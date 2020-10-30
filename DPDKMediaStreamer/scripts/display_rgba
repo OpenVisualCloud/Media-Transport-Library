@@ -1,0 +1,29 @@
+#!/bin/bash -e
+trap 'echo "$? ERROR $BASH_COMMAND">&2' err
+shopt -s globstar
+declare -a FILES
+
+FILES=$(pidof RxApp | while read PID ; do
+	for FD in /proc/$PID/fd/* ; do
+		readlink $FD | while read -a NAME ; do case $NAME in
+			/tmp/*rgba) echo $NAME ;;
+		esac ; done
+	done
+done)
+
+IFS='x' read WIDTH HEIGHT < <(
+	xdpyinfo | while IFS=':' read N V ; do case "$N" in
+	'screen #0') ;;
+	'  dimensions') echo "$V" ; break ;;
+	esac ; done | read DISMESION ;
+	echo "${DISMESION-1920x1080}"
+)
+WIDTH=$(($WIDTH-256))
+HEIGHT=$(($HEIGHT-256))
+trap 'killall ffplay' INT
+for FILE in ${FILES[@]} ; do
+	read POS <&3
+	ffplay -f rawvideo -video_size 1920x1080 -framerate 29.97 -pixel_format rgba $FILE -loop 0 -ss 0 -x 256 -y 256 $POS &
+done 3< <(for((y=0;y<HEIGHT-256;y+=257)); do for((x=0;x<WIDTH-256;x+=257)) ; do echo "-left $x -top $y" ; done ; done)
+
+wait

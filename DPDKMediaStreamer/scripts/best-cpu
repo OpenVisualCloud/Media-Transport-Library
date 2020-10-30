@@ -1,0 +1,15 @@
+#!/bin/bash -eu
+CPU=($(
+for A in $IN_PORT $OUT_PORT ; do 
+cat /sys/bus/pci/devices/$A/local_cpulist
+done | while IFS=',' read -a R ; do
+IFS=$'\n'; echo "${R[*]}"
+done | while IFS='-' read B E ; do
+for((I=B;I<=E;I++)); do echo $I ; done
+done | sort -uh ) )
+seq 1 ${#CPU[@]} | while read N; do
+echo ${CPU[@]:0:N}
+done | while read L ; do
+${1-*/app/rx_app/RxApp} ${ST_RX-} --in_port $IN_PORT --sip ${OUT_IP} --ip ${DEST_IP} --mac $DEST_MAC --o_port $OUT_PORT -- \
+-l ${L// /,} --socket-mem 1024,1024 > >(tail ${TAIL--1} | while read O ; do echo "${L// /,}: $O" >&2 ; done) 2>&1 && echo $L && break
+done
