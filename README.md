@@ -2,7 +2,7 @@
 
 ##### Overview
 
-Media treaming Library is solution based on DPDK prepared for transmitting and receiving raw video. Raw video RTP(real time protocol) is based on the SMPTE ST 2110-21 protocol. This solution are able to process high quality, full HD stream, without encoding. Connection of "no compression" and high speed network packets processing (DPDK) gives high quality and low latency.
+Media Streaming Library is solution based on DPDK prepared for transmitting and receiving raw video. Raw video RTP(real time protocol) is based on the SMPTE ST 2110-21 protocol. This solution are able to process high quality, full HD stream, without encoding. Connection of "no compression" and high speed network packets processing (DPDK) gives high quality and low latency.
 
 ##### Use cases
 
