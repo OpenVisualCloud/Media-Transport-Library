@@ -17,6 +17,7 @@
 #include "rvrtp_main.h"
 #include "st_api_internal.h"
 #include "st_flw_cls.h"
+#include "st_igmp.h"
 
 #include <stdbool.h>
 #include <stdio.h>
@@ -280,8 +281,9 @@ St21DestroySession(st21_session_t *sn)
 	d->snCount--;
 	if (d->dev.type == ST_DEV_TYPE_PRODUCER)
 	{
-		if (s->prodBuf)
-			free(s->prodBuf);
+		for (int i = 0; i < sn->extMem.numExtBuf; ++i)
+                       St21FreeFrame(sn, sn->extMem.addr[i]);
+
 		s->prodBuf = NULL;
 		if (s->prod.appHandle)
 			free(s->prod.appHandle);
@@ -783,6 +785,7 @@ St21BindIpAddr(st21_session_t *sn, st_addr_t *addr, uint16_t nicPort)
 		s->fl[0].dstMac[2] = 0x5e;
 		uint32_t tmpMacChunk = (addr->dst.addr4.sin_addr.s_addr >> 8) & 0xFFFFFF7F;
 		memcpy(&s->fl[0].dstMac[3], &tmpMacChunk, sizeof(uint8_t) * 3);
+		memcpy(&stMainParams.macAddr, s->fl[0].dstMac, ETH_ADDR_LEN);
 	}
 	else
 	{
@@ -845,17 +848,10 @@ St21BindIpAddr(st21_session_t *sn, st_addr_t *addr, uint16_t nicPort)
 	s->ofldFlags |= (ST_OFLD_HW_IP_CKSUM | ST_OFLD_HW_UDP_CKSUM);
 	s->state = ST_SN_STATE_ON;
 
-	return status;
-}
-
-/**
- * Called by the producer to listen and accept the incoming IGMP multicast reports to the
- * producer.
- */
-st_status_t
-St21ListenSession(st21_session_t *sn, st_addr_t *addr)
-{
-	st_status_t status = ST_NOT_IMPLEMENTED;
+	if (s->dev->dev.type == ST_DEV_TYPE_PRODUCER)
+	{
+		StUpdateSourcesList(addr->src.addr4.sin_addr.s_addr);
+	}
 
 	return status;
 }
@@ -868,21 +864,31 @@ St21ListenSession(st21_session_t *sn, st_addr_t *addr)
 st_status_t
 St21JoinSession(st21_session_t *sn, st_addr_t *addr)
 {
-	st_status_t status = ST_NOT_IMPLEMENTED;
+	st_status_t status = ST_OK;
 
-	return status;
-}
+	if (!addr)
+	{
+		return ST_INVALID_PARAM;
+	}
 
-/**
- * Called by the consumer application to drop producer session via RTCP
- * Producer in expected to stop if all consumers dropped
- * Consumer is expected to listen on St21Accept() the incomming RTCP connection
- */
-st_status_t
-St21DropSession(st21_session_t *sn)
-{
-	st_status_t status = ST_NOT_IMPLEMENTED;
+	status = RvRtpValidateSession(sn);
+	if (status != ST_OK)
+	{
+		return status;
+	}
 
+	//Implemented temporarily, function have to be modified in the future
+	if (stMainParams.ipAddr[0] >= 0xe0 && stMainParams.ipAddr[0] <= 0xef)
+	{
+		status = StCreateMembershipReportV3(*stMainParams.ipAddr, *stMainParams.sipAddr, MODE_IS_EXCLUDE, 1);
+		status = StSendMembershipReport();
+	}
+	else
+	{
+		RTE_LOG(ERR, USER1, "Can't join to the group - IP address not multicast.");
+		status = ST_IGMP_WRONG_IP_ADDRESS;
+	}
+	//
 	return status;
 }
 
@@ -1058,4 +1064,101 @@ St21GetSdp(st21_session_t *sn, char *sdpBuf, uint32_t sdpBufSize)
 	}
 
 	return status;
+}
+
+int
+St21GetExtIndex(st21_session_t *sn, uint8_t *addr)
+{
+	for (int i = 0; i < sn->extMem.numExtBuf; ++i)
+		if (addr >= sn->extMem.addr[i] && addr <= sn->extMem.endAddr[i])
+			return i;
+	return -1;
+}
+
+static void
+extBufFreeCb(void *extMem, void *arg)
+{
+	rvrtp_session_t *rsn = arg;
+	st21_session_t* sn = arg;
+	int idx = St21GetExtIndex(sn, extMem);
+#ifdef DEBUG
+	if (extMem == NULL) {
+		RTE_LOG(INFO, USER1, "External buffer address is invalid in extBufFreeCb\n");
+		return;
+	}
+
+	if (sn == NULL) {
+		RTE_LOG(INFO, USER1, "Session address is invalid in extBufFreeCb\n");
+		return;
+	}
+	RTE_LOG(INFO, USER1, "External buffer %p for session %d can be Freed\n", extMem, sn->ssid);
+#endif
+	if (likely(rsn->prod.appHandle))
+		rsn->prod.St21NotifyFrameDone(rsn->prod.appHandle, sn->extMem.addr[idx], 0);
+	else
+		St21FreeFrame(sn, sn->extMem.addr[idx]);
+}
+
+uint8_t *
+St21AllocFrame(st21_session_t *sn, uint32_t frameSize)
+{
+	uint8_t * extMem;
+	struct rte_mbuf_ext_shared_info *shInfo;
+	rte_iova_t bufIova;
+	uint16_t sharedInfoSize = sizeof(struct rte_mbuf_ext_shared_info);
+
+	extMem = rte_malloc("External buffer", frameSize, RTE_CACHE_LINE_SIZE);
+	if (extMem == NULL) {
+		RTE_LOG(ERR, USER1,
+				"Failed to allocate external memory of size %d\n",
+				frameSize);
+		return NULL;
+	}
+
+	shInfo = rte_malloc("SharedInfo", sharedInfoSize, RTE_CACHE_LINE_SIZE);
+	if (shInfo == NULL) {
+		RTE_LOG(ERR, USER1,
+				"Failed to allocate shinfo memory of size %d\n",
+				sharedInfoSize);
+		return NULL;
+	}
+	shInfo->free_cb = extBufFreeCb;
+	shInfo->fcb_opaque = sn;
+	rte_mbuf_ext_refcnt_set(shInfo, 0);
+
+	bufIova= rte_mem_virt2iova(extMem);
+	sn->extMem.shInfo[sn->extMem.numExtBuf] = shInfo;
+	sn->extMem.addr[sn->extMem.numExtBuf] = extMem;
+	sn->extMem.endAddr[sn->extMem.numExtBuf] = extMem + frameSize - 1;
+	sn->extMem.bufIova[sn->extMem.numExtBuf] = bufIova;
+	sn->extMem.numExtBuf++;
+	RTE_LOG(INFO, USER1,
+			"External buffer %p (IOVA: %lx size %d) allocated for session %d\n",
+			extMem, bufIova, frameSize, sn->ssid);
+
+	return extMem;
+}
+
+st_status_t
+St21FreeFrame(st21_session_t *sn, uint8_t* frame)
+{
+	int idx = St21GetExtIndex(sn, frame);
+
+	if (idx == -1) {
+		RTE_LOG(ERR, USER1,
+				"Ext memory %p does not belong to session %d\n",
+				frame, sn->ssid);
+		return ST_GENERAL_ERR;
+	}
+
+	if (rte_mbuf_ext_refcnt_read(sn->extMem.shInfo[idx]) != 0) {
+		return ST_SN_ERR_IN_USE;
+	}
+
+	rte_free(frame);
+	rte_free(sn->extMem.shInfo[idx]);
+	sn->extMem.addr[idx] = sn->extMem.endAddr[idx] = NULL;
+	sn->extMem.bufIova[idx] = 0;
+
+	return ST_OK;
 }

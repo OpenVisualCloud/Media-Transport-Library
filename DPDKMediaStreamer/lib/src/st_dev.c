@@ -702,7 +702,10 @@ StDevPrepMBuf(rvrtp_device_t *d)
 	return ST_OK;
 }
 
-static const struct rte_eth_conf portConf = { .rxmode = { .max_rx_pkt_len = RTE_ETHER_MAX_LEN } };
+static const struct rte_eth_conf portConf = {
+	.rxmode = { .max_rx_pkt_len = RTE_ETHER_MAX_LEN },
+	.txmode = { .offloads = DEV_TX_OFFLOAD_MULTI_SEGS }
+};
 
 static const struct rte_eth_txconf txPortConf = { .tx_rs_thresh = 1, .tx_free_thresh = 1 };
 static const struct rte_eth_rxconf rxPortConf = { .rx_free_thresh = 1 };
@@ -759,7 +762,7 @@ StDevInitRtePort(uint16_t port, rvrtp_device_t *d)
 		rte_exit(ST_GENERAL_ERR, "Error upon rte_eth_dev_adjust_nb_rx_tx_desc port %d info %s\n",
 				 port, strerror(-ret));
 	}
-
+#if 0
 	struct rte_eth_fc_conf fcConf;
 
 	ret = rte_eth_dev_flow_ctrl_get(port, &fcConf);
@@ -768,7 +771,7 @@ StDevInitRtePort(uint16_t port, rvrtp_device_t *d)
 				 port, strerror(-ret));
 	}
 
-#if 0
+
 	//possible value for fcConf.mode = RTE_FC_FULL/RTE_FC_TX_PAUSE/RTE_FC_NONE
 	fcConf.mode = RTE_FC_TX_PAUSE;//RTE_FC_FULL;//TX FC at min
 	fcConf.mac_ctrl_frame_fwd = 1;
@@ -1014,7 +1017,7 @@ StDevRvRtpInitSend(st_main_params_t *mp, rvrtp_device_t *d)
 		snprintf(ringName, 32, "SMPTE-RING-%u", i);
 
 		/* Create per session ring to the TPRS scheduler */
-		struct rte_ring *smpteRing = 
+		struct rte_ring *smpteRing =
 		    rte_ring_create(ringName, 0x1 << 10, rte_socket_id(), RING_F_SP_ENQ | RING_F_SC_DEQ);
 
 		d->txRing[i] = smpteRing;
@@ -1175,7 +1178,7 @@ StStartDevice(st_device_t *dev)
 			{
 				if (schThrdId < stMainParams.maxSchThrds)
 				{
-					int ret = rte_eal_remote_launch(LcoreMainTransmitterSingle,
+					int ret = rte_eal_remote_launch(LcoreMainTransmitterDual,
 													(void *)((U64)schThrdId), i);
 					if (ret != 0)
 					{

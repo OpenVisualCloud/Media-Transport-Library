@@ -30,6 +30,7 @@
 #include <sys/select.h>
 #include <sys/socket.h>
 #include <sys/time.h>
+#include <rte_mbuf.h>
 
 #define ST_VERSION_MAJOR 1
 #define ST_VERSION_MAJOR_CURRENT ST_VERSION_MAJOR
@@ -37,7 +38,7 @@
 #define ST_VERSION_MINOR 0
 #define ST_VERSION_MINOR_CURRENT ST_VERSION_MINOR
 
-#define ST_VERSION_LAST 15
+#define ST_VERSION_LAST 17
 #define ST_VERSION_LAST_CURRENT ST_VERSION_LAST
 
 struct st_version
@@ -75,6 +76,7 @@ typedef enum st_status
 	ST_SN_ERR_NO_TIMESLOT = -32,
 	ST_SN_ERR_NOT_READY = -33,
 	ST_SN_ERR_DISCONNECTED = -34,
+	ST_SN_ERR_IN_USE = -35,
 
 	ST_BAD_PRODUCER = -50,
 	ST_BAD_CONSUMER = -51,
@@ -151,6 +153,10 @@ typedef enum st_status
 
 	ST_PTP_GENERAL_ERR = -600,
 	ST_PTP_NOT_VALID_CLK_SRC = -601,
+
+	ST_IGMP_GENERAL_ERR = -650,
+	ST_IGMP_QUERIER_NOT_READY = -651,
+	ST_IGMP_WRONG_IP_ADDRESS = -652,
 
 } st_status_t;
 
@@ -248,7 +254,10 @@ typedef enum st_param
 	ST_LIB_VERSION = 41,	// read-only
 
 	ST_PTP_DROP_TIME = 100,
-	ST_PTP_THRESHOLD = 101,
+	ST_PTP_CLOCK_ID = 101,
+	ST_PTP_ADDR_MODE = 102,
+	ST_PTP_STEP_MODE = 103,
+	ST_PTP_CHOOSE_CLOCK_MODE = 104,
 
 	ST_SOURCE_IP = 150,
 	ST_DESTINATION_IP = 151,
@@ -310,7 +319,7 @@ typedef enum st21_cons_type
 									   //callback of St21RecvRtpPkt_f
 	ST21_CONS_RAW_L2_PKT = 0x31,	   //consumer of not parsed raw L2 packets (header points to L2 layer),
 									   // it uses only callback of St21RecvRtpPkt_f
-									   
+
 	ST21_CONS_LAST = ST21_CONS_RAW_L2_PKT,
 } st21_cons_type_t;
 
@@ -515,6 +524,16 @@ typedef enum st21_buf_fmt
 	ST21_BUF_FMT_YUV_422_12BIT_LE,
 } st21_buf_fmt_t;
 
+#define ST_MAX_EXT_BUFS 10
+struct st21_session_ext_mem
+{
+	struct rte_mbuf_ext_shared_info *shInfo[ST_MAX_EXT_BUFS];
+	uint8_t *addr[ST_MAX_EXT_BUFS];
+	uint8_t *endAddr[ST_MAX_EXT_BUFS];
+	rte_iova_t bufIova[ST_MAX_EXT_BUFS];
+	int numExtBuf;
+};
+typedef struct st21_session_ext_mem st21_ext_mem_t;
 /**
  * Structure for ST2110-21 video session
  */
@@ -535,6 +554,7 @@ struct st21_session
 	uint64_t frmsSend;
 	uint64_t pktsRecv;
 	uint64_t frmsRecv;
+	st21_ext_mem_t extMem;
 };
 typedef struct st21_session st21_session_t;
 
@@ -596,6 +616,7 @@ typedef union
 	uint32_t valueU32;
 	uint64_t valueU64;
 	char 	*strPtr;
+	void * ptr;
 } st_param_val_t;
 
 st_status_t StGetParam(st_param_t prm, st_param_val_t *val);
@@ -644,9 +665,28 @@ st_status_t StDestroyDevice(st_device_t *dev);	//IN ST device to destroy
 
 struct st_ptp_clock_id
 {
-	uint8_t addr[8];
+	uint8_t id[8];
 };
 typedef struct st_ptp_clock_id st_ptp_clock_id_t;
+
+typedef enum st_ptp_addr_mode
+{
+    ST_PTP_MULTICAST_ADDR = 0,
+    ST_PTP_UNICAST_ADDR = 1,
+} st_ptp_addr_mode_t;
+
+typedef enum st_ptp_step_mode
+{
+    ST_PTP_TWO_STEP = 0,
+    ST_PTP_ONE_STEP = 1,
+} st_ptp_step_mode_t;
+
+typedef enum st_ptp_master_choose_mode
+{
+    ST_PTP_BEST_KNOWN_MASTER = 0,
+    ST_PTP_SET_MASTER = 1,
+    ST_PTP_FIRST_KNOWN_MASTER = 2,
+} st_ptp_master_choose_mode_t;
 
 /*!
  * Called by the application to assign PTP primary and backup clock IDs
@@ -683,9 +723,9 @@ st_status_t StPtpSetClockSource(st_ptp_clock_id_t const *priClock,
  * @return \ref st_status_t
  *
  */
-st_status_t StPtpSetParam(st_param_t prm, uint64_t val);
+st_status_t StPtpSetParam(st_param_t prm,  st_param_val_t val);
 
-st_status_t StPtpGetParam(st_param_t prm, uint64_t *val);
+st_status_t StPtpGetParam(st_param_t prm,  st_param_val_t *val);
 
 /*!
  * Called by the application to get active PTP clock IDs
@@ -759,11 +799,6 @@ st_status_t St21DestroySession(st21_session_t *sn /* IN */);
  */
 st_status_t St21BindIpAddr(st21_session_t *sn, st_addr_t *addr, uint16_t nicPort);
 
-/**
- * Called by the producer to listen and accept the incoming IGMP multicast reports to the
- * producer.
- */
-st_status_t St21ListenSession(st21_session_t *sn, st_addr_t *addr);
 
 /**
  * Called by the consumer application to join producer session multicast group
@@ -771,13 +806,6 @@ st_status_t St21ListenSession(st21_session_t *sn, st_addr_t *addr);
  * reports to switches so that they can setup their IGMP snooping
  */
 st_status_t St21JoinSession(st21_session_t *sn, st_addr_t *addr);
-
-/**
- * Called by the consumer application to drop producer session multicast group
- * This procedure sends from a background thread IGMP Membership Leave message
- * The producer in expected to stop if all consumers dropped
- */
-st_status_t St21DropSession(st21_session_t *sn);
 
 st_status_t St21SetParam(st21_session_t *sn, st_param_t prm, uint64_t val);
 st_status_t St21GetParam(st21_session_t *sn, st_param_t prm, uint64_t *val);
@@ -806,7 +834,7 @@ st_status_t St21GetSdp(st21_session_t *sn, char *sdpBuf, uint32_t sdpBufSize);
  * (rtpHdr points to RTP header that is after UDP). Application is responsible of parsing and understanidng the packet.
  * This is for application implementing own packet assembling and own formats.
  */
-typedef st_status_t (*St21BuildRtpPkt_f)(void *appHandle, uint8_t *pktHdr, uint16_t *hdrSize, 
+typedef st_status_t (*St21BuildRtpPkt_f)(void *appHandle, uint8_t *pktHdr, uint16_t *hdrSize,
 										 uint8_t *rtpPayload, uint16_t *payloadSize);
 
 /**
@@ -985,5 +1013,21 @@ st_status_t St21ConsumerUpdate(
  * the session will notify the consumer about completion with callback
  */
 st_status_t St21ConsumerStop(st21_session_t *sn);
+
+/**
+ * Allocate memory for transmitting frames
+ */
+uint8_t * St21AllocFrame(
+	st21_session_t *sn, 	//IN session pointer
+	uint32_t frameSize);	//IN Size of memory
+
+/**
+ * Free memory if ref counter is zero, otherwise reports error that memory is
+ * still in use and free should be retried
+ */
+st_status_t
+St21FreeFrame(
+	st21_session_t *sn,	//IN session pointer
+       	uint8_t* frame);	//IN Addres of memory to be freed
 
 #endif

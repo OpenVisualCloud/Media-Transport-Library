@@ -37,10 +37,12 @@
 #include <rte_mempool.h>
 #include <rte_per_lcore.h>
 
+#include "st_igmp.h"
+
 #include <net/if.h>
+#include <st_ptp.h>
 #include <sys/ioctl.h>
 #include <time.h>
-#include <st_ptp.h>
 
 #define ST_KNI_NAME "vStKNI"
 #define RTE_LOGTYPE_ST_KNI (RTE_LOGTYPE_USER1)
@@ -156,6 +158,7 @@ StKniRxLcore(st_kni_ms_conf_t *c)
 	uint16_t portId;
 	uint16_t rxRing;
 	int32_t ret;
+	int vlanOffload;
 
 	if (c == NULL)
 		return;
@@ -165,6 +168,11 @@ StKniRxLcore(st_kni_ms_conf_t *c)
 
 	RTE_LOG(INFO, ST_KNI, "StKniRxLcore ethPortId: %d, rxRingNb %d - START\n", portId, rxRing);
 	clock_gettime(CLOCK_PROCESS_CPUTIME_ID, &c->rxTmr);
+
+        vlanOffload = rte_eth_dev_get_vlan_offload(portId);
+	vlanOffload |= ETH_VLAN_STRIP_OFFLOAD;
+	rte_eth_dev_set_vlan_offload(portId, vlanOffload);
+
 	while (rte_atomic32_read(&c->isStop) == 0)
 	{
 		/* Burst rx from eth */
@@ -185,6 +193,7 @@ StKniRxLcore(st_kni_ms_conf_t *c)
 		}
 		for (unsigned i = 0; i < nbRx; ++i)
 			StParseEthernet(c->ethPortId, pktsBurst[i]);
+
 		/* Burst tx to kni */
 		num = rte_kni_tx_burst(c->kni, pktsBurst, nbRx);
 
@@ -425,7 +434,7 @@ StStartKni(unsigned slvCoreRx, unsigned slvCoreTx, st_kni_ms_conf_t *c)
 	}
 	memset(&ops, 0, sizeof(ops));
 	ops.port_id = c->ethPortId;
-	ops.change_mtu = StKniChangeMtu; // kni_change_mtu;
+	ops.change_mtu = StKniChangeMtu;  // kni_change_mtu;
 	ops.config_network_if = StKniConfNetInt;
 	ops.config_mac_address = StKniCfgMacAddr;
 	ops.config_promiscusity = StKniConfigPromiscusity;
@@ -441,9 +450,11 @@ StStartKni(unsigned slvCoreRx, unsigned slvCoreTx, st_kni_ms_conf_t *c)
 	}
 	c->kni = kni;
 	StPtpInit(c->ethPortId, c->mbufPool, stDevParams->maxTxRings, c->txRing);
+	StIgmpQuerierInit(c->ethPortId, c->mbufPool, c->txRing, (uint32_t *)stMainParams.sipAddr,
+					  (uint32_t *)stMainParams.ipAddr);
 	rte_eal_remote_launch((lcore_function_t *)StKniTxLcore, c, c->slvCoreTx);
 	rte_eal_remote_launch((lcore_function_t *)StKniRxLcore, c, c->slvCoreRx);
-	{ // Assign IP to KNI
+	{  // Assign IP to KNI
 		int const sock = socket(AF_INET, SOCK_DGRAM, 0);
 		if (sock != -1)
 		{
@@ -451,7 +462,8 @@ StStartKni(unsigned slvCoreRx, unsigned slvCoreTx, st_kni_ms_conf_t *c)
 			strncpy(ifr.ifr_name, c->kniConf.name, sizeof(ifr.ifr_name) - 1);
 			ifr.ifr_ifru.ifru_addr.sa_family = AF_INET;
 			((struct sockaddr_in *)&ifr.ifr_ifru.ifru_addr)->sin_port = 0;
-			memcpy(&((struct sockaddr_in *)&ifr.ifr_ifru.ifru_addr)->sin_addr.s_addr, &stMainParams.sipAddr, 4);
+			memcpy(&((struct sockaddr_in *)&ifr.ifr_ifru.ifru_addr)->sin_addr.s_addr,
+				   &stMainParams.sipAddr, 4);
 
 			if (ioctl(sock, SIOCSIFADDR, &ifr))
 			{
@@ -472,6 +484,7 @@ StStopKni(st_kni_ms_conf_t *c)
 {
 	RTE_LOG(INFO, ST_KNI, "Release ST_KNI\n");
 	rte_atomic32_inc(&c->isStop);
+	StIgmpQuerierStop();
 	rte_eal_wait_lcore(c->slvCoreRx);
 	rte_eal_wait_lcore(c->slvCoreTx);
 	rte_kni_release(c->kni);

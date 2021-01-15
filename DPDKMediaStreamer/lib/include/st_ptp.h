@@ -36,27 +36,21 @@ typedef enum
 	MANAGEMENT = 0xD
 } st_ptp_messages;
 
-
-
-typedef struct clock_id
-{
-	uint8_t id[8];
-} clock_id_t;
+typedef st_ptp_clock_id_t clock_id_t;
 
 struct port_id
 {
-    clock_id_t clockIdentity;
+    st_ptp_clock_id_t clockIdentity;
     uint16_t portNumber;
 } __attribute__((packed));
 typedef struct port_id port_id_t;
 
-
 enum
 {
+	IPv4_PROTOCOL = 0x0800,
 	ARP_PROTOCOL = 0x0806,
 	PTP_PROTOCOL = 0x88F7
 };
-
 
 struct ptp_header
 {
@@ -144,14 +138,7 @@ typedef enum
 {
 	PTP_NOT_INITIALIZED = 0x00,
 	PTP_INITIALIZED     = 0x01,
-} ptp_state_t;
-
-typedef enum ptp_master_choose_mode
-{
-    ST_PTP_BEST_KNOWN_MASTER = 0,
-    ST_PTP_SET_MASTER = 1,
-    ST_PTP_FIRST_KNOWN_MASTER = 2,
-} ptp_master_choose_mode_t;
+} st_ptp_state_t;
 
 
 typedef enum
@@ -165,9 +152,9 @@ typedef enum
 
 typedef struct st_ptp_state
 {
-	ptp_state_t state;
+	st_ptp_state_t state;
 	port_id_t masterPortIdentity;
-	ptp_master_choose_mode_t masterChooseMode;
+	st_ptp_master_choose_mode_t masterChooseMode;
 	port_id_t ourPortIdentity;
 	uint16_t pauseToSendDelayReq;
     rte_atomic32_t isStop;
@@ -198,6 +185,12 @@ typedef struct st_ptp_state
 	int howHigherPortIdentity;
 	int howDifDelayReqDelayRes;
 	st_ptp_clocksource_t clkSrc;
+	int addrMode;
+	int stepMode;
+	clock_id_t setClockId;
+    uint16_t vlanTci;
+    uint8_t vlanRx;    /* indicate VLAN packet is received */
+    volatile int lock;
 } st_ptp_t;
 
 extern st_status_t StParseEthernet(uint16_t portId, struct rte_mbuf *m);

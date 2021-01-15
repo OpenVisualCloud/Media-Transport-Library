@@ -48,12 +48,23 @@ SendAppUnlock(rvrtp_send_app_t *app)
 	__sync_lock_release(&app->lock, 0);
 }
 
+static inline void
+SendAppWaitFrameDone(rvrtp_send_app_t *app)
+{
+       uint8_t done;
+       do {
+               done = __sync_lock_test_and_set(&app->frameDone[app->frameCursor], 1);
+       } while (done != 0);
+}
+
 static inline st_status_t
 SendAppReadFrameRgbaInline(rvrtp_send_app_t *app, st_vid_fmt_conv_t convert)
 {
 	SendAppLock(app);
 	app->frameBuf = app->frames[app->frameCursor];
 	SendAppUnlock(app);
+
+	SendAppWaitFrameDone(app);
 
 	st_rfc4175_422_10_pg2_t *dst = (st_rfc4175_422_10_pg2_t *)app->frameBuf;
 	st_rfc4175_422_10_pg2_t *const end
@@ -169,6 +180,8 @@ SendAppReadFrame422Inline(rvrtp_send_app_t *app,
 	SendAppLock(app);
 	app->frameBuf = app->frames[app->frameCursor];
 	SendAppUnlock(app);
+
+	SendAppWaitFrameDone(app);
 
 	st_rfc4175_422_10_pg2_t *dst = (st_rfc4175_422_10_pg2_t *)app->frameBuf;
 	st_rfc4175_422_10_pg2_t *const end
@@ -424,7 +437,7 @@ SendAppInit(rvrtp_send_app_t *app, const char *fileName)
 
 	for (uint32_t i = 0; i < SEND_APP_FRAME_MAX; i++)
 	{
-		app->frames[i] = malloc(app->session->frameSize);
+		app->frames[i] = St21AllocFrame(app->session, app->session->frameSize);
 		if (!app->frames[i])
 		{
 			return ST_NO_MEMORY;
@@ -718,7 +731,19 @@ SendAppGetNextSliceOffset(void *appHandle, uint8_t *frameBuf, uint32_t prevOffse
 void
 SendAppNotifyFrameDone(void *appHandle, uint8_t *frameBuf, uint32_t fieldId)
 {
-	//rvrtp_send_app_t *app = (rvrtp_send_app_t *)appHandle;
+	rvrtp_send_app_t *app = (rvrtp_send_app_t *)appHandle;
+	int i;
+
+	for (i = 0; i < SEND_APP_FRAME_MAX; ++i)
+	{
+		if (app->frames[i] == frameBuf)
+			break;
+	}
+
+	assert(i < SEND_APP_FRAME_MAX);
+
+	__sync_lock_release(&app->frameDone[i], 0);
+
 	return;
 }
 

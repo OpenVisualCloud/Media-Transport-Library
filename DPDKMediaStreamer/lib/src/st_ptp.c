@@ -19,6 +19,7 @@
 #include <rte_ethdev.h>
 
 #include "rvrtp_main.h"
+#include "st_igmp.h"
 
 #include <st_api.h>
 #include <sys/time.h>
@@ -30,6 +31,7 @@
 #define _BSD_SOURCE
 #include <endian.h>
 #include <math.h>
+#include <string.h>
 
 
 #define RTE_LOGTYPE_ST_PTP (RTE_LOGTYPE_USER1)
@@ -49,14 +51,19 @@
 
 #define ST_PTP_CLOCK_IDENTITY_MAGIC (0xfeff)
 
-//#define DEBUG
+//#define DEBUG_PTP
 
-#ifndef DEBUG
+#ifndef DEBUG_PTP
 #undef RTE_LOG
 #define RTE_LOG(...)
 #endif
 
 
+static st_ptp_t ptpState =
+{
+	.state = PTP_NOT_INITIALIZED,
+	.masterChooseMode = ST_PTP_FIRST_KNOWN_MASTER,
+};
 
 static inline int
 StPtpComparePortIdentities(const port_id_t *a, const port_id_t *b)
@@ -64,17 +71,73 @@ StPtpComparePortIdentities(const port_id_t *a, const port_id_t *b)
     return memcmp(a,b, sizeof(port_id_t));
 }
 
-st_status_t StPtpGetParam(st_param_t prm,uint64_t*val)
+	int addrMode;
+	int stepMode;
+	clock_id_t setClockId;
+
+static inline void
+StPtpLock()
 {
+	int lock;
+	do
+	{
+		lock = __sync_lock_test_and_set(&ptpState.lock, 1);
+	} while (lock != 0);
+}
+
+static inline void
+StPtpUnlock()
+{
+	__sync_lock_release(&ptpState.lock, 0);
+}
+
+st_status_t StPtpGetParam(st_param_t prm,  st_param_val_t *val)
+{
+    switch (prm)
+    {
+	case ST_PTP_CLOCK_ID:
+        memcpy(val->ptr, &ptpState.setClockId, sizeof(ptpState.setClockId));
+        break;
+	case ST_PTP_ADDR_MODE:
+        val->valueU32 = ptpState.addrMode;
+        break;
+	case ST_PTP_STEP_MODE:
+        val->valueU32 = ptpState.stepMode;
+        break;
+	case ST_PTP_CHOOSE_CLOCK_MODE:
+        val->valueU32 = ptpState.masterChooseMode;
+        break;
+	default:
+		RTE_LOG(INFO, USER1, "Parameter not supported by StPtpGetParam\n");
+		break;
+    }
     return ST_OK;
 }
 
-
-st_status_t StPtpSetParam(st_param_t prm,uint64_t val)
+st_status_t StPtpSetParam(st_param_t prm,  st_param_val_t val)
 {
+    switch (prm)
+    {
+	case ST_PTP_CLOCK_ID:
+        memcpy(&ptpState.setClockId, val.ptr, sizeof(ptpState.setClockId));
+        break;
+	case ST_PTP_ADDR_MODE:
+        ptpState.addrMode = val.valueU32;
+        break;
+	case ST_PTP_STEP_MODE:
+        ptpState.stepMode = val.valueU32;
+        break;
+	case ST_PTP_CHOOSE_CLOCK_MODE:
+        ptpState.masterChooseMode = val.valueU32;
+        break;
+	default:
+		RTE_LOG(INFO, USER1, "Parameter not supported by StPtpGetParam\n");
+		break;
+    }
     return ST_OK;
 }
-#ifdef DEBUG
+
+#ifdef DEBUG_PTP
 static void StPtpPrintClockIdentity(char *fieldName, clock_id_t *clockIdentity)
 {
     RTE_LOG(INFO, ST_PTP5, "%s.clockIdentity: %02x:%02x:%02x:%02x%02x:%02x:%02x:%02x\n", fieldName,
@@ -198,12 +261,6 @@ static void StPtpPrintDellayResMsg(ptp_delay_resp_msg_t* ptpHdr)
 #define StPtpPrintDellayResMsg(...)
 #endif
 
-static st_ptp_t ptpState =
-{
-	.state = PTP_NOT_INITIALIZED,
-	.masterChooseMode = ST_PTP_FIRST_KNOWN_MASTER,
-};
-
 #if 0
 static struct timeval
 ns_to_timeval(int64_t nsec)
@@ -282,8 +339,27 @@ static uint64_t
 StPtpTimeFromEth()
 {
 	struct timespec spec;
+
+        StPtpLock();
 	rte_eth_timesync_read_time(ptpState.portId, &spec);
+        StPtpUnlock();
 	return spec.tv_sec * GIGA + spec.tv_nsec;
+}
+
+static void
+StPtpPrepClockIdentityFromMac(clock_id_t *clockId, struct rte_ether_addr *mac)
+{
+    uint16_t ptpMagicClockId = ST_PTP_CLOCK_IDENTITY_MAGIC;
+    memcpy(&clockId->id[0], &mac->addr_bytes[0], 3);
+    memcpy(&clockId->id[3], &ptpMagicClockId,2);
+    memcpy(&clockId->id[5], &mac->addr_bytes[3], 3);
+}
+
+static void
+StPtpPrepMacFromClockIdentity(struct rte_ether_addr *mac, clock_id_t *clockId)
+{
+    memcpy(&mac->addr_bytes[0], &clockId->id[0], 3);
+    memcpy(&mac->addr_bytes[3], &clockId->id[5], 3);
 }
 
 static int
@@ -303,14 +379,30 @@ StPtpIsInitializedAndIsOurMaster(const ptp_header_t* ptpHdr)
 }
 
 static void
-StPtpParseSyncMsg(ptp_sync_msg_t const *ptpHdr, struct timespec *timestamp, int isSoft)
+StPtpParseSyncMsg(ptp_sync_msg_t const *ptpHdr, uint16_t portid, uint16_t rxTmstampIdx, uint64_t *tm)
 {
+    int isSoft = 0, ret;
+    struct timespec timestamp;
+
     if (StPtpIsInitializedAndIsOurMaster(&ptpHdr->hdr) != 0) return;
+
+    StPtpLock();
+    ret = rte_eth_timesync_read_rx_timestamp(portid, &timestamp, rxTmstampIdx);
+    StPtpUnlock();
+
+    if (!ret)
+    {
+	/* TODO if timesync HW is supported, it should not be used */
+        /*use software timestamp */
+        timestamp = ns_to_timespec(*tm);
+        isSoft = 1;
+    }
     ptpState.ist2Soft = isSoft;
-    ptpState.t2 = timespec64_to_ns(timestamp);
+    ptpState.t2 = timespec64_to_ns(&timestamp);
     ptpState.t2HPet = StPtpTimeFromRteCalc(curHPetClk);
     ptpState.syncSeqId = ptpHdr->hdr.sequenceId;
     ptpState.howSyncInAnnouce++;
+
     if (ptpState.t1HPetFreqStart  == 0 )  ptpState.t1HPetFreqClk = curHPetClk;
     ptpState.t1HPetFreqClkNext = curHPetClk;
     RTE_LOG(DEBUG, ST_PTP4,"SYNC save time\n");
@@ -333,8 +425,11 @@ static const ptp_delay_req_msg_t delayReqMsgPat =
 };
 
 static void
-StPtpParseFollowUpMsg(ptp_follow_up_msg_t const *ptpHdr, struct timespec *timestamp, uint16_t portid)
+StPtpParseFollowUpMsg(ptp_follow_up_msg_t const *ptpHdr, uint16_t portid)
 {
+
+    ptp_delay_req_msg_t *ptpMsg;
+
     if (StPtpIsInitializedAndIsOurMaster(&ptpHdr->hdr) != 0)
     {
         RTE_LOG(DEBUG, ST_PTP5,"FOLLOW_UP - not our master\n");
@@ -354,30 +449,61 @@ StPtpParseFollowUpMsg(ptp_follow_up_msg_t const *ptpHdr, struct timespec *timest
     //copy t1 time
     ptpState.t1 = net_tstamp_to_ns(&ptpHdr->preciseOriginTimestamp);
     if (ptpState.t1HPetFreqStart  == 0 )   ptpState.t1HPetFreqStart = ptpState.t1;
-    reqPkt->pkt_len = reqPkt->data_len = sizeof(struct rte_ether_hdr) + sizeof(ptp_delay_req_msg_t);
-    reqPkt->ol_flags |= PKT_TX_IEEE1588_TMST;
-    struct rte_ether_hdr *ethHdr = rte_pktmbuf_mtod(reqPkt, struct rte_ether_hdr *);
-    rte_eth_macaddr_get(portid, &ethHdr->s_addr);
-    static struct rte_ether_addr const multicast
-        = { { 0x01, 0x1b, 0x19, 0x0, 0x0, 0x0 } };
 
-    rte_ether_addr_copy(&multicast, &ethHdr->d_addr);
-    ethHdr->ether_type = htons(PTP_PROTOCOL);
-    ptp_delay_req_msg_t *ptpMsg = rte_pktmbuf_mtod_offset(reqPkt, ptp_delay_req_msg_t *,
+    struct rte_ether_hdr *ethHdr = rte_pktmbuf_mtod(reqPkt, struct rte_ether_hdr *);
+
+    if (ptpState.vlanRx) {
+        reqPkt->pkt_len = reqPkt->data_len = sizeof(struct rte_ether_hdr) 
+		 + sizeof(ptp_delay_req_msg_t) + sizeof(struct rte_vlan_hdr);
+	ethHdr->ether_type = htons(RTE_ETHER_TYPE_VLAN);
+	struct rte_vlan_hdr* vlan_header = (struct rte_vlan_hdr*)((char *)&ethHdr->ether_type + 2);
+	vlan_header->vlan_tci = htons(ptpState.vlanTci);
+	vlan_header->eth_proto  = htons(PTP_PROTOCOL);
+        ptpMsg = rte_pktmbuf_mtod_offset(reqPkt, ptp_delay_req_msg_t *,
+                sizeof(struct rte_ether_hdr) + sizeof(struct rte_vlan_hdr));
+    }
+    else {
+        reqPkt->pkt_len = reqPkt->data_len = sizeof(struct rte_ether_hdr) + sizeof(ptp_delay_req_msg_t);
+        ethHdr->ether_type = htons(PTP_PROTOCOL);
+
+        reqPkt->ol_flags |= PKT_TX_IEEE1588_TMST;
+        if (ptpState.vlanTci != 0)
+        {
+            reqPkt->ol_flags |= PKT_TX_VLAN;
+            reqPkt->vlan_tci = ptpState.vlanTci;
+        }
+        ptpMsg = rte_pktmbuf_mtod_offset(reqPkt, ptp_delay_req_msg_t *,
                 sizeof(struct rte_ether_hdr));
-    *ptpMsg = delayReqMsgPat;
+
+    }
+
+
+    rte_eth_macaddr_get(portid, &ethHdr->s_addr);
+    if (ptpState.addrMode == ST_PTP_MULTICAST_ADDR)
+    {
+        static struct rte_ether_addr const multicast
+            = { { 0x01, 0x1b, 0x19, 0x0, 0x0, 0x0 } };
+        rte_ether_addr_copy(&multicast, &ethHdr->d_addr);
+    }
+    else
+    {
+        static struct rte_ether_addr addr;
+        StPtpPrepMacFromClockIdentity(&addr, &ptpState.masterPortIdentity.clockIdentity);
+        rte_ether_addr_copy(&addr, &ethHdr->d_addr);
+    }
+
+    memcpy((void*)ptpMsg, (void*)&delayReqMsgPat, sizeof(ptp_delay_req_msg_t));
     ptpMsg->hdr.messageLength = htons(sizeof(ptp_delay_req_msg_t));
     ptpMsg->hdr.domainNumber = ptpHdr->hdr.domainNumber;
     ptpMsg->hdr.sourcePortIdentity = ptpState.ourPortIdentity;
     ptpState.delayReqId++;
     ptpMsg->hdr.sequenceId = ptpState.delayReqId;
     ptpState.delReqPkt = reqPkt;
-
     pthread_mutex_unlock(&ptpState.isDo);
 }
 
 static void
-StPtpParseDellayResMsg(ptp_delay_resp_msg_t const *ptpHdr, struct timespec *timestamp, uint16_t portid)
+StPtpParseDellayResMsg(ptp_delay_resp_msg_t const *ptpHdr, uint16_t portid)
 {
     if (ptpState.state != PTP_INITIALIZED)
     {
@@ -405,11 +531,14 @@ StPtpParseDellayResMsg(ptp_delay_resp_msg_t const *ptpHdr, struct timespec *time
     }
     ptpState.howDelayResOurInAnnouce++;
     struct timespec tmt3;
-#ifdef DEBUG
+#ifdef DEBUG_PTP
     uint64_t t3Soft = ptpState.t3;
 #endif
+
+    StPtpLock();
     ret = rte_eth_timesync_read_tx_timestamp(portid, &tmt3);
-    if (ret == 0) //when ok
+    StPtpUnlock();
+    if (ret == 0)
     {
         ptpState.t3 = timespec64_to_ns(&tmt3);
         ptpState.ist3Soft = 0;
@@ -424,7 +553,7 @@ StPtpParseDellayResMsg(ptp_delay_resp_msg_t const *ptpHdr, struct timespec *time
     ptpState.t4 = net_tstamp_to_ns(&ptpHdr->receiveTimestamp);
     int64_t delta = (((int64_t)ptpState.t4 - (int64_t)ptpState.t3)
         - ((int64_t)ptpState.t2 - (int64_t)ptpState.t1))/2;
-#ifdef DEBUG
+#ifdef DEBUG_PTP
     int64_t tp =  (((int64_t)ptpState.t4 - (int64_t)ptpState.t3)
             + ((int64_t)ptpState.t2 - (int64_t)ptpState.t1))/2;
 #endif
@@ -434,9 +563,11 @@ StPtpParseDellayResMsg(ptp_delay_resp_msg_t const *ptpHdr, struct timespec *time
     RTE_LOG(WARNING, ST_PTP6,"t1=%ld t2HPet=%ld t3HPet=%ld t4=%ld\n",
         ptpState.t1, ptpState.t2HPet, ptpState.t3HPet, ptpState.t4);
 
-    RTE_LOG(WARNING, ST_PTP6,"t2-t1=%ld t4-t3=%ld\n", ptpState.t2 -ptpState.t1, ptpState.t4 - ptpState.t3);
+     /* useful info for debug */
+    RTE_LOG(WARNING, ST_PTP6,"%s: t2-t1=%ld t4-t3=%ld\n", ptpState.vlanRx?"VLAN":"VLAN strip", ptpState.t2 -ptpState.t1, ptpState.t4 - ptpState.t3);
     RTE_LOG(WARNING, ST_PTP6,"t4-t1=%ld t3-t2=%ld\n", ptpState.t4 -ptpState.t1, ptpState.t3 - ptpState.t2);
 
+    StPtpLock();
     if (rte_eth_timesync_adjust_time(portid, delta) == 0)
     {
         if (ptpState.clkSrc == ST_PTP_CLOCK_SRC_ETH || ptpState.clkSrc == ST_PTP_CLOCK_SRC_AUTO)
@@ -449,9 +580,11 @@ StPtpParseDellayResMsg(ptp_delay_resp_msg_t const *ptpHdr, struct timespec *time
     {
         RTE_LOG(WARNING, ST_PTP, "rte_eth_timesync_adjust_time fail\n");
     }
+    StPtpUnlock();
+
     int64_t deltaHpet = (((int64_t)ptpState.t4 - (int64_t)(ptpState.t3HPet))
         - ((int64_t)ptpState.t2HPet - (int64_t)ptpState.t1))/2;
-#ifdef DEBUG
+#ifdef DEBUG_PTP
     int64_t delPath = ptpState.t3 - t3Soft;
     int64_t tpHPet =  (((int64_t)ptpState.t4 - (int64_t)(ptpState.t3HPet))
             + ((int64_t)ptpState.t2HPet - (int64_t)ptpState.t1))/2;
@@ -509,15 +642,6 @@ StPtpParseDellayResMsg(ptp_delay_resp_msg_t const *ptpHdr, struct timespec *time
 #endif
 }
 
-static void
-StPtpPrepClockIdentityFromMac(clock_id_t *clockId, struct rte_ether_addr *mac)
-{
-    uint16_t ptpMagicClockId = ST_PTP_CLOCK_IDENTITY_MAGIC;
-    memcpy(&clockId->id[0], &mac->addr_bytes[0], 3);
-    memcpy(&clockId->id[3], &ptpMagicClockId,2);
-    memcpy(&clockId->id[5], &mac->addr_bytes[3], 3);
-}
-
 static st_status_t
 StPtpGetPortClockIdentity(uint16_t portId, clock_id_t *clockId)
 {
@@ -530,7 +654,7 @@ StPtpGetPortClockIdentity(uint16_t portId, clock_id_t *clockId)
 }
 
 static void
-StPtpParseAnnouceMsg(ptp_announce_msg_t* ptpAnMsg, uint16_t portId)
+StPtpParseAnnouceMsg(struct rte_mbuf *m, ptp_announce_msg_t* ptpAnMsg, uint16_t portId)
 {
     //first prepare actual clock identity
     port_id_t ourPortIdentity;
@@ -547,9 +671,16 @@ StPtpParseAnnouceMsg(ptp_announce_msg_t* ptpAnMsg, uint16_t portId)
         if (ptpState.masterChooseMode == ST_PTP_FIRST_KNOWN_MASTER)
             ptpState.masterPortIdentity = ptpAnMsg->hdr.sourcePortIdentity;
 #if 0
-        else if (ptpState.state == ST_PTP_SET_MASTER)
+        else if (ptpState.masterChooseMode == ST_PTP_SET_MASTER)
         {
-            //ignore now
+            ptpState.masterChooseMode = ST_PTP_FIRST_KNOWN_MASTER;
+            //not implemented
+
+        }
+        else if (ptpState.masterChooseMode == ST_PTP_BEST_KNOWN_MASTER)
+        {
+            ptpState.masterChooseMode = ST_PTP_FIRST_KNOWN_MASTER;
+            //not implemented
         }
 #endif
         else return; //difrent not supported
@@ -587,60 +718,49 @@ StPtpParseAnnouceMsg(ptp_announce_msg_t* ptpAnMsg, uint16_t portId)
     ptpState.howDelayResInAnnouce = 0;
     ptpState.howDelayResOurInAnnouce = 0;
     ptpState.howHigherPortIdentity = 0;
+
+    if (m->ol_flags & PKT_RX_VLAN)
+    {
+        ptpState.vlanTci = m->vlan_tci;
+    }
+    else
+    {
+        ptpState.vlanTci = 0;
+    }
 }
 
 
 static void
-ParsePtp(ptp_header_t const *ptpHdr, uint16_t portid, uint16_t rxTmstampIdx)
+StPtpParsePtp(struct rte_mbuf *m, uint16_t portid, uint16_t rxTmstampIdx)
 {
     curHPetClk = rte_get_timer_cycles();
 	uint64_t tm = StPtpGetTime();
-	struct timespec timestamp;
-	int ret;
+	ptp_header_t *ptpHdr;
+
+        if (ptpState.vlanRx)
+            ptpHdr = rte_pktmbuf_mtod_offset(m, ptp_header_t *, sizeof(struct rte_ether_hdr)
+			     + sizeof(struct rte_vlan_hdr));
+	else
+	    ptpHdr = rte_pktmbuf_mtod_offset(m, ptp_header_t *, sizeof(struct rte_ether_hdr));
+
 	switch (ptpHdr->messageType)
 	{
 	case SYNC:
-		ret = rte_eth_timesync_read_rx_timestamp(portid, &timestamp, rxTmstampIdx);
-		RTE_LOG(DEBUG, ST_PTP4,"SYNC timestamp %ld:%ld ret=%d rxTmstampIdx: %d\n",
-			timestamp.tv_sec, timestamp.tv_nsec, ret, rxTmstampIdx);
-        if (ret != 0)
-        {
-            RTE_LOG(WARNING, ST_PTP4,"SYNC timestamp %ld:%ld ret=%d rxTmstampIdx: %d\n",
-                timestamp.tv_sec, timestamp.tv_nsec, ret, rxTmstampIdx);
-            timestamp = ns_to_timespec(tm); //soft tmsmp
-        }
-        StPtpPrintSyncMsg((ptp_sync_msg_t*)ptpHdr);
-		StPtpParseSyncMsg((ptp_sync_msg_t *)ptpHdr, &timestamp, ret?1:0);
+		StPtpParseSyncMsg((ptp_sync_msg_t *)ptpHdr, portid, rxTmstampIdx, &tm);
 		break;
 	case FOLLOW_UP:
-		ret = rte_eth_timesync_read_rx_timestamp(portid, &timestamp, rxTmstampIdx);
-		RTE_LOG(DEBUG, ST_PTP4,"FOLLOW_UP timestamp %ld:%ld ret=%d rxTmstampIdx: %d\n",
-			timestamp.tv_sec, timestamp.tv_nsec, ret, rxTmstampIdx);
-        StPtpPrintFollowUpMsg((ptp_follow_up_msg_t*)ptpHdr);
-		StPtpParseFollowUpMsg((ptp_follow_up_msg_t *)ptpHdr, &timestamp, portid);
+		StPtpParseFollowUpMsg((ptp_follow_up_msg_t *)ptpHdr, portid);
 		break;
 	case DELAY_RESP:
-        ret = rte_eth_timesync_read_rx_timestamp(portid, &timestamp, rxTmstampIdx);
-		RTE_LOG(DEBUG, ST_PTP4,"DELAY_RESP timestamp %ld:%ld ret=%d rxTmstampIdx: %d\n",
-			timestamp.tv_sec, timestamp.tv_nsec, ret, rxTmstampIdx);
-        StPtpPrintDellayResMsg((ptp_delay_resp_msg_t*)ptpHdr);
-		StPtpParseDellayResMsg((ptp_delay_resp_msg_t *)ptpHdr, &timestamp, portid);
+		StPtpParseDellayResMsg((ptp_delay_resp_msg_t *)ptpHdr, portid);
 		break;
 	case ANNOUNCE:
-		ret = rte_eth_timesync_read_rx_timestamp(portid, &timestamp, rxTmstampIdx);
-		RTE_LOG(DEBUG, ST_PTP4,"ANNOUNCE timestamp %ld:%ld ret=%d rxTmstampIdx: %d\n",
-			timestamp.tv_sec, timestamp.tv_nsec, ret, rxTmstampIdx);
-        StPtpPrintAnnounceMsg((ptp_announce_msg_t*) ptpHdr);
-        StPtpParseAnnouceMsg((ptp_announce_msg_t*) ptpHdr, portid);
-        break;
+                StPtpParseAnnouceMsg(m, (ptp_announce_msg_t*) ptpHdr, portid);
+                break;
 	case DELAY_REQ:
-        ret = rte_eth_timesync_read_rx_timestamp(portid, &timestamp, rxTmstampIdx);
-		RTE_LOG(DEBUG, ST_PTP4,"DELAY_REQ timestamp %ld:%ld ret=%d rxTmstampIdx: %d\n",
-			timestamp.tv_sec, timestamp.tv_nsec, ret, rxTmstampIdx);
-        StPtpPrintDelayReqMsg((ptp_delay_req_msg_t*)ptpHdr);
+                StPtpPrintDelayReqMsg((ptp_delay_req_msg_t*)ptpHdr);
 		break;
 	default:
-        rte_eth_timesync_read_rx_timestamp(portid, &timestamp, rxTmstampIdx);
 		RTE_LOG(DEBUG, ST_PTP4, "Unknown %02x PTP4L frame type\n", ptpHdr->messageType);
 		return;
 	}
@@ -648,19 +768,39 @@ ParsePtp(ptp_header_t const *ptpHdr, uint16_t portid, uint16_t rxTmstampIdx)
 
 void ParseArp(struct rte_arp_ipv4 const *header, uint16_t portid);
 
+
 st_status_t
 StParseEthernet(uint16_t portid, struct rte_mbuf *m)
 {
 	struct rte_ether_hdr *const ethHdr = rte_pktmbuf_mtod(m, struct rte_ether_hdr *);
-	switch (ntohs(ethHdr->ether_type))
+	uint16_t ether_type;
+	struct rte_vlan_hdr *vlan_header;
+	int vlan;
+
+	ether_type = ntohs(ethHdr->ether_type);
+	vlan = 0;
+
+	if (ether_type == RTE_ETHER_TYPE_VLAN)
+	{
+		/* TODO: will consider Vlan QinQ later */
+		vlan_header = (struct rte_vlan_hdr*)((void*)&ethHdr->ether_type + 2);
+		ptpState.vlanTci = ntohs(vlan_header->vlan_tci);
+		ether_type = ntohs(vlan_header->eth_proto);
+		vlan = 1;
+        }
+
+	switch (ether_type)
 	{
 	case PTP_PROTOCOL:
-		ParsePtp(rte_pktmbuf_mtod_offset(m, ptp_header_t *, sizeof(struct rte_ether_hdr)), portid,
-				 m->timesync);
+                ptpState.vlanRx = vlan;
+		StPtpParsePtp(m, portid,  m->timesync);
 		break;
 	case ARP_PROTOCOL:
 //		ParseArp(rte_pktmbuf_mtod_offset(m, struct rte_arp_ipv4 *, sizeof(struct rte_ether_hdr)),
 //				 portid);
+		break;
+	case IPv4_PROTOCOL:
+		ParseIp(rte_pktmbuf_mtod_offset(m, ipv4Hdr_t *, sizeof(struct rte_ether_hdr)), m, portid);
 		break;
 	default:
 //        RTE_LOG(DEBUG, ST_PTP4, "Unknow %04x frame type %s\n", ntohs(ethHdr->ether_type), t);
@@ -726,6 +866,7 @@ StPtpDelayReqThread(void *arg)
         }
         rte_delay_us_sleep (ptpState.pauseToSendDelayReq);
         rte_eth_timesync_read_tx_timestamp(ptpState.portId, &ts);
+
         if (rte_eth_tx_burst(ptpState.portId, ptpState.txRingId, (struct rte_mbuf **)&ptpState.delReqPkt, 1) == 0)
         //if (rte_ring_sp_enqueue(ptpState.txRing, (void *)ptpState.delReqPkt))
         // not remove under line - I'll be it test yet

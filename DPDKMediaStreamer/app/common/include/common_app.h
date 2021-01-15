@@ -29,7 +29,7 @@
 
 /* Defines */
 #define U64 unsigned long long
-#define SEND_APP_FRAME_MAX 2
+#define SEND_APP_FRAME_MAX 3
 #define RECV_APP_FRAME_MAX 6
 
 #define MIN(x, y) (x < y ? x : y)
@@ -82,6 +82,7 @@ typedef struct rvrtp_send_app
 
 	uint8_t *frameBuf;	// current frameBuffer
 	uint8_t *frames[SEND_APP_FRAME_MAX];
+	volatile uint8_t frameDone[SEND_APP_FRAME_MAX];
 	uint32_t frameCursor;
 	volatile uint32_t frameCursorSending;
 	uint64_t lastTmr;

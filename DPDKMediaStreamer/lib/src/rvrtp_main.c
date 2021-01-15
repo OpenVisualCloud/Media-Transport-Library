@@ -323,28 +323,15 @@ StDevCalculateBudgets(rvrtp_device_t *d)
 void
 SigHandler(int signo)
 {
-#ifdef TX_RING_DEBUG
-extern uint64_t negativeCount;
-extern uint64_t megaCount;
-extern uint64_t rightCount;
-#endif
-extern uint64_t adjustCount;
-
+extern uint64_t adjustCount[6];
 
 	rvrtp_device_t *dRx = &stRecvDevice;
 	rvrtp_device_t *dTx = &stSendDevice;
 
 	printf("----------------------------------------\n");
 	printf("ALIGNMENT COUNTS: \n");
-#ifdef TX_RING_DEBUG	
-	printf(" negativeCount %lu megaCount %lu rightCount %lu\n", 
-		   negativeCount, megaCount, rightCount);
-	uint64_t all = negativeCount + rightCount + megaCount;
-	double negPerct = negativeCount/all;
-	double megPerct = megaCount/all;
-	printf(" negative Perct %f mega Perct %f\n",  negPerct, megPerct);
-#endif
-	printf(" adjustCount %lu \n", adjustCount);
+	printf(" adjustCount[0] %lu adjustCount[1] %lu adjustCount[2] %lu\n", adjustCount[0], adjustCount[1], adjustCount[2]);
+	printf(" adjustCount[3] %lu adjustCount[4] %lu adjustCount[5] %lu\n", adjustCount[3], adjustCount[4], adjustCount[5]);
 	printf("----------------------------------------\n");
 	{
 		printf("SN TABLE: \n");
@@ -423,6 +410,7 @@ StDevInitTxThreads(st_main_params_t *mp, rvrtp_device_t *dev)
 				 "sessions\n",
 				 mp->maxEnqThrds, countRemaind);
 	}
+	if (countRemaind >= mp->maxEnqThrds/2) perThrdSnCount++;
 
 	for (uint32_t i = 0; i < mp->maxEnqThrds; i++)
 	{
@@ -451,6 +439,9 @@ StDevInitRxThreads(st_main_params_t *mp, rvrtp_device_t *dev)
 	mp->maxRcvThrds = stDevParams->maxRcvThrds;
 
 	uint32_t perThrdSnCount = dev->dev.maxSt21Sessions / mp->maxRcvThrds;
+	uint32_t countRemaind = dev->dev.maxSt21Sessions % mp->maxRcvThrds;
+
+	if (countRemaind >= mp->maxRcvThrds/2) perThrdSnCount++;
 
 	for (uint32_t i = 0; i < mp->maxRcvThrds; i++)
 	{
@@ -468,4 +459,5 @@ StDevInitRxThreads(st_main_params_t *mp, rvrtp_device_t *dev)
 	if (signal(SIGINT, SigHandler) == SIG_ERR)
 		printf("\ncan't catch SIGINT\n");
 	signal(SIGUSR1, SigHandler);
+
 }

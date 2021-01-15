@@ -247,7 +247,7 @@ typedef struct rvrtp_ebu_stat rvrtp_ebu_stat_t;
 /**
 * Function to build packet as it is dependent on a format
 */
-typedef void *(*RvRtpUpdatePacket_f)(rvrtp_session_t *s, void *hdr);
+typedef void *(*RvRtpUpdatePacket_f)(rvrtp_session_t *s, void *hdr, struct rte_mbuf *);
 
 /**
 * Function to receive packet as it is dependent on a format
@@ -409,7 +409,7 @@ st_status_t RvRtpSendDeviceAdjustBudget(rvrtp_device_t *dev);
  *
  * RETURNS: IP header location
  */
-void *RvRtpUpdateDualLinePacket(rvrtp_session_t *s, void *hdr);
+void *RvRtpUpdateDualLinePacket(rvrtp_session_t *s, void *hdr, struct rte_mbuf * m);
 
 
 /*****************************************************************************************
@@ -422,7 +422,7 @@ void *RvRtpUpdateDualLinePacket(rvrtp_session_t *s, void *hdr);
  *
  * RETURNS: IP header location
  */
-void *RvRtpUpdateSingleLinePacket(rvrtp_session_t *s, void *hdr);
+void *RvRtpUpdateSingleLinePacket(rvrtp_session_t *s, void *hdr, struct rte_mbuf *m);
 
 
 /*****************************************************************************
@@ -437,8 +437,7 @@ void *RvRtpUpdateSingleLinePacket(rvrtp_session_t *s, void *hdr);
  *
  * SEE ALSO:
  */
-void *RvRtpUpdateInterlacedPacket(rvrtp_session_t *s, void *hdr);
-
+void *RvRtpUpdateInterlacedPacket(rvrtp_session_t *s, void *hdr, struct rte_mbuf *m);
 
 /*****************************************************************************************
  *
@@ -775,7 +774,7 @@ RvRtpSessionUnlock(rvrtp_session_t *s)
 
 
 
-void *RvRtpDummyBuildPacket(rvrtp_session_t *s, void *hdr);
+void *RvRtpDummyBuildPacket(rvrtp_session_t *s, void *hdr, struct rte_mbuf *extMbuf);
 /* internal api end */
 
 /**

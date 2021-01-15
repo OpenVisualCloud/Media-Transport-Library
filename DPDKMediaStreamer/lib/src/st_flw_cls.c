@@ -74,8 +74,19 @@ StSetUDPFlow(uint16_t portId, uint16_t rxQ, struct st_udp_flow_conf *flConf,
 		ipv4Mask.hdr.next_proto_id = 0xff;
 	}
 
-	ipv4Mask.hdr.src_addr = flConf->srcMask;
-	ipv4Mask.hdr.dst_addr = flConf->dstMask;
+
+
+	if ((uint8_t)flConf->srcIp >= 0xe0 && (uint8_t)flConf->srcIp <= 0xef)
+	{
+		ipv4Mask.hdr.src_addr = 0x0;
+		ipv4Mask.hdr.dst_addr = 0x0;
+	}
+	else
+	{
+		ipv4Mask.hdr.src_addr = flConf->srcMask;
+		ipv4Mask.hdr.dst_addr = flConf->dstMask;
+	}
+
 
 	memset(&udpSpec, 0, sizeof(udpSpec));
 	udpSpec.hdr.src_port = flConf->srcPort;

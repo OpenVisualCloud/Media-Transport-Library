@@ -19,15 +19,21 @@
 #include "rvrtp_main.h"
 #include "st_api_internal.h"
 #include "st_flw_cls.h"
+#include "st_igmp.h"
+
 
 //#define ST_RECV_TIME_PRINT
 //#define ST_MEMCPY_TEST
 //#define ST_MULTICAST_TEST
+//
+/* TODO SW Timestamp is not accurate
+ * Use an acceptable adjustment. Will remove that in HW timestamp */
+#define ST_SW_TIMESTAMP_ADJUSTMENT 1000000
 
 rvrtp_device_t stRecvDevice;
 
 void *
-RvRtpDummyBuildPacket(rvrtp_session_t *s, void *hdr)
+RvRtpDummyBuildPacket(rvrtp_session_t *s, void *hdr, struct rte_mbuf *extMbuf)
 {
 	return NULL;
 }
@@ -306,13 +312,15 @@ RvRtpCalculatePacketEbu(rvrtp_session_t *s, uint64_t pktTmstamp, uint64_t pktCnt
 
 	if ((pktCnt == 1) || (s->ebu.cinTmstamp == 0))	//store initial tmstamp
 	{
-		s->ebu.cinTmstamp = pktTmstamp;
+		/* TODO Will remove it when using HW timestamp */
+		s->ebu.cinTmstamp = pktTmstamp - ST_SW_TIMESTAMP_ADJUSTMENT;
 	}
 	else  //calculate Cinst otherwise
 	{
 		int64_t diffTime = pktTmstamp - s->ebu.cinTmstamp;
 		int expCinPkts = (diffTime / s->sn.tprs) * 1.1f;
 		int cin = MAX(0, (int)pktCnt - expCinPkts);
+
 		s->ebu.cinSum += cin;
 		if (s->ebu.cinMin > cin)
 		{
@@ -1716,6 +1724,10 @@ RvRtpReceiveNextPacketsInline(
 	else if ((rtpTmstamp > s->ctx.tmstamp) ||
 		((rtpTmstamp & (0x1 << 31)) < (s->ctx.tmstamp & (0x1 << 31))))//new frame condition
 	{
+		if (stMainParams.isEbuCheck)
+		{
+			RvRtpCalculateFrameEbu(s, rtpTmstamp, m->timestamp);
+		}
 		if (s->consBufs[FRAME_CURR].tmstamp == 0)
 		{
 			//First time 2nd frame
@@ -1757,10 +1769,6 @@ RvRtpReceiveNextPacketsInline(
 #endif
 				RvRtpIncompleteDropNCont(s, rtpTmstamp, FRAME_CURR, TRUE, vscan, pktFmt);
 			}
-		}
-		if (stMainParams.isEbuCheck)
-		{
-			RvRtpCalculateFrameEbu(s, rtpTmstamp, m->timestamp);
 		}
 	}
 	else if ((rtpTmstamp == s->tmstampToDrop[0]) || (rtpTmstamp == s->tmstampToDrop[1]))
@@ -2558,7 +2566,7 @@ RvRtpReceiveFirstPacketsDln720p(rvrtp_session_t *s, struct rte_mbuf *mbuf)
 st_status_t
 RvRtpReceiveFirstPacketsDln1080p(rvrtp_session_t *s, struct rte_mbuf *mbuf)
 {
-	return RvRtpReceiveFirstPacketsInline(s, mbuf, ST21_720P, ST_INTEL_DLN_RFC4175_PKT);
+	return RvRtpReceiveFirstPacketsInline(s, mbuf, ST21_1080P, ST_INTEL_DLN_RFC4175_PKT);
 }
 
 /*****************************************************************************************
@@ -2650,6 +2658,7 @@ LcoreMainReceiver(void *args)
 	int vlanOffload = rte_eth_dev_get_vlan_offload(mp->rxPortId);
 	vlanOffload |= ETH_VLAN_STRIP_OFFLOAD;
 	rte_eth_dev_set_vlan_offload(mp->rxPortId, vlanOffload);
+
 	RTE_LOG(INFO, USER1, "Receiver ready - receiving packets STARTED\n");
 
 	while (rte_atomic32_read(&isRxDevToDestroy) == 0)

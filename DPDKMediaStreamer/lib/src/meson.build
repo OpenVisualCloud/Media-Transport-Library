@@ -1,6 +1,7 @@
 sources = files(
     'st_arp.c',
     'st_ptp.c',
+	'st_igmp.c',
     'rvrtp_main.c',
     'rvrtp_recv.c',
     'rvrtp_send.c',

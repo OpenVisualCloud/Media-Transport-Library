@@ -2,7 +2,14 @@
 
 ##### Overview
 
-Media Streaming Library is solution based on DPDK prepared for transmitting and receiving raw video. Raw video RTP(real time protocol) is based on the SMPTE ST 2110-21 protocol. This solution are able to process high quality, full HD stream, without encoding. Connection of "no compression" and high speed network packets processing (DPDK) gives high quality and low latency.
+Media treaming Library is solution based on DPDK prepared for transmitting and receiving raw video. Raw video RTP(real time protocol) is based on the SMPTE ST 2110-21 protocol. This solution are able to process high quality, full HD stream, without encoding. Connection of "no compression" and high speed network packets processing (DPDK) gives high quality and low latency.
+
+###### Overall Architecture
+
+<div align="center">
+
+<img src="/DPDKMediaStreamer/documentation/overallArchitecture.png" align="center" alt="overall architecture">
+</div>
 
 ##### Use cases
 
@@ -17,77 +24,12 @@ https://wiki.ith.intel.com/display/DMS/DPDK+Media+Streamer+Home
 * Transmit/Receive Raw Video Frames in HD-SDI format (Pixel format: YUV 4:2:2 10bit)
 * Handling standard TCP/IP stack packets
 * Support for 10/25/40/100 Gb/s Gigabit Ethernet
-* Network communication based on DPDK (supported version 20.02)
-
-## Changelog
-
-### **API changes**
-
-##### API Version 1.0.3
-* Function name change from **St21ProducerRegister** to the **St21RegisterProducer**
-* Function name change from **St21ConsumerRegister** to the **St21RegisterConsumer**
-
-##### API Version 1.0.4
-* Added implementation of the **St21GetSessionCount** function
-
-##### API Version 1.0.5 
-* Added implementation of the **St21SetParam** function
-* Added implementation of the **St21GetParam** function
-* Added implementation of the **St21GetSdp** function
-* Removed **St21SendSdp** function
-* Removed **St21ReceiveSdp** function
-
-##### API Version 1.0.6
-* Function parameters change at **StPtpSetClockSource**
-
-##### API Version 1.0.7
-* Added API function named **StInitLib**
-
-##### API Version 1.0.8
-* Added API function named **StPtpGetClockSource**
-
-##### API Version 1.0.9
-* Added "*Field ID*" parameter to support interlace standard
-
-##### API Version 1.0.11
-* Added new error code *ST_DEV_ERR_NOT_READY (-509)*
-
-##### API Version 1.0.12
-* App version is no longer supported by Library
-
-##### API Version 1.0.13
-* Added **st21_format_name** enum
-
-##### API Version 1.0.14
-* Changes in the **st21_prod_type** enum
-* Changes in the **st21_cons_type** enum
-
-##### API Version 1.0.15
-* Removed **StInitLib** function
-* Added **StGetParam** function
-* Added **StSetParam** function
-
-### **LIB changes**
-
-##### LIB Version 1.0.5
-* Added parameter **'mip'** to use multicast IP addresses
-
-##### LIB Version 1.0.6
-* Added support for 720p resolution
-
-##### LIB Version 1.0.7
-* Added parameter **'ebu'** to enable EBU logs (compatibility with standard ST 2110)
-
-##### LIB Version 1.0.8
-* Fixed **StDestroyDevice** function
-
-##### LIB Version 1.0.9
-* Parsing arguments - removed from the library and moved into the sample application
-* Added parameter **'log_level'** to enable additional logs
+* Network communication (unicast and multicast) based on DPDK (supported version 20.08)
+* Time synchronization using PTP
 
 ## Set up the environment
 
-#### Recomended OS - Ubuntu 18.04 LTS with kernel 5.3
+#### Recomended OS - Ubuntu 20.04 LTS with kernel 5.4
 
 ##### 1. Edit /etc/default/grub file
 ```bash
@@ -221,17 +163,74 @@ ninja
 ```
 
 #### 4. Run
+
+##### Unicast 
 ```bash
-${NameOfAppOutDir}/rx_app/RxApp --in_port <input PCI device address> --mac <destination MAC address> --ip <destination IP address> --sip <source IP address> --o_port <output PCI device address> --
+${NameOfAppOutDir}/rxtx_app/RxTxApp --in_port <input PCI device address> --o_port <output PCI device address> --ip <destination IP address> --sip <source IP address> --mac <destination MAC address> --
 ```
+
+##### Multicast
+```bash
+${NameOfAppOutDir}/rxtx_app/RxTxApp --in_port <input PCI device address> --o_port <output PCI device address> --ip <multicast group IP address> --
+```
+
+#### Examples 
+
+#### 1. Unicast
+Unicast communication is based on one transmitter and one receiver. It's necessary to define addresses of the transmitter and receiver.
+
+<div align="center">
+
+<img src="/DPDKMediaStreamer/documentation/unicastArchitecture.png" align="center" alt="unicast architecture">
+</div>
+
+###### Transmitter (Host 1)
+```bash
+${NameOfAppOutDir}/rxtx_app/RxTxApp --in_port 0000:af:00.0 --o_port 0000:af:00.0 --ip 192.168.0.11 --sip 192.168.0.10 --mac 40:a6:b7:0b:22:1c -f i1080p29 -tx --
+```
+###### Receiver (Host 2)
+```bash
+${NameOfAppOutDir}/rxtx_app/RxTxApp --in_port 0000:af:00.0 --o_port 0000:af:00.0 --ip 192.168.0.11 --sip 192.168.0.10 --mac 40:a6:b7:0b:22:24 -f i1080p29 -rx --
+```
+
+***Note: '-ip' and '-sip' parameters should be the same on the both side (Host 1 and Host 2)***
+
+#### 2. Multicast
+Multicast communication is based on one (or more, but not in basic usage) transmitter and many receivers. It's necessary to define IP address of the multicast group. Defining of sources IP addressess is not necessary in the basic usage.
+
+***Note: For proper work of the library using multicast hosts should be connected via switch with enabled IGMP SNOOPING option***
+
+<div align="center">
+
+<img src="/DPDKMediaStreamer/documentation/multicastArchitecture.png" align="center" alt="multicast architecture">
+</div>
+
+###### Transmitter (Host 1)
+```bash
+${NameOfAppOutDir}/rxtx_app/RxTxApp --in_port 0000:af:00.0 --o_port 0000:af:00.0 --ip 239.0.0.10 -f i1080p29 -tx --
+```
+###### Receiver (Host 2)
+```bash
+${NameOfAppOutDir}/rxtx_app/RxTxApp --in_port 0000:af:00.0 --o_port 0000:af:00.0 --ip 239.0.0.10 -f i1080p29 -rx --
+```
+###### Receiver (Host 3) 
+```bash
+${NameOfAppOutDir}/rxtx_app/RxTxApp --in_port 0000:af:00.0 --o_port 0000:af:00.0 --ip 239.0.0.11 -f i1080p29 -rx --
+```
+***Host 3 will not receive media content send by Host 1 because of joining to the different multicast group than Host 1***
+
+###### Receiver (Host 4)
+```bash
+${NameOfAppOutDir}/rxtx_app/RxTxApp --in_port 0000:af:00.0 --o_port 0000:af:00.0 --ip 239.0.0.10 -f i1080p29 -rx --
+```
+
 ##### Available parameters:
 ```bash
 -h                                           : print help info (optional)
 -v                                           : print versions info (optional)
---mac <MAC addr>                             : destination MAC address (required)
---ip <IP addr>                               : destination IP address (required)
---sip <IP addr>                              : source IP address (required)
---mip                                        : enable multicast flag
+--mac <MAC addr>                             : destination MAC address (required in unicast)
+--ip <IP addr>                               : destination IP address (required in unicast and multicast)
+--sip <IP addr>                              : source IP address (required in unicast)
 --ebu                                        : enable EBU compatibility with standard ST 2110 logs
 --port <UDP port>                            : base port from which to iterate sessions port IDs (optional)
 --rx                                         : run receive mode only (optional)
@@ -260,7 +259,7 @@ vim /etc/environment
 ```bash
 RTE_SDK=/home/dpdk
 RTE_TARGET=x86_64-native-linux-gcc
-IN_PORT=0000:af:00.1               # PCI addres of NIC to recv frames
+IN_PORT=0000:af:00.0               # PCI addres of NIC to recv frames
 OUT_PORT=0000:af:00.0              # PCI adress of NIC to send frames
 OUT_IP=192.168.0.2                 # IP addres for sender
 DEST_IP=192.168.0.1                # IP addres of destination
@@ -270,5 +269,5 @@ ST_RX='--rx'
 ```
 
 ```bash
-${NameOfAppOutDir}/rx_app/RxApp ${ST_RX-} --in_port $IN_PORT --o_port $OUT_PORT --mac $DEST_MAC --ip $DEST_IP --sip $OUT_IP --
+${NameOfAppOutDir}/rxtx_app/RxTxApp ${ST_RX-} --in_port $IN_PORT --o_port $OUT_PORT --mac $DEST_MAC --ip $DEST_IP --sip $OUT_IP --
 ```

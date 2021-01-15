@@ -28,6 +28,7 @@ static inline void *RvRtpBuildDualLinePacket(rvrtp_session_t *s, void *hdr);
 static inline void *RvRtpBuildSingleLinePacket(rvrtp_session_t *s, void *hdr);
 static inline void *RvRtpBuildL2Packet(rvrtp_session_t *s, struct rte_ether_hdr *l2);
 
+extern int St21GetExtIndex(st21_session_t *sn, uint8_t* addr);
 //#define TX_RINGS_DEBUG 1
 //#define ST_MULTICAST_TEST
 
@@ -568,7 +569,7 @@ RvRtpBuildL2Packet(rvrtp_session_t *s, struct rte_ether_hdr *l2)
  * SEE ALSO:
  */
 void *
-RvRtpUpdateDualLinePacket(rvrtp_session_t *s, void *hdr)
+RvRtpUpdateDualLinePacket(rvrtp_session_t *s, void *hdr, struct rte_mbuf *extMbuf)
 {
 	/* Create the IP & UDP header */
 	struct rte_ipv4_hdr *ip = hdr;
@@ -611,6 +612,7 @@ RvRtpUpdateDualLinePacket(rvrtp_session_t *s, void *hdr)
     /* line 1 */
     memcpy(&payload[s->ctx.line1Length], &s->prodBuf[byteLn2Offset], s->ctx.line2Length);
 
+    extMbuf->data_len = extMbuf->pkt_len = 0; // Not used
     // UDP checksum 
     udp->dgram_cksum = 0;
     if (unlikely((s->ofldFlags & ST_OFLD_HW_UDP_CKSUM) != ST_OFLD_HW_UDP_CKSUM))
@@ -661,8 +663,6 @@ RvRtpUpdateDualLinePacket(rvrtp_session_t *s, void *hdr)
 		s->ctx.line1Number = 0;
 		s->ctx.line2Number = 1;
 
-		s->prod.St21NotifyFrameDone(s->prod.appHandle, s->prodBuf, s->ctx.fieldId);
-
 		s->ctx.sliceOffset = 0;
 
 		//critical section
@@ -709,7 +709,7 @@ RvRtpUpdateDualLinePacket(rvrtp_session_t *s, void *hdr)
  * SEE ALSO:
  */
 void *
-RvRtpUpdateSingleLinePacket(rvrtp_session_t *s, void *hdr)
+RvRtpUpdateSingleLinePacket(rvrtp_session_t *s, void *hdr, struct rte_mbuf *extMbuf)
 {
 	/* Create the IP & UDP header */
 	struct rte_ipv4_hdr *ip = hdr;
@@ -737,13 +737,19 @@ RvRtpUpdateSingleLinePacket(rvrtp_session_t *s, void *hdr)
 		MIN(s->ctx.line1Length, s->ctx.line1Size - (uint32_t)s->ctx.line1Offset / s->fmt.pixelsInGrp * s->ctx.line1PixelGrpSize);
 	rtp->line1Length = htons(lengthLeft);
 
-    /* copy payload */
-    uint8_t *payload = (uint8_t *)&rtp[1];
-    uint32_t byteLn1Offset = 
+	/* copy payload */
+	uint32_t byteLn1Offset =
 		s->ctx.line1Number * s->ctx.line1Size + (uint32_t)s->ctx.line1Offset / s->fmt.pixelsInGrp * s->ctx.line1PixelGrpSize;
 
 	/* line 1 */
-	memcpy(payload, &s->prodBuf[byteLn1Offset], lengthLeft);
+	int idx = St21GetExtIndex(&s->sn, s->prodBuf);
+	rte_iova_t bufIova = s->sn.extMem.bufIova[idx] + byteLn1Offset;
+	struct rte_mbuf_ext_shared_info *shInfo = s->sn.extMem.shInfo[idx];
+	/* Attach extbuf to mbuf */
+	rte_pktmbuf_attach_extbuf(extMbuf, &s->prodBuf[byteLn1Offset], bufIova, lengthLeft, shInfo);
+	rte_mbuf_ext_refcnt_update(shInfo, 1);
+	extMbuf->data_len = extMbuf->pkt_len = lengthLeft;
+
 	// UDP checksum
 	udp->dgram_cksum = 0;
 	if (unlikely((s->ofldFlags & ST_OFLD_HW_UDP_CKSUM) != ST_OFLD_HW_UDP_CKSUM))
@@ -788,7 +794,6 @@ RvRtpUpdateSingleLinePacket(rvrtp_session_t *s, void *hdr)
         s->ctx.tmstamp = 0;//renew tmstamp at the next round
         s->ctx.line1Offset = 0;
         s->ctx.line1Number = 0;
-        s->prod.St21NotifyFrameDone(s->prod.appHandle, s->prodBuf, s->ctx.fieldId);
         s->ctx.sliceOffset = 0;
 
         //critical section
@@ -834,7 +839,7 @@ RvRtpUpdateSingleLinePacket(rvrtp_session_t *s, void *hdr)
  * SEE ALSO:
  */
 void *
-RvRtpUpdateInterlacedPacket(rvrtp_session_t *s, void *hdr)
+RvRtpUpdateInterlacedPacket(rvrtp_session_t *s, void *hdr, struct rte_mbuf *extMbuf)
 {
 	/* Create the IP & UDP header */
 	struct rte_ipv4_hdr *ip = hdr;
@@ -860,15 +865,21 @@ RvRtpUpdateInterlacedPacket(rvrtp_session_t *s, void *hdr)
     rtp->line1Offset = htons(s->ctx.line1Offset);
 	uint32_t lengthLeft = 
 		MIN(s->ctx.line1Length, s->ctx.line1Size - (uint32_t)s->ctx.line1Offset / s->fmt.pixelsInGrp * s->ctx.line1PixelGrpSize);
-	
-    /* copy payload */
-    uint8_t *payload = (uint8_t *)&rtp[1];
-    uint32_t byteLn1Offset = 
+
+	/* copy payload */
+	uint32_t byteLn1Offset =
 		(s->ctx.line1Number * 2 + s->ctx.fieldId) * s->ctx.line1Size + 
 		(uint32_t)s->ctx.line1Offset / s->fmt.pixelsInGrp * s->ctx.line1PixelGrpSize;
 
-    /* line 1 */
-    memcpy(payload, &s->prodBuf[byteLn1Offset], lengthLeft);
+	/* line 1 */
+	int idx = St21GetExtIndex(&s->sn, s->prodBuf);
+	rte_iova_t bufIova = s->sn.extMem.bufIova[idx] + byteLn1Offset;
+	struct rte_mbuf_ext_shared_info *shInfo = s->sn.extMem.shInfo[idx];
+	/* Attach extbuf to mbuf */
+	rte_pktmbuf_attach_extbuf(extMbuf, &s->prodBuf[byteLn1Offset], bufIova, lengthLeft, shInfo);
+	rte_mbuf_ext_refcnt_update(shInfo, 1);
+	extMbuf->data_len = extMbuf->pkt_len = lengthLeft;
+
     // UDP checksum 
     udp->dgram_cksum = 0;
     if (unlikely((s->ofldFlags & ST_OFLD_HW_UDP_CKSUM) != ST_OFLD_HW_UDP_CKSUM))
@@ -908,7 +919,6 @@ RvRtpUpdateInterlacedPacket(rvrtp_session_t *s, void *hdr)
     s->sn.pktsSend++;
     if (unlikely(rtp->marker == 1))
     {
-        s->prod.St21NotifyFrameDone(s->prod.appHandle, s->prodBuf, s->ctx.fieldId);
         s->ctx.tmstamp = 0;//renew tmstamp at the next round
         s->ctx.line1Offset = 0;
         s->ctx.line1Number = 0;

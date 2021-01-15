@@ -38,7 +38,7 @@
 
 #define LIB_VERSION_MAJOR 1
 #define LIB_VERSION_MINOR 0
-#define LIB_VERSION_LAST 9
+#define LIB_VERSION_LAST 11
 
 
 #define MBUF_CACHE_SIZE 128
@@ -77,8 +77,7 @@ typedef struct st_main_params
 	// Input Parameters
 	uint8_t macAddr[MAC_ADDR_LEN];							/**< destination MAC */
 	uint8_t ipAddr[IP_ADDR_LEN];	                        /**< destination IP */
-	uint8_t sipAddr[IP_ADDR_LEN];							/**< sender IP */
-	bool isMulticast;
+	uint8_t sipAddr[IP_ADDR_LEN];							/**< source IP */
 	bool isEbuCheck;
 	uint32_t rxOnly;
 	uint32_t txOnly;
@@ -127,5 +126,6 @@ int LcoreMainReceiver(void *args);
 // int LcoreMainTransmitter(void* args);
 int LcoreMainTransmitterBulk(void *args);
 int LcoreMainTransmitterSingle(void *args);
+int LcoreMainTransmitterDual(void *args);
 
 #endif

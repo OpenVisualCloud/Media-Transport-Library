@@ -282,6 +282,7 @@ LcoreMainPktRingEnqueue(void* args)
 
 	uint32_t pktsCount = mp->enqThrds[threadId].pktsCount;
 	struct rte_mbuf *pktVect[pktsCount];
+	struct rte_mbuf *pktExt[pktsCount];
 
 	struct rte_mempool *pool = dev->mbufPool;
 	if (!pool) rte_exit(127, "Packets mbufPool is invalid\n");
@@ -313,6 +314,13 @@ LcoreMainPktRingEnqueue(void* args)
 				(uint32_t)pktsBuild, pktsCount);
 			continue;
 		}
+		/* allocate mbufs for external buffer*/
+		if (rte_pktmbuf_alloc_bulk(pool, pktExt, pktsCount) < 0)
+		{
+			RTE_LOG(INFO, USER2, "Packets Ext allocation problem after: %u for %u\n",
+				(uint32_t)pktsBuild, pktsCount);
+			continue;
+		}
 		U64 roundTime = 0;
 		uint32_t firstSnInRound = 1;
 
@@ -327,7 +335,9 @@ LcoreMainPktRingEnqueue(void* args)
 				{
 					uint32_t ij = (i - thrdSnFirst) * ST_DEFAULT_PKTS_IN_LN + j;
 					rte_pktmbuf_free(pktVect[ij]);
+					rte_pktmbuf_free(pktExt[ij]);
 					pktVect[ij] = NULL;
+					pktExt[ij] = NULL;
 				}
 				continue;
 			}
@@ -351,19 +361,26 @@ LcoreMainPktRingEnqueue(void* args)
 				if (unlikely(s->state != ST_SN_STATE_RUN))
 				{
 					rte_pktmbuf_free(pktVect[ij]);
+					rte_pktmbuf_free(pktExt[ij]);
 					pktVect[ij] = NULL;
+					pktExt[ij] = NULL;
 					continue;
 				}
-
 				struct rte_ether_hdr *l2 = rte_pktmbuf_mtod(pktVect[ij], struct rte_ether_hdr *);
 				struct rte_ipv4_hdr *ip = RvRtpFillHeader(s, l2);
 
 				if (s->ctx.alignTmstamp) RvRtpAlignPacket(s, pktVect[ij]);
-				
-				// assemble the RTP packet accordingly to the format
-				s->UpdateRtpPkt(s, ip);
 
-				pktVect[ij]->data_len = s->fmt.pktSize;
+				// assemble the RTP packet accordingly to the format
+				s->UpdateRtpPkt(s, ip, pktExt[ij]);
+
+				pktVect[ij]->data_len = s->fmt.pktSize - pktExt[ij]->data_len;
+
+				if (pktExt[ij]->data_len)
+					rte_pktmbuf_chain(pktVect[ij], pktExt[ij]);
+				else
+					rte_pktmbuf_free(pktExt[ij]);
+
 				pktVect[ij]->pkt_len = s->fmt.pktSize;
 				pktVect[ij]->l2_len = 14;
 				pktVect[ij]->l3_len = 20;
@@ -375,7 +392,9 @@ LcoreMainPktRingEnqueue(void* args)
 					pktVect[ij]->ol_flags |= PKT_TX_IP_CKSUM | PKT_TX_UDP_CKSUM;
 					struct udphdr *udp = rte_pktmbuf_mtod_offset(pktVect[ij], struct udphdr *, 34);
 					ip->hdr_checksum = 0;
-					udp->uh_sum = rte_ipv4_phdr_cksum(ip, pktVect[ij]->ol_flags);
+					rte_raw_cksum_mbuf(pktVect[ij], pktVect[ij]->l2_len,
+							pktVect[ij]->pkt_len - pktVect[ij]->l2_len,
+							&udp->uh_sum);
 				}
 				__sync_fetch_and_add(&pktsBuild, 1);
 			}

@@ -30,7 +30,6 @@ typedef struct st_user_params
 	int rxOnly;
 	int txOnly;
 	bool isEbuCheck;
-	bool isMulticast;
 	uint8_t ipAddr[4];	/**< destination IP */
 	uint8_t sipAddr[4]; /**< sender IP */
 	uint8_t macAddr[6]; /**< destination MAC */
@@ -90,7 +89,6 @@ PrintHelp()
 	printf("   --mac <MAC addr>                             : destination MAC address \n");
 	printf("   --ip <IP addr>                               : destination IP address \n");
 	printf("   --sip <IP addr>                              : source IP address \n");
-	printf("   --mip                                        : enable multicast flag \n");
 	printf("   --ebu                                        : enable EBU compatibility with standard ST 2110 "
 		"logs\n");
 	printf("   -p <UDP port> or --port <UDP port>           : base port from which to iterate sessions port "
@@ -108,10 +106,19 @@ PrintHelp()
 	printf("   --s_count <number of sessions>               : number of sessions \n");
 	printf("   --o_port <PCI device address>                : output interface PCI device address \n");
 	printf("   --in_port <PCI device address>               : input interface PCI device address \n");
-	printf("   --ptp <hhhhhh.hhhh.hhhhhh>                   : master clock id \n");
+	printf("   --ptpid <hhhhhh.hhhh.hhhhhh>                 : master clock id - it will be used in ptp - disable BKC choosing algorithm\n");
+	printf("   --ptpam <u|m>                                : type of addresing for request in ptp\n");
+	printf("                                                    : m - multicast (default)\n");
+    printf("                                                    : u - unicast\n");
+	printf("   --ptpstp <o|t>                               : use one step ort two for ptp - default two\n");
+	printf("                                                    : o - one step - not supportet yet\n");
+    printf("                                                    : t - two step (default)\n");
 	printf("   --log_level <user,level<info/debug/error>>   : enable additional logs \n");
 	printf("\n");
 }
+
+#define MAKE_DWORD_FROM_CHAR(hh,hl,lh,ll) ((hh << 24) | (hl << 16) | (lh << 8) | (ll)
+#define MAKE_WORD_FROM_CHAR(h,l) ((h << 8) | (l))
 
 int
 ParseArgs(int argc, char *argv[], st_user_params_t *outParams)
@@ -127,7 +134,7 @@ ParseArgs(int argc, char *argv[], st_user_params_t *outParams)
 	outParams->udpPort = 10000;
 	outParams->snCount = MAX_SESSIONS_MAX;
 	outParams->bufFormat = ST21_BUF_FMT_YUV_422_10BIT_BE;
-	
+
 	stParamVal.valueU64 = outParams->snCount;
 	StSetParam(ST_SN_COUNT, stParamVal);
 
@@ -139,15 +146,16 @@ ParseArgs(int argc, char *argv[], st_user_params_t *outParams)
 		int optIdx = 0;
 		static struct option options[] = { { "ip", required_argument, 0, 1 },
 										   { "sip", required_argument, 0, 2 },
-										   { "mip", no_argument, 0, 3 },
-										   { "rx", no_argument, 0, 4 },
-										   { "tx", no_argument, 0, 5 },
-										   { "rgba", no_argument, 0, 6 },
-										   { "yuv10be", no_argument, 0, 7 },
+										   { "rx", no_argument, 0, 3 },
+										   { "tx", no_argument, 0, 4 },
+										   { "rgba", no_argument, 0, 5 },
+										   { "yuv10be", no_argument, 0, 6 },
 										   { "ebu", no_argument, 0, 'e' },
 										   { "log_level", required_argument, 0, 'l' },
 										   { "s_count", required_argument, 0, 's' },
-										   { "ptp", required_argument, 0, 't' },
+										   { "ptpid", required_argument, 0, MAKE_WORD_FROM_CHAR('p','i') },
+										   { "ptpam", required_argument, 0, MAKE_WORD_FROM_CHAR('p','m')  },
+										   { "ptpstp", required_argument, 0, MAKE_WORD_FROM_CHAR('p','s')  },
 										   { "mac", required_argument, 0, 'm' },
 										   { "o_port", required_argument, 0, 'o' },
 										   { "in_port", required_argument, 0, 'i' },
@@ -183,26 +191,22 @@ ParseArgs(int argc, char *argv[], st_user_params_t *outParams)
 			break;
 
 		case 3:
-			outParams->isMulticast = true;
-			break;
-
-		case 4:
 			outParams->rxOnly = 1;
 			stParamVal.valueU64 = 1;
 			StSetParam(ST_RX_ONLY, stParamVal);
 			break;
 
-		case 5:
+		case 4:
 			outParams->txOnly = 1;
 			stParamVal.valueU64 = 1;
 			StSetParam(ST_TX_ONLY, stParamVal);
 			break;
 
-		case 6:
+		case 5:
 			outParams->bufFormat = ST21_BUF_FMT_RGBA_8BIT;
 			break;
 
-		case 7:
+		case 6:
 			outParams->bufFormat = ST21_BUF_FMT_YUV_422_10BIT_BE;
 			break;
 
@@ -221,19 +225,37 @@ ParseArgs(int argc, char *argv[], st_user_params_t *outParams)
 			StSetParam(ST_SN_COUNT, stParamVal);
 			break;
 
-		case 't':  // ptp clock id
+		case MAKE_WORD_FROM_CHAR('p','i'):  // ptp clock id
 		{
 			st_ptp_clock_id_t clockId;
-			if (sscanf(optarg, "%2hhx%2hhx%2hhx.%2hhx%2hhx.%2hhx%2hhx%2hhx", clockId.addr + 0,
-				clockId.addr + 1, clockId.addr + 2, clockId.addr + 3, clockId.addr + 4,
-				clockId.addr + 5, clockId.addr + 6, clockId.addr + 7)
+			if (sscanf(optarg, "%2hhx%2hhx%2hhx.%2hhx%2hhx.%2hhx%2hhx%2hhx", clockId.id + 0,
+				clockId.id + 1, clockId.id + 2, clockId.id + 3, clockId.id + 4,
+				clockId.id + 5, clockId.id + 6, clockId.id + 7)
 				== 8)
 			{
-				StPtpSetClockSource(&clockId, &clockId);
+				stParamVal.ptr = (void*)&clockId;
+				StPtpSetParam(ST_PTP_CLOCK_ID,stParamVal);
+				stParamVal.valueU32 = ST_PTP_SET_MASTER;
+				StPtpSetParam(ST_PTP_CHOOSE_CLOCK_MODE,stParamVal);
 			}
 			break;
 		}
-
+		case MAKE_WORD_FROM_CHAR('p','m'):
+        {
+            char m = optarg[0];
+            if (m != 'm' && m != 'u') break;
+            stParamVal.valueU32 = m == 'm'? ST_PTP_MULTICAST_ADDR: ST_PTP_UNICAST_ADDR;
+            StPtpSetParam(ST_PTP_ADDR_MODE, stParamVal);
+            break;
+        }
+		case MAKE_WORD_FROM_CHAR('p','s'):
+        {
+            char s = optarg[0];
+            if (s != 'o' && s!= 't') break;
+            stParamVal.valueU32 = s == 't'? ST_PTP_TWO_STEP: ST_PTP_ONE_STEP;
+            StPtpSetParam(ST_PTP_STEP_MODE, stParamVal);
+            break;
+        }
 		case 'm':
 			if (sscanf(optarg, "%hhx:%hhx:%hhx:%hhx:%hhx:%hhx", &outParams->macAddr[0],
 				&outParams->macAddr[1], &outParams->macAddr[2], &outParams->macAddr[3],
@@ -519,14 +541,6 @@ StartTransmitter(st_user_params_t userParams, st21_format_t *txFmt, st21_session
 			return stat;
 		}
 
-		/// Temporary forcing multicast addressing if user choose multicast option
-		if (userParams.isMulticast)
-		{
-			char addrBuf[INET_ADDRSTRLEN];
-			sprintf(addrBuf, "239.0.0.%d", i + 1);
-			inet_pton(AF_INET, addrBuf, userParams.ipAddr);
-		}
-
 		/// Input parameters used by \ref St21BindIpAddr
 		memset(&txAddr, 0, sizeof(txAddr));
 		txAddr.src.addr4.sin_family = AF_INET;
@@ -622,14 +636,6 @@ StartReceiver(st_user_params_t userParams, st21_format_t *rxFmt, st21_session_t 
 		{
 			RTE_LOG(ERR, USER1, "St21CreateSession FAILED. ErrNo: %d\n", stat);
 			return stat;
-		}
-
-		/// Temporary forcing multicast addressing if user choose multicast option
-		if (userParams.isMulticast)
-		{
-			char addrBuf[INET_ADDRSTRLEN];
-			sprintf(addrBuf, "239.0.0.%d", i + 1);
-			inet_pton(AF_INET, addrBuf, userParams.ipAddr);
 		}
 
 		/// Input parameters used by \ref St21BindIpAddr
@@ -747,7 +753,7 @@ FinishReceiver(st21_session_t **rxSnOut, uint32_t snRxCount, rvrtp_recv_app_t **
 	return stat;
 }
 
-/** Main point of the entire solution 
+/** Main point of the entire solution
 * This is place where program is started
 */
 int
