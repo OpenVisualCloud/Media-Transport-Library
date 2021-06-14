@@ -1,5 +1,5 @@
 /*
-* Copyright 2020 Intel Corporation.
+* Copyright (C) 2020-2021 Intel Corporation.
 *
 * This software and the related documents are Intel copyrighted materials,
 * and your use of them is governed by the express license under which they
@@ -52,8 +52,18 @@ StSetUDPFlow(uint16_t portId, uint16_t rxQ, struct st_udp_flow_conf *flConf,
 
 	memset(&ipv4Spec, 0, sizeof(ipv4Spec));
 	ipv4Spec.hdr.next_proto_id = IPPROTO_UDP;
-	ipv4Spec.hdr.src_addr = flConf->srcIp;
-	ipv4Spec.hdr.dst_addr = flConf->dstIp;
+	//ipv4Spec.hdr.src_addr = flConf->srcIp;
+	//ipv4Spec.hdr.dst_addr = flConf->dstIp;
+	if (((flConf->dstIp & 0xff) >= 0xe0) && ((flConf->dstIp & 0xff) <= 0xef))
+	{
+		ipv4Spec.hdr.dst_addr = flConf->dstIp;
+		flConf->srcMask = 0;
+	}
+	else
+	{
+		ipv4Spec.hdr.src_addr = flConf->dstIp;
+		ipv4Spec.hdr.dst_addr = flConf->srcIp;
+	}
 
 	memset(&ipv4Mask, 0, sizeof(ipv4Mask));
 
@@ -74,19 +84,8 @@ StSetUDPFlow(uint16_t portId, uint16_t rxQ, struct st_udp_flow_conf *flConf,
 		ipv4Mask.hdr.next_proto_id = 0xff;
 	}
 
-
-
-	if ((uint8_t)flConf->srcIp >= 0xe0 && (uint8_t)flConf->srcIp <= 0xef)
-	{
-		ipv4Mask.hdr.src_addr = 0x0;
-		ipv4Mask.hdr.dst_addr = 0x0;
-	}
-	else
-	{
-		ipv4Mask.hdr.src_addr = flConf->srcMask;
-		ipv4Mask.hdr.dst_addr = flConf->dstMask;
-	}
-
+	ipv4Mask.hdr.src_addr = flConf->srcMask;
+	ipv4Mask.hdr.dst_addr = flConf->dstMask;
 
 	memset(&udpSpec, 0, sizeof(udpSpec));
 	udpSpec.hdr.src_port = flConf->srcPort;

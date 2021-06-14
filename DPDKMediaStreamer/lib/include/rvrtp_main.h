@@ -1,5 +1,5 @@
 /*
-* Copyright 2020 Intel Corporation.
+* Copyright (C) 2020-2021 Intel Corporation.
 *
 * This software and the related documents are Intel copyrighted materials,
 * and your use of them is governed by the express license under which they
@@ -40,9 +40,8 @@
 #define LIB_VERSION_MINOR 0
 #define LIB_VERSION_LAST 11
 
-
 #define MBUF_CACHE_SIZE 128
-#define RX_RING_SIZE 8192
+#define RX_RING_SIZE 16384
 #define TX_RING_SIZE 4096
 #define MAX_PAUSE_FRAMES (ST_MAX_SESSIONS_MAX * 2)
 #define MIN_PKT_SIZE 64
@@ -64,41 +63,122 @@ typedef struct st_main_params
 	volatile uint64_t ringBarrier0;
 	volatile uint64_t ringBarrier1;
 	volatile uint64_t ringBarrier2;
+	volatile uint64_t audioEnqStart;
 	st_hw_caps_t hwCaps;
 	uint32_t maxEnqThrds;
 	st_thrd_params_t enqThrds[ST_MAX_ENQ_THREADS_MAX];
 	uint32_t maxRcvThrds;
+	uint32_t maxAudioRcvThrds;
+	uint32_t maxAncRcvThrds;
 	st_thrd_params_t rcvThrds[ST_MAX_RCV_THREADS_MAX];
+	st_thrd_params_t audioRcvThrds[ST_AUDIO_MAX_RCV_THREADS_MAX];
+	st_thrd_params_t ancRcvThrds[ST_ANC_MAX_RCV_THREADS_MAX];
 	uint32_t maxSchThrds;
-	uint16_t txPortId;
-	uint16_t rxPortId;
+	uint16_t txPortId[MAX_RXTX_PORTS];
+	uint16_t rxPortId[MAX_RXTX_PORTS];
 	struct rte_mempool *mbufPool;
 
 	// Input Parameters
-	uint8_t macAddr[MAC_ADDR_LEN];							/**< destination MAC */
-	uint8_t ipAddr[IP_ADDR_LEN];	                        /**< destination IP */
-	uint8_t sipAddr[IP_ADDR_LEN];							/**< source IP */
+	uint8_t ipAddr[MAX_RXTX_PORTS][IP_ADDR_LEN];  /**< destination IP */
+	uint8_t sipAddr[MAX_RXTX_PORTS][IP_ADDR_LEN]; /**< source IP */
 	bool isEbuCheck;
 	uint32_t rxOnly;
 	uint32_t txOnly;
 	uint32_t rate;
 	uint32_t interlaced;
 	uint32_t fmtIndex;
+	uint32_t audioFmtIndex;
+	uint16_t audioFrameSize;
+	uint32_t txBulkNum; /* The number of objects for each tx dequeue */
 	uint32_t snCount;
+	uint32_t sn30Count;
+	uint32_t sn40Count;
 	uint16_t udpPort;
+	uint16_t numPorts;
 	st21_buf_fmt_t bufFormat;
 
-	char outPortName[MAX_STR_LEN];
-	char inPortName[MAX_STR_LEN];
+	char outPortName[MAX_RXTX_PORTS][MAX_STR_LEN];
+	char inPortName[MAX_RXTX_PORTS][MAX_STR_LEN];
 	char dpdkParams[MAX_STR_LEN]; /**< parameters after empty --  */
 } st_main_params_t;
+
+typedef struct
+{
+	uint64_t pktsPriAllocFail;
+	uint64_t pktsExtAllocFail;
+	uint64_t pktsRedAllocFail;
+	uint64_t pktsBuild;
+	uint64_t pktsQueued;
+
+	uint32_t pktsQueuePriFail;
+	uint32_t pktsQueueRedFail;
+	uint32_t sessionLkpFail;
+	uint32_t sessionStateFail;
+	uint32_t pktsChainPriFail;
+	uint32_t pktsChainRedFail;
+
+	/* place holder to keep it aligned to RTE_CACHE_LINE_SIZE */
+	//uint64_t rsvrd[(current element size) - RTE_CACHE_LINE_SIZE%8];
+} __rte_cache_aligned st_enqueue_stats_t;
+
+typedef struct
+{
+	uint64_t badIpUdp;
+	uint64_t badIpUdpR;
+	uint64_t badRtp;
+	uint64_t badRtpR;
+	uint64_t tmpstampDone;
+	uint64_t tmpstampDoneR;
+	uint64_t outOfOrder;
+	uint64_t outOfOrderR;
+	uint64_t rtpTmstampOverflow;
+	uint64_t rtpTmstampOverflowR;
+	uint64_t rtpTmstampLess;
+	uint64_t rtpTmstampLessR;
+
+	uint64_t restartAsNewFrame;
+	uint64_t restartAsNewFrameR;
+
+	uint64_t firstPacketGood;
+	uint64_t firstPacketGoodR;
+	uint64_t nonFirstPacketGood;
+	uint64_t nonFirstPacketGoodR;
+	uint64_t lastPacketGood;
+	uint64_t lastPacketGoodR;
+
+	uint64_t nonFirstPacketPendGood;
+	uint64_t nonFirstPacketPendGoodR;
+	uint64_t lastPacketPendGood;
+	uint64_t lastPacketPendGoodR;
+
+	uint64_t fastCopyFail;
+	uint64_t fastCopyFailR;
+	uint64_t fastCopyFailErr;
+	uint64_t fastCopyFailErrR;
+
+	uint64_t userNotifyLine;
+	uint64_t userNotifyPendLine;
+	uint64_t userNotifyFrame;
+	uint64_t userNotifyPendFrame;
+
+	uint64_t completeFrames;
+	uint64_t completePendFrames;
+	uint64_t incompleteFrameDone;
+	uint64_t incompletePendFrameDone;
+
+	uint64_t forcePendBuffOut;
+	uint64_t forcePendBuffOutR;
+	uint64_t forceCurrBuffOut;
+	uint64_t forceCurrBuffOutR;
+} __rte_cache_aligned st_rcv_stats_t;
+
 
 /*
  * Utility functions for device creation
  */
-void StDevInitTxThreads(st_main_params_t *mp, rvrtp_device_t *dev);
-void StDevInitRxThreads(st_main_params_t *mp, rvrtp_device_t *dev);
-st_status_t StDevCalculateBudgets(rvrtp_device_t *d);
+void StDevInitTxThreads(st_main_params_t *mp, st_device_impl_t *dev);
+void StDevInitRxThreads(st_main_params_t *mp, st_device_impl_t *dev);
+st_status_t StDevCalculateBudgets(st_device_impl_t *d);
 
 /* Defines */
 //#define DEBUG
@@ -108,24 +188,33 @@ extern struct tprs_scheduler sch;
 extern st_main_params_t stMainParams;
 extern const st_nic_rate_params_t *stDevParams;
 
-extern volatile uint64_t pktsBuild;
-extern volatile uint64_t pktsQueued;
-
 extern rte_atomic32_t isTxDevToDestroy;
 extern rte_atomic32_t isRxDevToDestroy;
+extern rte_atomic32_t isStopMainThreadTasks;
 
 extern void ShowWelcomeBanner();
-extern int ParseArgs(int argc, char *argv[]);
 
 void PrintVersion();
 void PrintHelp();
 
 // forward declarations
 int LcoreMainPktRingEnqueue(void *args);
+int LcoreMainAudioRingEnqueue(void *args);
+int LcoreMainAncillaryRingEnqueue(void *args);
 int LcoreMainReceiver(void *args);
-// int LcoreMainTransmitter(void* args);
-int LcoreMainTransmitterBulk(void *args);
-int LcoreMainTransmitterSingle(void *args);
-int LcoreMainTransmitterDual(void *args);
+int LcoreMainAudioReceiver(void *args);
+
+typedef struct lcore_transmitter_args
+{
+	uint32_t threadId; /* Thread id, 0 to max threads */
+	uint32_t bulkNum;  /* The number of objects for each dequeue, 1, 2 or 4 */
+} lcore_transmitter_args_t;
+
+int LcoreMainTransmitter(void *args);
+
+st_status_t RvRtpValidateFormat(st21_format_t *fmt);
+int St40CheckParityBits(uint16_t val);
+st_status_t St40GetUDW(int idx, uint16_t *udw, uint8_t *data);
+uint16_t St40CalcChecksum(int howData, uint8_t *data);
 
 #endif

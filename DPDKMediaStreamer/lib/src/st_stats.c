@@ -1,5 +1,5 @@
 /*
-* Copyright 2020 Intel Corporation.
+* Copyright (C) 2020-2021 Intel Corporation.
 *
 * This software and the related documents are Intel copyrighted materials,
 * and your use of them is governed by the express license under which they
@@ -59,51 +59,55 @@
 #define MIN_PER_FOR_MIN (15.0)
 #define RATE_UNIT (1e6)
 #define MIN_RATE_NOTVALID (1e50)
-
-static int StStsInit_(uint16_t portId);
+#define MAX_RXTX_PORTS 2
+static int StStsInit_(uint16_t numPorts);
 static void StStsPrint_(uint16_t portId);
 
 void
-StStsTask(uint16_t portId)
+StStsTask(uint16_t numPorts)
 {
-	if (StStsInit_(portId) < 0)
-		return;
-	StStsPrint_(portId);
+	for (uint16_t portId = 0; portId < numPorts; ++portId)
+	{
+		if (StStsInit_(portId) < 0)
+			return;
+		StStsPrint_(portId);
+	}
 }
 
-struct rte_eth_stats glbStats;
-static uint64_t firstTicks;
-static uint64_t lastTicks;
-static uint64_t freqTicks;
-static int isInit = 0;
-static int nbRead = 1;
+struct rte_eth_stats glbStats[MAX_RXTX_PORTS] __rte_cache_aligned;
+static uint64_t firstTicks[MAX_RXTX_PORTS];
+static uint64_t lastTicks[MAX_RXTX_PORTS];
+static uint64_t freqTicks[MAX_RXTX_PORTS];
+static int isInit[MAX_RXTX_PORTS] = { 0 };
+static uint64_t nbRead = 1;
 
-static double oMinRate = MIN_RATE_NOTVALID, iMinRate = MIN_RATE_NOTVALID;
-static double oMaxRate = 0.0, iMaxRate = 0.0;
+static double oMinRate[MAX_RXTX_PORTS] = { MIN_RATE_NOTVALID, MIN_RATE_NOTVALID };
+static double iMinRate[MAX_RXTX_PORTS] = { MIN_RATE_NOTVALID, MIN_RATE_NOTVALID };
+static double oMaxRate[MAX_RXTX_PORTS] = { 0.0, 0.0 }, iMaxRate[MAX_RXTX_PORTS] = { 0.0, 0.0 };
 
 static int
 StStsInit_(uint16_t portId)
 {
-	if (isInit)
+	if (isInit[portId])
 		return 0;
-	freqTicks = rte_get_tsc_hz();
-	if (freqTicks == 0)
+	freqTicks[portId] = rte_get_tsc_hz();
+	if (freqTicks[portId] == 0)
 		return -1;
-	lastTicks = rte_get_tsc_cycles();
-	if (lastTicks == 0)
+	lastTicks[portId] = rte_get_tsc_cycles();
+	if (lastTicks[portId] == 0)
 		return -1;
-	if (firstTicks == 0)
+	if (firstTicks[portId] == 0)
 	{
-		firstTicks = lastTicks;
+		firstTicks[portId] = lastTicks[portId];
 		return -1;
 	}
-	double per = 1.0 / freqTicks * (lastTicks - firstTicks);
+	double per = 1.0 / freqTicks[portId] * (lastTicks[portId] - firstTicks[portId]);
 	if (per < MIN_START_PER)
 		return -1;
 	if (rte_eth_stats_reset(portId))
 		return -1;
-	firstTicks = lastTicks;
-	isInit = 1;
+	firstTicks[portId] = lastTicks[portId];
+	isInit[portId] = 1;
 	return -1;
 }
 
@@ -112,59 +116,59 @@ StStsPrint_(uint16_t portId)
 {
 	struct rte_eth_stats stats;
 	uint64_t currTicks = rte_get_tsc_cycles();
-	double per = 1.0 / freqTicks * (currTicks - lastTicks);
+	double per = (double)(currTicks - lastTicks[portId]) / (double)freqTicks[portId];
 
-	if (per < MIN_PER)
+	if (per < MIN_PER || portId > 1)
 		return;
 
-	double perGlob = 1.0 / freqTicks * (currTicks - firstTicks);
+	double perGlob = (double)(currTicks - firstTicks[portId]) / (double)freqTicks[portId];
 
-	lastTicks = currTicks;
+	lastTicks[portId] = currTicks;
 
 	rte_eth_stats_get(portId, &stats);
 	rte_eth_stats_reset(portId);
 
-	double oRate = stats.obytes * 8, iRate = stats.ibytes * 8;
+	double oRate = (double)(stats.obytes * 8), iRate = (double)(stats.ibytes * 8);
 	oRate /= per;
 	iRate /= per;
 
-	glbStats.obytes += stats.obytes;
-	glbStats.ibytes += stats.ibytes;
+	glbStats[portId].obytes += stats.obytes;
+	glbStats[portId].ibytes += stats.ibytes;
 
-	double oMidRate = glbStats.obytes * 8, iMidRate = glbStats.ibytes * 8;
+	double oMidRate = glbStats[portId].obytes * 8, iMidRate = glbStats[portId].ibytes * 8;
 	oMidRate /= perGlob;
 	iMidRate /= perGlob;
 
 	if (perGlob > MIN_PER_FOR_MIN)
 	{
-		if (oMinRate > oRate)
-			oMinRate = oRate;
-		if (iMinRate > iRate)
-			iMinRate = iRate;
+		if (oMinRate[portId] > oRate)
+			oMinRate[portId] = oRate;
+		if (iMinRate[portId] > iRate)
+			iMinRate[portId] = iRate;
 	}
 
-	if (oMaxRate < oRate)
-		oMaxRate = oRate;
-	if (iMaxRate < iRate)
-		iMaxRate = iRate;
+	if (oMaxRate[portId] < oRate)
+		oMaxRate[portId] = oRate;
+	if (iMaxRate[portId] < iRate)
+		iMaxRate[portId] = iRate;
 
-	printf("\n* * * *    B I T   R A T E S    * * * * \n");
-	printf("NB: %d\n", nbRead);
+	printf("\n* * * *    B I T   R A T E S  Port %d  * * * * \n", portId);
+	printf("NB: %ld\n", nbRead);
 	printf("Last 10s Tx: %10.2lf [Mb/s]\n", oRate / RATE_UNIT);
 	printf("Last 10s Rx: %10.2lf [Mb/s]\n", iRate / RATE_UNIT);
-	if (perGlob > MIN_PER_FOR_MIN && oMinRate < MIN_RATE_NOTVALID)
-		printf("Min Tx:      %10.2lf [Mb/s]\n", oMinRate / RATE_UNIT);
+	if (perGlob > MIN_PER_FOR_MIN && oMinRate[portId] < MIN_RATE_NOTVALID)
+		printf("Min Tx:      %10.2lf [Mb/s]\n", oMinRate[portId] / RATE_UNIT);
 	else
 		printf("Min Tx:      %17s\n", "NOT VALID");
-	if (perGlob > MIN_PER_FOR_MIN && iMinRate < MIN_RATE_NOTVALID)
-		printf("Min Rx:      %10.2lf [Mb/s]\n", iMinRate / RATE_UNIT);
+	if (perGlob > MIN_PER_FOR_MIN && iMinRate[portId] < MIN_RATE_NOTVALID)
+		printf("Min Rx:      %10.2lf [Mb/s]\n", iMinRate[portId] / RATE_UNIT);
 	else
 		printf("Min Rx:      %17s\n", "NOT VALID");
 
 	printf("Avr Tx:      %10.2lf [Mb/s]\n", oMidRate / RATE_UNIT);
 	printf("Avr Rx:      %10.2lf [Mb/s]\n", iMidRate / RATE_UNIT);
-	printf("Max Tx:      %10.2lf [Mb/s]\n", oMaxRate / RATE_UNIT);
-	printf("Max Rx:      %10.2lf [Mb/s]\n", iMaxRate / RATE_UNIT);
+	printf("Max Tx:      %10.2lf [Mb/s]\n", oMaxRate[portId] / RATE_UNIT);
+	printf("Max Rx:      %10.2lf [Mb/s]\n", iMaxRate[portId] / RATE_UNIT);
 	printf("* *    E N D    B I T   R A T E S   * * \n\n");
 	nbRead++;
 	return;

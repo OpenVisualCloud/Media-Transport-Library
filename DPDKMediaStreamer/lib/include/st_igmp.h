@@ -1,5 +1,5 @@
 /*
-* Copyright 2020 Intel Corporation.
+* Copyright (C) 2020-2021 Intel Corporation.
 *
 * This software and the related documents are Intel copyrighted materials,
 * and your use of them is governed by the express license under which they
@@ -20,7 +20,7 @@
  *
  */
 
- /*
+/*
  *	Implementation of the Internet Group Management Protocol (Version 2 and 3)
  *	for multicast support is compatible with RFC 2236 and 3376
  */
@@ -39,7 +39,9 @@ typedef struct rte_ether_hdr ethernetHeader_t;
 typedef enum
 {
 	IGMP_NOT_INITIALIZED = 0x00,
-	IGMP_INITIALIZED = 0x01
+	IGMP_INITIALIZED = 0x01,
+	IGMP_STARTED = 0x02,
+	IGMP_STOPPED = 0x03
 } igmp_state_t;
 
 typedef enum
@@ -55,7 +57,8 @@ typedef enum igmp_timers
 	QUERY_INTERVAL = 20,			// set to 20 seconds / standard is 125 seconds (value 1 second)
 	QUERY_RESPONSE_INTERVAL = 100,	// 10 seconds (value 1/10 second)
 	GROUP_MEMBERSHIP_INTERVAL = (ROBUSTNESS_VARIABLE * QUERY_INTERVAL) + QUERY_RESPONSE_INTERVAL,
-	STARTUP_QUERY_INTERVAL = QUERY_INTERVAL / 4
+	STARTUP_QUERY_INTERVAL = QUERY_INTERVAL / 4,
+	MBUF_LIFE_TIME = 30
 } igmp_timers_t;
 
 typedef enum igmp_message_type
@@ -88,11 +91,11 @@ typedef struct st_igmp_params
 {
 	igmp_state_t state;
 	igmp_version_t igmp_version;
-	struct rte_mempool *mbuf;
+	struct rte_mbuf *mbuf;
 	volatile struct rte_mbuf *queryPkt;
 	volatile struct rte_mbuf *reportPkt;
 	uint16_t portId;
-	struct rte_ring *txRing;
+	uint16_t ringId;
 	uint32_t minMulitcastIpAddress;
 	uint32_t maxMulitcastIpAddress;
 	uint32_t srcIpAddress;
@@ -120,7 +123,7 @@ struct st_membership_query
 	uint8_t qqic;
 	uint16_t numberOfSources;
 	uint32_t sourceAddress;
-} __attribute__((__packed__));
+} __attribute__((__packed__)) __rte_aligned(2);
 typedef struct st_membership_query st_membership_query_t;
 
 struct st_group_record
@@ -144,7 +147,7 @@ struct st_membership_report_v1
 	uint8_t unused;
 	uint16_t checksum;
 	uint32_t groupAddress;
-} __attribute__((__packed__));
+} __attribute__((__packed__)) __rte_aligned(2);
 typedef struct st_membership_report_v1 st_membership_report_v1_t;
 
 struct st_membership_report_v2
@@ -153,7 +156,7 @@ struct st_membership_report_v2
 	uint8_t maxRespTime;
 	uint16_t checksum;
 	uint32_t groupAddress;
-} __attribute__((__packed__));
+} __attribute__((__packed__)) __rte_aligned(2);
 typedef struct st_membership_report_v2 st_membership_report_v2_t;
 
 struct st_membership_report_v3
@@ -164,25 +167,26 @@ struct st_membership_report_v3
 	uint16_t reserved_2;
 	uint16_t numberOfGroupRecords;
 	st_group_record_t groupRecords;
-} __attribute__((__packed__));
+} __attribute__((__packed__)) __rte_aligned(2);
 typedef struct st_membership_report_v3 st_membership_report_v3_t;
 
-extern st_status_t StIgmpQuerierInit(uint16_t portId, struct rte_mempool *mbuf,
-									 struct rte_ring *txRing, uint32_t *srcIpAddr,
-									 uint32_t *multicastIpAddr);
-st_status_t StCreateMembershipQueryV3(uint32_t sourceAddress, uint32_t groupAddress);
-st_status_t StCreateMembershipReportV2(uint32_t groupAddress, igmp_message_type_t type);
+extern st_status_t StIgmpInit(uint16_t portId, struct rte_mempool *mbuf, uint32_t *srcIpAddr,
+							  uint32_t *multicastIpAddr, uint16_t ringId);
+st_status_t StCreateMembershipQueryV3(uint32_t sourceAddress, uint32_t groupAddress, int portid);
+st_status_t StCreateMembershipReportV2(uint32_t sourceAddress, uint32_t groupAddress,
+									   igmp_message_type_t type, int portid);
 st_group_record_t StCreateGroupRecord(uint16_t numOfSrcs, uint32_t destinationAddress,
 									  uint32_t sourceAddress, qroup_record_type_t type);
 st_status_t StCreateMembershipReportV3(uint32_t groupAddress, uint32_t sourceAddress,
-									   qroup_record_type_t type, uint16_t numberOfGroupRecords);
-st_status_t StSendMembershipQuery();
-st_status_t StSendMembershipReport();
+									   qroup_record_type_t type, uint16_t numberOfGroupRecords,
+									   int portid);
+st_status_t StSendMembershipQuery(int portid);
+st_status_t StSendMembershipReport(int portid);
 st_status_t StIgmpQuerierStart();
 st_status_t StIgmpQuerierStop();
-st_status_t StUpdateSourcesList(uint32_t sourceAddress);
+st_status_t StUpdateSourcesList(uint32_t sourceAddress, int portid);
 
-void *StIgmpQuerierLoop(void *arg);
+void *IgmpQuerierLoop(void *arg);
 extern void ParseIp(ipv4Hdr_t const *ipHdr, struct rte_mbuf *m, uint16_t portid);
 
 #endif	// ST_IGMP_H

@@ -1,5 +1,5 @@
 /*
-* Copyright 2020 Intel Corporation.
+* Copyright (C) 2020-2021 Intel Corporation.
 *
 * This software and the related documents are Intel copyrighted materials,
 * and your use of them is governed by the express license under which they
@@ -31,9 +31,11 @@
 #include <unistd.h>
 
 #define SENDER_APP_DEBUG
+#define ST_OPT_SIZE 24
+//#define SENDER_APP_LOGS
 
 static inline void
-SendAppLock(rvrtp_send_app_t *app)
+SendAppLock(strtp_send_app_t *app)
 {
 	int lock;
 	do
@@ -43,32 +45,70 @@ SendAppLock(rvrtp_send_app_t *app)
 }
 
 static inline void
-SendAppUnlock(rvrtp_send_app_t *app)
+SendAppUnlock(strtp_send_app_t *app)
 {
 	__sync_lock_release(&app->lock, 0);
 }
 
-static inline void
-SendAppWaitFrameDone(rvrtp_send_app_t *app)
+static inline uint32_t
+SendAppFetchFrameCursor(strtp_send_app_t *app)
 {
-       uint8_t done;
-       do {
-               done = __sync_lock_test_and_set(&app->frameDone[app->frameCursor], 1);
-       } while (done != 0);
+	st21_producer_t *prod21;
+	st30_producer_t *prod30;
+	st40_producer_t *prod40;
+	uint32_t cursor = 0;
+
+	if (app->mtype == ST_ESSENCE_VIDEO)
+	{
+		prod21 = (st21_producer_t *)app->prod;
+		cursor = prod21->frameCursor;
+	}
+	else if (app->mtype == ST_ESSENCE_AUDIO)
+	{
+		prod30 = (st30_producer_t *)app->prod;
+		cursor = prod30->frameCursor;
+	}
+	else if (app->mtype == ST_ESSENCE_ANC)
+	{
+		prod40 = (st40_producer_t *)app->prod;
+		cursor = prod40->frameCursor;
+	}
+
+	return cursor;
+}
+
+static inline void
+SendAppWaitFrameDone(strtp_send_app_t *app)
+{
+	uint8_t done;
+	uint32_t cursor;
+
+	cursor = SendAppFetchFrameCursor(app);
+
+	do
+	{
+		done = __sync_lock_test_and_set(&app->frameDone[cursor], 1);
+	} while (done != 0);
 }
 
 static inline st_status_t
-SendAppReadFrameRgbaInline(rvrtp_send_app_t *app, st_vid_fmt_conv_t convert)
+SendAppReadFrameRgbaInline(strtp_send_app_t *app, st_vid_fmt_conv_t convert)
 {
+	uint32_t cursor;
+	st21_producer_t *prod;
+
 	SendAppLock(app);
-	app->frameBuf = app->frames[app->frameCursor];
+	prod = (st21_producer_t *)app->prod;
+
+	cursor = SendAppFetchFrameCursor(app);
+	prod->frameBuf = app->frames[cursor];
 	SendAppUnlock(app);
 
 	SendAppWaitFrameDone(app);
 
-	st_rfc4175_422_10_pg2_t *dst = (st_rfc4175_422_10_pg2_t *)app->frameBuf;
+	st_rfc4175_422_10_pg2_t *dst = (st_rfc4175_422_10_pg2_t *)prod->frameBuf;
 	st_rfc4175_422_10_pg2_t *const end
-		= (st_rfc4175_422_10_pg2_t *)(app->frameBuf + app->frameSize);
+		= (st_rfc4175_422_10_pg2_t *)(prod->frameBuf + prod->frameSize);
 
 	// read frame from movie and convert into frameBuf
 	for (; dst < end; dst += 4)
@@ -115,11 +155,11 @@ SendAppReadFrameRgbaInline(rvrtp_send_app_t *app, st_vid_fmt_conv_t convert)
 
 			fy1 = 0.183 * fr2 + 0.614 * fg2 + 0.0622 * fb2 + 16;
 
-#ifdef SENDER_APP_RGB_AVG // if to use sample avg instead of even pixel samples only
+#ifdef SENDER_APP_RGB_AVG  // if to use sample avg instead of even pixel samples only
 			fcb1 = -0.101 * fr2 - 0.338 * fb2 + 0.439 * fb2 + 128;
 			fcr1 = 0.439 * fr2 - 0.399 * fg2 - 0.040 * fb2 + 128;
 
-			switch (convert) // will inline
+			switch (convert)  // will inline
 			{
 			case ST_422_FMT_CONV_NET_LE10_BUF_RGBA:
 			case ST_422_FMT_CONV_NET_LE10_BUF_BGRA:
@@ -138,7 +178,7 @@ SendAppReadFrameRgbaInline(rvrtp_send_app_t *app, st_vid_fmt_conv_t convert)
 				return ST_NOT_SUPPORTED;
 			}
 #else
-			switch (convert) // will inline
+			switch (convert)  // will inline
 			{
 			case ST_422_FMT_CONV_NET_LE10_BUF_RGBA:
 			case ST_422_FMT_CONV_NET_LE10_BUF_BGRA:
@@ -168,28 +208,36 @@ SendAppReadFrameRgbaInline(rvrtp_send_app_t *app, st_vid_fmt_conv_t convert)
 	{
 		app->movie = app->movieBegin;
 	}
-	app->frameCursor = (app->frameCursor + 1) % SEND_APP_FRAME_MAX;
+	prod->frameCursor = (prod->frameCursor + 1) % SEND_APP_FRAME_MAX;
 	return ST_OK;
 }
 
 static inline st_status_t
-SendAppReadFrame422Inline(rvrtp_send_app_t *app,
+SendAppReadFrame422Inline(strtp_send_app_t *app,
 						  void (*Pack)(st_rfc4175_422_10_pg2_t *pg, uint16_t cb00, uint16_t y00,
 									   uint16_t cr00, uint16_t y01))
 {
+	st21_producer_t *prod;
 	SendAppLock(app);
-	app->frameBuf = app->frames[app->frameCursor];
+
+	prod = (st21_producer_t *)app->prod;
+
+	prod->frameBuf = app->frames[prod->frameCursor];
 	SendAppUnlock(app);
 
 	SendAppWaitFrameDone(app);
 
-	st_rfc4175_422_10_pg2_t *dst = (st_rfc4175_422_10_pg2_t *)app->frameBuf;
+	st_rfc4175_422_10_pg2_t *dst = (st_rfc4175_422_10_pg2_t *)prod->frameBuf;
 	st_rfc4175_422_10_pg2_t *const end
-		= (st_rfc4175_422_10_pg2_t *)(app->frameBuf + app->frameSize);
+		= (st_rfc4175_422_10_pg2_t *)(prod->frameBuf + prod->frameSize);
 	// read frame from movie and convert into frameBuf
 	uint16_t const *Y = (uint16_t *)(app->movie + 0 * (app->movieBufSize / 4));
 	uint16_t const *R = (uint16_t *)(app->movie + 2 * (app->movieBufSize / 4));
 	uint16_t const *B = (uint16_t *)(app->movie + 3 * (app->movieBufSize / 4));
+
+	/* TODO
+      * Below code is just a demo, which is not efficient for conversion
+      */
 	for (; dst < end; ++dst)
 	{
 		Pack(dst, *R++, Y[0], *B++, Y[1]);
@@ -197,58 +245,59 @@ SendAppReadFrame422Inline(rvrtp_send_app_t *app,
 		app->movie += sizeof(uint16_t) * 4;
 		assert(app->movie <= app->movieEnd);
 	}
+
 	if (app->movieEnd <= app->movie)
 	{
 		app->movie = app->movieBegin;
 	}
-	app->frameCursor = (app->frameCursor + 1) % SEND_APP_FRAME_MAX;
+	prod->frameCursor = (prod->frameCursor + 1) % SEND_APP_FRAME_MAX;
 	return ST_OK;
 }
 
 st_status_t
-SendAppReadFrameNetLeBufLe(rvrtp_send_app_t *app)
+SendAppReadFrameNetLeBufLe(strtp_send_app_t *app)
 {
 	return SendAppReadFrame422Inline(app, Pack_422le10_PG2le);
 }
 
 st_status_t
-SendAppReadFrameNetLeBufBe(rvrtp_send_app_t *app)
+SendAppReadFrameNetLeBufBe(strtp_send_app_t *app)
 {
 	return SendAppReadFrame422Inline(app, Pack_422be10_PG2le);
 }
 
 st_status_t
-SendAppReadFrameNetBeBufLe(rvrtp_send_app_t *app)
+SendAppReadFrameNetBeBufLe(strtp_send_app_t *app)
 {
 	return SendAppReadFrame422Inline(app, Pack_422le10_PG2be);
 }
 
 st_status_t
-SendAppReadFrameNetBeBufBe(rvrtp_send_app_t *app)
+SendAppReadFrameNetBeBufBe(strtp_send_app_t *app)
 {
 	return SendAppReadFrame422Inline(app, Pack_422be10_PG2be);
 }
 
 st_status_t
-SendAppReadFrameNetLeBufRgba(rvrtp_send_app_t *app)
+SendAppReadFrameNetLeBufRgba(strtp_send_app_t *app)
 {
 	return SendAppReadFrameRgbaInline(app, ST_422_FMT_CONV_NET_LE10_BUF_RGBA);
 }
 
 st_status_t
-SendAppReadFrameNetLeBufBgra(rvrtp_send_app_t *app)
+SendAppReadFrameNetLeBufBgra(strtp_send_app_t *app)
 {
 	return SendAppReadFrameRgbaInline(app, ST_422_FMT_CONV_NET_LE10_BUF_BGRA);
 }
 
 st_status_t
-SendAppReadFrameNetBeBufRgba(rvrtp_send_app_t *app)
+SendAppReadFrameNetBeBufRgba(strtp_send_app_t *app)
 {
 	return SendAppReadFrameRgbaInline(app, ST_422_FMT_CONV_NET_BE10_BUF_RGBA);
 }
 
 st_status_t
-SendAppReadFrameNetBeBufBgra(rvrtp_send_app_t *app)
+SendAppReadFrameNetBeBufBgra(strtp_send_app_t *app)
 {
 	return SendAppReadFrameRgbaInline(app, ST_422_FMT_CONV_NET_BE10_BUF_BGRA);
 }
@@ -268,73 +317,6 @@ typedef struct
 static app_cpulist_t cpuList[4];
 static volatile int howCpuScks = -1;
 static volatile int affinityCore = -1;
-
-static int
-SetAffinityCoreNb(rvrtp_send_app_t *app)
-{
-	cpu_set_t cpuset;
-	CPU_ZERO(&cpuset);
-	if (app->iscldThrSet && affinityCore == -1)
-	{
-		if (pthread_getaffinity_np(app->cldThr, sizeof(cpu_set_t), &cpuset) < 0)
-			return -1;
-		int coreNb = get_nprocs_conf() - 1;
-		for (; (coreNb >= 0) && (!CPU_ISSET(coreNb, &cpuset)); coreNb--)
-			;
-		// find which socket
-		int soc = howCpuScks - 1;
-		for (; soc >= 0; soc--)
-		{
-			if (coreNb >= cpuList[soc].lowMn && coreNb <= cpuList[soc].lowMx)
-				break;
-			if (coreNb >= cpuList[soc].highMn && coreNb <= cpuList[soc].highMx)
-				break;
-		}
-		if (soc < 0)
-			return -1;
-		if (howCpuScks > 1)
-		{
-			if (soc == (howCpuScks - 1))
-			{
-				soc = 0;
-			}
-			else
-			{
-				++soc;
-			}
-			affinityCore = cpuList[soc].highMx;
-		}
-		else
-		{
-			if (cpuList[soc].highMn != -1)
-			{
-				if (coreNb >= cpuList[soc].highMn && coreNb <= cpuList[soc].highMx)
-					affinityCore = cpuList[soc].lowMx;
-				else
-					affinityCore = cpuList[soc].highMx;
-			}
-			else
-			{
-				affinityCore = 1;
-			}
-		}
-	}
-	if (affinityCore >= 0 && app->affinited == 0)
-	{
-
-		affinityCore--;
-		CPU_ZERO(&cpuset);
-		if (affinityCore < 0)
-			affinityCore = 0;
-		CPU_SET(affinityCore + 1, &cpuset);
-		if (pthread_setaffinity_np(app->movieThread, sizeof(cpu_set_t), &cpuset) == 0)
-		{
-			app->affinited = 1;
-			printf("******  anifity OK %d\n", affinityCore + 1);
-		}
-	}
-	return -1;
-}
 
 static st_status_t
 GetCPUs(int32_t soc, app_cpulist_t *cl)
@@ -361,52 +343,48 @@ GetCPUs(int32_t soc, app_cpulist_t *cl)
 
 static void *__attribute__((noreturn)) SendAppThread(void *arg)
 {
-	rvrtp_send_app_t *app = (rvrtp_send_app_t *)arg;
-	app->lastTmr = rte_get_tsc_cycles();
+	strtp_send_app_t *app = (strtp_send_app_t *)arg;
+	uint64_t currTmr;
+	st21_producer_t *prod;
 	double period = 1.0 / rte_get_tsc_hz();
-	uint32_t droped = 0, old = app->frmsSend, act;
-	uint64_t currTmr, firstFrameTime = StPtpGetTime();
+	uint32_t elapsed = 0, old = app->frmsSend, act;
+
+	SetAffinityCore(app, ST_DEV_TYPE_PRODUCER);
+	prod = (st21_producer_t *)app->prod;
+	prod->frmLocCnt = 0;
+	prod->lastTmr = 0;
+
 	for (;;)
 	{
-		//		uint8_t *movie_old = app->movie;
 		act = app->frmsSend;
 		while (old == act)
 		{
-			sleep(0); // wait for next frame
+			sleep(0);
+			/* enqueue thread will update frmsSend */
 			act = app->frmsSend;
 		}
-		droped += (act - old - 1);
-		app->frmLocCnt += act - old;
+		elapsed += (act - old - 1);
+		prod->frmLocCnt += act - old;
 		old = act;
-		currTmr = rte_get_tsc_cycles();
 		app->SendAppReadFrame(app);
 
-		if (app->frmLocCnt >= HowFrames)
+		if (prod->frmLocCnt >= HowFrames)
 		{
-			uint64_t cclks = currTmr - app->lastTmr;
-			app->lastTmr = currTmr;
-			double frameRate = (double)(app->frmLocCnt) / (period * cclks);
-			RTE_LOG(INFO, USER2, "FrameRate = %4.2lf droped: %d\n", frameRate, droped);
-			if (droped && app->affinited == 0)
-				SetAffinityCoreNb(app);
-			droped = 0;
-			app->frmLocCnt = 0;
-		}
-		if (app->movie == app->movieBegin)
-		{
-			uint64_t curTime = StPtpGetTime();
-			uint64_t del = curTime - firstFrameTime;
-			firstFrameTime = curTime;
-			del /= 1000000000;
-			RTE_LOG(INFO, USER2, "Movie lenght: %ld\n", del);
+			currTmr = rte_get_tsc_cycles();
+			uint64_t cclks = currTmr - prod->lastTmr;
+			double frameRate = (double)(prod->frmLocCnt) / (period * cclks);
+			if (prod->lastTmr)
+				RTE_LOG(INFO, USER2, "App[%02d], Frame Rate = %4.2lf Over elapsed: %d\n",
+						app->index, frameRate, elapsed);
+			prod->lastTmr = currTmr;
+			elapsed = 0;
+			prod->frmLocCnt = 0;
 		}
 
-#if 1
-		if (app->view != NULL)
+		if (app->videoStream != NULL)
 		{
-			ShowFrame(app->view, app->movie, 2);
+			ShowFrame(app->videoStream, app->movie, 2);
 		}
-#endif
 	}
 }
 
@@ -414,48 +392,174 @@ static void *__attribute__((noreturn)) SendAppThread(void *arg)
 
 static void *__attribute__((noreturn)) SendAppThread(void *arg)
 {
-	rvrtp_send_app_t *app = (rvrtp_send_app_t *)arg;
+	strtp_send_app_t *app = (strtp_send_app_t *)arg;
+	SetAffinityCore(app, ST_DEV_TYPE_PRODUCER);
+
 	for (;;)
 	{
 		uint32_t const old = app->frmsSend;
 		app->SendAppReadFrame(app);
 		while (old == app->frmsSend)
 		{
-			sleep(0); // wait for next frame
+			sleep(0);  // wait for next frame
 		}
 	}
 }
 
 #endif
 
+static void *__attribute__((noreturn)) SendAudioThread(void *arg)
+{
+	strtp_send_app_t *app = (strtp_send_app_t *)arg;
+	SetAffinityCore(app, ST_DEV_TYPE_PRODUCER);
+
+	for (;;)
+	{
+		uint32_t const old = app->frmsSend;
+		app->SendAppReadFrame(app);
+		while (old == app->frmsSend)
+		{
+			sleep(0);  // wait for next frame
+		}
+		//if (app->affinited == 0)
+		//	SetAffinityCoreNb(app);
+	}
+}
 st_status_t
-SendAppInit(rvrtp_send_app_t *app, const char *fileName)
+SendAppOpenFile(strtp_send_app_t *app, const char *fileName)
+{
+	struct stat i;
+
+	app->fileFd = open(fileName, O_RDONLY);
+	if (app->fileFd >= 0)
+	{
+		fstat(app->fileFd, &i);
+
+		uint8_t *m = mmap(NULL, i.st_size, PROT_READ, MAP_SHARED, app->fileFd, 0);
+
+		if (MAP_FAILED != m)
+		{
+			app->movieBegin = m;
+			app->movie = m;
+			app->movieEnd = m + i.st_size;
+			if (app->mtype == ST_ESSENCE_ANC || app->mtype == ST_ESSENCE_AUDIO)
+			{
+				app->movieBufSize = i.st_size;	// ANC
+			}
+			else
+			{
+				app->singleFrameMode = (i.st_size == app->movieBufSize) ? 1 : 0;
+			}
+		}
+		else
+		{
+			RTE_LOG(ERR, USER1, "mmap fail '%s'\n", fileName);
+			return ST_GENERAL_ERR;
+		}
+	}  // ffmpeg -i ${file} -c:v rawvideo -pix_ftm yuv440p10be -o ${file}.yuv
+	else
+	{
+		char options[ST_OPT_SIZE];
+		switch (app->mtype)
+		{
+		case ST_ESSENCE_VIDEO:
+			snprintf(options, ST_OPT_SIZE, "%s", "videoFile");
+			break;
+		case ST_ESSENCE_AUDIO:
+			snprintf(options, ST_OPT_SIZE, "%s", "audioFile");
+			break;
+		case ST_ESSENCE_ANC:
+			snprintf(options, ST_OPT_SIZE, "%s", "ancFile");
+			break;
+		default:
+			break;
+		}
+		RTE_LOG(ERR, USER1, "Fail to find %s, please use option '--%s' to provide\n", fileName,
+				options);
+		return ST_GENERAL_ERR;
+	}
+
+	return ST_OK;
+}
+
+st_status_t
+SendAppInitProd(strtp_send_app_t *app, void *producer)
+{
+	st_essence_type_t type;
+	st_status_t status = ST_OK;
+
+	type = app->mtype;
+	app->prod = producer;
+
+	switch (type)
+	{
+	case ST_ESSENCE_VIDEO:
+		for (uint32_t i = 0; i < SEND_APP_FRAME_MAX; i++)
+		{
+			app->frames[i] = StAllocFrame(app->session, app->session->frameSize);
+			if (!app->frames[i])
+			{
+				return ST_NO_MEMORY;
+			}
+		}
+		status = SendSt21AppInit(app, producer);
+		break;
+	case ST_ESSENCE_AUDIO:
+		for (uint32_t i = 0; i < SEND_APP_FRAME_MAX; i++)
+		{
+			app->frames[i] = StAllocFrame(app->session, app->session->frameSize);
+			if (!app->frames[i])
+			{
+				return ST_NO_MEMORY;
+			}
+		}
+		status = SendSt30AppInit(app, producer);
+		break;
+	case ST_ESSENCE_ANC:
+		for (uint32_t i = 0; i < SEND_APP_FRAME_MAX; i++)
+		{
+			app->ancFrames[i].data = StAllocFrame(app->session, app->session->frameSize);
+			if (!app->ancFrames[i].data)
+			{
+				return ST_NO_MEMORY;
+			}
+		}
+		status = SendSt40AppInit(app, producer);
+		break;
+	default:
+		status = ST_INVALID_PARAM;
+		break;
+	}
+	return status;
+}
+
+st_status_t
+SendSt21AppInit(strtp_send_app_t *app, void *producer)
 {
 	st_status_t status = ST_OK;
-	st21_format_t fmt;
-	St21GetFormat(app->session, &fmt);
+	st_session_t *session = app->session;
+	st21_producer_t *prod = (st21_producer_t *)producer;
 
-	for (uint32_t i = 0; i < SEND_APP_FRAME_MAX; i++)
-	{
-		app->frames[i] = St21AllocFrame(app->session, app->session->frameSize);
-		if (!app->frames[i])
-		{
-			return ST_NO_MEMORY;
-		}
-	}
-	app->singleFrameMode = 0; // initially
-	app->dualPixelSize = (2 * fmt.pixelGrpSize) / fmt.pixelsInGrp;
-	app->sliceSize = 20 * // at least 20 lines if single pixel group usually 40 lines
-					 fmt.width * fmt.pixelGrpSize;
-	app->sliceCount = app->session->frameSize / app->sliceSize;
-	app->pixelGrpsInSlice = app->sliceSize / fmt.pixelGrpSize;
-	app->linesInSlice = 40; // for now TBD
+	st_format_t vfmt;
+	StGetFormat(app->session, &vfmt);
 
-	app->frameSize = app->session->frameSize;
+	st21_format_t *fmt = &vfmt.v;
+
+	app->singleFrameMode = 0;  // initially
+	prod->dualPixelSize = (2 * fmt->pixelGrpSize) / fmt->pixelsInGrp;
+	prod->sliceSize = 20 *	// at least 20 lines if single pixel group usually 40 lines
+					  fmt->width * fmt->pixelGrpSize;
+	prod->sliceCount = session->frameSize / prod->sliceSize;
+	prod->pixelGrpsInSlice = prod->sliceSize / fmt->pixelGrpSize;
+	prod->linesInSlice = 40;  // for now TBD
+
+	prod->frameSize = session->frameSize;
+	prod->appHandle = (void *)app;
+
 	switch (app->bufFormat)
 	{
 	case ST21_BUF_FMT_YUV_422_10BIT_BE:
-		switch (fmt.pixelFmt)
+		switch (fmt->pixelFmt)
 		{
 		case ST21_PIX_FMT_YCBCR_422_10BIT_BE:
 			app->SendAppReadFrame = SendAppReadFrameNetBeBufBe;
@@ -467,11 +571,11 @@ SendAppInit(rvrtp_send_app_t *app, const char *fileName)
 			ST_APP_ASSERT;
 			return ST_NOT_SUPPORTED;
 		}
-		app->movieBufSize = 4 * fmt.width * fmt.height;
+		app->movieBufSize = 4 * fmt->width * fmt->height;
 		break;
 
 	case ST21_BUF_FMT_RGBA_8BIT:
-		switch (fmt.pixelFmt)
+		switch (fmt->pixelFmt)
 		{
 		case ST21_PIX_FMT_YCBCR_422_10BIT_BE:
 			app->SendAppReadFrame = SendAppReadFrameNetBeBufRgba;
@@ -483,7 +587,7 @@ SendAppInit(rvrtp_send_app_t *app, const char *fileName)
 			ST_APP_ASSERT;
 			return ST_NOT_SUPPORTED;
 		}
-		app->movieBufSize = 4 * fmt.width * fmt.height;
+		app->movieBufSize = 4 * fmt->width * fmt->height;
 		break;
 
 	default:
@@ -493,12 +597,12 @@ SendAppInit(rvrtp_send_app_t *app, const char *fileName)
 
 	// for now there is only BE input buffer format supported
 
-	switch (fmt.clockRate)
+	switch (fmt->clockRate)
 	{
-	case 90000: // 90kHz
+	case 90000:	 // 90kHz
 		app->tmstampTime = 11111;
 		break;
-	case 48000: // 48kHz
+	case 48000:	 // 48kHz
 		app->tmstampTime = 20833;
 		break;
 	}
@@ -507,38 +611,14 @@ SendAppInit(rvrtp_send_app_t *app, const char *fileName)
 	RTE_LOG(INFO, USER2, "SendApp: dualPixelSize %u sliceSize %u sliceCount %u\n",
 			app->dualPixelSize, app->sliceSize, app->sliceCount);
 	RTE_LOG(INFO, USER2, "SendApp: pixelGrpsInSlice %u linesInSlice %u frameSize %u\n",
-			app->pixelGrpsInSlice, app->linesInSlice, app->frameSize);
+			app->pixelGrpsInSlice, app->linesInSlice, prod->frameSize);
 #endif
-	app->fileFd = open(fileName, O_RDONLY);
-	if (app->fileFd >= 0)
-	{
-		struct stat i;
-		fstat(app->fileFd, &i);
-
-		uint8_t *m = mmap(NULL, i.st_size, PROT_READ, MAP_SHARED, app->fileFd, 0);
-
-		if (MAP_FAILED != m)
-		{
-			app->movieBegin = m;
-			app->movie = m;
-			app->movieEnd = m + i.st_size;
-			app->singleFrameMode = (i.st_size == app->movieBufSize) ? 1 : 0;
-		}
-		else
-		{
-			RTE_LOG(ERR, USER1, "mmap fail '%s'\n", fileName);
-			return ST_GENERAL_ERR;
-		}
-	} // ffmpeg -i ${file} -c:v rawvideo -pix_ftm yuv440p10be -o ${file}.yuv
-	else
-	{
-		RTE_LOG(ERR, USER1, "open fail '%s'\n", fileName);
-		return ST_GENERAL_ERR;
-	}
 	// initially read 1st frame
-	app->frameCursor = 0;
+	prod->frameCursor = 0;
+	prod->frameBuf = app->frames[prod->frameCursor];
+	prod->frmLocCnt = 0;
 	app->frmsSend = 0;
-	app->frameBuf = app->frames[app->frameCursor];
+
 	status = app->SendAppReadFrame(app);
 	if (status != ST_OK)
 		return status;
@@ -554,77 +634,375 @@ SendAppInit(rvrtp_send_app_t *app, const char *fileName)
 	return ST_OK;
 }
 
+static inline st_status_t
+SendAppReadFrameAnc(strtp_send_app_t *app)
+{
+	st40_producer_t *prod;
+	SendAppLock(app);
+	prod = (st40_producer_t *)app->prod;
+	prod->frameBuf = &(app->ancFrames[prod->frameCursor]);
+	app->isEndOfAncDataBuf = false;
+	SendAppUnlock(app);
+	SendAppWaitFrameDone(app);
+	uint16_t udwSize
+		= app->movieBufSize > ST_ANC_UDW_MAX_SIZE ? ST_ANC_UDW_MAX_SIZE : app->movieBufSize;
+	prod->frameBuf->meta[0].c = 0;
+	prod->frameBuf->meta[0].lineNumber = 10;
+	prod->frameBuf->meta[0].horiOffset = 0;
+	prod->frameBuf->meta[0].s = 0;
+	prod->frameBuf->meta[0].streamNum = 0;
+	prod->frameBuf->meta[0].did = 0x43;
+	prod->frameBuf->meta[0].sdid = 0x02;
+	prod->frameBuf->meta[0].udwSize = udwSize;
+	prod->frameBuf->meta[0].udwOffset = 0;
+	rte_memcpy(prod->frameBuf->data, app->movie, udwSize);
+	prod->frameBuf->dataSize = udwSize;
+	prod->frameBuf->metaSize = 1;
+	prod->frameCursor = (prod->frameCursor + 1) % SEND_APP_FRAME_MAX;
+	return ST_OK;
+}
+
+static void *__attribute__((noreturn)) SendAncThread(void *arg)
+{
+	strtp_send_app_t *app = (strtp_send_app_t *)arg;
+	SetAffinityCore(app, ST_DEV_TYPE_PRODUCER);
+
+	for (;;)
+	{
+		uint32_t const old = app->frmsSend;
+		app->SendAppReadFrame(app);
+		while (old == app->frmsSend)
+		{
+			sleep(0);  // wait for next frame
+		}
+	}
+}
+
 st_status_t
-SendAppCreateProducer(st21_session_t *sn, st21_buf_fmt_t bufFormat, uint32_t fmtIndex,
-					  rvrtp_send_app_t **appOut)
+SendSt40AppInit(strtp_send_app_t *app, void *producer)
 {
 	st_status_t status = ST_OK;
+	st_session_t *session = app->session;
+	st40_producer_t *prod = (st40_producer_t *)producer;
+
+	st_format_t ancfmt;
+	StGetFormat(app->session, &ancfmt);
+
+	st40_format_t *fmt = &ancfmt.anc;
+
+	app->singleFrameMode = 1;  // initially
+
+	prod->bufSize = session->frameSize;
+	prod->appHandle = (void *)app;
+
+	app->SendAppReadFrame = SendAppReadFrameAnc;
+
+	// for now there is only BE input buffer format supported
+
+	switch (fmt->clockRate)
+	{
+	case 90000:	 // 90kHz
+		app->tmstampTime = 11111;
+		break;
+	case 48000:	 // 48kHz
+		app->tmstampTime = 20833;
+		break;
+	}
+
+	prod->frameCursor = 0;
+	prod->bufOffset = 0;
+	app->frmsSend = 0;
+
+	status = app->SendAppReadFrame(app);
+	if (status != ST_OK)
+		return status;
+
+	if (!app->singleFrameMode)
+	{
+		pthread_create(&app->movieThread, NULL, SendAncThread, (void *)app);
+		if (howCpuScks == -1)
+			for (howCpuScks = 0;
+				 (howCpuScks < 3) && (GetCPUs(howCpuScks, &cpuList[howCpuScks]) >= 0); howCpuScks++)
+				;
+	}
+	return ST_OK;
+}
+
+void *
+SendAppNewSt21Producer(st_session_t *sn)
+{
+	st21_producer_t *prod;
+
+	prod = malloc(sizeof(st21_producer_t));
+	if (!prod)
+	{
+		return NULL;
+	}
+
+	prod->St21GetNextFrameBuf = SendAppGetNextFrameBuf;
+	prod->prodType = ST21_PROD_P_FRAME;
+
+	prod->St21GetNextSliceOffset = SendAppGetNextSliceOffset;
+	prod->St21NotifyFrameDone = SendAppNotifyFrameDone;
+	prod->St21NotifyStopDone = SendAppNotifyStopDone;
+	prod->St21GetFrameTmstamp = SendAppGetFrameTmstamp;
+
+	return prod;
+}
+uint32_t
+SendAppGetNextAudioOffset(void *appHandle, uint8_t *frameBuf, uint32_t prevOffset,
+						  uint32_t *tmstamp)
+{
+	strtp_send_app_t *app = (strtp_send_app_t *)appHandle;
+	st30_producer_t *prod = (st30_producer_t *)app->prod;
+
+	if (frameBuf == NULL)
+		return prevOffset;	// invalid input
+
+	if (prod->bufOffset > prevOffset)
+		return prod->bufOffset;
+
+	return prevOffset;
+}
+
+void *
+SendAppNewSt30Producer(st_session_t *sn)
+{
+	st30_producer_t *prod;
+	prod = malloc(sizeof(st30_producer_t));
+	if (!prod)
+	{
+		return NULL;
+	}
+
+	prod->St30GetNextAudioBuf = SendAppGetNextAudioBuf;
+	prod->St30GetNextSampleOffset = SendAppGetNextAudioOffset;
+	prod->bufOffset = 0;
+	prod->prodType = ST30_PROD_RAW_RTP;
+
+	prod->St30NotifyBufferDone = SendAppNotifyBufDone;
+	prod->St30NotifyStopDone = SendAppNotifyStopDone;
+
+	return prod;
+}
+
+/**
+ * Callback to producer application to get next ancillary buffer necessary to continue streaming
+ * If application cannot return the next buffer returns NULL and TBD
+ */
+void *
+SendAppGetNextAncFrame(void *appHandle)
+{
+	strtp_send_app_t *app = (strtp_send_app_t *)appHandle;
+	st40_producer_t *prod;
+	uint8_t *nextBuf;
+
+	SendAppLock(app);
+
+	prod = (st40_producer_t *)app->prod;
+	nextBuf = (void *)prod->frameBuf;
+
+	if (app->iscldThrSet == 0)
+	{
+		app->cldThr = pthread_self();
+		app->iscldThrSet = 1;
+	}
+	app->frmsSend++;
+	SendAppUnlock(app);
+	return nextBuf;
+}
+
+/**
+ * Callback to producer application with notification about the buffer completion
+ * Ancillary frame can be released or reused after it but not sooner
+ */
+void
+SendAppNotifyAncFrameDone(void *appHandle, void *frameBuf)
+{
+	strtp_send_app_t *app = (strtp_send_app_t *)appHandle;
+	int i;
+	SendAppLock(app);
+	for (i = 0; i < SEND_APP_FRAME_MAX; ++i)
+	{
+		if (&(app->ancFrames[i]) == frameBuf)
+			break;
+	}
+
+	assert(i < SEND_APP_FRAME_MAX);
+
+	__sync_lock_release(&app->frameDone[i], 0);
+	SendAppUnlock(app);
+	return;
+}
+
+void *
+SendAppNewSt40Producer(st_session_t *sn)
+{
+	st40_producer_t *prod;
+
+	prod = malloc(sizeof(st40_producer_t));
+	if (!prod)
+	{
+		return NULL;
+	}
+	prod->prodType = ST40_PROD_REGULAR;
+
+	prod->St40GetNextAncFrame = SendAppGetNextAncFrame;
+	prod->St40NotifyFrameDone = SendAppNotifyAncFrameDone;
+
+	return prod;
+}
+
+static inline st_status_t
+SendAppReadFrameAudio(strtp_send_app_t *app)
+{
+	st30_producer_t *prod;
+	SendAppLock(app);
+
+	prod = (st30_producer_t *)app->prod;
+
+	prod->frameBuf = app->frames[prod->frameCursor];
+	SendAppUnlock(app);
+
+	SendAppWaitFrameDone(app);
+
+	uint8_t *dst = (uint8_t *)prod->frameBuf;
+	uint8_t *const end = (uint8_t *)(prod->frameBuf + prod->bufSize);
+
+	// read frame from movie and convert into frameBuf
+	for (; dst < end; ++dst)
+	{
+		*dst = *(uint8_t *)app->movie;
+		app->movie += sizeof(uint8_t);
+		prod->bufOffset += sizeof(uint8_t);
+		if (app->movie >= app->movieEnd)
+		{
+			app->movie = app->movieBegin;
+		}
+	}
+	prod->frameCursor = (prod->frameCursor + 1) % SEND_APP_FRAME_MAX;
+	return ST_OK;
+}
+
+st_status_t
+SendSt30AppInit(strtp_send_app_t *app, void *producer)
+{
+	st_status_t status = ST_OK;
+	st_session_t *session = app->session;
+	st30_producer_t *prod = (st30_producer_t *)producer;
+
+	app->singleFrameMode = 1;  // initially
+
+	prod->bufSize = session->frameSize;
+	prod->appHandle = (void *)app;
+
+	app->SendAppReadFrame = SendAppReadFrameAudio;
+	// initially read 1st frame
+	prod->frameCursor = 0;
+	prod->frameBuf = app->frames[prod->frameCursor];
+	app->frmsSend = 0;
+
+	status = app->SendAppReadFrame(app);
+	if (status != ST_OK)
+		return status;
+
+	if (!app->singleFrameMode)
+	{
+		pthread_create(&app->movieThread, NULL, SendAudioThread, (void *)app);
+		if (howCpuScks == -1)
+			for (howCpuScks = 0;
+				 (howCpuScks < 3) && (GetCPUs(howCpuScks, &cpuList[howCpuScks]) >= 0); howCpuScks++)
+				;
+	}
+
+	return ST_OK;
+}
+
+st_status_t
+SendAppNewProducer(st_session_t *sn, void **prodOut)
+{
+	st_essence_type_t mtype;
+	mtype = sn->type;
+	void *prod = NULL;
+
+	switch (mtype)
+	{
+	case ST_ESSENCE_VIDEO:
+		prod = SendAppNewSt21Producer(sn);
+		break;
+
+	case ST_ESSENCE_AUDIO:
+		prod = SendAppNewSt30Producer(sn);
+		break;
+
+	case ST_ESSENCE_ANC:
+		prod = SendAppNewSt40Producer(sn);
+		break;
+	default:
+		break;
+	}
+	if (!prod)
+		return ST_NO_MEMORY;
+
+	*prodOut = prod;
+
+	return ST_OK;
+}
+
+st_status_t
+SendAppCreateProducer(st_session_t *sn, uint8_t bufFormat, const char *fileName,
+					  strtp_send_app_t **appOut)
+{
+	st_status_t status = ST_OK;
+	void *producer;
 
 	if (!sn)
 		return ST_INVALID_PARAM;
 
-	rvrtp_send_app_t *app = malloc(sizeof(rvrtp_send_app_t));
+	strtp_send_app_t *app = malloc(sizeof(strtp_send_app_t));
 	if (!app)
 	{
 		return ST_NO_MEMORY;
 	}
-	memset(app, 0x0, sizeof(rvrtp_send_app_t));
+	memset(app, 0x0, sizeof(strtp_send_app_t));
+	app->mtype = sn->type;
 	app->session = sn;
-	app->bufFormat = bufFormat;
-	if (app->bufFormat == ST21_BUF_FMT_RGBA_8BIT)
-	{
-		if (fmtIndex == 0 || fmtIndex == 3)
-		{
-			status = SendAppInit(app, "720.signal_8b.rgba");
-		}
-		else if (fmtIndex == 1 || fmtIndex == 4)
-		{
-			status = SendAppInit(app, "signal_8b.rgba");
-		}
-		else if (fmtIndex == 2 || fmtIndex == 5)
-		{
-			status = SendAppInit(app, "2160.signal_8b.rgba");
-		}
-	}
-	else
-	{
-		if (fmtIndex == 0 || fmtIndex == 3)
-		{
-			status = SendAppInit(app, "720.signal_be.yuv");
-		}
-		else if (fmtIndex == 1 || fmtIndex == 4)
-		{
-			status = SendAppInit(app, "signal_be.yuv");
-		}
-		else if (fmtIndex == 2 || fmtIndex == 5)
-		{
-			status = SendAppInit(app, "2160.signal_be.yuv");
-		}
-	}
 
+	app->bufFormat = bufFormat;
+
+	status = SendAppNewProducer(sn, &producer);
 	if (status != ST_OK)
 	{
-		RTE_LOG(INFO, USER2, "SendAppInit error of %d\n", status);
+		RTE_LOG(INFO, USER2, "SendAppNewProducer error of %d\n", status);
 		free(app);
 		return status;
 	}
 
-	app->prod.St21GetNextFrameBuf = SendAppGetNextFrameBuf;
-	app->prod.appHandle = app;
-	app->prod.frameSize = sn->frameSize;
-	app->prod.sliceCount = app->sliceCount;
-	app->prod.sliceSize = app->sliceSize;
-	app->prod.prodType = ST21_PROD_P_FRAME;
-
-	app->prod.St21GetNextSliceOffset = SendAppGetNextSliceOffset;
-	app->prod.St21NotifyFrameDone = SendAppNotifyFrameDone;
-	app->prod.St21NotifyStopDone = SendAppNotifyStopDone;
-	app->prod.St21GetFrameTmstamp = SendAppGetFrameTmstamp;
-
-	status = St21RegisterProducer(sn, &app->prod);
+	status = SendAppOpenFile(app, fileName);
 	if (status != ST_OK)
 	{
-		RTE_LOG(INFO, USER2, "St21RegisterProducer FAILED. ErrNo: %d\n", status);
+		RTE_LOG(INFO, USER2, "SendAppOpenFile error of %d\n", status);
+		free(app);
+		return status;
+	}
+
+	if (app->mtype == ST_ESSENCE_ANC || app->mtype == ST_ESSENCE_AUDIO)
+	{
+		sn->frameSize = app->movieBufSize;
+	}
+
+	status = SendAppInitProd(app, producer);
+	if (status != ST_OK)
+	{
+		RTE_LOG(INFO, USER2, "SendAppInitProd error of %d\n", status);
+		free(app);
+		return status;
+	}
+
+	status = StRegisterProducer(sn, producer);	//&app->prod);
+	if (status != ST_OK)
+	{
+		RTE_LOG(INFO, USER2, "StRegisterProducer FAILED. ErrNo: %d\n", status);
 		free(app);
 		return status;
 	}
@@ -634,25 +1012,62 @@ SendAppCreateProducer(st21_session_t *sn, st21_buf_fmt_t bufFormat, uint32_t fmt
 	return status;
 }
 
+uint8_t *
+SendAppGetFrameBuf(strtp_send_app_t *app)
+{
+	if (app->mtype == ST_ESSENCE_VIDEO)
+	{
+		st21_producer_t *prod = app->prod;
+		return prod->frameBuf;
+	}
+	else if (app->mtype == ST_ESSENCE_AUDIO)
+	{
+		st30_producer_t *prod = app->prod;
+		return prod->frameBuf;
+	}
+	else
+	{
+		st40_producer_t *prod = app->prod;
+		return (uint8_t *)prod->frameBuf;
+	}
+}
+
 st_status_t
-SendAppStart(st21_session_t *sn, rvrtp_send_app_t *app)
+SendAppStart(st_session_t *sn, strtp_send_app_t *app)
 {
 	st_status_t status = ST_OK;
 
 	if (!sn || !app)
 		return ST_INVALID_PARAM;
 
-	status = St21ProducerStartFrame(sn, app->frameBuf, app->prod.frameSize, 0, 0);
+	switch (sn->type)
+	{
+	case ST_ESSENCE_VIDEO:
+		status = St21ProducerStartFrame(sn, SendAppGetFrameBuf(app), sn->frameSize, 0, 0);
+		break;
 
+	case ST_ESSENCE_AUDIO:
+		status = St30ProducerStartFrame(sn, SendAppGetFrameBuf(app), sn->frameSize, 0, 0);
+		break;
+
+	case ST_ESSENCE_ANC:
+		status = St40ProducerStartFrame(sn, SendAppGetFrameBuf(app), sn->frameSize, 0, 0);
+		break;
+	default:
+		status = ST_INVALID_PARAM;
+		break;
+	}
 	return status;
 }
 
 uint32_t
-SendAppReadNextSlice(rvrtp_send_app_t *app, uint8_t *frameBuf, uint32_t prevOffset,
+SendAppReadNextSlice(strtp_send_app_t *app, uint8_t *frameBuf, uint32_t prevOffset,
 					 uint32_t sliceSize, uint32_t fieldId)
 {
-	app->sliceOffset += sliceSize;
-	return app->sliceOffset;
+	st21_producer_t *prod = (st21_producer_t *)app->prod;
+
+	prod->sliceOffset += sliceSize;
+	return prod->sliceOffset;
 }
 
 /**
@@ -663,13 +1078,14 @@ SendAppReadNextSlice(rvrtp_send_app_t *app, uint8_t *frameBuf, uint32_t prevOffs
 uint8_t *
 SendAppGetNextFrameBuf(void *appHandle, uint8_t *prevFrameBuf, uint32_t bufSize, uint32_t fieldId)
 {
-	rvrtp_send_app_t *app = (rvrtp_send_app_t *)appHandle;
+	strtp_send_app_t *app = (strtp_send_app_t *)appHandle;
+	st21_producer_t *prod;
 	uint8_t *nextBuf;
 
 	SendAppLock(app);
 
-	nextBuf = app->frameBuf;
-	app->frmsSend++;
+	prod = (st21_producer_t *)app->prod;
+	nextBuf = prod->frameBuf;
 
 	if (app->iscldThrSet == 0)
 	{
@@ -683,14 +1099,16 @@ SendAppGetNextFrameBuf(void *appHandle, uint8_t *prevFrameBuf, uint32_t bufSize,
 	{
 		if (app->singleFrameMode)
 		{
-			app->sliceOffset = 0;
-			SendAppReadNextSlice(app, nextBuf, 0, app->sliceSize, fieldId);
+			app->frmsSend++;
+			prod->sliceOffset = 0;
+			SendAppReadNextSlice(app, nextBuf, 0, prod->sliceSize, fieldId);
 			return nextBuf;
 		}
 		else if (nextBuf != prevFrameBuf)
 		{
-			app->sliceOffset = 0;
-			SendAppReadNextSlice(app, nextBuf, 0, app->sliceSize, fieldId);
+			app->frmsSend++;
+			prod->sliceOffset = 0;
+			SendAppReadNextSlice(app, nextBuf, 0, prod->sliceSize, fieldId);
 			return nextBuf;
 		}
 	}
@@ -698,6 +1116,43 @@ SendAppGetNextFrameBuf(void *appHandle, uint8_t *prevFrameBuf, uint32_t bufSize,
 	{
 		return NULL;
 	}
+	return NULL;
+}
+
+uint8_t *
+SendAppGetNextAudioBuf(void *appHandle, uint8_t *prevFrameBuf, uint32_t bufSize)
+{
+	strtp_send_app_t *app = (strtp_send_app_t *)appHandle;
+	st30_producer_t *prod;
+	uint8_t *nextBuf;
+
+	SendAppLock(app);
+
+	prod = (st30_producer_t *)app->prod;
+	nextBuf = prod->frameBuf;
+
+	if (app->iscldThrSet == 0)
+	{
+		app->cldThr = pthread_self();
+		app->iscldThrSet = 1;
+	}
+
+	SendAppUnlock(app);
+
+	if (nextBuf)
+	{
+		if (app->singleFrameMode)
+		{
+			app->frmsSend++;
+			return nextBuf;
+		}
+		else if (nextBuf != prevFrameBuf)
+		{
+			app->frmsSend++;
+			return nextBuf;
+		}
+	}
+
 	return NULL;
 }
 
@@ -709,19 +1164,20 @@ SendAppGetNextFrameBuf(void *appHandle, uint8_t *prevFrameBuf, uint32_t bufSize,
 uint32_t
 SendAppGetNextSliceOffset(void *appHandle, uint8_t *frameBuf, uint32_t prevOffset, uint32_t fieldId)
 {
-	rvrtp_send_app_t *app = (rvrtp_send_app_t *)appHandle;
+	strtp_send_app_t *app = (strtp_send_app_t *)appHandle;
+	st21_producer_t *prod = (st21_producer_t *)app->prod;
 
 	if (frameBuf == NULL)
-		return prevOffset; // invalid input
+		return prevOffset;	// invalid input
 
-	if (app->sliceOffset > prevOffset)
-		return app->sliceOffset;
+	if (prod->sliceOffset > prevOffset)
+		return prod->sliceOffset;
 
-	if ((prevOffset + app->sliceSize) > app->frameSize)
+	if ((prevOffset + prod->sliceSize) > prod->frameSize)
 	{
-		return prevOffset; // above end of frame
+		return prevOffset;	// above end of frame
 	}
-	return SendAppReadNextSlice(app, frameBuf, prevOffset, app->sliceSize, fieldId);
+	return SendAppReadNextSlice(app, frameBuf, prevOffset, prod->sliceSize, fieldId);
 }
 
 /**
@@ -731,7 +1187,26 @@ SendAppGetNextSliceOffset(void *appHandle, uint8_t *frameBuf, uint32_t prevOffse
 void
 SendAppNotifyFrameDone(void *appHandle, uint8_t *frameBuf, uint32_t fieldId)
 {
-	rvrtp_send_app_t *app = (rvrtp_send_app_t *)appHandle;
+	strtp_send_app_t *app = (strtp_send_app_t *)appHandle;
+	int i;
+
+	for (i = 0; i < SEND_APP_FRAME_MAX; ++i)
+	{
+		if (app->frames[i] == frameBuf)
+			break;
+	}
+
+	assert(i < SEND_APP_FRAME_MAX);
+
+	__sync_lock_release(&app->frameDone[i], 0);
+
+	return;
+}
+
+void
+SendAppNotifyBufDone(void *appHandle, uint8_t *frameBuf)
+{
+	strtp_send_app_t *app = (strtp_send_app_t *)appHandle;
 	int i;
 
 	for (i = 0; i < SEND_APP_FRAME_MAX; ++i)
@@ -754,7 +1229,7 @@ SendAppNotifyFrameDone(void *appHandle, uint8_t *frameBuf, uint32_t fieldId)
 void
 SendAppNotifyStopDone(void *appHandle)
 {
-	//rvrtp_send_app_t *app = (rvrtp_send_app_t *)appHandle;
+	//strtp_send_app_t *app = (strtp_send_app_t *)appHandle;
 	return;
 }
 
@@ -767,24 +1242,33 @@ SendAppGetFrameTmstamp(void *appHandle)
 #define NETWORK_TIME 30000ul
 #define NIC_TX_TIME 20000ul
 
-	rvrtp_send_app_t *app = (rvrtp_send_app_t *)appHandle;
-	st21_session_t *s = app->session;
-	st21_format_t fmt;
+	strtp_send_app_t *app = (strtp_send_app_t *)appHandle;
+	st_session_t *s = app->session;
+	st_format_t getFmt;
 
-	St21GetFormat(s, &fmt);
+	StGetFormat(s, &getFmt);
 
 	uint32_t repeats = 0;
 	U64 ntime = StPtpGetTime();
 	struct timespec spec, specLast;
 	spec.tv_nsec = ntime % GIGA;
 	spec.tv_sec = ntime / GIGA;
-	U64 toEpoch;
-	U64 epochs = ntime / fmt.frameTime;
-	toEpoch = (epochs + 1) * fmt.frameTime - ntime;
+	U64 toEpoch = 0;
+	U64 epochs = 0;
+
+	if (s->type == ST_ESSENCE_VIDEO)
+	{
+		epochs = (U64)(ntime / getFmt.v.frameTime);
+		toEpoch = (U64)((epochs + 1) * getFmt.v.frameTime - ntime);
+	}
+	else if (s->type == ST_ESSENCE_ANC)
+	{
+		epochs = (U64)(ntime / getFmt.anc.frameTime);
+		toEpoch = (U64)((epochs + 1) * getFmt.anc.frameTime - ntime);
+	}
+
 	U64 toElapse = toEpoch + s->trOffset - NETWORK_TIME;
 	U64 elapsed;
-
-	// U64 st21Tmstamp90k = ((epochs + 1) * (tmIncrement1 + tmIncrement2)) / 2 + tfOffsetInTicks;
 
 	struct timespec req, rem;
 

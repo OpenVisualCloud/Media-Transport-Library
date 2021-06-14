@@ -1,5 +1,5 @@
 /*
-* Copyright 2020 Intel Corporation.
+* Copyright (C) 2020-2021 Intel Corporation.
 *
 * This software and the related documents are Intel copyrighted materials,
 * and your use of them is governed by the express license under which they
@@ -22,28 +22,46 @@
 
 #include "rxtx_app.h"
 
+#include <rte_ethdev.h>
+
 #include "rx_view.h"
+
+#ifndef ST_MAX_AUDIO_PKT_SIZE
+#define ST_MAX_AUDIO_PKT_SIZE 1200
+#endif
 
 typedef struct st_user_params
 {
-	// Input Parameters
+	/* Input Parameters */
 	int rxOnly;
 	int txOnly;
+	int numPorts;
 	bool isEbuCheck;
-	uint8_t ipAddr[4];	/**< destination IP */
-	uint8_t sipAddr[4]; /**< sender IP */
-	uint8_t macAddr[6]; /**< destination MAC */
+	uint8_t ipAddr[MAX_RXTX_PORTS][4];	/**< destination IP */
+	uint8_t sipAddr[MAX_RXTX_PORTS][4]; /**< source IP */
+	uint8_t macAddr[MAX_RXTX_PORTS][6]; /**< destination MAC */
 	uint32_t rate;
 	uint32_t interlaced;
 	uint32_t fmtIndex;
 	uint16_t udpPort;
+	uint16_t appSCoreId;
 	uint32_t snCount;
+	uint32_t sn30Count;
+	uint32_t sn40Count;
 	st21_buf_fmt_t bufFormat;
+	uint32_t showframeInTx; /* whether show frame in tx, default is off */
+	uint16_t audioFrameSize;
 
-	char *outPortName;
-	char *inPortName;
+	char *pPortName;
+	char *rPortName;
+
+	char *videoFileName;
+	char *audioFileName;
+	char *anciliaryFileName;
 
 } st_user_params_t;
+
+rxtxapp_main_t rxtx_main;
 
 void
 ShowWelcomeBanner()
@@ -62,7 +80,7 @@ PrintVersion()
 	st_param_val_t val;
 	printf("\n");
 	printf("API version: %d.%d.%d\n", ST_VERSION_MAJOR_CURRENT, ST_VERSION_MINOR_CURRENT,
-		ST_VERSION_LAST);
+		   ST_VERSION_LAST);
 
 	StGetParam(ST_LIB_VERSION, &val);
 	printf("Library version: %s\n", val.strPtr);
@@ -86,39 +104,73 @@ PrintHelp()
 	printf(" Params:\n");
 	printf("   -h                                           : print this help info \n");
 	printf("   -v                                           : print versions info \n");
-	printf("   --mac <MAC addr>                             : destination MAC address \n");
 	printf("   --ip <IP addr>                               : destination IP address \n");
-	printf("   --sip <IP addr>                              : source IP address \n");
-	printf("   --ebu                                        : enable EBU compatibility with standard ST 2110 "
-		"logs\n");
-	printf("   -p <UDP port> or --port <UDP port>           : base port from which to iterate sessions port "
-		"IDs\n");
+	printf("   --rip <IP addr>                              : destination redundant IP address \n");
+	printf("   --mac <MAC addr>                             : used when adding static entry into "
+		   "the ARP table \n");
+	printf("   --sip <IP addr>                              : user defined source IP address, if "
+		   "not set, get it from kernel\n");
+	printf("   --rsip <IP addr>                             : user defined source redundant IP "
+		   "address, if not set, get it from kernel\n");
+	printf("   --ebu                                        : enable EBU compatibility with "
+		   "standard ST 2110 "
+		   "logs\n");
+	printf("   -p <UDP port> or --port <UDP port>           : base port from which to iterate "
+		   "sessions port "
+		   "IDs\n");
 	printf("   --rx                                         : run receive mode only \n");
 	printf("   --tx                                         : run transmit mode only \n");
-	printf("   --rgba                                       : input / output buffers are in rgba format\n");
-	printf("   --yuv10be                                    : input / output buffers are in yuv10be format\n");
-	printf("   --format <fmt string>                        : select frame format e.g. a1080i50 = all 1080 interlaced 50fps\n");
-	printf("                                                    : e.g. i720p29  = intel 720 progressive 29.97fps\n");
-	printf("                                                    : e.g. i1080p59 = intel 1080 progressive 59.94fps\n");
-	printf("                                                    : e.g. i2160p59 = intel 2160 progressive 59.94fps\n");
-	printf("                                                    : e.g. i1080i29 = intel 1080 interlaced 29.97fps\n");
-	printf("                                                    : e.g. a1080p59 = all 1080 progressive 59.94fps\n");
-	printf("   --s_count <number of sessions>               : number of sessions \n");
-	printf("   --o_port <PCI device address>                : output interface PCI device address \n");
-	printf("   --in_port <PCI device address>               : input interface PCI device address \n");
-	printf("   --ptpid <hhhhhh.hhhh.hhhhhh>                 : master clock id - it will be used in ptp - disable BKC choosing algorithm\n");
-	printf("   --ptpam <u|m>                                : type of addresing for request in ptp\n");
+	printf("   --display                                    : display video for tx, default is "
+		   "off(on will impact tx performance) \n");
+	printf("   --format <fmt string>                        : select frame format e.g. a1080i50 = "
+		   "all 1080 interlaced 50fps\n");
+	printf("                                                    : e.g. i720p29  = intel 720 "
+		   "progressive 29.97fps\n");
+	printf("                                                    : e.g. i1080p59 = intel 1080 "
+		   "progressive 59.94fps\n");
+	printf("                                                    : e.g. i2160p59 = intel 2160 "
+		   "progressive 59.94fps\n");
+	printf("                                                    : e.g. i1080i29 = intel 1080 "
+		   "interlaced 29.97fps\n");
+	printf("                                                    : e.g. a1080p59 = all 1080 "
+		   "progressive 59.94fps\n");
+	printf("   --s_count <number of sessions>               : number of ST2110-20 (Video) sessions "
+		   "\n");
+	printf("   --s30_count <number of sessions>               : number of ST2110-30 (audio) "
+		   "sessions \n");
+	printf("   --s40_count <number of sessions>               : number of ST2110-40 (ancillary) "
+		   "sessions \n");
+	printf("   --app_scid <core id>                         : application start core id \n");
+	printf("   --p_port <PCI device address>                : primary interface PCI device address "
+		   "\n");
+	printf("   --r_port <PCI device address>                : redundant interface PCI device "
+		   "address \n");
+	printf("   --ptpid <hhhhhh.hhhh.hhhhhh>                 : master clock id - it will be used in "
+		   "ptp - disable BKC choosing algorithm\n");
+	printf(
+		"   --ptpam <u|m>                                : type of addresing for request in ptp\n");
 	printf("                                                    : m - multicast (default)\n");
-    printf("                                                    : u - unicast\n");
-	printf("   --ptpstp <o|t>                               : use one step ort two for ptp - default two\n");
-	printf("                                                    : o - one step - not supportet yet\n");
-    printf("                                                    : t - two step (default)\n");
+	printf("                                                    : u - unicast\n");
+	printf("   --ptpstp <o|t>                               : use one step ort two for ptp - "
+		   "default two\n");
+	printf(
+		"                                                    : o - one step - not supportet yet\n");
+	printf("                                                    : t - two step (default)\n");
 	printf("   --log_level <user,level<info/debug/error>>   : enable additional logs \n");
+	printf("   --videoFile  <filename>                      : specyfying the path to send video "
+		   "file \n");
+	printf("   --audioFile  <filename>                      : specyfying the path to send audio "
+		   "file \n");
+	printf("   --ancFile  <filename>                        : specyfying the path to send "
+		   "amciliary file \n");
+	printf("   --audioFrame  <Audio frame size>             : Size of Audio frame in bytes, user "
+		   "provides based on frequency, channel count and bit depth for desired duration of audio "
+		   "samples (e.g. 1ms) \n");
 	printf("\n");
 }
 
-#define MAKE_DWORD_FROM_CHAR(hh,hl,lh,ll) ((hh << 24) | (hl << 16) | (lh << 8) | (ll)
-#define MAKE_WORD_FROM_CHAR(h,l) ((h << 8) | (l))
+#define MAKE_DWORD_FROM_CHAR(hh, hl, lh, ll) ((hh << 24) | (hl << 16) | (lh << 8) | (ll)
+#define MAKE_WORD_FROM_CHAR(h, l) ((h << 8) | (l))
 
 int
 ParseArgs(int argc, char *argv[], st_user_params_t *outParams)
@@ -129,14 +181,15 @@ ParseArgs(int argc, char *argv[], st_user_params_t *outParams)
 
 	ShowWelcomeBanner();
 
-	outParams->rate = 29;
-	outParams->fmtIndex = 1;
-	outParams->udpPort = 10000;
-	outParams->snCount = MAX_SESSIONS_MAX;
-	outParams->bufFormat = ST21_BUF_FMT_YUV_422_10BIT_BE;
-
 	stParamVal.valueU64 = outParams->snCount;
 	StSetParam(ST_SN_COUNT, stParamVal);
+	stParamVal.valueU64 = outParams->sn30Count;
+	StSetParam(ST_SN30_COUNT, stParamVal);
+	stParamVal.valueU64 = outParams->sn40Count;
+	StSetParam(ST_SN40_COUNT, stParamVal);
+	stParamVal.strPtr = '\0';
+	StSetParam(ST_P_PORT, stParamVal);
+	StSetParam(ST_R_PORT, stParamVal);
 
 	char isIntel = 'a';
 	int32_t height = 0;
@@ -144,26 +197,37 @@ ParseArgs(int argc, char *argv[], st_user_params_t *outParams)
 	while (1)
 	{
 		int optIdx = 0;
-		static struct option options[] = { { "ip", required_argument, 0, 1 },
-										   { "sip", required_argument, 0, 2 },
-										   { "rx", no_argument, 0, 3 },
-										   { "tx", no_argument, 0, 4 },
-										   { "rgba", no_argument, 0, 5 },
-										   { "yuv10be", no_argument, 0, 6 },
-										   { "ebu", no_argument, 0, 'e' },
-										   { "log_level", required_argument, 0, 'l' },
-										   { "s_count", required_argument, 0, 's' },
-										   { "ptpid", required_argument, 0, MAKE_WORD_FROM_CHAR('p','i') },
-										   { "ptpam", required_argument, 0, MAKE_WORD_FROM_CHAR('p','m')  },
-										   { "ptpstp", required_argument, 0, MAKE_WORD_FROM_CHAR('p','s')  },
-										   { "mac", required_argument, 0, 'm' },
-										   { "o_port", required_argument, 0, 'o' },
-										   { "in_port", required_argument, 0, 'i' },
-										   { "format", required_argument, 0, 'f' },
-										   { "port", required_argument, 0, 'p' },
-										   { "help", no_argument, 0, 'h' },
-										   { "version", no_argument, 0, 'v' },
-										   { 0, 0, 0, 0 } };
+		static struct option options[]
+			= { { "ip", required_argument, 0, 1 },
+				{ "sip", required_argument, 0, 2 },
+				{ "rx", no_argument, 0, 3 },
+				{ "tx", no_argument, 0, 4 },
+				{ "rip", required_argument, 0, 7 },
+				{ "rsip", required_argument, 0, 8 },
+				{ "display", no_argument, 0, 9 },
+				{ "ebu", no_argument, 0, 'e' },
+				{ "log_level", required_argument, 0, 'l' },
+				{ "s_count", required_argument, 0, 's' },
+				{ "s30_count", required_argument, 0, MAKE_WORD_FROM_CHAR('s', '3') },
+				{ "s40_count", required_argument, 0, MAKE_WORD_FROM_CHAR('s', '4') },
+				{ "app_scid", required_argument, 0, 'c' },
+				{ "ptpid", required_argument, 0, MAKE_WORD_FROM_CHAR('p', 'i') },
+				{ "ptpam", required_argument, 0, MAKE_WORD_FROM_CHAR('p', 'm') },
+				{ "ptpstp", required_argument, 0, MAKE_WORD_FROM_CHAR('p', 's') },
+				{ "mac", required_argument, 0, 'm' },
+				{ "p_port", required_argument, 0, 'o' },
+				{ "r_port", required_argument, 0, 'i' },
+				{ "audio", required_argument, 0, 'a' },
+				{ "format", required_argument, 0, 'f' },
+				{ "port", required_argument, 0, 'p' },
+				{ "videoFile", required_argument, 0, MAKE_WORD_FROM_CHAR('v', 'f') },
+				{ "audioFile", required_argument, 0, MAKE_WORD_FROM_CHAR('a', 'f') },
+				{ "ancFile", required_argument, 0, MAKE_WORD_FROM_CHAR('c', 'f') },
+				{ "bulk_num", required_argument, 0, MAKE_WORD_FROM_CHAR('b', 'n') },
+				{ "audioFrame", required_argument, 0, MAKE_WORD_FROM_CHAR('a', 's') },
+				{ "help", no_argument, 0, 'h' },
+				{ "version", no_argument, 0, 'v' },
+				{ 0, 0, 0, 0 } };
 
 		c = getopt_long_only(argc, argv, "hv", options, &optIdx);
 
@@ -173,41 +237,65 @@ ParseArgs(int argc, char *argv[], st_user_params_t *outParams)
 		switch (c)
 		{
 		case 1:
-			if (inet_pton(AF_INET, optarg, outParams->ipAddr) != 1)
+			if (inet_pton(AF_INET, optarg, outParams->ipAddr[ST_PPORT]) != 1)
 			{
 				rte_exit(127, "%s is not IP\n", optarg);
 			}
-			memcpy((uint8_t *)&stParamVal.valueU32, outParams->ipAddr, 4);
+			memcpy((uint8_t *)&stParamVal.valueU32, outParams->ipAddr[ST_PPORT], 4);
 			StSetParam(ST_DESTINATION_IP, stParamVal);
 			break;
 
 		case 2:
-			if (inet_pton(AF_INET, optarg, outParams->sipAddr) != 1)
+			if (inet_pton(AF_INET, optarg, outParams->sipAddr[ST_PPORT]) != 1)
 			{
 				rte_exit(127, "%s is not IP\n", optarg);
 			}
-			memcpy((uint8_t *)&stParamVal.valueU32, outParams->sipAddr, 4);
+			memcpy((uint8_t *)&stParamVal.valueU32, outParams->sipAddr[ST_PPORT], 4);
 			StSetParam(ST_SOURCE_IP, stParamVal);
 			break;
 
 		case 3:
 			outParams->rxOnly = 1;
+			outParams->txOnly = 0;
 			stParamVal.valueU64 = 1;
 			StSetParam(ST_RX_ONLY, stParamVal);
+			stParamVal.valueU64 = 0;
+			StSetParam(ST_TX_ONLY, stParamVal);
 			break;
 
 		case 4:
 			outParams->txOnly = 1;
+			outParams->rxOnly = 0;
 			stParamVal.valueU64 = 1;
 			StSetParam(ST_TX_ONLY, stParamVal);
+			stParamVal.valueU64 = 0;
+			StSetParam(ST_RX_ONLY, stParamVal);
 			break;
 
-		case 5:
-			outParams->bufFormat = ST21_BUF_FMT_RGBA_8BIT;
+		case 7:
+			if (inet_pton(AF_INET, optarg, outParams->ipAddr[ST_RPORT]) != 1)
+			{
+				rte_exit(127, "%s is not IP\n", optarg);
+			}
+			memcpy((uint8_t *)&stParamVal.valueU32, outParams->ipAddr[ST_RPORT], 4);
+			StSetParam(ST_RDESTINATION_IP, stParamVal);
 			break;
 
-		case 6:
-			outParams->bufFormat = ST21_BUF_FMT_YUV_422_10BIT_BE;
+		case 8:
+			if (inet_pton(AF_INET, optarg, outParams->sipAddr[ST_RPORT]) != 1)
+			{
+				rte_exit(127, "%s is not IP\n", optarg);
+			}
+			memcpy((uint8_t *)&stParamVal.valueU32, outParams->sipAddr[ST_RPORT], 4);
+			StSetParam(ST_RSOURCE_IP, stParamVal);
+			break;
+
+		case 'c':
+			outParams->appSCoreId = atoi(optarg);
+			break;
+
+		case 9:
+			outParams->showframeInTx = 1;
 			break;
 
 		case 'e':
@@ -224,61 +312,74 @@ ParseArgs(int argc, char *argv[], st_user_params_t *outParams)
 			stParamVal.valueU64 = outParams->snCount;
 			StSetParam(ST_SN_COUNT, stParamVal);
 			break;
+		case MAKE_WORD_FROM_CHAR('s', '3'):
+			outParams->sn30Count = atoi(optarg);
+			stParamVal.valueU64 = outParams->sn30Count;
+			StSetParam(ST_SN30_COUNT, stParamVal);
+			break;
 
-		case MAKE_WORD_FROM_CHAR('p','i'):  // ptp clock id
+		case MAKE_WORD_FROM_CHAR('s', '4'):
+			outParams->sn40Count = atoi(optarg);
+			stParamVal.valueU64 = outParams->sn40Count;
+			StSetParam(ST_SN40_COUNT, stParamVal);
+			break;
+
+		case MAKE_WORD_FROM_CHAR('p', 'i'):	 // ptp clock id
 		{
 			st_ptp_clock_id_t clockId;
 			if (sscanf(optarg, "%2hhx%2hhx%2hhx.%2hhx%2hhx.%2hhx%2hhx%2hhx", clockId.id + 0,
-				clockId.id + 1, clockId.id + 2, clockId.id + 3, clockId.id + 4,
-				clockId.id + 5, clockId.id + 6, clockId.id + 7)
+					   clockId.id + 1, clockId.id + 2, clockId.id + 3, clockId.id + 4,
+					   clockId.id + 5, clockId.id + 6, clockId.id + 7)
 				== 8)
 			{
-				stParamVal.ptr = (void*)&clockId;
-				StPtpSetParam(ST_PTP_CLOCK_ID,stParamVal);
+				stParamVal.ptr = (void *)&clockId;
+				StPtpSetParam(ST_PTP_CLOCK_ID, stParamVal);
 				stParamVal.valueU32 = ST_PTP_SET_MASTER;
-				StPtpSetParam(ST_PTP_CHOOSE_CLOCK_MODE,stParamVal);
+				StPtpSetParam(ST_PTP_CHOOSE_CLOCK_MODE, stParamVal);
 			}
 			break;
 		}
-		case MAKE_WORD_FROM_CHAR('p','m'):
-        {
-            char m = optarg[0];
-            if (m != 'm' && m != 'u') break;
-            stParamVal.valueU32 = m == 'm'? ST_PTP_MULTICAST_ADDR: ST_PTP_UNICAST_ADDR;
-            StPtpSetParam(ST_PTP_ADDR_MODE, stParamVal);
-            break;
-        }
-		case MAKE_WORD_FROM_CHAR('p','s'):
-        {
-            char s = optarg[0];
-            if (s != 'o' && s!= 't') break;
-            stParamVal.valueU32 = s == 't'? ST_PTP_TWO_STEP: ST_PTP_ONE_STEP;
-            StPtpSetParam(ST_PTP_STEP_MODE, stParamVal);
-            break;
-        }
+		case MAKE_WORD_FROM_CHAR('p', 'm'):
+		{
+			char m = optarg[0];
+			if (m != 'm' && m != 'u')
+				break;
+			stParamVal.valueU32 = m == 'm' ? ST_PTP_MULTICAST_ADDR : ST_PTP_UNICAST_ADDR;
+			StPtpSetParam(ST_PTP_ADDR_MODE, stParamVal);
+			break;
+		}
+		case MAKE_WORD_FROM_CHAR('p', 's'):
+		{
+			char s = optarg[0];
+			if (s != 'o' && s != 't')
+				break;
+			stParamVal.valueU32 = s == 't' ? ST_PTP_TWO_STEP : ST_PTP_ONE_STEP;
+			StPtpSetParam(ST_PTP_STEP_MODE, stParamVal);
+			break;
+		}
+
+		case MAKE_WORD_FROM_CHAR('b', 'n'):
+			stParamVal.valueU64 = atoi(optarg);
+			StSetParam(ST_BULK_NUM, stParamVal);
+			break;
 		case 'm':
-			if (sscanf(optarg, "%hhx:%hhx:%hhx:%hhx:%hhx:%hhx", &outParams->macAddr[0],
-				&outParams->macAddr[1], &outParams->macAddr[2], &outParams->macAddr[3],
-				&outParams->macAddr[4], &outParams->macAddr[5])
-				== 6)
-			{
-				memcpy(&stParamVal.valueU64, outParams->macAddr, 6);
-				StSetParam(ST_MAC, stParamVal);
-			}
+			sscanf(optarg, "%hhx:%hhx:%hhx:%hhx:%hhx:%hhx", &outParams->macAddr[ST_PPORT][0],
+				   &outParams->macAddr[ST_PPORT][1], &outParams->macAddr[ST_PPORT][2],
+				   &outParams->macAddr[ST_PPORT][3], &outParams->macAddr[ST_PPORT][4],
+				   &outParams->macAddr[ST_PPORT][5]);
 			break;
 
 		case 'o':
-			outParams->outPortName = optarg;
-			stParamVal.strPtr = outParams->outPortName;
-			StSetParam(ST_OUT_PORT, stParamVal);
+			outParams->pPortName = optarg;
+			stParamVal.strPtr = outParams->pPortName;
+			StSetParam(ST_P_PORT, stParamVal);
 			break;
 
 		case 'i':
-			outParams->inPortName = optarg;
-			stParamVal.strPtr = outParams->inPortName;
-			StSetParam(ST_IN_PORT, stParamVal);
+			outParams->rPortName = optarg;
+			stParamVal.strPtr = outParams->rPortName;
+			StSetParam(ST_R_PORT, stParamVal);
 			break;
-
 		case 'f':
 		{
 			char interlaced;
@@ -305,7 +406,8 @@ ParseArgs(int argc, char *argv[], st_user_params_t *outParams)
 					outParams->fmtIndex = (isIntel == 'i') ? 2 : 5;
 					break;
 				}
-				switch (interlaced) {
+				switch (interlaced)
+				{
 				default:
 					rte_exit(127, "Invalid interlaced used, allowed: i, p\n");
 				case 'i':
@@ -334,9 +436,37 @@ ParseArgs(int argc, char *argv[], st_user_params_t *outParams)
 		}
 		break;
 
+		case 'a':
+			stParamVal.valueU64 = 0;
+			StSetParam(ST_AUDIOFMT_INDEX, stParamVal);
+
 		case 'p':
 			outParams->udpPort = atoi(optarg);
 			break;
+
+		case MAKE_WORD_FROM_CHAR('v', 'f'):
+			outParams->videoFileName = optarg;
+			outParams->bufFormat = ST21_BUF_FMT_YUV_422_10BIT_BE;
+			break;
+
+		case MAKE_WORD_FROM_CHAR('a', 'f'):
+			outParams->audioFileName = optarg;
+			break;
+
+		case MAKE_WORD_FROM_CHAR('c', 'f'):
+			outParams->anciliaryFileName = optarg;
+			break;
+
+		case MAKE_WORD_FROM_CHAR('a', 's'):
+		{
+			int userArg_audioFrameSize = atoi(optarg);
+			if ((userArg_audioFrameSize > 0) && (userArg_audioFrameSize <= ST_MAX_AUDIO_PKT_SIZE))
+			{
+				stParamVal.valueU32 = outParams->audioFrameSize = (uint16_t)userArg_audioFrameSize;
+				StSetParam(ST_AUDIO_FRAME_SIZE, stParamVal);
+			}
+		}
+		break;
 
 		case 'h':
 			PrintHelp();
@@ -356,6 +486,11 @@ ParseArgs(int argc, char *argv[], st_user_params_t *outParams)
 		}
 		nargs = optind;
 	}
+
+	int numPorts = outParams->rPortName ? 2 : 1;
+	stParamVal.valueU32 = outParams->numPorts = numPorts;
+	StSetParam(ST_NUM_PORT, stParamVal);
+
 	/* Verify if args were consistent
 	 */
 	if (outParams->fmtIndex >= ST21_FMT_MAX)
@@ -364,7 +499,7 @@ ParseArgs(int argc, char *argv[], st_user_params_t *outParams)
 		rte_exit(ST_FMT_ERR_BAD_HEIGHT, "Invalid Format ID used");
 	}
 	RTE_LOG(INFO, USER1, "Chosen FMT is %s%d%s%d\n", (isIntel == 'i') ? "intel " : "all ", height,
-		(outParams->interlaced) ? "i" : "p", outParams->rate);
+			(outParams->interlaced) ? "i" : "p", outParams->rate);
 
 	if (nargs == argc)
 	{
@@ -374,8 +509,8 @@ ParseArgs(int argc, char *argv[], st_user_params_t *outParams)
 }
 
 st_status_t
-InitFormat(st_user_params_t userParams, st21_format_t **txFmtOut, st21_format_t **rxFmtOut,
-		   st_device_t *confTx, st_device_t *confRx)
+InitSt21Format(st_user_params_t userParams, st21_format_t **txFmtOut, st21_format_t **rxFmtOut,
+			   st_device_t *confTx, st_device_t *confRx)
 {
 	st21_format_t *txFmt = NULL;
 	st21_format_t *rxFmt = NULL;
@@ -459,11 +594,92 @@ InitFormat(st_user_params_t userParams, st21_format_t **txFmtOut, st21_format_t 
 			break;
 		}
 	}
-
+	txFmt->frameTime = 1000000000.0 * txFmt->frmRateDen / txFmt->frmRateMul;
+	rxFmt->frameTime = 1000000000.0 * rxFmt->frmRateDen / rxFmt->frmRateMul;
 	*txFmtOut = txFmt;
 	*rxFmtOut = rxFmt;
 
 	return ST_OK;
+}
+
+st_status_t
+InitSt30Format(st_user_params_t userParams, st30_format_t **txFmtOut, st30_format_t **rxFmtOut)
+{
+	if (userParams.sn30Count > 0)
+	{
+		/* 
+		* Provide frame size based on user input
+		*/
+		*txFmtOut = &stereoPcm24bFmt;
+		*rxFmtOut = &stereoPcm24bFmt;
+	}
+	return ST_OK;
+}
+
+st_status_t
+InitSt40Format(st_user_params_t userParams, st40_format_t **txFmtOut, st40_format_t **rxFmtOut)
+{
+	if (userParams.sn40Count > 0)
+	{
+		*txFmtOut = &ancillaryDataFmt;
+		*rxFmtOut = &ancillaryDataFmt;
+	}
+	return ST_OK;
+}
+
+char *
+SelectFile(uint8_t bufFormat, char *userFileName)
+{
+	if (userFileName != NULL)
+		return userFileName;
+	else
+	{
+		switch (bufFormat)
+		{
+		case ST30_BUF_FMT_WAV:
+			return ST_DEFAULT_AUDIO;
+		case ST21_BUF_FMT_RGBA_8BIT:
+			return ST_DEFAULT_VIDEO_RGBA;
+		case ST21_BUF_FMT_YUV_422_10BIT_BE:
+			return ST_DEFAULT_VIDEO_YUV;
+		case ST40_BUF_FMT_CLOSED_CAPTIONS:
+			return ST_DEFAULT_ANCILIARY;
+		}
+	}
+	return NULL;
+}
+
+void
+SetupAppFmt(st21_format_t *vfmt, st30_format_t *afmt, st40_format_t *ancfmt)
+{
+	int i;
+	st_format_t *fmt;
+
+	/* TODO
+      * We assume all video format is the same now, and need to enhance it to allow different formats
+      */
+	for (i = 0; i < rxtx_main.st21_session_count; i++)
+	{
+		fmt = &rxtx_main.fmt_lists[i];
+		fmt->mtype = ST_ESSENCE_VIDEO;
+		fmt->v = *vfmt;
+	}
+
+	for (i = 0; i < rxtx_main.st30_session_count; i++)
+	{
+		fmt = &rxtx_main.fmt_lists[i + rxtx_main.st21_session_count];
+		fmt->mtype = ST_ESSENCE_AUDIO;
+		fmt->a = *afmt;
+	}
+
+	for (i = 0; i < rxtx_main.st40_session_count; i++)
+	{
+		fmt = &rxtx_main.fmt_lists[i + rxtx_main.st21_session_count + rxtx_main.st30_session_count];
+		fmt->mtype = ST_ESSENCE_ANC;
+		fmt->anc = *ancfmt;
+	}
+
+	return;
 }
 
 st_status_t
@@ -474,13 +690,17 @@ InitTransmitter(st_user_params_t userParams, st_device_t **txDevOut, st_device_t
 	st_device_t *txDev = NULL;
 
 	/// Create TX device
-	stat = StCreateDevice(&confTx, userParams.outPortName, userParams.outPortName, &txDev);
+	stat = StCreateDevice(&confTx, userParams.pPortName, userParams.rPortName, &txDev);
 	if (stat != ST_OK)
 	{
 		RTE_LOG(ERR, USER1, "StCreateDevice TX FAILED. ErrNo: %d\n", stat);
 		return stat;
 	}
 	RTE_LOG(INFO, USER1, "Create TX device done\n");
+
+	rxtx_main.st21_session_count = txDev->snCount;
+	rxtx_main.st30_session_count = txDev->sn30Count;
+	rxtx_main.st40_session_count = txDev->sn40Count;
 
 	/// Return handle to the created device
 	*txDevOut = txDev;
@@ -496,13 +716,17 @@ InitReceiver(st_user_params_t userParams, st_device_t **rxDevOut, st_device_t co
 	st_device_t *rxDev = NULL;
 
 	/// Create RX device
-	stat = StCreateDevice(&confRx, userParams.inPortName, userParams.inPortName, &rxDev);
+	stat = StCreateDevice(&confRx, userParams.pPortName, userParams.rPortName, &rxDev);
 	if (stat != ST_OK)
 	{
 		RTE_LOG(ERR, USER1, "StCreateDevice RX FAILED. ErrNo: %d\n", stat);
 		return stat;
 	}
 	RTE_LOG(INFO, USER1, "Create RX device done\n");
+
+	rxtx_main.st21_session_count = rxDev->snCount;
+	rxtx_main.st30_session_count = rxDev->sn30Count;
+	rxtx_main.st40_session_count = rxDev->sn40Count;
 
 	/// Return handle to the created device
 	*rxDevOut = rxDev;
@@ -511,79 +735,117 @@ InitReceiver(st_user_params_t userParams, st_device_t **rxDevOut, st_device_t co
 }
 
 st_status_t
-StartTransmitter(st_user_params_t userParams, st21_format_t *txFmt, st21_session_t **txSnOut,
-				 st_device_t *txDev)
+StartTransmitter(st_user_params_t userParams, st_session_t **txSnOut, st_device_t *txDev)
 {
 	st_status_t stat = ST_OK;
+	strtp_send_app_t *txApp = NULL;
+	char *fileName = NULL;
 
-	st21_session_t *txSn[txDev->snCount];
-	int isSendView = 0;
+	st_session_t *txSn[txDev->snCount + txDev->sn30Count + txDev->sn40Count];
+	bool isSendView = DoesGuiExist() && (userParams.showframeInTx == 1);
+
+	AppInitAffinity(userParams.appSCoreId);
 
 	/// Loop for create sessions
-	for (uint32_t i = 0; (i < txDev->snCount) && (userParams.rxOnly == 0); i++)
+	for (uint32_t i = 0;
+		 (i < txDev->snCount + txDev->sn30Count + txDev->sn40Count) && (userParams.rxOnly == 0);
+		 i++)
 	{
-		/// Input parameters used by \ref St21CreateSession
-		st21_session_t txSnIn = { 0 };
+		/// Input parameters used by \ref StCreateSession
+		st_session_t txSnIn = { 0 };
 		st_addr_t txAddr;
 		txSn[i] = NULL;
-		rvrtp_send_app_t *txApp = NULL;
 
-		txSnIn.nicPort[0] = txDev->port[0];
-		txSnIn.nicPort[1] = txDev->port[1];
-		txSnIn.caps = ST21_SN_SINGLE_PATH | ST21_SN_UNICAST | ST21_SN_CONNECTLESS;
+		txSnIn.nicPort[ST_PPORT] = txDev->port[ST_PPORT];
+		txSnIn.nicPort[ST_RPORT] = txDev->port[ST_RPORT];
+		txSnIn.caps = ST_SN_DUAL_PATH | ST_SN_UNICAST | ST_SN_CONNECTLESS;
 		txSnIn.ssid = 0x123450 + i;
+		uint8_t bufFmt = 0;
+		if (i < txDev->snCount)
+		{
+			txSnIn.type = ST_ESSENCE_VIDEO;
+			bufFmt = userParams.bufFormat;
+			fileName = SelectFile(bufFmt, userParams.videoFileName);
+		}
+		else if (i >= txDev->snCount && i < (txDev->snCount + txDev->sn30Count))
+		{
+			txSnIn.type = ST_ESSENCE_AUDIO;
+			bufFmt = ST30_BUF_FMT_WAV;
+			fileName = SelectFile(bufFmt, userParams.audioFileName);
+		}
+		else if (i >= (txDev->snCount + txDev->sn30Count)
+				 && i < (txDev->snCount + txDev->sn30Count + txDev->sn40Count))
+		{
+			txSnIn.type = ST_ESSENCE_ANC;
+			bufFmt = ST40_BUF_FMT_CLOSED_CAPTIONS;
+			fileName = SelectFile(bufFmt, userParams.anciliaryFileName);
+		}
 
 		/// Create session with given parameters
-		stat = St21CreateSession(txDev, &txSnIn, txFmt, &txSn[i]);
+		stat = StCreateSession(txDev, &txSnIn, &rxtx_main.fmt_lists[i], &txSn[i]);
 		if (stat != ST_OK)
 		{
-			RTE_LOG(ERR, USER1, "St21CreateSession FAILED. ErrNo: %d\n", stat);
+			RTE_LOG(ERR, USER1, "StCreateSession FAILED. ErrNo: %d\n", stat);
 			return stat;
 		}
 
-		/// Input parameters used by \ref St21BindIpAddr
-		memset(&txAddr, 0, sizeof(txAddr));
-		txAddr.src.addr4.sin_family = AF_INET;
-		txAddr.src.addr4.sin_port = htons(userParams.udpPort + txSn[i]->timeslot);
-		txAddr.dst.addr4.sin_port = htons(userParams.udpPort + txSn[i]->timeslot);
-		memcpy((uint8_t *)&txAddr.src.addr4.sin_addr.s_addr, &userParams.sipAddr, 4);
-		memcpy((uint8_t *)&txAddr.dst.addr4.sin_addr.s_addr, &userParams.ipAddr, 4);
-
-		/// Bind IP addresses with proper MAC and fill addresses in the flow table
-		stat = St21BindIpAddr(txSn[i], &txAddr, 0);
-		if (stat != ST_OK)
+		for (int p = 0; p < userParams.numPorts; ++p)
 		{
-			RTE_LOG(ERR, USER1, "St21BindIpAddr FAILED. ErrNo: %d\n", stat);
-			return stat;
+			/// Input parameters used by \ref StBindIpAddr
+			memset(&txAddr, 0, sizeof(txAddr));
+			txAddr.src.addr4.sin_family = AF_INET;
+			txAddr.src.addr4.sin_port = htons(userParams.udpPort + i);
+			txAddr.dst.addr4.sin_port = htons(userParams.udpPort + i);
+
+			st_param_val_t sipAddr;
+
+			StGetParam((0 == p) ? ST_SOURCE_IP : ST_RSOURCE_IP, &sipAddr);
+
+			memcpy((uint8_t *)&txAddr.src.addr4.sin_addr.s_addr, &sipAddr.valueU32, 4);
+			memcpy((uint8_t *)&txAddr.dst.addr4.sin_addr.s_addr, &userParams.ipAddr[p], 4);
+
+			/// Bind IP addresses with proper MAC and fill addresses in the flow table
+			stat = StBindIpAddr(txSn[i], &txAddr, txDev->port[p]);
+			if (stat != ST_OK)
+			{
+				RTE_LOG(ERR, USER1, "StBindIpAddr FAILED. ErrNo: %d\n", stat);
+				return stat;
+			}
 		}
 
-		/// Get content prepare send mechanism and \ref St21RegisterProducer
-		stat = SendAppCreateProducer(txSn[i], userParams.bufFormat, userParams.fmtIndex, &txApp);
+		if (fileName == NULL)
+		{
+			RTE_LOG(ERR, USER1, "Input file not provided\n");
+			return ST_GENERAL_ERR;
+		}
+		/// Get content prepare send mechanism and \ref StRegisterProducer
+		stat = SendAppCreateProducer(txSn[i], bufFmt, fileName, &txApp);
 		if (stat != ST_OK)
 		{
 			RTE_LOG(ERR, USER1, "SendAppCreateProducer FAILED. ErrNo: %d\n", stat);
 			return stat;
 		}
+		txApp->index = i;
 
 		/// Create viewer to enable presenting transmitted content on the screen
-		txApp->view = NULL;
-		if (isSendView == 0)
+		txApp->videoStream = NULL;
+		if ((txSn[i]->type == ST_ESSENCE_VIDEO) && isSendView)
 		{
 			char label[256];
-			st21_format_t fmt;
-			snprintf(label, sizeof(label), "SENDER: ");
-			St21GetFormat(txSn[i], &fmt);
-			stat = CreateView(&txApp->view, label, userParams.bufFormat, fmt.width, fmt.height);
+			st_format_t vfmt;
+			snprintf(label, sizeof(label), "SENDER: %d", ntohs(txAddr.src.addr4.sin_port));
+			StGetFormat(txSn[i], &vfmt);
+			st21_format_t *fmt = &vfmt.v;
+			stat = AddStream(&txApp->videoStream, label, userParams.bufFormat, fmt->width,
+							 fmt->height);
 			if (stat != ST_OK)
 			{
 				RTE_LOG(ERR, USER1, "CreateView sender FAILED. ErrNo: %d\n", stat);
 				return stat;
 			}
-			ShowFrame(txApp->view, txApp->movie, 2);
-			isSendView = 1;
 		}
 
-		/// Set transmitter ready for sending by call \ref St21ProducerStartFrame
+		/// Set transmitter ready for sending by call \ref StProducerStartFrame
 		stat = SendAppStart(txSn[i], txApp);
 		if (stat != ST_OK)
 		{
@@ -607,72 +869,128 @@ StartTransmitter(st_user_params_t userParams, st21_format_t *txFmt, st21_session
 }
 
 st_status_t
-StartReceiver(st_user_params_t userParams, st21_format_t *rxFmt, st21_session_t **rxSnOut,
-			  st_device_t *rxDev, rvrtp_recv_app_t **rxAppOut)
+StartReceiver(st_user_params_t userParams, st_session_t **rxSnOut, st_device_t *rxDev,
+			  strtp_recv_app_t **rxAppOut)
 {
 	st_status_t stat = ST_OK;
+	st_session_t *rxSn[rxDev->snCount + rxDev->sn30Count + rxDev->sn40Count];
+	strtp_recv_app_t *rxApp[rxDev->snCount + rxDev->sn30Count + rxDev->sn40Count];
+	st_format_t vfmt;
 
-	st21_session_t *rxSn[rxDev->snCount];
-	rvrtp_recv_app_t *rxApp[rxDev->snCount];
+	vfmt.mtype = ST_ESSENCE_VIDEO;
+	bool isRxView = DoesGuiExist();
+
+	uint16_t portid;
+	RTE_ETH_FOREACH_DEV(portid)
+	{
+		struct rte_flow_error error;
+		/* iterate all the ports and enable flow for physical ports */
+		char busName[RTE_ETH_NAME_MAX_LEN] = { '\0' };
+		if (0 == rte_eth_dev_get_name_by_port(portid, busName))
+		{
+			if (strncmp("net_", busName, 4))
+			{
+				if (0 != rte_flow_flush(portid, &error))
+					RTE_LOG(ERR, USER1, "failed to flush rte_flow, %d:%s\n", portid, error.message);
+			}
+		}
+	}
+
+	AppInitAffinity(userParams.appSCoreId);
 
 	/// Loop for create sessions
-	for (uint32_t i = 0; (i < rxDev->snCount) && (userParams.txOnly == 0); i++)
+	for (uint32_t i = 0;
+		 (i < rxDev->snCount + rxDev->sn30Count + rxDev->sn40Count) && (userParams.txOnly == 0);
+		 i++)
 	{
-		/// Input parameters used by \ref St21CreateSession
-		st21_session_t rxSnIn = { 0 };
+		/// Input parameters used by \ref StCreateSession
+		st_session_t rxSnIn = { 0 };
 		st_addr_t rxAddr;
 		rxSn[i] = NULL;
 		rxApp[i] = NULL;
 
-		rxSnIn.nicPort[0] = rxDev->port[0];
-		rxSnIn.nicPort[1] = rxDev->port[1];
-		rxSnIn.caps = ST21_SN_SINGLE_PATH | ST21_SN_UNICAST | ST21_SN_CONNECTLESS;
+		rxSnIn.nicPort[ST_PPORT] = rxDev->port[ST_PPORT];
+		rxSnIn.nicPort[ST_RPORT] = rxDev->port[ST_RPORT];
+		rxSnIn.caps = ST_SN_DUAL_PATH | ST_SN_UNICAST | ST_SN_CONNECTLESS;
 		rxSnIn.ssid = 0x123450 + i;
+
+		uint8_t bufFmt = 0;
+		if (i < rxDev->snCount)
+		{
+			rxSnIn.type = ST_ESSENCE_VIDEO;
+			bufFmt = userParams.bufFormat;
+		}
+		else if (i >= rxDev->snCount && i < (rxDev->snCount + rxDev->sn30Count))
+		{
+			rxSnIn.type = ST_ESSENCE_AUDIO;
+			bufFmt = ST30_BUF_FMT_WAV;
+		}
+		else if (i >= (rxDev->snCount + rxDev->sn30Count)
+				 && i < (rxDev->snCount + rxDev->sn30Count + rxDev->sn40Count))
+		{
+			rxSnIn.type = ST_ESSENCE_ANC;
+			bufFmt = ST40_BUF_FMT_CLOSED_CAPTIONS;
+		}
+
 		rxSnIn.timeslot = i;
 
 		/// Create session with given parameters
-		stat = St21CreateSession(rxDev, &rxSnIn, rxFmt, &rxSn[i]);
+		stat = StCreateSession(rxDev, &rxSnIn, &rxtx_main.fmt_lists[i], &rxSn[i]);
 		if (stat != ST_OK)
 		{
-			RTE_LOG(ERR, USER1, "St21CreateSession FAILED. ErrNo: %d\n", stat);
+			RTE_LOG(ERR, USER1, "StCreateSession FAILED. ErrNo: %d\n", stat);
 			return stat;
 		}
+		rxSn[i]->timeslot = rxSnIn.timeslot;
 
-		/// Input parameters used by \ref St21BindIpAddr
-		memset(&rxAddr, 0, sizeof(rxAddr));
-		rxAddr.src.addr4.sin_family = AF_INET;
-		rxAddr.src.addr4.sin_port = htons(userParams.udpPort + rxSn[i]->timeslot);
-		rxAddr.dst.addr4.sin_port = htons(userParams.udpPort + rxSn[i]->timeslot);
-		memcpy((uint8_t *)&rxAddr.src.addr4.sin_addr.s_addr, &userParams.sipAddr, 4);
-		memcpy((uint8_t *)&rxAddr.dst.addr4.sin_addr.s_addr, &userParams.ipAddr, 4);
-
-		/// Bind IP addresses with proper MAC and fill addresses in the flow table
-		stat = St21BindIpAddr(rxSn[i], &rxAddr, 0);
-		if (stat != ST_OK)
+		for (int p = 0; p < userParams.numPorts; ++p)
 		{
-			RTE_LOG(ERR, USER1, "St21BindIpAddr FAILED. ErrNo: %d\n", stat);
-			return stat;
+			/// Input parameters used by \ref StBindIpAddr
+			memset(&rxAddr, 0, sizeof(rxAddr));
+			rxAddr.src.addr4.sin_family = AF_INET;
+			rxAddr.src.addr4.sin_port = htons(userParams.udpPort + rxSn[i]->timeslot);
+			rxAddr.dst.addr4.sin_port = htons(userParams.udpPort + rxSn[i]->timeslot);
+
+			st_param_val_t sipAddr;
+
+			StGetParam((0 == p) ? ST_SOURCE_IP : ST_RSOURCE_IP, &sipAddr);
+
+			memcpy((uint8_t *)&rxAddr.src.addr4.sin_addr.s_addr, &sipAddr, 4);
+			memcpy((uint8_t *)&rxAddr.dst.addr4.sin_addr.s_addr, &userParams.ipAddr[p], 4);
+
+			/// Bind IP addresses with proper MAC and fill addresses in the flow table
+			stat = StBindIpAddr(rxSn[i], &rxAddr, rxDev->port[p]);
+			if (stat != ST_OK)
+			{
+				RTE_LOG(ERR, USER1, "StBindIpAddr FAILED. ErrNo: %d\n", stat);
+				return stat;
+			}
 		}
-		/// Prepare receive mechanism and \ref St21RegisterConsumer
-		stat = RecvAppCreateConsumer(rxSn[i], userParams.bufFormat, &rxApp[i]);
+		/// Prepare receive mechanism and \ref StRegisterConsumer
+		stat = RecvAppCreateConsumer(rxSn[i], bufFmt, &rxApp[i]);
 		if (stat != ST_OK)
 		{
 			RTE_LOG(ERR, USER1, "RecvAppCreateConsumer FAILED. ErrNo: %d\n", stat);
 			return stat;
 		}
 
-		/// Create viewer to enable presenting transmitted content on the screen
-		char label[256];
-		st21_format_t fmt;
-		snprintf(label, sizeof(label), "RECEIVER: ");
-		St21GetFormat(rxSn[i], &fmt);
-		stat = CreateView(&rxApp[i]->view, label, userParams.bufFormat, fmt.width, fmt.height);
-		if (stat != ST_OK)
+		if ((rxSn[i]->type == ST_ESSENCE_VIDEO) && isRxView)
 		{
-			RTE_LOG(ERR, USER1, "CreateView FAILED. ErrNo: %d\n", stat);
-			return stat;
-		}
+			/// Create viewer to enable presenting transmitted content on the screen
+			rxApp[i]->videoStream = NULL;
+			char label[256];
 
+			snprintf(label, sizeof(label), "RECEIVER: %d", ntohs(rxAddr.src.addr4.sin_port));
+			StGetFormat(rxSn[i], &vfmt);
+			st21_format_t *fmt = &vfmt.v;
+			stat = AddStream(&rxApp[i]->videoStream, label, userParams.bufFormat, fmt->width,
+							 fmt->height);
+			if (stat != ST_OK)
+			{
+				RTE_LOG(ERR, USER1, "AddStream receiver FAILED. ErrNo: %d\n", stat);
+				return stat;
+			}
+		}
 		/// Set receiver ready for receive by call \ref St21ConsumerStartFrame
 		stat = RecvAppStart(rxSn[i], rxApp[i]);
 		if (stat != ST_OK)
@@ -696,7 +1014,7 @@ StartReceiver(st_user_params_t userParams, st21_format_t *rxFmt, st21_session_t 
 }
 
 st_status_t
-FinishTransmitter(st21_session_t **txSnOut, uint32_t snTxCount)
+FinishTransmitter(st_session_t **txSnOut, uint32_t snTxCount)
 {
 	st_status_t stat = ST_OK;
 
@@ -704,17 +1022,17 @@ FinishTransmitter(st21_session_t **txSnOut, uint32_t snTxCount)
 	for (uint32_t i = 0; i < snTxCount; i++)
 	{
 		/// Finish sending frames
-		stat = St21ProducerStop(txSnOut[i]);
+		stat = StProducerStop(txSnOut[i]);
 		if (stat != ST_OK)
 		{
 			RTE_LOG(ERR, USER1, "St21ProducerStop FAILED. ErrNo: %d\n", stat);
 			return stat;
 		}
 		/// Destroy transmitter session
-		stat = St21DestroySession(txSnOut[i]);
+		stat = StDestroySession(txSnOut[i]);
 		if (stat != ST_OK)
 		{
-			RTE_LOG(ERR, USER1, "St21DestroySession FAILED. ErrNo: %d\n", stat);
+			RTE_LOG(ERR, USER1, "StDestroySession FAILED. ErrNo: %d\n", stat);
 			return stat;
 		}
 	}
@@ -725,7 +1043,7 @@ FinishTransmitter(st21_session_t **txSnOut, uint32_t snTxCount)
 }
 
 st_status_t
-FinishReceiver(st21_session_t **rxSnOut, uint32_t snRxCount, rvrtp_recv_app_t **app)
+FinishReceiver(st_session_t **rxSnOut, uint32_t snRxCount, strtp_recv_app_t **app)
 {
 	st_status_t stat = ST_OK;
 
@@ -740,10 +1058,10 @@ FinishReceiver(st21_session_t **rxSnOut, uint32_t snRxCount, rvrtp_recv_app_t **
 			return stat;
 		}
 		/// Destroy receiver session
-		stat = St21DestroySession(rxSnOut[i]);
+		stat = StDestroySession(rxSnOut[i]);
 		if (stat != ST_OK)
 		{
-			RTE_LOG(ERR, USER1, "St21DestroySession FAILED. ErrNo: %d\n", stat);
+			RTE_LOG(ERR, USER1, "StDestroySession FAILED. ErrNo: %d\n", stat);
 			return stat;
 		}
 	}
@@ -751,6 +1069,52 @@ FinishReceiver(st21_session_t **rxSnOut, uint32_t snRxCount, rvrtp_recv_app_t **
 	// Destroy RX session end
 
 	return stat;
+}
+
+// Function created because cleaning huge pages using rte_eal_cleanup() doesn't work properly.
+st_status_t
+clearHugePages()
+{
+	st_status_t status = ST_OK;
+	char filepath[280];
+	char fileName[35];
+	DIR *d;
+	struct dirent *dir;
+
+	d = opendir("/dev/hugepages/");
+	snprintf(fileName, 35, "%smap_", ST_PREFIX_APPNAME);
+
+	if (d)
+	{
+		while ((dir = readdir(d)) != NULL)
+		{
+			snprintf(filepath, 280, "/dev/hugepages/%s", dir->d_name);
+			char *ret = strstr(filepath, fileName);
+			if (ret != NULL)
+			{
+				status = access(filepath, W_OK);
+				if (status)
+				{
+					RTE_LOG(ERR, USER1, "Access to the rtemap (%s) failed! %s\n", filepath,
+							strerror(errno));
+					return ST_GENERAL_ERR;
+				}
+
+				status = remove(filepath);
+				if (status != ST_OK)
+				{
+					RTE_LOG(ERR, USER1, "Attempting to free Hugepages failed. Err: %s\n",
+							strerror(errno));
+					return ST_GENERAL_ERR;
+				}
+
+				RTE_LOG(WARNING, USER1, "remove old mmap file (%s)\n", filepath);
+			}
+		}
+		closedir(d);
+	}
+
+	return status;
 }
 
 /** Main point of the entire solution
@@ -761,16 +1125,23 @@ main(int argc, char *argv[])
 {
 	st_status_t status = ST_OK;
 
-	/// Initialization of variables
+	/* Initialization of variables
+     */
 	st_user_params_t userParams = { 0 };
 	uint32_t snTxCount = 0;
 	uint32_t snRxCount = 0;
 	st21_format_t *txFmt = NULL;
 	st21_format_t *rxFmt = NULL;
+	st30_format_t *txAfmt = NULL;
+	st30_format_t *rxAfmt = NULL;
+	st40_format_t *txAncFmt = NULL;
+	st40_format_t *rxAncFmt = NULL;
 	st_device_t *txDev = NULL;
 	st_device_t *rxDev = NULL;
 
-	/// STEP 1 - Preparing configuration for device initialization
+	/*
+	 * STEP 1 - Preparing configuration for device initialization
+	 */
 	st_device_t confRx = {
 		.type = ST_DEV_TYPE_CONSUMER,
 		.exactRate = ST_DEV_RATE_P_29_97,
@@ -779,6 +1150,29 @@ main(int argc, char *argv[])
 		.type = ST_DEV_TYPE_PRODUCER,
 		.exactRate = ST_DEV_RATE_P_29_97,
 	};
+
+	memset(&rxtx_main, 0, sizeof(rxtxapp_main_t));
+
+	st_param_val_t stParamVal;
+	userParams.rate = 29;
+	userParams.fmtIndex = 1;
+	userParams.udpPort = 10000;
+	/* Default configuration is single Video session, no audio, no ancillary */
+	userParams.snCount = 1;
+	userParams.sn30Count = 0;
+	userParams.sn40Count = 0;
+	userParams.bufFormat = ST21_BUF_FMT_YUV_422_10BIT_BE;
+	stParamVal.valueU64 = userParams.fmtIndex;
+	StSetParam(ST_FMT_INDEX, stParamVal);
+
+	RTE_LOG(INFO, USER1, "Application %s started, cleaning previously used hugepages if any!\n",
+			ST_PREFIX_APPNAME);
+	status = clearHugePages();
+	if (ST_OK != status)
+	{
+		RTE_LOG(ERR, USER1, "Failed to cleanup used Pages. ErrNo: %d\n", status);
+		return status;
+	}
 
 	/** STEP 2 - Parsing command line arguments
 	* This function is responsible for parsing arguments from command line,
@@ -792,8 +1186,14 @@ main(int argc, char *argv[])
 	*/
 	ParseArgs(argc, argv, &userParams);
 
+	rxtx_main.st21_session_count = userParams.snCount;
+	rxtx_main.st30_session_count = userParams.sn30Count;
+	rxtx_main.st40_session_count = userParams.sn40Count;
+	rxtx_main.fmt_count = rxtx_main.st30_session_count + rxtx_main.st21_session_count
+						  + rxtx_main.st40_session_count;
+
 	/** STEP 3 - Select proper format for transmit and receive.
-	* Format is related with image parameters such as width and heigh of image, pixel format etc.
+	* Format is related with different essences, such as image parameters, audio parameters etc.
 	* Params:
 	*	@param userParams - structure of parameters (type: \ref st_user_params_t) filled and returned after parse args
 	*	@param txFmt - container prepared for media related data, intended for transmitter
@@ -805,7 +1205,21 @@ main(int argc, char *argv[])
 	*
 	* @return \ref st_status_t
 	*/
-	status = InitFormat(userParams, &txFmt, &rxFmt, &confTx, &confRx);
+	status = InitSt21Format(userParams, &txFmt, &rxFmt, &confTx, &confRx);
+	if (status != ST_OK)
+	{
+		RTE_LOG(ERR, USER1, "FormatInit FAILED. ErrNo: %d\n", status);
+		return status;
+	}
+
+	status = InitSt30Format(userParams, &txAfmt, &rxAfmt);
+	if (status != ST_OK)
+	{
+		RTE_LOG(ERR, USER1, "FormatInit FAILED. ErrNo: %d\n", status);
+		return status;
+	}
+
+	status = InitSt40Format(userParams, &txAncFmt, &rxAncFmt);
 	if (status != ST_OK)
 	{
 		RTE_LOG(ERR, USER1, "FormatInit FAILED. ErrNo: %d\n", status);
@@ -842,16 +1256,18 @@ main(int argc, char *argv[])
 		return status;
 	}
 
-	st21_session_t *rxSn[rxDev->snCount];
-	st21_session_t *txSn[txDev->snCount];
-	rvrtp_recv_app_t *rxApp[rxDev->snCount];
+	SetupAppFmt(txFmt, txAfmt, txAncFmt);
+
+	st_session_t *rxSn[rxDev->snCount + rxDev->sn30Count + rxDev->sn40Count];
+	st_session_t *txSn[txDev->snCount + txDev->sn30Count + txDev->sn40Count];
+	strtp_recv_app_t *rxApp[rxDev->snCount + rxDev->sn30Count + rxDev->sn40Count];
 
 	/** STEP 6 - Initialization of Silmple DirectMedia Library
 	* Library used for presenting transmitted content on the screen
 	*
 	* @return \ref st_status_t
 	*/
-	status = InitSDL();
+	status = CreateGuiWindow();
 	if (status != ST_OK)
 	{
 		RTE_LOG(ERR, USER1, "InitSDL FAILED. ErrNo: %d\n", status);
@@ -867,7 +1283,7 @@ main(int argc, char *argv[])
 	*
 	* @return \ref st_status_t
 	*/
-	status = StartTransmitter(userParams, txFmt, txSn, txDev);
+	status = StartTransmitter(userParams, txSn, txDev);
 	if (status != ST_OK)
 	{
 		RTE_LOG(ERR, USER1, "StartReceiver FAILED. ErrNo: %d\n", status);
@@ -884,7 +1300,7 @@ main(int argc, char *argv[])
 	*
 	* @return \ref st_status_t
 	*/
-	status = StartReceiver(userParams, rxFmt, rxSn, rxDev, rxApp);
+	status = StartReceiver(userParams, rxSn, rxDev, rxApp);
 	if (status != ST_OK)
 	{
 		RTE_LOG(ERR, USER1, "StartReceiver FAILED. ErrNo: %d\n", status);
@@ -898,10 +1314,10 @@ main(int argc, char *argv[])
 	*
 	* @return \ref st_status_t
 	*/
-	status = St21GetSessionCount(txDev, &snTxCount);
+	status = StGetSessionCount(txDev, &snTxCount);
 	if (status != ST_OK)
 	{
-		RTE_LOG(ERR, USER1, "St21GetSessionCount FAILED. ErrNo: %d\n", status);
+		RTE_LOG(ERR, USER1, "StGetSessionCount FAILED. ErrNo: %d\n", status);
 		return status;
 	}
 
@@ -914,10 +1330,10 @@ main(int argc, char *argv[])
 	*
 	* @return \ref st_status_t
 	*/
-	status = St21GetSessionCount(rxDev, &snRxCount);
+	status = StGetSessionCount(rxDev, &snRxCount);
 	if (status != ST_OK)
 	{
-		RTE_LOG(ERR, USER1, "St21GetSessionCount FAILED. ErrNo: %d\n", status);
+		RTE_LOG(ERR, USER1, "StGetSessionCount FAILED. ErrNo: %d\n", status);
 		return status;
 	}
 
@@ -927,6 +1343,10 @@ main(int argc, char *argv[])
 	* "pause" prevent before immediate finish and close transmission
 	*/
 	pause();
+	/*
+	 * dispaly accumulated status at exit
+	 */
+	StDisplayExitStats();
 
 	/** STEP 12 - Stop transmitting and destroy transmitter sessions
 	* Params:
@@ -982,6 +1402,10 @@ main(int argc, char *argv[])
 		return status;
 	}
 
+	/**
+	 * STEP 16 -Destroy GUI
+	 */
+	DestroyGui();
+
 	return status;
 }
-

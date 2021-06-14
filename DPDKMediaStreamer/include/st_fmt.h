@@ -1,5 +1,5 @@
 /*
-* Copyright 2020 Intel Corporation.
+* Copyright (C) 2020-2021 Intel Corporation.
 *
 * This software and the related documents are Intel copyrighted materials,
 * and your use of them is governed by the express license under which they
@@ -16,7 +16,7 @@
 
 /*
 *
-*	Intel® ST 2110 Media Streaming Library
+*	Intel(R) ST 2110 Media Streaming Library
 *
 */
 
@@ -152,6 +152,11 @@ extern st21_format_t sln422be10Uhd2160p25Fmt;
 extern st21_format_t all422be10Hd720p25Fmt;
 extern st21_format_t all422be10Hd1080p25Fmt;
 extern st21_format_t all422be10Uhd2160p25Fmt;
+
+extern st30_format_t doulbySurround71Pcm24bFmt;
+extern st30_format_t stereoPcm24bFmt;
+
+extern st40_format_t ancillaryDataFmt;
 
 extern st21_format_t *fmtP25Table[ST21_FMT_P_MAX_25];
 extern st21_format_t *fmtP29Table[ST21_FMT_P_MAX_29];

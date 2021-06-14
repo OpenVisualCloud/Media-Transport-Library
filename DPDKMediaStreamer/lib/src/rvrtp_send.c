@@ -1,5 +1,5 @@
 /*
-* Copyright 2020 Intel Corporation.
+* Copyright (C) 2020-2021 Intel Corporation.
 *
 * This software and the related documents are Intel copyrighted materials,
 * and your use of them is governed by the express license under which they
@@ -17,31 +17,63 @@
 #include <rte_malloc.h>
 
 #include "rvrtp_main.h"
+#include "st_rtp.h"
 
 #include <stdio.h>
 #include <string.h>
 
-static inline void *RvRtpBuildIpHeader(rvrtp_session_t *s, struct rte_ipv4_hdr *ip);
-static inline void *RvRtpUpdateIpHeader(rvrtp_session_t *s, struct rte_ipv4_hdr *ip);
-static inline void *RvRtpBuildUdpHeader(rvrtp_session_t *s, struct rte_udp_hdr *udp);
-static inline void *RvRtpBuildDualLinePacket(rvrtp_session_t *s, void *hdr);
-static inline void *RvRtpBuildSingleLinePacket(rvrtp_session_t *s, void *hdr);
-static inline void *RvRtpBuildL2Packet(rvrtp_session_t *s, struct rte_ether_hdr *l2);
+void *StRtpBuildIpHeader(st_session_impl_t *s, struct rte_ipv4_hdr *ip, uint32_t portId);
+void *StRtpUpdateIpHeader(st_session_impl_t *s, struct rte_ipv4_hdr *ip);
+void *StRtpBuildUdpHeader(st_session_impl_t *s, struct rte_udp_hdr *udp);
+static inline void *RvRtpBuildDualLinePacket(st_session_impl_t *s, void *hdr);
+static inline void *RvRtpBuildSingleLinePacket(st_session_impl_t *s, void *hdr);
 
-extern int St21GetExtIndex(st21_session_t *sn, uint8_t* addr);
+extern int StGetExtIndex(st_session_t *sn, uint8_t *addr);
 //#define TX_RINGS_DEBUG 1
 //#define ST_MULTICAST_TEST
 
-rvrtp_device_t stSendDevice;
+st_device_impl_t stSendDevice;
 
 st_status_t
-RvRtpDummyRecvPacket(rvrtp_session_t *s, struct rte_mbuf *rxbuf)
+RvRtpDummyRecvPacket(st_session_impl_t *s, struct rte_mbuf *rxbuf)
 {
 	return ST_OK;
 }
 
+st_status_t
+RvRtpValidateFormat(st21_format_t *fmt)
+{
+	switch (fmt->pixelFmt)
+	{
+	case ST21_PIX_FMT_RGB_8BIT:
+	case ST21_PIX_FMT_RGB_10BIT_BE:
+	case ST21_PIX_FMT_RGB_10BIT_LE:
+	case ST21_PIX_FMT_RGB_12BIT_BE:
+	case ST21_PIX_FMT_RGB_12BIT_LE:
+	case ST21_PIX_FMT_BGR_8BIT:
+	case ST21_PIX_FMT_BGR_10BIT_BE:
+	case ST21_PIX_FMT_BGR_10BIT_LE:
+	case ST21_PIX_FMT_BGR_12BIT_BE:
+	case ST21_PIX_FMT_BGR_12BIT_LE:
+	case ST21_PIX_FMT_YCBCR_420_8BIT:
+	case ST21_PIX_FMT_YCBCR_420_10BIT_BE:
+	case ST21_PIX_FMT_YCBCR_420_10BIT_LE:
+	case ST21_PIX_FMT_YCBCR_420_12BIT_BE:
+	case ST21_PIX_FMT_YCBCR_420_12BIT_LE:
+	case ST21_PIX_FMT_YCBCR_422_8BIT:
+	case ST21_PIX_FMT_YCBCR_422_10BIT_BE:
+	case ST21_PIX_FMT_YCBCR_422_10BIT_LE:
+	case ST21_PIX_FMT_YCBCR_422_12BIT_BE:
+	case ST21_PIX_FMT_YCBCR_422_12BIT_LE:
+		break;
+	default:
+		return ST_INVALID_PARAM;
+	}
+	return ST_OK;
+}
+
 int32_t
-RvRtpGetTrOffsetTimeslot(rvrtp_device_t *dev, uint32_t pktTime, uint32_t tprs, uint32_t *timeslot)
+RvRtpGetTrOffsetTimeslot(st_device_impl_t *dev, uint32_t pktTime, uint32_t tprs, uint32_t *timeslot)
 {
 	if ((tprs < pktTime) || (dev->snCount == dev->dev.maxSt21Sessions))
 		return -1;
@@ -52,12 +84,13 @@ RvRtpGetTrOffsetTimeslot(rvrtp_device_t *dev, uint32_t pktTime, uint32_t tprs, u
 		dev->timeQuot = tprs;  // *dev->dev.rateGbps;
 		dev->timeTable[0] = pktTime;
 		*timeslot = 0;
-#ifdef TX_RINGS_DEBUG
-		RTE_LOG(INFO, USER2, "RvRtpGetTimeslot devQuot %u tprs %u\n", dev->timeQuot, tprs);
-#endif
+
+		RTE_LOG(DEBUG, USER2, "RvRtpGetTimeslot devQuot %u tprs %u\n", dev->timeQuot, tprs);
+
 		dev->lastAllocSn = 0;
 		return 0;
 	}
+
 	uint32_t usedTimeQuot = 0;
 	if (dev->dev.maxSt21Sessions >= 32)
 	{
@@ -65,9 +98,9 @@ RvRtpGetTrOffsetTimeslot(rvrtp_device_t *dev, uint32_t pktTime, uint32_t tprs, u
 		{
 			usedTimeQuot += dev->timeTable[i];
 		}
-#ifdef TX_RINGS_DEBUG
-		RTE_LOG(INFO, USER2, "RvRtpGetTimeslot usedTimeQuot %u\n", usedTimeQuot);
-#endif
+
+		RTE_LOG(DEBUG, USER2, "RvRtpGetTimeslot usedTimeQuot %u\n", usedTimeQuot);
+
 		if (dev->timeQuot >= usedTimeQuot + pktTime)
 		{
 			uint32_t snId = dev->lastAllocSn + 8;
@@ -83,10 +116,10 @@ RvRtpGetTrOffsetTimeslot(rvrtp_device_t *dev, uint32_t pktTime, uint32_t tprs, u
 				{
 					found = 1;
 					dev->timeTable[snId] = pktTime;
-#ifdef TX_RINGS_DEBUG
-					RTE_LOG(INFO, USER2, "RvRtpGetTimeslot pktTime %u usedTimeQuot %u\n", pktTime,
+
+					RTE_LOG(DEBUG, USER2, "RvRtpGetTimeslot pktTime %u usedTimeQuot %u\n", pktTime,
 							usedTimeQuot);
-#endif
+
 					*timeslot = snId;
 					dev->lastAllocSn = snId;
 					return usedTimeQuot;
@@ -105,141 +138,161 @@ RvRtpGetTrOffsetTimeslot(rvrtp_device_t *dev, uint32_t pktTime, uint32_t tprs, u
 		{
 			usedTimeQuot += dev->timeTable[i];
 		}
-		RTE_LOG(INFO, USER2, "RvRtpGetTimeslot usedTimeQuot %u\n", usedTimeQuot);
+		RTE_LOG(DEBUG, USER2, "RvRtpGetTimeslot usedTimeQuot %u\n", usedTimeQuot);
 
 		if (dev->timeQuot >= usedTimeQuot + pktTime)
 		{
 			dev->timeTable[dev->snCount] = pktTime;
-			RTE_LOG(INFO, USER2, "RvRtpGetTimeslot pktTime %u usedTimeQuot %u\n", pktTime,
+			RTE_LOG(DEBUG, USER2, "RvRtpGetTimeslot pktTime %u usedTimeQuot %u\n", pktTime,
 					usedTimeQuot);
 			*timeslot = dev->snCount;
 			return usedTimeQuot;
 		}
 	}
-	RTE_LOG(INFO, USER2,
-			"RvRtpGetTimeslot failed since pktTime %u + usedTimeQuot %u > quot of %u\n", pktTime,
-			usedTimeQuot, dev->timeQuot);
+	RTE_LOG(ERR, USER2, "RvRtpGetTimeslot failed since pktTime %u + usedTimeQuot %u > quot of %u\n",
+			pktTime, usedTimeQuot, dev->timeQuot);
 	return (-1);
 }
 
 extern st_main_params_t stMainParams;
 
 void
-ArpAnswer(uint16_t portid, uint32_t ip, struct rte_ether_addr const *mac)
+RvRtpInitPacketCtx(st_session_impl_t *s, uint32_t ring)
 {
-	//RTE_LOG(DEBUG, USER1, "ArpAnswer %u %08x %u\n", portid, ip, stSendDevice.snCount);
-	for (rvrtp_session_t **i = stSendDevice.snTable + stSendDevice.snCount;
-		 stSendDevice.snTable <= --i;)
+	s->vctx.tmstampOddInc
+		= (uint32_t)(((uint64_t)s->fmt.v.clockRate * (uint64_t)s->fmt.v.frmRateDen)
+					 / (uint64_t)s->fmt.v.frmRateMul);
+	s->vctx.tmstampEvenInc = s->vctx.tmstampOddInc;
+	if ((s->vctx.tmstampOddInc & 0x3) == 1)
 	{
-		//RTE_LOG(DEBUG, USER1, "ArpAnswer %u %08x %p\n", portid, ip, *i);
-		if (*i)
-		{
-			if (ip == (*i)->hdrPrint.singleHdr.ip.dst_addr)
-			{
-				memcpy((*i)->hdrPrint.singleHdr.eth.d_addr.addr_bytes, mac,
-					   sizeof((*i)->hdrPrint.singleHdr.eth.d_addr.addr_bytes));
-			}
-		}
+		s->vctx.tmstampEvenInc++;
 	}
-}
-
-void
-RvRtpInitPacketCtx(rvrtp_session_t *s, uint32_t ring)
-{
-	s->ctx.tmstampOddInc = (uint32_t)(((uint64_t)s->fmt.clockRate * (uint64_t)s->fmt.frmRateDen)
-									  / (uint64_t)s->fmt.frmRateMul);
-	s->ctx.tmstampEvenInc = s->ctx.tmstampOddInc;
-	if ((s->ctx.tmstampOddInc & 0x3) == 1)
-	{
-		s->ctx.tmstampEvenInc++;
-	}
-	s->ctx.alignTmstamp = 0;
-	s->ctx.line1PixelGrpSize = s->fmt.pixelGrpSize;
-	s->ctx.line1Offset = 0;
-	s->ctx.line1Number = 0;
-	s->ctx.line1Length = s->fmt.pixelsInPkt / s->fmt.pixelsInGrp * s->ctx.line1PixelGrpSize;
-	s->ctx.line1Size = s->fmt.width / s->fmt.pixelsInGrp * s->ctx.line1PixelGrpSize;
+	s->vctx.alignTmstamp = 0;
+	s->vctx.line1PixelGrpSize = s->fmt.v.pixelGrpSize;
+	s->vctx.line1Offset = 0;
+	s->vctx.line1Number = 0;
+	s->vctx.line1Length = s->fmt.v.pixelsInPkt / s->fmt.v.pixelsInGrp * s->vctx.line1PixelGrpSize;
+	s->vctx.line1Size = s->fmt.v.width / s->fmt.v.pixelsInGrp * s->vctx.line1PixelGrpSize;
 
 	struct rte_ipv4_hdr *ip;
 	struct rte_udp_hdr *udp;
 
-	switch (s->fmt.pktFmt)
+	switch (s->fmt.v.pktFmt)
 	{
 	case ST_INTEL_DLN_RFC4175_PKT:
-		s->ctx.line2Offset = 0;
-		s->ctx.line2Number = 1;
-		s->ctx.line2PixelGrpSize = s->fmt.pixelGrpSize;
-		s->ctx.line2Size = s->fmt.width / s->fmt.pixelsInGrp * s->ctx.line2PixelGrpSize;
-		s->ctx.line2Length = s->fmt.pixelsInPkt / s->fmt.pixelsInGrp * s->ctx.line2PixelGrpSize;
-		ip = (struct rte_ipv4_hdr *)RvRtpBuildL2Packet(s, &s->hdrPrint.dualHdr.eth);
-		udp = (struct rte_udp_hdr *)RvRtpBuildIpHeader(s, ip);
+		s->vctx.line2Offset = 0;
+		s->vctx.line2Number = 1;
+		s->vctx.line2PixelGrpSize = s->fmt.v.pixelGrpSize;
+		s->vctx.line2Size = s->fmt.v.width / s->fmt.v.pixelsInGrp * s->vctx.line2PixelGrpSize;
+		s->vctx.line2Length
+			= s->fmt.v.pixelsInPkt / s->fmt.v.pixelsInGrp * s->vctx.line2PixelGrpSize;
+		ip = (struct rte_ipv4_hdr *)StRtpBuildL2Packet(s, &s->hdrPrint[ST_PPORT].dualHdr.eth, 0);
+		udp = (struct rte_udp_hdr *)StRtpBuildIpHeader(s, ip, 0);
 		{
 			st_rfc4175_rtp_dual_hdr_t *rtp
-				= (st_rfc4175_rtp_dual_hdr_t *)RvRtpBuildUdpHeader(s, udp);
+				= (st_rfc4175_rtp_dual_hdr_t *)StRtpBuildUdpHeader(s, udp);
 			RvRtpBuildDualLinePacket(s, rtp);
+		}
+		if (s->sn.caps & ST_SN_DUAL_PATH && stMainParams.numPorts > 1)
+		{
+			ip = (struct rte_ipv4_hdr *)StRtpBuildL2Packet(s, &s->hdrPrint[ST_RPORT].dualHdr.eth,
+														   1);
+			udp = (struct rte_udp_hdr *)StRtpBuildIpHeader(s, ip, 1);
 		}
 		break;
 
 	case ST_INTEL_SLN_RFC4175_PKT:
-		ip = (struct rte_ipv4_hdr *)RvRtpBuildL2Packet(s, &s->hdrPrint.singleHdr.eth);
-		udp = (struct rte_udp_hdr *)RvRtpBuildIpHeader(s, ip);
+		ip = (struct rte_ipv4_hdr *)StRtpBuildL2Packet(s, &s->hdrPrint[ST_PPORT].singleHdr.eth, 0);
+		udp = (struct rte_udp_hdr *)StRtpBuildIpHeader(s, ip, 0);
 		{
-			st_rfc4175_rtp_dual_hdr_t *rtp
-				= (st_rfc4175_rtp_dual_hdr_t *)RvRtpBuildUdpHeader(s, udp);
+			st_rfc4175_rtp_single_hdr_t *rtp
+				= (st_rfc4175_rtp_single_hdr_t *)StRtpBuildUdpHeader(s, udp);
 			RvRtpBuildSingleLinePacket(s, rtp);
+		}
+		if (s->sn.caps & ST_SN_DUAL_PATH && stMainParams.numPorts > 1)
+		{
+			ip = (struct rte_ipv4_hdr *)StRtpBuildL2Packet(s, &s->hdrPrint[ST_RPORT].singleHdr.eth,
+														   1);
+			udp = (struct rte_udp_hdr *)StRtpBuildIpHeader(s, ip, 1);
 		}
 		break;
 	default:
 		break;
 	}
-#ifdef TX_RINGS_DEBUG
-	RTE_LOG(INFO, USER2, "RvRtpInitPacketCtx line1Length %u line2Length %u\n", s->ctx.line1Length,
-			s->ctx.line2Length);
-#endif
+
+	RTE_LOG(DEBUG, USER2, "RvRtpInitPacketCtx line1Length %u line2Length %u\n", s->vctx.line1Length,
+			s->vctx.line2Length);
+
+	s->sn.pktsRecv = 0;
+	s->sn.pktsSend = 0;
+	s->sn.frmsRecv = 0;
+	s->sn.frmsSend = 0;
+	memset(s->sn.frmsDrop, 0, sizeof(s->sn.frmsDrop));
+	memset(s->sn.pktsDrop, 0, sizeof(s->sn.pktsDrop));
 }
 
 st_status_t
-RvRtpCreateTxSession(rvrtp_device_t *dev, st21_session_t *sin, st21_format_t *fmt,
-					 rvrtp_session_t **sout)
+RvRtpCreateTxSession(st_device_impl_t *dev, st_session_t *sin, st_format_t *fmt,
+					 st_session_impl_t **sout)
 {
+	st_essence_type_t mtype;
+	uint32_t tmstampTime;
+	st21_format_t *vfmt;
+	st_status_t status;
+
 	if ((!dev) || (!sin) || (!fmt))
 		return ST_INVALID_PARAM;
 
-	uint32_t tmstampTime;
-	st21_session_t sn = *sin;
+	mtype = fmt->mtype;
 
-    sn.trOffset = (uint32_t)((uint64_t)(fmt->frameTime * fmt->trOffsetLines) / (uint64_t)fmt->totalLines);
-    sn.frameSize = ((uint64_t)fmt->width * fmt->height * fmt->pixelGrpSize) / fmt->pixelsInGrp;
+	/* This method just handle video */
+	if (mtype != ST_ESSENCE_VIDEO)
+		return ST_INVALID_PARAM;
 
-	uint32_t pktsInGappedMode = fmt->pktsInLine * fmt->totalLines;
+	vfmt = &fmt->v;
 
-	if (fmt->pktFmt == ST_INTEL_DLN_RFC4175_PKT)
+	status = RvRtpValidateFormat(vfmt);
+	if (status != ST_OK)
+	{
+		return status;
+	}
+
+	st_session_t sn = *sin;
+
+	sn.trOffset = (uint32_t)((uint64_t)(vfmt->frameTime * vfmt->trOffsetLines)
+							 / (uint64_t)vfmt->totalLines);
+	sn.frameSize = ((uint64_t)vfmt->width * vfmt->height * vfmt->pixelGrpSize) / vfmt->pixelsInGrp;
+
+	uint32_t pktsInGappedMode = vfmt->pktsInLine * vfmt->totalLines;
+
+	if (vfmt->pktFmt == ST_INTEL_DLN_RFC4175_PKT)
 	{
 		pktsInGappedMode /= 2;	//have 8 pkts in line so need to adjust
 	}
-	if ((fmt->vscan == ST21_2160I) || (fmt->vscan == ST21_1080I) || (fmt->vscan == ST21_720I))
+	if ((vfmt->vscan == ST21_2160I) || (vfmt->vscan == ST21_1080I) || (vfmt->vscan == ST21_720I))
 	{
 		pktsInGappedMode /= 2;	//have a half packets to send
 	}
-	else if ((fmt->vscan != ST21_2160P) && (fmt->vscan != ST21_1080P) && (fmt->vscan != ST21_720P))
+	else if ((vfmt->vscan != ST21_2160P) && (vfmt->vscan != ST21_1080P)
+			 && (vfmt->vscan != ST21_720P))
 	{
 		return ST_FMT_ERR_BAD_VSCAN;
 	}
 
-    switch (dev->dev.pacerType)
-    {
-    case ST_2110_21_TPN:
-        sn.tprs = fmt->frameTime / pktsInGappedMode;
-        break;
-    case ST_2110_21_TPNL:
-    case ST_2110_21_TPW:
-        sn.tprs = fmt->frameTime / fmt->pktsInFrame;
-        break;
-    default:
-        return ST_DEV_BAD_PACING;
-    }
+	switch (dev->dev.pacerType)
+	{
+	case ST_2110_21_TPN:
+		sn.tprs = (uint32_t)(vfmt->frameTime / pktsInGappedMode);
+		break;
+	case ST_2110_21_TPNL:
+	case ST_2110_21_TPW:
+		sn.tprs = (uint32_t)(vfmt->frameTime / vfmt->pktsInFrame);
+		break;
+	default:
+		return ST_DEV_BAD_PACING;
+	}
 
-	switch (fmt->clockRate)
+	switch (vfmt->clockRate)
 	{
 	case 90000:	 //90kHz
 		tmstampTime = 11111;
@@ -248,28 +301,27 @@ RvRtpCreateTxSession(rvrtp_device_t *dev, st21_session_t *sin, st21_format_t *fm
 		return ST_FMT_ERR_BAD_CLK_RATE;
 	}
 
-    sn.pktTime = ((fmt->pktSize + ST_PHYS_PKT_ADD) * 8) / dev->dev.rateGbps;
-    uint32_t remaind = ((fmt->pktSize + ST_PHYS_PKT_ADD) * 8) % dev->dev.rateGbps;
-    if (remaind >= (dev->dev.rateGbps / 2)) sn.pktTime++;
+	sn.pktTime = ((vfmt->pktSize + ST_PHYS_PKT_ADD) * 8) / dev->dev.rateGbps;
+	uint32_t remaind = ((vfmt->pktSize + ST_PHYS_PKT_ADD) * 8) % dev->dev.rateGbps;
+	if (remaind >= (dev->dev.rateGbps / 2))
+		sn.pktTime++;
 
-    int32_t trOffset = RvRtpGetTrOffsetTimeslot(dev, sn.pktTime, sn.tprs, &sn.timeslot);
-    if (trOffset < 0)
-    {
-        RTE_LOG(INFO, USER1, "failed RvRtpGetTrOffsetTimeslot %u %u\n", sn.pktTime, sn.tprs);
+	int32_t trOffset = RvRtpGetTrOffsetTimeslot(dev, sn.pktTime, sn.tprs, &sn.timeslot);
+	if (trOffset < 0)
+	{
+		RTE_LOG(INFO, USER1, "failed RvRtpGetTrOffsetTimeslot %u %u\n", sn.pktTime, sn.tprs);
 
-        return ST_SN_ERR_NO_TIMESLOT;//impossible to find timeslot for the producer
-    }
-    sn.trOffset += trOffset;
+		return ST_SN_ERR_NO_TIMESLOT;  //impossible to find timeslot for the producer
+	}
+	sn.trOffset += trOffset;
 
-#ifdef TX_RINGS_DEBUG
-	RTE_LOG(INFO, USER1, "RvRtpGetTrOffsetTimeslot troffste %u timeslot %u\n", sn.trOffset,
+	RTE_LOG(DEBUG, USER1, "RvRtpGetTrOffsetTimeslot troffste %u timeslot %u\n", sn.trOffset,
 			sn.timeslot);
-#endif
 
-	rvrtp_session_t *s = malloc(sizeof(rvrtp_session_t));
+	st_session_impl_t *s = malloc(sizeof(st_session_impl_t));
 	if (s)
 	{
-		memset(s, 0x0, sizeof(rvrtp_session_t));
+		memset(s, 0x0, sizeof(st_session_impl_t));
 
 		s->fmt = *fmt;
 		s->dev = dev;
@@ -277,16 +329,16 @@ RvRtpCreateTxSession(rvrtp_device_t *dev, st21_session_t *sin, st21_format_t *fm
 		s->tmstampTime = tmstampTime;
 
 		//have a half lines to send in interlaced cases
-		switch (fmt->vscan)
+		switch (vfmt->vscan)
 		{
 		case ST21_2160I:
 		case ST21_1080I:
 		case ST21_720I:
-			s->ctx.fieldId = 0;
+			s->vctx.fieldId = 0;
 			s->UpdateRtpPkt = RvRtpUpdateInterlacedPacket;
 			break;
 		default:
-			switch (s->fmt.pktFmt)
+			switch (s->fmt.v.pktFmt)
 			{
 			case ST_INTEL_DLN_RFC4175_PKT:
 				s->UpdateRtpPkt = RvRtpUpdateDualLinePacket;
@@ -295,7 +347,7 @@ RvRtpCreateTxSession(rvrtp_device_t *dev, st21_session_t *sin, st21_format_t *fm
 				s->UpdateRtpPkt = RvRtpUpdateSingleLinePacket;
 				break;
 			default:
-				RTE_LOG(INFO, USER2, "Not supported format on transmitter\n");
+				RTE_LOG(ERR, USER2, "Not supported format on transmitter\n");
 				free(s);
 				return ST_FMT_ERR_NOT_SUPPORTED_ON_TX;
 			}
@@ -325,6 +377,13 @@ RvRtpCreateTxSession(rvrtp_device_t *dev, st21_session_t *sin, st21_format_t *fm
 	return ST_NO_MEMORY;
 }
 
+st_status_t
+RvRtpDestroyTxSession(st_session_impl_t *s)
+{
+
+	return ST_OK;
+}
+
 /*****************************************************************************
  *
  * RvRtpSessionCheckRunState - check if session is in run state that permits
@@ -335,63 +394,54 @@ RvRtpCreateTxSession(rvrtp_device_t *dev, st21_session_t *sin, st21_format_t *fm
  * SEE ALSO:
  */
 int
-RvRtpSessionCheckRunState(rvrtp_session_t *s)
+RvRtpSessionCheckRunState(st_session_impl_t *s)
 {
 	// lock session
-	RvRtpSessionLock(s);
+	StSessionLock(s);
 
 	if (s->state != ST_SN_STATE_RUN)  // state is protected by the lock as well as prodBuf
 	{
 		if (s->state == ST_SN_STATE_NO_NEXT_FRAME)
 		{
-			s->prodBuf = s->prod.St21GetNextFrameBuf(s->prod.appHandle, s->prodBuf,
-													 s->prod.frameSize, s->ctx.fieldId);
-			if (s->prodBuf != NULL)
+			uint8_t *new_prod_buf = s->prod.St21GetNextFrameBuf(s->prod.appHandle, s->prodBuf,
+																s->prod.frameSize, s->vctx.fieldId);
+			if (new_prod_buf != NULL)
 			{
+				s->prodBuf = new_prod_buf;
 				s->state = ST_SN_STATE_RUN;
-				s->ctx.sliceOffset = 0;
+				s->vctx.sliceOffset = 0;
 				s->sliceOffset = s->prod.St21GetNextSliceOffset(s->prod.appHandle, s->prodBuf, 0,
-																s->ctx.fieldId);
-			}
-			else
-			{
-				RTE_LOG(INFO, USER2, "ST_SN_STATE_NO_NEXT_FRAME: for session %u prodBuf %p\n",
-						s->sn.timeslot, s->prodBuf);
+																s->vctx.fieldId);
 			}
 		}
 		else if (s->state == ST_SN_STATE_NO_NEXT_SLICE)
 		{
 			uint32_t nextOffset = s->prod.St21GetNextSliceOffset(s->prod.appHandle, s->prodBuf,
-																 s->sliceOffset, s->ctx.fieldId);
+																 s->sliceOffset, s->vctx.fieldId);
 			if (nextOffset > s->sliceOffset)
 			{
 				s->sliceOffset = nextOffset;
 				s->state = ST_SN_STATE_RUN;
 			}
-			else
-			{
-				RTE_LOG(INFO, USER2, "ST_SN_STATE_NO_NEXT_SLICE: for session %u sliceOffset %u\n",
-						s->sn.timeslot, nextOffset);
-			}
 		}
 	}
 	//leave critical section
-	RvRtpSessionUnlock(s);
+	StSessionUnlock(s);
 
 	return (s->state == ST_SN_STATE_RUN);
 }
 
 /*****************************************************************************
  *
- * RvRtpBuildIpHeader -IP header constructor routine.
+ * StRtpBuildIpHeader -IP header constructor routine.
  *
  * DESCRIPTION
  * Constructs the IP header
  *
  * RETURNS: UDP header location
  */
-static inline void *
-RvRtpBuildIpHeader(rvrtp_session_t *s, struct rte_ipv4_hdr *ip)
+void *
+StRtpBuildIpHeader(st_session_impl_t *s, struct rte_ipv4_hdr *ip, uint32_t portId)
 {
 	uint16_t tlen;
 
@@ -401,38 +451,48 @@ RvRtpBuildIpHeader(rvrtp_session_t *s, struct rte_ipv4_hdr *ip)
 	ip->version_ihl = (4 << 4) | (sizeof(struct rte_ipv4_hdr) / 4);
 
 	ip->time_to_live = 64;
-	ip->type_of_service = s->fl[0].tos;
+	ip->type_of_service = s->fl[portId].tos;
 
 #define IP_DONT_FRAGMENT_FLAG 0x0040
 	ip->fragment_offset = IP_DONT_FRAGMENT_FLAG;
 
-	tlen = s->fmt.pktSize - s->etherSize;
+	tlen = StSessionGetPktsize(s) - s->etherSize;
+
 	ip->total_length = htons(tlen);
 	ip->next_proto_id = 17;
-	ip->src_addr = s->fl[0].src.addr4.sin_addr.s_addr;
-	ip->dst_addr = s->fl[0].dst.addr4.sin_addr.s_addr;
+	ip->src_addr = s->fl[portId].src.addr4.sin_addr.s_addr;
+	ip->dst_addr = s->fl[portId].dst.addr4.sin_addr.s_addr;
 
 	return &ip[1];
 }
 
 /*****************************************************************************
  *
- * RvRtpUpdateIpHeader -IP header constructor routine.
+ * StRtpUpdateIpHeader -IP header constructor routine.
  *
  * DESCRIPTION
  * Constructs the IP header
  *
  * RETURNS: UDP header location
  */
-static inline void *
-RvRtpUpdateIpHeader(rvrtp_session_t *s, struct rte_ipv4_hdr *ip)
+void *
+StRtpUpdateIpHeader(st_session_impl_t *s, struct rte_ipv4_hdr *ip)
 {
 #ifdef ST_LATE_SN_CONNECT
 	ip->src_addr = s->fl[0].src.addr4.sin_addr.s_addr;
 	ip->dst_addr = s->fl[0].dst.addr4.sin_addr.s_addr;
 #endif
 
-	ip->packet_id = htons(s->ctx.ipPacketId++);
+	if (s->sn.type == ST_ESSENCE_VIDEO || s->sn.type == ST_ESSENCE_AUDIO)
+	{
+		ip->packet_id = htons(s->vctx.ipPacketId++);
+	}
+	else if (s->sn.type == ST_ESSENCE_ANC)
+	{
+		ip->packet_id = htons(s->vctx.ipPacketId++);
+		uint16_t tlen = StSessionGetPktsize(s) - s->etherSize;
+		ip->total_length = htons(tlen);
+	}
 
 #ifdef ST_LATE_SN_CONNECT
 	if (unlikely((s->ofldFlags & ST_OFLD_HW_IP_CKSUM) != ST_OFLD_HW_IP_CKSUM))
@@ -446,19 +506,18 @@ RvRtpUpdateIpHeader(rvrtp_session_t *s, struct rte_ipv4_hdr *ip)
 
 /*****************************************************************************
  *
- * RvRtpBuildUdpHeader -UDP header constructor routine.
+ * StRtpBuildUdpHeader -UDP header constructor routine.
  *
  * DESCRIPTION
  * Constructs the UDP header
  *
  * RETURNS: RTP header location
  */
-static inline void *
-RvRtpBuildUdpHeader(rvrtp_session_t *s, struct rte_udp_hdr *udp)
+void *
+StRtpBuildUdpHeader(st_session_impl_t *s, struct rte_udp_hdr *udp)
 {
 	uint16_t tlen;
-
-	tlen = s->fmt.pktSize - (s->etherSize + sizeof(struct rte_ipv4_hdr));
+	tlen = StSessionGetPktsize(s) - (s->etherSize + sizeof(struct rte_ipv4_hdr));
 	udp->dgram_len = htons(tlen);
 	udp->src_port = s->fl[0].src.addr4.sin_port;
 	udp->dst_port = s->fl[0].dst.addr4.sin_port;
@@ -480,7 +539,7 @@ RvRtpBuildUdpHeader(rvrtp_session_t *s, struct rte_udp_hdr *udp)
  * SEE ALSO:
  */
 static inline void *
-RvRtpBuildDualLinePacket(rvrtp_session_t *s, void *hdr)
+RvRtpBuildDualLinePacket(st_session_impl_t *s, void *hdr)
 {
 	/* Create the IP & UDP header */
 	struct st_rfc4175_rtp_dual_hdr *rtp = (struct st_rfc4175_rtp_dual_hdr *)hdr;
@@ -493,12 +552,12 @@ RvRtpBuildDualLinePacket(rvrtp_session_t *s, void *hdr)
 
 	rtp->ssrc = htonl(s->sn.ssid);
 
-	rtp->line1Length = htons(s->ctx.line1Length);
-	rtp->line2Length = htons(s->ctx.line2Length);
-	rtp->line1Number = htons(s->ctx.line1Number);
-	rtp->line2Number = htons(s->ctx.line2Number);
-	rtp->line1Offset = htons(s->ctx.line1Offset);
-	rtp->line2Offset = htons(s->ctx.line2Offset);
+	rtp->line1Length = htons(s->vctx.line1Length);
+	rtp->line2Length = htons(s->vctx.line2Length);
+	rtp->line1Number = htons(s->vctx.line1Number);
+	rtp->line2Number = htons(s->vctx.line2Number);
+	rtp->line1Offset = htons(s->vctx.line1Offset);
+	rtp->line2Offset = htons(s->vctx.line2Offset);
 
 	/* Return the original pointer for IP hdr */
 	return hdr;
@@ -517,7 +576,7 @@ RvRtpBuildDualLinePacket(rvrtp_session_t *s, void *hdr)
  * SEE ALSO:
  */
 static inline void *
-RvRtpBuildSingleLinePacket(rvrtp_session_t *s, void *hdr)
+RvRtpBuildSingleLinePacket(st_session_impl_t *s, void *hdr)
 {
 	/* Create the IP & UDP header */
 	struct st_rfc4175_rtp_single_hdr *rtp = (struct st_rfc4175_rtp_single_hdr *)hdr;
@@ -528,15 +587,15 @@ RvRtpBuildSingleLinePacket(rvrtp_session_t *s, void *hdr)
 	rtp->csrcCount = 0;
 	rtp->payloadType = RVRTP_PAYLOAD_TYPE_RAW_VIDEO;
 	rtp->ssrc = htonl(s->sn.ssid);
-	rtp->line1Length = htons(s->ctx.line1Length);
-	rtp->line1Number = htons(s->ctx.line1Number);
-	rtp->line1Offset = htons(s->ctx.line1Offset);
+	rtp->line1Length = htons(s->vctx.line1Length);
+	rtp->line1Number = htons(s->vctx.line1Number);
+	rtp->line1Offset = htons(s->vctx.line1Offset);
 	return hdr;
 }
 
 /*****************************************************************************
  *
- * RvRtpBuildL2Packet - L2 header constructor routine.
+ * StRtpBuildL2Packet - L2 header constructor routine.
  *
  * DESCRIPTION
  * Constructs the l2 packet
@@ -545,14 +604,14 @@ RvRtpBuildSingleLinePacket(rvrtp_session_t *s, void *hdr)
  *
  * SEE ALSO:
  */
-static inline void *
-RvRtpBuildL2Packet(rvrtp_session_t *s, struct rte_ether_hdr *l2)
+void *
+StRtpBuildL2Packet(st_session_impl_t *s, struct rte_ether_hdr *l2, uint32_t portId)
 {
 	struct rte_ipv4_hdr *ip = (struct rte_ipv4_hdr *)&l2[1];
 
 	l2->ether_type = htons(0x0800);
-	memcpy(&l2->d_addr, &s->fl[0].dstMac, ETH_ADDR_LEN);
-	memcpy(&l2->s_addr, &s->fl[0].srcMac, ETH_ADDR_LEN);
+	memcpy(&l2->d_addr, &s->fl[portId].dstMac, ETH_ADDR_LEN);
+	memcpy(&l2->s_addr, &s->fl[portId].srcMac, ETH_ADDR_LEN);
 	return ip;
 }
 
@@ -569,128 +628,135 @@ RvRtpBuildL2Packet(rvrtp_session_t *s, struct rte_ether_hdr *l2)
  * SEE ALSO:
  */
 void *
-RvRtpUpdateDualLinePacket(rvrtp_session_t *s, void *hdr, struct rte_mbuf *extMbuf)
+RvRtpUpdateDualLinePacket(st_session_impl_t *s, void *hdr, struct rte_mbuf *extMbuf)
 {
 	/* Create the IP & UDP header */
 	struct rte_ipv4_hdr *ip = hdr;
-	struct rte_udp_hdr *udp = (struct rte_udp_hdr *)RvRtpUpdateIpHeader(s, ip);
+	struct rte_udp_hdr *udp = (struct rte_udp_hdr *)StRtpUpdateIpHeader(s, ip);
 
 	struct st_rfc4175_rtp_dual_hdr *rtp = (struct st_rfc4175_rtp_dual_hdr *)&udp[1];
 
-	//if (unlikely(s->ctx.tmstamp == 0))
+	//if (unlikely(s->vctx.tmstamp == 0))
 	//{
-	//	s->ctx.tmstamp = s->prod.St21GetFrameTmstamp(s->prod.appHandle);
+	//	s->vctx.tmstamp = s->prod.St21GetFrameTmstamp(s->prod.appHandle);
 	//}
 
-    /* is frame complete ?*/
-    if (unlikely(((s->ctx.line2Number + 1) == s->fmt.height) && (s->ctx.line2Offset >= s->fmt.width - s->fmt.pixelsInPkt)))
-    {
-        rtp->marker = 1;
-    }
-    else
-    {
-        rtp->marker = 0;
-    }
-    rtp->seqNumber = htons((uint16_t)s->ctx.seqNumber.lohi.seqLo);
-    rtp->seqNumberExt = htons((uint16_t)s->ctx.seqNumber.lohi.seqHi);
-    rtp->tmstamp = htonl(s->ctx.tmstamp);
-    rtp->line1Number = htons(s->ctx.line1Number);
-    rtp->line2Number = htons(s->ctx.line2Number);
-    rtp->line1Offset = htons(s->ctx.line1Offset | 0x8000); //set line1Continue bit
-    rtp->line2Offset = htons(s->ctx.line2Offset);
+	/* is frame complete ?*/
+	if (unlikely(((s->vctx.line2Number + 1) == s->fmt.v.height)
+				 && (s->vctx.line2Offset >= s->fmt.v.width - s->fmt.v.pixelsInPkt)))
+	{
+		rtp->marker = 1;
+	}
+	else
+	{
+		rtp->marker = 0;
+	}
+	rtp->seqNumber = htons((uint16_t)s->vctx.seqNumber.lohi.seqLo);
+	rtp->seqNumberExt = htons((uint16_t)s->vctx.seqNumber.lohi.seqHi);
+	rtp->tmstamp = htonl(s->vctx.tmstamp);
+	rtp->line1Number = htons(s->vctx.line1Number);
+	rtp->line2Number = htons(s->vctx.line2Number);
+	rtp->line1Offset = htons(s->vctx.line1Offset | 0x8000);	 //set line1Continue bit
+	rtp->line2Offset = htons(s->vctx.line2Offset);
 
-    /* copy payload */
-    uint8_t *payload = (uint8_t *)&rtp[1];
+	/* copy payload */
+	uint8_t *payload = (uint8_t *)&rtp[1];
 
-    uint32_t byteLn1Offset = s->ctx.line1Number  * s->ctx.line1Size +
-        (uint32_t)s->ctx.line1Offset / s->fmt.pixelsInGrp * s->ctx.line1PixelGrpSize;
-    uint32_t byteLn2Offset = s->ctx.line2Number  * s->ctx.line2Size +
-        (uint32_t)s->ctx.line2Offset / s->fmt.pixelsInGrp * s->ctx.line2PixelGrpSize;
+	uint32_t byteLn1Offset
+		= s->vctx.line1Number * s->vctx.line1Size
+		  + (uint32_t)s->vctx.line1Offset / s->fmt.v.pixelsInGrp * s->vctx.line1PixelGrpSize;
+	uint32_t byteLn2Offset
+		= s->vctx.line2Number * s->vctx.line2Size
+		  + (uint32_t)s->vctx.line2Offset / s->fmt.v.pixelsInGrp * s->vctx.line2PixelGrpSize;
 
-    /* line 0 */
-    memcpy(payload, &s->prodBuf[byteLn1Offset], s->ctx.line1Length);
-    /* line 1 */
-    memcpy(&payload[s->ctx.line1Length], &s->prodBuf[byteLn2Offset], s->ctx.line2Length);
+	/* line 0 */
+	memcpy(payload, &s->prodBuf[byteLn1Offset], s->vctx.line1Length);
+	/* line 1 */
+	memcpy(&payload[s->vctx.line1Length], &s->prodBuf[byteLn2Offset], s->vctx.line2Length);
 
-    extMbuf->data_len = extMbuf->pkt_len = 0; // Not used
-    // UDP checksum 
-    udp->dgram_cksum = 0;
-    if (unlikely((s->ofldFlags & ST_OFLD_HW_UDP_CKSUM) != ST_OFLD_HW_UDP_CKSUM))
-    {
-        udp->dgram_cksum = rte_ipv4_udptcp_cksum(ip, (const void *)udp);
-        if (udp->dgram_cksum == 0) udp->dgram_cksum = 0xFFFF;
-    }
+	extMbuf->data_len = extMbuf->pkt_len = 0;  // Not used
+	// UDP checksum
+	udp->dgram_cksum = 0;
+	if (unlikely((s->ofldFlags & ST_OFLD_HW_UDP_CKSUM) != ST_OFLD_HW_UDP_CKSUM))
+	{
+		udp->dgram_cksum = rte_ipv4_udptcp_cksum(ip, (const void *)udp);
+		if (udp->dgram_cksum == 0)
+			udp->dgram_cksum = 0xFFFF;
+	}
 
-    //iterate to next packet
-    s->ctx.line1Offset += s->fmt.pixelsInPkt;
-    s->ctx.line2Offset += s->fmt.pixelsInPkt;
-    s->ctx.seqNumber.sequence++;
-    if ((rtp->marker == 0) && (s->ctx.line2Offset >= s->fmt.width))
-    {
-        s->ctx.line1Offset = 0;
-        s->ctx.line2Offset = 0;
-        s->ctx.line1Number += 2;
-        s->ctx.line2Number += 2;
-        s->ctx.sliceOffset = byteLn2Offset + s->ctx.line2Length;
-		s->ctx.alignTmstamp = 1;
+	//iterate to next packet
+	s->vctx.line1Offset += s->fmt.v.pixelsInPkt;
+	s->vctx.line2Offset += s->fmt.v.pixelsInPkt;
+	s->vctx.seqNumber.sequence++;
+	if ((rtp->marker == 0) && (s->vctx.line2Offset >= s->fmt.v.width))
+	{
+		s->vctx.line1Offset = 0;
+		s->vctx.line2Offset = 0;
+		s->vctx.line1Number += 2;
+		s->vctx.line2Number += 2;
+		s->vctx.sliceOffset = byteLn2Offset + s->vctx.line2Length;
+		s->vctx.alignTmstamp = 1;
 
-        uint32_t currentOffset = __sync_fetch_and_or(&s->sliceOffset, 0);
+		uint32_t currentOffset = __sync_fetch_and_or(&s->sliceOffset, 0);
 
-        if (s->ctx.sliceOffset >= currentOffset)
-        {
-            RvRtpSessionLock(s);
+		if (s->vctx.sliceOffset >= currentOffset)
+		{
+			StSessionLock(s);
 
 			uint32_t sliceOffset = s->prod.St21GetNextSliceOffset(s->prod.appHandle, s->prodBuf,
-																  currentOffset, s->ctx.fieldId);
+																  currentOffset, s->vctx.fieldId);
 			if (sliceOffset == currentOffset)
 			{
-				RTE_LOG(INFO, USER2, "St21GetNextSliceOffset logical error of offset %u == %u\n",
-						s->ctx.sliceOffset, currentOffset);
+				RTE_LOG(ERR, USER2, "St21GetNextSliceOffset logical error of offset %u == %u\n",
+						s->vctx.sliceOffset, currentOffset);
 				s->state = ST_SN_STATE_NO_NEXT_SLICE;
 			}
 			s->sliceOffset = sliceOffset;
 
-			RvRtpSessionUnlock(s);
+			StSessionUnlock(s);
 		}
 	}
 	s->sn.pktsSend++;
 	if (unlikely(rtp->marker == 1))
 	{
 		s->sn.frmsSend++;
-		s->ctx.tmstamp = 0;	 //renew tmstamp at the next round
-		s->ctx.line1Offset = 0;
-		s->ctx.line2Offset = 0;
-		s->ctx.line1Number = 0;
-		s->ctx.line2Number = 1;
+		s->vctx.tmstamp = 0;  //renew tmstamp at the next round
+		s->vctx.line1Offset = 0;
+		s->vctx.line2Offset = 0;
+		s->vctx.line1Number = 0;
+		s->vctx.line2Number = 1;
 
-		s->ctx.sliceOffset = 0;
+		s->vctx.sliceOffset = 0;
 
 		//critical section
-		RvRtpSessionLock(s);
+		StSessionLock(s);
 
 		s->sliceOffset = 0x0;
 
-		s->prodBuf = s->prod.St21GetNextFrameBuf(s->prod.appHandle, s->prodBuf, s->sn.frameSize,
-												 s->ctx.fieldId);
-		if (unlikely(s->prodBuf == NULL))
+		uint8_t *new_prod_buf = s->prod.St21GetNextFrameBuf(s->prod.appHandle, s->prodBuf,
+															s->sn.frameSize, s->vctx.fieldId);
+		if (new_prod_buf == NULL)
 		{
 			s->state = ST_SN_STATE_NO_NEXT_FRAME;
 		}
 		else
 		{
-			uint32_t nextOffset
-				= s->prod.St21GetNextSliceOffset(s->prod.appHandle, s->prodBuf, 0, s->ctx.fieldId);
+			uint32_t nextOffset;
+			s->prodBuf = new_prod_buf;
+
+			nextOffset
+				= s->prod.St21GetNextSliceOffset(s->prod.appHandle, s->prodBuf, 0, s->vctx.fieldId);
 			s->sliceOffset += nextOffset;
 			if (nextOffset == 0)
 			{
-				RTE_LOG(INFO, USER2, "St21GetNextSliceOffset logical error of offset %u\n",
+				RTE_LOG(ERR, USER2, "St21GetNextSliceOffset logical error of offset %u\n",
 						nextOffset);
 				s->state = ST_SN_STATE_NO_NEXT_SLICE;
 			}
 		}
 
 		//unlock session and sliceOffset
-		RvRtpSessionUnlock(s);
+		StSessionUnlock(s);
 	}
 	/* Return the original pointer for IP hdr */
 	return hdr;
@@ -709,17 +775,17 @@ RvRtpUpdateDualLinePacket(rvrtp_session_t *s, void *hdr, struct rte_mbuf *extMbu
  * SEE ALSO:
  */
 void *
-RvRtpUpdateSingleLinePacket(rvrtp_session_t *s, void *hdr, struct rte_mbuf *extMbuf)
+RvRtpUpdateSingleLinePacket(st_session_impl_t *s, void *hdr, struct rte_mbuf *extMbuf)
 {
 	/* Create the IP & UDP header */
 	struct rte_ipv4_hdr *ip = hdr;
-	struct rte_udp_hdr *udp = (struct rte_udp_hdr *)RvRtpUpdateIpHeader(s, ip);
+	struct rte_udp_hdr *udp = (struct rte_udp_hdr *)StRtpUpdateIpHeader(s, ip);
 
 	struct st_rfc4175_rtp_single_hdr *rtp = (struct st_rfc4175_rtp_single_hdr *)&udp[1];
 
 	/* is frame complete ?*/
-	if (unlikely(((s->ctx.line1Number + 1) == s->fmt.height)
-				 && (s->ctx.line1Offset >= s->fmt.width - s->fmt.pixelsInPkt)))
+	if (unlikely(((s->vctx.line1Number + 1) == s->fmt.v.height)
+				 && (s->vctx.line1Offset >= s->fmt.v.width - s->fmt.v.pixelsInPkt)))
 	{
 		rtp->marker = 1;
 	}
@@ -727,22 +793,25 @@ RvRtpUpdateSingleLinePacket(rvrtp_session_t *s, void *hdr, struct rte_mbuf *extM
 	{
 		rtp->marker = 0;
 	}
-	rtp->seqNumber = htons((uint16_t)s->ctx.seqNumber.lohi.seqLo);
-	rtp->seqNumberExt = htons((uint16_t)s->ctx.seqNumber.lohi.seqHi);
+	rtp->seqNumber = htons((uint16_t)s->vctx.seqNumber.lohi.seqLo);
+	rtp->seqNumberExt = htons((uint16_t)s->vctx.seqNumber.lohi.seqHi);
 
-    rtp->tmstamp = htonl(s->ctx.tmstamp);
-    rtp->line1Number = htons(s->ctx.line1Number);
-    rtp->line1Offset = htons(s->ctx.line1Offset);
-	uint32_t lengthLeft = 
-		MIN(s->ctx.line1Length, s->ctx.line1Size - (uint32_t)s->ctx.line1Offset / s->fmt.pixelsInGrp * s->ctx.line1PixelGrpSize);
+	rtp->tmstamp = htonl(s->vctx.tmstamp);
+	rtp->line1Number = htons(s->vctx.line1Number);
+	rtp->line1Offset = htons(s->vctx.line1Offset);
+	uint32_t lengthLeft
+		= MIN(s->vctx.line1Length, s->vctx.line1Size
+									   - (uint32_t)s->vctx.line1Offset / s->fmt.v.pixelsInGrp
+											 * s->vctx.line1PixelGrpSize);
 	rtp->line1Length = htons(lengthLeft);
 
 	/* copy payload */
-	uint32_t byteLn1Offset =
-		s->ctx.line1Number * s->ctx.line1Size + (uint32_t)s->ctx.line1Offset / s->fmt.pixelsInGrp * s->ctx.line1PixelGrpSize;
+	uint32_t byteLn1Offset
+		= s->vctx.line1Number * s->vctx.line1Size
+		  + (uint32_t)s->vctx.line1Offset / s->fmt.v.pixelsInGrp * s->vctx.line1PixelGrpSize;
 
 	/* line 1 */
-	int idx = St21GetExtIndex(&s->sn, s->prodBuf);
+	int idx = StGetExtIndex(&s->sn, s->prodBuf);
 	rte_iova_t bufIova = s->sn.extMem.bufIova[idx] + byteLn1Offset;
 	struct rte_mbuf_ext_shared_info *shInfo = s->sn.extMem.shInfo[idx];
 	/* Attach extbuf to mbuf */
@@ -760,67 +829,71 @@ RvRtpUpdateSingleLinePacket(rvrtp_session_t *s, void *hdr, struct rte_mbuf *extM
 	}
 
 	//iterate to next packet
-	s->ctx.line1Offset += s->fmt.pixelsInPkt;
-	s->ctx.seqNumber.sequence++;
-	if ((rtp->marker == 0) && (s->ctx.line1Offset >= s->fmt.width))
+	s->vctx.line1Offset += s->fmt.v.pixelsInPkt;
+	s->vctx.seqNumber.sequence++;
+	if ((rtp->marker == 0) && (s->vctx.line1Offset >= s->fmt.v.width))
 	{
-		s->ctx.line1Offset = 0;
-		s->ctx.line1Number++;
-		s->ctx.alignTmstamp = (s->ctx.line1Number & 0x1);
-		s->ctx.sliceOffset = byteLn1Offset + s->ctx.line1Length;
+		s->vctx.line1Offset = 0;
+		s->vctx.line1Number++;
+		s->vctx.alignTmstamp = (s->vctx.line1Number & 0x1);
+		s->vctx.sliceOffset = byteLn1Offset + s->vctx.line1Length;
 
 		uint32_t currentOffset = __sync_fetch_and_or(&s->sliceOffset, 0);
 
-		if (s->ctx.sliceOffset >= currentOffset)
+		if (s->vctx.sliceOffset >= currentOffset)
 		{
-			RvRtpSessionLock(s);
+			StSessionLock(s);
 
-            uint32_t sliceOffset = 
-				s->prod.St21GetNextSliceOffset(s->prod.appHandle, s->prodBuf, currentOffset, s->ctx.fieldId);
-            if (sliceOffset == currentOffset)
-            {
-                RTE_LOG(INFO, USER2, "St21GetNextSliceOffset logical error of offset %u == %u\n", s->ctx.sliceOffset, currentOffset);
-                s->state = ST_SN_STATE_NO_NEXT_SLICE;
-            }
-            s->sliceOffset = sliceOffset;
+			uint32_t sliceOffset = s->prod.St21GetNextSliceOffset(s->prod.appHandle, s->prodBuf,
+																  currentOffset, s->vctx.fieldId);
+			if (sliceOffset == currentOffset)
+			{
+				RTE_LOG(ERR, USER2, "St21GetNextSliceOffset logical error of offset %u == %u\n",
+						s->vctx.sliceOffset, currentOffset);
+				s->state = ST_SN_STATE_NO_NEXT_SLICE;
+			}
+			s->sliceOffset = sliceOffset;
 
-            RvRtpSessionUnlock(s);
-        }
-    }
-    s->sn.pktsSend++;
-    if (unlikely(rtp->marker == 1))
-    {
-        s->sn.frmsSend++;
-        s->ctx.tmstamp = 0;//renew tmstamp at the next round
-        s->ctx.line1Offset = 0;
-        s->ctx.line1Number = 0;
-        s->ctx.sliceOffset = 0;
+			StSessionUnlock(s);
+		}
+	}
+	s->sn.pktsSend++;
+	if (unlikely(rtp->marker == 1))
+	{
+		s->sn.frmsSend++;
+		s->vctx.tmstamp = 0;  //renew tmstamp at the next round
+		s->vctx.line1Offset = 0;
+		s->vctx.line1Number = 0;
+		s->vctx.sliceOffset = 0;
 
-        //critical section
-        RvRtpSessionLock(s);
+		//critical section
+		StSessionLock(s);
 
-        s->sliceOffset = 0x0;
+		s->sliceOffset = 0x0;
 
-		s->prodBuf = s->prod.St21GetNextFrameBuf(s->prod.appHandle, s->prodBuf, s->sn.frameSize,
-												 s->ctx.fieldId);
-		if (s->prodBuf == NULL)
+		uint8_t *new_prod_buf = s->prod.St21GetNextFrameBuf(s->prod.appHandle, s->prodBuf,
+															s->sn.frameSize, s->vctx.fieldId);
+		if (new_prod_buf == NULL)
 		{
 			s->state = ST_SN_STATE_NO_NEXT_FRAME;
 		}
 		else
 		{
-			uint32_t nextOffset
-				= s->prod.St21GetNextSliceOffset(s->prod.appHandle, s->prodBuf, 0, s->ctx.fieldId);
+			uint32_t nextOffset;
+			s->prodBuf = new_prod_buf;
+
+			nextOffset
+				= s->prod.St21GetNextSliceOffset(s->prod.appHandle, s->prodBuf, 0, s->vctx.fieldId);
 			s->sliceOffset += nextOffset;
 			if (nextOffset == 0)
 			{
-				RTE_LOG(INFO, USER2, "St21GetNextSliceOffset logical error of offset %u\n",
+				RTE_LOG(ERR, USER2, "St21GetNextSliceOffset logical error of offset %u\n",
 						nextOffset);
 				s->state = ST_SN_STATE_NO_NEXT_SLICE;
 			}
 		}
 		//unlock session and sliceOffset
-		RvRtpSessionUnlock(s);
+		StSessionUnlock(s);
 	}
 	/* Return the original pointer for IP hdr */
 	return hdr;
@@ -839,17 +912,17 @@ RvRtpUpdateSingleLinePacket(rvrtp_session_t *s, void *hdr, struct rte_mbuf *extM
  * SEE ALSO:
  */
 void *
-RvRtpUpdateInterlacedPacket(rvrtp_session_t *s, void *hdr, struct rte_mbuf *extMbuf)
+RvRtpUpdateInterlacedPacket(st_session_impl_t *s, void *hdr, struct rte_mbuf *extMbuf)
 {
 	/* Create the IP & UDP header */
 	struct rte_ipv4_hdr *ip = hdr;
-	struct rte_udp_hdr *udp = (struct rte_udp_hdr *)RvRtpUpdateIpHeader(s, ip);
+	struct rte_udp_hdr *udp = (struct rte_udp_hdr *)StRtpUpdateIpHeader(s, ip);
 
 	struct st_rfc4175_rtp_single_hdr *rtp = (struct st_rfc4175_rtp_single_hdr *)&udp[1];
 
 	/* is frame complete ?*/
-	if (unlikely(((s->ctx.line1Number + 1) == s->fmt.height / 2)
-				 && (s->ctx.line1Offset >= s->fmt.width - s->fmt.pixelsInPkt)))
+	if (unlikely(((s->vctx.line1Number + 1) == s->fmt.v.height / 2)
+				 && (s->vctx.line1Offset >= s->fmt.v.width - s->fmt.v.pixelsInPkt)))
 	{
 		rtp->marker = 1;
 	}
@@ -857,22 +930,25 @@ RvRtpUpdateInterlacedPacket(rvrtp_session_t *s, void *hdr, struct rte_mbuf *extM
 	{
 		rtp->marker = 0;
 	}
-	rtp->seqNumber = htons((uint16_t)s->ctx.seqNumber.lohi.seqLo);
-	rtp->seqNumberExt = htons((uint16_t)s->ctx.seqNumber.lohi.seqHi);
+	rtp->seqNumber = htons((uint16_t)s->vctx.seqNumber.lohi.seqLo);
+	rtp->seqNumberExt = htons((uint16_t)s->vctx.seqNumber.lohi.seqHi);
 
-    rtp->tmstamp = htonl(s->ctx.tmstamp);
-    rtp->line1Number = htons(s->ctx.line1Number | (s->ctx.fieldId << 15)); //set Field value and line number;
-    rtp->line1Offset = htons(s->ctx.line1Offset);
-	uint32_t lengthLeft = 
-		MIN(s->ctx.line1Length, s->ctx.line1Size - (uint32_t)s->ctx.line1Offset / s->fmt.pixelsInGrp * s->ctx.line1PixelGrpSize);
+	rtp->tmstamp = htonl(s->vctx.tmstamp);
+	rtp->line1Number
+		= htons(s->vctx.line1Number | (s->vctx.fieldId << 15));	 //set Field value and line number;
+	rtp->line1Offset = htons(s->vctx.line1Offset);
+	uint32_t lengthLeft
+		= MIN(s->vctx.line1Length, s->vctx.line1Size
+									   - (uint32_t)s->vctx.line1Offset / s->fmt.v.pixelsInGrp
+											 * s->vctx.line1PixelGrpSize);
 
 	/* copy payload */
-	uint32_t byteLn1Offset =
-		(s->ctx.line1Number * 2 + s->ctx.fieldId) * s->ctx.line1Size + 
-		(uint32_t)s->ctx.line1Offset / s->fmt.pixelsInGrp * s->ctx.line1PixelGrpSize;
+	uint32_t byteLn1Offset
+		= (s->vctx.line1Number * 2 + s->vctx.fieldId) * s->vctx.line1Size
+		  + (uint32_t)s->vctx.line1Offset / s->fmt.v.pixelsInGrp * s->vctx.line1PixelGrpSize;
 
 	/* line 1 */
-	int idx = St21GetExtIndex(&s->sn, s->prodBuf);
+	int idx = StGetExtIndex(&s->sn, s->prodBuf);
 	rte_iova_t bufIova = s->sn.extMem.bufIova[idx] + byteLn1Offset;
 	struct rte_mbuf_ext_shared_info *shInfo = s->sn.extMem.shInfo[idx];
 	/* Attach extbuf to mbuf */
@@ -880,73 +956,94 @@ RvRtpUpdateInterlacedPacket(rvrtp_session_t *s, void *hdr, struct rte_mbuf *extM
 	rte_mbuf_ext_refcnt_update(shInfo, 1);
 	extMbuf->data_len = extMbuf->pkt_len = lengthLeft;
 
-    // UDP checksum 
-    udp->dgram_cksum = 0;
-    if (unlikely((s->ofldFlags & ST_OFLD_HW_UDP_CKSUM) != ST_OFLD_HW_UDP_CKSUM))
-    {
-        udp->dgram_cksum = rte_ipv4_udptcp_cksum(ip, (const void *)udp);
-        if (udp->dgram_cksum == 0)
-            udp->dgram_cksum = 0xFFFF;
-    }
+	// UDP checksum
+	udp->dgram_cksum = 0;
+	if (unlikely((s->ofldFlags & ST_OFLD_HW_UDP_CKSUM) != ST_OFLD_HW_UDP_CKSUM))
+	{
+		udp->dgram_cksum = rte_ipv4_udptcp_cksum(ip, (const void *)udp);
+		if (udp->dgram_cksum == 0)
+			udp->dgram_cksum = 0xFFFF;
+	}
 
-    //iterate to next packet
-    s->ctx.line1Offset += s->fmt.pixelsInPkt;
-    s->ctx.seqNumber.sequence++;
-    if ((rtp->marker == 0) && (s->ctx.line1Offset >= s->fmt.width))
-    {
-        s->ctx.line1Offset = 0;
-        s->ctx.line1Number++;
-		s->ctx.alignTmstamp = (s->ctx.line1Number & 0x1);
-        s->ctx.sliceOffset = byteLn1Offset + s->ctx.line1Length;
+	//iterate to next packet
+	s->vctx.line1Offset += s->fmt.v.pixelsInPkt;
+	s->vctx.seqNumber.sequence++;
+	if ((rtp->marker == 0) && (s->vctx.line1Offset >= s->fmt.v.width))
+	{
+		s->vctx.line1Offset = 0;
+		s->vctx.line1Number++;
+		s->vctx.alignTmstamp = (s->vctx.line1Number & 0x1);
+		s->vctx.sliceOffset = byteLn1Offset + s->vctx.line1Length;
 
-        uint32_t currentOffset = __sync_fetch_and_or(&s->sliceOffset, 0);
+		uint32_t currentOffset = __sync_fetch_and_or(&s->sliceOffset, 0);
 
-        if (s->ctx.sliceOffset >= currentOffset)
-        {
-            RvRtpSessionLock(s);
+		if (s->vctx.sliceOffset >= currentOffset)
+		{
+			StSessionLock(s);
 
-            uint32_t sliceOffset = s->prod.St21GetNextSliceOffset(s->prod.appHandle, s->prodBuf, currentOffset, s->ctx.fieldId);
-            if (sliceOffset == currentOffset)
-            {
-                RTE_LOG(INFO, USER2, "St21GetNextSliceOffset logical error of offset %u == %u\n", s->ctx.sliceOffset, currentOffset);
-                s->state = ST_SN_STATE_NO_NEXT_SLICE;
-            }
-            s->sliceOffset = sliceOffset;
+			uint32_t sliceOffset = s->prod.St21GetNextSliceOffset(s->prod.appHandle, s->prodBuf,
+																  currentOffset, s->vctx.fieldId);
+			if (sliceOffset == currentOffset)
+			{
+				RTE_LOG(ERR, USER2, "St21GetNextSliceOffset logical error of offset %u == %u\n",
+						s->vctx.sliceOffset, currentOffset);
+				s->state = ST_SN_STATE_NO_NEXT_SLICE;
+			}
+			s->sliceOffset = sliceOffset;
 
-            RvRtpSessionUnlock(s);
-        }
-    }
-    s->sn.pktsSend++;
-    if (unlikely(rtp->marker == 1))
-    {
-        s->ctx.tmstamp = 0;//renew tmstamp at the next round
-        s->ctx.line1Offset = 0;
-        s->ctx.line1Number = 0;
-        s->sn.frmsSend++;
-        s->ctx.sliceOffset = 0;
-		s->ctx.fieldId ^= 0x1;
+			StSessionUnlock(s);
+		}
+	}
+	s->sn.pktsSend++;
+	if (unlikely(rtp->marker == 1))
+	{
+		s->vctx.tmstamp = 0;  //renew tmstamp at the next round
+		s->vctx.line1Offset = 0;
+		s->vctx.line1Number = 0;
+		s->sn.frmsSend++;
+		s->vctx.sliceOffset = 0;
+		s->vctx.fieldId ^= 0x1;
 
-        //critical section
-        RvRtpSessionLock(s);
-        s->sliceOffset = 0x0;
-        s->prodBuf = s->prod.St21GetNextFrameBuf(s->prod.appHandle, s->prodBuf, s->sn.frameSize, s->ctx.fieldId);
-        if (s->prodBuf == NULL)
-        {
-            s->state = ST_SN_STATE_NO_NEXT_FRAME;
-        }
-        else
-        {
-            uint32_t nextOffset = s->prod.St21GetNextSliceOffset(s->prod.appHandle, s->prodBuf, 0, s->ctx.fieldId);
-            s->sliceOffset += nextOffset;
-            if (nextOffset == 0)
-            {
-                RTE_LOG(INFO, USER2, "St21GetNextSliceOffset logical error of offset %u\n", nextOffset);
-                s->state = ST_SN_STATE_NO_NEXT_SLICE;
-            }
-        }
-        //unlock session and sliceOffset
-        RvRtpSessionUnlock(s);
-    }
-    /* Return the original pointer for IP hdr */
-    return hdr;
+		//critical section
+		StSessionLock(s);
+		s->sliceOffset = 0x0;
+		uint8_t *temp = s->prod.St21GetNextFrameBuf(s->prod.appHandle, s->prodBuf, s->sn.frameSize,
+													s->vctx.fieldId);
+		if (temp == NULL)
+		{
+			s->state = ST_SN_STATE_NO_NEXT_FRAME;
+		}
+		else
+		{
+			uint32_t nextOffset;
+			s->prodBuf = temp;
+			nextOffset
+				= s->prod.St21GetNextSliceOffset(s->prod.appHandle, s->prodBuf, 0, s->vctx.fieldId);
+			s->sliceOffset += nextOffset;
+			if (nextOffset == 0)
+			{
+				RTE_LOG(ERR, USER2, "St21GetNextSliceOffset logical error of offset %u\n",
+						nextOffset);
+				s->state = ST_SN_STATE_NO_NEXT_SLICE;
+			}
+		}
+		//unlock session and sliceOffset
+		StSessionUnlock(s);
+	}
+	/* Return the original pointer for IP hdr */
+	return hdr;
+}
+
+static st_session_method_t rvrtp_method = {
+	.create_tx_session = RvRtpCreateTxSession,
+	.create_rx_session = RvRtpCreateRxSession,
+	.destroy_tx_session = RvRtpDestroyTxSession,
+	.destroy_rx_session = RvRtpDestroyRxSession,
+	.init_packet_ctx = RvRtpInitPacketCtx,
+};
+
+void
+rvrtp_method_init()
+{
+	st_init_session_method(&rvrtp_method, ST_ESSENCE_VIDEO);
 }

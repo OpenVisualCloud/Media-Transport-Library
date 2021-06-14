@@ -1,5 +1,5 @@
 /*
-* Copyright 2020 Intel Corporation.
+* Copyright (C) 2020-2021 Intel Corporation.
 *
 * This software and the related documents are Intel copyrighted materials,
 * and your use of them is governed by the express license under which they
@@ -17,9 +17,11 @@
 #ifndef _ST_PTP_H
 #define _ST_PTP_H
 
-#include "st_api.h"
-#include <rte_ethdev.h>
 #include <rte_atomic.h>
+#include <rte_ethdev.h>
+
+#include "st_api.h"
+
 #include <pthread.h>
 
 typedef enum
@@ -40,8 +42,8 @@ typedef st_ptp_clock_id_t clock_id_t;
 
 struct port_id
 {
-    st_ptp_clock_id_t clockIdentity;
-    uint16_t portNumber;
+	st_ptp_clock_id_t clockIdentity;
+	uint16_t portNumber;
 } __attribute__((packed));
 typedef struct port_id port_id_t;
 
@@ -54,26 +56,26 @@ enum
 
 struct ptp_header
 {
-    struct
-    {
-        uint8_t messageType:4;
-        uint8_t transportSpecific:4;
-    };
-    struct
-    {
-        uint8_t versionPTP:4;
-        uint8_t reserved0:4;
-    };
-    uint16_t messageLength;
-    uint8_t domainNumber;
+	struct
+	{
+		uint8_t messageType : 4;
+		uint8_t transportSpecific : 4;
+	};
+	struct
+	{
+		uint8_t versionPTP : 4;
+		uint8_t reserved0 : 4;
+	};
+	uint16_t messageLength;
+	uint8_t domainNumber;
 	uint8_t reserved1;
-    uint16_t flagField;
-    int64_t correctionField;
+	uint16_t flagField;
+	int64_t correctionField;
 	uint32_t reserved2;
-    port_id_t sourcePortIdentity;
-    uint16_t sequenceId;
-    uint8_t controlField;
-    int8_t logMessageInterval;
+	port_id_t sourcePortIdentity;
+	uint16_t sequenceId;
+	uint8_t controlField;
+	int8_t logMessageInterval;
 } __attribute__((packed));
 typedef struct ptp_header ptp_header_t;
 
@@ -112,7 +114,7 @@ typedef struct ptp_announce_msg ptp_announce_msg_t;
 struct ptp_sync_msg
 {
 	ptp_header_t hdr;
-    ptp_tmstamp_t originTimestamp;
+	ptp_tmstamp_t originTimestamp;
 } __attribute__((packed));
 typedef struct ptp_sync_msg ptp_sync_msg_t;
 typedef struct ptp_sync_msg ptp_delay_req_msg_t;
@@ -120,7 +122,7 @@ typedef struct ptp_sync_msg ptp_delay_req_msg_t;
 struct ptp_follow_up_msg
 {
 	ptp_header_t hdr;
-    ptp_tmstamp_t preciseOriginTimestamp;
+	ptp_tmstamp_t preciseOriginTimestamp;
 	uint8_t suffix[0];
 } __attribute__((packed));
 typedef struct ptp_follow_up_msg ptp_follow_up_msg_t;
@@ -128,27 +130,45 @@ typedef struct ptp_follow_up_msg ptp_follow_up_msg_t;
 struct ptp_delay_resp_msg
 {
 	ptp_header_t hdr;
-    ptp_tmstamp_t receiveTimestamp;
-    port_id_t requestingPortIdentity;
+	ptp_tmstamp_t receiveTimestamp;
+	port_id_t requestingPortIdentity;
 	uint8_t suffix[0];
 } __attribute__((packed));
 typedef struct ptp_delay_resp_msg ptp_delay_resp_msg_t;
 
+struct ptp_ipv4_udp
+{
+	struct rte_ipv4_hdr ip;
+	struct rte_udp_hdr udp;
+} __attribute__((__packed__));	// __rte_aligned(2);
+typedef struct ptp_ipv4_udp ptp_ipv4_udp_t;
+
 typedef enum
 {
 	PTP_NOT_INITIALIZED = 0x00,
-	PTP_INITIALIZED     = 0x01,
+	PTP_INITIALIZED = 0x01,
 } st_ptp_state_t;
-
 
 typedef enum
 {
-    ST_PTP_CLOCK_SRC_AUTO,
-    ST_PTP_CLOCK_SRC_ETH,
-    ST_PTP_CLOCK_SRC_RTE,
-    ST_PTP_CLOCK_SRC_RTC, //not supported
+	ST_PTP_CLOCK_SRC_AUTO,
+	ST_PTP_CLOCK_SRC_ETH,
+	ST_PTP_CLOCK_SRC_RTE,
+	ST_PTP_CLOCK_SRC_RTC,  //not supported
 } st_ptp_clocksource_t;
 
+typedef enum
+{
+	ST_PTP_L2_MODE,
+	ST_PTP_L4_MODE,
+} st_ptp_l_mode;
+typedef enum
+{
+	ST_PTP_UDP_EVENT_PORT = 319,
+	ST_PTP_UDP_GEN_PORT = 320,
+	ST_PTP_UDP_MULTICAST_GEN_MSG_PORT = ST_PTP_UDP_GEN_PORT,
+	ST_PTP_UDP_UNICAST_CLK_GEN_PORT = ST_PTP_UDP_GEN_PORT,
+} st_ptp_udp_ports;
 
 typedef struct st_ptp_state
 {
@@ -157,25 +177,26 @@ typedef struct st_ptp_state
 	st_ptp_master_choose_mode_t masterChooseMode;
 	port_id_t ourPortIdentity;
 	uint16_t pauseToSendDelayReq;
-    rte_atomic32_t isStop;
-    uint16_t portId;
+	rte_atomic32_t isStop;
+	uint16_t portId;
 	uint16_t txRingId;
 	struct rte_ring *txRing;
-    struct rte_mempool *mbuf;
-    volatile struct rte_mbuf *delReqPkt;
-    pthread_mutex_t isDo;
-    pthread_t ptpDelayReqThread;
-    uint64_t t1;
+	struct rte_mempool *mbuf;
+	volatile struct rte_mbuf *delReqPkt;
+	pthread_mutex_t signalDelayReq;
+	pthread_mutex_t isDo;
+	pthread_t ptpDelayReqThread;
+	uint64_t t1;
 	uint64_t t2;
-    uint64_t t3;
+	uint64_t t3;
 	uint64_t t4;
-    int ist2Soft;
+	int ist2Soft;
 	int ist3Soft;
 	uint64_t t2HPet;
-    uint64_t t3HPet;
-    uint64_t t1HPetFreqStart;
-    uint64_t t1HPetFreqClk;
-    uint64_t t1HPetFreqClkNext;
+	uint64_t t3HPet;
+	uint64_t t1HPetFreqStart;
+	uint64_t t1HPetFreqClk;
+	uint64_t t1HPetFreqClkNext;
 	uint16_t syncSeqId;
 	uint16_t delayReqId;
 	int howSyncInAnnouce;
@@ -188,16 +209,20 @@ typedef struct st_ptp_state
 	int addrMode;
 	int stepMode;
 	clock_id_t setClockId;
-    uint16_t vlanTci;
-    uint8_t vlanRx;    /* indicate VLAN packet is received */
-    volatile int lock;
+	uint16_t vlanTci;
+	uint8_t vlanRx; /* indicate VLAN packet is received */
+	int adjustsAllowed;
+	volatile int lock;
+	st_ptp_l_mode ptpLMode;
+	ptp_ipv4_udp_t tdstIPv4;
+	ptp_ipv4_udp_t dstIPv4;
 } st_ptp_t;
 
 extern st_status_t StParseEthernet(uint16_t portId, struct rte_mbuf *m);
-extern st_status_t StPtpInit(uint16_t portId, struct rte_mempool *mbuf,  uint16_t txRingId, struct rte_ring *txRing);
+extern st_status_t StPtpInit(uint16_t portId, struct rte_mempool *mbuf, uint16_t txRingId,
+							 struct rte_ring *txRing);
 extern st_status_t StPtpDeInit(uint16_t portId);
 extern st_status_t StPtpIsSync(uint16_t portId);
 extern st_status_t StSetClockSource(st_ptp_clocksource_t clkSrc);
 
-
-#endif // _ST_PTP_H
+#endif	// _ST_PTP_H

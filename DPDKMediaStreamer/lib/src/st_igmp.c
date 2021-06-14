@@ -1,5 +1,5 @@
 /*
-* Copyright 2020 Intel Corporation.
+* Copyright (C) 2020-2021 Intel Corporation.
 *
 * This software and the related documents are Intel copyrighted materials,
 * and your use of them is governed by the express license under which they
@@ -41,21 +41,98 @@
 #define MIN_NUMBER_OF_ENTIRES 64
 
 pthread_t querierThread;
-atomic_int_least8_t isQuerierStopped;
+atomic_int_least8_t isQuerierStopped = 1;
 
-static st_igmp_params_t igmpParams = { .state = IGMP_NOT_INITIALIZED, .numberOfSources = 0 };
+static st_igmp_params_t igmpParams[MAX_RXTX_PORTS]
+	= { { .state = IGMP_NOT_INITIALIZED, .numberOfSources = 0 } };
+
+uint32_t
+IgmpSetPktSize(uint32_t sizeOfIgmpHdr)
+{
+	uint32_t pktSize = sizeof(struct rte_ether_hdr) + sizeof(struct rte_ipv4_hdr) + sizeOfIgmpHdr;
+
+	// Align to the 60 bytes because of requirements of NIC's (e.g. Intel(R) Fortville, support packets with minimum size 60 bytes)
+	if (pktSize < 60)
+	{
+		pktSize += 60 - pktSize;
+	}
+
+	return pktSize;
+}
+
+void
+IgmpBuildIpHdr(struct rte_ipv4_hdr *ipHdr, uint32_t sourceAddress, uint32_t sizeOfIgmpHdr)
+{
+	if (!ipHdr)
+	{
+		return;
+	}
+
+	ipHdr->version_ihl = (4 << 4) | (sizeof(struct rte_ipv4_hdr) / 4);
+	ipHdr->time_to_live = 1;
+	ipHdr->type_of_service = IP_IGMP_DSCP_VALUE;
+	ipHdr->fragment_offset = IP_DONT_FRAGMENT_FLAG;
+	ipHdr->hdr_checksum = 0;
+
+	uint16_t tLen = sizeof(struct rte_ipv4_hdr) + sizeOfIgmpHdr;
+	ipHdr->total_length = htons(tLen);
+	ipHdr->next_proto_id = IGMP_PROTOCOL;
+	ipHdr->src_addr = sourceAddress;
+}
+
+uint16_t
+IgmpCalculateChecksum(igmp_message_type_t messageType, void *igmpMessage)
+{
+	if (!igmpMessage)
+	{
+		return 0;
+	}
+
+	uint8_t count = 0;
+	uint16_t *val_1 = (uint16_t *)(igmpMessage);
+	uint16_t sum = 0;
+
+	switch (messageType)
+	{
+	case MEMBERSHIP_QUERY:
+		count = sizeof(st_membership_query_t) / sizeof(uint16_t);
+		break;
+	case MEMBERSHIP_REPORT_V1:
+		break;
+	case MEMBERSHIP_REPORT_V2:
+		count = sizeof(st_membership_report_v2_t) / sizeof(uint16_t);
+		;
+		break;
+	case MEMBERSHIP_REPORT_V3:
+		count = sizeof(st_membership_report_v3_t) / sizeof(uint16_t);
+		break;
+	default:
+		RTE_LOG(ERR, USER1, "Unknown message type: %d", messageType);
+		return 0;
+	}
+
+	while (count > 0)
+	{
+		sum = sum + ntohs(*val_1);
+		val_1++;
+		count--;
+	}
+	sum = ~sum;
+
+	return sum;
+}
 
 st_status_t
-StCreateMembershipQueryV3(uint32_t sourceAddress, uint32_t groupAddress)
+StCreateMembershipQueryV3(uint32_t sourceAddress, uint32_t groupAddress, int portid)
 {
-	struct rte_mbuf *queryPktTmp = rte_pktmbuf_alloc(igmpParams.mbuf);
-	if (queryPktTmp == NULL)
+	if (!igmpParams[portid].mbuf)
 	{
-		RTE_LOG(ERR, USER1, "Create Membership Query rte_pktmbuf_alloc failed\n");
-		return ST_NO_MEMORY;
+		return ST_BUFFER_NOT_READY;
 	}
+	rte_mbuf_refcnt_set(igmpParams[portid].mbuf, MBUF_LIFE_TIME);
+
 	st_membership_query_t *membershipQuery
-		= rte_pktmbuf_mtod_offset(queryPktTmp, st_membership_query_t *,
+		= rte_pktmbuf_mtod_offset(igmpParams[portid].mbuf, st_membership_query_t *,
 								  sizeof(struct rte_ether_hdr) + sizeof(struct rte_ipv4_hdr));
 
 	membershipQuery->type = MEMBERSHIP_QUERY;
@@ -66,34 +143,24 @@ StCreateMembershipQueryV3(uint32_t sourceAddress, uint32_t groupAddress)
 	membershipQuery->qrv = 0x00;
 	membershipQuery->qqic = 0x08;
 
-	queryPktTmp->pkt_len = sizeof(struct rte_ether_hdr) + sizeof(struct rte_ipv4_hdr)
-						   + sizeof(st_membership_query_t);
-	queryPktTmp->data_len = sizeof(struct rte_ether_hdr) + sizeof(struct rte_ipv4_hdr)
-							+ sizeof(st_membership_query_t);
-	queryPktTmp->ol_flags = PKT_TX_IPV4;
+	igmpParams[portid].mbuf->pkt_len = IgmpSetPktSize(sizeof(st_membership_query_t));
+	igmpParams[portid].mbuf->data_len = IgmpSetPktSize(sizeof(st_membership_query_t));
+	igmpParams[portid].mbuf->ol_flags = PKT_TX_IPV4;
 
-	queryPktTmp->l2_len = sizeof(struct rte_ether_hdr);
-	queryPktTmp->l3_len = sizeof(struct rte_ipv4_hdr);
+	igmpParams[portid].mbuf->l2_len = sizeof(struct rte_ether_hdr);
+	igmpParams[portid].mbuf->l3_len = sizeof(struct rte_ipv4_hdr);
+	igmpParams[portid].mbuf->ol_flags |= PKT_TX_IP_CKSUM;
 
-	struct rte_ether_hdr *ethHdr = rte_pktmbuf_mtod(queryPktTmp, struct rte_ether_hdr *);
-	rte_eth_macaddr_get(igmpParams.portId, &ethHdr->s_addr);
+	struct rte_ether_hdr *ethHdr
+		= rte_pktmbuf_mtod(igmpParams[portid].mbuf, struct rte_ether_hdr *);
 
+	rte_eth_macaddr_get(igmpParams[portid].portId, &ethHdr->s_addr);
 	ethHdr->ether_type = htons(IPv4_PROTOCOL);
 
-	struct rte_ipv4_hdr *ipHdr
-		= rte_pktmbuf_mtod_offset(queryPktTmp, struct rte_ipv4_hdr *, sizeof(struct rte_ether_hdr));
-	ipHdr->version_ihl = (4 << 4) | (sizeof(struct rte_ipv4_hdr) / 4);
-	ipHdr->time_to_live = 1;
-	ipHdr->type_of_service = IP_IGMP_DSCP_VALUE;
-	ipHdr->fragment_offset = IP_DONT_FRAGMENT_FLAG;
+	struct rte_ipv4_hdr *ipHdr = rte_pktmbuf_mtod_offset(
+		igmpParams[portid].mbuf, struct rte_ipv4_hdr *, sizeof(struct rte_ether_hdr));
 
-	queryPktTmp->ol_flags |= PKT_TX_IP_CKSUM;
-	ipHdr->hdr_checksum = 0;
-
-	uint16_t tLen = sizeof(struct rte_ipv4_hdr) + sizeof(st_membership_query_t);
-	ipHdr->total_length = htons(tLen);
-	ipHdr->next_proto_id = IGMP_PROTOCOL;
-	ipHdr->src_addr = sourceAddress;
+	IgmpBuildIpHdr(ipHdr, sourceAddress, sizeof(st_membership_query_t));
 
 	static struct rte_ether_addr multicast = { 0 };
 	multicast.addr_bytes[0] = 0x01;
@@ -101,10 +168,10 @@ StCreateMembershipQueryV3(uint32_t sourceAddress, uint32_t groupAddress)
 	multicast.addr_bytes[2] = 0x5e;
 	uint32_t tmpMacChunk = 0;
 
-	switch (igmpParams.queryMessageType)
+	switch (igmpParams[portid].queryMessageType)
 	{
 	case GENERAL_MEMBERSHIP_QUERY:
-		ipHdr->dst_addr = igmpParams.queryIpAddress;
+		ipHdr->dst_addr = igmpParams[portid].queryIpAddress;
 		membershipQuery->groupAddress = 0;
 		membershipQuery->numberOfSources = 0;
 		membershipQuery->sourceAddress = 0;
@@ -123,7 +190,7 @@ StCreateMembershipQueryV3(uint32_t sourceAddress, uint32_t groupAddress)
 	case GROUP_AND_SOURCE_MEMBERSHIP_QUERY:
 		ipHdr->dst_addr = groupAddress;
 		membershipQuery->groupAddress = groupAddress;
-		membershipQuery->numberOfSources = htons(igmpParams.numberOfSources);
+		membershipQuery->numberOfSources = htons(igmpParams[portid].numberOfSources);
 		membershipQuery->sourceAddress = sourceAddress;
 		tmpMacChunk = (groupAddress >> 8) & 0xFFFFFF7F;
 		memcpy(&multicast.addr_bytes[3], &tmpMacChunk, sizeof(uint8_t) * 3);
@@ -134,66 +201,59 @@ StCreateMembershipQueryV3(uint32_t sourceAddress, uint32_t groupAddress)
 
 	rte_ether_addr_copy(&multicast, &ethHdr->d_addr);
 
-	// calculate checksum
-	uint8_t count = sizeof(st_membership_query_t) / sizeof(uint16_t);
-	uint16_t *val_1 = (uint16_t *)(membershipQuery);
-	uint16_t sum = 0;
+	uint16_t checksum = IgmpCalculateChecksum(MEMBERSHIP_QUERY, membershipQuery);
 
-	while (count > 0)
+	if (checksum <= 0)
 	{
-		sum = sum + ntohs(*val_1);
-		val_1++;
-		count--;
+		return ST_IGMP_WRONG_CHECKSUM;
 	}
-	sum = ~sum;
 
-	membershipQuery->checksum = htons(sum);
+	membershipQuery->checksum = htons(checksum);
 
-	igmpParams.queryPkt = queryPktTmp;
+	igmpParams[portid].queryPkt = igmpParams[portid].mbuf;
 
 	return ST_OK;
 }
 
 st_status_t
-StCreateMembershipReportV2(uint32_t groupAddress, igmp_message_type_t type)
+StCreateMembershipReportV2(uint32_t sourceAddress, uint32_t groupAddress, igmp_message_type_t type,
+						   int portid)
 {
-	struct rte_mbuf *reportPktTmp = rte_pktmbuf_alloc(igmpParams.mbuf);
-	if (reportPktTmp == NULL)
+	if (!igmpParams[portid].mbuf)
 	{
-		RTE_LOG(ERR, USER1, "Create Membership Report rte_pktmbuf_alloc failed\n");
-		return ST_NO_MEMORY;
+		return ST_BUFFER_NOT_READY;
 	}
+	rte_mbuf_refcnt_set(igmpParams[portid].mbuf, MBUF_LIFE_TIME);
 
 	st_membership_report_v2_t *membershipReport
-		= rte_pktmbuf_mtod_offset(reportPktTmp, st_membership_report_v2_t *,
+		= rte_pktmbuf_mtod_offset(igmpParams[portid].mbuf, st_membership_report_v2_t *,
 								  sizeof(struct rte_ether_hdr) + sizeof(struct rte_ipv4_hdr));
 
 	membershipReport->type = type;
 	membershipReport->maxRespTime = QUERY_RESPONSE_INTERVAL;
 	membershipReport->checksum = 0;
 
-	reportPktTmp->pkt_len = sizeof(struct rte_ether_hdr) + sizeof(struct rte_ipv4_hdr)
-							+ sizeof(st_membership_report_v2_t);
-	reportPktTmp->data_len = sizeof(struct rte_ether_hdr) + sizeof(struct rte_ipv4_hdr)
-							 + sizeof(st_membership_report_v2_t);
-	reportPktTmp->ol_flags = PKT_TX_IPV4;
+	igmpParams[portid].mbuf->pkt_len = IgmpSetPktSize(sizeof(st_membership_report_v2_t));
+	igmpParams[portid].mbuf->data_len = IgmpSetPktSize(sizeof(st_membership_report_v2_t));
+	igmpParams[portid].mbuf->ol_flags = PKT_TX_IPV4;
 
-	reportPktTmp->l2_len = sizeof(struct rte_ether_hdr);
-	reportPktTmp->l3_len = sizeof(struct rte_ipv4_hdr);
+	igmpParams[portid].mbuf->l2_len = sizeof(struct rte_ether_hdr);
+	igmpParams[portid].mbuf->l3_len = sizeof(struct rte_ipv4_hdr);
 
-	struct rte_ether_hdr *ethHdr = rte_pktmbuf_mtod(reportPktTmp, struct rte_ether_hdr *);
-	rte_eth_macaddr_get(igmpParams.portId, &ethHdr->s_addr);
+	struct rte_ether_hdr *ethHdr
+		= rte_pktmbuf_mtod(igmpParams[portid].mbuf, struct rte_ether_hdr *);
+	rte_eth_macaddr_get(igmpParams[portid].portId, &ethHdr->s_addr);
 
 	ethHdr->ether_type = htons(IPv4_PROTOCOL);
 
-	struct rte_ipv4_hdr *ipHdr = rte_pktmbuf_mtod_offset(reportPktTmp, struct rte_ipv4_hdr *,
-														 sizeof(struct rte_ether_hdr));
+	struct rte_ipv4_hdr *ipHdr = rte_pktmbuf_mtod_offset(
+		igmpParams[portid].mbuf, struct rte_ipv4_hdr *, sizeof(struct rte_ether_hdr));
 	ipHdr->version_ihl = (4 << 4) | (sizeof(struct rte_ipv4_hdr) / 4);
 	ipHdr->time_to_live = 1;
 	ipHdr->type_of_service = IP_IGMP_DSCP_VALUE;
 	ipHdr->fragment_offset = IP_DONT_FRAGMENT_FLAG;
 
-	reportPktTmp->ol_flags |= PKT_TX_IP_CKSUM;
+	igmpParams[portid].mbuf->ol_flags |= PKT_TX_IP_CKSUM;
 	ipHdr->hdr_checksum = 0;
 
 	uint16_t tLen = sizeof(struct rte_ipv4_hdr) + sizeof(st_membership_report_v2_t);
@@ -208,12 +268,12 @@ StCreateMembershipReportV2(uint32_t groupAddress, igmp_message_type_t type)
 
 	if (type == MEMBERSHIP_QUERY)
 	{
-		ipHdr->src_addr = igmpParams.srcIpAddress;
-		switch (igmpParams.queryMessageType)
+		ipHdr->src_addr = sourceAddress;
+		switch (igmpParams[portid].queryMessageType)
 		{
 		case GENERAL_MEMBERSHIP_QUERY:
 			membershipReport->groupAddress = 0;
-			ipHdr->dst_addr = igmpParams.queryIpAddress;
+			ipHdr->dst_addr = igmpParams[portid].queryIpAddress;
 			multicast_dst.addr_bytes[3] = 0x00;
 			multicast_dst.addr_bytes[4] = 0x00;
 			multicast_dst.addr_bytes[5] = 0x01;
@@ -230,7 +290,7 @@ StCreateMembershipReportV2(uint32_t groupAddress, igmp_message_type_t type)
 	}
 	else if (type == MEMBERSHIP_REPORT_V2 || type == LEAVE_GROUP_V2)
 	{
-		ipHdr->src_addr = 0x0;
+		ipHdr->src_addr = sourceAddress;
 		membershipReport->groupAddress = groupAddress;
 		ipHdr->dst_addr = groupAddress;
 		tmpMacChunk = (groupAddress >> 8) & 0xFFFFFF7F;
@@ -239,29 +299,23 @@ StCreateMembershipReportV2(uint32_t groupAddress, igmp_message_type_t type)
 
 	rte_ether_addr_copy(&multicast_dst, &ethHdr->d_addr);
 
-	// calculate checksum
-	uint8_t count = sizeof(st_membership_report_v2_t) / sizeof(uint16_t);
-	uint16_t *val_1 = (uint16_t *)(membershipReport);
-	uint16_t sum = 0;
+	uint16_t checksum = IgmpCalculateChecksum(MEMBERSHIP_QUERY, membershipReport);
 
-	while (count > 0)
+	if (checksum <= 0)
 	{
-		sum = sum + ntohs(*val_1);
-		val_1++;
-		count--;
+		return ST_IGMP_WRONG_CHECKSUM;
 	}
-	sum = ~sum;
 
 	if (type == MEMBERSHIP_QUERY)
 	{
-		membershipReport->checksum = htons(sum);
+		membershipReport->checksum = htons(checksum);
 	}
 	else if (type == MEMBERSHIP_REPORT_V2 || type == LEAVE_GROUP_V2)
 	{
-		membershipReport->checksum = htons(sum - 1);
+		membershipReport->checksum = htons(checksum - 1);
 	}
 
-	igmpParams.reportPkt = reportPktTmp;
+	igmpParams[portid].reportPkt = igmpParams[portid].mbuf;
 
 	return ST_OK;
 }
@@ -284,17 +338,16 @@ StCreateGroupRecord(uint16_t numOfSrcs, uint32_t groupAddress, uint32_t sourceAd
 
 st_status_t
 StCreateMembershipReportV3(uint32_t groupAddress, uint32_t sourceAddress, qroup_record_type_t type,
-						   uint16_t numberOfGroupRecords)
+						   uint16_t numberOfGroupRecords, int portid)
 {
-	struct rte_mbuf *reportPktTmp = rte_pktmbuf_alloc(igmpParams.mbuf);
-	if (reportPktTmp == NULL)
+	if (!igmpParams[portid].mbuf)
 	{
-		RTE_LOG(ERR, USER1, "Create Membership Report rte_pktmbuf_alloc failed\n");
-		return ST_NO_MEMORY;
+		return ST_BUFFER_NOT_READY;
 	}
+	rte_mbuf_refcnt_set(igmpParams[portid].mbuf, MBUF_LIFE_TIME);
 
 	st_membership_report_v3_t *membershipReport
-		= rte_pktmbuf_mtod_offset(reportPktTmp, st_membership_report_v3_t *,
+		= rte_pktmbuf_mtod_offset(igmpParams[portid].mbuf, st_membership_report_v3_t *,
 								  sizeof(struct rte_ether_hdr) + sizeof(struct rte_ipv4_hdr));
 
 	membershipReport->type = MEMBERSHIP_REPORT_V3;
@@ -305,97 +358,122 @@ StCreateMembershipReportV3(uint32_t groupAddress, uint32_t sourceAddress, qroup_
 	membershipReport->groupRecords = StCreateGroupRecord(
 		0, groupAddress, 0, type);	// Change in case of handling more than one source
 
-	reportPktTmp->pkt_len = sizeof(struct rte_ether_hdr) + sizeof(struct rte_ipv4_hdr)
-							+ sizeof(st_membership_report_v3_t);
-	reportPktTmp->data_len = sizeof(struct rte_ether_hdr) + sizeof(struct rte_ipv4_hdr)
-							 + sizeof(st_membership_report_v3_t);
-	reportPktTmp->ol_flags = PKT_TX_IPV4;
+	igmpParams[portid].mbuf->pkt_len = IgmpSetPktSize(sizeof(st_membership_report_v3_t));
+	igmpParams[portid].mbuf->data_len = IgmpSetPktSize(sizeof(st_membership_report_v3_t));
+	igmpParams[portid].mbuf->ol_flags = PKT_TX_IPV4;
 
-	reportPktTmp->l2_len = sizeof(struct rte_ether_hdr);
-	reportPktTmp->l3_len = sizeof(struct rte_ipv4_hdr);
+	igmpParams[portid].mbuf->l2_len = sizeof(struct rte_ether_hdr);
+	igmpParams[portid].mbuf->l3_len = sizeof(struct rte_ipv4_hdr);
 
-	struct rte_ether_hdr *ethHdr = rte_pktmbuf_mtod(reportPktTmp, struct rte_ether_hdr *);
-	rte_eth_macaddr_get(igmpParams.portId, &ethHdr->s_addr);
+	struct rte_ether_hdr *ethHdr
+		= rte_pktmbuf_mtod(igmpParams[portid].mbuf, struct rte_ether_hdr *);
+	rte_eth_macaddr_get(igmpParams[portid].portId, &ethHdr->s_addr);
 	static struct rte_ether_addr const multicast_dst = { { 0x01, 0x00, 0x5e, 0x00, 0x00, 0x16 } };
 
 	rte_ether_addr_copy(&multicast_dst, &ethHdr->d_addr);
 
 	ethHdr->ether_type = htons(IPv4_PROTOCOL);
 
-	struct rte_ipv4_hdr *ipHdr = rte_pktmbuf_mtod_offset(reportPktTmp, struct rte_ipv4_hdr *,
-														 sizeof(struct rte_ether_hdr));
+	struct rte_ipv4_hdr *ipHdr = rte_pktmbuf_mtod_offset(
+		igmpParams[portid].mbuf, struct rte_ipv4_hdr *, sizeof(struct rte_ether_hdr));
 	ipHdr->version_ihl = (4 << 4) | (sizeof(struct rte_ipv4_hdr) / 4);
 	ipHdr->time_to_live = 1;
 	ipHdr->type_of_service = IP_IGMP_DSCP_VALUE;
 	ipHdr->fragment_offset = IP_DONT_FRAGMENT_FLAG;
 
-	reportPktTmp->ol_flags |= PKT_TX_IP_CKSUM;
+	igmpParams[portid].mbuf->ol_flags |= PKT_TX_IP_CKSUM;
 	ipHdr->hdr_checksum = 0;
 
 	uint16_t tLen = sizeof(struct rte_ipv4_hdr) + sizeof(st_membership_report_v3_t);
 	ipHdr->total_length = htons(tLen);
 	ipHdr->next_proto_id = IGMP_PROTOCOL;
-	ipHdr->src_addr = 0x0;
-	ipHdr->dst_addr = igmpParams.reportIpAddress;
+	ipHdr->src_addr = sourceAddress;
+	ipHdr->dst_addr = igmpParams[portid].reportIpAddress;
 
-	// calculate checksum
-	uint8_t count = sizeof(st_membership_report_v3_t) / sizeof(uint16_t);
-	uint16_t *val_1 = (uint16_t *)(membershipReport);
-	uint16_t sum = 0;
+	uint16_t checksum = IgmpCalculateChecksum(MEMBERSHIP_QUERY, membershipReport);
 
-	while (count > 0)
+	if (checksum <= 0)
 	{
-		sum = sum + ntohs(*val_1);
-		val_1++;
-		count--;
+		return ST_IGMP_WRONG_CHECKSUM;
 	}
-	sum = ~sum;
 
-	membershipReport->checksum = htons(sum - 1);
+	membershipReport->checksum = htons(checksum - 1);
 
-	igmpParams.reportPkt = reportPktTmp;
+	igmpParams[portid].reportPkt = igmpParams[portid].mbuf;
 
 	return ST_OK;
 }
 
 st_status_t
-StSendMembershipQuery()
+StSendMembershipQuery(int portid)
 {
-	if (rte_ring_sp_enqueue(igmpParams.txRing, (void *)igmpParams.queryPkt) < 0)
+	if (!igmpParams[portid].queryPkt)
 	{
-		RTE_LOG(ERR, USER1,
-				"ERROR: Not enough room in the ring to enqueue; object Membership Query is not "
-				"enqueued\n");
-		return ST_NO_MEMORY;
+		return ST_BUFFER_NOT_READY;
 	}
 
-	return ST_OK;
+	int retryCount = 3;
+
+	do
+	{
+		if (unlikely(igmpParams[portid].state != IGMP_INITIALIZED))
+		{
+			return ST_IGMP_NOT_READY;
+		}
+
+		if (rte_eth_tx_burst(igmpParams[portid].portId, igmpParams[portid].ringId,
+							 (struct rte_mbuf **)&igmpParams[portid].queryPkt, 1)
+			> 0)
+		{
+			return ST_OK;
+		}
+		retryCount--;
+	} while (retryCount != 0);
+
+	RTE_LOG(DEBUG, USER1, "Membership Query was not send for portid %d\n", portid);
+	return ST_IGMP_SEND_QUERY_FAILED;
 }
 
 st_status_t
-StSendMembershipReport()
+StSendMembershipReport(int portid)
 {
-	if (rte_ring_sp_enqueue(igmpParams.txRing, (void *)igmpParams.reportPkt) < 0)
+	if (!igmpParams[portid].reportPkt)
 	{
-		RTE_LOG(ERR, USER1,
-				"ERROR: Not enough room in the ring to enqueue; object Membership Report is not "
-				"enqueued\n");
-		return ST_NO_MEMORY;
+		return ST_BUFFER_NOT_READY;
 	}
 
-	return ST_OK;
+	int retryCount = 3;
+
+	do
+	{
+		if (unlikely(igmpParams[portid].state != IGMP_INITIALIZED))
+		{
+			return ST_IGMP_NOT_READY;
+		}
+
+		if (rte_eth_tx_burst(igmpParams[portid].portId, igmpParams[portid].ringId,
+							 (struct rte_mbuf **)&igmpParams[portid].reportPkt, 1)
+			> 0)
+		{
+			return ST_OK;
+		}
+		retryCount--;
+	} while (retryCount != 0);
+
+	RTE_LOG(DEBUG, USER1, "Membership Report was not send for portid %d\n", portid);
+	return ST_IGMP_SEND_REPORT_FAILED;
 }
 
 st_status_t
 StIgmpQuerierStart()
 {
-	if (igmpParams.state != IGMP_INITIALIZED)
+	if (isQuerierStopped == 0)
 	{
-		return ST_IGMP_QUERIER_NOT_READY;
+		return ST_OK;
 	}
 
 	isQuerierStopped = 0;
-	pthread_create(&querierThread, NULL, &StIgmpQuerierLoop, NULL);
+	pthread_create(&querierThread, NULL, &IgmpQuerierLoop, NULL);
 
 	return ST_OK;
 }
@@ -403,17 +481,28 @@ StIgmpQuerierStart()
 st_status_t
 StIgmpQuerierStop()
 {
-	if (igmpParams.state != IGMP_INITIALIZED)
+	if (isQuerierStopped == 1)
 	{
-		return ST_IGMP_QUERIER_NOT_READY;
+		return ST_OK;
+	}
+
+	for (int i = 0; i < stMainParams.numPorts; i++)
+	{
+		igmpParams[i].state = IGMP_STOPPED;
 	}
 
 	isQuerierStopped = 1;
 	pthread_join(querierThread, NULL);
 
-	free(igmpParams.sourceAddressesList);
-
-	igmpParams.state = IGMP_NOT_INITIALIZED;
+	for (int i = 0; i < stMainParams.numPorts; i++)
+	{
+		if (igmpParams[i].sourceAddressesList)
+		{
+			free(igmpParams[i].sourceAddressesList);
+			igmpParams[i].sourceAddressesList = NULL;
+		}
+		igmpParams[i].state = IGMP_NOT_INITIALIZED;
+	}
 
 	RTE_LOG(INFO, USER1, "IGMP querier STOPPED\n");
 
@@ -421,38 +510,53 @@ StIgmpQuerierStop()
 }
 
 st_status_t
-StIgmpQuerierInit(uint16_t portId, struct rte_mempool *mbuf, struct rte_ring *txRing,
-				  uint32_t *srcIpAddr, uint32_t *multicastIpAddr)
+StIgmpInit(uint16_t portId, struct rte_mempool *mempool, uint32_t *srcIpAddr,
+		   uint32_t *multicastIpAddr, uint16_t ringId)
 {
-	igmpParams.igmp_version = IGMP_V3;
-	igmpParams.mbuf = mbuf;
-	igmpParams.portId = portId;
-	igmpParams.txRing = txRing;
-	igmpParams.queryMessageType = GENERAL_MEMBERSHIP_QUERY;
-	igmpParams.sourceAddressesList = malloc(MIN_NUMBER_OF_ENTIRES * sizeof(uint32_t));
-	igmpParams.maxNumberOfSources = MIN_NUMBER_OF_ENTIRES;
-	igmpParams.numberOfSources = 0;
-	igmpParams.srcIpAddress = *srcIpAddr;
-	igmpParams.groupIpAddress = *multicastIpAddr;
+	if (!mempool || !srcIpAddr || !multicastIpAddr)
+	{
+		return ST_INVALID_PARAM;
+	}
 
-	if (inet_pton(AF_INET, "224.0.0.1", &igmpParams.queryIpAddress) != 1)
+	igmpParams[portId].igmp_version = IGMP_V3;
+	igmpParams[portId].portId = portId;
+	igmpParams[portId].queryMessageType
+		= GENERAL_MEMBERSHIP_QUERY;	 // At this moment only general query is sent,
+									 // environment is prepared for support other
+									 // message types but it is not used.
+	igmpParams[portId].sourceAddressesList = malloc(MIN_NUMBER_OF_ENTIRES * sizeof(uint32_t));
+	igmpParams[portId].maxNumberOfSources = MIN_NUMBER_OF_ENTIRES;
+	igmpParams[portId].numberOfSources = 0;
+	igmpParams[portId].srcIpAddress = *srcIpAddr;
+	igmpParams[portId].groupIpAddress = *multicastIpAddr;
+
+	igmpParams[portId].mbuf = rte_pktmbuf_alloc(mempool);
+	igmpParams[portId].ringId = ringId;
+	if (igmpParams[portId].mbuf == NULL)
+	{
+		RTE_LOG(ERR, USER1, "IGMP rte_pktmbuf_alloc failed\n");
+		return ST_NO_MEMORY;
+	}
+	rte_mbuf_refcnt_set(igmpParams[portId].mbuf, 3 * MBUF_LIFE_TIME);
+
+	if (inet_pton(AF_INET, "224.0.0.1", &igmpParams[portId].queryIpAddress) != 1)
 	{
 		RTE_LOG(ERR, USER1, "Translate IP query address error\n");
 	}
-	if (inet_pton(AF_INET, "224.0.0.22", &igmpParams.reportIpAddress) != 1)
+	if (inet_pton(AF_INET, "224.0.0.22", &igmpParams[portId].reportIpAddress) != 1)
 	{
 		RTE_LOG(ERR, USER1, "Translate IP report address error\n");
 	}
-	if (inet_pton(AF_INET, "224.0.0.0", &igmpParams.minMulitcastIpAddress) != 1)
+	if (inet_pton(AF_INET, "224.0.0.0", &igmpParams[portId].minMulitcastIpAddress) != 1)
 	{
 		RTE_LOG(ERR, USER1, "Translate IP minMulitcast address error\n");
 	}
-	if (inet_pton(AF_INET, "239.255.255.255", &igmpParams.maxMulitcastIpAddress) != 1)
+	if (inet_pton(AF_INET, "239.255.255.255", &igmpParams[portId].maxMulitcastIpAddress) != 1)
 	{
 		RTE_LOG(ERR, USER1, "Translate IP maxMulitcast address error\n");
 	}
 
-	igmpParams.state = IGMP_INITIALIZED;
+	igmpParams[portId].state = IGMP_INITIALIZED;
 
 	if (stMainParams.rxOnly != 1)
 	{
@@ -463,26 +567,27 @@ StIgmpQuerierInit(uint16_t portId, struct rte_mempool *mbuf, struct rte_ring *tx
 }
 
 st_status_t
-StUpdateSourcesList(uint32_t sourceAddress)
+StUpdateSourcesList(uint32_t sourceAddress, int portid)
 {
 
-	if (igmpParams.numberOfSources >= igmpParams.maxNumberOfSources)
+	if (igmpParams[portid].numberOfSources >= igmpParams[portid].maxNumberOfSources)
 	{
-		igmpParams.sourceAddressesList
-			= realloc(igmpParams.sourceAddressesList,
-					  (igmpParams.numberOfSources + MIN_NUMBER_OF_ENTIRES) * sizeof(uint32_t));
-		igmpParams.maxNumberOfSources = igmpParams.numberOfSources + MIN_NUMBER_OF_ENTIRES;
+		igmpParams[portid].sourceAddressesList = realloc(
+			igmpParams[portid].sourceAddressesList,
+			(igmpParams[portid].numberOfSources + MIN_NUMBER_OF_ENTIRES) * sizeof(uint32_t));
+		igmpParams[portid].maxNumberOfSources
+			= igmpParams[portid].numberOfSources + MIN_NUMBER_OF_ENTIRES;
 	}
 
-	igmpParams.numberOfSources++;
+	igmpParams[portid].numberOfSources++;
 
-	igmpParams.sourceAddressesList[igmpParams.numberOfSources] = sourceAddress;
+	igmpParams[portid].sourceAddressesList[igmpParams[portid].numberOfSources] = sourceAddress;
 
 	return ST_OK;
 }
 
 void *
-StIgmpQuerierLoop(void *arg)
+IgmpQuerierLoop(void *arg)
 {
 	st_status_t status = ST_OK;
 
@@ -490,48 +595,57 @@ StIgmpQuerierLoop(void *arg)
 
 	while (!isQuerierStopped)
 	{
-		if (igmpParams.igmp_version == IGMP_V2)
+		for (int portid = 0; portid < stMainParams.numPorts; portid++)
 		{
-			status = StCreateMembershipReportV2(igmpParams.groupIpAddress, MEMBERSHIP_QUERY);
-		}
-		else if (igmpParams.igmp_version == IGMP_V3)
-		{
-			status = StCreateMembershipQueryV3(igmpParams.srcIpAddress, igmpParams.groupIpAddress);
-		}
+			if (igmpParams[portid].igmp_version == IGMP_V2)
+			{
+				status = StCreateMembershipReportV2(igmpParams[portid].srcIpAddress,
+													igmpParams[portid].groupIpAddress,
+													MEMBERSHIP_QUERY, portid);
+			}
+			else if (igmpParams[portid].igmp_version == IGMP_V3)
+			{
+				status = StCreateMembershipQueryV3(igmpParams[portid].srcIpAddress,
+												   igmpParams[portid].groupIpAddress, portid);
+			}
 
-		if (status != ST_OK)
-		{
-			RTE_LOG(ERR, USER1, "StCreateMembershipQuery FAILED, ErrNo: %d\n", status);
-			return NULL;
-		}
+			if (status != ST_OK)
+			{
+				RTE_LOG(ERR, USER1, "StCreateMembershipQuery FAILED, ErrNo: %d\n", status);
+				return NULL;
+			}
 
-		if (igmpParams.igmp_version == IGMP_V2)
-		{
-			status = StSendMembershipReport();
-		}
-		else if (igmpParams.igmp_version == IGMP_V3)
-		{
-			status = StSendMembershipQuery();
-		}
+			if (igmpParams[portid].igmp_version == IGMP_V2)
+			{
+				status = StSendMembershipReport(portid);
+			}
+			else if (igmpParams[portid].igmp_version == IGMP_V3)
+			{
+				status = StSendMembershipQuery(portid);
+			}
 
-		if (status != ST_OK)
-		{
-			RTE_LOG(ERR, USER1, "StSendMembershipQuery FAILED, ErrNo: %d\n", status);
-			return NULL;
+			if (status != ST_OK)
+			{
+				RTE_LOG(ERR, USER1, "StSendMembershipQuery FAILED, ErrNo: %d\n", status);
+			}
 		}
 		sleep(QUERY_INTERVAL);
 	}
-
+	for (int portid = 0; portid < stMainParams.numPorts; portid++)
+	{
+		rte_pktmbuf_free(igmpParams[portid].mbuf);
+	}
 	return NULL;
 }
 
 void
 ParseIp(ipv4Hdr_t const *ipHdr, struct rte_mbuf *m, uint16_t portid)
 {
-	if (ipHdr->next_proto_id != IGMP_PROTOCOL)
+	if (ipHdr->next_proto_id != IGMP_PROTOCOL || !ipHdr || !m)
 	{
 		return;
 	}
+
 	st_status_t status = ST_OK;
 
 	st_membership_query_t *recvQuery = rte_pktmbuf_mtod_offset(
@@ -540,21 +654,30 @@ ParseIp(ipv4Hdr_t const *ipHdr, struct rte_mbuf *m, uint16_t portid)
 	switch (recvQuery->type)
 	{
 	case MEMBERSHIP_QUERY:
-		if (igmpParams.igmp_version == IGMP_V2)
+		if (igmpParams[portid].igmp_version == IGMP_V2)
 		{
-			status = StCreateMembershipReportV2(igmpParams.groupIpAddress, MEMBERSHIP_REPORT_V2);
+			status = StCreateMembershipReportV2(igmpParams[portid].srcIpAddress,
+												igmpParams[portid].groupIpAddress,
+												MEMBERSHIP_REPORT_V2, portid);
 		}
-		else if (igmpParams.igmp_version == IGMP_V3)
+		else if (igmpParams[portid].igmp_version == IGMP_V3)
 		{
-			status = StCreateMembershipReportV3(igmpParams.groupIpAddress, igmpParams.srcIpAddress,
-									   MODE_IS_EXCLUDE, 1);
+			status = StCreateMembershipReportV3(igmpParams[portid].groupIpAddress,
+												igmpParams[portid].srcIpAddress, MODE_IS_EXCLUDE, 1,
+												portid);
+		}
+		else
+		{
+			/* unsupported IGMP version */
+			RTE_LOG(DEBUG, USER1, "Unsupported IGMP version %d\n", igmpParams[portid].igmp_version);
+			return;
 		}
 		if (status != ST_OK)
 		{
 			RTE_LOG(ERR, USER1, "StCreateMembershipReport FAILED, ErrNo: %d\n", status);
 			return;
 		}
-		status = StSendMembershipReport();
+		status = StSendMembershipReport(portid);
 		if (status != ST_OK)
 		{
 			RTE_LOG(ERR, USER1, "StSendMembershipReport FAILED, ErrNo: %d\n", status);

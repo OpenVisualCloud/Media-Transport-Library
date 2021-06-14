@@ -1,5 +1,5 @@
 /*
-* Copyright 2020 Intel Corporation.
+* Copyright (C) 2020-2021 Intel Corporation.
 *
 * This software and the related documents are Intel copyrighted materials,
 * and your use of them is governed by the express license under which they
@@ -15,7 +15,7 @@
 */
 
 #include "rvrtp_main.h"
-#include "st_api_internal.h"
+#include "st_arp.h"
 #include "st_flw_cls.h"
 #include "st_igmp.h"
 
@@ -23,8 +23,47 @@
 #include <stdio.h>
 #include <string.h>
 
+#define ST_ARP_SEARCH_CHECK_US (5 * 1000 * 1000) /* every 5 seconds */
+#define ST_ARP_SEARCH_DELAY_US (50 * 1000)		 /* 50ms */
+#define ST_ARP_SEARCH_CHECK_POINT (ST_ARP_SEARCH_CHECK_US / ST_ARP_SEARCH_DELAY_US)
+
+static st_session_method_t sn_method[ST_MAX_ESSENCE];
+
+st_essence_type_t
+st_get_essence_type(st_session_t *session)
+{
+	return session->type;
+}
+
+void
+st_init_session_method(st_session_method_t *method, st_essence_type_t type)
+{
+	method->init = 1;
+	sn_method[type] = *method;
+}
+
+int
+StSessionGetPktsize(st_session_impl_t *s)
+{
+	st_essence_type_t mtype = st_get_essence_type(&s->sn);
+
+	switch (mtype)
+	{
+	case ST_ESSENCE_VIDEO:
+		return s->fmt.v.pktSize;
+	case ST_ESSENCE_AUDIO:
+		return s->fmt.a.pktSize;
+	case ST_ESSENCE_ANC:
+		return s->ancctx.pktSize;
+	default:
+		return -1;
+	}
+
+	return -1;
+}
+
 static inline void
-RvRtpDeviceLock(rvrtp_device_t *d)
+StDeviceLock(st_device_impl_t *d)
 {
 	int lock;
 	do
@@ -34,13 +73,13 @@ RvRtpDeviceLock(rvrtp_device_t *d)
 }
 
 static inline void
-RvRtpDeviceUnlock(rvrtp_device_t *d)
+StDeviceUnlock(st_device_impl_t *d)
 {
 	__sync_lock_release(&d->lock, 0);
 }
 
 st_status_t
-RvRtpSendDeviceAdjustBudget(rvrtp_device_t *dev)
+StRtpSendDeviceAdjustBudget(st_device_impl_t *dev)
 {
 	uint32_t budget = dev->quot;
 
@@ -48,7 +87,7 @@ RvRtpSendDeviceAdjustBudget(rvrtp_device_t *dev)
 	{
 		if (dev->snTable[i])
 		{
-			dev->txPktSizeL1[i] = dev->snTable[i]->fmt.pktSize + ST_PHYS_PKT_ADD;
+			dev->txPktSizeL1[i] = StSessionGetPktsize(dev->snTable[i]) + ST_PHYS_PKT_ADD;
 		}
 		else
 		{
@@ -77,7 +116,7 @@ RvRtpSendDeviceAdjustBudget(rvrtp_device_t *dev)
 }
 
 st_status_t
-RvRtpValidateSession(st21_session_t *sn)
+StValidateSession(st_session_t *sn)
 {
 	bool found = false;
 
@@ -96,6 +135,22 @@ RvRtpValidateSession(st21_session_t *sn)
 			break;
 		}
 	}
+	for (int i = 0; i < stSendDevice.dev.sn30Count; i++)
+	{
+		if (&stSendDevice.sn30Table[i]->sn == sn)
+		{
+			found = true;
+			break;
+		}
+	}
+	for (int i = 0; i < stSendDevice.dev.sn40Count; i++)
+	{
+		if (&stSendDevice.sn40Table[i]->sn == sn)
+		{
+			found = true;
+			break;
+		}
+	}
 
 	// search if current session exist in the RX session table
 	for (int i = 0; i < stRecvDevice.dev.snCount; i++)
@@ -107,24 +162,38 @@ RvRtpValidateSession(st21_session_t *sn)
 		}
 	}
 
+	for (int i = 0; i < stRecvDevice.dev.sn30Count; i++)
+	{
+		if (&stRecvDevice.sn30Table[i]->sn == sn)
+		{
+			found = true;
+			break;
+		}
+	}
+
+	for (int i = 0; i < stRecvDevice.dev.sn40Count; i++)
+	{
+		if (&stRecvDevice.sn40Table[i]->sn == sn)
+		{
+			found = true;
+			break;
+		}
+	}
+
 	if (found)
 	{
 		return ST_OK;
-	}
-	else
-	{
-		return ST_SN_ERR_NOT_READY;
 	}
 
 	return ST_SN_ERR_NOT_READY;
 }
 
 st_status_t
-RvRtpValidateDevice(st_device_t *dev)
+StValidateDevice(st_device_t *dev)
 {
 	bool found = false;
 
-	// validate device parameter
+	/* validate device parameter */
 	if (!dev)
 	{
 		return ST_INVALID_PARAM;
@@ -139,16 +208,44 @@ RvRtpValidateDevice(st_device_t *dev)
 	{
 		return ST_OK;
 	}
-	else
-	{
-		return ST_DEV_ERR_NOT_READY;
-	}
 
 	return ST_DEV_ERR_NOT_READY;
 }
 
 st_status_t
-St21GetSessionCount(st_device_t *dev, uint32_t *count)
+StValidateProducer(void *producer, st_essence_type_t type)
+{
+	if (!producer)
+	{
+		return ST_INVALID_PARAM;
+	}
+
+	if (type == ST_ESSENCE_VIDEO)
+	{
+		st21_producer_t *videoProducer = (st21_producer_t *)producer;
+		switch (videoProducer->prodType)
+		{
+		case ST21_PROD_INVALID:
+		case ST21_PROD_P_FRAME:
+		case ST21_PROD_P_FRAME_TMSTAMP:
+		case ST21_PROD_I_FIELD:
+		case ST21_PROD_I_FIELD_TMSTAMP:
+		case ST21_PROD_P_FRAME_SLICE:
+		case ST21_PROD_P_SLICE_TMSTAMP:
+		case ST21_PROD_I_FIELD_SLICE:
+		case ST21_PROD_I_SLICE_TMSTAMP:
+		case ST21_PROD_RAW_RTP:
+		case ST21_PROD_RAW_L2_PKT:
+			break;
+		default:
+			return ST_INVALID_PARAM;
+		}
+	}
+	return ST_OK;
+}
+
+st_status_t
+StGetSessionCount(st_device_t *dev, uint32_t *count)
 {
 	st_status_t status = ST_OK;
 
@@ -157,55 +254,78 @@ St21GetSessionCount(st_device_t *dev, uint32_t *count)
 		return ST_INVALID_PARAM;
 	}
 
-	status = RvRtpValidateDevice(dev);
+	status = StValidateDevice(dev);
 	if (status != ST_OK)
 	{
 		return status;
 	}
+	st_device_impl_t *d = (st_device_impl_t *)dev;
 
-	rvrtp_device_t *d = (rvrtp_device_t *)dev;
-
-	*count = d->snCount;
+	*count = d->snCount + d->sn30Count + d->sn40Count;
 
 	return status;
+}
+
+static void
+StInitSessionMethod()
+{
+	/*video */
+	rvrtp_method_init();
+
+	/*audio */
+	rartp_method_init();
+
+	/* ancillary */
+	ranc_method_init();
+
+	return;
 }
 
 /**
  * Called by the application to create a new session on NIC device
  */
 st_status_t
-St21CreateSession(
-	st_device_t *dev,		 // IN device on which to create session
-	st21_session_t *inSn,	 // IN structure
-	st21_format_t *fmt,		 // IN session packet's format, optional for receiver
-	st21_session_t **outSn)	 // OUT created session object w/ fields updated respectively
+StCreateSession(st_device_t *dev,	   // IN device on which to create session
+				st_session_t *inSn,	   // IN structure
+				st_format_t *fmt,	   // IN session packet's format, optional for receiver
+				st_session_t **outSn)  // OUT created session object w/ fields updated respectively
 {
 	st_status_t status = ST_OK;
-	rvrtp_session_t *s;
+	st_essence_type_t mtype;
+	st_session_impl_t *s;
 
 	if ((!inSn) || (!fmt) || (!outSn))
 	{
 		return ST_INVALID_PARAM;
 	}
 
-	status = RvRtpValidateDevice(dev);
+	status = StValidateDevice(dev);
 	if (status != ST_OK)
 	{
 		return status;
 	}
 
-	rvrtp_device_t *d = (rvrtp_device_t *)dev;
+	StInitSessionMethod();
+	mtype = st_get_essence_type(inSn);
+	st_device_impl_t *d = (st_device_impl_t *)dev;
 
-	RvRtpDeviceLock(d);
+	if (mtype == ST_ESSENCE_AUDIO)
+	{
+		fmt->a.pktSize = ((stMainParams.audioFrameSize > 0)
+						  && (stMainParams.audioFrameSize < ST_MAX_AUDIO_PKT_SIZE))
+							 ? (stMainParams.audioFrameSize + ST_PKT_AUDIO_HDR_LEN)
+							 : fmt->a.pktSize;
+	}
 
+	StDeviceLock(d);
 	switch (dev->type)
 	{
 	case ST_DEV_TYPE_PRODUCER:
-		status = RvRtpCreateTxSession(d, inSn, fmt, &s);
+		status = sn_method[mtype].create_tx_session(d, inSn, fmt, &s);
 		break;
 
 	case ST_DEV_TYPE_CONSUMER:
-		status = RvRtpCreateRxSession(d, inSn, fmt, &s);
+		status = sn_method[mtype].create_rx_session(d, inSn, fmt, &s);
 		break;
 
 	default:
@@ -213,16 +333,28 @@ St21CreateSession(
 	}
 	if (status == ST_OK)
 	{
+		s->sn.fmt = fmt;
 		// update device and session out ptr
-		*outSn = (st21_session_t *)s;
-		__sync_fetch_and_add(&d->snTable[s->sn.timeslot], s);
-		d->snCount++;
-		if (dev->type == ST_DEV_TYPE_PRODUCER)
+		*outSn = (st_session_t *)s;
+		if (mtype == ST_ESSENCE_VIDEO)
 		{
-			status = RvRtpSendDeviceAdjustBudget(d);
+			d->snTable[s->sn.timeslot] = s;
+			d->snCount++;
+			if (dev->type == ST_DEV_TYPE_PRODUCER)
+				status = StRtpSendDeviceAdjustBudget(d);
+		}
+		else if (mtype == ST_ESSENCE_AUDIO)
+		{
+			d->sn30Table[s->sn.timeslot] = s;
+			d->sn30Count++;
+		}
+		else if (mtype == ST_ESSENCE_ANC)
+		{
+			d->sn40Table[s->sn.timeslot] = s;
+			d->sn40Count++;
 		}
 	}
-	RvRtpDeviceUnlock(d);
+	StDeviceUnlock(d);
 	return status;
 }
 
@@ -231,7 +363,7 @@ St21CreateSession(
  * This is complementary method to St21GetSdp and several St21GetParam
  */
 st_status_t
-St21GetFormat(st21_session_t *sn, st21_format_t *fmt)
+StGetFormat(st_session_t *sn, st_format_t *fmt)
 {
 	st_status_t status = ST_OK;
 
@@ -240,13 +372,13 @@ St21GetFormat(st21_session_t *sn, st21_format_t *fmt)
 		return ST_INVALID_PARAM;
 	}
 
-	status = RvRtpValidateSession(sn);
+	status = StValidateSession(sn);
 	if (status != ST_OK)
 	{
 		return status;
 	}
 
-	rvrtp_session_t *s = (rvrtp_session_t *)sn;
+	st_session_impl_t *s = (st_session_impl_t *)sn;
 	*fmt = s->fmt;
 	return status;
 }
@@ -256,64 +388,39 @@ St21GetFormat(st21_session_t *sn, st21_format_t *fmt)
  * on which it has been created
  */
 st_status_t
-St21DestroySession(st21_session_t *sn)
+StDestroySession(st_session_t *sn)
 {
 	st_status_t status = ST_OK;
 
-	status = RvRtpValidateSession(sn);
+	status = StValidateSession(sn);
 	if (status != ST_OK)
 	{
 		return status;
 	}
 
-	rvrtp_session_t *s = (rvrtp_session_t *)sn;
-	rvrtp_device_t *d = s->dev;
+	st_essence_type_t mtype = sn->type;
+	st_session_impl_t *s = (st_session_impl_t *)sn;
+	st_device_impl_t *d = s->dev;
 
 	if ((d != &stSendDevice) && (d != &stRecvDevice))
 	{
 		return ST_INVALID_PARAM;
 	}
 
-	RvRtpDeviceLock(d);
-	RvRtpSessionLock(s);
+	StDeviceLock(d);
+	StSessionLock(s);
 
 	__sync_fetch_and_and(&d->snTable[s->sn.timeslot], NULL);
 	d->snCount--;
 	if (d->dev.type == ST_DEV_TYPE_PRODUCER)
 	{
-		for (int i = 0; i < sn->extMem.numExtBuf; ++i)
-                       St21FreeFrame(sn, sn->extMem.addr[i]);
-
-		s->prodBuf = NULL;
-		if (s->prod.appHandle)
-			free(s->prod.appHandle);
-		s->prod.appHandle = NULL;
-
-		status = RvRtpSendDeviceAdjustBudget(d);
-		RvRtpSessionUnlock(s);
-		free(s);
+		status = sn_method[mtype].destroy_tx_session(s);
 	}
 	else
 	{
-		if (s->consBufs[FRAME_PREV].buf)
-		{
-			s->cons.St21NotifyFrameDone(s->cons.appHandle, s->consBufs[FRAME_PREV].buf,
-										s->ctx.fieldId);
-		}
-		s->consBufs[FRAME_PREV].buf = NULL;
-		if (s->consBufs[FRAME_CURR].buf)
-		{
-			s->cons.St21NotifyFrameDone(s->cons.appHandle, s->consBufs[FRAME_CURR].buf,
-										s->ctx.fieldId);
-		}
-		s->consBufs[FRAME_CURR].buf = NULL;
-		//? what with consumer app figure out later
-		rte_free(s->cons.appHandle);
-		s->cons.appHandle = NULL;
-		RvRtpSessionUnlock(s);
-		rte_free(s);
+		status = sn_method[mtype].destroy_rx_session(s);
 	}
-	RvRtpDeviceUnlock(d);
+	StDeviceUnlock(d);
 	return status;
 }
 
@@ -321,35 +428,35 @@ St21DestroySession(st21_session_t *sn)
  * Called by the producer to register live producer for video streaming
  */
 st_status_t
-St21RegisterProducer(
-	st21_session_t *sn,		// IN session pointer
-	st21_producer_t *prod)	// IN register callbacks to allow interaction with live producer
+StRegisterProducer(st_session_t *sn,  // IN session pointer
+				   void *prod)	// IN register callbacks to allow interaction with live producer
 {
 	st_status_t status = ST_OK;
 
-	if (!prod || prod->prodType < 0x00 || prod->prodType > 0x30)
+	status = StValidateSession(sn);
+	if (status != ST_OK)
 	{
-		return ST_INVALID_PARAM;
+		return status;
 	}
+	st_session_impl_t *s = (st_session_impl_t *)sn;
 
-	status = RvRtpValidateSession(sn);
+	status = StValidateProducer(prod, sn->type);
 	if (status != ST_OK)
 	{
 		return status;
 	}
 
-	rvrtp_session_t *s = (rvrtp_session_t *)sn;
+	StSessionLock(s);
 
-	if ((!prod->St21GetNextFrameBuf) || (!prod->St21GetNextSliceOffset))
-	{
-		return ST_BAD_PRODUCER;
-	}
+	/* TODO use "void *" in the future */
+	if (sn->type == ST_ESSENCE_VIDEO)
+		s->prod = *(st21_producer_t *)prod;
+	else if (sn->type == ST_ESSENCE_AUDIO)
+		s->aprod = *(st30_producer_t *)prod;
+	else
+		s->ancprod = *(st40_producer_t *)prod;
 
-	RvRtpSessionLock(s);
-
-	s->prod = *prod;
-
-	RvRtpSessionUnlock(s);
+	StSessionUnlock(s);
 
 	return status;
 }
@@ -359,7 +466,7 @@ St21RegisterProducer(
  */
 st_status_t
 St21ProducerStartFrame(
-	st21_session_t *sn,	   // IN session pointer
+	st_session_t *sn,	   // IN session pointer
 	uint8_t *frameBuf,	   // IN 1st frame buffer for the session
 	uint32_t linesOffset,  // IN offset in complete lines of the frameBuf to which producer filled
 						   // the buffer
@@ -374,52 +481,46 @@ St21ProducerStartFrame(
 		return ST_INVALID_PARAM;
 	}
 
-	rvrtp_session_t *s = (rvrtp_session_t *)sn;
+	st_session_impl_t *s = (st_session_impl_t *)sn;
 
 	if (s->state < 1 || s->state > 4)
 	{
 		return ST_SN_ERR_NOT_READY;
 	}
 
-	rvrtp_device_t *d = s->dev;
+	st_device_impl_t *d = s->dev;
 
 	if (d != &stSendDevice)
 	{
 		return ST_INVALID_PARAM;
 	}
 
-	RvRtpSessionLock(s);
+	StSessionLock(s);
 
-	s->prodBuf = frameBuf;
+	s->prodBuf = NULL;
 	s->sliceOffset = linesOffset;
-	s->ctx.sliceOffset = 0;
+	s->vctx.sliceOffset = 0;
+	s->state = ST_SN_STATE_NO_NEXT_FRAME;
 
-	if (linesOffset)
-	{
-		s->state = ST_SN_STATE_RUN;
-	}
-	else
-	{
-		s->state = ST_SN_STATE_NO_NEXT_SLICE;
-		status = ST_BUFFER_NOT_READY;
-	}
-
-	RvRtpSessionUnlock(s);
+	StSessionUnlock(s);
 
 	return status;
 }
 
 /**
- * Called by the producer asynchronously to update video streaming
- * in case producer has more data to send, it also restart streaming
- * if the producer callback failed due to lack of buffer with video
+ * Called by the producer asynchronously to start each frame of video streaming
+ */
+/* TODO
+ * consider merge duplicate code with St21ProducerStartFrame
  */
 st_status_t
-St21ProducerUpdate(
-    st21_session_t *sn,	  // IN session pointer
-    uint8_t *frameBuf,	  // IN frame buffer for the session from which to restart
-    uint32_t linesOffset) // IN offset in complete lines of the frameBuf to which
-						  // producer filled the buffer
+St30ProducerStartFrame(
+	st_session_t *sn,	   // IN session pointer
+	uint8_t *frameBuf,	   // IN 1st frame buffer for the session
+	uint32_t linesOffset,  // IN offset in complete lines of the frameBuf to which producer filled
+						   // the buffer
+	uint32_t tmstamp,	   // IN if not 0 then 90kHz timestamp of the frame
+	uint64_t ptpTime)	   // IN if not 0 start new frame at the given PTP timestamp + TROFFSET
 {
 	st_status_t status = ST_OK;
 
@@ -429,21 +530,131 @@ St21ProducerUpdate(
 		return ST_INVALID_PARAM;
 	}
 
-	rvrtp_session_t *s = (rvrtp_session_t *)sn;
+	st_session_impl_t *s = (st_session_impl_t *)sn;
 
 	if (s->state < 1 || s->state > 4)
 	{
 		return ST_SN_ERR_NOT_READY;
 	}
 
-	rvrtp_device_t *d = s->dev;
+	st_device_impl_t *d = s->dev;
 
 	if (d != &stSendDevice)
 	{
 		return ST_INVALID_PARAM;
 	}
 
-	RvRtpSessionLock(s);
+	StSessionLock(s);
+
+	s->prodBuf = frameBuf;
+	s->bufOffset = linesOffset;
+	//s->actx.sliceOffset = 0;
+
+	if (linesOffset)
+	{
+		s->state = ST_SN_STATE_RUN;
+	}
+	else
+	{
+		s->state = ST_SN_STATE_NO_NEXT_SLICE;
+		status = ST_BUFFER_NOT_READY;
+	}
+
+	StSessionUnlock(s);
+
+	return status;
+}
+/**
+ * Called by the producer asynchronously to start each frame of video streaming
+ * TODO
+ * consider merge duplicate code with St21ProducerStartFrame
+ */
+st_status_t
+St40ProducerStartFrame(
+	st_session_t *sn,	  // IN session pointer
+	uint8_t *ancBuf,	  // IN 1st frame buffer for the session
+	uint32_t buffOffset,  // IN offset in complete lines of the frameBuf to which producer filled
+						  // the buffer
+	uint32_t tmstamp,	  // IN if not 0 then 90kHz timestamp of the frame
+	uint64_t ptpTime)	  // IN if not 0 start new frame at the given PTP timestamp + TROFFSET
+{
+	st_status_t status = ST_OK;
+
+	// validate parameters
+	if ((!sn) || (!ancBuf))
+	{
+		return ST_INVALID_PARAM;
+	}
+
+	st_session_impl_t *s = (st_session_impl_t *)sn;
+
+	if (s->state < 1 || s->state > 4)
+	{
+		return ST_SN_ERR_NOT_READY;
+	}
+
+	st_device_impl_t *d = s->dev;
+
+	if (d != &stSendDevice)
+	{
+		return ST_INVALID_PARAM;
+	}
+
+	StSessionLock(s);
+
+	//	s->ancctx.payloadSize = sizeof(st_anc_pkt_payload_hdr_t) + sn->frameSize;
+	s->prodBuf = ancBuf;
+	s->sliceOffset = buffOffset;
+	//s->actx.sliceOffset = 0;
+
+	if (buffOffset)
+	{
+		s->state = ST_SN_STATE_RUN;
+	}
+	else
+	{
+		s->state = ST_SN_STATE_NO_NEXT_SLICE;
+		status = ST_BUFFER_NOT_READY;
+	}
+
+	StSessionUnlock(s);
+
+	return status;
+}
+/**
+ * Called by the producer asynchronously to update video streaming
+ * in case producer has more data to send, it also restart streaming
+ * if the producer callback failed due to lack of buffer with video
+ */
+st_status_t
+St21ProducerUpdate(st_session_t *sn,	  // IN session pointer
+				   uint8_t *frameBuf,	  // IN frame buffer for the session from which to restart
+				   uint32_t linesOffset)  // IN offset in complete lines of the frameBuf to which
+										  // producer filled the buffer
+{
+	st_status_t status = ST_OK;
+
+	// validate parameters
+	if ((!sn) || (!frameBuf))
+	{
+		return ST_INVALID_PARAM;
+	}
+
+	st_session_impl_t *s = (st_session_impl_t *)sn;
+
+	if (s->state < 1 || s->state > 4)
+	{
+		return ST_SN_ERR_NOT_READY;
+	}
+
+	st_device_impl_t *d = s->dev;
+
+	if (d != &stSendDevice)
+	{
+		return status;
+	}
+
+	StSessionLock(s);
 
 	s->prodBuf = frameBuf;
 	s->sliceOffset = linesOffset;
@@ -458,7 +669,7 @@ St21ProducerUpdate(
 		status = ST_BUFFER_NOT_READY;
 	}
 
-	RvRtpSessionUnlock(s);
+	StSessionUnlock(s);
 
 	return status;
 }
@@ -468,96 +679,82 @@ St21ProducerUpdate(
  * the session will notify the producer about completion with callback
  */
 st_status_t
-St21ProducerStop(st21_session_t *sn)
+StProducerStop(st_session_t *sn)
 {
 	st_status_t status = ST_OK;
 
 	// validate parameters
-	status = RvRtpValidateSession(sn);
+	status = StValidateSession(sn);
 	if (status != ST_OK)
 	{
-		return status;
+		return ST_INVALID_PARAM;
 	}
 
-	rvrtp_session_t *s = (rvrtp_session_t *)sn;
-	rvrtp_device_t *d = s->dev;
+	st_session_impl_t *s = (st_session_impl_t *)sn;
+	st_device_impl_t *d = s->dev;
 
 	if (d != &stSendDevice)
 	{
 		return ST_INVALID_PARAM;
 	}
 
-	RvRtpSessionLock(s);
+	StSessionLock(s);
 
 	s->state = ST_SN_STATE_STOP_PENDING;
 
-	RvRtpSessionUnlock(s);
+	StSessionUnlock(s);
 
 	return status;
 }
 
-/**
- * Called by the consumerr to register live receiver for video streaming
- */
 st_status_t
-St21RegisterConsumer(
-	st21_session_t *sn,		// IN session pointer
-	st21_consumer_t *cons)	// IN register callbacks to allow interaction with live receiver
+St21ValidateCons(st21_consumer_t *cons)
 {
-	st_status_t status = ST_OK;
-
-	if (!cons || cons->consType < ST21_CONS_INVALID || cons->consType >= ST21_CONS_LAST)
-	{
-		return ST_INVALID_PARAM;
-	}
-
-	status = RvRtpValidateSession(sn);
-	if (status != ST_OK)
-	{
-		return status;
-	}
-
-	rvrtp_session_t *s = (rvrtp_session_t *)sn;
 
 	switch (cons->consType)
 	{
 	case ST21_CONS_RAW_L2_PKT:
 	case ST21_CONS_RAW_RTP:
-		if ((!cons->St21RecvRtpPkt) || (cons->St21GetNextFrameBuf) || (cons->St21NotifyFrameRecv) || (cons->St21PutFrameTmstamp) ||
-			(cons->St21NotifyFrameDone) || (cons->St21NotifySliceRecv) || (cons->St21NotifySliceDone) || (cons->St21PutFrameTmstamp))
+		if ((!cons->St21RecvRtpPkt) || (cons->St21GetNextFrameBuf) || (cons->St21NotifyFrameRecv)
+			|| (cons->St21PutFrameTmstamp) || (cons->St21NotifyFrameDone)
+			|| (cons->St21NotifySliceRecv) || (cons->St21NotifySliceDone)
+			|| (cons->St21PutFrameTmstamp))
 		{
 			return ST_BAD_CONSUMER;
 		}
 		break;
 	case ST21_CONS_P_FRAME:
 	case ST21_CONS_I_FIELD:
-		if ((!cons->St21GetNextFrameBuf) || (!cons->St21NotifyFrameRecv) || (!cons->St21PutFrameTmstamp) ||
-			(!cons->St21NotifyFrameDone))
+		if ((!cons->St21GetNextFrameBuf) || (!cons->St21NotifyFrameRecv)
+			|| (!cons->St21PutFrameTmstamp) || (!cons->St21NotifyFrameDone))
 		{
 			return ST_BAD_CONSUMER;
 		}
 		break;
 	case ST21_CONS_P_FRAME_TMSTAMP:
 	case ST21_CONS_I_FIELD_TMSTAMP:
-		if ((!cons->St21GetNextFrameBuf) || (!cons->St21NotifyFrameRecv) || (!cons->St21PutFrameTmstamp) ||
-			(!cons->St21NotifyFrameDone) || (!cons->St21PutFrameTmstamp))
+		if ((!cons->St21GetNextFrameBuf) || (!cons->St21NotifyFrameRecv)
+			|| (!cons->St21PutFrameTmstamp) || (!cons->St21NotifyFrameDone)
+			|| (!cons->St21PutFrameTmstamp))
 		{
 			return ST_BAD_CONSUMER;
 		}
 		break;
 	case ST21_CONS_I_FIELD_SLICE:
 	case ST21_CONS_P_FRAME_SLICE:
-		if ((!cons->St21GetNextFrameBuf) || (!cons->St21NotifyFrameRecv) || (!cons->St21PutFrameTmstamp) ||
-			(!cons->St21NotifyFrameDone) || (!cons->St21NotifySliceRecv) || (!cons->St21NotifySliceDone))
+		if ((!cons->St21GetNextFrameBuf) || (!cons->St21NotifyFrameRecv)
+			|| (!cons->St21PutFrameTmstamp) || (!cons->St21NotifyFrameDone)
+			|| (!cons->St21NotifySliceRecv) || (!cons->St21NotifySliceDone))
 		{
 			return ST_BAD_CONSUMER;
 		}
 		break;
 	case ST21_CONS_I_SLICE_TMSTAMP:
 	case ST21_CONS_P_SLICE_TMSTAMP:
-		if ((!cons->St21GetNextFrameBuf) || (!cons->St21NotifyFrameRecv) || (!cons->St21PutFrameTmstamp) ||
-			(!cons->St21NotifyFrameDone) || (!cons->St21NotifySliceRecv) || (!cons->St21NotifySliceDone) ||
-			(!cons->St21PutFrameTmstamp))
+		if ((!cons->St21GetNextFrameBuf) || (!cons->St21NotifyFrameRecv)
+			|| (!cons->St21PutFrameTmstamp) || (!cons->St21NotifyFrameDone)
+			|| (!cons->St21NotifySliceRecv) || (!cons->St21NotifySliceDone)
+			|| (!cons->St21PutFrameTmstamp))
 		{
 			return ST_BAD_CONSUMER;
 		}
@@ -566,18 +763,133 @@ St21RegisterConsumer(
 		return ST_INVALID_PARAM;
 	}
 
-	RvRtpSessionLock(s);
+	return ST_OK;
+}
 
-	s->cons = *cons;
+/**
+ * Called by the consumerr to register live receiver for video streaming
+ */
+st_status_t
+St30ValidateCons(st30_consumer_t *cons)
+{
+	st_status_t status = ST_OK;
+
+	/* TODO
+     * a workarond for st30 consumer
+     */
+	return ST_OK;
+
+	if (!cons || cons->consType < ST30_CONS_INVALID || cons->consType >= ST30_CONS_LAST)
+	{
+		return ST_INVALID_PARAM;
+	}
+
+	switch (cons->consType)
+	{
+	case ST30_CONS_RAW_L2_PKT:
+	case ST30_CONS_RAW_RTP:
+		if ((!cons->St30RecvRtpPkt) || (cons->St30GetNextAudioBuf) || (cons->St30NotifySampleRecv)
+			|| (cons->St30NotifyBufferDone))
+		{
+			return ST_BAD_CONSUMER;
+		}
+		break;
+	case ST30_CONS_REGULAR:
+		if ((!cons->St30GetNextAudioBuf) || (!cons->St30NotifySampleRecv)
+			|| (!cons->St30NotifyBufferDone))
+		{
+			return ST_BAD_CONSUMER;
+		}
+		break;
+	default:
+		return ST_INVALID_PARAM;
+	}
+
+	return status;
+}
+
+st_status_t
+St40ValidateCons(st40_consumer_t *cons)
+{
+	st_status_t status = ST_OK;
+
+	if (!cons || cons->consType < ST40_CONS_INVALID || cons->consType > ST40_CONS_LAST)
+	{
+		return ST_INVALID_PARAM;
+	}
+
+	switch (cons->consType)
+	{
+	case ST40_CONS_REGULAR:
+		if ((!cons->St40GetNextAncFrame) || (!cons->St40NotifyFrameDone))
+		{
+			return ST_BAD_CONSUMER;
+		}
+		break;
+	default:
+		return ST_INVALID_PARAM;
+	}
+	return status;
+}
+/**
+ * Called by the consumerr to register live receiver for video streaming
+ */
+st_status_t
+StRegisterConsumer(st_session_t *sn,  // IN session pointer
+				   void *cons)	// IN register callbacks to allow interaction with live receiver
+{
+	st_status_t status = ST_OK;
+
+	/* TODO need to add this check back */
+	status = StValidateSession(sn);
+	if (status != ST_OK)
+	{
+		return status;
+	}
+
+	st_session_impl_t *s = (st_session_impl_t *)sn;
+
+	StSessionLock(s);
+
+	/* TODO use "void *" in the future */
+	switch (sn->type)
+	{
+	case ST_ESSENCE_VIDEO:
+		status = St21ValidateCons((st21_consumer_t *)cons);
+		if (status == ST_OK)
+		{
+			s->cons = *(st21_consumer_t *)cons;
+			/* TODO: need to use a unified way for callback */
+			if ((s->cons.consType == ST21_CONS_RAW_L2_PKT)
+				|| (s->cons.consType == ST21_CONS_RAW_RTP))
+				s->RecvRtpPkt = RvRtpReceivePacketCallback;
+		}
+		break;
+
+	case ST_ESSENCE_AUDIO:
+		status = St30ValidateCons((st30_consumer_t *)cons);
+		if (status == ST_OK)
+		{
+			s->acons = *(st30_consumer_t *)cons;
+		}
+		break;
+
+	case ST_ESSENCE_ANC:
+		status = St40ValidateCons((st40_consumer_t *)cons);
+		if (status == ST_OK)
+		{
+			s->anccons = *(st40_consumer_t *)cons;
+		}
+		break;
+
+	default:
+		break;
+	}
+
 	s->consState = FRAME_PREV;
 	s->state = ST_SN_STATE_ON;
 
-	if ((cons->consType == ST21_CONS_RAW_L2_PKT) || (cons->consType == ST21_CONS_RAW_RTP))
-	{
-		s->RecvRtpPkt = RvRtpReceivePacketCallback;
-	}
-
-	RvRtpSessionUnlock(s);
+	StSessionUnlock(s);
 	return status;
 }
 
@@ -586,9 +898,9 @@ St21RegisterConsumer(
  */
 st_status_t
 St21ConsumerStartFrame(
-	st21_session_t *sn,	 // IN session pointer
-	uint8_t *frameBuf,	 // IN 1st frame buffer for the session
-	uint64_t ptpTime)	 // IN if not 0 start receiving session since the given ptp time
+	st_session_t *sn,	// IN session pointer
+	uint8_t *frameBuf,	// IN 1st frame buffer for the session
+	uint64_t ptpTime)	// IN if not 0 start receiving session since the given ptp time
 {
 	st_status_t status = ST_OK;
 
@@ -598,13 +910,13 @@ St21ConsumerStartFrame(
 		return ST_INVALID_PARAM;
 	}
 
-	rvrtp_session_t *s = (rvrtp_session_t *)sn;
+	st_session_impl_t *s = (st_session_impl_t *)sn;
 	if (s->state < 1 || s->state > 4)
 	{
 		return ST_SN_ERR_NOT_READY;
 	}
 
-	rvrtp_device_t *d = s->dev;
+	st_device_impl_t *d = s->dev;
 	if (d != &stRecvDevice)
 	{
 		return ST_INVALID_PARAM;
@@ -615,10 +927,9 @@ St21ConsumerStartFrame(
 		return ST_SN_ERR_NOT_READY;	 // logical error in the API use
 	}
 
-	RvRtpSessionLock(s);
+	StSessionLock(s);
 
-	if ((s->cons.consType == ST21_CONS_RAW_L2_PKT) ||
-		(s->cons.consType == ST21_CONS_RAW_RTP))
+	if ((s->cons.consType == ST21_CONS_RAW_L2_PKT) || (s->cons.consType == ST21_CONS_RAW_RTP))
 	{
 		//nothing but in fitire set timer and handle ptpTime
 	}
@@ -629,7 +940,7 @@ St21ConsumerStartFrame(
 			if ((s->consBufs[FRAME_CURR].buf) && (s->consBufs[FRAME_CURR].buf != frameBuf))
 			{
 				s->cons.St21NotifyFrameDone(s->cons.appHandle, s->consBufs[FRAME_CURR].buf,
-											s->ctx.fieldId);
+											s->vctx.fieldId);
 			}
 			s->consBufs[FRAME_CURR].buf = frameBuf;
 			s->consBufs[FRAME_CURR].pkts = 0;
@@ -640,6 +951,7 @@ St21ConsumerStartFrame(
 			s->consBufs[FRAME_PREV].buf = frameBuf;
 			s->consBufs[FRAME_PREV].pkts = 0;
 			s->consBufs[FRAME_PREV].tmstamp = 0;
+
 			s->consBufs[FRAME_CURR].buf = NULL;
 			s->consBufs[FRAME_CURR].pkts = 0;
 			s->consBufs[FRAME_CURR].tmstamp = 0;
@@ -648,9 +960,77 @@ St21ConsumerStartFrame(
 	}
 	// so far assume full frame mode only
 	s->state = ST_SN_STATE_RUN;
-	
-	RvRtpSessionUnlock(s);
+
+	StSessionUnlock(s);
 	return status;
+}
+
+/**
+ * Called by the consumer asynchronously to start 1st frame of video streaming
+ */
+st_status_t
+St30ConsumerStartFrame(
+	st_session_t *sn,	// IN session pointer
+	uint8_t *frameBuf,	// IN 1st frame buffer for the session
+	uint64_t ptpTime)	// IN if not 0 start receiving session since the given ptp time
+{
+	st_status_t status = ST_OK;
+
+	st_session_impl_t *s = (st_session_impl_t *)sn;
+	if (s->state < 1 || s->state > 4)
+	{
+		return ST_SN_ERR_NOT_READY;
+	}
+
+	st_device_impl_t *d = s->dev;
+	if (d != &stRecvDevice)
+	{
+		return ST_INVALID_PARAM;
+	}
+
+	if (s->state != ST_SN_STATE_ON)
+	{
+		return ST_SN_ERR_NOT_READY;	 // logical error in the API use
+	}
+
+	//s->consBuf = frameBuf;
+	StSessionLock(s);
+
+	// so far assume full frame mode only
+	s->state = ST_SN_STATE_RUN;
+
+	StSessionUnlock(s);
+	return status;
+}
+
+st_status_t
+St40ConsumerStartFrame(st_session_t *sn)
+{
+	st_session_impl_t *s = (st_session_impl_t *)sn;
+	if (s->state < 1 || s->state > 4)
+	{
+		return ST_SN_ERR_NOT_READY;
+	}
+
+	st_device_impl_t *d = s->dev;
+	if (d != &stRecvDevice)
+	{
+		return ST_INVALID_PARAM;
+	}
+
+	if (s->state != ST_SN_STATE_ON)
+	{
+		return ST_SN_ERR_NOT_READY;	 // logical error in the API use
+	}
+
+	//s->consBuf = frameBuf;
+	StSessionLock(s);
+
+	// so far assume full frame mode only
+	s->state = ST_SN_STATE_RUN;
+
+	StSessionUnlock(s);
+	return ST_OK;
 }
 
 /**
@@ -659,11 +1039,10 @@ St21ConsumerStartFrame(
  * if the consumerr callback failed due to lack of available buffer
  */
 st_status_t
-St21ConsumerUpdate(
-    st21_session_t *sn,	  // IN session pointer
-    uint8_t *frameBuf,	  // IN frame buffer for the session from which to restart
-    uint32_t linesOffset) // IN offset in complete lines of the frameBuf to which
-						  // consumer can get the buffer
+St21ConsumerUpdate(st_session_t *sn,	  // IN session pointer
+				   uint8_t *frameBuf,	  // IN frame buffer for the session from which to restart
+				   uint32_t linesOffset)  // IN offset in complete lines of the frameBuf to which
+										  // consumer can get the buffer
 {
 	st_status_t status = ST_OK;
 
@@ -673,27 +1052,25 @@ St21ConsumerUpdate(
 		return ST_INVALID_PARAM;
 	}
 
-	rvrtp_session_t *s = (rvrtp_session_t *)sn;
+	st_session_impl_t *s = (st_session_impl_t *)sn;
 	if (s->state < 1 || s->state > 4)
 	{
 		return ST_SN_ERR_NOT_READY;
 	}
 
-	rvrtp_device_t *d = s->dev;
+	st_device_impl_t *d = s->dev;
 	if (d != &stRecvDevice)
 	{
 		return ST_INVALID_PARAM;
 	}
 
-
-	if ((s->cons.consType == ST21_CONS_RAW_L2_PKT) ||
-		(s->cons.consType == ST21_CONS_RAW_RTP))
+	if ((s->cons.consType == ST21_CONS_RAW_L2_PKT) || (s->cons.consType == ST21_CONS_RAW_RTP))
 	{
 		s->state = ST_SN_STATE_RUN;
 		return ST_OK;
 	}
 
-	RvRtpSessionLock(s);
+	StSessionLock(s);
 
 	s->consBufs[s->consState].buf = frameBuf;
 	s->prodBuf = frameBuf;
@@ -709,7 +1086,7 @@ St21ConsumerUpdate(
 		status = ST_BUFFER_NOT_READY;
 	}
 
-	RvRtpSessionUnlock(s);
+	StSessionUnlock(s);
 	return status;
 }
 
@@ -718,30 +1095,30 @@ St21ConsumerUpdate(
  * the session will notify the consumer about completion with callback
  */
 st_status_t
-St21ConsumerStop(st21_session_t *sn)
+ConsumerStop(st_session_t *sn)
 {
 	st_status_t status = ST_OK;
 
 	// validate parameters
-	status = RvRtpValidateSession(sn);
+	status = StValidateSession(sn);
 	if (status != ST_OK)
 	{
 		return status;
 	}
 
-	rvrtp_session_t *s = (rvrtp_session_t *)sn;
-	rvrtp_device_t *d = s->dev;
+	st_session_impl_t *s = (st_session_impl_t *)sn;
+	st_device_impl_t *d = s->dev;
 
 	if (d != &stRecvDevice)
 	{
 		return ST_INVALID_PARAM;
 	}
 
-	RvRtpSessionLock(s);
+	StSessionLock(s);
 
 	s->state = ST_SN_STATE_STOP_PENDING;
 
-	RvRtpSessionUnlock(s);
+	StSessionUnlock(s);
 
 	return status;
 }
@@ -753,8 +1130,9 @@ St21ConsumerStop(st21_session_t *sn)
  * on the ports as required respecitvely
  * path addresses and VLANs
  */
+extern rte_atomic32_t isStopBkgTask;
 st_status_t
-St21BindIpAddr(st21_session_t *sn, st_addr_t *addr, uint16_t nicPort)
+StBindIpAddr(st_session_t *sn, st_addr_t *addr, uint16_t nicPort)
 {
 	st_status_t status = ST_OK;
 
@@ -763,71 +1141,81 @@ St21BindIpAddr(st21_session_t *sn, st_addr_t *addr, uint16_t nicPort)
 		return ST_INVALID_PARAM;
 	}
 
-	status = RvRtpValidateSession(sn);
+	status = StValidateSession(sn);
 	if (status != ST_OK)
 	{
 		return status;
 	}
 
-	rvrtp_session_t *s = (rvrtp_session_t *)sn;
+	st_session_impl_t *s = (st_session_impl_t *)sn;
 
-	s->fl[0].dst.addr4.sin_family = addr->src.addr4.sin_family;
-	s->fl[0].dst.addr4.sin_port = addr->dst.addr4.sin_port;
-	s->fl[0].src.addr4.sin_port = addr->src.addr4.sin_port;
-	s->fl[0].src.addr4.sin_addr.s_addr = addr->src.addr4.sin_addr.s_addr;
-	s->fl[0].dst.addr4.sin_addr.s_addr = addr->dst.addr4.sin_addr.s_addr;
+	s->fl[nicPort].dst.addr4.sin_family = addr->src.addr4.sin_family;
+	s->fl[nicPort].dst.addr4.sin_port = addr->dst.addr4.sin_port;
+	s->fl[nicPort].src.addr4.sin_port = addr->src.addr4.sin_port;
+	s->fl[nicPort].src.addr4.sin_addr.s_addr = addr->src.addr4.sin_addr.s_addr;
+	s->fl[nicPort].dst.addr4.sin_addr.s_addr = addr->dst.addr4.sin_addr.s_addr;
 	// multicast IP addresses filtering and translation IP to the correct MAC
 	if ((uint8_t)addr->dst.addr4.sin_addr.s_addr >= 0xe0
 		&& (uint8_t)addr->dst.addr4.sin_addr.s_addr <= 0xef)
 	{
-		s->fl[0].dstMac[0] = 0x01;
-		s->fl[0].dstMac[1] = 0x00;
-		s->fl[0].dstMac[2] = 0x5e;
+		s->fl[nicPort].dstMac[0] = 0x01;
+		s->fl[nicPort].dstMac[1] = 0x00;
+		s->fl[nicPort].dstMac[2] = 0x5e;
 		uint32_t tmpMacChunk = (addr->dst.addr4.sin_addr.s_addr >> 8) & 0xFFFFFF7F;
-		memcpy(&s->fl[0].dstMac[3], &tmpMacChunk, sizeof(uint8_t) * 3);
-		memcpy(&stMainParams.macAddr, s->fl[0].dstMac, ETH_ADDR_LEN);
+		memcpy(&s->fl[nicPort].dstMac[3], &tmpMacChunk, sizeof(uint8_t) * 3);
 	}
 	else
 	{
-		memcpy(s->fl[0].dstMac, &stMainParams.macAddr, ETH_ADDR_LEN);
+		int i = 0;
+		char *ip = inet_ntoa(s->fl[nicPort].dst.addr4.sin_addr);
+
+		RTE_LOG(INFO, USER1, "Start to receive destination mac on ARP for ip %s\n", ip);
+		while (!SearchArpHist(s->fl[nicPort].dst.addr4.sin_addr.s_addr, s->fl[nicPort].dstMac))
+		{
+			if (rte_atomic32_read(&isStopMainThreadTasks) == 1)
+				return ST_ARP_EXITED_WITH_NO_ARP_RESPONSE;
+			rte_delay_us_sleep(ST_ARP_SEARCH_DELAY_US);
+			i++;
+			if (0 == (i % ST_ARP_SEARCH_CHECK_POINT)) /* Log if it hit the check ponit */
+				RTE_LOG(INFO, USER1, "Still waiting ARP for ip %s, retry %d\n", ip, i);
+		}
+		RTE_LOG(INFO, USER1, "Get destination mac done for ip %s\n", ip);
 	}
 
-	memcpy(s->fl[0].srcMac, &(s->dev->srcMacAddr[0][0]), ETH_ADDR_LEN);
-#ifdef ST_DSCP_EXPEDITED_PRIORITY	
-	s->fl[0].dscp = 0x2e;  // expedited forwarding (46)
+	memcpy(s->fl[nicPort].srcMac, s->dev->srcMacAddr[nicPort], ETH_ADDR_LEN);
+#ifdef ST_DSCP_EXPEDITED_PRIORITY
+	s->fl[nicPort].dscp = 0x2e;	 // expedited forwarding (46)
 #else
-	s->fl[0].dscp = 0;
+	s->fl[nicPort].dscp = 0;
 #endif
-	s->fl[0].ecn = 0;
+	s->fl[nicPort].ecn = 0;
 	if (s->dev->dev.type == ST_DEV_TYPE_CONSUMER)
 	{
-		s->fl[1] = s->fl[0];
 		//// start of flow classification
 		struct st_udp_flow_conf fl;
 
 		memset(&fl, 0xff, sizeof(struct st_udp_flow_conf));
 
 		struct rte_flow_error err;
+		uint16_t rxQ = 1 + s->tid;
 
 #ifdef DEBUG
-		RTE_LOG(INFO, USER2, "Flow setup Tid %u Table: sn %u, port %u ip %x sip %x\n", tid, i,
-				ntohs(s->fl[0].dst.addr4.sin_port), ntohl(s->fl[0].dst.addr4.sin_addr.s_addr),
-				ntohl(s->fl[0].src.addr4.sin_addr.s_addr));
+		RTE_LOG(INFO, USER2, "Flow setup Tid %u Table: sn %u, port %u ip %x sip %x RxQ %u\n",
+				s->tid, nicPort, ntohs(s->fl[nicPort].dst.addr4.sin_port),
+				ntohl(s->fl[nicPort].dst.addr4.sin_addr.s_addr),
+				ntohl(s->fl[nicPort].src.addr4.sin_addr.s_addr), rxQ);
 #endif
-		fl.dstIp = s->fl[0].dst.addr4.sin_addr.s_addr;
-		fl.dstPort = s->fl[0].dst.addr4.sin_port;
-		fl.srcIp = s->fl[0].src.addr4.sin_addr.s_addr;
-		fl.srcPort = s->fl[0].src.addr4.sin_port;
-
-		if (((fl.dstIp & 0xff) >= 224) && ((fl.dstIp & 0xff) <= 239))
-			fl.srcMask = 0;
+		fl.dstIp = s->fl[nicPort].dst.addr4.sin_addr.s_addr;
+		fl.dstPort = s->fl[nicPort].dst.addr4.sin_port;
+		fl.srcIp = s->fl[nicPort].src.addr4.sin_addr.s_addr;
+		fl.srcPort = s->fl[nicPort].src.addr4.sin_port;
 
 #ifdef DEBUG
 		StPrintPartFilter(" Source IP4     ", fl.srcIp, fl.srcMask, fl.srcPort, fl.srcPortMask);
 		StPrintPartFilter(" Destination IP4", fl.dstIp, fl.dstMask, fl.dstPort, fl.dstPortMask);
 #endif
 
-		s->dev->flTable[s->sn.timeslot]	= StSetUDPFlow(s->dev->dev.port[0] /*rxPortId*/, 1 + s->tid, &fl, &err);
+		s->dev->flTable[s->sn.timeslot] = StSetUDPFlow(nicPort, rxQ, &fl, &err);
 		if (!s->dev->flTable[s->sn.timeslot])
 		{
 			RTE_LOG(INFO, USER2, "Flow setup failed with error: %s\n", err.message);
@@ -837,20 +1225,20 @@ St21BindIpAddr(st21_session_t *sn, st_addr_t *addr, uint16_t nicPort)
 	}
 
 #ifdef TX_RINGS_DEBUG
-	RTE_LOG(INFO, USER1, "TX DST MAC address %02x:%02x:%02x:%02x:%02x:%02x\n", s->fl[0].dstMac[0],
-			s->fl[0].dstMac[1], s->fl[0].dstMac[2], s->fl[0].dstMac[3], s->fl[0].dstMac[4],
-			s->fl[0].dstMac[5]);
+	RTE_LOG(DEBUG, USER1, "TX DST MAC address %02x:%02x:%02x:%02x:%02x:%02x\n",
+			s->fl[nicPort].dstMac[0], s->fl[nicPort].dstMac[1], s->fl[nicPort].dstMac[2],
+			s->fl[nicPort].dstMac[3], s->fl[nicPort].dstMac[4], s->fl[nicPort].dstMac[5]);
 #endif
 	s->etherSize = 14;	// no vlan yet
 
-	RvRtpInitPacketCtx(s, sn->timeslot);
+	sn_method[sn->type].init_packet_ctx(s, sn->timeslot);
 
 	s->ofldFlags |= (ST_OFLD_HW_IP_CKSUM | ST_OFLD_HW_UDP_CKSUM);
 	s->state = ST_SN_STATE_ON;
 
 	if (s->dev->dev.type == ST_DEV_TYPE_PRODUCER)
 	{
-		StUpdateSourcesList(addr->src.addr4.sin_addr.s_addr);
+		StUpdateSourcesList(addr->src.addr4.sin_addr.s_addr, nicPort);
 	}
 
 	return status;
@@ -862,7 +1250,7 @@ St21BindIpAddr(st21_session_t *sn, st_addr_t *addr, uint16_t nicPort)
  * Consumer is expected to listen on St21ReceiveSDP() the incomming RTCP connection
  */
 st_status_t
-St21JoinSession(st21_session_t *sn, st_addr_t *addr)
+StJoinMulticastGroup(st_addr_t *addr)
 {
 	st_status_t status = ST_OK;
 
@@ -871,33 +1259,31 @@ St21JoinSession(st21_session_t *sn, st_addr_t *addr)
 		return ST_INVALID_PARAM;
 	}
 
-	status = RvRtpValidateSession(sn);
-	if (status != ST_OK)
+	for (int p = 0; p < stMainParams.numPorts; ++p)
 	{
-		return status;
+		if ((uint8_t)addr->dst.addr4.sin_addr.s_addr >= 0xe0
+			&& (uint8_t)addr->dst.addr4.sin_addr.s_addr <= 0xef)
+		{
+			status = StCreateMembershipReportV3(addr->dst.addr4.sin_addr.s_addr,
+												*(uint32_t *)stMainParams.sipAddr[p],
+												MODE_IS_EXCLUDE, 1, p);
+			status = StSendMembershipReport(p);
+		}
+		else
+		{
+			RTE_LOG(ERR, USER1, "Can't join to the group - IP address not multicast.\n");
+			status = ST_IGMP_WRONG_IP_ADDRESS;
+		}
 	}
-
-	//Implemented temporarily, function have to be modified in the future
-	if (stMainParams.ipAddr[0] >= 0xe0 && stMainParams.ipAddr[0] <= 0xef)
-	{
-		status = StCreateMembershipReportV3(*stMainParams.ipAddr, *stMainParams.sipAddr, MODE_IS_EXCLUDE, 1);
-		status = StSendMembershipReport();
-	}
-	else
-	{
-		RTE_LOG(ERR, USER1, "Can't join to the group - IP address not multicast.");
-		status = ST_IGMP_WRONG_IP_ADDRESS;
-	}
-	//
 	return status;
 }
 
 st_status_t
-St21SetParam(st21_session_t *sn, st_param_t prm, uint64_t val)
+St21SetParam(st_session_t *sn, st_param_t prm, uint64_t val)
 {
 	st_status_t status = ST_OK;
 
-	status = RvRtpValidateSession(sn);
+	status = StValidateSession(sn);
 	if (status != ST_OK)
 	{
 		return status;
@@ -917,11 +1303,11 @@ St21SetParam(st21_session_t *sn, st_param_t prm, uint64_t val)
 }
 
 st_status_t
-St21GetParam(st21_session_t *sn, st_param_t prm, uint64_t *val)
+St21GetParam(st_session_t *sn, st_param_t prm, uint64_t *val)
 {
 	st_status_t status = ST_OK;
 
-	status = RvRtpValidateSession(sn);
+	status = StValidateSession(sn);
 	if (status != ST_OK)
 	{
 		return status;
@@ -941,7 +1327,7 @@ St21GetParam(st21_session_t *sn, st_param_t prm, uint64_t *val)
 	case ST21_FRM_2022_7_MODE:
 		*val = (uint64_t)ST21_FRM_2022_7_MODE_OFF;
 		break;
-	
+
 	default:
 		RTE_LOG(INFO, USER1, "Unknown param: %d\n", prm);
 		return ST_INVALID_PARAM;
@@ -956,11 +1342,11 @@ St21GetParam(st21_session_t *sn, st_param_t prm, uint64_t *val)
  * This is complementary method to St21GetFormat and several St21GetParam
  */
 st_status_t
-St21GetSdp(st21_session_t *sn, char *sdpBuf, uint32_t sdpBufSize)
+St21GetSdp(st_session_t *sn, char *sdpBuf, uint32_t sdpBufSize)
 {
 	st_status_t status = ST_OK;
 
-	status = RvRtpValidateSession(sn);
+	status = StValidateSession(sn);
 	if (status != ST_OK)
 	{
 		return status;
@@ -969,7 +1355,7 @@ St21GetSdp(st21_session_t *sn, char *sdpBuf, uint32_t sdpBufSize)
 	uint32_t depth = 0;
 	char tmpBuf[2048];
 
-	rvrtp_session_t *s = (rvrtp_session_t *)sn;
+	st_session_impl_t *s = (st_session_impl_t *)sn;
 	char const *pacerType;
 	switch (s->dev->dev.pacerType)
 	{
@@ -977,7 +1363,7 @@ St21GetSdp(st21_session_t *sn, char *sdpBuf, uint32_t sdpBufSize)
 		pacerType = "2110TPW";
 		break;
 	case ST_2110_21_TPNL:
-		pacerType ="2110TPNL";
+		pacerType = "2110TPNL";
 		break;
 	case ST_2110_21_TPN:
 		pacerType = "2110TPN";
@@ -987,7 +1373,7 @@ St21GetSdp(st21_session_t *sn, char *sdpBuf, uint32_t sdpBufSize)
 		break;
 	}
 
-	switch (s->fmt.pixelFmt)
+	switch (s->fmt.v.pixelFmt)
 	{
 	case ST21_PIX_FMT_RGB_8BIT:
 	case ST21_PIX_FMT_BGR_8BIT:
@@ -1027,8 +1413,8 @@ St21GetSdp(st21_session_t *sn, char *sdpBuf, uint32_t sdpBufSize)
 		exactframerate=%u/%u; depth=%u; colorimetry=BT709;\n \
 		TP=%s",
 			ntohs(s->fl[0].dst.addr4.sin_port), 96, ntohl(s->fl[0].src.addr4.sin_addr.s_addr), 96,
-			s->fmt.clockRate, 96, s->fmt.width, s->fmt.height, s->fmt.frmRateMul, s->fmt.frmRateDen,
-			depth, pacerType);
+			s->fmt.v.clockRate, 96, s->fmt.v.width, s->fmt.v.height, s->fmt.v.frmRateMul,
+			s->fmt.v.frmRateDen, depth, pacerType);
 	/*
 	TODO: Add a = ts-refclk:ptp=IEEE1588-2008:00-0C-17-FF-FE-4B-A3_01
 	to the sdp file when ptp will be ready
@@ -1036,10 +1422,11 @@ St21GetSdp(st21_session_t *sn, char *sdpBuf, uint32_t sdpBufSize)
 
 	if (sdpBufSize < strlen(tmpBuf))
 	{
-		RTE_LOG(INFO, USER1,
-				"Provided size of output SDP buffer not enough. Please allocate more space (for %zu "
-				"characters)\n",
-				strlen(tmpBuf));
+		RTE_LOG(
+			INFO, USER1,
+			"Provided size of output SDP buffer not enough. Please allocate more space (for %zu "
+			"characters)\n",
+			strlen(tmpBuf));
 		return ST_NO_MEMORY;
 	}
 
@@ -1067,7 +1454,7 @@ St21GetSdp(st21_session_t *sn, char *sdpBuf, uint32_t sdpBufSize)
 }
 
 int
-St21GetExtIndex(st21_session_t *sn, uint8_t *addr)
+StGetExtIndex(st_session_t *sn, uint8_t *addr)
 {
 	for (int i = 0; i < sn->extMem.numExtBuf; ++i)
 		if (addr >= sn->extMem.addr[i] && addr <= sn->extMem.endAddr[i])
@@ -1078,80 +1465,80 @@ St21GetExtIndex(st21_session_t *sn, uint8_t *addr)
 static void
 extBufFreeCb(void *extMem, void *arg)
 {
-	rvrtp_session_t *rsn = arg;
-	st21_session_t* sn = arg;
-	int idx = St21GetExtIndex(sn, extMem);
+	st_session_impl_t *rsn = arg;
+	st_session_t *sn = arg;
+	int idx = StGetExtIndex(sn, extMem);
 #ifdef DEBUG
-	if (extMem == NULL) {
+	if (extMem == NULL)
+	{
 		RTE_LOG(INFO, USER1, "External buffer address is invalid in extBufFreeCb\n");
 		return;
 	}
 
-	if (sn == NULL) {
+	if (sn == NULL)
+	{
 		RTE_LOG(INFO, USER1, "Session address is invalid in extBufFreeCb\n");
 		return;
 	}
-	RTE_LOG(INFO, USER1, "External buffer %p for session %d can be Freed\n", extMem, sn->ssid);
+	RTE_LOG(INFO, USER1, "Freecb:External buffer %p %p for session %d can be Freed\n", extMem,
+			sn->extMem.addr[idx], sn->ssid);
 #endif
 	if (likely(rsn->prod.appHandle))
 		rsn->prod.St21NotifyFrameDone(rsn->prod.appHandle, sn->extMem.addr[idx], 0);
 	else
-		St21FreeFrame(sn, sn->extMem.addr[idx]);
+		StFreeFrame(sn, sn->extMem.addr[idx]);
 }
 
 uint8_t *
-St21AllocFrame(st21_session_t *sn, uint32_t frameSize)
+StAllocFrame(st_session_t *sn, uint32_t frameSize)
 {
-	uint8_t * extMem;
+	uint8_t *extMem;
 	struct rte_mbuf_ext_shared_info *shInfo;
 	rte_iova_t bufIova;
 	uint16_t sharedInfoSize = sizeof(struct rte_mbuf_ext_shared_info);
 
 	extMem = rte_malloc("External buffer", frameSize, RTE_CACHE_LINE_SIZE);
-	if (extMem == NULL) {
-		RTE_LOG(ERR, USER1,
-				"Failed to allocate external memory of size %d\n",
-				frameSize);
+	if (extMem == NULL)
+	{
+		RTE_LOG(ERR, USER1, "Failed to allocate external memory of size %d\n", frameSize);
 		return NULL;
 	}
 
 	shInfo = rte_malloc("SharedInfo", sharedInfoSize, RTE_CACHE_LINE_SIZE);
-	if (shInfo == NULL) {
-		RTE_LOG(ERR, USER1,
-				"Failed to allocate shinfo memory of size %d\n",
-				sharedInfoSize);
+	if (shInfo == NULL)
+	{
+		RTE_LOG(ERR, USER1, "Failed to allocate shinfo memory of size %d\n", sharedInfoSize);
 		return NULL;
 	}
 	shInfo->free_cb = extBufFreeCb;
 	shInfo->fcb_opaque = sn;
 	rte_mbuf_ext_refcnt_set(shInfo, 0);
 
-	bufIova= rte_mem_virt2iova(extMem);
+	bufIova = rte_mem_virt2iova(extMem);
 	sn->extMem.shInfo[sn->extMem.numExtBuf] = shInfo;
 	sn->extMem.addr[sn->extMem.numExtBuf] = extMem;
 	sn->extMem.endAddr[sn->extMem.numExtBuf] = extMem + frameSize - 1;
 	sn->extMem.bufIova[sn->extMem.numExtBuf] = bufIova;
 	sn->extMem.numExtBuf++;
-	RTE_LOG(INFO, USER1,
-			"External buffer %p (IOVA: %lx size %d) allocated for session %d\n",
+	RTE_LOG(INFO, USER1, "External buffer %p (IOVA: %lx size %d) allocated for session %d\n",
 			extMem, bufIova, frameSize, sn->ssid);
 
 	return extMem;
 }
 
 st_status_t
-St21FreeFrame(st21_session_t *sn, uint8_t* frame)
+StFreeFrame(st_session_t *sn, uint8_t *frame)
 {
-	int idx = St21GetExtIndex(sn, frame);
+	int idx = StGetExtIndex(sn, frame);
 
-	if (idx == -1) {
-		RTE_LOG(ERR, USER1,
-				"Ext memory %p does not belong to session %d\n",
-				frame, sn->ssid);
+	if (idx == -1)
+	{
+		RTE_LOG(ERR, USER1, "Ext memory %p does not belong to session %d\n", frame, sn->ssid);
 		return ST_GENERAL_ERR;
 	}
 
-	if (rte_mbuf_ext_refcnt_read(sn->extMem.shInfo[idx]) != 0) {
+	if (rte_mbuf_ext_refcnt_read(sn->extMem.shInfo[idx]) != 0)
+	{
 		return ST_SN_ERR_IN_USE;
 	}
 

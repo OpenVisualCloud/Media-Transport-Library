@@ -1,5 +1,5 @@
 /*
-* Copyright 2020 Intel Corporation.
+* Copyright (C) 2020-2021 Intel Corporation.
 *
 * This software and the related documents are Intel copyrighted materials,
 * and your use of them is governed by the express license under which they
@@ -29,15 +29,15 @@ typedef struct st_kni_ms_conf st_kni_ms_conf_t;
 
 extern st_kni_ms_conf_t *StInitKniConf(int32_t ethPortId, struct rte_mempool *mbufPool,
 									   uint16_t rxRingNb, uint32_t txThread,
-									   struct rte_ring *txRing);
+									   struct rte_ring *txRing, int32_t userPortId);
 
-extern int32_t StStartKni(uint32_t slvCoreRx, uint32_t slvCoreTx, st_kni_ms_conf_t *c);
+extern int32_t StStartKni(uint32_t slvCoreRx, uint32_t slvCoreTx, st_kni_ms_conf_t **c);
 
 extern int32_t StInitKni(int32_t nbs);
-extern int32_t StStopKni(st_kni_ms_conf_t *c);
+extern int32_t StStopKni(st_kni_ms_conf_t **cs);
 
 // implemented in st_dev.c
-extern const char *StDevGetKniInterName(void);
+extern const char *StDevGetKniInterName(int portId);
 extern st_status_t StKniBkgTask(void);
 
-#endif // _ST_KNI_H
+#endif	// _ST_KNI_H

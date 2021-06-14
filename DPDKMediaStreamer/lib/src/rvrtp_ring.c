@@ -1,5 +1,5 @@
 /*
-* Copyright 2020 Intel Corporation.
+* Copyright (C) 2020-2021 Intel Corporation.
 *
 * This software and the related documents are Intel copyrighted materials,
 * and your use of them is governed by the express license under which they
@@ -14,80 +14,90 @@
 *
 */
 
-
+#include "dpdk_common.h"
 #include "rvrtp_main.h"
+
 #include <unistd.h>
 
-volatile uint64_t pktsBuild = 0;
-volatile uint64_t pktsQueued = 0;
+extern int hwts_dynfield_offset[RTE_MAX_ETHPORTS];
+
+st_enqueue_stats_t enqStats[RTE_MAX_LCORE] __rte_cache_aligned;
 
 //#define TX_RINGS_DEBUG 1
 //#define ST_RING_TIME_PRINT
 //#define TX_TIMER_DEBUG 1
 //#define _TX_RINGS_DEBUG_ 1
 
-#define ST_CLOCK_PRECISION_TIME 40000ul
-#define ST_TPRS_SLOTS_ADVANCE   8
+#define ST_TPRS_SLOTS_ADVANCE 8
 
 uint64_t adjustCount[6] = { 0, 0, 0, 0, 0, 0 };
 
 /**
-* Align each 8th packet to reduce burstiness 
+* Align each 8th packet to reduce burstiness
 */
 static inline void
-RvRtpAlignPacket(rvrtp_session_t *s, struct rte_mbuf *m)
+RvRtpAlignPacket(st_session_impl_t *s, struct rte_mbuf *m)
 {
 	// set mbuf timestmap to expected nanoseconds on a wire - 8 times Tprs time
-	m->timestamp = ((U64)s->ctx.epochs * s->fmt.frameTime) + s->sn.trOffset - s->nicTxTime;
-	int tprsSlots = (s->ctx.line1Number + 1) * s->fmt.pktsInLine - ST_TPRS_SLOTS_ADVANCE;
-	m->timestamp +=	((int64_t)tprsSlots * s->sn.tprs);
-	s->ctx.alignTmstamp = 0;
-}
+	int tprsSlots = (s->vctx.line1Number + 1) * s->fmt.v.pktsInLine - ST_TPRS_SLOTS_ADVANCE;
 
+#if (RTE_VER_YEAR < 21)
+	m->timestamp = (U64)(s->vctx.epochs * s->fmt.v.frameTime) + s->sn.trOffset - s->nicTxTime
+				   + ((int64_t)tprsSlots * s->sn.tprs);
+#else
+	/* No access to portid, hence we have rely on pktpriv_data */
+	pktpriv_data_t *ptr = rte_mbuf_to_priv(m);
+	ptr->timestamp = (U64)(s->vctx.epochs * s->fmt.v.frameTime) + s->sn.trOffset - s->nicTxTime
+					 + ((int64_t)tprsSlots * s->sn.tprs);
+#endif
+	s->vctx.alignTmstamp = 0;
+}
 
 /**
 * Get the ST2110-21 timestamp of 90k aligned to the epoch
 */
 uint32_t
-RvRtpGetFrameTmstamp(rvrtp_session_t *s, uint32_t firstWaits, U64 *roundTime, struct rte_mbuf *m)
+RvRtpGetFrameTmstamp(st_session_impl_t *s, uint32_t firstWaits, U64 *roundTime, struct rte_mbuf *m)
 {
-	U64 ntime, ntimeLast;
+	U64 ntime;
+	U64 ntimeCpu, ntimeCpuLast;
 
-	if (unlikely(!roundTime)) ST_ASSERT;
+	if (unlikely(!roundTime))
+		ST_ASSERT;
 
 	if (*roundTime == 0)
 	{
 		*roundTime = StPtpGetTime();
 	}
 	ntime = *roundTime;
-	U64 epochs = ntime / s->fmt.frameTime;
+	U64 epochs = (U64)(ntime / s->fmt.v.frameTime);
 
 	int areSameEpochs = 0, isOneLate = 0;
 
-	if (s->ctx.epochs == 0) 
+	if (s->vctx.epochs == 0)
 	{
-		s->ctx.epochs = epochs;
+		s->vctx.epochs = epochs;
 	}
-	else if ((int64_t)epochs - s->ctx.epochs > 1)
+	else if ((int64_t)epochs - s->vctx.epochs > 1)
 	{
-		s->ctx.epochs = epochs;
+		s->vctx.epochs = epochs;
 		__sync_fetch_and_add(&adjustCount[0], 1);
 	}
-	else if ((int64_t)epochs - s->ctx.epochs == 0)
+	else if ((int64_t)epochs - s->vctx.epochs == 0)
 	{
 		areSameEpochs++;
 		__sync_fetch_and_add(&adjustCount[1], 1);
 	}
-	else if ((int64_t)epochs - s->ctx.epochs == 1)
+	else if ((int64_t)epochs - s->vctx.epochs == 1)
 	{
 		isOneLate++;
-		s->ctx.epochs++;
+		s->vctx.epochs++;
 		__sync_fetch_and_add(&adjustCount[2], 1);
 	}
 	else
-	{	
+	{
 		//? case
-		s->ctx.epochs = epochs;
+		s->vctx.epochs = epochs;
 		__sync_fetch_and_add(&adjustCount[0], 1);
 	}
 
@@ -95,42 +105,54 @@ RvRtpGetFrameTmstamp(rvrtp_session_t *s, uint32_t firstWaits, U64 *roundTime, st
 	int64_t toElapse;
 	U64 st21Tmstamp90k;
 	U64 advance = s->nicTxTime + ST_TPRS_SLOTS_ADVANCE * s->sn.tprs;
-	double frmTime90k = s->fmt.clockRate * s->fmt.frmRateDen / s->fmt.frmRateMul;
-	s->ctx.alignTmstamp = 0;
-	//ntime = StPtpGetTime();
-	U64 remaind = ntime % s->fmt.frameTime; 
+	long double frmTime90k = 1.0L * s->fmt.v.clockRate * s->fmt.v.frmRateDen / s->fmt.v.frmRateMul;
+	s->vctx.alignTmstamp = 0;
+	ntime = StPtpGetTime();
+	ntimeCpu = StGetCpuTimeNano();
+	U64 epochs_r = (U64)(ntime / s->fmt.v.frameTime);
+	U64 remaind = ntime - (U64)(epochs_r * s->fmt.v.frameTime);
 
 	if ((isOneLate || (!areSameEpochs)) && (remaind < s->sn.trOffset - advance))
 	{
-		if (remaind > s->sn.trOffset/2)
+		if (remaind > s->sn.trOffset / 2)
 		{
 			toElapse = 0;
 			__sync_fetch_and_add(&adjustCount[3], 1);
 		}
-		else 
+		else
 		{
 			toElapse = s->sn.trOffset - advance - remaind;
 			__sync_fetch_and_add(&adjustCount[4], 1);
-			
 		}
-		
+
 		// set 90k timestamp aligned to epoch
-		st21Tmstamp90k = s->ctx.epochs * frmTime90k;
-		m->timestamp = ((U64)s->ctx.epochs * s->fmt.frameTime) + s->sn.trOffset - advance;
+		st21Tmstamp90k = s->vctx.epochs * frmTime90k;
+#if (RTE_VER_YEAR < 21)
+		m->timestamp = (U64)(s->vctx.epochs * s->fmt.v.frameTime) + s->sn.trOffset - advance;
+#else
+		/* No access to portid, hence we have rely on pktpriv_data */
+		pktpriv_data_t *ptr = rte_mbuf_to_priv(m);
+		ptr->timestamp = (U64)(s->vctx.epochs * s->fmt.v.frameTime) + s->sn.trOffset - advance;
+#endif
 	}
 	else
 	{
-		s->ctx.epochs++;
-		toEpoch = s->ctx.epochs * s->fmt.frameTime - ntime;
+		s->vctx.epochs++;
+		toEpoch = (U64)(s->vctx.epochs * s->fmt.v.frameTime) - ntime;
 		toElapse = toEpoch + s->sn.trOffset - advance;
 		// set 90k timestamp aligned to epoch
-		st21Tmstamp90k = s->ctx.epochs * frmTime90k;
+		st21Tmstamp90k = s->vctx.epochs * frmTime90k;
 		__sync_fetch_and_add(&adjustCount[5], 1);
-		
-		// set mbuf timestmap to expected nanoseconds on a wire - ST_TPRS_SLOTS_ADVANCE times Tprs time
-		m->timestamp = ((U64)s->ctx.epochs * s->fmt.frameTime) + s->sn.trOffset - advance;
-	}
 
+		// set mbuf timestmap to expected nanoseconds on a wire - ST_TPRS_SLOTS_ADVANCE times Tprs time
+#if (RTE_VER_YEAR < 21)
+		m->timestamp = (U64)(s->vctx.epochs * s->fmt.v.frameTime) + s->sn.trOffset - advance;
+#else
+		/* We do not have access to portid, hence we have rely on pktpriv_data */
+		pktpriv_data_t *ptr = rte_mbuf_to_priv(m);
+		ptr->timestamp = (U64)(s->vctx.epochs * s->fmt.v.frameTime) + s->sn.trOffset - advance;
+#endif
+	}
 
 	//leave only complete 128us steps so that waiting will be done with 128us accuracy
 	if ((toElapse > 2 * ST_CLOCK_PRECISION_TIME) && firstWaits)
@@ -138,6 +160,7 @@ RvRtpGetFrameTmstamp(rvrtp_session_t *s, uint32_t firstWaits, U64 *roundTime, st
 		toElapse -= ST_CLOCK_PRECISION_TIME;
 
 		uint32_t repeats = 0;
+		uint32_t repeatCountMax = 2 * (uint32_t)(toElapse / ST_CLOCK_PRECISION_TIME);
 		U64 elapsed;
 		struct timespec req, rem;
 
@@ -150,13 +173,14 @@ RvRtpGetFrameTmstamp(rvrtp_session_t *s, uint32_t firstWaits, U64 *roundTime, st
 		{
 			req.tv_nsec = ST_CLOCK_PRECISION_TIME / 2;
 		}
-	
-		for (;;)
+
+		for (; repeats < repeatCountMax; repeats++)
 		{
 			clock_nanosleep(CLOCK_REALTIME, 0, &req, &rem);
-			ntimeLast = StPtpGetTime();
-			elapsed = ntimeLast - ntime;
-			if (elapsed + MAX(req.tv_sec, ST_CLOCK_PRECISION_TIME) > toElapse) break;
+			ntimeCpuLast = StGetCpuTimeNano();
+			elapsed = ntimeCpuLast - ntimeCpu;
+			if (elapsed + MAX(req.tv_nsec, ST_CLOCK_PRECISION_TIME) > toElapse)
+				break;
 			repeats++;
 		}
 #ifdef TX_TIMER_DEBUG
@@ -165,142 +189,120 @@ RvRtpGetFrameTmstamp(rvrtp_session_t *s, uint32_t firstWaits, U64 *roundTime, st
 			uint64_t tmstamp64_ = (U64)ntimeLast / s->tmstampTime;
 			uint32_t tmstamp32_ = (uint32_t)tmstamp64_;
 			uint32_t tmstamp32 = (uint32_t)st21Tmstamp90k;
+#if (RTE_VER_YEAR < 21)
+
+			uint64_t mtmtstamp = m->timestamp;
+#else
+			/* No access to portid, hence we have rely on pktpriv_data */
+			pktpriv_data_t *ptr = rte_mbuf_to_priv(m);
+			uint64_t mtmtstamp = ptr->timestamp;
+#endif
 
 			RTE_LOG(INFO, USER2, "RvRtpGetFrameTmstamp: elapsed %llu diff %lld tmdelta %d\n",
-				elapsed, (long long int)toElapse - elapsed, tmstamp32 - s->lastTmstamp);
+					elapsed, (long long int)toElapse - elapsed, tmstamp32 - s->lastTmstamp);
 			RTE_LOG(INFO, USER2, "RvRtpGetFrameTmstamp: waiting %llu tmstamp %u delta %d\n",
-				toElapse, tmstamp32, (int32_t)(tmstamp32_ - tmstamp32));
+					toElapse, tmstamp32, (int32_t)(tmstamp32_ - tmstamp32));
 			RTE_LOG(INFO, USER2, "RvRtpGetFrameTmstamp: mbuf->tmstamp %lu time %lu timeDiff %lu\n",
-				m->timestamp, (uint64_t)ntimeLast, m->timestamp - ntimeLast);
-
+					mtmtstamp, (uint64_t)ntimeLast, mtmtstamp - ntimeLast);
 		}
-#endif
-
-#if 0
-	//leave only complete 128us steps so that waiting will be done with 128us accuracy
-	if ((toElapse > ST_CLOCK_PRECISION_TIME) && firstWaits)
-	{
-		int64_t toSet = toElapse - ST_CLOCK_PRECISION_TIME/2;
-
-		uint32_t repeats = 0;
-		int64_t elapsed;
-		struct timespec req, rem;
-
-		req.tv_sec = 0;
-		req.tv_nsec = (toSet * 4) / 5;
-	
-		for (;;)
-		{
-			clock_nanosleep(CLOCK_REALTIME, 0, &req, &rem);
-			ntimeLast = StPtpGetTime();
-			elapsed = ntimeLast - ntime;
-			if (elapsed + ST_CLOCK_PRECISION_TIME > toElapse) break;
-			int64_t left = toElapse - elapsed;
-			if (left > ST_CLOCK_PRECISION_TIME * 10)
-			{
-				req.tv_nsec = 2 * ST_CLOCK_PRECISION_TIME;
-			}
-			else
-			{
-				req.tv_nsec = ST_CLOCK_PRECISION_TIME / 2;
-			}
-			repeats++;
-		}
-#ifdef TX_TIMER_DEBUG
-		if ((s->sn.timeslot == 0) && (adjustCount[5] % 100 == 0))
-		{
-			uint64_t tmstamp64_ = (U64)ntimeLast / s->tmstampTime;
-			uint32_t tmstamp32_ = (uint32_t)tmstamp64_;
-			uint32_t tmstamp32 = (uint32_t)st21Tmstamp90k;
-
-			RTE_LOG(INFO, USER2, "RvRtpGetFrameTmstamp: elapsed %ld diff %ld tmdelta %d\n",
-				elapsed, (int64_t)toElapse - elapsed, (int)(tmstamp32 - s->lastTmstamp));
-			RTE_LOG(INFO, USER2, "RvRtpGetFrameTmstamp: waiting %ld tmstamp %u delta %d\n",
-				toElapse, tmstamp32, (int)(tmstamp32_ - tmstamp32));
-			RTE_LOG(INFO, USER2, "RvRtpGetFrameTmstamp: mbuf->tmstamp %lu time %lu timeDiff %ld\n",
-				m->timestamp, (uint64_t)ntimeLast, (int64_t)m->timestamp - (int64_t)ntimeLast);
-
-		}
-#endif
 #endif
 	}
 	s->lastTmstamp = st21Tmstamp90k;
+
 	return (uint32_t)st21Tmstamp90k;
 }
 
-
 /*****************************************************************************
  *
- * RvRtpFillHdrs - Copy and fill all pkts headers
+ * StRtpFillHdrs - Copy and fill all pkts headers
  *
  * DESCRIPTION
  * Constructs the pkt header from the template
  *
  * RETURNS: IP header location
  */
-static inline void *
-RvRtpFillHeader(rvrtp_session_t *s, struct rte_ether_hdr *l2)
+void *
+StRtpFillHeader(st_session_impl_t *s, struct rte_ether_hdr *l2)
 {
 	struct rte_ipv4_hdr *ip = (struct rte_ipv4_hdr *)&l2[1];
-	memcpy(l2, &s->hdrPrint, sizeof(s->hdrPrint));
+	memcpy(l2, &s->hdrPrint[ST_PPORT], sizeof(s->hdrPrint[ST_PPORT]));
 	return ip;
 }
 
-
-/* Packet creator thread runned on master lcore*/
-int 
-LcoreMainPktRingEnqueue(void* args) 
+void
+StRtpFillHeaderR(st_session_impl_t *s, uint8_t *l2R, uint8_t *l2)
 {
+	uint32_t eth_ip_size = sizeof(struct rte_ether_hdr) + sizeof(struct rte_ipv4_hdr);
+	uint8_t *udp = l2 + eth_ip_size;
+	uint8_t *udpR = l2R + eth_ip_size;
+
+	memcpy(l2R, &s->hdrPrint[ST_RPORT], eth_ip_size);
+	memcpy(udpR, udp, sizeof(s->hdrPrint[ST_RPORT]) - eth_ip_size);
+}
+
+/* packet enqueue for redudant port */
+int
+LcoreMainPktRingEnqueue_withoutRedudant(void *args)
+{
+	unsigned coreId = rte_lcore_index(rte_lcore_id());
 	uint32_t threadId = (uint32_t)((uint64_t)args);
 	st_main_params_t *mp = &stMainParams;
 	int count = 0;
 
 	if (threadId >= mp->maxEnqThrds)
 	{
-		RTE_LOG(INFO, USER2, "PKT ENQUEUE RUNNING ON %d LCORE in threadId of %u\n", rte_lcore_id(), threadId);
+		RTE_LOG(INFO, USER2, "PKT ENQUEUE RUNNING ON %d LCORE in threadId of %u\n", rte_lcore_id(),
+				threadId);
 		rte_exit(127, "Invalid threadId - exiting PKT ENQUEUE\n");
 	}
 
 #ifdef TX_RINGS_DEBUG
-	RTE_LOG(INFO, USER1, "PKT ENQUEUE RUNNING ON LCORE %d SOCKET %d THREAD %d\n",
-		rte_lcore_id(), rte_lcore_to_socket_id(rte_lcore_id()), threadId);
+	RTE_LOG(INFO, USER1, "PKT ENQUEUE RUNNING ON LCORE %d SOCKET %d THREAD %d\n", rte_lcore_id(),
+			rte_lcore_to_socket_id(rte_lcore_id()), threadId);
 #endif
 
 	uint32_t ring = 0;
 
-	rvrtp_device_t *dev = &stSendDevice;
-	rvrtp_session_t *s;
+	st_device_impl_t *dev = &stSendDevice;
+	st_session_impl_t *s;
 
 	while (count < dev->dev.snCount)
 	{
-		sleep(1);
+		//sleep(1);
 		if (dev->snTable[count] != NULL)
 		{
 			count++;
 		}
 	}
 
-	uint32_t pktsCount = mp->enqThrds[threadId].pktsCount;
+	const uint32_t pktsCount = mp->enqThrds[threadId].pktsCount;
 	struct rte_mbuf *pktVect[pktsCount];
 	struct rte_mbuf *pktExt[pktsCount];
 
+	char name[35] = "enq-thread-";
+	snprintf(name + strlen(name), 35, "%3d", threadId);
+
 	struct rte_mempool *pool = dev->mbufPool;
-	if (!pool) rte_exit(127, "Packets mbufPool is invalid\n");
+	if (!pool)
+		rte_exit(127, "Packets mbufPool is invalid\n");
 
 	uint32_t thrdSnFirst = mp->enqThrds[threadId].thrdSnFirst;
 	uint32_t thrdSnLast = mp->enqThrds[threadId].thrdSnLast;
 
 #ifdef TX_RINGS_DEBUG
-	RTE_LOG(INFO, USER2, "Thread params: %u %u %u %u\n",
-		thrdSnFirst, thrdSnLast, pktsCount, threadId);
+	RTE_LOG(INFO, USER2, "Thread params: %u %u %u %u\n", thrdSnFirst, thrdSnLast, pktsCount,
+			threadId);
 #endif
 #ifdef ST_RING_TIME_PRINT
 	uint64_t ratioClk = rte_get_tsc_hz();
 #endif
 
 	// wait for scheduler threads to be ready
-	RVRTP_SEMAPHORE_WAIT(mp->ringStart, mp->maxSchThrds);
+	RVRTP_SEMAPHORE_WAIT(mp->ringStart, mp->maxSchThrds * mp->numPorts);
 	RTE_LOG(INFO, USER2, "Transmitter ready - sending packet STARTED\n");
+
+	//DPDKMS-482 - additional workaround
+	rte_delay_us_sleep(10 * 1000 * 1000);
 
 	while (rte_atomic32_read(&isTxDevToDestroy) == 0)
 	{
@@ -310,17 +312,21 @@ LcoreMainPktRingEnqueue(void* args)
 		/* allocate pkts */
 		if (rte_pktmbuf_alloc_bulk(pool, pktVect, pktsCount) < 0)
 		{
-			RTE_LOG(INFO, USER2, "Packets allocation problem after: %u for %u\n",
-				(uint32_t)pktsBuild, pktsCount);
+			RTE_LOG(INFO, USER2, "Packets allocation problem after: %lu for %u\n",
+					(uint64_t)enqStats[coreId].pktsBuild, pktsCount);
+			enqStats[coreId].pktsPriAllocFail += 1;
 			continue;
 		}
 		/* allocate mbufs for external buffer*/
 		if (rte_pktmbuf_alloc_bulk(pool, pktExt, pktsCount) < 0)
 		{
+			rte_pktmbuf_free_bulk(&pktVect[0], pktsCount);
 			RTE_LOG(INFO, USER2, "Packets Ext allocation problem after: %u for %u\n",
-				(uint32_t)pktsBuild, pktsCount);
+					(uint32_t)enqStats[coreId].pktsBuild, pktsCount);
+			enqStats[coreId].pktsExtAllocFail += 1;
 			continue;
 		}
+
 		U64 roundTime = 0;
 		uint32_t firstSnInRound = 1;
 
@@ -329,7 +335,7 @@ LcoreMainPktRingEnqueue(void* args)
 		for (uint32_t i = thrdSnFirst; i < thrdSnLast; i++)
 		{
 			s = dev->snTable[i];
-			if (s == NULL)
+			if (unlikely(s == NULL))
 			{
 				for (uint32_t j = 0; j < ST_DEFAULT_PKTS_IN_LN; j++)
 				{
@@ -339,17 +345,24 @@ LcoreMainPktRingEnqueue(void* args)
 					pktVect[ij] = NULL;
 					pktExt[ij] = NULL;
 				}
+				enqStats[coreId].sessionLkpFail += 1;
 				continue;
 			}
 
 			uint32_t ij = (i - thrdSnFirst) * ST_DEFAULT_PKTS_IN_LN;
+#if (RTE_VER_YEAR < 21)
 			pktVect[ij]->timestamp = 0;
+#else
+			pktpriv_data_t *ptr = rte_mbuf_to_priv(pktVect[ij]);
+			ptr->timestamp = 0;
+#endif
 
 			do
 			{
-				if (unlikely(s->ctx.tmstamp == 0))
+				if (unlikely(s->vctx.tmstamp == 0))
 				{
-					s->ctx.tmstamp = RvRtpGetFrameTmstamp(s, firstSnInRound, &roundTime, pktVect[ij]);
+					s->vctx.tmstamp
+						= RvRtpGetFrameTmstamp(s, firstSnInRound, &roundTime, pktVect[ij]);
 					firstSnInRound = 0;
 				}
 			} while (RvRtpSessionCheckRunState(s) == 0);
@@ -364,82 +377,395 @@ LcoreMainPktRingEnqueue(void* args)
 					rte_pktmbuf_free(pktExt[ij]);
 					pktVect[ij] = NULL;
 					pktExt[ij] = NULL;
+					enqStats[coreId].sessionStateFail += 1;
 					continue;
 				}
 				struct rte_ether_hdr *l2 = rte_pktmbuf_mtod(pktVect[ij], struct rte_ether_hdr *);
-				struct rte_ipv4_hdr *ip = RvRtpFillHeader(s, l2);
+				struct rte_ipv4_hdr *ip = StRtpFillHeader(s, l2);
 
-				if (s->ctx.alignTmstamp) RvRtpAlignPacket(s, pktVect[ij]);
+				if (s->vctx.alignTmstamp)
+					RvRtpAlignPacket(s, pktVect[ij]);
 
 				// assemble the RTP packet accordingly to the format
 				s->UpdateRtpPkt(s, ip, pktExt[ij]);
 
-				pktVect[ij]->data_len = s->fmt.pktSize - pktExt[ij]->data_len;
+				pktVect[ij]->data_len = s->fmt.v.pktSize - pktExt[ij]->data_len;
 
-				if (pktExt[ij]->data_len)
-					rte_pktmbuf_chain(pktVect[ij], pktExt[ij]);
-				else
+				if (unlikely(pktExt[ij]->data_len == 0))
+				{
+					enqStats[coreId].pktsChainPriFail += 1;
 					rte_pktmbuf_free(pktExt[ij]);
+				}
+				rte_pktmbuf_chain(pktVect[ij], pktExt[ij]);
 
-				pktVect[ij]->pkt_len = s->fmt.pktSize;
+				pktVect[ij]->pkt_len = s->fmt.v.pktSize;
 				pktVect[ij]->l2_len = 14;
 				pktVect[ij]->l3_len = 20;
 				pktVect[ij]->ol_flags = PKT_TX_IPV4;
+				pktVect[ij]->ol_flags |= PKT_TX_IP_CKSUM;
 
-				// UDP & IP checksum check
-				if ((s->ofldFlags & (ST_OFLD_HW_IP_CKSUM | ST_OFLD_HW_UDP_CKSUM)) == (ST_OFLD_HW_IP_CKSUM | ST_OFLD_HW_UDP_CKSUM))
-				{
-					pktVect[ij]->ol_flags |= PKT_TX_IP_CKSUM | PKT_TX_UDP_CKSUM;
-					struct udphdr *udp = rte_pktmbuf_mtod_offset(pktVect[ij], struct udphdr *, 34);
-					ip->hdr_checksum = 0;
-					rte_raw_cksum_mbuf(pktVect[ij], pktVect[ij]->l2_len,
-							pktVect[ij]->pkt_len - pktVect[ij]->l2_len,
-							&udp->uh_sum);
-				}
-				__sync_fetch_and_add(&pktsBuild, 1);
+				enqStats[coreId].pktsBuild += 1;
 			}
 		}
 #ifdef ST_RING_TIME_PRINT
 		uint64_t cycles1 = rte_get_tsc_cycles();
 		printf("Ring pkt assembly time elapsed %llu ratio %llu pktTime %llu\n",
-			(U64)(cycles1 - cycles0), (U64)ratioClk, (U64)(cycles1 - cycles0) / pktsCount);
+			   (U64)(cycles1 - cycles0), (U64)ratioClk, (U64)(cycles1 - cycles0) / pktsCount);
 #endif
-		for (uint32_t j = 0; j < ST_DEFAULT_PKTS_IN_LN; j+=4)
+		for (uint32_t j = 0; j < ST_DEFAULT_PKTS_IN_LN; j += 4)
 		{
 			for (uint32_t i = thrdSnFirst; i < thrdSnLast; i++)
 			{
-				if (!dev->snTable[i]) continue;
+				if (unlikely(!dev->snTable[i]))
+				{
+					enqStats[coreId].sessionLkpFail += 1;
+					continue;
+				}
 
-				uint32_t noFails = 0;
 				uint32_t ij = (i - thrdSnFirst) * ST_DEFAULT_PKTS_IN_LN + j;
 
-				if (!pktVect[ij]) continue;
+				if (!pktVect[ij])
+				{
+					enqStats[coreId].pktsQueuePriFail += 1;
+					continue;
+				}
 
 				ring = dev->snTable[i]->sn.timeslot;
 
-				while (rte_ring_sp_enqueue_bulk(dev->txRing[ring], (void**)&pktVect[ij], 4, NULL) == 0)
+				while (rte_ring_sp_enqueue_bulk(dev->txRing[ST_PPORT][ring], (void **)&pktVect[ij],
+												4, NULL)
+					   == 0)
 				{
 					RVRTP_SEMAPHORE_GIVE(mp->schedStart, 1);
 #ifdef _TX_RINGS_DEBUG_
-					if ((noFails % 1000) == 0)	
-						RTE_LOG(INFO, USER2, "Packets enqueue ring %u after: %llu times %u\n", ring, (U64)pktsQueued, noFails);
+					if ((enqStats[coreId].pktsQueued % 1000) == 0)
+						RTE_LOG(INFO, USER2, "Packets enqueue ring %u after: %llu times %u\n", ring,
+								(U64)enqStats[coreId].pktsQueued, noFails);
 #endif
-					noFails++;
 					__sync_synchronize();
 				}
-				__sync_fetch_and_add(&pktsQueued, 1);
+
+				enqStats[coreId].pktsQueued += 1;
 			}
 		}
 		RVRTP_BARRIER_SYNC(mp->ringBarrier2, threadId, mp->maxEnqThrds);
-		
+
 		RVRTP_SEMAPHORE_GIVE(mp->schedStart, 1);
 
 #ifdef ST_RING_TIME_PRINT
 		uint64_t cycles2 = rte_get_tsc_cycles();
-		printf("Ring finish time elapsed %llu ratio %llu pktTime %llu\n",
-			(U64)(cycles2 - cycles1), (U64)ratioClk, (U64)(cycles2 - cycles1) / pktsCount);
+		printf("Ring finish time elapsed %llu ratio %llu pktTime %llu\n", (U64)(cycles2 - cycles1),
+			   (U64)ratioClk, (U64)(cycles2 - cycles1) / pktsCount);
 #endif
 	}
+	RTE_LOG(INFO, USER2, "Transmitter closed - sending packet STOPPED\n");
+	return 0;
+}
+
+/* Packet creator thread runned on master lcore*/
+int
+LcoreMainPktRingEnqueue_withRedudant(void *args)
+{
+	unsigned coreId = rte_lcore_index(rte_lcore_id());
+	uint32_t threadId = (uint32_t)((uint64_t)args);
+	st_main_params_t *mp = &stMainParams;
+	int count = 0;
+
+	if (threadId >= mp->maxEnqThrds)
+	{
+		RTE_LOG(INFO, USER2, "PKT ENQUEUE RUNNING ON %d LCORE in threadId of %u\n", rte_lcore_id(),
+				threadId);
+		rte_exit(127, "Invalid threadId - exiting PKT ENQUEUE\n");
+	}
+
+#ifdef TX_RINGS_DEBUG
+	RTE_LOG(INFO, USER1, "PKT ENQUEUE RUNNING ON LCORE %d SOCKET %d THREAD %d\n", rte_lcore_id(),
+			rte_lcore_to_socket_id(rte_lcore_id()), threadId);
+#endif
+
+	uint32_t ring = 0;
+
+	st_device_impl_t *dev = &stSendDevice;
+	st_session_impl_t *s;
+
+	while (count < dev->dev.snCount)
+	{
+		//sleep(1);
+		if (dev->snTable[count] != NULL)
+		{
+			count++;
+		}
+	}
+
+	const uint32_t pktsCount = mp->enqThrds[threadId].pktsCount;
+	struct rte_mbuf *pktVect[pktsCount];
+	struct rte_mbuf *pktVectR[pktsCount];
+	struct rte_mbuf *pktExt[pktsCount];
+
+	struct rte_mempool *pool = dev->mbufPool;
+	if (!pool)
+		rte_exit(127, "Packets mbufPool is invalid\n");
+
+	uint32_t thrdSnFirst = mp->enqThrds[threadId].thrdSnFirst;
+	uint32_t thrdSnLast = mp->enqThrds[threadId].thrdSnLast;
+	bool redRing = (mp->numPorts > 1) ? 1 : 0;
+
+#ifdef TX_RINGS_DEBUG
+	RTE_LOG(INFO, USER2, "Thread params: %u %u %u %u\n", thrdSnFirst, thrdSnLast, pktsCount,
+			threadId);
+#endif
+#ifdef ST_RING_TIME_PRINT
+	uint64_t ratioClk = rte_get_tsc_hz();
+#endif
+
+	// wait for scheduler threads to be ready
+	RVRTP_SEMAPHORE_WAIT(mp->ringStart, mp->maxSchThrds * mp->numPorts);
+	RTE_LOG(INFO, USER2, "Transmitter ready - sending packet STARTED\n");
+
+	//DPDKMS-482 - additional workaround
+	rte_delay_us_sleep(10 * 1000 * 1000);
+
+	while (rte_atomic32_read(&isTxDevToDestroy) == 0)
+	{
+#ifdef ST_RING_TIME_PRINT
+		uint64_t cycles0 = rte_get_tsc_cycles();
+#endif
+		/* allocate pkts */
+		if (rte_pktmbuf_alloc_bulk(pool, pktVect, pktsCount) < 0)
+		{
+			enqStats[coreId].pktsPriAllocFail += 1;
+			RTE_LOG(INFO, USER2, "Packets allocation problem after: %u for %u\n",
+					(uint32_t)enqStats[coreId].pktsPriAllocFail, pktsCount);
+			continue;
+		}
+		/* allocate mbufs for external buffer*/
+		if (rte_pktmbuf_alloc_bulk(pool, pktExt, pktsCount) < 0)
+		{
+			enqStats[coreId].pktsExtAllocFail += 1;
+			rte_pktmbuf_free_bulk(&pktVect[0], pktsCount);
+			RTE_LOG(INFO, USER2, "Packets Ext allocation problem after: %lu for %u\n",
+					(uint64_t)enqStats[coreId].pktsBuild, pktsCount);
+			continue;
+		}
+		if (redRing && rte_pktmbuf_alloc_bulk(pool, pktVectR, pktsCount) < 0)
+		{
+			enqStats[coreId].pktsRedAllocFail += 1;
+			rte_pktmbuf_free_bulk(&pktVect[0], pktsCount);
+			rte_pktmbuf_free_bulk(&pktExt[0], pktsCount);
+			RTE_LOG(INFO, USER2, "Packets allocation problem after: %lu for %u\n",
+					(uint64_t)enqStats[coreId].pktsBuild, pktsCount);
+			continue;
+		}
+		U64 roundTime = 0;
+		uint32_t firstSnInRound = 1;
+
+		RVRTP_BARRIER_SYNC(mp->ringBarrier1, threadId, mp->maxEnqThrds);
+
+		for (uint32_t i = thrdSnFirst; i < thrdSnLast; i++)
+		{
+			bool sendR = 0;
+
+			s = dev->snTable[i];
+
+			if (unlikely(s == NULL))
+			{
+				for (uint32_t j = 0; j < ST_DEFAULT_PKTS_IN_LN; j++)
+				{
+					uint32_t ij = (i - thrdSnFirst) * ST_DEFAULT_PKTS_IN_LN + j;
+					rte_pktmbuf_free(pktVect[ij]);
+					rte_pktmbuf_free(pktExt[ij]);
+					if (redRing)
+					{
+						rte_pktmbuf_free(pktVectR[ij]);
+						pktVectR[ij] = NULL;
+					}
+					pktVect[ij] = NULL;
+					pktExt[ij] = NULL;
+				}
+				enqStats[coreId].sessionLkpFail += 1;
+				continue;
+			}
+
+			sendR = (redRing && (s->sn.caps & ST_SN_DUAL_PATH)) ? 1 : 0;
+			uint32_t ij = (i - thrdSnFirst) * ST_DEFAULT_PKTS_IN_LN;
+#if (RTE_VER_YEAR < 21)
+			pktVect[ij]->timestamp = 0;
+#else
+			pktpriv_data_t *ptr = rte_mbuf_to_priv(pktVect[ij]);
+			ptr->timestamp = 0;
+#endif
+
+			do
+			{
+				if (unlikely(s->vctx.tmstamp == 0))
+				{
+					s->vctx.tmstamp
+						= RvRtpGetFrameTmstamp(s, firstSnInRound, &roundTime, pktVect[ij]);
+					firstSnInRound = 0;
+				}
+			} while (RvRtpSessionCheckRunState(s) == 0);
+
+			for (uint32_t j = 0; j < ST_DEFAULT_PKTS_IN_LN; j++)
+			{
+				uint32_t ij = (i - thrdSnFirst) * ST_DEFAULT_PKTS_IN_LN + j;
+
+				if (unlikely(s->state != ST_SN_STATE_RUN))
+				{
+					rte_pktmbuf_free(pktVect[ij]);
+					rte_pktmbuf_free(pktExt[ij]);
+					if (redRing)
+					{
+						rte_pktmbuf_free(pktVectR[ij]);
+						pktVectR[ij] = NULL;
+					}
+					pktVect[ij] = NULL;
+					pktExt[ij] = NULL;
+					enqStats[coreId].sessionStateFail += 1;
+					continue;
+				}
+				struct rte_ether_hdr *l2 = rte_pktmbuf_mtod(pktVect[ij], struct rte_ether_hdr *);
+				struct rte_ipv4_hdr *ip = StRtpFillHeader(s, l2);
+
+				if (s->vctx.alignTmstamp)
+					RvRtpAlignPacket(s, pktVect[ij]);
+
+				// assemble the RTP packet accordingly to the format
+				s->UpdateRtpPkt(s, ip, pktExt[ij]);
+
+				pktVect[ij]->data_len = s->fmt.v.pktSize - pktExt[ij]->data_len;
+
+				if (pktExt[ij]->data_len == 0)
+				{
+					rte_pktmbuf_free(pktExt[ij]);
+					enqStats[coreId].pktsChainPriFail += 1;
+				}
+				rte_pktmbuf_chain(pktVect[ij], pktExt[ij]);
+
+				pktVect[ij]->pkt_len = s->fmt.v.pktSize;
+				pktVect[ij]->l2_len = 14;
+				pktVect[ij]->l3_len = 20;
+				pktVect[ij]->ol_flags = PKT_TX_IPV4;
+				pktVect[ij]->ol_flags |= PKT_TX_IP_CKSUM;
+
+				if (sendR)
+				{
+					pktVectR[ij]->data_len = pktVect[ij]->data_len;
+					pktVectR[ij]->pkt_len = pktVect[ij]->pkt_len;
+					pktVectR[ij]->l2_len = pktVect[ij]->l2_len;
+					pktVectR[ij]->l3_len = pktVect[ij]->l3_len;
+					pktVectR[ij]->ol_flags = pktVect[ij]->ol_flags;
+					pktVectR[ij]->nb_segs = 2;
+
+					pktVectR[ij]->next = pktExt[ij];
+					rte_mbuf_refcnt_set(pktExt[ij], 2);
+
+					uint8_t *l2R = rte_pktmbuf_mtod(pktVectR[ij], uint8_t *);
+					StRtpFillHeaderR(s, l2R, (uint8_t *)l2);
+
+					/* ToDo: should not we chain the Redudant packets? */
+				}
+				else if (redRing)
+				{
+					rte_pktmbuf_free(pktVectR[ij]);
+					pktVectR[ij] = NULL;
+				}
+				enqStats[coreId].pktsBuild += 1;
+			}
+		}
+#ifdef ST_RING_TIME_PRINT
+		uint64_t cycles1 = rte_get_tsc_cycles();
+		printf("Ring pkt assembly time elapsed %llu ratio %llu pktTime %llu\n",
+			   (U64)(cycles1 - cycles0), (U64)ratioClk, (U64)(cycles1 - cycles0) / pktsCount);
+#endif
+		for (uint32_t j = 0; j < ST_DEFAULT_PKTS_IN_LN; j += 4)
+		{
+			for (uint32_t i = thrdSnFirst; i < thrdSnLast; i++)
+			{
+				if (unlikely(!dev->snTable[i]))
+				{
+					enqStats[coreId].sessionLkpFail += 1;
+					continue;
+				}
+
+				uint32_t ij = (i - thrdSnFirst) * ST_DEFAULT_PKTS_IN_LN + j;
+
+				if (unlikely(!pktVect[ij]))
+					continue;
+
+				ring = dev->snTable[i]->sn.timeslot;
+
+				while (rte_ring_sp_enqueue_bulk(dev->txRing[ST_PPORT][ring], (void **)&pktVect[ij],
+												4, NULL)
+					   == 0)
+				{
+					RVRTP_SEMAPHORE_GIVE(mp->schedStart, 1);
+#ifdef _TX_RINGS_DEBUG_
+					if ((enqStats[coreId].pktsQueued % 1000) == 0)
+						RTE_LOG(INFO, USER2, "Packets enqueue ring %u after: %llu times %u\n", ring,
+								(U64)enqStats[coreId].pktsQueued, noFails);
+#endif
+					__sync_synchronize();
+				}
+
+				while (redRing && pktVectR[ij]
+					   && (rte_ring_sp_enqueue_bulk(dev->txRing[ST_RPORT][ring],
+													(void **)&pktVectR[ij], 4, NULL)
+						   == 0))
+				{
+					RVRTP_SEMAPHORE_GIVE(mp->schedStart, 1);
+#ifdef _TX_RINGS_DEBUG_
+					if ((enqStats[coreId].pktsQueued % 1000) == 0)
+						RTE_LOG(INFO, USER2, "Packets enqueue ring %u after: %llu times %u\n", ring,
+								(U64)enqStats[coreId].pktsQueued, noFails);
+#endif
+					__sync_synchronize();
+				}
+				enqStats[coreId].pktsQueued += 1;
+			}
+		}
+		RVRTP_BARRIER_SYNC(mp->ringBarrier2, threadId, mp->maxEnqThrds);
+
+		RVRTP_SEMAPHORE_GIVE(mp->schedStart, 1);
+
+#ifdef ST_RING_TIME_PRINT
+		uint64_t cycles2 = rte_get_tsc_cycles();
+		printf("Ring finish time elapsed %llu ratio %llu pktTime %llu\n", (U64)(cycles2 - cycles1),
+			   (U64)ratioClk, (U64)(cycles2 - cycles1) / pktsCount);
+#endif
+	}
+	RTE_LOG(INFO, USER2, "Transmitter closed - sending packet STOPPED\n");
+	return 0;
+}
+
+/* Packet creator thread runned on master lcore*/
+int
+LcoreMainPktRingEnqueue(void *args)
+{
+	st_main_params_t *mp = &stMainParams;
+	uint32_t threadId = (uint32_t)((uint64_t)args);
+	bool redRing = (mp->numPorts > 1) ? 1 : 0;
+
+	if (threadId >= mp->maxEnqThrds)
+	{
+		RTE_LOG(INFO, USER2, "PKT ENQUEUE RUNNING ON %d LCORE in threadId of %u\n", rte_lcore_id(),
+				threadId);
+		rte_exit(127, "Invalid threadId - exiting PKT ENQUEUE\n");
+	}
+
+#ifdef TX_RINGS_DEBUG
+	RTE_LOG(INFO, USER1, "PKT ENQUEUE RUNNING ON LCORE %d SOCKET %d THREAD %d\n", rte_lcore_id(),
+			rte_lcore_to_socket_id(rte_lcore_id()), threadId);
+#endif
+
+	if (redRing)
+	{
+		LcoreMainPktRingEnqueue_withRedudant(args);
+	}
+	else
+	{
+		LcoreMainPktRingEnqueue_withoutRedudant(args);
+	}
+
 	RTE_LOG(INFO, USER2, "Transmitter closed - sending packet STOPPED\n");
 	return 0;
 }

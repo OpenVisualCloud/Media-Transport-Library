@@ -1,5 +1,5 @@
 /*
-* Copyright 2020 Intel Corporation.
+* Copyright (C) 2020-2021 Intel Corporation.
 *
 * This software and the related documents are Intel copyrighted materials,
 * and your use of them is governed by the express license under which they
@@ -22,21 +22,8 @@
 
 #include "st_kni.h"
 
-#include <rte_atomic.h>
-#include <rte_common.h>
-#include <rte_debug.h>
-#include <rte_ethdev.h>
-#include <rte_ether.h>
-#include <rte_kni.h>
-#include <rte_launch.h>
-#include <rte_lcore.h>
-#include <rte_log.h>
-#include <rte_malloc.h>
-#include <rte_memcpy.h>
-#include <rte_memory.h>
-#include <rte_mempool.h>
-#include <rte_per_lcore.h>
-
+#include "dpdk_common.h"
+#include "st_arp.h"
 #include "st_igmp.h"
 
 #include <net/if.h>
@@ -153,115 +140,141 @@ StKniBurstFreeMbufs(struct rte_mbuf **pkts, uint32_t num)
 }
 
 static void
-StKniRxLcore(st_kni_ms_conf_t *c)
+StKniRxLcore(st_kni_ms_conf_t **cs)
 {
 	uint16_t portId;
 	uint16_t rxRing;
 	int32_t ret;
 	int vlanOffload;
+	int run = (1 << nbKni) - 1;
 
-	if (c == NULL)
-		return;
+	if (!cs)
+	{
+		ST_ASSERT;
+	}
 
-	portId = c->ethPortId;
-	rxRing = c->rxRingNb;
+	for (int k = 0; k < nbKni; ++k)
+	{
+		RTE_LOG(INFO, ST_KNI, "StKniRxLcore ethPortId: %d, rxRingNb %d - START\n", cs[k]->ethPortId,
+				cs[k]->rxRingNb);
+		vlanOffload = rte_eth_dev_get_vlan_offload(cs[k]->ethPortId);
+		vlanOffload |= ETH_VLAN_STRIP_OFFLOAD;
+		rte_eth_dev_set_vlan_offload(cs[k]->ethPortId, vlanOffload);
+	}
 
-	RTE_LOG(INFO, ST_KNI, "StKniRxLcore ethPortId: %d, rxRingNb %d - START\n", portId, rxRing);
-	clock_gettime(CLOCK_PROCESS_CPUTIME_ID, &c->rxTmr);
-
-        vlanOffload = rte_eth_dev_get_vlan_offload(portId);
-	vlanOffload |= ETH_VLAN_STRIP_OFFLOAD;
-	rte_eth_dev_set_vlan_offload(portId, vlanOffload);
-
-	while (rte_atomic32_read(&c->isStop) == 0)
+	while (run)
 	{
 		/* Burst rx from eth */
 		struct rte_mbuf *pktsBurst[PKT_BURST_SZ];
-		unsigned nbRx, num;
-		rte_kni_handle_request(c->kni);
-		if (!rte_atomic32_read(&c->lnkUp))
+		for (int k = 0; k < nbKni; ++k)
 		{
-			rte_delay_ms(100);
-			continue;
-		}
+			unsigned nbRx, num;
+			st_kni_ms_conf_t *c = cs[k];
 
-		nbRx = rte_eth_rx_burst(portId, rxRing, pktsBurst, PKT_BURST_SZ);
-		if (unlikely(nbRx > PKT_BURST_SZ))
-		{
-			RTE_LOG(INFO, ST_KNI, "Error receiving from eth\n");
-			continue;
-		}
-		for (unsigned i = 0; i < nbRx; ++i)
-			StParseEthernet(c->ethPortId, pktsBurst[i]);
+			if (rte_atomic32_read(&cs[k]->isStop))
+			{
+				run &= ~(1 << k);
+				continue;
+			}
 
-		/* Burst tx to kni */
-		num = rte_kni_tx_burst(c->kni, pktsBurst, nbRx);
+			clock_gettime(CLOCK_PROCESS_CPUTIME_ID, &c->rxTmr);
+			portId = c->ethPortId;
+			rxRing = c->rxRingNb;
+			rte_kni_handle_request(c->kni);
+			if (!rte_atomic32_read(&c->lnkUp))
+			{
+				rte_delay_ms(100);
+				continue;
+			}
 
-		if (num)
-			c->rxPcks += num;
+			nbRx = rte_eth_rx_burst(portId, rxRing, pktsBurst, PKT_BURST_SZ);
+			if (unlikely(nbRx > PKT_BURST_SZ))
+			{
+				RTE_LOG(INFO, ST_KNI, "Error receiving from eth\n");
+				continue;
+			}
+			for (unsigned i = 0; i < nbRx; ++i)
+				StParseEthernet(c->ethPortId, pktsBurst[i]);
+			/* Burst tx to kni */
+			num = rte_kni_tx_burst(c->kni, pktsBurst, nbRx);
 
-		ret = rte_kni_handle_request(c->kni);
-		if (ret)
-		{
-			RTE_LOG(INFO, ST_KNI, "Error %d\n", ret);
-		}
-		if (unlikely(num < nbRx))
-		{
-			/* Free mbufs not tx to kni interface */
-			StKniBurstFreeMbufs(&pktsBurst[num], nbRx - num);
-			c->rxDrpd += nbRx - num;
-		}
+			if (num)
+				c->rxPcks += num;
+
+			ret = rte_kni_handle_request(c->kni);
+			if (ret)
+			{
+				RTE_LOG(INFO, ST_KNI, "Error %d\n", ret);
+			}
+			if (unlikely(num < nbRx))
+			{
+				/* Free mbufs not tx to kni interface */
+				StKniBurstFreeMbufs(&pktsBurst[num], nbRx - num);
+				c->rxDrpd += nbRx - num;
+			}
 #ifdef ST_KNI_DEBUG
-		StPrintRecvStats(c);
+			StPrintRecvStats(c);
 #endif
+		}
 	}
 	RTE_LOG(INFO, ST_KNI, "StKniRxLcore ethPortId: %d, rxRingNb %d - STOP\n", portId, rxRing);
 }
 
 static void
-StKniTxLcore(st_kni_ms_conf_t *c)
+StKniTxLcore(st_kni_ms_conf_t **cs)
 {
 	unsigned nb_tx, num;
 	struct rte_ring *txRing;
 	struct rte_mbuf *pktsBurst[PKT_BURST_SZ];
+	int run = (1 << nbKni) - 1;
 
-	if (!c)
+	if (!cs)
 	{
 		ST_ASSERT;
 	}
-
-	txRing = c->txRing;
 	RTE_LOG(INFO, ST_KNI, " StKniTxLcore txRing - START\n");
-
-	clock_gettime(CLOCK_PROCESS_CPUTIME_ID, &c->txTmr);
-
-	while (rte_atomic32_read(&c->isStop) == 0)
+	while (run)
 	{
-		if (!rte_atomic32_read(&c->lnkUp))
+		for (int k = 0; k < nbKni; ++k)
 		{
-			rte_delay_ms(100);
-			continue;
-		}
-		/* Burst rx from kni */
-		num = rte_kni_rx_burst(c->kni, pktsBurst, PKT_BURST_SZ);
-		if (unlikely(num > PKT_BURST_SZ))
-		{
-			RTE_LOG(INFO, ST_KNI, "Error receiving from KNI\n");
-			continue;
-		}
-		/* Burst tx to eth */
-		nb_tx = rte_ring_sp_enqueue_bulk(txRing, (void **)pktsBurst, num, NULL);
-		if (nb_tx)
-			c->txPcks += nb_tx;
-		if (unlikely(nb_tx < num))
-		{
-			/* Free mbufs not tx to NIC */
-			StKniBurstFreeMbufs(&pktsBurst[nb_tx], num - nb_tx);
-			c->txDrpd += num - nb_tx;
-		}
+			st_kni_ms_conf_t *c = cs[k];
+
+			if (rte_atomic32_read(&cs[k]->isStop))
+			{
+				run &= ~(1 << k);
+				continue;
+			}
+
+			txRing = c->txRing;
+
+			clock_gettime(CLOCK_PROCESS_CPUTIME_ID, &c->txTmr);
+
+			if (!rte_atomic32_read(&c->lnkUp))
+			{
+				rte_delay_ms(100);
+				continue;
+			}
+			/* Burst rx from kni */
+			num = rte_kni_rx_burst(c->kni, pktsBurst, PKT_BURST_SZ);
+			if (unlikely(num > PKT_BURST_SZ))
+			{
+				RTE_LOG(INFO, ST_KNI, "Error receiving from KNI\n");
+				continue;
+			}
+			/* Burst tx to eth */
+			nb_tx = rte_ring_sp_enqueue_bulk(txRing, (void **)pktsBurst, num, NULL);
+			if (nb_tx)
+				c->txPcks += nb_tx;
+			if (unlikely(nb_tx < num))
+			{
+				/* Free mbufs not tx to NIC */
+				StKniBurstFreeMbufs(&pktsBurst[nb_tx], num - nb_tx);
+				c->txDrpd += num - nb_tx;
+			}
 #ifdef ST_KNI_DEBUG
-		StPrintTranStats(c);
+			StPrintTranStats(c);
 #endif
+		}
 	}
 	RTE_LOG(INFO, ST_KNI, " StKniTxLcore txRing - STOP\n");
 }
@@ -354,7 +367,7 @@ StKniConfigAllMulticast(uint16_t portId, uint8_t toOn)
 
 st_kni_ms_conf_t *
 StInitKniConf(int32_t ethPortId, struct rte_mempool *mbufPool, uint16_t rxRingNb, uint32_t txThread,
-			  struct rte_ring *txRing)
+			  struct rte_ring *txRing, int32_t userPortId)
 {
 	st_kni_ms_conf_t *c = NULL;
 	struct rte_eth_dev_info devInfo;
@@ -378,6 +391,7 @@ StInitKniConf(int32_t ethPortId, struct rte_mempool *mbufPool, uint16_t rxRingNb
 	c = kniItfs + firstEmptyKni;
 	firstEmptyKni++;
 	memset(c, 0, sizeof(struct st_kni_ms_conf));
+
 	c->ethPortId = ethPortId;
 	c->rxRingNb = rxRingNb;
 	c->txRing = txRing;
@@ -405,11 +419,13 @@ StInitKniConf(int32_t ethPortId, struct rte_mempool *mbufPool, uint16_t rxRingNb
 		firstEmptyKni--;
 		return NULL;
 	}
-	const char *kniName = StDevGetKniInterName();
+	const char *kniName = StDevGetKniInterName(userPortId);
 	if (kniName == NULL)
 		snprintf(c->kniConf.name, RTE_KNI_NAMESIZE, ST_KNI_NAME "%u", c->ethPortId);
 	else
-		strncpy(c->kniConf.name, kniName, RTE_KNI_NAMESIZE);
+	{
+		snprintf(c->kniConf.name, RTE_KNI_NAMESIZE, "%s", kniName);
+	}
 	c->kniConf.group_id = ethPortId;
 	c->kniConf.mbuf_size = MAX_PACKET_SZ;
 	rte_eth_dev_get_mtu(ethPortId, &c->kniConf.mtu);
@@ -420,41 +436,59 @@ StInitKniConf(int32_t ethPortId, struct rte_mempool *mbufPool, uint16_t rxRingNb
 }
 
 int32_t
-StStartKni(unsigned slvCoreRx, unsigned slvCoreTx, st_kni_ms_conf_t *c)
+StStartKni(unsigned slvCoreRx, unsigned slvCoreTx, st_kni_ms_conf_t **cs)
 {
-	struct rte_kni *kni;
+	int ret;
 	struct rte_kni_ops ops;
 	RTE_LOG(INFO, ST_KNI, "slvCoreRx: %d, slvCoreTx: %d\n", slvCoreRx, slvCoreTx);
-	c->slvCoreRx = slvCoreRx;
-	c->slvCoreTx = slvCoreTx;
-	if (c->mbufPool == NULL)
+
+	/*
+	 * If HT is enabled, we can run both RX and TX on sibling cores
+	 */
+	uint16_t baseCore = RTE_MAX(slvCoreTx, slvCoreRx);
+	uint16_t baseSiblingCore = siblingCore(baseCore);
+	if (baseCore != baseSiblingCore)
 	{
-		RTE_LOG(ERR, ST_KNI, ST_KNI_ERROR "No mbuf set\n");
-		return ST_INVALID_PARAM;
+		slvCoreTx = baseCore;
+		slvCoreRx = baseSiblingCore;
 	}
-	memset(&ops, 0, sizeof(ops));
-	ops.port_id = c->ethPortId;
-	ops.change_mtu = StKniChangeMtu;  // kni_change_mtu;
-	ops.config_network_if = StKniConfNetInt;
-	ops.config_mac_address = StKniCfgMacAddr;
-	ops.config_promiscusity = StKniConfigPromiscusity;
-	ops.config_allmulticast = StKniConfigAllMulticast;
-	kni = rte_kni_alloc(c->mbufPool, &c->kniConf, &ops);
-	if (!kni)
+
+	for (int k = 0; k < nbKni; ++k)
 	{
-		RTE_LOG(ERR, ST_KNI,
-				ST_KNI_ERROR "Fail to create kni for "
-							 "port: %d\n",
-				c->ethPortId);
-		return ST_KNI_CANNOT_PREPARE;
-	}
-	c->kni = kni;
-	StPtpInit(c->ethPortId, c->mbufPool, stDevParams->maxTxRings, c->txRing);
-	StIgmpQuerierInit(c->ethPortId, c->mbufPool, c->txRing, (uint32_t *)stMainParams.sipAddr,
-					  (uint32_t *)stMainParams.ipAddr);
-	rte_eal_remote_launch((lcore_function_t *)StKniTxLcore, c, c->slvCoreTx);
-	rte_eal_remote_launch((lcore_function_t *)StKniRxLcore, c, c->slvCoreRx);
-	{  // Assign IP to KNI
+		st_kni_ms_conf_t *c = cs[k];
+		struct rte_kni *kni;
+
+		c->slvCoreRx = slvCoreRx;
+		c->slvCoreTx = slvCoreTx;
+		if (c->mbufPool == NULL)
+		{
+			RTE_LOG(ERR, ST_KNI, ST_KNI_ERROR "No mbuf set\n");
+			return ST_INVALID_PARAM;
+		}
+		memset(&ops, 0, sizeof(ops));
+		ops.port_id = c->ethPortId;
+		ops.change_mtu = StKniChangeMtu;  // kni_change_mtu;
+		ops.config_network_if = StKniConfNetInt;
+		ops.config_mac_address = StKniCfgMacAddr;
+		ops.config_promiscusity = StKniConfigPromiscusity;
+		ops.config_allmulticast = StKniConfigAllMulticast;
+		kni = rte_kni_alloc(c->mbufPool, &c->kniConf, &ops);
+		if (!kni)
+		{
+			RTE_LOG(ERR, ST_KNI,
+					ST_KNI_ERROR "Fail to create kni for "
+								 "port: %d\n",
+					c->ethPortId);
+			return ST_KNI_CANNOT_PREPARE;
+		}
+		c->kni = kni;
+
+		StIgmpInit(c->ethPortId, c->mbufPool, (uint32_t *)stMainParams.sipAddr[k],
+				   (uint32_t *)stMainParams.ipAddr[k], stDevParams->maxTxRings + 1);
+
+		StPtpInit(c->ethPortId, c->mbufPool, stDevParams->maxTxRings, c->txRing);
+
+		// Assign IP to KNI
 		int const sock = socket(AF_INET, SOCK_DGRAM, 0);
 		if (sock != -1)
 		{
@@ -463,8 +497,11 @@ StStartKni(unsigned slvCoreRx, unsigned slvCoreTx, st_kni_ms_conf_t *c)
 			ifr.ifr_ifru.ifru_addr.sa_family = AF_INET;
 			((struct sockaddr_in *)&ifr.ifr_ifru.ifru_addr)->sin_port = 0;
 			memcpy(&((struct sockaddr_in *)&ifr.ifr_ifru.ifru_addr)->sin_addr.s_addr,
-				   &stMainParams.sipAddr, 4);
+				   &stMainParams.sipAddr[k], 4);
 
+			RTE_LOG(INFO, ST_KNI, "Inf:%s IP:%d.%d.%d.%d\n", ifr.ifr_name,
+					stMainParams.sipAddr[k][0], stMainParams.sipAddr[k][1],
+					stMainParams.sipAddr[k][2], stMainParams.sipAddr[k][3]);
 			if (ioctl(sock, SIOCSIFADDR, &ifr))
 			{
 				RTE_LOG(ERR, USER1, "Cannot assign IP to %s\n", ifr.ifr_name);
@@ -476,19 +513,40 @@ StStartKni(unsigned slvCoreRx, unsigned slvCoreTx, st_kni_ms_conf_t *c)
 			RTE_LOG(ERR, USER1, "socket AF_INET fail\n");
 		}
 	}
+
+	ret = rte_eal_remote_launch((lcore_function_t *)StKniTxLcore, cs, slvCoreTx);
+	if (ret != 0)
+	{
+		RTE_LOG(ERR, USER1, "StKniTxLcore failed to launch\n");
+		return ST_REMOTE_LAUNCH_FAIL;
+	}
+	ret = rte_eal_remote_launch((lcore_function_t *)StKniRxLcore, cs, slvCoreRx);
+	if (ret != 0)
+	{
+		RTE_LOG(ERR, USER1, "StKniRxLcore failed to launch\n");
+		return ST_REMOTE_LAUNCH_FAIL;
+	}
+
 	return ST_OK;
 }
 
 int32_t
-StStopKni(st_kni_ms_conf_t *c)
+StStopKni(st_kni_ms_conf_t **cs)
 {
 	RTE_LOG(INFO, ST_KNI, "Release ST_KNI\n");
-	rte_atomic32_inc(&c->isStop);
 	StIgmpQuerierStop();
-	rte_eal_wait_lcore(c->slvCoreRx);
-	rte_eal_wait_lcore(c->slvCoreTx);
-	rte_kni_release(c->kni);
-	rte_eth_dev_stop(c->ethPortId);
+
+	for (int k = 0; k < nbKni; ++k)
+		rte_atomic32_inc(&cs[k]->isStop);
+
+	for (int k = 0; k < nbKni; ++k)
+	{
+		st_kni_ms_conf_t *c = cs[k];
+		rte_eal_wait_lcore(c->slvCoreRx);
+		rte_eal_wait_lcore(c->slvCoreTx);
+		rte_kni_release(c->kni);
+		rte_eth_dev_stop(c->ethPortId);
+	}
 	return 0;
 }
 

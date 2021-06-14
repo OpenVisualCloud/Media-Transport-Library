@@ -1,5 +1,5 @@
 /*
-* Copyright 2020 Intel Corporation.
+* Copyright (C) 2020-2021 Intel Corporation.
 *
 * This software and the related documents are Intel copyrighted materials,
 * and your use of them is governed by the express license under which they
@@ -16,7 +16,7 @@
 
 /*
 *
-*	Intel® ST 2110 Media Streaming Library
+*	Intel(R) ST 2110 Media Streaming Library
 *
 */
 
@@ -62,9 +62,9 @@ typedef struct st_rgba_8b st_rgba_8b_t;
 0               1               2               3
 0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9 0 1
 +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
-| C’B00 (10 bits) | Y’00 (10 bits) | C’R00 (10 bits) |Y’01
+| CB00 (10 bits) | Y00 (10 bits) | CR00 (10 bits) |Y01
 +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
-| Y’01 (cont’d) |
+| Y01 (contd) |
 +-+-+-+-+-+-+-+-+
 
 */
@@ -95,13 +95,33 @@ struct st_rfc4175_422_10_pg2
 
 typedef struct st_rfc4175_422_10_pg2 st_rfc4175_422_10_pg2_t;
 
+struct st_wav
+{
+	uint8_t chunkId[4];		 // RIFF string
+	uint32_t chunkSize;		 // size of file in bytes
+	uint8_t fmt[4];			 // WAVE string
+	uint8_t fmtMarker[4];	 // fmt string with trailing null char
+	uint32_t fmtLen;		 // length of the format data
+	uint16_t formatType;	 // format type. 1-PCM, 3- IEEE float, 6 - 8bit A law, 7 - 8bit mu law
+	uint16_t channels;		 // no.of channels
+	uint32_t sampleRate;	 // sampling rate (blocks per second)
+	uint32_t byteRate;		 // SampleRate * NumChannels * BitsPerSample/8
+	uint16_t blockAlign;	 // NumChannels * BitsPerSample/8
+	uint16_t bitsPerSample;	 // bits per sample, 8- 8bits, 16- 16 bits etc
+	uint8_t dataChunkHeader[4];	 // DATA string or FLLR string
+	uint32_t
+		dataSize;  // NumSamples * NumChannels * BitsPerSample/8 - size of the next chunk that will be read
+	uint8_t data[];
+} __attribute__((__packed__));
+
+typedef struct st_wav st_wav_t;
 /*
 0               1               2               3
 0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9 0 1
 +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
-| C’B00 (10 bits) | Y’00 (10 bits) | C’R00 (10 bits) |Y’01
+| CB00 (10 bits) | Y00 (10 bits) | CR00 (10 bits) |Y01
 +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
-| Y’01 (cont’d) |
+| Y01 (contd) |
 +-+-+-+-+-+-+-+-+
 * Unpacked 422 10 bit fields in packets are in BE, PG2 shall be in BE
 */
@@ -128,9 +148,9 @@ Pack_422be10_PG2be(st_rfc4175_422_10_pg2_t *pg, uint16_t cb00, uint16_t y00, uin
 0               1               2               3
 0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9 0 1
 +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
-| C’B00 (10 bits) | Y’00 (10 bits) | C’R00 (10 bits) |Y’01
+| CB00 (10 bits) | Y00 (10 bits) | CR00 (10 bits) |Y01
 +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
-| Y’01 (cont’d) |
+| Y01 (contd) |
 +-+-+-+-+-+-+-+-+
 * Unpacked 422 10 bit fields in packets are in LE, PG2 shall be in BE
 */
@@ -152,9 +172,9 @@ Pack_422le10_PG2be(st_rfc4175_422_10_pg2_t *pg, uint16_t cb0, uint16_t y0, uint1
 0				1				2				3
 0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9 0 1
 +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
-| C’B00 (10 bits) | Y’00 (10 bits) | C’R00 (10 bits) |Y’01
+| CB00 (10 bits) | Y00 (10 bits) | CR00 (10 bits) |Y01
 +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
-| Y’01 (cont’d) |
+| Y01 (contd) |
 +-+-+-+-+-+-+-+-+
 * Unpacked 422 10 bit fields in packets are in LE, PG2 shall be in BE
 */
@@ -176,9 +196,9 @@ Pack_422le10_PG2le(st_rfc4175_422_10_pg2_t *pg, uint16_t cb00, uint16_t y00, uin
 0				1				2				3
 0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9 0 1
 +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
-| C’B00 (10 bits) | Y’00 (10 bits) | C’R00 (10 bits) |Y’01
+| CB00 (10 bits) | Y00 (10 bits) | CR00 (10 bits) |Y01
 +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
-| Y’01 (cont’d) |
+| Y01 (contd) |
 +-+-+-+-+-+-+-+-+
 * Unpacked 422 10 bit fields in packets are in LE, PG2 shall be in BE
 */
@@ -205,9 +225,9 @@ Pack_422be10_PG2le(st_rfc4175_422_10_pg2_t *pg, uint16_t cb00, uint16_t y00, uin
 0               1               2               3
 0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9 0 1
 +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
-| C’B00 (10 bits) | Y’00 (10 bits) | C’R00 (10 bits) |Y’01
+| CB00 (10 bits) | Y00 (10 bits) | CR00 (10 bits) |Y01
 +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
-| Y’01 (cont’d) |
+| Y01 (contd) |
 +-+-+-+-+-+-+-+-+
 * PG2 fields in packets are in BE, result shall be in LE
 */
@@ -231,9 +251,9 @@ Unpack_PG2be_422le10(st_rfc4175_422_10_pg2_t const *pg, uint16_t *cb00, uint16_t
 0               1               2               3
 0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9 0 1
 +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
-| C’B00 (10 bits) | Y’00 (10 bits) | C’R00 (10 bits) |Y’01
+| CB00 (10 bits) | Y00 (10 bits) | CR00 (10 bits) |Y01
 +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
-| Y’01 (cont’d) |
+| Y01 (contd) |
 +-+-+-+-+-+-+-+-+
 * PG2 fields in packets are in BE, result shall be in BE
 */
@@ -257,9 +277,9 @@ Unpack_PG2be_422be10(st_rfc4175_422_10_pg2_t const *pg, uint16_t *cb00, uint16_t
 0               1               2               3
 0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9 0 1
 +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
-| C’B00 (10 bits) | Y’00 (10 bits) | C’R00 (10 bits) |Y’01
+| CB00 (10 bits) | Y00 (10 bits) | CR00 (10 bits) |Y01
 +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
-| Y’01 (cont’d) |
+| Y01 (contd) |
 +-+-+-+-+-+-+-+-+
 * PG2 fields in packets are in LE, result shall be in BE
 */
@@ -283,9 +303,9 @@ Unpack_PG2le_422be10(st_rfc4175_422_10_pg2_t const *pg, uint16_t *cb00, uint16_t
 0               1               2               3
 0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9 0 1
 +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
-| C’B00 (10 bits) | Y’00 (10 bits) | C’R00 (10 bits) |Y’01
+| CB00 (10 bits) | Y00 (10 bits) | CR00 (10 bits) |Y01
 +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
-| Y’01 (cont’d) |
+| Y01 (contd) |
 +-+-+-+-+-+-+-+-+
 * PG2 fields in packets are in LE, result shall be in LE
 */
@@ -304,5 +324,44 @@ Unpack_PG2le_422le10(st_rfc4175_422_10_pg2_t const *pg, uint16_t *cb00, uint16_t
 	*cr00 = cr;
 	*y01 = y1;
 }
+
+struct st_anc_pkt_payload_hdr
+{
+#ifdef __LITTLE_ENDIAN_BITFIELDS
+	union
+	{
+		struct
+		{
+			uint32_t streamNum : 7;
+			uint32_t s : 1;
+			uint32_t horizontalOffset : 12;
+			uint32_t lineNumber : 11;
+			uint32_t c : 1;
+		} first_hdr_chunk;
+		uint32_t swaped_first_hdr_chunk;
+	};
+	union
+	{
+		struct
+		{
+			uint32_t rsvdForUdw : 2;
+			uint32_t dataCount : 10;
+			uint32_t sdid : 10;
+			uint32_t did : 10;
+		} second_hdr_chunk;
+		uint32_t swaped_second_hdr_chunk;
+	};
+#else
+	uint32_t c : 1;
+	uint32_t lineNumber : 11;
+	uint32_t horizontalOffset : 12;
+	uint32_t s : 1;
+	uint32_t streamNum : 7;
+	uint32_t did : 10;
+	uint32_t sdid : 10;
+	uint32_t dataCount : 10;
+#endif
+} __attribute__((__packed__));
+typedef struct st_anc_pkt_payload_hdr st_anc_pkt_payload_hdr_t;
 
 #endif

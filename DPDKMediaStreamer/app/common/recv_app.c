@@ -1,5 +1,5 @@
 /*
-* Copyright 2020 Intel Corporation.
+* Copyright (C) 2020-2021 Intel Corporation.
 *
 * This software and the related documents are Intel copyrighted materials,
 * and your use of them is governed by the express license under which they
@@ -13,17 +13,112 @@
 * in the License.
 *
 */
+#define _GNU_SOURCE
 
 #include "common_app.h"
 #include "rx_view.h"
 
 #include <fcntl.h>
+#include <sched.h>
 #include <sys/mman.h>
 #include <sys/stat.h>
+#include <sys/sysinfo.h>
 #include <sys/types.h>
 #include <unistd.h>
 
+// #define RX_APP_DEBUG 1
+#define ST_ESSENCE_NUM 3
+#define ST_DEV_TYPES 2
+
 static rte_atomic32_t isAppStopped;
+static bool audioCmp = false;
+static bool ancCmp = false;
+
+static volatile cpu_set_t affinityCore_Application[ST_DEV_TYPES];
+static cpu_set_t affinityCore_toUse[ST_DEV_TYPES][ST_ESSENCE_NUM];
+static uint16_t coreIndex_toUse[ST_DEV_TYPES][ST_ESSENCE_NUM];
+static pthread_mutex_t lock;
+
+static const char *essence_type_name[ST_ESSENCE_MAX] = {
+	[ST_ESSENCE_VIDEO] = "video",
+	[ST_ESSENCE_AUDIO] = "audio",
+	[ST_ESSENCE_ANC] = "ancilary",
+};
+
+void
+SetAffinityCore(void *app, st_dev_type_t type)
+{
+	pthread_t thread;
+	st_essence_type_t etype;
+	if (type == ST_DEV_TYPE_PRODUCER)
+	{
+		etype = ((strtp_send_app_t *)app)->mtype;
+		thread = ((strtp_send_app_t *)app)->movieThread;
+	}
+	else
+	{
+		etype = ((strtp_recv_app_t *)app)->session->type;
+		thread = ((strtp_recv_app_t *)app)->writeThread;
+	}
+
+	cpu_set_t app_cpuset;
+	CPU_ZERO(&app_cpuset);
+
+	pthread_mutex_lock(&lock);
+
+	if (CPU_COUNT(&affinityCore_toUse[type][etype]) == 0)
+	{
+		coreIndex_toUse[type][etype] = 0;
+		CPU_OR(&affinityCore_toUse[type][etype], (cpu_set_t *)&affinityCore_Application[type],
+			   (cpu_set_t *)&affinityCore_Application[type]);
+	}
+
+	while (coreIndex_toUse[type][etype]++ < get_nprocs_conf())
+	{
+		if (CPU_ISSET(coreIndex_toUse[type][etype], &affinityCore_toUse[type][etype]))
+		{
+			CPU_CLR(coreIndex_toUse[type][etype], &affinityCore_toUse[type][etype]);
+			CPU_SET(coreIndex_toUse[type][etype], &app_cpuset);
+			break;
+		}
+	}
+	if (pthread_setaffinity_np(thread, sizeof(cpu_set_t), &app_cpuset) == 0)
+	{
+		RTE_LOG(INFO, USER1, "****** %s affinity set successfully in %d\n",
+				essence_type_name[etype], coreIndex_toUse[type][etype]);
+	}
+	else
+	{
+		RTE_LOG(ERR, USER1, "****** %s affinity set fail %d\n", essence_type_name[etype],
+				coreIndex_toUse[type][etype]);
+	}
+	pthread_mutex_unlock(&lock);
+}
+
+void
+AppInitAffinity(int appStartCoreId)
+{
+	static bool getAffnity = 0;
+
+	if (getAffnity == 0)
+	{
+		getAffnity = 1;
+		cpu_set_t myCpu;
+		CPU_ZERO(&myCpu);
+		CPU_ZERO(&affinityCore_toUse[ST_DEV_TYPE_PRODUCER][0]);
+		CPU_ZERO(&affinityCore_toUse[ST_DEV_TYPE_PRODUCER][1]);
+		CPU_ZERO(&affinityCore_toUse[ST_DEV_TYPE_PRODUCER][2]);
+		CPU_ZERO(&affinityCore_toUse[ST_DEV_TYPE_CONSUMER][0]);
+		CPU_ZERO(&affinityCore_toUse[ST_DEV_TYPE_CONSUMER][1]);
+		CPU_ZERO(&affinityCore_toUse[ST_DEV_TYPE_CONSUMER][2]);
+
+		StGetAppAffinityCores(appStartCoreId, &myCpu);
+		CPU_OR((cpu_set_t *)&affinityCore_Application[ST_DEV_TYPE_CONSUMER], &myCpu, &myCpu);
+		CPU_OR((cpu_set_t *)&affinityCore_Application[ST_DEV_TYPE_PRODUCER], &myCpu, &myCpu);
+		pthread_mutex_init(&lock, NULL);
+		RTE_LOG(INFO, USER1, "****** App available cpu count %u\n", CPU_COUNT((cpu_set_t *)&myCpu));
+	}
+}
 
 static inline uint8_t
 RecvAppClamp(float value)
@@ -36,7 +131,7 @@ RecvAppClamp(float value)
 }
 
 static inline void
-RecvAppLock(rvrtp_recv_app_t *app)
+RecvAppLock(strtp_recv_app_t *app)
 {
 	int lock;
 	do
@@ -46,13 +141,13 @@ RecvAppLock(rvrtp_recv_app_t *app)
 }
 
 static inline void
-RecvAppUnlock(rvrtp_recv_app_t *app)
+RecvAppUnlock(strtp_recv_app_t *app)
 {
 	__sync_lock_release(&app->lock, 0);
 }
 
 static inline void
-RecvAppWriteFrameRgbaInline(rvrtp_recv_app_t *app, st_rfc4175_422_10_pg2_t const *ptr,
+RecvAppWriteFrameRgbaInline(strtp_recv_app_t *app, st_rfc4175_422_10_pg2_t const *ptr,
 							st_vid_fmt_conv_t convert)
 {
 	st_rgba_8b_t *dualPix = (st_rgba_8b_t *)(app->movie + app->movieCursor);
@@ -65,7 +160,7 @@ RecvAppWriteFrameRgbaInline(rvrtp_recv_app_t *app, st_rfc4175_422_10_pg2_t const
 
 		for (uint32_t j = 0; j < 4; j++)
 		{
-			switch (convert) // will inline
+			switch (convert)  // will inline
 			{
 			case ST_422_FMT_CONV_NET_LE10_BUF_RGBA:
 			case ST_422_FMT_CONV_NET_LE10_BUF_BGRA:
@@ -99,14 +194,14 @@ RecvAppWriteFrameRgbaInline(rvrtp_recv_app_t *app, st_rfc4175_422_10_pg2_t const
 }
 
 static inline void
-RecvAppWriteFrame422Inline(rvrtp_recv_app_t *app, st_rfc4175_422_10_pg2_t const *ptr,
+RecvAppWriteFrame422Inline(strtp_recv_app_t *app, st_rfc4175_422_10_pg2_t const *ptr,
 						   void (*Unpack)(st_rfc4175_422_10_pg2_t const *pg, uint16_t *cb00,
 										  uint16_t *y00, uint16_t *cr00, uint16_t *y01))
 {
 	st_rfc4175_422_10_pg2_t const *const end = ptr + (app->frameSize / sizeof(*ptr));
-	uint16_t * Yy = (uint16_t *)(app->movie + app->movieCursor + 0 * (app->movieBufSize / 4));
-	uint16_t * Cr = (uint16_t *)(app->movie + app->movieCursor + 2 * (app->movieBufSize / 4));
-	uint16_t * Br = (uint16_t *)(app->movie + app->movieCursor + 3 * (app->movieBufSize / 4));
+	uint16_t *Yy = (uint16_t *)(app->movie + app->movieCursor + 0 * (app->movieBufSize / 4));
+	uint16_t *Cr = (uint16_t *)(app->movie + app->movieCursor + 2 * (app->movieBufSize / 4));
+	uint16_t *Br = (uint16_t *)(app->movie + app->movieCursor + 3 * (app->movieBufSize / 4));
 	for (; ptr < end; ++ptr)
 	{
 		Unpack(ptr, Cr++, Yy + 0, Br++, Yy + 1);
@@ -115,206 +210,555 @@ RecvAppWriteFrame422Inline(rvrtp_recv_app_t *app, st_rfc4175_422_10_pg2_t const 
 	app->movieCursor = (app->movieCursor + app->movieBufSize) % app->movieSize;
 }
 
-#if 0
-static void
-RecvAppWriteFrameNetLeBufLe(rvrtp_recv_app_t *app, st_rfc4175_422_10_pg2_t const *ptr)
+static inline void
+RecvAppWriteAudioBuffer(strtp_recv_app_t *app, const unsigned char *buffer)
 {
-	RecvAppWriteFrame422Inline(app, ptr, Unpack_PG2le_422le10);
+	if ((app->movieCursor + app->session->frameSize) > app->movieSize)
+	{
+		app->movieCursor = 0;
+	}
+#ifdef RX_APP_DEBUG
+	printf("Write: movie=%x movieCursor=%x size=%u movie size%u from buffer:%x data:%x%x%x%x\n",
+		   (unsigned int)app->movie, (unsigned int)app->movieCursor, app->session->frameSize,
+		   app->movieSize, buffer, buffer[0], buffer[1], buffer[2], buffer[3]);
+#endif /* RX_APP_DEBUG */
+	rte_memcpy((uint8_t *)app->movie + app->movieCursor, buffer, app->session->frameSize);
+	app->movieCursor = (app->movieCursor + app->session->frameSize) % app->movieSize;
 }
-#endif
 
 static void
-RecvAppWriteFrameNetLeBufBe(rvrtp_recv_app_t *app, st_rfc4175_422_10_pg2_t const *ptr)
+RecvAppWriteFrameNetLeBufBe(strtp_recv_app_t *app, st_rfc4175_422_10_pg2_t const *ptr)
 {
 	RecvAppWriteFrame422Inline(app, ptr, Unpack_PG2le_422be10);
 }
 
-#if 0
 static void
-RecvAppWriteFrameNetBeBufLe(rvrtp_recv_app_t *app, st_rfc4175_422_10_pg2_t const *ptr)
-{
-	RecvAppWriteFrame422Inline(app, ptr, Unpack_PG2be_422le10);
-}
-#endif
-static void
-RecvAppWriteFrameNetBeBufBe(rvrtp_recv_app_t *app, st_rfc4175_422_10_pg2_t const *ptr)
+RecvAppWriteFrameNetBeBufBe(strtp_recv_app_t *app, st_rfc4175_422_10_pg2_t const *ptr)
 {
 	RecvAppWriteFrame422Inline(app, ptr, Unpack_PG2be_422be10);
 }
 
 void
-RecvAppWriteFrameNetLeBufRgba(rvrtp_recv_app_t *app, st_rfc4175_422_10_pg2_t const *ptr)
+RecvAppWriteFrameNetLeBufRgba(strtp_recv_app_t *app, st_rfc4175_422_10_pg2_t const *ptr)
 {
 	RecvAppWriteFrameRgbaInline(app, ptr, ST_422_FMT_CONV_NET_LE10_BUF_RGBA);
 }
 
 void
-RecvAppWriteFrameNetBeBufRgba(rvrtp_recv_app_t *app, st_rfc4175_422_10_pg2_t const *ptr)
+RecvAppWriteFrameNetBeBufRgba(strtp_recv_app_t *app, st_rfc4175_422_10_pg2_t const *ptr)
 {
 	RecvAppWriteFrameRgbaInline(app, ptr, ST_422_FMT_CONV_NET_BE10_BUF_RGBA);
 }
 
 void
-RecvAppWriteFrameNetLeBufBgra(rvrtp_recv_app_t *app, st_rfc4175_422_10_pg2_t const *ptr)
+RecvAppWriteFrameNetLeBufBgra(strtp_recv_app_t *app, st_rfc4175_422_10_pg2_t const *ptr)
 {
 	RecvAppWriteFrameRgbaInline(app, ptr, ST_422_FMT_CONV_NET_LE10_BUF_BGRA);
 }
 
 void
-RecvAppWriteFrameNetBeBufBgra(rvrtp_recv_app_t *app, st_rfc4175_422_10_pg2_t const *ptr)
+RecvAppWriteFrameNetBeBufBgra(strtp_recv_app_t *app, st_rfc4175_422_10_pg2_t const *ptr)
 {
 	RecvAppWriteFrameRgbaInline(app, ptr, ST_422_FMT_CONV_NET_BE10_BUF_BGRA);
 }
 
 static void *
-RecvAppThread(rvrtp_recv_app_t *app)
+RecvAppThread(strtp_recv_app_t *app)
 {
+	uint8_t *frameBuf;
+	st_status_t status;
+	uint8_t *sharedMv;
+
+	SetAffinityCore(app, ST_DEV_TYPE_CONSUMER);
+
 	while (rte_atomic32_read(&isAppStopped) == 0)
 	{
 		uint32_t const old = app->frmsRecv;
 		while ((old == app->frmsRecv) && (rte_atomic32_read(&isAppStopped) == 0))
 		{
-			sleep(0); // wait for next frame
+			sleep(0);  // wait for next frame
 		}
-		RecvAppLock(app);
-		uint8_t *frameBuf = app->frames[app->writeCursor];
-		uint8_t const*const sharedMv = app->movie + app->movieCursor;
-		RecvAppUnlock(app);
-		app->RecvAppWriteFrame(app, (st_rfc4175_422_10_pg2_t const *)frameBuf);
-		ShowFrame(app->view, sharedMv, app->fieldId);
+
+		if (app->session->type == ST_ESSENCE_VIDEO)
+		{
+			RecvAppLock(app);
+			frameBuf = app->frames[app->writeCursor];
+			sharedMv = app->movie + app->movieCursor;
+			RecvAppUnlock(app);
+			app->RecvAppWriteFrame(app, (st_rfc4175_422_10_pg2_t const *)frameBuf);
+			if (app->videoStream != NULL)
+				ShowFrame(app->videoStream, sharedMv, app->fieldId);
+		}
+		else if (app->session->type == ST_ESSENCE_AUDIO)
+		{
+			RecvAppLock(app);
+			while (app->framesToRead > 0)
+			{
+				frameBuf = app->samples[app->readCursor];
+				app->readCursor = (app->readCursor + 1) % RECV_APP_SAMPLE_MAX;
+				sharedMv = app->movie + app->movieCursor;
+				app->RecvAppWriteAudioFrame(app, frameBuf);
+				app->framesToRead--;
+				if (audioCmp)
+				{
+					status = PlayAudioFrame(app->ref, sharedMv, app->session->frameSize);
+					if (status != ST_OK)
+						RTE_LOG(INFO, USER1,
+								"Cursor - (write:%u,read:%u), frames - (ToRead:%u,Recv:%u) "
+								"session:%d\n",
+								app->writeCursor, app->readCursor, app->framesToRead, app->frmsRecv,
+								app->session->ssid);
+				}
+			}
+			RecvAppUnlock(app);
+		}
+		else if (app->session->type == ST_ESSENCE_ANC)
+		{
+			RecvAppLock(app);
+			while (app->framesToRead > 0)
+			{
+				int offset = app->ancFrames[app->readCursor].meta[0].udwOffset;
+				int count = app->ancFrames[app->readCursor].meta[0].udwSize;
+				if (ancCmp)
+				{
+					status = PlayAncFrame(app->ancref,
+										  app->ancFrames[app->readCursor].data + offset, count);
+					if (status != ST_OK)
+						RTE_LOG(ERR, USER1,
+								"Anc Frame check failure: Cursor - (write:%u,read:%u), frames - "
+								"(ToRead:%u,Recv:%u) session:%d\n",
+								app->writeCursor, app->readCursor, app->framesToRead, app->frmsRecv,
+								app->session->ssid);
+					app->readCursor = (app->readCursor + 1) % RECV_APP_FRAME_MAX;
+					app->framesToRead--;
+				}
+			}
+			RecvAppUnlock(app);
+		}
 	}
 	return app;
 }
 
 st_status_t
-RecvAppInit(rvrtp_recv_app_t *app)
+RecvAppInit(strtp_recv_app_t *app)
 {
-	for (uint32_t i = 0; i < RECV_APP_FRAME_MAX; i++)
-	{
-		app->frames[i] = malloc(app->session->frameSize);
-		if (!app->frames[i])
-		{
-			return ST_NO_MEMORY;
-		}
-	}
-	st21_format_t fmt;
-	St21GetFormat(app->session, &fmt);
+	st_format_t vfmt;
+	StGetFormat(app->session, &vfmt);
 
-	switch (app->bufFormat)
+	st21_format_t *fmt = &vfmt.v;
+
+	if (app->session->type == ST_ESSENCE_VIDEO)
 	{
-	case ST21_BUF_FMT_YUV_422_10BIT_BE:
-		// for now there is only BE output buffer format
-		app->movieBufSize = 2 * sizeof(uint16_t) * fmt.width * fmt.height;
-		switch(fmt.vscan) {
-		case ST21_720I:case ST21_1080I: case ST21_2160I:
-				app->movieBufSize/=2;
-				snprintf(app->fileName, sizeof(app->fileName) - 1, "/tmp/%p.%ux%u.yuv422p10be.yuv", app, fmt.width, fmt.height/2);
+		switch (app->bufFormat)
+		{
+		case ST21_BUF_FMT_YUV_422_10BIT_BE:
+			app->frames[0] = malloc(RECV_APP_FRAME_MAX * app->session->frameSize);
+			if (!app->frames[0])
+			{
+				return ST_NO_MEMORY;
+			}
+			for (uint32_t i = 1; i < RECV_APP_FRAME_MAX; i++)
+			{
+				app->frames[i] = app->frames[0] + i * app->session->frameSize;
+			}
+			// for now there is only BE output buffer format
+			app->movieBufSize = 2 * sizeof(uint16_t) * fmt->width * fmt->height;
+			switch (fmt->vscan)
+			{
+			case ST21_720I:
+			case ST21_1080I:
+			case ST21_2160I:
+				app->movieBufSize /= 2;
+				snprintf(app->fileName, sizeof(app->fileName) - 1, "/tmp/%p.%ux%u.yuv422p10be.yuv",
+						 app, fmt->width, fmt->height / 2);
 				break;
-		default:
-				snprintf(app->fileName, sizeof(app->fileName) - 1, "/tmp/%p.%ux%u.yuv422p10be.yuv", app, fmt.width, fmt.height);
-		}
-		switch (fmt.pixelFmt)
-		{
-		case ST21_PIX_FMT_YCBCR_422_10BIT_BE:
-			app->RecvAppWriteFrame = RecvAppWriteFrameNetBeBufBe;
+			default:
+				snprintf(app->fileName, sizeof(app->fileName) - 1, "/tmp/%p.%ux%u.yuv422p10be.yuv",
+						 app, fmt->width, fmt->height);
+			}
+			switch (fmt->pixelFmt)
+			{
+			case ST21_PIX_FMT_YCBCR_422_10BIT_BE:
+				app->RecvAppWriteFrame = RecvAppWriteFrameNetBeBufBe;
+				break;
+			case ST21_PIX_FMT_YCBCR_422_10BIT_LE:
+				app->RecvAppWriteFrame = RecvAppWriteFrameNetLeBufBe;
+				break;
+			default:
+				ST_APP_ASSERT;
+				return ST_NOT_SUPPORTED;
+			}
 			break;
-		case ST21_PIX_FMT_YCBCR_422_10BIT_LE:
-			app->RecvAppWriteFrame = RecvAppWriteFrameNetLeBufBe;
+
+		case ST21_BUF_FMT_RGBA_8BIT:
+			snprintf(app->fileName, sizeof(app->fileName) - 1, "/tmp/%p.%ux%u.rgba", app,
+					 fmt->width, fmt->height);
+			app->movieBufSize = sizeof(st_rgba_8b_t) * fmt->width * fmt->height;
+			switch (fmt->pixelFmt)
+			{
+			case ST21_PIX_FMT_YCBCR_422_10BIT_BE:
+				app->RecvAppWriteFrame = RecvAppWriteFrameNetBeBufRgba;
+				break;
+			case ST21_PIX_FMT_YCBCR_422_10BIT_LE:
+				app->RecvAppWriteFrame = RecvAppWriteFrameNetLeBufRgba;
+				break;
+			default:
+				ST_APP_ASSERT;
+				return ST_NOT_SUPPORTED;
+			}
+			break;
+
+		default:
+			ST_APP_ASSERT;
+			return ST_NOT_SUPPORTED;
+		}
+	}
+	else if (app->session->type == ST_ESSENCE_AUDIO)
+	{
+		switch ((st30_buf_fmt_t)app->bufFormat)
+		{
+		case ST30_BUF_FMT_WAV:
+			app->samples[0] = malloc(RECV_APP_SAMPLE_MAX * app->session->frameSize);
+			if (!app->samples[0])
+			{
+				return ST_NO_MEMORY;
+			}
+			for (uint32_t i = 1; i < RECV_APP_SAMPLE_MAX; i++)
+			{
+				app->samples[i] = app->samples[0] + i * app->session->frameSize;
+			}
+			// TBD what Audio Buffer size do we want
+			//	Temporary size - TBD it must be aligned to audio sample packet size
+			app->movieBufSize = 192 * 102400;
+			snprintf(app->fileName, sizeof(app->fileName) - 1, "/tmp/%p.wav", app);
+			app->RecvAppWriteAudioFrame = RecvAppWriteAudioBuffer;
+			break;
+
+		default:
+			ST_APP_ASSERT;
+			return ST_NOT_SUPPORTED;
+		}
+	}
+	else
+	{
+		switch ((st40_buf_fmt_t)app->bufFormat)
+		{
+		case ST40_BUF_FMT_CLOSED_CAPTIONS:
+			app->ancFrames[0].data = malloc(RECV_APP_FRAME_MAX * app->session->frameSize);
+			if (!app->ancFrames[0].data)
+			{
+				return ST_NO_MEMORY;
+			}
+			for (uint32_t i = 1; i < RECV_APP_FRAME_MAX; i++)
+			{
+				app->ancFrames[i].data = app->ancFrames[0].data + i * app->session->frameSize;
+			}
 			break;
 		default:
 			ST_APP_ASSERT;
 			return ST_NOT_SUPPORTED;
 		}
-		break;
-
-	case ST21_BUF_FMT_RGBA_8BIT:
-		snprintf(app->fileName, sizeof(app->fileName) - 1, "/tmp/%p.%ux%u.rgba", app, fmt.width,
-				 fmt.height);
-		app->movieBufSize = sizeof(st_rgba_8b_t) * fmt.width * fmt.height;
-		switch (fmt.pixelFmt)
-		{
-		case ST21_PIX_FMT_YCBCR_422_10BIT_BE:
-			app->RecvAppWriteFrame = RecvAppWriteFrameNetBeBufRgba;
-			break;
-		case ST21_PIX_FMT_YCBCR_422_10BIT_LE:
-			app->RecvAppWriteFrame = RecvAppWriteFrameNetLeBufRgba;
-			break;
-		default:
-			ST_APP_ASSERT;
-			return ST_NOT_SUPPORTED;
-		}
-		break;
-
-	default:
-		ST_APP_ASSERT;
-		return ST_NOT_SUPPORTED;
 	}
 
-	app->dualPixelSize = (2 * fmt.pixelGrpSize) / fmt.pixelsInGrp;
-	app->sliceSize = 20 * // at least 20 lines if single pixel group usually 40 lines
-					 fmt.width * fmt.pixelGrpSize;
-	app->sliceCount = app->session->frameSize / app->sliceSize;
-	app->pixelGrpsInSlice = app->sliceSize / fmt.pixelGrpSize;
-	app->linesInSlice = 40; // for now TBD
+	if (app->session->type == ST_ESSENCE_VIDEO)
+	{
+		app->dualPixelSize = (2 * fmt->pixelGrpSize) / fmt->pixelsInGrp;
+		app->sliceSize = 20 *  // at least 20 lines if single pixel group usually 40 lines
+						 fmt->width * fmt->pixelGrpSize;
+		app->sliceCount = app->session->frameSize / app->sliceSize;
+		app->pixelGrpsInSlice = app->sliceSize / fmt->pixelGrpSize;
+		app->linesInSlice = 40;	 // for now TBD
+	}
 
 	app->frameSize = app->session->frameSize;
 
-#if 1 // def DEBUG
-	RTE_LOG(INFO, USER2, "RecvApp dualPixelSize %u sliceSize %u sliceCount %u\n",
-			app->dualPixelSize, app->sliceSize, app->sliceCount);
-	RTE_LOG(INFO, USER2, "RecvApp pixelGrpsInSlice %u linesInSlice %u frameSize %u\n",
-			app->pixelGrpsInSlice, app->linesInSlice, app->frameSize);
-#endif
-	app->movieCursor = 0;
-	app->movieSize = 4 * app->movieBufSize;
-	uint32_t fileSizeBytes = app->movieSize;
-
-	app->fileFd = open(app->fileName, O_CREAT | O_RDWR, 0640);
-	int ret = ftruncate(app->fileFd, fileSizeBytes);
-	if (ret < 0)
+	if (app->session->type == ST_ESSENCE_VIDEO)
 	{
-		return ST_GENERAL_ERR;
+		RTE_LOG(DEBUG, USER2, "RecvApp dualPixelSize %u sliceSize %u sliceCount %u\n",
+				app->dualPixelSize, app->sliceSize, app->sliceCount);
+		RTE_LOG(DEBUG, USER2, "RecvApp pixelGrpsInSlice %u linesInSlice %u frameSize %u\n",
+				app->pixelGrpsInSlice, app->linesInSlice, app->frameSize);
 	}
-	app->movie = mmap(NULL, fileSizeBytes, PROT_READ | PROT_WRITE, MAP_SHARED, app->fileFd, 0);
+	else
+	{
+		RTE_LOG(DEBUG, USER2, "RecvApp frameSize %u\n", app->frameSize);
+	}
+
+	if (app->session->type != ST_ESSENCE_ANC)
+	{
+		app->movieCursor = 0;
+		// TODO - compe up with reasonable size
+		app->movieSize = 4 * app->movieBufSize;
+		uint32_t fileSizeBytes = app->movieSize;
+
+		RTE_LOG(DEBUG, USER2, "Opening Rx file: %s size %d\n", app->fileName, fileSizeBytes);
+		app->fileFd = open(app->fileName, O_CREAT | O_RDWR, 0640);
+		int ret = ftruncate(app->fileFd, fileSizeBytes);
+		if (ret < 0)
+		{
+			RTE_LOG(ERR, USER2, "Opening Rx file: %s failed\n", app->fileName);
+			return ST_GENERAL_ERR;
+		}
+		app->movie = mmap(NULL, fileSizeBytes, PROT_READ | PROT_WRITE, MAP_SHARED, app->fileFd, 0);
+	}
 
 	app->writeCursor = 0;
+	app->readCursor = 0;
+	app->framesToRead = 0;
 	app->inputCursor = 0;
 	app->frmsRecv = 0;
 
 	rte_atomic32_set(&isAppStopped, 0);
 
-	pthread_create(&app->writeThread, NULL, (void*(*)(void*))RecvAppThread, (void *)app);
+	pthread_create(&app->writeThread, NULL, (void *(*)(void *))RecvAppThread, (void *)app);
 
 	return ST_OK;
 }
 
-st_status_t
-RecvAppCreateConsumer(st21_session_t *sn, st21_buf_fmt_t bufFormat, rvrtp_recv_app_t **appOut)
+static void
+RecvInitSt21Cons(st_session_t *sn, st21_consumer_t *cons, void *app)
 {
+
+	memset((void *)cons, 0, sizeof(st21_consumer_t));
+	cons->appHandle = app;
+	cons->frameSize = sn->frameSize;
+	/* TODO
+      * consumer type is provided through user command
+      */
+	cons->consType = ST21_CONS_P_FRAME;
+
+	cons->St21NotifyFrameRecv = RecvAppNotifyFrameRecv;
+	cons->St21NotifyFrameDone = RecvAppNotifyFrameDone;
+	cons->St21GetNextFrameBuf = RecvAppGetNextFrameBuf;
+	cons->St21PutFrameTmstamp = RecvAppPutFrameTmstamp;
+}
+static void
+RecvInitSt30Cons(st_session_t *sn, st30_consumer_t *cons, void *app)
+{
+
+	memset((void *)cons, 0, sizeof(st30_consumer_t));
+	cons->appHandle = app;
+	cons->bufSize = sn->frameSize;
+	cons->consType = ST30_CONS_REGULAR;
+	/* TODO
+      * consumer type is provided through user command
+      */
+
+	/* TODO
+     * add consumer callback
+     */
+	cons->St30GetNextAudioBuf = RecvAppGetNextAudioBuf;
+	cons->St30NotifySampleRecv = RecvAppNotifySampleRecv;
+	cons->St30NotifyBufferDone = RecvAppNotifyBufferDone;
+	cons->St30NotifyStopDone = NULL;
+	cons->St30RecvRtpPkt = NULL;
+}
+
+/**
+ * Callback to consumer application with notification about the buffer completion
+ * Audio buffer can be released or reused after it but not sooner
+ */
+void
+RecvAppNotifyAncFrameDone(void *appHandle, void *frameBuf)
+{
+	RTE_LOG(DEBUG, USER3, "RecvAppNotifyAncFrameDone frameBuf:%" PRIxPTR "\n", (uintptr_t)frameBuf);
+	strtp_recv_app_t *app = (strtp_recv_app_t *)appHandle;
+
+	RecvAppLock(app);
+
+	for (uint32_t i = 0; i < RECV_APP_FRAME_MAX; i++)
+	{
+		if (&(app->ancFrames[i]) == frameBuf)
+		{
+			app->writeCursor = i;
+			app->framesToRead++;
+			break;
+		}
+	}
+	app->frmsRecv++;
+	RecvAppUnlock(app);
+	RTE_LOG(DEBUG, USER3, "AncBuf %p\n", frameBuf);
+	return;
+}
+
+/**
+ * Callback to consumer application to get next audio buffer necessary to continue streaming
+ */
+void *
+RecvAppGetNextAncFrame(void *appHandle)
+{
+	strtp_ancFrame_t *nextFrame;
+	strtp_recv_app_t *app = (strtp_recv_app_t *)appHandle;
+	RecvAppLock(app);
+	nextFrame = &(app->ancFrames[app->inputCursor]);
+	app->inputCursor = (app->inputCursor + 1) % RECV_APP_FRAME_MAX;
+	nextFrame->dataSize = 0;
+	nextFrame->metaSize = 0;
+	RecvAppUnlock(app);
+	RTE_LOG(DEBUG, USER3, "RecvAppGetNextAncFrame %" PRIxPTR "\n", (uintptr_t)nextFrame);
+	return nextFrame;
+}
+
+static void
+RecvInitSt40Cons(st_session_t *sn, st40_consumer_t *cons, void *app)
+{
+
+	memset((void *)cons, 0, sizeof(st40_consumer_t));
+	cons->appHandle = app;
+	cons->bufSize = sn->frameSize;
+	cons->consType = ST40_CONS_REGULAR;
+	cons->St40GetNextAncFrame = RecvAppGetNextAncFrame;
+	cons->St40NotifyFrameDone = RecvAppNotifyAncFrameDone;
+}
+
+/**
+ * Callback to producer or consumer application with notification about the buffer completion
+ * Audio buffer can be released or reused after it but not sooner
+ */
+void
+RecvAppNotifyBufferDone(void *appHandle, uint8_t *frameBuf)
+{
+	RTE_LOG(DEBUG, USER3, "RecvAppNotifyBufferDone frameBuf:%" PRIxPTR "\n", (uintptr_t)frameBuf);
+
+	return;
+}
+
+/**
+ * Callback to producer application to get next audio buffer necessary to continue streaming
+ * If application cannot return the next buffer returns NULL and TBD then has to call St30ProducerUpdate
+ * to restart streaming
+ */
+uint8_t *
+RecvAppGetNextAudioBuf(void *appHandle, uint8_t *prevAudioBuf, uint32_t bufSize)
+{
+	uint8_t *nextBuf;
+	strtp_recv_app_t *app = (strtp_recv_app_t *)appHandle;
+	if (bufSize != app->frameSize)
+		return NULL;
+
+	RecvAppLock(app);
+	nextBuf = app->samples[app->inputCursor];
+	app->inputCursor = (app->inputCursor + 1) % RECV_APP_SAMPLE_MAX;
+	RecvAppUnlock(app);
+	RTE_LOG(DEBUG, USER3, "RecvAppGetNextAudioBuf %" PRIxPTR "\n", (uintptr_t)nextBuf);
+	return nextBuf;
+}
+
+/**
+ * Callback to producer or consumer application with notification about completion of the session
+ * stop It means that all buffer pointers can be released after it but not sooner
+ */
+void
+RecvAppNotifySampleRecv(void *appHandle, uint8_t *audioBuf, uint32_t bufOffset, uint32_t tmstamp)
+{
+	strtp_recv_app_t *app = (strtp_recv_app_t *)appHandle;
+
+	RecvAppLock(app);
+
+	for (uint32_t i = 0; i < RECV_APP_SAMPLE_MAX; i++)
+	{
+		if (app->samples[i] == audioBuf)
+		{
+			app->writeCursor = i;
+			app->framesToRead++;
+			break;
+		}
+	}
+	app->frmsRecv++;
+	RecvAppUnlock(app);
+	RTE_LOG(DEBUG, USER1, "AudioBuf %p\n", audioBuf);
+}
+
+static int
+RecvInitConsumer(st_session_t *sn, strtp_recv_app_t *app, void *cons)
+{
+	st_status_t status = ST_NO_MEMORY;
+	char *filename = NULL;
+
+	switch (sn->type)
+	{
+	case ST_ESSENCE_AUDIO:
+		// Open Audio Reference file
+		status = CreateAudioRef(&app->ref);
+		if (status != ST_OK)
+		{
+			RTE_LOG(ERR, USER1, "CreateRef FAILED. ErrNo: %d\n", status);
+			return status;
+		}
+		filename = AudioRefSelectFile(app->bufFormat);
+		status = AudioRefOpenFile(app->ref, filename);
+		if (status != ST_OK)
+		{
+			RTE_LOG(INFO, USER2, "AudioRefOpenFile error of %d, no audio compare\n", status);
+			free(app->ref);
+		}
+		else
+			audioCmp = true;
+
+		RecvInitSt30Cons(sn, cons, app);
+		status = ST_OK;
+		break;
+
+	case ST_ESSENCE_VIDEO:
+		RecvInitSt21Cons(sn, cons, app);
+		status = ST_OK;
+		break;
+
+	case ST_ESSENCE_ANC:
+		// Open Ancillary Reference file
+		status = CreateAncRef(&app->ancref);
+		if (status != ST_OK)
+		{
+			RTE_LOG(ERR, USER1, "CreateRef FAILED. ErrNo: %d\n", status);
+			return status;
+		}
+		filename = AncRefSelectFile(app->bufFormat);
+		status = AncRefOpenFile(app->ancref, filename);
+		if (status != ST_OK)
+		{
+			RTE_LOG(INFO, USER2, "AncRefOpenFile error of %d, no Anc Compare\n", status);
+			free(app->ancref);
+		}
+		else
+			ancCmp = true;
+		RecvInitSt40Cons(sn, cons, app);
+		status = ST_OK;
+		break;
+
+	default:
+		break;
+	}
+	return status;
+}
+
+st_status_t
+RecvAppCreateConsumer(st_session_t *sn, st21_buf_fmt_t bufFormat, strtp_recv_app_t **appOut)
+{
+	st21_consumer_t cons;
+
 	if (!sn)
 		return ST_INVALID_PARAM;
-	rvrtp_recv_app_t *app = rte_malloc_socket("RecvApp", sizeof(rvrtp_recv_app_t), RTE_CACHE_LINE_SIZE, rte_socket_id());;
+	strtp_recv_app_t *app = rte_malloc_socket("RecvApp", sizeof(strtp_recv_app_t),
+											  RTE_CACHE_LINE_SIZE, rte_socket_id());
 	if (app)
 	{
-		memset(app, 0x0, sizeof(rvrtp_recv_app_t));
+		memset(app, 0x0, sizeof(strtp_recv_app_t));
 		app->session = sn;
 		app->bufFormat = bufFormat;
 		st_status_t status = RecvAppInit(app);
 		if (status == ST_OK)
 		{
-			st21_consumer_t cons;
-			memset(&cons, 0, sizeof(cons));
-			cons.appHandle = app;
-			cons.frameSize = sn->frameSize;
-			cons.consType = ST21_CONS_P_FRAME;
-			cons.St21NotifyFrameRecv = RecvAppNotifyFrameRecv;
-			cons.St21NotifyFrameDone = RecvAppNotifyFrameDone;
-			cons.St21GetNextFrameBuf = RecvAppGetNextFrameBuf;
-			cons.St21PutFrameTmstamp = RecvAppPutFrameTmstamp;
-			status = St21RegisterConsumer(sn, &cons);
+			status = RecvInitConsumer(sn, app, (void *)&cons);
 			if (status != ST_OK)
 			{
-				RTE_LOG(INFO, USER2, "St21RegisterConsumer FAILED. ErrNo: %d\n", status);
+				RTE_LOG(INFO, USER2, "RecvInitConsumer FAILED. ErrNo: %d\n", status);
+				rte_free(app);
+				return status;
+			}
+			status = StRegisterConsumer(sn, (void *)&cons);
+			if (status != ST_OK)
+			{
+				RTE_LOG(INFO, USER2, "StRegisterConsumer FAILED. ErrNo: %d\n", status);
 				rte_free(app);
 				return status;
 			}
@@ -332,20 +776,23 @@ RecvAppCreateConsumer(st21_session_t *sn, st21_buf_fmt_t bufFormat, rvrtp_recv_a
 }
 
 st_status_t
-RecvAppStart(st21_session_t *sn, rvrtp_recv_app_t *app)
+RecvAppStart(st_session_t *sn, strtp_recv_app_t *app)
 {
 	st_status_t status = ST_OK;
-
 	if (!sn || !app)
 		return ST_INVALID_PARAM;
 
-	status = St21ConsumerStartFrame(sn, app->frames[0], 0);
-
+	if (sn->type == ST_ESSENCE_VIDEO)
+		status = St21ConsumerStartFrame(sn, app->frames[0], 0);
+	else if (sn->type == ST_ESSENCE_AUDIO)
+		status = St30ConsumerStartFrame(sn, app->samples[0], 0);
+	else if (sn->type == ST_ESSENCE_ANC)
+		status = St40ConsumerStartFrame(sn);
 	return status;
 }
 
 st_status_t
-RecvAppStop(st21_session_t *sn, rvrtp_recv_app_t *app)
+RecvAppStop(st_session_t *sn, strtp_recv_app_t *app)
 {
 	st_status_t status = ST_OK;
 
@@ -355,13 +802,24 @@ RecvAppStop(st21_session_t *sn, rvrtp_recv_app_t *app)
 	rte_atomic32_set(&isAppStopped, 1);
 	(void)pthread_join(app->writeThread, NULL);
 
-	status = St21ConsumerStop(sn);
+	status = ConsumerStop(sn);
 	if (status != ST_OK)
 	{
-		RTE_LOG(ERR, USER1, "St21ConsumerStop FAILED. ErrNo: %d\n", status);
+		RTE_LOG(ERR, USER1, "ConsumerStop FAILED. ErrNo: %d\n", status);
 		return status;
 	}
-
+	if (app->session->type == ST_ESSENCE_VIDEO)
+	{
+		free(app->frames[0]);
+	}
+	if (app->session->type == ST_ESSENCE_AUDIO)
+	{
+		free(app->samples[0]);
+	}
+	if (app->session->type == ST_ESSENCE_ANC)
+	{
+		free(app->ancFrames[0].data);
+	}
 	return status;
 }
 
@@ -374,7 +832,7 @@ uint8_t *
 RecvAppGetNextFrameBuf(void *appHandle, uint8_t *prevFrameBuf, uint32_t bufSize, uint32_t fieldId)
 {
 	uint8_t *nextBuf;
-	rvrtp_recv_app_t *app = (rvrtp_recv_app_t *)appHandle;
+	strtp_recv_app_t *app = (strtp_recv_app_t *)appHandle;
 	if (bufSize != app->frameSize)
 		return NULL;
 
@@ -403,7 +861,7 @@ RecvAppNotifyFrameDone(void *appHandle, uint8_t *frameBuf, uint32_t fieldId)
 void
 RecvAppNotifyFrameRecv(void *appHandle, uint8_t *frameBuf, uint32_t tmstamp, uint32_t fieldId)
 {
-	rvrtp_recv_app_t *app = (rvrtp_recv_app_t *)appHandle;
+	strtp_recv_app_t *app = (strtp_recv_app_t *)appHandle;
 
 	RecvAppLock(app);
 
@@ -416,15 +874,15 @@ RecvAppNotifyFrameRecv(void *appHandle, uint8_t *frameBuf, uint32_t tmstamp, uin
 		}
 	}
 	RecvAppUnlock(app);
-	RTE_LOG(DEBUG,USER1,"Field %u             %p\n",fieldId, frameBuf);
-	app->fieldId=fieldId;
+	RTE_LOG(DEBUG, USER1, "Field %u             %p\n", fieldId, frameBuf);
+	app->fieldId = fieldId;
 	app->frmsRecv++;
 }
 
 void
 RecvAppPutFrameTmstamp(void *appHandle, uint32_t tmstamp)
 {
-	//rvrtp_recv_app_t *app = (rvrtp_recv_app_t *)appHandle;
+	//strtp_recv_app_t *app = (strtp_recv_app_t *)appHandle;
 
 	// printf("Received timestamp of during frame of %llu of %u\n", (U64)app->frmsRecv, tmstamp);
 	return;

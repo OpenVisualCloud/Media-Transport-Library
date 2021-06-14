@@ -1,5 +1,5 @@
 /*
-* Copyright 2020 Intel Corporation.
+* Copyright (C) 2020-2021 Intel Corporation.
 *
 * This software and the related documents are Intel copyrighted materials,
 * and your use of them is governed by the express license under which they
@@ -25,10 +25,21 @@
 
 #include "common_app.h"
 
+#include <dirent.h>
+#include <getopt.h>
 #include <stdlib.h>
 #include <unistd.h>
-#include <getopt.h>
 
 #define MAX_SESSIONS_MAX 160
+
+typedef struct rxtxapp_main
+{
+	st_format_t fmt_lists[MAX_SESSIONS_MAX];
+	uint32_t fmt_count;
+	uint32_t st21_session_count;
+	uint32_t st30_session_count;
+	uint32_t st40_session_count;
+
+} rxtxapp_main_t;
 
 #endif

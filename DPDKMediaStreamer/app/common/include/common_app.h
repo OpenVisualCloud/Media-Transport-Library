@@ -1,5 +1,5 @@
 /*
-* Copyright 2020 Intel Corporation.
+* Copyright (C) 2020-2021 Intel Corporation.
 *
 * This software and the related documents are Intel copyrighted materials,
 * and your use of them is governed by the express license under which they
@@ -32,6 +32,11 @@
 #define SEND_APP_FRAME_MAX 3
 #define RECV_APP_FRAME_MAX 6
 
+#define ST_ANC_UDW_MAX_SIZE 255 * 10 / 8
+
+#define RECV_APP_SAMPLE_MAX 3072
+#define RECV_APP_AUDIO_BUF_MAX 6
+
 #define MIN(x, y) (x < y ? x : y)
 #define MAX(x, y) (x > y ? x : y)
 
@@ -52,41 +57,35 @@ typedef enum
 
 } st_vid_fmt_conv_t;
 
-struct rvrtp_send_app;
+struct strtp_send_app;
 
-typedef st_status_t (*SendAppReadFrame_f)(struct rvrtp_send_app *app);
+typedef st_status_t (*SendAppReadFrame_f)(struct strtp_send_app *app);
 
-typedef struct rvrtp_send_app
+typedef struct strtp_send_app
 {
-	st21_session_t *session;
-	st21_producer_t prod;
-	st21_buf_fmt_t bufFormat;  // producer buffer format
-	int singleFrameMode;	   // if file size is equal to frame size
-	int fileFd;				   // -pix_fmt yuv440p10be
+	st_session_t *session;
+	st_essence_type_t mtype;
+	void *prod;			  //
+	uint8_t bufFormat;	  // producer buffer format
+	int singleFrameMode;  // if file size is equal to frame size
+	int fileFd;			  // -pix_fmt yuv440p10be
 	char fileName[256];
-	const uint8_t *movieBegin;	// mmap movie
+	const uint8_t *movieBegin;	// mmap movie (video/audio/anc)
 	const uint8_t *movieEnd;	// mmap movie
 	const uint8_t *movie;		// current movie frame
 	pthread_t movieThread;		// calling SendAppReadFrame
 	uint32_t movieBufSize;
-	uint32_t sliceSize;	   // at least 2 lines
-	uint32_t sliceOffset;  //
-	uint32_t sliceCount;   //
-	uint32_t frameSize;
+	uint32_t audioSampleSize;
+	bool isEndOfAncDataBuf;
 	uint32_t tmstampTime;
-
-	uint32_t dualPixelSize;
-	uint32_t pixelGrpsInSlice;
-	uint32_t linesInSlice;
-	uint32_t firstTmstamp;
-
-	uint8_t *frameBuf;	// current frameBuffer
-	uint8_t *frames[SEND_APP_FRAME_MAX];
+	union
+	{
+		uint8_t *frames[SEND_APP_FRAME_MAX];
+		strtp_ancFrame_t ancFrames[SEND_APP_FRAME_MAX];
+	};
 	volatile uint8_t frameDone[SEND_APP_FRAME_MAX];
-	uint32_t frameCursor;
-	volatile uint32_t frameCursorSending;
-	uint64_t lastTmr;
-	uint32_t frmLocCnt;
+	uint8_t index;	// Identifier
+
 	pthread_t cldThr;  // frameThread
 	int iscldThrSet;
 	int affinited;
@@ -97,20 +96,21 @@ typedef struct rvrtp_send_app
 	volatile uint32_t frmsSend;	 // sync SendAppGetNextFrameBuf and SendAppReadFrame
 
 	volatile int lock;
-	view_info_t *view;
-} rvrtp_send_app_t;
+	video_stream_info_t *videoStream;
+} strtp_send_app_t;
 
-struct rvrtp_recv_app;
+struct strtp_recv_app;
 
-typedef void (*RecvAppWriteFrame_f)(struct rvrtp_recv_app *app, st_rfc4175_422_10_pg2_t const *ptr);
+typedef void (*RecvAppWriteFrame_f)(struct strtp_recv_app *app, st_rfc4175_422_10_pg2_t const *ptr);
+typedef void (*RecvAppWriteBuffer_f)(struct strtp_recv_app *app, uint8_t const *ptr);
 
-typedef struct rvrtp_recv_app
+typedef struct strtp_recv_app
 {
-	st21_session_t *session;
+	char fileName[256];
+	st_session_t *session;
 	st21_buf_fmt_t bufFormat;  // consumer buffer format
 	int fileFd;				   // file descriptor for share yuv422p10be
-	char fileName[256];
-	uint8_t *movie; // mmap of yuv422p10be
+	uint8_t *movie;			   // mmap of yuv422p10be
 
 	uint32_t volatile movieCursor;
 	uint32_t movieBufSize;
@@ -125,12 +125,23 @@ typedef struct rvrtp_recv_app
 	uint32_t pixelGrpsInSlice;
 	uint32_t linesInSlice;
 
-	uint8_t *frames[RECV_APP_FRAME_MAX];
+	union
+	{
+		uint8_t *frames[RECV_APP_FRAME_MAX];
+		uint8_t *samples[RECV_APP_SAMPLE_MAX];
+		strtp_ancFrame_t ancFrames[RECV_APP_FRAME_MAX];
+	};
 	uint32_t inputCursor;
 	uint32_t volatile writeCursor;
+	uint32_t volatile readCursor;
+	uint32_t volatile framesToRead;
 
 	// functions set per video format
-	RecvAppWriteFrame_f RecvAppWriteFrame;
+	union
+	{
+		RecvAppWriteFrame_f RecvAppWriteFrame;
+		RecvAppWriteBuffer_f RecvAppWriteAudioFrame;
+	};
 
 	volatile uint32_t frmsRecv;
 	unsigned volatile fieldId; /**< 0 even, 1 odd*/
@@ -139,30 +150,40 @@ typedef struct rvrtp_recv_app
 
 	volatile int lock;
 
-	view_info_t *view;
-} rvrtp_recv_app_t;
+	video_stream_info_t *videoStream;
+	union
+	{
+		audio_ref_t *ref;
+		anc_ref_t *ancref;
+	};
 
+} strtp_recv_app_t;
+
+// External declarations (library based)
+extern void StGetAppAffinityCores(uint16_t start_id, cpu_set_t *app_cpuset);
 // Sender app forward declarations
-st_status_t SendAppReadFrameNetLeBufLe(rvrtp_send_app_t *app);
-st_status_t SendAppReadFrameNetLeBufBe(rvrtp_send_app_t *app);
-st_status_t SendAppReadFrameNetBeBufLe(rvrtp_send_app_t *app);
-st_status_t SendAppReadFrameNetBeBufBe(rvrtp_send_app_t *app);
-st_status_t SendAppReadFrameNetLeBufRgba(rvrtp_send_app_t *app);
-st_status_t SendAppReadFrameNetLeBufBgra(rvrtp_send_app_t *app);
-st_status_t SendAppReadFrameNetBeBufRgba(rvrtp_send_app_t *app);
-st_status_t SendAppReadFrameNetBeBufBgra(rvrtp_send_app_t *app);
+st_status_t SendAppReadFrameNetLeBufLe(strtp_send_app_t *app);
+st_status_t SendAppReadFrameNetLeBufBe(strtp_send_app_t *app);
+st_status_t SendAppReadFrameNetBeBufLe(strtp_send_app_t *app);
+st_status_t SendAppReadFrameNetBeBufBe(strtp_send_app_t *app);
+st_status_t SendAppReadFrameNetLeBufRgba(strtp_send_app_t *app);
+st_status_t SendAppReadFrameNetLeBufBgra(strtp_send_app_t *app);
+st_status_t SendAppReadFrameNetBeBufRgba(strtp_send_app_t *app);
+st_status_t SendAppReadFrameNetBeBufBgra(strtp_send_app_t *app);
 
-st_status_t SendAppInit(rvrtp_send_app_t *app, const char *fileName);
-st_status_t SendAppCreateProducer(st21_session_t *sn, st21_buf_fmt_t bufFormat, uint32_t fmtIndex,
-								  rvrtp_send_app_t **appOut);
-st_status_t SendAppStart(st21_session_t *sn, rvrtp_send_app_t *app);
+st_status_t SendSt21AppInit(strtp_send_app_t *app, void *prod);
+st_status_t SendSt30AppInit(strtp_send_app_t *app, void *prod);
+st_status_t SendSt40AppInit(strtp_send_app_t *app, void *prod);
+st_status_t SendAppCreateProducer(st_session_t *sn, uint8_t bufFormat, const char *fileName,
+								  strtp_send_app_t **appOut);
+st_status_t SendAppStart(st_session_t *sn, strtp_send_app_t *app);
 
-st_status_t RecvAppCreateConsumer(st21_session_t *sn, st21_buf_fmt_t bufFormat,
-								  rvrtp_recv_app_t **appOut);
-st_status_t RecvAppStart(st21_session_t *sn, rvrtp_recv_app_t *app);
-st_status_t RecvAppStop(st21_session_t *sn, rvrtp_recv_app_t *app);
+st_status_t RecvAppCreateConsumer(st_session_t *sn, st21_buf_fmt_t bufFormat,
+								  strtp_recv_app_t **appOut);
+st_status_t RecvAppStart(st_session_t *sn, strtp_recv_app_t *app);
+st_status_t RecvAppStop(st_session_t *sn, strtp_recv_app_t *app);
 
-uint32_t SendAppReadNextSlice(rvrtp_send_app_t *app, uint8_t *frameBuf, uint32_t prevOffset,
+uint32_t SendAppReadNextSlice(strtp_send_app_t *app, uint8_t *frameBuf, uint32_t prevOffset,
 							  uint32_t sliceSize, uint32_t fieldId);
 
 /**
@@ -172,6 +193,10 @@ uint32_t SendAppReadNextSlice(rvrtp_send_app_t *app, uint8_t *frameBuf, uint32_t
  */
 uint8_t *SendAppGetNextFrameBuf(void *appHandle, uint8_t *prevFrameBuf, uint32_t bufSize,
 								uint32_t fieldId);
+
+uint8_t *SendAppGetNextAudioBuf(void *appHandle, uint8_t *prevFrameBuf, uint32_t bufSize);
+
+uint8_t *SendAppGetNextAncBuf(void *appHandle, uint8_t *prevFrameBuf, uint32_t bufSize);
 
 /**
  * Callback to producer or consumer application to get next slice buffer necessary to continue
@@ -186,6 +211,7 @@ uint32_t SendAppGetNextSliceOffset(void *appHandle, uint8_t *frameBuf, uint32_t 
  * Frame buffer can be released or reused after it but not sooner
  */
 void SendAppNotifyFrameDone(void *appHandle, uint8_t *frameBuf, uint32_t fieldId);
+void SendAppNotifyBufDone(void *appHandle, uint8_t *frameBuf);
 
 /**
  * Callback to producer or consumer application with notification about completion of the session
@@ -198,9 +224,15 @@ void SendAppNotifyStopDone(void *appHandle);
  */
 uint32_t SendAppGetFrameTmstamp(void *appHandle);
 
+/**
+ * Callback to producer application to get next ancillary buffer necessary to continue streaming
+ * If application cannot return the next buffer returns NULL and TBD
+ */
+void *SendAppGetNextAncFrame(void *appHandle);
+
 // Receiver App forward declarations
 
-st_status_t RecvAppInit(rvrtp_recv_app_t *app);
+st_status_t RecvAppInit(strtp_recv_app_t *app);
 
 /**
  * Callback to producer application to get next frame buffer necessary to continue streaming
@@ -224,9 +256,37 @@ void RecvAppNotifyFrameRecv(void *appHandle, uint8_t *frameBuf, uint32_t tmstamp
 
 void RecvAppPutFrameTmstamp(void *appHandle, uint32_t tmstamp);
 
-void RecvAppWriteFrameNetLeBufRgba(rvrtp_recv_app_t *app, st_rfc4175_422_10_pg2_t const *ptr);
-void RecvAppWriteFrameNetLeBufBgra(rvrtp_recv_app_t *app, st_rfc4175_422_10_pg2_t const *ptr);
-void RecvAppWriteFrameNetBeBufRgba(rvrtp_recv_app_t *app, st_rfc4175_422_10_pg2_t const *ptr);
-void RecvAppWriteFrameNetBeBufBgra(rvrtp_recv_app_t *app, st_rfc4175_422_10_pg2_t const *ptr);
+void RecvAppWriteFrameNetLeBufRgba(strtp_recv_app_t *app, st_rfc4175_422_10_pg2_t const *ptr);
+void RecvAppWriteFrameNetLeBufBgra(strtp_recv_app_t *app, st_rfc4175_422_10_pg2_t const *ptr);
+void RecvAppWriteFrameNetBeBufRgba(strtp_recv_app_t *app, st_rfc4175_422_10_pg2_t const *ptr);
+void RecvAppWriteFrameNetBeBufBgra(strtp_recv_app_t *app, st_rfc4175_422_10_pg2_t const *ptr);
+
+/**
+ * Callback to producer or consumer application with notification about the buffer completion
+ * Audio buffer can be released or reused after it but not sooner
+ */
+void RecvAppNotifyBufferDone(void *appHandle, uint8_t *frameBuf);
+
+/**
+ * Callback to producer application to get next audio buffer necessary to continue streaming
+ * If application cannot return the next buffer returns NULL and TBD then has to call St30ProducerUpdate
+ * to restart streaming
+ */
+uint8_t *RecvAppGetNextAudioBuf(void *appHandle, uint8_t *prevAudioBuf, uint32_t bufSize);
+
+/**
+ * Callback to consumer application to get next ancillary buffer necessary to continue streaming
+ */
+void *RecvAppGetNextAncFrame(void *appHandle);
+
+/**
+ * Callback to producer or consumer application with notification about completion of the session
+ * stop It means that all buffer pointers can be released after it but not sooner
+ */
+void RecvAppNotifySampleRecv(void *appHandle, uint8_t *audioBuf, uint32_t bufOffset,
+							 uint32_t tmstamp);
+
+void AppInitAffinity(int appStartCoreId);
+void SetAffinityCore(void *app, st_dev_type_t type);
 
 #endif

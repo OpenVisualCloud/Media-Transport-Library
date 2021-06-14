@@ -1,5 +1,5 @@
 /*
-* Copyright 2020 Intel Corporation.
+* Copyright (C) 2020-2021 Intel Corporation.
 *
 * This software and the related documents are Intel copyrighted materials,
 * and your use of them is governed by the express license under which they
@@ -51,6 +51,7 @@ st21_format_t dln422be10Hd720p59Fmt = {
 st21_format_t dln422be10Hd1080p59Fmt = {
 	ST21_PIX_FMT_YCBCR_422_10BIT_BE,
 	ST21_1080P,
+	1080,
 	1920,
 	1125,
 	22,								 /* 22 lines of tr default offset */
@@ -125,7 +126,7 @@ st21_format_t sln422be10Uhd2160p29Fmt = {
 	1001,
 	ST_INTEL_SLN_RFC4175_PKT,
 	480,
-	4,
+	8,
 	ST_HD_SLN_422_10_480_PIXELS, /* pkt size */
 	33366667,					 /* ns */
 	17280						 /* pkts in frame */
@@ -1114,3 +1115,41 @@ st21_format_t *fmtI59Table[ST21_FMT_I_MAX_59] = {
 	[ST21_FMT_I_AYA_1080_59] = &all422be10Hd1080i59Fmt,
 	[ST21_FMT_I_AYA_2160_59] = &all422be10Uhd2160i59Fmt,
 };
+
+/*
+ * Audio formats
+ */
+//struct st30_format
+//{
+//	st30_sample_fmt_t sampleFmt;
+//	uint32_t chanCount;	 //usually 1-8, default 2, but exceptionnaly max is 24 only for ST30_SURROUND_222
+//	st30_chan_order_t chanOrder[8]; // for example [ST_SURROUND_51, ST30_STD_STEREO, 0, 0, ...]
+//									// specifies 6 channels of 5.1 + 2 stereo, leaving remainig
+//									// other positions empty
+//	st30_sample_clk_t sampleClkRate;//48k or 96k of sampling clock rate
+//	uint32_t sampleGrpSize;	 // number of bytes in the sample group,
+//	uint32_t sampleGrpCount; // 48/96 sample groups per 1ms, 6/12 sample groups per 125us
+//	uint32_t epochTime;	     // in nanoseconds, 1M for 1ms, 125k for 125us
+//	uint32_t pktSize;		 //pkt size w/o VLAN header
+//};
+
+st30_format_t stereoPcm24bFmt = {
+	ST30_PCM16_SAMPLING,
+	2,
+	{ ST30_STD_STEREO, 0, 0, 0, 0, 0, 0, 0 },
+	48000, /* freq in Hz*/
+	4,
+	48,
+	1000000,				  /* 1ms */
+	ST_AUDIO_PKT_STEREO_PCM16 /* default pkt size */
+};
+
+/*
+* Ancillary data format
+*/
+st40_format_t ancillaryDataFmt = { 90000, /* freq in Hz*/
+								   //1000,//ST_HD_SLN_422_10_480_PIXELS, /* pkt size */
+								   16683333, /* ns */
+								   //1080,						 /* pkts in frame */
+								   1000000, /* 1ms */
+								   ST_ANC_RTP_PKT_MAX_LEN };

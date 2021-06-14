@@ -1,5 +1,5 @@
 /*
-* Copyright 2020 Intel Corporation.
+* Copyright (C) 2020-2021 Intel Corporation.
 *
 * This software and the related documents are Intel copyrighted materials,
 * and your use of them is governed by the express license under which they
@@ -24,21 +24,57 @@
 
 #include <rte_atomic.h>
 #include <rte_cycles.h>
+#include <rte_hexdump.h>
 
 #include <byteswap.h>
+#include <fcntl.h>
+#include <sys/mman.h>
+#include <sys/queue.h>
+#include <sys/stat.h>
+#include <sys/types.h>
 
-struct view_info
+struct video_stream_info
+{
+	char label[256];
+	uint32_t format;
+	uint32_t bufFormat;
+	uint8_t *frame;
+	int cnt;
+	int width;
+	int height;
+	int id;
+	LIST_ENTRY(video_stream_info) videoStreamInfo;
+};
+typedef struct video_stream_info video_stream_info_t;
+LIST_HEAD(listVideoStreamHead, video_stream_info);
+
+static struct listVideoStreamHead headOfListVideoSteams;
+static struct video_stream_info *currentVideoStream = NULL;
+
+struct gui_window
 {
 	SDL_Window *window;
 	SDL_Renderer *renderer;
 	SDL_Texture *texture;
-	uint32_t format;
-	uint32_t bufFormat;
-	int cnt;
 	long int allFrames;
-	uint8_t *frame;
-	int width;
-	int height;
+};
+
+static struct gui_window guiWindow;
+
+struct audio_ref
+{
+	const uint8_t *refBegin;  // begining of reference audio stream
+	const uint8_t *refEnd;	  // end of reference audio stream
+	const uint8_t *refFrame;  // current reference audio frame
+	int fileFd;				  // Handle for reference audio file
+};
+
+struct anc_ref
+{
+	const uint8_t *refBegin;  // begining of reference audio stream
+	const uint8_t *refEnd;	  // end of reference audio stream
+	const uint8_t *refFrame;  // current reference audio frame
+	int fileFd;				  // Handle for reference audio file
 };
 
 static pthread_t EventLoopThreadId;
@@ -49,35 +85,114 @@ static rte_atomic32_t isStop;
 static int default_width = 320;
 static int default_height = 240;
 
+static void
+destroySDL()
+{
+	if (guiWindow.texture)
+	{
+		SDL_DestroyTexture(guiWindow.texture);
+		guiWindow.texture = NULL;
+	}
+	if (guiWindow.renderer)
+	{
+		SDL_DestroyRenderer(guiWindow.renderer);
+		guiWindow.renderer = NULL;
+	}
+	if (guiWindow.window)
+	{
+		SDL_DestroyWindow(guiWindow.window);
+		guiWindow.window = NULL;
+	}
+	SDL_Quit();
+}
 st_status_t
-InitSDL(void)
+CreateGuiWindow(void)
 {
 	int res;
-	res = SDL_Init(SDL_INIT_VIDEO | SDL_INIT_AUDIO | SDL_INIT_TIMER);
+	res = SDL_Init(SDL_INIT_VIDEO | SDL_INIT_AUDIO | SDL_INIT_EVENTS);
 	if (res != 0)
 	{
-		printf("SLD_Init error: %s\n", SDL_GetError());
-		return res;
+		printf("SDL_Init error: %s\n", SDL_GetError());
+		return ST_GUI_ERR_NO_SDL;
 	}
-	res = pthread_create(&EventLoopThreadId, NULL, EventLoopThread, (void *)NULL);
-	if (res != 0)
+	memset(&guiWindow, 0, sizeof(guiWindow));
+	guiWindow.window
+		= SDL_CreateWindow("=== HELP ===", SDL_WINDOWPOS_UNDEFINED, SDL_WINDOWPOS_UNDEFINED,
+						   default_width, default_height, SDL_WINDOW_SHOWN | SDL_WINDOW_RESIZABLE);
+	if (guiWindow.window == NULL)
 	{
-		printf("SDL threat create error\n");
-		SDL_Quit();
+		printf("could not create window: %s\n", SDL_GetError());
+		destroySDL();
+		return ST_GUI_ERR_NO_WINDOW;
 	}
+
+	guiWindow.renderer = SDL_CreateRenderer(guiWindow.window, -1, 0);
+	if (guiWindow.renderer == NULL)
+	{
+		printf("could not create render: %s\n", SDL_GetError());
+		destroySDL();
+		return ST_GUI_ERR_NO_RENDER;
+	}
+
+	guiWindow.texture = SDL_CreateTexture(guiWindow.renderer, SDL_PIXELFORMAT_ARGB8888,
+										  SDL_TEXTUREACCESS_STREAMING, 1920, 1080);
+	if (guiWindow.texture == NULL)
+	{
+		printf("could not create texture: %s\n", SDL_GetError());
+		destroySDL();
+		return ST_GUI_ERR_NO_TEXTURE;
+	}
+	SDL_SetTextureBlendMode(guiWindow.texture, SDL_BLENDMODE_NONE);
+	LIST_INIT(&headOfListVideoSteams);
 	rte_atomic32_init(&howView);
 	rte_atomic32_set(&howView, 0);
 	rte_atomic32_init(&isStop);
 	rte_atomic32_set(&isStop, 0);
+	//Add help stream?
+	res = pthread_create(&EventLoopThreadId, NULL, EventLoopThread, (void *)NULL);
+	if (res != 0)
+	{
+		printf("SDL threat create error\n");
+		destroySDL();
+	}
 	return res;
 }
 
 st_status_t
-CreateView(view_info_t **view, const char *label, st21_buf_fmt_t bufFormat, int width, int height)
+CreateAudioRef(audio_ref_t **ref)
 {
-	view_info_t *locView;
-	uint8_t *frame = NULL;
+	audio_ref_t *locRef = malloc(sizeof(audio_ref_t));
+	if (locRef == NULL)
+	{
+		return ST_NO_MEMORY;
+	}
+	memset(locRef, 0, sizeof(audio_ref_t));
+	*ref = locRef;
 
+	return ST_OK;
+}
+
+st_status_t
+CreateAncRef(anc_ref_t **ref)
+{
+	anc_ref_t *locRef = malloc(sizeof(anc_ref_t));
+	if (locRef == NULL)
+	{
+		return ST_NO_MEMORY;
+	}
+	memset(locRef, 0, sizeof(anc_ref_t));
+	*ref = locRef;
+
+	return ST_OK;
+}
+
+st_status_t
+AddStream(video_stream_info_t **videoStream, const char *label, st21_buf_fmt_t bufFormat, int width,
+		  int height)
+{
+	video_stream_info_t *locVideoStream = NULL;
+	uint8_t *frame = NULL;
+	*videoStream = NULL;
 	if ((width != 1920 || height != 1080) && (width != 1280 || height != 720))
 		return ST_NOT_SUPPORTED;
 	switch (bufFormat)
@@ -92,34 +207,108 @@ CreateView(view_info_t **view, const char *label, st21_buf_fmt_t bufFormat, int 
 		break;
 	default:
 		return ST_NOT_SUPPORTED;
-		break;
 	}
-	locView = malloc(sizeof(view_info_t));
-	if (locView == NULL)
+	locVideoStream = malloc(sizeof(video_stream_info_t));
+	if (locVideoStream == NULL)
 	{
 		if (frame != NULL)
 			free(frame);
 		return ST_NO_MEMORY;
 	}
-	memset(locView, 0, sizeof(view_info_t));
-
-	locView->frame = frame;
-	locView->width = width;
-	locView->height = height;
-
-	locView->window
-		= SDL_CreateWindow(label, SDL_WINDOWPOS_UNDEFINED, SDL_WINDOWPOS_UNDEFINED, default_width,
-						   default_height, SDL_WINDOW_SHOWN | SDL_WINDOW_RESIZABLE);
-	locView->renderer = SDL_CreateRenderer(locView->window, -1, 0);
-	locView->format = SDL_PIXELFORMAT_ARGB8888;
-	locView->bufFormat = bufFormat;
-	locView->texture = SDL_CreateTexture(locView->renderer, locView->format,
-										 SDL_TEXTUREACCESS_STREAMING, width, height);
-	SDL_SetTextureBlendMode(locView->texture, SDL_BLENDMODE_NONE);
-	*view = locView;
-	rte_atomic32_add(&howView, 1);
-
+	memset(locVideoStream, 0, sizeof(video_stream_info_t));
+	locVideoStream->frame = frame;
+	locVideoStream->width = width;
+	locVideoStream->height = height;
+	locVideoStream->bufFormat = bufFormat;
+	snprintf(locVideoStream->label, sizeof(locVideoStream->label), "%s", label);
+	LIST_INSERT_HEAD(&headOfListVideoSteams, locVideoStream, videoStreamInfo);
+	*videoStream = locVideoStream;
+	if (currentVideoStream == NULL)
+	{
+		currentVideoStream = locVideoStream;
+		SDL_SetWindowTitle(guiWindow.window, label);
+	}
+	printf("\nSTREAM NAME: %s\n", label);
 	return ST_OK;
+}
+
+void
+PrepNext(void)
+{
+	video_stream_info_t *videoStream, *videoStremNext;
+	videoStremNext = LIST_FIRST(&headOfListVideoSteams);
+	do
+	{
+		videoStream = videoStremNext;
+		videoStremNext = LIST_NEXT(videoStream, videoStreamInfo);
+		if (videoStremNext == NULL)
+			videoStremNext = LIST_FIRST(&headOfListVideoSteams);
+	} while (videoStremNext != currentVideoStream);
+	currentVideoStream = videoStream;
+	SDL_SetWindowTitle(guiWindow.window, currentVideoStream->label);
+}
+
+static void
+PrepPrev(void)
+{
+	video_stream_info_t *videoStream;
+	videoStream = LIST_NEXT(currentVideoStream, videoStreamInfo);
+	if (videoStream != NULL)
+		currentVideoStream = videoStream;
+	else
+		currentVideoStream = LIST_FIRST(&headOfListVideoSteams);
+	SDL_SetWindowTitle(guiWindow.window, currentVideoStream->label);
+}
+
+static void *
+EventLoopThread(void *arg)
+{
+	SDL_Event event;
+	while (rte_atomic32_read(&isStop) == 0)
+	{
+		do
+		{
+			if (rte_atomic32_read(&isStop) == 1)
+				break;
+			SDL_PumpEvents();
+		} while (!SDL_PeepEvents(&event, 1, SDL_GETEVENT, SDL_FIRSTEVENT, SDL_LASTEVENT));
+
+		switch (event.type)
+		{
+		case SDL_KEYDOWN:
+			switch (event.key.keysym.sym)
+			{
+			case SDLK_LEFT:
+				break;
+			case SDLK_RIGHT:
+				break;
+			case SDLK_UP:
+				PrepNext();
+				break;
+			case SDLK_DOWN:
+				PrepPrev();
+				break;
+			case SDLK_h:
+				printf("\nSDL GUIL HELP\n"
+					   "h  - display this help\n"
+					   "Up - switch to next video strem\n"
+					   "Dw - switch to previus video strem\n");
+				break;
+			default:
+				break;
+			}
+			break;
+		case SDL_MOUSEBUTTONDOWN:
+		case SDL_MOUSEMOTION:
+		case SDL_WINDOWEVENT:
+			break;
+		case SDL_QUIT:
+			break;
+		default:
+			break;
+		}
+	}
+	return NULL;
 }
 
 typedef struct viewRGB
@@ -185,10 +374,10 @@ typedef struct viewRGB
 
 #endif
 
-static inline double
+static inline uint8_t
 GetCollor(uint16_t y, uint16_t b, uint16_t r, double cy, double cb, double cr)
 {
-	return 256.0 / 1024.0 * (cy * (0 + y) + cb * (-512 + b) + cr * (-512 + r));
+	return (uint16_t)(cy * (0 + y) + cb * (-512 + b) + cr * (-512 + r)) >> 2;
 }
 
 static void
@@ -204,7 +393,7 @@ ConvYuv422beToRgb(uint8_t *rgb, uint8_t const *yuv, unsigned width, unsigned hei
 
 	for (int lc = height; lc > 0; lc -= 1)
 	{
-		for (int pc = width/2; pc > 0; pc -= 1)
+		for (int pc = width / 2; pc > 0; pc -= 1)
 		{
 			uint16_t yle, vle, ule;
 
@@ -232,124 +421,236 @@ ConvYuv422beToRgb(uint8_t *rgb, uint8_t const *yuv, unsigned width, unsigned hei
 }
 
 st_status_t
-ShowFrame(view_info_t *view, uint8_t const*frame, int interlaced)
+ShowFrame(video_stream_info_t *stream, uint8_t const *frame, int interlaced)
 {
-	view->cnt++;
-	//
-	SDL_SetRenderDrawColor(view->renderer, 0, 0, 0, 255);
-	SDL_RenderClear(view->renderer);
+	stream->cnt++;
+	if (stream != currentVideoStream)
+		return ST_OK;
 
-	switch (view->bufFormat)
+	SDL_SetRenderDrawColor(guiWindow.renderer, 0, 0, 0, 255);
+	SDL_RenderClear(guiWindow.renderer);
+
+	switch (stream->bufFormat)
 	{
 	case ST21_BUF_FMT_RGBA_8BIT:
-		SDL_UpdateTexture(view->texture, NULL, frame, view->width * sizeof(Uint32));
+		SDL_UpdateTexture(guiWindow.texture, NULL, frame, stream->width * sizeof(Uint32));
 		break;
 	case ST21_BUF_FMT_YUV_422_10BIT_BE:
-		switch(interlaced) {
+		switch (interlaced)
+		{
 		case 0:
-			ConvYuv422beToRgb(view->frame,               frame, view->width, view->height/2, view->width);
+			ConvYuv422beToRgb(stream->frame, frame, stream->width, stream->height / 2,
+							  stream->width);
 			break;
 		case 1:
-			ConvYuv422beToRgb(view->frame+view->width*4, frame, view->width, view->height/2, view->width);
+			ConvYuv422beToRgb(stream->frame + stream->width * 4, frame, stream->width,
+							  stream->height / 2, stream->width);
 			break;
 		default:
-			ConvYuv422beToRgb(view->frame,               frame, view->width, view->height, 0);
+			ConvYuv422beToRgb(stream->frame, frame, stream->width, stream->height, 0);
 		}
-		SDL_UpdateTexture(view->texture, NULL, view->frame, view->width * sizeof(Uint32));
+		SDL_UpdateTexture(guiWindow.texture, NULL, stream->frame, stream->width * sizeof(Uint32));
 		break;
 	}
 
-	SDL_RenderCopy(view->renderer, view->texture, NULL, NULL);
-	SDL_RenderPresent(view->renderer);
+	SDL_RenderCopy(guiWindow.renderer, guiWindow.texture, NULL, NULL);
+	SDL_RenderPresent(guiWindow.renderer);
 	return ST_OK;
 }
 
-static void
-RefreshLoopWaitEvent(SDL_Event *event)
+char *
+AudioRefSelectFile(uint8_t bufFormat)
 {
-	SDL_PumpEvents();
-	while (!SDL_PeepEvents(event, 1, SDL_GETEVENT, SDL_FIRSTEVENT, SDL_LASTEVENT))
+	char *filename = NULL;
+
+	if (bufFormat == ST30_BUF_FMT_WAV)
 	{
-		SDL_PumpEvents();
+		filename = ST_DEFAULT_AUDIO;
 	}
+	return filename;
 }
 
-// bellow is loop event for GUI - template
-static void *
-EventLoopThread(void *arg)
+char *
+AncRefSelectFile(uint8_t bufFormat)
 {
-	SDL_Event event;
+	char *filename = NULL;
 
-	while ((rte_atomic32_read(&howView) == 0) && (rte_atomic32_read(&isStop) == 0))
-		rte_delay_us_sleep(500 * 1000);
-
-	rte_delay_us_sleep(1000 * 1000);
-
-	while (rte_atomic32_read(&isStop) == 0)
+	if (bufFormat == ST40_BUF_FMT_CLOSED_CAPTIONS)
 	{
-		RefreshLoopWaitEvent(&event);
-		switch (event.type)
+		filename = ST_DEFAULT_ANCILIARY;
+	}
+	return filename;
+}
+
+st_status_t
+AudioRefOpenFile(audio_ref_t *ref, const char *fileName)
+{
+	struct stat i;
+
+	ref->fileFd = open(fileName, O_RDONLY);
+	if (ref->fileFd >= 0)
+	{
+		fstat(ref->fileFd, &i);
+
+		uint8_t *m = mmap(NULL, i.st_size, PROT_READ, MAP_SHARED, ref->fileFd, 0);
+
+		if (MAP_FAILED != m)
 		{
-		case SDL_KEYDOWN:
-			continue;
-			switch (event.key.keysym.sym)
-			{
-			case SDLK_f:
-				break;
-			case SDLK_p:
-			case SDLK_SPACE:
-				break;
-			case SDLK_m:
-				break;
-			case SDLK_KP_MULTIPLY:
-			case SDLK_0:
-				break;
-			case SDLK_KP_DIVIDE:
-			case SDLK_9:
-				break;
-			case SDLK_s: // S: Step to next frame
-				break;
-			case SDLK_a:
-				break;
-			case SDLK_v:
-				break;
-			case SDLK_c:
-				break;
-			case SDLK_t:
-				break;
-			case SDLK_w:
-				break;
-			case SDLK_PAGEUP:
-				break;
-			case SDLK_PAGEDOWN:
-				break;
-			case SDLK_LEFT:
-			case SDLK_RIGHT:
-			case SDLK_UP:
-			case SDLK_DOWN:
-				break;
-			default:
-				break;
-			}
-			break;
-		case SDL_MOUSEBUTTONDOWN:
-		case SDL_MOUSEMOTION:
-			break;
-		case SDL_WINDOWEVENT:
-			break;
-		case SDL_QUIT:
-			break;
-		default:
-			break;
+			ref->refBegin = m;
+			ref->refFrame = m;
+			ref->refEnd = m + i.st_size;
+		}
+		else
+		{
+			RTE_LOG(ERR, USER1, "mmap fail '%s'\n", fileName);
+			return ST_GENERAL_ERR;
 		}
 	}
-	return NULL;
+	else
+	{
+		ref = NULL;
+		RTE_LOG(INFO, USER1, "There are no audio file to compare!\n");
+		return ST_GENERAL_ERR;
+	}
+
+	return ST_OK;
+}
+
+st_status_t
+AncRefOpenFile(anc_ref_t *ref, const char *fileName)
+{
+	struct stat i;
+
+	ref->fileFd = open(fileName, O_RDONLY);
+	if (ref->fileFd >= 0)
+	{
+		fstat(ref->fileFd, &i);
+
+		uint8_t *m = mmap(NULL, i.st_size, PROT_READ, MAP_SHARED, ref->fileFd, 0);
+
+		if (MAP_FAILED != m)
+		{
+			ref->refBegin = m;
+			ref->refFrame = m;
+			ref->refEnd = m + i.st_size;
+		}
+		else
+		{
+			RTE_LOG(ERR, USER1, "mmap fail '%s'\n", fileName);
+			return ST_GENERAL_ERR;
+		}
+	}
+	else
+	{
+		ref = NULL;
+		RTE_LOG(INFO, USER1, "There are no anciliary file to compare\n");
+		return ST_GENERAL_ERR;
+	}
+
+	return ST_OK;
+}
+
+st_status_t
+PlayAudioFrame(audio_ref_t *ref, uint8_t const *frame, uint32_t frameSize)
+{
+	// Compare incoming audio frame with reference
+	int status = -1;
+	bool rewind = false;
+	int count = 0;
+	const uint8_t *old_ref = ref->refFrame;
+
+	if (ref == NULL)
+	{
+		//There are no audio file
+		return ST_OK;
+	}
+
+	while (status)
+	{
+		status = memcmp(frame, ref->refFrame, frameSize);
+		// Calculate new reference frame
+		ref->refFrame += frameSize;
+		if ((ref->refFrame >= ref->refEnd) || ((ref->refEnd - ref->refFrame) < frameSize))
+		{
+			ref->refFrame = ref->refBegin;
+		}
+
+		if (status)
+		{
+			if (!rewind)
+			{
+				RTE_LOG(INFO, USER2, "Bad audio...rewinding...\n");
+				rewind = true;
+			}
+			count++;
+		}
+		if (ref->refFrame == old_ref)
+			break;
+	}
+	if (rewind)
+	{
+		RTE_LOG(INFO, USER2, "Audio rewind %d\n", count);
+	}
+
+	return ST_OK;
+}
+
+st_status_t
+PlayAncFrame(anc_ref_t *ref, uint8_t const *frame, uint32_t frameSize)
+{
+	// Compare incoming anc frame with reference
+	int status = 1;
+	bool rewind = false;
+	int count = 0;
+	const uint8_t *old_ref = ref->refFrame;
+
+	if (ref == NULL)
+	{
+		//There are no anciliary file
+		return ST_OK;
+	}
+
+	while (status)
+	{
+		status = memcmp(frame, ref->refFrame, frameSize);
+		// Calculate new reference frame
+		ref->refFrame += frameSize;
+		if ((ref->refFrame >= ref->refEnd) || ((ref->refEnd - ref->refFrame) < frameSize))
+		{
+			ref->refFrame = ref->refBegin;
+		}
+		if (status)
+		{
+			if (!rewind)
+			{
+				RTE_LOG(INFO, USER2, "Bad anc...rewinding");
+				rewind = true;
+			}
+			count++;
+		}
+		if (ref->refFrame == old_ref)
+			break;
+	}
+	if (rewind)
+	{
+		RTE_LOG(INFO, USER2, "ANC rewind %d\n", count);
+	}
+
+	return ST_OK;
 }
 
 void
-CloseViews(void)
+DestroyGui(void)
 {
+	if (!DoesGuiExist())
+		return;
 	rte_atomic32_set(&isStop, 1);
 	pthread_join(EventLoopThreadId, NULL);
-	SDL_Quit();
+	destroySDL();
+}
+
+bool
+DoesGuiExist(void)
+{
+	return guiWindow.window != NULL && guiWindow.renderer != NULL && guiWindow.texture != NULL;
 }
