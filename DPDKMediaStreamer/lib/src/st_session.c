@@ -45,6 +45,11 @@ st_init_session_method(st_session_method_t *method, st_essence_type_t type)
 int
 StSessionGetPktsize(st_session_impl_t *s)
 {
+	if(!s)
+	{
+		return -1;
+	}
+
 	st_essence_type_t mtype = st_get_essence_type(&s->sn);
 
 	switch (mtype)
@@ -81,6 +86,11 @@ StDeviceUnlock(st_device_impl_t *d)
 st_status_t
 StRtpSendDeviceAdjustBudget(st_device_impl_t *dev)
 {
+	if(!dev)
+	{
+		return ST_INVALID_PARAM;
+	}
+
 	uint32_t budget = dev->quot;
 
 	for (uint32_t i = 0; i < dev->dev.maxSt21Sessions; i++)
@@ -414,10 +424,17 @@ StDestroySession(st_session_t *sn)
 	d->snCount--;
 	if (d->dev.type == ST_DEV_TYPE_PRODUCER)
 	{
+		for(int i = 0; i < sn->extMem.numExtBuf; i++)
+			StFreeFrame(sn, sn->extMem.addr[i]);
+
+		s->prodBuf = NULL;
+
+		StSessionUnlock(s);
 		status = sn_method[mtype].destroy_tx_session(s);
 	}
 	else
 	{
+		StSessionUnlock(s);
 		status = sn_method[mtype].destroy_rx_session(s);
 	}
 	StDeviceUnlock(d);
@@ -516,8 +533,8 @@ St21ProducerStartFrame(
 st_status_t
 St30ProducerStartFrame(
 	st_session_t *sn,	   // IN session pointer
-	uint8_t *frameBuf,	   // IN 1st frame buffer for the session
-	uint32_t linesOffset,  // IN offset in complete lines of the frameBuf to which producer filled
+	uint8_t *audioBuf,	   // IN 1st frame buffer for the session
+	uint32_t linesOffset,  // IN offset in complete lines of the audioBuf to which producer filled
 						   // the buffer
 	uint32_t tmstamp,	   // IN if not 0 then 90kHz timestamp of the frame
 	uint64_t ptpTime)	   // IN if not 0 start new frame at the given PTP timestamp + TROFFSET
@@ -525,7 +542,7 @@ St30ProducerStartFrame(
 	st_status_t status = ST_OK;
 
 	// validate parameters
-	if ((!sn) || (!frameBuf))
+	if ((!sn) || (!audioBuf))
 	{
 		return ST_INVALID_PARAM;
 	}
@@ -546,9 +563,8 @@ St30ProducerStartFrame(
 
 	StSessionLock(s);
 
-	s->prodBuf = frameBuf;
+	s->prodBuf = audioBuf;
 	s->bufOffset = linesOffset;
-	//s->actx.sliceOffset = 0;
 
 	if (linesOffset)
 	{
@@ -602,10 +618,8 @@ St40ProducerStartFrame(
 
 	StSessionLock(s);
 
-	//	s->ancctx.payloadSize = sizeof(st_anc_pkt_payload_hdr_t) + sn->frameSize;
 	s->prodBuf = ancBuf;
 	s->sliceOffset = buffOffset;
-	//s->actx.sliceOffset = 0;
 
 	if (buffOffset)
 	{
@@ -674,6 +688,16 @@ St21ProducerUpdate(st_session_t *sn,	  // IN session pointer
 	return status;
 }
 
+st_status_t
+St30ProducerUpdate(st_session_t *sn,
+					uint8_t *audioBuf,
+					uint32_t bufOffset,
+					uint32_t tmstamp,
+					uint64_t ptpTime)
+{
+	return ST_NOT_IMPLEMENTED;
+}
+
 /**
  * Called by the producer asynchronously to stop video streaming,
  * the session will notify the producer about completion with callback
@@ -697,6 +721,18 @@ StProducerStop(st_session_t *sn)
 	{
 		return ST_INVALID_PARAM;
 	}
+	// before session destroy, should wait enqueue/schedule thread done
+	if (rte_atomic32_read(&isTxDevToDestroy) == 0)
+	{
+		int i = 0;
+		rte_atomic32_set(&isTxDevToDestroy, 1);
+		while (d->rte_thread_core[i] != -1)
+		{
+			rte_eal_wait_lcore(d->rte_thread_core[i]);
+			d->rte_thread_core[i] = -1;
+			i++;
+		}
+	}
 
 	StSessionLock(s);
 
@@ -708,8 +744,18 @@ StProducerStop(st_session_t *sn)
 }
 
 st_status_t
+St30ProducerStop(st_session_t *sn)
+{
+	return ST_NOT_IMPLEMENTED;
+}
+
+st_status_t
 St21ValidateCons(st21_consumer_t *cons)
 {
+	if(!cons)
+	{
+		return ST_INVALID_PARAM;
+	}
 
 	switch (cons->consType)
 	{
@@ -774,6 +820,10 @@ St30ValidateCons(st30_consumer_t *cons)
 {
 	st_status_t status = ST_OK;
 
+	if(!cons)
+	{
+		return ST_INVALID_PARAM;
+	}
 	/* TODO
      * a workarond for st30 consumer
      */
@@ -813,6 +863,11 @@ St40ValidateCons(st40_consumer_t *cons)
 {
 	st_status_t status = ST_OK;
 
+	if(!cons)
+	{
+		return ST_INVALID_PARAM;
+	}
+
 	if (!cons || cons->consType < ST40_CONS_INVALID || cons->consType > ST40_CONS_LAST)
 	{
 		return ST_INVALID_PARAM;
@@ -845,6 +900,10 @@ StRegisterConsumer(st_session_t *sn,  // IN session pointer
 	if (status != ST_OK)
 	{
 		return status;
+	}
+	if(!cons)
+	{
+		return ST_INVALID_PARAM;
 	}
 
 	st_session_impl_t *s = (st_session_impl_t *)sn;
@@ -905,7 +964,12 @@ St21ConsumerStartFrame(
 	st_status_t status = ST_OK;
 
 	// validate parameters
-	if ((!sn) || (!frameBuf))
+	status = StValidateSession(sn);
+	if (status != ST_OK)
+	{
+		return status;
+	}
+	if (!frameBuf)
 	{
 		return ST_INVALID_PARAM;
 	}
@@ -976,6 +1040,16 @@ St30ConsumerStartFrame(
 {
 	st_status_t status = ST_OK;
 
+	status = StValidateSession(sn);
+	if (status != ST_OK)
+	{
+		return status;
+	}
+	if (!frameBuf)
+	{
+		return ST_INVALID_PARAM;
+	}
+
 	st_session_impl_t *s = (st_session_impl_t *)sn;
 	if (s->state < 1 || s->state > 4)
 	{
@@ -1006,6 +1080,14 @@ St30ConsumerStartFrame(
 st_status_t
 St40ConsumerStartFrame(st_session_t *sn)
 {
+	st_status_t status = ST_OK;
+
+	status = StValidateSession(sn);
+	if (status != ST_OK)
+	{
+		return status;
+	}
+
 	st_session_impl_t *s = (st_session_impl_t *)sn;
 	if (s->state < 1 || s->state > 4)
 	{
@@ -1047,7 +1129,12 @@ St21ConsumerUpdate(st_session_t *sn,	  // IN session pointer
 	st_status_t status = ST_OK;
 
 	// validate parameters
-	if ((!sn) || (!frameBuf))
+	status = StValidateSession(sn);
+	if (status != ST_OK)
+	{
+		return status;
+	}
+	if (!frameBuf)
 	{
 		return ST_INVALID_PARAM;
 	}
@@ -1090,6 +1177,16 @@ St21ConsumerUpdate(st_session_t *sn,	  // IN session pointer
 	return status;
 }
 
+st_status_t
+St30ConsumerUpdate(st_session_t *sn,
+					uint8_t *audioBuf,
+					uint32_t bufOffset,
+					uint32_t tmstamp,
+					uint64_t ptpTime)
+{
+	return ST_NOT_IMPLEMENTED;
+}
+
 /**
  * Called by the consumer asynchronously to stop video streaming,
  * the session will notify the consumer about completion with callback
@@ -1113,6 +1210,18 @@ ConsumerStop(st_session_t *sn)
 	{
 		return ST_INVALID_PARAM;
 	}
+	// before session destroy, should wait rx thread done
+	if (rte_atomic32_read(&isRxDevToDestroy) == 0)
+	{
+		int i = 0;
+		rte_atomic32_set(&isRxDevToDestroy, 1);
+		while (d->rte_thread_core[i] != -1)
+		{
+			rte_eal_wait_lcore(d->rte_thread_core[i]);
+			d->rte_thread_core[i] = -1;
+			i++;
+		}
+	}
 
 	StSessionLock(s);
 
@@ -1121,6 +1230,12 @@ ConsumerStop(st_session_t *sn)
 	StSessionUnlock(s);
 
 	return status;
+}
+
+st_status_t 
+St30ConsumerStop(st_session_t *sn)
+{
+	return ST_NOT_IMPLEMENTED;
 }
 
 /**
@@ -1155,8 +1270,7 @@ StBindIpAddr(st_session_t *sn, st_addr_t *addr, uint16_t nicPort)
 	s->fl[nicPort].src.addr4.sin_addr.s_addr = addr->src.addr4.sin_addr.s_addr;
 	s->fl[nicPort].dst.addr4.sin_addr.s_addr = addr->dst.addr4.sin_addr.s_addr;
 	// multicast IP addresses filtering and translation IP to the correct MAC
-	if ((uint8_t)addr->dst.addr4.sin_addr.s_addr >= 0xe0
-		&& (uint8_t)addr->dst.addr4.sin_addr.s_addr <= 0xef)
+	if (ST_IS_IPV4_MCAST((uint8_t)addr->dst.addr4.sin_addr.s_addr))
 	{
 		s->fl[nicPort].dstMac[0] = 0x01;
 		s->fl[nicPort].dstMac[1] = 0x00;
@@ -1164,7 +1278,7 @@ StBindIpAddr(st_session_t *sn, st_addr_t *addr, uint16_t nicPort)
 		uint32_t tmpMacChunk = (addr->dst.addr4.sin_addr.s_addr >> 8) & 0xFFFFFF7F;
 		memcpy(&s->fl[nicPort].dstMac[3], &tmpMacChunk, sizeof(uint8_t) * 3);
 	}
-	else
+	else if (s->dev->dev.type == ST_DEV_TYPE_PRODUCER)
 	{
 		int i = 0;
 		char *ip = inet_ntoa(s->fl[nicPort].dst.addr4.sin_addr);
@@ -1261,8 +1375,7 @@ StJoinMulticastGroup(st_addr_t *addr)
 
 	for (int p = 0; p < stMainParams.numPorts; ++p)
 	{
-		if ((uint8_t)addr->dst.addr4.sin_addr.s_addr >= 0xe0
-			&& (uint8_t)addr->dst.addr4.sin_addr.s_addr <= 0xef)
+		if (ST_IS_IPV4_MCAST((uint8_t)addr->dst.addr4.sin_addr.s_addr))
 		{
 			status = StCreateMembershipReportV3(addr->dst.addr4.sin_addr.s_addr,
 												*(uint32_t *)stMainParams.sipAddr[p],
@@ -1456,6 +1569,11 @@ St21GetSdp(st_session_t *sn, char *sdpBuf, uint32_t sdpBufSize)
 int
 StGetExtIndex(st_session_t *sn, uint8_t *addr)
 {
+	if (!sn)
+	{
+		return ST_INVALID_PARAM;
+	}
+
 	for (int i = 0; i < sn->extMem.numExtBuf; ++i)
 		if (addr >= sn->extMem.addr[i] && addr <= sn->extMem.endAddr[i])
 			return i;
@@ -1492,6 +1610,10 @@ extBufFreeCb(void *extMem, void *arg)
 uint8_t *
 StAllocFrame(st_session_t *sn, uint32_t frameSize)
 {
+	if (StValidateSession(sn) != ST_OK)
+	{
+		return NULL;
+	}
 	uint8_t *extMem;
 	struct rte_mbuf_ext_shared_info *shInfo;
 	rte_iova_t bufIova;
@@ -1529,6 +1651,11 @@ StAllocFrame(st_session_t *sn, uint32_t frameSize)
 st_status_t
 StFreeFrame(st_session_t *sn, uint8_t *frame)
 {
+	if ((!sn) || (!frame))
+	{
+		return ST_INVALID_PARAM;
+	}
+
 	int idx = StGetExtIndex(sn, frame);
 
 	if (idx == -1)

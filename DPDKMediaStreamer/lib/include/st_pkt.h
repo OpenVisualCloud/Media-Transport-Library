@@ -313,6 +313,8 @@ struct st_rfc4175_rgb_8_pg1
 ///////////////////////////////////////////////////////////////////////
 #define NIC_RATE_SPEED_COUNT 4
 
+typedef uint32_t (*st_nic_enq_threads_fn)(st_pacing_type_t pacing, uint32_t snCount);
+
 typedef struct st_nic_rate_params
 {
 	uint8_t nicSpeed;
@@ -328,6 +330,8 @@ typedef struct st_nic_rate_params
 	uint8_t maxAudioRcvThrds;
 	uint8_t maxAncRcvThrds;
 	uint8_t maxTxBulkNum; /* The number of objects for each dequeue, 1, 2 or 4 */
+	/* function to get the number of enqueue threads for required sn count and pacing type */
+	st_nic_enq_threads_fn fnGetEnqThrds;
 } st_nic_rate_params_t;
 
 typedef struct
@@ -377,7 +381,7 @@ typedef struct
 #define ST_MAX_SESSIONS_50FPS_40GBPS 16
 #define ST_MAX_SESSIONS_59FPS_40GBPS 14
 #define ST_MAX_TX_RINGS_40GBPS 1
-#define ST_MAX_ENQ_THREADS_40GBPS 4
+#define ST_MAX_ENQ_THREADS_40GBPS 2
 #define ST_MAX_RCV_THREADS_40GBPS 4
 #define ST_MAX_AUDIO_RCV_THREADS_40GBPS 1
 #define ST_MAX_ANC_RCV_THREADS_40GBPS 1
@@ -390,7 +394,7 @@ typedef struct
 #define ST_MAX_SESSIONS_50FPS_100GBPS 40
 #define ST_MAX_SESSIONS_59FPS_100GBPS 32
 #define ST_MAX_TX_RINGS_100GBPS 2
-#define ST_MAX_ENQ_THREADS_100GBPS 8
+#define ST_MAX_ENQ_THREADS_100GBPS 4
 #define ST_MAX_RCV_THREADS_100GBPS 8
 #define ST_MAX_AUDIO_RCV_THREADS_100GBPS 2
 #define ST_MAX_ANC_RCV_THREADS_100GBPS 2
@@ -418,5 +422,8 @@ typedef struct
 #define ST_FLOW_CLASS_IN_HW
 
 #define ST_CLOCK_PRECISION_TIME 40000ul
+
+#define ST_VRX_FULL_NARROW	(9) /* Pass criteria for narrow */
+#define ST_VRX_FULL_WIDE	(863) /* Pass criteria for wide */
 
 #endif /* ST_PKT_H_ */

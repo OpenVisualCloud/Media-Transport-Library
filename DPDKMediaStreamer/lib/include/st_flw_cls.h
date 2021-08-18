@@ -48,11 +48,7 @@ struct st_udp_flow_conf
 	uint32_t dstMask;
 	uint16_t dstPort;
 	uint16_t dstPortMask;
-	struct rte_ether_addr dstMac;
-	struct rte_ether_addr srcMac;
 	uint16_t etherType;
-	struct rte_ether_addr dstMacMask;
-	struct rte_ether_addr srcMacMask;
 	uint16_t etherTypeMask;
 };
 

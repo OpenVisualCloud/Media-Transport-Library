@@ -22,16 +22,13 @@
 
 #include "rx_view.h"
 
-#include <rte_atomic.h>
-#include <rte_cycles.h>
-#include <rte_hexdump.h>
-
 #include <byteswap.h>
 #include <fcntl.h>
 #include <sys/mman.h>
 #include <sys/queue.h>
 #include <sys/stat.h>
 #include <sys/types.h>
+#include <stdatomic.h>
 
 struct video_stream_info
 {
@@ -79,8 +76,9 @@ struct anc_ref
 
 static pthread_t EventLoopThreadId;
 static void *EventLoopThread(void *arg);
-static rte_atomic32_t howView;
-static rte_atomic32_t isStop;
+
+static volatile atomic_uint_fast32_t howView;
+static volatile atomic_uint_fast32_t isStop;
 
 static int default_width = 320;
 static int default_height = 240;
@@ -144,10 +142,8 @@ CreateGuiWindow(void)
 	}
 	SDL_SetTextureBlendMode(guiWindow.texture, SDL_BLENDMODE_NONE);
 	LIST_INIT(&headOfListVideoSteams);
-	rte_atomic32_init(&howView);
-	rte_atomic32_set(&howView, 0);
-	rte_atomic32_init(&isStop);
-	rte_atomic32_set(&isStop, 0);
+	atomic_init(&howView, 0);
+	atomic_init(&isStop, 0);
 	//Add help stream?
 	res = pthread_create(&EventLoopThreadId, NULL, EventLoopThread, (void *)NULL);
 	if (res != 0)
@@ -264,11 +260,11 @@ static void *
 EventLoopThread(void *arg)
 {
 	SDL_Event event;
-	while (rte_atomic32_read(&isStop) == 0)
+	while (atomic_load(&isStop) == 0)
 	{
 		do
 		{
-			if (rte_atomic32_read(&isStop) == 1)
+			if (atomic_load(&isStop) == 1)
 				break;
 			SDL_PumpEvents();
 		} while (!SDL_PeepEvents(&event, 1, SDL_GETEVENT, SDL_FIRSTEVENT, SDL_LASTEVENT));
@@ -502,14 +498,14 @@ AudioRefOpenFile(audio_ref_t *ref, const char *fileName)
 		}
 		else
 		{
-			RTE_LOG(ERR, USER1, "mmap fail '%s'\n", fileName);
+			printf("ERR USER1: mmap fail '%s'\n", fileName);
 			return ST_GENERAL_ERR;
 		}
 	}
 	else
 	{
 		ref = NULL;
-		RTE_LOG(INFO, USER1, "There are no audio file to compare!\n");
+		printf("INFO USER1: There are no audio file to compare!\n");
 		return ST_GENERAL_ERR;
 	}
 
@@ -536,14 +532,14 @@ AncRefOpenFile(anc_ref_t *ref, const char *fileName)
 		}
 		else
 		{
-			RTE_LOG(ERR, USER1, "mmap fail '%s'\n", fileName);
+			printf("ERR USER1: mmap fail '%s'\n", fileName);
 			return ST_GENERAL_ERR;
 		}
 	}
 	else
 	{
 		ref = NULL;
-		RTE_LOG(INFO, USER1, "There are no anciliary file to compare\n");
+		printf("INFO USER1: There are no anciliary file to compare\n");
 		return ST_GENERAL_ERR;
 	}
 
@@ -579,7 +575,7 @@ PlayAudioFrame(audio_ref_t *ref, uint8_t const *frame, uint32_t frameSize)
 		{
 			if (!rewind)
 			{
-				RTE_LOG(INFO, USER2, "Bad audio...rewinding...\n");
+				printf("INFO USER2: Bad audio...rewinding...\n");
 				rewind = true;
 			}
 			count++;
@@ -589,7 +585,7 @@ PlayAudioFrame(audio_ref_t *ref, uint8_t const *frame, uint32_t frameSize)
 	}
 	if (rewind)
 	{
-		RTE_LOG(INFO, USER2, "Audio rewind %d\n", count);
+		printf("INFO USER2: Audio rewind %d\n", count);
 	}
 
 	return ST_OK;
@@ -623,7 +619,7 @@ PlayAncFrame(anc_ref_t *ref, uint8_t const *frame, uint32_t frameSize)
 		{
 			if (!rewind)
 			{
-				RTE_LOG(INFO, USER2, "Bad anc...rewinding");
+				printf("INFO USER2: Bad anc...rewinding");
 				rewind = true;
 			}
 			count++;
@@ -633,7 +629,7 @@ PlayAncFrame(anc_ref_t *ref, uint8_t const *frame, uint32_t frameSize)
 	}
 	if (rewind)
 	{
-		RTE_LOG(INFO, USER2, "ANC rewind %d\n", count);
+		printf("INFO USER2: ANC rewind %d\n", count);
 	}
 
 	return ST_OK;
@@ -644,7 +640,7 @@ DestroyGui(void)
 {
 	if (!DoesGuiExist())
 		return;
-	rte_atomic32_set(&isStop, 1);
+	atomic_store(&isStop, 1);
 	pthread_join(EventLoopThreadId, NULL);
 	destroySDL();
 }

@@ -54,7 +54,7 @@ st21_format_t dln422be10Hd1080p59Fmt = {
 	1080,
 	1920,
 	1125,
-	22,								 /* 22 lines of tr default offset */
+	43,
 	sizeof(st_rfc4175_422_10_pg2_t), /* in 5 bytes 2 pixels */
 	2,
 	90000, /* freq in Hz*/
@@ -220,7 +220,7 @@ st21_format_t sln422be10Hd1080p59Fmt = {
 	1080,
 	1920,
 	1125,
-	22,								 /* 22 lines of tr default offset */
+	43,
 	sizeof(st_rfc4175_422_10_pg2_t), /* in 5 bytes 2 pixels */
 	2,
 	90000, /* freq in Hz*/
@@ -280,7 +280,7 @@ st21_format_t all422be10Hd1080p59Fmt = {
 	1080,
 	1920,
 	1125,
-	22,								 /* 22 lines of tr default offset */
+	43,
 	sizeof(st_rfc4175_422_10_pg2_t), /* in 5 bytes 2 pixels */
 	2,
 	90000, /* freq in Hz*/

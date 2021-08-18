@@ -517,7 +517,10 @@ StIgmpInit(uint16_t portId, struct rte_mempool *mempool, uint32_t *srcIpAddr,
 	{
 		return ST_INVALID_PARAM;
 	}
-
+    if (igmpParams[portId].state == IGMP_INITIALIZED)
+	{
+		return ST_OK;
+	}
 	igmpParams[portId].igmp_version = IGMP_V3;
 	igmpParams[portId].portId = portId;
 	igmpParams[portId].queryMessageType
@@ -528,7 +531,8 @@ StIgmpInit(uint16_t portId, struct rte_mempool *mempool, uint32_t *srcIpAddr,
 	igmpParams[portId].maxNumberOfSources = MIN_NUMBER_OF_ENTIRES;
 	igmpParams[portId].numberOfSources = 0;
 	igmpParams[portId].srcIpAddress = *srcIpAddr;
-	igmpParams[portId].groupIpAddress = *multicastIpAddr;
+	igmpParams[portId].groupIpAddress[ST_TX] = multicastIpAddr[ST_TX];
+	igmpParams[portId].groupIpAddress[ST_RX] = multicastIpAddr[ST_RX];
 
 	igmpParams[portId].mbuf = rte_pktmbuf_alloc(mempool);
 	igmpParams[portId].ringId = ringId;
@@ -558,7 +562,7 @@ StIgmpInit(uint16_t portId, struct rte_mempool *mempool, uint32_t *srcIpAddr,
 
 	igmpParams[portId].state = IGMP_INITIALIZED;
 
-	if (stMainParams.rxOnly != 1)
+	if (stMainParams.pTx == 1 || stMainParams.rTx == 1)
 	{
 		StIgmpQuerierStart();
 	}
@@ -599,14 +603,31 @@ IgmpQuerierLoop(void *arg)
 		{
 			if (igmpParams[portid].igmp_version == IGMP_V2)
 			{
-				status = StCreateMembershipReportV2(igmpParams[portid].srcIpAddress,
-													igmpParams[portid].groupIpAddress,
-													MEMBERSHIP_QUERY, portid);
+				for (int i = 0; i < MAX_RXTX_TYPES; i++)
+				{
+					if (igmpParams[portid].groupIpAddress[i] != 0)
+					{
+						status = StCreateMembershipReportV2(igmpParams[portid].srcIpAddress,
+															igmpParams[portid].groupIpAddress[i],
+															MEMBERSHIP_QUERY, portid);
+						if (status != ST_OK)
+						    break;
+					}
+				}
 			}
 			else if (igmpParams[portid].igmp_version == IGMP_V3)
 			{
-				status = StCreateMembershipQueryV3(igmpParams[portid].srcIpAddress,
-												   igmpParams[portid].groupIpAddress, portid);
+				for (int i = 0; i < MAX_RXTX_TYPES; i++)
+				{
+					if (igmpParams[portid].groupIpAddress[i] != 0)
+					{
+						status = StCreateMembershipQueryV3(igmpParams[portid].srcIpAddress,
+														   igmpParams[portid].groupIpAddress[i],
+														   portid);
+						if (status != ST_OK)
+							break;
+					}
+				}
 			}
 
 			if (status != ST_OK)
@@ -629,7 +650,11 @@ IgmpQuerierLoop(void *arg)
 				RTE_LOG(ERR, USER1, "StSendMembershipQuery FAILED, ErrNo: %d\n", status);
 			}
 		}
-		sleep(QUERY_INTERVAL);
+		for (int i = 0; i < QUERY_INTERVAL; i++) {
+			if (isQuerierStopped)
+				break;
+			sleep(1);
+		}
 	}
 	for (int portid = 0; portid < stMainParams.numPorts; portid++)
 	{
@@ -656,15 +681,25 @@ ParseIp(ipv4Hdr_t const *ipHdr, struct rte_mbuf *m, uint16_t portid)
 	case MEMBERSHIP_QUERY:
 		if (igmpParams[portid].igmp_version == IGMP_V2)
 		{
-			status = StCreateMembershipReportV2(igmpParams[portid].srcIpAddress,
-												igmpParams[portid].groupIpAddress,
-												MEMBERSHIP_REPORT_V2, portid);
+			for (int i = 0; i < MAX_RXTX_TYPES; i++)
+			{
+				status = StCreateMembershipReportV2(igmpParams[portid].srcIpAddress,
+													igmpParams[portid].groupIpAddress[i],
+													MEMBERSHIP_REPORT_V2, portid);
+				if (status != ST_OK)
+					break;
+			}
 		}
 		else if (igmpParams[portid].igmp_version == IGMP_V3)
 		{
-			status = StCreateMembershipReportV3(igmpParams[portid].groupIpAddress,
-												igmpParams[portid].srcIpAddress, MODE_IS_EXCLUDE, 1,
-												portid);
+			for (int i = 0; i < MAX_RXTX_TYPES; i++)
+			{
+				status = StCreateMembershipReportV3(igmpParams[portid].groupIpAddress[i],
+													igmpParams[portid].srcIpAddress,
+													MODE_IS_EXCLUDE, 1, portid);
+				if (status != ST_OK)
+					break;
+			}
 		}
 		else
 		{

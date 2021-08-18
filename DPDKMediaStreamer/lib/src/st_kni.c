@@ -440,6 +440,7 @@ StStartKni(unsigned slvCoreRx, unsigned slvCoreTx, st_kni_ms_conf_t **cs)
 {
 	int ret;
 	struct rte_kni_ops ops;
+	st_status_t status;
 	RTE_LOG(INFO, ST_KNI, "slvCoreRx: %d, slvCoreTx: %d\n", slvCoreRx, slvCoreTx);
 
 	/*
@@ -447,7 +448,7 @@ StStartKni(unsigned slvCoreRx, unsigned slvCoreTx, st_kni_ms_conf_t **cs)
 	 */
 	uint16_t baseCore = RTE_MAX(slvCoreTx, slvCoreRx);
 	uint16_t baseSiblingCore = siblingCore(baseCore);
-	if (baseCore != baseSiblingCore)
+	if ((baseCore != baseSiblingCore) && (rte_lcore_is_enabled(baseSiblingCore)))
 	{
 		slvCoreTx = baseCore;
 		slvCoreRx = baseSiblingCore;
@@ -457,7 +458,7 @@ StStartKni(unsigned slvCoreRx, unsigned slvCoreTx, st_kni_ms_conf_t **cs)
 	{
 		st_kni_ms_conf_t *c = cs[k];
 		struct rte_kni *kni;
-
+        uint32_t ipAddr[MAX_RXTX_TYPES] = { 0, 0 };
 		c->slvCoreRx = slvCoreRx;
 		c->slvCoreTx = slvCoreTx;
 		if (c->mbufPool == NULL)
@@ -483,10 +484,18 @@ StStartKni(unsigned slvCoreRx, unsigned slvCoreTx, st_kni_ms_conf_t **cs)
 		}
 		c->kni = kni;
 
-		StIgmpInit(c->ethPortId, c->mbufPool, (uint32_t *)stMainParams.sipAddr[k],
-				   (uint32_t *)stMainParams.ipAddr[k], stDevParams->maxTxRings + 1);
+		if ((stMainParams.pTx == 1 && k == 0) || (stMainParams.rTx == 1 && k == 1))
+			ipAddr[ST_TX] = *((uint32_t *)stMainParams.ipAddr[k][ST_TX]);
+		if ((stMainParams.pRx == 1 && k == 0) || (stMainParams.rRx == 1 && k == 1))
+			ipAddr[ST_RX] = *((uint32_t *)stMainParams.ipAddr[k][ST_RX]);
+		StIgmpInit(c->ethPortId, c->mbufPool, (uint32_t *)stMainParams.sipAddr[k], ipAddr,
+				   stDevParams->maxTxRings + 1);
 
-		StPtpInit(c->ethPortId, c->mbufPool, stDevParams->maxTxRings, c->txRing);
+		status = StPtpInit(c->ethPortId, c->mbufPool, stDevParams->maxTxRings, c->txRing);
+		if(status != ST_OK)
+		{
+			return status;
+		}
 
 		// Assign IP to KNI
 		int const sock = socket(AF_INET, SOCK_DGRAM, 0);
@@ -534,19 +543,24 @@ int32_t
 StStopKni(st_kni_ms_conf_t **cs)
 {
 	RTE_LOG(INFO, ST_KNI, "Release ST_KNI\n");
-	StIgmpQuerierStop();
-
 	for (int k = 0; k < nbKni; ++k)
+	{
 		rte_atomic32_inc(&cs[k]->isStop);
+	}
+
+	// wait kni thread done
+	if (nbKni > 0)
+	{
+		rte_eal_wait_lcore(cs[0]->slvCoreRx);
+		rte_eal_wait_lcore(cs[0]->slvCoreTx);
+	}
 
 	for (int k = 0; k < nbKni; ++k)
 	{
-		st_kni_ms_conf_t *c = cs[k];
-		rte_eal_wait_lcore(c->slvCoreRx);
-		rte_eal_wait_lcore(c->slvCoreTx);
-		rte_kni_release(c->kni);
-		rte_eth_dev_stop(c->ethPortId);
+		rte_kni_unregister_handlers(cs[k]->kni);
+		rte_kni_release(cs[k]->kni);
 	}
+	nbKni = 0;
 	return 0;
 }
 

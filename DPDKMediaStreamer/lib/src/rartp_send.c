@@ -28,7 +28,7 @@ void *RaRtpUpdateAudioPacket(st_session_impl_t *s, void *hdr, struct rte_mbuf *m
 
 static inline void *RaRtpBuildAudioPacket(st_session_impl_t *s, void *hdr);
 
-//#define TX_RINGS_DEBUG 1
+//#define TX_RINGS_DEBUG
 //#define ST_MULTICAST_TEST
 
 extern st_device_impl_t stSendDevice;
@@ -52,7 +52,7 @@ RaRtpGetFrameTmstamp(st_session_impl_t *s, uint32_t firstWaits, U64 *roundTime, 
 		*roundTime = StPtpGetTime();
 	}
 	ntime = *roundTime;
-	U64 epochs = ntime / s->fmt.a.epochTime;
+	int64_t epochs = (int64_t)(ntime / s->fmt.a.epochTime);
 
 	int areSameEpochs = 0, isOneLate = 0;
 
@@ -60,17 +60,17 @@ RaRtpGetFrameTmstamp(st_session_impl_t *s, uint32_t firstWaits, U64 *roundTime, 
 	{
 		s->actx.epochs = epochs;
 	}
-	else if ((int64_t)epochs - s->actx.epochs > 1)
+	else if (epochs - s->actx.epochs > 1)
 	{
 		s->actx.epochs = epochs;
 		__sync_fetch_and_add(&audioCount[0], 1);
 	}
-	else if ((int64_t)epochs - s->actx.epochs == 0)
+	else if (((epochs - s->actx.epochs) == 0) || ((epochs - s->actx.epochs) == -1))
 	{
 		areSameEpochs++;
 		__sync_fetch_and_add(&audioCount[1], 1);
 	}
-	else if ((int64_t)epochs - s->actx.epochs == 1)
+	else if (epochs - s->actx.epochs == 1)
 	{
 		isOneLate++;
 		s->actx.epochs++;
@@ -83,12 +83,12 @@ RaRtpGetFrameTmstamp(st_session_impl_t *s, uint32_t firstWaits, U64 *roundTime, 
 		__sync_fetch_and_add(&audioCount[5], 1);
 	}
 
-	U64 toEpoch;
+	int64_t toEpoch;
 	int64_t toElapse;
 	U64 st30Tmstamp48k;
 	U64 advance = s->nicTxTime;
 	ntime = StPtpGetTime();
-	ntimeCpu = StGetCpuTimeNano();
+	ntimeCpu = StGetTscTimeNano();
 	//U64 remaind = ntime % s->fmt.a.epochTime;
 
 	if (isOneLate || !areSameEpochs)
@@ -98,13 +98,7 @@ RaRtpGetFrameTmstamp(st_session_impl_t *s, uint32_t firstWaits, U64 *roundTime, 
 
 		// set 48k timestamp aligned to epoch
 		st30Tmstamp48k = s->actx.epochs * s->fmt.a.sampleGrpCount;
-#if (RTE_VER_YEAR < 21)
-		m->timestamp = ((U64)s->actx.epochs * s->fmt.a.epochTime) - advance;
-#else
-		/* No access to portid, hence we have rely on pktpriv_data */
-		pktpriv_data_t *ptr = rte_mbuf_to_priv(m);
-		ptr->timestamp = ((U64)s->actx.epochs * s->fmt.a.epochTime) - advance;
-#endif
+		StMbufSetTimestamp(m, ((U64)s->actx.epochs * s->fmt.a.epochTime) - advance);
 	}
 	else
 	{
@@ -116,16 +110,11 @@ RaRtpGetFrameTmstamp(st_session_impl_t *s, uint32_t firstWaits, U64 *roundTime, 
 		__sync_fetch_and_add(&audioCount[4], 1);
 
 		// set mbuf timestmap to expected nanoseconds on a wire
-#if (RTE_VER_YEAR < 21)
-		m->timestamp = ((U64)s->actx.epochs * s->fmt.a.epochTime) - advance;
-#else
-		/* No access to portid, hence we have rely on pktpriv_data */
-		pktpriv_data_t *ptr = rte_mbuf_to_priv(m);
-		ptr->timestamp = ((U64)s->actx.epochs * s->fmt.a.epochTime) - advance;
-#endif
+		StMbufSetTimestamp(m, ((U64)s->actx.epochs * s->fmt.a.epochTime) - advance);
 	}
-
-	if ((toElapse > (int64_t)(2 * ST_CLOCK_PRECISION_TIME)) && firstWaits)
+	if (toElapse < 0)
+		toElapse = 0;
+	if ((toElapse > 2 * ST_CLOCK_PRECISION_TIME) && firstWaits)
 	{
 		toElapse -= ST_CLOCK_PRECISION_TIME;
 
@@ -147,7 +136,7 @@ RaRtpGetFrameTmstamp(st_session_impl_t *s, uint32_t firstWaits, U64 *roundTime, 
 		for (; repeats < repeatCountMax; repeats++)
 		{
 			clock_nanosleep(CLOCK_REALTIME, 0, &req, &rem);
-			ntimeCpuLast = StGetCpuTimeNano();
+			ntimeCpuLast = StGetTscTimeNano();
 			elapsed = ntimeCpuLast - ntimeCpu;
 			if (elapsed + ST_CLOCK_PRECISION_TIME > toElapse)
 				break;
@@ -158,14 +147,7 @@ RaRtpGetFrameTmstamp(st_session_impl_t *s, uint32_t firstWaits, U64 *roundTime, 
 			uint64_t tmstamp64_ = (U64)ntimeLast / s->tmstampTime;
 			uint32_t tmstamp32_ = (uint32_t)tmstamp64_;
 			uint32_t tmstamp32 = (uint32_t)st30Tmstamp48k;
-#if (RTE_VER_YEAR < 21)
-
-			uint64_t mtmtstamp = m->timestamp;
-#else
-			/* No access to portid, hence we have rely on pktpriv_data */
-			pktpriv_data_t *ptr = rte_mbuf_to_priv(m);
-			uint64_t mtmtstamp = ptr->timestamp;
-#endif
+			uint64_t mtmtstamp = StMbufGetTimestamp(m);
 
 			RTE_LOG(INFO, USER2, "RaRtpGetFrameTmstamp: elapsed %llu diff %lld tmdelta %d\n",
 					elapsed, (long long int)toElapse - elapsed, tmstamp32 - s->lastTmstamp);
@@ -219,14 +201,15 @@ RaRtpInitPacketCtx(st_session_impl_t *s, uint32_t ring)
 
 	s->actx.payloadSize = s->fmt.a.pktSize - ST_PKT_AUDIO_HDR_LEN;
 
-	ip = (struct rte_ipv4_hdr *)StRtpBuildL2Packet(s, &s->hdrPrint[ST_PPORT].audioHdr.eth, 0);
-	udp = (struct rte_udp_hdr *)StRtpBuildIpHeader(s, ip, 0);
-	st_rfc3550_audio_hdr_t *rtp = (st_rfc3550_audio_hdr_t *)StRtpBuildUdpHeader(s, udp);
+	ip = (struct rte_ipv4_hdr *)StRtpBuildL2Packet(s, &s->hdrPrint[ST_PPORT].audioHdr.eth, ST_PPORT);
+	udp = (struct rte_udp_hdr *)StRtpBuildIpHeader(s, ip, ST_PPORT);
+	st_rfc3550_audio_hdr_t *rtp = (st_rfc3550_audio_hdr_t *)StRtpBuildUdpHeader(s, udp, ST_PPORT);
 	RaRtpBuildAudioPacket(s, rtp);
 	if (s->sn.caps & ST_SN_DUAL_PATH && stMainParams.numPorts > 1)
 	{
-		ip = (struct rte_ipv4_hdr *)StRtpBuildL2Packet(s, &s->hdrPrint[ST_RPORT].audioHdr.eth, 1);
-		udp = (struct rte_udp_hdr *)StRtpBuildIpHeader(s, ip, 1);
+		ip = (struct rte_ipv4_hdr *)StRtpBuildL2Packet(s, &s->hdrPrint[ST_RPORT].audioHdr.eth, ST_RPORT);
+		udp = (struct rte_udp_hdr *)StRtpBuildIpHeader(s, ip, ST_RPORT);
+		rtp = (st_rfc3550_audio_hdr_t *)StRtpBuildUdpHeader(s, udp, ST_RPORT);
 	}
 
 	RTE_LOG(DEBUG, USER2, "RaRtpInitPacketCtx payloadLength %u\n", s->actx.payloadSize);
@@ -382,9 +365,10 @@ RaRtpCreateTxSession(st_device_impl_t *dev, st_session_t *sin, st_format_t *fmt,
 
 	sn.timeslot = timeslot;
 
-	sn.frameSize = 1024 * fmt->a.pktSize;  // Need to fix this.
+	sn.frameSize = 1024 * fmt->a.pktSize; //need to revise it
 
-	st_session_impl_t *s = malloc(sizeof(st_session_impl_t));
+	st_session_impl_t *s = rte_malloc_socket("SessionAudio", sizeof(st_session_impl_t),
+											 RTE_CACHE_LINE_SIZE, rte_socket_id());
 	if (s)
 	{
 		memset(s, 0x0, sizeof(st_session_impl_t));
@@ -422,6 +406,15 @@ RaRtpCreateTxSession(st_device_impl_t *dev, st_session_t *sin, st_format_t *fmt,
 st_status_t
 RaRtpDestroyTxSession(st_session_impl_t *s)
 {
+	if (!s)
+		return ST_INVALID_PARAM;
+
+	if(s->acons.appHandle)
+		RTE_LOG(WARNING, USER1, "App handler is not cleared!\n");
+
+	rte_free(s);
+	s = NULL;
+
 	return ST_OK;
 }
 
@@ -445,7 +438,7 @@ RaRtpSessionCheckRunState(st_session_impl_t *s)
 	{
 		if (s->state == ST_SN_STATE_NO_NEXT_FRAME)
 		{
-			newbuf = s->aprod.St30GetNextAudioBuf(s->aprod.appHandle, s->prodBuf, s->aprod.bufSize);
+			newbuf = s->aprod.St30GetNextAudioBuf(s->aprod.appHandle, s->prodBuf, s->aprod.bufSize, NULL);
 			if (newbuf != NULL)
 			{
 				s->prodBuf = newbuf;
@@ -564,7 +557,7 @@ RaRtpUpdateAudioPacket(st_session_impl_t *s, void *hdr, struct rte_mbuf *m)
 		s->aprod.St30NotifyBufferDone(s->aprod.appHandle, s->prodBuf);
 		s->actx.bufOffset = 0;
 
-		s->prodBuf = s->aprod.St30GetNextAudioBuf(s->aprod.appHandle, s->prodBuf, s->aprod.bufSize);
+		s->prodBuf = s->aprod.St30GetNextAudioBuf(s->aprod.appHandle, s->prodBuf, s->aprod.bufSize, NULL);
 		if (s->prodBuf)
 		{
 			uint32_t nextOffset = s->aprod.St30GetNextSampleOffset(s->aprod.appHandle, s->prodBuf,
@@ -622,7 +615,7 @@ LcoreMainAudioRingEnqueue(void *args)
 	st_device_impl_t *dev = &stSendDevice;
 
 	// wait for scheduler threads to be ready
-	RVRTP_SEMAPHORE_WAIT(mp->ringStart, mp->maxSchThrds);
+	RVRTP_SEMAPHORE_WAIT(mp->ringStart, mp->maxSchThrds * mp->numPorts);
 
 	st_session_impl_t *s;
 
@@ -671,6 +664,7 @@ LcoreMainAudioRingEnqueue(void *args)
 		for (uint32_t i = 0; i < dev->dev.maxSt30Sessions; i++)
 		{
 			bool sendR = 0;
+			bool sendP = 0;
 			/* TODO: need to re-work base on this version*/
 			s = dev->sn30Table[i];
 
@@ -686,19 +680,16 @@ LcoreMainAudioRingEnqueue(void *args)
 				}
 				continue;
 			}
-			sendR = (redRing && (s->sn.caps & ST_SN_DUAL_PATH)) ? 1 : 0;
+			sendR = (redRing && (s->sn.caps & ST_SN_DUAL_PATH) && mp->rTx == 1) ? 1 : 0;
+			sendP = ((s->sn.caps & ST_SN_DUAL_PATH) && mp->pTx == 1) ? 1 : 0;
 
-#if (RTE_VER_YEAR < 21)
-			pktVect[i]->timestamp = 0;
-#else
-			pktpriv_data_t *ptr = rte_mbuf_to_priv(pktVect[i]);
-			ptr->timestamp = 0;
-#endif
+			StMbufSetTimestamp(pktVect[i], 0);
+
 			do
 			{
 				s->actx.tmstamp = RaRtpGetFrameTmstamp(s, firstSnInRound, &roundTime, m);
 				firstSnInRound = 0;
-			} while (RaRtpSessionCheckRunState(s) == 0);
+			} while ((RaRtpSessionCheckRunState(s) == 0) && (rte_atomic32_read(&isTxDevToDestroy) == 0));
 
 			struct rte_ether_hdr *l2 = rte_pktmbuf_mtod(m, struct rte_ether_hdr *);
 			struct rte_ipv4_hdr *ip = StRtpFillHeader(s, l2);
@@ -721,26 +712,28 @@ LcoreMainAudioRingEnqueue(void *args)
 				pktVectR[i]->l2_len = pktVect[i]->l2_len;
 				pktVectR[i]->l3_len = pktVect[i]->l3_len;
 				pktVectR[i]->ol_flags = pktVect[i]->ol_flags;
-				RaRtpCopyPacket(pktVectR[i], pktVect[i]);
 				uint8_t *l2R = rte_pktmbuf_mtod(pktVectR[i], uint8_t *);
 				StRtpFillHeaderR(s, l2R, rte_pktmbuf_mtod(pktVect[i], uint8_t *));
+				RaRtpCopyPacket(pktVectR[i], pktVect[i]);
 			}
 			else if (redRing)
 			{
 				rte_pktmbuf_free(pktVectR[i]);
 				pktVectR[i] = NULL;
 			}
+			if (!sendP)
+			{
+				rte_pktmbuf_free(pktVect[i]);
+				pktVect[i] = NULL;
+			}
 
 			enqStats[coreId].pktsBuild += 1;
 		}
 		for (uint32_t i = 0; i < dev->dev.maxSt30Sessions; i++)
 		{
-			if (!pktVect[i])
-				continue;
-
 			uint32_t noFails = 0;
 			uint32_t ring = dev->dev.maxSt21Sessions;  //audio ring is after video sessions
-			while (rte_ring_mp_enqueue(dev->txRing[ST_PPORT][ring], (void *)pktVect[i]) != 0)
+			while (pktVect[i] && rte_ring_mp_enqueue(dev->txRing[ST_PPORT][ring], (void *)pktVect[i]) != 0)
 			{
 				noFails++;
 #ifdef _TX_RINGS_DEBUG_
@@ -749,6 +742,8 @@ LcoreMainAudioRingEnqueue(void *args)
 							(U64)pktsQueued, noFails);
 #endif
 				__sync_synchronize();
+				if (rte_atomic32_read(&isTxDevToDestroy) != 0)
+					break;
 			}
 			while (redRing && pktVectR[i]
 				   && rte_ring_mp_enqueue(dev->txRing[ST_RPORT][ring], (void *)pktVectR[i]) != 0)
@@ -760,6 +755,8 @@ LcoreMainAudioRingEnqueue(void *args)
 							(U64)pktsQueued, noFails);
 #endif
 				__sync_synchronize();
+				if (rte_atomic32_read(&isTxDevToDestroy) != 0)
+					break;
 			}
 			enqStats[coreId].pktsQueued += 1;
 		}

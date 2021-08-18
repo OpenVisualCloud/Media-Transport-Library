@@ -11,17 +11,21 @@
 # express or implied warranties, other than those that are expressly stated
 # in the License.
 
+cc = meson.get_compiler('c')
+
 #allow experimental api
 add_global_arguments('-DALLOW_EXPERIMENTAL_API', language : 'c')
 
 #add DPDK dependences
 dpdk = dependency('libdpdk')
+sdl2_dep = dependency('sdl2')
+thread_dep = dependency('threads')
 
+m_dep=[]
+numa_dep = []
 
-cc = meson.get_compiler('c')
 m_dep = cc.find_library('m', required : true)
 numa_dep = cc.find_library('numa', required : true)
-thread_dep = dependency('threads')
 
 #add include directory
 include_dir += include_directories('include')
@@ -37,10 +41,18 @@ lib_c_args = []
 #enable warning as error
 lib_c_args += [ '-Werror' ]
 
-#simd build option
-lib_c_args += ['-mavx2']
+#simd build option, enable sse4.2 default
+lib_c_args += ['-msse4.2']
+
 compiler = meson.get_compiler('c')
 if compiler.has_header('rte_build_config.h')
+  add_avx2 = run_command('grep', 'RTE_CPUFLAG_AVX2', '/usr/local/include/rte_build_config.h')
+  if add_avx2.returncode() == 0
+    if add_avx2.stdout().contains('RTE_CPUFLAG_AVX2')
+      lib_c_args += ['-mavx2']
+    endif
+  endif
+
   add_avx512f = run_command('grep', 'RTE_CPUFLAG_AVX512F', '/usr/local/include/rte_build_config.h')
   if add_avx512f.returncode() == 0
     if add_avx512f.stdout().contains('RTE_CPUFLAG_AVX512F')
@@ -50,4 +62,4 @@ if compiler.has_header('rte_build_config.h')
 endif
 
 #build static library
-self_lib = static_library('MediaStreamer', sources, include_directories : include_dir, c_args : lib_c_args, dependencies: [m_dep, numa_dep, thread_dep], install: true)
+self_lib += static_library(meson.project_name(), sources, include_directories : include_dir, c_args : lib_c_args, dependencies: [dpdk, m_dep, numa_dep, thread_dep], install: true)

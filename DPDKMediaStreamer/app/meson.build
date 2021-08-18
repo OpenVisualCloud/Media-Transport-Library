@@ -19,5 +19,5 @@ common_app_src = []
 include_dir = []
 
 subdir('common')
-
 subdir('rxtx_app')
+subdir('test')

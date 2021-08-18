@@ -18,6 +18,8 @@
 #include "dpdk_common.h"
 #include "st_api.h"
 #include "st_arp.h"
+#include "st_ptp.h"
+#include "st_igmp.h"
 #include "st_pkt.h"
 #include "st_stats.h"
 
@@ -58,56 +60,69 @@
 #define RTE_LOGTYPE_ST_DEV (RTE_LOGTYPE_USER1)
 #define ST_DEV_ERROR "[ERROR] "
 
+/* default thread for DPDK */
+static short int lcCount = 1 /* main thread */ + ST_KNI_THEARD;
+
 userargs_t func_args[RTE_MAX_LCORE];
 /* array to hold dynamic offset for timestamp support NIC */
 int hwts_dynfield_offset[RTE_MAX_ETHPORTS];
 static lcore_transmitter_args_t transmitter_thread_args[RTE_MAX_LCORE];
+
+/*
+ * Caculate the required enqueue threads based on session count and pacing way,
+ * it may get fine tune based on HW(DDR DIMM and NIC) setup
+ */
+static uint32_t stDevGetEnqThreads100G(st_pacing_type_t pacing, uint32_t snCount)
+{
+	uint32_t threads = 1;
+
+	if (snCount >= 30)
+		threads = 3;
+	else if (snCount >= 16)
+		threads = 2;
+
+	return threads;
+}
+
+static uint32_t stDevGetEnqThreadsDefault(st_pacing_type_t pacing, uint32_t snCount)
+{
+	return 1;
+}
 
 const static st_nic_rate_params_t stNicParamsTable[NIC_RATE_SPEED_COUNT]
 	= { { ST_NIC_RATE_SPEED_10GBPS, ST_MAX_SESSIONS_25FPS_10GBPS, ST_MAX_SESSIONS_29FPS_10GBPS,
 		  ST_MAX_SESSIONS_50FPS_10GBPS, ST_MAX_SESSIONS_59FPS_10GBPS, ST_MAX_TX_RINGS_10GBPS,
 		  ST_MAX_RX_RINGS_10GBPS, ST_MAX_SCH_THREADS_10GBPS, ST_MAX_ENQ_THREADS_10GBPS,
 		  ST_MAX_RCV_THREADS_10GBPS, ST_MAX_AUDIO_RCV_THREADS_10GBPS, ST_MAX_ANC_RCV_THREADS_10GBPS,
-		  ST_MAX_TX_BULK_NUM_10GBPS },
+		  ST_MAX_TX_BULK_NUM_10GBPS, stDevGetEnqThreadsDefault},
 		{ ST_NIC_RATE_SPEED_25GBPS, ST_MAX_SESSIONS_25FPS_25GBPS, ST_MAX_SESSIONS_29FPS_25GBPS,
 		  ST_MAX_SESSIONS_50FPS_25GBPS, ST_MAX_SESSIONS_59FPS_25GBPS, ST_MAX_TX_RINGS_25GBPS,
 		  ST_MAX_RX_RINGS_25GBPS, ST_MAX_SCH_THREADS_25GBPS, ST_MAX_ENQ_THREADS_25GBPS,
 		  ST_MAX_RCV_THREADS_25GBPS, ST_MAX_AUDIO_RCV_THREADS_25GBPS, ST_MAX_ANC_RCV_THREADS_25GBPS,
-		  ST_MAX_TX_BULK_NUM_25GBPS },
+		  ST_MAX_TX_BULK_NUM_25GBPS, stDevGetEnqThreadsDefault},
 		{ ST_NIC_RATE_SPEED_40GBPS, ST_MAX_SESSIONS_25FPS_40GBPS, ST_MAX_SESSIONS_29FPS_40GBPS,
 		  ST_MAX_SESSIONS_50FPS_40GBPS, ST_MAX_SESSIONS_59FPS_40GBPS, ST_MAX_TX_RINGS_40GBPS,
 		  ST_MAX_RX_RINGS_40GBPS, ST_MAX_SCH_THREADS_40GBPS, ST_MAX_ENQ_THREADS_40GBPS,
 		  ST_MAX_RCV_THREADS_40GBPS, ST_MAX_AUDIO_RCV_THREADS_40GBPS, ST_MAX_ANC_RCV_THREADS_40GBPS,
-		  ST_MAX_TX_BULK_NUM_40GBPS },
+		  ST_MAX_TX_BULK_NUM_40GBPS, stDevGetEnqThreadsDefault},
 		{ ST_NIC_RATE_SPEED_100GBPS, ST_MAX_SESSIONS_25FPS_100GBPS, ST_MAX_SESSIONS_29FPS_100GBPS,
 		  ST_MAX_SESSIONS_50FPS_100GBPS, ST_MAX_SESSIONS_59FPS_100GBPS, ST_MAX_TX_RINGS_100GBPS,
 		  ST_MAX_RX_RINGS_100GBPS, ST_MAX_SCH_THREADS_100GBPS, ST_MAX_ENQ_THREADS_100GBPS,
 		  ST_MAX_RCV_THREADS_100GBPS, ST_MAX_AUDIO_RCV_THREADS_100GBPS,
-		  ST_MAX_ANC_RCV_THREADS_100GBPS, ST_MAX_TX_BULK_NUM_100GBPS } };
+		  ST_MAX_ANC_RCV_THREADS_100GBPS, ST_MAX_TX_BULK_NUM_100GBPS, stDevGetEnqThreads100G} };
 
 static unsigned short getNicNuma(char *nicAddr);
 static int getPowerCore(unsigned short core, char *result, uint8_t resultLen);
 static int isNumaCore(unsigned short core, uint8_t numa);
 static unsigned int freeHugeNuma(unsigned short numa);
+static bool isNicLinkSpeedMax(char *nicAddr);
+static uint8_t isNicLinkWidthSame(char *nicAddr);
+
 int getCore(rte_cpuset_t *libcore, uint16_t flags);
 
 const st_nic_rate_params_t *
 StDevFindDevConf(uint8_t nicSpeedRate, const st_nic_rate_params_t *nicParamsTable)
 {
-	if (stMainParams.numPorts == MAX_RXTX_PORTS)
-	{
-		switch (nicSpeedRate)
-		{
-		case ST_NIC_RATE_SPEED_100GBPS:
-			nicSpeedRate = ST_NIC_RATE_SPEED_40GBPS;
-			break;
-		case ST_NIC_RATE_SPEED_40GBPS:
-			nicSpeedRate = ST_NIC_RATE_SPEED_25GBPS;
-			break;
-		default:
-			break;
-		}
-	}
 	for (int i = 0; i < NIC_RATE_SPEED_COUNT; i++)
 	{
 		if (nicParamsTable[i].nicSpeed == nicSpeedRate)
@@ -116,6 +131,29 @@ StDevFindDevConf(uint8_t nicSpeedRate, const st_nic_rate_params_t *nicParamsTabl
 		}
 	}
 	return NULL;
+}
+
+static st_status_t
+StDevEnPhiscPort(int numPorts)
+{
+	for (uint16_t portid = 0; portid < (uint16_t)numPorts; portid++)
+	{
+		struct rte_flow_error error;
+		/* iterate all the ports and enable flow for physical ports */
+		char busName[RTE_ETH_NAME_MAX_LEN] = { '\0' };
+		if (0 == rte_eth_dev_get_name_by_port(portid, busName))
+		{
+			if (strncmp("net_", busName, 4))
+			{
+				if (0 != rte_flow_flush(portid, &error))
+				{
+					RTE_LOG(ERR, USER1, "failed to flush rte_flow, %d:%s\n", portid, error.message);
+					return ST_DEV_FAIL_FLASH_RTE_FLOW;
+				}
+			}
+		}
+	}
+	return ST_OK;
 }
 
 /**
@@ -295,7 +333,7 @@ StDevGetDpdkCardDrvName(const char *portName)
 
 // TODO: Have to read register from MMIO
 static const char *krnDrvNames[] = {
-	"ixgbe", "ice", "i40e", "mlx4_core", "mlx5_core",
+	 "ice", "i40e",
 };
 
 typedef struct st_port_info
@@ -318,6 +356,7 @@ typedef enum
 
 typedef struct st_used_dev_info
 {
+	uint8_t isDevTypeInit;
 	unsigned int isDevTypesPrep;
 	st_port_info_t port[MAX_RXTX_PORTS];
 } st_used_dev_info_t;
@@ -527,12 +566,7 @@ static char socketMemPar[] = "--socket-mem";
 static char filePrefix[] = "--file-prefix";
 static char inMemory[] = "--in-memory";
 static char matchAllocations[] = "--match-allocations";
-static char portPar[] =
-#if (RTE_VER_YEAR < 21)
-	"-w";
-#else
-	"-a";
-#endif
+static char portPar[] = "-a";
 static char procListPar[] = "-l";
 
 static st_status_t
@@ -540,55 +574,85 @@ StDevInitParams(st_eal_args_t *a, st_used_dev_info_t *p)
 {
 	short int loMin, loMax, hiMin, hiMax;
 	uint8_t bus;
+	bool isPrimaryRedundant_SamePcie = false;
+	bool isPrimaryRedundant_SamePcieGen = false;
+	bool isPrimaryRedundant_SameLnkCapacity = false;
 	char dpdkName[35] = ST_PREFIX_APPNAME;
-
 	rte_cpuset_t libraryCores;
+
 	/* identify the NUMA for Primary Port */
-	int numaPrimary = -1, numaRedudant = -1;
+	int numaPrimary = -1, numaRedundant = -1;
 
 	numaPrimary = getNicNuma(p->port[ST_PPORT].normName);
+	/* for single NUMA, numa node returened is -1 */
+	if (numaPrimary == -1)
+	{
+		RTE_LOG(ERR, USER1, "Primary Port (%s) NUMA not found\n", p->port[ST_PPORT].normName);
+		return ST_DEV_GENERAL_ERR;
+	}
+	RTE_LOG(INFO, USER1, "Primary port (%s) is on NUMA (%d)\n", p->port[ST_PPORT].normName, numaPrimary);
+
 	/* identify the NUMA for Redudant Port */
 	if ((p->port[ST_RPORT].normName) && (stMainParams.numPorts == 2))
-		numaRedudant = getNicNuma(p->port[ST_RPORT].normName);
-
-	if (numaPrimary != -1)
 	{
-		RTE_LOG(INFO, USER1, "primary port (%s) is on NUMA (%d)\n", p->port[ST_PPORT].normName,
-				numaPrimary);
-		if ((p->port[ST_RPORT].normName) && (stMainParams.numPorts == 2))
+		numaRedundant = getNicNuma(p->port[ST_RPORT].normName);
+		if (numaRedundant == -1)
 		{
-			RTE_LOG(INFO, USER1, "Redudant port (%s) is on NUMA (%d)\n", p->port[ST_RPORT].normName,
-					numaRedudant);
-			/* check if both are on same NUMA */
-			if (numaPrimary != numaRedudant)
-			{
-				RTE_LOG(ERR, USER1,
-						"Primary port (%s) and Redudant Port (%s) are not in same NUMA\n",
-						p->port[ST_PPORT].normName, p->port[ST_RPORT].normName);
-				return ST_DEV_GENERAL_ERR;
-			}
+			RTE_LOG(ERR, USER1, "Redundant Port (%s) NUMA not found\n", p->port[ST_RPORT].normName);
+			return ST_DEV_GENERAL_ERR;
 		}
+		RTE_LOG(INFO, USER1, "Redundant port (%s) is on NUMA (%d)\n", p->port[ST_RPORT].normName, numaPrimary);
+	}
 
-		/* for single NUMA, numa node returened is -1 */
-		if (numaPrimary == 65535)
-			numaPrimary = 0;
+	if (stMainParams.numPorts == 2)
+	{
+		/* check NIC is from same PCIe card */
+		size_t lenPport = strlen(p->port[ST_PPORT].normName);
+		size_t lenRport = strlen(p->port[ST_RPORT].normName);
+		if (lenPport == lenRport)
+			isPrimaryRedundant_SamePcie = (strncmp(p->port[ST_PPORT].normName, p->port[ST_RPORT].normName, lenRport - 1) == 0) ? true : false;
 
+		/* check NIC ports for PCIe gen */
+		isPrimaryRedundant_SamePcieGen = ((isNicLinkSpeedMax(p->port[ST_PPORT].normName)) && (isNicLinkSpeedMax(p->port[ST_RPORT].normName))) ? true : false;
+
+		/* check NIC ports for PCIe link */
+		isPrimaryRedundant_SameLnkCapacity = (isNicLinkWidthSame(p->port[ST_PPORT].normName) == isNicLinkWidthSame(p->port[ST_RPORT].normName)) ? true : false;
+
+		RTE_LOG(INFO, USER1, "is Primary & Redudant port same: PCIe card (%s), Pcie Gen (%s), Link Capacity (%s)\n",
+				(isPrimaryRedundant_SamePcie == true) ? "yes" : "no",
+				(isPrimaryRedundant_SamePcieGen == true) ? "yes" : "no",
+				(isPrimaryRedundant_SameLnkCapacity == true) ? "yes" : "no");
+	}
+
+	if ((p->port[ST_RPORT].normName) && (stMainParams.numPorts == 2))
+	{
+		/* check if both are on same NUMA */
+		if (numaPrimary != numaRedundant)
+		{
+			RTE_LOG(ERR, USER1, "Primary port (%s) and Redudant Port (%s) are not in same NUMA\n",
+				p->port[ST_PPORT].normName, p->port[ST_RPORT].normName);
+			return ST_DEV_GENERAL_ERR;
+		}
+	}
+
+	st_param_val_t val;
+	StGetParam(ST_LIB_SCOREID, &val);
+
+	if(!strlen(val.strPtr))
+	{
 		/* fetching performance cores on the same NUMA */
-		uint16_t numaFlag = (numaPrimary == 0)
-								? 16
-								: (numaPrimary == 1)
-									  ? 32
-									  : (numaPrimary == 2) ? 64 : (numaPrimary == 3) ? 128 : 0;
-		uint16_t coreFlag = 1;
+		uint16_t numaFlag = 	(numaPrimary == 0) ?  16 :
+					(numaPrimary == 1) ?  32 :
+					(numaPrimary == 2) ?  64 :
+					(numaPrimary == 3) ? 128 : 0;
+		uint16_t coreFlag = 1; /* performance */
 
 		/* prepare socketMemVal */
 		snprintf(socketMemVal, sizeof(socketMemVal), "%s",
-				 (numaPrimary == 0)
-					 ? "2048,0,0,0"
-					 : (numaPrimary == 1)
-						   ? "0,2048,0,0"
-						   : (numaPrimary == 2) ? "0,0,2048,0"
-												: (numaPrimary == 3) ? "0,0,0,2048" : "0,0,0,0");
+				(numaPrimary == 0) ? "2048,0,0,0" :
+				(numaPrimary == 1) ? "0,2048,0,0" :
+				(numaPrimary == 2) ? "0,0,2048,0" :
+				(numaPrimary == 3) ? "0,0,0,2048" : "0,0,0,0");
 
 		if (getCore(&libraryCores, numaFlag + coreFlag) != 0)
 		{
@@ -606,25 +670,25 @@ StDevInitParams(st_eal_args_t *a, st_used_dev_info_t *p)
 		/* prepare core mask */
 		int cpuCount = 0;
 
-		for (int cpuIndex = 0;
-			 ((cpuIndex < RTE_MAX_LCORE) && (cpuCount < CPU_COUNT(&libraryCores))); cpuIndex++)
+		for (int cpuIndex = 0; ((cpuIndex < RTE_MAX_LCORE) && (cpuCount < CPU_COUNT(&libraryCores))); cpuIndex++)
 		{
 			if (CPU_ISSET(cpuIndex, &libraryCores))
 			{
 				snprintf(a->coreList + strlen(a->coreList),
-						 sizeof(a->coreList) - strlen(a->coreList), "%d,", cpuIndex);
+						sizeof(a->coreList) - strlen(a->coreList), "%d,", cpuIndex);
 				cpuCount += 1;
 			}
 		}
 		a->coreList[strlen(a->coreList) - 1] = '\0';
-
-		RTE_LOG(INFO, USER1, "CPU core List (%s)\n", a->coreList);
+		RTE_LOG(INFO, USER1, "from library CPU core List (%s)\n", a->coreList);
 	}
 	else
 	{
-		RTE_LOG(ERR, USER1, "Primary Port (%s) NUMA not found\n", p->port[ST_PPORT].normName);
-		return ST_DEV_GENERAL_ERR;
+		strncpy(a->coreList, val.strPtr, sizeof(a->coreList) - 1);
+		RTE_LOG(INFO, USER1, "from user CPU core List (%s)\n", a->coreList);
 	}
+
+	
 
 	a->argc = 0;
 	a->argv[a->argc] = namePrg;
@@ -665,25 +729,80 @@ StDevInitParams(st_eal_args_t *a, st_used_dev_info_t *p)
 	if (stDevParams == NULL)
 		return ST_DEV_NOT_FIND_SPEED_CONF;
 
-	/* default thread for DPDK */
-	short int lcCount = 1 /* main thread */ + ST_KNI_THEARD;
+	if (!stMainParams.maxEnqThrds)
+	{
+		stMainParams.maxEnqThrds = stDevParams->maxEnqThrds;
+		if (stDevParams->fnGetEnqThrds)
+		{
+			stMainParams.maxEnqThrds =
+				stDevParams->fnGetEnqThrds(StGetPacing(), stMainParams.snCount);
+		}
+	}
 
-	if (!stMainParams.rxOnly)
+	/* check if total session is within boundary */
+	uint8_t totalSession = 0;
+	uint8_t maxSession = ST_MAX_SESSIONS_MAX;
+	totalSession += (stMainParams.pTx == 1 || stMainParams.rTx == 1) ? (stMainParams.sn40Count + stMainParams.sn30Count + stMainParams.snCount) : 0;
+	totalSession += (stMainParams.pRx == 1 || stMainParams.rRx == 1) ? (stMainParams.sn40Count + stMainParams.sn30Count + stMainParams.snCount) : 0;
+	if (maxSession < totalSession)
 	{
-		lcCount += stDevParams->maxEnqThrds + (stDevParams->maxSchThrds * stMainParams.numPorts);
-		if (stMainParams.sn30Count > 0)
-			lcCount += 1;
-		if (stMainParams.sn40Count > 0)
-			lcCount += 1;
+		RTE_LOG(ERR, USER1, "total session (%u) is greater than maximum allowed (%u) sessions\n", totalSession, maxSession);
+		return ST_DEV_GENERAL_ERR;
 	}
-	if (!stMainParams.txOnly)
+
+	/*
+	 * build minimum core count required
+	 *
+	 * thread details can be found in lib/include/st_pkt.h 
+	 * main core - 1
+	 * 
+	 * if TX:
+	 *  - video:
+	 * 	a. scheduler * numPorts (as we need seperate schdulers for Primary and redundant)
+	 *  	b. enqueue threads based on s_count
+	 *  - audio:
+	 *	a. for NIC 10Gbps, 25Gbps, 40Gbps - 1 thread
+	 * 	b. for NIC 50Gbps, 100Gbps - 2 threads
+	 *  - ancilary:
+	 *	a. for NIC 10Gbps, 25Gbps, 40Gbps - 1 thread
+	 * 	b. for NIC 50Gbps, 100Gbps - 2 threads
+	 *
+	 * note: based on mode (tx, rx and DUAL) and actual user selection NUMBER of threads will change
+	 */
+
+        /*
+	 * we do not have max session for both audio & auncilary on a given NIC speed
+	 * we are going to make an approxiamtion for required number of auido and anacilary threads.
+	 */
+	uint8_t maxThreadFactor = maxSession/2;
+
+	if (stMainParams.pTx == 1 || stMainParams.rTx == 1)
 	{
-		lcCount += stDevParams->maxRcvThrds;
-		if (stMainParams.sn30Count > 0)
-			lcCount += stDevParams->maxAudioRcvThrds;
-		if (stMainParams.sn40Count > 0)
-			lcCount += stDevParams->maxAncRcvThrds;
+               lcCount += (stDevParams->maxSchThrds * stMainParams.numPorts);
+               lcCount += (stDevParams->fnGetEnqThrds(StGetPacing(), stMainParams.snCount)) ? stMainParams.maxEnqThrds : 1;
+               if (stMainParams.sn30Count)
+               {
+                       lcCount += (stMainParams.sn30Count/maxThreadFactor) ? stDevParams->maxAudioRcvThrds : 1;
+               }
+               if (stMainParams.sn40Count)
+               {
+                       lcCount += (stMainParams.sn40Count/maxThreadFactor) ? stDevParams->maxAncRcvThrds : 1;
+               }
 	}
+
+	if (stMainParams.pRx == 1 || stMainParams.rRx == 1)
+	{
+               lcCount += (stMainParams.snCount / stDevParams->maxRcvThrds) ? stDevParams->maxRcvThrds: 1;
+               if (stMainParams.sn30Count)
+               {
+                       lcCount += (stMainParams.sn30Count/maxThreadFactor) ? stDevParams->maxAudioRcvThrds : 1;
+               }
+               if (stMainParams.sn40Count)
+               {
+                       lcCount += (stMainParams.sn40Count/maxThreadFactor) ? stDevParams->maxAncRcvThrds : 1;
+               }
+	}
+
 
 	if (lcCount > (loMax + 1 + hiMax - hiMin - 2 * ST_FREE_LCORES_ON_CPU))
 		return ST_DEV_GENERAL_ERR;
@@ -716,6 +835,33 @@ StDevGetLocalIp(const char *eth, int portidx)
 		return ST_BAD_SRC_IPADDR;
 	}
 	return ST_OK;
+}
+
+static void *
+StDevCalibrateTscHz(__rte_unused void *arg)
+{
+	int loop = 100;
+	uint64_t tscHzSum = 0, tscHz;
+
+	for (int i = 0; i < loop; i++)
+	{
+		uint64_t startMonoNs, startTscCycle, endMonoNs, endTscCycle;
+
+		startMonoNs = StGetMonotonicTimeNano();
+		startTscCycle = rte_get_tsc_cycles();
+
+		rte_delay_ms(10);
+
+		endMonoNs = StGetMonotonicTimeNano();
+		endTscCycle = rte_get_tsc_cycles();
+		tscHzSum += NSEC_PER_SEC * (endTscCycle - startTscCycle) / (endMonoNs - startMonoNs);
+	}
+
+	tscHz = tscHzSum / loop;
+	StSetTscTimeHz(tscHz);
+	RTE_LOG(INFO, ST_DEV, "%s, tscHz %ld\n", __func__, StGetTscTimeHz());
+
+	return NULL;
 }
 
 static st_status_t
@@ -752,17 +898,42 @@ StDevInitDevs(st_used_dev_info_t *p)
 	res = StDevTestNuma();
 	if (res < 0)
 		return res;
+
+	if (StGetPacing() == ST_PACING_DEFAULT)
+	{ /* default to pause */
+		StSetPacing(ST_PACING_PAUSE);
+	}
+
 	if (StDevInitParams(&args, p) < 0)
 		return ST_DEV_BAD_PORT_NAME;
 
 	args.argv[args.argc++] = "-v";
 	if (strlen(stMainParams.dpdkParams) > 2)
 	{
+		args.argv[args.argc++] = "--log-level";
 		args.argv[args.argc++] = stMainParams.dpdkParams;
 	}
 	args.argv[args.argc++] = "--";
 	if (rte_eal_init(args.argc, args.argv) < 0)
 		return ST_DEV_BAD_PORT_NAME;
+
+	/* check if we have sufficent core count */
+	if(rte_lcore_count() < lcCount)
+	{
+		RTE_LOG(ERR, USER1, "Please retry with more cores, required core count is (%u)\n", lcCount);
+		return ST_NOT_SUPPORTED;
+	}
+
+	/* rte tsc freq init in rte_eal_init */
+	if (!StGetTscTimeHz())
+	{
+		pthread_t tid;
+
+		/* Use default rte tsc hz, calibrate later */
+		StSetTscTimeHz(rte_get_tsc_hz());
+		rte_ctrl_thread_create(&tid, "tsc_calibrate", NULL, StDevCalibrateTscHz, NULL);
+	}
+	RTE_LOG(INFO, ST_DEV, "%s, tscHz %ld\n", __func__, StGetTscTimeHz());
 
 	return ST_OK;
 }
@@ -805,16 +976,24 @@ StDevExitDevs(st_used_dev_info_t *p)
 {
 	char *portName;
 	uint16_t portId;
-
-	for (int k = 0; k < stMainParams.numPorts; ++k)
+	if (rte_eth_dev_count_avail())
 	{
-		portName = p->port[k].normName;
-
-		if (rte_eth_dev_get_port_by_name(portName, &portId) != 0)
-			return ST_DEV_BAD_PORT_NAME;
-		rte_eth_dev_close(portId); /* Close the port */
-
-		StDevBindToKernel(portName); /* Bind back to kernel */
+		for (int k = 0; k < stMainParams.numPorts; ++k)
+		{
+			portName = p->port[k].normName;
+			if (rte_eth_dev_get_port_by_name(portName, &portId) == 0)
+			{
+				rte_eth_dev_stop(portId);
+				rte_eth_dev_close(portId); /* Close the port */
+			}
+			/* Bind back to kernel */
+			if (StDevBindToKernel(portName) != ST_OK)
+			{
+				RTE_LOG(ERR, USER1, "Failed to bind port %s back to kernel drv %s\n", portName,
+						krnDrvNames[k]);
+				return ST_DEV_BAD_PORT_NAME;
+			}
+		}
 	}
 
 	return ST_OK;
@@ -825,13 +1004,10 @@ StDevPrepMBuf(st_device_impl_t *d)
 {
 	struct rte_mempool *mbufPool;
 	/* Creates a new mempool in memory to hold the mbufs. */
-	mbufPool = rte_pktmbuf_pool_create_by_ops("MBUF_POOL", (1 << 18), MBUF_CACHE_SIZE,
-#if (RTE_VER_YEAR < 21)
-											  0,
-#else
-											  sizeof(pktpriv_data_t),
-#endif
-											  RTE_MBUF_DEFAULT_BUF_SIZE, rte_socket_id(), "stack");
+	if((mbufPool  = rte_mempool_lookup("MBUF_POOL")) == NULL)
+		mbufPool = rte_pktmbuf_pool_create_by_ops("MBUF_POOL", (1 << 18), MBUF_CACHE_SIZE,
+							sizeof(pktpriv_data_t),
+							RTE_MBUF_DEFAULT_BUF_SIZE, rte_socket_id(), "stack");
 
 	if (mbufPool == NULL)
 		return ST_DEV_CANNOT_PREPARE_MBUF;
@@ -874,13 +1050,7 @@ mbuf_parse(uint16_t port __rte_unused, uint16_t qidx __rte_unused, struct rte_mb
 			continue;
 		}
 
-#if (RTE_VER_YEAR < 21)
-		m->timestamp = ptpTime;
-#else
-		/* No access to portid, hence we have rely on pktpriv_data */
-		pktpriv_data_t *ptr = rte_mbuf_to_priv(m);
-		ptr->timestamp = ptpTime;
-#endif
+		StMbufSetTimestamp(m, ptpTime);
 
 		pkts[j] = m;
 		j += 1;
@@ -1054,14 +1224,12 @@ StDevInitRtePort(uint16_t port, st_device_impl_t *d)
 	}
 #endif	// ST_NIC_DRIVER_WA
 
-#if (RTE_VER_YEAR >= 21)
 	rte_mbuf_dyn_rx_timestamp_register(&hwts_dynfield_offset[port], NULL);
 	if (hwts_dynfield_offset[port] < 0)
 	{
 		RTE_LOG(ERR, USER1, " Failed to register timestamp field for port(%d:%s)\n", port,
 				devInfo.driver_name);
 	}
-#endif
 
 	/* Start the Ethernet port. */
 	ret = rte_eth_dev_start(port);
@@ -1098,8 +1266,8 @@ StDevInitRxTx(st_device_impl_t *d)
 	}
 
 	// st_device_impl_t *recvDev = NULL;
-	d->dev.ver.major = ST_VERSION_MAJOR_CURRENT;
-	d->dev.ver.major = ST_VERSION_MINOR_CURRENT;
+	d->dev.ver.major = ST_VERSION_MAJOR;
+	d->dev.ver.major = ST_VERSION_MINOR;
 	d->dev.maxSt21Sessions = ST_MAX_SESSIONS_MAX;
 	d->dev.maxSt30Sessions = ST_MAX_SESSIONS_MAX;
 	d->dev.maxSt40Sessions = ST_MAX_SESSIONS_MAX;
@@ -1163,7 +1331,11 @@ StDevRvRtpInitRecv(st_main_params_t *mp, st_device_impl_t *d)
 	if (d->dev.rateGbps == 0)
 		d->dev.rateGbps = stDevParams->nicSpeed;
 
-	if ((res = StDevCalculateBudgets(d)) != ST_OK)
+	int num_port = 1;
+	if ((mp->numPorts == MAX_RXTX_PORTS) && (stMainParams.pRx == 1) && (stMainParams.rRx == 1))
+		num_port = MAX_RXTX_PORTS;
+
+	if ((res = StDevCalculateBudgets(d, num_port)) != ST_OK)
 		return res;
 
 	if (mp->snCount > d->dev.maxSt21Sessions)
@@ -1207,7 +1379,8 @@ StDevRvRtpInitRecv(st_main_params_t *mp, st_device_impl_t *d)
 	memset(d->sn40Table, 0, d->dev.maxSt40Sessions * sizeof(st_session_impl_t *));
 
 	d->mbufPool = mp->mbufPool;
-	d->rxOnly = mp->rxOnly;
+	d->pRx = mp->pRx;
+	d->rRx = mp->rRx;
 
 	for (int p = 0; p < mp->numPorts; ++p)
 	{
@@ -1240,9 +1413,15 @@ StDevRvRtpInitSend(st_main_params_t *mp, st_device_impl_t *d)
 		d->dev.rateGbps = stDevParams->nicSpeed;
 
 	d->mbufPool = mp->mbufPool;
-	d->rxOnly = mp->rxOnly;
+	d->pTx = mp->pTx;
+	d->pRx = mp->pRx;
+	d->rTx = mp->rTx;
+	d->rRx = mp->rRx;
 
-	if ((res = StDevCalculateBudgets(d)) != ST_OK)
+	int num_port = 1;
+	if ((mp->numPorts == MAX_RXTX_PORTS) && (stMainParams.pTx == 1) && (stMainParams.rTx == 1))
+		num_port = MAX_RXTX_PORTS;
+	if ((res = StDevCalculateBudgets(d, num_port)) != ST_OK)
 		return res;
 
 	if (mp->snCount > d->dev.maxSt21Sessions)
@@ -1306,6 +1485,27 @@ StDevRvRtpInitSend(st_main_params_t *mp, st_device_impl_t *d)
 		memset(d->packetsTx[i], 0, (d->maxRings + 1) * sizeof(uint64_t));
 		memset(d->pausesTx[i], 0, (d->maxRings + 1) * sizeof(uint64_t));
 
+		d->pacingDeltaSum[i] = rte_malloc_socket("pacingDeltaSum", (d->maxRings + 1) * sizeof(uint64_t),
+										   RTE_CACHE_LINE_SIZE, rte_socket_id());
+		d->pacingDeltaCnt[i] = rte_malloc_socket("pacingDeltaCnt", (d->maxRings + 1) * sizeof(uint64_t),
+										   RTE_CACHE_LINE_SIZE, rte_socket_id());
+		d->pacingDeltaMax[i] = rte_malloc_socket("pacingDeltaMax", (d->maxRings + 1) * sizeof(uint64_t),
+										   RTE_CACHE_LINE_SIZE, rte_socket_id());
+		d->pacingUpDeltaMax[i] = rte_malloc_socket("pacingUpDeltaMax", (d->maxRings + 1) * sizeof(uint64_t),
+										   RTE_CACHE_LINE_SIZE, rte_socket_id());
+		d->pacingVrxCnt[i] = rte_malloc_socket("pacingVrxCnt", (d->maxRings + 1) * sizeof(uint64_t),
+										   RTE_CACHE_LINE_SIZE, rte_socket_id());
+		if (!d->pacingDeltaSum[i] || !d->pacingDeltaCnt[i] || !d->pacingDeltaMax[i] ||
+			!d->pacingUpDeltaMax[i] || !d->pacingVrxCnt[i])
+		{
+			rte_exit(ST_NO_MEMORY, "%s, cannot allocate pacingDelta\n", __func__);
+		}
+		memset(d->pacingDeltaSum[i], 0, (d->maxRings + 1) * sizeof(uint64_t));
+		memset(d->pacingDeltaCnt[i], 0, (d->maxRings + 1) * sizeof(uint64_t));
+		memset(d->pacingDeltaMax[i], 0, (d->maxRings + 1) * sizeof(uint64_t));
+		memset(d->pacingUpDeltaMax[i], 0, (d->maxRings + 1) * sizeof(uint64_t));
+		memset(d->pacingDeltaSum[i], 0, (d->maxRings + 1) * sizeof(uint64_t));
+
 		struct rte_ether_addr srcMac;
 		rte_eth_macaddr_get(mp->txPortId[i], &srcMac);
 
@@ -1329,7 +1529,9 @@ StDevRvRtpInitSend(st_main_params_t *mp, st_device_impl_t *d)
 			snprintf(ringName, 32, "SMPTE-RING-%u%u", i, j);
 
 			/* Create per session ring to the TPRS scheduler */
-			struct rte_ring *smpteRing = rte_ring_create(ringName, count, rte_socket_id(), flags);
+			struct rte_ring *smpteRing;//rte_ring_create(ringName, count, rte_socket_id(), flags);
+			if((smpteRing = rte_ring_lookup(ringName)) == NULL)
+				smpteRing = rte_ring_create(ringName, count, rte_socket_id(), flags);
 
 			d->txRing[i][j] = smpteRing;
 #ifdef TX_RINGS_DEBUG
@@ -1404,33 +1606,40 @@ static pthread_t devBkgTaskTid;
 static void *
 StDevBkgTasks(void *arg)
 {
-	uint64_t curStamp, stsStamp, arpStamp, kniStamp;
-	curStamp = StGetCpuTimeNano();
+	uint64_t curStamp, stsStamp, arpStamp1, arpStamp2, kniStamp;
+	curStamp = StGetTscTimeNano();
 	stsStamp = curStamp;
-	arpStamp = curStamp;
+	arpStamp1 = curStamp;
+	arpStamp2 = curStamp;
 	kniStamp = curStamp;
+	bool send_p_tx = false;
+	bool send_r_tx = false;
+	if ((stMainParams.pTx == 1) && !ST_IS_IPV4_MCAST(stMainParams.ipAddr[ST_PPORT][ST_TX][0]))
+		send_p_tx = true;
+	if ((stMainParams.rTx == 1) && !ST_IS_IPV4_MCAST(stMainParams.ipAddr[ST_RPORT][ST_TX][0]))
+		send_r_tx = true;
+
 	while (rte_atomic32_read(&isStopBkgTask) == 0)
 	{
 		rte_delay_us_sleep(ST_BKG_TICK);
-		curStamp = StGetCpuTimeNano();
+		curStamp = StGetTscTimeNano();
 		ST_TEST_PER_AND_DO(curStamp, stsStamp, ST_BKG_STS_PER, StStsTask(stMainParams.numPorts));
-		bool isMultiCast
-			= stMainParams.ipAddr[ST_PPORT][0] >= 0xe0 && stMainParams.ipAddr[ST_PPORT][0] <= 0xef;
-		if (!isMultiCast && !SearchArpHist(*(uint32_t *)stMainParams.ipAddr[ST_PPORT], NULL))
-			ST_TEST_PER_AND_DO(curStamp, arpStamp, ST_BKG_ARP_PER,
+		if (send_p_tx && !SearchArpHist(*(uint32_t *)stMainParams.ipAddr[ST_PPORT][ST_TX], NULL))
+			ST_TEST_PER_AND_DO(curStamp, arpStamp1, ST_BKG_ARP_PER,
 							   ArpRequest(stMainParams.txPortId[ST_PPORT],
-										  *(uint32_t *)stMainParams.ipAddr[ST_PPORT], *(uint32_t *)stMainParams.sipAddr[ST_PPORT]));
+										  *(uint32_t *)stMainParams.ipAddr[ST_PPORT][ST_TX],
+										  *(uint32_t *)stMainParams.sipAddr[ST_PPORT]));
 		if (stMainParams.numPorts == 2)
 		{
-			isMultiCast = stMainParams.ipAddr[ST_RPORT][0] >= 0xe0
-						  && stMainParams.ipAddr[ST_RPORT][0] <= 0xef;
-			if (!isMultiCast && !SearchArpHist(*(uint32_t *)stMainParams.ipAddr[ST_RPORT], NULL))
-				ST_TEST_PER_AND_DO(curStamp, arpStamp, ST_BKG_ARP_PER,
+			if (send_r_tx
+				&& !SearchArpHist(*(uint32_t *)stMainParams.ipAddr[ST_RPORT][ST_TX], NULL))
+				ST_TEST_PER_AND_DO(curStamp, arpStamp2, ST_BKG_ARP_PER,
 								   ArpRequest(stMainParams.txPortId[ST_RPORT],
-											  *(uint32_t *)stMainParams.ipAddr[ST_RPORT],*(uint32_t *)stMainParams.sipAddr[ST_RPORT]));
+											  *(uint32_t *)stMainParams.ipAddr[ST_RPORT][ST_TX],
+											  *(uint32_t *)stMainParams.sipAddr[ST_RPORT]));
 		}
 		ST_TEST_PER_AND_DO(curStamp, kniStamp, ST_BKG_KNI_PER, StKniBkgTask());
-	}
+		}
 	return NULL;
 }
 
@@ -1448,9 +1657,12 @@ StDevInitBkgTasks(void)
 static st_status_t
 StDevStopBkgTasks(void)
 {
-	storeArpHist();
-	rte_atomic32_set(&isStopBkgTask, 1);
-	pthread_join(devBkgTaskTid, NULL);
+	if (rte_atomic32_read(&isStopBkgTask) == 0)
+	{
+		storeArpHist();
+		rte_atomic32_set(&isStopBkgTask, 1);
+		pthread_join(devBkgTaskTid, NULL);
+	}
 	return ST_OK;
 }
 
@@ -1469,10 +1681,12 @@ StStartDevice(st_device_t *dev)
 
 	uint32_t enqThrdId = 0;
 	uint32_t schThrdId = 0;
+	int used_core_len = 0;
+	d->rte_thread_core[0] = -1;
 
 	if (d->dev.type == ST_DEV_TYPE_PRODUCER)
 	{
-		if (stMainParams.rxOnly == 0 && !isSchActive)
+		if ((stMainParams.pTx == 1 || stMainParams.rTx == 1) && !isSchActive)
 		{
 			do
 			{
@@ -1487,7 +1701,8 @@ StStartDevice(st_device_t *dev)
 					RTE_LOG(ERR, USER1, "LcoreMainTransmitterDual failed to launch\n");
 					return ST_REMOTE_LAUNCH_FAIL;
 				}
-			} while (++schThrdId < stDevParams->maxSchThrds * stMainParams.numPorts);
+				d->rte_thread_core[used_core_len++] = currlCore;
+			} while (++schThrdId < stMainParams.maxSchThrds * stMainParams.numPorts);
 
 			/* Start the video enqueue */
 			do
@@ -1500,6 +1715,7 @@ StStartDevice(st_device_t *dev)
 					RTE_LOG(ERR, USER1, "LcoreMainPktRingEnqueue failed to launch\n");
 					return ST_REMOTE_LAUNCH_FAIL;
 				}
+				d->rte_thread_core[used_core_len++] = currlCore;
 			} while (++enqThrdId < stMainParams.maxEnqThrds);
 
 			/* Start the audio enqueue */
@@ -1514,6 +1730,7 @@ StStartDevice(st_device_t *dev)
 					RTE_LOG(ERR, USER1, "Run RingEuqueue not possible. Lcore not ready\n");
 					return ST_REMOTE_LAUNCH_FAIL;
 				}
+				d->rte_thread_core[used_core_len++] = currlCore;
 			}
 
 			/* Start the ancillary enqueue */
@@ -1529,13 +1746,14 @@ StStartDevice(st_device_t *dev)
 							"Run Ancillary Data RingEuqueue not possible. Lcore not ready\n");
 					return ST_REMOTE_LAUNCH_FAIL;
 				}
+				d->rte_thread_core[used_core_len++] = currlCore;
 			}
 			isSchActive = true;
 		}
 	}
 	else
 	{
-		if (stMainParams.txOnly == 0)
+		if (stMainParams.pRx == 1 || stMainParams.rRx == 1)
 		{
 			uint16_t maxRcvThreads = stMainParams.maxRcvThrds;
 			uint16_t maxRcv30Threads
@@ -1612,9 +1830,11 @@ StStartDevice(st_device_t *dev)
 					RTE_LOG(ERR, USER1, "Run Receiver not possible. Lcore not ready\n");
 					return ST_REMOTE_LAUNCH_FAIL;
 				}
+				d->rte_thread_core[used_core_len++] = currlCore;
 			}
 		}
 	}
+	d->rte_thread_core[used_core_len] = -1;
 
 	return status;
 }
@@ -1634,6 +1854,8 @@ StCreateDevice(st_device_t *inDev, const char *port1Name, const char *port2Name,
 
 	printf("Ports: %s %s\n", port1Name, port2Name);
 	stMainParams.schedStart = 0;
+	stMainParams.interSchedStart[ST_PPORT] = 0;
+	stMainParams.interSchedStart[ST_RPORT] = 0;
 	stMainParams.ringStart = 0;
 	stMainParams.ringBarrier1 = 0;
 	stMainParams.ringBarrier2 = 0;
@@ -1647,7 +1869,7 @@ StCreateDevice(st_device_t *inDev, const char *port1Name, const char *port2Name,
 		|| (inDev->maxSt30Sessions > ST_MAX_SESSIONS_MAX)
 		|| (inDev->maxSt40Sessions > ST_MAX_SESSIONS_MAX))
 	{
-		return ST_DEV_MAX_ERR;
+		return ST_DEV_CANNOT_READ_CPUS;
 	}
 
 	res = StTestExacRate(inDev);
@@ -1682,7 +1904,11 @@ StCreateDevice(st_device_t *inDev, const char *port1Name, const char *port2Name,
 		}
 	}
 	else
+	{
+		locUsedPort.isDevTypeInit = usedPortInfo.isDevTypeInit;
 		usedPortInfo = locUsedPort;
+	}
+
 
 	if (inDev->type == ST_DEV_TYPE_PRODUCER)
 	{
@@ -1708,7 +1934,7 @@ StCreateDevice(st_device_t *inDev, const char *port1Name, const char *port2Name,
 	*(st_device_t *)d = *inDev;
 	d->numPorts = stMainParams.numPorts;
 
-	if (usedPortInfo.isDevTypesPrep == 0)
+	if (!usedPortInfo.isDevTypesPrep && !usedPortInfo.isDevTypeInit)
 	{
 		res = StDevInitDevs(&usedPortInfo);
 		if (res < 0)
@@ -1721,7 +1947,7 @@ StCreateDevice(st_device_t *inDev, const char *port1Name, const char *port2Name,
 		return res;
 	}
 
-	if (usedPortInfo.isDevTypesPrep == 0)
+	if (!usedPortInfo.isDevTypesPrep && !usedPortInfo.isDevTypeInit)
 	{
 		res = StDevPrepMBuf(d);
 		if (res < 0)
@@ -1765,7 +1991,14 @@ StCreateDevice(st_device_t *inDev, const char *port1Name, const char *port2Name,
 			return ST_DEV_CANNOT_PREP_CONSUMER;
 		}
 		usedPortInfo.isDevTypesPrep |= ST_DEV_TYPE_CONSUMER_USED;
+		res = StDevEnPhiscPort(stMainParams.numPorts);
+		if (res < 0)
+		{
+			RTE_LOG(ERR, ST_DEV, ST_DEV_ERROR "Cannot prepare consumer\n");
+			return ST_DEV_CANNOT_PREP_CONSUMER;
+		}
 	}
+	usedPortInfo.isDevTypeInit = 1;
 
 	d->dev.snCount = stMainParams.snCount;
 	d->dev.sn30Count = stMainParams.sn30Count;
@@ -1808,9 +2041,13 @@ StCreateDevice(st_device_t *inDev, const char *port1Name, const char *port2Name,
 										 "$RTE_SDK/$RTE_TARGET/kmod/rte_kni.ko carrier=on`\n");
 			}
 		}
-		StStartKni(slvCoreRx, slvCoreTx, kni);
 
-		printf("##### KNI TX runned on the %d lcore #####\n", slvCoreTx);
+		if (StStartKni(slvCoreRx, slvCoreTx, kni) != ST_OK)
+		{
+			rte_exit(ST_GENERAL_ERR, "Failed to initialize the KNI with DPDK cores!");
+		}
+
+		printf("\n##### KNI TX runned on the %d lcore #####\n", slvCoreTx);
 		printf("##### KNI RX runned on the %d lcore #####\n", slvCoreRx);
 		isKniActive = true;
 
@@ -1831,25 +2068,74 @@ StDestroyDevice(st_device_t *dev)
 	status = StValidateDevice(dev);
 	if (status != ST_OK)
 	{
+		if (0 == usedPortInfo.isDevTypesPrep)
+		{
+			StIgmpQuerierStop();
+			for (int port = 0; port < stMainParams.numPorts; port++)
+				StPtpDeInit(port);
+
+			StStopKni(kni);
+			StDevExitDevs(&usedPortInfo);
+		}
 		return status;
 	}
+	st_device_impl_t *d = (st_device_impl_t *)dev;
 
+	/* we need some delay to wait for pkt-enqueue and scheduler thread to complete its loop to check atomic stop */
+	rte_delay_us_block(5000);
+	rte_atomic32_set(&isStopMainThreadTasks, 1);
+	StDevStopBkgTasks();
+
+	rte_free(d->snTable);
+	rte_free(d->sn30Table);
+	rte_free(d->sn40Table);
+	rte_free(d->timeTable);
+	rte_free(d->txPktSizeL1);
+
+	d->snTable = NULL;
+	d->sn30Table = NULL;
+	d->sn40Table = NULL;
+	d->timeTable = NULL;
+	d->txPktSizeL1 = NULL;
+
+	for (int i = 0; i < MAX_RXTX_PORTS; ++i)
+	{
+		if(d->txRing[i])
+		{
+			rte_free(d->txRing[i]);
+			d->txRing[i] = NULL;
+		}
+		if(d->packetsTx[i])
+		{
+			rte_free(d->packetsTx[i]);
+			d->packetsTx[i] = NULL;
+
+		}
+		if(d->pausesTx[i])
+		{
+			rte_free(d->packetsTx[i]);
+			d->packetsTx[i] = NULL;
+		}
+	}
 	if (dev->type == ST_DEV_TYPE_PRODUCER)
 	{
-		rte_atomic32_set(&isTxDevToDestroy, 1);
 		usedPortInfo.isDevTypesPrep &= ~ST_DEV_TYPE_PRODUCER_USED;
 	}
 	else if (dev->type == ST_DEV_TYPE_CONSUMER)
 	{
-		rte_atomic32_set(&isRxDevToDestroy, 1);
 		usedPortInfo.isDevTypesPrep &= ~ST_DEV_TYPE_CONSUMER_USED;
 	}
-	rte_atomic32_set(&isStopMainThreadTasks, 1);
 
-	StDevStopBkgTasks();
-	StStopKni(kni);
-	if (0 == usedPortInfo.isDevTypesPrep) /* No any producer/consumer now */
+	/* call DPDK interface and KNI destroy once, that is after rx and tx destroy */
+	if (0 == usedPortInfo.isDevTypesPrep)
+	{
+		StIgmpQuerierStop();
+		for (int port = 0; port < stMainParams.numPorts; port++)
+			StPtpDeInit(port);
+
+		StStopKni(kni);
 		StDevExitDevs(&usedPortInfo);
+	}
 
 	return status;
 }
@@ -1945,6 +2231,65 @@ getNicNuma(char *nicAddr)
 	}
 
 	return -1;
+}
+
+static uint8_t
+isNicLinkWidthSame(char *nicAddr)
+{
+	FILE *fp1 = NULL, *fp2 = NULL;
+	char cmd1[512] = { '\0' };
+	char cmd2[512] = { '\0' };
+
+	snprintf(cmd1, 512, "/sys/bus/pci/devices/%s/current_link_width", nicAddr);
+	snprintf(cmd2, 512, "/sys/bus/pci/devices/%s/max_link_width", nicAddr);
+
+	if ((access(cmd1, F_OK) == 0) && (access(cmd2, F_OK) == 0))
+	{
+		fp1 = fopen(cmd1, "r");
+		fp2 = fopen(cmd2, "r");
+		if ((fp1 != NULL) && (fp2 != NULL))
+		{
+			if ((fgets(cmd1, 511, fp1) != NULL) && (fgets(cmd2, 511, fp2) != NULL))
+			{
+				uint8_t len1 = atoi(cmd1);
+				uint8_t len2 = atoi(cmd2);
+
+				return (len1 == len2) ? len1 : 0;
+			}
+		}
+	}
+
+	return 0;
+}
+
+
+static bool
+isNicLinkSpeedMax(char *nicAddr)
+{
+	FILE *fp1 = NULL, *fp2 = NULL;
+	char cmd1[512] = { '\0' };
+	char cmd2[512] = { '\0' };
+
+	snprintf(cmd1, 512, "/sys/bus/pci/devices/%s/current_link_speed", nicAddr);
+	snprintf(cmd2, 512, "/sys/bus/pci/devices/%s/max_link_speed", nicAddr);
+
+	if ((access(cmd1, F_OK) == 0) && (access(cmd2, F_OK) == 0))
+	{
+		fp1 = fopen(cmd1, "r");
+		fp2 = fopen(cmd2, "r");
+		if ((fp1 != NULL) && (fp2 != NULL))
+		{
+			if ((fgets(cmd1, 511, fp1) != NULL) && (fgets(cmd2, 511, fp2) != NULL))
+			{
+				size_t len1 = strlen(cmd1);
+				size_t len2 = strlen(cmd2);
+				if (len1 == len2)
+					return (memcmp(cmd1, cmd2, len1) == 0) ? true : false;
+			}
+		}
+	}
+
+	return false;
 }
 
 static int

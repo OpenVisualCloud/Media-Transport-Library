@@ -11,23 +11,21 @@
 # express or implied warranties, other than those that are expressly stated
 # in the License.
 
-project('Intel(R) Media Streaming Library', 'c',
+project('MediaStreamer', 'c',
                 default_options: ['c_std=gnu11', 'buildtype=release'],
-        		version: '1.0',)
+        		version: '1.1',)
 
 #enable BSD_SOURCE
 add_global_arguments('-D_DEFAULT_SOURCE', language : 'c')
 
 #get external variables
-add_global_arguments('-DGIT="'+run_command('git', 'describe', '--always').stdout().strip()+'"', language : 'c')
-add_global_arguments('-DBUILD="'+run_command('printenv', 'BUILD_ID').stdout().strip()+'"', language : 'c')
+add_global_arguments('-DGIT="'+ run_command('git', 'describe', '--always').stdout().strip() + '"', language : 'c')
+add_global_arguments('-DBUILD="' + meson.project_version() + '"', language : 'c')
 
 self_lib = []
 
 #add include directory
-include_dir = [
-	include_directories('include')
-]
+include_dir = [ include_directories('include'), ]
 
 #install header files
 subdir('include')
@@ -36,8 +34,10 @@ subdir('include')
 subdir('lib')
 
 pkg = import('pkgconfig')
-pkg.generate(libraries : self_lib,
-             version : '1.0',
-             name : 'MediaStreamer',
-             filebase : 'libMediaStreamer',
-             description : 'DPDK based Media Streamer')
+pkg.generate(
+		name : meson.project_name(),
+		version : meson.project_version(),
+		libraries : self_lib,
+		filebase : 'lib' + meson.project_name(),
+             	description : 'Intel(R) Media Streaming Library based on DPDK'
+)

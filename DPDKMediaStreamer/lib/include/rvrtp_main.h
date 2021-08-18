@@ -31,6 +31,7 @@
 #include <rte_malloc.h>
 #include <rte_mbuf.h>
 #include <rte_ring.h>
+#include <rte_time.h>
 
 /* Self includes */
 #include "st_api_internal.h"
@@ -59,6 +60,8 @@ typedef struct st_hw_caps
 typedef struct st_main_params
 {
 	volatile uint64_t schedStart;
+	//used for sync between two schedule
+	volatile uint64_t interSchedStart[MAX_RXTX_PORTS];
 	volatile uint64_t ringStart;
 	volatile uint64_t ringBarrier0;
 	volatile uint64_t ringBarrier1;
@@ -79,11 +82,13 @@ typedef struct st_main_params
 	struct rte_mempool *mbufPool;
 
 	// Input Parameters
-	uint8_t ipAddr[MAX_RXTX_PORTS][IP_ADDR_LEN];  /**< destination IP */
+	uint8_t ipAddr[MAX_RXTX_PORTS][MAX_RXTX_TYPES][IP_ADDR_LEN];  /**< destination IP for tx */
 	uint8_t sipAddr[MAX_RXTX_PORTS][IP_ADDR_LEN]; /**< source IP */
 	bool isEbuCheck;
-	uint32_t rxOnly;
-	uint32_t txOnly;
+	uint32_t pRx;
+	uint32_t pTx;
+	uint32_t rRx;
+	uint32_t rTx;
 	uint32_t rate;
 	uint32_t interlaced;
 	uint32_t fmtIndex;
@@ -96,6 +101,10 @@ typedef struct st_main_params
 	uint16_t udpPort;
 	uint16_t numPorts;
 	st21_buf_fmt_t bufFormat;
+	st_pacing_type_t pacing; /* Pacing control way */
+	uint64_t tscHz; /* The frequency of the RDTSC timer resolution */
+	uint32_t userTmstamp; /* (Optional) Enqueue use user provided timestamp for packet's RTP timestamp field */
+	char lib_cid[512];
 
 	char outPortName[MAX_RXTX_PORTS][MAX_STR_LEN];
 	char inPortName[MAX_RXTX_PORTS][MAX_STR_LEN];
@@ -178,7 +187,7 @@ typedef struct
  */
 void StDevInitTxThreads(st_main_params_t *mp, st_device_impl_t *dev);
 void StDevInitRxThreads(st_main_params_t *mp, st_device_impl_t *dev);
-st_status_t StDevCalculateBudgets(st_device_impl_t *d);
+st_status_t StDevCalculateBudgets(st_device_impl_t *d, int num_port);
 
 /* Defines */
 //#define DEBUG
@@ -191,6 +200,40 @@ extern const st_nic_rate_params_t *stDevParams;
 extern rte_atomic32_t isTxDevToDestroy;
 extern rte_atomic32_t isRxDevToDestroy;
 extern rte_atomic32_t isStopMainThreadTasks;
+
+static inline st_pacing_type_t StGetPacing()
+{
+	return stMainParams.pacing;
+}
+
+static inline bool StIsTscPacing()
+{
+	return (ST_PACING_TSC == StGetPacing()) ? true : false;
+}
+
+static inline void StSetPacing(st_pacing_type_t pacing)
+{
+	stMainParams.pacing = pacing;
+}
+
+static inline uint64_t StGetTscTimeHz()
+{
+	return stMainParams.tscHz;
+}
+
+static inline void StSetTscTimeHz(uint64_t hz)
+{
+	stMainParams.tscHz = hz;
+}
+
+/* Return relative TSC time in nanoseconds */
+static inline uint64_t StGetTscTimeNano()
+{
+	double tsc = rte_get_tsc_cycles();
+	double tsc_hz = StGetTscTimeHz();
+	double time_nano = tsc / (tsc_hz / ((double)NSEC_PER_SEC));
+	return time_nano;
+}
 
 extern void ShowWelcomeBanner();
 

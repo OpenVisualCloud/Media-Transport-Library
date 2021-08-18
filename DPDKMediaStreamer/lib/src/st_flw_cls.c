@@ -54,7 +54,7 @@ StSetUDPFlow(uint16_t portId, uint16_t rxQ, struct st_udp_flow_conf *flConf,
 	ipv4Spec.hdr.next_proto_id = IPPROTO_UDP;
 	//ipv4Spec.hdr.src_addr = flConf->srcIp;
 	//ipv4Spec.hdr.dst_addr = flConf->dstIp;
-	if (((flConf->dstIp & 0xff) >= 0xe0) && ((flConf->dstIp & 0xff) <= 0xef))
+	if (ST_IS_IPV4_MCAST(flConf->dstIp & 0xff))
 	{
 		ipv4Spec.hdr.dst_addr = flConf->dstIp;
 		flConf->srcMask = 0;

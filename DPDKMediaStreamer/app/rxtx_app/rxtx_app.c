@@ -22,8 +22,6 @@
 
 #include "rxtx_app.h"
 
-#include <rte_ethdev.h>
-
 #include "rx_view.h"
 
 #ifndef ST_MAX_AUDIO_PKT_SIZE
@@ -33,13 +31,14 @@
 typedef struct st_user_params
 {
 	/* Input Parameters */
-	int rxOnly;
-	int txOnly;
+	int pTx;
+	int pRx;
+	int rTx;
+	int rRx;
 	int numPorts;
 	bool isEbuCheck;
-	uint8_t ipAddr[MAX_RXTX_PORTS][4];	/**< destination IP */
+	uint8_t ipAddr[MAX_RXTX_PORTS][MAX_RXTX_TYPES][4];	/**< destination IP for TX and RX*/
 	uint8_t sipAddr[MAX_RXTX_PORTS][4]; /**< source IP */
-	uint8_t macAddr[MAX_RXTX_PORTS][6]; /**< destination MAC */
 	uint32_t rate;
 	uint32_t interlaced;
 	uint32_t fmtIndex;
@@ -79,7 +78,7 @@ PrintVersion()
 {
 	st_param_val_t val;
 	printf("\n");
-	printf("API version: %d.%d.%d\n", ST_VERSION_MAJOR_CURRENT, ST_VERSION_MINOR_CURRENT,
+	printf("API version: %d.%d.%d\n", ST_VERSION_MAJOR, ST_VERSION_MINOR,
 		   ST_VERSION_LAST);
 
 	StGetParam(ST_LIB_VERSION, &val);
@@ -104,10 +103,10 @@ PrintHelp()
 	printf(" Params:\n");
 	printf("   -h                                           : print this help info \n");
 	printf("   -v                                           : print versions info \n");
-	printf("   --ip <IP addr>                               : destination IP address \n");
-	printf("   --rip <IP addr>                              : destination redundant IP address \n");
-	printf("   --mac <MAC addr>                             : used when adding static entry into "
-		   "the ARP table \n");
+	printf("   --p_tx_ip <IP addr>                          : destination TX IP address for primary port(required when p_tx = 1) \n");
+	printf("   --r_tx_ip <IP addr>                          : destination TX IP address for redundant port(required when r_tx = 1) \n");
+	printf("   --p_rx_ip <IP addr>                          : destination RX IP address for primary port(required when p_rx = 1) \n");
+	printf("   --r_rx_ip <IP addr>                          : destination RX IP address for redundant port(required  when r_rx = 1) \n");
 	printf("   --sip <IP addr>                              : user defined source IP address, if "
 		   "not set, get it from kernel\n");
 	printf("   --rsip <IP addr>                             : user defined source redundant IP "
@@ -118,8 +117,10 @@ PrintHelp()
 	printf("   -p <UDP port> or --port <UDP port>           : base port from which to iterate "
 		   "sessions port "
 		   "IDs\n");
-	printf("   --rx                                         : run receive mode only \n");
-	printf("   --tx                                         : run transmit mode only \n");
+	printf("   --p_tx                                       : run transmit from primary port (required)\n");
+	printf("   --p_rx                                       : run receive from primary port \n");
+	printf("   --r_tx                                       : run transmit from redundant port \n");
+	printf("   --r_rx                                       : run receive from redundant port \n");
 	printf("   --display                                    : display video for tx, default is "
 		   "off(on will impact tx performance) \n");
 	printf("   --format <fmt string>                        : select frame format e.g. a1080i50 = "
@@ -141,6 +142,7 @@ PrintHelp()
 	printf("   --s40_count <number of sessions>               : number of ST2110-40 (ancillary) "
 		   "sessions \n");
 	printf("   --app_scid <core id>                         : application start core id \n");
+	printf("   --lib_cid <cores id>                         : library core id e.g. 1,2,3,4 \n");
 	printf("   --p_port <PCI device address>                : primary interface PCI device address "
 		   "\n");
 	printf("   --r_port <PCI device address>                : redundant interface PCI device "
@@ -166,6 +168,9 @@ PrintHelp()
 	printf("   --audioFrame  <Audio frame size>             : Size of Audio frame in bytes, user "
 		   "provides based on frequency, channel count and bit depth for desired duration of audio "
 		   "samples (e.g. 1ms) \n");
+	printf("   --pacing <control way>			: select pacing type e.g. pause or tsc\n");
+	printf("   --tsc_hz <hz>			        : User specified tsc frequency\n");
+	printf("   --user_timestamp                 : User provide timestamp values for RTP header via ST_API calls\n");
 	printf("\n");
 }
 
@@ -194,23 +199,34 @@ ParseArgs(int argc, char *argv[], st_user_params_t *outParams)
 	char isIntel = 'a';
 	int32_t height = 0;
 
+	char *token = '\0';
+   	char *ptr = NULL;
+	char *exitStr = '\0';
+	int strLengh = 0;
+   	long int lib_core = 0;
+
 	while (1)
 	{
 		int optIdx = 0;
 		static struct option options[]
-			= { { "ip", required_argument, 0, 1 },
+			= { { "p_tx_ip", required_argument, 0, 1 },
 				{ "sip", required_argument, 0, 2 },
-				{ "rx", no_argument, 0, 3 },
-				{ "tx", no_argument, 0, 4 },
-				{ "rip", required_argument, 0, 7 },
+				{ "p_tx", no_argument, 0, 3 },
+				{ "p_rx", no_argument, 0, 4 },
+				{ "r_tx", no_argument, 0, 5 },
+				{ "r_rx", no_argument, 0, 6 },
+				{ "r_tx_ip", required_argument, 0, 7 },
 				{ "rsip", required_argument, 0, 8 },
 				{ "display", no_argument, 0, 9 },
+				{ "p_rx_ip", required_argument, 0, 10 },
+				{ "r_rx_ip", required_argument, 0, 11 },
 				{ "ebu", no_argument, 0, 'e' },
 				{ "log_level", required_argument, 0, 'l' },
 				{ "s_count", required_argument, 0, 's' },
 				{ "s30_count", required_argument, 0, MAKE_WORD_FROM_CHAR('s', '3') },
 				{ "s40_count", required_argument, 0, MAKE_WORD_FROM_CHAR('s', '4') },
 				{ "app_scid", required_argument, 0, 'c' },
+				{ "lib_cid", required_argument, 0, MAKE_WORD_FROM_CHAR('c', 'l') },
 				{ "ptpid", required_argument, 0, MAKE_WORD_FROM_CHAR('p', 'i') },
 				{ "ptpam", required_argument, 0, MAKE_WORD_FROM_CHAR('p', 'm') },
 				{ "ptpstp", required_argument, 0, MAKE_WORD_FROM_CHAR('p', 's') },
@@ -224,9 +240,13 @@ ParseArgs(int argc, char *argv[], st_user_params_t *outParams)
 				{ "audioFile", required_argument, 0, MAKE_WORD_FROM_CHAR('a', 'f') },
 				{ "ancFile", required_argument, 0, MAKE_WORD_FROM_CHAR('c', 'f') },
 				{ "bulk_num", required_argument, 0, MAKE_WORD_FROM_CHAR('b', 'n') },
+				{ "enqueue_threads", required_argument, 0, MAKE_WORD_FROM_CHAR('e', 't') },
 				{ "audioFrame", required_argument, 0, MAKE_WORD_FROM_CHAR('a', 's') },
+				{ "pacing", required_argument, 0, MAKE_WORD_FROM_CHAR('p', 'c') },
+				{ "tsc_hz", required_argument, 0, MAKE_WORD_FROM_CHAR('t', 'h') },
 				{ "help", no_argument, 0, 'h' },
 				{ "version", no_argument, 0, 'v' },
+				{ "user_timestamp", no_argument, 0, MAKE_WORD_FROM_CHAR('u', 't') },
 				{ 0, 0, 0, 0 } };
 
 		c = getopt_long_only(argc, argv, "hv", options, &optIdx);
@@ -237,54 +257,66 @@ ParseArgs(int argc, char *argv[], st_user_params_t *outParams)
 		switch (c)
 		{
 		case 1:
-			if (inet_pton(AF_INET, optarg, outParams->ipAddr[ST_PPORT]) != 1)
+			if (inet_pton(AF_INET, optarg, outParams->ipAddr[ST_PPORT][ST_TX]) != 1)
 			{
-				rte_exit(127, "%s is not IP\n", optarg);
+				printf("Error - exiting with code: 127\n");
+				printf("\tCause: %s is not IP for pport_tx\n", optarg);
+				exit(127);
 			}
-			memcpy((uint8_t *)&stParamVal.valueU32, outParams->ipAddr[ST_PPORT], 4);
-			StSetParam(ST_DESTINATION_IP, stParamVal);
+			memcpy((uint8_t *)&stParamVal.valueU32, outParams->ipAddr[ST_PPORT][ST_TX], 4);
+			StSetParam(ST_DESTINATION_IP_TX, stParamVal);
 			break;
 
 		case 2:
 			if (inet_pton(AF_INET, optarg, outParams->sipAddr[ST_PPORT]) != 1)
 			{
-				rte_exit(127, "%s is not IP\n", optarg);
+				printf("Error - exiting with code: 127\n");
+				printf("\tCause: %s is not IP\n", optarg);
+				exit(127);
 			}
 			memcpy((uint8_t *)&stParamVal.valueU32, outParams->sipAddr[ST_PPORT], 4);
 			StSetParam(ST_SOURCE_IP, stParamVal);
 			break;
 
 		case 3:
-			outParams->rxOnly = 1;
-			outParams->txOnly = 0;
+			outParams->pTx = 1;
 			stParamVal.valueU64 = 1;
-			StSetParam(ST_RX_ONLY, stParamVal);
-			stParamVal.valueU64 = 0;
-			StSetParam(ST_TX_ONLY, stParamVal);
+			StSetParam(ST_TX_FROM_P, stParamVal);
 			break;
 
 		case 4:
-			outParams->txOnly = 1;
-			outParams->rxOnly = 0;
+			outParams->pRx = 1;
 			stParamVal.valueU64 = 1;
-			StSetParam(ST_TX_ONLY, stParamVal);
-			stParamVal.valueU64 = 0;
-			StSetParam(ST_RX_ONLY, stParamVal);
+			StSetParam(ST_RX_FROM_P, stParamVal);
+			break;
+		case 5:
+			outParams->rTx = 1;
+			stParamVal.valueU64 = 1;
+			StSetParam(ST_TX_FROM_R, stParamVal);
+			break;
+		case 6:
+			outParams->rRx = 1;
+			stParamVal.valueU64 = 1;
+			StSetParam(ST_RX_FROM_R, stParamVal);
 			break;
 
 		case 7:
-			if (inet_pton(AF_INET, optarg, outParams->ipAddr[ST_RPORT]) != 1)
+			if (inet_pton(AF_INET, optarg, outParams->ipAddr[ST_RPORT][ST_TX]) != 1)
 			{
-				rte_exit(127, "%s is not IP\n", optarg);
+				printf("Error - exiting with code: 127\n");
+				printf("\tCause: %s is not IP for rport_tx\n", optarg);
+				exit(127);
 			}
-			memcpy((uint8_t *)&stParamVal.valueU32, outParams->ipAddr[ST_RPORT], 4);
-			StSetParam(ST_RDESTINATION_IP, stParamVal);
+			memcpy((uint8_t *)&stParamVal.valueU32, outParams->ipAddr[ST_RPORT][ST_TX], 4);
+			StSetParam(ST_RDESTINATION_IP_TX, stParamVal);
 			break;
 
 		case 8:
 			if (inet_pton(AF_INET, optarg, outParams->sipAddr[ST_RPORT]) != 1)
 			{
-				rte_exit(127, "%s is not IP\n", optarg);
+				printf("Error - exiting with code: 127\n");
+				printf("\tCause: %s is not IP\n", optarg);
+				exit(127);;
 			}
 			memcpy((uint8_t *)&stParamVal.valueU32, outParams->sipAddr[ST_RPORT], 4);
 			StSetParam(ST_RSOURCE_IP, stParamVal);
@@ -294,8 +326,60 @@ ParseArgs(int argc, char *argv[], st_user_params_t *outParams)
 			outParams->appSCoreId = atoi(optarg);
 			break;
 
+		case MAKE_WORD_FROM_CHAR('c', 'l'):
+			strLengh = strlen(optarg) + 2;
+			exitStr = calloc(strLengh, sizeof(char));
+			token = strtok(optarg, ",");
+			if(exitStr == NULL)
+			{
+					printf("ERR: Invalid lib_score, not enough memory \n");
+					exit(127);
+			}
+			while(token != NULL)
+			{
+				lib_core = strtol(token, &ptr, 10);
+				if(*ptr != '\0' || lib_core >= UINT8_MAX || lib_core <= 0)
+				{
+					printf("ERR: Invalid lib_cid, only UIN8_T intigers are allowed\n");
+					exit(127);
+				}
+
+				strncat(exitStr, token, sizeof(char) * 3);
+				strcat(exitStr, ",");
+
+				token = strtok(NULL, ",");
+			}
+
+			if(exitStr)exitStr[strlen(exitStr) - 1] = '\0';
+			stParamVal.strPtr = exitStr;
+			StSetParam(ST_LIB_SCOREID, stParamVal);
+			free(exitStr);
+			break;
+
 		case 9:
 			outParams->showframeInTx = 1;
+			break;
+
+		case 10:
+			if (inet_pton(AF_INET, optarg, outParams->ipAddr[ST_PPORT][ST_RX]) != 1)
+			{
+				printf("Error - exiting with code: 127\n");
+				printf("\tCause: %s is not IP for pport_rx\n", optarg);
+				exit(127);
+			}
+			memcpy((uint8_t *)&stParamVal.valueU32, outParams->ipAddr[ST_PPORT][ST_RX], 4);
+			StSetParam(ST_DESTINATION_IP_RX, stParamVal);
+			break;
+
+		case 11:
+			if (inet_pton(AF_INET, optarg, outParams->ipAddr[ST_RPORT][ST_RX]) != 1)
+			{
+				printf("Error - exiting with code: 127\n");
+				printf("\tCause: %s is not IP for rport_rx\n", optarg);
+				exit(127);
+			}
+			memcpy((uint8_t *)&stParamVal.valueU32, outParams->ipAddr[ST_RPORT][ST_RX], 4);
+			StSetParam(ST_RDESTINATION_IP_RX, stParamVal);
 			break;
 
 		case 'e':
@@ -362,11 +446,10 @@ ParseArgs(int argc, char *argv[], st_user_params_t *outParams)
 			stParamVal.valueU64 = atoi(optarg);
 			StSetParam(ST_BULK_NUM, stParamVal);
 			break;
-		case 'm':
-			sscanf(optarg, "%hhx:%hhx:%hhx:%hhx:%hhx:%hhx", &outParams->macAddr[ST_PPORT][0],
-				   &outParams->macAddr[ST_PPORT][1], &outParams->macAddr[ST_PPORT][2],
-				   &outParams->macAddr[ST_PPORT][3], &outParams->macAddr[ST_PPORT][4],
-				   &outParams->macAddr[ST_PPORT][5]);
+
+		case MAKE_WORD_FROM_CHAR('e', 't'):
+			stParamVal.valueU64 = atoi(optarg);
+			StSetParam(ST_ENQUEU_THREADS, stParamVal);
 			break;
 
 		case 'o':
@@ -388,14 +471,18 @@ ParseArgs(int argc, char *argv[], st_user_params_t *outParams)
 				switch (isIntel)
 				{
 				default:
-					rte_exit(127, "Invalid prefix used, allowed: a, i\n");
+					printf("Error - exiting with code: 127\n");
+					printf("\tCause: Invalid prefix used, allowed: a, i\n");
+					exit(127);
 				case 'a':
 				case 'i':;
 				}
 				switch (height)
 				{
 				default:
-					rte_exit(127, "Invalid frame heigth used, allowed: 720, 1080, 2160\n");
+					printf("Error - exiting with code: 127\n");
+					printf("\tCause: Invalid frame heigth used, allowed: 720, 1080, 2160\n");
+					exit(127);
 				case 720:
 					outParams->fmtIndex = (isIntel == 'i') ? 0 : 3;
 					break;
@@ -409,7 +496,9 @@ ParseArgs(int argc, char *argv[], st_user_params_t *outParams)
 				switch (interlaced)
 				{
 				default:
-					rte_exit(127, "Invalid interlaced used, allowed: i, p\n");
+					printf("Error - exiting with code: 127\n");
+					printf("\tCause: Invalid interlaced used, allowed: i, p\n");
+					exit(127);
 				case 'i':
 					outParams->interlaced = 1;
 					break;
@@ -420,7 +509,9 @@ ParseArgs(int argc, char *argv[], st_user_params_t *outParams)
 				switch (outParams->rate)
 				{
 				default:
-					rte_exit(127, "Invalid rate, allowed: 25, 29,50, 59\n");
+					printf("Error - exiting with code: 127\n");
+					printf("\tCause: Invalid rate, allowed: 25, 29,50, 59\n");
+					exit(127);
 				case 25:
 				case 29:
 				case 50:
@@ -429,7 +520,9 @@ ParseArgs(int argc, char *argv[], st_user_params_t *outParams)
 			}
 			else
 			{
-				rte_exit(127, "Invalid format, example: a1080p29\n");
+				printf("Error - exiting with code: 127\n");
+				printf("\tCause: Invalid format, example: a1080p29\n");
+				exit(127);
 			}
 			stParamVal.valueU64 = outParams->fmtIndex;
 			StSetParam(ST_FMT_INDEX, stParamVal);
@@ -468,21 +561,38 @@ ParseArgs(int argc, char *argv[], st_user_params_t *outParams)
 		}
 		break;
 
+		case MAKE_WORD_FROM_CHAR('p', 'c'):
+			stParamVal.strPtr = optarg;
+			StSetParam(ST_PACING_TYPE, stParamVal);
+			break;
+
+		case MAKE_WORD_FROM_CHAR('t', 'h'):
+			stParamVal.valueU64 = atol(optarg);
+			StSetParam(ST_TSC_HZ, stParamVal);
+			break;
+
+		case MAKE_WORD_FROM_CHAR('u', 't'):
+			stParamVal.valueBool = true;
+			StSetParam(ST_USER_TMSTAMP, stParamVal);
+			break;
+
 		case 'h':
 			PrintHelp();
-			rte_exit(0, " ");
+			exit(0);
 
 		case 'v':
 			PrintVersion();
-			rte_exit(0, " ");
+			exit(0);
 
 		case '?':
 			break;
 		case 0:
-			rte_exit(0, "Invalid arguments provided!\n");
+			printf("Error - exiting with code: 0\n");
+			printf("\tCause: Invalid arguments provided!\n");
+			exit(0);
 		default:
 			PrintHelp();
-			rte_exit(0, " ");
+			exit(0);
 		}
 		nargs = optind;
 	}
@@ -496,14 +606,18 @@ ParseArgs(int argc, char *argv[], st_user_params_t *outParams)
 	if (outParams->fmtIndex >= ST21_FMT_MAX)
 	{
 		PrintHelp();
-		rte_exit(ST_FMT_ERR_BAD_HEIGHT, "Invalid Format ID used");
+		printf("Error - exiting with code: %d\n", ST_FMT_ERR_BAD_HEIGHT);
+		printf("\tCause: Invalid Format ID used");
+		exit(ST_FMT_ERR_BAD_HEIGHT);
 	}
-	RTE_LOG(INFO, USER1, "Chosen FMT is %s%d%s%d\n", (isIntel == 'i') ? "intel " : "all ", height,
+	printf("INFO USER1: Chosen FMT is %s%d%s%d\n", (isIntel == 'i') ? "intel " : "all ", height,
 			(outParams->interlaced) ? "i" : "p", outParams->rate);
 
 	if (nargs == argc)
 	{
-		rte_exit(ST_GENERAL_ERR, "Application exited because of wrong usage\n");
+		printf("Error - exiting with code: %d\n", ST_GENERAL_ERR);
+		printf("\tCause: Application exited because of wrong usage\n");
+		exit(ST_GENERAL_ERR);
 	}
 	return nargs;
 }
@@ -693,10 +807,10 @@ InitTransmitter(st_user_params_t userParams, st_device_t **txDevOut, st_device_t
 	stat = StCreateDevice(&confTx, userParams.pPortName, userParams.rPortName, &txDev);
 	if (stat != ST_OK)
 	{
-		RTE_LOG(ERR, USER1, "StCreateDevice TX FAILED. ErrNo: %d\n", stat);
+		printf("ERR USER1: StCreateDevice TX FAILED. ErrNo: %d\n", stat);
 		return stat;
 	}
-	RTE_LOG(INFO, USER1, "Create TX device done\n");
+	printf("INFO USER1: Create TX device done\n");
 
 	rxtx_main.st21_session_count = txDev->snCount;
 	rxtx_main.st30_session_count = txDev->sn30Count;
@@ -719,10 +833,10 @@ InitReceiver(st_user_params_t userParams, st_device_t **rxDevOut, st_device_t co
 	stat = StCreateDevice(&confRx, userParams.pPortName, userParams.rPortName, &rxDev);
 	if (stat != ST_OK)
 	{
-		RTE_LOG(ERR, USER1, "StCreateDevice RX FAILED. ErrNo: %d\n", stat);
+		printf("ERR USER1: StCreateDevice RX FAILED. ErrNo: %d\n", stat);
 		return stat;
 	}
-	RTE_LOG(INFO, USER1, "Create RX device done\n");
+	printf("INFO USER1: Create RX device done\n");
 
 	rxtx_main.st21_session_count = rxDev->snCount;
 	rxtx_main.st30_session_count = rxDev->sn30Count;
@@ -735,11 +849,11 @@ InitReceiver(st_user_params_t userParams, st_device_t **rxDevOut, st_device_t co
 }
 
 st_status_t
-StartTransmitter(st_user_params_t userParams, st_session_t **txSnOut, st_device_t *txDev)
+StartTransmitter(st_user_params_t userParams, st_session_t **txSnOut, st_device_t *txDev, strtp_send_app_t **txAppOut)
 {
 	st_status_t stat = ST_OK;
-	strtp_send_app_t *txApp = NULL;
 	char *fileName = NULL;
+	strtp_send_app_t *txApp[txDev->snCount + txDev->sn30Count + txDev->sn40Count];
 
 	st_session_t *txSn[txDev->snCount + txDev->sn30Count + txDev->sn40Count];
 	bool isSendView = DoesGuiExist() && (userParams.showframeInTx == 1);
@@ -748,14 +862,14 @@ StartTransmitter(st_user_params_t userParams, st_session_t **txSnOut, st_device_
 
 	/// Loop for create sessions
 	for (uint32_t i = 0;
-		 (i < txDev->snCount + txDev->sn30Count + txDev->sn40Count) && (userParams.rxOnly == 0);
+		 (i < txDev->snCount + txDev->sn30Count + txDev->sn40Count) && (userParams.pTx == 1 || userParams.rTx == 1);
 		 i++)
 	{
 		/// Input parameters used by \ref StCreateSession
 		st_session_t txSnIn = { 0 };
 		st_addr_t txAddr;
 		txSn[i] = NULL;
-
+		txApp[i] = NULL;
 		txSnIn.nicPort[ST_PPORT] = txDev->port[ST_PPORT];
 		txSnIn.nicPort[ST_RPORT] = txDev->port[ST_RPORT];
 		txSnIn.caps = ST_SN_DUAL_PATH | ST_SN_UNICAST | ST_SN_CONNECTLESS;
@@ -781,87 +895,90 @@ StartTransmitter(st_user_params_t userParams, st_session_t **txSnOut, st_device_
 			fileName = SelectFile(bufFmt, userParams.anciliaryFileName);
 		}
 
+		if (fileName == NULL)
+		{
+			printf("ERR USER1: Input file not provided\n");
+			return ST_GENERAL_ERR;
+		}
 		/// Create session with given parameters
 		stat = StCreateSession(txDev, &txSnIn, &rxtx_main.fmt_lists[i], &txSn[i]);
 		if (stat != ST_OK)
 		{
-			RTE_LOG(ERR, USER1, "StCreateSession FAILED. ErrNo: %d\n", stat);
+			printf("ERR USER1: StCreateSession FAILED. ErrNo: %d\n", stat);
 			return stat;
 		}
 
+		/// Input parameters used by \ref StBindIpAddr
+		memset(&txAddr, 0, sizeof(txAddr));
+		txAddr.src.addr4.sin_family = AF_INET;
+		txAddr.src.addr4.sin_port = htons(userParams.udpPort + i);
+		txAddr.dst.addr4.sin_port = htons(userParams.udpPort + i);
 		for (int p = 0; p < userParams.numPorts; ++p)
 		{
-			/// Input parameters used by \ref StBindIpAddr
-			memset(&txAddr, 0, sizeof(txAddr));
-			txAddr.src.addr4.sin_family = AF_INET;
-			txAddr.src.addr4.sin_port = htons(userParams.udpPort + i);
-			txAddr.dst.addr4.sin_port = htons(userParams.udpPort + i);
-
 			st_param_val_t sipAddr;
 
-			StGetParam((0 == p) ? ST_SOURCE_IP : ST_RSOURCE_IP, &sipAddr);
-
-			memcpy((uint8_t *)&txAddr.src.addr4.sin_addr.s_addr, &sipAddr.valueU32, 4);
-			memcpy((uint8_t *)&txAddr.dst.addr4.sin_addr.s_addr, &userParams.ipAddr[p], 4);
-
-			/// Bind IP addresses with proper MAC and fill addresses in the flow table
-			stat = StBindIpAddr(txSn[i], &txAddr, txDev->port[p]);
-			if (stat != ST_OK)
+			if (((userParams.pTx == 1) && (p == 0)) || ((userParams.rTx == 1) && (p == 1)))
 			{
-				RTE_LOG(ERR, USER1, "StBindIpAddr FAILED. ErrNo: %d\n", stat);
-				return stat;
+				StGetParam((0 == p) ? ST_SOURCE_IP : ST_RSOURCE_IP, &sipAddr);
+
+				memcpy((uint8_t *)&txAddr.src.addr4.sin_addr.s_addr, &sipAddr.valueU32, 4);
+				memcpy((uint8_t *)&txAddr.dst.addr4.sin_addr.s_addr, userParams.ipAddr[p][ST_TX], 4);
+
+				/// Bind IP addresses with proper MAC and fill addresses in the flow table
+				stat = StBindIpAddr(txSn[i], &txAddr, txDev->port[p]);
+				if (stat != ST_OK)
+				{
+					printf("ERR USER1: StBindIpAddr FAILED. ErrNo: %d\n", stat);
+					return stat;
+				}
 			}
 		}
 
-		if (fileName == NULL)
-		{
-			RTE_LOG(ERR, USER1, "Input file not provided\n");
-			return ST_GENERAL_ERR;
-		}
 		/// Get content prepare send mechanism and \ref StRegisterProducer
-		stat = SendAppCreateProducer(txSn[i], bufFmt, fileName, &txApp);
+		stat = SendAppCreateProducer(txSn[i], bufFmt, fileName, &txApp[i]);
 		if (stat != ST_OK)
 		{
-			RTE_LOG(ERR, USER1, "SendAppCreateProducer FAILED. ErrNo: %d\n", stat);
+			printf("ERR USER1: SendAppCreateProducer FAILED. ErrNo: %d\n", stat);
 			return stat;
 		}
-		txApp->index = i;
+		txApp[i]->index = i;
 
 		/// Create viewer to enable presenting transmitted content on the screen
-		txApp->videoStream = NULL;
+		txApp[i]->videoStream = NULL;
 		if ((txSn[i]->type == ST_ESSENCE_VIDEO) && isSendView)
 		{
 			char label[256];
 			st_format_t vfmt;
-			snprintf(label, sizeof(label), "SENDER: %d", ntohs(txAddr.src.addr4.sin_port));
+			snprintf(label, sizeof(label), "SENDER: %d", userParams.udpPort + i);
 			StGetFormat(txSn[i], &vfmt);
 			st21_format_t *fmt = &vfmt.v;
-			stat = AddStream(&txApp->videoStream, label, userParams.bufFormat, fmt->width,
+			stat = AddStream(&txApp[i]->videoStream, label, userParams.bufFormat, fmt->width,
 							 fmt->height);
 			if (stat != ST_OK)
 			{
-				RTE_LOG(ERR, USER1, "CreateView sender FAILED. ErrNo: %d\n", stat);
+				printf("ERR USER1: CreateView sender FAILED. ErrNo: %d\n", stat);
 				return stat;
 			}
 		}
 
 		/// Set transmitter ready for sending by call \ref StProducerStartFrame
-		stat = SendAppStart(txSn[i], txApp);
+		stat = SendAppStart(txSn[i], txApp[i]);
 		if (stat != ST_OK)
 		{
-			RTE_LOG(ERR, USER1, "SendAppStart FAILED. ErrNo: %d\n", stat);
+			printf("ERR USER1: SendAppStart FAILED. ErrNo: %d\n", stat);
 			return stat;
 		}
 
 		/// Return handle to the created session
 		txSnOut[i] = txSn[i];
+		txApp[i] = txApp[i];
 	}
 
 	/// Run threads for generating frames and for sending them
 	stat = StStartDevice(txDev);
 	if (stat != ST_OK)
 	{
-		RTE_LOG(ERR, USER1, "StStartDevice (TX) FAILED. ErrNo: %d\n", stat);
+		printf("ERR USER1: StStartDevice (TX) FAILED. ErrNo: %d\n", stat);
 		return stat;
 	}
 
@@ -880,27 +997,11 @@ StartReceiver(st_user_params_t userParams, st_session_t **rxSnOut, st_device_t *
 	vfmt.mtype = ST_ESSENCE_VIDEO;
 	bool isRxView = DoesGuiExist();
 
-	uint16_t portid;
-	RTE_ETH_FOREACH_DEV(portid)
-	{
-		struct rte_flow_error error;
-		/* iterate all the ports and enable flow for physical ports */
-		char busName[RTE_ETH_NAME_MAX_LEN] = { '\0' };
-		if (0 == rte_eth_dev_get_name_by_port(portid, busName))
-		{
-			if (strncmp("net_", busName, 4))
-			{
-				if (0 != rte_flow_flush(portid, &error))
-					RTE_LOG(ERR, USER1, "failed to flush rte_flow, %d:%s\n", portid, error.message);
-			}
-		}
-	}
-
 	AppInitAffinity(userParams.appSCoreId);
 
 	/// Loop for create sessions
 	for (uint32_t i = 0;
-		 (i < rxDev->snCount + rxDev->sn30Count + rxDev->sn40Count) && (userParams.txOnly == 0);
+		 (i < rxDev->snCount + rxDev->sn30Count + rxDev->sn40Count) && (userParams.pRx == 1 || userParams.rRx == 1);
 		 i++)
 	{
 		/// Input parameters used by \ref StCreateSession
@@ -938,41 +1039,43 @@ StartReceiver(st_user_params_t userParams, st_session_t **rxSnOut, st_device_t *
 		stat = StCreateSession(rxDev, &rxSnIn, &rxtx_main.fmt_lists[i], &rxSn[i]);
 		if (stat != ST_OK)
 		{
-			RTE_LOG(ERR, USER1, "StCreateSession FAILED. ErrNo: %d\n", stat);
+			printf("ERR USER1: StCreateSession FAILED. ErrNo: %d\n", stat);
 			return stat;
 		}
 		rxSn[i]->timeslot = rxSnIn.timeslot;
-
+		/// Input parameters used by \ref StBindIpAddr
+		memset(&rxAddr, 0, sizeof(rxAddr));
+		rxAddr.src.addr4.sin_family = AF_INET;
+		rxAddr.src.addr4.sin_port = htons(userParams.udpPort + rxSn[i]->timeslot);
+		rxAddr.dst.addr4.sin_port = htons(userParams.udpPort + rxSn[i]->timeslot);
 		for (int p = 0; p < userParams.numPorts; ++p)
 		{
-			/// Input parameters used by \ref StBindIpAddr
-			memset(&rxAddr, 0, sizeof(rxAddr));
-			rxAddr.src.addr4.sin_family = AF_INET;
-			rxAddr.src.addr4.sin_port = htons(userParams.udpPort + rxSn[i]->timeslot);
-			rxAddr.dst.addr4.sin_port = htons(userParams.udpPort + rxSn[i]->timeslot);
 
 			st_param_val_t sipAddr;
-
-			StGetParam((0 == p) ? ST_SOURCE_IP : ST_RSOURCE_IP, &sipAddr);
-
-			memcpy((uint8_t *)&rxAddr.src.addr4.sin_addr.s_addr, &sipAddr, 4);
-			memcpy((uint8_t *)&rxAddr.dst.addr4.sin_addr.s_addr, &userParams.ipAddr[p], 4);
-
-			/// Bind IP addresses with proper MAC and fill addresses in the flow table
-			stat = StBindIpAddr(rxSn[i], &rxAddr, rxDev->port[p]);
-			if (stat != ST_OK)
+			if (((userParams.pRx == 1) && (p == 0)) || ((userParams.rRx == 1) && (p == 1)))
 			{
-				RTE_LOG(ERR, USER1, "StBindIpAddr FAILED. ErrNo: %d\n", stat);
-				return stat;
+				StGetParam((0 == p) ? ST_SOURCE_IP : ST_RSOURCE_IP, &sipAddr);
+
+				memcpy((uint8_t *)&rxAddr.src.addr4.sin_addr.s_addr, &sipAddr, 4);
+				memcpy((uint8_t *)&rxAddr.dst.addr4.sin_addr.s_addr, userParams.ipAddr[p][ST_RX], 4);
+
+				/// Bind IP addresses with proper MAC and fill addresses in the flow table
+				stat = StBindIpAddr(rxSn[i], &rxAddr, rxDev->port[p]);
+				if (stat != ST_OK)
+				{
+					printf("ERR USER1: StBindIpAddr FAILED. ErrNo: %d\n", stat);
+					return stat;
+				}
 			}
 		}
 		/// Prepare receive mechanism and \ref StRegisterConsumer
 		stat = RecvAppCreateConsumer(rxSn[i], bufFmt, &rxApp[i]);
 		if (stat != ST_OK)
 		{
-			RTE_LOG(ERR, USER1, "RecvAppCreateConsumer FAILED. ErrNo: %d\n", stat);
+			printf("ERR USER1: RecvAppCreateConsumer FAILED. ErrNo: %d\n", stat);
 			return stat;
 		}
+		rxApp[i]->index = i;
 
 		if ((rxSn[i]->type == ST_ESSENCE_VIDEO) && isRxView)
 		{
@@ -987,7 +1090,7 @@ StartReceiver(st_user_params_t userParams, st_session_t **rxSnOut, st_device_t *
 							 fmt->height);
 			if (stat != ST_OK)
 			{
-				RTE_LOG(ERR, USER1, "AddStream receiver FAILED. ErrNo: %d\n", stat);
+				printf("ERR USER1: AddStream receiver FAILED. ErrNo: %d\n", stat);
 				return stat;
 			}
 		}
@@ -995,7 +1098,7 @@ StartReceiver(st_user_params_t userParams, st_session_t **rxSnOut, st_device_t *
 		stat = RecvAppStart(rxSn[i], rxApp[i]);
 		if (stat != ST_OK)
 		{
-			RTE_LOG(ERR, USER1, "RecvAppStart FAILED. ErrNo: %d\n", stat);
+			printf("ERR USER1: RecvAppStart FAILED. ErrNo: %d\n", stat);
 			return stat;
 		}
 		rxSnOut[i] = rxSn[i];
@@ -1006,7 +1109,7 @@ StartReceiver(st_user_params_t userParams, st_session_t **rxSnOut, st_device_t *
 	stat = StStartDevice(rxDev);
 	if (stat != ST_OK)
 	{
-		RTE_LOG(ERR, USER1, "StStartDevice (RX) FAILED. ErrNo: %d\n", stat);
+		printf("ERR USER1: StStartDevice (RX) FAILED. ErrNo: %d\n", stat);
 		return stat;
 	}
 
@@ -1014,10 +1117,9 @@ StartReceiver(st_user_params_t userParams, st_session_t **rxSnOut, st_device_t *
 }
 
 st_status_t
-FinishTransmitter(st_session_t **txSnOut, uint32_t snTxCount)
+FinishTransmitter(st_session_t **txSnOut, uint32_t snTxCount, strtp_send_app_t **app)
 {
 	st_status_t stat = ST_OK;
-
 	// Destroy TX session
 	for (uint32_t i = 0; i < snTxCount; i++)
 	{
@@ -1025,18 +1127,20 @@ FinishTransmitter(st_session_t **txSnOut, uint32_t snTxCount)
 		stat = StProducerStop(txSnOut[i]);
 		if (stat != ST_OK)
 		{
-			RTE_LOG(ERR, USER1, "St21ProducerStop FAILED. ErrNo: %d\n", stat);
+			printf("ERR USER1: St21ProducerStop FAILED. ErrNo: %d\n", stat);
 			return stat;
 		}
 		/// Destroy transmitter session
 		stat = StDestroySession(txSnOut[i]);
+		numa_free(app[i], sizeof(strtp_send_app_t));
+		app[i] = NULL;
 		if (stat != ST_OK)
 		{
-			RTE_LOG(ERR, USER1, "StDestroySession FAILED. ErrNo: %d\n", stat);
+			printf("ERR USER1: StDestroySession FAILED. ErrNo: %d\n", stat);
 			return stat;
 		}
 	}
-	RTE_LOG(INFO, USER1, "Producer STOPPED and destroyed\n");
+	printf("INFO USER1: Producer STOPPED and destroyed\n");
 	// Destroy TX session end
 
 	return stat;
@@ -1046,7 +1150,6 @@ st_status_t
 FinishReceiver(st_session_t **rxSnOut, uint32_t snRxCount, strtp_recv_app_t **app)
 {
 	st_status_t stat = ST_OK;
-
 	// Destroy RX session
 	for (uint32_t i = 0; i < snRxCount; i++)
 	{
@@ -1054,18 +1157,20 @@ FinishReceiver(st_session_t **rxSnOut, uint32_t snRxCount, strtp_recv_app_t **ap
 		stat = RecvAppStop(rxSnOut[i], app[i]);
 		if (stat != ST_OK)
 		{
-			RTE_LOG(ERR, USER1, "St21ConsumerStop FAILED. ErrNo: %d\n", stat);
+			printf("ERR USER1: St21ConsumerStop FAILED. ErrNo: %d\n", stat);
 			return stat;
 		}
 		/// Destroy receiver session
 		stat = StDestroySession(rxSnOut[i]);
+		numa_free(app[i], sizeof(strtp_recv_app_t));
+		app[i] = NULL;
 		if (stat != ST_OK)
 		{
-			RTE_LOG(ERR, USER1, "StDestroySession FAILED. ErrNo: %d\n", stat);
+			printf("ERR USER1: StDestroySession FAILED. ErrNo: %d\n", stat);
 			return stat;
 		}
 	}
-	RTE_LOG(INFO, USER1, "Consumer STOPPED and destroyed\n");
+	printf("INFO USER1: Consumer STOPPED and destroyed\n");
 	// Destroy RX session end
 
 	return stat;
@@ -1095,7 +1200,7 @@ clearHugePages()
 				status = access(filepath, W_OK);
 				if (status)
 				{
-					RTE_LOG(ERR, USER1, "Access to the rtemap (%s) failed! %s\n", filepath,
+					printf("ERR USER1: Access to the rtemap (%s) failed! %s\n", filepath,
 							strerror(errno));
 					return ST_GENERAL_ERR;
 				}
@@ -1103,12 +1208,12 @@ clearHugePages()
 				status = remove(filepath);
 				if (status != ST_OK)
 				{
-					RTE_LOG(ERR, USER1, "Attempting to free Hugepages failed. Err: %s\n",
+					printf("ERR USER1: Attempting to free Hugepages failed. Err: %s\n",
 							strerror(errno));
 					return ST_GENERAL_ERR;
 				}
 
-				RTE_LOG(WARNING, USER1, "remove old mmap file (%s)\n", filepath);
+				printf("WARNING USER1: remove old mmap file (%s)\n", filepath);
 			}
 		}
 		closedir(d);
@@ -1138,6 +1243,7 @@ main(int argc, char *argv[])
 	st40_format_t *rxAncFmt = NULL;
 	st_device_t *txDev = NULL;
 	st_device_t *rxDev = NULL;
+	bool direct_free = false;
 
 	/*
 	 * STEP 1 - Preparing configuration for device initialization
@@ -1165,12 +1271,12 @@ main(int argc, char *argv[])
 	stParamVal.valueU64 = userParams.fmtIndex;
 	StSetParam(ST_FMT_INDEX, stParamVal);
 
-	RTE_LOG(INFO, USER1, "Application %s started, cleaning previously used hugepages if any!\n",
+	printf("INFO USER1: Application %s started, cleaning previously used hugepages if any!\n",
 			ST_PREFIX_APPNAME);
 	status = clearHugePages();
 	if (ST_OK != status)
 	{
-		RTE_LOG(ERR, USER1, "Failed to cleanup used Pages. ErrNo: %d\n", status);
+		printf("ERR USER1: Failed to cleanup used Pages. ErrNo: %d\n", status);
 		return status;
 	}
 
@@ -1185,6 +1291,52 @@ main(int argc, char *argv[])
 	* @return number of arguments
 	*/
 	ParseArgs(argc, argv, &userParams);
+
+	// the option p_tx or p_rx is required
+	if (userParams.pTx == 0 && userParams.pRx == 0 && userParams.rTx == 0 && userParams.rRx == 0)
+	{
+		if (userParams.numPorts >= 1 && userParams.pPortName != NULL)
+		{
+			userParams.pTx = 1;
+			userParams.pRx = 1;
+			stParamVal.valueU64 = 1;
+			StSetParam(ST_TX_FROM_P, stParamVal);
+			StSetParam(ST_RX_FROM_P, stParamVal);
+			if (userParams.numPorts == MAX_RXTX_PORTS && userParams.rPortName != NULL)
+			{
+				userParams.rTx = 1;
+				userParams.rRx = 1;
+				stParamVal.valueU64 = 1;
+				StSetParam(ST_TX_FROM_R, stParamVal);
+				StSetParam(ST_RX_FROM_R, stParamVal);
+			}
+		}
+		else
+		{
+			printf("ERR, USER1, The option --p_port is required.\n");
+			return ST_GENERAL_ERR;
+		}
+	}
+	if ((userParams.pTx == 1) && (*((uint32_t *)userParams.ipAddr[ST_PPORT][ST_TX]) == 0))
+	{
+		printf("ERR, USER1, p port is used for tx, but ip is not set");
+		return ST_GENERAL_ERR;
+	}
+	if ((userParams.pRx == 1) && (*((uint32_t *)userParams.ipAddr[ST_PPORT][ST_RX]) == 0))
+	{
+		printf("ERR, USER1, p port is used for rx, but ip is not set");
+		return ST_GENERAL_ERR;
+	}
+	if ((userParams.rTx == 1) && (*((uint32_t *)userParams.ipAddr[ST_RPORT][ST_TX]) == 0))
+	{
+		printf("ERR, USER1, r port is used for tx, but ip is not set");
+		return ST_GENERAL_ERR;
+	}
+	if ((userParams.rRx == 1) && (*((uint32_t *)userParams.ipAddr[ST_RPORT][ST_RX]) == 0))
+	{
+		printf("ERR, USER1, r port is used for rx, but ip is not set");
+		return ST_GENERAL_ERR;
+	}
 
 	rxtx_main.st21_session_count = userParams.snCount;
 	rxtx_main.st30_session_count = userParams.sn30Count;
@@ -1208,21 +1360,21 @@ main(int argc, char *argv[])
 	status = InitSt21Format(userParams, &txFmt, &rxFmt, &confTx, &confRx);
 	if (status != ST_OK)
 	{
-		RTE_LOG(ERR, USER1, "FormatInit FAILED. ErrNo: %d\n", status);
+		printf("ERR USER1: FormatInit FAILED. ErrNo: %d\n", status);
 		return status;
 	}
 
 	status = InitSt30Format(userParams, &txAfmt, &rxAfmt);
 	if (status != ST_OK)
 	{
-		RTE_LOG(ERR, USER1, "FormatInit FAILED. ErrNo: %d\n", status);
+		printf("ERR USER1: FormatInit FAILED. ErrNo: %d\n", status);
 		return status;
 	}
 
 	status = InitSt40Format(userParams, &txAncFmt, &rxAncFmt);
 	if (status != ST_OK)
 	{
-		RTE_LOG(ERR, USER1, "FormatInit FAILED. ErrNo: %d\n", status);
+		printf("ERR USER1: FormatInit FAILED. ErrNo: %d\n", status);
 		return status;
 	}
 
@@ -1237,7 +1389,7 @@ main(int argc, char *argv[])
 	status = InitTransmitter(userParams, &txDev, confTx);
 	if (status != ST_OK)
 	{
-		RTE_LOG(ERR, USER1, "InitTransmitter FAILED. ErrNo: %d\n", status);
+		printf("ERR USER1: InitTransmitter FAILED. ErrNo: %d\n", status);
 		return status;
 	}
 
@@ -1252,7 +1404,7 @@ main(int argc, char *argv[])
 	status = InitReceiver(userParams, &rxDev, confRx);
 	if (status != ST_OK)
 	{
-		RTE_LOG(ERR, USER1, "InitReceiver FAILED. ErrNo: %d\n", status);
+		printf("ERR USER1: InitReceiver FAILED. ErrNo: %d\n", status);
 		return status;
 	}
 
@@ -1261,7 +1413,7 @@ main(int argc, char *argv[])
 	st_session_t *rxSn[rxDev->snCount + rxDev->sn30Count + rxDev->sn40Count];
 	st_session_t *txSn[txDev->snCount + txDev->sn30Count + txDev->sn40Count];
 	strtp_recv_app_t *rxApp[rxDev->snCount + rxDev->sn30Count + rxDev->sn40Count];
-
+	strtp_send_app_t *txApp [txDev->snCount + txDev->sn30Count + txDev->sn40Count];;
 	/** STEP 6 - Initialization of Silmple DirectMedia Library
 	* Library used for presenting transmitted content on the screen
 	*
@@ -1270,7 +1422,7 @@ main(int argc, char *argv[])
 	status = CreateGuiWindow();
 	if (status != ST_OK)
 	{
-		RTE_LOG(ERR, USER1, "InitSDL FAILED. ErrNo: %d\n", status);
+		printf("ERR USER1: InitSDL FAILED. ErrNo: %d\n", status);
 	}
 
 	/** STEP 7 - Create and initialize transmitter sessions
@@ -1283,11 +1435,11 @@ main(int argc, char *argv[])
 	*
 	* @return \ref st_status_t
 	*/
-	status = StartTransmitter(userParams, txSn, txDev);
+	status = StartTransmitter(userParams, txSn, txDev, txApp);
 	if (status != ST_OK)
 	{
-		RTE_LOG(ERR, USER1, "StartReceiver FAILED. ErrNo: %d\n", status);
-		return status;
+		direct_free = true;
+		printf("ERR USER1: StartTransmitter FAILED. ErrNo: %d\n", status);
 	}
 
 	/** STEP 8 - Create and initialize receiver sessions
@@ -1303,8 +1455,8 @@ main(int argc, char *argv[])
 	status = StartReceiver(userParams, rxSn, rxDev, rxApp);
 	if (status != ST_OK)
 	{
-		RTE_LOG(ERR, USER1, "StartReceiver FAILED. ErrNo: %d\n", status);
-		return status;
+		direct_free = true;
+		printf("ERR USER1: StartReceiver FAILED. ErrNo: %d\n", status);
 	}
 
 	/** STEP 9 - API function responsible for get actual number of created transmitter sessions
@@ -1317,11 +1469,11 @@ main(int argc, char *argv[])
 	status = StGetSessionCount(txDev, &snTxCount);
 	if (status != ST_OK)
 	{
-		RTE_LOG(ERR, USER1, "StGetSessionCount FAILED. ErrNo: %d\n", status);
-		return status;
+		direct_free = true;
+		printf("ERR USER1: StGetSessionCount FAILED. ErrNo: %d\n", status);
 	}
 
-	RTE_LOG(INFO, USER1, "Create TX sessions done. Number of sessions: %u\n", snTxCount);
+	printf("INFO USER1: Create TX sessions done. Number of sessions: %u\n", snTxCount);
 
 	/** STEP 10 - API function responsible for get actual number of created receiver sessions
 	* Params:
@@ -1333,16 +1485,19 @@ main(int argc, char *argv[])
 	status = StGetSessionCount(rxDev, &snRxCount);
 	if (status != ST_OK)
 	{
-		RTE_LOG(ERR, USER1, "StGetSessionCount FAILED. ErrNo: %d\n", status);
-		return status;
+		direct_free = true;
+		printf("ERR USER1: StGetSessionCount FAILED. ErrNo: %d\n", status);
 	}
 
-	RTE_LOG(INFO, USER1, "Create RX sessions done. Number of sessions: %u\n", snRxCount);
+	printf("INFO USER1: Create RX sessions done. Number of sessions: %u\n", snRxCount);
 
 	/** STEP 11 - Wait until signal caught
 	* "pause" prevent before immediate finish and close transmission
 	*/
-	pause();
+	if (!direct_free)
+	{
+		pause();
+	}
 	/*
 	 * dispaly accumulated status at exit
 	 */
@@ -1355,11 +1510,10 @@ main(int argc, char *argv[])
 	*
 	* @return \ref st_status_t
 	*/
-	status = FinishTransmitter(txSn, snTxCount);
+	status = FinishTransmitter(txSn, snTxCount, txApp);
 	if (status != ST_OK)
 	{
-		RTE_LOG(ERR, USER1, "FinishTransmitter FAILED. ErrNo: %d\n", status);
-		return status;
+		printf("ERR USER1: FinishTransmitter FAILED. ErrNo: %d\n", status);
 	}
 
 	/** STEP 13 - Stop receiving and destroy receiver sessions
@@ -1372,8 +1526,7 @@ main(int argc, char *argv[])
 	status = FinishReceiver(rxSn, snRxCount, rxApp);
 	if (status != ST_OK)
 	{
-		RTE_LOG(ERR, USER1, "FinishReceiver FAILED. ErrNo: %d\n", status);
-		return status;
+		printf("ERR USER1: FinishReceiver FAILED. ErrNo: %d\n", status);
 	}
 
 	/** STEP 14 - Destroy transmitter device
@@ -1385,8 +1538,7 @@ main(int argc, char *argv[])
 	status = StDestroyDevice(txDev);
 	if (status != ST_OK)
 	{
-		RTE_LOG(ERR, USER1, "StDestroyDevice FAILED. ErrNo: %d\n", status);
-		return status;
+		printf("ERR USER1: StDestroyDevice FAILED. ErrNo: %d\n", status);
 	}
 
 	/** STEP 15 -Destroy receiver device
@@ -1398,8 +1550,7 @@ main(int argc, char *argv[])
 	status = StDestroyDevice(rxDev);
 	if (status != ST_OK)
 	{
-		RTE_LOG(ERR, USER1, "StDestroyDevice FAILED. ErrNo: %d\n", status);
-		return status;
+		printf("ERR USER1: StDestroyDevice FAILED. ErrNo: %d\n", status);
 	}
 
 	/**

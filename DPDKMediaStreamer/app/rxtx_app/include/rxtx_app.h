@@ -29,6 +29,7 @@
 #include <getopt.h>
 #include <stdlib.h>
 #include <unistd.h>
+#include <numa.h>
 
 #define MAX_SESSIONS_MAX 160
 

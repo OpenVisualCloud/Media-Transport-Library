@@ -45,8 +45,11 @@ char stLibVersionStr[MAX_STR_LEN];
 
 extern st_enqueue_stats_t enqStats[RTE_MAX_LCORE];
 extern st_rcv_stats_t rxThreadStats[RTE_MAX_LCORE];
+extern st_rcv_stats_t rxThreadAudioStats[RTE_MAX_LCORE];
+extern st_rcv_stats_t rxThreadAncilStats[RTE_MAX_LCORE];
 
 struct rateAdjust {
+	int port_num;
 	int session_num;
 	int frame_rate;
 	int gbps;
@@ -77,9 +80,12 @@ StGetParam(st_param_t prm, st_param_val_t *val)
 	case ST_RSOURCE_IP:
 		memcpy(&val->valueU32, stMainParams.sipAddr[ST_RPORT], IP_ADDR_LEN);
 		break;
+	case ST_LIB_SCOREID:
+		val->strPtr = stMainParams.lib_cid;
+		break;
 	default:
 		RTE_LOG(INFO, USER1, "Unknown param: %d\n", prm);
-		return ST_INVALID_PARAM;
+		return ST_BAD_PARAM_ID;
 	}
 
 	return ST_OK;
@@ -96,11 +102,17 @@ StSetParam(st_param_t prm, st_param_val_t val)
 	case ST_RSOURCE_IP:
 		memcpy(stMainParams.sipAddr[ST_RPORT], (uint8_t *)&(val.valueU32), IP_ADDR_LEN);
 		break;
-	case ST_DESTINATION_IP:
-		memcpy(stMainParams.ipAddr[ST_PPORT], (uint8_t *)&(val.valueU32), IP_ADDR_LEN);
+	case ST_DESTINATION_IP_TX:
+		memcpy(stMainParams.ipAddr[ST_PPORT][ST_TX], (uint8_t *)&(val.valueU32), IP_ADDR_LEN);
 		break;
-	case ST_RDESTINATION_IP:
-		memcpy(stMainParams.ipAddr[ST_RPORT], (uint8_t *)&(val.valueU32), IP_ADDR_LEN);
+	case ST_RDESTINATION_IP_TX:
+		memcpy(stMainParams.ipAddr[ST_RPORT][ST_TX], (uint8_t *)&(val.valueU32), IP_ADDR_LEN);
+		break;
+	case ST_DESTINATION_IP_RX:
+		memcpy(stMainParams.ipAddr[ST_PPORT][ST_RX], (uint8_t *)&(val.valueU32), IP_ADDR_LEN);
+		break;
+	case ST_RDESTINATION_IP_RX:
+		memcpy(stMainParams.ipAddr[ST_RPORT][ST_RX], (uint8_t *)&(val.valueU32), IP_ADDR_LEN);
 		break;
 	case ST_EBU_TEST:
 		stMainParams.isEbuCheck = val.valueU64;
@@ -114,11 +126,17 @@ StSetParam(st_param_t prm, st_param_val_t val)
 	case ST_SN40_COUNT:
 		stMainParams.sn40Count = val.valueU64;
 		break;
-	case ST_TX_ONLY:
-		stMainParams.txOnly = val.valueU64;
+	case ST_TX_FROM_P:
+		stMainParams.pTx = val.valueU64;
 		break;
-	case ST_RX_ONLY:
-		stMainParams.rxOnly = val.valueU64;
+	case ST_RX_FROM_P:
+		stMainParams.pRx = val.valueU64;
+		break;
+	case ST_TX_FROM_R:
+		stMainParams.rTx = val.valueU64;
+		break;
+	case ST_RX_FROM_R:
+		stMainParams.rRx = val.valueU64;
 		break;
 	case ST_P_PORT:
 		snprintf(stMainParams.inPortName[ST_PPORT], sizeof(stMainParams.inPortName[ST_PPORT]), "%s",
@@ -147,8 +165,28 @@ StSetParam(st_param_t prm, st_param_val_t val)
 	case ST_BULK_NUM:
 		stMainParams.txBulkNum = val.valueU64;
 		break;
+	case ST_ENQUEU_THREADS:
+		stMainParams.maxEnqThrds = val.valueU64;
+		break;
 	case ST_NUM_PORT:
 		stMainParams.numPorts = val.valueU32;
+		break;
+	case ST_PACING_TYPE:
+		if (!strcmp(val.strPtr, "pause"))
+			StSetPacing(ST_PACING_PAUSE);
+		else if (!strcmp(val.strPtr, "tsc"))
+			StSetPacing(ST_PACING_TSC);
+		else
+			RTE_LOG(WARNING, USER1, "%s, unknown pacing: %s\n", __func__, val.strPtr);
+		break;
+	case ST_TSC_HZ:
+		StSetTscTimeHz(val.valueU64);
+		break;
+	case ST_LIB_SCOREID:
+		strncpy(stMainParams.lib_cid, val.strPtr, sizeof(stMainParams.lib_cid) - 1);
+		break;
+	case ST_USER_TMSTAMP:
+		stMainParams.userTmstamp = val.valueBool;
 		break;
 	default:
 		RTE_LOG(INFO, USER1, "Unknown param: %d\n", prm);
@@ -220,9 +258,13 @@ StDisplayExitStats(void)
 	printf("----------------------------------------\n");
 	printf("RX video stats:\n");
 	st_rcv_stats_t rx_total = { 0 };
+	st_rcv_stats_t rx_audio_total = { 0 };
+	st_rcv_stats_t rx_ancil_total = { 0 };
 	core = 0;
+
 	RTE_LCORE_FOREACH(core)
 	{
+		/* video stats */
 		rx_total.badIpUdp 		+= rxThreadStats[core].badIpUdp;
 		rx_total.badIpUdpR 		+= rxThreadStats[core].badIpUdpR;
 		rx_total.badRtp 		+= rxThreadStats[core].badRtp;
@@ -269,6 +311,102 @@ StDisplayExitStats(void)
 		rx_total.forcePendBuffOutR 	+= rxThreadStats[core].forcePendBuffOutR;
 		rx_total.forceCurrBuffOut 	+= rxThreadStats[core].forceCurrBuffOut;
 		rx_total.forceCurrBuffOutR 	+= rxThreadStats[core].forceCurrBuffOutR;
+
+		/* audio stats */
+		rx_audio_total.badIpUdp 		+= rxThreadAudioStats[core].badIpUdp;
+		rx_audio_total.badIpUdpR 		+= rxThreadAudioStats[core].badIpUdpR;
+		rx_audio_total.badRtp 			+= rxThreadAudioStats[core].badRtp;
+		rx_audio_total.badRtpR 			+= rxThreadAudioStats[core].badRtpR;
+		rx_audio_total.tmpstampDone 		+= rxThreadAudioStats[core].tmpstampDone;
+		rx_audio_total.tmpstampDoneR 		+= rxThreadAudioStats[core].tmpstampDoneR;
+		rx_audio_total.outOfOrder 		+= rxThreadAudioStats[core].outOfOrder;
+		rx_audio_total.outOfOrderR 		+= rxThreadAudioStats[core].outOfOrderR;
+		rx_audio_total.rtpTmstampOverflow	+= rxThreadAudioStats[core].rtpTmstampOverflow;
+		rx_audio_total.rtpTmstampOverflowR	+= rxThreadAudioStats[core].rtpTmstampOverflowR;
+		rx_audio_total.rtpTmstampLess 		+= rxThreadAudioStats[core].rtpTmstampLess;
+		rx_audio_total.rtpTmstampLessR 		+= rxThreadAudioStats[core].rtpTmstampLessR;
+
+		rx_audio_total.restartAsNewFrame	+= rxThreadAudioStats[core].restartAsNewFrame;
+		rx_audio_total.restartAsNewFrameR	+= rxThreadAudioStats[core].restartAsNewFrameR;
+
+		rx_audio_total.firstPacketGood 		+= rxThreadAudioStats[core].firstPacketGood;
+		rx_audio_total.firstPacketGoodR 	+= rxThreadAudioStats[core].firstPacketGoodR;
+		rx_audio_total.nonFirstPacketGood	+= rxThreadAudioStats[core].nonFirstPacketGood;
+		rx_audio_total.nonFirstPacketGoodR	+= rxThreadAudioStats[core].nonFirstPacketGoodR;
+		rx_audio_total.lastPacketGood 		+= rxThreadAudioStats[core].lastPacketGood;
+		rx_audio_total.lastPacketGoodR 		+= rxThreadAudioStats[core].lastPacketGoodR;
+		rx_audio_total.nonFirstPacketPendGood	+= rxThreadAudioStats[core].nonFirstPacketPendGood;
+		rx_audio_total.nonFirstPacketPendGoodR	+= rxThreadAudioStats[core].nonFirstPacketPendGoodR;
+		rx_audio_total.lastPacketPendGood 	+= rxThreadAudioStats[core].lastPacketPendGood;
+		rx_audio_total.lastPacketPendGoodR 	+= rxThreadAudioStats[core].lastPacketPendGoodR;
+
+		rx_audio_total.fastCopyFail 		+= rxThreadAudioStats[core].fastCopyFail;
+		rx_audio_total.fastCopyFailR 		+= rxThreadAudioStats[core].fastCopyFailR;
+		rx_audio_total.fastCopyFailErr 		+= rxThreadAudioStats[core].fastCopyFailErr;
+		rx_audio_total.fastCopyFailErrR		+= rxThreadAudioStats[core].fastCopyFailErrR;
+
+		rx_audio_total.userNotifyLine 		+= rxThreadAudioStats[core].userNotifyLine;
+		rx_audio_total.userNotifyPendLine 	+= rxThreadAudioStats[core].userNotifyPendLine;
+		rx_audio_total.userNotifyFrame 		+= rxThreadAudioStats[core].userNotifyFrame;
+		rx_audio_total.userNotifyPendFrame 	+= rxThreadAudioStats[core].userNotifyPendFrame;
+
+		rx_audio_total.completeFrames 		+= rxThreadAudioStats[core].completeFrames;
+		rx_audio_total.completePendFrames 	+= rxThreadAudioStats[core].completePendFrames;
+		rx_audio_total.incompleteFrameDone	+= rxThreadAudioStats[core].incompleteFrameDone;
+		rx_audio_total.incompletePendFrameDone	+= rxThreadAudioStats[core].incompletePendFrameDone;
+
+		rx_audio_total.forcePendBuffOut 	+= rxThreadAudioStats[core].forcePendBuffOut;
+		rx_audio_total.forcePendBuffOutR 	+= rxThreadAudioStats[core].forcePendBuffOutR;
+		rx_audio_total.forceCurrBuffOut 	+= rxThreadAudioStats[core].forceCurrBuffOut;
+		rx_audio_total.forceCurrBuffOutR 	+= rxThreadAudioStats[core].forceCurrBuffOutR;
+
+		/* ancilary stats */
+		rx_ancil_total.badIpUdp 		+= rxThreadAncilStats[core].badIpUdp;
+		rx_ancil_total.badIpUdpR 		+= rxThreadAncilStats[core].badIpUdpR;
+		rx_ancil_total.badRtp 			+= rxThreadAncilStats[core].badRtp;
+		rx_ancil_total.badRtpR 			+= rxThreadAncilStats[core].badRtpR;
+		rx_ancil_total.tmpstampDone 		+= rxThreadAncilStats[core].tmpstampDone;
+		rx_ancil_total.tmpstampDoneR 		+= rxThreadAncilStats[core].tmpstampDoneR;
+		rx_ancil_total.outOfOrder 		+= rxThreadAncilStats[core].outOfOrder;
+		rx_ancil_total.outOfOrderR 		+= rxThreadAncilStats[core].outOfOrderR;
+		rx_ancil_total.rtpTmstampOverflow	+= rxThreadAncilStats[core].rtpTmstampOverflow;
+		rx_ancil_total.rtpTmstampOverflowR	+= rxThreadAncilStats[core].rtpTmstampOverflowR;
+		rx_ancil_total.rtpTmstampLess 		+= rxThreadAncilStats[core].rtpTmstampLess;
+		rx_ancil_total.rtpTmstampLessR 		+= rxThreadAncilStats[core].rtpTmstampLessR;
+
+		rx_ancil_total.restartAsNewFrame	+= rxThreadAncilStats[core].restartAsNewFrame;
+		rx_ancil_total.restartAsNewFrameR	+= rxThreadAncilStats[core].restartAsNewFrameR;
+
+		rx_ancil_total.firstPacketGood 		+= rxThreadAncilStats[core].firstPacketGood;
+		rx_ancil_total.firstPacketGoodR 	+= rxThreadAncilStats[core].firstPacketGoodR;
+		rx_ancil_total.nonFirstPacketGood	+= rxThreadAncilStats[core].nonFirstPacketGood;
+		rx_ancil_total.nonFirstPacketGoodR	+= rxThreadAncilStats[core].nonFirstPacketGoodR;
+		rx_ancil_total.lastPacketGood 		+= rxThreadAncilStats[core].lastPacketGood;
+		rx_ancil_total.lastPacketGoodR 		+= rxThreadAncilStats[core].lastPacketGoodR;
+		rx_ancil_total.nonFirstPacketPendGood	+= rxThreadAncilStats[core].nonFirstPacketPendGood;
+		rx_ancil_total.nonFirstPacketPendGoodR	+= rxThreadAncilStats[core].nonFirstPacketPendGoodR;
+		rx_ancil_total.lastPacketPendGood 	+= rxThreadAncilStats[core].lastPacketPendGood;
+		rx_ancil_total.lastPacketPendGoodR 	+= rxThreadAncilStats[core].lastPacketPendGoodR;
+
+		rx_ancil_total.fastCopyFail 		+= rxThreadAncilStats[core].fastCopyFail;
+		rx_ancil_total.fastCopyFailR 		+= rxThreadAncilStats[core].fastCopyFailR;
+		rx_ancil_total.fastCopyFailErr 		+= rxThreadAncilStats[core].fastCopyFailErr;
+		rx_ancil_total.fastCopyFailErrR		+= rxThreadAncilStats[core].fastCopyFailErrR;
+
+		rx_ancil_total.userNotifyLine 		+= rxThreadAncilStats[core].userNotifyLine;
+		rx_ancil_total.userNotifyPendLine 	+= rxThreadAncilStats[core].userNotifyPendLine;
+		rx_ancil_total.userNotifyFrame 		+= rxThreadAncilStats[core].userNotifyFrame;
+		rx_ancil_total.userNotifyPendFrame 	+= rxThreadAncilStats[core].userNotifyPendFrame;
+
+		rx_ancil_total.completeFrames 		+= rxThreadAncilStats[core].completeFrames;
+		rx_ancil_total.completePendFrames 	+= rxThreadAncilStats[core].completePendFrames;
+		rx_ancil_total.incompleteFrameDone	+= rxThreadAncilStats[core].incompleteFrameDone;
+		rx_ancil_total.incompletePendFrameDone	+= rxThreadAncilStats[core].incompletePendFrameDone;
+
+		rx_ancil_total.forcePendBuffOut 	+= rxThreadAncilStats[core].forcePendBuffOut;
+		rx_ancil_total.forcePendBuffOutR 	+= rxThreadAncilStats[core].forcePendBuffOutR;
+		rx_ancil_total.forceCurrBuffOut 	+= rxThreadAncilStats[core].forceCurrBuffOut;
+		rx_ancil_total.forceCurrBuffOutR 	+= rxThreadAncilStats[core].forceCurrBuffOutR;
 	}
 
 	printf("--- RX VIDEO THREAD STATS --\n");
@@ -311,20 +449,106 @@ StDisplayExitStats(void)
 	printf("| %12s | %30s | %20lu |\n", "normal", "complete PEND Frame", rx_total.completePendFrames);
 	printf("------------------------------------------------------------------------\n");
 
+	printf("--- RX AUDIO THREAD STATS --\n");
+	printf("\n");
+	printf("--- LIBRARY ---\n");
+	printf("-----------------------------------------------------------------------------------------------\n");
+	printf("| %12s | %30s | %20s | %20s |\n", "Error Type", "Category", "Primary", "Redundant");
+	printf("-----------------------------------------------------------------------------------------------\n");
+	printf("| %12s | %30s | %20lu | %20lu |\n", "packet-err", "bad Ip|Udp", 		rx_audio_total.badIpUdp, rx_audio_total.badIpUdpR); 
+	printf("| %12s | %30s | %20lu | %20lu |\n", "packet-err", "bad Rtp", 			rx_audio_total.badRtp, rx_audio_total.badRtpR);
+	printf("| %12s | %30s | %20lu | %20lu |\n", "rtp-hdr-err", "out of Order", 		rx_audio_total.outOfOrder, rx_audio_total.outOfOrderR);
+	printf("| %12s | %30s | %20lu | %20lu |\n", "rtp-hdr-err", "incorrect tmstamp", 	rx_audio_total.rtpTmstampLess, rx_audio_total.rtpTmstampLessR);
+	printf("| %12s | %30s | %20lu | %20lu |\n", "switch-err", "Force Pending Frames", 	rx_audio_total.forcePendBuffOut, rx_audio_total.forcePendBuffOutR);
+	printf("| %12s | %30s | %20lu | %20lu |\n", "switch-err", "Force Current Frames", 	rx_audio_total.forceCurrBuffOut, rx_audio_total.forceCurrBuffOutR);
+	printf("| %12s | %30s | %20lu | %20lu |\n", "switch-err", "Historgram Err pkt", 	rx_audio_total.fastCopyFailErr, rx_audio_total.fastCopyFailErrR);
+	printf("^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n");
+	printf("| %12s | %30s | %20lu | %20lu |\n", "rtp-hdr-ok", "tmstamp Done", 		rx_audio_total.tmpstampDone, rx_audio_total.tmpstampDoneR);
+	printf("| %12s | %30s | %20lu | %20lu |\n", "rtp-hdr-ok", "tmstamp Overflow", 		rx_audio_total.rtpTmstampOverflow, rx_audio_total.rtpTmstampOverflowR);
+	printf("| %12s | %30s | %20lu | %20lu |\n", "rtp-hdr-ok", "First Frame Pkt", 		rx_audio_total.firstPacketGood, rx_audio_total.firstPacketGoodR);
+	printf("| %12s | %30s | %20lu | %20lu |\n", "rtp-hdr-ok", "CURR Frame middle Pkt", 	rx_audio_total.nonFirstPacketGood, rx_audio_total.nonFirstPacketGoodR);
+	printf("| %12s | %30s | %20lu | %20lu |\n", "rtp-hdr-ok", "PEND Frame middle Pkt", 	rx_audio_total.nonFirstPacketPendGood, rx_audio_total.nonFirstPacketPendGoodR);
+	printf("| %12s | %30s | %20lu | %20lu |\n", "rtp-hdr-ok", "CURR Frame last Pkt", 	rx_audio_total.lastPacketGood, rx_audio_total.lastPacketGoodR);
+	printf("| %12s | %30s | %20lu | %20lu |\n", "rtp-hdr-ok", "PEND Frame last Pkt", 	rx_audio_total.lastPacketPendGood, rx_audio_total.lastPacketPendGoodR);
+	printf("| %12s | %30s | %20lu | %20lu |\n", "library-ok", "Restart as new Frame", 	rx_audio_total.restartAsNewFrame, rx_audio_total.restartAsNewFrameR);
+	printf("| %12s | %30s | %20lu | %20lu |\n", "library-ok", "Histogram Redundant pkt", 	rx_audio_total.fastCopyFail, rx_audio_total.fastCopyFailR);
+	printf("-----------------------------------------------------------------------------------------------\n");
+	printf("\n");
+	printf("--- USER NOTIFICATION ---\n");
+	printf("------------------------------------------------------------------------\n");
+	printf("| %12s | %30s | %20s | \n", "Error Type", "Category", "Count");
+	printf("------------------------------------------------------------------------\n");
+	printf("| %12s | %30s | %20lu |\n", "unexpected", "incomplete Curr-Frame", rx_audio_total.incompleteFrameDone);
+	printf("| %12s | %30s | %20lu |\n", "unexpected", "incomplete Pend-Frame", rx_audio_total.incompletePendFrameDone);
+	printf("^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n");
+	printf("| %12s | %30s | %20lu |\n", "normal", "Notify N lines of CURR", rx_audio_total.userNotifyLine);
+	printf("| %12s | %30s | %20lu |\n", "normal", "Notify N lines of PEND", rx_audio_total.userNotifyPendLine);
+	printf("| %12s | %30s | %20lu |\n", "normal", "Notify Frame of CURR", rx_audio_total.userNotifyFrame);
+	printf("| %12s | %30s | %20lu |\n", "normal", "Notify Frame of PEND", rx_audio_total.userNotifyPendFrame);
+	printf("| %12s | %30s | %20lu |\n", "normal", "complete CURR Frame", rx_audio_total.completeFrames);
+	printf("| %12s | %30s | %20lu |\n", "normal", "complete PEND Frame", rx_audio_total.completePendFrames);
+	printf("------------------------------------------------------------------------\n");
+
+	printf("--- RX ANCILARY THREAD STATS --\n");
+	printf("\n");
+	printf("--- LIBRARY ---\n");
+	printf("-----------------------------------------------------------------------------------------------\n");
+	printf("| %12s | %30s | %20s | %20s |\n", "Error Type", "Category", "Primary", "Redundant");
+	printf("-----------------------------------------------------------------------------------------------\n");
+	printf("| %12s | %30s | %20lu | %20lu |\n", "packet-err", "bad Ip|Udp", rx_ancil_total.badIpUdp, rx_ancil_total.badIpUdpR); 
+	printf("| %12s | %30s | %20lu | %20lu |\n", "packet-err", "bad Rtp", rx_ancil_total.badRtp, rx_ancil_total.badRtpR);
+	printf("| %12s | %30s | %20lu | %20lu |\n", "rtp-hdr-err", "out of Order", rx_ancil_total.outOfOrder, rx_ancil_total.outOfOrderR);
+	printf("| %12s | %30s | %20lu | %20lu |\n", "rtp-hdr-err", "incorrect tmstamp", rx_ancil_total.rtpTmstampLess, rx_ancil_total.rtpTmstampLessR);
+	printf("| %12s | %30s | %20lu | %20lu |\n", "switch-err", "Force Pending Frames", rx_ancil_total.forcePendBuffOut, rx_ancil_total.forcePendBuffOutR);
+	printf("| %12s | %30s | %20lu | %20lu |\n", "switch-err", "Force Current Frames", rx_ancil_total.forceCurrBuffOut, rx_ancil_total.forceCurrBuffOutR);
+	printf("| %12s | %30s | %20lu | %20lu |\n", "switch-err", "Historgram Err pkt", rx_ancil_total.fastCopyFailErr,	rx_ancil_total.fastCopyFailErrR);
+	printf("^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n");
+	printf("| %12s | %30s | %20lu | %20lu |\n", "rtp-hdr-ok", "tmstamp Done", rx_ancil_total.tmpstampDone, rx_ancil_total.tmpstampDoneR);
+	printf("| %12s | %30s | %20lu | %20lu |\n", "rtp-hdr-ok", "tmstamp Overflow", rx_ancil_total.rtpTmstampOverflow, rx_ancil_total.rtpTmstampOverflowR);
+	printf("| %12s | %30s | %20lu | %20lu |\n", "rtp-hdr-ok", "First Frame Pkt", rx_ancil_total.firstPacketGood, rx_ancil_total.firstPacketGoodR);
+	printf("| %12s | %30s | %20lu | %20lu |\n", "rtp-hdr-ok", "CURR Frame middle Pkt", rx_ancil_total.nonFirstPacketGood, rx_ancil_total.nonFirstPacketGoodR);
+	printf("| %12s | %30s | %20lu | %20lu |\n", "rtp-hdr-ok", "PEND Frame middle Pkt", rx_ancil_total.nonFirstPacketPendGood, rx_ancil_total.nonFirstPacketPendGoodR);
+	printf("| %12s | %30s | %20lu | %20lu |\n", "rtp-hdr-ok", "CURR Frame last Pkt", rx_ancil_total.lastPacketGood, rx_ancil_total.lastPacketGoodR);
+	printf("| %12s | %30s | %20lu | %20lu |\n", "rtp-hdr-ok", "PEND Frame last Pkt", rx_ancil_total.lastPacketPendGood, rx_ancil_total.lastPacketPendGoodR);
+	printf("| %12s | %30s | %20lu | %20lu |\n", "library-ok", "Restart as new Frame", rx_ancil_total.restartAsNewFrame, rx_ancil_total.restartAsNewFrameR);
+	printf("| %12s | %30s | %20lu | %20lu |\n", "library-ok", "Histogram Redundant pkt", rx_ancil_total.fastCopyFail, rx_ancil_total.fastCopyFailR);
+	printf("-----------------------------------------------------------------------------------------------\n");
+	printf("\n");
+	printf("--- USER NOTIFICATION ---\n");
+	printf("------------------------------------------------------------------------\n");
+	printf("| %12s | %30s | %20s | \n", "Error Type", "Category", "Count");
+	printf("------------------------------------------------------------------------\n");
+	printf("| %12s | %30s | %20lu |\n", "unexpected", "incomplete Curr-Frame", rx_ancil_total.incompleteFrameDone);
+	printf("| %12s | %30s | %20lu |\n", "unexpected", "incomplete Pend-Frame", rx_ancil_total.incompletePendFrameDone);
+	printf("^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n");
+	printf("| %12s | %30s | %20lu |\n", "normal", "Notify N lines of CURR", rx_ancil_total.userNotifyLine);
+	printf("| %12s | %30s | %20lu |\n", "normal", "Notify N lines of PEND", rx_ancil_total.userNotifyPendLine);
+	printf("| %12s | %30s | %20lu |\n", "normal", "Notify Frame of CURR", rx_ancil_total.userNotifyFrame);
+	printf("| %12s | %30s | %20lu |\n", "normal", "Notify Frame of PEND", rx_ancil_total.userNotifyPendFrame);
+	printf("| %12s | %30s | %20lu |\n", "normal", "complete CURR Frame", rx_ancil_total.completeFrames);
+	printf("| %12s | %30s | %20lu |\n", "normal", "complete PEND Frame", rx_ancil_total.completePendFrames);
+	printf("------------------------------------------------------------------------\n");
+
 	if ((dTx->packetsTx) && (dTx->pausesTx))
 	{
 		for (uint32_t i = 0; i < stMainParams.numPorts; i++)
+		{
+			if (i == 0 && stMainParams.pTx != 1)
+				continue;
 			for (uint32_t j = 0; j <= dTx->maxRings; j++)
 			{
 				printf(" TX port %u ring %u packetsTx %lu pausesTx %lu\n", i, j,
 					   dTx->packetsTx[i][j], dTx->pausesTx[i][j]);
 			}
+		}
 	}
 
-	if (stSendDevice.snTable && stSendDevice.snTable[0] && !stMainParams.rxOnly)
+	if (stSendDevice.snTable && stSendDevice.snTable[0])
 	{
 		for (int p = 0; p < stMainParams.numPorts; ++p)
 		{
+			if (p == 0 && stMainParams.pTx != 1)
+				continue;
 			fprintf(stderr, "DEST_MAC %02x:%02x:%02x:%02x:%02x:%02x\n",
 					stSendDevice.snTable[0]->hdrPrint[p].singleHdr.eth.d_addr.addr_bytes[0],
 					stSendDevice.snTable[0]->hdrPrint[p].singleHdr.eth.d_addr.addr_bytes[1],
@@ -465,28 +689,31 @@ StDevGetInterlaced(st_exact_rate_t videoRate)
 }
 
 struct rateAdjust adjust_table[] = {
-	{2, ST_DEV_RATE_P_59_94, 25, 15000},
-	{3, ST_DEV_RATE_P_59_94, 25, 12000},
-	{1, ST_DEV_RATE_P_29_97, 25, 33000},
-	{2, ST_DEV_RATE_P_29_97, 25, 30000},
-	{3, ST_DEV_RATE_P_29_97, 25, 20000},
-	{3, ST_DEV_RATE_P_59_94, 40, 1500},
-	{3, ST_DEV_RATE_P_29_97, 40, 3000},
+	{1, 2, ST_DEV_RATE_P_59_94, 25, 15000},
+	{1, 3, ST_DEV_RATE_P_59_94, 25, 14000},
+	{1, 2, ST_DEV_RATE_P_50_00, 25, 18000},
+	{1, 3, ST_DEV_RATE_P_50_00, 25, 17500},
+	{1, 1, ST_DEV_RATE_P_29_97, 25, 33000},
+	{1, 2, ST_DEV_RATE_P_29_97, 25, 30000},
+	{1, 3, ST_DEV_RATE_P_29_97, 25, 20000},
+	{1, 3, ST_DEV_RATE_P_59_94, 40, 1500},
+	{1, 3, ST_DEV_RATE_P_29_97, 40, 3000},
+	{2, 7, ST_DEV_RATE_P_59_94, 100, 6000},
 };
 
 st_status_t
-StDevGetAdjust(st_device_impl_t *d)
+StDevGetAdjust(st_device_impl_t *d, int num_port)
 {
-	int idx;
-	for (idx = 0; idx < sizeof(adjust_table)/sizeof(struct rateAdjust); idx ++)
+	for (int idx = 0; idx < sizeof(adjust_table) / sizeof(struct rateAdjust); idx++)
 	{
-		if (d->snCount <= adjust_table[idx].session_num &&
-				d->dev.exactRate == adjust_table[idx].frame_rate &&
-				d->dev.rateGbps == adjust_table[idx].gbps) {
+		if (num_port == adjust_table[idx].port_num
+			&& stMainParams.snCount <= adjust_table[idx].session_num
+			&& d->dev.exactRate == adjust_table[idx].frame_rate
+			&& d->dev.rateGbps == adjust_table[idx].gbps)
+		{
 			d->adjust = adjust_table[idx].adjust;
 			return ST_OK;
-                   }
-
+		}
 	}
 	d->adjust = 0;
 	return ST_OK;
@@ -496,7 +723,7 @@ StDevGetAdjust(st_device_impl_t *d)
  * did not consider ST30 and ST40, and need to refine it
  */
 st_status_t
-StDevCalculateBudgets(st_device_impl_t *d)
+StDevCalculateBudgets(st_device_impl_t *d, int num_port)
 {
 	// check number of sessions and other fields for valid values
 	if (d->dev.maxSt21Sessions == 0)
@@ -540,6 +767,8 @@ StDevCalculateBudgets(st_device_impl_t *d)
 		return ST_DEV_BAD_PACING;
 	}
 
+	quotBase = quotBase / num_port;
+
 	if (StDevGetInterlaced(d->dev.exactRate) || d->fmtIndex == 0)
 	{
 		pktSlotsInFrame /= 2;
@@ -547,11 +776,16 @@ StDevCalculateBudgets(st_device_impl_t *d)
 
 	d->quot = (quotBase / 8 / pktSlotsInFrame) / ST_DENOM_DEFAULT;
 	d->remaind = (quotBase / 8 / pktSlotsInFrame) % ST_DENOM_DEFAULT;
+	if (num_port == MAX_RXTX_PORTS)
+	    d->dev.maxSt21Sessions = MIN(d->dev.maxSt21Sessions, (StDevGetNicMaxSessions(d) + 1)/MAX_RXTX_PORTS);
+	else
+	    d->dev.maxSt21Sessions = MIN(d->dev.maxSt21Sessions, StDevGetNicMaxSessions(d));
 
-	d->dev.maxSt21Sessions = MIN(d->dev.maxSt21Sessions, StDevGetNicMaxSessions(d));
-
-	// now calcuate ring count
-	uint32_t maxRings
+	uint32_t maxRings;
+	if (d->quot < d->dev.maxSt21Sessions * ST_HD_422_10_SLN_L1_SZ)
+	    maxRings = d->dev.maxSt21Sessions;
+	else
+	    maxRings
 		= d->dev.maxSt21Sessions
 		  + (d->quot - d->dev.maxSt21Sessions * ST_HD_422_10_SLN_L1_SZ) / ST_DEFAULT_PKT_L1_SZ;
 
@@ -568,7 +802,7 @@ StDevCalculateBudgets(st_device_impl_t *d)
 							  - (int)((maxRings - d->dev.maxSt21Sessions) * ST_DEFAULT_PKT_L1_SZ);
 
 	RTE_LOG(INFO, USER1, "ST21 Sessions Out of bound ring budget: %d\n", outOfBoundRingBytes);
-	d->outOfBoundRing = 1;
+	d->outOfBoundRing = outOfBoundRingBytes < 0 ? 0: 1;
 	d->maxRings = maxRings;
 
 	/* TODO just hardcode the audio session number */
@@ -579,7 +813,7 @@ StDevCalculateBudgets(st_device_impl_t *d)
 			"ST21 Sessions max count is %u Rings count is %u, Out of bound ring is %s\n",
 			d->dev.maxSt21Sessions, d->maxRings, d->outOfBoundRing ? "on" : "off");
 
-	StDevGetAdjust(d);
+	StDevGetAdjust(d, num_port);
 
 	return ST_OK;
 }
@@ -609,43 +843,26 @@ StDevInitTxThreads(st_main_params_t *mp, st_device_impl_t *dev)
 	// count lcores to initialize threading structures
 	uint32_t thrdCount = 0;
 	int i = 0;
-#if (RTE_VER_YEAR < 21)
-	RTE_LCORE_FOREACH_SLAVE(i)
-#else
 	RTE_LCORE_FOREACH_WORKER(i)
-#endif
 	{
 		thrdCount++;
 	}
 
 	thrdCount -= ST_KNI_THEARD;
 
-	if (!mp->rxOnly)
+	if (mp->pTx == 1 || mp->rTx == 1)
 	{
+
 		mp->maxSchThrds = stDevParams->maxSchThrds;
-		int tempThreads = thrdCount - (mp->maxSchThrds * mp->numPorts);
-		if (mp->sn30Count > 0)
-			tempThreads--;
-		if (mp->sn40Count > 0)
-			tempThreads--;
-		mp->maxEnqThrds = stDevParams->maxEnqThrds;
-		if (stDevParams->maxEnqThrds > tempThreads)
-			mp->maxEnqThrds = tempThreads;
-
-		if (!mp->txOnly)
+		if (mp->pTx == 1 && mp->rTx == 1)
+		    mp->maxSchThrds = 1;
+		if (mp->pacing == ST_PACING_TSC)
 		{
-			mp->maxEnqThrds -= (stDevParams->maxRcvThrds + stDevParams->maxAudioRcvThrds
-								+ stDevParams->maxAncRcvThrds);
+			if (mp->snCount <= dev->dev.maxSt21Sessions/2)
+				mp->maxSchThrds = 1;
 		}
 
-		if (mp->maxEnqThrds < stDevParams->maxEnqThrds)
-		{
-			rte_exit(ST_INVALID_PARAM,
-					 "Invalid number of enq threads of %u for available number of sessions, shall "
-					 "be %u\n",
-					 mp->maxEnqThrds, stDevParams->maxEnqThrds);
-		}
-
+		RTE_LOG(INFO, USER1, "%s, snCount %d enqueue threads %d\n", __func__, mp->snCount, mp->maxEnqThrds);
 		uint32_t perThrdSnCount = RTE_MIN(dev->dev.maxSt21Sessions, mp->snCount) / mp->maxEnqThrds;
 		uint32_t countRemaind = RTE_MIN(dev->dev.maxSt21Sessions, mp->snCount) % mp->maxEnqThrds;
 
@@ -689,7 +906,7 @@ StDevInitRxThreads(st_main_params_t *mp, st_device_impl_t *dev)
 	mp->maxAudioRcvThrds = stDevParams->maxAudioRcvThrds;
 	mp->maxAncRcvThrds = stDevParams->maxAncRcvThrds;
 
-	if (!mp->txOnly)
+	if (mp->pRx == 1 || mp->rRx == 1)
 	{
 		uint32_t perThrdSnCount = RTE_MIN(dev->dev.maxSt21Sessions, mp->snCount) / mp->maxRcvThrds;
 		uint32_t countRemaind = RTE_MIN(dev->dev.maxSt21Sessions, mp->snCount) % mp->maxRcvThrds;

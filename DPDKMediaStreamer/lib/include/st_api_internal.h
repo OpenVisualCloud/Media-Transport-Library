@@ -23,6 +23,7 @@
 #include <rte_mbuf.h>
 #include <rte_ring.h>
 
+#include "dpdk_common.h"
 #include "st_api.h"
 #include "st_fmt.h"
 #include "st_pkt.h"
@@ -181,10 +182,11 @@ struct rvrtp_pkt_ctx
 	uint32_t sliceOffset;
 
 	uint32_t tmstamp;
+	uint32_t usertmstamp;
 	uint32_t tmstampOddInc;
 	uint32_t tmstampEvenInc;
 	uint32_t alignTmstamp;
-	uint64_t epochs;
+	int64_t epochs;
 
 	uint16_t line1PixelGrpSize;
 	uint16_t line2PixelGrpSize;
@@ -219,7 +221,7 @@ typedef struct rartp_pkt_ctx
 	uint16_t seqNumber;
 
 	uint32_t tmstamp;
-	uint64_t epochs;
+	int64_t epochs;
 
 	uint16_t ipPacketId;
 	uint32_t payloadSize;
@@ -241,7 +243,7 @@ struct ranc_pkt_ctx
 	uint16_t extSeqNumber;
 
 	uint32_t tmstamp;
-	uint64_t epochs;
+	int64_t epochs;
 
 	uint16_t ipPacketId;
 	uint32_t payloadSize;  //size of anc header and payload of ancillary data
@@ -307,6 +309,22 @@ struct rvrtp_ebu_stat
 } __rte_cache_aligned;
 
 typedef struct rvrtp_ebu_stat rvrtp_ebu_stat_t;
+
+/* timing for Packet Read Schedule */
+struct rvrtp_pacing
+{
+	double trs; /* in ns for of 2 consecutive packets, T-Frame / N-Packets */
+	double trOffset; /* in ns */
+	double timeCursor; /* in ns */
+	uint32_t vrx; /* packets unit, VRX */
+	double trafficTime; /* in ns, traffic time between tx and rx, need tune for different setup */
+
+	uint64_t curEpochs;
+	uint32_t epochMismatch;
+	uint32_t idx;
+} __rte_cache_aligned;
+
+typedef struct rvrtp_pacing rvrtp_pacing_t;
 
 /**
 * Function to build packet as it is dependent on a format
@@ -398,6 +416,7 @@ struct st_session_impl
 		ranc_pkt_ctx_t ancctx;
 	};
 	rvrtp_ebu_stat_t ebu;
+	rvrtp_pacing_t pacing;
 	union st_pkt_hdr hdrPrint[MAX_RXTX_PORTS] __rte_cache_aligned;
 	uint64_t padding[8] __rte_cache_aligned;  //usefull to capture memory corrupts
 } __rte_cache_aligned;
@@ -528,8 +547,10 @@ struct st_device_impl
 	uint32_t timeQuot;	//in nanoseconds
 	uint32_t *timeTable;
 
-	uint32_t rxOnly;
-	uint32_t txOnly;
+	uint32_t pRx;
+	uint32_t pTx;
+	uint32_t rRx;
+	uint32_t rTx;
 
 	uint32_t maxRings;
 	uint32_t outOfBoundRing;
@@ -550,10 +571,16 @@ struct st_device_impl
 	uint32_t numPorts;
 	uint8_t srcMacAddr[MAX_RXTX_PORTS][ETH_ADDR_LEN];
 
+	uint64_t *pacingDeltaSum[MAX_RXTX_PORTS];
+	uint64_t *pacingDeltaCnt[MAX_RXTX_PORTS];
+	uint64_t *pacingDeltaMax[MAX_RXTX_PORTS];
+	uint64_t *pacingUpDeltaMax[MAX_RXTX_PORTS]; /* the max delta from booting up */
+	uint64_t *pacingVrxCnt[MAX_RXTX_PORTS]; /* delta cnt max than Vrx timing */
+
 	uint64_t *packetsTx[MAX_RXTX_PORTS];
 	uint64_t *pausesTx[MAX_RXTX_PORTS];
 	int32_t adjust;
-
+	int rte_thread_core[RTE_MAX_LCORE];
 	volatile int lock;
 } __rte_cache_aligned;
 typedef struct st_device_impl st_device_impl_t;
@@ -564,7 +591,6 @@ extern st_device_impl_t stSendDevice;
 struct tprs_scheduler
 {
 	int	timeCursor;
-	uint32_t timeRemaind;
 
 	uint32_t quot;
 	int32_t	adjust;
@@ -1041,6 +1067,18 @@ int32_t RancRtpGetTimeslot(st_device_impl_t *dev);
 void RancRtpSetTimeslot(st_device_impl_t *dev, int32_t timeslot, st_session_impl_t *s);
 uint32_t RancRtpGetFrameTmstamp(st_session_impl_t *s, uint32_t firstWaits, U64 *roundTime,
 								struct rte_mbuf *m);
+
+static inline void StMbufSetTimestamp(struct rte_mbuf *mbuf, uint64_t timestamp)
+{
+	pktpriv_data_t *ptr = rte_mbuf_to_priv(mbuf);
+	ptr->timestamp = timestamp;
+}
+
+static inline uint64_t StMbufGetTimestamp(struct rte_mbuf *mbuf)
+{
+	pktpriv_data_t *ptr = rte_mbuf_to_priv(mbuf);
+	return ptr->timestamp;
+}
 
 /* internal api end */
 

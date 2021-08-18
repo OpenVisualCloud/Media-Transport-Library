@@ -29,10 +29,24 @@
 #include <sys/types.h>
 #include <time.h>
 #include <unistd.h>
+#include <numa.h>
 
 #define SENDER_APP_DEBUG
 #define ST_OPT_SIZE 24
 //#define SENDER_APP_LOGS
+
+uint32_t glblTmstamp[256] = {1,10,20,30,40,50,60,70,80,90};
+
+typedef struct
+{
+	int32_t lowMn;
+	int32_t lowMx;
+	int32_t highMn;
+	int32_t highMx;
+} app_cpulist_t;
+
+static app_cpulist_t cpuList[4];
+static volatile int howCpuScks = -1;
 
 static inline void
 SendAppLock(strtp_send_app_t *app)
@@ -230,6 +244,12 @@ SendAppReadFrame422Inline(strtp_send_app_t *app,
 	st_rfc4175_422_10_pg2_t *dst = (st_rfc4175_422_10_pg2_t *)prod->frameBuf;
 	st_rfc4175_422_10_pg2_t *const end
 		= (st_rfc4175_422_10_pg2_t *)(prod->frameBuf + prod->frameSize);
+
+	if (app->movieEnd <= (app->movie + app->movieBufSize))
+	{
+		app->movie = app->movieBegin;
+	}
+
 	// read frame from movie and convert into frameBuf
 	uint16_t const *Y = (uint16_t *)(app->movie + 0 * (app->movieBufSize / 4));
 	uint16_t const *R = (uint16_t *)(app->movie + 2 * (app->movieBufSize / 4));
@@ -242,15 +262,13 @@ SendAppReadFrame422Inline(strtp_send_app_t *app,
 	{
 		Pack(dst, *R++, Y[0], *B++, Y[1]);
 		Y += 2;
-		app->movie += sizeof(uint16_t) * 4;
-		assert(app->movie <= app->movieEnd);
+		if ((app->movieEnd - app->movie) > (sizeof(uint16_t) * 4))
+			app->movie += sizeof(uint16_t) * 4;
+		else
+			app->movie = app->movieBegin;
 	}
 
-	if (app->movieEnd <= app->movie)
-	{
-		app->movie = app->movieBegin;
-	}
-	prod->frameCursor = (prod->frameCursor + 1) % SEND_APP_FRAME_MAX;
+	prod->frameCursor = ((prod->frameCursor + 1) % SEND_APP_FRAME_MAX);
 	return ST_OK;
 }
 
@@ -302,22 +320,6 @@ SendAppReadFrameNetBeBufBgra(strtp_send_app_t *app)
 	return SendAppReadFrameRgbaInline(app, ST_422_FMT_CONV_NET_BE10_BUF_BGRA);
 }
 
-#define WhichThread (0)
-#define HowFrames (400)
-
-#if WhichThread == 0
-
-typedef struct
-{
-	int32_t lowMn;
-	int32_t lowMx;
-	int32_t highMn;
-	int32_t highMx;
-} app_cpulist_t;
-static app_cpulist_t cpuList[4];
-static volatile int howCpuScks = -1;
-static volatile int affinityCore = -1;
-
 static st_status_t
 GetCPUs(int32_t soc, app_cpulist_t *cl)
 {
@@ -344,15 +346,12 @@ GetCPUs(int32_t soc, app_cpulist_t *cl)
 static void *__attribute__((noreturn)) SendAppThread(void *arg)
 {
 	strtp_send_app_t *app = (strtp_send_app_t *)arg;
-	uint64_t currTmr;
-	st21_producer_t *prod;
-	double period = 1.0 / rte_get_tsc_hz();
 	uint32_t elapsed = 0, old = app->frmsSend, act;
 
 	SetAffinityCore(app, ST_DEV_TYPE_PRODUCER);
-	prod = (st21_producer_t *)app->prod;
-	prod->frmLocCnt = 0;
-	prod->lastTmr = 0;
+
+	app->fpsFrameCnt = 0;
+	app->fpsLastTimeNs = 0;
 
 	for (;;)
 	{
@@ -363,23 +362,31 @@ static void *__attribute__((noreturn)) SendAppThread(void *arg)
 			/* enqueue thread will update frmsSend */
 			act = app->frmsSend;
 		}
+
+#if ST_APP_FPS_SHOW
 		elapsed += (act - old - 1);
-		prod->frmLocCnt += act - old;
+		app->fpsFrameCnt += act - old;
+		if (app->fpsFrameCnt >= ST_APP_FPS_FRAME_INTERVAL)
+		{
+			uint64_t curTimeNs = StGetMonotonicTimeNano();
+
+			if (app->fpsLastTimeNs)
+			{
+				double timeSec = (double)(curTimeNs - app->fpsLastTimeNs) / NS_PER_S;
+				double frameRate = app->fpsFrameCnt / timeSec;
+
+				printf("INFO USER2 SendApp[%02d], Frame Rate = %4.2lf Over elapsed: %d\n",
+						app->index, frameRate, elapsed);
+			}
+
+			elapsed = 0;
+			app->fpsFrameCnt = 0;
+			app->fpsLastTimeNs = curTimeNs;
+		}
+#endif
+
 		old = act;
 		app->SendAppReadFrame(app);
-
-		if (prod->frmLocCnt >= HowFrames)
-		{
-			currTmr = rte_get_tsc_cycles();
-			uint64_t cclks = currTmr - prod->lastTmr;
-			double frameRate = (double)(prod->frmLocCnt) / (period * cclks);
-			if (prod->lastTmr)
-				RTE_LOG(INFO, USER2, "App[%02d], Frame Rate = %4.2lf Over elapsed: %d\n",
-						app->index, frameRate, elapsed);
-			prod->lastTmr = currTmr;
-			elapsed = 0;
-			prod->frmLocCnt = 0;
-		}
 
 		if (app->videoStream != NULL)
 		{
@@ -387,26 +394,6 @@ static void *__attribute__((noreturn)) SendAppThread(void *arg)
 		}
 	}
 }
-
-#else
-
-static void *__attribute__((noreturn)) SendAppThread(void *arg)
-{
-	strtp_send_app_t *app = (strtp_send_app_t *)arg;
-	SetAffinityCore(app, ST_DEV_TYPE_PRODUCER);
-
-	for (;;)
-	{
-		uint32_t const old = app->frmsSend;
-		app->SendAppReadFrame(app);
-		while (old == app->frmsSend)
-		{
-			sleep(0);  // wait for next frame
-		}
-	}
-}
-
-#endif
 
 static void *__attribute__((noreturn)) SendAudioThread(void *arg)
 {
@@ -453,7 +440,7 @@ SendAppOpenFile(strtp_send_app_t *app, const char *fileName)
 		}
 		else
 		{
-			RTE_LOG(ERR, USER1, "mmap fail '%s'\n", fileName);
+			printf("ERR USER1: mmap fail '%s'\n", fileName);
 			return ST_GENERAL_ERR;
 		}
 	}  // ffmpeg -i ${file} -c:v rawvideo -pix_ftm yuv440p10be -o ${file}.yuv
@@ -474,7 +461,7 @@ SendAppOpenFile(strtp_send_app_t *app, const char *fileName)
 		default:
 			break;
 		}
-		RTE_LOG(ERR, USER1, "Fail to find %s, please use option '--%s' to provide\n", fileName,
+		printf("ERR USER1: Fail to find %s, please use option '--%s' to provide\n", fileName,
 				options);
 		return ST_GENERAL_ERR;
 	}
@@ -608,15 +595,14 @@ SendSt21AppInit(strtp_send_app_t *app, void *producer)
 	}
 
 #ifdef SENDER_APP_LOGS
-	RTE_LOG(INFO, USER2, "SendApp: dualPixelSize %u sliceSize %u sliceCount %u\n",
+	printf("INFO USER2: SendApp: dualPixelSize %u sliceSize %u sliceCount %u\n",
 			app->dualPixelSize, app->sliceSize, app->sliceCount);
-	RTE_LOG(INFO, USER2, "SendApp: pixelGrpsInSlice %u linesInSlice %u frameSize %u\n",
+	printf("INFO USER2: SendApp: pixelGrpsInSlice %u linesInSlice %u frameSize %u\n",
 			app->pixelGrpsInSlice, app->linesInSlice, prod->frameSize);
 #endif
 	// initially read 1st frame
 	prod->frameCursor = 0;
 	prod->frameBuf = app->frames[prod->frameCursor];
-	prod->frmLocCnt = 0;
 	app->frmsSend = 0;
 
 	status = app->SendAppReadFrame(app);
@@ -655,7 +641,7 @@ SendAppReadFrameAnc(strtp_send_app_t *app)
 	prod->frameBuf->meta[0].sdid = 0x02;
 	prod->frameBuf->meta[0].udwSize = udwSize;
 	prod->frameBuf->meta[0].udwOffset = 0;
-	rte_memcpy(prod->frameBuf->data, app->movie, udwSize);
+	memcpy(prod->frameBuf->data, app->movie, udwSize);
 	prod->frameBuf->dataSize = udwSize;
 	prod->frameBuf->metaSize = 1;
 	prod->frameCursor = (prod->frameCursor + 1) % SEND_APP_FRAME_MAX;
@@ -959,7 +945,7 @@ SendAppCreateProducer(st_session_t *sn, uint8_t bufFormat, const char *fileName,
 	if (!sn)
 		return ST_INVALID_PARAM;
 
-	strtp_send_app_t *app = malloc(sizeof(strtp_send_app_t));
+	strtp_send_app_t *app = numa_alloc_local(sizeof(strtp_send_app_t));
 	if (!app)
 	{
 		return ST_NO_MEMORY;
@@ -973,16 +959,16 @@ SendAppCreateProducer(st_session_t *sn, uint8_t bufFormat, const char *fileName,
 	status = SendAppNewProducer(sn, &producer);
 	if (status != ST_OK)
 	{
-		RTE_LOG(INFO, USER2, "SendAppNewProducer error of %d\n", status);
-		free(app);
+		printf("INFO USER2: SendAppNewProducer error of %d\n", status);
+		numa_free(app, sizeof(strtp_send_app_t));
 		return status;
 	}
 
 	status = SendAppOpenFile(app, fileName);
 	if (status != ST_OK)
 	{
-		RTE_LOG(INFO, USER2, "SendAppOpenFile error of %d\n", status);
-		free(app);
+		printf("INFO USER2: SendAppOpenFile error of %d\n", status);
+		numa_free(app, sizeof(strtp_send_app_t));
 		return status;
 	}
 
@@ -994,16 +980,16 @@ SendAppCreateProducer(st_session_t *sn, uint8_t bufFormat, const char *fileName,
 	status = SendAppInitProd(app, producer);
 	if (status != ST_OK)
 	{
-		RTE_LOG(INFO, USER2, "SendAppInitProd error of %d\n", status);
-		free(app);
+		printf("INFO USER2: SendAppInitProd error of %d\n", status);
+		numa_free(app, sizeof(strtp_send_app_t));
 		return status;
 	}
 
 	status = StRegisterProducer(sn, producer);	//&app->prod);
 	if (status != ST_OK)
 	{
-		RTE_LOG(INFO, USER2, "StRegisterProducer FAILED. ErrNo: %d\n", status);
-		free(app);
+		printf("INFO USER2: StRegisterProducer FAILED. ErrNo: %d\n", status);
+		numa_free(app, sizeof(strtp_send_app_t));
 		return status;
 	}
 
@@ -1076,11 +1062,13 @@ SendAppReadNextSlice(strtp_send_app_t *app, uint8_t *frameBuf, uint32_t prevOffs
  * St21ProducerUpdate or St21ConsumerUpdate to restart streaming
  */
 uint8_t *
-SendAppGetNextFrameBuf(void *appHandle, uint8_t *prevFrameBuf, uint32_t bufSize, uint32_t fieldId)
+SendAppGetNextFrameBuf(void *appHandle, uint8_t *prevFrameBuf, uint32_t bufSize, uint32_t *tmstamp, uint32_t fieldId)
 {
 	strtp_send_app_t *app = (strtp_send_app_t *)appHandle;
 	st21_producer_t *prod;
 	uint8_t *nextBuf;
+//	uint32_t usertmstamp = rand();
+	uint8_t tmstampIndex = pthread_self() % 256;
 
 	SendAppLock(app);
 
@@ -1092,7 +1080,6 @@ SendAppGetNextFrameBuf(void *appHandle, uint8_t *prevFrameBuf, uint32_t bufSize,
 		app->cldThr = pthread_self();
 		app->iscldThrSet = 1;
 	}
-
 	SendAppUnlock(app);
 
 	if (nextBuf)
@@ -1102,6 +1089,14 @@ SendAppGetNextFrameBuf(void *appHandle, uint8_t *prevFrameBuf, uint32_t bufSize,
 			app->frmsSend++;
 			prod->sliceOffset = 0;
 			SendAppReadNextSlice(app, nextBuf, 0, prod->sliceSize, fieldId);
+			if (tmstamp) 
+			{
+				*tmstamp = glblTmstamp[tmstampIndex];
+				glblTmstamp[tmstampIndex] += 200;
+#ifdef DEBUG
+				printf("SendAppGetNextFrameBuf: %u while usertmstamp: %u\n", *tmstamp, glblTmstamp[tmstampIndex]);
+#endif
+			}
 			return nextBuf;
 		}
 		else if (nextBuf != prevFrameBuf)
@@ -1109,18 +1104,22 @@ SendAppGetNextFrameBuf(void *appHandle, uint8_t *prevFrameBuf, uint32_t bufSize,
 			app->frmsSend++;
 			prod->sliceOffset = 0;
 			SendAppReadNextSlice(app, nextBuf, 0, prod->sliceSize, fieldId);
+			if (tmstamp) 
+			{
+				*tmstamp = glblTmstamp[tmstampIndex];
+				glblTmstamp[tmstampIndex] += 200;
+#ifdef DEBUG
+				printf("SendAppGetNextFrameBuf: %u while usertmstamp: %u\n", *tmstamp, glblTmstamp[tmstampIndex]);
+#endif
+			}
 			return nextBuf;
 		}
-	}
-	else
-	{
-		return NULL;
 	}
 	return NULL;
 }
 
 uint8_t *
-SendAppGetNextAudioBuf(void *appHandle, uint8_t *prevFrameBuf, uint32_t bufSize)
+SendAppGetNextAudioBuf(void *appHandle, uint8_t *prevFrameBuf, uint32_t bufSize, uint32_t *tmstamp)
 {
 	strtp_send_app_t *app = (strtp_send_app_t *)appHandle;
 	st30_producer_t *prod;
@@ -1292,12 +1291,12 @@ SendAppGetFrameTmstamp(void *appHandle)
 	uint32_t tmstamp = ((uint64_t)specLast.tv_nsec + tmstampSec + NIC_TX_TIME) / app->tmstampTime;
 
 #ifdef SENDER_APP_LOGS
-	RTE_LOG(INFO, USER2,
+	printf("INFO USER2:"
 			"SendAppGetFrameTmstamp: session %u, repeats %llu elapsed %llu diff %llu \n",
 			s->timeslot, repeats, elapsed,
 			(elapsed > toElapse) ? elapsed - toElapse : toElapse - elapsed);
 
-	RTE_LOG(INFO, USER2, "SendAppGetFrameTmstamp: session %u, waiting %llu troffset %u delta %u\n",
+	printf("INFO USER2: SendAppGetFrameTmstamp: session %u, waiting %llu troffset %u delta %u\n",
 			s->timeslot, toElapse, s->sn.trOffset, tmstamp - app->firstTmstamp);
 
 	app->firstTmstamp = tmstamp;

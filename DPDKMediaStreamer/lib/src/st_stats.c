@@ -15,6 +15,7 @@
 */
 
 #include "st_stats.h"
+#include "st_api.h"
 
 #include <rte_atomic.h>
 #include <rte_branch_prediction.h>
@@ -53,6 +54,8 @@
 #include <sys/ioctl.h>
 #include <sys/queue.h>
 #include <unistd.h>
+
+#include "rvrtp_main.h"
 
 #define MIN_START_PER (4.0)
 #define MIN_PER (9.8)
@@ -112,8 +115,73 @@ StStsInit_(uint16_t portId)
 }
 
 static void
+StStsPrintPacing(uint16_t portId)
+{
+	st_device_impl_t *dTx = &stSendDevice;
+	st_session_impl_t *s;
+	rvrtp_pacing_t *pacing;
+
+	for (uint32_t j = 0; j < stMainParams.snCount; j++)
+	{
+		s = dTx->snTable[j];
+		if (!s)
+		{
+			break;
+		}
+		pacing = &s->pacing;
+
+		if (nbRead > 6)
+		{
+			if (dTx->pacingDeltaMax[portId][j] > dTx->pacingUpDeltaMax[portId][j])
+			{
+				dTx->pacingUpDeltaMax[portId][j] = dTx->pacingDeltaMax[portId][j];
+			}
+
+			if (dTx->pacingDeltaMax[portId][j] > (pacing->vrx * pacing->trs))
+			{
+				dTx->pacingVrxCnt[portId][j]++;
+			}
+		}
+
+		printf("Pacingdelta for TX port %u ring %02u, upMax %lu Vrx %lu, Cnt %lu Max %lu Avg %lu\n",
+			portId, j,
+			dTx->pacingUpDeltaMax[portId][j],
+			dTx->pacingVrxCnt[portId][j],
+			dTx->pacingDeltaCnt[portId][j],
+			dTx->pacingDeltaMax[portId][j],
+			dTx->pacingDeltaCnt[portId][j] ? dTx->pacingDeltaSum[portId][j] / dTx->pacingDeltaCnt[portId][j] : 0);
+
+		dTx->pacingDeltaCnt[portId][j] = 0;
+		dTx->pacingDeltaMax[portId][j] = 0;
+		dTx->pacingDeltaSum[portId][j] = 0;
+	}
+
+	if (portId == 0)
+	{
+		for (uint32_t j = 0; j < stMainParams.snCount; j++)
+		{
+			s = dTx->snTable[j];
+			if (!s)
+			{
+				break;
+			}
+			pacing = &s->pacing;
+
+			if (pacing->epochMismatch)
+			{
+				printf("Session %02u, epoch mismatch %u\n", j, pacing->epochMismatch);
+				pacing->epochMismatch = 0;
+			}
+		}
+	}
+}
+
+static void
 StStsPrint_(uint16_t portId)
 {
+	if (rte_eth_dev_count_avail() == 0)
+		return;
+
 	struct rte_eth_stats stats;
 	uint64_t currTicks = rte_get_tsc_cycles();
 	double per = (double)(currTicks - lastTicks[portId]) / (double)freqTicks[portId];
@@ -169,6 +237,12 @@ StStsPrint_(uint16_t portId)
 	printf("Avr Rx:      %10.2lf [Mb/s]\n", iMidRate / RATE_UNIT);
 	printf("Max Tx:      %10.2lf [Mb/s]\n", oMaxRate[portId] / RATE_UNIT);
 	printf("Max Rx:      %10.2lf [Mb/s]\n", iMaxRate[portId] / RATE_UNIT);
+	printf("Status: imissed %ld ierrors %ld oerrors %ld rx_nombuf %ld\n",
+			stats.imissed, stats.ierrors, stats.oerrors, stats.rx_nombuf);
+	if ((stMainParams.pTx == 1 || stMainParams.rTx == 1) && StIsTscPacing())
+	{
+		StStsPrintPacing(portId);
+	}
 	printf("* *    E N D    B I T   R A T E S   * * \n\n");
 	nbRead++;
 	return;

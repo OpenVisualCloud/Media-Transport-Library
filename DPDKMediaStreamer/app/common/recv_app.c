@@ -25,16 +25,19 @@
 #include <sys/sysinfo.h>
 #include <sys/types.h>
 #include <unistd.h>
+#include <stdatomic.h>
+#include <numa.h>
 
 // #define RX_APP_DEBUG 1
+// #define DEBUG 1
 #define ST_ESSENCE_NUM 3
 #define ST_DEV_TYPES 2
 
-static rte_atomic32_t isAppStopped;
+static volatile atomic_uint_fast32_t isAppStopped;
 static bool audioCmp = false;
 static bool ancCmp = false;
 
-static volatile cpu_set_t affinityCore_Application[ST_DEV_TYPES];
+static volatile cpu_set_t affinityCore_Application;
 static cpu_set_t affinityCore_toUse[ST_DEV_TYPES][ST_ESSENCE_NUM];
 static uint16_t coreIndex_toUse[ST_DEV_TYPES][ST_ESSENCE_NUM];
 static pthread_mutex_t lock;
@@ -69,8 +72,8 @@ SetAffinityCore(void *app, st_dev_type_t type)
 	if (CPU_COUNT(&affinityCore_toUse[type][etype]) == 0)
 	{
 		coreIndex_toUse[type][etype] = 0;
-		CPU_OR(&affinityCore_toUse[type][etype], (cpu_set_t *)&affinityCore_Application[type],
-			   (cpu_set_t *)&affinityCore_Application[type]);
+		CPU_OR(&affinityCore_toUse[type][etype], (cpu_set_t *)&affinityCore_Application,
+			   (cpu_set_t *)&affinityCore_Application);
 	}
 
 	while (coreIndex_toUse[type][etype]++ < get_nprocs_conf())
@@ -78,18 +81,19 @@ SetAffinityCore(void *app, st_dev_type_t type)
 		if (CPU_ISSET(coreIndex_toUse[type][etype], &affinityCore_toUse[type][etype]))
 		{
 			CPU_CLR(coreIndex_toUse[type][etype], &affinityCore_toUse[type][etype]);
+			CPU_CLR(coreIndex_toUse[type][etype], &affinityCore_Application);
 			CPU_SET(coreIndex_toUse[type][etype], &app_cpuset);
 			break;
 		}
 	}
 	if (pthread_setaffinity_np(thread, sizeof(cpu_set_t), &app_cpuset) == 0)
 	{
-		RTE_LOG(INFO, USER1, "****** %s affinity set successfully in %d\n",
+		printf("INFO USER1: ****** %s affinity set successfully in %d\n",
 				essence_type_name[etype], coreIndex_toUse[type][etype]);
 	}
 	else
 	{
-		RTE_LOG(ERR, USER1, "****** %s affinity set fail %d\n", essence_type_name[etype],
+		printf("ERR USER1: ****** %s affinity set fail %d\n", essence_type_name[etype],
 				coreIndex_toUse[type][etype]);
 	}
 	pthread_mutex_unlock(&lock);
@@ -113,10 +117,9 @@ AppInitAffinity(int appStartCoreId)
 		CPU_ZERO(&affinityCore_toUse[ST_DEV_TYPE_CONSUMER][2]);
 
 		StGetAppAffinityCores(appStartCoreId, &myCpu);
-		CPU_OR((cpu_set_t *)&affinityCore_Application[ST_DEV_TYPE_CONSUMER], &myCpu, &myCpu);
-		CPU_OR((cpu_set_t *)&affinityCore_Application[ST_DEV_TYPE_PRODUCER], &myCpu, &myCpu);
+		CPU_OR((cpu_set_t *)&affinityCore_Application, &myCpu, &myCpu);
 		pthread_mutex_init(&lock, NULL);
-		RTE_LOG(INFO, USER1, "****** App available cpu count %u\n", CPU_COUNT((cpu_set_t *)&myCpu));
+		printf("INFO USER1: ****** App available cpu count %u\n", CPU_COUNT((cpu_set_t *)&myCpu));
 	}
 }
 
@@ -222,7 +225,7 @@ RecvAppWriteAudioBuffer(strtp_recv_app_t *app, const unsigned char *buffer)
 		   (unsigned int)app->movie, (unsigned int)app->movieCursor, app->session->frameSize,
 		   app->movieSize, buffer, buffer[0], buffer[1], buffer[2], buffer[3]);
 #endif /* RX_APP_DEBUG */
-	rte_memcpy((uint8_t *)app->movie + app->movieCursor, buffer, app->session->frameSize);
+	memcpy((uint8_t *)app->movie + app->movieCursor, buffer, app->session->frameSize);
 	app->movieCursor = (app->movieCursor + app->session->frameSize) % app->movieSize;
 }
 
@@ -271,10 +274,13 @@ RecvAppThread(strtp_recv_app_t *app)
 
 	SetAffinityCore(app, ST_DEV_TYPE_CONSUMER);
 
-	while (rte_atomic32_read(&isAppStopped) == 0)
+	app->fpsFrameCnt = 0;
+	app->fpsLastTimeNs = 0;
+
+	while (atomic_load(&isAppStopped) == 0)
 	{
 		uint32_t const old = app->frmsRecv;
-		while ((old == app->frmsRecv) && (rte_atomic32_read(&isAppStopped) == 0))
+		while ((old == app->frmsRecv) && (atomic_load(&isAppStopped) == 0))
 		{
 			sleep(0);  // wait for next frame
 		}
@@ -288,6 +294,23 @@ RecvAppThread(strtp_recv_app_t *app)
 			app->RecvAppWriteFrame(app, (st_rfc4175_422_10_pg2_t const *)frameBuf);
 			if (app->videoStream != NULL)
 				ShowFrame(app->videoStream, sharedMv, app->fieldId);
+#if ST_APP_FPS_SHOW
+			app->fpsFrameCnt += app->frmsRecv - old;
+			if (app->fpsFrameCnt >= ST_APP_FPS_FRAME_INTERVAL)
+			{
+				uint64_t curTimeNs = StGetMonotonicTimeNano();
+
+				if (app->fpsLastTimeNs)
+				{
+					double timeSec = (double)(curTimeNs - app->fpsLastTimeNs) / NS_PER_S;
+					double frameRate = app->fpsFrameCnt / timeSec;
+					printf("INFO USER2: RecvApp[%02d], Frame Rate = %4.2lf\n", app->index, frameRate);
+				}
+
+				app->fpsFrameCnt = 0;
+				app->fpsLastTimeNs = curTimeNs;
+			}
+#endif
 		}
 		else if (app->session->type == ST_ESSENCE_AUDIO)
 		{
@@ -303,7 +326,7 @@ RecvAppThread(strtp_recv_app_t *app)
 				{
 					status = PlayAudioFrame(app->ref, sharedMv, app->session->frameSize);
 					if (status != ST_OK)
-						RTE_LOG(INFO, USER1,
+						printf("INFO USER1"
 								"Cursor - (write:%u,read:%u), frames - (ToRead:%u,Recv:%u) "
 								"session:%d\n",
 								app->writeCursor, app->readCursor, app->framesToRead, app->frmsRecv,
@@ -312,26 +335,23 @@ RecvAppThread(strtp_recv_app_t *app)
 			}
 			RecvAppUnlock(app);
 		}
-		else if (app->session->type == ST_ESSENCE_ANC)
+		else if ((app->session->type == ST_ESSENCE_ANC) && ancCmp)
 		{
 			RecvAppLock(app);
 			while (app->framesToRead > 0)
 			{
 				int offset = app->ancFrames[app->readCursor].meta[0].udwOffset;
 				int count = app->ancFrames[app->readCursor].meta[0].udwSize;
-				if (ancCmp)
-				{
-					status = PlayAncFrame(app->ancref,
-										  app->ancFrames[app->readCursor].data + offset, count);
-					if (status != ST_OK)
-						RTE_LOG(ERR, USER1,
-								"Anc Frame check failure: Cursor - (write:%u,read:%u), frames - "
-								"(ToRead:%u,Recv:%u) session:%d\n",
-								app->writeCursor, app->readCursor, app->framesToRead, app->frmsRecv,
-								app->session->ssid);
-					app->readCursor = (app->readCursor + 1) % RECV_APP_FRAME_MAX;
-					app->framesToRead--;
-				}
+				status = PlayAncFrame(app->ancref,
+									  app->ancFrames[app->readCursor].data + offset, count);
+				if (status != ST_OK)
+					printf("ERR USER1:"
+							"Anc Frame check failure: Cursor - (write:%u,read:%u), frames - "
+							"(ToRead:%u,Recv:%u) session:%d\n",
+							app->writeCursor, app->readCursor, app->framesToRead, app->frmsRecv,
+							app->session->ssid);
+				app->readCursor = (app->readCursor + 1) % RECV_APP_FRAME_MAX;
+				app->framesToRead--;
 			}
 			RecvAppUnlock(app);
 		}
@@ -472,17 +492,19 @@ RecvAppInit(strtp_recv_app_t *app)
 
 	app->frameSize = app->session->frameSize;
 
+#ifdef DEBUG
 	if (app->session->type == ST_ESSENCE_VIDEO)
 	{
-		RTE_LOG(DEBUG, USER2, "RecvApp dualPixelSize %u sliceSize %u sliceCount %u\n",
+		printf("DEBUG USER2: RecvApp dualPixelSize %u sliceSize %u sliceCount %u\n",
 				app->dualPixelSize, app->sliceSize, app->sliceCount);
-		RTE_LOG(DEBUG, USER2, "RecvApp pixelGrpsInSlice %u linesInSlice %u frameSize %u\n",
+		printf("DEBUG USER2: RecvApp pixelGrpsInSlice %u linesInSlice %u frameSize %u\n",
 				app->pixelGrpsInSlice, app->linesInSlice, app->frameSize);
 	}
 	else
 	{
-		RTE_LOG(DEBUG, USER2, "RecvApp frameSize %u\n", app->frameSize);
+		printf("DEBUG USER2: RecvApp frameSize %u\n", app->frameSize);
 	}
+#endif
 
 	if (app->session->type != ST_ESSENCE_ANC)
 	{
@@ -491,12 +513,15 @@ RecvAppInit(strtp_recv_app_t *app)
 		app->movieSize = 4 * app->movieBufSize;
 		uint32_t fileSizeBytes = app->movieSize;
 
+#ifdef DEBUG
 		RTE_LOG(DEBUG, USER2, "Opening Rx file: %s size %d\n", app->fileName, fileSizeBytes);
+#endif
+
 		app->fileFd = open(app->fileName, O_CREAT | O_RDWR, 0640);
 		int ret = ftruncate(app->fileFd, fileSizeBytes);
 		if (ret < 0)
 		{
-			RTE_LOG(ERR, USER2, "Opening Rx file: %s failed\n", app->fileName);
+			printf("ERR USER2: Opening Rx file: %s failed\n", app->fileName);
 			return ST_GENERAL_ERR;
 		}
 		app->movie = mmap(NULL, fileSizeBytes, PROT_READ | PROT_WRITE, MAP_SHARED, app->fileFd, 0);
@@ -508,7 +533,7 @@ RecvAppInit(strtp_recv_app_t *app)
 	app->inputCursor = 0;
 	app->frmsRecv = 0;
 
-	rte_atomic32_set(&isAppStopped, 0);
+	atomic_init(&isAppStopped, 0);
 
 	pthread_create(&app->writeThread, NULL, (void *(*)(void *))RecvAppThread, (void *)app);
 
@@ -561,7 +586,9 @@ RecvInitSt30Cons(st_session_t *sn, st30_consumer_t *cons, void *app)
 void
 RecvAppNotifyAncFrameDone(void *appHandle, void *frameBuf)
 {
-	RTE_LOG(DEBUG, USER3, "RecvAppNotifyAncFrameDone frameBuf:%" PRIxPTR "\n", (uintptr_t)frameBuf);
+#ifdef DEBUG
+	printf("DEBUG USER3: RecvAppNotifyAncFrameDone frameBuf:%" PRIxPTR "\n", (uintptr_t)frameBuf);
+#endif
 	strtp_recv_app_t *app = (strtp_recv_app_t *)appHandle;
 
 	RecvAppLock(app);
@@ -577,7 +604,9 @@ RecvAppNotifyAncFrameDone(void *appHandle, void *frameBuf)
 	}
 	app->frmsRecv++;
 	RecvAppUnlock(app);
-	RTE_LOG(DEBUG, USER3, "AncBuf %p\n", frameBuf);
+#ifdef DEBUG
+	printf("DEBUG USER3: AncBuf %p\n", frameBuf);
+#endif
 	return;
 }
 
@@ -595,7 +624,9 @@ RecvAppGetNextAncFrame(void *appHandle)
 	nextFrame->dataSize = 0;
 	nextFrame->metaSize = 0;
 	RecvAppUnlock(app);
-	RTE_LOG(DEBUG, USER3, "RecvAppGetNextAncFrame %" PRIxPTR "\n", (uintptr_t)nextFrame);
+#ifdef DEBUG
+	printf("DEBUG USER3: RecvAppGetNextAncFrame %" PRIxPTR "\n", (uintptr_t)nextFrame);
+#endif
 	return nextFrame;
 }
 
@@ -618,10 +649,13 @@ RecvInitSt40Cons(st_session_t *sn, st40_consumer_t *cons, void *app)
 void
 RecvAppNotifyBufferDone(void *appHandle, uint8_t *frameBuf)
 {
-	RTE_LOG(DEBUG, USER3, "RecvAppNotifyBufferDone frameBuf:%" PRIxPTR "\n", (uintptr_t)frameBuf);
-
+#ifdef DEBUG
+	printf("DEBUG USER3: RecvAppNotifyBufferDone frameBuf:%" PRIxPTR "\n", (uintptr_t)frameBuf);
+#endif
 	return;
 }
+
+
 
 /**
  * Callback to producer application to get next audio buffer necessary to continue streaming
@@ -629,7 +663,7 @@ RecvAppNotifyBufferDone(void *appHandle, uint8_t *frameBuf)
  * to restart streaming
  */
 uint8_t *
-RecvAppGetNextAudioBuf(void *appHandle, uint8_t *prevAudioBuf, uint32_t bufSize)
+RecvAppGetNextAudioBuf(void *appHandle, uint8_t *prevAudioBuf, uint32_t bufSize, uint32_t *tmstamp)
 {
 	uint8_t *nextBuf;
 	strtp_recv_app_t *app = (strtp_recv_app_t *)appHandle;
@@ -640,7 +674,9 @@ RecvAppGetNextAudioBuf(void *appHandle, uint8_t *prevAudioBuf, uint32_t bufSize)
 	nextBuf = app->samples[app->inputCursor];
 	app->inputCursor = (app->inputCursor + 1) % RECV_APP_SAMPLE_MAX;
 	RecvAppUnlock(app);
-	RTE_LOG(DEBUG, USER3, "RecvAppGetNextAudioBuf %" PRIxPTR "\n", (uintptr_t)nextBuf);
+#ifdef DEBUG
+	printf("DEBUG USER3: RecvAppGetNextAudioBuf %" PRIxPTR "\n", (uintptr_t)nextBuf);
+#endif
 	return nextBuf;
 }
 
@@ -666,7 +702,9 @@ RecvAppNotifySampleRecv(void *appHandle, uint8_t *audioBuf, uint32_t bufOffset, 
 	}
 	app->frmsRecv++;
 	RecvAppUnlock(app);
-	RTE_LOG(DEBUG, USER1, "AudioBuf %p\n", audioBuf);
+#ifdef DEBUG
+	printf("DEBUG USER3: RecvAppNotifySampleRecv %" PRIxPTR " tmstamp %u\n", (uintptr_t)audioBuf, tmstamp);
+#endif
 }
 
 static int
@@ -682,14 +720,14 @@ RecvInitConsumer(st_session_t *sn, strtp_recv_app_t *app, void *cons)
 		status = CreateAudioRef(&app->ref);
 		if (status != ST_OK)
 		{
-			RTE_LOG(ERR, USER1, "CreateRef FAILED. ErrNo: %d\n", status);
+			printf("ERR USER1: CreateRef FAILED. ErrNo: %d\n", status);
 			return status;
 		}
 		filename = AudioRefSelectFile(app->bufFormat);
 		status = AudioRefOpenFile(app->ref, filename);
 		if (status != ST_OK)
 		{
-			RTE_LOG(INFO, USER2, "AudioRefOpenFile error of %d, no audio compare\n", status);
+			printf("INFO USER2: AudioRefOpenFile error of %d, no audio compare\n", status);
 			free(app->ref);
 		}
 		else
@@ -709,14 +747,14 @@ RecvInitConsumer(st_session_t *sn, strtp_recv_app_t *app, void *cons)
 		status = CreateAncRef(&app->ancref);
 		if (status != ST_OK)
 		{
-			RTE_LOG(ERR, USER1, "CreateRef FAILED. ErrNo: %d\n", status);
+			printf("ERR USER1: CreateRef FAILED. ErrNo: %d\n", status);
 			return status;
 		}
 		filename = AncRefSelectFile(app->bufFormat);
 		status = AncRefOpenFile(app->ancref, filename);
 		if (status != ST_OK)
 		{
-			RTE_LOG(INFO, USER2, "AncRefOpenFile error of %d, no Anc Compare\n", status);
+			printf("INFO USER2: AncRefOpenFile error of %d, no Anc Compare\n", status);
 			free(app->ancref);
 		}
 		else
@@ -738,8 +776,7 @@ RecvAppCreateConsumer(st_session_t *sn, st21_buf_fmt_t bufFormat, strtp_recv_app
 
 	if (!sn)
 		return ST_INVALID_PARAM;
-	strtp_recv_app_t *app = rte_malloc_socket("RecvApp", sizeof(strtp_recv_app_t),
-											  RTE_CACHE_LINE_SIZE, rte_socket_id());
+	strtp_recv_app_t *app = numa_alloc_local( sizeof(strtp_recv_app_t));
 	if (app)
 	{
 		memset(app, 0x0, sizeof(strtp_recv_app_t));
@@ -751,22 +788,22 @@ RecvAppCreateConsumer(st_session_t *sn, st21_buf_fmt_t bufFormat, strtp_recv_app
 			status = RecvInitConsumer(sn, app, (void *)&cons);
 			if (status != ST_OK)
 			{
-				RTE_LOG(INFO, USER2, "RecvInitConsumer FAILED. ErrNo: %d\n", status);
-				rte_free(app);
+				printf("INFO USER2: RecvInitConsumer FAILED. ErrNo: %d\n", status);
+				numa_free(app, sizeof(strtp_recv_app_t));
 				return status;
 			}
 			status = StRegisterConsumer(sn, (void *)&cons);
 			if (status != ST_OK)
 			{
-				RTE_LOG(INFO, USER2, "StRegisterConsumer FAILED. ErrNo: %d\n", status);
-				rte_free(app);
+				printf("INFO USER2: RecvInitConsumer FAILED. ErrNo: %d\n", status);
+				numa_free(app, sizeof(strtp_recv_app_t));
 				return status;
 			}
 			*appOut = app;
 		}
 		else
 		{
-			RTE_LOG(INFO, USER3, "RecvAppInit error of %d\n", status);
+			printf("INFO USER3: RecvAppInit error of %d\n", status);
 		}
 		// ToDo ~RecvAppDeInit - app contain open file!
 		return status;
@@ -799,13 +836,13 @@ RecvAppStop(st_session_t *sn, strtp_recv_app_t *app)
 	if (!sn || !app)
 		return ST_INVALID_PARAM;
 
-	rte_atomic32_set(&isAppStopped, 1);
+	atomic_store(&isAppStopped, 1);
 	(void)pthread_join(app->writeThread, NULL);
 
 	status = ConsumerStop(sn);
 	if (status != ST_OK)
 	{
-		RTE_LOG(ERR, USER1, "ConsumerStop FAILED. ErrNo: %d\n", status);
+		printf("ERR USER1: ConsumerStop FAILED. ErrNo: %d\n", status);
 		return status;
 	}
 	if (app->session->type == ST_ESSENCE_VIDEO)
@@ -820,6 +857,7 @@ RecvAppStop(st_session_t *sn, strtp_recv_app_t *app)
 	{
 		free(app->ancFrames[0].data);
 	}
+
 	return status;
 }
 
@@ -829,7 +867,7 @@ RecvAppStop(st_session_t *sn, strtp_recv_app_t *app)
  * to restart streaming
  */
 uint8_t *
-RecvAppGetNextFrameBuf(void *appHandle, uint8_t *prevFrameBuf, uint32_t bufSize, uint32_t fieldId)
+RecvAppGetNextFrameBuf(void *appHandle, uint8_t *prevFrameBuf, uint32_t bufSize, uint32_t *tmstamp, uint32_t fieldId)
 {
 	uint8_t *nextBuf;
 	strtp_recv_app_t *app = (strtp_recv_app_t *)appHandle;
@@ -849,7 +887,7 @@ RecvAppGetNextFrameBuf(void *appHandle, uint8_t *prevFrameBuf, uint32_t bufSize,
 void
 RecvAppNotifyFrameDone(void *appHandle, uint8_t *frameBuf, uint32_t fieldId)
 {
-	// RTE_LOG(INFO, USER3, "RecvAppNotifyFrameDone\n");
+	// printf("INFO USER3: RecvAppNotifyFrameDone\n");
 	// free(frameBuf);
 	return;
 }
@@ -863,6 +901,14 @@ RecvAppNotifyFrameRecv(void *appHandle, uint8_t *frameBuf, uint32_t tmstamp, uin
 {
 	strtp_recv_app_t *app = (strtp_recv_app_t *)appHandle;
 
+	if (!frameBuf)
+	{
+	#ifdef DEBUG
+		printf("DEBUG USER1: %s(%d), null frame for field %u\n", __func__, app->index, fieldId);
+	#endif
+		return;
+	}
+
 	RecvAppLock(app);
 
 	for (uint32_t i = 0; i < RECV_APP_FRAME_MAX; i++)
@@ -874,7 +920,9 @@ RecvAppNotifyFrameRecv(void *appHandle, uint8_t *frameBuf, uint32_t tmstamp, uin
 		}
 	}
 	RecvAppUnlock(app);
-	RTE_LOG(DEBUG, USER1, "Field %u             %p\n", fieldId, frameBuf);
+#ifdef DEBUG
+	printf("DEBUG USER1: %s(%d), field %u %p tmstamp %u\n", __func__, app->index, fieldId, frameBuf, tmstamp);
+#endif
 	app->fieldId = fieldId;
 	app->frmsRecv++;
 }

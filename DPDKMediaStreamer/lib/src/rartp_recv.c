@@ -30,6 +30,8 @@
 extern st_device_impl_t stRecvDevice;
 volatile uint32_t prevSeqNumber = 0;
 
+st_rcv_stats_t rxThreadAudioStats[RTE_MAX_LCORE];
+
 void *
 RaRtpDummyBuildPacket(st_session_impl_t *s, void *hdr, struct rte_mbuf *m)
 {
@@ -85,7 +87,7 @@ RaRtpCreateRxSession(st_device_impl_t *dev, st_session_t *sin, st_format_t *fmt,
 		s->dev = dev;
 		s->sn = *sin;
 		s->sn.timeslot = timeslot;
-		s->sn.frameSize = s->fmt.a.pktSize;
+		s->sn.frameSize = s->fmt.a.pktSize - ST_PKT_AUDIO_HDR_LEN;
 		s->sn.rtpProfile = RARTP_PAYLOAD_TYPE_PCM_AUDIO;
 
 		for (uint32_t i = 0; i < stMainParams.maxAudioRcvThrds; i++)
@@ -105,7 +107,7 @@ RaRtpCreateRxSession(st_device_impl_t *dev, st_session_t *sin, st_format_t *fmt,
 
 		s->state = ST_SN_STATE_ON;
 
-		s->actx.payloadSize = s->fmt.a.pktSize;
+		s->actx.payloadSize = s->fmt.a.pktSize - ST_PKT_AUDIO_HDR_LEN;
 		s->acons.bufSize = s->sn.frameSize;
 		s->actx.histogramSize = 2 * s->acons.bufSize / s->actx.payloadSize;
 		s->actx.histogram = rte_malloc_socket("Audio", s->actx.histogramSize, RTE_CACHE_LINE_SIZE,
@@ -126,6 +128,21 @@ RaRtpCreateRxSession(st_device_impl_t *dev, st_session_t *sin, st_format_t *fmt,
 st_status_t
 RaRtpDestroyRxSession(st_session_impl_t *s)
 {
+	if (!s)
+		return ST_INVALID_PARAM;
+
+	if(s->consBuf)
+	{
+		s->acons.St30NotifyBufferDone(s->acons.appHandle, s->consBuf);
+	}
+	s->consBufs[FRAME_CURR].buf = NULL;
+
+	if(s->acons.appHandle)
+		RTE_LOG(WARNING, USER1, "App handler is not cleared!\n");
+
+	rte_free(s);
+	s = NULL;
+
 	return ST_OK;
 }
 
@@ -264,7 +281,7 @@ RaRtpReceivePacketsRegular(st_session_impl_t *s, struct rte_mbuf *m)
 		if (!s->consBuf)
 		{
 			s->consBuf
-				= s->acons.St30GetNextAudioBuf(s->acons.appHandle, s->consBuf, s->acons.bufSize);
+				= s->acons.St30GetNextAudioBuf(s->acons.appHandle, s->consBuf, s->acons.bufSize, NULL);
 			if (unlikely(s->consBuf == NULL))
 			{
 				s->pktsDrop++;
@@ -306,7 +323,7 @@ RaRtpReceivePacketsRegular(st_session_impl_t *s, struct rte_mbuf *m)
 	{
 
 		s->acons.St30NotifyBufferDone(s->acons.appHandle, s->consBuf);
-		s->consBuf = s->acons.St30GetNextAudioBuf(s->acons.appHandle, s->consBuf, s->acons.bufSize);
+		s->consBuf = s->acons.St30GetNextAudioBuf(s->acons.appHandle, s->consBuf, s->acons.bufSize, NULL);
 		s->actx.bufOffset = 0;
 	}
 
@@ -353,30 +370,13 @@ RaRtpReceivePacketCallback(st_session_impl_t *s, struct rte_mbuf *m)
 	switch (s->acons.consType)
 	{
 	case ST21_CONS_RAW_L2_PKT:
-#if (RTE_VER_YEAR < 21)
 		return s->acons.St30RecvRtpPkt(s->acons.appHandle, pktHdr, hdrSize, rtpPayload, payloadSize,
-									   m->timestamp);
-#else
-	{
-		pktpriv_data_t *ptr = rte_mbuf_to_priv(m);
-		return s->acons.St30RecvRtpPkt(s->acons.appHandle, pktHdr, hdrSize, rtpPayload, payloadSize,
-									   ptr->timestamp);
-	}
-#endif
+									   StMbufGetTimestamp(m));
 
 	case ST21_CONS_RAW_RTP:
-#if (RTE_VER_YEAR < 21)
 		return s->acons.St30RecvRtpPkt(s->acons.appHandle, (uint8_t *)rtp,
 									   sizeof(st_rfc3550_audio_hdr_t), rtpPayload, payloadSize,
-									   m->timestamp);
-#else
-	{
-		pktpriv_data_t *ptr = rte_mbuf_to_priv(m);
-		return s->acons.St30RecvRtpPkt(s->acons.appHandle, (uint8_t *)rtp,
-									   sizeof(st_rfc3550_audio_hdr_t), rtpPayload, payloadSize,
-									   ptr->timestamp);
-	}
-#endif
+									   StMbufGetTimestamp(m));
 
 	default:
 		ST_ASSERT;

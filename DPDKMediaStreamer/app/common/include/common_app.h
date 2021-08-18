@@ -23,10 +23,6 @@
 #include "st_fmt.h"
 #include "st_pack.h"
 
-/* DPDK includes */
-#include <rte_eal.h>
-#include <rte_malloc.h>
-
 /* Defines */
 #define U64 unsigned long long
 #define SEND_APP_FRAME_MAX 3
@@ -40,8 +36,17 @@
 #define MIN(x, y) (x < y ? x : y)
 #define MAX(x, y) (x > y ? x : y)
 
-#define ST_APP_ASSERT                                                                              \
-	rte_exit(127, "ASSERT error file %s function %s line %u\n", __FILE__, __FUNCTION__, __LINE__)
+#define ST_APP_ASSERT      do{ \
+							fprintf(stderr," ASSERT error file %s function %s line %u\n", __FILE__, __FUNCTION__, __LINE__ ); \
+							exit(127); \
+							}while(0);
+                                                                        \
+
+
+#define ST_APP_FPS_SHOW		(1) /* If display fps for send and recv app */
+#if ST_APP_FPS_SHOW
+#define ST_APP_FPS_FRAME_INTERVAL	(60 * 10) /* 10s */
+#endif
 
 typedef enum
 {
@@ -97,6 +102,9 @@ typedef struct strtp_send_app
 
 	volatile int lock;
 	video_stream_info_t *videoStream;
+
+	uint32_t fpsFrameCnt; /* for FPS */
+	uint64_t fpsLastTimeNs; /* for FPS */
 } strtp_send_app_t;
 
 struct strtp_recv_app;
@@ -157,6 +165,10 @@ typedef struct strtp_recv_app
 		anc_ref_t *ancref;
 	};
 
+	uint8_t index;	// Identifier
+
+	uint32_t fpsFrameCnt; /* for FPS */
+	uint64_t fpsLastTimeNs; /* for FPS */
 } strtp_recv_app_t;
 
 // External declarations (library based)
@@ -192,11 +204,11 @@ uint32_t SendAppReadNextSlice(strtp_send_app_t *app, uint8_t *frameBuf, uint32_t
  * St21ProducerUpdate or St21ConsumerUpdate to restart streaming
  */
 uint8_t *SendAppGetNextFrameBuf(void *appHandle, uint8_t *prevFrameBuf, uint32_t bufSize,
-								uint32_t fieldId);
+								uint32_t *tmstamp, uint32_t fieldId);
 
-uint8_t *SendAppGetNextAudioBuf(void *appHandle, uint8_t *prevFrameBuf, uint32_t bufSize);
+uint8_t *SendAppGetNextAudioBuf(void *appHandle, uint8_t *prevFrameBuf, uint32_t bufSize, uint32_t *tmstamp);
 
-uint8_t *SendAppGetNextAncBuf(void *appHandle, uint8_t *prevFrameBuf, uint32_t bufSize);
+uint8_t *SendAppGetNextAncBuf(void *appHandle, uint8_t *prevFrameBuf, uint32_t bufSize, uint32_t *tmstamp);
 
 /**
  * Callback to producer or consumer application to get next slice buffer necessary to continue
@@ -240,7 +252,7 @@ st_status_t RecvAppInit(strtp_recv_app_t *app);
  * to restart streaming
  */
 uint8_t *RecvAppGetNextFrameBuf(void *appHandle, uint8_t *prevFrameBuf, uint32_t bufSize,
-								uint32_t fieldId);
+								uint32_t *tmstamp, uint32_t fieldId);
 
 /**
  * Callback to producer or consumer application with notification about the frame completion
@@ -272,7 +284,7 @@ void RecvAppNotifyBufferDone(void *appHandle, uint8_t *frameBuf);
  * If application cannot return the next buffer returns NULL and TBD then has to call St30ProducerUpdate
  * to restart streaming
  */
-uint8_t *RecvAppGetNextAudioBuf(void *appHandle, uint8_t *prevAudioBuf, uint32_t bufSize);
+uint8_t *RecvAppGetNextAudioBuf(void *appHandle, uint8_t *prevAudioBuf, uint32_t bufSize, uint32_t *tmstamp);
 
 /**
  * Callback to consumer application to get next ancillary buffer necessary to continue streaming

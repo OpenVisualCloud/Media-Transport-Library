@@ -21,7 +21,7 @@
 
 void *StRtpBuildIpHeader(st_session_impl_t *s, struct rte_ipv4_hdr *ip, uint32_t portId);
 void *StRtpUpdateIpHeader(st_session_impl_t *s, struct rte_ipv4_hdr *ip);
-void *StRtpBuildUdpHeader(st_session_impl_t *s, struct rte_udp_hdr *udp);
+void *StRtpBuildUdpHeader(st_session_impl_t *s, struct rte_udp_hdr *udp, uint32_t portId);
 
 void *StRtpBuildL2Packet(st_session_impl_t *s, struct rte_ether_hdr *l2, uint32_t portId);
 

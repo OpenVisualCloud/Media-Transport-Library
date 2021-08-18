@@ -36,6 +36,7 @@
 #include <math.h>
 #include <string.h>
 
+
 #define RTE_LOGTYPE_ST_PTP (RTE_LOGTYPE_USER1)
 #define RTE_LOGTYPE_ST_PTP1 (RTE_LOGTYPE_USER1)
 #define RTE_LOGTYPE_ST_PTP2 (RTE_LOGTYPE_USER2)
@@ -45,6 +46,7 @@
 #define RTE_LOGTYPE_ST_PTP6 (RTE_LOGTYPE_USER6)
 #define RTE_LOGTYPE_ST_PTP7 (RTE_LOGTYPE_USER7)
 #define RTE_LOGTYPE_ST_PTP8 (RTE_LOGTYPE_USER8)
+
 
 #define PAUSE_TO_SEND_FIRST_DELAY_REQ (50)	//us
 #define ORDER_WAIT_TIME (50)				//us
@@ -63,7 +65,7 @@
 #define PTP_LOG(...) RTE_LOG(__VA_ARGS__)
 #endif
 
-#define USE_LOCK (0)
+#define USE_LOCK (1)
 
 static st_ptp_t ptpState[MAX_RXTX_PORTS] = {
 	{
@@ -95,8 +97,14 @@ static st_ptp_summary_statistic ptpSumStat[MAX_RXTX_PORTS];
 void
 StPtpPrintStatus_callback(void *arg)
 {
-	int portId = (int)(int64_t)arg;
-	PTP_SUM_LOG(INFO, ST_PTP, "PTP report for port:                    %d\n", portId);
+	long portId = (long)arg;
+	if (rte_atomic32_read(&isStopMainThreadTasks) == 1)
+	{
+		StPtpDeInit(portId);
+		return;
+	}
+
+	PTP_SUM_LOG(INFO, ST_PTP, "PTP report for port:                    %ld\n", portId);
 	if (rte_atomic32_read(&ptpSumStat[portId].isWorks) != 0)
 	{
 		PTP_SUM_LOG(INFO, ST_PTP, "Curent L4/L2 mode:                      %s\n",
@@ -110,19 +118,19 @@ StPtpPrintStatus_callback(void *arg)
 	}
 	else
 	{
-		PTP_SUM_LOG(INFO, ST_PTP, "PTP for portId: %d not synchronized yet\n", portId);
+		PTP_SUM_LOG(INFO, ST_PTP, "PTP for portId: %ld not synchronized yet\n", portId);
 	}
 	rte_atomic32_clear(&ptpSumStat[portId].isWorks);
 	rte_atomic32_set(&ptpSumStat[portId].isClr, 1);
 	if (0
 		!= rte_eal_alarm_set(SUMMARY_INFO_PTP_PERIOD * 1000000ll, StPtpPrintStatus_callback,
-							 (void *)(int64_t)portId))
+							 (void *)portId))
 	{
 		/* retry once more if nto exit */
 		if (0
 			!= rte_eal_alarm_set(SUMMARY_INFO_PTP_PERIOD * 1000000ll, StPtpPrintStatus_callback,
-								 (void *)(int64_t)portId))
-			rte_exit(EXIT_FAILURE, "failed to enable PTP stats handler for portId: %d!\n", portId);
+								 (void *)portId))
+			rte_exit(EXIT_FAILURE, "failed to enable PTP stats handler for portId: %ld!\n", portId);
 	}
 }
 
@@ -315,7 +323,7 @@ StPtpPrintFollowUpMsg(ptp_follow_up_msg_t *ptpHdr)
 }
 
 static void
-StPtpPrintDellayResMsg(ptp_delay_resp_msg_t *ptpHdr)
+StPtpPrintDelayResMsg(ptp_delay_resp_msg_t *ptpHdr)
 {
 	PTP_LOG(INFO, ST_PTP5, "\033[34;1m\n");
 	PTP_LOG(INFO, ST_PTP5, "\n##### PTP DELAY_RESP MESSAGE #####\n");
@@ -337,7 +345,7 @@ StPtpPrintDellayResMsg(ptp_delay_resp_msg_t *ptpHdr)
 #define StPtpPrintSyncMsg(...)
 #define StPtpPrintDelayReqMsg(...)
 #define StPtpPrintFollowUpMsg(...)
-#define StPtpPrintDellayResMsg(...)
+#define StPtpPrintDelayResMsg(...)
 #endif
 
 static inline struct timespec
@@ -362,40 +370,12 @@ net_tstamp_to_ns(const ptp_tmstamp_t *ts)
 	return (sec * NS_PER_S) + ntohl(ts->ns);
 }
 
-static long double hpetPeriod = 1e0l;  // ns
-static uint64_t epochRteAdj;		   // time beetwen 1970 and boot time and adjust
-static uint64_t curHPetClk;
-static inline void
-StPtpCalcHpetPeriod(void)
-{
-	hpetPeriod = 1e9l / rte_get_timer_hz();
-}
-
-static inline uint64_t
-StPtpTimeFromRteCalc(uint64_t cyc)
-{
-	long double adjust = hpetPeriod * cyc;
-	return epochRteAdj + adjust;
-}
-
-static uint64_t
-StPtpTimeFromRte()
-{
-	return StPtpTimeFromRteCalc(rte_get_timer_cycles());
-}
-
 static uint64_t
 StPtpTimeFromEth(void)
 {
 	struct timespec spec;
-	struct rte_eth_link link;
 	uint16_t portId = ST_PPORT;
 
-	rte_eth_link_get_nowait(portId, &link);
-	if (link.link_status == ETH_LINK_DOWN)
-	{
-		portId = ST_RPORT;
-	}
 	StPtpLock(portId);
 	rte_eth_timesync_read_time(ptpState[portId].portId, &spec);
 	StPtpUnlock(portId);
@@ -419,7 +399,7 @@ StPtpPrepMacFromClockIdentity(struct rte_ether_addr *mac, clock_id_t *clockId)
 }
 
 static int
-StPtpIsInitializedAndIsOurMaster(const ptp_header_t *ptpHdr, uint16_t portId)
+StPtpIsInitializedAndIsOurMaster(ptp_header_t *ptpHdr, uint16_t portId)
 {
 	if (ptpState[portId].state != PTP_INITIALIZED)
 	{
@@ -437,36 +417,22 @@ StPtpIsInitializedAndIsOurMaster(const ptp_header_t *ptpHdr, uint16_t portId)
 }
 
 static void
-StPtpParseSyncMsg(ptp_sync_msg_t const *ptpHdr, uint16_t portId, uint16_t rxTmstampIdx,
-				  uint64_t *tm)
+StPtpParseSyncMsg(struct rte_mbuf *m, ptp_sync_msg_t *ptpHdr, uint16_t portId, uint16_t rxTmstampIdx)
 {
-	int isSoft = 0, ret;
-	struct timespec timestamp;
-
-	StPtpLock(portId);
-	ret = rte_eth_timesync_read_rx_timestamp(portId, &timestamp, rxTmstampIdx);
-	StPtpUnlock(portId);
-
 	if (StPtpIsInitializedAndIsOurMaster(&ptpHdr->hdr, portId) != 0)
 		return;
 
-	if (!ret)
-	{
-		/* TODO if timesync HW is supported, it should not be used */
-		/*use software timestamp */
-		timestamp = ns_to_timespec(*tm);
-		isSoft = 1;
-	}
-	ptpState[portId].ist2Soft = isSoft;
+	StPtpPrintSyncMsg(ptpHdr);
+	struct timespec timestamp;
+	int ret;
+	StPtpLock(portId);
+	ret = rte_eth_timesync_read_rx_timestamp(ptpState[portId].portId, &timestamp, rxTmstampIdx);
+	if (ret < 0)
+		rte_eth_timesync_read_time(ptpState[portId].portId, &timestamp);
+	StPtpUnlock(portId);
 	ptpState[portId].t2 = timespec64_to_ns(&timestamp);
-	ptpState[portId].t2HPet = StPtpTimeFromRteCalc(curHPetClk);
 	ptpState[portId].syncSeqId = ptpHdr->hdr.sequenceId;
 	ptpState[portId].howSyncInAnnouce++;
-
-	if (ptpState[portId].t1HPetFreqStart == 0)
-		ptpState[portId].t1HPetFreqClk = curHPetClk;
-	ptpState[portId].t1HPetFreqClkNext = curHPetClk;
-	PTP_LOG(INFO, ST_PTP4, "SYNC save time\n");
 }
 
 static const ptp_delay_req_msg_t delayReqMsgPat = {
@@ -485,11 +451,12 @@ static const ptp_delay_req_msg_t delayReqMsgPat = {
 };
 
 static void
-StPtpParseFollowUpMsg(ptp_follow_up_msg_t const *ptpHdr, uint16_t portId)
+StPtpParseFollowUpMsg(ptp_follow_up_msg_t *ptpHdr, uint16_t portId)
 {
 
 	ptp_delay_req_msg_t *ptpMsg;
 	ptp_ipv4_udp_t *ipv4Hdr = NULL;	 //must be becouse gcc report that it can be not initialized
+	StPtpPrintFollowUpMsg(ptpHdr);
 
 	if (StPtpIsInitializedAndIsOurMaster(&ptpHdr->hdr, portId) != 0)
 	{
@@ -509,8 +476,6 @@ StPtpParseFollowUpMsg(ptp_follow_up_msg_t const *ptpHdr, uint16_t portId)
 	}
 	//copy t1 time
 	ptpState[portId].t1 = net_tstamp_to_ns(&ptpHdr->preciseOriginTimestamp);
-	if (ptpState[portId].t1HPetFreqStart == 0)
-		ptpState[portId].t1HPetFreqStart = ptpState[portId].t1;
 
 	struct rte_ether_hdr *ethHdr = rte_pktmbuf_mtod(reqPkt, struct rte_ether_hdr *);
 
@@ -609,28 +574,31 @@ StPtpParseFollowUpMsg(ptp_follow_up_msg_t const *ptpHdr, uint16_t portId)
 	ptpMsg->hdr.sourcePortIdentity = ptpState[portId].ourPortIdentity;
 	ptpState[portId].delayReqId++;
 	ptpMsg->hdr.sequenceId = ptpState[portId].delayReqId;
+
+	StPtpPrintDelayReqMsg(ptpMsg);
 	ptpState[portId].delReqPkt = reqPkt;
 	pthread_mutex_unlock(&ptpState[portId].isDo);
 }
 
 static void
-StPtpParseDellayResMsg(ptp_delay_resp_msg_t const *ptpHdr, uint16_t portId)
+StPtpParseDelayResMsg(ptp_delay_resp_msg_t *ptpHdr, uint16_t portId)
 {
 	if (ptpState[portId].state != PTP_INITIALIZED)
 	{
 		PTP_LOG(WARNING, ST_PTP4, "PTP slave not initialized yet\n");
 		return;
 	}
+	StPtpPrintDelayResMsg(ptpHdr);
 	ptpState[portId].howDelayResInAnnouce++;
 	int ret = StPtpComparePortIdentities(&ptpHdr->requestingPortIdentity,
 										 &ptpState[portId].ourPortIdentity);
-	PTP_LOG(WARNING, ST_PTP4, "StPtpParseDellayResMsg ret= %d\n", ret);
+	PTP_LOG(WARNING, ST_PTP4, "StPtpParseDelayResMsg ret= %d\n", ret);
 	if (ret != 0)
 	{
 		if (ret > 0)
 			ptpState[portId].howHigherPortIdentity++;
 		PTP_LOG(WARNING, ST_PTP6,
-				"StPtpParseDellayResMsg ptpState[portId].howHigherPortIdentity %d\n",
+				"StPtpParseDelayResMsg ptpState[portId].howHigherPortIdentity %d\n",
 				ptpState[portId].howHigherPortIdentity);
 		PTP_LOG(WARNING, ST_PTP6, "\n\nDELAY_RESP not for us START\n");
 		StPtpPrintPortIdentity("requestingPortIdentity", &ptpHdr->requestingPortIdentity);
@@ -644,40 +612,15 @@ StPtpParseDellayResMsg(ptp_delay_resp_msg_t const *ptpHdr, uint16_t portId)
 		return;
 	}
 	ptpState[portId].howDelayResOurInAnnouce++;
-	struct timespec tmt3;
-#if INFO_PTP == 1
-	uint64_t t3Soft = ptpState[portId].t3;
-#endif
 
-	StPtpLock(portId);
-	ret = rte_eth_timesync_read_tx_timestamp(portId, &tmt3);
-	StPtpUnlock(portId);
-	if (ret == 0)
-	{
-		ptpState[portId].t3 = timespec64_to_ns(&tmt3);
-		ptpState[portId].ist3Soft = 0;
-	}
-	else
-	{
-		PTP_LOG(WARNING, ST_PTP4, "DELAY_RESP timestamp %ld:%ld ret=%d\n", tmt3, tmt3.tv_nsec, ret);
-		ptpState[portId].ist3Soft = 1;
-	}
-	PTP_LOG(WARNING, ST_PTP6, "DELAY_RESP ptpState[portId].ist3Soft=%d\n",
-			ptpState[portId].ist3Soft);
 	ptpState[portId].t4 = net_tstamp_to_ns(&ptpHdr->receiveTimestamp);
+	StPtpLock(portId);
 	int64_t delta = (((int64_t)ptpState[portId].t4 - (int64_t)ptpState[portId].t3)
 					 - ((int64_t)ptpState[portId].t2 - (int64_t)ptpState[portId].t1))
 					/ 2;
-#if INFO_PTP == 1
-	int64_t tp = (((int64_t)ptpState[portId].t4 - (int64_t)ptpState[portId].t3)
-				  + ((int64_t)ptpState[portId].t2 - (int64_t)ptpState[portId].t1))
-				 / 2;
-#endif
 
 	PTP_LOG(WARNING, ST_PTP6, "t1=%ld t2=%ld t3=%ld t4=%ld\n", ptpState[portId].t1,
 			ptpState[portId].t2, ptpState[portId].t3, ptpState[portId].t4);
-	PTP_LOG(WARNING, ST_PTP6, "t1=%ld t2HPet=%ld t3HPet=%ld t4=%ld\n", ptpState[portId].t1,
-			ptpState[portId].t2HPet, ptpState[portId].t3HPet, ptpState[portId].t4);
 
 	/* useful info for debug */
 	PTP_LOG(WARNING, ST_PTP6, "%s: t2-t1=%ld t4-t3=%ld\n",
@@ -686,16 +629,9 @@ StPtpParseDellayResMsg(ptp_delay_resp_msg_t const *ptpHdr, uint16_t portId)
 	PTP_LOG(WARNING, ST_PTP6, "t4-t1=%ld t3-t2=%ld\n", ptpState[portId].t4 - ptpState[portId].t1,
 			ptpState[portId].t3 - ptpState[portId].t2);
 
-	StPtpLock(portId);
 	if (rte_eth_timesync_adjust_time(portId, delta) == 0)
 	{
-		if (ptpState[portId].clkSrc == ST_PTP_CLOCK_SRC_ETH
-			|| ptpState[portId].clkSrc == ST_PTP_CLOCK_SRC_AUTO)
-			StPtpGetTime = StPtpTimeFromEth;
 		PTP_LOG(WARNING, ST_PTP4, "delta: %ld\n", delta);
-		PTP_LOG(WARNING, ST_PTP4, "   tp: %ld\n", tp);
-		PTP_LOG(WARNING, ST_PTP4, "ist2Soft %ld  ist3Soft: %ld\n", ptpState[portId].ist2Soft,
-				ptpState[portId].ist3Soft);
 	}
 	else
 	{
@@ -703,48 +639,12 @@ StPtpParseDellayResMsg(ptp_delay_resp_msg_t const *ptpHdr, uint16_t portId)
 	}
 	StPtpUnlock(portId);
 
-	int64_t deltaHpet = (((int64_t)ptpState[portId].t4 - (int64_t)(ptpState[portId].t3HPet))
-						 - ((int64_t)ptpState[portId].t2HPet - (int64_t)ptpState[portId].t1))
-						/ 2;
-#if INFO_PTP == 1
-	int64_t delPath = ptpState[portId].t3 - t3Soft;
-	int64_t tpHPet = (((int64_t)ptpState[portId].t4 - (int64_t)(ptpState[portId].t3HPet))
-					  + ((int64_t)ptpState[portId].t2HPet - (int64_t)ptpState[portId].t1))
-					 / 2;
-#endif
-	PTP_LOG(WARNING, ST_PTP6, "t2HPet-t1=%ld t4-t3HPet=%ld\n",
-			ptpState[portId].t2HPet - ptpState[portId].t1,
-			ptpState[portId].t4 - ptpState[portId].t3HPet);
-	PTP_LOG(WARNING, ST_PTP6, "t4-t1=%ld t3HPet-t2HPet=%ld\n",
-			ptpState[portId].t4 - ptpState[portId].t1,
-			ptpState[portId].t3HPet - ptpState[portId].t2HPet);
-
-	epochRteAdj += deltaHpet;
-	long double newHPetPeriod;
-	uint64_t curHPetDel = ptpState[portId].t1 - ptpState[portId].t1HPetFreqStart;
-
-	if (curHPetDel >= MIN_FREQ_MES_TIME)
-	{
-		newHPetPeriod = (long double)curHPetDel
-						/ (ptpState[portId].t1HPetFreqClkNext - ptpState[portId].t1HPetFreqClk);
-		hpetPeriod = newHPetPeriod;
-		ptpState[portId].t1HPetFreqStart = 0;
-		ptpState[portId].t1HPetFreqClk = 0;
-	}
-
-	PTP_LOG(WARNING, ST_PTP4, "   curHPetDel: %ld\n", curHPetDel);
-	PTP_LOG(WARNING, ST_PTP4, "	deltaHpet: %ld\n", deltaHpet);
-	PTP_LOG(WARNING, ST_PTP4, "	   tpHpet: %ld\n", tpHPet);
-	PTP_LOG(WARNING, ST_PTP4, "   hpetPeriod: %Lf\n", hpetPeriod);
-	PTP_LOG(WARNING, ST_PTP4, "newHpetPeriod: %Lf\n", newHPetPeriod);
-	PTP_LOG(WARNING, ST_PTP4, "  t3 - t3Soft: %ld\n", delPath);
-
 	//here calculation only
 	if (rte_atomic32_read(&ptpSumStat[portId].isClr) != 0)
 	{
 		ptpSumStat[portId].lastPartAvgAbsVal = 0;
 		ptpSumStat[portId].cntToSum = 0;
-		ptpSumStat[portId].lastMaxAbsOff = ptpSumStat[portId].lastMinAbsOff = delta;
+		ptpSumStat[portId].lastMaxAbsOff = ptpSumStat[portId].lastMinAbsOff = abs(delta);
 		rte_atomic32_clear(&ptpSumStat[portId].isClr);
 	}
 	int64_t absDelta = abs(delta);
@@ -753,14 +653,10 @@ StPtpParseDellayResMsg(ptp_delay_resp_msg_t const *ptpHdr, uint16_t portId)
 	ptpSumStat[portId].lastAvgAbsVal
 		= (ptpSumStat[portId].lastPartAvgAbsVal + ptpSumStat[portId].cntToSum / 2 + 1)
 		  / ptpSumStat[portId].cntToSum;
-	int64_t lastMaxAbsOff = ptpSumStat[portId].lastMaxAbsOff < 0 ? -ptpSumStat[portId].lastMaxAbsOff
-																 : ptpSumStat[portId].lastMaxAbsOff;
-	int64_t lastMinAbsOff = ptpSumStat[portId].lastMinAbsOff < 0 ? -ptpSumStat[portId].lastMinAbsOff
-																 : ptpSumStat[portId].lastMinAbsOff;
 	ptpSumStat[portId].lastMaxAbsOff
-		= absDelta > lastMaxAbsOff ? delta : ptpSumStat[portId].lastMaxAbsOff;
+		= absDelta > ptpSumStat[portId].lastMaxAbsOff ? absDelta : ptpSumStat[portId].lastMaxAbsOff;
 	ptpSumStat[portId].lastMinAbsOff
-		= absDelta < lastMinAbsOff ? delta : ptpSumStat[portId].lastMinAbsOff;
+		= absDelta < ptpSumStat[portId].lastMinAbsOff ? absDelta : ptpSumStat[portId].lastMinAbsOff;
 	rte_atomic32_set(&ptpSumStat[portId].isWorks, 1);
 }
 
@@ -782,6 +678,7 @@ StPtpParseAnnouceMsg(struct rte_mbuf *m, ptp_announce_msg_t *ptpAnMsg, uint16_t 
 	//first prepare actual clock identity
 	port_id_t ourPortIdentity;
 	ourPortIdentity.portNumber = htons(1);	//now allways
+	StPtpPrintAnnounceMsg(ptpAnMsg);
 	if (StPtpGetPortClockIdentity(portId, &ourPortIdentity.clockIdentity) != 0)
 	{
 		ptpState[portId].state = PTP_NOT_INITIALIZED;
@@ -865,8 +762,6 @@ static st_status_t
 StPtpParsePtp(struct rte_mbuf *m, uint16_t portId, uint16_t rxTmstampIdx, st_ptp_l_mode mode,
 			  uint16_t vlan)
 {
-	curHPetClk = rte_get_timer_cycles();
-	uint64_t tm = StPtpGetTime();
 	ptp_header_t *ptpHdr;
 	ptpState[portId].ptpLMode = ST_PTP_L2_MODE;
 	//test is L4 or L2
@@ -917,13 +812,13 @@ StPtpParsePtp(struct rte_mbuf *m, uint16_t portId, uint16_t rxTmstampIdx, st_ptp
 	switch (ptpHdr->messageType)
 	{
 	case SYNC:
-		StPtpParseSyncMsg((ptp_sync_msg_t *)ptpHdr, portId, rxTmstampIdx, &tm);
+		StPtpParseSyncMsg(m, (ptp_sync_msg_t *)ptpHdr, portId, rxTmstampIdx);
 		break;
 	case FOLLOW_UP:
 		StPtpParseFollowUpMsg((ptp_follow_up_msg_t *)ptpHdr, portId);
 		break;
 	case DELAY_RESP:
-		StPtpParseDellayResMsg((ptp_delay_resp_msg_t *)ptpHdr, portId);
+		StPtpParseDelayResMsg((ptp_delay_resp_msg_t *)ptpHdr, portId);
 		break;
 	case ANNOUNCE:
 		StPtpParseAnnouceMsg(m, (ptp_announce_msg_t *)ptpHdr, portId);
@@ -986,6 +881,7 @@ StParseEthernet(uint16_t portId, struct rte_mbuf *m)
 
 uint64_t (*StPtpGetTime)(void) = StPtpTimeFromEth;	//TimeFromRtc;
 
+
 st_status_t
 StPtpGetClockSource(st_ptp_clock_id_t *currClock)
 {
@@ -1014,20 +910,21 @@ StPtpSetClockSource(st_ptp_clock_id_t const *priClock, st_ptp_clock_id_t const *
 static void *
 StPtpDelayReqThread(void *arg)
 {
-	int ret;
 	uint16_t portId = (uint64_t)arg;
+	int wait_us = 0;
 	while (rte_atomic32_read(&ptpState[portId].isStop) == 0)
 	{
 		struct timespec ts;
 		pthread_mutex_lock(&ptpState[portId].isDo);
 		if (rte_atomic32_read(&ptpState[portId].isStop) > 0)
 		{
-			rte_pktmbuf_free((struct rte_mbuf *)ptpState[portId].delReqPkt);
+			if (ptpState[portId].delReqPkt != NULL)
+			    rte_pktmbuf_free((struct rte_mbuf *)ptpState[portId].delReqPkt);
 			break;
 		}
 		rte_delay_us_sleep(ptpState[portId].pauseToSendDelayReq);
 		rte_eth_timesync_read_tx_timestamp(ptpState[portId].portId, &ts);
-
+		StPtpLock(portId);
 		if (rte_eth_tx_burst(ptpState[portId].portId, ptpState[portId].txRingId,
 							 (struct rte_mbuf **)&ptpState[portId].delReqPkt, 1)
 			== 0)
@@ -1036,17 +933,28 @@ StPtpDelayReqThread(void *arg)
 		{
 			rte_pktmbuf_free((struct rte_mbuf *)ptpState[portId].delReqPkt);
 			PTP_LOG(WARNING, ST_PTP4, "delReqPkt didn't send\n");
+			StPtpUnlock(portId);
 			continue;
 		}
 
 		ptpState[portId].howDelayReqSent++;
-		ret = rte_eth_timesync_read_time(ptpState[portId].portId,
-										 &ts);	//soft time - if we here should be 0
-		if (ret != 0)
-			continue;
+		wait_us = 0;
+		ts.tv_nsec = 0;
+		ts.tv_sec = 0;
+
+		/* Wait at least 50 us to read TX timestamp. */
+		while ((rte_eth_timesync_read_tx_timestamp(ptpState[portId].portId, &ts) < 0) && (wait_us < 50))
+		{
+			rte_delay_us(1);
+			wait_us++;
+		}
+		if (wait_us == 50)
+		{
+			rte_eth_timesync_read_time(ptpState[portId].portId, &ts);
+		}
 		ptpState[portId].t3 = timespec64_to_ns(&ts);  //temp soft
-		ptpState[portId].t3HPet = StPtpTimeFromRte();
-		PTP_LOG(WARNING, ST_PTP4, "delReqPkt sent\n");
+		StPtpUnlock(portId);
+
 	}
 	return NULL;
 }
@@ -1109,27 +1017,6 @@ StPtpInit(uint16_t portId, struct rte_mempool *mbuf, uint16_t txRingId, struct r
 		PTP_LOG(ERR, ST_PTP, "Cannot init portclockid PTP, not valid MAC?\n");
 		return ST_PTP_GENERAL_ERR;
 	}
-	static struct timespec time;
-	if (portId == ST_PPORT)
-	{
-		tzset();
-		StPtpCalcHpetPeriod();
-
-		if (clock_gettime(CLOCK_REALTIME, &time) != 0)
-		{
-			PTP_LOG(ERR, ST_PTP, "Cannot read  CLOCK_REALTIME\n");
-			return ST_PTP_GENERAL_ERR;
-		}
-		uint64_t ns = timespec64_to_ns(&time);
-		ns += timezone * NS_PER_S;
-		time = ns_to_timespec(ns);
-		StSetClockSource(ST_PTP_CLOCK_SRC_AUTO);
-	}
-	if (rte_eth_timesync_write_time(portId, &time))
-	{
-		PTP_LOG(ERR, ST_PTP, "Cannot write sync CLOCK_REALTIME to Eth\n");
-		return ST_PTP_GENERAL_ERR;
-	}
 
 	ret = pthread_create(&ptpState[portId].ptpDelayReqThread, NULL,
 						 (void *(*)(void *))StPtpDelayReqThread, (void *)(uint64_t)portId);
@@ -1141,28 +1028,7 @@ StPtpInit(uint16_t portId, struct rte_mempool *mbuf, uint16_t txRingId, struct r
 
 	StJoinPtpMulticastGroup_callback(NULL);
 
-	StPtpPrintStatus_callback((void *)(int64_t)portId);
-	return ST_OK;
-}
-
-st_status_t
-StSetClockSource(st_ptp_clocksource_t clkSrc)
-{
-	switch (clkSrc)
-	{
-	case ST_PTP_CLOCK_SRC_AUTO:
-	case ST_PTP_CLOCK_SRC_ETH:
-		StPtpGetTime = StPtpTimeFromEth;
-		break;
-	case ST_PTP_CLOCK_SRC_RTE:
-		StPtpGetTime = StPtpTimeFromRte;
-		break;
-	case ST_PTP_CLOCK_SRC_RTC:
-	default:
-		return ST_PTP_NOT_VALID_CLK_SRC;
-	}
-	ptpState[ST_PPORT].clkSrc = clkSrc;
-	ptpState[ST_RPORT].clkSrc = clkSrc;
+	StPtpPrintStatus_callback((void *)((long)portId));
 	return ST_OK;
 }
 
@@ -1175,8 +1041,3 @@ StPtpDeInit(uint16_t portId)
 	return ST_OK;
 }
 
-st_status_t
-StPtpIsSync(uint16_t portId)
-{
-	return -1;
-}

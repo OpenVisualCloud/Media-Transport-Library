@@ -33,12 +33,12 @@ PktL2Size(int32_t l1_size)
 	return (uint32_t)(l1_size - (int32_t)ST_PHYS_PKT_ADD);
 }
 
-//#define TX_SCH_DEBUG   1
-//#define _TX_SCH_DEBUG_ 1
-//#define _TX_RINGS_DEBUG_ 1
-#define TX_RINGS_DEBUG 1
-//#define ST_SCHED_TIME_PRINT 1
-//#define TX_SCH_DEBUG_PAUSE 1
+//#define TX_SCH_DEBUG
+//#define _TX_SCH_DEBUG_
+//#define _TX_RINGS_DEBUG_
+//#define TX_RINGS_DEBUG
+//#define ST_SCHED_TIME_PRINT
+//#define TX_SCH_DEBUG_PAUSE
 
 #ifdef TX_RINGS_DEBUG
 #define RING_LOG(...) RTE_LOG(INFO, USER1, __VA_ARGS__)
@@ -81,33 +81,35 @@ StSchFillGapBulk(tprs_scheduler_t *sch, st_device_impl_t *dev, uint32_t deqRing,
 		if ((leftBytes << 2) <= ST_DEFAULT_LEFT_BYTES_720P)
 		{
 			vec[sch->top] = pauseFrame[sch->slot];
-			uint16_t pauseSize = leftBytes << 2;
-			//vec[sch->top]->data_len = PktL2Size((int)pauseSize);
-			//vec[sch->top]->pkt_len = PktL2Size((int)pauseSize);
+			uint16_t pauseSize = leftBytes;
+			vec[sch->top]->data_len = PktL2Size((int)pauseSize);
+			vec[sch->top]->pkt_len = PktL2Size((int)pauseSize);
 			rte_mbuf_refcnt_update(vec[sch->top], 1);
 			dev->pausesTx[sch->thrdId][deqRing] += 1;
 			sch->top += 1;
 			sch->timeCursor -= pauseSize;
 			sch->burstSize += 1;
+			PAUSE_LOG("lack of big enought pkt on ring %u, submitting pause of %u, timeCusor = %u\n", deqRing,
+					  pauseSize, sch->timeCursor);
 		}
 		else  // strange not expected behavior, huge gap
 		{
-			PAUSE_LOG("lack of big enought pkt on ring %u, submitting pause of %u\n", deqRing,
-					  dev->txPktSizeL1[deqRing]);
 			/* put pause if no packet */
 			vec[sch->top] = pauseFrame[sch->slot];
 			vec[sch->top + 1] = pauseFrame[sch->slot];
 			vec[sch->top + 2] = pauseFrame[sch->slot];
 			vec[sch->top + 3] = pauseFrame[sch->slot];
 			// adjust pause size
-			uint16_t pauseSize = leftBytes & ~0x1;
-			//vec[sch->top]->data_len = PktL2Size((int)pauseSize);
-			//vec[sch->top]->pkt_len = PktL2Size((int)pauseSize);
+			uint16_t pauseSize = leftBytes;
+			vec[sch->top]->data_len = PktL2Size((int)pauseSize);
+			vec[sch->top]->pkt_len = PktL2Size((int)pauseSize);
 			rte_mbuf_refcnt_update(vec[sch->top], 4);
 			dev->pausesTx[sch->thrdId][deqRing] += 4;
 			sch->top += 4;
-			sch->timeCursor -= 4 * pauseSize;
+			sch->timeCursor -= pauseSize;
 			sch->burstSize += 4;
+			PAUSE_LOG("lack of big enought pkt on ring %u, submitting pause of %u, timeCusor = %u\n", deqRing,
+					  pauseSize, sch->timeCursor);
 		}
 		sch->slot = (sch->slot + 1) % MAX_PAUSE_FRAMES;
 	}
@@ -126,7 +128,7 @@ StSchFillGapSingleOrDual(tprs_scheduler_t *sch, st_device_impl_t *dev, uint32_t 
 		//vec[sch->top]->data_len = PktL2Size((int)pauseSize);
 		//vec[sch->top]->pkt_len = PktL2Size((int)pauseSize);
 		rte_mbuf_refcnt_update(vec[sch->top], 1);
-		dev->pausesTx[deqRing]++;
+		dev->pausesTx[sch->thrdId][deqRing]++;
 		sch->top++;
 		sch->timeCursor -= pauseSize;
 		sch->burstSize++;
@@ -314,7 +316,7 @@ StSchInitThread(tprs_scheduler_t *sch, st_device_impl_t *dev, st_main_params_t *
 		uint32_t devTxQueue = i * mp->maxSchThrds + schedId;
 		quot -= dev->txPktSizeL1[devTxQueue];
 		sch->ringThreshLo[i] = quot + sch->minPktSize;
-		sch->deqRingMap[i] = dev->dev.maxSt21Sessions + schedId;
+		sch->deqRingMap[i] = devTxQueue;
 	}
 
 	for (uint32_t i = 0; i <= sch->lastTxRing; i++)
@@ -331,7 +333,7 @@ StSchInitThread(tprs_scheduler_t *sch, st_device_impl_t *dev, st_main_params_t *
 static inline uint32_t
 StSchDispatchTimeCursor(tprs_scheduler_t *sch, st_device_impl_t *dev)
 {
-	if ((sch->ring == sch->outOfBoundRing) || (sch->timeCursor == 0))
+	if ((sch->ring == sch->outOfBoundRing) || (sch->timeCursor <= 0))
 	{
 		sch->ring = 0;
 		sch->pktSize = dev->txPktSizeL1[sch->deqRingMap[sch->ring]];
@@ -362,30 +364,16 @@ StSchAlignToEpoch(uint16_t port_id, uint16_t queue, struct rte_mbuf *pkts[], uin
 
 	for (uint32_t i = 0; i < pktsCount; ++i)
 	{
-#if (RTE_VER_YEAR >= 21)
 		uint64_t now = rte_rdtsc();
-#endif
-
-		uint64_t timeStamp =
-#if (RTE_VER_YEAR < 21)
-			pkts[i]->timestamp;
-#else
-			(hwts_dynfield_offset[port_id] > 0)
-				? *RTE_MBUF_DYNFIELD(pkts[i], hwts_dynfield_offset[port_id], rte_mbuf_timestamp_t *)
-				: now;
-#endif
+		uint64_t timeStamp = (hwts_dynfield_offset[port_id] > 0) ?
+					*RTE_MBUF_DYNFIELD(pkts[i], hwts_dynfield_offset[port_id], rte_mbuf_timestamp_t *) : now;
 
 		if (timeStamp > t)
 		{
 			if (timeStamp > (t + 34 * MEGA))  // 34ms limit
 			{
 				//RTE_LOG(INFO, USER1, "Wrong Time %lu to wait = %lu\n", pkts[i]->timestamp, pkts[i]->timestamp - t);
-#if (RTE_VER_YEAR < 21)
-				pkts[i]->timestamp = 0;	 //-= 33 * MEGA;
-#else
-				pktpriv_data_t *ptr = rte_mbuf_to_priv(pkts[i]);
-				ptr->timestamp = 0;	 //-= 33 * MEGA;
-#endif
+				StMbufSetTimestamp(pkts[i], 0);
 			}
 			return i;
 		}
@@ -422,8 +410,8 @@ StSchFillPause(tprs_scheduler_t *sch, st_device_impl_t *dev, uint32_t deqRing, u
 			   uint32_t vectSize, struct rte_mbuf **pauseFrame, struct rte_mbuf **vec,
 			   uint32_t bulkNum)
 {
-	PAUSE_LOG("lack of packet on ring %u, submitting pause of %u\n", deqRing,
-			  dev->txPktSizeL1[deqRing]);
+	PAUSE_LOG("lack of packet on ring %u, submitting pause of %u %u, cursor = %d\n", deqRing,
+			  dev->txPktSizeL1[deqRing], sch->pktSize & ~0x1, sch->timeCursor);
 	uint16_t pauseSize = sch->pktSize & ~0x1;
 	int curTimeCursor = sch->timeCursor + sch->adjust;
 
@@ -506,9 +494,8 @@ StSchFillOob(tprs_scheduler_t *sch, st_device_impl_t *dev, uint32_t deqRing,
 	else
 	{
 		sch->timeCursor = 0;
-		return;
 	}
-
+	return;
 }
 
 static inline void
@@ -529,6 +516,21 @@ StSchPacketOrPause(tprs_scheduler_t *sch, st_device_impl_t *dev, uint32_t deqRin
 		dev->pausesTx[sch->thrdId][deqRing]++;
 	}
 
+	if (deqPauseIt)
+	{ /* adjust pause size */
+		uint32_t phyPktSize = 0;
+		for (uint32_t idx = 0; idx < deq; idx++)
+		{
+			phyPktSize += vecTemp[idx]->pkt_len;
+		}
+		uint16_t leftBytes = (dev->txPktSizeL1[deqRing] - ST_PHYS_PKT_ADD) * bulkNum - phyPktSize;
+		uint16_t pauseSize = (leftBytes+pauseCount-1)/pauseCount;
+		pauseFrame[sch->slot]->data_len = pauseSize;
+		pauseFrame[sch->slot]->pkt_len = pauseSize;
+		rte_mbuf_refcnt_update(pauseFrame[sch->slot], deqPauseIt);
+		sch->slot = (sch->slot + 1) % MAX_PAUSE_FRAMES;
+	}
+
 	uint32_t phyPktSize = 0;
 	for (uint32_t idx = 0; idx < bulkNum; idx++)
 	{
@@ -537,17 +539,9 @@ StSchPacketOrPause(tprs_scheduler_t *sch, st_device_impl_t *dev, uint32_t deqRin
 	}
 	sch->burstSize += bulkNum;
 
-	if (deqPauseIt)
-	{ /* adjust pause size */
-		uint16_t pauseSize = PktL2Size((int)sch->pktSize) & ~0x1;
-		pauseFrame[sch->slot]->data_len = pauseSize;
-		pauseFrame[sch->slot]->pkt_len = pauseSize;
-		rte_mbuf_refcnt_update(pauseFrame[sch->slot], deqPauseIt);
-		sch->slot = (sch->slot + 1) % MAX_PAUSE_FRAMES;
-	}
-
 	phyPktSize = ST_PHYS_PKT_ADD + (phyPktSize / bulkNum);
 	sch->timeCursor -= phyPktSize;
+
 }
 
 static uint16_t
@@ -582,8 +576,20 @@ StSchPreCheckPkts(struct rte_mbuf **pkts, uint16_t nb_pkts)
 	return j;
 }
 
-int
-LcoreMainTransmitter(void *args)
+static inline void
+StSchtTxBurst(uint16_t port_id, uint16_t queue_id, struct rte_mbuf **tx_pkts, uint16_t nb_pkts)
+{
+	uint32_t sent = 0;
+
+	/* Send this vector with busy looping */
+	while (sent < nb_pkts)
+	{
+		sent += rte_eth_tx_burst(port_id, queue_id, &tx_pkts[sent], nb_pkts - sent);
+	}
+}
+
+static int
+LcoreMainTransmitterPause(void *args)
 {
 	RING_LOG("TRANSMITTER RUNNED ON LCORE %d SOCKET %d\n", rte_lcore_id(),
 			 rte_lcore_to_socket_id(rte_lcore_id()));
@@ -656,7 +662,7 @@ LcoreMainTransmitter(void *args)
 		uint32_t cnt = 0;
 		memset(vec, 0x0, sizeof(struct rte_mbuf *) * pktVecSize);
 #endif
-		while (!mp->schedStart)
+		while ((!mp->schedStart) && (rte_atomic32_read(&isTxDevToDestroy) == 0))
 		{
 #ifdef _TX_SCH_DEBUG_
 			cnt++;
@@ -665,25 +671,31 @@ LcoreMainTransmitter(void *args)
 				RTE_LOG(INFO, USER1, "Waiting under starvation thread Id of %u...\n", threadId);
 			}
 #endif	// TX_SCH_DEBUG
-			struct rte_mbuf *mbuf[asn_cnt + 1];
-			int rv = rte_ring_sc_dequeue_bulk(dev->txRing[txPortId][dev->dev.maxSt21Sessions],
-											  (void **)mbuf, asn_cnt, NULL);
-			if (rv == 0)
-				continue;
-			int32_t sent = 0;
-			int32_t actualSent = StSchPreCheckPkts(&mbuf[0], rv);
-			while (sent < actualSent)
+
+			if (schedId == 0 && asn_cnt != 0)
 			{
-				sent += rte_eth_tx_burst(txPortId, sch->queueId, &mbuf[sent], actualSent - sent);
+				struct rte_mbuf *mbuf[asn_cnt + 1];
+				int rv = rte_ring_sc_dequeue_bulk(dev->txRing[txPortId][dev->dev.maxSt21Sessions],
+												  (void **)mbuf, asn_cnt, NULL);
+				if (rv == 0)
+					continue;
+
+				int32_t sent = 0;
+				int32_t actualSent = StSchPreCheckPkts(&mbuf[0], rv);
+				while (sent < actualSent)
+				{
+					sent
+						+= rte_eth_tx_burst(txPortId, sch->queueId, &mbuf[sent], actualSent - sent);
+				}
+				dev->packetsTx[txPortId][dev->dev.maxSt21Sessions] += actualSent;
 			}
-			dev->packetsTx[txPortId][dev->dev.maxSt21Sessions + threadId] += actualSent;
 		}
 
 		sch->slot = 0;
 		uint32_t eos = 0;
 		sch->timeCursor = 0;
 
-		while (!eos)
+		while (!eos && (rte_atomic32_read(&isTxDevToDestroy) == 0))
 		{
 #ifdef ST_SCHED_TIME_PRINT
 			uint64_t cycles0 = rte_get_tsc_cycles();
@@ -694,8 +706,12 @@ LcoreMainTransmitter(void *args)
 			for (uint32_t i = 0; i < vectSizeNPauses; i++)
 			{
 				uint32_t deqRing = StSchDispatchTimeCursor(sch, dev);
-				if (sch->ring == 0)
+				if (sch->ring == 0 && deqRing == 0)
 				{
+					while ((mp->interSchedStart[txPortId] == 1) && (mp->maxSchThrds > 1) && (rte_atomic32_read(&isTxDevToDestroy) == 0))
+					{
+						__sync_synchronize();
+					}
 					uint32_t rv = rte_ring_sc_dequeue_bulk(dev->txRing[txPortId][deqRing],
 														   (void **)vecTemp, bulkNum, NULL);
 					if (unlikely(rv == 0))
@@ -706,24 +722,35 @@ LcoreMainTransmitter(void *args)
 					}
 					else
 					{
-						/* initialize from available budget*/
-						sch->timeCursor += sch->quot;
-						sch->timeRemaind += sch->remaind;
-						if (unlikely(sch->timeRemaind >= ST_DENOM_DEFAULT))
+
+						if (mp->maxSchThrds > 1)
 						{
-							sch->timeRemaind -= ST_DENOM_DEFAULT;
-							sch->timeCursor++;
+							__sync_synchronize();
+							mp->interSchedStart[txPortId] = 1;
 						}
+						/* initialize from available budget*/
+						sch->timeCursor = sch->quot;
 						uint32_t phyPktSize = StSchFillPacket(sch, dev, deqRing, i, vectSize,
 															  vecTemp, vec, bulkNum);
 
 						StSchFillGap(sch, dev, deqRing, phyPktSize, pauseFrame, vec, bulkNum);
 					}
 				}
-				else if (sch->ring <= sch->lastSnRing)
+				else if (sch->ring <= sch->lastSnRing || (deqRing != dev->dev.maxSt21Sessions && sch->ring <= sch->lastTxRing))
 				{
+					if (schedId != 0 && sch->ring == 0)
+					{
+						while ((mp->interSchedStart[txPortId] == 0) && (rte_atomic32_read(&isTxDevToDestroy) == 0))
+						{
+							__sync_synchronize();
+						}
+						__sync_lock_test_and_set(&mp->interSchedStart[txPortId], 0);
+						/* initialize from available budget*/
+						sch->timeCursor = sch->quot;
+					}
 					uint32_t rv = rte_ring_sc_dequeue_bulk(dev->txRing[txPortId][deqRing],
 														   (void **)vecTemp, bulkNum, NULL);
+
 					if (unlikely(rv == 0))
 					{
 						StSchFillPause(sch, dev, deqRing, i, vectSize, pauseFrame, vec, bulkNum);
@@ -736,8 +763,9 @@ LcoreMainTransmitter(void *args)
 						StSchFillGap(sch, dev, deqRing, phyPktSize, pauseFrame, vec, bulkNum);
 					}
 				}
-				else if (sch->ring <= sch->lastTxRing)
+				else if (deqRing == dev->dev.maxSt21Sessions)
 				{
+					// kni and audio, anc
 					uint32_t deq = 0;
 					if (asn_cnt)
 					{
@@ -784,7 +812,7 @@ LcoreMainTransmitter(void *args)
 				else if (sch->ring == sch->outOfBoundRing)
 				{
 					/* send pause here always */
-					PAUSE_PKT_LOG(dev->pausesTx[deqRing],
+					PAUSE_PKT_LOG(dev->pausesTx[sch->thrdId][deqRing],
 								  "Out of bound ring %u, submitting pause of %u\n", sch->ring,
 								  sch->pktSize);
 #ifdef TX_SCH_DEBUG
@@ -847,3 +875,140 @@ LcoreMainTransmitter(void *args)
 	}
 	return 0;
 }
+
+static int
+LcoreMainTransmitterTscPacing(void *args)
+{
+	st_main_params_t *mp = &stMainParams;
+	st_device_impl_t *dev = &stSendDevice;
+	lcore_transmitter_args_t *lt_args = args;
+	uint32_t threadId = lt_args->threadId;
+	uint32_t schedId = SCHED_ID(threadId);
+	uint16_t txPortId = PORT_ID(threadId);
+
+	tprs_scheduler_t *sch = rte_malloc_socket("tprsSch", sizeof(tprs_scheduler_t), RTE_CACHE_LINE_SIZE, rte_socket_id());
+
+	if ((schedId > mp->maxSchThrds) || !sch)
+		rte_exit(ST_NO_MEMORY, "%s, Transmitter init memory error\n", __func__);
+
+	StSchInitThread(sch, dev, mp, threadId);
+	uint32_t max_ring = mp->snCount;
+	uint32_t start_ring = schedId;
+
+	// Firstly synchronize the moment both schedulers are ready
+	RVRTP_BARRIER_SYNC(mp->schedStart, threadId, mp->maxSchThrds * mp->numPorts);
+
+	RTE_LOG(INFO, USER2, "%s(%d), rte_lcore_id %d\n", __func__, threadId, rte_lcore_id());
+	struct rte_mbuf *mbuf[1];
+	struct rte_mbuf *inbuf[max_ring];
+	for (uint32_t ring = 0; ring < max_ring; ring++)
+	{
+		inbuf[ring] = NULL;
+	}
+	int rv;
+	uint64_t timestamp;
+	uint32_t burst_size = 1;
+	uint32_t sn_per_thread = mp->snCount / mp->maxSchThrds;
+	if (sn_per_thread > 12)
+	{
+		burst_size = 4;
+	}
+	else if (sn_per_thread > 8)
+	{
+		burst_size = 2;
+	}
+	uint32_t burst_idx = 0;
+	struct rte_mbuf *burst_buf[burst_size];
+	RTE_LOG(INFO, USER2, "%s(%d), max_ring %d audio ring %d burst_size %d\n", __func__, threadId, max_ring, dev->dev.maxSt21Sessions, burst_size);
+
+	// Since all ready now can release ring enqueue threads
+	RVRTP_SEMAPHORE_GIVE(mp->ringStart, 1);
+
+	while (rte_atomic32_read(&isTxDevToDestroy) == 0)
+	{
+		for (uint32_t ring = start_ring; ring < max_ring; ring = ring + mp->maxSchThrds)
+		{ /* ring for video session */
+			if (inbuf[ring])
+			{ /* First checking exist infight buffer */
+				timestamp = StMbufGetTimestamp(inbuf[ring]);
+				if (timestamp > StGetTscTimeNano())
+				{ /* sch time not reach */
+					continue;
+				}
+				else
+				{
+					burst_buf[burst_idx] = inbuf[ring]; /* put it in burst_buf */
+					burst_idx++;
+					inbuf[ring] = NULL;
+					dev->packetsTx[txPortId][ring] += 1;
+				}
+			}
+			else
+			{ /* dequeue from ring */
+				rv = rte_ring_sc_dequeue(dev->txRing[txPortId][ring], (void **)&mbuf[0]);
+				if (unlikely(rv < 0))
+				{
+					continue;
+				}
+				timestamp = StMbufGetTimestamp(mbuf[0]);
+
+				uint64_t cur = StGetTscTimeNano();
+				if (timestamp < cur)
+				{ /* time already reach, not expected */
+					uint64_t delta = cur - timestamp;
+
+					dev->pacingDeltaCnt[txPortId][ring] += 1;
+					dev->pacingDeltaSum[txPortId][ring] += delta;
+					if (delta > dev->pacingDeltaMax[txPortId][ring])
+					{
+						dev->pacingDeltaMax[txPortId][ring] = delta;
+					}
+
+					burst_buf[burst_idx] = mbuf[0]; /* put it in burst_buf */
+					burst_idx++;
+					dev->packetsTx[txPortId][ring] += 1;
+				}
+				else
+				{ /* sch time not reach, put it in inflight buf */
+					inbuf[ring] = mbuf[0];
+					continue;
+				}
+			}
+
+			if (burst_idx >= burst_size)
+			{ /* Sending burst pkts now */
+				StSchtTxBurst(txPortId, sch->queueId, &burst_buf[0], burst_size);
+				burst_idx = 0;
+			}
+		}
+
+		if (schedId == 0)
+		{
+			uint32_t ring
+				= dev->dev.maxSt21Sessions; /* audio/anc/kni ring without timestamp check */
+			rv = rte_ring_sc_dequeue(dev->txRing[txPortId][ring], (void **)&mbuf[0]);
+			if (unlikely(rv < 0))
+			{
+				continue;
+			}
+
+			/* Sending this pkt directly */
+			StSchtTxBurst(txPortId, sch->queueId, &mbuf[0], 1);
+			dev->packetsTx[txPortId][ring] += 1;
+		}
+	}
+
+	return 0;
+}
+
+int
+LcoreMainTransmitter(void *args)
+{
+	if (StIsTscPacing())
+		LcoreMainTransmitterTscPacing(args);
+	else
+		LcoreMainTransmitterPause(args);
+
+	return 0;
+}
+

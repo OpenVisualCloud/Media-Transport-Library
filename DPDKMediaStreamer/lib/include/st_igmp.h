@@ -99,7 +99,7 @@ typedef struct st_igmp_params
 	uint32_t minMulitcastIpAddress;
 	uint32_t maxMulitcastIpAddress;
 	uint32_t srcIpAddress;
-	uint32_t groupIpAddress;
+	uint32_t groupIpAddress[MAX_RXTX_TYPES];
 	uint32_t reportIpAddress;
 	uint32_t queryIpAddress;
 	query_message_type_t queryMessageType;

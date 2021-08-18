@@ -30,56 +30,56 @@
 #define __LITTLE_ENDIAN_BITFIELDS 1
 #endif
 
-#define KILO 1000ul
-#define MEGA 1000000ul
-#define GIGA 1000000000ul
+#define KILO 1000ul			/**< Multiplier 10^3*/
+#define MEGA 1000000ul		/**< Multiplier 10^6*/
+#define GIGA 1000000000ul	/**< Multiplier 10^9*/
 
-typedef union st_p210_yuv
-{
-	struct
-	{
-		uint16_t y0;
-		uint16_t y1;
-	} __attribute__((__packed__));
-	struct
-	{
-		uint16_t cr;
-		uint16_t cb;
-	} __attribute__((__packed__));
-} st_p210_yuv_t;
-
+/**
+ * \struct st_rgba_8b
+ *
+ * \brief structure conatining info about colors in RGBA pixel format
+ */
 struct st_rgba_8b
 {
-	uint8_t r;
-	uint8_t g;
-	uint8_t b;
-	uint8_t a;
+	uint8_t r;		/**< 8-bit red color representation */
+	uint8_t g;		/**< 8-bit green color representation */
+	uint8_t b;		/**< 8-bit blue color representation */
+	uint8_t a;		/**< 8-bit alpha channel representation */
 } __attribute__((__packed__));
 
-typedef struct st_rgba_8b st_rgba_8b_t;
+typedef struct st_rgba_8b st_rgba_8b_t; /**< Type of the structure \ref st_rgba_8b. */
 
-/*
-0               1               2               3
-0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9 0 1
-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
-| CB00 (10 bits) | Y00 (10 bits) | CR00 (10 bits) |Y01
-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
-| Y01 (contd) |
-+-+-+-+-+-+-+-+-+
-
-*/
+/**
+ * \struct st_rfc4175_422_10_pg2
+ * 
+ * \brief Structure describing two image pixels in YUV 4:2:2 10-bit format
+ * 
+ \verbatim
+ 0               1               2               3
+ 0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9 0 1
+ +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+ | CB00 (10 bits)    | Y00 (10 bits)     | CR00 (10 bits)    | Y01
+ +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+ | Y01 (contd) |
+ +-+-+-+-+-+-+-+-+
+ \endverbatim
+ *
+ */
 struct st_rfc4175_422_10_pg2
 {
-	uint8_t Cb00;
+	uint8_t Cb00;				/**< Blue-difference chrominance (8-bits) */
 #ifdef __LITTLE_ENDIAN_BITFIELDS
-	uint8_t Y00 : 6;
-	uint8_t Cb00_ : 2;
+	uint8_t Y00 : 6;			/**< First Luminance (6-bits) */
+	uint8_t Cb00_ : 2;			/**< Blue-difference chrominance (2-bits) 
+									as complement to the 10-bits */
 
-	uint8_t Cr00 : 4;
-	uint8_t Y00_ : 4;
+	uint8_t Cr00 : 4;			/**< Red-difference chrominance */
+	uint8_t Y00_ : 4;			/**< First Luminance (4-bits) as complement
+									to the 10-bits */
 
-	uint8_t Y01 : 2;
-	uint8_t Cr00_ : 6;
+	uint8_t Y01 : 2;			/**< Second Luminance (2-bits) */
+	uint8_t Cr00_ : 6;			/**< Red-difference chrominance (6-bits)
+									as complement to the 10-bits */
 #else
 	uint8_t Cb00_ : 2;
 	uint8_t Y00 : 6;
@@ -90,41 +90,33 @@ struct st_rfc4175_422_10_pg2
 	uint8_t Cr00_ : 6;
 	uint8_t Y01 : 2;
 #endif
-	uint8_t Y01_;
+	uint8_t Y01_;				/**< Secoond Luminance (8-bits) 
+									as complement to the 10-bits*/
 } __attribute__((__packed__));
 
-typedef struct st_rfc4175_422_10_pg2 st_rfc4175_422_10_pg2_t;
+typedef struct st_rfc4175_422_10_pg2 st_rfc4175_422_10_pg2_t; /**< Type of the structure \ref st_rfc4175_422_10_pg2. */
 
-struct st_wav
-{
-	uint8_t chunkId[4];		 // RIFF string
-	uint32_t chunkSize;		 // size of file in bytes
-	uint8_t fmt[4];			 // WAVE string
-	uint8_t fmtMarker[4];	 // fmt string with trailing null char
-	uint32_t fmtLen;		 // length of the format data
-	uint16_t formatType;	 // format type. 1-PCM, 3- IEEE float, 6 - 8bit A law, 7 - 8bit mu law
-	uint16_t channels;		 // no.of channels
-	uint32_t sampleRate;	 // sampling rate (blocks per second)
-	uint32_t byteRate;		 // SampleRate * NumChannels * BitsPerSample/8
-	uint16_t blockAlign;	 // NumChannels * BitsPerSample/8
-	uint16_t bitsPerSample;	 // bits per sample, 8- 8bits, 16- 16 bits etc
-	uint8_t dataChunkHeader[4];	 // DATA string or FLLR string
-	uint32_t
-		dataSize;  // NumSamples * NumChannels * BitsPerSample/8 - size of the next chunk that will be read
-	uint8_t data[];
-} __attribute__((__packed__));
-
-typedef struct st_wav st_wav_t;
-/*
-0               1               2               3
-0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9 0 1
-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
-| CB00 (10 bits) | Y00 (10 bits) | CR00 (10 bits) |Y01
-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
-| Y01 (contd) |
-+-+-+-+-+-+-+-+-+
-* Unpacked 422 10 bit fields in packets are in BE, PG2 shall be in BE
-*/
+/**
+ * Function converting (packing) string of image pixels into the pixel group
+ * Unpacked 422 10 bit fields in packets are in BE, PG2 will be in BE
+ \verbatim
+ 0               1               2               3
+ 0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9 0 1
+ +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+ | CB00 (10 bits) | Y00 (10 bits) | CR00 (10 bits) |Y01
+ +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+ | Y01 (contd) |
+ +-+-+-+-+-+-+-+-+
+ \endverbatim
+ *
+ * @param pg 	- OUT buffer with packed pixels
+ * @param cb00 	- IN parameter of blue-difference chrominance component (Cb)
+ * @param y00 	- IN parameter of first luminance (Y)
+ * @param cr00 	- IN parameter of red-difference chrominance component (Cr)
+ * @param y01 	- IN parameter of second luminance (Y)
+ *
+ * @return no return
+ */
 static inline void
 Pack_422be10_PG2be(st_rfc4175_422_10_pg2_t *pg, uint16_t cb00, uint16_t y00, uint16_t cr00,
 				   uint16_t y01)
@@ -144,16 +136,27 @@ Pack_422be10_PG2be(st_rfc4175_422_10_pg2_t *pg, uint16_t cb00, uint16_t y00, uin
 	pg->Y01_ = y1 & 0xff;
 }
 
-/*
-0               1               2               3
-0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9 0 1
-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
-| CB00 (10 bits) | Y00 (10 bits) | CR00 (10 bits) |Y01
-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
-| Y01 (contd) |
-+-+-+-+-+-+-+-+-+
-* Unpacked 422 10 bit fields in packets are in LE, PG2 shall be in BE
-*/
+/**
+ * Function converting (packing) string of pixels of the image into the pixel group
+ * Unpacked 422 10 bit fields in packets are in LE, PG2 will be in BE
+ \verbatim
+ 0               1               2               3
+ 0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9 0 1
+ +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+ | CB00 (10 bits) | Y00 (10 bits) | CR00 (10 bits) |Y01
+ +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+ | Y01 (contd) |
+ +-+-+-+-+-+-+-+-+
+ \endverbatim
+ *
+ * @param pg 	- OUT buffer with packed pixels
+ * @param cb0 	- IN parameter of blue-difference chrominance component (Cb)
+ * @param y0 	- IN parameter of first luminance (Y)
+ * @param cr0 	- IN parameter of red-difference chrominance component (Cr)
+ * @param y1 	- IN parameter of second luminance (Y)
+ *
+ * @return no return
+ */
 static inline void
 Pack_422le10_PG2be(st_rfc4175_422_10_pg2_t *pg, uint16_t cb0, uint16_t y0, uint16_t cr0,
 				   uint16_t y1)
@@ -168,16 +171,27 @@ Pack_422le10_PG2be(st_rfc4175_422_10_pg2_t *pg, uint16_t cb0, uint16_t y0, uint1
 	pg->Y01_ = y1 & 0xff;
 }
 
-/*
-0				1				2				3
-0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9 0 1
-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
-| CB00 (10 bits) | Y00 (10 bits) | CR00 (10 bits) |Y01
-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
-| Y01 (contd) |
-+-+-+-+-+-+-+-+-+
-* Unpacked 422 10 bit fields in packets are in LE, PG2 shall be in BE
-*/
+/**
+ * Function converting (packing) string of image pixels into the pixel group
+ * Unpacked 422 10 bit fields in packets are in LE, PG2 will be in LE
+ \verbatim
+ 0				1				2				3
+ 0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9 0 1
+ +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+ | CB00 (10 bits) | Y00 (10 bits) | CR00 (10 bits) |Y01
+ +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+ | Y01 (contd) |
+ +-+-+-+-+-+-+-+-+
+ \endverbatim
+ *
+ * @param pg 	- OUT buffer with packed pixels
+ * @param cb00 	- IN parameter of blue-difference chrominance component (Cb)
+ * @param y00 	- IN parameter of first luminance (Y)
+ * @param cr00 	- IN parameter of red-difference chrominance component (Cr)
+ * @param y01 	- IN parameter of second luminance (Y)
+ *
+ * @return no return
+ */
 static inline void
 Pack_422le10_PG2le(st_rfc4175_422_10_pg2_t *pg, uint16_t cb00, uint16_t y00, uint16_t cr00,
 				   uint16_t y01)
@@ -192,16 +206,27 @@ Pack_422le10_PG2le(st_rfc4175_422_10_pg2_t *pg, uint16_t cb00, uint16_t y00, uin
 	pg->Y01_ = (y01 & 0x3fc) >> 2;
 }
 
-/*
-0				1				2				3
-0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9 0 1
-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
-| CB00 (10 bits) | Y00 (10 bits) | CR00 (10 bits) |Y01
-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
-| Y01 (contd) |
-+-+-+-+-+-+-+-+-+
-* Unpacked 422 10 bit fields in packets are in LE, PG2 shall be in BE
-*/
+/**
+ * Function converting (packing) string of image pixels into the pixel group
+ * Unpacked 422 10 bit fields in packets are in BE, PG2 will be in LE
+ \verbatim
+ 0				1				2				3
+ 0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9 0 1
+ +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+ | CB00 (10 bits) | Y00 (10 bits) | CR00 (10 bits) |Y01
+ +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+ | Y01 (contd) |
+ +-+-+-+-+-+-+-+-+
+ \endverbatim
+ *
+ * @param pg 	- OUT buffer with packed pixels
+ * @param cb00 	- IN parameter of blue-difference chrominance component (Cb)
+ * @param y00 	- IN parameter of first luminance (Y)
+ * @param cr00 	- IN parameter of red-difference chrominance component (Cr)
+ * @param y01 	- IN parameter of second luminance (Y)
+ *
+ * @return no return
+ */
 static inline void
 Pack_422be10_PG2le(st_rfc4175_422_10_pg2_t *pg, uint16_t cb00, uint16_t y00, uint16_t cr00,
 				   uint16_t y01)
@@ -221,16 +246,27 @@ Pack_422be10_PG2le(st_rfc4175_422_10_pg2_t *pg, uint16_t cb00, uint16_t y00, uin
 	pg->Y01_ = (y1 & 0x3fc) >> 2;
 }
 
-/*
-0               1               2               3
-0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9 0 1
-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
-| CB00 (10 bits) | Y00 (10 bits) | CR00 (10 bits) |Y01
-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
-| Y01 (contd) |
-+-+-+-+-+-+-+-+-+
-* PG2 fields in packets are in BE, result shall be in LE
-*/
+/**
+ * Function converting (unpacking) pixel group into the string of image pixels
+ * PG2 fields in packets are in BE, result will be in LE
+ \verbatim
+ 0               1               2               3
+ 0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9 0 1
+ +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+ | CB00 (10 bits) | Y00 (10 bits) | CR00 (10 bits) |Y01
+ +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+ | Y01 (contd) |
+ +-+-+-+-+-+-+-+-+
+ \endverbatim
+ *
+ * @param pg 	- IN buffer with packed pixels
+ * @param cb00 	- OUT parameter of blue-difference chrominance component (Cb)
+ * @param y00 	- OUT parameter of first luminance (Y)
+ * @param cr00 	- OUT parameter of red-difference chrominance component (Cr)
+ * @param y01 	- OUT parameter of second luminance (Y)
+ *
+ * @return no return
+ */
 static inline void
 Unpack_PG2be_422le10(st_rfc4175_422_10_pg2_t const *pg, uint16_t *cb00, uint16_t *y00,
 					 uint16_t *cr00, uint16_t *y01)
@@ -247,16 +283,27 @@ Unpack_PG2be_422le10(st_rfc4175_422_10_pg2_t const *pg, uint16_t *cb00, uint16_t
 	*y01 = y1;
 }
 
-/*
-0               1               2               3
-0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9 0 1
-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
-| CB00 (10 bits) | Y00 (10 bits) | CR00 (10 bits) |Y01
-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
-| Y01 (contd) |
-+-+-+-+-+-+-+-+-+
-* PG2 fields in packets are in BE, result shall be in BE
-*/
+/**
+ * Function converting (unpacking) pixel group into the string of image pixels
+ * PG2 fields in packets are in BE, result will be in BE
+ \verbatim
+ 0               1               2               3
+ 0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9 0 1
+ +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+ | CB00 (10 bits) | Y00 (10 bits) | CR00 (10 bits) |Y01
+ +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+ | Y01 (contd) |
+ +-+-+-+-+-+-+-+-+
+ \endverbatim
+ *
+ * @param pg 	- IN buffer with packed pixels
+ * @param cb00 	- OUT parameter of blue-difference chrominance component (Cb)
+ * @param y00 	- OUT parameter of first luminance (Y)
+ * @param cr00 	- OUT parameter of red-difference chrominance component (Cr)
+ * @param y01 	- OUT parameter of second luminance (Y)
+ *
+ * @return no return
+ */
 static inline void
 Unpack_PG2be_422be10(st_rfc4175_422_10_pg2_t const *pg, uint16_t *cb00, uint16_t *y00,
 					 uint16_t *cr00, uint16_t *y01)
@@ -273,16 +320,27 @@ Unpack_PG2be_422be10(st_rfc4175_422_10_pg2_t const *pg, uint16_t *cb00, uint16_t
 	*y01 = htons(y1);
 }
 
-/*
-0               1               2               3
-0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9 0 1
-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
-| CB00 (10 bits) | Y00 (10 bits) | CR00 (10 bits) |Y01
-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
-| Y01 (contd) |
-+-+-+-+-+-+-+-+-+
-* PG2 fields in packets are in LE, result shall be in BE
-*/
+/**
+ * Function converting (unpacking) pixel group into the string of image pixels
+ * PG2 fields in packets are in LE, result will be in BE
+ \verbatim
+ 0               1               2               3
+ 0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9 0 1
+ +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+ | CB00 (10 bits) | Y00 (10 bits) | CR00 (10 bits) |Y01
+ +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+ | Y01 (contd) |
+ +-+-+-+-+-+-+-+-+
+ \endverbatim
+ *
+ * @param pg 	- IN buffer with packed pixels
+ * @param cb00 	- OUT parameter of blue-difference chrominance component (Cb)
+ * @param y00 	- OUT parameter of first luminance (Y)
+ * @param cr00 	- OUT parameter of red-difference chrominance component (Cr)
+ * @param y01 	- OUT parameter of second luminance (Y)
+ *
+ * @return no return
+ */
 static inline void
 Unpack_PG2le_422be10(st_rfc4175_422_10_pg2_t const *pg, uint16_t *cb00, uint16_t *y00,
 					 uint16_t *cr00, uint16_t *y01)
@@ -299,16 +357,27 @@ Unpack_PG2le_422be10(st_rfc4175_422_10_pg2_t const *pg, uint16_t *cb00, uint16_t
 	*y01 = htons(y1);
 }
 
-/*
-0               1               2               3
-0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9 0 1
-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
-| CB00 (10 bits) | Y00 (10 bits) | CR00 (10 bits) |Y01
-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
-| Y01 (contd) |
-+-+-+-+-+-+-+-+-+
-* PG2 fields in packets are in LE, result shall be in LE
-*/
+/**
+ * Function converting (unpacking) pixel group into the string of image pixels
+ * PG2 fields in packets are in LE, result will be in LE
+ \verbatim
+ 0               1               2               3
+ 0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9 0 1
+ +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+ | CB00 (10 bits) | Y00 (10 bits) | CR00 (10 bits) |Y01
+ +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+ | Y01 (contd) |
+ +-+-+-+-+-+-+-+-+
+ \endverbatim
+ *
+ * @param pg 	- IN buffer with packed pixels
+ * @param cb00 	- OUT parameter of blue-difference chrominance component (Cb)
+ * @param y00 	- OUT parameter of first luminance (Y)
+ * @param cr00 	- OUT parameter of red-difference chrominance component (Cr)
+ * @param y01 	- OUT parameter of second luminance (Y)
+ *
+ * @return no return
+ */
 static inline void
 Unpack_PG2le_422le10(st_rfc4175_422_10_pg2_t const *pg, uint16_t *cb00, uint16_t *y00,
 					 uint16_t *cr00, uint16_t *y01)
@@ -325,6 +394,12 @@ Unpack_PG2le_422le10(st_rfc4175_422_10_pg2_t const *pg, uint16_t *cb00, uint16_t
 	*y01 = y1;
 }
 
+/**
+ * \struct st_anc_pkt_payload_hdr
+ * 
+ * \brief Structure describe ancillary data payload header (RFC 8331)
+ * 
+ */
 struct st_anc_pkt_payload_hdr
 {
 #ifdef __LITTLE_ENDIAN_BITFIELDS
@@ -332,24 +407,41 @@ struct st_anc_pkt_payload_hdr
 	{
 		struct
 		{
-			uint32_t streamNum : 7;
-			uint32_t s : 1;
-			uint32_t horizontalOffset : 12;
-			uint32_t lineNumber : 11;
-			uint32_t c : 1;
+			uint32_t streamNum : 7;			/**< StreamNum field carrying identification of the source data
+												stream number of the ANC data packet. Depends
+												on S (Data Stream Flag) field (RFC 8331)*/
+			uint32_t s : 1;					/**< Indicates whether the data stream number of a multi-stream
+												data mapping used to transport the ANC data packet. 
+												If the S bit is '0', then the StreamNum is not analyzed.
+												If the S bit is '1', then the StreamNum field contains info
+												about stream number in the ANC data packet. (RFC 8331) */
+			uint32_t horizontalOffset : 12;	/**< Defines the location of the ANC data packet in the SDI raster 
+												(RFC 8331) */
+			uint32_t lineNumber : 11;		/**< Containing information about line number corresponds to the 
+												location (vertical) of the ANC data packet in the SDI raster.
+												(RFC 8331) */
+			uint32_t c : 1;					/**< If the C bit is '0', the ANC data uses luma (Y)
+												data channel. If the C bit is '0', the ANC data 
+												uses color-difference data channel. (RFC 8331)*/
 		} first_hdr_chunk;
-		uint32_t swaped_first_hdr_chunk;
+		uint32_t swaped_first_hdr_chunk;	/**< Handle to make operating on first_hdr_chunk buffer easier. */
 	};
 	union
 	{
 		struct
 		{
-			uint32_t rsvdForUdw : 2;
-			uint32_t dataCount : 10;
-			uint32_t sdid : 10;
-			uint32_t did : 10;
+			uint32_t rsvdForUdw : 2;		/**< Starting point of the UDW (user data words). (RFC 8331)*/
+			uint32_t dataCount : 10;		/**< The lower 8 bits of Data_Count, corresponding to bits b7 (MSB)
+												through b0 (LSB) of the 10-bit Data_Count word, contain the actual
+												count of 10-bit words in User_Data_Words. Bit b8 is the even parity
+												for bits b7 through b0, and bit b9 is the inverse (logical NOT) 
+												of bit b8. (RFC 8331) */
+			uint32_t sdid : 10;				/**< Secondary Data Identification Word. Used only for a "Type 2" ANC
+												data packet. Note that in a "Type 1" ANC data packet, this word
+												will actually carry the Data Block Number (DBN). (RFC 8331) */
+			uint32_t did : 10;				/**< Data Identification Word (RFC 8331) */
 		} second_hdr_chunk;
-		uint32_t swaped_second_hdr_chunk;
+		uint32_t swaped_second_hdr_chunk;	/**< Handle to make operating on second_hdr_chunk buffer easier. */
 	};
 #else
 	uint32_t c : 1;
@@ -362,6 +454,7 @@ struct st_anc_pkt_payload_hdr
 	uint32_t dataCount : 10;
 #endif
 } __attribute__((__packed__));
-typedef struct st_anc_pkt_payload_hdr st_anc_pkt_payload_hdr_t;
+
+typedef struct st_anc_pkt_payload_hdr st_anc_pkt_payload_hdr_t;	/**< Type of the structure \ref st_anc_pkt_payload_hdr. */
 
 #endif

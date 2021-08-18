@@ -151,14 +151,6 @@ typedef enum
 
 typedef enum
 {
-	ST_PTP_CLOCK_SRC_AUTO,
-	ST_PTP_CLOCK_SRC_ETH,
-	ST_PTP_CLOCK_SRC_RTE,
-	ST_PTP_CLOCK_SRC_RTC,  //not supported
-} st_ptp_clocksource_t;
-
-typedef enum
-{
 	ST_PTP_L2_MODE,
 	ST_PTP_L4_MODE,
 } st_ptp_l_mode;
@@ -190,13 +182,6 @@ typedef struct st_ptp_state
 	uint64_t t2;
 	uint64_t t3;
 	uint64_t t4;
-	int ist2Soft;
-	int ist3Soft;
-	uint64_t t2HPet;
-	uint64_t t3HPet;
-	uint64_t t1HPetFreqStart;
-	uint64_t t1HPetFreqClk;
-	uint64_t t1HPetFreqClkNext;
 	uint16_t syncSeqId;
 	uint16_t delayReqId;
 	int howSyncInAnnouce;
@@ -205,7 +190,6 @@ typedef struct st_ptp_state
 	int howDelayResOurInAnnouce;
 	int howHigherPortIdentity;
 	int howDifDelayReqDelayRes;
-	st_ptp_clocksource_t clkSrc;
 	int addrMode;
 	int stepMode;
 	clock_id_t setClockId;
@@ -222,7 +206,5 @@ extern st_status_t StParseEthernet(uint16_t portId, struct rte_mbuf *m);
 extern st_status_t StPtpInit(uint16_t portId, struct rte_mempool *mbuf, uint16_t txRingId,
 							 struct rte_ring *txRing);
 extern st_status_t StPtpDeInit(uint16_t portId);
-extern st_status_t StPtpIsSync(uint16_t portId);
-extern st_status_t StSetClockSource(st_ptp_clocksource_t clkSrc);
 
 #endif	// _ST_PTP_H

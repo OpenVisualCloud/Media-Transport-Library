@@ -106,15 +106,16 @@ RancRtpInitPacketCtx(st_session_impl_t *s, uint32_t ring)
 	s->ancctx.seqNumber = 0;
 	s->ancctx.extSeqNumber = 0;
 
-	ip = (struct rte_ipv4_hdr *)StRtpBuildL2Packet(s, &s->hdrPrint[ST_PPORT].ancillaryHdr.eth, 0);
-	udp = (struct rte_udp_hdr *)StRtpBuildIpHeader(s, ip, 0);
-	st_rfc8331_anc_rtp_hdr_t *rtp = (st_rfc8331_anc_rtp_hdr_t *)StRtpBuildUdpHeader(s, udp);
+	ip = (struct rte_ipv4_hdr *)StRtpBuildL2Packet(s, &s->hdrPrint[ST_PPORT].ancillaryHdr.eth, ST_PPORT);
+	udp = (struct rte_udp_hdr *)StRtpBuildIpHeader(s, ip, ST_PPORT);
+	st_rfc8331_anc_rtp_hdr_t *rtp = (st_rfc8331_anc_rtp_hdr_t *)StRtpBuildUdpHeader(s, udp, ST_PPORT);
 	RancRtpBuildAncillaryPacket(s, rtp);
 	if (s->sn.caps & ST_SN_DUAL_PATH && stMainParams.numPorts > 1)
 	{
 		ip = (struct rte_ipv4_hdr *)StRtpBuildL2Packet(s, &s->hdrPrint[ST_RPORT].ancillaryHdr.eth,
-													   1);
-		udp = (struct rte_udp_hdr *)StRtpBuildIpHeader(s, ip, 1);
+													   ST_RPORT);
+		udp = (struct rte_udp_hdr *)StRtpBuildIpHeader(s, ip, ST_RPORT);
+		rtp = (st_rfc8331_anc_rtp_hdr_t *)StRtpBuildUdpHeader(s, udp, ST_RPORT);
 	}
 
 #ifdef TX_RINGS_DEBUG
@@ -216,6 +217,15 @@ RancRtpCreateTxSession(st_device_impl_t *dev, st_session_t *sin, st_format_t *fm
 st_status_t
 RancRtpDestroyTxSession(st_session_impl_t *s)
 {
+	if (!s)
+		return ST_INVALID_PARAM;
+
+	if(s->anccons.appHandle)
+		RTE_LOG(WARNING, USER1, "App handler is not cleared!\n");
+
+	rte_free(s);
+	s = NULL;
+
 	return ST_OK;
 }
 
@@ -428,7 +438,7 @@ RancRtpGetFrameTmstamp(st_session_impl_t *s, uint32_t firstWaits, U64 *roundTime
 		*roundTime = StPtpGetTime();
 	}
 	ntime = *roundTime;
-	U64 epochs = (U64)(ntime / s->fmt.anc.frameTime);
+	int64_t epochs = (int64_t)(ntime / s->fmt.anc.frameTime);
 
 	int areSameEpochs = 0, isOneLate = 0;
 
@@ -436,17 +446,17 @@ RancRtpGetFrameTmstamp(st_session_impl_t *s, uint32_t firstWaits, U64 *roundTime
 	{
 		s->ancctx.epochs = epochs;
 	}
-	else if ((int64_t)epochs - s->ancctx.epochs > 1)
+	else if ((epochs - s->ancctx.epochs) > 1)
 	{
 		s->ancctx.epochs = epochs;
 		__sync_fetch_and_add(&ac_adjustCount[0], 1);
 	}
-	else if ((int64_t)epochs - s->ancctx.epochs == 0)
+	else if (((epochs - s->ancctx.epochs) == 0) || ((epochs - s->ancctx.epochs) == -1))
 	{
 		areSameEpochs++;
 		__sync_fetch_and_add(&ac_adjustCount[1], 1);
 	}
-	else if ((int64_t)epochs - s->ancctx.epochs == 1)
+	else if ((epochs - s->ancctx.epochs) == 1)
 	{
 		isOneLate++;
 		s->ancctx.epochs++;
@@ -454,24 +464,24 @@ RancRtpGetFrameTmstamp(st_session_impl_t *s, uint32_t firstWaits, U64 *roundTime
 	}
 	else
 	{
-		//? case
 		s->ancctx.epochs = epochs;
 		__sync_fetch_and_add(&ac_adjustCount[0], 1);
 	}
 
-	U64 toEpoch;
+	int64_t toEpoch;
 	int64_t toElapse;
 	U64 st40Tmstamp90k;
 	U64 advance = s->nicTxTime + ST_TPRS_SLOTS_ADVANCE * s->sn.tprs;
 	long double frmTime90k = 1.0L * s->fmt.anc.clockRate * 1001 / 60000;  //todo real fps?
+
 	ntime = StPtpGetTime();
-	ntimeCpu = StGetCpuTimeNano();
+	ntimeCpu = StGetTscTimeNano();
 	U64 epochs_r = (U64)(ntime / s->fmt.anc.frameTime);
 	U64 remaind = ntime - (U64)(epochs_r * s->fmt.anc.frameTime);
 
-	if ((isOneLate || (!areSameEpochs)) && (remaind < s->sn.trOffset - advance))
+	if (((isOneLate) || (!areSameEpochs)) && (remaind < (s->sn.trOffset - advance)))
 	{
-		if (remaind > s->sn.trOffset / 2)
+		if (remaind > (s->sn.trOffset / 2))
 		{
 			toElapse = 0;
 			__sync_fetch_and_add(&ac_adjustCount[3], 1);
@@ -484,16 +494,12 @@ RancRtpGetFrameTmstamp(st_session_impl_t *s, uint32_t firstWaits, U64 *roundTime
 
 		// set 90k timestamp aligned to epoch
 		st40Tmstamp90k = s->ancctx.epochs * frmTime90k;
-#if (RTE_VER_YEAR < 21)
-		m->timestamp = (U64)(s->ancctx.epochs * s->fmt.anc.frameTime) + s->sn.trOffset - advance;
-#else
-		/* No access to portid, hence we have rely on pktpriv_data */
-		pktpriv_data_t *ptr = rte_mbuf_to_priv(m);
-		ptr->timestamp = (U64)(s->ancctx.epochs * s->fmt.anc.frameTime) + s->sn.trOffset - advance;
-#endif
+		StMbufSetTimestamp(m, (U64)(s->ancctx.epochs * s->fmt.anc.frameTime) + s->sn.trOffset - advance);
 	}
 	else
 	{
+		// Removing below line as it causes s->ancctx.epochs to diverge from current epoch without any reason 
+		// causing ((epochs - s->ancctx.epochs) < 0) case to hit eventually
 		s->ancctx.epochs++;
 		toEpoch = (U64)(s->ancctx.epochs * s->fmt.anc.frameTime) - ntime;
 		toElapse = toEpoch + s->sn.trOffset - advance;
@@ -501,13 +507,7 @@ RancRtpGetFrameTmstamp(st_session_impl_t *s, uint32_t firstWaits, U64 *roundTime
 		st40Tmstamp90k = s->ancctx.epochs * frmTime90k;
 		__sync_fetch_and_add(&ac_adjustCount[5], 1);
 
-#if (RTE_VER_YEAR < 21)
-		m->timestamp = (U64)(s->ancctx.epochs * s->fmt.anc.frameTime) + s->sn.trOffset - advance;
-#else
-		/* No access to portid, hence we have rely on pktpriv_data */
-		pktpriv_data_t *ptr = rte_mbuf_to_priv(m);
-		ptr->timestamp = (U64)(s->ancctx.epochs * s->fmt.anc.frameTime) + s->sn.trOffset - advance;
-#endif
+		StMbufSetTimestamp(m, (U64)(s->ancctx.epochs * s->fmt.anc.frameTime) + s->sn.trOffset - advance);
 	}
 	if (toElapse < 0)
 		toElapse = 0;
@@ -534,7 +534,7 @@ RancRtpGetFrameTmstamp(st_session_impl_t *s, uint32_t firstWaits, U64 *roundTime
 		for (; repeats < repeatCountMax; repeats++)
 		{
 			clock_nanosleep(CLOCK_REALTIME, 0, &req, &rem);
-			ntimeCpuLast = StGetCpuTimeNano();
+			ntimeCpuLast = StGetTscTimeNano();
 			elapsed = ntimeCpuLast - ntimeCpu;
 			if (elapsed + MAX(req.tv_nsec, ST_CLOCK_PRECISION_TIME) > toElapse)
 				break;
@@ -575,7 +575,7 @@ RancRtpUpdateAncillaryPacket(st_session_impl_t *s, void *hdr, struct rte_mbuf *m
 			udp->dgram_cksum = 0xFFFF;
 	}
 	udp->dgram_len = htons(m->pkt_len - m->l2_len - m->l3_len);
-	st_rfc8331_anc_rtp_hdr_t *rtp = (st_rfc8331_anc_rtp_hdr_t *)StRtpBuildUdpHeader(s, udp);
+	st_rfc8331_anc_rtp_hdr_t *rtp = (st_rfc8331_anc_rtp_hdr_t *)StRtpBuildUdpHeader(s, udp, ST_PPORT);
 
 	rtp->seqNumber = htons(s->ancctx.seqNumber);
 	rtp->tmstamp = htonl(s->ancctx.tmstamp);
@@ -658,7 +658,7 @@ LcoreMainAncillaryRingEnqueue(void *args)
 	st_device_impl_t *dev = &stSendDevice;
 
 	// wait for scheduler threads to be ready
-	RVRTP_SEMAPHORE_WAIT(mp->ringStart, mp->maxSchThrds);
+	RVRTP_SEMAPHORE_WAIT(mp->ringStart, mp->maxSchThrds * mp->numPorts);
 	st_session_impl_t *s;
 
 	uint32_t pktsCount = dev->dev.maxSt40Sessions;
@@ -700,6 +700,7 @@ LcoreMainAncillaryRingEnqueue(void *args)
 		for (uint32_t i = 0; i < pktsCount; i++)
 		{
 			bool sendR = 0;
+			bool sendP = 0;
 			/* TODO
 				 * need to re-work base on this version*/
 			s = dev->sn40Table[i];
@@ -716,13 +717,11 @@ LcoreMainAncillaryRingEnqueue(void *args)
 				}
 				continue;
 			}
-			sendR = (redRing && (s->sn.caps & ST_SN_DUAL_PATH)) ? 1 : 0;
-#if (RTE_VER_YEAR < 21)
-			pktVect[i]->timestamp = 0;
-#else
-			pktpriv_data_t *ptr = rte_mbuf_to_priv(pktVect[i]);
-			ptr->timestamp = 0;
-#endif
+
+			sendR = (redRing && (s->sn.caps & ST_SN_DUAL_PATH) && mp->rTx == 1) ? 1 : 0;
+			sendP = ((s->sn.caps & ST_SN_DUAL_PATH) && mp->pTx == 1) ? 1 : 0;
+
+			StMbufSetTimestamp(pktVect[i], 0);
 
 			s->ancctx.tmstamp = RancRtpGetFrameTmstamp(s, firstSnInRound, &roundTime, pktVect[i]);
 			firstSnInRound = 0;
@@ -750,14 +749,19 @@ LcoreMainAncillaryRingEnqueue(void *args)
 				pktVectR[i]->l3_len = pktVect[i]->l3_len;
 				pktVectR[i]->l4_len = pktVect[i]->l4_len;
 				pktVectR[i]->ol_flags = pktVect[i]->ol_flags;
-				RancRtpCopyPacket(pktVectR[i], pktVect[i]);
 				uint8_t *l2R = rte_pktmbuf_mtod(pktVectR[i], uint8_t *);
 				StRtpFillHeaderR(s, l2R, rte_pktmbuf_mtod(pktVect[i], uint8_t *));
+				RancRtpCopyPacket(pktVectR[i], pktVect[i]);
 			}
 			else if (redRing)
 			{
 				rte_pktmbuf_free(pktVectR[i]);
 				pktVectR[i] = NULL;
+			}
+			if (!sendP)
+			{
+				rte_pktmbuf_free(pktVect[i]);
+				pktVect[i] = NULL;
 			}
 			enqStats[coreId].pktsBuild += 1;
 #ifdef _ANC_DEBUG_
@@ -769,9 +773,6 @@ LcoreMainAncillaryRingEnqueue(void *args)
 		}
 		for (uint32_t i = 0; i < pktsCount; i++)
 		{
-			if (!pktVect[i])
-				continue;
-
 			uint32_t noFails = 0;
 			uint32_t ring
 				= dev->dev.maxSt21Sessions;	 //ancillary data and audio use the next ring after
@@ -780,7 +781,7 @@ LcoreMainAncillaryRingEnqueue(void *args)
 			RTE_LOG(DEBUG, USER2, "LcoreMainAncRingEnqueue enqueing i:%u, pktVect[i]:%u\n", i,
 					pktVect[i]);
 #endif
-			while (rte_ring_mp_enqueue(dev->txRing[ST_PPORT][ring], (void *)pktVect[i]) != 0)
+			while (pktVect[i] && rte_ring_mp_enqueue(dev->txRing[ST_PPORT][ring], (void *)pktVect[i]) != 0)
 			{
 				noFails++;
 #ifdef _TX_RINGS_DEBUG_
@@ -788,6 +789,8 @@ LcoreMainAncillaryRingEnqueue(void *args)
 					RTE_LOG(DEBUG, USER2, "Packets enqueue ring %u times %u\n", ring, , noFails);
 #endif
 				__sync_synchronize();
+				if (rte_atomic32_read(&isTxDevToDestroy) != 0)
+					break;
 			}
 			while (redRing && pktVectR[i]
 				   && rte_ring_mp_enqueue(dev->txRing[ST_RPORT][ring], (void *)pktVectR[i]) != 0)
@@ -798,6 +801,8 @@ LcoreMainAncillaryRingEnqueue(void *args)
 					RTE_LOG(DEBUG, USER2, "Packets enqueue ring %u times %u\n", ring, , noFails);
 #endif
 				__sync_synchronize();
+				if (rte_atomic32_read(&isTxDevToDestroy) != 0)
+					break;
 			}
 			enqStats[coreId].pktsQueued += 1;
 #ifdef _ANC_DEBUG_

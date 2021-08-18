@@ -321,6 +321,25 @@ RvRtpCreateRxSession(st_device_impl_t *dev, st_session_t *sin, st_format_t *fmt,
 st_status_t
 RvRtpDestroyRxSession(st_session_impl_t *s)
 {
+	if (!s)
+		return ST_INVALID_PARAM;
+
+	if(s->consBufs[FRAME_PREV].buf)
+	{
+		s->cons.St21NotifyFrameDone(s->cons.appHandle, s->consBufs[FRAME_PREV].buf, s->vctx.fieldId);
+	}
+	s->consBufs[FRAME_PREV].buf = NULL;
+	if(s->consBufs[FRAME_CURR].buf)
+	{
+		s->cons.St21NotifyFrameDone(s->cons.appHandle, s->consBufs[FRAME_CURR].buf, s->vctx.fieldId);
+	}
+	s->consBufs[FRAME_CURR].buf = NULL;
+
+	if(s->cons.appHandle)
+		RTE_LOG(WARNING, USER1, "App handler is not cleared!\n");
+
+	rte_free(s);
+	s = NULL;
 
 	return ST_OK;
 }
@@ -1511,7 +1530,7 @@ RvRtpFixCurrentFrame(st_session_impl_t *s, uint32_t rtpTmstamp, st21_vscan_t vsc
 	if (frameId != FRAME_PEND)
 	{
 		s->consBufs[FRAME_CURR].buf = s->cons.St21GetNextFrameBuf(
-			s->cons.appHandle, s->consBufs[FRAME_PREV].buf, s->cons.frameSize, s->vctx.fieldId);
+			s->cons.appHandle, s->consBufs[FRAME_PREV].buf, s->cons.frameSize, NULL, s->vctx.fieldId);
 
 		RvRtpClearFragHistInline(s, vscan, pktFmt);
 	}
@@ -1851,12 +1870,7 @@ RvRtpReceiveNextPacketsInline(st_session_impl_t *s, struct rte_mbuf *m, st21_vsc
 	const struct st_rfc4175_rtp_dual_hdr *rtp = rte_pktmbuf_mtod_offset(
 		m, struct st_rfc4175_rtp_dual_hdr *, m->l2_len + m->l3_len + m->l4_len);
 	uint32_t rtpTmstamp = ntohl(rtp->tmstamp);
-#if (RTE_VER_YEAR < 21)
-	const uint64_t dpdk_timestamp = m->timestamp;
-#else
-	pktpriv_data_t *ptr = rte_mbuf_to_priv(m);
-	const uint64_t dpdk_timestamp = ptr->timestamp;
-#endif
+	const uint64_t dpdk_timestamp = StMbufGetTimestamp(m);
 
 	s->vctx.data = NULL;  //pointer to right frameBuffer
 
@@ -1910,12 +1924,7 @@ RvRtpReceiveNextPacketsInline(st_session_impl_t *s, struct rte_mbuf *m, st21_vsc
 	{
 		if (stMainParams.isEbuCheck)
 		{
-#if (RTE_VER_YEAR < 21)
-			RvRtpCalculateFrameEbu(s, rtpTmstamp, m->timestamp);
-#else
-			pktpriv_data_t *ptr = rte_mbuf_to_priv(m);
-			RvRtpCalculateFrameEbu(s, rtpTmstamp, ptr->timestamp);
-#endif
+			RvRtpCalculateFrameEbu(s, rtpTmstamp, StMbufGetTimestamp(m));
 		}
 		if (s->consBufs[FRAME_CURR].tmstamp == 0)
 		{
@@ -1924,7 +1933,7 @@ RvRtpReceiveNextPacketsInline(st_session_impl_t *s, struct rte_mbuf *m, st21_vsc
 			{
 				s->consBufs[FRAME_CURR].buf
 					= s->cons.St21GetNextFrameBuf(s->cons.appHandle, s->consBufs[FRAME_PREV].buf,
-												  s->cons.frameSize, s->vctx.fieldId);
+												  s->cons.frameSize, NULL, s->vctx.fieldId);
 				if (unlikely(s->consBufs[FRAME_CURR].buf == NULL))
 				{
 					return RvRtpDropFrameAtTmstamp(s, rtpTmstamp, ST_PKT_DROP_NO_FRAME_BUF);
@@ -1939,7 +1948,7 @@ RvRtpReceiveNextPacketsInline(st_session_impl_t *s, struct rte_mbuf *m, st21_vsc
 			s->consBufs[FRAME_PEND].buf = s->consBufs[FRAME_CURR].buf;
 			s->pendCnt = 0;
 			s->consBufs[FRAME_CURR].buf = s->cons.St21GetNextFrameBuf(
-				s->cons.appHandle, s->consBufs[FRAME_CURR].buf, s->cons.frameSize, s->vctx.fieldId);
+				s->cons.appHandle, s->consBufs[FRAME_CURR].buf, s->cons.frameSize, NULL, s->vctx.fieldId);
 			if (unlikely(s->consBufs[FRAME_CURR].buf == NULL))
 			{
 				return RvRtpDropFrameAtTmstamp(s, rtpTmstamp, ST_PKT_DROP_NO_FRAME_BUF);
@@ -2026,7 +2035,7 @@ RvRtpReceiveNextPacketsInline(st_session_impl_t *s, struct rte_mbuf *m, st21_vsc
 					s->consBufs[FRAME_CURR].tmstamp = 0;
 					s->consBufs[FRAME_CURR].buf = s->cons.St21GetNextFrameBuf(
 						s->cons.appHandle, s->consBufs[FRAME_PREV].buf, s->cons.frameSize,
-						s->vctx.fieldId);
+						NULL, s->vctx.fieldId);
 					RvRtpClearFragHistInline(s, vscan, pktFmt);
 				}
 				s->tmstampDone = rtpTmstamp;
@@ -2055,6 +2064,224 @@ RvRtpReceiveNextPacketsInline(st_session_impl_t *s, struct rte_mbuf *m, st21_vsc
 		s->consState = FRAME_CURR;
 		s->pendCnt = 0;
 		s->consBufs[FRAME_PEND].buf = NULL;
+	}
+
+	return ST_OK;
+}
+
+st_status_t
+RvRtpRecvUsrTmstampNextPacketsRedundantInline(st_session_impl_t *s, struct rte_mbuf *m, st21_vscan_t vscan,
+                                                          st21_pkt_fmt_t pktFmt)
+{
+	uint32_t frameId = FRAME_CURR;
+	st_status_t res = ST_OK;
+
+	const struct rte_ipv4_hdr *ip = rte_pktmbuf_mtod_offset(m, struct rte_ipv4_hdr *, m->l2_len);
+	const struct st_rfc4175_rtp_dual_hdr *rtp = rte_pktmbuf_mtod_offset(m, struct st_rfc4175_rtp_dual_hdr *, m->l2_len + m->l3_len + m->l4_len);
+
+	const uint32_t rtpTmstamp = ntohl(rtp->tmstamp);
+	const uint16_t coreId = rte_lcore_id();
+	s->vctx.data = NULL;  //pointer to right frameBuffer
+
+	/* scenario case checkers */
+	const bool rtpMarkerPacket = (rtp->marker) ? true : false;
+	const bool isRedundantPort = (m->port == 1) ? true : false;
+	bool isMiddlePacket = false;
+	bool isLastPacket = false;
+	bool isMiddlePendPacket = false;
+	bool isLastPendPacket = false;
+	bool pendFramePresent = (s->consBufs[FRAME_PEND].buf) ? true : false;
+	bool userNotifyLine = false;
+
+	/* Validate the IP & UDP & RTP header */
+	res = StRtpIpUdpHdrCheck(s, ip);
+	if (unlikely(res != ST_OK))
+	{
+		rxThreadStats[coreId].badIpUdp += isRedundantPort ? 0 : 1;
+		rxThreadStats[coreId].badIpUdpR += isRedundantPort ? 1 : 0;
+		s->pendCnt += 1;
+		return res;
+	}
+
+	res = StRtpHdrCheck(s, rtp, pktFmt, vscan);
+	if (unlikely(res != ST_OK))
+	{
+		rxThreadStats[coreId].badRtp += isRedundantPort ? 0 : 1;
+		rxThreadStats[coreId].badRtpR += isRedundantPort ? 1 : 0;
+		s->pendCnt += 1;
+		return res;
+	}
+
+	/* ToDo assuming user ca send wiuth timestamp 0 */
+	if ((s->tmstampDone != 0) && (rtpTmstamp == s->tmstampDone))
+	{
+		rxThreadStats[coreId].tmpstampDone += isRedundantPort ? 0 : 1;
+		rxThreadStats[coreId].tmpstampDoneR += isRedundantPort ? 1 : 0;
+
+		s->sn.pktsDrop[ST_PKT_DROP(ST_PKT_DROP_BAD_RTP_TMSTAMP)]++;
+		return ST_PKT_DROP_BAD_RTP_TMSTAMP;
+	}
+
+	/* check if rcvd pkt time is expected currFrame */
+	if (rtpTmstamp == s->vctx.tmstamp)	/* expected current packet */
+	{
+		isMiddlePacket = (!rtpMarkerPacket) ? true : false;
+		isLastPacket = (rtpMarkerPacket) ? true : false;
+
+		s->vctx.data = s->consBufs[FRAME_CURR].buf;
+		s->sn.pktsRecv++;
+	}
+	/* check if rcvd pkt time is expected pendFrame */
+	else if (pendFramePresent && (rtpTmstamp == s->consBufs[FRAME_PEND].tmstamp)) /* expected prev packet */
+	{	
+		isMiddlePendPacket = (!rtpMarkerPacket) ? true : false;
+		isLastPendPacket = (rtpMarkerPacket) ? true : false;
+
+		frameId = FRAME_PEND;
+                s->vctx.data = s->consBufs[FRAME_PEND].buf;
+                s->sn.pktsRecv++;
+	}
+	/* pkt can be the first of the frame or any packet which does not match curr|pend frame */
+	else
+	{
+		bool restartAsNewFrame = true;
+
+		/* 
+		 * we have 3 scenarios
+		 * 	- there is pend buff to send notification
+		 * 	- if there is current frame try moving to pending
+		 * 	- if there is no buff try allocating buffer
+		 */
+		if ((s->consBufs[FRAME_PEND].pkts > 0) && (pendFramePresent && restartAsNewFrame))
+		{
+			s->cons.St21NotifyFrameRecv(s->cons.appHandle, s->vctx.data, s->consBufs[FRAME_PEND].tmstamp, s->vctx.fieldId);
+			s->cons.St21NotifyFrameDone(s->cons.appHandle, s->consBufs[FRAME_PEND].buf, s->vctx.fieldId);
+			s->tmstampDone = s->consBufs[FRAME_PEND].tmstamp;
+
+			rxThreadStats[coreId].incompletePendFrameDone += (s->consBufs[FRAME_PEND].pkts != s->fmt.v.pktsInFrame) ? 1 : 0;
+			rxThreadStats[coreId].completePendFrames += (s->consBufs[FRAME_PEND].pkts == s->fmt.v.pktsInFrame) ? 1 : 0;
+			rxThreadStats[coreId].userNotifyPendFrame += 1;
+
+			s->tmstampDone = s->consBufs[FRAME_PEND].tmstamp;
+			s->consBufs[FRAME_PEND].pkts = 0;
+			s->consBufs[FRAME_PEND].tmstamp = 0;
+			s->consBufs[FRAME_PEND].buf = NULL;
+
+			rxThreadStats[coreId].forcePendBuffOut += isRedundantPort ? 0 : 1;
+			rxThreadStats[coreId].forcePendBuffOutR += isRedundantPort ? 1 : 0;
+		}
+
+		/* it is a new frame */
+		s->sn.frmsRecv++;
+
+		/* make current buffer as pend buffer */
+		s->consBufs[FRAME_PEND].pkts = s->consBufs[FRAME_CURR].pkts;
+		s->consBufs[FRAME_PEND].tmstamp = s->consBufs[FRAME_CURR].tmstamp;
+		RvRtpCopyFragHistInline(s, vscan, pktFmt);
+		s->consBufs[FRAME_PEND].buf = s->consBufs[FRAME_CURR].buf;
+
+		s->consBufs[FRAME_CURR].buf = s->cons.St21GetNextFrameBuf(s->cons.appHandle, s->consBufs[FRAME_PREV].buf, s->cons.frameSize, NULL, s->vctx.fieldId);
+		if (unlikely(s->consBufs[FRAME_CURR].buf == NULL))
+        	{
+                	return RvRtpDropFrameAtTmstamp(s, rtpTmstamp, ST_PKT_DROP_NO_FRAME_BUF);
+		}
+		s->pendCnt = 0;
+		s->consBufs[FRAME_CURR].pkts = 0;
+		s->consBufs[FRAME_CURR].tmstamp = 0;
+		RvRtpClearFragHistInline(s, vscan, pktFmt);
+
+		s->consBufs[FRAME_CURR].tmstamp = rtpTmstamp;
+		s->vctx.tmstamp = rtpTmstamp;
+		s->vctx.data = s->consBufs[FRAME_CURR].buf;
+		s->sn.pktsRecv++;
+
+		rxThreadStats[coreId].restartAsNewFrame += (restartAsNewFrame && isRedundantPort) ? 0 : 1;
+		rxThreadStats[coreId].restartAsNewFrameR += (restartAsNewFrame && isRedundantPort) ? 1 : 0;
+
+		rxThreadStats[coreId].firstPacketGood += isRedundantPort ? 0 : 1;
+		rxThreadStats[coreId].firstPacketGoodR += isRedundantPort ? 1 : 0;
+	}
+
+	s->consBufs[frameId].lastGoodPacketPort = m->port;
+	s->pendCnt += pendFramePresent ? 1 : 0;
+
+	/* counter update */
+	rxThreadStats[coreId].nonFirstPacketGood += (!isRedundantPort && isMiddlePacket) ? 1 : 0;
+	rxThreadStats[coreId].nonFirstPacketGoodR += (isRedundantPort && isMiddlePacket)? 1 : 0;
+	rxThreadStats[coreId].lastPacketGood += (!isRedundantPort && isLastPacket)? 1 : 0;
+	rxThreadStats[coreId].lastPacketGoodR += (isRedundantPort && isLastPacket)? 1 : 0;
+	rxThreadStats[coreId].nonFirstPacketPendGood += (!isRedundantPort && isMiddlePendPacket) ? 1 : 0;
+	rxThreadStats[coreId].nonFirstPacketPendGoodR += (isRedundantPort && isMiddlePendPacket)? 1 : 0;
+	rxThreadStats[coreId].lastPacketPendGood += (!isRedundantPort && isLastPendPacket) ? 1 : 0;
+	rxThreadStats[coreId].lastPacketPendGoodR += (isRedundantPort && isLastPendPacket)? 1 : 0;
+
+	res = RvRtpReceiveFastCopyInline(s, rtp, vscan, pktFmt, frameId);
+	if (unlikely(res != ST_OK))
+	{
+		if (res == ST_PKT_DROP_REDUNDANT_PATH)
+		{
+			s->sn.pktsDrop[ST_PKT_DROP(ST_PKT_DROP_REDUNDANT_PATH)]++;
+			rxThreadStats[coreId].fastCopyFail += isRedundantPort ? 0 : 1;
+			rxThreadStats[coreId].fastCopyFailR += isRedundantPort ? 1 : 0;
+		}
+		else
+		{
+			rxThreadStats[coreId].fastCopyFailErr += isRedundantPort ? 0 : 1;
+			rxThreadStats[coreId].fastCopyFailErrR += isRedundantPort ? 1 : 0;
+		}
+
+		return res;
+	}
+	s->consBufs[frameId].pkts++;
+
+	if (userNotifyLine)
+	{
+		rxThreadStats[coreId].userNotifyLine += 1;
+		//s->sn.linesRecv++;
+		//s->cons.St21NotifyFrameRecv(s->cons.appHandle, s->vctx.data, rtpTmstamp, s->vctx.fieldId);
+	}
+
+	bool sendPendFrame = (s->consBufs[FRAME_PEND].buf) &&
+				((s->consBufs[FRAME_PEND].pkts == s->fmt.v.pktsInFrame) ||
+				(((s->consBufs[FRAME_CURR].pkts == s->fmt.v.pktsInFrame) ||
+				((s->consBufs[FRAME_PEND].pkts + s->pendCnt) > s->fmt.v.pktsInFrame)) && 
+				(m->port) != s->consBufs[frameId].lastGoodPacketPort)) ? true : false;
+
+	if (sendPendFrame)
+	{
+		s->sn.frmsRecv++;
+		s->cons.St21NotifyFrameRecv(s->cons.appHandle, s->vctx.data, s->consBufs[FRAME_PEND].tmstamp, s->vctx.fieldId);
+
+		s->cons.St21NotifyFrameDone(s->cons.appHandle, s->consBufs[FRAME_PEND].buf, s->vctx.fieldId);
+
+		rxThreadStats[coreId].completePendFrames += (s->consBufs[FRAME_PEND].pkts == s->fmt.v.pktsInFrame) ? 1 : 0;
+		rxThreadStats[coreId].incompletePendFrameDone += (s->consBufs[FRAME_PEND].pkts != s->fmt.v.pktsInFrame) ? 1 : 0;
+		rxThreadStats[coreId].userNotifyPendFrame += 1;
+
+		s->tmstampDone = s->consBufs[FRAME_PEND].tmstamp;
+		s->consBufs[FRAME_PEND].pkts = 0;
+		s->consBufs[FRAME_PEND].tmstamp = 0;
+		s->consBufs[FRAME_PEND].buf = NULL;
+		s->pendCnt = 0;
+
+		pendFramePresent = false;
+	}
+
+	if ((!pendFramePresent) && (s->consBufs[FRAME_CURR].pkts == s->fmt.v.pktsInFrame))
+	{
+		s->sn.frmsRecv++;
+		s->cons.St21NotifyFrameRecv(s->cons.appHandle, s->vctx.data, s->consBufs[FRAME_CURR].tmstamp, s->vctx.fieldId);
+
+		s->cons.St21NotifyFrameDone(s->cons.appHandle, s->consBufs[FRAME_CURR].buf, s->vctx.fieldId);
+
+		s->tmstampDone = s->consBufs[FRAME_CURR].tmstamp;
+		s->consBufs[FRAME_CURR].pkts = 0;
+		s->consBufs[FRAME_CURR].tmstamp = 0;
+		s->consBufs[FRAME_CURR].buf = s->cons.St21GetNextFrameBuf(s->cons.appHandle, s->consBufs[FRAME_PREV].buf, s->cons.frameSize, NULL, s->vctx.fieldId);
+		RvRtpClearFragHistInline(s, vscan, pktFmt);
+
+		rxThreadStats[coreId].completeFrames += 1;
+		rxThreadStats[coreId].userNotifyFrame += 1;
 	}
 
 	return ST_OK;
@@ -2089,12 +2316,7 @@ RvRtpReceiveNextPacketsRedundantInline(st_session_impl_t *s, struct rte_mbuf *m,
 	const struct st_rfc4175_rtp_dual_hdr *rtp = rte_pktmbuf_mtod_offset(m, struct st_rfc4175_rtp_dual_hdr *, m->l2_len + m->l3_len + m->l4_len);
 
 	const uint32_t rtpTmstamp = ntohl(rtp->tmstamp);
-#if (RTE_VER_YEAR < 21)
-	const uint64_t dpdk_timestamp = m->timestamp;
-#else
-	pktpriv_data_t *ptr = rte_mbuf_to_priv(m);
-	const uint64_t dpdk_timestamp = ptr->timestamp;
-#endif
+	const uint64_t dpdk_timestamp = StMbufGetTimestamp(m);
 	const uint16_t coreId = rte_lcore_id();
 	s->vctx.data = NULL;  //pointer to right frameBuffer
 
@@ -2270,7 +2492,7 @@ RvRtpReceiveNextPacketsRedundantInline(st_session_impl_t *s, struct rte_mbuf *m,
 		RvRtpCopyFragHistInline(s, vscan, pktFmt);
 		s->consBufs[FRAME_PEND].buf = s->consBufs[FRAME_CURR].buf;
 
-		s->consBufs[FRAME_CURR].buf = s->cons.St21GetNextFrameBuf(s->cons.appHandle, s->consBufs[FRAME_PREV].buf, s->cons.frameSize, s->vctx.fieldId);
+		s->consBufs[FRAME_CURR].buf = s->cons.St21GetNextFrameBuf(s->cons.appHandle, s->consBufs[FRAME_PREV].buf, s->cons.frameSize, NULL, s->vctx.fieldId);
 		if (unlikely(s->consBufs[FRAME_CURR].buf == NULL))
         	{
                 	return RvRtpDropFrameAtTmstamp(s, rtpTmstamp, ST_PKT_DROP_NO_FRAME_BUF);
@@ -2377,7 +2599,7 @@ RvRtpReceiveNextPacketsRedundantInline(st_session_impl_t *s, struct rte_mbuf *m,
 		s->tmstampDone = s->consBufs[FRAME_CURR].tmstamp;
 		s->consBufs[FRAME_CURR].pkts = 0;
 		s->consBufs[FRAME_CURR].tmstamp = 0;
-		s->consBufs[FRAME_CURR].buf = s->cons.St21GetNextFrameBuf(s->cons.appHandle, s->consBufs[FRAME_PREV].buf, s->cons.frameSize, s->vctx.fieldId);
+		s->consBufs[FRAME_CURR].buf = s->cons.St21GetNextFrameBuf(s->cons.appHandle, s->consBufs[FRAME_PREV].buf, s->cons.frameSize, NULL, s->vctx.fieldId);
 		RvRtpClearFragHistInline(s, vscan, pktFmt);
 
 		rxThreadStats[coreId].completeFrames += 1;
@@ -2413,13 +2635,7 @@ RvRtpReceiveNextPacketsPrimaryInline(st_session_impl_t *s, struct rte_mbuf *m, s
 	const struct st_rfc4175_rtp_dual_hdr *rtp = rte_pktmbuf_mtod_offset(
 		m, struct st_rfc4175_rtp_dual_hdr *, m->l2_len + m->l3_len + m->l4_len);
 	const uint32_t rtpTmstamp = ntohl(rtp->tmstamp);
-#if (RTE_VER_YEAR < 21)
-	const uint64_t dpdk_timestamp = m->timestamp;
-#else
-	pktpriv_data_t *ptr = rte_mbuf_to_priv(m);
-	const uint64_t dpdk_timestamp = ptr->timestamp;
-#endif
-
+	const uint64_t dpdk_timestamp = StMbufGetTimestamp(m);
 	const uint16_t coreId = rte_lcore_id();
 
 	s->vctx.data = NULL;  //pointer to right frameBuffer
@@ -2440,13 +2656,15 @@ RvRtpReceiveNextPacketsPrimaryInline(st_session_impl_t *s, struct rte_mbuf *m, s
 		return res;
 	}
 
-	//	bool overflowRtpNewPacket = false;
 	const bool rtpMarkerPacket = (rtp->marker) ? true : false;
 	const bool userNotifyLine = false;
 	bool userNotifyFrame = false;
 	bool isMiddlePendPacket = false;
 	bool isLastPendPacket = false;
-	uint32_t frameDoneTotalPkts = 0;
+
+	//	if (rtpMarkerPacket)
+	//		printf("(%s) tmstamp from rtp %u vcts %u\n", __func__, rtpTmstamp, s->vctx.tmstamp);
+	
 
 	if (unlikely(rtpTmstamp == s->tmstampDone))
 	{
@@ -2480,10 +2698,14 @@ RvRtpReceiveNextPacketsPrimaryInline(st_session_impl_t *s, struct rte_mbuf *m, s
 		const bool checkRtpTmstampOverflow = (rtpTmstamp < currFrameTmstamp);
 		bool dropOutofOrderPkts = false;
 		bool restartAsNewFrame = true;
+		bool sNewPacketNewFrame = ((s->consBufs[FRAME_CURR].buf == NULL) && (s->sn.pktsRecv == 0)) ? true : false; /* real first packet for current session */
 
 		if (checkRtpTmstampOverflow)
 		{
-			/* ToDo: 0xFFFFF447 - 30fps & 0xFFFFFA23 - 60fps*/
+			/* ToDo: Since application logic is not passing Frame rate 
+			 * as duscssed from BETA1.0 we need to implement the proper timestamp overflow check
+			 *
+			 * 0xFFFFF447 - 30fps & 0xFFFFFA23 - 60fps*/
 			if (currFrameTmstamp >= 0xFFFFFA23)
 			{
 				s->pendCnt = 0;
@@ -2501,27 +2723,40 @@ RvRtpReceiveNextPacketsPrimaryInline(st_session_impl_t *s, struct rte_mbuf *m, s
 			}
 		}
 	
-		/* new frame scenario */
+		/*
+		 * new packet for new frame scenario
+		 * or
+		 * we missed rtp marker indicating end of frame
+		 */
 		if (restartAsNewFrame)
 		{
-
-			if (stMainParams.isEbuCheck)
+			if (likely(sNewPacketNewFrame == false))
 			{
-				RvRtpCalculateEbuAvg(s);
+				if (stMainParams.isEbuCheck)
+				{
+					RvRtpCalculateEbuAvg(s);
+				}
+				rxThreadStats[coreId].restartAsNewFrame += 1;
+
+				/* if we have not recieved RTP marker then we need to flush the frame_curr */
+				if (s->consBufs[FRAME_CURR].tmstamp)
+				{
+					s->consBufs[FRAME_CURR].tmstamp = s->vctx.tmstamp;
+					s->cons.St21NotifyFrameRecv(s->cons.appHandle, s->vctx.data,
+											s->consBufs[FRAME_CURR].tmstamp, s->vctx.fieldId);
+					s->cons.St21NotifyFrameDone(s->cons.appHandle, s->consBufs[FRAME_CURR].buf,
+											s->vctx.fieldId);
+					s->sn.frmsRecv++;
+					rxThreadStats[coreId].incompleteFrameDone
+						+= (s->consBufs[FRAME_CURR].pkts < s->fmt.v.pktsInFrame) ? 1 : 0;
+					rxThreadStats[coreId].completeFrames
+						+= (s->consBufs[FRAME_CURR].pkts == s->fmt.v.pktsInFrame) ? 1 : 0;
+					rxThreadStats[coreId].userNotifyFrame += 1;
+				}
+				s->tmstampDone = s->consBufs[FRAME_CURR].tmstamp;
 			}
-			rxThreadStats[coreId].restartAsNewFrame += 1;
 
-			s->consBufs[FRAME_CURR].tmstamp = s->vctx.tmstamp;
-
-			s->cons.St21NotifyFrameRecv(s->cons.appHandle, s->vctx.data, rtpTmstamp, s->vctx.fieldId);
-			s->cons.St21NotifyFrameDone(s->cons.appHandle, s->consBufs[FRAME_CURR].buf, s->vctx.fieldId);
-			s->sn.frmsRecv++;
-
-			s->tmstampDone = s->consBufs[FRAME_CURR].tmstamp;
-
-			rxThreadStats[coreId].incompleteFrameDone += (s->consBufs[FRAME_CURR].pkts < s->fmt.v.pktsInFrame) ? 0 : 1;
-
-			s->consBufs[FRAME_CURR].buf = s->cons.St21GetNextFrameBuf(s->cons.appHandle, s->consBufs[FRAME_CURR].buf, s->cons.frameSize, s->vctx.fieldId);
+			s->consBufs[FRAME_CURR].buf = s->cons.St21GetNextFrameBuf(s->cons.appHandle, s->consBufs[FRAME_CURR].buf, s->cons.frameSize, NULL, s->vctx.fieldId);
 			if (unlikely(s->consBufs[FRAME_CURR].buf == NULL))
 			{
 				return RvRtpDropFrameAtTmstamp(s, rtpTmstamp, ST_PKT_DROP_NO_FRAME_BUF);
@@ -2541,6 +2776,7 @@ RvRtpReceiveNextPacketsPrimaryInline(st_session_impl_t *s, struct rte_mbuf *m, s
 			s->sn.pktsDrop[ST_PKT_DROP(ST_PKT_DROP_BAD_RTP_TMSTAMP)]++;
 			return ST_PKT_DROP_BAD_RTP_TMSTAMP;
 		}
+
 		if (stMainParams.isEbuCheck)
 		{
 			RvRtpCalculatePacketEbu(s, dpdk_timestamp, 1);
@@ -2551,11 +2787,11 @@ RvRtpReceiveNextPacketsPrimaryInline(st_session_impl_t *s, struct rte_mbuf *m, s
 		rxThreadStats[coreId].firstPacketGood += 1;
 	}
 
-	rxThreadStats[coreId].nonFirstPacketPendGood += isMiddlePendPacket ? 1 : 0;
-	rxThreadStats[coreId].lastPacketPendGood += isLastPendPacket ? 1 : 0;
+	rxThreadStats[coreId].nonFirstPacketGood += isMiddlePendPacket ? 1 : 0;
+	rxThreadStats[coreId].lastPacketGood += isLastPendPacket ? 1 : 0;
 
 	s->vctx.tmstamp = rtpTmstamp;
-	res = RvRtpReceiveFastCopyInline(s, rtp, vscan, pktFmt, frameId);
+	res = RvRtpReceiveFastCopyInline(s, rtp, vscan, pktFmt, FRAME_CURR);
 	if (unlikely(res != ST_OK))
 	{
 		if (res == ST_PKT_DROP_REDUNDANT_PATH)
@@ -2571,6 +2807,7 @@ RvRtpReceiveNextPacketsPrimaryInline(st_session_impl_t *s, struct rte_mbuf *m, s
 		userNotifyFrame = true;
 	}
 
+	/* for low latency N line notification feature */
 	if (userNotifyLine)
 	{
 		rxThreadStats[coreId].userNotifyLine += 1;
@@ -2581,26 +2818,173 @@ RvRtpReceiveNextPacketsPrimaryInline(st_session_impl_t *s, struct rte_mbuf *m, s
 		s->sn.frmsRecv++;
 		s->cons.St21NotifyFrameRecv(s->cons.appHandle, s->vctx.data, rtpTmstamp, s->vctx.fieldId);
 		rxThreadStats[coreId].userNotifyFrame += 1;
+		rxThreadStats[coreId].completeFrames += (s->consBufs[FRAME_CURR].pkts == s->fmt.v.pktsInFrame) ? 1 : 0;
+		rxThreadStats[coreId].incompleteFrameDone += (s->consBufs[FRAME_CURR].pkts < s->fmt.v.pktsInFrame) ? 1 : 0;
 		s->cons.St21NotifyFrameDone(s->cons.appHandle, s->consBufs[FRAME_CURR].buf, s->vctx.fieldId);
 		s->tmstampDone = rtpTmstamp;
-	}
-
-	if (rtpMarkerPacket)
-	{
-		rxThreadStats[coreId].lastPacketGood += 1;
-		frameDoneTotalPkts = s->consBufs[FRAME_CURR].pkts;
 
 		s->consBufs[FRAME_CURR].pkts = 0;
 		s->consBufs[FRAME_CURR].tmstamp = 0;
 		s->tmstampDone = rtpTmstamp;
 		s->consBufs[FRAME_CURR].buf = s->cons.St21GetNextFrameBuf(
-			s->cons.appHandle, s->consBufs[FRAME_PREV].buf, s->cons.frameSize, s->vctx.fieldId);
+			s->cons.appHandle, s->consBufs[FRAME_PREV].buf, s->cons.frameSize, NULL, s->vctx.fieldId);
 		RvRtpClearFragHistInline(s, vscan, pktFmt);
 	}
 
-	if ((rtpMarkerPacket) && (frameDoneTotalPkts == s->fmt.v.pktsInFrame))
+	return ST_OK;
+}
+
+
+/*****************************************************************************************
+ *
+ * RvRtpRecvUsrTmstampNextPacketsPrimaryInline
+ *
+ * DESCRIPTION
+ * Main function to processes packets within session context
+ *
+ * assumption:
+ * 	- we are not expecting out of order or previous frames
+ *      - any packet recieved with marker for current frame is treated as end of frame
+ *
+ * RETURNS: st_status_t
+ *
+ * SEE ALSO:
+ */
+st_status_t
+RvRtpRecvUsrTmstampNextPacketsPrimaryInline(st_session_impl_t *s, struct rte_mbuf *m, st21_vscan_t vscan,
+							  st21_pkt_fmt_t pktFmt)
+{
+	uint32_t frameId = FRAME_CURR;
+	st_status_t res = ST_OK;
+
+	const struct rte_ipv4_hdr *ip = rte_pktmbuf_mtod_offset(m, struct rte_ipv4_hdr *, m->l2_len);
+	const struct st_rfc4175_rtp_dual_hdr *rtp = rte_pktmbuf_mtod_offset(
+		m, struct st_rfc4175_rtp_dual_hdr *, m->l2_len + m->l3_len + m->l4_len);
+	const uint32_t rtpTmstamp = ntohl(rtp->tmstamp);
+	const uint16_t coreId = rte_lcore_id();
+
+	s->vctx.data = NULL;  //pointer to right frameBuffer
+
+	/* Validate the IP & UDP header */
+	res = StRtpIpUdpHdrCheck(s, ip);
+	if (unlikely(res != ST_OK))
 	{
-		rxThreadStats[coreId].completeFrames += 1;
+		rxThreadStats[coreId].badIpUdp += 1;
+		return res;
+	}
+
+	/* Validate the RTP header */
+	res = StRtpHdrCheck(s, rtp, pktFmt, vscan);
+	if (unlikely(res != ST_OK))
+	{
+		rxThreadStats[coreId].badRtp += 1;
+		return res;
+	}
+
+	//	bool overflowRtpNewPacket = false;
+	const bool rtpMarkerPacket = (rtp->marker) ? true : false;
+	const bool userNotifyLine = false;
+	bool isMiddlePendPacket = false;
+	bool isLastPendPacket = false;
+
+	//	if (rtpMarkerPacket)
+	//		printf("%s Rcv timestamp: %u while vcts timestamp: %u\n", __func__, rtpTmstamp, s->vctx.tmstamp);
+	
+	if (likely(rtpTmstamp == s->vctx.tmstamp))	//tmstamp match most cases here
+	{
+		isMiddlePendPacket = (!rtpMarkerPacket) ? true : false;
+		isLastPendPacket = (rtpMarkerPacket) ? true : false;
+
+		rxThreadStats[coreId].nonFirstPacketGood += (!rtpMarkerPacket) ? 0 : 1;
+		/* except first packet in the frame all subsequent packet of the frame */
+		s->vctx.data = s->consBufs[FRAME_CURR].buf;
+		s->sn.pktsRecv++;
+
+		/* ToDo: user notify for n packets */
+		//s->cons.St21NotifyFrameRecv(s->cons.appHandle, s->vctx.data + n * nCount, rtpTmstamp, s->vctx.fieldId);
+		//userNotifyLine = true;
+	}
+	else
+	{
+		bool restartAsNewFrame = true;
+		bool sNewPacketNewFrame = ((s->consBufs[FRAME_CURR].buf == NULL) && (s->sn.pktsRecv == 0)) ? true : false; /* real first packet for current session */
+
+		/* new frame scenario */
+		if (restartAsNewFrame)
+		{
+			rxThreadStats[coreId].restartAsNewFrame += 1;
+
+			if (false == sNewPacketNewFrame)
+			{
+				if (s->consBufs[FRAME_CURR].tmstamp)
+				{
+					s->consBufs[FRAME_CURR].tmstamp = s->vctx.tmstamp;
+					s->cons.St21NotifyFrameRecv(s->cons.appHandle, s->vctx.data,
+												s->consBufs[FRAME_CURR].tmstamp, s->vctx.fieldId);
+					s->cons.St21NotifyFrameDone(s->cons.appHandle, s->consBufs[FRAME_CURR].buf,
+												s->vctx.fieldId);
+					s->sn.frmsRecv++;
+					rxThreadStats[coreId].incompleteFrameDone
+						+= (s->consBufs[FRAME_CURR].pkts < s->fmt.v.pktsInFrame) ? 1 : 0;
+					rxThreadStats[coreId].completeFrames
+						+= (s->consBufs[FRAME_CURR].pkts == s->fmt.v.pktsInFrame) ? 1 : 0;
+					rxThreadStats[coreId].userNotifyFrame += 1;
+					s->tmstampDone = s->consBufs[FRAME_CURR].tmstamp;
+				}
+			}
+			s->consBufs[FRAME_CURR].buf = s->cons.St21GetNextFrameBuf(s->cons.appHandle, s->consBufs[FRAME_CURR].buf, s->cons.frameSize, NULL, s->vctx.fieldId);
+			if (unlikely(s->consBufs[FRAME_CURR].buf == NULL))
+			{
+				return RvRtpDropFrameAtTmstamp(s, rtpTmstamp, ST_PKT_DROP_NO_FRAME_BUF);
+			}
+			RvRtpClearFragHistInline(s, vscan, pktFmt);
+
+			/* making current packet as new frame */
+			s->consBufs[FRAME_CURR].pkts = 0;
+			s->vctx.data = s->consBufs[FRAME_CURR].buf;
+			s->consBufs[FRAME_CURR].tmstamp = rtpTmstamp;
+		}
+
+		s->sn.pktsRecv++;
+		rxThreadStats[coreId].firstPacketGood += 1;
+	}
+
+	rxThreadStats[coreId].nonFirstPacketGood += isMiddlePendPacket ? 1 : 0;
+	rxThreadStats[coreId].lastPacketGood += isLastPendPacket ? 1 : 0;
+
+	s->vctx.tmstamp = rtpTmstamp;
+	res = RvRtpReceiveFastCopyInline(s, rtp, vscan, pktFmt, FRAME_CURR);
+	if (unlikely(res != ST_OK))
+	{
+		if (res == ST_PKT_DROP_REDUNDANT_PATH)
+			rxThreadStats[coreId].fastCopyFail += 1;
+		else
+			rxThreadStats[coreId].fastCopyFailErr += 1;
+		return res;
+	}
+	s->consBufs[frameId].pkts++;
+
+	if (userNotifyLine)
+	{
+		rxThreadStats[coreId].userNotifyLine += 1;
+	}
+
+	if (rtpMarkerPacket)
+	{
+		s->sn.frmsRecv++;
+		s->cons.St21NotifyFrameRecv(s->cons.appHandle, s->vctx.data, rtpTmstamp, s->vctx.fieldId);
+		rxThreadStats[coreId].userNotifyFrame += 1;
+		s->cons.St21NotifyFrameDone(s->cons.appHandle, s->consBufs[FRAME_CURR].buf, s->vctx.fieldId);
+		rxThreadStats[coreId].incompleteFrameDone += (s->consBufs[FRAME_CURR].pkts < s->fmt.v.pktsInFrame) ? 1 : 0;
+		rxThreadStats[coreId].completeFrames += (s->consBufs[FRAME_CURR].pkts == s->fmt.v.pktsInFrame) ? 1 : 0;
+		s->tmstampDone = rtpTmstamp;
+
+		s->consBufs[FRAME_CURR].pkts = 0;
+		s->consBufs[FRAME_CURR].tmstamp = 0;
+		s->tmstampDone = rtpTmstamp;
+		s->consBufs[FRAME_CURR].buf = s->cons.St21GetNextFrameBuf(
+			s->cons.appHandle, s->consBufs[FRAME_PREV].buf, s->cons.frameSize, NULL, s->vctx.fieldId);
+		RvRtpClearFragHistInline(s, vscan, pktFmt);
 	}
 
 	return ST_OK;
@@ -2903,30 +3287,13 @@ RvRtpReceivePacketCallback(st_session_impl_t *s, struct rte_mbuf *m)
 	switch (s->cons.consType)
 	{
 	case ST21_CONS_RAW_L2_PKT:
-#if (RTE_VER_YEAR < 21)
 		return s->cons.St21RecvRtpPkt(s->cons.appHandle, pktHdr, hdrSize, rtpPayload, payloadSize,
-									  m->timestamp);
-#else
-	{
-		pktpriv_data_t *ptr = rte_mbuf_to_priv(m);
-		return s->cons.St21RecvRtpPkt(s->cons.appHandle, pktHdr, hdrSize, rtpPayload, payloadSize,
-									  ptr->timestamp);
-	}
-#endif
+									  StMbufGetTimestamp(m));
 
 	case ST21_CONS_RAW_RTP:
-#if (RTE_VER_YEAR < 21)
 		return s->cons.St21RecvRtpPkt(s->cons.appHandle, (uint8_t *)rtp,
 									  sizeof(st_rfc4175_rtp_single_hdr_t), rtpPayload, payloadSize,
-									  m->timestamp);
-#else
-	{
-		pktpriv_data_t *ptr = rte_mbuf_to_priv(m);
-		return s->cons.St21RecvRtpPkt(s->cons.appHandle, (uint8_t *)rtp,
-									  sizeof(st_rfc4175_rtp_single_hdr_t), rtpPayload, payloadSize,
-									  ptr->timestamp);
-	}
-#endif
+									  StMbufGetTimestamp(m));
 	default:
 		ST_ASSERT;
 	}
@@ -2998,12 +3365,7 @@ RvRtpReceiveFirstPacketsInline(st_session_impl_t *s, struct rte_mbuf *m, st21_vs
 #ifdef ST_EBU_IN_1ST_PACKET
 		if (stMainParams.isEbuCheck)
 		{
-#if (RTE_VER_YEAR < 21)
-			RvRtpCalculatePacketEbu(s, m->timestamp, s->consBufs[FRAME_PREV].pkts);
-#else
-			pktpriv_data_t *ptr = rte_mbuf_to_priv(m);
-			RvRtpCalculatePacketEbu(s, ptr->timestamp, s->consBufs[FRAME_PREV].pkts);
-#endif
+			RvRtpCalculatePacketEbu(s, StMbufGetTimestamp(m), s->consBufs[FRAME_PREV].pkts);
 		}
 #endif
 	}
@@ -3041,7 +3403,7 @@ RvRtpReceiveFirstPacketsInline(st_session_impl_t *s, struct rte_mbuf *m, st21_vs
 				s->consBufs[FRAME_PEND].buf = s->consBufs[FRAME_PREV].buf;
 				s->consBufs[FRAME_PREV].buf
 					= s->cons.St21GetNextFrameBuf(s->cons.appHandle, s->consBufs[FRAME_PREV].buf,
-												  s->cons.frameSize, s->vctx.fieldId);
+												  s->cons.frameSize, NULL, s->vctx.fieldId);
 				s->vctx.data = s->consBufs[FRAME_PREV].buf;
 				s->consBufs[FRAME_PREV].pkts = 0;
 				RvRtpClearFragHistInline(s, vscan, pktFmt);
@@ -3064,7 +3426,7 @@ RvRtpReceiveFirstPacketsInline(st_session_impl_t *s, struct rte_mbuf *m, st21_vs
 
 				s->consBufs[FRAME_CURR].buf
 					= s->cons.St21GetNextFrameBuf(s->cons.appHandle, s->consBufs[FRAME_PREV].buf,
-												  s->cons.frameSize, s->vctx.fieldId);
+												  s->cons.frameSize, NULL, s->vctx.fieldId);
 				if (unlikely(s->consBufs[FRAME_CURR].buf == NULL))
 				{
 					return RvRtpDropFrameAtTmstamp(s, rtpTmstamp, ST_PKT_DROP_NO_FRAME_BUF);
@@ -3076,12 +3438,7 @@ RvRtpReceiveFirstPacketsInline(st_session_impl_t *s, struct rte_mbuf *m, st21_vs
 #ifdef ST_EBU_IN_1ST_PACKET
 		if (stMainParams.isEbuCheck)
 		{
-#if (RTE_VER_YEAR < 21)
-			RvRtpCalculateFrameEbu(s, rtpTmstamp, m->timestamp);
-#else
-			pktpriv_data_t *ptr = rte_mbuf_to_priv(m);
-			RvRtpCalculateFrameEbu(s, rtpTmstamp, ptr->timestamp);
-#endif
+			RvRtpCalculateFrameEbu(s, rtpTmstamp, StMbufGetTimestamp(m));
 		}
 #endif
 	}
@@ -3167,7 +3524,7 @@ RvRtpReceiveFirstPacketsInline(st_session_impl_t *s, struct rte_mbuf *m, st21_vs
 			s->consBufs[FRAME_CURR].pkts = 0;
 			s->consBufs[FRAME_CURR].tmstamp = 0;
 			s->consBufs[FRAME_CURR].buf = s->cons.St21GetNextFrameBuf(
-				s->cons.appHandle, s->consBufs[FRAME_PREV].buf, s->cons.frameSize, s->vctx.fieldId);
+				s->cons.appHandle, s->consBufs[FRAME_PREV].buf, s->cons.frameSize, NULL, s->vctx.fieldId);
 			RvRtpClearFragHistInline(s, vscan, pktFmt);
 		}
 		s->consBufs[FRAME_PEND].buf = NULL;
@@ -3192,6 +3549,11 @@ RvRtpReceiveFirstPacketsInline(st_session_impl_t *s, struct rte_mbuf *m, st21_vs
 st_status_t
 RvRtpReceiveFirstPackets720p(st_session_impl_t *s, struct rte_mbuf *mbuf)
 {
+	if (stMainParams.userTmstamp)
+		return (stMainParams.numPorts == 2) ?
+			RvRtpRecvUsrTmstampNextPacketsRedundantInline(s, mbuf, ST21_720P, ST_OTHER_SLN_RFC4175_PKT):
+			RvRtpRecvUsrTmstampNextPacketsPrimaryInline(s, mbuf, ST21_720P, ST_OTHER_SLN_RFC4175_PKT);
+
 	return (stMainParams.numPorts == 2) ?
 		RvRtpReceiveNextPacketsRedundantInline(s, mbuf, ST21_720P, ST_OTHER_SLN_RFC4175_PKT):
 		RvRtpReceiveNextPacketsPrimaryInline(s, mbuf, ST21_720P, ST_OTHER_SLN_RFC4175_PKT);
@@ -3212,6 +3574,11 @@ RvRtpReceiveFirstPackets720p(st_session_impl_t *s, struct rte_mbuf *mbuf)
 st_status_t
 RvRtpReceiveFirstPackets720i(st_session_impl_t *s, struct rte_mbuf *mbuf)
 {
+	if (stMainParams.userTmstamp)
+		return (stMainParams.numPorts == 2) ?
+			RvRtpRecvUsrTmstampNextPacketsRedundantInline(s, mbuf, ST21_720P, ST_OTHER_SLN_RFC4175_PKT):
+			RvRtpRecvUsrTmstampNextPacketsPrimaryInline(s, mbuf, ST21_720P, ST_OTHER_SLN_RFC4175_PKT);
+
 	return (stMainParams.numPorts == 2) ? 
 		RvRtpReceiveNextPacketsRedundantInline(s, mbuf, ST21_720I, ST_OTHER_SLN_RFC4175_PKT):
 		RvRtpReceiveNextPacketsPrimaryInline(s, mbuf, ST21_720I, ST_OTHER_SLN_RFC4175_PKT);
@@ -3231,6 +3598,11 @@ RvRtpReceiveFirstPackets720i(st_session_impl_t *s, struct rte_mbuf *mbuf)
 st_status_t
 RvRtpReceiveFirstPacketsSln720p(st_session_impl_t *s, struct rte_mbuf *mbuf)
 {
+	if (stMainParams.userTmstamp)
+		return (stMainParams.numPorts == 2) ?
+			RvRtpRecvUsrTmstampNextPacketsRedundantInline(s, mbuf, ST21_720P, ST_INTEL_SLN_RFC4175_PKT):
+			RvRtpRecvUsrTmstampNextPacketsPrimaryInline(s, mbuf, ST21_720P, ST_INTEL_SLN_RFC4175_PKT);
+
 	return (stMainParams.numPorts == 2) ?
 		RvRtpReceiveNextPacketsRedundantInline(s, mbuf, ST21_720P, ST_INTEL_SLN_RFC4175_PKT):
 		RvRtpReceiveNextPacketsPrimaryInline(s, mbuf, ST21_720P, ST_INTEL_SLN_RFC4175_PKT);
@@ -3251,6 +3623,11 @@ RvRtpReceiveFirstPacketsSln720p(st_session_impl_t *s, struct rte_mbuf *mbuf)
 st_status_t
 RvRtpReceiveFirstPackets1080i(st_session_impl_t *s, struct rte_mbuf *mbuf)
 {
+	if (stMainParams.userTmstamp)
+		return (stMainParams.numPorts == 2) ?
+			RvRtpRecvUsrTmstampNextPacketsRedundantInline(s, mbuf, ST21_1080I, ST_OTHER_SLN_RFC4175_PKT):
+			RvRtpRecvUsrTmstampNextPacketsPrimaryInline(s, mbuf, ST21_1080I, ST_OTHER_SLN_RFC4175_PKT);
+
 	return (stMainParams.numPorts == 2) ?
 		RvRtpReceiveNextPacketsRedundantInline(s, mbuf, ST21_1080I, ST_OTHER_SLN_RFC4175_PKT):
 		RvRtpReceiveNextPacketsPrimaryInline(s, mbuf, ST21_1080I, ST_OTHER_SLN_RFC4175_PKT);
@@ -3271,6 +3648,11 @@ RvRtpReceiveFirstPackets1080i(st_session_impl_t *s, struct rte_mbuf *mbuf)
 st_status_t
 RvRtpReceiveFirstPackets1080p(st_session_impl_t *s, struct rte_mbuf *mbuf)
 {
+	if (stMainParams.userTmstamp)
+		return (stMainParams.numPorts == 2) ?
+			RvRtpRecvUsrTmstampNextPacketsRedundantInline(s, mbuf, ST21_1080P, ST_OTHER_SLN_RFC4175_PKT):
+			RvRtpRecvUsrTmstampNextPacketsPrimaryInline(s, mbuf, ST21_1080P, ST_OTHER_SLN_RFC4175_PKT);
+
 	return (stMainParams.numPorts == 2) ?
 		RvRtpReceiveNextPacketsRedundantInline(s, mbuf, ST21_1080P, ST_OTHER_SLN_RFC4175_PKT):
 		RvRtpReceiveNextPacketsPrimaryInline(s, mbuf, ST21_1080P, ST_OTHER_SLN_RFC4175_PKT);
@@ -3290,6 +3672,11 @@ RvRtpReceiveFirstPackets1080p(st_session_impl_t *s, struct rte_mbuf *mbuf)
 st_status_t
 RvRtpReceiveFirstPacketsSln1080p(st_session_impl_t *s, struct rte_mbuf *mbuf)
 {
+	if (stMainParams.userTmstamp)
+		return (stMainParams.numPorts == 2) ?
+			RvRtpRecvUsrTmstampNextPacketsRedundantInline(s, mbuf, ST21_1080P, ST_INTEL_SLN_RFC4175_PKT):
+			RvRtpRecvUsrTmstampNextPacketsPrimaryInline(s, mbuf, ST21_1080P, ST_INTEL_SLN_RFC4175_PKT);
+
 	return (stMainParams.numPorts == 2) ?
 		RvRtpReceiveNextPacketsRedundantInline(s, mbuf, ST21_1080P, ST_INTEL_SLN_RFC4175_PKT) :
 		RvRtpReceiveNextPacketsPrimaryInline(s, mbuf, ST21_1080P, ST_INTEL_SLN_RFC4175_PKT);
@@ -3310,6 +3697,11 @@ RvRtpReceiveFirstPacketsSln1080p(st_session_impl_t *s, struct rte_mbuf *mbuf)
 st_status_t
 RvRtpReceiveFirstPackets2160p(st_session_impl_t *s, struct rte_mbuf *mbuf)
 {
+	if (stMainParams.userTmstamp)
+		return (stMainParams.numPorts == 2) ?
+			RvRtpRecvUsrTmstampNextPacketsRedundantInline(s, mbuf, ST21_2160P, ST_OTHER_SLN_RFC4175_PKT):
+			RvRtpRecvUsrTmstampNextPacketsPrimaryInline(s, mbuf, ST21_2160P, ST_OTHER_SLN_RFC4175_PKT);
+
 	return (stMainParams.numPorts == 2) ?
 		RvRtpReceiveNextPacketsRedundantInline(s, mbuf, ST21_2160P, ST_OTHER_SLN_RFC4175_PKT):
 		RvRtpReceiveNextPacketsPrimaryInline(s, mbuf, ST21_2160P, ST_OTHER_SLN_RFC4175_PKT);
@@ -3330,6 +3722,11 @@ RvRtpReceiveFirstPackets2160p(st_session_impl_t *s, struct rte_mbuf *mbuf)
 st_status_t
 RvRtpReceiveFirstPackets2160i(st_session_impl_t *s, struct rte_mbuf *mbuf)
 {
+	if (stMainParams.userTmstamp)
+		return (stMainParams.numPorts == 2) ?
+			RvRtpRecvUsrTmstampNextPacketsRedundantInline(s, mbuf, ST21_2160I, ST_OTHER_SLN_RFC4175_PKT):
+			RvRtpRecvUsrTmstampNextPacketsPrimaryInline(s, mbuf, ST21_2160I, ST_OTHER_SLN_RFC4175_PKT);
+
 	return (stMainParams.numPorts == 2) ?
 		RvRtpReceiveNextPacketsRedundantInline(s, mbuf, ST21_2160I, ST_OTHER_SLN_RFC4175_PKT):
 		RvRtpReceiveNextPacketsPrimaryInline(s, mbuf, ST21_2160I, ST_OTHER_SLN_RFC4175_PKT);
@@ -3349,6 +3746,11 @@ RvRtpReceiveFirstPackets2160i(st_session_impl_t *s, struct rte_mbuf *mbuf)
 st_status_t
 RvRtpReceiveFirstPacketsSln2160p(st_session_impl_t *s, struct rte_mbuf *mbuf)
 {
+	if (stMainParams.userTmstamp)
+		return (stMainParams.numPorts == 2) ?
+			RvRtpRecvUsrTmstampNextPacketsRedundantInline(s, mbuf, ST21_2160P, ST_INTEL_SLN_RFC4175_PKT):
+			RvRtpRecvUsrTmstampNextPacketsPrimaryInline(s, mbuf, ST21_2160P, ST_INTEL_SLN_RFC4175_PKT);
+
 	return (stMainParams.numPorts == 2) ?
 		RvRtpReceiveNextPacketsRedundantInline(s, mbuf, ST21_2160P, ST_INTEL_SLN_RFC4175_PKT):
 		RvRtpReceiveNextPacketsPrimaryInline(s, mbuf, ST21_2160P, ST_INTEL_SLN_RFC4175_PKT);
@@ -3385,6 +3787,11 @@ RvRtpReceiveFirstPacketsSln2160i(st_session_impl_t *s, struct rte_mbuf *mbuf)
 st_status_t
 RvRtpReceiveFirstPacketsDln720p(st_session_impl_t *s, struct rte_mbuf *mbuf)
 {
+	if (stMainParams.userTmstamp)
+		return (stMainParams.numPorts == 2) ?
+			RvRtpRecvUsrTmstampNextPacketsRedundantInline(s, mbuf, ST21_720P, ST_INTEL_DLN_RFC4175_PKT):
+			RvRtpRecvUsrTmstampNextPacketsPrimaryInline(s, mbuf, ST21_720P, ST_INTEL_DLN_RFC4175_PKT);
+
 	return (stMainParams.numPorts == 2) ?
 		RvRtpReceiveNextPacketsRedundantInline(s, mbuf, ST21_720P, ST_INTEL_DLN_RFC4175_PKT):
 		RvRtpReceiveNextPacketsPrimaryInline(s, mbuf, ST21_720P, ST_INTEL_DLN_RFC4175_PKT);
@@ -3404,6 +3811,11 @@ RvRtpReceiveFirstPacketsDln720p(st_session_impl_t *s, struct rte_mbuf *mbuf)
 st_status_t
 RvRtpReceiveFirstPacketsDln1080p(st_session_impl_t *s, struct rte_mbuf *mbuf)
 {
+	if (stMainParams.userTmstamp)
+		return (stMainParams.numPorts == 2) ?
+			RvRtpRecvUsrTmstampNextPacketsRedundantInline(s, mbuf, ST21_1080P, ST_INTEL_DLN_RFC4175_PKT):
+			RvRtpRecvUsrTmstampNextPacketsPrimaryInline(s, mbuf, ST21_1080P, ST_INTEL_DLN_RFC4175_PKT);
+
 	return (stMainParams.numPorts == 2) ? 
 		RvRtpReceiveNextPacketsRedundantInline(s, mbuf, ST21_1080P, ST_INTEL_DLN_RFC4175_PKT):
 		RvRtpReceiveNextPacketsPrimaryInline(s, mbuf, ST21_1080P, ST_INTEL_DLN_RFC4175_PKT);
@@ -3538,7 +3950,7 @@ LcoreMainReceiver(void *args)
 	{
 		int audioThId = threadId - mp->maxRcvThrds;
 		for (int i = mp->audioRcvThrds[audioThId].thrdSnFirst;
-			 sn_count < mp->audioRcvThrds[audioThId].thrdSnLast; sn_count++, i++)
+			 i < mp->audioRcvThrds[audioThId].thrdSnLast; sn_count++, i++)
 		{
 			sn[sn_count] = dev->sn30Table[i];
 		}
@@ -3549,9 +3961,10 @@ LcoreMainReceiver(void *args)
 	else if (uargs->sn_type == ST_ESSENCE_ANC)
 
 	{
-		int ancThId = threadId - mp->maxRcvThrds - mp->maxAudioRcvThrds;
+		int maxRcv30Threads = (mp->sn30Count == 0) ? 0 : mp->maxAudioRcvThrds;
+		int ancThId = threadId - mp->maxRcvThrds - maxRcv30Threads;
 		for (int i = mp->ancRcvThrds[ancThId].thrdSnFirst;
-			 sn_count < mp->ancRcvThrds[ancThId].thrdSnLast; sn_count++, i++)
+			 i < mp->ancRcvThrds[ancThId].thrdSnLast; sn_count++, i++)
 		{
 			sn[sn_count] = dev->sn40Table[i];
 		}
@@ -3567,7 +3980,6 @@ LcoreMainReceiver(void *args)
 		rte_eth_dev_set_vlan_offload(mp->rxPortId[p], vlanOffload);
 	}
 
-#if (RTE_VER_YEAR >= 21)
 	uint8_t checkHwTstamp[MAX_RXTX_PORTS] = { 0 };
 	struct rte_eth_dev_info dev_info = { 0 };
 	if (0 == rte_eth_dev_info_get(mp->rxPortId[ST_PPORT], &dev_info))
@@ -3578,7 +3990,6 @@ LcoreMainReceiver(void *args)
 				checkHwTstamp[i] = (hwts_dynfield_offset[mp->rxPortId[i]] != -1) ? 1 : 0;
 		}
 	}
-#endif
 
 	RTE_LOG(INFO, USER1, "Receiver ready - receiving packets STARTED\n");
 
@@ -3619,7 +4030,9 @@ LcoreMainReceiver(void *args)
 			continue;
 		}
 
-		uint64_t ptpTime = StPtpGetTime();
+		uint64_t ptpTime = 0;
+		if (stMainParams.isEbuCheck)
+			ptpTime = StPtpGetTime();
 
 		for (int i = 0; (i < rv) && (rv < 2 * RX_BURTS_SIZE); i++)
 		{
@@ -3632,10 +4045,6 @@ LcoreMainReceiver(void *args)
 #endif
 			rx_count++;
 
-#if (RTE_VER_YEAR < 21)
-			rxVect[i]->timestamp = ptpTime;
-#else
-			pktpriv_data_t *ptr = rte_mbuf_to_priv(rxVect[i]);
 			if ((checkHwTstamp[rxVect[i]->port]) && (rxVect[i]->port < mp->numPorts))
 			{
 				RTE_LOG(DEBUG, USER1, "checkHwTstamp is enabled, sw %lx hw %lx\n", ptpTime,
@@ -3647,9 +4056,8 @@ LcoreMainReceiver(void *args)
 							  uint64_t *))
 														   : ptpTime;
 			}
-			if (ptr)
-				ptr->timestamp = ptpTime;
-#endif
+			if (stMainParams.isEbuCheck)
+				StMbufSetTimestamp(rxVect[i], ptpTime);
 
 #ifdef DEBUG
 			type = StGetRtpType(rxVect[i]);

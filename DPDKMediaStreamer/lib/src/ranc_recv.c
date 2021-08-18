@@ -28,6 +28,8 @@
 #include "rvrtp_main.h"
 #include "st_rtp.h"
 
+st_rcv_stats_t rxThreadAncilStats[RTE_MAX_LCORE];
+
 void *
 RancRtpDummyBuildPacket(st_session_impl_t *s, void *hdr, struct rte_mbuf *m)
 {
@@ -77,12 +79,13 @@ RancRtpCreateRxSession(st_device_impl_t *dev, st_session_t *sin, st_format_t *fm
 		default:
 			return ST_FMT_ERR_BAD_CLK_RATE;
 		}
+		int maxAudioRcvThrds = (stMainParams.sn30Count == 0) ? 0 : stMainParams.maxAudioRcvThrds;
 		for (uint32_t i = 0; i < stMainParams.maxAncRcvThrds; i++)
 		{
 			if ((stMainParams.ancRcvThrds[i].thrdSnFirst <= timeslot)
 				&& (timeslot < stMainParams.ancRcvThrds[i].thrdSnLast))
 			{
-				s->tid = i + stMainParams.maxRcvThrds + stMainParams.maxAudioRcvThrds;
+				s->tid = i + stMainParams.maxRcvThrds + maxAudioRcvThrds;
 				break;
 			}
 		}
@@ -103,6 +106,21 @@ RancRtpCreateRxSession(st_device_impl_t *dev, st_session_t *sin, st_format_t *fm
 st_status_t
 RancRtpDestroyRxSession(st_session_impl_t *s)
 {
+	if (!s)
+		return ST_INVALID_PARAM;
+
+	if(s->consBuf)
+	{
+		s->anccons.St40NotifyFrameDone(s->cons.appHandle, s->prodBuf);
+	}
+	s->consBufs[FRAME_PREV].buf = NULL;
+
+	if(s->anccons.appHandle)
+		RTE_LOG(WARNING, USER1, "App handler is not cleared!\n");
+
+	rte_free(s);
+	s = NULL;
+
 	return ST_OK;
 }
 

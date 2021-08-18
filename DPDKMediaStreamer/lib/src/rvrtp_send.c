@@ -24,12 +24,12 @@
 
 void *StRtpBuildIpHeader(st_session_impl_t *s, struct rte_ipv4_hdr *ip, uint32_t portId);
 void *StRtpUpdateIpHeader(st_session_impl_t *s, struct rte_ipv4_hdr *ip);
-void *StRtpBuildUdpHeader(st_session_impl_t *s, struct rte_udp_hdr *udp);
+void *StRtpBuildUdpHeader(st_session_impl_t *s, struct rte_udp_hdr *udp, uint32_t portId);
 static inline void *RvRtpBuildDualLinePacket(st_session_impl_t *s, void *hdr);
 static inline void *RvRtpBuildSingleLinePacket(st_session_impl_t *s, void *hdr);
 
 extern int StGetExtIndex(st_session_t *sn, uint8_t *addr);
-//#define TX_RINGS_DEBUG 1
+//#define TX_RINGS_DEBUG
 //#define ST_MULTICAST_TEST
 
 st_device_impl_t stSendDevice;
@@ -92,63 +92,22 @@ RvRtpGetTrOffsetTimeslot(st_device_impl_t *dev, uint32_t pktTime, uint32_t tprs,
 	}
 
 	uint32_t usedTimeQuot = 0;
-	if (dev->dev.maxSt21Sessions >= 32)
+
+	for (uint32_t i = 0; i < dev->snCount; i++)
 	{
-		for (uint32_t i = 0; i < dev->dev.maxSt21Sessions; i++)
-		{
-			usedTimeQuot += dev->timeTable[i];
-		}
-
-		RTE_LOG(DEBUG, USER2, "RvRtpGetTimeslot usedTimeQuot %u\n", usedTimeQuot);
-
-		if (dev->timeQuot >= usedTimeQuot + pktTime)
-		{
-			uint32_t snId = dev->lastAllocSn + 8;
-			if (snId >= dev->dev.maxSt21Sessions)
-			{
-				snId = (snId + 1) % dev->dev.maxSt21Sessions;
-			}
-			uint8_t found = 0;
-			uint32_t tries = 0;
-			while ((!found) && (tries++ < (dev->dev.maxSt21Sessions - dev->snCount)))
-			{
-				if (dev->timeTable[snId] == 0)
-				{
-					found = 1;
-					dev->timeTable[snId] = pktTime;
-
-					RTE_LOG(DEBUG, USER2, "RvRtpGetTimeslot pktTime %u usedTimeQuot %u\n", pktTime,
-							usedTimeQuot);
-
-					*timeslot = snId;
-					dev->lastAllocSn = snId;
-					return usedTimeQuot;
-				}
-				snId += 8;
-				if (snId >= dev->dev.maxSt21Sessions)
-				{
-					snId = (snId + 1) % dev->dev.maxSt21Sessions;
-				}
-			}
-		}
+		usedTimeQuot += dev->timeTable[i];
 	}
-	else
+	RTE_LOG(DEBUG, USER2, "RvRtpGetTimeslot usedTimeQuot %u\n", usedTimeQuot);
+
+	if (dev->timeQuot >= usedTimeQuot + pktTime)
 	{
-		for (uint32_t i = 0; i < dev->snCount; i++)
-		{
-			usedTimeQuot += dev->timeTable[i];
-		}
-		RTE_LOG(DEBUG, USER2, "RvRtpGetTimeslot usedTimeQuot %u\n", usedTimeQuot);
-
-		if (dev->timeQuot >= usedTimeQuot + pktTime)
-		{
-			dev->timeTable[dev->snCount] = pktTime;
-			RTE_LOG(DEBUG, USER2, "RvRtpGetTimeslot pktTime %u usedTimeQuot %u\n", pktTime,
-					usedTimeQuot);
-			*timeslot = dev->snCount;
-			return usedTimeQuot;
-		}
+		dev->timeTable[dev->snCount] = pktTime;
+		RTE_LOG(DEBUG, USER2, "RvRtpGetTimeslot pktTime %u usedTimeQuot %u\n", pktTime,
+				usedTimeQuot);
+		*timeslot = dev->snCount;
+		return usedTimeQuot;
 	}
+
 	RTE_LOG(ERR, USER2, "RvRtpGetTimeslot failed since pktTime %u + usedTimeQuot %u > quot of %u\n",
 			pktTime, usedTimeQuot, dev->timeQuot);
 	return (-1);
@@ -186,34 +145,37 @@ RvRtpInitPacketCtx(st_session_impl_t *s, uint32_t ring)
 		s->vctx.line2Size = s->fmt.v.width / s->fmt.v.pixelsInGrp * s->vctx.line2PixelGrpSize;
 		s->vctx.line2Length
 			= s->fmt.v.pixelsInPkt / s->fmt.v.pixelsInGrp * s->vctx.line2PixelGrpSize;
-		ip = (struct rte_ipv4_hdr *)StRtpBuildL2Packet(s, &s->hdrPrint[ST_PPORT].dualHdr.eth, 0);
-		udp = (struct rte_udp_hdr *)StRtpBuildIpHeader(s, ip, 0);
+		ip = (struct rte_ipv4_hdr *)StRtpBuildL2Packet(s, &s->hdrPrint[ST_PPORT].dualHdr.eth, ST_PPORT);
+		udp = (struct rte_udp_hdr *)StRtpBuildIpHeader(s, ip, ST_PPORT);
+		st_rfc4175_rtp_dual_hdr_t *rtp_dual;
 		{
-			st_rfc4175_rtp_dual_hdr_t *rtp
-				= (st_rfc4175_rtp_dual_hdr_t *)StRtpBuildUdpHeader(s, udp);
-			RvRtpBuildDualLinePacket(s, rtp);
+			rtp_dual = (st_rfc4175_rtp_dual_hdr_t *)StRtpBuildUdpHeader(s, udp, ST_PPORT);
+			RvRtpBuildDualLinePacket(s, rtp_dual);
 		}
 		if (s->sn.caps & ST_SN_DUAL_PATH && stMainParams.numPorts > 1)
 		{
 			ip = (struct rte_ipv4_hdr *)StRtpBuildL2Packet(s, &s->hdrPrint[ST_RPORT].dualHdr.eth,
-														   1);
-			udp = (struct rte_udp_hdr *)StRtpBuildIpHeader(s, ip, 1);
+														   ST_RPORT);
+			udp = (struct rte_udp_hdr *)StRtpBuildIpHeader(s, ip, ST_RPORT);
+			rtp_dual = (st_rfc4175_rtp_dual_hdr_t *)StRtpBuildUdpHeader(s, udp, ST_RPORT);
+
 		}
 		break;
 
 	case ST_INTEL_SLN_RFC4175_PKT:
-		ip = (struct rte_ipv4_hdr *)StRtpBuildL2Packet(s, &s->hdrPrint[ST_PPORT].singleHdr.eth, 0);
-		udp = (struct rte_udp_hdr *)StRtpBuildIpHeader(s, ip, 0);
+		ip = (struct rte_ipv4_hdr *)StRtpBuildL2Packet(s, &s->hdrPrint[ST_PPORT].singleHdr.eth, ST_PPORT);
+		udp = (struct rte_udp_hdr *)StRtpBuildIpHeader(s, ip, ST_PPORT);
+		st_rfc4175_rtp_single_hdr_t *rtp_sln;
 		{
-			st_rfc4175_rtp_single_hdr_t *rtp
-				= (st_rfc4175_rtp_single_hdr_t *)StRtpBuildUdpHeader(s, udp);
-			RvRtpBuildSingleLinePacket(s, rtp);
+			rtp_sln = (st_rfc4175_rtp_single_hdr_t *)StRtpBuildUdpHeader(s, udp, ST_PPORT);
+			RvRtpBuildSingleLinePacket(s, rtp_sln);
 		}
 		if (s->sn.caps & ST_SN_DUAL_PATH && stMainParams.numPorts > 1)
 		{
 			ip = (struct rte_ipv4_hdr *)StRtpBuildL2Packet(s, &s->hdrPrint[ST_RPORT].singleHdr.eth,
-														   1);
-			udp = (struct rte_udp_hdr *)StRtpBuildIpHeader(s, ip, 1);
+														   ST_RPORT);
+			udp = (struct rte_udp_hdr *)StRtpBuildIpHeader(s, ip, ST_RPORT);
+			rtp_sln = (st_rfc4175_rtp_single_hdr_t *)StRtpBuildUdpHeader(s, udp, ST_RPORT);
 		}
 		break;
 	default:
@@ -318,7 +280,8 @@ RvRtpCreateTxSession(st_device_impl_t *dev, st_session_t *sin, st_format_t *fmt,
 	RTE_LOG(DEBUG, USER1, "RvRtpGetTrOffsetTimeslot troffste %u timeslot %u\n", sn.trOffset,
 			sn.timeslot);
 
-	st_session_impl_t *s = malloc(sizeof(st_session_impl_t));
+	st_session_impl_t *s = rte_malloc_socket("Session", sizeof(st_session_impl_t),
+											 RTE_CACHE_LINE_SIZE, rte_socket_id());
 	if (s)
 	{
 		memset(s, 0x0, sizeof(st_session_impl_t));
@@ -380,6 +343,14 @@ RvRtpCreateTxSession(st_device_impl_t *dev, st_session_t *sin, st_format_t *fmt,
 st_status_t
 RvRtpDestroyTxSession(st_session_impl_t *s)
 {
+	if (!s)
+		return ST_INVALID_PARAM;
+
+	if(s->cons.appHandle)
+		RTE_LOG(WARNING, USER1, "App handler is not cleared!\n");
+
+	rte_free(s);
+	s = NULL;
 
 	return ST_OK;
 }
@@ -396,6 +367,10 @@ RvRtpDestroyTxSession(st_session_impl_t *s)
 int
 RvRtpSessionCheckRunState(st_session_impl_t *s)
 {
+	if(s == NULL)
+		return ST_SN_STATE_STOP_PENDING;
+	uint32_t tmstamp = 0;
+
 	// lock session
 	StSessionLock(s);
 
@@ -404,12 +379,16 @@ RvRtpSessionCheckRunState(st_session_impl_t *s)
 		if (s->state == ST_SN_STATE_NO_NEXT_FRAME)
 		{
 			uint8_t *new_prod_buf = s->prod.St21GetNextFrameBuf(s->prod.appHandle, s->prodBuf,
-																s->prod.frameSize, s->vctx.fieldId);
+																s->prod.frameSize, &tmstamp, s->vctx.fieldId);
 			if (new_prod_buf != NULL)
 			{
 				s->prodBuf = new_prod_buf;
 				s->state = ST_SN_STATE_RUN;
 				s->vctx.sliceOffset = 0;
+				if (stMainParams.userTmstamp)
+				{
+					s->vctx.tmstamp = tmstamp;
+				}
 				s->sliceOffset = s->prod.St21GetNextSliceOffset(s->prod.appHandle, s->prodBuf, 0,
 																s->vctx.fieldId);
 			}
@@ -425,6 +404,7 @@ RvRtpSessionCheckRunState(st_session_impl_t *s)
 			}
 		}
 	}
+
 	//leave critical section
 	StSessionUnlock(s);
 
@@ -514,13 +494,13 @@ StRtpUpdateIpHeader(st_session_impl_t *s, struct rte_ipv4_hdr *ip)
  * RETURNS: RTP header location
  */
 void *
-StRtpBuildUdpHeader(st_session_impl_t *s, struct rte_udp_hdr *udp)
+StRtpBuildUdpHeader(st_session_impl_t *s, struct rte_udp_hdr *udp, uint32_t portid)
 {
 	uint16_t tlen;
 	tlen = StSessionGetPktsize(s) - (s->etherSize + sizeof(struct rte_ipv4_hdr));
 	udp->dgram_len = htons(tlen);
-	udp->src_port = s->fl[0].src.addr4.sin_port;
-	udp->dst_port = s->fl[0].dst.addr4.sin_port;
+	udp->src_port = s->fl[portid].src.addr4.sin_port;
+	udp->dst_port = s->fl[portid].dst.addr4.sin_port;
 	// UDP checksum
 	udp->dgram_cksum = 0;
 	return &udp[1];
@@ -610,8 +590,8 @@ StRtpBuildL2Packet(st_session_impl_t *s, struct rte_ether_hdr *l2, uint32_t port
 	struct rte_ipv4_hdr *ip = (struct rte_ipv4_hdr *)&l2[1];
 
 	l2->ether_type = htons(0x0800);
-	memcpy(&l2->d_addr, &s->fl[portId].dstMac, ETH_ADDR_LEN);
-	memcpy(&l2->s_addr, &s->fl[portId].srcMac, ETH_ADDR_LEN);
+	memcpy(&l2->d_addr, s->fl[portId].dstMac, ETH_ADDR_LEN);
+	memcpy(&l2->s_addr, s->fl[portId].srcMac, ETH_ADDR_LEN);
 	return ip;
 }
 
@@ -633,13 +613,9 @@ RvRtpUpdateDualLinePacket(st_session_impl_t *s, void *hdr, struct rte_mbuf *extM
 	/* Create the IP & UDP header */
 	struct rte_ipv4_hdr *ip = hdr;
 	struct rte_udp_hdr *udp = (struct rte_udp_hdr *)StRtpUpdateIpHeader(s, ip);
+	uint32_t tmstamp = 0;
 
 	struct st_rfc4175_rtp_dual_hdr *rtp = (struct st_rfc4175_rtp_dual_hdr *)&udp[1];
-
-	//if (unlikely(s->vctx.tmstamp == 0))
-	//{
-	//	s->vctx.tmstamp = s->prod.St21GetFrameTmstamp(s->prod.appHandle);
-	//}
 
 	/* is frame complete ?*/
 	if (unlikely(((s->vctx.line2Number + 1) == s->fmt.v.height)
@@ -734,7 +710,7 @@ RvRtpUpdateDualLinePacket(st_session_impl_t *s, void *hdr, struct rte_mbuf *extM
 		s->sliceOffset = 0x0;
 
 		uint8_t *new_prod_buf = s->prod.St21GetNextFrameBuf(s->prod.appHandle, s->prodBuf,
-															s->sn.frameSize, s->vctx.fieldId);
+															s->sn.frameSize, &tmstamp, s->vctx.fieldId);
 		if (new_prod_buf == NULL)
 		{
 			s->state = ST_SN_STATE_NO_NEXT_FRAME;
@@ -753,8 +729,9 @@ RvRtpUpdateDualLinePacket(st_session_impl_t *s, void *hdr, struct rte_mbuf *extM
 						nextOffset);
 				s->state = ST_SN_STATE_NO_NEXT_SLICE;
 			}
+			if (stMainParams.userTmstamp)
+				s->vctx.usertmstamp = tmstamp;
 		}
-
 		//unlock session and sliceOffset
 		StSessionUnlock(s);
 	}
@@ -780,6 +757,7 @@ RvRtpUpdateSingleLinePacket(st_session_impl_t *s, void *hdr, struct rte_mbuf *ex
 	/* Create the IP & UDP header */
 	struct rte_ipv4_hdr *ip = hdr;
 	struct rte_udp_hdr *udp = (struct rte_udp_hdr *)StRtpUpdateIpHeader(s, ip);
+	uint32_t tmstamp = 0;
 
 	struct st_rfc4175_rtp_single_hdr *rtp = (struct st_rfc4175_rtp_single_hdr *)&udp[1];
 
@@ -872,7 +850,7 @@ RvRtpUpdateSingleLinePacket(st_session_impl_t *s, void *hdr, struct rte_mbuf *ex
 		s->sliceOffset = 0x0;
 
 		uint8_t *new_prod_buf = s->prod.St21GetNextFrameBuf(s->prod.appHandle, s->prodBuf,
-															s->sn.frameSize, s->vctx.fieldId);
+															s->sn.frameSize, &tmstamp, s->vctx.fieldId);
 		if (new_prod_buf == NULL)
 		{
 			s->state = ST_SN_STATE_NO_NEXT_FRAME;
@@ -891,7 +869,10 @@ RvRtpUpdateSingleLinePacket(st_session_impl_t *s, void *hdr, struct rte_mbuf *ex
 						nextOffset);
 				s->state = ST_SN_STATE_NO_NEXT_SLICE;
 			}
+			if (stMainParams.userTmstamp)
+				s->vctx.usertmstamp = tmstamp;
 		}
+		
 		//unlock session and sliceOffset
 		StSessionUnlock(s);
 	}
@@ -917,6 +898,8 @@ RvRtpUpdateInterlacedPacket(st_session_impl_t *s, void *hdr, struct rte_mbuf *ex
 	/* Create the IP & UDP header */
 	struct rte_ipv4_hdr *ip = hdr;
 	struct rte_udp_hdr *udp = (struct rte_udp_hdr *)StRtpUpdateIpHeader(s, ip);
+	uint32_t tmstamp = 0;
+
 
 	struct st_rfc4175_rtp_single_hdr *rtp = (struct st_rfc4175_rtp_single_hdr *)&udp[1];
 
@@ -1008,7 +991,7 @@ RvRtpUpdateInterlacedPacket(st_session_impl_t *s, void *hdr, struct rte_mbuf *ex
 		StSessionLock(s);
 		s->sliceOffset = 0x0;
 		uint8_t *temp = s->prod.St21GetNextFrameBuf(s->prod.appHandle, s->prodBuf, s->sn.frameSize,
-													s->vctx.fieldId);
+													&tmstamp, s->vctx.fieldId);
 		if (temp == NULL)
 		{
 			s->state = ST_SN_STATE_NO_NEXT_FRAME;
@@ -1026,7 +1009,10 @@ RvRtpUpdateInterlacedPacket(st_session_impl_t *s, void *hdr, struct rte_mbuf *ex
 						nextOffset);
 				s->state = ST_SN_STATE_NO_NEXT_SLICE;
 			}
+			if (stMainParams.userTmstamp)
+				s->vctx.usertmstamp = tmstamp;
 		}
+
 		//unlock session and sliceOffset
 		StSessionUnlock(s);
 	}
