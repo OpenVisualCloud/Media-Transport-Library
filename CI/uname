@@ -1,0 +1,45 @@
+#!/bin/bash
+
+uname=$(which -a uname | grep -v /usr/local/sbin/uname | head -n1)
+kernel=${kernel:-$($uname -s)}
+nodename=${nodename:-$($uname -n)}
+kernel_rel=${kernel_rel:-$($uname -r)}
+kernel_ver=${kernel_ver:-$($uname -v)}
+machine=${machine:-$($uname -m)}
+processor=${processor:-$($uname -p)}
+hw=${hw:-$($uname -i)}
+os=${os:-$($uname -o)}
+
+[[ -z "$@" ]] && echo -n "$kernel"
+
+for arg in "$@"; do
+    case "$arg" in
+        --help)
+            echo -e "\nOVERRIDED uname script\n\nExport one or multiple variables to override uname output:"
+            echo "kernel     - repalces -s output"
+            echo "nodename   - repalces -n output"
+            echo "kernel_rel - repalces -r output"
+            echo "kernel_ver - repalces -v output"
+            echo "machine    - repalces -m output"
+            echo "processor  - repalces -p output"
+            echo "hw         - repalces -i output"
+            echo "os         - repalces -o output"
+            echo -e "\n"
+            eval "$uname $arg" ;;
+        -a|--all)
+            echo "$kernel $nodename $kernel_rel $kernel_ver $machine $processor $hw $os"
+            exit $? ;;
+        -s|--kernel-name) echo -n "$kernel";;
+        -n|--nodename) echo -n "$nodename";;
+        -r|--kernel-release) echo -n "$kernel_rel";;
+        -v|--kernel-version) echo -n "$kernel_ver";;
+        -m|--machine) echo -n "$machine";;
+        -p|--processor) echo -n "$processor";;
+        -i|--hardware-platform) echo -n "$hw";;
+        -o|--operating-system) echo -n "$os";;
+        *) eval "$uname $arg" ;;
+    esac
+done
+
+# new line
+echo
