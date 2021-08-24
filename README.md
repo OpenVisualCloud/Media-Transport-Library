@@ -185,9 +185,9 @@ git clone http://dpdk.org/git/dpdk-kmods
 ```
 Note: $dpdk_media_streamer points to source code of ST2110 DPDK Media Streamer obtained in [ST2110 DPDK Media Streaming library section](#MediaStreamingLibrary).
 ```bash
-patch -p1 < $dpdk_media_streamer/CI/dpdk-$dpdk_ver/0001-net-ice-enable-1588-timesync-API-POC.patch
-patch -p1 < $dpdk_media_streamer/CI/dpdk-$dpdk_ver/0004-net-ice-fix-L4-packets-not-work-issue.patch
-patch -p1 < $dpdk_media_streamer/CI/dpdk-$dpdk_ver/0001-temp-fix-to-enable-multicast-rx-on-ice.patch
+patch -p1 < $dpdk_media_streamer/DPDKMediaStreamer/patches/dpdk-$dpdk_ver/0001-net-ice-enable-1588-timesync-API-POC.patch
+patch -p1 < $dpdk_media_streamer/DPDKMediaStreamer/patches/dpdk-$dpdk_ver/0004-net-ice-fix-L4-packets-not-work-issue.patch
+patch -p1 < $dpdk_media_streamer/DPDKMediaStreamer/patches/dpdk-$dpdk_ver/0001-temp-fix-to-enable-multicast-rx-on-ice.patch
 ```
 
 ###### 8.2 Configure DPDK library features
@@ -263,8 +263,8 @@ sudo ninja uninstall
 ### 1. Get resources
 Clone the Intel ST 2110 Media Streaming Library repo
 ```bash
-git clone https://gitlab.devtools.intel.com/VEI/dpdk_media_streamer.git
-cd dpdk_media_streamer
+git clone https://github.com/OpenVisualCloud/ST2110-Media-Streaming-Library.git
+cd ST2110-Media-Streaming-Library
 ```
 
 ### 2. Build with installation
