@@ -61,7 +61,7 @@ ArpRequest(uint16_t portid, uint32_t ip, uint32_t sip)
 		rte_eth_macaddr_get(portid, &arp->arp_data.arp_sha);
 		memset(&arp->arp_data.arp_tha, 0, RTE_ETHER_ADDR_LEN);
 
-		if (rte_eth_tx_burst(portid, stDevParams->maxTxRings, &reqPkt, 1) <= 0)
+		if (rte_eth_tx_burst(portid, StGetMaxTxQueues(), &reqPkt, 1) <= 0)
 		{
 			RTE_LOG(WARNING, USER1, "rte_eth_tx_burst fail\n");
 			rte_pktmbuf_free(reqPkt);
@@ -114,7 +114,7 @@ ArpReceiveRequest(struct rte_arp_hdr const *request, uint16_t portid)
 				arp->arp_data.arp_tip = request->arp_data.arp_sip;
 				rte_eth_macaddr_get(portid, &arp->arp_data.arp_sha);
 				arp->arp_data.arp_sip = *(uint32_t *)stMainParams.sipAddr[userport];
-				if (rte_eth_tx_burst(portid, stDevParams->maxTxRings, &reqPkt, 1) <= 0)
+				if (rte_eth_tx_burst(portid, StGetMaxTxQueues(), &reqPkt, 1) <= 0)
 				{
 					RTE_LOG(WARNING, USER1, "rte_eth_tx_burst fail\n");
 					rte_pktmbuf_free(reqPkt);

@@ -195,7 +195,7 @@ extern "C"
 		ST_GUI_ERR_NO_WINDOW = -701,  /**<   Create window failed. SDL library related issue (see SDL_CreateWindow description).  */
 		ST_GUI_ERR_NO_RENDER = -702,  /**<   Create renderer failed. SDL library related issue (see SDL_CreateRenderer description).  */
 		ST_GUI_ERR_NO_TEXTURE = -703, /**<   Create renderer failed. SDL library related issue (see SDL_CreateTexture description).  */
-
+		ST_RL_ERR = -704,	/**<   Rate limit profile init failed  */
 	} st_status_t; /**< Type of the enum \ref st_status. */
 
 #define ST_PKT_DROP(reason) (-(reason + 199))	/**<   Macro for packets drop calculation */
@@ -385,6 +385,7 @@ extern "C"
 		ST_TSC_HZ = 171,		   /**<   Time of TSC (in Hz)  */
 		ST_ENQUEU_THREADS = 172,   /**<   Number of enqueue threads  */
 		ST_USER_TMSTAMP = 173,	   /**<   Use user timestamp  */
+		ST_RL_BPS = 174,	   /**<   Manual set the rate(byte per second) for ratelimit queue */
 		ST_LIB_SCOREID = 180,	   /**<   Choose core with given ID or get info about core ID  */
 	} st_param_t; /**< Type of the enum \ref st_param. */
 
@@ -820,7 +821,7 @@ extern "C"
 		ST_PACING_DEFAULT = 0, /**< determined by system */
 		ST_PACING_PAUSE,	   /**< Use pause frame */
 		ST_PACING_TSC,		   /**< By cpu TSC time stamp */
-		ST_PACING_NIC,		   /**< By hardware nic time spacing feature */
+		ST_PACING_NIC_RL,	   /**< By hardware nic rate limit feature */
 	} st_pacing_type_t; /**< Type of the enum \ref st_pacing_type. */
 
 /**

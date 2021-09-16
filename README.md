@@ -188,6 +188,7 @@ Note: $dpdk_media_streamer points to source code of ST2110 DPDK Media Streamer o
 patch -p1 < $dpdk_media_streamer/DPDKMediaStreamer/patches/dpdk-$dpdk_ver/0001-net-ice-enable-1588-timesync-API-POC.patch
 patch -p1 < $dpdk_media_streamer/DPDKMediaStreamer/patches/dpdk-$dpdk_ver/0004-net-ice-fix-L4-packets-not-work-issue.patch
 patch -p1 < $dpdk_media_streamer/DPDKMediaStreamer/patches/dpdk-$dpdk_ver/0001-temp-fix-to-enable-multicast-rx-on-ice.patch
+patch -p1 < $dpdk_media_streamer/DPDKMediaStreamer/patches/dpdk-$dpdk_ver/0001-net-ice-support-queue-bandwidth-limit.patch
 ```
 
 ###### 8.2 Configure DPDK library features
@@ -263,9 +264,12 @@ sudo ninja uninstall
 ### 1. Get resources
 Clone the Intel ST 2110 Media Streaming Library repo
 ```bash
-git clone https://github.com/OpenVisualCloud/ST2110-Media-Streaming-Library.git
-cd ST2110-Media-Streaming-Library
+git clone https://gitlab.devtools.intel.com/VEI/dpdk_media_streamer.git
+cd dpdk_media_streamer
 ```
+
+You will need to configure the data (video, audio, ancillary) content used in the sameple application. Refer to the definitions of ST_DEFAULT_VIDEO_YUV, ST_DEFAULT_VIDEO_RGBA, 
+ST_DEFAULT_AUDIO, and ST_DEFAULT_ANCILIARY in rx_view.h and how they are applied in the same app.  You will provide your own data files and copy them to <MediaStreamerDir>.
 
 ### 2. Build with installation
 
@@ -442,7 +446,7 @@ s40_count 0
 --videoFile <filename>                       : specifying the path to send video file (Currently application is working with YUV format 422 10bit BE only)
 --audioFile <filename>                       : specifying the path to send audio file
 --ancFile <filename>                         : specifying the path to send anciliary file
---pacing <pause/tsc>                         : the pacing type (optional)
+--pacing <pause/tsc/ratelimit>               : the pacing type (optional)
 ```
 
 ### 5. Test

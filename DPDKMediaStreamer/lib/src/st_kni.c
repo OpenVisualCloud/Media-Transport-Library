@@ -312,6 +312,7 @@ StKniConfNetInt(uint16_t portId, uint8_t ifUp)
 		ret = rte_eth_dev_start(portId);
 	if (!ret)
 		rte_atomic32_set(&c->lnkUp, ifUp);
+	RTE_LOG(INFO, ST_KNI, "%s, port %d, ifUp %d\n", __func__, portId, ifUp);
 	return 0;
 }
 
@@ -488,10 +489,11 @@ StStartKni(unsigned slvCoreRx, unsigned slvCoreTx, st_kni_ms_conf_t **cs)
 			ipAddr[ST_TX] = *((uint32_t *)stMainParams.ipAddr[k][ST_TX]);
 		if ((stMainParams.pRx == 1 && k == 0) || (stMainParams.rRx == 1 && k == 1))
 			ipAddr[ST_RX] = *((uint32_t *)stMainParams.ipAddr[k][ST_RX]);
-		StIgmpInit(c->ethPortId, c->mbufPool, (uint32_t *)stMainParams.sipAddr[k], ipAddr,
-				   stDevParams->maxTxRings + 1);
 
-		status = StPtpInit(c->ethPortId, c->mbufPool, stDevParams->maxTxRings, c->txRing);
+		StIgmpInit(c->ethPortId, c->mbufPool, (uint32_t *)stMainParams.sipAddr[k], ipAddr,
+				   StGetMaxTxQueues() + 1);
+
+		status = StPtpInit(c->ethPortId, c->mbufPool, StGetMaxTxQueues(), c->txRing);
 		if(status != ST_OK)
 		{
 			return status;
@@ -561,6 +563,17 @@ StStopKni(st_kni_ms_conf_t **cs)
 		rte_kni_release(cs[k]->kni);
 	}
 	nbKni = 0;
+	return 0;
+}
+
+st_status_t StKniUpdateLink(st_kni_ms_conf_t **c, unsigned int linkup)
+{
+	RTE_LOG(INFO, ST_KNI, "%s, linkup %d, nbKni %d\n", __func__, linkup, nbKni);
+	for (int k = 0; k < nbKni; ++k)
+	{
+		rte_kni_update_link(c[k]->kni, linkup);
+	}
+
 	return 0;
 }
 

@@ -36,6 +36,8 @@ extern int32_t StStartKni(uint32_t slvCoreRx, uint32_t slvCoreTx, st_kni_ms_conf
 extern int32_t StInitKni(int32_t nbs);
 extern int32_t StStopKni(st_kni_ms_conf_t **cs);
 
+st_status_t StKniUpdateLink(st_kni_ms_conf_t **c, unsigned int linkup);
+
 // implemented in st_dev.c
 extern const char *StDevGetKniInterName(int portId);
 extern st_status_t StKniBkgTask(void);

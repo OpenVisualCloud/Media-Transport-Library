@@ -725,11 +725,21 @@ static int TimePacingInit(st_session_impl_t *s, uint32_t idx)
 	pacing->idx = idx;
 	pacing->epochMismatch = 0;
 
+	pacing->pktIdx = 0;
+	if (StIsNicRlPacing())
+	{
+#define PACING_RL_TROFFSET_COMP (4) /* window time for sch troffset sync */
+		pacing->warmPktsForRL = 16 + PACING_RL_TROFFSET_COMP; /* For vero CINST */
+		pacing->vrx += 4 + PACING_RL_TROFFSET_COMP; /* time for warm pkts */
+		pacing->padIntervalForRL = StGetRlPadsInterval(); /* For vero VRX compensate */
+		RTE_LOG(DEBUG, USER2, "%s[%02d], padIntervalForRL %f\n", __func__, idx, pacing->padIntervalForRL);
+	}
+
 	RTE_LOG(DEBUG, USER2, "%s[%02d], trs %f trOffset %f\n", __func__, idx, pacing->trs, pacing->trOffset);
 	return 0;
 }
 
-static int TimePacingSyncTrOffset(st_session_impl_t *s)
+static int TimePacingSyncTrOffset(st_session_impl_t *s, bool sync)
 {
 	rvrtp_pacing_t *pacing = &s->pacing;
 	st21_format_t *vfmt = &s->fmt.v;
@@ -754,7 +764,7 @@ static int TimePacingSyncTrOffset(st_session_impl_t *s)
 	if (toEpochTroffset < 0)
 	{ /* should never happen */
 		toEpochTroffset = 0;
-		RTE_LOG(ERR, USER2, "%s(%02d), error toEpochTroffset %Lf, ptp_time %ld pre epochs %ld\n",
+		RTE_LOG(DEBUG, USER2, "%s(%02d), error toEpochTroffset %Lf, ptp_time %ld pre epochs %ld\n",
 			__func__, pacing->idx,
 			toEpochTroffset, ptp_time, pacing->curEpochs);
 	}
@@ -778,6 +788,13 @@ static int TimePacingSyncTrOffset(st_session_impl_t *s)
 			pacing->idx, epochTime, pacing->timeCursor);
 	}
 	pacing->timeCursor = epochTime;
+
+	if (sync)
+	{
+		StTscTimeNanoSleepTo(epochTime);
+	}
+
+	pacing->pktIdx = 0;
 
 	return 0;
 }
@@ -807,7 +824,7 @@ LcoreMainPktRingEnqueueTscPacing(void *args)
 	RVRTP_SEMAPHORE_WAIT(mp->ringStart, mp->maxSchThrds * mp->numPorts);
 
 	//DPDKMS-482 - additional workaround
-	rte_delay_us_sleep(10 * 1000 * 1000);
+	rte_delay_us_sleep(5 * 1000 * 1000);
 	RTE_LOG(INFO, USER2, "%s[%d], sending packet STARTED on lcore %d\n", __func__, threadId, rte_lcore_id());
 
 	for (uint32_t i = thrdSnFirst; i < thrdSnLast; i++)
@@ -870,13 +887,9 @@ LcoreMainPktRingEnqueueTscPacing(void *args)
 			{
 				if (unlikely(s->vctx.tmstamp == 0))
 				{
-//					if (!stMainParams.userTmstamp)
-						TimePacingSyncTrOffset(s);
-//					else
-//						s->vctx.tmstamp = s->vctx.usertmstamp;
+					TimePacingSyncTrOffset(s, false);
 				}
 			} while ((RvRtpSessionCheckRunState(s) == 0) && (rte_atomic32_read(&isTxDevToDestroy) == 0));
-
 
 			if (redRing)
 			{
@@ -973,10 +986,17 @@ LcoreMainPktRingEnqueueTscPacing(void *args)
 
 			for (int k = 0; k < ST_DEFAULT_PKTS_IN_LN && (pktVect[ij] || pktVectR[ij]); k++) {
 				if (pktVect[ij+k])
+				{
 					StMbufSetTimestamp(pktVect[ij + k], (uint64_t)pacing->timeCursor);
+					StMbufSetIdx(pktVect[ij + k], pacing->pktIdx);
+				}
 				if (redRing && pktVectR[ij+k])
+				{
 					StMbufSetTimestamp(pktVectR[ij + k], (uint64_t)pacing->timeCursor);
+					StMbufSetIdx(pktVectR[ij + k], pacing->pktIdx);
+				}
 				pacing->timeCursor += pacing->trs; /* pkt foward */
+				pacing->pktIdx += 1;
 			}
 
 			while (pktVect[ij] && 0 == rte_ring_sp_enqueue_bulk(dev->txRing[ST_PPORT][ring], (void **)&pktVect[ij],
@@ -1024,6 +1044,10 @@ LcoreMainPktRingEnqueue(void *args)
 
 	if (StIsTscPacing())
 	{
+		LcoreMainPktRingEnqueueTscPacing(args);
+	}
+	else if (StIsNicRlPacing())
+	{ /* use tsc pacing also, we may enhance rl scheduler with tsc later */
 		LcoreMainPktRingEnqueueTscPacing(args);
 	}
 	else if (redRing)

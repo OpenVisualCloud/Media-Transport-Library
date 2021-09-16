@@ -176,6 +176,8 @@ StSetParam(st_param_t prm, st_param_val_t val)
 			StSetPacing(ST_PACING_PAUSE);
 		else if (!strcmp(val.strPtr, "tsc"))
 			StSetPacing(ST_PACING_TSC);
+		else if (!strcmp(val.strPtr, "ratelimit"))
+			StSetPacing(ST_PACING_NIC_RL);
 		else
 			RTE_LOG(WARNING, USER1, "%s, unknown pacing: %s\n", __func__, val.strPtr);
 		break;
@@ -187,6 +189,9 @@ StSetParam(st_param_t prm, st_param_val_t val)
 		break;
 	case ST_USER_TMSTAMP:
 		stMainParams.userTmstamp = val.valueBool;
+		break;
+	case ST_RL_BPS:
+		StSetRlBps(val.valueU64);
 		break;
 	default:
 		RTE_LOG(INFO, USER1, "Unknown param: %d\n", prm);
@@ -856,7 +861,8 @@ StDevInitTxThreads(st_main_params_t *mp, st_device_impl_t *dev)
 		mp->maxSchThrds = stDevParams->maxSchThrds;
 		if (mp->pTx == 1 && mp->rTx == 1)
 		    mp->maxSchThrds = 1;
-		if (mp->pacing == ST_PACING_TSC)
+
+		if (!StIsPausePacing())
 		{
 			if (mp->snCount <= dev->dev.maxSt21Sessions/2)
 				mp->maxSchThrds = 1;

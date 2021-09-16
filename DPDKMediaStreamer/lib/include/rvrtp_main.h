@@ -73,6 +73,7 @@ typedef struct st_main_params
 	uint32_t maxRcvThrds;
 	uint32_t maxAudioRcvThrds;
 	uint32_t maxAncRcvThrds;
+	uint32_t maxTxQueues; /* max NIC queue for tx(both video and audio) */
 	st_thrd_params_t rcvThrds[ST_MAX_RCV_THREADS_MAX];
 	st_thrd_params_t audioRcvThrds[ST_AUDIO_MAX_RCV_THREADS_MAX];
 	st_thrd_params_t ancRcvThrds[ST_ANC_MAX_RCV_THREADS_MAX];
@@ -105,6 +106,8 @@ typedef struct st_main_params
 	uint64_t tscHz; /* The frequency of the RDTSC timer resolution */
 	uint32_t userTmstamp; /* (Optional) Enqueue use user provided timestamp for packet's RTP timestamp field */
 	char lib_cid[512];
+	uint64_t rlBps; /* bytes_per_sec for rate limit queue */
+	float rlPadsInterval; /* padding pkt interval(pkts level) for RL pacing */
 
 	char outPortName[MAX_RXTX_PORTS][MAX_STR_LEN];
 	char inPortName[MAX_RXTX_PORTS][MAX_STR_LEN];
@@ -201,14 +204,29 @@ extern rte_atomic32_t isTxDevToDestroy;
 extern rte_atomic32_t isRxDevToDestroy;
 extern rte_atomic32_t isStopMainThreadTasks;
 
+static inline st_pacing_type_t StGetMaxTxQueues()
+{
+	return stMainParams.maxTxQueues;
+}
+
 static inline st_pacing_type_t StGetPacing()
 {
 	return stMainParams.pacing;
 }
 
+static inline bool StIsPausePacing()
+{
+	return (ST_PACING_PAUSE == StGetPacing()) ? true : false;
+}
+
 static inline bool StIsTscPacing()
 {
 	return (ST_PACING_TSC == StGetPacing()) ? true : false;
+}
+
+static inline bool StIsNicRlPacing()
+{
+	return (ST_PACING_NIC_RL == StGetPacing()) ? true : false;
 }
 
 static inline void StSetPacing(st_pacing_type_t pacing)
@@ -226,6 +244,43 @@ static inline void StSetTscTimeHz(uint64_t hz)
 	stMainParams.tscHz = hz;
 }
 
+static inline uint64_t StGetRlBps()
+{
+	return stMainParams.rlBps;
+}
+
+static inline void StSetRlBps(uint64_t bytePerSec)
+{
+	stMainParams.rlBps = bytePerSec;
+}
+
+static inline float StGetRlPadsInterval()
+{
+	return stMainParams.rlPadsInterval;
+}
+
+static inline void StSetRlPadsInterval(float padsInterval)
+{
+	stMainParams.rlPadsInterval = padsInterval;
+}
+
+static inline st_session_impl_t *StGetSessionByRing(uint32_t ring)
+{
+	st_device_impl_t *dev = &stSendDevice;
+
+	return dev->snTable[ring];
+}
+
+static inline rvrtp_pacing_t *StGetPacingByRing(uint32_t ring)
+{
+	return &StGetSessionByRing(ring)->pacing;
+}
+
+static inline st21_format_t *StGetVfmtByRing(uint32_t ring)
+{
+	return &StGetSessionByRing(ring)->fmt.v;
+}
+
 /* Return relative TSC time in nanoseconds */
 static inline uint64_t StGetTscTimeNano()
 {
@@ -233,6 +288,14 @@ static inline uint64_t StGetTscTimeNano()
 	double tsc_hz = StGetTscTimeHz();
 	double time_nano = tsc / (tsc_hz / ((double)NSEC_PER_SEC));
 	return time_nano;
+}
+
+/* busy loop until target time reach */
+static inline void StTscTimeNanoSleepTo(uint64_t targetNs)
+{
+	while (StGetTscTimeNano() < targetNs)
+	{
+	}
 }
 
 extern void ShowWelcomeBanner();

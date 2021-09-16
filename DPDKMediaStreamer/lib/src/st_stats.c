@@ -115,7 +115,30 @@ StStsInit_(uint16_t portId)
 }
 
 static void
-StStsPrintPacing(uint16_t portId)
+StStsPrintPacingEpochMismatch(st_device_impl_t *dTx)
+{
+	st_session_impl_t *s;
+	rvrtp_pacing_t *pacing;
+
+	for (uint32_t j = 0; j < stMainParams.snCount; j++)
+	{
+		s = dTx->snTable[j];
+		if (!s)
+		{
+			break;
+		}
+
+		pacing = &s->pacing;
+		if (pacing->epochMismatch)
+		{
+			printf("Session %02u, epoch mismatch %u\n", j, pacing->epochMismatch);
+			pacing->epochMismatch = 0;
+		}
+	}
+}
+
+static void
+StStsPrintTscPacing(uint16_t portId)
 {
 	st_device_impl_t *dTx = &stSendDevice;
 	st_session_impl_t *s;
@@ -158,21 +181,27 @@ StStsPrintPacing(uint16_t portId)
 
 	if (portId == 0)
 	{
-		for (uint32_t j = 0; j < stMainParams.snCount; j++)
-		{
-			s = dTx->snTable[j];
-			if (!s)
-			{
-				break;
-			}
-			pacing = &s->pacing;
+		StStsPrintPacingEpochMismatch(dTx);
+	}
+}
 
-			if (pacing->epochMismatch)
-			{
-				printf("Session %02u, epoch mismatch %u\n", j, pacing->epochMismatch);
-				pacing->epochMismatch = 0;
-			}
+static void
+StStsPrintNicRlPacing(uint16_t portId)
+{
+	st_device_impl_t *dTx = &stSendDevice;
+
+	for (uint32_t j = 0; j < stMainParams.snCount; j++)
+	{
+		uint64_t vrx = dTx->pacingVrxCnt[portId][j];
+		if (vrx)
+		{
+			printf("Pacinginfo for TX port %u ring %02u, Vrx %lu\n", portId, j, vrx);
 		}
+	}
+
+	if (portId == 0)
+	{
+		StStsPrintPacingEpochMismatch(dTx);
 	}
 }
 
@@ -239,9 +268,16 @@ StStsPrint_(uint16_t portId)
 	printf("Max Rx:      %10.2lf [Mb/s]\n", iMaxRate[portId] / RATE_UNIT);
 	printf("Status: imissed %ld ierrors %ld oerrors %ld rx_nombuf %ld\n",
 			stats.imissed, stats.ierrors, stats.oerrors, stats.rx_nombuf);
-	if ((stMainParams.pTx == 1 || stMainParams.rTx == 1) && StIsTscPacing())
+	if ((stMainParams.pTx == 1 || stMainParams.rTx == 1))
 	{
-		StStsPrintPacing(portId);
+		if (StIsTscPacing())
+		{
+			StStsPrintTscPacing(portId);
+		}
+		else if (StIsNicRlPacing())
+		{
+			StStsPrintNicRlPacing(portId);
+		}
 	}
 	printf("* *    E N D    B I T   R A T E S   * * \n\n");
 	nbRead++;

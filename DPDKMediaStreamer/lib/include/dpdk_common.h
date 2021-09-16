@@ -19,6 +19,7 @@
 #include <rte_memory.h>
 #include <rte_mempool.h>
 #include <rte_per_lcore.h>
+#include <rte_tm.h>
 
 #if (((RTE_VER_YEAR == 21) && (RTE_VER_MONTH >= 05)) || (RTE_VER_YEAR > 21))
 
@@ -26,7 +27,8 @@
 
 typedef struct pktpriv_data_s
 {
-	uint64_t resv1[15]; /* dynamic fields are implemented after rte_mbuf, preventing overwrite*/
+	uint64_t resv1[14]; /* dynamic fields are implemented after rte_mbuf, preventing overwrite*/
+	uint64_t idx;
 	uint64_t timestamp;
 } pktpriv_data_t;
 #else

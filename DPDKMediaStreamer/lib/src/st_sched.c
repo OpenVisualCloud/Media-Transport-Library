@@ -16,6 +16,7 @@
 
 #include "dpdk_common.h"
 #include "rvrtp_main.h"
+#include <math.h>
 
 #define SCHED_ID(t) (t % stMainParams.maxSchThrds)
 #define PORT_ID(t) (t / stMainParams.maxSchThrds)
@@ -560,6 +561,8 @@ StSchPreCheckPkts(struct rte_mbuf **pkts, uint16_t nb_pkts)
 		if (unlikely((ptr == NULL) || (ptr->pkt_len < 60) || (ptr->nb_segs > 2)
 					 || (ptr->pkt_len > 1514)))
 		{
+			RTE_LOG(INFO, USER1, "%s, invalid packet on %d, len %d segs %d\n", __func__,
+				i, ptr->pkt_len, ptr->nb_segs);
 			replace[k++] = ptr;
 			continue;
 		}
@@ -580,11 +583,12 @@ static inline void
 StSchtTxBurst(uint16_t port_id, uint16_t queue_id, struct rte_mbuf **tx_pkts, uint16_t nb_pkts)
 {
 	uint32_t sent = 0;
+	int32_t actual_nb_pkts = StSchPreCheckPkts(tx_pkts, nb_pkts);
 
 	/* Send this vector with busy looping */
-	while (sent < nb_pkts)
+	while (sent < actual_nb_pkts)
 	{
-		sent += rte_eth_tx_burst(port_id, queue_id, &tx_pkts[sent], nb_pkts - sent);
+		sent += rte_eth_tx_burst(port_id, queue_id, &tx_pkts[sent], actual_nb_pkts - sent);
 	}
 }
 
@@ -1001,11 +1005,215 @@ LcoreMainTransmitterTscPacing(void *args)
 	return 0;
 }
 
+static struct rte_mbuf *
+StSchBuildPadPacket(st_main_params_t *mp, int port, uint16_t ether_type, uint16_t len)
+{
+	struct rte_ether_addr srcMac;
+	struct rte_mbuf *padPacket;
+	struct rte_ether_hdr *ethHdr;
+
+	rte_eth_macaddr_get(mp->txPortId[port], &srcMac);
+	padPacket = rte_pktmbuf_alloc(mp->mbufPool);
+	if (unlikely(padPacket == NULL))
+	{
+		RTE_LOG(INFO, USER1, "%s, packet allocation for pad error\n", __func__);
+		return NULL;
+	}
+
+	rte_pktmbuf_append(padPacket, len);
+	padPacket->data_len = len;
+	padPacket->pkt_len = len;
+
+	ethHdr = rte_pktmbuf_mtod(padPacket, struct rte_ether_hdr *);
+	memset((char *)ethHdr, 0, len);
+	ethHdr->ether_type = htons(ether_type);
+	ethHdr->d_addr.addr_bytes[0] = 0x01;
+	ethHdr->d_addr.addr_bytes[1] = 0x80;
+	ethHdr->d_addr.addr_bytes[2] = 0xC2;
+	ethHdr->d_addr.addr_bytes[5] = 0x01;
+	rte_memcpy(&ethHdr->s_addr, &srcMac, 6);
+
+	return padPacket;
+}
+
+static int
+LcoreMainTransmitterNicRlPacing(void *args)
+{
+	st_main_params_t *mp = &stMainParams;
+	st_device_impl_t *dev = &stSendDevice;
+	lcore_transmitter_args_t *lt_args = args;
+	uint32_t threadId = lt_args->threadId;
+	uint32_t bulkNum = lt_args->bulkNum;
+	uint32_t schedId = SCHED_ID(threadId);
+	uint16_t txPortId = PORT_ID(threadId);
+
+	tprs_scheduler_t *sch = rte_malloc_socket("tprsSch", sizeof(tprs_scheduler_t), RTE_CACHE_LINE_SIZE, rte_socket_id());
+
+	if ((schedId > mp->maxSchThrds) || !sch)
+		rte_exit(ST_NO_MEMORY, "%s, Transmitter init memory error\n", __func__);
+
+	StSchInitThread(sch, dev, mp, threadId);
+	uint32_t max_ring = mp->snCount;
+	uint32_t start_ring = schedId;
+	unsigned int rv;
+	struct rte_mbuf *mbuf[bulkNum];
+	struct rte_mbuf *padPacket[1];
+	st_session_impl_t *s;
+	rvrtp_pacing_t *pacing;
+	uint32_t pktIdx;
+	st21_format_t *vfmt = StGetVfmtByRing(0);
+
+	padPacket[0] = StSchBuildPadPacket(mp, txPortId, 0x0800, vfmt->pktSize);
+	if (!padPacket[0])
+		rte_exit(ST_NO_MEMORY, "%s, pad packet fail\n", __func__);
+
+	// Firstly synchronize the moment both schedulers are ready
+	RVRTP_BARRIER_SYNC(mp->schedStart, threadId, mp->maxSchThrds * mp->numPorts);
+
+	RTE_LOG(INFO, USER2, "%s(%d), rte_lcore_id %d\n", __func__, threadId, rte_lcore_id());
+	RTE_LOG(INFO, USER2, "%s(%d), max_ring %d lastTxRing %d bulkNum %d\n", __func__,
+			threadId, max_ring, sch->lastTxRing, bulkNum);
+
+	//DPDKMS-482 - additional workaround
+	rte_delay_us_sleep(5 * 1000 * 1000);
+
+	if (schedId == 0 && txPortId == 0) /* todo: add train for redunant ? */
+	{ /* training padIntervalForRL */
+		int padPkts;
+		int loopCnt = 100;
+		double pktsPerSecSum = 0;
+
+		padPkts = 2048 * 10;
+		for (int i = 0; i < padPkts; i++) /* warm stage to consume all nix tx buf */
+		{
+			rte_mbuf_refcnt_update(padPacket[0], 1);
+			StSchtTxBurst(txPortId, 0, &padPacket[0], 1);
+		}
+
+		padPkts = 2048 * 10;
+		for (int loop = 0; loop < loopCnt; loop++) /* training stage */
+		{
+			uint64_t startTsc = StGetTscTimeNano();
+			for (int i = 0; i < padPkts; i++)
+			{
+				rte_mbuf_refcnt_update(padPacket[0], 1);
+				StSchtTxBurst(txPortId, 0, &padPacket[0], 1);
+			}
+			uint64_t endTsc = StGetTscTimeNano();
+			double timeSec = (double)(endTsc - startTsc) / NS_PER_S;
+			pktsPerSecSum += padPkts / timeSec;
+		}
+		double pktsPerSec = pktsPerSecSum / loopCnt;
+
+		/* parse the rlPadsInterval */
+		double pktsPerFrame = pktsPerSec * vfmt->frmRateDen / vfmt->frmRateMul;
+		pktsPerFrame = pktsPerFrame * vfmt->height / vfmt->totalLines; /* adjust as tr offset */
+		if (pktsPerFrame < vfmt->pktsInFrame)
+		{
+			rte_exit(ST_SN_ERR_RATE_NO_FIT, "%s, error caculated pktsPerFrame %f(%d) for RL\n", __func__,
+				pktsPerFrame, vfmt->pktsInFrame);
+		}
+		float rlPadsInterval = (float)vfmt->pktsInFrame / (pktsPerFrame - vfmt->pktsInFrame);
+		StSetRlPadsInterval(rlPadsInterval);
+		RTE_LOG(INFO, USER2, "%s(%d), RL training, pktsPerSec %f pktsPerFrame %f rlPadsInterval %f\n",
+			__func__, threadId, pktsPerSec, pktsPerFrame, rlPadsInterval);
+	}
+
+	// Since all ready now can release ring enqueue threads
+	RVRTP_SEMAPHORE_GIVE(mp->ringStart, 1);
+
+	while (rte_atomic32_read(&isTxDevToDestroy) == 0)
+	{
+		for (uint32_t ring = start_ring; ring < max_ring; ring = ring + mp->maxSchThrds)
+		{ /* ring for video session */
+			s = StGetSessionByRing(ring);
+			if (unlikely(!s))
+			{
+				continue;
+			}
+			pacing = &s->pacing;
+
+			rv = rte_ring_sc_dequeue_bulk(dev->txRing[txPortId][ring], (void **)&mbuf[0], bulkNum, NULL);
+			if (unlikely(rv == 0))
+			{
+				continue;
+			}
+
+			pktIdx = StMbufGetIdx(mbuf[0]);
+			if (unlikely(!pktIdx)) /* warm start for the first packet */
+			{
+				int32_t warmPkts = pacing->warmPktsForRL;
+				struct rte_mbuf *pads[warmPkts];
+				uint64_t curTsc = StGetTscTimeNano();
+				uint64_t targetTsc = StMbufGetTimestamp(mbuf[0]);
+
+				if (curTsc < targetTsc)
+				{
+					StTscTimeNanoSleepTo(StMbufGetTimestamp(mbuf[0]));
+				}
+				else
+				{ /* reduce padding pkts as the time */
+					int32_t deltaPkts = (curTsc - targetTsc) / pacing->trs;
+
+					if (deltaPkts > warmPkts)
+					{
+						warmPkts = 0;
+						dev->pacingVrxCnt[txPortId][ring] += 1;
+					}
+					else
+					{
+						warmPkts -= deltaPkts;
+					}
+				}
+
+				for (int i = 0; i < warmPkts; i++)
+				{
+					pads[i] = padPacket[0];
+				}
+				rte_mbuf_refcnt_update(padPacket[0], warmPkts);
+				StSchtTxBurst(txPortId, ring, &pads[0], warmPkts);
+				dev->pausesTx[txPortId][ring] += warmPkts;
+			}
+
+			/* check if it need insert padding packet */
+			if (fmodf(pktIdx + 1, pacing->padIntervalForRL) < bulkNum)
+			{
+				rte_mbuf_refcnt_update(padPacket[0], 1);
+				StSchtTxBurst(txPortId, ring, &padPacket[0], 1);
+				dev->pausesTx[txPortId][ring] += 1;
+			}
+
+			/* Sending this pkt on each rl queue now */
+			StSchtTxBurst(txPortId, ring, &mbuf[0], bulkNum);
+			dev->packetsTx[txPortId][ring] += bulkNum;
+		}
+
+		if (schedId == 0)
+		{
+			uint32_t ring
+				= dev->dev.maxSt21Sessions; /* audio/anc/kni ring */
+			int arv = rte_ring_sc_dequeue(dev->txRing[txPortId][ring], (void **)&mbuf[0]);
+			if (unlikely(arv < 0))
+			{
+				continue;
+			}
+
+			/* Sending this pkt on audio/anc/kni queue(last) */
+			StSchtTxBurst(txPortId, StGetMaxTxQueues() - 1, &mbuf[0], 1);
+			dev->packetsTx[txPortId][ring] += 1;
+		}
+	}
+
+	return 0;
+}
+
 int
 LcoreMainTransmitter(void *args)
 {
 	if (StIsTscPacing())
 		LcoreMainTransmitterTscPacing(args);
+	else if (StIsNicRlPacing())
+		LcoreMainTransmitterNicRlPacing(args);
 	else
 		LcoreMainTransmitterPause(args);
 

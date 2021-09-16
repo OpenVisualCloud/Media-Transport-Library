@@ -322,6 +322,10 @@ struct rvrtp_pacing
 	uint64_t curEpochs;
 	uint32_t epochMismatch;
 	uint32_t idx;
+
+	uint64_t pktIdx; /* index for current packet */
+	uint32_t warmPktsForRL; /* pkts for RL pacing warm boot */
+	float padIntervalForRL; /* padding pkt interval(pkts level) for RL pacing */
 } __rte_cache_aligned;
 
 typedef struct rvrtp_pacing rvrtp_pacing_t;
@@ -1078,6 +1082,18 @@ static inline uint64_t StMbufGetTimestamp(struct rte_mbuf *mbuf)
 {
 	pktpriv_data_t *ptr = rte_mbuf_to_priv(mbuf);
 	return ptr->timestamp;
+}
+
+static inline void StMbufSetIdx(struct rte_mbuf *mbuf, uint64_t idx)
+{
+	pktpriv_data_t *ptr = rte_mbuf_to_priv(mbuf);
+	ptr->idx = idx;
+}
+
+static inline uint64_t StMbufGetIdx(struct rte_mbuf *mbuf)
+{
+	pktpriv_data_t *ptr = rte_mbuf_to_priv(mbuf);
+	return ptr->idx;
 }
 
 /* internal api end */

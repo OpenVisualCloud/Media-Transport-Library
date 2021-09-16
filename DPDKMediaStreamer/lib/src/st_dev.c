@@ -776,6 +776,18 @@ StDevInitParams(st_eal_args_t *a, st_used_dev_info_t *p)
 	 */
 	uint8_t maxThreadFactor = maxSession/2;
 
+	stMainParams.maxTxQueues = stDevParams->maxTxRings;
+	if (StIsNicRlPacing())
+	{
+		/*
+		 * Rate limit quota based on queue level
+		 * video ring use rl queue(0 - snCount)
+		 * audio/anc/kni use last queue(snCount)
+		 */
+		stMainParams.maxTxQueues = stMainParams.snCount + 1;
+	}
+	RTE_LOG(INFO, ST_DEV, "%s, maxTxQueues %d\n", __func__, StGetMaxTxQueues());
+
 	if (stMainParams.pTx == 1 || stMainParams.rTx == 1)
 	{
                lcCount += (stDevParams->maxSchThrds * stMainParams.numPorts);
@@ -1106,6 +1118,101 @@ StPreCheckPkts(uint8_t port __rte_unused, uint16_t qidx __rte_unused, struct rte
 }
 #endif	//ST_NIC_DRIVER_WA
 
+#define ST_SHAPER_PROFILE_ID	1
+#define ST_ROOT_NODE_ID		100
+#define ST_DEFAULT_NODE_ID	90
+
+static st_status_t
+StDevInitRateLimitProfile(uint16_t port, uint64_t bytes_per_sec, int qlow, int qhigh)
+{
+	int status;
+	struct rte_tm_error error;
+	struct rte_tm_shaper_params sp;
+	struct rte_tm_node_params np, qp;
+
+	/* set the bandwidth */
+	memset(&sp, 0, sizeof(sp));
+	memset(&error, 0, sizeof(error));
+	sp.peak.rate = bytes_per_sec;
+	status = rte_tm_shaper_profile_add(port, ST_SHAPER_PROFILE_ID, &sp, &error);
+	if (status != 0) {
+		RTE_LOG(ERR, USER1, "%s, Shaper profile add error: (%d)%s\n", __func__, status, error.message);
+		return ST_RL_ERR;
+	}
+
+	memset(&np, 0, sizeof(np));
+	memset(&error, 0, sizeof(error));
+	np.shaper_profile_id = ST_SHAPER_PROFILE_ID;
+	np.nonleaf.n_sp_priorities = 1;
+	/* root node */
+	status = rte_tm_node_add(port,
+			ST_ROOT_NODE_ID,
+			-1,
+			0,      /* priority */
+			1,      /* weigth */
+			0,      /* level */
+			&np,
+			&error);
+	if (status != 0) {
+		RTE_LOG(ERR, USER1, "%s, root node add error: (%d)%s\n", __func__, status, error.message);
+		return ST_RL_ERR;
+	}
+
+	memset(&error, 0, sizeof(error));
+	/* set up a nonleaf node based on root */
+	status = rte_tm_node_add(port,
+			ST_DEFAULT_NODE_ID,
+			ST_ROOT_NODE_ID,
+			0,      /* priority */
+			1,      /* weigth */
+			1,      /* level */
+			&np,
+			&error);
+	if (status != 0) {
+		RTE_LOG(ERR, USER1, "%s, profile node add error (%d)%s\n", __func__, status, error.message);
+		return ST_RL_ERR;
+	}
+
+	memset(&qp, 0, sizeof(qp));
+	memset(&error, 0, sizeof(error));
+	qp.shaper_profile_id = ST_SHAPER_PROFILE_ID;
+	qp.leaf.cman = RTE_TM_CMAN_TAIL_DROP;
+	qp.leaf.wred.wred_profile_id = RTE_TM_WRED_PROFILE_ID_NONE;
+	//qp.leaf.wred.wred_profile_id = 0xFFFFFFFF; //RTE_TM_WRED_PROFILE_ID_NONE;
+	/* set up queue node */
+	for (int i = qlow; i < qhigh; i++) {
+		status = rte_tm_node_add(port,
+			i,      /* node id */
+			ST_DEFAULT_NODE_ID,  /* parent id */
+			0,      /* priority */
+			1,      /* weigth */
+			2,      /* level */
+			&qp,
+			&error);
+		if (status != 0) {
+			RTE_LOG(ERR, USER1, "%s, queue node %d add error (%d)%s\n",
+				__func__, i, status, error.message);
+			return ST_RL_ERR;
+		}
+	}
+
+	status = rte_tm_hierarchy_commit(port, 1, &error);
+	if (status != 0) {
+		RTE_LOG(ERR, USER1, "%s, traffic management hierarchy commit error (%d)%s\n",
+			__func__, status, error.message);
+		return ST_RL_ERR;
+	}
+
+	RTE_LOG(INFO, USER1, "%s, queue %d-%d bytes_per_sec %ld succ\n", __func__,
+		qlow, qhigh, bytes_per_sec);
+	return ST_OK;
+}
+
+static uint64_t StDevGetRatelimitBps(st21_format_t *st21Fmt)
+{
+	return (uint64_t)st21Fmt->pktSize * st21Fmt->pktsInFrame * st21Fmt->frmRateMul / st21Fmt->frmRateDen;
+}
+
 static st_status_t
 StDevInitRtePort(uint16_t port, st_device_impl_t *d)
 {
@@ -1115,7 +1222,7 @@ StDevInitRtePort(uint16_t port, st_device_impl_t *d)
 							  + stDevParams->maxAncRcvThrds
 							  + 1;	// One RxQ more for Audio for each Rx Thread
 	const uint16_t txQueues
-		= stDevParams->maxTxRings + 1 + 1;	// allocate one more for PTP and one more for IGMP
+		= StGetMaxTxQueues() + 1 + 1;	// allocate one more for PTP and one more for IGMP
 	uint16_t rxDesc = RX_RING_SIZE;
 	uint16_t txDesc = TX_RING_SIZE;
 	int ret;
@@ -1688,6 +1795,33 @@ StStartDevice(st_device_t *dev)
 	{
 		if ((stMainParams.pTx == 1 || stMainParams.rTx == 1) && !isSchActive)
 		{
+			if (StIsNicRlPacing())
+			{
+				uint16_t port;
+
+				if (!StGetRlBps())
+				{
+					StSetRlBps(StDevGetRatelimitBps(StGetVfmtByRing(0)));
+				}
+
+				/*
+				 * WA: disable KNI traffic before committing the RL profile,
+				 * rte_tm_hierarchy_commit may fail if there's ongoing tx/rx request.
+				 */
+				//StKniUpdateLink(kni, 0);
+				//rte_delay_ms(100);
+				for (port = 0; port < stMainParams.numPorts; port++)
+				{
+					/* No RL for audio/anc queue */
+					status = StDevInitRateLimitProfile(port, StGetRlBps(), 0, StGetMaxTxQueues() - 1);
+					if (status < 0)
+					{
+						return status;
+					}
+				}
+				//StKniUpdateLink(kni, 1);
+			}
+
 			do
 			{
 				currlCore = rte_get_next_lcore(currlCore, 1, 0);

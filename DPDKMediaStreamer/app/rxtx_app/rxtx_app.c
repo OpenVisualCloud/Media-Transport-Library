@@ -168,7 +168,7 @@ PrintHelp()
 	printf("   --audioFrame  <Audio frame size>             : Size of Audio frame in bytes, user "
 		   "provides based on frequency, channel count and bit depth for desired duration of audio "
 		   "samples (e.g. 1ms) \n");
-	printf("   --pacing <control way>			: select pacing type e.g. pause or tsc\n");
+	printf("   --pacing <control way>			: select pacing type e.g. pause, ratelimit or tsc\n");
 	printf("   --tsc_hz <hz>			        : User specified tsc frequency\n");
 	printf("   --user_timestamp                 : User provide timestamp values for RTP header via ST_API calls\n");
 	printf("\n");
@@ -244,6 +244,7 @@ ParseArgs(int argc, char *argv[], st_user_params_t *outParams)
 				{ "audioFrame", required_argument, 0, MAKE_WORD_FROM_CHAR('a', 's') },
 				{ "pacing", required_argument, 0, MAKE_WORD_FROM_CHAR('p', 'c') },
 				{ "tsc_hz", required_argument, 0, MAKE_WORD_FROM_CHAR('t', 'h') },
+				{ "rl_Bps", required_argument, 0, MAKE_WORD_FROM_CHAR('r', 'B') },
 				{ "help", no_argument, 0, 'h' },
 				{ "version", no_argument, 0, 'v' },
 				{ "user_timestamp", no_argument, 0, MAKE_WORD_FROM_CHAR('u', 't') },
@@ -574,6 +575,11 @@ ParseArgs(int argc, char *argv[], st_user_params_t *outParams)
 		case MAKE_WORD_FROM_CHAR('u', 't'):
 			stParamVal.valueBool = true;
 			StSetParam(ST_USER_TMSTAMP, stParamVal);
+			break;
+
+		case MAKE_WORD_FROM_CHAR('r', 'B'):
+			stParamVal.valueU64 = atol(optarg);
+			StSetParam(ST_RL_BPS, stParamVal);
 			break;
 
 		case 'h':
