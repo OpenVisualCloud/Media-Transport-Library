@@ -132,6 +132,8 @@ RvRtpInitPacketCtx(st_session_impl_t *s, uint32_t ring)
 	s->vctx.line1Number = 0;
 	s->vctx.line1Length = s->fmt.v.pixelsInPkt / s->fmt.v.pixelsInGrp * s->vctx.line1PixelGrpSize;
 	s->vctx.line1Size = s->fmt.v.width / s->fmt.v.pixelsInGrp * s->vctx.line1PixelGrpSize;
+	s->vctx.line2Offset = 0;
+	s->vctx.line2Number = 0;
 
 	struct rte_ipv4_hdr *ip;
 	struct rte_udp_hdr *udp;

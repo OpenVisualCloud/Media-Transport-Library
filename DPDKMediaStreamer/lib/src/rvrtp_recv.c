@@ -673,8 +673,8 @@ StRtpIpUdpHdrCheck(st_session_impl_t *s, const struct rte_ipv4_hdr *ip)
  * RETURNS: st_status_t
  */
 static inline st_status_t
-StRtpHdrCheck(st_session_impl_t *s, const struct st_rfc4175_rtp_dual_hdr *rtp, st21_pkt_fmt_t pktFmt,
-			  st21_vscan_t vscan)
+StRtpHdrCheck(st_session_impl_t *s, const struct st_rfc4175_rtp_dual_hdr *rtp,
+			  st21_pkt_fmt_t pktFmt, st21_vscan_t vscan)
 {
 	if (unlikely((rtp->version != RVRTP_VERSION_2) || (rtp->csrcCount != 0)))
 	{
@@ -684,151 +684,73 @@ StRtpHdrCheck(st_session_impl_t *s, const struct st_rfc4175_rtp_dual_hdr *rtp, s
 		return ST_PKT_DROP_BAD_RTP_HDR;
 	}
 
-	if (pktFmt == ST_INTEL_DLN_RFC4175_PKT)
+	if (NFIELD_TEST_16_BIT(rtp->line1Offset) == 0)
 	{
-		if (NFIELD_TEST_16_BIT(rtp->line1Offset) == 0)	//shall be 1
-		{
-			s->pktsDrop++;
-			s->sn.pktsDrop[ST_PKT_DROP(ST_PKT_DROP_BAD_RTP_LN_CONT)]++;
-			RTE_LOG(INFO, USER3, "Packet bad LNCONT of %u pktsDrop %llu\n", 0, (U64)s->pktsDrop);
-			return ST_PKT_DROP_BAD_RTP_LN_CONT;
-		}
-#ifdef ST_DONT_IGNORE_PKT_CHECK
-		uint16_t line1LenRtp = ntohs(rtp->line1Length);
-		uint16_t line2LenRtp = ntohs(rtp->line2Length);
-
-		if ((line1LenRtp > s->vctx.line1Length) || (line2LenRtp > s->vctx.line2Length))
-		{
-			s->pktsDrop++;
-			s->sn.pktsDrop[ST_PKT_DROP(ST_PKT_DROP_BAD_RTP_LN_LEN)]++;
-			RTE_LOG(INFO, USER3, "Packet bad RTPLEN of %u pktsDrop %llu\n", line1LenRtp,
-					(U64)s->pktsDrop);
-			RTE_LOG(INFO, USER3, "Packet bad RTPLEN of %u pktsDrop %llu\n", line2LenRtp,
-					(U64)s->pktsDrop);
-			return ST_PKT_DROP_BAD_RTP_LN_LEN;
-		}
-#endif
-		s->vctx.line1Number = ntohs(NFIELD_MASK_15_BITS(rtp->line1Number));
-		s->vctx.line2Number = ntohs(NFIELD_MASK_15_BITS(rtp->line2Number));
-
-		s->vctx.line1Offset = ntohs(NFIELD_MASK_15_BITS(rtp->line1Offset));
-		s->vctx.line2Offset = ntohs(NFIELD_MASK_15_BITS(rtp->line2Offset));
-
-		if ((vscan == ST21_2160I) || (vscan == ST21_1080I) || (vscan == ST21_720I))
-		{
-#ifdef ST_DONT_IGNORE_PKT_CHECK
-			if ((s->vctx.line1Number >= s->fmt.v.height / 2)
-				|| (s->vctx.line2Number >= s->fmt.v.height / 2))
-			{
-				s->pktsDrop++;
-				s->sn.pktsDrop[ST_PKT_DROP(ST_PKT_DROP_BAD_RTP_LN_NUM)]++;
-				RTE_LOG(INFO, USER3, "Packet bad RTPLN NUMBER of %u pktsDrop %llu\n",
-						s->vctx.line1Number, (U64)s->pktsDrop);
-				RTE_LOG(INFO, USER3, "Packet bad RTPLN NUMBER of %u pktsDrop %llu\n",
-						s->vctx.line2Number, (U64)s->pktsDrop);
-				return ST_PKT_DROP_BAD_RTP_LN_NUM;
-			}
-#endif
-			s->vctx.fieldId = NFIELD_GET_16_BIT(rtp->line1Number);
-		}
-		else
-		{
-#ifdef ST_DONT_IGNORE_PKT_CHECK
-			if ((s->vctx.line1Number >= s->fmt.v.height)
-				|| (s->vctx.line2Number >= s->fmt.v.height))
-			{
-				s->pktsDrop++;
-				s->sn.pktsDrop[ST_PKT_DROP(ST_PKT_DROP_BAD_RTP_LN_NUM)]++;
-				RTE_LOG(INFO, USER3, "Packet bad RTPLN NUMBER of %u pktsDrop %llu\n",
-						s->vctx.line1Number, (U64)s->pktsDrop);
-				RTE_LOG(INFO, USER3, "Packet bad RTPLN NUMBER of %u pktsDrop %llu\n",
-						s->vctx.line2Number, (U64)s->pktsDrop);
-				return ST_PKT_DROP_BAD_RTP_LN_NUM;
-			}
-#endif
-			s->vctx.fieldId = 2;
-		}
-
-#ifdef ST_DONT_IGNORE_PKT_CHECK
-		if ((s->vctx.line1Offset + s->fmt.v.pixelsInPkt > s->fmt.v.width)
-			|| (s->vctx.line2Offset + s->fmt.v.pixelsInPkt > s->fmt.v.width))
-		{
-			s->pktsDrop++;
-			s->sn.pktsDrop[ST_PKT_DROP(ST_PKT_DROP_BAD_RTP_OFFSET)]++;
-			RTE_LOG(INFO, USER3, "Packet bad LN OFFSET of %u pktsDrop %llu\n", s->vctx.line1Offset,
-					(U64)s->pktsDrop);
-			RTE_LOG(INFO, USER3, "Packet bad LN OFFSET of %u pktsDrop %llu\n", s->vctx.line2Offset,
-					(U64)s->pktsDrop);
-			return ST_PKT_DROP_BAD_RTP_OFFSET;
-		}
-#endif
-		return ST_OK;
+		s->vctx.dualLineMode = false;
 	}
 	else
 	{
-		if (NFIELD_TEST_16_BIT(rtp->line1Offset))  //here shall be 0 if single line packet
-		{
-			s->pktsDrop++;
-			s->sn.pktsDrop[ST_PKT_DROP(ST_PKT_DROP_BAD_RTP_LN_CONT)]++;
-			RTE_LOG(INFO, USER3, "Packet bad LNCONT of %u pktsDrop %llu\n", 1, (U64)s->pktsDrop);
-			return ST_PKT_DROP_BAD_RTP_LN_CONT;
-		}
-#ifdef ST_DONT_IGNORE_PKT_CHECK
-		uint16_t line1LenRtp = ntohs(rtp->line1Length);
-
-		if (line1LenRtp > s->vctx.line1Length)
-		{
-			s->pktsDrop++;
-			s->sn.pktsDrop[ST_PKT_DROP(ST_PKT_DROP_BAD_RTP_LN_LEN)]++;
-			RTE_LOG(INFO, USER3, "Packet bad RTPLEN of %u pktsDrop %llu\n", line1LenRtp,
-					(U64)s->pktsDrop);
-			return ST_PKT_DROP_BAD_RTP_LN_LEN;
-		}
-#endif
-
-		s->vctx.line1Number = ntohs(NFIELD_MASK_15_BITS(rtp->line1Number));
-		s->vctx.line1Offset = ntohs(NFIELD_MASK_15_BITS(rtp->line1Offset));
-
-		if ((vscan == ST21_2160I) || (vscan == ST21_1080I) || (vscan == ST21_720I))
-		{
-#ifdef ST_DONT_IGNORE_PKT_CHECK
-			if (s->vctx.line1Number >= s->fmt.v.height / 2)
-			{
-				s->pktsDrop++;
-				s->sn.pktsDrop[ST_PKT_DROP(ST_PKT_DROP_BAD_RTP_LN_NUM)]++;
-				RTE_LOG(INFO, USER3, "Packet bad RTPLN NUMBER of %u pktsDrop %llu\n",
-						s->vctx.line1Number, (U64)s->pktsDrop);
-				return ST_PKT_DROP_BAD_RTP_LN_NUM;
-			}
-#endif
-			s->vctx.fieldId = NFIELD_GET_16_BIT(rtp->line1Number);
-		}
-		else
-		{
-#ifdef ST_DONT_IGNORE_PKT_CHECK
-			if (s->vctx.line1Number >= s->fmt.v.height)
-			{
-				s->pktsDrop++;
-				s->sn.pktsDrop[ST_PKT_DROP(ST_PKT_DROP_BAD_RTP_LN_NUM)]++;
-				RTE_LOG(INFO, USER3, "Packet bad RTPLN NUMBER of %u pktsDrop %llu\n",
-						s->vctx.line1Number, (U64)s->pktsDrop);
-				return ST_PKT_DROP_BAD_RTP_LN_NUM;
-			}
-#endif
-			s->vctx.fieldId = 2;
-		}
-
-#ifdef ST_DONT_IGNORE_PKT_CHECK
-		if (s->vctx.line1Offset + s->fmt.v.pixelsInPkt > s->fmt.v.width)
-		{
-			s->pktsDrop++;
-			s->sn.pktsDrop[ST_PKT_DROP(ST_PKT_DROP_BAD_RTP_OFFSET)]++;
-			RTE_LOG(INFO, USER3, "Packet bad LN OFFSET of %u pktsDrop %llu\n", s->vctx.line1Offset,
-					(U64)s->pktsDrop);
-			return ST_PKT_DROP_BAD_RTP_OFFSET;
-		}
-#endif
+		s->vctx.dualLineMode = true;
 	}
+
+	s->vctx.line1Number = ntohs(NFIELD_MASK_15_BITS(rtp->line1Number));
+	s->vctx.line2Number = s->vctx.dualLineMode ? ntohs(NFIELD_MASK_15_BITS(rtp->line2Number)) : 0;
+	s->vctx.line1Offset = ntohs(NFIELD_MASK_15_BITS(rtp->line1Offset));
+	s->vctx.line2Offset = s->vctx.dualLineMode ? ntohs(NFIELD_MASK_15_BITS(rtp->line2Offset)) : 0;
+	s->vctx.line1Length = ntohs(rtp->line1Length);
+	s->vctx.line2Length = s->vctx.dualLineMode ? ntohs(rtp->line2Length) : 0;
+
+	if ((vscan == ST21_2160I) || (vscan == ST21_1080I) || (vscan == ST21_720I))
+	{
+#ifdef ST_DONT_IGNORE_PKT_CHECK
+		if ((s->vctx.line1Number >= s->fmt.v.height / 2)
+			|| (s->vctx.line2Number >= s->fmt.v.height / 2))
+		{
+			s->pktsDrop++;
+			s->sn.pktsDrop[ST_PKT_DROP(ST_PKT_DROP_BAD_RTP_LN_NUM)]++;
+			RTE_LOG(INFO, USER3, "Packet bad RTPLN NUMBER of %u pktsDrop %llu\n",
+					s->vctx.line1Number, (U64)s->pktsDrop);
+			RTE_LOG(INFO, USER3, "Packet bad RTPLN NUMBER of %u pktsDrop %llu\n",
+					s->vctx.line2Number, (U64)s->pktsDrop);
+			return ST_PKT_DROP_BAD_RTP_LN_NUM;
+		}
+#endif
+		s->vctx.fieldId = NFIELD_GET_16_BIT(rtp->line1Number);
+	}
+	else
+	{
+#ifdef ST_DONT_IGNORE_PKT_CHECK
+		if ((s->vctx.line1Number >= s->fmt.v.height) || (s->vctx.line2Number >= s->fmt.v.height))
+		{
+			s->pktsDrop++;
+			s->sn.pktsDrop[ST_PKT_DROP(ST_PKT_DROP_BAD_RTP_LN_NUM)]++;
+			RTE_LOG(INFO, USER3, "Packet bad RTPLN NUMBER of %u pktsDrop %llu\n",
+					s->vctx.line1Number, (U64)s->pktsDrop);
+			RTE_LOG(INFO, USER3, "Packet bad RTPLN NUMBER of %u pktsDrop %llu\n",
+					s->vctx.line2Number, (U64)s->pktsDrop);
+			return ST_PKT_DROP_BAD_RTP_LN_NUM;
+		}
+#endif
+		s->vctx.fieldId = 2;
+	}
+
+#ifdef ST_DONT_IGNORE_PKT_CHECK
+	if ((s->vctx.line1Offset + (s->vctx.line1Length / s->fmt.v.pixelGrpSize * s->fmt.v.pixelsInGrp)
+		 > s->fmt.v.width)
+		|| (s->vctx.line2Offset
+				+ (s->vctx.line2Length / s->fmt.v.pixelGrpSize * s->fmt.v.pixelsInGrp)
+			> s->fmt.v.width))
+	{
+		s->pktsDrop++;
+		s->sn.pktsDrop[ST_PKT_DROP(ST_PKT_DROP_BAD_RTP_OFFSET)]++;
+		RTE_LOG(INFO, USER3, "Packet bad LN OFFSET of %u pktsDrop %llu\n", s->vctx.line1Offset,
+				(U64)s->pktsDrop);
+		RTE_LOG(INFO, USER3, "Packet bad LN OFFSET of %u pktsDrop %llu\n", s->vctx.line2Offset,
+				(U64)s->pktsDrop);
+		return ST_PKT_DROP_BAD_RTP_OFFSET;
+	}
+#endif
+
 	return ST_OK;
 }
 
@@ -1553,15 +1475,22 @@ RvRtpReceiveFastCopyInline(st_session_impl_t *s, const void *rtp, st21_vscan_t v
 						   st21_pkt_fmt_t pktFmt, uint32_t whichFrm)
 {
 	uint32_t histIdx = whichFrm / NUM_HISTOGRAMS;
-	if (pktFmt == ST_INTEL_SLN_RFC4175_PKT)
+	if (pktFmt != ST_OTHER_SLN_RFC4175_PKT)
 	{
-		/* Single line copy payload */
-		st_rfc4175_rtp_single_hdr_t *rtpSingle = (st_rfc4175_rtp_single_hdr_t *)rtp;
-		uint8_t *payload = (uint8_t *)&rtpSingle[1];
-
-		uint32_t byteLn1Offset
+		uint8_t *payload;
+		uint32_t byteLn1Offset;
+		uint32_t byteLn2Offset;
+		if (!s->vctx.dualLineMode)
+			payload = (uint8_t *)rtp + sizeof(st_rfc4175_rtp_single_hdr_t);
+		else
+			payload = (uint8_t *)rtp + sizeof(st_rfc4175_rtp_dual_hdr_t);
+		byteLn1Offset
 			= s->vctx.line1Number * s->vctx.line1Size
 			  + (uint32_t)s->vctx.line1Offset / s->fmt.v.pixelsInGrp * s->vctx.line1PixelGrpSize;
+
+		byteLn2Offset
+			= s->vctx.line2Number * s->vctx.line1Size
+			  + (uint32_t)s->vctx.line2Offset / s->fmt.v.pixelsInGrp * s->vctx.line1PixelGrpSize;
 
 		// solve patterns of vscan
 		if (vscan == ST21_2160P)
@@ -1578,7 +1507,13 @@ RvRtpReceiveFastCopyInline(st_session_impl_t *s, const void *rtp, st21_vscan_t v
 
 #ifndef ST_MEMCPY_TEST
 			/* line 1 payload copy */
-			memcpy(&s->vctx.data[byteLn1Offset], payload, ST_FMT_UHD2160_PKT_SLN_SZ);
+			memcpy(&s->vctx.data[byteLn1Offset], payload, s->vctx.line1Length);
+			if (s->vctx.dualLineMode)
+			{
+				/* line 2 payload copy */
+				memcpy(&s->vctx.data[byteLn2Offset], &payload[s->vctx.line1Length],
+					   s->vctx.line2Length);
+			}
 #endif
 		}
 		else if (vscan == ST21_1080P)
@@ -1597,13 +1532,17 @@ RvRtpReceiveFastCopyInline(st_session_impl_t *s, const void *rtp, st21_vscan_t v
 			}
 #ifndef ST_MEMCPY_TEST
 			/* line 1 payload copy */
-			memcpy(&s->vctx.data[byteLn1Offset], payload, ST_FMT_HD1080_PKT_SLN_SZ);
+			memcpy(&s->vctx.data[byteLn1Offset], payload, s->vctx.line1Length);
+			if (s->vctx.dualLineMode)
+			{
+				/* line 2 payload copy */
+				memcpy(&s->vctx.data[byteLn2Offset], &payload[s->vctx.line1Length],
+					   s->vctx.line2Length);
+			}
 #endif
 		}
 		else if (vscan == ST21_720P)
 		{
-			uint32_t lnOffset
-				= s->vctx.line1Offset / s->fmt.v.pixelsInGrp * s->vctx.line1PixelGrpSize;
 			uint8_t bitToSet = (1 << (s->vctx.line1Offset / s->fmt.v.pixelsInPkt))
 							   << (3 * (s->vctx.line1Number & 0x1));
 			if (s->vctx.fragHistogram[histIdx][s->vctx.line1Number / 2] & bitToSet)
@@ -1614,67 +1553,17 @@ RvRtpReceiveFastCopyInline(st_session_impl_t *s, const void *rtp, st21_vscan_t v
 			{
 				s->vctx.lineHistogram[s->vctx.line1Number]++;
 			}
-			s->vctx.fragHistogram[histIdx][s->vctx.line1Number / 2] |= (1 << bitToSet);
-
-			uint16_t line1LenRtp = ntohs(rtpSingle->line1Length);
-			if (line1LenRtp + lnOffset > s->vctx.line1Size)
-			{
-				s->pktsDrop++;
-				s->sn.pktsDrop[ST_PKT_DROP(ST_PKT_DROP_BAD_RTP_LN_LEN)]++;
-				RTE_LOG(INFO, USER3, "Packet bad RTPLEN of %u pktsDrop %llu\n", line1LenRtp,
-						(U64)s->pktsDrop);
-				return ST_PKT_DROP_BAD_RTP_LN_LEN;
-			}
+			s->vctx.fragHistogram[histIdx][s->vctx.line1Number / 2] |= bitToSet;
 #ifndef ST_MEMCPY_TEST
 			/* line 1 payload copy */
-			memcpy(&s->vctx.data[byteLn1Offset], payload, line1LenRtp);
+			memcpy(&s->vctx.data[byteLn1Offset], payload, s->vctx.line1Length);
+			if (s->vctx.dualLineMode)
+			{
+				/* line 2 payload copy */
+				memcpy(&s->vctx.data[byteLn2Offset], &payload[s->vctx.line1Length],
+					   s->vctx.line2Length);
+			}
 #endif
-		}
-	}
-	else if (pktFmt == ST_INTEL_DLN_RFC4175_PKT)  //dual line packets here
-	{
-		st_rfc4175_rtp_dual_hdr_t *rtpDual = (st_rfc4175_rtp_dual_hdr_t *)rtp;
-		/* Dual line copy payload */
-		uint8_t *payload = (uint8_t *)&rtpDual[1];
-		uint32_t byteLn1Offset
-			= s->vctx.line1Number * s->vctx.line1Size
-			  + (uint32_t)s->vctx.line1Offset / s->fmt.v.pixelsInGrp * s->vctx.line1PixelGrpSize;
-		uint32_t byteLn2Offset
-			= s->vctx.line2Number * s->vctx.line2Size
-			  + (uint32_t)s->vctx.line2Offset / s->fmt.v.pixelsInGrp * s->vctx.line2PixelGrpSize;
-
-		if (s->vctx.fragHistogram[histIdx][s->vctx.line1Number])
-			return ST_PKT_DROP_REDUNDANT_PATH;
-		if (whichFrm == FRAME_CURR)
-		{
-			s->vctx.lineHistogram[s->vctx.line1Number / 2]++;
-		}
-		s->vctx.fragHistogram[histIdx][s->vctx.line1Number / 2]
-			|= (1 << (s->vctx.line1Offset / s->fmt.v.pixelsInPkt));
-
-		if (vscan == ST21_1080P)
-		{
-#ifndef ST_MEMCPY_TEST
-			/* line 1 */
-			memcpy(&s->vctx.data[byteLn1Offset], payload, ST_FMT_HD1080_PKT_DLN_SZ);
-			/* line 2 */
-			memcpy(&s->vctx.data[byteLn2Offset], &payload[s->vctx.line1Length],
-				   ST_FMT_HD1080_PKT_DLN_SZ);
-#endif
-		}
-		else if (vscan == ST21_720P)
-		{
-#ifndef ST_MEMCPY_TEST
-			/* line 1 */
-			memcpy(&s->vctx.data[byteLn1Offset], payload, ST_FMT_HD720_PKT_DLN_SZ);
-			/* line 2 */
-			memcpy(&s->vctx.data[byteLn2Offset], &payload[s->vctx.line1Length],
-				   ST_FMT_HD720_PKT_DLN_SZ);
-#endif
-		}
-		else
-		{
-			ST_ASSERT;
 		}
 	}
 	else if (pktFmt == ST_OTHER_SLN_RFC4175_PKT)  //open standard packets here

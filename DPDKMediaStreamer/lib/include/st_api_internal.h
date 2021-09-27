@@ -202,6 +202,7 @@ struct rvrtp_pkt_ctx
 
 	uint16_t ipPacketId;
 	uint16_t fieldId;  //interlaced field 0 or 1 (odd or even)
+	bool dualLineMode;
 
 	uint32_t line1Size;
 	uint32_t line2Size;
