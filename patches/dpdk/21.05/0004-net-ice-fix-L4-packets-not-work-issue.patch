@@ -1,0 +1,67 @@
+From 269ee60da269281a979790c978726c9cb6565a16 Mon Sep 17 00:00:00 2001
+From: Simei Su <simei.su@intel.com>
+Date: Fri, 2 Jul 2021 16:34:14 +0800
+Subject: [PATCH 4/4] net/ice: fix L4 packets not work issue
+
+If the packet is L4, remove the packet type judgement.
+
+Signed-off-by: Simei Su <simei.su@intel.com>
+---
+ drivers/net/ice/ice_rxtx.c | 27 +++++++++------------------
+ 1 file changed, 9 insertions(+), 18 deletions(-)
+
+diff --git a/drivers/net/ice/ice_rxtx.c b/drivers/net/ice/ice_rxtx.c
+index 20cd506..439534d 100644
+--- a/drivers/net/ice/ice_rxtx.c
++++ b/drivers/net/ice/ice_rxtx.c
+@@ -1657,12 +1657,9 @@ ice_rx_scan_hw_ring(struct ice_rx_queue *rxq)
+ 			ice_rxd_to_vlan_tci(mb, &rxdp[j]);
+ 			rxq->rxd_to_pkt_fields(rxq, mb, &rxdp[j]);
+ 
+-			if ((mb->packet_type & RTE_PTYPE_L2_MASK)
+-					== RTE_PTYPE_L2_ETHER_TIMESYNC) {
+-				rxq->time_high = rte_le_to_cpu_32(rxdp[j].wb.flex_ts.ts_high);
+-				mb->timesync = rxq->queue_id;
+-				pkt_flags |= PKT_RX_IEEE1588_PTP;
+-			}
++			rxq->time_high = rte_le_to_cpu_32(rxdp[j].wb.flex_ts.ts_high);
++			mb->timesync = rxq->queue_id;
++			pkt_flags |= PKT_RX_IEEE1588_PTP;
+ 
+ 			mb->ol_flags |= pkt_flags;
+ 		}
+@@ -1962,12 +1959,9 @@ ice_recv_scattered_pkts(void *rx_queue,
+ 		rxq->rxd_to_pkt_fields(rxq, first_seg, &rxd);
+ 		pkt_flags = ice_rxd_error_to_pkt_flags(rx_stat_err0);
+ 
+-		if ((first_seg->packet_type & RTE_PTYPE_L2_MASK)
+-				== RTE_PTYPE_L2_ETHER_TIMESYNC) {
+-			rxq->time_high = rxd.wb.flex_ts.ts_high;
+-			first_seg->timesync = rxq->queue_id;
+-			pkt_flags |= PKT_RX_IEEE1588_PTP;
+-		}
++		rxq->time_high = rxd.wb.flex_ts.ts_high;
++		first_seg->timesync = rxq->queue_id;
++		pkt_flags |= PKT_RX_IEEE1588_PTP;
+ 
+ 		first_seg->ol_flags |= pkt_flags;
+ 		/* Prefetch data of first segment, if configured to do so. */
+@@ -2376,12 +2370,9 @@ ice_recv_pkts(void *rx_queue,
+ 		rxq->rxd_to_pkt_fields(rxq, rxm, &rxd);
+ 		pkt_flags = ice_rxd_error_to_pkt_flags(rx_stat_err0);
+ 
+-		if ((rxm->packet_type & RTE_PTYPE_L2_MASK)
+-				== RTE_PTYPE_L2_ETHER_TIMESYNC) {
+-			rxq->time_high = rxd.wb.flex_ts.ts_high;
+-			rxm->timesync = rxq->queue_id;
+-			pkt_flags |= PKT_RX_IEEE1588_PTP;
+-		}
++		rxq->time_high = rxd.wb.flex_ts.ts_high;
++		rxm->timesync = rxq->queue_id;
++		pkt_flags |= PKT_RX_IEEE1588_PTP;
+ 
+ 		rxm->ol_flags |= pkt_flags;
+ 		/* copy old mbuf to rx_pkts */
+-- 
+2.9.5
+

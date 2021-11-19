@@ -1,0 +1,50 @@
+{
+    "interfaces": [
+        {
+            "name": "0000:4b:00.0",
+            "ip": "192.168.96.188"
+        }
+    ],
+    "tx_sessions": [
+        {
+            "dip": [
+                "239.0.96.189"
+            ],
+            "interface": [
+                0
+            ],
+            "video": [
+                {
+                    "replicas": 1,
+                    "type": "frame",
+                    "pacing": "gap",
+                    "start_port": 20000,
+                    "tr_offset": "default",
+                    "video_format": "i1080p59",
+                    "pg_format": "YUV_422_10bit",
+                    "video_url": "./assets/test.yuv"
+                }
+            ]
+        },
+        {
+            "dip": [
+                "239.0.96.199"
+            ],
+            "interface": [
+                0
+            ],
+            "video": [
+                {
+                    "replicas": 1,
+                    "type": "frame",
+                    "pacing": "gap",
+                    "start_port": 20000,
+                    "tr_offset": "default",
+                    "video_format": "i1080p59",
+                    "pg_format": "YUV_422_10bit",
+                    "video_url": "./assets/test.yuv"
+                }
+            ]
+        }
+    ]
+}

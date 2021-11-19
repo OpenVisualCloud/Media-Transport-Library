@@ -1,0 +1,461 @@
+From 759dfd34654609efa2938d5f8d619d1a3e027515 Mon Sep 17 00:00:00 2001
+From: Ping Yu <ping.yu@intel.com>
+Date: Thu, 16 Sep 2021 15:32:27 +0800
+Subject: [PATCH] update VF rate limit
+
+Signed-off-by: Ping Yu <ping.yu@intel.com>
+---
+ drivers/common/iavf/virtchnl.h |  31 ++++++
+ drivers/net/iavf/iavf.h        |  13 +++
+ drivers/net/iavf/iavf_tm.c     | 189 +++++++++++++++++++++++++++++++--
+ drivers/net/iavf/iavf_vchnl.c  |  23 ++++
+ 4 files changed, 248 insertions(+), 8 deletions(-)
+
+diff --git a/drivers/common/iavf/virtchnl.h b/drivers/common/iavf/virtchnl.h
+index 1cf0866124..0d041bc468 100644
+--- a/drivers/common/iavf/virtchnl.h
++++ b/drivers/common/iavf/virtchnl.h
+@@ -159,6 +159,7 @@ enum virtchnl_ops {
+ 	VIRTCHNL_OP_DISABLE_VLAN_FILTERING_V2 = 59,
+ 	VIRTCHNL_OP_GET_QOS_CAPS = 66,
+ 	VIRTCHNL_OP_CONFIG_QUEUE_TC_MAP = 67,
++	VIRTCHNL_OP_CONFIG_QUEUE_BW = 68,
+ 	VIRTCHNL_OP_ENABLE_QUEUES_V2 = 107,
+ 	VIRTCHNL_OP_DISABLE_QUEUES_V2 = 108,
+ 	VIRTCHNL_OP_MAP_QUEUE_VECTOR = 111,
+@@ -1871,6 +1872,23 @@ struct virtchnl_queue_tc_mapping {
+ 
+ VIRTCHNL_CHECK_STRUCT_LEN(12, virtchnl_queue_tc_mapping);
+ 
++/* VIRTCHNL_OP_CONFIG_QUEUE_BW */
++struct virtchnl_queue_bw {
++	u16 queue_id;
++	u8 pad[2];
++	struct virtchnl_shaper_bw shaper;
++};
++
++VIRTCHNL_CHECK_STRUCT_LEN(12, virtchnl_queue_bw);
++
++struct virtchnl_queues_bw_cfg {
++	u16 vsi_id;
++	u16 num_queues;
++	struct virtchnl_queue_bw cfg[1];
++};
++
++VIRTCHNL_CHECK_STRUCT_LEN(16, virtchnl_queues_bw_cfg);
++
+ /* VIRTCHNL_OP_QUERY_FDIR_FILTER
+  * VF sends this request to PF by filling out vsi_id,
+  * flow_id and reset_counter. PF will return query_info
+@@ -2264,6 +2282,19 @@ virtchnl_vc_validate_vf_msg(struct virtchnl_version_info *ver, u32 v_opcode,
+ 					 sizeof(q_tc->tc[0]);
+ 		}
+ 		break;
++	case VIRTCHNL_OP_CONFIG_QUEUE_BW:
++		valid_len = sizeof(struct virtchnl_queues_bw_cfg);
++		if (msglen >= valid_len) {
++			struct virtchnl_queues_bw_cfg *q_bw =
++				(struct virtchnl_queues_bw_cfg *)msg;
++			if (q_bw->num_queues == 0) {
++				err_msg_format = true;
++				break;
++			}
++			valid_len += (q_bw->num_queues - 1) *
++					 sizeof(q_bw->cfg[0]);
++		}
++		break;
+ 	case VIRTCHNL_OP_GET_OFFLOAD_VLAN_V2_CAPS:
+ 		break;
+ 	case VIRTCHNL_OP_ADD_VLAN_V2:
+diff --git a/drivers/net/iavf/iavf.h b/drivers/net/iavf/iavf.h
+index b3bd078111..f54a417ee5 100644
+--- a/drivers/net/iavf/iavf.h
++++ b/drivers/net/iavf/iavf.h
+@@ -144,11 +144,21 @@ struct iavf_tm_node {
+ 	uint32_t weight;
+ 	uint32_t reference_count;
+ 	struct iavf_tm_node *parent;
++	struct iavf_tm_shaper_profile *shaper_profile;
+ 	struct rte_tm_node_params params;
+ };
+ 
+ TAILQ_HEAD(iavf_tm_node_list, iavf_tm_node);
+ 
++struct iavf_tm_shaper_profile {
++	TAILQ_ENTRY(iavf_tm_shaper_profile) node;
++	uint32_t shaper_profile_id;
++	uint32_t reference_count;
++	struct rte_tm_shaper_params profile;
++};
++
++TAILQ_HEAD(iavf_shaper_profile_list, iavf_tm_shaper_profile);
++
+ /* node type of Traffic Manager */
+ enum iavf_tm_node_type {
+ 	IAVF_TM_NODE_TYPE_PORT,
+@@ -162,6 +172,7 @@ struct iavf_tm_conf {
+ 	struct iavf_tm_node *root; /* root node - vf vsi */
+ 	struct iavf_tm_node_list tc_list; /* node list for all the TCs */
+ 	struct iavf_tm_node_list queue_list; /* node list for all the queues */
++	struct iavf_shaper_profile_list shaper_profile_list;
+ 	uint32_t nb_tc_node;
+ 	uint32_t nb_queue_node;
+ 	bool committed;
+@@ -394,6 +405,8 @@ int iavf_add_del_mc_addr_list(struct iavf_adapter *adapter,
+ int iavf_request_queues(struct iavf_adapter *adapter, uint16_t num);
+ int iavf_get_max_rss_queue_region(struct iavf_adapter *adapter);
+ int iavf_get_qos_cap(struct iavf_adapter *adapter);
++int iavf_set_q_bw(struct rte_eth_dev *dev,
++		struct virtchnl_queues_bw_cfg *q_bw, uint16_t size);
+ int iavf_set_q_tc_map(struct rte_eth_dev *dev,
+ 			struct virtchnl_queue_tc_mapping *q_tc_mapping,
+ 			uint16_t size);
+diff --git a/drivers/net/iavf/iavf_tm.c b/drivers/net/iavf/iavf_tm.c
+index 3c80276ff3..9e188b84b9 100644
+--- a/drivers/net/iavf/iavf_tm.c
++++ b/drivers/net/iavf/iavf_tm.c
+@@ -8,6 +8,13 @@
+ static int iavf_hierarchy_commit(struct rte_eth_dev *dev,
+ 				 __rte_unused int clear_on_fail,
+ 				 __rte_unused struct rte_tm_error *error);
++static int iavf_shaper_profile_add(struct rte_eth_dev *dev,
++			uint32_t shaper_profile_id,
++			struct rte_tm_shaper_params *profile,
++			struct rte_tm_error *error);
++static int iavf_shaper_profile_del(struct rte_eth_dev *dev,
++			uint32_t shaper_profile_id,
++			struct rte_tm_error *error);
+ static int iavf_tm_node_add(struct rte_eth_dev *dev, uint32_t node_id,
+ 	      uint32_t parent_node_id, uint32_t priority,
+ 	      uint32_t weight, uint32_t level_id,
+@@ -30,6 +37,8 @@ static int iavf_node_type_get(struct rte_eth_dev *dev, uint32_t node_id,
+ 		   int *is_leaf, struct rte_tm_error *error);
+ 
+ const struct rte_tm_ops iavf_tm_ops = {
++	.shaper_profile_add = iavf_shaper_profile_add,
++	.shaper_profile_delete = iavf_shaper_profile_del,
+ 	.node_add = iavf_tm_node_add,
+ 	.node_delete = iavf_tm_node_delete,
+ 	.capabilities_get = iavf_tm_capabilities_get,
+@@ -44,6 +53,9 @@ iavf_tm_conf_init(struct rte_eth_dev *dev)
+ {
+ 	struct iavf_info *vf = IAVF_DEV_PRIVATE_TO_VF(dev->data->dev_private);
+ 
++	/* initialize shaper profile list */
++	TAILQ_INIT(&vf->tm_conf.shaper_profile_list);
++
+ 	/* initialize node configuration */
+ 	vf->tm_conf.root = NULL;
+ 	TAILQ_INIT(&vf->tm_conf.tc_list);
+@@ -57,6 +69,7 @@ void
+ iavf_tm_conf_uninit(struct rte_eth_dev *dev)
+ {
+ 	struct iavf_info *vf = IAVF_DEV_PRIVATE_TO_VF(dev->data->dev_private);
++	struct iavf_tm_shaper_profile *shaper_profile;
+ 	struct iavf_tm_node *tm_node;
+ 
+ 	/* clear node configuration */
+@@ -74,6 +87,14 @@ iavf_tm_conf_uninit(struct rte_eth_dev *dev)
+ 		rte_free(vf->tm_conf.root);
+ 		vf->tm_conf.root = NULL;
+ 	}
++
++	/* Remove all shaper profiles */
++	while ((shaper_profile =
++	       TAILQ_FIRST(&vf->tm_conf.shaper_profile_list))) {
++		TAILQ_REMOVE(&vf->tm_conf.shaper_profile_list,
++			     shaper_profile, node);
++		rte_free(shaper_profile);
++	}
+ }
+ 
+ static inline struct iavf_tm_node *
+@@ -132,13 +153,6 @@ iavf_node_param_check(struct iavf_info *vf, uint32_t node_id,
+ 		return -EINVAL;
+ 	}
+ 
+-	/* not support shaper profile */
+-	if (params->shaper_profile_id) {
+-		error->type = RTE_TM_ERROR_TYPE_NODE_PARAMS_SHAPER_PROFILE_ID;
+-		error->message = "shaper profile not supported";
+-		return -EINVAL;
+-	}
+-
+ 	/* not support shared shaper */
+ 	if (params->shared_shaper_id) {
+ 		error->type = RTE_TM_ERROR_TYPE_NODE_PARAMS_SHARED_SHAPER_ID;
+@@ -236,6 +250,23 @@ iavf_node_type_get(struct rte_eth_dev *dev, uint32_t node_id,
+ 	return 0;
+ }
+ 
++static inline struct iavf_tm_shaper_profile *
++iavf_shaper_profile_search(struct rte_eth_dev *dev,
++			   uint32_t shaper_profile_id)
++{
++	struct iavf_info *vf = IAVF_DEV_PRIVATE_TO_VF(dev->data->dev_private);
++	struct iavf_shaper_profile_list *shaper_profile_list =
++		&vf->tm_conf.shaper_profile_list;
++	struct iavf_tm_shaper_profile *shaper_profile;
++
++	TAILQ_FOREACH(shaper_profile, shaper_profile_list, node) {
++		if (shaper_profile_id == shaper_profile->shaper_profile_id)
++			return shaper_profile;
++	}
++
++	return NULL;
++}
++
+ static int
+ iavf_tm_node_add(struct rte_eth_dev *dev, uint32_t node_id,
+ 	      uint32_t parent_node_id, uint32_t priority,
+@@ -246,6 +277,7 @@ iavf_tm_node_add(struct rte_eth_dev *dev, uint32_t node_id,
+ 	struct iavf_info *vf = IAVF_DEV_PRIVATE_TO_VF(dev->data->dev_private);
+ 	enum iavf_tm_node_type node_type = IAVF_TM_NODE_TYPE_MAX;
+ 	enum iavf_tm_node_type parent_node_type = IAVF_TM_NODE_TYPE_MAX;
++	struct iavf_tm_shaper_profile *shaper_profile = NULL;
+ 	struct iavf_tm_node *tm_node;
+ 	struct iavf_tm_node *parent_node;
+ 	uint16_t tc_nb = vf->qos_cap->num_elem;
+@@ -273,6 +305,18 @@ iavf_tm_node_add(struct rte_eth_dev *dev, uint32_t node_id,
+ 		return -EINVAL;
+ 	}
+ 
++	/* check the shaper profile id */
++	if (params->shaper_profile_id != RTE_TM_SHAPER_PROFILE_ID_NONE) {
++		shaper_profile = iavf_shaper_profile_search(dev,
++			params->shaper_profile_id);
++		if (!shaper_profile) {
++			error->type =
++				RTE_TM_ERROR_TYPE_NODE_PARAMS_SHAPER_PROFILE_ID;
++			error->message = "shaper profile not exist";
++			return -EINVAL;
++		}
++	}
++
+ 	/* root node if not have a parent */
+ 	if (parent_node_id == RTE_TM_NODE_ID_NULL) {
+ 		/* check level */
+@@ -358,6 +402,7 @@ iavf_tm_node_add(struct rte_eth_dev *dev, uint32_t node_id,
+ 	tm_node->id = node_id;
+ 	tm_node->reference_count = 0;
+ 	tm_node->parent = parent_node;
++	tm_node->shaper_profile = shaper_profile;
+ 	rte_memcpy(&tm_node->params, params,
+ 			 sizeof(struct rte_tm_node_params));
+ 	if (parent_node_type == IAVF_TM_NODE_TYPE_PORT) {
+@@ -373,6 +418,10 @@ iavf_tm_node_add(struct rte_eth_dev *dev, uint32_t node_id,
+ 	}
+ 	tm_node->parent->reference_count++;
+ 
++	/* increase the reference counter of the shaper profile */
++	if (shaper_profile)
++		shaper_profile->reference_count++;
++
+ 	return 0;
+ }
+ 
+@@ -437,6 +486,103 @@ iavf_tm_node_delete(struct rte_eth_dev *dev, uint32_t node_id,
+ 	return 0;
+ }
+ 
++static int
++iavf_shaper_profile_param_check(struct rte_tm_shaper_params *profile,
++				struct rte_tm_error *error)
++{
++	/* min bucket size not supported */
++	if (profile->committed.size) {
++		error->type = RTE_TM_ERROR_TYPE_SHAPER_PROFILE_COMMITTED_SIZE;
++		error->message = "committed bucket size not supported";
++		return -EINVAL;
++	}
++	/* max bucket size not supported */
++	if (profile->peak.size) {
++		error->type = RTE_TM_ERROR_TYPE_SHAPER_PROFILE_PEAK_SIZE;
++		error->message = "peak bucket size not supported";
++		return -EINVAL;
++	}
++	/* length adjustment not supported */
++	if (profile->pkt_length_adjust) {
++		error->type = RTE_TM_ERROR_TYPE_SHAPER_PROFILE_PKT_ADJUST_LEN;
++		error->message = "packet length adjustment not supported";
++		return -EINVAL;
++	}
++
++	return 0;
++}
++
++static int
++iavf_shaper_profile_add(struct rte_eth_dev *dev,
++			uint32_t shaper_profile_id,
++			struct rte_tm_shaper_params *profile,
++			struct rte_tm_error *error)
++{
++	struct iavf_info *vf = IAVF_DEV_PRIVATE_TO_VF(dev->data->dev_private);
++	struct iavf_tm_shaper_profile *shaper_profile;
++	int ret;
++
++	if (!profile || !error)
++		return -EINVAL;
++
++	ret = iavf_shaper_profile_param_check(profile, error);
++	if (ret)
++		return ret;
++
++	shaper_profile = iavf_shaper_profile_search(dev, shaper_profile_id);
++
++	if (shaper_profile) {
++		error->type = RTE_TM_ERROR_TYPE_SHAPER_PROFILE_ID;
++		error->message = "profile ID exist";
++		return -EINVAL;
++	}
++
++	shaper_profile = rte_zmalloc("iavf_tm_shaper_profile",
++				     sizeof(struct iavf_tm_shaper_profile),
++				     0);
++	if (!shaper_profile)
++		return -ENOMEM;
++	shaper_profile->shaper_profile_id = shaper_profile_id;
++	rte_memcpy(&shaper_profile->profile, profile,
++			 sizeof(struct rte_tm_shaper_params));
++	TAILQ_INSERT_TAIL(&vf->tm_conf.shaper_profile_list,
++			  shaper_profile, node);
++
++	return 0;
++}
++
++static int
++iavf_shaper_profile_del(struct rte_eth_dev *dev,
++			uint32_t shaper_profile_id,
++			struct rte_tm_error *error)
++{
++	struct iavf_info *vf = IAVF_DEV_PRIVATE_TO_VF(dev->data->dev_private);
++	struct iavf_tm_shaper_profile *shaper_profile;
++
++	if (!error)
++		return -EINVAL;
++
++	shaper_profile = iavf_shaper_profile_search(dev, shaper_profile_id);
++
++	if (!shaper_profile) {
++		error->type = RTE_TM_ERROR_TYPE_SHAPER_PROFILE_ID;
++		error->message = "profile ID not exist";
++		return -EINVAL;
++	}
++
++	/* don't delete a profile if it's used by one or several nodes */
++	if (shaper_profile->reference_count) {
++		error->type = RTE_TM_ERROR_TYPE_SHAPER_PROFILE;
++		error->message = "profile in use";
++		return -EINVAL;
++	}
++
++	TAILQ_REMOVE(&vf->tm_conf.shaper_profile_list, shaper_profile, node);
++	rte_free(shaper_profile);
++
++	return 0;
++}
++
+ static int
+ iavf_tm_capabilities_get(struct rte_eth_dev *dev,
+ 			 struct rte_tm_capabilities *cap,
+@@ -656,10 +802,11 @@ static int iavf_hierarchy_commit(struct rte_eth_dev *dev,
+ 	struct iavf_adapter *adapter =
+ 		IAVF_DEV_PRIVATE_TO_ADAPTER(dev->data->dev_private);
+ 	struct virtchnl_queue_tc_mapping *q_tc_mapping;
++	struct virtchnl_queues_bw_cfg *q_bw;
+ 	struct iavf_tm_node_list *queue_list = &vf->tm_conf.queue_list;
+ 	struct iavf_tm_node *tm_node;
+ 	struct iavf_qtc_map *qtc_map;
+-	uint16_t size;
++	uint16_t size, size_q;
+ 	int index = 0, node_committed = 0;
+ 	int i, ret_val = IAVF_SUCCESS;
+ 
+@@ -691,10 +838,21 @@ static int iavf_hierarchy_commit(struct rte_eth_dev *dev,
+ 		goto fail_clear;
+ 	}
+ 
++	size_q = sizeof(*q_bw) + sizeof(q_bw->cfg[0]) *
++		(vf->num_queue_pairs - 1);
++	q_bw = rte_zmalloc("q_bw", size_q, 0);
++	if (!q_bw) {
++		ret_val = IAVF_ERR_NO_MEMORY;
++		goto fail_clear;
++	}
++
+ 	q_tc_mapping->vsi_id = vf->vsi.vsi_id;
+ 	q_tc_mapping->num_tc = vf->qos_cap->num_elem;
+ 	q_tc_mapping->num_queue_pairs = vf->num_queue_pairs;
+ 
++	q_bw->vsi_id = vf->vsi.vsi_id;
++	q_bw->num_queues = vf->num_queue_pairs;
++
+ 	TAILQ_FOREACH(tm_node, queue_list, node) {
+ 		if (tm_node->tc >= q_tc_mapping->num_tc) {
+ 			PMD_DRV_LOG(ERR, "TC%d is not enabled", tm_node->tc);
+@@ -702,6 +860,17 @@ static int iavf_hierarchy_commit(struct rte_eth_dev *dev,
+ 			goto fail_clear;
+ 		}
+ 		q_tc_mapping->tc[tm_node->tc].req.queue_count++;
++
++		if (tm_node->shaper_profile) {
++			q_bw->cfg[node_committed].queue_id = node_committed;
++			q_bw->cfg[node_committed].shaper.peak =
++			tm_node->shaper_profile->profile.peak.rate /
++			1000 * IAVF_BITS_PER_BYTE;
++			q_bw->cfg[node_committed].shaper.committed =
++			tm_node->shaper_profile->profile.committed.rate /
++			1000 * IAVF_BITS_PER_BYTE;
++		}		
++		
+ 		node_committed++;
+ 	}
+ 
+@@ -712,6 +881,10 @@ static int iavf_hierarchy_commit(struct rte_eth_dev *dev,
+ 		goto fail_clear;
+ 	}
+ 
++	ret_val = iavf_set_q_bw(dev, q_bw, size_q);
++	if (ret_val)
++		goto fail_clear;
++
+ 	/* store the queue TC mapping info */
+ 	qtc_map = rte_zmalloc("qtc_map",
+ 		sizeof(struct iavf_qtc_map) * q_tc_mapping->num_tc, 0);
+diff --git a/drivers/net/iavf/iavf_vchnl.c b/drivers/net/iavf/iavf_vchnl.c
+index 06dc663947..0a37413114 100644
+--- a/drivers/net/iavf/iavf_vchnl.c
++++ b/drivers/net/iavf/iavf_vchnl.c
+@@ -1604,6 +1604,29 @@ int iavf_set_q_tc_map(struct rte_eth_dev *dev,
+ 	return err;
+ }
+ 
++int iavf_set_q_bw(struct rte_eth_dev *dev,
++		struct virtchnl_queues_bw_cfg *q_bw, uint16_t size)
++{
++	struct iavf_adapter *adapter =
++			IAVF_DEV_PRIVATE_TO_ADAPTER(dev->data->dev_private);
++	struct iavf_info *vf = IAVF_DEV_PRIVATE_TO_VF(dev->data->dev_private);
++	struct iavf_cmd_info args;
++	int err;
++
++	memset(&args, 0, sizeof(args));
++	args.ops = VIRTCHNL_OP_CONFIG_QUEUE_BW;
++	args.in_args = (uint8_t *)q_bw;
++	args.in_args_size = size;
++	args.out_buffer = vf->aq_resp;
++	args.out_size = IAVF_AQ_BUF_SZ;
++
++	err = iavf_execute_vf_cmd(adapter, &args);
++	if (err)
++		PMD_DRV_LOG(ERR, "Failed to execute command of"
++			    " VIRTCHNL_OP_CONFIG_QUEUE_BW");
++	return err;
++}
++
+ int
+ iavf_add_del_mc_addr_list(struct iavf_adapter *adapter,
+ 			struct rte_ether_addr *mc_addrs,
+-- 
+2.25.1
+

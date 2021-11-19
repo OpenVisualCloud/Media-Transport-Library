@@ -1,0 +1,286 @@
+From f9aa93dd44407ec9dfd22b2bbf634324cbaefe58 Mon Sep 17 00:00:00 2001
+From: Ric Li <ming3.li@intel.com>
+Date: Fri, 5 Nov 2021 17:33:24 +0800
+Subject: [PATCH] enable rx timestamp and fix performance issue
+
+Use the dynamic mbuf to register timestamp field and flag.
+The ice has the feature to dump Rx timestamp value into dynamic
+mbuf field by flex descriptor. This feature is turned on by dev
+config "enable-rx-timestamp". Currently, it's only supported
+under scalar path.
+
+In Rx data path, it reads hardware registers per packet, resulting in
+big performance drop. This patch improves performance from two aspects:
+(1) replace per packet hardware register read by per burst.
+(2) reduce hardware register read time from 3 to 2 when the low value of
+    time is not close to overflow.
+
+From: Simei Su <simei.su@intel.com>
+Signed-off-by: Ric Li <ming3.li@intel.com>
+---
+ drivers/net/ice/ice_ethdev.c          |  6 ++-
+ drivers/net/ice/ice_ethdev.h          |  1 +
+ drivers/net/ice/ice_rxtx.c            | 69 +++++++++++++++++++++++++++
+ drivers/net/ice/ice_rxtx.h            | 47 ++++++++++++++++++
+ drivers/net/ice/ice_rxtx_vec_common.h |  3 ++
+ 5 files changed, 125 insertions(+), 1 deletion(-)
+
+diff --git a/drivers/net/ice/ice_ethdev.c b/drivers/net/ice/ice_ethdev.c
+index ca5ef206d0..f0cd51ddb7 100644
+--- a/drivers/net/ice/ice_ethdev.c
++++ b/drivers/net/ice/ice_ethdev.c
+@@ -35,6 +35,9 @@
+ #define DEFAULT_INCVAL_EXT     0x13b13b13bULL
+ #define ICE_CYCLECOUNTER_MASK  0xffffffffffffffffULL
+ 
++uint64_t ice_timestamp_dynflag;
++int ice_timestamp_dynfield_offset = -1;
++
+ static const char * const ice_valid_args[] = {
+ 	ICE_SAFE_MODE_SUPPORT_ARG,
+ 	ICE_PIPELINE_MODE_SUPPORT_ARG,
+@@ -3512,7 +3515,8 @@ ice_dev_info_get(struct rte_eth_dev *dev, struct rte_eth_dev_info *dev_info)
+ 			DEV_RX_OFFLOAD_QINQ_STRIP |
+ 			DEV_RX_OFFLOAD_OUTER_IPV4_CKSUM |
+ 			DEV_RX_OFFLOAD_VLAN_EXTEND |
+-			DEV_RX_OFFLOAD_RSS_HASH;
++			DEV_RX_OFFLOAD_RSS_HASH |
++			DEV_RX_OFFLOAD_TIMESTAMP;
+ 		dev_info->tx_offload_capa |=
+ 			DEV_TX_OFFLOAD_QINQ_INSERT |
+ 			DEV_TX_OFFLOAD_IPV4_CKSUM |
+diff --git a/drivers/net/ice/ice_ethdev.h b/drivers/net/ice/ice_ethdev.h
+index 5e22a35740..5ac09fa19e 100644
+--- a/drivers/net/ice/ice_ethdev.h
++++ b/drivers/net/ice/ice_ethdev.h
+@@ -532,6 +532,7 @@ struct ice_adapter {
+ 	struct ice_devargs devargs;
+ 	enum ice_pkg_type active_pkg_type; /* loaded ddp package type */
+ 	uint16_t fdir_ref_cnt;
++	uint64_t time_hw;
+ #ifdef RTE_ARCH_X86
+ 	bool rx_use_avx2;
+ 	bool rx_use_avx512;
+diff --git a/drivers/net/ice/ice_rxtx.c b/drivers/net/ice/ice_rxtx.c
+index 1e51c417a3..ee43714455 100644
+--- a/drivers/net/ice/ice_rxtx.c
++++ b/drivers/net/ice/ice_rxtx.c
+@@ -302,6 +302,18 @@ ice_program_hw_rx_queue(struct ice_rx_queue *rxq)
+ 		}
+ 	}
+ 
++	if (rxq->offloads & DEV_RX_OFFLOAD_TIMESTAMP) {
++		/* Register mbuf field and flag for Rx timestamp */
++		err = rte_mbuf_dyn_rx_timestamp_register(
++				&ice_timestamp_dynfield_offset,
++				&ice_timestamp_dynflag);
++		if (err) {
++			PMD_DRV_LOG(ERR,
++				"Cannot register mbuf field/flag for timestamp");
++			return -EINVAL;
++		}
++	}
++
+ 	memset(&rx_ctx, 0, sizeof(rx_ctx));
+ 
+ 	rx_ctx.base = rxq->rx_ring_dma / ICE_QUEUE_BASE_ADDR_UNIT;
+@@ -358,6 +370,9 @@ ice_program_hw_rx_queue(struct ice_rx_queue *rxq)
+ 	regval |= (0x1 << QRXFLXP_CNTXT_TS_S) &
+ 		QRXFLXP_CNTXT_TS_M;
+ 
++	if (rxq->offloads & DEV_RX_OFFLOAD_TIMESTAMP)
++		regval |= QRXFLXP_CNTXT_TS_M;	
++
+ 	ICE_WRITE_REG(hw, QRXFLXP_CNTXT(rxq->reg_idx), regval);
+ 
+ 	err = ice_clear_rxq_ctx(hw, rxq->reg_idx);
+@@ -1551,6 +1566,10 @@ ice_rx_scan_hw_ring(struct ice_rx_queue *rxq)
+ 	int32_t i, j, nb_rx = 0;
+ 	uint64_t pkt_flags = 0;
+ 	uint32_t *ptype_tbl = rxq->vsi->adapter->ptype_tbl;
++	struct ice_vsi *vsi = rxq->vsi;
++	struct ice_hw *hw = ICE_VSI_TO_HW(vsi);
++	uint64_t ts_ns;
++	struct ice_adapter *ad = rxq->vsi->adapter;
+ 
+ 	rxdp = &rxq->rx_ring[rxq->rx_tail];
+ 	rxep = &rxq->sw_ring[rxq->rx_tail];
+@@ -1561,6 +1580,9 @@ ice_rx_scan_hw_ring(struct ice_rx_queue *rxq)
+ 	if (!(stat_err0 & (1 << ICE_RX_FLEX_DESC_STATUS0_DD_S)))
+ 		return 0;
+ 
++	if (rxq->offloads & DEV_RX_OFFLOAD_TIMESTAMP)
++		rxq->hw_register_set = 1;
++
+ 	/**
+ 	 * Scan LOOK_AHEAD descriptors at a time to determine which
+ 	 * descriptors reference packets that are ready to be received.
+@@ -1598,6 +1620,17 @@ ice_rx_scan_hw_ring(struct ice_rx_queue *rxq)
+ 			mb->timesync = rxq->queue_id;
+ 			pkt_flags |= PKT_RX_IEEE1588_PTP;
+ 
++			if (ice_timestamp_dynflag > 0) {
++				ts_ns = ice_rxtx_tstamp_convert_32b_64b(hw, ad,
++					rxq->hw_register_set,
++					rte_le_to_cpu_32(rxdp[j].wb.flex_ts.ts_high));
++				rxq->hw_register_set = 0;
++				*RTE_MBUF_DYNFIELD(mb,
++					ice_timestamp_dynfield_offset,
++					rte_mbuf_timestamp_t *) = ts_ns;
++				mb->ol_flags |= ice_timestamp_dynflag;
++			}			
++
+ 			mb->ol_flags |= pkt_flags;
+ 		}
+ 
+@@ -1781,6 +1814,13 @@ ice_recv_scattered_pkts(void *rx_queue,
+ 	uint64_t dma_addr;
+ 	uint64_t pkt_flags;
+ 	uint32_t *ptype_tbl = rxq->vsi->adapter->ptype_tbl;
++	struct ice_vsi *vsi = rxq->vsi;
++	struct ice_hw *hw = ICE_VSI_TO_HW(vsi);
++	uint64_t ts_ns;
++	struct ice_adapter *ad = rxq->vsi->adapter;
++
++	if (rxq->offloads & DEV_RX_OFFLOAD_TIMESTAMP)
++		rxq->hw_register_set = 1;
+ 
+ 	while (nb_rx < nb_pkts) {
+ 		rxdp = &rx_ring[rx_id];
+@@ -1896,6 +1936,17 @@ ice_recv_scattered_pkts(void *rx_queue,
+ 		first_seg->timesync = rxq->queue_id;
+ 		pkt_flags |= PKT_RX_IEEE1588_PTP;
+ 
++		if (ice_timestamp_dynflag > 0) {
++			ts_ns = ice_rxtx_tstamp_convert_32b_64b(hw, ad,
++				rxq->hw_register_set,
++				rte_le_to_cpu_32(rxd.wb.flex_ts.ts_high));
++			rxq->hw_register_set = 0;
++			*RTE_MBUF_DYNFIELD(first_seg,
++				ice_timestamp_dynfield_offset,
++				rte_mbuf_timestamp_t *) = ts_ns;
++			first_seg->ol_flags |= ice_timestamp_dynflag;
++		}
++
+ 		first_seg->ol_flags |= pkt_flags;
+ 		/* Prefetch data of first segment, if configured to do so. */
+ 		rte_prefetch0(RTE_PTR_ADD(first_seg->buf_addr,
+@@ -2251,6 +2302,13 @@ ice_recv_pkts(void *rx_queue,
+ 	uint64_t dma_addr;
+ 	uint64_t pkt_flags;
+ 	uint32_t *ptype_tbl = rxq->vsi->adapter->ptype_tbl;
++	struct ice_vsi *vsi = rxq->vsi;
++	struct ice_hw *hw = ICE_VSI_TO_HW(vsi);
++	uint64_t ts_ns;
++	struct ice_adapter *ad = rxq->vsi->adapter;
++
++	if (rxq->offloads & DEV_RX_OFFLOAD_TIMESTAMP)
++		rxq->hw_register_set = 1;
+ 
+ 	while (nb_rx < nb_pkts) {
+ 		rxdp = &rx_ring[rx_id];
+@@ -2307,6 +2365,17 @@ ice_recv_pkts(void *rx_queue,
+ 		rxm->timesync = rxq->queue_id;
+ 		pkt_flags |= PKT_RX_IEEE1588_PTP;
+ 
++		if (ice_timestamp_dynflag > 0) {
++			ts_ns = ice_rxtx_tstamp_convert_32b_64b(hw, ad,
++				rxq->hw_register_set,
++				rte_le_to_cpu_32(rxd.wb.flex_ts.ts_high));
++			rxq->hw_register_set = 0;
++			*RTE_MBUF_DYNFIELD(rxm,
++				ice_timestamp_dynfield_offset,
++				rte_mbuf_timestamp_t *) = ts_ns;
++			rxm->ol_flags |= ice_timestamp_dynflag;
++		}
++
+ 		rxm->ol_flags |= pkt_flags;
+ 		/* copy old mbuf to rx_pkts */
+ 		rx_pkts[nb_rx++] = rxm;
+diff --git a/drivers/net/ice/ice_rxtx.h b/drivers/net/ice/ice_rxtx.h
+index 89996d7b3e..8528f50b8f 100644
+--- a/drivers/net/ice/ice_rxtx.h
++++ b/drivers/net/ice/ice_rxtx.h
+@@ -40,6 +40,9 @@
+ 
+ #define ICE_RXDID_COMMS_OVS	22
+ 
++extern uint64_t ice_timestamp_dynflag;
++extern int ice_timestamp_dynfield_offset;
++
+ typedef void (*ice_rx_release_mbufs_t)(struct ice_rx_queue *rxq);
+ typedef void (*ice_tx_release_mbufs_t)(struct ice_tx_queue *txq);
+ typedef void (*ice_rxd_to_pkt_fields_t)(struct ice_rx_queue *rxq,
+@@ -89,6 +92,7 @@ struct ice_rx_queue {
+ 	ice_rxd_to_pkt_fields_t rxd_to_pkt_fields; /* handle FlexiMD by RXDID */
+ 	ice_rx_release_mbufs_t rx_rel_mbufs;
+ 	uint64_t offloads;
++	uint32_t hw_register_set;
+ 
+ 	uint32_t time_high; /* High value of the timestamp */
+ };
+@@ -313,4 +317,47 @@ void ice_fdir_rx_parsing_enable(struct ice_adapter *ad, bool on)
+ 	}
+ }
+ 
++#define ICE_TIMESYNC_REG_WRAP_GUARD_BAND  10000
++
++/* Helper function to convert a 32b nanoseconds timestamp to 64b. */
++static inline
++uint64_t ice_rxtx_tstamp_convert_32b_64b(struct ice_hw *hw, struct ice_adapter *ad,
++				    uint32_t flag, uint32_t in_timestamp)
++{
++	const uint64_t mask = 0xFFFFFFFF;
++	uint32_t hi, lo, lo2, delta;
++	uint64_t ns;
++
++	if (flag) {
++		lo = ICE_READ_REG(hw, GLTSYN_TIME_L(0));
++		hi = ICE_READ_REG(hw, GLTSYN_TIME_H(0));
++
++		/*
++		 * On typical system, the delta between lo and lo2 is ~1000ns,
++		 * so 10000 seems a large-enough but not overly-big guard band.
++		 */
++		if (lo > (UINT32_MAX - ICE_TIMESYNC_REG_WRAP_GUARD_BAND))
++			lo2 = ICE_READ_REG(hw, GLTSYN_TIME_L(0));
++		else
++			lo2 = lo;
++
++		if (lo2 < lo) {
++			lo = ICE_READ_REG(hw, GLTSYN_TIME_L(0));
++			hi = ICE_READ_REG(hw, GLTSYN_TIME_H(0));
++		}
++
++		ad->time_hw = ((uint64_t)hi << 32) | lo;
++	}
++
++	delta = (in_timestamp - (uint32_t)(ad->time_hw & mask));
++	if (delta > (mask / 2)) {
++		delta = ((uint32_t)(ad->time_hw & mask) - in_timestamp);
++		ns = ad->time_hw - delta;	
++	} else {
++		ns = ad->time_hw + delta;
++	}
++
++	return ns;
++}
++
+ #endif /* _ICE_RXTX_H_ */
+diff --git a/drivers/net/ice/ice_rxtx_vec_common.h b/drivers/net/ice/ice_rxtx_vec_common.h
+index 2d8ef7dc8a..5b5250565e 100644
+--- a/drivers/net/ice/ice_rxtx_vec_common.h
++++ b/drivers/net/ice/ice_rxtx_vec_common.h
+@@ -287,6 +287,9 @@ ice_rx_vec_queue_default(struct ice_rx_queue *rxq)
+ 	if (rxq->proto_xtr != PROTO_XTR_NONE)
+ 		return -1;
+ 
++	if (rxq->offloads & DEV_RX_OFFLOAD_TIMESTAMP)
++		return -1;
++
+ 	if (rxq->offloads & ICE_RX_VECTOR_OFFLOAD)
+ 		return ICE_VECTOR_OFFLOAD_PATH;
+ 
+-- 
+2.25.1
+

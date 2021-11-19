@@ -1,0 +1,28 @@
+From ebd299b3084d98d1abad8fc99fd852045e0cb285 Mon Sep 17 00:00:00 2001
+From: Ting Xu <ting.xu@intel.com>
+Date: Sun, 26 Sep 2021 07:34:09 +0000
+Subject: [PATCH] net/iavf: add capability for runtime rx/tx queue setup
+
+Signed-off-by: Ting Xu <ting.xu@intel.com>
+---
+ drivers/net/iavf/iavf_ethdev.c | 4 ++++
+ 1 file changed, 4 insertions(+)
+
+diff --git a/drivers/net/iavf/iavf_ethdev.c b/drivers/net/iavf/iavf_ethdev.c
+index 574cfe055e..010ad12ab7 100644
+--- a/drivers/net/iavf/iavf_ethdev.c
++++ b/drivers/net/iavf/iavf_ethdev.c
+@@ -970,6 +970,10 @@ iavf_dev_info_get(struct rte_eth_dev *dev, struct rte_eth_dev_info *dev_info)
+ 		DEV_TX_OFFLOAD_MULTI_SEGS |
+ 		DEV_TX_OFFLOAD_MBUF_FAST_FREE;
+ 
++	dev_info->dev_capa =
++		RTE_ETH_DEV_CAPA_RUNTIME_RX_QUEUE_SETUP |
++		RTE_ETH_DEV_CAPA_RUNTIME_TX_QUEUE_SETUP;
++
+ 	if (vf->vf_res->vf_cap_flags & VIRTCHNL_VF_OFFLOAD_CRC)
+ 		dev_info->rx_offload_capa |= DEV_RX_OFFLOAD_KEEP_CRC;
+ 
+-- 
+2.25.1
+

@@ -1,0 +1,918 @@
+From cebe91824a6e61beb957beb0d7e913e43efa9316 Mon Sep 17 00:00:00 2001
+From: Ping Yu <ping.yu@intel.com>
+Date: Thu, 16 Sep 2021 15:15:29 +0800
+Subject: [PATCH] update ice 1588 timesync based on 21.08
+
+Signed-off-by: Ping Yu <ping.yu@intel.com>
+---
+ drivers/net/ice/base/ice_common.c   | 112 ++++++++++++
+ drivers/net/ice/base/ice_common.h   |   9 +
+ drivers/net/ice/base/ice_controlq.c |   2 +-
+ drivers/net/ice/base/ice_type.h     |   1 +
+ drivers/net/ice/ice_ethdev.c        | 263 ++++++++++++++++++++++++++++
+ drivers/net/ice/ice_ethdev.h        |   6 +
+ drivers/net/ice/ice_ptp.c           | 198 +++++++++++++++++++++
+ drivers/net/ice/ice_ptp.h           |  46 +++++
+ drivers/net/ice/ice_rxtx.c          |  39 ++++-
+ drivers/net/ice/ice_rxtx.h          |   2 +
+ drivers/net/ice/meson.build         |   1 +
+ 11 files changed, 677 insertions(+), 2 deletions(-)
+ create mode 100644 drivers/net/ice/ice_ptp.c
+ create mode 100644 drivers/net/ice/ice_ptp.h
+
+diff --git a/drivers/net/ice/base/ice_common.c b/drivers/net/ice/base/ice_common.c
+index 51fca7b166..83e526ace0 100644
+--- a/drivers/net/ice/base/ice_common.c
++++ b/drivers/net/ice/base/ice_common.c
+@@ -1350,6 +1350,118 @@ ice_clear_tx_drbell_q_ctx(struct ice_hw *hw, u32 tx_drbell_q_index)
+ 	return ICE_SUCCESS;
+ }
+ 
++/**
++ * ice_is_generic_mac
++ * @hw: pointer to the hardware structure
++ *
++ * returns true if mac_type is ICE_MAC_GENERIC, false if not
++ */
++bool ice_is_generic_mac(struct ice_hw *hw)
++{
++	return hw->mac_type == ICE_MAC_GENERIC;
++}
++
++/*(
++ * ice_get_sbq - returns the right control queue to use for sideband
++ * @hw: pointer to the hardware structure
++ */
++static struct ice_ctl_q_info *ice_get_sbq(struct ice_hw *hw)
++{
++	if (!ice_is_generic_mac(hw))
++		return &hw->adminq;
++	return &hw->sbq;
++}
++
++/**
++ * ice_sbq_send_cmd - send Sideband Queue command to Sideband Queue
++ * @hw: pointer to the HW struct
++ * @desc: descriptor describing the command
++ * @buf: buffer to use for indirect commands (NULL for direct commands)
++ * @buf_size: size of buffer for indirect commands (0 for direct commands)
++ * @cd: pointer to command details structure
++ */
++static enum ice_status
++ice_sbq_send_cmd(struct ice_hw *hw, struct ice_sbq_cmd_desc *desc,
++		 void *buf, u16 buf_size, struct ice_sq_cd *cd)
++{
++	return ice_sq_send_cmd(hw, ice_get_sbq(hw), (struct ice_aq_desc *)desc,
++			       buf, buf_size, cd);
++}
++
++/**
++ * ice_sbq_send_cmd_nolock - send Sideband Queue command to Sideband Queue
++ * 			     but do not lock sq_lock
++ * @hw: pointer to the HW struct
++ * @desc: descriptor describing the command
++ * @buf: buffer to use for indirect commands (NULL for direct commands)
++ * @buf_size: size of buffer for indirect commands (0 for direct commands)
++ * @cd: pointer to command details structure
++ */
++static enum ice_status
++ice_sbq_send_cmd_nolock(struct ice_hw *hw, struct ice_sbq_cmd_desc *desc,
++			void *buf, u16 buf_size, struct ice_sq_cd *cd)
++{
++	return ice_sq_send_cmd_nolock(hw, ice_get_sbq(hw),
++				      (struct ice_aq_desc *)desc, buf,
++				      buf_size, cd);
++}
++
++/**
++ * ice_sbq_rw_reg_lp - Fill Sideband Queue command, with lock parameter
++ * @hw: pointer to the HW struct
++ * @in: message info to be filled in descriptor
++ * @lock: true to lock the sq_lock (the usual case); false if the sq_lock has
++ * already been locked at a higher level
++ */
++enum ice_status ice_sbq_rw_reg_lp(struct ice_hw *hw,
++				  struct ice_sbq_msg_input *in, bool lock)
++{
++	struct ice_sbq_cmd_desc desc = {0};
++	struct ice_sbq_msg_req msg = {0};
++	enum ice_status status;
++	u16 msg_len;
++
++	msg_len = sizeof(msg);
++
++	msg.dest_dev = in->dest_dev;
++	msg.opcode = in->opcode;
++	msg.flags = ICE_SBQ_MSG_FLAGS;
++	msg.sbe_fbe = ICE_SBQ_MSG_SBE_FBE;
++	msg.msg_addr_low = CPU_TO_LE16(in->msg_addr_low);
++	msg.msg_addr_high = CPU_TO_LE32(in->msg_addr_high);
++
++	if (in->opcode)
++		msg.data = CPU_TO_LE32(in->data);
++	else
++		/* data read comes back in completion, so shorten the struct by
++		 * sizeof(msg.data)
++		 */
++		msg_len -= sizeof(msg.data);
++
++	desc.flags = CPU_TO_LE16(ICE_AQ_FLAG_RD);
++	desc.opcode = CPU_TO_LE16(ice_sbq_opc_neigh_dev_req);
++	desc.param0.cmd_len = CPU_TO_LE16(msg_len);
++	if (lock)
++		status = ice_sbq_send_cmd(hw, &desc, &msg, msg_len, NULL);
++	else
++		status = ice_sbq_send_cmd_nolock(hw, &desc, &msg, msg_len, NULL);
++
++	if (!status && !in->opcode)
++		in->data = LE32_TO_CPU
++			(((struct ice_sbq_msg_cmpl *)&msg)->data);
++	return status;
++}
++
++/**
++ * ice_sbq_rw_reg - Fill Sideband Queue command
++ * @hw: pointer to the HW struct
++ * @in: message info to be filled in descriptor
++ */
++enum ice_status ice_sbq_rw_reg(struct ice_hw *hw, struct ice_sbq_msg_input *in)
++{
++	return ice_sbq_rw_reg_lp(hw, in, true);
++}
++
+ /* FW Admin Queue command wrappers */
+ 
+ /**
+diff --git a/drivers/net/ice/base/ice_common.h b/drivers/net/ice/base/ice_common.h
+index 22ea89cbbb..e87241a324 100644
+--- a/drivers/net/ice/base/ice_common.h
++++ b/drivers/net/ice/base/ice_common.h
+@@ -10,6 +10,7 @@
+ #include "ice_flex_pipe.h"
+ #include "ice_switch.h"
+ #include "ice_fdir.h"
++#include "ice_sbq_cmd.h"
+ 
+ #define ICE_SQ_SEND_DELAY_TIME_MS	10
+ #define ICE_SQ_SEND_MAX_EXECUTE		3
+@@ -54,6 +55,10 @@ enum ice_status
+ ice_sq_send_cmd(struct ice_hw *hw, struct ice_ctl_q_info *cq,
+ 		struct ice_aq_desc *desc, void *buf, u16 buf_size,
+ 		struct ice_sq_cd *cd);
++enum ice_status
++ice_sq_send_cmd_nolock(struct ice_hw *hw, struct ice_ctl_q_info *cq,
++		       struct ice_aq_desc *desc, void *buf, u16 buf_size,
++		       struct ice_sq_cd *cd);
+ void ice_clear_pxe_mode(struct ice_hw *hw);
+ 
+ enum ice_status ice_get_caps(struct ice_hw *hw);
+@@ -250,4 +255,8 @@ ice_aq_write_i2c(struct ice_hw *hw, struct ice_aqc_link_topo_addr topo_addr,
+ 		 u16 bus_addr, __le16 addr, u8 params, u8 *data,
+ 		 struct ice_sq_cd *cd);
+ bool ice_fw_supports_report_dflt_cfg(struct ice_hw *hw);
++enum ice_status ice_sbq_rw_reg(struct ice_hw *hw, struct ice_sbq_msg_input *in);
++enum ice_status ice_sbq_rw_reg_lp(struct ice_hw *hw,
++				  struct ice_sbq_msg_input *in, bool lock);
++bool ice_is_generic_mac(struct ice_hw *hw);
+ #endif /* _ICE_COMMON_H_ */
+diff --git a/drivers/net/ice/base/ice_controlq.c b/drivers/net/ice/base/ice_controlq.c
+index 93f7bc0274..25cbdf9c19 100644
+--- a/drivers/net/ice/base/ice_controlq.c
++++ b/drivers/net/ice/base/ice_controlq.c
+@@ -882,7 +882,7 @@ static bool ice_sq_done(struct ice_hw *hw, struct ice_ctl_q_info *cq)
+  * This is the main send command routine for the ATQ. It runs the queue,
+  * cleans the queue, etc.
+  */
+-static enum ice_status
++enum ice_status
+ ice_sq_send_cmd_nolock(struct ice_hw *hw, struct ice_ctl_q_info *cq,
+ 		       struct ice_aq_desc *desc, void *buf, u16 buf_size,
+ 		       struct ice_sq_cd *cd)
+diff --git a/drivers/net/ice/base/ice_type.h b/drivers/net/ice/base/ice_type.h
+index 2644d5db73..8e9366c12e 100644
+--- a/drivers/net/ice/base/ice_type.h
++++ b/drivers/net/ice/base/ice_type.h
+@@ -945,6 +945,7 @@ struct ice_hw {
+ 	/* Control Queue info */
+ 	struct ice_ctl_q_info adminq;
+ 	struct ice_ctl_q_info mailboxq;
++	struct ice_ctl_q_info sbq;
+ 	/* Additional function to send AdminQ command */
+ 	int (*aq_send_cmd_fn)(void *param, struct ice_aq_desc *desc,
+ 			      void *buf, u16 buf_size);
+diff --git a/drivers/net/ice/ice_ethdev.c b/drivers/net/ice/ice_ethdev.c
+index a4cd39c954..677f6cf75e 100644
+--- a/drivers/net/ice/ice_ethdev.c
++++ b/drivers/net/ice/ice_ethdev.c
+@@ -23,6 +23,7 @@
+ #include "ice_ethdev.h"
+ #include "ice_rxtx.h"
+ #include "ice_generic_flow.h"
++#include "ice_ptp.h"
+ 
+ /* devargs */
+ #define ICE_SAFE_MODE_SUPPORT_ARG "safe-mode-support"
+@@ -30,6 +31,10 @@
+ #define ICE_PROTO_XTR_ARG         "proto_xtr"
+ #define ICE_HW_DEBUG_MASK_ARG     "hw_debug_mask"
+ 
++/* timesync values. */
++#define DEFAULT_INCVAL_EXT     0x13b13b13bULL
++#define ICE_CYCLECOUNTER_MASK  0xffffffffffffffffULL
++
+ static const char * const ice_valid_args[] = {
+ 	ICE_SAFE_MODE_SUPPORT_ARG,
+ 	ICE_PIPELINE_MODE_SUPPORT_ARG,
+@@ -141,6 +146,18 @@ static int ice_dev_udp_tunnel_port_add(struct rte_eth_dev *dev,
+ 			struct rte_eth_udp_tunnel *udp_tunnel);
+ static int ice_dev_udp_tunnel_port_del(struct rte_eth_dev *dev,
+ 			struct rte_eth_udp_tunnel *udp_tunnel);
++static int ice_timesync_enable(struct rte_eth_dev *dev);
++static int ice_timesync_read_rx_timestamp(struct rte_eth_dev *dev,
++					  struct timespec *timestamp,
++					  uint32_t flags); 
++static int ice_timesync_read_tx_timestamp(struct rte_eth_dev *dev,
++					  struct timespec *timestamp);
++static int ice_timesync_adjust_time(struct rte_eth_dev *dev, int64_t delta);
++static int ice_timesync_read_time(struct rte_eth_dev *dev,
++				 struct timespec *timestamp);
++static int ice_timesync_write_time(struct rte_eth_dev *dev,
++				   const struct timespec *timestamp);
++static int ice_timesync_disable(struct rte_eth_dev *dev);
+ 
+ static const struct rte_pci_id pci_id_ice_map[] = {
+ 	{ RTE_PCI_DEVICE(ICE_INTEL_VENDOR_ID, ICE_DEV_ID_E823L_BACKPLANE) },
+@@ -224,6 +241,13 @@ static const struct eth_dev_ops ice_eth_dev_ops = {
+ 	.udp_tunnel_port_del          = ice_dev_udp_tunnel_port_del,
+ 	.tx_done_cleanup              = ice_tx_done_cleanup,
+ 	.get_monitor_addr             = ice_get_monitor_addr,
++	.timesync_enable              = ice_timesync_enable,
++	.timesync_read_rx_timestamp   = ice_timesync_read_rx_timestamp,
++	.timesync_read_tx_timestamp   = ice_timesync_read_tx_timestamp,
++	.timesync_adjust_time         = ice_timesync_adjust_time,
++	.timesync_read_time           = ice_timesync_read_time,
++	.timesync_write_time	      = ice_timesync_write_time,
++	.timesync_disable	      = ice_timesync_disable,
+ };
+ 
+ /* store statistics names and its offset in stats structure */
+@@ -5280,6 +5304,245 @@ ice_dev_udp_tunnel_port_del(struct rte_eth_dev *dev,
+ 	return ret;
+ }
+ 
++static int
++ice_timesync_enable(struct rte_eth_dev *dev)
++{
++	struct ice_hw *hw = ICE_DEV_PRIVATE_TO_HW(dev->data->dev_private);
++	struct ice_pf *pf = ICE_DEV_PRIVATE_TO_PF(dev->data->dev_private);
++	struct ice_adapter *ad = ICE_DEV_PRIVATE_TO_ADAPTER(dev->data->dev_private);
++	uint64_t incval = DEFAULT_INCVAL_EXT;
++	uint32_t reg, high, low;
++	int ret;
++
++	/* Clear timesync registers */
++	ICE_WRITE_REG(hw, GLTSYN_SYNC_DLAY, 0);
++
++	reg = ICE_READ_REG(hw, GLTSYN_STAT(0));
++	reg &= 0xFFFFFF08;
++	ICE_WRITE_REG(hw, GLTSYN_STAT(0), reg);
++
++	reg = ICE_READ_REG(hw, GLINT_TSYN_PHY);
++	reg &= 0xFFFFFFE0;
++	ICE_WRITE_REG(hw, GLINT_TSYN_PHY, reg);
++
++	/* Disable TX timestamp interrupt */
++	reg = ICE_READ_REG(hw, PFINT_OICR_ENA);
++	reg &= ~PFINT_OICR_TSYN_TX_M;
++	ICE_WRITE_REG(hw, PFINT_OICR_ENA, reg);
++
++	/* Enable source clock */
++	ICE_WRITE_REG(hw, GLTSYN_ENA(0), GLTSYN_ENA_TSYN_ENA_M);
++
++	/* Enable PHY time sync */
++	ret = ice_phy_port_reg_write_ext(pf, ETH_GLTSYN_ENA(0),
++					 GLTSYN_ENA_TSYN_ENA_M);
++	if (ret)
++		PMD_DRV_LOG(ERR, "PTP failed\n");
++
++	incval = DEFAULT_INCVAL_EXT;
++	/* Write the increment time value to PHY */
++	/* Shadow Adjust */
++	ICE_WRITE_REG(hw, GLTSYN_SHADJ_L(0), (uint32_t)(incval & 0xFFFFFFFF));
++	ICE_WRITE_REG(hw, GLTSYN_SHADJ_H(0), (uint32_t)(incval >> 32));
++
++	/* Phy Clks */
++	/* Fill Rx and Tx ports and send msg to PHY */
++	low = (uint32_t)(incval & 0xFFFFFFFF);
++	high = (uint32_t)(incval >> 32);
++	ret = ice_phy_port_reg_write_ext(pf, ETH_GLTSYN_SHADJ_L(0), low);
++	if (!ret)
++		ret = ice_phy_port_reg_write_ext(pf, ETH_GLTSYN_SHADJ_H(0), high);
++	if (ret)
++		PMD_DRV_LOG(ERR, "PTP failed in external port register write\n");
++
++	/* Request HW to load the above shadow register to real timers */
++	ret = ice_ptp_tmr_cmd(pf, INIT_INCVAL);
++	if (ret)
++		PMD_DRV_LOG(ERR, "PTP failed in external port register write\n");
++
++	/* Request HW to load the above shadow register to real timers */
++	ret = ice_ptp_tmr_cmd(pf, INIT_INCVAL);
++	if (ret)
++		PMD_DRV_LOG(ERR, "PTP failed in timer cmd\n");
++
++	/* Initialize cycle counters for system time/RX timestamp/TX timestamp */
++	memset(&ad->systime_tc, 0, sizeof(struct rte_timecounter));
++	memset(&ad->rx_tstamp_tc, 0, sizeof(struct rte_timecounter));
++	memset(&ad->tx_tstamp_tc, 0, sizeof(struct rte_timecounter));
++
++	ad->systime_tc.cc_mask = ICE_CYCLECOUNTER_MASK;
++	ad->systime_tc.cc_shift = 0;
++	ad->systime_tc.nsec_mask = 0;
++
++	ad->rx_tstamp_tc.cc_mask = ICE_CYCLECOUNTER_MASK;
++	ad->rx_tstamp_tc.cc_shift = 0;
++	ad->rx_tstamp_tc.nsec_mask = 0;
++
++	ad->tx_tstamp_tc.cc_mask = ICE_CYCLECOUNTER_MASK;
++	ad->tx_tstamp_tc.cc_shift = 0;
++	ad->tx_tstamp_tc.nsec_mask = 0;
++
++	return 0;
++}
++
++static uint64_t
++ice_read_systime(struct ice_hw *hw)
++{
++	uint32_t hi, lo, lo2;
++	uint64_t systime;
++
++	lo = ICE_READ_REG(hw, GLTSYN_TIME_L(0));
++	hi = ICE_READ_REG(hw, GLTSYN_TIME_H(0));
++	lo2 = ICE_READ_REG(hw, GLTSYN_TIME_L(0));
++
++	if (lo2 < lo) {
++		lo = ICE_READ_REG(hw, GLTSYN_TIME_L(0));
++		hi = ICE_READ_REG(hw, GLTSYN_TIME_H(0));
++	}
++
++	systime = ((uint64_t)hi << 32) | lo;
++
++	return systime;
++}
++
++static uint64_t
++ice_tstamp_convert_32b_64b(uint64_t systime, uint64_t timestamp)
++{
++	const uint64_t mask = 0xFFFFFFFF;
++	uint32_t delta;
++	uint64_t ns;
++
++	delta = (timestamp - (uint32_t)(systime & mask));
++
++	if (delta > (mask / 2)) {
++		delta = ((uint32_t)(systime & mask) - timestamp);
++		ns = systime - delta;
++	} else {
++		ns = systime + delta;
++	}
++
++	return ns;
++}
++
++static int
++ice_timesync_read_rx_timestamp(struct rte_eth_dev *dev,
++			       struct timespec *timestamp, uint32_t flags)
++{
++	struct ice_hw *hw = ICE_DEV_PRIVATE_TO_HW(dev->data->dev_private);
++	struct ice_adapter *ad = ICE_DEV_PRIVATE_TO_ADAPTER(dev->data->dev_private);
++	struct ice_rx_queue *rxq;
++
++	uint32_t ts_high;
++	uint64_t ts_ns, ns, systime;
++
++	rxq = dev->data->rx_queues[flags];
++
++	systime = ice_read_systime(hw);
++
++	ts_high = rxq->time_high;
++	ts_ns = ice_tstamp_convert_32b_64b(systime, ts_high);
++	ns = rte_timecounter_update(&ad->rx_tstamp_tc, ts_ns);
++	*timestamp = rte_ns_to_timespec(ns);
++
++	return 0;
++}
++
++static int
++ice_timesync_read_tx_timestamp(struct rte_eth_dev *dev, struct timespec *timestamp)
++{
++	struct ice_hw *hw = ICE_DEV_PRIVATE_TO_HW(dev->data->dev_private);
++	struct ice_pf *pf = ICE_DEV_PRIVATE_TO_PF(dev->data->dev_private);
++	struct ice_adapter *ad = ICE_DEV_PRIVATE_TO_ADAPTER(dev->data->dev_private);
++	uint8_t lport;
++	uint32_t addr, val, ts_low, ts_high;
++	uint64_t systime, ts_ns, ns;
++	int ret;
++	const uint64_t mask = 0xFFFFFFFF;
++
++	lport = hw->port_info->lport;
++
++	/* Read the low timestamp first */
++	addr = TS_EXT(LOW_TX_MEMORY_BANK_START, lport, 0);
++	ret = ice_phy_quad_reg_read_ext(pf, addr, &val);
++	if (ret)
++		PMD_DRV_LOG(ERR, "PTP failed in external phy quard register read\n");
++
++	ts_low = val;
++
++	/* Read the high timestamp next */
++	addr = TS_EXT(HIGH_TX_MEMORY_BANK_START, lport, 0);
++	ret = ice_phy_quad_reg_read_ext(pf, addr, &val);
++	if (ret)
++		PMD_DRV_LOG(ERR, "PTP failed in external phy quard register read\n");
++
++	ts_high = val;
++	ts_ns = (((uint64_t)ts_high) << 32) | (uint64_t)ts_low;
++
++	systime = ice_read_systime(hw);
++	ts_ns = ice_tstamp_convert_32b_64b(systime, (ts_ns >> 8) & mask);
++	ns = rte_timecounter_update(&ad->tx_tstamp_tc, ts_ns);
++	*timestamp = rte_ns_to_timespec(ns);
++
++	return 0;
++}
++
++static int
++ice_timesync_adjust_time(struct rte_eth_dev *dev, int64_t delta)
++{
++	struct ice_adapter *ad = ICE_DEV_PRIVATE_TO_ADAPTER(dev->data->dev_private);
++
++	ad->systime_tc.nsec += delta;
++	ad->rx_tstamp_tc.nsec += delta;
++	ad->tx_tstamp_tc.nsec += delta;
++
++	return 0;
++}
++
++static int
++ice_timesync_read_time(struct rte_eth_dev *dev, struct timespec *ts)
++{
++	struct ice_hw *hw = ICE_DEV_PRIVATE_TO_HW(dev->data->dev_private);
++	struct ice_adapter *ad = ICE_DEV_PRIVATE_TO_ADAPTER(dev->data->dev_private);
++	uint64_t systime, ns;
++
++	systime = ice_read_systime(hw);
++	ns = rte_timecounter_update(&ad->systime_tc, systime);
++	*ts = rte_ns_to_timespec(ns);
++
++	return 0;
++}
++
++static int
++ice_timesync_write_time(struct rte_eth_dev *dev, const struct timespec *ts)
++{
++	struct ice_adapter *ad = ICE_DEV_PRIVATE_TO_ADAPTER(dev->data->dev_private);
++	uint64_t ns;
++
++	ns = rte_timespec_to_ns(ts);
++
++	ad->systime_tc.nsec = ns;
++	ad->rx_tstamp_tc.nsec = ns;
++	ad->tx_tstamp_tc.nsec = ns;
++
++	return 0;
++}
++
++static int
++ice_timesync_disable(struct rte_eth_dev *dev)
++{
++	struct ice_hw *hw = ICE_DEV_PRIVATE_TO_HW(dev->data->dev_private);
++	uint64_t val;
++
++	val = ICE_READ_REG(hw, GLTSYN_ENA(0));
++	val &= ~GLTSYN_ENA_TSYN_ENA_M;
++	ICE_WRITE_REG(hw, GLTSYN_ENA(0), val);
++
++	ICE_WRITE_REG(hw, GLTSYN_INCVAL_L(0), 0);
++	ICE_WRITE_REG(hw, GLTSYN_INCVAL_H(0), 0);
++
++	return 0;
++}
++
+ static int
+ ice_pci_probe(struct rte_pci_driver *pci_drv __rte_unused,
+ 	      struct rte_pci_device *pci_dev)
+diff --git a/drivers/net/ice/ice_ethdev.h b/drivers/net/ice/ice_ethdev.h
+index edafdf168b..abab08436d 100644
+--- a/drivers/net/ice/ice_ethdev.h
++++ b/drivers/net/ice/ice_ethdev.h
+@@ -6,6 +6,7 @@
+ #define _ICE_ETHDEV_H_
+ 
+ #include <rte_kvargs.h>
++#include <rte_time.h>
+ 
+ #include <ethdev_driver.h>
+ 
+@@ -492,6 +493,11 @@ struct ice_adapter {
+ 	bool tx_use_avx2;
+ 	bool tx_use_avx512;
+ #endif
++         /* For PTP */
++        struct rte_timecounter systime_tc;
++        struct rte_timecounter rx_tstamp_tc;
++        struct rte_timecounter tx_tstamp_tc;
++
+ };
+ 
+ struct ice_vsi_vlan_pvid_info {
+diff --git a/drivers/net/ice/ice_ptp.c b/drivers/net/ice/ice_ptp.c
+new file mode 100644
+index 0000000000..72b7568b50
+--- /dev/null
++++ b/drivers/net/ice/ice_ptp.c
+@@ -0,0 +1,198 @@
++#include "ice_ethdev.h"
++#include "base/ice_sbq_cmd.h"
++#include "base/ice_type.h"
++#include "base/ice_common.h"
++#include "ice_ptp.h"
++
++/**
++ * ice_ptp_send_msg_to_phy_ext - Send sbq message to external PHY
++ * @pf: Board private structure
++ * @phy_msg: Message to be sent to PHY
++ *
++ * Send a message to external PHY using sbq command
++ */
++static int ice_ptp_send_msg_to_phy_ext(struct ice_pf *pf, struct ice_sbq_msg_input *phy_msg)
++{
++	struct ice_hw *hw = ICE_PF_TO_HW(pf);
++	enum ice_status status;
++
++	phy_msg->dest_dev = rmn_0;
++	status = ice_sbq_rw_reg(hw, phy_msg);
++	if (status)
++		PMD_DRV_LOG(ERR, "PTP failed to send msg to phy %d\n", status);
++
++	return 0;
++}
++
++/**
++ * ice_phy_port_reg_read_ext - Read an external PHY port register
++ * @pf: The PF private structure
++ * @addr: Address of the register
++ * @val: Pointer to the value to read (out param)
++ */
++static enum ice_status
++ice_phy_port_reg_read_ext(struct ice_pf *pf, uint32_t addr, uint32_t *val)
++{
++	struct ice_sbq_msg_input phy_msg;
++	enum ice_status status;
++
++	phy_msg.msg_addr_low = ICE_LO_WORD(addr);
++	phy_msg.msg_addr_high = ICE_HI_WORD(addr);
++	phy_msg.opcode = ice_sbq_msg_rd;
++
++	status = ice_ptp_send_msg_to_phy_ext(pf, &phy_msg);
++	if (status)
++		return status;
++
++	*val = phy_msg.data;
++
++	return 0;
++}
++
++/**
++ * ice_phy_port_reg_write_ext - Write an external PHY port register
++ * @pf: The PF private structure
++ * @addr: Address of the register
++ * @val: Value to write
++ */
++int ice_phy_port_reg_write_ext(struct ice_pf *pf, uint32_t addr, uint32_t val)
++{
++	struct ice_sbq_msg_input phy_msg;
++
++	phy_msg.msg_addr_low = ICE_LO_WORD(addr);
++	phy_msg.msg_addr_high = ICE_HI_WORD(addr);
++	phy_msg.opcode = ice_sbq_msg_wr;
++	phy_msg.data = val;
++
++	return ice_ptp_send_msg_to_phy_ext(pf, &phy_msg);
++}
++
++/**
++ * ice_phy_quad_reg_read_ext - Read an external PHY quad register
++ * @pf: The PF private structure
++ * @addr: Address of the register
++ * @val: Pointer to the value to read (out param)
++ */
++int ice_phy_quad_reg_read_ext(struct ice_pf *pf, uint32_t addr, uint32_t *val)
++{
++	struct ice_sbq_msg_input phy_msg;
++	enum ice_status status;
++
++	phy_msg.msg_addr_low = ICE_LO_WORD(addr);
++	phy_msg.msg_addr_high = ICE_HI_WORD(addr);
++	phy_msg.opcode = ice_sbq_msg_rd;
++
++	status = ice_ptp_send_msg_to_phy_ext(pf, &phy_msg);
++	if (!status)
++		*val = phy_msg.data;
++
++	return status;
++}
++
++/**
++ * ice_ptp_port_cmd_ext - Utility function to fill port command registers
++ * @pf: The PF private structure
++ * @cmd: Command to be sent to the port
++ *
++ * Utility function for filling external PHY command registers
++ */
++static enum
++ice_status ice_ptp_port_cmd_ext(struct ice_pf *pf, __rte_unused enum tmr_cmd cmd)
++{
++	enum ice_status status;
++	uint32_t cmd_val = 0, val = 0;
++
++	switch (cmd) {
++	case INIT_INCVAL:
++		cmd_val = 0x10;
++		break;
++	case ADJ_TIME:
++		cmd_val = 0x100;
++		break;
++	case INIT_TIME:
++	case ADJ_TIME_AT_TIME:
++	case READ_TIME:
++		cmd_val = 0x0;
++		break;
++	default:
++		break;
++	}
++
++	/* Read, modify, write */
++	status = ice_phy_port_reg_read_ext(pf, ETH_GLTSYN_CMD, &val);
++
++	/* Modify necessary bits only and perform write */
++	val &= ~0xFF;
++	val |= cmd_val;
++	status = ice_phy_port_reg_write_ext(pf, ETH_GLTSYN_CMD, val);
++
++	return status;
++}
++
++/**
++ * ice_ptp_master_cmd - Run timer command on master clock
++ * @pf: Board private structure
++ * @cmd: Timer command
++ */
++static void ice_ptp_src_cmd(struct ice_pf *pf, __rte_unused enum tmr_cmd cmd)
++{
++	struct ice_hw *hw = ICE_PF_TO_HW(pf);
++	uint32_t cmd_val = 0;
++
++#define SEL_CPK_MASTER 8
++	cmd_val = 0 << SEL_CPK_MASTER;
++
++	switch (cmd) {
++	case INIT_INCVAL:
++		cmd_val |= 0x10;
++		break;
++	case ADJ_TIME:
++		cmd_val = 0x100;
++		break;
++	case INIT_TIME:
++	case ADJ_TIME_AT_TIME:
++	case READ_TIME:
++		cmd_val = 0x0;
++		break;
++	default:
++		break;
++	}
++
++	ICE_WRITE_REG(hw, GLTSYN_CMD, cmd_val);
++}
++
++/**
++ * ice_ptp_tmr_cmd_lp - Run timer command, with lock parameter
++ * @pf: Board private structure
++ * @cmd: Timer command
++ * @lock_sbq: true to lock the sideband queue
++ *
++ * Perform a timer command on master timer and all PHY ports.
++ */
++enum ice_status
++ice_ptp_tmr_cmd_lp(struct ice_pf *pf, enum tmr_cmd cmd, __rte_unused bool lock_sbq)
++{
++	enum ice_status status = 0;
++	struct ice_hw *hw = ICE_PF_TO_HW(pf);
++
++	/* First write to master timer */
++	ice_ptp_src_cmd(pf, cmd);
++
++	/* Next write to ports */
++	status = ice_ptp_port_cmd_ext(pf, cmd);
++
++	/* Sync will drive both master timers and PHY cmds */
++	ICE_WRITE_REG(hw, GLTSYN_CMD_SYNC, SYNC_EXEC_CMD);
++
++	return status;
++}
++
++/**
++ * ice_ptp_tmr_cmd - Run timer command on master timer and all PHY ports.
++ * @pf: Board private structure
++ * @cmd: Timer command
++ */
++enum ice_status ice_ptp_tmr_cmd(struct ice_pf *pf, enum tmr_cmd cmd)
++{
++	return ice_ptp_tmr_cmd_lp(pf, cmd, true);
++}
+diff --git a/drivers/net/ice/ice_ptp.h b/drivers/net/ice/ice_ptp.h
+new file mode 100644
+index 0000000000..e22e2e9de9
+--- /dev/null
++++ b/drivers/net/ice/ice_ptp.h
+@@ -0,0 +1,46 @@
++enum tmr_cmd {
++	INIT_TIME,
++	INIT_INCVAL,
++	ADJ_TIME,
++	ADJ_TIME_AT_TIME,
++	READ_TIME,
++};
++
++#define ETH_GLTSYN_ENA(_i)	   (0x03000348 + ((_i) * 4))
++#define LOW_TX_MEMORY_BANK_START   0x03090000
++#define HIGH_TX_MEMORY_BANK_START  0x03090004
++
++#define SYNC_EXEC_CMD            0x3
++
++/* Rx FIFO status registers */
++#define ETH_GLTSYN_CMD             0x03000344
++#define ETH_GLTSYN_SHADJ_L(_i)     (0x03000378 + ((_i) * 32))
++#define ETH_GLTSYN_SHADJ_H(_i)     (0x0300037C + ((_i) * 32))
++#if 0
++/* Macros to derive port low and high addresses on both quads */
++#define P_Q0_L(_a, _p) ICE_LO_WORD(((_a) + (0x2000 * (_p))))
++#define P_Q0_H(_a, _p) ICE_HI_WORD(((_a) + (0x2000 * (_p))))
++#define P_Q1_L(_a, _p) ICE_LO_WORD(((_a) - (0x2000 * ((_p) -               \
++						ICE_PORTS_PER_QUAD))))
++#define P_Q1_H(_a, _p) ICE_HI_WORD(((_a) - (0x2000 * ((_p) -		   \
++						ICE_PORTS_PER_QUAD))))
++
++/* PHY port register base addresses */
++#define P_0_BASE           0x80000
++#define P_4_BASE           0x106000
++#endif
++/* Macros to derive offsets for TimeStampLow and TimeStampHigh */
++#define BYTES_PER_IDX_ADDR_L_U     8
++#define TS_EXT(_a, _port, _idx)    ((_a) + (0x1000 * (_port)) +	\
++				   ((_idx) * BYTES_PER_IDX_ADDR_L_U))
++
++int ice_phy_port_reg_write_ext(struct ice_pf *pf, uint32_t addr, uint32_t val);
++
++int ice_phy_port_reg_write(struct ice_pf *pf, int port, uint16_t offset, uint32_t val);
++
++int ice_phy_quad_reg_read_ext(struct ice_pf *pf, uint32_t addr, uint32_t *val);
++
++enum ice_status ice_ptp_tmr_cmd(struct ice_pf *pf, enum tmr_cmd cmd);
++
++enum ice_status
++ice_ptp_tmr_cmd_lp(struct ice_pf *pf, enum tmr_cmd cmd, __rte_unused bool lock_sbq);
+diff --git a/drivers/net/ice/ice_rxtx.c b/drivers/net/ice/ice_rxtx.c
+index 5d7ab4f047..ac774c433e 100644
+--- a/drivers/net/ice/ice_rxtx.c
++++ b/drivers/net/ice/ice_rxtx.c
+@@ -354,6 +354,10 @@ ice_program_hw_rx_queue(struct ice_rx_queue *rxq)
+ 	regval |= (0x03 << QRXFLXP_CNTXT_RXDID_PRIO_S) &
+ 		QRXFLXP_CNTXT_RXDID_PRIO_M;
+ 
++	/* Enable timestamp overlay feature in the queue context */
++	regval |= (0x1 << QRXFLXP_CNTXT_TS_S) &
++		QRXFLXP_CNTXT_TS_M;
++
+ 	ICE_WRITE_REG(hw, QRXFLXP_CNTXT(rxq->reg_idx), regval);
+ 
+ 	err = ice_clear_rxq_ctx(hw, rxq->reg_idx);
+@@ -689,6 +693,7 @@ ice_tx_queue_start(struct rte_eth_dev *dev, uint16_t tx_queue_id)
+ 	tx_ctx.tso_ena = 1; /* tso enable */
+ 	tx_ctx.tso_qnum = txq->reg_idx; /* index for tso state structure */
+ 	tx_ctx.legacy_int = 1; /* Legacy or Advanced Host Interface */
++	tx_ctx.tsyn_ena = 1;
+ 
+ 	ice_set_ctx(hw, (uint8_t *)&tx_ctx, txq_elem->txqs[0].txq_ctx,
+ 		    ice_tlan_ctx_info);
+@@ -1589,6 +1594,13 @@ ice_rx_scan_hw_ring(struct ice_rx_queue *rxq)
+ 			ice_rxd_to_vlan_tci(mb, &rxdp[j]);
+ 			rxq->rxd_to_pkt_fields(rxq, mb, &rxdp[j]);
+ 
++			if ((mb->packet_type & RTE_PTYPE_L2_MASK)
++					== RTE_PTYPE_L2_ETHER_TIMESYNC) {
++				rxq->time_high = rte_le_to_cpu_32(rxdp[j].wb.flex_ts.ts_high);
++				mb->timesync = rxq->queue_id;
++				pkt_flags |= PKT_RX_IEEE1588_PTP;
++			}
++
+ 			mb->ol_flags |= pkt_flags;
+ 		}
+ 
+@@ -1882,6 +1894,14 @@ ice_recv_scattered_pkts(void *rx_queue,
+ 		ice_rxd_to_vlan_tci(first_seg, &rxd);
+ 		rxq->rxd_to_pkt_fields(rxq, first_seg, &rxd);
+ 		pkt_flags = ice_rxd_error_to_pkt_flags(rx_stat_err0);
++
++		if ((first_seg->packet_type & RTE_PTYPE_L2_MASK)
++				== RTE_PTYPE_L2_ETHER_TIMESYNC) {
++			rxq->time_high = rxd.wb.flex_ts.ts_high;
++			first_seg->timesync = rxq->queue_id;
++			pkt_flags |= PKT_RX_IEEE1588_PTP;
++		}
++
+ 		first_seg->ol_flags |= pkt_flags;
+ 		/* Prefetch data of first segment, if configured to do so. */
+ 		rte_prefetch0(RTE_PTR_ADD(first_seg->buf_addr,
+@@ -2288,6 +2308,14 @@ ice_recv_pkts(void *rx_queue,
+ 		ice_rxd_to_vlan_tci(rxm, &rxd);
+ 		rxq->rxd_to_pkt_fields(rxq, rxm, &rxd);
+ 		pkt_flags = ice_rxd_error_to_pkt_flags(rx_stat_err0);
++
++		if ((rxm->packet_type & RTE_PTYPE_L2_MASK)
++				== RTE_PTYPE_L2_ETHER_TIMESYNC) {
++			rxq->time_high = rxd.wb.flex_ts.ts_high;
++			rxm->timesync = rxq->queue_id;
++			pkt_flags |= PKT_RX_IEEE1588_PTP;
++		}
++
+ 		rxm->ol_flags |= pkt_flags;
+ 		/* copy old mbuf to rx_pkts */
+ 		rx_pkts[nb_rx++] = rxm;
+@@ -2501,6 +2529,8 @@ ice_calc_context_desc(uint64_t flags)
+ 		PKT_TX_OUTER_IP_CKSUM |
+ 		PKT_TX_TUNNEL_MASK;
+ 
++	mask |= PKT_TX_IEEE1588_TMST;
++
+ 	return (flags & mask) ? 1 : 0;
+ }
+ 
+@@ -2667,6 +2697,12 @@ ice_xmit_pkts(void *tx_queue, struct rte_mbuf **tx_pkts, uint16_t nb_pkts)
+ 			if (ol_flags & PKT_TX_TCP_SEG)
+ 				cd_type_cmd_tso_mss |=
+ 					ice_set_tso_ctx(tx_pkt, tx_offload);
++			else {
++				if (ol_flags & PKT_TX_IEEE1588_TMST)
++					cd_type_cmd_tso_mss |=
++						((uint64_t)ICE_TX_CTX_DESC_TSYN <<
++						ICE_TXD_CTX_QW1_CMD_S);
++			}
+ 
+ 			ctx_txd->tunneling_params =
+ 				rte_cpu_to_le_32(cd_tunneling_params);
+@@ -3059,6 +3095,7 @@ ice_set_rx_function(struct rte_eth_dev *dev)
+ 	PMD_INIT_FUNC_TRACE();
+ 	struct ice_adapter *ad =
+ 		ICE_DEV_PRIVATE_TO_ADAPTER(dev->data->dev_private);
++#if 0
+ #ifdef RTE_ARCH_X86
+ 	struct ice_rx_queue *rxq;
+ 	int i;
+@@ -3179,7 +3216,7 @@ ice_set_rx_function(struct rte_eth_dev *dev)
+ 	}
+ 
+ #endif
+-
++#endif
+ 	if (dev->data->scattered_rx) {
+ 		/* Set the non-LRO scattered function */
+ 		PMD_INIT_LOG(DEBUG,
+diff --git a/drivers/net/ice/ice_rxtx.h b/drivers/net/ice/ice_rxtx.h
+index b10db0874d..89996d7b3e 100644
+--- a/drivers/net/ice/ice_rxtx.h
++++ b/drivers/net/ice/ice_rxtx.h
+@@ -89,6 +89,8 @@ struct ice_rx_queue {
+ 	ice_rxd_to_pkt_fields_t rxd_to_pkt_fields; /* handle FlexiMD by RXDID */
+ 	ice_rx_release_mbufs_t rx_rel_mbufs;
+ 	uint64_t offloads;
++
++	uint32_t time_high; /* High value of the timestamp */
+ };
+ 
+ struct ice_tx_entry {
+diff --git a/drivers/net/ice/meson.build b/drivers/net/ice/meson.build
+index 0b86d74a49..f66efd65e5 100644
+--- a/drivers/net/ice/meson.build
++++ b/drivers/net/ice/meson.build
+@@ -12,6 +12,7 @@ sources = files(
+         'ice_hash.c',
+         'ice_rxtx.c',
+         'ice_switch_filter.c',
++	'ice_ptp.c',
+ )
+ 
+ deps += ['hash', 'net', 'common_iavf']
+-- 
+2.25.1
+

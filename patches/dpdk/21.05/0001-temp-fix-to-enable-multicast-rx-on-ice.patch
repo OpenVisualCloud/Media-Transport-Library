@@ -1,0 +1,25 @@
+From 9c7b9ac4a7f42301328cbb94cfa7196ead5699b5 Mon Sep 17 00:00:00 2001
+From: ywan171 <yi.a.wang@intel.com>
+Date: Fri, 16 Jul 2021 04:23:00 +0200
+Subject: [PATCH] temp fix to enable multicast rx on ice will not be needed
+ with new DDP released from EPG, suppose along with dpdk 21.11
+
+Signed-off-by: ywan171 <yi.a.wang@intel.com>
+---
+ drivers/net/ice/ice_fdir_filter.c | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/drivers/net/ice/ice_fdir_filter.c b/drivers/net/ice/ice_fdir_filter.c
+index 092c70450..de76aca55 100644
+--- a/drivers/net/ice/ice_fdir_filter.c
++++ b/drivers/net/ice/ice_fdir_filter.c
+@@ -2142,5 +2142,5 @@ static struct ice_flow_parser ice_fdir_parser = {
+ 
+ RTE_INIT(ice_fdir_engine_register)
+ {
+-	ice_register_flow_engine(&ice_fdir_engine);
++//	ice_register_flow_engine(&ice_fdir_engine);
+ }
+-- 
+2.25.1
+

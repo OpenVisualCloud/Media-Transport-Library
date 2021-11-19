@@ -1,0 +1,104 @@
+From cef4d34614571811495af68940b00034447435f0 Mon Sep 17 00:00:00 2001
+From: root <root@media-qiaoliu-nuc.sh.intel.com>
+Date: Wed, 10 Nov 2021 22:10:13 -0500
+Subject: [PATCH 2/2] Add DDP package load support in windows
+
+---
+ drivers/net/ice/ice_ethdev.c |  6 +++---
+ drivers/net/ice/ice_ethdev.h |  5 +++++
+ lib/eal/windows/eal.c        | 32 +++++++++++++++++++++++++++++++-
+ 3 files changed, 39 insertions(+), 4 deletions(-)
+
+diff --git a/drivers/net/ice/ice_ethdev.c b/drivers/net/ice/ice_ethdev.c
+index ca5ef20..32a88ec 100644
+--- a/drivers/net/ice/ice_ethdev.c
++++ b/drivers/net/ice/ice_ethdev.c
+@@ -2022,7 +2022,7 @@ ice_dev_init(struct rte_eth_dev *dev)
+ 		ICE_DEV_PRIVATE_TO_ADAPTER(dev->data->dev_private);
+ 	struct ice_vsi *vsi;
+ 	int ret;
+-#ifndef RTE_EXEC_ENV_WINDOWS
++
+ 	off_t pos;
+ 	uint32_t dsn_low, dsn_high;
+ 	uint64_t dsn;
+@@ -2077,7 +2077,7 @@ ice_dev_init(struct rte_eth_dev *dev)
+ 		return -EINVAL;
+ 	}
+ 
+-#ifndef RTE_EXEC_ENV_WINDOWS
++
+ 	use_dsn = false;
+ 	dsn = 0;
+ 	pos = rte_pci_find_ext_capability(pci_dev, RTE_PCI_EXT_CAP_ID_DSN);
+@@ -2200,7 +2200,7 @@ ice_dev_init(struct rte_eth_dev *dev)
+ 	dev->data->mac_addrs = NULL;
+ err_init_mac:
+ 	rte_free(pf->proto_xtr);
+-#ifndef RTE_EXEC_ENV_WINDOWS
++
+ err_init_fw:
+ #endif
+ 	ice_deinit_hw(hw);
+diff --git a/drivers/net/ice/ice_ethdev.h b/drivers/net/ice/ice_ethdev.h
+index 5e22a35..7da2e26 100644
+--- a/drivers/net/ice/ice_ethdev.h
++++ b/drivers/net/ice/ice_ethdev.h
+@@ -47,8 +47,13 @@
+ #define ICE_MAX_PKT_TYPE  1024
+ 
+ /* DDP package search path */
++#ifndef RTE_EXEC_ENV_WINDOWS
+ #define ICE_PKG_FILE_DEFAULT "/lib/firmware/intel/ice/ddp/ice.pkg"
+ #define ICE_PKG_FILE_UPDATES "/lib/firmware/updates/intel/ice/ddp/ice.pkg"
++#else
++#define ICE_PKG_FILE_DEFAULT "./ice.pkg"
++#define ICE_PKG_FILE_UPDATES "c:\\dpdk\\lib\\ice.pkg"
++#endif
+ #define ICE_PKG_FILE_SEARCH_PATH_DEFAULT "/lib/firmware/intel/ice/ddp/"
+ #define ICE_PKG_FILE_SEARCH_PATH_UPDATES "/lib/firmware/updates/intel/ice/ddp/"
+ #define ICE_MAX_PKG_FILENAME_SIZE   256
+diff --git a/lib/eal/windows/eal.c b/lib/eal/windows/eal.c
+index 3d8c520..8b33c27 100644
+--- a/lib/eal/windows/eal.c
++++ b/lib/eal/windows/eal.c
+@@ -473,5 +473,35 @@ rte_firmware_read(__rte_unused const char *name,
+ 			__rte_unused void **buf,
+ 			__rte_unused size_t *bufsz)
+ {
+-	return -1;
++	FILE* fp;
++	size_t size;
++	void *tmp;
++	
++	*buf = NULL;
++	*bufsz = 0;
++	fp=fopen(name,"rb");
++	if(fp)
++	{
++		fseek(fp, 0, SEEK_END);
++		size = ftell(fp);
++		if(size >0)
++		    tmp = realloc(*buf, size);
++		else return -1;
++		if (tmp == NULL)
++		{
++			fclose(fp);
++			return -1;
++		}
++		*buf = tmp;
++		fseek(fp, 0, SEEK_SET);
++		*bufsz = fread(*buf,1,size,fp);
++		fclose(fp);
++	
++		if(*bufsz>0)
++		   return 0;
++		else
++			return -1;
++	}
++	else
++		return -1;
+ }
+-- 
+2.7.4
+

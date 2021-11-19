@@ -1,0 +1,9 @@
+1. Usage: analyse the interval(ns) between two packets in one frame.
+2. Dependency:
+  ubuntu: apt-get install libpcap-dev
+  centos: yum install libpcap-devel
+3. Build:
+  make
+4. Run:
+  e.g. Dump the pkt interval(ns) for frame 3 in the pcap file to a csv file.
+  ./readpcap 4k.pcap 3 > 4k.csv

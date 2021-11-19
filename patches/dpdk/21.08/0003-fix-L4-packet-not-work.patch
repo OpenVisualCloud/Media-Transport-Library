@@ -1,0 +1,65 @@
+From 93dfc8004440c03541b475adfe426041b8bd81ce Mon Sep 17 00:00:00 2001
+From: Ping Yu <ping.yu@intel.com>
+Date: Thu, 16 Sep 2021 15:26:48 +0800
+Subject: [PATCH] fix L4 packet not work
+
+Signed-off-by: Ping Yu <ping.yu@intel.com>
+---
+ drivers/net/ice/ice_rxtx.c | 27 +++++++++------------------
+ 1 file changed, 9 insertions(+), 18 deletions(-)
+
+diff --git a/drivers/net/ice/ice_rxtx.c b/drivers/net/ice/ice_rxtx.c
+index ac774c433e..1e51c417a3 100644
+--- a/drivers/net/ice/ice_rxtx.c
++++ b/drivers/net/ice/ice_rxtx.c
+@@ -1594,12 +1594,9 @@ ice_rx_scan_hw_ring(struct ice_rx_queue *rxq)
+ 			ice_rxd_to_vlan_tci(mb, &rxdp[j]);
+ 			rxq->rxd_to_pkt_fields(rxq, mb, &rxdp[j]);
+ 
+-			if ((mb->packet_type & RTE_PTYPE_L2_MASK)
+-					== RTE_PTYPE_L2_ETHER_TIMESYNC) {
+-				rxq->time_high = rte_le_to_cpu_32(rxdp[j].wb.flex_ts.ts_high);
+-				mb->timesync = rxq->queue_id;
+-				pkt_flags |= PKT_RX_IEEE1588_PTP;
+-			}
++			rxq->time_high = rte_le_to_cpu_32(rxdp[j].wb.flex_ts.ts_high);
++			mb->timesync = rxq->queue_id;
++			pkt_flags |= PKT_RX_IEEE1588_PTP;
+ 
+ 			mb->ol_flags |= pkt_flags;
+ 		}
+@@ -1895,12 +1892,9 @@ ice_recv_scattered_pkts(void *rx_queue,
+ 		rxq->rxd_to_pkt_fields(rxq, first_seg, &rxd);
+ 		pkt_flags = ice_rxd_error_to_pkt_flags(rx_stat_err0);
+ 
+-		if ((first_seg->packet_type & RTE_PTYPE_L2_MASK)
+-				== RTE_PTYPE_L2_ETHER_TIMESYNC) {
+-			rxq->time_high = rxd.wb.flex_ts.ts_high;
+-			first_seg->timesync = rxq->queue_id;
+-			pkt_flags |= PKT_RX_IEEE1588_PTP;
+-		}
++		rxq->time_high = rxd.wb.flex_ts.ts_high;
++		first_seg->timesync = rxq->queue_id;
++		pkt_flags |= PKT_RX_IEEE1588_PTP;
+ 
+ 		first_seg->ol_flags |= pkt_flags;
+ 		/* Prefetch data of first segment, if configured to do so. */
+@@ -2309,12 +2303,9 @@ ice_recv_pkts(void *rx_queue,
+ 		rxq->rxd_to_pkt_fields(rxq, rxm, &rxd);
+ 		pkt_flags = ice_rxd_error_to_pkt_flags(rx_stat_err0);
+ 
+-		if ((rxm->packet_type & RTE_PTYPE_L2_MASK)
+-				== RTE_PTYPE_L2_ETHER_TIMESYNC) {
+-			rxq->time_high = rxd.wb.flex_ts.ts_high;
+-			rxm->timesync = rxq->queue_id;
+-			pkt_flags |= PKT_RX_IEEE1588_PTP;
+-		}
++		rxq->time_high = rxd.wb.flex_ts.ts_high;
++		rxm->timesync = rxq->queue_id;
++		pkt_flags |= PKT_RX_IEEE1588_PTP;
+ 
+ 		rxm->ol_flags |= pkt_flags;
+ 		/* copy old mbuf to rx_pkts */
+-- 
+2.25.1
+

@@ -1,0 +1,24 @@
+From 0d367990c9a248845c870e30a6dd6a15cdfb4e29 Mon Sep 17 00:00:00 2001
+From: Ping Yu <ping.yu@intel.com>
+Date: Thu, 16 Sep 2021 15:24:27 +0800
+Subject: [PATCH] temp fix to enable multicast rx on ice
+
+Signed-off-by: Ping Yu <ping.yu@intel.com>
+---
+ drivers/net/ice/ice_fdir_filter.c | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/drivers/net/ice/ice_fdir_filter.c b/drivers/net/ice/ice_fdir_filter.c
+index 82adb1fc8b..f83b843994 100644
+--- a/drivers/net/ice/ice_fdir_filter.c
++++ b/drivers/net/ice/ice_fdir_filter.c
+@@ -2244,5 +2244,5 @@ static struct ice_flow_parser ice_fdir_parser = {
+ 
+ RTE_INIT(ice_fdir_engine_register)
+ {
+-	ice_register_flow_engine(&ice_fdir_engine);
++//	ice_register_flow_engine(&ice_fdir_engine);
+ }
+-- 
+2.25.1
+

@@ -1,0 +1,115 @@
+From e8f5d8378ab5574021db882879bd4fde591afba9 Mon Sep 17 00:00:00 2001
+From: Frank Du <frank.du@intel.com>
+Date: Thu, 11 Nov 2021 15:34:39 +0800
+Subject: [PATCH 9/9] net/ice: support max burst size configuration
+
+This patch adds support for max burst size configuration for
+TX scheduler. This feature can be tuned on by devargs:
+        -a 0000:18:00.0,max_burst_size=x
+The value of x should between 64 and 1023*1024.
+
+Signed-off-by: Wenjun Wu <wenjun1.wu@intel.com>
+Signed-off-by: Frank Du <frank.du@intel.com>
+---
+ drivers/net/ice/ice_ethdev.c | 37 +++++++++++++++++++++++++++++++++++-
+ drivers/net/ice/ice_ethdev.h |  1 +
+ 2 files changed, 37 insertions(+), 1 deletion(-)
+
+diff --git a/drivers/net/ice/ice_ethdev.c b/drivers/net/ice/ice_ethdev.c
+index f0cd51ddb7..1c155218af 100644
+--- a/drivers/net/ice/ice_ethdev.c
++++ b/drivers/net/ice/ice_ethdev.c
+@@ -30,6 +30,7 @@
+ #define ICE_PIPELINE_MODE_SUPPORT_ARG  "pipeline-mode-support"
+ #define ICE_PROTO_XTR_ARG         "proto_xtr"
+ #define ICE_HW_DEBUG_MASK_ARG     "hw_debug_mask"
++#define ICE_MAX_BURST_SIZE_ARG    "max_burst_size"
+ 
+ /* timesync values. */
+ #define DEFAULT_INCVAL_EXT     0x13b13b13bULL
+@@ -43,6 +44,7 @@ static const char * const ice_valid_args[] = {
+ 	ICE_PIPELINE_MODE_SUPPORT_ARG,
+ 	ICE_PROTO_XTR_ARG,
+ 	ICE_HW_DEBUG_MASK_ARG,
++	ICE_MAX_BURST_SIZE_ARG,
+ 	NULL
+ };
+ 
+@@ -1826,6 +1828,25 @@ parse_u64(const char *key, const char *value, void *args)
+ 	return 0;
+ }
+ 
++static int
++parse_u16(const char *key, const char *value, void *args)
++{
++	u16 *num = (u16 *)args;
++	u16 tmp;
++
++	errno = 0;
++	tmp = strtoull(value, NULL, 10);
++	if (errno) {
++		PMD_DRV_LOG(WARNING, "%s: \"%s\" is not a valid u16",
++			    key, value);
++		return -1;
++	}
++
++	*num = tmp;
++
++	return 0;
++}
++
+ static int ice_parse_devargs(struct rte_eth_dev *dev)
+ {
+ 	struct ice_adapter *ad =
+@@ -1867,6 +1888,11 @@ static int ice_parse_devargs(struct rte_eth_dev *dev)
+ 	if (ret)
+ 		goto bail;
+ 
++	ret = rte_kvargs_process(kvlist, ICE_MAX_BURST_SIZE_ARG,
++				 &parse_u16, &ad->devargs.max_burst_size);
++	if (ret)
++		goto bail;
++
+ bail:
+ 	rte_kvargs_free(kvlist);
+ 	return ret;
+@@ -2074,6 +2100,14 @@ ice_dev_init(struct rte_eth_dev *dev)
+ 
+ 	ice_init_controlq_parameter(hw);
+ 
++	if (ad->devargs.max_burst_size) {
++		ret = ice_cfg_rl_burst_size(hw, ad->devargs.max_burst_size);
++		if (ret) {
++			PMD_INIT_LOG(ERR, "Failed to configure burst size");
++			return -EINVAL;
++		}
++	}
++
+ 	ret = ice_init_hw(hw);
+ 	if (ret) {
+ 		PMD_INIT_LOG(ERR, "Failed to initialize HW");
+@@ -5600,7 +5634,8 @@ RTE_PMD_REGISTER_PARAM_STRING(net_ice,
+ 			      ICE_HW_DEBUG_MASK_ARG "=0xXXX"
+ 			      ICE_PROTO_XTR_ARG "=[queue:]<vlan|ipv4|ipv6|ipv6_flow|tcp|ip_offset>"
+ 			      ICE_SAFE_MODE_SUPPORT_ARG "=<0|1>"
+-			      ICE_PIPELINE_MODE_SUPPORT_ARG "=<0|1>");
++			      ICE_PIPELINE_MODE_SUPPORT_ARG "=<0|1>"
++			      ICE_MAX_BURST_SIZE_ARG "=x");
+ 
+ RTE_LOG_REGISTER_SUFFIX(ice_logtype_init, init, NOTICE);
+ RTE_LOG_REGISTER_SUFFIX(ice_logtype_driver, driver, NOTICE);
+diff --git a/drivers/net/ice/ice_ethdev.h b/drivers/net/ice/ice_ethdev.h
+index 5ac09fa19e..5d6052c14b 100644
+--- a/drivers/net/ice/ice_ethdev.h
++++ b/drivers/net/ice/ice_ethdev.h
+@@ -513,6 +513,7 @@ struct ice_devargs {
+ 	uint8_t proto_xtr_dflt;
+ 	int pipe_mode_support;
+ 	uint8_t proto_xtr[ICE_MAX_QUEUE_NUM];
++	uint16_t max_burst_size;
+ };
+ 
+ /**
+-- 
+2.30.2
+
