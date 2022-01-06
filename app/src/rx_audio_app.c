@@ -76,7 +76,15 @@ static int app_rx_audio_compare_with_ref(struct st_app_rx_audio_session* session
       }
       count++;
     }
-    if (session->st30_ref_cursor == old_ref) break;
+    if (session->st30_ref_cursor == old_ref) {
+      if (ret) {
+        err("%s, bad audio reference file, stop referencing\n", __func__);
+        app_rx_audio_close_source(session);
+        return ret;
+      } else {
+        break;
+      }
+    }
   }
   if (rewind) {
     info("%s audio rewind %d\n", __func__, count);
@@ -86,9 +94,13 @@ static int app_rx_audio_compare_with_ref(struct st_app_rx_audio_session* session
 }
 
 static int app_rx_audio_handle_rtp(struct st_app_rx_audio_session* s,
-                                   struct st30_rfc3550_rtp_hdr* hdr) {
+                                   struct st_rfc3550_rtp_hdr* hdr) {
   /* only compare each packet with reference now */
   uint8_t* payload = (uint8_t*)hdr + sizeof(*hdr);
+
+  s->stat_frame_total_received++;
+  if (!s->stat_frame_frist_rx_time)
+    s->stat_frame_frist_rx_time = st_app_get_monotonic_time();
 
   if (s->st30_ref_fd > 0) app_rx_audio_compare_with_ref(s, payload);
   return 0;
@@ -100,7 +112,7 @@ static void* app_rx_audio_rtp_thread(void* arg) {
   void* usrptr;
   uint16_t len;
   void* mbuf;
-  struct st30_rfc3550_rtp_hdr* hdr;
+  struct st_rfc3550_rtp_hdr* hdr;
 
   info("%s(%d), start\n", __func__, idx);
   while (!s->st30_app_thread_stop) {
@@ -115,7 +127,7 @@ static void* app_rx_audio_rtp_thread(void* arg) {
     }
 
     /* get one packet */
-    hdr = (struct st30_rfc3550_rtp_hdr*)usrptr;
+    hdr = (struct st_rfc3550_rtp_hdr*)usrptr;
     app_rx_audio_handle_rtp(s, hdr);
     /* free to lib */
     st30_rx_put_mbuf(s->handle, mbuf);
@@ -137,8 +149,15 @@ static int app_rx_audio_init_rtp_thread(struct st_app_rx_audio_session* s) {
   return 0;
 }
 
-static int app_rx_audio_frame_done(void* priv, void* frame) {
+static int app_rx_audio_frame_done(void* priv, void* frame,
+                                   struct st30_frame_meta* meta) {
   struct st_app_rx_audio_session* s = priv;
+
+  if (!s->handle) return -EIO;
+
+  s->stat_frame_total_received++;
+  if (!s->stat_frame_frist_rx_time)
+    s->stat_frame_frist_rx_time = st_app_get_monotonic_time();
 
   if (s->st30_ref_fd > 0) app_rx_audio_compare_with_ref(s, frame);
 
@@ -183,6 +202,21 @@ static int app_rx_audio_uinit(struct st_app_rx_audio_session* s) {
   return 0;
 }
 
+static int app_rx_audio_result(struct st_app_rx_audio_session* s) {
+  int idx = s->idx;
+  uint64_t cur_time_ns = st_app_get_monotonic_time();
+  double time_sec = (double)(cur_time_ns - s->stat_frame_frist_rx_time) / NS_PER_S;
+  double framerate = s->stat_frame_total_received / time_sec;
+
+  if (!s->stat_frame_total_received) return -EINVAL;
+
+  critical("%s(%d), %s, fps %f, %d frame received\n", __func__, idx,
+           ST_APP_EXPECT_NEAR(framerate, s->expect_fps, s->expect_fps * 0.05) ? "OK"
+                                                                              : "FAILED",
+           framerate, s->stat_frame_total_received);
+  return 0;
+}
+
 static int app_rx_audio_init(struct st_app_context* ctx,
                              st_json_rx_audio_session_t* audio,
                              struct st_app_rx_audio_session* s) {
@@ -213,11 +247,12 @@ static int app_rx_audio_init(struct st_app_context* ctx,
   ops.notify_rtp_ready = app_rx_audio_rtp_ready;
   ops.type = audio ? audio->type : ST30_TYPE_FRAME_LEVEL;
   ops.fmt = audio ? audio->audio_format : ST30_FMT_PCM16;
-  ops.channel = audio ? audio->audio_channel : ST30_CHAN_STEREO;
+  ops.channel = audio ? audio->audio_channel : 2;
   ops.sampling = audio ? audio->audio_sampling : ST30_SAMPLING_48K;
   ops.sample_size = st30_get_sample_size(ops.fmt, ops.channel, ops.sampling);
   int frametime = audio && (ops.type == ST30_TYPE_FRAME_LEVEL) ? audio->audio_frametime_ms
                                                                : 1; /* frame time: ms */
+  s->expect_fps = 1000 / frametime;
   s->st30_frame_size = frametime * ops.sample_size;
   s->pkt_len = ops.sample_size;
   ops.framebuff_size = s->st30_frame_size;
@@ -283,6 +318,18 @@ int st_app_rx_audio_sessions_uinit(struct st_app_context* ctx) {
   for (i = 0; i < ctx->rx_audio_session_cnt; i++) {
     s = &ctx->rx_audio_sessions[i];
     app_rx_audio_uinit(s);
+  }
+
+  return 0;
+}
+
+int st_app_rx_audio_sessions_result(struct st_app_context* ctx) {
+  int i, ret = 0;
+  struct st_app_rx_audio_session* s;
+
+  for (i = 0; i < ctx->rx_audio_session_cnt; i++) {
+    s = &ctx->rx_audio_sessions[i];
+    ret += app_rx_audio_result(s);
   }
 
   return 0;

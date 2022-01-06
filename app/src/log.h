@@ -46,5 +46,9 @@ enum st_log_level app_get_log_level(void);
   do {                                                                  \
     if (app_get_log_level() <= ST_LOG_LEVEL_ERROR) printf(__VA_ARGS__); \
   } while (0)
+#define critical(...)    \
+  do {                   \
+    printf(__VA_ARGS__); \
+  } while (0)
 
 #endif

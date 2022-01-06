@@ -21,6 +21,7 @@ add_global_arguments('-DALLOW_EXPERIMENTAL_API', language : 'c')
 libst_dpdk = dependency('libst_dpdk', required : true)
 gtest = dependency('gtest', required : true)
 libnuma = cpp_c.find_library('numa', required : true)
+libopenssl = dependency('openssl', required : true)
 
 #add source file
 subdir('src')
@@ -43,5 +44,5 @@ executable('KahawaiTest', sources,
   c_args : test_c_args,
   cpp_args : test_cpp_args,
   link_args: test_ld_args,
-  dependencies: [libst_dpdk, gtest, libnuma]
+  dependencies: [libst_dpdk, gtest, libnuma, libopenssl]
 )

@@ -194,18 +194,18 @@ static void app_tx_anc_build_rtp_packet(struct st_app_tx_anc_session* s, void* u
                           ? 255
                           : s->st40_source_end - s->st40_frame_cursor;
   uint16_t check_sum, total_size, payload_len;
-  hdr->marker = 1;
+  hdr->base.marker = 1;
   hdr->anc_count = 1;
-  hdr->payload_type = 113;
-  hdr->version = 2;
-  hdr->extension = 0;
-  hdr->padding = 0;
-  hdr->csrc_count = 0;
+  hdr->base.payload_type = 113;
+  hdr->base.version = 2;
+  hdr->base.extension = 0;
+  hdr->base.padding = 0;
+  hdr->base.csrc_count = 0;
   hdr->f = 0b00;
-  hdr->tmstamp = s->st40_rtp_tmstamp;
-  hdr->ssrc = htonl(0x88888888 + s->idx);
+  hdr->base.tmstamp = s->st40_rtp_tmstamp;
+  hdr->base.ssrc = htonl(0x88888888 + s->idx);
   /* update rtp seq*/
-  hdr->seq_number = htons((uint16_t)s->st40_seq_id);
+  hdr->base.seq_number = htons((uint16_t)s->st40_seq_id);
   hdr->seq_number_ext = htons((uint16_t)(s->st40_seq_id >> 16));
   s->st40_seq_id++;
   s->st40_rtp_tmstamp++;

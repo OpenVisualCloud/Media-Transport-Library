@@ -40,8 +40,16 @@
 #define ST_EBU_PASS "PASSED"
 #define ST_EBU_FAIL "FAILED"
 
+/* total size: 54 */
+struct st_rfc3550_hdr {
+  struct rte_ether_hdr eth;      /* size: 14 */
+  struct rte_ipv4_hdr ipv4;      /* size: 20 */
+  struct rte_udp_hdr udp;        /* size: 8 */
+  struct st_rfc3550_rtp_hdr rtp; /* size: 12 */
+} __attribute__((__packed__)) __rte_aligned(2);
+
 /* total size: 62 */
-struct st_rfc4175_hdr_single {
+struct st_rfc4175_video_hdr {
   struct rte_ether_hdr eth;        /* size: 14 */
   struct rte_ipv4_hdr ipv4;        /* size: 20 */
   struct rte_udp_hdr udp;          /* size: 8 */
@@ -50,12 +58,13 @@ struct st_rfc4175_hdr_single {
 
 /* total size: 54 */
 struct st_rfc3550_audio_hdr {
-  struct rte_ether_hdr eth;        /* size: 14 */
-  struct rte_ipv4_hdr ipv4;        /* size: 20 */
-  struct rte_udp_hdr udp;          /* size: 8 */
-  struct st30_rfc3550_rtp_hdr rtp; /* size: 12 */
+  struct rte_ether_hdr eth;      /* size: 14 */
+  struct rte_ipv4_hdr ipv4;      /* size: 20 */
+  struct rte_udp_hdr udp;        /* size: 8 */
+  struct st_rfc3550_rtp_hdr rtp; /* size: 12 */
 } __attribute__((__packed__)) __rte_aligned(2);
 
+/* total size: 62 */
 struct st_rfc8331_anc_hdr {
   struct rte_ether_hdr eth;        /* size: 14 */
   struct rte_ipv4_hdr ipv4;        /* size: 20 */
@@ -63,8 +72,8 @@ struct st_rfc8331_anc_hdr {
   struct st40_rfc8331_rtp_hdr rtp; /* size: 20 */
 } __attribute__((__packed__)) __rte_aligned(2);
 
-#define ST_PKT_SLN_HDR_LEN \
-  (sizeof(struct st_rfc4175_hdr_single) - sizeof(struct rte_ether_hdr))
+#define ST_PKT_VIDEO_HDR_LEN \
+  (sizeof(struct st_rfc4175_video_hdr) - sizeof(struct rte_ether_hdr))
 
 #define ST_PKT_AUDIO_HDR_LEN \
   (sizeof(struct st_rfc3550_audio_hdr) - sizeof(struct rte_ether_hdr))
@@ -72,6 +81,8 @@ struct st_rfc8331_anc_hdr {
 #define ST_PKT_ANC_HDR_LEN \
   (sizeof(struct st_rfc8331_anc_hdr) - sizeof(struct rte_ether_hdr))
 
-#define ST_PKT_MAX_UDP_BYTES (1460) /* standard UDP is 1460 bytes */
+/* standard UDP is 1460 bytes */
+#define ST_PKT_MAX_ETHER_BYTES \
+  (1460 + sizeof(struct rte_ether_hdr) + sizeof(struct rte_ipv4_hdr))
 
 #endif

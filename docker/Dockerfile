@@ -7,7 +7,7 @@ ENV no_proxy=$no_proxy
 ENV DEBIAN_FRONTEND=noninteractive
 
 RUN apt update && \
-    apt install -y sudo git gcc meson gdb python3 python3-pip pkg-config libnuma-dev libjson-c-dev libpcap-dev libgtest-dev libsdl2-dev && \
+    apt install -y sudo git gcc meson gdb python3 python3-pip pkg-config libnuma-dev libjson-c-dev libpcap-dev libgtest-dev libsdl2-dev libssl-dev && \
     apt clean all
 
 # `wget` and `libc6-dev-i386` needed for klocwork scan
@@ -35,6 +35,7 @@ RUN cd /tmp/dpdk && \
     git am $dpdk_st_kahawai/patches/dpdk/21.08/0007-build-enable-IEEE1588-PTP-option.patch && \
     git am $dpdk_st_kahawai/patches/dpdk/21.08/0008-enable-rx-timestamp-and-fix-performance-issue.patch && \
     git am $dpdk_st_kahawai/patches/dpdk/21.08/0009-net-ice-support-max-burst-size-configuration.patch && \
+    git am $dpdk_st_kahawai/patches/dpdk/21.08/0010-Add-init-time-to-sync-PHY-timer-with-primary-timer.patch && \
     meson build && \
     ninja -C build && \
     ninja -C build install && \

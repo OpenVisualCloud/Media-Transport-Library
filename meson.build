@@ -11,7 +11,7 @@
 # express or implied warranties, other than those that are expressly stated
 # in the License.
 
-project('st_dpdk', 'c', default_options: ['c_std=gnu11', 'buildtype=release'], version: '0.7.0',)
+project('st_dpdk', 'c', default_options: ['c_std=gnu11', 'buildtype=release'], version: '0.7.1',)
 
 exec_env = host_machine.system()
 set_variable('is_windows', exec_env == 'windows')
@@ -20,7 +20,7 @@ message('BUILD Enviroment: ' + exec_env)
 add_global_arguments('-D_DEFAULT_SOURCE', language : 'c')
 
 #get external variables
-add_global_arguments('-D__ST_GIT__="'+ run_command('git', 'describe', '--abbrev=8', '--tags', '--dirty', '--always').stdout().strip() + '"', language : 'c')
+add_global_arguments('-D__ST_GIT__="'+ run_command('git', 'describe', '--abbrev=8', '--dirty', '--always').stdout().strip() + '"', language : 'c')
 add_global_arguments('-D__ST_BUILD__="' + meson.project_version() + '"', language : 'c')
 
 if get_option('enable_kni') == true

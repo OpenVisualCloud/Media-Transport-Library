@@ -11,4 +11,5 @@
 # express or implied warranties, other than those that are expressly stated
 # in the License.
 
-sources = files('tests.cpp', 'st_test.cpp', 'st20_test.cpp', 'st30_test.cpp', 'st40_test.cpp')
+sources = files('tests.cpp', 'st_test.cpp', 'st20_test.cpp', 'st22_test.cpp',
+                'st30_test.cpp', 'st40_test.cpp')

@@ -22,11 +22,11 @@
 #include "log.h"
 #include "pack.h"
 
-int conv_app_convert_yuv422p10be_to_ycbcr422_10bit_pg(struct conv_app_context* ctx) {
+int conv_app_convert_yuv422p10_to_ycbcr422_10bit_pg(struct conv_app_context* ctx) {
   // check if the input param valid
   int ret = 0;
-  if (strcmp(ctx->pix_fmt_in, "yuv422p10be")) {
-    err("in this function, only yuv422p10be input is supported");
+  if (strcmp(ctx->pix_fmt_in, "yuv422p10be") && strcmp(ctx->pix_fmt_in, "yuv422p10le")) {
+    err("in this function, only yuv422p10be or yuv422p10le input is supported");
     return -1;
   }
   if (strcmp(ctx->pix_fmt_out, "yuv422YCBCR10be") &&
@@ -38,6 +38,8 @@ int conv_app_convert_yuv422p10be_to_ycbcr422_10bit_pg(struct conv_app_context* c
     err("w or h is 0\n");
     return -1;
   }
+
+  int src_be = !strcmp(ctx->pix_fmt_in, "yuv422p10be");
   int frame_size_in = ctx->w * ctx->h * 2 * sizeof(uint16_t);
   int frame_size_out = ctx->w * ctx->h * 2 * 10 / 8;
   FILE *fp_in = NULL, *fp_out = NULL;
@@ -78,14 +80,20 @@ int conv_app_convert_yuv422p10be_to_ycbcr422_10bit_pg(struct conv_app_context* c
     uint16_t const* R = (uint16_t*)(buf_in + ctx->w * ctx->h * sizeof(uint16_t));
     uint16_t const* B = (uint16_t*)(buf_in + ctx->w * ctx->h * 3 / 2 * sizeof(uint16_t));
     rfc4175_422_10_pg2_t* p = (rfc4175_422_10_pg2_t*)buf_out;
+    rfc4175_422_10_pg2_le_t* p_le = (rfc4175_422_10_pg2_le_t*)buf_out;
     for (int pg2 = 0; pg2 < ctx->w * ctx->h / 2; pg2++) {
       if (be) {
-        Pack_422be10_PG2be(p, *R++, Y[0], *B++, Y[1]);
+        if (src_be)
+          Pack_422be10_PG2be(p++, *R++, Y[0], *B++, Y[1]);
+        else
+          Pack_422le10_PG2be(p++, *R++, Y[0], *B++, Y[1]);
       } else {
-        Pack_422be10_PG2le(p, *R++, Y[0], *B++, Y[1]);
+        if (src_be)
+          Pack_422be10_PG2le(p_le++, *R++, Y[0], *B++, Y[1]);
+        else
+          Pack_422le10_PG2le(p_le++, *R++, Y[0], *B++, Y[1]);
       }
       Y += 2;
-      p++;
     }
     fwrite(buf_out, 1, frame_size_out, fp_out);
   }
@@ -111,7 +119,7 @@ release : {
 }
 }
 
-int conv_app_convert_ycbcr422_10bit_pg_to_yuv422p10be(struct conv_app_context* ctx) {
+int conv_app_convert_ycbcr422_10bit_pg_to_yuv422p10(struct conv_app_context* ctx) {
   // check if the input param valid
   if (strcmp(ctx->pix_fmt_in, "yuv422YCBCR10be") &&
       strcmp(ctx->pix_fmt_in, "yuv422YCBCR10le")) {
@@ -119,14 +127,16 @@ int conv_app_convert_ycbcr422_10bit_pg_to_yuv422p10be(struct conv_app_context* c
     return -1;
   }
   int ret = 0;
-  if (strcmp(ctx->pix_fmt_out, "yuv422p10be")) {
-    err("in this function, only yuv422p10be output is supported");
+  if (strcmp(ctx->pix_fmt_out, "yuv422p10be") &&
+      strcmp(ctx->pix_fmt_out, "yuv422p10le")) {
+    err("in this function, only yuv422p10be or yuv422p10le output is supported");
     return -1;
   }
   if (!ctx->w || !ctx->h) {
     err("w or h is 0\n");
     return -1;
   }
+  int out_be = !strcmp(ctx->pix_fmt_out, "yuv422p10be");
   int frame_size_in = ctx->w * ctx->h * 2 * 10 / 8;
   int frame_size_out = ctx->w * ctx->h * 2 * sizeof(uint16_t);
   FILE *fp_in = NULL, *fp_out = NULL;
@@ -166,14 +176,20 @@ int conv_app_convert_ycbcr422_10bit_pg_to_yuv422p10be(struct conv_app_context* c
     uint16_t* R = (uint16_t*)(buf_out + ctx->w * ctx->h * sizeof(uint16_t));
     uint16_t* B = (uint16_t*)(buf_out + ctx->w * ctx->h * 3 / 2 * sizeof(uint16_t));
     rfc4175_422_10_pg2_t* p = (rfc4175_422_10_pg2_t*)buf_in;
+    rfc4175_422_10_pg2_le_t* p_le = (rfc4175_422_10_pg2_le_t*)buf_in;
     for (int pg2 = 0; pg2 < ctx->w * ctx->h / 2; pg2++) {
       if (be) {
-        Unpack_PG2be_422be10(p, R++, Y, B++, Y + 1);
+        if (out_be)
+          Unpack_PG2be_422be10(p++, R++, Y, B++, Y + 1);
+        else
+          Unpack_PG2be_422le10(p++, R++, Y, B++, Y + 1);
       } else {
-        Unpack_PG2le_422be10(p, R++, Y, B++, Y + 1);
+        if (out_be)
+          Unpack_PG2le_422be10(p_le++, R++, Y, B++, Y + 1);
+        else
+          Unpack_PG2le_422le10(p_le++, R++, Y, B++, Y + 1);
       }
       Y += 2;
-      p++;
     }
     fwrite(buf_out, 1, frame_size_out, fp_out);
   }
@@ -216,24 +232,25 @@ int main(int argc, char** argv) {
     return 0;
   }
 
-  if (!strcmp(ctx->pix_fmt_in, "yuv422p10be") &&
+  if ((!strcmp(ctx->pix_fmt_in, "yuv422p10be") ||
+       !strcmp(ctx->pix_fmt_in, "yuv422p10le")) &&
       (!strcmp(ctx->pix_fmt_out, "yuv422YCBCR10be") ||
        !strcmp(ctx->pix_fmt_out, "yuv422YCBCR10le"))) {
-    ret = conv_app_convert_yuv422p10be_to_ycbcr422_10bit_pg(ctx);
+    ret = conv_app_convert_yuv422p10_to_ycbcr422_10bit_pg(ctx);
     if (ret < 0) {
-      err("%s, conv_app_convert_yuv422_to_yuv422P10 fail %d\n", __func__, ret);
+      err("%s, conv_app_convert_yuv422p10_to_ycbcr422_10bit_pg fail %d\n", __func__, ret);
       conv_app_free(ctx);
       return 0;
     }
   }
 
-  if (!strcmp(ctx->pix_fmt_out, "yuv422p10be") &&
+  if ((!strcmp(ctx->pix_fmt_out, "yuv422p10be") ||
+       !strcmp(ctx->pix_fmt_out, "yuv422p10le")) &&
       (!strcmp(ctx->pix_fmt_in, "yuv422YCBCR10be") ||
        !strcmp(ctx->pix_fmt_in, "yuv422YCBCR10le"))) {
-    ret = conv_app_convert_ycbcr422_10bit_pg_to_yuv422p10be(ctx);
+    ret = conv_app_convert_ycbcr422_10bit_pg_to_yuv422p10(ctx);
     if (ret < 0) {
-      err("%s, conv_app_convert_ycbcr422_10bit_pg_to_yuv422p10be fail %d\n", __func__,
-          ret);
+      err("%s, conv_app_convert_ycbcr422_10bit_pg_to_yuv422p10 fail %d\n", __func__, ret);
       conv_app_free(ctx);
       return 0;
     }

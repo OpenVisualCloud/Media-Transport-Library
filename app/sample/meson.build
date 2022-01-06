@@ -13,3 +13,5 @@
 
 video_tx_sources = files('tx_video_sample.c')
 video_rx_sources = files('rx_video_sample.c')
+video_tx_rtp_sources = files('tx_rtp_video_sample.c')
+video_rx_rtp_sources = files('rx_rtp_video_sample.c')

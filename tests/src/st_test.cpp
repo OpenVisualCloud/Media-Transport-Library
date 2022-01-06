@@ -227,3 +227,30 @@ TEST(Main, lcore_expect_fail) {
   ASSERT_LT(ret, 0);
   test_lcore_one(ctx);
 }
+
+static bool test_dev_started(struct st_tests_context* ctx) {
+  st_handle handle = ctx->handle;
+  struct st_stats stats;
+  int ret;
+
+  ret = st_get_stats(handle, &stats);
+  if (ret < 0) return ret;
+
+  if (stats.dev_started)
+    return true;
+  else
+    return false;
+}
+
+TEST(Main, dev_started) {
+  struct st_tests_context* ctx = st_test_ctx();
+  st_handle handle = ctx->handle;
+
+  EXPECT_FALSE(test_dev_started(ctx));
+  int ret = st_start(handle);
+  EXPECT_GE(ret, 0);
+  EXPECT_TRUE(test_dev_started(ctx));
+  ret = st_stop(handle);
+  EXPECT_GE(ret, 0);
+  EXPECT_FALSE(test_dev_started(ctx));
+}

@@ -35,6 +35,12 @@ int st_rx_video_sessions_mgr_detach(struct st_rx_video_sessions_mgr* mgr,
 
 void st_rx_video_sessions_stat(struct st_main_impl* impl);
 
-int rx_video_session_put_frame(struct st_rx_video_session_impl* s, void* frame);
+int st_rx_video_session_put_frame(struct st_rx_video_session_impl* s, void* frame);
+
+int st_rx_video_sessions_mgr_update_src(struct st_rx_video_sessions_mgr* mgr,
+                                        struct st_rx_video_session_impl* s,
+                                        struct st_rx_source_info* src);
+
+int st_rx_video_sessions_mgr_update(struct st_rx_video_sessions_mgr* mgr);
 
 #endif

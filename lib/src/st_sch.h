@@ -23,7 +23,12 @@ static inline struct st_sch_impl* st_get_sch(struct st_main_impl* impl, int i) {
   return &impl->sch[i];
 }
 
-static inline bool st_sch_is_active(struct st_sch_impl* sch) { return sch->active; }
+static inline bool st_sch_is_active(struct st_sch_impl* sch) {
+  if (rte_atomic32_read(&sch->active))
+    return true;
+  else
+    return false;
+}
 
 int st_sch_init(struct st_main_impl* impl, int data_quota_mbs_limit);
 

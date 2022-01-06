@@ -23,12 +23,29 @@ int st_tx_video_sessions_mgr_init(struct st_main_impl* impl, struct st_sch_impl*
                                   struct st_tx_video_sessions_mgr* mgr);
 
 struct st_tx_video_session_impl* st_tx_video_sessions_mgr_attach(
-    struct st_tx_video_sessions_mgr* mgr, struct st20_tx_ops* ops);
+    struct st_tx_video_sessions_mgr* mgr, struct st20_tx_ops* ops,
+    enum st_session_type s_type);
 int st_tx_video_sessions_mgr_detach(struct st_tx_video_sessions_mgr* mgr,
                                     struct st_tx_video_session_impl* s);
 
 int st_tx_video_sessions_mgr_uinit(struct st_tx_video_sessions_mgr* mgr);
 
+int st_tx_video_sessions_mgr_update(struct st_tx_video_sessions_mgr* mgr);
+
 void st_tx_video_sessions_stat(struct st_main_impl* impl);
+
+static inline void tx_video_session_lock(struct st_tx_video_sessions_mgr* mgr, int sidx) {
+  rte_spinlock_lock(&mgr->mutex[sidx]);
+}
+
+static inline int tx_video_session_try_lock(struct st_tx_video_sessions_mgr* mgr,
+                                            int sidx) {
+  return rte_spinlock_trylock(&mgr->mutex[sidx]);
+}
+
+static inline void tx_video_session_unlock(struct st_tx_video_sessions_mgr* mgr,
+                                           int sidx) {
+  rte_spinlock_unlock(&mgr->mutex[sidx]);
+}
 
 #endif

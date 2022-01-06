@@ -23,7 +23,7 @@ bool st_bitmap_test_and_set(uint8_t* bitmap, int idx);
 
 int st_ring_dequeue_clean(struct rte_ring* ring);
 
-void st_mbuf_sanity_check(struct rte_mbuf** mbufs, uint16_t nb);
+void st_mbuf_sanity_check(struct rte_mbuf** mbufs, uint16_t nb, char* tag);
 
 int st_pacing_train_result_add(struct st_main_impl* impl, enum st_port port,
                                uint64_t rl_bps, float pad_interval);
@@ -58,5 +58,15 @@ static inline bool st_is_valid_payload_type(int payload_type) {
 }
 
 void st_eth_macaddr_dump(enum st_port port, char* tag, struct rte_ether_addr* mac_addr);
+
+static inline bool st_rx_seq_drop(uint16_t new_id, uint16_t old_id, uint16_t delta) {
+  if ((new_id <= old_id) && ((old_id - new_id) < delta))
+    return true;
+  else
+    return false;
+}
+
+struct rte_mbuf* st_build_pad(struct st_main_impl* impl, enum st_port port,
+                              uint16_t port_id, uint16_t ether_type, uint16_t len);
 
 #endif

@@ -49,7 +49,9 @@ void PrintHelp() {
   printf("   --help                            : print this help info \n");
   printf("   --width                           : source width \n");
   printf("   --height                          : source height \n");
-  printf("   --in_pix_fmt                      : in pixel format \"yuv422p10be\"\n");
+  printf(
+      "   --in_pix_fmt                      : in pixel format \"yuv422p10be, "
+      "yuv422p10le\"\n");
   printf(
       "   --out_pix_fmt                     : out pixel format "
       "\"yuv422YCBCR10be\",\"yuv422YCBCR10le\"\n");

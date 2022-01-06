@@ -17,7 +17,7 @@
 #include "rx_st22_app.h"
 
 static int app_rx_st22_handle_rtp(struct st22_app_rx_session* s,
-                                  struct st22_rfc9143_rtp_hdr* hdr) {
+                                  struct st_rfc3550_rtp_hdr* hdr) {
   int idx = s->idx;
   uint32_t tmstamp = ntohl(hdr->tmstamp);
   uint8_t* frame;
@@ -56,7 +56,7 @@ static void* app_rx_st22_rtp_thread(void* arg) {
   void* usrptr;
   uint16_t len;
   void* mbuf;
-  struct st22_rfc9143_rtp_hdr* hdr;
+  struct st_rfc3550_rtp_hdr* hdr;
 
   info("%s(%d), start\n", __func__, idx);
   while (!s->st22_app_thread_stop) {
@@ -71,7 +71,7 @@ static void* app_rx_st22_rtp_thread(void* arg) {
     }
 
     /* get one packet */
-    hdr = (struct st22_rfc9143_rtp_hdr*)usrptr;
+    hdr = (struct st_rfc3550_rtp_hdr*)usrptr;
     app_rx_st22_handle_rtp(s, hdr);
     /* free to lib */
     st22_rx_put_mbuf(s->handle, mbuf);
@@ -183,7 +183,7 @@ static int app_rx_st22_init(struct st_app_context* ctx, struct st22_app_rx_sessi
   st22_rx_handle handle;
 
   s->rtp_pkt_size = ctx->st22_rtp_pkt_size;
-  s->rtp_pd_size = s->rtp_pkt_size - sizeof(struct st22_rfc9143_rtp_hdr);
+  s->rtp_pd_size = s->rtp_pkt_size - sizeof(struct st_rfc3550_rtp_hdr);
   s->rtp_frame_total_pkts = ctx->st22_rtp_frame_total_pkts;
   s->width = 1920;
   s->height = 1080;

@@ -63,6 +63,25 @@ static int st_json_parse_tx_video(int idx, json_object* video_obj,
     return -ST_JSON_NOT_VALID;
   }
 
+  /* parse video packing mode */
+  const char* packing =
+      json_object_get_string(json_object_object_get(video_obj, "packing"));
+  // CHECK_STRING(packing);
+  if (packing) {
+    if (strcmp(packing, "GPM_SL") == 0) {
+      video->packing = ST20_PACKING_GPM_SL;
+    } else if (strcmp(packing, "BPM") == 0) {
+      video->packing = ST20_PACKING_BPM;
+    } else if (strcmp(packing, "GPM") == 0) {
+      video->packing = ST20_PACKING_GPM;
+    } else {
+      err("%s, invalid video packing mode %s\n", __func__, packing);
+      return -ST_JSON_NOT_VALID;
+    }
+  } else {
+    video->packing = ST20_PACKING_GPM_SL;
+  }
+
   /* parse udp port */
   int start_port = json_object_get_int(json_object_object_get(video_obj, "start_port"));
   if (start_port < 0 || start_port > 65535) {
@@ -106,6 +125,12 @@ static int st_json_parse_tx_video(int idx, json_object* video_obj,
     video->video_format = VIDEO_FORMAT_720P_50FPS;
   } else if (strcmp(video_format, "i720p29") == 0) {
     video->video_format = VIDEO_FORMAT_720P_29FPS;
+  } else if (strcmp(video_format, "i4320p59") == 0) {
+    video->video_format = VIDEO_FORMAT_4320P_59FPS;
+  } else if (strcmp(video_format, "i4320p50") == 0) {
+    video->video_format = VIDEO_FORMAT_4320P_50FPS;
+  } else if (strcmp(video_format, "i4320p29") == 0) {
+    video->video_format = VIDEO_FORMAT_4320P_29FPS;
   } else {
     err("%s, invalid video format %s\n", __func__, video_format);
     return -ST_JSON_NOT_VALID;
@@ -186,16 +211,41 @@ static int st_json_parse_tx_audio(int idx, json_object* audio_obj,
   }
 
   /* parse audio channel */
-  const char* audio_channel =
-      json_object_get_string(json_object_object_get(audio_obj, "audio_channel"));
-  CHECK_STRING(audio_channel);
-  if (strcmp(audio_channel, "mono") == 0) {
-    audio->audio_channel = ST30_CHAN_MONO;
-  } else if (strcmp(audio_channel, "stereo") == 0) {
-    audio->audio_channel = ST30_CHAN_STEREO;
-  } else {
-    err("%s, invalid audio channel %s\n", __func__, audio_channel);
-    return -ST_JSON_NOT_VALID;
+  json_object* audio_channel_array = json_object_object_get(audio_obj, "audio_channel");
+  if (audio_channel_array == NULL ||
+      json_object_get_type(audio_channel_array) != json_type_array) {
+    err("%s, can not parse audio channel\n", __func__);
+    return -ST_JSON_PARSE_FAIL;
+  }
+  for (int i = 0; i < json_object_array_length(audio_channel_array); ++i) {
+    json_object* channel_obj = json_object_array_get_idx(audio_channel_array, i);
+    const char* channel = json_object_get_string(channel_obj);
+    CHECK_STRING(channel);
+    if (strcmp(channel, "M") == 0) {
+      audio->audio_channel += 1;
+    } else if (strcmp(channel, "DM") == 0 || strcmp(channel, "ST") == 0 ||
+               strcmp(channel, "LtRt") == 0) {
+      audio->audio_channel += 2;
+    } else if (strcmp(channel, "51") == 0) {
+      audio->audio_channel += 6;
+    } else if (strcmp(channel, "71") == 0) {
+      audio->audio_channel += 8;
+    } else if (strcmp(channel, "222") == 0) {
+      audio->audio_channel += 24;
+    } else if (strcmp(channel, "SGRP") == 0) {
+      audio->audio_channel += 4;
+    } else if (channel[0] == 'U' && channel[1] >= '0' && channel[1] <= '9' &&
+               channel[2] >= '0' && channel[2] <= '9' && channel[3] == '\0') {
+      int num_channel = (channel[1] - '0') * 10 + (channel[2] - '0');
+      if (num_channel < 1 || num_channel > 64) {
+        err("%s, audio undefined channel number out of range %s\n", __func__, channel);
+        return -ST_JSON_NOT_VALID;
+      }
+      audio->audio_channel += num_channel;
+    } else {
+      err("%s, invalid audio channel %s\n", __func__, channel);
+      return -ST_JSON_NOT_VALID;
+    }
   }
 
   /* parse audio sampling */
@@ -372,6 +422,12 @@ static int st_json_parse_rx_video(int idx, json_object* video_obj,
     video->video_format = VIDEO_FORMAT_720P_50FPS;
   } else if (strcmp(video_format, "i720p29") == 0) {
     video->video_format = VIDEO_FORMAT_720P_29FPS;
+  } else if (strcmp(video_format, "i4320p59") == 0) {
+    video->video_format = VIDEO_FORMAT_4320P_59FPS;
+  } else if (strcmp(video_format, "i4320p50") == 0) {
+    video->video_format = VIDEO_FORMAT_4320P_50FPS;
+  } else if (strcmp(video_format, "i4320p29") == 0) {
+    video->video_format = VIDEO_FORMAT_4320P_29FPS;
   } else {
     err("%s, invalid video format %s\n", __func__, video_format);
     return -ST_JSON_NOT_VALID;
@@ -449,16 +505,41 @@ static int st_json_parse_rx_audio(int idx, json_object* audio_obj,
   }
 
   /* parse audio channel */
-  const char* audio_channel =
-      json_object_get_string(json_object_object_get(audio_obj, "audio_channel"));
-  CHECK_STRING(audio_channel);
-  if (strcmp(audio_channel, "mono") == 0) {
-    audio->audio_channel = ST30_CHAN_MONO;
-  } else if (strcmp(audio_channel, "stereo") == 0) {
-    audio->audio_channel = ST30_CHAN_STEREO;
-  } else {
-    err("%s, invalid audio channel %s\n", __func__, audio_channel);
-    return -ST_JSON_NOT_VALID;
+  json_object* audio_channel_array = json_object_object_get(audio_obj, "audio_channel");
+  if (audio_channel_array == NULL ||
+      json_object_get_type(audio_channel_array) != json_type_array) {
+    err("%s, can not parse audio channel\n", __func__);
+    return -ST_JSON_PARSE_FAIL;
+  }
+  for (int i = 0; i < json_object_array_length(audio_channel_array); ++i) {
+    json_object* channel_obj = json_object_array_get_idx(audio_channel_array, i);
+    const char* channel = json_object_get_string(channel_obj);
+    CHECK_STRING(channel);
+    if (strcmp(channel, "M") == 0) {
+      audio->audio_channel += 1;
+    } else if (strcmp(channel, "DM") == 0 || strcmp(channel, "ST") == 0 ||
+               strcmp(channel, "LtRt") == 0) {
+      audio->audio_channel += 2;
+    } else if (strcmp(channel, "51") == 0) {
+      audio->audio_channel += 6;
+    } else if (strcmp(channel, "71") == 0) {
+      audio->audio_channel += 8;
+    } else if (strcmp(channel, "222") == 0) {
+      audio->audio_channel += 24;
+    } else if (strcmp(channel, "SGRP") == 0) {
+      audio->audio_channel += 4;
+    } else if (channel[0] == 'U' && channel[1] >= '0' && channel[1] <= '9' &&
+               channel[2] >= '0' && channel[2] <= '9' && channel[3] == '\0') {
+      int num_channel = (channel[1] - '0') * 10 + (channel[2] - '0');
+      if (num_channel < 1 || num_channel > 64) {
+        err("%s, audio undefined channel number out of range %s\n", __func__, channel);
+        return -ST_JSON_NOT_VALID;
+      }
+      audio->audio_channel += num_channel;
+    } else {
+      err("%s, invalid audio channel %s\n", __func__, channel);
+      return -ST_JSON_NOT_VALID;
+    }
   }
 
   /* parse audio sampling */
@@ -524,9 +605,21 @@ int st_app_parse_json(st_json_context_t* ctx, const char* filename) {
 
   json_object* root_object = json_object_from_file(filename);
   if (root_object == NULL) {
-    err("%s, can not parse json file %s, err: %s\n", __func__, filename,
-        json_util_get_last_err());
+    err("%s, can not parse json file %s, please check the format\n", __func__, filename);
     return -ST_JSON_PARSE_FAIL;
+  }
+
+  /* parse quota for system */
+  json_object* sch_quota_object =
+      json_object_object_get(root_object, "sch_session_quota");
+  if (sch_quota_object != NULL) {
+    int sch_quota = json_object_get_int(sch_quota_object);
+    if (sch_quota < 0) {
+      err("%s, invalid quota number\n", __func__);
+      ret = -ST_JSON_NOT_VALID;
+      goto exit;
+    }
+    ctx->sch_quota = sch_quota;
   }
 
   /* parse interfaces for system */
@@ -878,14 +971,17 @@ enum st_fps st_app_get_fps(enum video_format fmt) {
     case VIDEO_FORMAT_720P_59FPS:
     case VIDEO_FORMAT_1080P_59FPS:
     case VIDEO_FORMAT_2160P_59FPS:
+    case VIDEO_FORMAT_4320P_59FPS:
       return ST_FPS_P59_94;
     case VIDEO_FORMAT_720P_50FPS:
     case VIDEO_FORMAT_1080P_50FPS:
     case VIDEO_FORMAT_2160P_50FPS:
+    case VIDEO_FORMAT_4320P_50FPS:
       return ST_FPS_P50;
     case VIDEO_FORMAT_720P_29FPS:
     case VIDEO_FORMAT_1080P_29FPS:
     case VIDEO_FORMAT_2160P_29FPS:
+    case VIDEO_FORMAT_4320P_29FPS:
       return ST_FPS_P29_97;
     default: {
       err("%s, invalid video fmt %d\n", __func__, fmt);
@@ -907,6 +1003,10 @@ int st_app_get_width(enum video_format fmt) {
     case VIDEO_FORMAT_2160P_50FPS:
     case VIDEO_FORMAT_2160P_29FPS:
       return 3840;
+    case VIDEO_FORMAT_4320P_59FPS:
+    case VIDEO_FORMAT_4320P_50FPS:
+    case VIDEO_FORMAT_4320P_29FPS:
+      return 7680;
     default: {
       err("%s, invalid video fmt %d\n", __func__, fmt);
       return 1920;
@@ -927,6 +1027,10 @@ int st_app_get_height(enum video_format fmt) {
     case VIDEO_FORMAT_2160P_50FPS:
     case VIDEO_FORMAT_2160P_29FPS:
       return 2160;
+    case VIDEO_FORMAT_4320P_59FPS:
+    case VIDEO_FORMAT_4320P_50FPS:
+    case VIDEO_FORMAT_4320P_29FPS:
+      return 4320;
     default: {
       err("%s, invalid video fmt %d\n", __func__, fmt);
       return 1080;

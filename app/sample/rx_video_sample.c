@@ -14,6 +14,7 @@
  *
  */
 
+#include <errno.h>
 #include <pthread.h>
 #include <st_dpdk_api.h>
 #include <stdbool.h>
@@ -22,12 +23,22 @@
 #include <string.h>
 #include <unistd.h>
 
+#define RX_VIDEO_PORT_BDF "0000:af:00.0"
+#define RX_VIDEO_FB_CNT (3)
+#define RX_VIDEO_UDP_PORT (10000)
+#define RX_VIDEO_PAYLOAD_TYPE (112)
+/* local ip address for current bdf port */
+static uint8_t g_rx_video_local_ip[ST_IP_ADDR_LEN] = {192, 168, 0, 1};
+/* source ip address for rx video session */
+static uint8_t g_rx_video_source_ip[ST_IP_ADDR_LEN] = {239, 168, 0, 1};
+static uint8_t g_rx_video_source_ip2[ST_IP_ADDR_LEN] = {239, 168, 0, 2};
+
 struct app_context {
   int idx;
   int16_t ready_frame_idx;
   int16_t consumer_frame_idx;
   int fb_rec;
-  void* frame_rec[3];
+  void* frame_rec[RX_VIDEO_FB_CNT];
   void* handle;
   bool stop;
   pthread_t app_thread;
@@ -35,13 +46,22 @@ struct app_context {
   pthread_mutex_t wake_mutex;
 };
 
-static int rx_frame_ready(void* priv, void* frame) {
+static int rx_frame_ready(void* priv, void* frame, struct st20_frame_meta* meta) {
   struct app_context* s = (struct app_context*)priv;
+
+  if (!s->handle) return -EIO;
+
+  /* incomplete frame */
+  if (!st20_is_frame_complete(meta->status)) {
+    st20_rx_put_framebuff(s->handle, frame);
+    return 0;
+  }
+
   pthread_mutex_lock(&s->wake_mutex);
   // restore the returned frame ptr, since rx_frame_ready callback should be non-blocked.
   // the frame should be handled in app thread
   s->frame_rec[s->ready_frame_idx] = frame;
-  s->ready_frame_idx = (s->ready_frame_idx + 1) % 3;
+  s->ready_frame_idx = (s->ready_frame_idx + 1) % RX_VIDEO_FB_CNT;
   pthread_cond_signal(&s->wake_cond);
   pthread_mutex_unlock(&s->wake_mutex);
   s->fb_rec++;
@@ -56,7 +76,7 @@ static void* app_rx_video_frame_thread(void* arg) {
   while (!s->stop) {
     consumer_idx = s->consumer_frame_idx;
     consumer_idx++;
-    if (consumer_idx >= 3) consumer_idx = 0;
+    if (consumer_idx >= RX_VIDEO_FB_CNT) consumer_idx = 0;
     if (consumer_idx == s->ready_frame_idx) {
       /* no buffer */
       pthread_mutex_lock(&s->wake_mutex);
@@ -68,6 +88,9 @@ static void* app_rx_video_frame_thread(void* arg) {
     frame = s->frame_rec[consumer_idx];
     // put your handle of frame ptr here, it contains pixels data format in st2110-20
     // aligned with the TX transfer pg format
+    // should not dispose heavy work here, if the buf is not returned timely to the pool
+    // by st20_rx_put_framebuff. lib will be lack of available frame buf and packet drop
+    // may happen.
     st20_rx_put_framebuff(s->handle, frame);
     s->consumer_frame_idx = consumer_idx;
   }
@@ -80,21 +103,20 @@ int main() {
   memset(&param, 0, sizeof(param));
   int session_num = 1;
   param.num_ports = 1;
-  strncpy(param.port[ST_PORT_P], "0000:af:00.0", ST_PORT_MAX_LEN);
-  uint8_t ip[4] = {192, 168, 0, 1};
-  memcpy(param.sip_addr[ST_PORT_P], ip, ST_IP_ADDR_LEN);
+  strncpy(param.port[ST_PORT_P], RX_VIDEO_PORT_BDF, ST_PORT_MAX_LEN);
+  memcpy(param.sip_addr[ST_PORT_P], g_rx_video_local_ip, ST_IP_ADDR_LEN);
   param.flags = ST_FLAG_BIND_NUMA;      // default bind to numa
   param.log_level = ST_LOG_LEVEL_INFO;  // log level. ERROR, INFO, WARNING
   param.priv = NULL;                    // usr ctx pointer
-  param.ptp_get_time_fn =
-      NULL;  // user regist ptp func, if not regist, the internal pt p will be used
+  // user regist ptp func, if not regist, the internal pt p will be used
+  param.ptp_get_time_fn = NULL;
   param.tx_sessions_cnt_max = 0;
   param.rx_sessions_cnt_max = session_num;
   param.lcores = NULL;
   st_handle dev_handle = st_init(&param);
   if (!dev_handle) {
     printf("st_init fail\n");
-    return -1;
+    return -EIO;
   }
   st20_rx_handle rx_handle[session_num];
   struct app_context* app[session_num];
@@ -104,36 +126,34 @@ int main() {
   for (int i = 0; i < session_num; i++) {
     app[i] = (struct app_context*)malloc(sizeof(struct app_context));
     if (!app[i]) {
-      printf(" app struct is not correctly malloc");
-      return -1;
+      printf("app struct is malloc failed");
+      return -ENOMEM;
     }
+    memset(app[i], 0, sizeof(struct app_context));
     app[i]->idx = i;
     struct st20_rx_ops ops_rx;
+    memset(&ops_rx, 0, sizeof(ops_rx));
     ops_rx.name = "st20_test";
     ops_rx.priv = app[i];  // app handle register to lib
     ops_rx.num_port = 1;
-    uint8_t sip[4] = {239, 168, 0, 1};
-    memcpy(ops_rx.sip_addr[ST_PORT_P], sip, ST_IP_ADDR_LEN);  // tx src ip like 239.0.0.1
-    strncpy(ops_rx.port[ST_PORT_P], "0000:af:00.0",
-            ST_PORT_MAX_LEN);  // send port interface like 0000:af:00.0
-    ops_rx.udp_port[ST_PORT_P] =
-        10000 + i;  // user could config the udp port in this interface.
+    memcpy(ops_rx.sip_addr[ST_PORT_P], g_rx_video_source_ip, ST_IP_ADDR_LEN);
+    strncpy(ops_rx.port[ST_PORT_P], RX_VIDEO_PORT_BDF, ST_PORT_MAX_LEN);
+    ops_rx.udp_port[ST_PORT_P] = RX_VIDEO_UDP_PORT + i;  // user config the udp port.
     ops_rx.pacing = ST21_PACING_NARROW;
     ops_rx.type = ST20_TYPE_FRAME_LEVEL;
     ops_rx.width = 1920;
     ops_rx.height = 1080;
     ops_rx.fps = ST_FPS_P59_94;
     ops_rx.fmt = ST20_FMT_YUV_422_10BIT;
-    ops_rx.framebuff_cnt =
-        3;  // aligned with frame_rec[3] in app_context, framebuf pool size is 3 in lib.
-    ops_rx.notify_frame_ready =
-        rx_frame_ready;  // app regist non-block func, app could get a frame ready
-                         // notification info by this callback
+    ops_rx.framebuff_cnt = RX_VIDEO_FB_CNT;
+    ops_rx.payload_type = RX_VIDEO_PAYLOAD_TYPE;
+    // app regist non-block func, app get a frame ready notification info by this cb
+    ops_rx.notify_frame_ready = rx_frame_ready;
     rx_handle[i] = st20_rx_create(dev_handle, &ops_rx);
     if (!rx_handle[i]) {
-      printf(" rx_session is not correctly created");
+      printf("rx_session is not correctly created for %d", i);
       free(app[i]);
-      return -1;
+      return -EIO;
     }
     app[i]->handle = rx_handle[i];
     app[i]->consumer_frame_idx = -1;
@@ -149,16 +169,36 @@ int main() {
         printf("session free failed\n");
       }
       free(app[i]);
-      return -1;
+      return -EIO;
     }
   }
   // start rx
   ret = st_start(dev_handle);
+
+  // update ip and port api calling
+  sleep(10);
+  struct st_rx_source_info src;
+  /* switch to mcast port p(tx_session:1) */
+  memset(&src, 0, sizeof(src));
+  src.udp_port[ST_PORT_P] = 20000;
+  memcpy(src.sip_addr[ST_PORT_P], g_rx_video_source_ip2, ST_IP_ADDR_LEN);
+  ret = st20_rx_update_source(rx_handle[0], &src);
+
+  sleep(10);
+  /* switch to mcast port p(tx_session:1) */
+  memset(&src, 0, sizeof(src));
+  src.udp_port[ST_PORT_P] = RX_VIDEO_UDP_PORT;
+  memcpy(src.sip_addr[ST_PORT_P], g_rx_video_source_ip, ST_IP_ADDR_LEN);
+  ret = st20_rx_update_source(rx_handle[0], &src);
+
   // rx run 120s
   sleep(120);
   // stop app thread
   for (int i = 0; i < session_num; i++) {
     app[i]->stop = true;
+    pthread_mutex_lock(&app[i]->wake_mutex);
+    pthread_cond_signal(&app[i]->wake_cond);
+    pthread_mutex_unlock(&app[i]->wake_mutex);
     pthread_join(app[i]->app_thread, NULL);
   }
 

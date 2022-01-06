@@ -2,11 +2,12 @@
 
 @section software_interactions Software interactions
 
-@subsection software_interactions_flow_tx_frame Producer frame mode
+@subsection software_interactions_flow_tx_frame Transmitter frame mode
 
  lib takes resposibilty of rtp encapsulation 
 
- Below pseudo code presenting flows from application to the library for producer mode.  
+ Below pseudo code presenting flows from application to the library for transmitter in frame mode.
+
  you could refer app/sample/tx_video_sample.c for the whole sample 
 
 ```bash
@@ -68,6 +69,7 @@ for (i = 0; i < session_num; i++)
 //destroy device
 st_uninit(dev_handle);
 ```
+app thread to get the frame buf and feed data to it, you could refer tx_video_app.c in app/src folder
 
 ```bash
 static void* app_tx_video_frame_thread(void* arg) {
@@ -86,13 +88,15 @@ static void* app_tx_video_frame_thread(void* arg) {
 ```
 \n
 
-@subsection software_interactions_flow_tx_rtp Producer rtp mode
+@subsection software_interactions_flow_tx_rtp Transmitter rtp mode
  
  app takes resposibilty of rtp encapsulation
 
- Below pseudo code presenting flows from application to the library for producer mode.
+ Below pseudo code presenting flows from application to the library for transmitter in rtp mode.
 
- take st20 as example, if st30/st40 session is created/release, replace st20_xxx with st30_xxx, st40_xxx
+ take st20 as example, if st30/st40/st22 session is created/release, replace st20_xxx with st30_xxx, st40_xxx, st22_xxx
+
+ you could refer app/sample/tx_rtp_video_sample.c for the whole sample of st22 case
 
 ```bash
 //create device
@@ -173,11 +177,12 @@ static void* app_tx_video_rtp_thread(void* arg) {
 
 \n
 
-@subsection software_interactions_flow_rx_frame Consumer frame mode
+@subsection software_interactions_flow_rx_frame Receiver frame mode
 
  lib takes resposibilty of rtp decapsulation
 
- Below pseudo code presenting flows from application to the library for consumer mode.  
+ Below pseudo code presenting flows from application to the library for receiver in frame mode.
+
  you could refer app/sample/rx_video_sample.c for the whole sample 
 
 ```bash
@@ -235,6 +240,7 @@ for (i = 0; i < session_num; i++)
 //destroy device
 st_uninit(dev_handle);
 ```
+app thread to get the frame buf, dispose it and return to lib.you could refer rx_video_app.c in app/src folder
 
 ```bash
 static void* app_rx_video_frame_thread(void* arg) {
@@ -254,11 +260,13 @@ static void* app_rx_video_frame_thread(void* arg) {
 
 \n
 
-@subsection software_interactions_flow_rx_rtp Consumer rtp mode
+@subsection software_interactions_flow_rx_rtp Receiver rtp mode
 
  app takes resposibilty of rtp decapsulation
 
- Below pseudo code presenting flows from application to the library for consumer mode.
+ Below pseudo code presenting flows from application to the library for receiver in rtp mode.
+
+you could refer app/sample/rx_rtp_video_sample.c for the whole sample of st22 case
 
 ```bash
 //create device

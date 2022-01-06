@@ -176,7 +176,7 @@ static void* app_tx_audio_session_pcap_thread(void* arg) {
 static void app_tx_audio_build_rtp_packet(struct st_app_tx_audio_session* s, void* usrptr,
                                           uint16_t* mbuf_len) {
   /* generate one anc rtp for test purpose */
-  struct st30_rfc3550_rtp_hdr* rtp = (struct st30_rfc3550_rtp_hdr*)usrptr;
+  struct st_rfc3550_rtp_hdr* rtp = (struct st_rfc3550_rtp_hdr*)usrptr;
   uint8_t* payload = (uint8_t*)&rtp[1];
   /* rtp hdr */
   memset(rtp, 0x0, sizeof(*rtp));
@@ -199,7 +199,7 @@ static void app_tx_audio_build_rtp_packet(struct st_app_tx_audio_session* s, voi
     st_memcpy(payload, s->st30_frame_cursor, s->pkt_len);
     s->st30_frame_cursor += s->pkt_len;
   }
-  *mbuf_len = sizeof(struct st30_rfc3550_rtp_hdr) + s->pkt_len;
+  *mbuf_len = sizeof(struct st_rfc3550_rtp_hdr) + s->pkt_len;
 }
 
 static void* app_tx_audio_session_rtp_thread(void* arg) {
@@ -366,7 +366,7 @@ static int app_tx_audio_session_init(struct st_app_context* ctx,
   ops.notify_rtp_done = app_tx_audio_session_rtp_done;
   ops.framebuff_cnt = s->framebuff_cnt;
   ops.fmt = audio ? audio->audio_format : ST30_FMT_PCM16;
-  ops.channel = audio ? audio->audio_channel : ST30_CHAN_STEREO;
+  ops.channel = audio ? audio->audio_channel : 2;
   ops.sampling = audio ? audio->audio_sampling : ST30_SAMPLING_48K;
   ops.sample_size = st30_get_sample_size(ops.fmt, ops.channel, ops.sampling);
   int frametime = audio ? audio->audio_frametime_ms : 1; /* frame time: ms */

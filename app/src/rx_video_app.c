@@ -80,7 +80,7 @@ static void* app_rx_video_frame_thread(void* arg) {
 static int app_rx_video_handle_rtp(struct st_app_rx_video_session* s,
                                    struct st20_rfc4175_rtp_hdr* hdr) {
   int idx = s->idx;
-  uint32_t tmstamp = ntohl(hdr->tmstamp);
+  uint32_t tmstamp = ntohl(hdr->base.tmstamp);
   struct st20_rfc4175_extra_rtp_hdr* e_hdr = NULL;
   uint16_t row_number; /* 0 to 1079 for 1080p */
   uint16_t row_offset; /* [0, 480, 960, 1440] for 1080p */
@@ -93,6 +93,9 @@ static int app_rx_video_handle_rtp(struct st_app_rx_video_session* s,
     /* new frame received */
     s->st21_last_tmstamp = tmstamp;
     s->stat_frame_received++;
+    s->stat_frame_total_received++;
+    if (!s->stat_frame_frist_rx_time)
+      s->stat_frame_frist_rx_time = st_app_get_monotonic_time();
 
     s->st21_dst_cursor += s->st21_frame_size;
     if ((s->st21_dst_cursor + s->st21_frame_size) > s->st21_dst_end)
@@ -248,11 +251,23 @@ static int app_rx_video_init_rtp_thread(struct st_app_rx_video_session* s) {
   return 0;
 }
 
-static int app_rx_video_frame_ready(void* priv, void* frame) {
+static int app_rx_video_frame_ready(void* priv, void* frame,
+                                    struct st20_frame_meta* meta) {
   struct st_app_rx_video_session* s = priv;
   int ret;
 
+  if (!s->handle) return -EIO;
+
+  /* incomplete frame */
+  if (!st20_is_frame_complete(meta->status)) {
+    st20_rx_put_framebuff(s->handle, frame);
+    return 0;
+  }
+
   s->stat_frame_received++;
+  s->stat_frame_total_received++;
+  if (!s->stat_frame_frist_rx_time)
+    s->stat_frame_frist_rx_time = st_app_get_monotonic_time();
 
   if (s->st21_dst_fd < 0 && s->display == NULL) {
     /* free the queue directly as no read thread is running */
@@ -369,6 +384,7 @@ static int app_rx_video_init(struct st_app_context* ctx,
   s->st21_frame_size = ops.width * ops.height * s->st21_pg.size / s->st21_pg.coverage;
   s->width = ops.width;
   s->height = ops.height;
+  s->expect_fps = st_frame_rate(ops.fps);
 
   s->st21_dst_q_size = s->st21_dst_fb_cnt ? s->st21_dst_fb_cnt : 4;
   s->st21_frames_dst_queue = st_app_zmalloc(sizeof(void*) * s->st21_dst_q_size);
@@ -434,6 +450,21 @@ static int app_rx_video_stat(struct st_app_rx_video_session* s) {
   return 0;
 }
 
+static int app_rx_video_result(struct st_app_rx_video_session* s) {
+  int idx = s->idx;
+  uint64_t cur_time_ns = st_app_get_monotonic_time();
+  double time_sec = (double)(cur_time_ns - s->stat_frame_frist_rx_time) / NS_PER_S;
+  double framerate = s->stat_frame_total_received / time_sec;
+
+  if (!s->stat_frame_total_received) return -EINVAL;
+
+  critical("%s(%d), %s, fps %f, %d frame received\n", __func__, idx,
+           ST_APP_EXPECT_NEAR(framerate, s->expect_fps, s->expect_fps * 0.05) ? "OK"
+                                                                              : "FAILED",
+           framerate, s->stat_frame_total_received);
+  return 0;
+}
+
 int st_app_rx_video_sessions_init(struct st_app_context* ctx) {
   int ret, i;
   struct st_app_rx_video_session* s;
@@ -474,6 +505,18 @@ int st_app_rx_video_sessions_stat(struct st_app_context* ctx) {
   for (i = 0; i < ctx->rx_video_session_cnt; i++) {
     s = &ctx->rx_video_sessions[i];
     app_rx_video_stat(s);
+  }
+
+  return 0;
+}
+
+int st_app_rx_video_sessions_result(struct st_app_context* ctx) {
+  int i, ret = 0;
+  struct st_app_rx_video_session* s;
+
+  for (i = 0; i < ctx->rx_video_session_cnt; i++) {
+    s = &ctx->rx_video_sessions[i];
+    ret += app_rx_video_result(s);
   }
 
   return 0;

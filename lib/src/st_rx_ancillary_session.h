@@ -33,4 +33,10 @@ int st_rx_ancillary_sessions_mgr_detach(struct st_rx_ancillary_sessions_mgr* mgr
 
 void st_rx_ancillary_sessions_stat(struct st_main_impl* impl);
 
+int st_rx_ancillary_sessions_mgr_update_src(struct st_rx_ancillary_sessions_mgr* mgr,
+                                            struct st_rx_ancillary_session_impl* s,
+                                            struct st_rx_source_info* src);
+
+int st_rx_ancillary_sessions_mgr_update(struct st_rx_ancillary_sessions_mgr* mgr);
+
 #endif

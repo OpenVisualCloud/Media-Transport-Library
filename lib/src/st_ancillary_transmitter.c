@@ -16,8 +16,10 @@
 
 #include "st_ancillary_transmitter.h"
 
+#include "st_dev.h"
 #include "st_log.h"
 #include "st_sch.h"
+#include "st_tx_ancillary_session.h"
 #include "st_util.h"
 
 static int st_ancillary_trs_tasklet_start(void* priv) {
@@ -35,11 +37,26 @@ static int st_ancillary_trs_tasklet_stop(void* priv) {
   int idx = trs->idx, port;
 
   for (port = 0; port < st_num_ports(impl); port++) {
+    /* flush all the pkts in the tx ring desc */
+    st_dev_flush_tx_queue(impl, port, mgr->queue_id[port]);
     st_ring_dequeue_clean(mgr->ring[port]);
     info("%s(%d), port %d, remaining entries %d\n", __func__, idx, port,
          rte_ring_count(mgr->ring[port]));
 
-    if (trs->inflight[port]) rte_pktmbuf_free(trs->inflight[port]);
+    if (trs->inflight[port]) {
+      rte_pktmbuf_free(trs->inflight[port]);
+      trs->inflight[port] = NULL;
+    }
+  }
+  mgr->st40_stat_pkts_burst = 0;
+
+  /* free mempool for inactive session */
+  struct st_tx_ancillary_session_impl* s;
+  for (int sidx = 0; sidx < ST_MAX_TX_ANC_SESSIONS; sidx++) {
+    s = &mgr->sessions[sidx];
+    tx_ancillary_session_lock(mgr, sidx);
+    if (!mgr->active[sidx]) tx_ancillary_session_rtp_pool_free(s);
+    tx_ancillary_session_unlock(mgr, sidx);
   }
 
   return 0;
@@ -97,6 +114,10 @@ int st_ancillary_transmitter_init(struct st_main_impl* impl, struct st_sch_impl*
   int ret, idx = sch->idx;
   struct st_sch_tasklet_ops ops;
 
+  trs->parnet = impl;
+  trs->idx = idx;
+  trs->mgr = mgr;
+
   memset(&ops, 0x0, sizeof(ops));
   ops.priv = trs;
   ops.name = "ancillary_transmitter";
@@ -109,10 +130,6 @@ int st_ancillary_transmitter_init(struct st_main_impl* impl, struct st_sch_impl*
     info("%s(%d), st_sch_register_tasklet fail %d\n", __func__, idx, ret);
     return ret;
   }
-
-  trs->parnet = impl;
-  trs->idx = idx;
-  trs->mgr = mgr;
 
   info("%s(%d), succ\n", __func__, idx);
   return 0;

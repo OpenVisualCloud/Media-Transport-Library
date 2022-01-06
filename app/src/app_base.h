@@ -33,13 +33,18 @@
 #ifndef _ST_APP_BASE_HEAD_H_
 #define _ST_APP_BASE_HEAD_H_
 
-#define ST_APP_MAX_TX_VIDEO_SESSIONS (32)
-#define ST_APP_MAX_TX_AUDIO_SESSIONS (32)
-#define ST_APP_MAX_TX_ANC_SESSIONS (32)
+#define ST_APP_MAX_TX_VIDEO_SESSIONS (60)
+#define ST_APP_MAX_TX_AUDIO_SESSIONS (60)
+#define ST_APP_MAX_TX_ANC_SESSIONS (60)
 
-#define ST_APP_MAX_RX_VIDEO_SESSIONS (32)
-#define ST_APP_MAX_RX_AUDIO_SESSIONS (32)
-#define ST_APP_MAX_RX_ANC_SESSIONS (32)
+#define ST_APP_MAX_RX_VIDEO_SESSIONS (60)
+#define ST_APP_MAX_RX_AUDIO_SESSIONS (60)
+#define ST_APP_MAX_RX_ANC_SESSIONS (60)
+
+#define ST_APP_MAX_LCORES (32)
+
+#define ST_APP_EXPECT_NEAR(val, expect, delta) \
+  ((val > (expect - delta)) && (val < (expect + delta)))
 
 #ifndef NS_PER_S
 #define NS_PER_S (1000000000)
@@ -65,7 +70,9 @@ struct st_display {
 
 struct st_app_tx_video_session {
   int idx;
+  st_handle st;
   st20_tx_handle handle;
+  int handle_sch_idx;
   uint16_t framebuff_cnt;
   uint16_t st21_framebuff_idx; /* index for current fb */
   int* st21_free_framebuff;
@@ -82,10 +89,12 @@ struct st_app_tx_video_session {
   struct st20_pgroup st21_pg;
   int width;
   int height;
+  bool single_line;
 
   /* rtp info */
   bool st21_rtp_input;
-  int st21_pkts_in_line; /* number of packets per each line, 4 for 1080p */
+  int st21_pkts_in_line;  /* GPM only, number of packets per each line, 4 for 1080p */
+  int st21_bytes_in_line; /* bytes per line, 4800 for 1080p yuv422 10bit */
   uint32_t
       st21_pkt_data_len; /* data len(byte) for each pkt, 1200 for 1080p yuv422 10bit */
   struct st20_rfc4175_rtp_hdr st20_rtp_base;
@@ -94,6 +103,8 @@ struct st_app_tx_video_session {
   uint32_t st21_seq_id; /* seq id in current frame */
   uint32_t st21_rtp_tmstamp;
 
+  double expect_fps;
+  uint64_t stat_frame_frist_tx_time;
   uint32_t st21_frame_done_cnt;
   uint32_t st21_packet_done_cnt;
 
@@ -190,6 +201,9 @@ struct st_app_rx_video_session {
   /* stat */
   int stat_frame_received;
   uint64_t stat_last_time;
+  int stat_frame_total_received;
+  uint64_t stat_frame_frist_rx_time;
+  double expect_fps;
 
   pthread_t st21_app_thread;
   pthread_cond_t st21_wake_cond;
@@ -216,6 +230,11 @@ struct st_app_rx_audio_session {
   pthread_cond_t st30_wake_cond;
   pthread_mutex_t st30_wake_mutex;
   bool st30_app_thread_stop;
+
+  /* stat */
+  int stat_frame_total_received;
+  uint64_t stat_frame_frist_rx_time;
+  double expect_fps;
 };
 
 struct st_app_rx_anc_session {
@@ -225,6 +244,10 @@ struct st_app_rx_anc_session {
   pthread_cond_t st40_wake_cond;
   pthread_mutex_t st40_wake_mutex;
   bool st40_app_thread_stop;
+
+  /* stat */
+  int stat_frame_total_received;
+  uint64_t stat_frame_frist_rx_time;
 };
 
 struct st22_app_tx_session {
@@ -251,7 +274,7 @@ struct st22_app_tx_session {
   uint16_t st22_seq_id;      /* seq id in current session */
   uint32_t st22_rtp_tmstamp; /* tmstamp for current frame */
   int st22_frame_idx;
-  struct st22_rfc9143_rtp_hdr st22_rtp_base;
+  struct st_rfc3550_rtp_hdr st22_rtp_base;
 };
 
 struct st22_app_rx_session {
@@ -288,6 +311,9 @@ struct st_app_context {
   bool stop;
   uint8_t tx_dip_addr[ST_PORT_MAX][ST_IP_ADDR_LEN]; /* tx destination IP */
 
+  int last_session_sch_index;
+  int lcore[ST_APP_MAX_LCORES];
+
   char tx_video_url[ST_APP_URL_MAX_LEN]; /* send video content url*/
   struct st_app_tx_video_session tx_video_sessions[ST_APP_MAX_TX_VIDEO_SESSIONS];
   int tx_video_session_cnt;
@@ -318,7 +344,6 @@ struct st_app_context {
 
   struct st_app_rx_anc_session rx_anc_sessions[ST_APP_MAX_RX_ANC_SESSIONS];
   int rx_anc_session_cnt;
-  int lcore;
 
   char tx_st22_url[ST_APP_URL_MAX_LEN]; /* send st22 content url*/
   struct st22_app_tx_session tx_st22_sessions[ST_APP_MAX_TX_VIDEO_SESSIONS];
@@ -346,5 +371,7 @@ static inline uint64_t st_app_get_monotonic_time() {
   clock_gettime(ST_CLOCK_MONOTONIC_ID, &ts);
   return ((uint64_t)ts.tv_sec * NS_PER_S) + ts.tv_nsec;
 }
+
+int st_app_video_get_lcore(struct st_app_context* ctx, int sch_idx, unsigned int* lcore);
 
 #endif

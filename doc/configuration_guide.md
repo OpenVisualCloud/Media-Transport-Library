@@ -40,7 +40,7 @@ Example `tx_multicast.json` file, find more example config file in `<kahawai>/co
                     "start_port": 30000,
                     "type": "frame",
                     "audio_format": "PCM16",
-                    "audio_channel": "stereo",
+                    "audio_channel": ["ST"],
                     "audio_sampling": "48kHz",
                     "audio_frametime_ms": 1,
                     "audio_url": "./test.wav"
@@ -116,7 +116,7 @@ Items in each element of the "audio" array
 
 ​	**audio_format (string):** `"PCM8", "PCM16", "PCM24" ` audio format
 
-​	**audio_channel (string):** `"mono", "stereo"` audio channel
+​	**audio_channel (array-string):** `"M", "DM", "ST", "LtRt", "51", "71", "222", "SGRP", "U01...U64"` audio channel-order(a listing of these channel grouping symbols), the library only cares the total number of channels
 
 ​	**audio_sampling (string):** `"48kHz", "96kHz"` audio sample rate
 
@@ -180,7 +180,7 @@ Items in each element of the "audio" array
 
 ​	**audio_format (string):** `"PCM8", "PCM16", "PCM24" ` audio format
 
-​	**audio_channel (string):** `"mono", "stereo"` audio channel
+​	**audio_channel (array-string):** `"M", "DM", "ST", "LtRt", "51", "71", "222", "SGRP", "U01...U64"` audio channel-order(a listing of these channel grouping symbols), the library only cares the total number of channels
 
 ​	**audio_sampling (string):** `"48kHz", "96kHz"` audio sample rate
 

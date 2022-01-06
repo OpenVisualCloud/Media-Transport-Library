@@ -27,6 +27,7 @@ enum test_args_cmd {
   TEST_ARG_R_PORT,
   TEST_ARG_LCORES,
   TEST_ARG_LOG_LEVEL,
+  TEST_ARG_SCH_SESSION_QUOTA,
 };
 
 static struct option test_args_options[] = {
@@ -35,6 +36,7 @@ static struct option test_args_options[] = {
 
     {"lcores", required_argument, 0, TEST_ARG_LCORES},
     {"log_level", required_argument, 0, TEST_ARG_LOG_LEVEL},
+    {"sch_session_quota", required_argument, 0, TEST_ARG_SCH_SESSION_QUOTA},
     {0, 0, 0, 0}};
 
 static struct st_tests_context* g_test_ctx;
@@ -63,6 +65,9 @@ static int test_parse_args(struct st_tests_context* ctx, struct st_init_params* 
         break;
       case TEST_ARG_LCORES:
         p->lcores = optarg;
+        break;
+      case TEST_ARG_SCH_SESSION_QUOTA: /* unit: 1080p tx */
+        p->data_quota_mbs_per_sch = atoi(optarg) * 2589 + 100;
         break;
       case TEST_ARG_LOG_LEVEL:
         if (!strcmp(optarg, "debug"))
@@ -123,7 +128,7 @@ static uint64_t test_ptp_from_real_time(void* priv) {
 
 static void test_ctx_init(struct st_tests_context* ctx) {
   struct st_init_params* p = &ctx->para;
-  int cpus_per_soc = 3;
+  int cpus_per_soc = 4;
   char* lcores_list = ctx->lcores_list;
   int pos = 0;
   int numa_nodes = 0;
@@ -136,7 +141,7 @@ static void test_ctx_init(struct st_tests_context* ctx) {
 
   memset(p, 0x0, sizeof(*p));
   p->flags = ST_FLAG_BIND_NUMA; /* default bind to numa */
-  p->log_level = ST_LOG_LEVEL_ERROR;
+  p->log_level = ST_LOG_LEVEL_WARNING;
   p->priv = ctx;
   p->ptp_get_time_fn = test_ptp_from_real_time;
   p->tx_sessions_cnt_max = 32;
@@ -186,6 +191,7 @@ TEST(Misc, version_compare) {
 }
 
 static void st_memcpy_test(size_t size) {
+  ASSERT_TRUE(size > 0);
   char src[size];
   char dst[size];
 
@@ -308,7 +314,7 @@ GTEST_API_ int main(int argc, char** argv) {
 }
 
 int tx_next_frame(void* priv, uint16_t* next_frame_idx) {
-  auto ctx = (struct tests_context*)priv;
+  auto ctx = (tests_context*)priv;
 
   *next_frame_idx = ctx->fb_idx;
   dbg("%s, next_frame_idx %d\n", __func__, *next_frame_idx);
@@ -317,4 +323,40 @@ int tx_next_frame(void* priv, uint16_t* next_frame_idx) {
   ctx->fb_send++;
   if (!ctx->start_time) ctx->start_time = st_test_get_monotonic_time();
   return 0;
+}
+
+void test_md5_dump(const char* tag, unsigned char* md5) {
+  for (size_t i = 0; i < MD5_DIGEST_LENGTH; i++) {
+    info("0x%x ", md5[i]);
+  }
+  info(", %s done\n", tag);
+}
+
+void md5_frame_check(void* args) {
+  auto ctx = (tests_context*)args;
+  std::unique_lock<std::mutex> lck(ctx->mtx, std::defer_lock);
+  unsigned char result[MD5_DIGEST_LENGTH];
+  while (!ctx->stop) {
+    if (ctx->buf_q.empty()) {
+      lck.lock();
+      if (!ctx->stop) ctx->cv.wait(lck);
+      lck.unlock();
+      continue;
+    } else {
+      void* frame = ctx->buf_q.front();
+      ctx->buf_q.pop();
+      dbg("%s, frame %p\n", __func__, frame);
+      int i;
+      MD5((unsigned char*)frame, ctx->frame_size, result);
+      for (i = 0; i < TEST_MD5_HIST_NUM; i++) {
+        unsigned char* target_md5 = ctx->md5s[i];
+        if (!memcmp(result, target_md5, MD5_DIGEST_LENGTH)) break;
+      }
+      if (i >= TEST_MD5_HIST_NUM) {
+        test_md5_dump("rx_error_md5", result);
+        ctx->fail_cnt++;
+      }
+      st_test_free(frame);
+    }
+  }
 }

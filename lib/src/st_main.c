@@ -400,7 +400,7 @@ static int st_tx_video_ops_check(struct st20_tx_ops* ops) {
       err("%s, invalid rtp_ring_size %d\n", __func__, ops->rtp_ring_size);
       return -EINVAL;
     }
-    if ((ops->rtp_pkt_size < 0) || (ops->rtp_pkt_size > ST_PKT_MAX_RTP_BYTES)) {
+    if (!st_rtp_len_valid(ops->rtp_pkt_size)) {
       err("%s, invalid rtp_pkt_size %d\n", __func__, ops->rtp_pkt_size);
       return -EINVAL;
     }
@@ -438,7 +438,7 @@ static int st22_tx_video_ops_check(struct st22_tx_ops* ops) {
     err("%s, invalid rtp_ring_size %d\n", __func__, ops->rtp_ring_size);
     return -EINVAL;
   }
-  if ((ops->rtp_pkt_size < 0) || (ops->rtp_pkt_size > ST_PKT_MAX_RTP_BYTES)) {
+  if (!st_rtp_len_valid(ops->rtp_pkt_size)) {
     err("%s, invalid rtp_pkt_size %d\n", __func__, ops->rtp_pkt_size);
     return -EINVAL;
   }
@@ -481,7 +481,7 @@ static int st_tx_audio_ops_check(struct st30_tx_ops* ops) {
       err("%s, invalid rtp_ring_size %d\n", __func__, ops->rtp_ring_size);
       return -EINVAL;
     }
-    if ((ops->sample_size < 0) || (ops->sample_size > ST_PKT_MAX_RTP_BYTES)) {
+    if ((ops->sample_size <= 0) || (ops->sample_size > ST_PKT_MAX_RTP_BYTES)) {
       err("%s, invalid sample_size %d\n", __func__, ops->sample_size);
       return -EINVAL;
     }
@@ -681,12 +681,34 @@ static int st_rx_ancillary_ops_check(struct st40_rx_ops* ops) {
   return 0;
 }
 
+int st_rx_source_info_check(struct st_rx_source_info* src, int num_ports) {
+  uint8_t* ip;
+  int ret;
+
+  for (int i = 0; i < num_ports; i++) {
+    ip = src->sip_addr[i];
+    ret = st_ip_addr_check(ip);
+    if (ret < 0) {
+      err("%s(%d), invalid ip %d.%d.%d.%d\n", __func__, i, ip[0], ip[1], ip[2], ip[3]);
+      return -EINVAL;
+    }
+  }
+
+  if (num_ports > 1) {
+    if (0 == memcmp(src->sip_addr[0], src->sip_addr[1], ST_IP_ADDR_LEN)) {
+      err("%s, same %d.%d.%d.%d for both ip\n", __func__, ip[0], ip[1], ip[2], ip[3]);
+      return -EINVAL;
+    }
+  }
+
+  return 0;
+}
+
 st_handle st_init(struct st_init_params* p) {
   struct st_main_impl* impl = NULL;
   int socket[ST_PORT_MAX], ret;
   int num_ports = p->num_ports;
 
-  info("st version: %s, dpdk version: %s\n", st_version(), rte_version());
   RTE_BUILD_BUG_ON(ST_SESSION_PORT_MAX > (int)ST_PORT_MAX);
 
   ret = st_user_params_check(p);
@@ -700,6 +722,7 @@ st_handle st_init(struct st_init_params* p) {
     err("%s, st_dev_eal_init fail %d\n", __func__, ret);
     return NULL;
   }
+  info("st version: %s, dpdk version: %s\n", st_version(), rte_version());
 
   for (int i = 0; i < num_ports; i++) {
     socket[i] = st_dev_get_socket(st_p_port(p));
@@ -736,10 +759,16 @@ st_handle st_init(struct st_init_params* p) {
   rte_atomic32_set(&impl->request_exit, 0);
   rte_atomic32_set(&impl->dev_in_reset, 0);
   impl->lcore_lock_fd = -1;
-  impl->tx_sessions_cnt_max = RTE_MIN(32, p->tx_sessions_cnt_max);
-  impl->rx_sessions_cnt_max = RTE_MIN(32, p->rx_sessions_cnt_max);
+  impl->tx_sessions_cnt_max = RTE_MIN(60, p->tx_sessions_cnt_max);
+  impl->rx_sessions_cnt_max = RTE_MIN(60, p->rx_sessions_cnt_max);
   info("%s, max sessions tx %d rx %d\n", __func__, impl->tx_sessions_cnt_max,
        impl->rx_sessions_cnt_max);
+
+  /* init mgr lock for audio and anc */
+  pthread_mutex_init(&impl->tx_a_mgr_mutex, NULL);
+  pthread_mutex_init(&impl->rx_a_mgr_mutex, NULL);
+  pthread_mutex_init(&impl->tx_anc_mgr_mutex, NULL);
+  pthread_mutex_init(&impl->rx_anc_mgr_mutex, NULL);
 
   impl->tsc_hz = rte_get_tsc_hz();
 
@@ -843,6 +872,23 @@ int st_put_lcore(st_handle st, unsigned int lcore) {
   return st_dev_put_lcore(impl, lcore);
 }
 
+int st_bind_to_lcore(st_handle st, pthread_t thread, unsigned int lcore) {
+  struct st_main_impl* impl = st;
+  if (!impl) return -EIO;
+
+  if (!st_dev_lcore_valid(impl, lcore)) {
+    err("%s, invalid lcore %d\n", __func__, lcore);
+    return -EINVAL;
+  }
+
+  cpu_set_t mask;
+  CPU_ZERO(&mask);
+  CPU_SET(lcore, &mask);
+  pthread_setaffinity_np(thread, sizeof(mask), &mask);
+
+  return 0;
+}
+
 st20_tx_handle st20_tx_create(st_handle st, struct st20_tx_ops* ops) {
   struct st_main_impl* impl = st;
   struct st_sch_impl* sch;
@@ -883,7 +929,9 @@ st20_tx_handle st20_tx_create(st_handle st, struct st20_tx_ops* ops) {
     return NULL;
   }
 
+  pthread_mutex_lock(&sch->tx_video_mgr_mutex);
   ret = st_tx_video_init(impl, sch);
+  pthread_mutex_unlock(&sch->tx_video_mgr_mutex);
   if (ret < 0) {
     err("%s, st_tx_video_init fail %d\n", __func__, ret);
     st_dev_put_sch(sch, quota_mbs);
@@ -891,7 +939,9 @@ st20_tx_handle st20_tx_create(st_handle st, struct st20_tx_ops* ops) {
     return NULL;
   }
 
-  s = st_tx_video_sessions_mgr_attach(&sch->tx_video_mgr, ops);
+  pthread_mutex_lock(&sch->tx_video_mgr_mutex);
+  s = st_tx_video_sessions_mgr_attach(&sch->tx_video_mgr, ops, ST_SESSION_TYPE_TX_VIDEO);
+  pthread_mutex_unlock(&sch->tx_video_mgr_mutex);
   if (!s) {
     err("%s(%d), st_tx_sessions_mgr_attach fail\n", __func__, sch->idx);
     st_dev_put_sch(sch, quota_mbs);
@@ -960,10 +1010,9 @@ void* st20_tx_get_mbuf(st20_tx_handle handle, void** usrptr) {
     return NULL;
   }
 
-  pkt =
-      rte_pktmbuf_alloc(st_get_mempool(s_impl->parnet, s->port_maps[ST_SESSION_PORT_P]));
+  pkt = rte_pktmbuf_alloc(s->packet_mempool);
   if (!pkt) {
-    err("%s(%d), pkt alloc fail\n", __func__, idx);
+    dbg("%s(%d), pkt alloc fail\n", __func__, idx);
     return NULL;
   }
 
@@ -978,8 +1027,8 @@ int st20_tx_put_mbuf(st20_tx_handle handle, void* mbuf, uint16_t len) {
   struct rte_ring* packet_ring;
   int idx, ret;
 
-  if (len <= 0) {
-    dbg("%s, invalid len %d\n", __func__, len);
+  if (!st_rtp_len_valid(len)) {
+    if (len) err("%s, invalid len %d\n", __func__, len);
     rte_pktmbuf_free(mbuf);
     return -EIO;
   }
@@ -1010,6 +1059,17 @@ int st20_tx_put_mbuf(st20_tx_handle handle, void* mbuf, uint16_t len) {
   return 0;
 }
 
+int st20_tx_get_sch_idx(st20_tx_handle handle) {
+  struct st_tx_video_session_handle_impl* s_impl = handle;
+
+  if (s_impl->type != ST_SESSION_TYPE_TX_VIDEO) {
+    err("%s, invalid type %d\n", __func__, s_impl->type);
+    return -EINVAL;
+  }
+
+  return s_impl->sch->idx;
+}
+
 int st20_tx_free(st20_tx_handle handle) {
   struct st_tx_video_session_handle_impl* s_impl = handle;
   struct st_main_impl* impl;
@@ -1033,6 +1093,7 @@ int st20_tx_free(st20_tx_handle handle) {
     return -EIO;
   }
 
+  /* no need to lock as session is located already */
   ret = st_tx_video_sessions_mgr_detach(&sch->tx_video_mgr, s);
   if (ret < 0)
     err("%s(%d,%d), st_tx_sessions_mgr_deattach fail\n", __func__, sch_idx, idx);
@@ -1041,6 +1102,11 @@ int st20_tx_free(st20_tx_handle handle) {
   if (ret < 0) err("%s(%d, %d), st_dev_put_sch fail\n", __func__, sch_idx, idx);
 
   st_rte_free(s_impl);
+
+  /* update max idx */
+  pthread_mutex_lock(&sch->tx_video_mgr_mutex);
+  st_tx_video_sessions_mgr_update(&sch->tx_video_mgr);
+  pthread_mutex_unlock(&sch->tx_video_mgr_mutex);
 
   rte_atomic32_dec(&impl->st20_tx_sessions_cnt);
   info("%s, succ on sch %d session %d\n", __func__, sch_idx, idx);
@@ -1053,18 +1119,15 @@ st30_tx_handle st30_tx_create(st_handle st, struct st30_tx_ops* ops) {
   struct st_tx_audio_session_impl* s;
   int ret;
 
-  if (rte_atomic32_read(&impl->started)) {
-    err("%s, only allowed when dev is in stop state\n", __func__);
-    return NULL;
-  }
-
   ret = st_tx_audio_ops_check(ops);
   if (ret < 0) {
     err("%s, st_tx_audio_ops_check fail %d\n", __func__, ret);
     return NULL;
   }
 
+  pthread_mutex_lock(&impl->tx_a_mgr_mutex);
   ret = st_tx_audio_init(impl);
+  pthread_mutex_unlock(&impl->tx_a_mgr_mutex);
   if (ret < 0) {
     err("%s, st_tx_audio_init fail %d\n", __func__, ret);
     return NULL;
@@ -1076,7 +1139,9 @@ st30_tx_handle st30_tx_create(st_handle st, struct st30_tx_ops* ops) {
     return NULL;
   }
 
+  pthread_mutex_lock(&impl->tx_a_mgr_mutex);
   s = st_tx_audio_sessions_mgr_attach(&impl->tx_a_mgr, ops);
+  pthread_mutex_unlock(&impl->tx_a_mgr_mutex);
   if (!s) {
     err("%s, st_tx_audio_sessions_mgr_attach fail\n", __func__);
     st_rte_free(s_impl);
@@ -1107,15 +1172,16 @@ int st30_tx_free(st30_tx_handle handle) {
   s = s_impl->impl;
   idx = s->idx;
 
-  if (rte_atomic32_read(&impl->started)) {
-    err("%s(%d), only allowed when dev is in stop state\n", __func__, idx);
-    return -EIO;
-  }
-
+  /* no need to lock as session is located already */
   ret = st_tx_audio_sessions_mgr_detach(&impl->tx_a_mgr, s);
   if (ret < 0) err("%s(%d), st_tx_audio_sessions_mgr_deattach fail\n", __func__, idx);
 
   st_rte_free(s_impl);
+
+  /* update max idx */
+  pthread_mutex_lock(&impl->tx_a_mgr_mutex);
+  st_tx_audio_sessions_mgr_update(&impl->tx_a_mgr);
+  pthread_mutex_unlock(&impl->tx_a_mgr_mutex);
 
   rte_atomic32_dec(&impl->st30_tx_sessions_cnt);
   info("%s, succ on session %d\n", __func__, idx);
@@ -1171,10 +1237,9 @@ void* st30_tx_get_mbuf(st30_tx_handle handle, void** usrptr) {
     return NULL;
   }
 
-  pkt =
-      rte_pktmbuf_alloc(st_get_mempool(s_impl->parnet, s->port_maps[ST_SESSION_PORT_P]));
+  pkt = rte_pktmbuf_alloc(s->packet_mempool);
   if (!pkt) {
-    err("%s(%d), pkt alloc fail\n", __func__, idx);
+    dbg("%s(%d), pkt alloc fail\n", __func__, idx);
     return NULL;
   }
 
@@ -1195,8 +1260,8 @@ int st30_tx_put_mbuf(st30_tx_handle handle, void* mbuf, uint16_t len) {
     return -EIO;
   }
 
-  if (!len) {
-    err("%s, invalid len %d\n", __func__, len);
+  if (!st_rtp_len_valid(len)) {
+    if (len) err("%s, invalid len %d\n", __func__, len);
     rte_pktmbuf_free(mbuf);
     return -EIO;
   }
@@ -1227,18 +1292,15 @@ st40_tx_handle st40_tx_create(st_handle st, struct st40_tx_ops* ops) {
   struct st_tx_ancillary_session_impl* s;
   int ret;
 
-  if (rte_atomic32_read(&impl->started)) {
-    err("%s, only allowed when dev is in stop state\n", __func__);
-    return NULL;
-  }
-
   ret = st_tx_ancillary_ops_check(ops);
   if (ret < 0) {
     err("%s, st_tx_ancillary_ops_check fail %d\n", __func__, ret);
     return NULL;
   }
 
+  pthread_mutex_lock(&impl->tx_anc_mgr_mutex);
   ret = st_tx_anc_init(impl);
+  pthread_mutex_unlock(&impl->tx_anc_mgr_mutex);
   if (ret < 0) {
     err("%s, st_tx_anc_init fail %d\n", __func__, ret);
     return NULL;
@@ -1250,7 +1312,9 @@ st40_tx_handle st40_tx_create(st_handle st, struct st40_tx_ops* ops) {
     return NULL;
   }
 
+  pthread_mutex_lock(&impl->tx_anc_mgr_mutex);
   s = st_tx_ancillary_sessions_mgr_attach(&impl->tx_anc_mgr, ops);
+  pthread_mutex_unlock(&impl->tx_anc_mgr_mutex);
   if (!s) {
     err("%s, st_tx_ancillary_sessions_mgr_attach fail\n", __func__);
     st_rte_free(s_impl);
@@ -1291,10 +1355,9 @@ void* st40_tx_get_mbuf(st40_tx_handle handle, void** usrptr) {
     return NULL;
   }
 
-  pkt =
-      rte_pktmbuf_alloc(st_get_mempool(s_impl->parnet, s->port_maps[ST_SESSION_PORT_P]));
+  pkt = rte_pktmbuf_alloc(s->packet_mempool);
   if (!pkt) {
-    err("%s(%d), pkt alloc fail\n", __func__, idx);
+    dbg("%s(%d), pkt alloc fail\n", __func__, idx);
     return NULL;
   }
 
@@ -1314,8 +1377,8 @@ int st40_tx_put_mbuf(st40_tx_handle handle, void* mbuf, uint16_t len) {
     return -EIO;
   }
 
-  if (len <= 0) {
-    dbg("%s, invalid len %d\n", __func__, len);
+  if (!st_rtp_len_valid(len)) {
+    if (len) err("%s, invalid len %d\n", __func__, len);
     rte_pktmbuf_free(mbuf);
     return -EIO;
   }
@@ -1355,15 +1418,16 @@ int st40_tx_free(st40_tx_handle handle) {
   s = s_impl->impl;
   idx = s->idx;
 
-  if (rte_atomic32_read(&impl->started)) {
-    err("%s(%d), only allowed when dev is in stop state\n", __func__, idx);
-    return -EIO;
-  }
-
+  /* no need to lock as session is located already */
   ret = st_tx_ancillary_sessions_mgr_detach(&impl->tx_anc_mgr, s);
   if (ret < 0) err("%s(%d), st_tx_ancillary_sessions_mgr_detach fail\n", __func__, idx);
 
   st_rte_free(s_impl);
+
+  /* update max idx */
+  pthread_mutex_lock(&impl->tx_anc_mgr_mutex);
+  st_tx_ancillary_sessions_mgr_update(&impl->tx_anc_mgr);
+  pthread_mutex_unlock(&impl->tx_anc_mgr_mutex);
 
   rte_atomic32_dec(&impl->st40_tx_sessions_cnt);
   info("%s, succ on session %d\n", __func__, idx);
@@ -1401,11 +1465,6 @@ st20_rx_handle st20_rx_create(st_handle st, struct st20_rx_ops* ops) {
   int quota_mbs, ret;
   uint64_t bps;
 
-  if (rte_atomic32_read(&impl->started)) {
-    err("%s, only allowed when dev is in stop state\n", __func__);
-    return NULL;
-  }
-
   ret = st_rx_video_ops_check(ops);
   if (ret < 0) {
     err("%s, st_rx_video_ops_check fail %d\n", __func__, ret);
@@ -1432,7 +1491,9 @@ st20_rx_handle st20_rx_create(st_handle st, struct st20_rx_ops* ops) {
     return NULL;
   }
 
+  pthread_mutex_lock(&sch->rx_video_mgr_mutex);
   ret = st_rx_video_init(impl, sch);
+  pthread_mutex_unlock(&sch->rx_video_mgr_mutex);
   if (ret < 0) {
     err("%s, st_rx_video_init fail %d\n", __func__, ret);
     st_dev_put_sch(sch, quota_mbs);
@@ -1440,7 +1501,9 @@ st20_rx_handle st20_rx_create(st_handle st, struct st20_rx_ops* ops) {
     return NULL;
   }
 
+  pthread_mutex_lock(&sch->rx_video_mgr_mutex);
   s = st_rx_video_sessions_mgr_attach(&sch->rx_video_mgr, ops);
+  pthread_mutex_unlock(&sch->rx_video_mgr_mutex);
   if (!s) {
     err("%s(%d), st_rx_video_sessions_mgr_attach fail\n", __func__, sch->idx);
     st_dev_put_sch(sch, quota_mbs);
@@ -1457,6 +1520,43 @@ st20_rx_handle st20_rx_create(st_handle st, struct st20_rx_ops* ops) {
   rte_atomic32_inc(&impl->st20_rx_sessions_cnt);
   info("%s, succ on sch %d session %d\n", __func__, sch->idx, s->idx);
   return s_impl;
+}
+
+int st20_rx_update_source(st20_rx_handle handle, struct st_rx_source_info* src) {
+  struct st_rx_video_session_handle_impl* s_impl = handle;
+  struct st_rx_video_session_impl* s;
+  int idx, ret;
+
+  if (s_impl->type != ST_SESSION_TYPE_RX_VIDEO) {
+    err("%s, invalid type %d\n", __func__, s_impl->type);
+    return -EIO;
+  }
+
+  s = s_impl->impl;
+  idx = s->idx;
+
+  ret = st_rx_source_info_check(src, s->ops.num_port);
+  if (ret < 0) return ret;
+
+  ret = st_rx_video_sessions_mgr_update_src(&s_impl->sch->rx_video_mgr, s, src);
+  if (ret < 0) {
+    err("%s(%d), online update fail %d\n", __func__, idx, ret);
+    return ret;
+  }
+
+  info("%s, succ on session %d\n", __func__, idx);
+  return 0;
+}
+
+int st20_rx_get_sch_idx(st20_rx_handle handle) {
+  struct st_rx_video_session_handle_impl* s_impl = handle;
+
+  if (s_impl->type != ST_SESSION_TYPE_RX_VIDEO) {
+    err("%s, invalid type %d\n", __func__, s_impl->type);
+    return -EINVAL;
+  }
+
+  return s_impl->sch->idx;
 }
 
 int st20_rx_free(st20_rx_handle handle) {
@@ -1477,11 +1577,7 @@ int st20_rx_free(st20_rx_handle handle) {
   idx = s->idx;
   sch_idx = s->idx;
 
-  if (rte_atomic32_read(&impl->started)) {
-    err("%s(%d), only allowed when dev is in stop state\n", __func__, idx);
-    return -EIO;
-  }
-
+  /* no need to lock as session is located already */
   ret = st_rx_video_sessions_mgr_detach(&sch->rx_video_mgr, s);
   if (ret < 0)
     err("%s(%d,%d), st_rx_video_sessions_mgr_deattach fail\n", __func__, sch_idx, idx);
@@ -1490,6 +1586,11 @@ int st20_rx_free(st20_rx_handle handle) {
   if (ret < 0) err("%s(%d,%d), st_dev_put_sch fail\n", __func__, sch_idx, idx);
 
   st_rte_free(s_impl);
+
+  /* update max idx */
+  pthread_mutex_lock(&sch->rx_video_mgr_mutex);
+  st_rx_video_sessions_mgr_update(&sch->rx_video_mgr);
+  pthread_mutex_unlock(&sch->rx_video_mgr_mutex);
 
   rte_atomic32_dec(&impl->st20_rx_sessions_cnt);
   info("%s, succ on sch %d session %d\n", __func__, sch_idx, idx);
@@ -1507,7 +1608,7 @@ int st20_rx_put_framebuff(st20_rx_handle handle, void* frame) {
 
   s = s_impl->impl;
 
-  return rx_video_session_put_frame(s, frame);
+  return st_rx_video_session_put_frame(s, frame);
 }
 
 void* st20_rx_get_mbuf(st20_rx_handle handle, void** usrptr, uint16_t* len) {
@@ -1560,18 +1661,15 @@ st30_rx_handle st30_rx_create(st_handle st, struct st30_rx_ops* ops) {
   struct st_rx_audio_session_impl* s;
   int ret;
 
-  if (rte_atomic32_read(&impl->started)) {
-    err("%s, only allowed when dev is in stop state\n", __func__);
-    return NULL;
-  }
-
   ret = st_rx_audio_ops_check(ops);
   if (ret < 0) {
     err("%s, st_rx_audio_ops_check fail %d\n", __func__, ret);
     return NULL;
   }
 
+  pthread_mutex_lock(&impl->rx_a_mgr_mutex);
   ret = st_rx_audio_init(impl);
+  pthread_mutex_unlock(&impl->rx_a_mgr_mutex);
   if (ret < 0) {
     err("%s, st_rx_audio_init fail %d\n", __func__, ret);
     return NULL;
@@ -1583,7 +1681,9 @@ st30_rx_handle st30_rx_create(st_handle st, struct st30_rx_ops* ops) {
     return NULL;
   }
 
+  pthread_mutex_lock(&impl->rx_a_mgr_mutex);
   s = st_rx_audio_sessions_mgr_attach(&impl->rx_a_mgr, ops);
+  pthread_mutex_unlock(&impl->rx_a_mgr_mutex);
   if (!s) {
     err("%s(%d), st_rx_audio_sessions_mgr_attach fail\n", __func__, sch->idx);
     st_rte_free(s_impl);
@@ -1597,6 +1697,34 @@ st30_rx_handle st30_rx_create(st_handle st, struct st30_rx_ops* ops) {
   rte_atomic32_inc(&impl->st30_rx_sessions_cnt);
   info("%s, succ on sch %d session %d\n", __func__, sch->idx, s->idx);
   return s_impl;
+}
+
+int st30_rx_update_source(st30_rx_handle handle, struct st_rx_source_info* src) {
+  struct st_rx_audio_session_handle_impl* s_impl = handle;
+  struct st_main_impl* impl;
+  struct st_rx_audio_session_impl* s;
+  int idx, ret;
+
+  if (s_impl->type != ST_SESSION_TYPE_RX_AUDIO) {
+    err("%s, invalid type %d\n", __func__, s_impl->type);
+    return -EIO;
+  }
+
+  impl = s_impl->parnet;
+  s = s_impl->impl;
+  idx = s->idx;
+
+  ret = st_rx_source_info_check(src, s->ops.num_port);
+  if (ret < 0) return ret;
+
+  ret = st_rx_audio_sessions_mgr_update_src(&impl->rx_a_mgr, s, src);
+  if (ret < 0) {
+    err("%s(%d), online update fail %d\n", __func__, idx, ret);
+    return ret;
+  }
+
+  info("%s, succ on session %d\n", __func__, idx);
+  return 0;
 }
 
 int st30_rx_free(st30_rx_handle handle) {
@@ -1614,15 +1742,16 @@ int st30_rx_free(st30_rx_handle handle) {
   s = s_impl->impl;
   idx = s->idx;
 
-  if (rte_atomic32_read(&impl->started)) {
-    err("%s, only allowed when dev is in stop state\n", __func__);
-    return -EIO;
-  }
-
+  /* no need to lock as session is located already */
   ret = st_rx_audio_sessions_mgr_detach(&impl->rx_a_mgr, s);
   if (ret < 0) err("%s(%d), st_rx_audio_sessions_mgr_deattach fail\n", __func__, idx);
 
   st_rte_free(s_impl);
+
+  /* update max idx */
+  pthread_mutex_lock(&impl->rx_a_mgr_mutex);
+  st_rx_audio_sessions_mgr_update(&impl->rx_a_mgr);
+  pthread_mutex_unlock(&impl->rx_a_mgr_mutex);
 
   rte_atomic32_dec(&impl->st30_rx_sessions_cnt);
   info("%s, succ on session %d\n", __func__, idx);
@@ -1640,7 +1769,7 @@ int st30_rx_put_framebuff(st30_rx_handle handle, void* frame) {
 
   s = s_impl->impl;
 
-  return rx_audio_session_put_frame(s, frame);
+  return st_rx_audio_session_put_frame(s, frame);
 }
 
 void* st30_rx_get_mbuf(st30_rx_handle handle, void** usrptr, uint16_t* len) {
@@ -1692,18 +1821,15 @@ st40_rx_handle st40_rx_create(st_handle st, struct st40_rx_ops* ops) {
   struct st_rx_ancillary_session_impl* s;
   int ret;
 
-  if (rte_atomic32_read(&impl->started)) {
-    err("%s, only allowed when dev is in stop state\n", __func__);
-    return NULL;
-  }
-
   ret = st_rx_ancillary_ops_check(ops);
   if (ret < 0) {
     err("%s, st_rx_audio_ops_check fail %d\n", __func__, ret);
     return NULL;
   }
 
+  pthread_mutex_lock(&impl->rx_anc_mgr_mutex);
   ret = st_rx_anc_init(impl);
+  pthread_mutex_unlock(&impl->rx_anc_mgr_mutex);
   if (ret < 0) {
     err("%s, st_rx_audio_init fail %d\n", __func__, ret);
     return NULL;
@@ -1715,7 +1841,9 @@ st40_rx_handle st40_rx_create(st_handle st, struct st40_rx_ops* ops) {
     return NULL;
   }
 
+  pthread_mutex_lock(&impl->rx_anc_mgr_mutex);
   s = st_rx_ancillary_sessions_mgr_attach(&impl->rx_anc_mgr, ops);
+  pthread_mutex_unlock(&impl->rx_anc_mgr_mutex);
   if (!s) {
     err("%s, st_rx_ancillary_sessions_mgr_attach fail\n", __func__);
     st_rte_free(s_impl);
@@ -1729,6 +1857,34 @@ st40_rx_handle st40_rx_create(st_handle st, struct st40_rx_ops* ops) {
   rte_atomic32_inc(&impl->st40_rx_sessions_cnt);
   info("%s, succ on session %d\n", __func__, s->idx);
   return s_impl;
+}
+
+int st40_rx_update_source(st40_rx_handle handle, struct st_rx_source_info* src) {
+  struct st_rx_ancillary_session_handle_impl* s_impl = handle;
+  struct st_main_impl* impl;
+  struct st_rx_ancillary_session_impl* s;
+  int idx, ret;
+
+  if (s_impl->type != ST_SESSION_TYPE_RX_ANC) {
+    err("%s, invalid type %d\n", __func__, s_impl->type);
+    return -EIO;
+  }
+
+  impl = s_impl->parnet;
+  s = s_impl->impl;
+  idx = s->idx;
+
+  ret = st_rx_source_info_check(src, s->ops.num_port);
+  if (ret < 0) return ret;
+
+  ret = st_rx_ancillary_sessions_mgr_update_src(&impl->rx_anc_mgr, s, src);
+  if (ret < 0) {
+    err("%s(%d), online update fail %d\n", __func__, idx, ret);
+    return ret;
+  }
+
+  info("%s, succ on session %d\n", __func__, idx);
+  return 0;
 }
 
 int st40_rx_free(st40_rx_handle handle) {
@@ -1746,15 +1902,16 @@ int st40_rx_free(st40_rx_handle handle) {
   s = s_impl->impl;
   idx = s->idx;
 
-  if (rte_atomic32_read(&impl->started)) {
-    err("%s, only allowed when dev is in stop state\n", __func__);
-    return -EIO;
-  }
-
+  /* no need to lock as session is located already */
   ret = st_rx_ancillary_sessions_mgr_detach(&impl->rx_anc_mgr, s);
   if (ret < 0) err("%s(%d), st_rx_ancillary_sessions_mgr_detach fail\n", __func__, idx);
 
   st_rte_free(s_impl);
+
+  /* update max idx */
+  pthread_mutex_lock(&impl->rx_anc_mgr_mutex);
+  st_rx_ancillary_sessions_mgr_update(&impl->rx_anc_mgr);
+  pthread_mutex_unlock(&impl->rx_anc_mgr_mutex);
 
   rte_atomic32_dec(&impl->st40_rx_sessions_cnt);
   info("%s, succ on session %d\n", __func__, idx);
@@ -1845,7 +2002,9 @@ st22_tx_handle st22_tx_create(st_handle st, struct st22_tx_ops* ops) {
     return NULL;
   }
 
+  pthread_mutex_lock(&sch->tx_video_mgr_mutex);
   ret = st_tx_video_init(impl, sch);
+  pthread_mutex_unlock(&sch->tx_video_mgr_mutex);
   if (ret < 0) {
     err("%s, st_tx_video_init fail %d\n", __func__, ret);
     st_dev_put_sch(sch, quota_mbs);
@@ -1876,7 +2035,10 @@ st22_tx_handle st22_tx_create(st_handle st, struct st22_tx_ops* ops) {
   st20_ops.rtp_frame_total_pkts = ops->rtp_frame_total_pkts;
   st20_ops.rtp_pkt_size = ops->rtp_pkt_size;
   st20_ops.notify_rtp_done = ops->notify_rtp_done;
-  s = st_tx_video_sessions_mgr_attach(&sch->tx_video_mgr, &st20_ops);
+  pthread_mutex_lock(&sch->tx_video_mgr_mutex);
+  s = st_tx_video_sessions_mgr_attach(&sch->tx_video_mgr, &st20_ops,
+                                      ST22_SESSION_TYPE_TX_VIDEO);
+  pthread_mutex_unlock(&sch->tx_video_mgr_mutex);
   if (!s) {
     err("%s(%d), st_tx_sessions_mgr_attach fail\n", __func__, sch->idx);
     st_dev_put_sch(sch, quota_mbs);
@@ -1919,6 +2081,7 @@ int st22_tx_free(st22_tx_handle handle) {
     return -EIO;
   }
 
+  /* no need to lock as session is located already */
   ret = st_tx_video_sessions_mgr_detach(&sch->tx_video_mgr, s);
   if (ret < 0)
     err("%s(%d,%d), st_tx_sessions_mgr_deattach fail\n", __func__, sch_idx, idx);
@@ -1927,6 +2090,11 @@ int st22_tx_free(st22_tx_handle handle) {
   if (ret < 0) err("%s(%d, %d), st_dev_put_sch fail\n", __func__, sch_idx, idx);
 
   st_rte_free(s_impl);
+
+  /* update max idx */
+  pthread_mutex_lock(&sch->tx_video_mgr_mutex);
+  st_tx_video_sessions_mgr_update(&sch->tx_video_mgr);
+  pthread_mutex_unlock(&sch->tx_video_mgr_mutex);
 
   rte_atomic32_dec(&impl->st22_tx_sessions_cnt);
   info("%s, succ on sch %d session %d\n", __func__, sch_idx, idx);
@@ -1958,10 +2126,9 @@ void* st22_tx_get_mbuf(st22_tx_handle handle, void** usrptr) {
     return NULL;
   }
 
-  pkt =
-      rte_pktmbuf_alloc(st_get_mempool(s_impl->parnet, s->port_maps[ST_SESSION_PORT_P]));
+  pkt = rte_pktmbuf_alloc(s->packet_mempool);
   if (!pkt) {
-    err("%s(%d), pkt alloc fail\n", __func__, idx);
+    dbg("%s(%d), pkt alloc fail\n", __func__, idx);
     return NULL;
   }
 
@@ -1976,8 +2143,8 @@ int st22_tx_put_mbuf(st22_tx_handle handle, void* mbuf, uint16_t len) {
   struct rte_ring* packet_ring;
   int idx, ret;
 
-  if (len <= 0) {
-    dbg("%s, invalid len %d\n", __func__, len);
+  if (!st_rtp_len_valid(len)) {
+    if (len) err("%s, invalid len %d\n", __func__, len);
     rte_pktmbuf_free(mbuf);
     return -EIO;
   }
@@ -2008,6 +2175,17 @@ int st22_tx_put_mbuf(st22_tx_handle handle, void* mbuf, uint16_t len) {
   return 0;
 }
 
+int st22_tx_get_sch_idx(st22_tx_handle handle) {
+  struct st22_tx_video_session_handle_impl* s_impl = handle;
+
+  if (s_impl->type != ST22_SESSION_TYPE_TX_VIDEO) {
+    err("%s, invalid type %d\n", __func__, s_impl->type);
+    return -EINVAL;
+  }
+
+  return s_impl->sch->idx;
+}
+
 st22_rx_handle st22_rx_create(st_handle st, struct st22_rx_ops* ops) {
   struct st_main_impl* impl = st;
   struct st_sch_impl* sch;
@@ -2016,11 +2194,6 @@ st22_rx_handle st22_rx_create(st_handle st, struct st22_rx_ops* ops) {
   int quota_mbs, ret;
   uint64_t bps;
   struct st20_rx_ops st20_ops;
-
-  if (rte_atomic32_read(&impl->started)) {
-    err("%s, only allowed when dev is in stop state\n", __func__);
-    return NULL;
-  }
 
   ret = st22_rx_video_ops_check(ops);
   if (ret < 0) {
@@ -2049,7 +2222,9 @@ st22_rx_handle st22_rx_create(st_handle st, struct st22_rx_ops* ops) {
     return NULL;
   }
 
+  pthread_mutex_lock(&sch->rx_video_mgr_mutex);
   ret = st_rx_video_init(impl, sch);
+  pthread_mutex_unlock(&sch->rx_video_mgr_mutex);
   if (ret < 0) {
     err("%s, st_rx_video_init fail %d\n", __func__, ret);
     st_dev_put_sch(sch, quota_mbs);
@@ -2078,7 +2253,9 @@ st22_rx_handle st22_rx_create(st_handle st, struct st22_rx_ops* ops) {
   st20_ops.fmt = ops->fmt;
   st20_ops.rtp_ring_size = ops->rtp_ring_size;
   st20_ops.notify_rtp_ready = ops->notify_rtp_ready;
+  pthread_mutex_lock(&sch->rx_video_mgr_mutex);
   s = st_rx_video_sessions_mgr_attach(&sch->rx_video_mgr, &st20_ops);
+  pthread_mutex_unlock(&sch->rx_video_mgr_mutex);
   if (!s) {
     err("%s(%d), st_rx_video_sessions_mgr_attach fail\n", __func__, sch->idx);
     st_dev_put_sch(sch, quota_mbs);
@@ -2095,6 +2272,43 @@ st22_rx_handle st22_rx_create(st_handle st, struct st22_rx_ops* ops) {
   rte_atomic32_inc(&impl->st22_rx_sessions_cnt);
   info("%s, succ on sch %d session %d\n", __func__, sch->idx, s->idx);
   return s_impl;
+}
+
+int st22_rx_update_source(st22_rx_handle handle, struct st_rx_source_info* src) {
+  struct st22_rx_video_session_handle_impl* s_impl = handle;
+  struct st_rx_video_session_impl* s;
+  int idx, ret;
+
+  if (s_impl->type != ST22_SESSION_TYPE_RX_VIDEO) {
+    err("%s, invalid type %d\n", __func__, s_impl->type);
+    return -EIO;
+  }
+
+  s = s_impl->impl;
+  idx = s->idx;
+
+  ret = st_rx_source_info_check(src, s->ops.num_port);
+  if (ret < 0) return ret;
+
+  ret = st_rx_video_sessions_mgr_update_src(&s_impl->sch->rx_video_mgr, s, src);
+  if (ret < 0) {
+    err("%s(%d), online update fail %d\n", __func__, idx, ret);
+    return ret;
+  }
+
+  info("%s, succ on session %d\n", __func__, idx);
+  return 0;
+}
+
+int st22_rx_get_sch_idx(st22_rx_handle handle) {
+  struct st22_rx_video_session_handle_impl* s_impl = handle;
+
+  if (s_impl->type != ST22_SESSION_TYPE_RX_VIDEO) {
+    err("%s, invalid type %d\n", __func__, s_impl->type);
+    return -EINVAL;
+  }
+
+  return s_impl->sch->idx;
 }
 
 int st22_rx_free(st22_rx_handle handle) {
@@ -2115,11 +2329,7 @@ int st22_rx_free(st22_rx_handle handle) {
   idx = s->idx;
   sch_idx = s->idx;
 
-  if (rte_atomic32_read(&impl->started)) {
-    err("%s(%d), only allowed when dev is in stop state\n", __func__, idx);
-    return -EIO;
-  }
-
+  /* no need to lock as session is located already */
   ret = st_rx_video_sessions_mgr_detach(&sch->rx_video_mgr, s);
   if (ret < 0)
     err("%s(%d,%d), st_rx_video_sessions_mgr_deattach fail\n", __func__, sch_idx, idx);
@@ -2128,6 +2338,11 @@ int st22_rx_free(st22_rx_handle handle) {
   if (ret < 0) err("%s(%d,%d), st_dev_put_sch fail\n", __func__, sch_idx, idx);
 
   st_rte_free(s_impl);
+
+  /* update max idx */
+  pthread_mutex_lock(&sch->rx_video_mgr_mutex);
+  st_rx_video_sessions_mgr_update(&sch->rx_video_mgr);
+  pthread_mutex_unlock(&sch->rx_video_mgr_mutex);
 
   rte_atomic32_dec(&impl->st22_rx_sessions_cnt);
   info("%s, succ on sch %d session %d\n", __func__, sch_idx, idx);
@@ -2246,6 +2461,10 @@ int st_get_stats(st_handle st, struct st_stats* stats) {
   stats->st40_rx_sessions_cnt = rte_atomic32_read(&impl->st40_rx_sessions_cnt);
   stats->sch_cnt = rte_atomic32_read(&impl->sch_cnt);
   stats->lcore_cnt = rte_atomic32_read(&impl->lcore_cnt);
+  if (rte_atomic32_read(&impl->started))
+    stats->dev_started = 1;
+  else
+    stats->dev_started = 0;
   return 0;
 }
 

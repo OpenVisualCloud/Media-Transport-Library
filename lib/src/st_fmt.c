@@ -89,30 +89,6 @@ static const struct st20_pgroup st20_pgroups[] = {
 
 };
 
-static const struct st21_timing st20_timings[] = {
-    {
-        /* 1080p */
-        .width = 1920,
-        .height = 1080,
-        .total_lines = 1125,
-        .tro_lines = 43,
-    },
-    {
-        /* 720p */
-        .width = 1280,
-        .height = 720,
-        .total_lines = 750,
-        .tro_lines = 28,
-    },
-    {
-        /* 2160p */
-        .width = 3840,
-        .height = 2160,
-        .total_lines = 2250,
-        .tro_lines = 86,
-    },
-};
-
 static const struct st_fps_timing st_fps_timings[] = {
     {
         /* ST_FPS_P59_94 */
@@ -120,6 +96,7 @@ static const struct st_fps_timing st_fps_timings[] = {
         .sampling_clock_rate = 90 * 1000,
         .mul = 60000,
         .den = 1001,
+        .frame_rate = 59.94,
     },
     {
         /* ST_FPS_P50 */
@@ -127,6 +104,7 @@ static const struct st_fps_timing st_fps_timings[] = {
         .sampling_clock_rate = 90 * 1000,
         .mul = 50,
         .den = 1,
+        .frame_rate = 50,
     },
     {
         /* ST_FPS_P29_97 */
@@ -134,6 +112,7 @@ static const struct st_fps_timing st_fps_timings[] = {
         .sampling_clock_rate = 90 * 1000,
         .mul = 30000,
         .den = 1001,
+        .frame_rate = 29.97,
     },
 };
 
@@ -151,20 +130,6 @@ int st20_get_pgroup(enum st20_fmt fmt, struct st20_pgroup* pg) {
   return -EINVAL;
 }
 
-int st21_get_timing(int width, int height, struct st21_timing* tm) {
-  int i;
-
-  for (i = 0; i < ST_ARRAY_SIZE(st20_timings); i++) {
-    if ((width == st20_timings[i].width) && (height == st20_timings[i].height)) {
-      *tm = st20_timings[i];
-      return 0;
-    }
-  }
-
-  err("%s, invalid width %d height %d\n", __func__, width, height);
-  return -EINVAL;
-}
-
 int st_get_fps_timing(enum st_fps fps, struct st_fps_timing* fps_tm) {
   int i;
 
@@ -179,28 +144,38 @@ int st_get_fps_timing(enum st_fps fps, struct st_fps_timing* fps_tm) {
   return -EINVAL;
 }
 
+double st_frame_rate(enum st_fps fps) {
+  int i;
+
+  for (i = 0; i < ST_ARRAY_SIZE(st_fps_timings); i++) {
+    if (fps == st_fps_timings[i].fps) {
+      return st_fps_timings[i].frame_rate;
+    }
+  }
+
+  err("%s, invalid fps %d\n", __func__, fps);
+  return 0;
+}
+
 int st20_get_bandwidth_bps(int width, int height, enum st20_fmt fmt, enum st_fps fps,
                            uint64_t* bps) {
   struct st20_pgroup pg;
-  struct st21_timing tm;
   struct st_fps_timing fps_tm;
   int ret;
 
   ret = st20_get_pgroup(fmt, &pg);
   if (ret < 0) return ret;
 
-  ret = st21_get_timing(width, height, &tm);
-  if (ret < 0) return ret;
-
   ret = st_get_fps_timing(fps, &fps_tm);
   if (ret < 0) return ret;
 
-  *bps = (uint64_t)width * 8 * tm.total_lines * pg.size / pg.coverage * fps_tm.mul /
-         fps_tm.den;
+  double ractive = 1080.0 / 1125.0;
+  *bps = (uint64_t)width * height * 8 * pg.size / pg.coverage * fps_tm.mul / fps_tm.den;
+  *bps = (double)*bps / ractive;
   return 0;
 }
 
-int st30_get_sample_size(enum st30_fmt fmt, enum st30_channel c, enum st30_sampling s) {
+int st30_get_sample_size(enum st30_fmt fmt, uint16_t c, enum st30_sampling s) {
   int pcm_size = 2;
   switch (fmt) {
     case ST30_FMT_PCM16:
@@ -216,7 +191,6 @@ int st30_get_sample_size(enum st30_fmt fmt, enum st30_channel c, enum st30_sampl
       err("%s, wrong fmt %d\n", __func__, fmt);
       return -EINVAL;
   }
-  int channel_size = (c == ST30_CHAN_MONO) ? 1 : 2;
   int sample_size = (s == ST30_SAMPLING_48K) ? 48 : 96;
-  return pcm_size * channel_size * sample_size;
+  return pcm_size * c * sample_size;
 }

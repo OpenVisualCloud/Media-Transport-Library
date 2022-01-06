@@ -28,13 +28,10 @@
 #define _ST_APP_PARSE_JSON_HEAD_H_
 
 #define MAX_INTERFACES 2
-#define MAX_PTP_LEN 32
-#define MAX_TS_LEN 10
-#define MAX_TXS 10
 
-#define MAX_VIDEO 32
-#define MAX_AUDIO 20
-#define MAX_ANC 20
+#define MAX_VIDEO 60
+#define MAX_AUDIO 60
+#define MAX_ANC 60
 
 #define ST_APP_URL_MAX_LEN (256)
 
@@ -68,6 +65,9 @@ enum video_format {
   VIDEO_FORMAT_2160P_59FPS,
   VIDEO_FORMAT_2160P_50FPS,
   VIDEO_FORMAT_2160P_29FPS,
+  VIDEO_FORMAT_4320P_59FPS,
+  VIDEO_FORMAT_4320P_50FPS,
+  VIDEO_FORMAT_4320P_29FPS,
   VIDEO_FORMAT_MAX,
 };
 
@@ -91,6 +91,7 @@ typedef struct st_json_tx_video_session {
   enum video_format video_format;
   enum pacing pacing;
   enum st20_type type;
+  enum st20_packing packing;
   enum tr_offset tr_offset;
   enum st20_fmt pg_format;
 } st_json_tx_video_session_t;
@@ -104,7 +105,7 @@ typedef struct st_json_tx_audio_session {
   uint16_t udp_port;
   enum st30_type type;
   enum st30_fmt audio_format;
-  enum st30_channel audio_channel;
+  int audio_channel;
   enum st30_sampling audio_sampling;
   int audio_frametime_ms;
 } st_json_tx_audio_session_t;
@@ -144,7 +145,7 @@ typedef struct st_json_rx_audio_session {
   uint16_t udp_port;
   enum st30_type type;
   enum st30_fmt audio_format;
-  enum st30_channel audio_channel;
+  int audio_channel;
   enum st30_sampling audio_sampling;
   int audio_frametime_ms;
 } st_json_rx_audio_session_t;
@@ -161,6 +162,7 @@ typedef struct st_json_rx_ancillary_session {
 typedef struct st_json_context {
   st_json_interface_t interfaces[MAX_INTERFACES];
   int num_interfaces;
+  int sch_quota;
 
   st_json_tx_video_session_t tx_video[MAX_VIDEO];
   int tx_video_session_cnt;

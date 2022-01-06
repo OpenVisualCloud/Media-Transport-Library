@@ -37,14 +37,11 @@ app_c_args += ['-Wall']
 if is_windows
 libpcap =[]
 mingw_root_dir = 'c:\mingw64'
-dpdk_root_dir = 'c:\dpdk'
 app_c_args += ['-DWINDOWSENV']
 app_c_args += ['-Wformat=0']
 app_c_args += ['-D__USE_MINGW_ANSI_STDIO']
 mingw_include_dir = mingw_root_dir + '''\include'''
 windows_include_dir = '..\..\lib\windows'
-dpdk_include_dir = dpdk_root_dir + '''\lib\eal\windows\include'''
-app_c_args += ['-I' + dpdk_include_dir]
 app_c_args += ['-I' + mingw_include_dir]
 app_c_args += ['-I' + windows_include_dir]
 
@@ -63,7 +60,7 @@ app_c_args += ['-msse4.2']
 
 app_ld_args = []
 
-app_ld_args += ['-pthread']
+app_ld_args += ['-pthread','-lm']
 
 if is_windows
 app_ld_args += ['-lmingw32','-lws2_32','-lDbghelp','-lSetupapi','-ldinput8', '-ldxguid', '-ldxerr8', '-lwinmm', '-limm32','-lversion','-lwpcap','-lPacket','-lSDL2','-lSDL2Main','-lmman','-ljson-c']
@@ -90,7 +87,19 @@ executable('TxVideoApp', video_tx_sources,
   dependencies: [libst_dpdk]
 )
 
+executable('TxRtpVideoApp', video_tx_rtp_sources,
+  c_args : app_c_args,
+  link_args: app_ld_args,
+  dependencies: [libst_dpdk]
+)
+
 executable('RxVideoApp', video_rx_sources,
+  c_args : app_c_args,
+  link_args: app_ld_args,
+  dependencies: [libst_dpdk]
+)
+
+executable('RxRtpVideoApp', video_rx_rtp_sources,
   c_args : app_c_args,
   link_args: app_ld_args,
   dependencies: [libst_dpdk]

@@ -48,13 +48,14 @@ int st_ring_dequeue_clean(struct rte_ring* ring) {
   return 0;
 }
 
-void st_mbuf_sanity_check(struct rte_mbuf** mbufs, uint16_t nb) {
+void st_mbuf_sanity_check(struct rte_mbuf** mbufs, uint16_t nb, char* tag) {
   struct rte_mbuf* mbuf;
 
   for (int i = 0; i < nb; i++) {
     mbuf = mbufs[i];
     if ((mbuf->pkt_len < 60) || (mbuf->nb_segs > 2) || (mbuf->pkt_len > 1514)) {
-      err("%s, fail on %d len %d\n", __func__, i, mbuf->pkt_len);
+      err("%s(%s), fail on %d len %d nb_segs %d\n", __func__, tag ? tag : "", i,
+          mbuf->pkt_len, mbuf->nb_segs);
     }
   }
 }
@@ -129,9 +130,9 @@ void st_video_rtp_dump(enum st_port port, int idx, char* tag,
   uint16_t line1_number = ntohs(rtp->row_number);
   uint16_t line1_offset = ntohs(rtp->row_offset);
   uint16_t line1_length = ntohs(rtp->row_length);
-  uint32_t tmstamp = ntohl(rtp->tmstamp);
-  uint32_t seq_id =
-      (uint32_t)ntohs(rtp->seq_number) | (((uint32_t)ntohs(rtp->seq_number_ext)) << 16);
+  uint32_t tmstamp = ntohl(rtp->base.tmstamp);
+  uint32_t seq_id = (uint32_t)ntohs(rtp->base.seq_number) |
+                    (((uint32_t)ntohs(rtp->seq_number_ext)) << 16);
   struct st20_rfc4175_extra_rtp_hdr* extra_rtp = NULL;
 
   if (line1_offset & 0x8000) {
@@ -207,4 +208,33 @@ void st_eth_macaddr_dump(enum st_port port, char* tag, struct rte_ether_addr* ma
   uint8_t* addr = &mac_addr->addr_bytes[0];
   info("%02x:%02x:%02x:%02x:%02x:%02x\n", addr[0], addr[1], addr[2], addr[3], addr[4],
        addr[5]);
+}
+
+struct rte_mbuf* st_build_pad(struct st_main_impl* impl, enum st_port port,
+                              uint16_t port_id, uint16_t ether_type, uint16_t len) {
+  struct rte_ether_addr src_mac;
+  struct rte_mbuf* pad;
+  struct rte_ether_hdr* eth_hdr;
+
+  pad = rte_pktmbuf_alloc(st_get_mempool(impl, port));
+  if (unlikely(pad == NULL)) {
+    err("%s, fail to allocate pad pktmbuf\n", __func__);
+    return NULL;
+  }
+
+  rte_eth_macaddr_get(port_id, &src_mac);
+  rte_pktmbuf_append(pad, len);
+  pad->data_len = len;
+  pad->pkt_len = len;
+
+  eth_hdr = rte_pktmbuf_mtod(pad, struct rte_ether_hdr*);
+  memset((char*)eth_hdr, 0, len);
+  eth_hdr->ether_type = htons(ether_type);
+  eth_hdr->d_addr.addr_bytes[0] = 0x01;
+  eth_hdr->d_addr.addr_bytes[1] = 0x80;
+  eth_hdr->d_addr.addr_bytes[2] = 0xC2;
+  eth_hdr->d_addr.addr_bytes[5] = 0x01;
+  rte_memcpy(&eth_hdr->s_addr, &src_mac, RTE_ETHER_ADDR_LEN);
+
+  return pad;
 }

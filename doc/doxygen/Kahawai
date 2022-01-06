@@ -870,6 +870,7 @@ INPUT                  = ../../include \
                          ../build.md \
                          ../run.md \
                          ../configuration_guide.md \
+                         ../performance.md \
                          programmers_guide.md \
                          api.md
 

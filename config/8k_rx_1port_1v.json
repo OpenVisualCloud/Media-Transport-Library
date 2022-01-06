@@ -1,0 +1,30 @@
+{
+    "interfaces": [
+        {
+            "name": "0000:af:00.1",
+            "ip": "192.168.84.189"
+        }
+    ],
+    "rx_sessions": [
+        {
+            "ip": [
+                "239.168.84.1"
+            ],
+            "interface": [
+                0
+            ],
+            "video": [
+                {
+                    "replicas": 1,
+                    "type": "frame",
+                    "pacing": "gap",
+                    "start_port": 20000,
+                    "tr_offset": "default",
+                    "video_format": "i4320p59",
+                    "pg_format": "YUV_422_10bit",
+                    "display": false
+                }
+            ]
+        }
+    ]
+}

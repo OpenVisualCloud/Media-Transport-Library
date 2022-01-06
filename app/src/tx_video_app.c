@@ -44,6 +44,8 @@ static int app_tx_video_frame_done(void* priv, uint16_t frame_idx) {
   pthread_cond_signal(&s->st21_wake_cond);
   pthread_mutex_unlock(&s->st21_wake_mutex);
   s->st21_frame_done_cnt++;
+  if (!s->stat_frame_frist_tx_time)
+    s->stat_frame_frist_tx_time = st_app_get_monotonic_time();
   dbg("%s(%d), framebuffer index %d\n", __func__, s->idx, frame_idx);
   return 0;
 }
@@ -63,10 +65,7 @@ static void* app_tx_video_frame_thread(void* arg) {
   int idx = s->idx;
   uint16_t i;
   if (s->lcore != -1) {
-    cpu_set_t mask;
-    CPU_ZERO(&mask);
-    CPU_SET(s->lcore, &mask);
-    pthread_setaffinity_np(pthread_self(), sizeof(mask), &mask);
+    st_bind_to_lcore(s->st, pthread_self(), s->lcore);
   }
 
   info("%s(%d), start\n", __func__, idx);
@@ -131,10 +130,7 @@ static void* app_tx_video_pcap_thread(void* arg) {
   struct udphdr* udp_hdr;
   uint16_t udp_data_len;
   if (s->lcore != -1) {
-    cpu_set_t mask;
-    CPU_ZERO(&mask);
-    CPU_SET(s->lcore, &mask);
-    pthread_setaffinity_np(pthread_self(), sizeof(mask), &mask);
+    st_bind_to_lcore(s->st, pthread_self(), s->lcore);
   }
 
   info("%s(%d), start\n", __func__, idx);
@@ -192,29 +188,48 @@ static int app_tx_video_init_rtp(struct st_app_tx_video_session* s,
                                  struct st20_tx_ops* ops) {
   int idx = s->idx;
   struct st20_rfc4175_rtp_hdr* rtp = &s->st20_rtp_base;
-  /* calculate pkts in line for rtp */
-  size_t bytes_in_pkt = ST_PKT_MAX_RTP_BYTES - sizeof(*rtp);
-  /* 4800 if 1080p yuv422 */
-  size_t bytes_in_line = ops->width * s->st21_pg.size / s->st21_pg.coverage;
 
-  s->st21_pkts_in_line = (bytes_in_line / bytes_in_pkt) + 1;
-  s->st21_total_pkts = ops->height * s->st21_pkts_in_line;
+  /* 4800 if 1080p yuv422 */
+  s->st21_bytes_in_line = ops->width * s->st21_pg.size / s->st21_pg.coverage;
   s->st21_pkt_idx = 0;
   s->st21_seq_id = 1;
-  int pixels_in_pkts = (ops->width + s->st21_pkts_in_line - 1) / s->st21_pkts_in_line;
-  s->st21_pkt_data_len =
-      (pixels_in_pkts + s->st21_pg.coverage - 1) / s->st21_pg.coverage * s->st21_pg.size;
-  info("%s(%d), %d pkts(%d) in line\n", __func__, idx, s->st21_pkts_in_line,
-       s->st21_pkt_data_len);
+
+  if (ops->packing == ST20_PACKING_GPM_SL) {
+    /* calculate pkts in line for rtp */
+    size_t bytes_in_pkt = ST_PKT_MAX_RTP_BYTES - sizeof(*rtp);
+    s->st21_pkts_in_line = (s->st21_bytes_in_line / bytes_in_pkt) + 1;
+    s->st21_total_pkts = ops->height * s->st21_pkts_in_line;
+    int pixels_in_pkts = (ops->width + s->st21_pkts_in_line - 1) / s->st21_pkts_in_line;
+    s->st21_pkt_data_len = (pixels_in_pkts + s->st21_pg.coverage - 1) /
+                           s->st21_pg.coverage * s->st21_pg.size;
+    info("%s(%d), %d pkts(%d) in line\n", __func__, idx, s->st21_pkts_in_line,
+         s->st21_pkt_data_len);
+  } else if (ops->packing == ST20_PACKING_BPM) {
+    s->st21_pkt_data_len = 1260;
+    int pixels_in_pkts = s->st21_pkt_data_len * s->st21_pg.coverage / s->st21_pg.size;
+    s->st21_total_pkts = ceil((double)ops->width * ops->height / pixels_in_pkts);
+    info("%s(%d), %d pkts(%d) in frame\n", __func__, idx, s->st21_total_pkts,
+         s->st21_pkt_data_len);
+  } else if (ops->packing == ST20_PACKING_GPM) {
+    int max_data_len =
+        ST_PKT_MAX_RTP_BYTES - sizeof(*rtp) - sizeof(struct st20_rfc4175_extra_rtp_hdr);
+    int pg_per_pkt = max_data_len / s->st21_pg.size;
+    s->st21_total_pkts =
+        (ceil)((double)ops->width * ops->height / (s->st21_pg.coverage * pg_per_pkt));
+    s->st21_pkt_data_len = pg_per_pkt * s->st21_pg.size;
+  } else {
+    err("%s(%d), invalid packing mode: %d\n", __func__, idx, ops->packing);
+    return -EIO;
+  }
 
   /* todo: how to get the pkts info for pcap */
   ops->rtp_frame_total_pkts = s->st21_total_pkts;
   ops->rtp_pkt_size = s->st21_pkt_data_len + sizeof(*rtp);
 
   memset(rtp, 0, sizeof(*rtp));
-  rtp->version = 2;
-  rtp->payload_type = 112;
-  rtp->ssrc = htonl(s->idx + 0x423450);
+  rtp->base.version = 2;
+  rtp->base.payload_type = 112;
+  rtp->base.ssrc = htonl(s->idx + 0x423450);
   rtp->row_length = htons(s->st21_pkt_data_len);
   return 0;
 }
@@ -222,41 +237,68 @@ static int app_tx_video_init_rtp(struct st_app_tx_video_session* s,
 static int app_tx_video_build_rtp_packet(struct st_app_tx_video_session* s,
                                          struct st20_rfc4175_rtp_hdr* rtp,
                                          uint16_t* pkt_len) {
-  uint16_t data_len = s->st21_pkt_data_len;
-  int pkts_in_line = s->st21_pkts_in_line;
-  int row_number = s->st21_pkt_idx / pkts_in_line;
-  int pixels_in_pkt = s->st21_pkt_data_len / s->st21_pg.size * s->st21_pg.coverage;
-  int row_offset = pixels_in_pkt * (s->st21_pkt_idx % pkts_in_line);
+  struct st20_rfc4175_extra_rtp_hdr* e_rtp = NULL;
+  uint32_t offset;
+  uint16_t row_number, row_offset;
   uint8_t* frame = s->st21_frame_cursor;
   uint8_t* payload = (uint8_t*)rtp + sizeof(*rtp);
+
+  if (s->single_line) {
+    row_number = s->st21_pkt_idx / s->st21_pkts_in_line;
+    int pixels_in_pkt = s->st21_pkt_data_len / s->st21_pg.size * s->st21_pg.coverage;
+    row_offset = pixels_in_pkt * (s->st21_pkt_idx % s->st21_pkts_in_line);
+    offset = (row_number * s->width + row_offset) / s->st21_pg.coverage * s->st21_pg.size;
+  } else {
+    offset = s->st21_pkt_data_len * s->st21_pkt_idx;
+    row_number = offset / s->st21_bytes_in_line;
+    row_offset = (offset % s->st21_bytes_in_line) * s->st21_pg.coverage / s->st21_pg.size;
+    if ((offset + s->st21_pkt_data_len > (row_number + 1) * s->st21_bytes_in_line) &&
+        (offset + s->st21_pkt_data_len < s->st21_frame_size)) {
+      e_rtp = (struct st20_rfc4175_extra_rtp_hdr*)payload;
+      payload += sizeof(*e_rtp);
+    }
+  }
 
   /* copy base hdr */
   st_memcpy(rtp, &s->st20_rtp_base, sizeof(*rtp));
   /* update hdr */
   rtp->row_number = htons(row_number);
   rtp->row_offset = htons(row_offset);
-  rtp->tmstamp = htonl(s->st21_rtp_tmstamp);
-  rtp->seq_number = htons(s->st21_seq_id);
+  rtp->base.tmstamp = htonl(s->st21_rtp_tmstamp);
+  rtp->base.seq_number = htons(s->st21_seq_id);
   rtp->seq_number_ext = htons((uint16_t)(s->st21_seq_id >> 16));
   s->st21_seq_id++;
-  int temp = (s->width - row_offset) / s->st21_pg.coverage * s->st21_pg.size;
-  data_len = s->st21_pkt_data_len > temp ? temp : s->st21_pkt_data_len;
+
+  int temp = s->single_line
+                 ? ((s->width - row_offset) / s->st21_pg.coverage * s->st21_pg.size)
+                 : (s->st21_frame_size - offset);
+  uint16_t data_len = s->st21_pkt_data_len > temp ? temp : s->st21_pkt_data_len;
   rtp->row_length = htons(data_len);
   *pkt_len = data_len + sizeof(*rtp);
+  if (e_rtp) {
+    uint16_t row_length_0 = (row_number + 1) * s->st21_bytes_in_line - offset;
+    uint16_t row_length_1 = s->st21_pkt_data_len - row_length_0;
+    rtp->row_length = htons(row_length_0);
+    e_rtp->row_length = htons(row_length_1);
+    e_rtp->row_offset = htons(0);
+    e_rtp->row_number = htons(row_number + 1);
+    rtp->row_offset = htons(row_offset | 0x8000);
+    *pkt_len += sizeof(*e_rtp);
+  }
   /* copy payload */
-  uint32_t offset =
-      (row_number * s->width + row_offset) / s->st21_pg.coverage * s->st21_pg.size;
   st_memcpy(payload, frame + offset, data_len);
 
   s->st21_pkt_idx++;
   if (s->st21_pkt_idx >= s->st21_total_pkts) {
     dbg("%s(%d), frame %d done\n", __func__, s->idx, s->st21_frame_idx);
     /* end of current frame */
-    rtp->marker = 1;
+    rtp->base.marker = 1;
 
     s->st21_pkt_idx = 0;
     s->st21_rtp_tmstamp++;
     s->st21_frame_done_cnt++;
+    if (!s->stat_frame_frist_tx_time)
+      s->stat_frame_frist_tx_time = st_app_get_monotonic_time();
 
     s->st21_frame_cursor += s->st21_frame_size;
     if ((s->st21_frame_cursor + s->st21_frame_size) > s->st21_source_end)
@@ -273,10 +315,7 @@ static void* app_tx_video_rtp_thread(void* arg) {
   void* usrptr = NULL;
   uint16_t mbuf_len = 0;
   if (s->lcore != -1) {
-    cpu_set_t mask;
-    CPU_ZERO(&mask);
-    CPU_SET(s->lcore, &mask);
-    pthread_setaffinity_np(pthread_self(), sizeof(mask), &mask);
+    st_bind_to_lcore(s->st, pthread_self(), s->lcore);
   }
 
   info("%s(%d), start\n", __func__, idx);
@@ -428,6 +467,21 @@ static int app_tx_video_uinit(struct st_app_tx_video_session* s) {
   return 0;
 }
 
+static int app_tx_video_result(struct st_app_tx_video_session* s) {
+  int idx = s->idx;
+  uint64_t cur_time_ns = st_app_get_monotonic_time();
+  double time_sec = (double)(cur_time_ns - s->stat_frame_frist_tx_time) / NS_PER_S;
+  double framerate = s->st21_frame_done_cnt / time_sec;
+
+  if (!s->st21_frame_done_cnt) return -EINVAL;
+
+  critical("%s(%d), %s, fps %f, %d frames send\n", __func__, idx,
+           ST_APP_EXPECT_NEAR(framerate, s->expect_fps, s->expect_fps * 0.05) ? "OK"
+                                                                              : "FAILED",
+           framerate, s->st21_frame_done_cnt);
+  return 0;
+}
+
 static int app_tx_video_init(struct st_app_context* ctx,
                              st_json_tx_video_session_t* video,
                              struct st_app_tx_video_session* s) {
@@ -455,6 +509,7 @@ static int app_tx_video_init(struct st_app_context* ctx,
     ops.udp_port[ST_PORT_R] = video ? video->udp_port : (10000 + s->idx);
   }
   ops.pacing = ST21_PACING_NARROW;
+  ops.packing = video ? video->packing : ST20_PACKING_GPM_SL;
   ops.type = video ? video->type : ST20_TYPE_FRAME_LEVEL;
   ops.width = video ? st_app_get_width(video->video_format) : 1920;
   ops.height = video ? st_app_get_height(video->video_format) : 1080;
@@ -463,7 +518,7 @@ static int app_tx_video_init(struct st_app_context* ctx,
   ops.get_next_frame = app_tx_video_next_frame;
   ops.notify_frame_done = app_tx_video_frame_done;
   ops.notify_rtp_done = app_tx_video_rtp_done;
-  ops.framebuff_cnt = 2;
+  ops.framebuff_cnt = 3;
   ops.payload_type = 112;
 
   ret = st20_get_pgroup(ops.fmt, &s->st21_pg);
@@ -475,6 +530,9 @@ static int app_tx_video_init(struct st_app_context* ctx,
          ST_APP_URL_MAX_LEN);
   s->st21_pcap_input = false;
   s->st21_rtp_input = false;
+  s->st = ctx->st;
+  s->single_line = (ops.packing == ST20_PACKING_GPM_SL);
+  s->expect_fps = st_frame_rate(ops.fps);
 
   s->framebuff_cnt = ops.framebuff_cnt;
   s->st21_free_framebuff = (int*)st_app_zmalloc(sizeof(int) * s->framebuff_cnt);
@@ -515,6 +573,10 @@ static int app_tx_video_init(struct st_app_context* ctx,
     return -EIO;
   }
   s->handle = handle;
+  s->handle_sch_idx = st20_tx_get_sch_idx(handle);
+  unsigned int lcore;
+  ret = st_app_video_get_lcore(ctx, s->handle_sch_idx, &lcore);
+  if (ret >= 0) s->lcore = lcore;
 
   ret = app_tx_video_open_source(s);
   if (ret < 0) {
@@ -539,7 +601,7 @@ int st_app_tx_video_sessions_init(struct st_app_context* ctx) {
   for (i = 0; i < ctx->tx_video_session_cnt; i++) {
     s = &ctx->tx_video_sessions[i];
     s->idx = i;
-    s->lcore = ctx->lcore;
+    s->lcore = -1;
     ret = app_tx_video_init(ctx, ctx->json_ctx ? &ctx->json_ctx->tx_video[i] : NULL, s);
     if (ret < 0) {
       err("%s(%d), app_tx_video_init fail %d\n", __func__, i, ret);
@@ -561,18 +623,6 @@ int st_app_tx_video_sessions_stop(struct st_app_context* ctx) {
   return 0;
 }
 
-int st_app_tx_video_sessions_handle_uinit(struct st_app_context* ctx) {
-  int i;
-  struct st_app_tx_video_session* s;
-
-  for (i = 0; i < ctx->tx_video_session_cnt; i++) {
-    s = &ctx->tx_video_sessions[i];
-    app_tx_video_handle_free(s);
-  }
-
-  return 0;
-}
-
 int st_app_tx_video_sessions_uinit(struct st_app_context* ctx) {
   int i;
   struct st_app_tx_video_session* s;
@@ -580,6 +630,18 @@ int st_app_tx_video_sessions_uinit(struct st_app_context* ctx) {
   for (i = 0; i < ctx->tx_video_session_cnt; i++) {
     s = &ctx->tx_video_sessions[i];
     app_tx_video_uinit(s);
+  }
+
+  return 0;
+}
+
+int st_app_tx_video_sessions_result(struct st_app_context* ctx) {
+  int i, ret = 0;
+  struct st_app_tx_video_session* s;
+
+  for (i = 0; i < ctx->tx_video_session_cnt; i++) {
+    s = &ctx->tx_video_sessions[i];
+    ret += app_tx_video_result(s);
   }
 
   return 0;

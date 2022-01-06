@@ -63,7 +63,7 @@ int st_app_player_uinit(struct st_app_context* ctx) {
 int st_app_player_init(struct st_app_context* ctx) {
   int res = SDL_Init(SDL_INIT_VIDEO | SDL_INIT_AUDIO | SDL_INIT_EVENTS);
   if (res) {
-    err("%s, SDL_Init fail: %s\n", __func__, SDL_GetError());
+    warn("%s, SDL_Init fail: %s\n", __func__, SDL_GetError());
     st_app_player_uinit(ctx);
     return -EIO;
   }

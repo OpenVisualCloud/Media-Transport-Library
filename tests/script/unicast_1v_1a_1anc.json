@@ -1,26 +1,26 @@
 {
     "interfaces": [
         {
-            "name": "0000:af:01.0",
-            "ip": "192.168.84.101"
+            "name": "0000:af:00.0",
+            "ip": "192.168.17.101"
         },
         {
-            "name": "0000:af:01.1",
-            "ip": "192.168.84.102"
+            "name": "0000:af:00.1",
+            "ip": "192.168.17.102"
         }
     ],
     "tx_sessions": [
         {
             "dip": [
-                "192.168.84.102"
+                "192.168.17.102"
             ],
             "interface": [
                 0
             ],
             "video": [
                 {
-                    "replicas": 4,
-                    "type": "rtp",
+                    "replicas": 1,
+                    "type": "frame",
                     "pacing": "gap",
                     "start_port": 20000,
                     "tr_offset": "default",
@@ -31,11 +31,11 @@
             ],
             "audio": [
                 {
-                    "replicas": 4,
-                    "type": "rtp",
+                    "replicas": 1,
+                    "type": "frame",
                     "start_port": 30000,
                     "audio_format": "PCM16",
-                    "audio_channel": "stereo",
+                    "audio_channel": ["ST"],
                     "audio_sampling": "48kHz",
                     "audio_frametime_ms": 1,
                     "audio_url": "./test.wav"
@@ -43,9 +43,9 @@
             ],
             "ancillary": [
                 {
-                    "replicas": 4,
+                    "replicas": 1,
                     "start_port": 40000,
-                    "type": "rtp",
+                    "type": "frame",
                     "ancillary_format": "closed_caption",
                     "ancillary_url": "./test.txt",
                     "ancillary_fps": "p59"
@@ -56,15 +56,15 @@
     "rx_sessions": [
         {
             "ip": [
-                "192.168.84.101"
+                "192.168.17.101",
             ],
             "interface": [
                 1
             ],
             "video": [
                 {
-                    "replicas": 4,
-                    "type": "rtp",
+                    "replicas": 1,
+                    "type": "frame",
                     "pacing": "gap",
                     "start_port": 20000,
                     "tr_offset": "default",
@@ -75,11 +75,11 @@
             ],
             "audio": [
                 {
-                    "replicas": 4,
-                    "type": "rtp",
+                    "replicas": 1,
+                    "type": "frame",
                     "start_port": 30000,
                     "audio_format": "PCM16",
-                    "audio_channel": "stereo",
+                    "audio_channel": ["ST"],
                     "audio_sampling": "48kHz",
                     "audio_frametime_ms": 1,
                     "audio_url": "./test.wav"
@@ -87,7 +87,7 @@
             ],
             "ancillary": [
                 {
-                    "replicas": 4,
+                    "replicas": 1,
                     "start_port": 40000
                 }
             ]

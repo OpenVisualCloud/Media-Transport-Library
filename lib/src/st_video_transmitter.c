@@ -59,8 +59,8 @@ static int video_trs_session_warm_up(struct st_main_impl* impl,
     return 0;
   }
 
-  for (int i = 0; i < warm_pkts; i++) pads[i] = s->pad[s_port];
-  rte_mbuf_refcnt_update(s->pad[s_port], warm_pkts);
+  for (int i = 0; i < warm_pkts; i++) pads[i] = s->pad[s_port][ST20_PKT_TYPE_NORMAL];
+  rte_mbuf_refcnt_update(s->pad[s_port][ST20_PKT_TYPE_NORMAL], warm_pkts);
 
   dbg("%s(%d), send warm_pkts %d\n", __func__, s->idx, warm_pkts);
   tx = rte_eth_tx_burst(s->port_id[s_port], s->queue_id[s_port], &pads[0], warm_pkts);
@@ -93,9 +93,10 @@ static void video_burst_packet(struct st_tx_video_session_impl* s,
   }
 
   /* check if it need insert padding packet */
-  if (fmodf(pkt_idx + 1, pacing->pad_interval) < bulk) {
-    rte_mbuf_refcnt_update(s->pad[s_port], 1);
-    tx = rte_eth_tx_burst(s->port_id[s_port], s->queue_id[s_port], &s->pad[s_port], 1);
+  if (fmodf(pkt_idx + 1 + pacing->pad_interval / 2, pacing->pad_interval) < bulk) {
+    rte_mbuf_refcnt_update(s->pad[s_port][ST20_PKT_TYPE_NORMAL], 1);
+    tx = rte_eth_tx_burst(s->port_id[s_port], s->queue_id[s_port],
+                          &s->pad[s_port][ST20_PKT_TYPE_NORMAL], 1);
     if (tx < 1) s->trs_pad_inflight_num[s_port]++;
   }
 }
@@ -142,7 +143,8 @@ static int video_trs_rl_tasklet(struct st_main_impl* impl,
   if (s->trs_pad_inflight_num[s_port] > 0) {
     dbg("%s(%d), inflight padding pkts %d\n", __func__, idx,
         s->trs_pad_inflight_num[s_port]);
-    tx = rte_eth_tx_burst(s->port_id[s_port], s->queue_id[s_port], &s->pad[s_port], 1);
+    tx = rte_eth_tx_burst(s->port_id[s_port], s->queue_id[s_port],
+                          &s->pad[s_port][ST20_PKT_TYPE_NORMAL], 1);
     s->trs_pad_inflight_num[s_port] -= tx;
     return 0;
   }
@@ -166,13 +168,21 @@ static int video_trs_rl_tasklet(struct st_main_impl* impl,
   int valid_bulk = bulk;
   for (int i = 0; i < bulk; i++) {
     pkt_idx = st_mbuf_get_idx(pkts[i]);
-    if (pkt_idx == 0) {
+    if (pkt_idx == 0 || pkt_idx >= s->st20_total_pkts) {
       valid_bulk = i;
       break;
     }
   }
   dbg("%s(%d), pkt_idx %" PRIu64 " ts %" PRIu64 "\n", __func__, idx, pkt_idx,
       st_mbuf_get_time_stamp(pkts[0]));
+
+  if (unlikely(pkt_idx >= s->st20_total_pkts)) {
+    video_burst_packet(s, s_port, pkts, valid_bulk, false);
+    rte_pktmbuf_free_bulk(&pkts[valid_bulk], bulk - valid_bulk);
+    dbg("%s(%d), pkt_idx %" PRIu64 " ts %" PRIu64 "\n", __func__, idx, pkt_idx,
+        st_mbuf_get_time_stamp(pkts[0]));
+    return 0;
+  }
 
   if (unlikely(!pkt_idx)) {
     uint64_t cur_tsc = st_get_tsc(impl);
@@ -203,6 +213,7 @@ static int video_trs_rl_tasklet(struct st_main_impl* impl,
       video_trs_session_warm_up(impl, trs, s, s_port);
     }
   }
+
   int pos = (valid_bulk == bulk) ? 0 : valid_bulk;
 
   video_burst_packet(s, s_port, &pkts[pos], bulk - pos, false);
@@ -292,16 +303,20 @@ static int video_trs_tasklet_handler(void* priv) {
   struct st_main_impl* impl = trs->parnet;
   struct st_tx_video_sessions_mgr* mgr = trs->mgr;
   struct st_tx_video_session_impl* s;
-  int i, s_port;
+  int sidx, s_port;
 
-  for (i = 0; i < ST_SCH_MAX_TX_VIDEO_SESSIONS; i++) {
-    if (!mgr->active[i]) continue;
-    s = &mgr->sessions[i];
-    for (s_port = 0; s_port < s->ops.num_port; s_port++) {
-      if (ST21_TX_PACING_WAY_RL == impl->tx_pacing_way)
-        video_trs_rl_tasklet(impl, trs, s, s_port);
-      else
-        video_trs_tsc_tasklet(impl, trs, s, s_port);
+  for (sidx = 0; sidx < mgr->max_idx; sidx++) {
+    if (tx_video_session_try_lock(mgr, sidx)) {
+      if (mgr->active[sidx]) {
+        s = &mgr->sessions[sidx];
+        for (s_port = 0; s_port < s->ops.num_port; s_port++) {
+          if (ST21_TX_PACING_WAY_RL == impl->tx_pacing_way)
+            video_trs_rl_tasklet(impl, trs, s, s_port);
+          else
+            video_trs_tsc_tasklet(impl, trs, s, s_port);
+        }
+      }
+      tx_video_session_unlock(mgr, sidx);
     }
   }
 
@@ -313,6 +328,10 @@ int st_video_transmitter_init(struct st_main_impl* impl, struct st_sch_impl* sch
                               struct st_video_transmitter_impl* trs) {
   int ret, idx = sch->idx;
   struct st_sch_tasklet_ops ops;
+
+  trs->parnet = impl;
+  trs->idx = idx;
+  trs->mgr = mgr;
 
   memset(&ops, 0x0, sizeof(ops));
   ops.priv = trs;
@@ -326,10 +345,6 @@ int st_video_transmitter_init(struct st_main_impl* impl, struct st_sch_impl* sch
     info("%s(%d), st_sch_register_tasklet fail %d\n", __func__, idx, ret);
     return ret;
   }
-
-  trs->parnet = impl;
-  trs->idx = idx;
-  trs->mgr = mgr;
 
   info("%s(%d), succ\n", __func__, idx);
   return 0;

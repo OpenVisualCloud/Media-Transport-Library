@@ -14,13 +14,13 @@ intel_iommu=on iommu=pt
 ```
 then:
 ```bash
-update-grub
-reboot
+sudo update-grub
+sudo reboot
 ```
 ###### 1.2.2 Centos:
 ```bash
-grubby --update-kernel=ALL --args="intel_iommu=on iommu=pt"
-reboot
+sudo grubby --update-kernel=ALL --args="intel_iommu=on iommu=pt"
+sudo reboot
 ```
 
 #### 1.3 Double check iommu_groups is created by kernel after reboot.
@@ -50,7 +50,7 @@ sudo chown -R <USER>:<USER> /dev/vfio/
 #### 3.2 Huge page setup:
 e.g Enable 2048 2M huge pages, in total 4g memory.
 ```bash
-sysctl -w vm.nr_hugepages=2048
+sudo sysctl -w vm.nr_hugepages=2048
 ```
 
 #### 3.3 Prepare source files:
@@ -124,7 +124,7 @@ Kahawai include many automate test cases based on gtest, below is the example co
 ```
 BTW, the test required large huge page settings, pls expend it to 8g.
 ```bash
-sysctl -w vm.nr_hugepages=4096
+sudo sysctl -w vm.nr_hugepages=4096
 ```
 
 ## 5. FAQs:
@@ -146,7 +146,7 @@ Pls
 # Edit /etc/security/limits.conf, append below two lines at the end of file, change <USER> to the user name currently login.
 <USER>    hard   memlock           unlimited
 <USER>    soft   memlock           unlimited
-reboot
+sudo reboot
 ```
 After reboot, double check the limit is disabled.
 ```bash
@@ -186,5 +186,5 @@ ST: dev_create_port(0), link not connected
 
 #### 5.7 Bind BDF port back to kernel mode:
 ```bash
-./script/nicctl.sh bind_kernel 0000:af:00.0
+sudo ./script/nicctl.sh bind_kernel 0000:af:00.0
 ```

@@ -42,6 +42,7 @@ dpdk_root_dir = 'c:\dpdk'
 dpdkcflags = run_command('pkg-config', '--cflags', 'libdpdk')
 dpdklibs = run_command('pkg-config', '--static', '--libs', 'libdpdk')
 st_dpdk_include_dir += include_directories('''.\windows\''')
+st_dpdk_include_dir += include_directories(dpdk_root_dir + '''\lib\eal\windows\include\''')
 st_dpdk_include_dir += include_directories(dpdk_root_dir + '''\lib\kni\''')
 st_dpdk_c_args += ['-static','-DWINDOWSENV', '-Wformat=0','-Wno-maybe-uninitialized', '-Og']
 st_dpdk_link_c_args += ['-static','-limagehlp', '-lsetupapi', '-lWs2_32']

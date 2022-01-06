@@ -281,6 +281,8 @@ int st_app_parse_args(struct st_app_context* ctx, struct st_init_params* p, int 
                  sizeof(p->sip_addr[i]));
           p->num_ports++;
         }
+        if (ctx->json_ctx->sch_quota)
+          p->data_quota_mbs_per_sch = ctx->json_ctx->sch_quota * 2589 + 100;
         break;
       case ST_ARG_PTP_UNICAST_ADDR:
         p->flags |= ST_FLAG_PTP_UNICAST_ADDR;

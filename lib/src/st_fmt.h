@@ -19,21 +19,13 @@
 
 #include <st_dpdk_api.h>
 
-struct st21_timing {
-  int width;       /* 1920 for 1080p */
-  int height;      /* 1080 for 1080p */
-  int total_lines; /* 1125 for 1080p */
-  int tro_lines;   /* tr offset, 43 if height >= 1080, 28 for others */
-};
-
 struct st_fps_timing {
   enum st_fps fps;
   int sampling_clock_rate; /* 90k of sampling clock rate */
   int mul;                 /* 60000 for ST_FPS_P59_94 */
   int den;                 /* 1001 for ST_FPS_P59_94 */
+  double frame_rate;       /* fps number */
 };
-
-int st21_get_timing(int width, int height, struct st21_timing* tm);
 
 int st_get_fps_timing(enum st_fps fps, struct st_fps_timing* fps_tm);
 

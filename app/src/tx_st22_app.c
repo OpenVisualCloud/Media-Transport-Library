@@ -17,7 +17,7 @@
 #include "tx_st22_app.h"
 
 static int app_tx_st22_build_rtp_packet(struct st22_app_tx_session* s,
-                                        struct st22_rfc9143_rtp_hdr* rtp,
+                                        struct st_rfc3550_rtp_hdr* rtp,
                                         uint16_t* pkt_len) {
   uint8_t* frame = s->st22_frame_cursor;
   uint8_t* payload = (uint8_t*)rtp + sizeof(*rtp);
@@ -87,7 +87,7 @@ static void* app_tx_st22_rtp_thread(void* arg) {
       }
     }
 
-    app_tx_st22_build_rtp_packet(s, (struct st22_rfc9143_rtp_hdr*)usrptr, &mbuf_len);
+    app_tx_st22_build_rtp_packet(s, (struct st_rfc3550_rtp_hdr*)usrptr, &mbuf_len);
     st22_tx_put_mbuf(s->handle, mbuf, mbuf_len);
   }
   info("%s(%d), stop\n", __func__, idx);
@@ -165,7 +165,7 @@ static int app_tx_st22_open_source(struct st22_app_tx_session* s) {
 }
 
 static int app_tx_st22_init_rtp(struct st22_app_tx_session* s) {
-  struct st22_rfc9143_rtp_hdr* rtp = &s->st22_rtp_base;
+  struct st_rfc3550_rtp_hdr* rtp = &s->st22_rtp_base;
 
   memset(rtp, 0, sizeof(*rtp));
   rtp->version = 2;
@@ -204,7 +204,7 @@ static int app_tx_st22_init(struct st_app_context* ctx, struct st22_app_tx_sessi
   st22_tx_handle handle;
 
   s->rtp_pkt_size = ctx->st22_rtp_pkt_size;
-  s->rtp_pd_size = s->rtp_pkt_size - sizeof(struct st22_rfc9143_rtp_hdr);
+  s->rtp_pd_size = s->rtp_pkt_size - sizeof(struct st_rfc3550_rtp_hdr);
   s->rtp_frame_total_pkts = ctx->st22_rtp_frame_total_pkts;
   s->width = 1920;
   s->height = 1080;

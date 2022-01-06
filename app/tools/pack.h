@@ -63,7 +63,7 @@ typedef struct rgba_8b rgba_8b_t; /**< Type of the structure \ref rgba_8b. */
  */
 struct rfc4175_422_10_pg2 {
   uint8_t Cb00; /**< Blue-difference chrominance (8-bits) */
-#ifdef __LITTLE_ENDIAN_BITFIELDS
+#if __LITTLE_ENDIAN_BITFIELDS
   uint8_t Y00 : 6;   /**< First Luminance (6-bits) */
   uint8_t Cb00_ : 2; /**< Blue-difference chrominance (2-bits)
                                              as complement to the 10-bits */
@@ -89,8 +89,39 @@ struct rfc4175_422_10_pg2 {
                                         as complement to the 10-bits*/
 } __attribute__((__packed__));
 
+struct rfc4175_422_10_pg2_le {
+  uint8_t Cb00; /**< Blue-difference chrominance (8-bits) */
+#if __LITTLE_ENDIAN_BITFIELDS
+  uint8_t Cb00_ : 2;
+  uint8_t Y00 : 6;
+
+  uint8_t Y00_ : 4;
+  uint8_t Cr00 : 4;
+
+  uint8_t Cr00_ : 6;
+  uint8_t Y01 : 2;
+#else
+  uint8_t Y00 : 6;   /**< First Luminance (6-bits) */
+  uint8_t Cb00_ : 2; /**< Blue-difference chrominance (2-bits)
+                                             as complement to the 10-bits */
+
+  uint8_t Cr00 : 4; /**< Red-difference chrominance */
+  uint8_t Y00_ : 4; /**< First Luminance (4-bits) as complement
+                                            to the 10-bits */
+
+  uint8_t Y01 : 2;   /**< Second Luminance (2-bits) */
+  uint8_t Cr00_ : 6; /**< Red-difference chrominance (6-bits)
+                                             as complement to the 10-bits */
+#endif
+  uint8_t Y01_; /**< Secoond Luminance (8-bits)
+                                        as complement to the 10-bits*/
+} __attribute__((__packed__));
+
 typedef struct rfc4175_422_10_pg2
     rfc4175_422_10_pg2_t; /**< Type of the structure \ref rfc4175_422_10_pg2. */
+
+typedef struct rfc4175_422_10_pg2_le
+    rfc4175_422_10_pg2_le_t; /**< Type of the structure \ref rfc4175_422_10_pg2. */
 
 /**
  * Function converting (packing) string of image pixels into the pixel group
@@ -184,7 +215,7 @@ static inline void Pack_422le10_PG2be(rfc4175_422_10_pg2_t* pg, uint16_t cb0, ui
  *
  * @return no return
  */
-static inline void Pack_422le10_PG2le(rfc4175_422_10_pg2_t* pg, uint16_t cb00,
+static inline void Pack_422le10_PG2le(rfc4175_422_10_pg2_le_t* pg, uint16_t cb00,
                                       uint16_t y00, uint16_t cr00, uint16_t y01) {
   pg->Cb00 = cb00 & 0xff;
   pg->Cb00_ = (cb00 & 0x300) >> 8;
@@ -217,7 +248,7 @@ static inline void Pack_422le10_PG2le(rfc4175_422_10_pg2_t* pg, uint16_t cb00,
  *
  * @return no return
  */
-static inline void Pack_422be10_PG2le(rfc4175_422_10_pg2_t* pg, uint16_t cb00,
+static inline void Pack_422be10_PG2le(rfc4175_422_10_pg2_le_t* pg, uint16_t cb00,
                                       uint16_t y00, uint16_t cr00, uint16_t y01) {
   uint16_t cb0 = ntohs(cb00);
   uint16_t y0 = ntohs(y00);
@@ -325,7 +356,7 @@ static inline void Unpack_PG2be_422be10(rfc4175_422_10_pg2_t const* pg, uint16_t
  *
  * @return no return
  */
-static inline void Unpack_PG2le_422be10(rfc4175_422_10_pg2_t const* pg, uint16_t* cb00,
+static inline void Unpack_PG2le_422be10(rfc4175_422_10_pg2_le_t const* pg, uint16_t* cb00,
                                         uint16_t* y00, uint16_t* cr00, uint16_t* y01) {
   uint16_t cb, y0, cr, y1;
   cb = pg->Cb00 + (pg->Cb00_ << 8);
@@ -360,7 +391,7 @@ static inline void Unpack_PG2le_422be10(rfc4175_422_10_pg2_t const* pg, uint16_t
  *
  * @return no return
  */
-static inline void Unpack_PG2le_422le10(rfc4175_422_10_pg2_t const* pg, uint16_t* cb00,
+static inline void Unpack_PG2le_422le10(rfc4175_422_10_pg2_le_t const* pg, uint16_t* cb00,
                                         uint16_t* y00, uint16_t* cr00, uint16_t* y01) {
   uint16_t cb, y0, cr, y1;
   cb = pg->Cb00 + (pg->Cb00_ << 8);

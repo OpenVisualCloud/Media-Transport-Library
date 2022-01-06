@@ -37,7 +37,7 @@
                     "type": "rtp",
                     "start_port": 30000,
                     "audio_format": "PCM16",
-                    "audio_channel": "stereo",
+                    "audio_channel": ["ST"],
                     "audio_sampling": "48kHz",
                     "audio_frametime_ms": 1,
                     "audio_url": "./test.wav"

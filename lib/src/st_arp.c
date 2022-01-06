@@ -199,8 +199,8 @@ int st_arp_cni_get_mac(struct st_main_impl* impl, struct rte_ether_addr* ea,
     st_sleep_ms(100);
     retry++;
     if (0 == (retry % 50))
-      err("%s(%d), waiting arp from %d.%d.%d.%d\n", __func__, port, addr[0], addr[1],
-          addr[2], addr[3]);
+      info("%s(%d), waiting arp from %d.%d.%d.%d\n", __func__, port, addr[0], addr[1],
+           addr[2], addr[3]);
   }
   memcpy(ea->addr_bytes, arp_impl->ea[port].addr_bytes, RTE_ETHER_ADDR_LEN);
   rte_pktmbuf_free(req_pkt);

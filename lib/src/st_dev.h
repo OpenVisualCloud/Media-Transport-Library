@@ -69,11 +69,14 @@ int st_dev_request_rx_queue(struct st_main_impl* impl, enum st_port port,
                             uint16_t* queue_id, struct st_dev_flow* flow);
 int st_dev_free_tx_queue(struct st_main_impl* impl, enum st_port port, uint16_t queue_id);
 int st_dev_free_rx_queue(struct st_main_impl* impl, enum st_port port, uint16_t queue_id);
+int st_dev_flush_tx_queue(struct st_main_impl* impl, enum st_port port,
+                          uint16_t queue_id);
 
 int st_dev_if_init(struct st_main_impl* impl);
 int st_dev_if_uinit(struct st_main_impl* impl);
 
 int st_dev_put_lcore(struct st_main_impl* impl, unsigned int lcore);
 int st_dev_get_lcore(struct st_main_impl* impl, unsigned int* lcore);
+bool st_dev_lcore_valid(struct st_main_impl* impl, unsigned int lcore);
 
 #endif

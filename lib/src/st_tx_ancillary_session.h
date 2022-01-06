@@ -28,6 +28,25 @@ struct st_tx_ancillary_session_impl* st_tx_ancillary_sessions_mgr_attach(
 int st_tx_ancillary_sessions_mgr_detach(struct st_tx_ancillary_sessions_mgr* mgr,
                                         struct st_tx_ancillary_session_impl* s);
 
+int st_tx_ancillary_sessions_mgr_update(struct st_tx_ancillary_sessions_mgr* mgr);
+
 void st_tx_ancillary_sessions_stat(struct st_main_impl* impl);
+
+static inline void tx_ancillary_session_lock(struct st_tx_ancillary_sessions_mgr* mgr,
+                                             int sidx) {
+  rte_spinlock_lock(&mgr->mutex[sidx]);
+}
+
+static inline int tx_ancillary_session_try_lock(struct st_tx_ancillary_sessions_mgr* mgr,
+                                                int sidx) {
+  return rte_spinlock_trylock(&mgr->mutex[sidx]);
+}
+
+static inline void tx_ancillary_session_unlock(struct st_tx_ancillary_sessions_mgr* mgr,
+                                               int sidx) {
+  rte_spinlock_unlock(&mgr->mutex[sidx]);
+}
+
+int tx_ancillary_session_rtp_pool_free(struct st_tx_ancillary_session_impl* s);
 
 #endif

@@ -115,7 +115,7 @@ static int dev_eal_init(struct st_init_params* p) {
   int argc, i, ret;
   int num_ports = p->num_ports;
   static bool eal_inited = false; /* eal cann't re-enter in one process */
-  char port_params[ST_PORT_MAX][ST_PORT_MAX_LEN];
+  char port_params[ST_PORT_MAX][2 * ST_PORT_MAX_LEN];
   char* port_param;
 
   argc = 0;
@@ -136,9 +136,8 @@ static int dev_eal_init(struct st_init_params* p) {
     argv[argc] = "-a";
     argc++;
     port_param = port_params[i];
-    memset(port_param, 0, ST_PORT_MAX_LEN);
-    strncat(port_param, p->port[i], ST_PORT_MAX_LEN);
-    strncat(port_param, ",max_burst_size=2048", ST_PORT_MAX_LEN);
+    memset(port_param, 0, 2 * ST_PORT_MAX_LEN);
+    snprintf(port_param, 2 * ST_PORT_MAX_LEN, "%s,max_burst_size=2048", p->port[i]);
     dbg("%s(%d), port_param: %s\n", __func__, i, port_param);
     argv[argc] = port_param;
     argc++;
@@ -164,9 +163,6 @@ static int dev_eal_init(struct st_init_params* p) {
     argv[argc] = "error";
   else
     argv[argc] = "info";
-  argc++;
-
-  argv[argc] = "-v";
   argc++;
 
   argv[argc] = "--";
@@ -540,7 +536,8 @@ static int dev_detect_link(struct st_main_impl* impl, enum st_port port) {
     st_sleep_ms(100); /* only happen on CVL PF */
   }
 
-  err("%s(%d), link not connected\n", __func__, port);
+  err("%s(%d), link not connected for %s\n", __func__, port,
+      st_get_user_params(impl)->port[port]);
   return -EIO;
 }
 
@@ -754,7 +751,7 @@ static int dev_reset_port(struct st_main_impl* impl, enum st_port port) {
 static int dev_filelock_lock(struct st_main_impl* impl) {
   int fd = -1;
   if (access(ST_FLOCK_PATH, F_OK) < 0) {
-    fd = open(ST_FLOCK_PATH, O_RDWR | O_CREAT, 0666);
+    fd = open(ST_FLOCK_PATH, O_RDONLY | O_CREAT, 0666);
   } else {
     fd = open(ST_FLOCK_PATH, O_RDONLY);
   }
@@ -814,6 +811,7 @@ int st_dev_get_lcore(struct st_main_impl* impl, unsigned int* lcore) {
         lcore_shm->lcores_active[cur_lcore] = true;
         lcore_shm->used++;
         rte_atomic32_inc(&impl->lcore_cnt);
+        impl->local_lcores_active[cur_lcore] = true;
         ret = dev_filelock_unlock(impl);
         if (ret < 0) {
           err("%s, dev_filelock_unlock fail\n", __func__);
@@ -855,6 +853,7 @@ int st_dev_put_lcore(struct st_main_impl* impl, unsigned int lcore) {
   lcore_shm->lcores_active[lcore] = false;
   lcore_shm->used--;
   rte_atomic32_dec(&impl->lcore_cnt);
+  impl->local_lcores_active[lcore] = false;
   ret = dev_filelock_unlock(impl);
   if (ret < 0) {
     err("%s, dev_filelock_unlock fail\n", __func__);
@@ -867,6 +866,21 @@ err_unlock:
   return ret;
 }
 
+bool st_dev_lcore_valid(struct st_main_impl* impl, unsigned int lcore) {
+  struct st_lcore_shm* lcore_shm = impl->lcore_shm;
+
+  if (lcore >= RTE_MAX_LCORE) {
+    err("%s, invalid lcore %d\n", __func__, lcore);
+    return -EIO;
+  }
+  if (!lcore_shm) {
+    err("%s, no lcore shm attached\n", __func__);
+    return -EIO;
+  }
+
+  return lcore_shm->lcores_active[lcore];
+}
+
 static int dev_uinit_lcores(struct st_main_impl* impl) {
   int ret;
   int shm_id = impl->lcore_shm_id;
@@ -875,14 +889,18 @@ static int dev_uinit_lcores(struct st_main_impl* impl) {
     err("%s, no lcore shm attached\n", __func__);
     return -EIO;
   }
+
+  for (unsigned int lcore = 0; lcore < RTE_MAX_LCORE; lcore++) {
+    if (impl->local_lcores_active[lcore]) {
+      warn("%s, lcore %d still active\n", __func__, lcore);
+      st_dev_put_lcore(impl, lcore);
+    }
+  }
+
   ret = dev_filelock_lock(impl);
   if (ret < 0) {
     err("%s, dev_filelock_lock fail\n", __func__);
     return ret;
-  }
-  for (unsigned int lcore = 0; lcore < RTE_MAX_LCORE; lcore++) {
-    if (lcore_shm->lcores_active[lcore])
-      warn("%s, lcore %d still active\n", __func__, lcore);
   }
 
   ret = shmdt(impl->lcore_shm);
@@ -900,7 +918,7 @@ static int dev_uinit_lcores(struct st_main_impl* impl) {
   if (shmds.shm_nattch == 0) { /* remove ipc if we are the last user */
     ret = shmctl(shm_id, IPC_RMID, NULL);
     if (ret < 0) {
-      err("%s, can not remove shared memory, %s\n", __func__, strerror(errno));
+      warn("%s, can not remove shared memory, %s\n", __func__, strerror(errno));
       goto err_unlock;
     }
   }
@@ -1075,6 +1093,7 @@ int st_dev_request_tx_queue(struct st_main_impl* impl, enum st_port port,
       inf->tx_queues_active[q] = true;
       inf->tx_queues_bps[q] = bytes_per_sec;
       *queue_id = q;
+      info("%s(%d), q %d with speed %" PRIu64 "\n", __func__, port, q, bytes_per_sec);
       return 0;
     }
   }
@@ -1112,7 +1131,7 @@ int st_dev_request_rx_queue(struct st_main_impl* impl, enum st_port port,
       ret = rte_eth_dev_rx_queue_start(inf->port_id, q);
       if (ret < 0) {
         err("%s(%d), start runtime rx queue %d fail %d\n", __func__, port, q, ret);
-        return -ENOMEM;
+        return -EIO;
       }
     }
 
@@ -1120,11 +1139,37 @@ int st_dev_request_rx_queue(struct st_main_impl* impl, enum st_port port,
 
     inf->rx_queues_active[q] = true;
     *queue_id = q;
+    info("%s(%d), q %d\n", __func__, port, q);
     return 0;
   }
 
   err("%s(%d), fail to find free rx queue\n", __func__, port);
   return -ENOMEM;
+}
+
+int st_dev_flush_tx_queue(struct st_main_impl* impl, enum st_port port,
+                          uint16_t queue_id) {
+  struct st_interface* inf = st_if(impl, port);
+
+  if (queue_id >= inf->max_tx_queues) {
+    err("%s(%d), invalid queue %d\n", __func__, port, queue_id);
+    return -EIO;
+  }
+
+  if (!inf->tx_queues_active[queue_id]) {
+    err("%s(%d), queue %d is not allocated\n", __func__, port, queue_id);
+    return -EIO;
+  }
+
+  int burst_pkts = inf->nb_tx_desc;
+  struct rte_mbuf* pads[1];
+  pads[0] = inf->pad;
+
+  for (int i = 0; i < burst_pkts; i++) {
+    rte_mbuf_refcnt_update(inf->pad, 1);
+    st_tx_burst_busy(inf->port_id, queue_id, &pads[0], 1);
+  }
+  return 0;
 }
 
 int st_dev_free_tx_queue(struct st_main_impl* impl, enum st_port port,
@@ -1142,12 +1187,14 @@ int st_dev_free_tx_queue(struct st_main_impl* impl, enum st_port port,
   }
 
   inf->tx_queues_active[queue_id] = false;
+  info("%s(%d), q %d\n", __func__, port, queue_id);
   return 0;
 }
 
 int st_dev_free_rx_queue(struct st_main_impl* impl, enum st_port port,
                          uint16_t queue_id) {
   struct st_interface* inf = st_if(impl, port);
+  int ret;
 
   if (queue_id >= inf->max_rx_queues) {
     err("%s(%d), invalid queue %d\n", __func__, port, queue_id);
@@ -1161,7 +1208,14 @@ int st_dev_free_rx_queue(struct st_main_impl* impl, enum st_port port,
 
   inf_free_rx_queue_flow(inf, queue_id);
 
+  if (inf->feature & ST_IF_FEATURE_RUNTIME_RX_QUEUE) {
+    ret = rte_eth_dev_rx_queue_stop(inf->port_id, queue_id);
+    if (ret < 0)
+      err("%s(%d), stop runtime rx queue %d fail %d\n", __func__, port, queue_id, ret);
+  }
+
   inf->rx_queues_active[queue_id] = false;
+  info("%s(%d), q %d\n", __func__, port, queue_id);
   return 0;
 }
 
@@ -1231,6 +1285,16 @@ struct st_sch_impl* st_dev_get_sch(struct st_main_impl* impl, int quota_mbs) {
     return NULL;
   }
 
+  /* start the sch if dev is started */
+  if (rte_atomic32_read(&impl->started)) {
+    ret = st_dev_start_sch(impl, sch);
+    if (ret < 0) {
+      err("%s(%d), start sch fail %d\n", __func__, idx, ret);
+      st_sch_free(sch);
+      return NULL;
+    }
+  }
+
   rte_atomic32_inc(&sch->ref_cnt);
   return sch;
 }
@@ -1276,7 +1340,7 @@ int st_dev_create(struct st_main_impl* impl) {
   /* init sch with one lcore scheduler */
   int data_quota_mbs_per_sch = st_get_user_params(impl)->data_quota_mbs_per_sch;
   if (!data_quota_mbs_per_sch)
-    data_quota_mbs_per_sch = 10 * 2589 + 100; /* max 10 sessions 1080p@60gps */
+    data_quota_mbs_per_sch = 10 * 2589 + 100; /* default: max 10 sessions 1080p@60fps */
   ret = st_sch_init(impl, data_quota_mbs_per_sch);
   if (ret < 0) {
     err("%s, st_sch_init fail %d\n", __func__, ret);
@@ -1386,14 +1450,15 @@ int st_dev_stop(struct st_main_impl* impl) {
   for (int sch_idx = 0; sch_idx < ST_MAX_SCH_NUM; sch_idx++) {
     sch = st_get_sch(impl, sch_idx);
     if (st_sch_is_active(sch)) {
-      st_dev_put_lcore(impl, sch->lcore);
       ret = st_sch_stop(sch);
-      if (ret < 0) err("%s(%d), st_sch_stop fail %d\n", __func__, sch_idx, ret);
+      if (ret < 0) {
+        err("%s(%d), st_sch_stop fail %d\n", __func__, sch_idx, ret);
+      } else {
+        rte_eal_wait_lcore(sch->lcore);
+        st_dev_put_lcore(impl, sch->lcore);
+      }
     }
   }
-
-  info("%s, wait all lcore finish\n", __func__);
-  rte_eal_mp_wait_lcore();
 
   info("%s, succ\n", __func__);
   return 0;
@@ -1454,7 +1519,9 @@ int st_dev_dst_ip_mac(struct st_main_impl* impl, uint8_t dip[ST_IP_ADDR_LEN],
       }
     } else {
       st_reset_arp(impl, port);
-      ret = st_arp_cni_get_mac(impl, ea, port, *(uint32_t*)dip);
+      uint32_t dip32;
+      memcpy(&dip32, dip, ST_IP_ADDR_LEN);
+      ret = st_arp_cni_get_mac(impl, ea, port, dip32);
       if (ret < 0) {
         err("%s(%d), failed to get mac from cni %d\n", __func__, port, ret);
         return ret;
@@ -1475,6 +1542,11 @@ int st_dev_if_uinit(struct st_main_impl* impl) {
 
   for (int i = 0; i < num_ports; i++) {
     inf = st_if(impl, i);
+
+    if (inf->pad) {
+      rte_pktmbuf_free(inf->pad);
+      inf->pad = NULL;
+    }
 
     if (inf->tx_queues_bps) {
       st_rte_free(inf->tx_queues_bps);
@@ -1508,6 +1580,9 @@ int st_dev_if_uinit(struct st_main_impl* impl) {
     }
 
     if (inf->mbuf_pool) {
+      unsigned int in_use_count = rte_mempool_in_use_count(inf->mbuf_pool);
+      if (in_use_count)
+        warn("%s(%d), still has %d mbuf in mempool\n", __func__, i, in_use_count);
       rte_mempool_free(inf->mbuf_pool);
       inf->mbuf_pool = NULL;
     }
@@ -1583,7 +1658,7 @@ int st_dev_if_init(struct st_main_impl* impl) {
     /* Creates a new mempool in memory to hold the mbufs. */
     unsigned int mbuf_elements = ST_MBUF_POOL_SIZE_10M * 3; /* for system */
     /* append rx sessions */
-    mbuf_elements += impl->rx_sessions_cnt_max * (1 * ST_MBUF_POOL_SIZE_10M);
+    mbuf_elements += impl->rx_sessions_cnt_max * (2 * ST_MBUF_POOL_SIZE_10M);
     /* append tx sessions */
     mbuf_elements += impl->tx_sessions_cnt_max * (2 * ST_MBUF_POOL_SIZE_10M);
     char pool_name[ST_MAX_NAME_LEN];
@@ -1642,6 +1717,13 @@ int st_dev_if_init(struct st_main_impl* impl) {
         sizeof(*inf->rx_queues_active) * inf->max_rx_queues, soc_id);
     if (!inf->rx_queues_active) {
       err("%s(%d), rx_queues_active not alloc\n", __func__, i);
+      st_dev_if_uinit(impl);
+      return -ENOMEM;
+    }
+
+    inf->pad = st_build_pad(impl, i, port_id, RTE_ETHER_TYPE_IPV4, 1024);
+    if (!inf->pad) {
+      err("%s(%d), pad alloc fail\n", __func__, i);
       st_dev_if_uinit(impl);
       return -ENOMEM;
     }

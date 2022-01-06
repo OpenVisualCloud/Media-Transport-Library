@@ -20,9 +20,9 @@ static void app_rx_anc_handle_rtp(struct st_app_rx_anc_session* s, void* usrptr)
   struct st40_rfc8331_rtp_hdr* hdr = (struct st40_rfc8331_rtp_hdr*)usrptr;
   struct st40_rfc8331_payload_hdr* payload_hdr =
       (struct st40_rfc8331_payload_hdr*)(&hdr[1]);
-
   int anc_count = hdr->anc_count;
   int idx, total_size, payload_len;
+
   for (idx = 0; idx < anc_count; idx++) {
     payload_hdr->swaped_first_hdr_chunk = ntohl(payload_hdr->swaped_first_hdr_chunk);
     payload_hdr->swaped_second_hdr_chunk = ntohl(payload_hdr->swaped_second_hdr_chunk);
@@ -62,6 +62,10 @@ static void app_rx_anc_handle_rtp(struct st_app_rx_anc_session* s, void* usrptr)
         sizeof(struct st40_rfc8331_payload_hdr) - 4 + total_size;  // Full size of one ANC
     payload_hdr = (struct st40_rfc8331_payload_hdr*)((uint8_t*)payload_hdr + payload_len);
   }
+
+  s->stat_frame_total_received++;
+  if (!s->stat_frame_frist_rx_time)
+    s->stat_frame_frist_rx_time = st_app_get_monotonic_time();
 }
 
 static void* app_rx_anc_session_read_thread(void* arg) {
@@ -167,6 +171,31 @@ static int app_rx_anc_session_init(struct st_app_context* ctx,
   return 0;
 }
 
+static bool app_rx_anc_fps_check(double framerate) {
+  double expect;
+
+  for (enum st_fps fps = 0; fps < ST_FPS_MAX; fps++) {
+    expect = st_frame_rate(fps);
+    if (ST_APP_EXPECT_NEAR(framerate, expect, expect * 0.05)) return true;
+  }
+
+  return false;
+}
+
+static int app_rx_anc_result(struct st_app_rx_anc_session* s) {
+  int idx = s->idx;
+  uint64_t cur_time_ns = st_app_get_monotonic_time();
+  double time_sec = (double)(cur_time_ns - s->stat_frame_frist_rx_time) / NS_PER_S;
+  double framerate = s->stat_frame_total_received / time_sec;
+
+  if (!s->stat_frame_total_received) return -EINVAL;
+
+  critical("%s(%d), %s, fps %f, %d frame received\n", __func__, idx,
+           app_rx_anc_fps_check(framerate) ? "OK" : "FAILED", framerate,
+           s->stat_frame_total_received);
+  return 0;
+}
+
 int st_app_rx_anc_sessions_init(struct st_app_context* ctx) {
   int ret, i;
   struct st_app_rx_anc_session* s;
@@ -194,5 +223,17 @@ int st_app_rx_anc_sessions_uinit(struct st_app_context* ctx) {
     s = &ctx->rx_anc_sessions[i];
     app_rx_anc_session_uinit(s);
   }
+  return 0;
+}
+
+int st_app_rx_anc_sessions_result(struct st_app_context* ctx) {
+  int i, ret = 0;
+  struct st_app_rx_anc_session* s;
+
+  for (i = 0; i < ctx->rx_anc_session_cnt; i++) {
+    s = &ctx->rx_anc_sessions[i];
+    ret += app_rx_anc_result(s);
+  }
+
   return 0;
 }

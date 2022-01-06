@@ -6,12 +6,12 @@ The build required 3 parts, build the DPDK library, the ST Kahawai library on to
 ## 1. Install the build dependency
 #### 1.1 Ubuntu/Debian:
 ```bash
-sudo apt-get install git gcc meson python3 python3-pip pkg-config libnuma-dev libjson-c-dev libpcap-dev libgtest-dev libsdl2-dev
+sudo apt-get install git gcc meson python3 python3-pip pkg-config libnuma-dev libjson-c-dev libpcap-dev libgtest-dev libsdl2-dev libssl-dev
 sudo pip3 install pyelftools
 ```
 #### 1.2 Centos:
 ```bash
-sudo yum install git gcc meson python3 python3-pip pkg-config libnuma-devel json-c-devel libpcap-devel gtest-devel SDL2-devel
+sudo yum install git gcc meson python3 python3-pip pkg-config libnuma-devel json-c-devel libpcap-devel gtest-devel SDL2-devel openssl-devel
 sudo pip3 install pyelftools
 ```
 
@@ -37,6 +37,7 @@ patch -p1 < $dpdk_st_kahawai/patches/dpdk/21.08/0006-net-iavf-add-capability-for
 patch -p1 < $dpdk_st_kahawai/patches/dpdk/21.08/0007-build-enable-IEEE1588-PTP-option.patch
 patch -p1 < $dpdk_st_kahawai/patches/dpdk/21.08/0008-enable-rx-timestamp-and-fix-performance-issue.patch
 patch -p1 < $dpdk_st_kahawai/patches/dpdk/21.08/0009-net-ice-support-max-burst-size-configuration.patch
+patch -p1 < $dpdk_st_kahawai/patches/dpdk/21.08/0010-Add-init-time-to-sync-PHY-timer-with-primary-timer.patch
 ```
 
 #### 2.3 Build and install DPDK library

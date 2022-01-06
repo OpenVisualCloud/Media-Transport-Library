@@ -43,5 +43,9 @@
   do {                             \
     RTE_LOG(ERR, ST, __VA_ARGS__); \
   } while (0)
+#define critical(...)               \
+  do {                              \
+    RTE_LOG(CRIT, ST, __VA_ARGS__); \
+  } while (0)
 
 #endif
