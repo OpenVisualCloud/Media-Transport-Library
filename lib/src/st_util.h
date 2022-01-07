@@ -69,4 +69,6 @@ static inline bool st_rx_seq_drop(uint16_t new_id, uint16_t old_id, uint16_t del
 struct rte_mbuf* st_build_pad(struct st_main_impl* impl, enum st_port port,
                               uint16_t port_id, uint16_t ether_type, uint16_t len);
 
+uint16_t st_rf1071_check_sum(uint8_t* p, size_t len, bool convert);
+
 #endif

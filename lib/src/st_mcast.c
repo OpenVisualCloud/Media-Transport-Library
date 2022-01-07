@@ -18,33 +18,26 @@
 
 #include "st_dev.h"
 #include "st_log.h"
+#include "st_util.h"
 
+/* Computing the Internet Checksum based on rfc1071 */
 static uint16_t mcast_msg_checksum(enum mcast_msg_type type, void* msg, uint16_t num) {
-  uint8_t count = 0;
-  uint16_t* val = (uint16_t*)msg;
-  uint16_t sum = 0;
+  size_t size = 0;
 
   switch (type) {
     case MEMBERSHIP_QUERY:
-      count = sizeof(struct mcast_mb_query_v3) / sizeof(uint16_t);
+      size = sizeof(struct mcast_mb_query_v3);
       break;
     case MEMBERSHIP_REPORT_V3:
-      count = (sizeof(struct mcast_mb_report_v3_wo_gr) +
-               num * sizeof(struct mcast_group_record)) /
-              sizeof(uint16_t);
+      size = (sizeof(struct mcast_mb_report_v3_wo_gr) +
+              num * sizeof(struct mcast_group_record));
       break;
     default:
       err("%s, wrong mcast msg type: %d\n", __func__, type);
       break;
   }
 
-  while (count > 0) {
-    sum = sum + ntohs(*val);
-    val++;
-    count--;
-  }
-  sum = ~sum;
-  return sum;
+  return st_rf1071_check_sum(msg, size, true);
 }
 
 /* group record shaping, refer to RFC3376 - 4.2.4 */
@@ -150,11 +143,11 @@ static int mcast_membership_report(struct st_main_impl* impl,
                          group_num * sizeof(struct mcast_group_record);
 
   if (group_num <= 0) {
-    dbg("%s, no group to join\n", __func__);
+    dbg("%s(%d), no group to join\n", __func__, port);
     return 0;
   }
 
-  dbg("%s, group_num: %d\n", __func__, group_num);
+  dbg("%s(%d), group_num: %d\n", __func__, port, group_num);
 
   pkt = rte_pktmbuf_alloc(st_get_mempool(impl, port));
   if (!pkt) {
@@ -196,7 +189,8 @@ static int mcast_membership_report(struct st_main_impl* impl,
     err("%s, err checksum %d\n", __func__, checksum);
     return -EIO;
   }
-  mb_report->checksum = htons(checksum - 1);
+  dbg("%s, checksum %d\n", __func__, checksum);
+  mb_report->checksum = htons(checksum);
 
   pkt->ol_flags = PKT_TX_IPV4;
   pkt->l2_len = sizeof(struct rte_ether_hdr);

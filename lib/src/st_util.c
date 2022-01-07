@@ -238,3 +238,34 @@ struct rte_mbuf* st_build_pad(struct st_main_impl* impl, enum st_port port,
 
   return pad;
 }
+
+uint16_t st_rf1071_check_sum(uint8_t* p, size_t len, bool convert) {
+  uint16_t* u16_in = (uint16_t*)p;
+  uint16_t check_sum = 0;
+  uint32_t sum = 0;
+
+  if (convert) {
+    while (len > 1) {
+      sum += ntohs(*u16_in++);
+      len -= 2;
+    }
+  } else {
+    while (len > 1) {
+      sum += *u16_in++;
+      len -= 2;
+    }
+  }
+
+  if (len == 1) {
+    uint16_t left = 0;
+    *(uint8_t*)&left = *(uint8_t*)u16_in;
+    sum += left;
+  }
+
+  /* fold to 16 */
+  sum = (sum >> 16) + (sum & 0xffff);
+  sum += (sum >> 16);
+  check_sum = ~sum;
+
+  return check_sum;
+}
