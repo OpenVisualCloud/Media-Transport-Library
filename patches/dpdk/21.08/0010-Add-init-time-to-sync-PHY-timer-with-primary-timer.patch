@@ -1,0 +1,126 @@
+From 60a0e2851a8b51fb5c9a3dbdc1a7fa94e7e55b2a Mon Sep 17 00:00:00 2001
+From: qiaoliu78 <media@qiaoliu-mobl2.ccr.corp.intel.com>
+Date: Thu, 2 Dec 2021 09:46:17 +0800
+Subject: [PATCH 10/10] Add init time to sync PHY timer with primary timer
+
+---
+ drivers/net/ice/ice_ethdev.c |  6 +++++-
+ drivers/net/ice/ice_ptp.c    | 38 ++++++++++++++++++++++++++++++++----
+ drivers/net/ice/ice_ptp.h    |  4 ++++
+ 3 files changed, 43 insertions(+), 5 deletions(-)
+
+diff --git a/drivers/net/ice/ice_ethdev.c b/drivers/net/ice/ice_ethdev.c
+index 1c155218af..0f472f6a4a 100644
+--- a/drivers/net/ice/ice_ethdev.c
++++ b/drivers/net/ice/ice_ethdev.c
+@@ -5370,7 +5370,8 @@ ice_timesync_enable(struct rte_eth_dev *dev)
+ 	uint64_t incval = DEFAULT_INCVAL_EXT;
+ 	uint32_t reg, high, low;
+ 	int ret;
+-
++	uint64_t starttime;
++	struct timespec system_time;
+ 	/* Clear timesync registers */
+ 	ICE_WRITE_REG(hw, GLTSYN_SYNC_DLAY, 0);
+ 
+@@ -5439,6 +5440,9 @@ ice_timesync_enable(struct rte_eth_dev *dev)
+ 	ad->tx_tstamp_tc.cc_shift = 0;
+ 	ad->tx_tstamp_tc.nsec_mask = 0;
+ 
++	clock_gettime(CLOCK_MONOTONIC, &system_time);
++	starttime = system_time.tv_sec*NSEC_PER_SEC + system_time.tv_nsec;
++	ice_ptp_init_time(dev,starttime);
+ 	return 0;
+ }
+ 
+diff --git a/drivers/net/ice/ice_ptp.c b/drivers/net/ice/ice_ptp.c
+index 72b7568b50..411d8386a5 100644
+--- a/drivers/net/ice/ice_ptp.c
++++ b/drivers/net/ice/ice_ptp.c
+@@ -104,12 +104,14 @@ ice_status ice_ptp_port_cmd_ext(struct ice_pf *pf, __rte_unused enum tmr_cmd cmd
+ 
+ 	switch (cmd) {
+ 	case INIT_INCVAL:
+-		cmd_val = 0x10;
++		cmd_val |= 0x2;
+ 		break;
+ 	case ADJ_TIME:
+-		cmd_val = 0x100;
++		cmd_val |= 0x4;
+ 		break;
+ 	case INIT_TIME:
++		cmd_val |= 0x1;
++		break;
+ 	case ADJ_TIME_AT_TIME:
+ 	case READ_TIME:
+ 		cmd_val = 0x0;
+@@ -144,12 +146,14 @@ static void ice_ptp_src_cmd(struct ice_pf *pf, __rte_unused enum tmr_cmd cmd)
+ 
+ 	switch (cmd) {
+ 	case INIT_INCVAL:
+-		cmd_val |= 0x10;
++		cmd_val |= 0x2;
+ 		break;
+ 	case ADJ_TIME:
+-		cmd_val = 0x100;
++		cmd_val |= 0x4;
+ 		break;
+ 	case INIT_TIME:
++		cmd_val |= 0x1;
++		break;
+ 	case ADJ_TIME_AT_TIME:
+ 	case READ_TIME:
+ 		cmd_val = 0x0;
+@@ -196,3 +200,29 @@ enum ice_status ice_ptp_tmr_cmd(struct ice_pf *pf, enum tmr_cmd cmd)
+ {
+ 	return ice_ptp_tmr_cmd_lp(pf, cmd, true);
+ }
++
++int ice_ptp_init_time(struct rte_eth_dev *dev, u64 time)
++{
++	int status;
++	struct ice_hw *hw = ICE_DEV_PRIVATE_TO_HW(dev->data->dev_private);
++	struct ice_pf *pf = ICE_DEV_PRIVATE_TO_PF(dev->data->dev_private);
++
++	u8 tmr_idx = 0;
++
++	/* Source timers */
++	wr32(hw, GLTSYN_SHTIME_L(tmr_idx), time & 0xFFFFFFFF);
++	wr32(hw, GLTSYN_SHTIME_H(tmr_idx), time >>32);
++	wr32(hw, GLTSYN_SHTIME_0(tmr_idx), 0);
++
++	/* PHY timers */
++	/* Fill Rx and Tx ports and send msg to PHY */
++	status = ice_phy_port_reg_write_ext(pf, ETH_GLTSYN_SHTIME_0(tmr_idx), 0);
++	if (status)
++		return status;
++	
++  status = ice_phy_port_reg_write_ext(pf, ETH_GLTSYN_SHTIME_L(tmr_idx), time & 0xFFFFFFFF);
++  if (status)
++		return status;
++
++	return ice_ptp_tmr_cmd(pf, INIT_TIME);
++}
+\ No newline at end of file
+diff --git a/drivers/net/ice/ice_ptp.h b/drivers/net/ice/ice_ptp.h
+index e22e2e9de9..54fdc8f5ad 100644
+--- a/drivers/net/ice/ice_ptp.h
++++ b/drivers/net/ice/ice_ptp.h
+@@ -14,6 +14,8 @@ enum tmr_cmd {
+ 
+ /* Rx FIFO status registers */
+ #define ETH_GLTSYN_CMD             0x03000344
++#define ETH_GLTSYN_SHTIME_0(i)		(0x03000368 + ((i) * 32))
++#define ETH_GLTSYN_SHTIME_L(i)		(0x0300036C + ((i) * 32))
+ #define ETH_GLTSYN_SHADJ_L(_i)     (0x03000378 + ((_i) * 32))
+ #define ETH_GLTSYN_SHADJ_H(_i)     (0x0300037C + ((_i) * 32))
+ #if 0
+@@ -44,3 +46,5 @@ enum ice_status ice_ptp_tmr_cmd(struct ice_pf *pf, enum tmr_cmd cmd);
+ 
+ enum ice_status
+ ice_ptp_tmr_cmd_lp(struct ice_pf *pf, enum tmr_cmd cmd, __rte_unused bool lock_sbq);
++
++int ice_ptp_init_time(struct rte_eth_dev *dev, u64 time);
+-- 
+2.30.2
+
