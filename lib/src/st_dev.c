@@ -420,9 +420,7 @@ static struct rte_flow* dev_rx_queue_create_flow(uint16_t port_id, uint16_t q,
   if (flow->port_flow) {
     memset(&udp_spec, 0, sizeof(udp_spec));
     memset(&udp_mask, 0, sizeof(udp_mask));
-    udp_spec.hdr.src_port = htons(flow->src_port);
     udp_spec.hdr.dst_port = htons(flow->dst_port);
-    udp_mask.hdr.src_port = htons(0xFFFF);
     udp_mask.hdr.dst_port = htons(0xFFFF);
   }
 
