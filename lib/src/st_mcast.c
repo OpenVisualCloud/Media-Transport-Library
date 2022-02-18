@@ -59,7 +59,7 @@ static struct rte_ether_addr const mcast_mac_dst = {{0x01, 0x00, 0x5e, 0x00, 0x0
 static struct rte_ether_addr const mcast_mac_query = {
     {0x01, 0x00, 0x5e, 0x00, 0x00, 0x01}};
 
-static int mcast_membership_general_query(struct st_main_impl* impl, enum st_port port) {
+int mcast_membership_general_query(struct st_main_impl* impl, enum st_port port) {
   struct st_mcast_impl* mcast = &impl->mcast;
   struct rte_mbuf* pkt;
   struct rte_ether_hdr* eth_hdr;
@@ -224,9 +224,6 @@ static void mcast_membership_report_cb(void* param) {
   for (int port = 0; port < num_ports; port++) {
     ret = mcast_membership_report(impl, MCAST_MODE_IS_EXCLUDE, port);
     if (ret < 0) err("%s(%d), mcast_membership_report fail %d\n", __func__, port, ret);
-    ret = mcast_membership_general_query(impl, port);
-    if (ret < 0)
-      err("%s(%d), mcast_membership_general_query fail %d\n", __func__, port, ret);
   }
 
   ret = rte_eal_alarm_set(IGMP_JOIN_GROUP_PERIOD_US, mcast_membership_report_cb, impl);
@@ -422,7 +419,6 @@ int st_mcast_join(struct st_main_impl* impl, uint32_t group_addr, enum st_port p
   mcast_inf_add_mac(inf, &mcast_mac);
   /* report to switch */
   mcast_membership_report(impl, MCAST_MODE_IS_EXCLUDE, port);
-  mcast_membership_general_query(impl, port);
 
   info("%s(%d), succ, group %d.%d.%d.%d\n", __func__, port, ip[0], ip[1], ip[2], ip[3]);
   return 0;
@@ -467,7 +463,6 @@ int st_mcast_restore(struct st_main_impl* impl, enum st_port port) {
       rte_eth_dev_mac_addr_add(port_id, &inf->mcast_mac_lists[i], 0);
   }
   mcast_membership_report(impl, MCAST_MODE_IS_EXCLUDE, port);
-  mcast_membership_general_query(impl, port);
   return 0;
 }
 
