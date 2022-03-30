@@ -20,6 +20,7 @@
 #include <sys/types.h>
 
 #include "app_base.h"
+#include "fmt.h"
 #include "log.h"
 #include "player.h"
 

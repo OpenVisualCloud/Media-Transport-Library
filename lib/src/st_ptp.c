@@ -23,6 +23,14 @@
 #include "st_mcast.h"
 #include "st_sch.h"
 
+#define ST_PTP_USE_TX_TIME_STAMP (1)
+#define ST_PTP_USE_TX_TIMER (1)
+#define ST_PTP_CHECK_TX_TIME_STAMP (0)
+#define ST_PTP_CHECK_RX_TIME_STAMP (0)
+#define ST_PTP_PRINT_ERR_RESULT (0)
+
+#define ST_PTP_EBU_SYNC_MS (10)
+
 static char* ptp_mode_strs[ST_PTP_MAX_MODE] = {
     "l2",
     "l4",
@@ -106,57 +114,150 @@ static inline void ptp_set_master_addr(struct st_ptp_impl* ptp,
   }
 }
 
-static int ptp_parse_result(struct st_ptp_impl* ptp) {
-  uint16_t port_id = ptp->port_id;
-  int64_t delta = ((int64_t)ptp->t4 - ptp->t3) - ((int64_t)ptp->t2 - ptp->t1);
-  uint64_t abs_delta, expect_delta;
-
-  delta /= 2;
-  abs_delta = abs(delta);
-
-  if (ptp->delta_result_cnt) {
-    expect_delta = ptp->delta_result_sum / ptp->delta_result_cnt * 2;
-    expect_delta = RTE_MAX(expect_delta, 100 * 1000); /* min 100us */
-    if (abs_delta > expect_delta) {
-      dbg("%s(%d), error abs_delta %" PRIu64 "\n", __func__, ptp->port, abs_delta);
-      ptp->delta_result_err++;
-      ptp->stat_result_err++;
-      if (ptp->delta_result_err > 5) {
-        dbg("%s(%d), reset the delta result as too many errors\n", __func__, ptp->port);
-        ptp->delta_result_err = 0;
-        ptp->delta_result_cnt = 0;
-        ptp->delta_result_sum = 0;
-      }
-      return -EIO;
-    }
-  }
-  ptp->delta_result_err = 0;
-
+static void ptp_adjust_delta(struct st_ptp_impl* ptp, int64_t delta) {
   ptp_timesync_lock(ptp);
-  rte_eth_timesync_adjust_time(port_id, delta);
+  rte_eth_timesync_adjust_time(ptp->port_id, delta);
   ptp_timesync_unlock(ptp);
   dbg("%s(%d), delta %" PRId64 ", ptp %" PRIu64 "\n", __func__, ptp->port, delta,
       ptp_get_raw_time(ptp));
   ptp->ptp_delta += delta;
 
-  if (1 == ptp->delta_result_cnt) ptp->delta_result_sum = abs_delta;
-  ptp->delta_result_sum += abs_delta;
+  if (5 == ptp->delta_result_cnt) /* clear the first 5 results */
+    ptp->delta_result_sum = abs(delta) * ptp->delta_result_cnt;
+  else
+    ptp->delta_result_sum += abs(delta);
 
   ptp->delta_result_cnt++;
   /* update status */
   ptp->stat_delta_min = RTE_MIN(delta, ptp->stat_delta_min);
   ptp->stat_delta_max = RTE_MAX(delta, ptp->stat_delta_max);
   ptp->stat_delta_cnt++;
-  ptp->stat_delta_sum += abs_delta;
+  ptp->stat_delta_sum += abs(delta);
+}
+
+static void ptp_expect_result_clear(struct st_ptp_impl* ptp) {
+  ptp->expect_result_cnt = 0;
+  ptp->expect_result_sum = 0;
+  ptp->expect_result_start_ns = 0;
+}
+
+static void ptp_t_result_clear(struct st_ptp_impl* ptp) {
+  ptp->t1 = 0;
+  ptp->t2 = 0;
+  ptp->t3 = 0;
+  ptp->t4 = 0;
+}
+
+static void ptp_result_reset(struct st_ptp_impl* ptp) {
+  ptp->delta_result_err = 0;
+  ptp->delta_result_cnt = 0;
+  ptp->delta_result_sum = 0;
+  ptp->expect_result_avg = 0;
+}
+
+static void ptp_monitor_handler(void* param) {
+  struct st_ptp_impl* ptp = param;
+  uint64_t expect_result_period_us = ptp->expect_result_period_ns / 1000;
+
+  ptp->stat_sync_timeout_err++;
+  if (ptp->expect_result_avg && expect_result_period_us) {
+    ptp_adjust_delta(ptp, ptp->expect_result_avg);
+    dbg("%s(%d), next timer %ld\n", __func__, ptp->port, expect_result_period_us);
+    rte_eal_alarm_set(expect_result_period_us, ptp_monitor_handler, ptp);
+  }
+}
+
+static void ptp_sync_timeout_handler(void* param) {
+  struct st_ptp_impl* ptp = param;
+  uint64_t expect_result_period_us = ptp->expect_result_period_ns / 1000;
+
+  ptp_expect_result_clear(ptp);
+  ptp_t_result_clear(ptp);
+  ptp->stat_sync_timeout_err++;
+  if (ptp->expect_result_avg) {
+    ptp_adjust_delta(ptp, ptp->expect_result_avg);
+    dbg("%s(%d), next timer %ld\n", __func__, ptp->port, expect_result_period_us);
+    if (expect_result_period_us) {
+      rte_eal_alarm_set(expect_result_period_us, ptp_monitor_handler, ptp);
+    }
+  }
+}
+
+static int ptp_parse_result(struct st_ptp_impl* ptp) {
+  int64_t delta = ((int64_t)ptp->t4 - ptp->t3) - ((int64_t)ptp->t2 - ptp->t1);
+  uint64_t abs_delta, expect_delta;
+
+  dbg("%s(%d), t1 %" PRIu64 " t2 %" PRIu64 " t3 %" PRIu64 " t4 %" PRIu64 "\n", __func__,
+      ptp->port, ptp->t1, ptp->t2, ptp->t3, ptp->t4);
+
+  delta /= 2;
+  abs_delta = abs(delta);
+
+  /* cancel the monitor */
+  rte_eal_alarm_cancel(ptp_sync_timeout_handler, ptp);
+  rte_eal_alarm_cancel(ptp_monitor_handler, ptp);
+
+  if (ptp->delta_result_cnt) {
+    expect_delta = abs(ptp->expect_result_avg) * (RTE_MIN(ptp->delta_result_err + 2, 5));
+    if (!expect_delta) {
+      expect_delta = ptp->delta_result_sum / ptp->delta_result_cnt * 2;
+      expect_delta = RTE_MAX(expect_delta, 100 * 1000); /* min 100us */
+    }
+    if (abs_delta > expect_delta) {
+#if ST_PTP_PRINT_ERR_RESULT
+      err("%s(%d), error abs_delta %" PRIu64 "\n", __func__, ptp->port, abs_delta);
+      err("%s(%d), t1 %" PRIu64 " t2 %" PRIu64 " t3 %" PRIu64 " t4 %" PRIu64 "\n",
+          __func__, ptp->port, ptp->t1, ptp->t2, ptp->t3, ptp->t4);
+#endif
+      ptp_t_result_clear(ptp);
+      ptp_expect_result_clear(ptp);
+      ptp->delta_result_err++;
+      ptp->stat_result_err++;
+      if (ptp->delta_result_err > 10) {
+        dbg("%s(%d), reset the result as too many errors\n", __func__, ptp->port);
+        ptp_result_reset(ptp);
+      }
+      if (ptp->expect_result_avg) {
+        ptp_adjust_delta(ptp, ptp->expect_result_avg);
+      }
+      return -EIO;
+    }
+  }
+  ptp->delta_result_err = 0;
+
+  ptp_adjust_delta(ptp, delta);
+  ptp_t_result_clear(ptp);
+
+  if (ptp->delta_result_cnt > 10) {
+    if (abs(delta) < 10000) {
+      ptp->expect_result_cnt++;
+      if (!ptp->expect_result_start_ns)
+        ptp->expect_result_start_ns = st_get_monotonic_time();
+      ptp->expect_result_sum += delta;
+      if (ptp->expect_result_cnt >= 10) {
+        ptp->expect_result_avg = ptp->expect_result_sum / ptp->expect_result_cnt;
+        ptp->expect_result_period_ns =
+            (st_get_monotonic_time() - ptp->expect_result_start_ns) /
+            (ptp->expect_result_cnt - 1);
+        dbg("%s(%d), expect result avg %u, period %fs\n", __func__, ptp->port,
+            ptp->expect_result_avg, (float)ptp->expect_result_period_ns / NS_PER_S);
+        ptp_expect_result_clear(ptp);
+      }
+    } else {
+      ptp_expect_result_clear(ptp);
+    }
+  }
+
   return 0;
 }
 
-static void ptp_delay_req_handler(void* param) {
-  struct st_ptp_impl* ptp = param;
+static void ptp_delay_req_task(struct st_ptp_impl* ptp) {
   enum st_port port = ptp->port;
   uint16_t port_id = ptp->port_id;
   size_t hdr_offset;
   struct st_ptp_sync_msg* msg;
+
+  if (ptp->t3) return; /* t3 already sent */
 
   struct rte_mbuf* m = rte_pktmbuf_alloc(ptp->mbuf_pool);
   if (!m) {
@@ -167,7 +268,11 @@ static void ptp_delay_req_handler(void* param) {
   if (ptp->t2_vlan) {
     err("%s(%d), todo for vlan\n", __func__, port);
   } else {
+#if RTE_VERSION >= RTE_VERSION_NUM(21, 11, 0, 0)
+    m->ol_flags |= RTE_MBUF_F_TX_IEEE1588_TMST;
+#else
     m->ol_flags |= PKT_TX_IEEE1588_TMST;
+#endif
   }
 
   struct rte_ether_hdr* hdr = rte_pktmbuf_mtod(m, struct rte_ether_hdr*);
@@ -199,15 +304,17 @@ static void ptp_delay_req_handler(void* param) {
   ptp->t3_sequence_id++;
   msg->hdr.sequence_id = htons(ptp->t3_sequence_id);
 
-  rte_eth_macaddr_get(port_id, &hdr->s_addr);
-  ptp_set_master_addr(ptp, &hdr->d_addr);
+  rte_eth_macaddr_get(port_id, st_eth_s_addr(hdr));
+  ptp_set_master_addr(ptp, st_eth_d_addr(hdr));
   m->pkt_len = hdr_offset + sizeof(struct st_ptp_sync_msg);
   m->data_len = m->pkt_len;
 
+#if ST_PTP_USE_TX_TIME_STAMP
   struct timespec ts;
   ptp_timesync_lock(ptp);
   rte_eth_timesync_read_tx_timestamp(port_id, &ts);
   ptp_timesync_unlock(ptp);
+#endif
   // st_mbuf_dump(port, 0, "PTP_DELAY_REQ", m);
   uint16_t tx = rte_eth_tx_burst(port_id, ptp->tx_queue_id, &m, 1);
   if (tx < 1) {
@@ -216,23 +323,46 @@ static void ptp_delay_req_handler(void* param) {
     return;
   }
 
-  /* Wait at least 50 us to read TX timestamp. */
+#if ST_PTP_USE_TX_TIME_STAMP
+  /* Wait max 50 us to read TX timestamp. */
   int max_retry = 50;
   int ret;
+  uint64_t tx_ns = 0;
   while (max_retry > 0) {
     ptp_timesync_lock(ptp);
     ret = rte_eth_timesync_read_tx_timestamp(port_id, &ts);
     ptp_timesync_unlock(ptp);
-    if (ret >= 0) break;
+    if (ret >= 0) {
+      tx_ns = st_timespec_to_ns(&ts);
+      break;
+    }
     st_delay_us(1);
     max_retry--;
   }
+
   if (max_retry <= 0) {
-    ptp_timesync_lock(ptp);
-    rte_eth_timesync_read_time(port_id, &ts);
-    ptp_timesync_unlock(ptp);
+    err("%s(%d), read tx reach max retry\n", __func__, port);
   }
-  ptp->t3 = st_timespec_to_ns(&ts);
+
+#if ST_PTP_CHECK_TX_TIME_STAMP
+  ptp_timesync_lock(ptp);
+  rte_eth_timesync_read_time(port_id, &ts);
+  ptp_timesync_unlock(ptp);
+
+  uint64_t ptp_ns = st_timespec_to_ns(&ts);
+  uint64_t delta = ptp_ns - tx_ns;
+#define TX_MAX_DELTA (1 * 1000 * 1000) /* 1ms */
+  if (unlikely(delta > TX_MAX_DELTA)) {
+    err("%s(%d), tx_ns %" PRIu64 ", delta %" PRIu64 "\n", __func__, ptp->port, tx_ns,
+        delta);
+    ptp->stat_tx_sync_err++;
+  }
+#endif
+
+  ptp->t3 = tx_ns;
+#else
+  ptp->t3 = ptp_get_raw_time(ptp);
+#endif
   dbg("%s(%d), t3 %" PRIu64 ", seq %d, max_retry %d, ptp %" PRIu64 "\n", __func__, port,
       ptp->t3, ptp->t3_sequence_id, max_retry, ptp_get_raw_time(ptp));
 
@@ -242,32 +372,58 @@ static void ptp_delay_req_handler(void* param) {
   }
 }
 
+#if ST_PTP_USE_TX_TIMER
+static void ptp_delay_req_handler(void* param) {
+  struct st_ptp_impl* ptp = param;
+  return ptp_delay_req_task(ptp);
+}
+#endif
+
 static int ptp_parse_sync(struct st_ptp_impl* ptp, struct st_ptp_sync_msg* msg, bool vlan,
                           enum st_ptp_l_mode mode, uint16_t timesync) {
   struct timespec timestamp;
   int ret;
   uint16_t port_id = ptp->port_id;
-  uint64_t rx_ns = 0, ptp_ns = 0, delta;
+  uint64_t rx_ns = 0;
 #define RX_MAX_DELTA (1 * 1000 * 1000) /* 1ms */
+
+  ptp->stat_sync_cnt++;
+
+  uint64_t monitor_period_us = ptp->expect_result_period_ns / 1000 / 2;
+  if (monitor_period_us) {
+    monitor_period_us = RTE_MAX(monitor_period_us, 100 * 1000 * 1000); /* min 100ms */
+    if (ptp->t2) { /* already has a pending t2 */
+      ptp_expect_result_clear(ptp);
+      ptp_t_result_clear(ptp);
+      ptp->stat_sync_timeout_err++;
+      if (ptp->expect_result_avg) ptp_adjust_delta(ptp, ptp->expect_result_avg);
+    }
+    rte_eal_alarm_cancel(ptp_monitor_handler, ptp);
+    rte_eal_alarm_cancel(ptp_sync_timeout_handler, ptp);
+    rte_eal_alarm_set(monitor_period_us, ptp_sync_timeout_handler, ptp);
+  }
 
   ptp_timesync_lock(ptp);
   ret = rte_eth_timesync_read_rx_timestamp(port_id, &timestamp, timesync);
   if (ret >= 0) rx_ns = st_timespec_to_ns(&timestamp);
+  ptp_timesync_unlock(ptp);
+
+#if ST_PTP_CHECK_TX_TIME_STAMP
+  uint64_t ptp_ns = 0, delta;
   ret = rte_eth_timesync_read_time(port_id, &timestamp);
   if (ret >= 0) ptp_ns = st_timespec_to_ns(&timestamp);
-  ptp_timesync_unlock(ptp);
   delta = ptp_ns - rx_ns;
   if (unlikely(delta > RX_MAX_DELTA)) {
-    dbg("%s(%d), rx_ns %" PRIu64 ", delta %" PRIu64 "\n", __func__, ptp->port, rx_ns,
+    err("%s(%d), rx_ns %" PRIu64 ", delta %" PRIu64 "\n", __func__, ptp->port, rx_ns,
         delta);
-    rx_ns = ptp_ns; /* use ptp instead, timesync unstable */
     ptp->stat_rx_sync_err++;
   }
+#endif
 
+#if ST_PTP_USE_TX_TIMER
   rte_eal_alarm_cancel(ptp_delay_req_handler, ptp);
-  ptp->t1 = 0;
-  ptp->t3 = 0;
-  ptp->t4 = 0;
+#endif
+  ptp_t_result_clear(ptp);
   ptp->t2 = rx_ns;
   ptp->t2_sequence_id = msg->hdr.sequence_id;
   ptp->t2_vlan = vlan;
@@ -279,8 +435,6 @@ static int ptp_parse_sync(struct st_ptp_impl* ptp, struct st_ptp_sync_msg* msg, 
 
 static int ptp_parse_follow_up(struct st_ptp_impl* ptp,
                                struct st_ptp_follow_up_msg* msg) {
-  enum st_port port = ptp->port;
-
   if (msg->hdr.sequence_id != ptp->t2_sequence_id) {
     dbg("%s(%d), error sequence id %d %d\n", __func__, port, msg->hdr.sequence_id,
         ptp->t2_sequence_id);
@@ -292,8 +446,12 @@ static int ptp_parse_follow_up(struct st_ptp_impl* ptp,
   dbg("%s(%d), t1 %" PRIu64 ", ptp %" PRIu64 "\n", __func__, port, ptp->t1,
       ptp_get_raw_time(ptp));
 
-  rte_eal_alarm_set(ST_PTP_DELAY_REQ_US + (port * ST_PTP_DELAY_STEP_US),
+#if ST_PTP_USE_TX_TIMER
+  rte_eal_alarm_set(ST_PTP_DELAY_REQ_US + (ptp->port * ST_PTP_DELAY_STEP_US),
                     ptp_delay_req_handler, ptp);
+#else
+  ptp_delay_req_task(ptp);
+#endif
 
   return 0;
 }
@@ -367,7 +525,53 @@ static void ptp_stat_clear(struct st_ptp_impl* ptp) {
   ptp->stat_delta_min = INT_MAX;
   ptp->stat_delta_max = INT_MIN;
   ptp->stat_rx_sync_err = 0;
+  ptp->stat_tx_sync_err = 0;
   ptp->stat_result_err = 0;
+  ptp->stat_sync_timeout_err = 0;
+  ptp->stat_sync_cnt = 0;
+}
+
+static void ptp_sync_from_user(struct st_main_impl* impl, struct st_ptp_impl* ptp) {
+  enum st_port port = ptp->port;
+  uint64_t target_ns = st_get_ptp_time(impl, port);
+  uint64_t raw_ns = ptp_get_raw_time(ptp);
+  int64_t delta = (int64_t)target_ns - raw_ns;
+  uint64_t abs_delta = abs(delta);
+  uint64_t expect_abs_delta = abs(ptp->expect_result_avg) * 2;
+
+  if (expect_abs_delta) {
+    if (abs_delta > expect_abs_delta) delta = ptp->expect_result_avg;
+  } else {
+    if (abs_delta < 10000) {
+      ptp->expect_result_sum += delta;
+      ptp->expect_result_cnt++;
+      if (ptp->expect_result_cnt > 1000) {
+        ptp->expect_result_avg = ptp->expect_result_sum / ptp->expect_result_cnt;
+        info("%s(%d), expect delta %d, sum %d\n", __func__, port, ptp->expect_result_avg,
+             ptp->expect_result_sum);
+      }
+    }
+  }
+
+  ptp->delta_result_cnt++;
+  ptp_timesync_lock(ptp);
+  rte_eth_timesync_adjust_time(ptp->port_id, delta);
+  ptp_timesync_unlock(ptp);
+  ptp->ptp_delta += delta;
+  dbg("%s(%d), delta %" PRId64 "\n", __func__, port, delta);
+
+  /* update status */
+  ptp->stat_delta_min = RTE_MIN(delta, ptp->stat_delta_min);
+  ptp->stat_delta_max = RTE_MAX(delta, ptp->stat_delta_max);
+  ptp->stat_delta_cnt++;
+  ptp->stat_delta_sum += abs(delta);
+}
+
+static void ptp_sync_from_user_handler(void* param) {
+  struct st_ptp_impl* ptp = param;
+
+  ptp_sync_from_user(ptp->impl, ptp);
+  rte_eal_alarm_set(ST_PTP_EBU_SYNC_MS * 1000, ptp_sync_from_user_handler, ptp);
 }
 
 static int ptp_init(struct st_main_impl* impl, struct st_ptp_impl* ptp,
@@ -376,8 +580,6 @@ static int ptp_init(struct st_main_impl* impl, struct st_ptp_impl* ptp,
   struct rte_ether_addr mac;
   int ret;
   uint8_t* ip = &ptp->sip_addr[0];
-
-  if (!st_if_has_timesync(impl, port)) return 0;
 
   ret = rte_eth_macaddr_get(port_id, &mac);
   if (ret < 0) {
@@ -403,7 +605,6 @@ static int ptp_init(struct st_main_impl* impl, struct st_ptp_impl* ptp,
   ptp->master_initialized = false;
   ptp->t3_sequence_id = 0x1000 * port;
 
-  /* todo: check why we can't support both mode with same config */
   struct st_init_params* p = st_get_user_params(impl);
   if (p->flags & ST_FLAG_PTP_UNICAST_ADDR) {
     ptp->master_addr_mode = ST_PTP_UNICAST_ADDR;
@@ -413,6 +614,14 @@ static int ptp_init(struct st_main_impl* impl, struct st_ptp_impl* ptp,
   }
 
   ptp_stat_clear(ptp);
+
+  if (!st_if_has_ptp(impl, port)) {
+    if (st_has_ebu(impl)) {
+      ptp_sync_from_user(impl, ptp);
+      rte_eal_alarm_set(ST_PTP_EBU_SYNC_MS * 1000, ptp_sync_from_user_handler, ptp);
+    }
+    return 0;
+  }
 
   /* create tx queue */
   ret = st_dev_request_tx_queue(impl, port, &ptp->tx_queue_id, 0);
@@ -425,12 +634,11 @@ static int ptp_init(struct st_main_impl* impl, struct st_ptp_impl* ptp,
   inet_pton(AF_INET, "224.0.1.129", ptp->mcast_group_addr);
 
   /* create rx queue */
-  struct st_dev_flow flow;
+  struct st_rx_flow flow;
   memset(&flow, 0xff, sizeof(flow));
   rte_memcpy(flow.dip_addr, ptp->mcast_group_addr, ST_IP_ADDR_LEN);
   rte_memcpy(flow.sip_addr, st_sip_addr(impl, port), ST_IP_ADDR_LEN);
   flow.port_flow = false;
-  flow.src_port = ST_PTP_UDP_GEN_PORT;
   flow.dst_port = ST_PTP_UDP_GEN_PORT;
   ret = st_dev_request_rx_queue(impl, port, &ptp->rx_queue_id, &flow);
   if (ret < 0) {
@@ -454,12 +662,15 @@ static int ptp_init(struct st_main_impl* impl, struct st_ptp_impl* ptp,
 
 static int ptp_uinit(struct st_main_impl* impl, struct st_ptp_impl* ptp) {
   enum st_port port = ptp->port;
-  int ret;
 
-  if (!st_if_has_timesync(impl, port)) return 0;
+  rte_eal_alarm_cancel(ptp_sync_from_user_handler, ptp);
+#if ST_PTP_USE_TX_TIMER
+  rte_eal_alarm_cancel(ptp_delay_req_handler, ptp);
+#endif
+  rte_eal_alarm_cancel(ptp_sync_timeout_handler, ptp);
+  rte_eal_alarm_cancel(ptp_monitor_handler, ptp);
 
-  ret = rte_eal_alarm_cancel(ptp_delay_req_handler, ptp);
-  if (ret < 0) err("%s(%d), st_delay_req_handler cancel fail %d\n", __func__, port, ret);
+  if (!st_if_has_ptp(impl, port)) return 0;
 
   st_mcast_l2_leave(impl, &ptp_l2_multicast_eaddr, port);
   st_mcast_leave(impl, *(uint32_t*)ptp->mcast_group_addr, port);
@@ -482,7 +693,7 @@ int st_ptp_parse(struct st_ptp_impl* ptp, struct st_ptp_header* hdr, bool vlan,
                  struct st_ptp_ipv4_udp* ipv4_hdr) {
   enum st_port port = ptp->port;
 
-  if (!st_if_has_timesync(ptp->impl, port)) return 0;
+  if (!st_if_has_ptp(ptp->impl, port)) return 0;
 
   // dbg("%s(%d), message_type %d\n", __func__, port, hdr->message_type);
   // st_ptp_print_port_id(port, &hdr->source_port_identity);
@@ -526,8 +737,8 @@ int st_ptp_parse(struct st_ptp_impl* ptp, struct st_ptp_header* hdr, bool vlan,
   }
 
   /* read to clear rx timesync status */
-  struct timespec timestamp;
-  rte_eth_timesync_read_rx_timestamp(ptp->port_id, &timestamp, timesync);
+  // struct timespec timestamp;
+  // rte_eth_timesync_read_rx_timestamp(ptp->port_id, &timestamp, timesync);
   return 0;
 }
 
@@ -540,26 +751,42 @@ void st_ptp_stat(struct st_main_impl* impl) {
   uint64_t ns;
 
   for (int i = 0; i < num_ports; i++) {
+    ptp = st_get_ptp(impl, i);
+
     ns = st_get_ptp_time(impl, i);
     st_ns_to_timespec(ns, &spec);
     localtime_r(&spec.tv_sec, &t);
     strftime(date_time, sizeof(date_time), "%Y-%m-%d %H:%M:%S", &t);
     info("PTP(%d), time %" PRIu64 ", %s\n", i, ns, date_time);
 
-    if (!st_if_has_timesync(impl, i)) continue;
+    if (!st_if_has_ptp(impl, i)) {
+      if (st_has_ebu(impl)) {
+        info("PTP(%d), raw ptp %" PRIu64 "\n", i, ptp_get_raw_time(ptp));
+        if (ptp->stat_delta_cnt) {
+          info("PTP(%d), delta: avr %" PRId64 ", min %" PRId64 ", max %" PRId64
+               ", cnt %d, expect %d\n",
+               i, ptp->stat_delta_sum / ptp->stat_delta_cnt, ptp->stat_delta_min,
+               ptp->stat_delta_max, ptp->stat_delta_cnt, ptp->expect_result_avg);
+        }
+        ptp_stat_clear(ptp);
+      }
+      continue;
+    }
 
-    ptp = st_get_ptp(impl, i);
     if (ptp->stat_delta_cnt)
       info("PTP(%d), mode %s, delta: avr %" PRId64 ", min %" PRId64 ", max %" PRId64
-           ", cnt %" PRId64 ", avg %" PRId64 "\n",
+           ", cnt %d\n",
            i, ptp_mode_str(ptp->t2_mode), ptp->stat_delta_sum / ptp->stat_delta_cnt,
-           ptp->stat_delta_min, ptp->stat_delta_max, ptp->stat_delta_cnt,
-           ptp->delta_result_cnt ? (ptp->delta_result_sum / ptp->delta_result_cnt) : 0);
+           ptp->stat_delta_min, ptp->stat_delta_max, ptp->stat_delta_cnt);
     else
       info("PTP(%d): not connected\n", i);
-    if (ptp->stat_rx_sync_err || ptp->stat_result_err)
-      info("PTP(%d): rx time sync error %" PRId64 ", delta result error %" PRId64 "\n", i,
-           ptp->stat_rx_sync_err, ptp->stat_result_err);
+    info("PTP(%d), sync cnt %d, expect avg %d@%fs\n", i, ptp->stat_sync_cnt,
+         ptp->expect_result_avg, (float)ptp->expect_result_period_ns / NS_PER_S);
+    if (ptp->stat_rx_sync_err || ptp->stat_result_err || ptp->stat_tx_sync_err)
+      info("PTP(%d): rx time error %d, tx time error %d, delta result error %d\n", i,
+           ptp->stat_rx_sync_err, ptp->stat_tx_sync_err, ptp->stat_result_err);
+    if (ptp->stat_sync_timeout_err)
+      info("PTP(%d): sync timeout %d\n", i, ptp->stat_sync_timeout_err);
     ptp_stat_clear(ptp);
   }
 }
@@ -592,4 +819,8 @@ int st_ptp_uinit(struct st_main_impl* impl) {
   }
 
   return 0;
+}
+
+uint64_t st_get_raw_ptp_time(struct st_main_impl* impl, enum st_port port) {
+  return ptp_get_raw_time(st_get_ptp(impl, port));
 }

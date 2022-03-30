@@ -31,6 +31,9 @@
 static uint8_t g_rx_video_local_ip[ST_IP_ADDR_LEN] = {192, 168, 0, 1};
 /* source ip address for rx video session */
 static uint8_t g_rx_video_source_ip[ST_IP_ADDR_LEN] = {239, 168, 0, 1};
+
+static bool g_update_src_test = false;
+#define RX_VIDEO_UDP_PORT_2 (RX_VIDEO_UDP_PORT + 1)
 static uint8_t g_rx_video_source_ip2[ST_IP_ADDR_LEN] = {239, 168, 0, 2};
 
 struct app_context {
@@ -100,8 +103,9 @@ static void* app_rx_video_frame_thread(void* arg) {
 
 int main() {
   struct st_init_params param;
-  memset(&param, 0, sizeof(param));
   int session_num = 1;
+
+  memset(&param, 0, sizeof(param));
   param.num_ports = 1;
   strncpy(param.port[ST_PORT_P], RX_VIDEO_PORT_BDF, ST_PORT_MAX_LEN);
   memcpy(param.sip_addr[ST_PORT_P], g_rx_video_local_ip, ST_IP_ADDR_LEN);
@@ -113,15 +117,16 @@ int main() {
   param.tx_sessions_cnt_max = 0;
   param.rx_sessions_cnt_max = session_num;
   param.lcores = NULL;
+  // create device
   st_handle dev_handle = st_init(&param);
   if (!dev_handle) {
     printf("st_init fail\n");
     return -EIO;
   }
+
   st20_rx_handle rx_handle[session_num];
   struct app_context* app[session_num];
   int ret;
-
   // create and register rx session
   for (int i = 0; i < session_num; i++) {
     app[i] = (struct app_context*)malloc(sizeof(struct app_context));
@@ -172,27 +177,31 @@ int main() {
       return -EIO;
     }
   }
+
   // start rx
   ret = st_start(dev_handle);
 
   // update ip and port api calling
-  sleep(10);
-  struct st_rx_source_info src;
-  /* switch to mcast port p(tx_session:1) */
-  memset(&src, 0, sizeof(src));
-  src.udp_port[ST_PORT_P] = 20000;
-  memcpy(src.sip_addr[ST_PORT_P], g_rx_video_source_ip2, ST_IP_ADDR_LEN);
-  ret = st20_rx_update_source(rx_handle[0], &src);
+  if (g_update_src_test) {
+    sleep(10);
+    struct st_rx_source_info src;
+    /* switch to mcast port p(tx_session:1) */
+    memset(&src, 0, sizeof(src));
+    src.udp_port[ST_PORT_P] = 20000;
+    memcpy(src.sip_addr[ST_PORT_P], g_rx_video_source_ip2, ST_IP_ADDR_LEN);
+    ret = st20_rx_update_source(rx_handle[0], &src);
 
-  sleep(10);
-  /* switch to mcast port p(tx_session:1) */
-  memset(&src, 0, sizeof(src));
-  src.udp_port[ST_PORT_P] = RX_VIDEO_UDP_PORT;
-  memcpy(src.sip_addr[ST_PORT_P], g_rx_video_source_ip, ST_IP_ADDR_LEN);
-  ret = st20_rx_update_source(rx_handle[0], &src);
+    sleep(10);
+    /* switch to mcast port p(tx_session:1) */
+    memset(&src, 0, sizeof(src));
+    src.udp_port[ST_PORT_P] = RX_VIDEO_UDP_PORT;
+    memcpy(src.sip_addr[ST_PORT_P], g_rx_video_source_ip, ST_IP_ADDR_LEN);
+    ret = st20_rx_update_source(rx_handle[0], &src);
+  }
 
   // rx run 120s
   sleep(120);
+
   // stop app thread
   for (int i = 0; i < session_num; i++) {
     app[i]->stop = true;
@@ -213,6 +222,7 @@ int main() {
     }
     pthread_mutex_destroy(&app[i]->wake_mutex);
     pthread_cond_destroy(&app[i]->wake_cond);
+    printf("session(%d) received frames %d\n", i, app[i]->fb_rec);
     free(app[i]);
   }
 

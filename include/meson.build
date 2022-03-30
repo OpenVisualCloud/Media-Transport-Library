@@ -11,4 +11,4 @@
 # express or implied warranties, other than those that are expressly stated
 # in the License.
 
-install_headers('st_dpdk_api.h', )
+install_headers('st_dpdk_api.h', 'st_convert_api.h',)

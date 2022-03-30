@@ -55,7 +55,7 @@ static int st_ancillary_trs_tasklet_stop(void* priv) {
   for (int sidx = 0; sidx < ST_MAX_TX_ANC_SESSIONS; sidx++) {
     s = &mgr->sessions[sidx];
     tx_ancillary_session_lock(mgr, sidx);
-    if (!mgr->active[sidx]) tx_ancillary_session_rtp_pool_free(s);
+    if (!mgr->active[sidx]) tx_ancillary_session_mempool_free(s);
     tx_ancillary_session_unlock(mgr, sidx);
   }
 

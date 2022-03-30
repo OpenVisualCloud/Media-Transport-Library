@@ -1,0 +1,136 @@
+From 78306d27a9426a69a51bed7839d07a37095ed83b Mon Sep 17 00:00:00 2001
+From: qiaoliu <qiao.liu@intel.com>
+Date: Wed, 19 Jan 2022 10:52:05 +0800
+Subject: [PATCH 7/7] Add Windows 10 May 2019 and newer version 1GB huge page
+ support
+
+---
+ lib/eal/windows/eal_hugepages.c |  4 +--
+ lib/eal/windows/eal_memory.c    | 60 +++++++++++++++++++++++++++++----
+ lib/eal/windows/eal_windows.h   |  8 +++++
+ 3 files changed, 64 insertions(+), 8 deletions(-)
+
+diff --git a/lib/eal/windows/eal_hugepages.c b/lib/eal/windows/eal_hugepages.c
+index b007dceb39..89db38533e 100644
+--- a/lib/eal/windows/eal_hugepages.c
++++ b/lib/eal/windows/eal_hugepages.c
+@@ -68,8 +68,8 @@ hugepage_info_init(void)
+ 	/* Only one hugepage size available on Windows. */
+ 	internal_conf->num_hugepage_sizes = 1;
+ 	hpi = &internal_conf->hugepage_info[0];
+-
+-	hpi->hugepage_sz = GetLargePageMinimum();
++  
++	hpi->hugepage_sz = eal_mem_hugepage_size();
+ 	if (hpi->hugepage_sz == 0)
+ 		return -ENOTSUP;
+ 
+diff --git a/lib/eal/windows/eal_memory.c b/lib/eal/windows/eal_memory.c
+index 2fd37d9708..57642116d8 100644
+--- a/lib/eal/windows/eal_memory.c
++++ b/lib/eal/windows/eal_memory.c
+@@ -323,7 +323,7 @@ void *
+ eal_mem_commit(void *requested_addr, size_t size, int socket_id)
+ {
+ 	HANDLE process;
+-	MEM_EXTENDED_PARAMETER param;
++	MEM_EXTENDED_PARAMETER param[2];
+ 	DWORD param_count = 0;
+ 	DWORD flags;
+ 	void *addr;
+@@ -364,15 +364,21 @@ eal_mem_commit(void *requested_addr, size_t size, int socket_id)
+ 	}
+ 
+ 	if (socket_id != SOCKET_ID_ANY) {
+-		param_count = 1;
+-		memset(&param, 0, sizeof(param));
+-		param.Type = MemExtendedParameterNumaNode;
+-		param.ULong = eal_socket_numa_node(socket_id);
++		if(eal_mem_hugepage_size()> RTE_PGSIZE_2M) 
++			param_count = 2;
++		else
++			param_count = 1;
++		memset(&param[0], 0, sizeof(MEM_EXTENDED_PARAMETER));
++		param[0].Type = MemExtendedParameterNumaNode;
++		param[0].ULong = eal_socket_numa_node(socket_id);
++		memset(&param[1], 0, sizeof(MEM_EXTENDED_PARAMETER));
++		param[1].Type = MemExtendedParameterAttributeFlags;
++		param[1].ULong64 = 0x00000010;//MEM_EXTENDED_PARAMETER_NONPAGED_HUGE
+ 	}
+ 
+ 	flags = MEM_RESERVE | MEM_COMMIT | MEM_LARGE_PAGES;
+ 	addr = VirtualAlloc2_ptr(process, requested_addr, size,
+-		flags, PAGE_READWRITE, &param, param_count);
++		flags, PAGE_READWRITE, param, param_count);
+ 	if (addr == NULL) {
+ 		/* Logging may overwrite GetLastError() result. */
+ 		DWORD err = GetLastError();
+@@ -617,6 +623,48 @@ eal_get_baseaddr(void)
+ 	return 0;
+ }
+ 
++size_t eal_mem_hugepage_size(void)
++{
++	MEM_EXTENDED_PARAMETER param;
++	DWORD param_count = 0;
++	DWORD flags;
++	void *addr;
++	static size_t page_size = 0;
++	HANDLE process;
++	if(!page_size){
++	    process = GetCurrentProcess();
++	     // Check if current OS support 1GB huge page
++	    param_count = 1;
++	    memset(&param, 0, sizeof(MEM_EXTENDED_PARAMETER));
++	    param.Type = MemExtendedParameterAttributeFlags;
++	    param.ULong64 = 0x00000010;//MEM_EXTENDED_PARAMETER_NONPAGED_HUGE  
++	    flags = MEM_RESERVE | MEM_COMMIT | MEM_LARGE_PAGES;
++	 
++	    if(VirtualAlloc2_ptr == NULL)
++		      eal_mem_win32api_init();
++	    addr = VirtualAlloc2_ptr(process, NULL, RTE_PGSIZE_1G,
++		                           flags, PAGE_READWRITE, &param, param_count);
++	    if (addr == NULL) {
++		 
++		      DWORD err = GetLastError();
++		      if(err == ERROR_INVALID_PARAMETER) 
++			    {
++				    /* do not support 1GB huge page */
++				    RTE_LOG_WIN32_ERR(" Current version only can support 2MB page size\n");
++				    page_size = GetLargePageMinimum();		
++		    	}
++	    }  
++    	else{
++		      page_size = RTE_PGSIZE_1G;   // 1GB huge Cache
++	  	    if (!VirtualFreeEx(process, addr, 0, MEM_RELEASE)) {
++			        RTE_LOG_WIN32_ERR("VirtualFreeEx(%p, 0, release)",addr);
++			        return page_size;
++		  }
++	}
++}
++  return page_size;
++}
++
+ size_t
+ rte_mem_page_size(void)
+ {
+diff --git a/lib/eal/windows/eal_windows.h b/lib/eal/windows/eal_windows.h
+index 23ead6d30c..f6e6f17158 100644
+--- a/lib/eal/windows/eal_windows.h
++++ b/lib/eal/windows/eal_windows.h
+@@ -136,4 +136,12 @@ void *eal_mem_commit(void *requested_addr, size_t size, int socket_id);
+  */
+ int eal_mem_decommit(void *addr, size_t size);
+ 
++/**
++ * Check if the OS version support 1GB huge page size, and return correct huge page size
++ *
++ * @return
++ * huge page size 2M or 1G.
++ */
++size_t eal_mem_hugepage_size(void);
++
+ #endif /* _EAL_WINDOWS_H_ */
+-- 
+2.17.1
+

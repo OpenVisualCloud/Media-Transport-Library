@@ -75,8 +75,8 @@ int mcast_membership_general_query(struct st_main_impl* impl, enum st_port port)
   }
 
   eth_hdr = rte_pktmbuf_mtod_offset(pkt, struct rte_ether_hdr*, hdr_offset);
-  rte_eth_macaddr_get(st_port_id(impl, port), &eth_hdr->s_addr);
-  rte_ether_addr_copy(&mcast_mac_query, &eth_hdr->d_addr);
+  rte_eth_macaddr_get(st_port_id(impl, port), st_eth_s_addr(eth_hdr));
+  rte_ether_addr_copy(&mcast_mac_query, st_eth_d_addr(eth_hdr));
   eth_hdr->ether_type = htons(RTE_ETHER_TYPE_IPV4);
   hdr_offset += sizeof(*eth_hdr);
 
@@ -111,10 +111,7 @@ int mcast_membership_general_query(struct st_main_impl* impl, enum st_port port)
   }
   mb_query->checksum = htons(checksum);
 
-  pkt->ol_flags = PKT_TX_IPV4;
-  pkt->l2_len = sizeof(struct rte_ether_hdr);
-  pkt->l3_len = sizeof(struct rte_ipv4_hdr);
-  pkt->ol_flags |= PKT_TX_IP_CKSUM;
+  st_mbuf_init_ipv4(pkt);
   pkt->pkt_len = pkt->l2_len + pkt->l3_len + mb_query_len;
   pkt->data_len = pkt->pkt_len;
 
@@ -156,8 +153,8 @@ static int mcast_membership_report(struct st_main_impl* impl,
   }
 
   eth_hdr = rte_pktmbuf_mtod_offset(pkt, struct rte_ether_hdr*, hdr_offset);
-  rte_eth_macaddr_get(st_port_id(impl, port), &eth_hdr->s_addr);
-  rte_ether_addr_copy(&mcast_mac_dst, &eth_hdr->d_addr);
+  rte_eth_macaddr_get(st_port_id(impl, port), st_eth_s_addr(eth_hdr));
+  rte_ether_addr_copy(&mcast_mac_dst, st_eth_d_addr(eth_hdr));
   eth_hdr->ether_type = htons(RTE_ETHER_TYPE_IPV4);
   hdr_offset += sizeof(*eth_hdr);
 
@@ -192,10 +189,7 @@ static int mcast_membership_report(struct st_main_impl* impl,
   dbg("%s, checksum %d\n", __func__, checksum);
   mb_report->checksum = htons(checksum);
 
-  pkt->ol_flags = PKT_TX_IPV4;
-  pkt->l2_len = sizeof(struct rte_ether_hdr);
-  pkt->l3_len = sizeof(struct rte_ipv4_hdr);
-  pkt->ol_flags |= PKT_TX_IP_CKSUM;
+  st_mbuf_init_ipv4(pkt);
   pkt->pkt_len = pkt->l2_len + pkt->l3_len + mb_report_len;
   pkt->data_len = pkt->pkt_len;
 

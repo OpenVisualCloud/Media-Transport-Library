@@ -52,8 +52,8 @@ static int arp_receive_request(struct st_main_impl* impl, struct rte_arp_hdr* re
   struct rte_ether_hdr* eth = rte_pktmbuf_mtod(rpl_pkt, struct rte_ether_hdr*);
   uint16_t port_id = st_port_id(impl, port);
 
-  rte_eth_macaddr_get(port_id, &eth->s_addr);
-  rte_ether_addr_copy(&request->arp_data.arp_sha, &eth->d_addr);
+  rte_eth_macaddr_get(port_id, st_eth_s_addr(eth));
+  rte_ether_addr_copy(&request->arp_data.arp_sha, st_eth_d_addr(eth));
   eth->ether_type = htons(RTE_ETHER_TYPE_ARP);  // ARP_PROTOCOL
 
   struct rte_arp_hdr* arp =
@@ -76,7 +76,7 @@ static int arp_receive_request(struct st_main_impl* impl, struct rte_arp_hdr* re
   }
 
   uint8_t* ip = (uint8_t*)&request->arp_data.arp_sip;
-  info("%s(%d), send to %d.%d.%d.%d\n", __func__, port, ip[0], ip[1], ip[2], ip[3]);
+  info_once("%s(%d), send to %d.%d.%d.%d\n", __func__, port, ip[0], ip[1], ip[2], ip[3]);
   return 0;
 }
 
@@ -90,7 +90,7 @@ static int arp_receive_reply(struct st_main_impl* impl, struct rte_arp_hdr* repl
   }
 
   uint8_t* ip = (uint8_t*)&reply->arp_data.arp_sip;
-  info("%s(%d), from %d.%d.%d.%d\n", __func__, port, ip[0], ip[1], ip[2], ip[3]);
+  info_once("%s(%d), from %d.%d.%d.%d\n", __func__, port, ip[0], ip[1], ip[2], ip[3]);
 
   struct st_arp_impl* arp_impl = &impl->arp;
 
@@ -170,8 +170,8 @@ int st_arp_cni_get_mac(struct st_main_impl* impl, struct rte_ether_addr* ea,
       sizeof(struct rte_ether_hdr) + sizeof(struct rte_arp_hdr);
 
   struct rte_ether_hdr* eth = rte_pktmbuf_mtod(req_pkt, struct rte_ether_hdr*);
-  rte_eth_macaddr_get(port_id, &eth->s_addr);
-  memset(&eth->d_addr, 0xFF, RTE_ETHER_ADDR_LEN);
+  rte_eth_macaddr_get(port_id, st_eth_s_addr(eth));
+  memset(st_eth_d_addr(eth), 0xFF, RTE_ETHER_ADDR_LEN);
   eth->ether_type = htons(RTE_ETHER_TYPE_ARP);  // ARP_PROTOCOL
   struct rte_arp_hdr* arp =
       rte_pktmbuf_mtod_offset(req_pkt, struct rte_arp_hdr*, sizeof(struct rte_ether_hdr));

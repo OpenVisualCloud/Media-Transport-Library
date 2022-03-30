@@ -1,0 +1,5 @@
+1. Usage: emulate a busy task on CPU.
+2. Build:
+  make
+3. Run: eg run a work which sleep 100 ms then work 100 us on cpu 29
+  numactl -C 29 ./sch_smi_emulate --sleep_ms 100 --work_us 100

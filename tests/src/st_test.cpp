@@ -14,6 +14,7 @@
  *
  */
 
+#include "log.h"
 #include "tests.h"
 
 int st_test_sch_cnt(struct st_tests_context* ctx) {
@@ -25,6 +26,24 @@ int st_test_sch_cnt(struct st_tests_context* ctx) {
   if (ret < 0) return ret;
 
   return stats.sch_cnt;
+}
+
+bool st_test_dma_available(struct st_tests_context* ctx) {
+  st_handle handle = ctx->handle;
+  struct st_stats stats;
+  struct st_cap cap;
+  int ret;
+
+  ret = st_get_stats(handle, &stats);
+  if (ret < 0) return ret;
+
+  ret = st_get_cap(handle, &cap);
+  if (ret < 0) return ret;
+
+  if (stats.dma_dev_cnt < cap.dma_dev_cnt_max)
+    return true;
+  else
+    return false;
 }
 
 static void init_expect_fail_test(void) {
@@ -253,4 +272,19 @@ TEST(Main, dev_started) {
   ret = st_stop(handle);
   EXPECT_GE(ret, 0);
   EXPECT_FALSE(test_dev_started(ctx));
+}
+
+TEST(Main, bandwidth) {
+  uint64_t bandwidth_1080p_mps = st20_1080p59_yuv422_10bit_bandwidth_mps();
+  uint64_t bandwidth_1080p = 0;
+  int ret = st20_get_bandwidth_bps(1920, 1080, ST20_FMT_YUV_422_10BIT, ST_FPS_P59_94,
+                                   &bandwidth_1080p);
+  EXPECT_GE(ret, 0);
+  EXPECT_EQ(bandwidth_1080p / 1000 / 1000, bandwidth_1080p_mps);
+
+  uint64_t bandwidth_720p = 0;
+  ret = st20_get_bandwidth_bps(1280, 720, ST20_FMT_YUV_422_10BIT, ST_FPS_P59_94,
+                               &bandwidth_720p);
+  EXPECT_GE(ret, 0);
+  EXPECT_GT(bandwidth_1080p, bandwidth_720p);
 }

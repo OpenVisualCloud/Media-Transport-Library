@@ -35,6 +35,14 @@
   do {                              \
     RTE_LOG(INFO, ST, __VA_ARGS__); \
   } while (0)
+#define info_once(...)                \
+  do {                                \
+    static bool once = true;          \
+    if (once) {                       \
+      RTE_LOG(INFO, ST, __VA_ARGS__); \
+      once = false;                   \
+    }                                 \
+  } while (0)
 #define warn(...)                      \
   do {                                 \
     RTE_LOG(WARNING, ST, __VA_ARGS__); \

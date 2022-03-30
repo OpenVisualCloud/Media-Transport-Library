@@ -202,6 +202,7 @@ static int app_tx_st22_init(struct st_app_context* ctx, struct st22_app_tx_sessi
   struct st22_tx_ops ops;
   char name[32];
   st22_tx_handle handle;
+  memset(&ops, 0, sizeof(ops));
 
   s->rtp_pkt_size = ctx->st22_rtp_pkt_size;
   s->rtp_pd_size = s->rtp_pkt_size - sizeof(struct st_rfc3550_rtp_hdr);
@@ -270,7 +271,9 @@ static int app_tx_st22_init(struct st_app_context* ctx, struct st22_app_tx_sessi
 int st22_app_tx_sessions_init(struct st_app_context* ctx) {
   int ret, i;
   struct st22_app_tx_session* s;
-
+  ctx->tx_st22_sessions = (struct st22_app_tx_session*)st_app_zmalloc(
+      sizeof(struct st22_app_tx_session) * ctx->tx_st22_session_cnt);
+  if (!ctx->tx_st22_sessions) return -ENOMEM;
   for (i = 0; i < ctx->tx_st22_session_cnt; i++) {
     s = &ctx->tx_st22_sessions[i];
     s->idx = i;
@@ -286,7 +289,7 @@ int st22_app_tx_sessions_init(struct st_app_context* ctx) {
 
 int st22_app_tx_sessions_stop(struct st_app_context* ctx) {
   struct st22_app_tx_session* s;
-
+  if (!ctx->tx_st22_sessions) return 0;
   for (int i = 0; i < ctx->tx_st22_session_cnt; i++) {
     s = &ctx->tx_st22_sessions[i];
     app_tx_st22_stop_source(s);
@@ -298,12 +301,13 @@ int st22_app_tx_sessions_stop(struct st_app_context* ctx) {
 int st22_app_tx_sessions_uinit(struct st_app_context* ctx) {
   int i;
   struct st22_app_tx_session* s;
-
+  if (!ctx->tx_st22_sessions) return 0;
   for (i = 0; i < ctx->tx_st22_session_cnt; i++) {
     s = &ctx->tx_st22_sessions[i];
     s->idx = i;
     app_tx_st22_uinit(s);
   }
+  st_app_free(ctx->tx_st22_sessions);
 
   return 0;
 }

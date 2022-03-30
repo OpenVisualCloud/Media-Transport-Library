@@ -55,7 +55,7 @@ static int st_audio_trs_tasklet_stop(void* priv) {
   for (int sidx = 0; sidx < ST_MAX_TX_AUDIO_SESSIONS; sidx++) {
     s = &mgr->sessions[sidx];
     tx_audio_session_lock(mgr, sidx);
-    if (!mgr->active[sidx]) tx_audio_session_rtp_pool_free(s);
+    if (!mgr->active[sidx]) tx_audio_session_mempool_free(s);
     tx_audio_session_unlock(mgr, sidx);
   }
 
@@ -76,20 +76,25 @@ static int st_audio_trs_session_tasklet(struct st_main_impl* impl,
   pkt = trs->inflight[port];
   if (pkt) {
     n = rte_eth_tx_burst(mgr->port_id[port], mgr->queue_id[port], &pkt, 1);
-    if (n >= 1) trs->inflight[port] = NULL;
+    if (n >= 1)
+      trs->inflight[port] = NULL;
+    else
+      return 0;
     mgr->st30_stat_pkts_burst += n;
-    return 0;
   }
 
-  /* try to dequeue */
-  ret = rte_ring_sc_dequeue(ring, (void**)&pkt);
-  if (ret < 0) return 0;
+  for (int i = 0; i < mgr->max_idx; i++) {
+    /* try to dequeue */
+    ret = rte_ring_sc_dequeue(ring, (void**)&pkt);
+    if (ret < 0) return 0;
 
-  n = rte_eth_tx_burst(mgr->port_id[port], mgr->queue_id[port], &pkt, 1);
-  mgr->st30_stat_pkts_burst += n;
-  if (n < 1) {
-    trs->inflight[port] = pkt;
-    trs->inflight_cnt[port]++;
+    n = rte_eth_tx_burst(mgr->port_id[port], mgr->queue_id[port], &pkt, 1);
+    mgr->st30_stat_pkts_burst += n;
+    if (n < 1) {
+      trs->inflight[port] = pkt;
+      trs->inflight_cnt[port]++;
+      return 0;
+    }
   }
 
   return 0;
@@ -137,7 +142,7 @@ int st_audio_transmitter_init(struct st_main_impl* impl, struct st_sch_impl* sch
 
 int st_audio_transmitter_uinit(struct st_audio_transmitter_impl* trs) {
   int idx = trs->idx;
-
-  info("%s(%d), succ\n", __func__, idx);
+  info("%s(%d), succ, inflight %d:%d\n", __func__, idx, trs->inflight_cnt[ST_PORT_P],
+       trs->inflight_cnt[ST_PORT_R]);
   return 0;
 }

@@ -46,6 +46,6 @@ static inline void tx_audio_session_unlock(struct st_tx_audio_sessions_mgr* mgr,
   rte_spinlock_unlock(&mgr->mutex[sidx]);
 }
 
-int tx_audio_session_rtp_pool_free(struct st_tx_audio_session_impl* s);
+int tx_audio_session_mempool_free(struct st_tx_audio_session_impl* s);
 
 #endif

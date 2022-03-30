@@ -11,7 +11,7 @@
 # express or implied warranties, other than those that are expressly stated
 # in the License.
 
-project('st_dpdk', 'c', default_options: ['c_std=gnu11', 'buildtype=release'], version: '0.7.1',)
+project('st_dpdk', 'c', default_options: ['c_std=gnu11', 'buildtype=release'], version: '22.04.0',)
 
 exec_env = host_machine.system()
 set_variable('is_windows', exec_env == 'windows')

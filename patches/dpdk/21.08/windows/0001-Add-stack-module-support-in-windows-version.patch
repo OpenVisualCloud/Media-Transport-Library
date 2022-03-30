@@ -1,7 +1,7 @@
-From 3337b3c8f289a6d8de1d5b989f0be66df5e2e339 Mon Sep 17 00:00:00 2001
-From: root <root@media-qiaoliu-nuc.sh.intel.com>
-Date: Wed, 10 Nov 2021 22:05:04 -0500
-Subject: [PATCH 1/2] Add stack module support in windows version
+From bf6d168248ebde53f8739f60a8b8624e8d38f448 Mon Sep 17 00:00:00 2001
+From: qiaoliu <qiao.liu@intel.com>
+Date: Thu, 20 Jan 2022 10:44:07 +0800
+Subject: [PATCH 1/7] Add stack module support in windows version
 
 ---
  drivers/mempool/stack/meson.build | 8 ++++----
@@ -9,7 +9,7 @@ Subject: [PATCH 1/2] Add stack module support in windows version
  2 files changed, 5 insertions(+), 4 deletions(-)
 
 diff --git a/drivers/mempool/stack/meson.build b/drivers/mempool/stack/meson.build
-index 371cf13..44cc9aa 100644
+index 371cf131b1..44cc9aab78 100644
 --- a/drivers/mempool/stack/meson.build
 +++ b/drivers/mempool/stack/meson.build
 @@ -1,10 +1,10 @@
@@ -28,7 +28,7 @@ index 371cf13..44cc9aa 100644
  sources = files('rte_mempool_stack.c')
  
 diff --git a/lib/meson.build b/lib/meson.build
-index 1673ca4..9c4841f 100644
+index 1673ca4323..9c4841fe40 100644
 --- a/lib/meson.build
 +++ b/lib/meson.build
 @@ -85,6 +85,7 @@ if is_windows
@@ -40,5 +40,5 @@ index 1673ca4..9c4841f 100644
  endif
  
 -- 
-2.7.4
+2.17.1
 

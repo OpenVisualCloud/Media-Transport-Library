@@ -1,0 +1,153 @@
+From 61354c16e3331d6d8837b497138c89601a385c58 Mon Sep 17 00:00:00 2001
+From: Frank Du <frank.du@intel.com>
+Date: Thu, 11 Nov 2021 15:34:39 +0800
+Subject: [PATCH 3/6] net/ice: support max burst size configuration
+
+This patch adds support for max burst size configuration for
+TX scheduler. This feature can be tuned on by devargs:
+        -a 0000:18:00.0,max_burst_size=x
+The value of x should between 64 and 1023*1024.
+
+Signed-off-by: Wenjun Wu <wenjun1.wu@intel.com>
+Signed-off-by: Frank Du <frank.du@intel.com>
+---
+ drivers/net/ice/ice_ethdev.c | 65 ++++++++++++++++++++++++++++--------
+ drivers/net/ice/ice_ethdev.h |  1 +
+ 2 files changed, 52 insertions(+), 14 deletions(-)
+
+diff --git a/drivers/net/ice/ice_ethdev.c b/drivers/net/ice/ice_ethdev.c
+index 7682106f65..d9391f153c 100644
+--- a/drivers/net/ice/ice_ethdev.c
++++ b/drivers/net/ice/ice_ethdev.c
+@@ -32,6 +32,7 @@
+ #define ICE_HW_DEBUG_MASK_ARG     "hw_debug_mask"
+ #define ICE_ONE_PPS_OUT_ARG       "pps_out"
+ #define ICE_RX_LOW_LATENCY_ARG    "rx_low_latency"
++#define ICE_MAX_BURST_SIZE_ARG    "max_burst_size"
+ 
+ #define ICE_CYCLECOUNTER_MASK  0xffffffffffffffffULL
+ 
+@@ -45,6 +46,7 @@ static const char * const ice_valid_args[] = {
+ 	ICE_HW_DEBUG_MASK_ARG,
+ 	ICE_ONE_PPS_OUT_ARG,
+ 	ICE_RX_LOW_LATENCY_ARG,
++	ICE_MAX_BURST_SIZE_ARG,
+ 	NULL
+ };
+ 
+@@ -1943,6 +1945,25 @@ handle_pps_out_arg(__rte_unused const char *key, const char *value,
+ 	return 0;
+ }
+ 
++static int
++parse_u16(const char *key, const char *value, void *args)
++{
++	u16 *num = (u16 *)args;
++	u16 tmp;
++
++	errno = 0;
++	tmp = strtoull(value, NULL, 10);
++	if (errno) {
++		PMD_DRV_LOG(WARNING, "%s: \"%s\" is not a valid u16",
++			    key, value);
++		return -1;
++	}
++
++	*num = tmp;
++
++	return 0;
++}
++
+ static int ice_parse_devargs(struct rte_eth_dev *dev)
+ {
+ 	struct ice_adapter *ad =
+@@ -1967,22 +1988,22 @@ static int ice_parse_devargs(struct rte_eth_dev *dev)
+ 	ret = rte_kvargs_process(kvlist, ICE_PROTO_XTR_ARG,
+ 				 &handle_proto_xtr_arg, &ad->devargs);
+ 	if (ret)
+-		goto bail;
++	goto bail;
+ 
+-	ret = rte_kvargs_process(kvlist, ICE_SAFE_MODE_SUPPORT_ARG,
+-				 &parse_bool, &ad->devargs.safe_mode_support);
+-	if (ret)
+-		goto bail;
++ret = rte_kvargs_process(kvlist, ICE_SAFE_MODE_SUPPORT_ARG,
++			 &parse_bool, &ad->devargs.safe_mode_support);
++if (ret)
++	goto bail;
+ 
+-	ret = rte_kvargs_process(kvlist, ICE_PIPELINE_MODE_SUPPORT_ARG,
+-				 &parse_bool, &ad->devargs.pipe_mode_support);
+-	if (ret)
+-		goto bail;
++ret = rte_kvargs_process(kvlist, ICE_PIPELINE_MODE_SUPPORT_ARG,
++			 &parse_bool, &ad->devargs.pipe_mode_support);
++if (ret)
++	goto bail;
+ 
+-	ret = rte_kvargs_process(kvlist, ICE_HW_DEBUG_MASK_ARG,
+-				 &parse_u64, &ad->hw.debug_mask);
+-	if (ret)
+-		goto bail;
++ret = rte_kvargs_process(kvlist, ICE_HW_DEBUG_MASK_ARG,
++			 &parse_u64, &ad->hw.debug_mask);
++if (ret)
++	goto bail;
+ 
+ 	ret = rte_kvargs_process(kvlist, ICE_ONE_PPS_OUT_ARG,
+ 				 &handle_pps_out_arg, &ad->devargs);
+@@ -1991,6 +2012,13 @@ static int ice_parse_devargs(struct rte_eth_dev *dev)
+ 
+ 	ret = rte_kvargs_process(kvlist, ICE_RX_LOW_LATENCY_ARG,
+ 				 &parse_bool, &ad->devargs.rx_low_latency);
++	if (ret)
++		goto bail;
++
++	ret = rte_kvargs_process(kvlist, ICE_MAX_BURST_SIZE_ARG,
++				 &parse_u16, &ad->devargs.max_burst_size);
++	if (ret)
++		goto bail;
+ 
+ bail:
+ 	rte_kvargs_free(kvlist);
+@@ -2199,6 +2227,14 @@ ice_dev_init(struct rte_eth_dev *dev)
+ 
+ 	ice_init_controlq_parameter(hw);
+ 
++	if (ad->devargs.max_burst_size) {
++		ret = ice_cfg_rl_burst_size(hw, ad->devargs.max_burst_size);
++		if (ret) {
++			PMD_INIT_LOG(ERR, "Failed to configure burst size");
++			return -EINVAL;
++		}
++	}
++
+ 	ret = ice_init_hw(hw);
+ 	if (ret) {
+ 		PMD_INIT_LOG(ERR, "Failed to initialize HW");
+@@ -5713,7 +5749,8 @@ RTE_PMD_REGISTER_PARAM_STRING(net_ice,
+ 			      ICE_PROTO_XTR_ARG "=[queue:]<vlan|ipv4|ipv6|ipv6_flow|tcp|ip_offset>"
+ 			      ICE_SAFE_MODE_SUPPORT_ARG "=<0|1>"
+ 			      ICE_PIPELINE_MODE_SUPPORT_ARG "=<0|1>"
+-			      ICE_RX_LOW_LATENCY_ARG "=<0|1>");
++			      ICE_RX_LOW_LATENCY_ARG "=<0|1>"
++			      ICE_MAX_BURST_SIZE_ARG "=x");
+ 
+ RTE_LOG_REGISTER_SUFFIX(ice_logtype_init, init, NOTICE);
+ RTE_LOG_REGISTER_SUFFIX(ice_logtype_driver, driver, NOTICE);
+diff --git a/drivers/net/ice/ice_ethdev.h b/drivers/net/ice/ice_ethdev.h
+index 2e3e45f3d7..73f2484215 100644
+--- a/drivers/net/ice/ice_ethdev.h
++++ b/drivers/net/ice/ice_ethdev.h
+@@ -488,6 +488,7 @@ struct ice_devargs {
+ 	uint8_t proto_xtr[ICE_MAX_QUEUE_NUM];
+ 	uint8_t pin_idx;
+ 	uint8_t pps_out_ena;
++	uint16_t max_burst_size;
+ };
+ 
+ /**
+-- 
+2.30.2
+

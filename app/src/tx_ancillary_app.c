@@ -363,6 +363,7 @@ static int app_tx_anc_session_init(struct st_app_context* ctx,
   struct st40_tx_ops ops;
   char name[32];
   st40_tx_handle handle;
+  memset(&ops, 0, sizeof(ops));
 
   s->framebuff_cnt = 2;
   s->st40_framebuff_idx = 0;
@@ -448,7 +449,7 @@ static int app_tx_anc_session_init(struct st_app_context* ctx,
 
 int st_app_tx_anc_sessions_stop(struct st_app_context* ctx) {
   struct st_app_tx_anc_session* s;
-
+  if (!ctx->tx_anc_sessions) return 0;
   for (int i = 0; i < ctx->tx_anc_session_cnt; i++) {
     s = &ctx->tx_anc_sessions[i];
     app_tx_anc_session_stop_source(s);
@@ -460,7 +461,9 @@ int st_app_tx_anc_sessions_stop(struct st_app_context* ctx) {
 int st_app_tx_anc_sessions_init(struct st_app_context* ctx) {
   int ret, i;
   struct st_app_tx_anc_session* s;
-
+  ctx->tx_anc_sessions = (struct st_app_tx_anc_session*)st_app_zmalloc(
+      sizeof(struct st_app_tx_anc_session) * ctx->tx_anc_session_cnt);
+  if (!ctx->tx_anc_sessions) return -ENOMEM;
   for (i = 0; i < ctx->tx_anc_session_cnt; i++) {
     s = &ctx->tx_anc_sessions[i];
     s->idx = i;
@@ -478,7 +481,7 @@ int st_app_tx_anc_sessions_init(struct st_app_context* ctx) {
 int st_app_tx_anc_sessions_uinit(struct st_app_context* ctx) {
   int ret, i;
   struct st_app_tx_anc_session* s;
-
+  if (!ctx->tx_anc_sessions) return 0;
   for (i = 0; i < ctx->tx_anc_session_cnt; i++) {
     s = &ctx->tx_anc_sessions[i];
     if (s->handle) {
@@ -499,6 +502,7 @@ int st_app_tx_anc_sessions_uinit(struct st_app_context* ctx) {
     pthread_mutex_destroy(&s->st40_wake_mutex);
     pthread_cond_destroy(&s->st40_wake_cond);
   }
+  st_app_free(ctx->tx_anc_sessions);
 
   return 0;
 }

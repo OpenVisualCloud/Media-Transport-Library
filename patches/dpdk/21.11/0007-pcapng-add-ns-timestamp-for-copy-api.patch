@@ -1,0 +1,81 @@
+From fc103bdd576fd6102f9e0a993014bbac22248589 Mon Sep 17 00:00:00 2001
+From: Ric Li <ming3.li@intel.com>
+Date: Mon, 14 Feb 2022 16:28:01 +0800
+Subject: [PATCH] pcapng: add ns timestamp for copy api
+
+The original API only receives cycles and converts it to ns.
+Add ns timestamp to directly write it to pcapng file.
+
+Signed-off-by: Ric Li <ming3.li@intel.com>
+---
+ app/test/test_pcapng.c  | 2 +-
+ lib/pcapng/rte_pcapng.c | 5 +++--
+ lib/pcapng/rte_pcapng.h | 2 +-
+ lib/pdump/rte_pdump.c   | 2 +-
+ 4 files changed, 6 insertions(+), 5 deletions(-)
+
+diff --git a/app/test/test_pcapng.c b/app/test/test_pcapng.c
+index c2dbeaf603..77ee87ba30 100644
+--- a/app/test/test_pcapng.c
++++ b/app/test/test_pcapng.c
+@@ -139,7 +139,7 @@ test_write_packets(void)
+ 		struct rte_mbuf *mc;
+ 
+ 		mc = rte_pcapng_copy(port_id, 0, orig, mp, pkt_len,
+-				rte_get_tsc_cycles(), 0);
++				rte_get_tsc_cycles(), 0, 0);
+ 		if (mc == NULL) {
+ 			fprintf(stderr, "Cannot copy packet\n");
+ 			return -1;
+diff --git a/lib/pcapng/rte_pcapng.c b/lib/pcapng/rte_pcapng.c
+index 03edabe73e..9ef9e53958 100644
+--- a/lib/pcapng/rte_pcapng.c
++++ b/lib/pcapng/rte_pcapng.c
+@@ -411,7 +411,7 @@ struct rte_mbuf *
+ rte_pcapng_copy(uint16_t port_id, uint32_t queue,
+ 		const struct rte_mbuf *md,
+ 		struct rte_mempool *mp,
+-		uint32_t length, uint64_t cycles,
++		uint32_t length, uint64_t cycles, uint64_t tm_ns,
+ 		enum rte_pcapng_direction direction)
+ {
+ 	struct pcapng_enhance_packet_block *epb;
+@@ -424,7 +424,8 @@ rte_pcapng_copy(uint16_t port_id, uint32_t queue,
+ #ifdef RTE_LIBRTE_ETHDEV_DEBUG
+ 	RTE_ETH_VALID_PORTID_OR_ERR_RET(port_id, NULL);
+ #endif
+-	ns = pcapng_tsc_to_ns(cycles);
++	ns = tm_ns;
++	if(ns == 0)	ns = pcapng_tsc_to_ns(cycles);
+ 
+ 	orig_len = rte_pktmbuf_pkt_len(md);
+ 
+diff --git a/lib/pcapng/rte_pcapng.h b/lib/pcapng/rte_pcapng.h
+index 8d3fbb1941..d0f7429dca 100644
+--- a/lib/pcapng/rte_pcapng.h
++++ b/lib/pcapng/rte_pcapng.h
+@@ -112,7 +112,7 @@ __rte_experimental
+ struct rte_mbuf *
+ rte_pcapng_copy(uint16_t port_id, uint32_t queue,
+ 		const struct rte_mbuf *m, struct rte_mempool *mp,
+-		uint32_t length, uint64_t timestamp,
++		uint32_t length, uint64_t timestamp, uint64_t tm_ns,
+ 		enum rte_pcapng_direction direction);
+ 
+ 
+diff --git a/lib/pdump/rte_pdump.c b/lib/pdump/rte_pdump.c
+index af450695ec..5168abdbe0 100644
+--- a/lib/pdump/rte_pdump.c
++++ b/lib/pdump/rte_pdump.c
+@@ -121,7 +121,7 @@ pdump_copy(uint16_t port_id, uint16_t queue,
+ 		if (cbs->ver == V2)
+ 			p = rte_pcapng_copy(port_id, queue,
+ 					    pkts[i], mp, cbs->snaplen,
+-					    ts, direction);
++					    ts, 0, direction);
+ 		else
+ 			p = rte_pktmbuf_copy(pkts[i], mp, 0, cbs->snaplen);
+ 
+-- 
+2.25.1
+

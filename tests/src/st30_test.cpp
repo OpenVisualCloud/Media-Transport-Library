@@ -34,6 +34,12 @@ static int tx_audio_build_rtp_packet(tests_context* s, struct st_rfc3550_rtp_hdr
   rtp->seq_number = htons(s->seq_id);
   s->seq_id++;
   if (s->seq_id == 0x10000) s->seq_id = 0;
+  if (s->check_md5) {
+    uint8_t* payload = (uint8_t*)rtp + sizeof(*rtp);
+    st_memcpy(payload, s->frame_buf[s->fb_idx], s->pkt_data_len);
+    s->fb_idx++;
+    if (s->fb_idx >= TEST_MD5_HIST_NUM) s->fb_idx = 0;
+  }
   *pkt_len = sizeof(struct st_rfc3550_rtp_hdr) + s->pkt_data_len;
   return 0;
 }
@@ -104,15 +110,47 @@ static void rx_get_packet(void* args) {
         continue;
       }
     }
+    if (ctx->check_md5) {
+      struct st_rfc3550_rtp_hdr* hdr = (struct st_rfc3550_rtp_hdr*)usrptr;
+      uint8_t* payload = (uint8_t*)hdr + sizeof(*hdr);
+      unsigned char result[MD5_DIGEST_LENGTH];
+      MD5((unsigned char*)payload, ctx->frame_size, result);
+      int i;
+      for (i = 0; i < TEST_MD5_HIST_NUM; i++) {
+        unsigned char* target_md5 = ctx->md5s[i];
+        if (!memcmp(result, target_md5, MD5_DIGEST_LENGTH)) break;
+      }
+      if (i >= TEST_MD5_HIST_NUM) {
+        test_md5_dump("st30_rx_error_md5", result);
+        ctx->fail_cnt++;
+      }
+      ctx->check_md5_frame_cnt++;
+    }
     ctx->fb_rec++;
     st30_rx_put_mbuf(ctx->handle, mbuf);
   }
 }
 
-static int rx_frame_ready(void* priv, void* frame, struct st30_frame_meta* meta) {
+static int st30_rx_frame_ready(void* priv, void* frame, struct st30_frame_meta* meta) {
   auto ctx = (tests_context*)priv;
 
   if (!ctx->handle) return -EIO;
+
+  /* direct do the md5 check since frame_size is small */
+  if (ctx->check_md5) {
+    unsigned char result[MD5_DIGEST_LENGTH];
+    MD5((unsigned char*)frame, ctx->frame_size, result);
+    int i;
+    for (i = 0; i < TEST_MD5_HIST_NUM; i++) {
+      unsigned char* target_md5 = ctx->md5s[i];
+      if (!memcmp(result, target_md5, MD5_DIGEST_LENGTH)) break;
+    }
+    if (i >= TEST_MD5_HIST_NUM) {
+      test_md5_dump("st30_rx_error_md5", result);
+      ctx->fail_cnt++;
+    }
+    ctx->check_md5_frame_cnt++;
+  }
 
   st30_rx_put_framebuff((st30_rx_handle)ctx->handle, frame);
   ctx->fb_rec++;
@@ -142,7 +180,7 @@ static void st30_rx_ops_init(tests_context* st30, struct st30_rx_ops* ops) {
   ops->sample_size = st30_get_sample_size(ops->fmt, ops->channel, ops->sampling);
   ops->framebuff_cnt = st30->fb_cnt;
   ops->framebuff_size = ops->sample_size;
-  ops->notify_frame_ready = rx_frame_ready;
+  ops->notify_frame_ready = st30_rx_frame_ready;
   ops->notify_rtp_ready = rx_rtp_ready;
   ops->rtp_ring_size = 1024;
 }
@@ -234,7 +272,8 @@ TEST(St30_rx, create_expect_fail_ring_sz) {
 }
 
 static void st30_tx_fps_test(enum st30_type type[], enum st30_sampling sample[],
-                             uint16_t channel[], enum st30_fmt fmt[], int sessions = 1) {
+                             uint16_t channel[], enum st30_fmt fmt[],
+                             enum st_test_level level, int sessions = 1) {
   auto ctx = (struct st_tests_context*)st_test_ctx();
   auto m_handle = ctx->handle;
   int ret;
@@ -245,6 +284,9 @@ static void st30_tx_fps_test(enum st30_type type[], enum st30_sampling sample[],
   double expect_framerate = 1000.0;
   std::vector<double> framerate;
   std::vector<std::thread> rtp_thread;
+
+  /* return if level small than gloabl */
+  if (level < ctx->level) return;
 
   test_ctx.resize(sessions);
   handle.resize(sessions);
@@ -297,7 +339,7 @@ static void st30_tx_fps_test(enum st30_type type[], enum st30_sampling sample[],
   ret = st_stop(m_handle);
   EXPECT_GE(ret, 0);
   for (int i = 0; i < sessions; i++) {
-    EXPECT_TRUE(test_ctx[i]->fb_send > 0);
+    EXPECT_GT(test_ctx[i]->fb_send, 0);
     info("%s, session %d fb_send %d framerate %f\n", __func__, i, test_ctx[i]->fb_send,
          framerate[i]);
     EXPECT_NEAR(framerate[i], expect_framerate, expect_framerate * 0.1);
@@ -308,7 +350,9 @@ static void st30_tx_fps_test(enum st30_type type[], enum st30_sampling sample[],
 }
 
 static void st30_rx_fps_test(enum st30_type type[], enum st30_sampling sample[],
-                             uint16_t channel[], enum st30_fmt fmt[], int sessions = 1) {
+                             uint16_t channel[], enum st30_fmt fmt[],
+                             enum st_test_level level, int sessions = 1,
+                             bool check_md5 = false) {
   auto ctx = (struct st_tests_context*)st_test_ctx();
   auto m_handle = ctx->handle;
   int ret;
@@ -320,6 +364,9 @@ static void st30_rx_fps_test(enum st30_type type[], enum st30_sampling sample[],
          __func__);
     return;
   }
+
+  /* return if level small than gloabl */
+  if (level < ctx->level) return;
 
   std::vector<tests_context*> test_ctx_tx;
   std::vector<tests_context*> test_ctx_rx;
@@ -344,7 +391,10 @@ static void st30_rx_fps_test(enum st30_type type[], enum st30_sampling sample[],
 
     test_ctx_tx[i]->idx = i;
     test_ctx_tx[i]->ctx = ctx;
-    test_ctx_tx[i]->fb_cnt = 3;
+    if (check_md5)
+      test_ctx_tx[i]->fb_cnt = TEST_MD5_HIST_NUM;
+    else
+      test_ctx_tx[i]->fb_cnt = 3;
     test_ctx_tx[i]->fb_idx = 0;
     memset(&ops_tx, 0, sizeof(ops_tx));
     ops_tx.name = "st30_test";
@@ -368,6 +418,24 @@ static void st30_rx_fps_test(enum st30_type type[], enum st30_sampling sample[],
     tx_handle[i] = st30_tx_create(m_handle, &ops_tx);
     ASSERT_TRUE(tx_handle[i] != NULL);
     test_ctx_tx[i]->handle = tx_handle[i];
+    test_ctx_tx[i]->check_md5 = check_md5;
+    if (check_md5) {
+      uint8_t* fb;
+      for (int frame = 0; frame < TEST_MD5_HIST_NUM; frame++) {
+        if (type[i] == ST30_TYPE_FRAME_LEVEL) {
+          fb = (uint8_t*)st30_tx_get_framebuffer(tx_handle[i], frame);
+        } else {
+          test_ctx_tx[i]->frame_buf[frame] =
+              (uint8_t*)st_test_zmalloc(ops_tx.framebuff_size);
+          fb = test_ctx_tx[i]->frame_buf[frame];
+        }
+        ASSERT_TRUE(fb != NULL);
+        st_test_rand_data(fb, ops_tx.framebuff_size, frame);
+        unsigned char* result = test_ctx_tx[i]->md5s[frame];
+        MD5((unsigned char*)fb, ops_tx.framebuff_size, result);
+        test_md5_dump("st30_rx", result);
+      }
+    }
     if (type[i] == ST30_TYPE_RTP_LEVEL) {
       test_ctx_tx[i]->stop = false;
       rtp_thread_tx[i] = std::thread(tx_feed_packet, test_ctx_tx[i]);
@@ -394,16 +462,22 @@ static void st30_rx_fps_test(enum st30_type type[], enum st30_sampling sample[],
     ops_rx.channel = channel[i];
     ops_rx.fmt = fmt[i];
     ops_rx.sample_size =
-        st30_get_sample_size(ops_tx.fmt, ops_tx.channel, ops_tx.sampling);
+        st30_get_sample_size(ops_rx.fmt, ops_rx.channel, ops_rx.sampling);
     ops_rx.framebuff_size = ops_rx.sample_size;
     ops_rx.framebuff_cnt = test_ctx_rx[i]->fb_cnt;
-    ops_rx.notify_frame_ready = rx_frame_ready;
+    ops_rx.notify_frame_ready = st30_rx_frame_ready;
     ops_rx.notify_rtp_ready = rx_rtp_ready;
     ops_rx.rtp_ring_size = 1024;
 
     rx_handle[i] = st30_rx_create(m_handle, &ops_rx);
     ASSERT_TRUE(rx_handle[i] != NULL);
     test_ctx_rx[i]->handle = rx_handle[i];
+    test_ctx_rx[i]->check_md5 = check_md5;
+    test_ctx_rx[i]->frame_size = ops_rx.framebuff_size;
+    if (check_md5) {
+      memcpy(test_ctx_rx[i]->md5s, test_ctx_tx[i]->md5s,
+             TEST_MD5_HIST_NUM * MD5_DIGEST_LENGTH);
+    }
     if (type[i] == ST30_TYPE_RTP_LEVEL) {
       test_ctx_rx[i]->stop = false;
       rtp_thread_rx[i] = std::thread(rx_get_packet, test_ctx_rx[i]);
@@ -437,7 +511,11 @@ static void st30_rx_fps_test(enum st30_type type[], enum st30_sampling sample[],
   ret = st_stop(m_handle);
   EXPECT_GE(ret, 0);
   for (int i = 0; i < sessions; i++) {
-    EXPECT_TRUE(test_ctx_rx[i]->fb_rec > 0);
+    EXPECT_GT(test_ctx_rx[i]->fb_rec, 0);
+    EXPECT_LE(test_ctx_rx[i]->fail_cnt, 2);
+    if (check_md5) {
+      EXPECT_GT(test_ctx_rx[i]->check_md5_frame_cnt, 0);
+    }
     info("%s, session %d fb_rec %d framerate %f\n", __func__, i, test_ctx_rx[i]->fb_rec,
          framerate[i]);
     EXPECT_NEAR(framerate[i], expect_framerate, expect_framerate * 0.1);
@@ -445,6 +523,12 @@ static void st30_rx_fps_test(enum st30_type type[], enum st30_sampling sample[],
     EXPECT_GE(ret, 0);
     ret = st30_rx_free(rx_handle[i]);
     EXPECT_GE(ret, 0);
+    if (check_md5 && (type[i] == ST30_TYPE_RTP_LEVEL)) {
+      for (int frame = 0; frame < TEST_MD5_HIST_NUM; frame++) {
+        if (test_ctx_tx[i]->frame_buf[frame])
+          st_test_free(test_ctx_tx[i]->frame_buf[frame]);
+      }
+    }
     delete test_ctx_tx[i];
     delete test_ctx_rx[i];
   }
@@ -455,67 +539,82 @@ TEST(St30_tx, frame_48k_mono_s1) {
   enum st30_sampling s[1] = {ST30_SAMPLING_48K};
   uint16_t c[1] = {1};
   enum st30_fmt f[3] = {ST30_FMT_PCM8, ST30_FMT_PCM16, ST30_FMT_PCM24};
-  for (int i = 0; i < 3; i++) st30_tx_fps_test(type, s, c, &f[i]);
+  for (int i = 0; i < 3; i++) st30_tx_fps_test(type, s, c, &f[i], ST_TEST_LEVEL_ALL);
 }
-TEST(St30_tx, frame_96k_mono_s1) {
+TEST(St30_tx, rtp_96k_mono_s1) {
   enum st30_type type[1] = {ST30_TYPE_RTP_LEVEL};
   enum st30_sampling s[1] = {ST30_SAMPLING_96K};
   uint16_t c[1] = {1};
   enum st30_fmt f[3] = {ST30_FMT_PCM8, ST30_FMT_PCM16, ST30_FMT_PCM24};
-  for (int i = 0; i < 3; i++) st30_tx_fps_test(type, s, c, &f[i]);
+  for (int i = 0; i < 3; i++) st30_tx_fps_test(type, s, c, &f[i], ST_TEST_LEVEL_ALL);
 }
 TEST(St30_tx, frame_48k_stereo_s1) {
   enum st30_type type[1] = {ST30_TYPE_FRAME_LEVEL};
   enum st30_sampling s[1] = {ST30_SAMPLING_48K};
   uint16_t c[1] = {2};
   enum st30_fmt f[3] = {ST30_FMT_PCM8, ST30_FMT_PCM16, ST30_FMT_PCM24};
-  for (int i = 0; i < 3; i++) st30_tx_fps_test(type, s, c, &f[i]);
+  for (int i = 0; i < 3; i++) st30_tx_fps_test(type, s, c, &f[i], ST_TEST_LEVEL_ALL);
 }
-TEST(St30_tx, frame_96k_stereo_s1) {
+TEST(St30_tx, rtp_96k_stereo_s1) {
   enum st30_type type[1] = {ST30_TYPE_RTP_LEVEL};
   enum st30_sampling s[1] = {ST30_SAMPLING_96K};
   uint16_t c[1] = {2};
   enum st30_fmt f[3] = {ST30_FMT_PCM8, ST30_FMT_PCM16, ST30_FMT_PCM24};
-  for (int i = 0; i < 3; i++) st30_tx_fps_test(type, s, c, &f[i]);
+  for (int i = 0; i < 3; i++) st30_tx_fps_test(type, s, c, &f[i], ST_TEST_LEVEL_ALL);
 }
 TEST(St30_tx, frame_48k_sgrp_s1) {
   enum st30_type type[1] = {ST30_TYPE_FRAME_LEVEL};
   enum st30_sampling s[1] = {ST30_SAMPLING_48K};
   uint16_t c[1] = {4};
   enum st30_fmt f[3] = {ST30_FMT_PCM8, ST30_FMT_PCM16, ST30_FMT_PCM24};
-  for (int i = 0; i < 3; i++) st30_tx_fps_test(type, s, c, &f[i]);
+  for (int i = 0; i < 3; i++)
+    st30_tx_fps_test(type, s, c, &f[i], ST_TEST_LEVEL_MANDATORY);
 }
 TEST(St30_tx, frame_96k_sgrp_s1) {
   enum st30_type type[1] = {ST30_TYPE_FRAME_LEVEL};
   enum st30_sampling s[1] = {ST30_SAMPLING_96K};
   uint16_t c[1] = {4};
   enum st30_fmt f[3] = {ST30_FMT_PCM8, ST30_FMT_PCM16, ST30_FMT_PCM24};
-  for (int i = 0; i < 3; i++) st30_tx_fps_test(type, s, c, &f[i]);
+  for (int i = 0; i < 3; i++) st30_tx_fps_test(type, s, c, &f[i], ST_TEST_LEVEL_ALL);
 }
-TEST(St30_tx, frame_96k_stereo_s3) {
+TEST(St30_tx, mix_96k_stereo_s3) {
   enum st30_type type[3] = {ST30_TYPE_RTP_LEVEL, ST30_TYPE_FRAME_LEVEL,
                             ST30_TYPE_RTP_LEVEL};
   enum st30_sampling s[3] = {ST30_SAMPLING_96K, ST30_SAMPLING_96K, ST30_SAMPLING_96K};
   uint16_t c[3] = {2, 2, 2};
   enum st30_fmt f[3] = {ST30_FMT_PCM8, ST30_FMT_PCM16, ST30_FMT_PCM24};
-  st30_tx_fps_test(type, s, c, f, 3);
+  st30_tx_fps_test(type, s, c, f, ST_TEST_LEVEL_MANDATORY, 3);
 }
 
-TEST(St30_tx, frame_48k_96_mix) {
+TEST(St30_tx, mix_48k_96_mix) {
   enum st30_type type[3] = {ST30_TYPE_FRAME_LEVEL, ST30_TYPE_RTP_LEVEL,
                             ST30_TYPE_RTP_LEVEL};
   enum st30_sampling s[3] = {ST30_SAMPLING_96K, ST30_SAMPLING_48K, ST30_SAMPLING_48K};
   uint16_t c[3] = {2, 1, 4};
   enum st30_fmt f[3] = {ST30_FMT_PCM8, ST30_FMT_PCM16, ST30_FMT_PCM24};
-  st30_tx_fps_test(type, s, c, f, 3);
+  st30_tx_fps_test(type, s, c, f, ST_TEST_LEVEL_MANDATORY, 3);
 }
-TEST(St30_rx, frame_48k_96_mix) {
+TEST(St30_rx, mix_48k_96_mix) {
   enum st30_type type[3] = {ST30_TYPE_FRAME_LEVEL, ST30_TYPE_RTP_LEVEL,
                             ST30_TYPE_RTP_LEVEL};
   enum st30_sampling s[3] = {ST30_SAMPLING_96K, ST30_SAMPLING_48K, ST30_SAMPLING_48K};
   uint16_t c[3] = {2, 1, 4};
   enum st30_fmt f[3] = {ST30_FMT_PCM8, ST30_FMT_PCM16, ST30_FMT_PCM24};
-  st30_rx_fps_test(type, s, c, f, 3);
+  st30_rx_fps_test(type, s, c, f, ST_TEST_LEVEL_MANDATORY, 3);
+}
+TEST(St30_rx, frame_digest_48k_96_mix) {
+  enum st30_type type[2] = {ST30_TYPE_FRAME_LEVEL, ST30_TYPE_FRAME_LEVEL};
+  enum st30_sampling s[2] = {ST30_SAMPLING_96K, ST30_SAMPLING_48K};
+  uint16_t c[2] = {2, 1};
+  enum st30_fmt f[2] = {ST30_FMT_PCM16, ST30_FMT_PCM24};
+  st30_rx_fps_test(type, s, c, f, ST_TEST_LEVEL_MANDATORY, 2, true);
+}
+TEST(St30_rx, rtp_digest_48k_96_mix) {
+  enum st30_type type[2] = {ST30_TYPE_RTP_LEVEL, ST30_TYPE_RTP_LEVEL};
+  enum st30_sampling s[2] = {ST30_SAMPLING_96K, ST30_SAMPLING_48K};
+  uint16_t c[2] = {1, 4};
+  enum st30_fmt f[2] = {ST30_FMT_PCM16, ST30_FMT_PCM8};
+  st30_rx_fps_test(type, s, c, f, ST_TEST_LEVEL_MANDATORY, 2, true);
 }
 
 static void st30_rx_update_src_test(enum st30_type type, int tx_sessions) {
@@ -615,7 +714,7 @@ static void st30_rx_update_src_test(enum st30_type type, int tx_sessions) {
         st30_get_sample_size(ops_tx.fmt, ops_tx.channel, ops_tx.sampling);
     ops_rx.framebuff_size = ops_rx.sample_size;
     ops_rx.framebuff_cnt = test_ctx_rx[i]->fb_cnt;
-    ops_rx.notify_frame_ready = rx_frame_ready;
+    ops_rx.notify_frame_ready = st30_rx_frame_ready;
     ops_rx.notify_rtp_ready = rx_rtp_ready;
     ops_rx.rtp_ring_size = 1024;
 
@@ -630,7 +729,7 @@ static void st30_rx_update_src_test(enum st30_type type, int tx_sessions) {
 
   ret = st_start(m_handle);
   EXPECT_GE(ret, 0);
-  sleep(2);
+  sleep(10);
 
   struct st_rx_source_info src;
   /* switch to mcast port p(tx_session:1) */
@@ -651,7 +750,7 @@ static void st30_rx_update_src_test(enum st30_type type, int tx_sessions) {
     double time_sec = (double)(cur_time_ns - test_ctx_rx[i]->start_time) / NS_PER_S;
     framerate[i] = test_ctx_rx[i]->fb_rec / time_sec;
 
-    EXPECT_TRUE(test_ctx_rx[i]->fb_rec > 0);
+    EXPECT_GT(test_ctx_rx[i]->fb_rec, 0);
     info("%s, session %d fb_rec %d framerate %f for mcast 1\n", __func__, i,
          test_ctx_rx[i]->fb_rec, framerate[i]);
     EXPECT_NEAR(framerate[i], expect_framerate, expect_framerate * 0.1);
@@ -676,7 +775,7 @@ static void st30_rx_update_src_test(enum st30_type type, int tx_sessions) {
       double time_sec = (double)(cur_time_ns - test_ctx_rx[i]->start_time) / NS_PER_S;
       framerate[i] = test_ctx_rx[i]->fb_rec / time_sec;
 
-      EXPECT_TRUE(test_ctx_rx[i]->fb_rec > 0);
+      EXPECT_GT(test_ctx_rx[i]->fb_rec, 0);
       info("%s, session %d fb_rec %d framerate %f for mcast 2\n", __func__, i,
            test_ctx_rx[i]->fb_rec, framerate[i]);
       EXPECT_NEAR(framerate[i], expect_framerate, expect_framerate * 0.1);
@@ -701,7 +800,7 @@ static void st30_rx_update_src_test(enum st30_type type, int tx_sessions) {
     double time_sec = (double)(cur_time_ns - test_ctx_rx[i]->start_time) / NS_PER_S;
     framerate[i] = test_ctx_rx[i]->fb_rec / time_sec;
 
-    EXPECT_TRUE(test_ctx_rx[i]->fb_rec > 0);
+    EXPECT_GT(test_ctx_rx[i]->fb_rec, 0);
     info("%s, session %d fb_rec %d framerate %f for unicast 0\n", __func__, i,
          test_ctx_rx[i]->fb_rec, framerate[i]);
     EXPECT_NEAR(framerate[i], expect_framerate, expect_framerate * 0.1);
@@ -895,7 +994,7 @@ static void st30_rx_meta_test(enum st30_fmt fmt[], enum st30_sampling sampling[]
   ret = st_stop(m_handle);
   EXPECT_GE(ret, 0);
   for (int i = 0; i < sessions; i++) {
-    EXPECT_TRUE(test_ctx_rx[i]->fb_rec > 0);
+    EXPECT_GT(test_ctx_rx[i]->fb_rec, 0);
     info("%s, session %d fb_rec %d fail %d framerate %f\n", __func__, i,
          test_ctx_rx[i]->fb_rec, test_ctx_rx[i]->fail_cnt, framerate[i]);
     EXPECT_NEAR(framerate[i], expect_framerate, expect_framerate * 0.1);
@@ -1011,7 +1110,7 @@ static void st30_create_after_start_test(enum st30_type type[],
           st30_get_sample_size(ops_tx.fmt, ops_tx.channel, ops_tx.sampling);
       ops_rx.framebuff_size = ops_rx.sample_size;
       ops_rx.framebuff_cnt = test_ctx_rx[i]->fb_cnt;
-      ops_rx.notify_frame_ready = rx_frame_ready;
+      ops_rx.notify_frame_ready = st30_rx_frame_ready;
       ops_rx.notify_rtp_ready = rx_rtp_ready;
       ops_rx.rtp_ring_size = 1024;
 
@@ -1047,7 +1146,7 @@ static void st30_create_after_start_test(enum st30_type type[],
     }
 
     for (int i = 0; i < sessions; i++) {
-      EXPECT_TRUE(test_ctx_rx[i]->fb_rec > 0);
+      EXPECT_GT(test_ctx_rx[i]->fb_rec, 0);
       info("%s, session %d fb_rec %d framerate %f\n", __func__, i, test_ctx_rx[i]->fb_rec,
            framerate[i]);
       EXPECT_NEAR(framerate[i], expect_framerate, expect_framerate * 0.1);

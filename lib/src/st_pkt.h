@@ -35,10 +35,18 @@
 #define ST_EBU_RTP_WRAP_AROUND (0x100000000)
 
 #define ST_EBU_PASS_NARROW "PASSED NARROW"
-#define ST_EBU_PASS_WIDE "PASSED WIDE"
-#define ST_EBU_PASS_WIDE_WA "PASSED WIDE WA" /* Extend WA WIDE as no hw rx time */
+#define ST_EBU_PASS_WIDE "FAILED with WIDE"
+/* Extend WA WIDE as no hw rx time */
+#define ST_EBU_PASS_WIDE_WA "FAILED with WIDE WA error"
 #define ST_EBU_PASS "PASSED"
 #define ST_EBU_FAIL "FAILED"
+
+/* total size: 42 */
+struct st_base_hdr {
+  struct rte_ether_hdr eth; /* size: 14 */
+  struct rte_ipv4_hdr ipv4; /* size: 20 */
+  struct rte_udp_hdr udp;   /* size: 8 */
+} __attribute__((__packed__)) __rte_aligned(2);
 
 /* total size: 54 */
 struct st_rfc3550_hdr {

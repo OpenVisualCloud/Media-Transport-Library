@@ -1,0 +1,27 @@
+From e0d9c0b36a566627472c57c668ce542bb95a1eb6 Mon Sep 17 00:00:00 2001
+From: qiaoliu <qiao.liu@intel.com>
+Date: Thu, 20 Jan 2022 10:49:47 +0800
+Subject: [PATCH 6/7] Bind thread to dedicate core in windows version
+
+---
+ lib/eal/windows/eal.c | 4 ++++
+ 1 file changed, 4 insertions(+)
+
+diff --git a/lib/eal/windows/eal.c b/lib/eal/windows/eal.c
+index 8b33c27864..a46c540f75 100644
+--- a/lib/eal/windows/eal.c
++++ b/lib/eal/windows/eal.c
+@@ -397,6 +397,10 @@ rte_eal_init(int argc, char **argv)
+ 		/* create a thread for each lcore */
+ 		if (eal_thread_create(&lcore_config[i].thread_id) != 0)
+ 			rte_panic("Cannot create thread\n");
++	    ret = pthread_setaffinity_np(lcore_config[i].thread_id,
++			sizeof(rte_cpuset_t), &lcore_config[i].cpuset);
++		if (ret != 0)
++			rte_panic("Cannot set affinity\n");
+ 	}
+ 
+ 	/* Initialize services so drivers can register services during probe. */
+-- 
+2.17.1
+

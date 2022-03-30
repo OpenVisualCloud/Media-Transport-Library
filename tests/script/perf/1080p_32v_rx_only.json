@@ -1,5 +1,4 @@
 {
-    "sch_session_quota" : 8,
     "interfaces": [
         {
             "name": "0000:af:00.0",

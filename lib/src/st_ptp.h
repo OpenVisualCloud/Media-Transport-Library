@@ -20,6 +20,7 @@
 #include "st_main.h"
 
 #define ST_PTP_DELAY_REQ_US (50)
+#define ST_PTP_DELAY_REQ_MONITOR_US (1000 * 1)
 #define ST_PTP_DELAY_STEP_US (10)
 #define ST_PTP_CLOCK_IDENTITY_MAGIC (0xfeff)
 

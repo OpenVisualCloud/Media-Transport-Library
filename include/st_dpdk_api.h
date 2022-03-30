@@ -27,6 +27,7 @@
 #include <stdbool.h>
 #include <stddef.h>
 #include <stdint.h>
+#include <string.h>
 
 #ifndef _ST_DPDK_API_HEAD_H_
 #define _ST_DPDK_API_HEAD_H_
@@ -38,15 +39,15 @@ extern "C" {
 /**
  * Major version number of Media Streaming Library
  */
-#define ST_VERSION_MAJOR (0)
+#define ST_VERSION_MAJOR (22)
 /**
  * Minor version number of Media Streaming Library
  */
-#define ST_VERSION_MINOR (7)
+#define ST_VERSION_MINOR (4)
 /**
  * Last version number of Media Streaming Library
  */
-#define ST_VERSION_LAST (1)
+#define ST_VERSION_LAST (0)
 /**
  * Macro to compute a version number usable for comparisons
  */
@@ -79,6 +80,11 @@ extern "C" {
  * Max allowed number of video(st20) frame buffers
  */
 #define ST20_FB_MAX_COUNT (8)
+
+/**
+ * Max allowed number of dma devs
+ */
+#define ST_DMA_DEV_MAX (8)
 
 /**
  * Handle to media streaming device context
@@ -118,6 +124,20 @@ typedef void* st30_rx_handle;
 typedef void* st40_rx_handle;
 
 /**
+ * Handle to st user dma device
+ */
+typedef void* st_udma_handle;
+
+/**
+ * IO virtual address type.
+ */
+typedef uint64_t st_iova_t;
+/**
+ * Bad IOVA address
+ */
+#define ST_BAD_IOVA ((st_iova_t)-1)
+
+/**
  * Port logical type
  */
 enum st_port {
@@ -135,6 +155,17 @@ enum st_log_level {
   ST_LOG_LEVEL_WARNING,   /**< warning log level */
   ST_LOG_LEVEL_ERROR,     /**< error log level */
   ST_LOG_LEVEL_MAX,       /**< max value of this enum */
+};
+
+/**
+ * SIMD level type
+ */
+enum st_simd_level {
+  ST_SIMD_LEVEL_NONE = 0,     /**< Scalar */
+  ST_SIMD_LEVEL_AVX2,         /**< AVX2 */
+  ST_SIMD_LEVEL_AVX512,       /**< AVX512 */
+  ST_SIMD_LEVEL_AVX512_VBMI2, /**< AVX512 VBMI2 */
+  ST_SIMD_LEVEL_MAX,          /**< max value of this enum */
 };
 
 /**
@@ -163,15 +194,23 @@ enum st21_pacing {
 };
 
 /**
- * FPS type of media streaming
+ * FPS type of media streaming, Frame per second or Field per second
  */
 enum st_fps {
   ST_FPS_P59_94 = 0, /**< 59.94 fps */
   ST_FPS_P50,        /**< 50 fps */
   ST_FPS_P29_97,     /**< 29.97 fps */
+  ST_FPS_P25,        /**< 25 fps*/
   ST_FPS_MAX,        /**< max value of this enum */
 };
 
+/**
+ * FILED type of the media buffer
+ */
+enum st_field {
+  FIRST_FIELD = 0,
+  SECOND_FIELD = 1,
+};
 /**
  * Format type of st2110-20(video) streaming
  */
@@ -187,6 +226,10 @@ enum st20_fmt {
   ST20_FMT_RGB_10BIT,         /**< 10-bit RGB */
   ST20_FMT_RGB_12BIT,         /**< 12-bit RGB */
   ST20_FMT_RGB_16BIT,         /**< 16-bit RGB */
+  ST20_FMT_YUV_444_8BIT,      /**< 8-bit YUV 4:4:4 */
+  ST20_FMT_YUV_444_10BIT,     /**< 10-bit YUV 4:4:4 */
+  ST20_FMT_YUV_444_12BIT,     /**< 12-bit YUV 4:4:4 */
+  ST20_FMT_YUV_444_16BIT,     /**< 16-bit YUV 4:4:4 */
   ST20_FMT_MAX,               /**< max value of this enum */
 };
 
@@ -194,9 +237,19 @@ enum st20_fmt {
  * Session type of st2110-20(video) streaming
  */
 enum st20_type {
-  ST20_TYPE_FRAME_LEVEL = 0, /**< app interface lib based on frame level */
-  ST20_TYPE_RTP_LEVEL,       /**< app interface lib based on RTP level */
-  ST20_TYPE_MAX,             /**< max value of this enum */
+  /** app interface lib based on frame level */
+  ST20_TYPE_FRAME_LEVEL = 0,
+  /** app interface lib based on RTP level */
+  ST20_TYPE_RTP_LEVEL,
+  /**
+   * similar to ST20_TYPE_FRAME_LEVEL but with slice control,
+   * latency reduce to slice(lines) level.
+   * BTW, pls always enable ST20_RX_FLAG_RECEIVE_INCOMPLETE_FRAME then app can get the
+   * notify for incomplete frame
+   */
+  ST20_TYPE_SLICE_LEVEL,
+  /** max value of this enum */
+  ST20_TYPE_MAX,
 };
 
 /**
@@ -273,6 +326,10 @@ struct st20_frame_meta {
   enum st20_frame_status status;
   /** Frame total size */
   size_t frame_total_size;
+  /** The total size for user frame */
+  size_t uframe_total_size;
+  /** field type indicate */
+  enum st_field field;
   /**
    * The actual received size for current frame, user can inspect frame_recv_size
    * against frame_total_size to check the signal integrity for incomplete frame.
@@ -281,7 +338,63 @@ struct st20_frame_meta {
 };
 
 /**
- * A structure describing rfc3550 rtp header
+ * Slice meta data of st2110-20(video) rx streaming
+ */
+struct st20_slice_meta {
+  /** Frame resolution width */
+  uint32_t width;
+  /** Frame resolution height */
+  uint32_t height;
+  /** Frame resolution fps */
+  enum st_fps fps;
+  /** Frame resolution format */
+  enum st20_fmt fmt;
+  /** Frame timestamp format */
+  enum st10_timestamp_fmt tfmt;
+  /** Frame total size */
+  size_t frame_total_size;
+  /** The total size for user frame */
+  size_t uframe_total_size;
+  /** field type indicate */
+  enum st_field field;
+  /** Frame timestamp value */
+  uint64_t timestamp;
+  /** The received size for current frame */
+  size_t frame_recv_size;
+  /** The received lines for current frame */
+  uint32_t frame_recv_lines;
+};
+
+/**
+ * Pixel group meta data for user frame st2110-20(video) rx streaming.
+ */
+struct st20_uframe_pg_meta {
+  /** Frame resolution width */
+  uint32_t width;
+  /** Frame resolution height */
+  uint32_t height;
+  /** Frame resolution fps */
+  enum st_fps fps;
+  /** Frame resolution format */
+  enum st20_fmt fmt;
+  /** The total size for raw frame */
+  size_t frame_total_size;
+  /** The total size for user frame */
+  size_t uframe_total_size;
+  /** Point to current pixel groups data */
+  void* payload;
+  /** Number of octets of data included from current pixel groups data */
+  uint16_t row_length;
+  /** Scan line number */
+  uint16_t row_number;
+  /** Offset of the first pixel of the payload data within current pixel groups data */
+  uint16_t row_offset;
+  /** How many pixel groups in current meta */
+  uint32_t pg_cnt;
+};
+
+/**
+ * A structure describing rfc3550 rtp header, size: 12
  */
 struct st_rfc3550_rtp_hdr {
 #ifdef ST_LITTLE_ENDIAN
@@ -326,9 +439,14 @@ struct st_rfc3550_rtp_hdr {
  * sample row. The Continuation bit shall be set to 0 otherwise.
  */
 #define ST20_SRD_OFFSET_CONTINUATION (0x1 << 15)
+/**
+ * The field identification bit shall be set to 1 if the payload comes from second
+ * field.The field identification bit shall be set to 0 otherwise.
+ */
+#define ST20_SECOND_FIELD (0x1 << 15)
 
 /**
- * A structure describing a st2110-20(video) rfc4175 rtp header
+ * A structure describing a st2110-20(video) rfc4175 rtp header, size: 20
  */
 struct st20_rfc4175_rtp_hdr {
   /** Rtp rfc3550 base hdr */
@@ -345,7 +463,7 @@ struct st20_rfc4175_rtp_hdr {
 
 /**
  * A structure describing a st2110-20(video) rfc4175 rtp additional header.
- * if Continuation bit is set in struct st20_rfc4175_rtp_hdr.
+ * if Continuation bit is set in struct st20_rfc4175_rtp_hdr. size: 6
  */
 struct st20_rfc4175_extra_rtp_hdr {
   /** Number of octets of data included from this scan line */
@@ -354,6 +472,56 @@ struct st20_rfc4175_extra_rtp_hdr {
   uint16_t row_number;
   /** Offset of the first pixel of the payload data within the scan line */
   uint16_t row_offset;
+} __attribute__((__packed__));
+
+/** Pixel Group describing two image pixels in YUV 4:2:2 10-bit format */
+struct st20_rfc4175_422_10_pg2_be {
+  uint8_t Cb00; /**< First 8 bit Blue */
+#ifdef ST_LITTLE_ENDIAN
+  uint8_t Y00 : 6;   /**< First 6 bits Luminance for Y0 */
+  uint8_t Cb00_ : 2; /**< Second 2 bit Blue */
+  uint8_t Cr00 : 4;  /**< First 4 bit Red */
+  uint8_t Y00_ : 4;  /**< Second 4 bits Luminance for Y0 */
+  uint8_t Y01 : 2;   /**< First 2 bits Luminance for Y1 */
+  uint8_t Cr00_ : 6; /**< Second 6 bit Red */
+#else
+  uint8_t Cb00_ : 2; /**< Second 2 bit Blue */
+  uint8_t Y00 : 6;   /**< First 6 bits Luminance for Y0 */
+  uint8_t Y00_ : 4;  /**< Second 4 bits Luminance for Y0 */
+  uint8_t Cr00 : 4;  /**< First 4 bit Red */
+  uint8_t Cr00_ : 6; /**< Second 6 bit Red */
+  uint8_t Y01 : 2;   /**< First 2 bits Luminance for Y1 */
+#endif
+  uint8_t Y01_; /**< Second 2 bits Luminance for Y1 */
+} __attribute__((__packed__));
+
+/** Pixel Group describing two image pixels in YUV 4:2:2 10-bit format */
+struct st20_rfc4175_422_10_pg2_le {
+  uint8_t Cb00; /**< First 8 bit Blue */
+#ifdef ST_LITTLE_ENDIAN
+  uint8_t Cb00_ : 2; /**< Second 2 bit Blue */
+  uint8_t Y00 : 6;   /**< First 6 bits Luminance for Y0 */
+  uint8_t Y00_ : 4;  /**< Second 4 bits Luminance for Y0 */
+  uint8_t Cr00 : 4;  /**< First 4 bit Red */
+  uint8_t Cr00_ : 6; /**< Second 6 bit Red */
+  uint8_t Y01 : 2;   /**< First 2 bits Luminance for Y1 */
+#else
+  uint8_t Y00 : 6;   /**< First 6 bits Luminance for Y0 */
+  uint8_t Cb00_ : 2; /**< Second 2 bit Blue */
+  uint8_t Cr00 : 4;  /**< First 4 bit Red */
+  uint8_t Y00_ : 4;  /**< Second 4 bits Luminance for Y0 */
+  uint8_t Y01 : 2;   /**< First 2 bits Luminance for Y1 */
+  uint8_t Cr00_ : 6; /**< Second 6 bit Red */
+#endif
+  uint8_t Y01_; /**< Second 2 bits Luminance for Y1 */
+} __attribute__((__packed__));
+
+/** Pixel Group describing two image pixels in YUV 4:2:2 8-bit format */
+struct st20_rfc4175_422_8_pg2_le {
+  uint8_t Cb00; /**< 8 bit Blue */
+  uint8_t Y00;  /**< 8 bit Y0 */
+  uint8_t Cr00; /**< 8 bit Red */
+  uint8_t Y01;  /**< 8 bit Y1 */
 } __attribute__((__packed__));
 
 /**
@@ -458,6 +626,11 @@ struct st40_rfc8331_payload_hdr {
  */
 #define ST_FLAG_PTP_ENABLE (0x1 << 1)
 /**
+ * Flag bit in flags of struct st_init_params.
+ * Separated lcore for RX video(st2110-20/st2110-22) session.
+ */
+#define ST_FLAG_RX_SEPARATE_VIDEO_LCORE (0x1 << 2)
+/**
  * Flag bit in flags of struct st_init_params, debug usage only.
  * dedicate thread for cni message
  */
@@ -487,6 +660,16 @@ struct st40_rfc8331_payload_hdr {
  * use unicast address for ptp PTP_DELAY_REQ message
  */
 #define ST_FLAG_PTP_UNICAST_ADDR (0x1 << 21)
+/**
+ * Flag bit in flags of struct st_init_params, debug usage only.
+ * Mono memory pool for all rx queue
+ */
+#define ST_FLAG_RX_QUEUE_MONO_POOL (0x1 << 22)
+/**
+ * Flag bit in flags of struct st_init_params, debug usage only.
+ * Use TSC pacing instead of the RL
+ */
+#define ST_FLAG_TSC_PACING (0x1 << 23)
 
 /**
  * The structure describing how to init the streaming dpdk context.
@@ -516,6 +699,10 @@ struct st_init_params {
    * NULL means determined by system itself
    */
   char* lcores;
+  /** dma(CBDMA or DSA) dev Pcie BDF path like 0000:80:04.0 */
+  char dma_dev_port[ST_DMA_DEV_MAX][ST_PORT_MAX_LEN];
+  /** number of dma dev ports in dma_dev_port, leave to zero if no dma dev */
+  uint8_t num_dma_dev_port;
   /** log level */
   enum st_log_level log_level;
   /** flags, value in ST_FLAG_* */
@@ -527,12 +714,22 @@ struct st_init_params {
    * if NULL, ST instance will get from built-in ptp source(NIC) or system time instead.
    */
   uint64_t (*ptp_get_time_fn)(void* priv);
-  /** stats dump peroid in seconds, 0 means determined by system itself */
+  /** stats dump peroid in seconds, 0 means determined by lib */
   uint16_t dump_period_s;
   /** stats dump callabck in every dump_period_s */
   void (*stat_dump_cb_fn)(void* priv);
-  /** data quota for each lcore, 0 means determined by system itself */
+  /** data quota for each lcore, 0 means determined by lib */
   uint32_t data_quota_mbs_per_sch;
+  /**
+   * number of transmit descriptors for each NIC TX queue, 0 means determined by lib.
+   * It will affect the memory usage and the performance.
+   */
+  uint16_t nb_tx_desc;
+  /**
+   * number of receive descriptors for each NIC RX queue, 0 means determined by lib.
+   * It will affect the memory usage and the performance.
+   */
+  uint16_t nb_rx_desc;
   /**
    * tx destination mac address, debug usage only.
    * Valid if ST_FLAG_USER_P(R)_TX_MAC is enabled
@@ -572,6 +769,8 @@ struct st20_tx_ops {
   enum st_fps fps;
   /** Session resolution format */
   enum st20_fmt fmt;
+  /** interlace or not false: non-interlaced: true: interlaced*/
+  bool interlaced;
   /** 7 bits payload type define in RFC3550 */
   uint8_t payload_type;
 
@@ -589,7 +788,7 @@ struct st20_tx_ops {
    * And only non-block method can be used within this callback, as it run from lcore
    * tasklet routine.
    */
-  int (*get_next_frame)(void* priv, uint16_t* next_frame_idx);
+  int (*get_next_frame)(void* priv, uint16_t* next_frame_idx, bool* second_field);
   /**
    * ST20_TYPE_FRAME_LEVEL callback when lib finish current frame.
    * frame_idx indicate the frame which finish the transmit.
@@ -599,6 +798,11 @@ struct st20_tx_ops {
    * tasklet routine.
    */
   int (*notify_frame_done)(void* priv, uint16_t frame_idx);
+  /**
+   * ST20_TYPE_SLICE_LEVEL callback when lib requires new lines.
+   * User should provide the ready lines number.
+   */
+  int (*query_frame_lines_ready)(void* priv, uint16_t frame_idx, uint16_t* lines_ready);
 
   /**
    * rtp ring size, must be power of 2
@@ -906,11 +1110,19 @@ struct st40_tx_ops {
 
 /**
  * Flag bit in flags of struct st20_rx_ops.
- * Only for ST20_TYPE_FRAME_LEVEL.
+ * Only for ST20_TYPE_FRAME_LEVEL/ST20_TYPE_SLICE_LEVEL.
  * If set, lib will pass the incomplete frame to app also by notify_frame_ready.
  * User can check st20_frame_meta data for the frame integrity
  */
 #define ST20_RX_FLAG_RECEIVE_INCOMPLETE_FRAME (0x1 << 0)
+/**
+ * Flag bit in flags of struct st20_rx_ops.
+ * Only for ST20_TYPE_FRAME_LEVEL/ST20_TYPE_SLICE_LEVEL.
+ * If set, lib will try to allocate DMA memory copy offload from
+ * dma_dev_port(st_init_params) list.
+ * Pls note it could fallback to CPU if no DMA device is available.
+ */
+#define ST20_RX_FLAG_DMA_OFFLOAD (0x1 << 1)
 
 /**
  * The structure describing how to create a rx st2110-20(video) session.
@@ -948,11 +1160,13 @@ struct st20_rx_ops {
   uint8_t payload_type;
   /** flags, value in ST20_RX_FLAG_* */
   uint32_t flags;
+  /** interlace or not false: non-interlaced: true: interlaced*/
+  bool interlaced;
 
   /**
    * the ST20_TYPE_FRAME_LEVEL frame buffer count requested,
    * should be in range [2, ST20_FB_MAX_COUNT].
-   * Only for ST20_TYPE_FRAME_LEVEL.
+   * Only for ST20_TYPE_FRAME_LEVEL/ST20_TYPE_SLICE_LEVEL.
    */
   uint16_t framebuff_cnt;
   /**
@@ -962,13 +1176,45 @@ struct st20_rx_ops {
    * return:
    *   - 0: if app consume the frame successful. App should call st20_rx_put_framebuff
    * to return the frame when it finish the handling
-   *   < 0: the error code if app cann't handle, lib will free the frame then
-   * the consume of frame.
-   * Only for ST20_TYPE_FRAME_LEVEL.
+   *   < 0: the error code if app cann't handle, lib will free the frame then.
+   * Only for ST20_TYPE_FRAME_LEVEL/ST20_TYPE_SLICE_LEVEL.
    * And only non-block method can be used in this callback as it run from lcore tasklet
    * routine.
    */
   int (*notify_frame_ready)(void* priv, void* frame, struct st20_frame_meta* meta);
+
+  /**
+   * Total size for user frame, lib will allocate frame with this value. When lib receive
+   * a payload from network, it will call uframe_pg_callback to let user to handle the
+   * pixel group data in the payload, the callback should convert the pixel group data to
+   * the data format app required.
+   * Zero means the user frame mode is disabled.
+   * Only for ST20_TYPE_FRAME_LEVEL/ST20_TYPE_SLICE_LEVEL.
+   */
+  size_t uframe_size;
+  /**
+   * User frame callback when lib receive pixel group datas from network.
+   * frame: point to the address of the user frame buf.
+   * meta: point to the meta data.
+   * return:
+   *   - 0: if app consume the pixel group successfully.
+   *   < 0: the error code if app cann't handle.
+   * Only for ST20_TYPE_FRAME_LEVEL/ST20_TYPE_SLICE_LEVEL.
+   * And only non-block method can be used in this callback as it run from lcore tasklet
+   * routine.
+   */
+  int (*uframe_pg_callback)(void* priv, void* frame, struct st20_uframe_pg_meta* meta);
+
+  /** lines in one slice, for ST20_TYPE_SLICE_LEVEL */
+  uint32_t slice_lines;
+  /**
+   * ST20_TYPE_SLICE_LEVEL callback when lib received slice info for one frame.
+   * frame: point to the address of the frame buf.
+   * meta: point to the meta data.
+   * And only non-block method can be used in this callback as it run from lcore tasklet
+   * routine.
+   */
+  int (*notify_slice_ready)(void* priv, void* frame, struct st20_slice_meta* meta);
 
   /**
    * rtp ring size, must be power of 2.
@@ -1142,10 +1388,12 @@ struct st_rx_source_info {
  * A structure used to retrieve capacity for an ST instance.
  */
 struct st_cap {
-  /** max tx session count in current straming context */
+  /** max tx session count for current straming context */
   uint16_t tx_sessions_cnt_max;
-  /** max rx session count in current straming context */
+  /** max rx session count for current straming context */
   uint16_t rx_sessions_cnt_max;
+  /** max dma dev count for current straming context */
+  uint8_t dma_dev_cnt_max;
 };
 
 /**
@@ -1168,10 +1416,12 @@ struct st_stats {
   uint16_t st30_rx_sessions_cnt;
   /** st40 rx session count in current straming context */
   uint16_t st40_rx_sessions_cnt;
-  /** scheduler count in current straming context */
+  /** active scheduler count in current straming context */
   uint8_t sch_cnt;
-  /** lcore count in current straming context */
+  /** active lcore count in current straming context */
   uint8_t lcore_cnt;
+  /** active dma dev count for current straming context */
+  uint8_t dma_dev_cnt;
   /** if straming device is started(st_start) */
   uint8_t dev_started;
 };
@@ -1410,6 +1660,136 @@ void* st_hp_zmalloc(st_handle st, size_t size, enum st_port port);
 void st_hp_free(st_handle st, void* ptr);
 
 /**
+ * Return the IO address of a virtual address from st_hp_malloc/st_hp_zmalloc
+ *
+ * @param addr
+ *   Address obtained from previous st_hp_malloc/st_hp_zmalloc call
+ * @return
+ *   ST_BAD_IOVA on error
+ *   otherwise return an address suitable for IO
+ */
+st_iova_t st_hp_virt2iova(st_handle st, const void* addr);
+
+/**
+ * Allocate a user DMA dev from the dma_dev_port(st_init_params) list.
+ * In NUMA systems, the dma dev allocated from the same NUMA socket of the port.
+ *
+ * @param st
+ *   The handle to the media streaming device context.
+ * @param size
+ *   Number of descriptor for the user DMA device
+ * @param port
+ *   Port for the user DMA device to be allocated.
+ * @return
+ *   - NULL on error.
+ *   - Otherwise, the handle to the st user dma dev.
+ */
+st_udma_handle st_udma_create(st_handle st, uint16_t nb_desc, enum st_port port);
+
+/**
+ * Free the st user dma dev.
+ *
+ * @param handle
+ *   The handle to the st user dma dev.
+ * @return
+ *   - 0: Success.
+ *   - <0: Error code of the free.
+ */
+int st_udma_free(st_udma_handle handle);
+
+/**
+ * Enqueue a copy operation onto the user dma dev.
+ *
+ * @param handle
+ *   The handle to the st user dma dev.
+ * @param dst
+ *   The st_iova_t address of the destination buffer.
+ *   Must be the memory address by st_hp_virt2iova.
+ * @param src
+ *   The st_iova_t address of the source buffer.
+ *   Must be the memory address by st_hp_virt2iova.
+ * @param length
+ *   The length of the data to be copied.
+ *
+ * @return
+ *   - 0..UINT16_MAX: index of enqueued job.
+ *   - -ENOSPC: if no space left to enqueue.
+ *   - other values < 0 on failure.
+ */
+int st_udma_copy(st_udma_handle handle, st_iova_t dst, st_iova_t src, uint32_t length);
+
+/**
+ * Enqueue a fill operation onto the virtual DMA channel.
+ *
+ * @param handle
+ *   The handle to the st user dma dev.
+ * @param dst
+ *   The st_iova_t address of the destination buffer.
+ *   Must be the memory address by st_hp_virt2iova.
+ * @param pattern
+ *   The pattern(u64) to populate the destination buffer with.
+ * @param length
+ *   The length of the data to be copied.
+ *
+ * @return
+ *   - 0..UINT16_MAX: index of enqueued job.
+ *   - -ENOSPC: if no space left to enqueue.
+ *   - other values < 0 on failure.
+ */
+int st_udma_fill(st_udma_handle handle, st_iova_t dst, uint64_t pattern, uint32_t length);
+
+/**
+ * Enqueue a fill operation onto the virtual DMA channel.
+ *
+ * @param handle
+ *   The handle to the st user dma dev.
+ * @param dst
+ *   The st_iova_t address of the destination buffer.
+ *   Must be the memory address by st_hp_virt2iova.
+ * @param pattern
+ *   The pattern(u8) to populate the destination buffer with.
+ * @param length
+ *   The length of the data to be copied.
+ *
+ * @return
+ *   - 0..UINT16_MAX: index of enqueued job.
+ *   - -ENOSPC: if no space left to enqueue.
+ *   - other values < 0 on failure.
+ */
+static inline int st_udma_fill_u8(st_udma_handle handle, st_iova_t dst, uint8_t pattern,
+                                  uint32_t length) {
+  uint64_t pattern_u64;
+  /* pattern to u64 */
+  memset(&pattern_u64, pattern, sizeof(pattern_u64));
+  return st_udma_fill(handle, dst, pattern_u64, length);
+}
+
+/**
+ * Trigger hardware to begin performing enqueued operations.
+ *
+ * @param handle
+ *   The handle to the st user dma dev.
+ * @return
+ *   - 0: Success.
+ *   - <0: Error code of the submit.
+ */
+int st_udma_submit(st_udma_handle handle);
+
+/**
+ * Return the number of operations that have been successfully completed.
+ *
+ * @param handle
+ *   The handle to the st user dma dev.
+ * @param nb_cpls
+ *   The maximum number of completed operations that can be processed.
+ *
+ * @return
+ *   The number of operations that successfully completed. This return value
+ *   must be less than or equal to the value of nb_cpls.
+ */
+uint16_t st_udma_completed(st_udma_handle handle, const uint16_t nb_cpls);
+
+/**
  * Read current time from ptp source.
  *
  * @param st
@@ -1418,6 +1798,24 @@ void st_hp_free(st_handle st, void* ptr);
  *   - The time in nanoseconds in current ptp system
  */
 uint64_t st_ptp_read_time(st_handle st);
+
+/**
+ * Get SIMD level current cpu supported.
+ *
+ * @return
+ *   - The simd level
+ */
+enum st_simd_level st_get_simd_level(void);
+
+/**
+ * Get name of CPU simd level
+ *
+ * @param level
+ *     The simd level
+ * @return
+ *     simd level name
+ */
+const char* st_get_simd_level_name(enum st_simd_level level);
 
 /**
  * Create one tx st2110-20(video) session.
@@ -1500,7 +1898,7 @@ int st20_tx_put_mbuf(st20_tx_handle handle, void* mbuf, uint16_t len);
 int st20_tx_get_sch_idx(st20_tx_handle handle);
 
 /**
- * Retrieve the pixel group info from from st2110-20(video) format.
+ * Retrieve the pixel group info from st2110-20(video) format.
  *
  * @param fmt
  *   The st2110-20(video) format.
@@ -1511,6 +1909,37 @@ int st20_tx_get_sch_idx(st20_tx_handle handle);
  *   - <0: Error code if fail.
  */
 int st20_get_pgroup(enum st20_fmt fmt, struct st20_pgroup* pg);
+
+/**
+ * Retrieve bit rate(bit per second) for given st2110-20(video) format.
+ *
+ * @param width
+ *   The st2110-20(video) width.
+ * @param height
+ *   The st2110-20(video) height.
+ * @param fmt
+ *   The st2110-20(video) format.
+ * @param fps
+ *   The st2110-20(video) fps.
+ * @param bps
+ *   A pointer to the return bit rate.
+ * @return
+ *   - 0 if successful.
+ *   - <0: Error code if fail.
+ */
+int st20_get_bandwidth_bps(int width, int height, enum st20_fmt fmt, enum st_fps fps,
+                           uint64_t* bps);
+
+/**
+ * Inline function returning bandwidth(mega per second) for 1080 p59 yuv422 10bit
+ * @return
+ *     Bandwidth(mega per second)
+ */
+static inline uint64_t st20_1080p59_yuv422_10bit_bandwidth_mps(void) {
+  uint64_t bps;
+  st20_get_bandwidth_bps(1920, 1080, ST20_FMT_YUV_422_10BIT, ST_FPS_P59_94, &bps);
+  return bps / 1000 / 1000;
+}
 
 /**
  * Create one tx st2110-22(compressed video) session.
@@ -1769,6 +2198,19 @@ int st20_rx_update_source(st20_rx_handle handle, struct st_rx_source_info* src);
  *   - <0: Error code.
  */
 int st20_rx_get_sch_idx(st20_rx_handle handle);
+
+/**
+ * Dump st2110-20 packets to pcapng file.
+ *
+ * @param handle
+ *   The handle to the rx st2110-20(compressed video) session.
+ * @param max_dump_packets
+ *   The max number of packets to be dumpped.
+ * @return
+ *   - 0: Success, rx st2110-20(video) session pcapng dump succ.
+ *   - <0: Error code of the rx st2110-20(video) session pcapng dump.
+ */
+int st20_rx_pcapng_dump(st20_rx_handle handle, uint32_t max_dump_packets);
 
 /**
  * Free the rx st2110-20(video) session.

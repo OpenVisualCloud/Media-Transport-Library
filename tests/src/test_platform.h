@@ -19,6 +19,10 @@
 #ifdef WINDOWSENV /* Windows */
 #include <Winsock2.h>
 #include <ws2tcpip.h>
+#ifndef sleep
+#define sleep(x) Sleep(1000 * x)
+#include <unistd.h>
+#endif
 #else /* Linux */
 #include <arpa/inet.h>
 #endif

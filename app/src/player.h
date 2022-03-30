@@ -20,6 +20,9 @@
 #include "app_base.h"
 #include "log.h"
 
+#ifndef _PLAYER_HEAD_H_
+#define _PLAYER_HEAD_H_
+
 int st_app_player_uinit(struct st_app_context* ctx);
 int st_app_player_init(struct st_app_context* ctx);
 
@@ -27,3 +30,5 @@ int st_app_attach_display(struct st_app_rx_video_session* video);
 int st_app_dettach_display(struct st_app_rx_video_session* video);
 
 int st_app_display_frame(struct st_display* display, uint8_t const* frame);
+
+#endif

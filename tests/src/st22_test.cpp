@@ -391,7 +391,7 @@ static void st22_rx_fps_test(enum st_fps fps[], int width[], int height[],
   ret = st_stop(m_handle);
   EXPECT_GE(ret, 0);
   for (int i = 0; i < sessions; i++) {
-    EXPECT_TRUE(test_ctx_rx[i]->fb_rec > 0);
+    EXPECT_GT(test_ctx_rx[i]->fb_rec, 0);
     info("%s, session %d fb_rec %d framerate %f\n", __func__, i, test_ctx_rx[i]->fb_rec,
          framerate[i]);
     EXPECT_NEAR(framerate[i], expect_framerate[i], expect_framerate[i] * 0.1);
@@ -534,7 +534,7 @@ static void st22_rx_update_src_test(int tx_sessions) {
 
   ret = st_start(m_handle);
   EXPECT_GE(ret, 0);
-  sleep(2);
+  sleep(10);
 
   struct st_rx_source_info src;
   /* switch to mcast port p(tx_session:1) */
@@ -554,7 +554,7 @@ static void st22_rx_update_src_test(int tx_sessions) {
     double time_sec = (double)(cur_time_ns - test_ctx_rx[i]->start_time) / NS_PER_S;
     framerate[i] = test_ctx_rx[i]->fb_rec / time_sec;
 
-    EXPECT_TRUE(test_ctx_rx[i]->fb_rec > 0);
+    EXPECT_GT(test_ctx_rx[i]->fb_rec, 0);
     info("%s, session %d fb_rec %d framerate %f for mcast 1\n", __func__, i,
          test_ctx_rx[i]->fb_rec, framerate[i]);
     EXPECT_NEAR(framerate[i], expect_framerate[i], expect_framerate[i] * 0.1);
@@ -578,7 +578,7 @@ static void st22_rx_update_src_test(int tx_sessions) {
       double time_sec = (double)(cur_time_ns - test_ctx_rx[i]->start_time) / NS_PER_S;
       framerate[i] = test_ctx_rx[i]->fb_rec / time_sec;
 
-      EXPECT_TRUE(test_ctx_rx[i]->fb_rec > 0);
+      EXPECT_GT(test_ctx_rx[i]->fb_rec, 0);
       info("%s, session %d fb_rec %d framerate %f for mcast 2\n", __func__, i,
            test_ctx_rx[i]->fb_rec, framerate[i]);
       EXPECT_NEAR(framerate[i], expect_framerate[i], expect_framerate[i] * 0.1);
@@ -602,7 +602,7 @@ static void st22_rx_update_src_test(int tx_sessions) {
     double time_sec = (double)(cur_time_ns - test_ctx_rx[i]->start_time) / NS_PER_S;
     framerate[i] = test_ctx_rx[i]->fb_rec / time_sec;
 
-    EXPECT_TRUE(test_ctx_rx[i]->fb_rec > 0);
+    EXPECT_GT(test_ctx_rx[i]->fb_rec, 0);
     info("%s, session %d fb_rec %d framerate %f for unicast 0\n", __func__, i,
          test_ctx_rx[i]->fb_rec, framerate[i]);
     EXPECT_NEAR(framerate[i], expect_framerate[i], expect_framerate[i] * 0.1);
@@ -718,7 +718,7 @@ static void st22_rx_after_start_test(enum st_fps fps[], int width[], int height[
         test_ctx_tx[i]->frame_buf[frame] = (uint8_t*)st_test_zmalloc(frame_size);
         fb = test_ctx_tx[i]->frame_buf[frame];
         ASSERT_TRUE(fb != NULL);
-        for (size_t s = 0; s < frame_size; s++) fb[s] = rand() % 0xFF;
+        st_test_rand_data(fb, frame_size, frame);
         unsigned char* result = test_ctx_tx[i]->md5s[frame];
         MD5((unsigned char*)fb, frame_size, result);
         test_md5_dump("st22_rx", result);
@@ -799,11 +799,11 @@ static void st22_rx_after_start_test(enum st_fps fps[], int width[], int height[
       }
     }
     for (int i = 0; i < sessions; i++) {
-      EXPECT_TRUE(test_ctx_rx[i]->fb_rec > 0);
+      EXPECT_GT(test_ctx_rx[i]->fb_rec, 0);
       info("%s, session %d fb_rec %d framerate %f\n", __func__, i, test_ctx_rx[i]->fb_rec,
            framerate[i]);
       EXPECT_NEAR(framerate[i], expect_framerate[i], expect_framerate[i] * 0.1);
-      EXPECT_TRUE(test_ctx_rx[i]->fail_cnt < 2);  // the first frame may be incompleted
+      EXPECT_LT(test_ctx_rx[i]->fail_cnt, 2);  // the first frame may be incompleted
       ret = st22_rx_free(rx_handle[i]);
       EXPECT_GE(ret, 0);
     }

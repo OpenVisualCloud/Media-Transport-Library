@@ -24,13 +24,6 @@
 #include "st_sch.h"
 #include "st_util.h"
 
-static inline bool ra_ebu_enabled(struct st_main_impl* impl) {
-  if (st_get_user_params(impl)->flags & ST_FLAG_RX_VIDEO_EBU)
-    return true;
-  else
-    return false;
-}
-
 static inline double ra_ebu_pass_rate(struct st_rx_audio_ebu_result* ebu_result,
                                       int pass) {
   return (double)pass * 100 / ebu_result->ebu_result_num;
@@ -411,7 +404,7 @@ static int rx_audio_session_handle_frame_pkt(struct st_main_impl* impl,
   s->st30_stat_pkts_received++;
   s->st30_pkt_idx++;
 
-  if (ra_ebu_enabled(impl) && inf->feature & ST_IF_FEATURE_RX_OFFLOAD_TIMESTAMP) {
+  if (st_has_ebu(impl) && inf->feature & ST_IF_FEATURE_RX_OFFLOAD_TIMESTAMP) {
     ra_ebu_on_packet(s, tmstamp, st_mbuf_get_hw_time_stamp(impl, mbuf));
   }
 
@@ -434,7 +427,7 @@ static int rx_audio_session_handle_frame_pkt(struct st_main_impl* impl,
     }
     s->frame_recv_size = 0;
     s->st30_pkt_idx = 0;
-    s->st30_stat_frames_received++;
+    rte_atomic32_inc(&s->st30_stat_frames_received);
     s->st30_frame = NULL;
     dbg("%s: full frame on %p\n", __func__, s->st30_frame);
   }
@@ -478,7 +471,7 @@ static int rx_audio_session_handle_rtp_pkt(struct st_main_impl* impl,
   ops->notify_rtp_ready(ops->priv);
   s->st30_stat_pkts_received++;
 
-  if (ra_ebu_enabled(impl) && inf->feature & ST_IF_FEATURE_RX_OFFLOAD_TIMESTAMP) {
+  if (st_has_ebu(impl) && inf->feature & ST_IF_FEATURE_RX_OFFLOAD_TIMESTAMP) {
     ra_ebu_on_packet(s, tmstamp, st_mbuf_get_hw_time_stamp(impl, mbuf));
   }
 
@@ -561,7 +554,7 @@ static int rx_audio_session_init_hw(struct st_main_impl* impl,
   int idx = s->idx, num_port = s->ops.num_port;
   int ret;
   uint16_t queue;
-  struct st_dev_flow flow;
+  struct st_rx_flow flow;
   enum st_port port;
 
   for (int i = 0; i < num_port; i++) {
@@ -571,7 +564,6 @@ static int rx_audio_session_init_hw(struct st_main_impl* impl,
     rte_memcpy(flow.dip_addr, s->ops.sip_addr[i], ST_IP_ADDR_LEN);
     rte_memcpy(flow.sip_addr, st_sip_addr(impl, port), ST_IP_ADDR_LEN);
     flow.port_flow = true;
-    flow.src_port = s->st30_src_port[i];
     flow.dst_port = s->st30_dst_port[i];
 
     ret = st_dev_request_rx_queue(impl, port, &queue, &flow);
@@ -690,10 +682,10 @@ static int rx_audio_session_attach(struct st_main_impl* impl,
   s->st30_stat_pkts_received = 0;
   s->st30_stat_pkts_dropped = 0;
   s->st30_stat_frames_dropped = 0;
-  s->st30_stat_frames_received = 0;
+  rte_atomic32_set(&s->st30_stat_frames_received, 0);
   s->st30_stat_last_time = st_get_monotonic_time();
 
-  if (ra_ebu_enabled(impl)) {
+  if (st_has_ebu(impl)) {
     ret = ra_ebu_init(impl, s);
     if (ret < 0) {
       err("%s(%d), ra_ebu_init fail %d\n", __func__, idx, ret);
@@ -730,11 +722,13 @@ static void rx_audio_session_stat(struct st_rx_audio_session_impl* s) {
   int idx = s->idx;
   uint64_t cur_time_ns = st_get_monotonic_time();
   double time_sec = (double)(cur_time_ns - s->st30_stat_last_time) / NS_PER_S;
-  double framerate = s->st30_stat_frames_received / time_sec;
+  int frames_received = rte_atomic32_read(&s->st30_stat_frames_received);
+  double framerate = frames_received / time_sec;
+
+  rte_atomic32_set(&s->st30_stat_frames_received, 0);
 
   info("RX_AUDIO_SESSION(%d): fps %f, st30 received frames %d, received pkts %d\n", idx,
-       framerate, s->st30_stat_frames_received, s->st30_stat_pkts_received);
-  s->st30_stat_frames_received = 0;
+       framerate, frames_received, s->st30_stat_pkts_received);
   s->st30_stat_pkts_received = 0;
   s->st30_stat_last_time = cur_time_ns;
 
@@ -748,7 +742,7 @@ static void rx_audio_session_stat(struct st_rx_audio_session_impl* s) {
 
 static int rx_audio_session_detach(struct st_main_impl* impl,
                                    struct st_rx_audio_session_impl* s) {
-  if (ra_ebu_enabled(impl)) rx_audio_session_ebu_result(s);
+  if (st_has_ebu(impl)) rx_audio_session_ebu_result(s);
   rx_audio_session_stat(s);
   rx_audio_session_uinit_mcast(impl, s);
   rx_audio_session_uinit_sw(impl, s);

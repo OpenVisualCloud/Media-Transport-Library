@@ -49,20 +49,16 @@ st_dpdk_link_c_args += ['-static','-limagehlp', '-lsetupapi', '-lWs2_32']
 endif
 
 compiler = meson.get_compiler('c')
-if compiler.has_header('rte_build_config.h')
-  add_avx2 = run_command('grep', 'RTE_CPUFLAG_AVX2', '/usr/local/include/rte_build_config.h')
-  if add_avx2.returncode() == 0
-    if add_avx2.stdout().contains('RTE_CPUFLAG_AVX2')
-      st_dpdk_c_args += ['-mavx2']
-    endif
-  endif
+if compiler.has_argument('-mavx2')
+  st_dpdk_c_args += ['-DST_HAS_AVX2']
+endif
 
-  add_avx512f = run_command('grep', 'RTE_CPUFLAG_AVX512F', '/usr/local/include/rte_build_config.h')
-  if add_avx512f.returncode() == 0
-    if add_avx512f.stdout().contains('RTE_CPUFLAG_AVX512F')
-      st_dpdk_c_args += ['-mavx512f']
-    endif
-  endif
+if compiler.has_argument('-mavx512vl')
+  st_dpdk_c_args += ['-DST_HAS_AVX512']
+endif
+
+if compiler.has_argument('-mavx512vbmi2')
+  st_dpdk_c_args += ['-DST_HAS_AVX512_VBMI2']
 endif
 
 #build library

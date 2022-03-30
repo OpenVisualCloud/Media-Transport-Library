@@ -108,13 +108,18 @@ For the supported parameters in the json, please refer to [JSON configuration gu
 --ptp                                : Enable the built-in Kahawai PTP, default is disabled and system time is selected as PTP time source
 --lcores <lcore list>                : the DPDK lcore list for this run, e.g. --lcores 28,29,30,31. If not assigned, lib will allocate lcore from system socket cores.
 --test_time <seconds>                : the run duration, unit: seconds
+--rx_separate_lcore                  : If enabled, RX video session will run on dedicated lcores, it means TX video and RX video is not running on the same core.
+--dma_dev <DMA1,DMA2,DMA3...>        : DMA dev list to offload the packet memory copy for RX video frame session.
 --ebu                                : debug option, enable timing check for video rx streams
+--pcapng_dump <n>                    : debug option, dump n packets from rx video streams to pcapng files. 
 --promiscuous                        : debug option, enable RX promiscuous( receive all data passing through it regardless of whether the destination address of the data) mode for NIC.
 --cni_thread                         : debug option, use a dedicated thread for cni messages instead of tasklet
 --sch_session_quota <count>          : debug option, max sessions count for one lcore, unit: 1080P 60FPS TX
 --p_tx_dst_mac <mac>                 : debug option, destination MAC address for primary port, debug usage only
 --r_tx_dst_mac <mac>                 : debug option, destination MAC address for redundant port, debug usage only
 --log_level <level>                  : debug option, set log level. e.g. debug, info, warning, error
+--nb_tx_desc <count>                 : debug option, number of transmit descriptors for each NIC TX queue, affect the memory usage and the performance.
+--nb_rx_desc <count>                 : debug option, number of receive descriptors for each NIC RX queue, affect the memory usage and the performance.
 ```
 
 ## 4. Tests:

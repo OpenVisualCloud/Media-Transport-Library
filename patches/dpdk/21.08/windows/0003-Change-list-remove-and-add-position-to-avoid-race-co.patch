@@ -1,0 +1,45 @@
+From c7153e98d67b9aee7369bd7cc29c159ba2c78f79 Mon Sep 17 00:00:00 2001
+From: qiaoliu <qiao.liu@intel.com>
+Date: Thu, 20 Jan 2022 10:46:27 +0800
+Subject: [PATCH 3/7] Change list remove and add position to avoid race
+ condition
+
+---
+ lib/eal/windows/eal_alarm.c | 11 ++++++++---
+ 1 file changed, 8 insertions(+), 3 deletions(-)
+
+diff --git a/lib/eal/windows/eal_alarm.c b/lib/eal/windows/eal_alarm.c
+index e5dc54efb8..b31e9beb2a 100644
+--- a/lib/eal/windows/eal_alarm.c
++++ b/lib/eal/windows/eal_alarm.c
+@@ -63,9 +63,17 @@ alarm_set(struct alarm_entry *entry, LARGE_INTEGER deadline)
+ 	BOOL ret = SetWaitableTimer(
+ 		entry->timer, &deadline, 0, alarm_callback, entry, FALSE);
+ 	if (!ret) {
++		if (entry->timer != NULL)
++		    CloseHandle(entry->timer);
++	    if (entry != NULL)
++		    free(entry);
+ 		RTE_LOG_WIN32_ERR("SetWaitableTimer");
+ 		return -1;
+ 	}
++
++	rte_spinlock_lock(&alarm_lock);
++	LIST_INSERT_HEAD(&alarm_list, entry, next);
++	rte_spinlock_unlock(&alarm_lock);	
+ 	return 0;
+ }
+ 
+@@ -152,9 +160,6 @@ rte_eal_alarm_set(uint64_t us, rte_eal_alarm_callback cb_fn, void *cb_arg)
+ 			goto fail;
+ 	}
+ 
+-	rte_spinlock_lock(&alarm_lock);
+-	LIST_INSERT_HEAD(&alarm_list, ap, next);
+-	rte_spinlock_unlock(&alarm_lock);
+ 
+ 	goto exit;
+ 
+-- 
+2.17.1
+

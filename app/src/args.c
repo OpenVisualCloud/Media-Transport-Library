@@ -65,7 +65,14 @@ enum st_args_cmd {
   ST_ARG_NIC_RX_PROMISCUOUS,
   ST_ARG_RX_VIDEO_DISPLAY,
   ST_ARG_LIB_PTP,
+  ST_ARG_RX_MONO_POOL,
   ST_ARG_LOG_LEVEL,
+  ST_ARG_NB_TX_DESC,
+  ST_ARG_NB_RX_DESC,
+  ST_ARG_DMA_DEV,
+  ST_ARG_RX_SEPARATE_VIDEO_LCORE,
+  ST_ARG_TSC_PACING,
+  ST_ARG_PCAPNG_DUMP,
 
   ST_ARG_MAX,
 };
@@ -122,6 +129,13 @@ static struct option st_app_args_options[] = {
     {"promiscuous", no_argument, 0, ST_ARG_NIC_RX_PROMISCUOUS},
     {"log_level", required_argument, 0, ST_ARG_LOG_LEVEL},
     {"ptp", no_argument, 0, ST_ARG_LIB_PTP},
+    {"rx_mono_pool", no_argument, 0, ST_ARG_RX_MONO_POOL},
+    {"rx_separate_lcore", no_argument, 0, ST_ARG_RX_SEPARATE_VIDEO_LCORE},
+    {"nb_tx_desc", required_argument, 0, ST_ARG_NB_TX_DESC},
+    {"nb_rx_desc", required_argument, 0, ST_ARG_NB_RX_DESC},
+    {"dma_dev", required_argument, 0, ST_ARG_DMA_DEV},
+    {"tsc", no_argument, 0, ST_ARG_TSC_PACING},
+    {"pcapng_dump", required_argument, 0, ST_ARG_PCAPNG_DUMP},
 
     {0, 0, 0, 0}};
 
@@ -162,6 +176,53 @@ static int app_args_parse_r_tx_mac(struct st_init_params* p, char* mac_str) {
   if (ret < 0) return ret;
 
   p->flags |= ST_FLAG_USER_R_TX_MAC;
+  return 0;
+}
+
+static int app_args_dma_dev(struct st_init_params* p, char* in_dev) {
+  if (!in_dev) return -EIO;
+  char devs[128];
+  strncpy(devs, in_dev, 127);
+
+  dbg("%s, dev list %s\n", __func__, devs);
+  char* next_dev = strtok(devs, ",");
+  while (next_dev) {
+    dbg("next_dev: %s\n", next_dev);
+    strncpy(p->dma_dev_port[p->num_dma_dev_port], next_dev, ST_PORT_MAX_LEN);
+    p->num_dma_dev_port++;
+    next_dev = strtok(NULL, ",");
+  }
+  return 0;
+}
+
+static int app_args_json(struct st_app_context* ctx, struct st_init_params* p,
+                         char* json_file) {
+  ctx->json_ctx = st_app_zmalloc(sizeof(st_json_context_t));
+  if (!ctx->json_ctx) {
+    err("%s, json_ctx alloc fail\n", __func__);
+    return -ENOMEM;
+  }
+  int ret = st_app_parse_json(ctx->json_ctx, json_file);
+  if (ret < 0) {
+    err("%s, st_app_parse_json fail %d\n", __func__, ret);
+    st_app_free(ctx->json_ctx);
+    ctx->json_ctx = NULL;
+    return ret;
+  }
+  ctx->tx_video_session_cnt = ctx->json_ctx->tx_video_session_cnt;
+  ctx->tx_audio_session_cnt = ctx->json_ctx->tx_audio_session_cnt;
+  ctx->tx_anc_session_cnt = ctx->json_ctx->tx_anc_session_cnt;
+  ctx->rx_video_session_cnt = ctx->json_ctx->rx_video_session_cnt;
+  ctx->rx_audio_session_cnt = ctx->json_ctx->rx_audio_session_cnt;
+  ctx->rx_anc_session_cnt = ctx->json_ctx->rx_anc_session_cnt;
+  for (int i = 0; i < ctx->json_ctx->num_interfaces; ++i) {
+    snprintf(p->port[i], sizeof(p->port[i]), "%s", ctx->json_ctx->interfaces[i].name);
+    memcpy(p->sip_addr[i], ctx->json_ctx->interfaces[i].ip_addr, sizeof(p->sip_addr[i]));
+    p->num_ports++;
+  }
+  if (ctx->json_ctx->sch_quota)
+    p->data_quota_mbs_per_sch =
+        ctx->json_ctx->sch_quota * st20_1080p59_yuv422_10bit_bandwidth_mps();
   return 0;
 }
 
@@ -256,33 +317,7 @@ int st_app_parse_args(struct st_app_context* ctx, struct st_init_params* p, int 
         ctx->rx_st22_session_cnt = atoi(optarg);
         break;
       case ST_ARG_CONFIG_FILE:
-        ctx->json_ctx = st_app_zmalloc(sizeof(st_json_context_t));
-        if (!ctx->json_ctx) {
-          err("%s, json_ctx alloc fail\n", __func__);
-          return -ENOMEM;
-        }
-        int ret = st_app_parse_json(ctx->json_ctx, optarg);
-        if (ret < 0) {
-          err("%s, st_app_parse_json fail %d\n", __func__, ret);
-          st_app_free(ctx->json_ctx);
-          ctx->json_ctx = NULL;
-          return ret;
-        }
-        ctx->tx_video_session_cnt = ctx->json_ctx->tx_video_session_cnt;
-        ctx->tx_audio_session_cnt = ctx->json_ctx->tx_audio_session_cnt;
-        ctx->tx_anc_session_cnt = ctx->json_ctx->tx_anc_session_cnt;
-        ctx->rx_video_session_cnt = ctx->json_ctx->rx_video_session_cnt;
-        ctx->rx_audio_session_cnt = ctx->json_ctx->rx_audio_session_cnt;
-        ctx->rx_anc_session_cnt = ctx->json_ctx->rx_anc_session_cnt;
-        for (int i = 0; i < ctx->json_ctx->num_interfaces; ++i) {
-          snprintf(p->port[i], sizeof(p->port[i]), "%s",
-                   ctx->json_ctx->interfaces[i].name);
-          memcpy(p->sip_addr[i], ctx->json_ctx->interfaces[i].ip_addr,
-                 sizeof(p->sip_addr[i]));
-          p->num_ports++;
-        }
-        if (ctx->json_ctx->sch_quota)
-          p->data_quota_mbs_per_sch = ctx->json_ctx->sch_quota * 2589 + 100;
+        app_args_json(ctx, p, optarg);
         break;
       case ST_ARG_PTP_UNICAST_ADDR:
         p->flags |= ST_FLAG_PTP_UNICAST_ADDR;
@@ -296,6 +331,15 @@ int st_app_parse_args(struct st_app_context* ctx, struct st_init_params* p, int 
       case ST_ARG_RX_EBU:
         p->flags |= ST_FLAG_RX_VIDEO_EBU;
         break;
+      case ST_ARG_RX_MONO_POOL:
+        p->flags |= ST_FLAG_RX_QUEUE_MONO_POOL;
+        break;
+      case ST_ARG_RX_SEPARATE_VIDEO_LCORE:
+        p->flags |= ST_FLAG_RX_SEPARATE_VIDEO_LCORE;
+        break;
+      case ST_ARG_TSC_PACING:
+        p->flags |= ST_FLAG_TSC_PACING;
+        break;
       case ST_ARG_USER_LCORES:
         app_args_parse_lcores(p, optarg);
         break;
@@ -303,7 +347,8 @@ int st_app_parse_args(struct st_app_context* ctx, struct st_init_params* p, int 
         p->data_quota_mbs_per_sch = atoi(optarg);
         break;
       case ST_ARG_SCH_SESSION_QUOTA: /* unit: 1080p tx */
-        p->data_quota_mbs_per_sch = atoi(optarg) * 2589 + 100;
+        p->data_quota_mbs_per_sch =
+            atoi(optarg) * st20_1080p59_yuv422_10bit_bandwidth_mps();
         break;
       case ST_ARG_P_TX_DST_MAC:
         app_args_parse_p_tx_mac(p, optarg);
@@ -333,6 +378,18 @@ int st_app_parse_args(struct st_app_context* ctx, struct st_init_params* p, int 
         else
           err("%s, unknow log level %s\n", __func__, optarg);
         app_set_log_level(p->log_level);
+        break;
+      case ST_ARG_NB_TX_DESC:
+        p->nb_tx_desc = atoi(optarg);
+        break;
+      case ST_ARG_NB_RX_DESC:
+        p->nb_rx_desc = atoi(optarg);
+        break;
+      case ST_ARG_DMA_DEV:
+        app_args_dma_dev(p, optarg);
+        break;
+      case ST_ARG_PCAPNG_DUMP:
+        ctx->pcapng_max_pkts = atoi(optarg);
         break;
       case '?':
         break;

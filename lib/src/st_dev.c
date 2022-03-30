@@ -18,6 +18,7 @@
 
 #include "st_arp.h"
 #include "st_cni.h"
+#include "st_dma.h"
 #include "st_log.h"
 #include "st_mcast.h"
 #include "st_ptp.h"
@@ -49,9 +50,11 @@ static void dev_eth_stat(struct st_main_impl* impl) {
       info("DEV(%d): Avr rate, tx: %" PRIu64 " Mb/s, rx: %" PRIu64
            " Mb/s, pkts, tx: %" PRIu64 ", rx: %" PRIu64 "\n",
            i, orate_m, irate_m, stats.opackets, stats.ipackets);
-      info("DEV(%d): Status: imissed %" PRIu64 " ierrors %" PRIu64 " oerrors %" PRIu64
-           " rx_nombuf %" PRIu64 "\n",
-           i, stats.imissed, stats.ierrors, stats.oerrors, stats.rx_nombuf);
+      if (stats.imissed || stats.ierrors || stats.oerrors || stats.rx_nombuf) {
+        info("DEV(%d): Status: imissed %" PRIu64 " ierrors %" PRIu64 " oerrors %" PRIu64
+             " rx_nombuf %" PRIu64 "\n",
+             i, stats.imissed, stats.ierrors, stats.oerrors, stats.rx_nombuf);
+      }
     }
   }
 }
@@ -69,6 +72,7 @@ static void dev_stat(struct st_main_impl* impl) {
   if (impl->tx_a_init) st_tx_audio_sessions_stat(impl);
   if (impl->tx_anc_init) st_tx_ancillary_sessions_stat(impl);
   st_rx_video_sessions_stat(impl);
+  st_dma_stat(impl);
   if (impl->rx_a_init) st_rx_audio_sessions_stat(impl);
   if (impl->rx_anc_init) st_rx_ancillary_sessions_stat(impl);
   if (p->stat_dump_cb_fn) p->stat_dump_cb_fn(p->priv);
@@ -112,7 +116,7 @@ static void* dev_stat_thread(void* arg) {
 
 static int dev_eal_init(struct st_init_params* p) {
   char* argv[ST_EAL_MAX_ARGS];
-  int argc, i, ret;
+  int argc, ret;
   int num_ports = p->num_ports;
   static bool eal_inited = false; /* eal cann't re-enter in one process */
   char port_params[ST_PORT_MAX][2 * ST_PORT_MAX_LEN];
@@ -132,7 +136,7 @@ static int dev_eal_init(struct st_init_params* p) {
 #endif
   argv[argc] = "--in-memory";
   argc++;
-  for (i = 0; i < num_ports; i++) {
+  for (int i = 0; i < num_ports; i++) {
     argv[argc] = "-a";
     argc++;
     port_param = port_params[i];
@@ -140,6 +144,15 @@ static int dev_eal_init(struct st_init_params* p) {
     snprintf(port_param, 2 * ST_PORT_MAX_LEN, "%s,max_burst_size=2048", p->port[i]);
     dbg("%s(%d), port_param: %s\n", __func__, i, port_param);
     argv[argc] = port_param;
+    argc++;
+  }
+
+  /* amend dma dev port */
+  dbg("%s, dma dev no %u\n", __func__, p->num_dma_dev_port);
+  for (int i = 0; i < p->num_dma_dev_port; i++) {
+    argv[argc] = "-a";
+    argc++;
+    argv[argc] = p->dma_dev_port[i];
     argc++;
   }
 
@@ -181,11 +194,12 @@ static int dev_eal_init(struct st_init_params* p) {
 
 static int dev_rx_runtime_queue_start(struct st_main_impl* impl, enum st_port port) {
   struct st_interface* inf = st_if(impl, port);
-  uint16_t q;
   int ret;
+  struct st_rx_queue* rx_queue;
 
-  for (q = 0; q < inf->max_rx_queues; q++) {
-    if (inf->rx_queues_active[q]) {
+  for (uint16_t q = 0; q < inf->max_rx_queues; q++) {
+    rx_queue = &inf->rx_queues[q];
+    if (rx_queue->active) {
       ret = rte_eth_dev_rx_queue_start(inf->port_id, q);
       if (ret < 0)
         err("%s(%d), start runtime rx queue %d fail %d\n", __func__, port, q, ret);
@@ -212,8 +226,8 @@ static int dev_flush_rx_queue(struct st_interface* inf, uint16_t queue) {
 }
 
 #define ST_SHAPER_PROFILE_ID 1
-#define ST_ROOT_NODE_ID 100
-#define ST_DEFAULT_NODE_ID 90
+#define ST_ROOT_NODE_ID 256
+#define ST_DEFAULT_NODE_ID 246
 
 static int dev_rl_init_root(struct st_main_impl* impl, enum st_port port,
                             uint32_t shaper_profile_id) {
@@ -323,8 +337,10 @@ static int dev_init_ratelimit(struct st_main_impl* impl, enum st_port port) {
     }
   }
 
+  struct st_tx_queue* tx_queue;
   for (int q = 0; q < inf->max_tx_queues; q++) {
-    uint64_t bps = inf->tx_queues_active[q] ? inf->tx_queues_bps[q] : 0;
+    tx_queue = &inf->tx_queues[q];
+    uint64_t bps = tx_queue->active ? tx_queue->bps : 0;
 
     if (!bps && (ST_PORT_VF == port_type))
       bps = 1024 * 1024 * 1024; /* VF require all q config with RL */
@@ -332,14 +348,14 @@ static int dev_init_ratelimit(struct st_main_impl* impl, enum st_port port) {
       bps = 1024 * 1024 * 1024; /* trigger detect in case all tx not config with rl */
 
     /* delete old queue node */
-    if (inf->tx_rl_shapers_mapping[q] >= 0) {
+    if (tx_queue->rl_shapers_mapping >= 0) {
       ret = rte_tm_node_delete(port_id, q, &error);
       if (ret < 0) {
         err("%s(%d), node %d delete fail %d(%s)\n", __func__, port, q, ret,
             error.message);
         return ret;
       }
-      inf->tx_rl_shapers_mapping[q] = -1;
+      tx_queue->rl_shapers_mapping = -1;
     }
 
     if (bps) {
@@ -357,14 +373,17 @@ static int dev_init_ratelimit(struct st_main_impl* impl, enum st_port port) {
         err("%s(%d), q %d add fail %d(%s)\n", __func__, port, q, ret, error.message);
         return ret;
       }
-      inf->tx_rl_shapers_mapping[q] = shaper->idx;
+      tx_queue->rl_shapers_mapping = shaper->idx;
       info("%s(%d), q %d link to shaper id %d\n", __func__, port, q,
            shaper->shaper_profile_id);
     }
   }
 
   /* TODO: VF requires to stop the port first */
-  if (ST_PORT_VF == port_type) rte_eth_dev_stop(port_id);
+  if (ST_PORT_VF == port_type) {
+    st_cni_stop(impl);
+    rte_eth_dev_stop(port_id);
+  }
 
   ret = rte_tm_hierarchy_commit(port_id, 1, &error);
   if (ret < 0) err("%s(%d), commit error (%d)%s\n", __func__, port, ret, error.message);
@@ -374,6 +393,7 @@ static int dev_init_ratelimit(struct st_main_impl* impl, enum st_port port) {
     /* start runtime rx queue again */
     if (inf->feature & ST_IF_FEATURE_RUNTIME_RX_QUEUE)
       dev_rx_runtime_queue_start(impl, port);
+    st_cni_start(impl);
   }
 
   dbg("%s(%d), succ\n", __func__, port);
@@ -381,7 +401,7 @@ static int dev_init_ratelimit(struct st_main_impl* impl, enum st_port port) {
 }
 
 static struct rte_flow* dev_rx_queue_create_flow(uint16_t port_id, uint16_t q,
-                                                 struct st_dev_flow* flow) {
+                                                 struct st_rx_flow* flow) {
   struct rte_flow_attr attr;
   struct rte_flow_item pattern[4];
   struct rte_flow_action action[2];
@@ -465,52 +485,24 @@ static struct rte_flow* dev_rx_queue_create_flow(uint16_t port_id, uint16_t q,
   return r_flow;
 }
 
-static int dev_free_queues(struct st_main_impl* impl) {
-  int num_ports = st_num_ports(impl);
-  struct rte_flow* flow;
-  struct rte_flow_error error;
-  int ret;
-  struct st_interface* inf;
-
-  for (int i = 0; i < num_ports; i++) {
-    inf = st_if(impl, i);
-
-    /* check if all queues are free */
-    for (uint16_t q = 0; q < inf->max_tx_queues; q++) {
-      if (inf->tx_queues_active[q]) {
-        warn("%s(%d), tx queue %d still active\n", __func__, i, q);
-      }
-    }
-    for (uint16_t q = 0; q < inf->max_rx_queues; q++) {
-      if (inf->rx_queues_active[q]) {
-        warn("%s(%d), rx queue %d still active\n", __func__, i, q);
-      }
-    }
-
-    for (uint16_t rx_q = 0; rx_q < inf->max_rx_queues; rx_q++) {
-      flow = inf->rx_queues_flow[rx_q];
-      if (flow) {
-        ret = rte_flow_destroy(st_port_id(impl, i), flow, &error);
-        if (ret < 0)
-          err("%s(%d), rte_flow_destroy fail for queue %d\n", __func__, i, rx_q);
-        inf->rx_queues_flow[rx_q] = NULL;
-      }
-    }
-  }
-
-  dbg("%s, succ\n", __func__);
-  return 0;
-}
-
 static int dev_free_port(struct st_main_impl* impl, enum st_port port) {
   int ret;
   uint16_t port_id = st_port_id(impl, port);
+  struct st_interface* inf = st_if(impl, port);
+
+  if (!(inf->status & ST_IF_STAT_PORT_STARTED)) {
+    info("%s(%d), port not started\n", __func__, port);
+    return 0;
+  }
 
   ret = rte_eth_dev_stop(port_id);
   if (ret < 0) err("%s(%d), rte_eth_dev_stop fail %d\n", __func__, port, ret);
 
   ret = rte_eth_dev_close(port_id);
   if (ret < 0) err("%s(%d), rte_eth_dev_close fail %d\n", __func__, port, ret);
+
+  inf->status &= ~ST_IF_STAT_PORT_STARTED;
+  inf->status &= ~ST_IF_STAT_PORT_CONFIGED;
 
   info("%s(%d), succ\n", __func__, port);
   return 0;
@@ -558,8 +550,13 @@ static int dev_start_timesync(struct st_main_impl* impl, enum st_port port) {
       return ret;
     }
     if (spec.tv_sec || spec.tv_nsec) {
-      info("%s(%d), tv_sec %" PRIu64 " tv_nsec %" PRIu64 ", i %d\n", __func__, port,
-           spec.tv_sec, spec.tv_nsec, i);
+      /* read and print time */
+      rte_eth_timesync_read_time(port_id, &spec);
+      struct tm t;
+      char date_time[64];
+      localtime_r(&spec.tv_sec, &t);
+      strftime(date_time, sizeof(date_time), "%Y-%m-%d %H:%M:%S", &t);
+      info("%s(%d), init ptp time %s, i %d\n", __func__, port, date_time, i);
       break;
     }
     dbg("%s(%d), tv_sec %" PRIu64 " tv_nsec %" PRIu64 ", i %d\n", __func__, port,
@@ -575,7 +572,6 @@ static int dev_start_timesync(struct st_main_impl* impl, enum st_port port) {
 }
 
 static const struct rte_eth_conf dev_port_conf = {
-    .rxmode = {.max_rx_pkt_len = RTE_ETHER_MAX_LEN},
     .txmode = {.offloads = DEV_TX_OFFLOAD_MULTI_SEGS}};
 
 static const struct rte_eth_txconf dev_tx_port_conf = {.tx_rs_thresh = 1,
@@ -584,8 +580,9 @@ static const struct rte_eth_rxconf dev_rx_port_conf = {.rx_free_thresh = 1,
                                                        .rx_deferred_start = 0};
 
 static int dev_config_port(struct st_main_impl* impl, enum st_port port) {
-  uint16_t nb_rx_desc = ST_DEV_RX_RING_SIZE, nb_tx_desc = ST_DEV_TX_RING_SIZE;
+  uint16_t nb_rx_desc = ST_DEV_RX_DESC, nb_tx_desc = ST_DEV_TX_DESC;
   int ret;
+  struct st_init_params* p = st_get_user_params(impl);
   uint16_t port_id = st_port_id(impl, port);
   struct st_interface* inf = st_if(impl, port);
   uint16_t nb_rx_q = inf->max_rx_queues, nb_tx_q = inf->max_tx_queues;
@@ -599,6 +596,10 @@ static int dev_config_port(struct st_main_impl* impl, enum st_port port) {
     err("%s(%d), rte_eth_dev_configure fail %d\n", __func__, port, ret);
     return ret;
   }
+
+  /* apply if user has rx_tx_desc config */
+  if (p->nb_tx_desc) nb_tx_desc = p->nb_tx_desc;
+  if (p->nb_rx_desc) nb_rx_desc = p->nb_rx_desc;
 
   ret = rte_eth_dev_adjust_nb_rx_tx_desc(port_id, &nb_rx_desc, &nb_tx_desc);
   if (ret < 0) {
@@ -632,6 +633,8 @@ static int dev_config_port(struct st_main_impl* impl, enum st_port port) {
     return -EIO;
   }
 
+  inf->status |= ST_IF_STAT_PORT_CONFIGED;
+
   info("%s(%d), tx_q(%d with %d desc) rx_q (%d with %d desc)\n", __func__, port, nb_tx_q,
        nb_tx_desc, nb_rx_q, nb_rx_desc);
   return 0;
@@ -651,9 +654,12 @@ static int dev_start_port(struct st_main_impl* impl, enum st_port port) {
   if (inf->feature & ST_IF_FEATURE_RUNTIME_RX_QUEUE) rx_deferred_start = 1;
   rx_port_conf.rx_deferred_start = rx_deferred_start;
 
+  struct rte_mempool* mbuf_pool;
   for (uint16_t q = 0; q < nb_rx_q; q++) {
+    mbuf_pool = inf->rx_queues[q].mbuf_pool ? inf->rx_queues[q].mbuf_pool
+                                            : st_get_mempool(impl, port);
     ret = rte_eth_rx_queue_setup(port_id, q, nb_rx_desc, socket_id, &rx_port_conf,
-                                 st_get_mempool(impl, port));
+                                 mbuf_pool);
     if (ret < 0) {
       err("%s(%d), rte_eth_rx_queue_setup fail %d for queue %d\n", __func__, port, ret,
           q);
@@ -675,6 +681,7 @@ static int dev_start_port(struct st_main_impl* impl, enum st_port port) {
     err("%s(%d), rte_eth_dev_start fail %d\n", __func__, port, ret);
     return ret;
   }
+  inf->status |= ST_IF_STAT_PORT_STARTED;
 
   if (st_get_user_params(impl)->flags & ST_FLAG_NIC_RX_PROMISCUOUS) {
     /* Enable RX in promiscuous mode if it's required. */
@@ -721,23 +728,26 @@ static int dev_reset_port(struct st_main_impl* impl, enum st_port port) {
   st_cni_start(impl);
 
   /* clear rl status */
-  for (int q = 0; q < inf->max_tx_queues; q++)
-    inf->tx_rl_shapers_mapping[q] = -1; /* init to invalid */
+  for (int q = 0; q < inf->max_tx_queues; q++) {
+    inf->tx_queues[q].rl_shapers_mapping = -1; /* init to invalid */
+  }
   inf->tx_rl_root_active = false;
   struct st_rl_shaper* shapers = &inf->tx_rl_shapers[0];
   memset(shapers, 0, sizeof(*shapers) * ST_MAX_RL_ITEMS);
 
   /* restore rte flow */
+  struct st_rx_queue* rx_queue;
   for (uint16_t rx_q = 0; rx_q < inf->max_rx_queues; rx_q++) {
-    flow = inf->rx_queues_flow[rx_q];
+    rx_queue = &inf->rx_queues[rx_q];
+    flow = rx_queue->flow;
     if (flow) {
-      flow = dev_rx_queue_create_flow(port_id, rx_q, &inf->rx_dev_flows[rx_q]);
+      flow = dev_rx_queue_create_flow(port_id, rx_q, &rx_queue->st_flow);
       if (!flow) {
         err("%s(%d), dev_rx_queue_create_flow fail for q %d\n", __func__, port, rx_q);
         rte_atomic32_set(&impl->dev_in_reset, 0);
         return -EIO;
       }
-      inf->rx_queues_flow[rx_q] = flow;
+      rx_queue->flow = flow;
     }
   }
   /* restore mcast */
@@ -804,13 +814,13 @@ int st_dev_get_lcore(struct st_main_impl* impl, unsigned int* lcore) {
     if ((cur_lcore < RTE_MAX_LCORE) &&
         rte_lcore_to_socket_id(cur_lcore) == st_socket_id(impl, ST_PORT_P)) {
       if (!lcore_shm->lcores_active[cur_lcore]) {
-        dbg("%s, available lcore %d\n", __func__, cur_lcore);
         *lcore = cur_lcore;
         lcore_shm->lcores_active[cur_lcore] = true;
         lcore_shm->used++;
         rte_atomic32_inc(&impl->lcore_cnt);
         impl->local_lcores_active[cur_lcore] = true;
         ret = dev_filelock_unlock(impl);
+        info("%s, available lcore %d\n", __func__, cur_lcore);
         if (ret < 0) {
           err("%s, dev_filelock_unlock fail\n", __func__);
           return ret;
@@ -853,6 +863,7 @@ int st_dev_put_lcore(struct st_main_impl* impl, unsigned int lcore) {
   rte_atomic32_dec(&impl->lcore_cnt);
   impl->local_lcores_active[lcore] = false;
   ret = dev_filelock_unlock(impl);
+  info("%s, lcore %d\n", __func__, lcore);
   if (ret < 0) {
     err("%s, dev_filelock_unlock fail\n", __func__);
     return ret;
@@ -996,57 +1007,122 @@ err_unlock:
   return ret;
 }
 
-/* WA: assign dummy flow to the idle rx queue */
-static int dev_config_dynamic_rx_queue(struct st_main_impl* impl) {
-  int num_ports = st_num_ports(impl);
-  struct rte_flow* flow;
-  struct st_dev_flow dummy_flow;
-  struct st_interface* inf;
-
-  memset(&dummy_flow, 0xff, sizeof(dummy_flow));
-  inet_pton(AF_INET, "192.168.30.188", dummy_flow.dip_addr);
-  inet_pton(AF_INET, "192.168.30.189", dummy_flow.sip_addr);
-  dummy_flow.port_flow = true;
-
-  for (int i = 0; i < num_ports; i++) {
-    inf = st_if(impl, i);
-
-    /* no action if it's capable rx runtime queue */
-    if (inf->feature & ST_IF_FEATURE_RUNTIME_RX_QUEUE) continue;
-
-    for (uint16_t rx_q = 0; rx_q < inf->max_rx_queues; rx_q++) {
-      if (rx_q == 0) continue; /* cni rx queue */
-      if (!inf->rx_queues_flow[rx_q]) {
-        dummy_flow.src_port = 12345 + rx_q;
-        dummy_flow.dst_port = dummy_flow.src_port;
-        flow = dev_rx_queue_create_flow(st_port_id(impl, i), rx_q, &dummy_flow);
-        if (!flow) {
-          dev_free_queues(impl);
-          err("%s(%d), dev_rx_queue_create_flow fail for q %d\n", __func__, i, rx_q);
-          return -EIO;
-        }
-        inf->rx_queues_flow[rx_q] = flow;
-        inf->rx_dev_flows[rx_q] = dummy_flow;
-      }
-    }
-  }
-
-  dbg("%s, succ\n", __func__);
-  return 0;
-}
-
-static int inf_free_rx_queue_flow(struct st_interface* inf, uint16_t queue_id) {
+static int dev_if_free_rx_queue_flow(struct st_interface* inf,
+                                     struct st_rx_queue* rx_queue) {
   int ret;
   struct rte_flow* flow;
   struct rte_flow_error error;
 
-  flow = inf->rx_queues_flow[queue_id];
+  flow = rx_queue->flow;
   if (flow) {
     ret = rte_flow_destroy(inf->port_id, flow, &error);
     if (ret < 0)
-      err("%s(%d), rte_flow_destroy fail for queue %d\n", __func__, inf->port, queue_id);
-    inf->rx_queues_flow[queue_id] = NULL;
+      err("%s(%d), rte_flow_destroy fail for queue %d\n", __func__, inf->port,
+          rx_queue->queue_id);
+    rx_queue->flow = NULL;
   }
+
+  return 0;
+}
+
+static int dev_if_uinit_rx_queues(struct st_interface* inf) {
+  enum st_port port = inf->port;
+  struct st_rx_queue* rx_queue;
+  struct rte_flow_error error;
+
+  if (!inf->rx_queues) return 0;
+
+  for (uint16_t q = 0; q < inf->max_rx_queues; q++) {
+    rx_queue = &inf->rx_queues[q];
+    if (rx_queue->active) {
+      warn("%s(%d), rx queue %d still active\n", __func__, port, q);
+    }
+    if (rx_queue->flow) {
+      dbg("%s(%d), rte flow %d still active\n", __func__, port, q);
+      rte_flow_destroy(inf->port_id, rx_queue->flow, &error);
+      rx_queue->flow = NULL;
+    }
+    if (rx_queue->mbuf_pool) {
+      st_mempool_free(rx_queue->mbuf_pool);
+      rx_queue->mbuf_pool = NULL;
+    }
+  }
+
+  st_rte_free(inf->rx_queues);
+  inf->rx_queues = NULL;
+
+  return 0;
+}
+
+static int dev_if_init_rx_queues(struct st_main_impl* impl, struct st_interface* inf) {
+  struct st_rx_queue* rx_queues =
+      st_rte_zmalloc_socket(sizeof(*rx_queues) * inf->max_rx_queues, inf->socket_id);
+  if (!rx_queues) {
+    err("%s(%d), rx_queues not alloc\n", __func__, inf->port);
+    return -ENOMEM;
+  }
+
+  struct st_init_params* p = st_get_user_params(impl);
+  if (!(p->flags & ST_FLAG_RX_QUEUE_MONO_POOL)) {
+    for (uint16_t q = 0; q < inf->max_rx_queues; q++) {
+      rx_queues[q].queue_id = q;
+      /* Creates mempool to hold the rx queue mbufs. */
+      unsigned int mbuf_elements = inf->nb_rx_desc + 1024;
+      char pool_name[ST_MAX_NAME_LEN];
+      snprintf(pool_name, ST_MAX_NAME_LEN, "ST%d_RX%d_MBUF_POOL", inf->port, q);
+      struct rte_mempool* mbuf_pool = NULL;
+      if (q == 0)
+        mbuf_pool = st_mempool_create_common(impl, inf->port, pool_name, mbuf_elements);
+      else
+        mbuf_pool = st_mempool_create(impl, inf->port, pool_name, mbuf_elements,
+                                      ST_MBUF_CACHE_SIZE, sizeof(struct st_muf_priv_data),
+                                      ST_PKT_MAX_ETHER_BYTES);
+      if (!mbuf_pool) {
+        dev_if_uinit_rx_queues(inf);
+        return -ENOMEM;
+      }
+      rx_queues[q].mbuf_pool = mbuf_pool;
+    }
+  }
+  inf->rx_queues = rx_queues;
+  pthread_mutex_init(&inf->rx_queues_mutex, NULL);
+
+  return 0;
+}
+
+static int dev_if_uinit_tx_queues(struct st_interface* inf) {
+  enum st_port port = inf->port;
+  struct st_tx_queue* tx_queue;
+
+  if (!inf->tx_queues) return 0;
+
+  for (uint16_t q = 0; q < inf->max_tx_queues; q++) {
+    tx_queue = &inf->tx_queues[q];
+    if (tx_queue->active) {
+      warn("%s(%d), tx_queuequeue %d still active\n", __func__, port, q);
+    }
+  }
+
+  st_rte_free(inf->tx_queues);
+  inf->tx_queues = NULL;
+
+  return 0;
+}
+
+static int dev_if_init_tx_queues(struct st_main_impl* impl, struct st_interface* inf) {
+  struct st_tx_queue* tx_queues =
+      st_rte_zmalloc_socket(sizeof(*tx_queues) * inf->max_tx_queues, inf->socket_id);
+  if (!tx_queues) {
+    err("%s(%d), tx_queues not alloc\n", __func__, inf->port);
+    return -ENOMEM;
+  }
+
+  for (uint16_t q = 0; q < inf->max_tx_queues; q++) {
+    tx_queues[q].queue_id = q;
+    tx_queues[q].rl_shapers_mapping = -1;
+  }
+  inf->tx_queues = tx_queues;
+  pthread_mutex_init(&inf->tx_queues_mutex, NULL);
 
   return 0;
 }
@@ -1085,32 +1161,41 @@ int st_dev_request_tx_queue(struct st_main_impl* impl, enum st_port port,
                             uint16_t* queue_id, uint64_t bytes_per_sec) {
   struct st_interface* inf = st_if(impl, port);
   uint16_t q;
+  struct st_tx_queue* tx_queue;
 
+  pthread_mutex_lock(&inf->tx_queues_mutex);
   for (q = 0; q < inf->max_tx_queues; q++) {
-    if (!inf->tx_queues_active[q]) {
-      inf->tx_queues_active[q] = true;
-      inf->tx_queues_bps[q] = bytes_per_sec;
+    tx_queue = &inf->tx_queues[q];
+    if (!tx_queue->active) {
+      tx_queue->active = true;
+      tx_queue->bps = bytes_per_sec;
       *queue_id = q;
+      pthread_mutex_unlock(&inf->tx_queues_mutex);
       info("%s(%d), q %d with speed %" PRIu64 "\n", __func__, port, q, bytes_per_sec);
       return 0;
     }
   }
+  pthread_mutex_unlock(&inf->tx_queues_mutex);
 
   err("%s(%d), fail to find free tx queue\n", __func__, port);
   return -ENOMEM;
 }
 
 int st_dev_request_rx_queue(struct st_main_impl* impl, enum st_port port,
-                            uint16_t* queue_id, struct st_dev_flow* flow) {
+                            uint16_t* queue_id, struct st_rx_flow* flow) {
   struct st_interface* inf = st_if(impl, port);
   uint16_t port_id = inf->port_id;
   uint16_t q;
   int ret;
+  struct st_rx_queue* rx_queue;
 
+  pthread_mutex_lock(&inf->rx_queues_mutex);
   for (q = 0; q < inf->max_rx_queues; q++) {
-    if (inf->rx_queues_active[q]) continue;
+    rx_queue = &inf->rx_queues[q];
+    if (rx_queue->active) continue;
 
-    inf_free_rx_queue_flow(inf, q);
+    /* free the dummmy flow if any */
+    dev_if_free_rx_queue_flow(inf, rx_queue);
 
     if (flow) {
       struct rte_flow* r_flow;
@@ -1118,28 +1203,31 @@ int st_dev_request_rx_queue(struct st_main_impl* impl, enum st_port port,
       r_flow = dev_rx_queue_create_flow(port_id, q, flow);
       if (!r_flow) {
         err("%s(%d), create flow fail for queue %d\n", __func__, port, q);
+        pthread_mutex_unlock(&inf->rx_queues_mutex);
         return -EIO;
       }
 
-      inf->rx_queues_flow[q] = r_flow;
-      inf->rx_dev_flows[q] = *flow;
+      rx_queue->flow = r_flow;
+      rx_queue->st_flow = *flow;
     }
 
     if (inf->feature & ST_IF_FEATURE_RUNTIME_RX_QUEUE) {
       ret = rte_eth_dev_rx_queue_start(inf->port_id, q);
       if (ret < 0) {
         err("%s(%d), start runtime rx queue %d fail %d\n", __func__, port, q, ret);
+        pthread_mutex_unlock(&inf->rx_queues_mutex);
         return -EIO;
       }
     }
+    rx_queue->active = true;
+    pthread_mutex_unlock(&inf->rx_queues_mutex);
 
     dev_flush_rx_queue(inf, q);
-
-    inf->rx_queues_active[q] = true;
     *queue_id = q;
     info("%s(%d), q %d\n", __func__, port, q);
     return 0;
   }
+  pthread_mutex_unlock(&inf->rx_queues_mutex);
 
   err("%s(%d), fail to find free rx queue\n", __func__, port);
   return -ENOMEM;
@@ -1148,13 +1236,15 @@ int st_dev_request_rx_queue(struct st_main_impl* impl, enum st_port port,
 int st_dev_flush_tx_queue(struct st_main_impl* impl, enum st_port port,
                           uint16_t queue_id) {
   struct st_interface* inf = st_if(impl, port);
+  struct st_tx_queue* tx_queue;
 
   if (queue_id >= inf->max_tx_queues) {
     err("%s(%d), invalid queue %d\n", __func__, port, queue_id);
     return -EIO;
   }
 
-  if (!inf->tx_queues_active[queue_id]) {
+  tx_queue = &inf->tx_queues[queue_id];
+  if (!tx_queue->active) {
     err("%s(%d), queue %d is not allocated\n", __func__, port, queue_id);
     return -EIO;
   }
@@ -1173,18 +1263,20 @@ int st_dev_flush_tx_queue(struct st_main_impl* impl, enum st_port port,
 int st_dev_free_tx_queue(struct st_main_impl* impl, enum st_port port,
                          uint16_t queue_id) {
   struct st_interface* inf = st_if(impl, port);
+  struct st_tx_queue* tx_queue;
 
   if (queue_id >= inf->max_tx_queues) {
     err("%s(%d), invalid queue %d\n", __func__, port, queue_id);
     return -EIO;
   }
 
-  if (!inf->tx_queues_active[queue_id]) {
+  tx_queue = &inf->tx_queues[queue_id];
+  if (!tx_queue->active) {
     err("%s(%d), queue %d is not allocated\n", __func__, port, queue_id);
     return -EIO;
   }
 
-  inf->tx_queues_active[queue_id] = false;
+  tx_queue->active = false;
   info("%s(%d), q %d\n", __func__, port, queue_id);
   return 0;
 }
@@ -1193,18 +1285,20 @@ int st_dev_free_rx_queue(struct st_main_impl* impl, enum st_port port,
                          uint16_t queue_id) {
   struct st_interface* inf = st_if(impl, port);
   int ret;
+  struct st_rx_queue* rx_queue;
 
   if (queue_id >= inf->max_rx_queues) {
     err("%s(%d), invalid queue %d\n", __func__, port, queue_id);
     return -EIO;
   }
 
-  if (!inf->rx_queues_active[queue_id]) {
+  rx_queue = &inf->rx_queues[queue_id];
+  if (!rx_queue->active) {
     err("%s(%d), queue %d is not allocated\n", __func__, port, queue_id);
     return -EIO;
   }
 
-  inf_free_rx_queue_flow(inf, queue_id);
+  dev_if_free_rx_queue_flow(inf, rx_queue);
 
   if (inf->feature & ST_IF_FEATURE_RUNTIME_RX_QUEUE) {
     ret = rte_eth_dev_rx_queue_stop(inf->port_id, queue_id);
@@ -1212,13 +1306,14 @@ int st_dev_free_rx_queue(struct st_main_impl* impl, enum st_port port,
       err("%s(%d), stop runtime rx queue %d fail %d\n", __func__, port, queue_id, ret);
   }
 
-  inf->rx_queues_active[queue_id] = false;
+  rx_queue->active = false;
   info("%s(%d), q %d\n", __func__, port, queue_id);
   return 0;
 }
 
 int st_dev_put_sch(struct st_sch_impl* sch, int quota_mbs) {
-  int sidx = sch->idx;
+  int sidx = sch->idx, ret;
+  struct st_main_impl* impl = sch->parnet;
 
   st_sch_free_quota(sch, quota_mbs);
 
@@ -1228,7 +1323,16 @@ int st_dev_put_sch(struct st_sch_impl* sch, int quota_mbs) {
       err("%s(%d), still has %d data_quota_mbs_total\n", __func__, sidx,
           sch->data_quota_mbs_total);
     /* stop and free sch */
-    st_sch_stop(sch);
+    ret = st_sch_stop(sch);
+    if (ret < 0) {
+      err("%s(%d), st_sch_stop fail %d\n", __func__, sidx, ret);
+    } else {
+      /* put the sch lcore if dev is started */
+      if (rte_atomic32_read(&impl->started)) {
+        rte_eal_wait_lcore(sch->lcore);
+        st_dev_put_lcore(impl, sch->lcore);
+      }
+    }
     st_sch_free(sch);
   }
 
@@ -1254,12 +1358,14 @@ int st_dev_start_sch(struct st_main_impl* impl, struct st_sch_impl* sch) {
   return 0;
 }
 
-struct st_sch_impl* st_dev_get_sch(struct st_main_impl* impl, int quota_mbs) {
+struct st_sch_impl* st_dev_get_sch(struct st_main_impl* impl, int quota_mbs,
+                                   enum st_sch_type type) {
   int ret, idx;
   struct st_sch_impl* sch;
 
   for (idx = 0; idx < ST_MAX_SCH_NUM; idx++) {
     sch = st_get_sch(impl, idx);
+    if (sch->type != type) continue;
     ret = st_sch_add_quota(sch, quota_mbs);
     if (ret >= 0) {
       /* find one sch capable with quota */
@@ -1270,7 +1376,7 @@ struct st_sch_impl* st_dev_get_sch(struct st_main_impl* impl, int quota_mbs) {
   }
 
   /* no quota, try to create one */
-  sch = st_sch_request(impl);
+  sch = st_sch_request(impl, type);
   if (!sch) {
     err("%s, no free sch\n", __func__);
     return NULL;
@@ -1308,11 +1414,16 @@ int st_dev_create(struct st_main_impl* impl) {
 
   for (int i = 0; i < num_ports; i++) {
     inf = st_if(impl, i);
-    ret = dev_config_port(impl, i);
-    if (ret < 0) {
-      err("%s(%d), dev_config_port fail %d\n", __func__, i, ret);
-      goto err_exit;
+
+#if RTE_VERSION >= RTE_VERSION_NUM(21, 11, 0, 0)
+    /* DPDK 21.11 support start time sync before rte_eth_dev_start */
+    if ((st_has_ptp_service(impl) || st_has_ebu(impl)) &&
+        (st_port_type(impl, i) == ST_PORT_PF)) {
+      ret = dev_start_timesync(impl, i);
+      if (ret >= 0) inf->feature |= ST_IF_FEATURE_TIMESYNC;
     }
+#endif
+
     ret = dev_start_port(impl, i);
     if (ret < 0) {
       err("%s(%d), dev_start_port fail %d\n", __func__, i, ret);
@@ -1323,22 +1434,25 @@ int st_dev_create(struct st_main_impl* impl) {
       err("%s(%d), dev_detect_link fail %d\n", __func__, i, ret);
       goto err_exit;
     }
-    if (st_has_ptp_service(impl) && st_port_type(impl, i) == ST_PORT_PF) {
+    /* try to start time sync after rte_eth_dev_start */
+    if ((st_has_ptp_service(impl) || st_has_ebu(impl)) &&
+        (st_port_type(impl, i) == ST_PORT_PF) &&
+        !(inf->feature & ST_IF_FEATURE_TIMESYNC)) {
       ret = dev_start_timesync(impl, i);
       if (ret >= 0) inf->feature |= ST_IF_FEATURE_TIMESYNC;
     }
-  }
-
-  ret = dev_config_dynamic_rx_queue(impl);
-  if (ret < 0) {
-    err("%s, dev_config_dynamic_rx_queue fail %d\n", __func__, ret);
-    goto err_exit;
+    info("%s(%d), feature 0x%x\n", __func__, i, inf->feature);
   }
 
   /* init sch with one lcore scheduler */
-  int data_quota_mbs_per_sch = st_get_user_params(impl)->data_quota_mbs_per_sch;
-  if (!data_quota_mbs_per_sch)
-    data_quota_mbs_per_sch = 10 * 2589 + 100; /* default: max 10 sessions 1080p@60fps */
+  int data_quota_mbs_per_sch;
+  if (st_has_user_quota(impl)) {
+    data_quota_mbs_per_sch = st_get_user_params(impl)->data_quota_mbs_per_sch;
+  } else {
+    /* default: max ST_QUOTA_TX1080P_PER_SCH sessions 1080p@60fps for tx */
+    data_quota_mbs_per_sch =
+        ST_QUOTA_TX1080P_PER_SCH * st20_1080p59_yuv422_10bit_bandwidth_mps();
+  }
   ret = st_sch_init(impl, data_quota_mbs_per_sch);
   if (ret < 0) {
     err("%s, st_sch_init fail %d\n", __func__, ret);
@@ -1346,11 +1460,16 @@ int st_dev_create(struct st_main_impl* impl) {
   }
 
   /* create system sch */
-  impl->main_sch = st_dev_get_sch(impl, 0);
+  impl->main_sch = st_dev_get_sch(impl, 0, ST_SCH_TYPE_DEFAULT);
   if (ret < 0) {
-    err("%s, st_dev_get_sch fail\n", __func__);
+    err("%s, get sch fail\n", __func__);
     goto err_exit;
   }
+
+  if (p->flags & ST_FLAG_TSC_PACING)
+    impl->tx_pacing_way = ST21_TX_PACING_WAY_TSC;
+  else
+    impl->tx_pacing_way = ST21_TX_PACING_WAY_AUTO;
 
   /* rte_eth_stats_get fail in alram context for VF, move it to thread */
   pthread_mutex_init(&impl->stat_wake_mutex, NULL);
@@ -1387,7 +1506,6 @@ int st_dev_free(struct st_main_impl* impl) {
 
   st_dev_put_sch(impl->main_sch, 0);
 
-  dev_free_queues(impl);
   dev_uinit_lcores(impl);
 
   for (i = 0; i < num_ports; i++) {
@@ -1535,7 +1653,7 @@ int st_dev_dst_ip_mac(struct st_main_impl* impl, uint8_t dip[ST_IP_ADDR_LEN],
 }
 
 int st_dev_if_uinit(struct st_main_impl* impl) {
-  int num_ports = st_num_ports(impl);
+  int num_ports = st_num_ports(impl), ret;
   struct st_interface* inf;
 
   for (int i = 0; i < num_ports; i++) {
@@ -1546,31 +1664,9 @@ int st_dev_if_uinit(struct st_main_impl* impl) {
       inf->pad = NULL;
     }
 
-    if (inf->tx_queues_bps) {
-      st_rte_free(inf->tx_queues_bps);
-      inf->tx_queues_bps = NULL;
-    }
-    if (inf->tx_queues_active) {
-      st_rte_free(inf->tx_queues_active);
-      inf->tx_queues_active = NULL;
-    }
-    if (inf->tx_rl_shapers_mapping) {
-      st_rte_free(inf->tx_rl_shapers_mapping);
-      inf->tx_rl_shapers_mapping = NULL;
-    }
+    dev_if_uinit_tx_queues(inf);
+    dev_if_uinit_rx_queues(inf);
 
-    if (inf->rx_queues_flow) {
-      st_rte_free(inf->rx_queues_flow);
-      inf->rx_queues_flow = NULL;
-    }
-    if (inf->rx_dev_flows) {
-      st_rte_free(inf->rx_dev_flows);
-      inf->rx_dev_flows = NULL;
-    }
-    if (inf->rx_queues_active) {
-      st_rte_free(inf->rx_queues_active);
-      inf->rx_queues_active = NULL;
-    }
     if (inf->mcast_mac_lists) {
       warn("%s(%d), mcast_mac_lists still active\n", __func__, i);
       free(inf->mcast_mac_lists);
@@ -1578,11 +1674,8 @@ int st_dev_if_uinit(struct st_main_impl* impl) {
     }
 
     if (inf->mbuf_pool) {
-      unsigned int in_use_count = rte_mempool_in_use_count(inf->mbuf_pool);
-      if (in_use_count)
-        warn("%s(%d), still has %d mbuf in mempool\n", __func__, i, in_use_count);
-      rte_mempool_free(inf->mbuf_pool);
-      inf->mbuf_pool = NULL;
+      ret = st_mempool_free(inf->mbuf_pool);
+      if (ret >= 0) inf->mbuf_pool = NULL;
     }
   }
 
@@ -1592,7 +1685,6 @@ int st_dev_if_uinit(struct st_main_impl* impl) {
 int st_dev_if_init(struct st_main_impl* impl) {
   int num_ports = st_num_ports(impl);
   struct st_init_params* p = st_get_user_params(impl);
-  int soc_id;
   uint16_t port_id;
   enum st_port_type port_type;
   char* port;
@@ -1602,7 +1694,6 @@ int st_dev_if_init(struct st_main_impl* impl) {
 
   for (int i = 0; i < num_ports; i++) {
     port = p->port[i];
-    soc_id = st_socket_id(impl, i);
     ret = rte_eth_dev_get_port_by_name(port, &port_id);
     if (ret < 0) {
       err("%s, failed to locate %s. Please run nicctl.sh\n", __func__, port);
@@ -1628,19 +1719,26 @@ int st_dev_if_init(struct st_main_impl* impl) {
       inf->ptp_get_time_fn = ptp_from_real_time;
 
     /* set max tx/rx queues */
-    inf->max_tx_queues = impl->tx_sessions_cnt_max + 4; /* ptp, kni, arp, mcast */
-    inf->max_rx_queues = impl->rx_sessions_cnt_max + 2; /* ptp and kni */
+    inf->max_tx_queues = impl->tx_sessions_cnt_max + 2; /* arp, mcast */
+    inf->max_rx_queues = impl->rx_sessions_cnt_max + 1; /* cni */
+    if (st_has_ptp_service(impl)) {
+      inf->max_tx_queues++;
+      inf->max_rx_queues++;
+    }
+#ifdef ST_HAS_KNI
+    inf->max_tx_queues++; /* kni tx queue */
+#endif
 
-    /* WA: when using VF, num_queue_pairs will be set as the max of tx/rx */
-    if (port_type == ST_PORT_VF)
-      inf->max_rx_queues = inf->max_tx_queues =
-          RTE_MAX(inf->max_rx_queues, inf->max_tx_queues);
+    /* when using VF, num_queue_pairs will be set as the max of tx/rx */
+    if (port_type == ST_PORT_VF) {
+      inf->max_tx_queues = RTE_MAX(inf->max_rx_queues, inf->max_tx_queues);
+      inf->max_rx_queues = inf->max_tx_queues;
+    }
 
     if (dev_info.dev_capa & RTE_ETH_DEV_CAPA_RUNTIME_RX_QUEUE_SETUP)
       inf->feature |= ST_IF_FEATURE_RUNTIME_RX_QUEUE;
 
-    if (st_get_user_params(impl)->flags & ST_FLAG_RX_VIDEO_EBU &&
-        dev_info.rx_offload_capa & DEV_RX_OFFLOAD_TIMESTAMP) {
+    if (st_has_ebu(impl) && (dev_info.rx_offload_capa & DEV_RX_OFFLOAD_TIMESTAMP)) {
       if (!impl->dynfield_offset) {
         ret = rte_mbuf_dyn_rx_timestamp_register(&impl->dynfield_offset, NULL);
         if (ret < 0) {
@@ -1653,68 +1751,36 @@ int st_dev_if_init(struct st_main_impl* impl) {
       inf->feature |= ST_IF_FEATURE_RX_OFFLOAD_TIMESTAMP;
     }
 
-    /* Creates a new mempool in memory to hold the mbufs. */
-    unsigned int mbuf_elements = ST_MBUF_POOL_SIZE_10M * 3; /* for system */
-    /* append rx sessions */
-    mbuf_elements += impl->rx_sessions_cnt_max * (2 * ST_MBUF_POOL_SIZE_10M);
-    /* append tx sessions */
-    mbuf_elements += impl->tx_sessions_cnt_max * (2 * ST_MBUF_POOL_SIZE_10M);
+    ret = dev_config_port(impl, i);
+    if (ret < 0) {
+      err("%s(%d), dev_config_port fail %d\n", __func__, i, ret);
+      st_dev_if_uinit(impl);
+      return -EIO;
+    }
+
+    /* Creates a default mempool in memory to hold the system mbufs. */
+    unsigned int mbuf_elements = 1024;
+    if (p->flags & ST_FLAG_RX_QUEUE_MONO_POOL) {
+      /* append rx sessions */
+      mbuf_elements += inf->max_rx_queues * inf->nb_rx_desc;
+    }
     char pool_name[ST_MAX_NAME_LEN];
     snprintf(pool_name, ST_MAX_NAME_LEN, "ST%d_SYS_MBUF_POOL", i);
-    struct rte_mempool* mbuf_pool = rte_pktmbuf_pool_create_by_ops(
-        pool_name, mbuf_elements, ST_MBUF_CACHE_SIZE, sizeof(struct st_muf_priv_data),
-        ST_MBUF_SIZE, soc_id, "stack");
+    struct rte_mempool* mbuf_pool =
+        st_mempool_create_common(impl, i, pool_name, mbuf_elements);
     if (!mbuf_pool) {
-      err("%s(%d), mbuf_pool create fail\n", __func__, i);
       st_dev_if_uinit(impl);
       return -ENOMEM;
     }
-    info("%s(%d), mbuf_pool at %p size %dm\n", __func__, i, mbuf_pool,
-         mbuf_elements * ST_MBUF_SIZE / (1024 * 1024));
     inf->mbuf_pool = mbuf_pool;
 
-    inf->tx_queues_bps =
-        st_rte_zmalloc_socket(sizeof(*inf->tx_queues_bps) * inf->max_tx_queues, soc_id);
-    if (!inf->tx_queues_bps) {
-      err("%s(%d), tx_queues_bps not alloc\n", __func__, i);
+    ret = dev_if_init_tx_queues(impl, inf);
+    if (ret < 0) {
       st_dev_if_uinit(impl);
       return -ENOMEM;
     }
-    inf->tx_queues_active = st_rte_zmalloc_socket(
-        sizeof(*inf->tx_queues_active) * inf->max_tx_queues, soc_id);
-    if (!inf->tx_queues_active) {
-      err("%s(%d), tx_queues_bps not alloc\n", __func__, i);
-      st_dev_if_uinit(impl);
-      return -ENOMEM;
-    }
-    inf->tx_rl_shapers_mapping = st_rte_zmalloc_socket(
-        sizeof(*inf->tx_rl_shapers_mapping) * inf->max_tx_queues, soc_id);
-    if (!inf->tx_rl_shapers_mapping) {
-      err("%s(%d), tx_rl_shapers_mapping not alloc\n", __func__, i);
-      st_dev_if_uinit(impl);
-      return -ENOMEM;
-    }
-    for (int q = 0; q < inf->max_tx_queues; q++)
-      inf->tx_rl_shapers_mapping[q] = -1; /* init to invalid */
-
-    inf->rx_queues_flow =
-        st_rte_zmalloc_socket(sizeof(*inf->rx_queues_flow) * inf->max_rx_queues, soc_id);
-    if (!inf->rx_queues_flow) {
-      err("%s(%d), rx_queues_flow not alloc\n", __func__, i);
-      st_dev_if_uinit(impl);
-      return -ENOMEM;
-    }
-    inf->rx_dev_flows =
-        st_rte_zmalloc_socket(sizeof(*inf->rx_dev_flows) * inf->max_rx_queues, soc_id);
-    if (!inf->rx_dev_flows) {
-      err("%s(%d), rx_dev_flows not alloc\n", __func__, i);
-      st_dev_if_uinit(impl);
-      return -ENOMEM;
-    }
-    inf->rx_queues_active = st_rte_zmalloc_socket(
-        sizeof(*inf->rx_queues_active) * inf->max_rx_queues, soc_id);
-    if (!inf->rx_queues_active) {
-      err("%s(%d), rx_queues_active not alloc\n", __func__, i);
+    ret = dev_if_init_rx_queues(impl, inf);
+    if (ret < 0) {
       st_dev_if_uinit(impl);
       return -ENOMEM;
     }

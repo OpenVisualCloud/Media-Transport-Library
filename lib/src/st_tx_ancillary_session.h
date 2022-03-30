@@ -47,6 +47,6 @@ static inline void tx_ancillary_session_unlock(struct st_tx_ancillary_sessions_m
   rte_spinlock_unlock(&mgr->mutex[sidx]);
 }
 
-int tx_ancillary_session_rtp_pool_free(struct st_tx_ancillary_session_impl* s);
+int tx_ancillary_session_mempool_free(struct st_tx_ancillary_session_impl* s);
 
 #endif

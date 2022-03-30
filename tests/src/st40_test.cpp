@@ -173,13 +173,21 @@ static int rx_rtp_ready(void* priv) {
   void* useptr;
   void* mbuf;
   uint16_t len;
-  mbuf = st40_rx_get_mbuf((st40_rx_handle)ctx->handle, &useptr, &len);
-  if (ctx->check_md5) {
-    rx_handle_rtp(ctx, (struct st40_rfc8331_rtp_hdr*)useptr);
+
+  if (!ctx->handle) return -EIO;
+
+  while (1) {
+    mbuf = st40_rx_get_mbuf((st40_rx_handle)ctx->handle, &useptr, &len);
+    if (!mbuf) break; /* no mbuf */
+    if (ctx->check_md5) {
+      rx_handle_rtp(ctx, (struct st40_rfc8331_rtp_hdr*)useptr);
+    }
+    st40_rx_put_mbuf((st40_rx_handle)ctx->handle, mbuf);
+    ctx->fb_rec++;
   }
-  st40_rx_put_mbuf((st40_rx_handle)ctx->handle, mbuf);
-  ctx->fb_rec++;
+
   if (!ctx->start_time) ctx->start_time = st_test_get_monotonic_time();
+
   return 0;
 }
 
@@ -284,7 +292,8 @@ TEST(St40_rx, create_expect_fail_ring_sz) {
   expect_fail_test_rtp_ring_2(st40_rx, ring_size);
 }
 
-static void st40_tx_fps_test(enum st40_type type[], enum st_fps fps[], int sessions = 1) {
+static void st40_tx_fps_test(enum st40_type type[], enum st_fps fps[],
+                             enum st_test_level level, int sessions = 1) {
   auto ctx = (struct st_tests_context*)st_test_ctx();
   auto m_handle = ctx->handle;
   int ret;
@@ -295,6 +304,9 @@ static void st40_tx_fps_test(enum st40_type type[], enum st_fps fps[], int sessi
   std::vector<double> expect_framerate;
   std::vector<double> framerate;
   std::vector<std::thread> rtp_thread;
+
+  /* return if level small than gloabl */
+  if (level < ctx->level) return;
 
   test_ctx.resize(sessions);
   handle.resize(sessions);
@@ -346,7 +358,7 @@ static void st40_tx_fps_test(enum st40_type type[], enum st_fps fps[], int sessi
   EXPECT_GE(ret, 0);
 
   for (int i = 0; i < sessions; i++) {
-    EXPECT_TRUE(test_ctx[i]->fb_send > 0);
+    EXPECT_GT(test_ctx[i]->fb_send, 0);
     info("%s, session %d fb_send %d framerate %f\n", __func__, i, test_ctx[i]->fb_send,
          framerate[i]);
     EXPECT_NEAR(framerate[i], expect_framerate[i], expect_framerate[i] * 0.1);
@@ -356,13 +368,17 @@ static void st40_tx_fps_test(enum st40_type type[], enum st_fps fps[], int sessi
   }
 }
 
-static void st40_rx_fps_test(enum st40_type type[], enum st_fps fps[], int sessions = 1,
+static void st40_rx_fps_test(enum st40_type type[], enum st_fps fps[],
+                             enum st_test_level level, int sessions = 1,
                              bool check_md5 = false) {
   auto ctx = (struct st_tests_context*)st_test_ctx();
   auto m_handle = ctx->handle;
   int ret;
   struct st40_tx_ops ops_tx;
   struct st40_rx_ops ops_rx;
+
+  /* return if level small than gloabl */
+  if (level < ctx->level) return;
 
   if (ctx->para.num_ports != 2) {
     info("%s, dual port should be enabled for tx test, one for tx and one for rx\n",
@@ -442,7 +458,7 @@ static void st40_rx_fps_test(enum st40_type type[], enum st_fps fps[], int sessi
         } else {
           fb = test_ctx_tx[i]->frame_buf[frame];
         }
-        for (size_t s = 0; s < frame_size; s++) fb[s] = rand() % 0xFF;
+        st_test_rand_data(fb, frame_size, frame);
         unsigned char* result = test_ctx_tx[i]->md5s[frame];
         MD5((unsigned char*)fb, frame_size, result);
         test_md5_dump("st40_rx", result);
@@ -518,15 +534,17 @@ static void st40_rx_fps_test(enum st40_type type[], enum st_fps fps[], int sessi
   ret = st_stop(m_handle);
   EXPECT_GE(ret, 0);
   for (int i = 0; i < sessions; i++) {
-    EXPECT_TRUE(test_ctx_rx[i]->fb_rec > 0);
+    EXPECT_GT(test_ctx_rx[i]->fb_rec, 0);
     info("%s, session %d fb_rec %d framerate %f\n", __func__, i, test_ctx_rx[i]->fb_rec,
          framerate[i]);
     EXPECT_NEAR(framerate[i], expect_framerate[i], expect_framerate[i] * 0.1);
+    EXPECT_LE(test_ctx_rx[i]->fail_cnt, 2);
     ret = st40_tx_free(tx_handle[i]);
     EXPECT_GE(ret, 0);
     ret = st40_rx_free(rx_handle[i]);
     EXPECT_GE(ret, 0);
     if (check_md5) {
+      EXPECT_GT(test_ctx_rx[i]->check_md5_frame_cnt, 0);
       for (int frame = 0; frame < TEST_MD5_HIST_NUM; frame++) {
         if (test_ctx_tx[i]->frame_buf[frame])
           st_test_free(test_ctx_tx[i]->frame_buf[frame]);
@@ -542,71 +560,71 @@ static void st40_rx_fps_test(enum st40_type type[], enum st_fps fps[], int sessi
 TEST(St40_tx, frame_fps59_94_s1) {
   enum st40_type type[1] = {ST40_TYPE_FRAME_LEVEL};
   enum st_fps fps[1] = {ST_FPS_P59_94};
-  st40_tx_fps_test(type, fps);
+  st40_tx_fps_test(type, fps, ST_TEST_LEVEL_ALL);
 }
-TEST(St40_tx, frame_fps29_97_s1) {
+TEST(St40_tx, rtp_fps29_97_s1) {
   enum st40_type type[1] = {ST40_TYPE_RTP_LEVEL};
   enum st_fps fps[1] = {ST_FPS_P29_97};
-  st40_tx_fps_test(type, fps);
+  st40_tx_fps_test(type, fps, ST_TEST_LEVEL_ALL);
 }
 TEST(St40_tx, frame_fps50_s1) {
   enum st40_type type[1] = {ST40_TYPE_FRAME_LEVEL};
   enum st_fps fps[1] = {ST_FPS_P50};
-  st40_tx_fps_test(type, fps);
+  st40_tx_fps_test(type, fps, ST_TEST_LEVEL_ALL);
 }
-TEST(St40_tx, frame_fps59_94_s3) {
+TEST(St40_tx, mix_fps59_94_s3) {
   enum st40_type type[3] = {ST40_TYPE_FRAME_LEVEL, ST40_TYPE_RTP_LEVEL,
                             ST40_TYPE_RTP_LEVEL};
   enum st_fps fps[3] = {ST_FPS_P59_94, ST_FPS_P59_94, ST_FPS_P59_94};
-  st40_tx_fps_test(type, fps, 3);
+  st40_tx_fps_test(type, fps, ST_TEST_LEVEL_MANDATORY, 3);
 }
-TEST(St40_tx, frame_fps29_97_s3) {
+TEST(St40_tx, mix_fps29_97_s3) {
   enum st40_type type[3] = {ST40_TYPE_FRAME_LEVEL, ST40_TYPE_RTP_LEVEL,
                             ST40_TYPE_RTP_LEVEL};
   enum st_fps fps[3] = {ST_FPS_P29_97, ST_FPS_P29_97, ST_FPS_P29_97};
-  st40_tx_fps_test(type, fps, 3);
+  st40_tx_fps_test(type, fps, ST_TEST_LEVEL_MANDATORY, 3);
 }
-TEST(St40_tx, frame_fps50_s3) {
+TEST(St40_tx, rtp_fps50_s3) {
   enum st40_type type[3] = {ST40_TYPE_RTP_LEVEL, ST40_TYPE_RTP_LEVEL,
                             ST40_TYPE_RTP_LEVEL};
   enum st_fps fps[3] = {ST_FPS_P50, ST_FPS_P50, ST_FPS_P50};
-  st40_tx_fps_test(type, fps, 3);
+  st40_tx_fps_test(type, fps, ST_TEST_LEVEL_ALL, 3);
 }
 
-TEST(St40_tx, frame_fps50_fps29_97) {
+TEST(St40_tx, mix_fps50_fps29_97) {
   enum st40_type type[2] = {ST40_TYPE_FRAME_LEVEL, ST40_TYPE_RTP_LEVEL};
   enum st_fps fps[2] = {ST_FPS_P50, ST_FPS_P29_97};
-  st40_tx_fps_test(type, fps, 2);
+  st40_tx_fps_test(type, fps, ST_TEST_LEVEL_MANDATORY, 2);
 }
-TEST(St40_tx, frame_fps50_fps59_94) {
+TEST(St40_tx, mix_fps50_fps59_94) {
   enum st40_type type[2] = {ST40_TYPE_FRAME_LEVEL, ST40_TYPE_RTP_LEVEL};
   enum st_fps fps[2] = {ST_FPS_P50, ST_FPS_P59_94};
-  st40_tx_fps_test(type, fps, 2);
+  st40_tx_fps_test(type, fps, ST_TEST_LEVEL_MANDATORY, 2);
 }
 TEST(St40_tx, frame_fps29_97_fps59_94) {
   enum st40_type type[2] = {ST40_TYPE_FRAME_LEVEL, ST40_TYPE_FRAME_LEVEL};
   enum st_fps fps[2] = {ST_FPS_P29_97, ST_FPS_P59_94};
-  st40_tx_fps_test(type, fps, 2);
+  st40_tx_fps_test(type, fps, ST_TEST_LEVEL_ALL, 2);
 }
 TEST(St40_rx, frame_fps29_97_fps59_94) {
   enum st40_type type[2] = {ST40_TYPE_RTP_LEVEL, ST40_TYPE_RTP_LEVEL};
   enum st_fps fps[2] = {ST_FPS_P29_97, ST_FPS_P59_94};
-  st40_rx_fps_test(type, fps, 2);
+  st40_rx_fps_test(type, fps, ST_TEST_LEVEL_MANDATORY, 2);
 }
 TEST(St40_rx, frame_fps50_fps59_94) {
   enum st40_type type[2] = {ST40_TYPE_RTP_LEVEL, ST40_TYPE_FRAME_LEVEL};
   enum st_fps fps[2] = {ST_FPS_P50, ST_FPS_P59_94};
-  st40_rx_fps_test(type, fps, 2);
+  st40_rx_fps_test(type, fps, ST_TEST_LEVEL_MANDATORY, 2);
 }
 TEST(St40_rx, frame_fps50_fps59_94_digest) {
   enum st40_type type[2] = {ST40_TYPE_FRAME_LEVEL, ST40_TYPE_FRAME_LEVEL};
   enum st_fps fps[2] = {ST_FPS_P50, ST_FPS_P59_94};
-  st40_rx_fps_test(type, fps, 2, true);
+  st40_rx_fps_test(type, fps, ST_TEST_LEVEL_MANDATORY, 2, true);
 }
 TEST(St40_rx, rtp_fps50_fps59_94_digest) {
   enum st40_type type[2] = {ST40_TYPE_RTP_LEVEL, ST40_TYPE_RTP_LEVEL};
   enum st_fps fps[2] = {ST_FPS_P50, ST_FPS_P59_94};
-  st40_rx_fps_test(type, fps, 2, true);
+  st40_rx_fps_test(type, fps, ST_TEST_LEVEL_MANDATORY, 2, true);
 }
 static void st40_rx_update_src_test(enum st40_type type, int tx_sessions) {
   auto ctx = (struct st_tests_context*)st_test_ctx();
@@ -703,7 +721,7 @@ static void st40_rx_update_src_test(enum st40_type type, int tx_sessions) {
 
   ret = st_start(m_handle);
   EXPECT_GE(ret, 0);
-  sleep(2);
+  sleep(10);
 
   struct st_rx_source_info src;
   /* switch to mcast port p(tx_session:1) */
@@ -724,7 +742,7 @@ static void st40_rx_update_src_test(enum st40_type type, int tx_sessions) {
     double time_sec = (double)(cur_time_ns - test_ctx_rx[i]->start_time) / NS_PER_S;
     framerate[i] = test_ctx_rx[i]->fb_rec / time_sec;
 
-    EXPECT_TRUE(test_ctx_rx[i]->fb_rec > 0);
+    EXPECT_GT(test_ctx_rx[i]->fb_rec, 0);
     info("%s, session %d fb_rec %d framerate %f for mcast 1\n", __func__, i,
          test_ctx_rx[i]->fb_rec, framerate[i]);
     EXPECT_NEAR(framerate[i], expect_framerate[i], expect_framerate[i] * 0.1);
@@ -749,7 +767,7 @@ static void st40_rx_update_src_test(enum st40_type type, int tx_sessions) {
       double time_sec = (double)(cur_time_ns - test_ctx_rx[i]->start_time) / NS_PER_S;
       framerate[i] = test_ctx_rx[i]->fb_rec / time_sec;
 
-      EXPECT_TRUE(test_ctx_rx[i]->fb_rec > 0);
+      EXPECT_GT(test_ctx_rx[i]->fb_rec, 0);
       info("%s, session %d fb_rec %d framerate %f for mcast 2\n", __func__, i,
            test_ctx_rx[i]->fb_rec, framerate[i]);
       EXPECT_NEAR(framerate[i], expect_framerate[i], expect_framerate[i] * 0.1);
@@ -774,7 +792,7 @@ static void st40_rx_update_src_test(enum st40_type type, int tx_sessions) {
     double time_sec = (double)(cur_time_ns - test_ctx_rx[i]->start_time) / NS_PER_S;
     framerate[i] = test_ctx_rx[i]->fb_rec / time_sec;
 
-    EXPECT_TRUE(test_ctx_rx[i]->fb_rec > 0);
+    EXPECT_GT(test_ctx_rx[i]->fb_rec, 0);
     info("%s, session %d fb_rec %d framerate %f for unicast 0\n", __func__, i,
          test_ctx_rx[i]->fb_rec, framerate[i]);
     EXPECT_NEAR(framerate[i], expect_framerate[i], expect_framerate[i] * 0.1);
@@ -916,7 +934,7 @@ static void st40_after_start_test(enum st40_type type[], enum st_fps fps[], int 
 
     /* check fps */
     for (int i = 0; i < sessions; i++) {
-      EXPECT_TRUE(test_ctx_rx[i]->fb_rec > 0);
+      EXPECT_GT(test_ctx_rx[i]->fb_rec, 0);
       info("%s, session %d fb_rec %d framerate %f\n", __func__, i, test_ctx_rx[i]->fb_rec,
            framerate[i]);
       EXPECT_NEAR(framerate[i], expect_framerate[i], expect_framerate[i] * 0.1);

@@ -18,6 +18,7 @@
 #include <math.h>
 #include <rte_alarm.h>
 #include <rte_arp.h>
+#include <rte_errno.h>
 #include <rte_ethdev.h>
 #include <rte_kni.h>
 #include <rte_tm.h>
@@ -35,28 +36,44 @@
 #define _ST_LIB_MAIN_HEAD_H_
 
 #define ST_MBUF_CACHE_SIZE (128)
-#define ST_MBUF_SIZE (RTE_MBUF_DEFAULT_BUF_SIZE) /* 2176 (2048 + 128) */
-#define ST_MBUF_POOL_SIZE_10M (4096)             /* 10M with 5 2M hugepage, 4096x2156 */
+#define ST_MBUF_HEADROOM_SIZE (RTE_PKTMBUF_HEADROOM)          /* 128 */
+#define ST_MBUF_DEFAULT_DATA_SIZE (RTE_MBUF_DEFAULT_DATAROOM) /* 2048 */
 
 #define ST_MAX_NAME_LEN (32)
 
 #define ST_MCAST_POOL_INC (32)
 
-#define ST_MAX_SCH_NUM (6)          /* max 6 scheduler lcore */
+#define ST_MAX_SCH_NUM (18)         /* max 18 scheduler lcore */
 #define ST_MAX_TASKLET_PER_SCH (16) /* max 16 tasklet in one scheduler lcore */
+
+/* max 12 1080p tx session per sch lcore */
+#define ST_QUOTA_TX1080P_PER_SCH (12)
+/* max 8 1080p rtp tx session per sch lcore */
+#define ST_QUOTA_TX1080P_RTP_PER_SCH (8)
+/* max 12 1080p rx session per sch lcore */
+#define ST_QUOTA_RX1080P_PER_SCH (12)
+/* max 12 1080p rtp rx session per sch lcore, rtp unpack run on other threads */
+#define ST_QUOTA_RX1080P_RTP_PER_SCH (12)
+/* max 8 1080p rx(without DMA) session per sch lcore */
+#define ST_QUOTA_RX1080P_NO_DMA_PER_SCH (8)
 
 #define ST_SCH_MAX_TX_VIDEO_SESSIONS (60) /* max video tx sessions per sch lcore */
 #define ST_SCH_MAX_RX_VIDEO_SESSIONS (60) /* max video rx sessions per sch lcore */
 #define ST_SESSION_MAX_BULK (4)
+#define ST_TX_VIDEO_SESSIONS_RING_SIZE (512)
 /* number of tmstamp it will tracked for out of order pkts */
 #define ST_VIDEO_RX_REC_NUM_OFO (2)
+/* number of slices it will tracked as out of order pkts */
+#define ST_VIDEO_RX_SLICE_NUM (32)
 
-/* max tx audio(st_30) sessions */
-#define ST_MAX_TX_AUDIO_SESSIONS (60)
-#define ST_MAX_RX_AUDIO_SESSIONS (60)
-/* max tx anc(st_40) sessions */
-#define ST_MAX_TX_ANC_SESSIONS (60)
-#define ST_MAX_RX_ANC_SESSIONS (60)
+/* max tx/rx audio(st_30) sessions */
+#define ST_MAX_TX_AUDIO_SESSIONS (180)
+#define ST_TX_AUDIO_SESSIONS_RING_SIZE (512)
+#define ST_MAX_RX_AUDIO_SESSIONS (180)
+/* max tx/rx anc(st_40) sessions */
+#define ST_MAX_TX_ANC_SESSIONS (180)
+#define ST_TX_ANC_SESSIONS_RING_SIZE (512)
+#define ST_MAX_RX_ANC_SESSIONS (180)
 
 /* max RL items */
 #define ST_MAX_RL_ITEMS (32)
@@ -64,6 +81,10 @@
 #define ST_ARRAY_SIZE(arr) (sizeof(arr) / sizeof(arr[0]))
 
 #define ST_MCAST_GROUP_MAX (60)
+
+#define ST_DMA_MAX_SESSIONS (16)
+/* if use rte ring for dma enqueue/dequeue */
+#define ST_DMA_RTE_RING (1)
 
 #define ST_IP_DONT_FRAGMENT_FLAG (0x0040)
 
@@ -74,12 +95,30 @@
 /* Port registers Rx timestamp in mbuf dynamic field */
 #define ST_IF_FEATURE_RX_OFFLOAD_TIMESTAMP (0x00000004)
 
+#define ST_IF_STAT_PORT_CONFIGED (0x00000001)
+#define ST_IF_STAT_PORT_STARTED (0x00000002)
+
 struct st_main_impl; /* foward declare */
 
-struct st_muf_priv_data {
-  uint64_t resv1[14];  /* dynamic fields are implemented after rte_mbuf */
-  uint64_t idx;        /* index inside curren frame */
+struct st_tx_muf_priv_data {
   uint64_t time_stamp; /* tsc time stamp of current mbuf */
+  uint32_t idx;        /* index inside curren frame */
+};
+
+/* info passing between dma and rx */
+struct st_rx_muf_priv_data {
+  uint32_t offset;
+  uint32_t len;
+  uint32_t lender;
+  uint32_t padding;
+};
+
+/* dynamic fields are implemented after rte_mbuf */
+struct st_muf_priv_data {
+  union {
+    struct st_tx_muf_priv_data tx_priv;
+    struct st_rx_muf_priv_data rx_priv;
+  };
 };
 
 struct st_ptp_clock_id {
@@ -179,14 +218,23 @@ struct st_ptp_impl {
   uint64_t delta_result_cnt;
   uint64_t delta_result_sum;
   uint64_t delta_result_err;
+  /* expect result */
+  int32_t expect_result_cnt;
+  int32_t expect_result_sum;
+  int32_t expect_result_avg;
+  uint64_t expect_result_start_ns;
+  uint64_t expect_result_period_ns;
 
   /* status */
   int64_t stat_delta_min;
   int64_t stat_delta_max;
-  int64_t stat_delta_cnt;
+  int32_t stat_delta_cnt;
   int64_t stat_delta_sum;
-  int64_t stat_rx_sync_err;
-  int64_t stat_result_err;
+  int32_t stat_rx_sync_err;
+  int32_t stat_tx_sync_err;
+  int32_t stat_result_err;
+  int32_t stat_sync_timeout_err;
+  int32_t stat_sync_cnt;
 };
 
 struct st_cni_impl {
@@ -292,9 +340,10 @@ struct st20_packet_group_info {
 
 struct st_tx_video_session_impl {
   enum st_port port_maps[ST_SESSION_PORT_MAX];
+  struct rte_mempool* mbuf_mempool_hdr[ST_SESSION_PORT_MAX];
+  struct rte_mempool* mbuf_mempool_chain;
   struct rte_ring* ring[ST_SESSION_PORT_MAX];
   struct rte_ring* packet_ring;
-  struct rte_mempool* packet_mempool;
   uint16_t port_id[ST_SESSION_PORT_MAX];
   uint16_t queue_id[ST_SESSION_PORT_MAX];
   uint16_t queue_active[ST_SESSION_PORT_MAX];
@@ -335,32 +384,38 @@ struct st_tx_video_session_impl {
   struct rte_mbuf_ext_shared_info** st20_frames_sh_info;
   rte_iova_t* st20_frames_iova;
   uint16_t st20_frame_idx; /* current frame index */
+  bool st20_second_field;  /*indicate whether it is second field */
   enum st21_tx_frame_status st20_frame_stat;
+  uint16_t st20_frame_lines_ready;
 
   struct st20_pgroup st20_pg;
   struct st_fps_timing fps_tm;
-  int st20_bytes_in_line; /* number of bytes per each line, 4800 for 1080p */
-  int st20_pkts_in_line;  /* number of packets per each line, 4 for 1080p */
-  uint32_t st20_pkt_len;  /* data len(byte) for each pkt */
-  uint32_t st20_pkt_size; /* size for each pkt which include the header */
-  int st20_total_pkts;    /* total pkts in one frame, ex: 4320 for 1080p */
-  int st20_pkt_idx;       /* pkt index in current frame */
-  uint32_t st20_seq_id;   /* seq id for each pkt */
-  uint32_t st20_rtp_time; /* keep track of rtp time */
-  int st21_vrx_narrow;    /* pass criteria for narrow */
-  int st21_vrx_wide;      /* pass criteria for wide */
+  int st20_bytes_in_line;    /* number of bytes per each line, 4800 for 1080p */
+  int st20_pkts_in_line;     /* number of packets per each line, 4 for 1080p */
+  uint16_t st20_pkt_len;     /* data len(byte) for each pkt */
+  uint16_t st20_pkt_size;    /* size for each pkt which include the header */
+  uint16_t rtp_pkt_max_size; /* max size for user rtp pkt */
+  int st20_total_pkts;       /* total pkts in one frame, ex: 4320 for 1080p */
+  int st20_pkt_idx;          /* pkt index in current frame, start from zero */
+  uint32_t st20_seq_id;      /* seq id for each pkt */
+  uint32_t st20_rtp_time;    /* keep track of rtp time */
+  int st21_vrx_narrow;       /* pass criteria for narrow */
+  int st21_vrx_wide;         /* pass criteria for wide */
 
   struct st20_packet_group_info st20_pkt_info[ST20_PKT_TYPE_MAX];
   struct rte_mbuf* pad[ST_SESSION_PORT_MAX][ST20_PKT_TYPE_MAX];
 
   /* stat */
-  int st20_stat_frame_cnt;
+  rte_atomic32_t st20_stat_frame_cnt;
   int st20_stat_pkts_build;
+  int st20_stat_pkts_dummy;
   int st20_stat_pkts_burst;
+  int st20_stat_pkts_burst_dummy;
   uint64_t st20_stat_last_time;
   uint32_t st20_epoch_mismatch;    /* mismatch the epoch */
   uint32_t st20_troffset_mismatch; /* troffset mismatch */
   uint32_t st20_user_busy;         /* get_next_frame or dequeue_bulk from rtp ring fail */
+  uint32_t st20_lines_not_ready;   /* query app lines not ready */
 };
 
 struct st_tx_video_sessions_mgr {
@@ -381,17 +436,32 @@ struct st_video_transmitter_impl {
   int idx; /* index for current transmitter */
 };
 
+struct st_rx_video_slot_slice {
+  uint32_t offset;
+  uint32_t size;
+};
+
+struct st_rx_video_slot_slice_info {
+  struct st_rx_video_slot_slice slices[ST_VIDEO_RX_SLICE_NUM];
+  uint32_t ready_slices;
+  uint32_t extra_slices;
+};
+
 struct st_rx_video_slot_impl {
   int idx;
   uint32_t tmstamp;
   uint16_t seq_id_base; /* seq id for the first packt */
   bool seq_id_got;
   void* frame; /* only for frame type */
+  rte_iova_t frame_iova;
   uint8_t* frame_bitmap;
   rte_atomic32_t frame_recv_size; /* only for frame type */
   uint32_t pkts_received;
   uint32_t pkts_redunant_received;
   struct st20_frame_meta meta; /* only for frame type */
+  /** field type indicate */
+  enum st_field field;
+  struct st_rx_video_slot_slice_info* slice_info; /* for ST20_TYPE_SLICE_LEVEL */
 };
 
 struct st_rx_video_ebu_info {
@@ -492,6 +562,7 @@ struct st_rx_video_ebu_result {
 
 struct st_rx_video_session_impl {
   int idx; /* index for current session */
+  int sch_idx;
   struct st20_rx_ops ops;
   char ops_name[ST_MAX_NAME_LEN];
 
@@ -510,6 +581,9 @@ struct st_rx_video_session_impl {
   rte_atomic32_t* st20_frames_refcnt;
   struct st20_pgroup st20_pg;
 
+  size_t st20_uframe_size; /* size per user frame */
+  struct st20_uframe_pg_meta pg_meta;
+
   /* st21 rtp info */
   struct rte_ring* st20_rtps_ring;
 
@@ -518,6 +592,23 @@ struct st_rx_video_session_impl {
   int slot_idx;
   int slot_max;
 
+  /* slice info */
+  uint32_t slice_lines;
+  size_t slice_size;
+  struct st20_slice_meta slice_meta;
+
+  /* dma dev */
+  struct st_dma_lender_dev* dma_dev;
+  uint16_t dma_nb_desc;
+  struct st_rx_video_slot_impl* dma_slot;
+#ifdef ST_PCAPNG_ENABLED
+  /* pcap dumper */
+  uint32_t pcapng_dumped_pkts;
+  uint32_t pcapng_dropped_pkts;
+  uint32_t pcapng_max_pkts;
+  struct rte_pcapng* pcapng;
+  struct rte_mempool* pcapng_pool;
+#endif
   /* additional lcore for pkt handling */
   unsigned int pkt_lcore;
   bool has_pkt_lcore;
@@ -532,10 +623,14 @@ struct st_rx_video_session_impl {
   int st20_stat_pkts_offset_dropped;
   int st20_stat_pkts_redunant_dropped;
   int st20_stat_pkts_received;
+  int st20_stat_pkts_dma;
   int st20_stat_pkts_rtp_ring_full;
   int st20_stat_pkts_no_slot;
   int st20_stat_frames_dropped;
-  int st20_stat_frames_received;
+  rte_atomic32_t st20_stat_frames_received;
+  int st20_stat_slices_received;
+  int st20_stat_pkts_slice_fail;
+  int st20_stat_pkts_slice_merged;
   uint64_t st20_stat_last_time;
   struct st_rx_video_ebu_info ebu_info;
   struct st_rx_video_ebu_stat ebu;
@@ -554,6 +649,12 @@ struct st_rx_video_sessions_mgr {
   rte_spinlock_t mutex[ST_SCH_MAX_RX_VIDEO_SESSIONS];
 };
 
+enum st_sch_type {
+  ST_SCH_TYPE_DEFAULT = 0,
+  ST_SCH_TYPE_RX_VIDEO_ONLY,
+  ST_SCH_TYPE_MAX,
+};
+
 struct st_sch_impl {
   pthread_mutex_t mutex; /* protect sch context */
   struct st_sch_tasklet_impl tasklet[ST_MAX_TASKLET_PER_SCH];
@@ -570,6 +671,7 @@ struct st_sch_impl {
   rte_atomic32_t stopped;
   rte_atomic32_t active; /* if this sch is active */
   rte_atomic32_t ref_cnt;
+  enum st_sch_type type;
 
   /* one tx video sessions mgr/transmitter for one sch */
   struct st_video_transmitter_impl video_transmitter;
@@ -598,11 +700,12 @@ struct st_tx_audio_session_impl {
   char ops_name[ST_MAX_NAME_LEN];
 
   enum st_port port_maps[ST_SESSION_PORT_MAX];
+  struct rte_mempool* mbuf_mempool_hdr[ST_SESSION_PORT_MAX];
+  struct rte_mempool* mbuf_mempool_chain;
   struct rte_mbuf* inflight[ST_SESSION_PORT_MAX];
   bool has_inflight[ST_SESSION_PORT_MAX];
   int inflight_cnt[ST_SESSION_PORT_MAX]; /* for stats */
   struct rte_ring* packet_ring;
-  struct rte_mempool* packet_mempool;
 
   void* st30_frames;
   int st30_frame_size;     /* size per frame*/
@@ -625,7 +728,7 @@ struct st_tx_audio_session_impl {
   uint32_t st30_rtp_time;     /* record rtp time */
 
   /* stat */
-  int st30_stat_frame_cnt;
+  rte_atomic32_t st30_stat_frame_cnt;
   int st30_stat_pkt_cnt;
   uint32_t st30_epoch_mismatch; /* count of frame lower than pacing */
 };
@@ -735,7 +838,7 @@ struct st_rx_audio_session_impl {
   int st30_stat_pkts_dropped;
   int st30_stat_pkts_received;
   int st30_stat_frames_dropped;
-  int st30_stat_frames_received;
+  rte_atomic32_t st30_stat_frames_received;
   int st30_stat_pkts_rtp_ring_full;
   uint64_t st30_stat_last_time;
   struct st_rx_audio_ebu_info ebu_info;
@@ -770,11 +873,12 @@ struct st_tx_ancillary_session_impl {
   char ops_name[ST_MAX_NAME_LEN];
 
   enum st_port port_maps[ST_SESSION_PORT_MAX];
+  struct rte_mempool* mbuf_mempool_hdr[ST_SESSION_PORT_MAX];
+  struct rte_mempool* mbuf_mempool_chain;
   struct rte_mbuf* inflight[ST_SESSION_PORT_MAX];
   bool has_inflight[ST_SESSION_PORT_MAX];
   int inflight_cnt[ST_SESSION_PORT_MAX]; /* for stats */
   struct rte_ring* packet_ring;
-  struct rte_mempool* packet_mempool;
 
   void* st40_frames;
   uint16_t st40_frame_idx; /* current frame index */
@@ -795,7 +899,7 @@ struct st_tx_ancillary_session_impl {
   int st40_rtp_time;        /* record rtp time */
 
   /* stat */
-  int st40_stat_frame_cnt;
+  rte_atomic32_t st40_stat_frame_cnt;
   int st40_stat_pkt_cnt;
   uint32_t st40_epoch_mismatch; /* count of frame lower than pacing */
 };
@@ -839,7 +943,7 @@ struct st_rx_ancillary_session_impl {
 
   uint32_t tmstamp;
   /* status */
-  int st40_stat_frames_received;
+  rte_atomic32_t st40_stat_frames_received;
   int st40_stat_pkts_dropped;
   int st40_stat_pkts_received;
   uint64_t st40_stat_last_time;
@@ -877,15 +981,38 @@ struct st_rl_shaper {
   int idx;
 };
 
+struct st_rx_flow {
+  uint8_t dip_addr[ST_IP_ADDR_LEN]; /* rx destination IP */
+  uint8_t sip_addr[ST_IP_ADDR_LEN]; /* source IP */
+  bool port_flow;                   /* if apply port flow */
+  uint16_t dst_port;                /* udp destination port */
+};
+
+struct st_rx_queue {
+  uint16_t queue_id;
+  bool active;
+  struct rte_flow* flow;
+  struct st_rx_flow st_flow;
+  struct rte_mempool* mbuf_pool;
+};
+
+struct st_tx_queue {
+  uint16_t queue_id;
+  bool active;
+  int rl_shapers_mapping; /* map to tx_rl_shapers */
+  uint64_t bps;           /* bytes per sec for rate limit */
+};
+
 struct st_interface {
   enum st_port port;
   uint16_t port_id;
   enum st_port_type port_type;
   int socket_id;                          /* socket id for the port */
   uint32_t feature;                       /* ST_IF_FEATURE_* */
-  uint32_t link_speed;                    /**< ETH_SPEED_NUM_ */
-  struct rte_ether_addr* mcast_mac_lists; /**< pool of multicast mac addrs */
-  uint32_t mcast_nb;                      /**< number of address */
+  uint32_t link_speed;                    /* ETH_SPEED_NUM_ */
+  struct rte_ether_addr* mcast_mac_lists; /* pool of multicast mac addrs */
+  uint32_t mcast_nb;                      /* number of address */
+  uint32_t status;                        /* ST_IF_STAT_* */
 
   struct rte_mempool* mbuf_pool;
   uint16_t nb_tx_desc;
@@ -895,21 +1022,19 @@ struct st_interface {
 
   /* tx queue resources */
   int max_tx_queues;
-  bool* tx_queues_active;
-  /* bytes per sec for rate limit */
-  uint64_t* tx_queues_bps;
+  struct st_tx_queue* tx_queues;
+  pthread_mutex_t tx_queues_mutex; /* protect tx_queues */
+
+  /* rx queue resources */
+  int max_rx_queues;
+  struct st_rx_queue* rx_queues;
+  pthread_mutex_t rx_queues_mutex; /* protect rx_queues */
+
   /* tx rl info */
-  int* tx_rl_shapers_mapping; /* map to tx_rl_shapers */
   struct st_rl_shaper tx_rl_shapers[ST_MAX_RL_ITEMS];
   bool tx_rl_root_active;
   /* video rl pacing train result */
   struct st_pacing_train_result pt_results[ST_MAX_RL_ITEMS];
-
-  /* rx queue resources */
-  int max_rx_queues;
-  bool* rx_queues_active;
-  struct rte_flow** rx_queues_flow;
-  struct st_dev_flow* rx_dev_flows;
 
   /* function ops per interface(pf/vf) */
   uint64_t (*ptp_get_time_fn)(struct st_main_impl* impl, enum st_port port);
@@ -918,6 +1043,49 @@ struct st_interface {
 struct st_lcore_shm {
   int used;                          /* number of used lcores */
   bool lcores_active[RTE_MAX_LCORE]; /* lcores active map */
+};
+
+typedef int (*st_dma_drop_mbuf_cb)(void* priv, struct rte_mbuf* mbuf);
+
+struct st_dma_lender_dev {
+  struct st_dma_dev* parent;
+  int lender_id;
+  bool active;
+
+  void* priv;
+  uint16_t nb_borrowed;
+  st_dma_drop_mbuf_cb cb;
+};
+
+struct st_dma_dev {
+  int16_t dev_id;
+  uint16_t nb_desc;
+  bool active;
+  bool usable;
+  int idx;
+  int sch_idx;
+  int soc_id;
+  uint16_t nb_session; /* number of attached session(lender)s */
+  uint16_t max_shared; /* max number of attached session(lender)s */
+  /* shared lenders */
+  struct st_dma_lender_dev lenders[ST_DMA_MAX_SESSIONS];
+  uint16_t nb_inflight; /* not atomic since it's in single thread only */
+#if ST_DMA_RTE_RING
+  struct rte_ring* borrow_queue; /* borrowed mbufs from rx sessions */
+#else
+  uint16_t inflight_enqueue_idx;
+  uint16_t inflight_dequeue_idx;
+  struct rte_mbuf** inflight_mbufs;
+#endif
+  uint64_t stat_inflight_sum;
+  uint64_t stat_commit_sum;
+};
+
+struct st_dma_mgr {
+  struct st_dma_dev devs[ST_DMA_DEV_MAX];
+  pthread_mutex_t mutex; /* protect devs */
+  uint8_t num_dma_dev;
+  rte_atomic32_t num_dma_dev_active;
 };
 
 struct st_main_impl {
@@ -998,6 +1166,8 @@ struct st_main_impl {
 
   /* rx timestamp register */
   int dynfield_offset;
+
+  struct st_dma_mgr dma_mgr;
 };
 
 struct st_tx_video_session_handle_impl {
@@ -1083,25 +1253,63 @@ static inline int st_num_ports(struct st_main_impl* impl) {
   return st_get_user_params(impl)->num_ports;
 }
 
-static inline int st_has_ptp_service(struct st_main_impl* impl) {
+bool st_is_valid_socket(struct st_main_impl* impl, int soc_id);
+
+static inline bool st_has_ptp_service(struct st_main_impl* impl) {
   if (st_get_user_params(impl)->flags & ST_FLAG_PTP_ENABLE)
     return true;
   else
     return false;
 }
 
-static inline int st_has_user_ptp(struct st_main_impl* impl) {
+static inline bool st_has_user_ptp(struct st_main_impl* impl) {
   if (st_get_user_params(impl)->ptp_get_time_fn)
     return true;
   else
     return false;
 }
 
-static inline int st_if_has_timesync(struct st_main_impl* impl, enum st_port port) {
+static inline bool st_has_user_quota(struct st_main_impl* impl) {
+  if (st_get_user_params(impl)->data_quota_mbs_per_sch)
+    return true;
+  else
+    return false;
+}
+
+static inline bool st_has_ebu(struct st_main_impl* impl) {
+  if (st_get_user_params(impl)->flags & ST_FLAG_RX_VIDEO_EBU)
+    return true;
+  else
+    return false;
+}
+
+static inline bool st_rx_video_separate_sch(struct st_main_impl* impl) {
+  if (st_get_user_params(impl)->flags & ST_FLAG_RX_SEPARATE_VIDEO_LCORE)
+    return true;
+  else
+    return false;
+}
+
+static inline bool st_if_has_timesync(struct st_main_impl* impl, enum st_port port) {
   if (st_if(impl, port)->feature & ST_IF_FEATURE_TIMESYNC)
     return true;
   else
     return false;
+}
+
+static inline bool st_if_has_ptp(struct st_main_impl* impl, enum st_port port) {
+  if (st_has_ptp_service(impl) && st_if_has_timesync(impl, port))
+    return true;
+  else
+    return false;
+}
+
+static inline uint16_t st_if_nb_tx_desc(struct st_main_impl* impl, enum st_port port) {
+  return st_if(impl, port)->nb_tx_desc;
+}
+
+static inline uint16_t st_if_nb_rx_desc(struct st_main_impl* impl, enum st_port port) {
+  return st_if(impl, port)->nb_rx_desc;
 }
 
 static inline int st_socket_id(struct st_main_impl* impl, enum st_port port) {
@@ -1111,6 +1319,10 @@ static inline int st_socket_id(struct st_main_impl* impl, enum st_port port) {
 static inline struct rte_mempool* st_get_mempool(struct st_main_impl* impl,
                                                  enum st_port port) {
   return st_if(impl, port)->mbuf_pool;
+}
+
+static inline struct st_dma_mgr* st_get_dma_mgr(struct st_main_impl* impl) {
+  return &impl->dma_mgr;
 }
 
 static inline void st_sleep_ms(unsigned int ms) { return rte_delay_us_sleep(ms * 1000); }
@@ -1137,7 +1349,11 @@ static inline void st_free_mbufs(struct rte_mbuf** pkts, int num) {
 static inline void st_mbuf_init_ipv4(struct rte_mbuf* pkt) {
   pkt->l2_len = sizeof(struct rte_ether_hdr); /* 14 */
   pkt->l3_len = sizeof(struct rte_ipv4_hdr);  /* 20 */
+#if RTE_VERSION >= RTE_VERSION_NUM(21, 11, 0, 0)
+  pkt->ol_flags |= RTE_MBUF_F_TX_IPV4 | RTE_MBUF_F_TX_IP_CKSUM;
+#else
   pkt->ol_flags |= PKT_TX_IPV4 | PKT_TX_IP_CKSUM;
+#endif
 }
 
 static inline uint64_t st_timespec_to_ns(const struct timespec* ts) {
@@ -1171,14 +1387,14 @@ static inline uint64_t st_get_monotonic_time() {
   return ((uint64_t)ts.tv_sec * NS_PER_S) + ts.tv_nsec;
 }
 
-static inline void st_mbuf_set_time_stamp(struct rte_mbuf* mbuf, uint64_t time_stamp) {
+static inline void st_tx_mbuf_set_time_stamp(struct rte_mbuf* mbuf, uint64_t time_stamp) {
   struct st_muf_priv_data* priv = rte_mbuf_to_priv(mbuf);
-  priv->time_stamp = time_stamp;
+  priv->tx_priv.time_stamp = time_stamp;
 }
 
-static inline uint64_t st_mbuf_get_time_stamp(struct rte_mbuf* mbuf) {
+static inline uint64_t st_tx_mbuf_get_time_stamp(struct rte_mbuf* mbuf) {
   struct st_muf_priv_data* priv = rte_mbuf_to_priv(mbuf);
-  return priv->time_stamp;
+  return priv->tx_priv.time_stamp;
 }
 
 static inline uint64_t st_mbuf_get_hw_time_stamp(struct st_main_impl* impl,
@@ -1193,19 +1409,51 @@ static inline uint64_t st_mbuf_get_hw_time_stamp(struct st_main_impl* impl,
   return time_stamp;
 }
 
-static inline void st_mbuf_set_idx(struct rte_mbuf* mbuf, uint64_t idx) {
+static inline void st_tx_mbuf_set_idx(struct rte_mbuf* mbuf, uint32_t idx) {
   struct st_muf_priv_data* priv = rte_mbuf_to_priv(mbuf);
-  priv->idx = idx;
+  priv->tx_priv.idx = idx;
 }
 
-static inline uint64_t st_mbuf_get_idx(struct rte_mbuf* mbuf) {
+static inline uint32_t st_tx_mbuf_get_idx(struct rte_mbuf* mbuf) {
   struct st_muf_priv_data* priv = rte_mbuf_to_priv(mbuf);
-  return priv->idx;
+  return priv->tx_priv.idx;
+}
+
+static inline void st_rx_mbuf_set_lender(struct rte_mbuf* mbuf, uint32_t lender) {
+  struct st_muf_priv_data* priv = rte_mbuf_to_priv(mbuf);
+  priv->rx_priv.lender = lender;
+}
+
+static inline uint32_t st_rx_mbuf_get_lender(struct rte_mbuf* mbuf) {
+  struct st_muf_priv_data* priv = rte_mbuf_to_priv(mbuf);
+  return priv->rx_priv.lender;
+}
+
+static inline void st_rx_mbuf_set_offset(struct rte_mbuf* mbuf, uint32_t offset) {
+  struct st_muf_priv_data* priv = rte_mbuf_to_priv(mbuf);
+  priv->rx_priv.offset = offset;
+}
+
+static inline uint32_t st_rx_mbuf_get_offset(struct rte_mbuf* mbuf) {
+  struct st_muf_priv_data* priv = rte_mbuf_to_priv(mbuf);
+  return priv->rx_priv.offset;
+}
+
+static inline void st_rx_mbuf_set_len(struct rte_mbuf* mbuf, uint32_t len) {
+  struct st_muf_priv_data* priv = rte_mbuf_to_priv(mbuf);
+  priv->rx_priv.len = len;
+}
+
+static inline uint32_t st_rx_mbuf_get_len(struct rte_mbuf* mbuf) {
+  struct st_muf_priv_data* priv = rte_mbuf_to_priv(mbuf);
+  return priv->rx_priv.len;
 }
 
 static inline uint64_t st_get_ptp_time(struct st_main_impl* impl, enum st_port port) {
   return st_if(impl, port)->ptp_get_time_fn(impl, port);
 }
+
+uint64_t st_get_raw_ptp_time(struct st_main_impl* impl, enum st_port port);
 
 static inline bool st_rtp_len_valid(uint16_t len) {
   if (len <= 0 || len > ST_PKT_MAX_RTP_BYTES)
@@ -1213,5 +1461,30 @@ static inline bool st_rtp_len_valid(uint16_t len) {
   else
     return true;
 }
+
+static inline bool st20_is_frame_type(enum st20_type type) {
+  if ((type == ST20_TYPE_FRAME_LEVEL) || (type == ST20_TYPE_SLICE_LEVEL))
+    return true;
+  else
+    return false;
+}
+
+#if RTE_VERSION >= RTE_VERSION_NUM(21, 11, 0, 0)
+static inline struct rte_ether_addr* st_eth_s_addr(struct rte_ether_hdr* eth) {
+  return &eth->src_addr;
+}
+
+static inline struct rte_ether_addr* st_eth_d_addr(struct rte_ether_hdr* eth) {
+  return &eth->dst_addr;
+}
+#else
+static inline struct rte_ether_addr* st_eth_s_addr(struct rte_ether_hdr* eth) {
+  return &eth->s_addr;
+}
+
+static inline struct rte_ether_addr* st_eth_d_addr(struct rte_ether_hdr* eth) {
+  return &eth->d_addr;
+}
+#endif
 
 #endif

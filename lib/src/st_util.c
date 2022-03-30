@@ -135,8 +135,8 @@ void st_video_rtp_dump(enum st_port port, int idx, char* tag,
                     (((uint32_t)ntohs(rtp->seq_number_ext)) << 16);
   struct st20_rfc4175_extra_rtp_hdr* extra_rtp = NULL;
 
-  if (line1_offset & 0x8000) {
-    line1_offset &= ~0x8000;
+  if (line1_offset & ST20_SRD_OFFSET_CONTINUATION) {
+    line1_offset &= ~ST20_SRD_OFFSET_CONTINUATION;
     extra_rtp = (struct st20_rfc4175_extra_rtp_hdr*)&rtp[1];
   }
 
@@ -164,10 +164,10 @@ void st_mbuf_dump(enum st_port port, int idx, char* tag, struct rte_mbuf* m) {
 
   if (tag) info("%s(%d,%d), %s\n", __func__, port, idx, tag);
   info("ether_type 0x%x\n", ether_type);
-  mac = &eth->d_addr.addr_bytes[0];
+  mac = &st_eth_d_addr(eth)->addr_bytes[0];
   info("d_mac %02x:%02x:%02x:%02x:%02x:%02x\n", mac[0], mac[1], mac[2], mac[3], mac[4],
        mac[5]);
-  mac = &eth->s_addr.addr_bytes[0];
+  mac = &st_eth_s_addr(eth)->addr_bytes[0];
   info("s_mac %02x:%02x:%02x:%02x:%02x:%02x\n", mac[0], mac[1], mac[2], mac[3], mac[4],
        mac[5]);
 
@@ -230,15 +230,50 @@ struct rte_mbuf* st_build_pad(struct st_main_impl* impl, enum st_port port,
   eth_hdr = rte_pktmbuf_mtod(pad, struct rte_ether_hdr*);
   memset((char*)eth_hdr, 0, len);
   eth_hdr->ether_type = htons(ether_type);
-  eth_hdr->d_addr.addr_bytes[0] = 0x01;
-  eth_hdr->d_addr.addr_bytes[1] = 0x80;
-  eth_hdr->d_addr.addr_bytes[2] = 0xC2;
-  eth_hdr->d_addr.addr_bytes[5] = 0x01;
-  rte_memcpy(&eth_hdr->s_addr, &src_mac, RTE_ETHER_ADDR_LEN);
+  st_eth_d_addr(eth_hdr)->addr_bytes[0] = 0x01;
+  st_eth_d_addr(eth_hdr)->addr_bytes[1] = 0x80;
+  st_eth_d_addr(eth_hdr)->addr_bytes[2] = 0xC2;
+  st_eth_d_addr(eth_hdr)->addr_bytes[5] = 0x01;
+  rte_memcpy(st_eth_s_addr(eth_hdr), &src_mac, RTE_ETHER_ADDR_LEN);
 
   return pad;
 }
 
+struct rte_mempool* st_mempool_create(struct st_main_impl* impl, enum st_port port,
+                                      const char* name, unsigned int n,
+                                      unsigned int cache_size, uint16_t priv_size,
+                                      uint16_t element_size) {
+  if (element_size % cache_size) { /* align to cache size */
+    element_size = (element_size / cache_size + 1) * cache_size;
+  }
+  uint16_t data_room_size = element_size + ST_MBUF_HEADROOM_SIZE; /* include head room */
+  struct rte_mempool* mbuf_pool = rte_pktmbuf_pool_create_by_ops(
+      name, n, cache_size, priv_size, data_room_size, st_socket_id(impl, port), "stack");
+  if (!mbuf_pool) {
+    err("%s(%d), fail(%s) for %s, n %u\n", __func__, port, rte_strerror(rte_errno), name,
+        n);
+  } else {
+    float size_m = (float)n * (data_room_size + priv_size) / (1024 * 1024);
+    info("%s(%d), succ at %p size %fm n %u d %u for %s\n", __func__, port, mbuf_pool,
+         size_m, n, element_size, name);
+  }
+  return mbuf_pool;
+}
+
+int st_mempool_free(struct rte_mempool* mp) {
+  unsigned int in_use_count = rte_mempool_in_use_count(mp);
+  if (in_use_count) {
+    /* caused by the mbuf is still in nix tx queues */
+    warn("%s, still has %d mbuf in mempool %s\n", __func__, in_use_count, mp->name);
+    return -EIO;
+  }
+
+  /* no any in-use mbuf */
+  rte_mempool_free(mp);
+  return 0;
+}
+
+/* Computing the Internet Checksum based on rfc1071 */
 uint16_t st_rf1071_check_sum(uint8_t* p, size_t len, bool convert) {
   uint16_t* u16_in = (uint16_t*)p;
   uint16_t check_sum = 0;

@@ -1,0 +1,119 @@
+From efc19a1612c60c10d5e64afcf6d7a805b1a4f5ff Mon Sep 17 00:00:00 2001
+From: qiaoliu <qiao.liu@intel.com>
+Date: Wed, 22 Dec 2021 15:34:20 +0800
+Subject: [PATCH 1/7] Add DDP package load support in windows
+
+---
+ drivers/net/ice/ice_ethdev.c |  9 +++------
+ drivers/net/ice/ice_ethdev.h |  5 +++++
+ lib/eal/windows/eal.c        | 32 +++++++++++++++++++++++++++++++-
+ 3 files changed, 39 insertions(+), 7 deletions(-)
+
+diff --git a/drivers/net/ice/ice_ethdev.c b/drivers/net/ice/ice_ethdev.c
+index 4d2a1186fc..edf4ad3ba3 100644
+--- a/drivers/net/ice/ice_ethdev.c
++++ b/drivers/net/ice/ice_ethdev.c
+@@ -2191,12 +2191,11 @@ ice_dev_init(struct rte_eth_dev *dev)
+ 		ICE_DEV_PRIVATE_TO_ADAPTER(dev->data->dev_private);
+ 	struct ice_vsi *vsi;
+ 	int ret;
+-#ifndef RTE_EXEC_ENV_WINDOWS
++
+ 	off_t pos;
+ 	uint32_t dsn_low, dsn_high;
+ 	uint64_t dsn;
+ 	bool use_dsn;
+-#endif
+ 
+ 	dev->dev_ops = &ice_eth_dev_ops;
+ 	dev->rx_queue_count = ice_rx_queue_count;
+@@ -2254,7 +2253,7 @@ ice_dev_init(struct rte_eth_dev *dev)
+ 		return -EINVAL;
+ 	}
+ 
+-#ifndef RTE_EXEC_ENV_WINDOWS
++
+ 	use_dsn = false;
+ 	dsn = 0;
+ 	pos = rte_pci_find_ext_capability(pci_dev, RTE_PCI_EXT_CAP_ID_DSN);
+@@ -2290,7 +2289,6 @@ ice_dev_init(struct rte_eth_dev *dev)
+ 					"Entering Safe Mode");
+ 		ad->is_safe_mode = 1;
+ 	}
+-#endif
+ 
+ 	PMD_INIT_LOG(INFO, "FW %d.%d.%05d API %d.%d",
+ 		     hw->fw_maj_ver, hw->fw_min_ver, hw->fw_build,
+@@ -2383,9 +2381,8 @@ ice_dev_init(struct rte_eth_dev *dev)
+ 	dev->data->mac_addrs = NULL;
+ err_init_mac:
+ 	rte_free(pf->proto_xtr);
+-#ifndef RTE_EXEC_ENV_WINDOWS
++
+ err_init_fw:
+-#endif
+ 	ice_deinit_hw(hw);
+ 
+ 	return ret;
+diff --git a/drivers/net/ice/ice_ethdev.h b/drivers/net/ice/ice_ethdev.h
+index 5b17d94cb9..17d3404b99 100644
+--- a/drivers/net/ice/ice_ethdev.h
++++ b/drivers/net/ice/ice_ethdev.h
+@@ -46,8 +46,13 @@
+ #define ICE_MAX_PKT_TYPE  1024
+ 
+ /* DDP package search path */
++#ifndef RTE_EXEC_ENV_WINDOWS
+ #define ICE_PKG_FILE_DEFAULT "/lib/firmware/intel/ice/ddp/ice.pkg"
+ #define ICE_PKG_FILE_UPDATES "/lib/firmware/updates/intel/ice/ddp/ice.pkg"
++#else
++#define ICE_PKG_FILE_DEFAULT "./ice.pkg"
++#define ICE_PKG_FILE_UPDATES "c:\\dpdk\\lib\\ice.pkg"
++#endif
+ #define ICE_PKG_FILE_SEARCH_PATH_DEFAULT "/lib/firmware/intel/ice/ddp/"
+ #define ICE_PKG_FILE_SEARCH_PATH_UPDATES "/lib/firmware/updates/intel/ice/ddp/"
+ #define ICE_MAX_PKG_FILENAME_SIZE   256
+diff --git a/lib/eal/windows/eal.c b/lib/eal/windows/eal.c
+index 67db7f099a..6cae594eaf 100644
+--- a/lib/eal/windows/eal.c
++++ b/lib/eal/windows/eal.c
+@@ -500,5 +500,35 @@ rte_firmware_read(__rte_unused const char *name,
+ 			__rte_unused void **buf,
+ 			__rte_unused size_t *bufsz)
+ {
+-	return -1;
++	FILE* fp;
++	size_t size;
++	void *tmp;
++	
++	*buf = NULL;
++	*bufsz = 0;
++	fp=fopen(name,"rb");
++	if(fp)
++	{
++		fseek(fp, 0, SEEK_END);
++		size = ftell(fp);
++		if(size >0)
++		    tmp = realloc(*buf, size);
++		else return -1;
++		if (tmp == NULL)
++		{
++			fclose(fp);
++			return -1;
++		}
++		*buf = tmp;
++		fseek(fp, 0, SEEK_SET);
++		*bufsz = fread(*buf,1,size,fp);
++		fclose(fp);
++	
++		if(*bufsz>0)
++		   return 0;
++		else
++			return -1;
++	}
++	else
++		return -1;
+ }
+-- 
+2.17.1
+

@@ -133,6 +133,7 @@ static int app_rx_anc_session_init(struct st_app_context* ctx,
   struct st40_rx_ops ops;
   char name[32];
   st40_rx_handle handle;
+  memset(&ops, 0, sizeof(ops));
 
   snprintf(name, 32, "app_rx_anc%d", idx);
   ops.name = name;
@@ -199,7 +200,9 @@ static int app_rx_anc_result(struct st_app_rx_anc_session* s) {
 int st_app_rx_anc_sessions_init(struct st_app_context* ctx) {
   int ret, i;
   struct st_app_rx_anc_session* s;
-
+  ctx->rx_anc_sessions = (struct st_app_rx_anc_session*)st_app_zmalloc(
+      sizeof(struct st_app_rx_anc_session) * ctx->rx_anc_session_cnt);
+  if (!ctx->rx_anc_sessions) return -ENOMEM;
   for (i = 0; i < ctx->rx_anc_session_cnt; i++) {
     s = &ctx->rx_anc_sessions[i];
     s->idx = i;
@@ -218,17 +221,19 @@ int st_app_rx_anc_sessions_init(struct st_app_context* ctx) {
 int st_app_rx_anc_sessions_uinit(struct st_app_context* ctx) {
   int i;
   struct st_app_rx_anc_session* s;
-
+  if (!ctx->rx_anc_sessions) return 0;
   for (i = 0; i < ctx->rx_anc_session_cnt; i++) {
     s = &ctx->rx_anc_sessions[i];
     app_rx_anc_session_uinit(s);
   }
+  st_app_free(ctx->rx_anc_sessions);
   return 0;
 }
 
 int st_app_rx_anc_sessions_result(struct st_app_context* ctx) {
   int i, ret = 0;
   struct st_app_rx_anc_session* s;
+  if (!ctx->rx_anc_sessions) return 0;
 
   for (i = 0; i < ctx->rx_anc_session_cnt; i++) {
     s = &ctx->rx_anc_sessions[i];

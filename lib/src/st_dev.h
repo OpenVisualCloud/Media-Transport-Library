@@ -19,23 +19,14 @@
 
 #include "st_main.h"
 
-#define ST_DEV_RX_RING_SIZE (4096)
-#define ST_DEV_TX_RING_SIZE (4096)
+#define ST_DEV_RX_DESC (4096 / 2)
+#define ST_DEV_TX_DESC (4096 / 8)
 
 #define ST_DEV_STAT_INTERVAL_S (10) /* 10s */
 #define ST_DEV_STAT_INTERVAL_US(s) (s * US_PER_S)
 #define ST_DEV_STAT_M_UNIT (1000 * 1000)
 
 #define ST_EAL_MAX_ARGS (32)
-
-/* flow conf for rx queue */
-struct st_dev_flow {
-  uint8_t dip_addr[ST_IP_ADDR_LEN]; /* rx destination IP */
-  uint8_t sip_addr[ST_IP_ADDR_LEN]; /* source IP */
-  bool port_flow;                   /* if apply port flow */
-  uint16_t dst_port;                /* udp destination port */
-  uint16_t src_port;                /* udp source port */
-};
 
 int st_dev_get_socket(const char* port);
 
@@ -48,7 +39,8 @@ int st_dev_free(struct st_main_impl* impl);
 int st_dev_start(struct st_main_impl* impl);
 int st_dev_stop(struct st_main_impl* impl);
 
-struct st_sch_impl* st_dev_get_sch(struct st_main_impl* impl, int quota_mbs);
+struct st_sch_impl* st_dev_get_sch(struct st_main_impl* impl, int quota_mbs,
+                                   enum st_sch_type type);
 int st_dev_put_sch(struct st_sch_impl* sch, int quota_mbs);
 int st_dev_start_sch(struct st_main_impl* impl, struct st_sch_impl* sch);
 
@@ -66,7 +58,7 @@ int st_dev_dst_ip_mac(struct st_main_impl* impl, uint8_t dip[ST_IP_ADDR_LEN],
 int st_dev_request_tx_queue(struct st_main_impl* impl, enum st_port port,
                             uint16_t* queue_id, uint64_t bytes_per_sec);
 int st_dev_request_rx_queue(struct st_main_impl* impl, enum st_port port,
-                            uint16_t* queue_id, struct st_dev_flow* flow);
+                            uint16_t* queue_id, struct st_rx_flow* flow);
 int st_dev_free_tx_queue(struct st_main_impl* impl, enum st_port port, uint16_t queue_id);
 int st_dev_free_rx_queue(struct st_main_impl* impl, enum st_port port, uint16_t queue_id);
 int st_dev_flush_tx_queue(struct st_main_impl* impl, enum st_port port,

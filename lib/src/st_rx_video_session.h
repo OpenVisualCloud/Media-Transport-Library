@@ -21,6 +21,8 @@
 
 #define ST_RX_VIDEO_BURTS_SIZE (128)
 
+#define ST_RX_VIDEO_DMA_MIN_SIZE (1024)
+
 #define ST_RV_EBU_TSC_SYNC_MS (100) /* sync tsc with ptp period(ms) */
 #define ST_RV_EBU_TSC_SYNC_NS (ST_RV_EBU_TSC_SYNC_MS * 1000 * 1000)
 
@@ -42,5 +44,9 @@ int st_rx_video_sessions_mgr_update_src(struct st_rx_video_sessions_mgr* mgr,
                                         struct st_rx_source_info* src);
 
 int st_rx_video_sessions_mgr_update(struct st_rx_video_sessions_mgr* mgr);
+
+int st_rx_video_session_start_pcapng(struct st_main_impl* impl,
+                                     struct st_rx_video_session_impl* s,
+                                     uint32_t max_dump_packets);
 
 #endif

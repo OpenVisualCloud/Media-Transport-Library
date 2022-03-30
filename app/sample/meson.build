@@ -11,7 +11,12 @@
 # express or implied warranties, other than those that are expressly stated
 # in the License.
 
-video_tx_sources = files('tx_video_sample.c')
-video_rx_sources = files('rx_video_sample.c')
-video_tx_rtp_sources = files('tx_rtp_video_sample.c')
-video_rx_rtp_sources = files('rx_rtp_video_sample.c')
+video_tx_sample_sources = files('tx_video_sample.c')
+video_rx_sample_sources = files('rx_video_sample.c')
+video_tx_rtp_sample_sources = files('tx_rtp_video_sample.c')
+video_rx_rtp_sample_sources = files('rx_rtp_video_sample.c')
+video_tx_st22_sample_sources = files('tx_st22_video_sample.c')
+video_rx_st22_sample_sources = files('rx_st22_video_sample.c')
+video_rx_slice_sample_sources = files('rx_slice_video_sample.c')
+video_tx_slice_sample_sources = files('tx_slice_video_sample.c')
+dma_sample_sources = files('dma_sample.c')

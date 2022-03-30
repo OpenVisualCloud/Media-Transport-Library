@@ -1,0 +1,80 @@
+From patchwork Fri Sep 10 08:08:17 2021
+Content-Type: text/plain; charset="utf-8"
+MIME-Version: 1.0
+Content-Transfer-Encoding: 7bit
+X-Patchwork-Submitter: Wenjun Wu <wenjun1.wu@intel.com>
+X-Patchwork-Id: 98558
+X-Patchwork-Delegate: qi.z.zhang@intel.com
+Return-Path: <dev-bounces@dpdk.org>
+X-Original-To: patchwork@inbox.dpdk.org
+Delivered-To: patchwork@inbox.dpdk.org
+Received: from mails.dpdk.org (mails.dpdk.org [217.70.189.124])
+	by inbox.dpdk.org (Postfix) with ESMTP id 1F85CA0547;
+	Fri, 10 Sep 2021 10:27:04 +0200 (CEST)
+Received: from [217.70.189.124] (localhost [127.0.0.1])
+	by mails.dpdk.org (Postfix) with ESMTP id C967B410F5;
+	Fri, 10 Sep 2021 10:26:58 +0200 (CEST)
+Received: from mga18.intel.com (mga18.intel.com [134.134.136.126])
+ by mails.dpdk.org (Postfix) with ESMTP id 3830840041
+ for <dev@dpdk.org>; Fri, 10 Sep 2021 10:26:54 +0200 (CEST)
+X-IronPort-AV: E=McAfee;i="6200,9189,10102"; a="208136174"
+X-IronPort-AV: E=Sophos;i="5.85,282,1624345200"; d="scan'208";a="208136174"
+Received: from fmsmga003.fm.intel.com ([10.253.24.29])
+ by orsmga106.jf.intel.com with ESMTP/TLS/ECDHE-RSA-AES256-GCM-SHA384;
+ 10 Sep 2021 01:26:51 -0700
+X-ExtLoop1: 1
+X-IronPort-AV: E=Sophos;i="5.85,282,1624345200"; d="scan'208";a="540346354"
+Received: from wuwenjun.sh.intel.com ([10.67.110.178])
+ by FMSMGA003.fm.intel.com with ESMTP; 10 Sep 2021 01:26:50 -0700
+From: Wenjun Wu <wenjun1.wu@intel.com>
+To: dev@dpdk.org,
+	qi.z.zhang@intel.com
+Cc: Wenjun Wu <wenjun1.wu@intel.com>,
+	Dapeng Yu <dapengx.yu@intel.com>
+Date: Fri, 10 Sep 2021 16:08:17 +0800
+Message-Id: <20210910080821.18718-4-wenjun1.wu@intel.com>
+X-Mailer: git-send-email 2.25.1
+In-Reply-To: <20210910080821.18718-1-wenjun1.wu@intel.com>
+References: <20210910080821.18718-1-wenjun1.wu@intel.com>
+MIME-Version: 1.0
+Subject: [dpdk-dev] [PATCH 20.11 3/7] net/ice: support 256 queues
+X-BeenThere: dev@dpdk.org
+X-Mailman-Version: 2.1.29
+Precedence: list
+List-Id: DPDK patches and discussions <dev.dpdk.org>
+List-Unsubscribe: <https://mails.dpdk.org/options/dev>,
+ <mailto:dev-request@dpdk.org?subject=unsubscribe>
+List-Archive: <http://mails.dpdk.org/archives/dev/>
+List-Post: <mailto:dev@dpdk.org>
+List-Help: <mailto:dev-request@dpdk.org?subject=help>
+List-Subscribe: <https://mails.dpdk.org/listinfo/dev>,
+ <mailto:dev-request@dpdk.org?subject=subscribe>
+Errors-To: dev-bounces@dpdk.org
+Sender: "dev" <dev-bounces@dpdk.org>
+
+This patch is not for LTS upstream, just for users to cherry-pick.
+
+256 queues can be allowed now. Improve the code to support 256 queues
+for per PF.
+
+Signed-off-by: Dapeng Yu <dapengx.yu@intel.com>
+Signed-off-by: Wenjun Wu <wenjun1.wu@intel.com>
+---
+ drivers/net/ice/ice_ethdev.h | 4 ++--
+ 1 file changed, 2 insertions(+), 2 deletions(-)
+
+diff --git a/drivers/net/ice/ice_ethdev.h b/drivers/net/ice/ice_ethdev.h
+index f96625f43a..94b99999b3 100644
+--- a/drivers/net/ice/ice_ethdev.h
++++ b/drivers/net/ice/ice_ethdev.h
+@@ -21,8 +21,8 @@
+ #define ICE_ADMINQ_BUF_SZ            4096
+ #define ICE_SBIOQ_BUF_SZ             4096
+ #define ICE_MAILBOXQ_BUF_SZ          4096
+-/* Number of queues per TC should be one of 1, 2, 4, 8, 16, 32, 64 */
+-#define ICE_MAX_Q_PER_TC         64
++/* Number of queues per TC should be one of 1, 2, 4, 8, 16, 32, 64, 128, 256 */
++#define ICE_MAX_Q_PER_TC         256
+ #define ICE_NUM_DESC_DEFAULT     512
+ #define ICE_BUF_SIZE_MIN         1024
+ #define ICE_FRAME_SIZE_MAX       9728

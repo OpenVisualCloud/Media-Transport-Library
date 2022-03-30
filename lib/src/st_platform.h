@@ -27,6 +27,13 @@
 #include <sys/ioctl.h>
 #include <sys/shm.h>
 #include <sys/socket.h>
+
+/* pcapng only available from DPDK 21.11 */
+#if RTE_VERSION >= RTE_VERSION_NUM(21, 11, 0, 0)
+#include <rte_pcapng.h>
+#define ST_PCAPNG_ENABLED
+#endif
+
 #endif
 
 #ifdef CLOCK_MONOTONIC_RAW

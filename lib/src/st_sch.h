@@ -39,7 +39,7 @@ int st_sch_start(struct st_sch_impl* sch, unsigned int lcore);
 
 int st_sch_stop(struct st_sch_impl* sch);
 
-struct st_sch_impl* st_sch_request(struct st_main_impl* impl);
+struct st_sch_impl* st_sch_request(struct st_main_impl* impl, enum st_sch_type type);
 int st_sch_free(struct st_sch_impl* sch);
 
 int st_sch_add_quota(struct st_sch_impl* sch, int quota_mbs);

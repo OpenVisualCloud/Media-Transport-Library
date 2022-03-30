@@ -1,0 +1,36 @@
+From 80c8261c066beba673dab67fab19f9ff68687acd Mon Sep 17 00:00:00 2001
+From: Frank Du <frank.du@intel.com>
+Date: Fri, 29 Oct 2021 09:30:19 +0800
+Subject: [PATCH 1/6] build: enable IEEE1588(PTP) option
+
+Signed-off-by: Frank Du <frank.du@intel.com>
+---
+ config/meson.build | 2 ++
+ meson_options.txt  | 1 +
+ 2 files changed, 3 insertions(+)
+
+diff --git a/config/meson.build b/config/meson.build
+index 805d5d51d0..4fd3f1a20c 100644
+--- a/config/meson.build
++++ b/config/meson.build
+@@ -381,6 +381,8 @@ install_headers(['rte_config.h'],
+ # enable VFIO only if it is linux OS
+ dpdk_conf.set('RTE_EAL_VFIO', is_linux)
+ 
++dpdk_conf.set('RTE_LIBRTE_IEEE1588', get_option('support_ieee1588'))
++
+ # specify -D_GNU_SOURCE unconditionally
+ add_project_arguments('-D_GNU_SOURCE', language: 'c')
+ 
+diff --git a/meson_options.txt b/meson_options.txt
+index 7c220ad68d..9d4c95683f 100644
+--- a/meson_options.txt
++++ b/meson_options.txt
+@@ -48,3 +48,4 @@ option('tests', type: 'boolean', value: true, description:
+        'build unit tests')
+ option('use_hpet', type: 'boolean', value: false, description:
+        'use HPET timer in EAL')
++option('support_ieee1588', type: 'boolean', value: true, description: 'support IEEE1588(PTP) ')
+-- 
+2.30.2
+

@@ -23,15 +23,16 @@
 #include <string.h>
 
 #include "app_platform.h"
+#include "fmt.h"
 
 #ifndef _ST_APP_PARSE_JSON_HEAD_H_
 #define _ST_APP_PARSE_JSON_HEAD_H_
 
 #define MAX_INTERFACES 2
 
-#define MAX_VIDEO 60
-#define MAX_AUDIO 60
-#define MAX_ANC 60
+#define MAX_VIDEO 180
+#define MAX_AUDIO 180
+#define MAX_ANC 180
 
 #define ST_APP_URL_MAX_LEN (256)
 
@@ -56,18 +57,26 @@ enum tr_offset {
 };
 
 enum video_format {
+  VIDEO_FORMAT_480I_59FPS,
+  VIDEO_FORMAT_576I_50FPS,
   VIDEO_FORMAT_720P_59FPS,
   VIDEO_FORMAT_720P_50FPS,
   VIDEO_FORMAT_720P_29FPS,
+  VIDEO_FORMAT_720P_25FPS,
   VIDEO_FORMAT_1080P_59FPS,
   VIDEO_FORMAT_1080P_50FPS,
   VIDEO_FORMAT_1080P_29FPS,
+  VIDEO_FORMAT_1080P_25FPS,
+  VIDEO_FORMAT_1080I_59FPS,
+  VIDEO_FORMAT_1080I_50FPS,
   VIDEO_FORMAT_2160P_59FPS,
   VIDEO_FORMAT_2160P_50FPS,
   VIDEO_FORMAT_2160P_29FPS,
+  VIDEO_FORMAT_2160P_25FPS,
   VIDEO_FORMAT_4320P_59FPS,
   VIDEO_FORMAT_4320P_50FPS,
   VIDEO_FORMAT_4320P_29FPS,
+  VIDEO_FORMAT_4320P_25FPS,
   VIDEO_FORMAT_MAX,
 };
 
@@ -133,6 +142,7 @@ typedef struct st_json_rx_video_session {
   enum st20_type type;
   enum tr_offset tr_offset;
   enum st20_fmt pg_format;
+  enum user_pg_fmt user_pg_format;
   bool display;
 } st_json_rx_video_session_t;
 
@@ -184,4 +194,5 @@ int st_app_parse_json(st_json_context_t* ctx, const char* filename);
 enum st_fps st_app_get_fps(enum video_format fmt);
 int st_app_get_width(enum video_format fmt);
 int st_app_get_height(enum video_format fmt);
+bool st_app_get_interlaced(enum video_format fmt);
 #endif

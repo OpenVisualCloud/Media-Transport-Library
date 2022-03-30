@@ -161,7 +161,7 @@ int st_sch_init(struct st_main_impl* impl, int data_quota_mbs_limit) {
   return 0;
 }
 
-struct st_sch_impl* st_sch_request(struct st_main_impl* impl) {
+struct st_sch_impl* st_sch_request(struct st_main_impl* impl, enum st_sch_type type) {
   struct st_sch_impl* sch;
 
   for (int sch_idx = 0; sch_idx < ST_MAX_SCH_NUM; sch_idx++) {
@@ -169,6 +169,7 @@ struct st_sch_impl* st_sch_request(struct st_main_impl* impl) {
 
     sch_lock(sch);
     if (!st_sch_is_active(sch)) { /* find one free sch */
+      sch->type = type;
       rte_atomic32_inc(&sch->active);
       rte_atomic32_inc(&impl->sch_cnt);
       sch_unlock(sch);
@@ -206,10 +207,10 @@ int st_sch_add_quota(struct st_sch_impl* sch, int quota_mbs) {
   sch_lock(sch);
   /* either the first quota request or sch is capable the quota */
   if (!sch->data_quota_mbs_total ||
-      ((sch->data_quota_mbs_total + quota_mbs) < sch->data_quota_mbs_limit)) {
+      ((sch->data_quota_mbs_total + quota_mbs) <= sch->data_quota_mbs_limit)) {
     /* find one sch capable with quota */
     sch->data_quota_mbs_total += quota_mbs;
-    info("%s(%d), quota %d total now %d\n", __func__, idx, quota_mbs,
+    info("%s(%d:%d), quota %d total now %d\n", __func__, idx, sch->type, quota_mbs,
          sch->data_quota_mbs_total);
     sch_unlock(sch);
     return 0;

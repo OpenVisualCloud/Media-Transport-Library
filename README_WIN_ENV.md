@@ -59,9 +59,16 @@ patch -p1 < {path_to_repo_dir}/libraries.media.st2110.kahawai/patches/dpdk/{dpdk
 patch -p1 < {path_to_repo_dir}/libraries.media.st2110.kahawai/patches/dpdk/{dpdk_dir_ver}/0005-update-VF-rate-limit.patch
 patch -p1 < {path_to_repo_dir}/libraries.media.st2110.kahawai/patches/dpdk/{dpdk_dir_ver}/0006-net-iavf-add-capability-for-runtime-rx-tx-queue-setu.patch
 patch -p1 < {path_to_repo_dir}/libraries.media.st2110.kahawai/patches/dpdk/{dpdk_dir_ver}/0007-build-enable-IEEE1588-PTP-option.patch
+patch -p1 < {path_to_repo_dir}/libraries.media.st2110.kahawai/patches/dpdk/{dpdk_dir_ver}/0008-enable-rx-timestamp-and-fix-performance-issue.patch
+patch -p1 < {path_to_repo_dir}/libraries.media.st2110.kahawai/patches/dpdk/{dpdk_dir_ver}/0009-net-ice-support-max-burst-size-configuration.patch
+patch -p1 < {path_to_repo_dir}/libraries.media.st2110.kahawai/patches/dpdk/{dpdk_dir_ver}/0010-Add-init-time-to-sync-PHY-timer-with-primary-timer.patch
 Then apply windows platform dpdk patch
 patch -p1 < {path_to_repo_dir}/libraries.media.st2110.kahawai/patches/dpdk/{dpdk_dir_ver}/windows/0001-Add-stack-module-support-in-windows-version.patch
 patch -p1 < {path_to_repo_dir}/libraries.media.st2110.kahawai/patches/dpdk/{dpdk_dir_ver}/windows/0002-Add-DDP-package-load-support-in-windows.patch
+patch -p1 < {path_to_repo_dir}/libraries.media.st2110.kahawai/patches/dpdk/{dpdk_dir_ver}/windows/0003-Change-list-remove-and-add-position-to-avoid-race-co.patch
+patch -p1 < {path_to_repo_dir}/libraries.media.st2110.kahawai/patches/dpdk/{dpdk_dir_ver}/windows/0004-Mingw-compiler-do-have-same-implementation.patch
+patch -p1 < {path_to_repo_dir}/libraries.media.st2110.kahawai/patches/dpdk/{dpdk_dir_ver}/windows/0005-Mingw-do-have-pthread-implementation-change-to-adapt.patch
+patch -p1 < {path_to_repo_dir}/libraries.media.st2110.kahawai/patches/dpdk/{dpdk_dir_ver}/windows/0006-Bind-thread-to-dedicate-core-in-windows-version.patch
 ```
 
 ##### 3.1.4 Add new build options in /meson_options.txt
@@ -81,7 +88,7 @@ dpdk_conf.set('RTE_LIBRTE_IEEE1588', get_option('support_ieee1588'))
 Execute the commands below in cmd:
 
 ```bash
-cd  C:\path_to\dpdk-21.05
+cd  C:\path_to\dpdk-21.08
 meson build
 ninja -C build install
 ```
@@ -212,4 +219,7 @@ pnputil /add-driver Z:\path\to\virt2phys.inf /install
 
 #### 3.5.7 Here we just go through next and finish buttons.
 #### 3.5.8 Same step as above to install the netuio driver by right clicking the ICE driver in device manager
+#### 3.5.9 Copy the ICE driver related DDP file ice-1.3.26.0.pkg to the same directory as rxtxapp.exe file, can download from Intel site:
+https://downloadmirror.intel.com/681886/26_6.zip
+#### 3.5.10 Create the temp folder in root directory c:\
 

@@ -99,7 +99,7 @@ static int rx_ancillary_session_handle_pkt(struct st_main_impl* impl,
     return 0;
   }
   if (rtp->tmstamp != s->tmstamp) {
-    s->st40_stat_frames_received++;
+    rte_atomic32_inc(&s->st40_stat_frames_received);
     s->tmstamp = rtp->tmstamp;
   }
   s->st40_stat_pkts_received++;
@@ -169,7 +169,7 @@ static int rx_ancillary_session_init_hw(struct st_main_impl* impl,
   int idx = s->idx, num_port = s->ops.num_port;
   int ret;
   uint16_t queue;
-  struct st_dev_flow flow;
+  struct st_rx_flow flow;
   enum st_port port;
 
   for (int i = 0; i < num_port; i++) {
@@ -179,7 +179,6 @@ static int rx_ancillary_session_init_hw(struct st_main_impl* impl,
     rte_memcpy(flow.dip_addr, s->ops.sip_addr[i], ST_IP_ADDR_LEN);
     rte_memcpy(flow.sip_addr, st_sip_addr(impl, port), ST_IP_ADDR_LEN);
     flow.port_flow = true;
-    flow.src_port = s->st40_src_port[i];
     flow.dst_port = s->st40_dst_port[i];
 
     ret = st_dev_request_rx_queue(impl, port, &queue, &flow);
@@ -286,6 +285,7 @@ static int rx_ancillary_session_attach(struct st_main_impl* impl,
   s->st40_stat_pkts_received = 0;
   s->st40_stat_pkts_dropped = 0;
   s->st40_stat_last_time = st_get_monotonic_time();
+  rte_atomic32_set(&s->st40_stat_frames_received, 0);
 
   ret = rx_ancillary_session_init_hw(impl, s);
   if (ret < 0) {
@@ -316,11 +316,13 @@ static void rx_ancillary_session_stat(struct st_rx_ancillary_session_impl* s) {
   int idx = s->idx;
   uint64_t cur_time_ns = st_get_monotonic_time();
   double time_sec = (double)(cur_time_ns - s->st40_stat_last_time) / NS_PER_S;
-  double framerate = s->st40_stat_frames_received / time_sec;
+  int frames_received = rte_atomic32_read(&s->st40_stat_frames_received);
+  double framerate = frames_received / time_sec;
+
+  rte_atomic32_set(&s->st40_stat_frames_received, 0);
 
   info("RX_ANC_SESSION(%d): fps %f, st40 received frames %d, received pkts %d\n", idx,
-       framerate, s->st40_stat_frames_received, s->st40_stat_pkts_received);
-  s->st40_stat_frames_received = 0;
+       framerate, frames_received, s->st40_stat_pkts_received);
   s->st40_stat_pkts_received = 0;
   s->st40_stat_last_time = cur_time_ns;
 

@@ -1,0 +1,32 @@
+From 1edf89d3bfe40f66fe3ffaa67e604194a845624c Mon Sep 17 00:00:00 2001
+From: qiaoliu <qiao.liu@intel.com>
+Date: Thu, 20 Jan 2022 10:47:18 +0800
+Subject: [PATCH 4/7] Mingw compiler do have same implementation
+
+---
+ lib/eal/windows/getopt.c | 4 ++--
+ 1 file changed, 2 insertions(+), 2 deletions(-)
+
+diff --git a/lib/eal/windows/getopt.c b/lib/eal/windows/getopt.c
+index a1f51c6c23..650ce2ede4 100644
+--- a/lib/eal/windows/getopt.c
++++ b/lib/eal/windows/getopt.c
+@@ -452,7 +452,7 @@ getopt_long(int nargc, char *nargv[], const char *options,
+ 	return (getopt_internal(nargc, nargv, options, long_options, idx,
+ 	    FLAG_PERMUTE));
+ }
+-
++#ifndef __MINGW32__
+ /*
+  * getopt_long_only --
+  *	Parse argc/argv argument vector.
+@@ -465,5 +465,5 @@ getopt_long_only(int nargc, char *nargv[], const char *options,
+ 	return (getopt_internal(nargc, nargv, options, long_options, idx,
+ 	    FLAG_PERMUTE|FLAG_LONGONLY));
+ }
+-
++#endif
+ #endif /* NEED_USUAL_GETOPT */
+-- 
+2.17.1
+

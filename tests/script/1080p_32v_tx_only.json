@@ -1,9 +1,12 @@
 {
-    "sch_session_quota" : 8,
     "interfaces": [
         {
             "name": "0000:af:00.0",
             "ip": "192.168.17.101"
+        },
+	{
+            "name": "0000:af:00.1",
+            "ip": "192.168.17.102"
         }
     ],
     "tx_sessions": [

@@ -31,6 +31,9 @@ sources = files(
 	'st_rx_ancillary_session.c',
 	'st_ancillary_transmitter.c',
 	'st_ancillary.c',
+	'st_dma.c',
+	'st_avx512.c',
+	'st_avx512_vbmi.c',
 )
 
 if get_option('enable_kni') == true

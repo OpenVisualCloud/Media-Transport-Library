@@ -90,7 +90,7 @@ Items in each element of the "video" array
 
 ​	**replicas (int):** `1~max_num` the number of session copies
 
-​	**type (string):** `"frame", "rtp"` app->lib data type
+​	**type (string):** `"frame", "rtp", "slice"` app->lib data type
 
 ​	**pacing (string):** `"gap", "linear"` pacing type
 
@@ -154,7 +154,7 @@ Items in each element of the "video" array
 
 ​	**replicas (int):** `1~max_num` the number of session copies
 
-​	**type (string):** `"frame", "rtp"` lib->app data type
+​	**type (string):** `"frame", "rtp", "slice"` lib->app data type
 
 ​	**pacing (string):** `"gap", "linear"` pacing type
 
@@ -166,7 +166,9 @@ Items in each element of the "video" array
 
 ​	**pg_format (string):** `"YUV_422_10bit"` pixel group format
 
-​	**display (bool):** `true, false` display video frames with SDL
+​	**user_pg_format (string):** `"YUV_422_8bit"` user required pixel group format
+
+​	**display (bool):** `true, false` display video frames with SDL, only works when user_pg_format set to YUV_422_8bit
 
 #### audio (array of audio sessions)
 

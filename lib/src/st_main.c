@@ -21,6 +21,7 @@
 #include "st_audio_transmitter.h"
 #include "st_cni.h"
 #include "st_dev.h"
+#include "st_dma.h"
 #include "st_fmt.h"
 #include "st_log.h"
 #include "st_mcast.h"
@@ -46,9 +47,35 @@ enum st_port st_port_by_id(struct st_main_impl* impl, uint16_t port_id) {
   return ST_PORT_MAX;
 }
 
+bool st_is_valid_socket(struct st_main_impl* impl, int soc_id) {
+  int num_ports = st_num_ports(impl);
+  int i;
+
+  for (i = 0; i < num_ports; i++) {
+    if (soc_id == st_socket_id(impl, i)) return true;
+  }
+
+  err("%s, invalid soc_id %d\n", __func__, soc_id);
+  return false;
+}
+
+static int u64_cmp(const void* a, const void* b) {
+  const uint64_t* ai = a;
+  const uint64_t* bi = b;
+
+  if (*ai < *bi) {
+    return -1;
+  } else if (*ai > *bi) {
+    return 1;
+  }
+  return 0;
+}
+
 static void* st_calibrate_tsc(void* arg) {
   struct st_main_impl* impl = arg;
   int loop = 100;
+  int trim = 10;
+  uint64_t array[loop];
   uint64_t tsc_hz_sum = 0;
 
   for (int i = 0; i < loop; i++) {
@@ -61,10 +88,15 @@ static void* st_calibrate_tsc(void* arg) {
 
     end = st_get_monotonic_time();
     end_tsc = rte_get_tsc_cycles();
-    tsc_hz_sum += NS_PER_S * (end_tsc - start_tsc) / (end - start);
+    array[i] = NS_PER_S * (end_tsc - start_tsc) / (end - start);
   }
 
-  impl->tsc_hz = tsc_hz_sum / loop;
+  qsort(array, loop, sizeof(uint64_t), u64_cmp);
+  for (int i = trim; i < loop - trim; i++) {
+    tsc_hz_sum += array[i];
+  }
+  impl->tsc_hz = tsc_hz_sum / (loop - trim * 2);
+
   info("%s, tscHz %" PRIu64 "\n", __func__, impl->tsc_hz);
   return NULL;
 }
@@ -201,7 +233,7 @@ static int st_tx_anc_init(struct st_main_impl* impl) {
 
   if (impl->tx_anc_init) return 0;
 
-  /* create tx ancillary context, todo: creat only when it has ancillary */
+  /* create tx ancillary context */
   ret = st_tx_ancillary_sessions_mgr_init(impl, impl->main_sch, &impl->tx_anc_mgr);
   if (ret < 0) {
     err("%s, st_tx_ancillary_sessions_mgr_init fail\n", __func__);
@@ -264,6 +296,8 @@ static int st_main_create(struct st_main_impl* impl) {
     return ret;
   }
 
+  st_dma_init(impl);
+
   ret = st_arp_init(impl);
   if (ret < 0) {
     err("%s, st_arp_init fail %d\n", __func__, ret);
@@ -305,6 +339,8 @@ static int st_main_free(struct st_main_impl* impl) {
   st_ptp_uinit(impl);
   st_arp_uinit(impl);
   st_mcast_uinit(impl);
+
+  st_dma_uinit(impl);
 
   st_dev_free(impl);
   info("%s, succ\n", __func__);
@@ -389,7 +425,7 @@ static int st_tx_video_ops_check(struct st20_tx_ops* ops) {
     }
   }
 
-  if (ops->type == ST20_TYPE_FRAME_LEVEL) {
+  if (st20_is_frame_type(ops->type)) {
     if ((ops->framebuff_cnt < 2) || (ops->framebuff_cnt > ST20_FB_MAX_COUNT)) {
       err("%s, invalid framebuff_cnt %d, should in range [2:%d]\n", __func__,
           ops->framebuff_cnt, ST20_FB_MAX_COUNT);
@@ -533,6 +569,7 @@ static int st_tx_ancillary_ops_check(struct st40_tx_ops* ops) {
 static int st_rx_video_ops_check(struct st20_rx_ops* ops) {
   int num_ports = ops->num_port, ret;
   uint8_t* ip;
+  enum st20_type type = ops->type;
 
   if ((num_ports > ST_PORT_MAX) || (num_ports <= 0)) {
     err("%s, invalid num_ports %d\n", __func__, num_ports);
@@ -555,15 +592,25 @@ static int st_rx_video_ops_check(struct st20_rx_ops* ops) {
     }
   }
 
-  if (ops->type == ST20_TYPE_FRAME_LEVEL) {
+  if (st20_is_frame_type(type)) {
     if ((ops->framebuff_cnt < 2) || (ops->framebuff_cnt > ST20_FB_MAX_COUNT)) {
       err("%s, invalid framebuff_cnt %d, should in range [2:%d]\n", __func__,
           ops->framebuff_cnt, ST20_FB_MAX_COUNT);
       return -EINVAL;
     }
-  } else if (ops->type == ST20_TYPE_RTP_LEVEL) {
+  }
+
+  if (type == ST20_TYPE_RTP_LEVEL) {
     if (ops->rtp_ring_size <= 0) {
       err("%s, invalid rtp_ring_size %d\n", __func__, ops->rtp_ring_size);
+      return -EINVAL;
+    }
+  }
+
+  if (type == ST20_TYPE_SLICE_LEVEL) {
+    if (!(ops->flags & ST20_RX_FLAG_RECEIVE_INCOMPLETE_FRAME)) {
+      err("%s, pls enable ST20_RX_FLAG_RECEIVE_INCOMPLETE_FRAME for silce mode\n",
+          __func__);
       return -EINVAL;
     }
   }
@@ -759,10 +806,11 @@ st_handle st_init(struct st_init_params* p) {
   rte_atomic32_set(&impl->request_exit, 0);
   rte_atomic32_set(&impl->dev_in_reset, 0);
   impl->lcore_lock_fd = -1;
-  impl->tx_sessions_cnt_max = RTE_MIN(60, p->tx_sessions_cnt_max);
-  impl->rx_sessions_cnt_max = RTE_MIN(60, p->rx_sessions_cnt_max);
-  info("%s, max sessions tx %d rx %d\n", __func__, impl->tx_sessions_cnt_max,
-       impl->rx_sessions_cnt_max);
+  impl->tx_sessions_cnt_max = RTE_MIN(180, p->tx_sessions_cnt_max);
+  impl->rx_sessions_cnt_max = RTE_MIN(180, p->rx_sessions_cnt_max);
+  info("%s, max sessions tx %d rx %d, flags 0x%" PRIx64 "\n", __func__,
+       impl->tx_sessions_cnt_max, impl->rx_sessions_cnt_max,
+       st_get_user_params(impl)->flags);
 
   /* init mgr lock for audio and anc */
   pthread_mutex_init(&impl->tx_a_mgr_mutex, NULL);
@@ -786,6 +834,7 @@ st_handle st_init(struct st_init_params* p) {
   }
 
   info("%s, succ, tsc_hz %" PRIu64 "\n", __func__, impl->tsc_hz);
+  info("%s, simd level %s\n", __func__, st_get_simd_level_name(st_get_simd_level()));
   return impl;
 
 err_exit:
@@ -907,14 +956,19 @@ st20_tx_handle st20_tx_create(st_handle st, struct st20_tx_ops* ops) {
     err("%s, st_tx_video_ops_check fail %d\n", __func__, ret);
     return NULL;
   }
-
-  ret = st20_get_bandwidth_bps(ops->width, ops->height, ops->fmt, ops->fps, &bps);
+  int height = ops->interlaced ? (ops->height >> 1) : ops->height;
+  ret = st20_get_bandwidth_bps(ops->width, height, ops->fmt, ops->fps, &bps);
   if (ret < 0) {
     err("%s, st20_get_bandwidth_bps fail\n", __func__);
     return NULL;
   }
   quota_mbs = bps / (1000 * 1000);
   quota_mbs *= ops->num_port;
+  if (!st_has_user_quota(impl)) {
+    if (ST20_TYPE_RTP_LEVEL == ops->type) {
+      quota_mbs = quota_mbs * ST_QUOTA_TX1080P_PER_SCH / ST_QUOTA_TX1080P_RTP_PER_SCH;
+    }
+  }
 
   s_impl = st_rte_zmalloc_socket(sizeof(*s_impl), st_socket_id(impl, ST_PORT_P));
   if (!s_impl) {
@@ -922,10 +976,10 @@ st20_tx_handle st20_tx_create(st_handle st, struct st20_tx_ops* ops) {
     return NULL;
   }
 
-  sch = st_dev_get_sch(impl, quota_mbs);
+  sch = st_dev_get_sch(impl, quota_mbs, ST_SCH_TYPE_DEFAULT);
   if (!sch) {
     st_rte_free(s_impl);
-    err("%s, st_dev_get_sch fail\n", __func__);
+    err("%s, get sch fail\n", __func__);
     return NULL;
   }
 
@@ -1010,7 +1064,7 @@ void* st20_tx_get_mbuf(st20_tx_handle handle, void** usrptr) {
     return NULL;
   }
 
-  pkt = rte_pktmbuf_alloc(s->packet_mempool);
+  pkt = rte_pktmbuf_alloc(s->mbuf_mempool_chain);
   if (!pkt) {
     dbg("%s(%d), pkt alloc fail\n", __func__, idx);
     return NULL;
@@ -1044,6 +1098,12 @@ int st20_tx_put_mbuf(st20_tx_handle handle, void* mbuf, uint16_t len) {
   packet_ring = s->packet_ring;
   if (!packet_ring) {
     err("%s(%d), packet ring is not created\n", __func__, idx);
+    rte_pktmbuf_free(mbuf);
+    return -EIO;
+  }
+
+  if (len > s->rtp_pkt_max_size) {
+    err("%s(%d), invalid len %u, allowed %u\n", __func__, idx, len, s->rtp_pkt_max_size);
     rte_pktmbuf_free(mbuf);
     return -EIO;
   }
@@ -1237,7 +1297,7 @@ void* st30_tx_get_mbuf(st30_tx_handle handle, void** usrptr) {
     return NULL;
   }
 
-  pkt = rte_pktmbuf_alloc(s->packet_mempool);
+  pkt = rte_pktmbuf_alloc(s->mbuf_mempool_chain);
   if (!pkt) {
     dbg("%s(%d), pkt alloc fail\n", __func__, idx);
     return NULL;
@@ -1355,7 +1415,7 @@ void* st40_tx_get_mbuf(st40_tx_handle handle, void** usrptr) {
     return NULL;
   }
 
-  pkt = rte_pktmbuf_alloc(s->packet_mempool);
+  pkt = rte_pktmbuf_alloc(s->mbuf_mempool_chain);
   if (!pkt) {
     dbg("%s(%d), pkt alloc fail\n", __func__, idx);
     return NULL;
@@ -1462,7 +1522,7 @@ st20_rx_handle st20_rx_create(st_handle st, struct st20_rx_ops* ops) {
   struct st_sch_impl* sch;
   struct st_rx_video_session_handle_impl* s_impl;
   struct st_rx_video_session_impl* s;
-  int quota_mbs, ret;
+  int quota_mbs, ret, quota_mbs_wo_dma = 0;
   uint64_t bps;
 
   ret = st_rx_video_ops_check(ops);
@@ -1477,6 +1537,16 @@ st20_rx_handle st20_rx_create(st_handle st, struct st20_rx_ops* ops) {
     return NULL;
   }
   quota_mbs = bps / (1000 * 1000);
+  quota_mbs *= ops->num_port;
+  if (!st_has_user_quota(impl)) {
+    if (ST20_TYPE_RTP_LEVEL == ops->type) {
+      quota_mbs = quota_mbs * ST_QUOTA_TX1080P_PER_SCH / ST_QUOTA_RX1080P_RTP_PER_SCH;
+    } else {
+      quota_mbs_wo_dma =
+          quota_mbs * ST_QUOTA_TX1080P_PER_SCH / ST_QUOTA_RX1080P_NO_DMA_PER_SCH;
+      quota_mbs = quota_mbs * ST_QUOTA_TX1080P_PER_SCH / ST_QUOTA_RX1080P_PER_SCH;
+    }
+  }
 
   s_impl = st_rte_zmalloc_socket(sizeof(*s_impl), st_socket_id(impl, ST_PORT_P));
   if (!s_impl) {
@@ -1484,10 +1554,12 @@ st20_rx_handle st20_rx_create(st_handle st, struct st20_rx_ops* ops) {
     return NULL;
   }
 
-  sch = st_dev_get_sch(impl, quota_mbs);
+  sch = st_dev_get_sch(
+      impl, quota_mbs,
+      st_rx_video_separate_sch(impl) ? ST_SCH_TYPE_RX_VIDEO_ONLY : ST_SCH_TYPE_DEFAULT);
   if (!sch) {
     st_rte_free(s_impl);
-    err("%s, st_dev_get_sch fail\n", __func__);
+    err("%s, get sch fail\n", __func__);
     return NULL;
   }
 
@@ -1509,6 +1581,12 @@ st20_rx_handle st20_rx_create(st_handle st, struct st20_rx_ops* ops) {
     st_dev_put_sch(sch, quota_mbs);
     st_rte_free(s_impl);
     return NULL;
+  }
+
+  if (!st_has_user_quota(impl) && st20_is_frame_type(ops->type) && !s->dma_dev) {
+    int extra_quota_mbs = quota_mbs_wo_dma - quota_mbs;
+    ret = st_sch_add_quota(sch, extra_quota_mbs);
+    if (ret >= 0) quota_mbs += extra_quota_mbs;
   }
 
   s_impl->parnet = impl;
@@ -1557,6 +1635,22 @@ int st20_rx_get_sch_idx(st20_rx_handle handle) {
   }
 
   return s_impl->sch->idx;
+}
+
+int st20_rx_pcapng_dump(st20_rx_handle handle, uint32_t max_dump_packets) {
+  struct st_rx_video_session_handle_impl* s_impl = handle;
+  struct st_rx_video_session_impl* s = s_impl->impl;
+  struct st_main_impl* impl = s_impl->parnet;
+  int ret;
+
+  if (s_impl->type != ST_SESSION_TYPE_RX_VIDEO) {
+    err("%s, invalid type %d\n", __func__, s_impl->type);
+    return -EINVAL;
+  }
+
+  ret = st_rx_video_session_start_pcapng(impl, s, max_dump_packets);
+
+  return ret;
 }
 
 int st20_rx_free(st20_rx_handle handle) {
@@ -1980,14 +2074,17 @@ st22_tx_handle st22_tx_create(st_handle st, struct st22_tx_ops* ops) {
     return NULL;
   }
 
-  /* todo: calculate from total pkts in ops */
-  ret = st20_get_bandwidth_bps(ops->width, ops->height, ops->fmt, ops->fps, &bps);
+  ret = st22_get_bandwidth_bps(ops->rtp_frame_total_pkts, ops->rtp_pkt_size, ops->fps,
+                               &bps);
   if (ret < 0) {
-    err("%s, st20_get_bandwidth_bps fail\n", __func__);
+    err("%s, get_bandwidth_bps fail\n", __func__);
     return NULL;
   }
   quota_mbs = bps / (1000 * 1000);
   quota_mbs *= ops->num_port;
+  if (!st_has_user_quota(impl)) {
+    quota_mbs = quota_mbs * ST_QUOTA_TX1080P_PER_SCH / ST_QUOTA_TX1080P_RTP_PER_SCH;
+  }
 
   s_impl = st_rte_zmalloc_socket(sizeof(*s_impl), st_socket_id(impl, ST_PORT_P));
   if (!s_impl) {
@@ -1995,10 +2092,10 @@ st22_tx_handle st22_tx_create(st_handle st, struct st22_tx_ops* ops) {
     return NULL;
   }
 
-  sch = st_dev_get_sch(impl, quota_mbs);
+  sch = st_dev_get_sch(impl, quota_mbs, ST_SCH_TYPE_DEFAULT);
   if (!sch) {
     st_rte_free(s_impl);
-    err("%s, st_dev_get_sch fail\n", __func__);
+    err("%s, get sch fail\n", __func__);
     return NULL;
   }
 
@@ -2126,7 +2223,7 @@ void* st22_tx_get_mbuf(st22_tx_handle handle, void** usrptr) {
     return NULL;
   }
 
-  pkt = rte_pktmbuf_alloc(s->packet_mempool);
+  pkt = rte_pktmbuf_alloc(s->mbuf_mempool_chain);
   if (!pkt) {
     dbg("%s(%d), pkt alloc fail\n", __func__, idx);
     return NULL;
@@ -2160,6 +2257,12 @@ int st22_tx_put_mbuf(st22_tx_handle handle, void* mbuf, uint16_t len) {
   packet_ring = s->packet_ring;
   if (!packet_ring) {
     err("%s(%d), packet ring is not created\n", __func__, idx);
+    rte_pktmbuf_free(mbuf);
+    return -EIO;
+  }
+
+  if (len > s->rtp_pkt_max_size) {
+    err("%s(%d), invalid len %u, allowed %u\n", __func__, idx, len, s->rtp_pkt_max_size);
     rte_pktmbuf_free(mbuf);
     return -EIO;
   }
@@ -2201,13 +2304,15 @@ st22_rx_handle st22_rx_create(st_handle st, struct st22_rx_ops* ops) {
     return NULL;
   }
 
-  /* todo: calculate from total pkts in ops */
   ret = st20_get_bandwidth_bps(ops->width, ops->height, ops->fmt, ops->fps, &bps);
   if (ret < 0) {
-    err("%s, st20_get_bandwidth_bps fail\n", __func__);
+    err("%s, get_bandwidth_bps fail\n", __func__);
     return NULL;
   }
+  bps /= 4; /* default compress ratio 1/4 */
   quota_mbs = bps / (1000 * 1000);
+  quota_mbs *= ops->num_port;
+  quota_mbs *= 2; /* double quota for RTP path */
 
   s_impl = st_rte_zmalloc_socket(sizeof(*s_impl), st_socket_id(impl, ST_PORT_P));
   if (!s_impl) {
@@ -2215,10 +2320,12 @@ st22_rx_handle st22_rx_create(st_handle st, struct st22_rx_ops* ops) {
     return NULL;
   }
 
-  sch = st_dev_get_sch(impl, quota_mbs);
+  sch = st_dev_get_sch(
+      impl, quota_mbs,
+      st_rx_video_separate_sch(impl) ? ST_SCH_TYPE_RX_VIDEO_ONLY : ST_SCH_TYPE_DEFAULT);
   if (!sch) {
     st_rte_free(s_impl);
-    err("%s, st_dev_get_sch fail\n", __func__);
+    err("%s, get sch fail\n", __func__);
     return NULL;
   }
 
@@ -2430,6 +2537,10 @@ void* st_hp_zmalloc(st_handle st, size_t size, enum st_port port) {
 
 void st_hp_free(st_handle st, void* ptr) { return st_rte_free(ptr); }
 
+st_iova_t st_hp_virt2iova(st_handle st, const void* addr) {
+  return rte_malloc_virt2iova(addr);
+}
+
 const char* st_version(void) {
   static char version[64];
   if (version[0] != 0) return version;
@@ -2445,11 +2556,13 @@ int st_get_cap(st_handle st, struct st_cap* cap) {
 
   cap->tx_sessions_cnt_max = impl->tx_sessions_cnt_max;
   cap->rx_sessions_cnt_max = impl->rx_sessions_cnt_max;
+  cap->dma_dev_cnt_max = impl->dma_mgr.num_dma_dev;
   return 0;
 }
 
 int st_get_stats(st_handle st, struct st_stats* stats) {
   struct st_main_impl* impl = st;
+  struct st_dma_mgr* mgr = st_get_dma_mgr(impl);
 
   stats->st20_tx_sessions_cnt = rte_atomic32_read(&impl->st20_tx_sessions_cnt);
   stats->st22_tx_sessions_cnt = rte_atomic32_read(&impl->st22_tx_sessions_cnt);
@@ -2461,6 +2574,7 @@ int st_get_stats(st_handle st, struct st_stats* stats) {
   stats->st40_rx_sessions_cnt = rte_atomic32_read(&impl->st40_rx_sessions_cnt);
   stats->sch_cnt = rte_atomic32_read(&impl->sch_cnt);
   stats->lcore_cnt = rte_atomic32_read(&impl->lcore_cnt);
+  stats->dma_dev_cnt = rte_atomic32_read(&mgr->num_dma_dev_active);
   if (rte_atomic32_read(&impl->started))
     stats->dev_started = 1;
   else
@@ -2471,4 +2585,75 @@ int st_get_stats(st_handle st, struct st_stats* stats) {
 uint64_t st_ptp_read_time(st_handle st) {
   struct st_main_impl* impl = st;
   return st_get_ptp_time(impl, ST_PORT_P);
+}
+
+st_udma_handle st_udma_create(st_handle st, uint16_t nb_desc, enum st_port port) {
+  struct st_main_impl* impl = st;
+  struct st_dma_request_req req;
+
+  req.nb_desc = nb_desc;
+  req.max_shared = 1;
+  req.sch_idx = 0;
+  req.socket_id = st_socket_id(impl, port);
+  req.priv = impl;
+  req.drop_mbuf_cb = NULL;
+  struct st_dma_lender_dev* dev = st_dma_request_dev(impl, &req);
+  return dev;
+}
+
+int st_udma_free(st_udma_handle handle) {
+  struct st_dma_lender_dev* dev = handle;
+  struct st_main_impl* impl = dev->priv;
+
+  return st_dma_free_dev(impl, dev);
+}
+
+int st_udma_copy(st_udma_handle handle, st_iova_t dst, st_iova_t src, uint32_t length) {
+  struct st_dma_lender_dev* dev = handle;
+
+  return st_dma_copy(dev, dst, src, length);
+}
+
+int st_udma_fill(st_udma_handle handle, st_iova_t dst, uint64_t pattern,
+                 uint32_t length) {
+  struct st_dma_lender_dev* dev = handle;
+
+  return st_dma_fill(dev, dst, pattern, length);
+}
+
+int st_udma_submit(st_udma_handle handle) {
+  struct st_dma_lender_dev* dev = handle;
+
+  return st_dma_submit(dev);
+}
+
+uint16_t st_udma_completed(st_udma_handle handle, const uint16_t nb_cpls) {
+  struct st_dma_lender_dev* dev = handle;
+
+  return st_dma_completed(dev, nb_cpls, NULL, NULL);
+}
+
+enum st_simd_level st_get_simd_level(void) {
+  if (rte_cpu_get_flag_enabled(RTE_CPUFLAG_AVX512VBMI2))
+    return ST_SIMD_LEVEL_AVX512_VBMI2;
+  if (rte_cpu_get_flag_enabled(RTE_CPUFLAG_AVX512VL)) return ST_SIMD_LEVEL_AVX512;
+  if (rte_cpu_get_flag_enabled(RTE_CPUFLAG_AVX2)) return ST_SIMD_LEVEL_AVX2;
+  /* no simd */
+  return ST_SIMD_LEVEL_NONE;
+}
+
+static const char* st_simd_level_names[ST_SIMD_LEVEL_MAX] = {
+    "none",
+    "avx2",
+    "avx512",
+    "avx512_vbmi",
+};
+
+const char* st_get_simd_level_name(enum st_simd_level level) {
+  if ((level >= ST_SIMD_LEVEL_MAX) || (level < 0)) {
+    err("%s, invalid level %d\n", __func__, level);
+    return "unknown";
+  }
+
+  return st_simd_level_names[level];
 }

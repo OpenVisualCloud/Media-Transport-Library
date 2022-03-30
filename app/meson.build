@@ -24,10 +24,13 @@ libpcap = dependency('pcap', required:true)
 endif
 libsdl2 = dependency('sdl2', required:true)
 
+libopenssl = dependency('openssl', required : true)
+
 #add source file
 subdir('src')
 subdir('tools')
 subdir('sample')
+subdir('perf')
 
 app_c_args = []
 
@@ -81,27 +84,86 @@ executable('ConvApp', conv_sources,
   link_args: app_ld_args,
 )
 
-executable('TxVideoApp', video_tx_sources,
+executable('PerfRfc4175ToYuv422p10le', perf_rfc4175_to_yuv422p10le_sources,
   c_args : app_c_args,
   link_args: app_ld_args,
   dependencies: [libst_dpdk]
 )
 
-executable('TxRtpVideoApp', video_tx_rtp_sources,
+executable('PerfRfc4175422be10ToLe', perf_rfc4175_422be10_to_le_sources,
   c_args : app_c_args,
   link_args: app_ld_args,
   dependencies: [libst_dpdk]
 )
 
-executable('RxVideoApp', video_rx_sources,
+executable('PerfRfc4175422be10ToLe8', perf_rfc4175_422be10_to_le8_sources,
   c_args : app_c_args,
   link_args: app_ld_args,
   dependencies: [libst_dpdk]
 )
 
-executable('RxRtpVideoApp', video_rx_rtp_sources,
+executable('PerfRfc4175422be10ToV210', perf_rfc4175_422be10_to_v210_sources,
   c_args : app_c_args,
   link_args: app_ld_args,
   dependencies: [libst_dpdk]
 )
 
+executable('TxVideoSample', video_tx_sample_sources,
+  c_args : app_c_args,
+  link_args: app_ld_args,
+  dependencies: [libst_dpdk]
+)
+
+executable('TxRtpVideoSample', video_tx_rtp_sample_sources,
+  c_args : app_c_args,
+  link_args: app_ld_args,
+  dependencies: [libst_dpdk]
+)
+
+executable('RxVideoSample', video_rx_sample_sources,
+  c_args : app_c_args,
+  link_args: app_ld_args,
+  dependencies: [libst_dpdk]
+)
+
+executable('RxRtpVideoSample', video_rx_rtp_sample_sources,
+  c_args : app_c_args,
+  link_args: app_ld_args,
+  dependencies: [libst_dpdk]
+)
+
+executable('TxSt22VideoSample', video_tx_st22_sample_sources,
+  c_args : app_c_args,
+  link_args: app_ld_args,
+  dependencies: [libst_dpdk]
+)
+
+executable('RxSt22VideoSample', video_rx_st22_sample_sources,
+  c_args : app_c_args,
+  link_args: app_ld_args,
+  dependencies: [libst_dpdk]
+)
+
+executable('RxSliceVideoSample', video_rx_slice_sample_sources,
+  c_args : app_c_args,
+  link_args: app_ld_args,
+  dependencies: [libst_dpdk]
+)
+
+executable('TxSliceVideoSample', video_tx_slice_sample_sources,
+  c_args : app_c_args,
+  link_args: app_ld_args,
+  dependencies: [libst_dpdk]
+)
+
+executable('DmaSample', dma_sample_sources,
+  c_args : app_c_args,
+  link_args: app_ld_args,
+  dependencies: [libst_dpdk, libopenssl]
+)
+
+executable('PerfDma', perf_dma_sources,
+  c_args : app_c_args,
+  link_args: app_ld_args,
+  dependencies: [libst_dpdk]
+)

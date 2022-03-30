@@ -23,19 +23,17 @@ RUN git config --global http.proxy $http_proxy && \
     git config --global user.name "Your Name"
 RUN cd /tmp/ && git clone https://github.com/DPDK/dpdk.git && \
     cd dpdk && \
-    git checkout v21.08 && \
-    git switch -c v21.08
+    git checkout v21.11 && \
+    git switch -c v21.11
 RUN cd /tmp/dpdk && \
-    git am $dpdk_st_kahawai/patches/dpdk/21.08/0001-update-ice-1588-timesync-based-on-21.08.patch && \
-    git am $dpdk_st_kahawai/patches/dpdk/21.08/0002-temp-fix-to-enable-multicast-rx-on-ice.patch && \
-    git am $dpdk_st_kahawai/patches/dpdk/21.08/0003-fix-L4-packet-not-work.patch && \
-    git am $dpdk_st_kahawai/patches/dpdk/21.08/0004-eanble-PF-ICE-rate-limit.patch && \
-    git am $dpdk_st_kahawai/patches/dpdk/21.08/0005-update-VF-rate-limit.patch && \
-    git am $dpdk_st_kahawai/patches/dpdk/21.08/0006-net-iavf-add-capability-for-runtime-rx-tx-queue-setu.patch && \
-    git am $dpdk_st_kahawai/patches/dpdk/21.08/0007-build-enable-IEEE1588-PTP-option.patch && \
-    git am $dpdk_st_kahawai/patches/dpdk/21.08/0008-enable-rx-timestamp-and-fix-performance-issue.patch && \
-    git am $dpdk_st_kahawai/patches/dpdk/21.08/0009-net-ice-support-max-burst-size-configuration.patch && \
-    git am $dpdk_st_kahawai/patches/dpdk/21.08/0010-Add-init-time-to-sync-PHY-timer-with-primary-timer.patch && \
+    git am $dpdk_st_kahawai/patches/dpdk/21.11/0001-build-enable-IEEE1588-PTP-option.patch && \
+    git am $dpdk_st_kahawai/patches/dpdk/21.11/0002-Change-to-enable-PTP.patch && \
+    git am $dpdk_st_kahawai/patches/dpdk/21.11/0003-net-ice-support-max-burst-size-configuration.patch && \
+    git am $dpdk_st_kahawai/patches/dpdk/21.11/0004-eanble-PF-ICE-rate-limit.patch && \
+    git am $dpdk_st_kahawai/patches/dpdk/21.11/0005-update-VF-rate-limit.patch && \
+    git am $dpdk_st_kahawai/patches/dpdk/21.11/0006-net-iavf-support-max-burst-size-configuration.patch && \
+    git am $dpdk_st_kahawai/patches/dpdk/21.11/20.11-3-7-net-ice-support-256-queues.patch && \
+    git am $dpdk_st_kahawai/patches/dpdk/21.11/0007-pcapng-add-ns-timestamp-for-copy-api.patch && \
     meson build && \
     ninja -C build && \
     ninja -C build install && \

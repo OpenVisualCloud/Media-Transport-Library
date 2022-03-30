@@ -57,11 +57,11 @@ static int notify_frame_done(void* priv, uint16_t frame_idx) {
   return 0;
 }
 
-static int tx_next_frame(void* priv, uint16_t* next_frame_idx) {
+static int tx_next_frame(void* priv, uint16_t* next_frame_idx, bool* second_field) {
   struct app_context* s = (struct app_context*)priv;
   int i;
   pthread_mutex_lock(&s->wake_mutex);
-  for (i = 0; i < 3; i++) {
+  for (i = 0; i < TX_VIDEO_FB_CNT; i++) {
     if (s->ready_framebuff[i] == 1) {
       s->framebuff_idx = i;
       s->ready_framebuff[i] = 0;
@@ -70,8 +70,12 @@ static int tx_next_frame(void* priv, uint16_t* next_frame_idx) {
   }
   pthread_cond_signal(&s->wake_cond);
   pthread_mutex_unlock(&s->wake_mutex);
-  if (i == 3) return -1;
+  if (i == TX_VIDEO_FB_CNT) {
+    printf("no ready framebuff\n");
+    return -1;
+  }
   *next_frame_idx = s->framebuff_idx;
+  *second_field = false;
   return 0;
 }
 
@@ -120,8 +124,9 @@ static void* app_tx_video_frame_thread(void* arg) {
 
 int main() {
   struct st_init_params param;
-  memset(&param, 0, sizeof(param));
   int session_num = 1;
+
+  memset(&param, 0, sizeof(param));
   param.num_ports = 1;
   strncpy(param.port[ST_PORT_P], TX_VIDEO_PORT_BDF, ST_PORT_MAX_LEN);
   memcpy(param.sip_addr[ST_PORT_P], g_tx_video_local_ip, ST_IP_ADDR_LEN);
@@ -134,16 +139,18 @@ int main() {
   param.rx_sessions_cnt_max = 0;
   // let lib decide to core or user could define it.
   param.lcores = NULL;
+
+  // create device
   st_handle dev_handle = st_init(&param);
   if (!dev_handle) {
     printf("st_init fail\n");
     return -EIO;
   }
+
   st20_tx_handle tx_handle[session_num];
   struct app_context* app[session_num];
   int ret;
-
-  // create and register rx session
+  // create and register tx session
   for (int i = 0; i < session_num; i++) {
     app[i] = (struct app_context*)malloc(sizeof(struct app_context));
     if (!app[i]) {
@@ -154,7 +161,7 @@ int main() {
     app[i]->idx = i;
     struct st20_tx_ops ops_tx;
     memset(&ops_tx, 0, sizeof(ops_tx));
-    ops_tx.name = "st20_test";
+    ops_tx.name = "st20_tx";
     ops_tx.priv = app[i];  // app handle register to lib
     ops_tx.num_port = 1;
     // tx src ip like 239.0.0.1
@@ -176,7 +183,7 @@ int main() {
     ops_tx.notify_frame_done = notify_frame_done;
     tx_handle[i] = st20_tx_create(dev_handle, &ops_tx);
     if (!tx_handle[i]) {
-      printf(" tx_session is not correctly created");
+      printf("tx_session is not correctly created\n");
       free(app[i]);
       return -EIO;
     }
@@ -200,10 +207,12 @@ int main() {
       return -EIO;
     }
   }
+
   // start tx
   ret = st_start(dev_handle);
   // tx 120s
   sleep(120);
+
   // stop app thread
   for (int i = 0; i < session_num; i++) {
     app[i]->stop = true;

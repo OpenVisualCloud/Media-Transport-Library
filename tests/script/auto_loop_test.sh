@@ -14,7 +14,7 @@ echo "Total ${#TEST_JSON_LIST[@]} cases, each with ${TEST_TIME_SEC}s"
 for ((loop=0; loop<$TEST_LOOP; loop++)); do
 	cur_json_idx=0
 	for json_file in ${TEST_JSON_LIST[@]}; do
-		cmd="$RXTXAPP --log_level error --test_time $TEST_TIME_SEC --config_file $TEST_JSON_DIR/$json_file"
+		cmd="$RXTXAPP --log_level error --test_time $TEST_TIME_SEC --config_file $TEST_JSON_DIR/$json_file --rx_separate_lcore"
 		echo "test with cmd: $cmd, index: $cur_json_idx, loop: $loop"
 		let "cur_json_idx+=1"
 		$cmd

@@ -1,0 +1,69 @@
+/*
+ * Copyright (C) 2021 Intel Corporation.
+ *
+ * This software and the related documents are Intel copyrighted materials,
+ * and your use of them is governed by the express license under which they
+ * were provided to you ("License").
+ * Unless the License provides otherwise, you may not use, modify, copy,
+ * publish, distribute, disclose or transmit this software or the related
+ * documents without Intel's prior written permission.
+ *
+ * This software and the related documents are provided as is, with no
+ * express or implied warranties, other than those that are expressly stated
+ * in the License.
+ *
+ */
+
+#ifndef _ST_LIB_DMA_HEAD_H_
+#define _ST_LIB_DMA_HEAD_H_
+
+#include "st_main.h"
+
+int st_dma_init(struct st_main_impl* impl);
+int st_dma_uinit(struct st_main_impl* impl);
+int st_dma_stat(struct st_main_impl* impl);
+
+struct st_dma_request_req {
+  uint16_t nb_desc;
+  uint16_t max_shared;
+  int sch_idx;
+  int socket_id;
+  void* priv;
+  st_dma_drop_mbuf_cb drop_mbuf_cb;
+};
+
+struct st_dma_lender_dev* st_dma_request_dev(struct st_main_impl* impl,
+                                             struct st_dma_request_req* req);
+int st_dma_free_dev(struct st_main_impl* impl, struct st_dma_lender_dev* dev);
+
+/* enqueue mbuf for later free, also mark the lender session */
+int st_dma_borrow_mbuf(struct st_dma_lender_dev* dev, struct rte_mbuf* mbuf);
+/* dequeue and free mbufs */
+int st_dma_drop_mbuf(struct st_dma_lender_dev* dev, uint16_t nb_mbuf);
+
+bool st_dma_full(struct st_dma_lender_dev* dev);
+
+int st_dma_copy(struct st_dma_lender_dev* dev, rte_iova_t dst, rte_iova_t src,
+                uint32_t length);
+int st_dma_fill(struct st_dma_lender_dev* dev, rte_iova_t dst, uint64_t pattern,
+                uint32_t length);
+int st_dma_submit(struct st_dma_lender_dev* dev);
+uint16_t st_dma_completed(struct st_dma_lender_dev* dev, uint16_t nb_cpls,
+                          uint16_t* last_idx, bool* has_error);
+
+static inline bool st_dma_empty(struct st_dma_lender_dev* dev) {
+  if (dev->nb_borrowed)
+    return false;
+  else
+    return true;
+}
+
+static inline int st_dma_lender_id(struct st_dma_lender_dev* dev) {
+  return dev->lender_id;
+}
+
+static inline int st_dma_dev_id(struct st_dma_lender_dev* dev) {
+  return dev->parent->idx;
+}
+
+#endif
