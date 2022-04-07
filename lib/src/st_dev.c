@@ -517,15 +517,16 @@ static int dev_detect_link(struct st_main_impl* impl, enum st_port port) {
   memset(&eth_link, 0, sizeof(eth_link));
 
   for (int i = 0; i < 50; i++) {
-    rte_eth_link_get(port_id, &eth_link);
+    rte_eth_link_get_nowait(port_id, &eth_link);
     if (eth_link.link_status) {
       inf->link_speed = eth_link.link_speed;
-      info("%s(%d), link_speed %dg\n", __func__, port, inf->link_speed / 1000);
+      st_eth_link_dump(port_id);
       return 0;
     }
     st_sleep_ms(100); /* only happen on CVL PF */
   }
 
+  st_eth_link_dump(port_id);
   err("%s(%d), link not connected for %s\n", __func__, port,
       st_get_user_params(impl)->port[port]);
   return -EIO;
