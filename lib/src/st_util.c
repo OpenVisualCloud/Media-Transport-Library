@@ -196,11 +196,11 @@ void st_lcore_dump() { rte_lcore_dump(stdout); }
 void st_eth_link_dump(uint16_t port_id) {
   struct rte_eth_link eth_link;
 
-  rte_eth_link_get(port_id, &eth_link);
+  rte_eth_link_get_nowait(port_id, &eth_link);
 
-  info("%s(%d), link_speed %dg link_status %d link_duplex %d link_autoneg %d\n", __func__,
-       port_id, eth_link.link_speed / 1000, eth_link.link_status, eth_link.link_duplex,
-       eth_link.link_autoneg);
+  critical("%s(%d), link_speed %dg link_status %d link_duplex %d link_autoneg %d\n",
+           __func__, port_id, eth_link.link_speed / 1000, eth_link.link_status,
+           eth_link.link_duplex, eth_link.link_autoneg);
 }
 
 void st_eth_macaddr_dump(enum st_port port, char* tag, struct rte_ether_addr* mac_addr) {

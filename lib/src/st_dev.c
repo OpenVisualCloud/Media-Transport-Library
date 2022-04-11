@@ -516,7 +516,7 @@ static int dev_detect_link(struct st_main_impl* impl, enum st_port port) {
 
   memset(&eth_link, 0, sizeof(eth_link));
 
-  for (int i = 0; i < 50; i++) {
+  for (int i = 0; i < 100; i++) {
     rte_eth_link_get_nowait(port_id, &eth_link);
     if (eth_link.link_status) {
       inf->link_speed = eth_link.link_speed;
