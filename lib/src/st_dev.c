@@ -33,6 +33,54 @@
 
 static int dev_reset_port(struct st_main_impl* impl, enum st_port port);
 
+static void dev_eth_xstat(uint16_t port_id) {
+  struct rte_eth_xstat* xstats;
+  int cnt_xstats, idx_xstat;
+  struct rte_eth_xstat_name* xstats_names;
+
+  /* Get count */
+  cnt_xstats = rte_eth_xstats_get_names(port_id, NULL, 0);
+  if (cnt_xstats < 0) {
+    err("%s(%u), get names fail\n", __func__, port_id);
+    return;
+  }
+
+  /* Get id-name lookup table */
+  xstats_names = malloc(sizeof(struct rte_eth_xstat_name) * cnt_xstats);
+  if (xstats_names == NULL) {
+    err("%s(%u), malloc xstats names fail\n", __func__, port_id);
+    return;
+  }
+  if (cnt_xstats != rte_eth_xstats_get_names(port_id, xstats_names, cnt_xstats)) {
+    err("%s(%u), get cnt_xstats names fail\n", __func__, port_id);
+    free(xstats_names);
+    return;
+  }
+
+  /* Get stats themselves */
+  xstats = malloc(sizeof(struct rte_eth_xstat) * cnt_xstats);
+  if (xstats == NULL) {
+    err("%s(%u), malloc xstats fail\n", __func__, port_id);
+    free(xstats_names);
+    return;
+  }
+  if (cnt_xstats != rte_eth_xstats_get(port_id, xstats, cnt_xstats)) {
+    err("%s(%u), cnt_xstats mismatch\n", __func__, port_id);
+    free(xstats_names);
+    free(xstats);
+    return;
+  }
+
+  /* Display xstats, err level since this called only with error case */
+  for (idx_xstat = 0; idx_xstat < cnt_xstats; idx_xstat++) {
+    if (xstats[idx_xstat].value) {
+      err("%s: %" PRIu64 "\n", xstats_names[idx_xstat].name, xstats[idx_xstat].value);
+    }
+  }
+  free(xstats_names);
+  free(xstats);
+}
+
 static void dev_eth_stat(struct st_main_impl* impl) {
   int num_ports = st_num_ports(impl);
   uint16_t port_id;
@@ -42,8 +90,6 @@ static void dev_eth_stat(struct st_main_impl* impl) {
     port_id = st_port_id(impl, i);
 
     if (!rte_eth_stats_get(port_id, &stats)) {
-      rte_eth_stats_reset(port_id);
-
       uint64_t orate_m = stats.obytes * 8 / ST_DEV_STAT_INTERVAL_S / ST_DEV_STAT_M_UNIT;
       uint64_t irate_m = stats.ibytes * 8 / ST_DEV_STAT_INTERVAL_S / ST_DEV_STAT_M_UNIT;
 
@@ -51,10 +97,14 @@ static void dev_eth_stat(struct st_main_impl* impl) {
            " Mb/s, pkts, tx: %" PRIu64 ", rx: %" PRIu64 "\n",
            i, orate_m, irate_m, stats.opackets, stats.ipackets);
       if (stats.imissed || stats.ierrors || stats.oerrors || stats.rx_nombuf) {
-        info("DEV(%d): Status: imissed %" PRIu64 " ierrors %" PRIu64 " oerrors %" PRIu64
-             " rx_nombuf %" PRIu64 "\n",
-             i, stats.imissed, stats.ierrors, stats.oerrors, stats.rx_nombuf);
+        err("DEV(%d): Status: imissed %" PRIu64 " ierrors %" PRIu64 " oerrors %" PRIu64
+            " rx_nombuf %" PRIu64 "\n",
+            i, stats.imissed, stats.ierrors, stats.oerrors, stats.rx_nombuf);
+        dev_eth_xstat(port_id);
       }
+
+      rte_eth_stats_reset(port_id);
+      rte_eth_xstats_reset(port_id);
     }
   }
 }
