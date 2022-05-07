@@ -1404,7 +1404,6 @@ static inline uint64_t st_mbuf_get_hw_time_stamp(struct st_main_impl* impl,
   uint64_t time_stamp =
       *RTE_MBUF_DYNFIELD(mbuf, impl->dynfield_offset, rte_mbuf_timestamp_t*);
   st_ns_to_timespec(time_stamp, &spec);
-  spec.tv_sec -= ptp->master_utc_offset;
   time_stamp = st_timespec_to_ns(&spec) + ptp->ptp_delta;
   return time_stamp;
 }

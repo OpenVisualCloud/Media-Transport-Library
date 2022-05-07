@@ -73,7 +73,6 @@ static uint64_t ptp_get_time(struct st_ptp_impl* ptp) {
   struct timespec spec;
 
   ptp_get_time_spec(ptp, &spec);
-  spec.tv_sec -= ptp->master_utc_offset;
   return st_timespec_to_ns(&spec);
 }
 
@@ -436,14 +435,14 @@ static int ptp_parse_sync(struct st_ptp_impl* ptp, struct st_ptp_sync_msg* msg, 
 static int ptp_parse_follow_up(struct st_ptp_impl* ptp,
                                struct st_ptp_follow_up_msg* msg) {
   if (msg->hdr.sequence_id != ptp->t2_sequence_id) {
-    dbg("%s(%d), error sequence id %d %d\n", __func__, port, msg->hdr.sequence_id,
+    dbg("%s(%d), error sequence id %d %d\n", __func__, ptp->port, msg->hdr.sequence_id,
         ptp->t2_sequence_id);
     return -EINVAL;
   }
 
   ptp->t1 = ptp_net_tmstamp_to_ns(&msg->precise_origin_timestamp);
   ptp->t1_domain_number = msg->hdr.domain_number;
-  dbg("%s(%d), t1 %" PRIu64 ", ptp %" PRIu64 "\n", __func__, port, ptp->t1,
+  dbg("%s(%d), t1 %" PRIu64 ", ptp %" PRIu64 "\n", __func__, ptp->port, ptp->t1,
       ptp_get_raw_time(ptp));
 
 #if ST_PTP_USE_TX_TIMER
@@ -755,6 +754,7 @@ void st_ptp_stat(struct st_main_impl* impl) {
 
     ns = st_get_ptp_time(impl, i);
     st_ns_to_timespec(ns, &spec);
+    spec.tv_sec -= ptp->master_utc_offset; /* display with utc offset */
     localtime_r(&spec.tv_sec, &t);
     strftime(date_time, sizeof(date_time), "%Y-%m-%d %H:%M:%S", &t);
     info("PTP(%d), time %" PRIu64 ", %s\n", i, ns, date_time);
