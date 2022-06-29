@@ -1343,7 +1343,7 @@ static int rx_video_session_handle_frame_pkt(struct st_main_impl* impl,
     if ((pkt_idx < 0) || (pkt_idx >= (s->st20_frame_bitmap_size * 8))) {
       dbg("%s(%d,%d), drop as invalid pkt_idx %d base %u\n", __func__, s->idx, s_port,
           pkt_idx, slot->seq_id_base_u32);
-      s->st20_stat_pkts_idx_dropped++;
+      s->st20_stat_pkts_idx_oo_bitmap++;
       return -EIO;
     }
     bool is_set = st_bitmap_test_and_set(bitmap, pkt_idx);
@@ -1518,7 +1518,7 @@ static int rx_video_session_handle_rtp_pkt(struct st_main_impl* impl,
     if ((pkt_idx < 0) || (pkt_idx >= (s->st20_frame_bitmap_size * 8))) {
       dbg("%s(%d,%d), drop as invalid pkt_idx %d base %u\n", __func__, s->idx, s_port,
           pkt_idx, slot->seq_id_base);
-      s->st20_stat_pkts_idx_dropped++;
+      s->st20_stat_pkts_idx_oo_bitmap++;
       return -EIO;
     }
     bool is_set = st_bitmap_test_and_set(bitmap, pkt_idx);
@@ -1661,7 +1661,7 @@ static int rx_video_session_handle_st22_pkt(struct st_main_impl* impl,
     if ((pkt_idx < 0) || (pkt_idx >= (s->st20_frame_bitmap_size * 8))) {
       dbg("%s(%d,%d), drop as invalid pkt_idx %d base %u\n", __func__, s->idx, s_port,
           pkt_idx, slot->seq_id_base);
-      s->st20_stat_pkts_idx_dropped++;
+      s->st20_stat_pkts_idx_oo_bitmap++;
       return -EIO;
     }
     bool is_set = st_bitmap_test_and_set(bitmap, pkt_idx);
@@ -2282,8 +2282,8 @@ static int rx_video_session_attach(struct st_main_impl* impl,
     s->st20_frame_size = ops->width * ops->height * s->st20_pg.size / s->st20_pg.coverage;
   s->st20_uframe_size = ops->uframe_size;
   if (ops->interlaced) s->st20_frame_size = s->st20_frame_size >> 1;
-  /* at least 1000 byte for each packet */
-  s->st20_frame_bitmap_size = s->st20_frame_size / 1000 / 8;
+  /* at least 800 byte for each packet */
+  s->st20_frame_bitmap_size = s->st20_frame_size / 800 / 8;
   /* one line at line 2 packets for all the format */
   if (s->st20_frame_bitmap_size < ops->height * 2 / 8)
     s->st20_frame_bitmap_size = ops->height * 2 / 8;
@@ -2295,6 +2295,7 @@ static int rx_video_session_attach(struct st_main_impl* impl,
   }
 
   s->st20_stat_pkts_idx_dropped = 0;
+  s->st20_stat_pkts_idx_oo_bitmap = 0;
   s->st20_stat_pkts_no_slot = 0;
   s->st20_stat_pkts_offset_dropped = 0;
   s->st20_stat_pkts_redunant_dropped = 0;
@@ -2438,11 +2439,12 @@ static void rx_video_session_stat(struct st_rx_video_sessions_mgr* mgr,
       s->st20_stat_pkts_offset_dropped) {
     info(
         "RX_VIDEO_SESSION(%d,%d): incomplete frames %d, pkts (idx error: %d, offset "
-        "error: %d)\n",
+        "error: %d, idx out of bitmap: %d)\n",
         m_idx, idx, s->st20_stat_frames_dropped, s->st20_stat_pkts_idx_dropped,
-        s->st20_stat_pkts_offset_dropped);
+        s->st20_stat_pkts_offset_dropped, s->st20_stat_pkts_idx_oo_bitmap);
     s->st20_stat_frames_dropped = 0;
     s->st20_stat_pkts_idx_dropped = 0;
+    s->st20_stat_pkts_idx_oo_bitmap = 0;
   }
   if (s->st20_stat_pkts_rtp_ring_full) {
     info("RX_VIDEO_SESSION(%d,%d): rtp dropped pkts %d as ring full\n", m_idx, idx,

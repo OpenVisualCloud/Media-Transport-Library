@@ -771,6 +771,7 @@ struct st_rx_video_session_impl {
 
   /* status */
   int st20_stat_pkts_idx_dropped;
+  int st20_stat_pkts_idx_oo_bitmap;
   int st20_stat_pkts_enqueue_fallback; /* for pkt lcore */
   int st20_stat_pkts_offset_dropped;
   int st20_stat_pkts_redunant_dropped;
