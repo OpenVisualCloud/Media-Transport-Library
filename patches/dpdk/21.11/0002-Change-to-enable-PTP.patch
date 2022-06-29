@@ -1,7 +1,7 @@
-From 3d99ab12013109a2138b562dd0d8b7e1c7c754c9 Mon Sep 17 00:00:00 2001
+From cf261e4f83e83e7564a124c2d57d8cdecff161da Mon Sep 17 00:00:00 2001
 From: qiaoliu78 <media@qiaoliu-mobl2.ccr.corp.intel.com>
 Date: Wed, 22 Dec 2021 15:21:52 +0800
-Subject: [PATCH 2/6] Change to enable PTP
+Subject: [PATCH 2/9] Change to enable PTP
 
 ---
  drivers/net/ice/ice_ethdev.c |  5 +++++

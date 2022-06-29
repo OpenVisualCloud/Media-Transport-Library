@@ -22,8 +22,11 @@
 #include <string.h>
 #include <unistd.h>
 
+#include "../src/app_platform.h"
+
 #define RX_VIDEO_PORT_BDF "0000:af:00.0"
 #define RX_VIDEO_UDP_PORT (10000)
+#define RX_VIDEO_PAYLOAD_TYPE (112)
 
 /* local ip address for current bdf port */
 static uint8_t g_rx_video_local_ip[ST_IP_ADDR_LEN] = {192, 168, 0, 1};
@@ -43,9 +46,9 @@ struct app_context {
 static int rx_rtp_ready(void* priv) {
   struct app_context* s = (struct app_context*)priv;
   // wake up the app thread who is waiting for the rtp buf;
-  pthread_mutex_lock(&s->wake_mutex);
-  pthread_cond_signal(&s->wake_cond);
-  pthread_mutex_unlock(&s->wake_mutex);
+  st_pthread_mutex_lock(&s->wake_mutex);
+  st_pthread_cond_signal(&s->wake_cond);
+  st_pthread_mutex_unlock(&s->wake_mutex);
   return 0;
 }
 
@@ -60,9 +63,9 @@ static void* app_rx_video_rtp_thread(void* arg) {
     mbuf = st20_rx_get_mbuf(s->handle, &usrptr, &len);
     if (!mbuf) {
       /* no buffer */
-      pthread_mutex_lock(&s->wake_mutex);
-      if (!s->stop) pthread_cond_wait(&s->wake_cond, &s->wake_mutex);
-      pthread_mutex_unlock(&s->wake_mutex);
+      st_pthread_mutex_lock(&s->wake_mutex);
+      if (!s->stop) st_pthread_cond_wait(&s->wake_cond, &s->wake_mutex);
+      st_pthread_mutex_unlock(&s->wake_mutex);
       continue;
     }
 
@@ -128,6 +131,7 @@ int main() {
     ops_rx.height = 1080;
     ops_rx.fps = ST_FPS_P59_94;
     ops_rx.fmt = ST20_FMT_YUV_422_10BIT;
+    ops_rx.payload_type = RX_VIDEO_PAYLOAD_TYPE;
     ops_rx.rtp_ring_size = 1024;
     ops_rx.notify_rtp_ready = rx_rtp_ready;
     rx_handle[i] = st20_rx_create(dev_handle, &ops_rx);
@@ -137,8 +141,8 @@ int main() {
       return -1;
     }
     app[i]->handle = rx_handle[i];
-    pthread_mutex_init(&app[i]->wake_mutex, NULL);
-    pthread_cond_init(&app[i]->wake_cond, NULL);
+    st_pthread_mutex_init(&app[i]->wake_mutex, NULL);
+    st_pthread_cond_init(&app[i]->wake_cond, NULL);
     ret = pthread_create(&app[i]->app_thread, NULL, app_rx_video_rtp_thread, app[i]);
     if (ret < 0) {
       printf("%s(%d), app_thread create fail %d\n", __func__, ret, i);
@@ -160,9 +164,9 @@ int main() {
   // stop app thread
   for (int i = 0; i < session_num; i++) {
     app[i]->stop = true;
-    pthread_mutex_lock(&app[i]->wake_mutex);
-    pthread_cond_signal(&app[i]->wake_cond);
-    pthread_mutex_unlock(&app[i]->wake_mutex);
+    st_pthread_mutex_lock(&app[i]->wake_mutex);
+    st_pthread_cond_signal(&app[i]->wake_cond);
+    st_pthread_mutex_unlock(&app[i]->wake_mutex);
     pthread_join(app[i]->app_thread, NULL);
   }
 
@@ -175,8 +179,8 @@ int main() {
     if (ret) {
       printf("session free failed\n");
     }
-    pthread_mutex_destroy(&app[i]->wake_mutex);
-    pthread_cond_destroy(&app[i]->wake_cond);
+    st_pthread_mutex_destroy(&app[i]->wake_mutex);
+    st_pthread_cond_destroy(&app[i]->wake_cond);
     printf("session(%d) received frames %d\n", i, app[i]->fb_rec);
     free(app[i]);
   }

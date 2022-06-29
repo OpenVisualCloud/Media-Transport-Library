@@ -1,7 +1,7 @@
-From e2004bea072fa82da210d0a6d72fed0ae7ac3a3f Mon Sep 17 00:00:00 2001
+From 8f9422dc9e77e9083c9b68d13f46ae4173742dfa Mon Sep 17 00:00:00 2001
 From: Ping Yu <ping.yu@intel.com>
 Date: Thu, 16 Sep 2021 15:30:23 +0800
-Subject: [PATCH 4/6] eanble PF ICE rate limit
+Subject: [PATCH 4/9] eanble PF ICE rate limit
 
 Signed-off-by: Ping Yu <ping.yu@intel.com>
 ---

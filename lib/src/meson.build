@@ -34,6 +34,8 @@ sources = files(
 	'st_dma.c',
 	'st_avx512.c',
 	'st_avx512_vbmi.c',
+	'st_admin.c',
+	'st_config.c',
 )
 
 if get_option('enable_kni') == true
@@ -43,3 +45,5 @@ endif
 if is_windows
   sources += files('../windows/win_posix.c')
 endif
+
+subdir('pipeline')

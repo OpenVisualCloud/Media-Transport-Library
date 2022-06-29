@@ -19,13 +19,18 @@
 #include "log.h"
 #include "tests.h"
 
-#define ST20_TRAIN_TIME_S (3) /* time for train_pacing */
+#define ST20_TRAIN_TIME_S (0) /* 0 for runtime rl */
+
+#define ST20_TEST_PAYLOAD_TYPE (112)
 
 static int tx_next_video_frame(void* priv, uint16_t* next_frame_idx, bool* second_field) {
   auto ctx = (tests_context*)priv;
 
+  if (!ctx->handle) return -EIO; /* not ready */
+
   if (ctx->slice) {
-    uint8_t* fb = (uint8_t*)st20_tx_get_framebuffer(ctx->handle, ctx->fb_idx);
+    uint8_t* fb =
+        (uint8_t*)st20_tx_get_framebuffer((st20_tx_handle)ctx->handle, ctx->fb_idx);
     memset(fb, 0x0, ctx->frame_size);
     ctx->lines_ready[ctx->fb_idx] = 0;
   }
@@ -43,6 +48,8 @@ static int tx_next_video_frame(void* priv, uint16_t* next_frame_idx, bool* secon
 static int tx_next_video_field(void* priv, uint16_t* next_frame_idx, bool* second_field) {
   auto ctx = (tests_context*)priv;
 
+  if (!ctx->handle) return -EIO; /* not ready */
+
   *next_frame_idx = ctx->fb_idx;
   *second_field = ctx->fb_send % 2 ? true : false;
   dbg("%s, next_frame_idx %d\n", __func__, *next_frame_idx);
@@ -56,7 +63,9 @@ static int tx_next_video_field(void* priv, uint16_t* next_frame_idx, bool* secon
 static int tx_frame_lines_ready(void* priv, uint16_t frame_idx, uint16_t* lines_ready) {
   auto ctx = (tests_context*)priv;
 
-  uint8_t* fb = (uint8_t*)st20_tx_get_framebuffer(ctx->handle, frame_idx);
+  if (!ctx->handle) return -EIO; /* not ready */
+
+  uint8_t* fb = (uint8_t*)st20_tx_get_framebuffer((st20_tx_handle)ctx->handle, frame_idx);
   int offset = ctx->lines_ready[frame_idx] * ctx->stride;
   uint16_t lines = ctx->lines_per_slice;
   if (ctx->lines_ready[frame_idx] + lines > ctx->height)
@@ -80,12 +89,12 @@ static int tx_video_build_ooo_mapping(tests_context* s) {
     ooo_mapping[i] = i;
   }
 
-  int ooo_pkts = rand() % 7;
-  if (ooo_pkts <= 0) ooo_pkts = 7;
+  int ooo_pkts = rand() % 4;
+  if (ooo_pkts <= 0) ooo_pkts = 4;
   int ooo_start = rand() % 10;
-  if (ooo_start <= 0) ooo_start = 7;
+  if (ooo_start <= 0) ooo_start = 10;
   int ooo_end = ooo_start + ooo_pkts;
-  int ooo_step = 100;
+  int ooo_step = total_pkts / 40;
   while (ooo_end < total_pkts) {
     int s = ooo_start, e = ooo_end, temp;
     while (s <= e) {
@@ -138,7 +147,7 @@ static int tx_video_build_rtp_packet(tests_context* s, struct st20_rfc4175_rtp_h
   rtp->base.padding = 0;
   rtp->base.version = 2;
   rtp->base.marker = 0;
-  rtp->base.payload_type = 96;
+  rtp->base.payload_type = ST20_TEST_PAYLOAD_TYPE;
   rtp->row_number = htons(row_number);
   rtp->row_offset = htons(row_offset);
   rtp->base.tmstamp = htonl(s->rtp_tmstamp);
@@ -164,8 +173,8 @@ static int tx_video_build_rtp_packet(tests_context* s, struct st20_rfc4175_rtp_h
     rtp->row_offset = htons(row_offset | ST20_SRD_OFFSET_CONTINUATION);
     *pkt_len += sizeof(*e_rtp);
   }
-  if (s->check_md5) {
-    st_memcpy(payload, s->frame_buf[s->fb_idx % TEST_MD5_HIST_NUM] + offset, data_len);
+  if (s->check_sha) {
+    st_memcpy(payload, s->frame_buf[s->fb_idx % TEST_SHA_HIST_NUM] + offset, data_len);
   }
 
   s->pkt_idx++;
@@ -194,11 +203,11 @@ static void tx_feed_packet(void* args) {
   std::unique_lock<std::mutex> lck(ctx->mtx, std::defer_lock);
   while (!ctx->stop) {
     /* get available buffer*/
-    mbuf = st20_tx_get_mbuf(ctx->handle, &usrptr);
+    mbuf = st20_tx_get_mbuf((st20_tx_handle)ctx->handle, &usrptr);
     if (!mbuf) {
       lck.lock();
       /* try again */
-      mbuf = st20_tx_get_mbuf(ctx->handle, &usrptr);
+      mbuf = st20_tx_get_mbuf((st20_tx_handle)ctx->handle, &usrptr);
       if (mbuf) {
         lck.unlock();
       } else {
@@ -211,12 +220,14 @@ static void tx_feed_packet(void* args) {
     /* build the rtp pkt */
     tx_video_build_rtp_packet(ctx, (struct st20_rfc4175_rtp_hdr*)usrptr, &mbuf_len);
 
-    st20_tx_put_mbuf(ctx->handle, mbuf, mbuf_len);
+    st20_tx_put_mbuf((st20_tx_handle)ctx->handle, mbuf, mbuf_len);
   }
 }
 
 static int tx_rtp_done(void* args) {
   auto ctx = (tests_context*)args;
+  if (!ctx->handle) return -EIO; /* not ready */
+
   std::unique_lock<std::mutex> lck(ctx->mtx);
   ctx->cv.notify_all();
   if (!ctx->start_time) ctx->start_time = st_test_get_monotonic_time();
@@ -225,6 +236,8 @@ static int tx_rtp_done(void* args) {
 
 static int rx_rtp_ready(void* args) {
   auto ctx = (tests_context*)args;
+  if (!ctx->handle) return -EIO; /* not ready */
+
   std::unique_lock<std::mutex> lck(ctx->mtx);
   ctx->cv.notify_all();
   if (!ctx->start_time) ctx->start_time = st_test_get_monotonic_time();
@@ -301,11 +314,11 @@ static void rx_get_packet(void* args) {
   struct st20_rfc4175_rtp_hdr* hdr;
   while (!ctx->stop) {
     /* get available buffer*/
-    mbuf = st20_rx_get_mbuf(ctx->handle, &usrptr, &mbuf_len);
+    mbuf = st20_rx_get_mbuf((st20_rx_handle)ctx->handle, &usrptr, &mbuf_len);
     if (!mbuf) {
       lck.lock();
       /* try again */
-      mbuf = st20_rx_get_mbuf(ctx->handle, &usrptr, &mbuf_len);
+      mbuf = st20_rx_get_mbuf((st20_rx_handle)ctx->handle, &usrptr, &mbuf_len);
       if (mbuf) {
         lck.unlock();
       } else {
@@ -326,10 +339,10 @@ static void rx_get_packet(void* args) {
       ctx->fb_rec++;
       ctx->packet_rec = 0;
     }
-    if (ctx->check_md5) {
+    if (ctx->check_sha) {
       rx_handle_rtp(ctx, hdr, newframe);
     }
-    st20_rx_put_mbuf(ctx->handle, mbuf);
+    st20_rx_put_mbuf((st20_rx_handle)ctx->handle, mbuf);
   }
 }
 
@@ -371,6 +384,7 @@ static void st20_tx_ops_init(tests_context* st20, struct st20_tx_ops* ops) {
   ops->height = 1080;
   ops->fps = ST_FPS_P59_94;
   ops->fmt = ST20_FMT_YUV_422_10BIT;
+  ops->payload_type = ST20_TEST_PAYLOAD_TYPE;
 
   ops->framebuff_cnt = st20->fb_cnt;
   ops->get_next_frame = tx_next_video_frame;
@@ -399,6 +413,7 @@ static void st20_rx_ops_init(tests_context* st20, struct st20_rx_ops* ops) {
   ops->height = 1080;
   ops->fps = ST_FPS_P59_94;
   ops->fmt = ST20_FMT_YUV_422_10BIT;
+  ops->payload_type = ST20_TEST_PAYLOAD_TYPE;
 
   ops->framebuff_cnt = st20->fb_cnt;
   ops->notify_frame_ready = st20_rx_frame_ready;
@@ -525,9 +540,13 @@ static void rtp_tx_specific_init(struct st20_tx_ops* ops, tests_context* test_ct
   test_ctx->bytes_in_line = bytes_in_line;
   test_ctx->width = ops->width;
   test_ctx->single_line = (ops->packing == ST20_PACKING_GPM_SL);
+  test_ctx->frame_size =
+      ops->width * ops->height * test_ctx->st20_pg.size / test_ctx->st20_pg.coverage;
 
   ops->rtp_frame_total_pkts = test_ctx->total_pkts_in_frame;
   ops->rtp_pkt_size = test_ctx->pkt_data_len + sizeof(struct st20_rfc4175_rtp_hdr);
+  if (ops->packing != ST20_PACKING_GPM_SL) /* no extra for GPM_SL */
+    ops->rtp_pkt_size += sizeof(struct st20_rfc4175_extra_rtp_hdr);
   ops->notify_rtp_done = tx_rtp_done;
   ops->rtp_ring_size = 1024;
 }
@@ -570,12 +589,14 @@ static void st20_tx_fps_test(enum st20_type type[], enum st_fps fps[], int width
     ops.width = width[i];
     ops.height = height[i];
     ops.fmt = fmt;
+    ops.packing = ST20_PACKING_BPM;
     if (type[i] == ST20_TYPE_RTP_LEVEL) {
       rtp_tx_specific_init(&ops, test_ctx[i]);
     }
     handle[i] = st20_tx_create(m_handle, &ops);
-    test_ctx[i]->handle = handle[i];
+
     ASSERT_TRUE(handle[i] != NULL);
+    test_ctx[i]->handle = handle[i];
     if (type[i] == ST20_TYPE_RTP_LEVEL) {
       test_ctx[i]->stop = false;
       rtp_thread[i] = std::thread(tx_feed_packet, test_ctx[i]);
@@ -673,14 +694,16 @@ static void st20_rx_fps_test(enum st20_type type[], enum st_fps fps[], int width
     ops_tx.height = height[i];
     ops_tx.fps = fps[i];
     ops_tx.fmt = fmt;
+    ops_tx.payload_type = ST20_TEST_PAYLOAD_TYPE;
     ops_tx.framebuff_cnt = test_ctx_tx[i]->fb_cnt;
     ops_tx.get_next_frame = tx_next_video_frame;
     if (type[i] == ST20_TYPE_RTP_LEVEL) {
       rtp_tx_specific_init(&ops_tx, test_ctx_tx[i]);
     }
+
     tx_handle[i] = st20_tx_create(m_handle, &ops_tx);
-    test_ctx_tx[i]->handle = tx_handle[i];
     ASSERT_TRUE(tx_handle[i] != NULL);
+    test_ctx_tx[i]->handle = tx_handle[i];
     if (type[i] == ST20_TYPE_RTP_LEVEL) {
       test_ctx_tx[i]->stop = false;
       rtp_thread_tx[i] = std::thread(tx_feed_packet, test_ctx_tx[i]);
@@ -708,15 +731,17 @@ static void st20_rx_fps_test(enum st20_type type[], enum st_fps fps[], int width
     ops_rx.height = height[i];
     ops_rx.fps = fps[i];
     ops_rx.fmt = fmt;
+    ops_rx.payload_type = ST20_TEST_PAYLOAD_TYPE;
     ops_rx.framebuff_cnt = test_ctx_rx[i]->fb_cnt;
     ops_rx.notify_frame_ready = st20_rx_frame_ready;
     ops_rx.notify_rtp_ready = rx_rtp_ready;
     ops_rx.rtp_ring_size = 1024;
     ops_rx.flags = ST20_RX_FLAG_DMA_OFFLOAD;
     rx_handle[i] = st20_rx_create(m_handle, &ops_rx);
-    test_ctx_rx[i]->handle = rx_handle[i];
+
     test_ctx_rx[i]->total_pkts_in_frame = test_ctx_tx[i]->total_pkts_in_frame;
     ASSERT_TRUE(rx_handle[i] != NULL);
+    test_ctx_rx[i]->handle = rx_handle[i];
     if (type[i] == ST20_TYPE_RTP_LEVEL) {
       test_ctx_rx[i]->stop = false;
       rtp_thread_rx[i] = std::thread(rx_get_packet, test_ctx_rx[i]);
@@ -1004,6 +1029,7 @@ static void st20_rx_update_src_test(enum st20_type type, int tx_sessions) {
     ops_tx.height = 1080;
     ops_tx.fps = ST_FPS_P59_94;
     ops_tx.fmt = ST20_FMT_YUV_422_10BIT;
+    ops_tx.payload_type = ST20_TEST_PAYLOAD_TYPE;
     ops_tx.framebuff_cnt = test_ctx_tx[i]->fb_cnt;
     ops_tx.get_next_frame = tx_next_video_frame;
     if (type == ST20_TYPE_RTP_LEVEL) {
@@ -1011,9 +1037,8 @@ static void st20_rx_update_src_test(enum st20_type type, int tx_sessions) {
     }
 
     tx_handle[i] = st20_tx_create(m_handle, &ops_tx);
-    test_ctx_tx[i]->handle = tx_handle[i];
     ASSERT_TRUE(tx_handle[i] != NULL);
-
+    test_ctx_tx[i]->handle = tx_handle[i];
     if (type == ST20_TYPE_RTP_LEVEL) {
       test_ctx_tx[i]->stop = false;
       rtp_thread_tx[i] = std::thread(tx_feed_packet, test_ctx_tx[i]);
@@ -1041,15 +1066,17 @@ static void st20_rx_update_src_test(enum st20_type type, int tx_sessions) {
     ops_rx.height = 1080;
     ops_rx.fps = ST_FPS_P59_94;
     ops_rx.fmt = ST20_FMT_YUV_422_10BIT;
+    ops_rx.payload_type = ST20_TEST_PAYLOAD_TYPE;
     ops_rx.framebuff_cnt = test_ctx_rx[i]->fb_cnt;
     ops_rx.notify_frame_ready = st20_rx_frame_ready;
     ops_rx.notify_rtp_ready = rx_rtp_ready;
     ops_rx.rtp_ring_size = 1024;
     ops_rx.flags = ST20_RX_FLAG_RECEIVE_INCOMPLETE_FRAME | ST20_RX_FLAG_DMA_OFFLOAD;
     rx_handle[i] = st20_rx_create(m_handle, &ops_rx);
-    test_ctx_rx[i]->handle = rx_handle[i];
+
     test_ctx_rx[i]->total_pkts_in_frame = test_ctx_tx[i]->total_pkts_in_frame;
     ASSERT_TRUE(rx_handle[i] != NULL);
+    test_ctx_rx[i]->handle = rx_handle[i];
     if (type == ST20_TYPE_RTP_LEVEL) {
       test_ctx_rx[i]->stop = false;
       rtp_thread_rx[i] = std::thread(rx_get_packet, test_ctx_rx[i]);
@@ -1334,7 +1361,7 @@ static int st20_digest_rx_field_ready(void* priv, void* frame,
 static void st20_digest_rx_frame_check(void* args) {
   auto ctx = (tests_context*)args;
   std::unique_lock<std::mutex> lck(ctx->mtx, std::defer_lock);
-  unsigned char result[MD5_DIGEST_LENGTH];
+  unsigned char result[SHA256_DIGEST_LENGTH];
   while (!ctx->stop) {
     if (ctx->buf_q.empty()) {
       lck.lock();
@@ -1346,17 +1373,17 @@ static void st20_digest_rx_frame_check(void* args) {
       ctx->buf_q.pop();
       dbg("%s, frame %p\n", __func__, frame);
       int i;
-      MD5((unsigned char*)frame, ctx->uframe_size ? ctx->uframe_size : ctx->frame_size,
-          result);
-      for (i = 0; i < TEST_MD5_HIST_NUM; i++) {
-        unsigned char* target_md5 = ctx->md5s[i];
-        if (!memcmp(result, target_md5, MD5_DIGEST_LENGTH)) break;
+      SHA256((unsigned char*)frame, ctx->uframe_size ? ctx->uframe_size : ctx->frame_size,
+             result);
+      for (i = 0; i < TEST_SHA_HIST_NUM; i++) {
+        unsigned char* target_sha = ctx->shas[i];
+        if (!memcmp(result, target_sha, SHA256_DIGEST_LENGTH)) break;
       }
-      if (i >= TEST_MD5_HIST_NUM) {
-        test_md5_dump("st20_rx_error_md5", result);
+      if (i >= TEST_SHA_HIST_NUM) {
+        test_sha_dump("st20_rx_error_sha", result);
         ctx->fail_cnt++;
       }
-      ctx->check_md5_frame_cnt++;
+      ctx->check_sha_frame_cnt++;
       st20_rx_put_framebuff((st20_rx_handle)ctx->handle, frame);
     }
   }
@@ -1365,7 +1392,7 @@ static void st20_digest_rx_frame_check(void* args) {
 static void st20_digest_rx_field_check(void* args) {
   auto ctx = (tests_context*)args;
   std::unique_lock<std::mutex> lck(ctx->mtx, std::defer_lock);
-  unsigned char result[MD5_DIGEST_LENGTH];
+  unsigned char result[SHA256_DIGEST_LENGTH];
   while (!ctx->stop) {
     if (ctx->buf_q.empty()) {
       lck.lock();
@@ -1379,21 +1406,21 @@ static void st20_digest_rx_field_check(void* args) {
       ctx->flag_q.pop();
       dbg("%s, frame %p\n", __func__, frame);
       int i;
-      MD5((unsigned char*)frame, ctx->uframe_size ? ctx->uframe_size : ctx->frame_size,
-          result);
-      for (i = 0; i < TEST_MD5_HIST_NUM; i++) {
-        unsigned char* target_md5 = ctx->md5s[i];
-        if (!memcmp(result, target_md5, MD5_DIGEST_LENGTH)) break;
+      SHA256((unsigned char*)frame, ctx->uframe_size ? ctx->uframe_size : ctx->frame_size,
+             result);
+      for (i = 0; i < TEST_SHA_HIST_NUM; i++) {
+        unsigned char* target_sha = ctx->shas[i];
+        if (!memcmp(result, target_sha, SHA256_DIGEST_LENGTH)) break;
       }
-      if (i >= TEST_MD5_HIST_NUM) {
-        test_md5_dump("st20_rx_error_md5", result);
+      if (i >= TEST_SHA_HIST_NUM) {
+        test_sha_dump("st20_rx_error_sha", result);
         ctx->fail_cnt++;
       }
       if (i % 2 != flag) {
-        test_md5_dump("field split error", result);
+        test_sha_dump("field split error", result);
         ctx->fail_cnt++;
       }
-      ctx->check_md5_frame_cnt++;
+      ctx->check_sha_frame_cnt++;
       st20_rx_put_framebuff((st20_rx_handle)ctx->handle, frame);
     }
   }
@@ -1423,7 +1450,7 @@ static void st20_rx_digest_test(enum st20_type tx_type[], enum st20_type rx_type
   std::vector<double> framerate;
   std::vector<std::thread> rtp_thread_tx;
   std::vector<std::thread> rtp_thread_rx;
-  std::vector<std::thread> md5_check;
+  std::vector<std::thread> sha_check;
   int slices_per_frame = 32;
 
   test_ctx_tx.resize(sessions);
@@ -1434,7 +1461,7 @@ static void st20_rx_digest_test(enum st20_type tx_type[], enum st20_type rx_type
   framerate.resize(sessions);
   rtp_thread_tx.resize(sessions);
   rtp_thread_rx.resize(sessions);
-  md5_check.resize(sessions);
+  sha_check.resize(sessions);
 
   for (int i = 0; i < sessions; i++) {
     expect_framerate[i] = st_frame_rate(fps[i]);
@@ -1443,9 +1470,9 @@ static void st20_rx_digest_test(enum st20_type tx_type[], enum st20_type rx_type
 
     test_ctx_tx[i]->idx = i;
     test_ctx_tx[i]->ctx = ctx;
-    test_ctx_tx[i]->fb_cnt = TEST_MD5_HIST_NUM;
+    test_ctx_tx[i]->fb_cnt = TEST_SHA_HIST_NUM;
     test_ctx_tx[i]->fb_idx = 0;
-    test_ctx_tx[i]->check_md5 = true;
+    test_ctx_tx[i]->check_sha = true;
     memset(&ops_tx, 0, sizeof(ops_tx));
     ops_tx.name = "st20_digest_test";
     ops_tx.priv = test_ctx_tx[i];
@@ -1461,6 +1488,7 @@ static void st20_rx_digest_test(enum st20_type tx_type[], enum st20_type rx_type
     ops_tx.interlaced = interlaced[i];
     ops_tx.fps = fps[i];
     ops_tx.fmt = fmt;
+    ops_tx.payload_type = ST20_TEST_PAYLOAD_TYPE;
     ops_tx.framebuff_cnt = test_ctx_tx[i]->fb_cnt;
     ops_tx.get_next_frame = interlaced[i] ? tx_next_video_field : tx_next_video_frame;
     ops_tx.query_frame_lines_ready = tx_frame_lines_ready;
@@ -1478,21 +1506,24 @@ static void st20_rx_digest_test(enum st20_type tx_type[], enum st20_type rx_type
     test_ctx_tx[i]->out_of_order_pkt = out_of_order;
 
     tx_handle[i] = st20_tx_create(m_handle, &ops_tx);
-    test_ctx_tx[i]->handle = tx_handle[i];
     ASSERT_TRUE(tx_handle[i] != NULL);
 
-    /* md5 caculate */
+    /* sha caculate */
     struct st20_pgroup st20_pg;
     st20_get_pgroup(ops_tx.fmt, &st20_pg);
     size_t frame_size = ops_tx.width * ops_tx.height * st20_pg.size / st20_pg.coverage;
     if (interlaced[i]) frame_size = frame_size >> 1;
+    if (tx_type[i] == ST20_TYPE_FRAME_LEVEL) {
+      EXPECT_EQ(st20_tx_get_framebuffer_size(tx_handle[i]), frame_size);
+      EXPECT_EQ(st20_tx_get_framebuffer_count(tx_handle[i]), test_ctx_tx[i]->fb_cnt);
+    }
     test_ctx_tx[i]->frame_size = frame_size;
     test_ctx_tx[i]->slice = (tx_type[i] == ST20_TYPE_SLICE_LEVEL);
     test_ctx_tx[i]->lines_per_slice = ops_tx.height / 30;
     test_ctx_tx[i]->height = ops_tx.height;
     test_ctx_tx[i]->stride = ops_tx.width / st20_pg.coverage * st20_pg.size;
     uint8_t* fb;
-    for (int frame = 0; frame < TEST_MD5_HIST_NUM; frame++) {
+    for (int frame = 0; frame < TEST_SHA_HIST_NUM; frame++) {
       if (tx_type[i] == ST20_TYPE_FRAME_LEVEL) {
         fb = (uint8_t*)st20_tx_get_framebuffer(tx_handle[i], frame);
       } else {
@@ -1501,10 +1532,11 @@ static void st20_rx_digest_test(enum st20_type tx_type[], enum st20_type rx_type
       }
       ASSERT_TRUE(fb != NULL);
       st_test_rand_data(fb, frame_size, frame);
-      unsigned char* result = test_ctx_tx[i]->md5s[frame];
-      MD5((unsigned char*)fb, frame_size, result);
-      test_md5_dump("st20_rx", result);
+      unsigned char* result = test_ctx_tx[i]->shas[frame];
+      SHA256((unsigned char*)fb, frame_size, result);
+      test_sha_dump("st20_rx", result);
     }
+    test_ctx_tx[i]->handle = tx_handle[i];
     if (tx_type[i] == ST20_TYPE_RTP_LEVEL) {
       test_ctx_tx[i]->stop = false;
       rtp_thread_tx[i] = std::thread(tx_feed_packet, test_ctx_tx[i]);
@@ -1519,7 +1551,7 @@ static void st20_rx_digest_test(enum st20_type tx_type[], enum st20_type rx_type
     test_ctx_rx[i]->ctx = ctx;
     test_ctx_rx[i]->fb_cnt = 3;
     test_ctx_rx[i]->fb_idx = 0;
-    test_ctx_rx[i]->check_md5 = true;
+    test_ctx_rx[i]->check_sha = true;
     memset(&ops_rx, 0, sizeof(ops_rx));
     ops_rx.name = "st20_digest_test";
     ops_rx.priv = test_ctx_rx[i];
@@ -1533,6 +1565,7 @@ static void st20_rx_digest_test(enum st20_type tx_type[], enum st20_type rx_type
     ops_rx.height = height[i];
     ops_rx.fps = fps[i];
     ops_rx.fmt = fmt;
+    ops_rx.payload_type = ST20_TEST_PAYLOAD_TYPE;
     ops_rx.interlaced = interlaced[i];
     ops_rx.framebuff_cnt = test_ctx_rx[i]->fb_cnt;
     ops_rx.slice_lines = height[i] / slices_per_frame;
@@ -1560,18 +1593,19 @@ static void st20_rx_digest_test(enum st20_type tx_type[], enum st20_type rx_type
     }
 
     rx_handle[i] = st20_rx_create(m_handle, &ops_rx);
-    test_ctx_rx[i]->handle = rx_handle[i];
+
     test_ctx_rx[i]->frame_size = test_ctx_tx[i]->frame_size;
     test_ctx_rx[i]->width = ops_rx.width;
     st20_get_pgroup(ops_rx.fmt, &test_ctx_rx[i]->st20_pg);
-    memcpy(test_ctx_rx[i]->md5s, test_ctx_tx[i]->md5s,
-           TEST_MD5_HIST_NUM * MD5_DIGEST_LENGTH);
+    memcpy(test_ctx_rx[i]->shas, test_ctx_tx[i]->shas,
+           TEST_SHA_HIST_NUM * SHA256_DIGEST_LENGTH);
     test_ctx_rx[i]->total_pkts_in_frame = test_ctx_tx[i]->total_pkts_in_frame;
     ASSERT_TRUE(rx_handle[i] != NULL);
+    test_ctx_rx[i]->handle = rx_handle[i];
     if (rx_type[i] == ST20_TYPE_RTP_LEVEL) {
       test_ctx_rx[i]->stop = false;
       rtp_thread_rx[i] = std::thread(rx_get_packet, test_ctx_rx[i]);
-      md5_check[i] = std::thread(md5_frame_check, test_ctx_rx[i]);
+      sha_check[i] = std::thread(sha_frame_check, test_ctx_rx[i]);
     } else {
       test_ctx_rx[i]->stop = false;
       if (interlaced[i]) {
@@ -1606,7 +1640,7 @@ static void st20_rx_digest_test(enum st20_type tx_type[], enum st20_type rx_type
     }
     rtp_thread_rx[i].join();
     if (rx_type[i] == ST20_TYPE_RTP_LEVEL) {
-      md5_check[i].join();
+      sha_check[i].join();
       while (!test_ctx_rx[i]->buf_q.empty()) {
         void* frame = test_ctx_rx[i]->buf_q.front();
         st_test_free(frame);
@@ -1619,8 +1653,8 @@ static void st20_rx_digest_test(enum st20_type tx_type[], enum st20_type rx_type
   EXPECT_GE(ret, 0);
   for (int i = 0; i < sessions; i++) {
     EXPECT_GE(test_ctx_rx[i]->fb_rec, 0);
-    EXPECT_GT(test_ctx_rx[i]->check_md5_frame_cnt, 0);
-    if ((rx_type[i] == ST20_TYPE_SLICE_LEVEL) && (height[i] >= (1080 * 4)))
+    EXPECT_GT(test_ctx_rx[i]->check_sha_frame_cnt, 0);
+    if (rx_type[i] == ST20_TYPE_SLICE_LEVEL)
       EXPECT_LT(test_ctx_rx[i]->incomplete_frame_cnt, 2 * 5);
     else
       EXPECT_LT(test_ctx_rx[i]->incomplete_frame_cnt, 2);
@@ -1640,13 +1674,13 @@ static void st20_rx_digest_test(enum st20_type tx_type[], enum st20_type rx_type
       EXPECT_NEAR(framerate[i], expect_framerate[i], expect_framerate[i] * 0.1);
     }
     if (tx_type[i] == ST20_TYPE_RTP_LEVEL) {
-      for (int frame = 0; frame < TEST_MD5_HIST_NUM; frame++) {
+      for (int frame = 0; frame < TEST_SHA_HIST_NUM; frame++) {
         if (test_ctx_tx[i]->frame_buf[frame])
           st_test_free(test_ctx_tx[i]->frame_buf[frame]);
       }
     }
     if (rx_type[i] == ST20_TYPE_RTP_LEVEL) {
-      for (int frame = 0; frame < TEST_MD5_HIST_NUM; frame++) {
+      for (int frame = 0; frame < TEST_SHA_HIST_NUM; frame++) {
         if (test_ctx_rx[i]->frame_buf[frame])
           st_test_free(test_ctx_rx[i]->frame_buf[frame]);
       }
@@ -1665,7 +1699,7 @@ static void st20_rx_digest_test(enum st20_type tx_type[], enum st20_type rx_type
 TEST(St20_rx, digest_frame_1080p_fps59_94_s1) {
   enum st20_type type[1] = {ST20_TYPE_FRAME_LEVEL};
   enum st20_type rx_type[1] = {ST20_TYPE_FRAME_LEVEL};
-  enum st20_packing packing[1] = {ST20_PACKING_GPM_SL};
+  enum st20_packing packing[1] = {ST20_PACKING_BPM};
   enum st_fps fps[1] = {ST_FPS_P59_94};
   int width[1] = {1920};
   int height[1] = {1080};
@@ -1677,7 +1711,7 @@ TEST(St20_rx, digest_frame_1080p_fps59_94_s1) {
 TEST(St20_rx, digest_field_1080p_fps59_94_s1) {
   enum st20_type type[1] = {ST20_TYPE_FRAME_LEVEL};
   enum st20_type rx_type[1] = {ST20_TYPE_FRAME_LEVEL};
-  enum st20_packing packing[1] = {ST20_PACKING_GPM_SL};
+  enum st20_packing packing[1] = {ST20_PACKING_BPM};
   enum st_fps fps[1] = {ST_FPS_P59_94};
   int width[1] = {1920};
   int height[1] = {1080};
@@ -1737,7 +1771,7 @@ TEST(St20_rx, digest_field_720p_fps29_97_s1_bpm) {
 TEST(St20_rx, digest_rtp_1080p_fps59_94_s1) {
   enum st20_type type[1] = {ST20_TYPE_RTP_LEVEL};
   enum st20_type rx_type[1] = {ST20_TYPE_RTP_LEVEL};
-  enum st20_packing packing[1] = {ST20_PACKING_GPM_SL};
+  enum st20_packing packing[1] = {ST20_PACKING_BPM};
   enum st_fps fps[1] = {ST_FPS_P59_94};
   int width[1] = {1920};
   int height[1] = {1080};
@@ -1749,7 +1783,7 @@ TEST(St20_rx, digest_rtp_1080p_fps59_94_s1) {
 TEST(St20_rx, digest_frame_4320p_fps59_94_s1) {
   enum st20_type type[1] = {ST20_TYPE_FRAME_LEVEL};
   enum st20_type rx_type[1] = {ST20_TYPE_FRAME_LEVEL};
-  enum st20_packing packing[1] = {ST20_PACKING_GPM_SL};
+  enum st20_packing packing[1] = {ST20_PACKING_BPM};
   enum st_fps fps[1] = {ST_FPS_P59_94};
   int width[1] = {1920 * 4};
   int height[1] = {1080 * 4};
@@ -1761,7 +1795,7 @@ TEST(St20_rx, digest_frame_4320p_fps59_94_s1) {
 TEST(St20_rx, digest_field_4320p_fps59_94_s1) {
   enum st20_type type[1] = {ST20_TYPE_FRAME_LEVEL};
   enum st20_type rx_type[1] = {ST20_TYPE_FRAME_LEVEL};
-  enum st20_packing packing[1] = {ST20_PACKING_GPM_SL};
+  enum st20_packing packing[1] = {ST20_PACKING_BPM};
   enum st_fps fps[1] = {ST_FPS_P59_94};
   int width[1] = {1920 * 4};
   int height[1] = {1080 * 4};
@@ -1923,7 +1957,7 @@ TEST(St20_rx, digest_ooo_slice_s3) {
 TEST(St20_rx, digest_slice_4320p) {
   enum st20_type type[1] = {ST20_TYPE_FRAME_LEVEL};
   enum st20_type rx_type[1] = {ST20_TYPE_SLICE_LEVEL};
-  enum st20_packing packing[1] = {ST20_PACKING_GPM_SL};
+  enum st20_packing packing[1] = {ST20_PACKING_BPM};
   enum st_fps fps[1] = {ST_FPS_P59_94};
   int width[1] = {1920 * 4};
   int height[1] = {1080 * 4};
@@ -1939,8 +1973,8 @@ TEST(St20_rx, digest_slice_4320p) {
 TEST(St20_rx, digest_ooo_slice_4320p) {
   enum st20_type type[1] = {ST20_TYPE_RTP_LEVEL};
   enum st20_type rx_type[1] = {ST20_TYPE_SLICE_LEVEL};
-  enum st20_packing packing[1] = {ST20_PACKING_GPM_SL};
-  enum st_fps fps[1] = {ST_FPS_P59_94};
+  enum st20_packing packing[1] = {ST20_PACKING_BPM};
+  enum st_fps fps[1] = {ST_FPS_P25};
   int width[1] = {1920 * 4};
   int height[1] = {1080 * 4};
   bool interlaced[1] = {false};
@@ -1955,7 +1989,7 @@ TEST(St20_rx, digest_ooo_slice_4320p) {
 TEST(St20_rx, digest_frame_4096_2160_fps59_94_12bit_yuv444_s1) {
   enum st20_type type[1] = {ST20_TYPE_FRAME_LEVEL};
   enum st20_type rx_type[1] = {ST20_TYPE_FRAME_LEVEL};
-  enum st20_packing packing[1] = {ST20_PACKING_GPM_SL};
+  enum st20_packing packing[1] = {ST20_PACKING_BPM};
   enum st_fps fps[1] = {ST_FPS_P59_94};
   int width[1] = {4096};
   int height[1] = {2160};
@@ -1966,11 +2000,28 @@ TEST(St20_rx, digest_frame_4096_2160_fps59_94_12bit_yuv444_s1) {
 
 static int st20_tx_meta_build_rtp(tests_context* s, struct st20_rfc4175_rtp_hdr* rtp,
                                   uint16_t* pkt_len) {
-  uint16_t data_len = s->pkt_data_len;
-  int pkts_in_line = s->pkts_in_line;
-  int row_number = s->pkt_idx / pkts_in_line;
-  int pixels_in_pkt = s->pkt_data_len / s->st20_pg.size * s->st20_pg.coverage;
-  int row_offset = pixels_in_pkt * (s->pkt_idx % pkts_in_line);
+  struct st20_rfc4175_extra_rtp_hdr* e_rtp = NULL;
+  int offset;
+  int frame_size = s->frame_size;
+  uint16_t row_number, row_offset;
+  uint8_t* payload = (uint8_t*)rtp + sizeof(*rtp);
+  int pkt_idx = s->pkt_idx;
+
+  if (s->single_line) {
+    row_number = pkt_idx / s->pkts_in_line;
+    int pixels_in_pkt = s->pkt_data_len / s->st20_pg.size * s->st20_pg.coverage;
+    row_offset = pixels_in_pkt * (pkt_idx % s->pkts_in_line);
+    offset = (row_number * s->width + row_offset) / s->st20_pg.coverage * s->st20_pg.size;
+  } else {
+    offset = s->pkt_data_len * pkt_idx;
+    row_number = offset / s->bytes_in_line;
+    row_offset = (offset % s->bytes_in_line) * s->st20_pg.coverage / s->st20_pg.size;
+    if ((offset + s->pkt_data_len > (row_number + 1) * s->bytes_in_line) &&
+        (offset + s->pkt_data_len < frame_size)) {
+      e_rtp = (struct st20_rfc4175_extra_rtp_hdr*)payload;
+      payload += sizeof(*e_rtp);
+    }
+  }
   bool marker = false;
 
   /* update hdr */
@@ -1979,17 +2030,29 @@ static int st20_tx_meta_build_rtp(tests_context* s, struct st20_rfc4175_rtp_hdr*
   rtp->base.padding = 0;
   rtp->base.version = 2;
   rtp->base.marker = 0;
-  rtp->base.payload_type = 96;
+  rtp->base.payload_type = ST20_TEST_PAYLOAD_TYPE;
   rtp->row_number = htons(row_number);
   rtp->row_offset = htons(row_offset);
   rtp->base.tmstamp = htonl(s->rtp_tmstamp);
   rtp->base.seq_number = htons(s->seq_id);
   rtp->seq_number_ext = htons((uint16_t)(s->seq_id >> 16));
   s->seq_id++;
-  int temp = (s->width - row_offset) / s->st20_pg.coverage * s->st20_pg.size;
-  data_len = s->pkt_data_len > temp ? temp : s->pkt_data_len;
+  int temp = s->single_line
+                 ? ((s->width - row_offset) / s->st20_pg.coverage * s->st20_pg.size)
+                 : (frame_size - offset);
+  uint16_t data_len = s->pkt_data_len > temp ? temp : s->pkt_data_len;
   rtp->row_length = htons(data_len);
   *pkt_len = data_len + sizeof(*rtp);
+  if (e_rtp) {
+    uint16_t row_length_0 = (row_number + 1) * s->bytes_in_line - offset;
+    uint16_t row_length_1 = s->pkt_data_len - row_length_0;
+    rtp->row_length = htons(row_length_0);
+    e_rtp->row_length = htons(row_length_1);
+    e_rtp->row_offset = htons(0);
+    e_rtp->row_number = htons(row_number + 1);
+    rtp->row_offset = htons(row_offset | ST20_SRD_OFFSET_CONTINUATION);
+    *pkt_len += sizeof(*e_rtp);
+  }
 
   s->pkt_idx++;
 
@@ -2018,11 +2081,11 @@ static void st20_rx_meta_feed_packet(void* args) {
   std::unique_lock<std::mutex> lck(ctx->mtx, std::defer_lock);
   while (!ctx->stop) {
     /* get available buffer*/
-    mbuf = st20_tx_get_mbuf(ctx->handle, &usrptr);
+    mbuf = st20_tx_get_mbuf((st20_tx_handle)ctx->handle, &usrptr);
     if (!mbuf) {
       lck.lock();
       /* try again */
-      mbuf = st20_tx_get_mbuf(ctx->handle, &usrptr);
+      mbuf = st20_tx_get_mbuf((st20_tx_handle)ctx->handle, &usrptr);
       if (mbuf) {
         lck.unlock();
       } else {
@@ -2035,7 +2098,7 @@ static void st20_rx_meta_feed_packet(void* args) {
     /* build the rtp pkt */
     st20_tx_meta_build_rtp(ctx, (struct st20_rfc4175_rtp_hdr*)usrptr, &mbuf_len);
 
-    st20_tx_put_mbuf(ctx->handle, mbuf, mbuf_len);
+    st20_tx_put_mbuf((st20_tx_handle)ctx->handle, mbuf, mbuf_len);
   }
 }
 
@@ -2111,17 +2174,19 @@ static void st20_rx_meta_test(enum st_fps fps[], int width[], int height[],
     strncpy(ops_tx.port[ST_PORT_P], ctx->para.port[ST_PORT_P], ST_PORT_MAX_LEN);
     ops_tx.udp_port[ST_PORT_P] = 10000 + i;
     ops_tx.pacing = ST21_PACING_NARROW;
+    ops_tx.packing = ST20_PACKING_BPM;
     ops_tx.type = ST20_TYPE_RTP_LEVEL;
     ops_tx.width = width[i];
     ops_tx.height = height[i];
     ops_tx.fps = fps[i];
     ops_tx.fmt = fmt;
+    ops_tx.payload_type = ST20_TEST_PAYLOAD_TYPE;
     ops_tx.framebuff_cnt = test_ctx_tx[i]->fb_cnt;
     ops_tx.get_next_frame = tx_next_video_frame;
     rtp_tx_specific_init(&ops_tx, test_ctx_tx[i]);
     tx_handle[i] = st20_tx_create(m_handle, &ops_tx);
-    test_ctx_tx[i]->handle = tx_handle[i];
     ASSERT_TRUE(tx_handle[i] != NULL);
+    test_ctx_tx[i]->handle = tx_handle[i];
     test_ctx_tx[i]->stop = false;
     rtp_thread_tx[i] = std::thread(st20_rx_meta_feed_packet, test_ctx_tx[i]);
   }
@@ -2147,13 +2212,13 @@ static void st20_rx_meta_test(enum st_fps fps[], int width[], int height[],
     ops_rx.height = height[i];
     ops_rx.fps = fps[i];
     ops_rx.fmt = fmt;
+    ops_rx.payload_type = ST20_TEST_PAYLOAD_TYPE;
     ops_rx.flags = ST20_RX_FLAG_RECEIVE_INCOMPLETE_FRAME | ST20_RX_FLAG_DMA_OFFLOAD;
     ops_rx.framebuff_cnt = test_ctx_rx[i]->fb_cnt;
     ops_rx.notify_frame_ready = st20_rx_meta_frame_ready;
     ops_rx.notify_rtp_ready = rx_rtp_ready;
     ops_rx.rtp_ring_size = 1024;
     rx_handle[i] = st20_rx_create(m_handle, &ops_rx);
-    test_ctx_rx[i]->handle = rx_handle[i];
     test_ctx_rx[i]->frame_size = test_ctx_tx[i]->frame_size;
     ASSERT_TRUE(rx_handle[i] != NULL);
     test_ctx_rx[i]->stop = false;
@@ -2166,6 +2231,8 @@ static void st20_rx_meta_test(enum st_fps fps[], int width[], int height[],
     meta->fps = ops_rx.fps;
     meta->fmt = ops_rx.fmt;
     test_ctx_rx[i]->priv = meta;
+
+    test_ctx_rx[i]->handle = rx_handle[i];
   }
 
   ret = st_start(m_handle);
@@ -2249,48 +2316,47 @@ static void st20_rx_after_start_test(enum st20_type type[], enum st_fps fps[],
   rtp_thread_tx.resize(sessions);
   rtp_thread_rx.resize(sessions);
 
-  for (int i = 0; i < sessions; i++) {
-    expect_framerate[i] = st_frame_rate(fps[i]);
-    test_ctx_tx[i] = new tests_context();
-    ASSERT_TRUE(test_ctx_tx[i] != NULL);
-
-    test_ctx_tx[i]->idx = i;
-    test_ctx_tx[i]->ctx = ctx;
-    test_ctx_tx[i]->fb_cnt = 3;
-    test_ctx_tx[i]->fb_idx = 0;
-    memset(&ops_tx, 0, sizeof(ops_tx));
-    ops_tx.name = "st20_test";
-    ops_tx.priv = test_ctx_tx[i];
-    ops_tx.num_port = 1;
-    memcpy(ops_tx.dip_addr[ST_PORT_P], ctx->para.sip_addr[ST_PORT_R], ST_IP_ADDR_LEN);
-    strncpy(ops_tx.port[ST_PORT_P], ctx->para.port[ST_PORT_P], ST_PORT_MAX_LEN);
-    ops_tx.udp_port[ST_PORT_P] = 10000 + i;
-    ops_tx.pacing = ST21_PACING_NARROW;
-    ops_tx.type = type[i];
-    ops_tx.width = width[i];
-    ops_tx.height = height[i];
-    ops_tx.fps = fps[i];
-    ops_tx.fmt = fmt;
-    ops_tx.framebuff_cnt = test_ctx_tx[i]->fb_cnt;
-    ops_tx.get_next_frame = tx_next_video_frame;
-    if (type[i] == ST20_TYPE_RTP_LEVEL) {
-      rtp_tx_specific_init(&ops_tx, test_ctx_tx[i]);
-    }
-    tx_handle[i] = st20_tx_create(m_handle, &ops_tx);
-    test_ctx_tx[i]->handle = tx_handle[i];
-    ASSERT_TRUE(tx_handle[i] != NULL);
-    if (type[i] == ST20_TYPE_RTP_LEVEL) {
-      test_ctx_tx[i]->stop = false;
-      rtp_thread_tx[i] = std::thread(tx_feed_packet, test_ctx_tx[i]);
-    }
-  }
-
   ret = st_start(m_handle);
   EXPECT_GE(ret, 0);
-  sleep(ST20_TRAIN_TIME_S * sessions); /* time for train_pacing */
-  sleep(5);
 
   for (int r = 0; r < repeat; r++) {
+    for (int i = 0; i < sessions; i++) {
+      expect_framerate[i] = st_frame_rate(fps[i]);
+      test_ctx_tx[i] = new tests_context();
+      ASSERT_TRUE(test_ctx_tx[i] != NULL);
+
+      test_ctx_tx[i]->idx = i;
+      test_ctx_tx[i]->ctx = ctx;
+      test_ctx_tx[i]->fb_cnt = 3;
+      test_ctx_tx[i]->fb_idx = 0;
+      memset(&ops_tx, 0, sizeof(ops_tx));
+      ops_tx.name = "st20_test";
+      ops_tx.priv = test_ctx_tx[i];
+      ops_tx.num_port = 1;
+      memcpy(ops_tx.dip_addr[ST_PORT_P], ctx->para.sip_addr[ST_PORT_R], ST_IP_ADDR_LEN);
+      strncpy(ops_tx.port[ST_PORT_P], ctx->para.port[ST_PORT_P], ST_PORT_MAX_LEN);
+      ops_tx.udp_port[ST_PORT_P] = 10000 + i;
+      ops_tx.pacing = ST21_PACING_NARROW;
+      ops_tx.type = type[i];
+      ops_tx.width = width[i];
+      ops_tx.height = height[i];
+      ops_tx.fps = fps[i];
+      ops_tx.fmt = fmt;
+      ops_tx.payload_type = ST20_TEST_PAYLOAD_TYPE;
+      ops_tx.framebuff_cnt = test_ctx_tx[i]->fb_cnt;
+      ops_tx.get_next_frame = tx_next_video_frame;
+      if (type[i] == ST20_TYPE_RTP_LEVEL) {
+        rtp_tx_specific_init(&ops_tx, test_ctx_tx[i]);
+      }
+      tx_handle[i] = st20_tx_create(m_handle, &ops_tx);
+      ASSERT_TRUE(tx_handle[i] != NULL);
+      test_ctx_tx[i]->handle = tx_handle[i];
+      if (type[i] == ST20_TYPE_RTP_LEVEL) {
+        test_ctx_tx[i]->stop = false;
+        rtp_thread_tx[i] = std::thread(tx_feed_packet, test_ctx_tx[i]);
+      }
+    }
+
     for (int i = 0; i < sessions; i++) {
       test_ctx_rx[i] = new tests_context();
       ASSERT_TRUE(test_ctx_rx[i] != NULL);
@@ -2312,15 +2378,17 @@ static void st20_rx_after_start_test(enum st20_type type[], enum st_fps fps[],
       ops_rx.height = height[i];
       ops_rx.fps = fps[i];
       ops_rx.fmt = fmt;
+      ops_rx.payload_type = ST20_TEST_PAYLOAD_TYPE;
       ops_rx.framebuff_cnt = test_ctx_rx[i]->fb_cnt;
       ops_rx.notify_frame_ready = st20_rx_frame_ready;
       ops_rx.notify_rtp_ready = rx_rtp_ready;
       ops_rx.rtp_ring_size = 1024;
       ops_rx.flags = ST20_RX_FLAG_DMA_OFFLOAD;
       rx_handle[i] = st20_rx_create(m_handle, &ops_rx);
-      test_ctx_rx[i]->handle = rx_handle[i];
+
       test_ctx_rx[i]->total_pkts_in_frame = test_ctx_tx[i]->total_pkts_in_frame;
       ASSERT_TRUE(rx_handle[i] != NULL);
+      test_ctx_rx[i]->handle = rx_handle[i];
       if (type[i] == ST20_TYPE_RTP_LEVEL) {
         test_ctx_rx[i]->stop = false;
         rtp_thread_rx[i] = std::thread(rx_get_packet, test_ctx_rx[i]);
@@ -2355,29 +2423,30 @@ static void st20_rx_after_start_test(enum st20_type type[], enum st_fps fps[],
       delete test_ctx_rx[i];
     }
 
-    sleep(2);
-  }
-
-  /* stop tx rtp if */
-  for (int i = 0; i < sessions; i++) {
-    if (type[i] == ST20_TYPE_RTP_LEVEL) {
-      test_ctx_tx[i]->stop = true;
-      {
-        std::unique_lock<std::mutex> lck(test_ctx_tx[i]->mtx);
-        test_ctx_tx[i]->cv.notify_all();
+    /* stop tx rtp if */
+    for (int i = 0; i < sessions; i++) {
+      if (type[i] == ST20_TYPE_RTP_LEVEL) {
+        test_ctx_tx[i]->stop = true;
+        {
+          std::unique_lock<std::mutex> lck(test_ctx_tx[i]->mtx);
+          test_ctx_tx[i]->cv.notify_all();
+        }
+        rtp_thread_tx[i].join();
       }
-      rtp_thread_tx[i].join();
     }
+
+    /* free all tx */
+    for (int i = 0; i < sessions; i++) {
+      ret = st20_tx_free(tx_handle[i]);
+      EXPECT_GE(ret, 0);
+      delete test_ctx_tx[i];
+    }
+
+    sleep(1);
   }
 
   ret = st_stop(m_handle);
   EXPECT_GE(ret, 0);
-  /* free all tx */
-  for (int i = 0; i < sessions; i++) {
-    ret = st20_tx_free(tx_handle[i]);
-    EXPECT_GE(ret, 0);
-    delete test_ctx_tx[i];
-  }
 }
 
 TEST(St20_rx, after_start_frame_720p_fps50_s1_r1) {
@@ -2437,7 +2506,7 @@ static void st20_rx_uframe_test(enum st20_type rx_type[], enum st20_packing pack
   std::vector<st20_rx_handle> rx_handle;
   std::vector<double> expect_framerate;
   std::vector<double> framerate;
-  std::vector<std::thread> md5_check;
+  std::vector<std::thread> sha_check;
   std::vector<std::thread> digest_thread_rx;
   int slices_per_frame = 32;
 
@@ -2447,7 +2516,7 @@ static void st20_rx_uframe_test(enum st20_type rx_type[], enum st20_packing pack
   rx_handle.resize(sessions);
   expect_framerate.resize(sessions);
   framerate.resize(sessions);
-  md5_check.resize(sessions);
+  sha_check.resize(sessions);
   digest_thread_rx.resize(sessions);
 
   for (int i = 0; i < sessions; i++) {
@@ -2457,9 +2526,9 @@ static void st20_rx_uframe_test(enum st20_type rx_type[], enum st20_packing pack
 
     test_ctx_tx[i]->idx = i;
     test_ctx_tx[i]->ctx = ctx;
-    test_ctx_tx[i]->fb_cnt = TEST_MD5_HIST_NUM;
+    test_ctx_tx[i]->fb_cnt = TEST_SHA_HIST_NUM;
     test_ctx_tx[i]->fb_idx = 0;
-    test_ctx_tx[i]->check_md5 = true;
+    test_ctx_tx[i]->check_sha = true;
     memset(&ops_tx, 0, sizeof(ops_tx));
     ops_tx.name = "st20_uframe_test";
     ops_tx.priv = test_ctx_tx[i];
@@ -2475,14 +2544,14 @@ static void st20_rx_uframe_test(enum st20_type rx_type[], enum st20_packing pack
     ops_tx.interlaced = interlaced[i];
     ops_tx.fps = fps[i];
     ops_tx.fmt = fmt;
+    ops_tx.payload_type = ST20_TEST_PAYLOAD_TYPE;
     ops_tx.framebuff_cnt = test_ctx_tx[i]->fb_cnt;
     ops_tx.get_next_frame = interlaced[i] ? tx_next_video_field : tx_next_video_frame;
 
     tx_handle[i] = st20_tx_create(m_handle, &ops_tx);
-    test_ctx_tx[i]->handle = tx_handle[i];
     ASSERT_TRUE(tx_handle[i] != NULL);
 
-    /* md5 caculate */
+    /* sha caculate */
     struct st20_pgroup st20_pg;
     st20_get_pgroup(ops_tx.fmt, &st20_pg);
     size_t frame_size = ops_tx.width * ops_tx.height * st20_pg.size / st20_pg.coverage;
@@ -2496,7 +2565,7 @@ static void st20_rx_uframe_test(enum st20_type rx_type[], enum st20_packing pack
     test_ctx_tx[i]->height = ops_tx.height;
     test_ctx_tx[i]->stride = ops_tx.width / st20_pg.coverage * st20_pg.size;
     uint8_t* fb;
-    for (int frame = 0; frame < TEST_MD5_HIST_NUM; frame++) {
+    for (int frame = 0; frame < TEST_SHA_HIST_NUM; frame++) {
       test_ctx_tx[i]->frame_buf[frame] = (uint8_t*)st_test_zmalloc(uframe_size);
       fb = test_ctx_tx[i]->frame_buf[frame];
       ASSERT_TRUE(fb != NULL);
@@ -2504,9 +2573,9 @@ static void st20_rx_uframe_test(enum st20_type rx_type[], enum st20_packing pack
       for (size_t i = 0; i < (uframe_size / 2); i++) {
         p10_u16[i] = rand() & 0x3ff; /* only 10 bit */
       }
-      unsigned char* result = test_ctx_tx[i]->md5s[frame];
-      MD5((unsigned char*)fb, uframe_size, result);
-      test_md5_dump("st20_rx", result);
+      unsigned char* result = test_ctx_tx[i]->shas[frame];
+      SHA256((unsigned char*)fb, uframe_size, result);
+      test_sha_dump("st20_rx", result);
 
       struct st20_rfc4175_422_10_pg2_be* pg =
           (struct st20_rfc4175_422_10_pg2_be*)st20_tx_get_framebuffer(tx_handle[i],
@@ -2516,6 +2585,8 @@ static void st20_rx_uframe_test(enum st20_type rx_type[], enum st20_packing pack
           (p10_u16 + ops_tx.width * ops_tx.height * 3 / 2), pg, ops_tx.width,
           ops_tx.height);
     }
+
+    test_ctx_tx[i]->handle = tx_handle[i];
   }
 
   for (int i = 0; i < sessions; i++) {
@@ -2526,7 +2597,7 @@ static void st20_rx_uframe_test(enum st20_type rx_type[], enum st20_packing pack
     test_ctx_rx[i]->ctx = ctx;
     test_ctx_rx[i]->fb_cnt = 3;
     test_ctx_rx[i]->fb_idx = 0;
-    test_ctx_rx[i]->check_md5 = true;
+    test_ctx_rx[i]->check_sha = true;
     memset(&ops_rx, 0, sizeof(ops_rx));
     ops_rx.name = "st20_uframe_test";
     ops_rx.priv = test_ctx_rx[i];
@@ -2540,6 +2611,7 @@ static void st20_rx_uframe_test(enum st20_type rx_type[], enum st20_packing pack
     ops_rx.height = height[i];
     ops_rx.fps = fps[i];
     ops_rx.fmt = fmt;
+    ops_rx.payload_type = ST20_TEST_PAYLOAD_TYPE;
     ops_rx.interlaced = interlaced[i];
     ops_rx.framebuff_cnt = test_ctx_rx[i]->fb_cnt;
     ops_rx.slice_lines = height[i] / slices_per_frame;
@@ -2570,14 +2642,15 @@ static void st20_rx_uframe_test(enum st20_type rx_type[], enum st20_packing pack
     }
 
     rx_handle[i] = st20_rx_create(m_handle, &ops_rx);
-    test_ctx_rx[i]->handle = rx_handle[i];
+
     test_ctx_rx[i]->frame_size = test_ctx_tx[i]->frame_size;
     test_ctx_rx[i]->width = ops_rx.width;
     test_ctx_rx[i]->uframe_size = ops_rx.uframe_size;
     st20_get_pgroup(ops_rx.fmt, &test_ctx_rx[i]->st20_pg);
-    memcpy(test_ctx_rx[i]->md5s, test_ctx_tx[i]->md5s,
-           TEST_MD5_HIST_NUM * MD5_DIGEST_LENGTH);
+    memcpy(test_ctx_rx[i]->shas, test_ctx_tx[i]->shas,
+           TEST_SHA_HIST_NUM * SHA256_DIGEST_LENGTH);
     ASSERT_TRUE(rx_handle[i] != NULL);
+    test_ctx_rx[i]->handle = rx_handle[i];
     test_ctx_rx[i]->stop = false;
     if (interlaced[i]) {
       digest_thread_rx[i] = std::thread(st20_digest_rx_field_check, test_ctx_rx[i]);
@@ -2607,7 +2680,7 @@ static void st20_rx_uframe_test(enum st20_type rx_type[], enum st20_packing pack
   EXPECT_GE(ret, 0);
   for (int i = 0; i < sessions; i++) {
     EXPECT_GE(test_ctx_rx[i]->fb_rec, 0);
-    EXPECT_GT(test_ctx_rx[i]->check_md5_frame_cnt, 0);
+    EXPECT_GT(test_ctx_rx[i]->check_sha_frame_cnt, 0);
     EXPECT_LT(test_ctx_rx[i]->incomplete_frame_cnt, 2);
     EXPECT_EQ(test_ctx_rx[i]->incomplete_slice_cnt, 0);
     if (rx_type[i] == ST20_TYPE_FRAME_LEVEL)
@@ -2636,7 +2709,7 @@ static void st20_rx_uframe_test(enum st20_type rx_type[], enum st20_packing pack
 
 TEST(St20_rx, uframe_1080p_fps59_94_s1) {
   enum st20_type rx_type[1] = {ST20_TYPE_FRAME_LEVEL};
-  enum st20_packing packing[1] = {ST20_PACKING_GPM_SL};
+  enum st20_packing packing[1] = {ST20_PACKING_BPM};
   enum st_fps fps[1] = {ST_FPS_P59_94};
   int width[1] = {1920};
   int height[1] = {1080};
@@ -2654,4 +2727,489 @@ TEST(St20_rx, uframe_mix_s2) {
   bool interlaced[2] = {false, false};
   st20_rx_uframe_test(rx_type, packing, fps, width, height, interlaced,
                       ST20_FMT_YUV_422_10BIT, true, 1);
+}
+
+static int st20_rx_detected(void* priv, const struct st20_detect_meta* meta,
+                            struct st20_detect_reply* reply) {
+  auto ctx = (tests_context*)priv;
+
+  if (!ctx->handle) return -EIO; /* not ready */
+
+  struct st20_slice_meta* s_meta = (struct st20_slice_meta*)ctx->priv;
+
+  ctx->lines_per_slice = meta->height / 32;
+  if (s_meta) reply->slice_lines = ctx->lines_per_slice;
+  if (ctx->uframe_size != 0) {
+    /* uframe fmt: yuv422 10bit planar */
+    ctx->uframe_size = meta->width * meta->height * 2 * sizeof(uint16_t);
+    reply->uframe_size = ctx->uframe_size;
+    if (s_meta) s_meta->uframe_total_size = ctx->uframe_size;
+  }
+
+  return 0;
+}
+
+static void st20_rx_detect_test(enum st20_type tx_type[], enum st20_type rx_type[],
+                                enum st20_packing packing[], enum st_fps fps[],
+                                int width[], int height[], bool interlaced[],
+                                bool user_frame, enum st20_fmt fmt, bool check_fps,
+                                int sessions = 1) {
+  auto ctx = (struct st_tests_context*)st_test_ctx();
+  auto m_handle = ctx->handle;
+  int ret;
+  struct st20_tx_ops ops_tx;
+  struct st20_rx_ops ops_rx;
+  if (ctx->para.num_ports != 2) {
+    info("%s, dual port should be enabled for tx test, one for tx and one for rx\n",
+         __func__);
+    return;
+  }
+
+  std::vector<tests_context*> test_ctx_tx;
+  std::vector<tests_context*> test_ctx_rx;
+  std::vector<st20_tx_handle> tx_handle;
+  std::vector<st20_rx_handle> rx_handle;
+  std::vector<double> expect_framerate;
+  std::vector<double> framerate;
+  std::vector<std::thread> rtp_thread_tx;
+  std::vector<std::thread> rtp_thread_rx;
+  std::vector<std::thread> sha_check;
+  int slices_per_frame = 32;
+
+  test_ctx_tx.resize(sessions);
+  test_ctx_rx.resize(sessions);
+  tx_handle.resize(sessions);
+  rx_handle.resize(sessions);
+  expect_framerate.resize(sessions);
+  framerate.resize(sessions);
+  rtp_thread_tx.resize(sessions);
+  rtp_thread_rx.resize(sessions);
+  sha_check.resize(sessions);
+
+  for (int i = 0; i < sessions; i++) {
+    expect_framerate[i] = st_frame_rate(fps[i]);
+    test_ctx_tx[i] = new tests_context();
+    ASSERT_TRUE(test_ctx_tx[i] != NULL);
+
+    test_ctx_tx[i]->idx = i;
+    test_ctx_tx[i]->ctx = ctx;
+    test_ctx_tx[i]->fb_cnt = TEST_SHA_HIST_NUM;
+    test_ctx_tx[i]->fb_idx = 0;
+    test_ctx_tx[i]->check_sha = true;
+    memset(&ops_tx, 0, sizeof(ops_tx));
+    ops_tx.name = "st20_detect_test";
+    ops_tx.priv = test_ctx_tx[i];
+    ops_tx.num_port = 1;
+    memcpy(ops_tx.dip_addr[ST_PORT_P], ctx->para.sip_addr[ST_PORT_R], ST_IP_ADDR_LEN);
+    strncpy(ops_tx.port[ST_PORT_P], ctx->para.port[ST_PORT_P], ST_PORT_MAX_LEN);
+    ops_tx.udp_port[ST_PORT_P] = 10000 + i;
+    ops_tx.pacing = ST21_PACING_NARROW;
+    ops_tx.packing = packing[i];
+    ops_tx.type = tx_type[i];
+    ops_tx.width = width[i];
+    ops_tx.height = height[i];
+    ops_tx.interlaced = interlaced[i];
+    ops_tx.fps = fps[i];
+    ops_tx.fmt = fmt;
+    ops_tx.payload_type = ST20_TEST_PAYLOAD_TYPE;
+    ops_tx.framebuff_cnt = test_ctx_tx[i]->fb_cnt;
+    ops_tx.get_next_frame = interlaced[i] ? tx_next_video_field : tx_next_video_frame;
+    ops_tx.query_frame_lines_ready = tx_frame_lines_ready;
+
+    tx_handle[i] = st20_tx_create(m_handle, &ops_tx);
+    ASSERT_TRUE(tx_handle[i] != NULL);
+
+    /* sha caculate */
+    struct st20_pgroup st20_pg;
+    st20_get_pgroup(ops_tx.fmt, &st20_pg);
+    size_t frame_size = ops_tx.width * ops_tx.height * st20_pg.size / st20_pg.coverage;
+    if (interlaced[i]) frame_size = frame_size >> 1;
+    test_ctx_tx[i]->frame_size = frame_size;
+    test_ctx_tx[i]->height = ops_tx.height;
+    test_ctx_tx[i]->stride = ops_tx.width / st20_pg.coverage * st20_pg.size;
+    uint8_t* fb;
+    if (user_frame) {
+      /* uframe fmt: yuv422 10bit planar */
+      size_t uframe_size = ops_tx.width * ops_tx.height * 2 * sizeof(uint16_t);
+      if (interlaced[i]) uframe_size = uframe_size >> 1;
+      test_ctx_tx[i]->uframe_size = uframe_size;
+      test_ctx_tx[i]->slice = false;
+      for (int frame = 0; frame < TEST_SHA_HIST_NUM; frame++) {
+        test_ctx_tx[i]->frame_buf[frame] = (uint8_t*)st_test_zmalloc(uframe_size);
+        fb = test_ctx_tx[i]->frame_buf[frame];
+        ASSERT_TRUE(fb != NULL);
+        uint16_t* p10_u16 = (uint16_t*)fb;
+        for (size_t i = 0; i < (uframe_size / 2); i++) {
+          p10_u16[i] = rand() & 0x3ff; /* only 10 bit */
+        }
+        unsigned char* result = test_ctx_tx[i]->shas[frame];
+        SHA256((unsigned char*)fb, uframe_size, result);
+        test_sha_dump("st20_rx", result);
+
+        struct st20_rfc4175_422_10_pg2_be* pg =
+            (struct st20_rfc4175_422_10_pg2_be*)st20_tx_get_framebuffer(tx_handle[i],
+                                                                        frame);
+        st20_yuv422p10le_to_rfc4175_422be10(
+            p10_u16, (p10_u16 + ops_tx.width * ops_tx.height),
+            (p10_u16 + ops_tx.width * ops_tx.height * 3 / 2), pg, ops_tx.width,
+            ops_tx.height);
+      }
+    } else {
+      test_ctx_tx[i]->lines_per_slice = ops_tx.height / 30;
+      test_ctx_tx[i]->slice = (tx_type[i] == ST20_TYPE_SLICE_LEVEL);
+      for (int frame = 0; frame < TEST_SHA_HIST_NUM; frame++) {
+        fb = (uint8_t*)st20_tx_get_framebuffer(tx_handle[i], frame);
+        ASSERT_TRUE(fb != NULL);
+        st_test_rand_data(fb, frame_size, frame);
+        unsigned char* result = test_ctx_tx[i]->shas[frame];
+        SHA256((unsigned char*)fb, frame_size, result);
+        test_sha_dump("st20_rx", result);
+      }
+    }
+
+    test_ctx_tx[i]->handle = tx_handle[i];
+  }
+
+  for (int i = 0; i < sessions; i++) {
+    test_ctx_rx[i] = new tests_context();
+    ASSERT_TRUE(test_ctx_rx[i] != NULL);
+
+    test_ctx_rx[i]->idx = i;
+    test_ctx_rx[i]->ctx = ctx;
+    test_ctx_rx[i]->fb_cnt = 3;
+    test_ctx_rx[i]->fb_idx = 0;
+    test_ctx_rx[i]->check_sha = true;
+    memset(&ops_rx, 0, sizeof(ops_rx));
+    ops_rx.name = "st20_detect_test";
+    ops_rx.priv = test_ctx_rx[i];
+    ops_rx.num_port = 1;
+    memcpy(ops_rx.sip_addr[ST_PORT_P], ctx->para.sip_addr[ST_PORT_P], ST_IP_ADDR_LEN);
+    strncpy(ops_rx.port[ST_PORT_P], ctx->para.port[ST_PORT_R], ST_PORT_MAX_LEN);
+    ops_rx.udp_port[ST_PORT_P] = 10000 + i;
+    ops_rx.pacing = ST21_PACING_NARROW;
+    ops_rx.type = rx_type[i];
+    ops_rx.width = 1920;
+    ops_rx.height = 1080;
+    ops_rx.fps = ST_FPS_P59_94;
+    ops_rx.fmt = fmt;
+    ops_rx.payload_type = ST20_TEST_PAYLOAD_TYPE;
+    ops_rx.interlaced = interlaced[i];
+    ops_rx.framebuff_cnt = test_ctx_rx[i]->fb_cnt;
+    ops_rx.slice_lines = height[i] / slices_per_frame;
+    ops_rx.notify_frame_ready =
+        interlaced[i] ? st20_digest_rx_field_ready : st20_digest_rx_frame_ready;
+    ops_rx.notify_slice_ready = st20_digest_rx_slice_ready;
+    ops_rx.notify_detected = st20_rx_detected;
+    if (user_frame) {
+      ops_rx.uframe_size = 1;
+      ops_rx.uframe_pg_callback = st20_rx_uframe_pg_callback;
+    } else {
+      ops_rx.uframe_size = 0;
+    }
+    ops_rx.flags = ST20_RX_FLAG_DMA_OFFLOAD | ST20_RX_FLAG_AUTO_DETECT;
+
+    if (rx_type[i] == ST20_TYPE_SLICE_LEVEL) {
+      /* set expect meta data to private */
+      auto meta =
+          (struct st20_slice_meta*)st_test_zmalloc(sizeof(struct st20_slice_meta));
+      ASSERT_TRUE(meta != NULL);
+      meta->width = width[i];
+      meta->height = height[i];
+      meta->fps = fps[i];
+      meta->fmt = fmt;
+      meta->frame_total_size = test_ctx_tx[i]->frame_size;
+      meta->uframe_total_size = 0;
+      meta->field = FIRST_FIELD;
+      test_ctx_rx[i]->priv = meta;
+      ops_rx.flags |= ST20_RX_FLAG_RECEIVE_INCOMPLETE_FRAME;
+    }
+
+    rx_handle[i] = st20_rx_create(m_handle, &ops_rx);
+
+    test_ctx_rx[i]->frame_size = test_ctx_tx[i]->frame_size;
+    test_ctx_rx[i]->uframe_size = ops_rx.uframe_size;
+    test_ctx_rx[i]->width = ops_tx.width;
+    st20_get_pgroup(ops_rx.fmt, &test_ctx_rx[i]->st20_pg);
+    memcpy(test_ctx_rx[i]->shas, test_ctx_tx[i]->shas,
+           TEST_SHA_HIST_NUM * SHA256_DIGEST_LENGTH);
+    test_ctx_rx[i]->total_pkts_in_frame = test_ctx_tx[i]->total_pkts_in_frame;
+    ASSERT_TRUE(rx_handle[i] != NULL);
+    test_ctx_rx[i]->handle = rx_handle[i];
+    test_ctx_rx[i]->stop = false;
+    if (interlaced[i]) {
+      rtp_thread_rx[i] = std::thread(st20_digest_rx_field_check, test_ctx_rx[i]);
+    } else {
+      rtp_thread_rx[i] = std::thread(st20_digest_rx_frame_check, test_ctx_rx[i]);
+    }
+  }
+
+  ret = st_start(m_handle);
+  EXPECT_GE(ret, 0);
+  sleep(ST20_TRAIN_TIME_S * sessions); /* time for train_pacing */
+  sleep(10 * 1);
+
+  for (int i = 0; i < sessions; i++) {
+    uint64_t cur_time_ns = st_test_get_monotonic_time();
+    double time_sec = (double)(cur_time_ns - test_ctx_rx[i]->start_time) / NS_PER_S;
+    framerate[i] = test_ctx_rx[i]->fb_rec / time_sec;
+    test_ctx_rx[i]->stop = true;
+    {
+      std::unique_lock<std::mutex> lck(test_ctx_rx[i]->mtx);
+      test_ctx_rx[i]->cv.notify_all();
+    }
+    rtp_thread_rx[i].join();
+  }
+
+  ret = st_stop(m_handle);
+  EXPECT_GE(ret, 0);
+  for (int i = 0; i < sessions; i++) {
+    EXPECT_GE(test_ctx_rx[i]->fb_rec, 0);
+    EXPECT_GT(test_ctx_rx[i]->check_sha_frame_cnt, 0);
+    if ((rx_type[i] == ST20_TYPE_SLICE_LEVEL) && (height[i] >= (1080 * 4)))
+      EXPECT_LT(test_ctx_rx[i]->incomplete_frame_cnt, 2 * 5);
+    else
+      EXPECT_LT(test_ctx_rx[i]->incomplete_frame_cnt, 2);
+    EXPECT_EQ(test_ctx_rx[i]->incomplete_slice_cnt, 0);
+    if (rx_type[i] == ST20_TYPE_FRAME_LEVEL)
+      EXPECT_EQ(test_ctx_rx[i]->fail_cnt, 0);
+    else
+      EXPECT_LE(test_ctx_rx[i]->fail_cnt, 2);
+    info("%s, session %d fb_rec %d framerate %f\n", __func__, i, test_ctx_rx[i]->fb_rec,
+         framerate[i]);
+    if (rx_type[i] == ST20_TYPE_SLICE_LEVEL) {
+      int expect_slice_cnt = test_ctx_rx[i]->fb_rec * slices_per_frame;
+      if (interlaced[i]) expect_slice_cnt /= 2;
+      EXPECT_NEAR(test_ctx_rx[i]->slice_cnt, expect_slice_cnt, expect_slice_cnt * 0.1);
+    }
+    if (check_fps) {
+      EXPECT_NEAR(framerate[i], expect_framerate[i], expect_framerate[i] * 0.1);
+    }
+
+    if (test_ctx_tx[i]->ooo_mapping) st_test_free(test_ctx_tx[i]->ooo_mapping);
+    if (test_ctx_rx[i]->priv) st_test_free(test_ctx_rx[i]->priv);
+    ret = st20_tx_free(tx_handle[i]);
+    EXPECT_GE(ret, 0);
+    ret = st20_rx_free(rx_handle[i]);
+    EXPECT_GE(ret, 0);
+    delete test_ctx_tx[i];
+    delete test_ctx_rx[i];
+  }
+}
+
+TEST(St20_rx, detect_1080p_fps59_94_s1) {
+  enum st20_type tx_type[1] = {ST20_TYPE_FRAME_LEVEL};
+  enum st20_type rx_type[1] = {ST20_TYPE_FRAME_LEVEL};
+  enum st20_packing packing[1] = {ST20_PACKING_BPM};
+  enum st_fps fps[1] = {ST_FPS_P59_94};
+  int width[1] = {1920};
+  int height[1] = {1080};
+  bool interlaced[1] = {false};
+  st20_rx_detect_test(tx_type, rx_type, packing, fps, width, height, interlaced, false,
+                      ST20_FMT_YUV_422_10BIT, true, 1);
+}
+
+TEST(St20_rx, detect_uframe_mix_s2) {
+  enum st20_type tx_type[2] = {ST20_TYPE_FRAME_LEVEL, ST20_TYPE_FRAME_LEVEL};
+  enum st20_type rx_type[2] = {ST20_TYPE_FRAME_LEVEL, ST20_TYPE_SLICE_LEVEL};
+  enum st20_packing packing[2] = {ST20_PACKING_BPM, ST20_PACKING_BPM};
+  enum st_fps fps[2] = {ST_FPS_P59_94, ST_FPS_P29_97};
+  int width[2] = {1280, 1920};
+  int height[2] = {720, 1080};
+  bool interlaced[2] = {false, false};
+  st20_rx_detect_test(tx_type, rx_type, packing, fps, width, height, interlaced, true,
+                      ST20_FMT_YUV_422_10BIT, true, 2);
+}
+
+TEST(St20_rx, detect_mix_frame_s3) {
+  enum st20_type tx_type[3] = {ST20_TYPE_FRAME_LEVEL, ST20_TYPE_FRAME_LEVEL,
+                               ST20_TYPE_FRAME_LEVEL};
+  enum st20_type rx_type[3] = {ST20_TYPE_FRAME_LEVEL, ST20_TYPE_FRAME_LEVEL,
+                               ST20_TYPE_FRAME_LEVEL};
+  enum st20_packing packing[3] = {ST20_PACKING_BPM, ST20_PACKING_GPM,
+                                  ST20_PACKING_GPM_SL};
+  enum st_fps fps[3] = {ST_FPS_P59_94, ST_FPS_P50, ST_FPS_P29_97};
+  int width[3] = {1280, 1920, 3840};
+  int height[3] = {720, 1080, 2160};
+  bool interlaced[3] = {false, false, true};
+  st20_rx_detect_test(tx_type, rx_type, packing, fps, width, height, interlaced, false,
+                      ST20_FMT_YUV_422_10BIT, true, 3);
+}
+
+TEST(St20_rx, detect_mix_slice_s3) {
+  enum st20_type tx_type[3] = {ST20_TYPE_FRAME_LEVEL, ST20_TYPE_FRAME_LEVEL,
+                               ST20_TYPE_FRAME_LEVEL};
+  enum st20_type rx_type[3] = {ST20_TYPE_SLICE_LEVEL, ST20_TYPE_SLICE_LEVEL,
+                               ST20_TYPE_SLICE_LEVEL};
+  enum st20_packing packing[3] = {ST20_PACKING_BPM, ST20_PACKING_GPM,
+                                  ST20_PACKING_GPM_SL};
+  enum st_fps fps[3] = {ST_FPS_P59_94, ST_FPS_P50, ST_FPS_P29_97};
+  int width[3] = {1280, 1920, 3840};
+  int height[3] = {720, 1080, 2160};
+  bool interlaced[3] = {false, false, true};
+  st20_rx_detect_test(tx_type, rx_type, packing, fps, width, height, interlaced, false,
+                      ST20_FMT_YUV_422_10BIT, true, 3);
+}
+
+static void st20_rx_dump_test(enum st20_type type[], enum st_fps fps[], int width[],
+                              int height[], enum st20_fmt fmt, int sessions = 1) {
+  auto ctx = (struct st_tests_context*)st_test_ctx();
+  auto m_handle = ctx->handle;
+  int ret;
+  struct st20_tx_ops ops_tx;
+  struct st20_rx_ops ops_rx;
+  if (ctx->para.num_ports != 2) {
+    info("%s, dual port should be enabled for tx test, one for tx and one for rx\n",
+         __func__);
+    return;
+  }
+
+  std::vector<tests_context*> test_ctx_tx;
+  std::vector<tests_context*> test_ctx_rx;
+  std::vector<st20_tx_handle> tx_handle;
+  std::vector<st20_rx_handle> rx_handle;
+  std::vector<double> expect_framerate;
+  std::vector<double> framerate;
+  std::vector<std::thread> rtp_thread_tx;
+  std::vector<std::thread> rtp_thread_rx;
+
+  test_ctx_tx.resize(sessions);
+  test_ctx_rx.resize(sessions);
+  tx_handle.resize(sessions);
+  rx_handle.resize(sessions);
+  expect_framerate.resize(sessions);
+  framerate.resize(sessions);
+  rtp_thread_tx.resize(sessions);
+  rtp_thread_rx.resize(sessions);
+
+  for (int i = 0; i < sessions; i++) {
+    expect_framerate[i] = st_frame_rate(fps[i]);
+    test_ctx_tx[i] = new tests_context();
+    ASSERT_TRUE(test_ctx_tx[i] != NULL);
+
+    test_ctx_tx[i]->idx = i;
+    test_ctx_tx[i]->ctx = ctx;
+    test_ctx_tx[i]->fb_cnt = 3;
+    test_ctx_tx[i]->fb_idx = 0;
+    memset(&ops_tx, 0, sizeof(ops_tx));
+    ops_tx.name = "st20_dump_test";
+    ops_tx.priv = test_ctx_tx[i];
+    ops_tx.num_port = 1;
+    memcpy(ops_tx.dip_addr[ST_PORT_P], ctx->para.sip_addr[ST_PORT_R], ST_IP_ADDR_LEN);
+    strncpy(ops_tx.port[ST_PORT_P], ctx->para.port[ST_PORT_P], ST_PORT_MAX_LEN);
+    ops_tx.udp_port[ST_PORT_P] = 10000 + i;
+    ops_tx.pacing = ST21_PACING_NARROW;
+    ops_tx.type = type[i];
+    ops_tx.width = width[i];
+    ops_tx.height = height[i];
+    ops_tx.fps = fps[i];
+    ops_tx.fmt = fmt;
+    ops_tx.payload_type = ST20_TEST_PAYLOAD_TYPE;
+    ops_tx.framebuff_cnt = test_ctx_tx[i]->fb_cnt;
+    ops_tx.get_next_frame = tx_next_video_frame;
+    if (type[i] == ST20_TYPE_RTP_LEVEL) {
+      rtp_tx_specific_init(&ops_tx, test_ctx_tx[i]);
+    }
+    tx_handle[i] = st20_tx_create(m_handle, &ops_tx);
+
+    ASSERT_TRUE(tx_handle[i] != NULL);
+    test_ctx_tx[i]->handle = tx_handle[i];
+    if (type[i] == ST20_TYPE_RTP_LEVEL) {
+      test_ctx_tx[i]->stop = false;
+      rtp_thread_tx[i] = std::thread(tx_feed_packet, test_ctx_tx[i]);
+    }
+  }
+
+  for (int i = 0; i < sessions; i++) {
+    test_ctx_rx[i] = new tests_context();
+    ASSERT_TRUE(test_ctx_rx[i] != NULL);
+
+    test_ctx_rx[i]->idx = i;
+    test_ctx_rx[i]->ctx = ctx;
+    test_ctx_rx[i]->fb_cnt = 3;
+    test_ctx_rx[i]->fb_idx = 0;
+    memset(&ops_rx, 0, sizeof(ops_rx));
+    ops_rx.name = "st20_dump_test";
+    ops_rx.priv = test_ctx_rx[i];
+    ops_rx.num_port = 1;
+    memcpy(ops_rx.sip_addr[ST_PORT_P], ctx->para.sip_addr[ST_PORT_P], ST_IP_ADDR_LEN);
+    strncpy(ops_rx.port[ST_PORT_P], ctx->para.port[ST_PORT_R], ST_PORT_MAX_LEN);
+    ops_rx.udp_port[ST_PORT_P] = 10000 + i;
+    ops_rx.pacing = ST21_PACING_NARROW;
+    ops_rx.type = type[i];
+    ops_rx.width = width[i];
+    ops_rx.height = height[i];
+    ops_rx.fps = fps[i];
+    ops_rx.fmt = fmt;
+    ops_rx.payload_type = ST20_TEST_PAYLOAD_TYPE;
+    ops_rx.framebuff_cnt = test_ctx_rx[i]->fb_cnt;
+    ops_rx.notify_frame_ready = st20_rx_frame_ready;
+    ops_rx.notify_rtp_ready = rx_rtp_ready;
+    ops_rx.rtp_ring_size = 1024;
+    ops_rx.flags = ST20_RX_FLAG_DMA_OFFLOAD;
+    rx_handle[i] = st20_rx_create(m_handle, &ops_rx);
+
+    test_ctx_rx[i]->total_pkts_in_frame = test_ctx_tx[i]->total_pkts_in_frame;
+    ASSERT_TRUE(rx_handle[i] != NULL);
+    test_ctx_rx[i]->handle = rx_handle[i];
+    if (type[i] == ST20_TYPE_RTP_LEVEL) {
+      test_ctx_rx[i]->stop = false;
+      rtp_thread_rx[i] = std::thread(rx_get_packet, test_ctx_rx[i]);
+    }
+  }
+
+  ret = st_start(m_handle);
+  EXPECT_GE(ret, 0);
+  sleep(ST20_TRAIN_TIME_S * sessions); /* time for train_pacing */
+
+  sleep(5);
+
+  uint32_t max_dump_packets = 100;
+  for (int i = 0; i < sessions; i++) {
+    struct st_pcap_dump_meta meta;
+    ret = st20_rx_pcapng_dump(rx_handle[i], max_dump_packets, true, &meta);
+    EXPECT_GE(ret, 0);
+    EXPECT_EQ(meta.dumped_packets, max_dump_packets);
+    dbg("%s, file_name %s\n", __func__, meta.file_name);
+    if (ret >= 0) remove(meta.file_name);
+  }
+
+  for (int i = 0; i < sessions; i++) {
+    uint64_t cur_time_ns = st_test_get_monotonic_time();
+    double time_sec = (double)(cur_time_ns - test_ctx_rx[i]->start_time) / NS_PER_S;
+    framerate[i] = test_ctx_rx[i]->fb_rec / time_sec;
+
+    if (type[i] == ST20_TYPE_RTP_LEVEL) {
+      test_ctx_tx[i]->stop = true;
+      test_ctx_rx[i]->stop = true;
+      {
+        std::unique_lock<std::mutex> lck(test_ctx_tx[i]->mtx);
+        test_ctx_tx[i]->cv.notify_all();
+      }
+      {
+        std::unique_lock<std::mutex> lck(test_ctx_rx[i]->mtx);
+        test_ctx_rx[i]->cv.notify_all();
+      }
+      rtp_thread_tx[i].join();
+      rtp_thread_rx[i].join();
+    }
+  }
+
+  ret = st_stop(m_handle);
+  EXPECT_GE(ret, 0);
+  for (int i = 0; i < sessions; i++) {
+    ret = st20_tx_free(tx_handle[i]);
+    EXPECT_GE(ret, 0);
+    ret = st20_rx_free(rx_handle[i]);
+    EXPECT_GE(ret, 0);
+    delete test_ctx_tx[i];
+    delete test_ctx_rx[i];
+  }
+}
+
+TEST(St20_rx, pcap_dump) {
+  enum st20_type type[2] = {ST20_TYPE_FRAME_LEVEL, ST20_TYPE_RTP_LEVEL};
+  enum st_fps fps[2] = {ST_FPS_P59_94, ST_FPS_P50};
+  int width[2] = {1280, 1920};
+  int height[2] = {720, 1080};
+  st20_rx_dump_test(type, fps, width, height, ST20_FMT_YUV_422_10BIT, 2);
 }

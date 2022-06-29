@@ -19,6 +19,7 @@
                     "type": "frame",
                     "pacing": "gap",
                     "start_port": 20000,
+                    "payload_type": 112,
                     "tr_offset": "default",
                     "video_format": "i1080p59",
                     "pg_format": "YUV_422_10bit",
@@ -31,16 +32,18 @@
                     "replicas": 1,
                     "type": "rtp",
                     "start_port": 30000,
+                    "payload_type": 111,
                     "audio_format": "PCM16",
                     "audio_channel": ["ST"],
                     "audio_sampling": "48kHz",
-                    "audio_frametime_ms": 1,
+                    "audio_ptime": "1",
                     "audio_url": "./test.wav"
                 }
             ],
             "ancillary": [
                 {
                     "replicas": 1,
+                    "payload_type": 113,
                     "start_port": 40000
                 }
             ]

@@ -16,7 +16,7 @@
 
 #include <json-c/json.h>
 #include <math.h>
-#include <st_dpdk_api.h>
+#include <st_pipeline_api.h>
 #include <stdbool.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -77,6 +77,7 @@ enum video_format {
   VIDEO_FORMAT_4320P_50FPS,
   VIDEO_FORMAT_4320P_29FPS,
   VIDEO_FORMAT_4320P_25FPS,
+  VIDEO_FORMAT_AUTO,
   VIDEO_FORMAT_MAX,
 };
 
@@ -103,6 +104,7 @@ typedef struct st_json_tx_video_session {
   enum st20_packing packing;
   enum tr_offset tr_offset;
   enum st20_fmt pg_format;
+  uint8_t payload_type;
 } st_json_tx_video_session_t;
 
 typedef struct st_json_tx_audio_session {
@@ -116,7 +118,8 @@ typedef struct st_json_tx_audio_session {
   enum st30_fmt audio_format;
   int audio_channel;
   enum st30_sampling audio_sampling;
-  int audio_frametime_ms;
+  enum st30_ptime audio_ptime;
+  uint8_t payload_type;
 } st_json_tx_audio_session_t;
 
 typedef struct st_json_tx_ancillary_session {
@@ -129,7 +132,28 @@ typedef struct st_json_tx_ancillary_session {
   enum st40_type type;
   enum anc_format anc_format;
   enum st_fps anc_fps;
+  uint8_t payload_type;
 } st_json_tx_ancillary_session_t;
+
+typedef struct st_json_tx_st22p_session {
+  uint8_t dip[ST_PORT_MAX][ST_IP_ADDR_LEN];
+  char st22p_url[ST_APP_URL_MAX_LEN];
+  st_json_interface_t* inf[ST_PORT_MAX];
+  int num_inf;
+
+  uint16_t udp_port;
+  enum st_frame_fmt format;
+  enum pacing pacing;
+  uint32_t width;
+  uint32_t height;
+  enum st_fps fps;
+  enum st_plugin_device device;
+  enum st22_codec codec;
+  enum st22_pack_type pack_type;
+  uint8_t payload_type;
+  enum st22_quality_mode quality;
+  uint32_t codec_thread_count;
+} st_json_tx_st22p_session_t;
 
 typedef struct st_json_rx_video_session {
   uint8_t ip[ST_PORT_MAX][ST_IP_ADDR_LEN];
@@ -144,6 +168,8 @@ typedef struct st_json_rx_video_session {
   enum st20_fmt pg_format;
   enum user_pg_fmt user_pg_format;
   bool display;
+  bool measure_latency;
+  uint8_t payload_type;
 } st_json_rx_video_session_t;
 
 typedef struct st_json_rx_audio_session {
@@ -157,7 +183,8 @@ typedef struct st_json_rx_audio_session {
   enum st30_fmt audio_format;
   int audio_channel;
   enum st30_sampling audio_sampling;
-  int audio_frametime_ms;
+  enum st30_ptime audio_ptime;
+  uint8_t payload_type;
 } st_json_rx_audio_session_t;
 
 typedef struct st_json_rx_ancillary_session {
@@ -167,7 +194,28 @@ typedef struct st_json_rx_ancillary_session {
   int num_inf;
 
   uint16_t udp_port;
+  uint8_t payload_type;
 } st_json_rx_ancillary_session_t;
+
+typedef struct st_json_rx_st22p_session {
+  uint8_t ip[ST_PORT_MAX][ST_IP_ADDR_LEN];
+  st_json_interface_t* inf[ST_PORT_MAX];
+  int num_inf;
+
+  uint16_t udp_port;
+  enum st_frame_fmt format;
+  enum pacing pacing;
+  uint32_t width;
+  uint32_t height;
+  enum st_fps fps;
+  enum st_plugin_device device;
+  enum st22_codec codec;
+  enum st22_pack_type pack_type;
+  bool display;
+  bool measure_latency;
+  uint8_t payload_type;
+  uint32_t codec_thread_count;
+} st_json_rx_st22p_session_t;
 
 typedef struct st_json_context {
   st_json_interface_t interfaces[MAX_INTERFACES];
@@ -180,6 +228,8 @@ typedef struct st_json_context {
   int tx_audio_session_cnt;
   st_json_tx_ancillary_session_t tx_anc[MAX_ANC];
   int tx_anc_session_cnt;
+  st_json_tx_st22p_session_t tx_st22p[MAX_ANC];
+  int tx_st22p_session_cnt;
 
   st_json_rx_video_session_t rx_video[MAX_VIDEO];
   int rx_video_session_cnt;
@@ -187,6 +237,8 @@ typedef struct st_json_context {
   int rx_audio_session_cnt;
   st_json_rx_ancillary_session_t rx_anc[MAX_ANC];
   int rx_anc_session_cnt;
+  st_json_rx_st22p_session_t rx_st22p[MAX_ANC];
+  int rx_st22p_session_cnt;
 } st_json_context_t;
 
 int st_app_parse_json(st_json_context_t* ctx, const char* filename);

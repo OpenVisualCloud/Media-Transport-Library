@@ -68,7 +68,7 @@ static void app_rx_anc_handle_rtp(struct st_app_rx_anc_session* s, void* usrptr)
     s->stat_frame_frist_rx_time = st_app_get_monotonic_time();
 }
 
-static void* app_rx_anc_session_read_thread(void* arg) {
+static void* app_rx_anc_read_thread(void* arg) {
   struct st_app_rx_anc_session* s = arg;
   int idx = s->idx;
   void* usrptr;
@@ -80,10 +80,10 @@ static void* app_rx_anc_session_read_thread(void* arg) {
     mbuf = st40_rx_get_mbuf(s->handle, &usrptr, &len);
     if (!mbuf) {
       /* no buffer */
-      pthread_mutex_lock(&s->st40_wake_mutex);
+      st_pthread_mutex_lock(&s->st40_wake_mutex);
       if (!s->st40_app_thread_stop)
-        pthread_cond_wait(&s->st40_wake_cond, &s->st40_wake_mutex);
-      pthread_mutex_unlock(&s->st40_wake_mutex);
+        st_pthread_cond_wait(&s->st40_wake_cond, &s->st40_wake_mutex);
+      st_pthread_mutex_unlock(&s->st40_wake_mutex);
       continue;
     }
     /* parse the packet */
@@ -95,23 +95,23 @@ static void* app_rx_anc_session_read_thread(void* arg) {
   return NULL;
 }
 
-static int app_rx_anc_session_rtp_ready(void* priv) {
+static int app_rx_anc_rtp_ready(void* priv) {
   struct st_app_rx_anc_session* s = priv;
 
-  pthread_mutex_lock(&s->st40_wake_mutex);
-  pthread_cond_signal(&s->st40_wake_cond);
-  pthread_mutex_unlock(&s->st40_wake_mutex);
+  st_pthread_mutex_lock(&s->st40_wake_mutex);
+  st_pthread_cond_signal(&s->st40_wake_cond);
+  st_pthread_mutex_unlock(&s->st40_wake_mutex);
   return 0;
 }
 
-static int app_rx_anc_session_uinit(struct st_app_rx_anc_session* s) {
+static int app_rx_anc_uinit(struct st_app_rx_anc_session* s) {
   int ret, idx = s->idx;
   s->st40_app_thread_stop = true;
   if (s->st40_app_thread) {
     /* wake up the thread */
-    pthread_mutex_lock(&s->st40_wake_mutex);
-    pthread_cond_signal(&s->st40_wake_cond);
-    pthread_mutex_unlock(&s->st40_wake_mutex);
+    st_pthread_mutex_lock(&s->st40_wake_mutex);
+    st_pthread_cond_signal(&s->st40_wake_cond);
+    st_pthread_mutex_unlock(&s->st40_wake_mutex);
     info("%s(%d), wait app thread stop\n", __func__, idx);
     pthread_join(s->st40_app_thread, NULL);
   }
@@ -120,15 +120,15 @@ static int app_rx_anc_session_uinit(struct st_app_rx_anc_session* s) {
     if (ret < 0) err("%s(%d), st30_rx_free fail %d\n", __func__, idx, ret);
     s->handle = NULL;
   }
-  pthread_mutex_destroy(&s->st40_wake_mutex);
-  pthread_cond_destroy(&s->st40_wake_cond);
+  st_pthread_mutex_destroy(&s->st40_wake_mutex);
+  st_pthread_cond_destroy(&s->st40_wake_cond);
 
   return 0;
 }
 
-static int app_rx_anc_session_init(struct st_app_context* ctx,
-                                   st_json_rx_ancillary_session_t* anc,
-                                   struct st_app_rx_anc_session* s) {
+static int app_rx_anc_init(struct st_app_context* ctx,
+                           st_json_rx_ancillary_session_t* anc,
+                           struct st_app_rx_anc_session* s) {
   int idx = s->idx, ret;
   struct st40_rx_ops ops;
   char name[32];
@@ -152,9 +152,10 @@ static int app_rx_anc_session_init(struct st_app_context* ctx,
     ops.udp_port[ST_PORT_R] = anc ? anc->udp_port : (10200 + s->idx);
   }
   ops.rtp_ring_size = 1024;
-  ops.notify_rtp_ready = app_rx_anc_session_rtp_ready;
-  pthread_mutex_init(&s->st40_wake_mutex, NULL);
-  pthread_cond_init(&s->st40_wake_cond, NULL);
+  ops.payload_type = anc ? anc->payload_type : ST_APP_PAYLOAD_TYPE_ANCILLARY;
+  ops.notify_rtp_ready = app_rx_anc_rtp_ready;
+  st_pthread_mutex_init(&s->st40_wake_mutex, NULL);
+  st_pthread_cond_init(&s->st40_wake_cond, NULL);
 
   handle = st40_rx_create(ctx->st, &ops);
   if (!handle) {
@@ -163,7 +164,7 @@ static int app_rx_anc_session_init(struct st_app_context* ctx,
   }
   s->handle = handle;
 
-  ret = pthread_create(&s->st40_app_thread, NULL, app_rx_anc_session_read_thread, s);
+  ret = pthread_create(&s->st40_app_thread, NULL, app_rx_anc_read_thread, s);
   if (ret < 0) {
     err("%s, st40_app_thread create fail %d\n", __func__, ret);
     return -EIO;
@@ -207,8 +208,7 @@ int st_app_rx_anc_sessions_init(struct st_app_context* ctx) {
     s = &ctx->rx_anc_sessions[i];
     s->idx = i;
 
-    ret =
-        app_rx_anc_session_init(ctx, ctx->json_ctx ? &ctx->json_ctx->rx_anc[i] : NULL, s);
+    ret = app_rx_anc_init(ctx, ctx->json_ctx ? &ctx->json_ctx->rx_anc[i] : NULL, s);
     if (ret < 0) {
       err("%s(%d), app_rx_anc_session_init fail %d\n", __func__, i, ret);
       return ret;
@@ -224,7 +224,7 @@ int st_app_rx_anc_sessions_uinit(struct st_app_context* ctx) {
   if (!ctx->rx_anc_sessions) return 0;
   for (i = 0; i < ctx->rx_anc_session_cnt; i++) {
     s = &ctx->rx_anc_sessions[i];
-    app_rx_anc_session_uinit(s);
+    app_rx_anc_uinit(s);
   }
   st_app_free(ctx->rx_anc_sessions);
   return 0;

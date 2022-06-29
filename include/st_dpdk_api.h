@@ -28,6 +28,7 @@
 #include <stddef.h>
 #include <stdint.h>
 #include <string.h>
+#include <time.h>
 
 #ifndef _ST_DPDK_API_HEAD_H_
 #define _ST_DPDK_API_HEAD_H_
@@ -43,7 +44,7 @@ extern "C" {
 /**
  * Minor version number of Media Streaming Library
  */
-#define ST_VERSION_MINOR (4)
+#define ST_VERSION_MINOR (6)
 /**
  * Last version number of Media Streaming Library
  */
@@ -56,6 +57,16 @@ extern "C" {
  * All version numbers in one to compare with ST_VERSION_NUM()
  */
 #define ST_VERSION ST_VERSION_NUM(ST_VERSION_MAJOR, ST_VERSION_MINOR, ST_VERSION_LAST)
+
+/**
+ * Get the uint64_t value for a specified bit set(0 to 63).
+ */
+#define ST_BIT64(nr) (UINT64_C(1) << (nr))
+
+/**
+ * Get the uint32_t value for a specified bit set(0 to 31).
+ */
+#define ST_BIT32(nr) (UINT32_C(1) << (nr))
 
 /**
  * Max length of a DPDK port name
@@ -73,8 +84,9 @@ extern "C" {
 /**
  * Max bytes in one RTP packet, include payload and header
  * standard UDP is 1460 bytes, and UDP headers are 8 bytes
+ * leave 100 for network extra space
  */
-#define ST_PKT_MAX_RTP_BYTES (1460 - 8)
+#define ST_PKT_MAX_RTP_BYTES (1460 - 8 - 100)
 
 /**
  * Max allowed number of video(st20) frame buffers
@@ -82,51 +94,61 @@ extern "C" {
 #define ST20_FB_MAX_COUNT (8)
 
 /**
+ * Max allowed number of video(st22) frame buffers
+ */
+#define ST22_FB_MAX_COUNT (8)
+
+/**
  * Max allowed number of dma devs
  */
 #define ST_DMA_DEV_MAX (8)
 
 /**
+ * Max length of a pcap dump file name
+ */
+#define ST_PCAP_FILE_MAX_LEN (32)
+
+/**
  * Handle to media streaming device context
  */
-typedef void* st_handle;
+typedef struct st_main_impl* st_handle;
 /**
  * Handle to tx st2110-20(video) session
  */
-typedef void* st20_tx_handle;
+typedef struct st_tx_video_session_handle_impl* st20_tx_handle;
 /**
  * Handle to tx st2110-22(compressed video) session
  */
-typedef void* st22_tx_handle;
+typedef struct st22_tx_video_session_handle_impl* st22_tx_handle;
 /**
  * Handle to tx st2110-30(audio) session
  */
-typedef void* st30_tx_handle;
+typedef struct st_tx_audio_session_handle_impl* st30_tx_handle;
 /**
  * Handle to tx st2110-40(ancillary) session
  */
-typedef void* st40_tx_handle;
+typedef struct st_tx_ancillary_session_handle_impl* st40_tx_handle;
 /**
  * Handle to rx st2110-20(video) session
  */
-typedef void* st20_rx_handle;
+typedef struct st_rx_video_session_handle_impl* st20_rx_handle;
 /**
  * Handle to rx st2110-22(compressed video) session
  */
-typedef void* st22_rx_handle;
+typedef struct st22_rx_video_session_handle_impl* st22_rx_handle;
 /**
  * Handle to rx st2110-30(audio) session
  */
-typedef void* st30_rx_handle;
+typedef struct st_rx_audio_session_handle_impl* st30_rx_handle;
 /**
  * Handle to rx st2110-40(ancillary) session
  */
-typedef void* st40_rx_handle;
+typedef struct st_rx_ancillary_session_handle_impl* st40_rx_handle;
 
 /**
  * Handle to st user dma device
  */
-typedef void* st_udma_handle;
+typedef struct st_dma_lender_dev* st_udma_handle;
 
 /**
  * IO virtual address type.
@@ -174,7 +196,7 @@ enum st_simd_level {
 enum st10_timestamp_fmt {
   /**
    * the raw media clock value defined in ST2110-10, whose units vary by essence
-   * sampling rate(90k for video, 48K for audio).
+   * sampling rate(90k for video, 48K/96K for audio).
    */
   ST10_TIMESTAMP_FMT_MEDIA_CLK = 0,
   /** the media clock time in nanoseconds since the TAI epoch */
@@ -253,6 +275,30 @@ enum st20_type {
 };
 
 /**
+ * Session type of st2110-22(compressed video) streaming
+ */
+enum st22_type {
+  /** app interface lib based on frame level */
+  ST22_TYPE_FRAME_LEVEL = 0,
+  /** app interface lib based on RTP level, same to ST20_TYPE_RTP_LEVEL */
+  ST22_TYPE_RTP_LEVEL,
+  /** max value of this enum */
+  ST22_TYPE_MAX,
+};
+
+/**
+ * Packetization mode of st2110-22(compressed video) streaming
+ */
+enum st22_pack_type {
+  /** Codestream packetization mode */
+  ST22_PACK_CODESTREAM = 0,
+  /** Slice packetization mode, not support now */
+  ST22_PACK_SLICE,
+  /** max value of this enum */
+  ST22_PACK_MAX,
+};
+
+/**
  * Frame status type of st2110-20(video) rx streaming
  */
 enum st20_frame_status {
@@ -288,10 +334,10 @@ static inline bool st20_is_frame_complete(enum st20_frame_status status) {
  * Session packing mode of st2110-20(video) streaming
  */
 enum st20_packing {
-  ST20_PACKING_GPM_SL = 0, /**< general packing mode, single scan line */
-  ST20_PACKING_BPM,        /**< block packing mode */
-  ST20_PACKING_GPM,        /**< general packing mode */
-  ST20_PACKING_MAX,        /**< max value of this enum */
+  ST20_PACKING_BPM = 0, /**< block packing mode */
+  ST20_PACKING_GPM,     /**< general packing mode */
+  ST20_PACKING_GPM_SL,  /**< general packing mode, single scan line */
+  ST20_PACKING_MAX,     /**< max value of this enum */
 };
 
 /**
@@ -394,6 +440,18 @@ struct st20_uframe_pg_meta {
 };
 
 /**
+ * Frame meta data of st2110-22(video) rx streaming
+ */
+struct st22_frame_meta {
+  /** Frame timestamp format */
+  enum st10_timestamp_fmt tfmt;
+  /** Frame timestamp value */
+  uint64_t timestamp;
+  /** Frame total size */
+  size_t frame_total_size;
+};
+
+/**
  * A structure describing rfc3550 rtp header, size: 12
  */
 struct st_rfc3550_rtp_hdr {
@@ -459,6 +517,63 @@ struct st20_rfc4175_rtp_hdr {
   uint16_t row_number;
   /** Offset of the first pixel of the payload data within the scan line */
   uint16_t row_offset;
+} __attribute__((__packed__));
+
+/**
+ * A structure describing a st2110-22(video) rfc9134 rtp header, size: 16
+ */
+struct st22_rfc9134_rtp_hdr {
+  /** Rtp rfc3550 base hdr */
+  struct st_rfc3550_rtp_hdr base;
+#ifdef ST_LITTLE_ENDIAN
+  /** F counter high part */
+  uint8_t f_counter_hi : 3;
+  /** Interlaced information */
+  uint8_t interlaced : 2;
+  /** Last */
+  uint8_t last_packet : 1;
+  /** pacKetization mode */
+  uint8_t kmode : 1;
+  /** Transmission mode */
+  uint8_t trans_order : 1;
+
+  /** Sep counter high part */
+  uint8_t sep_counter_hi : 6;
+  /** F counter low part */
+  uint8_t f_counter_lo : 2;
+
+  /** P counter high part */
+  uint8_t p_counter_hi : 3;
+  /** F counter low part */
+  uint8_t sep_counter_lo : 5;
+
+  /** P counter low part */
+  uint8_t p_counter_lo;
+#else
+  /** Transmission mode */
+  uint8_t trans_order : 1;
+  /** pacKetization mode */
+  uint8_t kmode : 1;
+  /** Last */
+  uint8_t last_packet : 1;
+  /** Interlaced information */
+  uint8_t interlaced : 2;
+  /** F counter high part */
+  uint8_t f_counter_hi : 3;
+
+  /** F counter low part */
+  uint8_t f_counter_lo : 2;
+  /** Sep counter high part */
+  uint8_t sep_counter_hi : 6;
+
+  /** F counter low part */
+  uint8_t sep_counter_lo : 5;
+  /** P counter high part */
+  uint8_t p_counter_hi : 3;
+
+  /** P counter low part */
+  uint8_t p_counter_lo;
+#endif
 } __attribute__((__packed__));
 
 /**
@@ -618,58 +733,77 @@ struct st40_rfc8331_payload_hdr {
  * Flag bit in flags of struct st_init_params.
  * If set, lib will call numa_bind to bind app thread and memory to NIC socket also.
  */
-#define ST_FLAG_BIND_NUMA (0x1 << 0)
+#define ST_FLAG_BIND_NUMA (ST_BIT64(0))
 /**
  * Flag bit in flags of struct st_init_params.
  * Enable built-in PTP implementation, only for PF now.
  * If not enable, it will use system time as the PTP source.
  */
-#define ST_FLAG_PTP_ENABLE (0x1 << 1)
+#define ST_FLAG_PTP_ENABLE (ST_BIT64(1))
 /**
  * Flag bit in flags of struct st_init_params.
  * Separated lcore for RX video(st2110-20/st2110-22) session.
  */
-#define ST_FLAG_RX_SEPARATE_VIDEO_LCORE (0x1 << 2)
+#define ST_FLAG_RX_SEPARATE_VIDEO_LCORE (ST_BIT64(2))
+/**
+ * Flag bit in flags of struct st_init_params.
+ * Enable migrate mode for tx video session if current LCORE is too busy to handle the
+ * tx video tasklet, the busy session may be migrated to a new LCORE.
+ * If not enable, tx video will always use static mapping based on quota.
+ */
+#define ST_FLAG_TX_VIDEO_MIGRATE (ST_BIT64(3))
+/**
+ * Flag bit in flags of struct st_init_params.
+ * Enable migrate mode for rx video session if current LCORE is too busy to handle the
+ * rx video tasklet, the busy session may be migrated to a new LCORE.
+ * If not enable, rx video will always use static mapping based on quota.
+ */
+#define ST_FLAG_RX_VIDEO_MIGRATE (ST_BIT64(4))
 /**
  * Flag bit in flags of struct st_init_params, debug usage only.
  * dedicate thread for cni message
  */
-#define ST_FLAG_CNI_THREAD (0x1 << 16)
+#define ST_FLAG_CNI_THREAD (ST_BIT64(16))
 /**
  * Flag bit in flags of struct st_init_params, debug usage only.
  * Enable video rx ebu check
  */
-#define ST_FLAG_RX_VIDEO_EBU (0x1 << 17)
+#define ST_FLAG_RX_VIDEO_EBU (ST_BIT64(17))
 /**
  * Flag bit in flags of struct st_init_params, debug usage only.
  * P TX destination mac assigned by user
  */
-#define ST_FLAG_USER_P_TX_MAC (0x1 << 18)
+#define ST_FLAG_USER_P_TX_MAC (ST_BIT64(18))
 /**
  * Flag bit in flags of struct st_init_params, debug usage only.
  * R TX destination mac assigned by user
  */
-#define ST_FLAG_USER_R_TX_MAC (0x1 << 19)
+#define ST_FLAG_USER_R_TX_MAC (ST_BIT64(19))
 /**
  * Flag bit in flags of struct st_init_params, debug usage only.
  * Enable NIC promiscuous mode for RX
  */
-#define ST_FLAG_NIC_RX_PROMISCUOUS (0x1 << 20)
+#define ST_FLAG_NIC_RX_PROMISCUOUS (ST_BIT64(20))
 /**
  * Flag bit in flags of struct st_init_params, debug usage only.
  * use unicast address for ptp PTP_DELAY_REQ message
  */
-#define ST_FLAG_PTP_UNICAST_ADDR (0x1 << 21)
+#define ST_FLAG_PTP_UNICAST_ADDR (ST_BIT64(21))
 /**
  * Flag bit in flags of struct st_init_params, debug usage only.
  * Mono memory pool for all rx queue
  */
-#define ST_FLAG_RX_QUEUE_MONO_POOL (0x1 << 22)
+#define ST_FLAG_RX_QUEUE_MONO_POOL (ST_BIT64(22))
 /**
  * Flag bit in flags of struct st_init_params, debug usage only.
  * Use TSC pacing instead of the RL
  */
-#define ST_FLAG_TSC_PACING (0x1 << 23)
+#define ST_FLAG_TSC_PACING (ST_BIT64(23))
+/**
+ * Flag bit in flags of struct st_init_params, debug usage only.
+ * Do st_start in st_init, st_stop in st_uninit, and skip the st_start/st_stop
+ */
+#define ST_FLAG_DEV_AUTO_START_STOP (ST_BIT64(24))
 
 /**
  * The structure describing how to init the streaming dpdk context.
@@ -730,6 +864,10 @@ struct st_init_params {
    * It will affect the memory usage and the performance.
    */
   uint16_t nb_rx_desc;
+  /**
+   * Suggest max allowed udp size for each network pkt, leave to zero if you don't known.
+   */
+  uint16_t pkt_udp_suggest_max_size;
   /**
    * tx destination mac address, debug usage only.
    * Valid if ST_FLAG_USER_P(R)_TX_MAC is enabled
@@ -847,6 +985,9 @@ struct st22_tx_ops {
   /** UDP port number */
   uint16_t udp_port[ST_PORT_MAX];
 
+  /** Session streaming type, frame or RTP */
+  enum st22_type type;
+
   /** Sender pacing type */
   enum st21_pacing pacing;
   /** Session resolution width */
@@ -855,45 +996,97 @@ struct st22_tx_ops {
   uint32_t height;
   /** Session resolution fps */
   enum st_fps fps;
-  /** Session resolution format */
-  enum st20_fmt fmt;
   /** 7 bits payload type define in RFC3550 */
   uint8_t payload_type;
+  /** packetization modes define in RFC9134 */
+  enum st22_pack_type pack_type;
 
-  /** rtp ring size, must be power of 2 */
+  /**
+   * the frame buffer count requested for one st22 tx session,
+   * should be in range [2, ST22_FB_MAX_COUNT],
+   * only for ST22_TYPE_FRAME_LEVEL.
+   */
+  uint16_t framebuff_cnt;
+  /**
+   * max framebuffer size for one st22 tx session codestream,
+   * usually ST22 use constant bitrate (CBR) mode.
+   * lib will allocate all frame buffer with this size,
+   * app can indicate the real codestream size later in get_next_frame query.
+   * only for ST22_TYPE_FRAME_LEVEL.
+   */
+  size_t framebuff_max_size;
+  /**
+   * ST22_TYPE_FRAME_LEVEL callback when lib require a new frame.
+   * User should provide the next avaiable frame index to next_frame_idx.
+   * It implicit means the frame ownership will be transferred to lib.
+   * only for ST22_TYPE_FRAME_LEVEL.
+   * And only non-block method can be used within this callback, as it run from lcore
+   * tasklet routine.
+   * next_frame_idx: next available frame index.
+   * frame_size: frame size for next_frame_idx, should smaller than framebuff_max_size.
+   */
+  int (*get_next_frame)(void* priv, uint16_t* next_frame_idx, size_t* frame_size);
+  /**
+   * ST20_TYPE_FRAME_LEVEL callback when lib finish current frame.
+   * frame_idx indicate the frame which finish the transmit.
+   * It implicit means the frame ownership is transferred to app.
+   * only for ST20_TYPE_FRAME_LEVEL.
+   * And only non-block method can be used within this callback as it run from lcore
+   * tasklet routine.
+   */
+  int (*notify_frame_done)(void* priv, uint16_t frame_idx);
+
+  /** rtp ring size, must be power of 2, for ST22_TYPE_RTP_LEVEL */
   uint32_t rtp_ring_size;
-  /** total pkts in one rtp frame */
+  /** total pkts in one rtp frame, for ST22_TYPE_RTP_LEVEL */
   uint32_t rtp_frame_total_pkts;
   /**
    * size for each rtp pkt, both the data and rtp header,
    * must small than ST_PKT_MAX_RTP_BYTES.
+   * for ST22_TYPE_RTP_LEVEL
    */
   uint16_t rtp_pkt_size;
   /**
    * callback when lib consume one rtp packet.
    * And only non-block method can be used in this callback as it run from lcore tasklet
    * routine.
+   * for ST22_TYPE_RTP_LEVEL
    */
   int (*notify_rtp_done)(void* priv);
 };
 
 /**
- * PCM type of st2110-30(audio) streaming
+ * Payload format of st2110-30/31(audio) streaming
  */
 enum st30_fmt {
   ST30_FMT_PCM8 = 0, /**< 8 bits per channel */
   ST30_FMT_PCM16,    /**< 16 bits per channel */
   ST30_FMT_PCM24,    /**< 24 bits per channel */
+  ST31_FMT_AM824,    /**< 32 bits per channel */
   ST30_FMT_MAX,      /**< max value of this enum */
 };
 
 /**
- * Sampling type of st2110-30(audio) streaming
+ * Sampling rate of st2110-30/31(audio) streaming
  */
 enum st30_sampling {
-  ST30_SAMPLING_48K = 0, /**< media Clock rate of 48kHz */
-  ST30_SAMPLING_96K,     /**< media Clock rate of 96kHz */
+  ST30_SAMPLING_48K = 0, /**< sampling rate of 48kHz */
+  ST30_SAMPLING_96K,     /**< sampling rate of 96kHz */
+  ST31_SAMPLING_44K,     /**< sampling rate of 44.1kHz */
   ST30_SAMPLING_MAX,     /**< max value of this enum */
+};
+
+/**
+ * Packet time period of st2110-30/31(audio) streaming
+ */
+enum st30_ptime {
+  ST30_PTIME_1MS = 0, /**< packet time of 1ms */
+  ST30_PTIME_125US,   /**< packet time of 125us */
+  ST30_PTIME_80US,    /**< packet time of 80us */
+  ST31_PTIME_1_09MS,  /**< packet time of 1.09ms, only for 44.1kHz sample */
+  ST31_PTIME_0_14MS,  /**< packet time of 0.14ms, only for 44.1kHz sample */
+  ST31_PTIME_0_09MS,  /**< packet time of 0.09ms, only for 44.1kHz sample */
+  ST30_PTIME_MAX,     /**< max value of this enum */
 };
 
 /**
@@ -939,12 +1132,14 @@ struct st30_tx_ops {
   /** UDP port number */
   uint16_t udp_port[ST_PORT_MAX];
 
-  /** Session PCM format */
+  /** Session payload format */
   enum st30_fmt fmt;
   /** Session channel number */
   uint16_t channel;
-  /** Session sampling format */
+  /** Session sampling rate */
   enum st30_sampling sampling;
+  /** Session packet time */
+  enum st30_ptime ptime;
   /** Session streaming type, frame or RTP */
   enum st30_type type;
   /** 7 bits payload type define in RFC3550 */
@@ -954,6 +1149,11 @@ struct st30_tx_ops {
    * use st30_get_sample_size to get the size for different format.
    */
   uint16_t sample_size;
+  /**
+   * number of samples for single channel in packet,
+   * use st30_get_sample_num to get the number from different ptime and sampling rate.
+   */
+  uint16_t sample_num;
 
   /**
    * the frame buffer count requested for one st30 tx session,
@@ -1114,7 +1314,7 @@ struct st40_tx_ops {
  * If set, lib will pass the incomplete frame to app also by notify_frame_ready.
  * User can check st20_frame_meta data for the frame integrity
  */
-#define ST20_RX_FLAG_RECEIVE_INCOMPLETE_FRAME (0x1 << 0)
+#define ST20_RX_FLAG_RECEIVE_INCOMPLETE_FRAME (ST_BIT32(0))
 /**
  * Flag bit in flags of struct st20_rx_ops.
  * Only for ST20_TYPE_FRAME_LEVEL/ST20_TYPE_SLICE_LEVEL.
@@ -1122,7 +1322,46 @@ struct st40_tx_ops {
  * dma_dev_port(st_init_params) list.
  * Pls note it could fallback to CPU if no DMA device is available.
  */
-#define ST20_RX_FLAG_DMA_OFFLOAD (0x1 << 1)
+#define ST20_RX_FLAG_DMA_OFFLOAD (ST_BIT32(1))
+/**
+ * Flag bit in flags of struct st20_rx_ops.
+ * Only for ST20_TYPE_FRAME_LEVEL/ST20_TYPE_SLICE_LEVEL.
+ * If set, lib will automatically detect video format.
+ * Width, height and fps set by app will be invalid.
+ */
+#define ST20_RX_FLAG_AUTO_DETECT (ST_BIT32(2))
+
+/**
+ * A structure used to pass detect metadata to app.
+ */
+struct st20_detect_meta {
+  /** Stream resolution width */
+  int width;
+  /** Stream resolution height */
+  int height;
+  /** Stream FPS */
+  enum st_fps fps;
+  /** Packet packing mode */
+  enum st20_packing packing;
+  /** Interlaced scan, otherwise progressive */
+  bool interlaced;
+};
+
+/**
+ * A structure used to pass detect reply to lib.
+ */
+struct st20_detect_reply {
+  /**
+   * Only for ST20_TYPE_SLICE_LEVEL.
+   * App replied slice lines when sliceused.
+   */
+  uint32_t slice_lines;
+  /**
+   * Only used when user frame set.
+   * App replied user frame size.
+   */
+  size_t uframe_size;
+};
 
 /**
  * The structure describing how to create a rx st2110-20(video) session.
@@ -1228,6 +1467,14 @@ struct st20_rx_ops {
    * routine.
    */
   int (*notify_rtp_ready)(void* priv);
+  /**
+   * ST20_TYPE_FRAME_LEVEL/ST20_TYPE_SLICE_LEVEL callback when lib detected video format.
+   * Only for ST20_TYPE_FRAME_LEVEL/ST20_TYPE_SLICE_LEVEL.
+   * And only non-block method can be used in this callback as it run from lcore tasklet
+   * routine.
+   */
+  int (*notify_detected)(void* priv, const struct st20_detect_meta* meta,
+                         struct st20_detect_reply* reply);
 };
 
 /**
@@ -1248,6 +1495,9 @@ struct st22_rx_ops {
   /** UDP port number */
   uint16_t udp_port[ST_PORT_MAX];
 
+  /** Session streaming type, frame or RTP */
+  enum st22_type type;
+
   /** Sender pacing type */
   enum st21_pacing pacing;
   /** Session resolution width */
@@ -1256,17 +1506,46 @@ struct st22_rx_ops {
   uint32_t height;
   /** Session resolution fps */
   enum st_fps fps;
-  /** Session resolution format */
-  enum st20_fmt fmt;
   /** 7 bits payload type define in RFC3550 */
   uint8_t payload_type;
+  /** packetization modes define in RFC9134 */
+  enum st22_pack_type pack_type;
 
-  /** rtp ring size, must be power of 2 */
+  /**
+   * the frame buffer count requested for one st22 rx session,
+   * should be in range [2, ST22_FB_MAX_COUNT],
+   * only for ST22_TYPE_FRAME_LEVEL.
+   */
+  uint16_t framebuff_cnt;
+  /**
+   * max framebuffer size for one st22 rx session,
+   * usually ST22 use constant bitrate (CBR) mode.
+   * lib will allocate all frame buffer with this size,
+   * app can get the real codestream size later in notify_frame_ready callback.
+   * only for ST22_TYPE_FRAME_LEVEL.
+   */
+  size_t framebuff_max_size;
+  /**
+   * ST22_TYPE_FRAME_LEVEL callback when lib receive one frame.
+   * frame: point to the address of the frame buf.
+   * meta: point to the meta data.
+   * return:
+   *   - 0: if app consume the frame successful. App should call st22_rx_put_framebuff
+   * to return the frame when it finish the handling
+   *   < 0: the error code if app cann't handle, lib will free the frame then.
+   * Only for ST22_TYPE_FRAME_LEVEL.
+   * And only non-block method can be used in this callback as it run from lcore tasklet
+   * routine.
+   */
+  int (*notify_frame_ready)(void* priv, void* frame, struct st22_frame_meta* meta);
+
+  /** rtp ring size, must be power of 2, for ST22_TYPE_RTP_LEVEL */
   uint32_t rtp_ring_size;
   /**
    * callback when lib receive one rtp packet.
    * And only non-block method can be used in this callback as it run from lcore tasklet
    * routine.
+   * For ST22_TYPE_RTP_LEVEL.
    */
   int (*notify_rtp_ready)(void* priv);
 };
@@ -1293,8 +1572,10 @@ struct st30_rx_ops {
   enum st30_fmt fmt;
   /** Session channel number */
   uint16_t channel;
-  /** Session sampling format */
+  /** Session sampling rate */
   enum st30_sampling sampling;
+  /** Session packet time */
+  enum st30_ptime ptime;
   /** Session streaming type, frame or RTP */
   enum st30_type type;
   /** 7 bits payload type define in RFC3550 */
@@ -1304,6 +1585,11 @@ struct st30_rx_ops {
    * use st30_get_sample_size to get the size for different format.
    */
   uint16_t sample_size;
+  /**
+   * number of samples for single channel in packet,
+   * use st30_get_sample_num to get the number from different ptime and sampling rate.
+   */
+  uint16_t sample_num;
 
   /**
    * the frame buffer count requested for one st30 rx session,
@@ -1424,6 +1710,16 @@ struct st_stats {
   uint8_t dma_dev_cnt;
   /** if straming device is started(st_start) */
   uint8_t dev_started;
+};
+
+/**
+ * Pcap dump meta data for synchronous st**_rx_pcapng_dump.
+ */
+struct st_pcap_dump_meta {
+  /** file path for the pcap dump file */
+  char file_name[ST_PCAP_FILE_MAX_LEN];
+  /** number of packets dumped */
+  uint32_t dumped_packets;
 };
 
 /**
@@ -1662,6 +1958,8 @@ void st_hp_free(st_handle st, void* ptr);
 /**
  * Return the IO address of a virtual address from st_hp_malloc/st_hp_zmalloc
  *
+ * @param st
+ *   The handle to the media streaming device context.
  * @param addr
  *   Address obtained from previous st_hp_malloc/st_hp_zmalloc call
  * @return
@@ -1676,7 +1974,7 @@ st_iova_t st_hp_virt2iova(st_handle st, const void* addr);
  *
  * @param st
  *   The handle to the media streaming device context.
- * @param size
+ * @param nb_desc
  *   Number of descriptor for the user DMA device
  * @param port
  *   Port for the user DMA device to be allocated.
@@ -1856,6 +2154,26 @@ int st20_tx_free(st20_tx_handle handle);
 void* st20_tx_get_framebuffer(st20_tx_handle handle, uint16_t idx);
 
 /**
+ * Get the framebuffer size for the tx st2110-20(video) session.
+ *
+ * @param handle
+ *   The handle to the tx st2110-20(video) session.
+ * @return
+ *   - size.
+ */
+size_t st20_tx_get_framebuffer_size(st20_tx_handle handle);
+
+/**
+ * Get the framebuffer count for the tx st2110-20(compressed video) session.
+ *
+ * @param handle
+ *   The handle to the tx st2110-20(compressed video) session.
+ * @return
+ *   - count.
+ */
+int st20_tx_get_framebuffer_count(st20_tx_handle handle);
+
+/**
  * Get the mbuf pointer and usrptr of the mbuf from the tx st2110-20(video) session.
  * For ST20_TYPE_RTP_LEVEL.
  * Must call st20_tx_put_mbuf to return the mbuf after rtp pack done.
@@ -2009,6 +2327,20 @@ int st22_tx_put_mbuf(st22_tx_handle handle, void* mbuf, uint16_t len);
 int st22_tx_get_sch_idx(st22_tx_handle handle);
 
 /**
+ * Get the framebuffer pointer from the tx st2110-22(video) session.
+ * For ST22_TYPE_FRAME_LEVEL.
+ *
+ * @param handle
+ *   The handle to the tx st2110-22(video) session.
+ * @param idx
+ *   The framebuffer index, should be in range [0, framebuff_cnt of st22_tx_ops].
+ * @return
+ *   - NULL on error.
+ *   - Otherwise, the framebuffer pointer.
+ */
+void* st22_tx_get_fb_addr(st22_tx_handle handle, uint16_t idx);
+
+/**
  * Create one tx st2110-30(audio) session.
  *
  * @param st
@@ -2078,19 +2410,40 @@ void* st30_tx_get_mbuf(st30_tx_handle handle, void** usrptr);
 int st30_tx_put_mbuf(st30_tx_handle handle, void* mbuf, uint16_t len);
 
 /**
+ * Retrieve the packet time in nanoseconds from st2110-30(audio) ptime.
+ *
+ * @param ptime
+ *   The st2110-30(audio) ptime.
+ * @return
+ *   - >0 the packet time in nanoseconds.
+ *   - <0: Error code if fail.
+ */
+double st30_get_packet_time(enum st30_ptime ptime);
+
+/**
  * Retrieve the sample data size from from st2110-30(audio) format.
  *
  * @param fmt
  *   The st2110-30(audio) format.
- * @param c
- *   The st2110-30(audio) channel.
- * @param s
- *   The st2110-30(audio) sampling.
  * @return
  *   - >0 the sample data size.
  *   - <0: Error code if fail.
  */
-int st30_get_sample_size(enum st30_fmt fmt, uint16_t c, enum st30_sampling s);
+int st30_get_sample_size(enum st30_fmt fmt);
+
+/**
+ * Retrieve the number of samples in packet from
+ * st2110-30(audio) packet time and sampling rate.
+ *
+ * @param ptime
+ *   The st2110-30(audio) packet time.
+ * @param sampling
+ *   The st2110-30(audio) sampling rate.
+ * @return
+ *   - >0 the sample num in packet.
+ *   - <0: Error code if fail.
+ */
+int st30_get_sample_num(enum st30_ptime ptime, enum st30_sampling sampling);
 
 /**
  * Create one tx st2110-40(ancillary) session.
@@ -2203,14 +2556,20 @@ int st20_rx_get_sch_idx(st20_rx_handle handle);
  * Dump st2110-20 packets to pcapng file.
  *
  * @param handle
- *   The handle to the rx st2110-20(compressed video) session.
+ *   The handle to the rx st2110-20(video) session.
  * @param max_dump_packets
  *   The max number of packets to be dumpped.
+ * @param sync
+ *   synchronous or asynchronous, true means this func will return after dump
+ * progress is finished.
+ * @param meta
+ *   The meta data returned, only for synchronous, leave to NULL if not need the meta.
  * @return
  *   - 0: Success, rx st2110-20(video) session pcapng dump succ.
  *   - <0: Error code of the rx st2110-20(video) session pcapng dump.
  */
-int st20_rx_pcapng_dump(st20_rx_handle handle, uint32_t max_dump_packets);
+int st20_rx_pcapng_dump(st20_rx_handle handle, uint32_t max_dump_packets, bool sync,
+                        struct st_pcap_dump_meta* meta);
 
 /**
  * Free the rx st2110-20(video) session.
@@ -2222,6 +2581,26 @@ int st20_rx_pcapng_dump(st20_rx_handle handle, uint32_t max_dump_packets);
  *   - <0: Error code of the rx st2110-20(video) session free.
  */
 int st20_rx_free(st20_rx_handle handle);
+
+/**
+ * Get the framebuffer size for the tx st2110-20(video) session.
+ *
+ * @param handle
+ *   The handle to the tx st2110-20(video) session.
+ * @return
+ *   - size.
+ */
+size_t st20_rx_get_framebuffer_size(st20_rx_handle handle);
+
+/**
+ * Get the framebuffer count for the tx st2110-20(video) session.
+ *
+ * @param handle
+ *   The handle to the tx st2110-20(video) session.
+ * @return
+ *   - count.
+ */
+int st20_rx_get_framebuffer_count(st20_rx_handle handle);
 
 /**
  * Put back the received buff get from notify_frame_ready.
@@ -2304,6 +2683,25 @@ int st22_rx_update_source(st22_rx_handle handle, struct st_rx_source_info* src);
 int st22_rx_get_sch_idx(st22_rx_handle handle);
 
 /**
+ * Dump st2110-22 packets to pcapng file.
+ *
+ * @param handle
+ *   The handle to the rx st2110-22(compressed video) session.
+ * @param max_dump_packets
+ *   The max number of packets to be dumpped.
+ * @param sync
+ *   synchronous or asynchronous, true means this func will return after dump
+ * progress is finished.
+ * @param meta
+ *   The meta data returned, only for synchronous, leave to NULL if not need the meta.
+ * @return
+ *   - 0: Success, rx st2110-22 session pcapng dump succ.
+ *   - <0: Error code of the rx st2110-22 session pcapng dump.
+ */
+int st22_rx_pcapng_dump(st22_rx_handle handle, uint32_t max_dump_packets, bool sync,
+                        struct st_pcap_dump_meta* meta);
+
+/**
  * Free the rx st2110-22(compressed video) session.
  *
  * @param handle
@@ -2341,6 +2739,34 @@ void* st22_rx_get_mbuf(st22_rx_handle handle, void** usrptr, uint16_t* len);
  *   the dpdk mbuf pointer by st22_rx_get_mbuf.
  */
 void st22_rx_put_mbuf(st22_rx_handle handle, void* mbuf);
+
+/**
+ * Put back the received buff get from notify_frame_ready.
+ * For ST22_TYPE_FRAME_LEVEL.
+ *
+ * @param handle
+ *   The handle to the rx st2110-22(video) session.
+ * @param frame
+ *   The framebuffer pointer.
+ * @return
+ *   - 0: Success, rx st2110-22(video) session freed.
+ *   - <0: Error code of the rx st2110-22(video) session free.
+ */
+int st22_rx_put_framebuff(st22_rx_handle handle, void* frame);
+
+/**
+ * Get the framebuffer pointer from the rx st2110-22(video) session.
+ * For ST22_TYPE_FRAME_LEVEL.
+ *
+ * @param handle
+ *   The handle to the rx st2110-22(video) session.
+ * @param idx
+ *   The framebuffer index, should be in range [0, framebuff_cnt of st22_rx_ops].
+ * @return
+ *   - NULL on error.
+ *   - Otherwise, the framebuffer pointer.
+ */
+void* st22_rx_get_fb_addr(st22_rx_handle handle, uint16_t idx);
 
 /**
  * Create one rx st2110-30(audio) session.
@@ -2552,6 +2978,30 @@ int st40_check_parity_bits(uint16_t val);
  *   frame rate number
  */
 double st_frame_rate(enum st_fps fps);
+
+/**
+ * Helper function to convert ST10_TIMESTAMP_FMT_TAI to ST10_TIMESTAMP_FMT_MEDIA_CLK.
+ *
+ * @param tai_ns
+ *   time in nanoseconds since the TAI epoch.
+ * @param sampling_rate
+ *   sampling rate(90k for video, 48K/96K for audio).
+ * @return
+ *   the raw media clock value defined in ST2110-10, whose units vary by sampling_rate
+ */
+uint32_t st10_tai_to_media_clk(uint64_t tai_ns, uint32_t sampling_rate);
+
+/**
+ * Helper function to convert ST10_TIMESTAMP_FMT_MEDIA_CLK to nanoseconds.
+ *
+ * @param media_ts
+ *   the raw media clock value defined in ST2110-10, whose units vary by sampling_rate.
+ * @param sampling_rate
+ *   sampling rate(90k for video, 48K/96K for audio).
+ * @return
+ *   time in nanoseconds.
+ */
+uint64_t st10_media_clk_to_ns(uint32_t media_ts, uint32_t sampling_rate);
 
 #if defined(__cplusplus)
 }

@@ -352,7 +352,7 @@ int st_mcast_init(struct st_main_impl* impl) {
   int ret;
 
   for (int port = 0; port < ST_PORT_MAX; ++port) {
-    pthread_mutex_init(&mcast->group_mutex[port], NULL);
+    st_pthread_mutex_init(&mcast->group_mutex[port], NULL);
   }
 
   ret = rte_eal_alarm_set(IGMP_JOIN_GROUP_PERIOD_US, mcast_membership_report_cb, impl);
@@ -372,7 +372,7 @@ int st_mcast_uinit(struct st_main_impl* impl) {
   mcast_queues_uinit(impl);
 
   for (int port = 0; port < ST_PORT_MAX; ++port) {
-    pthread_mutex_destroy(&mcast->group_mutex[port]);
+    st_pthread_mutex_destroy(&mcast->group_mutex[port]);
   }
 
   ret = rte_eal_alarm_cancel(mcast_membership_report_cb, impl);
@@ -395,10 +395,10 @@ int st_mcast_join(struct st_main_impl* impl, uint32_t group_addr, enum st_port p
     return -EIO;
   }
 
-  pthread_mutex_lock(&mcast->group_mutex[port]);
+  st_pthread_mutex_lock(&mcast->group_mutex[port]);
   for (int i = 0; i < group_num; ++i) {
     if (mcast->group_ip[port][i] == group_addr) {
-      pthread_mutex_unlock(&mcast->group_mutex[port]);
+      st_pthread_mutex_unlock(&mcast->group_mutex[port]);
       info("%s(%d), group %d.%d.%d.%d already in\n", __func__, port, ip[0], ip[1], ip[2],
            ip[3]);
       return 0;
@@ -406,7 +406,7 @@ int st_mcast_join(struct st_main_impl* impl, uint32_t group_addr, enum st_port p
   }
   mcast->group_ip[port][group_num] = group_addr;
   mcast->group_num[port]++;
-  pthread_mutex_unlock(&mcast->group_mutex[port]);
+  st_pthread_mutex_unlock(&mcast->group_mutex[port]);
 
   /* add mcast mac to interface */
   st_mcast_ip_to_mac(ip, &mcast_mac);
@@ -427,21 +427,21 @@ int st_mcast_leave(struct st_main_impl* impl, uint32_t group_addr, enum st_port 
   uint8_t* ip = (uint8_t*)&group_addr;
   struct rte_ether_addr mcast_mac;
 
-  pthread_mutex_lock(&mcast->group_mutex[port]);
+  st_pthread_mutex_lock(&mcast->group_mutex[port]);
   /* search the group ip list and delete the addr */
   for (int i = 0; i < group_num; ++i) {
     if (mcast->group_ip[port][i] == group_addr) {
       dbg("%s, found group ip in the group list, delete it\n", __func__);
       mcast->group_ip[port][i] = mcast->group_ip[port][group_num - 1];
       mcast->group_num[port]--;
-      pthread_mutex_unlock(&mcast->group_mutex[port]);
+      st_pthread_mutex_unlock(&mcast->group_mutex[port]);
       /* remove mcast mac from interface */
       st_mcast_ip_to_mac(ip, &mcast_mac);
       mcast_inf_remove_mac(inf, &mcast_mac);
       return 0;
     }
   }
-  pthread_mutex_unlock(&mcast->group_mutex[port]);
+  st_pthread_mutex_unlock(&mcast->group_mutex[port]);
   dbg("%s, group ip not found, nothing to delete\n", __func__);
   return 0;
 }

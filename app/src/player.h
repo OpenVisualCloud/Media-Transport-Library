@@ -26,9 +26,7 @@
 int st_app_player_uinit(struct st_app_context* ctx);
 int st_app_player_init(struct st_app_context* ctx);
 
-int st_app_attach_display(struct st_app_rx_video_session* video);
-int st_app_dettach_display(struct st_app_rx_video_session* video);
-
-int st_app_display_frame(struct st_display* display, uint8_t const* frame);
+int st_app_init_display(struct st_display* d, int idx, int width, int height, char* font);
+int st_app_uinit_display(struct st_display* d);
 
 #endif

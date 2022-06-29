@@ -50,15 +50,6 @@ static int st_ancillary_trs_tasklet_stop(void* priv) {
   }
   mgr->st40_stat_pkts_burst = 0;
 
-  /* free mempool for inactive session */
-  struct st_tx_ancillary_session_impl* s;
-  for (int sidx = 0; sidx < ST_MAX_TX_ANC_SESSIONS; sidx++) {
-    s = &mgr->sessions[sidx];
-    tx_ancillary_session_lock(mgr, sidx);
-    if (!mgr->active[sidx]) tx_ancillary_session_mempool_free(s);
-    tx_ancillary_session_unlock(mgr, sidx);
-  }
-
   return 0;
 }
 

@@ -30,7 +30,7 @@ static int app_rx_audio_open_source(struct st_app_rx_audio_session* session) {
   int fd, idx = session->idx;
   struct stat i;
 
-  fd = open(session->st30_ref_url, O_RDONLY);
+  fd = st_open(session->st30_ref_url, O_RDONLY);
   if (fd < 0) {
     info("%s(%d), open %s fail\n", __func__, idx, session->st30_ref_url);
     return 0;
@@ -119,10 +119,10 @@ static void* app_rx_audio_rtp_thread(void* arg) {
     mbuf = st30_rx_get_mbuf(s->handle, &usrptr, &len);
     if (!mbuf) {
       /* no buffer */
-      pthread_mutex_lock(&s->st30_wake_mutex);
+      st_pthread_mutex_lock(&s->st30_wake_mutex);
       if (!s->st30_app_thread_stop)
-        pthread_cond_wait(&s->st30_wake_cond, &s->st30_wake_mutex);
-      pthread_mutex_unlock(&s->st30_wake_mutex);
+        st_pthread_cond_wait(&s->st30_wake_cond, &s->st30_wake_mutex);
+      st_pthread_mutex_unlock(&s->st30_wake_mutex);
       continue;
     }
 
@@ -169,9 +169,9 @@ static int app_rx_audio_frame_done(void* priv, void* frame,
 static int app_rx_audio_rtp_ready(void* priv) {
   struct st_app_rx_audio_session* s = priv;
 
-  pthread_mutex_lock(&s->st30_wake_mutex);
-  pthread_cond_signal(&s->st30_wake_cond);
-  pthread_mutex_unlock(&s->st30_wake_mutex);
+  st_pthread_mutex_lock(&s->st30_wake_mutex);
+  st_pthread_cond_signal(&s->st30_wake_cond);
+  st_pthread_mutex_unlock(&s->st30_wake_mutex);
 
   return 0;
 }
@@ -182,15 +182,15 @@ static int app_rx_audio_uinit(struct st_app_rx_audio_session* s) {
   s->st30_app_thread_stop = true;
   if (s->st30_app_thread) {
     /* wake up the thread */
-    pthread_mutex_lock(&s->st30_wake_mutex);
-    pthread_cond_signal(&s->st30_wake_cond);
-    pthread_mutex_unlock(&s->st30_wake_mutex);
+    st_pthread_mutex_lock(&s->st30_wake_mutex);
+    st_pthread_cond_signal(&s->st30_wake_cond);
+    st_pthread_mutex_unlock(&s->st30_wake_mutex);
     info("%s(%d), wait app thread stop\n", __func__, idx);
     pthread_join(s->st30_app_thread, NULL);
   }
 
-  pthread_mutex_destroy(&s->st30_wake_mutex);
-  pthread_cond_destroy(&s->st30_wake_cond);
+  st_pthread_mutex_destroy(&s->st30_wake_mutex);
+  st_pthread_cond_destroy(&s->st30_wake_cond);
 
   if (s->handle) {
     ret = st30_rx_free(s->handle);
@@ -248,20 +248,23 @@ static int app_rx_audio_init(struct st_app_context* ctx,
   ops.notify_rtp_ready = app_rx_audio_rtp_ready;
   ops.type = audio ? audio->type : ST30_TYPE_FRAME_LEVEL;
   ops.fmt = audio ? audio->audio_format : ST30_FMT_PCM16;
+  ops.payload_type = audio ? audio->payload_type : ST_APP_PAYLOAD_TYPE_AUDIO;
   ops.channel = audio ? audio->audio_channel : 2;
   ops.sampling = audio ? audio->audio_sampling : ST30_SAMPLING_48K;
-  ops.sample_size = st30_get_sample_size(ops.fmt, ops.channel, ops.sampling);
-  int frametime = audio && (ops.type == ST30_TYPE_FRAME_LEVEL) ? audio->audio_frametime_ms
-                                                               : 1; /* frame time: ms */
-  s->expect_fps = 1000 / frametime;
-  s->st30_frame_size = frametime * ops.sample_size;
-  s->pkt_len = ops.sample_size;
+  ops.ptime = audio ? audio->audio_ptime : ST30_PTIME_1MS;
+  ops.sample_size = st30_get_sample_size(ops.fmt);
+  ops.sample_num = st30_get_sample_num(ops.ptime, ops.sampling);
+  s->pkt_len = ops.sample_size * ops.sample_num * ops.channel;
+  /* frame time to 1ms */
+  s->st30_frame_size =
+      ops.sample_size * st30_get_sample_num(ST30_PTIME_1MS, ops.sampling) * ops.channel;
+  s->expect_fps = 1000.0;
   ops.framebuff_size = s->st30_frame_size;
   ops.framebuff_cnt = s->framebuff_cnt;
   ops.rtp_ring_size = ctx->rx_audio_rtp_ring_size ? ctx->rx_audio_rtp_ring_size : 16;
 
-  pthread_mutex_init(&s->st30_wake_mutex, NULL);
-  pthread_cond_init(&s->st30_wake_cond, NULL);
+  st_pthread_mutex_init(&s->st30_wake_mutex, NULL);
+  st_pthread_cond_init(&s->st30_wake_cond, NULL);
 
   strncpy(s->st30_ref_url, audio ? audio->audio_url : "null", sizeof(s->st30_ref_url));
 

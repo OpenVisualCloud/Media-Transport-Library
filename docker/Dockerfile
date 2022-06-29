@@ -7,7 +7,7 @@ ENV no_proxy=$no_proxy
 ENV DEBIAN_FRONTEND=noninteractive
 
 RUN apt update && \
-    apt install -y sudo git gcc meson gdb python3 python3-pip pkg-config libnuma-dev libjson-c-dev libpcap-dev libgtest-dev libsdl2-dev libssl-dev && \
+    apt install -y sudo git gcc meson gdb python3 python3-pip pkg-config libnuma-dev libjson-c-dev libpcap-dev libgtest-dev libsdl2-dev libsdl2-ttf-dev libssl-dev && \
     apt clean all
 
 # `wget` and `libc6-dev-i386` needed for klocwork scan
@@ -32,8 +32,9 @@ RUN cd /tmp/dpdk && \
     git am $dpdk_st_kahawai/patches/dpdk/21.11/0004-eanble-PF-ICE-rate-limit.patch && \
     git am $dpdk_st_kahawai/patches/dpdk/21.11/0005-update-VF-rate-limit.patch && \
     git am $dpdk_st_kahawai/patches/dpdk/21.11/0006-net-iavf-support-max-burst-size-configuration.patch && \
-    git am $dpdk_st_kahawai/patches/dpdk/21.11/20.11-3-7-net-ice-support-256-queues.patch && \
     git am $dpdk_st_kahawai/patches/dpdk/21.11/0007-pcapng-add-ns-timestamp-for-copy-api.patch && \
+    git am $dpdk_st_kahawai/patches/dpdk/21.11/0008-net-ice-support-256-queues.patch && \
+    git am $dpdk_st_kahawai/patches/dpdk/21.11/0009-net-iavf-refine-queue-rate-limit-configure.patch && \
     meson build && \
     ninja -C build && \
     ninja -C build install && \

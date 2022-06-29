@@ -26,10 +26,12 @@
 #include "rx_ancillary_app.h"
 #include "rx_audio_app.h"
 #include "rx_st22_app.h"
+#include "rx_st22p_app.h"
 #include "rx_video_app.h"
 #include "tx_ancillary_app.h"
 #include "tx_audio_app.h"
 #include "tx_st22_app.h"
+#include "tx_st22p_app.h"
 #include "tx_video_app.h"
 
 static struct st_app_context* g_app_ctx; /* only for st_app_sig_handler */
@@ -39,6 +41,7 @@ static void app_stat(void* priv) {
   struct st_app_context* ctx = priv;
 
   st_app_rx_video_sessions_stat(ctx);
+  st_app_rx_st22p_sessions_stat(ctx);
 }
 
 void app_set_log_level(enum st_log_level level) { app_log_level = level; }
@@ -55,7 +58,10 @@ static uint64_t app_ptp_from_real_time(void* priv) {
 static void user_param_init(struct st_app_context* ctx, struct st_init_params* p) {
   memset(p, 0x0, sizeof(*p));
 
-  p->flags = ST_FLAG_BIND_NUMA; /* default bind to numa */
+  p->flags |= ST_FLAG_BIND_NUMA; /* default bind to numa */
+  p->flags |= ST_FLAG_TX_VIDEO_MIGRATE;
+  p->flags |= ST_FLAG_RX_VIDEO_MIGRATE;
+  p->flags |= ST_FLAG_RX_SEPARATE_VIDEO_LCORE;
   p->priv = ctx;
   p->ptp_get_time_fn = app_ptp_from_real_time;
   p->stat_dump_cb_fn = app_stat;
@@ -75,23 +81,28 @@ static void st_app_ctx_init(struct st_app_context* ctx) {
   ctx->tx_anc_session_cnt = 0;
   strncpy(ctx->tx_st22_url, "test.raw", sizeof(ctx->tx_st22_url));
   ctx->tx_st22_session_cnt = 0;
+  strncpy(ctx->tx_st22p_url, "test_rfc4175.yuv", sizeof(ctx->tx_st22p_url));
+  ctx->tx_st22p_session_cnt = 0;
 
   /* rx */
   ctx->rx_video_session_cnt = 0;
   ctx->rx_audio_session_cnt = 0;
   ctx->rx_anc_session_cnt = 0;
   ctx->rx_st22_session_cnt = 0;
+  ctx->rx_st22p_session_cnt = 0;
 
   /* st22 */
-  ctx->st22_rtp_frame_total_pkts = 540; /* compress ratio 1/8, 4320/8 */
-  ctx->st22_rtp_pkt_size = 1280 + sizeof(struct st_rfc3550_rtp_hdr);
+  ctx->st22_bpp = 3; /* 3bit per pixel */
 
   /* init lcores and sch */
-  for (int i = 0; i < ST_APP_MAX_LCORES; i++) ctx->lcore[i] = -1;
-  ctx->last_session_sch_index = -1;
+  for (int i = 0; i < ST_APP_MAX_LCORES; i++) {
+    ctx->lcore[i] = -1;
+    ctx->rtp_lcore[i] = -1;
+  }
 }
 
-int st_app_video_get_lcore(struct st_app_context* ctx, int sch_idx, unsigned int* lcore) {
+int st_app_video_get_lcore(struct st_app_context* ctx, int sch_idx, bool rtp,
+                           unsigned int* lcore) {
   int ret;
   unsigned int video_lcore;
 
@@ -100,37 +111,47 @@ int st_app_video_get_lcore(struct st_app_context* ctx, int sch_idx, unsigned int
     return -EINVAL;
   }
 
-  if (ctx->lcore[sch_idx] < 0) {
-    ret = st_get_lcore(ctx->st, &video_lcore);
-    if (ret < 0) return ret;
-    ctx->lcore[sch_idx] = video_lcore;
-    info("%s, new lcore %d for sch idx %d\n", __func__, video_lcore, sch_idx);
+  if (rtp) {
+    if (ctx->rtp_lcore[sch_idx] < 0) {
+      ret = st_get_lcore(ctx->st, &video_lcore);
+      if (ret < 0) return ret;
+      ctx->rtp_lcore[sch_idx] = video_lcore;
+      info("%s, new rtp lcore %d for sch idx %d\n", __func__, video_lcore, sch_idx);
+    }
+  } else {
+    if (ctx->lcore[sch_idx] < 0) {
+      ret = st_get_lcore(ctx->st, &video_lcore);
+      if (ret < 0) return ret;
+      ctx->lcore[sch_idx] = video_lcore;
+      info("%s, new lcore %d for sch idx %d\n", __func__, video_lcore, sch_idx);
+    }
   }
 
-  *lcore = ctx->lcore[sch_idx];
+  if (rtp)
+    *lcore = ctx->rtp_lcore[sch_idx];
+  else
+    *lcore = ctx->lcore[sch_idx];
   return 0;
 }
 
 static void st_app_ctx_free(struct st_app_context* ctx) {
-  st_app_tx_video_sessions_stop(ctx);
-  st_app_tx_audio_sessions_stop(ctx);
-  st_app_tx_anc_sessions_stop(ctx);
-  st22_app_tx_sessions_stop(ctx);
-
-  /* stop st first */
-  if (ctx->st) st_stop(ctx->st);
-
-  if (ctx->json_ctx) st_app_free(ctx->json_ctx);
-
   st_app_tx_video_sessions_uinit(ctx);
   st_app_tx_audio_sessions_uinit(ctx);
   st_app_tx_anc_sessions_uinit(ctx);
+  st_app_tx_st22p_sessions_uinit(ctx);
   st22_app_tx_sessions_uinit(ctx);
 
   st_app_rx_video_sessions_uinit(ctx);
   st_app_rx_audio_sessions_uinit(ctx);
   st_app_rx_anc_sessions_uinit(ctx);
+  st_app_rx_st22p_sessions_uinit(ctx);
   st22_app_rx_sessions_uinit(ctx);
+
+  if (ctx->runtime_session) {
+    if (ctx->st) st_stop(ctx->st);
+  }
+
+  if (ctx->json_ctx) st_app_free(ctx->json_ctx);
 
   if (ctx->st) {
     for (int i = 0; i < ST_APP_MAX_LCORES; i++) {
@@ -151,6 +172,7 @@ static int st_app_result(struct st_app_context* ctx) {
   result += st_app_rx_video_sessions_result(ctx);
   result += st_app_rx_audio_sessions_result(ctx);
   result += st_app_rx_anc_sessions_result(ctx);
+  result += st_app_rx_st22p_sessions_result(ctx);
   return result;
 }
 
@@ -189,9 +211,13 @@ int main(int argc, char** argv) {
     return ret;
   }
   if (ctx->tx_video_session_cnt > ST_APP_MAX_TX_VIDEO_SESSIONS ||
+      ctx->tx_st22_session_cnt > ST_APP_MAX_TX_VIDEO_SESSIONS ||
+      ctx->tx_st22p_session_cnt > ST_APP_MAX_TX_VIDEO_SESSIONS ||
       ctx->tx_audio_session_cnt > ST_APP_MAX_TX_AUDIO_SESSIONS ||
       ctx->tx_anc_session_cnt > ST_APP_MAX_TX_ANC_SESSIONS ||
       ctx->rx_video_session_cnt > ST_APP_MAX_RX_VIDEO_SESSIONS ||
+      ctx->rx_st22_session_cnt > ST_APP_MAX_RX_VIDEO_SESSIONS ||
+      ctx->rx_st22p_session_cnt > ST_APP_MAX_RX_VIDEO_SESSIONS ||
       ctx->rx_audio_session_cnt > ST_APP_MAX_RX_AUDIO_SESSIONS ||
       ctx->rx_anc_session_cnt > ST_APP_MAX_RX_ANC_SESSIONS) {
     err("%s, session cnt invalid, pass the restriction %d\n", __func__,
@@ -200,9 +226,11 @@ int main(int argc, char** argv) {
   }
 
   ctx->para.tx_sessions_cnt_max = ctx->tx_video_session_cnt + ctx->tx_audio_session_cnt +
-                                  ctx->tx_anc_session_cnt + ctx->tx_st22_session_cnt;
+                                  ctx->tx_anc_session_cnt + ctx->tx_st22_session_cnt +
+                                  ctx->tx_st22p_session_cnt;
   ctx->para.rx_sessions_cnt_max = ctx->rx_video_session_cnt + ctx->rx_audio_session_cnt +
-                                  ctx->rx_anc_session_cnt + ctx->rx_st22_session_cnt;
+                                  ctx->rx_anc_session_cnt + ctx->rx_st22_session_cnt +
+                                  ctx->rx_st22p_session_cnt;
 
   ctx->st = st_init(&ctx->para);
   if (!ctx->st) {
@@ -226,6 +254,15 @@ int main(int argc, char** argv) {
     ctx->has_sdl = true;
   }
 
+  if (ctx->runtime_session) {
+    ret = st_start(ctx->st);
+    if (ret < 0) {
+      err("%s, start dev fail %d\n", __func__, ret);
+      st_app_ctx_free(ctx);
+      return -EIO;
+    }
+  }
+
   ret = st_app_tx_video_sessions_init(ctx);
   if (ret < 0) {
     err("%s, st_app_tx_video_sessions_init fail %d\n", __func__, ret);
@@ -243,6 +280,13 @@ int main(int argc, char** argv) {
   ret = st_app_tx_anc_sessions_init(ctx);
   if (ret < 0) {
     err("%s, st_app_tx_anc_sessions_init fail %d\n", __func__, ret);
+    st_app_ctx_free(ctx);
+    return -EIO;
+  }
+
+  ret = st_app_tx_st22p_sessions_init(ctx);
+  if (ret < 0) {
+    err("%s, st_app_tx_st22p_sessions_init fail %d\n", __func__, ret);
     st_app_ctx_free(ctx);
     return -EIO;
   }
@@ -282,11 +326,20 @@ int main(int argc, char** argv) {
     return -EIO;
   }
 
-  ret = st_start(ctx->st);
+  ret = st_app_rx_st22p_sessions_init(ctx);
   if (ret < 0) {
-    err("%s, start dev fail %d\n", __func__, ret);
+    err("%s, st_app_rx_st22p_sessions_init fail %d\n", __func__, ret);
     st_app_ctx_free(ctx);
     return -EIO;
+  }
+
+  if (!ctx->runtime_session) {
+    ret = st_start(ctx->st);
+    if (ret < 0) {
+      err("%s, start dev fail %d\n", __func__, ret);
+      st_app_ctx_free(ctx);
+      return -EIO;
+    }
   }
 
   test_time_s = ctx->test_time_s;
@@ -297,6 +350,11 @@ int main(int argc, char** argv) {
     if (test_time_s && (run_time_s > test_time_s)) break;
   }
   info("%s, start to ending\n", __func__);
+
+  if (!ctx->runtime_session) {
+    /* stop st first */
+    if (ctx->st) st_stop(ctx->st);
+  }
 
   ret = st_app_result(ctx);
 

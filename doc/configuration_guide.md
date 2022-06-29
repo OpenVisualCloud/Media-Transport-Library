@@ -28,6 +28,7 @@ Example `tx_multicast.json` file, find more example config file in `<kahawai>/co
                     "type": "frame",
                     "pacing": "gap",
                     "start_port": 20000,
+                    "payload_type": 112,
                     "tr_offset": "default",
                     "video_format": "i1080p59",
                     "pg_format": "YUV_422_10bit",
@@ -38,11 +39,12 @@ Example `tx_multicast.json` file, find more example config file in `<kahawai>/co
                 {
                     "replicas": 1,
                     "start_port": 30000,
+                    "payload_type": 111,
                     "type": "frame",
                     "audio_format": "PCM16",
                     "audio_channel": ["ST"],
                     "audio_sampling": "48kHz",
-                    "audio_frametime_ms": 1,
+                    "audio_ptime": "1",
                     "audio_url": "./test.wav"
                 }
             ],
@@ -50,6 +52,7 @@ Example `tx_multicast.json` file, find more example config file in `<kahawai>/co
                 {
                     "replicas": 1,
                     "start_port": 40000,
+                    "payload_type": 113,
                     "type": "frame",
                     "ancillary_format": "closed_caption",
                     "ancillary_url": "./test.txt",
@@ -94,7 +97,11 @@ Items in each element of the "video" array
 
 ​	**pacing (string):** `"gap", "linear"` pacing type
 
+​	**packing (string):** `"GPM_SL", "BPM", "GPM"` packing mode, default is "GPM_SL" single line mode
+
 ​	**start_port (int):** `0~65535` start udp port for copies of sessions
+
+​	**payload_type (int):** `0~127` 7 bits payload type define in RFC3550
 
 ​	**tr_offset (string):** `"default", "none"` tr_offset for frame
 
@@ -114,13 +121,15 @@ Items in each element of the "audio" array
 
 ​	**start_port (int):** `0~65535` start udp port for copies of sessions
 
+​	**payload_type (int):** `0~127` 7 bits payload type define in RFC3550
+
 ​	**audio_format (string):** `"PCM8", "PCM16", "PCM24" ` audio format
 
 ​	**audio_channel (array-string):** `"M", "DM", "ST", "LtRt", "51", "71", "222", "SGRP", "U01...U64"` audio channel-order(a listing of these channel grouping symbols), the library only cares the total number of channels
 
-​	**audio_sampling (string):** `"48kHz", "96kHz"` audio sample rate
+​	**audio_sampling (string):** `"48kHz", "96kHz", "44kHz"` audio sample rate
 
-​	**audio_frametime_ms (int):** `1~max_time` audio sample time, default is 1ms
+​	**audio_ptime (string):** `"1", "0.12", "0.08"(, "1.09", "0.14", "0.09" for 44.1kHz audio)` audio packet time, only support 1ms for now
 
 ​	**audio_url (string):** audio source
 
@@ -131,6 +140,8 @@ Items in each element of the "ancillary" array
 ​	**replicas (int):** `1~max_num` the number of session copies
 
 ​	**start_port (int):** `0~65535` start udp port for copies of sessions
+
+​	**payload_type (int):** `0~127` 7 bits payload type define in RFC3550
 
 ​	**ancillary_format (string):** `"closed_caption"` ancillary format
 
@@ -160,6 +171,8 @@ Items in each element of the "video" array
 
 ​	**start_port (int):** `0~65535` start udp port for copies of sessions
 
+​	**payload_type (int):** `0~127` 7 bits payload type define in RFC3550
+
 ​	**tr_offset (string):** `"default", "none"` tr_offset for frame
 
 ​	**video_format (string):** `"i1080p59", "i1080p50", "i1080p29", "i720p59", "i720p50", "i720p29", "i2160p59", "i2160p50", "i2160p29"` video format
@@ -180,13 +193,15 @@ Items in each element of the "audio" array
 
 ​	**start_port (int):** `0~65535` start udp port for copies of sessions
 
+​	**payload_type (int):** `0~127` 7 bits payload type define in RFC3550
+
 ​	**audio_format (string):** `"PCM8", "PCM16", "PCM24" ` audio format
 
 ​	**audio_channel (array-string):** `"M", "DM", "ST", "LtRt", "51", "71", "222", "SGRP", "U01...U64"` audio channel-order(a listing of these channel grouping symbols), the library only cares the total number of channels
 
-​	**audio_sampling (string):** `"48kHz", "96kHz"` audio sample rate
+​	**audio_sampling (string):** `"48kHz", "96kHz", "44kHz"` audio sample rate
 
-​	**audio_frametime_ms (int):** `1~max_time` audio sample time, default is 1ms
+​	**audio_ptime (string):** `"1", "0.12", "0.08"(, "1.09", "0.14", "0.09" for 44.1kHz audio)` only support 1ms for now
 
 ​	**audio_url (string):** audio reference file
 
@@ -197,3 +212,5 @@ Items in each element of the "ancillary" array
 ​	**replicas (int):** `1~max_num` the number of session copies
 
 ​	**start_port (int):** `0~65535` start udp port for copies of sessions
+
+​	**payload_type (int):** `0~127` 7 bits payload type define in RFC3550

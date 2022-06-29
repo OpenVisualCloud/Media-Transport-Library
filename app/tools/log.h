@@ -17,8 +17,8 @@
 /* Header for tools log usage */
 #include <stdio.h>
 
-#ifndef _ST_APP_LOG_HEAD_H_
-#define _ST_APP_LOG_HEAD_H_
+#ifndef _ST_APP_TOOLS_LOG_HEAD_H_
+#define _ST_APP_TOOLS_LOG_HEAD_H_
 
 /* log define */
 #ifdef DEBUG

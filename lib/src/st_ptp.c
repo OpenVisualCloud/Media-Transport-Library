@@ -647,7 +647,7 @@ static int ptp_init(struct st_main_impl* impl, struct st_ptp_impl* ptp,
   ptp->rx_queue_active = true;
 
   /* join mcast */
-  ret = st_mcast_join(impl, *(uint32_t*)ptp->mcast_group_addr, port);
+  ret = st_mcast_join(impl, st_ip_to_u32(ptp->mcast_group_addr), port);
   if (ret < 0) {
     err("%s(%d), join ptp multicast group fail\n", __func__, port);
     return ret;
@@ -672,7 +672,7 @@ static int ptp_uinit(struct st_main_impl* impl, struct st_ptp_impl* ptp) {
   if (!st_if_has_ptp(impl, port)) return 0;
 
   st_mcast_l2_leave(impl, &ptp_l2_multicast_eaddr, port);
-  st_mcast_leave(impl, *(uint32_t*)ptp->mcast_group_addr, port);
+  st_mcast_leave(impl, st_ip_to_u32(ptp->mcast_group_addr), port);
 
   if (ptp->tx_queue_active) {
     st_dev_free_tx_queue(impl, port, ptp->tx_queue_id);

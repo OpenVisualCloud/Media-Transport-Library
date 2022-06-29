@@ -166,8 +166,8 @@ static void test_dma_copy_fill_async(struct st_tests_context* ctx, bool fill) {
 
   void *fb_dst = NULL, *fb_src = NULL;
   st_iova_t fb_dst_iova, fb_src_iova;
-  unsigned char fb_dst_md5s[MD5_DIGEST_LENGTH];
-  unsigned char fb_src_md5s[MD5_DIGEST_LENGTH];
+  unsigned char fb_dst_shas[SHA256_DIGEST_LENGTH];
+  unsigned char fb_src_shas[SHA256_DIGEST_LENGTH];
 
   /* allocate fb dst and src(with random data) */
   fb_dst = st_hp_malloc(st, fb_size, ST_PORT_P);
@@ -180,7 +180,7 @@ static void test_dma_copy_fill_async(struct st_tests_context* ctx, bool fill) {
     memset(fb_src, pattern, fb_size);
   else
     st_test_rand_data((uint8_t*)fb_src, fb_size, 0);
-  MD5((unsigned char*)fb_src, fb_size, fb_src_md5s);
+  SHA256((unsigned char*)fb_src, fb_size, fb_src_shas);
 
   while (fb_dst_iova_off < fb_size) {
     /* try to copy */
@@ -200,9 +200,9 @@ static void test_dma_copy_fill_async(struct st_tests_context* ctx, bool fill) {
     fb_dst_iova_off += element_size * nb_dq;
   }
 
-  /* all copy completed, check md5 */
-  MD5((unsigned char*)fb_dst, fb_size, fb_dst_md5s);
-  ret = memcmp(fb_dst_md5s, fb_src_md5s, MD5_DIGEST_LENGTH);
+  /* all copy completed, check sha */
+  SHA256((unsigned char*)fb_dst, fb_size, fb_dst_shas);
+  ret = memcmp(fb_dst_shas, fb_src_shas, SHA256_DIGEST_LENGTH);
   EXPECT_EQ(ret, 0);
 
   st_hp_free(st, fb_dst);

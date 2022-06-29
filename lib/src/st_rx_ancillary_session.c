@@ -22,31 +22,46 @@
 #include "st_sch.h"
 #include "st_util.h"
 
-static inline void rx_ancillary_session_lock(struct st_rx_ancillary_sessions_mgr* mgr,
-                                             int sidx) {
-  rte_spinlock_lock(&mgr->mutex[sidx]);
+/* call rx_ancillary_session_put always if get successfully */
+static inline struct st_rx_ancillary_session_impl* rx_ancillary_session_get(
+    struct st_rx_ancillary_sessions_mgr* mgr, int idx) {
+  rte_spinlock_lock(&mgr->mutex[idx]);
+  struct st_rx_ancillary_session_impl* s = mgr->sessions[idx];
+  if (!s) rte_spinlock_unlock(&mgr->mutex[idx]);
+  return s;
 }
 
-static inline int rx_ancillary_session_try_lock(struct st_rx_ancillary_sessions_mgr* mgr,
-                                                int sidx) {
-  return rte_spinlock_trylock(&mgr->mutex[sidx]);
+/* call rx_ancillary_session_put always if get successfully */
+static inline struct st_rx_ancillary_session_impl* rx_ancillary_session_try_get(
+    struct st_rx_ancillary_sessions_mgr* mgr, int idx) {
+  if (!rte_spinlock_trylock(&mgr->mutex[idx])) return NULL;
+  struct st_rx_ancillary_session_impl* s = mgr->sessions[idx];
+  if (!s) rte_spinlock_unlock(&mgr->mutex[idx]);
+  return s;
 }
 
-static inline void rx_ancillary_session_unlock(struct st_rx_ancillary_sessions_mgr* mgr,
-                                               int sidx) {
-  rte_spinlock_unlock(&mgr->mutex[sidx]);
+/* call rx_ancillary_session_put always if get successfully */
+static inline bool rx_ancillary_session_get_empty(
+    struct st_rx_ancillary_sessions_mgr* mgr, int idx) {
+  rte_spinlock_lock(&mgr->mutex[idx]);
+  struct st_rx_ancillary_session_impl* s = mgr->sessions[idx];
+  if (s) {
+    rte_spinlock_unlock(&mgr->mutex[idx]); /* not null, unlock it */
+    return false;
+  } else {
+    return true;
+  }
+}
+
+static inline void rx_ancillary_session_put(struct st_rx_ancillary_sessions_mgr* mgr,
+                                            int idx) {
+  rte_spinlock_unlock(&mgr->mutex[idx]);
 }
 
 static int rx_ancillary_session_init(struct st_main_impl* impl,
                                      struct st_rx_ancillary_sessions_mgr* mgr,
                                      struct st_rx_ancillary_session_impl* s, int idx) {
   s->idx = idx;
-  return 0;
-}
-
-static int rx_ancillary_session_uinit(struct st_main_impl* impl,
-                                      struct st_rx_ancillary_session_impl* s) {
-  dbg("%s(%d), succ\n", __func__, s->idx);
   return 0;
 }
 
@@ -76,6 +91,12 @@ static int rx_ancillary_session_handle_pkt(struct st_main_impl* impl,
       rte_pktmbuf_mtod_offset(mbuf, struct st_rfc3550_rtp_hdr*, hdr_offset);
 
   uint16_t seq_id = ntohs(rtp->seq_number);
+  uint8_t payload_type = rtp->payload_type;
+
+  if (payload_type != ops->payload_type) {
+    s->st40_stat_pkts_wrong_hdr_dropped++;
+    return -EINVAL;
+  }
 
   /* set first seq_id - 1 */
   if (unlikely(s->st40_seq_id == -1)) s->st40_seq_id = seq_id - 1;
@@ -132,16 +153,13 @@ static int rx_ancillary_sessions_tasklet_handler(void* priv) {
   struct st_rx_ancillary_sessions_mgr* mgr = priv;
   struct st_main_impl* impl = mgr->parnet;
   struct st_rx_ancillary_session_impl* s;
-  int sidx;
 
-  for (sidx = 0; sidx < mgr->max_idx; sidx++) {
-    if (rx_ancillary_session_try_lock(mgr, sidx)) {
-      if (mgr->active[sidx]) {
-        s = &mgr->sessions[sidx];
-        rx_ancillary_session_tasklet(impl, s);
-      }
-      rx_ancillary_session_unlock(mgr, sidx);
-    }
+  for (int sidx = 0; sidx < mgr->max_idx; sidx++) {
+    s = rx_ancillary_session_try_get(mgr, sidx);
+    if (!s) continue;
+
+    rx_ancillary_session_tasklet(impl, s);
+    rx_ancillary_session_put(mgr, sidx);
   }
 
   return 0;
@@ -203,7 +221,7 @@ static int rx_ancillary_session_uinit_mcast(struct st_main_impl* impl,
 
   for (int i = 0; i < ops->num_port; i++) {
     if (st_is_multicast_ip(ops->sip_addr[i]))
-      st_mcast_leave(impl, *(uint32_t*)ops->sip_addr[i],
+      st_mcast_leave(impl, st_ip_to_u32(ops->sip_addr[i]),
                      st_port_logic2phy(s->port_maps, i));
   }
 
@@ -217,7 +235,7 @@ static int rx_ancillary_session_init_mcast(struct st_main_impl* impl,
 
   for (int i = 0; i < ops->num_port; i++) {
     if (!st_is_multicast_ip(ops->sip_addr[i])) continue;
-    ret = st_mcast_join(impl, *(uint32_t*)ops->sip_addr[i],
+    ret = st_mcast_join(impl, st_ip_to_u32(ops->sip_addr[i]),
                         st_port_logic2phy(s->port_maps, i));
     if (ret < 0) return ret;
   }
@@ -274,7 +292,7 @@ static int rx_ancillary_session_attach(struct st_main_impl* impl,
   ret = st_build_port_map(impl, ports, s->port_maps, num_port);
   if (ret < 0) return ret;
 
-  strncpy(s->ops_name, ops->name, ST_MAX_NAME_LEN);
+  strncpy(s->ops_name, ops->name, ST_MAX_NAME_LEN - 1);
   s->ops = *ops;
   for (int i = 0; i < num_port; i++) {
     s->st40_src_port[i] = (ops->udp_port[i]) ? (ops->udp_port[i]) : (30000 + idx);
@@ -284,6 +302,7 @@ static int rx_ancillary_session_attach(struct st_main_impl* impl,
   s->st40_seq_id = -1;
   s->st40_stat_pkts_received = 0;
   s->st40_stat_pkts_dropped = 0;
+  s->st40_stat_pkts_wrong_hdr_dropped = 0;
   s->st40_stat_last_time = st_get_monotonic_time();
   rte_atomic32_set(&s->st40_stat_frames_received, 0);
 
@@ -321,14 +340,19 @@ static void rx_ancillary_session_stat(struct st_rx_ancillary_session_impl* s) {
 
   rte_atomic32_set(&s->st40_stat_frames_received, 0);
 
-  info("RX_ANC_SESSION(%d): fps %f, st40 received frames %d, received pkts %d\n", idx,
-       framerate, frames_received, s->st40_stat_pkts_received);
+  info("RX_ANC_SESSION(%d:%s): fps %f, st40 received frames %d, received pkts %d\n", idx,
+       s->ops_name, framerate, frames_received, s->st40_stat_pkts_received);
   s->st40_stat_pkts_received = 0;
   s->st40_stat_last_time = cur_time_ns;
 
   if (s->st40_stat_pkts_dropped) {
     info("RX_ANC_SESSION(%d): st40 dropped pkts %d\n", idx, s->st40_stat_pkts_dropped);
     s->st40_stat_pkts_dropped = 0;
+  }
+  if (s->st40_stat_pkts_wrong_hdr_dropped) {
+    info("RX_AUDIO_SESSION(%d): wrong hdr dropped pkts %d\n", idx,
+         s->st40_stat_pkts_wrong_hdr_dropped);
+    s->st40_stat_pkts_wrong_hdr_dropped = 0;
   }
 }
 
@@ -376,26 +400,30 @@ static int rx_ancillary_session_update_src(struct st_main_impl* impl,
   return 0;
 }
 
+static int rx_ancillary_sessions_mgr_detach(struct st_rx_ancillary_sessions_mgr* mgr,
+                                            struct st_rx_ancillary_session_impl* s,
+                                            int idx) {
+  rx_ancillary_session_detach(mgr->parnet, s);
+  mgr->sessions[idx] = NULL;
+  st_rte_free(s);
+  return 0;
+}
+
 int st_rx_ancillary_sessions_mgr_update_src(struct st_rx_ancillary_sessions_mgr* mgr,
                                             struct st_rx_ancillary_session_impl* s,
                                             struct st_rx_source_info* src) {
-  int ret = -EIO, midx = mgr->idx, sidx = s->idx;
+  int ret = -EIO, midx = mgr->idx, idx = s->idx;
 
-  if (s != &mgr->sessions[sidx]) {
-    err("%s(%d,%d), mismatch session\n", __func__, midx, sidx);
+  s = rx_ancillary_session_get(mgr, idx); /* get the lock */
+  if (!s) {
+    err("%s(%d,%d), get session fail\n", __func__, midx, idx);
     return -EIO;
   }
 
-  if (!mgr->active[sidx]) {
-    err("%s(%d,%d), not active\n", __func__, midx, sidx);
-    return -EIO;
-  }
-
-  rx_ancillary_session_lock(mgr, sidx);
   ret = rx_ancillary_session_update_src(mgr->parnet, s, src);
-  rx_ancillary_session_unlock(mgr, sidx);
+  rx_ancillary_session_put(mgr, idx);
   if (ret < 0) {
-    err("%s(%d,%d), fail %d\n", __func__, midx, sidx, ret);
+    err("%s(%d,%d), fail %d\n", __func__, midx, idx, ret);
     return ret;
   }
 
@@ -413,11 +441,6 @@ int st_rx_ancillary_sessions_mgr_init(struct st_main_impl* impl, struct st_sch_i
 
   for (int i = 0; i < ST_MAX_RX_ANC_SESSIONS; i++) {
     rte_spinlock_init(&mgr->mutex[i]);
-    ret = rx_ancillary_session_init(impl, mgr, &mgr->sessions[i], i);
-    if (ret < 0) {
-      err("%s(%d), rx_audio_session_init fail %d for %d\n", __func__, idx, ret, i);
-      return ret;
-    }
   }
 
   memset(&ops, 0x0, sizeof(ops));
@@ -438,50 +461,58 @@ int st_rx_ancillary_sessions_mgr_init(struct st_main_impl* impl, struct st_sch_i
 }
 
 int st_rx_ancillary_sessions_mgr_uinit(struct st_rx_ancillary_sessions_mgr* mgr) {
-  int idx = mgr->idx;
-  int ret, i;
+  int m_idx = mgr->idx;
   struct st_rx_ancillary_session_impl* s;
 
-  for (i = 0; i < ST_MAX_RX_ANC_SESSIONS; i++) {
-    s = &mgr->sessions[i];
+  for (int i = 0; i < ST_MAX_RX_ANC_SESSIONS; i++) {
+    s = rx_ancillary_session_get(mgr, i);
+    if (!s) continue;
 
-    if (mgr->active[i]) { /* make sure all session are detached*/
-      warn("%s(%d), session %d still attached\n", __func__, idx, i);
-      ret = st_rx_ancillary_sessions_mgr_detach(mgr, s);
-      if (ret < 0) {
-        err("%s(%d), st_rx_audio_sessions_mgr_detach fail %d for %d\n", __func__, idx,
-            ret, i);
-      }
-    }
-
-    ret = rx_ancillary_session_uinit(mgr->parnet, s);
-    if (ret < 0) {
-      err("%s(%d), st_rx_audio_session_uinit fail %d for %d\n", __func__, idx, ret, i);
-    }
+    warn("%s(%d), session %d still attached\n", __func__, m_idx, i);
+    rx_ancillary_sessions_mgr_detach(mgr, s, i);
+    rx_ancillary_session_put(mgr, i);
   }
 
-  info("%s(%d), succ\n", __func__, idx);
+  info("%s(%d), succ\n", __func__, m_idx);
   return 0;
 }
 
 struct st_rx_ancillary_session_impl* st_rx_ancillary_sessions_mgr_attach(
     struct st_rx_ancillary_sessions_mgr* mgr, struct st40_rx_ops* ops) {
   int midx = mgr->idx;
-  int i, ret;
+  struct st_main_impl* impl = mgr->parnet;
+  int ret;
   struct st_rx_ancillary_session_impl* s;
 
-  for (i = 0; i < ST_MAX_RX_ANC_SESSIONS; i++) {
-    if (!mgr->active[i]) {
-      s = &mgr->sessions[i];
-      ret = rx_ancillary_session_attach(mgr->parnet, mgr, s, ops);
-      if (ret < 0) {
-        err("%s(%d), rx_audio_session_attach fail on %d\n", __func__, midx, i);
-        return NULL;
-      }
-      mgr->active[i] = true;
-      mgr->max_idx = RTE_MAX(mgr->max_idx, i + 1);
-      return s;
+  /* find one empty slot in the mgr */
+  for (int i = 0; i < ST_MAX_RX_ANC_SESSIONS; i++) {
+    if (!rx_ancillary_session_get_empty(mgr, i)) continue;
+
+    s = st_rte_zmalloc_socket(sizeof(*s), st_socket_id(impl, ST_PORT_P));
+    if (!s) {
+      err("%s(%d), session malloc fail on %d\n", __func__, midx, i);
+      rx_ancillary_session_put(mgr, i);
+      return NULL;
     }
+    ret = rx_ancillary_session_init(impl, mgr, s, i);
+    if (ret < 0) {
+      err("%s(%d), init fail on %d\n", __func__, midx, i);
+      rx_ancillary_session_put(mgr, i);
+      st_rte_free(s);
+      return NULL;
+    }
+    ret = rx_ancillary_session_attach(mgr->parnet, mgr, s, ops);
+    if (ret < 0) {
+      err("%s(%d), attach fail on %d\n", __func__, midx, i);
+      rx_ancillary_session_put(mgr, i);
+      st_rte_free(s);
+      return NULL;
+    }
+
+    mgr->sessions[i] = s;
+    mgr->max_idx = RTE_MAX(mgr->max_idx, i + 1);
+    rx_ancillary_session_put(mgr, i);
+    return s;
   }
 
   err("%s(%d), fail\n", __func__, midx);
@@ -491,25 +522,17 @@ struct st_rx_ancillary_session_impl* st_rx_ancillary_sessions_mgr_attach(
 int st_rx_ancillary_sessions_mgr_detach(struct st_rx_ancillary_sessions_mgr* mgr,
                                         struct st_rx_ancillary_session_impl* s) {
   int midx = mgr->idx;
-  int sidx = s->idx;
+  int idx = s->idx;
 
-  if (s != &mgr->sessions[sidx]) {
-    err("%s(%d,%d), mismatch session\n", __func__, midx, sidx);
+  s = rx_ancillary_session_get(mgr, idx); /* get the lock */
+  if (!s) {
+    err("%s(%d,%d), get session fail\n", __func__, midx, idx);
     return -EIO;
   }
 
-  if (!mgr->active[sidx]) {
-    err("%s(%d,%d), not active\n", __func__, midx, sidx);
-    return -EIO;
-  }
+  rx_ancillary_sessions_mgr_detach(mgr, s, idx);
 
-  rx_ancillary_session_lock(mgr, sidx);
-
-  rx_ancillary_session_detach(mgr->parnet, s);
-
-  mgr->active[sidx] = false;
-
-  rx_ancillary_session_unlock(mgr, sidx);
+  rx_ancillary_session_put(mgr, idx);
 
   return 0;
 }
@@ -518,7 +541,7 @@ int st_rx_ancillary_sessions_mgr_update(struct st_rx_ancillary_sessions_mgr* mgr
   int max_idx = 0;
 
   for (int i = 0; i < ST_MAX_RX_ANC_SESSIONS; i++) {
-    if (mgr->active[i]) max_idx = i + 1;
+    if (mgr->sessions[i]) max_idx = i + 1;
   }
 
   mgr->max_idx = max_idx;
@@ -530,9 +553,9 @@ void st_rx_ancillary_sessions_stat(struct st_main_impl* impl) {
   struct st_rx_ancillary_session_impl* s;
 
   for (int j = 0; j < mgr->max_idx; j++) {
-    if (mgr->active[j]) {
-      s = &mgr->sessions[j];
-      rx_ancillary_session_stat(s);
-    }
+    s = rx_ancillary_session_get(mgr, j);
+    if (!s) continue;
+    rx_ancillary_session_stat(s);
+    rx_ancillary_session_put(mgr, j);
   }
 }

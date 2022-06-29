@@ -117,6 +117,7 @@ static void* cni_trafic_thread(void* arg) {
   info("%s, start\n", __func__);
   while (rte_atomic32_read(&cni->stop_thread) == 0) {
     cni_traffic(impl);
+    st_sleep_ms(1);
   }
   info("%s, stop\n", __func__);
 
@@ -246,7 +247,7 @@ int st_cni_init(struct st_main_impl* impl) {
     ops.stop = cni_tasklet_stop;
     ops.handler = cni_tasklet_handlder;
 
-    ret = st_sch_register_tasklet(st_get_sch(impl, 0), &ops);
+    ret = st_sch_register_tasklet(impl->main_sch, &ops);
     if (ret < 0) {
       info("%s, st_sch_register_tasklet fail %d\n", __func__, ret);
       st_cni_uinit(impl);

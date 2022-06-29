@@ -54,15 +54,32 @@ sudo sysctl -w vm.nr_hugepages=2048
 ```
 
 #### 3.3 Prepare source files:
-Pls note the input yuv source file for sample app is the yuv422YCBCR10be pixel group format, not ffmpeg yuv422p10be pixel format. Kahawai include a simple tools to convert the format.
-###### 3.3.1 Convert yuv422p10be to yuv422YCBCR10be
-Below is the command to convert yuv422p10be file to yuv422YCBCR10be pg format(ST2110-20 supported pg format for 422 10bit)
+Pls note the input yuv source file for sample app is the rfc4175 yuv422be10(big edian 10bit) pixel group format which define in ST2110 spec. Kahawai include a simple tools to convert the format from yuv422 planar 10bit little endian format.
+
+###### 3.3.1 Prepare a yuv422p10le file.
 ```bash
-./build/app/ConvApp --width 1920 --height 1080 --in_pix_fmt yuv422p10be --out_pix_fmt yuv422YCBCR10be -i signal_be.yuv -o test.yuv
+wget https://jell.yfish.us/media/jellyfish-3-mbps-hd-hevc-10bit.mkv
+ffmpeg -i jellyfish-3-mbps-hd-hevc-10bit.mkv -vframes 2 -c:v rawvideo yuv420p10le.yuv
+ffmpeg -s 1920x1080 -pix_fmt yuv420p10le -i yuv420p10le.yuv -pix_fmt yuv422p10le yuv422p10le.yuv
 ```
-Below is the command to convert yuv422YCBCR10be pg format(ST2110-20 supported pg format for 422 10bit) to yuv422p10be file
+
+###### 3.3.2 Convert yuv422p10le to yuv422rfc4175be10
+Below is the command to convert yuv422p10le file to yuv422rfc4175be10 pg format(ST2110-20 supported pg format for 422 10bit)
+```bash
+./build/app/ConvApp -width 1920 -height 1080 -in_pix_fmt yuv422p10le -i yuv422p10le.yuv -out_pix_fmt yuv422rfc4175be10 -o out_rfc4175.yuv
 ```
-./build/app/ConvApp --width 1920 --height 1080 --in_pix_fmt yuv422YCBCR10be --out_pix_fmt yuv422p10be  -i test.yuv -o signal_out.yuv
+
+###### 3.3.3 Convert yuv422rfc4175be10 back to yuv422p10le
+Below is the command to convert yuv422rfc4175be10 pg format(ST2110-20 supported pg format for 422 10bit) to yuv422p10le file
+```
+./build/app/ConvApp -width 1920 -height 1080 -in_pix_fmt yuv422rfc4175be10 -i in_rfc4175.yuv -out_pix_fmt yuv422p10be -o out_yuv422p10le.yuv
+```
+
+###### 3.3.4 v210 support
+This tools also support v210 format, use "v210" for the in_pix_fmt/out_pix_fmt args instead.
+```
+./build/app/ConvApp -width 1920 -height 1080 -in_pix_fmt yuv422rfc4175be10 -i in_rfc4175.yuv -out_pix_fmt v210 -o out_v210.yuv
+./build/app/ConvApp -width 1920 -height 1080 -in_pix_fmt v210 -i in_v210.yuv -out_pix_fmt yuv422rfc4175be10 -o out_rfc4175.yuv
 ```
 
 #### 3.4 PTP setup(optional):
@@ -100,6 +117,8 @@ ST: RX_VIDEO_SESSION(0,0): fps 59.899925, received frames 599, pkts 2589686
 app_rx_video_stat(0), fps 59.899932, 599 frame received
 ST: * *    E N D    S T A T E   * *
 ```
+Kahawai also provide many loop test(1 port as tx, 1 port as rx) config file , pls refer to [loop config](../tests/script/).
+
 For the supported parameters in the json, please refer to [JSON configuration guide](configuration_guide.md) for detail.
 
 #### 3.6 Available parameters in sample app
@@ -110,6 +129,8 @@ For the supported parameters in the json, please refer to [JSON configuration gu
 --test_time <seconds>                : the run duration, unit: seconds
 --rx_separate_lcore                  : If enabled, RX video session will run on dedicated lcores, it means TX video and RX video is not running on the same core.
 --dma_dev <DMA1,DMA2,DMA3...>        : DMA dev list to offload the packet memory copy for RX video frame session.
+--runtime_session                    : start instance before creat video/audio/anc sessions, similar to runtime tx/rx create.
+
 --ebu                                : debug option, enable timing check for video rx streams
 --pcapng_dump <n>                    : debug option, dump n packets from rx video streams to pcapng files. 
 --promiscuous                        : debug option, enable RX promiscuous( receive all data passing through it regardless of whether the destination address of the data) mode for NIC.

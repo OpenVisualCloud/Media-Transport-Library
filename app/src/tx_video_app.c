@@ -19,139 +19,203 @@
 static int app_tx_video_next_frame(void* priv, uint16_t* next_frame_idx,
                                    bool* second_field) {
   struct st_app_tx_video_session* s = priv;
-  int i;
-  pthread_mutex_lock(&s->st20_wake_mutex);
-  for (i = 0; i < s->framebuff_cnt; i++) {
-    if (s->st20_ready_framebuff[i].used) {
-      s->st20_framebuff_idx = i;
-      s->st20_ready_framebuff[i].used = false;
-      break;
-    }
-  }
-  pthread_cond_signal(&s->st20_wake_cond);
-  pthread_mutex_unlock(&s->st20_wake_mutex);
-  if (i == s->framebuff_cnt) return -EIO;
-  *next_frame_idx = s->st20_framebuff_idx;
-  *second_field = s->st20_ready_framebuff[i].second_field;
+  int ret;
+  uint16_t consumer_idx = s->framebuff_consumer_idx;
+  struct st_tx_frame* framebuff = &s->framebuffs[consumer_idx];
 
-  dbg("%s(%d), next framebuffer index %d\n", __func__, s->idx, *next_frame_idx);
-  return 0;
+  st_pthread_mutex_lock(&s->st20_wake_mutex);
+  if (ST_TX_FRAME_READY == framebuff->stat) {
+    dbg("%s(%d), next frame idx %u\n", __func__, s->idx, consumer_idx);
+    ret = 0;
+    framebuff->stat = ST_TX_FRAME_IN_TRANSMITTING;
+    *next_frame_idx = consumer_idx;
+    *second_field = framebuff->second_field;
+    /* point to next */
+    consumer_idx++;
+    if (consumer_idx >= s->framebuff_cnt) consumer_idx = 0;
+    s->framebuff_consumer_idx = consumer_idx;
+  } else {
+    /* not ready */
+    ret = -EIO;
+    dbg("%s(%d), idx %u err stat %d\n", __func__, s->idx, consumer_idx, framebuff->stat);
+  }
+  st_pthread_cond_signal(&s->st20_wake_cond);
+  st_pthread_mutex_unlock(&s->st20_wake_mutex);
+
+  return ret;
 }
 
 static int app_tx_video_frame_done(void* priv, uint16_t frame_idx) {
   struct st_app_tx_video_session* s = priv;
+  int ret;
+  struct st_tx_frame* framebuff = &s->framebuffs[frame_idx];
 
-  pthread_mutex_lock(&s->st20_wake_mutex);
-  s->st20_free_framebuff[frame_idx] = 1;
-  pthread_cond_signal(&s->st20_wake_cond);
-  pthread_mutex_unlock(&s->st20_wake_mutex);
+  st_pthread_mutex_lock(&s->st20_wake_mutex);
+  if (ST_TX_FRAME_IN_TRANSMITTING == framebuff->stat) {
+    ret = 0;
+    framebuff->stat = ST_TX_FRAME_FREE;
+    dbg("%s(%d), done_idx %u\n", __func__, s->idx, frame_idx);
+  } else {
+    ret = -EIO;
+    err("%s(%d), err status %d for frame %u\n", __func__, s->idx, framebuff->stat,
+        frame_idx);
+  }
+  st_pthread_cond_signal(&s->st20_wake_cond);
+  st_pthread_mutex_unlock(&s->st20_wake_mutex);
+
   s->st20_frame_done_cnt++;
   if (!s->stat_frame_frist_tx_time)
     s->stat_frame_frist_tx_time = st_app_get_monotonic_time();
-  dbg("%s(%d), framebuffer index %d\n", __func__, s->idx, frame_idx);
-  return 0;
+
+  return ret;
 }
 
-static int app_tx_frame_lines_ready(void* priv, uint16_t frame_idx,
-                                    uint16_t* lines_ready) {
+static int app_tx_video_frame_lines_ready(void* priv, uint16_t frame_idx,
+                                          uint16_t* lines_ready) {
   struct st_app_tx_video_session* s = priv;
-  pthread_mutex_lock(&s->st20_wake_mutex);
-  *lines_ready = s->st20_ready_framebuff[frame_idx].lines_ready;
-  pthread_mutex_unlock(&s->st20_wake_mutex);
+  struct st_tx_frame* framebuff = &s->framebuffs[frame_idx];
 
-  dbg("%s(%d), lines ready %d\n", __func__, s->idx, *lines_ready);
+  st_pthread_mutex_lock(&s->st20_wake_mutex);
+  framebuff->slice_trigger = true;
+  *lines_ready = framebuff->lines_ready;
+  dbg("%s(%d), frame %u ready %d lines\n", __func__, s->idx, frame_idx,
+      framebuff->lines_ready);
+  st_pthread_mutex_unlock(&s->st20_wake_mutex);
+
   return 0;
 }
 
 static int app_tx_video_rtp_done(void* priv) {
   struct st_app_tx_video_session* s = priv;
 
-  pthread_mutex_lock(&s->st20_wake_mutex);
-  pthread_cond_signal(&s->st20_wake_cond);
-  pthread_mutex_unlock(&s->st20_wake_mutex);
+  st_pthread_mutex_lock(&s->st20_wake_mutex);
+  st_pthread_cond_signal(&s->st20_wake_cond);
+  st_pthread_mutex_unlock(&s->st20_wake_mutex);
   s->st20_packet_done_cnt++;
   return 0;
+}
+
+static void app_tx_video_thread_bind(struct st_app_tx_video_session* s) {
+  if (s->lcore != -1) {
+    st_bind_to_lcore(s->st, pthread_self(), s->lcore);
+  }
+}
+
+static void app_tx_video_check_lcore(struct st_app_tx_video_session* s, bool rtp) {
+  int sch_idx = st20_tx_get_sch_idx(s->handle);
+  if (s->handle_sch_idx != sch_idx) {
+    s->handle_sch_idx = sch_idx;
+    unsigned int lcore;
+    int ret = st_app_video_get_lcore(s->ctx, s->handle_sch_idx, rtp, &lcore);
+    if ((ret >= 0) && (lcore != s->lcore)) {
+      s->lcore = lcore;
+      app_tx_video_thread_bind(s);
+      info("%s(%d), bind to new lcore %d\n", __func__, s->idx, lcore);
+    }
+  }
+}
+
+static void app_tx_video_build_frame(struct st_app_tx_video_session* s, void* frame,
+                                     size_t frame_size) {
+  if (s->st20_frame_cursor + frame_size > s->st20_source_end) {
+    s->st20_frame_cursor = s->st20_source_begin;
+  }
+  uint8_t* src = s->st20_frame_cursor;
+
+  st_memcpy(frame, src, frame_size);
+  /* point to next frame */
+  s->st20_frame_cursor += frame_size;
+}
+
+static void app_tx_video_build_slice(struct st_app_tx_video_session* s,
+                                     struct st_tx_frame* framebuff, void* frame_addr) {
+  int lines_build = 0;
+  int bytes_per_slice = framebuff->size / s->height * s->lines_per_slice;
+  int frame_size = framebuff->size;
+
+  if (s->st20_frame_cursor + frame_size > s->st20_source_end) {
+    s->st20_frame_cursor = s->st20_source_begin;
+  }
+  uint8_t* src = s->st20_frame_cursor;
+  uint8_t* dst = frame_addr;
+  /* point to next frame */
+  s->st20_frame_cursor += frame_size;
+
+  /* simulate the timing */
+  while (!framebuff->slice_trigger) {
+    usleep(1);
+  }
+
+  st_memcpy(dst, src, bytes_per_slice);
+  dst += bytes_per_slice;
+  src += bytes_per_slice;
+  lines_build += s->lines_per_slice;
+
+  st_pthread_mutex_lock(&s->st20_wake_mutex);
+  framebuff->lines_ready = lines_build;
+  st_pthread_mutex_unlock(&s->st20_wake_mutex);
+
+  while (lines_build < s->height) {
+    int lines = s->lines_per_slice;
+    if ((lines_build + lines) > s->height) lines = s->height - lines_build;
+    int bytes_slice = framebuff->size / s->height * lines;
+
+    lines_build += lines;
+    st_memcpy(dst, src, bytes_slice);
+    dst += bytes_slice;
+    src += bytes_slice;
+
+    st_pthread_mutex_lock(&s->st20_wake_mutex);
+    framebuff->lines_ready = lines_build;
+    st_pthread_mutex_unlock(&s->st20_wake_mutex);
+  }
 }
 
 static void* app_tx_video_frame_thread(void* arg) {
   struct st_app_tx_video_session* s = arg;
   int idx = s->idx;
-  uint16_t i;
-  if (s->lcore != -1) {
-    st_bind_to_lcore(s->st, pthread_self(), s->lcore);
-  }
+  uint16_t producer_idx;
+  struct st_tx_frame* framebuff;
+
+  app_tx_video_thread_bind(s);
 
   info("%s(%d), start\n", __func__, idx);
   while (!s->st20_app_thread_stop) {
-    pthread_mutex_lock(&s->st20_wake_mutex);
-    // guarantee the sequence
-    bool has_ready = false;
-    for (i = 0; i < s->framebuff_cnt; i++) {
-      if (s->st20_ready_framebuff[i].used) {
-        has_ready = true;
-        break;
-      }
-    }
-    if (has_ready) {
+    st_pthread_mutex_lock(&s->st20_wake_mutex);
+    producer_idx = s->framebuff_producer_idx;
+    framebuff = &s->framebuffs[producer_idx];
+    if (ST_TX_FRAME_FREE != framebuff->stat) {
+      /* not in free */
       if (!s->st20_app_thread_stop)
-        pthread_cond_wait(&s->st20_wake_cond, &s->st20_wake_mutex);
-      pthread_mutex_unlock(&s->st20_wake_mutex);
+        st_pthread_cond_wait(&s->st20_wake_cond, &s->st20_wake_mutex);
+      st_pthread_mutex_unlock(&s->st20_wake_mutex);
       continue;
+    }
+    st_pthread_mutex_unlock(&s->st20_wake_mutex);
+
+    app_tx_video_check_lcore(s, false);
+
+    void* frame_addr = st20_tx_get_framebuffer(s->handle, producer_idx);
+    if (!s->slice) {
+      /* interlaced use different layout? */
+      app_tx_video_build_frame(s, frame_addr, s->st20_frame_size);
     }
 
-    for (i = 0; i < s->framebuff_cnt; i++) {
-      if (s->st20_free_framebuff[i] == 1) {
-        s->st20_free_framebuff[i] = 0;
-        break;
-      }
-    }
-    if (i == s->framebuff_cnt) {
-      if (!s->st20_app_thread_stop)
-        pthread_cond_wait(&s->st20_wake_cond, &s->st20_wake_mutex);
-      pthread_mutex_unlock(&s->st20_wake_mutex);
-      continue;
-    }
-    if (s->slice) {
-      s->st20_ready_framebuff[i].used = true;
-      s->st20_ready_framebuff[i].lines_ready = 0;
-    }
-    pthread_mutex_unlock(&s->st20_wake_mutex);
-    uint8_t* src = s->st20_frame_cursor;
-    uint8_t* dst = st20_tx_get_framebuffer(s->handle, i);
-    int framesize = s->interlaced ? s->st20_frame_size * 2 : s->st20_frame_size;
-    if (s->st20_frame_cursor + framesize > s->st20_source_end) {
-      s->st20_frame_cursor = s->st20_source_begin;
-      src = s->st20_frame_cursor;
-    }
-    if (!s->interlaced && !s->slice) {
-      st_memcpy(dst, src, s->st20_frame_size);
-      /* point to next frame */
-      s->st20_frame_cursor += s->st20_frame_size;
-    } else if (s->slice) {
-      int stride = s->width / s->st20_pg.coverage * s->st20_pg.size;
-      for (int slice_idx = 0; slice_idx * s->lines_per_slice < s->height; slice_idx++) {
-        int offset = slice_idx * s->lines_per_slice * stride;
-        st_memcpy(dst + offset, src + offset, s->lines_per_slice * stride);
-        pthread_mutex_lock(&s->st20_wake_mutex);
-        s->st20_ready_framebuff[i].lines_ready += s->lines_per_slice;
-        pthread_mutex_unlock(&s->st20_wake_mutex);
-      }
-      s->st20_frame_cursor += s->st20_frame_size;
-    } else {
-      s->st20_ready_framebuff[i].second_field = s->second_field;
+    st_pthread_mutex_lock(&s->st20_wake_mutex);
+    framebuff->size = s->st20_frame_size;
+    framebuff->second_field = s->second_field;
+    framebuff->stat = ST_TX_FRAME_READY;
+    /* point to next */
+    producer_idx++;
+    if (producer_idx >= s->framebuff_cnt) producer_idx = 0;
+    s->framebuff_producer_idx = producer_idx;
+    if (s->interlaced) {
       s->second_field = !s->second_field;
-      int stride = s->width / s->st20_pg.coverage * s->st20_pg.size;
-      int offset = s->st20_ready_framebuff[i].second_field ? stride : 0;
-      for (int i = 0; i < s->height / 2; i++) {
-        st_memcpy(dst + i * stride, s->st20_frame_cursor + i * stride * 2 + offset,
-                  stride);
-      }
-      if (s->st20_ready_framebuff[i].second_field) s->st20_frame_cursor += framesize;
     }
-    if (!s->slice) {
-      pthread_mutex_lock(&s->st20_wake_mutex);
-      s->st20_ready_framebuff[i].used = true;
-      pthread_mutex_unlock(&s->st20_wake_mutex);
+    st_pthread_mutex_unlock(&s->st20_wake_mutex);
+
+    if (s->slice) {
+      app_tx_video_build_slice(s, framebuff, frame_addr);
     }
   }
   info("%s(%d), stop\n", __func__, idx);
@@ -170,24 +234,23 @@ static void* app_tx_video_pcap_thread(void* arg) {
   struct ip* ip_hdr;
   struct udphdr* udp_hdr;
   uint16_t udp_data_len;
-  if (s->lcore != -1) {
-    st_bind_to_lcore(s->st, pthread_self(), s->lcore);
-  }
+
+  app_tx_video_thread_bind(s);
 
   info("%s(%d), start\n", __func__, idx);
   while (!s->st20_app_thread_stop) {
     /* get available buffer*/
     mbuf = st20_tx_get_mbuf(s->handle, &usrptr);
     if (!mbuf) {
-      pthread_mutex_lock(&s->st20_wake_mutex);
+      st_pthread_mutex_lock(&s->st20_wake_mutex);
       /* try again */
       mbuf = st20_tx_get_mbuf(s->handle, &usrptr);
       if (mbuf) {
-        pthread_mutex_unlock(&s->st20_wake_mutex);
+        st_pthread_mutex_unlock(&s->st20_wake_mutex);
       } else {
         if (!s->st20_app_thread_stop)
-          pthread_cond_wait(&s->st20_wake_cond, &s->st20_wake_mutex);
-        pthread_mutex_unlock(&s->st20_wake_mutex);
+          st_pthread_cond_wait(&s->st20_wake_cond, &s->st20_wake_mutex);
+        st_pthread_mutex_unlock(&s->st20_wake_mutex);
         continue;
       }
     }
@@ -218,7 +281,12 @@ static void* app_tx_video_pcap_thread(void* arg) {
       }
     }
 
+    struct st_rfc3550_rtp_hdr* hdr = (struct st_rfc3550_rtp_hdr*)usrptr;
+    if (hdr->payload_type != s->payload_type) udp_data_len = 0;
+
     st20_tx_put_mbuf(s->handle, mbuf, udp_data_len);
+
+    app_tx_video_check_lcore(s, true);
   }
   info("%s(%d), stop\n", __func__, idx);
 
@@ -268,12 +336,15 @@ static int app_tx_video_init_rtp(struct st_app_tx_video_session* s,
   ops->rtp_frame_total_pkts = s->st20_total_pkts;
   if (s->st20_pcap_input)
     ops->rtp_pkt_size = ST_PKT_MAX_RTP_BYTES;
-  else
+  else {
     ops->rtp_pkt_size = s->st20_pkt_data_len + sizeof(*rtp);
+    if (ops->packing != ST20_PACKING_GPM_SL) /* no extra for GPM_SL */
+      ops->rtp_pkt_size += sizeof(struct st20_rfc4175_extra_rtp_hdr);
+  }
 
   memset(rtp, 0, sizeof(*rtp));
   rtp->base.version = 2;
-  rtp->base.payload_type = 112;
+  rtp->base.payload_type = ST_APP_PAYLOAD_TYPE_VIDEO;
   rtp->base.ssrc = htonl(s->idx + 0x423450);
   rtp->row_length = htons(s->st20_pkt_data_len);
   return 0;
@@ -384,24 +455,23 @@ static void* app_tx_video_rtp_thread(void* arg) {
   void* mbuf;
   void* usrptr = NULL;
   uint16_t mbuf_len = 0;
-  if (s->lcore != -1) {
-    st_bind_to_lcore(s->st, pthread_self(), s->lcore);
-  }
+
+  app_tx_video_thread_bind(s);
 
   info("%s(%d), start\n", __func__, idx);
   while (!s->st20_app_thread_stop) {
     /* get available buffer*/
     mbuf = st20_tx_get_mbuf(s->handle, &usrptr);
     if (!mbuf) {
-      pthread_mutex_lock(&s->st20_wake_mutex);
+      st_pthread_mutex_lock(&s->st20_wake_mutex);
       /* try again */
       mbuf = st20_tx_get_mbuf(s->handle, &usrptr);
       if (mbuf) {
-        pthread_mutex_unlock(&s->st20_wake_mutex);
+        st_pthread_mutex_unlock(&s->st20_wake_mutex);
       } else {
         if (!s->st20_app_thread_stop)
-          pthread_cond_wait(&s->st20_wake_cond, &s->st20_wake_mutex);
-        pthread_mutex_unlock(&s->st20_wake_mutex);
+          st_pthread_cond_wait(&s->st20_wake_cond, &s->st20_wake_mutex);
+        st_pthread_mutex_unlock(&s->st20_wake_mutex);
         continue;
       }
     }
@@ -410,6 +480,8 @@ static void* app_tx_video_rtp_thread(void* arg) {
     app_tx_video_build_rtp_packet(s, (struct st20_rfc4175_rtp_hdr*)usrptr, &mbuf_len);
 
     st20_tx_put_mbuf(s->handle, mbuf, mbuf_len);
+
+    app_tx_video_check_lcore(s, true);
   }
   info("%s(%d), stop\n", __func__, idx);
 
@@ -421,7 +493,7 @@ static int app_tx_video_open_source(struct st_app_tx_video_session* s) {
     int fd;
     struct stat i;
 
-    fd = open(s->st20_source_url, O_RDONLY);
+    fd = st_open(s->st20_source_url, O_RDONLY);
     if (fd < 0) {
       err("%s, open fail '%s'\n", __func__, s->st20_source_url);
       return -EIO;
@@ -491,9 +563,9 @@ static int app_tx_video_start_source(struct st_app_context* ctx,
 static void app_tx_video_stop_source(struct st_app_tx_video_session* s) {
   s->st20_app_thread_stop = true;
   /* wake up the thread */
-  pthread_mutex_lock(&s->st20_wake_mutex);
-  pthread_cond_signal(&s->st20_wake_cond);
-  pthread_mutex_unlock(&s->st20_wake_mutex);
+  st_pthread_mutex_lock(&s->st20_wake_mutex);
+  st_pthread_cond_signal(&s->st20_wake_cond);
+  st_pthread_mutex_unlock(&s->st20_wake_mutex);
   if (s->st20_app_thread) {
     pthread_join(s->st20_app_thread, NULL);
     s->st20_app_thread = 0;
@@ -536,16 +608,12 @@ static int app_tx_video_uinit(struct st_app_tx_video_session* s) {
   app_tx_video_handle_free(s);
   app_tx_video_close_source(s);
 
-  if (s->st20_ready_framebuff) {
-    free(s->st20_ready_framebuff);
-    s->st20_ready_framebuff = NULL;
+  if (s->framebuffs) {
+    st_app_free(s->framebuffs);
+    s->framebuffs = NULL;
   }
-  if (s->st20_free_framebuff) {
-    free(s->st20_free_framebuff);
-    s->st20_free_framebuff = NULL;
-  }
-  pthread_mutex_destroy(&s->st20_wake_mutex);
-  pthread_cond_destroy(&s->st20_wake_cond);
+  st_pthread_mutex_destroy(&s->st20_wake_mutex);
+  st_pthread_cond_destroy(&s->st20_wake_cond);
 
   return 0;
 }
@@ -574,6 +642,8 @@ static int app_tx_video_init(struct st_app_context* ctx,
   st20_tx_handle handle;
   memset(&ops, 0, sizeof(ops));
 
+  s->ctx = ctx;
+
   snprintf(name, 32, "app_tx_video_%d", idx);
   ops.name = name;
   ops.priv = s;
@@ -593,7 +663,7 @@ static int app_tx_video_init(struct st_app_context* ctx,
     ops.udp_port[ST_PORT_R] = video ? video->udp_port : (10000 + s->idx);
   }
   ops.pacing = ST21_PACING_NARROW;
-  ops.packing = video ? video->packing : ST20_PACKING_GPM_SL;
+  ops.packing = video ? video->packing : ST20_PACKING_BPM;
   ops.type = video ? video->type : ST20_TYPE_FRAME_LEVEL;
   ops.width = video ? st_app_get_width(video->video_format) : 1920;
   ops.height = video ? st_app_get_height(video->video_format) : 1080;
@@ -602,15 +672,13 @@ static int app_tx_video_init(struct st_app_context* ctx,
   ops.interlaced = video ? st_app_get_interlaced(video->video_format) : false;
   ops.get_next_frame = app_tx_video_next_frame;
   ops.notify_frame_done = app_tx_video_frame_done;
-  ops.query_frame_lines_ready = app_tx_frame_lines_ready;
+  ops.query_frame_lines_ready = app_tx_video_frame_lines_ready;
   ops.notify_rtp_done = app_tx_video_rtp_done;
   ops.framebuff_cnt = 2;
-  ops.payload_type = 112;
+  ops.payload_type = video ? video->payload_type : ST_APP_PAYLOAD_TYPE_VIDEO;
 
   ret = st20_get_pgroup(ops.fmt, &s->st20_pg);
   if (ret < 0) return ret;
-  s->st20_frame_size = ops.width * ops.height * s->st20_pg.size / s->st20_pg.coverage;
-  if (ops.interlaced) s->st20_frame_size = s->st20_frame_size >> 1;
   s->width = ops.width;
   s->height = ops.height;
   s->interlaced = ops.interlaced ? true : false;
@@ -622,24 +690,24 @@ static int app_tx_video_init(struct st_app_context* ctx,
   s->single_line = (ops.packing == ST20_PACKING_GPM_SL);
   s->slice = (ops.type == ST20_TYPE_SLICE_LEVEL);
   s->expect_fps = st_frame_rate(ops.fps);
+  s->payload_type = ops.payload_type;
 
   s->framebuff_cnt = ops.framebuff_cnt;
   s->lines_per_slice = ops.height / 30;
+  s->st20_source_fd = -1;
 
-  s->st20_free_framebuff = (int*)st_app_zmalloc(sizeof(int) * s->framebuff_cnt);
-  if (!s->st20_free_framebuff) return -ENOMEM;
-  for (int j = 0; j < s->framebuff_cnt; j++) s->st20_free_framebuff[j] = 1;
-  s->st20_ready_framebuff = (struct st_app_frameinfo*)st_app_zmalloc(
-      sizeof(struct st_app_frameinfo) * s->framebuff_cnt);
-  if (!s->st20_ready_framebuff) {
-    st_app_free(s->st20_free_framebuff);
+  s->framebuffs =
+      (struct st_tx_frame*)st_app_zmalloc(sizeof(*s->framebuffs) * s->framebuff_cnt);
+  if (!s->framebuffs) {
     return -ENOMEM;
   }
-  for (int j = 0; j < s->framebuff_cnt; j++) s->st20_ready_framebuff[j].used = false;
-  s->st20_framebuff_idx = 0;
-  s->st20_source_fd = -1;
-  pthread_mutex_init(&s->st20_wake_mutex, NULL);
-  pthread_cond_init(&s->st20_wake_cond, NULL);
+  for (uint16_t j = 0; j < s->framebuff_cnt; j++) {
+    s->framebuffs[j].stat = ST_TX_FRAME_FREE;
+    s->framebuffs[j].lines_ready = 0;
+  }
+
+  st_pthread_mutex_init(&s->st20_wake_mutex, NULL);
+  st_pthread_cond_init(&s->st20_wake_cond, NULL);
 
   /* select rtp type for pcap file or tx_video_rtp_ring_size */
   if (strstr(s->st20_source_url, ".pcap")) {
@@ -665,9 +733,12 @@ static int app_tx_video_init(struct st_app_context* ctx,
     return -EIO;
   }
   s->handle = handle;
+  s->st20_frame_size = st20_tx_get_framebuffer_size(handle);
   s->handle_sch_idx = st20_tx_get_sch_idx(handle);
   unsigned int lcore;
-  ret = st_app_video_get_lcore(ctx, s->handle_sch_idx, &lcore);
+  bool rtp = false;
+  if (ops.type == ST20_TYPE_RTP_LEVEL) rtp = true;
+  ret = st_app_video_get_lcore(ctx, s->handle_sch_idx, rtp, &lcore);
   if (ret >= 0) s->lcore = lcore;
 
   ret = app_tx_video_open_source(s);

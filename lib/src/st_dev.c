@@ -16,6 +16,7 @@
 
 #include "st_dev.h"
 
+#include "pipeline/st_plugin.h"
 #include "st_arp.h"
 #include "st_cni.h"
 #include "st_dma.h"
@@ -31,54 +32,36 @@
 #include "st_tx_video_session.h"
 #include "st_util.h"
 
-static int dev_reset_port(struct st_main_impl* impl, enum st_port port);
-
 static void dev_eth_xstat(uint16_t port_id) {
-  struct rte_eth_xstat* xstats;
-  int cnt_xstats, idx_xstat;
-  struct rte_eth_xstat_name* xstats_names;
-
   /* Get count */
-  cnt_xstats = rte_eth_xstats_get_names(port_id, NULL, 0);
-  if (cnt_xstats < 0) {
+  int cnt = rte_eth_xstats_get_names(port_id, NULL, 0);
+  if (cnt < 0) {
     err("%s(%u), get names fail\n", __func__, port_id);
     return;
   }
 
   /* Get id-name lookup table */
-  xstats_names = malloc(sizeof(struct rte_eth_xstat_name) * cnt_xstats);
-  if (xstats_names == NULL) {
-    err("%s(%u), malloc xstats names fail\n", __func__, port_id);
-    return;
-  }
-  if (cnt_xstats != rte_eth_xstats_get_names(port_id, xstats_names, cnt_xstats)) {
-    err("%s(%u), get cnt_xstats names fail\n", __func__, port_id);
-    free(xstats_names);
+  struct rte_eth_xstat_name names[cnt];
+  memset(names, 0, cnt * sizeof(names[0]));
+  if (cnt != rte_eth_xstats_get_names(port_id, &names[0], cnt)) {
+    err("%s(%u), get cnt names fail\n", __func__, port_id);
     return;
   }
 
   /* Get stats themselves */
-  xstats = malloc(sizeof(struct rte_eth_xstat) * cnt_xstats);
-  if (xstats == NULL) {
-    err("%s(%u), malloc xstats fail\n", __func__, port_id);
-    free(xstats_names);
-    return;
-  }
-  if (cnt_xstats != rte_eth_xstats_get(port_id, xstats, cnt_xstats)) {
-    err("%s(%u), cnt_xstats mismatch\n", __func__, port_id);
-    free(xstats_names);
-    free(xstats);
+  struct rte_eth_xstat xstats[cnt];
+  memset(xstats, 0, cnt * sizeof(xstats[0]));
+  if (cnt != rte_eth_xstats_get(port_id, &xstats[0], cnt)) {
+    err("%s(%u), cnt mismatch\n", __func__, port_id);
     return;
   }
 
   /* Display xstats, err level since this called only with error case */
-  for (idx_xstat = 0; idx_xstat < cnt_xstats; idx_xstat++) {
-    if (xstats[idx_xstat].value) {
-      err("%s: %" PRIu64 "\n", xstats_names[idx_xstat].name, xstats[idx_xstat].value);
+  for (int i = 0; i < cnt; i++) {
+    if (xstats[i].value) {
+      err("%s: %" PRIu64 "\n", names[i].name, xstats[i].value);
     }
   }
-  free(xstats_names);
-  free(xstats);
 }
 
 static void dev_eth_stat(struct st_main_impl* impl) {
@@ -125,14 +108,15 @@ static void dev_stat(struct st_main_impl* impl) {
   st_dma_stat(impl);
   if (impl->rx_a_init) st_rx_audio_sessions_stat(impl);
   if (impl->rx_anc_init) st_rx_ancillary_sessions_stat(impl);
+  st_plugins_dump(impl);
   if (p->stat_dump_cb_fn) p->stat_dump_cb_fn(p->priv);
   info("* *    E N D    S T A T E   * * \n\n");
 }
 
 static void dev_stat_wakeup_thread(struct st_main_impl* impl) {
-  pthread_mutex_lock(&impl->stat_wake_mutex);
-  pthread_cond_signal(&impl->stat_wake_cond);
-  pthread_mutex_unlock(&impl->stat_wake_mutex);
+  st_pthread_mutex_lock(&impl->stat_wake_mutex);
+  st_pthread_cond_signal(&impl->stat_wake_cond);
+  st_pthread_mutex_unlock(&impl->stat_wake_mutex);
 }
 
 static void dev_stat_alarm_handler(void* param) {
@@ -152,10 +136,10 @@ static void* dev_stat_thread(void* arg) {
 
   info("%s, start\n", __func__);
   while (rte_atomic32_read(&impl->stat_stop) == 0) {
-    pthread_mutex_lock(&impl->stat_wake_mutex);
+    st_pthread_mutex_lock(&impl->stat_wake_mutex);
     if (!rte_atomic32_read(&impl->stat_stop))
-      pthread_cond_wait(&impl->stat_wake_cond, &impl->stat_wake_mutex);
-    pthread_mutex_unlock(&impl->stat_wake_mutex);
+      st_pthread_cond_wait(&impl->stat_wake_cond, &impl->stat_wake_mutex);
+    st_pthread_mutex_unlock(&impl->stat_wake_mutex);
 
     if (!rte_atomic32_read(&impl->stat_stop)) dev_stat(impl);
   }
@@ -167,7 +151,7 @@ static void* dev_stat_thread(void* arg) {
 static int dev_eal_init(struct st_init_params* p) {
   char* argv[ST_EAL_MAX_ARGS];
   int argc, ret;
-  int num_ports = p->num_ports;
+  int num_ports = RTE_MIN(p->num_ports, ST_PORT_MAX);
   static bool eal_inited = false; /* eal cann't re-enter in one process */
   char port_params[ST_PORT_MAX][2 * ST_PORT_MAX_LEN];
   char* port_param;
@@ -198,8 +182,9 @@ static int dev_eal_init(struct st_init_params* p) {
   }
 
   /* amend dma dev port */
+  uint8_t num_dma_dev_port = RTE_MIN(p->num_dma_dev_port, ST_DMA_DEV_MAX);
   dbg("%s, dma dev no %u\n", __func__, p->num_dma_dev_port);
-  for (int i = 0; i < p->num_dma_dev_port; i++) {
+  for (uint8_t i = 0; i < num_dma_dev_port; i++) {
     argv[argc] = "-a";
     argc++;
     argv[argc] = p->dma_dev_port[i];
@@ -242,7 +227,7 @@ static int dev_eal_init(struct st_init_params* p) {
   return 0;
 }
 
-static int dev_rx_runtime_queue_start(struct st_main_impl* impl, enum st_port port) {
+int dev_rx_runtime_queue_start(struct st_main_impl* impl, enum st_port port) {
   struct st_interface* inf = st_if(impl, port);
   int ret;
   struct st_rx_queue* rx_queue;
@@ -278,6 +263,7 @@ static int dev_flush_rx_queue(struct st_interface* inf, uint16_t queue) {
 #define ST_SHAPER_PROFILE_ID 1
 #define ST_ROOT_NODE_ID 256
 #define ST_DEFAULT_NODE_ID 246
+#define ST_VF_DEFAULT_RL_BPS (1024 * 1024 * 1024 / 8) /* 1g bit per second */
 
 static int dev_rl_init_root(struct st_main_impl* impl, enum st_port port,
                             uint32_t shaper_profile_id) {
@@ -368,86 +354,112 @@ static struct st_rl_shaper* dev_rl_shaper_get(struct st_main_impl* impl,
   return dev_rl_shaper_add(impl, port, bps);
 }
 
-static int dev_init_ratelimit(struct st_main_impl* impl, enum st_port port) {
+/* VF require all q config with RL */
+static int dev_init_ratelimit_vf(struct st_main_impl* impl, enum st_port port) {
   uint16_t port_id = st_port_id(impl, port);
   struct st_interface* inf = st_if(impl, port);
-  enum st_port_type port_type = st_port_type(impl, port);
   int ret;
   struct rte_tm_error error;
   struct rte_tm_node_params qp;
   struct st_rl_shaper* shaper;
+  uint64_t bps = ST_VF_DEFAULT_RL_BPS;
 
   memset(&error, 0, sizeof(error));
-
-  if (ST_PORT_VF == port_type && inf->tx_rl_root_active) {
-    ret = dev_reset_port(impl, port);
-    if (ret < 0) {
-      err("%s(%d), VF dev_reset_port fail %d\n", __func__, port, ret);
-      return ret;
-    }
-  }
 
   struct st_tx_queue* tx_queue;
   for (int q = 0; q < inf->max_tx_queues; q++) {
     tx_queue = &inf->tx_queues[q];
-    uint64_t bps = tx_queue->active ? tx_queue->bps : 0;
 
-    if (!bps && (ST_PORT_VF == port_type))
-      bps = 1024 * 1024 * 1024; /* VF require all q config with RL */
-    if (!bps && !q)
-      bps = 1024 * 1024 * 1024; /* trigger detect in case all tx not config with rl */
-
-    /* delete old queue node */
-    if (tx_queue->rl_shapers_mapping >= 0) {
-      ret = rte_tm_node_delete(port_id, q, &error);
-      if (ret < 0) {
-        err("%s(%d), node %d delete fail %d(%s)\n", __func__, port, q, ret,
-            error.message);
-        return ret;
-      }
-      tx_queue->rl_shapers_mapping = -1;
+    shaper = dev_rl_shaper_get(impl, port, bps);
+    if (!shaper) {
+      err("%s(%d), rl shaper get fail for q %d\n", __func__, port, q);
+      return -EIO;
     }
-
-    if (bps) {
-      shaper = dev_rl_shaper_get(impl, port, bps);
-      if (!shaper) {
-        err("%s(%d), rl shaper get fail for q %d\n", __func__, port, q);
-        return -EIO;
-      }
-      memset(&qp, 0, sizeof(qp));
-      qp.shaper_profile_id = shaper->shaper_profile_id;
-      qp.leaf.cman = RTE_TM_CMAN_TAIL_DROP;
-      qp.leaf.wred.wred_profile_id = RTE_TM_WRED_PROFILE_ID_NONE;
-      ret = rte_tm_node_add(port_id, q, ST_DEFAULT_NODE_ID, 0, 1, 2, &qp, &error);
-      if (ret < 0) {
-        err("%s(%d), q %d add fail %d(%s)\n", __func__, port, q, ret, error.message);
-        return ret;
-      }
-      tx_queue->rl_shapers_mapping = shaper->idx;
-      info("%s(%d), q %d link to shaper id %d\n", __func__, port, q,
-           shaper->shaper_profile_id);
+    memset(&qp, 0, sizeof(qp));
+    qp.shaper_profile_id = shaper->shaper_profile_id;
+    qp.leaf.cman = RTE_TM_CMAN_TAIL_DROP;
+    qp.leaf.wred.wred_profile_id = RTE_TM_WRED_PROFILE_ID_NONE;
+    ret = rte_tm_node_add(port_id, q, ST_DEFAULT_NODE_ID, 0, 1, 2, &qp, &error);
+    if (ret < 0) {
+      err("%s(%d), q %d add fail %d(%s)\n", __func__, port, q, ret, error.message);
+      return ret;
     }
-  }
-
-  /* TODO: VF requires to stop the port first */
-  if (ST_PORT_VF == port_type) {
-    st_cni_stop(impl);
-    rte_eth_dev_stop(port_id);
+    tx_queue->rl_shapers_mapping = shaper->idx;
+    tx_queue->bps = bps;
+    info("%s(%d), q %d link to shaper id %d\n", __func__, port, q,
+         shaper->shaper_profile_id);
   }
 
   ret = rte_tm_hierarchy_commit(port_id, 1, &error);
   if (ret < 0) err("%s(%d), commit error (%d)%s\n", __func__, port, ret, error.message);
 
-  if (ST_PORT_VF == port_type) {
-    rte_eth_dev_start(port_id);
-    /* start runtime rx queue again */
-    if (inf->feature & ST_IF_FEATURE_RUNTIME_RX_QUEUE)
-      dev_rx_runtime_queue_start(impl, port);
-    st_cni_start(impl);
-  }
-
   dbg("%s(%d), succ\n", __func__, port);
   return ret;
+}
+
+static int dev_tx_queue_set_rl_rate(struct st_main_impl* impl, enum st_port port,
+                                    uint16_t queue, uint64_t bytes_per_sec) {
+  uint16_t port_id = st_port_id(impl, port);
+  struct st_interface* inf = st_if(impl, port);
+  struct st_tx_queue* tx_queue = &inf->tx_queues[queue];
+  uint64_t bps = bytes_per_sec;
+  int ret;
+  struct rte_tm_error error;
+  struct rte_tm_node_params qp;
+  struct st_rl_shaper* shaper;
+
+  if (!bps) { /* default */
+    bps = ST_VF_DEFAULT_RL_BPS;
+  }
+
+  /* not changed */
+  if (bps == tx_queue->bps) return 0;
+
+  if (!(inf->feature & ST_IF_FEATURE_RUNTIME_RL)) {
+    tx_queue->bps = bps;
+    return 0;
+  }
+
+  /* delete old queue node */
+  if (tx_queue->rl_shapers_mapping >= 0) {
+    ret = rte_tm_node_delete(port_id, queue, &error);
+    if (ret < 0) {
+      err("%s(%d), node %d delete fail %d(%s)\n", __func__, port, queue, ret,
+          error.message);
+      return ret;
+    }
+    tx_queue->rl_shapers_mapping = -1;
+  }
+
+  if (bps) {
+    shaper = dev_rl_shaper_get(impl, port, bps);
+    if (!shaper) {
+      err("%s(%d), rl shaper get fail for q %d\n", __func__, port, queue);
+      return -EIO;
+    }
+    memset(&qp, 0, sizeof(qp));
+    qp.shaper_profile_id = shaper->shaper_profile_id;
+    qp.leaf.cman = RTE_TM_CMAN_TAIL_DROP;
+    qp.leaf.wred.wred_profile_id = RTE_TM_WRED_PROFILE_ID_NONE;
+    ret = rte_tm_node_add(port_id, queue, ST_DEFAULT_NODE_ID, 0, 1, 2, &qp, &error);
+    if (ret < 0) {
+      err("%s(%d), q %d add fail %d(%s)\n", __func__, port, queue, ret, error.message);
+      return ret;
+    }
+    tx_queue->rl_shapers_mapping = shaper->idx;
+    info("%s(%d), q %d link to shaper id %d\n", __func__, port, queue,
+         shaper->shaper_profile_id);
+  }
+
+  ret = rte_tm_hierarchy_commit(port_id, 1, &error);
+  if (ret < 0) {
+    err("%s(%d), commit error (%d)%s\n", __func__, port, ret, error.message);
+    return ret;
+  }
+
+  tx_queue->bps = bps;
+
+  return 0;
 }
 
 static struct rte_flow* dev_rx_queue_create_flow(uint16_t port_id, uint16_t q,
@@ -623,7 +635,13 @@ static int dev_start_timesync(struct st_main_impl* impl, enum st_port port) {
 }
 
 static const struct rte_eth_conf dev_port_conf = {
-    .txmode = {.offloads = DEV_TX_OFFLOAD_MULTI_SEGS}};
+    .txmode = {
+#if RTE_VERSION >= RTE_VERSION_NUM(22, 3, 0, 0)
+        .offloads = RTE_ETH_TX_OFFLOAD_MULTI_SEGS,
+#else
+        .offloads = DEV_TX_OFFLOAD_MULTI_SEGS,
+#endif
+    }};
 
 static const struct rte_eth_txconf dev_tx_port_conf = {.tx_rs_thresh = 1,
                                                        .tx_free_thresh = 1};
@@ -639,8 +657,13 @@ static int dev_config_port(struct st_main_impl* impl, enum st_port port) {
   uint16_t nb_rx_q = inf->max_rx_queues, nb_tx_q = inf->max_tx_queues;
   struct rte_eth_conf port_conf = dev_port_conf;
 
-  if (inf->feature & ST_IF_FEATURE_RX_OFFLOAD_TIMESTAMP)
+  if (inf->feature & ST_IF_FEATURE_RX_OFFLOAD_TIMESTAMP) {
+#if RTE_VERSION >= RTE_VERSION_NUM(22, 3, 0, 0)
+    port_conf.rxmode.offloads |= RTE_ETH_RX_OFFLOAD_TIMESTAMP;
+#else
     port_conf.rxmode.offloads |= DEV_RX_OFFLOAD_TIMESTAMP;
+#endif
+  }
 
   ret = rte_eth_dev_configure(port_id, nb_rx_q, nb_tx_q, &port_conf);
   if (ret < 0) {
@@ -745,7 +768,7 @@ static int dev_start_port(struct st_main_impl* impl, enum st_port port) {
   return 0;
 }
 
-static int dev_reset_port(struct st_main_impl* impl, enum st_port port) {
+int dev_reset_port(struct st_main_impl* impl, enum st_port port) {
   int ret;
   uint16_t port_id = st_port_id(impl, port);
   struct st_interface* inf = st_if(impl, port);
@@ -862,8 +885,8 @@ int st_dev_get_lcore(struct st_main_impl* impl, unsigned int* lcore) {
   do {
     cur_lcore = rte_get_next_lcore(cur_lcore, 1, 0);
 
-    if ((cur_lcore < RTE_MAX_LCORE) &&
-        rte_lcore_to_socket_id(cur_lcore) == st_socket_id(impl, ST_PORT_P)) {
+    if ((cur_lcore < RTE_MAX_LCORE) && st_socket_match(rte_lcore_to_socket_id(cur_lcore),
+                                                       st_socket_id(impl, ST_PORT_P))) {
       if (!lcore_shm->lcores_active[cur_lcore]) {
         *lcore = cur_lcore;
         lcore_shm->lcores_active[cur_lcore] = true;
@@ -1136,7 +1159,7 @@ static int dev_if_init_rx_queues(struct st_main_impl* impl, struct st_interface*
     }
   }
   inf->rx_queues = rx_queues;
-  pthread_mutex_init(&inf->rx_queues_mutex, NULL);
+  st_pthread_mutex_init(&inf->rx_queues_mutex, NULL);
 
   return 0;
 }
@@ -1173,7 +1196,7 @@ static int dev_if_init_tx_queues(struct st_main_impl* impl, struct st_interface*
     tx_queues[q].rl_shapers_mapping = -1;
   }
   inf->tx_queues = tx_queues;
-  pthread_mutex_init(&inf->tx_queues_mutex, NULL);
+  st_pthread_mutex_init(&inf->tx_queues_mutex, NULL);
 
   return 0;
 }
@@ -1213,20 +1236,25 @@ int st_dev_request_tx_queue(struct st_main_impl* impl, enum st_port port,
   struct st_interface* inf = st_if(impl, port);
   uint16_t q;
   struct st_tx_queue* tx_queue;
+  int ret;
 
-  pthread_mutex_lock(&inf->tx_queues_mutex);
+  st_pthread_mutex_lock(&inf->tx_queues_mutex);
   for (q = 0; q < inf->max_tx_queues; q++) {
     tx_queue = &inf->tx_queues[q];
     if (!tx_queue->active) {
+      ret = dev_tx_queue_set_rl_rate(impl, port, q, bytes_per_sec);
+      if (ret < 0) { /* clear runtime rl if it's not support */
+        inf->feature &= ~ST_IF_FEATURE_RUNTIME_RL;
+        impl->tx_pacing_way = ST21_TX_PACING_WAY_TSC;
+      }
       tx_queue->active = true;
-      tx_queue->bps = bytes_per_sec;
       *queue_id = q;
-      pthread_mutex_unlock(&inf->tx_queues_mutex);
+      st_pthread_mutex_unlock(&inf->tx_queues_mutex);
       info("%s(%d), q %d with speed %" PRIu64 "\n", __func__, port, q, bytes_per_sec);
       return 0;
     }
   }
-  pthread_mutex_unlock(&inf->tx_queues_mutex);
+  st_pthread_mutex_unlock(&inf->tx_queues_mutex);
 
   err("%s(%d), fail to find free tx queue\n", __func__, port);
   return -ENOMEM;
@@ -1240,7 +1268,7 @@ int st_dev_request_rx_queue(struct st_main_impl* impl, enum st_port port,
   int ret;
   struct st_rx_queue* rx_queue;
 
-  pthread_mutex_lock(&inf->rx_queues_mutex);
+  st_pthread_mutex_lock(&inf->rx_queues_mutex);
   for (q = 0; q < inf->max_rx_queues; q++) {
     rx_queue = &inf->rx_queues[q];
     if (rx_queue->active) continue;
@@ -1254,7 +1282,7 @@ int st_dev_request_rx_queue(struct st_main_impl* impl, enum st_port port,
       r_flow = dev_rx_queue_create_flow(port_id, q, flow);
       if (!r_flow) {
         err("%s(%d), create flow fail for queue %d\n", __func__, port, q);
-        pthread_mutex_unlock(&inf->rx_queues_mutex);
+        st_pthread_mutex_unlock(&inf->rx_queues_mutex);
         return -EIO;
       }
 
@@ -1266,19 +1294,19 @@ int st_dev_request_rx_queue(struct st_main_impl* impl, enum st_port port,
       ret = rte_eth_dev_rx_queue_start(inf->port_id, q);
       if (ret < 0) {
         err("%s(%d), start runtime rx queue %d fail %d\n", __func__, port, q, ret);
-        pthread_mutex_unlock(&inf->rx_queues_mutex);
+        st_pthread_mutex_unlock(&inf->rx_queues_mutex);
         return -EIO;
       }
     }
     rx_queue->active = true;
-    pthread_mutex_unlock(&inf->rx_queues_mutex);
+    st_pthread_mutex_unlock(&inf->rx_queues_mutex);
 
     dev_flush_rx_queue(inf, q);
     *queue_id = q;
     info("%s(%d), q %d\n", __func__, port, q);
     return 0;
   }
-  pthread_mutex_unlock(&inf->rx_queues_mutex);
+  st_pthread_mutex_unlock(&inf->rx_queues_mutex);
 
   err("%s(%d), fail to find free rx queue\n", __func__, port);
   return -ENOMEM;
@@ -1362,135 +1390,69 @@ int st_dev_free_rx_queue(struct st_main_impl* impl, enum st_port port,
   return 0;
 }
 
-int st_dev_put_sch(struct st_sch_impl* sch, int quota_mbs) {
-  int sidx = sch->idx, ret;
-  struct st_main_impl* impl = sch->parnet;
-
-  st_sch_free_quota(sch, quota_mbs);
-
-  if (rte_atomic32_dec_and_test(&sch->ref_cnt)) {
-    info("%s(%d), ref_cnt now zero\n", __func__, sidx);
-    if (sch->data_quota_mbs_total)
-      err("%s(%d), still has %d data_quota_mbs_total\n", __func__, sidx,
-          sch->data_quota_mbs_total);
-    /* stop and free sch */
-    ret = st_sch_stop(sch);
-    if (ret < 0) {
-      err("%s(%d), st_sch_stop fail %d\n", __func__, sidx, ret);
-    } else {
-      /* put the sch lcore if dev is started */
-      if (rte_atomic32_read(&impl->started)) {
-        rte_eal_wait_lcore(sch->lcore);
-        st_dev_put_lcore(impl, sch->lcore);
-      }
-    }
-    st_sch_free(sch);
-  }
-
-  return 0;
-}
-
-int st_dev_start_sch(struct st_main_impl* impl, struct st_sch_impl* sch) {
-  int sidx = sch->idx;
-  int ret;
-  unsigned int lcore;
-
-  ret = st_dev_get_lcore(impl, &lcore);
-  if (ret < 0) {
-    err("%s(%d), dev_get_lcore fail %d\n", __func__, sidx, ret);
-    return ret;
-  }
-  ret = st_sch_start(sch, lcore);
-  if (ret < 0) {
-    err("%s(%d), st_sch_start fail %d\n", __func__, sidx, ret);
-    return ret;
-  }
-
-  return 0;
-}
-
-struct st_sch_impl* st_dev_get_sch(struct st_main_impl* impl, int quota_mbs,
-                                   enum st_sch_type type) {
-  int ret, idx;
-  struct st_sch_impl* sch;
-
-  for (idx = 0; idx < ST_MAX_SCH_NUM; idx++) {
-    sch = st_get_sch(impl, idx);
-    if (sch->type != type) continue;
-    ret = st_sch_add_quota(sch, quota_mbs);
-    if (ret >= 0) {
-      /* find one sch capable with quota */
-      info("%s(%d), succ with quota_mbs %d\n", __func__, idx, quota_mbs);
-      rte_atomic32_inc(&sch->ref_cnt);
-      return sch;
-    }
-  }
-
-  /* no quota, try to create one */
-  sch = st_sch_request(impl, type);
-  if (!sch) {
-    err("%s, no free sch\n", __func__);
-    return NULL;
-  }
-  idx = sch->idx;
-  ret = st_sch_add_quota(sch, quota_mbs);
-  if (ret < 0) {
-    err("%s(%d), st_sch_add_quota fail %d\n", __func__, idx, ret);
-    st_sch_free(sch);
-    return NULL;
-  }
-
-  /* start the sch if dev is started */
-  if (rte_atomic32_read(&impl->started)) {
-    ret = st_dev_start_sch(impl, sch);
-    if (ret < 0) {
-      err("%s(%d), start sch fail %d\n", __func__, idx, ret);
-      st_sch_free(sch);
-      return NULL;
-    }
-  }
-
-  rte_atomic32_inc(&sch->ref_cnt);
-  return sch;
-}
-
 int st_dev_create(struct st_main_impl* impl) {
   int num_ports = st_num_ports(impl);
   struct st_init_params* p = st_get_user_params(impl);
   int ret;
   struct st_interface* inf;
+  enum st_port_type port_type;
 
   ret = dev_init_lcores(impl);
   if (ret < 0) return ret;
 
   for (int i = 0; i < num_ports; i++) {
+    int detect_retry = 0;
+
     inf = st_if(impl, i);
+    port_type = inf->port_type;
 
 #if RTE_VERSION >= RTE_VERSION_NUM(21, 11, 0, 0)
     /* DPDK 21.11 support start time sync before rte_eth_dev_start */
-    if ((st_has_ptp_service(impl) || st_has_ebu(impl)) &&
-        (st_port_type(impl, i) == ST_PORT_PF)) {
+    if ((st_has_ptp_service(impl) || st_has_ebu(impl)) && (port_type == ST_PORT_PF)) {
       ret = dev_start_timesync(impl, i);
       if (ret >= 0) inf->feature |= ST_IF_FEATURE_TIMESYNC;
     }
 #endif
 
+  retry:
     ret = dev_start_port(impl, i);
     if (ret < 0) {
       err("%s(%d), dev_start_port fail %d\n", __func__, i, ret);
       goto err_exit;
     }
+    if (detect_retry > 0) {
+      err("%s(%d), sleep 5s before detect link\n", __func__, i);
+      /* leave time as reset */
+      st_sleep_ms(5 * 1000);
+    }
     ret = dev_detect_link(impl, i); /* some port can only detect link after start */
     if (ret < 0) {
-      err("%s(%d), dev_detect_link fail %d\n", __func__, i, ret);
-      goto err_exit;
+      err("%s(%d), dev_detect_link fail %d retry %d\n", __func__, i, ret, detect_retry);
+      if (detect_retry < 3) {
+        detect_retry++;
+        rte_eth_dev_reset(inf->port_id);
+        ret = dev_config_port(impl, i);
+        if (ret < 0) {
+          err("%s(%d), dev_config_port fail %d\n", __func__, i, ret);
+          goto err_exit;
+        }
+        goto retry;
+      } else {
+        goto err_exit;
+      }
     }
     /* try to start time sync after rte_eth_dev_start */
-    if ((st_has_ptp_service(impl) || st_has_ebu(impl)) &&
-        (st_port_type(impl, i) == ST_PORT_PF) &&
+    if ((st_has_ptp_service(impl) || st_has_ebu(impl)) && (port_type == ST_PORT_PF) &&
         !(inf->feature & ST_IF_FEATURE_TIMESYNC)) {
       ret = dev_start_timesync(impl, i);
       if (ret >= 0) inf->feature |= ST_IF_FEATURE_TIMESYNC;
+    }
+    /* */
+    if (port_type == ST_PORT_VF) {
+      ret = dev_init_ratelimit_vf(impl, i);
+      if (ret < 0) { /* fallback to tsc if no rl */
+        impl->tx_pacing_way = ST21_TX_PACING_WAY_TSC;
+      }
     }
     info("%s(%d), feature 0x%x\n", __func__, i, inf->feature);
   }
@@ -1504,27 +1466,22 @@ int st_dev_create(struct st_main_impl* impl) {
     data_quota_mbs_per_sch =
         ST_QUOTA_TX1080P_PER_SCH * st20_1080p59_yuv422_10bit_bandwidth_mps();
   }
-  ret = st_sch_init(impl, data_quota_mbs_per_sch);
+  ret = st_sch_mrg_init(impl, data_quota_mbs_per_sch);
   if (ret < 0) {
-    err("%s, st_sch_init fail %d\n", __func__, ret);
+    err("%s, sch mgr init fail %d\n", __func__, ret);
     goto err_exit;
   }
 
   /* create system sch */
-  impl->main_sch = st_dev_get_sch(impl, 0, ST_SCH_TYPE_DEFAULT);
+  impl->main_sch = st_sch_get(impl, 0, ST_SCH_TYPE_DEFAULT);
   if (ret < 0) {
     err("%s, get sch fail\n", __func__);
     goto err_exit;
   }
 
-  if (p->flags & ST_FLAG_TSC_PACING)
-    impl->tx_pacing_way = ST21_TX_PACING_WAY_TSC;
-  else
-    impl->tx_pacing_way = ST21_TX_PACING_WAY_AUTO;
-
   /* rte_eth_stats_get fail in alram context for VF, move it to thread */
-  pthread_mutex_init(&impl->stat_wake_mutex, NULL);
-  pthread_cond_init(&impl->stat_wake_cond, NULL);
+  st_pthread_mutex_init(&impl->stat_wake_mutex, NULL);
+  st_pthread_cond_init(&impl->stat_wake_cond, NULL);
   rte_atomic32_set(&impl->stat_stop, 0);
   rte_ctrl_thread_create(&impl->stat_tid, "st_dev_stat", NULL, dev_stat_thread, impl);
   if (!p->dump_period_s) p->dump_period_s = ST_DEV_STAT_INTERVAL_S;
@@ -1535,7 +1492,7 @@ int st_dev_create(struct st_main_impl* impl) {
   return 0;
 
 err_exit:
-  if (impl->main_sch) st_dev_put_sch(impl->main_sch, 0);
+  if (impl->main_sch) st_sch_put(impl->main_sch, 0);
   for (int i = num_ports - 1; i >= 0; i--) dev_free_port(impl, i);
   return ret;
 }
@@ -1552,10 +1509,10 @@ int st_dev_free(struct st_main_impl* impl) {
     pthread_join(impl->stat_tid, NULL);
     impl->stat_tid = 0;
   }
-  pthread_mutex_destroy(&impl->stat_wake_mutex);
-  pthread_cond_destroy(&impl->stat_wake_cond);
+  st_pthread_mutex_destroy(&impl->stat_wake_mutex);
+  st_pthread_cond_destroy(&impl->stat_wake_cond);
 
-  st_dev_put_sch(impl->main_sch, 0);
+  st_sch_put(impl->main_sch, 0);
 
   dev_uinit_lcores(impl);
 
@@ -1569,40 +1526,12 @@ int st_dev_free(struct st_main_impl* impl) {
 
 int st_dev_start(struct st_main_impl* impl) {
   int ret = 0;
-  int num_ports = st_num_ports(impl);
-  struct st_sch_impl* sch;
-
-  for (int i = 0; i < num_ports; i++) {
-    if ((impl->tx_pacing_way == ST21_TX_PACING_WAY_AUTO) ||
-        (impl->tx_pacing_way == ST21_TX_PACING_WAY_RL)) {
-      ret = dev_init_ratelimit(impl, i);
-      if (ret < 0) break;
-    }
-  }
-  if (impl->tx_pacing_way == ST21_TX_PACING_WAY_AUTO) {
-    if (ret < 0) /* fall back to tsc pacing */
-      impl->tx_pacing_way = ST21_TX_PACING_WAY_TSC;
-    else
-      impl->tx_pacing_way = ST21_TX_PACING_WAY_RL;
-    ret = 0;
-    info("%s, detected pacing way %d\n", __func__, impl->tx_pacing_way);
-  }
-  if (ret < 0) {
-    err("%s, dev_init_ratelimit fail %d\n", __func__, ret);
-    return ret;
-  }
 
   /* start active sch */
-  for (int sch_idx = 0; sch_idx < ST_MAX_SCH_NUM; sch_idx++) {
-    sch = st_get_sch(impl, sch_idx);
-    if (st_sch_is_active(sch)) {
-      ret = st_dev_start_sch(impl, sch);
-      if (ret < 0) {
-        err("%s(%d), st_dev_start_sch fail %d\n", __func__, sch_idx, ret);
-        st_dev_stop(impl);
-        return ret;
-      }
-    }
+  ret = st_sch_start_all(impl);
+  if (ret < 0) {
+    err("%s, start all sch fail %d\n", __func__, ret);
+    return ret;
   }
 
   info("%s, succ\n", __func__);
@@ -1610,24 +1539,7 @@ int st_dev_start(struct st_main_impl* impl) {
 }
 
 int st_dev_stop(struct st_main_impl* impl) {
-  int ret;
-  struct st_sch_impl* sch;
-
-  /* stop active sch */
-  for (int sch_idx = 0; sch_idx < ST_MAX_SCH_NUM; sch_idx++) {
-    sch = st_get_sch(impl, sch_idx);
-    if (st_sch_is_active(sch)) {
-      ret = st_sch_stop(sch);
-      if (ret < 0) {
-        err("%s(%d), st_sch_stop fail %d\n", __func__, sch_idx, ret);
-      } else {
-        rte_eal_wait_lcore(sch->lcore);
-        st_dev_put_lcore(impl, sch->lcore);
-      }
-    }
-  }
-
-  info("%s, succ\n", __func__);
+  st_sch_stop_all(impl);
   return 0;
 }
 
@@ -1789,7 +1701,13 @@ int st_dev_if_init(struct st_main_impl* impl) {
     if (dev_info.dev_capa & RTE_ETH_DEV_CAPA_RUNTIME_RX_QUEUE_SETUP)
       inf->feature |= ST_IF_FEATURE_RUNTIME_RX_QUEUE;
 
-    if (st_has_ebu(impl) && (dev_info.rx_offload_capa & DEV_RX_OFFLOAD_TIMESTAMP)) {
+    if (st_has_ebu(impl) &&
+#if RTE_VERSION >= RTE_VERSION_NUM(22, 3, 0, 0)
+        (dev_info.rx_offload_capa & RTE_ETH_RX_OFFLOAD_TIMESTAMP)
+#else
+        (dev_info.rx_offload_capa & DEV_RX_OFFLOAD_TIMESTAMP)
+#endif
+    ) {
       if (!impl->dynfield_offset) {
         ret = rte_mbuf_dyn_rx_timestamp_register(&impl->dynfield_offset, NULL);
         if (ret < 0) {
@@ -1801,6 +1719,10 @@ int st_dev_if_init(struct st_main_impl* impl) {
       }
       inf->feature |= ST_IF_FEATURE_RX_OFFLOAD_TIMESTAMP;
     }
+
+    /* set runtime rl support except tsc */
+    if (impl->tx_pacing_way != ST21_TX_PACING_WAY_TSC)
+      inf->feature |= ST_IF_FEATURE_RUNTIME_RL;
 
     ret = dev_config_port(impl, i);
     if (ret < 0) {

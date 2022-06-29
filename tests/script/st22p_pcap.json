@@ -1,0 +1,61 @@
+{
+    "interfaces": [
+        {
+            "name": "0000:af:00.0",
+            "ip": "192.168.17.101"
+        },
+        {
+            "name": "0000:af:00.1",
+            "ip": "192.168.17.102"
+        }
+    ],
+	"tx_sessions": [
+        {
+            "dip": [
+                "192.168.17.102"
+            ],
+            "interface": [
+                0
+            ],
+            "video": [
+                {
+                    "replicas": 1,
+                    "type": "rtp",
+                    "pacing": "gap",
+                    "packing": "BPM",
+                    "start_port": 20000,
+                    "payload_type": 112,
+                    "tr_offset": "default",
+                    "video_format": "i1080p59",
+                    "pg_format": "YUV_422_10bit",
+                    "video_url": "./test_st22.pcap"
+                }
+            ]
+        }
+    ],
+    "rx_sessions": [
+        {
+            "ip": [
+                "192.168.17.101"
+            ],
+            "interface": [
+                1
+            ],
+            "st22p": [
+                {
+                    "replicas": 1,
+                    "start_port": 20000,
+                    "payload_type": 112,
+                    "width": 3840,
+                    "height": 2160,
+                    "fps": "p59",
+                    "codec": "JPEG-XS",
+                    "device": "AUTO",
+                    "pack_type": "codestream",
+                    "output_format": "BGRA",
+                    "display": false
+                }
+            ]
+        }
+    ]
+}

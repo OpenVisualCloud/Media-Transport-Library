@@ -15,7 +15,7 @@
  */
 
 #include <errno.h>
-#include <openssl/md5.h>
+#include <openssl/sha.h>
 #include <pthread.h>
 #include <st_dpdk_api.h>
 #include <stdbool.h>
@@ -53,8 +53,8 @@ static int dma_copy_sample(st_handle st) {
 
   void *fb_dst = NULL, *fb_src = NULL;
   st_iova_t fb_dst_iova, fb_src_iova;
-  unsigned char fb_dst_md5s[MD5_DIGEST_LENGTH];
-  unsigned char fb_src_md5s[MD5_DIGEST_LENGTH];
+  unsigned char fb_dst_shas[SHA256_DIGEST_LENGTH];
+  unsigned char fb_src_shas[SHA256_DIGEST_LENGTH];
 
   /* allocate fb dst and src(with random data) */
   fb_dst = st_hp_malloc(st, fb_size, ST_PORT_P);
@@ -65,7 +65,7 @@ static int dma_copy_sample(st_handle st) {
   }
   fb_dst_iova = st_hp_virt2iova(st, fb_dst);
   fb_src = st_hp_malloc(st, fb_size, ST_PORT_P);
-  if (!fb_dst) {
+  if (!fb_src) {
     printf("fb src create fail\n");
     st_hp_free(st, fb_dst);
     st_udma_free(dma);
@@ -73,7 +73,7 @@ static int dma_copy_sample(st_handle st) {
   }
   fb_src_iova = st_hp_virt2iova(st, fb_src);
   rand_data((uint8_t*)fb_src, fb_size, 0);
-  MD5((unsigned char*)fb_src, fb_size, fb_src_md5s);
+  SHA256((unsigned char*)fb_src, fb_size, fb_src_shas);
 
   uint64_t start_ns = st_ptp_read_time(st);
   while (fb_dst_iova_off < fb_size) {
@@ -95,11 +95,11 @@ static int dma_copy_sample(st_handle st) {
   }
   uint64_t end_ns = st_ptp_read_time(st);
 
-  /* all copy completed, check md5 */
-  MD5((unsigned char*)fb_dst, fb_size, fb_dst_md5s);
-  ret = memcmp(fb_dst_md5s, fb_src_md5s, MD5_DIGEST_LENGTH);
+  /* all copy completed, check sha */
+  SHA256((unsigned char*)fb_dst, fb_size, fb_dst_shas);
+  ret = memcmp(fb_dst_shas, fb_src_shas, SHA256_DIGEST_LENGTH);
   if (ret != 0) {
-    printf("md5 check fail\n");
+    printf("sha check fail\n");
   } else {
     printf("dma copy %dk with time %dus\n", fb_size / 1024,
            (int)(end_ns - start_ns) / 1000);

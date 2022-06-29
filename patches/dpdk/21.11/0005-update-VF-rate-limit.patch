@@ -1,7 +1,7 @@
-From 54695155529d16ec7cf8549ffe64b04297e10bb9 Mon Sep 17 00:00:00 2001
+From 793b0e4b69ca3892700577f283e72cce31797bbc Mon Sep 17 00:00:00 2001
 From: Ping Yu <ping.yu@intel.com>
 Date: Thu, 16 Sep 2021 15:32:27 +0800
-Subject: [PATCH 5/6] update VF rate limit
+Subject: [PATCH 5/9] update VF rate limit
 
 Signed-off-by: Ping Yu <ping.yu@intel.com>
 ---

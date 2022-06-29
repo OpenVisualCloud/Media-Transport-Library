@@ -39,11 +39,6 @@ int st_dev_free(struct st_main_impl* impl);
 int st_dev_start(struct st_main_impl* impl);
 int st_dev_stop(struct st_main_impl* impl);
 
-struct st_sch_impl* st_dev_get_sch(struct st_main_impl* impl, int quota_mbs,
-                                   enum st_sch_type type);
-int st_dev_put_sch(struct st_sch_impl* sch, int quota_mbs);
-int st_dev_start_sch(struct st_main_impl* impl, struct st_sch_impl* sch);
-
 /* ip from 224.x.x.x to 239.x.x.x */
 static inline uint64_t st_is_multicast_ip(uint8_t ip[ST_IP_ADDR_LEN]) {
   if (ip[0] >= 224 && ip[0] <= 239)

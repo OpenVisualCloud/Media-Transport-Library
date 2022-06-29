@@ -10,6 +10,7 @@ TEST_LOOP=1
 TEST_JSON_LIST='*.json'
 #echo $TEST_JSON_LIST
 
+export KAHAWAI_CFG_PATH=../../kahawai.json
 echo "Total ${#TEST_JSON_LIST[@]} cases, each with ${TEST_TIME_SEC}s"
 for ((loop=0; loop<$TEST_LOOP; loop++)); do
 	cur_json_idx=0
@@ -22,5 +23,7 @@ for ((loop=0; loop<$TEST_LOOP; loop++)); do
 		echo ""
 	done
 done
+
+unset KAHAWAI_CFG_PATH
 
 echo "All test cases finished"

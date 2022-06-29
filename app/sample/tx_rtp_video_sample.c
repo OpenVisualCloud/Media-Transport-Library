@@ -49,9 +49,9 @@ struct app_context {
 
 static int notify_rtp_done(void* priv) {
   struct app_context* s = (struct app_context*)priv;
-  pthread_mutex_lock(&s->wake_mutex);
-  pthread_cond_signal(&s->wake_cond);
-  pthread_mutex_unlock(&s->wake_mutex);
+  st_pthread_mutex_lock(&s->wake_mutex);
+  st_pthread_cond_signal(&s->wake_cond);
+  st_pthread_mutex_unlock(&s->wake_mutex);
   return 0;
 }
 
@@ -105,14 +105,14 @@ static void* app_tx_rtp_thread(void* arg) {
     /* get available buffer*/
     mbuf = st20_tx_get_mbuf(s->handle, &usrptr);
     if (!mbuf) {
-      pthread_mutex_lock(&s->wake_mutex);
+      st_pthread_mutex_lock(&s->wake_mutex);
       /* try again */
       mbuf = st20_tx_get_mbuf(s->handle, &usrptr);
       if (mbuf) {
-        pthread_mutex_unlock(&s->wake_mutex);
+        st_pthread_mutex_unlock(&s->wake_mutex);
       } else {
-        if (!s->stop) pthread_cond_wait(&s->wake_cond, &s->wake_mutex);
-        pthread_mutex_unlock(&s->wake_mutex);
+        if (!s->stop) st_pthread_cond_wait(&s->wake_cond, &s->wake_mutex);
+        st_pthread_mutex_unlock(&s->wake_mutex);
         continue;
       }
     }
@@ -197,8 +197,8 @@ int main() {
     app[i]->stop = false;
     app[i]->packet_size = ops_tx.rtp_pkt_size;
     app[i]->total_packet_in_frame = ops_tx.rtp_frame_total_pkts;
-    pthread_mutex_init(&app[i]->wake_mutex, NULL);
-    pthread_cond_init(&app[i]->wake_cond, NULL);
+    st_pthread_mutex_init(&app[i]->wake_mutex, NULL);
+    st_pthread_cond_init(&app[i]->wake_cond, NULL);
     ret = pthread_create(&app[i]->app_thread, NULL, app_tx_rtp_thread, app[i]);
     if (ret < 0) {
       printf("%s(%d), app_thread create fail %d\n", __func__, ret, i);
@@ -220,9 +220,9 @@ int main() {
   // stop app thread
   for (int i = 0; i < session_num; i++) {
     app[i]->stop = true;
-    pthread_mutex_lock(&app[i]->wake_mutex);
-    pthread_cond_signal(&app[i]->wake_cond);
-    pthread_mutex_unlock(&app[i]->wake_mutex);
+    st_pthread_mutex_lock(&app[i]->wake_mutex);
+    st_pthread_cond_signal(&app[i]->wake_cond);
+    st_pthread_mutex_unlock(&app[i]->wake_mutex);
     pthread_join(app[i]->app_thread, NULL);
   }
 
@@ -235,8 +235,8 @@ int main() {
     if (ret) {
       printf("session free failed\n");
     }
-    pthread_mutex_destroy(&app[i]->wake_mutex);
-    pthread_cond_destroy(&app[i]->wake_cond);
+    st_pthread_mutex_destroy(&app[i]->wake_mutex);
+    st_pthread_cond_destroy(&app[i]->wake_cond);
 
     free(app[i]);
   }

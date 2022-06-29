@@ -51,6 +51,21 @@ int st_dma_submit(struct st_dma_lender_dev* dev);
 uint16_t st_dma_completed(struct st_dma_lender_dev* dev, uint16_t nb_cpls,
                           uint16_t* last_idx, bool* has_error);
 
+static inline void st_dma_copy_busy(struct st_dma_lender_dev* dev, rte_iova_t dst,
+                                    rte_iova_t src, uint32_t length) {
+  int ret;
+  do {
+    ret = st_dma_copy(dev, dst, src, length);
+  } while (ret < 0);
+}
+
+static inline void st_dma_submit_busy(struct st_dma_lender_dev* dev) {
+  int ret;
+  do {
+    ret = st_dma_submit(dev);
+  } while (ret < 0);
+}
+
 static inline bool st_dma_empty(struct st_dma_lender_dev* dev) {
   if (dev->nb_borrowed)
     return false;

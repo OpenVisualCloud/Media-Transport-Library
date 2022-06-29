@@ -11,15 +11,15 @@
 # express or implied warranties, other than those that are expressly stated
 # in the License.
 
-project('st_dpdk', 'c', default_options: ['c_std=gnu11', 'buildtype=release'], version: '22.04.0',)
+project('st_dpdk', 'c', default_options: ['c_std=gnu11', 'buildtype=release'], version: '22.06.0',)
 
 exec_env = host_machine.system()
 set_variable('is_windows', exec_env == 'windows')
 message('BUILD Enviroment: ' + exec_env)
-#enable BSD_SOURCE
+# enable BSD_SOURCE
 add_global_arguments('-D_DEFAULT_SOURCE', language : 'c')
 
-#get external variables
+# get external variables
 add_global_arguments('-D__ST_GIT__="'+ run_command('git', 'describe', '--abbrev=8', '--dirty', '--always').stdout().strip() + '"', language : 'c')
 add_global_arguments('-D__ST_BUILD__="' + meson.project_version() + '"', language : 'c')
 
@@ -29,13 +29,13 @@ endif
 
 st_dpdk_lib = []
 
-#add include directory
+# add include directory
 st_dpdk_include_dir = [ include_directories('include'), ]
 
-#install header files
+# install header files
 subdir('include')
 
-#build library
+# build library
 subdir('lib')
 
 pkg = import('pkgconfig')

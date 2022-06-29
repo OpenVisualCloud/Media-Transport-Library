@@ -15,7 +15,6 @@
  */
 
 #include <errno.h>
-#include <openssl/md5.h>
 #include <pthread.h>
 #include <st_dpdk_api.h>
 #include <stdbool.h>

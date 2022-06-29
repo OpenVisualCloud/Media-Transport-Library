@@ -1,7 +1,7 @@
-From a31de005b4bed50d76601e868602067370e080c7 Mon Sep 17 00:00:00 2001
+From d44570aa5e9187c47822bb1e2ae6a7dedf397154 Mon Sep 17 00:00:00 2001
 From: Wenjun Wu <wenjun1.wu@intel.com>
 Date: Tue, 28 Dec 2021 15:59:08 +0800
-Subject: [PATCH 6/6] net/iavf: support max burst size configuration
+Subject: [PATCH 6/9] net/iavf: support max burst size configuration
 
 This patch adds support for max burst size configuration for
 TX scheduler. This feature can be tuned on by devargs:

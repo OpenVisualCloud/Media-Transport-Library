@@ -1,6 +1,19 @@
 # Change log
 
-## Change log for next release:
+## Change log for 22.06:
+* User frame mode with uframe_pg_callback for rx video session.
+* Color format SIMD convert API between RFC4175 YUV422 10bit BE and other LE format, see st_convert_api.h.
+* SIMD build and runtime framework.
+* Migration suppport for tx/rx video session if the cpu lcore usage is too busy, see ST_FLAG_TX_VIDEO_MIGRATE/ST_FLAG_RX_VIDEO_MIGRATE.
+* DMA/DSA helper on SIMD convert API to reduce LLC usage for 4K/8K resolution, see st_convert_api.h.
+* Format auto detect for rx video session, see ST20_RX_FLAG_AUTO_DETECT.
+* rx: add payload type check in the hdr sanity inspection.
+* st22: add frame mode support for tx and rx.
+* st22: add pipeline mode support for both tx and rx, see st_pipeline_api.h for the API, tx_st22_pipeline_sample.c/rx_st22_pipeline_sample.c for the sample code.
+* st22: add encode/decode plugin sample code, see jpegxs_plugin_sample.c for the sample and kahawai.json for the plugin so config.
+* app: json config support for st22 pipeline mode.
+* tx/st20: runtime session create/free features, adding runtime ratelimit support.
+* st30: support 125us and 80us in audio pacing
 
 ## Change log for Beta 22.04:
 * Enabled field mode to support 1080i,PAL,NTSC with narrow pacing.

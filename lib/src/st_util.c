@@ -305,3 +305,97 @@ uint16_t st_rf1071_check_sum(uint8_t* p, size_t len, bool convert) {
 
   return check_sum;
 }
+
+struct st_u64_fifo* st_u64_fifo_init(int size, int soc_id) {
+  struct st_u64_fifo* fifo = st_rte_zmalloc_socket(sizeof(*fifo), soc_id);
+  if (!fifo) return NULL;
+  uint64_t* data = st_rte_zmalloc_socket(sizeof(*data) * size, soc_id);
+  if (!data) {
+    st_rte_free(fifo);
+    return NULL;
+  }
+
+  fifo->data = data;
+  fifo->size = size;
+  return fifo;
+}
+
+int st_u64_fifo_uinit(struct st_u64_fifo* fifo) {
+  if (fifo->used > 0) {
+    err("%s, still has %d items\n", __func__, fifo->used);
+    return -EIO;
+  }
+  st_rte_free(fifo->data);
+  st_rte_free(fifo);
+  return 0;
+}
+
+/* todo: add overflow check */
+int st_u64_fifo_put(struct st_u64_fifo* fifo, uint64_t item) {
+  if (fifo->used >= fifo->size) {
+    err("%s, fail as fifo is full(%d)\n", __func__, fifo->size);
+    return -EIO;
+  }
+  fifo->data[fifo->write_idx] = item;
+  fifo->write_idx++;
+  if (fifo->write_idx >= fifo->size) fifo->write_idx = 0;
+  fifo->used++;
+  return 0;
+}
+
+/* todo: add overflow check */
+int st_u64_fifo_get(struct st_u64_fifo* fifo, uint64_t* item) {
+  if (fifo->used <= 0) {
+    err("%s, fail as empty\n", __func__);
+    return -EIO;
+  }
+  *item = fifo->data[fifo->read_idx];
+  fifo->read_idx++;
+  if (fifo->read_idx >= fifo->size) fifo->read_idx = 0;
+  fifo->used--;
+  return 0;
+}
+
+struct st_cvt_dma_ctx* st_cvt_dma_ctx_init(int fifo_size, int soc_id, int type_num) {
+  struct st_cvt_dma_ctx* ctx = st_rte_zmalloc_socket(sizeof(*ctx), soc_id);
+  if (!ctx) return NULL;
+
+  ctx->fifo = st_u64_fifo_init(fifo_size, soc_id);
+  if (!ctx->fifo) goto fail;
+  ctx->tran = st_rte_zmalloc_socket(sizeof(*ctx->tran) * type_num, soc_id);
+  if (!ctx->tran) goto fail;
+  ctx->done = st_rte_zmalloc_socket(sizeof(*ctx->done) * type_num, soc_id);
+  if (!ctx->done) goto fail;
+
+  return ctx;
+
+fail:
+  if (ctx->fifo) st_u64_fifo_uinit(ctx->fifo);
+  if (ctx->tran) st_rte_free(ctx->tran);
+  if (ctx->done) st_rte_free(ctx->done);
+  st_rte_free(ctx);
+  return NULL;
+}
+
+int st_cvt_dma_ctx_uinit(struct st_cvt_dma_ctx* ctx) {
+  st_u64_fifo_uinit(ctx->fifo);
+  st_rte_free(ctx->tran);
+  st_rte_free(ctx->done);
+  st_rte_free(ctx);
+  return 0;
+}
+
+int st_cvt_dma_ctx_push(struct st_cvt_dma_ctx* ctx, int type) {
+  st_u64_fifo_put(ctx->fifo, type);
+  ctx->tran[type]++;
+  dbg("%s, tran %d for type %d\n", __func__, ctx->tran[type], type);
+  return 0;
+}
+
+int st_cvt_dma_ctx_pop(struct st_cvt_dma_ctx* ctx) {
+  uint64_t type = 0;
+  st_u64_fifo_get(ctx->fifo, &type);
+  ctx->done[type]++;
+  dbg("%s, done %d for type %" PRIu64 "\n", __func__, ctx->done[type], type);
+  return 0;
+}

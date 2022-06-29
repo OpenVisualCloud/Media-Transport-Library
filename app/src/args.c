@@ -71,8 +71,11 @@ enum st_args_cmd {
   ST_ARG_NB_RX_DESC,
   ST_ARG_DMA_DEV,
   ST_ARG_RX_SEPARATE_VIDEO_LCORE,
+  ST_ARG_RX_MIX_VIDEO_LCORE,
   ST_ARG_TSC_PACING,
   ST_ARG_PCAPNG_DUMP,
+  ST_ARG_RUNTIME_SESSION,
+  ST_ARG_TTF_FILE,
 
   ST_ARG_MAX,
 };
@@ -131,11 +134,14 @@ static struct option st_app_args_options[] = {
     {"ptp", no_argument, 0, ST_ARG_LIB_PTP},
     {"rx_mono_pool", no_argument, 0, ST_ARG_RX_MONO_POOL},
     {"rx_separate_lcore", no_argument, 0, ST_ARG_RX_SEPARATE_VIDEO_LCORE},
+    {"rx_mix_lcore", no_argument, 0, ST_ARG_RX_MIX_VIDEO_LCORE},
     {"nb_tx_desc", required_argument, 0, ST_ARG_NB_TX_DESC},
     {"nb_rx_desc", required_argument, 0, ST_ARG_NB_RX_DESC},
     {"dma_dev", required_argument, 0, ST_ARG_DMA_DEV},
     {"tsc", no_argument, 0, ST_ARG_TSC_PACING},
     {"pcapng_dump", required_argument, 0, ST_ARG_PCAPNG_DUMP},
+    {"runtime_session", no_argument, 0, ST_ARG_RUNTIME_SESSION},
+    {"ttf_file", required_argument, 0, ST_ARG_TTF_FILE},
 
     {0, 0, 0, 0}};
 
@@ -181,14 +187,14 @@ static int app_args_parse_r_tx_mac(struct st_init_params* p, char* mac_str) {
 
 static int app_args_dma_dev(struct st_init_params* p, char* in_dev) {
   if (!in_dev) return -EIO;
-  char devs[128];
-  strncpy(devs, in_dev, 127);
+  char devs[128] = {0};
+  strncpy(devs, in_dev, 128 - 1);
 
   dbg("%s, dev list %s\n", __func__, devs);
   char* next_dev = strtok(devs, ",");
-  while (next_dev) {
+  while (next_dev && (p->num_dma_dev_port < ST_DMA_DEV_MAX)) {
     dbg("next_dev: %s\n", next_dev);
-    strncpy(p->dma_dev_port[p->num_dma_dev_port], next_dev, ST_PORT_MAX_LEN);
+    strncpy(p->dma_dev_port[p->num_dma_dev_port], next_dev, ST_PORT_MAX_LEN - 1);
     p->num_dma_dev_port++;
     next_dev = strtok(NULL, ",");
   }
@@ -212,9 +218,11 @@ static int app_args_json(struct st_app_context* ctx, struct st_init_params* p,
   ctx->tx_video_session_cnt = ctx->json_ctx->tx_video_session_cnt;
   ctx->tx_audio_session_cnt = ctx->json_ctx->tx_audio_session_cnt;
   ctx->tx_anc_session_cnt = ctx->json_ctx->tx_anc_session_cnt;
+  ctx->tx_st22p_session_cnt = ctx->json_ctx->tx_st22p_session_cnt;
   ctx->rx_video_session_cnt = ctx->json_ctx->rx_video_session_cnt;
   ctx->rx_audio_session_cnt = ctx->json_ctx->rx_audio_session_cnt;
   ctx->rx_anc_session_cnt = ctx->json_ctx->rx_anc_session_cnt;
+  ctx->rx_st22p_session_cnt = ctx->json_ctx->rx_st22p_session_cnt;
   for (int i = 0; i < ctx->json_ctx->num_interfaces; ++i) {
     snprintf(p->port[i], sizeof(p->port[i]), "%s", ctx->json_ctx->interfaces[i].name);
     memcpy(p->sip_addr[i], ctx->json_ctx->interfaces[i].ip_addr, sizeof(p->sip_addr[i]));
@@ -229,6 +237,7 @@ static int app_args_json(struct st_app_context* ctx, struct st_init_params* p,
 int st_app_parse_args(struct st_app_context* ctx, struct st_init_params* p, int argc,
                       char** argv) {
   int cmd = -1, optIdx = 0;
+  int nb;
 
   while (1) {
     cmd = getopt_long_only(argc, argv, "hv", st_app_args_options, &optIdx);
@@ -337,6 +346,9 @@ int st_app_parse_args(struct st_app_context* ctx, struct st_init_params* p, int 
       case ST_ARG_RX_SEPARATE_VIDEO_LCORE:
         p->flags |= ST_FLAG_RX_SEPARATE_VIDEO_LCORE;
         break;
+      case ST_ARG_RX_MIX_VIDEO_LCORE:
+        p->flags &= ~ST_FLAG_RX_SEPARATE_VIDEO_LCORE;
+        break;
       case ST_ARG_TSC_PACING:
         p->flags |= ST_FLAG_TSC_PACING;
         break;
@@ -347,8 +359,10 @@ int st_app_parse_args(struct st_app_context* ctx, struct st_init_params* p, int 
         p->data_quota_mbs_per_sch = atoi(optarg);
         break;
       case ST_ARG_SCH_SESSION_QUOTA: /* unit: 1080p tx */
-        p->data_quota_mbs_per_sch =
-            atoi(optarg) * st20_1080p59_yuv422_10bit_bandwidth_mps();
+        nb = atoi(optarg);
+        if (nb > 0 && nb < 100) {
+          p->data_quota_mbs_per_sch = nb * st20_1080p59_yuv422_10bit_bandwidth_mps();
+        }
         break;
       case ST_ARG_P_TX_DST_MAC:
         app_args_parse_p_tx_mac(p, optarg);
@@ -390,6 +404,12 @@ int st_app_parse_args(struct st_app_context* ctx, struct st_init_params* p, int 
         break;
       case ST_ARG_PCAPNG_DUMP:
         ctx->pcapng_max_pkts = atoi(optarg);
+        break;
+      case ST_ARG_RUNTIME_SESSION:
+        ctx->runtime_session = true;
+        break;
+      case ST_ARG_TTF_FILE:
+        snprintf(ctx->ttf_file, sizeof(ctx->ttf_file), "%s", optarg);
         break;
       case '?':
         break;

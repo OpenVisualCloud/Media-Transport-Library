@@ -1,7 +1,7 @@
-From 61354c16e3331d6d8837b497138c89601a385c58 Mon Sep 17 00:00:00 2001
+From e81dfeb7ba493828b7684853696f41eb1b751277 Mon Sep 17 00:00:00 2001
 From: Frank Du <frank.du@intel.com>
 Date: Thu, 11 Nov 2021 15:34:39 +0800
-Subject: [PATCH 3/6] net/ice: support max burst size configuration
+Subject: [PATCH 3/9] net/ice: support max burst size configuration
 
 This patch adds support for max burst size configuration for
 TX scheduler. This feature can be tuned on by devargs:

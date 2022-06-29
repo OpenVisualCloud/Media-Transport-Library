@@ -26,12 +26,13 @@
 #define ST_RV_EBU_TSC_SYNC_MS (100) /* sync tsc with ptp period(ms) */
 #define ST_RV_EBU_TSC_SYNC_NS (ST_RV_EBU_TSC_SYNC_MS * 1000 * 1000)
 
-int st_rx_video_sessions_mgr_init(struct st_main_impl* impl, struct st_sch_impl* sch,
-                                  struct st_rx_video_sessions_mgr* mgr);
-int st_rx_video_sessions_mgr_uinit(struct st_rx_video_sessions_mgr* mgr);
+int st_rx_video_sessions_sch_init(struct st_main_impl* impl, struct st_sch_impl* sch);
+
+int st_rx_video_sessions_sch_uinit(struct st_main_impl* impl, struct st_sch_impl* sch);
 
 struct st_rx_video_session_impl* st_rx_video_sessions_mgr_attach(
-    struct st_rx_video_sessions_mgr* mgr, struct st20_rx_ops* ops);
+    struct st_rx_video_sessions_mgr* mgr, struct st20_rx_ops* ops,
+    struct st22_rx_ops* st22_ops);
 int st_rx_video_sessions_mgr_detach(struct st_rx_video_sessions_mgr* mgr,
                                     struct st_rx_video_session_impl* s);
 
@@ -47,6 +48,61 @@ int st_rx_video_sessions_mgr_update(struct st_rx_video_sessions_mgr* mgr);
 
 int st_rx_video_session_start_pcapng(struct st_main_impl* impl,
                                      struct st_rx_video_session_impl* s,
-                                     uint32_t max_dump_packets);
+                                     uint32_t max_dump_packets, bool sync,
+                                     struct st_pcap_dump_meta* meta);
+
+/* call rx_video_session_put always if get successfully */
+static inline struct st_rx_video_session_impl* rx_video_session_get(
+    struct st_rx_video_sessions_mgr* mgr, int idx) {
+  rte_spinlock_lock(&mgr->mutex[idx]);
+  struct st_rx_video_session_impl* s = mgr->sessions[idx];
+  if (!s) rte_spinlock_unlock(&mgr->mutex[idx]);
+  return s;
+}
+
+/* call rx_video_session_put always if get successfully */
+static inline struct st_rx_video_session_impl* rx_video_session_try_get(
+    struct st_rx_video_sessions_mgr* mgr, int idx) {
+  if (!rte_spinlock_trylock(&mgr->mutex[idx])) return NULL;
+  struct st_rx_video_session_impl* s = mgr->sessions[idx];
+  if (!s) rte_spinlock_unlock(&mgr->mutex[idx]);
+  return s;
+}
+
+/* call rx_video_session_put always if get successfully */
+static inline bool rx_video_session_get_empty(struct st_rx_video_sessions_mgr* mgr,
+                                              int idx) {
+  rte_spinlock_lock(&mgr->mutex[idx]);
+  struct st_rx_video_session_impl* s = mgr->sessions[idx];
+  if (s) {
+    rte_spinlock_unlock(&mgr->mutex[idx]); /* not null, unlock it */
+    return false;
+  } else {
+    return true;
+  }
+}
+
+static inline void rx_video_session_put(struct st_rx_video_sessions_mgr* mgr, int idx) {
+  rte_spinlock_unlock(&mgr->mutex[idx]);
+}
+
+void rx_video_session_cal_cpu_busy(struct st_rx_video_session_impl* s);
+void rx_video_session_clear_cpu_busy(struct st_rx_video_session_impl* s);
+
+static inline bool rx_video_session_is_cpu_busy(struct st_rx_video_session_impl* s) {
+  if (s->dma_dev && (s->dma_busy_score > 90)) return true;
+
+  if (s->cpu_busy_score > 95.0) return true;
+
+  return false;
+}
+
+static inline float rx_video_session_get_cpu_busy(struct st_rx_video_session_impl* s) {
+  return s->cpu_busy_score;
+}
+
+int st_rx_video_session_migrate(struct st_main_impl* impl,
+                                struct st_rx_video_sessions_mgr* mgr,
+                                struct st_rx_video_session_impl* s, int idx);
 
 #endif

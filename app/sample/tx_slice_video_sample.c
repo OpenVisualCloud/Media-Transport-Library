@@ -23,117 +23,164 @@
 #include <string.h>
 #include <unistd.h>
 
-#define TX_VIDEO_PORT_BDF "0000:4b:00.0"
-#define TX_VIDEO_FB_CNT (3)
-#define TX_VIDEO_UDP_PORT (20000)
+#include "../src/app_platform.h"
+
+#define TX_VIDEO_PORT_BDF "0000:af:00.1"
+#define TX_VIDEO_UDP_PORT (10000)
 #define TX_VIDEO_PAYLOAD_TYPE (112)
+
 /* local ip address for current bdf port */
-static uint8_t g_tx_video_local_ip[ST_IP_ADDR_LEN] = {192, 168, 1, 1};
+static uint8_t g_tx_video_local_ip[ST_IP_ADDR_LEN] = {192, 168, 0, 2};
 /* dst ip address for tx video session */
-static uint8_t g_tx_video_dst_ip[ST_IP_ADDR_LEN] = {239, 0, 1, 1};
+static uint8_t g_tx_video_dst_ip[ST_IP_ADDR_LEN] = {239, 168, 0, 1};
 
 struct app_context {
   int idx;
-  int16_t framebuff_idx;
-  uint8_t ready_framebuff[TX_VIDEO_FB_CNT];
-  uint8_t free_framebuff[TX_VIDEO_FB_CNT];
   int fb_send;
   void* handle;
+
   bool stop;
-  int frame_size;
   pthread_t app_thread;
   pthread_cond_t wake_cond;
   pthread_mutex_t wake_mutex;
-  uint16_t lines_per_slice;
-  uint16_t lines_ready[TX_VIDEO_FB_CNT];
+
+  int framebuff_size;
+  uint16_t framebuff_cnt;
+  uint16_t framebuff_producer_idx;
+  uint16_t framebuff_consumer_idx;
+  struct st_tx_frame* framebuffs;
+
+  int lines_per_slice;
+  int height;
 };
 
-static int notify_frame_done(void* priv, uint16_t frame_idx) {
-  struct app_context* s = (struct app_context*)priv;
-  pthread_mutex_lock(&s->wake_mutex);
-  s->free_framebuff[frame_idx] = 1;
-  pthread_cond_signal(&s->wake_cond);
-  pthread_mutex_unlock(&s->wake_mutex);
-  s->fb_send++;
-  // printf("send frame %d..........\n", s->fb_send);
-  return 0;
-}
+static int tx_video_next_frame(void* priv, uint16_t* next_frame_idx, bool* second_field) {
+  struct app_context* s = priv;
+  int ret;
+  uint16_t consumer_idx = s->framebuff_consumer_idx;
+  struct st_tx_frame* framebuff = &s->framebuffs[consumer_idx];
 
-static int tx_next_frame(void* priv, uint16_t* next_frame_idx, bool* second_field) {
-  struct app_context* s = (struct app_context*)priv;
-  int i;
-  pthread_mutex_lock(&s->wake_mutex);
-  for (i = 0; i < TX_VIDEO_FB_CNT; i++) {
-    if (s->ready_framebuff[i] == 1) {
-      s->framebuff_idx = i;
-      s->ready_framebuff[i] = 0;
-      break;
-    }
+  st_pthread_mutex_lock(&s->wake_mutex);
+  if (ST_TX_FRAME_READY == framebuff->stat) {
+    // printf("%s(%d), next frame idx %u\n", __func__, s->idx, consumer_idx);
+    ret = 0;
+    framebuff->stat = ST_TX_FRAME_IN_TRANSMITTING;
+    *next_frame_idx = consumer_idx;
+    *second_field = false;
+    /* point to next */
+    consumer_idx++;
+    if (consumer_idx >= s->framebuff_cnt) consumer_idx = 0;
+    s->framebuff_consumer_idx = consumer_idx;
+  } else {
+    /* not ready */
+    ret = -EIO;
   }
-  pthread_cond_signal(&s->wake_cond);
-  pthread_mutex_unlock(&s->wake_mutex);
-  if (i == TX_VIDEO_FB_CNT) {
-    printf("no ready framebuff\n");
-    return -1;
+  st_pthread_cond_signal(&s->wake_cond);
+  st_pthread_mutex_unlock(&s->wake_mutex);
+
+  return ret;
+}
+
+static int tx_video_frame_done(void* priv, uint16_t frame_idx) {
+  struct app_context* s = priv;
+  int ret;
+  struct st_tx_frame* framebuff = &s->framebuffs[frame_idx];
+
+  st_pthread_mutex_lock(&s->wake_mutex);
+  if (ST_TX_FRAME_IN_TRANSMITTING == framebuff->stat) {
+    ret = 0;
+    framebuff->stat = ST_TX_FRAME_FREE;
+    // printf("%s(%d), done_idx %u\n", __func__, s->idx, frame_idx);
+    s->fb_send++;
+  } else {
+    ret = -EIO;
+    printf("%s(%d), err status %d for frame %u\n", __func__, s->idx, framebuff->stat,
+           frame_idx);
   }
-  *next_frame_idx = s->framebuff_idx;
-  *second_field = false;
+  st_pthread_cond_signal(&s->wake_cond);
+  st_pthread_mutex_unlock(&s->wake_mutex);
+
+  return ret;
+}
+
+static int tx_video_frame_lines_ready(void* priv, uint16_t frame_idx,
+                                      uint16_t* lines_ready) {
+  struct app_context* s = priv;
+  struct st_tx_frame* framebuff = &s->framebuffs[frame_idx];
+
+  st_pthread_mutex_lock(&s->wake_mutex);
+  framebuff->slice_trigger = true;
+  *lines_ready = framebuff->lines_ready;
+  // printf("%s(%d), frame %u ready %d lines\n", __func__, s->idx, frame_idx,
+  // framebuff->lines_ready);
+  st_pthread_mutex_unlock(&s->wake_mutex);
+
   return 0;
 }
 
-static int tx_frame_lines_ready(void* priv, uint16_t frame_idx, uint16_t* lines_ready) {
-  struct app_context* s = (struct app_context*)priv;
+static void tx_video_build_slice(struct app_context* s, struct st_tx_frame* framebuff,
+                                 void* frame_addr) {
+  int lines_build = 0;
+  int slices = (s->height / s->lines_per_slice) + 1;
 
-  pthread_mutex_lock(&s->wake_mutex);
-  *lines_ready = s->lines_ready[frame_idx];
-  pthread_mutex_unlock(&s->wake_mutex);
+  /* simulate the timing */
+  while (!framebuff->slice_trigger) {
+    usleep(1);
+  }
+  lines_build += s->lines_per_slice;
+  st_pthread_mutex_lock(&s->wake_mutex);
+  framebuff->lines_ready = lines_build;
+  st_pthread_mutex_unlock(&s->wake_mutex);
 
-  return 0;
+  while (lines_build < s->height) {
+    /* call the real build here, sample just sleep */
+    usleep(10 * 1000 / slices);
+
+    st_pthread_mutex_lock(&s->wake_mutex);
+    lines_build += s->lines_per_slice;
+    if (lines_build > s->height) lines_build = s->height;
+    framebuff->lines_ready = lines_build;
+    st_pthread_mutex_unlock(&s->wake_mutex);
+  }
 }
 
-static void* app_tx_video_frame_thread(void* arg) {
+static void* tx_video_slice_thread(void* arg) {
   struct app_context* s = arg;
-  uint16_t i;
+  uint16_t producer_idx;
+  uint16_t consumer_idx;
+  struct st_tx_frame* framebuff;
+
+  printf("%s(%d), start\n", __func__, s->idx);
   while (!s->stop) {
-    pthread_mutex_lock(&s->wake_mutex);
-    // guarantee the sequence, let ready buf to be exhausted
-    bool has_ready = false;
-    for (i = 0; i < TX_VIDEO_FB_CNT; i++) {
-      if (s->ready_framebuff[i] == 1) {
-        has_ready = true;
-        break;
-      }
-    }
-    if (has_ready) {
-      if (!s->stop) pthread_cond_wait(&s->wake_cond, &s->wake_mutex);
-      pthread_mutex_unlock(&s->wake_mutex);
+    st_pthread_mutex_lock(&s->wake_mutex);
+    producer_idx = s->framebuff_producer_idx;
+    consumer_idx = s->framebuff_consumer_idx;
+    framebuff = &s->framebuffs[producer_idx];
+    /* limit the producer to simulate the slice timing */
+    if ((producer_idx != consumer_idx) || (ST_TX_FRAME_FREE != framebuff->stat)) {
+      /* not in free */
+      if (!s->stop) st_pthread_cond_wait(&s->wake_cond, &s->wake_mutex);
+      st_pthread_mutex_unlock(&s->wake_mutex);
       continue;
     }
 
-    for (i = 0; i < TX_VIDEO_FB_CNT; i++) {
-      if (s->free_framebuff[i] == 1) {
-        s->free_framebuff[i] = 0;
-        break;
-      }
-    }
-    if (i == TX_VIDEO_FB_CNT) {
-      if (!s->stop) pthread_cond_wait(&s->wake_cond, &s->wake_mutex);
-      pthread_mutex_unlock(&s->wake_mutex);
-      continue;
-    }
-    s->ready_framebuff[i] = 1;
-    s->lines_ready[i] = 0;
-    pthread_mutex_unlock(&s->wake_mutex);
-    uint8_t* dst = st20_tx_get_framebuffer(s->handle, i);
-    // feed the data, memset 0 as example
-    int slice_size = s->frame_size / 30;
-    for (int slice_idx = 0; slice_idx < 30; slice_idx++) {
-      memset(dst + slice_idx * slice_size, 0, slice_size);
-      pthread_mutex_lock(&s->wake_mutex);
-      s->lines_ready[i] += s->lines_per_slice;
-      pthread_mutex_unlock(&s->wake_mutex);
-    }
+    // printf("%s(%d), producer_idx %d consumer_idx %d\n", __func__, s->idx, producer_idx,
+    // consumer_idx);
+    void* frame_addr = st20_tx_get_framebuffer(s->handle, producer_idx);
+
+    framebuff->size = s->framebuff_size;
+    framebuff->lines_ready = 0;
+    framebuff->slice_trigger = false;
+    framebuff->stat = ST_TX_FRAME_READY;
+    /* point to next */
+    producer_idx++;
+    if (producer_idx >= s->framebuff_cnt) producer_idx = 0;
+    s->framebuff_producer_idx = producer_idx;
+    st_pthread_mutex_unlock(&s->wake_mutex);
+
+    tx_video_build_slice(s, framebuff, frame_addr);
   }
+  printf("%s(%d), stop\n", __func__, s->idx);
 
   return NULL;
 }
@@ -141,6 +188,7 @@ static void* app_tx_video_frame_thread(void* arg) {
 int main() {
   struct st_init_params param;
   int session_num = 1;
+  int fb_cnt = 3;
 
   memset(&param, 0, sizeof(param));
   param.num_ports = 1;
@@ -175,6 +223,19 @@ int main() {
     }
     memset(app[i], 0, sizeof(struct app_context));
     app[i]->idx = i;
+    app[i]->framebuff_cnt = fb_cnt;
+    app[i]->framebuffs =
+        (struct st_tx_frame*)malloc(sizeof(*app[i]->framebuffs) * app[i]->framebuff_cnt);
+    if (!app[i]->framebuffs) {
+      printf("%s, framebuffs malloc fail\n", __func__);
+      free(app[i]);
+      return -1;
+    }
+    for (uint16_t j = 0; j < app[i]->framebuff_cnt; j++) {
+      app[i]->framebuffs[j].stat = ST_TX_FRAME_FREE;
+      app[i]->framebuffs[j].lines_ready = 0;
+    }
+
     struct st20_tx_ops ops_tx;
     memset(&ops_tx, 0, sizeof(ops_tx));
     ops_tx.name = "st20_tx";
@@ -186,41 +247,41 @@ int main() {
     strncpy(ops_tx.port[ST_PORT_P], TX_VIDEO_PORT_BDF, ST_PORT_MAX_LEN);
     ops_tx.udp_port[ST_PORT_P] = TX_VIDEO_UDP_PORT + i;  // udp port
     ops_tx.pacing = ST21_PACING_NARROW;
-    ops_tx.type = ST20_TYPE_FRAME_LEVEL;
+    ops_tx.type = ST20_TYPE_SLICE_LEVEL;
     ops_tx.width = 1920;
     ops_tx.height = 1080;
     ops_tx.fps = ST_FPS_P59_94;
     ops_tx.fmt = ST20_FMT_YUV_422_10BIT;
     ops_tx.payload_type = TX_VIDEO_PAYLOAD_TYPE;
-    ops_tx.framebuff_cnt = TX_VIDEO_FB_CNT;
+    ops_tx.framebuff_cnt = fb_cnt;
     // app regist non-block func, app could get a frame to send to lib
-    ops_tx.get_next_frame = tx_next_frame;
+    ops_tx.get_next_frame = tx_video_next_frame;
     // app regist non-block func, app could get the frame tx done
-    ops_tx.notify_frame_done = notify_frame_done;
-    ops_tx.query_frame_lines_ready = tx_frame_lines_ready;
+    ops_tx.notify_frame_done = tx_video_frame_done;
+    ops_tx.query_frame_lines_ready = tx_video_frame_lines_ready;
     tx_handle[i] = st20_tx_create(dev_handle, &ops_tx);
     if (!tx_handle[i]) {
       printf("tx_session is not correctly created\n");
+      free(app[i]->framebuffs);
       free(app[i]);
       return -EIO;
     }
     app[i]->handle = tx_handle[i];
     app[i]->stop = false;
-    memset(app[i]->ready_framebuff, 0, sizeof(app[i]->ready_framebuff));
-    memset(app[i]->free_framebuff, 1, sizeof(app[i]->free_framebuff));
-    struct st20_pgroup st20_pg;
-    ret = st20_get_pgroup(ops_tx.fmt, &st20_pg);
-    app[i]->frame_size = ops_tx.width * ops_tx.height * st20_pg.size / st20_pg.coverage;
-    app[i]->lines_per_slice = ops_tx.height / 30;
-    pthread_mutex_init(&app[i]->wake_mutex, NULL);
-    pthread_cond_init(&app[i]->wake_cond, NULL);
-    ret = pthread_create(&app[i]->app_thread, NULL, app_tx_video_frame_thread, app[i]);
+
+    app[i]->framebuff_size = st20_tx_get_framebuffer_size(tx_handle[i]);
+    app[i]->height = ops_tx.height;
+    app[i]->lines_per_slice = app[i]->height / 30;
+    st_pthread_mutex_init(&app[i]->wake_mutex, NULL);
+    st_pthread_cond_init(&app[i]->wake_cond, NULL);
+    ret = pthread_create(&app[i]->app_thread, NULL, tx_video_slice_thread, app[i]);
     if (ret < 0) {
       printf("%s(%d), app_thread create fail %d\n", __func__, ret, i);
       ret = st20_tx_free(tx_handle[i]);
       if (ret) {
         printf("session free failed\n");
       }
+      free(app[i]->framebuffs);
       free(app[i]);
       return -EIO;
     }
@@ -234,9 +295,9 @@ int main() {
   // stop app thread
   for (int i = 0; i < session_num; i++) {
     app[i]->stop = true;
-    pthread_mutex_lock(&app[i]->wake_mutex);
-    pthread_cond_signal(&app[i]->wake_cond);
-    pthread_mutex_unlock(&app[i]->wake_mutex);
+    st_pthread_mutex_lock(&app[i]->wake_mutex);
+    st_pthread_cond_signal(&app[i]->wake_cond);
+    st_pthread_mutex_unlock(&app[i]->wake_mutex);
     pthread_join(app[i]->app_thread, NULL);
   }
 
@@ -249,9 +310,10 @@ int main() {
     if (ret) {
       printf("session free failed\n");
     }
-    pthread_mutex_destroy(&app[i]->wake_mutex);
-    pthread_cond_destroy(&app[i]->wake_cond);
+    st_pthread_mutex_destroy(&app[i]->wake_mutex);
+    st_pthread_cond_destroy(&app[i]->wake_cond);
 
+    free(app[i]->framebuffs);
     free(app[i]);
   }
 

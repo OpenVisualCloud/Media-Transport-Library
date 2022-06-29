@@ -47,13 +47,37 @@
   do {                                 \
     RTE_LOG(WARNING, ST, __VA_ARGS__); \
   } while (0)
+#define warn_once(...)                   \
+  do {                                   \
+    static bool once = true;             \
+    if (once) {                          \
+      RTE_LOG(WARNING, ST, __VA_ARGS__); \
+      once = false;                      \
+    }                                    \
+  } while (0)
 #define err(...)                   \
   do {                             \
     RTE_LOG(ERR, ST, __VA_ARGS__); \
   } while (0)
+#define err_once(...)                \
+  do {                               \
+    static bool once = true;         \
+    if (once) {                      \
+      RTE_LOG(ERR, ST, __VA_ARGS__); \
+      once = false;                  \
+    }                                \
+  } while (0)
 #define critical(...)               \
   do {                              \
     RTE_LOG(CRIT, ST, __VA_ARGS__); \
+  } while (0)
+#define critical_once(...)            \
+  do {                                \
+    static bool once = true;          \
+    if (once) {                       \
+      RTE_LOG(CRIT, ST, __VA_ARGS__); \
+      once = false;                   \
+    }                                 \
   } while (0)
 
 #endif

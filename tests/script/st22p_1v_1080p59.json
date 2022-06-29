@@ -1,0 +1,66 @@
+{
+    "interfaces": [
+        {
+            "name": "0000:af:00.0",
+            "ip": "192.168.17.101"
+        },
+        {
+            "name": "0000:af:00.1",
+            "ip": "192.168.17.102"
+        }
+    ],
+    "tx_sessions": [
+        {
+            "dip": [
+                "192.168.17.102"
+            ],
+            "interface": [
+                0
+            ],
+            "st22p": [
+                {
+                    "replicas": 1,
+                    "start_port": 50000,
+                    "payload_type": 114,
+                    "width": 1920,
+                    "height": 1080,
+                    "fps": "p59",
+                    "codec": "JPEG-XS",
+                    "device": "AUTO",
+                    "quality": "speed",
+                    "pack_type": "codestream",
+                    "input_format": "YUV422RFC4175PG2BE10",
+                    "codec_thread_count" : 2,
+                    "st22p_url": "./test.yuv"
+                }
+            ]
+        }
+    ],
+    "rx_sessions": [
+        {
+            "ip": [
+                "192.168.17.101"
+            ],
+            "interface": [
+                1
+            ],
+            "st22p": [
+                {
+                    "replicas": 1,
+                    "start_port": 50000,
+                    "payload_type": 114,
+                    "width": 1920,
+                    "height": 1080,
+                    "fps": "p59",
+                    "codec": "JPEG-XS",
+                    "device": "AUTO",
+                    "pack_type": "codestream",
+                    "output_format": "YUV422RFC4175PG2BE10",
+                    "codec_thread_count" : 2,
+                    "display": false,
+                    "measure_latency": true,
+                }
+            ]
+        }
+    ]
+}

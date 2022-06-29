@@ -114,7 +114,7 @@ static int dma_drop_mbuf(struct st_dma_dev* dma_dev, uint16_t nb_mbuf) {
 #if ST_DMA_RTE_RING
     int ret = rte_ring_sc_dequeue(dma_dev->borrow_queue, (void**)&mbuf);
     if (ret < 0) {
-      err("%s, no item to dequeue\n", __func__);
+      err("%s(%d), no item to dequeue\n", __func__, dma_dev->idx);
       break;
     }
 #else
@@ -292,7 +292,7 @@ struct st_dma_lender_dev* st_dma_request_dev(struct st_main_impl* impl,
   uint16_t nb_desc = req->nb_desc;
   if (!nb_desc) nb_desc = 128;
 
-  pthread_mutex_lock(&mgr->mutex);
+  st_pthread_mutex_lock(&mgr->mutex);
   /* first try to find a shared dma */
   for (idx = 0; idx < ST_DMA_DEV_MAX; idx++) {
     dev = &mgr->devs[idx];
@@ -306,7 +306,7 @@ struct st_dma_lender_dev* st_dma_request_dev(struct st_main_impl* impl,
           lender_dev->priv = req->priv;
           lender_dev->cb = req->drop_mbuf_cb;
           dev->nb_session++;
-          pthread_mutex_unlock(&mgr->mutex);
+          st_pthread_mutex_unlock(&mgr->mutex);
           info("%s(%d), shared dma with id %u\n", __func__, idx, render);
           return lender_dev;
         }
@@ -335,13 +335,13 @@ struct st_dma_lender_dev* st_dma_request_dev(struct st_main_impl* impl,
       dev->nb_session++;
       dev->active = true;
       rte_atomic32_inc(&mgr->num_dma_dev_active);
-      pthread_mutex_unlock(&mgr->mutex);
+      st_pthread_mutex_unlock(&mgr->mutex);
       info("%s(%d), dma created with max share %u nb_desc %u\n", __func__, idx,
            dev->max_shared, dev->nb_desc);
       return lender_dev;
     }
   }
-  pthread_mutex_unlock(&mgr->mutex);
+  st_pthread_mutex_unlock(&mgr->mutex);
 
   err("%s, fail to find free dev\n", __func__);
   return NULL;
@@ -439,7 +439,7 @@ int st_dma_init(struct st_main_impl* impl) {
   bool test = false;
   struct st_dma_lender_dev* lender_dev;
 
-  pthread_mutex_init(&mgr->mutex, NULL);
+  st_pthread_mutex_init(&mgr->mutex, NULL);
 
   /* init idx */
   for (idx = 0; idx < ST_DMA_DEV_MAX; idx++) {

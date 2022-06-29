@@ -1,44 +1,68 @@
-From ba8a9c718e344b7312c2333a72f4bad717531ebd Mon Sep 17 00:00:00 2001
+From ea9fe7b16a2a640e5061e0b81a5026eddb9982c3 Mon Sep 17 00:00:00 2001
 From: qiaoliu <qiao.liu@intel.com>
 Date: Wed, 22 Dec 2021 15:37:00 +0800
-Subject: [PATCH 2/7] Change list remove and add position to avoid race
+Subject: [PATCH 2/8] Change list remove and add position to avoid race
  condition
 
 ---
- lib/eal/windows/eal_alarm.c | 11 ++++++++---
- 1 file changed, 8 insertions(+), 3 deletions(-)
+ lib/eal/windows/eal_alarm.c | 21 +++++++++++++++------
+ 1 file changed, 15 insertions(+), 6 deletions(-)
 
 diff --git a/lib/eal/windows/eal_alarm.c b/lib/eal/windows/eal_alarm.c
-index 103c1f909d..0b1ab14cae 100644
+index 103c1f909d..1c3f8c45ad 100644
 --- a/lib/eal/windows/eal_alarm.c
 +++ b/lib/eal/windows/eal_alarm.c
-@@ -64,9 +64,17 @@ alarm_set(struct alarm_entry *entry, LARGE_INTEGER deadline)
- 	BOOL ret = SetWaitableTimer(
- 		entry->timer, &deadline, 0, alarm_callback, entry, FALSE);
- 	if (!ret) {
-+		if (entry->timer != NULL)
-+		    CloseHandle(entry->timer);
-+	    if (entry != NULL)
-+		    free(entry);
- 		RTE_LOG_WIN32_ERR("SetWaitableTimer");
- 		return -1;
- 	}
-+
-+	rte_spinlock_lock(&alarm_lock);
-+	LIST_INSERT_HEAD(&alarm_list, entry, next);
-+	rte_spinlock_unlock(&alarm_lock);	
- 	return 0;
- }
- 
-@@ -153,9 +161,6 @@ rte_eal_alarm_set(uint64_t us, rte_eal_alarm_callback cb_fn, void *cb_arg)
+@@ -152,7 +152,7 @@ rte_eal_alarm_set(uint64_t us, rte_eal_alarm_callback cb_fn, void *cb_arg)
+ 		if (ret < 0)
  			goto fail;
  	}
+-
++	
+ 	rte_spinlock_lock(&alarm_lock);
+ 	LIST_INSERT_HEAD(&alarm_list, ap, next);
+ 	rte_spinlock_unlock(&alarm_lock);
+@@ -181,7 +181,7 @@ alarm_matches(const struct alarm_entry *ap,
+ int
+ rte_eal_alarm_cancel(rte_eal_alarm_callback cb_fn, void *cb_arg)
+ {
+-	struct alarm_entry *ap;
++	struct alarm_entry *ap,*ap_prev,*ap_next;
+ 	unsigned int state;
+ 	int removed;
+ 	bool executing;
+@@ -197,20 +197,29 @@ rte_eal_alarm_cancel(rte_eal_alarm_callback cb_fn, void *cb_arg)
+ 		executing = false;
  
--	rte_spinlock_lock(&alarm_lock);
--	LIST_INSERT_HEAD(&alarm_list, ap, next);
--	rte_spinlock_unlock(&alarm_lock);
+ 		rte_spinlock_lock(&alarm_lock);
+-
++		
++    ap = NULL;
++    ap_prev = ap;
+ 		LIST_FOREACH(ap, &alarm_list, next) {
+-			if (!alarm_matches(ap, cb_fn, cb_arg))
++			if (!alarm_matches(ap, cb_fn, cb_arg)){
++				ap_prev = ap;
+ 				continue;
++			}
  
- 	goto exit;
+ 			state = ALARM_ARMED;
+ 			if (atomic_compare_exchange_strong(
+ 					&ap->state, &state, ALARM_CANCELLED)) {
++				ap_next = LIST_NEXT((ap), next);
+ 				alarm_remove_unsafe(ap);
++				if( ap_prev ) ap = ap_prev;
++				else ap = ap_next;
+ 				removed++;
+-			} else if (state == ALARM_TRIGGERED)
++				if(ap == NULL) break;
++			} else if (state == ALARM_TRIGGERED){
+ 				executing = true;
++				ap_prev = ap;
++			}
+ 		}
+-
+ 		rte_spinlock_unlock(&alarm_lock);
+ 	} while (executing);
  
 -- 
 2.17.1

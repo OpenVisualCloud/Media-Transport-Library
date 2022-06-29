@@ -86,4 +86,35 @@ int st_mempool_free(struct rte_mempool* mp);
 
 uint16_t st_rf1071_check_sum(uint8_t* p, size_t len, bool convert);
 
+struct st_u64_fifo {
+  uint64_t* data;
+  int write_idx;
+  int read_idx;
+  int size;
+  int used;
+};
+
+struct st_u64_fifo* st_u64_fifo_init(int size, int soc_id);
+int st_u64_fifo_uinit(struct st_u64_fifo* fifo);
+int st_u64_fifo_put(struct st_u64_fifo* fifo, uint64_t item);
+int st_u64_fifo_get(struct st_u64_fifo* fifo, uint64_t* item);
+
+struct st_cvt_dma_ctx {
+  struct st_u64_fifo* fifo;
+  int* tran;
+  int* done;
+};
+
+struct st_cvt_dma_ctx* st_cvt_dma_ctx_init(int fifo_size, int soc_id, int type_num);
+int st_cvt_dma_ctx_uinit(struct st_cvt_dma_ctx* ctx);
+int st_cvt_dma_ctx_push(struct st_cvt_dma_ctx* ctx, int type);
+int st_cvt_dma_ctx_pop(struct st_cvt_dma_ctx* ctx);
+static inline int st_cvt_dma_ctx_get_done(struct st_cvt_dma_ctx* ctx, int type) {
+  return ctx->done[type];
+}
+
+static inline int st_cvt_dma_ctx_get_tran(struct st_cvt_dma_ctx* ctx, int type) {
+  return ctx->tran[type];
+}
+
 #endif

@@ -1,1 +1,2 @@
 option('enable_kni', type: 'boolean', value: false, description: 'enable/disable KNI')
+option('dpdk_root_dir', type: 'string', value: 'c:\dpdk', description: 'dpdk source code root dir')

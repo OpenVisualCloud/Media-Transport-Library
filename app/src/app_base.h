@@ -15,6 +15,9 @@
  */
 
 #include <SDL2/SDL.h>
+#ifdef APP_HAS_SDL2_TTF
+#include <SDL2/SDL_ttf.h>
+#endif
 #include <errno.h>
 #include <pcap.h>
 #include <pthread.h>
@@ -57,16 +60,25 @@ struct st_display {
   SDL_Renderer* renderer;
   SDL_Texture* texture;
   SDL_PixelFormatEnum fmt;
+#ifdef APP_HAS_SDL2_TTF
+  TTF_Font* font;
+#endif
+  SDL_Rect msg_rect;
   int window_w;
   int window_h;
   int pixel_w;
   int pixel_h;
-  uint8_t* source_frame;
+  void* front_frame;
+  int front_frame_size;
+  uint32_t last_time;
+  uint32_t frame_cnt;
+  double fps;
 
-  pthread_t st_display_thread;
-  bool st_display_thread_stop;
-  pthread_cond_t st_display_wake_cond;
-  pthread_mutex_t st_display_wake_mutex;
+  pthread_t display_thread;
+  bool display_thread_stop;
+  pthread_cond_t display_wake_cond;
+  pthread_mutex_t display_wake_mutex;
+  pthread_mutex_t display_frame_mutex;
 };
 
 struct st_app_frameinfo {
@@ -80,19 +92,23 @@ struct st_app_tx_video_session {
   st_handle st;
   st20_tx_handle handle;
   int handle_sch_idx;
-  uint16_t framebuff_cnt;
 
-  uint16_t st20_framebuff_idx; /* index for current fb */
-  int* st20_free_framebuff;
-  struct st_app_frameinfo* st20_ready_framebuff;
-  char st20_source_url[ST_APP_URL_MAX_LEN];
+  struct st_app_context* ctx;
+
+  uint16_t framebuff_cnt;
+  uint16_t framebuff_producer_idx;
+  uint16_t framebuff_consumer_idx;
+  struct st_tx_frame* framebuffs;
 
   pcap_t* st20_pcap;
   bool st20_pcap_input;
+
+  char st20_source_url[ST_APP_URL_MAX_LEN];
   uint8_t* st20_source_begin;
   uint8_t* st20_source_end;
   uint8_t* st20_frame_cursor;
   int st20_source_fd;
+
   int st20_frame_size;
   bool st20_second_field;
   struct st20_pgroup st20_pg;
@@ -116,6 +132,7 @@ struct st_app_tx_video_session {
   int st20_pkt_idx;     /* pkt index in current frame */
   uint32_t st20_seq_id; /* seq id in current frame */
   uint32_t st20_rtp_tmstamp;
+  uint8_t payload_type;
 
   double expect_fps;
   uint64_t stat_frame_frist_tx_time;
@@ -136,13 +153,14 @@ struct st_app_tx_audio_session {
   st30_tx_handle handle;
 
   uint16_t framebuff_cnt;
-  uint16_t st30_framebuff_idx; /* index for current fb */
-  int* st30_free_framebuff;
-  int* st30_ready_framebuff;
+  uint16_t framebuff_producer_idx;
+  uint16_t framebuff_consumer_idx;
+  struct st_tx_frame* framebuffs;
+
   int st30_frame_done_cnt;
   int st30_packet_done_cnt;
 
-  char st30_source_url[ST_APP_URL_MAX_LEN];
+  char st30_source_url[ST_APP_URL_MAX_LEN + 1];
   int st30_source_fd;
   pcap_t* st30_pcap;
   bool st30_pcap_input;
@@ -165,13 +183,15 @@ struct st_app_tx_anc_session {
   st40_tx_handle handle;
 
   uint16_t framebuff_cnt;
-  uint16_t st40_framebuff_idx; /* index for current fb */
-  int* st40_free_framebuff;
-  int* st40_ready_framebuff;
+
+  uint16_t framebuff_producer_idx;
+  uint16_t framebuff_consumer_idx;
+  struct st_tx_frame* framebuffs;
+
   uint32_t st40_frame_done_cnt;
   uint32_t st40_packet_done_cnt;
 
-  char st40_source_url[ST_APP_URL_MAX_LEN];
+  char st40_source_url[ST_APP_URL_MAX_LEN + 1];
   int st40_source_fd;
   pcap_t* st40_pcap;
   bool st40_pcap_input;
@@ -189,9 +209,11 @@ struct st_app_tx_anc_session {
 
 struct st_app_rx_video_session {
   int idx;
+  st_handle st;
   st20_rx_handle handle;
   int framebuff_cnt;
   int st20_frame_size;
+  bool slice;
 
   char st20_dst_url[ST_APP_URL_MAX_LEN];
   int st20_dst_fb_cnt; /* the count of recevied fbs will be saved to file */
@@ -201,10 +223,9 @@ struct st_app_rx_video_session {
   uint8_t* st20_dst_cursor;
 
   /* frame info */
-  void** st20_frames_dst_queue; /* list to received frame buffers */
-  int st20_dst_q_size;
-  int st20_dst_qp_idx; /* producer index */
-  int st20_dst_qc_idx; /* consumer index */
+  uint16_t framebuff_producer_idx;
+  uint16_t framebuff_consumer_idx;
+  struct st_rx_frame* framebuffs;
 
   /* rtp info */
   uint32_t st20_last_tmstamp;
@@ -227,6 +248,9 @@ struct st_app_rx_video_session {
 
   struct st_display* display;
   uint32_t pcapng_max_pkts;
+
+  bool measure_latency;
+  uint64_t stat_latency_us_sum;
 };
 
 struct st_app_rx_audio_session {
@@ -236,7 +260,7 @@ struct st_app_rx_audio_session {
   int st30_frame_size;
   int pkt_len;
 
-  char st30_ref_url[ST_APP_URL_MAX_LEN];
+  char st30_ref_url[ST_APP_URL_MAX_LEN + 1];
   int st30_ref_fd;
   uint8_t* st30_ref_begin;
   uint8_t* st30_ref_end;
@@ -269,15 +293,26 @@ struct st_app_rx_anc_session {
 struct st22_app_tx_session {
   int idx;
   st22_tx_handle handle;
-  int rtp_frame_total_pkts;
-  int rtp_pkt_size; /* pkt size include both rtp and payload */
-  int rtp_pd_size;  /* payload size for each pkt */
+
   int width;
   int height;
-  int st22_frame_size;
+  enum st22_type type;
+  int bpp;
+  size_t bytes_per_frame;
 
-  pthread_cond_t st22_wake_cond;
-  pthread_mutex_t st22_wake_mutex;
+  struct st_app_context* ctx;
+  st_handle st;
+  int lcore;
+  int handle_sch_idx;
+
+  uint16_t framebuff_cnt;
+  uint16_t framebuff_producer_idx;
+  uint16_t framebuff_consumer_idx;
+  struct st_tx_frame* framebuffs;
+
+  pthread_cond_t wake_cond;
+  pthread_mutex_t wake_mutex;
+
   bool st22_app_thread_stop;
   pthread_t st22_app_thread;
   char st22_source_url[ST_APP_URL_MAX_LEN];
@@ -286,30 +321,28 @@ struct st22_app_tx_session {
   uint8_t* st22_source_end;
   uint8_t* st22_frame_cursor;
 
-  int st22_pkt_idx;          /* pkt index in current frame */
-  uint16_t st22_seq_id;      /* seq id in current session */
-  uint32_t st22_rtp_tmstamp; /* tmstamp for current frame */
-  int st22_frame_idx;
-  struct st_rfc3550_rtp_hdr st22_rtp_base;
+  int fb_send;
 };
 
 struct st22_app_rx_session {
   int idx;
   st22_rx_handle handle;
-  int rtp_frame_total_pkts;
-  int rtp_pkt_size; /* pkt size include both rtp and payload */
-  int rtp_pd_size;  /* payload size for each pkt */
   int width;
   int height;
-  int st22_frame_size;
+  int bpp;
+  size_t bytes_per_frame;
 
-  int st22_pkt_idx; /* pkt index in current frame */
-  uint32_t st22_last_tmstamp;
+  uint16_t framebuff_cnt;
+  uint16_t framebuff_producer_idx;
+  uint16_t framebuff_consumer_idx;
+  struct st_rx_frame* framebuffs;
 
-  pthread_cond_t st22_wake_cond;
-  pthread_mutex_t st22_wake_mutex;
+  pthread_cond_t wake_cond;
+  pthread_mutex_t wake_mutex;
+
   bool st22_app_thread_stop;
   pthread_t st22_app_thread;
+  int fb_decoded;
 
   char st22_dst_url[ST_APP_URL_MAX_LEN];
   int st22_dst_fb_cnt; /* the count of recevied fbs will be saved to file */
@@ -317,6 +350,58 @@ struct st22_app_rx_session {
   uint8_t* st22_dst_begin;
   uint8_t* st22_dst_end;
   uint8_t* st22_dst_cursor;
+};
+
+struct st_app_tx_st22p_session {
+  int idx;
+  st22p_tx_handle handle;
+  st_handle st;
+  int framebuff_cnt;
+  int st22p_frame_size;
+  int width;
+  int height;
+
+  char st22p_source_url[ST_APP_URL_MAX_LEN];
+  uint8_t* st22p_source_begin;
+  uint8_t* st22p_source_end;
+  uint8_t* st22p_frame_cursor;
+  int st22p_source_fd;
+
+  double expect_fps;
+
+  pthread_t st22p_app_thread;
+  pthread_cond_t st22p_wake_cond;
+  pthread_mutex_t st22p_wake_mutex;
+  bool st22p_app_thread_stop;
+};
+
+struct st_app_rx_st22p_session {
+  int idx;
+  st_handle st;
+  st22p_rx_handle handle;
+  int framebuff_cnt;
+  int st22p_frame_size;
+  bool slice;
+  int width;
+  int height;
+
+  /* stat */
+  int stat_frame_received;
+  uint64_t stat_last_time;
+  int stat_frame_total_received;
+  uint64_t stat_frame_frist_rx_time;
+  double expect_fps;
+
+  pthread_t st22p_app_thread;
+  pthread_cond_t st22p_wake_cond;
+  pthread_mutex_t st22p_wake_mutex;
+  bool st22p_app_thread_stop;
+
+  struct st_display* display;
+  uint32_t pcapng_max_pkts;
+
+  bool measure_latency;
+  uint64_t stat_latency_us_sum;
 };
 
 struct st_app_context {
@@ -327,8 +412,10 @@ struct st_app_context {
   bool stop;
   uint8_t tx_dip_addr[ST_PORT_MAX][ST_IP_ADDR_LEN]; /* tx destination IP */
 
-  int last_session_sch_index;
   int lcore[ST_APP_MAX_LCORES];
+  int rtp_lcore[ST_APP_MAX_LCORES];
+
+  bool runtime_session;
 
   char tx_video_url[ST_APP_URL_MAX_LEN]; /* send video content url*/
   struct st_app_tx_video_session* tx_video_sessions;
@@ -344,6 +431,10 @@ struct st_app_context {
   char tx_anc_url[ST_APP_URL_MAX_LEN];
   int tx_anc_session_cnt;
   int tx_anc_rtp_ring_size; /* the ring size for tx anc rtp type */
+
+  char tx_st22p_url[ST_APP_URL_MAX_LEN]; /* send st22p content url*/
+  struct st_app_tx_st22p_session* tx_st22p_sessions;
+  int tx_st22p_session_cnt;
 
   uint8_t rx_sip_addr[ST_PORT_MAX][ST_IP_ADDR_LEN]; /* rx source IP */
 
@@ -361,14 +452,18 @@ struct st_app_context {
   struct st_app_rx_anc_session* rx_anc_sessions;
   int rx_anc_session_cnt;
 
+  struct st_app_rx_st22p_session* rx_st22p_sessions;
+  int rx_st22p_session_cnt;
+
   char tx_st22_url[ST_APP_URL_MAX_LEN]; /* send st22 content url*/
   struct st22_app_tx_session* tx_st22_sessions;
   int tx_st22_session_cnt;
   struct st22_app_rx_session* rx_st22_sessions;
   int rx_st22_session_cnt;
-  int st22_rtp_frame_total_pkts;
-  int st22_rtp_pkt_size; /* pkt size include both rtp and payload */
+  int st22_bpp;
+
   uint32_t pcapng_max_pkts;
+  char ttf_file[ST_APP_URL_MAX_LEN];
 };
 
 static inline void* st_app_malloc(size_t sz) { return malloc(sz); }
@@ -389,6 +484,7 @@ static inline uint64_t st_app_get_monotonic_time() {
   return ((uint64_t)ts.tv_sec * NS_PER_S) + ts.tv_nsec;
 }
 
-int st_app_video_get_lcore(struct st_app_context* ctx, int sch_idx, unsigned int* lcore);
+int st_app_video_get_lcore(struct st_app_context* ctx, int sch_idx, bool rtp,
+                           unsigned int* lcore);
 
 #endif

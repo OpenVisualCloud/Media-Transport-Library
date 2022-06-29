@@ -16,101 +16,120 @@
 
 #include "tx_audio_app.h"
 
-static int app_tx_audio_session_next_frame(void* priv, uint16_t* next_frame_idx) {
+static int app_tx_audio_next_frame(void* priv, uint16_t* next_frame_idx) {
   struct st_app_tx_audio_session* s = priv;
-  uint16_t i;
-  pthread_mutex_lock(&s->st30_wake_mutex);
-  for (i = 0; i < s->framebuff_cnt; i++) {
-    if (s->st30_ready_framebuff[i] == 1) {
-      s->st30_framebuff_idx = i;
-      s->st30_ready_framebuff[i] = 0;
-      break;
-    }
-  }
-  pthread_cond_signal(&s->st30_wake_cond);
-  pthread_mutex_unlock(&s->st30_wake_mutex);
-  if (i == s->framebuff_cnt) return -1;
-  *next_frame_idx = s->st30_framebuff_idx;
+  int ret;
+  uint16_t consumer_idx = s->framebuff_consumer_idx;
+  struct st_tx_frame* framebuff = &s->framebuffs[consumer_idx];
 
-  dbg("%s(%d), next framebuffer index %d\n", __func__, s->idx, *next_frame_idx);
-  return 0;
+  st_pthread_mutex_lock(&s->st30_wake_mutex);
+  if (ST_TX_FRAME_READY == framebuff->stat) {
+    dbg("%s(%d), next frame idx %u\n", __func__, s->idx, consumer_idx);
+    ret = 0;
+    framebuff->stat = ST_TX_FRAME_IN_TRANSMITTING;
+    *next_frame_idx = consumer_idx;
+    /* point to next */
+    consumer_idx++;
+    if (consumer_idx >= s->framebuff_cnt) consumer_idx = 0;
+    s->framebuff_consumer_idx = consumer_idx;
+  } else {
+    /* not ready */
+    err("%s(%d), idx %u err stat %d\n", __func__, s->idx, consumer_idx, framebuff->stat);
+    ret = -EIO;
+  }
+  st_pthread_cond_signal(&s->st30_wake_cond);
+  st_pthread_mutex_unlock(&s->st30_wake_mutex);
+  return ret;
 }
 
-static int app_tx_audio_session_frame_done(void* priv, uint16_t frame_idx) {
+static int app_tx_audio_frame_done(void* priv, uint16_t frame_idx) {
   struct st_app_tx_audio_session* s = priv;
-  pthread_mutex_lock(&s->st30_wake_mutex);
-  s->st30_free_framebuff[frame_idx] = 1;
-  pthread_cond_signal(&s->st30_wake_cond);
-  pthread_mutex_unlock(&s->st30_wake_mutex);
+  int ret;
+  struct st_tx_frame* framebuff = &s->framebuffs[frame_idx];
+
+  st_pthread_mutex_lock(&s->st30_wake_mutex);
+  if (ST_TX_FRAME_IN_TRANSMITTING == framebuff->stat) {
+    ret = 0;
+    framebuff->stat = ST_TX_FRAME_FREE;
+    dbg("%s(%d), done_idx %u\n", __func__, s->idx, frame_idx);
+  } else {
+    ret = -EIO;
+    err("%s(%d), err status %d for frame %u\n", __func__, s->idx, framebuff->stat,
+        frame_idx);
+  }
+  st_pthread_cond_signal(&s->st30_wake_cond);
+  st_pthread_mutex_unlock(&s->st30_wake_mutex);
+
   s->st30_frame_done_cnt++;
   dbg("%s(%d), framebuffer index %d\n", __func__, s->idx, frame_idx);
-  return 0;
+  return ret;
 }
 
-static int app_tx_audio_session_rtp_done(void* priv) {
+static int app_tx_audio_rtp_done(void* priv) {
   struct st_app_tx_audio_session* s = priv;
-  pthread_mutex_lock(&s->st30_wake_mutex);
-  pthread_cond_signal(&s->st30_wake_cond);
-  pthread_mutex_unlock(&s->st30_wake_mutex);
+  st_pthread_mutex_lock(&s->st30_wake_mutex);
+  st_pthread_cond_signal(&s->st30_wake_cond);
+  st_pthread_mutex_unlock(&s->st30_wake_mutex);
   s->st30_packet_done_cnt++;
   return 0;
 }
 
-static void* app_tx_audio_session_frame_thread(void* arg) {
-  struct st_app_tx_audio_session* s = arg;
-  uint16_t i;
-  while (!s->st30_app_thread_stop) {
-    pthread_mutex_lock(&s->st30_wake_mutex);
-    // guarantee the sequence
-    bool has_ready = false;
-    for (i = 0; i < s->framebuff_cnt; i++) {
-      if (s->st30_ready_framebuff[i] == 1) {
-        has_ready = true;
-        break;
-      }
-    }
-    if (has_ready) {
-      if (!s->st30_app_thread_stop)
-        pthread_cond_wait(&s->st30_wake_cond, &s->st30_wake_mutex);
-      pthread_mutex_unlock(&s->st30_wake_mutex);
-      continue;
-    }
-    for (i = 0; i < s->framebuff_cnt; i++) {
-      if (s->st30_free_framebuff[i] == 1) {
-        s->st30_free_framebuff[i] = 0;
-        break;
-      }
-    }
+static void app_tx_audio_build_frame(struct st_app_tx_audio_session* s, void* frame,
+                                     size_t frame_size) {
+  uint8_t* src = s->st30_frame_cursor;
+  uint8_t* dst = frame;
 
-    if (i == s->framebuff_cnt) {
+  if (s->st30_frame_cursor + frame_size > s->st30_source_end) {
+    int len = s->st30_source_end - s->st30_frame_cursor;
+    len = len / s->pkt_len * s->pkt_len;
+    if (len) st_memcpy(dst, s->st30_frame_cursor, len);
+    /* wrap back in the end */
+    st_memcpy(dst + len, s->st30_source_begin, frame_size - len);
+    s->st30_frame_cursor = s->st30_source_begin + frame_size - len;
+  } else {
+    st_memcpy(dst, src, s->st30_frame_size);
+    s->st30_frame_cursor += s->st30_frame_size;
+  }
+}
+
+static void* app_tx_audio_frame_thread(void* arg) {
+  struct st_app_tx_audio_session* s = arg;
+  int idx = s->idx;
+  uint16_t producer_idx;
+  struct st_tx_frame* framebuff;
+
+  info("%s(%d), start\n", __func__, idx);
+  while (!s->st30_app_thread_stop) {
+    st_pthread_mutex_lock(&s->st30_wake_mutex);
+    producer_idx = s->framebuff_producer_idx;
+    framebuff = &s->framebuffs[producer_idx];
+    if (ST_TX_FRAME_FREE != framebuff->stat) {
+      /* not in free */
       if (!s->st30_app_thread_stop)
-        pthread_cond_wait(&s->st30_wake_cond, &s->st30_wake_mutex);
-      pthread_mutex_unlock(&s->st30_wake_mutex);
+        st_pthread_cond_wait(&s->st30_wake_cond, &s->st30_wake_mutex);
+      st_pthread_mutex_unlock(&s->st30_wake_mutex);
       continue;
     }
-    pthread_mutex_unlock(&s->st30_wake_mutex);
-    uint8_t* src = s->st30_frame_cursor;
-    uint8_t* dst = st30_tx_get_framebuffer(s->handle, i);
-    if (s->st30_frame_cursor + s->st30_frame_size > s->st30_source_end) {
-      int len = s->st30_source_end - s->st30_frame_cursor;
-      len = len / s->pkt_len * s->pkt_len;
-      if (len) st_memcpy(dst, s->st30_frame_cursor, len);
-      /* wrap back in the end */
-      st_memcpy(dst + len, s->st30_source_begin, s->st30_frame_size - len);
-      s->st30_frame_cursor = s->st30_source_begin + s->st30_frame_size - len;
-    } else {
-      st_memcpy(dst, src, s->st30_frame_size);
-      s->st30_frame_cursor += s->st30_frame_size;
-    }
-    pthread_mutex_lock(&s->st30_wake_mutex);
-    s->st30_ready_framebuff[i] = 1;
-    pthread_mutex_unlock(&s->st30_wake_mutex);
+    st_pthread_mutex_unlock(&s->st30_wake_mutex);
+
+    void* frame_addr = st30_tx_get_framebuffer(s->handle, producer_idx);
+    app_tx_audio_build_frame(s, frame_addr, s->st30_frame_size);
+
+    st_pthread_mutex_lock(&s->st30_wake_mutex);
+    framebuff->size = s->st30_frame_size;
+    framebuff->stat = ST_TX_FRAME_READY;
+    /* point to next */
+    producer_idx++;
+    if (producer_idx >= s->framebuff_cnt) producer_idx = 0;
+    s->framebuff_producer_idx = producer_idx;
+    st_pthread_mutex_unlock(&s->st30_wake_mutex);
   }
+  info("%s(%d), stop\n", __func__, idx);
 
   return NULL;
 }
 
-static void* app_tx_audio_session_pcap_thread(void* arg) {
+static void* app_tx_audio_pcap_thread(void* arg) {
   struct st_app_tx_audio_session* s = arg;
   int idx = s->idx;
   void* mbuf;
@@ -127,15 +146,15 @@ static void* app_tx_audio_session_pcap_thread(void* arg) {
     /* get available buffer*/
     mbuf = st30_tx_get_mbuf(s->handle, &usrptr);
     if (!mbuf) {
-      pthread_mutex_lock(&s->st30_wake_mutex);
+      st_pthread_mutex_lock(&s->st30_wake_mutex);
       /* try again */
       mbuf = st30_tx_get_mbuf(s->handle, &usrptr);
       if (mbuf) {
-        pthread_mutex_unlock(&s->st30_wake_mutex);
+        st_pthread_mutex_unlock(&s->st30_wake_mutex);
       } else {
         if (!s->st30_app_thread_stop)
-          pthread_cond_wait(&s->st30_wake_cond, &s->st30_wake_mutex);
-        pthread_mutex_unlock(&s->st30_wake_mutex);
+          st_pthread_cond_wait(&s->st30_wake_cond, &s->st30_wake_mutex);
+        st_pthread_mutex_unlock(&s->st30_wake_mutex);
         continue;
       }
     }
@@ -173,8 +192,8 @@ static void* app_tx_audio_session_pcap_thread(void* arg) {
   return NULL;
 }
 
-static void app_tx_audio_build_rtp_packet(struct st_app_tx_audio_session* s, void* usrptr,
-                                          uint16_t* mbuf_len) {
+static void app_tx_audio_build_rtp(struct st_app_tx_audio_session* s, void* usrptr,
+                                   uint16_t* mbuf_len) {
   /* generate one anc rtp for test purpose */
   struct st_rfc3550_rtp_hdr* rtp = (struct st_rfc3550_rtp_hdr*)usrptr;
   uint8_t* payload = (uint8_t*)&rtp[1];
@@ -185,7 +204,7 @@ static void app_tx_audio_build_rtp_packet(struct st_app_tx_audio_session* s, voi
   rtp->padding = 0;
   rtp->version = 2;
   rtp->marker = 0;
-  rtp->payload_type = 111;
+  rtp->payload_type = ST_APP_PAYLOAD_TYPE_AUDIO;
   rtp->ssrc = htonl(0x66666666 + s->idx);
   rtp->tmstamp = s->st30_rtp_tmstamp;
   s->st30_rtp_tmstamp++;
@@ -202,7 +221,7 @@ static void app_tx_audio_build_rtp_packet(struct st_app_tx_audio_session* s, voi
   *mbuf_len = sizeof(struct st_rfc3550_rtp_hdr) + s->pkt_len;
 }
 
-static void* app_tx_audio_session_rtp_thread(void* arg) {
+static void* app_tx_audio_rtp_thread(void* arg) {
   struct st_app_tx_audio_session* s = arg;
   int idx = s->idx;
   void* mbuf;
@@ -214,21 +233,21 @@ static void* app_tx_audio_session_rtp_thread(void* arg) {
     /* get available buffer*/
     mbuf = st30_tx_get_mbuf(s->handle, &usrptr);
     if (!mbuf) {
-      pthread_mutex_lock(&s->st30_wake_mutex);
+      st_pthread_mutex_lock(&s->st30_wake_mutex);
       /* try again */
       mbuf = st30_tx_get_mbuf(s->handle, &usrptr);
       if (mbuf) {
-        pthread_mutex_unlock(&s->st30_wake_mutex);
+        st_pthread_mutex_unlock(&s->st30_wake_mutex);
       } else {
         if (!s->st30_app_thread_stop)
-          pthread_cond_wait(&s->st30_wake_cond, &s->st30_wake_mutex);
-        pthread_mutex_unlock(&s->st30_wake_mutex);
+          st_pthread_cond_wait(&s->st30_wake_cond, &s->st30_wake_mutex);
+        st_pthread_mutex_unlock(&s->st30_wake_mutex);
         continue;
       }
     }
 
     /* build the rtp pkt */
-    app_tx_audio_build_rtp_packet(s, usrptr, &mbuf_len);
+    app_tx_audio_build_rtp(s, usrptr, &mbuf_len);
 
     st30_tx_put_mbuf(s->handle, mbuf, mbuf_len);
   }
@@ -237,11 +256,11 @@ static void* app_tx_audio_session_rtp_thread(void* arg) {
   return NULL;
 }
 
-static int app_tx_audio_session_open_source(struct st_app_tx_audio_session* s) {
+static int app_tx_audio_open_source(struct st_app_tx_audio_session* s) {
   if (!s->st30_pcap_input) {
     struct stat i;
 
-    s->st30_source_fd = open(s->st30_source_url, O_RDONLY);
+    s->st30_source_fd = st_open(s->st30_source_url, O_RDONLY);
     if (s->st30_source_fd >= 0) {
       fstat(s->st30_source_fd, &i);
 
@@ -273,7 +292,7 @@ static int app_tx_audio_session_open_source(struct st_app_tx_audio_session* s) {
   return 0;
 }
 
-static int app_tx_audio_session_close_source(struct st_app_tx_audio_session* s) {
+static int app_tx_audio_close_source(struct st_app_tx_audio_session* s) {
   if (s->st30_source_fd >= 0) {
     munmap(s->st30_source_begin, s->st30_source_end - s->st30_source_begin);
     close(s->st30_source_fd);
@@ -287,42 +306,62 @@ static int app_tx_audio_session_close_source(struct st_app_tx_audio_session* s) 
   return 0;
 }
 
-static int app_tx_audio_session_start_source(struct st_app_tx_audio_session* s) {
+static int app_tx_audio_start_source(struct st_app_tx_audio_session* s) {
   int ret = -EINVAL;
 
+  s->st30_app_thread_stop = false;
   if (s->st30_pcap_input)
-    ret = pthread_create(&s->st30_app_thread, NULL, app_tx_audio_session_pcap_thread,
-                         (void*)s);
+    ret = pthread_create(&s->st30_app_thread, NULL, app_tx_audio_pcap_thread, (void*)s);
   else if (s->st30_rtp_input)
-    ret = pthread_create(&s->st30_app_thread, NULL, app_tx_audio_session_rtp_thread,
-                         (void*)s);
+    ret = pthread_create(&s->st30_app_thread, NULL, app_tx_audio_rtp_thread, (void*)s);
   else
-    ret = pthread_create(&s->st30_app_thread, NULL, app_tx_audio_session_frame_thread,
-                         (void*)s);
+    ret = pthread_create(&s->st30_app_thread, NULL, app_tx_audio_frame_thread, (void*)s);
 
   if (ret != 0) {
-    err("%s, st30_app_thread create fail err = %d", __func__, ret);
+    err("%s, app_thread create fail err = %d", __func__, ret);
     return -EIO;
   }
-  s->st30_app_thread_stop = false;
+
   return 0;
 }
 
-static void app_tx_audio_session_stop_source(struct st_app_tx_audio_session* s) {
+static void app_tx_audio_stop_source(struct st_app_tx_audio_session* s) {
   if (s->st30_source_fd >= 0) {
     s->st30_app_thread_stop = true;
     /* wake up the thread */
-    pthread_mutex_lock(&s->st30_wake_mutex);
-    pthread_cond_signal(&s->st30_wake_cond);
-    pthread_mutex_unlock(&s->st30_wake_mutex);
+    st_pthread_mutex_lock(&s->st30_wake_mutex);
+    st_pthread_cond_signal(&s->st30_wake_cond);
+    st_pthread_mutex_unlock(&s->st30_wake_mutex);
     if (s->st30_app_thread) (void)pthread_join(s->st30_app_thread, NULL);
   }
 }
 
-static int app_tx_audio_session_init(struct st_app_context* ctx,
-                                     st_json_tx_audio_session_t* audio,
-                                     struct st_app_tx_audio_session* s) {
-  int idx = s->idx, ret, j;
+static int app_tx_audio_uinit(struct st_app_tx_audio_session* s) {
+  int ret;
+
+  app_tx_audio_stop_source(s);
+
+  if (s->handle) {
+    ret = st30_tx_free(s->handle);
+    if (ret < 0) err("%s(%d), st30_tx_free fail %d\n", __func__, s->idx, ret);
+    s->handle = NULL;
+  }
+
+  app_tx_audio_close_source(s);
+  if (s->framebuffs) {
+    st_app_free(s->framebuffs);
+    s->framebuffs = NULL;
+  }
+  st_pthread_mutex_destroy(&s->st30_wake_mutex);
+  st_pthread_cond_destroy(&s->st30_wake_cond);
+
+  return 0;
+}
+
+static int app_tx_audio_init(struct st_app_context* ctx,
+                             st_json_tx_audio_session_t* audio,
+                             struct st_app_tx_audio_session* s) {
+  int idx = s->idx, ret;
   struct st30_tx_ops ops;
   char name[32];
   st30_tx_handle handle;
@@ -330,19 +369,20 @@ static int app_tx_audio_session_init(struct st_app_context* ctx,
 
   s->framebuff_cnt = 2;
   s->st30_seq_id = 1;
-  s->st30_framebuff_idx = 0;
-  s->st30_free_framebuff = (int*)st_app_zmalloc(sizeof(int) * s->framebuff_cnt);
-  if (!s->st30_free_framebuff) return -ENOMEM;
-  for (j = 0; j < s->framebuff_cnt; j++) s->st30_free_framebuff[j] = 1;
-  s->st30_ready_framebuff = (int*)st_app_zmalloc(sizeof(int) * s->framebuff_cnt);
-  if (!s->st30_ready_framebuff) {
-    st_app_free(s->st30_free_framebuff);
+
+  s->framebuffs =
+      (struct st_tx_frame*)st_app_zmalloc(sizeof(*s->framebuffs) * s->framebuff_cnt);
+  if (!s->framebuffs) {
     return -ENOMEM;
   }
-  for (j = 0; j < s->framebuff_cnt; j++) s->st30_ready_framebuff[j] = 0;
+  for (uint16_t j = 0; j < s->framebuff_cnt; j++) {
+    s->framebuffs[j].stat = ST_TX_FRAME_FREE;
+    s->framebuffs[j].lines_ready = 0;
+  }
+
   s->st30_source_fd = -1;
-  pthread_mutex_init(&s->st30_wake_mutex, NULL);
-  pthread_cond_init(&s->st30_wake_cond, NULL);
+  st_pthread_mutex_init(&s->st30_wake_mutex, NULL);
+  st_pthread_cond_init(&s->st30_wake_cond, NULL);
 
   snprintf(name, 32, "app_tx_audio%d", idx);
   ops.name = name;
@@ -362,19 +402,22 @@ static int app_tx_audio_session_init(struct st_app_context* ctx,
             ST_PORT_MAX_LEN);
     ops.udp_port[ST_PORT_R] = audio ? audio->udp_port : (10100 + s->idx);
   }
-  ops.get_next_frame = app_tx_audio_session_next_frame;
-  ops.notify_frame_done = app_tx_audio_session_frame_done;
-  ops.notify_rtp_done = app_tx_audio_session_rtp_done;
+  ops.get_next_frame = app_tx_audio_next_frame;
+  ops.notify_frame_done = app_tx_audio_frame_done;
+  ops.notify_rtp_done = app_tx_audio_rtp_done;
   ops.framebuff_cnt = s->framebuff_cnt;
   ops.fmt = audio ? audio->audio_format : ST30_FMT_PCM16;
   ops.channel = audio ? audio->audio_channel : 2;
   ops.sampling = audio ? audio->audio_sampling : ST30_SAMPLING_48K;
-  ops.sample_size = st30_get_sample_size(ops.fmt, ops.channel, ops.sampling);
-  int frametime = audio ? audio->audio_frametime_ms : 1; /* frame time: ms */
-  s->st30_frame_size = frametime * ops.sample_size;
-  s->pkt_len = ops.sample_size;
+  ops.ptime = audio ? audio->audio_ptime : ST30_PTIME_1MS;
+  ops.sample_size = st30_get_sample_size(ops.fmt);
+  ops.sample_num = st30_get_sample_num(ops.ptime, ops.sampling);
+  s->pkt_len = ops.sample_size * ops.sample_num * ops.channel;
+  /* frame time to 1ms */
+  s->st30_frame_size =
+      ops.sample_size * st30_get_sample_num(ST30_PTIME_1MS, ops.sampling) * ops.channel;
   ops.framebuff_size = s->st30_frame_size;
-  ops.payload_type = 111;
+  ops.payload_type = audio ? audio->payload_type : ST_APP_PAYLOAD_TYPE_AUDIO;
 
   s->st30_pcap_input = false;
   ops.type = audio ? audio->type : ST30_TYPE_FRAME_LEVEL;
@@ -397,6 +440,7 @@ static int app_tx_audio_session_init(struct st_app_context* ctx,
   handle = st30_tx_create(ctx->st, &ops);
   if (!handle) {
     err("%s(%d), st30_tx_create fail\n", __func__, idx);
+    app_tx_audio_uinit(s);
     return -EIO;
   }
 
@@ -404,16 +448,17 @@ static int app_tx_audio_session_init(struct st_app_context* ctx,
   strncpy(s->st30_source_url, audio ? audio->audio_url : ctx->tx_audio_url,
           sizeof(s->st30_source_url));
 
-  ret = app_tx_audio_session_open_source(s);
+  ret = app_tx_audio_open_source(s);
   if (ret < 0) {
     err("%s(%d), app_tx_audio_session_open_source fail\n", __func__, idx);
+    app_tx_audio_uinit(s);
     return ret;
   }
 
-  ret = app_tx_audio_session_start_source(s);
+  ret = app_tx_audio_start_source(s);
   if (ret < 0) {
-    app_tx_audio_session_close_source(s);
     err("%s(%d), app_tx_audio_session_start_source fail %d\n", __func__, idx, ret);
+    app_tx_audio_uinit(s);
     return ret;
   }
 
@@ -425,23 +470,23 @@ int st_app_tx_audio_sessions_stop(struct st_app_context* ctx) {
   if (!ctx->tx_audio_sessions) return 0;
   for (int i = 0; i < ctx->tx_audio_session_cnt; i++) {
     s = &ctx->tx_audio_sessions[i];
-    app_tx_audio_session_stop_source(s);
+    app_tx_audio_stop_source(s);
   }
 
   return 0;
 }
 
 int st_app_tx_audio_sessions_init(struct st_app_context* ctx) {
-  int ret, i;
+  int ret;
   struct st_app_tx_audio_session* s;
   ctx->tx_audio_sessions = (struct st_app_tx_audio_session*)st_app_zmalloc(
       sizeof(struct st_app_tx_audio_session) * ctx->tx_audio_session_cnt);
   if (!ctx->tx_audio_sessions) return -ENOMEM;
-  for (i = 0; i < ctx->tx_audio_session_cnt; i++) {
+
+  for (int i = 0; i < ctx->tx_audio_session_cnt; i++) {
     s = &ctx->tx_audio_sessions[i];
     s->idx = i;
-    ret = app_tx_audio_session_init(
-        ctx, ctx->json_ctx ? &ctx->json_ctx->tx_audio[i] : NULL, s);
+    ret = app_tx_audio_init(ctx, ctx->json_ctx ? &ctx->json_ctx->tx_audio[i] : NULL, s);
     if (ret < 0) {
       err("%s(%d), app_tx_audio_session_init fail %d\n", __func__, i, ret);
       return ret;
@@ -452,28 +497,13 @@ int st_app_tx_audio_sessions_init(struct st_app_context* ctx) {
 }
 
 int st_app_tx_audio_sessions_uinit(struct st_app_context* ctx) {
-  int ret, i;
   struct st_app_tx_audio_session* s;
-  if (!ctx->tx_audio_sessions) return 0;
-  for (i = 0; i < ctx->tx_audio_session_cnt; i++) {
-    s = &ctx->tx_audio_sessions[i];
-    if (s->handle) {
-      ret = st30_tx_free(s->handle);
-      if (ret < 0) err("%s(%d), st30_tx_free fail %d\n", __func__, i, ret);
-      s->handle = NULL;
-    }
 
-    app_tx_audio_session_close_source(s);
-    if (s->st30_ready_framebuff) {
-      free(s->st30_ready_framebuff);
-      s->st30_ready_framebuff = NULL;
-    }
-    if (s->st30_free_framebuff) {
-      free(s->st30_free_framebuff);
-      s->st30_free_framebuff = NULL;
-    }
-    pthread_mutex_destroy(&s->st30_wake_mutex);
-    pthread_cond_destroy(&s->st30_wake_cond);
+  if (!ctx->tx_audio_sessions) return 0;
+
+  for (int i = 0; i < ctx->tx_audio_session_cnt; i++) {
+    s = &ctx->tx_audio_sessions[i];
+    app_tx_audio_uinit(s);
   }
   st_app_free(ctx->tx_audio_sessions);
 

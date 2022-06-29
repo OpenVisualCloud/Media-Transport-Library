@@ -41,9 +41,14 @@ dpdk-devbind.py -b vfio-pci 0000:80:04.1
 dpdk-devbind.py -b vfio-pci 0000:80:04.2
 ```
 
-#### 2.3 Pass the DMA port to RxTxApp:
+## 3. Pass the DMA port to RxTxApp:
 Args --dma_dev was used the pass the DMA setup, below example bind 3 dma ports to the application
 ```bash
 --dma_dev 0000:80:04.0,0000:80:04.1,0000:80:04.2
+```
+Logs will show the DMA usage info like below:
+```bash
+ST: RX_VIDEO_SESSION(1,0): pkts 2589325 by dma copy, dma busy 0.000000
+ST: DMA(0), s 2589313 c 2589313 e 0 avg q 1
 ```
 BTW, the gtest support --dma_dev also, pls pass the DMA setup for the DMA test.

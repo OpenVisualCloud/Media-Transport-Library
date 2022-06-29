@@ -16,8 +16,19 @@
 
 #include "player.h"
 
+#define FPS_CALCULATE_INTERVEL (30)
+#define SCREEN_WIDTH (640)
+#define SCREEN_HEIGHT (360)
+#define MSG_WIDTH (60)
+#define MSG_HEIGHT (15)
+#define MSG_WIDTH_MARGIN (5)
+#define MSG_HEIGHT_MARGIN (5)
+
 int st_app_player_uinit(struct st_app_context* ctx) {
   SDL_Quit();
+#ifdef APP_HAS_SDL2_TTF
+  TTF_Quit();
+#endif
   return 0;
 }
 
@@ -28,6 +39,15 @@ int st_app_player_init(struct st_app_context* ctx) {
     st_app_player_uinit(ctx);
     return -EIO;
   }
+
+#ifdef APP_HAS_SDL2_TTF
+  res = TTF_Init();
+  if (res) {
+    warn("%s, TTF_Init fail: %s\n", __func__, TTF_GetError());
+    st_app_player_uinit(ctx);
+    return -EIO;
+  }
+#endif
 
   return 0;
 }
@@ -78,21 +98,6 @@ static int create_display_context(struct st_display* d) {
   return 0;
 }
 
-int st_app_display_frame(struct st_display* d, uint8_t const* frame) {
-  if (d == NULL) {
-    err("%s, display not initialized\n", __func__);
-    return -EIO;
-  }
-
-  SDL_SetRenderDrawColor(d->renderer, 0, 0, 0, SDL_ALPHA_OPAQUE);
-  SDL_RenderClear(d->renderer);
-
-  SDL_UpdateTexture(d->texture, NULL, frame, d->pixel_w * 2);
-  SDL_RenderCopy(d->renderer, d->texture, NULL, NULL);
-  SDL_RenderPresent(d->renderer);
-  return 0;
-}
-
 static void* display_thread_func(void* arg) {
   struct st_display* d = arg;
   int idx = d->idx;
@@ -105,16 +110,48 @@ static void* display_thread_func(void* arg) {
     return NULL;
   }
 #endif
-  while (!d->st_display_thread_stop) {
-    pthread_mutex_lock(&d->st_display_wake_mutex);
-    if (!d->st_display_thread_stop)
-      pthread_cond_wait(&d->st_display_wake_cond, &d->st_display_wake_mutex);
-    pthread_mutex_unlock(&d->st_display_wake_mutex);
-    st_app_display_frame(d, d->source_frame);
 
+  while (!d->display_thread_stop) {
+    st_pthread_mutex_lock(&d->display_wake_mutex);
+    if (!d->display_thread_stop)
+      st_pthread_cond_wait(&d->display_wake_cond, &d->display_wake_mutex);
+    st_pthread_mutex_unlock(&d->display_wake_mutex);
+
+    /* calculate fps*/
+    if (d->frame_cnt % FPS_CALCULATE_INTERVEL == 0) {
+      uint32_t time = SDL_GetTicks();
+      d->fps = 1000.0 * FPS_CALCULATE_INTERVEL / (time - d->last_time);
+      d->last_time = time;
+    }
+    d->frame_cnt++;
+
+    SDL_SetRenderDrawColor(d->renderer, 0, 0, 0, SDL_ALPHA_OPAQUE);
+    SDL_RenderClear(d->renderer);
+
+    st_pthread_mutex_lock(&d->display_frame_mutex);
+    SDL_UpdateTexture(d->texture, NULL, d->front_frame, d->pixel_w * 2);
+    st_pthread_mutex_unlock(&d->display_frame_mutex);
+    SDL_RenderCopy(d->renderer, d->texture, NULL, NULL);
+
+#ifdef APP_HAS_SDL2_TTF
+    /* display info */
+    if (d->font) {
+      char text[32];
+      sprintf(text, "FPS:\t%.2f", d->fps);
+      SDL_Color Red = {255, 0, 0};
+      SDL_Surface* surfaceMessage = TTF_RenderText_Solid(d->font, text, Red);
+      SDL_Texture* Message = SDL_CreateTextureFromSurface(d->renderer, surfaceMessage);
+
+      SDL_RenderCopy(d->renderer, Message, NULL, &d->msg_rect);
+      SDL_FreeSurface(surfaceMessage);
+      SDL_DestroyTexture(Message);
+    }
+#endif
+
+    SDL_RenderPresent(d->renderer);
 #ifdef WINDOWSENV
     while (SDL_PollEvent(&event)) {
-      if (event.type == SDL_QUIT) d->st_display_thread_stop = true;
+      if (event.type == SDL_QUIT) d->display_thread_stop = true;
     }
 #endif
   }
@@ -122,80 +159,92 @@ static void* display_thread_func(void* arg) {
   return NULL;
 }
 
-static int init_display_thread(struct st_display* d) {
-  int ret, idx = d->idx;
-
-  ret = pthread_create(&d->st_display_thread, NULL, display_thread_func, d);
-  if (ret < 0) {
-    err("%s(%d), st_display_thread create fail %d\n", __func__, ret, idx);
-    return -EIO;
-  }
-
-  return 0;
-}
-
-int st_app_dettach_display(struct st_app_rx_video_session* video) {
-  struct st_display* d = video->display;
+int st_app_uinit_display(struct st_display* d) {
   if (!d) return 0;
   int idx = d->idx;
 
-  d->st_display_thread_stop = true;
-  if (d->st_display_thread) {
+  d->display_thread_stop = true;
+  if (d->display_thread) {
     /* wake up the thread */
-    pthread_mutex_lock(&d->st_display_wake_mutex);
-    pthread_cond_signal(&d->st_display_wake_cond);
-    pthread_mutex_unlock(&d->st_display_wake_mutex);
+    st_pthread_mutex_lock(&d->display_wake_mutex);
+    st_pthread_cond_signal(&d->display_wake_cond);
+    st_pthread_mutex_unlock(&d->display_wake_mutex);
     info("%s(%d), wait display thread stop\n", __func__, idx);
-    pthread_join(d->st_display_thread, NULL);
+    pthread_join(d->display_thread, NULL);
   }
-
-  pthread_mutex_destroy(&d->st_display_wake_mutex);
-  pthread_cond_destroy(&d->st_display_wake_cond);
+  st_pthread_mutex_destroy(&d->display_wake_mutex);
+  st_pthread_mutex_destroy(&d->display_frame_mutex);
+  st_pthread_cond_destroy(&d->display_wake_cond);
 
   destroy_display_context(d);
-  if (d != NULL) {
-    st_app_free(d);
-    video->display = NULL;
+
+#ifdef APP_HAS_SDL2_TTF
+  if (d->font) {
+    TTF_CloseFont(d->font);
+    d->font = NULL;
   }
+#endif
+
+  if (d->front_frame) {
+    st_app_free(d->front_frame);
+    d->front_frame = NULL;
+  }
+
   return 0;
 }
 
-int st_app_attach_display(struct st_app_rx_video_session* video) {
-  if (video->user_pg.fmt != USER_FMT_YUV_422_8BIT) {
-    err("%s, format not supported\n", __func__);
-    return -EINVAL;
+int st_app_init_display(struct st_display* d, int idx, int width, int height,
+                        char* font) {
+  int ret;
+  if (!d) return -ENOMEM;
+  d->idx = idx;
+  d->window_w = SCREEN_WIDTH;
+  d->window_h = SCREEN_HEIGHT;
+  d->pixel_w = width;
+  d->pixel_h = height;
+  d->fmt = SDL_PIXELFORMAT_UYVY;
+#ifdef APP_HAS_SDL2_TTF
+  d->font = TTF_OpenFont(font, 40);
+  if (!d->font)
+    warn("%s, open font fail, won't show info: %s\n", __func__, TTF_GetError());
+#endif
+  if (d->fmt == SDL_PIXELFORMAT_UYVY) {
+    d->front_frame_size = width * height * 2;
+  } else {
+    err("%s, unsupported pixel format %d\n", __func__, d->fmt);
+    return -EIO;
   }
 
-  struct st_display* d = st_app_zmalloc(sizeof(struct st_display));
-  if (!d) return -ENOMEM;
-  d->idx = video->idx;
-  d->window_w = 320;
-  d->window_h = 180;
-  d->pixel_w = video->width;
-  d->pixel_h = video->height;
-  d->fmt = SDL_PIXELFORMAT_UYVY;
+  d->front_frame = st_app_zmalloc(d->front_frame_size);
+  if (!d->front_frame) {
+    err("%s, alloc front frame fail\n", __func__);
+    return -ENOMEM;
+  }
+
+  d->msg_rect.w = MSG_WIDTH;
+  d->msg_rect.h = MSG_HEIGHT;
+  d->msg_rect.x = MSG_WIDTH_MARGIN;
+  d->msg_rect.y = SCREEN_HEIGHT - MSG_HEIGHT - MSG_HEIGHT_MARGIN;
 
 #ifndef WINDOWSENV
-  int ret = create_display_context(d);
+  ret = create_display_context(d);
   if (ret < 0) {
     err("%s, create display context fail: %d\n", __func__, ret);
-    st_app_dettach_display(video);
+    st_app_uinit_display(d);
     return ret;
   }
-#else
-  int ret;
 #endif
 
-  pthread_mutex_init(&d->st_display_wake_mutex, NULL);
-  pthread_cond_init(&d->st_display_wake_cond, NULL);
+  st_pthread_mutex_init(&d->display_wake_mutex, NULL);
+  st_pthread_mutex_init(&d->display_frame_mutex, NULL);
+  st_pthread_cond_init(&d->display_wake_cond, NULL);
 
-  ret = init_display_thread(d);
+  ret = pthread_create(&d->display_thread, NULL, display_thread_func, d);
   if (ret < 0) {
-    err("%s, init_display_thread fail: %d\n", __func__, ret);
-    st_app_dettach_display(video);
+    err("%s(%d), create display thread fail: %d\n", __func__, idx, ret);
+    st_app_uinit_display(d);
     return ret;
   }
 
-  video->display = d;
   return 0;
 }

@@ -22,11 +22,12 @@
                     "replicas": 2,
                     "type": "rtp",
                     "pacing": "gap",
+                    "packing": "GPM",
                     "start_port": 20000,
+                    "payload_type": 112,
                     "tr_offset": "default",
                     "video_format": "i1080p59",
                     "pg_format": "YUV_422_10bit",
-                    "packing" : "GPM",
                     "video_url": "./test.yuv"
                 }
             ]
@@ -46,6 +47,7 @@
                     "type": "rtp",
                     "pacing": "gap",
                     "start_port": 20000,
+                    "payload_type": 112,
                     "tr_offset": "default",
                     "video_format": "i1080p59",
                     "pg_format": "YUV_422_10bit",

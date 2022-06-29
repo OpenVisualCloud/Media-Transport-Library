@@ -16,8 +16,10 @@
 
 #include "st_avx512_vbmi.h"
 
+#include "st_dma.h"
 #include "st_log.h"
 #include "st_simd.h"
+#include "st_util.h"
 
 #ifdef ST_HAS_AVX512_VBMI2
 static uint8_t b2l_permute_mask_table_512[16 * 4] = {
@@ -440,6 +442,133 @@ int st20_rfc4175_422be10_to_yuv422p10le_avx512_vbmi(struct st20_rfc4175_422_10_p
   return 0;
 }
 
+int st20_rfc4175_422be10_to_yuv422p10le_avx512_vbmi_dma(
+    struct st_dma_lender_dev* dma, struct st20_rfc4175_422_10_pg2_be* pg_be,
+    st_iova_t pg_be_iova, uint16_t* y, uint16_t* b, uint16_t* r, uint32_t w, uint32_t h) {
+  __m512i permute_le_mask = _mm512_loadu_si512(b2l_permute_mask_table_512);
+  __m512i srlv_le_mask = _mm512_loadu_si512(b2l_srlv_mask_table_512);
+  __m512i srlv_and_mask = _mm512_loadu_si512(b2l_and_mask_table_512);
+  __mmask64 k = 0xFFFFFFFFFF; /* each __m512i with 2*4 pg group, 40 bytes */
+  int pg_cnt = w * h / 2;
+
+  int caches_num = 4;
+  int cache_pg_cnt = (256 * 1024) / sizeof(*pg_be); /* pg cnt for each cache */
+  int align = caches_num * 8; /* align to simd pg groups and caches_num */
+  cache_pg_cnt = cache_pg_cnt / align * align;
+  size_t cache_size = cache_pg_cnt * sizeof(*pg_be);
+  int soc_id = dma->parent->soc_id;
+
+  struct st20_rfc4175_422_10_pg2_be* be_caches =
+      st_rte_zmalloc_socket(cache_size * caches_num, soc_id);
+  struct st_cvt_dma_ctx* ctx = st_cvt_dma_ctx_init(2 * caches_num, soc_id, 2);
+  if (!be_caches || !ctx) {
+    err("%s, alloc cache(%d,%" PRIu64 ") fail, %p\n", __func__, cache_pg_cnt, cache_size,
+        be_caches);
+    if (be_caches) st_rte_free(be_caches);
+    if (ctx) st_cvt_dma_ctx_uinit(ctx);
+    return st20_rfc4175_422be10_to_yuv422p10le_avx512_vbmi(pg_be, y, b, r, w, h);
+  }
+  rte_iova_t be_caches_iova = rte_malloc_virt2iova(be_caches);
+
+  /* first with caches batch step */
+  int cache_batch = pg_cnt / cache_pg_cnt;
+  dbg("%s, pg_cnt %d cache_pg_cnt %d caches_num %d cache_batch %d\n", __func__, pg_cnt,
+      cache_pg_cnt, caches_num, cache_batch);
+  for (int i = 0; i < cache_batch; i++) {
+    struct st20_rfc4175_422_10_pg2_be* be_cache =
+        be_caches + (i % caches_num) * cache_pg_cnt;
+    dbg("%s, cache batch idx %d\n", __func__, i);
+
+    int max_tran = i + caches_num;
+    max_tran = RTE_MIN(max_tran, cache_batch);
+    int cur_tran = st_cvt_dma_ctx_get_tran(ctx, 0);
+    /* push max be dma */
+    while (cur_tran < max_tran) {
+      rte_iova_t be_cache_iova = be_caches_iova + (cur_tran % caches_num) * cache_size;
+      st_dma_copy_busy(dma, be_cache_iova, pg_be_iova, cache_size);
+      pg_be += cache_pg_cnt;
+      pg_be_iova += cache_size;
+      st_cvt_dma_ctx_push(ctx, 0);
+      cur_tran = st_cvt_dma_ctx_get_tran(ctx, 0);
+    }
+    st_dma_submit_busy(dma);
+
+    /* wait until current be dma copy done */
+    while (st_cvt_dma_ctx_get_done(ctx, 0) < (i + 1)) {
+      uint16_t nb_dq = st_dma_completed(dma, 1, NULL, NULL);
+      if (nb_dq) st_cvt_dma_ctx_pop(ctx);
+    }
+
+    struct st20_rfc4175_422_10_pg2_be* pg = be_cache;
+    int batch = cache_pg_cnt / 8;
+    for (int j = 0; j < batch; j++) {
+      __m512i input = _mm512_maskz_loadu_epi8(k, pg);
+      __m512i permute_le_result = _mm512_permutexvar_epi8(permute_le_mask, input);
+      __m512i srlv_le_result = _mm512_srlv_epi16(permute_le_result, srlv_le_mask);
+      __m512i stage_m512i = _mm512_and_si512(srlv_le_result, srlv_and_mask);
+
+      pg += 8;
+
+      __m128i result_B = _mm512_extracti32x4_epi32(stage_m512i, 0);
+      __m128i result_R = _mm512_extracti32x4_epi32(stage_m512i, 1);
+      __m128i result_Y0 = _mm512_extracti32x4_epi32(stage_m512i, 2);
+      __m128i result_Y1 = _mm512_extracti32x4_epi32(stage_m512i, 3);
+
+      _mm_storeu_si128((__m128i*)b, result_B);
+      b += 2 * 4;
+      _mm_storeu_si128((__m128i*)r, result_R);
+      r += 2 * 4;
+      _mm_storeu_si128((__m128i*)y, result_Y0);
+      y += 2 * 4;
+      _mm_storeu_si128((__m128i*)y, result_Y1);
+      y += 2 * 4;
+    }
+  }
+
+  pg_cnt = pg_cnt % cache_pg_cnt;
+  st_rte_free(be_caches);
+
+  /* remaining simd batch */
+  int batch = pg_cnt / 8;
+  /* each m512i batch handle 4 __m512i(16 __m128i), each __m128i with 2 pg group */
+  for (int i = 0; i < batch; i++) {
+    __m512i input = _mm512_maskz_loadu_epi8(k, pg_be);
+    __m512i permute_le_result = _mm512_permutexvar_epi8(permute_le_mask, input);
+    __m512i srlv_le_result = _mm512_srlv_epi16(permute_le_result, srlv_le_mask);
+    __m512i stage_m512i = _mm512_and_si512(srlv_le_result, srlv_and_mask);
+
+    pg_be += 8;
+
+    __m128i result_B = _mm512_extracti32x4_epi32(stage_m512i, 0);
+    __m128i result_R = _mm512_extracti32x4_epi32(stage_m512i, 1);
+    __m128i result_Y0 = _mm512_extracti32x4_epi32(stage_m512i, 2);
+    __m128i result_Y1 = _mm512_extracti32x4_epi32(stage_m512i, 3);
+
+    _mm_storeu_si128((__m128i*)b, result_B);
+    b += 2 * 4;
+    _mm_storeu_si128((__m128i*)r, result_R);
+    r += 2 * 4;
+    _mm_storeu_si128((__m128i*)y, result_Y0);
+    y += 2 * 4;
+    _mm_storeu_si128((__m128i*)y, result_Y1);
+    y += 2 * 4;
+  }
+  pg_cnt = pg_cnt % 8;
+
+  /* remaining scalar batch */
+  while (pg_cnt > 0) {
+    st20_unpack_pg2be_422le10(pg_be, b, y, r, y + 1);
+    b++;
+    r++;
+    y += 2;
+    pg_be++;
+
+    pg_cnt--;
+  }
+
+  return 0;
+}
+
 int st20_rfc4175_422be10_to_422le10_avx512_vbmi(struct st20_rfc4175_422_10_pg2_be* pg_be,
                                                 struct st20_rfc4175_422_10_pg2_le* pg_le,
                                                 uint32_t w, uint32_t h) {
@@ -471,6 +600,139 @@ int st20_rfc4175_422be10_to_422le10_avx512_vbmi(struct st20_rfc4175_422_10_pg2_b
     pg_le += 12;
   }
 
+  int left = pg_cnt % 12;
+  while (left) {
+    uint16_t cb, y0, cr, y1;
+
+    cb = (pg_be->Cb00 << 2) + pg_be->Cb00_;
+    y0 = (pg_be->Y00 << 4) + pg_be->Y00_;
+    cr = (pg_be->Cr00 << 6) + pg_be->Cr00_;
+    y1 = (pg_be->Y01 << 8) + pg_be->Y01_;
+
+    pg_le->Cb00 = cb;
+    pg_le->Cb00_ = cb >> 8;
+    pg_le->Y00 = y0;
+    pg_le->Y00_ = y0 >> 6;
+    pg_le->Cr00 = cr;
+    pg_le->Cr00_ = cr >> 4;
+    pg_le->Y01 = y1;
+    pg_le->Y01_ = y1 >> 2;
+    pg_be++;
+    pg_le++;
+    left--;
+  }
+
+  return 0;
+}
+
+int st20_rfc4175_422be10_to_422le10_avx512_vbmi_dma(
+    struct st_dma_lender_dev* dma, struct st20_rfc4175_422_10_pg2_be* pg_be,
+    st_iova_t pg_be_iova, struct st20_rfc4175_422_10_pg2_le* pg_le, uint32_t w,
+    uint32_t h) {
+  __m512i permute_l0 = _mm512_loadu_si512((__m512i*)permute_l0_mask_table);
+  __m512i permute_r0 = _mm512_loadu_si512((__m512i*)permute_r0_mask_table);
+  __m512i and_l0 = _mm512_loadu_si512((__m512i*)and_l0_mask_table);
+  __m512i and_r0 = _mm512_loadu_si512((__m512i*)and_r0_mask_table);
+  __m512i permute_l1 = _mm512_loadu_si512((__m512i*)permute_l1_mask_table);
+  __m512i permute_r1 = _mm512_loadu_si512((__m512i*)permute_r1_mask_table);
+  __mmask16 k = 0x7FFF; /* each __m512i with 12 pg group, 60 bytes */
+  int pg_cnt = w * h / 2;
+
+  int caches_num = 4;
+  int cache_pg_cnt = (256 * 1024) / sizeof(*pg_be); /* pg cnt for each cache */
+  int align = caches_num * 12; /* align to simd pg groups and caches_num */
+  cache_pg_cnt = cache_pg_cnt / align * align;
+  size_t cache_size = cache_pg_cnt * sizeof(*pg_be);
+  int soc_id = dma->parent->soc_id;
+
+  struct st20_rfc4175_422_10_pg2_be* be_caches =
+      st_rte_zmalloc_socket(cache_size * caches_num, soc_id);
+  /* two type be(0) or le(1) */
+  struct st_cvt_dma_ctx* ctx = st_cvt_dma_ctx_init(2 * caches_num, soc_id, 2);
+  if (!be_caches || !ctx) {
+    err("%s, alloc cache(%d,%" PRIu64 ") fail, %p\n", __func__, cache_pg_cnt, cache_size,
+        be_caches);
+    if (be_caches) st_rte_free(be_caches);
+    if (ctx) st_cvt_dma_ctx_uinit(ctx);
+    return st20_rfc4175_422be10_to_422le10_avx512_vbmi(pg_be, pg_le, w, h);
+  }
+  rte_iova_t be_caches_iova = rte_malloc_virt2iova(be_caches);
+
+  /* first with caches batch step */
+  int cache_batch = pg_cnt / cache_pg_cnt;
+  dbg("%s, pg_cnt %d cache_pg_cnt %d caches_num %d cache_batch %d\n", __func__, pg_cnt,
+      cache_pg_cnt, caches_num, cache_batch);
+  for (int i = 0; i < cache_batch; i++) {
+    struct st20_rfc4175_422_10_pg2_be* be_cache =
+        be_caches + (i % caches_num) * cache_pg_cnt;
+    dbg("%s, cache batch idx %d\n", __func__, i);
+
+    int max_tran = i + caches_num;
+    max_tran = RTE_MIN(max_tran, cache_batch);
+    int cur_tran = st_cvt_dma_ctx_get_tran(ctx, 0);
+    /* push max be dma */
+    while (cur_tran < max_tran) {
+      rte_iova_t be_cache_iova = be_caches_iova + (cur_tran % caches_num) * cache_size;
+      st_dma_copy_busy(dma, be_cache_iova, pg_be_iova, cache_size);
+      pg_be += cache_pg_cnt;
+      pg_be_iova += cache_size;
+      st_cvt_dma_ctx_push(ctx, 0);
+      cur_tran = st_cvt_dma_ctx_get_tran(ctx, 0);
+    }
+    st_dma_submit_busy(dma);
+
+    /* wait until current be dma copy done */
+    while (st_cvt_dma_ctx_get_done(ctx, 0) < (i + 1)) {
+      uint16_t nb_dq = st_dma_completed(dma, 1, NULL, NULL);
+      if (nb_dq) st_cvt_dma_ctx_pop(ctx);
+    }
+
+    struct st20_rfc4175_422_10_pg2_be* be = be_cache;
+    int batch = cache_pg_cnt / 12;
+    for (int j = 0; j < batch; j++) {
+      __m512i input = _mm512_maskz_loadu_epi32(k, (__m512i*)be);
+      __m512i permute_l0_result = _mm512_permutexvar_epi8(permute_l0, input);
+      __m512i permute_r0_result = _mm512_permutexvar_epi8(permute_r0, input);
+      __m512i rl_result =
+          _mm512_and_si512(_mm512_rol_epi32(permute_l0_result, 2), and_l0);
+      __m512i rr_result =
+          _mm512_and_si512(_mm512_ror_epi32(permute_r0_result, 2), and_r0);
+      __m512i rl_result_shuffle = _mm512_permutexvar_epi8(permute_l1, rl_result);
+      __m512i rr_result_shuffle = _mm512_permutexvar_epi8(permute_r1, rr_result);
+      __m512i result = _mm512_or_si512(rl_result_shuffle, rr_result_shuffle);
+
+      /* store to the first 60 bytes after dest address */
+      _mm512_mask_storeu_epi32((__m512i*)pg_le, k, result);
+
+      be += 12;
+      pg_le += 12;
+    }
+  }
+
+  pg_cnt = pg_cnt % cache_pg_cnt;
+  st_rte_free(be_caches);
+  st_cvt_dma_ctx_uinit(ctx);
+
+  /* remaining simd batch */
+  int batch = pg_cnt / 12;
+  for (int i = 0; i < batch; i++) {
+    __m512i input = _mm512_maskz_loadu_epi32(k, (__m512i*)pg_be);
+    __m512i permute_l0_result = _mm512_permutexvar_epi8(permute_l0, input);
+    __m512i permute_r0_result = _mm512_permutexvar_epi8(permute_r0, input);
+    __m512i rl_result = _mm512_and_si512(_mm512_rol_epi32(permute_l0_result, 2), and_l0);
+    __m512i rr_result = _mm512_and_si512(_mm512_ror_epi32(permute_r0_result, 2), and_r0);
+    __m512i rl_result_shuffle = _mm512_permutexvar_epi8(permute_l1, rl_result);
+    __m512i rr_result_shuffle = _mm512_permutexvar_epi8(permute_r1, rr_result);
+    __m512i result = _mm512_or_si512(rl_result_shuffle, rr_result_shuffle);
+
+    /* store to the first 60 bytes after dest address */
+    _mm512_mask_storeu_epi32((__m512i*)pg_le, k, result);
+
+    pg_be += 12;
+    pg_le += 12;
+  }
+
+  /* remaining scalar batch */
   int left = pg_cnt % 12;
   while (left) {
     uint16_t cb, y0, cr, y1;
@@ -535,6 +797,116 @@ int st20_rfc4175_422be10_to_422le8_avx512_vbmi(struct st20_rfc4175_422_10_pg2_be
   return 0;
 }
 
+int st20_rfc4175_422be10_to_422le8_avx512_vbmi_dma(
+    struct st_dma_lender_dev* dma, struct st20_rfc4175_422_10_pg2_be* pg_10,
+    st_iova_t pg_10_iova, struct st20_rfc4175_422_8_pg2_le* pg_8, uint32_t w,
+    uint32_t h) {
+  __m512i permute_mask = _mm512_loadu_si512((__m512i*)word_permute_mask_table_512);
+  __m512i srlv_mask = _mm512_loadu_si512((__m512i*)word_srlv_mask_table_512);
+  __mmask64 k_load = 0xFFFFFFFFFF; /* each __m512i with 2*4 pg group, 40 bytes */
+  __mmask64 k_store = 0x5555555555555555;
+  int pg_cnt = w * h / 2;
+  dbg("%s, pg_cnt %d\n", __func__, pg_cnt);
+
+  int caches_num = 4;
+  int cache_pg_cnt = (256 * 1024) / sizeof(*pg_10); /* pg cnt for each cache */
+  int align = caches_num * 8; /* align to simd pg groups and caches_num */
+  cache_pg_cnt = cache_pg_cnt / align * align;
+  size_t cache_size = cache_pg_cnt * sizeof(*pg_10);
+  int soc_id = dma->parent->soc_id;
+
+  struct st20_rfc4175_422_10_pg2_be* be10_caches =
+      st_rte_zmalloc_socket(cache_size * caches_num, soc_id);
+  /* two type be(0) or le(1) */
+  struct st_cvt_dma_ctx* ctx = st_cvt_dma_ctx_init(2 * caches_num, soc_id, 2);
+  if (!be10_caches || !ctx) {
+    err("%s, alloc cache(%d,%" PRIu64 ") fail, %p\n", __func__, cache_pg_cnt, cache_size,
+        be10_caches);
+    if (be10_caches) st_rte_free(be10_caches);
+    if (ctx) st_cvt_dma_ctx_uinit(ctx);
+    return st20_rfc4175_422be10_to_422le8_avx512_vbmi(pg_10, pg_8, w, h);
+  }
+  rte_iova_t be10_caches_iova = rte_malloc_virt2iova(be10_caches);
+
+  /* first with caches batch step */
+  int cache_batch = pg_cnt / cache_pg_cnt;
+  dbg("%s, pg_cnt %d cache_pg_cnt %d caches_num %d cache_batch %d\n", __func__, pg_cnt,
+      cache_pg_cnt, caches_num, cache_batch);
+  for (int i = 0; i < cache_batch; i++) {
+    struct st20_rfc4175_422_10_pg2_be* be10_cache =
+        be10_caches + (i % caches_num) * cache_pg_cnt;
+    dbg("%s, cache batch idx %d\n", __func__, i);
+
+    int max_tran = i + caches_num;
+    max_tran = RTE_MIN(max_tran, cache_batch);
+    int cur_tran = st_cvt_dma_ctx_get_tran(ctx, 0);
+    /* push max be dma */
+    while (cur_tran < max_tran) {
+      rte_iova_t be10_cache_iova =
+          be10_caches_iova + (cur_tran % caches_num) * cache_size;
+      st_dma_copy_busy(dma, be10_cache_iova, pg_10_iova, cache_size);
+      pg_10 += cache_pg_cnt;
+      pg_10_iova += cache_size;
+      st_cvt_dma_ctx_push(ctx, 0);
+      cur_tran = st_cvt_dma_ctx_get_tran(ctx, 0);
+    }
+    st_dma_submit_busy(dma);
+
+    /* wait until current be dma copy done */
+    while (st_cvt_dma_ctx_get_done(ctx, 0) < (i + 1)) {
+      uint16_t nb_dq = st_dma_completed(dma, 1, NULL, NULL);
+      if (nb_dq) st_cvt_dma_ctx_pop(ctx);
+    }
+    struct st20_rfc4175_422_10_pg2_be* be_10 = be10_cache;
+    int batch = cache_pg_cnt / 8;
+    for (int j = 0; j < batch; j++) {
+      __m512i input = _mm512_maskz_loadu_epi8(k_load, be_10);
+      __m512i permute_result = _mm512_permutexvar_epi8(permute_mask, input);
+      __m512i srlv_result = _mm512_srlv_epi16(permute_result, srlv_mask);
+      __m512i result = _mm512_srli_epi16(srlv_result, 2);
+
+      _mm512_mask_compressstoreu_epi8(pg_8, k_store, result);
+
+      be_10 += 8;
+      pg_8 += 8;
+    }
+  }
+
+  pg_cnt = pg_cnt % cache_pg_cnt;
+  st_rte_free(be10_caches);
+  st_cvt_dma_ctx_uinit(ctx);
+
+  /* remaining simd batch */
+  int batch = pg_cnt / 8;
+  for (int i = 0; i < batch; i++) {
+    __m512i input = _mm512_maskz_loadu_epi8(k_load, pg_10);
+    __m512i permute_result = _mm512_permutexvar_epi8(permute_mask, input);
+    __m512i srlv_result = _mm512_srlv_epi16(permute_result, srlv_mask);
+    __m512i result = _mm512_srli_epi16(srlv_result, 2);
+
+    _mm512_mask_compressstoreu_epi8(pg_8, k_store, result);
+
+    pg_10 += 8;
+    pg_8 += 8;
+  }
+
+  /* remaining scalar batch */
+  int left = pg_cnt % 8;
+  while (left) {
+    pg_8->Cb00 = pg_10->Cb00;
+    pg_8->Y00 = (pg_10->Y00 << 2) + (pg_10->Y00_ >> 2);
+    pg_8->Cr00 = (pg_10->Cr00 << 4) + (pg_10->Cr00_ >> 2);
+    pg_8->Y01 = (pg_10->Y01 << 6) + (pg_10->Y01_ >> 2);
+
+    pg_10++;
+    pg_8++;
+
+    left--;
+  }
+
+  return 0;
+}
+
 int st20_rfc4175_422le10_to_v210_avx512_vbmi(uint8_t* pg_le, uint8_t* pg_v210, uint32_t w,
                                              uint32_t h) {
   __m512i permute_mask = _mm512_loadu_si512((__m512i*)permute_mask_table_512);
@@ -566,8 +938,8 @@ int st20_rfc4175_422le10_to_v210_avx512_vbmi(uint8_t* pg_le, uint8_t* pg_v210, u
   return 0;
 }
 
-int st20_rfc4175_422be10_to_v210_avx512_vbmi(uint8_t* pg_be, uint8_t* pg_v210, uint32_t w,
-                                             uint32_t h) {
+int st20_rfc4175_422be10_to_v210_avx512_vbmi(struct st20_rfc4175_422_10_pg2_be* pg_be,
+                                             uint8_t* pg_v210, uint32_t w, uint32_t h) {
   __m512i permute0_mask = _mm512_loadu_si512((__m512i*)permute0_mask_table_512);
   __m512i multishift0_mask = _mm512_loadu_si512((__m512i*)multishift0_mask_table_512);
   __m512i and0_mask = _mm512_loadu_si512((__m512i*)and0_mask_table_512);
@@ -594,15 +966,281 @@ int st20_rfc4175_422be10_to_v210_avx512_vbmi(uint8_t* pg_be, uint8_t* pg_v210, u
     __m512i multishift1_result =
         _mm512_multishift_epi64_epi8(multishift1_mask, permute1_result);
     __m512i and1_result = _mm512_and_si512(multishift1_result, and1_mask);
-    __m512i result = _mm512_and_si512(and0_result, and1_result);
+    __m512i result = _mm512_or_si512(and0_result, and1_result);
 
     _mm512_storeu_si512((__m512i*)pg_v210, result);
 
-    pg_be += 60;
+    pg_be += 12;
     pg_v210 += 64;
   }
 
   return 0;
 }
+
+int st20_rfc4175_422be10_to_v210_avx512_vbmi_dma(struct st_dma_lender_dev* dma,
+                                                 struct st20_rfc4175_422_10_pg2_be* pg_be,
+                                                 st_iova_t pg_be_iova, uint8_t* pg_v210,
+                                                 uint32_t w, uint32_t h) {
+  __m512i permute0_mask = _mm512_loadu_si512((__m512i*)permute0_mask_table_512);
+  __m512i multishift0_mask = _mm512_loadu_si512((__m512i*)multishift0_mask_table_512);
+  __m512i and0_mask = _mm512_loadu_si512((__m512i*)and0_mask_table_512);
+  __m512i permute1_mask = _mm512_loadu_si512((__m512i*)permute1_mask_table_512);
+  __m512i multishift1_mask = _mm512_loadu_si512((__m512i*)multishift1_mask_table_512);
+  __m512i and1_mask = _mm512_loadu_si512((__m512i*)and1_mask_table_512);
+  __mmask16 k = 0x7FFF; /* each __m512i with 12 pg group, 60 bytes */
+
+  int pg_cnt = w * h / 2;
+  if (pg_cnt % 12 != 0) {
+    err("%s, invalid pg_cnt %d, pixel group number must be multiple of 12!\n", __func__,
+        pg_cnt);
+    return -EINVAL;
+  }
+
+  int caches_num = 4;
+  int cache_pg_cnt = (256 * 1024) / sizeof(*pg_be); /* pg cnt for each cache */
+  int align = caches_num * 12; /* align to simd pg groups and caches_num */
+  cache_pg_cnt = cache_pg_cnt / align * align;
+  size_t cache_size = cache_pg_cnt * sizeof(*pg_be);
+  int soc_id = dma->parent->soc_id;
+
+  struct st20_rfc4175_422_10_pg2_be* be_caches =
+      st_rte_zmalloc_socket(cache_size * caches_num, soc_id);
+  /* two type be(0) or le(1) */
+  struct st_cvt_dma_ctx* ctx = st_cvt_dma_ctx_init(2 * caches_num, soc_id, 2);
+  if (!be_caches || !ctx) {
+    err("%s, alloc cache(%d,%" PRIu64 ") fail, %p\n", __func__, cache_pg_cnt, cache_size,
+        be_caches);
+    if (be_caches) st_rte_free(be_caches);
+    if (ctx) st_cvt_dma_ctx_uinit(ctx);
+    return st20_rfc4175_422be10_to_v210_avx512_vbmi(pg_be, pg_v210, w, h);
+  }
+  rte_iova_t be_caches_iova = rte_malloc_virt2iova(be_caches);
+
+  /* first with caches batch step */
+  int cache_batch = pg_cnt / cache_pg_cnt;
+  dbg("%s, pg_cnt %d cache_pg_cnt %d caches_num %d cache_batch %d\n", __func__, pg_cnt,
+      cache_pg_cnt, caches_num, cache_batch);
+  for (int i = 0; i < cache_batch; i++) {
+    struct st20_rfc4175_422_10_pg2_be* be_cache =
+        be_caches + (i % caches_num) * cache_pg_cnt;
+    dbg("%s, cache batch idx %d\n", __func__, i);
+
+    int max_tran = i + caches_num;
+    max_tran = RTE_MIN(max_tran, cache_batch);
+    int cur_tran = st_cvt_dma_ctx_get_tran(ctx, 0);
+    /* push max be dma */
+    while (cur_tran < max_tran) {
+      rte_iova_t be_cache_iova = be_caches_iova + (cur_tran % caches_num) * cache_size;
+      st_dma_copy_busy(dma, be_cache_iova, pg_be_iova, cache_size);
+      pg_be += cache_pg_cnt;
+      pg_be_iova += cache_size;
+      st_cvt_dma_ctx_push(ctx, 0);
+      cur_tran = st_cvt_dma_ctx_get_tran(ctx, 0);
+    }
+    st_dma_submit_busy(dma);
+
+    /* wait until current be dma copy done */
+    while (st_cvt_dma_ctx_get_done(ctx, 0) < (i + 1)) {
+      uint16_t nb_dq = st_dma_completed(dma, 1, NULL, NULL);
+      if (nb_dq) st_cvt_dma_ctx_pop(ctx);
+    }
+
+    struct st20_rfc4175_422_10_pg2_be* be = be_cache;
+    int batch = cache_pg_cnt / 12;
+    for (int j = 0; j < batch; j++) {
+      __m512i input = _mm512_maskz_loadu_epi32(k, (__m512i*)be);
+      __m512i permute0_result = _mm512_permutexvar_epi8(permute0_mask, input);
+      __m512i multishift0_result =
+          _mm512_multishift_epi64_epi8(multishift0_mask, permute0_result);
+      __m512i and0_result = _mm512_and_si512(multishift0_result, and0_mask);
+      __m512i permute1_result = _mm512_permutexvar_epi8(permute1_mask, input);
+      __m512i multishift1_result =
+          _mm512_multishift_epi64_epi8(multishift1_mask, permute1_result);
+      __m512i and1_result = _mm512_and_si512(multishift1_result, and1_mask);
+      __m512i result = _mm512_or_si512(and0_result, and1_result);
+
+      _mm512_storeu_si512((__m512i*)pg_v210, result);
+
+      be += 12;
+      pg_v210 += 64;
+    }
+  }
+
+  pg_cnt = pg_cnt % cache_pg_cnt;
+  st_rte_free(be_caches);
+  st_cvt_dma_ctx_uinit(ctx);
+
+  /* remaining simd batch */
+  int batch = pg_cnt / 12;
+  for (int i = 0; i < batch; i++) {
+    __m512i input = _mm512_maskz_loadu_epi32(k, (__m512i*)pg_be);
+    __m512i permute0_result = _mm512_permutexvar_epi8(permute0_mask, input);
+    __m512i multishift0_result =
+        _mm512_multishift_epi64_epi8(multishift0_mask, permute0_result);
+    __m512i and0_result = _mm512_and_si512(multishift0_result, and0_mask);
+    __m512i permute1_result = _mm512_permutexvar_epi8(permute1_mask, input);
+    __m512i multishift1_result =
+        _mm512_multishift_epi64_epi8(multishift1_mask, permute1_result);
+    __m512i and1_result = _mm512_and_si512(multishift1_result, and1_mask);
+    __m512i result = _mm512_or_si512(and0_result, and1_result);
+
+    _mm512_storeu_si512((__m512i*)pg_v210, result);
+
+    pg_be += 12;
+    pg_v210 += 64;
+  }
+
+  return 0;
+}
+
+static uint16_t vbmi_l2b_sllv_mask_table[8 * 4] = {
+    /* 0-15, b0 - b7 */
+    0x0006,
+    0x0006,
+    0x0006,
+    0x0006,
+    0x0006,
+    0x0006,
+    0x0006,
+    0x0006,
+    /* 16-31, y0 - y7 */
+    0x0004,
+    0x0000,
+    0x0004,
+    0x0000,
+    0x0004,
+    0x0000,
+    0x0004,
+    0x0000,
+    /* 32-47, r0 - r7 */
+    0x0002,
+    0x0002,
+    0x0002,
+    0x0002,
+    0x0002,
+    0x0002,
+    0x0002,
+    0x0002,
+    /* 48-63, y8 - y15 */
+    0x0004,
+    0x0000,
+    0x0004,
+    0x0000,
+    0x0004,
+    0x0000,
+    0x0004,
+    0x0000,
+};
+
+static uint8_t vbmi_l2b_permute_hi_mask_table[16 * 4] = {
+    1 + (2 * 0), 0 + (2 * 0), 16 + (4 * 0), 32 + (2 * 0), 18 + (4 * 0), /* pg0 */
+    1 + (2 * 1), 0 + (2 * 1), 16 + (4 * 1), 32 + (2 * 1), 18 + (4 * 1), /* pg1 */
+    1 + (2 * 2), 0 + (2 * 2), 16 + (4 * 2), 32 + (2 * 2), 18 + (4 * 2), /* pg2 */
+    1 + (2 * 3), 0 + (2 * 3), 16 + (4 * 3), 32 + (2 * 3), 18 + (4 * 3), /* pg3 */
+    1 + (2 * 4), 0 + (2 * 4), 48 + (4 * 0), 32 + (2 * 4), 50 + (4 * 0), /* pg4 */
+    1 + (2 * 5), 0 + (2 * 5), 48 + (4 * 1), 32 + (2 * 5), 50 + (4 * 1), /* pg5 */
+    1 + (2 * 6), 0 + (2 * 6), 48 + (4 * 2), 32 + (2 * 6), 50 + (4 * 2), /* pg6 */
+    1 + (2 * 7), 0 + (2 * 7), 48 + (4 * 3), 32 + (2 * 7), 50 + (4 * 3), /* pg7 */
+    0x00,        0x00,        0x00,         0x00,         0x00,
+    0x00,        0x00,        0x00, /* 40-48 */
+    0x00,        0x00,        0x00,         0x00,         0x00,
+    0x00,        0x00,        0x00, /* 49-53 */
+    0x00,        0x00,        0x00,         0x00,         0x00,
+    0x00,        0x00,        0x00, /* 54-63 */
+};
+
+static uint8_t vbmi_l2b_permute_lo_mask_table[16 * 4] = {
+    0,    17 + (4 * 0), 33 + (2 * 0), 19 + (4 * 0), 0,                      /* pg0 */
+    0,    17 + (4 * 1), 33 + (2 * 1), 19 + (4 * 1), 0,                      /* pg1 */
+    0,    17 + (4 * 2), 33 + (2 * 2), 19 + (4 * 2), 0,                      /* pg2 */
+    0,    17 + (4 * 3), 33 + (2 * 3), 19 + (4 * 3), 0,                      /* pg3 */
+    0,    49 + (4 * 0), 33 + (2 * 4), 51 + (4 * 0), 0,                      /* pg4 */
+    0,    49 + (4 * 1), 33 + (2 * 5), 51 + (4 * 1), 0,                      /* pg5 */
+    0,    49 + (4 * 2), 33 + (2 * 6), 51 + (4 * 2), 0,                      /* pg6 */
+    0,    49 + (4 * 3), 33 + (2 * 7), 51 + (4 * 3), 0,                      /* pg7 */
+    0x00, 0x00,         0x00,         0x00,         0x00, 0x00, 0x00, 0x00, /* 40-48 */
+    0x00, 0x00,         0x00,         0x00,         0x00, 0x00, 0x00, 0x00, /* 49-53 */
+    0x00, 0x00,         0x00,         0x00,         0x00, 0x00, 0x00, 0x00, /* 54-63 */
+};
+
+static uint8_t vbmi_l2b_and_lo_mask_table[16 * 4] = {
+    0x00, 0xFF, 0xFF, 0xFF, 0x00,                   /* pg0 */
+    0x00, 0xFF, 0xFF, 0xFF, 0x00,                   /* pg1 */
+    0x00, 0xFF, 0xFF, 0xFF, 0x00,                   /* pg2 */
+    0x00, 0xFF, 0xFF, 0xFF, 0x00,                   /* pg3 */
+    0x00, 0xFF, 0xFF, 0xFF, 0x00,                   /* pg4 */
+    0x00, 0xFF, 0xFF, 0xFF, 0x00,                   /* pg5 */
+    0x00, 0xFF, 0xFF, 0xFF, 0x00,                   /* pg6 */
+    0x00, 0xFF, 0xFF, 0xFF, 0x00,                   /* pg7 */
+    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, /* 40-48 */
+    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, /* 49-53 */
+    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, /* 54-63 */
+};
+
+int st20_yuv422p10le_to_rfc4175_422be10_vbmi(uint16_t* y, uint16_t* b, uint16_t* r,
+                                             struct st20_rfc4175_422_10_pg2_be* pg,
+                                             uint32_t w, uint32_t h) {
+  uint32_t pg_cnt = w * h / 2; /* two pgs in one convert */
+  uint16_t cb, y0, cr, y1;
+  __m512i sllv_le_mask = _mm512_loadu_si512(vbmi_l2b_sllv_mask_table);
+  __m512i permute_hi_mask = _mm512_loadu_si512(vbmi_l2b_permute_hi_mask_table);
+  __m512i permute_lo_mask = _mm512_loadu_si512(vbmi_l2b_permute_lo_mask_table);
+  __m512i and_lo_mask = _mm512_loadu_si512(vbmi_l2b_and_lo_mask_table);
+  __mmask64 k = 0xFFFFFFFFFF; /* each __m512i with 2*4 pg group, 40 bytes */
+  __m512i zero = _mm512_setzero_si512();
+
+  /* each __m512i batch handle 4 __m128i, each __m128i with 2 pg group */
+  while (pg_cnt >= 8) {
+    __m128i src_128i[4];
+    src_128i[0] = _mm_loadu_si128((__m128i*)b); /* b0-b7 */
+    b += 8;
+    src_128i[1] = _mm_loadu_si128((__m128i*)y); /* y0-y7 */
+    y += 8;
+    src_128i[2] = _mm_loadu_si128((__m128i*)r); /* r0-r7 */
+    r += 8;
+    src_128i[3] = _mm_loadu_si128((__m128i*)y); /* y8-y15 */
+    y += 8;
+
+    /* b0-b7, y0-y7, r0-r7, y8-y15 */
+    __m512i src = _mm512_inserti64x2(zero, src_128i[0], 0);
+    src = _mm512_inserti64x2(src, src_128i[1], 1);
+    src = _mm512_inserti64x2(src, src_128i[2], 2);
+    src = _mm512_inserti64x2(src, src_128i[3], 3);
+
+    /* b0, r0, y0, y1, b1, r1, y2, y3 */
+    __m512i srlv_le_result = _mm512_sllv_epi16(src, sllv_le_mask);
+    __m512i permute_hi_result = _mm512_permutexvar_epi8(permute_hi_mask, srlv_le_result);
+    __m512i permute_lo_result = _mm512_permutexvar_epi8(permute_lo_mask, srlv_le_result);
+    permute_lo_result = _mm512_and_si512(permute_lo_result, and_lo_mask);
+    __m512i result = _mm512_or_si512(permute_hi_result, permute_lo_result);
+    _mm512_mask_storeu_epi8(pg, k, result);
+    pg += 8;
+
+    pg_cnt -= 8;
+  }
+
+  dbg("%s, remaining pg_cnt %d\n", __func__, pg_cnt);
+  while (pg_cnt > 0) {
+    cb = *b++;
+    y0 = *y++;
+    cr = *r++;
+    y1 = *y++;
+
+    pg->Cb00 = cb >> 2;
+    pg->Cb00_ = cb;
+    pg->Y00 = y0 >> 4;
+    pg->Y00_ = y0;
+    pg->Cr00 = cr >> 6;
+    pg->Cr00_ = cr;
+    pg->Y01 = y1 >> 8;
+    pg->Y01_ = y1;
+    pg++;
+
+    pg_cnt--;
+  }
+
+  return 0;
+}
+
 ST_TARGET_CODE_STOP
 #endif

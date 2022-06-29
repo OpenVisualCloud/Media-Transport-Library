@@ -34,9 +34,12 @@ enum test_args_cmd {
   TEST_ARG_LIB_PTP,
   TEST_ARG_RX_MONO_POOL,
   TEST_ARG_RX_SEPARATE_VIDEO_LCORE,
+  TEST_ARG_MIGRATE_ENABLE,
+  TEST_ARG_MIGRATE_DISABLE,
   TEST_ARG_NB_TX_DESC,
   TEST_ARG_NB_RX_DESC,
   TEST_ARG_LEVEL,
+  TEST_ARG_AUTO_START_STOP,
 };
 
 static struct option test_args_options[] = {
@@ -52,8 +55,11 @@ static struct option test_args_options[] = {
     {"ptp", no_argument, 0, TEST_ARG_LIB_PTP},
     {"rx_mono_pool", no_argument, 0, TEST_ARG_RX_MONO_POOL},
     {"rx_separate_lcore", no_argument, 0, TEST_ARG_RX_SEPARATE_VIDEO_LCORE},
+    {"migrate_enable", no_argument, 0, TEST_ARG_MIGRATE_ENABLE},
+    {"migrate_disable", no_argument, 0, TEST_ARG_MIGRATE_DISABLE},
     {"nb_tx_desc", required_argument, 0, TEST_ARG_NB_TX_DESC},
     {"nb_rx_desc", required_argument, 0, TEST_ARG_NB_RX_DESC},
+    {"auto_start_stop", no_argument, 0, TEST_ARG_AUTO_START_STOP},
 
     {0, 0, 0, 0}};
 
@@ -65,14 +71,14 @@ struct st_tests_context* st_test_ctx(void) {
 
 static int test_args_dma_dev(struct st_init_params* p, const char* in_dev) {
   if (!in_dev) return -EIO;
-  char devs[128];
-  strncpy(devs, in_dev, 127);
+  char devs[128] = {0};
+  strncpy(devs, in_dev, 128 - 1);
 
   dbg("%s, dev list %s\n", __func__, devs);
   char* next_dev = strtok(devs, ",");
-  while (next_dev) {
+  while (next_dev && (p->num_dma_dev_port < ST_DMA_DEV_MAX)) {
     dbg("next_dev: %s\n", next_dev);
-    strncpy(p->dma_dev_port[p->num_dma_dev_port], next_dev, ST_PORT_MAX_LEN);
+    strncpy(p->dma_dev_port[p->num_dma_dev_port], next_dev, ST_PORT_MAX_LEN - 1);
     p->num_dma_dev_port++;
     next_dev = strtok(NULL, ",");
   }
@@ -82,6 +88,7 @@ static int test_args_dma_dev(struct st_init_params* p, const char* in_dev) {
 static int test_parse_args(struct st_tests_context* ctx, struct st_init_params* p,
                            int argc, char** argv) {
   int cmd = -1, opt_idx = 0;
+  int nb;
 
   while (1) {
     cmd = getopt_long_only(argc, argv, "hv", test_args_options, &opt_idx);
@@ -101,8 +108,10 @@ static int test_parse_args(struct st_tests_context* ctx, struct st_init_params* 
         p->lcores = optarg;
         break;
       case TEST_ARG_SCH_SESSION_QUOTA: /* unit: 1080p tx */
-        p->data_quota_mbs_per_sch =
-            atoi(optarg) * st20_1080p59_yuv422_10bit_bandwidth_mps();
+        nb = atoi(optarg);
+        if (nb > 0 && nb < 100) {
+          p->data_quota_mbs_per_sch = nb * st20_1080p59_yuv422_10bit_bandwidth_mps();
+        }
         break;
       case TEST_ARG_DMA_DEV:
         test_args_dma_dev(p, optarg);
@@ -128,6 +137,14 @@ static int test_parse_args(struct st_tests_context* ctx, struct st_init_params* 
       case TEST_ARG_RX_SEPARATE_VIDEO_LCORE:
         p->flags |= ST_FLAG_RX_SEPARATE_VIDEO_LCORE;
         break;
+      case TEST_ARG_MIGRATE_ENABLE:
+        p->flags |= ST_FLAG_RX_VIDEO_MIGRATE;
+        p->flags |= ST_FLAG_TX_VIDEO_MIGRATE;
+        break;
+      case TEST_ARG_MIGRATE_DISABLE:
+        p->flags &= ~ST_FLAG_RX_VIDEO_MIGRATE;
+        p->flags &= ~ST_FLAG_TX_VIDEO_MIGRATE;
+        break;
       case TEST_ARG_LIB_PTP:
         p->flags |= ST_FLAG_PTP_ENABLE;
         p->ptp_get_time_fn = NULL; /* clear the user ptp func */
@@ -145,6 +162,9 @@ static int test_parse_args(struct st_tests_context* ctx, struct st_init_params* 
           ctx->level = ST_TEST_LEVEL_MANDATORY;
         else
           err("%s, unknow log level %s\n", __func__, optarg);
+        break;
+      case TEST_ARG_AUTO_START_STOP:
+        p->flags |= ST_FLAG_DEV_AUTO_START_STOP;
         break;
       default:
         break;
@@ -366,6 +386,31 @@ TEST(Misc, ptp) {
   EXPECT_EQ(ptp, ctx->ptp_time);
 }
 
+static void st10_timestamp_test(uint32_t sampling_rate) {
+  auto ctx = (struct st_tests_context*)st_test_ctx();
+  auto handle = ctx->handle;
+
+  uint64_t ptp1 = st_ptp_read_time(handle);
+  uint32_t media1 = st10_tai_to_media_clk(ptp1, sampling_rate);
+  /* sleep 100us */
+  usleep(100);
+  uint64_t ptp2 = st_ptp_read_time(handle);
+  uint32_t media2 = st10_tai_to_media_clk(ptp2, sampling_rate);
+  EXPECT_GT(ptp2, ptp1);
+  EXPECT_GT(media2, media1);
+
+  uint64_t ns_delta = st10_media_clk_to_ns(media2 - media1, sampling_rate);
+  uint64_t expect_delta = ptp2 - ptp1;
+  dbg("%s, delta %lu %lu\n", __func__, ns_delta, expect_delta);
+  EXPECT_NEAR(ns_delta, expect_delta, expect_delta * 0.5);
+}
+
+TEST(Misc, st10_timestamp) {
+  st10_timestamp_test(90 * 1000);
+  st10_timestamp_test(48 * 1000);
+  st10_timestamp_test(96 * 1000);
+}
+
 GTEST_API_ int main(int argc, char** argv) {
   struct st_tests_context* ctx;
   int ret;
@@ -389,6 +434,8 @@ GTEST_API_ int main(int argc, char** argv) {
     return -EIO;
   }
 
+  st_test_jpegxs_plugin_register(ctx);
+
   uint64_t start_time_ns = st_test_get_monotonic_time();
 
   ret = RUN_ALL_TESTS();
@@ -402,12 +449,16 @@ GTEST_API_ int main(int argc, char** argv) {
     sleep(time_least - time_s);
   }
 
+  st_test_jpegxs_plugin_unregister(ctx);
+
   test_ctx_uinit(ctx);
   return ret;
 }
 
 int tx_next_frame(void* priv, uint16_t* next_frame_idx) {
   auto ctx = (tests_context*)priv;
+
+  if (!ctx->handle) return -EIO; /* not ready */
 
   *next_frame_idx = ctx->fb_idx;
   dbg("%s, next_frame_idx %d\n", __func__, *next_frame_idx);
@@ -418,9 +469,9 @@ int tx_next_frame(void* priv, uint16_t* next_frame_idx) {
   return 0;
 }
 
-void test_md5_dump(const char* tag, unsigned char* md5) {
-  for (size_t i = 0; i < MD5_DIGEST_LENGTH; i++) {
-    dbg("0x%02x ", md5[i]);
+void test_sha_dump(const char* tag, unsigned char* sha) {
+  for (size_t i = 0; i < SHA256_DIGEST_LENGTH; i++) {
+    dbg("0x%02x ", sha[i]);
   }
   dbg(", %s done\n", tag);
 }
@@ -436,10 +487,32 @@ int st_test_check_patter(uint8_t* p, size_t sz, uint8_t base) {
   return 0;
 }
 
-void md5_frame_check(void* args) {
+int st_test_cmp(uint8_t* s1, uint8_t* s2, size_t sz) {
+  for (size_t i = 0; i < sz; i++) {
+    if (s1[i] != s2[i]) {
+      err("%s, mismatch on %lu, 0x%x 0x%x\n", __func__, i, s1[i], s2[i]);
+      return -EIO;
+    }
+  }
+
+  return 0;
+}
+
+int st_test_cmp_u16(uint16_t* s1, uint16_t* s2, size_t sz) {
+  for (size_t i = 0; i < sz; i++) {
+    if (s1[i] != s2[i]) {
+      err("%s, mismatch on %lu\n", __func__, i);
+      return -EIO;
+    }
+  }
+
+  return 0;
+}
+
+void sha_frame_check(void* args) {
   auto ctx = (tests_context*)args;
   std::unique_lock<std::mutex> lck(ctx->mtx, std::defer_lock);
-  unsigned char result[MD5_DIGEST_LENGTH];
+  unsigned char result[SHA256_DIGEST_LENGTH];
   while (!ctx->stop) {
     if (ctx->buf_q.empty()) {
       lck.lock();
@@ -451,16 +524,16 @@ void md5_frame_check(void* args) {
       ctx->buf_q.pop();
       dbg("%s, frame %p\n", __func__, frame);
       int i;
-      MD5((unsigned char*)frame, ctx->frame_size, result);
-      for (i = 0; i < TEST_MD5_HIST_NUM; i++) {
-        unsigned char* target_md5 = ctx->md5s[i];
-        if (!memcmp(result, target_md5, MD5_DIGEST_LENGTH)) break;
+      SHA256((unsigned char*)frame, ctx->frame_size, result);
+      for (i = 0; i < TEST_SHA_HIST_NUM; i++) {
+        unsigned char* target_sha = ctx->shas[i];
+        if (!memcmp(result, target_sha, SHA256_DIGEST_LENGTH)) break;
       }
-      if (i >= TEST_MD5_HIST_NUM) {
-        test_md5_dump("rx_error_md5", result);
+      if (i >= TEST_SHA_HIST_NUM) {
+        test_sha_dump("rx_error_sha", result);
         ctx->fail_cnt++;
       }
-      ctx->check_md5_frame_cnt++;
+      ctx->check_sha_frame_cnt++;
       st_test_free(frame);
     }
   }

@@ -14,6 +14,7 @@
  *
  */
 
+#include <errno.h>
 #include <pthread.h>
 #include <st_dpdk_api.h>
 #include <stdbool.h>
@@ -22,59 +23,111 @@
 #include <string.h>
 #include <unistd.h>
 
-#define RX_VIDEO_PORT_BDF "0000:af:00.0"
-#define RX_VIDEO_UDP_PORT (10000)
+#include "../src/app_platform.h"
+
+#define RX_ST22_PORT_BDF "0000:af:00.0"
+#define RX_ST22_UDP_PORT (10000)
+#define RX_ST22_PAYLOAD_TYPE (114)
 
 /* local ip address for current bdf port */
-static uint8_t g_rx_video_local_ip[ST_IP_ADDR_LEN] = {192, 168, 0, 1};
+static uint8_t g_rx_st22_local_ip[ST_IP_ADDR_LEN] = {192, 168, 0, 1};
 /* source ip address for rx video session */
-static uint8_t g_rx_video_source_ip[ST_IP_ADDR_LEN] = {239, 168, 0, 1};
+static uint8_t g_rx_st22_source_ip[ST_IP_ADDR_LEN] = {239, 168, 0, 1};
 
 struct app_context {
   int idx;
-  int fb_rec;
+  int fb_decoded;
   void* handle;
   bool stop;
-  pthread_t app_thread;
+  pthread_t decode_thread;
   pthread_cond_t wake_cond;
   pthread_mutex_t wake_mutex;
+  size_t bytes_per_frame;
+
+  uint16_t framebuff_cnt;
+  uint16_t framebuff_producer_idx;
+  uint16_t framebuff_consumer_idx;
+  struct st_rx_frame* framebuffs;
 };
 
-static int rx_rtp_ready(void* priv) {
-  struct app_context* s = (struct app_context*)priv;
-  // wake up the app thread who is waiting for the rtp buf;
-  pthread_mutex_lock(&s->wake_mutex);
-  pthread_cond_signal(&s->wake_cond);
-  pthread_mutex_unlock(&s->wake_mutex);
+static int rx_st22_enqueue_frame(struct app_context* s, void* frame, size_t size) {
+  uint16_t producer_idx = s->framebuff_producer_idx;
+  struct st_rx_frame* framebuff = &s->framebuffs[producer_idx];
+
+  if (framebuff->frame) {
+    return -EBUSY;
+  }
+
+  // printf("%s(%d), frame idx %d\n", __func__, s->idx, producer_idx);
+  framebuff->frame = frame;
+  framebuff->size = size;
+  /* point to next */
+  producer_idx++;
+  if (producer_idx >= s->framebuff_cnt) producer_idx = 0;
+  s->framebuff_producer_idx = producer_idx;
   return 0;
 }
 
-static void* app_rx_video_rtp_thread(void* arg) {
-  struct app_context* s = arg;
-  void* usrptr;
-  uint16_t len;
-  void* mbuf;
-  struct st_rfc3550_rtp_hdr* hdr;
+static int rx_st22_frame_ready(void* priv, void* frame, struct st22_frame_meta* meta) {
+  struct app_context* s = (struct app_context*)priv;
 
+  if (!s->handle) return -EIO;
+
+  st_pthread_mutex_lock(&s->wake_mutex);
+  int ret = rx_st22_enqueue_frame(s, frame, meta->frame_total_size);
+  if (ret < 0) {
+    printf("%s(%d), frame %p dropped\n", __func__, s->idx, frame);
+    /* free the queue */
+    st22_rx_put_framebuff(s->handle, frame);
+    st_pthread_mutex_unlock(&s->wake_mutex);
+    return ret;
+  }
+  st_pthread_cond_signal(&s->wake_cond);
+  st_pthread_mutex_unlock(&s->wake_mutex);
+
+  return 0;
+}
+
+static void st22_decode_frame(struct app_context* s, void* codestream_addr,
+                              size_t codestream_size) {
+  // printf("%s(%d), frame %p\n", __func__, s->idx, frame);
+
+  /* call the real decoding here, sample just sleep */
+  usleep(10 * 1000);
+  s->fb_decoded++;
+}
+
+static void* st22_decode_thread(void* arg) {
+  struct app_context* s = arg;
+  int idx = s->idx;
+  int consumer_idx;
+  struct st_rx_frame* framebuff;
+
+  printf("%s(%d), start\n", __func__, idx);
   while (!s->stop) {
-    mbuf = st22_rx_get_mbuf(s->handle, &usrptr, &len);
-    if (!mbuf) {
-      /* no buffer */
-      pthread_mutex_lock(&s->wake_mutex);
-      if (!s->stop) pthread_cond_wait(&s->wake_cond, &s->wake_mutex);
-      pthread_mutex_unlock(&s->wake_mutex);
+    st_pthread_mutex_lock(&s->wake_mutex);
+    consumer_idx = s->framebuff_consumer_idx;
+    framebuff = &s->framebuffs[consumer_idx];
+    if (!framebuff->frame) {
+      /* no ready frame */
+      if (!s->stop) st_pthread_cond_wait(&s->wake_cond, &s->wake_mutex);
+      st_pthread_mutex_unlock(&s->wake_mutex);
       continue;
     }
+    st_pthread_mutex_unlock(&s->wake_mutex);
 
-    /* get one packet */
-    hdr = (struct st_rfc3550_rtp_hdr*)usrptr;
-    /* handle the rtp packet, should not handle the heavy work, if the st22_rx_get_mbuf is
-     * not called timely, the rtp queue in the lib will be full and rtp will be enqueued
-     * fail in the lib, packet will be dropped*/
-    if (hdr->marker) s->fb_rec++;
-    /* free to lib */
-    st22_rx_put_mbuf(s->handle, mbuf);
+    // printf("%s(%d), frame idx %d\n", __func__, idx, consumer_idx);
+    st22_decode_frame(s, framebuff->frame, framebuff->size);
+    st22_rx_put_framebuff(s->handle, framebuff->frame);
+    /* point to next */
+    st_pthread_mutex_lock(&s->wake_mutex);
+    framebuff->frame = NULL;
+    consumer_idx++;
+    if (consumer_idx >= s->framebuff_cnt) consumer_idx = 0;
+    s->framebuff_consumer_idx = consumer_idx;
+    st_pthread_mutex_unlock(&s->wake_mutex);
   }
+  printf("%s(%d), stop\n", __func__, idx);
 
   return NULL;
 }
@@ -82,11 +135,13 @@ static void* app_rx_video_rtp_thread(void* arg) {
 int main() {
   struct st_init_params param;
   int session_num = 1;
+  int bpp = 3; /* 3bit per pixel */
+  int fb_cnt = 3;
 
   memset(&param, 0, sizeof(param));
   param.num_ports = 1;
-  strncpy(param.port[ST_PORT_P], RX_VIDEO_PORT_BDF, ST_PORT_MAX_LEN);
-  memcpy(param.sip_addr[ST_PORT_P], g_rx_video_local_ip, ST_IP_ADDR_LEN);
+  strncpy(param.port[ST_PORT_P], RX_ST22_PORT_BDF, ST_PORT_MAX_LEN);
+  memcpy(param.sip_addr[ST_PORT_P], g_rx_st22_local_ip, ST_IP_ADDR_LEN);
   param.flags = ST_FLAG_BIND_NUMA;      // default bind to numa
   param.log_level = ST_LOG_LEVEL_INFO;  // log level. ERROR, INFO, WARNING
   param.priv = NULL;                    // usr ctx pointer
@@ -98,7 +153,7 @@ int main() {
   /* create device */
   st_handle dev_handle = st_init(&param);
   if (!dev_handle) {
-    printf("st_init fail\n");
+    printf("%s, st_init fail\n", __func__);
     return -1;
   }
 
@@ -109,42 +164,65 @@ int main() {
   for (int i = 0; i < session_num; i++) {
     app[i] = (struct app_context*)malloc(sizeof(struct app_context));
     if (!app[i]) {
-      printf(" app struct is not correctly malloc");
+      printf("%s, app struct malloc fail\n", __func__);
       return -1;
     }
     memset(app[i], 0, sizeof(struct app_context));
     app[i]->idx = i;
+    app[i]->framebuff_cnt = fb_cnt;
+    app[i]->framebuffs =
+        (struct st_rx_frame*)malloc(sizeof(*app[i]->framebuffs) * app[i]->framebuff_cnt);
+    if (!app[i]->framebuffs) {
+      printf("%s, framebuffs malloc fail\n", __func__);
+      free(app[i]);
+      return -1;
+    }
+    for (uint16_t j = 0; j < app[i]->framebuff_cnt; j++)
+      app[i]->framebuffs[j].frame = NULL;
+    app[i]->framebuff_producer_idx = 0;
+    app[i]->framebuff_consumer_idx = 0;
+
     struct st22_rx_ops ops_rx;
     memset(&ops_rx, 0, sizeof(ops_rx));
     ops_rx.name = "st22_test";
     ops_rx.priv = app[i];  // app handle register to lib
     ops_rx.num_port = 1;
-    memcpy(ops_rx.sip_addr[ST_PORT_P], g_rx_video_source_ip, ST_IP_ADDR_LEN);
-    strncpy(ops_rx.port[ST_PORT_P], RX_VIDEO_PORT_BDF, ST_PORT_MAX_LEN);
+    memcpy(ops_rx.sip_addr[ST_PORT_P], g_rx_st22_source_ip, ST_IP_ADDR_LEN);
+    strncpy(ops_rx.port[ST_PORT_P], RX_ST22_PORT_BDF, ST_PORT_MAX_LEN);
     // user could config the udp port in this interface.
-    ops_rx.udp_port[ST_PORT_P] = RX_VIDEO_UDP_PORT + i;
+    ops_rx.udp_port[ST_PORT_P] = RX_ST22_UDP_PORT + i;
     ops_rx.width = 1920;
     ops_rx.height = 1080;
     ops_rx.fps = ST_FPS_P59_94;
-    ops_rx.fmt = ST20_FMT_YUV_422_10BIT;
-    ops_rx.rtp_ring_size = 1024;
-    ops_rx.notify_rtp_ready = rx_rtp_ready;
+    ops_rx.payload_type = RX_ST22_PAYLOAD_TYPE;
+    ops_rx.type = ST22_TYPE_FRAME_LEVEL;
+    ops_rx.pack_type = ST22_PACK_CODESTREAM;
+
+    app[i]->bytes_per_frame = ops_rx.width * ops_rx.height * bpp / 8;
+    ops_rx.framebuff_cnt = fb_cnt;
+    /* set to the max size per frame if not CBR model */
+    ops_rx.framebuff_max_size = app[i]->bytes_per_frame;
+    ops_rx.notify_frame_ready = rx_st22_frame_ready;
+
     rx_handle[i] = st22_rx_create(dev_handle, &ops_rx);
     if (!rx_handle[i]) {
-      printf(" rx_session is not correctly created");
+      printf("%s, rx create fail", __func__);
+      free(app[i]->framebuffs);
       free(app[i]);
       return -1;
     }
     app[i]->handle = rx_handle[i];
-    pthread_mutex_init(&app[i]->wake_mutex, NULL);
-    pthread_cond_init(&app[i]->wake_cond, NULL);
-    ret = pthread_create(&app[i]->app_thread, NULL, app_rx_video_rtp_thread, app[i]);
+    st_pthread_mutex_init(&app[i]->wake_mutex, NULL);
+    st_pthread_cond_init(&app[i]->wake_cond, NULL);
+    app[i]->stop = false;
+    ret = pthread_create(&app[i]->decode_thread, NULL, st22_decode_thread, app[i]);
     if (ret < 0) {
-      printf("%s(%d), app_thread create fail %d\n", __func__, ret, i);
+      printf("%s(%d), decode create fail %d\n", __func__, ret, i);
       ret = st22_rx_free(rx_handle[i]);
-      if (ret) {
-        printf("session free failed\n");
+      if (ret < 0) {
+        printf("%s, rx free fail", __func__);
       }
+      free(app[i]->framebuffs);
       free(app[i]);
       return -1;
     }
@@ -159,10 +237,10 @@ int main() {
   // stop app thread
   for (int i = 0; i < session_num; i++) {
     app[i]->stop = true;
-    pthread_mutex_lock(&app[i]->wake_mutex);
-    pthread_cond_signal(&app[i]->wake_cond);
-    pthread_mutex_unlock(&app[i]->wake_mutex);
-    pthread_join(app[i]->app_thread, NULL);
+    st_pthread_mutex_lock(&app[i]->wake_mutex);
+    st_pthread_cond_signal(&app[i]->wake_cond);
+    st_pthread_mutex_unlock(&app[i]->wake_mutex);
+    pthread_join(app[i]->decode_thread, NULL);
   }
 
   // stop rx
@@ -174,9 +252,10 @@ int main() {
     if (ret) {
       printf("session free failed\n");
     }
-    pthread_mutex_destroy(&app[i]->wake_mutex);
-    pthread_cond_destroy(&app[i]->wake_cond);
-    printf("session(%d) received frames %d\n", i, app[i]->fb_rec);
+    st_pthread_mutex_destroy(&app[i]->wake_mutex);
+    st_pthread_cond_destroy(&app[i]->wake_cond);
+    printf("session(%d) decode frames %d\n", i, app[i]->fb_decoded);
+    free(app[i]->framebuffs);
     free(app[i]);
   }
 

@@ -18,6 +18,7 @@
 #define _ST_LIB_FMT_HEAD_H_
 
 #include <st_convert_api.h>
+#include <st_pipeline_api.h>
 
 struct st_fps_timing {
   enum st_fps fps;
@@ -27,10 +28,17 @@ struct st_fps_timing {
   double frame_rate;       /* fps number */
 };
 
+struct st_frame_fmt_desc {
+  enum st_frame_fmt fmt;
+  char* name;
+};
+
 int st_get_fps_timing(enum st_fps fps, struct st_fps_timing* fps_tm);
 
-int st22_get_bandwidth_bps(uint32_t total_pkts, uint16_t pkt_size, enum st_fps fps,
+int st22_rtp_bandwidth_bps(uint32_t total_pkts, uint16_t pkt_size, enum st_fps fps,
                            uint64_t* bps);
+
+int st22_frame_bandwidth_bps(size_t frame_size, enum st_fps fps, uint64_t* bps);
 
 static inline void st20_unpack_pg2be_422le10(struct st20_rfc4175_422_10_pg2_be* pg,
                                              uint16_t* cb00, uint16_t* y00,

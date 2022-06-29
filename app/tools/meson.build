@@ -11,4 +11,4 @@
 # express or implied warranties, other than those that are expressly stated
 # in the License.
 
-conv_sources = files('convert_app.c', 'args.c')
+conv_sources = files('convert_app.c', 'convert_app_args.c')

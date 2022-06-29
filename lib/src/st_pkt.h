@@ -64,6 +64,14 @@ struct st_rfc4175_video_hdr {
   struct st20_rfc4175_rtp_hdr rtp; /* size: 20 */
 } __attribute__((__packed__)) __rte_aligned(2);
 
+/* total size: 58 */
+struct st22_rfc9134_video_hdr {
+  struct rte_ether_hdr eth;        /* size: 14 */
+  struct rte_ipv4_hdr ipv4;        /* size: 20 */
+  struct rte_udp_hdr udp;          /* size: 8 */
+  struct st22_rfc9134_rtp_hdr rtp; /* size: 16 */
+} __attribute__((__packed__)) __rte_aligned(2);
+
 /* total size: 54 */
 struct st_rfc3550_audio_hdr {
   struct rte_ether_hdr eth;      /* size: 14 */
@@ -82,6 +90,9 @@ struct st_rfc8331_anc_hdr {
 
 #define ST_PKT_VIDEO_HDR_LEN \
   (sizeof(struct st_rfc4175_video_hdr) - sizeof(struct rte_ether_hdr))
+
+#define ST22_PKT_VIDEO_HDR_LEN \
+  (sizeof(struct st22_rfc9134_video_hdr) - sizeof(struct rte_ether_hdr))
 
 #define ST_PKT_AUDIO_HDR_LEN \
   (sizeof(struct st_rfc3550_audio_hdr) - sizeof(struct rte_ether_hdr))

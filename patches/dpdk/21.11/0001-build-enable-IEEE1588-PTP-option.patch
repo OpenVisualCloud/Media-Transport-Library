@@ -1,7 +1,7 @@
-From 80c8261c066beba673dab67fab19f9ff68687acd Mon Sep 17 00:00:00 2001
+From 24bde82f4f66d28101f1f4f9428772c37c022e72 Mon Sep 17 00:00:00 2001
 From: Frank Du <frank.du@intel.com>
 Date: Fri, 29 Oct 2021 09:30:19 +0800
-Subject: [PATCH 1/6] build: enable IEEE1588(PTP) option
+Subject: [PATCH 1/9] build: enable IEEE1588(PTP) option
 
 Signed-off-by: Frank Du <frank.du@intel.com>
 ---

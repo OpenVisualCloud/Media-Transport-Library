@@ -19,8 +19,12 @@
 
 #include "st_main.h"
 
-static inline struct st_sch_impl* st_get_sch(struct st_main_impl* impl, int i) {
-  return &impl->sch[i];
+static inline struct st_sch_mgr* st_sch_get_mgr(struct st_main_impl* impl) {
+  return &impl->sch_mgr;
+}
+
+static inline struct st_sch_impl* st_sch_instance(struct st_main_impl* impl, int i) {
+  return &st_sch_get_mgr(impl)->sch[i];
 }
 
 static inline bool st_sch_is_active(struct st_sch_impl* sch) {
@@ -30,19 +34,29 @@ static inline bool st_sch_is_active(struct st_sch_impl* sch) {
     return false;
 }
 
-int st_sch_init(struct st_main_impl* impl, int data_quota_mbs_limit);
+static inline bool st_sch_started(struct st_sch_impl* sch) {
+  if (rte_atomic32_read(&sch->started))
+    return true;
+  else
+    return false;
+}
+
+int st_sch_mrg_init(struct st_main_impl* impl, int data_quota_mbs_limit);
 
 int st_sch_register_tasklet(struct st_sch_impl* sch,
                             struct st_sch_tasklet_ops* tasklet_ops);
 
-int st_sch_start(struct st_sch_impl* sch, unsigned int lcore);
-
-int st_sch_stop(struct st_sch_impl* sch);
-
-struct st_sch_impl* st_sch_request(struct st_main_impl* impl, enum st_sch_type type);
-int st_sch_free(struct st_sch_impl* sch);
-
 int st_sch_add_quota(struct st_sch_impl* sch, int quota_mbs);
-int st_sch_free_quota(struct st_sch_impl* sch, int quota_mbs);
+
+struct st_sch_impl* st_sch_get(struct st_main_impl* impl, int quota_mbs,
+                               enum st_sch_type type);
+int st_sch_put(struct st_sch_impl* sch, int quota_mbs);
+
+int st_sch_start_all(struct st_main_impl* impl);
+int st_sch_stop_all(struct st_main_impl* impl);
+
+static inline void st_sch_set_cpu_busy(struct st_sch_impl* sch, bool busy) {
+  sch->cpu_busy = busy;
+}
 
 #endif

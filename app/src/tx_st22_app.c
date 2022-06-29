@@ -16,79 +16,131 @@
 
 #include "tx_st22_app.h"
 
-static int app_tx_st22_build_rtp_packet(struct st22_app_tx_session* s,
-                                        struct st_rfc3550_rtp_hdr* rtp,
-                                        uint16_t* pkt_len) {
-  uint8_t* frame = s->st22_frame_cursor;
-  uint8_t* payload = (uint8_t*)rtp + sizeof(*rtp);
-
-  /* copy base hdr */
-  st_memcpy(rtp, &s->st22_rtp_base, sizeof(*rtp));
-  /* update hdr */
-  rtp->tmstamp = htonl(s->st22_rtp_tmstamp);
-  rtp->seq_number = htons(s->st22_seq_id);
-  s->st22_seq_id++;
-  *pkt_len = s->rtp_pkt_size;
-
-  /* copy payload */
-  uint32_t offset = s->st22_pkt_idx * s->rtp_pd_size;
-  st_memcpy(payload, frame + offset, s->rtp_pd_size);
-
-  s->st22_pkt_idx++;
-  if (s->st22_pkt_idx >= s->rtp_frame_total_pkts) {
-    dbg("%s(%d), frame %d done\n", __func__, s->idx, s->st22_frame_idx);
-    /* end of current frame */
-    rtp->marker = 1;
-
-    s->st22_pkt_idx = 0;
-    s->st22_rtp_tmstamp++;
-    s->st22_frame_idx++;
-
-    s->st22_frame_cursor += s->st22_frame_size;
-    if ((s->st22_frame_cursor + s->st22_frame_size) > s->st22_source_end)
-      s->st22_frame_cursor = s->st22_source_begin;
-  }
-
-  return 0;
-}
-
-static int app_tx_st22_rtp_done(void* priv) {
+static int app_tx_st22_next_frame(void* priv, uint16_t* next_frame_idx,
+                                  size_t* frame_size) {
   struct st22_app_tx_session* s = priv;
+  int ret;
+  uint16_t consumer_idx = s->framebuff_consumer_idx;
+  struct st_tx_frame* framebuff = &s->framebuffs[consumer_idx];
 
-  pthread_mutex_lock(&s->st22_wake_mutex);
-  pthread_cond_signal(&s->st22_wake_cond);
-  pthread_mutex_unlock(&s->st22_wake_mutex);
+  st_pthread_mutex_lock(&s->wake_mutex);
+  if (ST_TX_FRAME_READY == framebuff->stat) {
+    dbg("%s(%d), next frame idx %u\n", __func__, s->idx, consumer_idx);
+    ret = 0;
+    framebuff->stat = ST_TX_FRAME_IN_TRANSMITTING;
+    *next_frame_idx = consumer_idx;
+    *frame_size = framebuff->size;
+    /* point to next */
+    consumer_idx++;
+    if (consumer_idx >= s->framebuff_cnt) consumer_idx = 0;
+    s->framebuff_consumer_idx = consumer_idx;
+  } else {
+    /* not ready */
+    ret = -EIO;
+    err("%s(%d), idx %u err stat %d\n", __func__, s->idx, consumer_idx, framebuff->stat);
+  }
+  st_pthread_cond_signal(&s->wake_cond);
+  st_pthread_mutex_unlock(&s->wake_mutex);
 
-  return 0;
+  return ret;
 }
 
-static void* app_tx_st22_rtp_thread(void* arg) {
+static int app_tx_st22_frame_done(void* priv, uint16_t frame_idx) {
+  struct st22_app_tx_session* s = priv;
+  int ret;
+  struct st_tx_frame* framebuff = &s->framebuffs[frame_idx];
+
+  st_pthread_mutex_lock(&s->wake_mutex);
+  if (ST_TX_FRAME_IN_TRANSMITTING == framebuff->stat) {
+    ret = 0;
+    framebuff->stat = ST_TX_FRAME_FREE;
+    dbg("%s(%d), done_idx %u\n", __func__, s->idx, frame_idx);
+    s->fb_send++;
+  } else {
+    ret = -EIO;
+    err("%s(%d), err status %d for frame %u\n", __func__, s->idx, framebuff->stat,
+        frame_idx);
+  }
+  st_pthread_cond_signal(&s->wake_cond);
+  st_pthread_mutex_unlock(&s->wake_mutex);
+
+  return ret;
+}
+
+static void app_tx_st22_thread_bind(struct st22_app_tx_session* s) {
+  if (s->lcore != -1) {
+    st_bind_to_lcore(s->st, pthread_self(), s->lcore);
+  }
+}
+
+static void app_tx_st22_check_lcore(struct st22_app_tx_session* s, bool rtp) {
+  int sch_idx = st22_tx_get_sch_idx(s->handle);
+  if (s->handle_sch_idx != sch_idx) {
+    s->handle_sch_idx = sch_idx;
+    unsigned int lcore;
+    int ret = st_app_video_get_lcore(s->ctx, s->handle_sch_idx, rtp, &lcore);
+    if ((ret >= 0) && (lcore != s->lcore)) {
+      s->lcore = lcore;
+      app_tx_st22_thread_bind(s);
+      info("%s(%d), bind to new lcore %d\n", __func__, s->idx, lcore);
+    }
+  }
+}
+
+static void app_tx_st22_build_frame(struct st22_app_tx_session* s, void* codestream_addr,
+                                    size_t max_codestream_size, size_t* codestream_size) {
+  uint8_t* src = s->st22_frame_cursor;
+  uint8_t* dst = codestream_addr;
+  int framesize = s->bytes_per_frame;
+
+  if (s->st22_frame_cursor + framesize > s->st22_source_end) {
+    s->st22_frame_cursor = s->st22_source_begin;
+    src = s->st22_frame_cursor;
+  }
+  /* call the real encoding here, sample just copy from the file */
+  st_memcpy(dst, src, framesize);
+  /* point to next frame */
+  s->st22_frame_cursor += framesize;
+
+  *codestream_size = framesize;
+}
+
+static void* app_tx_st22_frame_thread(void* arg) {
   struct st22_app_tx_session* s = arg;
   int idx = s->idx;
-  void* mbuf;
-  uint16_t mbuf_len = s->rtp_pkt_size;
-  void* usrptr = NULL;
+  uint16_t producer_idx;
+  struct st_tx_frame* framebuff;
+
+  app_tx_st22_thread_bind(s);
 
   info("%s(%d), start\n", __func__, idx);
   while (!s->st22_app_thread_stop) {
-    /* get available buffer*/
-    mbuf = st22_tx_get_mbuf(s->handle, &usrptr);
-    if (!mbuf) {
-      pthread_mutex_lock(&s->st22_wake_mutex);
-      /* try again */
-      mbuf = st22_tx_get_mbuf(s->handle, &usrptr);
-      if (mbuf) {
-        pthread_mutex_unlock(&s->st22_wake_mutex);
-      } else {
-        if (!s->st22_app_thread_stop)
-          pthread_cond_wait(&s->st22_wake_cond, &s->st22_wake_mutex);
-        pthread_mutex_unlock(&s->st22_wake_mutex);
-        continue;
-      }
+    st_pthread_mutex_lock(&s->wake_mutex);
+    producer_idx = s->framebuff_producer_idx;
+    framebuff = &s->framebuffs[producer_idx];
+    if (ST_TX_FRAME_FREE != framebuff->stat) {
+      /* not in free */
+      if (!s->st22_app_thread_stop) st_pthread_cond_wait(&s->wake_cond, &s->wake_mutex);
+      st_pthread_mutex_unlock(&s->wake_mutex);
+      continue;
     }
+    st_pthread_mutex_unlock(&s->wake_mutex);
 
-    app_tx_st22_build_rtp_packet(s, (struct st_rfc3550_rtp_hdr*)usrptr, &mbuf_len);
-    st22_tx_put_mbuf(s->handle, mbuf, mbuf_len);
+    app_tx_st22_check_lcore(s, false);
+
+    void* frame_addr = st22_tx_get_fb_addr(s->handle, producer_idx);
+    size_t max_framesize = s->bytes_per_frame;
+    size_t codestream_size = s->bytes_per_frame;
+    app_tx_st22_build_frame(s, frame_addr, max_framesize, &codestream_size);
+
+    st_pthread_mutex_lock(&s->wake_mutex);
+    framebuff->size = codestream_size;
+    framebuff->stat = ST_TX_FRAME_READY;
+    /* point to next */
+    producer_idx++;
+    if (producer_idx >= s->framebuff_cnt) producer_idx = 0;
+    s->framebuff_producer_idx = producer_idx;
+    st_pthread_mutex_unlock(&s->wake_mutex);
   }
   info("%s(%d), stop\n", __func__, idx);
 
@@ -98,9 +150,9 @@ static void* app_tx_st22_rtp_thread(void* arg) {
 static void app_tx_st22_stop_source(struct st22_app_tx_session* s) {
   s->st22_app_thread_stop = true;
   /* wake up the thread */
-  pthread_mutex_lock(&s->st22_wake_mutex);
-  pthread_cond_signal(&s->st22_wake_cond);
-  pthread_mutex_unlock(&s->st22_wake_mutex);
+  st_pthread_mutex_lock(&s->wake_mutex);
+  st_pthread_cond_signal(&s->wake_cond);
+  st_pthread_mutex_unlock(&s->wake_mutex);
   if (s->st22_app_thread) {
     pthread_join(s->st22_app_thread, NULL);
     s->st22_app_thread = 0;
@@ -111,12 +163,12 @@ static int app_tx_st22_start_source(struct st_app_context* ctx,
                                     struct st22_app_tx_session* s) {
   int ret = -EINVAL;
 
-  ret = pthread_create(&s->st22_app_thread, NULL, app_tx_st22_rtp_thread, s);
+  s->st22_app_thread_stop = false;
+  ret = pthread_create(&s->st22_app_thread, NULL, app_tx_st22_frame_thread, s);
   if (ret < 0) {
     err("%s, st22_app_thread create fail err = %d\n", __func__, ret);
     return ret;
   }
-  s->st22_app_thread_stop = false;
 
   return 0;
 }
@@ -135,16 +187,16 @@ static int app_tx_st22_open_source(struct st22_app_tx_session* s) {
   int fd;
   struct stat i;
 
-  fd = open(s->st22_source_url, O_RDONLY);
+  fd = st_open(s->st22_source_url, O_RDONLY);
   if (fd < 0) {
     err("%s, open %s fai\n", __func__, s->st22_source_url);
     return -EIO;
   }
 
   fstat(fd, &i);
-  if (i.st_size < s->st22_frame_size) {
-    err("%s, %s file size small then a frame %d\n", __func__, s->st22_source_url,
-        s->st22_frame_size);
+  if (i.st_size < s->bytes_per_frame) {
+    err("%s, %s file size small then a frame %ld\n", __func__, s->st22_source_url,
+        s->bytes_per_frame);
     close(fd);
     return -EIO;
   }
@@ -161,16 +213,6 @@ static int app_tx_st22_open_source(struct st22_app_tx_session* s) {
   s->st22_source_end = m + i.st_size;
   s->st22_source_fd = fd;
 
-  return 0;
-}
-
-static int app_tx_st22_init_rtp(struct st22_app_tx_session* s) {
-  struct st_rfc3550_rtp_hdr* rtp = &s->st22_rtp_base;
-
-  memset(rtp, 0, sizeof(*rtp));
-  rtp->version = 2;
-  rtp->payload_type = 112;
-  rtp->ssrc = htonl(s->idx + 0x123450);
   return 0;
 }
 
@@ -192,26 +234,33 @@ static int app_tx_st22_uinit(struct st22_app_tx_session* s) {
   app_tx_st22_handle_free(s);
   app_tx_st22_close_source(s);
 
-  pthread_mutex_destroy(&s->st22_wake_mutex);
-  pthread_cond_destroy(&s->st22_wake_cond);
+  st_pthread_mutex_destroy(&s->wake_mutex);
+  st_pthread_cond_destroy(&s->wake_cond);
+
+  if (s->framebuffs) {
+    st_app_free(s->framebuffs);
+    s->framebuffs = NULL;
+  }
+
   return 0;
 }
 
-static int app_tx_st22_init(struct st_app_context* ctx, struct st22_app_tx_session* s) {
+static int app_tx_st22_init(struct st_app_context* ctx, struct st22_app_tx_session* s,
+                            int bpp) {
   int idx = s->idx, ret;
   struct st22_tx_ops ops;
   char name[32];
   st22_tx_handle handle;
   memset(&ops, 0, sizeof(ops));
 
-  s->rtp_pkt_size = ctx->st22_rtp_pkt_size;
-  s->rtp_pd_size = s->rtp_pkt_size - sizeof(struct st_rfc3550_rtp_hdr);
-  s->rtp_frame_total_pkts = ctx->st22_rtp_frame_total_pkts;
   s->width = 1920;
   s->height = 1080;
-  s->st22_frame_size = s->rtp_frame_total_pkts * s->rtp_pd_size;
+  s->bpp = bpp;
+  s->bytes_per_frame = s->width * s->height * bpp / 8;
   memcpy(s->st22_source_url, ctx->tx_st22_url, ST_APP_URL_MAX_LEN);
   s->st22_source_fd = -1;
+  s->st = ctx->st;
+  s->ctx = ctx;
 
   snprintf(name, 32, "app_tx_st22_%d", idx);
   ops.name = name;
@@ -229,17 +278,25 @@ static int app_tx_st22_init(struct st_app_context* ctx, struct st22_app_tx_sessi
   ops.width = s->width;
   ops.height = s->height;
   ops.fps = ST_FPS_P59_94;
-  ops.fmt = ST20_FMT_YUV_422_10BIT;
-  ops.rtp_ring_size = 1024;
-  ops.rtp_pkt_size = s->rtp_pkt_size;
-  ops.rtp_frame_total_pkts = s->rtp_frame_total_pkts;
-  ops.notify_rtp_done = app_tx_st22_rtp_done;
-  ops.payload_type = 112;
+  ops.payload_type = ST_APP_PAYLOAD_TYPE_ST22;
+  ops.type = ST22_TYPE_FRAME_LEVEL;
+  ops.framebuff_cnt = 3;
+  ops.framebuff_max_size = s->bytes_per_frame;
+  ops.get_next_frame = app_tx_st22_next_frame;
+  ops.notify_frame_done = app_tx_st22_frame_done;
 
-  pthread_mutex_init(&s->st22_wake_mutex, NULL);
-  pthread_cond_init(&s->st22_wake_cond, NULL);
+  s->framebuff_cnt = ops.framebuff_cnt;
+  s->framebuff_producer_idx = 0;
+  s->framebuff_consumer_idx = 0;
+  s->framebuffs =
+      (struct st_tx_frame*)st_app_zmalloc(sizeof(*s->framebuffs) * s->framebuff_cnt);
+  if (!s->framebuffs) return -ENOMEM;
+  for (uint16_t j = 0; j < s->framebuff_cnt; j++) {
+    s->framebuffs[j].stat = ST_TX_FRAME_FREE;
+  }
 
-  app_tx_st22_init_rtp(s);
+  st_pthread_mutex_init(&s->wake_mutex, NULL);
+  st_pthread_cond_init(&s->wake_cond, NULL);
 
   handle = st22_tx_create(ctx->st, &ops);
   if (!handle) {
@@ -248,6 +305,12 @@ static int app_tx_st22_init(struct st_app_context* ctx, struct st22_app_tx_sessi
     return -EIO;
   }
   s->handle = handle;
+  s->type = ops.type;
+  s->handle_sch_idx = st22_tx_get_sch_idx(handle);
+
+  unsigned int lcore;
+  ret = st_app_video_get_lcore(ctx, s->handle_sch_idx, false, &lcore);
+  if (ret >= 0) s->lcore = lcore;
 
   ret = app_tx_st22_open_source(s);
   if (ret < 0) {
@@ -263,8 +326,7 @@ static int app_tx_st22_init(struct st_app_context* ctx, struct st22_app_tx_sessi
     return ret;
   }
 
-  info("%s(%d), rtp size(%d:%d) total %d pkts\n", __func__, idx, s->rtp_pkt_size,
-       s->rtp_pd_size, s->rtp_frame_total_pkts);
+  info("%s(%d), bytes_per_frame %ld\n", __func__, idx, s->bytes_per_frame);
   return 0;
 }
 
@@ -277,7 +339,8 @@ int st22_app_tx_sessions_init(struct st_app_context* ctx) {
   for (i = 0; i < ctx->tx_st22_session_cnt; i++) {
     s = &ctx->tx_st22_sessions[i];
     s->idx = i;
-    ret = app_tx_st22_init(ctx, s);
+    s->lcore = -1;
+    ret = app_tx_st22_init(ctx, s, ctx->st22_bpp);
     if (ret < 0) {
       err("%s(%d), app_tx_st22_init fail %d\n", __func__, i, ret);
       return ret;

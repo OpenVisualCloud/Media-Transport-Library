@@ -16,112 +16,124 @@
 
 #include "tx_ancillary_app.h"
 
-static int app_tx_anc_session_next_frame(void* priv, uint16_t* next_frame_idx) {
+static int app_tx_anc_next_frame(void* priv, uint16_t* next_frame_idx) {
   struct st_app_tx_anc_session* s = priv;
-  uint16_t i;
-  pthread_mutex_lock(&s->st40_wake_mutex);
-  for (i = 0; i < s->framebuff_cnt; i++) {
-    if (s->st40_ready_framebuff[i] == 1) {
-      s->st40_framebuff_idx = i;
-      s->st40_ready_framebuff[i] = 0;
-      break;
-    }
-  }
-  pthread_cond_signal(&s->st40_wake_cond);
-  pthread_mutex_unlock(&s->st40_wake_mutex);
-  if (i == s->framebuff_cnt) return -1;
-  *next_frame_idx = s->st40_framebuff_idx;
+  int ret;
+  uint16_t consumer_idx = s->framebuff_consumer_idx;
+  struct st_tx_frame* framebuff = &s->framebuffs[consumer_idx];
 
-  dbg("%s(%d), next framebuffer index %d\n", __func__, s->idx, *next_frame_idx);
-  return 0;
+  st_pthread_mutex_lock(&s->st40_wake_mutex);
+  if (ST_TX_FRAME_READY == framebuff->stat) {
+    dbg("%s(%d), next frame idx %u\n", __func__, s->idx, consumer_idx);
+    ret = 0;
+    framebuff->stat = ST_TX_FRAME_IN_TRANSMITTING;
+    *next_frame_idx = consumer_idx;
+    /* point to next */
+    consumer_idx++;
+    if (consumer_idx >= s->framebuff_cnt) consumer_idx = 0;
+    s->framebuff_consumer_idx = consumer_idx;
+  } else {
+    /* not ready */
+    err("%s(%d), idx %u err stat %d\n", __func__, s->idx, consumer_idx, framebuff->stat);
+    ret = -EIO;
+  }
+  st_pthread_cond_signal(&s->st40_wake_cond);
+  st_pthread_mutex_unlock(&s->st40_wake_mutex);
+  return ret;
 }
 
-static int app_tx_anc_session_frame_done(void* priv, uint16_t frame_idx) {
+static int app_tx_anc_frame_done(void* priv, uint16_t frame_idx) {
   struct st_app_tx_anc_session* s = priv;
+  int ret;
+  struct st_tx_frame* framebuff = &s->framebuffs[frame_idx];
 
-  pthread_mutex_lock(&s->st40_wake_mutex);
-  s->st40_free_framebuff[frame_idx] = 1;
-  pthread_cond_signal(&s->st40_wake_cond);
-  pthread_mutex_unlock(&s->st40_wake_mutex);
+  st_pthread_mutex_lock(&s->st40_wake_mutex);
+  if (ST_TX_FRAME_IN_TRANSMITTING == framebuff->stat) {
+    ret = 0;
+    framebuff->stat = ST_TX_FRAME_FREE;
+    dbg("%s(%d), done_idx %u\n", __func__, s->idx, frame_idx);
+  } else {
+    ret = -EIO;
+    err("%s(%d), err status %d for frame %u\n", __func__, s->idx, framebuff->stat,
+        frame_idx);
+  }
+  st_pthread_cond_signal(&s->st40_wake_cond);
+  st_pthread_mutex_unlock(&s->st40_wake_mutex);
+
   s->st40_frame_done_cnt++;
   dbg("%s(%d), framebuffer index %d\n", __func__, s->idx, frame_idx);
-  return 0;
+  return ret;
 }
 
-static int app_tx_anc_session_rtp_done(void* priv) {
+static int app_tx_anc_rtp_done(void* priv) {
   struct st_app_tx_anc_session* s = priv;
-  pthread_mutex_lock(&s->st40_wake_mutex);
-  pthread_cond_signal(&s->st40_wake_cond);
-  pthread_mutex_unlock(&s->st40_wake_mutex);
+  st_pthread_mutex_lock(&s->st40_wake_mutex);
+  st_pthread_cond_signal(&s->st40_wake_cond);
+  st_pthread_mutex_unlock(&s->st40_wake_mutex);
   s->st40_packet_done_cnt++;
   return 0;
 }
 
-static void* app_tx_anc_session_frame_thread(void* arg) {
-  struct st_app_tx_anc_session* s = arg;
-  uint16_t i;
-  while (!s->st40_app_thread_stop) {
-    // guarantee the sequence
-    pthread_mutex_lock(&s->st40_wake_mutex);
-    bool has_ready = false;
-    for (i = 0; i < s->framebuff_cnt; i++) {
-      if (s->st40_ready_framebuff[i] == 1) {
-        has_ready = true;
-        break;
-      }
-    }
-    if (has_ready) {
-      if (!s->st40_app_thread_stop)
-        pthread_cond_wait(&s->st40_wake_cond, &s->st40_wake_mutex);
-      pthread_mutex_unlock(&s->st40_wake_mutex);
-      continue;
-    }
+static void app_tx_anc_build_frame(struct st_app_tx_anc_session* s,
+                                   struct st40_frame* dst) {
+  uint16_t udw_size = s->st40_source_end - s->st40_frame_cursor > 255
+                          ? 255
+                          : s->st40_source_end - s->st40_frame_cursor;
+  dst->meta[0].c = 0;
+  dst->meta[0].line_number = 10;
+  dst->meta[0].hori_offset = 0;
+  dst->meta[0].s = 0;
+  dst->meta[0].stream_num = 0;
+  dst->meta[0].did = 0x43;
+  dst->meta[0].sdid = 0x02;
+  dst->meta[0].udw_size = udw_size;
+  dst->meta[0].udw_offset = 0;
+  dst->data = s->st40_frame_cursor;
+  dst->data_size = udw_size;
+  dst->meta_num = 1;
+  s->st40_frame_cursor += udw_size;
+  if (s->st40_frame_cursor == s->st40_source_end)
+    s->st40_frame_cursor = s->st40_source_begin;
+}
 
-    for (i = 0; i < s->framebuff_cnt; i++) {
-      if (s->st40_free_framebuff[i] == 1) {
-        s->st40_free_framebuff[i] = 0;
-        break;
-      }
-    }
-    if (i == s->framebuff_cnt) {
+static void* app_tx_anc_frame_thread(void* arg) {
+  struct st_app_tx_anc_session* s = arg;
+  int idx = s->idx;
+  uint16_t producer_idx;
+  struct st_tx_frame* framebuff;
+
+  info("%s(%d), start\n", __func__, idx);
+  while (!s->st40_app_thread_stop) {
+    st_pthread_mutex_lock(&s->st40_wake_mutex);
+    producer_idx = s->framebuff_producer_idx;
+    framebuff = &s->framebuffs[producer_idx];
+    if (ST_TX_FRAME_FREE != framebuff->stat) {
+      /* not in free */
       if (!s->st40_app_thread_stop)
-        pthread_cond_wait(&s->st40_wake_cond, &s->st40_wake_mutex);
-      pthread_mutex_unlock(&s->st40_wake_mutex);
+        st_pthread_cond_wait(&s->st40_wake_cond, &s->st40_wake_mutex);
+      st_pthread_mutex_unlock(&s->st40_wake_mutex);
       continue;
     }
-    pthread_mutex_unlock(&s->st40_wake_mutex);
-    struct st40_frame* dst = (struct st40_frame*)st40_tx_get_framebuffer(s->handle, i);
-    if (!dst) {
-      err("did not get the buffer, continue");
-      continue;
-    }
-    uint16_t udw_size = s->st40_source_end - s->st40_frame_cursor > 255
-                            ? 255
-                            : s->st40_source_end - s->st40_frame_cursor;
-    dst->meta[0].c = 0;
-    dst->meta[0].line_number = 10;
-    dst->meta[0].hori_offset = 0;
-    dst->meta[0].s = 0;
-    dst->meta[0].stream_num = 0;
-    dst->meta[0].did = 0x43;
-    dst->meta[0].sdid = 0x02;
-    dst->meta[0].udw_size = udw_size;
-    dst->meta[0].udw_offset = 0;
-    dst->data = s->st40_frame_cursor;
-    dst->data_size = udw_size;
-    dst->meta_num = 1;
-    s->st40_frame_cursor += udw_size;
-    if (s->st40_frame_cursor == s->st40_source_end)
-      s->st40_frame_cursor = s->st40_source_begin;
-    pthread_mutex_lock(&s->st40_wake_mutex);
-    s->st40_ready_framebuff[i] = 1;
-    pthread_mutex_unlock(&s->st40_wake_mutex);
+    st_pthread_mutex_unlock(&s->st40_wake_mutex);
+
+    struct st40_frame* frame_addr = st40_tx_get_framebuffer(s->handle, producer_idx);
+    app_tx_anc_build_frame(s, frame_addr);
+
+    st_pthread_mutex_lock(&s->st40_wake_mutex);
+    framebuff->size = sizeof(*frame_addr);
+    framebuff->stat = ST_TX_FRAME_READY;
+    /* point to next */
+    producer_idx++;
+    if (producer_idx >= s->framebuff_cnt) producer_idx = 0;
+    s->framebuff_producer_idx = producer_idx;
+    st_pthread_mutex_unlock(&s->st40_wake_mutex);
   }
+  info("%s(%d), stop\n", __func__, idx);
 
   return NULL;
 }
 
-static void* app_tx_anc_session_pcap_thread(void* arg) {
+static void* app_tx_anc_pcap_thread(void* arg) {
   struct st_app_tx_anc_session* s = arg;
   int idx = s->idx;
   void* mbuf;
@@ -138,15 +150,15 @@ static void* app_tx_anc_session_pcap_thread(void* arg) {
     /* get available buffer*/
     mbuf = st40_tx_get_mbuf(s->handle, &usrptr);
     if (!mbuf) {
-      pthread_mutex_lock(&s->st40_wake_mutex);
+      st_pthread_mutex_lock(&s->st40_wake_mutex);
       /* try again */
       mbuf = st40_tx_get_mbuf(s->handle, &usrptr);
       if (mbuf) {
-        pthread_mutex_unlock(&s->st40_wake_mutex);
+        st_pthread_mutex_unlock(&s->st40_wake_mutex);
       } else {
         if (!s->st40_app_thread_stop)
-          pthread_cond_wait(&s->st40_wake_cond, &s->st40_wake_mutex);
-        pthread_mutex_unlock(&s->st40_wake_mutex);
+          st_pthread_cond_wait(&s->st40_wake_cond, &s->st40_wake_mutex);
+        st_pthread_mutex_unlock(&s->st40_wake_mutex);
         continue;
       }
     }
@@ -184,8 +196,8 @@ static void* app_tx_anc_session_pcap_thread(void* arg) {
   return NULL;
 }
 
-static void app_tx_anc_build_rtp_packet(struct st_app_tx_anc_session* s, void* usrptr,
-                                        uint16_t* mbuf_len) {
+static void app_tx_anc_build_rtp(struct st_app_tx_anc_session* s, void* usrptr,
+                                 uint16_t* mbuf_len) {
   /* generate one anc rtp for test purpose */
   struct st40_rfc8331_rtp_hdr* hdr = (struct st40_rfc8331_rtp_hdr*)usrptr;
   struct st40_rfc8331_payload_hdr* payload_hdr =
@@ -196,7 +208,7 @@ static void app_tx_anc_build_rtp_packet(struct st_app_tx_anc_session* s, void* u
   uint16_t check_sum, total_size, payload_len;
   hdr->base.marker = 1;
   hdr->anc_count = 1;
-  hdr->base.payload_type = 113;
+  hdr->base.payload_type = ST_APP_PAYLOAD_TYPE_ANCILLARY;
   hdr->base.version = 2;
   hdr->base.extension = 0;
   hdr->base.padding = 0;
@@ -239,7 +251,7 @@ static void app_tx_anc_build_rtp_packet(struct st_app_tx_anc_session* s, void* u
     s->st40_frame_cursor = s->st40_source_begin;
 }
 
-static void* app_tx_anc_session_rtp_thread(void* arg) {
+static void* app_tx_anc_rtp_thread(void* arg) {
   struct st_app_tx_anc_session* s = arg;
   int idx = s->idx;
   void* mbuf;
@@ -251,21 +263,21 @@ static void* app_tx_anc_session_rtp_thread(void* arg) {
     /* get available buffer*/
     mbuf = st40_tx_get_mbuf(s->handle, &usrptr);
     if (!mbuf) {
-      pthread_mutex_lock(&s->st40_wake_mutex);
+      st_pthread_mutex_lock(&s->st40_wake_mutex);
       /* try again */
       mbuf = st40_tx_get_mbuf(s->handle, &usrptr);
       if (mbuf) {
-        pthread_mutex_unlock(&s->st40_wake_mutex);
+        st_pthread_mutex_unlock(&s->st40_wake_mutex);
       } else {
         if (!s->st40_app_thread_stop)
-          pthread_cond_wait(&s->st40_wake_cond, &s->st40_wake_mutex);
-        pthread_mutex_unlock(&s->st40_wake_mutex);
+          st_pthread_cond_wait(&s->st40_wake_cond, &s->st40_wake_mutex);
+        st_pthread_mutex_unlock(&s->st40_wake_mutex);
         continue;
       }
     }
 
     /* build the rtp pkt */
-    app_tx_anc_build_rtp_packet(s, usrptr, &mbuf_len);
+    app_tx_anc_build_rtp(s, usrptr, &mbuf_len);
 
     st40_tx_put_mbuf(s->handle, mbuf, mbuf_len);
   }
@@ -274,11 +286,11 @@ static void* app_tx_anc_session_rtp_thread(void* arg) {
   return NULL;
 }
 
-static int app_tx_anc_session_open_source(struct st_app_tx_anc_session* s) {
+static int app_tx_anc_open_source(struct st_app_tx_anc_session* s) {
   if (!s->st40_pcap_input) {
     struct stat i;
 
-    s->st40_source_fd = open(s->st40_source_url, O_RDONLY);
+    s->st40_source_fd = st_open(s->st40_source_url, O_RDONLY);
     if (s->st40_source_fd >= 0) {
       fstat(s->st40_source_fd, &i);
 
@@ -310,7 +322,7 @@ static int app_tx_anc_session_open_source(struct st_app_tx_anc_session* s) {
   return 0;
 }
 
-static int app_tx_anc_session_close_source(struct st_app_tx_anc_session* s) {
+static int app_tx_anc_close_source(struct st_app_tx_anc_session* s) {
   if (s->st40_source_fd >= 0) {
     munmap(s->st40_source_begin, s->st40_source_end - s->st40_source_begin);
     close(s->st40_source_fd);
@@ -324,41 +336,62 @@ static int app_tx_anc_session_close_source(struct st_app_tx_anc_session* s) {
   return 0;
 }
 
-static int app_tx_anc_session_start_source(struct st_app_tx_anc_session* s) {
+static int app_tx_anc_start_source(struct st_app_tx_anc_session* s) {
   int ret = -EINVAL;
 
+  s->st40_app_thread_stop = false;
   if (s->st40_pcap_input)
-    ret = pthread_create(&s->st40_app_thread, NULL, app_tx_anc_session_pcap_thread,
-                         (void*)s);
+    ret = pthread_create(&s->st40_app_thread, NULL, app_tx_anc_pcap_thread, (void*)s);
   else if (s->st40_rtp_input)
-    ret = pthread_create(&s->st40_app_thread, NULL, app_tx_anc_session_rtp_thread,
-                         (void*)s);
+    ret = pthread_create(&s->st40_app_thread, NULL, app_tx_anc_rtp_thread, (void*)s);
   else
-    ret = pthread_create(&s->st40_app_thread, NULL, app_tx_anc_session_frame_thread,
-                         (void*)s);
+    ret = pthread_create(&s->st40_app_thread, NULL, app_tx_anc_frame_thread, (void*)s);
   if (ret < 0) {
-    err("%s, st21_app_thread create fail err = %d\n", __func__, ret);
+    err("%s, thread create fail err = %d\n", __func__, ret);
     return ret;
   }
-  s->st40_app_thread_stop = false;
 
   return 0;
 }
 
-static void app_tx_anc_session_stop_source(struct st_app_tx_anc_session* s) {
+static void app_tx_anc_stop_source(struct st_app_tx_anc_session* s) {
   if (s->st40_source_fd >= 0) {
     s->st40_app_thread_stop = true;
     /* wake up the thread */
-    pthread_mutex_lock(&s->st40_wake_mutex);
-    pthread_cond_signal(&s->st40_wake_cond);
-    pthread_mutex_unlock(&s->st40_wake_mutex);
+    st_pthread_mutex_lock(&s->st40_wake_mutex);
+    st_pthread_cond_signal(&s->st40_wake_cond);
+    st_pthread_mutex_unlock(&s->st40_wake_mutex);
     if (s->st40_app_thread) (void)pthread_join(s->st40_app_thread, NULL);
   }
 }
 
-static int app_tx_anc_session_init(struct st_app_context* ctx,
-                                   st_json_tx_ancillary_session_t* anc,
-                                   struct st_app_tx_anc_session* s) {
+int app_tx_anc_uinit(struct st_app_tx_anc_session* s) {
+  int ret;
+
+  app_tx_anc_stop_source(s);
+
+  if (s->handle) {
+    ret = st40_tx_free(s->handle);
+    if (ret < 0) err("%s(%d), st_tx_anc_session_free fail %d\n", __func__, s->idx, ret);
+    s->handle = NULL;
+  }
+
+  app_tx_anc_close_source(s);
+
+  if (s->framebuffs) {
+    st_app_free(s->framebuffs);
+    s->framebuffs = NULL;
+  }
+
+  st_pthread_mutex_destroy(&s->st40_wake_mutex);
+  st_pthread_cond_destroy(&s->st40_wake_cond);
+
+  return 0;
+}
+
+static int app_tx_anc_init(struct st_app_context* ctx,
+                           st_json_tx_ancillary_session_t* anc,
+                           struct st_app_tx_anc_session* s) {
   int idx = s->idx, ret;
   struct st40_tx_ops ops;
   char name[32];
@@ -366,20 +399,21 @@ static int app_tx_anc_session_init(struct st_app_context* ctx,
   memset(&ops, 0, sizeof(ops));
 
   s->framebuff_cnt = 2;
-  s->st40_framebuff_idx = 0;
   s->st40_seq_id = 1;
-  s->st40_free_framebuff = (int*)st_app_zmalloc(sizeof(int) * s->framebuff_cnt);
-  if (!s->st40_free_framebuff) return -ENOMEM;
-  for (int j = 0; j < s->framebuff_cnt; j++) s->st40_free_framebuff[j] = 1;
-  s->st40_ready_framebuff = (int*)st_app_zmalloc(sizeof(int) * s->framebuff_cnt);
-  if (!s->st40_ready_framebuff) {
-    st_app_free(s->st40_free_framebuff);
+
+  s->framebuffs =
+      (struct st_tx_frame*)st_app_zmalloc(sizeof(*s->framebuffs) * s->framebuff_cnt);
+  if (!s->framebuffs) {
     return -ENOMEM;
   }
-  for (int j = 0; j < s->framebuff_cnt; j++) s->st40_ready_framebuff[j] = 0;
+  for (uint16_t j = 0; j < s->framebuff_cnt; j++) {
+    s->framebuffs[j].stat = ST_TX_FRAME_FREE;
+    s->framebuffs[j].lines_ready = 0;
+  }
+
   s->st40_source_fd = -1;
-  pthread_mutex_init(&s->st40_wake_mutex, NULL);
-  pthread_cond_init(&s->st40_wake_cond, NULL);
+  st_pthread_mutex_init(&s->st40_wake_mutex, NULL);
+  st_pthread_cond_init(&s->st40_wake_cond, NULL);
 
   snprintf(name, 32, "app_tx_ancillary%d", idx);
   ops.name = name;
@@ -397,14 +431,14 @@ static int app_tx_anc_session_init(struct st_app_context* ctx,
             anc ? anc->inf[ST_PORT_R]->name : ctx->para.port[ST_PORT_R], ST_PORT_MAX_LEN);
     ops.udp_port[ST_PORT_R] = anc ? anc->udp_port : (10200 + s->idx);
   }
-  ops.get_next_frame = app_tx_anc_session_next_frame;
-  ops.notify_frame_done = app_tx_anc_session_frame_done;
-  ops.notify_rtp_done = app_tx_anc_session_rtp_done;
+  ops.get_next_frame = app_tx_anc_next_frame;
+  ops.notify_frame_done = app_tx_anc_frame_done;
+  ops.notify_rtp_done = app_tx_anc_rtp_done;
   ops.framebuff_cnt = s->framebuff_cnt;
   ops.fps = anc ? anc->anc_fps : ST_FPS_P59_94;
   s->st40_pcap_input = false;
   ops.type = anc ? anc->type : ST40_TYPE_FRAME_LEVEL;
-  ops.payload_type = 113;
+  ops.payload_type = anc ? anc->payload_type : ST_APP_PAYLOAD_TYPE_ANCILLARY;
   /* select rtp type for pcap file or tx_video_rtp_ring_size */
   if (strstr(s->st40_source_url, ".pcap")) {
     ops.type = ST40_TYPE_RTP_LEVEL;
@@ -424,6 +458,7 @@ static int app_tx_anc_session_init(struct st_app_context* ctx,
   handle = st40_tx_create(ctx->st, &ops);
   if (!handle) {
     err("%s(%d), st30_tx_create fail\n", __func__, idx);
+    app_tx_anc_uinit(s);
     return -EIO;
   }
 
@@ -431,16 +466,17 @@ static int app_tx_anc_session_init(struct st_app_context* ctx,
   strncpy(s->st40_source_url, anc ? anc->anc_url : ctx->tx_anc_url,
           sizeof(s->st40_source_url));
 
-  ret = app_tx_anc_session_open_source(s);
+  ret = app_tx_anc_open_source(s);
   if (ret < 0) {
     err("%s(%d), app_tx_audio_session_open_source fail\n", __func__, idx);
+    app_tx_anc_uinit(s);
     return ret;
   }
 
-  ret = app_tx_anc_session_start_source(s);
+  ret = app_tx_anc_start_source(s);
   if (ret < 0) {
-    app_tx_anc_session_close_source(s);
     err("%s(%d), app_tx_audio_session_start_source fail %d\n", __func__, idx, ret);
+    app_tx_anc_uinit(s);
     return ret;
   }
 
@@ -452,23 +488,23 @@ int st_app_tx_anc_sessions_stop(struct st_app_context* ctx) {
   if (!ctx->tx_anc_sessions) return 0;
   for (int i = 0; i < ctx->tx_anc_session_cnt; i++) {
     s = &ctx->tx_anc_sessions[i];
-    app_tx_anc_session_stop_source(s);
+    app_tx_anc_stop_source(s);
   }
 
   return 0;
 }
 
 int st_app_tx_anc_sessions_init(struct st_app_context* ctx) {
-  int ret, i;
+  int ret;
   struct st_app_tx_anc_session* s;
   ctx->tx_anc_sessions = (struct st_app_tx_anc_session*)st_app_zmalloc(
       sizeof(struct st_app_tx_anc_session) * ctx->tx_anc_session_cnt);
   if (!ctx->tx_anc_sessions) return -ENOMEM;
-  for (i = 0; i < ctx->tx_anc_session_cnt; i++) {
+
+  for (int i = 0; i < ctx->tx_anc_session_cnt; i++) {
     s = &ctx->tx_anc_sessions[i];
     s->idx = i;
-    ret =
-        app_tx_anc_session_init(ctx, ctx->json_ctx ? &ctx->json_ctx->tx_anc[i] : NULL, s);
+    ret = app_tx_anc_init(ctx, ctx->json_ctx ? &ctx->json_ctx->tx_anc[i] : NULL, s);
     if (ret < 0) {
       err("%s(%d), app_tx_anc_session_init fail %d\n", __func__, i, ret);
       return ret;
@@ -479,28 +515,12 @@ int st_app_tx_anc_sessions_init(struct st_app_context* ctx) {
 }
 
 int st_app_tx_anc_sessions_uinit(struct st_app_context* ctx) {
-  int ret, i;
   struct st_app_tx_anc_session* s;
   if (!ctx->tx_anc_sessions) return 0;
-  for (i = 0; i < ctx->tx_anc_session_cnt; i++) {
-    s = &ctx->tx_anc_sessions[i];
-    if (s->handle) {
-      ret = st40_tx_free(s->handle);
-      if (ret < 0) err("%s(%d), st_tx_anc_session_free fail %d\n", __func__, i, ret);
-      s->handle = NULL;
-    }
 
-    app_tx_anc_session_close_source(s);
-    if (s->st40_ready_framebuff) {
-      free(s->st40_ready_framebuff);
-      s->st40_ready_framebuff = NULL;
-    }
-    if (s->st40_free_framebuff) {
-      free(s->st40_free_framebuff);
-      s->st40_free_framebuff = NULL;
-    }
-    pthread_mutex_destroy(&s->st40_wake_mutex);
-    pthread_cond_destroy(&s->st40_wake_cond);
+  for (int i = 0; i < ctx->tx_anc_session_cnt; i++) {
+    s = &ctx->tx_anc_sessions[i];
+    app_tx_anc_uinit(s);
   }
   st_app_free(ctx->tx_anc_sessions);
 

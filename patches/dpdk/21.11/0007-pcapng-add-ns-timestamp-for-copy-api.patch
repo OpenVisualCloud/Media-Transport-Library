@@ -1,7 +1,7 @@
-From fc103bdd576fd6102f9e0a993014bbac22248589 Mon Sep 17 00:00:00 2001
+From 1e9521309d0dfe78b5a0a6aae2774432ee104903 Mon Sep 17 00:00:00 2001
 From: Ric Li <ming3.li@intel.com>
 Date: Mon, 14 Feb 2022 16:28:01 +0800
-Subject: [PATCH] pcapng: add ns timestamp for copy api
+Subject: [PATCH 7/9] pcapng: add ns timestamp for copy api
 
 The original API only receives cycles and converts it to ns.
 Add ns timestamp to directly write it to pcapng file.
@@ -77,5 +77,5 @@ index af450695ec..5168abdbe0 100644
  			p = rte_pktmbuf_copy(pkts[i], mp, 0, cbs->snaplen);
  
 -- 
-2.25.1
+2.30.2
 
