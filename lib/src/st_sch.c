@@ -42,30 +42,40 @@ static int sch_lcore_func(void* args) {
   int idx = sch->idx;
   int num_tasklet, i;
   struct st_sch_tasklet_ops* ops;
+  struct st_sch_tasklet_impl* tasklet;
 
-  num_tasklet = sch->num_tasklet;
+  num_tasklet = sch->max_tasklet_idx;
   info("%s(%d), start with %d tasklets\n", __func__, idx, num_tasklet);
 
   for (i = 0; i < num_tasklet; i++) {
-    ops = &sch->tasklet[i].ops;
+    tasklet = sch->tasklet[i];
+    if (!tasklet) continue;
+    ops = &tasklet->ops;
     if (ops->pre_start) ops->pre_start(ops->priv);
   }
 
   for (i = 0; i < num_tasklet; i++) {
-    ops = &sch->tasklet[i].ops;
+    tasklet = sch->tasklet[i];
+    if (!tasklet) continue;
+    ops = &tasklet->ops;
     if (ops->start) ops->start(ops->priv);
   }
 
   while (rte_atomic32_read(&sch->request_stop) == 0) {
-    num_tasklet = sch->num_tasklet;
+    num_tasklet = sch->max_tasklet_idx;
     for (i = 0; i < num_tasklet; i++) {
-      ops = &sch->tasklet[i].ops;
+      tasklet = sch->tasklet[i];
+      if (!tasklet) continue;
+      ops = &tasklet->ops;
       ops->handler(ops->priv);
     }
   }
 
+  num_tasklet = sch->max_tasklet_idx;
   for (i = 0; i < num_tasklet; i++) {
-    ops = &sch->tasklet[i].ops;
+    tasklet = sch->tasklet[i];
+    if (!tasklet) continue;
+    ops = &tasklet->ops;
     if (ops->stop) ops->stop(ops->priv);
   }
 
@@ -149,13 +159,20 @@ static struct st_sch_impl* sch_request(struct st_main_impl* impl, enum st_sch_ty
 }
 
 static int sch_free(struct st_sch_impl* sch) {
+  int idx = sch->idx;
+
   if (!st_sch_is_active(sch)) {
-    err("%s, sch %d is not allocated\n", __func__, sch->idx);
+    err("%s, sch %d is not allocated\n", __func__, idx);
     return -EIO;
   }
 
   sch_lock(sch);
-  /* todo: free all registered tasklet */
+  for (int i = 0; i < ST_MAX_TASKLET_PER_SCH; i++) {
+    if (sch->tasklet[i]) {
+      warn("%s(%d), tasklet %d still active\n", __func__, idx, i);
+      st_sch_unregister_tasklet(sch->tasklet[i]);
+    }
+  }
   rte_atomic32_dec(&st_sch_get_mgr(sch->parnet)->sch_cnt);
   rte_atomic32_dec(&sch->active);
   sch_unlock(sch);
@@ -224,30 +241,83 @@ static bool sch_is_capable(struct st_sch_impl* sch, int quota_mbs,
     return true;
 }
 
-/* todo: support unregister */
-int st_sch_register_tasklet(struct st_sch_impl* sch,
-                            struct st_sch_tasklet_ops* tasklet_ops) {
-  int idx = sch->idx;
-  int cur_tasklet_idx = sch->num_tasklet;
-  struct st_sch_tasklet_impl* sch_tasklet;
+int st_sch_unregister_tasklet(struct st_sch_tasklet_impl* tasklet) {
+  struct st_sch_impl* sch = tasklet->sch;
+  int sch_idx = sch->idx;
+  int idx = tasklet->idx;
 
   sch_lock(sch);
 
-  if (cur_tasklet_idx >= ST_MAX_TASKLET_PER_SCH) {
-    err("%s(%d), no space as sch is full(%d)\n", __func__, idx, cur_tasklet_idx);
+  if (sch->tasklet[idx] != tasklet) {
+    err("%s(%d), invalid tasklet on %d\n", __func__, sch_idx, idx);
     sch_unlock(sch);
-    return -ENOMEM;
+    return -EIO;
   }
 
-  sch_tasklet = &sch->tasklet[cur_tasklet_idx];
-  sch_tasklet->ops = *tasklet_ops;
-  strncpy(sch_tasklet->name, tasklet_ops->name, ST_MAX_NAME_LEN - 1);
-  sch->num_tasklet++;
+  /* todo: support runtime unregister */
+  if (rte_atomic32_read(&sch->started)) {
+    err("%s(%d), pls stop sch firstly\n", __func__, sch_idx);
+    sch_unlock(sch);
+    return -EIO;
+  }
 
-  info("%s(%d), tasklet %s registered into slot %d\n", __func__, sch->idx,
-       sch_tasklet->name, cur_tasklet_idx);
+  sch->tasklet[idx] = NULL;
+  info("%s(%d), tasklet %s unregistered at slot %d\n", __func__, sch_idx, tasklet->name,
+       idx);
+  st_rte_free(tasklet);
+
+  int max_idx = 0;
+  for (int i = 0; i < ST_MAX_TASKLET_PER_SCH; i++) {
+    if (sch->tasklet[i]) max_idx = i + 1;
+  }
+  sch->max_tasklet_idx = max_idx;
+
   sch_unlock(sch);
   return 0;
+}
+
+struct st_sch_tasklet_impl* st_sch_register_tasklet(
+    struct st_sch_impl* sch, struct st_sch_tasklet_ops* tasklet_ops) {
+  int idx = sch->idx;
+  struct st_main_impl* impl = sch->parnet;
+  struct st_sch_tasklet_impl* tasklet;
+
+  sch_lock(sch);
+
+  /* find one empty slot in the mgr */
+  for (int i = 0; i < ST_MAX_TASKLET_PER_SCH; i++) {
+    if (sch->tasklet[i]) continue;
+
+    /* find one empty tasklet slot */
+    tasklet = st_rte_zmalloc_socket(sizeof(*tasklet), st_socket_id(impl, ST_PORT_P));
+    if (!tasklet) {
+      err("%s(%d), tasklet malloc fail on %d\n", __func__, idx, i);
+      sch_unlock(sch);
+      return NULL;
+    }
+
+    tasklet->ops = *tasklet_ops;
+    strncpy(tasklet->name, tasklet_ops->name, ST_MAX_NAME_LEN - 1);
+    tasklet->sch = sch;
+    tasklet->idx = i;
+
+    sch->tasklet[i] = tasklet;
+    sch->max_tasklet_idx = RTE_MAX(sch->max_tasklet_idx, i + 1);
+
+    if (rte_atomic32_read(&sch->started)) {
+      if (tasklet_ops->pre_start) tasklet_ops->pre_start(tasklet_ops->priv);
+      if (tasklet_ops->start) tasklet_ops->start(tasklet_ops->priv);
+    }
+
+    sch_unlock(sch);
+    info("%s(%d), tasklet %s registered into slot %d\n", __func__, idx, tasklet_ops->name,
+         i);
+    return tasklet;
+  }
+
+  err("%s(%d), no space on this sch\n", __func__, idx);
+  sch_unlock(sch);
+  return NULL;
 }
 
 int st_sch_mrg_init(struct st_main_impl* impl, int data_quota_mbs_limit) {
@@ -264,7 +334,7 @@ int st_sch_mrg_init(struct st_main_impl* impl, int data_quota_mbs_limit) {
     rte_atomic32_set(&sch->started, 0);
     rte_atomic32_set(&sch->ref_cnt, 0);
     rte_atomic32_set(&sch->active, 0);
-    sch->num_tasklet = 0;
+    sch->max_tasklet_idx = 0;
     sch->data_quota_mbs_total = 0;
     sch->data_quota_mbs_limit = data_quota_mbs_limit;
     /* init mgr lock for video */

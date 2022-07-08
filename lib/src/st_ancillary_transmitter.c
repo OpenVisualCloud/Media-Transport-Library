@@ -102,7 +102,7 @@ static int st_ancillary_trs_tasklet_handler(void* priv) {
 int st_ancillary_transmitter_init(struct st_main_impl* impl, struct st_sch_impl* sch,
                                   struct st_tx_ancillary_sessions_mgr* mgr,
                                   struct st_ancillary_transmitter_impl* trs) {
-  int ret, idx = sch->idx;
+  int idx = sch->idx;
   struct st_sch_tasklet_ops ops;
 
   trs->parnet = impl;
@@ -116,10 +116,10 @@ int st_ancillary_transmitter_init(struct st_main_impl* impl, struct st_sch_impl*
   ops.stop = st_ancillary_trs_tasklet_stop;
   ops.handler = st_ancillary_trs_tasklet_handler;
 
-  ret = st_sch_register_tasklet(sch, &ops);
-  if (ret < 0) {
-    info("%s(%d), st_sch_register_tasklet fail %d\n", __func__, idx, ret);
-    return ret;
+  trs->tasklet = st_sch_register_tasklet(sch, &ops);
+  if (!trs->tasklet) {
+    err("%s(%d), st_sch_register_tasklet fail\n", __func__, idx);
+    return -EIO;
   }
 
   info("%s(%d), succ\n", __func__, idx);
@@ -129,6 +129,12 @@ int st_ancillary_transmitter_init(struct st_main_impl* impl, struct st_sch_impl*
 int st_ancillary_transmitter_uinit(struct st_ancillary_transmitter_impl* trs) {
   int idx = trs->idx;
 
-  info("%s(%d), succ\n", __func__, idx);
+  if (trs->tasklet) {
+    st_sch_unregister_tasklet(trs->tasklet);
+    trs->tasklet = NULL;
+  }
+
+  info("%s(%d), succ, inflight %d:%d\n", __func__, idx, trs->inflight_cnt[ST_PORT_P],
+       trs->inflight_cnt[ST_PORT_R]);
   return 0;
 }

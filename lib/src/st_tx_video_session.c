@@ -2045,7 +2045,7 @@ static int tx_video_sessions_mgr_init(struct st_main_impl* impl, struct st_sch_i
                                       struct st_tx_video_sessions_mgr* mgr) {
   int idx = sch->idx;
   struct st_sch_tasklet_ops ops;
-  int ret, i;
+  int i;
 
   RTE_BUILD_BUG_ON(sizeof(struct st_rfc4175_video_hdr) != 62);
   RTE_BUILD_BUG_ON(sizeof(struct st_rfc3550_hdr) != 54);
@@ -2067,10 +2067,10 @@ static int tx_video_sessions_mgr_init(struct st_main_impl* impl, struct st_sch_i
   ops.stop = tx_video_sessions_tasklet_stop;
   ops.handler = tx_video_sessions_tasklet_handler;
 
-  ret = st_sch_register_tasklet(sch, &ops);
-  if (ret < 0) {
-    err("%s(%d), st_sch_register_tasklet fail %d\n", __func__, idx, ret);
-    return ret;
+  mgr->tasklet = st_sch_register_tasklet(sch, &ops);
+  if (!mgr->tasklet) {
+    err("%s(%d), st_sch_register_tasklet fail\n", __func__, idx);
+    return -EIO;
   }
 
   info("%s(%d), succ\n", __func__, idx);
@@ -2080,6 +2080,11 @@ static int tx_video_sessions_mgr_init(struct st_main_impl* impl, struct st_sch_i
 static int tx_video_sessions_mgr_uinit(struct st_tx_video_sessions_mgr* mgr) {
   int m_idx = mgr->idx;
   struct st_tx_video_session_impl* s;
+
+  if (mgr->tasklet) {
+    st_sch_unregister_tasklet(mgr->tasklet);
+    mgr->tasklet = NULL;
+  }
 
   for (int i = 0; i < ST_SCH_MAX_TX_VIDEO_SESSIONS; i++) {
     s = tx_video_session_get(mgr, i);

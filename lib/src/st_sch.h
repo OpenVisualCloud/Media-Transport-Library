@@ -43,8 +43,9 @@ static inline bool st_sch_started(struct st_sch_impl* sch) {
 
 int st_sch_mrg_init(struct st_main_impl* impl, int data_quota_mbs_limit);
 
-int st_sch_register_tasklet(struct st_sch_impl* sch,
-                            struct st_sch_tasklet_ops* tasklet_ops);
+struct st_sch_tasklet_impl* st_sch_register_tasklet(
+    struct st_sch_impl* sch, struct st_sch_tasklet_ops* tasklet_ops);
+int st_sch_unregister_tasklet(struct st_sch_tasklet_impl* tasklet);
 
 int st_sch_add_quota(struct st_sch_impl* sch, int quota_mbs);
 

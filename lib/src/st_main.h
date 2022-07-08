@@ -264,6 +264,7 @@ struct st_cni_impl {
   pthread_t tid; /* thread id for rx */
   rte_atomic32_t stop_thread;
   bool lcore_tasklet;
+  struct st_sch_tasklet_impl* tasklet;
   /* stat */
   int eth_rx_cnt[ST_PORT_MAX];
 #ifdef ST_HAS_KNI
@@ -312,6 +313,7 @@ struct st_sch_tasklet_ops {
 struct st_sch_tasklet_impl {
   struct st_sch_tasklet_ops ops;
   char name[ST_MAX_NAME_LEN];
+  struct st_sch_impl* sch;
 
   int idx;
 };
@@ -523,6 +525,7 @@ struct st_tx_video_sessions_mgr {
   struct st_main_impl* parnet;
   int idx;     /* index for current session mgr */
   int max_idx; /* max session index */
+  struct st_sch_tasklet_impl* tasklet;
 
   struct st_tx_video_session_impl* sessions[ST_SCH_MAX_TX_VIDEO_SESSIONS];
   /* protect session, spin(fast) lock as it call from tasklet aslo */
@@ -532,6 +535,7 @@ struct st_tx_video_sessions_mgr {
 struct st_video_transmitter_impl {
   struct st_main_impl* parnet;
   struct st_tx_video_sessions_mgr* mgr;
+  struct st_sch_tasklet_impl* tasklet;
   int idx; /* index for current transmitter */
 };
 
@@ -795,6 +799,7 @@ struct st_rx_video_sessions_mgr {
   struct st_main_impl* parnet;
   int idx;     /* index for current session mgr */
   int max_idx; /* max session index */
+  struct st_sch_tasklet_impl* tasklet;
 
   struct st_rx_video_session_impl* sessions[ST_SCH_MAX_RX_VIDEO_SESSIONS];
   /* protect session, spin(fast) lock as it call from tasklet aslo */
@@ -809,8 +814,8 @@ enum st_sch_type {
 
 struct st_sch_impl {
   pthread_mutex_t mutex; /* protect sch context */
-  struct st_sch_tasklet_impl tasklet[ST_MAX_TASKLET_PER_SCH];
-  int num_tasklet;
+  struct st_sch_tasklet_impl* tasklet[ST_MAX_TASKLET_PER_SCH];
+  int max_tasklet_idx; /* max tasklet index */
   unsigned int lcore;
 
   int data_quota_mbs_total; /* total data quota(mb/s) for current sch */
@@ -897,6 +902,7 @@ struct st_tx_audio_sessions_mgr {
   struct st_main_impl* parnet;
   int idx;     /* index for current sessions mgr */
   int max_idx; /* max session index */
+  struct st_sch_tasklet_impl* tasklet;
 
   /* all audio sessions share same ring/queue */
   struct rte_ring* ring[ST_PORT_MAX];
@@ -915,6 +921,7 @@ struct st_tx_audio_sessions_mgr {
 struct st_audio_transmitter_impl {
   struct st_main_impl* parnet;
   struct st_tx_audio_sessions_mgr* mgr;
+  struct st_sch_tasklet_impl* tasklet;
   int idx; /* index for current transmitter */
 
   struct rte_mbuf* inflight[ST_PORT_MAX]; /* inflight mbuf */
@@ -1009,6 +1016,7 @@ struct st_rx_audio_sessions_mgr {
   struct st_main_impl* parnet;
   int idx;     /* index for current session mgr */
   int max_idx; /* max session index */
+  struct st_sch_tasklet_impl* tasklet;
 
   struct st_rx_audio_session_impl* sessions[ST_MAX_RX_AUDIO_SESSIONS];
   /* protect session, spin(fast) lock as it call from tasklet aslo */
@@ -1065,6 +1073,7 @@ struct st_tx_ancillary_sessions_mgr {
   struct st_main_impl* parnet;
   int idx;     /* index for current sessions mgr */
   int max_idx; /* max session index */
+  struct st_sch_tasklet_impl* tasklet;
 
   /* all anc sessions share same ring/queue */
   struct rte_ring* ring[ST_PORT_MAX];
@@ -1109,6 +1118,7 @@ struct st_rx_ancillary_sessions_mgr {
   struct st_main_impl* parnet;
   int idx;     /* index for current session mgr */
   int max_idx; /* max session index */
+  struct st_sch_tasklet_impl* tasklet;
 
   struct st_rx_ancillary_session_impl* sessions[ST_MAX_RX_ANC_SESSIONS];
   /* protect session, spin(fast) lock as it call from tasklet aslo */
@@ -1118,6 +1128,7 @@ struct st_rx_ancillary_sessions_mgr {
 struct st_ancillary_transmitter_impl {
   struct st_main_impl* parnet;
   struct st_tx_ancillary_sessions_mgr* mgr;
+  struct st_sch_tasklet_impl* tasklet;
   int idx; /* index for current transmitter */
 
   struct rte_mbuf* inflight[ST_PORT_MAX]; /* inflight mbuf */

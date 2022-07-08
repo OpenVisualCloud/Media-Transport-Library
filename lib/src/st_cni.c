@@ -247,11 +247,11 @@ int st_cni_init(struct st_main_impl* impl) {
     ops.stop = cni_tasklet_stop;
     ops.handler = cni_tasklet_handlder;
 
-    ret = st_sch_register_tasklet(impl->main_sch, &ops);
-    if (ret < 0) {
-      info("%s, st_sch_register_tasklet fail %d\n", __func__, ret);
+    cni->tasklet = st_sch_register_tasklet(impl->main_sch, &ops);
+    if (!cni->tasklet) {
+      err("%s, st_sch_register_tasklet fail\n", __func__);
       st_cni_uinit(impl);
-      return ret;
+      return -EIO;
     }
   }
 
@@ -266,6 +266,13 @@ int st_cni_init(struct st_main_impl* impl) {
 }
 
 int st_cni_uinit(struct st_main_impl* impl) {
+  struct st_cni_impl* cni = st_get_cni(impl);
+
+  if (cni->tasklet) {
+    st_sch_unregister_tasklet(cni->tasklet);
+    cni->tasklet = NULL;
+  }
+
   st_cni_stop(impl);
 
   cni_queues_uinit(impl);

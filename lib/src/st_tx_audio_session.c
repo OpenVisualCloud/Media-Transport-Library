@@ -951,11 +951,11 @@ int st_tx_audio_sessions_mgr_init(struct st_main_impl* impl, struct st_sch_impl*
   ops.stop = tx_audio_sessions_tasklet_stop;
   ops.handler = tx_audio_sessions_tasklet_handler;
 
-  ret = st_sch_register_tasklet(sch, &ops);
-  if (ret < 0) {
+  mgr->tasklet = st_sch_register_tasklet(sch, &ops);
+  if (!mgr->tasklet) {
     tx_audio_sessions_mgr_uinit_hw(impl, mgr);
-    err("%s(%d), st_sch_register_tasklet fail %d\n", __func__, idx, ret);
-    return ret;
+    err("%s(%d), st_sch_register_tasklet fail\n", __func__, idx);
+    return -EIO;
   }
 
   info("%s(%d), succ\n", __func__, idx);
@@ -966,6 +966,11 @@ int st_tx_audio_sessions_mgr_uinit(struct st_tx_audio_sessions_mgr* mgr) {
   int m_idx = mgr->idx;
   struct st_main_impl* impl = mgr->parnet;
   struct st_tx_audio_session_impl* s;
+
+  if (mgr->tasklet) {
+    st_sch_unregister_tasklet(mgr->tasklet);
+    mgr->tasklet = NULL;
+  }
 
   for (int i = 0; i < ST_MAX_TX_AUDIO_SESSIONS; i++) {
     s = tx_audio_session_get(mgr, i);
