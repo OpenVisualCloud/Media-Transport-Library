@@ -1,35 +1,29 @@
-This LIMITED DISTRIBUTION LICENSE AGREEMENT (“Agreement”) is a contract between You and Intel Corporation and its affiliates (“Intel”). It governs Your use of the Materials. If You are accepting this Agreement on behalf of or in conjunction with Your work for Your employer, You represent and warrant that You have the authority to bind your employer to this Agreement. By downloading, installing, or using the Materials, You agree to these terms. If You do not agree, do not use the Materials and destroy all copies.  
-1. DEFINITIONS.
-  1.1 “Including” means including but not limited to, whether or not capitalized.
-  1.2 “Intel Component” means a hardware component or product designed, developed, sold, or distributed by Intel or its affiliates.
-  1.3 “Materials” means software or other collateral Intel delivers to You under this Agreement.
-  1.4 “You” or “Your” means you or you and your employer and its affiliates, whether or not capitalized.
-  1.5 “Your Products” means products developed or to be developed by or for You that include an Intel-branded central processing unit executing the Materials.
-2. LICENSES.
-  2.1 License. Subject to the terms of this Agreement, Intel grants to You, for the Term, a limited, nonexclusive, nontransferable, revocable, worldwide, fully paid-up license under Intel’s intellectual property rights in the Materials, without the right to sublicense, to use the Materials in the development of Your Products, including modifying Materials delivered as source code, and distributing the Materials, including Your modifications, in object form, embedded in or for execution on Your Product and under terms and conditions consistent with Your rights and obligations under this Agreement. You may disclose the Materials to Your subcontractor for its work on Your Products under an agreement preventing the subcontractor from disclosing the Materials to others.
-  2.2 Restrictions. Except as authorized above, You will not: (a) use or modify the Materials in any other way; (b) reverse engineer, decompile, or disassemble the Materials provided in object form (except and only as specifically required under Section 2.5), or (c) use the Materials to violate or aid in the violation of any international human right. You will be liable for your subcontractor’s acts or omissions including breach of confidentiality.
-  2.3 No Implied License. Except for the express license in Section 2.1, Intel does not grant any express or implied licenses to you under any legal theory. Intel does not license You to make, have made, use, sell, or import any Intel technology or third-party products, or perform any patented process, even if referenced in the Materials. Any other licenses from Intel require additional consideration. Nothing in this Agreement requires Intel to grant any additional license.
-  2.4 Feedback. If you give Intel comments or suggestions related to the Materials, Intel confidential information provided in connection with this Agreement, or Intel Components, Intel can use them in any way and disclose them to anyone, without payment or other obligations to you.
-  2.5 Open Source Licenses. The Materials may include software subject to an open source license, including licenses recognized by the Open Source Initiative (http://www.opensource.org). Nothing in this Agreement limits any rights under, or grants rights that supersede, the terms of any applicable open source software license.
-  2.6 Third-Party Software. Your use of any third-party software is subject to Your compliance with the license You obtain directly from that third-party. A listing of any such third-party software may be in a text file accompanying the Materials.
-3. CONFIDENTIALITY. This Agreement and the Materials are Intel confidential information and subject to Your valid corporate non-disclosure agreement with Intel (CNDA). Except as authorized in Section 2.1, you must not disclose this information to anyone, including the U.S. government. This Agreement will not become effective, or will automatically terminate, in the absence of a CNDA.
-4. OWNERSHIP. Ownership of the Materials and related intellectual property rights is unchanged. You must maintain all copyright or other proprietary notices in the Materials.
-5. NO WARRANTY. The Materials are provided “as is,” without any express or implied warranty of any kind including warranties of merchantability, non-infringement, title, or fitness for a particular purpose. The Materials may include pre-release software or algorithms and may not be fully functional. Intel is not required to maintain, update, or support the Materials.
-6. LIMIT ON LIABILITY. Intel is providing the Materials for free and Your use of them is at Your own risk. Intel will not be liable to You under any legal theory for any losses or damages in connection with the Materials, including consequential damages, even if the possibility of damages was foreseeable or known. If any liability is found, Intel’s total, cumulative liability to You will not exceed $100.00 U.S. for all claims arising from or related to this Agreement. These liability limitations are a fundamental basis of our bargain and Intel would not have entered into this Agreement without them.
-7. INDEMNITY. You will indemnify, defend, and hold Intel harmless from any allegation against Intel arising in connection with Your use of the Materials and You will pay all of Intel’s losses, liabilities, and costs (including attorneys’ fees) arising from the allegation.
-8. PRIVACY; DATA COLLECTION
-  8.1 Privacy. Intel respects Your privacy. For information about why and how Intel may collect and use information from Your use of the Materials, see http://www.intel.com/privacy.
-  8.2 Data Collection. Some downloaded software included in the Materials may generate and collect information about the software and usage and transmit it to Intel to help improve Intel’s products and services. This collected information may include product name, product version, time of event collection, license type, support type, installation status, hardware and software performance, and use.
-9. GENERAL.
-  9.1 Assignment. You may not assign Your rights or obligations under this Agreement without Intel’s prior written consent. No third party will have any rights under this Agreement.
-  9.2 Dispute Resolution. If we have a dispute regarding this Agreement (other than a dispute over misappropriation of trade secrets or breaches of confidentiality obligations), neither of us can file a lawsuit or other regulatory proceeding unless the complaining party provides the other party a detailed notice of the dispute and our senior managers attempt to resolve the dispute. If we can’t resolve the dispute in 30 days, either of us may demand mediation and will then try to resolve the dispute with an impartial mediator. If we don’t resolve the dispute within 60 days after the mediation demand, either of us may begin litigation.
-  9.3 Governing Law; Jurisdiction. This Agreement is governed by USA and Delaware law without regard to conflict of laws principles. The United Nations Convention on Contracts for the International Sale of Goods does not apply. Except for claims for misappropriation of trade secrets or breach of confidentiality obligations, all disputes and actions arising out of or related to this Agreement are subject to the exclusive jurisdiction of the state and federal courts in Wilmington, Delaware and you consent to personal jurisdiction in those courts.
-  9.4 Compliance with Laws. The Materials are subject to export controls under applicable government laws and regulations, including in the U.S. You must comply with applicable laws and regulations, including U.S. and worldwide export regulations. You must not export, import, or transfer the Materials to any prohibited or sanctioned country, person, or entity. You must not use the Materials for the development, design, manufacture, or production of nuclear, missile, chemical, or biological weapons.
-  9.5 Severability. If a court holds a provision of this Agreement unenforceable, the court will modify that part to the minimum extent necessary to make that part enforceable or, if necessary, to sever that part. The rest of the provision remains fully enforceable.
-  9.6 Waiver. No waiver of any provision of this Agreement will be valid unless in a writing signed by an authorized representative of the waiving party that specifies the waived provision. That signed waiver will not constitute a waiver of any other provision. A party’s failure or delay in enforcing any provision will not operate as a waiver.
-  9.7 Entire Agreement. Except for any non-disclosure agreement between you and Intel, this Agreement constitutes the entire agreement, and supersedes all prior agreements, between Intel and You concerning its subject matter.
-10. TERM; TERMINATION; SURVIVAL.
-  10.1 Term. This Agreement begins upon Your acceptance of its terms and continues until terminated under Sections 3 or 10.2.
-  10.2 Termination. Either party may terminate this Agreement, with 30 days written notice, at any time for any reason. This Agreement will automatically terminate upon (a) Your breach of the Agreement, (b) an allegation that you do not have authority to bind your employer to these terms, or (c) Your assertion that an Intel Component, the Materials, or any product based on any Intel Components or the Materials infringes Your patents.
-  10.3 Effect of Termination. Upon termination of the Agreement, the licenses to You will immediately terminate and You must cease using the Materials and destroy all copies in your possession and direct Your subcontractors to do the same. Termination of this Agreement will not terminate the CNDA.
-  10.4 Survival. All sections except Section 2.1 survive termination of this Agreement.
+BSD 3-Clause License
+
+Copyright (c) 2022, Intel Corporation
+All rights reserved.
+
+Redistribution and use in source and binary forms, with or without
+modification, are permitted provided that the following conditions are met:
+
+* Redistributions of source code must retain the above copyright notice, this
+  list of conditions and the following disclaimer.
+
+* Redistributions in binary form must reproduce the above copyright notice,
+  this list of conditions and the following disclaimer in the documentation
+  and/or other materials provided with the distribution.
+
+* Neither the name of the copyright holder nor the names of its
+  contributors may be used to endorse or promote products derived from
+  this software without specific prior written permission.
+
+THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
+AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
+IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE
+DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE LIABLE
+FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL
+DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR
+SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER
+CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY,
+OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
+OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.

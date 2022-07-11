@@ -1,5 +1,8 @@
 #!/bin/bash
 
+# SPDX-License-Identifier: BSD-3-Clause
+# Copyright 2022 Intel Corporation
+
 if [ $# -lt 3 ]; then
     echo "Usage: "
     echo "    $0 <command> <bb:dd:ff.x> [Source ip] [Dest ip]"

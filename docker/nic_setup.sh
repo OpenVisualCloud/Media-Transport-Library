@@ -1,5 +1,8 @@
 #!/bin/bash
 
+# SPDX-License-Identifier: BSD-3-Clause
+# Copyright 2022 Intel Corporation
+
 if [ $# -lt 2 ]; then
     echo "Usage: "
     echo "    $0 ice-1.7.0_driver   ice-1.3.27.0.pkg  "

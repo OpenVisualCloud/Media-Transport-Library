@@ -1,3 +1,6 @@
+# SPDX-License-Identifier: BSD-3-Clause
+# Copyright 2022 Intel Corporation
+
 FROM ubuntu
 
 ENV http_proxy=$http_proxy

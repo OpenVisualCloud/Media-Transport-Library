@@ -1,2 +1,5 @@
+# SPDX-License-Identifier: BSD-3-Clause
+# Copyright 2022 Intel Corporation
+
 option('enable_kni', type: 'boolean', value: false, description: 'enable/disable KNI')
 option('dpdk_root_dir', type: 'string', value: 'c:\dpdk', description: 'dpdk source code root dir')
