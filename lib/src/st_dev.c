@@ -101,6 +101,7 @@ static void dev_stat(struct st_main_impl* impl) {
   dev_eth_stat(impl);
   st_ptp_stat(impl);
   st_cni_stat(impl);
+  st_sch_stat(impl);
   st_tx_video_sessions_stat(impl);
   if (impl->tx_a_init) st_tx_audio_sessions_stat(impl);
   if (impl->tx_anc_init) st_tx_ancillary_sessions_stat(impl);

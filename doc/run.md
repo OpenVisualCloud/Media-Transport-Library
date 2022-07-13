@@ -141,6 +141,8 @@ For the supported parameters in the json, please refer to [JSON configuration gu
 --log_level <level>                  : debug option, set log level. e.g. debug, info, warning, error
 --nb_tx_desc <count>                 : debug option, number of transmit descriptors for each NIC TX queue, affect the memory usage and the performance.
 --nb_rx_desc <count>                 : debug option, number of receive descriptors for each NIC RX queue, affect the memory usage and the performance.
+--tasklet_time                       : debug option, enable stat info for tasklet running time.
+--tsc                                : debug option, force to use tsc pacing.
 ```
 
 ## 4. Tests:

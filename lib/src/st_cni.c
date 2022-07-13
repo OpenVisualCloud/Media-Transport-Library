@@ -210,9 +210,13 @@ static int cni_queues_init(struct st_main_impl* impl, struct st_cni_impl* cni) {
   return 0;
 }
 
+static bool cni_if_need(struct st_main_impl* impl) { return true; }
+
 void st_cni_stat(struct st_main_impl* impl) {
   int num_ports = st_num_ports(impl);
   struct st_cni_impl* cni = st_get_cni(impl);
+
+  if (!cni->used) return;
 
   for (int i = 0; i < num_ports; i++) {
     info("CNI(%d): eth_rx_cnt %d \n", i, cni->eth_rx_cnt[i]);
@@ -224,6 +228,9 @@ int st_cni_init(struct st_main_impl* impl) {
   int ret;
   struct st_cni_impl* cni = st_get_cni(impl);
   struct st_init_params* p = st_get_user_params(impl);
+
+  cni->used = cni_if_need(impl);
+  if (!cni->used) return 0;
 
   cni->lcore_tasklet = (p->flags & ST_FLAG_CNI_THREAD) ? false : true;
   rte_atomic32_set(&cni->stop_thread, 0);
@@ -287,6 +294,8 @@ int st_cni_start(struct st_main_impl* impl) {
   struct st_cni_impl* cni = st_get_cni(impl);
   int ret;
 
+  if (!cni->used) return 0;
+
   ret = cni_trafic_thread_start(impl, cni);
   if (ret < 0) return ret;
 
@@ -295,6 +304,8 @@ int st_cni_start(struct st_main_impl* impl) {
 
 int st_cni_stop(struct st_main_impl* impl) {
   struct st_cni_impl* cni = st_get_cni(impl);
+
+  if (!cni->used) return 0;
 
   cni_trafic_thread_stop(cni);
 

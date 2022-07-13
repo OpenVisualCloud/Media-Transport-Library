@@ -804,6 +804,12 @@ struct st40_rfc8331_payload_hdr {
  * Do st_start in st_init, st_stop in st_uninit, and skip the st_start/st_stop
  */
 #define ST_FLAG_DEV_AUTO_START_STOP (ST_BIT64(24))
+/**
+ * Flag bit in flags of struct st_init_params, debug usage only.
+ * Enable tasklet time measurement, report status if tasklet run time longer than
+ * tasklet_time_thresh_us in st_init_params.
+ */
+#define ST_FLAG_TASKLET_TIME_MEASURE (ST_BIT64(25))
 
 /**
  * The structure describing how to init the streaming dpdk context.

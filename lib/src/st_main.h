@@ -259,6 +259,8 @@ struct st_ptp_impl {
 };
 
 struct st_cni_impl {
+  bool used; /* if enable cni */
+
   uint16_t rx_q_id[ST_PORT_MAX]; /* cni rx queue id */
   bool rx_q_active[ST_PORT_MAX];
   pthread_t tid; /* thread id for rx */
@@ -316,6 +318,11 @@ struct st_sch_tasklet_impl {
   struct st_sch_impl* sch;
 
   int idx;
+
+  uint32_t stat_max_time_us;
+  uint64_t stat_sum_time_us;
+  uint64_t stat_time_cnt;
+  uint32_t stat_min_time_us;
 };
 
 enum st_session_type {
@@ -1569,6 +1576,13 @@ static inline bool st_has_tx_video_migrate(struct st_main_impl* impl) {
 
 static inline bool st_has_rx_video_migrate(struct st_main_impl* impl) {
   if (st_get_user_params(impl)->flags & ST_FLAG_RX_VIDEO_MIGRATE)
+    return true;
+  else
+    return false;
+}
+
+static inline bool st_has_tasklet_time_measure(struct st_main_impl* impl) {
+  if (st_get_user_params(impl)->flags & ST_FLAG_TASKLET_TIME_MEASURE)
     return true;
   else
     return false;

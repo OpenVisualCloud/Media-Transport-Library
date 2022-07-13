@@ -76,6 +76,7 @@ enum st_args_cmd {
   ST_ARG_PCAPNG_DUMP,
   ST_ARG_RUNTIME_SESSION,
   ST_ARG_TTF_FILE,
+  ST_ARG_TASKLET_TIME,
 
   ST_ARG_MAX,
 };
@@ -142,6 +143,7 @@ static struct option st_app_args_options[] = {
     {"pcapng_dump", required_argument, 0, ST_ARG_PCAPNG_DUMP},
     {"runtime_session", no_argument, 0, ST_ARG_RUNTIME_SESSION},
     {"ttf_file", required_argument, 0, ST_ARG_TTF_FILE},
+    {"tasklet_time", no_argument, 0, ST_ARG_TASKLET_TIME},
 
     {0, 0, 0, 0}};
 
@@ -410,6 +412,9 @@ int st_app_parse_args(struct st_app_context* ctx, struct st_init_params* p, int 
         break;
       case ST_ARG_TTF_FILE:
         snprintf(ctx->ttf_file, sizeof(ctx->ttf_file), "%s", optarg);
+        break;
+      case ST_ARG_TASKLET_TIME:
+        p->flags |= ST_FLAG_TASKLET_TIME_MEASURE;
         break;
       case '?':
         break;

@@ -604,7 +604,7 @@ int st_plugin_register(st_handle st, const char* path) {
     return -EIO;
   }
 
-  /* open the plugin and parse the symble */
+  /* open the plugin and parse the symbol */
   dl_handle = dlopen(path, RTLD_LAZY);
   if (!dl_handle) {
     warn("%s, dlopen %s fail\n", __func__, path);

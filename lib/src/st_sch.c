@@ -39,10 +39,13 @@ static inline void sch_unlock(struct st_sch_impl* sch) {
 
 static int sch_lcore_func(void* args) {
   struct st_sch_impl* sch = args;
+  struct st_main_impl* impl = sch->parnet;
   int idx = sch->idx;
   int num_tasklet, i;
   struct st_sch_tasklet_ops* ops;
   struct st_sch_tasklet_impl* tasklet;
+  bool time_measure = st_has_tasklet_time_measure(impl);
+  uint64_t tsc_s = 0;
 
   num_tasklet = sch->max_tasklet_idx;
   info("%s(%d), start with %d tasklets\n", __func__, idx, num_tasklet);
@@ -67,7 +70,15 @@ static int sch_lcore_func(void* args) {
       tasklet = sch->tasklet[i];
       if (!tasklet) continue;
       ops = &tasklet->ops;
+      if (time_measure) tsc_s = st_get_tsc(impl);
       ops->handler(ops->priv);
+      if (time_measure) {
+        uint32_t delta_us = (st_get_tsc(impl) - tsc_s) / 1000;
+        tasklet->stat_max_time_us = RTE_MAX(tasklet->stat_max_time_us, delta_us);
+        tasklet->stat_min_time_us = RTE_MIN(tasklet->stat_min_time_us, delta_us);
+        tasklet->stat_sum_time_us += delta_us;
+        tasklet->stat_time_cnt++;
+      }
     }
   }
 
@@ -241,6 +252,33 @@ static bool sch_is_capable(struct st_sch_impl* sch, int quota_mbs,
     return true;
 }
 
+static void sch_tasklet_stat_clear(struct st_sch_tasklet_impl* tasklet) {
+  tasklet->stat_max_time_us = 0;
+  tasklet->stat_min_time_us = (uint32_t)-1;
+  tasklet->stat_sum_time_us = 0;
+  tasklet->stat_time_cnt = 0;
+}
+
+static void sch_stat(struct st_sch_impl* sch) {
+  int num_tasklet = sch->max_tasklet_idx;
+  struct st_sch_tasklet_impl* tasklet;
+  int idx = sch->idx;
+  uint32_t avg_us;
+
+  for (int i = 0; i < num_tasklet; i++) {
+    tasklet = sch->tasklet[i];
+    if (!tasklet) continue;
+
+    if (tasklet->stat_time_cnt) {
+      avg_us = tasklet->stat_sum_time_us / tasklet->stat_time_cnt;
+      info("SCH(%d): tasklet %s, avg %uus max %uus min %uus\n", idx, tasklet->name,
+           avg_us, tasklet->stat_max_time_us, tasklet->stat_min_time_us);
+    }
+
+    sch_tasklet_stat_clear(tasklet);
+  }
+}
+
 int st_sch_unregister_tasklet(struct st_sch_tasklet_impl* tasklet) {
   struct st_sch_impl* sch = tasklet->sch;
   int sch_idx = sch->idx;
@@ -300,6 +338,7 @@ struct st_sch_tasklet_impl* st_sch_register_tasklet(
     strncpy(tasklet->name, tasklet_ops->name, ST_MAX_NAME_LEN - 1);
     tasklet->sch = sch;
     tasklet->idx = i;
+    sch_tasklet_stat_clear(tasklet);
 
     sch->tasklet[i] = tasklet;
     sch->max_tasklet_idx = RTE_MAX(sch->max_tasklet_idx, i + 1);
@@ -500,4 +539,17 @@ int st_sch_stop_all(struct st_main_impl* impl) {
 
   info("%s, succ\n", __func__);
   return 0;
+}
+
+void st_sch_stat(struct st_main_impl* impl) {
+  struct st_sch_impl* sch;
+
+  if (!st_has_tasklet_time_measure(impl)) return;
+
+  for (int sch_idx = 0; sch_idx < ST_MAX_SCH_NUM; sch_idx++) {
+    sch = st_sch_instance(impl, sch_idx);
+    if (st_sch_started(sch)) {
+      sch_stat(sch);
+    }
+  }
 }
