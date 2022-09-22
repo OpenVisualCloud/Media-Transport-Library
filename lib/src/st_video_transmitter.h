@@ -12,4 +12,7 @@ int st_video_transmitter_init(struct st_main_impl* impl, struct st_sch_impl* sch
                               struct st_video_transmitter_impl* trs);
 int st_video_transmitter_uinit(struct st_video_transmitter_impl* trs);
 
+int st_video_reslove_pacing_tasklet(struct st_tx_video_session_impl* s,
+                                    enum st_session_port port);
+
 #endif

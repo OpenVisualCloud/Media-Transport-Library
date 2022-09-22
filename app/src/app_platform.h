@@ -8,8 +8,9 @@
 #ifdef WINDOWSENV /* Windows */
 #include <Winsock2.h>
 #include <ws2tcpip.h>
-
+// clang-format off
 #include "win_posix.h"
+// clang-format on
 #else /* Linux */
 #include <arpa/inet.h>
 #include <net/ethernet.h>
@@ -26,6 +27,7 @@
 #endif
 
 #include <fcntl.h>
+#include <signal.h>
 #include <stdio.h>
 
 #ifndef __FAVOR_BSD
@@ -111,6 +113,42 @@ static inline void st_pause(void) {
   system("pause");
 #else
   pause();
+#endif
+}
+
+static inline void st_usleep(
+    useconds_t usec) {  // windows usleep function precision is only 1~15ms
+#ifdef WINDOWSENV
+  LARGE_INTEGER delay;
+  HANDLE delay_timer_handle = NULL;
+  delay.QuadPart = usec;
+  delay.QuadPart = -(10 * delay.QuadPart);
+  delay_timer_handle = CreateWaitableTimer(NULL, TRUE, NULL);
+  if (delay_timer_handle) {
+    SetWaitableTimer(delay_timer_handle, &delay, 0, NULL, NULL, 0);
+    WaitForSingleObject(delay_timer_handle, INFINITE);
+    CloseHandle(delay_timer_handle);
+  } else {
+    Sleep((usec + 999) / 1000);
+  }
+#else
+  usleep(usec);
+#endif
+}
+
+static inline void st_getrealtime(struct timespec* pspec) {
+#ifdef WINDOWSENV
+  unsigned __int64 t;
+  union {
+    unsigned __int64 u64;
+    FILETIME ft;
+  } ct;
+  GetSystemTimePreciseAsFileTime(&ct.ft);
+  t = ct.u64 - INT64_C(116444736000000000);
+  pspec->tv_sec = t / 10000000;
+  pspec->tv_nsec = ((int)(t % 10000000)) * 100;
+#else
+  clock_gettime(CLOCK_REALTIME, pspec);
 #endif
 }
 

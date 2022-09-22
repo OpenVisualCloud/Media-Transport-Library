@@ -45,7 +45,8 @@ static struct st22p_rx_frame* rx_st22p_next_available(
   return NULL;
 }
 
-static int rx_st22p_frame_ready(void* priv, void* frame, struct st22_frame_meta* meta) {
+static int rx_st22p_frame_ready(void* priv, void* frame,
+                                struct st22_rx_frame_meta* meta) {
   struct st22p_rx_ctx* ctx = priv;
   struct st22p_rx_frame* framebuff;
 
@@ -187,6 +188,10 @@ static int rx_st22p_create_transport(st_handle st, struct st22p_rx_ctx* ctx,
     strncpy(ops_rx.port[i], ops->port.port[i], ST_PORT_MAX_LEN);
     ops_rx.udp_port[i] = ops->port.udp_port[i] + i;
   }
+  if (ops->flags & ST22P_RX_FLAG_DATA_PATH_ONLY)
+    ops_rx.flags |= ST22_RX_FLAG_DATA_PATH_ONLY;
+  if (ops->flags & ST22P_RX_FLAG_RECEIVE_INCOMPLETE_FRAME)
+    ops_rx.flags |= ST22_RX_FLAG_RECEIVE_INCOMPLETE_FRAME;
   ops_rx.pacing = ST21_PACING_NARROW;
   ops_rx.width = ops->width;
   ops_rx.height = ops->height;
@@ -212,7 +217,6 @@ static int rx_st22p_create_transport(st_handle st, struct st22p_rx_ctx* ctx,
     frames[i].src.data_size = ops_rx.framebuff_max_size;
     frames[i].src.width = ops->width;
     frames[i].src.height = ops->height;
-    frames[i].src.idx = i;
     frames[i].src.priv = &frames[i];
 
     frames[i].decode_frame.src = &frames[i].src;
@@ -269,7 +273,6 @@ static int rx_st22p_init_dst_fbs(struct st_main_impl* impl, struct st22p_rx_ctx*
     frames[i].dst.data_size = dst_size;
     frames[i].dst.width = ops->width;
     frames[i].dst.height = ops->height;
-    frames[i].dst.idx = i;
     frames[i].dst.priv = &frames[i];
   }
 
@@ -284,16 +287,17 @@ static int rx_st22p_get_decoder(struct st_main_impl* impl, struct st22p_rx_ctx* 
   struct st22_get_decoder_request req;
 
   memset(&req, 0, sizeof(req));
-  req.codec = ops->codec;
   req.device = ops->device;
   req.req.width = ops->width;
   req.req.height = ops->height;
   req.req.fps = ops->fps;
   req.req.output_fmt = ops->output_fmt;
-  if (req.codec == ST22_CODEC_JPEGXS) {
+  if (ops->codec == ST22_CODEC_JPEGXS) {
     req.req.input_fmt = ST_FRAME_FMT_JPEGXS_CODESTREAM;
+  } else if (ops->codec == ST22_CODEC_H264_CBR) {
+    req.req.input_fmt = ST_FRAME_FMT_H264_CBR_CODESTREAM;
   } else {
-    err("%s(%d), unknow codec %d\n", __func__, idx, req.codec);
+    err("%s(%d), unknow codec %d\n", __func__, idx, ops->codec);
     return -EINVAL;
   }
   req.req.framebuff_cnt = ops->framebuff_cnt;
@@ -313,7 +317,7 @@ static int rx_st22p_get_decoder(struct st_main_impl* impl, struct st22p_rx_ctx* 
   return 0;
 }
 
-struct st_frame_meta* st22p_rx_get_frame(st22p_rx_handle handle) {
+struct st_frame* st22p_rx_get_frame(st22p_rx_handle handle) {
   struct st22p_rx_ctx* ctx = handle;
   int idx = ctx->idx;
   struct st22p_rx_frame* framebuff;
@@ -343,7 +347,7 @@ struct st_frame_meta* st22p_rx_get_frame(st22p_rx_handle handle) {
   return &framebuff->dst;
 }
 
-int st22p_rx_put_frame(st22p_rx_handle handle, struct st_frame_meta* frame) {
+int st22p_rx_put_frame(st22p_rx_handle handle, struct st_frame* frame) {
   struct st22p_rx_ctx* ctx = handle;
   int idx = ctx->idx;
   struct st22p_rx_frame* framebuff = frame->priv;
@@ -501,6 +505,18 @@ size_t st22p_rx_frame_size(st22p_rx_handle handle) {
   }
 
   return ctx->dst_size;
+}
+
+int st22p_rx_get_queue_meta(st22p_rx_handle handle, struct st_queue_meta* meta) {
+  struct st22p_rx_ctx* ctx = handle;
+  int cidx = ctx->idx;
+
+  if (ctx->type != ST22_SESSION_TYPE_PIPELINE_RX) {
+    err("%s(%d), invalid type %d\n", __func__, cidx, ctx->type);
+    return 0;
+  }
+
+  return st22_rx_get_queue_meta(ctx->transport, meta);
 }
 
 int st22p_rx_pcapng_dump(st22p_rx_handle handle, uint32_t max_dump_packets, bool sync,

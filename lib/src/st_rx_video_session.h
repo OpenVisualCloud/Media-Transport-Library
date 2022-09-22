@@ -18,26 +18,7 @@ int st_rx_video_sessions_sch_init(struct st_main_impl* impl, struct st_sch_impl*
 
 int st_rx_video_sessions_sch_uinit(struct st_main_impl* impl, struct st_sch_impl* sch);
 
-struct st_rx_video_session_impl* st_rx_video_sessions_mgr_attach(
-    struct st_rx_video_sessions_mgr* mgr, struct st20_rx_ops* ops,
-    struct st22_rx_ops* st22_ops);
-int st_rx_video_sessions_mgr_detach(struct st_rx_video_sessions_mgr* mgr,
-                                    struct st_rx_video_session_impl* s);
-
 void st_rx_video_sessions_stat(struct st_main_impl* impl);
-
-int st_rx_video_session_put_frame(struct st_rx_video_session_impl* s, void* frame);
-
-int st_rx_video_sessions_mgr_update_src(struct st_rx_video_sessions_mgr* mgr,
-                                        struct st_rx_video_session_impl* s,
-                                        struct st_rx_source_info* src);
-
-int st_rx_video_sessions_mgr_update(struct st_rx_video_sessions_mgr* mgr);
-
-int st_rx_video_session_start_pcapng(struct st_main_impl* impl,
-                                     struct st_rx_video_session_impl* s,
-                                     uint32_t max_dump_packets, bool sync,
-                                     struct st_pcap_dump_meta* meta);
 
 /* call rx_video_session_put always if get successfully */
 static inline struct st_rx_video_session_impl* rx_video_session_get(

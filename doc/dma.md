@@ -52,3 +52,6 @@ ST: RX_VIDEO_SESSION(1,0): pkts 2589325 by dma copy, dma busy 0.000000
 ST: DMA(0), s 2589313 c 2589313 e 0 avg q 1
 ```
 BTW, the gtest support --dma_dev also, pls pass the DMA setup for the DMA test.
+
+## 3. DMA sample code for application usage:
+Refer to [../app/sample/dma_sample.c](dma_sample.c) for how to use DMA in application side, use st_hp_virt2iova(for st_hp_malloc) or st_dma_map(for malloc) to get the IOVA address.

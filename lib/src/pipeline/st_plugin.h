@@ -17,6 +17,12 @@ struct st22_decode_session_impl* st22_get_decoder(struct st_main_impl* impl,
 int st22_decode_notify_frame_ready(struct st22_decode_session_impl* encoder);
 int st22_put_decoder(struct st_main_impl* impl, struct st22_decode_session_impl* encoder);
 
+struct st20_convert_session_impl* st20_get_converter(
+    struct st_main_impl* impl, struct st20_get_converter_request* req);
+int st20_convert_notify_frame_ready(struct st20_convert_session_impl* converter);
+int st20_put_converter(struct st_main_impl* impl,
+                       struct st20_convert_session_impl* converter);
+
 int st_plugins_init(struct st_main_impl* impl);
 int st_plugins_uinit(struct st_main_impl* impl);
 

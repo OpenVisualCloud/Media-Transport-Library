@@ -1,7 +1,7 @@
 # SPDX-License-Identifier: BSD-3-Clause
 # Copyright 2022 Intel Corporation
 
-project('st_dpdk', 'c', default_options: ['c_std=gnu11', 'buildtype=release'], version: '22.06.0',)
+project('st_dpdk', 'c', default_options: ['c_std=gnu11', 'buildtype=release'], version: '22.09.0',)
 
 exec_env = host_machine.system()
 set_variable('is_windows', exec_env == 'windows')
@@ -15,6 +15,12 @@ add_global_arguments('-D__ST_BUILD__="' + meson.project_version() + '"', languag
 
 if get_option('enable_kni') == true
   add_global_arguments('-DST_HAS_KNI', language : 'c')
+endif
+
+if is_windows
+if get_option('enable_tap') == true
+  add_global_arguments('-DST_HAS_TAP', language : 'c')
+endif
 endif
 
 st_dpdk_lib = []

@@ -155,6 +155,7 @@ static int admin_tx_video_migrate(struct st_main_impl* impl, bool* migrated) {
   for (int sch_idx = 0; sch_idx < ST_MAX_SCH_NUM; sch_idx++) {
     struct st_sch_impl* sch = st_sch_instance(impl, sch_idx);
     if (!st_sch_started(sch)) continue;
+    if (!st_sch_has_busy(sch)) continue;
 
     /* check if any busy session in this cpu */
     struct st_tx_video_session_impl* busy_s_in_sch = NULL;
@@ -275,6 +276,7 @@ static int admin_rx_video_migrate(struct st_main_impl* impl, bool* migrated) {
   for (int sch_idx = 0; sch_idx < ST_MAX_SCH_NUM; sch_idx++) {
     struct st_sch_impl* sch = st_sch_instance(impl, sch_idx);
     if (!st_sch_started(sch)) continue;
+    if (!st_sch_has_busy(sch)) continue;
 
     /* check if any busy session in this cpu */
     struct st_rx_video_session_impl* busy_s_in_sch = NULL;
@@ -385,7 +387,7 @@ int st_admin_init(struct st_main_impl* impl) {
   st_pthread_cond_init(&admin->admin_wake_cond, NULL);
   rte_atomic32_set(&admin->admin_stop, 0);
 
-  rte_ctrl_thread_create(&admin->admin_tid, "st_admin_thread", NULL, admin_thread, impl);
+  pthread_create(&admin->admin_tid, NULL, admin_thread, impl);
   rte_eal_alarm_set(admin->period_us, admin_alarm_handler, impl);
 
   return 0;

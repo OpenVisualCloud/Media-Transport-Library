@@ -3,7 +3,7 @@
  */
 
 #include <pthread.h>
-#include <st_dpdk_api.h>
+#include <st20_dpdk_api.h>
 #include <stdbool.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -13,12 +13,12 @@
 #include "../src/app_platform.h"
 
 #define TX_VIDEO_PORT_BDF "0000:af:00.1"
-#define TX_VIDEO_UDP_PORT (10000)
+#define TX_VIDEO_UDP_PORT (20000)
 #define TX_VIDEO_PAYLOAD_TYPE (112)
 /* local ip address for current bdf port */
 static uint8_t g_tx_video_local_ip[ST_IP_ADDR_LEN] = {192, 168, 0, 2};
 /* dst ip address for tx video session */
-static uint8_t g_tx_video_dst_ip[ST_IP_ADDR_LEN] = {239, 168, 0, 1};
+static uint8_t g_tx_video_dst_ip[ST_IP_ADDR_LEN] = {239, 168, 85, 20};
 
 struct app_context {
   int idx;
@@ -35,6 +35,9 @@ struct app_context {
   pthread_cond_t wake_cond;
   pthread_mutex_t wake_mutex;
 };
+
+static bool g_video_active = false;
+static st_handle g_st_handle;
 
 static int notify_rtp_done(void* priv) {
   struct app_context* s = (struct app_context*)priv;
@@ -112,13 +115,27 @@ static void* app_tx_rtp_thread(void* arg) {
   return NULL;
 }
 
+static void app_sig_handler(int signo) {
+  printf("%s, signal %d\n", __func__, signo);
+  switch (signo) {
+    case SIGINT: /* Interrupt from keyboard */
+      g_video_active = false;
+      st_request_exit(g_st_handle);
+      break;
+  }
+
+  return;
+}
+
 int main() {
   struct st_init_params param;
   int session_num = 1;
+  char* port = getenv("ST_PORT_P");
+  if (!port) port = TX_VIDEO_PORT_BDF;
 
   memset(&param, 0, sizeof(param));
   param.num_ports = 1;
-  strncpy(param.port[ST_PORT_P], TX_VIDEO_PORT_BDF, ST_PORT_MAX_LEN);
+  strncpy(param.port[ST_PORT_P], port, ST_PORT_MAX_LEN);
   memcpy(param.sip_addr[ST_PORT_P], g_tx_video_local_ip, ST_IP_ADDR_LEN);
   param.flags = ST_FLAG_BIND_NUMA;      // default bind to numa
   param.log_level = ST_LOG_LEVEL_INFO;  // log level. ERROR, INFO, WARNING
@@ -135,6 +152,9 @@ int main() {
     printf("st_init fail\n");
     return -1;
   }
+
+  g_st_handle = dev_handle;
+  signal(SIGINT, app_sig_handler);
 
   st20_tx_handle tx_handle[session_num];
   struct app_context* app[session_num];
@@ -156,7 +176,7 @@ int main() {
     // tx src ip like 239.0.0.1
     memcpy(ops_tx.dip_addr[ST_PORT_P], g_tx_video_dst_ip, ST_IP_ADDR_LEN);
     // send port interface like 0000:af:00.0
-    strncpy(ops_tx.port[ST_PORT_P], TX_VIDEO_PORT_BDF, ST_PORT_MAX_LEN);
+    strncpy(ops_tx.port[ST_PORT_P], port, ST_PORT_MAX_LEN);
     ops_tx.udp_port[ST_PORT_P] =
         TX_VIDEO_UDP_PORT + i;  // user could config the udp port in this interface.
     ops_tx.pacing = ST21_PACING_NARROW;
@@ -202,9 +222,11 @@ int main() {
 
   // start tx
   ret = st_start(dev_handle);
+  g_video_active = true;
 
-  // tx 120s
-  sleep(120);
+  while (g_video_active) {
+    sleep(1);
+  }
 
   // stop app thread
   for (int i = 0; i < session_num; i++) {

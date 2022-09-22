@@ -1,7 +1,7 @@
-From d28934cec8d975b167a7659d5ab3ec3f2b2f98ee Mon Sep 17 00:00:00 2001
+From 97011ec217436f13606e4c3cf6e34acababcd968 Mon Sep 17 00:00:00 2001
 From: qiaoliu <qiao.liu@intel.com>
 Date: Wed, 16 Mar 2022 10:49:18 +0800
-Subject: [PATCH 8/8] Enable descriptor prefetch for CBDMA version 3.4
+Subject: [PATCH 7/9] Enable descriptor prefetch for CBDMA version 3.4
 
 ---
  drivers/dma/ioat/ioat_dmadev.c  | 6 +++++-

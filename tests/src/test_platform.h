@@ -9,12 +9,11 @@
 #include <ws2tcpip.h>
 #ifndef sleep
 #define sleep(x) Sleep(1000 * x)
-#include <unistd.h>
 #endif
 #else /* Linux */
 #include <arpa/inet.h>
 #endif
-
+#include <unistd.h>
 #ifdef CLOCK_MONOTONIC_RAW
 #define ST_CLOCK_MONOTONIC_ID CLOCK_MONOTONIC_RAW
 #else
@@ -53,4 +52,24 @@ static inline int st_pthread_cond_destroy(pthread_cond_t* cond) {
 
 static inline int st_pthread_cond_signal(pthread_cond_t* cond) {
   return pthread_cond_signal(cond);
+}
+
+static inline void st_usleep(
+    useconds_t usec) {  // windows usleep function precision is only 1~15ms
+#ifdef WINDOWSENV
+  LARGE_INTEGER delay;
+  HANDLE delay_timer_handle = NULL;
+  delay.QuadPart = usec;
+  delay.QuadPart = -(10 * delay.QuadPart);
+  delay_timer_handle = CreateWaitableTimer(NULL, TRUE, NULL);
+  if (delay_timer_handle) {
+    SetWaitableTimer(delay_timer_handle, &delay, 0, NULL, NULL, 0);
+    WaitForSingleObject(delay_timer_handle, INFINITE);
+    CloseHandle(delay_timer_handle);
+  } else {
+    Sleep((usec + 999) / 1000);
+  }
+#else
+  usleep(usec);
+#endif
 }

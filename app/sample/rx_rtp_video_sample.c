@@ -3,7 +3,7 @@
  */
 
 #include <pthread.h>
-#include <st_dpdk_api.h>
+#include <st20_dpdk_api.h>
 #include <stdbool.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -13,13 +13,13 @@
 #include "../src/app_platform.h"
 
 #define RX_VIDEO_PORT_BDF "0000:af:00.0"
-#define RX_VIDEO_UDP_PORT (10000)
+#define RX_VIDEO_UDP_PORT (20000)
 #define RX_VIDEO_PAYLOAD_TYPE (112)
 
 /* local ip address for current bdf port */
 static uint8_t g_rx_video_local_ip[ST_IP_ADDR_LEN] = {192, 168, 0, 1};
 /* source ip address for rx video session */
-static uint8_t g_rx_video_source_ip[ST_IP_ADDR_LEN] = {239, 168, 0, 1};
+static uint8_t g_rx_video_source_ip[ST_IP_ADDR_LEN] = {239, 168, 85, 20};
 
 struct app_context {
   int idx;
@@ -30,6 +30,9 @@ struct app_context {
   pthread_cond_t wake_cond;
   pthread_mutex_t wake_mutex;
 };
+
+static bool g_video_active = false;
+static st_handle g_st_handle;
 
 static int rx_rtp_ready(void* priv) {
   struct app_context* s = (struct app_context*)priv;
@@ -70,13 +73,27 @@ static void* app_rx_video_rtp_thread(void* arg) {
   return NULL;
 }
 
+static void app_sig_handler(int signo) {
+  printf("%s, signal %d\n", __func__, signo);
+  switch (signo) {
+    case SIGINT: /* Interrupt from keyboard */
+      g_video_active = false;
+      st_request_exit(g_st_handle);
+      break;
+  }
+
+  return;
+}
+
 int main() {
   struct st_init_params param;
   int session_num = 1;
+  char* port = getenv("ST_PORT_P");
+  if (!port) port = RX_VIDEO_PORT_BDF;
 
   memset(&param, 0, sizeof(param));
   param.num_ports = 1;
-  strncpy(param.port[ST_PORT_P], RX_VIDEO_PORT_BDF, ST_PORT_MAX_LEN);
+  strncpy(param.port[ST_PORT_P], port, ST_PORT_MAX_LEN);
   memcpy(param.sip_addr[ST_PORT_P], g_rx_video_local_ip, ST_IP_ADDR_LEN);
   param.flags = ST_FLAG_BIND_NUMA;      // default bind to numa
   param.log_level = ST_LOG_LEVEL_INFO;  // log level. ERROR, INFO, WARNING
@@ -92,6 +109,9 @@ int main() {
     printf("st_init fail\n");
     return -1;
   }
+
+  g_st_handle = dev_handle;
+  signal(SIGINT, app_sig_handler);
 
   st20_rx_handle rx_handle[session_num];
   struct app_context* app[session_num];
@@ -111,7 +131,7 @@ int main() {
     ops_rx.priv = app[i];  // app handle register to lib
     ops_rx.num_port = 1;
     memcpy(ops_rx.sip_addr[ST_PORT_P], g_rx_video_source_ip, ST_IP_ADDR_LEN);
-    strncpy(ops_rx.port[ST_PORT_P], RX_VIDEO_PORT_BDF, ST_PORT_MAX_LEN);
+    strncpy(ops_rx.port[ST_PORT_P], port, ST_PORT_MAX_LEN);
     // user could config the udp port in this interface.
     ops_rx.udp_port[ST_PORT_P] = RX_VIDEO_UDP_PORT + i;
     ops_rx.type = ST20_TYPE_RTP_LEVEL;
@@ -145,9 +165,11 @@ int main() {
 
   // start rx
   ret = st_start(dev_handle);
+  g_video_active = true;
 
-  // rx run 120s
-  sleep(120);
+  while (g_video_active) {
+    sleep(1);
+  }
 
   // stop app thread
   for (int i = 0; i < session_num; i++) {

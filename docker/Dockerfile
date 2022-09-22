@@ -26,18 +26,18 @@ RUN git config --global http.proxy $http_proxy && \
     git config --global user.name "Your Name"
 RUN cd /tmp/ && git clone https://github.com/DPDK/dpdk.git && \
     cd dpdk && \
-    git checkout v21.11 && \
-    git switch -c v21.11
+    git checkout v22.07 && \
+    git switch -c v22.07
 RUN cd /tmp/dpdk && \
-    git am $dpdk_st_kahawai/patches/dpdk/21.11/0001-build-enable-IEEE1588-PTP-option.patch && \
-    git am $dpdk_st_kahawai/patches/dpdk/21.11/0002-Change-to-enable-PTP.patch && \
-    git am $dpdk_st_kahawai/patches/dpdk/21.11/0003-net-ice-support-max-burst-size-configuration.patch && \
-    git am $dpdk_st_kahawai/patches/dpdk/21.11/0004-eanble-PF-ICE-rate-limit.patch && \
-    git am $dpdk_st_kahawai/patches/dpdk/21.11/0005-update-VF-rate-limit.patch && \
-    git am $dpdk_st_kahawai/patches/dpdk/21.11/0006-net-iavf-support-max-burst-size-configuration.patch && \
-    git am $dpdk_st_kahawai/patches/dpdk/21.11/0007-pcapng-add-ns-timestamp-for-copy-api.patch && \
-    git am $dpdk_st_kahawai/patches/dpdk/21.11/0008-net-ice-support-256-queues.patch && \
-    git am $dpdk_st_kahawai/patches/dpdk/21.11/0009-net-iavf-refine-queue-rate-limit-configure.patch && \
+    git am $dpdk_st_kahawai/patches/dpdk/22.07/0001-pcapng-add-ns-timestamp-for-copy-api.patch && \
+    git am $dpdk_st_kahawai/patches/dpdk/22.07/0002-net-af_xdp-parse-numa-node-id-from-sysfs.patch && \
+    git am $dpdk_st_kahawai/patches/dpdk/22.07/0003-net-iavf-refine-queue-rate-limit-configure.patch && \
+    git am $dpdk_st_kahawai/patches/dpdk/22.07/0004-net-ice-revert-PF-ICE-rate-limit-to-non-queue-group-.patch && \
+    git am $dpdk_st_kahawai/patches/dpdk/22.07/0005-net-iavf-support-max-burst-size-configuration.patch && \
+    git am $dpdk_st_kahawai/patches/dpdk/22.07/0006-net-ice-support-max-burst-size-configuration.patch && \
+    git am $dpdk_st_kahawai/patches/dpdk/22.07/0007-Add-support-for-i225-IT-ethernet-device-into-igc-pmd.patch && \
+    git am $dpdk_st_kahawai/patches/dpdk/22.07/0008-Change-to-enable-PTP.patch && \
+    git am $dpdk_st_kahawai/patches/dpdk/22.07/0009-ice-fix-ice_interrupt_handler-panic-when-stop.patch && \
     meson build && \
     ninja -C build && \
     ninja -C build install && \

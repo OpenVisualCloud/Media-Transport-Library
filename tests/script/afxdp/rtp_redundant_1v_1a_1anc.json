@@ -1,0 +1,105 @@
+{
+    "interfaces": [
+        {
+            "name": "ens801f0",
+        },
+        {
+            "name": "ens801f1",
+        }
+    ],
+    "tx_sessions": [
+        {
+            "dip": [
+                "192.168.18.102",
+                "192.168.18.101"
+            ],
+            "interface": [
+                0,
+                1
+            ],
+            "video": [
+                {
+                    "replicas": 1,
+                    "type": "rtp",
+                    "pacing": "gap",
+                    "packing": "BPM",
+                    "start_port": 20000,
+                    "payload_type": 112,
+                    "tr_offset": "default",
+                    "video_format": "i1080p59",
+                    "pg_format": "YUV_422_10bit",
+                    "video_url": "./test.yuv"
+                }
+            ],
+            "audio": [
+                {
+                    "replicas": 1,
+                    "type": "rtp",
+                    "start_port": 30000,
+                    "payload_type": 111,
+                    "audio_format": "PCM16",
+                    "audio_channel": ["ST"],
+                    "audio_sampling": "48kHz",
+                    "audio_ptime": "1",
+                    "audio_url": "./test.wav"
+                }
+            ],
+            "ancillary": [
+                {
+                    "replicas": 1,
+                    "start_port": 40000,
+                    "payload_type": 113,
+                    "type": "rtp",
+                    "ancillary_format": "closed_caption",
+                    "ancillary_url": "./test.txt",
+                    "ancillary_fps": "p59"
+                }
+            ]
+        }
+    ],
+    "rx_sessions": [
+        {
+            "ip": [
+                "192.168.18.101",
+                "192.168.18.102",
+            ],
+            "interface": [
+                1,
+                0
+            ],
+            "video": [
+                {
+                    "replicas": 1,
+                    "type": "rtp",
+                    "pacing": "gap",
+                    "start_port": 20000,
+                    "payload_type": 112,
+                    "tr_offset": "default",
+                    "video_format": "i1080p59",
+                    "pg_format": "YUV_422_10bit",
+                    "display": false
+                }
+            ],
+            "audio": [
+                {
+                    "replicas": 1,
+                    "type": "rtp",
+                    "start_port": 30000,
+                    "payload_type": 111,
+                    "audio_format": "PCM16",
+                    "audio_channel": ["ST"],
+                    "audio_sampling": "48kHz",
+                    "audio_ptime": "1",
+                    "audio_url": "./test.wav"
+                }
+            ],
+            "ancillary": [
+                {
+                    "replicas": 1,
+                    "payload_type": 113,
+                    "start_port": 40000
+                }
+            ]
+        }
+    ]
+}

@@ -114,8 +114,7 @@ static int app_rx_anc_uinit(struct st_app_rx_anc_session* s) {
   return 0;
 }
 
-static int app_rx_anc_init(struct st_app_context* ctx,
-                           st_json_rx_ancillary_session_t* anc,
+static int app_rx_anc_init(struct st_app_context* ctx, st_json_ancillary_session_t* anc,
                            struct st_app_rx_anc_session* s) {
   int idx = s->idx, ret;
   struct st40_rx_ops ops;
@@ -126,21 +125,23 @@ static int app_rx_anc_init(struct st_app_context* ctx,
   snprintf(name, 32, "app_rx_anc%d", idx);
   ops.name = name;
   ops.priv = s;
-  ops.num_port = anc ? anc->num_inf : ctx->para.num_ports;
-  memcpy(ops.sip_addr[ST_PORT_P], anc ? anc->ip[ST_PORT_P] : ctx->rx_sip_addr[ST_PORT_P],
-         ST_IP_ADDR_LEN);
+  ops.num_port = anc ? anc->base.num_inf : ctx->para.num_ports;
+  memcpy(ops.sip_addr[ST_PORT_P],
+         anc ? anc->base.ip[ST_PORT_P] : ctx->rx_sip_addr[ST_PORT_P], ST_IP_ADDR_LEN);
   strncpy(ops.port[ST_PORT_P],
-          anc ? anc->inf[ST_PORT_P]->name : ctx->para.port[ST_PORT_P], ST_PORT_MAX_LEN);
-  ops.udp_port[ST_PORT_P] = anc ? anc->udp_port : (10200 + s->idx);
+          anc ? anc->base.inf[ST_PORT_P]->name : ctx->para.port[ST_PORT_P],
+          ST_PORT_MAX_LEN);
+  ops.udp_port[ST_PORT_P] = anc ? anc->base.udp_port : (10200 + s->idx);
   if (ops.num_port > 1) {
     memcpy(ops.sip_addr[ST_PORT_R],
-           anc ? anc->ip[ST_PORT_R] : ctx->rx_sip_addr[ST_PORT_R], ST_IP_ADDR_LEN);
+           anc ? anc->base.ip[ST_PORT_R] : ctx->rx_sip_addr[ST_PORT_R], ST_IP_ADDR_LEN);
     strncpy(ops.port[ST_PORT_R],
-            anc ? anc->inf[ST_PORT_R]->name : ctx->para.port[ST_PORT_R], ST_PORT_MAX_LEN);
-    ops.udp_port[ST_PORT_R] = anc ? anc->udp_port : (10200 + s->idx);
+            anc ? anc->base.inf[ST_PORT_R]->name : ctx->para.port[ST_PORT_R],
+            ST_PORT_MAX_LEN);
+    ops.udp_port[ST_PORT_R] = anc ? anc->base.udp_port : (10200 + s->idx);
   }
   ops.rtp_ring_size = 1024;
-  ops.payload_type = anc ? anc->payload_type : ST_APP_PAYLOAD_TYPE_ANCILLARY;
+  ops.payload_type = anc ? anc->base.payload_type : ST_APP_PAYLOAD_TYPE_ANCILLARY;
   ops.notify_rtp_ready = app_rx_anc_rtp_ready;
   st_pthread_mutex_init(&s->st40_wake_mutex, NULL);
   st_pthread_cond_init(&s->st40_wake_cond, NULL);
@@ -196,7 +197,8 @@ int st_app_rx_anc_sessions_init(struct st_app_context* ctx) {
     s = &ctx->rx_anc_sessions[i];
     s->idx = i;
 
-    ret = app_rx_anc_init(ctx, ctx->json_ctx ? &ctx->json_ctx->rx_anc[i] : NULL, s);
+    ret = app_rx_anc_init(ctx, ctx->json_ctx ? &ctx->json_ctx->rx_anc_sessions[i] : NULL,
+                          s);
     if (ret < 0) {
       err("%s(%d), app_rx_anc_session_init fail %d\n", __func__, i, ret);
       return ret;

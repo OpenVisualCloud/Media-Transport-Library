@@ -3,3 +3,4 @@
 
 all:
 	gcc readpcap.c -o readpcap -lpcap
+	gcc readpcap_31.c -o readpcap_31 -lpcap

@@ -4,7 +4,7 @@
 
 #include <errno.h>
 #include <pthread.h>
-#include <st_dpdk_api.h>
+#include <st20_dpdk_api.h>
 #include <stdbool.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -14,13 +14,13 @@
 #include "../src/app_platform.h"
 
 #define TX_VIDEO_PORT_BDF "0000:af:00.1"
-#define TX_VIDEO_UDP_PORT (10000)
+#define TX_VIDEO_UDP_PORT (20000)
 #define TX_VIDEO_PAYLOAD_TYPE (112)
 
 /* local ip address for current bdf port */
 static uint8_t g_tx_video_local_ip[ST_IP_ADDR_LEN] = {192, 168, 0, 2};
 /* dst ip address for tx video session */
-static uint8_t g_tx_video_dst_ip[ST_IP_ADDR_LEN] = {239, 168, 0, 1};
+static uint8_t g_tx_video_dst_ip[ST_IP_ADDR_LEN] = {239, 168, 85, 20};
 
 struct app_context {
   int idx;
@@ -42,7 +42,23 @@ struct app_context {
   int height;
 };
 
-static int tx_video_next_frame(void* priv, uint16_t* next_frame_idx, bool* second_field) {
+static bool g_video_active = false;
+static st_handle g_st_handle;
+
+static void app_sig_handler(int signo) {
+  printf("%s, signal %d\n", __func__, signo);
+  switch (signo) {
+    case SIGINT: /* Interrupt from keyboard */
+      g_video_active = false;
+      st_request_exit(g_st_handle);
+      break;
+  }
+
+  return;
+}
+
+static int tx_video_next_frame(void* priv, uint16_t* next_frame_idx,
+                               struct st20_tx_frame_meta* meta) {
   struct app_context* s = priv;
   int ret;
   uint16_t consumer_idx = s->framebuff_consumer_idx;
@@ -54,7 +70,6 @@ static int tx_video_next_frame(void* priv, uint16_t* next_frame_idx, bool* secon
     ret = 0;
     framebuff->stat = ST_TX_FRAME_IN_TRANSMITTING;
     *next_frame_idx = consumer_idx;
-    *second_field = false;
     /* point to next */
     consumer_idx++;
     if (consumer_idx >= s->framebuff_cnt) consumer_idx = 0;
@@ -69,7 +84,8 @@ static int tx_video_next_frame(void* priv, uint16_t* next_frame_idx, bool* secon
   return ret;
 }
 
-static int tx_video_frame_done(void* priv, uint16_t frame_idx) {
+static int tx_video_frame_done(void* priv, uint16_t frame_idx,
+                               struct st20_tx_frame_meta* meta) {
   struct app_context* s = priv;
   int ret;
   struct st_tx_frame* framebuff = &s->framebuffs[frame_idx];
@@ -92,13 +108,13 @@ static int tx_video_frame_done(void* priv, uint16_t frame_idx) {
 }
 
 static int tx_video_frame_lines_ready(void* priv, uint16_t frame_idx,
-                                      uint16_t* lines_ready) {
+                                      struct st20_tx_slice_meta* meta) {
   struct app_context* s = priv;
   struct st_tx_frame* framebuff = &s->framebuffs[frame_idx];
 
   st_pthread_mutex_lock(&s->wake_mutex);
   framebuff->slice_trigger = true;
-  *lines_ready = framebuff->lines_ready;
+  meta->lines_ready = framebuff->lines_ready;
   // printf("%s(%d), frame %u ready %d lines\n", __func__, s->idx, frame_idx,
   // framebuff->lines_ready);
   st_pthread_mutex_unlock(&s->wake_mutex);
@@ -113,7 +129,7 @@ static void tx_video_build_slice(struct app_context* s, struct st_tx_frame* fram
 
   /* simulate the timing */
   while (!framebuff->slice_trigger) {
-    usleep(1);
+    st_usleep(1);
   }
   lines_build += s->lines_per_slice;
   st_pthread_mutex_lock(&s->wake_mutex);
@@ -122,7 +138,7 @@ static void tx_video_build_slice(struct app_context* s, struct st_tx_frame* fram
 
   while (lines_build < s->height) {
     /* call the real build here, sample just sleep */
-    usleep(10 * 1000 / slices);
+    st_usleep(10 * 1000 / slices);
 
     st_pthread_mutex_lock(&s->wake_mutex);
     lines_build += s->lines_per_slice;
@@ -177,10 +193,12 @@ int main() {
   struct st_init_params param;
   int session_num = 1;
   int fb_cnt = 3;
+  char* port = getenv("ST_PORT_P");
+  if (!port) port = TX_VIDEO_PORT_BDF;
 
   memset(&param, 0, sizeof(param));
   param.num_ports = 1;
-  strncpy(param.port[ST_PORT_P], TX_VIDEO_PORT_BDF, ST_PORT_MAX_LEN);
+  strncpy(param.port[ST_PORT_P], port, ST_PORT_MAX_LEN);
   memcpy(param.sip_addr[ST_PORT_P], g_tx_video_local_ip, ST_IP_ADDR_LEN);
   param.flags = ST_FLAG_BIND_NUMA;      // default bind to numa
   param.log_level = ST_LOG_LEVEL_INFO;  // log level. ERROR, INFO, WARNING
@@ -198,6 +216,10 @@ int main() {
     printf("st_init fail\n");
     return -EIO;
   }
+
+  g_st_handle = dev_handle;
+  g_video_active = true;
+  signal(SIGINT, app_sig_handler);
 
   st20_tx_handle tx_handle[session_num];
   struct app_context* app[session_num];
@@ -232,7 +254,7 @@ int main() {
     // tx src ip like 239.0.0.1
     memcpy(ops_tx.dip_addr[ST_PORT_P], g_tx_video_dst_ip, ST_IP_ADDR_LEN);
     // send port interface like 0000:af:00.0
-    strncpy(ops_tx.port[ST_PORT_P], TX_VIDEO_PORT_BDF, ST_PORT_MAX_LEN);
+    strncpy(ops_tx.port[ST_PORT_P], port, ST_PORT_MAX_LEN);
     ops_tx.udp_port[ST_PORT_P] = TX_VIDEO_UDP_PORT + i;  // udp port
     ops_tx.pacing = ST21_PACING_NARROW;
     ops_tx.type = ST20_TYPE_SLICE_LEVEL;
@@ -277,8 +299,10 @@ int main() {
 
   // start tx
   ret = st_start(dev_handle);
-  // tx 120s
-  sleep(120);
+
+  while (g_video_active) {
+    sleep(1);
+  }
 
   // stop app thread
   for (int i = 0; i < session_num; i++) {

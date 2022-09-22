@@ -4,7 +4,7 @@
 
 #include <errno.h>
 #include <pthread.h>
-#include <st_dpdk_api.h>
+#include <st20_dpdk_api.h>
 #include <stdbool.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -14,13 +14,13 @@
 #include "../src/app_platform.h"
 
 #define TX_ST22_PORT_BDF "0000:af:00.1"
-#define TX_ST22_UDP_PORT (10000)
+#define TX_ST22_UDP_PORT (50000)
 #define TX_ST22_PAYLOAD_TYPE (114)
 
 /* local ip address for current bdf port */
 static uint8_t g_tx_st22_local_ip[ST_IP_ADDR_LEN] = {192, 168, 0, 2};
 /* dst ip address for tx video session */
-static uint8_t g_tx_st22_dst_ip[ST_IP_ADDR_LEN] = {239, 168, 0, 1};
+static uint8_t g_tx_st22_dst_ip[ST_IP_ADDR_LEN] = {239, 168, 85, 22};
 
 struct app_context {
   int idx;
@@ -40,7 +40,23 @@ struct app_context {
   pthread_mutex_t wake_mutex;
 };
 
-static int tx_st22_next_frame(void* priv, uint16_t* next_frame_idx, size_t* frame_size) {
+static bool g_video_active = false;
+static st_handle g_st_handle;
+
+static void app_sig_handler(int signo) {
+  printf("%s, signal %d\n", __func__, signo);
+  switch (signo) {
+    case SIGINT: /* Interrupt from keyboard */
+      g_video_active = false;
+      st_request_exit(g_st_handle);
+      break;
+  }
+
+  return;
+}
+
+static int tx_st22_next_frame(void* priv, uint16_t* next_frame_idx,
+                              struct st22_tx_frame_meta* meta) {
   struct app_context* s = priv;
   int ret;
   uint16_t consumer_idx = s->framebuff_consumer_idx;
@@ -52,7 +68,7 @@ static int tx_st22_next_frame(void* priv, uint16_t* next_frame_idx, size_t* fram
     ret = 0;
     framebuff->stat = ST_TX_FRAME_IN_TRANSMITTING;
     *next_frame_idx = consumer_idx;
-    *frame_size = framebuff->size;
+    meta->codestream_size = framebuff->size;
     /* point to next */
     consumer_idx++;
     if (consumer_idx >= s->framebuff_cnt) consumer_idx = 0;
@@ -67,7 +83,8 @@ static int tx_st22_next_frame(void* priv, uint16_t* next_frame_idx, size_t* fram
   return ret;
 }
 
-static int tx_st22_frame_done(void* priv, uint16_t frame_idx) {
+static int tx_st22_frame_done(void* priv, uint16_t frame_idx,
+                              struct st22_tx_frame_meta* meta) {
   struct app_context* s = priv;
   int ret;
   struct st_tx_frame* framebuff = &s->framebuffs[frame_idx];
@@ -92,7 +109,7 @@ static int tx_st22_frame_done(void* priv, uint16_t frame_idx) {
 static void st22_encode_frame(struct app_context* s, void* codestream_addr,
                               size_t max_codestream_size, size_t* codestream_size) {
   /* call the real encoding here, sample just sleep */
-  usleep(10 * 1000);
+  st_usleep(10 * 1000);
   *codestream_size = s->bytes_per_frame;
 }
 
@@ -138,10 +155,12 @@ int main() {
   int session_num = 1;
   int bpp = 3; /* 3bit per pixel */
   int fb_cnt = 3;
+  char* port = getenv("ST_PORT_P");
+  if (!port) port = TX_ST22_PORT_BDF;
 
   memset(&param, 0, sizeof(param));
   param.num_ports = 1;
-  strncpy(param.port[ST_PORT_P], TX_ST22_PORT_BDF, ST_PORT_MAX_LEN);
+  strncpy(param.port[ST_PORT_P], port, ST_PORT_MAX_LEN);
   memcpy(param.sip_addr[ST_PORT_P], g_tx_st22_local_ip, ST_IP_ADDR_LEN);
   param.flags = ST_FLAG_BIND_NUMA;      // default bind to numa
   param.log_level = ST_LOG_LEVEL_INFO;  // log level. ERROR, INFO, WARNING
@@ -157,6 +176,10 @@ int main() {
     printf("%s, st_init fail\n", __func__);
     return -1;
   }
+
+  g_st_handle = dev_handle;
+  g_video_active = true;
+  signal(SIGINT, app_sig_handler);
 
   st22_tx_handle tx_handle[session_num];
   struct app_context* app[session_num];
@@ -191,7 +214,7 @@ int main() {
     // tx src ip like 239.0.0.1
     memcpy(ops_tx.dip_addr[ST_PORT_P], g_tx_st22_dst_ip, ST_IP_ADDR_LEN);
     // send port interface like 0000:af:00.0
-    strncpy(ops_tx.port[ST_PORT_P], TX_ST22_PORT_BDF, ST_PORT_MAX_LEN);
+    strncpy(ops_tx.port[ST_PORT_P], port, ST_PORT_MAX_LEN);
     ops_tx.udp_port[ST_PORT_P] =
         TX_ST22_UDP_PORT + i;  // user could config the udp port in this interface.
     ops_tx.pacing = ST21_PACING_NARROW;
@@ -237,8 +260,9 @@ int main() {
   // start tx
   ret = st_start(dev_handle);
 
-  // tx 120s
-  sleep(120);
+  while (g_video_active) {
+    sleep(1);
+  }
 
   // stop app thread
   for (int i = 0; i < session_num; i++) {

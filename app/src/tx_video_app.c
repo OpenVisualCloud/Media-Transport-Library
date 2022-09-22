@@ -5,7 +5,7 @@
 #include "tx_video_app.h"
 
 static int app_tx_video_next_frame(void* priv, uint16_t* next_frame_idx,
-                                   bool* second_field) {
+                                   struct st20_tx_frame_meta* meta) {
   struct st_app_tx_video_session* s = priv;
   int ret;
   uint16_t consumer_idx = s->framebuff_consumer_idx;
@@ -17,7 +17,7 @@ static int app_tx_video_next_frame(void* priv, uint16_t* next_frame_idx,
     ret = 0;
     framebuff->stat = ST_TX_FRAME_IN_TRANSMITTING;
     *next_frame_idx = consumer_idx;
-    *second_field = framebuff->second_field;
+    meta->second_field = framebuff->second_field;
     /* point to next */
     consumer_idx++;
     if (consumer_idx >= s->framebuff_cnt) consumer_idx = 0;
@@ -33,7 +33,8 @@ static int app_tx_video_next_frame(void* priv, uint16_t* next_frame_idx,
   return ret;
 }
 
-static int app_tx_video_frame_done(void* priv, uint16_t frame_idx) {
+static int app_tx_video_frame_done(void* priv, uint16_t frame_idx,
+                                   struct st20_tx_frame_meta* meta) {
   struct st_app_tx_video_session* s = priv;
   int ret;
   struct st_tx_frame* framebuff = &s->framebuffs[frame_idx];
@@ -59,13 +60,13 @@ static int app_tx_video_frame_done(void* priv, uint16_t frame_idx) {
 }
 
 static int app_tx_video_frame_lines_ready(void* priv, uint16_t frame_idx,
-                                          uint16_t* lines_ready) {
+                                          struct st20_tx_slice_meta* meta) {
   struct st_app_tx_video_session* s = priv;
   struct st_tx_frame* framebuff = &s->framebuffs[frame_idx];
 
   st_pthread_mutex_lock(&s->st20_wake_mutex);
   framebuff->slice_trigger = true;
-  *lines_ready = framebuff->lines_ready;
+  meta->lines_ready = framebuff->lines_ready;
   dbg("%s(%d), frame %u ready %d lines\n", __func__, s->idx, frame_idx,
       framebuff->lines_ready);
   st_pthread_mutex_unlock(&s->st20_wake_mutex);
@@ -91,7 +92,8 @@ static void app_tx_video_thread_bind(struct st_app_tx_video_session* s) {
 
 static void app_tx_video_check_lcore(struct st_app_tx_video_session* s, bool rtp) {
   int sch_idx = st20_tx_get_sch_idx(s->handle);
-  if (s->handle_sch_idx != sch_idx) {
+
+  if (!s->ctx->app_thread && (s->handle_sch_idx != sch_idx)) {
     s->handle_sch_idx = sch_idx;
     unsigned int lcore;
     int ret = st_app_video_get_lcore(s->ctx, s->handle_sch_idx, rtp, &lcore);
@@ -105,14 +107,15 @@ static void app_tx_video_check_lcore(struct st_app_tx_video_session* s, bool rtp
 
 static void app_tx_video_build_frame(struct st_app_tx_video_session* s, void* frame,
                                      size_t frame_size) {
-  if (s->st20_frame_cursor + frame_size > s->st20_source_end) {
-    s->st20_frame_cursor = s->st20_source_begin;
-  }
   uint8_t* src = s->st20_frame_cursor;
 
-  st_memcpy(frame, src, frame_size);
+  if (!s->ctx->tx_copy_once || !s->st20_frames_copied) st_memcpy(frame, src, frame_size);
   /* point to next frame */
   s->st20_frame_cursor += frame_size;
+  if (s->st20_frame_cursor + frame_size > s->st20_source_end) {
+    s->st20_frame_cursor = s->st20_source_begin;
+    s->st20_frames_copied = true;
+  }
 }
 
 static void app_tx_video_build_slice(struct st_app_tx_video_session* s,
@@ -131,7 +134,7 @@ static void app_tx_video_build_slice(struct st_app_tx_video_session* s,
 
   /* simulate the timing */
   while (!framebuff->slice_trigger) {
-    usleep(1);
+    st_usleep(1);
   }
 
   st_memcpy(dst, src, bytes_per_slice);
@@ -621,8 +624,7 @@ static int app_tx_video_result(struct st_app_tx_video_session* s) {
   return 0;
 }
 
-static int app_tx_video_init(struct st_app_context* ctx,
-                             st_json_tx_video_session_t* video,
+static int app_tx_video_init(struct st_app_context* ctx, st_json_video_session_t* video,
                              struct st_app_tx_video_session* s) {
   int idx = s->idx, ret;
   struct st20_tx_ops ops;
@@ -635,42 +637,51 @@ static int app_tx_video_init(struct st_app_context* ctx,
   snprintf(name, 32, "app_tx_video_%d", idx);
   ops.name = name;
   ops.priv = s;
-  ops.num_port = video ? video->num_inf : ctx->para.num_ports;
+  ops.num_port = video ? video->base.num_inf : ctx->para.num_ports;
   memcpy(ops.dip_addr[ST_PORT_P],
-         video ? video->dip[ST_PORT_P] : ctx->tx_dip_addr[ST_PORT_P], ST_IP_ADDR_LEN);
+         video ? video->base.ip[ST_PORT_P] : ctx->tx_dip_addr[ST_PORT_P], ST_IP_ADDR_LEN);
   strncpy(ops.port[ST_PORT_P],
-          video ? video->inf[ST_PORT_P]->name : ctx->para.port[ST_PORT_P],
+          video ? video->base.inf[ST_PORT_P]->name : ctx->para.port[ST_PORT_P],
           ST_PORT_MAX_LEN);
-  ops.udp_port[ST_PORT_P] = video ? video->udp_port : (10000 + s->idx);
+  ops.udp_port[ST_PORT_P] = video ? video->base.udp_port : (10000 + s->idx);
+  if (ctx->has_tx_dst_mac[ST_PORT_P]) {
+    memcpy(&ops.tx_dst_mac[ST_PORT_P][0], ctx->tx_dst_mac[ST_PORT_P], 6);
+    ops.flags |= ST20_TX_FLAG_USER_P_MAC;
+  }
   if (ops.num_port > 1) {
     memcpy(ops.dip_addr[ST_PORT_R],
-           video ? video->dip[ST_PORT_R] : ctx->tx_dip_addr[ST_PORT_R], ST_IP_ADDR_LEN);
+           video ? video->base.ip[ST_PORT_R] : ctx->tx_dip_addr[ST_PORT_R],
+           ST_IP_ADDR_LEN);
     strncpy(ops.port[ST_PORT_R],
-            video ? video->inf[ST_PORT_R]->name : ctx->para.port[ST_PORT_R],
+            video ? video->base.inf[ST_PORT_R]->name : ctx->para.port[ST_PORT_R],
             ST_PORT_MAX_LEN);
-    ops.udp_port[ST_PORT_R] = video ? video->udp_port : (10000 + s->idx);
+    ops.udp_port[ST_PORT_R] = video ? video->base.udp_port : (10000 + s->idx);
+    if (ctx->has_tx_dst_mac[ST_PORT_R]) {
+      memcpy(&ops.tx_dst_mac[ST_PORT_R][0], ctx->tx_dst_mac[ST_PORT_R], 6);
+      ops.flags |= ST20_TX_FLAG_USER_R_MAC;
+    }
   }
   ops.pacing = ST21_PACING_NARROW;
-  ops.packing = video ? video->packing : ST20_PACKING_BPM;
-  ops.type = video ? video->type : ST20_TYPE_FRAME_LEVEL;
-  ops.width = video ? st_app_get_width(video->video_format) : 1920;
-  ops.height = video ? st_app_get_height(video->video_format) : 1080;
-  ops.fps = video ? st_app_get_fps(video->video_format) : ST_FPS_P59_94;
-  ops.fmt = video ? video->pg_format : ST20_FMT_YUV_422_10BIT;
-  ops.interlaced = video ? st_app_get_interlaced(video->video_format) : false;
+  ops.packing = video ? video->info.packing : ST20_PACKING_BPM;
+  ops.type = video ? video->info.type : ST20_TYPE_FRAME_LEVEL;
+  ops.width = video ? st_app_get_width(video->info.video_format) : 1920;
+  ops.height = video ? st_app_get_height(video->info.video_format) : 1080;
+  ops.fps = video ? st_app_get_fps(video->info.video_format) : ST_FPS_P59_94;
+  ops.fmt = video ? video->info.pg_format : ST20_FMT_YUV_422_10BIT;
+  ops.interlaced = video ? st_app_get_interlaced(video->info.video_format) : false;
   ops.get_next_frame = app_tx_video_next_frame;
   ops.notify_frame_done = app_tx_video_frame_done;
   ops.query_frame_lines_ready = app_tx_video_frame_lines_ready;
   ops.notify_rtp_done = app_tx_video_rtp_done;
   ops.framebuff_cnt = 2;
-  ops.payload_type = video ? video->payload_type : ST_APP_PAYLOAD_TYPE_VIDEO;
+  ops.payload_type = video ? video->base.payload_type : ST_APP_PAYLOAD_TYPE_VIDEO;
 
   ret = st20_get_pgroup(ops.fmt, &s->st20_pg);
   if (ret < 0) return ret;
   s->width = ops.width;
   s->height = ops.height;
   s->interlaced = ops.interlaced ? true : false;
-  memcpy(s->st20_source_url, video ? video->video_url : ctx->tx_video_url,
+  memcpy(s->st20_source_url, video ? video->info.video_url : ctx->tx_video_url,
          ST_APP_URL_MAX_LEN);
   s->st20_pcap_input = false;
   s->st20_rtp_input = false;
@@ -726,8 +737,11 @@ static int app_tx_video_init(struct st_app_context* ctx,
   unsigned int lcore;
   bool rtp = false;
   if (ops.type == ST20_TYPE_RTP_LEVEL) rtp = true;
-  ret = st_app_video_get_lcore(ctx, s->handle_sch_idx, rtp, &lcore);
-  if (ret >= 0) s->lcore = lcore;
+
+  if (!ctx->app_thread) {
+    ret = st_app_video_get_lcore(ctx, s->handle_sch_idx, rtp, &lcore);
+    if (ret >= 0) s->lcore = lcore;
+  }
 
   ret = app_tx_video_open_source(s);
   if (ret < 0) {
@@ -755,7 +769,8 @@ int st_app_tx_video_sessions_init(struct st_app_context* ctx) {
     s = &ctx->tx_video_sessions[i];
     s->idx = i;
     s->lcore = -1;
-    ret = app_tx_video_init(ctx, ctx->json_ctx ? &ctx->json_ctx->tx_video[i] : NULL, s);
+    ret = app_tx_video_init(
+        ctx, ctx->json_ctx ? &ctx->json_ctx->tx_video_sessions[i] : NULL, s);
     if (ret < 0) {
       err("%s(%d), app_tx_video_init fail %d\n", __func__, i, ret);
       return ret;

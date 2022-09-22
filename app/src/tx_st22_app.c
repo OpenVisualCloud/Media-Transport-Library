@@ -5,7 +5,7 @@
 #include "tx_st22_app.h"
 
 static int app_tx_st22_next_frame(void* priv, uint16_t* next_frame_idx,
-                                  size_t* frame_size) {
+                                  struct st22_tx_frame_meta* meta) {
   struct st22_app_tx_session* s = priv;
   int ret;
   uint16_t consumer_idx = s->framebuff_consumer_idx;
@@ -17,7 +17,7 @@ static int app_tx_st22_next_frame(void* priv, uint16_t* next_frame_idx,
     ret = 0;
     framebuff->stat = ST_TX_FRAME_IN_TRANSMITTING;
     *next_frame_idx = consumer_idx;
-    *frame_size = framebuff->size;
+    meta->codestream_size = framebuff->size;
     /* point to next */
     consumer_idx++;
     if (consumer_idx >= s->framebuff_cnt) consumer_idx = 0;
@@ -25,7 +25,7 @@ static int app_tx_st22_next_frame(void* priv, uint16_t* next_frame_idx,
   } else {
     /* not ready */
     ret = -EIO;
-    err("%s(%d), idx %u err stat %d\n", __func__, s->idx, consumer_idx, framebuff->stat);
+    dbg("%s(%d), idx %u err stat %d\n", __func__, s->idx, consumer_idx, framebuff->stat);
   }
   st_pthread_cond_signal(&s->wake_cond);
   st_pthread_mutex_unlock(&s->wake_mutex);
@@ -33,7 +33,8 @@ static int app_tx_st22_next_frame(void* priv, uint16_t* next_frame_idx,
   return ret;
 }
 
-static int app_tx_st22_frame_done(void* priv, uint16_t frame_idx) {
+static int app_tx_st22_frame_done(void* priv, uint16_t frame_idx,
+                                  struct st22_tx_frame_meta* meta) {
   struct st22_app_tx_session* s = priv;
   int ret;
   struct st_tx_frame* framebuff = &s->framebuffs[frame_idx];
@@ -63,7 +64,8 @@ static void app_tx_st22_thread_bind(struct st22_app_tx_session* s) {
 
 static void app_tx_st22_check_lcore(struct st22_app_tx_session* s, bool rtp) {
   int sch_idx = st22_tx_get_sch_idx(s->handle);
-  if (s->handle_sch_idx != sch_idx) {
+
+  if (!s->ctx->app_thread && (s->handle_sch_idx != sch_idx)) {
     s->handle_sch_idx = sch_idx;
     unsigned int lcore;
     int ret = st_app_video_get_lcore(s->ctx, s->handle_sch_idx, rtp, &lcore);
@@ -257,10 +259,18 @@ static int app_tx_st22_init(struct st_app_context* ctx, struct st22_app_tx_sessi
   memcpy(ops.dip_addr[ST_PORT_P], ctx->tx_dip_addr[ST_PORT_P], ST_IP_ADDR_LEN);
   strncpy(ops.port[ST_PORT_P], ctx->para.port[ST_PORT_P], ST_PORT_MAX_LEN);
   ops.udp_port[ST_PORT_P] = 15000 + s->idx;
+  if (ctx->has_tx_dst_mac[ST_PORT_P]) {
+    memcpy(&ops.tx_dst_mac[ST_PORT_P][0], ctx->tx_dst_mac[ST_PORT_P], 6);
+    ops.flags |= ST22_TX_FLAG_USER_P_MAC;
+  }
   if (ops.num_port > 1) {
     memcpy(ops.dip_addr[ST_PORT_R], ctx->tx_dip_addr[ST_PORT_R], ST_IP_ADDR_LEN);
     strncpy(ops.port[ST_PORT_R], ctx->para.port[ST_PORT_R], ST_PORT_MAX_LEN);
     ops.udp_port[ST_PORT_R] = 15000 + s->idx;
+    if (ctx->has_tx_dst_mac[ST_PORT_R]) {
+      memcpy(&ops.tx_dst_mac[ST_PORT_R][0], ctx->tx_dst_mac[ST_PORT_R], 6);
+      ops.flags |= ST22_TX_FLAG_USER_R_MAC;
+    }
   }
   ops.pacing = ST21_PACING_NARROW;
   ops.width = s->width;
@@ -296,9 +306,11 @@ static int app_tx_st22_init(struct st_app_context* ctx, struct st22_app_tx_sessi
   s->type = ops.type;
   s->handle_sch_idx = st22_tx_get_sch_idx(handle);
 
-  unsigned int lcore;
-  ret = st_app_video_get_lcore(ctx, s->handle_sch_idx, false, &lcore);
-  if (ret >= 0) s->lcore = lcore;
+  if (!ctx->app_thread) {
+    unsigned int lcore;
+    ret = st_app_video_get_lcore(ctx, s->handle_sch_idx, false, &lcore);
+    if (ret >= 0) s->lcore = lcore;
+  }
 
   ret = app_tx_st22_open_source(s);
   if (ret < 0) {

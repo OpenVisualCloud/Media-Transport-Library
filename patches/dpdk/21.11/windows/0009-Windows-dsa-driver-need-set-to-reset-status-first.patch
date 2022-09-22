@@ -1,0 +1,29 @@
+From 576e6c2a3f57af292f417804ba0175f6de6a2635 Mon Sep 17 00:00:00 2001
+From: qiaoliu <qiao.liu@intel.com>
+Date: Tue, 2 Aug 2022 11:06:15 +0800
+Subject: [PATCH 9/9] Windows dsa driver need set to reset status first
+
+---
+ drivers/dma/idxd/idxd_pci.c | 6 ++++++
+ 1 file changed, 6 insertions(+)
+
+diff --git a/drivers/dma/idxd/idxd_pci.c b/drivers/dma/idxd/idxd_pci.c
+index 9ca1ec64e9..0b165499f2 100644
+--- a/drivers/dma/idxd/idxd_pci.c
++++ b/drivers/dma/idxd/idxd_pci.c
+@@ -176,6 +176,12 @@ init_pci_device(struct rte_pci_device *dev, struct idxd_dmadev *idxd,
+ 	pci->portals = dev->mem_resource[2].addr;
+ 	pci->wq_cfg_sz = (pci->regs->wqcap >> 24) & 0x0F;
+ 
++    idxd->u.pci = pci;
++    err_code = idxd_pci_dev_command(idxd, idxd_reset_device);
++	if (err_code) {
++		IDXD_PMD_ERR("Error reset device: code %#x", err_code);
++		goto err;
++	}
+ 	/* sanity check device status */
+ 	if (pci->regs->gensts & GENSTS_DEV_STATE_MASK) {
+ 		/* need function-level-reset (FLR) or is enabled */
+-- 
+2.17.1
+

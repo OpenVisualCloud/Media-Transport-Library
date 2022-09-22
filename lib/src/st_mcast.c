@@ -6,6 +6,7 @@
 
 #include "st_dev.h"
 #include "st_log.h"
+#include "st_socket.h"
 #include "st_util.h"
 
 /* Computing the Internet Checksum based on rfc1071 */
@@ -56,7 +57,7 @@ int mcast_membership_general_query(struct st_main_impl* impl, enum st_port port)
   size_t hdr_offset = 0;
   size_t mb_query_len = sizeof(struct mcast_mb_query_v3);
 
-  pkt = rte_pktmbuf_alloc(st_get_mempool(impl, port));
+  pkt = rte_pktmbuf_alloc(st_get_tx_mempool(impl, port));
   if (!pkt) {
     err("%s, report packet alloc failed\n", __func__);
     return -ENOMEM;
@@ -132,9 +133,14 @@ static int mcast_membership_report(struct st_main_impl* impl,
     return 0;
   }
 
+  if (!mcast->tx_q_active[port]) {
+    dbg("%s(%d), tx_q_active not active\n", __func__, port);
+    return -EIO;
+  }
+
   dbg("%s(%d), group_num: %d\n", __func__, port, group_num);
 
-  pkt = rte_pktmbuf_alloc(st_get_mempool(impl, port));
+  pkt = rte_pktmbuf_alloc(st_get_tx_mempool(impl, port));
   if (!pkt) {
     err("%s, report packet alloc failed\n", __func__);
     return -ENOMEM;
@@ -204,8 +210,12 @@ static void mcast_membership_report_cb(void* param) {
   int ret;
 
   for (int port = 0; port < num_ports; port++) {
-    ret = mcast_membership_report(impl, MCAST_MODE_IS_EXCLUDE, port);
-    if (ret < 0) err("%s(%d), mcast_membership_report fail %d\n", __func__, port, ret);
+    if (!st_pmd_is_kernel(impl, port)) {
+      ret = mcast_membership_report(impl, MCAST_MODE_IS_EXCLUDE, port);
+      if (ret < 0) {
+        err("%s(%d), mcast_membership_report fail %d\n", __func__, port, ret);
+      }
+    }
   }
 
   ret = rte_eal_alarm_set(IGMP_JOIN_GROUP_PERIOD_US, mcast_membership_report_cb, impl);
@@ -232,6 +242,9 @@ static int mcast_queues_init(struct st_main_impl* impl) {
   int ret;
 
   for (int i = 0; i < num_ports; i++) {
+    /* no mcast queue for kernel based pmd */
+    if (st_pmd_is_kernel(impl, i)) continue;
+
     ret = st_dev_request_tx_queue(impl, i, &mcast->tx_q_id[i], 0);
     if (ret < 0) {
       err("%s(%d), tx_q create fail\n", __func__, i);
@@ -377,6 +390,7 @@ int st_mcast_join(struct st_main_impl* impl, uint32_t group_addr, enum st_port p
   struct st_interface* inf = st_if(impl, port);
   int group_num = mcast->group_num[port];
   uint8_t* ip = (uint8_t*)&group_addr;
+  int ret;
 
   if (group_num >= ST_MCAST_GROUP_MAX) {
     err("%s, reach max multicast group number!\n", __func__);
@@ -386,23 +400,37 @@ int st_mcast_join(struct st_main_impl* impl, uint32_t group_addr, enum st_port p
   st_pthread_mutex_lock(&mcast->group_mutex[port]);
   for (int i = 0; i < group_num; ++i) {
     if (mcast->group_ip[port][i] == group_addr) {
+      mcast->group_ref_cnt[port][i]++;
       st_pthread_mutex_unlock(&mcast->group_mutex[port]);
-      info("%s(%d), group %d.%d.%d.%d already in\n", __func__, port, ip[0], ip[1], ip[2],
-           ip[3]);
+      info("%s(%d), group %d.%d.%d.%d ref cnt %u\n", __func__, port, ip[0], ip[1], ip[2],
+           ip[3], mcast->group_ref_cnt[port][i]);
       return 0;
     }
   }
+  if (st_pmd_is_kernel(impl, port)) {
+    ret = st_socket_join_mcast(impl, port, group_addr);
+    if (ret < 0) {
+      st_pthread_mutex_unlock(&mcast->group_mutex[port]);
+      err("%s(%d), fail(%d) to join socket group %d.%d.%d.%d\n", __func__, port, ret,
+          ip[0], ip[1], ip[2], ip[3]);
+      return ret;
+    }
+  }
   mcast->group_ip[port][group_num] = group_addr;
+  mcast->group_ref_cnt[port][group_num] = 1;
   mcast->group_num[port]++;
   st_pthread_mutex_unlock(&mcast->group_mutex[port]);
 
   /* add mcast mac to interface */
   st_mcast_ip_to_mac(ip, &mcast_mac);
   mcast_inf_add_mac(inf, &mcast_mac);
-  /* report to switch */
-  mcast_membership_report(impl, MCAST_MODE_IS_EXCLUDE, port);
 
-  info("%s(%d), succ, group %d.%d.%d.%d\n", __func__, port, ip[0], ip[1], ip[2], ip[3]);
+  /* report to switch to join group */
+  if (!st_pmd_is_kernel(impl, port)) {
+    mcast_membership_report(impl, MCAST_MODE_IS_EXCLUDE, port);
+  }
+
+  info("%s(%d), new group %d.%d.%d.%d\n", __func__, port, ip[0], ip[1], ip[2], ip[3]);
   return 0;
 }
 
@@ -420,8 +448,18 @@ int st_mcast_leave(struct st_main_impl* impl, uint32_t group_addr, enum st_port 
   for (int i = 0; i < group_num; ++i) {
     if (mcast->group_ip[port][i] == group_addr) {
       dbg("%s, found group ip in the group list, delete it\n", __func__);
+      mcast->group_ref_cnt[port][i]--;
+      info("%s(%d), group %d.%d.%d.%d ref cnt %u\n", __func__, port, ip[0], ip[1], ip[2],
+           ip[3], mcast->group_ref_cnt[port][i]);
+      if (mcast->group_ref_cnt[port][i]) {
+        st_pthread_mutex_unlock(&mcast->group_mutex[port]);
+        return 0;
+      }
       mcast->group_ip[port][i] = mcast->group_ip[port][group_num - 1];
       mcast->group_num[port]--;
+      if (st_pmd_is_kernel(impl, port)) {
+        st_socket_drop_mcast(impl, port, group_addr);
+      }
       st_pthread_mutex_unlock(&mcast->group_mutex[port]);
       /* remove mcast mac from interface */
       st_mcast_ip_to_mac(ip, &mcast_mac);
@@ -430,7 +468,7 @@ int st_mcast_leave(struct st_main_impl* impl, uint32_t group_addr, enum st_port 
     }
   }
   st_pthread_mutex_unlock(&mcast->group_mutex[port]);
-  dbg("%s, group ip not found, nothing to delete\n", __func__);
+  warn("%s, group ip not found, nothing to delete\n", __func__);
   return 0;
 }
 

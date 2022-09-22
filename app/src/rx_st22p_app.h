@@ -19,5 +19,6 @@ int st_app_rx_st22p_sessions_init(struct st_app_context* ctx);
 int st_app_rx_st22p_sessions_uinit(struct st_app_context* ctx);
 int st_app_rx_st22p_sessions_stat(struct st_app_context* ctx);
 int st_app_rx_st22p_sessions_result(struct st_app_context* ctx);
+int st_app_rx_st22p_sessions_pcap(struct st_app_context* ctx);
 
 #endif

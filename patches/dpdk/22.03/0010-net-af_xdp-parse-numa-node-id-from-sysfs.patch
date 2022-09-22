@@ -1,0 +1,58 @@
+From 2a090afc9084b47341fe90166926957646f9f861 Mon Sep 17 00:00:00 2001
+From: Frank Du <frank.du@intel.com>
+Date: Fri, 1 Jul 2022 09:35:12 +0800
+Subject: [PATCH 10/10] net/af_xdp: parse numa node id from sysfs
+
+Get from /sys/class/net/{if}/device/numa_node
+
+Signed-off-by: Frank Du <frank.du@intel.com>
+---
+ drivers/net/af_xdp/rte_eth_af_xdp.c | 18 +++++++++++++++---
+ 1 file changed, 15 insertions(+), 3 deletions(-)
+
+diff --git a/drivers/net/af_xdp/rte_eth_af_xdp.c b/drivers/net/af_xdp/rte_eth_af_xdp.c
+index 1e37da6e84..50776d2bd0 100644
+--- a/drivers/net/af_xdp/rte_eth_af_xdp.c
++++ b/drivers/net/af_xdp/rte_eth_af_xdp.c
+@@ -39,6 +39,7 @@
+ #include <rte_power_intrinsics.h>
+ 
+ #include "compat.h"
++#include "eal_filesystem.h"
+ 
+ #ifndef SO_PREFER_BUSY_POLL
+ #define SO_PREFER_BUSY_POLL 69
+@@ -1981,9 +1982,6 @@ rte_pmd_af_xdp_probe(struct rte_vdev_device *dev)
+ 		return -EINVAL;
+ 	}
+ 
+-	if (dev->device.numa_node == SOCKET_ID_ANY)
+-		dev->device.numa_node = rte_socket_id();
+-
+ 	if (parse_parameters(kvlist, if_name, &xsk_start_queue_idx,
+ 			     &xsk_queue_cnt, &shared_umem, prog_path,
+ 			     &busy_budget) < 0) {
+@@ -1996,6 +1994,20 @@ rte_pmd_af_xdp_probe(struct rte_vdev_device *dev)
+ 		return -EINVAL;
+ 	}
+ 
++	/* get numa node id from net sysfs */
++	if (dev->device.numa_node == SOCKET_ID_ANY) {
++		unsigned long numa = 0;
++		char numa_path[PATH_MAX];
++
++		snprintf(numa_path, sizeof(numa_path), "/sys/class/net/%s/device/numa_node",
++			 if_name);
++		if (eal_parse_sysfs_value(numa_path, &numa) != 0) {
++			dev->device.numa_node = rte_socket_id();
++		} else {
++			dev->device.numa_node = numa;
++		}
++	}
++
+ 	busy_budget = busy_budget == -1 ? ETH_AF_XDP_DFLT_BUSY_BUDGET :
+ 					busy_budget;
+ 
+-- 
+2.27.0
+

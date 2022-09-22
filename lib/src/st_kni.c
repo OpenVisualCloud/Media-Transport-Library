@@ -173,7 +173,7 @@ static int kni_start_port(struct st_main_impl* impl, enum st_port port) {
   ops.config_promiscusity = kni_config_promiscusity;
   ops.config_allmulticast = kni_config_allmulticast;
 
-  rkni = rte_kni_alloc(st_get_mempool(impl, port), &cni->conf[port], &ops);
+  rkni = rte_kni_alloc(st_get_tx_mempool(impl, port), &cni->conf[port], &ops);
   if (!rkni) {
     err("%s(%d), rte_kni_alloc fail\n", __func__, port);
     return -ENOMEM;
@@ -285,7 +285,7 @@ int st_kni_init(struct st_main_impl* impl) {
     }
   }
 
-  ret = rte_ctrl_thread_create(&cni->kni_bkg_tid, "kni_bkg", NULL, kni_bkg_thread, impl);
+  ret = pthread_create(&cni->kni_bkg_tid, NULL, kni_bkg_thread, impl);
   if (ret < 0) {
     st_kni_uinit(impl);
     err("%s, create kni_bkg thread fail\n", __func__);

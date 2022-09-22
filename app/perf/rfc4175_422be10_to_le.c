@@ -16,12 +16,12 @@
 #define DMA_PORT_BDF "0000:e7:01.0"
 #endif
 
-#if 0 /* icelake */
+#if 1 /* icelake */
 #define NIC_PORT_BDF "0000:4b:00.0"
 #define DMA_PORT_BDF "0000:00:01.0"
 #endif
 
-#if 1 /* clx */
+#if 0 /* clx */
 #define NIC_PORT_BDF "0000:af:00.0"
 #define DMA_PORT_BDF "0000:80:04.0"
 #endif
@@ -93,6 +93,20 @@ static int perf_cvt_422_10_pg2_be_to_le(st_handle st, int w, int h, int frames,
   duration = (float)(end - start) / CLOCKS_PER_SEC;
   printf("scalar, time: %f secs with %d frames(%dx%d,%fm@%d buffers)\n", duration, frames,
          w, h, planar_size_m, fb_cnt);
+
+  if (cpu_level >= ST_SIMD_LEVEL_AVX2) {
+    start = clock();
+    for (int i = 0; i < frames * 1; i++) {
+      pg_be_in = pg_be + (i % fb_cnt) * (fb_pg2_size / sizeof(*pg_be));
+      pg_le_out = pg_le + (i % fb_cnt) * (fb_pg2_size / sizeof(*pg_le));
+      st20_rfc4175_422be10_to_422le10_simd(pg_be_in, pg_le_out, w, h, ST_SIMD_LEVEL_AVX2);
+    }
+    end = clock();
+    float duration_simd = (float)(end - start) / CLOCKS_PER_SEC;
+    printf("avx2, time: %f secs with %d frames(%dx%d@%d buffers)\n", duration_simd,
+           frames, w, h, fb_cnt);
+    printf("avx2, %fx performance to scalar\n", duration / duration_simd);
+  }
 
   if (cpu_level >= ST_SIMD_LEVEL_AVX512) {
     start = clock();

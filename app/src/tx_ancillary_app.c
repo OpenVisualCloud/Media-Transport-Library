@@ -4,7 +4,8 @@
 
 #include "tx_ancillary_app.h"
 
-static int app_tx_anc_next_frame(void* priv, uint16_t* next_frame_idx) {
+static int app_tx_anc_next_frame(void* priv, uint16_t* next_frame_idx,
+                                 struct st40_tx_frame_meta* meta) {
   struct st_app_tx_anc_session* s = priv;
   int ret;
   uint16_t consumer_idx = s->framebuff_consumer_idx;
@@ -22,7 +23,7 @@ static int app_tx_anc_next_frame(void* priv, uint16_t* next_frame_idx) {
     s->framebuff_consumer_idx = consumer_idx;
   } else {
     /* not ready */
-    err("%s(%d), idx %u err stat %d\n", __func__, s->idx, consumer_idx, framebuff->stat);
+    dbg("%s(%d), idx %u err stat %d\n", __func__, s->idx, consumer_idx, framebuff->stat);
     ret = -EIO;
   }
   st_pthread_cond_signal(&s->st40_wake_cond);
@@ -30,7 +31,8 @@ static int app_tx_anc_next_frame(void* priv, uint16_t* next_frame_idx) {
   return ret;
 }
 
-static int app_tx_anc_frame_done(void* priv, uint16_t frame_idx) {
+static int app_tx_anc_frame_done(void* priv, uint16_t frame_idx,
+                                 struct st40_tx_frame_meta* meta) {
   struct st_app_tx_anc_session* s = priv;
   int ret;
   struct st_tx_frame* framebuff = &s->framebuffs[frame_idx];
@@ -377,8 +379,7 @@ int app_tx_anc_uinit(struct st_app_tx_anc_session* s) {
   return 0;
 }
 
-static int app_tx_anc_init(struct st_app_context* ctx,
-                           st_json_tx_ancillary_session_t* anc,
+static int app_tx_anc_init(struct st_app_context* ctx, st_json_ancillary_session_t* anc,
                            struct st_app_tx_anc_session* s) {
   int idx = s->idx, ret;
   struct st40_tx_ops ops;
@@ -406,27 +407,37 @@ static int app_tx_anc_init(struct st_app_context* ctx,
   snprintf(name, 32, "app_tx_ancillary%d", idx);
   ops.name = name;
   ops.priv = s;
-  ops.num_port = anc ? anc->num_inf : ctx->para.num_ports;
-  memcpy(ops.dip_addr[ST_PORT_P], anc ? anc->dip[ST_PORT_P] : ctx->tx_dip_addr[ST_PORT_P],
-         ST_IP_ADDR_LEN);
+  ops.num_port = anc ? anc->base.num_inf : ctx->para.num_ports;
+  memcpy(ops.dip_addr[ST_PORT_P],
+         anc ? anc->base.ip[ST_PORT_P] : ctx->tx_dip_addr[ST_PORT_P], ST_IP_ADDR_LEN);
   strncpy(ops.port[ST_PORT_P],
-          anc ? anc->inf[ST_PORT_P]->name : ctx->para.port[ST_PORT_P], ST_PORT_MAX_LEN);
-  ops.udp_port[ST_PORT_P] = anc ? anc->udp_port : (10200 + s->idx);
+          anc ? anc->base.inf[ST_PORT_P]->name : ctx->para.port[ST_PORT_P],
+          ST_PORT_MAX_LEN);
+  ops.udp_port[ST_PORT_P] = anc ? anc->base.udp_port : (10200 + s->idx);
+  if (ctx->has_tx_dst_mac[ST_PORT_P]) {
+    memcpy(&ops.tx_dst_mac[ST_PORT_P][0], ctx->tx_dst_mac[ST_PORT_P], 6);
+    ops.flags |= ST40_TX_FLAG_USER_P_MAC;
+  }
   if (ops.num_port > 1) {
     memcpy(ops.dip_addr[ST_PORT_R],
-           anc ? anc->dip[ST_PORT_R] : ctx->tx_dip_addr[ST_PORT_R], ST_IP_ADDR_LEN);
+           anc ? anc->base.ip[ST_PORT_R] : ctx->tx_dip_addr[ST_PORT_R], ST_IP_ADDR_LEN);
     strncpy(ops.port[ST_PORT_R],
-            anc ? anc->inf[ST_PORT_R]->name : ctx->para.port[ST_PORT_R], ST_PORT_MAX_LEN);
-    ops.udp_port[ST_PORT_R] = anc ? anc->udp_port : (10200 + s->idx);
+            anc ? anc->base.inf[ST_PORT_R]->name : ctx->para.port[ST_PORT_R],
+            ST_PORT_MAX_LEN);
+    ops.udp_port[ST_PORT_R] = anc ? anc->base.udp_port : (10200 + s->idx);
+    if (ctx->has_tx_dst_mac[ST_PORT_R]) {
+      memcpy(&ops.tx_dst_mac[ST_PORT_R][0], ctx->tx_dst_mac[ST_PORT_R], 6);
+      ops.flags |= ST40_TX_FLAG_USER_R_MAC;
+    }
   }
   ops.get_next_frame = app_tx_anc_next_frame;
   ops.notify_frame_done = app_tx_anc_frame_done;
   ops.notify_rtp_done = app_tx_anc_rtp_done;
   ops.framebuff_cnt = s->framebuff_cnt;
-  ops.fps = anc ? anc->anc_fps : ST_FPS_P59_94;
+  ops.fps = anc ? anc->info.anc_fps : ST_FPS_P59_94;
   s->st40_pcap_input = false;
-  ops.type = anc ? anc->type : ST40_TYPE_FRAME_LEVEL;
-  ops.payload_type = anc ? anc->payload_type : ST_APP_PAYLOAD_TYPE_ANCILLARY;
+  ops.type = anc ? anc->info.type : ST40_TYPE_FRAME_LEVEL;
+  ops.payload_type = anc ? anc->base.payload_type : ST_APP_PAYLOAD_TYPE_ANCILLARY;
   /* select rtp type for pcap file or tx_video_rtp_ring_size */
   if (strstr(s->st40_source_url, ".pcap")) {
     ops.type = ST40_TYPE_RTP_LEVEL;
@@ -451,7 +462,7 @@ static int app_tx_anc_init(struct st_app_context* ctx,
   }
 
   s->handle = handle;
-  strncpy(s->st40_source_url, anc ? anc->anc_url : ctx->tx_anc_url,
+  strncpy(s->st40_source_url, anc ? anc->info.anc_url : ctx->tx_anc_url,
           sizeof(s->st40_source_url));
 
   ret = app_tx_anc_open_source(s);
@@ -492,7 +503,8 @@ int st_app_tx_anc_sessions_init(struct st_app_context* ctx) {
   for (int i = 0; i < ctx->tx_anc_session_cnt; i++) {
     s = &ctx->tx_anc_sessions[i];
     s->idx = i;
-    ret = app_tx_anc_init(ctx, ctx->json_ctx ? &ctx->json_ctx->tx_anc[i] : NULL, s);
+    ret = app_tx_anc_init(ctx, ctx->json_ctx ? &ctx->json_ctx->tx_anc_sessions[i] : NULL,
+                          s);
     if (ret < 0) {
       err("%s(%d), app_tx_anc_session_init fail %d\n", __func__, i, ret);
       return ret;

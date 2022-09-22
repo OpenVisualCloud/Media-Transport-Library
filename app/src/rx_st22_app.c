@@ -71,7 +71,7 @@ static int app_rx_st22_enqueue_frame(struct st22_app_rx_session* s, void* frame,
 }
 
 static int app_rx_st22_frame_ready(void* priv, void* frame,
-                                   struct st22_frame_meta* meta) {
+                                   struct st22_rx_frame_meta* meta) {
   struct st22_app_rx_session* s = (struct st22_app_rx_session*)priv;
 
   if (!s->handle) return -EIO;

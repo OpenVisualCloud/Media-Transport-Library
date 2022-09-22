@@ -11,11 +11,15 @@ The Media Transport Library(Kahawai) is a solution based on DPDK prepared for tr
 
 ## 2. Build:
 Please refer to [build guide](doc/build.md) for how to build DPDK, the library and the sample application.
-Please refer to [build guide](doc/build_WIN.md) for how to build DPDK, the library and the sample application in Windows.
+
+For Windows, please refer to [Win build guide](doc/build_WIN.md) for how to build.
 
 ## 3. Run:
 Please refer to [run guide](doc/run.md) for how to setup and run the demo pipeline application.
-Please refer to [run guide](doc/run_WIN.md) for how to setup and run the demo pipeline application in Windows.
+
+For Windows, please refer to [Win run guide](doc/run_WIN.md) for how to setup and run the demo.
+
+For VF and VM support under Linux, please refer to [vf guide](doc/vf.md) for how to setup VF based on SRIOV, [vm guide](doc/vm.md) for how to setup VM based on VF passthrough.
 
 ## 4. Programmers guide:
 For how to develop application quickly based on Kahawai library, pls refer to [sample code](app/sample).

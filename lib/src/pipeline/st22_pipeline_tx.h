@@ -20,8 +20,8 @@ enum st22p_tx_frame_status {
 
 struct st22p_tx_frame {
   enum st22p_tx_frame_status stat;
-  struct st_frame_meta src; /* before encoding */
-  struct st_frame_meta dst; /* encoded */
+  struct st_frame src; /* before encoding */
+  struct st_frame dst; /* encoded */
   struct st22_encode_frame_meta encode_frame;
   uint16_t idx;
 };

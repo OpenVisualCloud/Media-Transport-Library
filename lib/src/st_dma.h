@@ -69,4 +69,9 @@ static inline int st_dma_dev_id(struct st_dma_lender_dev* dev) {
   return dev->parent->idx;
 }
 
+int st_map_init(struct st_main_impl* impl);
+int st_map_uinit(struct st_main_impl* impl);
+int st_map_add(struct st_main_impl* impl, struct st_map_item* item);
+int st_map_remove(struct st_main_impl* impl, struct st_map_item* item);
+
 #endif

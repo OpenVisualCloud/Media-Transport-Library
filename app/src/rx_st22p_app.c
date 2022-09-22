@@ -15,7 +15,7 @@ static int app_rx_st22p_frame_available(void* priv) {
 }
 
 static void app_rx_st22p_consume_frame(struct st_app_rx_st22p_session* s,
-                                       struct st_frame_meta* frame) {
+                                       struct st_frame* frame) {
   struct st_display* d = s->display;
 
   if (d && d->front_frame) {
@@ -36,7 +36,7 @@ static void app_rx_st22p_consume_frame(struct st_app_rx_st22p_session* s,
 
 static void* app_rx_st22p_frame_thread(void* arg) {
   struct st_app_rx_st22p_session* s = arg;
-  struct st_frame_meta* frame;
+  struct st_frame* frame;
 
   info("%s(%d), start\n", __func__, s->idx);
   while (!s->st22p_app_thread_stop) {
@@ -71,9 +71,6 @@ static void* app_rx_st22p_frame_thread(void* arg) {
     if (!s->stat_frame_frist_rx_time)
       s->stat_frame_frist_rx_time = st_app_get_monotonic_time();
     st22p_rx_put_frame(s->handle, frame);
-
-    if (s->pcapng_max_pkts && s->stat_frame_total_received == 100)
-      st22p_rx_pcapng_dump(s->handle, s->pcapng_max_pkts, false, NULL);
   }
   info("%s(%d), stop\n", __func__, s->idx);
 
@@ -124,7 +121,7 @@ static int app_rx_st22p_uinit(struct st_app_rx_st22p_session* s) {
 }
 
 static int app_rx_st22p_init(struct st_app_context* ctx,
-                             struct st_json_rx_st22p_session* video,
+                             struct st_json_st22p_session* st22p,
                              struct st_app_rx_st22p_session* s) {
   int idx = s->idx, ret;
   struct st22p_rx_ops ops;
@@ -135,31 +132,32 @@ static int app_rx_st22p_init(struct st_app_context* ctx,
   snprintf(name, 32, "app_rx_st22p_%d", idx);
   ops.name = name;
   ops.priv = s;
-  ops.port.num_port = video ? video->num_inf : ctx->para.num_ports;
+  ops.port.num_port = st22p ? st22p->base.num_inf : ctx->para.num_ports;
   memcpy(ops.port.sip_addr[ST_PORT_P],
-         video ? video->ip[ST_PORT_P] : ctx->rx_sip_addr[ST_PORT_P], ST_IP_ADDR_LEN);
+         st22p ? st22p->base.ip[ST_PORT_P] : ctx->rx_sip_addr[ST_PORT_P], ST_IP_ADDR_LEN);
   strncpy(ops.port.port[ST_PORT_P],
-          video ? video->inf[ST_PORT_P]->name : ctx->para.port[ST_PORT_P],
+          st22p ? st22p->base.inf[ST_PORT_P]->name : ctx->para.port[ST_PORT_P],
           ST_PORT_MAX_LEN);
-  ops.port.udp_port[ST_PORT_P] = video ? video->udp_port : (10000 + s->idx);
+  ops.port.udp_port[ST_PORT_P] = st22p ? st22p->base.udp_port : (10000 + s->idx);
   if (ops.port.num_port > 1) {
     memcpy(ops.port.sip_addr[ST_PORT_R],
-           video ? video->ip[ST_PORT_R] : ctx->rx_sip_addr[ST_PORT_R], ST_IP_ADDR_LEN);
+           st22p ? st22p->base.ip[ST_PORT_R] : ctx->rx_sip_addr[ST_PORT_R],
+           ST_IP_ADDR_LEN);
     strncpy(ops.port.port[ST_PORT_R],
-            video ? video->inf[ST_PORT_R]->name : ctx->para.port[ST_PORT_R],
+            st22p ? st22p->base.inf[ST_PORT_R]->name : ctx->para.port[ST_PORT_R],
             ST_PORT_MAX_LEN);
-    ops.port.udp_port[ST_PORT_R] = video ? video->udp_port : (10000 + s->idx);
+    ops.port.udp_port[ST_PORT_R] = st22p ? st22p->base.udp_port : (10000 + s->idx);
   }
 
-  ops.width = video ? video->width : 1920;
-  ops.height = video ? video->height : 1080;
-  ops.fps = video ? video->fps : ST_FPS_P59_94;
-  ops.output_fmt = video ? video->format : ST_FRAME_FMT_YUV422RFC4175PG2BE10;
-  ops.port.payload_type = video ? video->payload_type : ST_APP_PAYLOAD_TYPE_ST22;
-  ops.pack_type = video ? video->pack_type : ST22_PACK_CODESTREAM;
-  ops.codec = video ? video->codec : ST22_CODEC_JPEGXS;
-  ops.device = video ? video->device : ST_PLUGIN_DEVICE_AUTO;
-  ops.codec_thread_cnt = video ? video->codec_thread_count : 0;
+  ops.width = st22p ? st22p->info.width : 1920;
+  ops.height = st22p ? st22p->info.height : 1080;
+  ops.fps = st22p ? st22p->info.fps : ST_FPS_P59_94;
+  ops.output_fmt = st22p ? st22p->info.format : ST_FRAME_FMT_YUV422RFC4175PG2BE10;
+  ops.port.payload_type = st22p ? st22p->base.payload_type : ST_APP_PAYLOAD_TYPE_ST22;
+  ops.pack_type = st22p ? st22p->info.pack_type : ST22_PACK_CODESTREAM;
+  ops.codec = st22p ? st22p->info.codec : ST22_CODEC_JPEGXS;
+  ops.device = st22p ? st22p->info.device : ST_PLUGIN_DEVICE_AUTO;
+  ops.codec_thread_cnt = st22p ? st22p->info.codec_thread_count : 0;
   ops.max_codestream_size = 0;
   ops.notify_frame_available = app_rx_st22p_frame_available;
   ops.framebuff_cnt = s->framebuff_cnt;
@@ -173,7 +171,7 @@ static int app_rx_st22p_init(struct st_app_context* ctx,
   s->pcapng_max_pkts = ctx->pcapng_max_pkts;
   s->expect_fps = st_frame_rate(ops.fps);
 
-  if (ctx->has_sdl && ((video && video->display) || ctx->display)) {
+  if (ctx->has_sdl && st22p && st22p->display) {
     struct st_display* d = st_app_zmalloc(sizeof(struct st_display));
     ret = st_app_init_display(d, s->idx, s->width, s->height, ctx->ttf_file);
     if (ret < 0) {
@@ -184,7 +182,7 @@ static int app_rx_st22p_init(struct st_app_context* ctx,
     s->display = d;
   }
 
-  s->measure_latency = video ? video->measure_latency : true;
+  s->measure_latency = st22p ? st22p->measure_latency : true;
 
   handle = st22p_rx_create(ctx->st, &ops);
   if (!handle) {
@@ -243,10 +241,17 @@ static int app_rx_st22p_result(struct st_app_rx_st22p_session* s) {
   return 0;
 }
 
+static int app_rx_st22p_pcap(struct st_app_rx_st22p_session* s) {
+  if (s->pcapng_max_pkts)
+    st22p_rx_pcapng_dump(s->handle, s->pcapng_max_pkts, false, NULL);
+  return 0;
+}
+
 int st_app_rx_st22p_sessions_init(struct st_app_context* ctx) {
   int ret = 0, i = 0;
   struct st_app_rx_st22p_session* s;
-  info("%s(%d), rx_st22p_session_cnt %d\n", __func__, i, ctx->rx_st22p_session_cnt);
+
+  dbg("%s(%d), rx_st22p_session_cnt %d\n", __func__, i, ctx->rx_st22p_session_cnt);
   ctx->rx_st22p_sessions = (struct st_app_rx_st22p_session*)st_app_zmalloc(
       sizeof(struct st_app_rx_st22p_session) * ctx->rx_st22p_session_cnt);
   if (!ctx->rx_st22p_sessions) return -ENOMEM;
@@ -256,7 +261,8 @@ int st_app_rx_st22p_sessions_init(struct st_app_context* ctx) {
     s->st = ctx->st;
     s->framebuff_cnt = 3;
 
-    ret = app_rx_st22p_init(ctx, ctx->json_ctx ? &ctx->json_ctx->rx_st22p[i] : NULL, s);
+    ret = app_rx_st22p_init(
+        ctx, ctx->json_ctx ? &ctx->json_ctx->rx_st22p_sessions[i] : NULL, s);
     if (ret < 0) {
       err("%s(%d), app_rx_st22p_init fail %d\n", __func__, i, ret);
       return ret;
@@ -299,6 +305,18 @@ int st_app_rx_st22p_sessions_result(struct st_app_context* ctx) {
   for (i = 0; i < ctx->rx_st22p_session_cnt; i++) {
     s = &ctx->rx_st22p_sessions[i];
     ret += app_rx_st22p_result(s);
+  }
+
+  return 0;
+}
+
+int st_app_rx_st22p_sessions_pcap(struct st_app_context* ctx) {
+  int i, ret = 0;
+  struct st_app_rx_st22p_session* s;
+  if (!ctx->rx_st22p_sessions) return 0;
+  for (i = 0; i < ctx->rx_st22p_session_cnt; i++) {
+    s = &ctx->rx_st22p_sessions[i];
+    ret += app_rx_st22p_pcap(s);
   }
 
   return 0;

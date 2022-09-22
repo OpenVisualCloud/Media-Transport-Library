@@ -1,26 +1,17 @@
-From ea9fe7b16a2a640e5061e0b81a5026eddb9982c3 Mon Sep 17 00:00:00 2001
+From 9c2968f314241b51b1f4dd7cc22f1d5c0975d58f Mon Sep 17 00:00:00 2001
 From: qiaoliu <qiao.liu@intel.com>
 Date: Wed, 22 Dec 2021 15:37:00 +0800
-Subject: [PATCH 2/8] Change list remove and add position to avoid race
+Subject: [PATCH 2/9] Change list remove and add position to avoid race
  condition
 
 ---
- lib/eal/windows/eal_alarm.c | 21 +++++++++++++++------
- 1 file changed, 15 insertions(+), 6 deletions(-)
+ lib/eal/windows/eal_alarm.c | 17 +++++++++++++----
+ 1 file changed, 13 insertions(+), 4 deletions(-)
 
 diff --git a/lib/eal/windows/eal_alarm.c b/lib/eal/windows/eal_alarm.c
-index 103c1f909d..1c3f8c45ad 100644
+index 103c1f909d..f3c037f00a 100644
 --- a/lib/eal/windows/eal_alarm.c
 +++ b/lib/eal/windows/eal_alarm.c
-@@ -152,7 +152,7 @@ rte_eal_alarm_set(uint64_t us, rte_eal_alarm_callback cb_fn, void *cb_arg)
- 		if (ret < 0)
- 			goto fail;
- 	}
--
-+	
- 	rte_spinlock_lock(&alarm_lock);
- 	LIST_INSERT_HEAD(&alarm_list, ap, next);
- 	rte_spinlock_unlock(&alarm_lock);
 @@ -181,7 +181,7 @@ alarm_matches(const struct alarm_entry *ap,
  int
  rte_eal_alarm_cancel(rte_eal_alarm_callback cb_fn, void *cb_arg)
@@ -30,12 +21,10 @@ index 103c1f909d..1c3f8c45ad 100644
  	unsigned int state;
  	int removed;
  	bool executing;
-@@ -197,20 +197,29 @@ rte_eal_alarm_cancel(rte_eal_alarm_callback cb_fn, void *cb_arg)
- 		executing = false;
+@@ -198,19 +198,28 @@ rte_eal_alarm_cancel(rte_eal_alarm_callback cb_fn, void *cb_arg)
  
  		rte_spinlock_lock(&alarm_lock);
--
-+		
+ 
 +    ap = NULL;
 +    ap_prev = ap;
  		LIST_FOREACH(ap, &alarm_list, next) {

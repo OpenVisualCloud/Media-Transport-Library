@@ -1,0 +1,74 @@
+From 5349e458019a136d5539b1a4ece487933d92a1ff Mon Sep 17 00:00:00 2001
+From: Ric Li <ming3.li@intel.com>
+Date: Mon, 22 Aug 2022 10:11:14 +0800
+Subject: [PATCH] Change to enable PTP
+
+Signed-off-by: Ric Li <ming3.li@intel.com>
+---
+ drivers/net/ice/ice_ethdev.c |  5 +++++
+ drivers/net/ice/ice_rxtx.c   | 12 ++++++------
+ 2 files changed, 11 insertions(+), 6 deletions(-)
+
+diff --git a/drivers/net/ice/ice_ethdev.c b/drivers/net/ice/ice_ethdev.c
+index 29c2a060cf..f07fdb71e4 100644
+--- a/drivers/net/ice/ice_ethdev.c
++++ b/drivers/net/ice/ice_ethdev.c
+@@ -5751,6 +5751,8 @@ ice_timesync_enable(struct rte_eth_dev *dev)
+ 	struct ice_adapter *ad =
+ 			ICE_DEV_PRIVATE_TO_ADAPTER(dev->data->dev_private);
+ 	int ret;
++	uint64_t starttime;
++	struct timespec system_time;
+ 
+ 	if (dev->data->dev_started && !(dev->data->dev_conf.rxmode.offloads &
+ 	    RTE_ETH_RX_OFFLOAD_TIMESTAMP)) {
+@@ -5790,6 +5792,9 @@ ice_timesync_enable(struct rte_eth_dev *dev)
+ 	ad->tx_tstamp_tc.cc_shift = 0;
+ 	ad->tx_tstamp_tc.nsec_mask = 0;
+ 
++	clock_gettime(CLOCK_MONOTONIC, &system_time);
++	starttime = system_time.tv_sec*NSEC_PER_SEC + system_time.tv_nsec;
++	ice_ptp_init_time(hw,starttime);
+ 	ad->ptp_ena = 1;
+ 
+ 	return 0;
+diff --git a/drivers/net/ice/ice_rxtx.c b/drivers/net/ice/ice_rxtx.c
+index bfb3a16ae2..86a5eacc14 100644
+--- a/drivers/net/ice/ice_rxtx.c
++++ b/drivers/net/ice/ice_rxtx.c
+@@ -1656,8 +1656,8 @@ ice_rx_scan_hw_ring(struct ice_rx_queue *rxq)
+ 				pkt_flags |= ice_timestamp_dynflag;
+ 			}
+ 
+-			if (ad->ptp_ena && ((mb->packet_type &
+-			    RTE_PTYPE_L2_MASK) == RTE_PTYPE_L2_ETHER_TIMESYNC)) {
++			if (ad->ptp_ena /*&& ((mb->packet_type &
++				RTE_PTYPE_L2_MASK) == RTE_PTYPE_L2_ETHER_TIMESYNC)*/) {
+ 				rxq->time_high =
+ 				   rte_le_to_cpu_32(rxdp[j].wb.flex_ts.ts_high);
+ 				mb->timesync = rxq->queue_id;
+@@ -1998,8 +1998,8 @@ ice_recv_scattered_pkts(void *rx_queue,
+ 			pkt_flags |= ice_timestamp_dynflag;
+ 		}
+ 
+-		if (ad->ptp_ena && ((first_seg->packet_type & RTE_PTYPE_L2_MASK)
+-		    == RTE_PTYPE_L2_ETHER_TIMESYNC)) {
++		if (ad->ptp_ena /*&& ((first_seg->packet_type & RTE_PTYPE_L2_MASK)
++			== RTE_PTYPE_L2_ETHER_TIMESYNC)*/) {
+ 			rxq->time_high =
+ 			   rte_le_to_cpu_32(rxd.wb.flex_ts.ts_high);
+ 			first_seg->timesync = rxq->queue_id;
+@@ -2449,8 +2449,8 @@ ice_recv_pkts(void *rx_queue,
+ 			pkt_flags |= ice_timestamp_dynflag;
+ 		}
+ 
+-		if (ad->ptp_ena && ((rxm->packet_type & RTE_PTYPE_L2_MASK) ==
+-		    RTE_PTYPE_L2_ETHER_TIMESYNC)) {
++		if (ad->ptp_ena /*&& ((rxm->packet_type & RTE_PTYPE_L2_MASK) ==
++			RTE_PTYPE_L2_ETHER_TIMESYNC)*/) {
+ 			rxq->time_high =
+ 			   rte_le_to_cpu_32(rxd.wb.flex_ts.ts_high);
+ 			rxm->timesync = rxq->queue_id;
+-- 
+2.25.1
+

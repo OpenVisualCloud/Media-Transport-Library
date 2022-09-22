@@ -19,8 +19,8 @@ enum st22p_rx_frame_status {
 
 struct st22p_rx_frame {
   enum st22p_rx_frame_status stat;
-  struct st_frame_meta src; /* before decoding */
-  struct st_frame_meta dst; /* decoded */
+  struct st_frame src; /* before decoding */
+  struct st_frame dst; /* decoded */
   struct st22_decode_frame_meta decode_frame;
   uint16_t idx;
 };

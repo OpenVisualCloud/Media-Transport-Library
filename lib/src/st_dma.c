@@ -6,6 +6,125 @@
 
 #include "st_log.h"
 
+static inline struct st_map_mgr* st_get_map_mgr(struct st_main_impl* impl) {
+  return &impl->map_mgr;
+}
+
+int st_map_add(struct st_main_impl* impl, struct st_map_item* item) {
+  struct st_map_mgr* mgr = st_get_map_mgr(impl);
+  void* start = item->vaddr;
+  void* end = start + item->size;
+  struct st_map_item* i_item;
+  void* i_start;
+  void* i_end;
+  st_iova_t iova_base = 0x10000; /* assume user IOVA start from 1M */
+  st_iova_t iova_end;
+
+  st_pthread_mutex_lock(&mgr->mutex);
+
+  /* first check if any conflict with exist mapping */
+  for (int i = 0; i < ST_MAP_MAX_ITEMS; i++) {
+    i_item = mgr->items[i];
+    if (!i_item) continue;
+    i_start = i_item->vaddr;
+    i_end = i_start + i_item->size;
+    if ((start >= i_start) && (start <= i_end)) {
+      err("%s, invalid start %p i_start %p i_end %p\n", __func__, start, i_start, i_end);
+      st_pthread_mutex_unlock(&mgr->mutex);
+      return -EINVAL;
+    }
+    if ((end >= i_start) && (end <= i_end)) {
+      err("%s, invalid end %p i_start %p i_end %p\n", __func__, start, i_start, i_end);
+      st_pthread_mutex_unlock(&mgr->mutex);
+      return -EINVAL;
+    }
+    /* simply set iova_base to max iova in previous item */
+    iova_end = i_item->iova + i_item->size;
+    if (iova_end > iova_base) iova_base = iova_end;
+  }
+  item->iova = iova_base;
+
+  /* find empty slot and insert */
+  for (int i = 0; i < ST_MAP_MAX_ITEMS; i++) {
+    i_item = mgr->items[i];
+    if (i_item) continue;
+    i_item = st_rte_zmalloc_socket(sizeof(*i_item), st_socket_id(impl, ST_PORT_P));
+    if (!i_item) {
+      err("%s, i_item malloc fail\n", __func__);
+      st_pthread_mutex_unlock(&mgr->mutex);
+      return -EINVAL;
+    }
+    *i_item = *item;
+    mgr->items[i] = i_item;
+    st_pthread_mutex_unlock(&mgr->mutex);
+    info("%s(%d), start %p end %p iova 0x%" PRIx64 "\n", __func__, i, start, end,
+         i_item->iova);
+    return 0;
+  }
+
+  err("%s, no space, all items are used\n", __func__);
+  st_pthread_mutex_unlock(&mgr->mutex);
+  return -EIO;
+}
+
+int st_map_remove(struct st_main_impl* impl, struct st_map_item* item) {
+  struct st_map_mgr* mgr = st_get_map_mgr(impl);
+  void* start = item->vaddr;
+  void* end = start + item->size;
+  struct st_map_item* i_item;
+  void* i_start;
+  void* i_end;
+
+  st_pthread_mutex_lock(&mgr->mutex);
+
+  /* find slot and delete */
+  for (int i = 0; i < ST_MAP_MAX_ITEMS; i++) {
+    i_item = mgr->items[i];
+    if (!i_item) continue;
+    i_start = i_item->vaddr;
+    i_end = i_start + i_item->size;
+    if ((start == i_start) && (end == i_end) && (item->iova == i_item->iova)) {
+      info("%s(%d), start %p end %p iova 0x%" PRIx64 "\n", __func__, i, start, end,
+           i_item->iova);
+      st_rte_free(i_item);
+      mgr->items[i] = NULL;
+      st_pthread_mutex_unlock(&mgr->mutex);
+      return 0;
+    }
+  }
+
+  err("%s, unknown items start %p end %p iova %" PRIx64 "\n", __func__, start, end,
+      item->iova);
+  st_pthread_mutex_unlock(&mgr->mutex);
+  return -EIO;
+}
+
+int st_map_init(struct st_main_impl* impl) {
+  struct st_map_mgr* mgr = st_get_map_mgr(impl);
+
+  st_pthread_mutex_init(&mgr->mutex, NULL);
+
+  return 0;
+}
+
+int st_map_uinit(struct st_main_impl* impl) {
+  struct st_map_mgr* mgr = st_get_map_mgr(impl);
+  struct st_map_item* item;
+
+  for (int i = 0; i < ST_MAP_MAX_ITEMS; i++) {
+    item = mgr->items[i];
+    if (item) {
+      warn("%s(%d), still active, vaddr %p\n", __func__, i, item->vaddr);
+      st_rte_free(item);
+      mgr->items[i] = NULL;
+    }
+  }
+
+  st_pthread_mutex_destroy(&mgr->mutex);
+
+  return 0;
+}
+
 /* dmadev only available from DPDK 21.11 */
 #if RTE_VERSION >= RTE_VERSION_NUM(21, 11, 0, 0)
 #include <rte_dmadev.h>

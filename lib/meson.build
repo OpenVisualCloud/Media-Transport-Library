@@ -41,6 +41,9 @@ if is_windows
   st_dpdk_include_dir += include_directories(dpdk_root_dir + '''\lib\kni\''')
   st_dpdk_c_args += ['-static','-DWINDOWSENV','-D_WIN32_WINNT=0x0600','-Wformat=0','-Wno-maybe-uninitialized','-mno-ms-bitfields', '-Og']
   st_dpdk_link_c_args += ['-static','-limagehlp', '-lsetupapi', '-lWs2_32']
+  st_dpdk_link_c_args += ['-Wl,--whole-archive']
+  st_dpdk_link_c_args += [dpdklibs.stdout().strip().split()]
+  st_dpdk_link_c_args += ['-Wl,--no-whole-archive']
 endif
 
 if cc.has_argument('-mavx2')
@@ -56,15 +59,6 @@ if cc.has_argument('-mavx512vbmi2')
 endif
 
 # build library
-if is_windows
-st_dpdk_lib += static_library(meson.project_name(), sources,
-  include_directories : st_dpdk_include_dir,
-  c_args : st_dpdk_c_args,
-  link_args : st_dpdk_link_c_args,
-  dependencies: [dpdk_dep, libm_dep, libnuma_dep, libpthread_dep, libdl_dep, jsonc_dep],
-  install: true
-)
-else
 st_dpdk_lib += shared_library(meson.project_name(), sources,
   include_directories : st_dpdk_include_dir,
   c_args : st_dpdk_c_args,
@@ -72,4 +66,3 @@ st_dpdk_lib += shared_library(meson.project_name(), sources,
   dependencies: [dpdk_dep, libm_dep, libnuma_dep, libpthread_dep, libdl_dep, jsonc_dep],
   install: true
 )
-endif

@@ -7,6 +7,29 @@
 
 #include "st_main.h"
 
+/* ip from 224.x.x.x to 239.x.x.x */
+static inline uint64_t st_is_multicast_ip(uint8_t ip[ST_IP_ADDR_LEN]) {
+  if (ip[0] >= 224 && ip[0] <= 239)
+    return true;
+  else
+    return false;
+}
+
+static inline uint32_t st_ip_to_u32(uint8_t ip[ST_IP_ADDR_LEN]) {
+  uint32_t group = ((uint32_t)ip[0] << 0);
+  group |= ((uint32_t)ip[1] << 8);
+  group |= ((uint32_t)ip[2] << 16);
+  group |= ((uint32_t)ip[3] << 24);
+  return group;
+}
+
+static inline void st_u32_to_ip(uint32_t group, uint8_t ip[ST_IP_ADDR_LEN]) {
+  ip[0] = group >> 0;
+  ip[1] = group >> 8;
+  ip[2] = group >> 16;
+  ip[3] = group >> 24;
+}
+
 bool st_bitmap_test_and_set(uint8_t* bitmap, int idx);
 
 int st_ring_dequeue_clean(struct rte_ring* ring);
@@ -54,13 +77,21 @@ static inline bool st_rx_seq_drop(uint16_t new_id, uint16_t old_id, uint16_t del
     return false;
 }
 
-struct rte_mbuf* st_build_pad(struct st_main_impl* impl, enum st_port port,
+struct rte_mbuf* st_build_pad(struct st_main_impl* impl, struct rte_mempool* mempool,
                               uint16_t port_id, uint16_t ether_type, uint16_t len);
 
-struct rte_mempool* st_mempool_create(struct st_main_impl* impl, enum st_port port,
-                                      const char* name, unsigned int n,
-                                      unsigned int cache_size, uint16_t priv_size,
-                                      uint16_t element_size);
+struct rte_mempool* st_mempool_create_by_ops(struct st_main_impl* impl, enum st_port port,
+                                             const char* name, unsigned int n,
+                                             unsigned int cache_size, uint16_t priv_size,
+                                             uint16_t element_size, const char* ops_name);
+
+static inline struct rte_mempool* st_mempool_create(
+    struct st_main_impl* impl, enum st_port port, const char* name, unsigned int n,
+    unsigned int cache_size, uint16_t priv_size, uint16_t element_size) {
+  /* default with stack */
+  return st_mempool_create_by_ops(impl, port, name, n, cache_size, priv_size,
+                                  element_size, "stack");
+}
 
 static inline struct rte_mempool* st_mempool_create_common(struct st_main_impl* impl,
                                                            enum st_port port,
@@ -104,5 +135,27 @@ static inline int st_cvt_dma_ctx_get_done(struct st_cvt_dma_ctx* ctx, int type) 
 static inline int st_cvt_dma_ctx_get_tran(struct st_cvt_dma_ctx* ctx, int type) {
   return ctx->tran[type];
 }
+
+int st_run_cmd(const char* cmd, char* out, size_t out_len);
+
+static inline void st_mbuf_chain_sw_copy(struct rte_mbuf* pkt,
+                                         struct rte_mbuf* pkt_chain) {
+#if 1
+  /* copy payload to hdr */
+  rte_memcpy(rte_pktmbuf_mtod_offset(pkt, void*, pkt->data_len),
+             rte_pktmbuf_mtod(pkt_chain, void*), pkt_chain->pkt_len);
+#endif
+}
+
+static inline void st_mbuf_chain_sw(struct rte_mbuf* pkt, struct rte_mbuf* pkt_chain) {
+  st_mbuf_chain_sw_copy(pkt, pkt_chain);
+  pkt->data_len += pkt_chain->pkt_len;
+}
+
+int st_ip_addr_check(uint8_t* ip);
+
+int st_rx_source_info_check(struct st_rx_source_info* src, int num_ports);
+
+int st_frame_trans_uinit(struct st_frame_trans* frame);
 
 #endif

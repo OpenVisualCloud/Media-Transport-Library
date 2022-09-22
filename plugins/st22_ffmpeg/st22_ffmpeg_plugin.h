@@ -2,15 +2,17 @@
  * Copyright(c) 2022 Intel Corporation
  */
 
-#ifndef _JPEGXS_PLUGIN_SAMPLE_H_
-#define _JPEGXS_PLUGIN_SAMPLE_H_
+#ifndef _ST22_FFMPEG_PLUGIN_HEAD_H_
+#define _ST22_FFMPEG_PLUGIN_HEAD_H_
 
+#include <libavcodec/avcodec.h>
+#include <libavutil/opt.h>
 #include <st_pipeline_api.h>
 
-#define MAX_SAMPLE_ENCODER_SESSIONS (8)
-#define MAX_SAMPLE_DECODER_SESSIONS (8)
+#define MAX_ST22_ENCODER_SESSIONS (8)
+#define MAX_ST22_DECODER_SESSIONS (8)
 
-struct jpegxs_encoder_session {
+struct st22_encoder_session {
   int idx;
 
   struct st22_encoder_create_req req;
@@ -21,9 +23,15 @@ struct jpegxs_encoder_session {
   pthread_mutex_t wake_mutex;
 
   int frame_cnt;
+  int frame_idx;
+
+  /* AVCodec info */
+  AVCodecContext* codec_ctx;
+  AVFrame* codec_frame;
+  AVPacket* codec_pkt;
 };
 
-struct jpegxs_decoder_session {
+struct st22_decoder_session {
   int idx;
 
   struct st22_decoder_create_req req;
@@ -34,13 +42,20 @@ struct jpegxs_decoder_session {
   pthread_mutex_t wake_mutex;
 
   int frame_cnt;
+  int frame_idx;
+
+  /* AVCodec info */
+  AVCodecContext* codec_ctx;
+  AVFrame* codec_frame;
+  AVPacket* codec_pkt;
+  AVCodecParserContext* codec_parser;
 };
 
-struct jpegxs_sample_ctx {
+struct st22_ffmpeg_ctx {
   st22_encoder_dev_handle encoder_dev_handle;
   st22_decoder_dev_handle decoder_dev_handle;
-  struct jpegxs_encoder_session* encoder_sessions[MAX_SAMPLE_ENCODER_SESSIONS];
-  struct jpegxs_decoder_session* decoder_sessions[MAX_SAMPLE_DECODER_SESSIONS];
+  struct st22_encoder_session* encoder_sessions[MAX_ST22_ENCODER_SESSIONS];
+  struct st22_decoder_session* decoder_sessions[MAX_ST22_DECODER_SESSIONS];
 };
 
 /* the APIs for plugin */

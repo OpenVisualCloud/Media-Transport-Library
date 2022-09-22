@@ -4,7 +4,8 @@
 
 #include "tx_audio_app.h"
 
-static int app_tx_audio_next_frame(void* priv, uint16_t* next_frame_idx) {
+static int app_tx_audio_next_frame(void* priv, uint16_t* next_frame_idx,
+                                   struct st30_tx_frame_meta* meta) {
   struct st_app_tx_audio_session* s = priv;
   int ret;
   uint16_t consumer_idx = s->framebuff_consumer_idx;
@@ -22,7 +23,7 @@ static int app_tx_audio_next_frame(void* priv, uint16_t* next_frame_idx) {
     s->framebuff_consumer_idx = consumer_idx;
   } else {
     /* not ready */
-    err("%s(%d), idx %u err stat %d\n", __func__, s->idx, consumer_idx, framebuff->stat);
+    dbg("%s(%d), idx %u err stat %d\n", __func__, s->idx, consumer_idx, framebuff->stat);
     ret = -EIO;
   }
   st_pthread_cond_signal(&s->st30_wake_cond);
@@ -30,7 +31,8 @@ static int app_tx_audio_next_frame(void* priv, uint16_t* next_frame_idx) {
   return ret;
 }
 
-static int app_tx_audio_frame_done(void* priv, uint16_t frame_idx) {
+static int app_tx_audio_frame_done(void* priv, uint16_t frame_idx,
+                                   struct st30_tx_frame_meta* meta) {
   struct st_app_tx_audio_session* s = priv;
   int ret;
   struct st_tx_frame* framebuff = &s->framebuffs[frame_idx];
@@ -346,8 +348,7 @@ static int app_tx_audio_uinit(struct st_app_tx_audio_session* s) {
   return 0;
 }
 
-static int app_tx_audio_init(struct st_app_context* ctx,
-                             st_json_tx_audio_session_t* audio,
+static int app_tx_audio_init(struct st_app_context* ctx, st_json_audio_session_t* audio,
                              struct st_app_tx_audio_session* s) {
   int idx = s->idx, ret;
   struct st30_tx_ops ops;
@@ -375,40 +376,54 @@ static int app_tx_audio_init(struct st_app_context* ctx,
   snprintf(name, 32, "app_tx_audio%d", idx);
   ops.name = name;
   ops.priv = s;
-  ops.num_port = audio ? audio->num_inf : ctx->para.num_ports;
+  ops.num_port = audio ? audio->base.num_inf : ctx->para.num_ports;
   memcpy(ops.dip_addr[ST_PORT_P],
-         audio ? audio->dip[ST_PORT_P] : ctx->tx_dip_addr[ST_PORT_P], ST_IP_ADDR_LEN);
+         audio ? audio->base.ip[ST_PORT_P] : ctx->tx_dip_addr[ST_PORT_P], ST_IP_ADDR_LEN);
   strncpy(ops.port[ST_PORT_P],
-          audio ? audio->inf[ST_PORT_P]->name : ctx->para.port[ST_PORT_P],
+          audio ? audio->base.inf[ST_PORT_P]->name : ctx->para.port[ST_PORT_P],
           ST_PORT_MAX_LEN);
-  ops.udp_port[ST_PORT_P] = audio ? audio->udp_port : (10100 + s->idx);
+  ops.udp_port[ST_PORT_P] = audio ? audio->base.udp_port : (10100 + s->idx);
+  if (ctx->has_tx_dst_mac[ST_PORT_P]) {
+    memcpy(&ops.tx_dst_mac[ST_PORT_P][0], ctx->tx_dst_mac[ST_PORT_P], 6);
+    ops.flags |= ST30_TX_FLAG_USER_P_MAC;
+  }
   if (ops.num_port > 1) {
     memcpy(ops.dip_addr[ST_PORT_R],
-           audio ? audio->dip[ST_PORT_R] : ctx->tx_dip_addr[ST_PORT_R], ST_IP_ADDR_LEN);
+           audio ? audio->base.ip[ST_PORT_R] : ctx->tx_dip_addr[ST_PORT_R],
+           ST_IP_ADDR_LEN);
     strncpy(ops.port[ST_PORT_R],
-            audio ? audio->inf[ST_PORT_R]->name : ctx->para.port[ST_PORT_R],
+            audio ? audio->base.inf[ST_PORT_R]->name : ctx->para.port[ST_PORT_R],
             ST_PORT_MAX_LEN);
-    ops.udp_port[ST_PORT_R] = audio ? audio->udp_port : (10100 + s->idx);
+    ops.udp_port[ST_PORT_R] = audio ? audio->base.udp_port : (10100 + s->idx);
+    if (ctx->has_tx_dst_mac[ST_PORT_R]) {
+      memcpy(&ops.tx_dst_mac[ST_PORT_R][0], ctx->tx_dst_mac[ST_PORT_R], 6);
+      ops.flags |= ST30_TX_FLAG_USER_R_MAC;
+    }
   }
   ops.get_next_frame = app_tx_audio_next_frame;
   ops.notify_frame_done = app_tx_audio_frame_done;
   ops.notify_rtp_done = app_tx_audio_rtp_done;
   ops.framebuff_cnt = s->framebuff_cnt;
-  ops.fmt = audio ? audio->audio_format : ST30_FMT_PCM16;
-  ops.channel = audio ? audio->audio_channel : 2;
-  ops.sampling = audio ? audio->audio_sampling : ST30_SAMPLING_48K;
-  ops.ptime = audio ? audio->audio_ptime : ST30_PTIME_1MS;
+  ops.fmt = audio ? audio->info.audio_format : ST30_FMT_PCM16;
+  ops.channel = audio ? audio->info.audio_channel : 2;
+  ops.sampling = audio ? audio->info.audio_sampling : ST30_SAMPLING_48K;
+  ops.ptime = audio ? audio->info.audio_ptime : ST30_PTIME_1MS;
   ops.sample_size = st30_get_sample_size(ops.fmt);
   ops.sample_num = st30_get_sample_num(ops.ptime, ops.sampling);
   s->pkt_len = ops.sample_size * ops.sample_num * ops.channel;
-  /* frame time to 1ms */
-  s->st30_frame_size =
-      ops.sample_size * st30_get_sample_num(ST30_PTIME_1MS, ops.sampling) * ops.channel;
+  if (ops.ptime == ST30_PTIME_4MS) {
+    s->st30_frame_size =
+        ops.sample_size * st30_get_sample_num(ST30_PTIME_4MS, ops.sampling) * ops.channel;
+  } else {
+    /* when ptime <= 1ms, set frame time to 1ms */
+    s->st30_frame_size =
+        ops.sample_size * st30_get_sample_num(ST30_PTIME_1MS, ops.sampling) * ops.channel;
+  }
   ops.framebuff_size = s->st30_frame_size;
-  ops.payload_type = audio ? audio->payload_type : ST_APP_PAYLOAD_TYPE_AUDIO;
+  ops.payload_type = audio ? audio->base.payload_type : ST_APP_PAYLOAD_TYPE_AUDIO;
 
   s->st30_pcap_input = false;
-  ops.type = audio ? audio->type : ST30_TYPE_FRAME_LEVEL;
+  ops.type = audio ? audio->info.type : ST30_TYPE_FRAME_LEVEL;
   /* select rtp type for pcap file or tx_video_rtp_ring_size */
   if (strstr(s->st30_source_url, ".pcap")) {
     ops.type = ST30_TYPE_RTP_LEVEL;
@@ -433,7 +448,7 @@ static int app_tx_audio_init(struct st_app_context* ctx,
   }
 
   s->handle = handle;
-  strncpy(s->st30_source_url, audio ? audio->audio_url : ctx->tx_audio_url,
+  strncpy(s->st30_source_url, audio ? audio->info.audio_url : ctx->tx_audio_url,
           sizeof(s->st30_source_url));
 
   ret = app_tx_audio_open_source(s);
@@ -474,7 +489,8 @@ int st_app_tx_audio_sessions_init(struct st_app_context* ctx) {
   for (int i = 0; i < ctx->tx_audio_session_cnt; i++) {
     s = &ctx->tx_audio_sessions[i];
     s->idx = i;
-    ret = app_tx_audio_init(ctx, ctx->json_ctx ? &ctx->json_ctx->tx_audio[i] : NULL, s);
+    ret = app_tx_audio_init(
+        ctx, ctx->json_ctx ? &ctx->json_ctx->tx_audio_sessions[i] : NULL, s);
     if (ret < 0) {
       err("%s(%d), app_tx_audio_session_init fail %d\n", __func__, i, ret);
       return ret;

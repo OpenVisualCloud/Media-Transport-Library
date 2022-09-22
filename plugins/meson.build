@@ -28,16 +28,23 @@ plugins_c_args += ['-msse4.2']
 plugins_ld_args = []
 
 if is_windows
-plugins_c_args += ['-Wformat=0']
-libdpdklinkflags = run_command('pkg-config', '--static', '--libs', 'libdpdk')
-plugins_ld_args += ['-lmingw32','-lws2_32','-lDbghelp','-lSetupapi','-ldinput8', '-ldxguid', '-ldxerr8', '-lwinmm', '-limm32','-lversion','-lwpcap','-lPacket','-lSDL2','-lSDL2Main','-lmman','-ljson-c','-ldl']
-plugins_ld_args += ['-Wl,--whole-archive']
-plugins_ld_args += [libdpdklinkflags.stdout().strip().split()]
-plugins_ld_args += ['-Wl,--no-whole-archive']
+  plugins_c_args += ['-Wformat=0']
+  libdpdklinkflags = run_command('pkg-config', '--static', '--libs', 'libdpdk')
+  plugins_ld_args += ['-lmingw32','-lws2_32','-lDbghelp','-lSetupapi','-ldinput8', '-ldxguid', '-ldxerr8', '-lwinmm', '-limm32','-lversion','-lwpcap','-lPacket','-lSDL2','-lSDL2Main','-lmman','-ljson-c','-ldl']
+  plugins_ld_args += ['-Wl,--whole-archive']
+  plugins_ld_args += [libdpdklinkflags.stdout().strip().split()]
+  plugins_ld_args += ['-Wl,--no-whole-archive']
 endif
 
 # build plugins lib
-shared_library('st_plugin_jpegxs_sample', plugins_jpegxs_sample_sources,
+shared_library('st_plugin_st22_sample', plugins_st22_sample_sources,
+  c_args : plugins_c_args,
+  link_args : plugins_ld_args,
+  dependencies: [libst_dpdk_dep, libpthread_dep],
+  install: true
+)
+
+shared_library('st_plugin_convert_sample', plugins_convert_sample_sources,
   c_args : plugins_c_args,
   link_args : plugins_ld_args,
   dependencies: [libst_dpdk_dep, libpthread_dep],

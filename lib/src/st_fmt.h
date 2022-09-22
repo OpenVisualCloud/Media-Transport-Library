@@ -21,6 +21,8 @@ struct st_frame_fmt_desc {
   char* name;
 };
 
+const char* st_tx_pacing_way_name(enum st21_tx_pacing_way way);
+
 int st_get_fps_timing(enum st_fps fps, struct st_fps_timing* fps_tm);
 
 int st22_rtp_bandwidth_bps(uint32_t total_pkts, uint16_t pkt_size, enum st_fps fps,

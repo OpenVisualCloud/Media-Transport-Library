@@ -10,6 +10,9 @@
 #include <pcap.h>
 #include <pthread.h>
 #include <signal.h>
+#include <st20_dpdk_api.h>
+#include <st30_dpdk_api.h>
+#include <st40_dpdk_api.h>
 #include <st_dpdk_api.h>
 #include <stdbool.h>
 #include <stddef.h>
@@ -41,6 +44,8 @@
 #ifndef NS_PER_S
 #define NS_PER_S (1000000000)
 #endif
+
+#define UTC_OFFSSET (37) /* 2022/07 */
 
 struct st_display {
   int idx;
@@ -96,6 +101,7 @@ struct st_app_tx_video_session {
   uint8_t* st20_source_end;
   uint8_t* st20_frame_cursor;
   int st20_source_fd;
+  bool st20_frames_copied;
 
   int st20_frame_size;
   bool st20_second_field;
@@ -392,6 +398,57 @@ struct st_app_rx_st22p_session {
   uint64_t stat_latency_us_sum;
 };
 
+struct st_app_tx_st20p_session {
+  int idx;
+  st20p_tx_handle handle;
+  st_handle st;
+  int framebuff_cnt;
+  int st20p_frame_size;
+  int width;
+  int height;
+
+  char st20p_source_url[ST_APP_URL_MAX_LEN];
+  uint8_t* st20p_source_begin;
+  uint8_t* st20p_source_end;
+  uint8_t* st20p_frame_cursor;
+  int st20p_source_fd;
+
+  double expect_fps;
+
+  pthread_t st20p_app_thread;
+  pthread_cond_t st20p_wake_cond;
+  pthread_mutex_t st20p_wake_mutex;
+  bool st20p_app_thread_stop;
+};
+
+struct st_app_rx_st20p_session {
+  int idx;
+  st20p_rx_handle handle;
+  st_handle st;
+  int framebuff_cnt;
+  int st20p_frame_size;
+  int width;
+  int height;
+
+  /* stat */
+  int stat_frame_received;
+  uint64_t stat_last_time;
+  int stat_frame_total_received;
+  uint64_t stat_frame_frist_rx_time;
+  double expect_fps;
+
+  pthread_t st20p_app_thread;
+  pthread_cond_t st20p_wake_cond;
+  pthread_mutex_t st20p_wake_mutex;
+  bool st20p_app_thread_stop;
+
+  struct st_display* display;
+  uint32_t pcapng_max_pkts;
+
+  bool measure_latency;
+  uint64_t stat_latency_us_sum;
+};
+
 struct st_app_context {
   st_json_context_t* json_ctx;
   struct st_init_params para;
@@ -399,11 +456,18 @@ struct st_app_context {
   int test_time_s;
   bool stop;
   uint8_t tx_dip_addr[ST_PORT_MAX][ST_IP_ADDR_LEN]; /* tx destination IP */
+  bool has_tx_dst_mac[ST_PORT_MAX];
+  uint8_t tx_dst_mac[ST_PORT_MAX][6];
 
   int lcore[ST_APP_MAX_LCORES];
   int rtp_lcore[ST_APP_MAX_LCORES];
 
   bool runtime_session;
+  bool enable_hdr_split;
+  bool tx_copy_once;
+  bool app_thread;
+  uint32_t rx_max_width;
+  uint32_t rx_max_height;
 
   char tx_video_url[ST_APP_URL_MAX_LEN]; /* send video content url*/
   struct st_app_tx_video_session* tx_video_sessions;
@@ -424,11 +488,16 @@ struct st_app_context {
   struct st_app_tx_st22p_session* tx_st22p_sessions;
   int tx_st22p_session_cnt;
 
+  char tx_st20p_url[ST_APP_URL_MAX_LEN]; /* send st20p content url*/
+  struct st_app_tx_st20p_session* tx_st20p_sessions;
+  int tx_st20p_session_cnt;
+
   uint8_t rx_sip_addr[ST_PORT_MAX][ST_IP_ADDR_LEN]; /* rx source IP */
 
   struct st_app_rx_video_session* rx_video_sessions;
   int rx_video_session_cnt;
-  int rx_video_file_frames;   /* the frames recevied saved to file */
+  int rx_video_file_frames; /* the frames recevied saved to file */
+  int rx_video_fb_cnt;
   int rx_video_rtp_ring_size; /* the ring size for rx video rtp type */
   bool display;               /* flag to display all rx video with SDL */
   bool has_sdl;               /* has SDL device or not*/
@@ -443,6 +512,9 @@ struct st_app_context {
   struct st_app_rx_st22p_session* rx_st22p_sessions;
   int rx_st22p_session_cnt;
 
+  struct st_app_rx_st20p_session* rx_st20p_sessions;
+  int rx_st20p_session_cnt;
+
   char tx_st22_url[ST_APP_URL_MAX_LEN]; /* send st22 content url*/
   struct st22_app_tx_session* tx_st22_sessions;
   int tx_st22_session_cnt;
@@ -452,6 +524,7 @@ struct st_app_context {
 
   uint32_t pcapng_max_pkts;
   char ttf_file[ST_APP_URL_MAX_LEN];
+  int utc_offset;
 };
 
 static inline void* st_app_malloc(size_t sz) { return malloc(sz); }

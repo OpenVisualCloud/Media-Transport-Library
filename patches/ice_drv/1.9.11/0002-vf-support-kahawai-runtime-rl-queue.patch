@@ -1,0 +1,56 @@
+From cf936ed28c763fa898f543501ed673c7a9ec2492 Mon Sep 17 00:00:00 2001
+From: "Du, Frank" <frank.du@intel.com>
+Date: Wed, 3 Aug 2022 10:34:14 +0800
+Subject: [PATCH 2/4] vf: support kahawai runtime rl queue
+
+Signed-off-by: Du, Frank <frank.du@intel.com>
+---
+ src/ice_virtchnl.c | 9 +++++++++
+ 1 file changed, 9 insertions(+)
+
+diff --git a/src/ice_virtchnl.c b/src/ice_virtchnl.c
+index 7fe0006..51ca0fe 100644
+--- a/src/ice_virtchnl.c
++++ b/src/ice_virtchnl.c
+@@ -3361,6 +3361,11 @@ static int ice_vc_cfg_q_bw(struct ice_vf *vf, u8 *msg)
+ 
+ 	memcpy(vf->qs_bw, qs_bw, len);
+ 
++	/* for kahawai runtime rl */
++	if (vf->qs_bw)
++		if (ice_vf_cfg_qs_bw(vf, qbw->num_queues))
++			v_ret = VIRTCHNL_STATUS_ERR_PARAM;
++
+ err_bw:
+ 	kfree(qs_bw);
+ 
+@@ -3543,12 +3548,14 @@ skip_non_adq_checks:
+ 			vsi->tx_rings[q_idx]->dma = qpi->txq.dma_ring_addr;
+ 			vsi->tx_rings[q_idx]->count = qpi->txq.ring_len;
+ 
++#if 0 /* for kahawai runtime rl */
+ 			/* Disable any existing queue first */
+ 			if (ice_vf_vsi_dis_single_txq(vf, vsi, q_idx,
+ 						      qpi->txq.queue_id)) {
+ 				v_ret = VIRTCHNL_STATUS_ERR_PARAM;
+ 				goto error_param;
+ 			}
++#endif
+ 
+ 			/* Configure a queue with the requested settings */
+ 			if (ice_vsi_cfg_single_txq(vsi, vsi->tx_rings, q_idx)) {
+@@ -3629,9 +3636,11 @@ skip_non_adq_checks:
+ 		}
+ 	}
+ 
++#if 0 /* for kahawai runtime rl */
+ 	if (vf->qs_bw)
+ 		if (ice_vf_cfg_qs_bw(vf, qci->num_queue_pairs))
+ 			v_ret = VIRTCHNL_STATUS_ERR_PARAM;
++#endif
+ 
+ error_param:
+ 	/* send the response to the VF */
+-- 
+2.30.2
+

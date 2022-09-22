@@ -45,7 +45,8 @@ static struct st22p_tx_frame* tx_st22p_next_available(
   return NULL;
 }
 
-static int tx_st22p_next_frame(void* priv, uint16_t* next_frame_idx, size_t* frame_size) {
+static int tx_st22p_next_frame(void* priv, uint16_t* next_frame_idx,
+                               struct st22_tx_frame_meta* meta) {
   struct st22p_tx_ctx* ctx = priv;
   struct st22p_tx_frame* framebuff;
 
@@ -62,7 +63,13 @@ static int tx_st22p_next_frame(void* priv, uint16_t* next_frame_idx, size_t* fra
 
   framebuff->stat = ST22P_TX_FRAME_IN_TRANSMITTING;
   *next_frame_idx = framebuff->idx;
-  *frame_size = framebuff->dst.data_size;
+  if (ctx->ops.flags & ST22P_TX_FLAG_USER_TIMESTAMP) {
+    meta->tfmt = framebuff->src.tfmt;
+    meta->timestamp = framebuff->src.timestamp;
+    dbg("%s(%d), frame %u succ timestamp %lu\n", __func__, ctx->idx, framebuff->idx,
+        meta->timestamp);
+  }
+  meta->codestream_size = framebuff->dst.data_size;
   /* point to next */
   ctx->framebuff_consumer_idx = tx_st22p_next_idx(ctx, framebuff->idx);
   st_pthread_mutex_unlock(&ctx->lock);
@@ -70,7 +77,8 @@ static int tx_st22p_next_frame(void* priv, uint16_t* next_frame_idx, size_t* fra
   return 0;
 }
 
-static int tx_st22p_frame_done(void* priv, uint16_t frame_idx) {
+static int tx_st22p_frame_done(void* priv, uint16_t frame_idx,
+                               struct st22_tx_frame_meta* meta) {
   struct st22p_tx_ctx* ctx = priv;
   int ret;
   struct st22p_tx_frame* framebuff = &ctx->framebuffs[frame_idx];
@@ -86,6 +94,15 @@ static int tx_st22p_frame_done(void* priv, uint16_t frame_idx) {
         frame_idx);
   }
   st_pthread_mutex_unlock(&ctx->lock);
+
+  framebuff->src.tfmt = meta->tfmt;
+  framebuff->dst.tfmt = meta->tfmt;
+  framebuff->src.timestamp = meta->timestamp;
+  framebuff->dst.timestamp = meta->timestamp;
+
+  if (ctx->ops.notify_frame_done) { /* notify app which frame done */
+    ctx->ops.notify_frame_done(ctx->ops.priv, &framebuff->src);
+  }
 
   if (ctx->ops.notify_frame_available) { /* notify app */
     ctx->ops.notify_frame_available(ctx->ops.priv);
@@ -131,6 +148,7 @@ static int tx_st22p_encode_put_frame(void* priv, struct st22_encode_frame_meta* 
   struct st22p_tx_frame* framebuff = frame->priv;
   uint16_t encode_idx = framebuff->idx;
   size_t data_size = frame->dst->data_size;
+  size_t max_size = ctx->encode_impl->codestream_max_size;
 
   if (ctx->type != ST22_SESSION_TYPE_PIPELINE_TX) {
     err("%s(%d), invalid type %d\n", __func__, idx, ctx->type);
@@ -145,9 +163,10 @@ static int tx_st22p_encode_put_frame(void* priv, struct st22_encode_frame_meta* 
 
   dbg("%s(%d), frame %u result %d data_size %ld\n", __func__, idx, encode_idx, result,
       data_size);
-  if ((result < 0) || (data_size <= 0)) {
-    info("%s(%d), frame %u result %d data_size %ld\n", __func__, idx, encode_idx, result,
-         data_size);
+  if ((result < 0) || (data_size <= 0) || (data_size > max_size)) {
+    info("%s(%d), invalid frame %u result %d data_size %" PRIu64 " max_size %" PRIu64
+         "\n",
+         __func__, idx, encode_idx, result, data_size, max_size);
     framebuff->stat = ST22P_TX_FRAME_FREE;
     if (ctx->ops.notify_frame_available) { /* notify app */
       ctx->ops.notify_frame_available(ctx->ops.priv);
@@ -198,6 +217,18 @@ static int tx_st22p_create_transport(st_handle st, struct st22p_tx_ctx* ctx,
     strncpy(ops_tx.port[i], ops->port.port[i], ST_PORT_MAX_LEN);
     ops_tx.udp_port[i] = ops->port.udp_port[i] + i;
   }
+  if (ops->flags & ST22P_TX_FLAG_USER_P_MAC) {
+    memcpy(&ops_tx.tx_dst_mac[ST_PORT_P][0], &ops->tx_dst_mac[ST_PORT_P][0], 6);
+    ops_tx.flags |= ST22_TX_FLAG_USER_P_MAC;
+  }
+  if (ops->flags & ST22P_TX_FLAG_USER_R_MAC) {
+    memcpy(&ops_tx.tx_dst_mac[ST_PORT_R][0], &ops->tx_dst_mac[ST_PORT_R][0], 6);
+    ops_tx.flags |= ST22_TX_FLAG_USER_R_MAC;
+  }
+  if (ops->flags & ST22P_TX_FLAG_DISABLE_BOXES)
+    ops_tx.flags |= ST22_TX_FLAG_DISABLE_BOXES;
+  if (ops->flags & ST22P_TX_FLAG_USER_TIMESTAMP)
+    ops_tx.flags |= ST22_TX_FLAG_USER_TIMESTAMP;
   ops_tx.pacing = ST21_PACING_NARROW;
   ops_tx.width = ops->width;
   ops_tx.height = ops->height;
@@ -209,6 +240,9 @@ static int tx_st22p_create_transport(st_handle st, struct st22p_tx_ctx* ctx,
   ops_tx.framebuff_max_size = ctx->encode_impl->codestream_max_size;
   ops_tx.get_next_frame = tx_st22p_next_frame;
   ops_tx.notify_frame_done = tx_st22p_frame_done;
+  if (ops->codec != ST22_CODEC_JPEGXS) {
+    ops_tx.flags |= ST22_TX_FLAG_DISABLE_BOXES;
+  }
 
   transport = st22_tx_create(st, &ops_tx);
   if (!transport) {
@@ -226,7 +260,6 @@ static int tx_st22p_create_transport(st_handle st, struct st22p_tx_ctx* ctx,
     frames[i].dst.width = ops->width;
     frames[i].dst.height = ops->height;
     frames[i].dst.priv = &frames[i];
-    frames[i].dst.idx = i;
 
     frames[i].encode_frame.src = &frames[i].src;
     frames[i].encode_frame.dst = &frames[i].dst;
@@ -282,7 +315,6 @@ static int tx_st22p_init_src_fbs(struct st_main_impl* impl, struct st22p_tx_ctx*
     frames[i].src.data_size = src_size;
     frames[i].src.width = ops->width;
     frames[i].src.height = ops->height;
-    frames[i].src.idx = i;
     frames[i].src.priv = &frames[i];
   }
 
@@ -297,7 +329,6 @@ static int tx_st22p_get_encoder(struct st_main_impl* impl, struct st22p_tx_ctx* 
   struct st22_get_encoder_request req;
 
   memset(&req, 0, sizeof(req));
-  req.codec = ops->codec;
   req.device = ops->device;
   req.req.codestream_size = ops->codestream_size;
   req.req.max_codestream_size = ops->codestream_size;
@@ -305,10 +336,12 @@ static int tx_st22p_get_encoder(struct st_main_impl* impl, struct st22p_tx_ctx* 
   req.req.height = ops->height;
   req.req.fps = ops->fps;
   req.req.input_fmt = ops->input_fmt;
-  if (req.codec == ST22_CODEC_JPEGXS) {
+  if (ops->codec == ST22_CODEC_JPEGXS) {
     req.req.output_fmt = ST_FRAME_FMT_JPEGXS_CODESTREAM;
+  } else if (ops->codec == ST22_CODEC_H264_CBR) {
+    req.req.output_fmt = ST_FRAME_FMT_H264_CBR_CODESTREAM;
   } else {
-    err("%s(%d), unknow codec %d\n", __func__, idx, req.codec);
+    err("%s(%d), unknow codec %d\n", __func__, idx, ops->codec);
     return -EINVAL;
   }
   req.req.quality = ops->quality;
@@ -335,7 +368,7 @@ static int tx_st22p_get_encoder(struct st_main_impl* impl, struct st22p_tx_ctx* 
   return 0;
 }
 
-struct st_frame_meta* st22p_tx_get_frame(st22p_tx_handle handle) {
+struct st_frame* st22p_tx_get_frame(st22p_tx_handle handle) {
   struct st22p_tx_ctx* ctx = handle;
   int idx = ctx->idx;
   struct st22p_tx_frame* framebuff;
@@ -365,7 +398,7 @@ struct st_frame_meta* st22p_tx_get_frame(st22p_tx_handle handle) {
   return &framebuff->src;
 }
 
-int st22p_tx_put_frame(st22p_tx_handle handle, struct st_frame_meta* frame) {
+int st22p_tx_put_frame(st22p_tx_handle handle, struct st_frame* frame) {
   struct st22p_tx_ctx* ctx = handle;
   int idx = ctx->idx;
   struct st22p_tx_frame* framebuff = frame->priv;

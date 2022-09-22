@@ -1,0 +1,1157 @@
+From e1bcfeac03ad358943dbf7424c84603b296a6289 Mon Sep 17 00:00:00 2001
+From: Wenxuan Wu <wenxuanx.wu@intel.com>
+Date: Mon, 13 Jun 2022 10:25:47 +0000
+Subject: [PATCH] ethdev: introduce protocol header API
+
+This patch added new ethdev API to retrieve supported protocol header mask
+of a PMD, which helps to configure protocol header based buffer split.
+
+Signed-off-by: Wenxuan Wu <wenxuanx.wu@intel.com>
+---
+ app/test-pmd/cmdline.c                | 133 +++++++++++++++-
+ app/test-pmd/config.c                 |  75 +++++++++
+ app/test-pmd/parameters.c             |  15 +-
+ app/test-pmd/testpmd.c                |   6 +-
+ app/test-pmd/testpmd.h                |   6 +
+ drivers/net/ice/ice_ethdev.c          |  38 ++++-
+ drivers/net/ice/ice_rxtx.c            | 220 ++++++++++++++++++++++----
+ drivers/net/ice/ice_rxtx.h            |  16 ++
+ drivers/net/ice/ice_rxtx_vec_common.h |   3 +
+ lib/ethdev/ethdev_driver.h            |  18 +++
+ lib/ethdev/rte_ethdev.c               |  61 +++++--
+ lib/ethdev/rte_ethdev.h               |  38 ++++-
+ lib/ethdev/version.map                |   1 +
+ 13 files changed, 580 insertions(+), 50 deletions(-)
+
+diff --git a/app/test-pmd/cmdline.c b/app/test-pmd/cmdline.c
+index b4fe9dfb17..bf132e3abb 100644
+--- a/app/test-pmd/cmdline.c
++++ b/app/test-pmd/cmdline.c
+@@ -183,7 +183,7 @@ static void cmd_help_long_parsed(void *parsed_result,
+ 			"show (rxq|txq) info (port_id) (queue_id)\n"
+ 			"    Display information for configured RX/TX queue.\n\n"
+ 
+-			"show config (rxtx|cores|fwd|rxoffs|rxpkts|txpkts)\n"
++			"show config (rxtx|cores|fwd|rxoffs|rxpkts|rxhdrs|txpkts)\n"
+ 			"    Display the given configuration.\n\n"
+ 
+ 			"read rxd (port_id) (queue_id) (rxd_id)\n"
+@@ -307,6 +307,15 @@ static void cmd_help_long_parsed(void *parsed_result,
+ 			" Affects only the queues configured with split"
+ 			" offloads.\n\n"
+ 
++			"set rxhdrs (mac[,ipv4])*\n"
++			"	Set the protocol hdr of each segment to scatter"
++			" packets on receiving if split feature is engaged."
++			" Affects only the queues configured with split"
++			" offloads.\n\n"
++			"	Supported proto header: mac|ipv4||qinq|gre|ipv6|l3|tcp|udp|sctp|l4|"
++			"inner_mac|inner_ipv4|inner_ipv6|inner_l3|inner_tcp|"
++			"inner_udp|inner_sctp\n"
++
+ 			"set txpkts (x[,y]*)\n"
+ 			"    Set the length of each segment of TXONLY"
+ 			" and optionally CSUM packets.\n\n"
+@@ -3456,6 +3465,78 @@ static cmdline_parse_inst_t cmd_stop = {
+ 	},
+ };
+ 
++static unsigned int
++get_ptype(char *value)
++{
++	uint32_t protocol;
++	if (!strcmp(value, "mac"))
++		protocol = RTE_PTYPE_L2_ETHER;
++	else if (!strcmp(value, "ipv4"))
++		protocol = RTE_PTYPE_L3_IPV4;
++	else if (!strcmp(value, "ipv6"))
++		protocol = RTE_PTYPE_L3_IPV6;
++	else if (!strcmp(value, "l3"))
++		protocol = RTE_PTYPE_L3_IPV4|RTE_PTYPE_L3_IPV6;
++	else if (!strcmp(value, "tcp"))
++		protocol = RTE_PTYPE_L4_TCP;
++	else if (!strcmp(value, "udp"))
++		protocol = RTE_PTYPE_L4_UDP;
++	else if (!strcmp(value, "sctp"))
++		protocol = RTE_PTYPE_L4_SCTP;
++	else if (!strcmp(value, "l4"))
++		protocol = RTE_PTYPE_L4_TCP|RTE_PTYPE_L4_UDP|RTE_PTYPE_L4_SCTP;
++	else if (!strcmp(value, "inner_mac"))
++		protocol = RTE_PTYPE_INNER_L2_ETHER;
++	else if (!strcmp(value, "inner_ipv4"))
++		protocol = RTE_PTYPE_INNER_L3_IPV4;
++	else if (!strcmp(value, "inner_ipv6"))
++		protocol = RTE_PTYPE_INNER_L3_IPV6;
++	else if (!strcmp(value, "inner_l3"))
++		protocol = RTE_PTYPE_INNER_L3_IPV4|RTE_PTYPE_INNER_L3_IPV6;
++	else if (!strcmp(value, "inner_tcp"))
++		protocol = RTE_PTYPE_INNER_L4_TCP;
++	else if (!strcmp(value, "inner_udp"))
++		protocol = RTE_PTYPE_INNER_L4_UDP;
++	else if (!strcmp(value, "inner_sctp"))
++		protocol = RTE_PTYPE_INNER_L4_SCTP;
++	else if (!strcmp(value, "unknown"))
++		protocol = RTE_PTYPE_UNKNOWN;
++	else if (!strcmp(value, "gre"))
++		protocol = RTE_PTYPE_TUNNEL_GRE;
++	else if (!strcmp(value, "qinq"))
++		protocol = RTE_PTYPE_L2_ETHER_QINQ;
++	else {
++		fprintf(stderr, "Unsupported protocol name: %s\n", value);
++		return 0;
++	}
++	return protocol;
++}
++/* *** SET RXHDRSLIST *** */
++
++unsigned int
++parse_hdrs_list(const char *str, const char *item_name, unsigned int max_items,
++				unsigned int *parsed_items, int check_hdrs_sequence)
++{
++	unsigned int nb_item;
++	char *cur;
++	char *tmp;
++	nb_item = 0;
++	char *str2 = strdup(str);
++	cur = strtok_r(str2, ",", &tmp);
++	while (cur != NULL) {
++		parsed_items[nb_item] = get_ptype(cur);
++		cur = strtok_r(NULL, ",", &tmp);
++		nb_item++;
++	}
++	if (nb_item > max_items)
++		fprintf(stderr, "Number of %s = %u > %u (maximum items)\n",
++			item_name, nb_item + 1, max_items);
++	set_rx_pkt_hdrs(parsed_items, nb_item);
++	free(str2);
++	if (!check_hdrs_sequence)
++		return nb_item;
++	return nb_item;
++}
+ /* *** SET CORELIST and PORTLIST CONFIGURATION *** */
+ 
+ unsigned int
+@@ -3825,6 +3906,49 @@ static cmdline_parse_inst_t cmd_set_rxpkts = {
+ 	},
+ };
+ 
++/* *** SET SEGMENT HEADERS OF RX PACKETS SPLIT *** */
++struct cmd_set_rxhdrs_result {
++	cmdline_fixed_string_t cmd_keyword;
++	cmdline_fixed_string_t rxhdrs;
++	cmdline_fixed_string_t seg_hdrs;
++};
++
++static void
++cmd_set_rxhdrs_parsed(void *parsed_result,
++		      __rte_unused struct cmdline *cl,
++		      __rte_unused void *data)
++{
++	struct cmd_set_rxhdrs_result *res;
++	unsigned int seg_hdrs[MAX_SEGS_BUFFER_SPLIT];
++	unsigned int nb_segs;
++
++	res = parsed_result;
++	nb_segs = parse_hdrs_list(res->seg_hdrs, "segment hdrs",
++				  MAX_SEGS_BUFFER_SPLIT, seg_hdrs, 0);
++	if (nb_segs >= 1)
++		set_rx_pkt_hdrs(seg_hdrs, nb_segs);
++	cmd_reconfig_device_queue(RTE_PORT_ALL, 0, 1);
++}
++cmdline_parse_token_string_t cmd_set_rxhdrs_keyword =
++	TOKEN_STRING_INITIALIZER(struct cmd_set_rxhdrs_result,
++				 cmd_keyword, "set");
++cmdline_parse_token_string_t cmd_set_rxhdrs_name =
++	TOKEN_STRING_INITIALIZER(struct cmd_set_rxhdrs_result,
++				 rxhdrs, "rxhdrs");
++cmdline_parse_token_string_t cmd_set_rxhdrs_seg_hdrs =
++	TOKEN_STRING_INITIALIZER(struct cmd_set_rxhdrs_result,
++				 seg_hdrs, NULL);
++cmdline_parse_inst_t cmd_set_rxhdrs = {
++	.f = cmd_set_rxhdrs_parsed,
++	.data = NULL,
++	.help_str = "set rxhdrs <mac[,ipv4]*>",
++	.tokens = {
++		(void *)&cmd_set_rxhdrs_keyword,
++		(void *)&cmd_set_rxhdrs_name,
++		(void *)&cmd_set_rxhdrs_seg_hdrs,
++		NULL,
++	},
++};
+ /* *** SET SEGMENT LENGTHS OF TXONLY PACKETS *** */
+ 
+ struct cmd_set_txpkts_result {
+@@ -6918,6 +7042,8 @@ static void cmd_showcfg_parsed(void *parsed_result,
+ 		show_rx_pkt_offsets();
+ 	else if (!strcmp(res->what, "rxpkts"))
+ 		show_rx_pkt_segments();
++	else if (!strcmp(res->what, "rxhdrs"))
++		show_rx_pkt_hdrs();
+ 	else if (!strcmp(res->what, "txpkts"))
+ 		show_tx_pkt_segments();
+ 	else if (!strcmp(res->what, "txtimes"))
+@@ -6930,12 +7056,12 @@ static cmdline_parse_token_string_t cmd_showcfg_port =
+ 	TOKEN_STRING_INITIALIZER(struct cmd_showcfg_result, cfg, "config");
+ static cmdline_parse_token_string_t cmd_showcfg_what =
+ 	TOKEN_STRING_INITIALIZER(struct cmd_showcfg_result, what,
+-				 "rxtx#cores#fwd#rxoffs#rxpkts#txpkts#txtimes");
++				 "rxtx#cores#fwd#rxoffs#rxpkts#rxhdrs#txpkts#txtimes");
+ 
+ static cmdline_parse_inst_t cmd_showcfg = {
+ 	.f = cmd_showcfg_parsed,
+ 	.data = NULL,
+-	.help_str = "show config rxtx|cores|fwd|rxoffs|rxpkts|txpkts|txtimes",
++	.help_str = "show config rxtx|cores|fwd|rxoffs|rxpkts|rxhdrs|txpkts|txtimes",
+ 	.tokens = {
+ 		(void *)&cmd_showcfg_show,
+ 		(void *)&cmd_showcfg_port,
+@@ -14166,6 +14292,7 @@ static cmdline_parse_ctx_t builtin_ctx[] = {
+ 	(cmdline_parse_inst_t *)&cmd_set_log,
+ 	(cmdline_parse_inst_t *)&cmd_set_rxoffs,
+ 	(cmdline_parse_inst_t *)&cmd_set_rxpkts,
++	(cmdline_parse_inst_t *)&cmd_set_rxhdrs,
+ 	(cmdline_parse_inst_t *)&cmd_set_txpkts,
+ 	(cmdline_parse_inst_t *)&cmd_set_txsplit,
+ 	(cmdline_parse_inst_t *)&cmd_set_txtimes,
+diff --git a/app/test-pmd/config.c b/app/test-pmd/config.c
+index a2939867c4..5b066154ee 100644
+--- a/app/test-pmd/config.c
++++ b/app/test-pmd/config.c
+@@ -4939,6 +4939,81 @@ show_rx_pkt_segments(void)
+ 		printf("%hu\n", rx_pkt_seg_lengths[i]);
+ 	}
+ }
++static const char *get_ptype_str(uint32_t ptype)
++{
++	switch (ptype) {
++	case RTE_PTYPE_INNER_L2_ETHER_QINQ:
++		return "qinq";
++	case RTE_PTYPE_TUNNEL_GRE:
++		return "gre";
++	case RTE_PTYPE_UNKNOWN:
++		return "unknown";
++	case RTE_PTYPE_L2_ETHER:
++		return "outer_mac";
++	case RTE_PTYPE_L3_IPV4:
++		return "ipv4";
++	case RTE_PTYPE_L3_IPV6:
++		return "ipv6";
++	case RTE_PTYPE_L3_IPV6|RTE_PTYPE_L3_IPV4:
++		return "ip";
++	case RTE_PTYPE_L4_TCP:
++		return "tcp";
++	case RTE_PTYPE_L4_UDP:
++		return "udp";
++	case RTE_PTYPE_L4_SCTP:
++		return "sctp";
++	case RTE_PTYPE_L4_TCP|RTE_PTYPE_L4_UDP|RTE_PTYPE_L4_SCTP:
++		return "l4";
++	case RTE_PTYPE_INNER_L2_ETHER:
++		return "inner_mac";
++	case RTE_PTYPE_INNER_L3_IPV4:
++		return "inner_ipv4";
++	case RTE_PTYPE_INNER_L3_IPV6:
++		return "inner_ipv6";
++	case RTE_PTYPE_INNER_L4_TCP:
++		return "inner_tcp";
++	case RTE_PTYPE_INNER_L4_UDP:
++		return "inner_udp";
++	case RTE_PTYPE_INNER_L4_SCTP:
++		return "inner_sctp";
++	default:
++		return "unsupported";
++	}
++}
++void
++show_rx_pkt_hdrs(void)
++{
++	uint32_t i, n;
++
++	n = rx_pkt_nb_segs;
++	printf("Number of segments: %u\n", n);
++	if (n) {
++		printf("Packet segs: ");
++		for (i = 0; i != n - 1; i++)
++			printf("%s, ", get_ptype_str(rx_pkt_hdr_protos[i]));
++		printf("%s\n", rx_pkt_hdr_protos[i] == 0 ? "payload" :
++						get_ptype_str(rx_pkt_hdr_protos[i]));
++	}
++}
++void
++set_rx_pkt_hdrs(unsigned int *seg_hdrs, unsigned int nb_segs)
++{
++	unsigned int i;
++
++	if (nb_segs >= MAX_SEGS_BUFFER_SPLIT) {
++		printf("nb segments per RX packets=%u >= "
++		       "MAX_SEGS_BUFFER_SPLIT - ignored\n", nb_segs);
++		return;
++	}
++
++	for (i = 0; i < nb_segs; i++)
++		rx_pkt_hdr_protos[i] = (uint32_t) seg_hdrs[i];
++	/*
++	 * We calculate the number of hdrs, but payload is not included,
++	 * so rx_pkt_nb_segs would increase 1.
++	 */
++	rx_pkt_nb_segs = (rx_pkt_nb_segs == 0) ? (uint8_t) nb_segs + 1 : rx_pkt_nb_segs;
++}
+ 
+ void
+ set_rx_pkt_segments(unsigned int *seg_lengths, unsigned int nb_segs)
+diff --git a/app/test-pmd/parameters.c b/app/test-pmd/parameters.c
+index e3c9757f3f..d23c8c49ad 100644
+--- a/app/test-pmd/parameters.c
++++ b/app/test-pmd/parameters.c
+@@ -164,6 +164,7 @@ usage(char* progname)
+ 	       " Used mainly with PCAP drivers.\n");
+ 	printf("  --rxoffs=X[,Y]*: set RX segment offsets for split.\n");
+ 	printf("  --rxpkts=X[,Y]*: set RX segment sizes to split.\n");
++	printf("  --rxhdrs=mac[,ipv4]*: set RX segment protocol to split.\n");
+ 	printf("  --txpkts=X[,Y]*: set TX segment sizes"
+ 		" or total packet length.\n");
+ 	printf("  --txonly-multi-flow: generate multiple flows in txonly mode\n");
+@@ -676,6 +677,7 @@ launch_args_parse(int argc, char** argv)
+ 		{ "flow-isolate-all",	        0, 0, 0 },
+ 		{ "rxoffs",			1, 0, 0 },
+ 		{ "rxpkts",			1, 0, 0 },
++		{ "rxhdrs",			1, 0, 0 },
+ 		{ "txpkts",			1, 0, 0 },
+ 		{ "txonly-multi-flow",		0, 0, 0 },
+ 		{ "rxq-share",			2, 0, 0 },
+@@ -1331,7 +1333,6 @@ launch_args_parse(int argc, char** argv)
+ 			if (!strcmp(lgopts[opt_idx].name, "rxpkts")) {
+ 				unsigned int seg_len[MAX_SEGS_BUFFER_SPLIT];
+ 				unsigned int nb_segs;
+-
+ 				nb_segs = parse_item_list
+ 						(optarg, "rxpkt segments",
+ 						 MAX_SEGS_BUFFER_SPLIT,
+@@ -1341,6 +1342,18 @@ launch_args_parse(int argc, char** argv)
+ 				else
+ 					rte_exit(EXIT_FAILURE, "bad rxpkts\n");
+ 			}
++			if (!strcmp(lgopts[opt_idx].name, "rxhdrs")) {
++				unsigned int seg_hdrs[MAX_SEGS_BUFFER_SPLIT];
++				unsigned int nb_segs;
++				nb_segs = parse_hdrs_list
++						(optarg, "rxpkt segments",
++						MAX_SEGS_BUFFER_SPLIT,
++						seg_hdrs, 0);
++				if (nb_segs >= 1)
++					set_rx_pkt_hdrs(seg_hdrs, nb_segs);
++				else
++					rte_exit(EXIT_FAILURE, "bad rxpkts\n");
++			}
+ 			if (!strcmp(lgopts[opt_idx].name, "txpkts")) {
+ 				unsigned seg_lengths[RTE_MAX_SEGS_PER_PKT];
+ 				unsigned int nb_segs;
+diff --git a/app/test-pmd/testpmd.c b/app/test-pmd/testpmd.c
+index addcbcac85..039e2edfca 100644
+--- a/app/test-pmd/testpmd.c
++++ b/app/test-pmd/testpmd.c
+@@ -247,6 +247,7 @@ uint16_t rx_pkt_seg_lengths[MAX_SEGS_BUFFER_SPLIT];
+ uint8_t  rx_pkt_nb_segs; /**< Number of segments to split */
+ uint16_t rx_pkt_seg_offsets[MAX_SEGS_BUFFER_SPLIT];
+ uint8_t  rx_pkt_nb_offs; /**< Number of specified offsets */
++uint32_t rx_pkt_hdr_protos[MAX_SEGS_BUFFER_SPLIT];
+ 
+ /*
+  * Configuration of packet segments used by the "txonly" processing engine.
+@@ -2680,11 +2681,12 @@ rx_queue_setup(uint16_t port_id, uint16_t rx_queue_id,
+ 		mpx = mbuf_pool_find(socket_id, mp_n);
+ 		/* Handle zero as mbuf data buffer size. */
+ 		rx_seg->length = rx_pkt_seg_lengths[i] ?
+-				   rx_pkt_seg_lengths[i] :
+-				   mbuf_data_size[mp_n];
++					rx_pkt_seg_lengths[i] :
++					mbuf_data_size[mp_n];
+ 		rx_seg->offset = i < rx_pkt_nb_offs ?
+ 				   rx_pkt_seg_offsets[i] : 0;
+ 		rx_seg->mp = mpx ? mpx : mp;
++		rx_seg->proto_hdr = rx_pkt_hdr_protos[i];
+ 	}
+ 	rx_conf->rx_nseg = rx_pkt_nb_segs;
+ 	rx_conf->rx_seg = rx_useg;
+diff --git a/app/test-pmd/testpmd.h b/app/test-pmd/testpmd.h
+index fb2f5195d3..de992c9416 100644
+--- a/app/test-pmd/testpmd.h
++++ b/app/test-pmd/testpmd.h
+@@ -562,6 +562,7 @@ extern uint32_t max_rx_pkt_len;
+  * Configuration of packet segments used to scatter received packets
+  * if some of split features is configured.
+  */
++extern uint32_t rx_pkt_hdr_protos[MAX_SEGS_BUFFER_SPLIT];
+ extern uint16_t rx_pkt_seg_lengths[MAX_SEGS_BUFFER_SPLIT];
+ extern uint8_t  rx_pkt_nb_segs; /**< Number of segments to split */
+ extern uint16_t rx_pkt_seg_offsets[MAX_SEGS_BUFFER_SPLIT];
+@@ -892,6 +893,9 @@ inc_tx_burst_stats(struct fwd_stream *fs, uint16_t nb_tx)
+ unsigned int parse_item_list(const char *str, const char *item_name,
+ 			unsigned int max_items,
+ 			unsigned int *parsed_items, int check_unique_values);
++unsigned int parse_hdrs_list(const char *str, const char *item_name,
++			unsigned int max_item,
++			unsigned int *parsed_items, int check_unique_values);
+ void launch_args_parse(int argc, char** argv);
+ void cmdline_read_from_file(const char *filename);
+ int init_cmdline(void);
+@@ -1049,6 +1053,8 @@ void set_record_core_cycles(uint8_t on_off);
+ void set_record_burst_stats(uint8_t on_off);
+ void set_verbose_level(uint16_t vb_level);
+ void set_rx_pkt_segments(unsigned int *seg_lengths, unsigned int nb_segs);
++void set_rx_pkt_hdrs(unsigned int *seg_protos, unsigned int nb_segs);
++void show_rx_pkt_hdrs(void);
+ void show_rx_pkt_segments(void);
+ void set_rx_pkt_offsets(unsigned int *seg_offsets, unsigned int nb_offs);
+ void show_rx_pkt_offsets(void);
+diff --git a/drivers/net/ice/ice_ethdev.c b/drivers/net/ice/ice_ethdev.c
+index 29c2a060cf..955c67143a 100644
+--- a/drivers/net/ice/ice_ethdev.c
++++ b/drivers/net/ice/ice_ethdev.c
+@@ -171,6 +171,8 @@ static int ice_timesync_read_time(struct rte_eth_dev *dev,
+ static int ice_timesync_write_time(struct rte_eth_dev *dev,
+ 				   const struct timespec *timestamp);
+ static int ice_timesync_disable(struct rte_eth_dev *dev);
++static int ice_get_supported_split_hdrs(struct rte_eth_dev *dev,
++					uint32_t *ptypes);
+ 
+ static const struct rte_pci_id pci_id_ice_map[] = {
+ 	{ RTE_PCI_DEVICE(ICE_INTEL_VENDOR_ID, ICE_DEV_ID_E823L_BACKPLANE) },
+@@ -282,6 +284,7 @@ static const struct eth_dev_ops ice_eth_dev_ops = {
+ 	.timesync_write_time          = ice_timesync_write_time,
+ 	.timesync_disable             = ice_timesync_disable,
+ 	.tm_ops_get                   = ice_tm_ops_get,
++	.hdrs_supported_ptypes_get    = ice_get_supported_split_hdrs,
+ };
+ 
+ /* store statistics names and its offset in stats structure */
+@@ -3785,7 +3788,8 @@ ice_dev_info_get(struct rte_eth_dev *dev, struct rte_eth_dev_info *dev_info)
+ 			RTE_ETH_RX_OFFLOAD_OUTER_IPV4_CKSUM |
+ 			RTE_ETH_RX_OFFLOAD_VLAN_EXTEND |
+ 			RTE_ETH_RX_OFFLOAD_RSS_HASH |
+-			RTE_ETH_RX_OFFLOAD_TIMESTAMP;
++			RTE_ETH_RX_OFFLOAD_TIMESTAMP |
++			RTE_ETH_RX_OFFLOAD_BUFFER_SPLIT;
+ 		dev_info->tx_offload_capa |=
+ 			RTE_ETH_TX_OFFLOAD_QINQ_INSERT |
+ 			RTE_ETH_TX_OFFLOAD_IPV4_CKSUM |
+@@ -3797,7 +3801,7 @@ ice_dev_info_get(struct rte_eth_dev *dev, struct rte_eth_dev_info *dev_info)
+ 		dev_info->flow_type_rss_offloads |= ICE_RSS_OFFLOAD_ALL;
+ 	}
+ 
+-	dev_info->rx_queue_offload_capa = 0;
++	dev_info->rx_queue_offload_capa = RTE_ETH_RX_OFFLOAD_BUFFER_SPLIT;
+ 	dev_info->tx_queue_offload_capa = RTE_ETH_TX_OFFLOAD_MBUF_FAST_FREE;
+ 
+ 	dev_info->reta_size = pf->hash_lut_size;
+@@ -3866,6 +3870,11 @@ ice_dev_info_get(struct rte_eth_dev *dev, struct rte_eth_dev_info *dev_info)
+ 	dev_info->default_rxportconf.ring_size = ICE_BUF_SIZE_MIN;
+ 	dev_info->default_txportconf.ring_size = ICE_BUF_SIZE_MIN;
+ 
++	dev_info->rx_seg_capa.max_nseg = ICE_RX_MAX_NSEG;
++	dev_info->rx_seg_capa.multi_pools = 1;
++	dev_info->rx_seg_capa.offset_allowed = 0;
++	dev_info->rx_seg_capa.offset_align_log2 = 0;
++
+ 	return 0;
+ }
+ 
+@@ -5922,6 +5931,31 @@ ice_timesync_disable(struct rte_eth_dev *dev)
+ 	return 0;
+ }
+ 
++static int
++ice_get_supported_split_hdrs(struct rte_eth_dev *dev, uint32_t *ptypes)
++{
++	if (!dev)
++		return -EINVAL;
++/* Buffer split protocol header capability. */
++#define RTE_BUFFER_SPLIT_PROTO_HDR_MASK ( \
++	RTE_PTYPE_L2_ETHER | \
++	RTE_PTYPE_L3_IPV4 | \
++	RTE_PTYPE_L3_IPV6 | \
++	RTE_PTYPE_L4_TCP | \
++	RTE_PTYPE_L4_UDP | \
++	RTE_PTYPE_L4_SCTP | \
++	RTE_PTYPE_INNER_L2_ETHER | \
++	RTE_PTYPE_INNER_L3_IPV4 | \
++	RTE_PTYPE_INNER_L3_IPV6 | \
++	RTE_PTYPE_INNER_L4_TCP | \
++	RTE_PTYPE_INNER_L4_UDP | \
++	RTE_PTYPE_INNER_L4_SCTP)
++
++	*ptypes = RTE_BUFFER_SPLIT_PROTO_HDR_MASK;
++
++	return 0;
++}
++
+ static int
+ ice_pci_probe(struct rte_pci_driver *pci_drv __rte_unused,
+ 	      struct rte_pci_device *pci_dev)
+diff --git a/drivers/net/ice/ice_rxtx.c b/drivers/net/ice/ice_rxtx.c
+index bfb3a16ae2..458548898a 100644
+--- a/drivers/net/ice/ice_rxtx.c
++++ b/drivers/net/ice/ice_rxtx.c
+@@ -282,7 +282,6 @@ ice_program_hw_rx_queue(struct ice_rx_queue *rxq)
+ 	/* Set buffer size as the head split is disabled. */
+ 	buf_size = (uint16_t)(rte_pktmbuf_data_room_size(rxq->mp) -
+ 			      RTE_PKTMBUF_HEADROOM);
+-	rxq->rx_hdr_len = 0;
+ 	rxq->rx_buf_len = RTE_ALIGN(buf_size, (1 << ICE_RLAN_CTX_DBUF_S));
+ 	rxq->max_pkt_len =
+ 		RTE_MIN((uint32_t)ICE_SUPPORT_CHAIN_NUM * rxq->rx_buf_len,
+@@ -311,11 +310,53 @@ ice_program_hw_rx_queue(struct ice_rx_queue *rxq)
+ 
+ 	memset(&rx_ctx, 0, sizeof(rx_ctx));
+ 
++	if (rxq->offloads & RTE_ETH_RX_OFFLOAD_BUFFER_SPLIT) {
++		switch (rxq->rxseg[0].proto_hdr) {
++		case RTE_PTYPE_L2_ETHER:
++			rx_ctx.dtype = ICE_RX_DTYPE_HEADER_SPLIT;
++			rx_ctx.hsplit_1 = ICE_RLAN_RX_HSPLIT_1_SPLIT_L2;
++			break;
++		case RTE_PTYPE_INNER_L2_ETHER:
++			rx_ctx.dtype = ICE_RX_DTYPE_HEADER_SPLIT;
++			rx_ctx.hsplit_0 = ICE_RLAN_RX_HSPLIT_0_SPLIT_L2;
++			break;
++		case RTE_PTYPE_L3_IPV4:
++		case RTE_PTYPE_L3_IPV6:
++		case RTE_PTYPE_INNER_L3_IPV4:
++		case RTE_PTYPE_INNER_L3_IPV6:
++		case RTE_PTYPE_L3_IPV4 | RTE_PTYPE_L3_IPV6:
++			rx_ctx.dtype = ICE_RX_DTYPE_HEADER_SPLIT;
++			rx_ctx.hsplit_0 = ICE_RLAN_RX_HSPLIT_0_SPLIT_IP;
++			break;
++		case RTE_PTYPE_L4_TCP:
++		case RTE_PTYPE_L4_UDP:
++		case RTE_PTYPE_INNER_L4_TCP:
++		case RTE_PTYPE_INNER_L4_UDP:
++			rx_ctx.dtype = ICE_RX_DTYPE_HEADER_SPLIT;
++			rx_ctx.hsplit_0 = ICE_RLAN_RX_HSPLIT_0_SPLIT_TCP_UDP;
++			break;
++		case RTE_PTYPE_L4_SCTP:
++		case RTE_PTYPE_INNER_L4_SCTP:
++			rx_ctx.dtype = ICE_RX_DTYPE_HEADER_SPLIT;
++			rx_ctx.hsplit_0 = ICE_RLAN_RX_HSPLIT_0_SPLIT_SCTP;
++			break;
++		case RTE_PTYPE_UNKNOWN:
++			PMD_DRV_LOG(ERR, "Buffer split protocol must be configured");
++			return -EINVAL;
++		default:
++			PMD_DRV_LOG(ERR, "Buffer split protocol is not supported");
++			return -EINVAL;
++		}
++		rxq->rx_hdr_len = ICE_RX_HDR_BUF_SIZE;
++	} else {
++		rxq->rx_hdr_len = 0;
++		rx_ctx.dtype = 0; /* No Protocol Based Buffer Split mode */
++	}
++
+ 	rx_ctx.base = rxq->rx_ring_dma / ICE_QUEUE_BASE_ADDR_UNIT;
+ 	rx_ctx.qlen = rxq->nb_rx_desc;
+ 	rx_ctx.dbuf = rxq->rx_buf_len >> ICE_RLAN_CTX_DBUF_S;
+ 	rx_ctx.hbuf = rxq->rx_hdr_len >> ICE_RLAN_CTX_HBUF_S;
+-	rx_ctx.dtype = 0; /* No Header Split mode */
+ #ifndef RTE_LIBRTE_ICE_16BYTE_RX_DESC
+ 	rx_ctx.dsize = 1; /* 32B descriptors */
+ #endif
+@@ -401,6 +442,7 @@ ice_alloc_rx_queue_mbufs(struct ice_rx_queue *rxq)
+ 
+ 	for (i = 0; i < rxq->nb_rx_desc; i++) {
+ 		volatile union ice_rx_flex_desc *rxd;
++		rxd = &rxq->rx_ring[i];
+ 		struct rte_mbuf *mbuf = rte_mbuf_raw_alloc(rxq->mp);
+ 
+ 		if (unlikely(!mbuf)) {
+@@ -408,8 +450,6 @@ ice_alloc_rx_queue_mbufs(struct ice_rx_queue *rxq)
+ 			return -ENOMEM;
+ 		}
+ 
+-		rte_mbuf_refcnt_set(mbuf, 1);
+-		mbuf->next = NULL;
+ 		mbuf->data_off = RTE_PKTMBUF_HEADROOM;
+ 		mbuf->nb_segs = 1;
+ 		mbuf->port = rxq->port_id;
+@@ -417,9 +457,33 @@ ice_alloc_rx_queue_mbufs(struct ice_rx_queue *rxq)
+ 		dma_addr =
+ 			rte_cpu_to_le_64(rte_mbuf_data_iova_default(mbuf));
+ 
+-		rxd = &rxq->rx_ring[i];
+-		rxd->read.pkt_addr = dma_addr;
+-		rxd->read.hdr_addr = 0;
++		if (rxq->offloads & RTE_ETH_RX_OFFLOAD_BUFFER_SPLIT) {
++			struct rte_mbuf *mbuf_pay;
++			mbuf_pay = rte_mbuf_raw_alloc(rxq->rxseg[1].mp);
++			if (unlikely(!mbuf_pay)) {
++				PMD_DRV_LOG(ERR, "Failed to allocate payload mbuf for RX");
++				return -ENOMEM;
++			}
++
++			mbuf_pay->next = NULL;
++			mbuf_pay->data_off = RTE_PKTMBUF_HEADROOM;
++			mbuf_pay->nb_segs = 1;
++			mbuf_pay->port = rxq->port_id;
++			mbuf->next = mbuf_pay;
++
++			rxd->read.hdr_addr = dma_addr;
++			/* The LS bit should be set to zero regardless of
++			 * buffer split enablement.
++			 */
++			rxd->read.pkt_addr = rte_cpu_to_le_64(rte_mbuf_data_iova_default(mbuf_pay));
++
++		} else {
++			rte_mbuf_refcnt_set(mbuf, 1);
++			mbuf->next = NULL;
++			rxd->read.hdr_addr = 0;
++			rxd->read.pkt_addr = dma_addr;
++		}
++
+ #ifndef RTE_LIBRTE_ICE_16BYTE_RX_DESC
+ 		rxd->read.rsvd1 = 0;
+ 		rxd->read.rsvd2 = 0;
+@@ -443,14 +507,14 @@ _ice_rx_queue_release_mbufs(struct ice_rx_queue *rxq)
+ 
+ 	for (i = 0; i < rxq->nb_rx_desc; i++) {
+ 		if (rxq->sw_ring[i].mbuf) {
+-			rte_pktmbuf_free_seg(rxq->sw_ring[i].mbuf);
++			rte_pktmbuf_free(rxq->sw_ring[i].mbuf);
+ 			rxq->sw_ring[i].mbuf = NULL;
+ 		}
+ 	}
+ 	if (rxq->rx_nb_avail == 0)
+ 		return;
+ 	for (i = 0; i < rxq->rx_nb_avail; i++)
+-		rte_pktmbuf_free_seg(rxq->rx_stage[rxq->rx_next_avail + i]);
++		rte_pktmbuf_free(rxq->rx_stage[rxq->rx_next_avail + i]);
+ 
+ 	rxq->rx_nb_avail = 0;
+ }
+@@ -742,7 +806,7 @@ ice_fdir_program_hw_rx_queue(struct ice_rx_queue *rxq)
+ 	rx_ctx.qlen = rxq->nb_rx_desc;
+ 	rx_ctx.dbuf = rxq->rx_buf_len >> ICE_RLAN_CTX_DBUF_S;
+ 	rx_ctx.hbuf = rxq->rx_hdr_len >> ICE_RLAN_CTX_HBUF_S;
+-	rx_ctx.dtype = 0; /* No Header Split mode */
++	rx_ctx.dtype = 0; /* No Buffer Split mode */
+ 	rx_ctx.dsize = 1; /* 32B descriptors */
+ 	rx_ctx.rxmax = ICE_ETH_MAX_LEN;
+ 	/* TPH: Transaction Layer Packet (TLP) processing hints */
+@@ -1076,6 +1140,7 @@ ice_rx_queue_setup(struct rte_eth_dev *dev,
+ 	uint16_t len;
+ 	int use_def_burst_func = 1;
+ 	uint64_t offloads;
++	uint16_t n_seg = rx_conf->rx_nseg;
+ 
+ 	if (nb_desc % ICE_ALIGN_RING_DESC != 0 ||
+ 	    nb_desc > ICE_MAX_RING_DESC ||
+@@ -1087,6 +1152,17 @@ ice_rx_queue_setup(struct rte_eth_dev *dev,
+ 
+ 	offloads = rx_conf->offloads | dev->data->dev_conf.rxmode.offloads;
+ 
++	if (mp)
++		n_seg = 1;
++
++	if (n_seg > 1) {
++		if (!(offloads & RTE_ETH_RX_OFFLOAD_BUFFER_SPLIT)) {
++			PMD_INIT_LOG(ERR, "port %u queue index %u split offload not configured",
++					dev->data->port_id, queue_idx);
++			return -EINVAL;
++		}
++	}
++
+ 	/* Free memory if needed */
+ 	if (dev->data->rx_queues[queue_idx]) {
+ 		ice_rx_queue_release(dev->data->rx_queues[queue_idx]);
+@@ -1098,12 +1174,22 @@ ice_rx_queue_setup(struct rte_eth_dev *dev,
+ 				 sizeof(struct ice_rx_queue),
+ 				 RTE_CACHE_LINE_SIZE,
+ 				 socket_id);
++
+ 	if (!rxq) {
+ 		PMD_INIT_LOG(ERR, "Failed to allocate memory for "
+ 			     "rx queue data structure");
+ 		return -ENOMEM;
+ 	}
+-	rxq->mp = mp;
++
++	rxq->rxseg_nb = n_seg;
++	if (n_seg > 1) {
++		rte_memcpy(rxq->rxseg, rx_conf->rx_seg,
++			sizeof(struct rte_eth_rxseg_split) * n_seg);
++		rxq->mp = rxq->rxseg[0].mp;
++	} else {
++		rxq->mp = mp;
++	}
++
+ 	rxq->nb_rx_desc = nb_desc;
+ 	rxq->rx_free_thresh = rx_conf->rx_free_thresh;
+ 	rxq->queue_id = queue_idx;
+@@ -1570,7 +1656,7 @@ ice_rx_scan_hw_ring(struct ice_rx_queue *rxq)
+ 	struct ice_rx_entry *rxep;
+ 	struct rte_mbuf *mb;
+ 	uint16_t stat_err0;
+-	uint16_t pkt_len;
++	uint16_t pkt_len, hdr_len;
+ 	int32_t s[ICE_LOOK_AHEAD], nb_dd;
+ 	int32_t i, j, nb_rx = 0;
+ 	uint64_t pkt_flags = 0;
+@@ -1625,6 +1711,24 @@ ice_rx_scan_hw_ring(struct ice_rx_queue *rxq)
+ 				   ICE_RX_FLX_DESC_PKT_LEN_M) - rxq->crc_len;
+ 			mb->data_len = pkt_len;
+ 			mb->pkt_len = pkt_len;
++
++			if (rxq->offloads & RTE_ETH_RX_OFFLOAD_BUFFER_SPLIT) {
++				mb->nb_segs = (uint16_t)(mb->nb_segs + mb->next->nb_segs);
++				mb->next->next = NULL;
++				hdr_len = rte_le_to_cpu_16(rxdp[j].wb.hdr_len_sph_flex_flags1) &
++						ICE_RX_FLEX_DESC_HEADER_LEN_M;
++				pkt_len = (rte_le_to_cpu_16(rxdp[j].wb.pkt_len) &
++					ICE_RX_FLX_DESC_PKT_LEN_M) - rxq->crc_len;
++				mb->data_len = hdr_len;
++				mb->pkt_len = hdr_len + pkt_len;
++				mb->next->data_len = pkt_len;
++			} else {
++				pkt_len = (rte_le_to_cpu_16(rxdp[j].wb.pkt_len) &
++					ICE_RX_FLX_DESC_PKT_LEN_M) - rxq->crc_len;
++				mb->data_len = pkt_len;
++				mb->pkt_len = pkt_len;
++			}
++
+ 			mb->ol_flags = 0;
+ 			stat_err0 = rte_le_to_cpu_16(rxdp[j].wb.status_error0);
+ 			pkt_flags = ice_rxd_error_to_pkt_flags(stat_err0);
+@@ -1716,7 +1820,9 @@ ice_rx_alloc_bufs(struct ice_rx_queue *rxq)
+ 	struct rte_mbuf *mb;
+ 	uint16_t alloc_idx, i;
+ 	uint64_t dma_addr;
+-	int diag;
++	int diag, diag_pay;
++	uint64_t pay_addr;
++	struct rte_mbuf *mbufs_pay[rxq->rx_free_thresh];
+ 
+ 	/* Allocate buffers in bulk */
+ 	alloc_idx = (uint16_t)(rxq->rx_free_trigger -
+@@ -1729,6 +1835,15 @@ ice_rx_alloc_bufs(struct ice_rx_queue *rxq)
+ 		return -ENOMEM;
+ 	}
+ 
++	if (rxq->offloads & RTE_ETH_RX_OFFLOAD_BUFFER_SPLIT) {
++		diag_pay = rte_mempool_get_bulk(rxq->rxseg[1].mp,
++				(void *)mbufs_pay, rxq->rx_free_thresh);
++		if (unlikely(diag_pay != 0)) {
++			PMD_RX_LOG(ERR, "Failed to get payload mbufs in bulk");
++			return -ENOMEM;
++		}
++	}
++
+ 	rxdp = &rxq->rx_ring[alloc_idx];
+ 	for (i = 0; i < rxq->rx_free_thresh; i++) {
+ 		if (likely(i < (rxq->rx_free_thresh - 1)))
+@@ -1737,13 +1852,21 @@ ice_rx_alloc_bufs(struct ice_rx_queue *rxq)
+ 
+ 		mb = rxep[i].mbuf;
+ 		rte_mbuf_refcnt_set(mb, 1);
+-		mb->next = NULL;
+ 		mb->data_off = RTE_PKTMBUF_HEADROOM;
+ 		mb->nb_segs = 1;
+ 		mb->port = rxq->port_id;
+ 		dma_addr = rte_cpu_to_le_64(rte_mbuf_data_iova_default(mb));
+-		rxdp[i].read.hdr_addr = 0;
+-		rxdp[i].read.pkt_addr = dma_addr;
++
++		if (rxq->offloads & RTE_ETH_RX_OFFLOAD_BUFFER_SPLIT) {
++			mb->next = mbufs_pay[i];
++			pay_addr = rte_mbuf_data_iova_default(mbufs_pay[i]);
++			rxdp[i].read.hdr_addr = dma_addr;
++			rxdp[i].read.pkt_addr = rte_cpu_to_le_64(pay_addr);
++		} else {
++			mb->next = NULL;
++			rxdp[i].read.hdr_addr = 0;
++			rxdp[i].read.pkt_addr = dma_addr;
++		}
+ 	}
+ 
+ 	/* Update Rx tail register */
+@@ -2352,11 +2475,13 @@ ice_recv_pkts(void *rx_queue,
+ 	struct ice_rx_entry *sw_ring = rxq->sw_ring;
+ 	struct ice_rx_entry *rxe;
+ 	struct rte_mbuf *nmb; /* new allocated mbuf */
++	struct rte_mbuf *nmb_pay; /* new allocated payload mbuf */
+ 	struct rte_mbuf *rxm; /* pointer to store old mbuf in SW ring */
+ 	uint16_t rx_id = rxq->rx_tail;
+ 	uint16_t nb_rx = 0;
+ 	uint16_t nb_hold = 0;
+ 	uint16_t rx_packet_len;
++	uint16_t rx_header_len;
+ 	uint16_t rx_stat_err0;
+ 	uint64_t dma_addr;
+ 	uint64_t pkt_flags;
+@@ -2384,12 +2509,16 @@ ice_recv_pkts(void *rx_queue,
+ 		if (!(rx_stat_err0 & (1 << ICE_RX_FLEX_DESC_STATUS0_DD_S)))
+ 			break;
+ 
+-		/* allocate mbuf */
++		if (rx_stat_err0 & (1 << ICE_RX_FLEX_DESC_STATUS0_HBO_S))
++			break;
++
++		/* allocate header mbuf */
+ 		nmb = rte_mbuf_raw_alloc(rxq->mp);
+ 		if (unlikely(!nmb)) {
+ 			rxq->vsi->adapter->pf.dev_data->rx_mbuf_alloc_failed++;
+ 			break;
+ 		}
++
+ 		rxd = *rxdp; /* copy descriptor in ring to temp variable*/
+ 
+ 		nb_hold++;
+@@ -2402,24 +2531,55 @@ ice_recv_pkts(void *rx_queue,
+ 		dma_addr =
+ 			rte_cpu_to_le_64(rte_mbuf_data_iova_default(nmb));
+ 
+-		/**
+-		 * fill the read format of descriptor with physic address in
+-		 * new allocated mbuf: nmb
+-		 */
+-		rxdp->read.hdr_addr = 0;
+-		rxdp->read.pkt_addr = dma_addr;
++		if (rxq->offloads & RTE_ETH_RX_OFFLOAD_BUFFER_SPLIT) {
++			/* allocate payload mbuf */
++			nmb_pay = rte_mbuf_raw_alloc(rxq->rxseg[1].mp);
++			if (unlikely(!nmb_pay)) {
++				rxq->vsi->adapter->pf.dev_data->rx_mbuf_alloc_failed++;
++				break;
++			}
++
++			nmb->next = nmb_pay;
++			nmb_pay->next = NULL;
+ 
+-		/* calculate rx_packet_len of the received pkt */
+-		rx_packet_len = (rte_le_to_cpu_16(rxd.wb.pkt_len) &
+-				 ICE_RX_FLX_DESC_PKT_LEN_M) - rxq->crc_len;
++			/**
++			 * fill the read format of descriptor with physic address in
++			 * new allocated mbuf: nmb
++			 */
++			rxdp->read.hdr_addr = dma_addr;
++			rxdp->read.pkt_addr = rte_cpu_to_le_64(rte_mbuf_data_iova_default(nmb_pay));
++		} else {
++			/**
++			 * fill the read format of descriptor with physic address in
++			 * new allocated mbuf: nmb
++			 */
++			rxdp->read.hdr_addr = 0;
++			rxdp->read.pkt_addr = dma_addr;
++		}
+ 
+ 		/* fill old mbuf with received descriptor: rxd */
+ 		rxm->data_off = RTE_PKTMBUF_HEADROOM;
+ 		rte_prefetch0(RTE_PTR_ADD(rxm->buf_addr, RTE_PKTMBUF_HEADROOM));
+-		rxm->nb_segs = 1;
+-		rxm->next = NULL;
+-		rxm->pkt_len = rx_packet_len;
+-		rxm->data_len = rx_packet_len;
++		if (rxq->offloads & RTE_ETH_RX_OFFLOAD_BUFFER_SPLIT) {
++			rxm->nb_segs = (uint16_t)(rxm->nb_segs + rxm->next->nb_segs);
++			rxm->next->next = NULL;
++			/* calculate rx_packet_len of the received pkt */
++			rx_header_len = rte_le_to_cpu_16(rxd.wb.hdr_len_sph_flex_flags1) &
++					ICE_RX_FLEX_DESC_HEADER_LEN_M;
++			rx_packet_len = (rte_le_to_cpu_16(rxd.wb.pkt_len) &
++					ICE_RX_FLX_DESC_PKT_LEN_M) - rxq->crc_len;
++			rxm->data_len = rx_header_len;
++			rxm->pkt_len = rx_header_len + rx_packet_len;
++			rxm->next->data_len = rx_packet_len;
++		} else {
++			rxm->nb_segs = 1;
++			rxm->next = NULL;
++			/* calculate rx_packet_len of the received pkt */
++			rx_packet_len = (rte_le_to_cpu_16(rxd.wb.pkt_len) &
++					ICE_RX_FLX_DESC_PKT_LEN_M) - rxq->crc_len;
++			rxm->data_len = rx_packet_len;
++			rxm->pkt_len = rx_packet_len;
++		}
+ 		rxm->port = rxq->port_id;
+ 		rxm->packet_type = ptype_tbl[ICE_RX_FLEX_DESC_PTYPE_M &
+ 			rte_le_to_cpu_16(rxd.wb.ptype_flex_flags0)];
+diff --git a/drivers/net/ice/ice_rxtx.h b/drivers/net/ice/ice_rxtx.h
+index f5337d5284..d44bde3710 100644
+--- a/drivers/net/ice/ice_rxtx.h
++++ b/drivers/net/ice/ice_rxtx.h
+@@ -16,6 +16,9 @@
+ #define ICE_RX_MAX_BURST 32
+ #define ICE_TX_MAX_BURST 32
+ 
++/* Maximal number of segments to split. */
++#define ICE_RX_MAX_NSEG 2
++
+ #define ICE_CHK_Q_ENA_COUNT        100
+ #define ICE_CHK_Q_ENA_INTERVAL_US  100
+ 
+@@ -43,6 +46,11 @@
+ extern uint64_t ice_timestamp_dynflag;
+ extern int ice_timestamp_dynfield_offset;
+ 
++/* Max header size can be 2K - 64 bytes */
++#define ICE_RX_HDR_BUF_SIZE    (2048 - 64)
++
++#define ICE_HEADER_SPLIT_ENA   BIT(0)
++
+ typedef void (*ice_rx_release_mbufs_t)(struct ice_rx_queue *rxq);
+ typedef void (*ice_tx_release_mbufs_t)(struct ice_tx_queue *txq);
+ typedef void (*ice_rxd_to_pkt_fields_t)(struct ice_rx_queue *rxq,
+@@ -53,6 +61,12 @@ struct ice_rx_entry {
+ 	struct rte_mbuf *mbuf;
+ };
+ 
++enum ice_rx_dtype {
++	ICE_RX_DTYPE_NO_SPLIT       = 0,
++	ICE_RX_DTYPE_HEADER_SPLIT   = 1,
++	ICE_RX_DTYPE_SPLIT_ALWAYS   = 2,
++};
++
+ struct ice_rx_queue {
+ 	struct rte_mempool *mp; /* mbuf pool to populate RX ring */
+ 	volatile union ice_rx_flex_desc *rx_ring;/* RX ring virtual address */
+@@ -98,6 +112,8 @@ struct ice_rx_queue {
+ 	uint32_t hw_time_high; /* high 32 bits of timestamp */
+ 	uint32_t hw_time_low; /* low 32 bits of timestamp */
+ 	uint64_t hw_time_update; /* SW time of HW record updating */
++	struct rte_eth_rxseg_split rxseg[ICE_RX_MAX_NSEG];
++	uint32_t rxseg_nb;
+ };
+ 
+ struct ice_tx_entry {
+diff --git a/drivers/net/ice/ice_rxtx_vec_common.h b/drivers/net/ice/ice_rxtx_vec_common.h
+index 2dd2d83650..eec6ea2134 100644
+--- a/drivers/net/ice/ice_rxtx_vec_common.h
++++ b/drivers/net/ice/ice_rxtx_vec_common.h
+@@ -291,6 +291,9 @@ ice_rx_vec_queue_default(struct ice_rx_queue *rxq)
+ 	if (rxq->offloads & RTE_ETH_RX_OFFLOAD_TIMESTAMP)
+ 		return -1;
+ 
++	if (rxq->offloads & RTE_ETH_RX_OFFLOAD_BUFFER_SPLIT)
++		return -1;
++
+ 	if (rxq->offloads & ICE_RX_VECTOR_OFFLOAD)
+ 		return ICE_VECTOR_OFFLOAD_PATH;
+ 
+diff --git a/lib/ethdev/ethdev_driver.h b/lib/ethdev/ethdev_driver.h
+index 5101868ea7..fba9166059 100644
+--- a/lib/ethdev/ethdev_driver.h
++++ b/lib/ethdev/ethdev_driver.h
+@@ -1054,6 +1054,21 @@ typedef int (*eth_ip_reassembly_conf_get_t)(struct rte_eth_dev *dev,
+ typedef int (*eth_ip_reassembly_conf_set_t)(struct rte_eth_dev *dev,
+ 		const struct rte_eth_ip_reassembly_params *conf);
+ 
++/**
++ * @internal
++ * Get supported protocol flags of a PMD to split.
++ *
++ * @param dev
++ *   ethdev handle of port.
++ *
++ * @param[out]  ptype mask
++ *   supported ptype mask of a PMD.
++ *
++ * @return
++ *   Negative errno value on error, zero on success.
++ */
++typedef int (*eth_buffer_split_hdr_ptype_get_t)(struct rte_eth_dev *dev, uint32_t *ptype);
++
+ /**
+  * @internal
+  * Dump private info from device to a file.
+@@ -1301,6 +1316,9 @@ struct eth_dev_ops {
+ 	/** Set IP reassembly configuration */
+ 	eth_ip_reassembly_conf_set_t ip_reassembly_conf_set;
+ 
++	/** Get supported ptypes to split */
++	eth_buffer_split_hdr_ptype_get_t hdrs_supported_ptypes_get;
++
+ 	/** Dump private info from device */
+ 	eth_dev_priv_dump_t eth_dev_priv_dump;
+ 
+diff --git a/lib/ethdev/rte_ethdev.c b/lib/ethdev/rte_ethdev.c
+index 1979dc0850..121123d579 100644
+--- a/lib/ethdev/rte_ethdev.c
++++ b/lib/ethdev/rte_ethdev.c
+@@ -1635,9 +1635,10 @@ rte_eth_dev_is_removed(uint16_t port_id)
+ }
+ 
+ static int
+-rte_eth_rx_queue_check_split(const struct rte_eth_rxseg_split *rx_seg,
+-			     uint16_t n_seg, uint32_t *mbp_buf_size,
+-			     const struct rte_eth_dev_info *dev_info)
++rte_eth_rx_queue_check_split(uint16_t port_id,
++				const struct rte_eth_rxseg_split *rx_seg,
++				int16_t n_seg, uint32_t *mbp_buf_size,
++			    const struct rte_eth_dev_info *dev_info)
+ {
+ 	const struct rte_eth_rxseg_capa *seg_capa = &dev_info->rx_seg_capa;
+ 	struct rte_mempool *mp_first;
+@@ -1660,6 +1661,7 @@ rte_eth_rx_queue_check_split(const struct rte_eth_rxseg_split *rx_seg,
+ 		struct rte_mempool *mpl = rx_seg[seg_idx].mp;
+ 		uint32_t length = rx_seg[seg_idx].length;
+ 		uint32_t offset = rx_seg[seg_idx].offset;
++		uint32_t proto_hdr = rx_seg[seg_idx].proto_hdr;
+ 
+ 		if (mpl == NULL) {
+ 			RTE_ETHDEV_LOG(ERR, "null mempool pointer\n");
+@@ -1693,13 +1695,36 @@ rte_eth_rx_queue_check_split(const struct rte_eth_rxseg_split *rx_seg,
+ 		}
+ 		offset += seg_idx != 0 ? 0 : RTE_PKTMBUF_HEADROOM;
+ 		*mbp_buf_size = rte_pktmbuf_data_room_size(mpl);
+-		length = length != 0 ? length : *mbp_buf_size;
+-		if (*mbp_buf_size < length + offset) {
+-			RTE_ETHDEV_LOG(ERR,
+-				       "%s mbuf_data_room_size %u < %u (segment length=%u + segment offset=%u)\n",
+-				       mpl->name, *mbp_buf_size,
+-				       length + offset, length, offset);
+-			return -EINVAL;
++		uint32_t ptypes_mask;
++		int ret = rte_eth_supported_hdrs_get(port_id, &ptypes_mask);
++
++		if (ret == ENOTSUP || ptypes_mask == RTE_PTYPE_UNKNOWN) {
++			/* Split at fixed length. */
++			length = length != 0 ? length : *mbp_buf_size;
++			if (*mbp_buf_size < length + offset) {
++				RTE_ETHDEV_LOG(ERR,
++					"%s mbuf_data_room_size %u < %u (segment length=%u + segment offset=%u)\n",
++					mpl->name, *mbp_buf_size,
++					length + offset, length, offset);
++				return -EINVAL;
++			}
++		} else if (ret == 0) {
++			/* Split after specified protocol header. */
++			if (proto_hdr & ~ptypes_mask) {
++				RTE_ETHDEV_LOG(ERR,
++					"Protocol header 0x%x is not supported.\n",
++					proto_hdr & ~ptypes_mask);
++				return -EINVAL;
++			}
++			if (*mbp_buf_size < offset) {
++				RTE_ETHDEV_LOG(ERR,
++						"%s mbuf_data_room_size %u < %u segment offset)\n",
++						mpl->name, *mbp_buf_size,
++						offset);
++				return -EINVAL;
++			}
++		} else {
++			return ret;
+ 		}
+ 	}
+ 	return 0;
+@@ -1778,7 +1803,7 @@ rte_eth_rx_queue_setup(uint16_t port_id, uint16_t rx_queue_id,
+ 		n_seg = rx_conf->rx_nseg;
+ 
+ 		if (rx_conf->offloads & RTE_ETH_RX_OFFLOAD_BUFFER_SPLIT) {
+-			ret = rte_eth_rx_queue_check_split(rx_seg, n_seg,
++			ret = rte_eth_rx_queue_check_split(port_id, rx_seg, n_seg,
+ 							   &mbp_buf_size,
+ 							   &dev_info);
+ 			if (ret != 0)
+@@ -5900,6 +5925,20 @@ rte_eth_ip_reassembly_conf_set(uint16_t port_id,
+ 		       (*dev->dev_ops->ip_reassembly_conf_set)(dev, conf));
+ }
+ 
++int
++rte_eth_supported_hdrs_get(uint16_t port_id, uint32_t *ptypes)
++{
++	struct rte_eth_dev *dev;
++	RTE_ETH_VALID_PORTID_OR_ERR_RET(port_id, -ENODEV);
++	dev = &rte_eth_devices[port_id];
++
++	RTE_FUNC_PTR_OR_ERR_RET(*dev->dev_ops->hdrs_supported_ptypes_get,
++				-ENOTSUP);
++
++	return eth_err(port_id,
++		       (*dev->dev_ops->hdrs_supported_ptypes_get)(dev, ptypes));
++}
++
+ int
+ rte_eth_dev_priv_dump(uint16_t port_id, FILE *file)
+ {
+diff --git a/lib/ethdev/rte_ethdev.h b/lib/ethdev/rte_ethdev.h
+index de9e970d4d..f3668c5914 100644
+--- a/lib/ethdev/rte_ethdev.h
++++ b/lib/ethdev/rte_ethdev.h
+@@ -1175,6 +1175,9 @@ struct rte_eth_txmode {
+  *   specified in the first array element, the second buffer, from the
+  *   pool in the second element, and so on.
+  *
++ * - The proto_hdrs in the elements define the split position of
++ *   received packets.
++ *
+  * - The offsets from the segment description elements specify
+  *   the data offset from the buffer beginning except the first mbuf.
+  *   The first segment offset is added with RTE_PKTMBUF_HEADROOM.
+@@ -1196,14 +1199,25 @@ struct rte_eth_txmode {
+  *     - pool from the last valid element
+  *     - the buffer size from this pool
+  *     - zero offset
++ *
++ * - Length based buffer split:
++ *     - mp, length, offset should be configured.
++ *     - The proto_hdr field should not be configured.
++ *
++ * - Protocol header based buffer split:
++ *     - mp, offset, proto_hdr should be configured.
++ *     - The length field should not be configured.
+  */
+ struct rte_eth_rxseg_split {
+ 	struct rte_mempool *mp; /**< Memory pool to allocate segment from. */
+ 	uint16_t length; /**< Segment data length, configures split point. */
+ 	uint16_t offset; /**< Data offset from beginning of mbuf data buffer. */
+-	uint32_t reserved; /**< Reserved field. */
++	/**< Supported ptypes mask of a specific pmd, configures split point. */
++	uint32_t proto_hdr;
+ };
+ 
++#define ST_HAS_DPDK_HDR_SPLIT
++
+ /**
+  * @warning
+  * @b EXPERIMENTAL: this structure may change without prior notice.
+@@ -6206,6 +6220,28 @@ rte_eth_tx_buffer(uint16_t port_id, uint16_t queue_id,
+ 	return rte_eth_tx_buffer_flush(port_id, queue_id, buffer);
+ }
+ 
++
++/**
++ * @warning
++ * @b EXPERIMENTAL: this API may change without prior notice
++ *
++ * Get supported header protocols to split supported by PMD.
++ * The API will return error if the device is not valid.
++ *
++ * @param port_id
++ *   The port identifier of the device.
++ * @param ptype
++ *   Supported protocol headers of driver.
++ * @return
++ *   - (-ENOTSUP) if header protocol is not supported by device.
++ *   - (-ENODEV) if *port_id* invalid.
++ *   - (-EIO) if device is removed.
++ *   - (0) on success.
++ */
++__rte_experimental
++int rte_eth_supported_hdrs_get(uint16_t port_id,
++		uint32_t *ptype);
++
+ #ifdef __cplusplus
+ }
+ #endif
+diff --git a/lib/ethdev/version.map b/lib/ethdev/version.map
+index d46f31b63f..ea965ea7d0 100644
+--- a/lib/ethdev/version.map
++++ b/lib/ethdev/version.map
+@@ -285,6 +285,7 @@ EXPERIMENTAL {
+ 	rte_mtr_color_in_protocol_priority_get;
+ 	rte_mtr_color_in_protocol_set;
+ 	rte_mtr_meter_vlan_table_update;
++	rte_eth_supported_hdrs_get;
+ };
+ 
+ INTERNAL {
+-- 
+2.30.2
+

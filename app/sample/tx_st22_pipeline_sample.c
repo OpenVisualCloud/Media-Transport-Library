@@ -21,14 +21,15 @@
 #define TX_ST22_PAYLOAD_TYPE (114)
 
 /* local ip address for current bdf port */
-static uint8_t g_tx_st22_local_ip[ST_IP_ADDR_LEN] = {192, 168, 1, 22};
+static uint8_t g_tx_st22_local_ip[ST_IP_ADDR_LEN] = {192, 168, 22, 84};
 /* dst ip address for tx video session */
+// static uint8_t g_tx_st22_dst_ip[ST_IP_ADDR_LEN] = {192, 168, 22, 85};
 static uint8_t g_tx_st22_dst_ip[ST_IP_ADDR_LEN] = {239, 168, 85, 22};
 
 //#define ST22_TX_SAMPLE_FMT_BGRA
 //#define ST22_TX_SAMPLE_FMT_YUV422P10LE
-#define ST22_TX_SAMPLE_FMT_YUV422RFC4175PG2BE
-//#define ST22_TX_SAMPLE_FMT_YUV422PLANAR8
+//#define ST22_TX_SAMPLE_FMT_YUV422RFC4175PG2BE
+#define ST22_TX_SAMPLE_FMT_YUV422PLANAR8
 //#define ST22_TX_SAMPLE_FMT_YUV422PACKED8
 
 #ifdef ST22_TX_SAMPLE_FMT_BGRA
@@ -78,8 +79,23 @@ struct app_context {
 
   /* logo */
   void* logo_buf;
-  struct st_frame_meta logo_meta;
+  struct st_frame logo_meta;
 };
+
+static bool g_video_active = false;
+static st_handle g_st_handle;
+
+static void app_sig_handler(int signo) {
+  printf("%s, signal %d\n", __func__, signo);
+  switch (signo) {
+    case SIGINT: /* Interrupt from keyboard */
+      g_video_active = false;
+      st_request_exit(g_st_handle);
+      break;
+  }
+
+  return;
+}
 
 static int tx_st22p_close_source(struct app_context* s) {
   if (s->source_begin) {
@@ -95,6 +111,7 @@ static int tx_st22p_close_source(struct app_context* s) {
   return 0;
 }
 
+#ifdef ST22_TX_LOGO_FILE
 static int tx_st22p_open_logo(struct app_context* s, char* file) {
   FILE* fp_logo = st_fopen(file, "rb");
   if (!fp_logo) {
@@ -128,6 +145,7 @@ static int tx_st22p_open_logo(struct app_context* s, char* file) {
   fclose(fp_logo);
   return 0;
 }
+#endif
 
 static int tx_st22p_open_source(struct app_context* s, char* file) {
   int fd;
@@ -165,7 +183,9 @@ static int tx_st22p_open_source(struct app_context* s, char* file) {
   s->source_end = s->source_begin + i.st_size;
   close(fd);
 
+#ifdef ST22_TX_LOGO_FILE
   tx_st22p_open_logo(s, ST22_TX_LOGO_FILE);
+#endif
 
   return 0;
 }
@@ -180,7 +200,7 @@ static int tx_st22p_frame_available(void* priv) {
   return 0;
 }
 
-static void tx_st22p_build_frame(struct app_context* s, struct st_frame_meta* frame) {
+static void tx_st22p_build_frame(struct app_context* s, struct st_frame* frame) {
   if (s->frame_cursor + s->frame_size > s->source_end) {
     s->frame_cursor = s->source_begin;
   }
@@ -200,7 +220,7 @@ static void tx_st22p_build_frame(struct app_context* s, struct st_frame_meta* fr
 static void* tx_st22p_frame_thread(void* arg) {
   struct app_context* s = arg;
   st22p_tx_handle handle = s->handle;
-  struct st_frame_meta* frame;
+  struct st_frame* frame;
 
   printf("%s(%d), start\n", __func__, s->idx);
   while (!s->stop) {
@@ -211,7 +231,7 @@ static void* tx_st22p_frame_thread(void* arg) {
       st_pthread_mutex_unlock(&s->wake_mutex);
       continue;
     }
-    tx_st22p_build_frame(s, frame);
+    if (s->source_begin) tx_st22p_build_frame(s, frame);
     st22p_tx_put_frame(handle, frame);
   }
   printf("%s(%d), stop\n", __func__, s->idx);
@@ -227,6 +247,8 @@ int main() {
   int ret = -EIO;
   struct app_context* app[session_num];
   st_handle dev_handle;
+  char* port = getenv("ST_PORT_P");
+  if (!port) port = TX_ST22_PORT_BDF;
 
   for (int i = 0; i < session_num; i++) {
     app[i] = NULL;
@@ -234,7 +256,7 @@ int main() {
 
   memset(&param, 0, sizeof(param));
   param.num_ports = 1;
-  strncpy(param.port[ST_PORT_P], TX_ST22_PORT_BDF, ST_PORT_MAX_LEN);
+  strncpy(param.port[ST_PORT_P], port, ST_PORT_MAX_LEN);
   memcpy(param.sip_addr[ST_PORT_P], g_tx_st22_local_ip, ST_IP_ADDR_LEN);
   param.flags = ST_FLAG_BIND_NUMA | ST_FLAG_DEV_AUTO_START_STOP;
   param.log_level = ST_LOG_LEVEL_INFO;  // log level. ERROR, INFO, WARNING
@@ -251,6 +273,10 @@ int main() {
     ret = -EIO;
     goto err;
   }
+
+  g_st_handle = dev_handle;
+  g_video_active = true;
+  signal(SIGINT, app_sig_handler);
 
   // create and register tx session
   for (int i = 0; i < session_num; i++) {
@@ -275,7 +301,7 @@ int main() {
     // tx src ip like 239.0.0.1
     memcpy(ops_tx.port.dip_addr[ST_PORT_P], g_tx_st22_dst_ip, ST_IP_ADDR_LEN);
     // send port interface like 0000:af:00.0
-    strncpy(ops_tx.port.port[ST_PORT_P], TX_ST22_PORT_BDF, ST_PORT_MAX_LEN);
+    strncpy(ops_tx.port.port[ST_PORT_P], port, ST_PORT_MAX_LEN);
     ops_tx.port.udp_port[ST_PORT_P] = TX_ST22_UDP_PORT + i;
     ops_tx.port.payload_type = TX_ST22_PAYLOAD_TYPE;
     ops_tx.width = 1920;
@@ -283,7 +309,7 @@ int main() {
     ops_tx.fps = ST_FPS_P59_94;
     ops_tx.input_fmt = ST22_TX_SAMPLE_FMT;
     ops_tx.pack_type = ST22_PACK_CODESTREAM;
-    ops_tx.codec = ST22_CODEC_JPEGXS;
+    ops_tx.codec = ST22_CODEC_H264_CBR;  // ST22_CODEC_JPEGXS
     ops_tx.device = ST_PLUGIN_DEVICE_AUTO;
     ops_tx.quality = ST22_QUALITY_MODE_QUALITY;
     ops_tx.codec_thread_cnt = 2;
@@ -301,9 +327,6 @@ int main() {
 
     app[i]->frame_size = st22p_tx_frame_size(tx_handle);
     ret = tx_st22p_open_source(app[i], ST22_TX_SAMPLE_FILE);
-    if (ret < 0) {
-      goto err;
-    }
 
     ret = pthread_create(&app[i]->frame_thread, NULL, tx_st22p_frame_thread, app[i]);
     if (ret < 0) {
@@ -313,7 +336,9 @@ int main() {
     }
   }
 
-  st_pause();
+  while (g_video_active) {
+    sleep(1);
+  }
 
   // stop app thread
   for (int i = 0; i < session_num; i++) {

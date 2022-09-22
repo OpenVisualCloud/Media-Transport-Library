@@ -22,10 +22,12 @@ sources = files(
 	'st_ancillary_transmitter.c',
 	'st_ancillary.c',
 	'st_dma.c',
+	'st_avx2.c',
 	'st_avx512.c',
 	'st_avx512_vbmi.c',
 	'st_admin.c',
 	'st_config.c',
+	'st_socket.c',
 )
 
 if get_option('enable_kni') == true
@@ -33,6 +35,9 @@ if get_option('enable_kni') == true
 endif
 
 if is_windows
+if get_option('enable_tap') == true
+  sources += files('st_tap.c')
+endif
   sources += files('../windows/win_posix.c')
 endif
 

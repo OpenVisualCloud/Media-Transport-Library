@@ -1,32 +1,30 @@
-From f86e0cdf9a426492fa10e6d68a909cd69c726ff1 Mon Sep 17 00:00:00 2001
+From e01da1101aec17f6a66a3699d66309dd8f1a7306 Mon Sep 17 00:00:00 2001
 From: qiaoliu <qiao.liu@intel.com>
 Date: Wed, 19 Jan 2022 10:52:05 +0800
-Subject: [PATCH 7/7] Add Windows 10 May 2019 and newer version 1GB huge page
+Subject: [PATCH 6/9] Add Windows 10 May 2019 and newer version 1GB huge page
  support
 
 ---
- lib/eal/windows/eal_hugepages.c |  4 +--
+ lib/eal/windows/eal_hugepages.c |  2 +-
  lib/eal/windows/eal_memory.c    | 60 +++++++++++++++++++++++++++++----
  lib/eal/windows/eal_windows.h   |  8 +++++
- 3 files changed, 64 insertions(+), 8 deletions(-)
+ 3 files changed, 63 insertions(+), 7 deletions(-)
 
 diff --git a/lib/eal/windows/eal_hugepages.c b/lib/eal/windows/eal_hugepages.c
-index b007dceb39..89db38533e 100644
+index b007dceb39..d8cf20bc26 100644
 --- a/lib/eal/windows/eal_hugepages.c
 +++ b/lib/eal/windows/eal_hugepages.c
-@@ -68,8 +68,8 @@ hugepage_info_init(void)
- 	/* Only one hugepage size available on Windows. */
+@@ -69,7 +69,7 @@ hugepage_info_init(void)
  	internal_conf->num_hugepage_sizes = 1;
  	hpi = &internal_conf->hugepage_info[0];
--
+ 
 -	hpi->hugepage_sz = GetLargePageMinimum();
-+  
 +	hpi->hugepage_sz = eal_mem_hugepage_size();
  	if (hpi->hugepage_sz == 0)
  		return -ENOTSUP;
  
 diff --git a/lib/eal/windows/eal_memory.c b/lib/eal/windows/eal_memory.c
-index 2fd37d9708..57642116d8 100644
+index 2fd37d9708..f2f9621808 100644
 --- a/lib/eal/windows/eal_memory.c
 +++ b/lib/eal/windows/eal_memory.c
 @@ -323,7 +323,7 @@ void *
@@ -46,7 +44,7 @@ index 2fd37d9708..57642116d8 100644
 -		memset(&param, 0, sizeof(param));
 -		param.Type = MemExtendedParameterNumaNode;
 -		param.ULong = eal_socket_numa_node(socket_id);
-+		if(eal_mem_hugepage_size()> RTE_PGSIZE_2M) 
++		if(eal_mem_hugepage_size()> RTE_PGSIZE_2M)
 +			param_count = 2;
 +		else
 +			param_count = 1;
@@ -83,26 +81,26 @@ index 2fd37d9708..57642116d8 100644
 +	    param_count = 1;
 +	    memset(&param, 0, sizeof(MEM_EXTENDED_PARAMETER));
 +	    param.Type = MemExtendedParameterAttributeFlags;
-+	    param.ULong64 = 0x00000010;//MEM_EXTENDED_PARAMETER_NONPAGED_HUGE  
++	    param.ULong64 = 0x00000010;//MEM_EXTENDED_PARAMETER_NONPAGED_HUGE
 +	    flags = MEM_RESERVE | MEM_COMMIT | MEM_LARGE_PAGES;
-+	 
++
 +	    if(VirtualAlloc2_ptr == NULL)
 +		      eal_mem_win32api_init();
 +	    addr = VirtualAlloc2_ptr(process, NULL, RTE_PGSIZE_1G,
 +		                           flags, PAGE_READWRITE, &param, param_count);
 +	    if (addr == NULL) {
-+		 
++
 +		      DWORD err = GetLastError();
-+		      if(err == ERROR_INVALID_PARAMETER) 
++		      if(err == ERROR_INVALID_PARAMETER)
 +			    {
 +				    /* do not support 1GB huge page */
 +				    RTE_LOG_WIN32_ERR(" Current version only can support 2MB page size\n");
-+				    page_size = GetLargePageMinimum();		
-+		    	}
-+	    }  
-+    	else{
++				    page_size = GetLargePageMinimum();
++			}
++	    }
++	else{
 +		      page_size = RTE_PGSIZE_1G;   // 1GB huge Cache
-+	  	    if (!VirtualFreeEx(process, addr, 0, MEM_RELEASE)) {
++		    if (!VirtualFreeEx(process, addr, 0, MEM_RELEASE)) {
 +			        RTE_LOG_WIN32_ERR("VirtualFreeEx(%p, 0, release)",addr);
 +			        return page_size;
 +		  }

@@ -25,7 +25,7 @@ static inline void sch_unlock(struct st_sch_impl* sch) {
   st_pthread_mutex_unlock(&sch->mutex);
 }
 
-static int sch_lcore_func(void* args) {
+static int sch_tasklet_func(void* args) {
   struct st_sch_impl* sch = args;
   struct st_main_impl* impl = sch->parnet;
   int idx = sch->idx;
@@ -52,20 +52,46 @@ static int sch_lcore_func(void* args) {
     if (ops->start) ops->start(ops->priv);
   }
 
+  sch->sleep_ratio_start_ns = st_get_tsc(impl);
+
   while (rte_atomic32_read(&sch->request_stop) == 0) {
+    int pending = ST_TASKLET_ALL_DONE;
     num_tasklet = sch->max_tasklet_idx;
     for (i = 0; i < num_tasklet; i++) {
       tasklet = sch->tasklet[i];
       if (!tasklet) continue;
       ops = &tasklet->ops;
       if (time_measure) tsc_s = st_get_tsc(impl);
-      ops->handler(ops->priv);
+      pending += ops->handler(ops->priv);
       if (time_measure) {
         uint32_t delta_us = (st_get_tsc(impl) - tsc_s) / 1000;
         tasklet->stat_max_time_us = RTE_MAX(tasklet->stat_max_time_us, delta_us);
         tasklet->stat_min_time_us = RTE_MIN(tasklet->stat_min_time_us, delta_us);
         tasklet->stat_sum_time_us += delta_us;
         tasklet->stat_time_cnt++;
+      }
+    }
+    if (sch->allow_sleep && (pending == ST_TASKLET_ALL_DONE)) {
+      uint64_t start = st_get_tsc(impl);
+      st_sleep_ms(0); /* yeah, try to sleep zero time */
+      uint64_t end = st_get_tsc(impl);
+      uint64_t delta = end - start;
+      sch->stat_sleep_ns += delta;
+      sch->stat_sleep_cnt++;
+      sch->stat_sleep_ns_min = RTE_MIN(delta, sch->stat_sleep_ns_min);
+      sch->stat_sleep_ns_max = RTE_MAX(delta, sch->stat_sleep_ns_max);
+      /* cal cpu sleep ratio on every 5s */
+      sch->sleep_ratio_sleep_ns += delta;
+      uint64_t sleep_ratio_dur_ns = end - sch->sleep_ratio_start_ns;
+      if (sleep_ratio_dur_ns > (5 * (uint64_t)NS_PER_S)) {
+        dbg("%s(%d), sleep %" PRIu64 "ns, total %" PRIu64 "ns\n", __func__, idx,
+            sch->sleep_ratio_sleep_ns, sleep_ratio_dur_ns);
+        dbg("%s(%d), end %" PRIu64 "ns, start %" PRIu64 "ns\n", __func__, idx, end,
+            sch->sleep_ratio_start_ns);
+        sch->sleep_ratio_score =
+            (float)sch->sleep_ratio_sleep_ns * 100.0 / sleep_ratio_dur_ns;
+        sch->sleep_ratio_sleep_ns = 0;
+        sch->sleep_ratio_start_ns = end;
       }
     }
   }
@@ -83,31 +109,49 @@ static int sch_lcore_func(void* args) {
   return 0;
 }
 
-static int sch_start(struct st_sch_impl* sch, unsigned int lcore) {
+static void* sch_tasklet_thread(void* arg) {
+  sch_tasklet_func(arg);
+  return NULL;
+}
+
+static int sch_start(struct st_sch_impl* sch) {
   int idx = sch->idx;
   int ret;
 
   sch_lock(sch);
 
-  if (rte_atomic32_read(&sch->started)) {
-    err("%s(%d), started already\n", __func__, idx);
+  if (st_sch_started(sch)) {
+    warn("%s(%d), started already\n", __func__, idx);
     sch_unlock(sch);
     return -EIO;
   }
 
+  st_sch_set_cpu_busy(sch, false);
   rte_atomic32_set(&sch->request_stop, 0);
   rte_atomic32_set(&sch->stopped, 0);
 
-  ret = rte_eal_remote_launch(sch_lcore_func, sch, lcore);
+  if (!sch->run_in_thread) {
+    ret = st_dev_get_lcore(sch->parnet, &sch->lcore);
+    if (ret < 0) {
+      err("%s(%d), get lcore fail %d\n", __func__, idx, ret);
+      sch_unlock(sch);
+      return ret;
+    }
+    ret = rte_eal_remote_launch(sch_tasklet_func, sch, sch->lcore);
+  } else {
+    ret = pthread_create(&sch->tid, NULL, sch_tasklet_thread, sch);
+  }
   if (ret < 0) {
-    err("%s(%d), fail %d on lcore %d\n", __func__, idx, ret, lcore);
+    err("%s(%d), fail %d to launch\n", __func__, idx, ret);
     sch_unlock(sch);
     return ret;
   }
 
-  sch->lcore = lcore;
   rte_atomic32_set(&sch->started, 1);
-  info("%s(%d), succ on lcore %d\n", __func__, idx, lcore);
+  if (!sch->run_in_thread)
+    info("%s(%d), succ on lcore %u\n", __func__, idx, sch->lcore);
+  else
+    info("%s(%d), succ on tid %lu\n", __func__, idx, sch->tid);
   sch_unlock(sch);
   return 0;
 }
@@ -117,8 +161,8 @@ static int sch_stop(struct st_sch_impl* sch) {
 
   sch_lock(sch);
 
-  if (!rte_atomic32_read(&sch->started)) {
-    info("%s(%d), not started\n", __func__, idx);
+  if (!st_sch_started(sch)) {
+    warn("%s(%d), not started\n", __func__, idx);
     sch_unlock(sch);
     return 0;
   }
@@ -126,6 +170,12 @@ static int sch_stop(struct st_sch_impl* sch) {
   rte_atomic32_set(&sch->request_stop, 1);
   while (rte_atomic32_read(&sch->stopped) == 0) {
     st_sleep_ms(10);
+  }
+  if (!sch->run_in_thread) {
+    rte_eal_wait_lcore(sch->lcore);
+    st_dev_put_lcore(sch->parnet, sch->lcore);
+  } else {
+    pthread_join(sch->tid, NULL);
   }
   rte_atomic32_set(&sch->started, 0);
 
@@ -198,27 +248,6 @@ static int sch_free_quota(struct st_sch_impl* sch, int quota_mbs) {
   return 0;
 }
 
-static int sch_dev_start(struct st_main_impl* impl, struct st_sch_impl* sch) {
-  int sidx = sch->idx;
-  int ret;
-  unsigned int lcore;
-
-  st_sch_set_cpu_busy(sch, false);
-
-  ret = st_dev_get_lcore(impl, &lcore);
-  if (ret < 0) {
-    err("%s(%d), dev_get_lcore fail %d\n", __func__, sidx, ret);
-    return ret;
-  }
-  ret = sch_start(sch, lcore);
-  if (ret < 0) {
-    err("%s(%d), st_sch_start fail %d\n", __func__, sidx, ret);
-    return ret;
-  }
-
-  return 0;
-}
-
 static bool sch_is_capable(struct st_sch_impl* sch, int quota_mbs,
                            enum st_sch_type type) {
   if (!quota_mbs) { /* zero quota_mbs can be applied to any type */
@@ -253,17 +282,29 @@ static void sch_stat(struct st_sch_impl* sch) {
   int idx = sch->idx;
   uint32_t avg_us;
 
-  for (int i = 0; i < num_tasklet; i++) {
-    tasklet = sch->tasklet[i];
-    if (!tasklet) continue;
+  if (st_has_tasklet_time_measure(sch->parnet)) {
+    for (int i = 0; i < num_tasklet; i++) {
+      tasklet = sch->tasklet[i];
+      if (!tasklet) continue;
 
-    if (tasklet->stat_time_cnt) {
-      avg_us = tasklet->stat_sum_time_us / tasklet->stat_time_cnt;
-      info("SCH(%d): tasklet %s, avg %uus max %uus min %uus\n", idx, tasklet->name,
-           avg_us, tasklet->stat_max_time_us, tasklet->stat_min_time_us);
+      if (tasklet->stat_time_cnt) {
+        avg_us = tasklet->stat_sum_time_us / tasklet->stat_time_cnt;
+        info("SCH(%d): tasklet %s, avg %uus max %uus min %uus\n", idx, tasklet->name,
+             avg_us, tasklet->stat_max_time_us, tasklet->stat_min_time_us);
+        sch_tasklet_stat_clear(tasklet);
+      }
     }
+  }
 
-    sch_tasklet_stat_clear(tasklet);
+  if (sch->allow_sleep) {
+    info("SCH(%d): sleep %fms(ratio:%f), cnt %u, min %" PRIu64 "us, max %" PRIu64 "us\n",
+         idx, (double)sch->stat_sleep_ns / NS_PER_MS, sch->sleep_ratio_score,
+         sch->stat_sleep_cnt, sch->stat_sleep_ns_min / NS_PER_US,
+         sch->stat_sleep_ns_max / NS_PER_US);
+    sch->stat_sleep_ns = 0;
+    sch->stat_sleep_cnt = 0;
+    sch->stat_sleep_ns_min = -1;
+    sch->stat_sleep_ns_max = 0;
   }
 }
 
@@ -281,7 +322,7 @@ int st_sch_unregister_tasklet(struct st_sch_tasklet_impl* tasklet) {
   }
 
   /* todo: support runtime unregister */
-  if (rte_atomic32_read(&sch->started)) {
+  if (st_sch_started(sch)) {
     err("%s(%d), pls stop sch firstly\n", __func__, sch_idx);
     sch_unlock(sch);
     return -EIO;
@@ -331,7 +372,7 @@ struct st_sch_tasklet_impl* st_sch_register_tasklet(
     sch->tasklet[i] = tasklet;
     sch->max_tasklet_idx = RTE_MAX(sch->max_tasklet_idx, i + 1);
 
-    if (rte_atomic32_read(&sch->started)) {
+    if (st_sch_started(sch)) {
       if (tasklet_ops->pre_start) tasklet_ops->pre_start(tasklet_ops->priv);
       if (tasklet_ops->start) tasklet_ops->start(tasklet_ops->priv);
     }
@@ -364,6 +405,11 @@ int st_sch_mrg_init(struct st_main_impl* impl, int data_quota_mbs_limit) {
     sch->max_tasklet_idx = 0;
     sch->data_quota_mbs_total = 0;
     sch->data_quota_mbs_limit = data_quota_mbs_limit;
+    sch->run_in_thread = st_tasklet_has_thread(impl);
+    sch->allow_sleep = st_tasklet_has_sleep(impl);
+    /* max sleep mode: 2 4k session, fixed now */
+    sch->quota_mbs_max_for_sleep = st20_1080p59_yuv422_10bit_bandwidth_mps() * 8 + 100;
+    sch->stat_sleep_ns_min = -1;
     /* init mgr lock for video */
     st_pthread_mutex_init(&sch->tx_video_mgr_mutex, NULL);
     st_pthread_mutex_init(&sch->rx_video_mgr_mutex, NULL);
@@ -389,6 +435,11 @@ int st_sch_add_quota(struct st_sch_impl* sch, int quota_mbs) {
     sch->data_quota_mbs_total += quota_mbs;
     info("%s(%d:%d), quota %d total now %d\n", __func__, idx, sch->type, quota_mbs,
          sch->data_quota_mbs_total);
+    if (sch->allow_sleep && (sch->data_quota_mbs_total > sch->quota_mbs_max_for_sleep)) {
+      sch->allow_sleep = false;
+      info("%s(%d:%d), sleep mode is disabled since too high traffic\n", __func__, idx,
+           sch->type);
+    }
     sch_unlock(sch);
     return 0;
   }
@@ -412,12 +463,6 @@ int st_sch_put(struct st_sch_impl* sch, int quota_mbs) {
     ret = sch_stop(sch);
     if (ret < 0) {
       err("%s(%d), sch_stop fail %d\n", __func__, sidx, ret);
-    } else {
-      /* put the sch lcore if dev is started */
-      if (rte_atomic32_read(&impl->started)) {
-        rte_eal_wait_lcore(sch->lcore);
-        st_dev_put_lcore(impl, sch->lcore);
-      }
     }
     st_pthread_mutex_lock(&sch->tx_video_mgr_mutex);
     st_tx_video_sessions_sch_uinit(impl, sch);
@@ -473,7 +518,7 @@ struct st_sch_impl* st_sch_get(struct st_main_impl* impl, int quota_mbs,
 
   /* start the sch if dev is started */
   if (rte_atomic32_read(&impl->started)) {
-    ret = sch_dev_start(impl, sch);
+    ret = sch_start(sch);
     if (ret < 0) {
       err("%s(%d), start sch fail %d\n", __func__, idx, ret);
       sch_free(sch);
@@ -494,11 +539,11 @@ int st_sch_start_all(struct st_main_impl* impl) {
   /* start active sch */
   for (int sch_idx = 0; sch_idx < ST_MAX_SCH_NUM; sch_idx++) {
     sch = st_sch_instance(impl, sch_idx);
-    if (st_sch_is_active(sch)) {
-      ret = sch_dev_start(impl, sch);
+    if (st_sch_is_active(sch) && !st_sch_started(sch)) {
+      ret = sch_start(sch);
       if (ret < 0) {
-        err("%s(%d), sch_dev_start fail %d\n", __func__, sch_idx, ret);
-        st_dev_stop(impl);
+        err("%s(%d), sch_start fail %d\n", __func__, sch_idx, ret);
+        st_sch_stop_all(impl);
         return ret;
       }
     }
@@ -514,13 +559,10 @@ int st_sch_stop_all(struct st_main_impl* impl) {
   /* stop active sch */
   for (int sch_idx = 0; sch_idx < ST_MAX_SCH_NUM; sch_idx++) {
     sch = st_sch_instance(impl, sch_idx);
-    if (st_sch_is_active(sch)) {
+    if (st_sch_is_active(sch) && st_sch_started(sch)) {
       ret = sch_stop(sch);
       if (ret < 0) {
         err("%s(%d), sch_stop fail %d\n", __func__, sch_idx, ret);
-      } else {
-        rte_eal_wait_lcore(sch->lcore);
-        st_dev_put_lcore(impl, sch->lcore);
       }
     }
   }
@@ -531,8 +573,6 @@ int st_sch_stop_all(struct st_main_impl* impl) {
 
 void st_sch_stat(struct st_main_impl* impl) {
   struct st_sch_impl* sch;
-
-  if (!st_has_tasklet_time_measure(impl)) return;
 
   for (int sch_idx = 0; sch_idx < ST_MAX_SCH_NUM; sch_idx++) {
     sch = st_sch_instance(impl, sch_idx);

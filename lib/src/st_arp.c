@@ -28,7 +28,7 @@ static int arp_receive_request(struct st_main_impl* impl, struct rte_arp_hdr* re
     return -EINVAL;
   }
 
-  struct rte_mbuf* rpl_pkt = rte_pktmbuf_alloc(st_get_mempool(impl, port));
+  struct rte_mbuf* rpl_pkt = rte_pktmbuf_alloc(st_get_tx_mempool(impl, port));
   if (!rpl_pkt) {
     err("%s(%d), rpl_pkt alloc fail\n", __func__, port);
     return -ENOMEM;
@@ -112,6 +112,9 @@ static int arp_queues_init(struct st_main_impl* impl) {
   int ret;
 
   for (int i = 0; i < num_ports; i++) {
+    /* no arp queues for kernel based pmd */
+    if (st_pmd_is_kernel(impl, i)) continue;
+
     ret = st_dev_request_tx_queue(impl, i, &arp->tx_q_id[i], 0);
     if (ret < 0) {
       err("%s(%d), tx_q create fail\n", __func__, i);
@@ -149,9 +152,14 @@ int st_arp_cni_get_mac(struct st_main_impl* impl, struct rte_ether_addr* ea,
   int retry = 0;
   uint8_t* addr = (uint8_t*)&ip;
 
+  if (!arp_impl->tx_q_active[port]) {
+    err("%s(%d), tx_q not active\n", __func__, port);
+    return -EIO;
+  }
+
   arp_impl->ip[port] = ip;
 
-  struct rte_mbuf* req_pkt = rte_pktmbuf_alloc(st_get_mempool(impl, port));
+  struct rte_mbuf* req_pkt = rte_pktmbuf_alloc(st_get_tx_mempool(impl, port));
   if (!req_pkt) return -ENOMEM;
 
   req_pkt->pkt_len = req_pkt->data_len =
@@ -195,62 +203,6 @@ int st_arp_cni_get_mac(struct st_main_impl* impl, struct rte_ether_addr* ea,
 
   return 0;
 }
-
-#ifdef ST_HAS_KNI
-static int arp_get(int sfd, in_addr_t ip, struct rte_ether_addr* ea, const char* ifname) {
-  struct arpreq arpreq;
-  struct sockaddr_in* sin;
-  struct in_addr ina;
-  unsigned char* hw_addr;
-
-  memset(&arpreq, 0, sizeof(struct arpreq));
-
-  sin = (struct sockaddr_in*)&arpreq.arp_pa;
-  memset(sin, 0, sizeof(struct sockaddr_in));
-  sin->sin_family = AF_INET;
-  ina.s_addr = ip;
-  memcpy(&sin->sin_addr, (char*)&ina, sizeof(struct in_addr));
-
-  strcpy(arpreq.arp_dev, ifname);
-  int ret = ioctl(sfd, SIOCGARP, &arpreq);
-  if (ret < 0) {
-    err("%s, entry not available in cache...\n", __func__);
-    return -EIO;
-  }
-
-  info("%s, entry has been successfully retreived\n", __func__);
-  hw_addr = (unsigned char*)arpreq.arp_ha.sa_data;
-  memcpy(ea->addr_bytes, hw_addr, RTE_ETHER_ADDR_LEN);
-  dbg("%s, mac addr found : %02x:%02x:%02x:%02x:%02x:%02x\n", __func__, hw_addr[0],
-      hw_addr[1], hw_addr[2], hw_addr[3], hw_addr[4], hw_addr[5]);
-
-  return 0;
-}
-
-int st_arp_socket_get_mac(struct st_main_impl* impl, struct rte_ether_addr* ea,
-                          uint8_t dip[ST_IP_ADDR_LEN], const char* ifname) {
-  int sockfd = 0;
-  struct sockaddr_in addr;
-  char dummy_buf[4];
-
-  memset(&addr, 0, sizeof(addr));
-  addr.sin_family = AF_INET;
-  addr.sin_addr.s_addr = *(uint32_t*)dip;
-  addr.sin_port = htons(12345);
-  sockfd = socket(AF_INET, SOCK_DGRAM, 0);
-  if (sockfd < 0) {
-    err("%s, failed to create socket\n", __func__);
-    return -EIO;
-  }
-
-  while (arp_get(sockfd, *(uint32_t*)dip, ea, ifname) != 0) {
-    sendto(sockfd, dummy_buf, 0, 0, (struct sockaddr*)&addr, sizeof(struct sockaddr_in));
-    st_sleep_ms(100);
-  }
-
-  return 0;
-}
-#endif
 
 int st_arp_init(struct st_main_impl* impl) {
   int ret;

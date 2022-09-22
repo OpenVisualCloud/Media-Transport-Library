@@ -11,6 +11,7 @@
 #include "st_log.h"
 #include "st_ptp.h"
 #include "st_sch.h"
+#include "st_tap.h"
 #include "st_util.h"
 
 static int cni_rx_handle(struct st_main_impl* impl, struct rte_mbuf* m,
@@ -71,6 +72,7 @@ static int cni_traffic(struct st_main_impl* impl) {
   struct rte_mbuf* pkts_rx[ST_CNI_RX_BURST_SIZE];
   uint16_t rx;
   struct st_ptp_impl* ptp;
+  bool done = true;
 
   for (int i = 0; i < num_ports; i++) {
     ptp = st_get_ptp(impl, i);
@@ -83,20 +85,24 @@ static int cni_traffic(struct st_main_impl* impl) {
         cni->eth_rx_cnt[i] += rx;
         for (uint16_t ri = 0; ri < rx; ri++) cni_rx_handle(impl, pkts_rx[ri], i);
         st_free_mbufs(&pkts_rx[0], rx);
+        done = false;
       }
     }
-
+    st_tap_handle(impl, i, pkts_rx, rx);
     /* rx from cni rx queue */
-    rx = rte_eth_rx_burst(port_id, cni->rx_q_id[i], pkts_rx, ST_CNI_RX_BURST_SIZE);
-    if (rx > 0) {
-      cni->eth_rx_cnt[i] += rx;
-      for (uint16_t ri = 0; ri < rx; ri++) cni_rx_handle(impl, pkts_rx[ri], i);
-      st_kni_handle(impl, i, pkts_rx, rx);
-      st_free_mbufs(&pkts_rx[0], rx);
+    if (cni->rx_q_active[i]) {
+      rx = rte_eth_rx_burst(port_id, cni->rx_q_id[i], pkts_rx, ST_CNI_RX_BURST_SIZE);
+      if (rx > 0) {
+        cni->eth_rx_cnt[i] += rx;
+        for (uint16_t ri = 0; ri < rx; ri++) cni_rx_handle(impl, pkts_rx[ri], i);
+        st_kni_handle(impl, i, pkts_rx, rx);
+        st_free_mbufs(&pkts_rx[0], rx);
+        done = false;
+      }
     }
   }
 
-  return 0;
+  return done ? ST_TASKLET_ALL_DONE : ST_TASKLET_HAS_PENDING;
 }
 
 static void* cni_trafic_thread(void* arg) {
@@ -122,7 +128,7 @@ static int cni_trafic_thread_start(struct st_main_impl* impl, struct st_cni_impl
   }
 
   rte_atomic32_set(&cni->stop_thread, 0);
-  ret = rte_ctrl_thread_create(&cni->tid, "cni_trafic", NULL, cni_trafic_thread, impl);
+  ret = pthread_create(&cni->tid, NULL, cni_trafic_thread, impl);
   if (ret < 0) {
     err("%s, cni_trafic thread create fail %d\n", __func__, ret);
     return ret;
@@ -163,8 +169,7 @@ static int cni_tasklet_stop(void* priv) {
 static int cni_tasklet_handlder(void* priv) {
   struct st_main_impl* impl = priv;
 
-  cni_traffic(impl);
-  return 0;
+  return cni_traffic(impl);
 }
 
 static int cni_queues_uinit(struct st_main_impl* impl) {
@@ -185,7 +190,15 @@ static int cni_queues_init(struct st_main_impl* impl, struct st_cni_impl* cni) {
   int num_ports = st_num_ports(impl);
   int ret;
 
+  if (st_no_system_rx_queues(impl)) {
+    warn("%s, disabled as no system rx queues\n", __func__);
+    return 0;
+  }
+
   for (int i = 0; i < num_ports; i++) {
+    /* no cni for kernel based pmd */
+    if (st_pmd_is_kernel(impl, i)) continue;
+
     ret = st_dev_request_rx_queue(impl, i, &cni->rx_q_id[i], NULL);
     if (ret < 0) {
       err("%s(%d), kni_rx_q create fail\n", __func__, i);
@@ -199,7 +212,15 @@ static int cni_queues_init(struct st_main_impl* impl, struct st_cni_impl* cni) {
   return 0;
 }
 
-static bool cni_if_need(struct st_main_impl* impl) { return true; }
+static bool cni_if_need(struct st_main_impl* impl) {
+  int num_ports = st_num_ports(impl);
+
+  for (int i = 0; i < num_ports; i++) {
+    if (!st_pmd_is_kernel(impl, i)) return true;
+  }
+
+  return false;
+}
 
 void st_cni_stat(struct st_main_impl* impl) {
   int num_ports = st_num_ports(impl);
@@ -232,6 +253,9 @@ int st_cni_init(struct st_main_impl* impl) {
     st_cni_uinit(impl);
     return ret;
   }
+
+  ret = st_tap_init(impl);
+  if (ret < 0) return ret;
 
   if (cni->lcore_tasklet) {
     struct st_sch_tasklet_ops ops;
@@ -274,6 +298,8 @@ int st_cni_uinit(struct st_main_impl* impl) {
   cni_queues_uinit(impl);
 
   st_kni_uinit(impl);
+
+  st_tap_uinit(impl);
 
   info("%s, succ\n", __func__);
   return 0;

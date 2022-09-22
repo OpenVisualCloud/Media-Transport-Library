@@ -1,0 +1,146 @@
+From 6528e9da75e097bab6c14ad9d8fc7a86a8deeb57 Mon Sep 17 00:00:00 2001
+From: "Du, Frank" <frank.du@intel.com>
+Date: Wed, 3 Aug 2022 13:06:39 +0800
+Subject: [PATCH 3/4] vf: support burst config
+
+Signed-off-by: Du, Frank <frank.du@intel.com>
+---
+ src/ice_virtchnl.c           | 36 ++++++++++++++++++++++++++++++++++++
+ src/ice_virtchnl.h           |  1 +
+ src/ice_virtchnl_allowlist.c |  1 +
+ src/virtchnl.h               | 13 +++++++++++++
+ 4 files changed, 51 insertions(+)
+
+diff --git a/src/ice_virtchnl.c b/src/ice_virtchnl.c
+index 51ca0fe..4c79343 100644
+--- a/src/ice_virtchnl.c
++++ b/src/ice_virtchnl.c
+@@ -2410,6 +2410,37 @@ static int ice_vf_cfg_q_quanta_profile(struct ice_vf *vf, u16 quanta_size,
+ 	return VIRTCHNL_STATUS_SUCCESS;
+ }
+ 
++/**
++ * ice_vc_cfg_burst_size - Configure HW max burst size
++ * @vf: pointer to the VF info
++ * @msg: pointer to the msg buffer which holds the command descriptor
++ *
++ * Configure HW max burst size.
++ */
++static int ice_vc_cfg_burst_size(struct ice_vf *vf, u8 *msg)
++{
++	enum virtchnl_status_code v_ret = VIRTCHNL_STATUS_SUCCESS;
++	struct virtchnl_burst_size *bs = (struct virtchnl_burst_size *)msg;
++	struct ice_hw *hw = &vf->pf->hw;
++	int ret;
++
++	if (!test_bit(ICE_VF_STATE_ACTIVE, vf->vf_states)) {
++		v_ret = VIRTCHNL_STATUS_ERR_PARAM;
++		goto err;
++	}
++
++	if (ice_cfg_rl_burst_size(hw, bs->max_burst_size)) {
++		v_ret = VIRTCHNL_STATUS_ERR_PARAM;
++		goto err;
++	}
++
++err:
++	/* send the response to the VF */
++	ret = ice_vc_send_msg_to_vf(vf, VIRTCHNL_OP_CONFIG_BURST_SIZE, v_ret,
++				    NULL, 0);
++	return ret;
++}
++
+ /**
+  * ice_vc_config_rss_key
+  * @vf: pointer to the VF info
+@@ -6952,6 +6983,7 @@ static const struct ice_virtchnl_ops ice_virtchnl_dflt_ops = {
+ 	.dis_vlan_stripping_v2_msg = ice_vc_dis_vlan_stripping_v2_msg,
+ 	.ena_vlan_insertion_v2_msg = ice_vc_ena_vlan_insertion_v2_msg,
+ 	.dis_vlan_insertion_v2_msg = ice_vc_dis_vlan_insertion_v2_msg,
++	.cfg_burst_size = ice_vc_cfg_burst_size,
+ };
+ 
+ /**
+@@ -7112,6 +7144,7 @@ static const struct ice_virtchnl_ops ice_virtchnl_repr_ops = {
+ 	.dis_vlan_stripping_v2_msg = ice_vc_dis_vlan_stripping_v2_msg,
+ 	.ena_vlan_insertion_v2_msg = ice_vc_ena_vlan_insertion_v2_msg,
+ 	.dis_vlan_insertion_v2_msg = ice_vc_dis_vlan_insertion_v2_msg,
++	.cfg_burst_size = ice_vc_cfg_burst_size,
+ };
+ 
+ /**
+@@ -7358,6 +7391,9 @@ error_handler:
+ 	case VIRTCHNL_OP_DISABLE_VLAN_INSERTION_V2:
+ 		err = ops->dis_vlan_insertion_v2_msg(vf, msg);
+ 		break;
++	case VIRTCHNL_OP_CONFIG_BURST_SIZE:
++		err = ops->cfg_burst_size(vf, msg);
++		break;
+ 	case VIRTCHNL_OP_UNKNOWN:
+ 	default:
+ 		dev_err(dev, "Unsupported opcode %d from VF %d\n", v_opcode,
+diff --git a/src/ice_virtchnl.h b/src/ice_virtchnl.h
+index 8c05318..b4efe52 100644
+--- a/src/ice_virtchnl.h
++++ b/src/ice_virtchnl.h
+@@ -93,6 +93,7 @@ struct ice_virtchnl_ops {
+ 	int (*dis_vlan_stripping_v2_msg)(struct ice_vf *vf, u8 *msg);
+ 	int (*ena_vlan_insertion_v2_msg)(struct ice_vf *vf, u8 *msg);
+ 	int (*dis_vlan_insertion_v2_msg)(struct ice_vf *vf, u8 *msg);
++	int (*cfg_burst_size)(struct ice_vf *vf, u8 *msg);
+ };
+ 
+ /**
+diff --git a/src/ice_virtchnl_allowlist.c b/src/ice_virtchnl_allowlist.c
+index b9def6d..f98c8e9 100644
+--- a/src/ice_virtchnl_allowlist.c
++++ b/src/ice_virtchnl_allowlist.c
+@@ -115,6 +115,7 @@ static const u32 fdir_pf_allowlist_opcodes[] = {
+ static const u32 tc_allowlist_opcodes[] = {
+ 	VIRTCHNL_OP_GET_QOS_CAPS, VIRTCHNL_OP_CONFIG_QUEUE_TC_MAP,
+ 	VIRTCHNL_OP_CONFIG_QUEUE_BW, VIRTCHNL_OP_CONFIG_QUANTA,
++	VIRTCHNL_OP_CONFIG_BURST_SIZE,
+ };
+ 
+ static const u32 large_num_qpairs_allowlist_opcodes[] = {
+diff --git a/src/virtchnl.h b/src/virtchnl.h
+index b1f5313..fe76e36 100644
+--- a/src/virtchnl.h
++++ b/src/virtchnl.h
+@@ -182,6 +182,7 @@ enum virtchnl_ops {
+ 	VIRTCHNL_OP_MAP_QUEUE_VECTOR = 111,
+ 	VIRTCHNL_OP_CONFIG_QUEUE_BW = 112,
+ 	VIRTCHNL_OP_CONFIG_QUANTA = 113,
++	VIRTCHNL_OP_CONFIG_BURST_SIZE = 201,
+ 	VIRTCHNL_OP_MAX,
+ };
+ 
+@@ -1990,6 +1991,15 @@ struct virtchnl_queues_bw_cfg {
+ 
+ VIRTCHNL_CHECK_STRUCT_LEN(16, virtchnl_queues_bw_cfg);
+ 
++/* VIRTCHNL_OP_CONFIG_BURST_SIZE
++ * VF sends this message to set max burst size
++ */
++struct virtchnl_burst_size {
++	u32 max_burst_size;
++};
++
++VIRTCHNL_CHECK_STRUCT_LEN(4, virtchnl_burst_size);
++
+ /* queue types */
+ enum virtchnl_queue_type {
+ 	VIRTCHNL_QUEUE_TYPE_TX			= 0,
+@@ -2403,6 +2413,9 @@ virtchnl_vc_validate_vf_msg(struct virtchnl_version_info *ver, u32 v_opcode,
+ 			}
+ 		}
+ 		break;
++	case VIRTCHNL_OP_CONFIG_BURST_SIZE:
++		valid_len = sizeof(struct virtchnl_burst_size);
++		break;
+ 	case VIRTCHNL_OP_GET_OFFLOAD_VLAN_V2_CAPS:
+ 		break;
+ 	case VIRTCHNL_OP_ADD_VLAN_V2:
+-- 
+2.30.2
+

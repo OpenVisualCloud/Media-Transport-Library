@@ -9,6 +9,28 @@
 
 #define ST30_TEST_PAYLOAD_TYPE (111)
 
+static int tx_audio_next_frame(void* priv, uint16_t* next_frame_idx,
+                               struct st30_tx_frame_meta* meta) {
+  return tx_next_frame(priv, next_frame_idx);
+}
+
+static int tx_audio_next_frame_timestamp(void* priv, uint16_t* next_frame_idx,
+                                         struct st30_tx_frame_meta* meta) {
+  auto ctx = (tests_context*)priv;
+
+  if (!ctx->handle) return -EIO; /* not ready */
+
+  meta->tfmt = ST10_TIMESTAMP_FMT_TAI;
+  meta->timestamp = st_ptp_read_time(ctx->ctx->handle) + 2 * 1000 * 1000 + 500 * 1000;
+  *next_frame_idx = ctx->fb_idx;
+  dbg("%s, next_frame_idx %d\n", __func__, *next_frame_idx);
+  ctx->fb_idx++;
+  if (ctx->fb_idx >= ctx->fb_cnt) ctx->fb_idx = 0;
+  ctx->fb_send++;
+  if (!ctx->start_time) ctx->start_time = st_test_get_monotonic_time();
+  return 0;
+}
+
 static int tx_audio_build_rtp_packet(tests_context* s, struct st_rfc3550_rtp_hdr* rtp,
                                      uint16_t* pkt_len) {
   /* rtp hdr */
@@ -128,7 +150,7 @@ static void rx_get_packet(void* args) {
   }
 }
 
-static int st30_rx_frame_ready(void* priv, void* frame, struct st30_frame_meta* meta) {
+static int st30_rx_frame_ready(void* priv, void* frame, struct st30_rx_frame_meta* meta) {
   auto ctx = (tests_context*)priv;
 
   if (!ctx->handle) return -EIO;
@@ -209,9 +231,8 @@ static void st30_tx_ops_init(tests_context* st30, struct st30_tx_ops* ops) {
   ops->sample_size = st30_get_sample_size(ops->fmt);
   ops->sample_num = st30_get_sample_num(ops->ptime, ops->sampling);
   ops->framebuff_cnt = st30->fb_cnt;
-  ops->framebuff_size = ops->sample_size *
-                        st30_get_sample_num(ST30_PTIME_1MS, ops->sampling) * ops->channel;
-  ops->get_next_frame = tx_next_frame;
+  ops->framebuff_size = ops->sample_size * ops->sample_num * ops->channel;
+  ops->get_next_frame = tx_audio_next_frame;
   ops->notify_rtp_done = tx_rtp_done;
   ops->rtp_ring_size = 1024;
   st30->pkt_data_len = ops->sample_size * ops->sample_num * ops->channel;
@@ -324,12 +345,12 @@ static void st30_tx_fps_test(enum st30_type type[], enum st30_sampling sample[],
     handle[i] = st30_tx_create(m_handle, &ops);
     ASSERT_TRUE(handle[i] != NULL);
 
+    test_ctx[i]->handle = handle[i];
+
     if (type[i] == ST30_TYPE_RTP_LEVEL) {
       test_ctx[i]->stop = false;
       rtp_thread[i] = std::thread(tx_feed_packet, test_ctx[i]);
     }
-
-    test_ctx[i]->handle = handle[i];
   }
 
   ret = st_start(m_handle);
@@ -426,11 +447,9 @@ static void st30_rx_fps_test(enum st30_type type[], enum st30_sampling sample[],
     ops_tx.ptime = ptime[i];
     ops_tx.sample_size = st30_get_sample_size(ops_tx.fmt);
     ops_tx.sample_num = st30_get_sample_num(ops_tx.ptime, ops_tx.sampling);
-    ops_tx.framebuff_size = ops_tx.sample_size *
-                            st30_get_sample_num(ops_tx.ptime, ops_tx.sampling) *
-                            ops_tx.channel;
+    ops_tx.framebuff_size = ops_tx.sample_size * ops_tx.sample_num * ops_tx.channel;
     ops_tx.framebuff_cnt = test_ctx_tx[i]->fb_cnt;
-    ops_tx.get_next_frame = tx_next_frame;
+    ops_tx.get_next_frame = tx_audio_next_frame;
     ops_tx.notify_rtp_done = tx_rtp_done;
     ops_tx.rtp_ring_size = 1024;
     test_ctx_tx[i]->pkt_data_len =
@@ -456,12 +475,13 @@ static void st30_rx_fps_test(enum st30_type type[], enum st30_sampling sample[],
         test_sha_dump("st30_rx", result);
       }
     }
+
+    test_ctx_tx[i]->handle = tx_handle[i];
+
     if (type[i] == ST30_TYPE_RTP_LEVEL) {
       test_ctx_tx[i]->stop = false;
       rtp_thread_tx[i] = std::thread(tx_feed_packet, test_ctx_tx[i]);
     }
-
-    test_ctx_tx[i]->handle = tx_handle[i];
   }
 
   for (int i = 0; i < sessions; i++) {
@@ -487,9 +507,7 @@ static void st30_rx_fps_test(enum st30_type type[], enum st30_sampling sample[],
     ops_rx.ptime = ptime[i];
     ops_rx.sample_size = st30_get_sample_size(ops_rx.fmt);
     ops_rx.sample_num = st30_get_sample_num(ops_rx.ptime, ops_rx.sampling);
-    ops_rx.framebuff_size = ops_rx.sample_size *
-                            st30_get_sample_num(ops_rx.ptime, ops_rx.sampling) *
-                            ops_rx.channel;
+    ops_rx.framebuff_size = ops_rx.sample_size * ops_rx.sample_num * ops_rx.channel;
     ops_rx.framebuff_cnt = test_ctx_rx[i]->fb_cnt;
     ops_rx.notify_frame_ready = st30_rx_frame_ready;
     ops_rx.notify_rtp_ready = rx_rtp_ready;
@@ -516,6 +534,10 @@ static void st30_rx_fps_test(enum st30_type type[], enum st30_sampling sample[],
     }
 
     test_ctx_rx[i]->handle = rx_handle[i];
+
+    struct st_queue_meta q_meta;
+    ret = st30_rx_get_queue_meta(rx_handle[i], &q_meta);
+    EXPECT_GE(ret, 0);
   }
 
   ret = st_start(m_handle);
@@ -640,7 +662,7 @@ TEST(St30_tx, mix_96k_stereo_s3) {
   enum st30_ptime pt[3] = {ST30_PTIME_1MS, ST30_PTIME_1MS, ST30_PTIME_1MS};
   uint16_t c[3] = {2, 2, 2};
   enum st30_fmt f[3] = {ST30_FMT_PCM8, ST30_FMT_PCM16, ST30_FMT_PCM24};
-  st30_tx_fps_test(type, s, pt, c, f, ST_TEST_LEVEL_MANDATORY, 3);
+  st30_tx_fps_test(type, s, pt, c, f, ST_TEST_LEVEL_ALL, 3);
 }
 
 TEST(St30_tx, mix_48k_96_mix) {
@@ -650,7 +672,7 @@ TEST(St30_tx, mix_48k_96_mix) {
   enum st30_ptime pt[3] = {ST30_PTIME_1MS, ST30_PTIME_1MS, ST30_PTIME_1MS};
   uint16_t c[3] = {2, 1, 4};
   enum st30_fmt f[3] = {ST30_FMT_PCM8, ST30_FMT_PCM16, ST30_FMT_PCM24};
-  st30_tx_fps_test(type, s, pt, c, f, ST_TEST_LEVEL_MANDATORY, 3);
+  st30_tx_fps_test(type, s, pt, c, f, ST_TEST_LEVEL_ALL, 3);
 }
 TEST(St30_rx, mix_48k_96_mix) {
   enum st30_type type[3] = {ST30_TYPE_FRAME_LEVEL, ST30_TYPE_RTP_LEVEL,
@@ -693,13 +715,57 @@ TEST(St30_rx, rtp_digest_st31_mix) {
   enum st30_fmt f[2] = {ST31_FMT_AM824, ST31_FMT_AM824};
   st30_rx_fps_test(type, s, pt, c, f, ST_TEST_LEVEL_MANDATORY, 2, true);
 }
-TEST(St30_rx, frame_digest_125us_80us_mix) {
-  enum st30_type type[2] = {ST30_TYPE_FRAME_LEVEL, ST30_TYPE_FRAME_LEVEL};
-  enum st30_sampling s[2] = {ST30_SAMPLING_48K, ST30_SAMPLING_48K};
-  enum st30_ptime pt[2] = {ST30_PTIME_125US, ST30_PTIME_80US};
-  uint16_t c[2] = {8, 4};
-  enum st30_fmt f[2] = {ST30_FMT_PCM16, ST30_FMT_PCM24};
-  st30_rx_fps_test(type, s, pt, c, f, ST_TEST_LEVEL_MANDATORY, 2, true);
+TEST(St30_rx, frame_digest_stereo_ptime_mix_s5) {
+  enum st30_type type[5] = {ST30_TYPE_FRAME_LEVEL, ST30_TYPE_FRAME_LEVEL,
+                            ST30_TYPE_FRAME_LEVEL, ST30_TYPE_FRAME_LEVEL,
+                            ST30_TYPE_FRAME_LEVEL};
+  enum st30_sampling s[5] = {ST30_SAMPLING_48K, ST30_SAMPLING_48K, ST30_SAMPLING_48K,
+                             ST30_SAMPLING_48K, ST30_SAMPLING_48K};
+  enum st30_ptime pt[5] = {ST30_PTIME_125US, ST30_PTIME_250US, ST30_PTIME_333US,
+                           ST30_PTIME_4MS, ST31_PTIME_80US};
+  uint16_t c[5] = {2, 2, 2, 2, 2};
+  enum st30_fmt f[5] = {ST30_FMT_PCM16, ST30_FMT_PCM16, ST30_FMT_PCM16, ST30_FMT_PCM16,
+                        ST31_FMT_AM824};
+  st30_rx_fps_test(type, s, pt, c, f, ST_TEST_LEVEL_MANDATORY, 5, true);
+}
+TEST(St30_rx, frame_digest_max_channel_48k_16bit_ptime_mix_s5) {
+  enum st30_type type[5] = {ST30_TYPE_FRAME_LEVEL, ST30_TYPE_FRAME_LEVEL,
+                            ST30_TYPE_FRAME_LEVEL, ST30_TYPE_FRAME_LEVEL,
+                            ST30_TYPE_FRAME_LEVEL};
+  enum st30_sampling s[5] = {ST30_SAMPLING_48K, ST30_SAMPLING_48K, ST30_SAMPLING_48K,
+                             ST30_SAMPLING_48K, ST30_SAMPLING_48K};
+  enum st30_ptime pt[5] = {ST30_PTIME_125US, ST30_PTIME_250US, ST30_PTIME_333US,
+                           ST30_PTIME_1MS, ST30_PTIME_4MS};
+  uint16_t c[5] = {120, 60, 45, 15, 3};
+  enum st30_fmt f[5] = {ST30_FMT_PCM16, ST30_FMT_PCM16, ST30_FMT_PCM16, ST30_FMT_PCM16,
+                        ST30_FMT_PCM16};
+  st30_rx_fps_test(type, s, pt, c, f, ST_TEST_LEVEL_MANDATORY, 5, true);
+}
+TEST(St30_rx, frame_digest_max_channel_48k_24bit_ptime_mix_s5) {
+  enum st30_type type[5] = {ST30_TYPE_FRAME_LEVEL, ST30_TYPE_FRAME_LEVEL,
+                            ST30_TYPE_FRAME_LEVEL, ST30_TYPE_FRAME_LEVEL,
+                            ST30_TYPE_FRAME_LEVEL};
+  enum st30_sampling s[5] = {ST30_SAMPLING_48K, ST30_SAMPLING_48K, ST30_SAMPLING_48K,
+                             ST30_SAMPLING_48K, ST30_SAMPLING_48K};
+  enum st30_ptime pt[5] = {ST30_PTIME_125US, ST30_PTIME_250US, ST30_PTIME_333US,
+                           ST30_PTIME_1MS, ST30_PTIME_4MS};
+  uint16_t c[5] = {80, 40, 30, 10, 2};
+  enum st30_fmt f[5] = {ST30_FMT_PCM24, ST30_FMT_PCM24, ST30_FMT_PCM24, ST30_FMT_PCM24,
+                        ST30_FMT_PCM24};
+  st30_rx_fps_test(type, s, pt, c, f, ST_TEST_LEVEL_MANDATORY, 5, true);
+}
+TEST(St30_rx, frame_digest_max_channel_96k_24bit_ptime_mix_s5) {
+  enum st30_type type[5] = {ST30_TYPE_FRAME_LEVEL, ST30_TYPE_FRAME_LEVEL,
+                            ST30_TYPE_FRAME_LEVEL, ST30_TYPE_FRAME_LEVEL,
+                            ST30_TYPE_FRAME_LEVEL};
+  enum st30_sampling s[5] = {ST30_SAMPLING_96K, ST30_SAMPLING_96K, ST30_SAMPLING_96K,
+                             ST30_SAMPLING_96K, ST30_SAMPLING_96K};
+  enum st30_ptime pt[5] = {ST30_PTIME_125US, ST30_PTIME_250US, ST30_PTIME_333US,
+                           ST30_PTIME_1MS, ST30_PTIME_4MS};
+  uint16_t c[5] = {40, 20, 15, 5, 1};
+  enum st30_fmt f[5] = {ST30_FMT_PCM24, ST30_FMT_PCM24, ST30_FMT_PCM24, ST30_FMT_PCM24,
+                        ST30_FMT_PCM24};
+  st30_rx_fps_test(type, s, pt, c, f, ST_TEST_LEVEL_MANDATORY, 5, true);
 }
 
 static void st30_rx_update_src_test(enum st30_type type, int tx_sessions) {
@@ -762,23 +828,21 @@ static void st30_rx_update_src_test(enum st30_type type, int tx_sessions) {
     ops_tx.ptime = ST30_PTIME_1MS;
     ops_tx.sample_size = st30_get_sample_size(ops_tx.fmt);
     ops_tx.sample_num = st30_get_sample_num(ops_tx.ptime, ops_tx.sampling);
-    ops_tx.framebuff_size = ops_tx.sample_size *
-                            st30_get_sample_num(ST30_PTIME_1MS, ops_tx.sampling) *
-                            ops_tx.channel;
+    ops_tx.framebuff_size = ops_tx.sample_size * ops_tx.sample_num * ops_tx.channel;
     ops_tx.framebuff_cnt = test_ctx_tx[i]->fb_cnt;
-    ops_tx.get_next_frame = tx_next_frame;
+    ops_tx.get_next_frame = tx_audio_next_frame;
     ops_tx.notify_rtp_done = tx_rtp_done;
     ops_tx.rtp_ring_size = 1024;
 
     tx_handle[i] = st30_tx_create(m_handle, &ops_tx);
     ASSERT_TRUE(tx_handle[i] != NULL);
 
+    test_ctx_tx[i]->handle = tx_handle[i];
+
     if (type == ST30_TYPE_RTP_LEVEL) {
       test_ctx_tx[i]->stop = false;
       rtp_thread_tx[i] = std::thread(tx_feed_packet, test_ctx_tx[i]);
     }
-
-    test_ctx_tx[i]->handle = tx_handle[i];
   }
 
   for (int i = 0; i < rx_sessions; i++) {
@@ -804,9 +868,7 @@ static void st30_rx_update_src_test(enum st30_type type, int tx_sessions) {
     ops_rx.ptime = ST30_PTIME_1MS;
     ops_rx.sample_size = st30_get_sample_size(ops_rx.fmt);
     ops_rx.sample_num = st30_get_sample_num(ops_rx.ptime, ops_rx.sampling);
-    ops_rx.framebuff_size = ops_rx.sample_size *
-                            st30_get_sample_num(ST30_PTIME_1MS, ops_rx.sampling) *
-                            ops_rx.channel;
+    ops_rx.framebuff_size = ops_rx.sample_size * ops_rx.sample_num * ops_rx.channel;
     ops_rx.framebuff_cnt = test_ctx_rx[i]->fb_cnt;
     ops_rx.notify_frame_ready = st30_rx_frame_ready;
     ops_rx.notify_rtp_ready = rx_rtp_ready;
@@ -943,9 +1005,9 @@ TEST(St30_rx, update_source_frame) { st30_rx_update_src_test(ST30_TYPE_FRAME_LEV
 TEST(St30_rx, update_source_rtp) { st30_rx_update_src_test(ST30_TYPE_RTP_LEVEL, 2); }
 
 static int st30_rx_meta_frame_ready(void* priv, void* frame,
-                                    struct st30_frame_meta* meta) {
+                                    struct st30_rx_frame_meta* meta) {
   auto ctx = (tests_context*)priv;
-  auto expect_meta = (struct st30_frame_meta*)ctx->priv;
+  auto expect_meta = (struct st30_rx_frame_meta*)ctx->priv;
 
   if (!ctx->handle) return -EIO;
 
@@ -963,7 +1025,8 @@ static int st30_rx_meta_frame_ready(void* priv, void* frame,
 }
 
 static void st30_rx_meta_test(enum st30_fmt fmt[], enum st30_sampling sampling[],
-                              uint16_t channel[], int sessions = 1) {
+                              uint16_t channel[], int sessions = 1,
+                              bool user_timestamp = false) {
   auto ctx = (struct st_tests_context*)st_test_ctx();
   auto m_handle = ctx->handle;
   int ret;
@@ -981,14 +1044,14 @@ static void st30_rx_meta_test(enum st30_fmt fmt[], enum st30_sampling sampling[]
   std::vector<st30_rx_handle> rx_handle;
   double expect_framerate = 1000.0;
   std::vector<double> framerate;
-  std::vector<std::thread> rtp_thread_tx;
+
+  if (user_timestamp) expect_framerate /= 2;
 
   test_ctx_tx.resize(sessions);
   test_ctx_rx.resize(sessions);
   tx_handle.resize(sessions);
   rx_handle.resize(sessions);
   framerate.resize(sessions);
-  rtp_thread_tx.resize(sessions);
 
   for (int i = 0; i < sessions; i++) {
     test_ctx_tx[i] = new tests_context();
@@ -1005,7 +1068,7 @@ static void st30_rx_meta_test(enum st30_fmt fmt[], enum st30_sampling sampling[]
     memcpy(ops_tx.dip_addr[ST_PORT_P], ctx->para.sip_addr[ST_PORT_R], ST_IP_ADDR_LEN);
     strncpy(ops_tx.port[ST_PORT_P], ctx->para.port[ST_PORT_P], ST_PORT_MAX_LEN);
     ops_tx.udp_port[ST_PORT_P] = 20000 + i;
-    ops_tx.type = ST30_TYPE_RTP_LEVEL;
+    ops_tx.type = ST30_TYPE_FRAME_LEVEL;
     ops_tx.sampling = sampling[i];
     ops_tx.channel = channel[i];
     ops_tx.fmt = fmt[i];
@@ -1013,11 +1076,14 @@ static void st30_rx_meta_test(enum st30_fmt fmt[], enum st30_sampling sampling[]
     ops_tx.ptime = ST30_PTIME_1MS;
     ops_tx.sample_size = st30_get_sample_size(ops_tx.fmt);
     ops_tx.sample_num = st30_get_sample_num(ops_tx.ptime, ops_tx.sampling);
-    ops_tx.framebuff_size = ops_tx.sample_size *
-                            st30_get_sample_num(ST30_PTIME_1MS, ops_tx.sampling) *
-                            ops_tx.channel;
+    ops_tx.framebuff_size = ops_tx.sample_size * ops_tx.sample_num * ops_tx.channel;
     ops_tx.framebuff_cnt = test_ctx_tx[i]->fb_cnt;
-    ops_tx.get_next_frame = tx_next_frame;
+    if (user_timestamp) {
+      ops_tx.get_next_frame = tx_audio_next_frame_timestamp;
+      ops_tx.flags |= ST30_TX_FLAG_USER_TIMESTAMP;
+    } else {
+      ops_tx.get_next_frame = tx_audio_next_frame;
+    }
     ops_tx.notify_rtp_done = tx_rtp_done;
     ops_tx.rtp_ring_size = 1024;
     test_ctx_tx[i]->pkt_data_len =
@@ -1025,10 +1091,9 @@ static void st30_rx_meta_test(enum st30_fmt fmt[], enum st30_sampling sampling[]
     tx_handle[i] = st30_tx_create(m_handle, &ops_tx);
     ASSERT_TRUE(tx_handle[i] != NULL);
 
-    test_ctx_tx[i]->stop = false;
-    rtp_thread_tx[i] = std::thread(tx_feed_packet, test_ctx_tx[i]);
-
     test_ctx_tx[i]->handle = tx_handle[i];
+
+    test_ctx_tx[i]->stop = false;
   }
 
   for (int i = 0; i < sessions; i++) {
@@ -1054,9 +1119,7 @@ static void st30_rx_meta_test(enum st30_fmt fmt[], enum st30_sampling sampling[]
     ops_rx.ptime = ST30_PTIME_1MS;
     ops_rx.sample_size = st30_get_sample_size(ops_rx.fmt);
     ops_rx.sample_num = st30_get_sample_num(ops_rx.ptime, ops_rx.sampling);
-    ops_rx.framebuff_size = ops_rx.sample_size *
-                            st30_get_sample_num(ST30_PTIME_1MS, ops_rx.sampling) *
-                            ops_rx.channel;
+    ops_rx.framebuff_size = ops_rx.sample_size * ops_rx.sample_num * ops_rx.channel;
     ops_rx.framebuff_cnt = test_ctx_rx[i]->fb_cnt;
     ops_rx.notify_frame_ready = st30_rx_meta_frame_ready;
     ops_rx.notify_rtp_ready = rx_rtp_ready;
@@ -1068,7 +1131,8 @@ static void st30_rx_meta_test(enum st30_fmt fmt[], enum st30_sampling sampling[]
     test_ctx_rx[i]->stop = false;
 
     /* set expect meta data to private */
-    auto meta = (struct st30_frame_meta*)st_test_zmalloc(sizeof(struct st30_frame_meta));
+    auto meta =
+        (struct st30_rx_frame_meta*)st_test_zmalloc(sizeof(struct st30_rx_frame_meta));
     ASSERT_TRUE(meta != NULL);
     meta->channel = ops_rx.channel;
     meta->sampling = ops_rx.sampling;
@@ -1093,7 +1157,6 @@ static void st30_rx_meta_test(enum st30_fmt fmt[], enum st30_sampling sampling[]
       std::unique_lock<std::mutex> lck(test_ctx_tx[i]->mtx);
       test_ctx_tx[i]->cv.notify_all();
     }
-    rtp_thread_tx[i].join();
 
     test_ctx_rx[i]->stop = true;
   }
@@ -1102,8 +1165,9 @@ static void st30_rx_meta_test(enum st30_fmt fmt[], enum st30_sampling sampling[]
   EXPECT_GE(ret, 0);
   for (int i = 0; i < sessions; i++) {
     EXPECT_GT(test_ctx_rx[i]->fb_rec, 0);
-    info("%s, session %d fb_rec %d fail %d framerate %f\n", __func__, i,
-         test_ctx_rx[i]->fb_rec, test_ctx_rx[i]->fail_cnt, framerate[i]);
+    info("%s, session %d fb_rec %d fail %d framerate %f, fb send %d\n", __func__, i,
+         test_ctx_rx[i]->fb_rec, test_ctx_rx[i]->fail_cnt, framerate[i],
+         test_ctx_tx[i]->fb_send);
     EXPECT_NEAR(framerate[i], expect_framerate, expect_framerate * 0.1);
     ret = st30_tx_free(tx_handle[i]);
     EXPECT_GE(ret, 0);
@@ -1120,6 +1184,13 @@ TEST(St30_rx, frame_meta_pcm16_48k_2ch_s1) {
   enum st30_sampling sampling[1] = {ST30_SAMPLING_48K};
   uint16_t channel[1] = {2};
   st30_rx_meta_test(fmt, sampling, channel);
+}
+
+TEST(St30_rx, frame_user_timestamp) {
+  enum st30_fmt fmt[1] = {ST30_FMT_PCM16};
+  enum st30_sampling sampling[1] = {ST30_SAMPLING_48K};
+  uint16_t channel[1] = {2};
+  st30_rx_meta_test(fmt, sampling, channel, 1, true);
 }
 
 static void st30_create_after_start_test(enum st30_type type[],
@@ -1181,11 +1252,9 @@ static void st30_create_after_start_test(enum st30_type type[],
       ops_tx.ptime = ST30_PTIME_1MS;
       ops_tx.sample_size = st30_get_sample_size(ops_tx.fmt);
       ops_tx.sample_num = st30_get_sample_num(ops_tx.ptime, ops_tx.sampling);
-      ops_tx.framebuff_size = ops_tx.sample_size *
-                              st30_get_sample_num(ST30_PTIME_1MS, ops_tx.sampling) *
-                              ops_tx.channel;
+      ops_tx.framebuff_size = ops_tx.sample_size * ops_tx.sample_num * ops_tx.channel;
       ops_tx.framebuff_cnt = test_ctx_tx[i]->fb_cnt;
-      ops_tx.get_next_frame = tx_next_frame;
+      ops_tx.get_next_frame = tx_audio_next_frame;
       ops_tx.notify_rtp_done = tx_rtp_done;
       ops_tx.rtp_ring_size = 1024;
       test_ctx_tx[i]->pkt_data_len =
@@ -1193,12 +1262,12 @@ static void st30_create_after_start_test(enum st30_type type[],
       tx_handle[i] = st30_tx_create(m_handle, &ops_tx);
       ASSERT_TRUE(tx_handle[i] != NULL);
 
+      test_ctx_tx[i]->handle = tx_handle[i];
+
       if (type[i] == ST30_TYPE_RTP_LEVEL) {
         test_ctx_tx[i]->stop = false;
         rtp_thread_tx[i] = std::thread(tx_feed_packet, test_ctx_tx[i]);
       }
-
-      test_ctx_tx[i]->handle = tx_handle[i];
     }
 
     for (int i = 0; i < sessions; i++) {
@@ -1224,9 +1293,7 @@ static void st30_create_after_start_test(enum st30_type type[],
       ops_rx.ptime = ST30_PTIME_1MS;
       ops_rx.sample_size = st30_get_sample_size(ops_rx.fmt);
       ops_rx.sample_num = st30_get_sample_num(ops_rx.ptime, ops_rx.sampling);
-      ops_rx.framebuff_size = ops_rx.sample_size *
-                              st30_get_sample_num(ST30_PTIME_1MS, ops_rx.sampling) *
-                              ops_rx.channel;
+      ops_rx.framebuff_size = ops_rx.sample_size * ops_rx.sample_num * ops_rx.channel;
       ops_rx.framebuff_cnt = test_ctx_rx[i]->fb_cnt;
       ops_rx.notify_frame_ready = st30_rx_frame_ready;
       ops_rx.notify_rtp_ready = rx_rtp_ready;

@@ -1,0 +1,87 @@
+From d39f58ce4aa3f44f72e1aba3d2ad2ed655dc72e3 Mon Sep 17 00:00:00 2001
+From: qiaoliu <qiao.liu@intel.com>
+Date: Tue, 12 Jul 2022 14:30:42 +0800
+Subject: [PATCH 8/9] Windows need set the timer resolution to maximum to reach
+ high performance
+
+---
+ lib/eal/windows/eal_timer.c | 56 +++++++++++++++++++++++++++++++++++++
+ 1 file changed, 56 insertions(+)
+
+diff --git a/lib/eal/windows/eal_timer.c b/lib/eal/windows/eal_timer.c
+index b070cb7751..3b33d17507 100644
+--- a/lib/eal/windows/eal_timer.c
++++ b/lib/eal/windows/eal_timer.c
+@@ -14,6 +14,61 @@
+ #define US_PER_SEC 1E6
+ #define CYC_PER_10MHZ 1E7
+ 
++typedef PVOID (*NtQueryTimerResolution_type)(
++    PULONG MinimumResolution,
++    PULONG MaximumResolution,
++    PULONG CurrentResolution
++);
++
++typedef PVOID (*NtSetTimerResolution_type)(
++    ULONG RequestedResolution,
++    BOOLEAN Set,
++    PULONG ActualResolution
++);
++
++static NtQueryTimerResolution_type NtQueryTimerResolution_ptr;
++static NtSetTimerResolution_type NtSetTimerResolution_ptr;
++
++static int set_timer_resolution(void)
++{
++	ULONG minRes;
++	ULONG maxRes;
++	ULONG currentRes;
++	static const char library_name[] = "ntdll.dll";
++	static const char function1[] = "NtQueryTimerResolution";
++	static const char function2[] = "NtSetTimerResolution";
++
++	HMODULE library = NULL;
++
++	library = LoadLibraryA(library_name);
++	if (library == NULL) {
++		RTE_LOG_WIN32_ERR("LoadLibraryA(\"%s\")", library_name);
++		return -1;
++	}
++
++	NtQueryTimerResolution_ptr = (NtQueryTimerResolution_type)(
++		(void *)GetProcAddress(library, function1));
++	if (NtQueryTimerResolution_ptr == NULL) {
++		RTE_LOG_WIN32_ERR("GetProcAddress(\"%s\", \"%s\")\n",
++			library_name, function1);
++		return -1;
++	}
++
++	NtSetTimerResolution_ptr = (NtSetTimerResolution_type)(
++		(void *)GetProcAddress(library, function2));
++	if (NtSetTimerResolution_ptr == NULL) {
++		RTE_LOG_WIN32_ERR("GetProcAddress(\"%s\", \"%s\")\n",
++			library_name, function2);
++			return -1;
++	}
++
++
++	NtQueryTimerResolution_ptr(&minRes,&maxRes,&currentRes);
++  NtSetTimerResolution_ptr(maxRes, TRUE, &currentRes);
++  FreeLibrary(library);
++  return 0;
++}
++
+ void
+ rte_delay_us_sleep(unsigned int us)
+ {
+@@ -89,6 +144,7 @@ get_tsc_freq(void)
+ int
+ rte_eal_timer_init(void)
+ {
++	set_timer_resolution();
+ 	set_tsc_freq();
+ 	return 0;
+ }
+-- 
+2.17.1
+

@@ -1,0 +1,216 @@
+From be1cd6befc338affe043808f33690ef293f9d5b1 Mon Sep 17 00:00:00 2001
+From: "Du, Frank" <frank.du@intel.com>
+Date: Mon, 22 Aug 2022 15:22:47 +0800
+Subject: [PATCH 2/2] net/ice: support hdr split mbuf callback
+
+Use this cb to get customized payload buffer.
+
+Signed-off-by: Du, Frank <frank.du@intel.com>
+---
+ drivers/net/ice/ice_ethdev.c |  1 +
+ drivers/net/ice/ice_rxtx.c   | 47 ++++++++++++++++++++++++++++++++++++
+ drivers/net/ice/ice_rxtx.h   |  6 +++++
+ lib/ethdev/ethdev_driver.h   |  6 +++++
+ lib/ethdev/rte_ethdev.c      | 13 ++++++++++
+ lib/ethdev/rte_ethdev.h      | 11 +++++++++
+ lib/ethdev/version.map       |  2 ++
+ 7 files changed, 86 insertions(+)
+
+diff --git a/drivers/net/ice/ice_ethdev.c b/drivers/net/ice/ice_ethdev.c
+index 955c67143a..62ebf64add 100644
+--- a/drivers/net/ice/ice_ethdev.c
++++ b/drivers/net/ice/ice_ethdev.c
+@@ -285,6 +285,7 @@ static const struct eth_dev_ops ice_eth_dev_ops = {
+ 	.timesync_disable             = ice_timesync_disable,
+ 	.tm_ops_get                   = ice_tm_ops_get,
+ 	.hdrs_supported_ptypes_get    = ice_get_supported_split_hdrs,
++	.hdrs_mbuf_set_cb     = ice_hdrs_mbuf_set_cb,
+ };
+ 
+ /* store statistics names and its offset in stats structure */
+diff --git a/drivers/net/ice/ice_rxtx.c b/drivers/net/ice/ice_rxtx.c
+index 458548898a..7373537ec6 100644
+--- a/drivers/net/ice/ice_rxtx.c
++++ b/drivers/net/ice/ice_rxtx.c
+@@ -464,6 +464,14 @@ ice_alloc_rx_queue_mbufs(struct ice_rx_queue *rxq)
+ 				PMD_DRV_LOG(ERR, "Failed to allocate payload mbuf for RX");
+ 				return -ENOMEM;
+ 			}
++			if (rxq->hdrs_mbuf_cb) {
++				struct rte_eth_hdrs_mbuf hdrs_mbuf;
++				int ret = rxq->hdrs_mbuf_cb(rxq->hdrs_mbuf_cb_priv, &hdrs_mbuf);
++				if (ret >= 0) {
++					mbuf_pay->buf_addr = hdrs_mbuf.buf_addr;
++					mbuf_pay->buf_iova = hdrs_mbuf.buf_iova;
++				}
++			}
+ 
+ 			mbuf_pay->next = NULL;
+ 			mbuf_pay->data_off = RTE_PKTMBUF_HEADROOM;
+@@ -1858,6 +1866,14 @@ ice_rx_alloc_bufs(struct ice_rx_queue *rxq)
+ 		dma_addr = rte_cpu_to_le_64(rte_mbuf_data_iova_default(mb));
+ 
+ 		if (rxq->offloads & RTE_ETH_RX_OFFLOAD_BUFFER_SPLIT) {
++			if (rxq->hdrs_mbuf_cb) {
++				struct rte_eth_hdrs_mbuf hdrs_mbuf;
++				int ret = rxq->hdrs_mbuf_cb(rxq->hdrs_mbuf_cb_priv, &hdrs_mbuf);
++				if (ret >= 0) {
++					mbufs_pay[i]->buf_addr = hdrs_mbuf.buf_addr;
++					mbufs_pay[i]->buf_iova = hdrs_mbuf.buf_iova;
++				}
++			}
+ 			mb->next = mbufs_pay[i];
+ 			pay_addr = rte_mbuf_data_iova_default(mbufs_pay[i]);
+ 			rxdp[i].read.hdr_addr = dma_addr;
+@@ -2538,6 +2554,14 @@ ice_recv_pkts(void *rx_queue,
+ 				rxq->vsi->adapter->pf.dev_data->rx_mbuf_alloc_failed++;
+ 				break;
+ 			}
++			if (rxq->hdrs_mbuf_cb) {
++				struct rte_eth_hdrs_mbuf hdrs_mbuf;
++				int ret = rxq->hdrs_mbuf_cb(rxq->hdrs_mbuf_cb_priv, &hdrs_mbuf);
++				if (ret >= 0) {
++					nmb_pay->buf_addr = hdrs_mbuf.buf_addr;
++					nmb_pay->buf_iova = hdrs_mbuf.buf_iova;
++				}
++			}
+ 
+ 			nmb->next = nmb_pay;
+ 			nmb_pay->next = NULL;
+@@ -4518,3 +4542,26 @@ ice_fdir_programming(struct ice_pf *pf, struct ice_fltr_desc *fdir_desc)
+ 
+ 
+ }
++
++int
++ice_hdrs_mbuf_set_cb(struct rte_eth_dev *dev, uint16_t rx_queue_id,
++					void *priv, rte_eth_hdrs_mbuf_callback_fn cb) {
++	struct ice_rx_queue *rxq;
++
++	rxq = dev->data->rx_queues[rx_queue_id];
++	if (!rxq) {
++		PMD_DRV_LOG(ERR, "RX queue %u not available or setup", rx_queue_id);
++		return -EINVAL;
++	}
++
++	if (rxq->hdrs_mbuf_cb) {
++		PMD_DRV_LOG(ERR, "RX queue %u has hdrs mbuf cb already", rx_queue_id);
++		return -EINVAL;
++	}
++
++	rxq->hdrs_mbuf_cb_priv = priv;
++	rxq->hdrs_mbuf_cb = cb;
++	PMD_DRV_LOG(NOTICE, "RX queue %u register hdrs mbuf cb at %p", rx_queue_id, cb);
++	return 0;
++}
++
+diff --git a/drivers/net/ice/ice_rxtx.h b/drivers/net/ice/ice_rxtx.h
+index d44bde3710..1bdb6c01c8 100644
+--- a/drivers/net/ice/ice_rxtx.h
++++ b/drivers/net/ice/ice_rxtx.h
+@@ -114,6 +114,9 @@ struct ice_rx_queue {
+ 	uint64_t hw_time_update; /* SW time of HW record updating */
+ 	struct rte_eth_rxseg_split rxseg[ICE_RX_MAX_NSEG];
+ 	uint32_t rxseg_nb;
++
++	rte_eth_hdrs_mbuf_callback_fn hdrs_mbuf_cb;
++	void *hdrs_mbuf_cb_priv;
+ };
+ 
+ struct ice_tx_entry {
+@@ -310,6 +313,9 @@ int ice_fdir_programming(struct ice_pf *pf, struct ice_fltr_desc *fdir_desc);
+ int ice_tx_done_cleanup(void *txq, uint32_t free_cnt);
+ int ice_get_monitor_addr(void *rx_queue, struct rte_power_monitor_cond *pmc);
+ 
++int ice_hdrs_mbuf_set_cb(struct rte_eth_dev *dev, uint16_t rx_queue_id,
++					void *priv, rte_eth_hdrs_mbuf_callback_fn cb);
++
+ #define FDIR_PARSING_ENABLE_PER_QUEUE(ad, on) do { \
+ 	int i; \
+ 	for (i = 0; i < (ad)->pf.dev_data->nb_rx_queues; i++) { \
+diff --git a/lib/ethdev/ethdev_driver.h b/lib/ethdev/ethdev_driver.h
+index fba9166059..2a0d15d745 100644
+--- a/lib/ethdev/ethdev_driver.h
++++ b/lib/ethdev/ethdev_driver.h
+@@ -1108,6 +1108,9 @@ typedef int (*eth_rx_queue_avail_thresh_query_t)(struct rte_eth_dev *dev,
+ 					uint16_t *rx_queue_id,
+ 					uint8_t *avail_thresh);
+ 
++typedef int (*eth_hdrs_mbuf_set_cb_t)(struct rte_eth_dev *dev, uint16_t rx_queue_id,
++					void *priv, rte_eth_hdrs_mbuf_callback_fn cb);
++
+ /**
+  * @internal A structure containing the functions exported by an Ethernet driver.
+  */
+@@ -1326,6 +1329,9 @@ struct eth_dev_ops {
+ 	eth_rx_queue_avail_thresh_set_t rx_queue_avail_thresh_set;
+ 	/** Query Rx queue available descriptors threshold event */
+ 	eth_rx_queue_avail_thresh_query_t rx_queue_avail_thresh_query;
++
++	/** Set buffer split mbuf call back func */
++	eth_hdrs_mbuf_set_cb_t hdrs_mbuf_set_cb;
+ };
+ 
+ /**
+diff --git a/lib/ethdev/rte_ethdev.c b/lib/ethdev/rte_ethdev.c
+index 121123d579..b021214168 100644
+--- a/lib/ethdev/rte_ethdev.c
++++ b/lib/ethdev/rte_ethdev.c
+@@ -5956,6 +5956,19 @@ rte_eth_dev_priv_dump(uint16_t port_id, FILE *file)
+ 	return eth_err(port_id, (*dev->dev_ops->eth_dev_priv_dump)(dev, file));
+ }
+ 
++int
++rte_eth_hdrs_set_mbuf_callback(uint16_t port_id, uint16_t rx_queue_id, void *priv,
++			rte_eth_hdrs_mbuf_callback_fn cb)
++{
++	struct rte_eth_dev *dev;
++
++	RTE_ETH_VALID_PORTID_OR_ERR_RET(port_id, -ENODEV);
++	dev = &rte_eth_devices[port_id];
++
++	RTE_FUNC_PTR_OR_ERR_RET(*dev->dev_ops->hdrs_mbuf_set_cb, -ENOTSUP);
++	return eth_err(port_id, (*dev->dev_ops->hdrs_mbuf_set_cb)(dev, rx_queue_id, priv, cb));
++}
++
+ RTE_LOG_REGISTER_DEFAULT(rte_eth_dev_logtype, INFO);
+ 
+ RTE_INIT(ethdev_init_telemetry)
+diff --git a/lib/ethdev/rte_ethdev.h b/lib/ethdev/rte_ethdev.h
+index f3668c5914..5205ae23ac 100644
+--- a/lib/ethdev/rte_ethdev.h
++++ b/lib/ethdev/rte_ethdev.h
+@@ -6242,6 +6242,17 @@ __rte_experimental
+ int rte_eth_supported_hdrs_get(uint16_t port_id,
+ 		uint32_t *ptype);
+ 
++struct rte_eth_hdrs_mbuf {
++  void *buf_addr;
++  rte_iova_t buf_iova;
++};
++
++typedef int (*rte_eth_hdrs_mbuf_callback_fn)(void *priv, struct rte_eth_hdrs_mbuf *mbuf);
++
++__rte_experimental
++int rte_eth_hdrs_set_mbuf_callback(uint16_t port_id, uint16_t rx_queue_id, void *priv,
++			rte_eth_hdrs_mbuf_callback_fn cb);
++
+ #ifdef __cplusplus
+ }
+ #endif
+diff --git a/lib/ethdev/version.map b/lib/ethdev/version.map
+index ea965ea7d0..7c9bb9ffec 100644
+--- a/lib/ethdev/version.map
++++ b/lib/ethdev/version.map
+@@ -286,6 +286,8 @@ EXPERIMENTAL {
+ 	rte_mtr_color_in_protocol_set;
+ 	rte_mtr_meter_vlan_table_update;
+ 	rte_eth_supported_hdrs_get;
++	# added for kahawai header split
++	rte_eth_hdrs_set_mbuf_callback;
+ };
+ 
+ INTERNAL {
+-- 
+2.30.2
+

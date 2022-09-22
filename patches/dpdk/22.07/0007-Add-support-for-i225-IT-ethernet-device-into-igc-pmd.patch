@@ -1,0 +1,76 @@
+From a9e582a5cb63bae357b73734a1f66b62c81e0afb Mon Sep 17 00:00:00 2001
+From: wallace-lee <zhan.qiang.lee@intel.com>
+Date: Thu, 4 Aug 2022 16:39:02 +0800
+Subject: [PATCH] Add support for i225-IT ethernet device into igc pmd
+
+---
+ drivers/net/igc/base/igc_api.c     | 1 +
+ drivers/net/igc/base/igc_defines.h | 1 +
+ drivers/net/igc/base/igc_hw.h      | 1 +
+ drivers/net/igc/base/igc_i225.c    | 1 +
+ drivers/net/igc/igc_ethdev.c       | 1 +
+ 5 files changed, 5 insertions(+)
+
+diff --git a/drivers/net/igc/base/igc_api.c b/drivers/net/igc/base/igc_api.c
+index 9b791dc082..dc8fd886a6 100644
+--- a/drivers/net/igc/base/igc_api.c
++++ b/drivers/net/igc/base/igc_api.c
+@@ -886,6 +886,7 @@ s32 igc_set_mac_type(struct igc_hw *hw)
+ 	case IGC_DEV_ID_I225_V:
+ 	case IGC_DEV_ID_I225_K:
+ 	case IGC_DEV_ID_I225_I:
++        case IGC_DEV_ID_I225_IT:
+ 	case IGC_DEV_ID_I220_V:
+ 	case IGC_DEV_ID_I225_BLANK_NVM:
+ 	case IGC_DEV_ID_I226_K:
+diff --git a/drivers/net/igc/base/igc_defines.h b/drivers/net/igc/base/igc_defines.h
+index 61964bcdd2..d5fecab96b 100644
+--- a/drivers/net/igc/base/igc_defines.h
++++ b/drivers/net/igc/base/igc_defines.h
+@@ -1351,6 +1351,7 @@
+ #define IGP04IGC_E_PHY_ID	0x02A80391
+ #define M88_VENDOR		0x0141
+ #define I225_I_PHY_ID		0x67C9DC00
++#define I225_IT_PHY_ID		0x67C9DCC0
+ #define I226_LM_PHY_ID          0x67C9DC10
+ 
+ /* M88E1000 Specific Registers */
+diff --git a/drivers/net/igc/base/igc_hw.h b/drivers/net/igc/base/igc_hw.h
+index 707a1883b4..10edd9b02b 100644
+--- a/drivers/net/igc/base/igc_hw.h
++++ b/drivers/net/igc/base/igc_hw.h
+@@ -164,6 +164,7 @@ struct igc_hw;
+ #define IGC_DEV_ID_I225_V			0x15F3
+ #define IGC_DEV_ID_I225_K			0x3100
+ #define IGC_DEV_ID_I225_I			0x15F8
++#define IGC_DEV_ID_I225_IT			0x0d9f
+ #define IGC_DEV_ID_I220_V			0x15F7
+ #define IGC_DEV_ID_I225_BLANK_NVM		0x15FD
+ #define IGC_DEV_ID_I226_K           0x3102
+diff --git a/drivers/net/igc/base/igc_i225.c b/drivers/net/igc/base/igc_i225.c
+index 5f3d535490..218b1db034 100644
+--- a/drivers/net/igc/base/igc_i225.c
++++ b/drivers/net/igc/base/igc_i225.c
+@@ -176,6 +176,7 @@ static s32 igc_init_phy_params_i225(struct igc_hw *hw)
+ 	/* Verify phy id and set remaining function pointers */
+ 	switch (phy->id) {
+ 	case I225_I_PHY_ID:
++	case I225_IT_PHY_ID:
+ 	case I226_LM_PHY_ID:
+ 		phy->type		= igc_phy_i225;
+ 		phy->ops.set_d0_lplu_state = igc_set_d0_lplu_state_i225;
+diff --git a/drivers/net/igc/igc_ethdev.c b/drivers/net/igc/igc_ethdev.c
+index 7f221a5d34..f005a038e6 100644
+--- a/drivers/net/igc/igc_ethdev.c
++++ b/drivers/net/igc/igc_ethdev.c
+@@ -97,6 +97,7 @@ static const struct rte_pci_id pci_id_igc_map[] = {
+ 	{ RTE_PCI_DEVICE(IGC_INTEL_VENDOR_ID, IGC_DEV_ID_I225_V)  },
+ 	{ RTE_PCI_DEVICE(IGC_INTEL_VENDOR_ID, IGC_DEV_ID_I225_I)  },
+ 	{ RTE_PCI_DEVICE(IGC_INTEL_VENDOR_ID, IGC_DEV_ID_I225_K)  },
++	{ RTE_PCI_DEVICE(IGC_INTEL_VENDOR_ID, IGC_DEV_ID_I225_IT) },
+ 	{ RTE_PCI_DEVICE(IGC_INTEL_VENDOR_ID, IGC_DEV_ID_I226_K)  },
+ 	{ RTE_PCI_DEVICE(IGC_INTEL_VENDOR_ID, IGC_DEV_ID_I226_LMVP)  },
+ 	{ RTE_PCI_DEVICE(IGC_INTEL_VENDOR_ID, IGC_DEV_ID_I226_LM)  },
+-- 
+2.25.1
+

@@ -1,7 +1,7 @@
-From 2ea1d37fd628543ff064f45362a49014b176006d Mon Sep 17 00:00:00 2001
+From 81092f353c9aa1bc4f3154e74a302a8881f72625 Mon Sep 17 00:00:00 2001
 From: qiaoliu <qiao.liu@intel.com>
 Date: Wed, 22 Dec 2021 15:43:14 +0800
-Subject: [PATCH 4/7] Mingw do have pthread implementation change to adapt
+Subject: [PATCH 4/9] Mingw do have pthread implementation change to adapt
  mixed compiling
 
 ---
@@ -9,7 +9,7 @@ Subject: [PATCH 4/7] Mingw do have pthread implementation change to adapt
  1 file changed, 48 insertions(+), 2 deletions(-)
 
 diff --git a/lib/eal/windows/include/pthread.h b/lib/eal/windows/include/pthread.h
-index 27fd2cca52..c3d72f431e 100644
+index 27fd2cca52..34b8b6958a 100644
 --- a/lib/eal/windows/include/pthread.h
 +++ b/lib/eal/windows/include/pthread.h
 @@ -53,22 +53,36 @@ pthread_equal(pthread_t t1, pthread_t t2)
@@ -33,7 +33,7 @@ index 27fd2cca52..c3d72f431e 100644
  
  	thread_handle = OpenThread(THREAD_ALL_ACCESS, FALSE, threadid);
  	if (thread_handle == NULL) {
-+		
++
 +#ifdef __MINGW32__
 +        thread_handle = (HANDLE)pthread_gethandle(threadid);
 +		if (thread_handle == NULL) {
@@ -42,7 +42,7 @@ index 27fd2cca52..c3d72f431e 100644
  		return -1;
 +#ifdef __MINGW32__
 +		}
-+		else 
++		else
 +			  bneedclose = false;
 +#endif
  	}
@@ -82,7 +82,7 @@ index 27fd2cca52..c3d72f431e 100644
 +		RTE_LOG_WIN32_ERR("CloseHandle()");
 +		return -1;
 +	}
-+	
++
  	return 0;
  }
 +#ifdef __MINGW32__

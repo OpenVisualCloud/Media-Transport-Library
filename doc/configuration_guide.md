@@ -127,9 +127,9 @@ Items in each element of the "audio" array
 
 ​	**audio_channel (array-string):** `"M", "DM", "ST", "LtRt", "51", "71", "222", "SGRP", "U01...U64"` audio channel-order(a listing of these channel grouping symbols), the library only cares the total number of channels
 
-​	**audio_sampling (string):** `"48kHz", "96kHz", "44kHz"` audio sample rate
+​	**audio_sampling (string):** `"48kHz", "96kHz"` audio sample rate
 
-​	**audio_ptime (string):** `"1", "0.12", "0.08"(, "1.09", "0.14", "0.09" for 44.1kHz audio)` audio packet time, only support 1ms for now
+​	**audio_ptime (string):** `"1", "0.12", "0.25", "0.33", "4"` audio packet time, AES67(st30) supported: 1ms, 4ms, 125us(0.12), 250us(0.25) and 333us(0.33), AM824(st31) supported: 1ms
 
 ​	**audio_url (string):** audio source
 
@@ -181,7 +181,7 @@ Items in each element of the "video" array
 
 ​	**user_pg_format (string):** `"YUV_422_8bit"` user required pixel group format
 
-​	**display (bool):** `true, false` display video frames with SDL, only works when user_pg_format set to YUV_422_8bit
+​	**display (bool):** `true, false` display video frames with SDL, only works with YUV_422_10bit stream, "--display" option required in the command
 
 #### audio (array of audio sessions)
 
@@ -199,9 +199,9 @@ Items in each element of the "audio" array
 
 ​	**audio_channel (array-string):** `"M", "DM", "ST", "LtRt", "51", "71", "222", "SGRP", "U01...U64"` audio channel-order(a listing of these channel grouping symbols), the library only cares the total number of channels
 
-​	**audio_sampling (string):** `"48kHz", "96kHz", "44kHz"` audio sample rate
+​	**audio_sampling (string):** `"48kHz", "96kHz"` audio sample rate
 
-​	**audio_ptime (string):** `"1", "0.12", "0.08"(, "1.09", "0.14", "0.09" for 44.1kHz audio)` only support 1ms for now
+​	**audio_ptime (string):** `"1", "0.12", "0.25", "0.33", "4"` audio packet time, AES67(st30) supported: 1ms, 4ms, 125us(0.12), 250us(0.25) and 333us(0.33), AM824(st31) supported: 1ms
 
 ​	**audio_url (string):** audio reference file
 

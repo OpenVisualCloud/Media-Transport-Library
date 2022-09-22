@@ -7,6 +7,10 @@
 #include "st_log.h"
 #include "st_main.h"
 
+#ifdef ST_HAS_AVX2
+#include "st_avx2.h"
+#endif
+
 #ifdef ST_HAS_AVX512
 #include "st_avx512.h"
 #endif
@@ -141,6 +145,14 @@ static const struct st_fps_timing st_fps_timings[] = {
         .den = 1,
         .frame_rate = 25,
     },
+    {
+        /* ST_FPS_P119_88 */
+        .fps = ST_FPS_P119_88,
+        .sampling_clock_rate = 90 * 1000,
+        .mul = 60000 * 2,
+        .den = 1001,
+        .frame_rate = 119.88,
+    },
 };
 
 static const struct st_frame_fmt_desc st_frame_fmt_descs[] = {
@@ -189,7 +201,20 @@ static const struct st_frame_fmt_desc st_frame_fmt_descs[] = {
         .fmt = ST_FRAME_FMT_JPEGXS_CODESTREAM,
         .name = "JPEGXS_CODESTREAM",
     },
+    {
+        /* ST_FRAME_FMT_H264_CBR_CODESTREAM */
+        .fmt = ST_FRAME_FMT_H264_CBR_CODESTREAM,
+        .name = "H264_CBR_CODESTREAM",
+    },
 };
+
+static const char* st_pacing_way_names[ST21_TX_PACING_WAY_MAX] = {
+    "auto", "ratelimit", "tsc", "tsn", "ptp",
+};
+
+const char* st_tx_pacing_way_name(enum st21_tx_pacing_way way) {
+  return st_pacing_way_names[way];
+}
 
 size_t st_frame_size(enum st_frame_fmt fmt, uint32_t width, uint32_t height) {
   size_t size = 0;
@@ -207,7 +232,7 @@ size_t st_frame_size(enum st_frame_fmt fmt, uint32_t width, uint32_t height) {
       size = pixels * 2;
       break;
     case ST_FRAME_FMT_YUV422RFC4175PG2BE10:
-      size = pixels * 5 / 2;
+      size = st20_frame_size(ST20_FMT_YUV_422_10BIT, width, height);
       break;
     case ST_FRAME_FMT_ARGB:
     case ST_FRAME_FMT_BGRA:
@@ -236,6 +261,17 @@ int st20_get_pgroup(enum st20_fmt fmt, struct st20_pgroup* pg) {
 
   err("%s, invalid fmt %d\n", __func__, fmt);
   return -EINVAL;
+}
+
+size_t st20_frame_size(enum st20_fmt fmt, uint32_t width, uint32_t height) {
+  struct st20_pgroup pg;
+  int ret = st20_get_pgroup(fmt, &pg);
+  if (ret < 0) {
+    err("%s, st20_get_pgroup fail %d\n", __func__, ret);
+    return 0;
+  }
+
+  return (size_t)width * height * pg.size / pg.coverage;
 }
 
 int st_get_fps_timing(enum st_fps fps, struct st_fps_timing* fps_tm) {
@@ -278,6 +314,42 @@ const char* st_frame_fmt_name(enum st_frame_fmt fmt) {
   return "unknown";
 }
 
+enum st20_fmt st_frame_fmt_to_transport(enum st_frame_fmt fmt) {
+  switch (fmt) {
+    case ST_FRAME_FMT_YUV422RFC4175PG2BE10:
+      return ST20_FMT_YUV_422_10BIT;
+    case ST_FRAME_FMT_YUV422PACKED8:
+      return ST20_FMT_YUV_422_8BIT;
+    case ST_FRAME_FMT_RGB8:
+      return ST20_FMT_RGB_8BIT;
+    default:
+      err("%s, invalid fmt %d\n", __func__, fmt);
+      return ST20_FMT_MAX;
+  }
+}
+
+enum st_frame_fmt st_frame_fmt_from_transport(enum st20_fmt tfmt) {
+  switch (tfmt) {
+    case ST20_FMT_YUV_422_10BIT:
+      return ST_FRAME_FMT_YUV422RFC4175PG2BE10;
+    case ST20_FMT_YUV_422_8BIT:
+      return ST_FRAME_FMT_YUV422PACKED8;
+    case ST20_FMT_RGB_8BIT:
+      return ST_FRAME_FMT_RGB8;
+    default:
+      err("%s, invalid tfmt %d\n", __func__, tfmt);
+      return ST_FRAME_FMT_MAX;
+  }
+}
+
+bool st_frame_fmt_equal_transport(enum st_frame_fmt fmt, enum st20_fmt tfmt) {
+  enum st_frame_fmt to_fmt = st_frame_fmt_from_transport(tfmt);
+
+  if (to_fmt == ST_FRAME_FMT_MAX) return false;
+
+  return (fmt == to_fmt) ? true : false;
+}
+
 uint32_t st10_tai_to_media_clk(uint64_t tai_ns, uint32_t sampling_rate) {
   double ts = (double)tai_ns * sampling_rate / NS_PER_S;
   uint64_t tmstamp64 = ts;
@@ -290,8 +362,12 @@ uint64_t st10_media_clk_to_ns(uint32_t media_ts, uint32_t sampling_rate) {
   return ts;
 }
 
-int st_draw_logo(struct st_frame_meta* frame, struct st_frame_meta* logo, uint32_t x,
-                 uint32_t y) {
+enum st_pmd_type st_pmd_by_port_name(const char* port) {
+  char* bdf = strstr(port, ":");
+  return bdf ? ST_PMD_DPDK_USER : ST_PMD_DPDK_AF_XDP;
+}
+
+int st_draw_logo(struct st_frame* frame, struct st_frame* logo, uint32_t x, uint32_t y) {
   if (frame->fmt != logo->fmt) {
     err("%s, mismatch fmt %d %d\n", __func__, frame->fmt, logo->fmt);
     return -EINVAL;
@@ -377,7 +453,16 @@ double st30_get_packet_time(enum st30_ptime ptime) {
     case ST30_PTIME_125US:
       packet_time_ns = (double)1000000000.0 * 1 / 8000;
       break;
-    case ST30_PTIME_80US:
+    case ST30_PTIME_250US:
+      packet_time_ns = (double)1000000000.0 * 1 / 4000;
+      break;
+    case ST30_PTIME_333US:
+      packet_time_ns = (double)1000000000.0 * 1 / 3000;
+      break;
+    case ST30_PTIME_4MS:
+      packet_time_ns = (double)1000000000.0 * 4 / 1000;
+      break;
+    case ST31_PTIME_80US:
       packet_time_ns = (double)1000000000.0 * 1 / 12500;
       break;
     default:
@@ -420,7 +505,16 @@ int st30_get_sample_num(enum st30_ptime ptime, enum st30_sampling sampling) {
         case ST30_PTIME_125US:
           samples = 6;
           break;
-        case ST30_PTIME_80US:
+        case ST30_PTIME_250US:
+          samples = 12;
+          break;
+        case ST30_PTIME_333US:
+          samples = 16;
+          break;
+        case ST30_PTIME_4MS:
+          samples = 192;
+          break;
+        case ST31_PTIME_80US:
           samples = 4;
           break;
         default:
@@ -436,7 +530,16 @@ int st30_get_sample_num(enum st30_ptime ptime, enum st30_sampling sampling) {
         case ST30_PTIME_125US:
           samples = 12;
           break;
-        case ST30_PTIME_80US:
+        case ST30_PTIME_250US:
+          samples = 24;
+          break;
+        case ST30_PTIME_333US:
+          samples = 32;
+          break;
+        case ST30_PTIME_4MS:
+          samples = 384;
+          break;
+        case ST31_PTIME_80US:
           samples = 8;
           break;
         default:
@@ -465,6 +568,20 @@ int st30_get_sample_num(enum st30_ptime ptime, enum st30_sampling sampling) {
       return -EINVAL;
   }
   return samples;
+}
+
+int st30_get_sample_rate(enum st30_sampling sampling) {
+  switch (sampling) {
+    case ST30_SAMPLING_48K:
+      return 48000;
+    case ST30_SAMPLING_96K:
+      return 96000;
+    case ST31_SAMPLING_44K:
+      return 44100;
+    default:
+      err("%s, wrong sampling %d\n", __func__, sampling);
+      return -EINVAL;
+  }
 }
 
 static int st20_yuv422p10le_to_rfc4175_422be10_scalar(
@@ -738,6 +855,15 @@ int st20_rfc4175_422be10_to_422le10_simd(struct st20_rfc4175_422_10_pg2_be* pg_b
   }
 #endif
 
+#ifdef ST_HAS_AVX2
+  if ((level >= ST_SIMD_LEVEL_AVX2) && (cpu_level >= ST_SIMD_LEVEL_AVX2)) {
+    dbg("%s, avx2 ways\n", __func__);
+    ret = st20_rfc4175_422be10_to_422le10_avx2(pg_be, pg_le, w, h);
+    if (ret == 0) return 0;
+    dbg("%s, avx2 ways failed\n", __func__);
+  }
+#endif
+
   /* the last option */
   return st20_rfc4175_422be10_to_422le10_scalar(pg_be, pg_le, w, h);
 }
@@ -818,10 +944,67 @@ int st20_rfc4175_422le10_to_422be10_simd(struct st20_rfc4175_422_10_pg2_le* pg_l
   ST_MAY_UNUSED(cpu_level);
   ST_MAY_UNUSED(ret);
 
+#ifdef ST_HAS_AVX512_VBMI2
+  if ((level >= ST_SIMD_LEVEL_AVX512_VBMI2) &&
+      (cpu_level >= ST_SIMD_LEVEL_AVX512_VBMI2)) {
+    dbg("%s, avx512_vbmi ways\n", __func__);
+    ret = st20_rfc4175_422le10_to_422be10_vbmi(pg_le, pg_be, w, h);
+    if (ret == 0) return 0;
+    dbg("%s, avx512_vbmi ways failed\n", __func__);
+  }
+#endif
+
 #ifdef ST_HAS_AVX512
   if ((level >= ST_SIMD_LEVEL_AVX512) && (cpu_level >= ST_SIMD_LEVEL_AVX512)) {
     dbg("%s, avx512 ways\n", __func__);
     ret = st20_rfc4175_422le10_to_422be10_avx512(pg_le, pg_be, w, h);
+    if (ret == 0) return 0;
+    dbg("%s, avx512 ways failed\n", __func__);
+  }
+#endif
+
+#ifdef ST_HAS_AVX2
+  if ((level >= ST_SIMD_LEVEL_AVX2) && (cpu_level >= ST_SIMD_LEVEL_AVX2)) {
+    dbg("%s, avx2 ways\n", __func__);
+    ret = st20_rfc4175_422le10_to_422be10_avx2(pg_le, pg_be, w, h);
+    if (ret == 0) return 0;
+    dbg("%s, avx2 ways failed\n", __func__);
+  }
+#endif
+
+  /* the last option */
+  return st20_rfc4175_422le10_to_422be10_scalar(pg_le, pg_be, w, h);
+}
+
+int st20_rfc4175_422le10_to_422be10_simd_dma(st_udma_handle udma,
+                                             struct st20_rfc4175_422_10_pg2_le* pg_le,
+                                             st_iova_t pg_le_iova,
+                                             struct st20_rfc4175_422_10_pg2_be* pg_be,
+                                             uint32_t w, uint32_t h,
+                                             enum st_simd_level level) {
+  struct st_dma_lender_dev* dma = udma;
+  enum st_simd_level cpu_level = st_get_simd_level();
+  int ret;
+
+  ST_MAY_UNUSED(cpu_level);
+  ST_MAY_UNUSED(ret);
+  ST_MAY_UNUSED(dma);
+
+#ifdef ST_HAS_AVX512_VBMI2
+  if ((level >= ST_SIMD_LEVEL_AVX512_VBMI2) &&
+      (cpu_level >= ST_SIMD_LEVEL_AVX512_VBMI2)) {
+    dbg("%s, avx512_vbmi ways\n", __func__);
+    ret = st20_rfc4175_422le10_to_422be10_avx512_vbmi_dma(dma, pg_le, pg_le_iova, pg_be,
+                                                          w, h);
+    if (ret == 0) return 0;
+    dbg("%s, avx512_vbmi ways failed\n", __func__);
+  }
+#endif
+
+#ifdef ST_HAS_AVX512
+  if ((level >= ST_SIMD_LEVEL_AVX512) && (cpu_level >= ST_SIMD_LEVEL_AVX512)) {
+    dbg("%s, avx512 ways\n", __func__);
+    ret = st20_rfc4175_422le10_to_422be10_avx512_dma(dma, pg_le, pg_le_iova, pg_be, w, h);
     if (ret == 0) return 0;
     dbg("%s, avx512 ways failed\n", __func__);
   }
@@ -1177,6 +1360,139 @@ int st20_v210_to_rfc4175_422be10_simd(uint8_t* pg_v210,
   ST_MAY_UNUSED(cpu_level);
   ST_MAY_UNUSED(ret);
 
+#ifdef ST_HAS_AVX512_VBMI2
+  if ((level >= ST_SIMD_LEVEL_AVX512_VBMI2) &&
+      (cpu_level >= ST_SIMD_LEVEL_AVX512_VBMI2)) {
+    dbg("%s, avx512_vbmi ways\n", __func__);
+    ret = st20_v210_to_rfc4175_422be10_avx512_vbmi(pg_v210, pg_be, w, h);
+    if (ret == 0) return 0;
+    dbg("%s, avx512_vbmi ways failed\n", __func__);
+  }
+#endif
+
+#ifdef ST_HAS_AVX512
+  if ((level >= ST_SIMD_LEVEL_AVX512) && (cpu_level >= ST_SIMD_LEVEL_AVX512)) {
+    dbg("%s, avx512 ways\n", __func__);
+    ret = st20_v210_to_rfc4175_422be10_avx512(pg_v210, pg_be, w, h);
+    if (ret == 0) return 0;
+    dbg("%s, avx512 ways failed\n", __func__);
+  }
+#endif
+
   /* the last option */
   return st20_v210_to_rfc4175_422be10_scalar(pg_v210, (uint8_t*)pg_be, w, h);
+}
+
+int st20_v210_to_rfc4175_422be10_simd_dma(st_udma_handle udma, uint8_t* pg_v210,
+                                          st_iova_t pg_v210_iova,
+                                          struct st20_rfc4175_422_10_pg2_be* pg_be,
+                                          uint32_t w, uint32_t h,
+                                          enum st_simd_level level) {
+  enum st_simd_level cpu_level = st_get_simd_level();
+  int ret;
+
+  ST_MAY_UNUSED(cpu_level);
+  ST_MAY_UNUSED(ret);
+
+#ifdef ST_HAS_AVX512_VBMI2
+  if ((level >= ST_SIMD_LEVEL_AVX512_VBMI2) &&
+      (cpu_level >= ST_SIMD_LEVEL_AVX512_VBMI2)) {
+    dbg("%s, avx512_vbmi ways\n", __func__);
+    ret = st20_v210_to_rfc4175_422be10_avx512_vbmi_dma(udma, pg_v210, pg_v210_iova, pg_be,
+                                                       w, h);
+    if (ret == 0) return 0;
+    dbg("%s, avx512_vbmi ways failed\n", __func__);
+  }
+#endif
+
+#ifdef ST_HAS_AVX512
+  if ((level >= ST_SIMD_LEVEL_AVX512) && (cpu_level >= ST_SIMD_LEVEL_AVX512)) {
+    dbg("%s, avx512 ways\n", __func__);
+    ret =
+        st20_v210_to_rfc4175_422be10_avx512_dma(udma, pg_v210, pg_v210_iova, pg_be, w, h);
+    if (ret == 0) return 0;
+    dbg("%s, avx512 ways failed\n", __func__);
+  }
+#endif
+
+  /* the last option */
+  return st20_v210_to_rfc4175_422be10_scalar(pg_v210, (uint8_t*)pg_be, w, h);
+}
+
+int st31_am824_to_aes3(struct st31_am824* sf_am824, struct st31_aes3* sf_aes3,
+                       uint16_t subframes) {
+  for (int i = 0; i < subframes; ++i) {
+    /* preamble bits definition refer to
+     * https://www.intel.com/content/www/us/en/docs/programmable/683333/22-2-19-1-2/sdi-audio-fpga-ip-overview.html
+     */
+    if (sf_am824->b) {
+      /* block start, set "Z" preamble */
+      sf_aes3->preamble = 0x2;
+    } else if (sf_am824->f) {
+      /* frame start, set "X" preamble */
+      sf_aes3->preamble = 0x0;
+    } else {
+      /* second subframe, set "Y" preamble */
+      sf_aes3->preamble = 0x1;
+    }
+
+    /* copy p,c,u,v bits */
+    sf_aes3->p = sf_am824->p;
+    sf_aes3->c = sf_am824->c;
+    sf_aes3->u = sf_am824->u;
+    sf_aes3->v = sf_am824->v;
+
+    /* copy audio data */
+    sf_aes3->data_0 = sf_am824->data[0];
+    sf_aes3->data_1 = ((uint16_t)sf_am824->data[0] >> 4) |
+                      ((uint16_t)sf_am824->data[1] << 4) |
+                      ((uint16_t)sf_am824->data[2] << 12);
+    sf_aes3->data_2 = sf_am824->data[2] >> 4;
+
+    sf_aes3++;
+    sf_am824++;
+  }
+
+  return 0;
+}
+
+int st31_aes3_to_am824(struct st31_aes3* sf_aes3, struct st31_am824* sf_am824,
+                       uint16_t subframes) {
+  for (int i = 0; i < subframes; ++i) {
+    /* preamble bits definition refer to
+     * https://www.intel.com/content/www/us/en/docs/programmable/683333/22-2-19-1-2/sdi-audio-fpga-ip-overview.html
+     */
+    if (sf_aes3->preamble == 0x2) {
+      /* block start */
+      sf_am824->b = 1;
+      sf_am824->f = 1;
+      sf_am824->unused = 0;
+    } else if (sf_aes3->preamble == 0x0) {
+      /* frame start */
+      sf_am824->f = 1;
+      sf_am824->b = 0;
+      sf_am824->unused = 0;
+    } else {
+      /* second subframe */
+      sf_am824->b = 0;
+      sf_am824->f = 0;
+      sf_am824->unused = 0;
+    }
+
+    /* copy p,c,u,v bits */
+    sf_am824->p = sf_aes3->p;
+    sf_am824->c = sf_aes3->c;
+    sf_am824->u = sf_aes3->u;
+    sf_am824->v = sf_aes3->v;
+
+    /* copy audio data */
+    sf_am824->data[0] = sf_aes3->data_0 | (sf_aes3->data_1 << 4);
+    sf_am824->data[1] = sf_aes3->data_1 >> 4;
+    sf_am824->data[2] = (sf_aes3->data_2 << 4) | ((uint16_t)sf_aes3->data_1 >> 12);
+
+    sf_aes3++;
+    sf_am824++;
+  }
+
+  return 0;
 }

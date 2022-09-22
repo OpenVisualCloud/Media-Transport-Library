@@ -1,7 +1,7 @@
-From efc0445be35a504ddb6ee262da06558486c151da Mon Sep 17 00:00:00 2001
+From 73cc4fedbf4ae7616c3db10885b93f67dffb4a5e Mon Sep 17 00:00:00 2001
 From: qiaoliu <qiao.liu@intel.com>
 Date: Wed, 22 Dec 2021 15:38:23 +0800
-Subject: [PATCH 3/7] Mingw compiler do have same implementation
+Subject: [PATCH 3/9] Mingw compiler do have same implementation
 
 ---
  lib/eal/windows/getopt.c | 4 ++--

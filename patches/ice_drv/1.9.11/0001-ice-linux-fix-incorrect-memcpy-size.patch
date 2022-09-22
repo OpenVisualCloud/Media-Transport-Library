@@ -1,0 +1,27 @@
+From 76ae3b233435a043494bdf5621300594bed35490 Mon Sep 17 00:00:00 2001
+From: "Du, Frank" <frank.du@intel.com>
+Date: Tue, 2 Aug 2022 15:30:21 +0800
+Subject: [PATCH 1/4] ice-linux: fix incorrect memcpy size.
+
+Signed-off-by: Wenjun Wu <wenjun1.wu@intel.com>
+Signed-off-by: Du, Frank <frank.du@intel.com>
+---
+ src/ice_virtchnl.c | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/src/ice_virtchnl.c b/src/ice_virtchnl.c
+index feeb8db..7fe0006 100644
+--- a/src/ice_virtchnl.c
++++ b/src/ice_virtchnl.c
+@@ -3359,7 +3359,7 @@ static int ice_vc_cfg_q_bw(struct ice_vf *vf, u8 *msg)
+ 		qs_bw[i].tc = qbw->cfg[i].tc;
+ 	}
+ 
+-	memcpy(vf->qs_bw, qs_bw, sizeof(*qs_bw));
++	memcpy(vf->qs_bw, qs_bw, len);
+ 
+ err_bw:
+ 	kfree(qs_bw);
+-- 
+2.30.2
+

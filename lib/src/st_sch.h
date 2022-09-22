@@ -29,6 +29,13 @@ static inline bool st_sch_started(struct st_sch_impl* sch) {
     return false;
 }
 
+static inline bool st_sch_has_busy(struct st_sch_impl* sch) {
+  if (!sch->allow_sleep || sch->sleep_ratio_score > 70.0)
+    return true;
+  else
+    return false;
+}
+
 int st_sch_mrg_init(struct st_main_impl* impl, int data_quota_mbs_limit);
 
 struct st_sch_tasklet_impl* st_sch_register_tasklet(

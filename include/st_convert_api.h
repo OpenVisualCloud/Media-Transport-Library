@@ -13,7 +13,6 @@
  */
 
 #include <st_convert_internal.h>
-#include <st_dpdk_api.h>
 
 #ifndef _ST_CONVERT_API_HEAD_H_
 #define _ST_CONVERT_API_HEAD_H_
@@ -258,10 +257,16 @@ static inline int st20_yuv422p10le_to_rfc4175_422be10(
  *   Point to dma engine.
  * @param y
  *   Point to Y(yuv422p10le) vector.
+ * @param y_iova
+ *   IOVA address of the y buffer.
  * @param b
  *   Point to b(yuv422p10le) vector.
+ * @param b_iova
+ *   IOVA address of the b buffer.
  * @param r
  *   Point to r(yuv422p10le) vector.
+ * @param r_iova
+ *   IOVA address of the r buffer.
  * @param pg
  *   Point to pg(rfc4175_422be10) data.
  * @param w
@@ -303,6 +308,33 @@ static inline int st20_v210_to_rfc4175_422be10(uint8_t* pg_v210,
 }
 
 /**
+ * Convert v210 to rfc4175_422be10 with required SIMD level and DMA helper.
+ * Note the level may downgrade to the SIMD which system really support.
+ *
+ * @param udma
+ *   Point to dma engine.
+ * @param pg_v210
+ *   Point to pg(v210) data.
+ * @param pg_v210_iova
+ *   IOVA address for pg_v210 data.
+ * @param pg_be
+ *   Point to pg(rfc4175_422be10) data.
+ * @param w
+ *   The st2110-20(video) width.
+ * @param h
+ *   The st2110-20(video) height.
+ * @return
+ *   - 0 if successful.
+ *   - <0: Error code if convert fail.
+ */
+static inline int st20_v210_to_rfc4175_422be10_dma(
+    st_udma_handle udma, uint8_t* pg_v210, st_iova_t pg_v210_iova,
+    struct st20_rfc4175_422_10_pg2_be* pg_be, uint32_t w, uint32_t h) {
+  return st20_v210_to_rfc4175_422be10_simd_dma(udma, pg_v210, pg_v210_iova, pg_be, w, h,
+                                               ST_SIMD_LEVEL_MAX);
+}
+
+/**
  * Convert rfc4175_422le10 to rfc4175_422be10.
  *
  * @param pg_le
@@ -321,6 +353,34 @@ static inline int st20_rfc4175_422le10_to_422be10(
     struct st20_rfc4175_422_10_pg2_le* pg_le, struct st20_rfc4175_422_10_pg2_be* pg_be,
     uint32_t w, uint32_t h) {
   return st20_rfc4175_422le10_to_422be10_simd(pg_le, pg_be, w, h, ST_SIMD_LEVEL_MAX);
+}
+
+/**
+ * Convert rfc4175_422le10 to rfc4175_422be10 with max SIMD level and DMA helper.
+ * Profiling shows gain with 4k/8k solution due to LLC cache miss migration, thus pls
+ * only applied with 4k/8k.
+ *
+ * @param udma
+ *   Point to dma engine.
+ * @param pg_le
+ *   Point to pg(rfc4175_422le10) data.
+ * @param pg_le_iova
+ *   The st_iova_t address of the pg_le buffer.
+ * @param pg_be
+ *   Point to pg(rfc4175_422be10) data.
+ * @param w
+ *   The st2110-20(video) width.
+ * @param h
+ *   The st2110-20(video) height.
+ * @return
+ *   - 0 if successful.
+ *   - <0: Error code if convert fail.
+ */
+static inline int st20_rfc4175_422le10_to_422be10_dma(
+    st_udma_handle udma, struct st20_rfc4175_422_10_pg2_le* pg_le, st_iova_t pg_le_iova,
+    struct st20_rfc4175_422_10_pg2_be* pg_be, uint32_t w, uint32_t h) {
+  return st20_rfc4175_422le10_to_422be10_simd_dma(udma, pg_le, pg_le_iova, pg_be, w, h,
+                                                  ST_SIMD_LEVEL_MAX);
 }
 
 /**
@@ -407,6 +467,38 @@ static inline int st20_rfc4175_422le10_to_v210(uint8_t* pg_le, uint8_t* pg_v210,
  */
 int st20_v210_to_rfc4175_422le10(uint8_t* pg_v210, uint8_t* pg_le, uint32_t w,
                                  uint32_t h);
+
+/**
+ * Convert AM824 subframe to AES3 subframe.
+ *
+ * @param sf_am824
+ *   Point to AM824 data.
+ * @param sf_aes3
+ *   Point to AES3 data.
+ * @param subframes
+ *   The subframes number
+ * @return
+ *   - 0 if successful.
+ *   - <0: Error code if convert fail.
+ */
+int st31_am824_to_aes3(struct st31_am824* sf_am824, struct st31_aes3* sf_aes3,
+                       uint16_t subframes);
+
+/**
+ * Convert AES3 subframe to AM824 subframe.
+ *
+ * @param sf_aes3
+ *   Point to AES3 data.
+ * @param sf_am824
+ *   Point to AM824 data.
+ * @param subframes
+ *   The subframes number
+ * @return
+ *   - 0 if successful.
+ *   - <0: Error code if convert fail.
+ */
+int st31_aes3_to_am824(struct st31_aes3* sf_aes3, struct st31_am824* sf_am824,
+                       uint16_t subframes);
 
 #if defined(__cplusplus)
 }

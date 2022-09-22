@@ -15,7 +15,7 @@ static int app_tx_st22p_frame_available(void* priv) {
 }
 
 static void app_tx_st22p_build_frame(struct st_app_tx_st22p_session* s,
-                                     struct st_frame_meta* frame) {
+                                     struct st_frame* frame) {
   if (s->st22p_frame_cursor + s->st22p_frame_size > s->st22p_source_end) {
     s->st22p_frame_cursor = s->st22p_source_begin;
   }
@@ -30,7 +30,7 @@ static void* app_tx_st22p_frame_thread(void* arg) {
   struct st_app_tx_st22p_session* s = arg;
   st22p_tx_handle handle = s->handle;
   int idx = s->idx;
-  struct st_frame_meta* frame;
+  struct st_frame* frame;
 
   info("%s(%d), start\n", __func__, idx);
   while (!s->st22p_app_thread_stop) {
@@ -156,8 +156,7 @@ static int app_tx_st22p_uinit(struct st_app_tx_st22p_session* s) {
   return 0;
 }
 
-static int app_tx_st22p_init(struct st_app_context* ctx,
-                             st_json_tx_st22p_session_t* video,
+static int app_tx_st22p_init(struct st_app_context* ctx, st_json_st22p_session_t* st22p,
                              struct st_app_tx_st22p_session* s) {
   int idx = s->idx, ret;
   struct st22p_tx_ops ops;
@@ -168,38 +167,47 @@ static int app_tx_st22p_init(struct st_app_context* ctx,
   snprintf(name, 32, "app_tx_st22p_%d", idx);
   ops.name = name;
   ops.priv = s;
-  ops.port.num_port = video ? video->num_inf : ctx->para.num_ports;
+  ops.port.num_port = st22p ? st22p->base.num_inf : ctx->para.num_ports;
   memcpy(ops.port.dip_addr[ST_PORT_P],
-         video ? video->dip[ST_PORT_P] : ctx->tx_dip_addr[ST_PORT_P], ST_IP_ADDR_LEN);
+         st22p ? st22p->base.ip[ST_PORT_P] : ctx->tx_dip_addr[ST_PORT_P], ST_IP_ADDR_LEN);
   strncpy(ops.port.port[ST_PORT_P],
-          video ? video->inf[ST_PORT_P]->name : ctx->para.port[ST_PORT_P],
+          st22p ? st22p->base.inf[ST_PORT_P]->name : ctx->para.port[ST_PORT_P],
           ST_PORT_MAX_LEN);
-  ops.port.udp_port[ST_PORT_P] = video ? video->udp_port : (10000 + s->idx);
+  ops.port.udp_port[ST_PORT_P] = st22p ? st22p->base.udp_port : (10000 + s->idx);
+  if (ctx->has_tx_dst_mac[ST_PORT_P]) {
+    memcpy(&ops.tx_dst_mac[ST_PORT_P][0], ctx->tx_dst_mac[ST_PORT_P], 6);
+    ops.flags |= ST22P_TX_FLAG_USER_P_MAC;
+  }
   if (ops.port.num_port > 1) {
     memcpy(ops.port.dip_addr[ST_PORT_R],
-           video ? video->dip[ST_PORT_R] : ctx->tx_dip_addr[ST_PORT_R], ST_IP_ADDR_LEN);
+           st22p ? st22p->base.ip[ST_PORT_R] : ctx->tx_dip_addr[ST_PORT_R],
+           ST_IP_ADDR_LEN);
     strncpy(ops.port.port[ST_PORT_R],
-            video ? video->inf[ST_PORT_R]->name : ctx->para.port[ST_PORT_R],
+            st22p ? st22p->base.inf[ST_PORT_R]->name : ctx->para.port[ST_PORT_R],
             ST_PORT_MAX_LEN);
-    ops.port.udp_port[ST_PORT_R] = video ? video->udp_port : (10000 + s->idx);
+    ops.port.udp_port[ST_PORT_R] = st22p ? st22p->base.udp_port : (10000 + s->idx);
+    if (ctx->has_tx_dst_mac[ST_PORT_R]) {
+      memcpy(&ops.tx_dst_mac[ST_PORT_R][0], ctx->tx_dst_mac[ST_PORT_R], 6);
+      ops.flags |= ST22P_TX_FLAG_USER_R_MAC;
+    }
   }
-  ops.port.payload_type = video ? video->payload_type : ST_APP_PAYLOAD_TYPE_ST22;
-  ops.width = video ? video->width : 1920;
-  ops.height = video ? video->height : 1080;
-  ops.fps = video ? video->fps : ST_FPS_P59_94;
-  ops.input_fmt = video ? video->format : ST_FRAME_FMT_YUV422RFC4175PG2BE10;
-  ops.pack_type = video ? video->pack_type : ST22_PACK_CODESTREAM;
-  ops.codec = video ? video->codec : ST22_CODEC_JPEGXS;
-  ops.device = video ? video->device : ST_PLUGIN_DEVICE_AUTO;
-  ops.quality = video ? video->quality : ST22_QUALITY_MODE_SPEED;
-  ops.codec_thread_cnt = video ? video->codec_thread_count : 0;
+  ops.port.payload_type = st22p ? st22p->base.payload_type : ST_APP_PAYLOAD_TYPE_ST22;
+  ops.width = st22p ? st22p->info.width : 1920;
+  ops.height = st22p ? st22p->info.height : 1080;
+  ops.fps = st22p ? st22p->info.fps : ST_FPS_P59_94;
+  ops.input_fmt = st22p ? st22p->info.format : ST_FRAME_FMT_YUV422RFC4175PG2BE10;
+  ops.pack_type = st22p ? st22p->info.pack_type : ST22_PACK_CODESTREAM;
+  ops.codec = st22p ? st22p->info.codec : ST22_CODEC_JPEGXS;
+  ops.device = st22p ? st22p->info.device : ST_PLUGIN_DEVICE_AUTO;
+  ops.quality = st22p ? st22p->info.quality : ST22_QUALITY_MODE_SPEED;
+  ops.codec_thread_cnt = st22p ? st22p->info.codec_thread_count : 0;
   ops.codestream_size = ops.width * ops.height * 3 / 8;
   ops.framebuff_cnt = 2;
   ops.notify_frame_available = app_tx_st22p_frame_available;
 
   s->width = ops.width;
   s->height = ops.height;
-  memcpy(s->st22p_source_url, video ? video->st22p_url : ctx->tx_st22p_url,
+  memcpy(s->st22p_source_url, st22p ? st22p->info.st22p_url : ctx->tx_st22p_url,
          ST_APP_URL_MAX_LEN);
   s->st = ctx->st;
   s->expect_fps = st_frame_rate(ops.fps);
@@ -244,7 +252,8 @@ int st_app_tx_st22p_sessions_init(struct st_app_context* ctx) {
   for (i = 0; i < ctx->tx_st22p_session_cnt; i++) {
     s = &ctx->tx_st22p_sessions[i];
     s->idx = i;
-    ret = app_tx_st22p_init(ctx, ctx->json_ctx ? &ctx->json_ctx->tx_st22p[i] : NULL, s);
+    ret = app_tx_st22p_init(
+        ctx, ctx->json_ctx ? &ctx->json_ctx->tx_st22p_sessions[i] : NULL, s);
     if (ret < 0) {
       err("%s(%d), app_tx_st22p_init fail %d\n", __func__, i, ret);
       return ret;

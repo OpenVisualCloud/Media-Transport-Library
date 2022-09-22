@@ -1,0 +1,209 @@
+From 1c0a3aae6553a5cf8e89c0f442bcdebdc447d1e0 Mon Sep 17 00:00:00 2001
+From: Wenjun Wu <wenjun1.wu@intel.com>
+Date: Tue, 28 Dec 2021 15:59:08 +0800
+Subject: [PATCH 5/6] net/iavf: support max burst size configuration
+
+This patch adds support for max burst size configuration for
+TX scheduler. This feature can be tuned on by devargs:
+        -a 0000:18:00.0,max_burst_size=x
+The value of x should between 64 and 1023*1024.
+
+Signed-off-by: Wenjun Wu <wenjun1.wu@intel.com>
+---
+ drivers/common/iavf/virtchnl.h | 13 ++++++++++++
+ drivers/net/iavf/iavf.h        |  2 ++
+ drivers/net/iavf/iavf_ethdev.c | 37 +++++++++++++++++++++++++++++++++-
+ drivers/net/iavf/iavf_vchnl.c  | 31 ++++++++++++++++++++++++++++
+ 4 files changed, 82 insertions(+), 1 deletion(-)
+
+diff --git a/drivers/common/iavf/virtchnl.h b/drivers/common/iavf/virtchnl.h
+index f123daec8e..9cda96ab84 100644
+--- a/drivers/common/iavf/virtchnl.h
++++ b/drivers/common/iavf/virtchnl.h
+@@ -168,6 +168,7 @@ enum virtchnl_ops {
+ 	VIRTCHNL_OP_MAP_QUEUE_VECTOR = 111,
+ 	VIRTCHNL_OP_CONFIG_QUEUE_BW = 112,
+ 	VIRTCHNL_OP_CONFIG_QUANTA = 113,
++	VIRTCHNL_OP_CONFIG_BURST_SIZE = 201,
+ 	VIRTCHNL_OP_MAX,
+ };
+ 
+@@ -1849,6 +1850,15 @@ struct virtchnl_fdir_del {
+ 
+ VIRTCHNL_CHECK_STRUCT_LEN(12, virtchnl_fdir_del);
+ 
++/* VIRTCHNL_OP_CONFIG_BURST_SIZE
++ * VF sends this message to set max burst size
++ */
++struct virtchnl_burst_size {
++	u32 max_burst_size;
++};
++
++VIRTCHNL_CHECK_STRUCT_LEN(4, virtchnl_burst_size);
++
+ /* VIRTCHNL_OP_GET_QOS_CAPS
+  * VF sends this message to get its QoS Caps, such as
+  * TC number, Arbiter and Bandwidth.
+@@ -2428,6 +2438,9 @@ virtchnl_vc_validate_vf_msg(struct virtchnl_version_info *ver, u32 v_opcode,
+ 			virtchnl_inline_ipsec_val_msg_len(iim->ipsec_opcode);
+ 		break;
+ 	}
++	case VIRTCHNL_OP_CONFIG_BURST_SIZE:
++		valid_len = sizeof(struct virtchnl_burst_size);
++		break;
+ 	/* These are always errors coming from the VF. */
+ 	case VIRTCHNL_OP_EVENT:
+ 	case VIRTCHNL_OP_UNKNOWN:
+diff --git a/drivers/net/iavf/iavf.h b/drivers/net/iavf/iavf.h
+index 025ab3ff60..a9c3ebd831 100644
+--- a/drivers/net/iavf/iavf.h
++++ b/drivers/net/iavf/iavf.h
+@@ -296,6 +296,7 @@ struct iavf_devargs {
+ 	uint8_t proto_xtr_dflt;
+ 	uint8_t proto_xtr[IAVF_MAX_QUEUE_NUM];
+ 	uint16_t quanta_size;
++	uint32_t max_burst_size;
+ };
+ 
+ struct iavf_security_ctx;
+@@ -415,6 +416,7 @@ _atomic_set_async_response_cmd(struct iavf_info *vf, enum virtchnl_ops ops)
+ 
+ 	return !ret;
+ }
++int iavf_set_burst_size(struct rte_eth_dev *dev);
+ int iavf_check_api_version(struct iavf_adapter *adapter);
+ int iavf_get_vf_resource(struct iavf_adapter *adapter);
+ void iavf_handle_virtchnl_msg(struct rte_eth_dev *dev);
+diff --git a/drivers/net/iavf/iavf_ethdev.c b/drivers/net/iavf/iavf_ethdev.c
+index 506fcff6e3..8ff0edb828 100644
+--- a/drivers/net/iavf/iavf_ethdev.c
++++ b/drivers/net/iavf/iavf_ethdev.c
+@@ -35,6 +35,7 @@
+ /* devargs */
+ #define IAVF_PROTO_XTR_ARG         "proto_xtr"
+ #define IAVF_QUANTA_SIZE_ARG       "quanta_size"
++#define IAVF_MAX_BURST_SIZE_ARG    "max_burst_size"
+ 
+ uint64_t iavf_timestamp_dynflag;
+ int iavf_timestamp_dynfield_offset = -1;
+@@ -42,6 +43,7 @@ int iavf_timestamp_dynfield_offset = -1;
+ static const char * const iavf_valid_args[] = {
+ 	IAVF_PROTO_XTR_ARG,
+ 	IAVF_QUANTA_SIZE_ARG,
++	IAVF_MAX_BURST_SIZE_ARG,
+ 	NULL
+ };
+ 
+@@ -982,12 +984,20 @@ iavf_dev_start(struct rte_eth_dev *dev)
+ 				      dev->data->nb_tx_queues);
+ 	num_queue_pairs = vf->num_queue_pairs;
+ 
+-	if (vf->vf_res->vf_cap_flags & VIRTCHNL_VF_OFFLOAD_QOS)
++	if (vf->vf_res->vf_cap_flags & VIRTCHNL_VF_OFFLOAD_QOS) {
+ 		if (iavf_get_qos_cap(adapter)) {
+ 			PMD_INIT_LOG(ERR, "Failed to get qos capability");
+ 			return -1;
+ 		}
+ 
++		if (adapter->devargs.max_burst_size) {
++			if (iavf_set_burst_size(dev)) {
++				PMD_INIT_LOG(ERR, "iavf_set_burst_size failed");
++				return -1;
++			}
++		}
++	}
++
+ 	if (vf->vf_res->vf_cap_flags & VIRTCHNL_VF_CAP_PTP) {
+ 		if (iavf_get_ptp_cap(adapter)) {
+ 			PMD_INIT_LOG(ERR, "Failed to get ptp capability");
+@@ -2193,6 +2203,25 @@ parse_u16(__rte_unused const char *key, const char *value, void *args)
+ 	return 0;
+ }
+ 
++static int
++parse_u32(const char *key, const char *value, void *args)
++{
++	u32 *num = (u32 *)args;
++	u32 tmp;
++
++	errno = 0;
++	tmp = strtoull(value, NULL, 10);
++	if (errno) {
++		PMD_DRV_LOG(WARNING, "%s: \"%s\" is not a valid u16",
++			    key, value);
++		return -1;
++	}
++
++	*num = tmp;
++
++	return 0;
++}
++
+ static int iavf_parse_devargs(struct rte_eth_dev *dev)
+ {
+ 	struct iavf_adapter *ad =
+@@ -2224,6 +2253,11 @@ static int iavf_parse_devargs(struct rte_eth_dev *dev)
+ 	if (ret)
+ 		goto bail;
+ 
++	ret = rte_kvargs_process(kvlist, IAVF_MAX_BURST_SIZE_ARG,
++				 &parse_u32, &ad->devargs.max_burst_size);
++	if (ret)
++		goto bail;
++
+ 	if (ad->devargs.quanta_size != 0 &&
+ 	    (ad->devargs.quanta_size < 256 || ad->devargs.quanta_size > 4096 ||
+ 	     ad->devargs.quanta_size & 0x40)) {
+@@ -2376,6 +2410,7 @@ iavf_init_vf(struct rte_eth_dev *dev)
+ 		PMD_INIT_LOG(ERR, "iavf_get_vf_config failed");
+ 		goto err_alloc;
+ 	}
++
+ 	/* Allocate memort for RSS info */
+ 	if (vf->vf_res->vf_cap_flags & VIRTCHNL_VF_OFFLOAD_RSS_PF) {
+ 		vf->rss_key = rte_zmalloc("rss_key",
+diff --git a/drivers/net/iavf/iavf_vchnl.c b/drivers/net/iavf/iavf_vchnl.c
+index 21bd1e2193..0de2e6531c 100644
+--- a/drivers/net/iavf/iavf_vchnl.c
++++ b/drivers/net/iavf/iavf_vchnl.c
+@@ -1682,6 +1682,37 @@ int iavf_set_q_bw(struct rte_eth_dev *dev,
+ 	return err;
+ }
+ 
++int iavf_set_burst_size(struct rte_eth_dev *dev)
++{
++	struct iavf_adapter *adapter =
++			IAVF_DEV_PRIVATE_TO_ADAPTER(dev->data->dev_private);
++	struct iavf_info *vf = IAVF_DEV_PRIVATE_TO_VF(dev->data->dev_private);
++	struct iavf_cmd_info args;
++	struct virtchnl_burst_size bs;
++	int err;
++
++	if (adapter->devargs.max_burst_size < 64 ||
++	    adapter->devargs.max_burst_size > 1023 * 1024) {
++		PMD_DRV_LOG(ERR, "max burst size should between 64"
++			    " and 1023*1024");
++		return -1;
++	}
++
++	memset(&args, 0, sizeof(args));
++	bs.max_burst_size = adapter->devargs.max_burst_size;
++	args.ops = VIRTCHNL_OP_CONFIG_BURST_SIZE;
++	args.in_args = (uint8_t *)&bs;
++	args.in_args_size = sizeof(bs);
++	args.out_buffer = vf->aq_resp;
++	args.out_size = IAVF_AQ_BUF_SZ;
++
++	err = iavf_execute_vf_cmd(adapter, &args, 0);
++	if (err)
++		PMD_DRV_LOG(ERR, "Failed to execute command of"
++			    " VIRTCHNL_OP_CONFIG_BURST_SIZE");
++	return err;
++}
++
+ int
+ iavf_add_del_mc_addr_list(struct iavf_adapter *adapter,
+ 			struct rte_ether_addr *mc_addrs,
+-- 
+2.30.2
+

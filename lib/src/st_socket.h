@@ -1,0 +1,27 @@
+/* SPDX-License-Identifier: BSD-3-Clause
+ * Copyright(c) 2022 Intel Corporation
+ */
+
+#ifndef _ST_LIB_SOCKET_HEAD_H_
+#define _ST_LIB_SOCKET_HEAD_H_
+
+#include "st_main.h"
+
+int st_socket_get_if_ip(char* if_name, uint8_t ip[ST_IP_ADDR_LEN]);
+
+int st_socket_get_if_mac(char* if_name, struct rte_ether_addr* ea);
+
+int st_socket_join_mcast(struct st_main_impl* impl, enum st_port port, uint32_t group);
+
+int st_socket_drop_mcast(struct st_main_impl* impl, enum st_port port, uint32_t group);
+
+int st_socket_get_mac(struct st_main_impl* impl, char* if_name,
+                      uint8_t dip[ST_IP_ADDR_LEN], struct rte_ether_addr* ea);
+
+int st_socket_add_flow(struct st_main_impl* impl, enum st_port port, uint16_t queue_id,
+                       struct st_rx_flow* flow);
+
+int st_socket_remove_flow(struct st_main_impl* impl, enum st_port port, uint16_t queue_id,
+                          struct st_rx_flow* flow);
+
+#endif

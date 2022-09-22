@@ -10,6 +10,7 @@
 #include "st_log.h"
 #include "st_mcast.h"
 #include "st_sch.h"
+#include "st_util.h"
 
 #define ST_PTP_USE_TX_TIME_STAMP (1)
 #define ST_PTP_USE_TX_TIMER (1)
@@ -581,14 +582,14 @@ static int ptp_init(struct st_main_impl* impl, struct st_ptp_impl* ptp,
   memcpy(&id[3], &magic, 2);
   memcpy(&id[5], &mac.addr_bytes[3], 3);
   our_port_id->port_number = htons(port_id);  // now allways
-  ptp_print_port_id(port_id, our_port_id);
+  // ptp_print_port_id(port_id, our_port_id);
 
   rte_memcpy(ip, st_sip_addr(impl, port), ST_IP_ADDR_LEN);
 
   ptp->impl = impl;
   ptp->port = port;
   ptp->port_id = port_id;
-  ptp->mbuf_pool = st_get_mempool(impl, port);
+  ptp->mbuf_pool = st_get_tx_mempool(impl, port);
   ptp->master_initialized = false;
   ptp->t3_sequence_id = 0x1000 * port;
 
@@ -610,6 +611,11 @@ static int ptp_init(struct st_main_impl* impl, struct st_ptp_impl* ptp,
     return 0;
   }
 
+  if (st_no_system_rx_queues(impl)) {
+    warn("%s(%d), disabled as no system rx queues\n", __func__, port);
+    return 0;
+  }
+
   /* create tx queue */
   ret = st_dev_request_tx_queue(impl, port, &ptp->tx_queue_id, 0);
   if (ret < 0) {
@@ -622,7 +628,7 @@ static int ptp_init(struct st_main_impl* impl, struct st_ptp_impl* ptp,
 
   /* create rx queue */
   struct st_rx_flow flow;
-  memset(&flow, 0xff, sizeof(flow));
+  memset(&flow, 0, sizeof(flow));
   rte_memcpy(flow.dip_addr, ptp->mcast_group_addr, ST_IP_ADDR_LEN);
   rte_memcpy(flow.sip_addr, st_sip_addr(impl, port), ST_IP_ADDR_LEN);
   flow.port_flow = false;
@@ -785,6 +791,9 @@ int st_ptp_init(struct st_main_impl* impl) {
   struct st_ptp_impl* ptp;
 
   for (int i = 0; i < num_ports; i++) {
+    /* no ptp for kernel based pmd */
+    if (st_pmd_is_kernel(impl, i)) continue;
+
     ptp = st_get_ptp(impl, i);
     ret = ptp_init(impl, ptp, i);
     if (ret < 0) {

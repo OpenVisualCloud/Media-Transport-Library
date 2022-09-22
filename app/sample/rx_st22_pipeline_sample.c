@@ -23,12 +23,13 @@
 /* local ip address for current bdf port */
 static uint8_t g_rx_st22_local_ip[ST_IP_ADDR_LEN] = {192, 168, 22, 85};
 /* dst ip address for rx video session */
+// static uint8_t g_rx_st22_src_ip[ST_IP_ADDR_LEN] = {192, 168, 22, 84};
 static uint8_t g_rx_st22_src_ip[ST_IP_ADDR_LEN] = {239, 168, 85, 22};
 
 //#define ST22_RX_SAMPLE_FMT_BGRA
 //#define ST22_RX_SAMPLE_FMT_YUV422P10LE
-#define ST22_RX_SAMPLE_FMT_YUV422RFC4175PG2BE
-//#define ST22_RX_SAMPLE_FMT_YUV422PLANAR8
+//#define ST22_RX_SAMPLE_FMT_YUV422RFC4175PG2BE
+#define ST22_RX_SAMPLE_FMT_YUV422PLANAR8
 //#define ST22_RX_SAMPLE_FMT_YUV422PACKED8
 
 #ifdef ST22_RX_SAMPLE_FMT_BGRA
@@ -73,6 +74,21 @@ struct app_context {
   uint8_t* dst_end;
   uint8_t* dst_cursor;
 };
+
+static bool g_video_active = false;
+static st_handle g_st_handle;
+
+static void app_sig_handler(int signo) {
+  printf("%s, signal %d\n", __func__, signo);
+  switch (signo) {
+    case SIGINT: /* Interrupt from keyboard */
+      g_video_active = false;
+      st_request_exit(g_st_handle);
+      break;
+  }
+
+  return;
+}
 
 static int rx_st22p_frame_available(void* priv) {
   struct app_context* s = priv;
@@ -129,7 +145,7 @@ static int rx_st22p_open_source(struct app_context* s, const char* file) {
   return 0;
 }
 
-static void rx_st22p_consume_frame(struct app_context* s, struct st_frame_meta* frame) {
+static void rx_st22p_consume_frame(struct app_context* s, struct st_frame* frame) {
   if (s->dst_cursor + s->frame_size > s->dst_end) s->dst_cursor = s->dst_begin;
   st_memcpy(s->dst_cursor, frame->addr, s->frame_size);
   s->dst_cursor += s->frame_size;
@@ -140,7 +156,7 @@ static void rx_st22p_consume_frame(struct app_context* s, struct st_frame_meta* 
 static void* rx_st22p_frame_thread(void* arg) {
   struct app_context* s = arg;
   st22p_rx_handle handle = s->handle;
-  struct st_frame_meta* frame;
+  struct st_frame* frame;
 
   printf("%s(%d), start\n", __func__, s->idx);
   while (!s->stop) {
@@ -166,6 +182,8 @@ int main() {
   int ret = -EIO;
   struct app_context* app[session_num];
   st_handle dev_handle;
+  char* port = getenv("ST_PORT_P");
+  if (!port) port = RX_ST22_PORT_BDF;
 
   for (int i = 0; i < session_num; i++) {
     app[i] = NULL;
@@ -173,7 +191,7 @@ int main() {
 
   memset(&param, 0, sizeof(param));
   param.num_ports = 1;
-  strncpy(param.port[ST_PORT_P], RX_ST22_PORT_BDF, ST_PORT_MAX_LEN);
+  strncpy(param.port[ST_PORT_P], port, ST_PORT_MAX_LEN);
   memcpy(param.sip_addr[ST_PORT_P], g_rx_st22_local_ip, ST_IP_ADDR_LEN);
   param.flags = ST_FLAG_BIND_NUMA | ST_FLAG_DEV_AUTO_START_STOP;
   param.log_level = ST_LOG_LEVEL_INFO;  // log level. ERROR, INFO, WARNING
@@ -189,6 +207,10 @@ int main() {
     ret = -EIO;
     goto err;
   }
+
+  g_st_handle = dev_handle;
+  g_video_active = true;
+  signal(SIGINT, app_sig_handler);
 
   // create and register rx session
   for (int i = 0; i < session_num; i++) {
@@ -213,7 +235,7 @@ int main() {
     // rx src ip like 239.0.0.1
     memcpy(ops_rx.port.sip_addr[ST_PORT_P], g_rx_st22_src_ip, ST_IP_ADDR_LEN);
     // send port interface like 0000:af:00.0
-    strncpy(ops_rx.port.port[ST_PORT_P], RX_ST22_PORT_BDF, ST_PORT_MAX_LEN);
+    strncpy(ops_rx.port.port[ST_PORT_P], port, ST_PORT_MAX_LEN);
     ops_rx.port.udp_port[ST_PORT_P] = RX_ST22_UDP_PORT + i;
     ops_rx.port.payload_type = RX_ST22_PAYLOAD_TYPE;
     ops_rx.width = 1920;
@@ -221,7 +243,7 @@ int main() {
     ops_rx.fps = ST_FPS_P59_94;
     ops_rx.output_fmt = ST22_RX_SAMPLE_FMT;
     ops_rx.pack_type = ST22_PACK_CODESTREAM;
-    ops_rx.codec = ST22_CODEC_JPEGXS;
+    ops_rx.codec = ST22_CODEC_H264_CBR;
     ops_rx.device = ST_PLUGIN_DEVICE_AUTO;
     ops_rx.max_codestream_size = 0; /* let lib to decide */
     ops_rx.framebuff_cnt = fb_cnt;
@@ -250,7 +272,9 @@ int main() {
     }
   }
 
-  st_pause();
+  while (g_video_active) {
+    sleep(1);
+  }
 
   // stop app thread
   for (int i = 0; i < session_num; i++) {

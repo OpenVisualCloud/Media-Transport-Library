@@ -9,16 +9,6 @@
 
 int st_arp_parse(struct st_main_impl* impl, struct rte_arp_hdr* hdr, enum st_port port);
 
-#ifdef ST_HAS_KNI
-int st_arp_socket_get_mac(struct st_main_impl* impl, struct rte_ether_addr* ea,
-                          uint8_t dip[ST_IP_ADDR_LEN], const char* ifname);
-#else
-static inline int st_arp_socket_get_mac(struct st_main_impl* impl,
-                                        struct rte_ether_addr* ea,
-                                        uint8_t dip[ST_IP_ADDR_LEN], const char* ifname) {
-  return -EIO;
-}
-#endif
 int st_arp_cni_get_mac(struct st_main_impl* impl, struct rte_ether_addr* ea,
                        enum st_port port, uint32_t ip);
 

@@ -16,7 +16,7 @@
 
 #include "../src/app_platform.h"
 
-#define FWD_PORT_BDF "0000:af:00.1"
+#define FWD_PORT_BDF "0000:af:00.0"
 /* local ip address for current bdf port */
 static uint8_t g_fwd_local_ip[ST_IP_ADDR_LEN] = {192, 168, 84, 2};
 
@@ -38,7 +38,7 @@ static uint8_t g_tx_st22_dst_ip[ST_IP_ADDR_LEN] = {239, 168, 85, 22};
 struct app_context {
   st_handle st;
   int idx;
-  st20_rx_handle rx_handle;
+  st20p_rx_handle rx_handle;
   st22p_tx_handle tx_handle;
 
   bool stop;
@@ -50,15 +50,26 @@ struct app_context {
   pthread_mutex_t wake_mutex;
 
   size_t framebuff_size;
-  uint16_t framebuff_cnt;
-  uint16_t framebuff_producer_idx;
-  uint16_t framebuff_consumer_idx;
-  struct st_rx_frame* framebuffs;
 
   /* logo */
   void* logo_buf;
-  struct st_frame_meta logo_meta;
+  struct st_frame logo_meta;
 };
+
+static bool g_video_active = false;
+static st_handle g_st_handle;
+
+static void app_sig_handler(int signo) {
+  printf("%s, signal %d\n", __func__, signo);
+  switch (signo) {
+    case SIGINT: /* Interrupt from keyboard */
+      g_video_active = false;
+      st_request_exit(g_st_handle);
+      break;
+  }
+
+  return;
+}
 
 static int st22_fwd_open_logo(struct app_context* s, char* file) {
   FILE* fp_logo = st_fopen(file, "rb");
@@ -97,6 +108,8 @@ static int st22_fwd_open_logo(struct app_context* s, char* file) {
 static int tx_st22p_frame_available(void* priv) {
   struct app_context* s = priv;
 
+  if (!s->ready) return -EIO;
+
   st_pthread_mutex_lock(&s->wake_mutex);
   st_pthread_cond_signal(&s->wake_cond);
   st_pthread_mutex_unlock(&s->wake_mutex);
@@ -104,56 +117,24 @@ static int tx_st22p_frame_available(void* priv) {
   return 0;
 }
 
-static int rx_st20_enqueue_frame(struct app_context* s, void* frame, size_t size) {
-  uint16_t producer_idx = s->framebuff_producer_idx;
-  struct st_rx_frame* framebuff = &s->framebuffs[producer_idx];
-
-  if (framebuff->frame) {
-    return -EBUSY;
-  }
-
-  // printf("%s(%d), frame idx %d\n", __func__, s->idx, producer_idx);
-  framebuff->frame = frame;
-  framebuff->size = size;
-  /* point to next */
-  producer_idx++;
-  if (producer_idx >= s->framebuff_cnt) producer_idx = 0;
-  s->framebuff_producer_idx = producer_idx;
-  return 0;
-}
-
-static int rx_st20_frame_ready(void* priv, void* frame, struct st20_frame_meta* meta) {
+static int rx_st20p_frame_available(void* priv) {
   struct app_context* s = (struct app_context*)priv;
 
   if (!s->ready) return -EIO;
 
-  /* incomplete frame */
-  if (!st20_is_frame_complete(meta->status)) {
-    st20_rx_put_framebuff(s->rx_handle, frame);
-    return 0;
-  }
-
   st_pthread_mutex_lock(&s->wake_mutex);
-  int ret = rx_st20_enqueue_frame(s, frame, meta->frame_total_size);
-  if (ret < 0) {
-    printf("%s(%d), frame %p dropped\n", __func__, s->idx, frame);
-    /* free the queue */
-    st20_rx_put_framebuff(s->rx_handle, frame);
-    st_pthread_mutex_unlock(&s->wake_mutex);
-    return ret;
-  }
   st_pthread_cond_signal(&s->wake_cond);
   st_pthread_mutex_unlock(&s->wake_mutex);
 
   return 0;
 }
 
-static void rx_fwd_consume_frame(struct app_context* s, void* frame, size_t frame_size) {
+static void fwd_st22_consume_frame(struct app_context* s, struct st_frame* frame) {
   st22p_tx_handle tx_handle = s->tx_handle;
-  struct st_frame_meta* tx_frame;
+  struct st_frame* tx_frame;
 
-  if (frame_size != s->framebuff_size) {
-    printf("%s(%d), mismatch frame size %ld %ld\n", __func__, s->idx, frame_size,
+  if (frame->data_size != s->framebuff_size) {
+    printf("%s(%d), mismatch frame size %ld %ld\n", __func__, s->idx, frame->data_size,
            s->framebuff_size);
     return;
   }
@@ -166,7 +147,7 @@ static void rx_fwd_consume_frame(struct app_context* s, void* frame, size_t fram
       st_pthread_mutex_unlock(&s->wake_mutex);
       continue;
     }
-    st_memcpy(tx_frame->addr, frame, s->framebuff_size);
+    st_memcpy(tx_frame->addr, frame->addr, s->framebuff_size);
     if (s->logo_buf) {
       st_draw_logo(tx_frame, &s->logo_meta, 16, 16);
     }
@@ -176,35 +157,23 @@ static void rx_fwd_consume_frame(struct app_context* s, void* frame, size_t fram
   }
 }
 
-static void* fwd_thread(void* arg) {
+static void* st20_fwd_st22_thread(void* arg) {
   struct app_context* s = arg;
-  st20_rx_handle rx_handle = s->rx_handle;
-  struct st_rx_frame* rx_framebuff;
-  int consumer_idx;
+  st20p_rx_handle rx_handle = s->rx_handle;
+  struct st_frame* frame;
 
   printf("%s(%d), start\n", __func__, s->idx);
   while (!s->stop) {
-    st_pthread_mutex_lock(&s->wake_mutex);
-    consumer_idx = s->framebuff_consumer_idx;
-    rx_framebuff = &s->framebuffs[consumer_idx];
-    if (!rx_framebuff->frame) {
-      /* no ready frame */
+    frame = st20p_rx_get_frame(rx_handle);
+    if (!frame) { /* no frame */
+      st_pthread_mutex_lock(&s->wake_mutex);
       if (!s->stop) st_pthread_cond_wait(&s->wake_cond, &s->wake_mutex);
       st_pthread_mutex_unlock(&s->wake_mutex);
       continue;
     }
-    st_pthread_mutex_unlock(&s->wake_mutex);
 
-    // printf("%s(%d), frame idx %d\n", __func__, idx, consumer_idx);
-    rx_fwd_consume_frame(s, rx_framebuff->frame, rx_framebuff->size);
-    st20_rx_put_framebuff(rx_handle, rx_framebuff->frame);
-    /* point to next */
-    st_pthread_mutex_lock(&s->wake_mutex);
-    rx_framebuff->frame = NULL;
-    consumer_idx++;
-    if (consumer_idx >= s->framebuff_cnt) consumer_idx = 0;
-    s->framebuff_consumer_idx = consumer_idx;
-    st_pthread_mutex_unlock(&s->wake_mutex);
+    fwd_st22_consume_frame(s, frame);
+    st20p_rx_put_frame(rx_handle, frame);
   }
   printf("%s(%d), stop\n", __func__, s->idx);
 
@@ -217,7 +186,7 @@ static int free_app(struct app_context* app) {
     app->tx_handle = NULL;
   }
   if (app->rx_handle) {
-    st20_rx_free(app->rx_handle);
+    st20p_rx_free(app->rx_handle);
     app->rx_handle = NULL;
   }
   if (app->logo_buf) {
@@ -230,10 +199,6 @@ static int free_app(struct app_context* app) {
   }
   st_pthread_mutex_destroy(&app->wake_mutex);
   st_pthread_cond_destroy(&app->wake_cond);
-  if (app->framebuffs) {
-    free(app->framebuffs);
-    app->framebuffs = NULL;
-  }
 
   return 0;
 }
@@ -245,6 +210,8 @@ int main() {
   int ret = -EIO;
   struct app_context app;
   st_handle st;
+  char* port = getenv("ST_PORT_P");
+  if (!port) port = FWD_PORT_BDF;
 
   memset(&app, 0, sizeof(app));
   app.idx = 0;
@@ -252,21 +219,9 @@ int main() {
   st_pthread_mutex_init(&app.wake_mutex, NULL);
   st_pthread_cond_init(&app.wake_cond, NULL);
 
-  app.framebuff_cnt = fb_cnt;
-  app.framebuffs =
-      (struct st_rx_frame*)malloc(sizeof(*app.framebuffs) * app.framebuff_cnt);
-  if (!app.framebuffs) {
-    printf("%s, framebuffs malloc fail\n", __func__);
-    free_app(&app);
-    return -EIO;
-  }
-  for (uint16_t j = 0; j < app.framebuff_cnt; j++) app.framebuffs[j].frame = NULL;
-  app.framebuff_producer_idx = 0;
-  app.framebuff_consumer_idx = 0;
-
   memset(&param, 0, sizeof(param));
   param.num_ports = 1;
-  strncpy(param.port[ST_PORT_P], FWD_PORT_BDF, ST_PORT_MAX_LEN);
+  strncpy(param.port[ST_PORT_P], port, ST_PORT_MAX_LEN);
   memcpy(param.sip_addr[ST_PORT_P], g_fwd_local_ip, ST_IP_ADDR_LEN);
   param.flags = ST_FLAG_BIND_NUMA | ST_FLAG_DEV_AUTO_START_STOP;
   param.log_level = ST_LOG_LEVEL_INFO;  // log level. ERROR, INFO, WARNING
@@ -285,27 +240,32 @@ int main() {
   }
   app.st = st;
 
-  struct st20_rx_ops ops_rx;
+  g_st_handle = st;
+  signal(SIGINT, app_sig_handler);
+
+  struct st20p_rx_ops ops_rx;
   memset(&ops_rx, 0, sizeof(ops_rx));
-  ops_rx.name = "st20_fwd";
-  ops_rx.priv = &app;
-  ops_rx.num_port = 1;
-  memcpy(ops_rx.sip_addr[ST_PORT_P], g_rx_video_source_ip, ST_IP_ADDR_LEN);
-  strncpy(ops_rx.port[ST_PORT_P], FWD_PORT_BDF, ST_PORT_MAX_LEN);
-  ops_rx.udp_port[ST_PORT_P] = RX_ST20_UDP_PORT;  // user config the udp port.
-  ops_rx.pacing = ST21_PACING_NARROW;
-  ops_rx.type = ST20_TYPE_FRAME_LEVEL;
+  ops_rx.name = "st20p_test";
+  ops_rx.priv = &app;  // app handle register to lib
+  ops_rx.port.num_port = 1;
+  // rx src ip like 239.0.0.1
+  memcpy(ops_rx.port.sip_addr[ST_PORT_P], g_rx_video_source_ip, ST_IP_ADDR_LEN);
+  // send port interface like 0000:af:00.0
+  strncpy(ops_rx.port.port[ST_PORT_P], port, ST_PORT_MAX_LEN);
+  ops_rx.port.udp_port[ST_PORT_P] = RX_ST20_UDP_PORT;
+  ops_rx.port.payload_type = RX_ST20_PAYLOAD_TYPE;
   ops_rx.width = 1920;
   ops_rx.height = 1080;
   ops_rx.fps = ST_FPS_P59_94;
-  ops_rx.fmt = ST20_FMT_YUV_422_10BIT;
+  ops_rx.transport_fmt = ST20_FMT_YUV_422_10BIT;
+  ops_rx.output_fmt = ST_FRAME_FMT_YUV422RFC4175PG2BE10;
+  ops_rx.device = ST_PLUGIN_DEVICE_AUTO;
   ops_rx.framebuff_cnt = fb_cnt;
-  ops_rx.payload_type = RX_ST20_PAYLOAD_TYPE;
-  ops_rx.flags = 0;
-  ops_rx.notify_frame_ready = rx_st20_frame_ready;
-  st20_rx_handle rx_handle = st20_rx_create(st, &ops_rx);
+  ops_rx.notify_frame_available = rx_st20p_frame_available;
+
+  st20p_rx_handle rx_handle = st20p_rx_create(st, &ops_rx);
   if (!rx_handle) {
-    printf("%s, st20_rx_create fail\n", __func__);
+    printf("%s, st20p_rx_create fail\n", __func__);
     free_app(&app);
     return -EIO;
   }
@@ -317,7 +277,7 @@ int main() {
   ops_tx.priv = &app;  // app handle register to lib
   ops_tx.port.num_port = 1;
   memcpy(ops_tx.port.dip_addr[ST_PORT_P], g_tx_st22_dst_ip, ST_IP_ADDR_LEN);
-  strncpy(ops_tx.port.port[ST_PORT_P], FWD_PORT_BDF, ST_PORT_MAX_LEN);
+  strncpy(ops_tx.port.port[ST_PORT_P], port, ST_PORT_MAX_LEN);
   ops_tx.port.udp_port[ST_PORT_P] = TX_ST22_UDP_PORT;
   ops_tx.port.payload_type = TX_ST22_PAYLOAD_TYPE;
   ops_tx.width = 1920;
@@ -343,7 +303,7 @@ int main() {
 
   st22_fwd_open_logo(&app, ST22_TX_LOGO_FILE);
 
-  ret = pthread_create(&app.fwd_thread, NULL, fwd_thread, &app);
+  ret = pthread_create(&app.fwd_thread, NULL, st20_fwd_st22_thread, &app);
   if (ret < 0) {
     printf("%s(%d), thread create fail\n", __func__, ret);
     free_app(&app);
@@ -352,7 +312,8 @@ int main() {
 
   app.ready = true;
 
-  while (1) {
+  g_video_active = true;
+  while (g_video_active) {
     sleep(1);
   }
 

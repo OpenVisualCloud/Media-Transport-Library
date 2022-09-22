@@ -1,19 +1,39 @@
 {
     "plugins": [
         {
-            "enabled" : 1,
-            "name": "intopix_cpu",
+            "enabled": 1,
+            "name": "intopix_jpegxs_cpu",
             "path": "/usr/local/lib/x86_64-linux-gnu/libst_plugin_intopix_cpu.so"
         },
         {
-            "enabled" : 1,
-            "name": "sample",
-            "path": "/usr/local/lib/x86_64-linux-gnu/libst_plugin_jpegxs_sample.so"
+            "enabled": 0,
+            "name": "st22_ffmpeg",
+            "path": "/usr/local/lib/x86_64-linux-gnu/libst_plugin_st22_ffmpeg.so"
         },
         {
-            "enabled" : 1,
-            "name": "sample",
-            "path": "/usr/local/lib64/libst_plugin_jpegxs_sample.so"
+            "enabled": 0,
+            "name": "st22_ffmpeg",
+            "path": "/usr/local/lib64/libst_plugin_st22_ffmpeg.so"
+        },
+        {
+            "enabled": 1,
+            "name": "st22_sample",
+            "path": "/usr/local/lib/x86_64-linux-gnu/libst_plugin_st22_sample.so"
+        },
+        {
+            "enabled": 1,
+            "name": "st22_sample",
+            "path": "/usr/local/lib64/libst_plugin_st22_sample.so"
+        },
+        {
+            "enabled": 0,
+            "name": "convert_sample",
+            "path": "/usr/local/lib/x86_64-linux-gnu/libst_plugin_convert_sample.so"
+        },
+        {
+            "enabled": 0,
+            "name": "convert_sample",
+            "path": "/usr/local/lib64/libst_plugin_convert_sample.so"
         }
-    ],
+    ]
 }

@@ -2,4 +2,5 @@
 # Copyright 2022 Intel Corporation
 
 option('enable_kni', type: 'boolean', value: false, description: 'enable/disable KNI')
+option('enable_tap', type: 'boolean', value: false, description: 'enable/disable Windows TAP')
 option('dpdk_root_dir', type: 'string', value: 'c:\dpdk', description: 'dpdk source code root dir')

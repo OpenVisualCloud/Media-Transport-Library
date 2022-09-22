@@ -58,7 +58,7 @@ Pls note the input yuv source file for sample app is the rfc4175 yuv422be10(big 
 
 ###### 3.3.1 Prepare a yuv422p10le file.
 ```bash
-wget https://jell.yfish.us/media/jellyfish-3-mbps-hd-hevc-10bit.mkv
+wget https://www.larmoire.info/jellyfish/media/jellyfish-3-mbps-hd-hevc-10bit.mkv
 ffmpeg -i jellyfish-3-mbps-hd-hevc-10bit.mkv -vframes 2 -c:v rawvideo yuv420p10le.yuv
 ffmpeg -s 1920x1080 -pix_fmt yuv420p10le -i yuv420p10le.yuv -pix_fmt yuv422p10le yuv422p10le.yuv
 ```
@@ -130,19 +130,27 @@ For the supported parameters in the json, please refer to [JSON configuration gu
 --rx_separate_lcore                  : If enabled, RX video session will run on dedicated lcores, it means TX video and RX video is not running on the same core.
 --dma_dev <DMA1,DMA2,DMA3...>        : DMA dev list to offload the packet memory copy for RX video frame session.
 --runtime_session                    : start instance before creat video/audio/anc sessions, similar to runtime tx/rx create.
+--display                            : The main option for SDL init, to enable display for each rx video session, see JSON guide.
 
---ebu                                : debug option, enable timing check for video rx streams
---pcapng_dump <n>                    : debug option, dump n packets from rx video streams to pcapng files. 
+--ebu                                : debug option, enable timing check for video rx streams.
+--pcapng_dump <n>                    : debug option, dump n packets from rx video streams to pcapng files.
+--rx_video_file_frames <n>           : debug option, dump the received video frames to a yuv file, n is dump file size in frame unit.
+--rx_video_fb_cnt<n>                 : debug option, the frame buffer count.
 --promiscuous                        : debug option, enable RX promiscuous( receive all data passing through it regardless of whether the destination address of the data) mode for NIC.
---cni_thread                         : debug option, use a dedicated thread for cni messages instead of tasklet
---sch_session_quota <count>          : debug option, max sessions count for one lcore, unit: 1080P 60FPS TX
---p_tx_dst_mac <mac>                 : debug option, destination MAC address for primary port, debug usage only
---r_tx_dst_mac <mac>                 : debug option, destination MAC address for redundant port, debug usage only
---log_level <level>                  : debug option, set log level. e.g. debug, info, warning, error
+--cni_thread                         : debug option, use a dedicated thread for cni messages instead of tasklet.
+--sch_session_quota <count>          : debug option, max sessions count for one lcore, unit: 1080P 60FPS TX.
+--p_tx_dst_mac <mac>                 : debug option, destination MAC address for primary port.
+--r_tx_dst_mac <mac>                 : debug option, destination MAC address for redundant port.
+--log_level <level>                  : debug option, set log level. e.g. debug, info, warning, error.
 --nb_tx_desc <count>                 : debug option, number of transmit descriptors for each NIC TX queue, affect the memory usage and the performance.
 --nb_rx_desc <count>                 : debug option, number of receive descriptors for each NIC RX queue, affect the memory usage and the performance.
 --tasklet_time                       : debug option, enable stat info for tasklet running time.
 --tsc                                : debug option, force to use tsc pacing.
+--mono_pool                          : debug option, use mono pool for all tx and rx queues(sessions).
+--tasklet_thread                     : debug option, run the tasklet under thread instead of a pinned lcore.
+--tasklet_sleep                      : debug option, enable sleep if all tasklet report done status.
+--app_thread                         : debug option, run the app thread under a common os thread instead of a pinned lcore.
+--rxtx_simd_512                      : debug option, enable dpdk simd 512 path for rx/tx burst function, see --force-max-simd-bitwidth=512 in dpdk for detail.
 ```
 
 ## 4. Tests:

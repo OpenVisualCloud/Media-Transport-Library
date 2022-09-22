@@ -2,6 +2,7 @@
  * Copyright(c) 2022 Intel Corporation
  */
 
+#include "log.h"
 #include "tests.h"
 
 static int test_dma_cnt(struct st_tests_context* ctx) {
@@ -330,4 +331,162 @@ TEST(Dma, fill_async) {
   if (!st_test_dma_available(ctx)) return;
 
   test_dma_copy_fill_async(ctx, true);
+}
+
+static void _test_dma_map(st_handle st, const void* vaddr, size_t size,
+                          bool expect_succ) {
+  st_iova_t iova = st_dma_map(st, vaddr, size);
+  if (expect_succ) {
+    EXPECT_TRUE(iova != ST_BAD_IOVA);
+    int ret = st_dma_unmap(st, vaddr, iova, size);
+    EXPECT_TRUE(ret >= 0);
+  } else
+    EXPECT_FALSE(iova != ST_BAD_IOVA);
+}
+
+static void test_dma_map(struct st_tests_context* ctx, size_t size) {
+  auto st = ctx->handle;
+  size_t pg_sz = st_page_size(st);
+  /* 2 more pages to hold the head and tail */
+  uint8_t* p = (uint8_t*)malloc(size + 2 * pg_sz);
+  ASSERT_TRUE(p != NULL);
+
+  uint8_t* align = (uint8_t*)ST_ALIGN((uint64_t)p, pg_sz);
+  _test_dma_map(st, align, size, true);
+
+  free(p);
+}
+
+TEST(Dma, map) {
+  struct st_tests_context* ctx = st_test_ctx();
+  auto st = ctx->handle;
+
+  test_dma_map(ctx, 64 * st_page_size(st));
+  test_dma_map(ctx, 512 * st_page_size(st));
+}
+
+TEST(Dma, map_fail) {
+  struct st_tests_context* ctx = st_test_ctx();
+  auto st = ctx->handle;
+  size_t pg_sz = st_page_size(st);
+  uint8_t* p = (uint8_t*)malloc(pg_sz / 2);
+
+  _test_dma_map(st, p, pg_sz / 2, false);
+
+  free(p);
+}
+
+static void test_dma_remap(struct st_tests_context* ctx, size_t size) {
+  auto st = ctx->handle;
+  size_t pg_sz = st_page_size(st);
+  /* 2 more pages to hold the head and tail */
+  uint8_t* p = (uint8_t*)malloc(size + 2 * pg_sz);
+  ASSERT_TRUE(p != NULL);
+
+  uint8_t* align = (uint8_t*)ST_ALIGN((uint64_t)p, pg_sz);
+  st_iova_t iova = st_dma_map(st, align, size);
+  EXPECT_TRUE(iova != ST_BAD_IOVA);
+
+  st_iova_t bad_iova = st_dma_map(st, align, size);
+  EXPECT_TRUE(bad_iova == ST_BAD_IOVA);
+  bad_iova = st_dma_map(st, align + pg_sz, size - pg_sz);
+  EXPECT_TRUE(bad_iova == ST_BAD_IOVA);
+  bad_iova = st_dma_map(st, align - pg_sz, size);
+  EXPECT_TRUE(bad_iova == ST_BAD_IOVA);
+
+  int ret = st_dma_unmap(st, align, iova, size - pg_sz);
+  EXPECT_TRUE(ret < 0);
+  ret = st_dma_unmap(st, align + pg_sz, iova + pg_sz, size - pg_sz);
+  EXPECT_TRUE(ret < 0);
+
+  ret = st_dma_unmap(st, align, iova, size);
+  EXPECT_TRUE(ret >= 0);
+
+  ret = st_dma_unmap(st, align, iova, size);
+  EXPECT_TRUE(ret < 0);
+
+  free(p);
+}
+
+TEST(Dma, map_remap) {
+  struct st_tests_context* ctx = st_test_ctx();
+  auto st = ctx->handle;
+
+  test_dma_remap(ctx, 64 * st_page_size(st));
+}
+
+static void test_dma_map_copy(st_handle st, st_udma_handle dma, size_t copy_size) {
+  void *dst = NULL, *src = NULL;
+  size_t pg_sz = st_page_size(st);
+  /* 2 more pages to hold the head and tail */
+  size_t size = copy_size + 2 * pg_sz;
+
+  dst = (uint8_t*)malloc(size);
+  if (!dst) return;
+  src = (uint8_t*)malloc(size);
+  if (!src) {
+    free(dst);
+    return;
+  }
+  st_test_rand_data((uint8_t*)src, size, 0);
+
+  void* src_align = (void*)ST_ALIGN((uint64_t)src, pg_sz);
+  void* dst_align = (void*)ST_ALIGN((uint64_t)dst, pg_sz);
+  st_iova_t src_iova = st_dma_map(st, src_align, copy_size);
+  st_iova_t dst_iova = st_dma_map(st, dst_align, copy_size);
+  ASSERT_TRUE(src_iova != ST_BAD_IOVA);
+  ASSERT_TRUE(dst_iova != ST_BAD_IOVA);
+
+  int ret = st_udma_copy(dma, dst_iova, src_iova, copy_size);
+  EXPECT_GE(ret, 0);
+  ret = st_udma_submit(dma);
+  uint16_t nb_dq = 0;
+  while (nb_dq < 1) {
+    nb_dq = st_udma_completed(dma, 32);
+  }
+
+  ret = memcmp(src_align, dst_align, copy_size);
+  EXPECT_EQ(ret, 0);
+
+  ret = st_dma_unmap(st, src_align, src_iova, copy_size);
+  EXPECT_TRUE(ret >= 0);
+  ret = st_dma_unmap(st, dst_align, dst_iova, copy_size);
+  EXPECT_TRUE(ret >= 0);
+
+  free(dst);
+  free(src);
+}
+
+TEST(Dma, map_copy) {
+  struct st_tests_context* ctx = st_test_ctx();
+  auto st = ctx->handle;
+
+  if (!st_test_dma_available(ctx)) return;
+
+  st_udma_handle dma = st_udma_create(st, 128, ST_PORT_P);
+  ASSERT_TRUE(dma != NULL);
+
+  test_dma_map_copy(st, dma, 64 * st_page_size(st));
+
+  int ret = st_udma_free(dma);
+  EXPECT_GE(ret, 0);
+}
+
+static void test_dma_mem_alloc_free(struct st_tests_context* ctx, size_t size) {
+  auto st = ctx->handle;
+  st_dma_mem_handle dma_mem = st_dma_mem_alloc(st, size);
+  ASSERT_TRUE(dma_mem != NULL);
+  ASSERT_TRUE(st_dma_mem_addr(dma_mem) != NULL);
+  ASSERT_TRUE(st_dma_mem_iova(dma_mem) != 0 && st_dma_mem_iova(dma_mem) != ST_BAD_IOVA);
+
+  st_dma_mem_free(st, dma_mem);
+}
+
+TEST(Dma, mem_alloc_free) {
+  struct st_tests_context* ctx = st_test_ctx();
+
+  test_dma_mem_alloc_free(ctx, 111);
+  test_dma_mem_alloc_free(ctx, 2222);
+  test_dma_mem_alloc_free(ctx, 33333);
+  test_dma_mem_alloc_free(ctx, 444444);
 }

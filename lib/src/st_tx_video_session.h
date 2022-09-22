@@ -7,14 +7,6 @@
 
 #include "st_main.h"
 
-struct st_tx_video_session_impl* st_tx_video_sessions_mgr_attach(
-    struct st_tx_video_sessions_mgr* mgr, struct st20_tx_ops* ops,
-    enum st_session_type s_type, struct st22_tx_ops* st22_frame_ops);
-int st_tx_video_sessions_mgr_detach(struct st_tx_video_sessions_mgr* mgr,
-                                    struct st_tx_video_session_impl* s);
-
-int st_tx_video_sessions_mgr_update(struct st_tx_video_sessions_mgr* mgr);
-
 void st_tx_video_sessions_stat(struct st_main_impl* impl);
 
 int st_tx_video_sessions_sch_init(struct st_main_impl* impl, struct st_sch_impl* sch);

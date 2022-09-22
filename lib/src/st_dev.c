@@ -15,10 +15,64 @@
 #include "st_rx_audio_session.h"
 #include "st_rx_video_session.h"
 #include "st_sch.h"
+#include "st_socket.h"
 #include "st_tx_ancillary_session.h"
 #include "st_tx_audio_session.h"
 #include "st_tx_video_session.h"
 #include "st_util.h"
+
+struct st_dev_driver_info {
+  char* name;
+  enum st_port_type port_type;
+  enum st_driver_type drv_type;
+};
+
+static const struct st_dev_driver_info dev_drvs[] = {
+    {
+        .name = "net_ice",
+        .port_type = ST_PORT_PF,
+        .drv_type = ST_DRV_ICE,
+    },
+    {
+        .name = "net_i40e",
+        .port_type = ST_PORT_PF,
+        .drv_type = ST_DRV_I40E,
+    },
+    {
+        .name = "net_iavf",
+        .port_type = ST_PORT_VF,
+        .drv_type = ST_DRV_IAVF,
+    },
+    {
+        .name = "net_af_xdp",
+        .port_type = ST_PORT_AF_XDP,
+        .drv_type = ST_DRV_AF_XDP,
+    },
+    {
+        .name = "net_e1000_igb",
+        .port_type = ST_PORT_PF,
+        .drv_type = ST_DRV_E1000_IGB,
+    },
+    {
+        .name = "net_igc",
+        .port_type = ST_PORT_PF,
+        .drv_type = ST_DRV_IGC,
+    },
+};
+
+static int parse_driver_info(const char* driver, enum st_port_type* port,
+                             enum st_driver_type* drv) {
+  for (int i = 0; i < ST_ARRAY_SIZE(dev_drvs); i++) {
+    if (!strcmp(dev_drvs[i].name, driver)) {
+      *port = dev_drvs[i].port_type;
+      *drv = dev_drvs[i].drv_type;
+      return 0;
+    }
+  }
+
+  err("%s, unknown nic driver %s\n", __func__, driver);
+  return -EIO;
+}
 
 static void dev_eth_xstat(uint16_t port_id) {
   /* Get count */
@@ -67,7 +121,8 @@ static void dev_eth_stat(struct st_main_impl* impl) {
       info("DEV(%d): Avr rate, tx: %" PRIu64 " Mb/s, rx: %" PRIu64
            " Mb/s, pkts, tx: %" PRIu64 ", rx: %" PRIu64 "\n",
            i, orate_m, irate_m, stats.opackets, stats.ipackets);
-      if (stats.imissed || stats.ierrors || stats.oerrors || stats.rx_nombuf) {
+      if (stats.imissed || stats.ierrors || stats.rx_nombuf ||
+          (stats.oerrors && (ST_PORT_VF != st_port_type(impl, i)))) {
         err("DEV(%d): Status: imissed %" PRIu64 " ierrors %" PRIu64 " oerrors %" PRIu64
             " rx_nombuf %" PRIu64 "\n",
             i, stats.imissed, stats.ierrors, stats.oerrors, stats.rx_nombuf);
@@ -137,13 +192,15 @@ static void* dev_stat_thread(void* arg) {
   return NULL;
 }
 
-static int dev_eal_init(struct st_init_params* p) {
+static int dev_eal_init(struct st_init_params* p, struct st_kport_info* kport_info) {
   char* argv[ST_EAL_MAX_ARGS];
   int argc, ret;
   int num_ports = RTE_MIN(p->num_ports, ST_PORT_MAX);
   static bool eal_inited = false; /* eal cann't re-enter in one process */
+  bool has_afxdp = false;
   char port_params[ST_PORT_MAX][2 * ST_PORT_MAX_LEN];
   char* port_param;
+  int pci_ports = 0;
 
   argc = 0;
 
@@ -159,13 +216,28 @@ static int dev_eal_init(struct st_init_params* p) {
 #endif
   argv[argc] = "--in-memory";
   argc++;
+
   for (int i = 0; i < num_ports; i++) {
-    argv[argc] = "-a";
+    if (p->pmd[i] == ST_PMD_DPDK_AF_XDP) {
+      argv[argc] = "--vdev";
+      has_afxdp = true;
+    } else {
+      argv[argc] = "-a";
+      pci_ports++;
+    }
     argc++;
     port_param = port_params[i];
     memset(port_param, 0, 2 * ST_PORT_MAX_LEN);
-    snprintf(port_param, 2 * ST_PORT_MAX_LEN, "%s,max_burst_size=2048", p->port[i]);
-    dbg("%s(%d), port_param: %s\n", __func__, i, port_param);
+    if (p->pmd[i] == ST_PMD_DPDK_AF_XDP) {
+      snprintf(port_param, 2 * ST_PORT_MAX_LEN,
+               "net_af_xdp%d,iface=%s,start_queue=%u,queue_count=%u", i, p->port[i],
+               p->xdp_info[i].start_queue, p->xdp_info[i].queue_count);
+      /* save port name */
+      snprintf(kport_info->port[i], ST_PORT_MAX_LEN, "net_af_xdp%d", i);
+    } else {
+      snprintf(port_param, 2 * ST_PORT_MAX_LEN, "%s,max_burst_size=2048", p->port[i]);
+    }
+    info("%s(%d), port_param: %s\n", __func__, i, port_param);
     argv[argc] = port_param;
     argc++;
   }
@@ -175,6 +247,7 @@ static int dev_eal_init(struct st_init_params* p) {
   dbg("%s, dma dev no %u\n", __func__, p->num_dma_dev_port);
   for (uint8_t i = 0; i < num_dma_dev_port; i++) {
     argv[argc] = "-a";
+    pci_ports++;
     argc++;
     argv[argc] = p->dma_dev_port[i];
     argc++;
@@ -188,19 +261,32 @@ static int dev_eal_init(struct st_init_params* p) {
     argc++;
   }
 
+  if (!pci_ports) {
+    argv[argc] = "--no-pci";
+    argc++;
+  }
+
   argv[argc] = "--log-level";
   argc++;
   if (p->log_level == ST_LOG_LEVEL_DEBUG)
     argv[argc] = "user,debug";
-  else if (p->log_level == ST_LOG_LEVEL_INFO)
-    argv[argc] = "info";
-  else if (p->log_level == ST_LOG_LEVEL_WARNING)
+  else if (p->log_level == ST_LOG_LEVEL_INFO) {
+    if (has_afxdp)
+      argv[argc] = "pmd.net.af_xdp,info";
+    else
+      argv[argc] = "info";
+  } else if (p->log_level == ST_LOG_LEVEL_WARNING)
     argv[argc] = "warning";
   else if (p->log_level == ST_LOG_LEVEL_ERROR)
     argv[argc] = "error";
   else
     argv[argc] = "info";
   argc++;
+
+  if (p->flags & ST_FLAG_RXTX_SIMD_512) {
+    argv[argc] = "--force-max-simd-bitwidth=512";
+    argc++;
+  }
 
   argv[argc] = "--";
   argc++;
@@ -252,7 +338,7 @@ static int dev_flush_rx_queue(struct st_interface* inf, uint16_t queue) {
 #define ST_SHAPER_PROFILE_ID 1
 #define ST_ROOT_NODE_ID 256
 #define ST_DEFAULT_NODE_ID 246
-#define ST_VF_DEFAULT_RL_BPS (1024 * 1024 * 1024 / 8) /* 1g bit per second */
+#define ST_DEFAULT_RL_BPS (1024 * 1024 * 1024 / 8) /* 1g bit per second */
 
 static int dev_rl_init_root(struct st_main_impl* impl, enum st_port port,
                             uint32_t shaper_profile_id) {
@@ -343,7 +429,6 @@ static struct st_rl_shaper* dev_rl_shaper_get(struct st_main_impl* impl,
   return dev_rl_shaper_add(impl, port, bps);
 }
 
-/* VF require all q config with RL */
 static int dev_init_ratelimit_vf(struct st_main_impl* impl, enum st_port port) {
   uint16_t port_id = st_port_id(impl, port);
   struct st_interface* inf = st_if(impl, port);
@@ -351,7 +436,7 @@ static int dev_init_ratelimit_vf(struct st_main_impl* impl, enum st_port port) {
   struct rte_tm_error error;
   struct rte_tm_node_params qp;
   struct st_rl_shaper* shaper;
-  uint64_t bps = ST_VF_DEFAULT_RL_BPS;
+  uint64_t bps = ST_DEFAULT_RL_BPS;
 
   memset(&error, 0, sizeof(error));
 
@@ -398,16 +483,11 @@ static int dev_tx_queue_set_rl_rate(struct st_main_impl* impl, enum st_port port
   struct st_rl_shaper* shaper;
 
   if (!bps) { /* default */
-    bps = ST_VF_DEFAULT_RL_BPS;
+    bps = ST_DEFAULT_RL_BPS;
   }
 
   /* not changed */
   if (bps == tx_queue->bps) return 0;
-
-  if (!(inf->feature & ST_IF_FEATURE_RUNTIME_RL)) {
-    tx_queue->bps = bps;
-    return 0;
-  }
 
   /* delete old queue node */
   if (tx_queue->rl_shapers_mapping >= 0) {
@@ -451,7 +531,58 @@ static int dev_tx_queue_set_rl_rate(struct st_main_impl* impl, enum st_port port
   return 0;
 }
 
-static struct rte_flow* dev_rx_queue_create_flow(uint16_t port_id, uint16_t q,
+static struct rte_flow* dev_rx_queue_create_flow_raw(struct st_interface* inf, uint16_t q,
+                                                     struct st_rx_flow* flow) {
+  struct rte_flow_error error;
+  struct rte_flow* r_flow;
+
+  struct rte_flow_attr attr = {0};
+  struct rte_flow_item pattern[2];
+  struct rte_flow_action action[2];
+  struct rte_flow_item_raw spec = {0};
+  struct rte_flow_item_raw mask = {0};
+  struct rte_flow_action_queue to_queue = {0};
+
+  uint16_t port_id = inf->port_id;
+  char pkt_buf[] =
+      "0000000000010000000000020800450000300000000000110000010101010202020200001B3A001C00"
+      "008000000000000000000000000000000000000000";
+  char msk_buf[] =
+      "000000000000000000000000000000000000000000000000000000000000000000000000FFFF000000"
+      "000000000000000000000000000000000000000000";
+
+  attr.ingress = 1;
+
+  memset(pattern, 0, sizeof(pattern));
+  memset(action, 0, sizeof(action));
+
+  spec.pattern = (const void*)pkt_buf;
+  spec.length = 62;
+  mask.pattern = (const void*)msk_buf;
+  mask.length = 62;
+
+  pattern[0].type = RTE_FLOW_ITEM_TYPE_RAW;
+  pattern[0].spec = &spec;
+  pattern[0].mask = &mask;
+  pattern[1].type = RTE_FLOW_ITEM_TYPE_END;
+
+  to_queue.index = q;
+  action[0].type = RTE_FLOW_ACTION_TYPE_QUEUE;
+  action[0].conf = &to_queue;
+  action[1].type = RTE_FLOW_ACTION_TYPE_END;
+
+  r_flow = rte_flow_create(port_id, &attr, pattern, action, &error);
+  if (!r_flow) {
+    err("%s(%d), rte_flow_create fail for queue %d, %s\n", __func__, port_id, q,
+        error.message);
+    return NULL;
+  }
+
+  info("%s(%d), queue %u succ\n", __func__, inf->port, q);
+  return r_flow;
+}
+
+static struct rte_flow* dev_rx_queue_create_flow(struct st_interface* inf, uint16_t q,
                                                  struct st_rx_flow* flow) {
   struct rte_flow_attr attr;
   struct rte_flow_item pattern[4];
@@ -467,6 +598,14 @@ static struct rte_flow* dev_rx_queue_create_flow(uint16_t port_id, uint16_t q,
   struct rte_flow* r_flow;
   int ret;
 
+  uint16_t port_id = inf->port_id;
+  enum st_driver_type drv_type = inf->drv_type;
+
+  /* only raw flow can be applied on the hdr split queue */
+  if (st_if_hdr_split_pool(inf, q)) {
+    return dev_rx_queue_create_flow_raw(inf, q, flow);
+  }
+
   /* queue */
   queue.index = q;
 
@@ -478,13 +617,16 @@ static struct rte_flow* dev_rx_queue_create_flow(uint16_t port_id, uint16_t q,
   memset(&ipv4_spec, 0, sizeof(ipv4_spec));
   memset(&ipv4_mask, 0, sizeof(ipv4_mask));
   ipv4_spec.hdr.next_proto_id = IPPROTO_UDP;
-  memset(&ipv4_mask.hdr.dst_addr, 0xFF, ST_IP_ADDR_LEN);
-  if (st_is_multicast_ip(flow->dip_addr)) {
-    rte_memcpy(&ipv4_spec.hdr.dst_addr, flow->dip_addr, ST_IP_ADDR_LEN);
-  } else {
-    rte_memcpy(&ipv4_spec.hdr.src_addr, flow->dip_addr, ST_IP_ADDR_LEN);
-    rte_memcpy(&ipv4_spec.hdr.dst_addr, flow->sip_addr, ST_IP_ADDR_LEN);
-    memset(&ipv4_mask.hdr.src_addr, 0xFF, ST_IP_ADDR_LEN);
+
+  if (drv_type != ST_DRV_IGC) {
+    memset(&ipv4_mask.hdr.dst_addr, 0xFF, ST_IP_ADDR_LEN);
+    if (st_is_multicast_ip(flow->dip_addr)) {
+      rte_memcpy(&ipv4_spec.hdr.dst_addr, flow->dip_addr, ST_IP_ADDR_LEN);
+    } else {
+      rte_memcpy(&ipv4_spec.hdr.src_addr, flow->dip_addr, ST_IP_ADDR_LEN);
+      rte_memcpy(&ipv4_spec.hdr.dst_addr, flow->sip_addr, ST_IP_ADDR_LEN);
+      memset(&ipv4_mask.hdr.src_addr, 0xFF, ST_IP_ADDR_LEN);
+    }
   }
 
   /* udp flow */
@@ -505,8 +647,8 @@ static struct rte_flow* dev_rx_queue_create_flow(uint16_t port_id, uint16_t q,
 
   memset(pattern, 0, sizeof(pattern));
   pattern[0].type = RTE_FLOW_ITEM_TYPE_ETH;
-  pattern[0].spec = &eth_spec;
-  pattern[0].mask = &eth_mask;
+  pattern[0].spec = (drv_type == ST_DRV_IGC) ? NULL : &eth_spec;
+  pattern[0].mask = (drv_type == ST_DRV_IGC) ? NULL : &eth_mask;
   pattern[1].type = RTE_FLOW_ITEM_TYPE_IPV4;
   pattern[1].spec = &ipv4_spec;
   pattern[1].mask = &ipv4_mask;
@@ -536,7 +678,7 @@ static struct rte_flow* dev_rx_queue_create_flow(uint16_t port_id, uint16_t q,
   return r_flow;
 }
 
-static int dev_free_port(struct st_main_impl* impl, enum st_port port) {
+static int dev_stop_port(struct st_main_impl* impl, enum st_port port) {
   int ret;
   uint16_t port_id = st_port_id(impl, port);
   struct st_interface* inf = st_if(impl, port);
@@ -549,12 +691,25 @@ static int dev_free_port(struct st_main_impl* impl, enum st_port port) {
   ret = rte_eth_dev_stop(port_id);
   if (ret < 0) err("%s(%d), rte_eth_dev_stop fail %d\n", __func__, port, ret);
 
+  inf->status &= ~ST_IF_STAT_PORT_STARTED;
+  info("%s(%d), succ\n", __func__, port);
+  return 0;
+}
+
+static int dev_close_port(struct st_main_impl* impl, enum st_port port) {
+  int ret;
+  uint16_t port_id = st_port_id(impl, port);
+  struct st_interface* inf = st_if(impl, port);
+
+  if (!(inf->status & ST_IF_STAT_PORT_CONFIGED)) {
+    info("%s(%d), port not started\n", __func__, port);
+    return 0;
+  }
+
   ret = rte_eth_dev_close(port_id);
   if (ret < 0) err("%s(%d), rte_eth_dev_close fail %d\n", __func__, port, ret);
 
-  inf->status &= ~ST_IF_STAT_PORT_STARTED;
   inf->status &= ~ST_IF_STAT_PORT_CONFIGED;
-
   info("%s(%d), succ\n", __func__, port);
   return 0;
 }
@@ -623,19 +778,9 @@ static int dev_start_timesync(struct st_main_impl* impl, enum st_port port) {
   return 0;
 }
 
-static const struct rte_eth_conf dev_port_conf = {
-    .txmode = {
-#if RTE_VERSION >= RTE_VERSION_NUM(22, 3, 0, 0)
-        .offloads = RTE_ETH_TX_OFFLOAD_MULTI_SEGS,
-#else
-        .offloads = DEV_TX_OFFLOAD_MULTI_SEGS,
-#endif
-    }};
-
-static const struct rte_eth_txconf dev_tx_port_conf = {.tx_rs_thresh = 1,
-                                                       .tx_free_thresh = 1};
-static const struct rte_eth_rxconf dev_rx_port_conf = {.rx_free_thresh = 1,
-                                                       .rx_deferred_start = 0};
+static const struct rte_eth_conf dev_port_conf = {.txmode = {
+                                                      .offloads = 0,
+                                                  }};
 
 static int dev_config_port(struct st_main_impl* impl, enum st_port port) {
   uint16_t nb_rx_desc = ST_DEV_RX_DESC, nb_tx_desc = ST_DEV_TX_DESC;
@@ -645,6 +790,22 @@ static int dev_config_port(struct st_main_impl* impl, enum st_port port) {
   struct st_interface* inf = st_if(impl, port);
   uint16_t nb_rx_q = inf->max_rx_queues, nb_tx_q = inf->max_tx_queues;
   struct rte_eth_conf port_conf = dev_port_conf;
+
+  if (inf->feature & ST_IF_FEATURE_TX_MULTI_SEGS) {
+#if RTE_VERSION >= RTE_VERSION_NUM(22, 3, 0, 0)
+    port_conf.txmode.offloads |= RTE_ETH_TX_OFFLOAD_MULTI_SEGS;
+#else
+    port_conf.txmode.offloads |= DEV_TX_OFFLOAD_MULTI_SEGS;
+#endif
+  }
+
+  if (inf->feature & ST_IF_FEATURE_TX_OFFLOAD_IPV4_CKSUM) {
+#if RTE_VERSION >= RTE_VERSION_NUM(22, 3, 0, 0)
+    port_conf.txmode.offloads |= RTE_ETH_TX_OFFLOAD_IPV4_CKSUM;
+#else
+    port_conf.txmode.offloads |= DEV_TX_OFFLOAD_IPV4_CKSUM;
+#endif
+  }
 
   if (inf->feature & ST_IF_FEATURE_RX_OFFLOAD_TIMESTAMP) {
 #if RTE_VERSION >= RTE_VERSION_NUM(22, 3, 0, 0)
@@ -672,28 +833,30 @@ static int dev_config_port(struct st_main_impl* impl, enum st_port port) {
   inf->nb_tx_desc = nb_tx_desc;
   inf->nb_rx_desc = nb_rx_desc;
 
-  /* enable PTYPE for packet classification by NIC */
-  uint32_t ptypes[16];
-  uint32_t set_ptypes[16];
-  uint32_t ptype_mask = RTE_PTYPE_L2_ETHER_TIMESYNC | RTE_PTYPE_L2_ETHER_ARP |
-                        RTE_PTYPE_L2_ETHER_VLAN | RTE_PTYPE_L2_ETHER_QINQ |
-                        RTE_PTYPE_L4_ICMP | RTE_PTYPE_L3_IPV4 | RTE_PTYPE_L4_UDP |
-                        RTE_PTYPE_L4_FRAG;
-  int num_ptypes =
-      rte_eth_dev_get_supported_ptypes(port_id, ptype_mask, ptypes, RTE_DIM(ptypes));
-  for (int i = 0; i < num_ptypes; i += 1) {
-    set_ptypes[i] = ptypes[i];
-  }
-  if (num_ptypes >= 5) {
-    ret = rte_eth_dev_set_ptypes(port_id, ptype_mask, set_ptypes, num_ptypes);
-    if (ret < 0) {
-      err("%s(%d), rte_eth_dev_set_ptypes fail %d\n", __func__, port, ret);
-      return ret;
+  if (!st_pmd_is_kernel(impl, port)) {
+    /* enable PTYPE for packet classification by NIC */
+    uint32_t ptypes[16];
+    uint32_t set_ptypes[16];
+    uint32_t ptype_mask = RTE_PTYPE_L2_ETHER_TIMESYNC | RTE_PTYPE_L2_ETHER_ARP |
+                          RTE_PTYPE_L2_ETHER_VLAN | RTE_PTYPE_L2_ETHER_QINQ |
+                          RTE_PTYPE_L4_ICMP | RTE_PTYPE_L3_IPV4 | RTE_PTYPE_L4_UDP |
+                          RTE_PTYPE_L4_FRAG;
+    int num_ptypes =
+        rte_eth_dev_get_supported_ptypes(port_id, ptype_mask, ptypes, RTE_DIM(ptypes));
+    for (int i = 0; i < num_ptypes; i += 1) {
+      set_ptypes[i] = ptypes[i];
     }
-  } else {
-    err("%s(%d), failed to setup all ptype, only %d supported\n", __func__, port,
-        num_ptypes);
-    return -EIO;
+    if (num_ptypes >= 5) {
+      ret = rte_eth_dev_set_ptypes(port_id, ptype_mask, set_ptypes, num_ptypes);
+      if (ret < 0) {
+        err("%s(%d), rte_eth_dev_set_ptypes fail %d\n", __func__, port, ret);
+        return ret;
+      }
+    } else {
+      err("%s(%d), failed to setup all ptype, only %d supported\n", __func__, port,
+          num_ptypes);
+      return -EIO;
+    }
   }
 
   inf->status |= ST_IF_STAT_PORT_CONFIGED;
@@ -709,10 +872,18 @@ static int dev_start_port(struct st_main_impl* impl, enum st_port port) {
   int socket_id = rte_eth_dev_socket_id(port_id);
   struct st_interface* inf = st_if(impl, port);
   uint16_t nb_rx_q = inf->max_rx_queues, nb_tx_q = inf->max_tx_queues;
-  uint16_t nb_rx_desc = inf->nb_rx_desc, nb_tx_desc = inf->nb_tx_desc;
+  uint16_t nb_rx_desc = st_if_nb_rx_desc(impl, port);
+  uint16_t nb_tx_desc = st_if_nb_tx_desc(impl, port);
   uint8_t rx_deferred_start = 0;
-  struct rte_eth_txconf tx_port_conf = dev_tx_port_conf;
-  struct rte_eth_rxconf rx_port_conf = dev_rx_port_conf;
+  struct rte_eth_txconf tx_port_conf;
+  struct rte_eth_rxconf rx_port_conf;
+  struct rte_eth_dev_info dev_info;
+
+  ret = rte_eth_dev_info_get(port_id, &dev_info);
+  if (ret < 0) {
+    err("%s(%d), rte_eth_dev_info_get fail %d\n", __func__, port, ret);
+    return ret;
+  }
 
   if (inf->feature & ST_IF_FEATURE_RUNTIME_RX_QUEUE) rx_deferred_start = 1;
   rx_port_conf.rx_deferred_start = rx_deferred_start;
@@ -720,9 +891,50 @@ static int dev_start_port(struct st_main_impl* impl, enum st_port port) {
   struct rte_mempool* mbuf_pool;
   for (uint16_t q = 0; q < nb_rx_q; q++) {
     mbuf_pool = inf->rx_queues[q].mbuf_pool ? inf->rx_queues[q].mbuf_pool
-                                            : st_get_mempool(impl, port);
-    ret = rte_eth_rx_queue_setup(port_id, q, nb_rx_desc, socket_id, &rx_port_conf,
-                                 mbuf_pool);
+                                            : st_get_rx_mempool(impl, port);
+    if (!mbuf_pool) {
+      err("%s(%d), no mbuf_pool for queue %d\n", __func__, port, q);
+      return -ENOMEM;
+    }
+
+    rx_port_conf = dev_info.default_rxconf;
+
+    rx_port_conf.offloads = 0;
+    rx_port_conf.rx_nseg = 0;
+    rx_port_conf.rx_seg = NULL;
+    if (st_if_hdr_split_pool(inf, q) && st_if_has_hdr_split(impl, port)) {
+#ifdef ST_HAS_DPDK_HDR_SPLIT
+      rx_port_conf.offloads = RTE_ETH_RX_OFFLOAD_BUFFER_SPLIT;
+      info("%s(%d), enable hdr split for queue %d\n", __func__, port, q);
+      /* two segments */
+      union rte_eth_rxseg rx_usegs[2] = {};
+      struct rte_eth_rxseg_split* rx_seg;
+
+      rx_seg = &rx_usegs[0].split;
+      rx_seg->proto_hdr = RTE_PTYPE_L4_UDP;
+      rx_seg->offset = 0;
+      rx_seg->length = 0;
+      rx_seg->mp = mbuf_pool;
+
+      rx_seg = &rx_usegs[1].split;
+      rx_seg->proto_hdr = 0;
+      rx_seg->offset = 0;
+      rx_seg->length = 0;
+      rx_seg->mp = st_if_hdr_split_pool(inf, q);
+
+      rx_port_conf.rx_nseg = 2;
+      rx_port_conf.rx_seg = rx_usegs;
+
+      ret =
+          rte_eth_rx_queue_setup(port_id, q, nb_rx_desc, socket_id, &rx_port_conf, NULL);
+#else
+      err("%s, no hdr split support for this dpdk build\n", __func__);
+      return -ENOTSUP;
+#endif
+    } else {
+      ret = rte_eth_rx_queue_setup(port_id, q, nb_rx_desc, socket_id, &rx_port_conf,
+                                   mbuf_pool);
+    }
     if (ret < 0) {
       err("%s(%d), rte_eth_rx_queue_setup fail %d for queue %d\n", __func__, port, ret,
           q);
@@ -731,6 +943,7 @@ static int dev_start_port(struct st_main_impl* impl, enum st_port port) {
   }
 
   for (uint16_t q = 0; q < nb_tx_q; q++) {
+    tx_port_conf = dev_info.default_txconf;
     ret = rte_eth_tx_queue_setup(port_id, q, nb_tx_desc, socket_id, &tx_port_conf);
     if (ret < 0) {
       err("%s(%d), rte_eth_tx_queue_setup fail %d for queue %d\n", __func__, port, ret,
@@ -804,7 +1017,7 @@ int dev_reset_port(struct st_main_impl* impl, enum st_port port) {
     rx_queue = &inf->rx_queues[rx_q];
     flow = rx_queue->flow;
     if (flow) {
-      flow = dev_rx_queue_create_flow(port_id, rx_q, &rx_queue->st_flow);
+      flow = dev_rx_queue_create_flow(inf, rx_q, &rx_queue->st_flow);
       if (!flow) {
         err("%s(%d), dev_rx_queue_create_flow fail for q %d\n", __func__, port, rx_q);
         rte_atomic32_set(&impl->dev_in_reset, 0);
@@ -1109,6 +1322,10 @@ static int dev_if_uinit_rx_queues(struct st_interface* inf) {
       st_mempool_free(rx_queue->mbuf_pool);
       rx_queue->mbuf_pool = NULL;
     }
+    if (rx_queue->mbuf_payload_pool) {
+      st_mempool_free(rx_queue->mbuf_payload_pool);
+      rx_queue->mbuf_payload_pool = NULL;
+    }
   }
 
   st_rte_free(inf->rx_queues);
@@ -1125,26 +1342,53 @@ static int dev_if_init_rx_queues(struct st_main_impl* impl, struct st_interface*
     return -ENOMEM;
   }
 
-  struct st_init_params* p = st_get_user_params(impl);
-  if (!(p->flags & ST_FLAG_RX_QUEUE_MONO_POOL)) {
+  if (!st_has_rx_mono_pool(impl)) {
     for (uint16_t q = 0; q < inf->max_rx_queues; q++) {
       rx_queues[q].queue_id = q;
-      /* Creates mempool to hold the rx queue mbufs. */
+      /* Create mempool to hold the rx queue mbufs. */
       unsigned int mbuf_elements = inf->nb_rx_desc + 1024;
       char pool_name[ST_MAX_NAME_LEN];
       snprintf(pool_name, ST_MAX_NAME_LEN, "ST%d_RX%d_MBUF_POOL", inf->port, q);
       struct rte_mempool* mbuf_pool = NULL;
-      if (q == 0)
-        mbuf_pool = st_mempool_create_common(impl, inf->port, pool_name, mbuf_elements);
-      else
-        mbuf_pool = st_mempool_create(impl, inf->port, pool_name, mbuf_elements,
-                                      ST_MBUF_CACHE_SIZE, sizeof(struct st_muf_priv_data),
-                                      ST_PKT_MAX_ETHER_BYTES);
+
+      if (st_pmd_is_kernel(impl, inf->port)) {
+        mbuf_pool = st_mempool_create_by_ops(
+            impl, inf->port, pool_name, mbuf_elements, ST_MBUF_CACHE_SIZE,
+            sizeof(struct st_muf_priv_data), 2048 - ST_MBUF_CACHE_SIZE, NULL);
+      } else {
+        if (q < inf->system_rx_queues_end)
+          mbuf_pool = st_mempool_create_common(impl, inf->port, pool_name, mbuf_elements);
+        else {
+          uint16_t data_room_sz = ST_PKT_MAX_ETHER_BYTES;
+          if (inf->drv_type == ST_DRV_IGC) /* to avoid igc nic split mbuf */
+            data_room_sz = ST_MBUF_DEFAULT_DATA_SIZE;
+          if (impl->rx_pool_data_size) /* user suggested data room size */
+            data_room_sz = impl->rx_pool_data_size;
+          mbuf_pool = st_mempool_create(impl, inf->port, pool_name, mbuf_elements,
+                                        ST_MBUF_CACHE_SIZE,
+                                        sizeof(struct st_muf_priv_data), data_room_sz);
+        }
+      }
       if (!mbuf_pool) {
         dev_if_uinit_rx_queues(inf);
         return -ENOMEM;
       }
       rx_queues[q].mbuf_pool = mbuf_pool;
+      rx_queues[q].mbuf_elements = mbuf_elements;
+
+      /* hdr split payload mbuf */
+      if (st_if_has_hdr_split(impl, inf->port) && (q >= inf->system_rx_queues_end) &&
+          (q < inf->hdr_split_rx_queues_end)) {
+        snprintf(pool_name, ST_MAX_NAME_LEN, "ST%d_RX%d_PAYLOAD_POOL", inf->port, q);
+        mbuf_pool = st_mempool_create(impl, inf->port, pool_name, mbuf_elements,
+                                      ST_MBUF_CACHE_SIZE, sizeof(struct st_muf_priv_data),
+                                      ST_PKT_MAX_ETHER_BYTES);
+        if (!mbuf_pool) {
+          dev_if_uinit_rx_queues(inf);
+          return -ENOMEM;
+        }
+        rx_queues[q].mbuf_payload_pool = mbuf_pool;
+      }
     }
   }
   inf->rx_queues = rx_queues;
@@ -1190,6 +1434,36 @@ static int dev_if_init_tx_queues(struct st_main_impl* impl, struct st_interface*
   return 0;
 }
 
+/* detect pacing */
+static int dev_if_init_pacing(struct st_main_impl* impl, enum st_port port) {
+  struct st_interface* inf = st_if(impl, port);
+  int ret;
+
+  if ((ST21_TX_PACING_WAY_AUTO == inf->tx_pacing_way) ||
+      (ST21_TX_PACING_WAY_RL == inf->tx_pacing_way)) {
+    /* VF require all q config with RL */
+    if (inf->port_type == ST_PORT_VF) {
+      ret = dev_init_ratelimit_vf(impl, port);
+    } else {
+      ret = dev_tx_queue_set_rl_rate(impl, port, 0, ST_DEFAULT_RL_BPS);
+      if (ret >= 0) dev_tx_queue_set_rl_rate(impl, port, 0, 0);
+    }
+    if (ret < 0) { /* fallback to tsc if no rl */
+      if (ST21_TX_PACING_WAY_AUTO == inf->tx_pacing_way) {
+        warn("%s(%d), fallback to tsc as rl init fail\n", __func__, port);
+        inf->tx_pacing_way = ST21_TX_PACING_WAY_TSC;
+      } else {
+        err("%s(%d), rl init fail\n", __func__, port);
+        return ret;
+      }
+    } else {
+      inf->tx_pacing_way = ST21_TX_PACING_WAY_RL;
+    }
+  }
+
+  return 0;
+}
+
 static uint64_t ptp_from_real_time(struct st_main_impl* impl, enum st_port port) {
   struct timespec spec;
 
@@ -1203,23 +1477,6 @@ static uint64_t ptp_from_user(struct st_main_impl* impl, enum st_port port) {
   return p->ptp_get_time_fn(p->priv);
 }
 
-static enum st_port_type _get_type_from_driver(const char* driver) {
-  if (!strncmp(driver, "net_iavf", 10)) {
-    return ST_PORT_VF;
-  }
-
-  if (!strncmp(driver, "net_ice", 10)) { /* cvl pf */
-    return ST_PORT_PF;
-  }
-
-  if (!strncmp(driver, "net_i40e", 10)) { /* flv pf */
-    return ST_PORT_PF;
-  }
-
-  err("%s, fail to parse for driver %s\n", __func__, driver);
-  return ST_PORT_ERR;
-}
-
 int st_dev_request_tx_queue(struct st_main_impl* impl, enum st_port port,
                             uint16_t* queue_id, uint64_t bytes_per_sec) {
   struct st_interface* inf = st_if(impl, port);
@@ -1231,15 +1488,21 @@ int st_dev_request_tx_queue(struct st_main_impl* impl, enum st_port port,
   for (q = 0; q < inf->max_tx_queues; q++) {
     tx_queue = &inf->tx_queues[q];
     if (!tx_queue->active) {
-      ret = dev_tx_queue_set_rl_rate(impl, port, q, bytes_per_sec);
-      if (ret < 0) { /* clear runtime rl if it's not support */
-        inf->feature &= ~ST_IF_FEATURE_RUNTIME_RL;
-        impl->tx_pacing_way = ST21_TX_PACING_WAY_TSC;
+      if (inf->tx_pacing_way == ST21_TX_PACING_WAY_RL) {
+        ret = dev_tx_queue_set_rl_rate(impl, port, q, bytes_per_sec);
+        if (ret < 0) {
+          err("%s(%d), fallback to tsc as rl fail\n", __func__, port);
+          inf->tx_pacing_way = ST21_TX_PACING_WAY_TSC;
+        }
       }
+      tx_queue->bps = bytes_per_sec;
       tx_queue->active = true;
       *queue_id = q;
       st_pthread_mutex_unlock(&inf->tx_queues_mutex);
-      info("%s(%d), q %d with speed %" PRIu64 "\n", __func__, port, q, bytes_per_sec);
+      if (inf->tx_pacing_way == ST21_TX_PACING_WAY_RL)
+        info("%s(%d), q %d with speed %" PRIu64 "\n", __func__, port, q, bytes_per_sec);
+      else
+        info("%s(%d), q %d without rl\n", __func__, port, q);
       return 0;
     }
   }
@@ -1252,7 +1515,6 @@ int st_dev_request_tx_queue(struct st_main_impl* impl, enum st_port port,
 int st_dev_request_rx_queue(struct st_main_impl* impl, enum st_port port,
                             uint16_t* queue_id, struct st_rx_flow* flow) {
   struct st_interface* inf = st_if(impl, port);
-  uint16_t port_id = inf->port_id;
   uint16_t q;
   int ret;
   struct st_rx_queue* rx_queue;
@@ -1261,21 +1523,47 @@ int st_dev_request_rx_queue(struct st_main_impl* impl, enum st_port port,
   for (q = 0; q < inf->max_rx_queues; q++) {
     rx_queue = &inf->rx_queues[q];
     if (rx_queue->active) continue;
+    if (flow && flow->hdr_split) { /* continue if not hdr split queue */
+      if (!st_if_hdr_split_pool(inf, q)) continue;
+#ifdef ST_HAS_DPDK_HDR_SPLIT
+      if (flow->hdr_split_mbuf_cb) {
+        ret = rte_eth_hdrs_set_mbuf_callback(
+            inf->port_id, q, flow->hdr_split_mbuf_cb_priv, flow->hdr_split_mbuf_cb);
+        if (ret < 0) {
+          err("%s(%d), hdrs callback fail %d for queue %d\n", __func__, port, ret, q);
+          st_pthread_mutex_unlock(&inf->rx_queues_mutex);
+          return -EIO;
+        }
+      }
+#endif
+    } else { /* continue if hdr split queue */
+      if (st_if_hdr_split_pool(inf, q)) continue;
+    }
 
     /* free the dummmy flow if any */
     dev_if_free_rx_queue_flow(inf, rx_queue);
 
+    memset(&rx_queue->st_flow, 0, sizeof(rx_queue->st_flow));
     if (flow) {
-      struct rte_flow* r_flow;
+      if (st_pmd_is_kernel(impl, port)) {
+        ret = st_socket_add_flow(impl, port, q, flow);
+        if (ret < 0) {
+          err("%s(%d), socket add flow fail for queue %d\n", __func__, port, q);
+          st_pthread_mutex_unlock(&inf->rx_queues_mutex);
+          return -EIO;
+        }
+      } else {
+        struct rte_flow* r_flow;
 
-      r_flow = dev_rx_queue_create_flow(port_id, q, flow);
-      if (!r_flow) {
-        err("%s(%d), create flow fail for queue %d\n", __func__, port, q);
-        st_pthread_mutex_unlock(&inf->rx_queues_mutex);
-        return -EIO;
+        r_flow = dev_rx_queue_create_flow(inf, q, flow);
+        if (!r_flow) {
+          err("%s(%d), create flow fail for queue %d\n", __func__, port, q);
+          st_pthread_mutex_unlock(&inf->rx_queues_mutex);
+          return -EIO;
+        }
+
+        rx_queue->flow = r_flow;
       }
-
-      rx_queue->flow = r_flow;
       rx_queue->st_flow = *flow;
     }
 
@@ -1297,12 +1585,13 @@ int st_dev_request_rx_queue(struct st_main_impl* impl, enum st_port port,
   }
   st_pthread_mutex_unlock(&inf->rx_queues_mutex);
 
-  err("%s(%d), fail to find free rx queue\n", __func__, port);
+  err("%s(%d), fail to find free rx queue for %s\n", __func__, port,
+      flow->hdr_split ? "hdr_split" : "normal");
   return -ENOMEM;
 }
 
-int st_dev_flush_tx_queue(struct st_main_impl* impl, enum st_port port,
-                          uint16_t queue_id) {
+int st_dev_flush_tx_queue(struct st_main_impl* impl, enum st_port port, uint16_t queue_id,
+                          struct rte_mbuf* pad) {
   struct st_interface* inf = st_if(impl, port);
   struct st_tx_queue* tx_queue;
 
@@ -1317,14 +1606,21 @@ int st_dev_flush_tx_queue(struct st_main_impl* impl, enum st_port port,
     return -EIO;
   }
 
-  int burst_pkts = inf->nb_tx_desc;
+  int burst_pkts;
+  if (st_pmd_is_af_xdp(impl, port)) {
+    burst_pkts = st_if_nb_rx_desc(impl, port); /* same umem for both tx and rx */
+  } else {
+    burst_pkts = st_if_nb_tx_desc(impl, port);
+  }
   struct rte_mbuf* pads[1];
-  pads[0] = inf->pad;
+  pads[0] = pad;
 
+  info("%s(%d), queue %u burst_pkts %d\n", __func__, port, queue_id, burst_pkts);
   for (int i = 0; i < burst_pkts; i++) {
-    rte_mbuf_refcnt_update(inf->pad, 1);
+    rte_mbuf_refcnt_update(pad, 1);
     st_tx_burst_busy(inf->port_id, queue_id, &pads[0], 1);
   }
+  dbg("%s, end\n", __func__);
   return 0;
 }
 
@@ -1354,6 +1650,7 @@ int st_dev_free_rx_queue(struct st_main_impl* impl, enum st_port port,
   struct st_interface* inf = st_if(impl, port);
   int ret;
   struct st_rx_queue* rx_queue;
+  struct st_rx_flow* st_flow;
 
   if (queue_id >= inf->max_rx_queues) {
     err("%s(%d), invalid queue %d\n", __func__, port, queue_id);
@@ -1366,7 +1663,19 @@ int st_dev_free_rx_queue(struct st_main_impl* impl, enum st_port port,
     return -EIO;
   }
 
-  dev_if_free_rx_queue_flow(inf, rx_queue);
+  st_flow = &rx_queue->st_flow;
+
+  if (st_pmd_is_kernel(impl, port))
+    st_socket_remove_flow(impl, port, queue_id, st_flow);
+  else
+    dev_if_free_rx_queue_flow(inf, rx_queue);
+
+  if (st_flow->hdr_split) {
+#ifdef ST_HAS_DPDK_HDR_SPLIT
+    /* clear hdrs mbuf callback */
+    rte_eth_hdrs_set_mbuf_callback(inf->port_id, queue_id, NULL, NULL);
+#endif
+  }
 
   if (inf->feature & ST_IF_FEATURE_RUNTIME_RX_QUEUE) {
     ret = rte_eth_dev_rx_queue_stop(inf->port_id, queue_id);
@@ -1436,14 +1745,15 @@ int st_dev_create(struct st_main_impl* impl) {
       ret = dev_start_timesync(impl, i);
       if (ret >= 0) inf->feature |= ST_IF_FEATURE_TIMESYNC;
     }
-    /* */
-    if (port_type == ST_PORT_VF) {
-      ret = dev_init_ratelimit_vf(impl, i);
-      if (ret < 0) { /* fallback to tsc if no rl */
-        impl->tx_pacing_way = ST21_TX_PACING_WAY_TSC;
-      }
+
+    ret = dev_if_init_pacing(impl, i);
+    if (ret < 0) {
+      err("%s(%d), init pacing fail\n", __func__, i);
+      goto err_exit;
     }
-    info("%s(%d), feature 0x%x\n", __func__, i, inf->feature);
+
+    info("%s(%d), feature 0x%x, tx pacing %s\n", __func__, i, inf->feature,
+         st_tx_pacing_way_name(inf->tx_pacing_way));
   }
 
   /* init sch with one lcore scheduler */
@@ -1472,7 +1782,7 @@ int st_dev_create(struct st_main_impl* impl) {
   st_pthread_mutex_init(&impl->stat_wake_mutex, NULL);
   st_pthread_cond_init(&impl->stat_wake_cond, NULL);
   rte_atomic32_set(&impl->stat_stop, 0);
-  rte_ctrl_thread_create(&impl->stat_tid, "st_dev_stat", NULL, dev_stat_thread, impl);
+  pthread_create(&impl->stat_tid, NULL, dev_stat_thread, impl);
   if (!p->dump_period_s) p->dump_period_s = ST_DEV_STAT_INTERVAL_S;
   rte_eal_alarm_set(ST_DEV_STAT_INTERVAL_US(p->dump_period_s), dev_stat_alarm_handler,
                     impl);
@@ -1482,7 +1792,9 @@ int st_dev_create(struct st_main_impl* impl) {
 
 err_exit:
   if (impl->main_sch) st_sch_put(impl->main_sch, 0);
-  for (int i = num_ports - 1; i >= 0; i--) dev_free_port(impl, i);
+  for (int i = num_ports - 1; i >= 0; i--) {
+    dev_stop_port(impl, i);
+  }
   return ret;
 }
 
@@ -1506,7 +1818,7 @@ int st_dev_free(struct st_main_impl* impl) {
   dev_uinit_lcores(impl);
 
   for (i = 0; i < num_ports; i++) {
-    dev_free_port(impl, i);
+    dev_stop_port(impl, i);
   }
 
   info("%s, succ\n", __func__);
@@ -1539,13 +1851,19 @@ int st_dev_get_socket(const char* port) {
     err("%s, failed to locate %s. Please run nicctl.sh\n", __func__, port);
     return ret;
   }
-  return rte_eth_dev_socket_id(port_id);
+  int soc_id;
+  soc_id = rte_eth_dev_socket_id(port_id);
+  if (SOCKET_ID_ANY == soc_id) {
+    soc_id = 0;
+    info("%s, direct soc_id from SOCKET_ID_ANY to 0 for %s\n", __func__, port);
+  }
+  return soc_id;
 }
 
-int st_dev_init(struct st_init_params* p) {
+int st_dev_init(struct st_init_params* p, struct st_kport_info* kport_info) {
   int ret;
 
-  ret = dev_eal_init(p);
+  ret = dev_eal_init(p, kport_info);
   if (ret < 0) {
     err("%s, dev_eal_init fail %d\n", __func__, ret);
     return ret;
@@ -1564,32 +1882,21 @@ int st_dev_uinit(struct st_init_params* p) {
 int st_dev_dst_ip_mac(struct st_main_impl* impl, uint8_t dip[ST_IP_ADDR_LEN],
                       struct rte_ether_addr* ea, enum st_port port) {
   int ret;
-  struct st_init_params* p = st_get_user_params(impl);
 
-  if ((port == ST_PORT_P) && (p->flags & ST_FLAG_USER_P_TX_MAC)) {
-    rte_memcpy(&ea->addr_bytes[0], &p->tx_dst_mac[port][0], RTE_ETHER_ADDR_LEN);
-    info("%s, USER_P_TX_MAC\n", __func__);
-  } else if ((port == ST_PORT_R) && (p->flags & ST_FLAG_USER_R_TX_MAC)) {
-    rte_memcpy(&ea->addr_bytes[0], &p->tx_dst_mac[port][0], RTE_ETHER_ADDR_LEN);
-    info("%s, USER_R_TX_MAC\n", __func__);
-  } else if (st_is_multicast_ip(dip)) {
+  if (st_is_multicast_ip(dip)) {
     st_mcast_ip_to_mac(dip, ea);
   } else {
-    bool arp_kni = true;
-
     info("%s(%d), start to get mac for ip %d.%d.%d.%d\n", __func__, port, dip[0], dip[1],
          dip[2], dip[3]);
-    if (!arp_kni) {
-      ret = st_arp_socket_get_mac(impl, ea, dip, "plcaeholder");
+    if (st_pmd_is_kernel(impl, port)) {
+      ret = st_socket_get_mac(impl, st_get_user_params(impl)->port[port], dip, ea);
       if (ret < 0) {
         err("%s(%d), failed to get mac from socket %d\n", __func__, port, ret);
         return ret;
       }
     } else {
       st_reset_arp(impl, port);
-      uint32_t dip32;
-      memcpy(&dip32, dip, ST_IP_ADDR_LEN);
-      ret = st_arp_cni_get_mac(impl, ea, port, dip32);
+      ret = st_arp_cni_get_mac(impl, ea, port, st_ip_to_u32(dip));
       if (ret < 0) {
         err("%s(%d), failed to get mac from cni %d\n", __func__, port, ret);
         return ret;
@@ -1625,10 +1932,16 @@ int st_dev_if_uinit(struct st_main_impl* impl) {
       inf->mcast_mac_lists = NULL;
     }
 
-    if (inf->mbuf_pool) {
-      ret = st_mempool_free(inf->mbuf_pool);
-      if (ret >= 0) inf->mbuf_pool = NULL;
+    if (inf->tx_mbuf_pool) {
+      ret = st_mempool_free(inf->tx_mbuf_pool);
+      if (ret >= 0) inf->tx_mbuf_pool = NULL;
     }
+    if (inf->rx_mbuf_pool) {
+      ret = st_mempool_free(inf->rx_mbuf_pool);
+      if (ret >= 0) inf->rx_mbuf_pool = NULL;
+    }
+
+    dev_close_port(impl, i);
   }
 
   return 0;
@@ -1638,14 +1951,18 @@ int st_dev_if_init(struct st_main_impl* impl) {
   int num_ports = st_num_ports(impl);
   struct st_init_params* p = st_get_user_params(impl);
   uint16_t port_id;
-  enum st_port_type port_type;
   char* port;
   struct rte_eth_dev_info dev_info;
   struct st_interface* inf;
   int ret;
 
   for (int i = 0; i < num_ports; i++) {
-    port = p->port[i];
+    inf = st_if(impl, i);
+
+    if (st_pmd_is_kernel(impl, i))
+      port = impl->kport_info.port[i];
+    else
+      port = p->port[i];
     ret = rte_eth_dev_get_port_by_name(port, &port_id);
     if (ret < 0) {
       err("%s, failed to locate %s. Please run nicctl.sh\n", __func__, port);
@@ -1658,12 +1975,16 @@ int st_dev_if_init(struct st_main_impl* impl) {
       st_dev_if_uinit(impl);
       return ret;
     }
-    port_type = _get_type_from_driver(dev_info.driver_name);
-
-    inf = st_if(impl, i);
+    ret = parse_driver_info(dev_info.driver_name, &inf->port_type, &inf->drv_type);
+    if (ret < 0) {
+      err("%s, parse_driver_info fail(%d) for %s\n", __func__, ret, port);
+      st_dev_if_uinit(impl);
+      return ret;
+    }
     inf->port = i;
     inf->port_id = port_id;
-    inf->port_type = port_type;
+    inf->device = dev_info.device;
+    inf->tx_pacing_way = p->pacing;
 
     if (st_has_user_ptp(impl)) /* user provide the ptp source */
       inf->ptp_get_time_fn = ptp_from_user;
@@ -1671,24 +1992,64 @@ int st_dev_if_init(struct st_main_impl* impl) {
       inf->ptp_get_time_fn = ptp_from_real_time;
 
     /* set max tx/rx queues */
-    inf->max_tx_queues = impl->tx_sessions_cnt_max + 2; /* arp, mcast */
-    inf->max_rx_queues = impl->rx_sessions_cnt_max + 1; /* cni */
-    if (st_has_ptp_service(impl)) {
-      inf->max_tx_queues++;
-      inf->max_rx_queues++;
-    }
+    if (p->pmd[i] == ST_PMD_DPDK_AF_XDP) {
+      /* af_xdp queues(ring pairs) count indicate by user */
+      inf->max_tx_queues = p->xdp_info[i].queue_count;
+      inf->max_rx_queues = inf->max_tx_queues;
+      inf->system_rx_queues_end = 0;
+    } else {
+      inf->max_tx_queues = impl->tx_sessions_cnt_max + 2; /* arp, mcast */
+      if (st_has_ptp_service(impl)) {
+        inf->max_tx_queues++;
+      }
 #ifdef ST_HAS_KNI
-    inf->max_tx_queues++; /* kni tx queue */
+      inf->max_tx_queues++; /* kni tx queue */
 #endif
+#ifdef ST_HAS_TAP
+      inf->max_tx_queues++; /* tap tx queue */
+#endif
+      if (st_no_system_rx_queues(impl)) {
+        inf->max_rx_queues = impl->rx_sessions_cnt_max;
+      } else {
+        inf->max_rx_queues = impl->rx_sessions_cnt_max + 1; /* cni rx */
+        inf->system_rx_queues_end = 1;                      /* cni rx */
+        if (st_has_ptp_service(impl)) {
+          inf->max_rx_queues++;
+          inf->system_rx_queues_end++;
+        }
+#ifdef ST_HAS_TAP
+        inf->max_rx_queues++;
+        inf->system_rx_queues_end++;
+#endif
+      }
+      inf->hdr_split_rx_queues_end =
+          inf->system_rx_queues_end + p->nb_rx_hdr_split_queues;
+    }
 
     /* when using VF, num_queue_pairs will be set as the max of tx/rx */
-    if (port_type == ST_PORT_VF) {
+    if (inf->port_type == ST_PORT_VF) {
       inf->max_tx_queues = RTE_MAX(inf->max_rx_queues, inf->max_tx_queues);
       inf->max_rx_queues = inf->max_tx_queues;
     }
 
     if (dev_info.dev_capa & RTE_ETH_DEV_CAPA_RUNTIME_RX_QUEUE_SETUP)
       inf->feature |= ST_IF_FEATURE_RUNTIME_RX_QUEUE;
+
+#if RTE_VERSION >= RTE_VERSION_NUM(22, 3, 0, 0)
+    if (dev_info.tx_offload_capa & RTE_ETH_TX_OFFLOAD_MULTI_SEGS)
+      inf->feature |= ST_IF_FEATURE_TX_MULTI_SEGS;
+#else
+    if (dev_info.tx_offload_capa & DEV_TX_OFFLOAD_MULTI_SEGS)
+      inf->feature |= ST_IF_FEATURE_TX_MULTI_SEGS;
+#endif
+
+#if RTE_VERSION >= RTE_VERSION_NUM(22, 3, 0, 0)
+    if (dev_info.tx_offload_capa & RTE_ETH_TX_OFFLOAD_IPV4_CKSUM)
+      inf->feature |= ST_IF_FEATURE_TX_OFFLOAD_IPV4_CKSUM;
+#else
+    if (dev_info.tx_offload_capa & DEV_TX_OFFLOAD_IPV4_CKSUM)
+      inf->feature |= ST_IF_FEATURE_TX_OFFLOAD_IPV4_CKSUM;
+#endif
 
     if (st_has_ebu(impl) &&
 #if RTE_VERSION >= RTE_VERSION_NUM(22, 3, 0, 0)
@@ -1709,9 +2070,12 @@ int st_dev_if_init(struct st_main_impl* impl) {
       inf->feature |= ST_IF_FEATURE_RX_OFFLOAD_TIMESTAMP;
     }
 
-    /* set runtime rl support except tsc */
-    if (impl->tx_pacing_way != ST21_TX_PACING_WAY_TSC)
-      inf->feature |= ST_IF_FEATURE_RUNTIME_RL;
+#ifdef RTE_ETH_RX_OFFLOAD_BUFFER_SPLIT
+    if (dev_info.rx_queue_offload_capa & RTE_ETH_RX_OFFLOAD_BUFFER_SPLIT) {
+      inf->feature |= ST_IF_FEATURE_RXQ_OFFLOAD_BUFFER_SPLIT;
+      dbg("%s(%d), has rxq hdr split\n", __func__, i);
+    }
+#endif
 
     ret = dev_config_port(impl, i);
     if (ret < 0) {
@@ -1720,21 +2084,36 @@ int st_dev_if_init(struct st_main_impl* impl) {
       return -EIO;
     }
 
-    /* Creates a default mempool in memory to hold the system mbufs. */
     unsigned int mbuf_elements = 1024;
-    if (p->flags & ST_FLAG_RX_QUEUE_MONO_POOL) {
-      /* append rx sessions */
-      mbuf_elements += inf->max_rx_queues * inf->nb_rx_desc;
-    }
     char pool_name[ST_MAX_NAME_LEN];
-    snprintf(pool_name, ST_MAX_NAME_LEN, "ST%d_SYS_MBUF_POOL", i);
-    struct rte_mempool* mbuf_pool =
-        st_mempool_create_common(impl, i, pool_name, mbuf_elements);
+    struct rte_mempool* mbuf_pool;
+    /* Create mempool in memory to hold the system rx mbufs if mono */
+    if (st_has_rx_mono_pool(impl)) {
+      mbuf_elements = 1024;
+      /* append as rx queues */
+      mbuf_elements += inf->max_rx_queues * inf->nb_rx_desc;
+      snprintf(pool_name, ST_MAX_NAME_LEN, "ST%d_RX_SYS_MBUF_POOL", i);
+      mbuf_pool = st_mempool_create_common(impl, i, pool_name, mbuf_elements);
+      if (!mbuf_pool) {
+        st_dev_if_uinit(impl);
+        return -ENOMEM;
+      }
+      inf->rx_mbuf_pool = mbuf_pool;
+    }
+
+    /* Create default mempool in memory to hold the system tx mbufs */
+    mbuf_elements = 1024;
+    if (st_has_tx_mono_pool(impl)) {
+      /* append as tx queues, double as tx ring */
+      mbuf_elements += inf->max_tx_queues * inf->nb_tx_desc * 2;
+    }
+    snprintf(pool_name, ST_MAX_NAME_LEN, "ST%d_TX_SYS_MBUF_POOL", i);
+    mbuf_pool = st_mempool_create_common(impl, i, pool_name, mbuf_elements);
     if (!mbuf_pool) {
       st_dev_if_uinit(impl);
       return -ENOMEM;
     }
-    inf->mbuf_pool = mbuf_pool;
+    inf->tx_mbuf_pool = mbuf_pool;
 
     ret = dev_if_init_tx_queues(impl, inf);
     if (ret < 0) {
@@ -1747,17 +2126,30 @@ int st_dev_if_init(struct st_main_impl* impl) {
       return -ENOMEM;
     }
 
-    inf->pad = st_build_pad(impl, i, port_id, RTE_ETHER_TYPE_IPV4, 1024);
+    inf->pad = st_build_pad(impl, st_get_tx_mempool(impl, i), port_id,
+                            RTE_ETHER_TYPE_IPV4, 1024);
     if (!inf->pad) {
       err("%s(%d), pad alloc fail\n", __func__, i);
       st_dev_if_uinit(impl);
       return -ENOMEM;
     }
 
-    info("%s(%d), port_id %d port_type %d driver %s\n", __func__, i, port_id, port_type,
-         dev_info.driver_name);
+    info("%s(%d), port_id %d port_type %d drv_type %d\n", __func__, i, port_id,
+         inf->port_type, inf->drv_type);
+    info("%s(%d), dev_capa 0x%" PRIx64 ", offload 0x%" PRIx64 ":0x%" PRIx64
+         " queue offload 0x%" PRIx64 ":0x%" PRIx64 "\n",
+         __func__, i, dev_info.dev_capa, dev_info.tx_offload_capa,
+         dev_info.tx_offload_capa, dev_info.tx_queue_offload_capa,
+         dev_info.rx_queue_offload_capa);
+    info("%s(%d), system_rx_queues_end %d hdr_split_rx_queues_end %d\n", __func__, i,
+         inf->system_rx_queues_end, inf->hdr_split_rx_queues_end);
     uint8_t* ip = p->sip_addr[i];
     info("%s(%d), sip: %d.%d.%d.%d\n", __func__, i, ip[0], ip[1], ip[2], ip[3]);
+    struct rte_ether_addr mac;
+    rte_eth_macaddr_get(port_id, &mac);
+    info("%s(%d), mac: %02x:%02x:%02x:%02x:%02x:%02x\n", __func__, i, mac.addr_bytes[0],
+         mac.addr_bytes[1], mac.addr_bytes[2], mac.addr_bytes[3], mac.addr_bytes[4],
+         mac.addr_bytes[5]);
   }
 
   return 0;

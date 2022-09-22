@@ -1,7 +1,7 @@
-From efc19a1612c60c10d5e64afcf6d7a805b1a4f5ff Mon Sep 17 00:00:00 2001
+From 10d218ef59f02c1a1b9d6a248bbb68aa75bb9f98 Mon Sep 17 00:00:00 2001
 From: qiaoliu <qiao.liu@intel.com>
 Date: Wed, 22 Dec 2021 15:34:20 +0800
-Subject: [PATCH 1/7] Add DDP package load support in windows
+Subject: [PATCH 1/9] Add DDP package load support in windows
 
 ---
  drivers/net/ice/ice_ethdev.c |  9 +++------
@@ -74,7 +74,7 @@ index 5b17d94cb9..17d3404b99 100644
  #define ICE_PKG_FILE_SEARCH_PATH_UPDATES "/lib/firmware/updates/intel/ice/ddp/"
  #define ICE_MAX_PKG_FILENAME_SIZE   256
 diff --git a/lib/eal/windows/eal.c b/lib/eal/windows/eal.c
-index 67db7f099a..6cae594eaf 100644
+index 67db7f099a..e101ce36c6 100644
 --- a/lib/eal/windows/eal.c
 +++ b/lib/eal/windows/eal.c
 @@ -500,5 +500,35 @@ rte_firmware_read(__rte_unused const char *name,
@@ -85,7 +85,7 @@ index 67db7f099a..6cae594eaf 100644
 +	FILE* fp;
 +	size_t size;
 +	void *tmp;
-+	
++
 +	*buf = NULL;
 +	*bufsz = 0;
 +	fp=fopen(name,"rb");
@@ -105,7 +105,7 @@ index 67db7f099a..6cae594eaf 100644
 +		fseek(fp, 0, SEEK_SET);
 +		*bufsz = fread(*buf,1,size,fp);
 +		fclose(fp);
-+	
++
 +		if(*bufsz>0)
 +		   return 0;
 +		else

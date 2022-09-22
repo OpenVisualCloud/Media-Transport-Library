@@ -4,7 +4,7 @@
 
 #include <errno.h>
 #include <pthread.h>
-#include <st_dpdk_api.h>
+#include <st20_dpdk_api.h>
 #include <stdbool.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -14,13 +14,13 @@
 #include "../src/app_platform.h"
 
 #define RX_VIDEO_PORT_BDF "0000:af:00.0"
-#define RX_VIDEO_UDP_PORT (10000)
+#define RX_VIDEO_UDP_PORT (20000)
 #define RX_VIDEO_PAYLOAD_TYPE (112)
 
 /* local ip address for current bdf port */
 static uint8_t g_rx_video_local_ip[ST_IP_ADDR_LEN] = {192, 168, 0, 1};
 /* source ip address for rx video session */
-static uint8_t g_rx_video_source_ip[ST_IP_ADDR_LEN] = {239, 168, 0, 1};
+static uint8_t g_rx_video_source_ip[ST_IP_ADDR_LEN] = {239, 168, 85, 20};
 
 struct app_context {
   int idx;
@@ -38,6 +38,21 @@ struct app_context {
   uint16_t framebuff_consumer_idx;
   struct st_rx_frame* framebuffs;
 };
+
+static bool g_video_active = false;
+static st_handle g_st_handle;
+
+static void app_sig_handler(int signo) {
+  printf("%s, signal %d\n", __func__, signo);
+  switch (signo) {
+    case SIGINT: /* Interrupt from keyboard */
+      g_video_active = false;
+      st_request_exit(g_st_handle);
+      break;
+  }
+
+  return;
+}
 
 static int rx_video_enqueue_frame(struct app_context* s, void* frame, size_t size) {
   uint16_t producer_idx = s->framebuff_producer_idx;
@@ -57,7 +72,8 @@ static int rx_video_enqueue_frame(struct app_context* s, void* frame, size_t siz
   return 0;
 }
 
-static int rx_video_slice_ready(void* priv, void* frame, struct st20_slice_meta* meta) {
+static int rx_video_slice_ready(void* priv, void* frame,
+                                struct st20_rx_slice_meta* meta) {
   struct app_context* s = (struct app_context*)priv;
 
   if (!s->handle) return -EIO;
@@ -69,13 +85,14 @@ static int rx_video_slice_ready(void* priv, void* frame, struct st20_slice_meta*
   return 0;
 }
 
-static int rx_video_frame_ready(void* priv, void* frame, struct st20_frame_meta* meta) {
+static int rx_video_frame_ready(void* priv, void* frame,
+                                struct st20_rx_frame_meta* meta) {
   struct app_context* s = (struct app_context*)priv;
 
   if (!s->handle) return -EIO;
 
   /* incomplete frame */
-  if (!st20_is_frame_complete(meta->status)) {
+  if (!st_is_frame_complete(meta->status)) {
     st20_rx_put_framebuff(s->handle, frame);
     return 0;
   }
@@ -100,7 +117,7 @@ static void rx_video_consume_frame(struct app_context* s, void* frame,
   // printf("%s(%d), frame %p\n", __func__, s->idx, frame);
 
   /* call the real consumer here, sample just sleep */
-  usleep(10 * 1000);
+  st_usleep(10 * 1000);
   s->fb_rec++;
 }
 
@@ -143,10 +160,12 @@ int main() {
   struct st_init_params param;
   int session_num = 1;
   int fb_cnt = 3;
+  char* port = getenv("ST_PORT_P");
+  if (!port) port = RX_VIDEO_PORT_BDF;
 
   memset(&param, 0, sizeof(param));
   param.num_ports = 1;
-  strncpy(param.port[ST_PORT_P], RX_VIDEO_PORT_BDF, ST_PORT_MAX_LEN);
+  strncpy(param.port[ST_PORT_P], port, ST_PORT_MAX_LEN);
   memcpy(param.sip_addr[ST_PORT_P], g_rx_video_local_ip, ST_IP_ADDR_LEN);
   param.flags = ST_FLAG_BIND_NUMA;      // default bind to numa
   param.log_level = ST_LOG_LEVEL_INFO;  // log level. ERROR, INFO, WARNING
@@ -162,6 +181,10 @@ int main() {
     printf("st_init fail\n");
     return -EIO;
   }
+
+  g_st_handle = dev_handle;
+  g_video_active = true;
+  signal(SIGINT, app_sig_handler);
 
   st20_rx_handle rx_handle[session_num];
   struct app_context* app[session_num];
@@ -194,7 +217,7 @@ int main() {
     ops_rx.priv = app[i];  // app handle register to lib
     ops_rx.num_port = 1;
     memcpy(ops_rx.sip_addr[ST_PORT_P], g_rx_video_source_ip, ST_IP_ADDR_LEN);
-    strncpy(ops_rx.port[ST_PORT_P], RX_VIDEO_PORT_BDF, ST_PORT_MAX_LEN);
+    strncpy(ops_rx.port[ST_PORT_P], port, ST_PORT_MAX_LEN);
     ops_rx.udp_port[ST_PORT_P] = RX_VIDEO_UDP_PORT + i;  // user config the udp port.
     ops_rx.pacing = ST21_PACING_NARROW;
     ops_rx.type = ST20_TYPE_SLICE_LEVEL;
@@ -235,8 +258,9 @@ int main() {
   // start rx
   ret = st_start(dev_handle);
 
-  // rx run 120s
-  sleep(120);
+  while (g_video_active) {
+    sleep(1);
+  }
 
   // stop app thread
   for (int i = 0; i < session_num; i++) {

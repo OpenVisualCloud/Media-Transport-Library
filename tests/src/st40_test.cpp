@@ -9,6 +9,28 @@
 
 #define ST40_TEST_PAYLOAD_TYPE (113)
 
+static int tx_anc_next_frame(void* priv, uint16_t* next_frame_idx,
+                             struct st40_tx_frame_meta* meta) {
+  return tx_next_frame(priv, next_frame_idx);
+}
+
+static int tx_anc_next_frame_timestamp(void* priv, uint16_t* next_frame_idx,
+                                       struct st40_tx_frame_meta* meta) {
+  auto ctx = (tests_context*)priv;
+
+  if (!ctx->handle) return -EIO; /* not ready */
+
+  meta->tfmt = ST10_TIMESTAMP_FMT_TAI;
+  meta->timestamp = st_ptp_read_time(ctx->ctx->handle) + 40 * 1000 * 1000;
+  *next_frame_idx = ctx->fb_idx;
+  dbg("%s, next_frame_idx %d\n", __func__, *next_frame_idx);
+  ctx->fb_idx++;
+  if (ctx->fb_idx >= ctx->fb_cnt) ctx->fb_idx = 0;
+  ctx->fb_send++;
+  if (!ctx->start_time) ctx->start_time = st_test_get_monotonic_time();
+  return 0;
+}
+
 static int tx_anc_build_rtp_packet(tests_context* s, struct st40_rfc8331_rtp_hdr* rtp,
                                    uint16_t* pkt_len) {
   /* rtp hdr */
@@ -225,7 +247,7 @@ static void st40_tx_ops_init(tests_context* st40, struct st40_tx_ops* ops) {
   ops->payload_type = ST40_TEST_PAYLOAD_TYPE;
 
   ops->framebuff_cnt = st40->fb_cnt;
-  ops->get_next_frame = tx_next_frame;
+  ops->get_next_frame = tx_anc_next_frame;
   ops->rtp_ring_size = 1024;
   ops->notify_rtp_done = tx_rtp_done;
 }
@@ -288,6 +310,45 @@ TEST(St40_rx, create_expect_fail_ring_sz) {
   expect_fail_test_rtp_ring_2(st40_rx, ring_size);
 }
 
+static void st40_tx_frame_init(tests_context* st40, st40_tx_handle handle,
+                               enum st40_type type) {
+  size_t frame_size = 240;
+
+  st40->pkt_data_len = frame_size;
+  st40->frame_size = frame_size;
+
+  for (int frame = 0; frame < st40->fb_cnt; frame++) {
+    st40->frame_buf[frame] = (uint8_t*)st_test_zmalloc(frame_size);
+    ASSERT_TRUE(st40->frame_buf[frame] != NULL);
+
+    if (ST40_TYPE_FRAME_LEVEL == type) {
+      struct st40_frame* dst = (struct st40_frame*)st40_tx_get_framebuffer(handle, frame);
+      ASSERT_TRUE(dst != NULL);
+
+      dst->data_size = dst->meta[0].udw_size = frame_size;
+      dst->meta[0].udw_offset = 0;
+      dst->meta[0].c = 0;
+      dst->meta[0].line_number = 10;
+      dst->meta[0].hori_offset = 0;
+      dst->meta[0].s = 0;
+      dst->meta[0].stream_num = 0;
+      dst->meta[0].did = 0x43;
+      dst->meta[0].sdid = 0x02;
+      dst->meta_num = 1;
+      dst->data = st40->frame_buf[frame];
+    }
+  }
+}
+
+static void st40_tx_frame_uinit(tests_context* st40) {
+  for (int frame = 0; frame < st40->fb_cnt; frame++) {
+    if (st40->frame_buf[frame]) {
+      st_test_free(st40->frame_buf[frame]);
+      st40->frame_buf[frame] = NULL;
+    }
+  }
+}
+
 static void st40_tx_fps_test(enum st40_type type[], enum st_fps fps[],
                              enum st_test_level level, int sessions = 1) {
   auto ctx = (struct st_tests_context*)st_test_ctx();
@@ -326,12 +387,14 @@ static void st40_tx_fps_test(enum st40_type type[], enum st_fps fps[],
     handle[i] = st40_tx_create(m_handle, &ops);
     ASSERT_TRUE(handle[i] != NULL);
 
+    st40_tx_frame_init(test_ctx[i], handle[i], type[i]);
+
+    test_ctx[i]->handle = handle[i];
+
     if (type[i] == ST40_TYPE_RTP_LEVEL) {
       test_ctx[i]->stop = false;
       rtp_thread[i] = std::thread(tx_feed_packet, test_ctx[i]);
     }
-
-    test_ctx[i]->handle = handle[i];
   }
 
   ret = st_start(m_handle);
@@ -362,13 +425,14 @@ static void st40_tx_fps_test(enum st40_type type[], enum st_fps fps[],
     EXPECT_NEAR(framerate[i], expect_framerate[i], expect_framerate[i] * 0.1);
     ret = st40_tx_free(handle[i]);
     EXPECT_GE(ret, 0);
+    st40_tx_frame_uinit(test_ctx[i]);
     st_test_free(test_ctx[i]);
   }
 }
 
 static void st40_rx_fps_test(enum st40_type type[], enum st_fps fps[],
                              enum st_test_level level, int sessions = 1,
-                             bool check_sha = false) {
+                             bool check_sha = false, bool user_timestamp = false) {
   auto ctx = (struct st_tests_context*)st_test_ctx();
   auto m_handle = ctx->handle;
   int ret;
@@ -406,6 +470,7 @@ static void st40_rx_fps_test(enum st40_type type[], enum st_fps fps[],
     test_ctx_tx[i] = new tests_context();
     ASSERT_TRUE(test_ctx_tx[i] != NULL);
     expect_framerate[i] = st_frame_rate(fps[i]);
+    if (user_timestamp) expect_framerate[i] /= 2;
 
     test_ctx_tx[i]->idx = i;
     test_ctx_tx[i]->ctx = ctx;
@@ -422,7 +487,12 @@ static void st40_rx_fps_test(enum st40_type type[], enum st_fps fps[],
     ops_tx.fps = fps[i];
     ops_tx.payload_type = ST40_TEST_PAYLOAD_TYPE;
     ops_tx.framebuff_cnt = test_ctx_tx[i]->fb_cnt;
-    ops_tx.get_next_frame = tx_next_frame;
+    if (user_timestamp) {
+      ops_tx.get_next_frame = tx_anc_next_frame_timestamp;
+      ops_tx.flags |= ST40_TX_FLAG_USER_TIMESTAMP;
+    } else {
+      ops_tx.get_next_frame = tx_anc_next_frame;
+    }
     ops_tx.rtp_ring_size = 1024;
     ops_tx.notify_rtp_done = tx_rtp_done;
 
@@ -430,45 +500,24 @@ static void st40_rx_fps_test(enum st40_type type[], enum st_fps fps[],
     ASSERT_TRUE(tx_handle[i] != NULL);
 
     test_ctx_tx[i]->check_sha = check_sha;
-
+    st40_tx_frame_init(test_ctx_tx[i], tx_handle[i], type[i]);
     if (check_sha) {
       uint8_t* fb;
-      test_ctx_tx[i]->pkt_data_len = 240;
-      test_ctx_tx[i]->frame_size = test_ctx_tx[i]->pkt_data_len;
-      size_t frame_size = test_ctx_tx[i]->pkt_data_len;
-      for (int frame = 0; frame < TEST_SHA_HIST_NUM; frame++) {
-        test_ctx_tx[i]->frame_buf[frame] = (uint8_t*)st_test_zmalloc(frame_size);
-        ASSERT_TRUE(test_ctx_tx[i]->frame_buf[frame] != NULL);
-        if (type[i] == ST40_TYPE_FRAME_LEVEL) {
-          struct st40_frame* dst =
-              (struct st40_frame*)st40_tx_get_framebuffer(tx_handle[i], frame);
-          ASSERT_TRUE(dst != NULL);
-          dst->data_size = dst->meta[0].udw_size = test_ctx_tx[i]->pkt_data_len;
-          dst->meta[0].udw_offset = 0;
-          dst->meta[0].c = 0;
-          dst->meta[0].line_number = 10;
-          dst->meta[0].hori_offset = 0;
-          dst->meta[0].s = 0;
-          dst->meta[0].stream_num = 0;
-          dst->meta[0].did = 0x43;
-          dst->meta[0].sdid = 0x02;
-          dst->meta_num = 1;
-          fb = dst->data = test_ctx_tx[i]->frame_buf[frame];
-        } else {
-          fb = test_ctx_tx[i]->frame_buf[frame];
-        }
-        st_test_rand_data(fb, frame_size, frame);
+      for (int frame = 0; frame < test_ctx_tx[i]->fb_cnt; frame++) {
+        fb = test_ctx_tx[i]->frame_buf[frame];
+        st_test_rand_data(fb, test_ctx_tx[i]->frame_size, frame);
         unsigned char* result = test_ctx_tx[i]->shas[frame];
-        SHA256((unsigned char*)fb, frame_size, result);
+        SHA256((unsigned char*)fb, test_ctx_tx[i]->frame_size, result);
         test_sha_dump("st40_rx", result);
       }
     }
+
+    test_ctx_tx[i]->handle = tx_handle[i];
+
     if (type[i] == ST40_TYPE_RTP_LEVEL) {
       test_ctx_tx[i]->stop = false;
       rtp_thread_tx[i] = std::thread(tx_feed_packet, test_ctx_tx[i]);
     }
-
-    test_ctx_tx[i]->handle = tx_handle[i];
   }
 
   for (int i = 0; i < sessions; i++) {
@@ -502,6 +551,10 @@ static void st40_rx_fps_test(enum st40_type type[], enum st_fps fps[],
     }
 
     test_ctx_rx[i]->handle = rx_handle[i];
+
+    struct st_queue_meta meta;
+    ret = st40_rx_get_queue_meta(rx_handle[i], &meta);
+    EXPECT_GE(ret, 0);
   }
 
   ret = st_start(m_handle);
@@ -549,13 +602,8 @@ static void st40_rx_fps_test(enum st40_type type[], enum st_fps fps[],
     EXPECT_GE(ret, 0);
     if (check_sha) {
       EXPECT_GT(test_ctx_rx[i]->check_sha_frame_cnt, 0);
-      for (int frame = 0; frame < TEST_SHA_HIST_NUM; frame++) {
-        if (test_ctx_tx[i]->frame_buf[frame])
-          st_test_free(test_ctx_tx[i]->frame_buf[frame]);
-        if (test_ctx_rx[i]->frame_buf[frame])
-          st_test_free(test_ctx_rx[i]->frame_buf[frame]);
-      }
     }
+    st40_tx_frame_uinit(test_ctx_tx[i]);
     delete test_ctx_tx[i];
     delete test_ctx_rx[i];
   }
@@ -580,13 +628,13 @@ TEST(St40_tx, mix_fps59_94_s3) {
   enum st40_type type[3] = {ST40_TYPE_FRAME_LEVEL, ST40_TYPE_RTP_LEVEL,
                             ST40_TYPE_RTP_LEVEL};
   enum st_fps fps[3] = {ST_FPS_P59_94, ST_FPS_P59_94, ST_FPS_P59_94};
-  st40_tx_fps_test(type, fps, ST_TEST_LEVEL_MANDATORY, 3);
+  st40_tx_fps_test(type, fps, ST_TEST_LEVEL_ALL, 3);
 }
 TEST(St40_tx, mix_fps29_97_s3) {
   enum st40_type type[3] = {ST40_TYPE_FRAME_LEVEL, ST40_TYPE_RTP_LEVEL,
                             ST40_TYPE_RTP_LEVEL};
   enum st_fps fps[3] = {ST_FPS_P29_97, ST_FPS_P29_97, ST_FPS_P29_97};
-  st40_tx_fps_test(type, fps, ST_TEST_LEVEL_MANDATORY, 3);
+  st40_tx_fps_test(type, fps, ST_TEST_LEVEL_ALL, 3);
 }
 TEST(St40_tx, rtp_fps50_s3) {
   enum st40_type type[3] = {ST40_TYPE_RTP_LEVEL, ST40_TYPE_RTP_LEVEL,
@@ -630,6 +678,12 @@ TEST(St40_rx, rtp_fps50_fps59_94_digest) {
   enum st_fps fps[2] = {ST_FPS_P50, ST_FPS_P59_94};
   st40_rx_fps_test(type, fps, ST_TEST_LEVEL_MANDATORY, 2, true);
 }
+TEST(St40_rx, frame_user_timestamp) {
+  enum st40_type type[1] = {ST40_TYPE_FRAME_LEVEL};
+  enum st_fps fps[1] = {ST_FPS_P59_94};
+  st40_rx_fps_test(type, fps, ST_TEST_LEVEL_MANDATORY, 1, true, true);
+}
+
 static void st40_rx_update_src_test(enum st40_type type, int tx_sessions) {
   auto ctx = (struct st_tests_context*)st_test_ctx();
   auto m_handle = ctx->handle;
@@ -687,19 +741,21 @@ static void st40_rx_update_src_test(enum st40_type type, int tx_sessions) {
     ops_tx.fps = ST_FPS_P59_94;
     ops_tx.payload_type = ST40_TEST_PAYLOAD_TYPE;
     ops_tx.framebuff_cnt = test_ctx_tx[i]->fb_cnt;
-    ops_tx.get_next_frame = tx_next_frame;
+    ops_tx.get_next_frame = tx_anc_next_frame;
     ops_tx.notify_rtp_done = tx_rtp_done;
     ops_tx.rtp_ring_size = 1024;
 
     tx_handle[i] = st40_tx_create(m_handle, &ops_tx);
     ASSERT_TRUE(tx_handle[i] != NULL);
 
+    st40_tx_frame_init(test_ctx_tx[i], tx_handle[i], type);
+
+    test_ctx_tx[i]->handle = tx_handle[i];
+
     if (type == ST40_TYPE_RTP_LEVEL) {
       test_ctx_tx[i]->stop = false;
       rtp_thread_tx[i] = std::thread(tx_feed_packet, test_ctx_tx[i]);
     }
-
-    test_ctx_tx[i]->handle = tx_handle[i];
   }
 
   for (int i = 0; i < rx_sessions; i++) {
@@ -829,6 +885,7 @@ static void st40_rx_update_src_test(enum st40_type type, int tx_sessions) {
   for (int i = 0; i < tx_sessions; i++) {
     ret = st40_tx_free(tx_handle[i]);
     EXPECT_GE(ret, 0);
+    st40_tx_frame_uinit(test_ctx_tx[i]);
     delete test_ctx_tx[i];
   }
 }
@@ -889,19 +946,21 @@ static void st40_after_start_test(enum st40_type type[], enum st_fps fps[], int 
       ops_tx.fps = fps[i];
       ops_tx.payload_type = ST40_TEST_PAYLOAD_TYPE;
       ops_tx.framebuff_cnt = test_ctx_tx[i]->fb_cnt;
-      ops_tx.get_next_frame = tx_next_frame;
+      ops_tx.get_next_frame = tx_anc_next_frame;
       ops_tx.rtp_ring_size = 1024;
       ops_tx.notify_rtp_done = tx_rtp_done;
 
       tx_handle[i] = st40_tx_create(m_handle, &ops_tx);
       ASSERT_TRUE(tx_handle[i] != NULL);
 
+      st40_tx_frame_init(test_ctx_tx[i], tx_handle[i], type[i]);
+
+      test_ctx_tx[i]->handle = tx_handle[i];
+
       if (type[i] == ST40_TYPE_RTP_LEVEL) {
         test_ctx_tx[i]->stop = false;
         rtp_thread_tx[i] = std::thread(tx_feed_packet, test_ctx_tx[i]);
       }
-
-      test_ctx_tx[i]->handle = tx_handle[i];
     }
 
     for (int i = 0; i < sessions; i++) {
@@ -952,6 +1011,7 @@ static void st40_after_start_test(enum st40_type type[], enum st_fps fps[], int 
       EXPECT_NEAR(framerate[i], expect_framerate[i], expect_framerate[i] * 0.1);
       ret = st40_tx_free(tx_handle[i]);
       EXPECT_GE(ret, 0);
+      st40_tx_frame_uinit(test_ctx_tx[i]);
       delete test_ctx_tx[i];
       ret = st40_rx_free(rx_handle[i]);
       EXPECT_GE(ret, 0);

@@ -1,7 +1,7 @@
 # SPDX-License-Identifier: BSD-3-Clause
 # Copyright 2022 Intel Corporation
 
-project('Intel(R) ST DPDK sample app', 'c', default_options: ['c_std=gnu11', 'buildtype=release'], version: '22.06',)
+project('Intel(R) ST DPDK sample app', 'c', default_options: ['c_std=gnu11', 'buildtype=release'], version: '22.09',)
 
 # allow experimental api
 add_global_arguments('-DALLOW_EXPERIMENTAL_API', language : 'c')
@@ -55,7 +55,6 @@ if is_windows
   libjsonccflags = run_command('pkg-config', '--cflags', 'json-c')
   libsdl2cflags = run_command('pkg-config', '--cflags', 'sdl2')
   libsdl2_ttfcflags = run_command('pkg-config', '--cflags', 'sdl2-ttf')
-  libdpdklinkflags = run_command('pkg-config', '--static', '--libs', 'libdpdk')
   libopensslcflags = run_command('pkg-config', '--cflags', 'openssl')
 
   app_c_args += [libdpdkcflags.stdout().strip().split()]
@@ -72,9 +71,6 @@ app_ld_args = []
 
 if is_windows
   app_ld_args += ['-lmingw32','-lws2_32','-lDbghelp','-lSetupapi','-ldinput8', '-ldxguid', '-ldxerr8', '-lwinmm', '-limm32','-lversion','-lwpcap','-lPacket','-lSDL2','-lSDL2Main','-lmman','-ljson-c','-ldl']
-  app_ld_args += ['-Wl,--whole-archive']
-  app_ld_args += [libdpdklinkflags.stdout().strip().split()]
-  app_ld_args += ['-Wl,--no-whole-archive']
 endif
 
 # build executable
@@ -192,13 +188,31 @@ executable('TxSliceVideoSample', video_tx_slice_sample_sources,
   dependencies: [libst_dpdk, libpthread]
 )
 
-executable('RxSt20TxSt22Fwd', rx_st20_tx_st22_fwd_sources,
+executable('RxSt20pTxSt22pFwd', rx_st20p_tx_st22p_fwd_sources,
+  c_args : app_c_args,
+  link_args: app_ld_args,
+  dependencies: [libst_dpdk, libpthread]
+)
+
+executable('RxSt20pTxSt20pFwd', rx_st20p_tx_st20p_fwd_sources,
   c_args : app_c_args,
   link_args: app_ld_args,
   dependencies: [libst_dpdk, libpthread]
 )
 
 executable('RxSt20TxSt20Fwd', rx_st20_tx_st20_fwd_sources,
+  c_args : app_c_args,
+  link_args: app_ld_args,
+  dependencies: [libst_dpdk, libpthread]
+)
+
+executable('TxSt20PipelineSample', pipeline_tx_st20_sample_sources,
+  c_args : app_c_args,
+  link_args: app_ld_args,
+  dependencies: [libst_dpdk, libpthread]
+)
+
+executable('RxSt20PipelineSample', pipeline_rx_st20_sample_sources,
   c_args : app_c_args,
   link_args: app_ld_args,
   dependencies: [libst_dpdk, libpthread]

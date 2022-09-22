@@ -33,6 +33,7 @@ int st_ring_dequeue_clean(struct rte_ring* ring) {
     rte_pktmbuf_free(pkt);
   } while (1);
 
+  dbg("%s, end\n", __func__);
   return 0;
 }
 
@@ -199,13 +200,13 @@ void st_eth_macaddr_dump(enum st_port port, char* tag, struct rte_ether_addr* ma
        addr[5]);
 }
 
-struct rte_mbuf* st_build_pad(struct st_main_impl* impl, enum st_port port,
+struct rte_mbuf* st_build_pad(struct st_main_impl* impl, struct rte_mempool* mempool,
                               uint16_t port_id, uint16_t ether_type, uint16_t len) {
   struct rte_ether_addr src_mac;
   struct rte_mbuf* pad;
   struct rte_ether_hdr* eth_hdr;
 
-  pad = rte_pktmbuf_alloc(st_get_mempool(impl, port));
+  pad = rte_pktmbuf_alloc(mempool);
   if (unlikely(pad == NULL)) {
     err("%s, fail to allocate pad pktmbuf\n", __func__);
     return NULL;
@@ -228,16 +229,17 @@ struct rte_mbuf* st_build_pad(struct st_main_impl* impl, enum st_port port,
   return pad;
 }
 
-struct rte_mempool* st_mempool_create(struct st_main_impl* impl, enum st_port port,
-                                      const char* name, unsigned int n,
-                                      unsigned int cache_size, uint16_t priv_size,
-                                      uint16_t element_size) {
-  if (element_size % cache_size) { /* align to cache size */
+struct rte_mempool* st_mempool_create_by_ops(struct st_main_impl* impl, enum st_port port,
+                                             const char* name, unsigned int n,
+                                             unsigned int cache_size, uint16_t priv_size,
+                                             uint16_t element_size,
+                                             const char* ops_name) {
+  if (cache_size && (element_size % cache_size)) { /* align to cache size */
     element_size = (element_size / cache_size + 1) * cache_size;
   }
   uint16_t data_room_size = element_size + ST_MBUF_HEADROOM_SIZE; /* include head room */
   struct rte_mempool* mbuf_pool = rte_pktmbuf_pool_create_by_ops(
-      name, n, cache_size, priv_size, data_room_size, st_socket_id(impl, port), "stack");
+      name, n, cache_size, priv_size, data_room_size, st_socket_id(impl, port), ops_name);
   if (!mbuf_pool) {
     err("%s(%d), fail(%s) for %s, n %u\n", __func__, port, rte_strerror(rte_errno), name,
         n);
@@ -252,12 +254,12 @@ struct rte_mempool* st_mempool_create(struct st_main_impl* impl, enum st_port po
 int st_mempool_free(struct rte_mempool* mp) {
   unsigned int in_use_count = rte_mempool_in_use_count(mp);
   if (in_use_count) {
-    /* caused by the mbuf is still in nix tx queues */
-    warn("%s, still has %d mbuf in mempool %s\n", __func__, in_use_count, mp->name);
-    return -EIO;
+    /* caused by the mbuf is still in nix tx queues? */
+    err("%s, still has %d mbuf in mempool %s\n", __func__, in_use_count, mp->name);
   }
 
   /* no any in-use mbuf */
+  info("%s, free mempool %s\n", __func__, mp->name);
   rte_mempool_free(mp);
   return 0;
 }
@@ -385,5 +387,83 @@ int st_cvt_dma_ctx_pop(struct st_cvt_dma_ctx* ctx) {
   st_u64_fifo_get(ctx->fifo, &type);
   ctx->done[type]++;
   dbg("%s, done %d for type %" PRIu64 "\n", __func__, ctx->done[type], type);
+  return 0;
+}
+
+int st_run_cmd(const char* cmd, char* out, size_t out_len) {
+  FILE* fp;
+  char* ret;
+
+  fp = popen(cmd, "r");
+  if (!fp) {
+    err("%s, cmd %s run fail\n", __func__, cmd);
+    return -EIO;
+  }
+
+  if (out) {
+    out[0] = 0;
+    ret = fgets(out, out_len, fp);
+    if (!ret) {
+      err("%s, cmd %s read return fail\n", __func__, cmd);
+      pclose(fp);
+      return -EIO;
+    }
+  }
+
+  pclose(fp);
+  return 0;
+}
+
+int st_ip_addr_check(uint8_t* ip) {
+  for (int i = 0; i < ST_IP_ADDR_LEN; i++) {
+    if (ip[i]) return 0;
+  }
+
+  return -EINVAL;
+}
+
+int st_rx_source_info_check(struct st_rx_source_info* src, int num_ports) {
+  uint8_t* ip;
+  int ret;
+
+  for (int i = 0; i < num_ports; i++) {
+    ip = src->sip_addr[i];
+    ret = st_ip_addr_check(ip);
+    if (ret < 0) {
+      err("%s(%d), invalid ip %d.%d.%d.%d\n", __func__, i, ip[0], ip[1], ip[2], ip[3]);
+      return -EINVAL;
+    }
+  }
+
+  if (num_ports > 1) {
+    if (0 == memcmp(src->sip_addr[0], src->sip_addr[1], ST_IP_ADDR_LEN)) {
+      err("%s, same %d.%d.%d.%d for both ip\n", __func__, ip[0], ip[1], ip[2], ip[3]);
+      return -EINVAL;
+    }
+  }
+
+  return 0;
+}
+
+int st_frame_trans_uinit(struct st_frame_trans* frame) {
+  int idx = frame->idx;
+
+  /* check if it's still shared */
+  uint16_t sh_info_refcnt = rte_mbuf_ext_refcnt_read(&frame->sh_info);
+  if (sh_info_refcnt)
+    warn("%s(%d), sh_info still active, refcnt %d\n", __func__, idx, sh_info_refcnt);
+
+  int refcnt = rte_atomic32_read(&frame->refcnt);
+  if (refcnt) warn("%s(%d), refcnt not zero %d\n", __func__, idx, refcnt);
+
+  if (frame->addr) {
+    if (frame->flags & ST_FT_FLAG_RTE_MALLOC) {
+      dbg("%s(%d), free rte mem\n", __func__, idx);
+      st_rte_free(frame->addr);
+    }
+    frame->addr = NULL;
+  }
+  frame->iova = 0;
+
   return 0;
 }

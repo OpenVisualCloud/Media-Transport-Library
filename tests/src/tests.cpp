@@ -21,6 +21,8 @@ enum test_args_cmd {
   TEST_ARG_CNI_THREAD,
   TEST_ARG_LIB_PTP,
   TEST_ARG_RX_MONO_POOL,
+  TEST_ARG_TX_MONO_POOL,
+  TEST_ARG_MONO_POOL,
   TEST_ARG_RX_SEPARATE_VIDEO_LCORE,
   TEST_ARG_MIGRATE_ENABLE,
   TEST_ARG_MIGRATE_DISABLE,
@@ -28,6 +30,15 @@ enum test_args_cmd {
   TEST_ARG_NB_RX_DESC,
   TEST_ARG_LEVEL,
   TEST_ARG_AUTO_START_STOP,
+  TEST_ARG_AF_XDP_ZC_DISABLE,
+  TEST_ARG_START_QUEUE,
+  TEST_ARG_P_START_QUEUE,
+  TEST_ARG_R_START_QUEUE,
+  TEST_ARG_HDR_SPLIT,
+  TEST_ARG_TASKLET_THREAD,
+  TEST_ARG_TSC_PACING,
+  TEST_ARG_RXTX_SIMD_512,
+  TEST_ARG_PACING_WAY,
 };
 
 static struct option test_args_options[] = {
@@ -42,12 +53,23 @@ static struct option test_args_options[] = {
     {"cni_thread", no_argument, 0, TEST_ARG_CNI_THREAD},
     {"ptp", no_argument, 0, TEST_ARG_LIB_PTP},
     {"rx_mono_pool", no_argument, 0, TEST_ARG_RX_MONO_POOL},
+    {"tx_mono_pool", no_argument, 0, TEST_ARG_TX_MONO_POOL},
+    {"mono_pool", no_argument, 0, TEST_ARG_MONO_POOL},
     {"rx_separate_lcore", no_argument, 0, TEST_ARG_RX_SEPARATE_VIDEO_LCORE},
     {"migrate_enable", no_argument, 0, TEST_ARG_MIGRATE_ENABLE},
     {"migrate_disable", no_argument, 0, TEST_ARG_MIGRATE_DISABLE},
     {"nb_tx_desc", required_argument, 0, TEST_ARG_NB_TX_DESC},
     {"nb_rx_desc", required_argument, 0, TEST_ARG_NB_RX_DESC},
     {"auto_start_stop", no_argument, 0, TEST_ARG_AUTO_START_STOP},
+    {"afxdp_zc_disable", no_argument, 0, TEST_ARG_AF_XDP_ZC_DISABLE},
+    {"start_queue", required_argument, 0, TEST_ARG_START_QUEUE},
+    {"p_start_queue", required_argument, 0, TEST_ARG_P_START_QUEUE},
+    {"r_start_queue", required_argument, 0, TEST_ARG_R_START_QUEUE},
+    {"hdr_split", no_argument, 0, TEST_ARG_HDR_SPLIT},
+    {"tasklet_thread", no_argument, 0, TEST_ARG_TASKLET_THREAD},
+    {"tsc", no_argument, 0, TEST_ARG_TSC_PACING},
+    {"rxtx_simd_512", no_argument, 0, TEST_ARG_RXTX_SIMD_512},
+    {"pacing_way", required_argument, 0, TEST_ARG_PACING_WAY},
 
     {0, 0, 0, 0}};
 
@@ -120,7 +142,14 @@ static int test_parse_args(struct st_tests_context* ctx, struct st_init_params* 
         p->flags |= ST_FLAG_CNI_THREAD;
         break;
       case TEST_ARG_RX_MONO_POOL:
-        p->flags |= ST_FLAG_RX_QUEUE_MONO_POOL;
+        p->flags |= ST_FLAG_RX_MONO_POOL;
+        break;
+      case TEST_ARG_TX_MONO_POOL:
+        p->flags |= ST_FLAG_TX_MONO_POOL;
+        break;
+      case TEST_ARG_MONO_POOL:
+        p->flags |= ST_FLAG_RX_MONO_POOL;
+        p->flags |= ST_FLAG_TX_MONO_POOL;
         break;
       case TEST_ARG_RX_SEPARATE_VIDEO_LCORE:
         p->flags |= ST_FLAG_RX_SEPARATE_VIDEO_LCORE;
@@ -153,6 +182,45 @@ static int test_parse_args(struct st_tests_context* ctx, struct st_init_params* 
         break;
       case TEST_ARG_AUTO_START_STOP:
         p->flags |= ST_FLAG_DEV_AUTO_START_STOP;
+        break;
+      case TEST_ARG_AF_XDP_ZC_DISABLE:
+        p->flags |= ST_FLAG_AF_XDP_ZC_DISABLE;
+        break;
+      case TEST_ARG_START_QUEUE:
+        p->xdp_info[ST_PORT_P].start_queue = atoi(optarg);
+        p->xdp_info[ST_PORT_R].start_queue = atoi(optarg);
+        break;
+      case TEST_ARG_P_START_QUEUE:
+        p->xdp_info[ST_PORT_P].start_queue = atoi(optarg);
+        break;
+      case TEST_ARG_R_START_QUEUE:
+        p->xdp_info[ST_PORT_R].start_queue = atoi(optarg);
+        break;
+      case TEST_ARG_HDR_SPLIT:
+        ctx->hdr_split = true;
+        break;
+      case TEST_ARG_TASKLET_THREAD:
+        p->flags |= ST_FLAG_TASKLET_THREAD;
+        break;
+      case TEST_ARG_TSC_PACING:
+        p->pacing = ST21_TX_PACING_WAY_TSC;
+        break;
+      case TEST_ARG_RXTX_SIMD_512:
+        p->flags |= ST_FLAG_RXTX_SIMD_512;
+        break;
+      case TEST_ARG_PACING_WAY:
+        if (!strcmp(optarg, "auto"))
+          p->pacing = ST21_TX_PACING_WAY_AUTO;
+        else if (!strcmp(optarg, "rl"))
+          p->pacing = ST21_TX_PACING_WAY_RL;
+        else if (!strcmp(optarg, "tsn"))
+          p->pacing = ST21_TX_PACING_WAY_TSN;
+        else if (!strcmp(optarg, "tsc"))
+          p->pacing = ST21_TX_PACING_WAY_TSC;
+        else if (!strcmp(optarg, "ptp"))
+          p->pacing = ST21_TX_PACING_WAY_PTP;
+        else
+          err("%s, unknow pacing way %s\n", __func__, optarg);
         break;
       default:
         break;
@@ -220,6 +288,7 @@ static void test_ctx_init(struct st_tests_context* ctx) {
   int numa_nodes = 0;
   int max_cpus = 0;
 #endif
+
   ctx->level = ST_TEST_LEVEL_MANDATORY;
 #ifndef WINDOWSENV
   if (numa_available() >= 0) {
@@ -232,8 +301,11 @@ static void test_ctx_init(struct st_tests_context* ctx) {
   p->log_level = ST_LOG_LEVEL_WARNING;
   p->priv = ctx;
   p->ptp_get_time_fn = test_ptp_from_real_time;
-  p->tx_sessions_cnt_max = 32;
-  p->rx_sessions_cnt_max = 32;
+  p->tx_sessions_cnt_max = 16;
+  p->rx_sessions_cnt_max = 16;
+  /* defalut start queue set to 1 */
+  p->xdp_info[ST_PORT_P].start_queue = 1;
+  p->xdp_info[ST_PORT_R].start_queue = 1;
 
   /* build default lcore list */
   pos += snprintf(lcores_list + pos, TEST_LCORE_LIST_MAX_LEN - pos, "0-%d",
@@ -369,7 +441,7 @@ TEST(Misc, ptp) {
   uint64_t ptp = st_ptp_read_time(handle);
   EXPECT_EQ(ptp, ctx->ptp_time);
   /* try again */
-  usleep(1);
+  st_usleep(1);
   ptp = st_ptp_read_time(handle);
   EXPECT_EQ(ptp, ctx->ptp_time);
 }
@@ -381,7 +453,7 @@ static void st10_timestamp_test(uint32_t sampling_rate) {
   uint64_t ptp1 = st_ptp_read_time(handle);
   uint32_t media1 = st10_tai_to_media_clk(ptp1, sampling_rate);
   /* sleep 100us */
-  usleep(100);
+  st_usleep(100);
   uint64_t ptp2 = st_ptp_read_time(handle);
   uint32_t media2 = st10_tai_to_media_clk(ptp2, sampling_rate);
   EXPECT_GT(ptp2, ptp1);
@@ -402,6 +474,7 @@ TEST(Misc, st10_timestamp) {
 GTEST_API_ int main(int argc, char** argv) {
   struct st_tests_context* ctx;
   int ret;
+  bool link_flap_wa = false;
 
   testing::InitGoogleTest(&argc, argv);
 
@@ -416,13 +489,31 @@ GTEST_API_ int main(int argc, char** argv) {
   test_random_ip(ctx);
   g_test_ctx = ctx;
 
+  /* parse af xdp pmd info */
+  for (int i = 0; i < ctx->para.num_ports; i++) {
+    ctx->para.pmd[i] = st_pmd_by_port_name(ctx->para.port[i]);
+    if (ctx->para.pmd[i] != ST_PMD_DPDK_USER) {
+      st_get_if_ip(ctx->para.port[i], ctx->para.sip_addr[i]);
+      ctx->para.flags |= ST_FLAG_RX_SEPARATE_VIDEO_LCORE;
+      ctx->para.tx_sessions_cnt_max = 8;
+      ctx->para.rx_sessions_cnt_max = 8;
+      ctx->para.xdp_info[i].queue_count = 8;
+    } else {
+      link_flap_wa = true;
+    }
+  }
+  if (ctx->hdr_split) {
+    ctx->para.nb_rx_hdr_split_queues = 1;
+  }
+
   ctx->handle = st_init(&ctx->para);
   if (!ctx->handle) {
     err("%s, st_init fail\n", __func__);
     return -EIO;
   }
 
-  st_test_jpegxs_plugin_register(ctx);
+  st_test_st22_plugin_register(ctx);
+  st_test_convert_plugin_register(ctx);
 
   uint64_t start_time_ns = st_test_get_monotonic_time();
 
@@ -431,13 +522,14 @@ GTEST_API_ int main(int argc, char** argv) {
   uint64_t end_time_ns = st_test_get_monotonic_time();
   int time_s = (end_time_ns - start_time_ns) / NS_PER_S;
   int time_least = 10;
-  if (time_s < time_least) {
+  if (link_flap_wa && (time_s < time_least)) {
     /* wa for linkFlapErrDisabled in the hub */
     info("%s, sleep %ds before disable the port\n", __func__, time_least - time_s);
     sleep(time_least - time_s);
   }
 
-  st_test_jpegxs_plugin_unregister(ctx);
+  st_test_st22_plugin_unregister(ctx);
+  st_test_convert_plugin_unregister(ctx);
 
   test_ctx_uinit(ctx);
   return ret;

@@ -7,8 +7,10 @@
 #include <gtest/gtest.h>
 #include <math.h>
 #include <openssl/sha.h>
+#include <st20_dpdk_api.h>
+#include <st30_dpdk_api.h>
+#include <st40_dpdk_api.h>
 #include <st_convert_api.h>
-#include <st_dpdk_api.h>
 #include <st_pipeline_api.h>
 
 #include <condition_variable>
@@ -19,6 +21,8 @@
 
 #define TEST_LCORE_LIST_MAX_LEN (128)
 #define TEST_SHA_HIST_NUM (2)
+#define ST22_TEST_SHA_HIST_NUM (3)
+#define TEST_MAX_SHA_HIST_NUM (3)
 
 #define TEST_DATA_FIXED_PATTER (0)
 
@@ -32,10 +36,29 @@ enum st_test_level {
   ST_TEST_LEVEL_MAX, /* max value of this enum */
 };
 
-#define MAX_SAMPLE_ENCODER_SESSIONS (8)
-#define MAX_SAMPLE_DECODER_SESSIONS (8)
+#define MAX_TEST_ENCODER_SESSIONS (8)
+#define MAX_TEST_DECODER_SESSIONS (8)
+#define MAX_TEST_CONVERTER_SESSIONS (8)
 
-struct jpegxs_encoder_session {
+struct test_converter_session {
+  int idx;
+
+  struct st20_converter_create_req req;
+  st20p_convert_session session_p;
+  bool stop;
+  pthread_t convert_thread;
+  pthread_cond_t wake_cond;
+  pthread_mutex_t wake_mutex;
+
+  int sleep_time_us;
+
+  int frame_cnt;
+  int fail_interval;
+  int timeout_interval;
+  int timeout_ms;
+};
+
+struct test_st22_encoder_session {
   int idx;
 
   struct st22_encoder_create_req req;
@@ -51,9 +74,10 @@ struct jpegxs_encoder_session {
   int fail_interval;
   int timeout_interval;
   int timeout_ms;
+  int rand_ratio;
 };
 
-struct jpegxs_decoder_session {
+struct test_st22_decoder_session {
   int idx;
 
   struct st22_decoder_create_req req;
@@ -78,14 +102,18 @@ struct st_tests_context {
   uint8_t mcast_ip_addr[ST_PORT_MAX][ST_IP_ADDR_LEN];
   uint64_t ptp_time;
   enum st_test_level level;
+  bool hdr_split;
 
   st22_encoder_dev_handle encoder_dev_handle;
   st22_decoder_dev_handle decoder_dev_handle;
-  struct jpegxs_encoder_session* encoder_sessions[MAX_SAMPLE_ENCODER_SESSIONS];
-  struct jpegxs_decoder_session* decoder_sessions[MAX_SAMPLE_DECODER_SESSIONS];
-  int jpegxs_fail_interval;
-  int jpegxs_timeout_interval;
-  int jpegxs_timeout_ms;
+  st20_converter_dev_handle converter_dev_handle;
+  struct test_st22_encoder_session* encoder_sessions[MAX_TEST_ENCODER_SESSIONS];
+  struct test_st22_decoder_session* decoder_sessions[MAX_TEST_DECODER_SESSIONS];
+  struct test_converter_session* converter_sessions[MAX_TEST_CONVERTER_SESSIONS];
+  int plugin_fail_interval;
+  int plugin_timeout_interval;
+  int plugin_timeout_ms;
+  int plugin_rand_ratio;
 };
 
 struct st_tests_context* st_test_ctx(void);
@@ -101,16 +129,20 @@ static inline void* st_test_zmalloc(size_t sz) {
 }
 
 static inline void st_test_jxs_fail_interval(struct st_tests_context* ctx, int interval) {
-  ctx->jpegxs_fail_interval = interval;
+  ctx->plugin_fail_interval = interval;
 }
 
 static inline void st_test_jxs_timeout_interval(struct st_tests_context* ctx,
                                                 int interval) {
-  ctx->jpegxs_timeout_interval = interval;
+  ctx->plugin_timeout_interval = interval;
 }
 
 static inline void st_test_jxs_timeout_ms(struct st_tests_context* ctx, int ms) {
-  ctx->jpegxs_timeout_ms = ms;
+  ctx->plugin_timeout_ms = ms;
+}
+
+static inline void st_test_jxs_rand_ratio(struct st_tests_context* ctx, int rand_ratio) {
+  ctx->plugin_rand_ratio = rand_ratio;
 }
 
 static inline void st_test_free(void* p) { free(p); }
@@ -146,9 +178,13 @@ int st_test_sch_cnt(struct st_tests_context* ctx);
 
 bool st_test_dma_available(struct st_tests_context* ctx);
 
-int st_test_jpegxs_plugin_register(struct st_tests_context* ctx);
+int st_test_st22_plugin_register(struct st_tests_context* ctx);
 
-int st_test_jpegxs_plugin_unregister(struct st_tests_context* ctx);
+int st_test_st22_plugin_unregister(struct st_tests_context* ctx);
+
+int st_test_convert_plugin_register(struct st_tests_context* ctx);
+
+int st_test_convert_plugin_unregister(struct st_tests_context* ctx);
 
 /* Monotonic time (in nanoseconds) since some unspecified starting point. */
 static inline uint64_t st_test_get_monotonic_time() {
@@ -179,7 +215,7 @@ class tests_context {
   int seq_id = 0;
   int frame_base_seq_id = 0; /* for ooo_mapping */
   int pkt_idx = 0;
-  int rtp_tmstamp = 0;
+  uint32_t rtp_tmstamp = 0;
   int rtp_delta = 0;
   int pkt_data_len = 0;
   int pkts_in_line = 0;
@@ -191,14 +227,14 @@ class tests_context {
   bool single_line = false;
   bool slice = false;
   std::queue<void*> buf_q = {};
-  std::queue<enum st_field> flag_q = {};
+  std::queue<bool> second_field_q = {};
   int lines_per_slice = 0;
 
   size_t frame_size = 0;
   size_t uframe_size = 0;
-  uint8_t shas[TEST_SHA_HIST_NUM][SHA256_DIGEST_LENGTH] = {};
-  uint8_t* frame_buf[TEST_SHA_HIST_NUM] = {};
-  uint16_t lines_ready[TEST_SHA_HIST_NUM] = {};
+  uint8_t shas[TEST_MAX_SHA_HIST_NUM][SHA256_DIGEST_LENGTH] = {};
+  uint8_t* frame_buf[TEST_MAX_SHA_HIST_NUM] = {};
+  uint16_t lines_ready[TEST_MAX_SHA_HIST_NUM] = {};
   bool check_sha = false;
   int fail_cnt = 0; /* fail as sha or wrong status, etc. */
   int incomplete_frame_cnt = 0;
@@ -209,6 +245,13 @@ class tests_context {
   int slice_cnt = 0;
   uint32_t slice_recv_lines = 0;
   uint64_t slice_recv_timestamp = 0;
+  void* ext_fb_malloc;
+  uint8_t* ext_fb = NULL;
+  st_iova_t ext_fb_iova = 0;
+  size_t ext_fb_iova_map_sz = 0;
+  struct st20_ext_frame* ext_frames;
+  int ext_idx = 0;
+  bool ext_fb_in_use[3] = {false}; /* assume 3 framebuffer */
 };
 
 int tx_next_frame(void* priv, uint16_t* next_frame_idx);
@@ -237,6 +280,7 @@ int tx_next_frame(void* priv, uint16_t* next_frame_idx);
       ops.udp_port[ST_PORT_R]++;                            \
       expect_cnt++;                                         \
       A##_assert_cnt(expect_cnt);                           \
+      st_usleep(100 * 1000);                                \
     }                                                       \
     info("%s, max session cnt %d\n", __func__, expect_cnt); \
     act = expect_cnt;                                       \
@@ -245,6 +289,7 @@ int tx_next_frame(void* priv, uint16_t* next_frame_idx);
       EXPECT_GE(ret, 0);                                    \
       expect_cnt--;                                         \
       A##_assert_cnt(expect_cnt);                           \
+      st_usleep(100 * 1000);                                \
     }                                                       \
                                                             \
     A##_assert_cnt(0);                                      \
@@ -290,12 +335,14 @@ int tx_next_frame(void* priv, uint16_t* next_frame_idx);
         A##_assert_cnt(expect_cnt);                \
       }                                            \
                                                    \
+      st_usleep(100 * 1000);                       \
       for (int j = 0; j < step; j++) {             \
         ret = A##_free(handle[j]);                 \
         ASSERT_TRUE(ret >= 0);                     \
         expect_cnt--;                              \
         A##_assert_cnt(expect_cnt);                \
       }                                            \
+      st_usleep(100 * 1000);                       \
     }                                              \
                                                    \
     for (int i = 0; i < base; i++) {               \
@@ -482,6 +529,7 @@ int tx_next_frame(void* priv, uint16_t* next_frame_idx);
     ops.num_port = 1;                                       \
     ops.type = s_type;                                      \
     ops.rtp_ring_size = 1024;                               \
+    ops.rtp_frame_total_pkts = 1024;                        \
     ops.rtp_pkt_size = pkt_sz;                              \
     handle = A##_create(m_handle, &ops);                    \
     if (expect)                                             \

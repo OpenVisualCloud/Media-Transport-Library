@@ -57,6 +57,13 @@ int st_plugins_uinit(struct st_main_impl* impl) {
       mgr->decode_devs[i] = NULL;
     }
   }
+  for (int i = 0; i < ST_MAX_CONVERTER_DEV; i++) {
+    if (mgr->convert_devs[i]) {
+      dbg("%s, still has convert dev in %d\n", __func__, i);
+      st_rte_free(mgr->convert_devs[i]);
+      mgr->convert_devs[i] = NULL;
+    }
+  }
   st_pthread_mutex_destroy(&mgr->lock);
   st_pthread_mutex_destroy(&mgr->plugins_lock);
 
@@ -113,6 +120,8 @@ static struct st22_encode_session_impl* st22_get_encoder_session(
            st_frame_fmt_name(req->req.input_fmt), st_frame_fmt_name(req->req.output_fmt));
       return session_impl;
     } else {
+      err("%s(%d), fail to create one session at %d on dev %s\n", __func__, idx, i,
+          dev->name);
       return NULL;
     }
   }
@@ -122,10 +131,7 @@ static struct st22_encode_session_impl* st22_get_encoder_session(
 
 static bool st22_encoder_is_capable(struct st22_encoder_dev* dev,
                                     struct st22_get_encoder_request* req) {
-  enum st22_codec codec = req->codec;
   enum st_plugin_device plugin_dev = req->device;
-
-  if (codec != dev->codec) return false;
 
   if ((plugin_dev != ST_PLUGIN_DEVICE_AUTO) && (plugin_dev != dev->target_device))
     return false;
@@ -150,7 +156,10 @@ struct st22_encode_session_impl* st22_get_encoder(struct st_main_impl* impl,
     if (!dev_impl) continue;
     dbg("%s(%d), try to find one dev\n", __func__, i);
     dev = &mgr->encode_devs[i]->dev;
-    if (!st22_encoder_is_capable(dev, req)) continue;
+    if (!st22_encoder_is_capable(dev, req)) {
+      dbg("%s(%d), %s not capable\n", __func__, i, dev->name);
+      continue;
+    }
 
     dbg("%s(%d), try to find one session\n", __func__, i);
     session_impl = st22_get_encoder_session(dev_impl, req);
@@ -162,7 +171,8 @@ struct st22_encode_session_impl* st22_get_encoder(struct st_main_impl* impl,
   }
   st_pthread_mutex_unlock(&mgr->lock);
 
-  err("%s, fail to find one encode session\n", __func__);
+  err("%s, fail to get, input fmt: %s, output fmt: %s\n", __func__,
+      st_frame_fmt_name(req->req.input_fmt), st_frame_fmt_name(req->req.output_fmt));
   return NULL;
 }
 
@@ -214,6 +224,8 @@ static struct st22_decode_session_impl* st22_get_decoder_session(
            st_frame_fmt_name(req->req.input_fmt), st_frame_fmt_name(req->req.output_fmt));
       return session_impl;
     } else {
+      err("%s(%d), fail to create one session at %d on dev %s\n", __func__, idx, i,
+          dev->name);
       return NULL;
     }
   }
@@ -223,10 +235,7 @@ static struct st22_decode_session_impl* st22_get_decoder_session(
 
 static bool st22_decoder_is_capable(struct st22_decoder_dev* dev,
                                     struct st22_get_decoder_request* req) {
-  enum st22_codec codec = req->codec;
   enum st_plugin_device plugin_dev = req->device;
-
-  if (codec != dev->codec) return false;
 
   if ((plugin_dev != ST_PLUGIN_DEVICE_AUTO) && (plugin_dev != dev->target_device))
     return false;
@@ -263,7 +272,109 @@ struct st22_decode_session_impl* st22_get_decoder(struct st_main_impl* impl,
   }
   st_pthread_mutex_unlock(&mgr->lock);
 
-  err("%s, fail to find one decode session\n", __func__);
+  err("%s, fail to get, input fmt: %s, output fmt: %s\n", __func__,
+      st_frame_fmt_name(req->req.input_fmt), st_frame_fmt_name(req->req.output_fmt));
+  return NULL;
+}
+
+int st20_convert_notify_frame_ready(struct st20_convert_session_impl* converter) {
+  struct st20_convert_dev_impl* dev_impl = converter->parnet;
+  struct st20_converter_dev* dev = &dev_impl->dev;
+  st20_convert_priv session = converter->session;
+
+  return dev->notify_frame_available(session);
+}
+
+int st20_put_converter(struct st_main_impl* impl,
+                       struct st20_convert_session_impl* converter) {
+  struct st_plugin_mgr* mgr = st_get_plugins_mgr(impl);
+  struct st20_convert_dev_impl* dev_impl = converter->parnet;
+  struct st20_converter_dev* dev = &dev_impl->dev;
+  int idx = dev_impl->idx;
+  st20_convert_priv session = converter->session;
+
+  st_pthread_mutex_lock(&mgr->lock);
+  dev->free_session(dev->priv, session);
+  converter->session = NULL;
+  rte_atomic32_dec(&dev_impl->ref_cnt);
+  st_pthread_mutex_unlock(&mgr->lock);
+
+  info("%s(%d), put session %d succ\n", __func__, idx, converter->idx);
+  return 0;
+}
+
+static struct st20_convert_session_impl* st20_get_converter_session(
+    struct st20_convert_dev_impl* dev_impl, struct st20_get_converter_request* req) {
+  struct st20_converter_dev* dev = &dev_impl->dev;
+  int idx = dev_impl->idx;
+  struct st20_converter_create_req* create_req = &req->req;
+  struct st20_convert_session_impl* session_impl;
+  st20_convert_priv session;
+
+  for (int i = 0; i < ST_MAX_SESSIIONS_PER_CONVERTER; i++) {
+    session_impl = &dev_impl->sessions[i];
+    if (session_impl->session) continue;
+
+    session = dev->create_session(dev->priv, session_impl, create_req);
+    if (session) {
+      session_impl->session = session;
+      session_impl->req = *req;
+      session_impl->type = ST20_SESSION_TYPE_PIPELINE_CONVERT;
+      info("%s(%d), get one session at %d on dev %s\n", __func__, idx, i, dev->name);
+      info("%s(%d), input fmt: %s, output fmt: %s\n", __func__, idx,
+           st_frame_fmt_name(req->req.input_fmt), st_frame_fmt_name(req->req.output_fmt));
+      return session_impl;
+    } else {
+      err("%s(%d), fail to create one session at %d on dev %s\n", __func__, idx, i,
+          dev->name);
+      return NULL;
+    }
+  }
+
+  return NULL;
+}
+
+static bool st20_converter_is_capable(struct st20_converter_dev* dev,
+                                      struct st20_get_converter_request* req) {
+  enum st_plugin_device plugin_dev = req->device;
+
+  if ((plugin_dev != ST_PLUGIN_DEVICE_AUTO) && (plugin_dev != dev->target_device))
+    return false;
+
+  if (!(ST_BIT64(req->req.input_fmt) & dev->input_fmt_caps)) return false;
+
+  if (!(ST_BIT64(req->req.output_fmt) & dev->output_fmt_caps)) return false;
+
+  return true;
+}
+
+struct st20_convert_session_impl* st20_get_converter(
+    struct st_main_impl* impl, struct st20_get_converter_request* req) {
+  struct st_plugin_mgr* mgr = st_get_plugins_mgr(impl);
+  struct st20_converter_dev* dev;
+  struct st20_convert_dev_impl* dev_impl;
+  struct st20_convert_session_impl* session_impl;
+
+  st_pthread_mutex_lock(&mgr->lock);
+  for (int i = 0; i < ST_MAX_CONVERTER_DEV; i++) {
+    dev_impl = mgr->convert_devs[i];
+    if (!dev_impl) continue;
+    dbg("%s(%d), try to find one dev\n", __func__, i);
+    dev = &mgr->convert_devs[i]->dev;
+    if (!st20_converter_is_capable(dev, req)) continue;
+
+    dbg("%s(%d), try to find one session\n", __func__, i);
+    session_impl = st20_get_converter_session(dev_impl, req);
+    if (session_impl) {
+      rte_atomic32_inc(&dev_impl->ref_cnt);
+      st_pthread_mutex_unlock(&mgr->lock);
+      return session_impl;
+    }
+  }
+  st_pthread_mutex_unlock(&mgr->lock);
+
+  err("%s, fail to get, input fmt: %s, output fmt: %s\n", __func__,
+      st_frame_fmt_name(req->req.input_fmt), st_frame_fmt_name(req->req.output_fmt));
   return NULL;
 }
 
@@ -271,7 +382,7 @@ static int st22_encode_dev_dump(struct st22_encode_dev_impl* encode) {
   struct st22_encode_session_impl* session;
   int ref_cnt = rte_atomic32_read(&encode->ref_cnt);
 
-  if (ref_cnt) info("ST22 encoder dev %s with %d sessons\n", encode->name, ref_cnt);
+  if (ref_cnt) info("ST22 encoder dev: %s with %d sessons\n", encode->name, ref_cnt);
   for (int i = 0; i < ST_MAX_SESSIIONS_PER_ENCODER; i++) {
     session = &encode->sessions[i];
     if (!session->session) continue;
@@ -285,9 +396,23 @@ static int st22_decode_dev_dump(struct st22_decode_dev_impl* decode) {
   struct st22_decode_session_impl* session;
   int ref_cnt = rte_atomic32_read(&decode->ref_cnt);
 
-  if (ref_cnt) info("ST22 encoder dev %s with %d sessons\n", decode->name, ref_cnt);
+  if (ref_cnt) info("ST22 encoder dev: %s with %d sessons\n", decode->name, ref_cnt);
   for (int i = 0; i < ST_MAX_SESSIIONS_PER_DECODER; i++) {
     session = &decode->sessions[i];
+    if (!session->session) continue;
+    if (session->req.dump) session->req.dump(session->req.priv);
+  }
+
+  return 0;
+}
+
+static int st20_convert_dev_dump(struct st20_convert_dev_impl* convert) {
+  struct st20_convert_session_impl* session;
+  int ref_cnt = rte_atomic32_read(&convert->ref_cnt);
+
+  if (ref_cnt) info("ST20 convert dev: %s with %d sessons\n", convert->name, ref_cnt);
+  for (int i = 0; i < ST_MAX_SESSIIONS_PER_CONVERTER; i++) {
+    session = &convert->sessions[i];
     if (!session->session) continue;
     if (session->req.dump) session->req.dump(session->req.priv);
   }
@@ -299,6 +424,7 @@ int st_plugins_dump(struct st_main_impl* impl) {
   struct st_plugin_mgr* mgr = st_get_plugins_mgr(impl);
   struct st22_encode_dev_impl* encode;
   struct st22_decode_dev_impl* decode;
+  struct st20_convert_dev_impl* convert;
 
   st_pthread_mutex_lock(&mgr->lock);
   for (int i = 0; i < ST_MAX_ENCODER_DEV; i++) {
@@ -310,6 +436,11 @@ int st_plugins_dump(struct st_main_impl* impl) {
     decode = mgr->decode_devs[i];
     if (!decode) continue;
     st22_decode_dev_dump(decode);
+  }
+  for (int i = 0; i < ST_MAX_CONVERTER_DEV; i++) {
+    convert = mgr->convert_devs[i];
+    if (!convert) continue;
+    st20_convert_dev_dump(convert);
   }
   st_pthread_mutex_unlock(&mgr->lock);
 
@@ -380,6 +511,38 @@ int st22_decoder_unregister(st22_decoder_dev_handle handle) {
   return 0;
 }
 
+int st20_converter_unregister(st20_converter_dev_handle handle) {
+  struct st20_convert_dev_impl* dev = handle;
+
+  if (dev->type != ST20_SESSION_TYPE_DEV_CONVERT) {
+    err("%s, invalid type %d\n", __func__, dev->type);
+    return -EIO;
+  }
+
+  struct st_main_impl* impl = dev->parnet;
+  struct st_plugin_mgr* mgr = st_get_plugins_mgr(impl);
+  int idx = dev->idx;
+
+  if (mgr->convert_devs[idx] != dev) {
+    err("%s, invalid dev %p\n", __func__, dev);
+    return -EIO;
+  }
+
+  info("%s(%d), unregister %s\n", __func__, idx, dev->name);
+  st_pthread_mutex_lock(&mgr->lock);
+  int ref_cnt = rte_atomic32_read(&dev->ref_cnt);
+  if (ref_cnt) {
+    st_pthread_mutex_unlock(&mgr->lock);
+    err("%s(%d), %s are busy with ref_cnt %d\n", __func__, idx, dev->name, ref_cnt);
+    return -EBUSY;
+  }
+  st_rte_free(dev);
+  mgr->convert_devs[idx] = NULL;
+  st_pthread_mutex_unlock(&mgr->lock);
+
+  return 0;
+}
+
 st22_encoder_dev_handle st22_encoder_register(st_handle st,
                                               struct st22_encoder_dev* dev) {
   struct st_main_impl* impl = st;
@@ -410,6 +573,7 @@ st22_encoder_dev_handle st22_encoder_register(st_handle st,
     encode_dev =
         st_rte_zmalloc_socket(sizeof(*encode_dev), st_socket_id(impl, ST_PORT_P));
     if (!encode_dev) {
+      err("%s, encode_dev malloc fail\n", __func__);
       st_pthread_mutex_unlock(&mgr->lock);
       return NULL;
     }
@@ -465,6 +629,7 @@ st22_decoder_dev_handle st22_decoder_register(st_handle st,
     decode_dev =
         st_rte_zmalloc_socket(sizeof(*decode_dev), st_socket_id(impl, ST_PORT_P));
     if (!decode_dev) {
+      err("%s, decode_dev malloc fail\n", __func__);
       st_pthread_mutex_unlock(&mgr->lock);
       return NULL;
     }
@@ -483,6 +648,63 @@ st22_decoder_dev_handle st22_decoder_register(st_handle st,
     info("%s(%d), %s registered, device %d cap(0x%lx:0x%lx)\n", __func__, i,
          decode_dev->name, dev->target_device, dev->input_fmt_caps, dev->output_fmt_caps);
     return decode_dev;
+  }
+  st_pthread_mutex_unlock(&mgr->lock);
+
+  err("%s, no space, all items are used\n", __func__);
+  return NULL;
+}
+
+st20_converter_dev_handle st20_converter_register(st_handle st,
+                                                  struct st20_converter_dev* dev) {
+  struct st_main_impl* impl = st;
+  struct st_plugin_mgr* mgr = st_get_plugins_mgr(impl);
+  struct st20_convert_dev_impl* convert_dev;
+
+  if (impl->type != ST_SESSION_TYPE_MAIN) {
+    err("%s, invalid type %d\n", __func__, impl->type);
+    return NULL;
+  }
+
+  if (!dev->create_session) {
+    err("%s, pls set create_session\n", __func__);
+    return NULL;
+  }
+  if (!dev->free_session) {
+    err("%s, pls set free_session\n", __func__);
+    return NULL;
+  }
+  if (!dev->notify_frame_available) {
+    err("%s, pls set notify_frame_available\n", __func__);
+    return NULL;
+  }
+
+  st_pthread_mutex_lock(&mgr->lock);
+  for (int i = 0; i < ST_MAX_CONVERTER_DEV; i++) {
+    if (mgr->convert_devs[i]) continue;
+    convert_dev =
+        st_rte_zmalloc_socket(sizeof(*convert_dev), st_socket_id(impl, ST_PORT_P));
+    if (!convert_dev) {
+      err("%s, convert_dev malloc fail\n", __func__);
+      st_pthread_mutex_unlock(&mgr->lock);
+      return NULL;
+    }
+    convert_dev->type = ST20_SESSION_TYPE_DEV_CONVERT;
+    convert_dev->parnet = impl;
+    convert_dev->idx = i;
+    rte_atomic32_set(&convert_dev->ref_cnt, 0);
+    strncpy(convert_dev->name, dev->name, ST_MAX_NAME_LEN - 1);
+    convert_dev->dev = *dev;
+    for (int j = 0; j < ST_MAX_SESSIIONS_PER_CONVERTER; j++) {
+      convert_dev->sessions[j].idx = j;
+      convert_dev->sessions[j].parnet = convert_dev;
+    }
+    mgr->convert_devs[i] = convert_dev;
+    st_pthread_mutex_unlock(&mgr->lock);
+    info("%s(%d), %s registered, device %d cap(0x%lx:0x%lx)\n", __func__, i,
+         convert_dev->name, dev->target_device, dev->input_fmt_caps,
+         dev->output_fmt_caps);
+    return convert_dev;
   }
   st_pthread_mutex_unlock(&mgr->lock);
 
@@ -529,6 +751,29 @@ int st22_decoder_put_frame(st22p_decode_session session,
   struct st22_decode_session_impl* session_impl = session;
 
   if (session_impl->type != ST22_SESSION_TYPE_PIPELINE_DECODE) {
+    err("%s(%d), invalid type %d\n", __func__, session_impl->idx, session_impl->type);
+    return -EIO;
+  }
+
+  return session_impl->req.put_frame(session_impl->req.priv, frame, result);
+}
+
+struct st20_convert_frame_meta* st20_converter_get_frame(st20p_convert_session session) {
+  struct st20_convert_session_impl* session_impl = session;
+
+  if (session_impl->type != ST20_SESSION_TYPE_PIPELINE_CONVERT) {
+    err("%s(%d), invalid type %d\n", __func__, session_impl->idx, session_impl->type);
+    return NULL;
+  }
+
+  return session_impl->req.get_frame(session_impl->req.priv);
+}
+
+int st20_converter_put_frame(st20p_convert_session session,
+                             struct st20_convert_frame_meta* frame, int result) {
+  struct st20_convert_session_impl* session_impl = session;
+
+  if (session_impl->type != ST20_SESSION_TYPE_PIPELINE_CONVERT) {
     err("%s(%d), invalid type %d\n", __func__, session_impl->idx, session_impl->type);
     return -EIO;
   }

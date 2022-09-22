@@ -23,4 +23,6 @@ int st_app_rx_video_sessions_stat(struct st_app_context* ctx);
 
 int st_app_rx_video_sessions_result(struct st_app_context* ctx);
 
+int st_app_rx_video_sessions_pcap(struct st_app_context* ctx);
+
 #endif

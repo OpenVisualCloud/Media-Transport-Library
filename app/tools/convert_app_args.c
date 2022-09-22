@@ -37,8 +37,8 @@ static void conv_app_print_app() {
   printf(" --help        : print this help info\n");
   printf(" --width       : source width\n");
   printf(" --height      : source height\n");
-  printf(" --in_pix_fmt  : yuv422p10be, v210, yuv422rfc4175be10\n");
-  printf(" --out_pix_fmt : yuv422p10be, v210, yuv422rfc4175be10\n");
+  printf(" --in_pix_fmt  : yuv422p10le, v210, yuv422rfc4175be10\n");
+  printf(" --out_pix_fmt : yuv422p10le, v210, yuv422rfc4175be10\n");
   printf(" --i           : input file\n");
   printf(" --o           : output file\n");
   printf("\n");

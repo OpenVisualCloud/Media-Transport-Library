@@ -16,19 +16,19 @@
 
 #include "../src/app_platform.h"
 
-#define FWD_PORT_BDF "0000:af:00.1"
+#define FWD_PORT_BDF "0000:4b:00.1"
 /* local ip address for current bdf port */
-static uint8_t g_fwd_local_ip[ST_IP_ADDR_LEN] = {192, 168, 84, 2};
+static uint8_t g_fwd_local_ip[ST_IP_ADDR_LEN] = {192, 168, 96, 2};
 
 #define RX_ST20_UDP_PORT (20000)
 #define RX_ST20_PAYLOAD_TYPE (112)
-/* source ip address for rx video session, 239.168.84.1 */
-static uint8_t g_rx_video_source_ip[ST_IP_ADDR_LEN] = {239, 168, 85, 20};
+/* source ip address for rx video session, 239.19.96.1 */
+static uint8_t g_rx_video_source_ip[ST_IP_ADDR_LEN] = {239, 19, 96, 1};
 
 #define TX_ST20_UDP_PORT (20000)
 #define TX_ST20_PAYLOAD_TYPE (112)
-/* dst ip address for tx video session, 239.168.0.1 */
-static uint8_t g_tx_st20_dst_ip[ST_IP_ADDR_LEN] = {239, 168, 85, 21};
+/* dst ip address for tx video session, 239.19.96.2 */
+static uint8_t g_tx_st20_dst_ip[ST_IP_ADDR_LEN] = {239, 19, 96, 2};
 
 #define ST20_TX_LOGO_FMT (ST_FRAME_FMT_YUV422RFC4175PG2BE10)
 #define ST20_TX_LOGO_FILE ("logo_rfc4175.yuv")
@@ -61,7 +61,9 @@ struct app_context {
 
   /* logo */
   void* logo_buf;
-  struct st_frame_meta logo_meta;
+  struct st_frame logo_meta;
+
+  bool zero_copy;
 };
 
 static int st20_fwd_open_logo(struct app_context* s, char* file) {
@@ -116,18 +118,19 @@ static int rx_st20_enqueue_frame(struct app_context* s, void* frame, size_t size
   return 0;
 }
 
-static int rx_st20_frame_ready(void* priv, void* frame, struct st20_frame_meta* meta) {
+static int rx_st20_frame_ready(void* priv, void* frame, struct st20_rx_frame_meta* meta) {
   struct app_context* s = (struct app_context*)priv;
 
   if (!s->ready) return -EIO;
 
   /* incomplete frame */
-  if (!st20_is_frame_complete(meta->status)) {
+  if (!st_is_frame_complete(meta->status)) {
     st20_rx_put_framebuff(s->rx_handle, frame);
     return 0;
   }
 
   st_pthread_mutex_lock(&s->wake_mutex);
+  /* rx framebuffer from lib */
   int ret = rx_st20_enqueue_frame(s, frame, meta->frame_total_size);
   if (ret < 0) {
     printf("%s(%d), frame %p dropped\n", __func__, s->idx, frame);
@@ -142,7 +145,8 @@ static int rx_st20_frame_ready(void* priv, void* frame, struct st20_frame_meta* 
   return 0;
 }
 
-static int tx_video_next_frame(void* priv, uint16_t* next_frame_idx, bool* second_field) {
+static int tx_video_next_frame(void* priv, uint16_t* next_frame_idx,
+                               struct st20_tx_frame_meta* meta) {
   struct app_context* s = priv;
   int ret;
   uint16_t consumer_idx = s->tx_framebuff_consumer_idx;
@@ -154,7 +158,6 @@ static int tx_video_next_frame(void* priv, uint16_t* next_frame_idx, bool* secon
     ret = 0;
     framebuff->stat = ST_TX_FRAME_IN_TRANSMITTING;
     *next_frame_idx = consumer_idx;
-    *second_field = false;
     /* point to next */
     consumer_idx++;
     if (consumer_idx >= s->framebuff_cnt) consumer_idx = 0;
@@ -169,10 +172,16 @@ static int tx_video_next_frame(void* priv, uint16_t* next_frame_idx, bool* secon
   return ret;
 }
 
-static int tx_video_frame_done(void* priv, uint16_t frame_idx) {
+static int tx_video_frame_done(void* priv, uint16_t frame_idx,
+                               struct st20_tx_frame_meta* meta) {
   struct app_context* s = priv;
   int ret;
   struct st_tx_frame* framebuff = &s->tx_framebuffs[frame_idx];
+
+  if (s->zero_copy) { /* rx framebuffer put back to lib here */
+    void* frame_addr = st20_tx_get_framebuffer(s->tx_handle, frame_idx);
+    st20_rx_put_framebuff(s->rx_handle, frame_addr);
+  }
 
   st_pthread_mutex_lock(&s->wake_mutex);
   if (ST_TX_FRAME_IN_TRANSMITTING == framebuff->stat) {
@@ -193,7 +202,7 @@ static int tx_video_frame_done(void* priv, uint16_t frame_idx) {
 static void rx_fwd_consume_frame(struct app_context* s, void* frame, size_t frame_size) {
   uint16_t producer_idx;
   struct st_tx_frame* framebuff;
-  struct st_frame_meta tx_frame;
+  struct st_frame tx_frame;
 
   if (frame_size != s->framebuff_size) {
     printf("%s(%d), mismatch frame size %ld %ld\n", __func__, s->idx, frame_size,
@@ -210,10 +219,19 @@ static void rx_fwd_consume_frame(struct app_context* s, void* frame, size_t fram
     return;
   }
 
-  void* frame_addr = st20_tx_get_framebuffer(s->tx_handle, producer_idx);
-  st_memcpy(frame_addr, frame, s->framebuff_size);
+  if (s->zero_copy) {
+    struct st20_ext_frame ext_frame;
+    ext_frame.buf_addr = frame;
+    ext_frame.buf_iova = st_hp_virt2iova(s->st, frame);
+    ext_frame.buf_len = s->framebuff_size;
+    st20_tx_set_ext_frame(s->tx_handle, producer_idx, &ext_frame);
+  } else {
+    void* frame_addr = st20_tx_get_framebuffer(s->tx_handle, producer_idx);
+    st_memcpy(frame_addr, frame, s->framebuff_size);
+  }
+
   if (s->logo_buf) {
-    tx_frame.addr = frame_addr;
+    tx_frame.addr = frame;
     tx_frame.fmt = ST20_TX_LOGO_FMT;
     tx_frame.buffer_size = s->framebuff_size;
     tx_frame.data_size = s->framebuff_size;
@@ -233,7 +251,6 @@ static void rx_fwd_consume_frame(struct app_context* s, void* frame, size_t fram
 
 static void* fwd_thread(void* arg) {
   struct app_context* s = arg;
-  st20_rx_handle rx_handle = s->rx_handle;
   struct st_rx_frame* rx_framebuff;
   int consumer_idx;
 
@@ -249,9 +266,10 @@ static void* fwd_thread(void* arg) {
       continue;
     }
 
-    // printf("%s(%d), frame idx %d\n", __func__, idx, consumer_idx);
     rx_fwd_consume_frame(s, rx_framebuff->frame, rx_framebuff->size);
-    st20_rx_put_framebuff(rx_handle, rx_framebuff->frame);
+    if (!s->zero_copy) /* rx framebuffer put back to lib here */
+      st20_rx_put_framebuff(s->rx_handle, rx_framebuff->frame);
+    /* else, put back after tx done */
     /* point to next */
     rx_framebuff->frame = NULL;
     consumer_idx++;
@@ -330,6 +348,7 @@ int main() {
   for (uint16_t j = 0; j < app.framebuff_cnt; j++) {
     app.tx_framebuffs[j].stat = ST_TX_FRAME_FREE;
   }
+  app.zero_copy = true;
 
   memset(&param, 0, sizeof(param));
   param.num_ports = 1;
@@ -393,6 +412,7 @@ int main() {
   ops_tx.fps = ST_FPS_P59_94;
   ops_tx.fmt = ST20_FMT_YUV_422_10BIT;
   ops_tx.payload_type = TX_ST20_PAYLOAD_TYPE;
+  if (app.zero_copy) ops_tx.flags |= ST20_TX_FLAG_EXT_FRAME;
   ops_tx.framebuff_cnt = fb_cnt;
   ops_tx.get_next_frame = tx_video_next_frame;
   ops_tx.notify_frame_done = tx_video_frame_done;
