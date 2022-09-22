@@ -126,13 +126,13 @@ static uint8_t and0_mask_table_128[16] = {
 };
 
 static uint8_t shuffle1_mask_table_128[16] = {
-    0x80, 2, 1, 0x80, 0x80, 6, 5, 0x80, 0x80, 9, 8, 0x80, 0x80, 13, 12, 0x80,
+    0x80, 2, 1, 0x80, 0x80, 6, 5, 0x80, 0x80, 0x80, 9, 8, 0x80, 13, 12, 0x80,
 };
 
 static uint32_t srlv1_mask_table_128[4] = {
     2,
     4,
-    0,
+    6,
     0,
 };
 
@@ -829,7 +829,6 @@ int st20_rfc4175_422be10_to_v210_avx512(struct st20_rfc4175_422_10_pg2_be* pg_be
   __m128i and1_mask = _mm_loadu_si128((__m128i*)and1_mask_table_128);
 
   __mmask16 k_load = 0x7FFF; /* each __m128i with 3 pg group, 15 bytes */
-  __mmask8 k_l1 = 0x04;      /* shift left for shuffle1_result(epi32)[2] */
 
   int pg_cnt = w * h / 2;
   if (pg_cnt % 3 != 0) {
@@ -846,8 +845,7 @@ int st20_rfc4175_422be10_to_v210_avx512(struct st20_rfc4175_422_10_pg2_be* pg_be
     __m128i srlv0_result = _mm_srlv_epi16(sllv0_result, srlv0_mask);
     __m128i and0_result = _mm_and_si128(srlv0_result, and0_mask);
     __m128i shuffle1_result = _mm_shuffle_epi8(input, shuffle1_mask);
-    __m128i slli1_result = _mm_mask_slli_epi32(shuffle1_result, k_l1, shuffle1_result, 2);
-    __m128i srlv1_result = _mm_srlv_epi32(slli1_result, srlv1_mask);
+    __m128i srlv1_result = _mm_srlv_epi32(shuffle1_result, srlv1_mask);
     __m128i and1_result = _mm_and_si128(srlv1_result, and1_mask);
     __m128i result = _mm_or_si128(and0_result, and1_result);
 
@@ -873,7 +871,6 @@ int st20_rfc4175_422be10_to_v210_avx512_dma(struct st_dma_lender_dev* dma,
   __m128i and1_mask = _mm_loadu_si128((__m128i*)and1_mask_table_128);
 
   __mmask16 k_load = 0x7FFF; /* each __m128i with 3 pg group, 15 bytes */
-  __mmask8 k_l1 = 0x04;      /* shift left for shuffle1_result(epi32)[2] */
 
   int pg_cnt = w * h / 2;
   if (pg_cnt % 3 != 0) {
@@ -939,9 +936,7 @@ int st20_rfc4175_422be10_to_v210_avx512_dma(struct st_dma_lender_dev* dma,
       __m128i srlv0_result = _mm_srlv_epi16(sllv0_result, srlv0_mask);
       __m128i and0_result = _mm_and_si128(srlv0_result, and0_mask);
       __m128i shuffle1_result = _mm_shuffle_epi8(input, shuffle1_mask);
-      __m128i slli1_result =
-          _mm_mask_slli_epi32(shuffle1_result, k_l1, shuffle1_result, 2);
-      __m128i srlv1_result = _mm_srlv_epi32(slli1_result, srlv1_mask);
+      __m128i srlv1_result = _mm_srlv_epi32(shuffle1_result, srlv1_mask);
       __m128i and1_result = _mm_and_si128(srlv1_result, and1_mask);
       __m128i result = _mm_or_si128(and0_result, and1_result);
 
@@ -964,8 +959,7 @@ int st20_rfc4175_422be10_to_v210_avx512_dma(struct st_dma_lender_dev* dma,
     __m128i srlv0_result = _mm_srlv_epi16(sllv0_result, srlv0_mask);
     __m128i and0_result = _mm_and_si128(srlv0_result, and0_mask);
     __m128i shuffle1_result = _mm_shuffle_epi8(input, shuffle1_mask);
-    __m128i slli1_result = _mm_mask_slli_epi32(shuffle1_result, k_l1, shuffle1_result, 2);
-    __m128i srlv1_result = _mm_srlv_epi32(slli1_result, srlv1_mask);
+    __m128i srlv1_result = _mm_srlv_epi32(shuffle1_result, srlv1_mask);
     __m128i and1_result = _mm_and_si128(srlv1_result, and1_mask);
     __m128i result = _mm_or_si128(and0_result, and1_result);
 
