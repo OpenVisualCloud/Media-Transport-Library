@@ -806,9 +806,12 @@ struct st_rx_video_hdr_split_info {
   uint32_t cur_frame_mbuf_idx;
 };
 
+struct st_rx_video_sessions_mgr; /* forward declare */
+
 struct st_rx_video_session_impl {
   int idx; /* index for current session */
-  int sch_idx;
+  struct st_rx_video_sessions_mgr* parnet;
+
   struct st20_rx_ops ops;
   char ops_name[ST_MAX_NAME_LEN];
 
@@ -871,7 +874,6 @@ struct st_rx_video_session_impl {
   struct rte_ring* pkt_lcore_ring;
   rte_atomic32_t pkt_lcore_active;
   rte_atomic32_t pkt_lcore_stopped;
-  struct st_main_impl* parnet; /* for pkt lcore thread */
 
   /* the cpu resource to handle rx, 0: full, 100: cpu is very busy */
   float cpu_busy_score;
@@ -909,6 +911,10 @@ struct st_rx_video_session_impl {
   struct st_rx_video_ebu_info ebu_info;
   struct st_rx_video_ebu_stat ebu;
   struct st_rx_video_ebu_result ebu_result;
+
+  /* ret > 0 if it's handled by DMA */
+  int (*pkt_handler)(struct st_rx_video_session_impl* s, struct rte_mbuf* mbuf,
+                     enum st_session_port s_port, bool ctrl_thread);
 };
 
 struct st_rx_video_sessions_mgr {

@@ -59,7 +59,7 @@ static int arp_receive_request(struct st_main_impl* impl, struct rte_arp_hdr* re
   /* send arp reply packet */
   uint16_t send = rte_eth_tx_burst(port_id, impl->arp.tx_q_id[port], &rpl_pkt, 1);
   if (send < 1) {
-    err("%s(%d), rte_eth_tx_burst fail\n", __func__, port);
+    err_once("%s(%d), rte_eth_tx_burst fail\n", __func__, port);
     rte_pktmbuf_free(rpl_pkt);
   }
 
