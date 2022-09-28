@@ -1024,7 +1024,7 @@ static int rx_audio_ops_check(struct st30_rx_ops* ops) {
       err("%s, invalid rtp_ring_size %d\n", __func__, ops->rtp_ring_size);
       return -EINVAL;
     }
-    if ((ops->sample_size < 0) || (ops->sample_size > ST_PKT_MAX_RTP_BYTES)) {
+    if (ops->sample_size > ST_PKT_MAX_RTP_BYTES) {
       err("%s, invalid sample_size %d\n", __func__, ops->sample_size);
       return -EINVAL;
     }

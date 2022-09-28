@@ -3876,7 +3876,7 @@ void* st22_rx_get_fb_addr(st22_rx_handle handle, uint16_t idx) {
 
   s = s_impl->impl;
 
-  if (idx < 0 || idx >= s->st20_frames_cnt) {
+  if (idx >= s->st20_frames_cnt) {
     err("%s, invalid idx %d, should be in range [0, %d]\n", __func__, idx,
         s->st20_frames_cnt);
     return NULL;

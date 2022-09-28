@@ -1546,7 +1546,7 @@ void* st40_tx_get_framebuffer(st40_tx_handle handle, uint16_t idx) {
   }
 
   s = s_impl->impl;
-  if (idx < 0 || idx >= s->st40_frames_cnt) {
+  if (idx >= s->st40_frames_cnt) {
     err("%s, invalid idx %d, should be in range [0, %d]\n", __func__, idx,
         s->st40_frames_cnt);
     return NULL;

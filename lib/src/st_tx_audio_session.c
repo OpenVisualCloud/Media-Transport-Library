@@ -1440,7 +1440,7 @@ void* st30_tx_get_framebuffer(st30_tx_handle handle, uint16_t idx) {
 
   s = s_impl->impl;
 
-  if (idx < 0 || idx >= s->ops.framebuff_cnt) {
+  if (idx >= s->ops.framebuff_cnt) {
     err("%s, invalid idx %d, should be in range [0, %d]\n", __func__, idx,
         s->ops.framebuff_cnt);
     return NULL;

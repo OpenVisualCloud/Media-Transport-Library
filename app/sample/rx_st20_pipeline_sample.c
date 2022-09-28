@@ -359,7 +359,7 @@ err:
   for (int i = 0; i < session_num; i++) {
     if (app[i]) {
       if (app[i]->handle) st20p_rx_free(app[i]->handle);
-      if (app[i]->dma_mem) st_dma_mem_free(dev_handle, app[i]->dma_mem);
+      if (dev_handle && app[i]->dma_mem) st_dma_mem_free(dev_handle, app[i]->dma_mem);
       if (app[i]->ext_frames) free(app[i]->ext_frames);
       free(app[i]);
     }

@@ -1383,6 +1383,11 @@ int st_app_parse_json(st_json_context_t* ctx, const char* filename) {
   int num_interfaces = json_object_array_length(interfaces_array);
   ctx->interfaces =
       (st_json_interface_t*)st_app_zmalloc(num_interfaces * sizeof(st_json_interface_t));
+  if (!ctx->interfaces) {
+    err("%s, failed to allocate interfaces\n", __func__);
+    ret = -ST_JSON_NULL;
+    goto error;
+  }
   for (int i = 0; i < num_interfaces; ++i) {
     ret = st_json_parse_interfaces(json_object_array_get_idx(interfaces_array, i),
                                    &ctx->interfaces[i]);
@@ -1427,14 +1432,39 @@ int st_app_parse_json(st_json_context_t* ctx, const char* filename) {
     /* allocate tx sessions */
     ctx->tx_video_sessions = (st_json_video_session_t*)st_app_zmalloc(
         ctx->tx_video_session_cnt * sizeof(st_json_video_session_t));
+    if (!ctx->tx_video_sessions) {
+      err("%s, failed to allocate tx_video_sessions\n", __func__);
+      ret = -ST_JSON_NULL;
+      goto error;
+    }
     ctx->tx_audio_sessions = (st_json_audio_session_t*)st_app_zmalloc(
         ctx->tx_audio_session_cnt * sizeof(st_json_audio_session_t));
+    if (!ctx->tx_audio_sessions) {
+      err("%s, failed to allocate tx_audio_sessions\n", __func__);
+      ret = -ST_JSON_NULL;
+      goto error;
+    }
     ctx->tx_anc_sessions = (st_json_ancillary_session_t*)st_app_zmalloc(
         ctx->tx_anc_session_cnt * sizeof(st_json_ancillary_session_t));
+    if (!ctx->tx_anc_sessions) {
+      err("%s, failed to allocate tx_anc_sessions\n", __func__);
+      ret = -ST_JSON_NULL;
+      goto error;
+    }
     ctx->tx_st22p_sessions = (st_json_st22p_session_t*)st_app_zmalloc(
         ctx->tx_st22p_session_cnt * sizeof(st_json_st22p_session_t));
+    if (!ctx->tx_st22p_sessions) {
+      err("%s, failed to allocate tx_st22p_sessions\n", __func__);
+      ret = -ST_JSON_NULL;
+      goto error;
+    }
     ctx->tx_st20p_sessions = (st_json_st20p_session_t*)st_app_zmalloc(
         ctx->tx_st20p_session_cnt * sizeof(st_json_st20p_session_t));
+    if (!ctx->tx_st20p_sessions) {
+      err("%s, failed to allocate tx_st20p_sessions\n", __func__);
+      ret = -ST_JSON_NULL;
+      goto error;
+    }
 
     int num_inf = 0;
     int num_video = 0;
@@ -1692,14 +1722,39 @@ int st_app_parse_json(st_json_context_t* ctx, const char* filename) {
     /* allocate tx sessions */
     ctx->rx_video_sessions = (st_json_video_session_t*)st_app_zmalloc(
         ctx->rx_video_session_cnt * sizeof(st_json_video_session_t));
+    if (!ctx->rx_video_sessions) {
+      err("%s, failed to allocate rx_video_sessions\n", __func__);
+      ret = -ST_JSON_NULL;
+      goto error;
+    }
     ctx->rx_audio_sessions = (st_json_audio_session_t*)st_app_zmalloc(
         ctx->rx_audio_session_cnt * sizeof(st_json_audio_session_t));
+    if (!ctx->rx_audio_sessions) {
+      err("%s, failed to allocate rx_audio_sessions\n", __func__);
+      ret = -ST_JSON_NULL;
+      goto error;
+    }
     ctx->rx_anc_sessions = (st_json_ancillary_session_t*)st_app_zmalloc(
         ctx->rx_anc_session_cnt * sizeof(st_json_ancillary_session_t));
+    if (!ctx->rx_anc_sessions) {
+      err("%s, failed to allocate rx_anc_sessions\n", __func__);
+      ret = -ST_JSON_NULL;
+      goto error;
+    }
     ctx->rx_st22p_sessions = (st_json_st22p_session_t*)st_app_zmalloc(
         ctx->rx_st22p_session_cnt * sizeof(st_json_st22p_session_t));
+    if (!ctx->rx_st22p_sessions) {
+      err("%s, failed to allocate rx_st22p_sessions\n", __func__);
+      ret = -ST_JSON_NULL;
+      goto error;
+    }
     ctx->rx_st20p_sessions = (st_json_st20p_session_t*)st_app_zmalloc(
         ctx->rx_st20p_session_cnt * sizeof(st_json_st20p_session_t));
+    if (!ctx->rx_st20p_sessions) {
+      err("%s, failed to allocate rx_st20p_sessions\n", __func__);
+      ret = -ST_JSON_NULL;
+      goto error;
+    }
 
     int num_inf = 0;
     int num_video = 0;

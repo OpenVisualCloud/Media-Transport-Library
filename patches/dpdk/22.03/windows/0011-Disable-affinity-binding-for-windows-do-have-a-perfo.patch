@@ -1,0 +1,28 @@
+From d1ea490218d7d877ba050e83dfa6cded2f015ccc Mon Sep 17 00:00:00 2001
+From: qiaoliu <qiao.liu@intel.com>
+Date: Thu, 22 Sep 2022 09:13:48 +0800
+Subject: [PATCH 11/11] Disable affinity binding for windows do have a
+ performance drop issue with neighbour CPU
+
+---
+ lib/eal/windows/eal.c | 4 ----
+ 1 file changed, 4 deletions(-)
+
+diff --git a/lib/eal/windows/eal.c b/lib/eal/windows/eal.c
+index 474067e45f..e101ce36c6 100644
+--- a/lib/eal/windows/eal.c
++++ b/lib/eal/windows/eal.c
+@@ -422,10 +422,6 @@ rte_eal_init(int argc, char **argv)
+ 		/* create a thread for each lcore */
+ 		if (eal_thread_create(&lcore_config[i].thread_id) != 0)
+ 			rte_panic("Cannot create thread\n");
+-		ret = pthread_setaffinity_np(lcore_config[i].thread_id,
+-			sizeof(rte_cpuset_t), &lcore_config[i].cpuset);
+-		if (ret != 0)
+-			RTE_LOG(DEBUG, EAL, "Cannot set affinity\n");
+ 	}
+ 
+ 	/* Initialize services so drivers can register services during probe. */
+-- 
+2.17.1
+

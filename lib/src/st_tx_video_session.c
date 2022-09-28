@@ -2762,7 +2762,7 @@ int st20_tx_set_ext_frame(st20_tx_handle handle, uint16_t idx,
     return -EIO;
   }
 
-  if (idx < 0 || idx >= s->st20_frames_cnt) {
+  if (idx >= s->st20_frames_cnt) {
     err("%s, invalid idx %d, should be in range [0, %d]\n", __func__, idx,
         s->st20_frames_cnt);
     return -EIO;
@@ -2798,7 +2798,7 @@ void* st20_tx_get_framebuffer(st20_tx_handle handle, uint16_t idx) {
 
   s = s_impl->impl;
 
-  if (idx < 0 || idx >= s->st20_frames_cnt) {
+  if (idx >= s->st20_frames_cnt) {
     err("%s, invalid idx %d, should be in range [0, %d]\n", __func__, idx,
         s->st20_frames_cnt);
     return NULL;
@@ -3238,7 +3238,7 @@ void* st22_tx_get_fb_addr(st22_tx_handle handle, uint16_t idx) {
 
   s = s_impl->impl;
 
-  if (idx < 0 || idx >= s->st20_frames_cnt) {
+  if (idx >= s->st20_frames_cnt) {
     err("%s, invalid idx %d, should be in range [0, %d]\n", __func__, idx,
         s->st20_frames_cnt);
     return NULL;

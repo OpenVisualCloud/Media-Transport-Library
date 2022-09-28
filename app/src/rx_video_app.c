@@ -53,8 +53,10 @@ static void app_rx_video_consume_frame(struct st_app_rx_video_session* s, void* 
         st_memcpy(d->front_frame, frame, d->front_frame_size);
       else if (s->st20_pg.fmt == ST20_FMT_YUV_422_10BIT)
         st20_rfc4175_422be10_to_422le8(frame, d->front_frame, s->width, s->height);
-      else /* fmt mismatch*/
+      else /* fmt mismatch*/ {
+        st_pthread_mutex_unlock(&d->display_frame_mutex);
         return;
+      }
       st_pthread_mutex_unlock(&d->display_frame_mutex);
       st_pthread_mutex_lock(&d->display_wake_mutex);
       st_pthread_cond_signal(&d->display_wake_cond);

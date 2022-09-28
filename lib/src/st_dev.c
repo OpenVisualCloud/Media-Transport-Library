@@ -1586,7 +1586,7 @@ int st_dev_request_rx_queue(struct st_main_impl* impl, enum st_port port,
   st_pthread_mutex_unlock(&inf->rx_queues_mutex);
 
   err("%s(%d), fail to find free rx queue for %s\n", __func__, port,
-      flow->hdr_split ? "hdr_split" : "normal");
+      flow && flow->hdr_split ? "hdr_split" : "normal");
   return -ENOMEM;
 }
 

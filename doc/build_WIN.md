@@ -79,52 +79,7 @@ patch -p1 < {path_to_repo_dir}/libraries.media.st2110.kahawai/patches/dpdk/{dpdk
 patch -p1 < {path_to_repo_dir}/libraries.media.st2110.kahawai/patches/dpdk/{dpdk_dir_ver}/windows/0008-Windows-need-set-the-timer-resolution-to-maximum-to-.patch
 patch -p1 < {path_to_repo_dir}/libraries.media.st2110.kahawai/patches/dpdk/{dpdk_dir_ver}/windows/0009-Windows-dsa-driver-need-set-to-reset-status-first.patch
 patch -p1 < {path_to_repo_dir}/libraries.media.st2110.kahawai/patches/dpdk/{dpdk_dir_ver}/windows/0010-Windows-version-currently-no-BPF-support.patch
-```
-For DPDK version 21.11 patches
-```
-patch -p1 < {path_to_repo_dir}/libraries.media.st2110.kahawai/patches/dpdk/{dpdk_dir_ver}/0001-build-enable-IEEE1588-PTP-option.patch
-patch -p1 < {path_to_repo_dir}/libraries.media.st2110.kahawai/patches/dpdk/{dpdk_dir_ver}/0002-Change-to-enable-PTP.patch
-patch -p1 < {path_to_repo_dir}/libraries.media.st2110.kahawai/patches/dpdk/{dpdk_dir_ver}/0003-net-ice-support-max-burst-size-configuration.patch
-patch -p1 < {path_to_repo_dir}/libraries.media.st2110.kahawai/patches/dpdk/{dpdk_dir_ver}/0004-eanble-PF-ICE-rate-limit.patch
-patch -p1 < {path_to_repo_dir}/libraries.media.st2110.kahawai/patches/dpdk/{dpdk_dir_ver}/0005-update-VF-rate-limit.patch
-patch -p1 < {path_to_repo_dir}/libraries.media.st2110.kahawai/patches/dpdk/{dpdk_dir_ver}/0006-net-iavf-support-max-burst-size-configuration.patch
-patch -p1 < {path_to_repo_dir}/libraries.media.st2110.kahawai/patches/dpdk/{dpdk_dir_ver}/0007-pcapng-add-ns-timestamp-for-copy-api.patch
-patch -p1 < {path_to_repo_dir}/libraries.media.st2110.kahawai/patches/dpdk/{dpdk_dir_ver}/0008-net-ice-support-256-queues.patch
-patch -p1 < {path_to_repo_dir}/libraries.media.st2110.kahawai/patches/dpdk/{dpdk_dir_ver}/0009-net-iavf-refine-queue-rate-limit-configure.patch
-patch -p1 < {path_to_repo_dir}/libraries.media.st2110.kahawai/patches/dpdk/{dpdk_dir_ver}/windows/0001-Add-DDP-package-load-support-in-windows.patch
-patch -p1 < {path_to_repo_dir}/libraries.media.st2110.kahawai/patches/dpdk/{dpdk_dir_ver}/windows/0002-Change-list-remove-and-add-position-to-avoid-race-co.patch
-patch -p1 < {path_to_repo_dir}/libraries.media.st2110.kahawai/patches/dpdk/{dpdk_dir_ver}/windows/0003-Mingw-compiler-do-have-same-implementation.patch
-patch -p1 < {path_to_repo_dir}/libraries.media.st2110.kahawai/patches/dpdk/{dpdk_dir_ver}/windows/0004-Mingw-do-have-pthread-implementation-change-to-adapt.patch
-patch -p1 < {path_to_repo_dir}/libraries.media.st2110.kahawai/patches/dpdk/{dpdk_dir_ver}/windows/0005-To-change-for-windows-trained-pad_interval-pass-in-v.patch
-patch -p1 < {path_to_repo_dir}/libraries.media.st2110.kahawai/patches/dpdk/{dpdk_dir_ver}/windows/0006-Add-Windows-10-May-2019-and-newer-version-1GB-huge-p.patch
-patch -p1 < {path_to_repo_dir}/libraries.media.st2110.kahawai/patches/dpdk/{dpdk_dir_ver}/windows/0007-Enable-descriptor-prefetch-for-CBDMA-version-3.4.patch
-patch -p1 < {path_to_repo_dir}/libraries.media.st2110.kahawai/patches/dpdk/{dpdk_dir_ver}/windows/0008-Windows-need-set-the-timer-resolution-to-maximum-to-.patch
-patch -p1 < {path_to_repo_dir}/libraries.media.st2110.kahawai/patches/dpdk/{dpdk_dir_ver}/windows/0009-Windows-dsa-driver-need-set-to-reset-status-first.patch
-```
-
-For DPDK version 22.03 patches
-```
-patch -p1 < {path_to_repo_dir}/libraries.media.st2110.kahawai/patches/dpdk/{dpdk_dir_ver}/0001-build-enable-IEEE1588-PTP-option.patch
-patch -p1 < {path_to_repo_dir}/libraries.media.st2110.kahawai/patches/dpdk/{dpdk_dir_ver}/0002-Change-to-enable-PTP.patch
-patch -p1 < {path_to_repo_dir}/libraries.media.st2110.kahawai/patches/dpdk/{dpdk_dir_ver}/0003-net-ice-support-max-burst-size-configuration.patch
-patch -p1 < {path_to_repo_dir}/libraries.media.st2110.kahawai/patches/dpdk/{dpdk_dir_ver}/0004-eanble-PF-ICE-rate-limit.patch
-patch -p1 < {path_to_repo_dir}/libraries.media.st2110.kahawai/patches/dpdk/{dpdk_dir_ver}/0005-update-VF-rate-limit.patch
-patch -p1 < {path_to_repo_dir}/libraries.media.st2110.kahawai/patches/dpdk/{dpdk_dir_ver}/0006-net-iavf-support-max-burst-size-configuration.patch
-patch -p1 < {path_to_repo_dir}/libraries.media.st2110.kahawai/patches/dpdk/{dpdk_dir_ver}/0007-pcapng-add-ns-timestamp-for-copy-api.patch
-patch -p1 < {path_to_repo_dir}/libraries.media.st2110.kahawai/patches/dpdk/{dpdk_dir_ver}/0008-net-ice-support-256-queues.patch
-patch -p1 < {path_to_repo_dir}/libraries.media.st2110.kahawai/patches/dpdk/{dpdk_dir_ver}/0009-net-iavf-refine-queue-rate-limit-configure.patch
-patch -p1 < {path_to_repo_dir}/libraries.media.st2110.kahawai/patches/dpdk/{dpdk_dir_ver}/0010-net-af_xdp-parse-numa-node-id-from-sysfs.patch
-patch -p1 < {path_to_repo_dir}/libraries.media.st2110.kahawai/patches/dpdk/{dpdk_dir_ver}/0011-Add-support-for-i225-IT-PHY.patch
-patch -p1 < {path_to_repo_dir}/libraries.media.st2110.kahawai/patches/dpdk/{dpdk_dir_ver}/windows/0001-Add-DDP-package-load-support-in-windows.patch
-patch -p1 < {path_to_repo_dir}/libraries.media.st2110.kahawai/patches/dpdk/{dpdk_dir_ver}/windows/0002-Change-list-remove-and-add-position-to-avoid-race-co.patch
-patch -p1 < {path_to_repo_dir}/libraries.media.st2110.kahawai/patches/dpdk/{dpdk_dir_ver}/windows/0003-Mingw-compiler-do-have-same-implementation.patch
-patch -p1 < {path_to_repo_dir}/libraries.media.st2110.kahawai/patches/dpdk/{dpdk_dir_ver}/windows/0004-Mingw-do-have-pthread-implementation-change-to-adapt.patch
-patch -p1 < {path_to_repo_dir}/libraries.media.st2110.kahawai/patches/dpdk/{dpdk_dir_ver}/windows/0005-To-change-for-windows-trained-pad_interval-pass-in-v.patch
-patch -p1 < {path_to_repo_dir}/libraries.media.st2110.kahawai/patches/dpdk/{dpdk_dir_ver}/windows/0006-Add-Windows-10-May-2019-and-newer-version-1GB-huge-p.patch
-patch -p1 < {path_to_repo_dir}/libraries.media.st2110.kahawai/patches/dpdk/{dpdk_dir_ver}/windows/0007-Enable-descriptor-prefetch-for-CBDMA-version-3.4.patch
-patch -p1 < {path_to_repo_dir}/libraries.media.st2110.kahawai/patches/dpdk/{dpdk_dir_ver}/windows/0008-Windows-need-set-the-timer-resolution-to-maximum-to-.patch
-patch -p1 < {path_to_repo_dir}/libraries.media.st2110.kahawai/patches/dpdk/{dpdk_dir_ver}/windows/0009-Windows-dsa-driver-need-set-to-reset-status-first.patch
-patch -p1 < {path_to_repo_dir}/libraries.media.st2110.kahawai/patches/dpdk/{dpdk_dir_ver}/windows/0010-Windows-version-currently-no-BPF-support.patch
+patch -p1 < {path_to_repo_dir}/libraries.media.st2110.kahawai/patches/dpdk/{dpdk_dir_ver}/windows/0011-Remove-affinity-binding-for-windows-will-have-perfor.patch
 ```
 
 ### 3.2 Build and install DPDK

@@ -4,10 +4,11 @@
 * License: update to BSD-3
 * dpdk: update DPDK to v22.07
 * ice: update driver to 1.9.11
+* vf: add SRIOV based virtual NIC support, see vf.md.
+* vm: add SRIOV+KVM based virtulization support, see vm.md.
 * CSC: Color format SIMD convert API from CPU little endian format to RFC4175 YUV422 10bit BE, see st_convert_api.h.
 * AF_XDP: introduce AF_XDP PMD experimental support, see af_xdp.md.
 * pipeline: introduce pipeline friendly API for both st20 tx and rx, see st_pipeline_api.h for detail.
-* tasklet: support unregister now.
 * iova: add map/unmap support for IO device, see st_dma_map and st_dma_unmap.
 * Header split: introduce hdr split offload experimental support, see header_split.md.
 * Ext frame: external frame mode to support user allocated memory, see st20_ext_frame and ST20_TX_FLAG_EXT_FRAME/ST20P_TX_FLAG_EXT_FRAME.
@@ -17,7 +18,6 @@
 * API: change st20_frame_meta to st20_rx_frame_meta, also add st20_tx_frame_meta for get_next_frame of st20 tx.
 * API: change st_frame_meta to st_frame, also change the callback arg of st20p.notify_frame_done from void* to struct st_frame*.
 * plugin: add kahawai as a plugin to OBS, only rx path now.
-* tasklet: add thread and sleep option for core usage, see ST_FLAG_TASKLET_THREAD and ST_FLAG_TASKLET_SLEEP.
 * fps: add 120(119.88) fps support, see ST_FPS_P119_88.
 
 ## Change log for 22.06:
