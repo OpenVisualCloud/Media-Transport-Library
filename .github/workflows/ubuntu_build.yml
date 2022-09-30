@@ -1,6 +1,6 @@
-name: Ubuntu build.
+name: Ubuntu build
 
-on: [push]
+on: [push, pull_request]
 
 env:
   # Customize the env if
@@ -15,6 +15,10 @@ jobs:
 
     steps:
     - uses: actions/checkout@v3
+    - uses: DoozyX/clang-format-lint-action@v0.14
+      with:
+        source: '.'
+        extensions: 'hpp,h,cpp,c,cc'
 
     - name: Install the build dependency
       run: sudo apt-get install git gcc meson python3 python3-pip pkg-config libnuma-dev libjson-c-dev libpcap-dev libgtest-dev libsdl2-dev libsdl2-ttf-dev libssl-dev
