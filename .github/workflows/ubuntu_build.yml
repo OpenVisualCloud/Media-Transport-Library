@@ -22,5 +22,13 @@ jobs:
     - name: Install the python package
       run: sudo pip install pyelftools ninja
 
+    - name: Git config
+      run: |
+        git config --global user.email "you@example.com"
+        git config --global user.name "Your Name"
+
+    - name: Build dpdk
+      run: ./script/build_dpdk.sh
+
     - name: Build
       run: ./build.sh
