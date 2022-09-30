@@ -3,7 +3,7 @@
  */
 
 /**
- * @file st30_dpdk_api.h
+ * @file st20_dpdk_api.h
  *
  * Interfaces to Intel(R) Media ST2110-20 Streaming Library
  *
@@ -1332,8 +1332,8 @@ int st20_rx_get_framebuffer_count(st20_rx_handle handle);
  * @param frame
  *   The framebuffer pointer.
  * @return
- *   - 0: Success, rx st2110-20(video) session freed.
- *   - <0: Error code of the rx st2110-20(video) session free.
+ *   - 0: Success.
+ *   - <0: Error code.
  */
 int st20_rx_put_framebuff(st20_rx_handle handle, void* frame);
 
@@ -1494,8 +1494,8 @@ void st22_rx_put_mbuf(st22_rx_handle handle, void* mbuf);
  * @param frame
  *   The framebuffer pointer.
  * @return
- *   - 0: Success, rx st2110-22(video) session freed.
- *   - <0: Error code of the rx st2110-22(video) session free.
+ *   - 0: Success.
+ *   - <0: Error code.
  */
 int st22_rx_put_framebuff(st22_rx_handle handle, void* frame);
 

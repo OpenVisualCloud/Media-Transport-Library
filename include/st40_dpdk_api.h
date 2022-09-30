@@ -3,7 +3,7 @@
  */
 
 /**
- * @file st_dpdk_api.h
+ * @file st40_dpdk_api.h
  *
  * Interfaces to Intel(R) Media ST2110-40 Streaming Library
  *

@@ -1,0 +1,38 @@
+{
+    "interfaces": [
+        {
+            "name": "0000:af:01.2",
+            "ip": "192.168.17.101"
+        },
+        {
+            "name": "0000:af:01.3",
+            "ip": "192.168.17.102"
+        }
+    ],
+    "tx_sessions": [
+        {
+            "dip": [
+                "239.168.85.20",
+                "239.168.86.20"
+            ],
+            "interface": [
+                0,
+				1
+            ],
+            "video": [
+                {
+                    "replicas": 1,
+                    "type": "frame",
+                    "pacing": "gap",
+                    "packing": "BPM",
+                    "start_port": 20000,
+                    "payload_type": 112,
+                    "tr_offset": "default",
+                    "video_format": "i1080p59",
+                    "pg_format": "YUV_422_10bit",
+                    "video_url": "./test.yuv"
+                }
+            ],
+        }
+    ],
+}

@@ -548,8 +548,8 @@ int st30_rx_free(st30_rx_handle handle);
  * @param frame
  *   The framebuffer pointer.
  * @return
- *   - 0: Success, rx st2110-30(audio) session freed.
- *   - <0: Error code of the rx st2110-30(audio) session free.
+ *   - 0: Success.
+ *   - <0: Error code.
  */
 int st30_rx_put_framebuff(st30_rx_handle handle, void* frame);
 

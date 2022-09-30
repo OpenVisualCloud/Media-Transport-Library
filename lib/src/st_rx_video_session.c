@@ -3124,7 +3124,7 @@ int st_rx_video_sessions_sch_init(struct st_main_impl* impl, struct st_sch_impl*
 
   if (sch->rx_video_init) return 0;
 
-  /* create t video context */
+  /* create video context */
   ret = rvs_mgr_init(impl, sch, &sch->rx_video_mgr);
   if (ret < 0) {
     err("%s(%d), st_rvs_mgr_init fail %d\n", __func__, idx, ret);
@@ -3679,7 +3679,7 @@ st22_rx_handle st22_rx_create(st_handle st, struct st22_rx_ops* ops) {
     return NULL;
   }
 
-  /* reuse st20 rtp type */
+  /* reuse st20 type */
   memset(&st20_ops, 0, sizeof(st20_ops));
   st20_ops.name = ops->name;
   st20_ops.priv = ops->priv;

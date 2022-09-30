@@ -218,6 +218,12 @@ executable('RxSt20PipelineSample', pipeline_rx_st20_sample_sources,
   dependencies: [libst_dpdk, libpthread]
 )
 
+executable('RxSt20RedundantSample', redundant_rx_st20_sample_sources,
+  c_args : app_c_args,
+  link_args: app_ld_args,
+  dependencies: [libst_dpdk, libpthread]
+)
+
 executable('DmaSample', dma_sample_sources,
   c_args : app_c_args,
   link_args: app_ld_args,

@@ -1,0 +1,139 @@
+/* SPDX-License-Identifier: BSD-3-Clause
+ * Copyright(c) 2022 Intel Corporation
+ */
+
+/**
+ * @file st20_redundant_api.h
+ *
+ * Interfaces to Intel(R) Media ST2110-20 Streaming Library
+ *
+ */
+
+#include <st20_dpdk_api.h>
+
+#ifndef _ST20_REDUNDANT_API_HEAD_H_
+#define _ST20_REDUNDANT_API_HEAD_H_
+
+#if defined(__cplusplus)
+extern "C" {
+#endif
+
+/** Handle to rx st2110-22 pipeline session of lib */
+typedef struct st20r_rx_ctx* st20r_rx_handle;
+
+/**
+ * Flag bit in flags of struct st20r_rx_ops, for non ST_PMD_DPDK_USER.
+ * If set, it's application duty to set the rx flow(queue) and muticast join/drop.
+ * Use st20p_rx_get_queue_meta to get the queue meta(queue number etc) info.
+ */
+#define ST20R_RX_FLAG_DATA_PATH_ONLY (ST_BIT32(0))
+/**
+ * Flag bit in flags of struct st20r_rx_ops.
+ * If set, lib will pass the incomplete frame to app also.
+ * User can check st_frame_status data for the frame integrity
+ */
+#define ST20R_RX_FLAG_RECEIVE_INCOMPLETE_FRAME (ST_BIT32(16))
+/**
+ * Flag bit in flags of struct st20r_rx_ops.
+ * If set, lib will try to allocate DMA memory copy offload from
+ * dma_dev_port(st_init_params) list.
+ * Pls note it could fallback to CPU if no DMA device is available.
+ */
+#define ST20R_RX_FLAG_DMA_OFFLOAD (ST_BIT32(17))
+
+/**
+ * The structure describing how to create a rx st2110-20(redundant) session.
+ * Frame based.
+ */
+struct st20r_rx_ops {
+  /** name */
+  const char* name;
+  /** private data to the callback function */
+  void* priv;
+  /** source IP address of sender */
+  uint8_t sip_addr[ST_PORT_MAX][ST_IP_ADDR_LEN];
+  /** num of ports this session attached to, must be 2 */
+  uint8_t num_port;
+  /** Pcie BDF path like 0000:af:00.0, should align to BDF of st_init */
+  char port[ST_PORT_MAX][ST_PORT_MAX_LEN];
+  /** UDP port number */
+  uint16_t udp_port[ST_PORT_MAX];
+
+  /** Sender pacing type */
+  enum st21_pacing pacing;
+  /** Session packing mode */
+  enum st20_packing packing;
+  /** Session resolution width */
+  uint32_t width;
+  /** Session resolution height */
+  uint32_t height;
+  /** Session resolution fps */
+  enum st_fps fps;
+  /** Session resolution format */
+  enum st20_fmt fmt;
+  /** 7 bits payload type define in RFC3550 */
+  uint8_t payload_type;
+  /** flags, value in ST20R_RX_FLAG_* */
+  uint32_t flags;
+  /**
+   * the ST20_TYPE_FRAME_LEVEL frame buffer count requested,
+   * should be in range [2, ST20_FB_MAX_COUNT].
+   */
+  uint16_t framebuff_cnt;
+  /**
+   * ST20_TYPE_FRAME_LEVEL callback when lib receive one frame.
+   * frame: point to the address of the frame buf.
+   * meta: point to the meta data.
+   * return:
+   *   - 0: if app consume the frame successful. App should call st20r_rx_put_frame
+   * to return the frame when it finish the handling
+   *   < 0: the error code if app cann't handle, lib will free the frame then.
+   * Only for ST20_TYPE_FRAME_LEVEL/ST20_TYPE_SLICE_LEVEL.
+   * And only non-block method can be used in this callback as it run from lcore tasklet
+   * routine.
+   */
+  int (*notify_frame_ready)(void* priv, void* frame, struct st20_rx_frame_meta* meta);
+};
+
+/**
+ * Create one rx st2110-20(redundant) session.
+ *
+ * @param st
+ *   The handle to the media streaming device context.
+ * @param ops
+ *   The pointer to the structure describing how to create a rx st2110-20(video) session.
+ * @return
+ *   - NULL on error.
+ *   - Otherwise, the handle to the rx st2110-20(redundant) session.
+ */
+st20r_rx_handle st20r_rx_create(st_handle st, struct st20r_rx_ops* ops);
+
+/**
+ * Free the rx st2110-20(redundant) session.
+ *
+ * @param handle
+ *   The handle to the rx st2110-20(redundant) session.
+ * @return
+ *   - 0: Success.
+ *   - <0: Error code.
+ */
+int st20r_rx_free(st20r_rx_handle handle);
+
+/**
+ * Put back the received buff get from notify_frame_ready.
+ *
+ * @param handle
+ *   The handle to the rx st2110-20(redundant) session.
+ * @param frame
+ *   The framebuffer pointer.
+ * @return
+ *   - 0: Success.
+ *   - <0: Error code.
+ */
+int st20r_rx_put_frame(st20r_rx_handle handle, void* frame);
+
+#if defined(__cplusplus)
+}
+#endif
+
+#endif

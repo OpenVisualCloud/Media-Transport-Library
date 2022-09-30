@@ -42,3 +42,4 @@ endif
 endif
 
 subdir('pipeline')
+subdir('redundant')

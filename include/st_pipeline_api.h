@@ -536,7 +536,7 @@ struct st20p_rx_ops {
   const char* name;
   /** private data to the callback function */
   void* priv;
-  /** tx port info */
+  /** rx port info */
   struct st_rx_port port;
   /** flags, value in ST20P_RX_FLAG_* */
   uint32_t flags;
