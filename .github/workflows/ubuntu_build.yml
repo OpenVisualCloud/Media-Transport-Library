@@ -17,12 +17,10 @@ jobs:
     - uses: actions/checkout@v3
 
     - name: Install the build dependency
-      run: apt-get install git gcc meson python3 python3-pip pkg-config libnuma-dev libjson-c-dev libpcap-dev libgtest-dev libsdl2-dev libsdl2-ttf-dev libssl-dev
+      run: sudo apt-get install git gcc meson python3 python3-pip pkg-config libnuma-dev libjson-c-dev libpcap-dev libgtest-dev libsdl2-dev libsdl2-ttf-dev libssl-dev
 
     - name: Install the python package
-      run: pip install pyelftools ninja
+      run: sudo pip install pyelftools ninja
 
     - name: Build
-      working-directory: ${{runner.workspace}}
-      shell: bash
       run: ./build.sh
