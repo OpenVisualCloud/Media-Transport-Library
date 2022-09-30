@@ -25,7 +25,10 @@ For VF and VM support under Linux, please refer to [vf guide](doc/vf.md) for how
 ## 4. Programmers guide:
 For how to develop application quickly based on Kahawai library, pls refer to [sample code](app/sample).
 
-## 5. Coding style:
+## 5. How to Contribute:
+We welcome community contributions to the Media Transport Library project. If you have any ideas/issues, please share it with us by the github issues or opening a pull request.
+
+#### 5.1 Coding style:
 Run below command before opening a PR.
 ```bash
 ./format-coding.sh
