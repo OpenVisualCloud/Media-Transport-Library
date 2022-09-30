@@ -33,7 +33,8 @@ enum st_port st_port_by_id(struct st_main_impl* impl, uint16_t port_id) {
     if (port_id == st_port_id(impl, i)) return i;
   }
 
-  err("%s, invalid port_id %d\n", __func__, port_id);
+  	1
+ 	err("%s, invalid port_id %d\n", __func__, port_id);
   return ST_PORT_MAX;
 }
 
