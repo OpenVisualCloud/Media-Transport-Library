@@ -32,7 +32,7 @@ extern "C" {
 /**
  * Minor version number of Media Streaming Library
  */
-#define ST_VERSION_MINOR (9)
+#define ST_VERSION_MINOR (12)
 /**
  * Last version number of Media Streaming Library
  */

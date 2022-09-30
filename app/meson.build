@@ -1,7 +1,7 @@
 # SPDX-License-Identifier: BSD-3-Clause
 # Copyright 2022 Intel Corporation
 
-project('Intel(R) ST DPDK sample app', 'c', default_options: ['c_std=gnu11', 'buildtype=release'], version: '22.09',)
+project('Intel(R) ST DPDK sample app', 'c', default_options: ['c_std=gnu11', 'buildtype=release'], version: '22.12',)
 
 # allow experimental api
 add_global_arguments('-DALLOW_EXPERIMENTAL_API', language : 'c')
