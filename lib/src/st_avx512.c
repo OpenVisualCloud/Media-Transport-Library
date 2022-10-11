@@ -1775,8 +1775,345 @@ int st20_v210_to_rfc4175_422be10_avx512_dma(struct st_dma_lender_dev* dma,
 
   return 0;
 }
-
 /* end st20_v210_to_rfc4175_422be10_avx512 */
+
+/* begin st20_rfc4175_422be10_to_y210_avx512 */
+static uint8_t rfc4175be_to_y210_shuffle_tbl_128[16] = {
+    2,     1,     1,     0,     4,     3,     3,     2,     /* pg0 */
+    2 + 5, 1 + 5, 1 + 5, 0 + 5, 4 + 5, 3 + 5, 3 + 5, 2 + 5, /* pg1 */
+};
+
+static uint16_t rfc4175be_to_y210_sllv_tbl_128[8] = {
+    2, 0, 6, 4, 2, 0, 6, 4,
+};
+
+static uint16_t rfc4175be_to_y210_and_tbl_128[8] = {
+    0xFFC0, 0xFFC0, 0xFFC0, 0xFFC0, 0xFFC0, 0xFFC0, 0xFFC0, 0xFFC0,
+};
+
+int st20_rfc4175_422be10_to_y210_avx512(struct st20_rfc4175_422_10_pg2_be* pg_be,
+                                        uint16_t* pg_y210, uint32_t w, uint32_t h) {
+  __m128i shuffle_mask = _mm_loadu_si128((__m128i*)rfc4175be_to_y210_shuffle_tbl_128);
+  __m128i sllv_mask = _mm_loadu_si128((__m128i*)rfc4175be_to_y210_sllv_tbl_128);
+  __m128i and_mask = _mm_loadu_si128((__m128i*)rfc4175be_to_y210_and_tbl_128);
+
+  __mmask16 k_load = 0x3FF; /* each __m128i with 2 pg group, 10 bytes */
+
+  int pg_cnt = w * h / 2;
+
+  int batch = pg_cnt / 2;
+  for (int i = 0; i < batch; i++) {
+    __m128i input = _mm_maskz_loadu_epi8(k_load, (__m128i*)pg_be);
+    __m128i shuffle_result = _mm_shuffle_epi8(input, shuffle_mask);
+    __m128i sllv_result = _mm_sllv_epi16(shuffle_result, sllv_mask);
+    __m128i result = _mm_and_si128(sllv_result, and_mask);
+
+    _mm_storeu_si128((__m128i*)pg_y210, result);
+
+    pg_be += 2;
+    pg_y210 += 8;
+  }
+
+  int left = pg_cnt % 2;
+  while (left > 0) {
+    *pg_y210 = (pg_be->Y00 << 10) + (pg_be->Y00_ << 6);
+    *(pg_y210 + 1) = (pg_be->Cb00 << 8) + (pg_be->Cb00_ << 6);
+    *(pg_y210 + 2) = (pg_be->Y01 << 14) + (pg_be->Y01_ << 6);
+    *(pg_y210 + 3) = (pg_be->Cr00 << 12) + (pg_be->Cr00_ << 6);
+    pg_be++;
+    pg_y210 += 4;
+
+    left--;
+  }
+
+  return 0;
+}
+
+int st20_rfc4175_422be10_to_y210_avx512_dma(struct st_dma_lender_dev* dma,
+                                            struct st20_rfc4175_422_10_pg2_be* pg_be,
+                                            st_iova_t pg_be_iova, uint16_t* pg_y210,
+                                            uint32_t w, uint32_t h) {
+  __m128i shuffle_mask = _mm_loadu_si128((__m128i*)rfc4175be_to_y210_shuffle_tbl_128);
+  __m128i sllv_mask = _mm_loadu_si128((__m128i*)rfc4175be_to_y210_sllv_tbl_128);
+  __m128i and_mask = _mm_loadu_si128((__m128i*)rfc4175be_to_y210_and_tbl_128);
+
+  __mmask16 k_load = 0x3FF; /* each __m128i with 2 pg group, 10 bytes */
+
+  int pg_cnt = w * h / 2;
+  dbg("%s, pg_cnt %d\n", __func__, pg_cnt);
+
+  int caches_num = 4;
+  int cache_pg_cnt = (256 * 1024) / sizeof(*pg_be); /* pg cnt for each cache */
+  int align = caches_num * 2; /* align to simd pg groups and caches_num */
+  cache_pg_cnt = cache_pg_cnt / align * align;
+  size_t cache_size = cache_pg_cnt * sizeof(*pg_be);
+  int soc_id = dma->parent->soc_id;
+
+  struct st20_rfc4175_422_10_pg2_be* be_caches =
+      st_rte_zmalloc_socket(cache_size * caches_num, soc_id);
+  struct st_cvt_dma_ctx* ctx = st_cvt_dma_ctx_init(2 * caches_num, soc_id, 2);
+  if (!be_caches || !ctx) {
+    err("%s, alloc cache(%d,%" PRIu64 ") fail, %p\n", __func__, cache_pg_cnt, cache_size,
+        be_caches);
+    if (be_caches) st_rte_free(be_caches);
+    if (ctx) st_cvt_dma_ctx_uinit(ctx);
+    return st20_rfc4175_422be10_to_y210_avx512(pg_be, pg_y210, w, h);
+  }
+  rte_iova_t be_caches_iova = rte_malloc_virt2iova(be_caches);
+
+  /* first with caches batch step */
+  int cache_batch = pg_cnt / cache_pg_cnt;
+  dbg("%s, pg_cnt %d cache_pg_cnt %d caches_num %d cache_batch %d\n", __func__, pg_cnt,
+      cache_pg_cnt, caches_num, cache_batch);
+  for (int i = 0; i < cache_batch; i++) {
+    struct st20_rfc4175_422_10_pg2_be* be_cache =
+        be_caches + (i % caches_num) * cache_pg_cnt;
+    dbg("%s, cache batch idx %d\n", __func__, i);
+
+    int max_tran = i + caches_num;
+    max_tran = RTE_MIN(max_tran, cache_batch);
+    int cur_tran = st_cvt_dma_ctx_get_tran(ctx, 0);
+    /* push max be dma */
+    while (cur_tran < max_tran) {
+      rte_iova_t be_cache_iova = be_caches_iova + (cur_tran % caches_num) * cache_size;
+      st_dma_copy_busy(dma, be_cache_iova, pg_be_iova, cache_size);
+      pg_be += cache_pg_cnt;
+      pg_be_iova += cache_size;
+      st_cvt_dma_ctx_push(ctx, 0);
+      cur_tran = st_cvt_dma_ctx_get_tran(ctx, 0);
+    }
+    st_dma_submit_busy(dma);
+
+    /* wait until current be dma copy done */
+    while (st_cvt_dma_ctx_get_done(ctx, 0) < (i + 1)) {
+      uint16_t nb_dq = st_dma_completed(dma, 1, NULL, NULL);
+      if (nb_dq) st_cvt_dma_ctx_pop(ctx);
+    }
+    struct st20_rfc4175_422_10_pg2_be* be = be_cache;
+    int batch = cache_pg_cnt / 2;
+    for (int j = 0; j < batch; j++) {
+      __m128i input = _mm_maskz_loadu_epi8(k_load, (__m128i*)be);
+      __m128i shuffle_result = _mm_shuffle_epi8(input, shuffle_mask);
+      __m128i sllv_result = _mm_sllv_epi16(shuffle_result, sllv_mask);
+      __m128i result = _mm_and_si128(sllv_result, and_mask);
+
+      _mm_storeu_si128((__m128i*)pg_y210, result);
+
+      be += 2;
+      pg_y210 += 8;
+    }
+  }
+
+  pg_cnt = pg_cnt % cache_pg_cnt;
+  st_rte_free(be_caches);
+  st_cvt_dma_ctx_uinit(ctx);
+
+  /* remaining simd batch */
+  int batch = pg_cnt / 2;
+  for (int i = 0; i < batch; i++) {
+    __m128i input = _mm_maskz_loadu_epi8(k_load, (__m128i*)pg_be);
+    __m128i shuffle_result = _mm_shuffle_epi8(input, shuffle_mask);
+    __m128i sllv_result = _mm_sllv_epi16(shuffle_result, sllv_mask);
+    __m128i result = _mm_and_si128(sllv_result, and_mask);
+
+    _mm_storeu_si128((__m128i*)pg_y210, result);
+
+    pg_be += 2;
+    pg_y210 += 8;
+  }
+
+  /* remaining scalar batch */
+  int left = pg_cnt % 2;
+  while (left > 0) {
+    *pg_y210 = (pg_be->Y00 << 10) + (pg_be->Y00_ << 6);
+    *(pg_y210 + 1) = (pg_be->Cb00 << 8) + (pg_be->Cb00_ << 6);
+    *(pg_y210 + 2) = (pg_be->Y01 << 14) + (pg_be->Y01_ << 6);
+    *(pg_y210 + 3) = (pg_be->Cr00 << 12) + (pg_be->Cr00_ << 6);
+    pg_be++;
+    pg_y210 += 4;
+
+    left--;
+  }
+
+  return 0;
+}
+/* end st20_rfc4175_422be10_to_y210_avx512 */
+
+/* begin st20_y210_to_rfc4175_422be10_avx512 */
+static uint8_t y210_to_rfc4175be_shuffle0_tbl_128[16] = {
+    /*k: 000000111101111b */
+    3,     2,     7,     6,     0, /* pg0: cb,cr */
+    3 + 8, 2 + 8, 7 + 8, 6 + 8, 0, /* pg1: cb,cr */
+    0,     0,     0,     0,     0, 0,
+};
+
+static uint8_t y210_to_rfc4175be_shuffle1_tbl_128[16] = {
+    /*k: 000001111011110b */
+    0, 1,     0,     5,     4,     /* pg0: y0,y1 */
+    0, 1 + 8, 0 + 8, 5 + 8, 4 + 8, /* pg1: y0,y1 */
+    0, 0,     0,     0,     0,     0,
+};
+
+int st20_y210_to_rfc4175_422be10_avx512(uint16_t* pg_y210,
+                                        struct st20_rfc4175_422_10_pg2_be* pg_be,
+                                        uint32_t w, uint32_t h) {
+  __m128i srlv_mask = _mm_loadu_si128(
+      (__m128i*)rfc4175be_to_y210_sllv_tbl_128); /* reverse of be to y210 */
+  __m128i shuffle0_mask = _mm_loadu_si128((__m128i*)y210_to_rfc4175be_shuffle0_tbl_128);
+  __m128i shuffle1_mask = _mm_loadu_si128((__m128i*)y210_to_rfc4175be_shuffle1_tbl_128);
+
+  __mmask16 k_store = 0x3FF; /* each __m128i with 2 pg group, 10 bytes */
+
+  int pg_cnt = w * h / 2;
+
+  int batch = pg_cnt / 2;
+  for (int i = 0; i < batch; i++) {
+    __m128i input = _mm_loadu_epi8((__m128i*)pg_y210);
+    __m128i srlv_result = _mm_srlv_epi16(input, srlv_mask);
+    __m128i shuffle0_result = _mm_maskz_shuffle_epi8(0x1EF, srlv_result, shuffle0_mask);
+    __m128i shuffle1_result = _mm_maskz_shuffle_epi8(0x3DE, srlv_result, shuffle1_mask);
+    __m128i result = _mm_or_si128(shuffle0_result, shuffle1_result);
+
+    _mm_mask_storeu_epi8((__m128i*)pg_be, k_store, result);
+
+    pg_be += 2;
+    pg_y210 += 8;
+  }
+
+  int left = pg_cnt % 2;
+  while (left > 0) {
+    pg_be->Cb00 = *(pg_y210 + 1) >> 8;
+    pg_be->Cb00_ = (*(pg_y210 + 1) >> 6) & 0x3;
+    pg_be->Y00 = *pg_y210 >> 10;
+    pg_be->Y00_ = (*pg_y210 >> 6) & 0xF;
+    pg_be->Cr00 = *(pg_y210 + 3) >> 12;
+    pg_be->Cr00_ = (*(pg_y210 + 3) >> 6) & 0x3F;
+    pg_be->Y01 = *(pg_y210 + 2) >> 14;
+    pg_be->Y01_ = (*(pg_y210 + 2) >> 6) & 0xFF;
+
+    pg_y210 += 4;
+    pg_be++;
+    left--;
+  }
+
+  return 0;
+}
+
+int st20_y210_to_rfc4175_422be10_avx512_dma(struct st_dma_lender_dev* dma,
+                                            uint16_t* pg_y210, st_iova_t pg_y210_iova,
+                                            struct st20_rfc4175_422_10_pg2_be* pg_be,
+                                            uint32_t w, uint32_t h) {
+  __m128i srlv_mask = _mm_loadu_si128(
+      (__m128i*)rfc4175be_to_y210_sllv_tbl_128); /* reverse of be to y210 */
+  __m128i shuffle0_mask = _mm_loadu_si128((__m128i*)y210_to_rfc4175be_shuffle0_tbl_128);
+  __m128i shuffle1_mask = _mm_loadu_si128((__m128i*)y210_to_rfc4175be_shuffle1_tbl_128);
+
+  __mmask16 k_store = 0x3FF; /* each __m128i with 2 pg group, 10 bytes */
+
+  int pg_cnt = w * h / 2;
+  dbg("%s, pg_cnt %d\n", __func__, pg_cnt);
+
+  int caches_num = 4;
+  int cache_pg_cnt = (256 * 1024) / 8; /* pg cnt for each cache */
+  int align = caches_num * 2;          /* align to simd pg groups and caches_num */
+  cache_pg_cnt = cache_pg_cnt / align * align;
+  size_t cache_size = cache_pg_cnt * 8;
+  int soc_id = dma->parent->soc_id;
+
+  uint16_t* y210_caches = st_rte_zmalloc_socket(cache_size * caches_num, soc_id);
+  struct st_cvt_dma_ctx* ctx = st_cvt_dma_ctx_init(2 * caches_num, soc_id, 2);
+  if (!y210_caches || !ctx) {
+    err("%s, alloc cache(%d,%" PRIu64 ") fail, %p\n", __func__, cache_pg_cnt, cache_size,
+        y210_caches);
+    if (y210_caches) st_rte_free(y210_caches);
+    if (ctx) st_cvt_dma_ctx_uinit(ctx);
+    return st20_y210_to_rfc4175_422be10_avx512(pg_y210, pg_be, w, h);
+  }
+  rte_iova_t y210_caches_iova = rte_malloc_virt2iova(y210_caches);
+
+  /* first with caches batch step */
+  int cache_batch = pg_cnt / cache_pg_cnt;
+  dbg("%s, pg_cnt %d cache_pg_cnt %d caches_num %d cache_batch %d\n", __func__, pg_cnt,
+      cache_pg_cnt, caches_num, cache_batch);
+  for (int i = 0; i < cache_batch; i++) {
+    uint16_t* y210_cache = y210_caches + (i % caches_num) * cache_pg_cnt * 4;
+    dbg("%s, cache batch idx %d\n", __func__, i);
+
+    int max_tran = i + caches_num;
+    max_tran = RTE_MIN(max_tran, cache_batch);
+    int cur_tran = st_cvt_dma_ctx_get_tran(ctx, 0);
+    /* push max be dma */
+    while (cur_tran < max_tran) {
+      rte_iova_t y210_cache_iova =
+          y210_caches_iova + (cur_tran % caches_num) * cache_size;
+      st_dma_copy_busy(dma, y210_cache_iova, pg_y210_iova, cache_size);
+      pg_y210 += 4 * cache_pg_cnt;
+      pg_y210_iova += cache_size;
+      st_cvt_dma_ctx_push(ctx, 0);
+      cur_tran = st_cvt_dma_ctx_get_tran(ctx, 0);
+    }
+    st_dma_submit_busy(dma);
+
+    /* wait until current be dma copy done */
+    while (st_cvt_dma_ctx_get_done(ctx, 0) < (i + 1)) {
+      uint16_t nb_dq = st_dma_completed(dma, 1, NULL, NULL);
+      if (nb_dq) st_cvt_dma_ctx_pop(ctx);
+    }
+    uint16_t* y210 = y210_cache;
+    int batch = cache_pg_cnt / 2;
+    for (int j = 0; j < batch; j++) {
+      __m128i input = _mm_loadu_epi8((__m128i*)y210);
+      __m128i srlv_result = _mm_srlv_epi16(input, srlv_mask);
+      __m128i shuffle0_result = _mm_maskz_shuffle_epi8(0x1EF, srlv_result, shuffle0_mask);
+      __m128i shuffle1_result = _mm_maskz_shuffle_epi8(0x3DE, srlv_result, shuffle1_mask);
+      __m128i result = _mm_or_si128(shuffle0_result, shuffle1_result);
+
+      _mm_mask_storeu_epi8((__m128i*)pg_be, k_store, result);
+
+      pg_be += 2;
+      y210 += 8;
+    }
+  }
+
+  pg_cnt = pg_cnt % cache_pg_cnt;
+  st_rte_free(y210_caches);
+  st_cvt_dma_ctx_uinit(ctx);
+
+  /* remaining simd batch */
+  int batch = pg_cnt / 2;
+  for (int i = 0; i < batch; i++) {
+    __m128i input = _mm_loadu_epi8((__m128i*)pg_y210);
+    __m128i srlv_result = _mm_srlv_epi16(input, srlv_mask);
+    __m128i shuffle0_result = _mm_maskz_shuffle_epi8(0x1EF, srlv_result, shuffle0_mask);
+    __m128i shuffle1_result = _mm_maskz_shuffle_epi8(0x3DE, srlv_result, shuffle1_mask);
+    __m128i result = _mm_or_si128(shuffle0_result, shuffle1_result);
+
+    _mm_mask_storeu_epi8((__m128i*)pg_be, k_store, result);
+
+    pg_be += 2;
+    pg_y210 += 8;
+  }
+
+  /* remaining scalar batch */
+  int left = pg_cnt % 2;
+  while (left > 0) {
+    pg_be->Cb00 = *(pg_y210 + 1) >> 8;
+    pg_be->Cb00_ = (*(pg_y210 + 1) >> 6) & 0x3;
+    pg_be->Y00 = *pg_y210 >> 10;
+    pg_be->Y00_ = (*pg_y210 >> 6) & 0xF;
+    pg_be->Cr00 = *(pg_y210 + 3) >> 12;
+    pg_be->Cr00_ = (*(pg_y210 + 3) >> 6) & 0x3F;
+    pg_be->Y01 = *(pg_y210 + 2) >> 14;
+    pg_be->Y01_ = (*(pg_y210 + 2) >> 6) & 0xFF;
+
+    pg_y210 += 4;
+    pg_be++;
+    left--;
+  }
+
+  return 0;
+}
+/* end st20_y210_to_rfc4175_422be10_avx512 */
 
 ST_TARGET_CODE_STOP
 #endif

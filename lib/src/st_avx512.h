@@ -75,4 +75,21 @@ int st20_v210_to_rfc4175_422be10_avx512_dma(struct st_dma_lender_dev* dma,
                                             uint8_t* pg_v210, st_iova_t pg_v210_iova,
                                             struct st20_rfc4175_422_10_pg2_be* pg_be,
                                             uint32_t w, uint32_t h);
+
+int st20_rfc4175_422be10_to_y210_avx512(struct st20_rfc4175_422_10_pg2_be* pg_be,
+                                        uint16_t* pg_y210, uint32_t w, uint32_t h);
+
+int st20_rfc4175_422be10_to_y210_avx512_dma(struct st_dma_lender_dev* dma,
+                                            struct st20_rfc4175_422_10_pg2_be* pg_be,
+                                            st_iova_t pg_be_iova, uint16_t* pg_y210,
+                                            uint32_t w, uint32_t h);
+
+int st20_y210_to_rfc4175_422be10_avx512(uint16_t* pg_y210,
+                                        struct st20_rfc4175_422_10_pg2_be* pg_be,
+                                        uint32_t w, uint32_t h);
+
+int st20_y210_to_rfc4175_422be10_avx512_dma(struct st_dma_lender_dev* dma,
+                                            uint16_t* pg_y210, st_iova_t pg_y210_iova,
+                                            struct st20_rfc4175_422_10_pg2_be* pg_be,
+                                            uint32_t w, uint32_t h);
 #endif

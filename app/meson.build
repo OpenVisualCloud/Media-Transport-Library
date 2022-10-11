@@ -128,6 +128,18 @@ executable('PerfV210ToRfc4175422be10', perf_v210_to_rfc4175_422be10_sources,
   dependencies: [libst_dpdk, libpthread]
 )
 
+executable('PerfRfc4175422be10ToY210', perf_rfc4175_422be10_to_y210_sources,
+  c_args : app_c_args,
+  link_args: app_ld_args,
+  dependencies: [libst_dpdk, libpthread]
+)
+
+executable('PerfY210ToRfc4175422be10', perf_y210_to_rfc4175_422be10_sources,
+  c_args : app_c_args,
+  link_args: app_ld_args,
+  dependencies: [libst_dpdk, libpthread]
+)
+
 executable('TxVideoSample', video_tx_sample_sources,
   c_args : app_c_args,
   link_args: app_ld_args,
