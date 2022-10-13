@@ -101,6 +101,8 @@ enum st_frame_fmt {
   ST_FRAME_FMT_YUV422PLANAR10LE = 0,
   /** YUV 422 packed, 3 samples on a 32-bit word, 10 bits per sample */
   ST_FRAME_FMT_V210,
+  /** YUV 422 packed, 16 bits per sample with least significant 6 paddings */
+  ST_FRAME_FMT_Y210,
   /** YUV 422 planar 8bit */
   ST_FRAME_FMT_YUV422PLANAR8,
   /** YUV 422 packed 8bit(aka ST20_FMT_YUV_422_8BIT) */

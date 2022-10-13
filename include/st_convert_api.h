@@ -451,6 +451,105 @@ static inline int st20_rfc4175_422le10_to_v210(uint8_t* pg_le, uint8_t* pg_v210,
 }
 
 /**
+ * Convert rfc4175_422be10 to y210 with required SIMD level.
+ * Note the level may downgrade to the SIMD which system really support.
+ *
+ * @param pg_be
+ *   Point to pg(rfc4175_422be10) data.
+ * @param pg_y210
+ *   Point to pg(y210) data.
+ * @param w
+ *   The st2110-20(video) width.
+ * @param h
+ *   The st2110-20(video) height.
+ * @return
+ *   - 0 if successful.
+ *   - <0: Error code if convert fail.
+ */
+static inline int st20_rfc4175_422be10_to_y210(struct st20_rfc4175_422_10_pg2_be* pg_be,
+                                               uint16_t* pg_y210, uint32_t w,
+                                               uint32_t h) {
+  return st20_rfc4175_422be10_to_y210_simd(pg_be, pg_y210, w, h, ST_SIMD_LEVEL_MAX);
+}
+
+/**
+ * Convert rfc4175_422be10 to y210 with max SIMD level and DMA helper.
+ * Profiling shows gain with 4k/8k solution due to LLC cache miss migration, thus pls
+ * only applied with 4k/8k.
+ *
+ * @param udma
+ *   Point to dma engine.
+ * @param pg_be
+ *   Point to pg(rfc4175_422be10) data.
+ * @param pg_be_iova
+ *   The st_iova_t address of the pg_be buffer.
+ * @param pg_y210
+ *   Point to pg(y210) data.
+ * @param w
+ *   The st2110-20(video) width.
+ * @param h
+ *   The st2110-20(video) height.
+ * @return
+ *   - 0 if successful.
+ *   - <0: Error code if convert fail.
+ */
+static inline int st20_rfc4175_422be10_to_y210_dma(
+    st_udma_handle udma, struct st20_rfc4175_422_10_pg2_be* pg_be, st_iova_t pg_be_iova,
+    uint16_t* pg_y210, uint32_t w, uint32_t h) {
+  return st20_rfc4175_422be10_to_y210_simd_dma(udma, pg_be, pg_be_iova, pg_y210, w, h,
+                                               ST_SIMD_LEVEL_MAX);
+}
+
+/**
+ * Convert y210 to rfc4175_422be10 with required SIMD level.
+ * Note the level may downgrade to the SIMD which system really support.
+ *
+ * @param pg_y210
+ *   Point to pg(y210) data.
+ * @param pg_be
+ *   Point to pg(rfc4175_422be10) data.
+ * @param w
+ *   The st2110-20(video) width.
+ * @param h
+ *   The st2110-20(video) height.
+ * @return
+ *   - 0 if successful.
+ *   - <0: Error code if convert fail.
+ */
+static inline int st20_y210_to_rfc4175_422be10(uint16_t* pg_y210,
+                                               struct st20_rfc4175_422_10_pg2_be* pg_be,
+                                               uint32_t w, uint32_t h) {
+  return st20_y210_to_rfc4175_422be10_simd(pg_y210, pg_be, w, h, ST_SIMD_LEVEL_MAX);
+}
+
+/**
+ * Convert y210 to rfc4175_422be10 with required SIMD level and DMA helper.
+ * Note the level may downgrade to the SIMD which system really support.
+ *
+ * @param udma
+ *   Point to dma engine.
+ * @param pg_y210
+ *   Point to pg(y210) data.
+ * @param pg_y210_iova
+ *   IOVA address for pg_y210 data.
+ * @param pg_be
+ *   Point to pg(rfc4175_422be10) data.
+ * @param w
+ *   The st2110-20(video) width.
+ * @param h
+ *   The st2110-20(video) height.
+ * @return
+ *   - 0 if successful.
+ *   - <0: Error code if convert fail.
+ */
+static inline int st20_y210_to_rfc4175_422be10_dma(
+    st_udma_handle udma, uint16_t* pg_y210, st_iova_t pg_y210_iova,
+    struct st20_rfc4175_422_10_pg2_be* pg_be, uint32_t w, uint32_t h) {
+  return st20_y210_to_rfc4175_422be10_simd_dma(udma, pg_y210, pg_y210_iova, pg_be, w, h,
+                                               ST_SIMD_LEVEL_MAX);
+}
+
+/**
  * Convert v210 to rfc4175_422le10.
  *
  * @param pg_v210

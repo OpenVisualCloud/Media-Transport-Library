@@ -51,6 +51,9 @@ static enum cvt_frame_fmt cvt_parse_fmt(const char* sfmt) {
   if (!strcmp(sfmt, "v210")) {
     return CVT_FRAME_FMT_V210;
   }
+  if (!strcmp(sfmt, "y210")) {
+    return CVT_FRAME_FMT_Y210;
+  }
   if (!strcmp(sfmt, "yuv422rfc4175be10")) {
     return CVT_FRAME_FMT_YUV422RFC4175PG2BE10;
   }
