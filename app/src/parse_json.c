@@ -73,6 +73,20 @@ static const struct st_video_fmt_desc st_video_fmt_descs[] = {
         .fps = ST_FPS_P25,
     },
     {
+        .fmt = VIDEO_FORMAT_720P_60FPS,
+        .name = "i720p60",
+        .width = 1280,
+        .height = 720,
+        .fps = ST_FPS_P60,
+    },
+    {
+        .fmt = VIDEO_FORMAT_720P_30FPS,
+        .name = "i720p30",
+        .width = 1280,
+        .height = 720,
+        .fps = ST_FPS_P30,
+    },
+    {
         .fmt = VIDEO_FORMAT_1080P_119FPS,
         .name = "i1080p119",
         .width = 1920,
@@ -106,6 +120,20 @@ static const struct st_video_fmt_desc st_video_fmt_descs[] = {
         .width = 1920,
         .height = 1080,
         .fps = ST_FPS_P25,
+    },
+    {
+        .fmt = VIDEO_FORMAT_1080P_60FPS,
+        .name = "i1080p60",
+        .width = 1920,
+        .height = 1080,
+        .fps = ST_FPS_P60,
+    },
+    {
+        .fmt = VIDEO_FORMAT_1080P_30FPS,
+        .name = "i1080p30",
+        .width = 1920,
+        .height = 1080,
+        .fps = ST_FPS_P30,
     },
     {
         .fmt = VIDEO_FORMAT_1080I_59FPS,
@@ -157,6 +185,20 @@ static const struct st_video_fmt_desc st_video_fmt_descs[] = {
         .fps = ST_FPS_P25,
     },
     {
+        .fmt = VIDEO_FORMAT_2160P_60FPS,
+        .name = "i2160p60",
+        .width = 3840,
+        .height = 2160,
+        .fps = ST_FPS_P60,
+    },
+    {
+        .fmt = VIDEO_FORMAT_2160P_30FPS,
+        .name = "i2160p30",
+        .width = 3840,
+        .height = 2160,
+        .fps = ST_FPS_P30,
+    },
+    {
         .fmt = VIDEO_FORMAT_4320P_119FPS,
         .name = "i4320p119",
         .width = 7680,
@@ -190,6 +232,20 @@ static const struct st_video_fmt_desc st_video_fmt_descs[] = {
         .width = 7680,
         .height = 4320,
         .fps = ST_FPS_P25,
+    },
+    {
+        .fmt = VIDEO_FORMAT_4320P_60FPS,
+        .name = "i4320p60",
+        .width = 7680,
+        .height = 4320,
+        .fps = ST_FPS_P60,
+    },
+    {
+        .fmt = VIDEO_FORMAT_4320P_30FPS,
+        .name = "i4320p30",
+        .width = 7680,
+        .height = 4320,
+        .fps = ST_FPS_P30,
     },
     {
         .fmt = VIDEO_FORMAT_AUTO,

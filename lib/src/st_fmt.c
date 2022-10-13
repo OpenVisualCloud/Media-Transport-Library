@@ -114,36 +114,11 @@ static const struct st20_pgroup st20_pgroups[] = {
 
 static const struct st_fps_timing st_fps_timings[] = {
     {
-        /* ST_FPS_P59_94 */
-        .fps = ST_FPS_P59_94,
+        /* ST_FPS_P120 */
+        .fps = ST_FPS_P120,
         .sampling_clock_rate = 90 * 1000,
-        .mul = 60000,
-        .den = 1001,
-        .frame_rate = 59.94,
-    },
-    {
-        /* ST_FPS_P50 */
-        .fps = ST_FPS_P50,
-        .sampling_clock_rate = 90 * 1000,
-        .mul = 50,
+        .mul = 120,
         .den = 1,
-        .frame_rate = 50,
-    },
-    {
-        /* ST_FPS_P29_97 */
-        .fps = ST_FPS_P29_97,
-        .sampling_clock_rate = 90 * 1000,
-        .mul = 30000,
-        .den = 1001,
-        .frame_rate = 29.97,
-    },
-    {
-        /* ST_FPS_P25 */
-        .fps = ST_FPS_P25,
-        .sampling_clock_rate = 90 * 1000,
-        .mul = 25,
-        .den = 1,
-        .frame_rate = 25,
     },
     {
         /* ST_FPS_P119_88 */
@@ -151,7 +126,69 @@ static const struct st_fps_timing st_fps_timings[] = {
         .sampling_clock_rate = 90 * 1000,
         .mul = 60000 * 2,
         .den = 1001,
-        .frame_rate = 119.88,
+    },
+    {
+        /* ST_FPS_P100 */
+        .fps = ST_FPS_P100,
+        .sampling_clock_rate = 90 * 1000,
+        .mul = 100,
+        .den = 1,
+    },
+    {
+        /* ST_FPS_P60 */
+        .fps = ST_FPS_P60,
+        .sampling_clock_rate = 90 * 1000,
+        .mul = 60,
+        .den = 1,
+    },
+    {
+        /* ST_FPS_P59_94 */
+        .fps = ST_FPS_P59_94,
+        .sampling_clock_rate = 90 * 1000,
+        .mul = 60000,
+        .den = 1001,
+    },
+    {
+        /* ST_FPS_P50 */
+        .fps = ST_FPS_P50,
+        .sampling_clock_rate = 90 * 1000,
+        .mul = 50,
+        .den = 1,
+    },
+    {
+        /* ST_FPS_P30 */
+        .fps = ST_FPS_P30,
+        .sampling_clock_rate = 90 * 1000,
+        .mul = 30,
+        .den = 1,
+    },
+    {
+        /* ST_FPS_P29_97 */
+        .fps = ST_FPS_P29_97,
+        .sampling_clock_rate = 90 * 1000,
+        .mul = 30000,
+        .den = 1001,
+    },
+    {
+        /* ST_FPS_P25 */
+        .fps = ST_FPS_P25,
+        .sampling_clock_rate = 90 * 1000,
+        .mul = 25,
+        .den = 1,
+    },
+    {
+        /* ST_FPS_P24 */
+        .fps = ST_FPS_P24,
+        .sampling_clock_rate = 90 * 1000,
+        .mul = 24,
+        .den = 1,
+    },
+    {
+        /* ST_FPS_P23.98 */
+        .fps = ST_FPS_P23_98,
+        .sampling_clock_rate = 90 * 1000,
+        .mul = 24000,
+        .den = 1001,
     },
 };
 
@@ -293,7 +330,7 @@ double st_frame_rate(enum st_fps fps) {
 
   for (i = 0; i < ST_ARRAY_SIZE(st_fps_timings); i++) {
     if (fps == st_fps_timings[i].fps) {
-      return st_fps_timings[i].frame_rate;
+      return (double)st_fps_timings[i].mul / st_fps_timings[i].den;
     }
   }
 

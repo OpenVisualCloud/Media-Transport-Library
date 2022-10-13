@@ -127,15 +127,19 @@ static int tx_notify_ext_frame_done(void* priv, uint16_t frame_idx,
 
 static enum st_fps tmstamp_delta_to_fps(int delta) {
   switch (delta) {
+    case 1500:
+      return ST_FPS_P60;
     case 1501:
     case 1502:
       return ST_FPS_P59_94;
+    case 1800:
+      return ST_FPS_P50;
+    case 3000:
+      return ST_FPS_P30;
     case 3003:
       return ST_FPS_P29_97;
     case 3600:
       return ST_FPS_P25;
-    case 1800:
-      return ST_FPS_P50;
     default:
       dbg("%s, err delta %d\n", __func__, delta);
       break;
@@ -1004,6 +1008,20 @@ TEST(St20_tx, frame_1080p_fps29_97_s1) {
 TEST(St20_tx, frame_1080p_fps50_s1) {
   enum st20_type type[1] = {ST20_TYPE_FRAME_LEVEL};
   enum st_fps fps[1] = {ST_FPS_P50};
+  int width[1] = {1920};
+  int height[1] = {1080};
+  st20_tx_fps_test(type, fps, width, height, ST20_FMT_YUV_422_10BIT, ST_TEST_LEVEL_ALL);
+}
+TEST(St20_tx, frame_1080p_fps30_s1) {
+  enum st20_type type[1] = {ST20_TYPE_FRAME_LEVEL};
+  enum st_fps fps[1] = {ST_FPS_P30};
+  int width[1] = {1920};
+  int height[1] = {1080};
+  st20_tx_fps_test(type, fps, width, height, ST20_FMT_YUV_422_10BIT, ST_TEST_LEVEL_ALL);
+}
+TEST(St20_tx, frame_1080p_fps60_s1) {
+  enum st20_type type[1] = {ST20_TYPE_FRAME_LEVEL};
+  enum st_fps fps[1] = {ST_FPS_P60};
   int width[1] = {1920};
   int height[1] = {1080};
   st20_tx_fps_test(type, fps, width, height, ST20_FMT_YUV_422_10BIT, ST_TEST_LEVEL_ALL);
@@ -2088,14 +2106,14 @@ TEST(St20_rx, digest20_field_720p_fps59_94_s3) {
                       ST_TEST_LEVEL_ALL, 3);
 }
 
-TEST(St20_rx, digest_frame_1080p_fps59_94_s3) {
+TEST(St20_rx, digest_frame_1080p_fps_mix_s3) {
   enum st20_type type[3] = {ST20_TYPE_FRAME_LEVEL, ST20_TYPE_FRAME_LEVEL,
                             ST20_TYPE_FRAME_LEVEL};
   enum st20_type rx_type[3] = {ST20_TYPE_FRAME_LEVEL, ST20_TYPE_FRAME_LEVEL,
                                ST20_TYPE_FRAME_LEVEL};
   enum st20_packing packing[3] = {ST20_PACKING_GPM_SL, ST20_PACKING_GPM,
                                   ST20_PACKING_BPM};
-  enum st_fps fps[3] = {ST_FPS_P59_94, ST_FPS_P59_94, ST_FPS_P59_94};
+  enum st_fps fps[3] = {ST_FPS_P59_94, ST_FPS_P60, ST_FPS_P30};
   int width[3] = {1920, 1920, 1920};
   int height[3] = {1080, 1080, 1080};
   bool interlaced[3] = {false, false, false};
