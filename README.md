@@ -7,7 +7,7 @@ The Media Transport Library(Kahawai) is a solution based on DPDK prepared for tr
 #### 1.1 Features:
 * ST2110-20, ST2110-30, ST2110-40, ST2110-22
 * 1080p, 720p, 4k, 8k
-* FPS: 120, 120/1.001,100, 60, 60/1.001, 50, 30, 30/1.001, 25, 24, 24/1.001
+* FPS: 120, 119.88, 100, 60, 59.94, 50, 30, 29.97, 25, 24, 23.98
 * YUV 4:2:2 10bit
 
 ## 2. Build:
