@@ -1968,7 +1968,7 @@ int st20_y210_to_rfc4175_422be10_avx512(uint16_t* pg_y210,
 
   int batch = pg_cnt / 2;
   for (int i = 0; i < batch; i++) {
-    __m128i input = _mm_loadu_epi8((__m128i*)pg_y210);
+    __m128i input = _mm_loadu_si128((__m128i*)pg_y210);
     __m128i srlv_result = _mm_srlv_epi16(input, srlv_mask);
     __m128i shuffle0_result = _mm_maskz_shuffle_epi8(0x1EF, srlv_result, shuffle0_mask);
     __m128i shuffle1_result = _mm_maskz_shuffle_epi8(0x3DE, srlv_result, shuffle1_mask);
@@ -2062,7 +2062,7 @@ int st20_y210_to_rfc4175_422be10_avx512_dma(struct st_dma_lender_dev* dma,
     uint16_t* y210 = y210_cache;
     int batch = cache_pg_cnt / 2;
     for (int j = 0; j < batch; j++) {
-      __m128i input = _mm_loadu_epi8((__m128i*)y210);
+      __m128i input = _mm_loadu_si128((__m128i*)y210);
       __m128i srlv_result = _mm_srlv_epi16(input, srlv_mask);
       __m128i shuffle0_result = _mm_maskz_shuffle_epi8(0x1EF, srlv_result, shuffle0_mask);
       __m128i shuffle1_result = _mm_maskz_shuffle_epi8(0x3DE, srlv_result, shuffle1_mask);
@@ -2082,7 +2082,7 @@ int st20_y210_to_rfc4175_422be10_avx512_dma(struct st_dma_lender_dev* dma,
   /* remaining simd batch */
   int batch = pg_cnt / 2;
   for (int i = 0; i < batch; i++) {
-    __m128i input = _mm_loadu_epi8((__m128i*)pg_y210);
+    __m128i input = _mm_loadu_si128((__m128i*)pg_y210);
     __m128i srlv_result = _mm_srlv_epi16(input, srlv_mask);
     __m128i shuffle0_result = _mm_maskz_shuffle_epi8(0x1EF, srlv_result, shuffle0_mask);
     __m128i shuffle1_result = _mm_maskz_shuffle_epi8(0x3DE, srlv_result, shuffle1_mask);
