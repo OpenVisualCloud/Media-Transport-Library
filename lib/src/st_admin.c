@@ -184,7 +184,8 @@ static int admin_tx_video_migrate(struct st_main_impl* impl, bool* migrated) {
   }
 
   dbg("%s, find one busy session(%d,%d)\n", __func__, from_sch->idx, busy_s->idx);
-  struct st_sch_impl* to_sch = st_sch_get(impl, quota_mbs, from_sch->type);
+  struct st_sch_impl* to_sch =
+      st_sch_get(impl, quota_mbs, from_sch->type, ST_SCH_MASK_ALL);
   if (!to_sch) {
     err("%s, no idle sch for session(%d,%d)\n", __func__, from_sch->idx, busy_s->idx);
     return -EIO;
@@ -305,7 +306,8 @@ static int admin_rx_video_migrate(struct st_main_impl* impl, bool* migrated) {
   }
 
   dbg("%s, find one busy session(%d,%d)\n", __func__, from_sch->idx, busy_s->idx);
-  struct st_sch_impl* to_sch = st_sch_get(impl, quota_mbs, from_sch->type);
+  struct st_sch_impl* to_sch =
+      st_sch_get(impl, quota_mbs, from_sch->type, ST_SCH_MASK_ALL);
   if (!to_sch) {
     err("%s, no idle sch for session(%d,%d)\n", __func__, from_sch->idx, busy_s->idx);
     return -EIO;

@@ -479,7 +479,7 @@ int st_sch_put(struct st_sch_impl* sch, int quota_mbs) {
 }
 
 struct st_sch_impl* st_sch_get(struct st_main_impl* impl, int quota_mbs,
-                               enum st_sch_type type) {
+                               enum st_sch_type type, st_sch_mask_t mask) {
   int ret, idx;
   struct st_sch_impl* sch;
   struct st_sch_mgr* mgr = st_sch_get_mgr(impl);
@@ -489,6 +489,7 @@ struct st_sch_impl* st_sch_get(struct st_main_impl* impl, int quota_mbs,
   /* first try to find one sch capable with quota */
   for (idx = 0; idx < ST_MAX_SCH_NUM; idx++) {
     sch = st_sch_instance(impl, idx);
+    if (!(mask & ST_BIT64(idx))) continue;
     if (!st_sch_is_active(sch) || sch->cpu_busy) continue;
     if (!sch_is_capable(sch, quota_mbs, type)) continue;
     ret = st_sch_add_quota(sch, quota_mbs);

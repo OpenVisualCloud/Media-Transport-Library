@@ -55,6 +55,9 @@ static inline void rx_video_session_put(struct st_rx_video_sessions_mgr* mgr, in
   rte_spinlock_unlock(&mgr->mutex[idx]);
 }
 
+st20_rx_handle st20_rx_create_with_mask(struct st_main_impl* impl,
+                                        struct st20_rx_ops* ops, st_sch_mask_t sch_mask);
+
 void rx_video_session_cal_cpu_busy(struct st_rx_video_session_impl* s);
 void rx_video_session_clear_cpu_busy(struct st_rx_video_session_impl* s);
 

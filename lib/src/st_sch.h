@@ -45,7 +45,7 @@ int st_sch_unregister_tasklet(struct st_sch_tasklet_impl* tasklet);
 int st_sch_add_quota(struct st_sch_impl* sch, int quota_mbs);
 
 struct st_sch_impl* st_sch_get(struct st_main_impl* impl, int quota_mbs,
-                               enum st_sch_type type);
+                               enum st_sch_type type, st_sch_mask_t mask);
 int st_sch_put(struct st_sch_impl* sch, int quota_mbs);
 
 int st_sch_start_all(struct st_main_impl* impl);
