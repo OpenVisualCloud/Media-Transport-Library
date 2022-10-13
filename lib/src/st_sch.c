@@ -186,10 +186,14 @@ static int sch_stop(struct st_sch_impl* sch) {
   return 0;
 }
 
-static struct st_sch_impl* sch_request(struct st_main_impl* impl, enum st_sch_type type) {
+static struct st_sch_impl* sch_request(struct st_main_impl* impl, enum st_sch_type type,
+                                       st_sch_mask_t mask) {
   struct st_sch_impl* sch;
 
   for (int sch_idx = 0; sch_idx < ST_MAX_SCH_NUM; sch_idx++) {
+    /* mask check */
+    if (!(mask & ST_BIT64(sch_idx))) continue;
+
     sch = st_sch_instance(impl, sch_idx);
 
     sch_lock(sch);
@@ -489,8 +493,11 @@ struct st_sch_impl* st_sch_get(struct st_main_impl* impl, int quota_mbs,
   /* first try to find one sch capable with quota */
   for (idx = 0; idx < ST_MAX_SCH_NUM; idx++) {
     sch = st_sch_instance(impl, idx);
+    /* mask check */
     if (!(mask & ST_BIT64(idx))) continue;
+    /* active and busy check */
     if (!st_sch_is_active(sch) || sch->cpu_busy) continue;
+    /* quota check */
     if (!sch_is_capable(sch, quota_mbs, type)) continue;
     ret = st_sch_add_quota(sch, quota_mbs);
     if (ret >= 0) {
@@ -502,7 +509,7 @@ struct st_sch_impl* st_sch_get(struct st_main_impl* impl, int quota_mbs,
   }
 
   /* no quota, try to create one */
-  sch = sch_request(impl, type);
+  sch = sch_request(impl, type, mask);
   if (!sch) {
     err("%s, no free sch\n", __func__);
     sch_mgr_unlock(mgr);

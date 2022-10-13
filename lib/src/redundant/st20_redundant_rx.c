@@ -156,7 +156,7 @@ static int rx_st20r_create_transport(struct st20r_rx_ctx* ctx, struct st20r_rx_o
     /* let R port select a different sch */
     sch_mask &= ~(ST_BIT64(st20_rx_get_sch_idx(ctx->transport[ST_PORT_P]->handle)));
   }
-  info("%s(%d,%d), sch_mask %" PRIx64 "\n", __func__, idx, port, sch_mask);
+  dbg("%s(%d,%d), sch_mask %" PRIx64 "\n", __func__, idx, port, sch_mask);
   transport->handle = st20_rx_create_with_mask(impl, &ops_rx, sch_mask);
   if (!transport->handle) {
     err("%s(%d), transport create fail on port %d\n", __func__, idx, port);
