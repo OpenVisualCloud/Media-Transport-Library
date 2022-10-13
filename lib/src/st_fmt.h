@@ -13,7 +13,6 @@ struct st_fps_timing {
   int sampling_clock_rate; /* 90k of sampling clock rate */
   int mul;                 /* 60000 for ST_FPS_P59_94 */
   int den;                 /* 1001 for ST_FPS_P59_94 */
-  double frame_rate;       /* fps number */
 };
 
 struct st_frame_fmt_desc {

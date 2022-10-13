@@ -182,6 +182,12 @@ enum st_fps {
   ST_FPS_P29_97,     /**< 29.97 fps */
   ST_FPS_P25,        /**< 25 fps */
   ST_FPS_P119_88,    /**< 119.88 fps */
+  ST_FPS_P120,       /**< 120 fps */
+  ST_FPS_P100,       /**< 100 fps */
+  ST_FPS_P60,        /**< 60 fps */
+  ST_FPS_P30,        /**< 30 fps */
+  ST_FPS_P24,        /**< 24 fps */
+  ST_FPS_P23_98,     /**< 23.98 fps */
   ST_FPS_MAX,        /**< max value of this enum */
 };
 

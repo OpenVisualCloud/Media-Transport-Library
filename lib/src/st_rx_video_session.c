@@ -513,9 +513,15 @@ static void rv_detector_calculate_fps(struct st_rx_video_session_impl* s,
   if (abs(d0 - d1) <= 1) {
     dbg("%s(%d), d0 = %d, d1 = %d\n", __func__, s->idx, d0, d1);
     switch (d0) {
+      case 1500:
+        meta->fps = ST_FPS_P60;
+        return;
       case 1501:
       case 1502:
         meta->fps = ST_FPS_P59_94;
+        return;
+      case 3000:
+        meta->fps = ST_FPS_P30;
         return;
       case 3003:
         meta->fps = ST_FPS_P29_97;
