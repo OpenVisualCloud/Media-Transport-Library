@@ -9,9 +9,11 @@ env:
 jobs:
   build:
     runs-on: ${{ matrix.os }}
+    container:
+      image: centos:latest
     strategy:
       matrix:
-        os: [centos-latest]
+        os: [ubuntu-latest]
 
     steps:
     - uses: actions/checkout@v3

@@ -9,6 +9,8 @@ env:
 jobs:
   build:
     runs-on: ${{ matrix.os }}
+    container:
+      image: ubuntu:latest
     strategy:
       matrix:
         os: [ubuntu-latest]
