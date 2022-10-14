@@ -25,7 +25,7 @@ jobs:
     - name: Install the build dependency
       run: |
         dnf config-manager --set-enabled powertools
-        yum install sudo git gcc meson python3 python3-pip pkg-config json-c-devel libpcap-devel gtest-devel SDL2-devel openssl-devel
+        yum install -y sudo git gcc meson python3 python3-pip pkg-config json-c-devel libpcap-devel gtest-devel SDL2-devel openssl-devel
 
     - name: Install the python package
       run: pip install pyelftools ninja
