@@ -302,6 +302,12 @@ enum st22_quality_mode {
  * Pls note it could fallback to CPU if no DMA device is available.
  */
 #define ST20P_RX_FLAG_DMA_OFFLOAD (ST_BIT32(17))
+/**
+ * Flag bit in flags of struct st20p_rx_ops.
+ * Only for ST_FLAG_RX_VIDEO_MIGRATE is enabled.
+ * Always disable MIGRATE for this session.
+ */
+#define ST20P_RX_FLAG_DISABLE_MIGRATE (ST_BIT32(20))
 
 /** The structure info for st plugin encode session create request. */
 struct st22_encoder_create_req {

@@ -40,6 +40,12 @@ typedef struct st20r_rx_ctx* st20r_rx_handle;
  * Pls note it could fallback to CPU if no DMA device is available.
  */
 #define ST20R_RX_FLAG_DMA_OFFLOAD (ST_BIT32(17))
+/**
+ * Flag bit in flags of struct st20r_rx_ops.
+ * Only ST20_PACKING_BPM stream can enable this offload as software limit
+ * Try to enable header split offload feature.
+ */
+#define ST20R_RX_FLAG_HDR_SPLIT (ST_BIT32(19))
 
 /**
  * The structure describing how to create a rx st2110-20(redundant) session.

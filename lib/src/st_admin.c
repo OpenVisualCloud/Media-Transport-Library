@@ -285,7 +285,7 @@ static int admin_rx_video_migrate(struct st_main_impl* impl, bool* migrated) {
     for (int j = 0; j < rx_mgr->max_idx; j++) {
       struct st_rx_video_session_impl* rx_s = rx_video_session_get(rx_mgr, j);
       if (!rx_s) continue;
-      if (rx_video_session_is_cpu_busy(rx_s)) {
+      if (rx_video_session_can_migrate(rx_s) && rx_video_session_is_cpu_busy(rx_s)) {
         busy_s_in_sch = rx_s; /* last one as the busy one */
       }
       rx_video_session_put(rx_mgr, j);

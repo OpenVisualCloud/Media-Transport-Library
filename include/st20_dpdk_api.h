@@ -108,6 +108,13 @@ extern "C" {
  * Try to enable header split offload feature.
  */
 #define ST20_RX_FLAG_HDR_SPLIT (ST_BIT32(19))
+/**
+ * Flag bit in flags of struct st20_rx_ops.
+ * Only for ST20_TYPE_FRAME_LEVEL/ST20_TYPE_SLICE_LEVEL and ST_FLAG_RX_VIDEO_MIGRATE
+ * is enabled.
+ * Always disable MIGRATE for this session.
+ */
+#define ST20_RX_FLAG_DISABLE_MIGRATE (ST_BIT32(20))
 
 /**
  * Flag bit in flags of struct st22_rx_ops, for non ST_PMD_DPDK_USER.

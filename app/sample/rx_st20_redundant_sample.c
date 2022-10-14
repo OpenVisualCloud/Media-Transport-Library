@@ -14,9 +14,21 @@
 
 #include "../src/app_platform.h"
 
+// #define RX_HDR_SPLIT
+
+#ifdef RX_HDR_SPLIT
+#define RX_VIDEO_UDP_PORT_P (6970)
+#define RX_VIDEO_UDP_PORT_R (6970)
+#define RX_VIDEO_BDF_P ("0000:af:00.0")
+#define RX_VIDEO_BDF_R ("0000:af:00.1")
+#else
 #define RX_VIDEO_UDP_PORT_P (20000)
-#define RX_VIDEO_PAYLOAD_TYPE (112)
 #define RX_VIDEO_UDP_PORT_R (20000)
+#define RX_VIDEO_BDF_P ("0000:af:01.0")
+#define RX_VIDEO_BDF_R ("0000:af:01.1")
+#endif
+
+#define RX_VIDEO_PAYLOAD_TYPE (112)
 
 /* p local ip address for current bdf port */
 static uint8_t g_rx_video_local_ip_p[ST_IP_ADDR_LEN] = {192, 168, 0, 1};
@@ -153,9 +165,9 @@ int main() {
   int session_num = 1;
   int fb_cnt = 3;
   char* port_p = getenv("ST_PORT_P");
-  if (!port_p) port_p = "0000:af:01.0";
+  if (!port_p) port_p = RX_VIDEO_BDF_P;
   char* port_r = getenv("ST_PORT_R");
-  if (!port_r) port_r = "0000:af:01.1";
+  if (!port_r) port_r = RX_VIDEO_BDF_R;
 
   memset(&param, 0, sizeof(param));
   param.num_ports = 2;
@@ -166,6 +178,9 @@ int main() {
   param.flags = ST_FLAG_BIND_NUMA;      // default bind to numa
   param.log_level = ST_LOG_LEVEL_INFO;  // log level. ERROR, INFO, WARNING
   param.rx_sessions_cnt_max = session_num;
+#ifdef RX_HDR_SPLIT
+  param.nb_rx_hdr_split_queues = session_num;
+#endif
 
   // create device
   st_handle dev_handle = st_init(&param);
@@ -228,6 +243,9 @@ int main() {
     ops_rx.framebuff_cnt = fb_cnt;
     ops_rx.payload_type = RX_VIDEO_PAYLOAD_TYPE;
     ops_rx.notify_frame_ready = rx_video_frame_ready;
+#ifdef RX_HDR_SPLIT
+    ops_rx.flags |= ST20R_RX_FLAG_HDR_SPLIT;
+#endif
 
     rx_handle[i] = st20r_rx_create(dev_handle, &ops_rx);
     if (!rx_handle[i]) {

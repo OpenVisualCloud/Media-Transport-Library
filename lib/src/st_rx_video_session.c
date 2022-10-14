@@ -3212,6 +3212,13 @@ static int rv_ops_check(struct st20_rx_ops* ops) {
         return -EINVAL;
       }
     }
+    if (ops->flags & ST20_RX_FLAG_HDR_SPLIT) {
+      if (num_ports > 1) {
+        /* only 1 port allowed since the pkt payload is assigned to frame directly */
+        err("%s, hdr split only support 1 port, num_ports %d\n", __func__, num_ports);
+        return -EINVAL;
+      }
+    }
   }
 
   if (ops->uframe_size) {

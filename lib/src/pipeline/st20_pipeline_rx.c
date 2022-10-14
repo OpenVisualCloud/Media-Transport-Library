@@ -269,6 +269,8 @@ static int rx_st20p_create_transport(st_handle st, struct st20p_rx_ctx* ctx,
   if (ops->flags & ST20P_RX_FLAG_RECEIVE_INCOMPLETE_FRAME)
     ops_rx.flags |= ST20_RX_FLAG_RECEIVE_INCOMPLETE_FRAME;
   if (ops->flags & ST20P_RX_FLAG_DMA_OFFLOAD) ops_rx.flags |= ST20_RX_FLAG_DMA_OFFLOAD;
+  if (ops->flags & ST20P_RX_FLAG_DISABLE_MIGRATE)
+    ops_rx.flags |= ST20_RX_FLAG_DISABLE_MIGRATE;
   ops_rx.pacing = ST21_PACING_NARROW;
   ops_rx.width = ops->width;
   ops_rx.height = ops->height;

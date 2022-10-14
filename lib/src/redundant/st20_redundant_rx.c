@@ -139,7 +139,10 @@ static int rx_st20r_create_transport(struct st20r_rx_ctx* ctx, struct st20r_rx_o
     ops_rx.flags |= ST20_RX_FLAG_DATA_PATH_ONLY;
   /* always enable incomplelte frame */
   ops_rx.flags |= ST20_RX_FLAG_RECEIVE_INCOMPLETE_FRAME;
+  /* disable migrate since it may migrate the two sessions into one sch */
+  ops_rx.flags |= ST20_RX_FLAG_DISABLE_MIGRATE;
   if (ops->flags & ST20R_RX_FLAG_DMA_OFFLOAD) ops_rx.flags |= ST20_RX_FLAG_DMA_OFFLOAD;
+  if (ops->flags & ST20R_RX_FLAG_HDR_SPLIT) ops_rx.flags |= ST20_RX_FLAG_HDR_SPLIT;
 
   ops_rx.pacing = ops->pacing;
   ops_rx.width = ops->width;
