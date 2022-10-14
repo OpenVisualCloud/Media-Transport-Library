@@ -10,7 +10,7 @@ jobs:
   build:
     runs-on: ${{ matrix.os }}
     container:
-      image: tgagor/centos-stream:latest
+      image: dokken/centos-stream-8
     strategy:
       matrix:
         os: [ubuntu-latest]
