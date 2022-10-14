@@ -27,6 +27,3 @@ meson build
 ninja -C build
 cd build
 sudo ninja install
-pkg-config --cflags libdpdk
-pkg-config --libs libdpdk
-pkg-config --modversion libdpdk
