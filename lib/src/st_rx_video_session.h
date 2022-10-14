@@ -73,6 +73,13 @@ static inline float rx_video_session_get_cpu_busy(struct st_rx_video_session_imp
   return s->cpu_busy_score;
 }
 
+static inline bool rx_video_session_can_migrate(struct st_rx_video_session_impl* s) {
+  if (s->ops.flags & ST20_RX_FLAG_DISABLE_MIGRATE)
+    return false;
+  else
+    return true;
+}
+
 int st_rx_video_session_migrate(struct st_main_impl* impl,
                                 struct st_rx_video_sessions_mgr* mgr,
                                 struct st_rx_video_session_impl* s, int idx);
