@@ -6,13 +6,15 @@ The build required 3 parts, build the DPDK library, the Kahawai library on top o
 ## 1. Install the build dependency
 #### 1.1 Ubuntu/Debian:
 ```bash
+sudo apt-get update
 sudo apt-get install git gcc meson python3 python3-pip pkg-config libnuma-dev libjson-c-dev libpcap-dev libgtest-dev libsdl2-dev libsdl2-ttf-dev libssl-dev
 sudo pip install pyelftools ninja
 ```
 #### 1.2 Centos:
 ```bash
-sudo yum install git gcc meson python3 python3-pip pkg-config libnuma-devel json-c-devel libpcap-devel gtest-devel SDL2-devel SDL2_ttf-devel openssl-devel
-sudo pip install pyelftools ninja
+sudo dnf config-manager --set-enabled powertools
+sudo yum install git gcc gcc-c++ meson python3 python3-pip pkg-config json-c-devel libpcap-devel gtest-devel SDL2-devel openssl-devel numactl-devel
+sudo pip3 install pyelftools ninja
 ```
 
 ## 2. DPDK build and install:
@@ -53,4 +55,15 @@ pkg-config --modversion libdpdk
 ## 3. DPDK ST kahawai lib and app:
 ```bash
 ./build.sh
+```
+
+#### 3.1 FAQ
+It may get below error caused by PKG_CONFIG_PATH issue.
+```bash
+lib/meson.build:10:0: ERROR: Dependency "libdpdk" not found, tried pkgconfig
+```
+Try below command to find the pc path and add to the PKG_CONFIG_PATH env.
+```bash
+find / -name libdpdk.pc
+export PKG_CONFIG_PATH=/usr/local/lib64/pkgconfig/:/usr/local/lib/pkgconfig/
 ```
