@@ -23,7 +23,9 @@ jobs:
         extensions: 'hpp,h,cpp,c,cc'
 
     - name: Install the build dependency
-      run: yum install sudo git gcc meson python3 python3-pip pkg-config libnuma-devel json-c-devel libpcap-devel gtest-devel SDL2-devel SDL2_ttf-devel openssl-devel
+      run: |
+        dnf config-manager --set-enabled powertools
+        yum install sudo git gcc meson python3 python3-pip pkg-config json-c-devel libpcap-devel gtest-devel SDL2-devel openssl-devel
 
     - name: Install the python package
       run: pip install pyelftools ninja
