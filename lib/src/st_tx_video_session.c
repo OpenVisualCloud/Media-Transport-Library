@@ -264,8 +264,8 @@ static int tv_train_pacing(struct st_main_impl* impl, struct st_tx_video_session
   s->pacing.pad_interval = pad_interval;
   st_pacing_train_result_add(impl, port, rl_bps, pad_interval);
   train_end_time = st_get_tsc(impl);
-  info("%s(%d), trained pad_interval %f pkts_per_frame %f with time %fs\n", __func__, idx,
-       pad_interval, pkts_per_frame,
+  info("%s(%d,%d), trained pad_interval %f pkts_per_frame %f with time %fs\n", __func__,
+       idx, s_port, pad_interval, pkts_per_frame,
        (double)(train_end_time - train_start_time) / NS_PER_S);
   return 0;
 }
@@ -2689,7 +2689,7 @@ st20_tx_handle st20_tx_create(st_handle st, struct st20_tx_ops* ops) {
     return NULL;
   }
 
-  sch = st_sch_get(impl, quota_mbs, ST_SCH_TYPE_DEFAULT);
+  sch = st_sch_get(impl, quota_mbs, ST_SCH_TYPE_DEFAULT, ST_SCH_MASK_ALL);
   if (!sch) {
     st_rte_free(s_impl);
     err("%s, get sch fail\n", __func__);
@@ -3015,7 +3015,7 @@ st22_tx_handle st22_tx_create(st_handle st, struct st22_tx_ops* ops) {
     return NULL;
   }
 
-  sch = st_sch_get(impl, quota_mbs, ST_SCH_TYPE_DEFAULT);
+  sch = st_sch_get(impl, quota_mbs, ST_SCH_TYPE_DEFAULT, ST_SCH_MASK_ALL);
   if (!sch) {
     st_rte_free(s_impl);
     err("%s, get sch fail\n", __func__);

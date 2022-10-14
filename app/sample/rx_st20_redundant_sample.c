@@ -33,6 +33,7 @@ static st_handle g_st_handle;
 struct app_context {
   int idx;
   int fb_rec;
+  int stat_fb_rec;
   st20r_rx_handle handle;
 
   bool stop;
@@ -179,6 +180,9 @@ int main() {
   st20r_rx_handle rx_handle[session_num];
   struct app_context* app[session_num];
   int ret;
+  uint64_t sart_time_ns;
+  int loop = 0;
+
   // create and register rx session
   for (int i = 0; i < session_num; i++) {
     app[i] = (struct app_context*)malloc(sizeof(struct app_context));
@@ -246,8 +250,21 @@ int main() {
   g_video_active = true;
 
   // rx run
+  sart_time_ns = st_ptp_read_time(dev_handle);
   while (g_video_active) {
     sleep(1);
+    loop++;
+    if (0 == (loop % 10)) {
+      uint64_t end_time_ns = st_ptp_read_time(dev_handle);
+      double time_sec = (double)(end_time_ns - sart_time_ns) / (1000 * 1000 * 1000);
+      for (int i = 0; i < session_num; i++) {
+        int fb_rec = app[i]->fb_rec - app[i]->stat_fb_rec;
+        double framerate = fb_rec / time_sec;
+        printf("%s(%d), fps %f, %d frame received\n", __func__, i, framerate, fb_rec);
+        app[i]->stat_fb_rec = app[i]->fb_rec;
+      }
+      sart_time_ns = end_time_ns;
+    }
   }
 
   // stop app thread

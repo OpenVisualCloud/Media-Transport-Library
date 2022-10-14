@@ -5,6 +5,7 @@
 #include "st20_redundant_rx.h"
 
 #include "../st_log.h"
+#include "../st_rx_video_session.h"
 
 static int rx_st20r_frame_pop(struct st20r_rx_ctx* ctx, void* frame) {
   struct st20r_rx_frame* rx_frame;
@@ -150,14 +151,22 @@ static int rx_st20r_create_transport(struct st20r_rx_ctx* ctx, struct st20r_rx_o
   ops_rx.framebuff_cnt = ops->framebuff_cnt;
   ops_rx.notify_frame_ready = rx_st20r_frame_ready;
 
-  transport->handle = st20_rx_create(impl, &ops_rx);
+  st_sch_mask_t sch_mask = ST_SCH_MASK_ALL;
+  if (port == ST_PORT_R) {
+    /* let R port select a different sch */
+    sch_mask &= ~(ST_BIT64(st20_rx_get_sch_idx(ctx->transport[ST_PORT_P]->handle)));
+  }
+  dbg("%s(%d,%d), sch_mask %" PRIx64 "\n", __func__, idx, port, sch_mask);
+  transport->handle = st20_rx_create_with_mask(impl, &ops_rx, sch_mask);
   if (!transport->handle) {
-    err("%s(%d), transport create fail\n", __func__, idx);
+    err("%s(%d), transport create fail on port %d\n", __func__, idx, port);
     rx_st20r_free_transport(transport);
     return -EIO;
   }
 
   ctx->transport[port] = transport;
+  info("%s(%d,%d), succ on sch %d\n", __func__, idx, port,
+       st20_rx_get_sch_idx(transport->handle));
   return 0;
 }
 

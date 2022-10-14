@@ -3312,8 +3312,8 @@ static int rv_st22_ops_check(struct st22_rx_ops* ops) {
   return 0;
 }
 
-st20_rx_handle st20_rx_create(st_handle st, struct st20_rx_ops* ops) {
-  struct st_main_impl* impl = st;
+st20_rx_handle st20_rx_create_with_mask(struct st_main_impl* impl,
+                                        struct st20_rx_ops* ops, st_sch_mask_t sch_mask) {
   struct st_sch_impl* sch;
   struct st_rx_video_session_handle_impl* s_impl;
   struct st_rx_video_session_impl* s;
@@ -3354,9 +3354,9 @@ st20_rx_handle st20_rx_create(st_handle st, struct st20_rx_ops* ops) {
     return NULL;
   }
 
-  sch = st_sch_get(
-      impl, quota_mbs,
-      st_rx_video_separate_sch(impl) ? ST_SCH_TYPE_RX_VIDEO_ONLY : ST_SCH_TYPE_DEFAULT);
+  enum st_sch_type type =
+      st_rx_video_separate_sch(impl) ? ST_SCH_TYPE_RX_VIDEO_ONLY : ST_SCH_TYPE_DEFAULT;
+  sch = st_sch_get(impl, quota_mbs, type, sch_mask);
   if (!sch) {
     st_rte_free(s_impl);
     err("%s, get sch fail\n", __func__);
@@ -3399,6 +3399,10 @@ st20_rx_handle st20_rx_create(st_handle st, struct st20_rx_ops* ops) {
   rte_atomic32_inc(&impl->st20_rx_sessions_cnt);
   info("%s, succ on sch %d session %d\n", __func__, sch->idx, s->idx);
   return s_impl;
+}
+
+st20_rx_handle st20_rx_create(st_handle st, struct st20_rx_ops* ops) {
+  return st20_rx_create_with_mask(st, ops, ST_SCH_MASK_ALL);
 }
 
 int st20_rx_update_source(st20_rx_handle handle, struct st_rx_source_info* src) {
@@ -3666,9 +3670,9 @@ st22_rx_handle st22_rx_create(st_handle st, struct st22_rx_ops* ops) {
     return NULL;
   }
 
-  sch = st_sch_get(
-      impl, quota_mbs,
-      st_rx_video_separate_sch(impl) ? ST_SCH_TYPE_RX_VIDEO_ONLY : ST_SCH_TYPE_DEFAULT);
+  enum st_sch_type type =
+      st_rx_video_separate_sch(impl) ? ST_SCH_TYPE_RX_VIDEO_ONLY : ST_SCH_TYPE_DEFAULT;
+  sch = st_sch_get(impl, quota_mbs, type, ST_SCH_MASK_ALL);
   if (!sch) {
     st_rte_free(s_impl);
     err("%s, get sch fail\n", __func__);

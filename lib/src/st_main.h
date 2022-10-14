@@ -935,6 +935,11 @@ enum st_sch_type {
   ST_SCH_TYPE_MAX,
 };
 
+typedef uint64_t st_sch_mask_t;
+
+/* all sch */
+#define ST_SCH_MASK_ALL ((st_sch_mask_t)-1)
+
 struct st_sch_impl {
   pthread_mutex_t mutex; /* protect sch context */
   struct st_sch_tasklet_impl* tasklet[ST_MAX_TASKLET_PER_SCH];

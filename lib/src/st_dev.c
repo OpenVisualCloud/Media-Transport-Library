@@ -1772,7 +1772,7 @@ int st_dev_create(struct st_main_impl* impl) {
   }
 
   /* create system sch */
-  impl->main_sch = st_sch_get(impl, 0, ST_SCH_TYPE_DEFAULT);
+  impl->main_sch = st_sch_get(impl, 0, ST_SCH_TYPE_DEFAULT, ST_SCH_MASK_ALL);
   if (ret < 0) {
     err("%s, get sch fail\n", __func__);
     goto err_exit;
