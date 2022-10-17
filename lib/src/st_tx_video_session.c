@@ -604,12 +604,11 @@ static int tv_build_pkt(struct st_main_impl* impl, struct st_tx_video_session_im
   s->st20_ipv4_packet_id++;
 
   if (single_line) {
-    int pkts_in_line = s->st20_pkts_in_line;
-    line1_number = s->st20_pkt_idx / pkts_in_line;
+    line1_number = s->st20_pkt_idx / s->st20_pkts_in_line;
     int pixel_in_pkt = s->st20_pkt_len / s->st20_pg.size * s->st20_pg.coverage;
-    line1_offset = pixel_in_pkt * (s->st20_pkt_idx % pkts_in_line);
-    offset = (line1_number * ops->width + line1_offset) / s->st20_pg.coverage *
-             s->st20_pg.size;
+    line1_offset = pixel_in_pkt * (s->st20_pkt_idx % s->st20_pkts_in_line);
+    offset = line1_number * s->st20_linesize +
+             line1_offset / s->st20_pg.coverage * s->st20_pg.size;
   } else {
     offset = s->st20_pkt_len * s->st20_pkt_idx;
     line1_number = offset / s->st20_bytes_in_line;
@@ -2092,6 +2091,9 @@ static int tv_attach(struct st_main_impl* impl, struct st_tx_video_sessions_mgr*
     return ret;
   }
 
+  s->st20_linesize = ops->width * s->st20_pg.size / s->st20_pg.coverage;
+  if (ops->linesize > s->st20_linesize) s->st20_linesize = ops->linesize;
+
   uint32_t height = ops->interlaced ? (ops->height >> 1) : ops->height;
   if (st22_frame_ops) {
     if (st22_frame_ops->flags & ST22_TX_FLAG_DISABLE_BOXES)
@@ -2101,7 +2103,7 @@ static int tv_attach(struct st_main_impl* impl, struct st_tx_video_sessions_mgr*
     s->st22_codestream_size = st22_frame_ops->framebuff_max_size;
     s->st20_frame_size = s->st22_codestream_size + s->st22_box_hdr_length;
   } else {
-    s->st20_frame_size = ops->width * height * s->st20_pg.size / s->st20_pg.coverage;
+    s->st20_frame_size = s->st20_linesize * height;
   }
   s->st20_frames_cnt = ops->framebuff_cnt;
 
@@ -2554,6 +2556,12 @@ static int tv_ops_check(struct st20_tx_ops* ops) {
     if (ops->type == ST20_TYPE_SLICE_LEVEL) {
       if (!ops->query_frame_lines_ready) {
         err("%s, pls set query_frame_lines_ready\n", __func__);
+        return -EINVAL;
+      }
+    }
+    if (ops->linesize != 0) {
+      if (ops->packing != ST20_PACKING_GPM_SL) {
+        err("%s, linesize only used for single line packing mode now\n", __func__);
         return -EINVAL;
       }
     }

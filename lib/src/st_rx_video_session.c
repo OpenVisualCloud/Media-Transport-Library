@@ -1532,11 +1532,13 @@ static int rv_handle_frame_pkt(struct st_rx_video_session_impl* s, struct rte_mb
   }
 
   /* caculate offset */
-  uint32_t offset =
-      (line1_number * ops->width + line1_offset) / s->st20_pg.coverage * s->st20_pg.size;
+  uint32_t offset;
+  offset = line1_number * s->st20_linesize +
+           line1_offset / s->st20_pg.coverage * s->st20_pg.size;
   size_t payload_length = line1_length;
   if (extra_rtp) payload_length += ntohs(extra_rtp->row_length);
-  if ((offset + payload_length) > s->st20_frame_size) {
+  uint32_t offset_border = s->st20_linesize * ops->height;
+  if ((offset + payload_length) > offset_border) {
     dbg("%s(%d,%d): invalid offset %u frame size %" PRIu64 "\n", __func__, s->idx, s_port,
         offset, s->st20_frame_size);
     dbg("%s, number %u offset %u len %u\n", __func__, line1_number, line1_offset,
@@ -1626,7 +1628,7 @@ static int rv_handle_frame_pkt(struct st_rx_video_session_impl* s, struct rte_mb
     if (frame_recv_size >= s->st20_frame_size) end_frame = true;
   }
   if (end_frame) {
-    dbg("%s(%d,%d): full frame on %p(%d)\n", __func__, s->idx, s_port, slot->frame,
+    dbg("%s(%d,%d): full frame on %p(%lu)\n", __func__, s->idx, s_port, slot->frame,
         frame_recv_size);
     dbg("%s(%d,%d): tmstamp %u slot %d\n", __func__, s->idx, s_port, slot->tmstamp,
         slot->idx);
@@ -2641,6 +2643,8 @@ static int rv_attach(struct st_main_impl* impl, struct st_rx_video_sessions_mgr*
     info("%s(%d), hdr_split enabled in ops\n", __func__, idx);
   }
 
+  s->st20_linesize = ops->width * s->st20_pg.size / s->st20_pg.coverage;
+  if (ops->linesize > s->st20_linesize) s->st20_linesize = ops->linesize;
   s->slice_lines = ops->slice_lines;
   if (!s->slice_lines) s->slice_lines = ops->height / 32;
   s->slice_size = ops->width * s->slice_lines * s->st20_pg.size / s->st20_pg.coverage;

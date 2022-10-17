@@ -583,6 +583,8 @@ struct st20_tx_ops {
   uint32_t width;
   /** Session resolution height */
   uint32_t height;
+  /** Session linesize in bytes */
+  uint32_t linesize;
   /** Session resolution fps */
   enum st_fps fps;
   /** Session resolution format */
@@ -814,6 +816,8 @@ struct st20_rx_ops {
   uint32_t width;
   /** Session resolution height */
   uint32_t height;
+  /** Session linesize in bytes */
+  uint32_t linesize;
   /** Session resolution fps */
   enum st_fps fps;
   /** Session resolution format */
