@@ -1,5 +1,5 @@
 1. Start tx.
-   ./build/app/RxTxApp --config_file tests/script/redundant/tx.json
+   ./build/app/RxTxApp --config_file tests/script/redundant_json/tx.json
 2. Start rx, BDF is hardcode now, chang it according to your setup.
    ./build/app/RxSt20RedundantSample
 3. Run sch_smi_emulate on the rx lcore to simulate the frame drop in one lcore, the lcore number can be get from the rx log.

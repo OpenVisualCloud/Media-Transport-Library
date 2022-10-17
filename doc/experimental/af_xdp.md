@@ -38,25 +38,25 @@ modprobe ice
 #### 3.3 Assing IP and tuned settings:
 Below is the command to assign an IP in case no DHCP support in your setup
 ```bash
-nmcli dev set ens801f0 managed no
-ifconfig ens801f0 192.168.108.101/24
-nmcli dev set ens801f1 managed no
-ifconfig ens801f1 192.168.108.102/24
+sudo nmcli dev set ens801f0 managed no
+sudo ifconfig ens801f0 192.168.108.101/24
+sudo nmcli dev set ens801f1 managed no
+sudo ifconfig ens801f1 192.168.108.102/24
 ```
 Below is the tuned settings for performance.
 ```bash
-echo 2 | sudo tee /sys/class/net/ens801f1/napi_defer_hard_irqs
-echo 200000 | sudo tee /sys/class/net/ens801f1/gro_flush_timeout
 echo 2 | sudo tee /sys/class/net/ens801f0/napi_defer_hard_irqs
 echo 200000 | sudo tee /sys/class/net/ens801f0/gro_flush_timeout
+echo 2 | sudo tee /sys/class/net/ens801f1/napi_defer_hard_irqs
+echo 200000 | sudo tee /sys/class/net/ens801f1/gro_flush_timeout
 ```
 You may need disbale rp_filter for multicast report message.
 ```bash
-sysctl -w net.ipv4.conf.all.rp_filter=0
+sudo sysctl -w net.ipv4.conf.all.rp_filter=0
 ```
 
-## 4. Run:
-Refer to [afxdp config](../tests/script/afxdp/) for how to config the AF_XDP pmd in json config.
+## 4. Run with root user:
+Refer to [afxdp config](../tests/script/afxdp_json/) for how to config the AF_XDP pmd in json config.
 
 ## 5. FAQs:
 #### 5.1 No IP assigned.
