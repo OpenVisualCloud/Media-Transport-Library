@@ -8,6 +8,7 @@
 * test.wav for audio
 * test.txt for ancillary
 * test.pcap for rtp pcap models
+* test_st22.pcap for st22 pcap files
 
 ## 2. Loop test:
 Loop test with all json files under loop_json dir.
