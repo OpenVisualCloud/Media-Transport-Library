@@ -153,21 +153,21 @@ static int rx_st22p_decode_dump(void* priv) {
   uint16_t producer_idx = ctx->framebuff_producer_idx;
   uint16_t decode_idx = ctx->framebuff_decode_idx;
   uint16_t consumer_idx = ctx->framebuff_consumer_idx;
-  info("RX_ST22P(%s), p(%d:%s) d(%d:%s) c(%d:%s)\n", ctx->ops_name, producer_idx,
-       rx_st22p_stat_name(framebuff[producer_idx].stat), decode_idx,
-       rx_st22p_stat_name(framebuff[decode_idx].stat), consumer_idx,
-       rx_st22p_stat_name(framebuff[consumer_idx].stat));
+  notice("RX_ST22P(%s), p(%d:%s) d(%d:%s) c(%d:%s)\n", ctx->ops_name, producer_idx,
+         rx_st22p_stat_name(framebuff[producer_idx].stat), decode_idx,
+         rx_st22p_stat_name(framebuff[decode_idx].stat), consumer_idx,
+         rx_st22p_stat_name(framebuff[consumer_idx].stat));
 
   int decode_fail = rte_atomic32_read(&ctx->stat_decode_fail);
   rte_atomic32_set(&ctx->stat_decode_fail, 0);
   if (decode_fail) {
-    info("RX_ST22P(%s), decode fail %d\n", ctx->ops_name, decode_fail);
+    notice("RX_ST22P(%s), decode fail %d\n", ctx->ops_name, decode_fail);
   }
 
   int busy = rte_atomic32_read(&ctx->stat_busy);
   rte_atomic32_set(&ctx->stat_busy, 0);
   if (busy) {
-    info("RX_ST22P(%s), busy drop frame %d\n", ctx->ops_name, busy);
+    notice("RX_ST22P(%s), busy drop frame %d\n", ctx->ops_name, busy);
   }
 
   return 0;

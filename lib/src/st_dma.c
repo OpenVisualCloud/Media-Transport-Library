@@ -368,8 +368,8 @@ static int dma_stat(struct st_main_impl* impl, struct st_dma_dev* dev) {
     avg_nb_inflight = dev->stat_inflight_sum / dev->stat_commit_sum;
   dev->stat_inflight_sum = 0;
   dev->stat_commit_sum = 0;
-  info("DMA(%d), s %" PRIu64 " c %" PRIu64 " e %" PRIu64 " avg q %" PRIu64 "\n", idx,
-       stats.submitted, stats.completed, stats.errors, avg_nb_inflight);
+  notice("DMA(%d), s %" PRIu64 " c %" PRIu64 " e %" PRIu64 " avg q %" PRIu64 "\n", idx,
+         stats.submitted, stats.completed, stats.errors, avg_nb_inflight);
 
   return 0;
 }

@@ -118,9 +118,9 @@ static void dev_eth_stat(struct st_main_impl* impl) {
       uint64_t orate_m = stats.obytes * 8 / ST_DEV_STAT_INTERVAL_S / ST_DEV_STAT_M_UNIT;
       uint64_t irate_m = stats.ibytes * 8 / ST_DEV_STAT_INTERVAL_S / ST_DEV_STAT_M_UNIT;
 
-      info("DEV(%d): Avr rate, tx: %" PRIu64 " Mb/s, rx: %" PRIu64
-           " Mb/s, pkts, tx: %" PRIu64 ", rx: %" PRIu64 "\n",
-           i, orate_m, irate_m, stats.opackets, stats.ipackets);
+      notice("DEV(%d): Avr rate, tx: %" PRIu64 " Mb/s, rx: %" PRIu64
+             " Mb/s, pkts, tx: %" PRIu64 ", rx: %" PRIu64 "\n",
+             i, orate_m, irate_m, stats.opackets, stats.ipackets);
       if (stats.imissed || stats.ierrors || stats.rx_nombuf ||
           (stats.oerrors && (ST_PORT_VF != st_port_type(impl, i)))) {
         err("DEV(%d): Status: imissed %" PRIu64 " ierrors %" PRIu64 " oerrors %" PRIu64
@@ -140,7 +140,7 @@ static void dev_stat(struct st_main_impl* impl) {
 
   if (rte_atomic32_read(&impl->dev_in_reset)) return;
 
-  info("* *    S T    D E V   S T A T E   * * \n");
+  notice("* *    S T    D E V   S T A T E   * * \n");
   dev_eth_stat(impl);
   st_ptp_stat(impl);
   st_cni_stat(impl);
@@ -154,7 +154,7 @@ static void dev_stat(struct st_main_impl* impl) {
   if (impl->rx_anc_init) st_rx_ancillary_sessions_stat(impl);
   st_plugins_dump(impl);
   if (p->stat_dump_cb_fn) p->stat_dump_cb_fn(p->priv);
-  info("* *    E N D    S T A T E   * * \n\n");
+  notice("* *    E N D    S T A T E   * * \n\n");
 }
 
 static void dev_stat_wakeup_thread(struct st_main_impl* impl) {
@@ -268,19 +268,22 @@ static int dev_eal_init(struct st_init_params* p, struct st_kport_info* kport_in
 
   argv[argc] = "--log-level";
   argc++;
-  if (p->log_level == ST_LOG_LEVEL_DEBUG)
+  if (p->log_level == ST_LOG_LEVEL_DEBUG) {
     argv[argc] = "user,debug";
-  else if (p->log_level == ST_LOG_LEVEL_INFO) {
+  } else if (p->log_level == ST_LOG_LEVEL_INFO) {
     if (has_afxdp)
       argv[argc] = "pmd.net.af_xdp,info";
     else
       argv[argc] = "info";
-  } else if (p->log_level == ST_LOG_LEVEL_WARNING)
+  } else if (p->log_level == ST_LOG_LEVEL_NOTICE) {
+    argv[argc] = "notice";
+  } else if (p->log_level == ST_LOG_LEVEL_WARNING) {
     argv[argc] = "warning";
-  else if (p->log_level == ST_LOG_LEVEL_ERROR)
+  } else if (p->log_level == ST_LOG_LEVEL_ERROR) {
     argv[argc] = "error";
-  else
+  } else {
     argv[argc] = "info";
+  }
   argc++;
 
   if (p->flags & ST_FLAG_RXTX_SIMD_512) {

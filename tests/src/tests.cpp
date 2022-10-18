@@ -131,6 +131,8 @@ static int test_parse_args(struct st_tests_context* ctx, struct st_init_params* 
           p->log_level = ST_LOG_LEVEL_DEBUG;
         else if (!strcmp(optarg, "info"))
           p->log_level = ST_LOG_LEVEL_INFO;
+        else if (!strcmp(optarg, "notice"))
+          p->log_level = ST_LOG_LEVEL_NOTICE;
         else if (!strcmp(optarg, "warning"))
           p->log_level = ST_LOG_LEVEL_WARNING;
         else if (!strcmp(optarg, "error"))

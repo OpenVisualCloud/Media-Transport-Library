@@ -175,9 +175,9 @@ int main() {
   param.pmd[ST_PORT_P] = RX_VIDEO_PMD;
   param.xdp_info[ST_PORT_P].queue_count = session_num;
   param.xdp_info[ST_PORT_P].start_queue = 16;
-  param.flags = ST_FLAG_BIND_NUMA;      // default bind to numa
-  param.log_level = ST_LOG_LEVEL_INFO;  // log level. ERROR, INFO, WARNING
-  param.priv = NULL;                    // usr ctx pointer
+  param.flags = ST_FLAG_BIND_NUMA;        // default bind to numa
+  param.log_level = ST_LOG_LEVEL_NOTICE;  // log level. ERROR, INFO, WARNING
+  param.priv = NULL;                      // usr ctx pointer
   // user regist ptp func, if not regist, the internal pt p will be used
   param.ptp_get_time_fn = NULL;
   param.tx_sessions_cnt_max = 0;

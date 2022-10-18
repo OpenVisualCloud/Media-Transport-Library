@@ -1122,21 +1122,21 @@ static void tx_ancillary_session_stat(struct st_tx_ancillary_session_impl* s) {
 
   rte_atomic32_set(&s->st40_stat_frame_cnt, 0);
 
-  info("TX_ANC_SESSION(%d:%s): frame cnt %d, pkt cnt %d\n", idx, s->ops_name, frame_cnt,
-       s->st40_stat_pkt_cnt);
+  notice("TX_ANC_SESSION(%d:%s): frame cnt %d, pkt cnt %d\n", idx, s->ops_name, frame_cnt,
+         s->st40_stat_pkt_cnt);
   s->st40_stat_pkt_cnt = 0;
 
   if (s->st40_epoch_mismatch) {
-    info("TX_ANC_SESSION(%d): st40 epoch mismatch %d\n", idx, s->st40_epoch_mismatch);
+    notice("TX_ANC_SESSION(%d): st40 epoch mismatch %d\n", idx, s->st40_epoch_mismatch);
     s->st40_epoch_mismatch = 0;
   }
-  if (frame_cnt <= 0) {
+  if (frame_cnt <= 0) { /* may error state */
     err("TX_ANC_SESSION(%d): build ret %d\n", idx, s->stat_build_ret_code);
   }
 
   if (s->stat_error_user_timestamp) {
-    info("TX_ANC_SESSION(%d): error user timestamp %u\n", idx,
-         s->stat_error_user_timestamp);
+    notice("TX_ANC_SESSION(%d): error user timestamp %u\n", idx,
+           s->stat_error_user_timestamp);
     s->stat_error_user_timestamp = 0;
   }
 }
@@ -1272,7 +1272,7 @@ void st_tx_ancillary_sessions_stat(struct st_main_impl* impl) {
     tx_ancillary_session_put(mgr, j);
   }
   if (mgr->st40_stat_pkts_burst > 0) {
-    info("TX_ANC_SESSION, pkts burst %d\n", mgr->st40_stat_pkts_burst);
+    notice("TX_ANC_SESSION, pkts burst %d\n", mgr->st40_stat_pkts_burst);
     mgr->st40_stat_pkts_burst = 0;
   } else {
     if (mgr->max_idx > 0) {

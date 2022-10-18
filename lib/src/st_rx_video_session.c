@@ -2813,20 +2813,21 @@ static void rv_stat(struct st_rx_video_sessions_mgr* mgr,
   rte_atomic32_set(&s->stat_frames_received, 0);
 
   if (s->stat_slices_received) {
-    info("RX_VIDEO_SESSION(%d,%d:%s): fps %f frames %d pkts %d slices %d, cpu busy %f\n",
-         m_idx, idx, s->ops_name, framerate, frames_received, s->stat_pkts_received,
-         s->stat_slices_received, s->cpu_busy_score);
+    notice(
+        "RX_VIDEO_SESSION(%d,%d:%s): fps %f frames %d pkts %d slices %d, cpu busy %f\n",
+        m_idx, idx, s->ops_name, framerate, frames_received, s->stat_pkts_received,
+        s->stat_slices_received, s->cpu_busy_score);
   } else {
-    info("RX_VIDEO_SESSION(%d,%d:%s): fps %f frames %d pkts %d, cpu busy %f\n", m_idx,
-         idx, s->ops_name, framerate, frames_received, s->stat_pkts_received,
-         s->cpu_busy_score);
+    notice("RX_VIDEO_SESSION(%d,%d:%s): fps %f frames %d pkts %d, cpu busy %f\n", m_idx,
+           idx, s->ops_name, framerate, frames_received, s->stat_pkts_received,
+           s->cpu_busy_score);
   }
   s->stat_pkts_received = 0;
   s->stat_slices_received = 0;
   s->stat_last_time = cur_time_ns;
 
   if (s->stat_frames_dropped || s->stat_pkts_idx_dropped || s->stat_pkts_offset_dropped) {
-    info(
+    notice(
         "RX_VIDEO_SESSION(%d,%d): incomplete frames %d, pkts (idx error: %d, offset "
         "error: %d, idx out of bitmap: %d)\n",
         m_idx, idx, s->stat_frames_dropped, s->stat_pkts_idx_dropped,
@@ -2836,63 +2837,63 @@ static void rv_stat(struct st_rx_video_sessions_mgr* mgr,
     s->stat_pkts_idx_oo_bitmap = 0;
   }
   if (s->stat_pkts_rtp_ring_full) {
-    info("RX_VIDEO_SESSION(%d,%d): rtp dropped pkts %d as ring full\n", m_idx, idx,
-         s->stat_pkts_rtp_ring_full);
+    notice("RX_VIDEO_SESSION(%d,%d): rtp dropped pkts %d as ring full\n", m_idx, idx,
+           s->stat_pkts_rtp_ring_full);
     s->stat_pkts_rtp_ring_full = 0;
   }
   if (s->stat_pkts_no_slot) {
-    info("RX_VIDEO_SESSION(%d,%d): dropped pkts %d as no slot\n", m_idx, idx,
-         s->stat_pkts_no_slot);
+    notice("RX_VIDEO_SESSION(%d,%d): dropped pkts %d as no slot\n", m_idx, idx,
+           s->stat_pkts_no_slot);
     s->stat_pkts_no_slot = 0;
   }
   if (s->stat_pkts_redunant_dropped) {
-    info("RX_VIDEO_SESSION(%d,%d): redunant dropped pkts %d\n", m_idx, idx,
-         s->stat_pkts_redunant_dropped);
+    notice("RX_VIDEO_SESSION(%d,%d): redunant dropped pkts %d\n", m_idx, idx,
+           s->stat_pkts_redunant_dropped);
     s->stat_pkts_redunant_dropped = 0;
   }
   if (s->stat_pkts_wrong_hdr_dropped) {
-    info("RX_VIDEO_SESSION(%d,%d): wrong hdr dropped pkts %d\n", m_idx, idx,
-         s->stat_pkts_wrong_hdr_dropped);
+    notice("RX_VIDEO_SESSION(%d,%d): wrong hdr dropped pkts %d\n", m_idx, idx,
+           s->stat_pkts_wrong_hdr_dropped);
     s->stat_pkts_wrong_hdr_dropped = 0;
   }
   if (s->stat_pkts_enqueue_fallback) {
-    info("RX_VIDEO_SESSION(%d,%d): lcore enqueue fallback pkts %d\n", m_idx, idx,
-         s->stat_pkts_enqueue_fallback);
+    notice("RX_VIDEO_SESSION(%d,%d): lcore enqueue fallback pkts %d\n", m_idx, idx,
+           s->stat_pkts_enqueue_fallback);
     s->stat_pkts_enqueue_fallback = 0;
   }
   if (s->dma_dev) {
-    info("RX_VIDEO_SESSION(%d,%d): pkts %d by dma copy, dma busy %f\n", m_idx, idx,
-         s->stat_pkts_dma, s->dma_busy_score);
+    notice("RX_VIDEO_SESSION(%d,%d): pkts %d by dma copy, dma busy %f\n", m_idx, idx,
+           s->stat_pkts_dma, s->dma_busy_score);
     s->stat_pkts_dma = 0;
   }
   if (s->stat_pkts_slice_fail) {
-    info("RX_VIDEO_SESSION(%d,%d): pkts %d drop as slice add fail\n", m_idx, idx,
-         s->stat_pkts_slice_fail);
+    notice("RX_VIDEO_SESSION(%d,%d): pkts %d drop as slice add fail\n", m_idx, idx,
+           s->stat_pkts_slice_fail);
     s->stat_pkts_slice_fail = 0;
   }
   if (s->stat_pkts_slice_merged) {
-    info("RX_VIDEO_SESSION(%d,%d): pkts %d merged as slice\n", m_idx, idx,
-         s->stat_pkts_slice_merged);
+    notice("RX_VIDEO_SESSION(%d,%d): pkts %d merged as slice\n", m_idx, idx,
+           s->stat_pkts_slice_merged);
     s->stat_pkts_slice_merged = 0;
   }
   if (s->stat_pkts_multi_segments_received) {
-    info("RX_VIDEO_SESSION(%d,%d): multi segments pkts %d\n", m_idx, idx,
-         s->stat_pkts_multi_segments_received);
+    notice("RX_VIDEO_SESSION(%d,%d): multi segments pkts %d\n", m_idx, idx,
+           s->stat_pkts_multi_segments_received);
     s->stat_pkts_multi_segments_received = 0;
   }
   if (s->stat_pkts_not_bpm) {
-    info("RX_VIDEO_SESSION(%d,%d): not bpm hdr split pkts %d\n", m_idx, idx,
-         s->stat_pkts_not_bpm);
+    notice("RX_VIDEO_SESSION(%d,%d): not bpm hdr split pkts %d\n", m_idx, idx,
+           s->stat_pkts_not_bpm);
     s->stat_pkts_not_bpm = 0;
   }
   if (s->stat_pkts_wrong_payload_hdr_split) {
-    info("RX_VIDEO_SESSION(%d,%d): wrong payload hdr split pkts %d\n", m_idx, idx,
-         s->stat_pkts_wrong_payload_hdr_split);
+    notice("RX_VIDEO_SESSION(%d,%d): wrong payload hdr split pkts %d\n", m_idx, idx,
+           s->stat_pkts_wrong_payload_hdr_split);
     s->stat_pkts_wrong_payload_hdr_split = 0;
   }
   if (s->stat_mismatch_hdr_split_frame) {
-    info("RX_VIDEO_SESSION(%d,%d): hdr split mismatch frames %d\n", m_idx, idx,
-         s->stat_mismatch_hdr_split_frame);
+    notice("RX_VIDEO_SESSION(%d,%d): hdr split mismatch frames %d\n", m_idx, idx,
+           s->stat_mismatch_hdr_split_frame);
     s->stat_mismatch_hdr_split_frame = 0;
   }
 }

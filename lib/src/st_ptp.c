@@ -751,16 +751,16 @@ void st_ptp_stat(struct st_main_impl* impl) {
     spec.tv_sec -= ptp->master_utc_offset; /* display with utc offset */
     localtime_r(&spec.tv_sec, &t);
     strftime(date_time, sizeof(date_time), "%Y-%m-%d %H:%M:%S", &t);
-    info("PTP(%d): time %" PRIu64 ", %s\n", i, ns, date_time);
+    notice("PTP(%d): time %" PRIu64 ", %s\n", i, ns, date_time);
 
     if (!st_if_has_ptp(impl, i)) {
       if (st_has_ebu(impl)) {
-        info("PTP(%d): raw ptp %" PRIu64 "\n", i, ptp_get_raw_time(ptp));
+        notice("PTP(%d): raw ptp %" PRIu64 "\n", i, ptp_get_raw_time(ptp));
         if (ptp->stat_delta_cnt) {
-          info("PTP(%d): delta avr %" PRId64 ", min %" PRId64 ", max %" PRId64
-               ", cnt %d, expect %d\n",
-               i, ptp->stat_delta_sum / ptp->stat_delta_cnt, ptp->stat_delta_min,
-               ptp->stat_delta_max, ptp->stat_delta_cnt, ptp->expect_result_avg);
+          notice("PTP(%d): delta avr %" PRId64 ", min %" PRId64 ", max %" PRId64
+                 ", cnt %d, expect %d\n",
+                 i, ptp->stat_delta_sum / ptp->stat_delta_cnt, ptp->stat_delta_min,
+                 ptp->stat_delta_max, ptp->stat_delta_cnt, ptp->expect_result_avg);
         }
         ptp_stat_clear(ptp);
       }
@@ -768,19 +768,19 @@ void st_ptp_stat(struct st_main_impl* impl) {
     }
 
     if (ptp->stat_delta_cnt)
-      info("PTP(%d): mode %s, delta avr %" PRId64 ", min %" PRId64 ", max %" PRId64
-           ", cnt %d\n",
-           i, ptp_mode_str(ptp->t2_mode), ptp->stat_delta_sum / ptp->stat_delta_cnt,
-           ptp->stat_delta_min, ptp->stat_delta_max, ptp->stat_delta_cnt);
+      notice("PTP(%d): mode %s, delta avr %" PRId64 ", min %" PRId64 ", max %" PRId64
+             ", cnt %d\n",
+             i, ptp_mode_str(ptp->t2_mode), ptp->stat_delta_sum / ptp->stat_delta_cnt,
+             ptp->stat_delta_min, ptp->stat_delta_max, ptp->stat_delta_cnt);
     else
-      info("PTP(%d): not connected\n", i);
-    info("PTP(%d): sync cnt %d, expect avg %d@%fs\n", i, ptp->stat_sync_cnt,
-         ptp->expect_result_avg, (float)ptp->expect_result_period_ns / NS_PER_S);
+      notice("PTP(%d): not connected\n", i);
+    notice("PTP(%d): sync cnt %d, expect avg %d@%fs\n", i, ptp->stat_sync_cnt,
+           ptp->expect_result_avg, (float)ptp->expect_result_period_ns / NS_PER_S);
     if (ptp->stat_rx_sync_err || ptp->stat_result_err || ptp->stat_tx_sync_err)
-      info("PTP(%d): rx time error %d, tx time error %d, delta result error %d\n", i,
-           ptp->stat_rx_sync_err, ptp->stat_tx_sync_err, ptp->stat_result_err);
+      notice("PTP(%d): rx time error %d, tx time error %d, delta result error %d\n", i,
+             ptp->stat_rx_sync_err, ptp->stat_tx_sync_err, ptp->stat_result_err);
     if (ptp->stat_sync_timeout_err)
-      info("PTP(%d): sync timeout %d\n", i, ptp->stat_sync_timeout_err);
+      notice("PTP(%d): sync timeout %d\n", i, ptp->stat_sync_timeout_err);
     ptp_stat_clear(ptp);
   }
 }

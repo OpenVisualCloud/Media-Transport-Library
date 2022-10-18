@@ -382,7 +382,7 @@ static int st22_encode_dev_dump(struct st22_encode_dev_impl* encode) {
   struct st22_encode_session_impl* session;
   int ref_cnt = rte_atomic32_read(&encode->ref_cnt);
 
-  if (ref_cnt) info("ST22 encoder dev: %s with %d sessons\n", encode->name, ref_cnt);
+  if (ref_cnt) notice("ST22 encoder dev: %s with %d sessons\n", encode->name, ref_cnt);
   for (int i = 0; i < ST_MAX_SESSIIONS_PER_ENCODER; i++) {
     session = &encode->sessions[i];
     if (!session->session) continue;
@@ -396,7 +396,7 @@ static int st22_decode_dev_dump(struct st22_decode_dev_impl* decode) {
   struct st22_decode_session_impl* session;
   int ref_cnt = rte_atomic32_read(&decode->ref_cnt);
 
-  if (ref_cnt) info("ST22 encoder dev: %s with %d sessons\n", decode->name, ref_cnt);
+  if (ref_cnt) notice("ST22 encoder dev: %s with %d sessons\n", decode->name, ref_cnt);
   for (int i = 0; i < ST_MAX_SESSIIONS_PER_DECODER; i++) {
     session = &decode->sessions[i];
     if (!session->session) continue;
@@ -410,7 +410,7 @@ static int st20_convert_dev_dump(struct st20_convert_dev_impl* convert) {
   struct st20_convert_session_impl* session;
   int ref_cnt = rte_atomic32_read(&convert->ref_cnt);
 
-  if (ref_cnt) info("ST20 convert dev: %s with %d sessons\n", convert->name, ref_cnt);
+  if (ref_cnt) notice("ST20 convert dev: %s with %d sessons\n", convert->name, ref_cnt);
   for (int i = 0; i < ST_MAX_SESSIIONS_PER_CONVERTER; i++) {
     session = &convert->sessions[i];
     if (!session->session) continue;

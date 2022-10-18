@@ -95,9 +95,9 @@ int main() {
   param.num_ports = 1;
   strncpy(param.port[ST_PORT_P], port, ST_PORT_MAX_LEN);
   memcpy(param.sip_addr[ST_PORT_P], g_rx_video_local_ip, ST_IP_ADDR_LEN);
-  param.flags = ST_FLAG_BIND_NUMA;      // default bind to numa
-  param.log_level = ST_LOG_LEVEL_INFO;  // log level. ERROR, INFO, WARNING
-  param.priv = NULL;                    // usr ctx pointer
+  param.flags = ST_FLAG_BIND_NUMA;        // default bind to numa
+  param.log_level = ST_LOG_LEVEL_NOTICE;  // log level. ERROR, INFO, WARNING
+  param.priv = NULL;                      // usr ctx pointer
   param.ptp_get_time_fn =
       NULL;  // user regist ptp func, if not regist, the internal pt p will be used
   param.tx_sessions_cnt_max = 0;

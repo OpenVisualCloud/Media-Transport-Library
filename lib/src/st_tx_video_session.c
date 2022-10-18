@@ -2242,7 +2242,7 @@ static void tv_stat(struct st_tx_video_sessions_mgr* mgr,
 
   rte_atomic32_set(&s->stat_frame_cnt, 0);
 
-  info(
+  notice(
       "TX_VIDEO_SESSION(%d,%d:%s): fps %f, frame %d pkts %d:%d inflight %d:%d, cpu busy "
       "%f\n",
       m_idx, idx, s->ops_name, framerate, frame_cnt, s->stat_pkts_build,
@@ -2256,40 +2256,41 @@ static void tv_stat(struct st_tx_video_sessions_mgr* mgr,
   s->stat_pkts_burst_dummy = 0;
 
   if (s->stat_epoch_troffset_mismatch) {
-    info("TX_VIDEO_SESSION(%d,%d): mismatch epoch troffset %u\n", m_idx, idx,
-         s->stat_epoch_troffset_mismatch);
+    notice("TX_VIDEO_SESSION(%d,%d): mismatch epoch troffset %u\n", m_idx, idx,
+           s->stat_epoch_troffset_mismatch);
     s->stat_epoch_troffset_mismatch = 0;
   }
   if (s->stat_trans_troffset_mismatch) {
-    info("TX_VIDEO_SESSION(%d,%d): transmitter mismatch troffset %u\n", m_idx, idx,
-         s->stat_trans_troffset_mismatch);
+    notice("TX_VIDEO_SESSION(%d,%d): transmitter mismatch troffset %u\n", m_idx, idx,
+           s->stat_trans_troffset_mismatch);
     s->stat_trans_troffset_mismatch = 0;
   }
   if (s->stat_epoch_drop) {
-    info("TX_VIDEO_SESSION(%d,%d): epoch drop %u\n", m_idx, idx, s->stat_epoch_drop);
+    notice("TX_VIDEO_SESSION(%d,%d): epoch drop %u\n", m_idx, idx, s->stat_epoch_drop);
     s->stat_epoch_drop = 0;
   }
   if (s->stat_exceed_frame_time) {
-    info("TX_VIDEO_SESSION(%d,%d): build timeout frames %u\n", m_idx, idx,
-         s->stat_exceed_frame_time);
+    notice("TX_VIDEO_SESSION(%d,%d): build timeout frames %u\n", m_idx, idx,
+           s->stat_exceed_frame_time);
     s->stat_exceed_frame_time = 0;
   }
   if (s->stat_error_user_timestamp) {
-    info("TX_VIDEO_SESSION(%d,%d): error user timestamp %u\n", m_idx, idx,
-         s->stat_error_user_timestamp);
+    notice("TX_VIDEO_SESSION(%d,%d): error user timestamp %u\n", m_idx, idx,
+           s->stat_error_user_timestamp);
     s->stat_error_user_timestamp = 0;
   }
   if (s->stat_user_busy) {
-    info("TX_VIDEO_SESSION(%d,%d): busy as no ready frame from user %u\n", m_idx, idx,
-         s->stat_user_busy);
+    notice("TX_VIDEO_SESSION(%d,%d): busy as no ready frame from user %u\n", m_idx, idx,
+           s->stat_user_busy);
     s->stat_user_busy = 0;
   }
   if (s->stat_lines_not_ready) {
-    info("TX_VIDEO_SESSION(%d,%d): query new lines but app not ready %u\n", m_idx, idx,
-         s->stat_lines_not_ready);
+    notice("TX_VIDEO_SESSION(%d,%d): query new lines but app not ready %u\n", m_idx, idx,
+           s->stat_lines_not_ready);
     s->stat_lines_not_ready = 0;
   }
   if (frame_cnt <= 0) {
+    /* error level */
     err("TX_VIDEO_SESSION(%d,%d:%s): build ret %d, trs ret %d:%d\n", m_idx, idx,
         s->ops_name, s->stat_build_ret_code, s->stat_trs_ret_code[ST_SESSION_PORT_P],
         s->stat_trs_ret_code[ST_SESSION_PORT_R]);
@@ -2305,8 +2306,8 @@ static void tv_stat(struct st_tx_video_sessions_mgr* mgr,
       if (rte_atomic32_read(&frame_info->refcnt)) frames_in_trans++;
     }
     if ((frames_in_trans > 2) || (frames_in_trans >= framebuff_cnt)) {
-      info("TX_VIDEO_SESSION(%d,%d:%s): %d frames are in trans, total %u\n", m_idx, idx,
-           s->ops_name, frames_in_trans, framebuff_cnt);
+      notice("TX_VIDEO_SESSION(%d,%d:%s): %d frames are in trans, total %u\n", m_idx, idx,
+             s->ops_name, frames_in_trans, framebuff_cnt);
     }
   }
 }

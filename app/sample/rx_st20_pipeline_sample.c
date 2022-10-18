@@ -219,8 +219,8 @@ int main() {
   strncpy(param.port[ST_PORT_P], port, ST_PORT_MAX_LEN);
   memcpy(param.sip_addr[ST_PORT_P], g_rx_st20_local_ip, ST_IP_ADDR_LEN);
   param.flags = ST_FLAG_BIND_NUMA | ST_FLAG_DEV_AUTO_START_STOP;
-  param.log_level = ST_LOG_LEVEL_INFO;  // log level. ERROR, INFO, WARNING
-  param.priv = NULL;                    // usr crx pointer
+  param.log_level = ST_LOG_LEVEL_NOTICE;  // log level. ERROR, INFO, WARNING
+  param.priv = NULL;                      // usr crx pointer
   param.ptp_get_time_fn = NULL;
   param.rx_sessions_cnt_max = session_num;
   param.tx_sessions_cnt_max = 0;

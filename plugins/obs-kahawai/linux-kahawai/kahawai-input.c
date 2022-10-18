@@ -322,6 +322,7 @@ static obs_properties_t* kahawai_properties(void* vptr) {
                               OBS_COMBO_TYPE_LIST, OBS_COMBO_FORMAT_INT);
   obs_property_list_add_int(log_level_list, "ERROR", ST_LOG_LEVEL_ERROR);
   obs_property_list_add_int(log_level_list, "INFO", ST_LOG_LEVEL_INFO);
+  obs_property_list_add_int(log_level_list, "NOTICE", ST_LOG_LEVEL_NOTICE);
   obs_property_list_add_int(log_level_list, "WARNING", ST_LOG_LEVEL_WARNING);
   obs_property_list_add_int(log_level_list, "DEBUG", ST_LOG_LEVEL_DEBUG);
 

@@ -1085,22 +1085,23 @@ static void tx_audio_session_stat(struct st_tx_audio_session_impl* s) {
 
   rte_atomic32_set(&s->st30_stat_frame_cnt, 0);
 
-  info("TX_AUDIO_SESSION(%d:%s): frame cnt %d, pkt cnt %d, inflight count %d: %d\n", idx,
-       s->ops_name, frame_cnt, s->st30_stat_pkt_cnt, s->inflight_cnt[ST_PORT_P],
-       s->inflight_cnt[ST_PORT_R]);
+  notice("TX_AUDIO_SESSION(%d:%s): frame cnt %d, pkt cnt %d, inflight count %d: %d\n",
+         idx, s->ops_name, frame_cnt, s->st30_stat_pkt_cnt, s->inflight_cnt[ST_PORT_P],
+         s->inflight_cnt[ST_PORT_R]);
   s->st30_stat_pkt_cnt = 0;
 
   if (s->st30_epoch_mismatch) {
-    info("TX_AUDIO_SESSION(%d): st30 epoch mismatch %d\n", idx, s->st30_epoch_mismatch);
+    notice("TX_AUDIO_SESSION(%d): st30 epoch mismatch %d\n", idx, s->st30_epoch_mismatch);
     s->st30_epoch_mismatch = 0;
   }
   if (frame_cnt <= 0) {
+    /* error level */
     err("TX_AUDIO_SESSION(%d): build ret %d\n", idx, s->stat_build_ret_code);
   }
 
   if (s->stat_error_user_timestamp) {
-    info("TX_AUDIO_SESSION(%d): error user timestamp %u\n", idx,
-         s->stat_error_user_timestamp);
+    notice("TX_AUDIO_SESSION(%d): error user timestamp %u\n", idx,
+           s->stat_error_user_timestamp);
     s->stat_error_user_timestamp = 0;
   }
 }
@@ -1260,7 +1261,7 @@ void st_tx_audio_sessions_stat(struct st_main_impl* impl) {
     tx_audio_session_put(mgr, j);
   }
   if (mgr->st30_stat_pkts_burst > 0) {
-    info("TX_AUDIO_SESSION, pkts burst %d\n", mgr->st30_stat_pkts_burst);
+    notice("TX_AUDIO_SESSION, pkts burst %d\n", mgr->st30_stat_pkts_burst);
     mgr->st30_stat_pkts_burst = 0;
   } else {
     if (mgr->max_idx > 0) {
