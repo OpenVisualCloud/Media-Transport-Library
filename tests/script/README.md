@@ -68,3 +68,9 @@ export PATH=$PATH:/usr/local/bin/
 ```bash
 ./hdr_split_test.sh
 ```
+
+## 6. Sample test:
+Customize sample_test.sh as the setup and run
+```bash
+./sample_test.sh
+```
