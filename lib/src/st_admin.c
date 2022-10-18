@@ -90,13 +90,6 @@ static inline int tx_video_quota_mbs(struct st_tx_video_session_impl* s) {
     return s->st20_handle->quota_mbs;
 }
 
-static inline struct st_sch_impl* tx_video_get_sch(struct st_tx_video_session_impl* s) {
-  if (s->st22_handle)
-    return s->st22_handle->sch;
-  else
-    return s->st20_handle->sch;
-}
-
 static inline void tx_video_set_sch(struct st_tx_video_session_impl* s,
                                     struct st_sch_impl* sch) {
   if (s->st22_handle)
@@ -210,13 +203,6 @@ static inline int rx_video_quota_mbs(struct st_rx_video_session_impl* s) {
     return s->st22_handle->quota_mbs;
   else
     return s->st20_handle->quota_mbs;
-}
-
-static inline struct st_sch_impl* rx_video_get_sch(struct st_rx_video_session_impl* s) {
-  if (s->st22_handle)
-    return s->st22_handle->sch;
-  else
-    return s->st20_handle->sch;
 }
 
 static inline void rx_video_set_sch(struct st_rx_video_session_impl* s,

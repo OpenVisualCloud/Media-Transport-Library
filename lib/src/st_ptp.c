@@ -111,16 +111,16 @@ static void ptp_adjust_delta(struct st_ptp_impl* ptp, int64_t delta) {
   ptp->ptp_delta += delta;
 
   if (5 == ptp->delta_result_cnt) /* clear the first 5 results */
-    ptp->delta_result_sum = abs(delta) * ptp->delta_result_cnt;
+    ptp->delta_result_sum = labs(delta) * ptp->delta_result_cnt;
   else
-    ptp->delta_result_sum += abs(delta);
+    ptp->delta_result_sum += labs(delta);
 
   ptp->delta_result_cnt++;
   /* update status */
   ptp->stat_delta_min = RTE_MIN(delta, ptp->stat_delta_min);
   ptp->stat_delta_max = RTE_MAX(delta, ptp->stat_delta_max);
   ptp->stat_delta_cnt++;
-  ptp->stat_delta_sum += abs(delta);
+  ptp->stat_delta_sum += labs(delta);
 }
 
 static void ptp_expect_result_clear(struct st_ptp_impl* ptp) {
@@ -179,7 +179,7 @@ static int ptp_parse_result(struct st_ptp_impl* ptp) {
       ptp->port, ptp->t1, ptp->t2, ptp->t3, ptp->t4);
 
   delta /= 2;
-  abs_delta = abs(delta);
+  abs_delta = labs(delta);
 
   /* cancel the monitor */
   rte_eal_alarm_cancel(ptp_sync_timeout_handler, ptp);
@@ -217,7 +217,7 @@ static int ptp_parse_result(struct st_ptp_impl* ptp) {
   ptp_t_result_clear(ptp);
 
   if (ptp->delta_result_cnt > 10) {
-    if (abs(delta) < 10000) {
+    if (labs(delta) < 10000) {
       ptp->expect_result_cnt++;
       if (!ptp->expect_result_start_ns)
         ptp->expect_result_start_ns = st_get_monotonic_time();
@@ -524,7 +524,7 @@ static void ptp_sync_from_user(struct st_main_impl* impl, struct st_ptp_impl* pt
   uint64_t target_ns = st_get_ptp_time(impl, port);
   uint64_t raw_ns = ptp_get_raw_time(ptp);
   int64_t delta = (int64_t)target_ns - raw_ns;
-  uint64_t abs_delta = abs(delta);
+  uint64_t abs_delta = labs(delta);
   uint64_t expect_abs_delta = abs(ptp->expect_result_avg) * 2;
 
   if (expect_abs_delta) {
@@ -552,7 +552,7 @@ static void ptp_sync_from_user(struct st_main_impl* impl, struct st_ptp_impl* pt
   ptp->stat_delta_min = RTE_MIN(delta, ptp->stat_delta_min);
   ptp->stat_delta_max = RTE_MAX(delta, ptp->stat_delta_max);
   ptp->stat_delta_cnt++;
-  ptp->stat_delta_sum += abs(delta);
+  ptp->stat_delta_sum += labs(delta);
 }
 
 static void ptp_sync_from_user_handler(void* param) {
