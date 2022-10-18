@@ -293,18 +293,19 @@ static void sch_stat(struct st_sch_impl* sch) {
 
       if (tasklet->stat_time_cnt) {
         avg_us = tasklet->stat_sum_time_us / tasklet->stat_time_cnt;
-        info("SCH(%d): tasklet %s, avg %uus max %uus min %uus\n", idx, tasklet->name,
-             avg_us, tasklet->stat_max_time_us, tasklet->stat_min_time_us);
+        notice("SCH(%d): tasklet %s, avg %uus max %uus min %uus\n", idx, tasklet->name,
+               avg_us, tasklet->stat_max_time_us, tasklet->stat_min_time_us);
         sch_tasklet_stat_clear(tasklet);
       }
     }
   }
 
   if (sch->allow_sleep) {
-    info("SCH(%d): sleep %fms(ratio:%f), cnt %u, min %" PRIu64 "us, max %" PRIu64 "us\n",
-         idx, (double)sch->stat_sleep_ns / NS_PER_MS, sch->sleep_ratio_score,
-         sch->stat_sleep_cnt, sch->stat_sleep_ns_min / NS_PER_US,
-         sch->stat_sleep_ns_max / NS_PER_US);
+    notice("SCH(%d): sleep %fms(ratio:%f), cnt %u, min %" PRIu64 "us, max %" PRIu64
+           "us\n",
+           idx, (double)sch->stat_sleep_ns / NS_PER_MS, sch->sleep_ratio_score,
+           sch->stat_sleep_cnt, sch->stat_sleep_ns_min / NS_PER_US,
+           sch->stat_sleep_ns_max / NS_PER_US);
     sch->stat_sleep_ns = 0;
     sch->stat_sleep_cnt = 0;
     sch->stat_sleep_ns_min = -1;

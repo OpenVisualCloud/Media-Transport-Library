@@ -342,18 +342,18 @@ static void rx_ancillary_session_stat(struct st_rx_ancillary_session_impl* s) {
 
   rte_atomic32_set(&s->st40_stat_frames_received, 0);
 
-  info("RX_ANC_SESSION(%d:%s): fps %f, st40 received frames %d, received pkts %d\n", idx,
-       s->ops_name, framerate, frames_received, s->st40_stat_pkts_received);
+  notice("RX_ANC_SESSION(%d:%s): fps %f, st40 received frames %d, received pkts %d\n",
+         idx, s->ops_name, framerate, frames_received, s->st40_stat_pkts_received);
   s->st40_stat_pkts_received = 0;
   s->st40_stat_last_time = cur_time_ns;
 
   if (s->st40_stat_pkts_dropped) {
-    info("RX_ANC_SESSION(%d): st40 dropped pkts %d\n", idx, s->st40_stat_pkts_dropped);
+    notice("RX_ANC_SESSION(%d): st40 dropped pkts %d\n", idx, s->st40_stat_pkts_dropped);
     s->st40_stat_pkts_dropped = 0;
   }
   if (s->st40_stat_pkts_wrong_hdr_dropped) {
-    info("RX_AUDIO_SESSION(%d): wrong hdr dropped pkts %d\n", idx,
-         s->st40_stat_pkts_wrong_hdr_dropped);
+    notice("RX_AUDIO_SESSION(%d): wrong hdr dropped pkts %d\n", idx,
+           s->st40_stat_pkts_wrong_hdr_dropped);
     s->st40_stat_pkts_wrong_hdr_dropped = 0;
   }
 }

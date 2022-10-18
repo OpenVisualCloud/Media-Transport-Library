@@ -204,21 +204,21 @@ static int tx_st20p_convert_dump(void* priv) {
   uint16_t producer_idx = ctx->framebuff_producer_idx;
   uint16_t convert_idx = ctx->framebuff_convert_idx;
   uint16_t consumer_idx = ctx->framebuff_consumer_idx;
-  info("TX_st20p(%s), p(%d:%s) cv(%d:%s) c(%d:%s)\n", ctx->ops_name, producer_idx,
-       tx_st20p_stat_name(framebuff[producer_idx].stat), convert_idx,
-       tx_st20p_stat_name(framebuff[convert_idx].stat), consumer_idx,
-       tx_st20p_stat_name(framebuff[consumer_idx].stat));
+  notice("TX_st20p(%s), p(%d:%s) cv(%d:%s) c(%d:%s)\n", ctx->ops_name, producer_idx,
+         tx_st20p_stat_name(framebuff[producer_idx].stat), convert_idx,
+         tx_st20p_stat_name(framebuff[convert_idx].stat), consumer_idx,
+         tx_st20p_stat_name(framebuff[consumer_idx].stat));
 
   int convert_fail = rte_atomic32_read(&ctx->stat_convert_fail);
   rte_atomic32_set(&ctx->stat_convert_fail, 0);
   if (convert_fail) {
-    info("TX_st20p(%s), convert fail %d\n", ctx->ops_name, convert_fail);
+    notice("TX_st20p(%s), convert fail %d\n", ctx->ops_name, convert_fail);
   }
 
   int busy = rte_atomic32_read(&ctx->stat_busy);
   rte_atomic32_set(&ctx->stat_busy, 0);
   if (busy) {
-    info("TX_st20p(%s), busy drop frame %d\n", ctx->ops_name, busy);
+    notice("TX_st20p(%s), busy drop frame %d\n", ctx->ops_name, busy);
   }
 
   return 0;

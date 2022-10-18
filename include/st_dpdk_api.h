@@ -130,6 +130,7 @@ enum st_port {
 enum st_log_level {
   ST_LOG_LEVEL_DEBUG = 0, /**< debug log level */
   ST_LOG_LEVEL_INFO,      /**< info log level */
+  ST_LOG_LEVEL_NOTICE,    /**< notice log level */
   ST_LOG_LEVEL_WARNING,   /**< warning log level */
   ST_LOG_LEVEL_ERROR,     /**< error log level */
   ST_LOG_LEVEL_MAX,       /**< max value of this enum */

@@ -26,6 +26,10 @@ enum st_log_level app_get_log_level(void);
   do {                                                                 \
     if (app_get_log_level() <= ST_LOG_LEVEL_INFO) printf(__VA_ARGS__); \
   } while (0)
+#define notce(...)                                                       \
+  do {                                                                   \
+    if (app_get_log_level() <= ST_LOG_LEVEL_NOTICE) printf(__VA_ARGS__); \
+  } while (0)
 #define warn(...)                                                         \
   do {                                                                    \
     if (app_get_log_level() <= ST_LOG_LEVEL_WARNING) printf(__VA_ARGS__); \

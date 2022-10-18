@@ -229,7 +229,7 @@ void st_cni_stat(struct st_main_impl* impl) {
   if (!cni->used) return;
 
   for (int i = 0; i < num_ports; i++) {
-    info("CNI(%d): eth_rx_cnt %d \n", i, cni->eth_rx_cnt[i]);
+    notice("CNI(%d): eth_rx_cnt %d \n", i, cni->eth_rx_cnt[i]);
     cni->eth_rx_cnt[i] = 0;
   }
 }

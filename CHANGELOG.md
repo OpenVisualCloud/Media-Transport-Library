@@ -4,6 +4,7 @@
 * tasklet: add thread and sleep option for core usage, see ST_FLAG_TASKLET_THREAD and ST_FLAG_TASKLET_SLEEP.
 * tx: add user time stamp control, see ST20_TX_FLAG_USER_TIMESTAMP/ST30_TX_FLAG_USER_TIMESTAMP/ST40_TX_FLAG_USER_TIMESTAMP.
 * rx/video: add dual core redundant mode support. See st20_redundant_api.h for detail. Header split only support this dual core redundant mode.
+* lib/log: add noice level log, see ST_LOG_LEVEL_NOTICE.
 
 ## Change log for 22.09:
 * License: update to BSD-3

@@ -184,9 +184,9 @@ int main() {
   param.xdp_info[ST_PORT_P].start_queue = 16;
   strncpy(param.port[ST_PORT_P], port, ST_PORT_MAX_LEN);
   memcpy(param.sip_addr[ST_PORT_P], g_tx_video_local_ip, ST_IP_ADDR_LEN);
-  param.flags = ST_FLAG_BIND_NUMA;      // default bind to numa
-  param.log_level = ST_LOG_LEVEL_INFO;  // log level. ERROR, INFO, WARNING
-  param.priv = NULL;                    // usr ctx pointer
+  param.flags = ST_FLAG_BIND_NUMA;        // default bind to numa
+  param.log_level = ST_LOG_LEVEL_NOTICE;  // log level. ERROR, INFO, WARNING
+  param.priv = NULL;                      // usr ctx pointer
   // if not registed, the internal ptp source will be used
   param.ptp_get_time_fn = NULL;
   param.tx_sessions_cnt_max = session_num;

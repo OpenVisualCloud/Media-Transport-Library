@@ -188,15 +188,15 @@ static int tx_st22p_encode_dump(void* priv) {
   uint16_t producer_idx = ctx->framebuff_producer_idx;
   uint16_t encode_idx = ctx->framebuff_encode_idx;
   uint16_t consumer_idx = ctx->framebuff_consumer_idx;
-  info("TX_ST22P(%s), p(%d:%s) e(%d:%s) c(%d:%s)\n", ctx->ops_name, producer_idx,
-       tx_st22p_stat_name(framebuff[producer_idx].stat), encode_idx,
-       tx_st22p_stat_name(framebuff[encode_idx].stat), consumer_idx,
-       tx_st22p_stat_name(framebuff[consumer_idx].stat));
+  notice("TX_ST22P(%s), p(%d:%s) e(%d:%s) c(%d:%s)\n", ctx->ops_name, producer_idx,
+         tx_st22p_stat_name(framebuff[producer_idx].stat), encode_idx,
+         tx_st22p_stat_name(framebuff[encode_idx].stat), consumer_idx,
+         tx_st22p_stat_name(framebuff[consumer_idx].stat));
 
   int encode_fail = rte_atomic32_read(&ctx->stat_encode_fail);
   rte_atomic32_set(&ctx->stat_encode_fail, 0);
   if (encode_fail) {
-    info("RX_ST22P(%s), encode fail %d\n", ctx->ops_name, encode_fail);
+    notice("RX_ST22P(%s), encode fail %d\n", ctx->ops_name, encode_fail);
   }
 
   return 0;

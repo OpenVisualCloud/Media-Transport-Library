@@ -9,6 +9,8 @@
 
 /* log define */
 #define RTE_LOGTYPE_ST (RTE_LOGTYPE_USER1)
+
+/* Debug-level messages */
 #ifdef DEBUG
 #define dbg(...)                     \
   do {                               \
@@ -19,6 +21,8 @@
   do {           \
   } while (0)
 #endif
+
+/* Informational */
 #define info(...)                   \
   do {                              \
     RTE_LOG(INFO, ST, __VA_ARGS__); \
@@ -31,6 +35,22 @@
       once = false;                   \
     }                                 \
   } while (0)
+
+/* Normal but significant condition. */
+#define notice(...)                   \
+  do {                                \
+    RTE_LOG(NOTICE, ST, __VA_ARGS__); \
+  } while (0)
+#define notice_once(...)                \
+  do {                                  \
+    static bool once = true;            \
+    if (once) {                         \
+      RTE_LOG(NOTICE, ST, __VA_ARGS__); \
+      once = false;                     \
+    }                                   \
+  } while (0)
+
+/* Warning conditions. */
 #define warn(...)                      \
   do {                                 \
     RTE_LOG(WARNING, ST, __VA_ARGS__); \
@@ -43,6 +63,8 @@
       once = false;                      \
     }                                    \
   } while (0)
+
+/* Error conditions. */
 #define err(...)                   \
   do {                             \
     RTE_LOG(ERR, ST, __VA_ARGS__); \
@@ -55,6 +77,8 @@
       once = false;                  \
     }                                \
   } while (0)
+
+/* Critical conditions		*/
 #define critical(...)               \
   do {                              \
     RTE_LOG(CRIT, ST, __VA_ARGS__); \
