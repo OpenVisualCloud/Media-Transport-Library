@@ -168,6 +168,9 @@ int main() {
   if (!port_p) port_p = RX_VIDEO_BDF_P;
   char* port_r = getenv("ST_PORT_R");
   if (!port_r) port_r = RX_VIDEO_BDF_R;
+  int test_time_s = 60 * 10;
+  char* test_time_user = getenv("TEST_TIME_SEC");
+  if (test_time_user) test_time_s = atoi(test_time_user);
 
   memset(&param, 0, sizeof(param));
   param.num_ports = 2;
@@ -269,7 +272,8 @@ int main() {
 
   // rx run
   sart_time_ns = st_ptp_read_time(dev_handle);
-  while (g_video_active) {
+  printf("Run with %ds\n", test_time_s);
+  while (g_video_active && (loop < test_time_s)) {
     sleep(1);
     loop++;
     if (0 == (loop % 10)) {

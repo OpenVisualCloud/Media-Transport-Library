@@ -2532,7 +2532,7 @@ static int rv_init_hw(struct st_main_impl* impl, struct st_rx_video_session_impl
     rte_memcpy(flow.sip_addr, st_sip_addr(impl, port), ST_IP_ADDR_LEN);
     flow.port_flow = true;
     flow.dst_port = s->st20_dst_port[i];
-    if (rv_is_hdr_split(s) && st_if_has_hdr_split(impl, port)) {
+    if (rv_is_hdr_split(s)) {
       flow.hdr_split = true;
 #ifdef ST_HAS_DPDK_HDR_SPLIT
       flow.hdr_split_mbuf_cb_priv = s;

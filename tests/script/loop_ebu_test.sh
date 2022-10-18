@@ -6,7 +6,7 @@
 set -e
 
 RXTXAPP=../../build/app/RxTxApp
-TEST_JSON_DIR=.
+TEST_JSON_DIR=loop_json/
 TEST_TIME_SEC=100
 TEST_LOOP=1
 TEST_MULTI=true

@@ -144,6 +144,7 @@ if [ $cmd == "create_vf" ]; then
         #default VF number
         numvfs=6
     fi
+    modprobe vfio-pci
     disable_vf
     create_vf $numvfs
 fi
