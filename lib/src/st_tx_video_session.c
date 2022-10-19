@@ -2091,8 +2091,8 @@ static int tv_attach(struct st_main_impl* impl, struct st_tx_video_sessions_mgr*
     return ret;
   }
 
-  s->st20_linesize = ops->width * s->st20_pg.size / s->st20_pg.coverage;
-  if (ops->linesize > s->st20_linesize) s->st20_linesize = ops->linesize;
+  s->st20_linesize =
+      RTE_MAX(ops->linesize, ops->width * s->st20_pg.size / s->st20_pg.coverage);
 
   uint32_t height = ops->interlaced ? (ops->height >> 1) : ops->height;
   if (st22_frame_ops) {

@@ -2402,6 +2402,8 @@ static int rv_handle_detect_pkt(struct st_rx_video_session_impl* s, struct rte_m
         s->st20_frame_size =
             ops->width * ops->height * s->st20_pg.size / s->st20_pg.coverage;
         if (ops->interlaced) s->st20_frame_size = s->st20_frame_size >> 1;
+        s->st20_linesize =
+            RTE_MAX(ops->linesize, ops->width * s->st20_pg.size / s->st20_pg.coverage);
         /* at least 1000 byte for each packet */
         s->st20_frame_bitmap_size = s->st20_frame_size / 1000 / 8;
         /* one line at line 2 packets for all the format */
@@ -2643,8 +2645,8 @@ static int rv_attach(struct st_main_impl* impl, struct st_rx_video_sessions_mgr*
     info("%s(%d), hdr_split enabled in ops\n", __func__, idx);
   }
 
-  s->st20_linesize = ops->width * s->st20_pg.size / s->st20_pg.coverage;
-  if (ops->linesize > s->st20_linesize) s->st20_linesize = ops->linesize;
+  s->st20_linesize =
+      RTE_MAX(ops->linesize, ops->width * s->st20_pg.size / s->st20_pg.coverage);
   s->slice_lines = ops->slice_lines;
   if (!s->slice_lines) s->slice_lines = ops->height / 32;
   s->slice_size = ops->width * s->slice_lines * s->st20_pg.size / s->st20_pg.coverage;

@@ -1633,12 +1633,7 @@ static void st20_digest_rx_frame_check(void* args) {
       ctx->buf_q.pop();
       dbg("%s, frame %p\n", __func__, frame);
       int i;
-      size_t sha_size;
-      if (ctx->stride) {
-        sha_size = ctx->stride * ctx->height;
-      } else {
-        sha_size = ctx->uframe_size ? ctx->uframe_size : ctx->frame_size;
-      }
+      size_t sha_size = ctx->uframe_size ? ctx->uframe_size : (ctx->stride * ctx->height);
       SHA256((unsigned char*)frame, sha_size, result);
       for (i = 0; i < TEST_SHA_HIST_NUM; i++) {
         unsigned char* target_sha = ctx->shas[i];
@@ -1671,12 +1666,8 @@ static void st20_digest_rx_field_check(void* args) {
       ctx->second_field_q.pop();
       dbg("%s, frame %p\n", __func__, frame);
       int i;
-      size_t sha_size;
-      if (ctx->stride) {
-        sha_size = ctx->stride * ctx->height / 2;
-      } else {
-        sha_size = ctx->uframe_size ? ctx->uframe_size : ctx->frame_size;
-      }
+      size_t sha_size =
+          ctx->uframe_size ? ctx->uframe_size : (ctx->stride * ctx->height / 2);
       SHA256((unsigned char*)frame, sha_size, result);
       for (i = 0; i < TEST_SHA_HIST_NUM; i++) {
         unsigned char* target_sha = ctx->shas[i];
