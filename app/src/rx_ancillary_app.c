@@ -230,5 +230,5 @@ int st_app_rx_anc_sessions_result(struct st_app_context* ctx) {
     ret += app_rx_anc_result(s);
   }
 
-  return 0;
+  return ret;
 }

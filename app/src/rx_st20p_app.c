@@ -300,22 +300,26 @@ int st_app_rx_st20p_sessions_stat(struct st_app_context* ctx) {
 int st_app_rx_st20p_sessions_result(struct st_app_context* ctx) {
   int i, ret = 0;
   struct st_app_rx_st20p_session* s;
+
   if (!ctx->rx_st20p_sessions) return 0;
+
   for (i = 0; i < ctx->rx_st20p_session_cnt; i++) {
     s = &ctx->rx_st20p_sessions[i];
     ret += app_rx_st20p_result(s);
   }
 
-  return 0;
+  return ret;
 }
 
 int st_app_rx_st20p_sessions_pcap(struct st_app_context* ctx) {
-  int i, ret = 0;
+  int i;
   struct st_app_rx_st20p_session* s;
+
   if (!ctx->rx_st20p_sessions) return 0;
+
   for (i = 0; i < ctx->rx_st20p_session_cnt; i++) {
     s = &ctx->rx_st20p_sessions[i];
-    ret += app_rx_st20p_pcap(s);
+    app_rx_st20p_pcap(s);
   }
 
   return 0;
