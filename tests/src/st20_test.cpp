@@ -1633,8 +1633,8 @@ static void st20_digest_rx_frame_check(void* args) {
       ctx->buf_q.pop();
       dbg("%s, frame %p\n", __func__, frame);
       int i;
-      size_t sha_size = ctx->uframe_size ? ctx->uframe_size : (ctx->stride * ctx->height);
-      SHA256((unsigned char*)frame, sha_size, result);
+      SHA256((unsigned char*)frame, ctx->uframe_size ? ctx->uframe_size : ctx->frame_size,
+             result);
       for (i = 0; i < TEST_SHA_HIST_NUM; i++) {
         unsigned char* target_sha = ctx->shas[i];
         if (!memcmp(result, target_sha, SHA256_DIGEST_LENGTH)) break;
@@ -1666,9 +1666,8 @@ static void st20_digest_rx_field_check(void* args) {
       ctx->second_field_q.pop();
       dbg("%s, frame %p\n", __func__, frame);
       int i;
-      size_t sha_size =
-          ctx->uframe_size ? ctx->uframe_size : (ctx->stride * ctx->height / 2);
-      SHA256((unsigned char*)frame, sha_size, result);
+      SHA256((unsigned char*)frame, ctx->uframe_size ? ctx->uframe_size : ctx->frame_size,
+             result);
       for (i = 0; i < TEST_SHA_HIST_NUM; i++) {
         unsigned char* target_sha = ctx->shas[i];
         if (!memcmp(result, target_sha, SHA256_DIGEST_LENGTH)) break;
@@ -3692,10 +3691,9 @@ static int rx_query_ext_frame(void* priv, st20_ext_frame* ext_frame) {
 
 static void st20_tx_ext_frame_rx_digest_test(enum st20_packing packing[],
                                              enum st_fps fps[], int width[], int height[],
-                                             int linesize[], bool interlaced[],
-                                             enum st20_fmt fmt[], bool check_fps,
-                                             enum st_test_level level, int sessions = 1,
-                                             bool dynamic = false) {
+                                             bool interlaced[], enum st20_fmt fmt[],
+                                             bool check_fps, enum st_test_level level,
+                                             int sessions = 1, bool dynamic = false) {
   auto ctx = (struct st_tests_context*)st_test_ctx();
   auto m_handle = ctx->handle;
   int ret;
@@ -3755,7 +3753,6 @@ static void st20_tx_ext_frame_rx_digest_test(enum st20_packing packing[],
     ops_tx.type = ST20_TYPE_FRAME_LEVEL;
     ops_tx.width = width[i];
     ops_tx.height = height[i];
-    ops_tx.linesize = linesize[i];
     ops_tx.interlaced = interlaced[i];
     ops_tx.fps = fps[i];
     ops_tx.fmt = fmt[i];
@@ -3772,16 +3769,14 @@ static void st20_tx_ext_frame_rx_digest_test(enum st20_packing packing[],
     /* sha caculate */
     struct st20_pgroup st20_pg;
     st20_get_pgroup(ops_tx.fmt, &st20_pg);
-    test_ctx_tx[i]->stride = ops_tx.width * st20_pg.size / st20_pg.coverage;
-    if (linesize[i] > test_ctx_tx[i]->stride) test_ctx_tx[i]->stride = linesize[i];
-    size_t frame_size = test_ctx_tx[i]->stride * ops_tx.height;
+    size_t frame_size = ops_tx.width * ops_tx.height * st20_pg.size / st20_pg.coverage;
     if (interlaced[i]) frame_size = frame_size >> 1;
     EXPECT_EQ(st20_tx_get_framebuffer_size(tx_handle[i]), frame_size);
     EXPECT_EQ(st20_tx_get_framebuffer_count(tx_handle[i]), test_ctx_tx[i]->fb_cnt);
 
     test_ctx_tx[i]->frame_size = frame_size;
-    test_ctx_tx[i]->width = ops_tx.width;
     test_ctx_tx[i]->height = ops_tx.height;
+    test_ctx_tx[i]->stride = ops_tx.width / st20_pg.coverage * st20_pg.size;
 
     test_ctx_tx[i]->ext_frames = (struct st20_ext_frame*)malloc(
         sizeof(*test_ctx_tx[i]->ext_frames) * test_ctx_tx[i]->fb_cnt);
@@ -3810,16 +3805,7 @@ static void st20_tx_ext_frame_rx_digest_test(enum st20_packing packing[],
       fb = (uint8_t*)test_ctx_tx[i]->ext_fb + frame * frame_size;
 
       ASSERT_TRUE(fb != NULL);
-      if (linesize[i]) { /* leave padding data as 0 */
-        size_t valid_linesize = ops_tx.width * st20_pg.size / st20_pg.coverage;
-        int total_lines = height[i];
-        if (interlaced[i]) total_lines = total_lines / 2;
-        for (int line = 0; line < total_lines; line++) {
-          st_test_rand_data(fb + line * linesize[i], valid_linesize, frame);
-        }
-      } else {
-        st_test_rand_data(fb, frame_size, frame);
-      }
+      st_test_rand_data(fb, frame_size, frame);
       unsigned char* result = test_ctx_tx[i]->shas[frame];
       SHA256((unsigned char*)fb, frame_size, result);
       test_sha_dump("st20_rx", result);
@@ -3840,7 +3826,7 @@ static void st20_tx_ext_frame_rx_digest_test(enum st20_packing packing[],
 
     test_ctx_rx[i]->ext_frames = (struct st20_ext_frame*)malloc(
         sizeof(*test_ctx_rx[i]->ext_frames) * test_ctx_rx[i]->fb_cnt);
-    size_t frame_size = test_ctx_tx[i]->frame_size;
+    size_t frame_size = st20_frame_size(fmt[i], width[i], height[i]);
     size_t pg_sz = st_page_size(m_handle);
     size_t fb_size = frame_size * test_ctx_rx[i]->fb_cnt;
     test_ctx_rx[i]->ext_fb_iova_map_sz = st_size_page_align(fb_size, pg_sz); /* align */
@@ -3872,7 +3858,6 @@ static void st20_tx_ext_frame_rx_digest_test(enum st20_packing packing[],
     ops_rx.type = ST20_TYPE_FRAME_LEVEL;
     ops_rx.width = width[i];
     ops_rx.height = height[i];
-    ops_rx.linesize = linesize[i];
     ops_rx.fps = fps[i];
     ops_rx.fmt = fmt[i];
     ops_rx.payload_type = ST20_TEST_PAYLOAD_TYPE;
@@ -3890,11 +3875,8 @@ static void st20_tx_ext_frame_rx_digest_test(enum st20_packing packing[],
 
     rx_handle[i] = st20_rx_create(m_handle, &ops_rx);
 
-    test_ctx_rx[i]->frame_size = st20_frame_size(fmt[i], width[i], height[i]);
-    if (interlaced[i]) test_ctx_rx[i]->frame_size = test_ctx_rx[i]->frame_size >> 1;
+    test_ctx_rx[i]->frame_size = test_ctx_tx[i]->frame_size;
     test_ctx_rx[i]->width = ops_rx.width;
-    test_ctx_rx[i]->height = ops_rx.height;
-    test_ctx_rx[i]->stride = ops_rx.linesize;
     st20_get_pgroup(ops_rx.fmt, &test_ctx_rx[i]->st20_pg);
     memcpy(test_ctx_rx[i]->shas, test_ctx_tx[i]->shas,
            TEST_SHA_HIST_NUM * SHA256_DIGEST_LENGTH);
@@ -3975,11 +3957,10 @@ TEST(St20_rx, ext_frame_digest_frame_1080p_fps59_94_s1) {
   enum st_fps fps[1] = {ST_FPS_P59_94};
   int width[1] = {1920};
   int height[1] = {1080};
-  int linesize[1] = {0};
   bool interlaced[1] = {false};
   enum st20_fmt fmt[1] = {ST20_FMT_YUV_422_10BIT};
-  st20_tx_ext_frame_rx_digest_test(packing, fps, width, height, linesize, interlaced, fmt,
-                                   true, ST_TEST_LEVEL_ALL);
+  st20_tx_ext_frame_rx_digest_test(packing, fps, width, height, interlaced, fmt, true,
+                                   ST_TEST_LEVEL_ALL);
 }
 
 TEST(St20_rx, ext_frame_digest20_field_1080p_fps59_94_s1) {
@@ -3987,11 +3968,10 @@ TEST(St20_rx, ext_frame_digest20_field_1080p_fps59_94_s1) {
   enum st_fps fps[1] = {ST_FPS_P59_94};
   int width[1] = {1920};
   int height[1] = {1080};
-  int linesize[1] = {0};
   bool interlaced[1] = {true};
   enum st20_fmt fmt[1] = {ST20_FMT_YUV_422_10BIT};
-  st20_tx_ext_frame_rx_digest_test(packing, fps, width, height, linesize, interlaced, fmt,
-                                   true, ST_TEST_LEVEL_ALL);
+  st20_tx_ext_frame_rx_digest_test(packing, fps, width, height, interlaced, fmt, true,
+                                   ST_TEST_LEVEL_ALL);
 }
 
 TEST(St20_rx, ext_frame_digest_frame_720p_fps59_94_s1_gpm) {
@@ -3999,11 +3979,10 @@ TEST(St20_rx, ext_frame_digest_frame_720p_fps59_94_s1_gpm) {
   enum st_fps fps[1] = {ST_FPS_P59_94};
   int width[1] = {1280};
   int height[1] = {720};
-  int linesize[1] = {0};
   bool interlaced[1] = {false};
   enum st20_fmt fmt[1] = {ST20_FMT_YUV_422_10BIT};
-  st20_tx_ext_frame_rx_digest_test(packing, fps, width, height, linesize, interlaced, fmt,
-                                   true, ST_TEST_LEVEL_ALL);
+  st20_tx_ext_frame_rx_digest_test(packing, fps, width, height, interlaced, fmt, true,
+                                   ST_TEST_LEVEL_ALL);
 }
 
 TEST(St20_rx, ext_frame_s3) {
@@ -4011,26 +3990,11 @@ TEST(St20_rx, ext_frame_s3) {
   enum st_fps fps[3] = {ST_FPS_P59_94, ST_FPS_P50, ST_FPS_P50};
   int width[3] = {1280, 1920, 1920};
   int height[3] = {720, 1080, 1080};
-  int linesize[3] = {0, 0, 0};
   bool interlaced[3] = {true, true, true};
   enum st20_fmt fmt[3] = {ST20_FMT_YUV_422_10BIT, ST20_FMT_YUV_422_10BIT,
                           ST20_FMT_YUV_422_10BIT};
-  st20_tx_ext_frame_rx_digest_test(packing, fps, width, height, linesize, interlaced, fmt,
-                                   true, ST_TEST_LEVEL_MANDATORY, 3);
-}
-
-TEST(St20_rx, ext_frame_s3_linesize) {
-  enum st20_packing packing[3] = {ST20_PACKING_GPM_SL, ST20_PACKING_GPM_SL,
-                                  ST20_PACKING_GPM_SL};
-  enum st_fps fps[3] = {ST_FPS_P59_94, ST_FPS_P50, ST_FPS_P50};
-  int width[3] = {1280, 1920, 1920};
-  int height[3] = {720, 1080, 1080};
-  int linesize[3] = {4096, 5120, 8192};
-  bool interlaced[3] = {false, true, false};
-  enum st20_fmt fmt[3] = {ST20_FMT_YUV_422_10BIT, ST20_FMT_YUV_422_10BIT,
-                          ST20_FMT_YUV_422_10BIT};
-  st20_tx_ext_frame_rx_digest_test(packing, fps, width, height, linesize, interlaced, fmt,
-                                   true, ST_TEST_LEVEL_MANDATORY, 3);
+  st20_tx_ext_frame_rx_digest_test(packing, fps, width, height, interlaced, fmt, true,
+                                   ST_TEST_LEVEL_MANDATORY, 3);
 }
 
 TEST(St20_rx, ext_frame_s3_2) {
@@ -4038,12 +4002,11 @@ TEST(St20_rx, ext_frame_s3_2) {
   enum st_fps fps[3] = {ST_FPS_P59_94, ST_FPS_P50, ST_FPS_P50};
   int width[3] = {1280, 1920, 1920};
   int height[3] = {720, 1080, 1080};
-  int linesize[3] = {0, 0, 0};
   bool interlaced[3] = {true, false, true};
   enum st20_fmt fmt[3] = {ST20_FMT_YUV_422_12BIT, ST20_FMT_YUV_422_10BIT,
                           ST20_FMT_YUV_422_8BIT};
-  st20_tx_ext_frame_rx_digest_test(packing, fps, width, height, linesize, interlaced, fmt,
-                                   true, ST_TEST_LEVEL_MANDATORY, 3);
+  st20_tx_ext_frame_rx_digest_test(packing, fps, width, height, interlaced, fmt, true,
+                                   ST_TEST_LEVEL_MANDATORY, 3);
 }
 
 TEST(St20_rx, dynamic_ext_frame_s3) {
@@ -4051,12 +4014,11 @@ TEST(St20_rx, dynamic_ext_frame_s3) {
   enum st_fps fps[3] = {ST_FPS_P59_94, ST_FPS_P50, ST_FPS_P29_97};
   int width[3] = {1280, 1280, 1920};
   int height[3] = {720, 720, 1080};
-  int linesize[3] = {0, 0, 0};
   bool interlaced[3] = {false, false, false};
   enum st20_fmt fmt[3] = {ST20_FMT_YUV_422_10BIT, ST20_FMT_YUV_422_10BIT,
                           ST20_FMT_YUV_422_10BIT};
-  st20_tx_ext_frame_rx_digest_test(packing, fps, width, height, linesize, interlaced, fmt,
-                                   true, ST_TEST_LEVEL_MANDATORY, 3, true);
+  st20_tx_ext_frame_rx_digest_test(packing, fps, width, height, interlaced, fmt, true,
+                                   ST_TEST_LEVEL_MANDATORY, 3, true);
 }
 
 static void st20_tx_timestamp_test(int width[], int height[], enum st20_fmt fmt[],
