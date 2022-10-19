@@ -70,7 +70,7 @@ static void tv_frame_free_cb(void* addr, void* opaque) {
 
   for (frame_idx = 0; frame_idx < s->st20_frames_cnt; ++frame_idx) {
     frame_info = &s->st20_frames[frame_idx];
-    if ((addr >= frame_info->addr) && (addr < (frame_info->addr + s->st20_frame_size)))
+    if ((addr >= frame_info->addr) && (addr < (frame_info->addr + s->st20_fb_size)))
       break;
   }
   if (frame_idx >= s->st20_frames_cnt) {
@@ -123,10 +123,10 @@ static int tv_alloc_frames(struct st_main_impl* impl,
       frame_info->flags = ST_FT_FLAG_EXT;
       info("%s(%d), use external framebuffer, skip allocation\n", __func__, idx);
     } else {
-      void* frame = st_rte_zmalloc_socket(s->st20_frame_size, soc_id);
+      void* frame = st_rte_zmalloc_socket(s->st20_fb_size, soc_id);
       if (!frame) {
-        err("%s(%d), rte_malloc %" PRIu64 " fail at %d\n", __func__, idx,
-            s->st20_frame_size, i);
+        err("%s(%d), rte_malloc %" PRIu64 " fail at %d\n", __func__, idx, s->st20_fb_size,
+            i);
         return -ENOMEM;
       }
       if (st22_info) { /* copy boxes */
@@ -2091,8 +2091,13 @@ static int tv_attach(struct st_main_impl* impl, struct st_tx_video_sessions_mgr*
     return ret;
   }
 
-  s->st20_linesize =
-      RTE_MAX(ops->linesize, ops->width * s->st20_pg.size / s->st20_pg.coverage);
+  s->st20_linesize = ops->width * s->st20_pg.size / s->st20_pg.coverage;
+  if (ops->linesize > s->st20_linesize)
+    s->st20_linesize = ops->linesize;
+  else if (ops->linesize) {
+    err("%s(%d), invalid linesize %u\n", __func__, idx, ops->linesize);
+    return -EINVAL;
+  }
 
   uint32_t height = ops->interlaced ? (ops->height >> 1) : ops->height;
   if (st22_frame_ops) {
@@ -2103,7 +2108,8 @@ static int tv_attach(struct st_main_impl* impl, struct st_tx_video_sessions_mgr*
     s->st22_codestream_size = st22_frame_ops->framebuff_max_size;
     s->st20_frame_size = s->st22_codestream_size + s->st22_box_hdr_length;
   } else {
-    s->st20_frame_size = s->st20_linesize * height;
+    s->st20_frame_size = ops->width * height * s->st20_pg.size / s->st20_pg.coverage;
+    s->st20_fb_size = s->st20_linesize * height;
   }
   s->st20_frames_cnt = ops->framebuff_cnt;
 
@@ -2755,9 +2761,9 @@ int st20_tx_set_ext_frame(st20_tx_handle handle, uint16_t idx,
     err("%s, NULL ext frame\n", __func__);
     return -EIO;
   }
-  if (ext_frame->buf_len < s->st20_frame_size) {
+  if (ext_frame->buf_len < s->st20_fb_size) {
     err("%s, ext framebuffer size %" PRIu64 " can not hold frame, need %" PRIu64 "\n",
-        __func__, ext_frame->buf_len, s->st20_frame_size);
+        __func__, ext_frame->buf_len, s->st20_fb_size);
     return -EIO;
   }
   void* addr = ext_frame->buf_addr;
@@ -2830,7 +2836,7 @@ size_t st20_tx_get_framebuffer_size(st20_tx_handle handle) {
   }
 
   s = s_impl->impl;
-  return s->st20_frame_size;
+  return s->st20_fb_size;
 }
 
 int st20_tx_get_framebuffer_count(st20_tx_handle handle) {
