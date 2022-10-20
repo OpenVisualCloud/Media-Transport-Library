@@ -231,6 +231,7 @@ class tests_context {
   int lines_per_slice = 0;
 
   size_t frame_size = 0;
+  size_t fb_size;
   size_t uframe_size = 0;
   uint8_t shas[TEST_MAX_SHA_HIST_NUM][SHA256_DIGEST_LENGTH] = {};
   uint8_t* frame_buf[TEST_MAX_SHA_HIST_NUM] = {};
@@ -252,6 +253,7 @@ class tests_context {
   struct st20_ext_frame* ext_frames;
   int ext_idx = 0;
   bool ext_fb_in_use[3] = {false}; /* assume 3 framebuffer */
+  st_dma_mem_handle dma_mem = NULL;
 };
 
 int tx_next_frame(void* priv, uint16_t* next_frame_idx);
