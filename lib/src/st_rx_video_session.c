@@ -1537,10 +1537,10 @@ static int rv_handle_frame_pkt(struct st_rx_video_session_impl* s, struct rte_mb
            line1_offset / s->st20_pg.coverage * s->st20_pg.size;
   size_t payload_length = line1_length;
   if (extra_rtp) payload_length += ntohs(extra_rtp->row_length);
-  uint32_t offset_border = s->st20_linesize * ops->height;
-  if ((offset + payload_length) > offset_border) {
-    dbg("%s(%d,%d): invalid offset %u frame size %" PRIu64 "\n", __func__, s->idx, s_port,
-        offset, s->st20_frame_size);
+  if ((offset + payload_length) >
+      s->st20_fb_size + s->st20_bytes_in_line - s->st20_linesize) {
+    dbg("%s(%d,%d): invalid offset %u frame buffer size %" PRIu64 "\n", __func__, s->idx,
+        s_port, offset, s->st20_fb_size);
     dbg("%s, number %u offset %u len %u\n", __func__, line1_number, line1_offset,
         line1_length);
     s->stat_pkts_offset_dropped++;
@@ -1580,7 +1580,13 @@ static int rv_handle_frame_pkt(struct st_rx_video_session_impl* s, struct rte_mb
     }
   } else if (need_copy) {
     /* copy the payload to target frame by dma or cpu */
-    if (dma_dev && (payload_length > ST_RX_VIDEO_DMA_MIN_SIZE) && !st_dma_full(dma_dev)) {
+    if (extra_rtp && s->st20_linesize > s->st20_bytes_in_line) {
+      /* packet acrosses line padding, copy two lines data */
+      rte_memcpy(slot->frame + offset, payload, line1_length);
+      rte_memcpy(slot->frame + (line1_number + 1) * s->st20_linesize,
+                 payload + line1_length, payload_length - line1_length);
+    } else if (dma_dev && (payload_length > ST_RX_VIDEO_DMA_MIN_SIZE) &&
+               !st_dma_full(dma_dev)) {
       rte_iova_t payload_iova =
           rte_pktmbuf_iova_offset(mbuf, sizeof(struct st_rfc4175_video_hdr));
       if (extra_rtp) payload_iova += sizeof(*extra_rtp);
@@ -2402,7 +2408,8 @@ static int rv_handle_detect_pkt(struct st_rx_video_session_impl* s, struct rte_m
         s->st20_frame_size =
             ops->width * ops->height * s->st20_pg.size / s->st20_pg.coverage;
         if (ops->interlaced) s->st20_frame_size = s->st20_frame_size >> 1;
-        s->st20_linesize = ops->width * s->st20_pg.size / s->st20_pg.coverage;
+        s->st20_bytes_in_line = ops->width * s->st20_pg.size / s->st20_pg.coverage;
+        s->st20_linesize = s->st20_bytes_in_line;
         if (ops->linesize > s->st20_linesize)
           s->st20_linesize = ops->linesize;
         else if (ops->linesize) {
@@ -2652,7 +2659,8 @@ static int rv_attach(struct st_main_impl* impl, struct st_rx_video_sessions_mgr*
     info("%s(%d), hdr_split enabled in ops\n", __func__, idx);
   }
 
-  s->st20_linesize = ops->width * s->st20_pg.size / s->st20_pg.coverage;
+  s->st20_bytes_in_line = ops->width * s->st20_pg.size / s->st20_pg.coverage;
+  s->st20_linesize = s->st20_bytes_in_line;
   if (ops->linesize > s->st20_linesize)
     s->st20_linesize = ops->linesize;
   else if (ops->linesize) {

@@ -584,8 +584,7 @@ struct st20_tx_ops {
   /** Session resolution height */
   uint32_t height;
   /**
-   * Session linesize(stride) in bytes
-   * only used for GPM_SL packing, 0 if not set
+   * Session linesize(stride) in bytes, 0 if not set
    * Valid linesize should be wider than width size
    */
   uint32_t linesize;
@@ -821,8 +820,7 @@ struct st20_rx_ops {
   /** Session resolution height */
   uint32_t height;
   /**
-   * Session linesize(stride) in bytes
-   * only used for GPM_SL packing, 0 if not set
+   * Session linesize(stride) in bytes, 0 if not set
    * Valid linesize should be wider than width size
    */
   uint32_t linesize;

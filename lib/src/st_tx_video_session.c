@@ -588,6 +588,7 @@ static int tv_build_pkt(struct st_main_impl* impl, struct st_tx_video_session_im
   struct st20_tx_ops* ops = &s->ops;
   uint32_t offset;
   uint16_t line1_number, line1_offset;
+  uint16_t line1_length, line2_length;
   bool single_line = (ops->packing == ST20_PACKING_GPM_SL);
   struct st_frame_trans* frame_info = &s->st20_frames[s->st20_frame_idx];
 
@@ -637,8 +638,8 @@ static int tv_build_pkt(struct st_main_impl* impl, struct st_tx_video_session_im
   rtp->row_length = htons(left_len);
 
   if (e_rtp) {
-    uint16_t line1_length = (line1_number + 1) * s->st20_bytes_in_line - offset;
-    uint16_t line2_length = s->st20_pkt_len - line1_length;
+    line1_length = (line1_number + 1) * s->st20_bytes_in_line - offset;
+    line2_length = s->st20_pkt_len - line1_length;
     rtp->row_length = htons(line1_length);
     e_rtp->row_length = htons(line2_length);
     e_rtp->row_offset = htons(0);
@@ -652,10 +653,23 @@ static int tv_build_pkt(struct st_main_impl* impl, struct st_tx_video_session_im
   if (e_rtp) pkt->data_len += sizeof(*e_rtp);
   pkt->pkt_len = pkt->data_len;
 
-  /* attach payload to chainbuf */
-  rte_pktmbuf_attach_extbuf(pkt_chain, frame_info->addr + offset,
-                            frame_info->iova + offset, left_len, &frame_info->sh_info);
-  rte_mbuf_ext_refcnt_update(&frame_info->sh_info, 1);
+  if (!single_line && s->st20_linesize > s->st20_bytes_in_line)
+    /* update offset with line padding for copying */
+    offset = offset % s->st20_bytes_in_line + line1_number * s->st20_linesize;
+
+  if (e_rtp && s->st20_linesize > s->st20_bytes_in_line) {
+    /* cross lines with padding case */
+    /* do not attach extbuf, copy to data room */
+    void* payload = rte_pktmbuf_mtod(pkt_chain, void*);
+    st_memcpy(payload, frame_info->addr + offset, line1_length);
+    st_memcpy(payload + line1_length,
+              frame_info->addr + s->st20_linesize * (line1_number + 1), line2_length);
+  } else {
+    /* attach payload to chainbuf */
+    rte_pktmbuf_attach_extbuf(pkt_chain, frame_info->addr + offset,
+                              frame_info->iova + offset, left_len, &frame_info->sh_info);
+    rte_mbuf_ext_refcnt_update(&frame_info->sh_info, 1);
+  }
   pkt_chain->data_len = pkt_chain->pkt_len = left_len;
 
   /* chain the pkt */
@@ -1771,6 +1785,10 @@ static int tv_mempool_init(struct st_main_impl* impl,
       hdr_room_size += sizeof(struct st20_rfc4175_extra_rtp_hdr);
     /* attach extbuf used, only placeholder mbuf */
     chain_room_size = 0;
+    if (s->st20_linesize > s->st20_bytes_in_line) { /* lines have padding */
+      if (s->ops.packing != ST20_PACKING_GPM_SL) /* and there is packet acrossing lines */
+        chain_room_size = s->st20_pkt_len;
+    }
   }
 
   for (int i = 0; i < num_port; i++) {
@@ -2563,12 +2581,6 @@ static int tv_ops_check(struct st20_tx_ops* ops) {
     if (ops->type == ST20_TYPE_SLICE_LEVEL) {
       if (!ops->query_frame_lines_ready) {
         err("%s, pls set query_frame_lines_ready\n", __func__);
-        return -EINVAL;
-      }
-    }
-    if (ops->linesize != 0) {
-      if (ops->packing != ST20_PACKING_GPM_SL) {
-        err("%s, linesize only used for single line packing mode now\n", __func__);
         return -EINVAL;
       }
     }
