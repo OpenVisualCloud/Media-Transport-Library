@@ -1,7 +1,8 @@
 # SPDX-License-Identifier: BSD-3-Clause
 # Copyright 2022 Intel Corporation
 
-project('Intel(R) ST DPDK tests', 'cpp', default_options: ['cpp_std=gnu++11', 'buildtype=release'], version: '22.12',)
+project('st_test', 'cpp', default_options: ['buildtype=release'],
+        version: run_command(find_program('cat', 'more'), files('../VERSION'), check: true).stdout().strip(),)
 
 exec_env = host_machine.system()
 set_variable('is_windows', exec_env == 'windows')
