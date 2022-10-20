@@ -26,6 +26,7 @@
 #include "st_mem.h"
 #include "st_pkt.h"
 #include "st_platform.h"
+#include "st_quirk.h"
 
 #ifndef _ST_LIB_MAIN_HEAD_H_
 #define _ST_LIB_MAIN_HEAD_H_
