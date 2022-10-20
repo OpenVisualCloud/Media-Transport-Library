@@ -2666,9 +2666,10 @@ static int rv_attach(struct st_main_impl* impl, struct st_rx_video_sessions_mgr*
   if (!s->slice_lines) s->slice_lines = ops->height / 32;
   s->slice_size = ops->width * s->slice_lines * s->st20_pg.size / s->st20_pg.coverage;
   s->st20_frames_cnt = ops->framebuff_cnt;
-  if (st22_ops)
+  if (st22_ops) {
     s->st20_frame_size = st22_ops->framebuff_max_size;
-  else
+    s->st20_fb_size = s->st20_frame_size;
+  } else
     s->st20_frame_size = ops->width * ops->height * s->st20_pg.size / s->st20_pg.coverage;
   s->st20_uframe_size = ops->uframe_size;
   if (ops->interlaced) s->st20_frame_size = s->st20_frame_size >> 1;

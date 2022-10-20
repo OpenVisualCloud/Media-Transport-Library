@@ -1771,7 +1771,7 @@ static int tv_mempool_init(struct st_main_impl* impl,
       hdr_room_size += sizeof(struct st20_rfc4175_extra_rtp_hdr);
     /* attach extbuf used, only placeholder mbuf */
     chain_room_size = 0;
-  }
+    }
 
   for (int i = 0; i < num_port; i++) {
     port = st_port_logic2phy(s->port_maps, i);
@@ -2107,6 +2107,7 @@ static int tv_attach(struct st_main_impl* impl, struct st_tx_video_sessions_mgr*
       s->st22_box_hdr_length = sizeof(struct st22_boxes);
     s->st22_codestream_size = st22_frame_ops->framebuff_max_size;
     s->st20_frame_size = s->st22_codestream_size + s->st22_box_hdr_length;
+    s->st20_fb_size = s->st20_frame_size;
   } else {
     s->st20_frame_size = ops->width * height * s->st20_pg.size / s->st20_pg.coverage;
     s->st20_fb_size = s->st20_linesize * height;
