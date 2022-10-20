@@ -833,11 +833,11 @@ st_iova_t st_dma_mem_iova(st_dma_mem_handle handle) {
 }
 
 const char* st_version(void) {
-  static char version[64];
+  static char version[128];
   if (version[0] != 0) return version;
 
-  snprintf(version, sizeof(version), "%d.%d.%d %s %s", ST_VERSION_MAJOR, ST_VERSION_MINOR,
-           ST_VERSION_LAST, __TIMESTAMP__, __ST_GIT__);
+  snprintf(version, sizeof(version), "%d.%d.%d %s %s %s", ST_VERSION_MAJOR,
+           ST_VERSION_MINOR, ST_VERSION_LAST, __TIMESTAMP__, __ST_GIT__, ST_COMPILER);
 
   return version;
 }
