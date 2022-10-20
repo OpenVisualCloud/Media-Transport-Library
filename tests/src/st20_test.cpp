@@ -4487,6 +4487,19 @@ TEST(St20_rx, linesize_digest_s3) {
                             ST_TEST_LEVEL_MANDATORY, 3);
 }
 
+TEST(St20_rx, linesize_digest_crosslines_s3) {
+  enum st20_packing packing[3] = {ST20_PACKING_BPM, ST20_PACKING_GPM, ST20_PACKING_BPM};
+  enum st_fps fps[3] = {ST_FPS_P59_94, ST_FPS_P50, ST_FPS_P50};
+  int width[3] = {1280, 1920, 1920};
+  int height[3] = {720, 1080, 1080};
+  int linesize[3] = {4096, 5120, 8192};
+  bool interlaced[3] = {true, false, false};
+  enum st20_fmt fmt[3] = {ST20_FMT_YUV_422_10BIT, ST20_FMT_YUV_422_10BIT,
+                          ST20_FMT_YUV_422_10BIT};
+  st20_linesize_digest_test(packing, fps, width, height, linesize, interlaced, fmt, true,
+                            ST_TEST_LEVEL_MANDATORY, 3);
+}
+
 TEST(St20_rx, linesize_digest_ext_s3) {
   enum st20_packing packing[3] = {ST20_PACKING_GPM_SL, ST20_PACKING_GPM_SL,
                                   ST20_PACKING_GPM_SL};
