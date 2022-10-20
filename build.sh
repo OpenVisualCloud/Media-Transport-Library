@@ -18,6 +18,9 @@ if [ -n "$1" ];  then
       "debug")
            buildtype=debug
            ;;
+      "debugoptimized")
+           buildtype=debugoptimized
+           ;;
       "plain")
            buildtype=plain
            ;;

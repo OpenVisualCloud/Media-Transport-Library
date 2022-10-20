@@ -1253,7 +1253,7 @@ static int tv_tasklet_rtp(struct st_main_impl* impl, struct st_tx_video_session_
   if (eof)
     dbg("%s(%d), pkts_bulk %d pkt idx %d\n", __func__, idx, pkts_bulk, s->st20_pkt_idx);
 
-  n = rte_ring_sc_dequeue_bulk(s->packet_ring, (void**)&pkts_chain, pkts_bulk, NULL);
+  n = st_rte_ring_sc_dequeue_bulk(s->packet_ring, (void**)&pkts_chain, pkts_bulk, NULL);
   if (n == 0) {
     if (s->stat_user_busy_first) {
       s->stat_user_busy++;
