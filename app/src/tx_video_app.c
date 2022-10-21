@@ -813,5 +813,5 @@ int st_app_tx_video_sessions_result(struct st_app_context* ctx) {
     ret += app_tx_video_result(s);
   }
 
-  return 0;
+  return ret;
 }

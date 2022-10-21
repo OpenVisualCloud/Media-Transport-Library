@@ -25,18 +25,8 @@
 extern "C" {
 #endif
 
-/**
- * Major version number of Media Streaming Library
- */
-#define ST_VERSION_MAJOR (22)
-/**
- * Minor version number of Media Streaming Library
- */
-#define ST_VERSION_MINOR (12)
-/**
- * Last version number of Media Streaming Library
- */
-#define ST_VERSION_LAST (0)
+#include <st_build_config.h>
+
 /**
  * Macro to compute a version number usable for comparisons
  */

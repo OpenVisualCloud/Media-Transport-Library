@@ -628,7 +628,7 @@ static int rv_alloc_frames(struct st_main_impl* impl,
   enum st_port port = st_port_logic2phy(s->port_maps, ST_SESSION_PORT_P);
   int soc_id = st_socket_id(impl, port);
   int idx = s->idx;
-  size_t size = s->st20_uframe_size ? s->st20_uframe_size : s->st20_frame_size;
+  size_t size = s->st20_uframe_size ? s->st20_uframe_size : s->st20_fb_size;
   struct st_frame_trans* st20_frame;
   void* frame;
 
@@ -1532,13 +1532,15 @@ static int rv_handle_frame_pkt(struct st_rx_video_session_impl* s, struct rte_mb
   }
 
   /* caculate offset */
-  uint32_t offset =
-      (line1_number * ops->width + line1_offset) / s->st20_pg.coverage * s->st20_pg.size;
+  uint32_t offset;
+  offset = line1_number * s->st20_linesize +
+           line1_offset / s->st20_pg.coverage * s->st20_pg.size;
   size_t payload_length = line1_length;
   if (extra_rtp) payload_length += ntohs(extra_rtp->row_length);
-  if ((offset + payload_length) > s->st20_frame_size) {
-    dbg("%s(%d,%d): invalid offset %u frame size %" PRIu64 "\n", __func__, s->idx, s_port,
-        offset, s->st20_frame_size);
+  if ((offset + payload_length) >
+      s->st20_fb_size + s->st20_bytes_in_line - s->st20_linesize) {
+    dbg("%s(%d,%d): invalid offset %u frame buffer size %" PRIu64 "\n", __func__, s->idx,
+        s_port, offset, s->st20_fb_size);
     dbg("%s, number %u offset %u len %u\n", __func__, line1_number, line1_offset,
         line1_length);
     s->stat_pkts_offset_dropped++;
@@ -1578,7 +1580,13 @@ static int rv_handle_frame_pkt(struct st_rx_video_session_impl* s, struct rte_mb
     }
   } else if (need_copy) {
     /* copy the payload to target frame by dma or cpu */
-    if (dma_dev && (payload_length > ST_RX_VIDEO_DMA_MIN_SIZE) && !st_dma_full(dma_dev)) {
+    if (extra_rtp && s->st20_linesize > s->st20_bytes_in_line) {
+      /* packet acrosses line padding, copy two lines data */
+      rte_memcpy(slot->frame + offset, payload, line1_length);
+      rte_memcpy(slot->frame + (line1_number + 1) * s->st20_linesize,
+                 payload + line1_length, payload_length - line1_length);
+    } else if (dma_dev && (payload_length > ST_RX_VIDEO_DMA_MIN_SIZE) &&
+               !st_dma_full(dma_dev)) {
       rte_iova_t payload_iova =
           rte_pktmbuf_iova_offset(mbuf, sizeof(struct st_rfc4175_video_hdr));
       if (extra_rtp) payload_iova += sizeof(*extra_rtp);
@@ -1626,8 +1634,8 @@ static int rv_handle_frame_pkt(struct st_rx_video_session_impl* s, struct rte_mb
     if (frame_recv_size >= s->st20_frame_size) end_frame = true;
   }
   if (end_frame) {
-    dbg("%s(%d,%d): full frame on %p(%d)\n", __func__, s->idx, s_port, slot->frame,
-        frame_recv_size);
+    dbg("%s(%d,%d): full frame on %p(%" PRIu64 ")\n", __func__, s->idx, s_port,
+        slot->frame, frame_recv_size);
     dbg("%s(%d,%d): tmstamp %u slot %d\n", __func__, s->idx, s_port, slot->tmstamp,
         slot->idx);
     /* end of frame */
@@ -2400,6 +2408,16 @@ static int rv_handle_detect_pkt(struct st_rx_video_session_impl* s, struct rte_m
         s->st20_frame_size =
             ops->width * ops->height * s->st20_pg.size / s->st20_pg.coverage;
         if (ops->interlaced) s->st20_frame_size = s->st20_frame_size >> 1;
+        s->st20_bytes_in_line = ops->width * s->st20_pg.size / s->st20_pg.coverage;
+        s->st20_linesize = s->st20_bytes_in_line;
+        if (ops->linesize > s->st20_linesize)
+          s->st20_linesize = ops->linesize;
+        else if (ops->linesize) {
+          err("%s(%d), invalid linesize %u\n", __func__, s->idx, ops->linesize);
+          return -EINVAL;
+        }
+        s->st20_fb_size = s->st20_linesize * ops->height;
+        if (ops->interlaced) s->st20_fb_size = s->st20_fb_size >> 1;
         /* at least 1000 byte for each packet */
         s->st20_frame_bitmap_size = s->st20_frame_size / 1000 / 8;
         /* one line at line 2 packets for all the format */
@@ -2641,13 +2659,25 @@ static int rv_attach(struct st_main_impl* impl, struct st_rx_video_sessions_mgr*
     info("%s(%d), hdr_split enabled in ops\n", __func__, idx);
   }
 
+  s->st20_bytes_in_line = ops->width * s->st20_pg.size / s->st20_pg.coverage;
+  s->st20_linesize = s->st20_bytes_in_line;
+  if (ops->linesize > s->st20_linesize)
+    s->st20_linesize = ops->linesize;
+  else if (ops->linesize) {
+    err("%s(%d), invalid linesize %u\n", __func__, idx, ops->linesize);
+    return -EINVAL;
+  }
+
+  s->st20_fb_size = s->st20_linesize * ops->height;
+  if (ops->interlaced) s->st20_fb_size = s->st20_fb_size >> 1;
   s->slice_lines = ops->slice_lines;
   if (!s->slice_lines) s->slice_lines = ops->height / 32;
   s->slice_size = ops->width * s->slice_lines * s->st20_pg.size / s->st20_pg.coverage;
   s->st20_frames_cnt = ops->framebuff_cnt;
-  if (st22_ops)
+  if (st22_ops) {
     s->st20_frame_size = st22_ops->framebuff_max_size;
-  else
+    s->st20_fb_size = s->st20_frame_size;
+  } else
     s->st20_frame_size = ops->width * ops->height * s->st20_pg.size / s->st20_pg.coverage;
   s->st20_uframe_size = ops->uframe_size;
   if (ops->interlaced) s->st20_frame_size = s->st20_frame_size >> 1;
@@ -3529,7 +3559,7 @@ size_t st20_rx_get_framebuffer_size(st20_rx_handle handle) {
   }
 
   s = s_impl->impl;
-  return s->st20_frame_size;
+  return s->st20_fb_size;
 }
 
 int st20_rx_get_framebuffer_count(st20_rx_handle handle) {

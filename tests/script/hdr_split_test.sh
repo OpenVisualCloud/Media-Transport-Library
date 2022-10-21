@@ -3,7 +3,8 @@
 # SPDX-License-Identifier: BSD-3-Clause
 # Copyright 2022 Intel Corporation
 
-set -e
+# Disable error break since we need loop all jsons
+# set -e
 
 RXTXAPP=../../build/app/RxTxApp
 TEST_JSON_DIR=.

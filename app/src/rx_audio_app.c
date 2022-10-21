@@ -331,11 +331,12 @@ int st_app_rx_audio_sessions_uinit(struct st_app_context* ctx) {
 int st_app_rx_audio_sessions_result(struct st_app_context* ctx) {
   int i, ret = 0;
   struct st_app_rx_audio_session* s;
+
   if (!ctx->rx_audio_sessions) return 0;
   for (i = 0; i < ctx->rx_audio_session_cnt; i++) {
     s = &ctx->rx_audio_sessions[i];
     ret += app_rx_audio_result(s);
   }
 
-  return 0;
+  return ret;
 }

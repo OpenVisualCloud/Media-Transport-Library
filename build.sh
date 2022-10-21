@@ -12,11 +12,20 @@ function usage()
 }
 
 buildtype=release
+disable_pcapng=false
+
+if [ $ST_BUILD_DISABLE_PCAPNG == "true" ]; then
+    disable_pcapng=true
+    echo "Disable pcapng function."
+fi
 
 if [ -n "$1" ];  then
     case $1 in
       "debug")
            buildtype=debug
+           ;;
+      "debugoptimized")
+           buildtype=debugoptimized
            ;;
       "plain")
            buildtype=plain
@@ -34,7 +43,7 @@ TEST_BUILD_DIR=${WORKSPACE}/build/tests
 PLUGINS_BUILD_DIR=${WORKSPACE}/build/plugins
 
 # build lib
-meson ${LIB_BUILD_DIR} -Dbuildtype=$buildtype
+meson ${LIB_BUILD_DIR} -Dbuildtype=$buildtype -Ddisable_pcapng=$disable_pcapng
 pushd ${LIB_BUILD_DIR}
 ninja
 sudo ninja install

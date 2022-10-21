@@ -1,10 +1,18 @@
-name: Ubuntu build
+name: DPDK patches build
 
-on: [push, pull_request]
+on:
+  push:
+    paths:
+      - 'patches/**'
+      - .github/workflows/dpdk_patches_build.yml
+  pull_request:
+    paths:
+      - 'patches/**'
+      - .github/workflows/dpdk_patches_build.yml
 
 env:
   # Customize the env if
-  ST_BUILD_DISABLE_PCAPNG: true
+  ST_BUILD_DISABLE_PCAPNG: false
 
 jobs:
   build:
@@ -25,8 +33,7 @@ jobs:
     - name: Install the build dependency
       run: |
         apt-get update -y
-        apt-get install -y sudo git gcc meson python3 python3-pip pkg-config libnuma-dev libjson-c-dev libpcap-dev libgtest-dev libsdl2-dev libsdl2-ttf-dev libssl-dev
-        apt-get install -y dpdk-dev
+        apt-get install -y sudo git gcc meson python3 python3-pip pkg-config libnuma-dev libjson-c-dev libpcap-dev libgtest-dev libsdl2-dev libsdl2-ttf-dev libssl-dev 
 
     - name: Install the python package
       run: pip install pyelftools ninja
@@ -36,8 +43,8 @@ jobs:
         git config --global user.email "you@example.com"
         git config --global user.name "Your Name"
 
-    #- name: Build dpdk
-    #  run: ./script/build_dpdk.sh
+    - name: Build dpdk
+      run: ./script/build_dpdk.sh
 
     - name: Build
       run: |
