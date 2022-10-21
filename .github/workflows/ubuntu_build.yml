@@ -4,7 +4,7 @@ on: [push, pull_request]
 
 env:
   # Customize the env if
-  BUILD_TYPE: Release
+  ST_BUILD_DISABLE_PCAPNG: true
 
 jobs:
   build:
@@ -26,6 +26,7 @@ jobs:
       run: |
         apt-get update -y
         apt-get install -y sudo git gcc meson python3 python3-pip pkg-config libnuma-dev libjson-c-dev libpcap-dev libgtest-dev libsdl2-dev libsdl2-ttf-dev libssl-dev
+        apt-get install -y dpdk-dev
 
     - name: Install the python package
       run: pip install pyelftools ninja
@@ -35,8 +36,9 @@ jobs:
         git config --global user.email "you@example.com"
         git config --global user.name "Your Name"
 
-    - name: Build dpdk
-      run: ./script/build_dpdk.sh
+    #- name: Build dpdk
+    #  run: ./script/build_dpdk.sh
 
     - name: Build
-      run: ./build.sh
+      run: |
+        ./build.sh
