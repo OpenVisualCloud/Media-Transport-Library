@@ -69,7 +69,7 @@ find / -name libdpdk.pc
 export PKG_CONFIG_PATH=/usr/local/lib64/pkgconfig/:/usr/local/lib/pkgconfig/
 ```
 
-#### 4.1 Build with clang
+#### 4.2 Build with clang
 Before build, export CC/CXX to clang, see below for example.
 ```bash
 export CC=clang CXX=clang++
