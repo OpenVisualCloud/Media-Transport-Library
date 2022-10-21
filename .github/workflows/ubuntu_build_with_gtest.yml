@@ -1,0 +1,44 @@
+name: Ubuntu build and run gtest on self-hosted runner
+
+on:
+  pull_request_target:
+    branches: main
+
+env:
+  # Customize the env if
+  BUILD_TYPE: Release
+
+jobs:
+  Build:
+    runs-on: [Ubuntu, self-hosted]
+        
+    steps:
+    - uses: actions/checkout@v3
+
+    - name: Install the build dependency
+      run: |
+        sudo apt-get update -y
+        sudo apt-get install -y git gcc meson python3 python3-pip pkg-config libnuma-dev libjson-c-dev libpcap-dev libgtest-dev libsdl2-dev libsdl2-ttf-dev libssl-dev
+
+    - name: Install the python package
+      run: pip install pyelftools ninja
+
+    - name: Build dpdk
+      run: ./script/build_dpdk.sh
+
+    - name: Build
+      run: ./build.sh
+    
+  Test:
+    needs: Build
+    runs-on: [Ubuntu, self-hosted]
+    steps:
+      - name: Binding network adapter
+        run: |
+          ./script/nicctl.sh bind_pmd 0000:31:00.0
+          ./script/nicctl.sh bind_pmd 0000:31:00.1
+          ./dpdk/usertools/dpdk-devbind.py -b vfio-pci 0000:00:01.0
+          ./dpdk/usertools/dpdk-devbind.py -b vfio-pci 0000:00:01.1
+        
+      - name: Run test case
+        run: sudo ./build/tests/KahawaiTest --auto_start_stop --p_port 0000:31:00.0 --r_port 0000:31:00.1 --dma_dev 0000:00:01.0,0000:00:01.1
