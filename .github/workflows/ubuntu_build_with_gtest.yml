@@ -1,8 +1,6 @@
-name: Ubuntu build and run gtest on self-hosted runner
+name: gtest
 
-on:
-  pull_request_target:
-    branches: main
+on: [push, pull_request]
 
 env:
   # Customize the env if
@@ -11,7 +9,7 @@ env:
 jobs:
   Build:
     runs-on: [Ubuntu, self-hosted]
-        
+
     steps:
     - uses: actions/checkout@v3
 
@@ -28,7 +26,7 @@ jobs:
 
     - name: Build
       run: ./build.sh
-    
+  
   Test:
     needs: Build
     runs-on: [Ubuntu, self-hosted]
@@ -39,6 +37,6 @@ jobs:
           ./script/nicctl.sh bind_pmd 0000:31:00.1
           ./dpdk/usertools/dpdk-devbind.py -b vfio-pci 0000:00:01.0
           ./dpdk/usertools/dpdk-devbind.py -b vfio-pci 0000:00:01.1
-        
+
       - name: Run test case
         run: sudo ./build/tests/KahawaiTest --auto_start_stop --p_port 0000:31:00.0 --r_port 0000:31:00.1 --dma_dev 0000:00:01.0,0000:00:01.1
