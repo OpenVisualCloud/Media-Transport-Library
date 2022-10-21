@@ -4,12 +4,15 @@ on:
   push:
     paths:
       - 'patches/**'
+      - .github/workflows/dpdk_patches_build.yml
   pull_request:
     paths:
       - 'patches/**'
+      - .github/workflows/dpdk_patches_build.yml
 
 env:
   # Customize the env if
+  ST_BUILD_DISABLE_PCAPNG: false
 
 jobs:
   build:
