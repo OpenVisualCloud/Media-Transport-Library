@@ -15,8 +15,8 @@ buildtype=release
 disable_pcapng=false
 
 if [ $ST_BUILD_DISABLE_PCAPNG == "true" ]; then
-	disable_pcapng=true
-	echo "Disable pcapng function."
+    disable_pcapng=true
+    echo "Disable pcapng function."
 fi
 
 if [ -n "$1" ];  then
