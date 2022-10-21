@@ -57,8 +57,9 @@ pkg-config --modversion libdpdk
 ./build.sh
 ```
 
-#### 3.1 FAQ
-It may get below error caused by PKG_CONFIG_PATH issue.
+## 4. FAQ
+#### 4.1 PKG_CONFIG_PATH issue
+It may get below error caused by PKG_CONFIG_PATH path problem.
 ```bash
 lib/meson.build:10:0: ERROR: Dependency "libdpdk" not found, tried pkgconfig
 ```
@@ -66,4 +67,12 @@ Try below command to find the pc path and add to the PKG_CONFIG_PATH env.
 ```bash
 find / -name libdpdk.pc
 export PKG_CONFIG_PATH=/usr/local/lib64/pkgconfig/:/usr/local/lib/pkgconfig/
+```
+
+#### 4.2 Build with clang
+Before build, export CC/CXX to clang, see below for example.
+```bash
+export CC=clang CXX=clang++
+rm build -rf
+./build.sh
 ```

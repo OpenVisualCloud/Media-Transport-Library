@@ -21,6 +21,10 @@ if get_option('enable_kni') == true
   add_global_arguments('-DST_HAS_KNI', language : 'c')
 endif
 
+if get_option('disable_pcapng') == true
+  add_global_arguments('-DST_DISABLE_PCAPNG', language : 'c')
+endif
+
 if is_windows
 if get_option('enable_tap') == true
   add_global_arguments('-DST_HAS_TAP', language : 'c')

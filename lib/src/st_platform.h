@@ -16,13 +16,19 @@
 #include <sys/shm.h>
 #include <sys/socket.h>
 
+#ifdef ST_HAS_AVX512
+#include <immintrin.h>
+#endif
+
+#ifndef ST_DISABLE_PCAPNG
 /* pcapng only available from DPDK 21.11 */
 #if RTE_VERSION >= RTE_VERSION_NUM(21, 11, 0, 0)
 #include <rte_pcapng.h>
 #define ST_PCAPNG_ENABLED
 #endif
-
 #endif
+
+#endif /* end of WINDOWSENV */
 
 #ifdef CLOCK_MONOTONIC_RAW
 #define ST_CLOCK_MONOTONIC_ID CLOCK_MONOTONIC_RAW
