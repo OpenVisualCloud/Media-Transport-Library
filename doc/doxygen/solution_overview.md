@@ -2,7 +2,7 @@
 
 @section det_arch Solution overview
 \n
-Architecture of Intel® ST 2110 Media Streaming Library is based on a two sided communication scheme. There are three major parts to create a whole solution. 
+Architecture of Media Transport Library is based on a two sided communication scheme. There are three major parts to create a whole solution. 
 1.  Application part <span style="color:green"><b>(green color blocks)</b></span>
 2.  Library part <span style="color:blue"><b>(blue color blocks)</b></span>
 3.  Hardware part managed by DPDK framework (<span style="color:orange"><b>orange</b></span>, <span style="color:gray"><b>gray</b></span> and <span style="color:red"><b>red</b></span> coloured blocks)

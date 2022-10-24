@@ -63,5 +63,5 @@ pkg.generate(
   version : meson.project_version(),
   libraries : st_dpdk_lib,
   filebase : 'lib' + meson.project_name(),
-  description : 'Intel(R) ST(SMPTE ST) Library based on DPDK'
+  description : 'Media Transport Library based on DPDK'
 )

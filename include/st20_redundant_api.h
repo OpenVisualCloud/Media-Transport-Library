@@ -5,7 +5,7 @@
 /**
  * @file st20_redundant_api.h
  *
- * Interfaces to Intel(R) Media ST2110-20 Streaming Library
+ * Interfaces to Media Transport Library for st2110-20 redundant transport.
  *
  */
 
@@ -105,7 +105,7 @@ struct st20r_rx_ops {
  * Create one rx st2110-20(redundant) session.
  *
  * @param st
- *   The handle to the media streaming device context.
+ *   The handle to the media transport device context.
  * @param ops
  *   The pointer to the structure describing how to create a rx st2110-20(video) session.
  * @return

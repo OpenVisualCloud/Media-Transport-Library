@@ -5,10 +5,9 @@
 /**
  * @file st_pipeline_api.h
  *
- * Interfaces to Intel(R) Media Streaming Library Pipeline APIs
- *
- * This header define the public interfaces of Intel(R) Media Streaming Library Pipeline
- * APIs
+ * Interfaces to Media Transport Library for st2110-20/22 pipeline transport.
+ * It include a plugin layer to hide the covert/encode detail that application can
+ * foucs on the raw pixel handling.
  *
  */
 
@@ -682,7 +681,7 @@ struct st22p_rx_ops {
  * Register one st22 encoder.
  *
  * @param st
- *   The handle to the media streaming device context.
+ *   The handle to the media transport device context.
  * @param dev
  *   The pointer to the structure describing a st plugin encode.
  * @return
@@ -735,7 +734,7 @@ int st22_encoder_put_frame(st22p_encode_session session,
  * Register one st22 decoder.
  *
  * @param st
- *   The handle to the media streaming device context.
+ *   The handle to the media transport device context.
  * @param dev
  *   The pointer to the structure describing a st plugin encode.
  * @return
@@ -788,7 +787,7 @@ int st22_decoder_put_frame(st22p_decode_session session,
  * Register one st20 converter.
  *
  * @param st
- *   The handle to the media streaming device context.
+ *   The handle to the media transport device context.
  * @param dev
  *   The pointer to the structure describing a st20 plugin convert.
  * @return
@@ -842,7 +841,7 @@ int st20_converter_put_frame(st20p_convert_session session,
  * Register one st plugin so.
  *
  * @param st
- *   The handle to the media streaming device context.
+ *   The handle to the media transport device context.
  * @param path
  *   The path to the plugin so.
  *   Ex: /usr/local/lib/x86_64-linux-gnu/libst_plugin_sample.so
@@ -856,7 +855,7 @@ int st_plugin_register(st_handle st, const char* path);
  * Unregister one st plugin so.
  *
  * @param st
- *   The handle to the media streaming device context.
+ *   The handle to the media transport device context.
  * @param path
  *   The path to the plugin so.
  *   Ex: /usr/local/lib/x86_64-linux-gnu/libst_plugin_sample.so
@@ -870,7 +869,7 @@ int st_plugin_unregister(st_handle st, const char* path);
  * Get the number of registered plugins lib.
  *
  * @param st
- *   The handle to the media streaming device context.
+ *   The handle to the media transport device context.
  * @return
  *   - number.
  */
@@ -880,7 +879,7 @@ int st_get_plugins_nb(st_handle st);
  * Create one tx st2110-22 pipeline session.
  *
  * @param st
- *   The handle to the media streaming device context.
+ *   The handle to the media transport device context.
  * @param ops
  *   The pointer to the structure describing how to create a tx
  * st2110-22 pipeline session.
@@ -954,7 +953,7 @@ size_t st22p_tx_frame_size(st22p_tx_handle handle);
  * Create one rx st2110-22 pipeline session.
  *
  * @param st
- *   The handle to the media streaming device context.
+ *   The handle to the media transport device context.
  * @param ops
  *   The pointer to the structure describing how to create a rx
  * st2110-22 pipeline session.
@@ -1060,7 +1059,7 @@ int st22p_rx_get_queue_meta(st22p_rx_handle handle, struct st_queue_meta* meta);
  * Create one tx st2110-20 pipeline session.
  *
  * @param st
- *   The handle to the media streaming device context.
+ *   The handle to the media transport device context.
  * @param ops
  *   The pointer to the structure describing how to create a tx
  * st2110-20 pipeline session.
@@ -1152,7 +1151,7 @@ size_t st20p_tx_frame_size(st20p_tx_handle handle);
  * Create one rx st2110-20 pipeline session.
  *
  * @param st
- *   The handle to the media streaming device context.
+ *   The handle to the media transport device context.
  * @param ops
  *   The pointer to the structure describing how to create a rx
  * st2110-20 pipeline session.

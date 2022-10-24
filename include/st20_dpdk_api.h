@@ -5,7 +5,7 @@
 /**
  * @file st20_dpdk_api.h
  *
- * Interfaces to Intel(R) Media ST2110-20 Streaming Library
+ * Interfaces to Media Transport Library for st2110-20/22 transport.
  *
  */
 
@@ -1001,7 +1001,7 @@ struct st22_rx_ops {
  * Create one tx st2110-20(video) session.
  *
  * @param st
- *   The handle to the media streaming device context.
+ *   The handle to the media transport device context.
  * @param ops
  *   The pointer to the structure describing how to create a tx st2110-20(video) session.
  * @return
@@ -1176,7 +1176,7 @@ static inline uint64_t st20_1080p59_yuv422_10bit_bandwidth_mps(void) {
  * Create one tx st2110-22(compressed video) session.
  *
  * @param st
- *   The handle to the media streaming device context.
+ *   The handle to the media transport device context.
  * @param ops
  *   The pointer to the structure describing how to create a tx
  * st2110-22(compressed video) session.
@@ -1257,7 +1257,7 @@ void* st22_tx_get_fb_addr(st22_tx_handle handle, uint16_t idx);
  * Create one rx st2110-20(video) session.
  *
  * @param st
- *   The handle to the media streaming device context.
+ *   The handle to the media transport device context.
  * @param ops
  *   The pointer to the structure describing how to create a rx st2110-20(video) session.
  * @return
@@ -1410,7 +1410,7 @@ bool st20_rx_dma_enabled(st20_rx_handle handle);
  * Create one rx st2110-22(compressed video) session.
  *
  * @param st
- *   The handle to the media streaming device context.
+ *   The handle to the media transport device context.
  * @param ops
  *   The pointer to the structure describing how to create a rx
  * st2110-22(compressed video) session.
