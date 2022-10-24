@@ -5,9 +5,7 @@
 /**
  * @file st_convert_api.h
  *
- * Interfaces to Intel(R) Media Streaming Library Format Conversion Toolkit
- *
- * This header define the public interfaces of Intel(R) Media Streaming Library Format
+ * This header define the public interfaces of Media Transport Library Format
  * Conversion Toolkit
  *
  */

@@ -5,7 +5,7 @@
 /**
  * @file st40_dpdk_api.h
  *
- * Interfaces to Intel(R) Media ST2110-40 Streaming Library
+ * Interfaces to Media Transport Library for st2110-20 transport.
  *
  */
 
@@ -308,7 +308,7 @@ struct st40_rx_ops {
  * Create one tx st2110-40(ancillary) session.
  *
  * @param st
- *   The handle to the media streaming device context.
+ *   The handle to the media transport device context.
  * @param ops
  *   The pointer to the structure describing how to create a tx st2110-40(ancillary)
  * session.
@@ -378,7 +378,7 @@ int st40_tx_put_mbuf(st40_tx_handle handle, void* mbuf, uint16_t len);
  * Create one rx st2110-40(ancillary) session.
  *
  * @param st
- *   The handle to the media streaming device context.
+ *   The handle to the media transport device context.
  * @param ops
  *   The pointer to the structure describing how to create a rx
  * st2110-40(ancillary) session.

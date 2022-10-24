@@ -1,11 +1,8 @@
-# Intel(R) Media Streaming Library for ST 2110 compilation and build on Windows OS
+# IMedia Transport Library compilation and build on Windows OS
 
 ## 1. Introduction
 
-This document contains instructions for installing and configuring the Intel(R) Media Streaming Library for ST 2110 
-for Windows Operation System.
-This document describes how to compile and run a Intel(R) Media Streaming Library for ST 2110 and sample application 
-in a Windows OS environment. 
+This document contains instructions for installing and configuring the Media Transport Library for Windows Operation System.
 
 All the steps below related to the DPDK configuration instructions on Windows are from the website:
 https://doc.dpdk.org/guides/windows_gsg/intro.html

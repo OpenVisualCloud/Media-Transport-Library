@@ -5,7 +5,7 @@
 /**
  * @file st30_dpdk_api.h
  *
- * Interfaces to Intel(R) Media ST2110-30 Streaming Library
+ * Interfaces to Media Transport Library for st2110-30 transport.
  *
  */
 
@@ -390,7 +390,7 @@ struct st30_rx_ops {
  * Create one tx st2110-30(audio) session.
  *
  * @param st
- *   The handle to the media streaming device context.
+ *   The handle to the media transport device context.
  * @param ops
  *   The pointer to the structure describing how to create a tx st2110-30(audio) session.
  * @return
@@ -506,7 +506,7 @@ int st30_get_sample_rate(enum st30_sampling sampling);
  * Create one rx st2110-30(audio) session.
  *
  * @param st
- *   The handle to the media streaming device context.
+ *   The handle to the media transport device context.
  * @param ops
  *   The pointer to the structure describing how to create a rx st2110-30(audio) session.
  * @return

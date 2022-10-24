@@ -5,9 +5,7 @@
 /**
  * @file st_dpdk_api.h
  *
- * Interfaces to Intel(R) Media Streaming Library
- *
- * This header define the public interfaces of Intel(R) Media Streaming Library
+ * This header define the public interfaces of Media Transport Library.
  *
  */
 
@@ -77,7 +75,7 @@ extern "C" {
 #define ST_PCAP_FILE_MAX_LEN (32)
 
 /**
- * Handle to media streaming device context
+ * Handle to media transport device context
  */
 typedef struct st_main_impl* st_handle;
 /**
@@ -467,11 +465,11 @@ struct st_rx_source_info {
  * A structure used to retrieve capacity for an ST instance.
  */
 struct st_cap {
-  /** max tx session count for current streaming context */
+  /** max tx session count for current transport context */
   uint16_t tx_sessions_cnt_max;
-  /** max rx session count for current streaming context */
+  /** max rx session count for current transport context */
   uint16_t rx_sessions_cnt_max;
-  /** max dma dev count for current streaming context */
+  /** max dma dev count for current transport context */
   uint8_t dma_dev_cnt_max;
   /** the flags in st_init_params */
   uint64_t init_flags;
@@ -481,29 +479,29 @@ struct st_cap {
  * A structure used to retrieve state for an ST instance.
  */
 struct st_stats {
-  /** st20 tx session count in current streaming context */
+  /** st20 tx session count in current transport context */
   uint16_t st20_tx_sessions_cnt;
-  /** st22 tx session count in current streaming context */
+  /** st22 tx session count in current transport context */
   uint16_t st22_tx_sessions_cnt;
-  /** st30 tx session count in current streaming context */
+  /** st30 tx session count in current transport context */
   uint16_t st30_tx_sessions_cnt;
-  /** st40 tx session count in current streaming context */
+  /** st40 tx session count in current transport context */
   uint16_t st40_tx_sessions_cnt;
-  /** st20 rx session count in current streaming context */
+  /** st20 rx session count in current transport context */
   uint16_t st20_rx_sessions_cnt;
-  /** st22 rx session count in current streaming context */
+  /** st22 rx session count in current transport context */
   uint16_t st22_rx_sessions_cnt;
-  /** st30 rx session count in current streaming context */
+  /** st30 rx session count in current transport context */
   uint16_t st30_rx_sessions_cnt;
-  /** st40 rx session count in current streaming context */
+  /** st40 rx session count in current transport context */
   uint16_t st40_rx_sessions_cnt;
-  /** active scheduler count in current streaming context */
+  /** active scheduler count in current transport context */
   uint8_t sch_cnt;
-  /** active lcore count in current streaming context */
+  /** active lcore count in current transport context */
   uint8_t lcore_cnt;
-  /** active dma dev count for current streaming context */
+  /** active dma dev count for current transport context */
   uint8_t dma_dev_cnt;
-  /** if streaming device is started(st_start) */
+  /** if transport device is started(st_start) */
   uint8_t dev_started;
 };
 
@@ -579,21 +577,21 @@ static inline uint8_t* st_r_sip_addr(struct st_init_params* p) {
 const char* st_version(void);
 
 /**
- * Initialize the media streaming device context which based on DPDK.
+ * Initialize the media transport device context which based on DPDK.
  *
  * @param p
  *   The pointer to the init parameters.
  * @return
  *   - NULL on error.
- *   - Otherwise, the handle to the media streaming device context.
+ *   - Otherwise, the handle to the media transport device context.
  */
 st_handle st_init(struct st_init_params* p);
 
 /**
- * Un-initialize the media streaming device context.
+ * Un-initialize the media transport device context.
  *
  * @param st
- *   The handle to the media streaming device context.
+ *   The handle to the media transport device context.
  * @return
  *   - 0: Success, device un-initialized.
  *   - <0: Error code of the device un-initialize.
@@ -601,10 +599,10 @@ st_handle st_init(struct st_init_params* p);
 int st_uninit(st_handle st);
 
 /**
- * Start the media streaming device context.
+ * Start the media transport device context.
  *
  * @param st
- *   The handle to the media streaming device context.
+ *   The handle to the media transport device context.
  * @return
  *   - 0: Success, device started.
  *   - <0: Error code of the device start.
@@ -612,10 +610,10 @@ int st_uninit(st_handle st);
 int st_start(st_handle st);
 
 /**
- * Stop the media streaming device context.
+ * Stop the media transport device context.
  *
  * @param st
- *   The handle to the media streaming device context.
+ *   The handle to the media transport device context.
  * @return
  *   - 0: Success, device stopped.
  *   - <0: Error code of the device stop.
@@ -623,11 +621,11 @@ int st_start(st_handle st);
 int st_stop(st_handle st);
 
 /**
- * Abort the media streaming device context.
+ * Abort the media transport device context.
  * Usually called in the exception case, e.g CTRL-C.
  *
  * @param st
- *   The handle to the media streaming device context.
+ *   The handle to the media transport device context.
  * @return
  *   - 0: Success, device aborted.
  *   - <0: Error code of the device abort.
@@ -635,10 +633,10 @@ int st_stop(st_handle st);
 int st_request_exit(st_handle st);
 
 /**
- * Retrieve the capacity of the media streaming device context.
+ * Retrieve the capacity of the media transport device context.
  *
  * @param st
- *   The handle to the media streaming device context.
+ *   The handle to the media transport device context.
  * @param cap
  *   A pointer to a structure of type *st_cap* to be filled.
  * @return
@@ -648,10 +646,10 @@ int st_request_exit(st_handle st);
 int st_get_cap(st_handle st, struct st_cap* cap);
 
 /**
- * Retrieve the stat info of the media streaming device context.
+ * Retrieve the stat info of the media transport device context.
  *
  * @param st
- *   The handle to the media streaming device context.
+ *   The handle to the media transport device context.
  * @param stats
  *   A pointer to a structure of type *st_stats* to be filled.
  * @return
@@ -661,10 +659,10 @@ int st_get_cap(st_handle st, struct st_cap* cap);
 int st_get_stats(st_handle st, struct st_stats* stats);
 
 /**
- * Request one DPDK lcore from the media streaming device context.
+ * Request one DPDK lcore from the media transport device context.
  *
  * @param st
- *   The handle to the media streaming device context.
+ *   The handle to the media transport device context.
  * @param lcore
  *   A pointer to the retured lcore number.
  * @return
@@ -677,7 +675,7 @@ int st_get_lcore(st_handle st, unsigned int* lcore);
  * Bind one thread to lcore.
  *
  * @param st
- *   The handle to the media streaming device context.
+ *   The handle to the media transport device context.
  * @param thread
  *   the thread wchich request the bind action.
  * @param lcore
@@ -689,10 +687,10 @@ int st_get_lcore(st_handle st, unsigned int* lcore);
 int st_bind_to_lcore(st_handle st, pthread_t thread, unsigned int lcore);
 
 /**
- * Put back the DPDK lcore which requested from the media streaming device context.
+ * Put back the DPDK lcore which requested from the media transport device context.
  *
  * @param st
- *   The handle to the media streaming device context.
+ *   The handle to the media transport device context.
  * @param lcore
  *   the DPDK lcore which requested by st_get_lcore.
  * @return
@@ -721,7 +719,7 @@ void* st_memcpy(void* dest, const void* src, size_t n);
  * Note the mmeory is mmap to IOVA already, use st_hp_virt2iova to get the iova.
  *
  * @param st
- *   The handle to the media streaming device context.
+ *   The handle to the media transport device context.
  * @param size
  *   Size (in bytes) to be allocated.
  * @param port
@@ -739,7 +737,7 @@ void* st_hp_malloc(st_handle st, size_t size, enum st_port port);
  * Note the mmeory is mmap to IOVA already, use st_hp_virt2iova to get the iova.
  *
  * @param st
- *   The handle to the media streaming device context.
+ *   The handle to the media transport device context.
  * @param size
  *   Size (in bytes) to be allocated.
  * @param port
@@ -758,7 +756,7 @@ void* st_hp_zmalloc(st_handle st, size_t size, enum st_port port);
  * The behaviour is undefined if the pointer does not match this requirement.
  *
  * @param st
- *   The handle to the media streaming device context.
+ *   The handle to the media transport device context.
  * @param ptr
  *   The virtual address pointer to memory to be freed.
  */
@@ -768,7 +766,7 @@ void st_hp_free(st_handle st, void* ptr);
  * Return the IO address of a virtual address from st_hp_malloc/st_hp_zmalloc
  *
  * @param st
- *   The handle to the media streaming device context.
+ *   The handle to the media transport device context.
  * @param vaddr
  *   Virtual address obtained from previous st_hp_malloc/st_hp_zmalloc call
  * @return
@@ -781,7 +779,7 @@ st_iova_t st_hp_virt2iova(st_handle st, const void* vaddr);
  * Return the detected page size on the system.
  *
  * @param st
- *   The handle to the media streaming device context.
+ *   The handle to the media transport device context.
  * @return
  *   page size
  */
@@ -792,7 +790,7 @@ size_t st_page_size(st_handle st);
  * The virtual address and size must align to page size(st_page_size).
  *
  * @param st
- *   The handle to the media streaming device context.
+ *   The handle to the media transport device context.
  * @param vaddr
  *   Virtual address of memory to be mapped and must align to page size.
  * @param size
@@ -808,7 +806,7 @@ st_iova_t st_dma_map(st_handle st, const void* vaddr, size_t size);
  * Perform DMA unmapping on the st_dma_map
  *
  * @param st
- *   The handle to the media streaming device context.
+ *   The handle to the media transport device context.
  * @param vaddr
  *   Virtual address of memory to be unmapped and must align to page size.
  * @param iova
@@ -838,7 +836,7 @@ int st_dma_unmap(st_handle st, const void* vaddr, st_iova_t iova, size_t size);
  * *alloc_addr *addr(page aligned)
  *
  * @param st
- *   The handle to the media streaming device context.
+ *   The handle to the media transport device context.
  * @param size
  *   Size of valid data.
  * @return
@@ -852,7 +850,7 @@ st_dma_mem_handle st_dma_mem_alloc(st_handle st, size_t size);
  * This will use memset to clear the st dma mem struct.
  *
  * @param st
- *   The handle to the media streaming device context.
+ *   The handle to the media transport device context.
  * @param handle
  *   The handle to the st dma mem.
  */
@@ -883,7 +881,7 @@ st_iova_t st_dma_mem_iova(st_dma_mem_handle handle);
  * In NUMA systems, the dma dev allocated from the same NUMA socket of the port.
  *
  * @param st
- *   The handle to the media streaming device context.
+ *   The handle to the media transport device context.
  * @param nb_desc
  *   Number of descriptor for the user DMA device
  * @param port
@@ -1001,7 +999,7 @@ uint16_t st_udma_completed(st_udma_handle handle, const uint16_t nb_cpls);
  * Read current time from ptp source.
  *
  * @param st
- *   The handle to the media streaming device context.
+ *   The handle to the media transport device context.
  * @return
  *   - The time in nanoseconds in current ptp system
  */
