@@ -12,6 +12,7 @@ The Media Transport Library(Kahawai) is a solution based on DPDK prepared for tr
 * 1080p, 720p, 4k, 8k and other
 * FPS: 120, 119.88, 100, 60, 59.94, 50, 30, 29.97, 25, 24, 23.98
 * All the video format listed in ST2110-20, include YUV 4:2:2 10bit and others.
+* CSC support status: [status](doc/convert.md)
 
 #### 1.2 Architecture:
 Media transport library takes advantage DPDK features to implement a highly efficient, real-time & low-latency media transport stack, software based media transport makes it feasible for edge and cloud deployment based on COTS hardware. Kahawai introduce a tasklet async based scheduler to fully utilize CPU resources, easy integration with different packet processing unit and accelerators. The packet pacing module support different ways(algorithm) to acheive narrow pacing, RL(rate limit) is partially hardware offload while TSC is fully software based. Kahawai also develope SIMD CSC(color space format covert), DMA, plugin interface to build a fulll video production ecosystem.
