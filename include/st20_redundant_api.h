@@ -138,6 +138,45 @@ int st20r_rx_free(st20r_rx_handle handle);
  */
 int st20r_rx_put_frame(st20r_rx_handle handle, void* frame);
 
+/**
+ * Get the framebuffer size for the rx st2110-20(redundant) session.
+ *
+ * @param handle
+ *   The handle to the tx st2110-20(video) session.
+ * @return
+ *   - size.
+ */
+size_t st20r_rx_get_framebuffer_size(st20r_rx_handle handle);
+
+/**
+ * Get the framebuffer count for the rx st2110-20(redundant) session.
+ *
+ * @param handle
+ *   The handle to the tx st2110-20(video) session.
+ * @return
+ *   - count.
+ */
+int st20r_rx_get_framebuffer_count(st20r_rx_handle handle);
+
+/**
+ * Dump st2110-20(redundant) packets to pcapng file.
+ *
+ * @param handle
+ *   The handle to the rx st2110-20(redundant) session.
+ * @param max_dump_packets
+ *   The max number of packets to be dumpped.
+ * @param sync
+ *   synchronous or asynchronous, true means this func will return after dump
+ * progress is finished.
+ * @param meta
+ *   The meta data returned, only for synchronous, leave to NULL if not need the meta.
+ * @return
+ *   - 0: Success, rx st2110-20(redundant) session pcapng dump succ.
+ *   - <0: Error code of the rx st2110-20(redundant) session pcapng dump.
+ */
+int st20r_rx_pcapng_dump(st20r_rx_handle handle, uint32_t max_dump_packets, bool sync,
+                         struct st_pcap_dump_meta* meta);
+
 #if defined(__cplusplus)
 }
 #endif

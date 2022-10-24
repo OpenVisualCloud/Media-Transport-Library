@@ -1403,6 +1403,10 @@ void st_app_free_json(st_json_context_t* ctx) {
     st_app_free(ctx->rx_st20p_sessions);
     ctx->rx_st20p_sessions = NULL;
   }
+  if (ctx->rx_st20r_sessions) {
+    st_app_free(ctx->rx_st20r_sessions);
+    ctx->rx_st20r_sessions = NULL;
+  }
 }
 
 int st_app_parse_json(st_json_context_t* ctx, const char* filename) {
@@ -1775,9 +1779,13 @@ int st_app_parse_json(st_json_context_t* ctx, const char* filename) {
       num = parse_session_num(rx_group, "st20p");
       if (num < 0) goto error;
       ctx->rx_st20p_session_cnt += num;
+      /* parse rx st20r sessions */
+      num = parse_session_num(rx_group, "st20r");
+      if (num < 0) goto error;
+      ctx->rx_st20r_session_cnt += num;
     }
 
-    /* allocate tx sessions */
+    /* allocate rx sessions */
     ctx->rx_video_sessions = (st_json_video_session_t*)st_app_zmalloc(
         ctx->rx_video_session_cnt * sizeof(st_json_video_session_t));
     if (!ctx->rx_video_sessions) {
@@ -1813,6 +1821,13 @@ int st_app_parse_json(st_json_context_t* ctx, const char* filename) {
       ret = -ST_JSON_NULL;
       goto error;
     }
+    ctx->rx_st20r_sessions = (st_json_video_session_t*)st_app_zmalloc(
+        ctx->rx_st20r_session_cnt * sizeof(*ctx->rx_st20r_sessions));
+    if (!ctx->rx_st20r_sessions) {
+      err("%s, failed to allocate rx_st20r_sessions\n", __func__);
+      ret = -ST_JSON_NULL;
+      goto error;
+    }
 
     int num_inf = 0;
     int num_video = 0;
@@ -1820,6 +1835,7 @@ int st_app_parse_json(st_json_context_t* ctx, const char* filename) {
     int num_anc = 0;
     int num_st22p = 0;
     int num_st20p = 0;
+    int num_st20r = 0;
 
     for (int i = 0; i < json_object_array_length(rx_group_array); ++i) {
       json_object* rx_group = json_object_array_get_idx(rx_group_array, i);
@@ -2030,6 +2046,41 @@ int st_app_parse_json(st_json_context_t* ctx, const char* filename) {
             if (ret) goto error;
             if (ctx->rx_st20p_sessions[num_st20p].display) ctx->has_display = true;
             num_st20p++;
+          }
+        }
+      }
+
+      /* parse rx video sessions */
+      json_object* st20r_array = st_json_object_object_get(rx_group, "st20r");
+      if (st20r_array != NULL && json_object_get_type(st20r_array) == json_type_array) {
+        if (num_inf != 2) {
+          err("%s, invalid num_inf number for st20r: %d\n", __func__, num_inf);
+          ret = -ST_JSON_NOT_VALID;
+          goto error;
+        }
+        for (int j = 0; j < json_object_array_length(st20r_array); ++j) {
+          json_object* st20r_session = json_object_array_get_idx(st20r_array, j);
+          int replicas =
+              json_object_get_int(st_json_object_object_get(st20r_session, "replicas"));
+          if (replicas < 0) {
+            err("%s, invalid replicas number for st20r: %d\n", __func__, replicas);
+            ret = -ST_JSON_NOT_VALID;
+            goto error;
+          }
+          for (int k = 0; k < replicas; ++k) {
+            inet_pton(AF_INET, json_object_get_string(ip_p),
+                      ctx->rx_st20r_sessions[num_st20r].base.ip[0]);
+            ctx->rx_st20r_sessions[num_st20r].base.inf[0] = &ctx->interfaces[inf_p];
+            if (num_inf == 2) {
+              inet_pton(AF_INET, json_object_get_string(ip_r),
+                        ctx->rx_st20r_sessions[num_st20r].base.ip[1]);
+              ctx->rx_st20r_sessions[num_st20r].base.inf[1] = &ctx->interfaces[inf_r];
+            }
+            ctx->rx_st20r_sessions[num_st20r].base.num_inf = num_inf;
+            ret = st_json_parse_rx_video(k, st20r_session,
+                                         &ctx->rx_st20r_sessions[num_st20r]);
+            if (ret) goto error;
+            num_st20r++;
           }
         }
       }

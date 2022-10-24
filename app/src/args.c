@@ -246,6 +246,7 @@ static int app_args_json(struct st_app_context* ctx, struct st_init_params* p,
   ctx->rx_anc_session_cnt = ctx->json_ctx->rx_anc_session_cnt;
   ctx->rx_st22p_session_cnt = ctx->json_ctx->rx_st22p_session_cnt;
   ctx->rx_st20p_session_cnt = ctx->json_ctx->rx_st20p_session_cnt;
+  ctx->rx_st20r_session_cnt = ctx->json_ctx->rx_st20r_session_cnt;
   for (int i = 0; i < ctx->json_ctx->num_interfaces; ++i) {
     snprintf(p->port[i], sizeof(p->port[i]), "%s", ctx->json_ctx->interfaces[i].name);
     memcpy(p->sip_addr[i], ctx->json_ctx->interfaces[i].ip_addr, sizeof(p->sip_addr[i]));
@@ -255,12 +256,7 @@ static int app_args_json(struct st_app_context* ctx, struct st_init_params* p,
     p->data_quota_mbs_per_sch =
         ctx->json_ctx->sch_quota * st20_1080p59_yuv422_10bit_bandwidth_mps();
   }
-  for (int i = 0; i < ctx->json_ctx->rx_video_session_cnt; i++) {
-    int w = st_app_get_width(ctx->json_ctx->rx_video_sessions[i].info.video_format);
-    if (w > ctx->rx_max_width) ctx->rx_max_width = w;
-    int h = st_app_get_height(ctx->json_ctx->rx_video_sessions[i].info.video_format);
-    if (h > ctx->rx_max_height) ctx->rx_max_height = h;
-  }
+
   return 0;
 }
 
