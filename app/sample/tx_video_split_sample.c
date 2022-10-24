@@ -34,15 +34,16 @@ static st_handle g_st_handle;
 
 struct app_context {
   int idx;
+  int fb_cnt;
   int fb_send;
   int nfi; /* next_frame_idx */
   st20_tx_handle handle;
   struct st20_tx_ops ops;
 
   size_t frame_size; /* 1080p */
-  size_t fb_size;    /* 4k */
-  int fb_idx;
-  int fb_total;
+  size_t fb_size;    /* whole 4k */
+  int fb_idx;        /* currrent frame buffer index */
+  int fb_total;      /* total frame buffers read from yuv file */
   size_t fb_offset;
 
   st_dma_mem_handle dma_mem;
@@ -55,6 +56,8 @@ static int tx_video_next_frame(void* priv, uint16_t* next_frame_idx,
 
   if (!s->handle) return -EIO; /* not ready */
 
+  /* the fb_idx of each session is not synced here,
+   * which may need to consider in real production */
   struct st20_ext_frame ext_frame;
   ext_frame.buf_addr =
       st_dma_mem_addr(s->dma_mem) + s->fb_idx * s->fb_size + s->fb_offset;
@@ -65,7 +68,7 @@ static int tx_video_next_frame(void* priv, uint16_t* next_frame_idx,
 
   *next_frame_idx = s->nfi;
   s->nfi++;
-  if (s->nfi >= 3) s->nfi = 0;
+  if (s->nfi >= s->fb_cnt) s->nfi = 0;
 
   s->fb_idx++;
   if (s->fb_idx >= s->fb_total) s->fb_idx = 0;
@@ -150,6 +153,7 @@ int main() {
     app[i]->nfi = 0;
     app[i]->fb_idx = 0;
     app[i]->fb_total = 0;
+    app[i]->fb_cnt = fb_cnt;
 
     struct st20_tx_ops ops_tx;
     memset(&ops_tx, 0, sizeof(ops_tx));
@@ -159,6 +163,9 @@ int main() {
     memcpy(ops_tx.dip_addr[ST_PORT_P], g_tx_video_dst_ip, ST_IP_ADDR_LEN);
     strncpy(ops_tx.port[ST_PORT_P], port, ST_PORT_MAX_LEN);
 
+    struct st20_pgroup st20_pg;
+    st20_get_pgroup(ST20_FMT_YUV_422_10BIT, &st20_pg);
+
     ops_tx.flags |= ST20_TX_FLAG_EXT_FRAME;
     ops_tx.udp_port[ST_PORT_P] = TX_VIDEO_UDP_PORT + i;
     ops_tx.pacing = ST21_PACING_NARROW;
@@ -166,7 +173,7 @@ int main() {
     ops_tx.type = ST20_TYPE_FRAME_LEVEL;
     ops_tx.width = 1920;
     ops_tx.height = 1080;
-    ops_tx.linesize = 9600;
+    ops_tx.linesize = ops_tx.width * 2 * st20_pg.size / st20_pg.coverage;
     ops_tx.fps = ST_FPS_P59_94;
     ops_tx.fmt = ST20_FMT_YUV_422_10BIT;
     ops_tx.payload_type = TX_VIDEO_PAYLOAD_TYPE;
@@ -226,9 +233,9 @@ int main() {
   }
   /* square division on the 4k frame */
   app[0]->fb_offset = 0;
-  app[1]->fb_offset = 4800; /* 1920 * 5 / 2 */
+  app[1]->fb_offset = app[0]->ops.linesize / 2;
   app[2]->fb_offset = app[0]->frame_size * 2;
-  app[3]->fb_offset = app[0]->frame_size * 2 + 4800;
+  app[3]->fb_offset = app[2]->fb_offset + app[1]->fb_offset;
 
   // start tx
   ret = st_start(dev_handle);
