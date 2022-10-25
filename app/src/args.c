@@ -54,7 +54,6 @@ enum st_args_cmd {
   ST_ARG_P_TX_DST_MAC,
   ST_ARG_R_TX_DST_MAC,
   ST_ARG_NIC_RX_PROMISCUOUS,
-  ST_ARG_RX_VIDEO_DISPLAY,
   ST_ARG_LIB_PTP,
   ST_ARG_RX_MONO_POOL,
   ST_ARG_TX_MONO_POOL,
@@ -119,7 +118,6 @@ static struct option st_app_args_options[] = {
     {"rx_video_file_frames", required_argument, 0, ST_ARG_RX_VIDEO_FLIE_FRAMES},
     {"rx_video_fb_cnt", required_argument, 0, ST_ARG_RX_VIDEO_FB_CNT},
     {"rx_video_rtp_ring_size", required_argument, 0, ST_ARG_RX_VIDEO_RTP_RING_SIZE},
-    {"display", no_argument, 0, ST_ARG_RX_VIDEO_DISPLAY},
     {"rx_audio_sessions_count", required_argument, 0, ST_ARG_RX_AUDIO_SESSIONS_CNT},
     {"rx_audio_rtp_ring_size", required_argument, 0, ST_ARG_RX_AUDIO_RTP_RING_SIZE},
     {"rx_anc_sessions_count", required_argument, 0, ST_ARG_RX_ANC_SESSIONS_CNT},
@@ -434,9 +432,6 @@ int st_app_parse_args(struct st_app_context* ctx, struct st_init_params* p, int 
         break;
       case ST_ARG_NIC_RX_PROMISCUOUS:
         p->flags |= ST_FLAG_NIC_RX_PROMISCUOUS;
-        break;
-      case ST_ARG_RX_VIDEO_DISPLAY:
-        ctx->display = true;
         break;
       case ST_ARG_LIB_PTP:
         p->flags |= ST_FLAG_PTP_ENABLE;
