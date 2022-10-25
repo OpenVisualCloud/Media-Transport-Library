@@ -75,5 +75,10 @@ ST_PORT_P=0000:af:00.1 ./build/app/TxSt22VideoSample
 ST_PORT_P=0000:af:00.0 ./build/app/RxSt22VideoSample
 ```
 
+[tx_video_split_sample.c](tx_video_split_sample.c): A tx video(st2110-20) application based on frame interface, application reads a series of 4k frames from the file, square splits them to 4 parts and sends with 4 1080p sessions.
+```bash
+ST_PORT_P=0000:af:00.1 YUVFILE=./test.yuv ./build/app/TxVideoSplitSample
+```
+
 ## 4. Dma samle:
 [dma_sample.c](dma_sample.c): A DMA sample code.

@@ -248,3 +248,9 @@ executable('PerfDma', perf_dma_sources,
   link_args: app_ld_args,
   dependencies: [libst_dpdk]
 )
+
+executable('TxVideoSplitSample', video_tx_split_sample_sources,
+  c_args : app_c_args,
+  link_args: app_ld_args,
+  dependencies: [libst_dpdk]
+)
