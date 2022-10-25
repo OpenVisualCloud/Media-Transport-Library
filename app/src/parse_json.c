@@ -2050,7 +2050,7 @@ int st_app_parse_json(st_json_context_t* ctx, const char* filename) {
         }
       }
 
-      /* parse rx video sessions */
+      /* parse rx st20r sessions */
       json_object* st20r_array = st_json_object_object_get(rx_group, "st20r");
       if (st20r_array != NULL && json_object_get_type(st20r_array) == json_type_array) {
         if (num_inf != 2) {
@@ -2080,6 +2080,7 @@ int st_app_parse_json(st_json_context_t* ctx, const char* filename) {
             ret = st_json_parse_rx_video(k, st20r_session,
                                          &ctx->rx_st20r_sessions[num_st20r]);
             if (ret) goto error;
+            if (ctx->rx_st20r_sessions[num_st20p].display) ctx->has_display = true;
             num_st20r++;
           }
         }

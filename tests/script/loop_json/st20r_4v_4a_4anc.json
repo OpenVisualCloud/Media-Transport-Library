@@ -21,7 +21,7 @@
             ],
             "video": [
                 {
-                    "replicas": 1,
+                    "replicas": 4,
                     "type": "frame",
                     "pacing": "gap",
                     "start_port": 20000,
@@ -34,7 +34,7 @@
             ],
             "audio": [
                 {
-                    "replicas": 1,
+                    "replicas": 4,
                     "type": "frame",
                     "start_port": 30000,
                     "payload_type": 111,
@@ -47,7 +47,7 @@
             ],
             "ancillary": [
                 {
-                    "replicas": 1,
+                    "replicas": 4,
                     "start_port": 40000,
                     "payload_type": 113,
                     "type": "frame",
@@ -70,7 +70,7 @@
             ],
             "st20r": [
                 {
-                    "replicas": 1,
+                    "replicas": 4,
                     "type": "frame",
                     "pacing": "gap",
                     "start_port": 20000,
@@ -84,7 +84,7 @@
             ],
             "audio": [
                 {
-                    "replicas": 1,
+                    "replicas": 4,
                     "type": "frame",
                     "start_port": 30000,
                     "payload_type": 111,
@@ -97,7 +97,7 @@
             ],
             "ancillary": [
                 {
-                    "replicas": 1,
+                    "replicas": 4,
                     "payload_type": 113,
                     "start_port": 40000
                 }

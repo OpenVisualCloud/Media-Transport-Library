@@ -33,10 +33,32 @@ ls -l /sys/kernel/iommu_groups/
 #### 2.1 Update NIC FW and driver to latest version.
 Refer to https://www.intel.com/content/www/us/en/download/15084/intel-ethernet-adapter-complete-driver-pack.html
 
+After upgraded, please double check the DDP version is right(>1.3.30.0) from dmesg.
+```bash
+The DDP package was successfully loaded: ICE OS Default Package (mc) version 1.3.30.0
+```
+Use below command to update if it's not latest, the DDP package can be found at the latest Intel ice driver.
+```bash
+cd /usr/lib/firmware/updates/intel/ice/ddp
+cp <latest_ddp_dir>/ice-1.3.30.0.pkg ./
+rm ice.pkg
+ln -s ice-1.3.30.0.pkg ice.pkg
+rmmod ice
+modprobe ice
+```
+
 #### 2.2 Bind NIC to DPDK PMD mode.
 Below is the command to bind BDF 0000:af:00.0 to PF PMD mode, customize the BDF port as your setup.
 ```bash
 sudo ./script/nicctl.sh bind_pmd 0000:af:00.0
+```
+Doubel check if iommu is enabled if you see below error.
+```bash
+Error: bind failed for 0000:af:00.0 - Cannot bind to driver vfio-pci: [Errno 19] No such device
+Error: unbind failed for 0000:af:00.0 - Cannot open /sys/bus/pci/drivers//unbind: [Errno 13] Permission denied:
+```
+```bash
+ls -l /sys/kernel/iommu_groups/
 ```
 
 ## 3. Run the sample application:

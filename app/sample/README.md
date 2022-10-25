@@ -80,5 +80,10 @@ ST_PORT_P=0000:af:00.0 ./build/app/RxSt22VideoSample
 ST_PORT_P=0000:af:00.1 YUVFILE=./test.yuv ./build/app/TxVideoSplitSample
 ```
 
+[rx_st20_redundant_sample.c](rx_st20_redundant_sample.c): A rx video(st2110-20) redundant application based on frame interface, application need handle the color format conversion in case the user format is not the one defined in RFC4175.
+```bash
+ST_PORT_P=0000:af:01.0 ST_PORT_R=0000:af:01.1 ./build/app/RxSt20RedundantSample
+```
+
 ## 4. Dma samle:
 [dma_sample.c](dma_sample.c): A DMA sample code.
