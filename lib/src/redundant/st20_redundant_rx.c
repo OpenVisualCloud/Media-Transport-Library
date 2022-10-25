@@ -31,12 +31,15 @@ static int rx_st20r_frame_push(struct st20r_rx_ctx* ctx, void* frame, enum st_po
     rx_frame = &ctx->frames[i];
     if (rx_frame->frame) continue;
     /* find a empty slot, notify user */
+    rx_frame->frame = frame;
+    rx_frame->port = port;
+    rx_frame->meta = *meta;
     ret = ctx->ops.notify_frame_ready(ctx->ops.priv, frame, meta);
-    if (ret >= 0) {
-      /* save the frame */
-      rx_frame->frame = frame;
-      rx_frame->port = port;
-      rx_frame->meta = *meta;
+    dbg("%s(%d), notify frame %p(%d:%u) to user, ret %d\n", __func__, ctx->idx, frame,
+        port, i, ret);
+    if (ret < 0) {
+      /* clear the frame */
+      rx_frame->frame = NULL;
     }
     return ret;
   }
@@ -272,4 +275,43 @@ int st20r_rx_put_frame(st20r_rx_handle handle, void* frame) {
   }
 
   return rx_st20r_frame_pop(ctx, frame);
+}
+
+size_t st20r_rx_get_framebuffer_size(st20r_rx_handle handle) {
+  struct st20r_rx_ctx* ctx = handle;
+
+  if (ctx->type != ST_SESSION_TYPE_RX_VIDEO_R) {
+    err("%s(%d), invalid type %d\n", __func__, ctx->idx, ctx->type);
+    return -EIO;
+  }
+
+  return st20_rx_get_framebuffer_size(ctx->transport[ST_PORT_P]->handle);
+}
+
+int st20r_rx_get_framebuffer_count(st20r_rx_handle handle) {
+  struct st20r_rx_ctx* ctx = handle;
+
+  if (ctx->type != ST_SESSION_TYPE_RX_VIDEO_R) {
+    err("%s(%d), invalid type %d\n", __func__, ctx->idx, ctx->type);
+    return -EIO;
+  }
+
+  return st20_rx_get_framebuffer_count(ctx->transport[ST_PORT_P]->handle);
+}
+
+int st20r_rx_pcapng_dump(st20r_rx_handle handle, uint32_t max_dump_packets, bool sync,
+                         struct st_pcap_dump_meta* meta) {
+  struct st20r_rx_ctx* ctx = handle;
+  int ret = 0;
+
+  if (ctx->type != ST_SESSION_TYPE_RX_VIDEO_R) {
+    err("%s(%d), invalid type %d\n", __func__, ctx->idx, ctx->type);
+    return -EIO;
+  }
+
+  ret += st20_rx_pcapng_dump(ctx->transport[ST_PORT_P]->handle, max_dump_packets, sync,
+                             meta);
+  ret += st20_rx_pcapng_dump(ctx->transport[ST_PORT_R]->handle, max_dump_packets, sync,
+                             meta);
+  return ret;
 }

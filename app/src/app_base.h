@@ -11,6 +11,7 @@
 #include <pthread.h>
 #include <signal.h>
 #include <st20_dpdk_api.h>
+#include <st20_redundant_api.h>
 #include <st30_dpdk_api.h>
 #include <st40_dpdk_api.h>
 #include <st_dpdk_api.h>
@@ -205,6 +206,7 @@ struct st_app_rx_video_session {
   int idx;
   st_handle st;
   st20_rx_handle handle;
+  st20r_rx_handle st20r_handle; /* for st20r */
   int framebuff_cnt;
   int st20_frame_size;
   bool slice;
@@ -466,8 +468,6 @@ struct st_app_context {
   bool enable_hdr_split;
   bool tx_copy_once;
   bool app_thread;
-  uint32_t rx_max_width;
-  uint32_t rx_max_height;
 
   char tx_video_url[ST_APP_URL_MAX_LEN]; /* send video content url*/
   struct st_app_tx_video_session* tx_video_sessions;
@@ -513,6 +513,9 @@ struct st_app_context {
 
   struct st_app_rx_st20p_session* rx_st20p_sessions;
   int rx_st20p_session_cnt;
+
+  struct st_app_rx_video_session* rx_st20r_sessions;
+  int rx_st20r_session_cnt;
 
   char tx_st22_url[ST_APP_URL_MAX_LEN]; /* send st22 content url*/
   struct st22_app_tx_session* tx_st22_sessions;

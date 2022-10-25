@@ -222,6 +222,8 @@ typedef struct st_json_context {
   int rx_st22p_session_cnt;
   st_json_st20p_session_t* rx_st20p_sessions;
   int rx_st20p_session_cnt;
+  st_json_video_session_t* rx_st20r_sessions;
+  int rx_st20r_session_cnt;
 } st_json_context_t;
 
 int st_app_parse_json(st_json_context_t* ctx, const char* filename);

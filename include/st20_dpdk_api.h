@@ -1321,7 +1321,7 @@ int st20_rx_pcapng_dump(st20_rx_handle handle, uint32_t max_dump_packets, bool s
 int st20_rx_free(st20_rx_handle handle);
 
 /**
- * Get the framebuffer size for the tx st2110-20(video) session.
+ * Get the framebuffer size for the rx st2110-20(video) session.
  *
  * @param handle
  *   The handle to the tx st2110-20(video) session.
@@ -1331,7 +1331,7 @@ int st20_rx_free(st20_rx_handle handle);
 size_t st20_rx_get_framebuffer_size(st20_rx_handle handle);
 
 /**
- * Get the framebuffer count for the tx st2110-20(video) session.
+ * Get the framebuffer count for the rx st2110-20(video) session.
  *
  * @param handle
  *   The handle to the tx st2110-20(video) session.

@@ -14,6 +14,7 @@
 #include "rx_ancillary_app.h"
 #include "rx_audio_app.h"
 #include "rx_st20p_app.h"
+#include "rx_st20r_app.h"
 #include "rx_st22_app.h"
 #include "rx_st22p_app.h"
 #include "rx_video_app.h"
@@ -33,6 +34,7 @@ static void app_stat(void* priv) {
   st_app_rx_video_sessions_stat(ctx);
   st_app_rx_st22p_sessions_stat(ctx);
   st_app_rx_st20p_sessions_stat(ctx);
+  st_app_rx_st20r_sessions_stat(ctx);
 }
 
 void app_set_log_level(enum st_log_level level) { app_log_level = level; }
@@ -90,8 +92,7 @@ static void st_app_ctx_init(struct st_app_context* ctx) {
   ctx->rx_st22_session_cnt = 0;
   ctx->rx_st22p_session_cnt = 0;
   ctx->rx_st20p_session_cnt = 0;
-  ctx->rx_max_width = 1920;
-  ctx->rx_max_height = 1080;
+  ctx->rx_st20r_session_cnt = 0;
 
   /* st22 */
   ctx->st22_bpp = 3; /* 3bit per pixel */
@@ -151,6 +152,7 @@ static void st_app_ctx_free(struct st_app_context* ctx) {
   st_app_rx_anc_sessions_uinit(ctx);
   st_app_rx_st22p_sessions_uinit(ctx);
   st_app_rx_st20p_sessions_uinit(ctx);
+  st_app_rx_st20r_sessions_uinit(ctx);
   st22_app_rx_sessions_uinit(ctx);
 
   if (ctx->runtime_session) {
@@ -190,6 +192,7 @@ static int st_app_result(struct st_app_context* ctx) {
   result += st_app_rx_anc_sessions_result(ctx);
   result += st_app_rx_st22p_sessions_result(ctx);
   result += st_app_rx_st20p_sessions_result(ctx);
+  result += st_app_rx_st20r_sessions_result(ctx);
   return result;
 }
 
@@ -197,6 +200,7 @@ static int st_app_pcap(struct st_app_context* ctx) {
   st_app_rx_video_sessions_pcap(ctx);
   st_app_rx_st22p_sessions_pcap(ctx);
   st_app_rx_st20p_sessions_pcap(ctx);
+  st_app_rx_st20r_sessions_pcap(ctx);
   return 0;
 }
 
@@ -385,6 +389,13 @@ int main(int argc, char** argv) {
   ret = st_app_rx_st20p_sessions_init(ctx);
   if (ret < 0) {
     err("%s, st_app_rx_st20p_sessions_init fail %d\n", __func__, ret);
+    st_app_ctx_free(ctx);
+    return -EIO;
+  }
+
+  ret = st_app_rx_st20r_sessions_init(ctx);
+  if (ret < 0) {
+    err("%s, st_app_rx_st20r_sessions_init fail %d\n", __func__, ret);
     st_app_ctx_free(ctx);
     return -EIO;
   }
