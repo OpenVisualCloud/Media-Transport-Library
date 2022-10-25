@@ -199,6 +199,7 @@ typedef struct st_json_context {
   st_json_interface_t* interfaces;
   int num_interfaces;
   int sch_quota;
+  bool has_display;
 
   st_json_video_session_t* tx_video_sessions;
   int tx_video_session_cnt;

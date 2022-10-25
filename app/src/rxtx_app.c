@@ -287,8 +287,7 @@ int main(int argc, char** argv) {
     return -EIO;
   }
 
-  /* "--display" must be set to enable any rx display */
-  if (ctx->display) {
+  if (ctx->json_ctx->has_display) {
     ret = st_app_player_init(ctx);
     if (ret < 0) {
       ctx->has_sdl = false;

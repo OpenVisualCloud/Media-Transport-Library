@@ -130,7 +130,6 @@ For the supported parameters in the json, please refer to [JSON configuration gu
 --rx_separate_lcore                  : If enabled, RX video session will run on dedicated lcores, it means TX video and RX video is not running on the same core.
 --dma_dev <DMA1,DMA2,DMA3...>        : DMA dev list to offload the packet memory copy for RX video frame session.
 --runtime_session                    : start instance before creat video/audio/anc sessions, similar to runtime tx/rx create.
---display                            : The main option for SDL init, to enable display for each rx video session, see JSON guide.
 
 --ebu                                : debug option, enable timing check for video rx streams.
 --pcapng_dump <n>                    : debug option, dump n packets from rx video streams to pcapng files.

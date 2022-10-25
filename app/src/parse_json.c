@@ -1741,6 +1741,8 @@ int st_app_parse_json(st_json_context_t* ctx, const char* filename) {
     }
   }
 
+  ctx->has_display = false;
+
   /* parse rx sessions */
   json_object* rx_group_array = st_json_object_object_get(root_object, "rx_sessions");
   if (rx_group_array != NULL && json_object_get_type(rx_group_array) == json_type_array) {
@@ -1905,6 +1907,7 @@ int st_app_parse_json(st_json_context_t* ctx, const char* filename) {
             ret = st_json_parse_rx_video(k, video_session,
                                          &ctx->rx_video_sessions[num_video]);
             if (ret) goto error;
+            if (ctx->rx_video_sessions[num_video].display) ctx->has_display = true;
             num_video++;
           }
         }
@@ -1994,6 +1997,7 @@ int st_app_parse_json(st_json_context_t* ctx, const char* filename) {
             ret = st_json_parse_rx_st22p(k, st22p_session,
                                          &ctx->rx_st22p_sessions[num_st22p]);
             if (ret) goto error;
+            if (ctx->rx_st22p_sessions[num_st22p].display) ctx->has_display = true;
             num_st22p++;
           }
         }
@@ -2024,6 +2028,7 @@ int st_app_parse_json(st_json_context_t* ctx, const char* filename) {
             ret = st_json_parse_rx_st20p(k, st20p_session,
                                          &ctx->rx_st20p_sessions[num_st20p]);
             if (ret) goto error;
+            if (ctx->rx_st20p_sessions[num_st20p].display) ctx->has_display = true;
             num_st20p++;
           }
         }

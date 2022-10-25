@@ -181,7 +181,7 @@ Items in each element of the "video" array
 
 ​	**user_pg_format (string):** `"YUV_422_8bit"` user required pixel group format
 
-​	**display (bool):** `true, false` display video frames with SDL, only works with YUV_422_10bit stream, "--display" option required in the command
+​	**display (bool):** `true, false` display video frames with SDL, only works with YUV 422 10bit and 8bit stream
 
 #### audio (array of audio sessions)
 

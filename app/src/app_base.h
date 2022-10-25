@@ -499,7 +499,6 @@ struct st_app_context {
   int rx_video_file_frames; /* the frames recevied saved to file */
   int rx_video_fb_cnt;
   int rx_video_rtp_ring_size; /* the ring size for rx video rtp type */
-  bool display;               /* flag to display all rx video with SDL */
   bool has_sdl;               /* has SDL device or not*/
 
   struct st_app_rx_audio_session* rx_audio_sessions;
