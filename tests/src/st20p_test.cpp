@@ -482,7 +482,8 @@ static void test_internal_st20p_rx_frame_thread(void* args) {
   dbg("%s(%d), stop\n", __func__, s->idx);
 }
 
-static int test_st20p_rx_query_ext_frame(void* priv, st20_ext_frame* ext_frame) {
+static int test_st20p_rx_query_ext_frame(void* priv, st20_ext_frame* ext_frame,
+                                         struct st20_rx_frame_meta* meta) {
   tests_context* s = (tests_context*)priv;
   int i = s->ext_idx;
 
