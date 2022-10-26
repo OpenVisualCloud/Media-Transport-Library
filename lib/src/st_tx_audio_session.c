@@ -225,7 +225,7 @@ static uint64_t tx_audio_pacing_required_tai(struct st_tx_audio_session_impl* s,
                                              uint64_t timestamp) {
   uint64_t required_tai = 0;
 
-  if (!(s->ops.flags & ST30_TX_FLAG_USER_TIMESTAMP)) return 0;
+  if (!(s->ops.flags & ST30_TX_FLAG_USER_PACING)) return 0;
   if (!timestamp) return 0;
 
   if (tfmt == ST10_TIMESTAMP_FMT_MEDIA_CLK) {
@@ -290,7 +290,8 @@ static int tx_audio_session_sync_pacing(struct st_main_impl* impl,
   }
 
   pacing->cur_epochs = epochs;
-  pacing->cur_time_stamp = tx_audio_pacing_time_stamp(pacing, epochs);
+  pacing->pacing_time_stamp = tx_audio_pacing_time_stamp(pacing, epochs);
+  pacing->rtp_time_stamp = pacing->pacing_time_stamp;
   pacing->tsc_time_cursor = (double)st_get_tsc(impl) + to_epoch_tr_offset;
 
   if (sync) {
@@ -325,7 +326,7 @@ static int tx_audio_session_build_rtp_packet(struct st_main_impl* impl,
   /* update rtp */
   rtp->seq_number = htons(s->st30_seq_id);
   s->st30_seq_id++;
-  rtp->tmstamp = htonl(s->pacing.cur_time_stamp);
+  rtp->tmstamp = htonl(s->pacing.rtp_time_stamp);
 
   /* copy payload now */
   uint8_t* payload = (uint8_t*)&rtp[1];
@@ -370,7 +371,10 @@ static int tx_audio_session_build_packet(struct st_main_impl* impl,
       if (rtp->tmstamp != s->st30_rtp_time_app) {
         /* start of a new epoch */
         s->st30_rtp_time_app = rtp->tmstamp;
-        s->st30_rtp_time = s->pacing.cur_time_stamp;
+        if (s->ops.flags & ST30_TX_FLAG_USER_TIMESTAMP) {
+          s->pacing.rtp_time_stamp = ntohl(rtp->tmstamp);
+        }
+        s->st30_rtp_time = s->pacing.rtp_time_stamp;
         rte_atomic32_inc(&s->st30_stat_frame_cnt);
       }
       /* update rtp time */
@@ -494,8 +498,12 @@ static int tx_audio_session_tasklet_frame(struct st_main_impl* impl,
     uint64_t required_tai =
         tx_audio_pacing_required_tai(s, frame->ta_meta.tfmt, frame->ta_meta.timestamp);
     tx_audio_session_sync_pacing(impl, s, false, required_tai);
+    if (ops->flags & ST30_TX_FLAG_USER_TIMESTAMP &&
+        (frame->ta_meta.tfmt == ST10_TIMESTAMP_FMT_MEDIA_CLK)) {
+      pacing->rtp_time_stamp = (uint32_t)frame->ta_meta.timestamp;
+    }
     frame->ta_meta.tfmt = ST10_TIMESTAMP_FMT_MEDIA_CLK;
-    frame->ta_meta.timestamp = pacing->cur_time_stamp;
+    frame->ta_meta.timestamp = pacing->rtp_time_stamp;
   }
 
   uint64_t cur_tsc = st_get_tsc(impl);

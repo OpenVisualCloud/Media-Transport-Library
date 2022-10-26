@@ -934,6 +934,7 @@ TEST(St22p, digest_st22_4k_s1) {
 
   struct st22p_rx_digest_test_para para;
   test_st22p_init_rx_digest_para(&para);
+  para.level = ST_TEST_LEVEL_ALL;
 
   st22p_rx_digest_test(fps, width, height, fmt, codec, compress_ratio, &para);
 }

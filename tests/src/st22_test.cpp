@@ -1317,9 +1317,9 @@ TEST(St22_rx, digest_s2) {
   st22_rx_digest_test(fps, width, height, pkt_data_len, total_pkts, 2);
 }
 
-static void st22_tx_timestamp_test(int width[], int height[], int pkt_data_len[],
-                                   int total_pkts[], enum st_test_level level,
-                                   int sessions = 1) {
+static void st22_tx_user_pacing_test(int width[], int height[], int pkt_data_len[],
+                                     int total_pkts[], enum st_test_level level,
+                                     int sessions = 1) {
   auto ctx = (struct st_tests_context*)st_test_ctx();
   auto m_handle = ctx->handle;
   int ret;
@@ -1378,7 +1378,7 @@ static void st22_tx_timestamp_test(int width[], int height[], int pkt_data_len[]
     ops_tx.type = ST22_TYPE_FRAME_LEVEL;
     ops_tx.pack_type = ST22_PACK_CODESTREAM;
     ops_tx.framebuff_cnt = test_ctx_tx[i]->fb_cnt;
-    ops_tx.flags = ST22_TX_FLAG_USER_TIMESTAMP;
+    ops_tx.flags = ST22_TX_FLAG_USER_PACING;
 
     test_ctx_tx[i]->pkt_data_len = pkt_data_len[i];
     test_ctx_tx[i]->total_pkts_in_frame = total_pkts[i]; /* compress ratio 1/8, 4320/8 */
@@ -1469,10 +1469,10 @@ static void st22_tx_timestamp_test(int width[], int height[], int pkt_data_len[]
   }
 }
 
-TEST(St22_tx, tx_timestamp) {
+TEST(St22_tx, tx_user_pacing) {
   int width[1] = {1920};
   int height[1] = {1080};
   int pkt_data_len[1] = {1260};
   int total_pkts[1] = {602};
-  st22_tx_timestamp_test(width, height, pkt_data_len, total_pkts, ST_TEST_LEVEL_ALL, 1);
+  st22_tx_user_pacing_test(width, height, pkt_data_len, total_pkts, ST_TEST_LEVEL_ALL, 1);
 }

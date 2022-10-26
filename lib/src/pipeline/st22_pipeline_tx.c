@@ -63,7 +63,7 @@ static int tx_st22p_next_frame(void* priv, uint16_t* next_frame_idx,
 
   framebuff->stat = ST22P_TX_FRAME_IN_TRANSMITTING;
   *next_frame_idx = framebuff->idx;
-  if (ctx->ops.flags & ST22P_TX_FLAG_USER_TIMESTAMP) {
+  if (ctx->ops.flags & (ST22P_TX_FLAG_USER_PACING | ST22P_TX_FLAG_USER_TIMESTAMP)) {
     meta->tfmt = framebuff->src.tfmt;
     meta->timestamp = framebuff->src.timestamp;
     dbg("%s(%d), frame %u succ timestamp %lu\n", __func__, ctx->idx, framebuff->idx,
@@ -227,6 +227,7 @@ static int tx_st22p_create_transport(st_handle st, struct st22p_tx_ctx* ctx,
   }
   if (ops->flags & ST22P_TX_FLAG_DISABLE_BOXES)
     ops_tx.flags |= ST22_TX_FLAG_DISABLE_BOXES;
+  if (ops->flags & ST22P_TX_FLAG_USER_PACING) ops_tx.flags |= ST22_TX_FLAG_USER_PACING;
   if (ops->flags & ST22P_TX_FLAG_USER_TIMESTAMP)
     ops_tx.flags |= ST22_TX_FLAG_USER_TIMESTAMP;
   ops_tx.pacing = ST21_PACING_NARROW;

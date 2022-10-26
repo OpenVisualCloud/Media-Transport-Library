@@ -224,7 +224,7 @@ static uint64_t tx_ancillary_pacing_required_tai(struct st_tx_ancillary_session_
                                                  uint64_t timestamp) {
   uint64_t required_tai = 0;
 
-  if (!(s->ops.flags & ST40_TX_FLAG_USER_TIMESTAMP)) return 0;
+  if (!(s->ops.flags & ST40_TX_FLAG_USER_PACING)) return 0;
   if (!timestamp) return 0;
 
   if (tfmt == ST10_TIMESTAMP_FMT_MEDIA_CLK) {
@@ -288,10 +288,11 @@ static int tx_ancillary_session_sync_pacing(struct st_main_impl* impl,
   }
 
   pacing->cur_epochs = epochs;
-  pacing->cur_time_stamp = tx_ancillary_pacing_time_stamp(pacing, epochs);
+  pacing->pacing_time_stamp = tx_ancillary_pacing_time_stamp(pacing, epochs);
+  pacing->rtp_time_stamp = pacing->pacing_time_stamp;
   pacing->tsc_time_cursor = (double)st_get_tsc(impl) + to_epoch_tr_offset;
   dbg("%s(%d), epochs %lu time_stamp %u time_cursor %f to_epoch_tr_offset %f\n", __func__,
-      idx, pacing->cur_epochs, pacing->cur_time_stamp, pacing->tsc_time_cursor,
+      idx, pacing->cur_epochs, pacing->pacing_time_stamp, pacing->tsc_time_cursor,
       to_epoch_tr_offset);
 
   if (sync) {
@@ -326,7 +327,7 @@ static int tx_ancillary_session_build_rtp_packet(struct st_tx_ancillary_session_
   rtp->seq_number_ext = htons(s->st40_ext_seq_id);
   if (s->st40_seq_id == 0xFFFF) s->st40_ext_seq_id++;
   s->st40_seq_id++;
-  rtp->base.tmstamp = htonl(s->pacing.cur_time_stamp);
+  rtp->base.tmstamp = htonl(s->pacing.rtp_time_stamp);
 
   /* Set place for payload just behind rtp header */
   uint8_t* payload = (uint8_t*)&rtp[1];
@@ -419,7 +420,10 @@ static int tx_ancillary_session_build_packet(struct st_main_impl* impl,
         s->st40_rtp_time = rtp->base.tmstamp;
         tx_ancillary_session_sync_pacing(impl, s, false, 0);
       }
-      rtp->base.tmstamp = htonl(s->pacing.cur_time_stamp);
+      if (s->ops.flags & ST40_TX_FLAG_USER_TIMESTAMP) {
+        s->pacing.rtp_time_stamp = ntohl(rtp->base.tmstamp);
+      }
+      rtp->base.tmstamp = htonl(s->pacing.rtp_time_stamp);
     }
   }
 
@@ -546,8 +550,12 @@ static int tx_ancillary_session_tasklet_frame(struct st_main_impl* impl,
     uint64_t required_tai = tx_ancillary_pacing_required_tai(s, frame->tc_meta.tfmt,
                                                              frame->tc_meta.timestamp);
     tx_ancillary_session_sync_pacing(impl, s, false, required_tai);
+    if (ops->flags & ST40_TX_FLAG_USER_TIMESTAMP &&
+        (frame->ta_meta.tfmt == ST10_TIMESTAMP_FMT_MEDIA_CLK)) {
+      pacing->rtp_time_stamp = (uint32_t)frame->tc_meta.timestamp;
+    }
     frame->tc_meta.tfmt = ST10_TIMESTAMP_FMT_MEDIA_CLK;
-    frame->tc_meta.timestamp = pacing->cur_time_stamp;
+    frame->tc_meta.timestamp = pacing->rtp_time_stamp;
   }
 
   uint64_t cur_tsc = st_get_tsc(impl);

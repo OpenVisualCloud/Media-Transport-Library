@@ -414,12 +414,13 @@ static int tv_sync_pacing(struct st_main_impl* impl, struct st_tx_video_session_
 
   if (epochs > next_epochs) s->stat_epoch_drop += (epochs - next_epochs);
   pacing->cur_epochs = epochs;
-  pacing->cur_time_stamp = pacing_time_stamp(pacing, epochs);
+  pacing->pacing_time_stamp = pacing_time_stamp(pacing, epochs);
+  pacing->rtp_time_stamp = pacing->pacing_time_stamp;
   dbg("%s(%d), old time_cursor %fms\n", __func__, idx,
       pacing->tsc_time_cursor / 1000 / 1000);
   pacing->tsc_time_cursor = (double)st_get_tsc(impl) + to_epoch_tr_offset;
   dbg("%s(%d), epochs %lu time_stamp %u time_cursor %fms to_epoch_tr_offset %fms\n",
-      __func__, idx, pacing->cur_epochs, pacing->cur_time_stamp,
+      __func__, idx, pacing->cur_epochs, pacing->pacing_time_stamp,
       pacing->tsc_time_cursor / 1000 / 1000, to_epoch_tr_offset / 1000 / 1000);
   pacing->ptp_time_cursor = ptp_tr_offset_time;
 
@@ -629,7 +630,7 @@ static int tv_build_pkt(struct st_main_impl* impl, struct st_tx_video_session_im
   uint16_t field = frame_info->tv_meta.second_field ? ST20_SECOND_FIELD : 0x0000;
   rtp->row_number = htons(line1_number | field);
   rtp->row_offset = htons(line1_offset);
-  rtp->base.tmstamp = htonl(s->pacing.cur_time_stamp);
+  rtp->base.tmstamp = htonl(s->pacing.rtp_time_stamp);
 
   uint32_t temp =
       single_line ? ((ops->width - line1_offset) / s->st20_pg.coverage * s->st20_pg.size)
@@ -715,9 +716,13 @@ static int tv_build_rtp(struct st_main_impl* impl, struct st_tx_video_session_im
     rte_atomic32_inc(&s->stat_frame_cnt);
     s->st20_rtp_time = rtp->tmstamp;
     tv_sync_pacing(impl, s, false, 0);
+    if (s->ops.flags & ST20_TX_FLAG_USER_TIMESTAMP) {
+      s->pacing.rtp_time_stamp = ntohl(rtp->tmstamp);
+    }
+    dbg("%s(%d), rtp time stamp %u\n", __func__, s->idx, s->pacing.rtp_time_stamp);
   }
   /* update rtp time*/
-  rtp->tmstamp = htonl(s->pacing.cur_time_stamp);
+  rtp->tmstamp = htonl(s->pacing.rtp_time_stamp);
 
   /* update mbuf */
   st_mbuf_init_ipv4(pkt);
@@ -872,7 +877,7 @@ static int tv_build_st22(struct st_main_impl* impl, struct st_tx_video_session_i
   }
   rtp->base.seq_number = htons((uint16_t)s->st20_seq_id);
   s->st20_seq_id++;
-  rtp->base.tmstamp = htonl(s->pacing.cur_time_stamp);
+  rtp->base.tmstamp = htonl(s->pacing.rtp_time_stamp);
   uint16_t f_counter = st22_info->frame_idx % 32;
   uint16_t sep_counter = s->st20_pkt_idx / 2048;
   uint16_t p_counter = s->st20_pkt_idx % 2048;
@@ -972,7 +977,7 @@ static uint64_t tv_pacing_required_tai(struct st_tx_video_session_impl* s,
                                        enum st10_timestamp_fmt tfmt, uint64_t timestamp) {
   uint64_t required_tai = 0;
 
-  if (!(s->ops.flags & ST20_TX_FLAG_USER_TIMESTAMP)) return 0;
+  if (!(s->ops.flags & ST20_TX_FLAG_USER_PACING)) return 0;
   if (!timestamp) return 0;
 
   if (tfmt == ST10_TIMESTAMP_FMT_MEDIA_CLK) {
@@ -1084,8 +1089,12 @@ static int tv_tasklet_frame(struct st_main_impl* impl,
       /* user timestamp control if any */
       uint64_t required_tai = tv_pacing_required_tai(s, meta.tfmt, meta.timestamp);
       tv_sync_pacing(impl, s, false, required_tai);
+      if (ops->flags & ST20_TX_FLAG_USER_TIMESTAMP) {
+        pacing->rtp_time_stamp = st10_get_media_clk(meta.tfmt, meta.timestamp, 90 * 1000);
+      }
+      dbg("%s(%d), rtp time stamp %u\n", __func__, idx, pacing->rtp_time_stamp);
       frame->tv_meta.tfmt = ST10_TIMESTAMP_FMT_MEDIA_CLK;
-      frame->tv_meta.timestamp = pacing->cur_time_stamp;
+      frame->tv_meta.timestamp = pacing->rtp_time_stamp;
     }
   }
 
@@ -1459,12 +1468,16 @@ static int tv_tasklet_st22(struct st_main_impl* impl,
       /* user timestamp control if any */
       uint64_t required_tai = tv_pacing_required_tai(s, meta.tfmt, meta.timestamp);
       tv_sync_pacing(impl, s, false, required_tai);
+      if (ops->flags & ST20_TX_FLAG_USER_TIMESTAMP) {
+        pacing->rtp_time_stamp = st10_get_media_clk(meta.tfmt, meta.timestamp, 90 * 1000);
+      }
+      dbg("%s(%d), rtp time stamp %u\n", __func__, idx, pacing->rtp_time_stamp);
       frame->tx_st22_meta.tfmt = ST10_TIMESTAMP_FMT_MEDIA_CLK;
-      frame->tx_st22_meta.timestamp = pacing->cur_time_stamp;
+      frame->tx_st22_meta.timestamp = pacing->rtp_time_stamp;
       dbg("%s(%d), next_frame_idx %d(%d pkts) start\n", __func__, idx, next_frame_idx,
           s->st20_total_pkts);
       dbg("%s(%d), codestream_size %ld time_stamp %u\n", __func__, idx, codestream_size,
-          s->pacing.cur_time_stamp);
+          pacing->rtp_time_stamp);
     }
   }
 
@@ -3081,6 +3094,7 @@ st22_tx_handle st22_tx_create(st_handle st, struct st22_tx_ops* ops) {
       st20_ops.flags |= ST20_TX_FLAG_USER_R_MAC;
     }
   }
+  if (ops->flags & ST22_TX_FLAG_USER_PACING) st20_ops.flags |= ST20_TX_FLAG_USER_PACING;
   if (ops->flags & ST22_TX_FLAG_USER_TIMESTAMP)
     st20_ops.flags |= ST20_TX_FLAG_USER_TIMESTAMP;
   st20_ops.pacing = ops->pacing;

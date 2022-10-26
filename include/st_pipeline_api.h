@@ -242,10 +242,16 @@ enum st22_quality_mode {
 #define ST22P_TX_FLAG_DISABLE_BOXES (ST_BIT32(2))
 /**
  * Flag bit in flags of struct st22p_tx_ops.
- * User control the frame timing by pass a timestamp in st_frame,
- * lib will wait until timestamp is reached.
+ * User control the frame pacing by pass a timestamp in st_frame,
+ * lib will wait until timestamp is reached for each frame.
  */
-#define ST22P_TX_FLAG_USER_TIMESTAMP (ST_BIT32(3))
+#define ST22P_TX_FLAG_USER_PACING (ST_BIT32(3))
+/**
+ * Flag bit in flags of struct st22p_tx_ops.
+ * If enabled, lib will assign the rtp timestamp to the value in
+ * tx_frame_meta(ST10_TIMESTAMP_FMT_MEDIA_CLK is used)
+ */
+#define ST22P_TX_FLAG_USER_TIMESTAMP (ST_BIT32(4))
 
 /**
  * Flag bit in flags of struct st20p_tx_ops.
@@ -264,10 +270,16 @@ enum st22_quality_mode {
 #define ST20P_TX_FLAG_EXT_FRAME (ST_BIT32(2))
 /**
  * Flag bit in flags of struct st20p_tx_ops.
- * User control the frame timing by pass a timestamp in st_frame,
- * lib will wait until timestamp is reached.
+ * User control the frame pacing by pass a timestamp in st_frame,
+ * lib will wait until timestamp is reached for each frame.
  */
-#define ST20P_TX_FLAG_USER_TIMESTAMP (ST_BIT32(3))
+#define ST20P_TX_FLAG_USER_PACING (ST_BIT32(3))
+/**
+ * Flag bit in flags of struct st20p_tx_ops.
+ * If enabled, lib will assign the rtp timestamp to the value in
+ * tx_frame_meta(ST10_TIMESTAMP_FMT_MEDIA_CLK is used)
+ */
+#define ST20P_TX_FLAG_USER_TIMESTAMP (ST_BIT32(4))
 
 /**
  * Flag bit in flags of struct st22p_rx_ops, for non ST_PMD_DPDK_USER.

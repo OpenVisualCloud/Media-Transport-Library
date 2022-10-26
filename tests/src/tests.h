@@ -254,6 +254,10 @@ class tests_context {
   int ext_idx = 0;
   bool ext_fb_in_use[3] = {false}; /* assume 3 framebuffer */
   st_dma_mem_handle dma_mem = NULL;
+
+  bool user_pacing = false;
+  bool user_timestamp = false;
+  uint32_t pre_timestamp = 0;
 };
 
 int tx_next_frame(void* priv, uint16_t* next_frame_idx);
