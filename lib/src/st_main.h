@@ -426,11 +426,13 @@ struct st_tx_video_pacing {
   uint32_t warm_pkts;         /* pkts for RL pacing warm boot */
   float pad_interval;         /* padding pkt interval(pkts level) for RL pacing */
 
-  uint64_t cur_epochs;     /* epoch of current frame */
-  uint32_t cur_time_stamp; /* The Timestamp field shall contain the RTP Timestamp as
-                              specified in SMPTE ST 2110-10, 90K sample */
-  double tsc_time_cursor;  /* in ns, tsc time cursor for packet pacing */
-  double ptp_time_cursor;  /* in ns, ptp time cursor for packet pacing */
+  uint64_t cur_epochs; /* epoch of current frame */
+  /* timestamp for rtp header */
+  uint32_t rtp_time_stamp;
+  /* timestamp for pacing */
+  uint32_t pacing_time_stamp;
+  double tsc_time_cursor; /* in ns, tsc time cursor for packet pacing */
+  double ptp_time_cursor; /* in ns, ptp time cursor for packet pacing */
 };
 
 enum st20_packet_type {
@@ -1003,8 +1005,11 @@ struct st_tx_audio_session_pacing {
   double frame_time;          /* time of the frame in nanoseconds */
   double frame_time_sampling; /* time of the frame in sampling(48k) */
   uint64_t cur_epochs;        /* epoch of current frame */
-  uint32_t cur_time_stamp;    /* RTP Timestamp as specified in SMPTE PCM audio signals */
-  uint64_t tsc_time_cursor;   /* in ns, tsc time cursor for packet pacing */
+  /* timestamp for rtp header */
+  uint32_t rtp_time_stamp;
+  /* timestamp for pacing */
+  uint32_t pacing_time_stamp;
+  uint64_t tsc_time_cursor; /* in ns, tsc time cursor for packet pacing */
 };
 
 struct st_tx_audio_session_impl {
@@ -1187,9 +1192,11 @@ struct st_tx_ancillary_session_pacing {
   double frame_time;          /* time of the frame in nanoseconds */
   double frame_time_sampling; /* time of the frame in sampling(90k) */
   uint64_t cur_epochs;        /* epoch of current frame */
-  uint32_t cur_time_stamp;    /* The Timestamp field shall contain the RTP Timestamp as
-                                 specified in SMPTE ST 2110-10, 90K sample */
-  double tsc_time_cursor;     /* in ns, tsc time cursor for packet pacing */
+  /* timestamp for rtp header */
+  uint32_t rtp_time_stamp;
+  /* timestamp for pacing */
+  uint32_t pacing_time_stamp;
+  double tsc_time_cursor; /* in ns, tsc time cursor for packet pacing */
 };
 
 struct st_tx_ancillary_session_impl {

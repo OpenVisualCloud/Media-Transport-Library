@@ -78,7 +78,7 @@ static int tx_st20p_next_frame(void* priv, uint16_t* next_frame_idx,
 
   framebuff->stat = ST20P_TX_FRAME_IN_TRANSMITTING;
   *next_frame_idx = framebuff->idx;
-  if (ctx->ops.flags & ST20P_TX_FLAG_USER_TIMESTAMP) {
+  if (ctx->ops.flags & (ST20P_TX_FLAG_USER_PACING | ST20P_TX_FLAG_USER_TIMESTAMP)) {
     if (ctx->derive) {
       meta->tfmt = framebuff->dst.tfmt;
       meta->timestamp = framebuff->dst.timestamp;
@@ -259,6 +259,7 @@ static int tx_st20p_create_transport(st_handle st, struct st20p_tx_ctx* ctx,
   ops_tx.notify_frame_done = tx_st20p_frame_done;
   if (ctx->derive && ops->flags & ST20P_TX_FLAG_EXT_FRAME)
     ops_tx.flags |= ST20_TX_FLAG_EXT_FRAME;
+  if (ops->flags & ST20P_TX_FLAG_USER_PACING) ops_tx.flags |= ST20_TX_FLAG_USER_PACING;
   if (ops->flags & ST20P_TX_FLAG_USER_TIMESTAMP)
     ops_tx.flags |= ST20_TX_FLAG_USER_TIMESTAMP;
 

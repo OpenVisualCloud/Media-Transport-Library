@@ -7,16 +7,18 @@ set -e
 
 function usage()
 {
-    echo "Usage: $0 [debug]"
+    echo "Usage: $0 [debug/debugoptimized/plain/release]"
     exit 0
 }
 
 buildtype=release
 disable_pcapng=false
 
-if [ $ST_BUILD_DISABLE_PCAPNG == "true" ]; then
-    disable_pcapng=true
-    echo "Disable pcapng function."
+if [ -n "$ST_BUILD_DISABLE_PCAPNG" ];  then
+    if [ $ST_BUILD_DISABLE_PCAPNG == "true" ]; then
+        disable_pcapng=true
+        echo "Disable pcapng function."
+    fi
 fi
 
 if [ -n "$1" ];  then
@@ -29,6 +31,9 @@ if [ -n "$1" ];  then
            ;;
       "plain")
            buildtype=plain
+           ;;
+      "release")
+           buildtype=release
            ;;
        *)
            usage

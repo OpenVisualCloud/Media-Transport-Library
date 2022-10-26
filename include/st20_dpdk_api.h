@@ -45,10 +45,16 @@ extern "C" {
 #define ST20_TX_FLAG_EXT_FRAME (ST_BIT32(2))
 /**
  * Flag bit in flags of struct st20_tx_ops.
- * User control the frame timing by pass a timestamp in st20_tx_frame_meta,
- * lib will wait until timestamp is reached.
+ * User control the frame pacing by pass a timestamp in st20_tx_frame_meta,
+ * lib will wait until timestamp is reached for each frame.
  */
-#define ST20_TX_FLAG_USER_TIMESTAMP (ST_BIT32(3))
+#define ST20_TX_FLAG_USER_PACING (ST_BIT32(3))
+/**
+ * Flag bit in flags of struct st20_tx_ops.
+ * If enabled, lib will assign the rtp timestamp to the value in
+ * st20_tx_frame_meta(ST10_TIMESTAMP_FMT_MEDIA_CLK is used)
+ */
+#define ST20_TX_FLAG_USER_TIMESTAMP (ST_BIT32(4))
 
 /**
  * Flag bit in flags of struct st22_tx_ops.
@@ -67,10 +73,16 @@ extern "C" {
 #define ST22_TX_FLAG_DISABLE_BOXES (ST_BIT32(2))
 /**
  * Flag bit in flags of struct st22_tx_ops.
- * User control the frame timing by pass a timestamp in st22_tx_frame_meta,
- * lib will wait until timestamp is reached.
+ * User control the frame pacing by pass a timestamp in st22_tx_frame_meta,
+ * lib will wait until timestamp is reached for each frame.
  */
-#define ST22_TX_FLAG_USER_TIMESTAMP (ST_BIT32(3))
+#define ST22_TX_FLAG_USER_PACING (ST_BIT32(3))
+/**
+ * Flag bit in flags of struct st22_tx_ops.
+ * If enabled, lib will assign the rtp timestamp to the value in
+ * tx_frame_meta(ST10_TIMESTAMP_FMT_MEDIA_CLK is used)
+ */
+#define ST22_TX_FLAG_USER_TIMESTAMP (ST_BIT32(4))
 
 /**
  * Flag bit in flags of struct st20_rx_ops, for non ST_PMD_DPDK_USER.
@@ -249,19 +261,19 @@ struct st20_pgroup {
  * Frame meta data of st2110-20(video) tx streaming
  */
 struct st20_tx_frame_meta {
-  /** Frame resolution width, set by lib */
+  /** Frame resolution width */
   uint32_t width;
-  /** Frame resolution height, set by lib */
+  /** Frame resolution height */
   uint32_t height;
-  /** Frame resolution fps, set by lib */
+  /** Frame resolution fps */
   enum st_fps fps;
-  /** Frame resolution format, set by lib */
+  /** Frame resolution format */
   enum st20_fmt fmt;
   /** Second field type indicate for interlaced mode, set by user */
   bool second_field;
-  /** Timestamp format, user can customize it if ST20_TX_FLAG_USER_TIMESTAMP */
+  /** Timestamp format */
   enum st10_timestamp_fmt tfmt;
-  /** Timestamp value, user can customize it if ST20_TX_FLAG_USER_TIMESTAMP */
+  /** Timestamp value */
   uint64_t timestamp;
 };
 
@@ -374,9 +386,9 @@ struct st22_tx_frame_meta {
   enum st_fps fps;
   /** codestream_size for next_frame_idx, set by user */
   size_t codestream_size;
-  /** Timestamp format, user can customize it if ST22_TX_FLAG_USER_TIMESTAMP */
+  /** Timestamp format, user can customize it if ST22_TX_FLAG_USER_PACING */
   enum st10_timestamp_fmt tfmt;
-  /** Timestamp value, user can customize it if ST20_TX_FLAG_USER_TIMESTAMP */
+  /** Timestamp value, user can customize it if ST22_TX_FLAG_USER_PACING */
   uint64_t timestamp;
 };
 

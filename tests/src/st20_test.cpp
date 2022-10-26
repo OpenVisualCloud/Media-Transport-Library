@@ -40,9 +40,16 @@ static int tx_next_video_frame_timestamp(void* priv, uint16_t* next_frame_idx,
   if (!ctx->handle) return -EIO; /* not ready */
 
   *next_frame_idx = ctx->fb_idx;
-  meta->tfmt = ST10_TIMESTAMP_FMT_TAI;
-  meta->timestamp = st_ptp_read_time(ctx->ctx->handle) + 25 * 1000 * 1000;
-  dbg("%s, next_frame_idx %d\n", __func__, *next_frame_idx);
+
+  if (ctx->user_pacing) {
+    meta->tfmt = ST10_TIMESTAMP_FMT_TAI;
+    meta->timestamp = st_ptp_read_time(ctx->ctx->handle) + 25 * 1000 * 1000;
+  } else if (ctx->user_timestamp) {
+    meta->tfmt = ST10_TIMESTAMP_FMT_MEDIA_CLK;
+    meta->timestamp = ctx->fb_send;
+  }
+  dbg("%s, next_frame_idx %u timestamp %lu\n", __func__, *next_frame_idx,
+      meta->timestamp);
   ctx->fb_idx++;
   if (ctx->fb_idx >= ctx->fb_cnt) ctx->fb_idx = 0;
   ctx->fb_send++;
@@ -123,6 +130,20 @@ static int tx_notify_ext_frame_done(void* priv, uint16_t frame_idx,
 
   err("%s, unknown frame_addr %p\n", __func__, frame_addr);
   return -EIO;
+}
+
+static int tx_notify_timestamp_frame_done(void* priv, uint16_t frame_idx,
+                                          struct st20_tx_frame_meta* meta) {
+  auto ctx = (tests_context*)priv;
+
+  if (!ctx->handle) return -EIO; /* not ready */
+
+  if (ctx->user_timestamp && !ctx->user_pacing) {
+    dbg("%s, timestamp %u %u\n", __func__, (uint32_t)meta->timestamp, ctx->pre_timestamp);
+  }
+
+  ctx->pre_timestamp = meta->timestamp;
+  return 0;
 }
 
 static enum st_fps tmstamp_delta_to_fps(int delta) {
@@ -1188,8 +1209,8 @@ TEST(St20_rx, frame_s3) {
   enum st_fps fps[3] = {ST_FPS_P59_94, ST_FPS_P50, ST_FPS_P29_97};
   int width[3] = {1280, 1920, 1920};
   int height[3] = {720, 1080, 1080};
-  st20_rx_fps_test(type, fps, width, height, ST20_FMT_YUV_422_10BIT,
-                   ST_TEST_LEVEL_MANDATORY, 3);
+  st20_rx_fps_test(type, fps, width, height, ST20_FMT_YUV_422_10BIT, ST_TEST_LEVEL_ALL,
+                   3);
 }
 TEST(St20_rx, mix_s2) {
   enum st20_type type[2] = {ST20_TYPE_FRAME_LEVEL, ST20_TYPE_RTP_LEVEL};
@@ -1204,8 +1225,8 @@ TEST(St20_rx, frame_mix_4k_s2) {
   enum st_fps fps[2] = {ST_FPS_P59_94, ST_FPS_P50};
   int width[2] = {1280, 3840};
   int height[2] = {720, 2160};
-  st20_rx_fps_test(type, fps, width, height, ST20_FMT_YUV_422_10BIT,
-                   ST_TEST_LEVEL_MANDATORY, 2);
+  st20_rx_fps_test(type, fps, width, height, ST20_FMT_YUV_422_10BIT, ST_TEST_LEVEL_ALL,
+                   2);
 }
 TEST(St20_rx, ext_frame_mix_s3) {
   enum st20_type type[3] = {ST20_TYPE_FRAME_LEVEL, ST20_TYPE_FRAME_LEVEL,
@@ -1501,6 +1522,16 @@ static int st20_digest_rx_frame_ready(void* priv, void* frame,
     ctx->incomplete_frame_cnt++;
     st20_rx_put_framebuff((st20_rx_handle)ctx->handle, frame);
     return 0;
+  }
+
+  if (ctx->user_timestamp && !ctx->user_pacing) {
+    dbg("%s, timestamp %u %u\n", __func__, (uint32_t)meta->timestamp, ctx->pre_timestamp);
+    if (ctx->pre_timestamp) {
+      if ((uint32_t)meta->timestamp != (ctx->pre_timestamp + 1)) {
+        ctx->incomplete_frame_cnt++;
+      }
+    }
+    ctx->pre_timestamp = (uint32_t)meta->timestamp;
   }
 
   std::unique_lock<std::mutex> lck(ctx->mtx);
@@ -2202,7 +2233,7 @@ TEST(St20_rx, digest_frame_field_s3) {
   enum st20_fmt fmt[3] = {ST20_FMT_YUV_422_10BIT, ST20_FMT_YUV_422_10BIT,
                           ST20_FMT_YUV_422_10BIT};
   st20_rx_digest_test(type, rx_type, packing, fps, width, height, interlaced, fmt, false,
-                      ST_TEST_LEVEL_MANDATORY, 3);
+                      ST_TEST_LEVEL_ALL, 3);
 }
 
 TEST(St20_rx, digest_frame_rtp_s3) {
@@ -2304,7 +2335,7 @@ TEST(St20_rx, digest_tx_slice_s3) {
   enum st20_fmt fmt[3] = {ST20_FMT_YUV_422_10BIT, ST20_FMT_YUV_422_10BIT,
                           ST20_FMT_YUV_422_10BIT};
   st20_rx_digest_test(type, rx_type, packing, fps, width, height, interlaced, fmt, false,
-                      ST_TEST_LEVEL_MANDATORY, 3, false);
+                      ST_TEST_LEVEL_ALL, 3, false);
 }
 
 TEST(St20_rx, digest_slice_s3) {
@@ -2338,7 +2369,7 @@ TEST(St20_rx, digest20_field_slice_s3) {
   enum st20_fmt fmt[3] = {ST20_FMT_YUV_422_10BIT, ST20_FMT_YUV_422_10BIT,
                           ST20_FMT_YUV_422_10BIT};
   st20_rx_digest_test(type, rx_type, packing, fps, width, height, interlaced, fmt, false,
-                      ST_TEST_LEVEL_MANDATORY, 3, false);
+                      ST_TEST_LEVEL_ALL, 3, false);
 }
 
 TEST(St20_rx, digest_ooo_slice_s3) {
@@ -4026,8 +4057,9 @@ TEST(St20_rx, dynamic_ext_frame_s3) {
                                    ST_TEST_LEVEL_MANDATORY, 3, true);
 }
 
-static void st20_tx_timestamp_test(int width[], int height[], enum st20_fmt fmt[],
-                                   enum st_test_level level, int sessions = 1) {
+static void st20_tx_user_pacing_test(int width[], int height[], enum st20_fmt fmt[],
+                                     bool user_pacing[], bool user_timestamp[],
+                                     enum st_test_level level, int sessions = 1) {
   auto ctx = (struct st_tests_context*)st_test_ctx();
   auto m_handle = ctx->handle;
   int ret;
@@ -4064,7 +4096,10 @@ static void st20_tx_timestamp_test(int width[], int height[], enum st20_fmt fmt[
   enum st_fps fps = ST_FPS_P59_94;
 
   for (int i = 0; i < sessions; i++) {
-    expect_framerate[i] = st_frame_rate(fps) / 2;
+    if (user_pacing[i])
+      expect_framerate[i] = st_frame_rate(fps) / 2;
+    else
+      expect_framerate[i] = st_frame_rate(fps);
     test_ctx_tx[i] = new tests_context();
     ASSERT_TRUE(test_ctx_tx[i] != NULL);
 
@@ -4073,6 +4108,9 @@ static void st20_tx_timestamp_test(int width[], int height[], enum st20_fmt fmt[
     test_ctx_tx[i]->fb_cnt = TEST_SHA_HIST_NUM;
     test_ctx_tx[i]->fb_idx = 0;
     test_ctx_tx[i]->check_sha = true;
+    test_ctx_tx[i]->user_pacing = user_pacing[i];
+    test_ctx_tx[i]->user_timestamp = user_timestamp[i];
+
     memset(&ops_tx, 0, sizeof(ops_tx));
     ops_tx.name = "st20_timestamp_test";
     ops_tx.priv = test_ctx_tx[i];
@@ -4091,7 +4129,9 @@ static void st20_tx_timestamp_test(int width[], int height[], enum st20_fmt fmt[
     ops_tx.payload_type = ST20_TEST_PAYLOAD_TYPE;
     ops_tx.framebuff_cnt = test_ctx_tx[i]->fb_cnt;
     ops_tx.get_next_frame = tx_next_video_frame_timestamp;
-    ops_tx.flags = ST20_TX_FLAG_USER_TIMESTAMP;
+    ops_tx.notify_frame_done = tx_notify_timestamp_frame_done;
+    if (user_pacing[i]) ops_tx.flags |= ST20_TX_FLAG_USER_PACING;
+    if (user_timestamp[i]) ops_tx.flags |= ST20_TX_FLAG_USER_TIMESTAMP;
 
     tx_handle[i] = st20_tx_create(m_handle, &ops_tx);
     ASSERT_TRUE(tx_handle[i] != NULL);
@@ -4124,6 +4164,9 @@ static void st20_tx_timestamp_test(int width[], int height[], enum st20_fmt fmt[
     test_ctx_rx[i]->fb_cnt = 3;
     test_ctx_rx[i]->fb_idx = 0;
     test_ctx_rx[i]->check_sha = true;
+    test_ctx_rx[i]->user_pacing = user_pacing[i];
+    test_ctx_rx[i]->user_timestamp = user_timestamp[i];
+
     memset(&ops_rx, 0, sizeof(ops_rx));
     ops_rx.name = "st20_timestamp_test";
     ops_rx.priv = test_ctx_rx[i];
@@ -4200,11 +4243,15 @@ static void st20_tx_timestamp_test(int width[], int height[], enum st20_fmt fmt[
   }
 }
 
-TEST(St20_tx, tx_timestamp) {
-  int width[1] = {1920};
-  int height[1] = {1080};
-  enum st20_fmt fmt[1] = {ST20_FMT_YUV_422_10BIT};
-  st20_tx_timestamp_test(width, height, fmt, ST_TEST_LEVEL_MANDATORY, 1);
+TEST(St20_tx, tx_user_pacing) {
+  int width[3] = {1280, 1920, 1280};
+  int height[3] = {720, 1080, 720};
+  enum st20_fmt fmt[3] = {ST20_FMT_YUV_422_10BIT, ST20_FMT_YUV_422_10BIT,
+                          ST20_FMT_YUV_422_10BIT};
+  bool user_pacing[3] = {false, true, true};
+  bool user_timestamp[3] = {true, false, true};
+  st20_tx_user_pacing_test(width, height, fmt, user_pacing, user_timestamp,
+                           ST_TEST_LEVEL_MANDATORY, 3);
 }
 
 static void st20_linesize_digest_test(enum st20_packing packing[], enum st_fps fps[],

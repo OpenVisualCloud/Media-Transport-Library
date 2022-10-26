@@ -1071,6 +1071,44 @@ uint32_t st10_tai_to_media_clk(uint64_t tai_ns, uint32_t sampling_rate);
 uint64_t st10_media_clk_to_ns(uint32_t media_ts, uint32_t sampling_rate);
 
 /**
+ * Helper function to get tai for both ST10_TIMESTAMP_FMT_TAI and
+ * ST10_TIMESTAMP_FMT_MEDIA_CLK.
+ *
+ * @param tfmt
+ *   timestamp fmt.
+ * @param timestamp
+ *   timestamp value with tfmt.
+ * @param sampling_rate
+ *   sampling rate(90k for video, 48K/96K for audio).
+ * @return
+ *   time in nanoseconds since the TAI epoch.
+ */
+static inline uint64_t st10_get_tai(enum st10_timestamp_fmt tfmt, uint64_t timestamp,
+                                    uint32_t sampling_rate) {
+  if (tfmt == ST10_TIMESTAMP_FMT_TAI) return timestamp;
+  return st10_media_clk_to_ns((uint32_t)timestamp, sampling_rate);
+}
+
+/**
+ * Helper function to get media clock value defined in ST2110-10 for both
+ * ST10_TIMESTAMP_FMT_TAI and ST10_TIMESTAMP_FMT_MEDIA_CLK.
+ *
+ * @param tfmt
+ *   timestamp fmt.
+ * @param timestamp
+ *   timestamp value with tfmt.
+ * @param sampling_rate
+ *   sampling rate(90k for video, 48K/96K for audio).
+ * @return
+ *   the raw media clock value defined in ST2110-10, whose units vary by sampling_rate.
+ */
+static inline uint32_t st10_get_media_clk(enum st10_timestamp_fmt tfmt,
+                                          uint64_t timestamp, uint32_t sampling_rate) {
+  if (tfmt == ST10_TIMESTAMP_FMT_MEDIA_CLK) return (uint32_t)timestamp;
+  return st10_tai_to_media_clk(timestamp, sampling_rate);
+}
+
+/**
  * Helper function to get pmd type by port name.
  *
  * @param port

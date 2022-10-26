@@ -489,7 +489,7 @@ static void st40_rx_fps_test(enum st40_type type[], enum st_fps fps[],
     ops_tx.framebuff_cnt = test_ctx_tx[i]->fb_cnt;
     if (user_timestamp) {
       ops_tx.get_next_frame = tx_anc_next_frame_timestamp;
-      ops_tx.flags |= ST40_TX_FLAG_USER_TIMESTAMP;
+      ops_tx.flags |= ST40_TX_FLAG_USER_PACING;
     } else {
       ops_tx.get_next_frame = tx_anc_next_frame;
     }
@@ -646,12 +646,12 @@ TEST(St40_tx, rtp_fps50_s3) {
 TEST(St40_tx, mix_fps50_fps29_97) {
   enum st40_type type[2] = {ST40_TYPE_FRAME_LEVEL, ST40_TYPE_RTP_LEVEL};
   enum st_fps fps[2] = {ST_FPS_P50, ST_FPS_P29_97};
-  st40_tx_fps_test(type, fps, ST_TEST_LEVEL_MANDATORY, 2);
+  st40_tx_fps_test(type, fps, ST_TEST_LEVEL_ALL, 2);
 }
 TEST(St40_tx, mix_fps50_fps59_94) {
   enum st40_type type[2] = {ST40_TYPE_FRAME_LEVEL, ST40_TYPE_RTP_LEVEL};
   enum st_fps fps[2] = {ST_FPS_P50, ST_FPS_P59_94};
-  st40_tx_fps_test(type, fps, ST_TEST_LEVEL_MANDATORY, 2);
+  st40_tx_fps_test(type, fps, ST_TEST_LEVEL_ALL, 2);
 }
 TEST(St40_tx, frame_fps29_97_fps59_94) {
   enum st40_type type[2] = {ST40_TYPE_FRAME_LEVEL, ST40_TYPE_FRAME_LEVEL};
@@ -661,12 +661,12 @@ TEST(St40_tx, frame_fps29_97_fps59_94) {
 TEST(St40_rx, frame_fps29_97_fps59_94) {
   enum st40_type type[2] = {ST40_TYPE_RTP_LEVEL, ST40_TYPE_RTP_LEVEL};
   enum st_fps fps[2] = {ST_FPS_P29_97, ST_FPS_P59_94};
-  st40_rx_fps_test(type, fps, ST_TEST_LEVEL_MANDATORY, 2);
+  st40_rx_fps_test(type, fps, ST_TEST_LEVEL_ALL, 2);
 }
 TEST(St40_rx, frame_fps50_fps59_94) {
   enum st40_type type[2] = {ST40_TYPE_RTP_LEVEL, ST40_TYPE_FRAME_LEVEL};
   enum st_fps fps[2] = {ST_FPS_P50, ST_FPS_P59_94};
-  st40_rx_fps_test(type, fps, ST_TEST_LEVEL_MANDATORY, 2);
+  st40_rx_fps_test(type, fps, ST_TEST_LEVEL_ALL, 2);
 }
 TEST(St40_rx, frame_fps50_fps59_94_digest) {
   enum st40_type type[2] = {ST40_TYPE_FRAME_LEVEL, ST40_TYPE_FRAME_LEVEL};

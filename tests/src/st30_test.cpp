@@ -644,8 +644,7 @@ TEST(St30_tx, frame_48k_sgrp_s1) {
   enum st30_ptime pt[1] = {ST30_PTIME_1MS};
   uint16_t c[1] = {4};
   enum st30_fmt f[3] = {ST30_FMT_PCM8, ST30_FMT_PCM16, ST30_FMT_PCM24};
-  for (int i = 0; i < 3; i++)
-    st30_tx_fps_test(type, s, pt, c, &f[i], ST_TEST_LEVEL_MANDATORY);
+  for (int i = 0; i < 3; i++) st30_tx_fps_test(type, s, pt, c, &f[i], ST_TEST_LEVEL_ALL);
 }
 TEST(St30_tx, frame_96k_sgrp_s1) {
   enum st30_type type[1] = {ST30_TYPE_FRAME_LEVEL};
@@ -681,7 +680,7 @@ TEST(St30_rx, mix_48k_96_mix) {
   enum st30_ptime pt[3] = {ST30_PTIME_1MS, ST30_PTIME_1MS, ST30_PTIME_1MS};
   uint16_t c[3] = {2, 1, 4};
   enum st30_fmt f[3] = {ST30_FMT_PCM8, ST30_FMT_PCM16, ST30_FMT_PCM24};
-  st30_rx_fps_test(type, s, pt, c, f, ST_TEST_LEVEL_MANDATORY, 3);
+  st30_rx_fps_test(type, s, pt, c, f, ST_TEST_LEVEL_ALL, 3);
 }
 TEST(St30_rx, frame_digest_48k_96_mix) {
   enum st30_type type[2] = {ST30_TYPE_FRAME_LEVEL, ST30_TYPE_FRAME_LEVEL};
@@ -689,10 +688,18 @@ TEST(St30_rx, frame_digest_48k_96_mix) {
   enum st30_ptime pt[2] = {ST30_PTIME_1MS, ST30_PTIME_1MS};
   uint16_t c[2] = {2, 1};
   enum st30_fmt f[2] = {ST30_FMT_PCM16, ST30_FMT_PCM24};
-  st30_rx_fps_test(type, s, pt, c, f, ST_TEST_LEVEL_MANDATORY, 2, true);
+  st30_rx_fps_test(type, s, pt, c, f, ST_TEST_LEVEL_ALL, 2, true);
 }
 TEST(St30_rx, rtp_digest_48k_96_mix) {
   enum st30_type type[2] = {ST30_TYPE_RTP_LEVEL, ST30_TYPE_RTP_LEVEL};
+  enum st30_sampling s[2] = {ST30_SAMPLING_96K, ST30_SAMPLING_48K};
+  enum st30_ptime pt[2] = {ST30_PTIME_1MS, ST30_PTIME_1MS};
+  uint16_t c[2] = {1, 4};
+  enum st30_fmt f[2] = {ST30_FMT_PCM16, ST30_FMT_PCM8};
+  st30_rx_fps_test(type, s, pt, c, f, ST_TEST_LEVEL_ALL, 2, true);
+}
+TEST(St30_rx, digest_mix) {
+  enum st30_type type[2] = {ST30_TYPE_RTP_LEVEL, ST30_TYPE_FRAME_LEVEL};
   enum st30_sampling s[2] = {ST30_SAMPLING_96K, ST30_SAMPLING_48K};
   enum st30_ptime pt[2] = {ST30_PTIME_1MS, ST30_PTIME_1MS};
   uint16_t c[2] = {1, 4};
@@ -713,7 +720,7 @@ TEST(St30_rx, rtp_digest_st31_mix) {
   enum st30_ptime pt[2] = {ST30_PTIME_1MS, ST30_PTIME_1MS};
   uint16_t c[2] = {2, 2};
   enum st30_fmt f[2] = {ST31_FMT_AM824, ST31_FMT_AM824};
-  st30_rx_fps_test(type, s, pt, c, f, ST_TEST_LEVEL_MANDATORY, 2, true);
+  st30_rx_fps_test(type, s, pt, c, f, ST_TEST_LEVEL_ALL, 2, true);
 }
 TEST(St30_rx, frame_digest_stereo_ptime_mix_s5) {
   enum st30_type type[5] = {ST30_TYPE_FRAME_LEVEL, ST30_TYPE_FRAME_LEVEL,
@@ -726,7 +733,7 @@ TEST(St30_rx, frame_digest_stereo_ptime_mix_s5) {
   uint16_t c[5] = {2, 2, 2, 2, 2};
   enum st30_fmt f[5] = {ST30_FMT_PCM16, ST30_FMT_PCM16, ST30_FMT_PCM16, ST30_FMT_PCM16,
                         ST31_FMT_AM824};
-  st30_rx_fps_test(type, s, pt, c, f, ST_TEST_LEVEL_MANDATORY, 5, true);
+  st30_rx_fps_test(type, s, pt, c, f, ST_TEST_LEVEL_ALL, 5, true);
 }
 TEST(St30_rx, frame_digest_max_channel_48k_16bit_ptime_mix_s5) {
   enum st30_type type[5] = {ST30_TYPE_FRAME_LEVEL, ST30_TYPE_FRAME_LEVEL,
@@ -739,7 +746,7 @@ TEST(St30_rx, frame_digest_max_channel_48k_16bit_ptime_mix_s5) {
   uint16_t c[5] = {120, 60, 45, 15, 3};
   enum st30_fmt f[5] = {ST30_FMT_PCM16, ST30_FMT_PCM16, ST30_FMT_PCM16, ST30_FMT_PCM16,
                         ST30_FMT_PCM16};
-  st30_rx_fps_test(type, s, pt, c, f, ST_TEST_LEVEL_MANDATORY, 5, true);
+  st30_rx_fps_test(type, s, pt, c, f, ST_TEST_LEVEL_ALL, 5, true);
 }
 TEST(St30_rx, frame_digest_max_channel_48k_24bit_ptime_mix_s5) {
   enum st30_type type[5] = {ST30_TYPE_FRAME_LEVEL, ST30_TYPE_FRAME_LEVEL,
@@ -768,10 +775,12 @@ TEST(St30_rx, frame_digest_max_channel_96k_24bit_ptime_mix_s5) {
   st30_rx_fps_test(type, s, pt, c, f, ST_TEST_LEVEL_MANDATORY, 5, true);
 }
 
-static void st30_rx_update_src_test(enum st30_type type, int tx_sessions) {
+static void st30_rx_update_src_test(enum st30_type type, int tx_sessions,
+                                    enum st_test_level level) {
   auto ctx = (struct st_tests_context*)st_test_ctx();
   auto m_handle = ctx->handle;
   int ret;
+
   struct st30_tx_ops ops_tx;
   struct st30_rx_ops ops_rx;
   if (ctx->para.num_ports != 2) {
@@ -779,6 +788,9 @@ static void st30_rx_update_src_test(enum st30_type type, int tx_sessions) {
          __func__);
     return;
   }
+  /* return if level lower than global */
+  if (level < ctx->level) return;
+
   ASSERT_TRUE(tx_sessions >= 1);
 
   int rx_sessions = 1;
@@ -1001,8 +1013,12 @@ static void st30_rx_update_src_test(enum st30_type type, int tx_sessions) {
   }
 }
 
-TEST(St30_rx, update_source_frame) { st30_rx_update_src_test(ST30_TYPE_FRAME_LEVEL, 3); }
-TEST(St30_rx, update_source_rtp) { st30_rx_update_src_test(ST30_TYPE_RTP_LEVEL, 2); }
+TEST(St30_rx, update_source_frame) {
+  st30_rx_update_src_test(ST30_TYPE_FRAME_LEVEL, 3, ST_TEST_LEVEL_MANDATORY);
+}
+TEST(St30_rx, update_source_rtp) {
+  st30_rx_update_src_test(ST30_TYPE_RTP_LEVEL, 2, ST_TEST_LEVEL_ALL);
+}
 
 static int st30_rx_meta_frame_ready(void* priv, void* frame,
                                     struct st30_rx_frame_meta* meta) {
@@ -1025,8 +1041,8 @@ static int st30_rx_meta_frame_ready(void* priv, void* frame,
 }
 
 static void st30_rx_meta_test(enum st30_fmt fmt[], enum st30_sampling sampling[],
-                              uint16_t channel[], int sessions = 1,
-                              bool user_timestamp = false) {
+                              uint16_t channel[], enum st_test_level level,
+                              int sessions = 1, bool user_timestamp = false) {
   auto ctx = (struct st_tests_context*)st_test_ctx();
   auto m_handle = ctx->handle;
   int ret;
@@ -1037,6 +1053,8 @@ static void st30_rx_meta_test(enum st30_fmt fmt[], enum st30_sampling sampling[]
          __func__);
     return;
   }
+  /* return if level lower than global */
+  if (level < ctx->level) return;
 
   std::vector<tests_context*> test_ctx_tx;
   std::vector<tests_context*> test_ctx_rx;
@@ -1080,7 +1098,7 @@ static void st30_rx_meta_test(enum st30_fmt fmt[], enum st30_sampling sampling[]
     ops_tx.framebuff_cnt = test_ctx_tx[i]->fb_cnt;
     if (user_timestamp) {
       ops_tx.get_next_frame = tx_audio_next_frame_timestamp;
-      ops_tx.flags |= ST30_TX_FLAG_USER_TIMESTAMP;
+      ops_tx.flags |= ST30_TX_FLAG_USER_PACING;
     } else {
       ops_tx.get_next_frame = tx_audio_next_frame;
     }
@@ -1183,19 +1201,20 @@ TEST(St30_rx, frame_meta_pcm16_48k_2ch_s1) {
   enum st30_fmt fmt[1] = {ST30_FMT_PCM16};
   enum st30_sampling sampling[1] = {ST30_SAMPLING_48K};
   uint16_t channel[1] = {2};
-  st30_rx_meta_test(fmt, sampling, channel);
+  st30_rx_meta_test(fmt, sampling, channel, ST_TEST_LEVEL_ALL);
 }
 
 TEST(St30_rx, frame_user_timestamp) {
   enum st30_fmt fmt[1] = {ST30_FMT_PCM16};
   enum st30_sampling sampling[1] = {ST30_SAMPLING_48K};
   uint16_t channel[1] = {2};
-  st30_rx_meta_test(fmt, sampling, channel, 1, true);
+  st30_rx_meta_test(fmt, sampling, channel, ST_TEST_LEVEL_MANDATORY, 1, true);
 }
 
 static void st30_create_after_start_test(enum st30_type type[],
                                          enum st30_sampling sample[], uint16_t channel[],
-                                         enum st30_fmt fmt[], int sessions, int repeat) {
+                                         enum st30_fmt fmt[], int sessions, int repeat,
+                                         enum st_test_level level) {
   auto ctx = (struct st_tests_context*)st_test_ctx();
   auto m_handle = ctx->handle;
   int ret;
@@ -1207,6 +1226,8 @@ static void st30_create_after_start_test(enum st30_type type[],
          __func__);
     return;
   }
+  /* return if level lower than global */
+  if (level < ctx->level) return;
 
   std::vector<tests_context*> test_ctx_tx;
   std::vector<tests_context*> test_ctx_rx;
@@ -1355,7 +1376,7 @@ TEST(St30_rx, after_start_mix_s2_r1) {
   enum st30_sampling s[2] = {ST30_SAMPLING_96K, ST30_SAMPLING_48K};
   uint16_t c[2] = {1, 2};
   enum st30_fmt f[2] = {ST30_FMT_PCM24, ST30_FMT_PCM16};
-  st30_create_after_start_test(type, s, c, f, 2, 1);
+  st30_create_after_start_test(type, s, c, f, 2, 1, ST_TEST_LEVEL_MANDATORY);
 }
 
 TEST(St30_rx, after_start_frame_s1_r2) {
@@ -1363,5 +1384,5 @@ TEST(St30_rx, after_start_frame_s1_r2) {
   enum st30_sampling s[1] = {ST30_SAMPLING_96K};
   uint16_t c[1] = {2};
   enum st30_fmt f[1] = {ST30_FMT_PCM16};
-  st30_create_after_start_test(type, s, c, f, 1, 2);
+  st30_create_after_start_test(type, s, c, f, 1, 2, ST_TEST_LEVEL_ALL);
 }
