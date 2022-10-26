@@ -3668,7 +3668,8 @@ TEST(St20_rx, pcap_dump) {
   st20_rx_dump_test(type, fps, width, height, ST20_FMT_YUV_422_10BIT, 2);
 }
 
-static int rx_query_ext_frame(void* priv, st20_ext_frame* ext_frame) {
+static int rx_query_ext_frame(void* priv, st20_ext_frame* ext_frame,
+                              struct st20_rx_frame_meta* meta) {
   auto ctx = (tests_context*)priv;
   if (!ctx->handle) return -EIO; /* not ready */
   int i = ctx->ext_idx;

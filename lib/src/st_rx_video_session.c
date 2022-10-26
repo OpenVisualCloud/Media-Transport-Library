@@ -1149,7 +1149,18 @@ static struct st_rx_video_slot_impl* rv_slot_by_tmstamp(
   }
   if (rv_is_dynamic_ext_frame(s)) {
     struct st20_ext_frame ext_frame;
-    if (s->ops.query_ext_frame(s->ops.priv, &ext_frame) < 0) {
+    struct st20_rx_ops* ops = &s->ops;
+    struct st20_rx_frame_meta* meta = &slot->meta;
+
+    meta->width = ops->width;
+    meta->height = ops->height;
+    meta->fmt = ops->fmt;
+    meta->fps = ops->fps;
+    meta->tfmt = ST10_TIMESTAMP_FMT_MEDIA_CLK;
+    meta->timestamp = slot->tmstamp;
+    meta->frame_total_size = s->st20_frame_size;
+    meta->uframe_total_size = s->st20_uframe_size;
+    if (s->ops.query_ext_frame(s->ops.priv, &ext_frame, meta) < 0) {
       dbg("%s: query ext frame fail\n", __func__);
       rte_atomic32_dec(&frame_info->refcnt);
       return NULL;
@@ -1157,7 +1168,7 @@ static struct st_rx_video_slot_impl* rv_slot_by_tmstamp(
     frame_info->addr = ext_frame.buf_addr;
     frame_info->iova = ext_frame.buf_iova;
     frame_info->flags |= ST_FT_FLAG_EXT;
-    slot->meta.opaque = ext_frame.opaque;
+    meta->opaque = ext_frame.opaque;
   }
   slot->frame = frame_info->addr;
   slot->frame_iova = frame_info->iova;

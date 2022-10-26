@@ -102,9 +102,12 @@ static int rx_st20p_frame_available(void* priv) {
   return 0;
 }
 
-static int rx_st20p_query_ext_frame(void* priv, struct st20_ext_frame* ext_frame) {
+static int rx_st20p_query_ext_frame(void* priv, struct st20_ext_frame* ext_frame,
+                                    struct st20_rx_frame_meta* meta) {
   struct app_context* s = priv;
   int i = s->ext_idx;
+
+  /* you can check the timestamp from lib by meta->timestamp */
 
   ext_frame->buf_addr = s->ext_frames[i].buf_addr;
   ext_frame->buf_iova = s->ext_frames[i].buf_iova;

@@ -128,7 +128,8 @@ static int rx_st20p_frame_ready(void* priv, void* frame,
   return 0;
 }
 
-static int rx_st20p_query_ext_frame(void* priv, struct st20_ext_frame* ext_frame) {
+static int rx_st20p_query_ext_frame(void* priv, struct st20_ext_frame* ext_frame,
+                                    struct st20_rx_frame_meta* meta) {
   struct st20p_rx_ctx* ctx = priv;
   struct st20p_rx_frame* framebuff;
   int ret;
@@ -145,7 +146,7 @@ static int rx_st20p_query_ext_frame(void* priv, struct st20_ext_frame* ext_frame
     return -EBUSY;
   }
 
-  ret = ctx->ops.query_ext_frame(ctx->ops.priv, ext_frame);
+  ret = ctx->ops.query_ext_frame(ctx->ops.priv, ext_frame, meta);
   if (ret < 0) {
     st_pthread_mutex_unlock(&ctx->lock);
     return -EBUSY;

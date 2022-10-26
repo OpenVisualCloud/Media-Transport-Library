@@ -579,7 +579,8 @@ struct st20p_rx_ops {
    * And only non-block method can be used within this callback as it run from lcore
    * tasklet routine.
    */
-  int (*query_ext_frame)(void* priv, struct st20_ext_frame* ext_frame);
+  int (*query_ext_frame)(void* priv, struct st20_ext_frame* ext_frame,
+                         struct st20_rx_frame_meta* meta);
 };
 
 /** The structure describing how to create a tx st2110-22 pipeline session. */
