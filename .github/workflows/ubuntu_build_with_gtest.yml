@@ -1,6 +1,32 @@
 name: gtest
 
-on: [push, pull_request]
+on:
+  push:
+    paths:
+      - 'include/**'
+      - 'lib/**'
+      - 'patches/dpdk/**'
+      - script/build_dpdk.sh
+      - 'tests/**'
+      - build.sh
+      - kahawai.json
+      - meson.build
+      - meson_options.txt
+      - VERSION
+      - .github/workflows/ubuntu_build_with_gtest.yml
+  pull_request:
+    paths:
+      - 'include/**'
+      - 'lib/**'
+      - 'patches/dpdk/**'
+      - script/build_dpdk.sh
+      - 'tests/**'
+      - build.sh
+      - kahawai.json
+      - meson.build
+      - meson_options.txt
+      - VERSION
+      - .github/workflows/ubuntu_build_with_gtest.yml
 
 env:
   # Customize the env if
@@ -8,6 +34,7 @@ env:
 
 jobs:
   Build:
+    if: github.repository == 'OpenVisualCloud/Media-Transport-Library'
     runs-on: [Ubuntu, self-hosted]
 
     steps:
@@ -28,6 +55,7 @@ jobs:
       run: ./build.sh
   
   Test:
+    if: github.repository == 'OpenVisualCloud/Media-Transport-Library'
     needs: Build
     runs-on: [Ubuntu, self-hosted]
     steps:

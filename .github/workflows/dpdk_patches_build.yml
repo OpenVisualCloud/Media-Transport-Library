@@ -3,11 +3,11 @@ name: DPDK patches build
 on:
   push:
     paths:
-      - 'patches/**'
+      - 'patches/dpdk/**'
       - .github/workflows/dpdk_patches_build.yml
   pull_request:
     paths:
-      - 'patches/**'
+      - 'patches/dpdk/**'
       - .github/workflows/dpdk_patches_build.yml
 
 env:
