@@ -99,6 +99,11 @@ struct st20r_rx_ops {
    * routine.
    */
   int (*notify_frame_ready)(void* priv, void* frame, struct st20_rx_frame_meta* meta);
+  /**
+   * vsync callback, lib will call this when ptp come to a new epoch(frame time).
+   * Only non-block method can be used in this callback as it run from lcore routine.
+   */
+  int (*notify_vsync)(void* priv, struct st10_vsync_meta* meta);
 };
 
 /**

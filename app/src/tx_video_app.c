@@ -4,6 +4,14 @@
 
 #include "tx_video_app.h"
 
+static int app_tx_video_vsync(void* priv, struct st10_vsync_meta* meta) {
+#ifdef DEBUG
+  struct st_app_tx_video_session* s = priv;
+  dbg("%s(%d), epoch %" PRIu64 "\n", __func__, s->idx, meta->epoch);
+#endif
+  return 0;
+}
+
 static int app_tx_video_next_frame(void* priv, uint16_t* next_frame_idx,
                                    struct st20_tx_frame_meta* meta) {
   struct st_app_tx_video_session* s = priv;
@@ -673,6 +681,7 @@ static int app_tx_video_init(struct st_app_context* ctx, st_json_video_session_t
   ops.notify_frame_done = app_tx_video_frame_done;
   ops.query_frame_lines_ready = app_tx_video_frame_lines_ready;
   ops.notify_rtp_done = app_tx_video_rtp_done;
+  ops.notify_vsync = app_tx_video_vsync;
   ops.framebuff_cnt = 2;
   ops.payload_type = video ? video->base.payload_type : ST_APP_PAYLOAD_TYPE_VIDEO;
 

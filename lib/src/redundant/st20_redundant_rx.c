@@ -99,6 +99,16 @@ static int rx_st20r_frame_ready(void* priv, void* frame,
   return 0;
 }
 
+static int rx_st20r_frame_vsync(void* priv, struct st10_vsync_meta* meta) {
+  struct st20r_rx_ctx* ctx = priv;
+
+  if (ctx->ops.notify_vsync) {
+    ctx->ops.notify_vsync(ctx->ops.priv, meta);
+  }
+
+  return 0;
+}
+
 static int rx_st20r_free_transport(struct st20r_rx_transport* transport) {
   if (transport->handle) {
     st20_rx_free(transport->handle);
@@ -156,6 +166,8 @@ static int rx_st20r_create_transport(struct st20r_rx_ctx* ctx, struct st20r_rx_o
   ops_rx.type = ST20_TYPE_FRAME_LEVEL;
   ops_rx.framebuff_cnt = ops->framebuff_cnt;
   ops_rx.notify_frame_ready = rx_st20r_frame_ready;
+  if (port == ST_PORT_P) /* only register vsync to p port now */
+    ops_rx.notify_vsync = rx_st20r_frame_vsync;
 
   st_sch_mask_t sch_mask = ST_SCH_MASK_ALL;
   if (port == ST_PORT_R) {

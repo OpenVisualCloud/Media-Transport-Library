@@ -416,7 +416,7 @@ enum st_session_type {
   ST_SESSION_TYPE_MAX,
 };
 
-/* timing for Packet Read Schedule */
+/* timing for pacing */
 struct st_tx_video_pacing {
   double trs;             /* in ns for of 2 consecutive packets, T-Frame / N-Packets */
   double tr_offset;       /* in ns, tr offset time of each frame */
@@ -507,6 +507,12 @@ struct st22_tx_video_info {
   int st22_total_pkts;
 };
 
+struct st_vsync_info {
+  struct st10_vsync_meta meta;
+  uint64_t next_epoch_tsc;
+  bool init;
+};
+
 struct st_tx_video_session_impl {
   enum st_port port_maps[ST_SESSION_PORT_MAX];
   struct rte_mempool* mbuf_mempool_hdr[ST_SESSION_PORT_MAX];
@@ -538,6 +544,8 @@ struct st_tx_video_session_impl {
   int (*pacing_tasklet_func[ST_SESSION_PORT_MAX])(struct st_main_impl* impl,
                                                   struct st_tx_video_session_impl* s,
                                                   enum st_session_port s_port);
+
+  struct st_vsync_info vsync;
 
   struct st20_tx_ops ops;
   char ops_name[ST_MAX_NAME_LEN];
@@ -617,6 +625,7 @@ struct st_tx_video_session_impl {
   bool stat_user_busy_first;
   uint32_t stat_user_busy;       /* get_next_frame or dequeue_bulk from rtp ring fail */
   uint32_t stat_lines_not_ready; /* query app lines not ready */
+  uint32_t stat_vsync_mismatch;
 };
 
 struct st_tx_video_sessions_mgr {
@@ -839,6 +848,8 @@ struct st_rx_video_session_impl {
   /* st20 detector info */
   struct st_rx_video_detector detector;
 
+  struct st_vsync_info vsync;
+
   /* frames info */
   size_t st20_frame_size;        /* size per frame, without padding */
   size_t st20_fb_size;           /* frame buffer size, with lines' padding */
@@ -917,6 +928,8 @@ struct st_rx_video_session_impl {
   int stat_pkts_slice_fail;
   int stat_pkts_slice_merged;
   uint64_t stat_last_time;
+  uint32_t stat_vsync_mismatch;
+
   struct st_rx_video_ebu_info ebu_info;
   struct st_rx_video_ebu_stat ebu;
   struct st_rx_video_ebu_result ebu_result;

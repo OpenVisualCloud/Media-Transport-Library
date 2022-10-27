@@ -157,6 +157,16 @@ static int rx_st20p_query_ext_frame(void* priv, struct st20_ext_frame* ext_frame
   return 0;
 }
 
+static int rx_st20p_frame_vsync(void* priv, struct st10_vsync_meta* meta) {
+  struct st20p_rx_ctx* ctx = priv;
+
+  if (ctx->ops.notify_vsync) {
+    ctx->ops.notify_vsync(ctx->ops.priv, meta);
+  }
+
+  return 0;
+}
+
 static struct st20_convert_frame_meta* rx_st20p_convert_get_frame(void* priv) {
   struct st20p_rx_ctx* ctx = priv;
   int idx = ctx->idx;
@@ -281,6 +291,7 @@ static int rx_st20p_create_transport(st_handle st, struct st20p_rx_ctx* ctx,
   ops_rx.type = ST20_TYPE_FRAME_LEVEL;
   ops_rx.framebuff_cnt = ops->framebuff_cnt;
   ops_rx.notify_frame_ready = rx_st20p_frame_ready;
+  ops_rx.notify_vsync = rx_st20p_frame_vsync;
   if (ctx->derive) {
     /* ext frame info directly passed down to st20 lib */
     if (ops->ext_frames) ops_rx.ext_frames = ops->ext_frames;

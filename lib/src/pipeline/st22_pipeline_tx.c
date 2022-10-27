@@ -111,6 +111,16 @@ static int tx_st22p_frame_done(void* priv, uint16_t frame_idx,
   return ret;
 }
 
+static int tx_st22p_frame_vsync(void* priv, struct st10_vsync_meta* meta) {
+  struct st22p_tx_ctx* ctx = priv;
+
+  if (ctx->ops.notify_vsync) {
+    ctx->ops.notify_vsync(ctx->ops.priv, meta);
+  }
+
+  return 0;
+}
+
 static struct st22_encode_frame_meta* tx_st22p_encode_get_frame(void* priv) {
   struct st22p_tx_ctx* ctx = priv;
   int idx = ctx->idx;
@@ -241,6 +251,7 @@ static int tx_st22p_create_transport(st_handle st, struct st22p_tx_ctx* ctx,
   ops_tx.framebuff_max_size = ctx->encode_impl->codestream_max_size;
   ops_tx.get_next_frame = tx_st22p_next_frame;
   ops_tx.notify_frame_done = tx_st22p_frame_done;
+  ops_tx.notify_vsync = tx_st22p_frame_vsync;
   if (ops->codec != ST22_CODEC_JPEGXS) {
     ops_tx.flags |= ST22_TX_FLAG_DISABLE_BOXES;
   }

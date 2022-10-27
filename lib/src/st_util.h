@@ -158,4 +158,6 @@ int st_rx_source_info_check(struct st_rx_source_info* src, int num_ports);
 
 int st_frame_trans_uinit(struct st_frame_trans* frame);
 
+int st_vsync_calculate(struct st_main_impl* impl, struct st_vsync_info* vsync);
+
 #endif
