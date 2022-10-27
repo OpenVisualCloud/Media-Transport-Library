@@ -129,6 +129,16 @@ static int tx_st20p_frame_done(void* priv, uint16_t frame_idx,
   return ret;
 }
 
+static int tx_st20p_frame_vsync(void* priv, struct st10_vsync_meta* meta) {
+  struct st20p_tx_ctx* ctx = priv;
+
+  if (ctx->ops.notify_vsync) {
+    ctx->ops.notify_vsync(ctx->ops.priv, meta);
+  }
+
+  return 0;
+}
+
 static struct st20_convert_frame_meta* tx_st20p_convert_get_frame(void* priv) {
   struct st20p_tx_ctx* ctx = priv;
   int idx = ctx->idx;
@@ -257,6 +267,7 @@ static int tx_st20p_create_transport(st_handle st, struct st20p_tx_ctx* ctx,
   ops_tx.framebuff_cnt = ops->framebuff_cnt;
   ops_tx.get_next_frame = tx_st20p_next_frame;
   ops_tx.notify_frame_done = tx_st20p_frame_done;
+  ops_tx.notify_vsync = tx_st20p_frame_vsync;
   if (ctx->derive && ops->flags & ST20P_TX_FLAG_EXT_FRAME)
     ops_tx.flags |= ST20_TX_FLAG_EXT_FRAME;
   if (ops->flags & ST20P_TX_FLAG_USER_PACING) ops_tx.flags |= ST20_TX_FLAG_USER_PACING;

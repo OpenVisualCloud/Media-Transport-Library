@@ -2319,6 +2319,17 @@ static int rv_init_sw(struct st_main_impl* impl, struct st_rx_video_sessions_mgr
     rv_ebu_init(impl, s);
   }
 
+  struct st_fps_timing fps_tm;
+  ret = st_get_fps_timing(ops->fps, &fps_tm);
+  if (ret < 0) {
+    err("%s(%d), invalid fps %d\n", __func__, idx, ops->fps);
+    rv_uinit_sw(impl, s);
+    return ret;
+  }
+  s->vsync.meta.frame_time = (double)1000000000.0 * fps_tm.den / fps_tm.mul;
+  st_vsync_calculate(impl, &s->vsync);
+  s->vsync.init = true;
+
   return 0;
 }
 
@@ -2778,6 +2789,24 @@ static int rv_attach(struct st_main_impl* impl, struct st_rx_video_sessions_mgr*
   return 0;
 }
 
+static int rv_poll_vsync(struct st_main_impl* impl, struct st_rx_video_session_impl* s) {
+  struct st_vsync_info* vsync = &s->vsync;
+  uint64_t cur_tsc = st_get_tsc(impl);
+
+  if (!vsync->init) return 0;
+
+  if (cur_tsc > vsync->next_epoch_tsc) {
+    uint64_t tsc_delta = cur_tsc - vsync->next_epoch_tsc;
+    dbg("%s(%d), vsync with epochs %" PRIu64 "\n", __func__, s->idx, vsync->meta.epoch);
+    s->ops.notify_vsync(s->ops.priv, &vsync->meta);
+    st_vsync_calculate(impl, vsync); /* set next vsync */
+    /* check tsc delta for status */
+    if (tsc_delta > NS_PER_MS) s->stat_vsync_mismatch++;
+  }
+
+  return 0;
+}
+
 static int rvs_tasklet_handler(void* priv) {
   struct st_rx_video_sessions_mgr* mgr = priv;
   struct st_main_impl* impl = mgr->parnet;
@@ -2788,6 +2817,9 @@ static int rvs_tasklet_handler(void* priv) {
   for (sidx = 0; sidx < mgr->max_idx; sidx++) {
     s = rx_video_session_try_get(mgr, sidx);
     if (!s) continue;
+
+    /* check vsync if it has callback */
+    if (s->ops.notify_vsync) rv_poll_vsync(impl, s);
 
     pending += rv_tasklet(impl, s, mgr);
     rx_video_session_put(mgr, sidx);
@@ -2937,11 +2969,26 @@ static void rv_stat(struct st_rx_video_sessions_mgr* mgr,
            s->stat_mismatch_hdr_split_frame);
     s->stat_mismatch_hdr_split_frame = 0;
   }
+  if (s->stat_vsync_mismatch) {
+    notice("RX_VIDEO_SESSION(%d,%d): vsync mismatch cnt %u\n", m_idx, idx,
+           s->stat_vsync_mismatch);
+    s->stat_vsync_mismatch = 0;
+  }
 }
 
 static int rvs_tasklet_start(void* priv) {
   struct st_rx_video_sessions_mgr* mgr = priv;
   int idx = mgr->idx;
+  struct st_main_impl* impl = mgr->parnet;
+  struct st_rx_video_session_impl* s;
+
+  for (int sidx = 0; sidx < mgr->max_idx; sidx++) {
+    s = rx_video_session_try_get(mgr, sidx);
+    if (!s) continue;
+    /* re-calculate the vsync */
+    st_vsync_calculate(impl, &s->vsync);
+    rx_video_session_put(mgr, sidx);
+  }
 
   info("%s(%d), succ\n", __func__, idx);
   return 0;
@@ -3768,6 +3815,7 @@ st22_rx_handle st22_rx_create(st_handle st, struct st22_rx_ops* ops) {
   st20_ops.rtp_ring_size = ops->rtp_ring_size;
   st20_ops.notify_rtp_ready = ops->notify_rtp_ready;
   st20_ops.framebuff_cnt = ops->framebuff_cnt;
+  st20_ops.notify_vsync = ops->notify_vsync;
   st_pthread_mutex_lock(&sch->rx_video_mgr_mutex);
   s = rv_mgr_attach(&sch->rx_video_mgr, &st20_ops, ops);
   st_pthread_mutex_unlock(&sch->rx_video_mgr_mutex);

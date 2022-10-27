@@ -528,6 +528,18 @@ struct st_queue_meta {
 };
 
 /**
+ * Vsync callback meta data
+ */
+struct st10_vsync_meta {
+  /** current vsync epoch */
+  uint64_t epoch;
+  /** current ptp time */
+  uint64_t ptp;
+  /** frame time in ns */
+  double frame_time;
+};
+
+/**
  * Inline function returning primary port pointer from st_init_params
  * @param p
  *   The pointer to the init parameters.

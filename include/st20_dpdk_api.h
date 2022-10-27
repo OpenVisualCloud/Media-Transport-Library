@@ -672,6 +672,12 @@ struct st20_tx_ops {
    * tasklet routine.
    */
   int (*notify_rtp_done)(void* priv);
+
+  /**
+   * vsync callback, lib will call this when ptp come to a new epoch(frame time).
+   * Only non-block method can be used in this callback as it run from lcore routine.
+   */
+  int (*notify_vsync)(void* priv, struct st10_vsync_meta* meta);
 };
 
 /**
@@ -769,6 +775,12 @@ struct st22_tx_ops {
    * for ST22_TYPE_RTP_LEVEL
    */
   int (*notify_rtp_done)(void* priv);
+
+  /**
+   * vsync callback, lib will call this when ptp come to a new epoch(frame time).
+   * Only non-block method can be used in this callback as it run from lcore routine.
+   */
+  int (*notify_vsync)(void* priv, struct st10_vsync_meta* meta);
 };
 
 /**
@@ -933,6 +945,12 @@ struct st20_rx_ops {
    */
   int (*query_ext_frame)(void* priv, struct st20_ext_frame* ext_frame,
                          struct st20_rx_frame_meta* meta);
+
+  /**
+   * vsync callback, lib will call this when ptp come to a new epoch(frame time).
+   * Only non-block method can be used in this callback as it run from lcore routine.
+   */
+  int (*notify_vsync)(void* priv, struct st10_vsync_meta* meta);
 };
 
 /**
@@ -1008,6 +1026,12 @@ struct st22_rx_ops {
    * For ST22_TYPE_RTP_LEVEL.
    */
   int (*notify_rtp_ready)(void* priv);
+
+  /**
+   * vsync callback, lib will call this when ptp come to a new epoch(frame time).
+   * Only non-block method can be used in this callback as it run from lcore routine.
+   */
+  int (*notify_vsync)(void* priv, struct st10_vsync_meta* meta);
 };
 
 /**

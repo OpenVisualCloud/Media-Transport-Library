@@ -467,3 +467,15 @@ int st_frame_trans_uinit(struct st_frame_trans* frame) {
 
   return 0;
 }
+
+int st_vsync_calculate(struct st_main_impl* impl, struct st_vsync_info* vsync) {
+  uint64_t ptp_time = st_get_ptp_time(impl, ST_PORT_P);
+  uint64_t to_next_epochs;
+
+  vsync->meta.epoch = ptp_time / vsync->meta.frame_time + 1;
+  to_next_epochs = vsync->meta.epoch * vsync->meta.frame_time - ptp_time;
+  vsync->next_epoch_tsc = st_get_tsc(impl) + to_next_epochs;
+
+  dbg("%s, to_next_epochs %fms\n", __func__, (float)to_next_epochs / NS_PER_MS);
+  return 0;
+}

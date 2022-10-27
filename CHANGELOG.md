@@ -7,6 +7,7 @@
 * lib/log: add noice level log, see ST_LOG_LEVEL_NOTICE.
 * build: add clang support. See "Build with clang" section in build.md.
 * tx: add user pacing control, see ST20_TX_FLAG_USER_PACING, ST30_TX_FLAG_USER_PACING, ST40_TX_FLAG_USER_PACING.
+* video: add notify_vsync callback which happened when epoch time change to a new frame, vsync period is same to fps. See notify_vsync parameter in the session create ops for detail.
 
 ## Change log for 22.09:
 * License: update to BSD-3

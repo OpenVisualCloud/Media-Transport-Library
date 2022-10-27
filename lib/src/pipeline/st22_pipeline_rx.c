@@ -80,6 +80,16 @@ static int rx_st22p_frame_ready(void* priv, void* frame,
   return 0;
 }
 
+static int rx_st22p_frame_vsync(void* priv, struct st10_vsync_meta* meta) {
+  struct st22p_rx_ctx* ctx = priv;
+
+  if (ctx->ops.notify_vsync) {
+    ctx->ops.notify_vsync(ctx->ops.priv, meta);
+  }
+
+  return 0;
+}
+
 static struct st22_decode_frame_meta* rx_st22p_decode_get_frame(void* priv) {
   struct st22p_rx_ctx* ctx = priv;
   int idx = ctx->idx;
@@ -202,6 +212,7 @@ static int rx_st22p_create_transport(st_handle st, struct st22p_rx_ctx* ctx,
   ops_rx.framebuff_cnt = ops->framebuff_cnt;
   ops_rx.framebuff_max_size = ctx->max_codestream_size;
   ops_rx.notify_frame_ready = rx_st22p_frame_ready;
+  ops_rx.notify_vsync = rx_st22p_frame_vsync;
 
   transport = st22_rx_create(st, &ops_rx);
   if (!transport) {

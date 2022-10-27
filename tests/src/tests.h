@@ -203,6 +203,8 @@ class tests_context {
   uint16_t fb_idx = 0;
   int fb_send = 0;
   int fb_rec = 0;
+  int vsync_cnt = 0;
+  uint64_t first_vsync_time = 0;
   int packet_rec = 0;
   uint64_t start_time = 0;
   void* handle = NULL;
