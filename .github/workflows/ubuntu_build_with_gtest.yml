@@ -34,6 +34,7 @@ env:
 
 jobs:
   Build:
+    if: github.repository == 'OpenVisualCloud/Media-Transport-Library'
     runs-on: [Ubuntu, self-hosted]
 
     steps:
@@ -54,6 +55,7 @@ jobs:
       run: ./build.sh
   
   Test:
+    if: github.repository == 'OpenVisualCloud/Media-Transport-Library'
     needs: Build
     runs-on: [Ubuntu, self-hosted]
     steps:
