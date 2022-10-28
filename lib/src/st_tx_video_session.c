@@ -1232,7 +1232,8 @@ static int tv_tasklet_frame(struct st_main_impl* impl,
   }
 
   if (s->st20_pkt_idx >= s->st20_total_pkts) {
-    dbg("%s(%d), frame %d done\n", __func__, idx, s->st20_frame_idx);
+    dbg("%s(%d), frame %d done with %d pkts\n", __func__, idx, s->st20_frame_idx,
+        s->st20_pkt_idx);
     /* end of current frame */
     s->st20_frame_stat = ST21_TX_STAT_WAIT_FRAME;
     s->st20_pkt_idx = 0;

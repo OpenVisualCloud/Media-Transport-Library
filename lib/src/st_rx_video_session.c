@@ -963,6 +963,7 @@ static void rv_frame_notify(struct st_rx_video_session_impl* s,
 
     /* notify frame */
     int ret = -EIO;
+    dbg("%s(%d): tmstamp %u\n", __func__, s->idx, slot->tmstamp);
     if (ops->notify_frame_ready)
       ret = ops->notify_frame_ready(ops->priv, slot->frame, meta);
     if (ret < 0) {
@@ -1111,10 +1112,11 @@ static struct st_rx_video_slot_impl* rv_slot_by_tmstamp(
     if (tmstamp == slot->tmstamp) return slot;
   }
 
+  dbg("%s(%d): new tmstamp %u\n", __func__, s->idx, tmstamp);
   if (s->dma_dev && !st_dma_empty(s->dma_dev)) {
     /* still in progress of previous frame, drop current pkt */
     rte_atomic32_inc(&s->dma_previous_busy_cnt);
-    dbg("%s: still has dma inflight %u\n", __func__,
+    dbg("%s(%d): still has dma inflight %u\n", __func__, s->idx,
         s->dma_dev->nb_borrowed[s->dma_lender]);
     return NULL;
   }
@@ -1141,7 +1143,8 @@ static struct st_rx_video_slot_impl* rv_slot_by_tmstamp(
 
   struct st_frame_trans* frame_info = rv_get_frame(s);
   if (!frame_info) {
-    dbg("%s: slot %d get frame fail\n", __func__, slot_idx);
+    s->stat_slot_get_frame_fail++;
+    dbg("%s(%d): slot %d get frame fail\n", __func__, s->idx, slot_idx);
     return NULL;
   }
   if (hdr_split_pd) { /* reslove base addr */
@@ -1161,7 +1164,8 @@ static struct st_rx_video_slot_impl* rv_slot_by_tmstamp(
     meta->frame_total_size = s->st20_frame_size;
     meta->uframe_total_size = s->st20_uframe_size;
     if (s->ops.query_ext_frame(s->ops.priv, &ext_frame, meta) < 0) {
-      dbg("%s: query ext frame fail\n", __func__);
+      s->stat_slot_query_ext_fail++;
+      dbg("%s(%d): query ext frame fail\n", __func__, s->idx);
       rte_atomic32_dec(&frame_info->refcnt);
       return NULL;
     }
@@ -1181,8 +1185,8 @@ static struct st_rx_video_slot_impl* rv_slot_by_tmstamp(
 
   rte_atomic32_inc(&s->cbs_frame_slot_cnt);
 
-  dbg("%s: assign slot %d frame %p for tmstamp %u\n", __func__, slot_idx, slot->frame,
-      tmstamp);
+  dbg("%s(%d): assign slot %d frame %p for tmstamp %u\n", __func__, s->idx, slot_idx,
+      slot->frame, tmstamp);
   return slot;
 }
 
@@ -2973,6 +2977,16 @@ static void rv_stat(struct st_rx_video_sessions_mgr* mgr,
     notice("RX_VIDEO_SESSION(%d,%d): vsync mismatch cnt %u\n", m_idx, idx,
            s->stat_vsync_mismatch);
     s->stat_vsync_mismatch = 0;
+  }
+  if (s->stat_slot_get_frame_fail) {
+    notice("RX_VIDEO_SESSION(%d,%d): slot get frame fail %u\n", m_idx, idx,
+           s->stat_slot_get_frame_fail);
+    s->stat_slot_get_frame_fail = 0;
+  }
+  if (s->stat_slot_query_ext_fail) {
+    notice("RX_VIDEO_SESSION(%d,%d): slot query ext fail %u\n", m_idx, idx,
+           s->stat_slot_query_ext_fail);
+    s->stat_slot_query_ext_fail = 0;
   }
 }
 

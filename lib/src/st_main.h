@@ -929,6 +929,8 @@ struct st_rx_video_session_impl {
   int stat_pkts_slice_merged;
   uint64_t stat_last_time;
   uint32_t stat_vsync_mismatch;
+  uint32_t stat_slot_get_frame_fail;
+  uint32_t stat_slot_query_ext_fail;
 
   struct st_rx_video_ebu_info ebu_info;
   struct st_rx_video_ebu_stat ebu;

@@ -360,6 +360,11 @@ static void test_st20p_tx_frame_thread(void* args) {
     if (frame->width != s->width) s->incomplete_frame_cnt++;
     if (frame->height != s->height) s->incomplete_frame_cnt++;
     if (frame->fmt != s->fmt) s->incomplete_frame_cnt++;
+    if (s->user_timestamp) {
+      frame->tfmt = ST10_TIMESTAMP_FMT_MEDIA_CLK;
+      frame->timestamp = s->fb_send;
+      dbg("%s(%d), timestamp %d\n", __func__, s->idx, s->fb_send);
+    }
     if (s->ext_frames) {
       int ret = st20p_tx_put_ext_frame((st20p_tx_handle)handle, frame,
                                        &s->ext_frames[s->ext_idx]);
@@ -414,6 +419,22 @@ static void test_st20p_rx_frame_thread(void* args) {
     dbg("%s(%d), timestamp %ld\n", __func__, s->idx, frame->timestamp);
     if (frame->timestamp == timestamp) s->incomplete_frame_cnt++;
     timestamp = frame->timestamp;
+
+    /* check user timestamp if it has */
+    if (s->user_timestamp && !s->user_pacing) {
+      if (s->pre_timestamp) {
+        /*
+         * some frame may drop as SHA256 is slow,
+         * just check timestamp is adding with small step
+         */
+        if (((uint32_t)frame->timestamp - s->pre_timestamp) > 4) {
+          s->incomplete_frame_cnt++;
+          err("%s(%d), frame user timestamp %lu pre_timestamp %u\n", __func__, s->idx,
+              frame->timestamp, s->pre_timestamp);
+        }
+      }
+      s->pre_timestamp = (uint32_t)frame->timestamp;
+    }
 
     unsigned char* sha =
         (unsigned char*)frame->addr + frame->data_size - SHA256_DIGEST_LENGTH;
@@ -474,6 +495,22 @@ static void test_internal_st20p_rx_frame_thread(void* args) {
     if (frame->timestamp == timestamp) s->incomplete_frame_cnt++;
     timestamp = frame->timestamp;
 
+    /* check user timestamp if it has */
+    if (s->user_timestamp && !s->user_pacing) {
+      if (s->pre_timestamp) {
+        /*
+         * some frame may drop as SHA256 is slow,
+         * just check timestamp is adding with small step
+         */
+        if (((uint32_t)frame->timestamp - s->pre_timestamp) > 4) {
+          s->incomplete_frame_cnt++;
+          err("%s(%d), frame user timestamp %lu pre_timestamp %u\n", __func__, s->idx,
+              frame->timestamp, s->pre_timestamp);
+        }
+      }
+      s->pre_timestamp = (uint32_t)frame->timestamp;
+    }
+
     int i = 0;
     unsigned char* fb = (unsigned char*)frame->addr;
     SHA256(fb, s->frame_size, result);
@@ -528,6 +565,7 @@ struct st20p_rx_digest_test_para {
   bool dynamic;
   enum st_test_level level;
   int fb_cnt;
+  bool user_timestamp;
 };
 
 static void test_st20p_init_rx_digest_para(struct st20p_rx_digest_test_para* para) {
@@ -541,6 +579,7 @@ static void test_st20p_init_rx_digest_para(struct st20p_rx_digest_test_para* par
   para->check_fps = true;
   para->dynamic = false;
   para->level = ST_TEST_LEVEL_MANDATORY;
+  para->user_timestamp = false;
 }
 
 static void st20p_rx_digest_test(enum st_fps fps[], int width[], int height[],
@@ -609,6 +648,7 @@ static void st20p_rx_digest_test(enum st_fps fps[], int width[], int height[],
     test_ctx_tx[i]->width = width[i];
     test_ctx_tx[i]->height = height[i];
     test_ctx_tx[i]->fmt = tx_fmt[i];
+    test_ctx_tx[i]->user_timestamp = para->user_timestamp;
 
     memset(&ops_tx, 0, sizeof(ops_tx));
     ops_tx.name = "st20p_test";
@@ -632,6 +672,7 @@ static void st20p_rx_digest_test(enum st_fps fps[], int width[], int height[],
       ops_tx.notify_frame_done = test_st20p_tx_frame_done;
       ops_tx.flags |= ST20P_TX_FLAG_EXT_FRAME;
     }
+    if (para->user_timestamp) ops_tx.flags |= ST20P_TX_FLAG_USER_TIMESTAMP;
 
     test_ctx_tx[i]->frame_size = st_frame_size(tx_fmt[i], width[i], height[i]);
 
@@ -719,6 +760,7 @@ static void st20p_rx_digest_test(enum st_fps fps[], int width[], int height[],
     test_ctx_rx[i]->width = width[i];
     test_ctx_rx[i]->height = height[i];
     test_ctx_rx[i]->fmt = rx_fmt[i];
+    test_ctx_rx[i]->user_timestamp = para->user_timestamp;
     /* copy sha */
     memcpy(test_ctx_rx[i]->shas, test_ctx_tx[i]->shas,
            TEST_SHA_HIST_NUM * SHA256_DIGEST_LENGTH);
@@ -1107,6 +1149,7 @@ TEST(St20p, tx_rx_ext_digest_1080p_convert_s2) {
   para.tx_ext = true;
   para.rx_ext = true;
   para.check_fps = false;
+  para.user_timestamp = true;
 
   st20p_rx_digest_test(fps, width, height, tx_fmt, t_fmt, rx_fmt, &para);
 }

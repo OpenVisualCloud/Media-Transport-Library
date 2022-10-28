@@ -258,6 +258,7 @@ class tests_context {
   st_dma_mem_handle dma_mem = NULL;
 
   bool user_pacing = false;
+  /* user timestamp which advanced by 1 for erery frame */
   bool user_timestamp = false;
   uint32_t pre_timestamp = 0;
 };
