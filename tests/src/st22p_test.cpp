@@ -620,6 +620,11 @@ static void test_st22p_tx_frame_thread(void* args) {
     if (frame->width != s->width) s->incomplete_frame_cnt++;
     if (frame->height != s->height) s->incomplete_frame_cnt++;
     if (frame->fmt != s->fmt) s->incomplete_frame_cnt++;
+    if (s->user_timestamp) {
+      frame->tfmt = ST10_TIMESTAMP_FMT_MEDIA_CLK;
+      frame->timestamp = s->fb_send;
+      dbg("%s(%d), timestamp %d\n", __func__, s->idx, s->fb_send);
+    }
     /* directly put */
     st22p_tx_put_frame((st22p_tx_handle)handle, frame);
     s->fb_send++;
@@ -657,6 +662,22 @@ static void test_st22p_rx_frame_thread(void* args) {
     if (frame->timestamp == timestamp) s->incomplete_frame_cnt++;
     timestamp = frame->timestamp;
 
+    /* check user timestamp if it has */
+    if (s->user_timestamp && !s->user_pacing) {
+      if (s->pre_timestamp) {
+        /*
+         * some frame may drop as SHA256 is slow,
+         * just check timestamp is adding with small step
+         */
+        if (((uint32_t)frame->timestamp - s->pre_timestamp) > 4) {
+          s->incomplete_frame_cnt++;
+          err("%s(%d), frame user timestamp %lu pre_timestamp %u\n", __func__, s->idx,
+              frame->timestamp, s->pre_timestamp);
+        }
+      }
+      s->pre_timestamp = (uint32_t)frame->timestamp;
+    }
+
     unsigned char* sha =
         (unsigned char*)frame->addr + frame->data_size - SHA256_DIGEST_LENGTH;
     int i = 0;
@@ -684,6 +705,7 @@ struct st22p_rx_digest_test_para {
   int rand_ratio;
   bool check_fps;
   enum st_test_level level;
+  bool user_timestamp;
 };
 
 static void test_st22p_init_rx_digest_para(struct st22p_rx_digest_test_para* para) {
@@ -694,6 +716,7 @@ static void test_st22p_init_rx_digest_para(struct st22p_rx_digest_test_para* par
   para->rand_ratio = 0;
   para->check_fps = true;
   para->level = ST_TEST_LEVEL_MANDATORY;
+  para->user_timestamp = false;
 }
 
 static void st22p_rx_digest_test(enum st_fps fps[], int width[], int height[],
@@ -763,6 +786,7 @@ static void st22p_rx_digest_test(enum st_fps fps[], int width[], int height[],
     test_ctx_tx[i]->width = width[i];
     test_ctx_tx[i]->height = height[i];
     test_ctx_tx[i]->fmt = fmt[i];
+    test_ctx_tx[i]->user_timestamp = para->user_timestamp;
 
     memset(&ops_tx, 0, sizeof(ops_tx));
     ops_tx.name = "st22p_test";
@@ -784,6 +808,7 @@ static void st22p_rx_digest_test(enum st_fps fps[], int width[], int height[],
     ops_tx.framebuff_cnt = test_ctx_tx[i]->fb_cnt;
     ops_tx.notify_frame_available = test_st22p_tx_frame_available;
     ops_tx.notify_vsync = test_st22p_notify_vsync;
+    if (para->user_timestamp) ops_tx.flags |= ST22P_TX_FLAG_USER_TIMESTAMP;
 
     test_ctx_tx[i]->frame_size =
         st_frame_size(ops_tx.input_fmt, ops_tx.width, ops_tx.height);
@@ -832,6 +857,7 @@ static void st22p_rx_digest_test(enum st_fps fps[], int width[], int height[],
     test_ctx_rx[i]->width = width[i];
     test_ctx_rx[i]->height = height[i];
     test_ctx_rx[i]->fmt = fmt[i];
+    test_ctx_rx[i]->user_timestamp = para->user_timestamp;
     /* copy sha */
     memcpy(test_ctx_rx[i]->shas, test_ctx_tx[i]->shas,
            ST22_TEST_SHA_HIST_NUM * SHA256_DIGEST_LENGTH);
@@ -984,6 +1010,7 @@ TEST(St22p, digest_st22_s2) {
   struct st22p_rx_digest_test_para para;
   test_st22p_init_rx_digest_para(&para);
   para.sessions = 2;
+  para.user_timestamp = true;
 
   st22p_rx_digest_test(fps, width, height, fmt, codec, compress_ratio, &para);
 }
