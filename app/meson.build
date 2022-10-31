@@ -28,6 +28,7 @@ else
   message('SDL2_ttf not found')
 endif
 libopenssl = dependency('openssl', required : true)
+dpdk_dep = dependency('libdpdk', required : true)
 
 # add source file
 subdir('src')
@@ -253,4 +254,10 @@ executable('TxVideoSplitSample', video_tx_split_sample_sources,
   c_args : app_c_args,
   link_args: app_ld_args,
   dependencies: [libst_dpdk]
+)
+
+executable('RxSt20TxSt20SplitFwd', rx_st20_tx_st20_split_fwd_sources,
+  c_args : app_c_args,
+  link_args: app_ld_args,
+  dependencies: [libst_dpdk, dpdk_dep]
 )
