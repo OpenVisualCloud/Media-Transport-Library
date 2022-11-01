@@ -130,6 +130,7 @@
 
 #define NS_PER_MS (1000 * 1000)
 #define NS_PER_US (1000)
+#define US_PER_MS (1000)
 
 struct st_main_impl; /* foward declare */
 
@@ -348,6 +349,12 @@ struct st_sch_tasklet_ops {
    * return ST_TASKLET_HAS_PENDING if it has pending tasks.
    */
   int (*handler)(void* priv);
+  /*
+   * the recommend sleep time(us) if tasklet report ST_TASKLET_ALL_DONE.
+   * also this value can be set by st_tasklet_set_sleep at runtime.
+   * leave to zero if you don't know.
+   */
+  uint64_t advice_sleep_us;
 };
 
 struct st_sch_tasklet_impl {
@@ -530,6 +537,7 @@ struct st_tx_video_session_impl {
   uint16_t queue_id[ST_SESSION_PORT_MAX];
   uint16_t queue_active[ST_SESSION_PORT_MAX];
   int idx; /* index for current tx_session */
+  uint64_t advice_sleep_us;
 
   struct st_tx_video_session_handle_impl* st20_handle;
   struct st22_tx_video_session_handle_impl* st22_handle;
@@ -829,6 +837,7 @@ struct st_rx_video_session_impl {
 
   struct st20_rx_ops ops;
   char ops_name[ST_MAX_NAME_LEN];
+  uint64_t advice_sleep_us;
 
   enum st_port port_maps[ST_SESSION_PORT_MAX];
   uint16_t queue_id[ST_SESSION_PORT_MAX]; /* queue id for the session */
@@ -969,9 +978,7 @@ struct st_sch_impl {
   int max_tasklet_idx; /* max tasklet index */
   unsigned int lcore;
   bool run_in_thread; /* Run the tasklet inside one thread instead of a pinned lcore. */
-  bool allow_sleep;
-  int quota_mbs_max_for_sleep; /* max data quota(mb/s) for sleep mode */
-  pthread_t tid;               /* thread id for run_in_thread */
+  pthread_t tid;      /* thread id for run_in_thread */
 
   int data_quota_mbs_total; /* total data quota(mb/s) for current sch */
   int data_quota_mbs_limit; /* limit data quota(mb/s) for current sch */
@@ -996,6 +1003,11 @@ struct st_sch_impl {
   struct st_rx_video_sessions_mgr rx_video_mgr;
   bool rx_video_init;
   pthread_mutex_t rx_video_mgr_mutex; /* protect tx_video_mgr */
+
+  /* sch sleep info */
+  bool allow_sleep;
+  pthread_cond_t sleep_wake_cond;
+  pthread_mutex_t sleep_wake_mutex;
 
   /* the sch sleep ratio */
   float sleep_ratio_score;
@@ -1612,10 +1624,20 @@ struct st_map_mgr {
   struct st_map_item* items[ST_MAP_MAX_ITEMS];
 };
 
+struct st_var_params {
+  /* default sleep time(us) for sch tasklet sleep */
+  uint64_t sch_default_sleep_us;
+  /* force sleep time(us) for sch tasklet sleep */
+  uint64_t sch_force_sleep_us;
+  /* sleep(0) threshold */
+  uint64_t sch_zero_sleep_threshold_us;
+};
+
 struct st_main_impl {
   struct st_interface inf[ST_PORT_MAX];
 
   struct st_init_params user_para;
+  struct st_var_params var_para;
   struct st_kport_info kport_info;
   enum st_session_type type; /* for sanity check */
   uint64_t tsc_hz;
@@ -2002,6 +2024,18 @@ static inline struct rte_mbuf* st_get_pad(struct st_main_impl* impl, enum st_por
 
 static inline struct st_dma_mgr* st_get_dma_mgr(struct st_main_impl* impl) {
   return &impl->dma_mgr;
+}
+
+static inline uint64_t st_sch_default_sleep_us(struct st_main_impl* impl) {
+  return impl->var_para.sch_default_sleep_us;
+}
+
+static inline uint64_t st_sch_force_sleep_us(struct st_main_impl* impl) {
+  return impl->var_para.sch_force_sleep_us;
+}
+
+static inline uint64_t st_sch_zero_sleep_thresh_us(struct st_main_impl* impl) {
+  return impl->var_para.sch_zero_sleep_threshold_us;
 }
 
 static inline void st_sleep_ms(unsigned int ms) { return rte_delay_us_sleep(ms * 1000); }

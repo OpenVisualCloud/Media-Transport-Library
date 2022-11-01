@@ -685,3 +685,15 @@ size_t st20p_tx_frame_size(st20p_tx_handle handle) {
 
   return ctx->src_size;
 }
+
+int st20p_tx_get_sch_idx(st20p_tx_handle handle) {
+  struct st20p_tx_ctx* ctx = handle;
+  int cidx = ctx->idx;
+
+  if (ctx->type != ST20_SESSION_TYPE_PIPELINE_TX) {
+    err("%s(%d), invalid type %d\n", __func__, cidx, ctx->type);
+    return 0;
+  }
+
+  return st20_tx_get_sch_idx(ctx->transport);
+}

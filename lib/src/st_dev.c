@@ -1818,6 +1818,7 @@ int st_dev_free(struct st_main_impl* impl) {
 
   st_sch_put(impl->main_sch, 0);
 
+  st_sch_mrg_uinit(impl);
   dev_uinit_lcores(impl);
 
   for (i = 0; i < num_ports; i++) {

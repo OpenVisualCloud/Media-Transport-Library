@@ -68,6 +68,11 @@ static void user_param_init(struct st_app_context* ctx, struct st_init_params* p
   app_set_log_level(p->log_level);
 }
 
+static void var_param_init(struct st_app_context* ctx) {
+  if (ctx->var_para.sch_force_sleep_us)
+    st_sch_set_sleep_us(ctx->st, ctx->var_para.sch_force_sleep_us);
+}
+
 static void st_app_ctx_init(struct st_app_context* ctx) {
   user_param_init(ctx, &ctx->para);
 
@@ -284,6 +289,8 @@ int main(int argc, char** argv) {
   }
 
   g_app_ctx = ctx;
+
+  var_param_init(ctx);
 
   if (signal(SIGINT, st_app_sig_handler) == SIG_ERR) {
     err("%s, cat SIGINT fail\n", __func__);

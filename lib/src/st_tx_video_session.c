@@ -2254,9 +2254,16 @@ static int tv_attach(struct st_main_impl* impl, struct st_tx_video_sessions_mgr*
     return ret;
   }
 
+  /* init vsync */
   s->vsync.meta.frame_time = s->pacing.frame_time;
   st_vsync_calculate(impl, &s->vsync);
   s->vsync.init = true;
+  /* init advice sleep us */
+  double sleep_ns = s->pacing.trs * 128;
+  s->advice_sleep_us = sleep_ns / NS_PER_US;
+  if (st_tasklet_has_sleep(impl)) {
+    info("%s(%d), advice sleep us %" PRIu64 "\n", __func__, idx, s->advice_sleep_us);
+  }
 
   s->stat_lines_not_ready = 0;
   s->stat_user_busy = 0;
@@ -2532,11 +2539,20 @@ static int tv_mgr_uinit(struct st_tx_video_sessions_mgr* mgr) {
 
 static int tv_mgr_update(struct st_tx_video_sessions_mgr* mgr) {
   int max_idx = 0;
+  struct st_main_impl* impl = mgr->parnet;
+  uint64_t sleep_us = st_sch_default_sleep_us(impl);
+  struct st_tx_video_session_impl* s;
 
   for (int i = 0; i < ST_SCH_MAX_TX_VIDEO_SESSIONS; i++) {
-    if (mgr->sessions[i]) max_idx = i + 1;
+    s = mgr->sessions[i];
+    if (!s) continue;
+    max_idx = i + 1;
+    sleep_us = RTE_MIN(s->advice_sleep_us, sleep_us);
   }
+  dbg("%s(%d), sleep us %" PRIu64 ", max_idx %d\n", __func__, mgr->idx, sleep_us,
+      max_idx);
   mgr->max_idx = max_idx;
+  if (mgr->tasklet) st_tasklet_set_sleep(mgr->tasklet, sleep_us);
   return 0;
 }
 
@@ -2800,6 +2816,11 @@ st20_tx_handle st20_tx_create(st_handle st, struct st20_tx_ops* ops) {
     return NULL;
   }
 
+  /* update mgr status */
+  st_pthread_mutex_lock(&sch->tx_video_mgr_mutex);
+  tv_mgr_update(&sch->tx_video_mgr);
+  st_pthread_mutex_unlock(&sch->tx_video_mgr_mutex);
+
   s_impl->parnet = impl;
   s_impl->type = ST_SESSION_TYPE_TX_VIDEO;
   s_impl->sch = sch;
@@ -3041,7 +3062,7 @@ int st20_tx_free(st20_tx_handle handle) {
 
   st_rte_free(s_impl);
 
-  /* update max idx */
+  /* update mgr status */
   st_pthread_mutex_lock(&sch->tx_video_mgr_mutex);
   tv_mgr_update(&sch->tx_video_mgr);
   st_pthread_mutex_unlock(&sch->tx_video_mgr_mutex);
@@ -3212,7 +3233,7 @@ int st22_tx_free(st22_tx_handle handle) {
 
   st_rte_free(s_impl);
 
-  /* update max idx */
+  /* update mgr status */
   st_pthread_mutex_lock(&sch->tx_video_mgr_mutex);
   tv_mgr_update(&sch->tx_video_mgr);
   st_pthread_mutex_unlock(&sch->tx_video_mgr_mutex);

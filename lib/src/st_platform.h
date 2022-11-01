@@ -36,6 +36,9 @@
 #define ST_CLOCK_MONOTONIC_ID CLOCK_MONOTONIC
 #endif
 
+/* use CLOCK_MONOTONIC for st_pthread_cond_timedwait */
+#define ST_THREAD_TIMEDWAIT_CLOCK_ID CLOCK_MONOTONIC
+
 #ifdef WINDOWSENV
 #define ST_FLOCK_PATH "c:/temp/kahawai_lcore.lock"
 #else
@@ -66,6 +69,11 @@ static inline int st_pthread_cond_init(pthread_cond_t* cond,
 
 static inline int st_pthread_cond_wait(pthread_cond_t* cond, pthread_mutex_t* mutex) {
   return pthread_cond_wait(cond, mutex);
+}
+
+static inline int st_pthread_cond_timedwait(pthread_cond_t* cond, pthread_mutex_t* mutex,
+                                            const struct timespec* time) {
+  return pthread_cond_timedwait(cond, mutex, time);
 }
 
 static inline int st_pthread_cond_destroy(pthread_cond_t* cond) {

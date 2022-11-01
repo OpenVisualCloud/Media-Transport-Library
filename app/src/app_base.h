@@ -451,9 +451,15 @@ struct st_app_rx_st20p_session {
   uint64_t stat_latency_us_sum;
 };
 
+struct st_app_var_params {
+  /* force sleep time(us) for sch tasklet sleep */
+  uint64_t sch_force_sleep_us;
+};
+
 struct st_app_context {
   st_json_context_t* json_ctx;
   struct st_init_params para;
+  struct st_app_var_params var_para;
   st_handle st;
   int test_time_s;
   bool stop;

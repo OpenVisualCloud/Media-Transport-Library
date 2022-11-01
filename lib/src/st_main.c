@@ -406,6 +406,10 @@ st_handle st_init(struct st_init_params* p) {
   if (!impl) goto err_exit;
 
   rte_memcpy(&impl->user_para, p, sizeof(*p));
+  impl->var_para.sch_default_sleep_us = 1 * US_PER_MS; /* default 1ms */
+  /* use sleep zero if sleep us is smaller than this thresh */
+  impl->var_para.sch_zero_sleep_threshold_us = 200;
+
   rte_memcpy(&impl->kport_info, &kport_info, sizeof(kport_info));
   impl->type = ST_SESSION_TYPE_MAIN;
   for (int i = 0; i < num_ports; i++) {
@@ -881,6 +885,46 @@ int st_get_stats(st_handle st, struct st_stats* stats) {
     stats->dev_started = 1;
   else
     stats->dev_started = 0;
+  return 0;
+}
+
+int st_sch_enable_sleep(st_handle st, int sch_idx, bool enable) {
+  struct st_main_impl* impl = st;
+
+  if (sch_idx > ST_MAX_SCH_NUM) {
+    err("%s, invalid sch_idx %d\n", __func__, sch_idx);
+    return -EIO;
+  }
+  if (impl->type != ST_SESSION_TYPE_MAIN) {
+    err("%s, invalid type %d\n", __func__, impl->type);
+    return -EIO;
+  }
+
+  struct st_sch_impl* sch = st_sch_instance(impl, sch_idx);
+  if (!sch) {
+    err("%s(%d), sch instance null\n", __func__, sch_idx);
+    return -EIO;
+  }
+  if (!st_sch_is_active(sch)) {
+    err("%s(%d), not allocated\n", __func__, sch_idx);
+    return -EIO;
+  }
+
+  st_sch_enable_allow_sleep(sch, enable);
+  info("%s(%d), %s allow sleep\n", __func__, sch_idx, enable ? "enable" : "disable");
+  return 0;
+}
+
+int st_sch_set_sleep_us(st_handle st, uint64_t us) {
+  struct st_main_impl* impl = st;
+
+  if (impl->type != ST_SESSION_TYPE_MAIN) {
+    err("%s, invalid type %d\n", __func__, impl->type);
+    return -EIO;
+  }
+
+  impl->var_para.sch_force_sleep_us = us;
+  info("%s, us %" PRIu64 "\n", __func__, us);
   return 0;
 }
 
