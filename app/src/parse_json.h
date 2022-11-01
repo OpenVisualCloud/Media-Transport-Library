@@ -163,9 +163,10 @@ typedef struct st_json_video_session {
   st_json_session_base_t base;
   st_json_video_info_t info;
 
+  bool display;
+  
   /* rx only items */
   enum user_pg_fmt user_pg_format;
-  bool display;
   bool measure_latency;
 } st_json_video_session_t;
 

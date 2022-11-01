@@ -12,6 +12,27 @@ static int app_tx_video_vsync(void* priv, struct st10_vsync_meta* meta) {
   return 0;
 }
 
+static void app_tx_video_display_frame(struct st_app_tx_video_session* s, void* frame) {
+  struct st_display* d = s->display;
+
+  if (d && d->front_frame) {
+    if (st_pthread_mutex_trylock(&d->display_frame_mutex) == 0) {
+      if (s->st20_pg.fmt == ST20_FMT_YUV_422_8BIT)
+        st_memcpy(d->front_frame, frame, d->front_frame_size);
+      else if (s->st20_pg.fmt == ST20_FMT_YUV_422_10BIT)
+        st20_rfc4175_422be10_to_422le8(frame, d->front_frame, s->width, s->height);
+      else /* fmt mismatch*/ {
+        st_pthread_mutex_unlock(&d->display_frame_mutex);
+        return;
+      }
+      st_pthread_mutex_unlock(&d->display_frame_mutex);
+      st_pthread_mutex_lock(&d->display_wake_mutex);
+      st_pthread_cond_signal(&d->display_wake_cond);
+      st_pthread_mutex_unlock(&d->display_wake_mutex);
+    }
+  }
+}
+
 static int app_tx_video_next_frame(void* priv, uint16_t* next_frame_idx,
                                    struct st20_tx_frame_meta* meta) {
   struct st_app_tx_video_session* s = priv;
@@ -124,6 +145,8 @@ static void app_tx_video_build_frame(struct st_app_tx_video_session* s, void* fr
     s->st20_frame_cursor = s->st20_source_begin;
     s->st20_frames_copied = true;
   }
+
+  app_tx_video_display_frame(s, frame);
 }
 
 static void app_tx_video_build_slice(struct st_app_tx_video_session* s,
@@ -607,6 +630,11 @@ static int app_tx_video_uinit(struct st_app_tx_video_session* s) {
   app_tx_video_handle_free(s);
   app_tx_video_close_source(s);
 
+  st_app_uinit_display(s->display);
+  if (s->display) {
+    st_app_free(s->display);
+  }
+
   if (s->framebuffs) {
     st_app_free(s->framebuffs);
     s->framebuffs = NULL;
@@ -732,6 +760,17 @@ static int app_tx_video_init(struct st_app_context* ctx, st_json_video_session_t
     else
       ops.rtp_ring_size = 1024;
     app_tx_video_init_rtp(s, &ops);
+  }
+
+  if (ctx->has_sdl && video && video->display) {
+    struct st_display* d = st_app_zmalloc(sizeof(struct st_display));
+    ret = st_app_init_display(d, name, s->width, s->height, ctx->ttf_file);
+    if (ret < 0) {
+      err("%s(%d), st_app_init_display fail %d\n", __func__, idx, ret);
+      app_tx_video_uinit(s);
+      return -EIO;
+    }
+    s->display = d;
   }
 
   handle = st20_tx_create(ctx->st, &ops);

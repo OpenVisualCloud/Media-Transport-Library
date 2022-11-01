@@ -175,7 +175,7 @@ static int app_rx_st22p_init(struct st_app_context* ctx,
 
   if (ctx->has_sdl && st22p && st22p->display) {
     struct st_display* d = st_app_zmalloc(sizeof(struct st_display));
-    ret = st_app_init_display(d, s->idx, s->width, s->height, ctx->ttf_file);
+    ret = st_app_init_display(d, name, s->width, s->height, ctx->ttf_file);
     if (ret < 0) {
       err("%s(%d), st_app_init_display fail %d\n", __func__, idx, ret);
       app_rx_st22p_uinit(s);

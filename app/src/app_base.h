@@ -49,7 +49,7 @@
 #define UTC_OFFSSET (37) /* 2022/07 */
 
 struct st_display {
-  int idx;
+  char name[36];
   SDL_Window* window;
   SDL_Renderer* renderer;
   SDL_Texture* texture;
