@@ -29,6 +29,10 @@ static inline bool st_sch_started(struct st_sch_impl* sch) {
     return false;
 }
 
+static inline void st_sch_enable_allow_sleep(struct st_sch_impl* sch, bool enable) {
+  sch->allow_sleep = enable;
+}
+
 static inline bool st_sch_has_busy(struct st_sch_impl* sch) {
   if (!sch->allow_sleep || sch->sleep_ratio_score > 70.0)
     return true;
@@ -37,10 +41,16 @@ static inline bool st_sch_has_busy(struct st_sch_impl* sch) {
 }
 
 int st_sch_mrg_init(struct st_main_impl* impl, int data_quota_mbs_limit);
+int st_sch_mrg_uinit(struct st_main_impl* impl);
 
 struct st_sch_tasklet_impl* st_sch_register_tasklet(
     struct st_sch_impl* sch, struct st_sch_tasklet_ops* tasklet_ops);
 int st_sch_unregister_tasklet(struct st_sch_tasklet_impl* tasklet);
+
+static inline void st_tasklet_set_sleep(struct st_sch_tasklet_impl* tasklet,
+                                        uint64_t advice_sleep_us) {
+  tasklet->ops.advice_sleep_us = advice_sleep_us;
+}
 
 int st_sch_add_quota(struct st_sch_impl* sch, int quota_mbs);
 

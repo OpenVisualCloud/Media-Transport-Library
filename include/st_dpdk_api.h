@@ -671,6 +671,35 @@ int st_get_cap(st_handle st, struct st_cap* cap);
 int st_get_stats(st_handle st, struct st_stats* stats);
 
 /**
+ * Enable or disable sleep mode for sch.
+ *
+ * @param st
+ *   The handle to the media transport device context.
+ * @param sch_idx
+ *   The sch index, get from st20_tx_get_sch_idx or st20_rx_get_sch_idx.
+ * @param enable
+ *   enable or not.
+ * @return
+ *   - 0: Success.
+ *   - <0: Error code.
+ */
+int st_sch_enable_sleep(st_handle st, int sch_idx, bool enable);
+
+/**
+ * Set the sleep us for the sch if ST_FLAG_TASKLET_SLEEP is enabled.
+ * Debug usage only.
+ *
+ * @param st
+ *   The handle to the media transport device context.
+ * @param us
+ *   The max sleep us.
+ * @return
+ *   - 0: Success.
+ *   - <0: Error code.
+ */
+int st_sch_set_sleep_us(st_handle st, uint64_t us);
+
+/**
  * Request one DPDK lcore from the media transport device context.
  *
  * @param st

@@ -25,6 +25,75 @@ static inline void sch_unlock(struct st_sch_impl* sch) {
   st_pthread_mutex_unlock(&sch->mutex);
 }
 
+static void sch_sleep_wakeup(struct st_sch_impl* sch) {
+  st_pthread_mutex_lock(&sch->sleep_wake_mutex);
+  st_pthread_cond_signal(&sch->sleep_wake_cond);
+  st_pthread_mutex_unlock(&sch->sleep_wake_mutex);
+}
+
+static void sch_sleep_alarm_handler(void* param) {
+  struct st_sch_impl* sch = param;
+
+  sch_sleep_wakeup(sch);
+}
+
+static int sch_tasklet_sleep(struct st_main_impl* impl, struct st_sch_impl* sch) {
+  /* get sleep us */
+  uint64_t sleep_us = st_sch_default_sleep_us(impl);
+  uint64_t force_sleep_us = st_sch_force_sleep_us(impl);
+  int num_tasklet = sch->max_tasklet_idx;
+  struct st_sch_tasklet_impl* tasklet;
+  uint64_t advice_sleep_us;
+
+  if (force_sleep_us) {
+    sleep_us = force_sleep_us;
+  } else {
+    for (int i = 0; i < num_tasklet; i++) {
+      tasklet = sch->tasklet[i];
+      if (!tasklet) continue;
+      advice_sleep_us = tasklet->ops.advice_sleep_us;
+      if (advice_sleep_us && (advice_sleep_us < sleep_us)) sleep_us = advice_sleep_us;
+    }
+  }
+  dbg("%s(%d), sleep_us %" PRIu64 "\n", __func__, sch->idx, sleep_us);
+
+  /* sleep now */
+  uint64_t start = st_get_tsc(impl);
+  if (sleep_us < st_sch_zero_sleep_thresh_us(impl)) {
+    st_sleep_ms(0);
+  } else {
+    struct timespec abs_time;
+    clock_gettime(ST_THREAD_TIMEDWAIT_CLOCK_ID, &abs_time);
+    abs_time.tv_sec += 1; /* timeout 1s */
+
+    rte_eal_alarm_set(sleep_us, sch_sleep_alarm_handler, sch);
+    st_pthread_mutex_lock(&sch->sleep_wake_mutex);
+    st_pthread_cond_timedwait(&sch->sleep_wake_cond, &sch->sleep_wake_mutex, &abs_time);
+    st_pthread_mutex_unlock(&sch->sleep_wake_mutex);
+  }
+  uint64_t end = st_get_tsc(impl);
+  uint64_t delta = end - start;
+  sch->stat_sleep_ns += delta;
+  sch->stat_sleep_cnt++;
+  sch->stat_sleep_ns_min = RTE_MIN(delta, sch->stat_sleep_ns_min);
+  sch->stat_sleep_ns_max = RTE_MAX(delta, sch->stat_sleep_ns_max);
+  /* cal cpu sleep ratio on every 5s */
+  sch->sleep_ratio_sleep_ns += delta;
+  uint64_t sleep_ratio_dur_ns = end - sch->sleep_ratio_start_ns;
+  if (sleep_ratio_dur_ns > (5 * (uint64_t)NS_PER_S)) {
+    dbg("%s(%d), sleep %" PRIu64 "ns, total %" PRIu64 "ns\n", __func__, idx,
+        sch->sleep_ratio_sleep_ns, sleep_ratio_dur_ns);
+    dbg("%s(%d), end %" PRIu64 "ns, start %" PRIu64 "ns\n", __func__, idx, end,
+        sch->sleep_ratio_start_ns);
+    sch->sleep_ratio_score =
+        (float)sch->sleep_ratio_sleep_ns * 100.0 / sleep_ratio_dur_ns;
+    sch->sleep_ratio_sleep_ns = 0;
+    sch->sleep_ratio_start_ns = end;
+  }
+
+  return 0;
+}
+
 static int sch_tasklet_func(void* args) {
   struct st_sch_impl* sch = args;
   struct st_main_impl* impl = sch->parnet;
@@ -56,6 +125,7 @@ static int sch_tasklet_func(void* args) {
 
   while (rte_atomic32_read(&sch->request_stop) == 0) {
     int pending = ST_TASKLET_ALL_DONE;
+
     num_tasklet = sch->max_tasklet_idx;
     for (i = 0; i < num_tasklet; i++) {
       tasklet = sch->tasklet[i];
@@ -72,27 +142,7 @@ static int sch_tasklet_func(void* args) {
       }
     }
     if (sch->allow_sleep && (pending == ST_TASKLET_ALL_DONE)) {
-      uint64_t start = st_get_tsc(impl);
-      st_sleep_ms(0); /* yeah, try to sleep zero time */
-      uint64_t end = st_get_tsc(impl);
-      uint64_t delta = end - start;
-      sch->stat_sleep_ns += delta;
-      sch->stat_sleep_cnt++;
-      sch->stat_sleep_ns_min = RTE_MIN(delta, sch->stat_sleep_ns_min);
-      sch->stat_sleep_ns_max = RTE_MAX(delta, sch->stat_sleep_ns_max);
-      /* cal cpu sleep ratio on every 5s */
-      sch->sleep_ratio_sleep_ns += delta;
-      uint64_t sleep_ratio_dur_ns = end - sch->sleep_ratio_start_ns;
-      if (sleep_ratio_dur_ns > (5 * (uint64_t)NS_PER_S)) {
-        dbg("%s(%d), sleep %" PRIu64 "ns, total %" PRIu64 "ns\n", __func__, idx,
-            sch->sleep_ratio_sleep_ns, sleep_ratio_dur_ns);
-        dbg("%s(%d), end %" PRIu64 "ns, start %" PRIu64 "ns\n", __func__, idx, end,
-            sch->sleep_ratio_start_ns);
-        sch->sleep_ratio_score =
-            (float)sch->sleep_ratio_sleep_ns * 100.0 / sleep_ratio_dur_ns;
-        sch->sleep_ratio_sleep_ns = 0;
-        sch->sleep_ratio_start_ns = end;
-      }
+      sch_tasklet_sleep(impl, sch);
     }
   }
 
@@ -411,9 +461,15 @@ int st_sch_mrg_init(struct st_main_impl* impl, int data_quota_mbs_limit) {
     sch->data_quota_mbs_total = 0;
     sch->data_quota_mbs_limit = data_quota_mbs_limit;
     sch->run_in_thread = st_tasklet_has_thread(impl);
+
+    /* sleep info init */
     sch->allow_sleep = st_tasklet_has_sleep(impl);
-    /* max sleep mode: 2 4k session, fixed now */
-    sch->quota_mbs_max_for_sleep = st20_1080p59_yuv422_10bit_bandwidth_mps() * 8 + 100;
+    pthread_condattr_t attr;
+    pthread_condattr_init(&attr);
+    pthread_condattr_setclock(&attr, ST_THREAD_TIMEDWAIT_CLOCK_ID);
+    st_pthread_mutex_init(&sch->sleep_wake_mutex, NULL);
+    st_pthread_cond_init(&sch->sleep_wake_cond, &attr);
+
     sch->stat_sleep_ns_min = -1;
     /* init mgr lock for video */
     st_pthread_mutex_init(&sch->tx_video_mgr_mutex, NULL);
@@ -423,6 +479,26 @@ int st_sch_mrg_init(struct st_main_impl* impl, int data_quota_mbs_limit) {
   info("%s, succ with data quota %d M\n", __func__, data_quota_mbs_limit);
   return 0;
 }
+
+int st_sch_mrg_uinit(struct st_main_impl* impl) {
+  struct st_sch_impl* sch;
+  struct st_sch_mgr* mgr = st_sch_get_mgr(impl);
+
+  for (int sch_idx = 0; sch_idx < ST_MAX_SCH_NUM; sch_idx++) {
+    sch = st_sch_instance(impl, sch_idx);
+
+    st_pthread_mutex_destroy(&sch->tx_video_mgr_mutex);
+    st_pthread_mutex_destroy(&sch->rx_video_mgr_mutex);
+
+    st_pthread_mutex_destroy(&sch->sleep_wake_mutex);
+    st_pthread_cond_destroy(&sch->sleep_wake_cond);
+
+    st_pthread_mutex_destroy(&sch->mutex);
+  }
+
+  st_pthread_mutex_destroy(&mgr->mgr_mutex);
+  return 0;
+};
 
 int st_sch_add_quota(struct st_sch_impl* sch, int quota_mbs) {
   int idx = sch->idx;
@@ -440,11 +516,6 @@ int st_sch_add_quota(struct st_sch_impl* sch, int quota_mbs) {
     sch->data_quota_mbs_total += quota_mbs;
     info("%s(%d:%d), quota %d total now %d\n", __func__, idx, sch->type, quota_mbs,
          sch->data_quota_mbs_total);
-    if (sch->allow_sleep && (sch->data_quota_mbs_total > sch->quota_mbs_max_for_sleep)) {
-      sch->allow_sleep = false;
-      info("%s(%d:%d), sleep mode is disabled since too high traffic\n", __func__, idx,
-           sch->type);
-    }
     sch_unlock(sch);
     return 0;
   }

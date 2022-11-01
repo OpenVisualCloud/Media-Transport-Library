@@ -685,3 +685,15 @@ int st20p_rx_get_queue_meta(st20p_rx_handle handle, struct st_queue_meta* meta) 
 
   return st20_rx_get_queue_meta(ctx->transport, meta);
 }
+
+int st20p_rx_get_sch_idx(st20p_rx_handle handle) {
+  struct st20p_rx_ctx* ctx = handle;
+  int cidx = ctx->idx;
+
+  if (ctx->type != ST20_SESSION_TYPE_PIPELINE_RX) {
+    err("%s(%d), invalid type %d\n", __func__, cidx, ctx->type);
+    return 0;
+  }
+
+  return st20_rx_get_sch_idx(ctx->transport);
+}

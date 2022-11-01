@@ -1181,6 +1181,17 @@ void* st20p_tx_get_fb_addr(st20p_tx_handle handle, uint16_t idx);
 size_t st20p_tx_frame_size(st20p_tx_handle handle);
 
 /**
+ * Get the scheduler index for the tx st2110-20(pipeline) session.
+ *
+ * @param handle
+ *   The handle to the tx st2110-20(pipeline) session.
+ * @return
+ *   - >=0 the scheduler index.
+ *   - <0: Error code.
+ */
+int st20p_tx_get_sch_idx(st20p_tx_handle handle);
+
+/**
  * Create one rx st2110-20 pipeline session.
  *
  * @param st
@@ -1285,6 +1296,17 @@ int st20p_rx_pcapng_dump(st20p_rx_handle handle, uint32_t max_dump_packets, bool
  *   - <0: Error code.
  */
 int st20p_rx_get_queue_meta(st20p_rx_handle handle, struct st_queue_meta* meta);
+
+/**
+ * Get the scheduler index for the rx st2110-20(pipeline) session.
+ *
+ * @param handle
+ *   The handle to the rx st2110-20(pipeline) session.
+ * @return
+ *   - >=0 the scheduler index.
+ *   - <0: Error code.
+ */
+int st20p_rx_get_sch_idx(st20p_rx_handle handle);
 
 /**
  * Calculate the frame size per the format, w and h

@@ -79,6 +79,7 @@ enum st_args_cmd {
   ST_ARG_TX_COPY_ONCE,
   ST_ARG_TASKLET_THREAD,
   ST_ARG_TASKLET_SLEEP,
+  ST_ARG_TASKLET_SLEEP_US,
   ST_ARG_APP_THREAD,
   ST_ARG_RXTX_SIMD_512,
   ST_ARG_MAX,
@@ -161,6 +162,7 @@ static struct option st_app_args_options[] = {
     {"tx_copy_once", no_argument, 0, ST_ARG_TX_COPY_ONCE},
     {"tasklet_thread", no_argument, 0, ST_ARG_TASKLET_THREAD},
     {"tasklet_sleep", no_argument, 0, ST_ARG_TASKLET_SLEEP},
+    {"tasklet_sleep_us", required_argument, 0, ST_ARG_TASKLET_SLEEP_US},
     {"app_thread", no_argument, 0, ST_ARG_APP_THREAD},
     {"rxtx_simd_512", no_argument, 0, ST_ARG_RXTX_SIMD_512},
 
@@ -493,6 +495,9 @@ int st_app_parse_args(struct st_app_context* ctx, struct st_init_params* p, int 
         break;
       case ST_ARG_TASKLET_SLEEP:
         p->flags |= ST_FLAG_TASKLET_SLEEP;
+        break;
+      case ST_ARG_TASKLET_SLEEP_US:
+        ctx->var_para.sch_force_sleep_us = atoi(optarg);
         break;
       case ST_ARG_TASKLET_THREAD:
         p->flags |= ST_FLAG_TASKLET_THREAD;

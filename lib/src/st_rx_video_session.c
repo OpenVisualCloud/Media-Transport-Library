@@ -17,6 +17,7 @@
 #define RV_PKT_NOT_FREE (1)
 
 static int rv_init_pkt_handler(struct st_rx_video_session_impl* s);
+static int rvs_mgr_update(struct st_rx_video_sessions_mgr* mgr);
 
 static inline double rv_ebu_pass_rate(struct st_rx_video_ebu_result* ebu_result,
                                       int pass) {
@@ -2323,6 +2324,7 @@ static int rv_init_sw(struct st_main_impl* impl, struct st_rx_video_sessions_mgr
     rv_ebu_init(impl, s);
   }
 
+  /* init vsync */
   struct st_fps_timing fps_tm;
   ret = st_get_fps_timing(ops->fps, &fps_tm);
   if (ret < 0) {
@@ -2333,6 +2335,15 @@ static int rv_init_sw(struct st_main_impl* impl, struct st_rx_video_sessions_mgr
   s->vsync.meta.frame_time = (double)1000000000.0 * fps_tm.den / fps_tm.mul;
   st_vsync_calculate(impl, &s->vsync);
   s->vsync.init = true;
+  /* init advice sleep us */
+  int estimated_total_pkts = s->st20_frame_size / ST_VIDEO_BPM_SIZE;
+  double trs = s->vsync.meta.frame_time / estimated_total_pkts;
+  double sleep_ns = trs * 128;
+  s->advice_sleep_us = sleep_ns / NS_PER_US;
+  if (st_tasklet_has_sleep(impl)) {
+    info("%s(%d), advice sleep us %" PRIu64 ", trs %fns, total pkts %d\n", __func__, idx,
+         s->advice_sleep_us, trs, estimated_total_pkts);
+  }
 
   return 0;
 }
@@ -2455,6 +2466,7 @@ static int rv_handle_detect_pkt(struct st_rx_video_session_impl* s, struct rte_m
           rv_detect_change_status(s, ST20_DETECT_STAT_FAIL);
           return ret;
         }
+        rvs_mgr_update(s->parnet); /* update mgr since we has new advice sleep us */
         rv_detect_change_status(s, ST20_DETECT_STAT_SUCCESS);
         info("st20 detected(%d,%d): width: %d, height: %d, fps: %f\n", s->idx, s_port,
              meta->width, meta->height, st_frame_rate(meta->fps));
@@ -3201,12 +3213,20 @@ static int st_rvs_mgr_detach(struct st_rx_video_sessions_mgr* mgr,
 
 static int rvs_mgr_update(struct st_rx_video_sessions_mgr* mgr) {
   int max_idx = 0;
+  struct st_main_impl* impl = mgr->parnet;
+  uint64_t sleep_us = st_sch_default_sleep_us(impl);
+  struct st_rx_video_session_impl* s;
 
   for (int i = 0; i < ST_SCH_MAX_RX_VIDEO_SESSIONS; i++) {
-    if (mgr->sessions[i]) max_idx = i + 1;
+    s = mgr->sessions[i];
+    if (!s) continue;
+    max_idx = i + 1;
+    sleep_us = RTE_MIN(s->advice_sleep_us, sleep_us);
   }
-
+  dbg("%s(%d), sleep us %" PRIu64 ", max_idx %d\n", __func__, mgr->idx, sleep_us,
+      max_idx);
   mgr->max_idx = max_idx;
+  if (mgr->tasklet) st_tasklet_set_sleep(mgr->tasklet, sleep_us);
   return 0;
 }
 
@@ -3499,6 +3519,11 @@ st20_rx_handle st20_rx_create_with_mask(struct st_main_impl* impl,
     if (ret >= 0) quota_mbs += extra_quota_mbs;
   }
 
+  /* update mgr status */
+  st_pthread_mutex_lock(&sch->rx_video_mgr_mutex);
+  rvs_mgr_update(&sch->rx_video_mgr);
+  st_pthread_mutex_unlock(&sch->rx_video_mgr_mutex);
+
   s_impl->parnet = impl;
   s_impl->type = ST_SESSION_TYPE_RX_VIDEO;
   s_impl->sch = sch;
@@ -3597,7 +3622,7 @@ int st20_rx_free(st20_rx_handle handle) {
 
   st_rte_free(s_impl);
 
-  /* update max idx */
+  /* update mgr status */
   st_pthread_mutex_lock(&sch->rx_video_mgr_mutex);
   rvs_mgr_update(&sch->rx_video_mgr);
   st_pthread_mutex_unlock(&sch->rx_video_mgr_mutex);
@@ -3934,7 +3959,7 @@ int st22_rx_free(st22_rx_handle handle) {
 
   st_rte_free(s_impl);
 
-  /* update max idx */
+  /* update mgr status */
   st_pthread_mutex_lock(&sch->rx_video_mgr_mutex);
   rvs_mgr_update(&sch->rx_video_mgr);
   st_pthread_mutex_unlock(&sch->rx_video_mgr_mutex);
