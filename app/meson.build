@@ -7,7 +7,7 @@ project('st_app', 'c', default_options: ['buildtype=release'],
 # allow experimental api
 add_global_arguments('-DALLOW_EXPERIMENTAL_API', language : 'c')
 
-#detect os
+# detect os
 exec_env = host_machine.system()
 set_variable('is_windows', exec_env == 'windows')
 
@@ -256,8 +256,11 @@ executable('TxVideoSplitSample', video_tx_split_sample_sources,
   dependencies: [libst_dpdk]
 )
 
+# TODO: allow windows to link with dpdk_dep.
+if not is_windows
 executable('RxSt20TxSt20SplitFwd', rx_st20_tx_st20_split_fwd_sources,
   c_args : app_c_args,
   link_args: app_ld_args,
   dependencies: [libst_dpdk, dpdk_dep]
 )
+endif

@@ -26,7 +26,7 @@ typedef struct st22p_tx_ctx* st22p_tx_handle;
 typedef struct st22p_rx_ctx* st22p_rx_handle;
 /** Handle to tx st2110-20 pipeline session of lib */
 typedef struct st20p_tx_ctx* st20p_tx_handle;
-/** Handle to rx st2110-22 pipeline session of lib */
+/** Handle to rx st2110-20 pipeline session of lib */
 typedef struct st20p_rx_ctx* st20p_rx_handle;
 
 /** Handle to st2110-22 encode device of lib */
@@ -36,22 +36,22 @@ typedef struct st22_decode_dev_impl* st22_decoder_dev_handle;
 /** Handle to st2110-20 convert device of lib */
 typedef struct st20_convert_dev_impl* st20_converter_dev_handle;
 
-/** Handle to the encode session private data of plugin */
+/** Handle to the st22 encode session private data */
 typedef void* st22_encode_priv;
 
 /** Handle to the st2110-22 pipeline encode session of lib */
 typedef struct st22_encode_session_impl* st22p_encode_session;
 
-/** Handle to the decode session private data of plugin */
+/** Handle to the st22 decode session private data */
 typedef void* st22_decode_priv;
 
 /** Handle to the st2110-22 pipeline decode session of lib */
 typedef struct st22_decode_session_impl* st22p_decode_session;
 
-/** Handle to the convert session private data of plugin */
+/** Handle to the st20 convert session private data */
 typedef void* st20_convert_priv;
 
-/** Handle to the st2110-22 pipeline convert session of lib */
+/** Handle to the st2110-20 pipeline convert session of lib */
 typedef struct st20_convert_session_impl* st20p_convert_session;
 
 /** Handle to the private data of plugin */

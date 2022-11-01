@@ -36,8 +36,12 @@
 #define ST_CLOCK_MONOTONIC_ID CLOCK_MONOTONIC
 #endif
 
+#ifdef WINDOWSENV
+#define ST_THREAD_TIMEDWAIT_CLOCK_ID CLOCK_REALTIME
+#else
 /* use CLOCK_MONOTONIC for st_pthread_cond_timedwait */
 #define ST_THREAD_TIMEDWAIT_CLOCK_ID CLOCK_MONOTONIC
+#endif
 
 #ifdef WINDOWSENV
 #define ST_FLOCK_PATH "c:/temp/kahawai_lcore.lock"
