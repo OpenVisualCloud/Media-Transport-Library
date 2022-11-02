@@ -14,7 +14,8 @@
 int st_app_player_uinit(struct st_app_context* ctx);
 int st_app_player_init(struct st_app_context* ctx);
 
-int st_app_init_display(struct st_display* d, int idx, int width, int height, char* font);
+int st_app_init_display(struct st_display* d, char* name, int width, int height,
+                        char* font);
 int st_app_uinit_display(struct st_display* d);
 
 #endif

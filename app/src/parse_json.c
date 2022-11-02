@@ -486,6 +486,10 @@ static int st_json_parse_tx_video(int idx, json_object* video_obj,
   ret = parse_url(video_obj, "video_url", video->info.video_url);
   if (ret < 0) return ret;
 
+  /* parse display option */
+  video->display =
+      json_object_get_boolean(st_json_object_object_get(video_obj, "display"));
+
   return ST_JSON_SUCCESS;
 }
 
@@ -1049,6 +1053,10 @@ static int st_json_parse_tx_st22p(int idx, json_object* st22p_obj,
   st22p->info.codec_thread_count =
       json_object_get_int(st_json_object_object_get(st22p_obj, "codec_thread_count"));
 
+  /* parse display option */
+  st22p->display =
+      json_object_get_boolean(st_json_object_object_get(st22p_obj, "display"));
+
   return ST_JSON_SUCCESS;
 }
 
@@ -1284,6 +1292,10 @@ static int st_json_parse_tx_st20p(int idx, json_object* st20p_obj,
   ret = parse_url(st20p_obj, "st20p_url", st20p->info.st20p_url);
   if (ret < 0) return ret;
 
+  /* parse display option */
+  st20p->display =
+      json_object_get_boolean(st_json_object_object_get(st20p_obj, "display"));
+
   return ST_JSON_SUCCESS;
 }
 
@@ -1454,6 +1466,7 @@ int st_app_parse_json(st_json_context_t* ctx, const char* filename) {
     if (ret) goto error;
   }
   ctx->num_interfaces = num_interfaces;
+  ctx->has_display = false;
 
   /* parse tx sessions  */
   json_object* tx_group_array = st_json_object_object_get(root_object, "tx_sessions");
@@ -1619,6 +1632,7 @@ int st_app_parse_json(st_json_context_t* ctx, const char* filename) {
             ret = st_json_parse_tx_video(k, video_session,
                                          &ctx->tx_video_sessions[num_video]);
             if (ret) goto error;
+            if (ctx->tx_video_sessions[num_video].display) ctx->has_display = true;
             num_video++;
           }
         }
@@ -1708,6 +1722,7 @@ int st_app_parse_json(st_json_context_t* ctx, const char* filename) {
             ret = st_json_parse_tx_st22p(k, st22p_session,
                                          &ctx->tx_st22p_sessions[num_st22p]);
             if (ret) goto error;
+            if (ctx->tx_st22p_sessions[num_st22p].display) ctx->has_display = true;
             num_st22p++;
           }
         }
@@ -1738,14 +1753,13 @@ int st_app_parse_json(st_json_context_t* ctx, const char* filename) {
             ret = st_json_parse_tx_st20p(k, st20p_session,
                                          &ctx->tx_st20p_sessions[num_st20p]);
             if (ret) goto error;
+            if (ctx->tx_st20p_sessions[num_st20p].display) ctx->has_display = true;
             num_st20p++;
           }
         }
       }
     }
   }
-
-  ctx->has_display = false;
 
   /* parse rx sessions */
   json_object* rx_group_array = st_json_object_object_get(root_object, "rx_sessions");

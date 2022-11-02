@@ -111,6 +111,8 @@ Items in each element of the "video" array
 
 ​	**video_url (string):** video source
 
+​	**display (bool):** `true, false` display video frames with SDL, only works with YUV 422 10bit and 8bit stream
+
 #### audio (array of audio sessions)
 
 Items in each element of the "audio" array

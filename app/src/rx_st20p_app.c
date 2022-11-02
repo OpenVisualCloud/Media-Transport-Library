@@ -23,7 +23,7 @@ static void app_rx_st20p_consume_frame(struct st_app_rx_st20p_session* s,
       if (frame->fmt == ST_FRAME_FMT_YUV422RFC4175PG2BE10) {
         st20_rfc4175_422be10_to_422le8(frame->addr, d->front_frame, s->width, s->height);
       } else if (frame->fmt == ST_FRAME_FMT_YUV422PACKED8) {
-        st_memcpy(d->front_frame, frame->addr, frame->data_size);
+        st_memcpy(d->front_frame, frame->addr, d->front_frame_size);
       } else {
         st_pthread_mutex_unlock(&d->display_frame_mutex);
         return;
@@ -172,7 +172,7 @@ static int app_rx_st20p_init(struct st_app_context* ctx,
 
   if (ctx->has_sdl && st20p && st20p->display) {
     struct st_display* d = st_app_zmalloc(sizeof(struct st_display));
-    ret = st_app_init_display(d, s->idx, s->width, s->height, ctx->ttf_file);
+    ret = st_app_init_display(d, name, s->width, s->height, ctx->ttf_file);
     if (ret < 0) {
       err("%s(%d), st_app_init_display fail %d\n", __func__, idx, ret);
       app_rx_st20p_uinit(s);

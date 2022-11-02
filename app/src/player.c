@@ -56,11 +56,8 @@ static void destroy_display_context(struct st_display* d) {
 }
 
 static int create_display_context(struct st_display* d) {
-  char title[32];
-  sprintf(title, "st2110-20-display-%d", d->idx);
-
   d->window =
-      SDL_CreateWindow(title, SDL_WINDOWPOS_UNDEFINED, SDL_WINDOWPOS_UNDEFINED,
+      SDL_CreateWindow(d->name, SDL_WINDOWPOS_UNDEFINED, SDL_WINDOWPOS_UNDEFINED,
                        d->window_w, d->window_h, SDL_WINDOW_SHOWN | SDL_WINDOW_RESIZABLE);
   if (d->window == NULL) {
     err("%s, create window fail: %s\n", __func__, SDL_GetError());
@@ -88,7 +85,6 @@ static int create_display_context(struct st_display* d) {
 
 static void* display_thread_func(void* arg) {
   struct st_display* d = arg;
-  int idx = d->idx;
 
 #ifdef WINDOWSENV
   SDL_Event event;
@@ -143,13 +139,12 @@ static void* display_thread_func(void* arg) {
     }
 #endif
   }
-  info("%s(%d), stop\n", __func__, idx);
+  info("%s(%s), stop\n", __func__, d->name);
   return NULL;
 }
 
 int st_app_uinit_display(struct st_display* d) {
   if (!d) return 0;
-  int idx = d->idx;
 
   d->display_thread_stop = true;
   if (d->display_thread) {
@@ -157,7 +152,7 @@ int st_app_uinit_display(struct st_display* d) {
     st_pthread_mutex_lock(&d->display_wake_mutex);
     st_pthread_cond_signal(&d->display_wake_cond);
     st_pthread_mutex_unlock(&d->display_wake_mutex);
-    info("%s(%d), wait display thread stop\n", __func__, idx);
+    info("%s(%s), wait display thread stop\n", __func__, d->name);
     pthread_join(d->display_thread, NULL);
   }
   st_pthread_mutex_destroy(&d->display_wake_mutex);
@@ -181,11 +176,11 @@ int st_app_uinit_display(struct st_display* d) {
   return 0;
 }
 
-int st_app_init_display(struct st_display* d, int idx, int width, int height,
+int st_app_init_display(struct st_display* d, char* name, int width, int height,
                         char* font) {
   int ret;
   if (!d) return -ENOMEM;
-  d->idx = idx;
+  strncpy(d->name, name, 32);
   d->window_w = SCREEN_WIDTH;
   d->window_h = SCREEN_HEIGHT;
   d->pixel_w = width;
@@ -229,7 +224,7 @@ int st_app_init_display(struct st_display* d, int idx, int width, int height,
 
   ret = pthread_create(&d->display_thread, NULL, display_thread_func, d);
   if (ret < 0) {
-    err("%s(%d), create display thread fail: %d\n", __func__, idx, ret);
+    err("%s(%s), create display thread fail: %d\n", __func__, d->name, ret);
     st_app_uinit_display(d);
     return ret;
   }
