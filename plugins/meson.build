@@ -49,7 +49,8 @@ endif
 shared_library('st_plugin_st22_sample', plugins_st22_sample_sources,
   c_args : plugins_c_args,
   link_args : plugins_ld_args,
-  dependencies: [libst_dpdk_dep, libpthread_dep, asan_dep],
+  # asan should be always the first dep
+  dependencies: [asan_dep, libst_dpdk_dep, libpthread_dep],
   install: true
 )
 

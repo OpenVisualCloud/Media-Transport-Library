@@ -46,3 +46,9 @@ jobs:
       run: |
         export CC=clang CXX=clang++
         ./build.sh
+
+    - name: Build with debug
+      run: |
+        rm build -rf
+        export CC=clang CXX=clang++
+        ./build.sh debug

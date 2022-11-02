@@ -80,8 +80,6 @@ if get_option('enable_asan') == true
   message('Enable -fsanitize=address for app')
   app_c_args += ['-fsanitize=address']
   asan_dep = cc.find_library('asan', required : true)
-  app_c_args += ['-lasan']
-  1
 endif
 
 # build executable
