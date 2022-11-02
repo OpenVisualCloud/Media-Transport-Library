@@ -10,6 +10,7 @@
 * video: add notify_vsync callback which happened when epoch time change to a new frame, vsync period is same to fps. See notify_vsync parameter in the session create ops for detail.
 * csc: add y210 format support, y210 is the format for GPU yuv422 layout.
 * sch/tasklet: enhance sleep feature with timer based sleep and user control.
+* build: add AddressSanitizer(aka ASan) support, see asan.md
 
 ## Change log for 22.09:
 * License: update to BSD-3

@@ -3,6 +3,7 @@
 
 option('enable_kni', type: 'boolean', value: false, description: 'enable/disable KNI')
 option('disable_pcapng', type: 'boolean', value: false, description: 'if pcapng dump is disabled')
+option('enable_asan', type: 'boolean', value: false, description: 'enable/disable address sanitizer, debug usage only')
 
 option('enable_tap', type: 'boolean', value: false, description: 'enable/disable Windows TAP')
 option('dpdk_root_dir', type: 'string', value: 'c:\dpdk', description: 'dpdk source code root dir, for Windows')

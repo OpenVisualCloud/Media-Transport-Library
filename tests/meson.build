@@ -28,6 +28,7 @@ subdir('src')
 
 test_c_args = []
 test_cpp_args = []
+test_ld_args = []
 
 # enable warning as error
 test_c_args += ['-Werror']
@@ -44,11 +45,18 @@ if is_windows
   test_cpp_args += ['-Wformat=0']
 endif
 
-test_ld_args = []
-
 if is_windows
   libdpdklinkflags = run_command('pkg-config', '--static', '--libs', 'libdpdk')
   test_ld_args += ['-static-libstdc++','-lmingw32','-lws2_32','-lDbghelp','-lSetupapi','-ldinput8', '-ldxguid', '-ldxerr8', '-lwinmm', '-limm32','-lversion','-ljson-c','-ldl']
+endif
+
+# default no asan dep
+asan_dep = []
+if get_option('enable_asan') == true
+  message('Enable -fsanitize=address')
+  test_c_args += ['-fsanitize=address']
+  test_cpp_args += ['-fsanitize=address']
+  asan_dep = cpp_c.find_library('asan', required : true)
 endif
 
 # build test executable
@@ -56,5 +64,6 @@ executable('KahawaiTest', sources,
   c_args : test_c_args,
   cpp_args : test_cpp_args,
   link_args: test_ld_args,
-  dependencies: [libst_dpdk, gtest, libnuma, libopenssl, libpthread]
+  # asan should be always the first dep
+  dependencies: [asan_dep, libst_dpdk, gtest, libnuma, libopenssl, libpthread]
 )

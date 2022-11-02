@@ -20,6 +20,7 @@ jsonc_dep = dependency('json-c', required : true)
 subdir('src')
 
 st_dpdk_c_args = []
+st_dpdk_link_c_args = []
 
 # enable warning as error
 st_dpdk_c_args += ['-Werror']
@@ -28,8 +29,14 @@ st_dpdk_c_args += ['-Wall']
 #simd build option, enable sse4.2 default
 st_dpdk_c_args += ['-msse4.2']
 
-# link option
-st_dpdk_link_c_args = []
+# default no asan dep
+asan_dep = []
+if get_option('enable_asan') == true
+  message('Enable -fsanitize=address')
+  st_dpdk_c_args += ['-fsanitize=address']
+  st_dpdk_c_args += ['-DST_HAS_ASAN']
+  asan_dep = cc.find_library('asan', required : true)
+endif
 
 if is_windows
   libnuma_dep = []
@@ -63,6 +70,7 @@ st_dpdk_lib += shared_library(meson.project_name(), sources,
   include_directories : st_dpdk_include_dir,
   c_args : st_dpdk_c_args,
   link_args : st_dpdk_link_c_args,
-  dependencies: [dpdk_dep, libm_dep, libnuma_dep, libpthread_dep, libdl_dep, jsonc_dep],
+  # asan should be always the first dep
+  dependencies: [asan_dep, dpdk_dep, libm_dep, libnuma_dep, libpthread_dep, libdl_dep, jsonc_dep],
   install: true
 )
