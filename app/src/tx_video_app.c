@@ -762,17 +762,6 @@ static int app_tx_video_init(struct st_app_context* ctx, st_json_video_session_t
     app_tx_video_init_rtp(s, &ops);
   }
 
-  if (ctx->has_sdl && video && video->display) {
-    struct st_display* d = st_app_zmalloc(sizeof(struct st_display));
-    ret = st_app_init_display(d, name, s->width, s->height, ctx->ttf_file);
-    if (ret < 0) {
-      err("%s(%d), st_app_init_display fail %d\n", __func__, idx, ret);
-      app_tx_video_uinit(s);
-      return -EIO;
-    }
-    s->display = d;
-  }
-
   handle = st20_tx_create(ctx->st, &ops);
   if (!handle) {
     err("%s(%d), st20_tx_create fail\n", __func__, idx);
@@ -802,6 +791,17 @@ static int app_tx_video_init(struct st_app_context* ctx, st_json_video_session_t
     err("%s(%d), app_tx_video_start_source fail %d\n", __func__, idx, ret);
     app_tx_video_uinit(s);
     return ret;
+  }
+
+  if (ctx->has_sdl && video && video->display) {
+    struct st_display* d = st_app_zmalloc(sizeof(struct st_display));
+    ret = st_app_init_display(d, name, s->width, s->height, ctx->ttf_file);
+    if (ret < 0) {
+      err("%s(%d), st_app_init_display fail %d\n", __func__, idx, ret);
+      app_tx_video_uinit(s);
+      return -EIO;
+    }
+    s->display = d;
   }
 
   return 0;

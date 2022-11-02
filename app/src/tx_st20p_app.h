@@ -11,6 +11,7 @@
 
 #include "app_base.h"
 #include "log.h"
+#include "player.h"
 
 #ifndef _TX_APP_ST20P_HEAD_H_
 #define _TX_APP_ST20P_HEAD_H_

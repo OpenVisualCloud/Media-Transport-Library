@@ -363,6 +363,7 @@ struct st_app_tx_st22p_session {
   uint8_t* st22p_frame_cursor;
   int st22p_source_fd;
 
+  struct st_display* display;
   double expect_fps;
 
   pthread_t st22p_app_thread;
@@ -415,6 +416,7 @@ struct st_app_tx_st20p_session {
   uint8_t* st20p_frame_cursor;
   int st20p_source_fd;
 
+  struct st_display* display;
   double expect_fps;
 
   pthread_t st20p_app_thread;
