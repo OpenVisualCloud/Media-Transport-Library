@@ -124,5 +124,7 @@ typedef rte_cpuset_t cpu_set_t;
 int pthread_cond_signal(pthread_cond_t* cv);
 int pthread_cond_init(pthread_cond_t* cv, const pthread_condattr_t* a);
 int pthread_cond_wait(pthread_cond_t* cv, pthread_mutex_t* external_mutex);
+int pthread_cond_timedwait(pthread_cond_t* cond, pthread_mutex_t* mutex,
+                           const struct timespec* time);
 int pthread_cond_destroy(pthread_cond_t* cv);
 #endif

@@ -464,11 +464,15 @@ int st_sch_mrg_init(struct st_main_impl* impl, int data_quota_mbs_limit) {
 
     /* sleep info init */
     sch->allow_sleep = st_tasklet_has_sleep(impl);
+#if ST_THREAD_TIMEDWAIT_CLOCK_ID != CLOCK_REALTIME
     pthread_condattr_t attr;
     pthread_condattr_init(&attr);
     pthread_condattr_setclock(&attr, ST_THREAD_TIMEDWAIT_CLOCK_ID);
-    st_pthread_mutex_init(&sch->sleep_wake_mutex, NULL);
     st_pthread_cond_init(&sch->sleep_wake_cond, &attr);
+#else
+    st_pthread_cond_init(&sch->sleep_wake_cond, NULL);
+#endif
+    st_pthread_mutex_init(&sch->sleep_wake_mutex, NULL);
 
     sch->stat_sleep_ns_min = -1;
     /* init mgr lock for video */
