@@ -42,3 +42,8 @@ jobs:
     - name: Build
       run: |
         ./build.sh
+
+    - name: Build with debug
+      run: |
+        rm build -rf
+        ./build.sh debug

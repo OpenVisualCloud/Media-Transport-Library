@@ -20,13 +20,13 @@ libpthread_dep = cc.find_library('pthread', required : true)
 subdir('sample')
 
 plugins_c_args = []
+plugins_ld_args = []
+
 #enable warning as error
 plugins_c_args += ['-Werror']
 plugins_c_args += ['-Wall']
 #simd build option, enable sse4.2 default, todo: do we need AVX2/AVX512 for app ?
 plugins_c_args += ['-msse4.2']
-
-plugins_ld_args = []
 
 if is_windows
   plugins_c_args += ['-Wformat=0']
@@ -37,17 +37,27 @@ if is_windows
   plugins_ld_args += ['-Wl,--no-whole-archive']
 endif
 
+# default no asan dep
+asan_dep = []
+if get_option('enable_asan') == true
+  message('Enable -fsanitize=address')
+  plugins_c_args += ['-fsanitize=address']
+  asan_dep = cc.find_library('asan', required : true)
+endif
+
 # build plugins lib
 shared_library('st_plugin_st22_sample', plugins_st22_sample_sources,
   c_args : plugins_c_args,
   link_args : plugins_ld_args,
-  dependencies: [libst_dpdk_dep, libpthread_dep],
+  # asan should be always the first dep
+  dependencies: [asan_dep, libst_dpdk_dep, libpthread_dep],
   install: true
 )
 
 shared_library('st_plugin_convert_sample', plugins_convert_sample_sources,
   c_args : plugins_c_args,
   link_args : plugins_ld_args,
-  dependencies: [libst_dpdk_dep, libpthread_dep],
+  # asan should be always the first dep
+  dependencies: [asan_dep, libst_dpdk_dep, libpthread_dep],
   install: true
 )
