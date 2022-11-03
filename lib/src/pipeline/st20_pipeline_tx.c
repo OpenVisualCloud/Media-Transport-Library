@@ -29,6 +29,15 @@ static inline int convert_v210_to_rfc4175_422be10(void* src, void* dst, uint32_t
       (uint8_t*)src, (struct st20_rfc4175_422_10_pg2_be*)dst, width, height);
 }
 
+static inline int convert_yuv422p12le_to_rfc4175_422be12(void* src, void* dst,
+                                                         uint32_t width,
+                                                         uint32_t height) {
+  uint16_t* p12_u16 = (uint16_t*)src;
+  return st20_yuv422p12le_to_rfc4175_422be12(
+      p12_u16, (p12_u16 + width * height), (p12_u16 + width * height * 3 / 2),
+      (struct st20_rfc4175_422_12_pg2_be*)dst, width, height);
+}
+
 static uint16_t tx_st20p_next_idx(struct st20p_tx_ctx* ctx, uint16_t idx) {
   /* point to next */
   uint16_t next_idx = idx;
@@ -385,6 +394,17 @@ static int tx_st20p_get_converter_internal(struct st20p_tx_ctx* ctx,
       switch (output_fmt) {
         case ST_FRAME_FMT_YUV422RFC4175PG2BE10:
           ctx->convert_func_internal = convert_v210_to_rfc4175_422be10;
+          break;
+        default:
+          err("%s(%d), format not supported, input: %s, output: %s\n", __func__, ctx->idx,
+              st_frame_fmt_name(input_fmt), st_frame_fmt_name(output_fmt));
+          return -EIO;
+      }
+      break;
+    case ST_FRAME_FMT_YUV422PLANAR12LE:
+      switch (output_fmt) {
+        case ST_FRAME_FMT_YUV422RFC4175PG2BE12:
+          ctx->convert_func_internal = convert_yuv422p12le_to_rfc4175_422be12;
           break;
         default:
           err("%s(%d), format not supported, input: %s, output: %s\n", __func__, ctx->idx,

@@ -224,6 +224,52 @@ static inline int st20_rfc4175_422be10_to_422le8_dma(
 }
 
 /**
+ * Convert rfc4175_422be12 to yuv422p12le with the max optimised SIMD level.
+ *
+ * @param pg
+ *   Point to pg(rfc4175_422be12) data.
+ * @param y
+ *   Point to Y(yuv422p12le) vector.
+ * @param b
+ *   Point to b(yuv422p12le) vector.
+ * @param r
+ *   Point to r(yuv422p12le) vector.
+ * @param w
+ *   The st2110-20(video) width.
+ * @param h
+ *   The st2110-20(video) height.
+ * @return
+ *   - 0 if successful.
+ *   - <0: Error code if convert fail.
+ */
+static inline int st20_rfc4175_422be12_to_yuv422p12le(
+    struct st20_rfc4175_422_12_pg2_be* pg, uint16_t* y, uint16_t* b, uint16_t* r,
+    uint32_t w, uint32_t h) {
+  return st20_rfc4175_422be12_to_yuv422p12le_simd(pg, y, b, r, w, h, ST_SIMD_LEVEL_MAX);
+}
+
+/**
+ * Convert rfc4175_422be12 to rfc4175_422le12 with the max optimised SIMD level.
+ *
+ * @param pg_be
+ *   Point to pg(rfc4175_422be12) data.
+ * @param pg_le
+ *   Point to pg(rfc4175_422le12) data.
+ * @param w
+ *   The st2110-20(video) width.
+ * @param h
+ *   The st2110-20(video) height.
+ * @return
+ *   - 0 if successful.
+ *   - <0: Error code if convert fail.
+ */
+static inline int st20_rfc4175_422be12_to_422le12(
+    struct st20_rfc4175_422_12_pg2_be* pg_be, struct st20_rfc4175_422_12_pg2_le* pg_le,
+    uint32_t w, uint32_t h) {
+  return st20_rfc4175_422be12_to_422le12_simd(pg_be, pg_le, w, h, ST_SIMD_LEVEL_MAX);
+}
+
+/**
  * Convert yuv422p10le to rfc4175_422be10.
  *
  * @param y
@@ -564,6 +610,98 @@ static inline int st20_y210_to_rfc4175_422be10_dma(
  */
 int st20_v210_to_rfc4175_422le10(uint8_t* pg_v210, uint8_t* pg_le, uint32_t w,
                                  uint32_t h);
+
+/**
+ * Convert yuv422p12le to rfc4175_422be12.
+ *
+ * @param y
+ *   Point to Y(yuv422p12le) vector.
+ * @param b
+ *   Point to b(yuv422p12le) vector.
+ * @param r
+ *   Point to r(yuv422p12le) vector.
+ * @param pg
+ *   Point to pg(rfc4175_422be10) data.
+ * @param w
+ *   The st2110-20(video) width.
+ * @param h
+ *   The st2110-20(video) height.
+ * @return
+ *   - 0 if successful.
+ *   - <0: Error code if convert fail.
+ */
+static inline int st20_yuv422p12le_to_rfc4175_422be12(
+    uint16_t* y, uint16_t* b, uint16_t* r, struct st20_rfc4175_422_12_pg2_be* pg,
+    uint32_t w, uint32_t h) {
+  return st20_yuv422p12le_to_rfc4175_422be12_simd(y, b, r, pg, w, h, ST_SIMD_LEVEL_MAX);
+}
+
+/**
+ * Convert rfc4175_422le12 to rfc4175_422be12.
+ *
+ * @param pg_le
+ *   Point to pg(rfc4175_422le12) data.
+ * @param pg_be
+ *   Point to pg(rfc4175_422be12) data.
+ * @param w
+ *   The st2110-20(video) width.
+ * @param h
+ *   The st2110-20(video) height.
+ * @return
+ *   - 0 if successful.
+ *   - <0: Error code if convert fail.
+ */
+static inline int st20_rfc4175_422le12_to_422be12(
+    struct st20_rfc4175_422_12_pg2_le* pg_le, struct st20_rfc4175_422_12_pg2_be* pg_be,
+    uint32_t w, uint32_t h) {
+  return st20_rfc4175_422le12_to_422be12_simd(pg_le, pg_be, w, h, ST_SIMD_LEVEL_MAX);
+}
+
+/**
+ * Convert yuv422p12le to rfc4175_422le12.
+ *
+ * @param y
+ *   Point to Y(yuv422p12le) vector.
+ * @param b
+ *   Point to b(yuv422p12le) vector.
+ * @param r
+ *   Point to r(yuv422p12le) vector.
+ * @param pg
+ *   Point to pg(rfc4175_422le12) data.
+ * @param w
+ *   The st2110-20(video) width.
+ * @param h
+ *   The st2110-20(video) height.
+ * @return
+ *   - 0 if successful.
+ *   - <0: Error code if convert fail.
+ */
+int st20_yuv422p12le_to_rfc4175_422le12(uint16_t* y, uint16_t* b, uint16_t* r,
+                                        struct st20_rfc4175_422_12_pg2_le* pg, uint32_t w,
+                                        uint32_t h);
+
+/**
+ * Convert rfc4175_422le12 to yuv422p12le.
+ *
+ * @param pg
+ *   Point to pg(rfc4175_422le12) data.
+ * @param y
+ *   Point to Y(yuv422p12le) vector.
+ * @param b
+ *   Point to b(yuv422p12le) vector.
+ * @param r
+ *   Point to r(yuv422p12le) vector.
+ * @param w
+ *   The st2110-20(video) width.
+ * @param h
+ *   The st2110-20(video) height.
+ * @return
+ *   - 0 if successful.
+ *   - <0: Error code if convert fail.
+ */
+int st20_rfc4175_422le12_to_yuv422p12le(struct st20_rfc4175_422_12_pg2_le* pg,
+                                        uint16_t* y, uint16_t* b, uint16_t* r, uint32_t w,
+                                        uint32_t h);
 
 /**
  * Convert AM824 subframe to AES3 subframe.

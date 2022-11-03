@@ -23,12 +23,17 @@
 enum cvt_frame_fmt {
   /** YUV 422 planar 10bit little endian */
   CVT_FRAME_FMT_YUV422PLANAR10LE = 0,
+  /** YUV 422 planar 12bit little endian */
+  CVT_FRAME_FMT_YUV422PLANAR12LE,
   /** YUV 422 packed, 3 samples on a 32-bit word, 10 bits per sample */
   CVT_FRAME_FMT_V210,
   /** YUV 422 packed, 16 bits per sample with least significant 6 paddings */
   CVT_FRAME_FMT_Y210,
   /** RFC4175 in ST2110, two YUV 422 10 bit pixel gruops on 5 bytes, big endian */
+  /** RFC4175 in ST2110, two YUV 422 10 bit pixel groups on 5 bytes, big endian */
   CVT_FRAME_FMT_YUV422RFC4175PG2BE10,
+  /** RFC4175 in ST2110, two YUV 422 12 bit pixel groups on 6 bytes, big endian */
+  CVT_FRAME_FMT_YUV422RFC4175PG2BE12,
   /** max value of this enum */
   CVT_FRAME_FMT_MAX,
 };

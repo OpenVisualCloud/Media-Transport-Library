@@ -505,6 +505,48 @@ struct st20_rfc4175_extra_rtp_hdr {
   uint16_t row_offset;
 } __attribute__((__packed__));
 
+/** Pixel Group describing two image pixels in YUV 4:2:2 12-bit format */
+struct st20_rfc4175_422_12_pg2_be {
+  uint8_t Cb00; /**< First 8 bit Blue */
+#ifdef ST_LITTLE_ENDIAN
+  uint8_t Y00 : 4;   /**< First 4 bits Luminance for Y0 */
+  uint8_t Cb00_ : 4; /**< Second 4 bit Blue */
+  uint8_t Y00_;      /**< Second 8 bits Luminance for Y0 */
+  uint8_t Cr00;      /**< First 8 bit Red */
+  uint8_t Y01 : 4;   /**< First 4 bits Luminance for Y1 */
+  uint8_t Cr00_ : 4; /**< Second 4 bit Red */
+#else
+  uint8_t Cb00_ : 4; /**< Second 4 bit Blue */
+  uint8_t Y00 : 4;   /**< First 4 bits Luminance for Y0 */
+  uint8_t Y00_;      /**< Second 8 bits Luminance for Y0 */
+  uint8_t Cr00;      /**< First 8 bit Red */
+  uint8_t Cr00_ : 4; /**< Second 4 bit Red */
+  uint8_t Y01 : 4;   /**< First 4 bits Luminance for Y1 */
+#endif
+  uint8_t Y01_; /**< Second 8 bits Luminance for Y1 */
+} __attribute__((__packed__));
+
+/** Pixel Group describing two image pixels in YUV 4:2:2 12-bit format */
+struct st20_rfc4175_422_12_pg2_le {
+  uint8_t Cb00; /**< First 8 bit Blue */
+#ifdef ST_LITTLE_ENDIAN
+  uint8_t Cb00_ : 4; /**< Second 4 bit Blue */
+  uint8_t Y00 : 4;   /**< First 4 bits Luminance for Y0 */
+  uint8_t Y00_;      /**< Second 8 bits Luminance for Y0 */
+  uint8_t Cr00;      /**< First 8 bit Red */
+  uint8_t Cr00_ : 4; /**< Second 4 bit Red */
+  uint8_t Y01 : 4;   /**< First 4 bits Luminance for Y1 */
+#else
+  uint8_t Y00 : 4;   /**< First 4 bits Luminance for Y0 */
+  uint8_t Cb00_ : 4; /**< Second 4 bit Blue */
+  uint8_t Y00_;      /**< Second 8 bits Luminance for Y0 */
+  uint8_t Cr00;      /**< First 8 bit Red */
+  uint8_t Y01 : 4;   /**< First 4 bits Luminance for Y1 */
+  uint8_t Cr00_ : 4; /**< Second 4 bit Red */
+#endif
+  uint8_t Y01_; /**< Second 8 bits Luminance for Y1 */
+} __attribute__((__packed__));
+
 /** Pixel Group describing two image pixels in YUV 4:2:2 10-bit format */
 struct st20_rfc4175_422_10_pg2_be {
   uint8_t Cb00; /**< First 8 bit Blue */
@@ -523,7 +565,7 @@ struct st20_rfc4175_422_10_pg2_be {
   uint8_t Cr00_ : 6; /**< Second 6 bit Red */
   uint8_t Y01 : 2;   /**< First 2 bits Luminance for Y1 */
 #endif
-  uint8_t Y01_; /**< Second 2 bits Luminance for Y1 */
+  uint8_t Y01_; /**< Second 8 bits Luminance for Y1 */
 } __attribute__((__packed__));
 
 /** Pixel Group describing two image pixels in YUV 4:2:2 10-bit format */
@@ -544,7 +586,7 @@ struct st20_rfc4175_422_10_pg2_le {
   uint8_t Y01 : 2;   /**< First 2 bits Luminance for Y1 */
   uint8_t Cr00_ : 6; /**< Second 6 bit Red */
 #endif
-  uint8_t Y01_; /**< Second 2 bits Luminance for Y1 */
+  uint8_t Y01_; /**< Second 8 bits Luminance for Y1 */
 } __attribute__((__packed__));
 
 /** Pixel Group describing two image pixels in YUV 4:2:2 8-bit format */
