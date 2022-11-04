@@ -214,9 +214,19 @@ static const struct st_frame_fmt_desc st_frame_fmt_descs[] = {
         .name = "YUV422PACKED8",
     },
     {
+        /* ST_FRAME_FMT_YUV422PLANAR12LE */
+        .fmt = ST_FRAME_FMT_YUV422PLANAR12LE,
+        .name = "YUV422PLANAR12LE",
+    },
+    {
         /* ST_FRAME_FMT_YUV422RFC4175PG2BE10 */
         .fmt = ST_FRAME_FMT_YUV422RFC4175PG2BE10,
         .name = "YUV422RFC4175PG2BE10",
+    },
+    {
+        /* ST_FRAME_FMT_YUV422RFC4175PG2BE12 */
+        .fmt = ST_FRAME_FMT_YUV422RFC4175PG2BE12,
+        .name = "YUV422RFC4175PG2BE12",
     },
     {
         /* ST_FRAME_FMT_ARGB */
@@ -259,8 +269,9 @@ size_t st_frame_size(enum st_frame_fmt fmt, uint32_t width, uint32_t height) {
 
   switch (fmt) {
     case ST_FRAME_FMT_YUV422PLANAR10LE:
+    case ST_FRAME_FMT_YUV422PLANAR12LE:
     case ST_FRAME_FMT_Y210:
-      size = pixels * 2 * 2; /* 10bit in two bytes */
+      size = pixels * 2 * 2; /* 10/12bits in two bytes */
       break;
     case ST_FRAME_FMT_V210:
       size = pixels * 8 / 3;
@@ -271,6 +282,9 @@ size_t st_frame_size(enum st_frame_fmt fmt, uint32_t width, uint32_t height) {
       break;
     case ST_FRAME_FMT_YUV422RFC4175PG2BE10:
       size = st20_frame_size(ST20_FMT_YUV_422_10BIT, width, height);
+      break;
+    case ST_FRAME_FMT_YUV422RFC4175PG2BE12:
+      size = st20_frame_size(ST20_FMT_YUV_422_12BIT, width, height);
       break;
     case ST_FRAME_FMT_ARGB:
     case ST_FRAME_FMT_BGRA:
@@ -358,6 +372,8 @@ enum st20_fmt st_frame_fmt_to_transport(enum st_frame_fmt fmt) {
       return ST20_FMT_YUV_422_10BIT;
     case ST_FRAME_FMT_YUV422PACKED8:
       return ST20_FMT_YUV_422_8BIT;
+    case ST_FRAME_FMT_YUV422RFC4175PG2BE12:
+      return ST20_FMT_YUV_422_12BIT;
     case ST_FRAME_FMT_RGB8:
       return ST20_FMT_RGB_8BIT;
     default:
@@ -372,6 +388,8 @@ enum st_frame_fmt st_frame_fmt_from_transport(enum st20_fmt tfmt) {
       return ST_FRAME_FMT_YUV422RFC4175PG2BE10;
     case ST20_FMT_YUV_422_8BIT:
       return ST_FRAME_FMT_YUV422PACKED8;
+    case ST20_FMT_YUV_422_12BIT:
+      return ST_FRAME_FMT_YUV422RFC4175PG2BE12;
     case ST20_FMT_RGB_8BIT:
       return ST_FRAME_FMT_RGB8;
     default:
@@ -1588,6 +1606,192 @@ int st20_y210_to_rfc4175_422be10_simd_dma(st_udma_handle udma, uint16_t* pg_y210
 
   /* the last option */
   return st20_y210_to_rfc4175_422be10_scalar(pg_y210, pg_be, w, h);
+}
+
+static int st20_yuv422p12le_to_rfc4175_422be12_scalar(
+    uint16_t* y, uint16_t* b, uint16_t* r, struct st20_rfc4175_422_12_pg2_be* pg,
+    uint32_t w, uint32_t h) {
+  uint32_t cnt = w * h / 2; /* two pgs in one convert */
+  uint16_t cb, y0, cr, y1;
+
+  for (uint32_t pg2 = 0; pg2 < cnt; pg2++) {
+    cb = *b++;
+    y0 = *y++;
+    cr = *r++;
+    y1 = *y++;
+
+    pg->Cb00 = cb >> 4;
+    pg->Cb00_ = cb;
+    pg->Y00 = y0 >> 8;
+    pg->Y00_ = y0;
+    pg->Cr00 = cr >> 4;
+    pg->Cr00_ = cr;
+    pg->Y01 = y1 >> 8;
+    pg->Y01_ = y1;
+
+    pg++;
+  }
+
+  return 0;
+}
+
+int st20_yuv422p12le_to_rfc4175_422be12_simd(uint16_t* y, uint16_t* b, uint16_t* r,
+                                             struct st20_rfc4175_422_12_pg2_be* pg,
+                                             uint32_t w, uint32_t h,
+                                             enum st_simd_level level) {
+  /* the only option */
+  return st20_yuv422p12le_to_rfc4175_422be12_scalar(y, b, r, pg, w, h);
+}
+
+static int st20_rfc4175_422be12_to_yuv422p12le_scalar(
+    struct st20_rfc4175_422_12_pg2_be* pg, uint16_t* y, uint16_t* b, uint16_t* r,
+    uint32_t w, uint32_t h) {
+  uint32_t cnt = w * h / 2; /* two pgs in one convert */
+  uint16_t cb, y0, cr, y1;
+
+  for (uint32_t pg2 = 0; pg2 < cnt; pg2++) {
+    cb = (pg->Cb00 << 4) + pg->Cb00_;
+    y0 = (pg->Y00 << 8) + pg->Y00_;
+    cr = (pg->Cr00 << 4) + pg->Cr00_;
+    y1 = (pg->Y01 << 8) + pg->Y01_;
+
+    *b++ = cb;
+    *y++ = y0;
+    *r++ = cr;
+    *y++ = y1;
+    pg++;
+  }
+
+  return 0;
+}
+
+int st20_rfc4175_422be12_to_yuv422p12le_simd(struct st20_rfc4175_422_12_pg2_be* pg,
+                                             uint16_t* y, uint16_t* b, uint16_t* r,
+                                             uint32_t w, uint32_t h,
+                                             enum st_simd_level level) {
+  /* the only option */
+  return st20_rfc4175_422be12_to_yuv422p12le_scalar(pg, y, b, r, w, h);
+}
+
+int st20_yuv422p12le_to_rfc4175_422le12(uint16_t* y, uint16_t* b, uint16_t* r,
+                                        struct st20_rfc4175_422_12_pg2_le* pg, uint32_t w,
+                                        uint32_t h) {
+  uint32_t cnt = w * h / 2; /* two pgs in one convert */
+  uint16_t cb, y0, cr, y1;
+
+  for (uint32_t pg2 = 0; pg2 < cnt; pg2++) {
+    cb = *b++;
+    y0 = *y++;
+    cr = *r++;
+    y1 = *y++;
+
+    pg->Cb00 = cb;
+    pg->Cb00_ = cb >> 8;
+    pg->Y00 = y0;
+    pg->Y00_ = y0 >> 4;
+    pg->Cr00 = cr;
+    pg->Cr00_ = cr >> 8;
+    pg->Y01 = y1;
+    pg->Y01_ = y1 >> 4;
+
+    pg++;
+  }
+
+  return 0;
+}
+
+int st20_rfc4175_422le12_to_yuv422p12le(struct st20_rfc4175_422_12_pg2_le* pg,
+                                        uint16_t* y, uint16_t* b, uint16_t* r, uint32_t w,
+                                        uint32_t h) {
+  uint32_t cnt = w * h / 2; /* two pgs in one convert */
+  uint16_t cb, y0, cr, y1;
+
+  for (uint32_t pg2 = 0; pg2 < cnt; pg2++) {
+    cb = pg->Cb00 + (pg->Cb00_ << 8);
+    y0 = pg->Y00 + (pg->Y00_ << 4);
+    cr = pg->Cr00 + (pg->Cr00_ << 8);
+    y1 = pg->Y01 + (pg->Y01_ << 4);
+
+    *b++ = cb;
+    *y++ = y0;
+    *r++ = cr;
+    *y++ = y1;
+    pg++;
+  }
+
+  return 0;
+}
+
+int st20_rfc4175_422be12_to_422le12_scalar(struct st20_rfc4175_422_12_pg2_be* pg_be,
+                                           struct st20_rfc4175_422_12_pg2_le* pg_le,
+                                           uint32_t w, uint32_t h) {
+  uint32_t cnt = w * h / 2;
+  uint16_t cb, y0, cr, y1;
+
+  for (uint32_t pg2 = 0; pg2 < cnt; pg2++) {
+    cb = (pg_be->Cb00 << 4) + pg_be->Cb00_;
+    y0 = (pg_be->Y00 << 8) + pg_be->Y00_;
+    cr = (pg_be->Cr00 << 4) + pg_be->Cr00_;
+    y1 = (pg_be->Y01 << 8) + pg_be->Y01_;
+
+    pg_le->Cb00 = cb;
+    pg_le->Cb00_ = cb >> 8;
+    pg_le->Y00 = y0;
+    pg_le->Y00_ = y0 >> 4;
+    pg_le->Cr00 = cr;
+    pg_le->Cr00_ = cr >> 8;
+    pg_le->Y01 = y1;
+    pg_le->Y01_ = y1 >> 4;
+
+    pg_be++;
+    pg_le++;
+  }
+
+  return 0;
+}
+
+int st20_rfc4175_422be12_to_422le12_simd(struct st20_rfc4175_422_12_pg2_be* pg_be,
+                                         struct st20_rfc4175_422_12_pg2_le* pg_le,
+                                         uint32_t w, uint32_t h,
+                                         enum st_simd_level level) {
+  /* the only option */
+  return st20_rfc4175_422be12_to_422le12_scalar(pg_be, pg_le, w, h);
+}
+
+int st20_rfc4175_422le12_to_422be12_scalar(struct st20_rfc4175_422_12_pg2_le* pg_le,
+                                           struct st20_rfc4175_422_12_pg2_be* pg_be,
+                                           uint32_t w, uint32_t h) {
+  uint32_t cnt = w * h / 2; /* two pgs in one convert */
+  uint16_t cb, y0, cr, y1;
+
+  for (uint32_t pg2 = 0; pg2 < cnt; pg2++) {
+    cb = pg_le->Cb00 + (pg_le->Cb00_ << 8);
+    y0 = pg_le->Y00 + (pg_le->Y00_ << 4);
+    cr = pg_le->Cr00 + (pg_le->Cr00_ << 8);
+    y1 = pg_le->Y01 + (pg_le->Y01_ << 4);
+
+    pg_be->Cb00 = cb >> 4;
+    pg_be->Cb00_ = cb;
+    pg_be->Y00 = y0 >> 8;
+    pg_be->Y00_ = y0;
+    pg_be->Cr00 = cr >> 4;
+    pg_be->Cr00_ = cr;
+    pg_be->Y01 = y1 >> 8;
+    pg_be->Y01_ = y1;
+
+    pg_be++;
+    pg_le++;
+  }
+
+  return 0;
+}
+
+int st20_rfc4175_422le12_to_422be12_simd(struct st20_rfc4175_422_12_pg2_le* pg_le,
+                                         struct st20_rfc4175_422_12_pg2_be* pg_be,
+                                         uint32_t w, uint32_t h,
+                                         enum st_simd_level level) {
+  /* the only option */
+  return st20_rfc4175_422le12_to_422be12_scalar(pg_le, pg_be, w, h);
 }
 
 int st31_am824_to_aes3(struct st31_am824* sf_am824, struct st31_aes3* sf_aes3,

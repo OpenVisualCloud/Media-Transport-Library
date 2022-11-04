@@ -117,6 +117,13 @@ enum st_frame_fmt {
   ST_FRAME_FMT_BGRA,
   /** one RGB pixel per 24 bit word, 8 bits per sample(aka ST20_FMT_RGB_8BIT) */
   ST_FRAME_FMT_RGB8,
+  /** YUV 422 planar 12bit little endian */
+  ST_FRAME_FMT_YUV422PLANAR12LE,
+  /**
+   * RFC4175 in ST2110(ST20_FMT_YUV_422_12BIT),
+   * two YUV 422 12 bit pixel groups on 6 bytes, big endian
+   */
+  ST_FRAME_FMT_YUV422RFC4175PG2BE12,
   /** ST22 jpegxs codestream */
   ST_FRAME_FMT_JPEGXS_CODESTREAM = 24,
   /** ST22 h264 cbr codestream */

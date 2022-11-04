@@ -971,6 +971,8 @@ static int parse_st22p_format(json_object* st22p_obj, st_json_st22p_session_t* s
   REQUIRED_ITEM(format);
   if (strcmp(format, "YUV422PLANAR10LE") == 0) {
     st22p->info.format = ST_FRAME_FMT_YUV422PLANAR10LE;
+  } else if (strcmp(format, "YUV422PLANAR12LE") == 0) {
+    st22p->info.format = ST_FRAME_FMT_YUV422PLANAR12LE;
   } else if (strcmp(format, "ARGB") == 0) {
     st22p->info.format = ST_FRAME_FMT_ARGB;
   } else if (strcmp(format, "BGRA") == 0) {
@@ -983,6 +985,8 @@ static int parse_st22p_format(json_object* st22p_obj, st_json_st22p_session_t* s
     st22p->info.format = ST_FRAME_FMT_YUV422PACKED8;
   } else if (strcmp(format, "YUV422RFC4175PG2BE10") == 0) {
     st22p->info.format = ST_FRAME_FMT_YUV422RFC4175PG2BE10;
+  } else if (strcmp(format, "YUV422RFC4175PG2BE12") == 0) {
+    st22p->info.format = ST_FRAME_FMT_YUV422RFC4175PG2BE12;
   } else if (strcmp(format, "RGB8") == 0) {
     st22p->info.format = ST_FRAME_FMT_RGB8;
   } else if (strcmp(format, "JPEGXS_CODESTREAM") == 0) {
@@ -1190,6 +1194,8 @@ static int parse_st20p_format(json_object* st20p_obj, st_json_st20p_session_t* s
   REQUIRED_ITEM(format);
   if (strcmp(format, "YUV422PLANAR10LE") == 0) {
     st20p->info.format = ST_FRAME_FMT_YUV422PLANAR10LE;
+  } else if (strcmp(format, "YUV422PLANAR12LE") == 0) {
+    st20p->info.format = ST_FRAME_FMT_YUV422PLANAR12LE;
   } else if (strcmp(format, "ARGB") == 0) {
     st20p->info.format = ST_FRAME_FMT_ARGB;
   } else if (strcmp(format, "BGRA") == 0) {
@@ -1202,6 +1208,8 @@ static int parse_st20p_format(json_object* st20p_obj, st_json_st20p_session_t* s
     st20p->info.format = ST_FRAME_FMT_YUV422PACKED8;
   } else if (strcmp(format, "YUV422RFC4175PG2BE10") == 0) {
     st20p->info.format = ST_FRAME_FMT_YUV422RFC4175PG2BE10;
+  } else if (strcmp(format, "YUV422RFC4175PG2BE12") == 0) {
+    st20p->info.format = ST_FRAME_FMT_YUV422RFC4175PG2BE12;
   } else if (strcmp(format, "RGB8") == 0) {
     st20p->info.format = ST_FRAME_FMT_RGB8;
   } else {
