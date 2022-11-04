@@ -240,6 +240,56 @@ int st20_rfc4175_422be10_to_422le8_simd_dma(st_udma_handle udma,
                                             enum st_simd_level level);
 
 /**
+ * Convert rfc4175_422be12 to yuv422p12le with required SIMD level.
+ * Note the level may downgrade to the SIMD which system really support.
+ *
+ * @param pg
+ *   Point to pg(rfc4175_422be12) data.
+ * @param y
+ *   Point to Y(yuv422p12le) vector.
+ * @param b
+ *   Point to b(yuv422p12le) vector.
+ * @param r
+ *   Point to r(yuv422p12le) vector.
+ * @param w
+ *   The st2110-20(video) width.
+ * @param h
+ *   The st2110-20(video) height.
+ * @param level
+ *   simd level.
+ * @return
+ *   - 0 if successful.
+ *   - <0: Error code if convert fail.
+ */
+int st20_rfc4175_422be12_to_yuv422p12le_simd(struct st20_rfc4175_422_12_pg2_be* pg,
+                                             uint16_t* y, uint16_t* b, uint16_t* r,
+                                             uint32_t w, uint32_t h,
+                                             enum st_simd_level level);
+
+/**
+ * Convert rfc4175_422be12 to rfc4175_422le12 with required SIMD level.
+ * Note the level may downgrade to the SIMD which system really support.
+ *
+ * @param pg_be
+ *   Point to pg(rfc4175_422be12) data.
+ * @param pg_le
+ *   Point to pg(rfc4175_422le12) data.
+ * @param w
+ *   The st2110-20(video) width.
+ * @param h
+ *   The st2110-20(video) height.
+ * @param level
+ *   simd level.
+ * @return
+ *   - 0 if successful.
+ *   - <0: Error code if convert fail.
+ */
+int st20_rfc4175_422be12_to_422le12_simd(struct st20_rfc4175_422_12_pg2_be* pg_be,
+                                         struct st20_rfc4175_422_12_pg2_le* pg_le,
+                                         uint32_t w, uint32_t h,
+                                         enum st_simd_level level);
+
+/**
  * Convert yuv422p10le to rfc4175_422be10 with required SIMD level.
  * Note the level may downgrade to the SIMD which system really support.
  *
@@ -350,6 +400,33 @@ int st20_v210_to_rfc4175_422be10_simd_dma(st_udma_handle udma, uint8_t* pg_v210,
                                           struct st20_rfc4175_422_10_pg2_be* pg_be,
                                           uint32_t w, uint32_t h,
                                           enum st_simd_level level);
+
+/**
+ * Convert yuv422p12le to rfc4175_422be12 with required SIMD level.
+ * Note the level may downgrade to the SIMD which system really support.
+ *
+ * @param y
+ *   Point to Y(yuv422p12le) vector.
+ * @param b
+ *   Point to b(yuv422p12le) vector.
+ * @param r
+ *   Point to r(yuv422p12le) vector.
+ * @param pg
+ *   Point to pg(rfc4175_422be12) data.
+ * @param w
+ *   The st2110-20(video) width.
+ * @param h
+ *   The st2110-20(video) height.
+ * @param level
+ *   simd level.
+ * @return
+ *   - 0 if successful.
+ *   - <0: Error code if convert fail.
+ */
+int st20_yuv422p12le_to_rfc4175_422be12_simd(uint16_t* y, uint16_t* b, uint16_t* r,
+                                             struct st20_rfc4175_422_12_pg2_be* pg,
+                                             uint32_t w, uint32_t h,
+                                             enum st_simd_level level);
 
 /**
  * Convert rfc4175_422le10 to rfc4175_422be10 with required SIMD level.
@@ -527,6 +604,29 @@ int st20_y210_to_rfc4175_422be10_simd_dma(st_udma_handle udma, uint16_t* pg_y210
                                           struct st20_rfc4175_422_10_pg2_be* pg_be,
                                           uint32_t w, uint32_t h,
                                           enum st_simd_level level);
+
+/**
+ * Convert rfc4175_422le12 to rfc4175_422be12 with required SIMD level.
+ * Note the level may downgrade to the SIMD which system really support.
+ *
+ * @param pg_le
+ *   Point to pg(rfc4175_422le12) data.
+ * @param pg_be
+ *   Point to pg(rfc4175_422be12) data.
+ * @param w
+ *   The st2110-20(video) width.
+ * @param h
+ *   The st2110-20(video) height.
+ * @param level
+ *   simd level.
+ * @return
+ *   - 0 if successful.
+ *   - <0: Error code if convert fail.
+ */
+int st20_rfc4175_422le12_to_422be12_simd(struct st20_rfc4175_422_12_pg2_le* pg_le,
+                                         struct st20_rfc4175_422_12_pg2_be* pg_be,
+                                         uint32_t w, uint32_t h,
+                                         enum st_simd_level level);
 
 #if defined(__cplusplus)
 }
