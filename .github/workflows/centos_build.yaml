@@ -25,7 +25,7 @@ jobs:
     - name: Install the build dependency
       run: |
         dnf config-manager --set-enabled powertools
-        yum install -y sudo git gcc gcc-c++ meson python3 python3-pip pkg-config json-c-devel libpcap-devel gtest-devel SDL2-devel openssl-devel numactl-devel
+        yum install -y sudo git gcc gcc-c++ meson python3 python3-pip pkg-config json-c-devel libpcap-devel gtest-devel SDL2-devel openssl-devel numactl-devel libasan
         yum install -y dpdk-devel
 
     - name: Install the python package
@@ -43,3 +43,9 @@ jobs:
       run: |
         export PKG_CONFIG_PATH=/usr/local/lib64/pkgconfig/:/usr/local/lib/pkgconfig/
         ./build.sh
+
+    - name: Build with debug
+      run: |
+        rm build -rf
+        export PKG_CONFIG_PATH=/usr/local/lib64/pkgconfig/:/usr/local/lib/pkgconfig/
+        ./build.sh debug

@@ -817,9 +817,8 @@ static void st20_tx_fps_test(enum st20_type type[], enum st_fps fps[], int width
     if (ext_buf) {
       st_dma_unmap(m_handle, test_ctx[i]->ext_fb, test_ctx[i]->ext_fb_iova,
                    test_ctx[i]->ext_fb_iova_map_sz);
-      st_test_free(test_ctx[i]->ext_fb_malloc);
-      st_test_free(test_ctx[i]->ext_frames);
     }
+    tests_context_unit(test_ctx[i]);
     delete test_ctx[i];
   }
 }
@@ -1004,9 +1003,9 @@ static void st20_rx_fps_test(enum st20_type type[], enum st_fps fps[], int width
     if (ext_buf) {
       st_dma_unmap(m_handle, test_ctx_rx[i]->ext_fb, test_ctx_rx[i]->ext_fb_iova,
                    test_ctx_rx[i]->ext_fb_iova_map_sz);
-      st_test_free(test_ctx_rx[i]->ext_fb_malloc);
-      st_test_free(test_ctx_rx[i]->ext_frames);
     }
+    tests_context_unit(test_ctx_tx[i]);
+    tests_context_unit(test_ctx_rx[i]);
     delete test_ctx_tx[i];
     delete test_ctx_rx[i];
   }
@@ -1474,11 +1473,13 @@ static void st20_rx_update_src_test(enum st20_type type, int tx_sessions) {
   for (int i = 0; i < rx_sessions; i++) {
     ret = st20_rx_free(rx_handle[i]);
     EXPECT_GE(ret, 0);
+    tests_context_unit(test_ctx_rx[i]);
     delete test_ctx_rx[i];
   }
   for (int i = 0; i < tx_sessions; i++) {
     ret = st20_tx_free(tx_handle[i]);
     EXPECT_GE(ret, 0);
+    tests_context_unit(test_ctx_tx[i]);
     delete test_ctx_tx[i];
   }
 }
@@ -1990,24 +1991,12 @@ static void st20_rx_digest_test(enum st20_type tx_type[], enum st20_type rx_type
     if (check_fps) {
       EXPECT_NEAR(framerate[i], expect_framerate[i], expect_framerate[i] * 0.1);
     }
-    if (tx_type[i] == ST20_TYPE_RTP_LEVEL) {
-      for (int frame = 0; frame < TEST_SHA_HIST_NUM; frame++) {
-        if (test_ctx_tx[i]->frame_buf[frame])
-          st_test_free(test_ctx_tx[i]->frame_buf[frame]);
-      }
-    }
-    if (rx_type[i] == ST20_TYPE_RTP_LEVEL) {
-      for (int frame = 0; frame < TEST_SHA_HIST_NUM; frame++) {
-        if (test_ctx_rx[i]->frame_buf[frame])
-          st_test_free(test_ctx_rx[i]->frame_buf[frame]);
-      }
-    }
-    if (test_ctx_tx[i]->ooo_mapping) st_test_free(test_ctx_tx[i]->ooo_mapping);
-    if (test_ctx_rx[i]->priv) st_test_free(test_ctx_rx[i]->priv);
     ret = st20_tx_free(tx_handle[i]);
     EXPECT_GE(ret, 0);
     ret = st20_rx_free(rx_handle[i]);
     EXPECT_GE(ret, 0);
+    tests_context_unit(test_ctx_tx[i]);
+    tests_context_unit(test_ctx_rx[i]);
     delete test_ctx_tx[i];
     delete test_ctx_rx[i];
   }
@@ -2740,7 +2729,8 @@ static void st20_rx_meta_test(enum st_fps fps[], int width[], int height[],
     EXPECT_GE(ret, 0);
     ret = st20_rx_free(rx_handle[i]);
     EXPECT_GE(ret, 0);
-    st_test_free(test_ctx_rx[i]->priv);
+    tests_context_unit(test_ctx_tx[i]);
+    tests_context_unit(test_ctx_rx[i]);
     delete test_ctx_tx[i];
     delete test_ctx_rx[i];
   }
@@ -2893,6 +2883,7 @@ static void st20_rx_after_start_test(enum st20_type type[], enum st_fps fps[],
       EXPECT_NEAR(framerate[i], expect_framerate[i], expect_framerate[i] * 0.1);
       ret = st20_rx_free(rx_handle[i]);
       EXPECT_GE(ret, 0);
+      tests_context_unit(test_ctx_rx[i]);
       delete test_ctx_rx[i];
     }
 
@@ -2912,6 +2903,7 @@ static void st20_rx_after_start_test(enum st20_type type[], enum st_fps fps[],
     for (int i = 0; i < sessions; i++) {
       ret = st20_tx_free(tx_handle[i]);
       EXPECT_GE(ret, 0);
+      tests_context_unit(test_ctx_tx[i]);
       delete test_ctx_tx[i];
     }
 
@@ -3177,11 +3169,12 @@ static void st20_rx_uframe_test(enum st20_type rx_type[], enum st20_packing pack
     if (check_fps) {
       EXPECT_NEAR(framerate[i], expect_framerate[i], expect_framerate[i] * 0.1);
     }
-    if (test_ctx_rx[i]->priv) st_test_free(test_ctx_rx[i]->priv);
     ret = st20_tx_free(tx_handle[i]);
     EXPECT_GE(ret, 0);
     ret = st20_rx_free(rx_handle[i]);
     EXPECT_GE(ret, 0);
+    tests_context_unit(test_ctx_tx[i]);
+    tests_context_unit(test_ctx_rx[i]);
     delete test_ctx_tx[i];
     delete test_ctx_rx[i];
   }
@@ -3470,12 +3463,12 @@ static void st20_rx_detect_test(enum st20_type tx_type[], enum st20_type rx_type
       EXPECT_NEAR(framerate[i], expect_framerate[i], expect_framerate[i] * 0.1);
     }
 
-    if (test_ctx_tx[i]->ooo_mapping) st_test_free(test_ctx_tx[i]->ooo_mapping);
-    if (test_ctx_rx[i]->priv) st_test_free(test_ctx_rx[i]->priv);
     ret = st20_tx_free(tx_handle[i]);
     EXPECT_GE(ret, 0);
     ret = st20_rx_free(rx_handle[i]);
     EXPECT_GE(ret, 0);
+    tests_context_unit(test_ctx_tx[i]);
+    tests_context_unit(test_ctx_rx[i]);
     delete test_ctx_tx[i];
     delete test_ctx_rx[i];
   }
@@ -3686,6 +3679,8 @@ static void st20_rx_dump_test(enum st20_type type[], enum st_fps fps[], int widt
     EXPECT_GE(ret, 0);
     ret = st20_rx_free(rx_handle[i]);
     EXPECT_GE(ret, 0);
+    tests_context_unit(test_ctx_tx[i]);
+    tests_context_unit(test_ctx_rx[i]);
     delete test_ctx_tx[i];
     delete test_ctx_rx[i];
   }
@@ -3976,13 +3971,10 @@ static void st20_tx_ext_frame_rx_digest_test(enum st20_packing packing[],
     EXPECT_GE(ret, 0);
     st_dma_unmap(m_handle, test_ctx_tx[i]->ext_fb, test_ctx_tx[i]->ext_fb_iova,
                  test_ctx_tx[i]->ext_fb_iova_map_sz);
-    st_test_free(test_ctx_tx[i]->ext_fb_malloc);
-    st_test_free(test_ctx_tx[i]->ext_frames);
     st_dma_unmap(m_handle, test_ctx_rx[i]->ext_fb, test_ctx_rx[i]->ext_fb_iova,
                  test_ctx_rx[i]->ext_fb_iova_map_sz);
-    st_test_free(test_ctx_rx[i]->ext_fb_malloc);
-    st_test_free(test_ctx_rx[i]->ext_frames);
-    if (test_ctx_rx[i]->priv) st_test_free(test_ctx_rx[i]->priv);
+    tests_context_unit(test_ctx_tx[i]);
+    tests_context_unit(test_ctx_rx[i]);
     delete test_ctx_tx[i];
     delete test_ctx_rx[i];
   }
@@ -4233,11 +4225,12 @@ static void st20_tx_user_pacing_test(int width[], int height[], enum st20_fmt fm
 
     EXPECT_NEAR(tx_framerate[i], expect_framerate[i], expect_framerate[i] * 0.1);
     EXPECT_NEAR(rx_framerate[i], expect_framerate[i], expect_framerate[i] * 0.1);
-    if (test_ctx_rx[i]->priv) st_test_free(test_ctx_rx[i]->priv);
     ret = st20_tx_free(tx_handle[i]);
     EXPECT_GE(ret, 0);
     ret = st20_rx_free(rx_handle[i]);
     EXPECT_GE(ret, 0);
+    tests_context_unit(test_ctx_tx[i]);
+    tests_context_unit(test_ctx_rx[i]);
     delete test_ctx_tx[i];
     delete test_ctx_rx[i];
   }
@@ -4511,11 +4504,10 @@ static void st20_linesize_digest_test(enum st20_packing packing[], enum st_fps f
     EXPECT_GE(ret, 0);
     if (ext) {
       st_dma_mem_free(m_handle, test_ctx_tx[i]->dma_mem);
-      st_test_free(test_ctx_tx[i]->ext_frames);
       st_dma_mem_free(m_handle, test_ctx_rx[i]->dma_mem);
-      st_test_free(test_ctx_rx[i]->ext_frames);
     }
-    if (test_ctx_rx[i]->priv) st_test_free(test_ctx_rx[i]->priv);
+    tests_context_unit(test_ctx_tx[i]);
+    tests_context_unit(test_ctx_rx[i]);
     delete test_ctx_tx[i];
     delete test_ctx_rx[i];
   }

@@ -7,6 +7,37 @@
 #include "st_log.h"
 #include "st_main.h"
 
+#ifdef ST_HAS_ASAN
+/* additional memleak check for rte_malloc since dpdk asan not support this */
+static int g_st_rte_malloc_cnt;
+
+int st_asan_check(void) {
+  if (g_st_rte_malloc_cnt != 0) {
+    rte_panic("%s, detect not free memory by rte_malloc, error cnt %d\n", __func__,
+              g_st_rte_malloc_cnt);
+  }
+
+  return 0;
+}
+
+void* st_rte_malloc_socket(size_t sz, int socket) {
+  void* p = rte_malloc_socket(ST_DPDK_LIB_NAME, sz, RTE_CACHE_LINE_SIZE, socket);
+  if (p) g_st_rte_malloc_cnt++;
+  return p;
+}
+
+void* st_rte_zmalloc_socket(size_t sz, int socket) {
+  void* p = rte_zmalloc_socket(ST_DPDK_LIB_NAME, sz, RTE_CACHE_LINE_SIZE, socket);
+  if (p) g_st_rte_malloc_cnt++;
+  return p;
+}
+
+void st_rte_free(void* p) {
+  rte_free(p);
+  g_st_rte_malloc_cnt--;
+}
+#endif
+
 bool st_bitmap_test_and_set(uint8_t* bitmap, int idx) {
   int pos = idx / 8;
   int off = idx % 8;

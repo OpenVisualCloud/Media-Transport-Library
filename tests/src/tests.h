@@ -193,8 +193,10 @@ static inline uint64_t st_test_get_monotonic_time() {
   clock_gettime(ST_CLOCK_MONOTONIC_ID, &ts);
   return ((uint64_t)ts.tv_sec * NS_PER_S) + ts.tv_nsec;
 }
+
 void test_sha_dump(const char* tag, unsigned char* sha);
 void sha_frame_check(void* args);
+
 class tests_context {
  public:
   struct st_tests_context* ctx = NULL;
@@ -236,6 +238,7 @@ class tests_context {
   size_t fb_size;
   size_t uframe_size = 0;
   uint8_t shas[TEST_MAX_SHA_HIST_NUM][SHA256_DIGEST_LENGTH] = {};
+  /* frame buff alloc in the test context */
   uint8_t* frame_buf[TEST_MAX_SHA_HIST_NUM] = {};
   uint16_t lines_ready[TEST_MAX_SHA_HIST_NUM] = {};
   bool check_sha = false;
@@ -262,6 +265,8 @@ class tests_context {
   bool user_timestamp = false;
   uint32_t pre_timestamp = 0;
 };
+
+int tests_context_unit(tests_context* ctx);
 
 int tx_next_frame(void* priv, uint16_t* next_frame_idx);
 
