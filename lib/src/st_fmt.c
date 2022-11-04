@@ -201,7 +201,12 @@ static const struct st_frame_fmt_desc st_frame_fmt_descs[] = {
     {
         /* ST_FRAME_FMT_V210 */
         .fmt = ST_FRAME_FMT_V210,
-        .name = "v210",
+        .name = "V210",
+    },
+    {
+        /* ST_FRAME_FMT_Y210 */
+        .fmt = ST_FRAME_FMT_Y210,
+        .name = "Y210",
     },
     {
         /* ST_FRAME_FMT_YUV422PLANAR8 */
