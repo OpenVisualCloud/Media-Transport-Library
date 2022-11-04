@@ -2,30 +2,12 @@
  * Copyright(c) 2022 Intel Corporation
  */
 
-#include <errno.h>
-#include <pthread.h>
-#include <st20_dpdk_api.h>
-#include <stdbool.h>
-#include <stdio.h>
-#include <stdlib.h>
-#include <string.h>
-#include <unistd.h>
+#include "sample_util.h"
 
-#include "../src/app_platform.h"
-
-#define RX_ST22_PORT_BDF "0000:af:00.0"
-#define RX_ST22_UDP_PORT (50000)
-#define RX_ST22_PAYLOAD_TYPE (114)
-
-/* local ip address for current bdf port */
-static uint8_t g_rx_st22_local_ip[ST_IP_ADDR_LEN] = {192, 168, 0, 1};
-/* source ip address for rx video session */
-static uint8_t g_rx_st22_source_ip[ST_IP_ADDR_LEN] = {239, 168, 85, 22};
-
-struct app_context {
+struct rx_st22_sample_ctx {
   int idx;
   int fb_decoded;
-  void* handle;
+  st22_rx_handle handle;
   bool stop;
   pthread_t decode_thread;
   pthread_cond_t wake_cond;
@@ -38,22 +20,7 @@ struct app_context {
   struct st_rx_frame* framebuffs;
 };
 
-static bool g_video_active = false;
-static st_handle g_st_handle;
-
-static void app_sig_handler(int signo) {
-  printf("%s, signal %d\n", __func__, signo);
-  switch (signo) {
-    case SIGINT: /* Interrupt from keyboard */
-      g_video_active = false;
-      st_request_exit(g_st_handle);
-      break;
-  }
-
-  return;
-}
-
-static int rx_st22_enqueue_frame(struct app_context* s, void* frame, size_t size) {
+static int rx_st22_enqueue_frame(struct rx_st22_sample_ctx* s, void* frame, size_t size) {
   uint16_t producer_idx = s->framebuff_producer_idx;
   struct st_rx_frame* framebuff = &s->framebuffs[producer_idx];
 
@@ -72,7 +39,7 @@ static int rx_st22_enqueue_frame(struct app_context* s, void* frame, size_t size
 }
 
 static int rx_st22_frame_ready(void* priv, void* frame, struct st22_rx_frame_meta* meta) {
-  struct app_context* s = (struct app_context*)priv;
+  struct rx_st22_sample_ctx* s = (struct rx_st22_sample_ctx*)priv;
 
   if (!s->handle) return -EIO;
 
@@ -91,7 +58,7 @@ static int rx_st22_frame_ready(void* priv, void* frame, struct st22_rx_frame_met
   return 0;
 }
 
-static void st22_decode_frame(struct app_context* s, void* codestream_addr,
+static void st22_decode_frame(struct rx_st22_sample_ctx* s, void* codestream_addr,
                               size_t codestream_size) {
   // printf("%s(%d), frame %p\n", __func__, s->idx, frame);
 
@@ -101,7 +68,7 @@ static void st22_decode_frame(struct app_context* s, void* codestream_addr,
 }
 
 static void* st22_decode_thread(void* arg) {
-  struct app_context* s = arg;
+  struct rx_st22_sample_ctx* s = arg;
   int idx = s->idx;
   int consumer_idx;
   struct st_rx_frame* framebuff;
@@ -135,56 +102,38 @@ static void* st22_decode_thread(void* arg) {
   return NULL;
 }
 
-int main() {
-  struct st_init_params param;
-  int session_num = 1;
+int main(int argc, char** argv) {
   int bpp = 3; /* 3bit per pixel */
-  int fb_cnt = 3;
-  char* port = getenv("ST_PORT_P");
-  if (!port) port = RX_ST22_PORT_BDF;
-
-  memset(&param, 0, sizeof(param));
-  param.num_ports = 1;
-  strncpy(param.port[ST_PORT_P], port, ST_PORT_MAX_LEN);
-  memcpy(param.sip_addr[ST_PORT_P], g_rx_st22_local_ip, ST_IP_ADDR_LEN);
-  param.flags = ST_FLAG_BIND_NUMA;      // default bind to numa
-  param.log_level = ST_LOG_LEVEL_INFO;  // log level. ERROR, INFO, WARNING
-  param.priv = NULL;                    // usr ctx pointer
-  param.ptp_get_time_fn =
-      NULL;  // user regist ptp func, if not regist, the internal pt p will be used
-  param.tx_sessions_cnt_max = 0;
-  param.rx_sessions_cnt_max = session_num;
-  param.lcores = NULL;
-  /* create device */
-  st_handle dev_handle = st_init(&param);
-  if (!dev_handle) {
-    printf("%s, st_init fail\n", __func__);
-    return -1;
-  }
-
-  g_st_handle = dev_handle;
-  g_video_active = true;
-  signal(SIGINT, app_sig_handler);
-
-  st22_rx_handle rx_handle[session_num];
-  struct app_context* app[session_num];
+  struct st_sample_context ctx;
   int ret;
+
+  /* init sample(st) dev */
+  ret = st_sample_tx_init(&ctx, argc, argv);
+  if (ret < 0) return ret;
+
+  uint32_t session_num = ctx.sessions;
+  st22_rx_handle rx_handle[session_num];
+  struct rx_st22_sample_ctx* app[session_num];
+
   // create and register rx session
   for (int i = 0; i < session_num; i++) {
-    app[i] = (struct app_context*)malloc(sizeof(struct app_context));
+    app[i] = (struct rx_st22_sample_ctx*)malloc(sizeof(struct rx_st22_sample_ctx));
     if (!app[i]) {
-      printf("%s, app struct malloc fail\n", __func__);
-      return -1;
+      err("%s(%d), app context malloc fail\n", __func__, i);
+      ret = -ENOMEM;
+      goto error;
     }
-    memset(app[i], 0, sizeof(struct app_context));
+    memset(app[i], 0, sizeof(struct rx_st22_sample_ctx));
     app[i]->idx = i;
-    app[i]->framebuff_cnt = fb_cnt;
+    st_pthread_mutex_init(&app[i]->wake_mutex, NULL);
+    st_pthread_cond_init(&app[i]->wake_cond, NULL);
+    app[i]->framebuff_cnt = ctx.framebuff_cnt;
     app[i]->framebuffs =
         (struct st_rx_frame*)malloc(sizeof(*app[i]->framebuffs) * app[i]->framebuff_cnt);
     if (!app[i]->framebuffs) {
-      printf("%s, framebuffs malloc fail\n", __func__);
-      free(app[i]);
-      return -1;
+      err("%s(%d), framebuffs ctx malloc fail\n", __func__, i);
+      ret = -ENOMEM;
+      goto error;
     }
     for (uint16_t j = 0; j < app[i]->framebuff_cnt; j++)
       app[i]->framebuffs[j].frame = NULL;
@@ -196,51 +145,44 @@ int main() {
     ops_rx.name = "st22_test";
     ops_rx.priv = app[i];  // app handle register to lib
     ops_rx.num_port = 1;
-    memcpy(ops_rx.sip_addr[ST_PORT_P], g_rx_st22_source_ip, ST_IP_ADDR_LEN);
-    strncpy(ops_rx.port[ST_PORT_P], port, ST_PORT_MAX_LEN);
+    memcpy(ops_rx.sip_addr[ST_PORT_P], ctx.rx_sip_addr[ST_PORT_P], ST_IP_ADDR_LEN);
+    strncpy(ops_rx.port[ST_PORT_P], ctx.param.port[ST_PORT_P], ST_PORT_MAX_LEN);
     // user could config the udp port in this interface.
-    ops_rx.udp_port[ST_PORT_P] = RX_ST22_UDP_PORT + i;
-    ops_rx.width = 1920;
-    ops_rx.height = 1080;
-    ops_rx.fps = ST_FPS_P59_94;
-    ops_rx.payload_type = RX_ST22_PAYLOAD_TYPE;
+    ops_rx.udp_port[ST_PORT_P] = ctx.udp_port + i;
+    ops_rx.width = ctx.width;
+    ops_rx.height = ctx.height;
+    ops_rx.fps = ctx.fps;
+    ops_rx.payload_type = ctx.payload_type;
     ops_rx.type = ST22_TYPE_FRAME_LEVEL;
     ops_rx.pack_type = ST22_PACK_CODESTREAM;
 
     app[i]->bytes_per_frame = ops_rx.width * ops_rx.height * bpp / 8;
-    ops_rx.framebuff_cnt = fb_cnt;
+    ops_rx.framebuff_cnt = app[i]->framebuff_cnt;
     /* set to the max size per frame if not CBR model */
     ops_rx.framebuff_max_size = app[i]->bytes_per_frame;
     ops_rx.notify_frame_ready = rx_st22_frame_ready;
 
-    rx_handle[i] = st22_rx_create(dev_handle, &ops_rx);
+    rx_handle[i] = st22_rx_create(ctx.st, &ops_rx);
     if (!rx_handle[i]) {
-      printf("%s, rx create fail", __func__);
-      free(app[i]->framebuffs);
-      free(app[i]);
-      return -1;
+      err("%s(%d), st22_rx_create fail\n", __func__, i);
+      ret = -EIO;
+      goto error;
     }
     app[i]->handle = rx_handle[i];
-    st_pthread_mutex_init(&app[i]->wake_mutex, NULL);
-    st_pthread_cond_init(&app[i]->wake_cond, NULL);
+
     app[i]->stop = false;
     ret = pthread_create(&app[i]->decode_thread, NULL, st22_decode_thread, app[i]);
     if (ret < 0) {
-      printf("%s(%d), decode create fail %d\n", __func__, ret, i);
-      ret = st22_rx_free(rx_handle[i]);
-      if (ret < 0) {
-        printf("%s, rx free fail", __func__);
-      }
-      free(app[i]->framebuffs);
-      free(app[i]);
-      return -1;
+      err("%s(%d), app_thread create fail %d\n", __func__, ret, i);
+      ret = -EIO;
+      goto error;
     }
   }
 
   // start rx
-  ret = st_start(dev_handle);
+  ret = st_start(ctx.st);
 
-  while (g_video_active) {
+  while (!ctx.exit) {
     sleep(1);
   }
 
@@ -251,25 +193,24 @@ int main() {
     st_pthread_cond_signal(&app[i]->wake_cond);
     st_pthread_mutex_unlock(&app[i]->wake_mutex);
     pthread_join(app[i]->decode_thread, NULL);
+    info("%s(%d), decoded frames %d\n", __func__, i, app[i]->fb_decoded);
   }
 
   // stop rx
-  ret = st_stop(dev_handle);
+  ret = st_stop(ctx.st);
 
+error:
   // release session
   for (int i = 0; i < session_num; i++) {
-    ret = st22_rx_free(rx_handle[i]);
-    if (ret) {
-      printf("session free failed\n");
-    }
+    if (!app[i]) continue;
+    if (app[i]->handle) st22_rx_free(app[i]->handle);
     st_pthread_mutex_destroy(&app[i]->wake_mutex);
     st_pthread_cond_destroy(&app[i]->wake_cond);
-    printf("session(%d) decode frames %d\n", i, app[i]->fb_decoded);
-    free(app[i]->framebuffs);
+    if (app[i]->framebuffs) free(app[i]->framebuffs);
     free(app[i]);
   }
 
-  // destroy device
-  st_uninit(dev_handle);
-  return 0;
+  /* release sample(st) dev */
+  st_sample_uinit(&ctx);
+  return ret;
 }

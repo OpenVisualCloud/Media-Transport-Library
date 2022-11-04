@@ -196,14 +196,14 @@ int main() {
       int fd = -EIO;
       fd = st_open(file, O_RDONLY);
       if (fd < 0) {
-        printf("%s, open %s fail\n", __func__, file);
-        ret = -EIO;
-        goto error;
+        printf("%s, open %s fail, use blank video\n", __func__, file);
+        map_size = app[i]->fb_size * app[i]->fb_cnt;
+        goto dma_alloc;
       }
       struct stat st;
       fstat(fd, &st);
-      if (st.st_size < app[i]->fb_size || st.st_size % app[i]->fb_size) {
-        printf("%s, %s file size error %ld\n", __func__, file, st.st_size);
+      if (st.st_size < (app[i]->fb_size * app[i]->fb_cnt)) {
+        printf("%s, %s file size too small %ld\n", __func__, file, st.st_size);
         close(fd);
         ret = -EIO;
         goto error;
@@ -217,14 +217,18 @@ int main() {
         goto error;
       }
       close(fd);
+    dma_alloc:
       dma_mem = st_dma_mem_alloc(dev_handle, map_size);
       if (!dma_mem) {
         printf("%s(%d), dma mem alloc/map fail\n", __func__, i);
         ret = -EIO;
         goto error;
       }
-      void* dst = st_dma_mem_addr(dma_mem);
-      st_memcpy(dst, m, map_size);
+      if (m) {
+        void* dst = st_dma_mem_addr(dma_mem);
+        st_memcpy(dst, m, map_size);
+        munmap(m, map_size);
+      }
     }
     app[i]->dma_mem = dma_mem;
     app[i]->fb_total = map_size / app[i]->fb_size;

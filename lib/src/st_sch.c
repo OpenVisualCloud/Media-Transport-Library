@@ -361,6 +361,9 @@ static void sch_stat(struct st_sch_impl* sch) {
     sch->stat_sleep_ns_min = -1;
     sch->stat_sleep_ns_max = 0;
   }
+  if (!st_sch_started(sch)) {
+    notice("SCH(%d): still not started\n", idx);
+  }
 }
 
 int st_sch_unregister_tasklet(struct st_sch_tasklet_impl* tasklet) {

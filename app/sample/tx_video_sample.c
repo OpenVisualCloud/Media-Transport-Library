@@ -2,43 +2,9 @@
  * Copyright(c) 2022 Intel Corporation
  */
 
-#include <errno.h>
-#include <pthread.h>
-#include <signal.h>
-#include <st20_dpdk_api.h>
-#include <stdbool.h>
-#include <stdio.h>
-#include <stdlib.h>
-#include <string.h>
-#include <unistd.h>
+#include "sample_util.h"
 
-#include "../src/app_platform.h"
-
-#define TX_EXT_FRAME
-
-#if 0
-#define TX_VIDEO_PMD ST_PMD_DPDK_AF_XDP
-#define TX_VIDEO_PORT_BDF "ens801f1"
-//#define TX_VIDEO_DST_MAC "b4:96:91:aa:bb:08"
-#endif
-
-#if 1
-#define TX_VIDEO_PMD ST_PMD_DPDK_USER
-#define TX_VIDEO_PORT_BDF "0000:af:00.1"
-#endif
-
-#define TX_VIDEO_UDP_PORT (20000)
-#define TX_VIDEO_PAYLOAD_TYPE (112)
-
-/* local ip address for current bdf port */
-static uint8_t g_tx_video_local_ip[ST_IP_ADDR_LEN] = {192, 168, 0, 2};
-/* dst ip address for tx video session */
-static uint8_t g_tx_video_dst_ip[ST_IP_ADDR_LEN] = {239, 168, 85, 20};
-
-static bool g_video_active = false;
-static st_handle g_st_handle;
-
-struct app_context {
+struct tv_sample_context {
   int idx;
   int fb_send;
   st20_tx_handle handle;
@@ -60,7 +26,7 @@ struct app_context {
 
 static int tx_video_next_frame(void* priv, uint16_t* next_frame_idx,
                                struct st20_tx_frame_meta* meta) {
-  struct app_context* s = priv;
+  struct tv_sample_context* s = priv;
   int ret;
   uint16_t consumer_idx = s->framebuff_consumer_idx;
   struct st_tx_frame* framebuff = &s->framebuffs[consumer_idx];
@@ -69,7 +35,7 @@ static int tx_video_next_frame(void* priv, uint16_t* next_frame_idx,
 
   st_pthread_mutex_lock(&s->wake_mutex);
   if (ST_TX_FRAME_READY == framebuff->stat) {
-    // printf("%s(%d), next frame idx %u\n", __func__, s->idx, consumer_idx);
+    dbg("%s(%d), next frame idx %u\n", __func__, s->idx, consumer_idx);
     ret = 0;
     framebuff->stat = ST_TX_FRAME_IN_TRANSMITTING;
     *next_frame_idx = consumer_idx;
@@ -89,7 +55,7 @@ static int tx_video_next_frame(void* priv, uint16_t* next_frame_idx,
 
 static int tx_video_frame_done(void* priv, uint16_t frame_idx,
                                struct st20_tx_frame_meta* meta) {
-  struct app_context* s = priv;
+  struct tv_sample_context* s = priv;
   int ret;
   struct st_tx_frame* framebuff = &s->framebuffs[frame_idx];
 
@@ -99,12 +65,12 @@ static int tx_video_frame_done(void* priv, uint16_t frame_idx,
   if (ST_TX_FRAME_IN_TRANSMITTING == framebuff->stat) {
     ret = 0;
     framebuff->stat = ST_TX_FRAME_FREE;
-    // printf("%s(%d), done_idx %u\n", __func__, s->idx, frame_idx);
+    dbg("%s(%d), done_idx %u\n", __func__, s->idx, frame_idx);
     s->fb_send++;
   } else {
     ret = -EIO;
-    printf("%s(%d), err status %d for frame %u\n", __func__, s->idx, framebuff->stat,
-           frame_idx);
+    err("%s(%d), err status %d for frame %u\n", __func__, s->idx, framebuff->stat,
+        frame_idx);
   }
   st_pthread_cond_signal(&s->wake_cond);
   st_pthread_mutex_unlock(&s->wake_mutex);
@@ -112,17 +78,18 @@ static int tx_video_frame_done(void* priv, uint16_t frame_idx,
   return ret;
 }
 
-static void tx_video_build_frame(struct app_context* s, void* frame, size_t frame_size) {
+static void tx_video_build_frame(struct tv_sample_context* s, void* frame,
+                                 size_t frame_size) {
   /* call the real build here, sample just sleep */
   st_usleep(10 * 1000);
 }
 
 static void* tx_video_frame_thread(void* arg) {
-  struct app_context* s = arg;
+  struct tv_sample_context* s = arg;
   uint16_t producer_idx;
   struct st_tx_frame* framebuff;
 
-  printf("%s(%d), start\n", __func__, s->idx);
+  info("%s(%d), start\n", __func__, s->idx);
   while (!s->stop) {
     st_pthread_mutex_lock(&s->wake_mutex);
     producer_idx = s->framebuff_producer_idx;
@@ -153,79 +120,42 @@ static void* tx_video_frame_thread(void* arg) {
     s->framebuff_producer_idx = producer_idx;
     st_pthread_mutex_unlock(&s->wake_mutex);
   }
-  printf("%s(%d), stop\n", __func__, s->idx);
+  info("%s(%d), stop\n", __func__, s->idx);
 
   return NULL;
 }
 
-static void app_sig_handler(int signo) {
-  printf("%s, signal %d\n", __func__, signo);
-  switch (signo) {
-    case SIGINT: /* Interrupt from keyboard */
-      g_video_active = false;
-      st_request_exit(g_st_handle);
-      break;
-  }
+int main(int argc, char** argv) {
+  struct st_sample_context ctx;
+  int ret;
 
-  return;
-}
+  /* init sample(st) dev */
+  ret = st_sample_tx_init(&ctx, argc, argv);
+  if (ret < 0) return ret;
 
-int main() {
-  struct st_init_params param;
-  int session_num = 1;
-  int fb_cnt = 3;
-  char* port = getenv("ST_PORT_P");
-  if (!port) port = TX_VIDEO_PORT_BDF;
-
-  memset(&param, 0, sizeof(param));
-  param.num_ports = 1;
-  param.pmd[ST_PORT_P] = TX_VIDEO_PMD;
-  param.xdp_info[ST_PORT_P].queue_count = session_num;
-  param.xdp_info[ST_PORT_P].start_queue = 16;
-  strncpy(param.port[ST_PORT_P], port, ST_PORT_MAX_LEN);
-  memcpy(param.sip_addr[ST_PORT_P], g_tx_video_local_ip, ST_IP_ADDR_LEN);
-  param.flags = ST_FLAG_BIND_NUMA;        // default bind to numa
-  param.log_level = ST_LOG_LEVEL_NOTICE;  // log level. ERROR, INFO, WARNING
-  param.priv = NULL;                      // usr ctx pointer
-  // if not registed, the internal ptp source will be used
-  param.ptp_get_time_fn = NULL;
-  param.tx_sessions_cnt_max = session_num;
-  param.rx_sessions_cnt_max = 0;
-  // let lib decide to core or user could define it.
-  param.lcores = NULL;
-
-  // create device
-  st_handle dev_handle = st_init(&param);
-  if (!dev_handle) {
-    printf("st_init fail\n");
-    return -EIO;
-  }
-
-  g_st_handle = dev_handle;
-  signal(SIGINT, app_sig_handler);
-
+  uint32_t session_num = ctx.sessions;
   st20_tx_handle tx_handle[session_num];
   memset(tx_handle, 0, sizeof(tx_handle));
-  struct app_context* app[session_num];
+  struct tv_sample_context* app[session_num];
   memset(app, 0, sizeof(app));
-  int ret;
+
   // create and register tx session
   for (int i = 0; i < session_num; i++) {
-    app[i] = (struct app_context*)malloc(sizeof(struct app_context));
+    app[i] = (struct tv_sample_context*)malloc(sizeof(struct tv_sample_context));
     if (!app[i]) {
-      printf(" app struct is not correctly malloc");
+      err("%s(%d), app context malloc fail\n", __func__, i);
       ret = -ENOMEM;
       goto error;
     }
-    memset(app[i], 0, sizeof(struct app_context));
+    memset(app[i], 0, sizeof(*app[i]));
     st_pthread_mutex_init(&app[i]->wake_mutex, NULL);
     st_pthread_cond_init(&app[i]->wake_cond, NULL);
     app[i]->idx = i;
-    app[i]->framebuff_cnt = fb_cnt;
+    app[i]->framebuff_cnt = ctx.framebuff_cnt;
     app[i]->framebuffs =
         (struct st_tx_frame*)malloc(sizeof(*app[i]->framebuffs) * app[i]->framebuff_cnt);
     if (!app[i]->framebuffs) {
-      printf("%s, framebuffs malloc fail\n", __func__);
+      err("%s(%d), framebuffs ctx malloc fail\n", __func__, i);
       ret = -ENOMEM;
       goto error;
     }
@@ -238,35 +168,25 @@ int main() {
     ops_tx.name = "st20_tx";
     ops_tx.priv = app[i];  // app handle register to lib
     ops_tx.num_port = 1;
-    // tx src ip like 239.0.0.1
-    memcpy(ops_tx.dip_addr[ST_PORT_P], g_tx_video_dst_ip, ST_IP_ADDR_LEN);
-    // send port interface like 0000:af:00.0
-    strncpy(ops_tx.port[ST_PORT_P], port, ST_PORT_MAX_LEN);
-#ifdef TX_VIDEO_DST_MAC
-    uint8_t* mac = ops_tx.tx_dst_mac[ST_PORT_P];
-    sscanf(TX_VIDEO_DST_MAC, "%02hhx:%02hhx:%02hhx:%02hhx:%02hhx:%02hhx", &mac[0],
-           &mac[1], &mac[2], &mac[3], &mac[4], &mac[5]);
-    ops_tx.flags |= ST20_TX_FLAG_USER_P_MAC;
-#endif
-#ifdef TX_EXT_FRAME
-    ops_tx.flags |= ST20_TX_FLAG_EXT_FRAME;
-#endif
-    ops_tx.udp_port[ST_PORT_P] = TX_VIDEO_UDP_PORT + i;  // udp port
+    memcpy(ops_tx.dip_addr[ST_PORT_P], ctx.tx_dip_addr[ST_PORT_P], ST_IP_ADDR_LEN);
+    strncpy(ops_tx.port[ST_PORT_P], ctx.param.port[ST_PORT_P], ST_PORT_MAX_LEN);
+    if (ctx.ext_frame) ops_tx.flags |= ST20_TX_FLAG_EXT_FRAME;
+    ops_tx.udp_port[ST_PORT_P] = ctx.udp_port + i;  // udp port
     ops_tx.pacing = ST21_PACING_NARROW;
     ops_tx.type = ST20_TYPE_FRAME_LEVEL;
-    ops_tx.width = 1920;
-    ops_tx.height = 1080;
-    ops_tx.fps = ST_FPS_P59_94;
-    ops_tx.fmt = ST20_FMT_YUV_422_10BIT;
-    ops_tx.payload_type = TX_VIDEO_PAYLOAD_TYPE;
-    ops_tx.framebuff_cnt = fb_cnt;
+    ops_tx.width = ctx.width;
+    ops_tx.height = ctx.height;
+    ops_tx.fps = ctx.fps;
+    ops_tx.fmt = ctx.fmt;
+    ops_tx.payload_type = ctx.payload_type;
+    ops_tx.framebuff_cnt = app[i]->framebuff_cnt;
     // app regist non-block func, app could get a frame to send to lib
     ops_tx.get_next_frame = tx_video_next_frame;
     // app regist non-block func, app could get the frame tx done
     ops_tx.notify_frame_done = tx_video_frame_done;
-    tx_handle[i] = st20_tx_create(dev_handle, &ops_tx);
+    tx_handle[i] = st20_tx_create(ctx.st, &ops_tx);
     if (!tx_handle[i]) {
-      printf("tx_session is not correctly created\n");
+      err("%s(%d), st20_tx_create fail\n", __func__, i);
       ret = -EIO;
       goto error;
     }
@@ -281,11 +201,11 @@ int main() {
       |<---------------------- alloc_size (pgsz multiple)----------------->|
       *alloc_addr          *addr(pg aligned)
       */
-      size_t fb_size = app[i]->framebuff_size * fb_cnt;
+      size_t fb_size = app[i]->framebuff_size * app[i]->framebuff_cnt;
       /* alloc enough memory to hold framebuffers and map to iova */
-      st_dma_mem_handle dma_mem = st_dma_mem_alloc(dev_handle, fb_size);
+      st_dma_mem_handle dma_mem = st_dma_mem_alloc(ctx.st, fb_size);
       if (!dma_mem) {
-        printf("%s(%d), dma mem alloc/map fail\n", __func__, i);
+        err("%s(%d), dma mem alloc/map fail\n", __func__, i);
         ret = -EIO;
         goto error;
       }
@@ -297,17 +217,16 @@ int main() {
     app[i]->stop = false;
     ret = pthread_create(&app[i]->app_thread, NULL, tx_video_frame_thread, app[i]);
     if (ret < 0) {
-      printf("%s(%d), app_thread create fail %d\n", __func__, ret, i);
+      err("%s(%d), app_thread create fail %d\n", __func__, ret, i);
       ret = -EIO;
       goto error;
     }
   }
 
   // start tx
-  ret = st_start(dev_handle);
-  g_video_active = true;
+  ret = st_start(ctx.st);
 
-  while (g_video_active) {
+  while (!ctx.exit) {
     sleep(1);
   }
 
@@ -318,25 +237,26 @@ int main() {
     st_pthread_cond_signal(&app[i]->wake_cond);
     st_pthread_mutex_unlock(&app[i]->wake_mutex);
     pthread_join(app[i]->app_thread, NULL);
+    info("%s(%d), sent frames %d\n", __func__, i, app[i]->fb_send);
   }
 
   // stop tx
-  ret = st_stop(dev_handle);
+  ret = st_stop(ctx.st);
 
 error:
   // release session
   for (int i = 0; i < session_num; i++) {
     if (!app[i]) continue;
-    if (tx_handle[i]) st20_tx_free(tx_handle[i]);
+    if (app[i]->handle) st20_tx_free(app[i]->handle);
     st_pthread_mutex_destroy(&app[i]->wake_mutex);
     st_pthread_cond_destroy(&app[i]->wake_cond);
-    printf("session(%d) sent frames %d\n", i, app[i]->fb_send);
-    if (app[i]->dma_mem) st_dma_mem_free(dev_handle, app[i]->dma_mem);
+
+    if (app[i]->dma_mem) st_dma_mem_free(ctx.st, app[i]->dma_mem);
     if (app[i]->framebuffs) free(app[i]->framebuffs);
     free(app[i]);
   }
 
-  // destroy device
-  if (dev_handle) st_uninit(dev_handle);
+  /* release sample(st) dev */
+  st_sample_uinit(&ctx);
   return ret;
 }

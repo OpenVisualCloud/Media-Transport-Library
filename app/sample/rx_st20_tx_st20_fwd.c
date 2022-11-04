@@ -22,13 +22,13 @@ static uint8_t g_fwd_local_ip[ST_IP_ADDR_LEN] = {192, 168, 96, 2};
 
 #define RX_ST20_UDP_PORT (20000)
 #define RX_ST20_PAYLOAD_TYPE (112)
-/* source ip address for rx video session, 239.19.96.1 */
-static uint8_t g_rx_video_source_ip[ST_IP_ADDR_LEN] = {239, 19, 96, 1};
+/* source ip address for rx video session, 239.168.85.20 */
+static uint8_t g_rx_video_source_ip[ST_IP_ADDR_LEN] = {239, 168, 85, 20};
 
 #define TX_ST20_UDP_PORT (20000)
 #define TX_ST20_PAYLOAD_TYPE (112)
-/* dst ip address for tx video session, 239.19.96.2 */
-static uint8_t g_tx_st20_dst_ip[ST_IP_ADDR_LEN] = {239, 19, 96, 2};
+/* dst ip address for tx video session, 239.168.86.21 */
+static uint8_t g_tx_st20_dst_ip[ST_IP_ADDR_LEN] = {239, 168, 86, 21};
 
 #define ST20_TX_LOGO_FMT (ST_FRAME_FMT_YUV422RFC4175PG2BE10)
 #define ST20_TX_LOGO_FILE ("logo_rfc4175.yuv")
@@ -313,12 +313,29 @@ static int free_app(struct app_context* app) {
   return 0;
 }
 
+static bool g_video_active = false;
+static st_handle g_st_handle;
+
+static void app_sig_handler(int signo) {
+  printf("%s, signal %d\n", __func__, signo);
+  switch (signo) {
+    case SIGINT: /* Interrupt from keyboard */
+      g_video_active = false;
+      st_request_exit(g_st_handle);
+      break;
+  }
+
+  return;
+}
+
 int main() {
   struct st_init_params param;
   int fb_cnt = 4;
   int ret = -EIO;
   struct app_context app;
   st_handle st;
+  char* port = getenv("ST_PORT_P");
+  if (!port) port = FWD_PORT_BDF;
 
   memset(&app, 0, sizeof(app));
   app.idx = 0;
@@ -352,12 +369,12 @@ int main() {
 
   memset(&param, 0, sizeof(param));
   param.num_ports = 1;
-  strncpy(param.port[ST_PORT_P], FWD_PORT_BDF, ST_PORT_MAX_LEN);
+  strncpy(param.port[ST_PORT_P], port, ST_PORT_MAX_LEN);
   memcpy(param.sip_addr[ST_PORT_P], g_fwd_local_ip, ST_IP_ADDR_LEN);
   param.flags =
       ST_FLAG_BIND_NUMA | ST_FLAG_DEV_AUTO_START_STOP | ST_FLAG_RX_SEPARATE_VIDEO_LCORE;
-  param.log_level = ST_LOG_LEVEL_INFO;  // log level. ERROR, INFO, WARNING
-  param.priv = NULL;                    // usr ctx pointer
+  param.log_level = ST_LOG_LEVEL_NOTICE;  // log level. ERROR, INFO, WARNING
+  param.priv = NULL;                      // usr ctx pointer
   param.ptp_get_time_fn = NULL;
   param.tx_sessions_cnt_max = 1;
   param.rx_sessions_cnt_max = 1;
@@ -371,13 +388,17 @@ int main() {
   }
   app.st = st;
 
+  g_st_handle = st;
+  g_video_active = true;
+  signal(SIGINT, app_sig_handler);
+
   struct st20_rx_ops ops_rx;
   memset(&ops_rx, 0, sizeof(ops_rx));
   ops_rx.name = "st20_fwd";
   ops_rx.priv = &app;
   ops_rx.num_port = 1;
   memcpy(ops_rx.sip_addr[ST_PORT_P], g_rx_video_source_ip, ST_IP_ADDR_LEN);
-  strncpy(ops_rx.port[ST_PORT_P], FWD_PORT_BDF, ST_PORT_MAX_LEN);
+  strncpy(ops_rx.port[ST_PORT_P], port, ST_PORT_MAX_LEN);
   ops_rx.udp_port[ST_PORT_P] = RX_ST20_UDP_PORT;  // user config the udp port.
   ops_rx.pacing = ST21_PACING_NARROW;
   ops_rx.type = ST20_TYPE_FRAME_LEVEL;
@@ -403,7 +424,7 @@ int main() {
   ops_tx.priv = &app;
   ops_tx.num_port = 1;
   memcpy(ops_tx.dip_addr[ST_PORT_P], g_tx_st20_dst_ip, ST_IP_ADDR_LEN);
-  strncpy(ops_tx.port[ST_PORT_P], FWD_PORT_BDF, ST_PORT_MAX_LEN);
+  strncpy(ops_tx.port[ST_PORT_P], port, ST_PORT_MAX_LEN);
   ops_tx.udp_port[ST_PORT_P] = TX_ST20_UDP_PORT;
   ops_tx.pacing = ST21_PACING_NARROW;
   ops_tx.type = ST20_TYPE_FRAME_LEVEL;
@@ -436,7 +457,7 @@ int main() {
 
   app.ready = true;
 
-  while (1) {
+  while (g_video_active) {
     sleep(1);
   }
 

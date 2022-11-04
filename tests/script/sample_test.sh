@@ -7,89 +7,51 @@ set -e
 
 ST_PORT_TX=0000:af:01.1
 ST_PORT_RX=0000:af:01.0
-TEST_TIME_SEC=30
+ST_SIP_TX=192.168.87.80
+ST_SIP_RX=192.168.87.81
+ST_TX_IP=239.168.87.20
+ST_RX_IP=239.168.87.20
+TEST_TIME_SEC=15
 
-TEST_ST20=true
-TEST_ST20P=true
-TEST_ST22P=true
-TEST_ST20_SLICE=true
-TEST_ST20_RTP=true
+TEST_BIN_PATH=../../build/app
+LOG_LEVEL=notice
 
 export KAHAWAI_CFG_PATH=../../kahawai.json
 
-if [ $TEST_ST20 == "true" ]; then
-	echo "St20: start tx"
-	ST_PORT_P=${ST_PORT_TX} ../../build/app/TxVideoSample > /dev/null 2>&1 &
+test_tx_and_rx() {
+	local name=$1
+	local tx_prog=$2
+	local rx_prog=$3
+	echo "${name}: start ${tx_prog} "
+	${TEST_BIN_PATH}/${tx_prog} > /dev/null --log_level ${LOG_LEVEL} --p_port ${ST_PORT_TX} --p_sip ${ST_SIP_TX} --p_tx_ip ${ST_TX_IP} 2>&1 &
 	pid_tx=$!
-	echo "St20: start rx"
-	ST_PORT_P=${ST_PORT_RX} ../../build/app/RxVideoSample &
+	echo "${name}: start ${rx_prog}"
+	${TEST_BIN_PATH}/${rx_prog} --log_level ${LOG_LEVEL} --p_port ${ST_PORT_RX} --p_sip ${ST_SIP_RX} --p_rx_ip ${ST_RX_IP} &
 	pid_rx=$!
-	echo "St20: pid_tx ${pid_tx}, pid_rx ${pid_rx}, wait ${TEST_TIME_SEC}s"
+	echo "${name}: pid_tx ${pid_tx}, pid_rx ${pid_rx}, wait ${TEST_TIME_SEC}s"
 	sleep ${TEST_TIME_SEC}
 	kill -SIGINT ${pid_tx}
 	kill -SIGINT ${pid_rx}
-	echo "St20: wait all thread ending"
+	echo "${name}: wait all thread ending"
 	wait
-fi
+	echo "${name}: ****** Done ******"
+	echo ""
+}
 
-if [ $TEST_ST20P == "true" ]; then
-	echo "St20p: start tx"
-	ST_PORT_P=${ST_PORT_TX} ../../build/app/TxSt20PipelineSample > /dev/null 2>&1 &
-	pid_tx=$!
-	echo "St20p: start rx"
-	ST_PORT_P=${ST_PORT_RX} ../../build/app/RxSt20PipelineSample &
-	pid_rx=$!
-	echo "St20p: pid_tx ${pid_tx}, pid_rx ${pid_rx}, wait ${TEST_TIME_SEC}s"
-	sleep ${TEST_TIME_SEC}
-	kill -SIGINT ${pid_tx}
-	kill -SIGINT ${pid_rx}
-	echo "St20p: wait all thread ending"
-wait
-fi
+# test video
+test_tx_and_rx st20 TxVideoSample RxVideoSample
+# test st20p
+test_tx_and_rx st20p TxSt20PipelineSample RxSt20PipelineSample
+# test st22p
+test_tx_and_rx st22p TxSt22PipelineSample RxSt22PipelineSample
 
-if [ $TEST_ST22P == "true" ]; then
-	echo "St22p: start tx"
-	ST_PORT_P=${ST_PORT_TX} ../../build/app/TxSt22PipelineSample > /dev/null 2>&1 &
-	pid_tx=$!
-	echo "St22p: start rx"
-	ST_PORT_P=${ST_PORT_RX} ../../build/app/RxSt22PipelineSample &
-	pid_rx=$!
-	echo "St22p: pid_tx ${pid_tx}, pid_rx ${pid_rx}, wait ${TEST_TIME_SEC}s"
-	sleep ${TEST_TIME_SEC}
-	kill -SIGINT ${pid_tx}
-	kill -SIGINT ${pid_rx}
-	echo "St22p: wait all thread ending"
-wait
-fi
+# test rtp video
+test_tx_and_rx st20_rtp TxRtpVideoSample RxRtpVideoSample
+# test slice video
+test_tx_and_rx st20_slice TxSliceVideoSample RxSliceVideoSample
+# test st22
+test_tx_and_rx st22 TxSt22VideoSample RxSt22VideoSample
 
-if [ $TEST_ST20_SLICE == "true" ]; then
-	echo "St20_slice: start tx"
-	ST_PORT_P=${ST_PORT_TX} ../../build/app/TxSliceVideoSample > /dev/null 2>&1 &
-	pid_tx=$!
-	echo "St20_slice: start rx"
-	ST_PORT_P=${ST_PORT_RX} ../../build/app/RxSliceVideoSample &
-	pid_rx=$!
-	echo "St20_slice: pid_tx ${pid_tx}, pid_rx ${pid_rx}, wait ${TEST_TIME_SEC}s"
-	sleep ${TEST_TIME_SEC}
-	kill -SIGINT ${pid_tx}
-	kill -SIGINT ${pid_rx}
-	echo "St20_slice: wait all thread ending"
-	wait
-fi
-
-if [ $TEST_ST20_RTP == "true" ]; then
-	echo "St20_rtp: start tx"
-	ST_PORT_P=${ST_PORT_TX} ../../build/app/TxRtpVideoSample > /dev/null 2>&1 &
-	pid_tx=$!
-	echo "St20_rtp: start rx"
-	ST_PORT_P=${ST_PORT_RX} ../../build/app/RxRtpVideoSample &
-	pid_rx=$!
-	echo "St20_rtp: pid_tx ${pid_tx}, pid_rx ${pid_rx}, wait ${TEST_TIME_SEC}s"
-	sleep ${TEST_TIME_SEC}
-	kill -SIGINT ${pid_tx}
-	kill -SIGINT ${pid_rx}
-	echo "St20_rtp: wait all thread ending"
-	wait
-fi
+echo "****** All test OK ******"
 
 unset KAHAWAI_CFG_PATH

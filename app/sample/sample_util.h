@@ -1,0 +1,83 @@
+/* SPDX-License-Identifier: BSD-3-Clause
+ * Copyright(c) 2022 Intel Corporation
+ */
+
+#ifndef _ST_APP_SAMPLE_UTIL_H_
+#define _ST_APP_SAMPLE_UTIL_H_
+
+#include <errno.h>
+#include <fcntl.h>
+#include <pthread.h>
+#include <signal.h>
+#include <st_pipeline_api.h>
+#include <stdbool.h>
+#include <stddef.h>
+#include <stdlib.h>
+#include <string.h>
+#include <sys/mman.h>
+#include <sys/stat.h>
+#include <time.h>
+#include <unistd.h>
+
+#include "../src/app_platform.h"
+
+/* log define */
+#ifdef DEBUG
+#define dbg(...)         \
+  do {                   \
+    printf(__VA_ARGS__); \
+  } while (0)
+#else
+#define dbg(...) \
+  do {           \
+  } while (0)
+#endif
+#define info(...)        \
+  do {                   \
+    printf(__VA_ARGS__); \
+  } while (0)
+#define warn(...)        \
+  do {                   \
+    printf(__VA_ARGS__); \
+  } while (0)
+#define err(...)         \
+  do {                   \
+    printf(__VA_ARGS__); \
+  } while (0)
+
+#define ST_SAMPLE_URL_MAX_LEN (256)
+
+struct st_sample_context {
+  st_handle st;
+  struct st_init_params param;
+  uint8_t tx_dip_addr[ST_PORT_MAX][ST_IP_ADDR_LEN]; /* tx destination IP */
+  uint8_t rx_sip_addr[ST_PORT_MAX][ST_IP_ADDR_LEN]; /* rx source IP */
+  char tx_url[ST_SAMPLE_URL_MAX_LEN];
+  char rx_url[ST_SAMPLE_URL_MAX_LEN];
+
+  uint32_t width;
+  uint32_t height;
+  enum st_fps fps;
+  enum st20_fmt fmt;
+  enum st_frame_fmt input_fmt;
+  enum st_frame_fmt output_fmt;
+  enum st_frame_fmt st22p_input_fmt;
+  enum st_frame_fmt st22p_output_fmt;
+  uint16_t framebuff_cnt;
+  uint16_t udp_port;
+  uint8_t payload_type;
+  uint32_t sessions; /* number of sessions */
+  bool ext_frame;
+
+  char logo_url[ST_SAMPLE_URL_MAX_LEN];
+  uint32_t logo_width;
+  uint32_t logo_height;
+
+  bool exit;
+};
+
+int st_sample_tx_init(struct st_sample_context* ctx, int argc, char** argv);
+
+int st_sample_uinit(struct st_sample_context* ctx);
+
+#endif
