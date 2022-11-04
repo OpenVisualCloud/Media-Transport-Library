@@ -2839,51 +2839,54 @@ int st20_tx_set_ext_frame(st20_tx_handle handle, uint16_t idx,
                           struct st20_ext_frame* ext_frame) {
   struct st_tx_video_session_handle_impl* s_impl = handle;
   struct st_tx_video_session_impl* s;
+  int s_idx;
 
   if (s_impl->type != ST_SESSION_TYPE_TX_VIDEO) {
     err("%s, invalid type %d\n", __func__, s_impl->type);
     return -EINVAL;
   }
 
-  s = s_impl->impl;
-
   if (!ext_frame) {
     err("%s, NULL ext frame\n", __func__);
     return -EIO;
   }
+
+  s = s_impl->impl;
+  s_idx = s->idx;
+
   if (ext_frame->buf_len < s->st20_fb_size) {
-    err("%s, ext framebuffer size %" PRIu64 " can not hold frame, need %" PRIu64 "\n",
-        __func__, ext_frame->buf_len, s->st20_fb_size);
+    err("%s(%d), ext framebuffer size %" PRIu64 " can not hold frame, need %" PRIu64 "\n",
+        __func__, s_idx, ext_frame->buf_len, s->st20_fb_size);
     return -EIO;
   }
   void* addr = ext_frame->buf_addr;
   if (!addr) {
-    err("%s, invalid ext frame address\n", __func__);
+    err("%s(%d), invalid ext frame address\n", __func__, s_idx);
     return -EIO;
   }
   rte_iova_t iova_addr = ext_frame->buf_iova;
   if (iova_addr == ST_BAD_IOVA || iova_addr == 0) {
-    err("%s, invalid ext frame iova 0x%" PRIx64 "\n", __func__, iova_addr);
+    err("%s(%d), invalid ext frame iova 0x%" PRIx64 "\n", __func__, s_idx, iova_addr);
     return -EIO;
   }
 
   if (idx >= s->st20_frames_cnt) {
-    err("%s, invalid idx %d, should be in range [0, %d]\n", __func__, idx,
+    err("%s(%d), invalid idx %d, should be in range [0, %d]\n", __func__, s_idx, idx,
         s->st20_frames_cnt);
     return -EIO;
   }
   if (!s->st20_frames) {
-    err("%s, st20_frames not valid\n", __func__);
+    err("%s(%d), st20_frames not valid\n", __func__, s_idx);
     return -EINVAL;
   }
   struct st_frame_trans* frame = &s->st20_frames[idx];
   int refcnt = rte_atomic32_read(&frame->refcnt);
   if (refcnt) {
-    err("%s, frame %d are not free, refcnt %d\n", __func__, idx, refcnt);
+    err("%s(%d), frame %d are not free, refcnt %d\n", __func__, s_idx, idx, refcnt);
     return -EINVAL;
   }
   if (!(frame->flags & ST_FT_FLAG_EXT)) {
-    err("%s, frame %d are not ext enabled\n", __func__, idx);
+    err("%s(%d), frame %d are not ext enabled\n", __func__, s_idx, idx);
     return -EINVAL;
   }
 

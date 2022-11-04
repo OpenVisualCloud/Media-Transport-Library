@@ -620,3 +620,28 @@ void sha_frame_check(void* args) {
     }
   }
 }
+
+int tests_context_unit(tests_context* ctx) {
+  for (int frame = 0; frame < TEST_SHA_HIST_NUM; frame++) {
+    if (ctx->frame_buf[frame]) st_test_free(ctx->frame_buf[frame]);
+    ctx->frame_buf[frame] = NULL;
+  }
+  if (ctx->ooo_mapping) {
+    st_test_free(ctx->ooo_mapping);
+    ctx->ooo_mapping = NULL;
+  }
+  if (ctx->priv) {
+    st_test_free(ctx->priv);
+    ctx->priv = NULL;
+  }
+  if (ctx->ext_fb_malloc) {
+    st_test_free(ctx->ext_fb_malloc);
+    ctx->ext_fb_malloc = NULL;
+  }
+  if (ctx->ext_frames) {
+    st_test_free(ctx->ext_frames);
+    ctx->ext_frames = NULL;
+  }
+
+  return 0;
+}

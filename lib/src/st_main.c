@@ -25,11 +25,6 @@
 #include "st_tx_audio_session.h"
 #include "st_util.h"
 
-#ifdef ST_HAS_ASAN
-/* additional memleak check for rte_malloc since dpdk asan not support this */
-int g_st_rte_malloc_cnt;
-#endif
-
 enum st_port st_port_by_id(struct st_main_impl* impl, uint16_t port_id) {
   int num_ports = st_num_ports(impl);
   int i;
@@ -537,10 +532,7 @@ int st_uninit(st_handle st) {
   st_dev_uinit(p);
 
 #ifdef ST_HAS_ASAN
-  if (g_st_rte_malloc_cnt != 0) {
-    rte_panic("%s, detect not free memory by rte_malloc, error cnt %d\n", __func__,
-              g_st_rte_malloc_cnt);
-  }
+  st_asan_check();
 #endif
 
   info("%s, succ\n", __func__);

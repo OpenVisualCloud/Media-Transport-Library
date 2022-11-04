@@ -13,7 +13,7 @@ sudo pip install pyelftools ninja
 #### 1.2 Centos:
 ```bash
 sudo dnf config-manager --set-enabled powertools
-sudo yum install git gcc gcc-c++ meson python3 python3-pip pkg-config json-c-devel libpcap-devel gtest-devel SDL2-devel openssl-devel numactl-devel
+sudo yum install git gcc gcc-c++ meson python3 python3-pip pkg-config json-c-devel libpcap-devel gtest-devel SDL2-devel openssl-devel numactl-devel libasan
 sudo pip3 install pyelftools ninja
 ```
 

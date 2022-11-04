@@ -21,23 +21,10 @@ static inline void* st_zmalloc(size_t sz) {
 static inline void st_free(void* p) { free(p); }
 
 #ifdef ST_HAS_ASAN
-extern int g_st_rte_malloc_cnt;
-static inline void* st_rte_malloc_socket(size_t sz, int socket) {
-  void* p = rte_malloc_socket(ST_DPDK_LIB_NAME, sz, RTE_CACHE_LINE_SIZE, socket);
-  if (p) g_st_rte_malloc_cnt++;
-  return p;
-}
-
-static inline void* st_rte_zmalloc_socket(size_t sz, int socket) {
-  void* p = rte_zmalloc_socket(ST_DPDK_LIB_NAME, sz, RTE_CACHE_LINE_SIZE, socket);
-  if (p) g_st_rte_malloc_cnt++;
-  return p;
-}
-
-static inline void st_rte_free(void* p) {
-  rte_free(p);
-  g_st_rte_malloc_cnt--;
-}
+int st_asan_check(void);
+void* st_rte_malloc_socket(size_t sz, int socket);
+void* st_rte_zmalloc_socket(size_t sz, int socket);
+void st_rte_free(void* p);
 #else
 static inline void* st_rte_malloc_socket(size_t sz, int socket) {
   return rte_malloc_socket(ST_DPDK_LIB_NAME, sz, RTE_CACHE_LINE_SIZE, socket);
