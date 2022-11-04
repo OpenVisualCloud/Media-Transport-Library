@@ -721,10 +721,16 @@ static void st20p_rx_digest_test(enum st_fps fps[], int width[], int height[],
       ASSERT_TRUE(fb != NULL);
       st_test_rand_data(fb, frame_size, frame);
       if (tx_fmt[i] == ST_FRAME_FMT_YUV422PLANAR10LE) {
-        /* only 10bit valid */
+        /* only LSB 10 valid */
         uint16_t* p10_u16 = (uint16_t*)fb;
         for (size_t j = 0; j < (frame_size / 2); j++) {
           p10_u16[j] &= 0x3ff; /* only 10 bit */
+        }
+      } else if (tx_fmt[i] == ST_FRAME_FMT_Y210) {
+        /* only MSB 10 valid */
+        uint16_t* y210_u16 = (uint16_t*)fb;
+        for (size_t j = 0; j < (frame_size / 2); j++) {
+          y210_u16[j] &= 0xffc0; /* only 10 bit */
         }
       } else if (tx_fmt[i] == ST_FRAME_FMT_V210) {
         uint32_t* v210_word = (uint32_t*)fb;
@@ -1016,9 +1022,9 @@ TEST(St20p, digest_1080p_internal_s2) {
   enum st_fps fps[2] = {ST_FPS_P50, ST_FPS_P59_94};
   int width[2] = {1920, 1920};
   int height[2] = {1080, 1080};
-  enum st_frame_fmt tx_fmt[2] = {ST_FRAME_FMT_YUV422PLANAR10LE, ST_FRAME_FMT_V210};
+  enum st_frame_fmt tx_fmt[2] = {ST_FRAME_FMT_YUV422PLANAR10LE, ST_FRAME_FMT_Y210};
   enum st20_fmt t_fmt[2] = {ST20_FMT_YUV_422_10BIT, ST20_FMT_YUV_422_10BIT};
-  enum st_frame_fmt rx_fmt[2] = {ST_FRAME_FMT_YUV422PLANAR10LE, ST_FRAME_FMT_V210};
+  enum st_frame_fmt rx_fmt[2] = {ST_FRAME_FMT_YUV422PLANAR10LE, ST_FRAME_FMT_Y210};
 
   struct st20p_rx_digest_test_para para;
   test_st20p_init_rx_digest_para(&para);

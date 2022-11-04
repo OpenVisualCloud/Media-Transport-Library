@@ -27,6 +27,12 @@ static inline int convert_rfc4175_422be10_to_v210(void* src, void* dst, uint32_t
                                       (uint8_t*)dst, width, height);
 }
 
+static inline int convert_rfc4175_422be10_to_y210(void* src, void* dst, uint32_t width,
+                                                  uint32_t height) {
+  return st20_rfc4175_422be10_to_y210((struct st20_rfc4175_422_10_pg2_be*)src,
+                                      (uint16_t*)dst, width, height);
+}
+
 static inline int convert_rfc4175_422be10_to_yuv422p10le(void* src, void* dst,
                                                          uint32_t width,
                                                          uint32_t height) {
@@ -412,6 +418,9 @@ static int rx_st20p_get_converter_internal(struct st20p_rx_ctx* ctx,
           break;
         case ST_FRAME_FMT_V210:
           ctx->convert_func_internal = convert_rfc4175_422be10_to_v210;
+          break;
+        case ST_FRAME_FMT_Y210:
+          ctx->convert_func_internal = convert_rfc4175_422be10_to_y210;
           break;
         case ST_FRAME_FMT_YUV422PLANAR10LE:
           ctx->convert_func_internal = convert_rfc4175_422be10_to_yuv422p10le;

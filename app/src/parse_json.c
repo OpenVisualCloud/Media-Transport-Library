@@ -1202,6 +1202,8 @@ static int parse_st20p_format(json_object* st20p_obj, st_json_st20p_session_t* s
     st20p->info.format = ST_FRAME_FMT_BGRA;
   } else if (strcmp(format, "V210") == 0) {
     st20p->info.format = ST_FRAME_FMT_V210;
+  } else if (strcmp(format, "Y210") == 0) {
+    st20p->info.format = ST_FRAME_FMT_Y210;
   } else if (strcmp(format, "YUV422PLANAR8") == 0) {
     st20p->info.format = ST_FRAME_FMT_YUV422PLANAR8;
   } else if (strcmp(format, "YUV422PACKED8") == 0) {
