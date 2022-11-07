@@ -50,8 +50,9 @@
 struct st_sample_context {
   st_handle st;
   struct st_init_params param;
-  uint8_t tx_dip_addr[ST_PORT_MAX][ST_IP_ADDR_LEN]; /* tx destination IP */
-  uint8_t rx_sip_addr[ST_PORT_MAX][ST_IP_ADDR_LEN]; /* rx source IP */
+  uint8_t tx_dip_addr[ST_PORT_MAX][ST_IP_ADDR_LEN];  /* tx destination IP */
+  uint8_t rx_sip_addr[ST_PORT_MAX][ST_IP_ADDR_LEN];  /* rx source IP */
+  uint8_t fwd_dip_addr[ST_PORT_MAX][ST_IP_ADDR_LEN]; /* fwd destination IP */
   char tx_url[ST_SAMPLE_URL_MAX_LEN];
   char rx_url[ST_SAMPLE_URL_MAX_LEN];
 
@@ -76,7 +77,16 @@ struct st_sample_context {
   bool exit;
 };
 
+int st_sample_init(struct st_sample_context* ctx, int argc, char** argv, bool tx,
+                   bool rx);
+
+int st_sample_start(struct st_sample_context* ctx);
+
 int st_sample_tx_init(struct st_sample_context* ctx, int argc, char** argv);
+
+int st_sample_rx_init(struct st_sample_context* ctx, int argc, char** argv);
+
+int st_sample_fwd_init(struct st_sample_context* ctx, int argc, char** argv);
 
 int st_sample_uinit(struct st_sample_context* ctx);
 

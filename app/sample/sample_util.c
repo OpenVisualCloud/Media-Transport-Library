@@ -18,6 +18,7 @@ enum sample_args_cmd {
   SAMPLE_ARG_R_RX_IP,
   SAMPLE_ARG_P_SIP,
   SAMPLE_ARG_R_SIP,
+  SAMPLE_ARG_P_FWD_IP,
   SAMPLE_ARG_LOG_LEVEL,
   SAMPLE_ARG_DEV_AUTO_START,
 
@@ -40,6 +41,7 @@ static struct option sample_args_options[] = {
     {"r_rx_ip", required_argument, 0, SAMPLE_ARG_R_RX_IP},
     {"p_sip", required_argument, 0, SAMPLE_ARG_P_SIP},
     {"r_sip", required_argument, 0, SAMPLE_ARG_R_SIP},
+    {"p_fwd_ip", required_argument, 0, SAMPLE_ARG_P_FWD_IP},
     {"sessions_cnt", required_argument, 0, SAMPLE_ARG_SESSIONS_CNT},
     {"log_level", required_argument, 0, SAMPLE_ARG_LOG_LEVEL},
     {"dev_auto_start", no_argument, 0, SAMPLE_ARG_DEV_AUTO_START},
@@ -88,6 +90,9 @@ static int st_sample_parse_args(struct st_sample_context* ctx, int argc, char** 
         break;
       case SAMPLE_ARG_R_RX_IP:
         inet_pton(AF_INET, optarg, ctx->rx_sip_addr[ST_PORT_R]);
+        break;
+      case SAMPLE_ARG_P_FWD_IP:
+        inet_pton(AF_INET, optarg, ctx->fwd_dip_addr[ST_PORT_P]);
         break;
       case SAMPLE_ARG_LOG_LEVEL:
         if (!strcmp(optarg, "debug"))
@@ -152,8 +157,8 @@ static void sample_sig_handler(int signo) {
   return;
 }
 
-static int st_sample_init(struct st_sample_context* ctx, int argc, char** argv, bool tx,
-                          bool rx) {
+int st_sample_init(struct st_sample_context* ctx, int argc, char** argv, bool tx,
+                   bool rx) {
   struct st_init_params* p = &ctx->param;
   memset(ctx, 0, sizeof(*ctx));
 
@@ -161,8 +166,6 @@ static int st_sample_init(struct st_sample_context* ctx, int argc, char** argv, 
   signal(SIGINT, sample_sig_handler);
 
   p->flags |= ST_FLAG_BIND_NUMA; /* default bind to numa */
-  p->flags |= ST_FLAG_TX_VIDEO_MIGRATE;
-  p->flags |= ST_FLAG_RX_VIDEO_MIGRATE;
   p->flags |= ST_FLAG_RX_SEPARATE_VIDEO_LCORE;
   p->log_level = ST_LOG_LEVEL_INFO; /* default to info */
   /* use different default port/ip for tx and rx */
@@ -175,8 +178,9 @@ static int st_sample_init(struct st_sample_context* ctx, int argc, char** argv, 
   }
   inet_pton(AF_INET, "239.168.85.20", ctx->tx_dip_addr[ST_PORT_P]);
   inet_pton(AF_INET, "239.168.85.20", ctx->rx_sip_addr[ST_PORT_P]);
+  inet_pton(AF_INET, "239.168.85.21", ctx->fwd_dip_addr[ST_PORT_P]);
 
-  ctx->sessions = 1;
+  if (!ctx->sessions) ctx->sessions = 1;
   ctx->framebuff_cnt = 3;
   ctx->width = 1920;
   ctx->height = 1080;
@@ -202,6 +206,12 @@ static int st_sample_init(struct st_sample_context* ctx, int argc, char** argv, 
   /* always enable 1 port */
   if (!p->num_ports) p->num_ports = 1;
 
+  return 0;
+}
+
+int st_sample_start(struct st_sample_context* ctx) {
+  struct st_init_params* p = &ctx->param;
+
   /* create device */
   ctx->st = st_init(p);
   if (!ctx->st) {
@@ -222,5 +232,16 @@ int st_sample_uinit(struct st_sample_context* ctx) {
 }
 
 int st_sample_tx_init(struct st_sample_context* ctx, int argc, char** argv) {
-  return st_sample_init(ctx, argc, argv, true, false);
+  st_sample_init(ctx, argc, argv, true, false);
+  return st_sample_start(ctx);
+};
+
+int st_sample_rx_init(struct st_sample_context* ctx, int argc, char** argv) {
+  st_sample_init(ctx, argc, argv, false, true);
+  return st_sample_start(ctx);
+};
+
+int st_sample_fwd_init(struct st_sample_context* ctx, int argc, char** argv) {
+  st_sample_init(ctx, argc, argv, true, true);
+  return st_sample_start(ctx);
 };

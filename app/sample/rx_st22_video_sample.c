@@ -108,7 +108,7 @@ int main(int argc, char** argv) {
   int ret;
 
   /* init sample(st) dev */
-  ret = st_sample_tx_init(&ctx, argc, argv);
+  ret = st_sample_rx_init(&ctx, argc, argv);
   if (ret < 0) return ret;
 
   uint32_t session_num = ctx.sessions;

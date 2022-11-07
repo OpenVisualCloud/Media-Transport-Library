@@ -14,7 +14,7 @@ ST_RX_IP=239.168.87.20
 TEST_TIME_SEC=15
 
 TEST_BIN_PATH=../../build/app
-LOG_LEVEL=notice
+LOG_LEVEL=info
 
 export KAHAWAI_CFG_PATH=../../kahawai.json
 
@@ -22,11 +22,20 @@ test_tx_and_rx() {
 	local name=$1
 	local tx_prog=$2
 	local rx_prog=$3
-	echo "${name}: start ${tx_prog} "
-	${TEST_BIN_PATH}/${tx_prog} > /dev/null --log_level ${LOG_LEVEL} --p_port ${ST_PORT_TX} --p_sip ${ST_SIP_TX} --p_tx_ip ${ST_TX_IP} 2>&1 &
+	local width=1920
+	if [ -n "$4" ];  then
+	  width=$4
+	fi
+	local height=1080
+	if [ -n "$5" ];  then
+	  height=$5
+	fi
+	echo "${name}: start ${tx_prog}, width:${width} height:${height}"
+	#${TEST_BIN_PATH}/${tx_prog} --log_level ${LOG_LEVEL} --p_port ${ST_PORT_TX} --p_sip ${ST_SIP_TX} --p_tx_ip ${ST_TX_IP} --width ${width} --height ${height} &
+	${TEST_BIN_PATH}/${tx_prog} > /dev/null --log_level ${LOG_LEVEL} --p_port ${ST_PORT_TX} --p_sip ${ST_SIP_TX} --p_tx_ip ${ST_TX_IP} --width ${width} --height ${height} 2>&1 &
 	pid_tx=$!
 	echo "${name}: start ${rx_prog}"
-	${TEST_BIN_PATH}/${rx_prog} --log_level ${LOG_LEVEL} --p_port ${ST_PORT_RX} --p_sip ${ST_SIP_RX} --p_rx_ip ${ST_RX_IP} &
+	${TEST_BIN_PATH}/${rx_prog} --log_level ${LOG_LEVEL} --p_port ${ST_PORT_RX} --p_sip ${ST_SIP_RX} --p_rx_ip ${ST_RX_IP} --width ${width} --height ${height} &
 	pid_rx=$!
 	echo "${name}: pid_tx ${pid_tx}, pid_rx ${pid_rx}, wait ${TEST_TIME_SEC}s"
 	sleep ${TEST_TIME_SEC}
@@ -51,6 +60,18 @@ test_tx_and_rx st20_rtp TxRtpVideoSample RxRtpVideoSample
 test_tx_and_rx st20_slice TxSliceVideoSample RxSliceVideoSample
 # test st22
 test_tx_and_rx st22 TxSt22VideoSample RxSt22VideoSample
+
+# test RxSt20TxSt20Fwd
+test_tx_and_rx RxSt20TxSt20Fwd TxSt20PipelineSample RxSt20TxSt20Fwd
+# test RxSt20pTxSt20pFwd
+test_tx_and_rx RxSt20pTxSt20pFwd TxSt20PipelineSample RxSt20pTxSt20pFwd
+# test RxSt20pTxSt22pFwd
+test_tx_and_rx RxSt20pTxSt22pFwd TxSt20PipelineSample RxSt20pTxSt22pFwd
+
+# test TxVideoSplitSample
+test_tx_and_rx TxVideoSplitSample TxVideoSplitSample RxSt20PipelineSample
+# test RxSt20TxSt20SplitFwd, not enable now
+#test_tx_and_rx RxSt20TxSt20SplitFwd TxSt20PipelineSample RxSt20TxSt20SplitFwd 3840 2160
 
 echo "****** All test OK ******"
 
