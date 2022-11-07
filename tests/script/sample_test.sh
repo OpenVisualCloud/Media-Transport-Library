@@ -14,7 +14,7 @@ ST_RX_IP=239.168.87.20
 TEST_TIME_SEC=15
 
 TEST_BIN_PATH=../../build/app
-LOG_LEVEL=info
+LOG_LEVEL=notice
 
 export KAHAWAI_CFG_PATH=../../kahawai.json
 
