@@ -2,65 +2,9 @@
  * Copyright(c) 2022 Intel Corporation
  */
 
-#include <errno.h>
-#include <fcntl.h>
-#include <pthread.h>
-#include <st_pipeline_api.h>
-#include <stdbool.h>
-#include <stdio.h>
-#include <stdlib.h>
-#include <string.h>
-#include <sys/mman.h>
-#include <sys/stat.h>
-#include <unistd.h>
+#include "sample_util.h"
 
-#include "../src/app_platform.h"
-
-#define TX_ST22_PORT_BDF "0000:af:00.1"
-#define TX_ST22_UDP_PORT (50000)
-#define TX_ST22_PAYLOAD_TYPE (114)
-
-/* local ip address for current bdf port */
-static uint8_t g_tx_st22_local_ip[ST_IP_ADDR_LEN] = {192, 168, 22, 84};
-/* dst ip address for tx video session */
-// static uint8_t g_tx_st22_dst_ip[ST_IP_ADDR_LEN] = {192, 168, 22, 85};
-static uint8_t g_tx_st22_dst_ip[ST_IP_ADDR_LEN] = {239, 168, 85, 22};
-
-//#define ST22_TX_SAMPLE_FMT_BGRA
-//#define ST22_TX_SAMPLE_FMT_YUV422P10LE
-//#define ST22_TX_SAMPLE_FMT_YUV422RFC4175PG2BE
-#define ST22_TX_SAMPLE_FMT_YUV422PLANAR8
-//#define ST22_TX_SAMPLE_FMT_YUV422PACKED8
-
-#ifdef ST22_TX_SAMPLE_FMT_BGRA
-#define ST22_TX_SAMPLE_FMT (ST_FRAME_FMT_BGRA)
-#define ST22_TX_SAMPLE_FILE ("test.bgra")
-#endif
-
-#ifdef ST22_TX_SAMPLE_FMT_YUV422P10LE
-#define ST22_TX_SAMPLE_FMT (ST_FRAME_FMT_YUV422PLANAR10LE)
-#define ST22_TX_SAMPLE_FILE ("test_le.yuv")
-#endif
-
-#ifdef ST22_TX_SAMPLE_FMT_YUV422RFC4175PG2BE
-#define ST22_TX_SAMPLE_FMT (ST_FRAME_FMT_YUV422RFC4175PG2BE10)
-#define ST22_TX_SAMPLE_FILE ("test_rfc4175.yuv")
-#define ST22_TX_LOGO_FILE ("logo_rfc4175.yuv")
-#define ST22_TX_LOGO_WIDTH (200)
-#define ST22_TX_LOGO_HEIGHT (200)
-#endif
-
-#ifdef ST22_TX_SAMPLE_FMT_YUV422PLANAR8
-#define ST22_TX_SAMPLE_FMT (ST_FRAME_FMT_YUV422PLANAR8)
-#define ST22_TX_SAMPLE_FILE ("test_planar8.yuv")
-#endif
-
-#ifdef ST22_TX_SAMPLE_FMT_YUV422PACKED8
-#define ST22_TX_SAMPLE_FMT (ST_FRAME_FMT_YUV422PACKED8)
-#define ST22_TX_SAMPLE_FILE ("test_packed8.yuv")
-#endif
-
-struct app_context {
+struct tx_st22p_sample_ctx {
   st_handle st;
   int idx;
   st22p_tx_handle handle;
@@ -82,22 +26,7 @@ struct app_context {
   struct st_frame logo_meta;
 };
 
-static bool g_video_active = false;
-static st_handle g_st_handle;
-
-static void app_sig_handler(int signo) {
-  printf("%s, signal %d\n", __func__, signo);
-  switch (signo) {
-    case SIGINT: /* Interrupt from keyboard */
-      g_video_active = false;
-      st_request_exit(g_st_handle);
-      break;
-  }
-
-  return;
-}
-
-static int tx_st22p_close_source(struct app_context* s) {
+static int tx_st22p_close_source(struct tx_st22p_sample_ctx* s) {
   if (s->source_begin) {
     st_hp_free(s->st, s->source_begin);
     s->source_begin = NULL;
@@ -111,26 +40,25 @@ static int tx_st22p_close_source(struct app_context* s) {
   return 0;
 }
 
-#ifdef ST22_TX_LOGO_FILE
-static int tx_st22p_open_logo(struct app_context* s, char* file) {
+static int tx_st22p_open_logo(struct st_sample_context* ctx,
+                              struct tx_st22p_sample_ctx* s, char* file) {
   FILE* fp_logo = st_fopen(file, "rb");
   if (!fp_logo) {
-    printf("%s, open %s fail\n", __func__, file);
+    err("%s, open %s fail\n", __func__, file);
     return -EIO;
   }
 
-  size_t logo_size =
-      st_frame_size(ST22_TX_SAMPLE_FMT, ST22_TX_LOGO_WIDTH, ST22_TX_LOGO_HEIGHT);
+  size_t logo_size = st_frame_size(ctx->input_fmt, ctx->logo_width, ctx->logo_height);
   s->logo_buf = st_hp_malloc(s->st, logo_size, ST_PORT_P);
   if (!s->logo_buf) {
-    printf("%s, logo buf malloc fail\n", __func__);
+    err("%s, logo buf malloc fail\n", __func__);
     fclose(fp_logo);
     return -EIO;
   }
 
   size_t read = fread(s->logo_buf, 1, logo_size, fp_logo);
   if (read != logo_size) {
-    printf("%s, logo buf read fail\n", __func__);
+    err("%s, logo buf read fail\n", __func__);
     st_hp_free(s->st, s->logo_buf);
     s->logo_buf = NULL;
     fclose(fp_logo);
@@ -138,42 +66,42 @@ static int tx_st22p_open_logo(struct app_context* s, char* file) {
   }
 
   s->logo_meta.addr = s->logo_buf;
-  s->logo_meta.fmt = ST22_TX_SAMPLE_FMT;
-  s->logo_meta.width = ST22_TX_LOGO_WIDTH;
-  s->logo_meta.height = ST22_TX_LOGO_HEIGHT;
+  s->logo_meta.fmt = ctx->input_fmt;
+  s->logo_meta.width = ctx->logo_width;
+  s->logo_meta.height = ctx->logo_height;
 
   fclose(fp_logo);
   return 0;
 }
-#endif
 
-static int tx_st22p_open_source(struct app_context* s, char* file) {
+static int tx_st22p_open_source(struct st_sample_context* ctx,
+                                struct tx_st22p_sample_ctx* s, char* file) {
   int fd;
   struct stat i;
 
   fd = st_open(file, O_RDONLY);
   if (fd < 0) {
-    printf("%s, open %s fail\n", __func__, file);
+    err("%s, open %s fail\n", __func__, file);
     return -EIO;
   }
 
   fstat(fd, &i);
   if (i.st_size < s->frame_size) {
-    printf("%s, %s file size small then a frame %ld\n", __func__, file, s->frame_size);
+    err("%s, %s file size small then a frame %ld\n", __func__, file, s->frame_size);
     close(fd);
     return -EIO;
   }
 
   uint8_t* m = mmap(NULL, i.st_size, PROT_READ, MAP_SHARED, fd, 0);
   if (MAP_FAILED == m) {
-    printf("%s, mmap %s fail\n", __func__, file);
+    err("%s, mmap %s fail\n", __func__, file);
     close(fd);
     return -EIO;
   }
 
   s->source_begin = st_hp_malloc(s->st, i.st_size, ST_PORT_P);
   if (!s->source_begin) {
-    printf("%s, source malloc on hugepage fail\n", __func__);
+    err("%s, source malloc on hugepage fail\n", __func__);
     close(fd);
     return -EIO;
   }
@@ -183,15 +111,13 @@ static int tx_st22p_open_source(struct app_context* s, char* file) {
   s->source_end = s->source_begin + i.st_size;
   close(fd);
 
-#ifdef ST22_TX_LOGO_FILE
-  tx_st22p_open_logo(s, ST22_TX_LOGO_FILE);
-#endif
+  tx_st22p_open_logo(ctx, s, ctx->logo_url);
 
   return 0;
 }
 
 static int tx_st22p_frame_available(void* priv) {
-  struct app_context* s = priv;
+  struct tx_st22p_sample_ctx* s = priv;
 
   st_pthread_mutex_lock(&s->wake_mutex);
   st_pthread_cond_signal(&s->wake_cond);
@@ -200,7 +126,7 @@ static int tx_st22p_frame_available(void* priv) {
   return 0;
 }
 
-static void tx_st22p_build_frame(struct app_context* s, struct st_frame* frame) {
+static void tx_st22p_build_frame(struct tx_st22p_sample_ctx* s, struct st_frame* frame) {
   if (s->frame_cursor + s->frame_size > s->source_end) {
     s->frame_cursor = s->source_begin;
   }
@@ -218,11 +144,11 @@ static void tx_st22p_build_frame(struct app_context* s, struct st_frame* frame) 
 }
 
 static void* tx_st22p_frame_thread(void* arg) {
-  struct app_context* s = arg;
+  struct tx_st22p_sample_ctx* s = arg;
   st22p_tx_handle handle = s->handle;
   struct st_frame* frame;
 
-  printf("%s(%d), start\n", __func__, s->idx);
+  info("%s(%d), start\n", __func__, s->idx);
   while (!s->stop) {
     frame = st22p_tx_get_frame(handle);
     if (!frame) { /* no frame */
@@ -234,60 +160,33 @@ static void* tx_st22p_frame_thread(void* arg) {
     if (s->source_begin) tx_st22p_build_frame(s, frame);
     st22p_tx_put_frame(handle, frame);
   }
-  printf("%s(%d), stop\n", __func__, s->idx);
+  info("%s(%d), stop\n", __func__, s->idx);
 
   return NULL;
 }
 
-int main() {
-  struct st_init_params param;
-  int session_num = 1;
-  int fb_cnt = 4;
+int main(int argc, char** argv) {
   int bpp = 3;
-  int ret = -EIO;
-  struct app_context* app[session_num];
-  st_handle dev_handle;
-  char* port = getenv("ST_PORT_P");
-  if (!port) port = TX_ST22_PORT_BDF;
+  struct st_sample_context ctx;
+  int ret;
 
-  for (int i = 0; i < session_num; i++) {
-    app[i] = NULL;
-  }
+  /* init sample(st) dev */
+  ret = st_sample_tx_init(&ctx, argc, argv);
+  if (ret < 0) return ret;
 
-  memset(&param, 0, sizeof(param));
-  param.num_ports = 1;
-  strncpy(param.port[ST_PORT_P], port, ST_PORT_MAX_LEN);
-  memcpy(param.sip_addr[ST_PORT_P], g_tx_st22_local_ip, ST_IP_ADDR_LEN);
-  param.flags = ST_FLAG_BIND_NUMA | ST_FLAG_DEV_AUTO_START_STOP;
-  param.log_level = ST_LOG_LEVEL_NOTICE;  // log level. ERROR, INFO, WARNING
-  param.priv = NULL;                      // usr ctx pointer
-  param.ptp_get_time_fn = NULL;
-  param.tx_sessions_cnt_max = session_num;
-  param.rx_sessions_cnt_max = 0;
-  param.lcores = NULL;
-  param.nb_tx_desc = 128;
-  // create device
-  dev_handle = st_init(&param);
-  if (!dev_handle) {
-    printf("%s, st_init fail\n", __func__);
-    ret = -EIO;
-    goto err;
-  }
-
-  g_st_handle = dev_handle;
-  g_video_active = true;
-  signal(SIGINT, app_sig_handler);
+  uint32_t session_num = ctx.sessions;
+  struct tx_st22p_sample_ctx* app[session_num];
 
   // create and register tx session
   for (int i = 0; i < session_num; i++) {
-    app[i] = malloc(sizeof(struct app_context));
+    app[i] = malloc(sizeof(struct tx_st22p_sample_ctx));
     if (!app[i]) {
-      printf("%s, app struct malloc fail\n", __func__);
+      err("%s(%d), app context malloc fail\n", __func__, i);
       ret = -ENOMEM;
-      goto err;
+      goto error;
     }
-    memset(app[i], 0, sizeof(struct app_context));
-    app[i]->st = dev_handle;
+    memset(app[i], 0, sizeof(struct tx_st22p_sample_ctx));
+    app[i]->st = ctx.st;
     app[i]->idx = i;
     app[i]->stop = false;
     st_pthread_mutex_init(&app[i]->wake_mutex, NULL);
@@ -298,45 +197,46 @@ int main() {
     ops_tx.name = "st22p_test";
     ops_tx.priv = app[i];  // app handle register to lib
     ops_tx.port.num_port = 1;
-    // tx src ip like 239.0.0.1
-    memcpy(ops_tx.port.dip_addr[ST_PORT_P], g_tx_st22_dst_ip, ST_IP_ADDR_LEN);
-    // send port interface like 0000:af:00.0
-    strncpy(ops_tx.port.port[ST_PORT_P], port, ST_PORT_MAX_LEN);
-    ops_tx.port.udp_port[ST_PORT_P] = TX_ST22_UDP_PORT + i;
-    ops_tx.port.payload_type = TX_ST22_PAYLOAD_TYPE;
-    ops_tx.width = 1920;
-    ops_tx.height = 1080;
-    ops_tx.fps = ST_FPS_P59_94;
-    ops_tx.input_fmt = ST22_TX_SAMPLE_FMT;
+    memcpy(ops_tx.port.dip_addr[ST_PORT_P], ctx.tx_dip_addr[ST_PORT_P], ST_IP_ADDR_LEN);
+    strncpy(ops_tx.port.port[ST_PORT_P], ctx.param.port[ST_PORT_P], ST_PORT_MAX_LEN);
+    ops_tx.port.udp_port[ST_PORT_P] = ctx.udp_port + i;
+    ops_tx.port.payload_type = ctx.payload_type;
+    ops_tx.width = ctx.width;
+    ops_tx.height = ctx.height;
+    ops_tx.fps = ctx.fps;
+    ops_tx.input_fmt = ctx.st22p_input_fmt;
     ops_tx.pack_type = ST22_PACK_CODESTREAM;
-    ops_tx.codec = ST22_CODEC_H264_CBR;  // ST22_CODEC_JPEGXS
+    ops_tx.codec = ST22_CODEC_JPEGXS;
     ops_tx.device = ST_PLUGIN_DEVICE_AUTO;
     ops_tx.quality = ST22_QUALITY_MODE_QUALITY;
     ops_tx.codec_thread_cnt = 2;
     ops_tx.codestream_size = ops_tx.width * ops_tx.height * bpp / 8;
-    ops_tx.framebuff_cnt = fb_cnt;
+    ops_tx.framebuff_cnt = ctx.framebuff_cnt;
     ops_tx.notify_frame_available = tx_st22p_frame_available;
 
-    st22p_tx_handle tx_handle = st22p_tx_create(dev_handle, &ops_tx);
+    st22p_tx_handle tx_handle = st22p_tx_create(ctx.st, &ops_tx);
     if (!tx_handle) {
-      printf("%s, st22p_tx_createcreate fail\n", __func__);
+      err("%s(%d), st22p_tx_create fail\n", __func__, i);
       ret = -EIO;
-      goto err;
+      goto error;
     }
     app[i]->handle = tx_handle;
 
     app[i]->frame_size = st22p_tx_frame_size(tx_handle);
-    ret = tx_st22p_open_source(app[i], ST22_TX_SAMPLE_FILE);
+    ret = tx_st22p_open_source(&ctx, app[i], ctx.tx_url);
 
     ret = pthread_create(&app[i]->frame_thread, NULL, tx_st22p_frame_thread, app[i]);
     if (ret < 0) {
-      printf("%s(%d), thread create fail %d\n", __func__, ret, i);
+      err("%s(%d), thread create fail %d\n", __func__, ret, i);
       ret = -EIO;
-      goto err;
+      goto error;
     }
   }
 
-  while (g_video_active) {
+  // start tx
+  ret = st_start(ctx.st);
+
+  while (!ctx.exit) {
     sleep(1);
   }
 
@@ -347,34 +247,25 @@ int main() {
     st_pthread_cond_signal(&app[i]->wake_cond);
     st_pthread_mutex_unlock(&app[i]->wake_mutex);
     pthread_join(app[i]->frame_thread, NULL);
+    info("%s(%d), sent frames %d\n", __func__, i, app[i]->fb_send);
 
     tx_st22p_close_source(app[i]);
   }
 
-  // release session
-  for (int i = 0; i < session_num; i++) {
-    printf("%s, fb_send %d\n", __func__, app[i]->fb_send);
-    ret = st22p_tx_free(app[i]->handle);
-    if (ret < 0) {
-      printf("%s, session free failed\n", __func__);
-    }
-    st_pthread_mutex_destroy(&app[i]->wake_mutex);
-    st_pthread_cond_destroy(&app[i]->wake_cond);
+  // stop tx
+  ret = st_stop(ctx.st);
 
-    free(app[i]);
-  }
-
-  // destroy device
-  st_uninit(dev_handle);
-  return 0;
-
-err:
+error:
   for (int i = 0; i < session_num; i++) {
     if (app[i]) {
+      st_pthread_mutex_destroy(&app[i]->wake_mutex);
+      st_pthread_cond_destroy(&app[i]->wake_cond);
       if (app[i]->handle) st22p_tx_free(app[i]->handle);
       free(app[i]);
     }
   }
-  if (dev_handle) st_uninit(dev_handle);
+
+  /* release sample(st) dev */
+  st_sample_uinit(&ctx);
   return ret;
 }

@@ -178,8 +178,8 @@ int main() {
   strncpy(param.port[ST_PORT_R], port_r, ST_PORT_MAX_LEN - 1);
   memcpy(param.sip_addr[ST_PORT_P], g_rx_video_local_ip_p, ST_IP_ADDR_LEN);
   memcpy(param.sip_addr[ST_PORT_R], g_rx_video_local_ip_r, ST_IP_ADDR_LEN);
-  param.flags = ST_FLAG_BIND_NUMA;      // default bind to numa
-  param.log_level = ST_LOG_LEVEL_INFO;  // log level. ERROR, INFO, WARNING
+  param.flags = ST_FLAG_BIND_NUMA;        // default bind to numa
+  param.log_level = ST_LOG_LEVEL_NOTICE;  // log level. ERROR, INFO, WARNING
   param.rx_sessions_cnt_max = session_num;
 #ifdef RX_HDR_SPLIT
   param.nb_rx_hdr_split_queues = session_num;

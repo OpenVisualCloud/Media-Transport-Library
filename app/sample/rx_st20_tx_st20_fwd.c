@@ -2,40 +2,9 @@
  * Copyright(c) 2022 Intel Corporation
  */
 
-#include <errno.h>
-#include <fcntl.h>
-#include <pthread.h>
-#include <st_pipeline_api.h>
-#include <stdbool.h>
-#include <stdio.h>
-#include <stdlib.h>
-#include <string.h>
-#include <sys/mman.h>
-#include <sys/stat.h>
-#include <unistd.h>
+#include "sample_util.h"
 
-#include "../src/app_platform.h"
-
-#define FWD_PORT_BDF "0000:4b:00.1"
-/* local ip address for current bdf port */
-static uint8_t g_fwd_local_ip[ST_IP_ADDR_LEN] = {192, 168, 96, 2};
-
-#define RX_ST20_UDP_PORT (20000)
-#define RX_ST20_PAYLOAD_TYPE (112)
-/* source ip address for rx video session, 239.19.96.1 */
-static uint8_t g_rx_video_source_ip[ST_IP_ADDR_LEN] = {239, 19, 96, 1};
-
-#define TX_ST20_UDP_PORT (20000)
-#define TX_ST20_PAYLOAD_TYPE (112)
-/* dst ip address for tx video session, 239.19.96.2 */
-static uint8_t g_tx_st20_dst_ip[ST_IP_ADDR_LEN] = {239, 19, 96, 2};
-
-#define ST20_TX_LOGO_FMT (ST_FRAME_FMT_YUV422RFC4175PG2BE10)
-#define ST20_TX_LOGO_FILE ("logo_rfc4175.yuv")
-#define ST20_TX_LOGO_WIDTH (200)
-#define ST20_TX_LOGO_HEIGHT (200)
-
-struct app_context {
+struct rx_st20_tx_st20_sample_ctx {
   st_handle st;
   int idx;
   st20_rx_handle rx_handle;
@@ -59,32 +28,32 @@ struct app_context {
   uint16_t tx_framebuff_consumer_idx;
   struct st_tx_frame* tx_framebuffs;
 
+  bool zero_copy;
+
   /* logo */
   void* logo_buf;
   struct st_frame logo_meta;
-
-  bool zero_copy;
 };
 
-static int st20_fwd_open_logo(struct app_context* s, char* file) {
+static int st20_fwd_open_logo(struct st_sample_context* ctx,
+                              struct rx_st20_tx_st20_sample_ctx* s, char* file) {
   FILE* fp_logo = st_fopen(file, "rb");
   if (!fp_logo) {
     printf("%s, open %s fail\n", __func__, file);
     return -EIO;
   }
 
-  size_t logo_size =
-      st_frame_size(ST20_TX_LOGO_FMT, ST20_TX_LOGO_WIDTH, ST20_TX_LOGO_HEIGHT);
+  size_t logo_size = st_frame_size(ctx->input_fmt, ctx->logo_width, ctx->logo_height);
   s->logo_buf = st_hp_malloc(s->st, logo_size, ST_PORT_P);
   if (!s->logo_buf) {
-    printf("%s, logo buf malloc fail\n", __func__);
+    err("%s, logo buf malloc fail\n", __func__);
     fclose(fp_logo);
     return -EIO;
   }
 
   size_t read = fread(s->logo_buf, 1, logo_size, fp_logo);
   if (read != logo_size) {
-    printf("%s, logo buf read fail\n", __func__);
+    err("%s, logo buf read fail\n", __func__);
     st_hp_free(s->st, s->logo_buf);
     s->logo_buf = NULL;
     fclose(fp_logo);
@@ -92,15 +61,16 @@ static int st20_fwd_open_logo(struct app_context* s, char* file) {
   }
 
   s->logo_meta.addr = s->logo_buf;
-  s->logo_meta.fmt = ST20_TX_LOGO_FMT;
-  s->logo_meta.width = ST20_TX_LOGO_WIDTH;
-  s->logo_meta.height = ST20_TX_LOGO_HEIGHT;
+  s->logo_meta.fmt = ctx->input_fmt;
+  s->logo_meta.width = ctx->logo_width;
+  s->logo_meta.height = ctx->logo_height;
 
   fclose(fp_logo);
   return 0;
 }
 
-static int rx_st20_enqueue_frame(struct app_context* s, void* frame, size_t size) {
+static int rx_st20_enqueue_frame(struct rx_st20_tx_st20_sample_ctx* s, void* frame,
+                                 size_t size) {
   uint16_t producer_idx = s->framebuff_producer_idx;
   struct st_rx_frame* framebuff = &s->framebuffs[producer_idx];
 
@@ -119,7 +89,7 @@ static int rx_st20_enqueue_frame(struct app_context* s, void* frame, size_t size
 }
 
 static int rx_st20_frame_ready(void* priv, void* frame, struct st20_rx_frame_meta* meta) {
-  struct app_context* s = (struct app_context*)priv;
+  struct rx_st20_tx_st20_sample_ctx* s = (struct rx_st20_tx_st20_sample_ctx*)priv;
 
   if (!s->ready) return -EIO;
 
@@ -147,7 +117,7 @@ static int rx_st20_frame_ready(void* priv, void* frame, struct st20_rx_frame_met
 
 static int tx_video_next_frame(void* priv, uint16_t* next_frame_idx,
                                struct st20_tx_frame_meta* meta) {
-  struct app_context* s = priv;
+  struct rx_st20_tx_st20_sample_ctx* s = priv;
   int ret;
   uint16_t consumer_idx = s->tx_framebuff_consumer_idx;
   struct st_tx_frame* framebuff = &s->tx_framebuffs[consumer_idx];
@@ -174,7 +144,7 @@ static int tx_video_next_frame(void* priv, uint16_t* next_frame_idx,
 
 static int tx_video_frame_done(void* priv, uint16_t frame_idx,
                                struct st20_tx_frame_meta* meta) {
-  struct app_context* s = priv;
+  struct rx_st20_tx_st20_sample_ctx* s = priv;
   int ret;
   struct st_tx_frame* framebuff = &s->tx_framebuffs[frame_idx];
 
@@ -199,7 +169,8 @@ static int tx_video_frame_done(void* priv, uint16_t frame_idx,
   return ret;
 }
 
-static void rx_fwd_consume_frame(struct app_context* s, void* frame, size_t frame_size) {
+static void rx_fwd_consume_frame(struct rx_st20_tx_st20_sample_ctx* s, void* frame,
+                                 size_t frame_size) {
   uint16_t producer_idx;
   struct st_tx_frame* framebuff;
   struct st_frame tx_frame;
@@ -232,7 +203,7 @@ static void rx_fwd_consume_frame(struct app_context* s, void* frame, size_t fram
 
   if (s->logo_buf) {
     tx_frame.addr = frame;
-    tx_frame.fmt = ST20_TX_LOGO_FMT;
+    tx_frame.fmt = s->logo_meta.fmt;
     tx_frame.buffer_size = s->framebuff_size;
     tx_frame.data_size = s->framebuff_size;
     tx_frame.width = 1920;
@@ -250,7 +221,7 @@ static void rx_fwd_consume_frame(struct app_context* s, void* frame, size_t fram
 }
 
 static void* fwd_thread(void* arg) {
-  struct app_context* s = arg;
+  struct rx_st20_tx_st20_sample_ctx* s = arg;
   struct st_rx_frame* rx_framebuff;
   int consumer_idx;
 
@@ -282,7 +253,7 @@ static void* fwd_thread(void* arg) {
   return NULL;
 }
 
-static int free_app(struct app_context* app) {
+static int rx_st20_tx_st20_free_app(struct rx_st20_tx_st20_sample_ctx* app) {
   if (app->tx_handle) {
     st20_tx_free(app->tx_handle);
     app->tx_handle = NULL;
@@ -294,10 +265,6 @@ static int free_app(struct app_context* app) {
   if (app->logo_buf) {
     st_hp_free(app->st, app->logo_buf);
     app->logo_buf = NULL;
-  }
-  if (app->st) {
-    st_uninit(app->st);
-    app->st = NULL;
   }
   st_pthread_mutex_destroy(&app->wake_mutex);
   st_pthread_cond_destroy(&app->wake_cond);
@@ -313,26 +280,29 @@ static int free_app(struct app_context* app) {
   return 0;
 }
 
-int main() {
-  struct st_init_params param;
-  int fb_cnt = 4;
-  int ret = -EIO;
-  struct app_context app;
-  st_handle st;
+int main(int argc, char** argv) {
+  struct st_sample_context ctx;
+  int ret;
 
+  /* init sample(st) dev */
+  ret = st_sample_fwd_init(&ctx, argc, argv);
+  if (ret < 0) return ret;
+
+  struct rx_st20_tx_st20_sample_ctx app;
   memset(&app, 0, sizeof(app));
   app.idx = 0;
   app.stop = false;
+  app.st = ctx.st;
   st_pthread_mutex_init(&app.wake_mutex, NULL);
   st_pthread_cond_init(&app.wake_cond, NULL);
 
-  app.framebuff_cnt = fb_cnt;
+  app.framebuff_cnt = ctx.framebuff_cnt;
   app.framebuffs =
       (struct st_rx_frame*)malloc(sizeof(*app.framebuffs) * app.framebuff_cnt);
   if (!app.framebuffs) {
-    printf("%s, framebuffs malloc fail\n", __func__);
-    free_app(&app);
-    return -EIO;
+    err("%s, rx framebuffs ctx malloc fail\n", __func__);
+    ret = -EIO;
+    goto error;
   }
   for (uint16_t j = 0; j < app.framebuff_cnt; j++) app.framebuffs[j].frame = NULL;
   app.framebuff_producer_idx = 0;
@@ -341,59 +311,38 @@ int main() {
   app.tx_framebuffs =
       (struct st_tx_frame*)malloc(sizeof(*app.tx_framebuffs) * app.framebuff_cnt);
   if (!app.tx_framebuffs) {
-    printf("%s, tx framebuffs malloc fail\n", __func__);
-    free_app(&app);
-    return -EIO;
+    err("%s, tx framebuffs ctx malloc fail\n", __func__);
+    ret = -EIO;
+    goto error;
   }
   for (uint16_t j = 0; j < app.framebuff_cnt; j++) {
     app.tx_framebuffs[j].stat = ST_TX_FRAME_FREE;
   }
   app.zero_copy = true;
 
-  memset(&param, 0, sizeof(param));
-  param.num_ports = 1;
-  strncpy(param.port[ST_PORT_P], FWD_PORT_BDF, ST_PORT_MAX_LEN);
-  memcpy(param.sip_addr[ST_PORT_P], g_fwd_local_ip, ST_IP_ADDR_LEN);
-  param.flags =
-      ST_FLAG_BIND_NUMA | ST_FLAG_DEV_AUTO_START_STOP | ST_FLAG_RX_SEPARATE_VIDEO_LCORE;
-  param.log_level = ST_LOG_LEVEL_INFO;  // log level. ERROR, INFO, WARNING
-  param.priv = NULL;                    // usr ctx pointer
-  param.ptp_get_time_fn = NULL;
-  param.tx_sessions_cnt_max = 1;
-  param.rx_sessions_cnt_max = 1;
-  param.lcores = NULL;
-  // create device
-  st = st_init(&param);
-  if (!st) {
-    free_app(&app);
-    printf("%s, st_init fail\n", __func__);
-    return -EIO;
-  }
-  app.st = st;
-
   struct st20_rx_ops ops_rx;
   memset(&ops_rx, 0, sizeof(ops_rx));
   ops_rx.name = "st20_fwd";
   ops_rx.priv = &app;
   ops_rx.num_port = 1;
-  memcpy(ops_rx.sip_addr[ST_PORT_P], g_rx_video_source_ip, ST_IP_ADDR_LEN);
-  strncpy(ops_rx.port[ST_PORT_P], FWD_PORT_BDF, ST_PORT_MAX_LEN);
-  ops_rx.udp_port[ST_PORT_P] = RX_ST20_UDP_PORT;  // user config the udp port.
+  memcpy(ops_rx.sip_addr[ST_PORT_P], ctx.rx_sip_addr[ST_PORT_P], ST_IP_ADDR_LEN);
+  strncpy(ops_rx.port[ST_PORT_P], ctx.param.port[ST_PORT_P], ST_PORT_MAX_LEN);
+  ops_rx.udp_port[ST_PORT_P] = ctx.udp_port;  // user config the udp port.
   ops_rx.pacing = ST21_PACING_NARROW;
   ops_rx.type = ST20_TYPE_FRAME_LEVEL;
-  ops_rx.width = 1920;
-  ops_rx.height = 1080;
-  ops_rx.fps = ST_FPS_P59_94;
-  ops_rx.fmt = ST20_FMT_YUV_422_10BIT;
-  ops_rx.framebuff_cnt = fb_cnt;
-  ops_rx.payload_type = RX_ST20_PAYLOAD_TYPE;
+  ops_rx.width = ctx.width;
+  ops_rx.height = ctx.height;
+  ops_rx.fps = ctx.fps;
+  ops_rx.fmt = ctx.fmt;
+  ops_rx.framebuff_cnt = app.framebuff_cnt;
+  ops_rx.payload_type = ctx.payload_type;
   ops_rx.flags = 0;
   ops_rx.notify_frame_ready = rx_st20_frame_ready;
-  st20_rx_handle rx_handle = st20_rx_create(st, &ops_rx);
+  st20_rx_handle rx_handle = st20_rx_create(ctx.st, &ops_rx);
   if (!rx_handle) {
-    free_app(&app);
-    printf("%s, st20_rx_create fail\n", __func__);
-    return -EIO;
+    err("%s, st20_rx_create fail\n", __func__);
+    ret = -EIO;
+    goto error;
   }
   app.rx_handle = rx_handle;
 
@@ -402,41 +351,44 @@ int main() {
   ops_tx.name = "st20_fwd";
   ops_tx.priv = &app;
   ops_tx.num_port = 1;
-  memcpy(ops_tx.dip_addr[ST_PORT_P], g_tx_st20_dst_ip, ST_IP_ADDR_LEN);
-  strncpy(ops_tx.port[ST_PORT_P], FWD_PORT_BDF, ST_PORT_MAX_LEN);
-  ops_tx.udp_port[ST_PORT_P] = TX_ST20_UDP_PORT;
+  memcpy(ops_tx.dip_addr[ST_PORT_P], ctx.fwd_dip_addr[ST_PORT_P], ST_IP_ADDR_LEN);
+  strncpy(ops_tx.port[ST_PORT_P], ctx.param.port[ST_PORT_P], ST_PORT_MAX_LEN);
+  ops_tx.udp_port[ST_PORT_P] = ctx.udp_port;
   ops_tx.pacing = ST21_PACING_NARROW;
   ops_tx.type = ST20_TYPE_FRAME_LEVEL;
-  ops_tx.width = 1920;
-  ops_tx.height = 1080;
-  ops_tx.fps = ST_FPS_P59_94;
-  ops_tx.fmt = ST20_FMT_YUV_422_10BIT;
-  ops_tx.payload_type = TX_ST20_PAYLOAD_TYPE;
+  ops_tx.width = ctx.width;
+  ops_tx.height = ctx.height;
+  ops_tx.fps = ctx.fps;
+  ops_tx.fmt = ctx.fmt;
+  ops_tx.payload_type = ctx.payload_type;
   if (app.zero_copy) ops_tx.flags |= ST20_TX_FLAG_EXT_FRAME;
-  ops_tx.framebuff_cnt = fb_cnt;
+  ops_tx.framebuff_cnt = app.framebuff_cnt;
   ops_tx.get_next_frame = tx_video_next_frame;
   ops_tx.notify_frame_done = tx_video_frame_done;
-  st20_tx_handle tx_handle = st20_tx_create(st, &ops_tx);
+  st20_tx_handle tx_handle = st20_tx_create(ctx.st, &ops_tx);
   if (!tx_handle) {
-    free_app(&app);
-    printf("%s, st20_tx_create fail\n", __func__);
-    return -EIO;
+    err("%s, st20_tx_create fail\n", __func__);
+    ret = -EIO;
+    goto error;
   }
   app.tx_handle = tx_handle;
   app.framebuff_size = st20_tx_get_framebuffer_size(tx_handle);
 
-  st20_fwd_open_logo(&app, ST20_TX_LOGO_FILE);
+  st20_fwd_open_logo(&ctx, &app, ctx.logo_url);
 
   ret = pthread_create(&app.fwd_thread, NULL, fwd_thread, &app);
   if (ret < 0) {
-    printf("%s(%d), thread create fail\n", __func__, ret);
-    free_app(&app);
-    return -EIO;
+    err("%s, fwd thread create fail\n", __func__);
+    ret = -EIO;
+    goto error;
   }
 
   app.ready = true;
 
-  while (1) {
+  // start dev
+  ret = st_start(ctx.st);
+
+  while (!ctx.exit) {
     sleep(1);
   }
 
@@ -446,10 +398,16 @@ int main() {
   st_pthread_cond_signal(&app.wake_cond);
   st_pthread_mutex_unlock(&app.wake_mutex);
   pthread_join(app.fwd_thread, NULL);
+  info("%s, fb_fwd %d\n", __func__, app.fb_fwd);
 
+  // stop dev
+  ret = st_stop(ctx.st);
+
+error:
   // release session
-  printf("%s, fb_fwd %d\n", __func__, app.fb_fwd);
-  free_app(&app);
+  rx_st20_tx_st20_free_app(&app);
 
-  return 0;
+  /* release sample(st) dev */
+  st_sample_uinit(&ctx);
+  return ret;
 }
