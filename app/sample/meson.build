@@ -22,6 +22,6 @@ rx_st20p_tx_st22p_fwd_sources = files('rx_st20p_tx_st22p_fwd.c', 'sample_util.c'
 video_tx_split_sample_sources = files('tx_video_split_sample.c', 'sample_util.c')
 rx_st20_tx_st20_split_fwd_sources = files('rx_st20_tx_st20_split_fwd.c', 'sample_util.c')
 
-redundant_rx_st20_sample_sources = files('rx_st20_redundant_sample.c')
+redundant_rx_st20_sample_sources = files('rx_st20_redundant_sample.c', 'sample_util.c')
 
-dma_sample_sources = files('dma_sample.c')
+dma_sample_sources = files('dma_sample.c', 'sample_util.c')

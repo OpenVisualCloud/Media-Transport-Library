@@ -69,6 +69,7 @@ struct st_sample_context {
   uint8_t payload_type;
   uint32_t sessions; /* number of sessions */
   bool ext_frame;
+  bool hdr_split;
 
   char logo_url[ST_SAMPLE_URL_MAX_LEN];
   uint32_t logo_width;

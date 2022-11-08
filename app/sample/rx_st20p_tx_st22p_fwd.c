@@ -89,8 +89,8 @@ static void fwd_st22_consume_frame(struct rx_st20p_tx_st22p_sample_ctx* s,
   struct st_frame* tx_frame;
 
   if (frame->data_size != s->framebuff_size) {
-    printf("%s(%d), mismatch frame size %ld %ld\n", __func__, s->idx, frame->data_size,
-           s->framebuff_size);
+    err("%s(%d), mismatch frame size %ld %ld\n", __func__, s->idx, frame->data_size,
+        s->framebuff_size);
     return;
   }
 
@@ -117,7 +117,7 @@ static void* st20_fwd_st22_thread(void* arg) {
   st20p_rx_handle rx_handle = s->rx_handle;
   struct st_frame* frame;
 
-  printf("%s(%d), start\n", __func__, s->idx);
+  info("%s(%d), start\n", __func__, s->idx);
   while (!s->stop) {
     frame = st20p_rx_get_frame(rx_handle);
     if (!frame) { /* no frame */
@@ -130,7 +130,7 @@ static void* st20_fwd_st22_thread(void* arg) {
     fwd_st22_consume_frame(s, frame);
     st20p_rx_put_frame(rx_handle, frame);
   }
-  printf("%s(%d), stop\n", __func__, s->idx);
+  info("%s(%d), stop\n", __func__, s->idx);
 
   return NULL;
 }
@@ -255,6 +255,12 @@ int main(int argc, char** argv) {
 
   // stop dev
   ret = st_stop(ctx.st);
+
+  // check result
+  if (app.fb_fwd <= 0) {
+    err("%s, error, no fwd frames %d\n", __func__, app.fb_fwd);
+    ret = -EIO;
+  }
 
 error:
   // release session

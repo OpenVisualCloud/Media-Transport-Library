@@ -31,7 +31,7 @@ static int tx_st22_next_frame(void* priv, uint16_t* next_frame_idx,
 
   st_pthread_mutex_lock(&s->wake_mutex);
   if (ST_TX_FRAME_READY == framebuff->stat) {
-    // printf("%s(%d), next frame idx %u\n", __func__, s->idx, consumer_idx);
+    dbg("%s(%d), next frame idx %u\n", __func__, s->idx, consumer_idx);
     ret = 0;
     framebuff->stat = ST_TX_FRAME_IN_TRANSMITTING;
     *next_frame_idx = consumer_idx;
@@ -60,12 +60,12 @@ static int tx_st22_frame_done(void* priv, uint16_t frame_idx,
   if (ST_TX_FRAME_IN_TRANSMITTING == framebuff->stat) {
     ret = 0;
     framebuff->stat = ST_TX_FRAME_FREE;
-    // printf("%s(%d), done_idx %u\n", __func__, s->idx, frame_idx);
+    dbg("%s(%d), done_idx %u\n", __func__, s->idx, frame_idx);
     s->fb_send++;
   } else {
     ret = -EIO;
-    printf("%s(%d), err status %d for frame %u\n", __func__, s->idx, framebuff->stat,
-           frame_idx);
+    err("%s(%d), err status %d for frame %u\n", __func__, s->idx, framebuff->stat,
+        frame_idx);
   }
   st_pthread_cond_signal(&s->wake_cond);
   st_pthread_mutex_unlock(&s->wake_mutex);
@@ -85,7 +85,7 @@ static void* st22_encode_thread(void* arg) {
   uint16_t producer_idx;
   struct st_tx_frame* framebuff;
 
-  printf("%s(%d), start\n", __func__, s->idx);
+  info("%s(%d), start\n", __func__, s->idx);
   while (!s->stop) {
     st_pthread_mutex_lock(&s->wake_mutex);
     producer_idx = s->framebuff_producer_idx;
@@ -112,7 +112,7 @@ static void* st22_encode_thread(void* arg) {
     s->framebuff_producer_idx = producer_idx;
     st_pthread_mutex_unlock(&s->wake_mutex);
   }
-  printf("%s(%d), stop\n", __func__, s->idx);
+  info("%s(%d), stop\n", __func__, s->idx);
 
   return NULL;
 }
@@ -214,6 +214,14 @@ int main(int argc, char** argv) {
 
   // stop tx
   ret = st_stop(ctx.st);
+
+  // check result
+  for (int i = 0; i < session_num; i++) {
+    if (app[i]->fb_send <= 0) {
+      err("%s(%d), error, no sent frames %d\n", __func__, i, app[i]->fb_send);
+      ret = -EIO;
+    }
+  }
 
 error:
   // release session

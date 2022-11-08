@@ -46,7 +46,7 @@ static int sending_frames_insert(struct split_fwd_sample_ctx* app,
     }
   }
   if (i >= FB_CNT) {
-    printf("%s, no slot\n", __func__);
+    err("%s, no slot\n", __func__);
     return -EIO;
   }
   return 0;
@@ -303,6 +303,12 @@ int main(int argc, char** argv) {
   ret = st_stop(ctx.st);
   info("%s, fb_fwd %d\n", __func__, app.fb_fwd);
   app.ready = false;
+
+  // check result
+  if (app.fb_fwd <= 0) {
+    err("%s, error, no fwd frames %d\n", __func__, app.fb_fwd);
+    ret = -EIO;
+  }
 
 error:
   // release session

@@ -30,7 +30,7 @@ static int rx_video_enqueue_frame(struct rv_slice_sample_ctx* s, void* frame,
     return -EBUSY;
   }
 
-  // printf("%s(%d), frame idx %d\n", __func__, s->idx, producer_idx);
+  dbg("%s(%d), frame idx %d\n", __func__, s->idx, producer_idx);
   framebuff->frame = frame;
   framebuff->size = size;
   /* point to next */
@@ -68,7 +68,7 @@ static int rx_video_frame_ready(void* priv, void* frame,
   st_pthread_mutex_lock(&s->wake_mutex);
   int ret = rx_video_enqueue_frame(s, frame, meta->frame_total_size);
   if (ret < 0) {
-    printf("%s(%d), frame %p dropped\n", __func__, s->idx, frame);
+    info("%s(%d), frame %p dropped\n", __func__, s->idx, frame);
     /* free the queue */
     st20_rx_put_framebuff(s->handle, frame);
     st_pthread_mutex_unlock(&s->wake_mutex);
@@ -82,7 +82,7 @@ static int rx_video_frame_ready(void* priv, void* frame,
 
 static void rx_video_consume_frame(struct rv_slice_sample_ctx* s, void* frame,
                                    size_t frame_size) {
-  // printf("%s(%d), frame %p\n", __func__, s->idx, frame);
+  dbg("%s(%d), frame %p\n", __func__, s->idx, frame);
 
   /* call the real consumer here, sample just sleep */
   st_usleep(10 * 1000);
@@ -95,7 +95,7 @@ static void* rx_video_frame_thread(void* arg) {
   int consumer_idx;
   struct st_rx_frame* framebuff;
 
-  printf("%s(%d), start\n", __func__, idx);
+  info("%s(%d), start\n", __func__, idx);
   while (!s->stop) {
     st_pthread_mutex_lock(&s->wake_mutex);
     consumer_idx = s->framebuff_consumer_idx;
@@ -108,7 +108,7 @@ static void* rx_video_frame_thread(void* arg) {
     }
     st_pthread_mutex_unlock(&s->wake_mutex);
 
-    // printf("%s(%d), frame idx %d\n", __func__, idx, consumer_idx);
+    dbg("%s(%d), frame idx %d\n", __func__, idx, consumer_idx);
     rx_video_consume_frame(s, framebuff->frame, framebuff->size);
     st20_rx_put_framebuff(s->handle, framebuff->frame);
     /* point to next */
@@ -119,7 +119,7 @@ static void* rx_video_frame_thread(void* arg) {
     s->framebuff_consumer_idx = consumer_idx;
     st_pthread_mutex_unlock(&s->wake_mutex);
   }
-  printf("%s(%d), stop\n", __func__, idx);
+  info("%s(%d), stop\n", __func__, idx);
 
   return NULL;
 }
@@ -217,6 +217,14 @@ int main(int argc, char** argv) {
 
   // stop rx
   ret = st_stop(ctx.st);
+
+  // check result
+  for (int i = 0; i < session_num; i++) {
+    if (app[i]->fb_rec <= 0) {
+      err("%s(%d), error, no received frames %d\n", __func__, i, app[i]->fb_rec);
+      ret = -EIO;
+    }
+  }
 
 error:
   // release session

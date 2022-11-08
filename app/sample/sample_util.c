@@ -166,19 +166,26 @@ int st_sample_init(struct st_sample_context* ctx, int argc, char** argv, bool tx
   signal(SIGINT, sample_sig_handler);
 
   p->flags |= ST_FLAG_BIND_NUMA; /* default bind to numa */
-  p->flags |= ST_FLAG_RX_SEPARATE_VIDEO_LCORE;
+  // p->flags |= ST_FLAG_RX_SEPARATE_VIDEO_LCORE;
   p->log_level = ST_LOG_LEVEL_INFO; /* default to info */
   /* use different default port/ip for tx and rx */
   if (rx) {
     strncpy(p->port[ST_PORT_P], "0000:af:01.0", ST_PORT_MAX_LEN);
     inet_pton(AF_INET, "192.168.85.80", st_p_sip_addr(p));
+    strncpy(p->port[ST_PORT_R], "0000:af:01.1", ST_PORT_MAX_LEN);
+    inet_pton(AF_INET, "192.168.85.81", st_r_sip_addr(p));
   } else {
     strncpy(p->port[ST_PORT_P], "0000:af:01.1", ST_PORT_MAX_LEN);
     inet_pton(AF_INET, "192.168.85.81", st_p_sip_addr(p));
+    strncpy(p->port[ST_PORT_R], "0000:af:01.0", ST_PORT_MAX_LEN);
+    inet_pton(AF_INET, "192.168.85.80", st_r_sip_addr(p));
   }
   inet_pton(AF_INET, "239.168.85.20", ctx->tx_dip_addr[ST_PORT_P]);
+  inet_pton(AF_INET, "239.168.85.21", ctx->tx_dip_addr[ST_PORT_R]);
   inet_pton(AF_INET, "239.168.85.20", ctx->rx_sip_addr[ST_PORT_P]);
-  inet_pton(AF_INET, "239.168.85.21", ctx->fwd_dip_addr[ST_PORT_P]);
+  inet_pton(AF_INET, "239.168.85.21", ctx->rx_sip_addr[ST_PORT_R]);
+  inet_pton(AF_INET, "239.168.86.20", ctx->fwd_dip_addr[ST_PORT_P]);
+  inet_pton(AF_INET, "239.168.86.21", ctx->fwd_dip_addr[ST_PORT_R]);
 
   if (!ctx->sessions) ctx->sessions = 1;
   ctx->framebuff_cnt = 3;

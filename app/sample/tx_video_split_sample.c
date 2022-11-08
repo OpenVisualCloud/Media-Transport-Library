@@ -187,6 +187,14 @@ int main(int argc, char** argv) {
   // stop tx
   ret = st_stop(ctx.st);
 
+  // check result
+  for (int i = 0; i < session_num; i++) {
+    if (app[i]->fb_send <= 0) {
+      err("%s(%d), error, no sent frames %d\n", __func__, i, app[i]->fb_send);
+      ret = -EIO;
+    }
+  }
+
 error:
   // release session
   for (int i = 0; i < session_num; i++) {

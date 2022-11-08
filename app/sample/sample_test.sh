@@ -31,18 +31,22 @@ test_tx_and_rx() {
 	  height=$5
 	fi
 	echo "${name}: start ${tx_prog}, width:${width} height:${height}"
-	#${TEST_BIN_PATH}/${tx_prog} --log_level ${LOG_LEVEL} --p_port ${ST_PORT_TX} --p_sip ${ST_SIP_TX} --p_tx_ip ${ST_TX_IP} --width ${width} --height ${height} &
-	${TEST_BIN_PATH}/${tx_prog} > /dev/null --log_level ${LOG_LEVEL} --p_port ${ST_PORT_TX} --p_sip ${ST_SIP_TX} --p_tx_ip ${ST_TX_IP} --width ${width} --height ${height} 2>&1 &
+	${TEST_BIN_PATH}/${tx_prog} --log_level ${LOG_LEVEL} --p_port ${ST_PORT_TX} --p_sip ${ST_SIP_TX} --p_tx_ip ${ST_TX_IP} --width ${width} --height ${height} &
+	#${TEST_BIN_PATH}/${tx_prog} > /dev/null --log_level ${LOG_LEVEL} --p_port ${ST_PORT_TX} --p_sip ${ST_SIP_TX} --p_tx_ip ${ST_TX_IP} --width ${width} --height ${height} 2>&1 &
 	pid_tx=$!
 	echo "${name}: start ${rx_prog}"
 	${TEST_BIN_PATH}/${rx_prog} --log_level ${LOG_LEVEL} --p_port ${ST_PORT_RX} --p_sip ${ST_SIP_RX} --p_rx_ip ${ST_RX_IP} --width ${width} --height ${height} &
 	pid_rx=$!
 	echo "${name}: pid_tx ${pid_tx}, pid_rx ${pid_rx}, wait ${TEST_TIME_SEC}s"
 	sleep ${TEST_TIME_SEC}
+
+	echo "${name}: wait all thread ending"
 	kill -SIGINT ${pid_tx}
 	kill -SIGINT ${pid_rx}
-	echo "${name}: wait all thread ending"
-	wait
+	wait ${pid_tx}
+	echo "${name}: ${tx_prog} exit"
+	wait ${pid_rx}
+	echo "${name}: ${rx_prog} exit"
 	echo "${name}: ****** Done ******"
 	echo ""
 }
@@ -71,7 +75,7 @@ test_tx_and_rx RxSt20pTxSt22pFwd TxSt20PipelineSample RxSt20pTxSt22pFwd
 # test TxVideoSplitSample
 test_tx_and_rx TxVideoSplitSample TxVideoSplitSample RxSt20PipelineSample
 # test RxSt20TxSt20SplitFwd, not enable now
-#test_tx_and_rx RxSt20TxSt20SplitFwd TxSt20PipelineSample RxSt20TxSt20SplitFwd 3840 2160
+test_tx_and_rx RxSt20TxSt20SplitFwd TxSt20PipelineSample RxSt20TxSt20SplitFwd 3840 2160
 
 echo "****** All test OK ******"
 

@@ -2,47 +2,11 @@
  * Copyright(c) 2022 Intel Corporation
  */
 
-#include <errno.h>
-#include <pthread.h>
-#include <signal.h>
 #include <st20_redundant_api.h>
-#include <stdbool.h>
-#include <stdio.h>
-#include <stdlib.h>
-#include <string.h>
-#include <unistd.h>
 
-#include "../src/app_platform.h"
+#include "sample_util.h"
 
-// #define RX_HDR_SPLIT
-
-#ifdef RX_HDR_SPLIT
-#define RX_VIDEO_UDP_PORT_P (6970)
-#define RX_VIDEO_UDP_PORT_R (6970)
-#define RX_VIDEO_BDF_P ("0000:af:00.0")
-#define RX_VIDEO_BDF_R ("0000:af:00.1")
-#else
-#define RX_VIDEO_UDP_PORT_P (20000)
-#define RX_VIDEO_UDP_PORT_R (20000)
-#define RX_VIDEO_BDF_P ("0000:af:01.0")
-#define RX_VIDEO_BDF_R ("0000:af:01.1")
-#endif
-
-#define RX_VIDEO_PAYLOAD_TYPE (112)
-
-/* p local ip address for current bdf port */
-static uint8_t g_rx_video_local_ip_p[ST_IP_ADDR_LEN] = {192, 168, 0, 1};
-/* p source ip address for rx video session */
-static uint8_t g_rx_video_source_ip_p[ST_IP_ADDR_LEN] = {239, 168, 85, 20};
-/* r local ip address for current bdf port */
-static uint8_t g_rx_video_local_ip_r[ST_IP_ADDR_LEN] = {192, 168, 0, 2};
-/* r source ip address for rx video session */
-static uint8_t g_rx_video_source_ip_r[ST_IP_ADDR_LEN] = {239, 168, 86, 20};
-
-static bool g_video_active = false;
-static st_handle g_st_handle;
-
-struct app_context {
+struct st20r_sample_ctx {
   int idx;
   int fb_rec;
   int stat_fb_rec;
@@ -59,7 +23,7 @@ struct app_context {
   struct st_rx_frame* framebuffs;
 };
 
-static int rx_video_enqueue_frame(struct app_context* s, void* frame, size_t size) {
+static int rx_video_enqueue_frame(struct st20r_sample_ctx* s, void* frame, size_t size) {
   uint16_t producer_idx = s->framebuff_producer_idx;
   struct st_rx_frame* framebuff = &s->framebuffs[producer_idx];
 
@@ -67,7 +31,7 @@ static int rx_video_enqueue_frame(struct app_context* s, void* frame, size_t siz
     return -EBUSY;
   }
 
-  // printf("%s(%d), frame idx %d\n", __func__, s->idx, producer_idx);
+  dbg("%s(%d), frame idx %d\n", __func__, s->idx, producer_idx);
   framebuff->frame = frame;
   framebuff->size = size;
   /* point to next */
@@ -79,7 +43,7 @@ static int rx_video_enqueue_frame(struct app_context* s, void* frame, size_t siz
 
 static int rx_video_frame_ready(void* priv, void* frame,
                                 struct st20_rx_frame_meta* meta) {
-  struct app_context* s = (struct app_context*)priv;
+  struct st20r_sample_ctx* s = (struct st20r_sample_ctx*)priv;
 
   if (!s->handle) return -EIO;
 
@@ -92,7 +56,7 @@ static int rx_video_frame_ready(void* priv, void* frame,
   st_pthread_mutex_lock(&s->wake_mutex);
   int ret = rx_video_enqueue_frame(s, frame, meta->frame_total_size);
   if (ret < 0) {
-    printf("%s(%d), frame %p dropped\n", __func__, s->idx, frame);
+    err("%s(%d), frame %p dropped\n", __func__, s->idx, frame);
     /* free the queue */
     st20r_rx_put_frame(s->handle, frame);
     st_pthread_mutex_unlock(&s->wake_mutex);
@@ -104,9 +68,9 @@ static int rx_video_frame_ready(void* priv, void* frame,
   return 0;
 }
 
-static void rx_video_consume_frame(struct app_context* s, void* frame,
+static void rx_video_consume_frame(struct st20r_sample_ctx* s, void* frame,
                                    size_t frame_size) {
-  // printf("%s(%d), frame %p\n", __func__, s->idx, frame);
+  dbg("%s(%d), frame %p\n", __func__, s->idx, frame);
 
   /* call the real consumer here, sample just sleep */
   st_usleep(10 * 1000);
@@ -114,12 +78,12 @@ static void rx_video_consume_frame(struct app_context* s, void* frame,
 }
 
 static void* rx_video_frame_thread(void* arg) {
-  struct app_context* s = arg;
+  struct st20r_sample_ctx* s = arg;
   int idx = s->idx;
   int consumer_idx;
   struct st_rx_frame* framebuff;
 
-  printf("%s(%d), start\n", __func__, idx);
+  info("%s(%d), start\n", __func__, idx);
   while (!s->stop) {
     st_pthread_mutex_lock(&s->wake_mutex);
     consumer_idx = s->framebuff_consumer_idx;
@@ -132,7 +96,7 @@ static void* rx_video_frame_thread(void* arg) {
     }
     st_pthread_mutex_unlock(&s->wake_mutex);
 
-    // printf("%s(%d), frame idx %d\n", __func__, idx, consumer_idx);
+    dbg("%s(%d), frame idx %d\n", __func__, idx, consumer_idx);
     rx_video_consume_frame(s, framebuff->frame, framebuff->size);
     st20r_rx_put_frame(s->handle, framebuff->frame);
     /* point to next */
@@ -143,82 +107,45 @@ static void* rx_video_frame_thread(void* arg) {
     s->framebuff_consumer_idx = consumer_idx;
     st_pthread_mutex_unlock(&s->wake_mutex);
   }
-  printf("%s(%d), stop\n", __func__, idx);
+  info("%s(%d), stop\n", __func__, idx);
 
   return NULL;
 }
 
-static void app_sig_handler(int signo) {
-  printf("%s, signal %d\n", __func__, signo);
-  switch (signo) {
-    case SIGINT: /* Interrupt from keyboard */
-      g_video_active = false;
-      st_request_exit(g_st_handle);
-      break;
-  }
-
-  return;
-}
-
-int main() {
-  struct st_init_params param;
-  int session_num = 1;
-  int fb_cnt = 3;
-  char* port_p = getenv("ST_PORT_P");
-  if (!port_p) port_p = RX_VIDEO_BDF_P;
-  char* port_r = getenv("ST_PORT_R");
-  if (!port_r) port_r = RX_VIDEO_BDF_R;
-  int test_time_s = 60 * 10;
-  char* test_time_user = getenv("TEST_TIME_SEC");
-  if (test_time_user) test_time_s = atoi(test_time_user);
-
-  memset(&param, 0, sizeof(param));
-  param.num_ports = 2;
-  strncpy(param.port[ST_PORT_P], port_p, ST_PORT_MAX_LEN - 1);
-  strncpy(param.port[ST_PORT_R], port_r, ST_PORT_MAX_LEN - 1);
-  memcpy(param.sip_addr[ST_PORT_P], g_rx_video_local_ip_p, ST_IP_ADDR_LEN);
-  memcpy(param.sip_addr[ST_PORT_R], g_rx_video_local_ip_r, ST_IP_ADDR_LEN);
-  param.flags = ST_FLAG_BIND_NUMA;        // default bind to numa
-  param.log_level = ST_LOG_LEVEL_NOTICE;  // log level. ERROR, INFO, WARNING
-  param.rx_sessions_cnt_max = session_num;
-#ifdef RX_HDR_SPLIT
-  param.nb_rx_hdr_split_queues = session_num;
-#endif
-
-  // create device
-  st_handle dev_handle = st_init(&param);
-  if (!dev_handle) {
-    printf("%s, st_init fail\n", __func__);
-    return -EIO;
-  }
-
-  g_st_handle = dev_handle;
-  signal(SIGINT, app_sig_handler);
-
-  st20r_rx_handle rx_handle[session_num];
-  struct app_context* app[session_num];
+int main(int argc, char** argv) {
+  struct st_sample_context ctx;
   int ret;
+
+  /* init sample(st) dev */
+  st_sample_init(&ctx, argc, argv, true, false);
+  ctx.param.num_ports = 2; /* force to 2 */
+  ret = st_sample_start(&ctx);
+  if (ret < 0) return ret;
+
+  uint32_t session_num = ctx.sessions;
+  st20r_rx_handle rx_handle[session_num];
+  struct st20r_sample_ctx* app[session_num];
   uint64_t sart_time_ns;
   int loop = 0;
 
   // create and register rx session
   for (int i = 0; i < session_num; i++) {
-    app[i] = (struct app_context*)malloc(sizeof(struct app_context));
+    app[i] = (struct st20r_sample_ctx*)malloc(sizeof(struct st20r_sample_ctx));
     if (!app[i]) {
-      printf("%s, app malloc fail on %d\n", __func__, i);
+      err("%s(%d), app context malloc fail\n", __func__, i);
       ret = -ENOMEM;
       goto error;
     }
-    memset(app[i], 0, sizeof(struct app_context));
+    memset(app[i], 0, sizeof(struct st20r_sample_ctx));
     app[i]->idx = i;
     app[i]->stop = false;
     st_pthread_mutex_init(&app[i]->wake_mutex, NULL);
     st_pthread_cond_init(&app[i]->wake_cond, NULL);
-    app[i]->framebuff_cnt = fb_cnt;
+    app[i]->framebuff_cnt = ctx.framebuff_cnt;
     app[i]->framebuffs =
         (struct st_rx_frame*)malloc(sizeof(*app[i]->framebuffs) * app[i]->framebuff_cnt);
     if (!app[i]->framebuffs) {
-      printf("%s, framebuffs malloc fail on %d\n", __func__, i);
+      err("%s(%d), framebuffs ctx malloc fail\n", __func__, i);
       ret = -ENOMEM;
       goto error;
     }
@@ -232,27 +159,24 @@ int main() {
     ops_rx.name = "st20r_test";
     ops_rx.priv = app[i];  // app handle register to lib
     ops_rx.num_port = 2;
-    memcpy(ops_rx.sip_addr[ST_PORT_P], g_rx_video_source_ip_p, ST_IP_ADDR_LEN);
-    memcpy(ops_rx.sip_addr[ST_PORT_R], g_rx_video_source_ip_r, ST_IP_ADDR_LEN);
-    strncpy(ops_rx.port[ST_PORT_P], port_p, ST_PORT_MAX_LEN - 1);
-    strncpy(ops_rx.port[ST_PORT_R], port_r, ST_PORT_MAX_LEN - 1);
-    ops_rx.udp_port[ST_PORT_P] = RX_VIDEO_UDP_PORT_P + i;
-    ops_rx.udp_port[ST_PORT_R] = RX_VIDEO_UDP_PORT_R + i;
-
-    ops_rx.width = 1920;
-    ops_rx.height = 1080;
-    ops_rx.fps = ST_FPS_P59_94;
-    ops_rx.fmt = ST20_FMT_YUV_422_10BIT;
-    ops_rx.framebuff_cnt = fb_cnt;
-    ops_rx.payload_type = RX_VIDEO_PAYLOAD_TYPE;
+    memcpy(ops_rx.sip_addr[ST_PORT_P], ctx.rx_sip_addr[ST_PORT_P], ST_IP_ADDR_LEN);
+    memcpy(ops_rx.sip_addr[ST_PORT_R], ctx.rx_sip_addr[ST_PORT_R], ST_IP_ADDR_LEN);
+    strncpy(ops_rx.port[ST_PORT_P], ctx.param.port[ST_PORT_P], ST_PORT_MAX_LEN);
+    strncpy(ops_rx.port[ST_PORT_R], ctx.param.port[ST_PORT_R], ST_PORT_MAX_LEN);
+    ops_rx.udp_port[ST_PORT_P] = ctx.udp_port + i;
+    ops_rx.udp_port[ST_PORT_R] = ctx.udp_port + i;
+    ops_rx.width = ctx.width;
+    ops_rx.height = ctx.height;
+    ops_rx.fps = ctx.fps;
+    ops_rx.fmt = ctx.fmt;
+    ops_rx.framebuff_cnt = app[i]->framebuff_cnt;
+    ops_rx.payload_type = ctx.payload_type;
     ops_rx.notify_frame_ready = rx_video_frame_ready;
-#ifdef RX_HDR_SPLIT
-    ops_rx.flags |= ST20R_RX_FLAG_HDR_SPLIT;
-#endif
+    if (ctx.hdr_split) ops_rx.flags |= ST20R_RX_FLAG_HDR_SPLIT;
 
-    rx_handle[i] = st20r_rx_create(dev_handle, &ops_rx);
+    rx_handle[i] = st20r_rx_create(ctx.st, &ops_rx);
     if (!rx_handle[i]) {
-      printf("%s, rx create fail on %d\n", __func__, i);
+      err("%s(%d), rx create fail\n", __func__, i);
       ret = -EIO;
       goto error;
     }
@@ -260,29 +184,26 @@ int main() {
 
     ret = pthread_create(&app[i]->app_thread, NULL, rx_video_frame_thread, app[i]);
     if (ret < 0) {
-      printf("%s(%d), app_thread create fail %d\n", __func__, ret, i);
+      err("%s(%d), app_thread create fail %d\n", __func__, ret, i);
       goto error;
     }
   }
 
-  // start rx
-  ret = st_start(dev_handle);
-
-  g_video_active = true;
+  // start dev
+  ret = st_start(ctx.st);
 
   // rx run
-  sart_time_ns = st_ptp_read_time(dev_handle);
-  printf("Run with %ds\n", test_time_s);
-  while (g_video_active && (loop < test_time_s)) {
+  sart_time_ns = st_ptp_read_time(ctx.st);
+  while (!ctx.exit) {
     sleep(1);
     loop++;
     if (0 == (loop % 10)) {
-      uint64_t end_time_ns = st_ptp_read_time(dev_handle);
+      uint64_t end_time_ns = st_ptp_read_time(ctx.st);
       double time_sec = (double)(end_time_ns - sart_time_ns) / (1000 * 1000 * 1000);
       for (int i = 0; i < session_num; i++) {
         int fb_rec = app[i]->fb_rec - app[i]->stat_fb_rec;
         double framerate = fb_rec / time_sec;
-        printf("%s(%d), fps %f, %d frame received\n", __func__, i, framerate, fb_rec);
+        info("%s(%d), fps %f, %d frame received\n", __func__, i, framerate, fb_rec);
         app[i]->stat_fb_rec = app[i]->fb_rec;
       }
       sart_time_ns = end_time_ns;
@@ -296,24 +217,32 @@ int main() {
     st_pthread_cond_signal(&app[i]->wake_cond);
     st_pthread_mutex_unlock(&app[i]->wake_mutex);
     pthread_join(app[i]->app_thread, NULL);
+    info("%s(%d), received frames %d\n", __func__, i, app[i]->fb_rec);
   }
 
   // stop rx
-  ret = st_stop(dev_handle);
+  ret = st_stop(ctx.st);
+
+  // check result
+  for (int i = 0; i < session_num; i++) {
+    if (app[i]->fb_rec <= 0) {
+      err("%s(%d), error, no received frames %d\n", __func__, i, app[i]->fb_rec);
+      ret = -EIO;
+    }
+  }
 
 error:
   // release session
   for (int i = 0; i < session_num; i++) {
-    if (rx_handle[i]) st20r_rx_free(rx_handle[i]);
     if (!app[i]) continue;
+    if (app[i]->handle) st20r_rx_free(app[i]->handle);
     st_pthread_mutex_destroy(&app[i]->wake_mutex);
     st_pthread_cond_destroy(&app[i]->wake_cond);
-    printf("session(%d) received frames %d\n", i, app[i]->fb_rec);
     if (app[i]->framebuffs) free(app[i]->framebuffs);
     free(app[i]);
   }
 
-  // destroy device
-  st_uninit(dev_handle);
-  return 0;
+  /* release sample(st) dev */
+  st_sample_uinit(&ctx);
+  return ret;
 }

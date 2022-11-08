@@ -35,7 +35,7 @@ static int rx_st20p_enqueue_frame(struct rx_st20p_tx_st20p_sample_ctx* s,
                                   struct st_frame* frame) {
   uint16_t producer_idx = s->framebuff_producer_idx;
   if (s->framebuffs[producer_idx] != NULL) {
-    printf("%s, queue full!\n", __func__);
+    err("%s, queue full!\n", __func__);
     return -EIO;
   }
   s->framebuffs[producer_idx] = frame;
@@ -61,7 +61,7 @@ static int st20_fwd_open_logo(struct st_sample_context* ctx,
                               struct rx_st20p_tx_st20p_sample_ctx* s, char* file) {
   FILE* fp_logo = st_fopen(file, "rb");
   if (!fp_logo) {
-    printf("%s, open %s fail\n", __func__, file);
+    err("%s, open %s fail\n", __func__, file);
     return -EIO;
   }
 
@@ -101,7 +101,7 @@ static int tx_st20p_frame_done(void* priv, struct st_frame* frame) {
 
   struct st_frame* rx_frame = rx_st20p_dequeue_frame(s);
   if (frame->addr != rx_frame->addr) {
-    printf("%s, frame ooo, should not happen!\n", __func__);
+    err("%s, frame ooo, should not happen!\n", __func__);
     return -EIO;
   }
   st20p_rx_put_frame(rx_handle, rx_frame);
@@ -138,8 +138,8 @@ static void fwd_st20_consume_frame(struct rx_st20p_tx_st20p_sample_ctx* s,
   struct st_frame* tx_frame;
 
   if (frame->data_size != s->framebuff_size) {
-    printf("%s(%d), mismatch frame size %ld %ld\n", __func__, s->idx, frame->data_size,
-           s->framebuff_size);
+    err("%s(%d), mismatch frame size %ld %ld\n", __func__, s->idx, frame->data_size,
+        s->framebuff_size);
     return;
   }
 
@@ -178,7 +178,7 @@ static void* st20_fwd_st20_thread(void* arg) {
   st20p_rx_handle rx_handle = s->rx_handle;
   struct st_frame* frame;
 
-  printf("%s(%d), start\n", __func__, s->idx);
+  info("%s(%d), start\n", __func__, s->idx);
   while (!s->stop) {
     frame = st20p_rx_get_frame(rx_handle);
     if (!frame) { /* no frame */
@@ -191,7 +191,7 @@ static void* st20_fwd_st20_thread(void* arg) {
     if (s->zero_copy) {
       int ret = rx_st20p_enqueue_frame(s, frame);
       if (ret < 0) {
-        printf("%s, drop frame\n", __func__);
+        err("%s, drop frame\n", __func__);
         st20p_rx_put_frame(rx_handle, frame);
         return NULL;
       }
@@ -201,7 +201,7 @@ static void* st20_fwd_st20_thread(void* arg) {
       st20p_rx_put_frame(rx_handle, frame);
     }
   }
-  printf("%s(%d), stop\n", __func__, s->idx);
+  info("%s(%d), stop\n", __func__, s->idx);
 
   return NULL;
 }
@@ -342,6 +342,12 @@ int main(int argc, char** argv) {
 
   // stop dev
   ret = st_stop(ctx.st);
+
+  // check result
+  if (app.fb_fwd <= 0) {
+    err("%s, error, no fwd frames %d\n", __func__, app.fb_fwd);
+    ret = -EIO;
+  }
 
 error:
   // release session

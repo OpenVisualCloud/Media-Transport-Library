@@ -39,7 +39,7 @@ static int st20_fwd_open_logo(struct st_sample_context* ctx,
                               struct rx_st20_tx_st20_sample_ctx* s, char* file) {
   FILE* fp_logo = st_fopen(file, "rb");
   if (!fp_logo) {
-    printf("%s, open %s fail\n", __func__, file);
+    err("%s, open %s fail\n", __func__, file);
     return -EIO;
   }
 
@@ -78,7 +78,7 @@ static int rx_st20_enqueue_frame(struct rx_st20_tx_st20_sample_ctx* s, void* fra
     return -EBUSY;
   }
 
-  // printf("%s(%d), frame idx %d\n", __func__, s->idx, producer_idx);
+  dbg("%s(%d), frame idx %d\n", __func__, s->idx, producer_idx);
   framebuff->frame = frame;
   framebuff->size = size;
   /* point to next */
@@ -103,7 +103,7 @@ static int rx_st20_frame_ready(void* priv, void* frame, struct st20_rx_frame_met
   /* rx framebuffer from lib */
   int ret = rx_st20_enqueue_frame(s, frame, meta->frame_total_size);
   if (ret < 0) {
-    printf("%s(%d), frame %p dropped\n", __func__, s->idx, frame);
+    err("%s(%d), frame %p dropped\n", __func__, s->idx, frame);
     /* free the queue */
     st20_rx_put_framebuff(s->rx_handle, frame);
     st_pthread_mutex_unlock(&s->wake_mutex);
@@ -124,7 +124,7 @@ static int tx_video_next_frame(void* priv, uint16_t* next_frame_idx,
 
   st_pthread_mutex_lock(&s->wake_mutex);
   if (ST_TX_FRAME_READY == framebuff->stat) {
-    // printf("%s(%d), next frame idx %u\n", __func__, s->idx, consumer_idx);
+    dbg("%s(%d), next frame idx %u\n", __func__, s->idx, consumer_idx);
     ret = 0;
     framebuff->stat = ST_TX_FRAME_IN_TRANSMITTING;
     *next_frame_idx = consumer_idx;
@@ -157,11 +157,11 @@ static int tx_video_frame_done(void* priv, uint16_t frame_idx,
   if (ST_TX_FRAME_IN_TRANSMITTING == framebuff->stat) {
     ret = 0;
     framebuff->stat = ST_TX_FRAME_FREE;
-    // printf("%s(%d), done_idx %u\n", __func__, s->idx, frame_idx);
+    dbg("%s(%d), done_idx %u\n", __func__, s->idx, frame_idx);
   } else {
     ret = -EIO;
-    printf("%s(%d), err status %d for frame %u\n", __func__, s->idx, framebuff->stat,
-           frame_idx);
+    err("%s(%d), err status %d for frame %u\n", __func__, s->idx, framebuff->stat,
+        frame_idx);
   }
   st_pthread_cond_signal(&s->wake_cond);
   st_pthread_mutex_unlock(&s->wake_mutex);
@@ -176,8 +176,8 @@ static void rx_fwd_consume_frame(struct rx_st20_tx_st20_sample_ctx* s, void* fra
   struct st_frame tx_frame;
 
   if (frame_size != s->framebuff_size) {
-    printf("%s(%d), mismatch frame size %ld %ld\n", __func__, s->idx, frame_size,
-           s->framebuff_size);
+    err("%s(%d), mismatch frame size %ld %ld\n", __func__, s->idx, frame_size,
+        s->framebuff_size);
     return;
   }
 
@@ -185,8 +185,8 @@ static void rx_fwd_consume_frame(struct rx_st20_tx_st20_sample_ctx* s, void* fra
   framebuff = &s->tx_framebuffs[producer_idx];
   if (ST_TX_FRAME_FREE != framebuff->stat) {
     /* not in free */
-    printf("%s(%d), frame %u err state %d\n", __func__, s->idx, producer_idx,
-           framebuff->stat);
+    err("%s(%d), frame %u err state %d\n", __func__, s->idx, producer_idx,
+        framebuff->stat);
     return;
   }
 
@@ -225,7 +225,7 @@ static void* fwd_thread(void* arg) {
   struct st_rx_frame* rx_framebuff;
   int consumer_idx;
 
-  printf("%s(%d), start\n", __func__, s->idx);
+  info("%s(%d), start\n", __func__, s->idx);
   while (!s->stop) {
     st_pthread_mutex_lock(&s->wake_mutex);
     consumer_idx = s->framebuff_consumer_idx;
@@ -248,7 +248,7 @@ static void* fwd_thread(void* arg) {
     s->framebuff_consumer_idx = consumer_idx;
     st_pthread_mutex_unlock(&s->wake_mutex);
   }
-  printf("%s(%d), stop\n", __func__, s->idx);
+  info("%s(%d), stop\n", __func__, s->idx);
 
   return NULL;
 }
@@ -402,6 +402,12 @@ int main(int argc, char** argv) {
 
   // stop dev
   ret = st_stop(ctx.st);
+
+  // check result
+  if (app.fb_fwd <= 0) {
+    err("%s, error, no fwd frames %d\n", __func__, app.fb_fwd);
+    ret = -EIO;
+  }
 
 error:
   // release session

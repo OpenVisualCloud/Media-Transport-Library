@@ -139,8 +139,6 @@ static void tx_st22p_build_frame(struct tx_st22p_sample_ctx* s, struct st_frame*
 
   /* point to next frame */
   s->frame_cursor += s->frame_size;
-
-  s->fb_send++;
 }
 
 static void* tx_st22p_frame_thread(void* arg) {
@@ -159,6 +157,7 @@ static void* tx_st22p_frame_thread(void* arg) {
     }
     if (s->source_begin) tx_st22p_build_frame(s, frame);
     st22p_tx_put_frame(handle, frame);
+    s->fb_send++;
   }
   info("%s(%d), stop\n", __func__, s->idx);
 
@@ -254,6 +253,14 @@ int main(int argc, char** argv) {
 
   // stop tx
   ret = st_stop(ctx.st);
+
+  // check result
+  for (int i = 0; i < session_num; i++) {
+    if (app[i]->fb_send <= 0) {
+      err("%s(%d), error, no sent frames %d\n", __func__, i, app[i]->fb_send);
+      ret = -EIO;
+    }
+  }
 
 error:
   for (int i = 0; i < session_num; i++) {

@@ -128,6 +128,14 @@ int main(int argc, char** argv) {
   // stop rx
   ret = st_stop(ctx.st);
 
+  // check result
+  for (int i = 0; i < session_num; i++) {
+    if (app[i]->fb_rec <= 0) {
+      err("%s(%d), error, no received frames %d\n", __func__, i, app[i]->fb_rec);
+      ret = -EIO;
+    }
+  }
+
 error:
   // release session
   for (int i = 0; i < session_num; i++) {
@@ -135,7 +143,6 @@ error:
     if (app[i]->handle) st20_rx_free(app[i]->handle);
     st_pthread_mutex_destroy(&app[i]->wake_mutex);
     st_pthread_cond_destroy(&app[i]->wake_cond);
-    printf("session(%d) received frames %d\n", i, app[i]->fb_rec);
     free(app[i]);
   }
 

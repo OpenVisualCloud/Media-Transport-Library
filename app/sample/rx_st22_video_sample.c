@@ -28,7 +28,7 @@ static int rx_st22_enqueue_frame(struct rx_st22_sample_ctx* s, void* frame, size
     return -EBUSY;
   }
 
-  // printf("%s(%d), frame idx %d\n", __func__, s->idx, producer_idx);
+  dbg("%s(%d), frame idx %d\n", __func__, s->idx, producer_idx);
   framebuff->frame = frame;
   framebuff->size = size;
   /* point to next */
@@ -46,7 +46,7 @@ static int rx_st22_frame_ready(void* priv, void* frame, struct st22_rx_frame_met
   st_pthread_mutex_lock(&s->wake_mutex);
   int ret = rx_st22_enqueue_frame(s, frame, meta->frame_total_size);
   if (ret < 0) {
-    printf("%s(%d), frame %p dropped\n", __func__, s->idx, frame);
+    err("%s(%d), frame %p dropped\n", __func__, s->idx, frame);
     /* free the queue */
     st22_rx_put_framebuff(s->handle, frame);
     st_pthread_mutex_unlock(&s->wake_mutex);
@@ -60,7 +60,7 @@ static int rx_st22_frame_ready(void* priv, void* frame, struct st22_rx_frame_met
 
 static void st22_decode_frame(struct rx_st22_sample_ctx* s, void* codestream_addr,
                               size_t codestream_size) {
-  // printf("%s(%d), frame %p\n", __func__, s->idx, frame);
+  dbg("%s(%d), frame %p\n", __func__, s->idx, frame);
 
   /* call the real decoding here, sample just sleep */
   st_usleep(10 * 1000);
@@ -73,7 +73,7 @@ static void* st22_decode_thread(void* arg) {
   int consumer_idx;
   struct st_rx_frame* framebuff;
 
-  printf("%s(%d), start\n", __func__, idx);
+  info("%s(%d), start\n", __func__, idx);
   while (!s->stop) {
     st_pthread_mutex_lock(&s->wake_mutex);
     consumer_idx = s->framebuff_consumer_idx;
@@ -86,7 +86,7 @@ static void* st22_decode_thread(void* arg) {
     }
     st_pthread_mutex_unlock(&s->wake_mutex);
 
-    // printf("%s(%d), frame idx %d\n", __func__, idx, consumer_idx);
+    dbg("%s(%d), frame idx %d\n", __func__, idx, consumer_idx);
     st22_decode_frame(s, framebuff->frame, framebuff->size);
     st22_rx_put_framebuff(s->handle, framebuff->frame);
     /* point to next */
@@ -97,7 +97,7 @@ static void* st22_decode_thread(void* arg) {
     s->framebuff_consumer_idx = consumer_idx;
     st_pthread_mutex_unlock(&s->wake_mutex);
   }
-  printf("%s(%d), stop\n", __func__, idx);
+  info("%s(%d), stop\n", __func__, idx);
 
   return NULL;
 }
@@ -198,6 +198,14 @@ int main(int argc, char** argv) {
 
   // stop rx
   ret = st_stop(ctx.st);
+
+  // check result
+  for (int i = 0; i < session_num; i++) {
+    if (app[i]->fb_decoded <= 0) {
+      err("%s(%d), error, no decoded frames %d\n", __func__, i, app[i]->fb_decoded);
+      ret = -EIO;
+    }
+  }
 
 error:
   // release session
