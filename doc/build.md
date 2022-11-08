@@ -14,7 +14,7 @@ sudo pip install pyelftools ninja
 ```bash
 sudo dnf config-manager --set-enabled powertools
 sudo yum install git gcc gcc-c++ meson python3 python3-pip pkg-config json-c-devel libpcap-devel gtest-devel SDL2-devel openssl-devel numactl-devel libasan
-sudo pip3 install pyelftools ninja
+sudo pip3 install pyelftools
 ```
 
 ## 2. DPDK build and install:
