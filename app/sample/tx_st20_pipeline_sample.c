@@ -213,10 +213,15 @@ int main(int argc, char** argv) {
     memset(&ops_tx, 0, sizeof(ops_tx));
     ops_tx.name = "st20p_test";
     ops_tx.priv = app[i];  // app handle register to lib
-    ops_tx.port.num_port = 1;
+    ops_tx.port.num_port = ctx.param.num_ports;
     memcpy(ops_tx.port.dip_addr[ST_PORT_P], ctx.tx_dip_addr[ST_PORT_P], ST_IP_ADDR_LEN);
     strncpy(ops_tx.port.port[ST_PORT_P], ctx.param.port[ST_PORT_P], ST_PORT_MAX_LEN);
     ops_tx.port.udp_port[ST_PORT_P] = ctx.udp_port + i;
+    if (ops_tx.port.num_port > 1) {
+      memcpy(ops_tx.port.dip_addr[ST_PORT_R], ctx.tx_dip_addr[ST_PORT_R], ST_IP_ADDR_LEN);
+      strncpy(ops_tx.port.port[ST_PORT_R], ctx.param.port[ST_PORT_R], ST_PORT_MAX_LEN);
+      ops_tx.port.udp_port[ST_PORT_R] = ctx.udp_port + i;
+    }
     ops_tx.port.payload_type = ctx.payload_type;
     ops_tx.width = ctx.width;
     ops_tx.height = ctx.height;
@@ -276,6 +281,14 @@ int main(int argc, char** argv) {
 
   // stop tx
   ret = st_stop(ctx.st);
+
+  // check result
+  for (int i = 0; i < session_num; i++) {
+    if (app[i]->fb_send <= 0) {
+      err("%s(%d), error, no sent frames %d\n", __func__, i, app[i]->fb_send);
+      ret = -EIO;
+    }
+  }
 
 error:
   for (int i = 0; i < session_num; i++) {

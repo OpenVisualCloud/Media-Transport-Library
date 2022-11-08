@@ -59,7 +59,7 @@ static int app_tx_build_rtp_packet(struct tv_rtp_sample_ctx* s,
   s->seq_id++;
   s->pkt_idx++;
   if (s->pkt_idx >= s->total_packet_in_frame) {
-    // printf("%s(%d), frame %d done\n", __func__, s->idx, s->fb_send);
+    dbg("%s(%d), frame %d done\n", __func__, s->idx, s->fb_send);
     /* end of current frame */
     rtp->base.marker = 1;
 
@@ -186,6 +186,14 @@ int main(int argc, char** argv) {
 
   // stop tx
   ret = st_stop(ctx.st);
+
+  // check result
+  for (int i = 0; i < session_num; i++) {
+    if (app[i]->fb_send <= 0) {
+      err("%s(%d), error, no sent frames %d\n", __func__, i, app[i]->fb_send);
+      ret = -EIO;
+    }
+  }
 
 error:
   // release session

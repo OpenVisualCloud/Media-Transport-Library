@@ -2,21 +2,9 @@
  * Copyright(c) 2022 Intel Corporation
  */
 
-#include <errno.h>
 #include <openssl/sha.h>
-#include <pthread.h>
-#include <st_dpdk_api.h>
-#include <stdbool.h>
-#include <stdio.h>
-#include <stdlib.h>
-#include <string.h>
-#include <unistd.h>
 
-#define NIC_PORT_BDF "0000:af:00.0"
-#define DMA_PORT_BDF "0000:80:04.0"
-
-/* local ip address for current bdf port */
-static uint8_t g_local_ip[ST_IP_ADDR_LEN] = {192, 168, 0, 1};
+#include "sample_util.h"
 
 static inline void rand_data(uint8_t* p, size_t sz, uint8_t base) {
   for (size_t i = 0; i < sz; i++) {
@@ -35,7 +23,7 @@ static int dma_copy_sample(st_handle st) {
   /* create user dma dev */
   dma = st_udma_create(st, nb_desc, ST_PORT_P);
   if (!dma) {
-    printf("dma create fail\n");
+    err("dma create fail\n");
     return -EIO;
   }
 
@@ -47,14 +35,14 @@ static int dma_copy_sample(st_handle st) {
   /* allocate fb dst and src(with random data) */
   fb_dst = st_hp_malloc(st, fb_size, ST_PORT_P);
   if (!fb_dst) {
-    printf("fb dst create fail\n");
+    err("fb dst create fail\n");
     st_udma_free(dma);
     return -ENOMEM;
   }
   fb_dst_iova = st_hp_virt2iova(st, fb_dst);
   fb_src = st_hp_malloc(st, fb_size, ST_PORT_P);
   if (!fb_src) {
-    printf("fb src create fail\n");
+    err("fb src create fail\n");
     st_hp_free(st, fb_dst);
     st_udma_free(dma);
     return -ENOMEM;
@@ -87,10 +75,10 @@ static int dma_copy_sample(st_handle st) {
   SHA256((unsigned char*)fb_dst, fb_size, fb_dst_shas);
   ret = memcmp(fb_dst_shas, fb_src_shas, SHA256_DIGEST_LENGTH);
   if (ret != 0) {
-    printf("sha check fail\n");
+    err("sha check fail\n");
   } else {
-    printf("dma copy %" PRIu64 "k with time %dus\n", fb_size / 1024,
-           (int)(end_ns - start_ns) / 1000);
+    info("dma copy %" PRIu64 "k with time %dus\n", fb_size / 1024,
+         (int)(end_ns - start_ns) / 1000);
   }
 
   st_hp_free(st, fb_dst);
@@ -114,7 +102,7 @@ static int dma_map_copy_sample(st_handle st) {
   /* create user dma dev */
   dma = st_udma_create(st, nb_desc, ST_PORT_P);
   if (!dma) {
-    printf("%s: dma create fail\n", __func__);
+    err("%s: dma create fail\n", __func__);
     return -EIO;
   }
 
@@ -127,28 +115,28 @@ static int dma_map_copy_sample(st_handle st) {
   /* allocate fb dst and src(with random data) */
   fb_dst_malloc = malloc(fb_size_malloc);
   if (!fb_dst_malloc) {
-    printf("%s: fb dst malloc fail\n", __func__);
+    err("%s: fb dst malloc fail\n", __func__);
     ret = -ENOMEM;
     goto out;
   }
   fb_dst = (void*)ST_ALIGN((uint64_t)fb_dst_malloc, pg_sz);
   fb_dst_iova = st_dma_map(st, fb_dst, fb_size);
   if (fb_dst_iova == ST_BAD_IOVA) {
-    printf("%s: fb dst mmap fail\n", __func__);
+    err("%s: fb dst mmap fail\n", __func__);
     ret = -EIO;
     goto out;
   }
 
   fb_src_malloc = malloc(fb_size_malloc);
   if (!fb_src_malloc) {
-    printf("%s: fb src malloc fail\n", __func__);
+    err("%s: fb src malloc fail\n", __func__);
     ret = -ENOMEM;
     goto out;
   }
   fb_src = (void*)ST_ALIGN((uint64_t)fb_src_malloc, pg_sz);
   fb_src_iova = st_dma_map(st, fb_src, fb_size);
   if (fb_src_iova == ST_BAD_IOVA) {
-    printf("%s: fb src mmap fail\n", __func__);
+    err("%s: fb src mmap fail\n", __func__);
     ret = -EIO;
     goto out;
   }
@@ -180,10 +168,10 @@ static int dma_map_copy_sample(st_handle st) {
   SHA256((unsigned char*)fb_dst, fb_size, fb_dst_shas);
   ret = memcmp(fb_dst_shas, fb_src_shas, SHA256_DIGEST_LENGTH);
   if (ret != 0) {
-    printf("%s: sha check fail\n", __func__);
+    err("%s: sha check fail\n", __func__);
   } else {
-    printf("%s: dma map copy %" PRIu64 "k with time %dus\n", __func__, fb_size / 1024,
-           (int)(end_ns - start_ns) / 1000);
+    info("%s: dma map copy %" PRIu64 "k with time %dus\n", __func__, fb_size / 1024,
+         (int)(end_ns - start_ns) / 1000);
   }
 
 out:
@@ -199,40 +187,27 @@ out:
   return ret;
 }
 
-int main() {
-  struct st_init_params param;
-  int session_num = 1;
+int main(int argc, char** argv) {
+  struct st_sample_context ctx;
+  int ret;
 
-  memset(&param, 0, sizeof(param));
-  param.num_ports = 1;
-  strncpy(param.port[ST_PORT_P], NIC_PORT_BDF, ST_PORT_MAX_LEN);
-  memcpy(param.sip_addr[ST_PORT_P], g_local_ip, ST_IP_ADDR_LEN);
-  param.flags = ST_FLAG_BIND_NUMA;      // default bind to numa
-  param.log_level = ST_LOG_LEVEL_INFO;  // log level. ERROR, INFO, WARNING
-  param.priv = NULL;                    // usr ctx pointer
-  // if not registed, the internal ptp source will be used
-  param.ptp_get_time_fn = NULL;
-  param.tx_sessions_cnt_max = session_num;
-  param.rx_sessions_cnt_max = 0;
-  // let lib decide to core or user could define it.
-  param.lcores = NULL;
+  /* init sample(st) dev */
+  st_sample_init(&ctx, argc, argv, true, false);
   // dma port
-  strncpy(param.dma_dev_port[0], DMA_PORT_BDF, ST_PORT_MAX_LEN);
-  param.num_dma_dev_port = 1;
-
-  // create device
-  st_handle dev_handle = st_init(&param);
-  if (!dev_handle) {
-    printf("st_init fail\n");
-    return -EIO;
-  }
+  strncpy(ctx.param.dma_dev_port[0], "0000:80:04.0", ST_PORT_MAX_LEN);
+  ctx.param.num_dma_dev_port = 1;
+  ret = st_sample_start(&ctx);
+  if (ret < 0) return ret;
 
   /* dma copy with st_hp_*** memory */
-  dma_copy_sample(dev_handle);
+  ret = dma_copy_sample(ctx.st);
+  if (ret < 0) goto exit;
   /* dma copy with malloc/free memory, use map before passing to DMA */
-  dma_map_copy_sample(dev_handle);
+  ret = dma_map_copy_sample(ctx.st);
+  if (ret < 0) goto exit;
 
-  // destroy device
-  st_uninit(dev_handle);
-  return 0;
+exit:
+  /* release sample(st) dev */
+  st_sample_uinit(&ctx);
+  return ret;
 }

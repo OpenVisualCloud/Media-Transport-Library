@@ -31,7 +31,7 @@ static int rx_video_enqueue_frame(struct rv_sample_context* s, void* frame, size
     return -EBUSY;
   }
 
-  // printf("%s(%d), frame idx %d\n", __func__, s->idx, producer_idx);
+  dbg("%s(%d), frame idx %d\n", __func__, s->idx, producer_idx);
   framebuff->frame = frame;
   framebuff->size = size;
   /* point to next */
@@ -56,7 +56,7 @@ static int rx_video_frame_ready(void* priv, void* frame,
   st_pthread_mutex_lock(&s->wake_mutex);
   int ret = rx_video_enqueue_frame(s, frame, meta->frame_total_size);
   if (ret < 0) {
-    info("%s(%d), frame %p dropped\n", __func__, s->idx, frame);
+    err("%s(%d), frame %p dropped\n", __func__, s->idx, frame);
     /* free the queue */
     st20_rx_put_framebuff(s->handle, frame);
     st_pthread_mutex_unlock(&s->wake_mutex);
@@ -96,7 +96,7 @@ static void* rx_video_frame_thread(void* arg) {
     }
     st_pthread_mutex_unlock(&s->wake_mutex);
 
-    // printf("%s(%d), frame idx %d\n", __func__, idx, consumer_idx);
+    dbg("%s(%d), frame idx %d\n", __func__, idx, consumer_idx);
     rx_video_consume_frame(s, framebuff->frame, framebuff->size);
     st20_rx_put_framebuff(s->handle, framebuff->frame);
     /* point to next */
@@ -230,6 +230,14 @@ int main(int argc, char** argv) {
 
   // stop rx
   ret = st_stop(ctx.st);
+
+  // check result
+  for (int i = 0; i < session_num; i++) {
+    if (app[i]->fb_rec <= 0) {
+      err("%s(%d), error, no received frames %d\n", __func__, i, app[i]->fb_rec);
+      ret = -EIO;
+    }
+  }
 
 error:
   // release session

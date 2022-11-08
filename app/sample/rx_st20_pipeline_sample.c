@@ -254,6 +254,14 @@ int main(int argc, char** argv) {
   // stop rx
   ret = st_stop(ctx.st);
 
+  // check result
+  for (int i = 0; i < session_num; i++) {
+    if (app[i]->fb_recv <= 0) {
+      err("%s(%d), error, no received frames %d\n", __func__, i, app[i]->fb_recv);
+      ret = -EIO;
+    }
+  }
+
 error:
   for (int i = 0; i < session_num; i++) {
     if (app[i]) {
