@@ -1226,9 +1226,9 @@ static int parse_st20p_format(json_object* st20p_obj, st_json_st20p_session_t* s
     st20p->info.format = ST_FRAME_FMT_YUV422RFC4175PG2BE10;
   } else if (strcmp(format, "YUV422RFC4175PG2BE12") == 0) {
     st20p->info.format = ST_FRAME_FMT_YUV422RFC4175PG2BE12;
-  } else if (strcmp(format, "YUV44RFC4175PG4BE10") == 0) {
+  } else if (strcmp(format, "YUV444RFC4175PG4BE10") == 0) {
     st20p->info.format = ST_FRAME_FMT_YUV444RFC4175PG4BE10;
-  } else if (strcmp(format, "RGBRFC4175PG2BE10") == 0) {
+  } else if (strcmp(format, "RGBRFC4175PG4BE10") == 0) {
     st20p->info.format = ST_FRAME_FMT_RGBRFC4175PG4BE10;
   } else if (strcmp(format, "RGB8") == 0) {
     st20p->info.format = ST_FRAME_FMT_RGB8;
