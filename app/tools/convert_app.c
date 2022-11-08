@@ -21,10 +21,18 @@ static enum st_frame_fmt fmt_cvt2frame(enum cvt_frame_fmt fmt) {
       return ST_FRAME_FMT_V210;
     case CVT_FRAME_FMT_Y210:
       return ST_FRAME_FMT_Y210;
+    case CVT_FRAME_FMT_YUV444PLANAR10LE:
+      return ST_FRAME_FMT_YUV444PLANAR10LE;
+    case CVT_FRAME_FMT_GBRPLANAR10LE:
+      return ST_FRAME_FMT_GBRPLANAR10LE;
     case CVT_FRAME_FMT_YUV422RFC4175PG2BE10:
       return ST_FRAME_FMT_YUV422RFC4175PG2BE10;
     case CVT_FRAME_FMT_YUV422RFC4175PG2BE12:
       return ST_FRAME_FMT_YUV422RFC4175PG2BE12;
+    case CVT_FRAME_FMT_YUV444RFC4175PG4BE10:
+      return ST_FRAME_FMT_YUV444RFC4175PG4BE10;
+    case CVT_FRAME_FMT_RGBRFC4175PG4BE10:
+      return ST_FRAME_FMT_RGBRFC4175PG4BE10;
     default:
       break;
   }
@@ -135,6 +143,32 @@ static int convert(struct conv_app_context* ctx) {
         ret = -EIO;
         goto out;
       }
+    } else if (fmt_in == CVT_FRAME_FMT_YUV444PLANAR10LE) {
+      if (fmt_out == CVT_FRAME_FMT_YUV444RFC4175PG4BE10) {
+        uint16_t *y, *b, *r;
+        y = (uint16_t*)buf_in;
+        b = y + w * h;
+        r = b + w * h;
+        st20_yuv444p10le_to_rfc4175_444be10(
+            y, b, r, (struct st20_rfc4175_444_10_pg4_be*)buf_out, w, h);
+      } else {
+        err("%s, err fmt in %d out %d\n", __func__, fmt_in, fmt_out);
+        ret = -EIO;
+        goto out;
+      }
+    } else if (fmt_in == CVT_FRAME_FMT_GBRPLANAR10LE) {
+      if (fmt_out == CVT_FRAME_FMT_RGBRFC4175PG4BE10) {
+        uint16_t *g, *b, *r;
+        g = (uint16_t*)buf_in;
+        b = g + w * h;
+        r = b + w * h;
+        st20_gbrp10le_to_rfc4175_444be10(
+            g, b, r, (struct st20_rfc4175_444_10_pg4_be*)buf_out, w, h);
+      } else {
+        err("%s, err fmt in %d out %d\n", __func__, fmt_in, fmt_out);
+        ret = -EIO;
+        goto out;
+      }
     } else if (fmt_in == CVT_FRAME_FMT_YUV422RFC4175PG2BE10) {
       if (fmt_out == CVT_FRAME_FMT_YUV422PLANAR10LE) {
         uint16_t *y, *b, *r;
@@ -162,6 +196,32 @@ static int convert(struct conv_app_context* ctx) {
         r = b + w * h / 2;
         st20_rfc4175_422be12_to_yuv422p12le((struct st20_rfc4175_422_12_pg2_be*)buf_in, y,
                                             b, r, w, h);
+      } else {
+        err("%s, err fmt in %d out %d\n", __func__, fmt_in, fmt_out);
+        ret = -EIO;
+        goto out;
+      }
+    } else if (fmt_in == CVT_FRAME_FMT_YUV444RFC4175PG4BE10) {
+      if (fmt_out == CVT_FRAME_FMT_YUV444PLANAR10LE) {
+        uint16_t *y, *b, *r;
+        y = (uint16_t*)buf_out;
+        b = y + w * h;
+        r = b + w * h;
+        st20_rfc4175_444be10_to_yuv444p10le((struct st20_rfc4175_444_10_pg4_be*)buf_in, y,
+                                            b, r, w, h);
+      } else {
+        err("%s, err fmt in %d out %d\n", __func__, fmt_in, fmt_out);
+        ret = -EIO;
+        goto out;
+      }
+    } else if (fmt_in == CVT_FRAME_FMT_RGBRFC4175PG4BE10) {
+      if (fmt_out == CVT_FRAME_FMT_GBRPLANAR10LE) {
+        uint16_t *g, *b, *r;
+        g = (uint16_t*)buf_out;
+        b = g + w * h;
+        r = b + w * h;
+        st20_rfc4175_444be10_to_gbrp10le((struct st20_rfc4175_444_10_pg4_be*)buf_in, g, b,
+                                         r, w, h);
       } else {
         err("%s, err fmt in %d out %d\n", __func__, fmt_in, fmt_out);
         ret = -EIO;

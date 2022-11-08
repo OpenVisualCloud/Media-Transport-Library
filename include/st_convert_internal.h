@@ -290,6 +290,56 @@ int st20_rfc4175_422be12_to_422le12_simd(struct st20_rfc4175_422_12_pg2_be* pg_b
                                          enum st_simd_level level);
 
 /**
+ * Convert rfc4175_444be10 to yuv444p10le/gbrp10le with required SIMD level.
+ * Note the level may downgrade to the SIMD which system really support.
+ *
+ * @param pg
+ *   Point to pg(rfc4175_444be10) data.
+ * @param y_g
+ *   Point to Y(yuv444p10le) or g(gbrp10le) vector.
+ * @param b_r
+ *   Point to b(yuv444p10le) or r(gbrp10le) vector.
+ * @param r_b
+ *   Point to r(yuv444p10le) or b(gbrp10le) vector.
+ * @param w
+ *   The st2110-20(video) width.
+ * @param h
+ *   The st2110-20(video) height.
+ * @param level
+ *   simd level.
+ * @return
+ *   - 0 if successful.
+ *   - <0: Error code if convert fail.
+ */
+int st20_rfc4175_444be10_to_444p10le_simd(struct st20_rfc4175_444_10_pg4_be* pg,
+                                          uint16_t* y_g, uint16_t* b_r, uint16_t* r_b,
+                                          uint32_t w, uint32_t h,
+                                          enum st_simd_level level);
+
+/**
+ * Convert rfc4175_444be10 to rfc4175_444le10 with required SIMD level.
+ * Note the level may downgrade to the SIMD which system really support.
+ *
+ * @param pg_be
+ *   Point to pg(rfc4175_444be10) data.
+ * @param pg_le
+ *   Point to pg(rfc4175_444le10) data.
+ * @param w
+ *   The st2110-20(video) width.
+ * @param h
+ *   The st2110-20(video) height.
+ * @param level
+ *   simd level.
+ * @return
+ *   - 0 if successful.
+ *   - <0: Error code if convert fail.
+ */
+int st20_rfc4175_444be10_to_444le10_simd(struct st20_rfc4175_444_10_pg4_be* pg_be,
+                                         struct st20_rfc4175_444_10_pg4_le* pg_le,
+                                         uint32_t w, uint32_t h,
+                                         enum st_simd_level level);
+
+/**
  * Convert yuv422p10le to rfc4175_422be10 with required SIMD level.
  * Note the level may downgrade to the SIMD which system really support.
  *
@@ -427,6 +477,33 @@ int st20_yuv422p12le_to_rfc4175_422be12_simd(uint16_t* y, uint16_t* b, uint16_t*
                                              struct st20_rfc4175_422_12_pg2_be* pg,
                                              uint32_t w, uint32_t h,
                                              enum st_simd_level level);
+
+/**
+ * Convert yuv444p10le or gbrp10le to rfc4175_444be10 with required SIMD level.
+ * Note the level may downgrade to the SIMD which system really support.
+ *
+ * @param y_g
+ *   Point to Y(yuv444p10le) or g(gbrp10le) vector.
+ * @param b_r
+ *   Point to b(yuv444p10le) or r(gbrp10le) vector.
+ * @param r_b
+ *   Point to r(yuv444p10le) or b(gbrp10le) vector.
+ * @param pg
+ *   Point to pg(rfc4175_444be10) data.
+ * @param w
+ *   The st2110-20(video) width.
+ * @param h
+ *   The st2110-20(video) height.
+ * @param level
+ *   simd level.
+ * @return
+ *   - 0 if successful.
+ *   - <0: Error code if convert fail.
+ */
+int st20_444p10le_to_rfc4175_444be10_simd(uint16_t* y_g, uint16_t* b_r, uint16_t* r_b,
+                                          struct st20_rfc4175_444_10_pg4_be* pg,
+                                          uint32_t w, uint32_t h,
+                                          enum st_simd_level level);
 
 /**
  * Convert rfc4175_422le10 to rfc4175_422be10 with required SIMD level.
@@ -627,6 +704,74 @@ int st20_rfc4175_422le12_to_422be12_simd(struct st20_rfc4175_422_12_pg2_le* pg_l
                                          struct st20_rfc4175_422_12_pg2_be* pg_be,
                                          uint32_t w, uint32_t h,
                                          enum st_simd_level level);
+
+/**
+ * Convert rfc4175_444le10 to rfc4175_444be10 with required SIMD level.
+ * Note the level may downgrade to the SIMD which system really support.
+ *
+ * @param pg_le
+ *   Point to pg(rfc4175_444le10) data.
+ * @param pg_be
+ *   Point to pg(rfc4175_444be10) data.
+ * @param w
+ *   The st2110-20(video) width.
+ * @param h
+ *   The st2110-20(video) height.
+ * @param level
+ *   simd level.
+ * @return
+ *   - 0 if successful.
+ *   - <0: Error code if convert fail.
+ */
+int st20_rfc4175_444le10_to_444be10_simd(struct st20_rfc4175_444_10_pg4_le* pg_le,
+                                         struct st20_rfc4175_444_10_pg4_be* pg_be,
+                                         uint32_t w, uint32_t h,
+                                         enum st_simd_level level);
+/**
+ * Convert yuv444p10le or gbrp10le to rfc4175_444le10.
+ *
+ * @param y_g
+ *   Point to Y(yuv444p10le) or g(gbrp10le) vector.
+ * @param b_r
+ *   Point to b(yuv444p10le) or r(gbrp10le) vector.
+ * @param r_b
+ *   Point to r(yuv444p10le) or b(gbrp10le) vector.
+ * @param pg_le
+ *   Point to pg(rfc4175_444le10) data.
+ * @param w
+ *   The st2110-20(video) width.
+ * @param h
+ *   The st2110-20(video) height.
+ * @return
+ *   - 0 if successful.
+ *   - <0: Error code if convert fail.
+ */
+int st20_444p10le_to_rfc4175_444le10(uint16_t* y_g, uint16_t* b_r, uint16_t* r_b,
+                                     struct st20_rfc4175_444_10_pg4_le* pg, uint32_t w,
+                                     uint32_t h);
+
+/**
+ * Convert rfc4175_444le10 to yuv444p10le or gbrp10le.
+ *
+ * @param pg_le
+ *   Point to pg(rfc4175_444le10) data.
+ * @param y_g
+ *   Point to Y(yuv444p10le) or g(gbrp10le) vector.
+ * @param b_r
+ *   Point to b(yuv444p10le) or r(gbrp10le) vector.
+ * @param r_b
+ *   Point to r(yuv444p10le) or b(gbrp10le) vector.
+ * @param w
+ *   The st2110-20(video) width.
+ * @param h
+ *   The st2110-20(video) height.
+ * @return
+ *   - 0 if successful.
+ *   - <0: Error code if convert fail.
+ */
+int st20_rfc4175_444le10_to_444p10le(struct st20_rfc4175_444_10_pg4_le* pg, uint16_t* y_g,
+                                     uint16_t* b_r, uint16_t* r_b, uint32_t w,
+                                     uint32_t h);
 
 #if defined(__cplusplus)
 }

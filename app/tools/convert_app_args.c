@@ -57,11 +57,23 @@ static enum cvt_frame_fmt cvt_parse_fmt(const char* sfmt) {
   if (!strcmp(sfmt, "yuv422p12le")) {
     return CVT_FRAME_FMT_YUV422PLANAR12LE;
   }
+  if (!strcmp(sfmt, "yuv444p10le")) {
+    return CVT_FRAME_FMT_YUV444PLANAR10LE;
+  }
+  if (!strcmp(sfmt, "gbrp10le")) {
+    return CVT_FRAME_FMT_GBRPLANAR10LE;
+  }
   if (!strcmp(sfmt, "yuv422rfc4175be10")) {
     return CVT_FRAME_FMT_YUV422RFC4175PG2BE10;
   }
   if (!strcmp(sfmt, "yuv422rfc4175be12")) {
     return CVT_FRAME_FMT_YUV422RFC4175PG2BE12;
+  }
+  if (!strcmp(sfmt, "yuv444rfc4175be10")) {
+    return CVT_FRAME_FMT_YUV444RFC4175PG4BE10;
+  }
+  if (!strcmp(sfmt, "rgbrfc4175be10")) {
+    return CVT_FRAME_FMT_RGBRFC4175PG4BE10;
   }
 
   err("%s, unknown sfmt %s\n", __func__, sfmt);

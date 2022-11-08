@@ -505,6 +505,112 @@ struct st20_rfc4175_extra_rtp_hdr {
   uint16_t row_offset;
 } __attribute__((__packed__));
 
+/** Pixel Group describing four image pixels in YUV 4:4:4 or RGB 10-bit format */
+struct st20_rfc4175_444_10_pg4_be {
+  uint8_t Cb_R00; /**< First 8 bits for Cb/Red 0 */
+#ifdef ST_LITTLE_ENDIAN
+  uint8_t Y_G00 : 6;   /**< First 6 bits for Y/Green 0 */
+  uint8_t Cb_R00_ : 2; /**< Second 2 bits for Cb/Red 0 */
+  uint8_t Cr_B00 : 4;  /**< First 4 bits for Cr/Blue 0 */
+  uint8_t Y_G00_ : 4;  /**< Second 4 bits for Y/Green 0 */
+  uint8_t Cb_R01 : 2;  /**< First 2 bits for Cb/Red 1 */
+  uint8_t Cr_B00_ : 6; /**< Second 6 bits for Cr/Blue 0 */
+  uint8_t Cb_R01_;     /**< Second 8 bits for Cb/Red 1 */
+  uint8_t Y_G01;       /**< First 8 bits for Y/Green 1 */
+  uint8_t Cr_B01 : 6;  /**< First 6 bits for Cr/Blue 1 */
+  uint8_t Y_G01_ : 2;  /**< Second 2 bits for Y/Green 1 */
+  uint8_t Cb_R02 : 4;  /**< First 4 bits for Cb/Red 2 */
+  uint8_t Cr_B01_ : 4; /**< Second 2 bits for Cr/Blue 1 */
+  uint8_t Y_G02 : 2;   /**< First 2 bits for Y/Green 2 */
+  uint8_t Cb_R02_ : 6; /**< Second 6 bits for Cb/Red 2 */
+  uint8_t Y_G02_;      /**< Second 8 bits for Y/Green 2 */
+  uint8_t Cr_B02;      /**< First 8 bits for Cr/Blue 2 */
+  uint8_t Cb_R03 : 6;  /**< First 6 bits for Cb/Red 3 */
+  uint8_t Cr_B02_ : 2; /**< Second 2 bits for Cr/Blue 2 */
+  uint8_t Y_G03 : 4;   /**< First 4 bits for Y/Green 3 */
+  uint8_t Cb_R03_ : 4; /**< Second 4 bits for Cb/Red 3 */
+  uint8_t Cr_B03 : 2;  /**< First 2 bits for Cr/Blue 3 */
+  uint8_t Y_G03_ : 6;  /**< Second 6 bits for Y/Green 3 */
+#else
+  uint8_t Cb_R00_ : 2; /**< Second 2 bits for Cb/Red 0 */
+  uint8_t Y_G00 : 6;   /**< First 6 bits for Y/Green 0 */
+  uint8_t Y_G00_ : 4;  /**< Second 4 bits for Y/Green 0 */
+  uint8_t Cr_B00 : 4;  /**< First 4 bits for Cr/Blue 0 */
+  uint8_t Cr_B00_ : 6; /**< Second 6 bits for Cr/Blue 0 */
+  uint8_t Cb_R01 : 2;  /**< First 2 bits for Cb/Red 1 */
+  uint8_t Cb_R01_;     /**< Second 8 bits for Cb/Red 1 */
+  uint8_t Y_G01;       /**< First 8 bits for Y/Green 1 */
+  uint8_t Y_G01_ : 2;  /**< Second 2 bits for Y/Green 1 */
+  uint8_t Cr_B01 : 6;  /**< First 6 bits for Cr/Blue 1 */
+  uint8_t Cr_B01_ : 4; /**< Second 2 bits for Cr/Blue 1 */
+  uint8_t Cb_R02 : 4;  /**< First 4 bits for Cb/Red 2 */
+  uint8_t Cb_R02_ : 6; /**< Second 6 bits for Cb/Red 2 */
+  uint8_t Y_G02 : 2;   /**< First 2 bits for Y/Green 2 */
+  uint8_t Y_G02_;      /**< Second 8 bits for Y/Green 2 */
+  uint8_t Cr_B02;      /**< First 8 bits for Cr/Blue 2 */
+  uint8_t Cr_B02_ : 2; /**< Second 2 bits for Cr/Blue 2 */
+  uint8_t Cb_R03 : 6;  /**< First 6 bits for Cb/Red 3 */
+  uint8_t Cb_R03_ : 4; /**< Second 4 bits for Cb/Red 3 */
+  uint8_t Y_G03 : 4;   /**< First 4 bits for Y/Green 3 */
+  uint8_t Y_G03_ : 6;  /**< Second 6 bits for Y/Green 3 */
+  uint8_t Cr_B03 : 2;  /**< First 2 bits for Cr/Blue 3 */
+#endif
+  uint8_t Cr_B03_; /**< Second 8 bits for Cr/Blue 1 */
+} __attribute__((__packed__));
+
+/** Pixel Group describing four image pixels in YUV 4:4:4 or RGB 10-bit format */
+struct st20_rfc4175_444_10_pg4_le {
+  uint8_t Cb_R00; /**< First 8 bits for Cb/Red 0 */
+#ifdef ST_LITTLE_ENDIAN
+  uint8_t Cb_R00_ : 2; /**< Second 2 bits for Cb/Red 0 */
+  uint8_t Y_G00 : 6;   /**< First 6 bits for Y/Green 0 */
+  uint8_t Y_G00_ : 4;  /**< Second 4 bits for Y/Green 0 */
+  uint8_t Cr_B00 : 4;  /**< First 4 bits for Cr/Blue 0 */
+  uint8_t Cr_B00_ : 6; /**< Second 6 bits for Cr/Blue 0 */
+  uint8_t Cb_R01 : 2;  /**< First 2 bits for Cb/Red 1 */
+  uint8_t Cb_R01_;     /**< Second 8 bits for Cb/Red 1 */
+  uint8_t Y_G01;       /**< First 8 bits for Y/Green 1 */
+  uint8_t Y_G01_ : 2;  /**< Second 2 bits for Y/Green 1 */
+  uint8_t Cr_B01 : 6;  /**< First 6 bits for Cr/Blue 1 */
+  uint8_t Cr_B01_ : 4; /**< Second 2 bits for Cr/Blue 1 */
+  uint8_t Cb_R02 : 4;  /**< First 4 bits for Cb/Red 2 */
+  uint8_t Cb_R02_ : 6; /**< Second 6 bits for Cb/Red 2 */
+  uint8_t Y_G02 : 2;   /**< First 2 bits for Y/Green 2 */
+  uint8_t Y_G02_;      /**< Second 8 bits for Y/Green 2 */
+  uint8_t Cr_B02;      /**< First 8 bits for Cr/Blue 2 */
+  uint8_t Cr_B02_ : 2; /**< Second 2 bits for Cr/Blue 2 */
+  uint8_t Cb_R03 : 6;  /**< First 6 bits for Cb/Red 3 */
+  uint8_t Cb_R03_ : 4; /**< Second 4 bits for Cb/Red 3 */
+  uint8_t Y_G03 : 4;   /**< First 4 bits for Y/Green 3 */
+  uint8_t Y_G03_ : 6;  /**< Second 6 bits for Y/Green 3 */
+  uint8_t Cr_B03 : 2;  /**< First 2 bits for Cr/Blue 3 */
+#else
+  uint8_t Y_G00 : 6;   /**< First 6 bits for Y/Green 0 */
+  uint8_t Cb_R00_ : 2; /**< Second 2 bits for Cb/Red 0 */
+  uint8_t Cr_B00 : 4;  /**< First 4 bits for Cr/Blue 0 */
+  uint8_t Y_G00_ : 4;  /**< Second 4 bits for Y/Green 0 */
+  uint8_t Cb_R01 : 2;  /**< First 2 bits for Cb/Red 1 */
+  uint8_t Cr_B00_ : 6; /**< Second 6 bits for Cr/Blue 0 */
+  uint8_t Cb_R01_;     /**< Second 8 bits for Cb/Red 1 */
+  uint8_t Y_G01;       /**< First 8 bits for Y/Green 1 */
+  uint8_t Cr_B01 : 6;  /**< First 6 bits for Cr/Blue 1 */
+  uint8_t Y_G01_ : 2;  /**< Second 2 bits for Y/Green 1 */
+  uint8_t Cb_R02 : 4;  /**< First 4 bits for Cb/Red 2 */
+  uint8_t Cr_B01_ : 4; /**< Second 2 bits for Cr/Blue 1 */
+  uint8_t Y_G02 : 2;   /**< First 2 bits for Y/Green 2 */
+  uint8_t Cb_R02_ : 6; /**< Second 6 bits for Cb/Red 2 */
+  uint8_t Y_G02_;      /**< Second 8 bits for Y/Green 2 */
+  uint8_t Cr_B02;      /**< First 8 bits for Cr/Blue 2 */
+  uint8_t Cb_R03 : 6;  /**< First 6 bits for Cb/Red 3 */
+  uint8_t Cr_B02_ : 2; /**< Second 2 bits for Cr/Blue 2 */
+  uint8_t Y_G03 : 4;   /**< First 4 bits for Y/Green 3 */
+  uint8_t Cb_R03_ : 4; /**< Second 4 bits for Cb/Red 3 */
+  uint8_t Cr_B03 : 2;  /**< First 2 bits for Cr/Blue 3 */
+  uint8_t Y_G03_ : 6;  /**< Second 6 bits for Y/Green 3 */
+#endif
+  uint8_t Cr_B03_; /**< Second 8 bits for Cr/Blue 1 */
+} __attribute__((__packed__));
+
 /** Pixel Group describing two image pixels in YUV 4:2:2 12-bit format */
 struct st20_rfc4175_422_12_pg2_be {
   uint8_t Cb00; /**< First 8 bit Blue */
@@ -516,12 +622,12 @@ struct st20_rfc4175_422_12_pg2_be {
   uint8_t Y01 : 4;   /**< First 4 bits Luminance for Y1 */
   uint8_t Cr00_ : 4; /**< Second 4 bit Red */
 #else
-  uint8_t Cb00_ : 4; /**< Second 4 bit Blue */
-  uint8_t Y00 : 4;   /**< First 4 bits Luminance for Y0 */
-  uint8_t Y00_;      /**< Second 8 bits Luminance for Y0 */
-  uint8_t Cr00;      /**< First 8 bit Red */
-  uint8_t Cr00_ : 4; /**< Second 4 bit Red */
-  uint8_t Y01 : 4;   /**< First 4 bits Luminance for Y1 */
+  uint8_t Cb00_ : 4;   /**< Second 4 bit Blue */
+  uint8_t Y00 : 4;     /**< First 4 bits Luminance for Y0 */
+  uint8_t Y00_;        /**< Second 8 bits Luminance for Y0 */
+  uint8_t Cr00;        /**< First 8 bit Red */
+  uint8_t Cr00_ : 4;   /**< Second 4 bit Red */
+  uint8_t Y01 : 4;     /**< First 4 bits Luminance for Y1 */
 #endif
   uint8_t Y01_; /**< Second 8 bits Luminance for Y1 */
 } __attribute__((__packed__));
@@ -537,12 +643,12 @@ struct st20_rfc4175_422_12_pg2_le {
   uint8_t Cr00_ : 4; /**< Second 4 bit Red */
   uint8_t Y01 : 4;   /**< First 4 bits Luminance for Y1 */
 #else
-  uint8_t Y00 : 4;   /**< First 4 bits Luminance for Y0 */
-  uint8_t Cb00_ : 4; /**< Second 4 bit Blue */
-  uint8_t Y00_;      /**< Second 8 bits Luminance for Y0 */
-  uint8_t Cr00;      /**< First 8 bit Red */
-  uint8_t Y01 : 4;   /**< First 4 bits Luminance for Y1 */
-  uint8_t Cr00_ : 4; /**< Second 4 bit Red */
+  uint8_t Y00 : 4;     /**< First 4 bits Luminance for Y0 */
+  uint8_t Cb00_ : 4;   /**< Second 4 bit Blue */
+  uint8_t Y00_;        /**< Second 8 bits Luminance for Y0 */
+  uint8_t Cr00;        /**< First 8 bit Red */
+  uint8_t Y01 : 4;     /**< First 4 bits Luminance for Y1 */
+  uint8_t Cr00_ : 4;   /**< Second 4 bit Red */
 #endif
   uint8_t Y01_; /**< Second 8 bits Luminance for Y1 */
 } __attribute__((__packed__));
@@ -558,12 +664,12 @@ struct st20_rfc4175_422_10_pg2_be {
   uint8_t Y01 : 2;   /**< First 2 bits Luminance for Y1 */
   uint8_t Cr00_ : 6; /**< Second 6 bit Red */
 #else
-  uint8_t Cb00_ : 2; /**< Second 2 bit Blue */
-  uint8_t Y00 : 6;   /**< First 6 bits Luminance for Y0 */
-  uint8_t Y00_ : 4;  /**< Second 4 bits Luminance for Y0 */
-  uint8_t Cr00 : 4;  /**< First 4 bit Red */
-  uint8_t Cr00_ : 6; /**< Second 6 bit Red */
-  uint8_t Y01 : 2;   /**< First 2 bits Luminance for Y1 */
+  uint8_t Cb00_ : 2;   /**< Second 2 bit Blue */
+  uint8_t Y00 : 6;     /**< First 6 bits Luminance for Y0 */
+  uint8_t Y00_ : 4;    /**< Second 4 bits Luminance for Y0 */
+  uint8_t Cr00 : 4;    /**< First 4 bit Red */
+  uint8_t Cr00_ : 6;   /**< Second 6 bit Red */
+  uint8_t Y01 : 2;     /**< First 2 bits Luminance for Y1 */
 #endif
   uint8_t Y01_; /**< Second 8 bits Luminance for Y1 */
 } __attribute__((__packed__));
@@ -579,12 +685,12 @@ struct st20_rfc4175_422_10_pg2_le {
   uint8_t Cr00_ : 6; /**< Second 6 bit Red */
   uint8_t Y01 : 2;   /**< First 2 bits Luminance for Y1 */
 #else
-  uint8_t Y00 : 6;   /**< First 6 bits Luminance for Y0 */
-  uint8_t Cb00_ : 2; /**< Second 2 bit Blue */
-  uint8_t Cr00 : 4;  /**< First 4 bit Red */
-  uint8_t Y00_ : 4;  /**< Second 4 bits Luminance for Y0 */
-  uint8_t Y01 : 2;   /**< First 2 bits Luminance for Y1 */
-  uint8_t Cr00_ : 6; /**< Second 6 bit Red */
+  uint8_t Y00 : 6;     /**< First 6 bits Luminance for Y0 */
+  uint8_t Cb00_ : 2;   /**< Second 2 bit Blue */
+  uint8_t Cr00 : 4;    /**< First 4 bit Red */
+  uint8_t Y00_ : 4;    /**< Second 4 bits Luminance for Y0 */
+  uint8_t Y01 : 2;     /**< First 2 bits Luminance for Y1 */
+  uint8_t Cr00_ : 6;   /**< Second 6 bit Red */
 #endif
   uint8_t Y01_; /**< Second 8 bits Luminance for Y1 */
 } __attribute__((__packed__));

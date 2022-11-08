@@ -2486,6 +2486,508 @@ TEST(Cvt, rotate_rfc4175_422be12_yuv422p12le_422le12_scalar) {
                                                   ST_SIMD_LEVEL_NONE, ST_SIMD_LEVEL_NONE);
 }
 
+static void test_cvt_rfc4175_444be10_to_444p10le(int w, int h,
+                                                 enum st_simd_level cvt_level,
+                                                 enum st_simd_level back_level) {
+  int ret;
+  size_t fb_pg4_size = w * h * 15 / 4;
+  struct st20_rfc4175_444_10_pg4_be* pg =
+      (struct st20_rfc4175_444_10_pg4_be*)st_test_zmalloc(fb_pg4_size);
+  struct st20_rfc4175_444_10_pg4_be* pg_2 =
+      (struct st20_rfc4175_444_10_pg4_be*)st_test_zmalloc(fb_pg4_size);
+  size_t planar_size = w * h * 3 * sizeof(uint16_t);
+  uint16_t* p10_u16 = (uint16_t*)st_test_zmalloc(planar_size);
+
+  if (!pg || !pg_2 || !p10_u16) {
+    EXPECT_EQ(0, 1);
+    if (pg) st_test_free(pg);
+    if (pg_2) st_test_free(pg_2);
+    if (p10_u16) st_test_free(p10_u16);
+    return;
+  }
+
+  st_test_rand_data((uint8_t*)pg, fb_pg4_size, 0);
+
+  ret = st20_rfc4175_444be10_to_444p10le_simd(pg, p10_u16, (p10_u16 + w * h),
+                                              (p10_u16 + w * h * 2), w, h, cvt_level);
+  EXPECT_EQ(0, ret);
+
+  ret = st20_444p10le_to_rfc4175_444be10_simd(
+      p10_u16, (p10_u16 + w * h), (p10_u16 + w * h * 2), pg_2, w, h, back_level);
+  EXPECT_EQ(0, ret);
+
+  EXPECT_EQ(0, memcmp(pg, pg_2, fb_pg4_size));
+
+  st_test_free(pg);
+  st_test_free(pg_2);
+  st_test_free(p10_u16);
+}
+
+TEST(Cvt, rfc4175_444be10_to_444p10le) {
+  test_cvt_rfc4175_444be10_to_444p10le(1920, 1080, ST_SIMD_LEVEL_MAX, ST_SIMD_LEVEL_MAX);
+}
+
+TEST(Cvt, rfc4175_444be10_to_444p10le_scalar) {
+  test_cvt_rfc4175_444be10_to_444p10le(1920, 1080, ST_SIMD_LEVEL_NONE,
+                                       ST_SIMD_LEVEL_NONE);
+}
+
+static void test_cvt_444p10le_to_rfc4175_444be10(int w, int h,
+                                                 enum st_simd_level cvt_level,
+                                                 enum st_simd_level back_level) {
+  int ret;
+  size_t fb_pg4_size = w * h * 15 / 4;
+  struct st20_rfc4175_444_10_pg4_be* pg =
+      (struct st20_rfc4175_444_10_pg4_be*)st_test_zmalloc(fb_pg4_size);
+  size_t planar_size = w * h * 3 * sizeof(uint16_t);
+  uint16_t* p10_u16 = (uint16_t*)st_test_zmalloc(planar_size);
+  uint16_t* p10_u16_2 = (uint16_t*)st_test_zmalloc(planar_size);
+
+  if (!pg || !p10_u16_2 || !p10_u16) {
+    EXPECT_EQ(0, 1);
+    if (pg) st_test_free(pg);
+    if (p10_u16_2) st_test_free(p10_u16_2);
+    if (p10_u16) st_test_free(p10_u16);
+    return;
+  }
+
+  for (size_t i = 0; i < (planar_size / 2); i++) {
+    p10_u16[i] = rand() & 0x3ff; /* only 10 bit */
+  }
+
+  ret = st20_444p10le_to_rfc4175_444be10_simd(p10_u16, (p10_u16 + w * h),
+                                              (p10_u16 + w * h * 2), pg, w, h, cvt_level);
+  EXPECT_EQ(0, ret);
+
+  ret = st20_rfc4175_444be10_to_444p10le_simd(pg, p10_u16_2, (p10_u16_2 + w * h),
+                                              (p10_u16_2 + w * h * 2), w, h, back_level);
+  EXPECT_EQ(0, ret);
+
+  EXPECT_EQ(0, memcmp(p10_u16, p10_u16_2, planar_size));
+
+  st_test_free(pg);
+  st_test_free(p10_u16);
+  st_test_free(p10_u16_2);
+}
+
+TEST(Cvt, 444p10le_to_rfc4175_444be10) {
+  test_cvt_444p10le_to_rfc4175_444be10(1920, 1080, ST_SIMD_LEVEL_MAX, ST_SIMD_LEVEL_MAX);
+}
+
+TEST(Cvt, 444p10le_to_rfc4175_444be10_scalar) {
+  test_cvt_444p10le_to_rfc4175_444be10(1920, 1080, ST_SIMD_LEVEL_NONE,
+                                       ST_SIMD_LEVEL_NONE);
+}
+
+static void test_cvt_rfc4175_444le10_to_yuv444p10le(int w, int h,
+                                                    enum st_simd_level cvt_level,
+                                                    enum st_simd_level back_level) {
+  int ret;
+  size_t fb_pg4_size = w * h * 15 / 4;
+  struct st20_rfc4175_444_10_pg4_le* pg =
+      (struct st20_rfc4175_444_10_pg4_le*)st_test_zmalloc(fb_pg4_size);
+  struct st20_rfc4175_444_10_pg4_le* pg_2 =
+      (struct st20_rfc4175_444_10_pg4_le*)st_test_zmalloc(fb_pg4_size);
+  size_t planar_size = w * h * 3 * sizeof(uint16_t);
+  uint16_t* p10_u16 = (uint16_t*)st_test_zmalloc(planar_size);
+
+  if (!pg || !pg_2 || !p10_u16) {
+    EXPECT_EQ(0, 1);
+    if (pg) st_test_free(pg);
+    if (pg_2) st_test_free(pg_2);
+    if (p10_u16) st_test_free(p10_u16);
+    return;
+  }
+
+  st_test_rand_data((uint8_t*)pg, fb_pg4_size, 0);
+
+  ret = st20_rfc4175_444le10_to_yuv444p10le(pg, p10_u16, (p10_u16 + w * h),
+                                            (p10_u16 + w * h * 2), w, h);
+  EXPECT_EQ(0, ret);
+
+  ret = st20_yuv444p10le_to_rfc4175_444le10(p10_u16, (p10_u16 + w * h),
+                                            (p10_u16 + w * h * 2), pg_2, w, h);
+  EXPECT_EQ(0, ret);
+
+  EXPECT_EQ(0, memcmp(pg, pg_2, fb_pg4_size));
+
+  st_test_free(pg);
+  st_test_free(pg_2);
+  st_test_free(p10_u16);
+}
+
+TEST(Cvt, rfc4175_444le10_to_yuv444p10le) {
+  test_cvt_rfc4175_444le10_to_yuv444p10le(1920, 1080, ST_SIMD_LEVEL_MAX,
+                                          ST_SIMD_LEVEL_MAX);
+}
+
+TEST(Cvt, rfc4175_444le10_to_yuv444p10le_scalar) {
+  test_cvt_rfc4175_444le10_to_yuv444p10le(1920, 1080, ST_SIMD_LEVEL_NONE,
+                                          ST_SIMD_LEVEL_NONE);
+}
+
+static void test_cvt_rfc4175_444le10_to_gbrp10le(int w, int h,
+                                                 enum st_simd_level cvt_level,
+                                                 enum st_simd_level back_level) {
+  int ret;
+  size_t fb_pg4_size = w * h * 15 / 4;
+  struct st20_rfc4175_444_10_pg4_le* pg =
+      (struct st20_rfc4175_444_10_pg4_le*)st_test_zmalloc(fb_pg4_size);
+  struct st20_rfc4175_444_10_pg4_le* pg_2 =
+      (struct st20_rfc4175_444_10_pg4_le*)st_test_zmalloc(fb_pg4_size);
+  size_t planar_size = w * h * 3 * sizeof(uint16_t);
+  uint16_t* p10_u16 = (uint16_t*)st_test_zmalloc(planar_size);
+
+  if (!pg || !pg_2 || !p10_u16) {
+    EXPECT_EQ(0, 1);
+    if (pg) st_test_free(pg);
+    if (pg_2) st_test_free(pg_2);
+    if (p10_u16) st_test_free(p10_u16);
+    return;
+  }
+
+  st_test_rand_data((uint8_t*)pg, fb_pg4_size, 0);
+
+  ret = st20_rfc4175_444le10_to_gbrp10le(pg, p10_u16, (p10_u16 + w * h),
+                                         (p10_u16 + w * h * 2), w, h);
+  EXPECT_EQ(0, ret);
+
+  ret = st20_gbrp10le_to_rfc4175_444le10(p10_u16, (p10_u16 + w * h),
+                                         (p10_u16 + w * h * 2), pg_2, w, h);
+  EXPECT_EQ(0, ret);
+
+  EXPECT_EQ(0, memcmp(pg, pg_2, fb_pg4_size));
+
+  st_test_free(pg);
+  st_test_free(pg_2);
+  st_test_free(p10_u16);
+}
+
+TEST(Cvt, rfc4175_444le10_to_gbrp10le) {
+  test_cvt_rfc4175_444le10_to_gbrp10le(1920, 1080, ST_SIMD_LEVEL_MAX, ST_SIMD_LEVEL_MAX);
+}
+
+TEST(Cvt, rfc4175_444le10_to_gbrp10le_scalar) {
+  test_cvt_rfc4175_444le10_to_gbrp10le(1920, 1080, ST_SIMD_LEVEL_NONE,
+                                       ST_SIMD_LEVEL_NONE);
+}
+
+static void test_cvt_yuv444p10le_to_rfc4175_444le10(int w, int h,
+                                                    enum st_simd_level cvt_level,
+                                                    enum st_simd_level back_level) {
+  int ret;
+  size_t fb_pg4_size = w * h * 15 / 4;
+  struct st20_rfc4175_444_10_pg4_le* pg =
+      (struct st20_rfc4175_444_10_pg4_le*)st_test_zmalloc(fb_pg4_size);
+  size_t planar_size = w * h * 3 * sizeof(uint16_t);
+  uint16_t* p10_u16 = (uint16_t*)st_test_zmalloc(planar_size);
+  uint16_t* p10_u16_2 = (uint16_t*)st_test_zmalloc(planar_size);
+
+  if (!pg || !p10_u16_2 || !p10_u16) {
+    EXPECT_EQ(0, 1);
+    if (pg) st_test_free(pg);
+    if (p10_u16_2) st_test_free(p10_u16_2);
+    if (p10_u16) st_test_free(p10_u16);
+    return;
+  }
+
+  for (size_t i = 0; i < (planar_size / 2); i++) {
+    p10_u16[i] = rand() & 0x3ff; /* only 10 bit */
+  }
+
+  ret = st20_yuv444p10le_to_rfc4175_444le10(p10_u16, (p10_u16 + w * h),
+                                            (p10_u16 + w * h * 2), pg, w, h);
+  EXPECT_EQ(0, ret);
+
+  ret = st20_rfc4175_444le10_to_yuv444p10le(pg, p10_u16_2, (p10_u16_2 + w * h),
+                                            (p10_u16_2 + w * h * 2), w, h);
+  EXPECT_EQ(0, ret);
+
+  EXPECT_EQ(0, memcmp(p10_u16, p10_u16_2, planar_size));
+
+  st_test_free(pg);
+  st_test_free(p10_u16);
+  st_test_free(p10_u16_2);
+}
+
+TEST(Cvt, yuv444p10le_to_rfc4175_444le10) {
+  test_cvt_yuv444p10le_to_rfc4175_444le10(1920, 1080, ST_SIMD_LEVEL_MAX,
+                                          ST_SIMD_LEVEL_MAX);
+}
+
+TEST(Cvt, yuv444p10le_to_rfc4175_444le10_scalar) {
+  test_cvt_yuv444p10le_to_rfc4175_444le10(1920, 1080, ST_SIMD_LEVEL_NONE,
+                                          ST_SIMD_LEVEL_NONE);
+}
+
+static void test_cvt_gbrp10le_to_rfc4175_444le10(int w, int h,
+                                                 enum st_simd_level cvt_level,
+                                                 enum st_simd_level back_level) {
+  int ret;
+  size_t fb_pg4_size = w * h * 15 / 4;
+  struct st20_rfc4175_444_10_pg4_le* pg =
+      (struct st20_rfc4175_444_10_pg4_le*)st_test_zmalloc(fb_pg4_size);
+  size_t planar_size = w * h * 3 * sizeof(uint16_t);
+  uint16_t* p10_u16 = (uint16_t*)st_test_zmalloc(planar_size);
+  uint16_t* p10_u16_2 = (uint16_t*)st_test_zmalloc(planar_size);
+
+  if (!pg || !p10_u16_2 || !p10_u16) {
+    EXPECT_EQ(0, 1);
+    if (pg) st_test_free(pg);
+    if (p10_u16_2) st_test_free(p10_u16_2);
+    if (p10_u16) st_test_free(p10_u16);
+    return;
+  }
+
+  for (size_t i = 0; i < (planar_size / 2); i++) {
+    p10_u16[i] = rand() & 0x3ff; /* only 10 bit */
+  }
+
+  ret = st20_gbrp10le_to_rfc4175_444le10(p10_u16, (p10_u16 + w * h),
+                                         (p10_u16 + w * h * 2), pg, w, h);
+  EXPECT_EQ(0, ret);
+
+  ret = st20_rfc4175_444le10_to_gbrp10le(pg, p10_u16_2, (p10_u16_2 + w * h),
+                                         (p10_u16_2 + w * h * 2), w, h);
+  EXPECT_EQ(0, ret);
+
+  EXPECT_EQ(0, memcmp(p10_u16, p10_u16_2, planar_size));
+
+  st_test_free(pg);
+  st_test_free(p10_u16);
+  st_test_free(p10_u16_2);
+}
+
+TEST(Cvt, gbrp10le_to_rfc4175_444le10) {
+  test_cvt_gbrp10le_to_rfc4175_444le10(1920, 1080, ST_SIMD_LEVEL_MAX, ST_SIMD_LEVEL_MAX);
+}
+
+TEST(Cvt, gbrp10le_to_rfc4175_444le10_scalar) {
+  test_cvt_gbrp10le_to_rfc4175_444le10(1920, 1080, ST_SIMD_LEVEL_NONE,
+                                       ST_SIMD_LEVEL_NONE);
+}
+
+static void test_cvt_rfc4175_444be10_to_444le10(int w, int h,
+                                                enum st_simd_level cvt_level,
+                                                enum st_simd_level back_level) {
+  int ret;
+  size_t fb_pg4_size = w * h * 15 / 4;
+  struct st20_rfc4175_444_10_pg4_be* pg_be =
+      (struct st20_rfc4175_444_10_pg4_be*)st_test_zmalloc(fb_pg4_size);
+  struct st20_rfc4175_444_10_pg4_le* pg_le =
+      (struct st20_rfc4175_444_10_pg4_le*)st_test_zmalloc(fb_pg4_size);
+  struct st20_rfc4175_444_10_pg4_be* pg_be_2 =
+      (struct st20_rfc4175_444_10_pg4_be*)st_test_zmalloc(fb_pg4_size);
+
+  if (!pg_be || !pg_le || !pg_be_2) {
+    EXPECT_EQ(0, 1);
+    if (pg_be) st_test_free(pg_be);
+    if (pg_le) st_test_free(pg_le);
+    if (pg_be_2) st_test_free(pg_be_2);
+    return;
+  }
+
+  st_test_rand_data((uint8_t*)pg_be, fb_pg4_size, 0);
+
+  ret = st20_rfc4175_444be10_to_444le10_simd(pg_be, pg_le, w, h, cvt_level);
+  EXPECT_EQ(0, ret);
+
+  ret = st20_rfc4175_444le10_to_444be10_simd(pg_le, pg_be_2, w, h, back_level);
+  EXPECT_EQ(0, ret);
+
+  EXPECT_EQ(0, memcmp(pg_be, pg_be_2, fb_pg4_size));
+
+  st_test_free(pg_be);
+  st_test_free(pg_le);
+  st_test_free(pg_be_2);
+}
+
+TEST(Cvt, rfc4175_444be10_to_444le10) {
+  test_cvt_rfc4175_444be10_to_444le10(1920, 1080, ST_SIMD_LEVEL_MAX, ST_SIMD_LEVEL_MAX);
+}
+
+TEST(Cvt, rfc4175_444be10_to_444le10_scalar) {
+  test_cvt_rfc4175_444be10_to_444le10(1920, 1080, ST_SIMD_LEVEL_NONE, ST_SIMD_LEVEL_NONE);
+}
+
+static void test_cvt_rfc4175_444le10_to_444be10(int w, int h,
+                                                enum st_simd_level cvt_level,
+                                                enum st_simd_level back_level) {
+  int ret;
+  size_t fb_pg4_size = w * h * 15 / 4;
+  struct st20_rfc4175_444_10_pg4_le* pg_le =
+      (struct st20_rfc4175_444_10_pg4_le*)st_test_zmalloc(fb_pg4_size);
+  struct st20_rfc4175_444_10_pg4_be* pg_be =
+      (struct st20_rfc4175_444_10_pg4_be*)st_test_zmalloc(fb_pg4_size);
+  struct st20_rfc4175_444_10_pg4_le* pg_le_2 =
+      (struct st20_rfc4175_444_10_pg4_le*)st_test_zmalloc(fb_pg4_size);
+
+  if (!pg_be || !pg_le || !pg_le_2) {
+    EXPECT_EQ(0, 1);
+    if (pg_be) st_test_free(pg_be);
+    if (pg_le) st_test_free(pg_le);
+    if (pg_le_2) st_test_free(pg_le_2);
+    return;
+  }
+
+  st_test_rand_data((uint8_t*)pg_le, fb_pg4_size, 0);
+
+  ret = st20_rfc4175_444le10_to_444be10_simd(pg_le, pg_be, w, h, cvt_level);
+  EXPECT_EQ(0, ret);
+
+  ret = st20_rfc4175_444be10_to_444le10_simd(pg_be, pg_le_2, w, h, back_level);
+  EXPECT_EQ(0, ret);
+
+  EXPECT_EQ(0, memcmp(pg_le, pg_le_2, fb_pg4_size));
+
+  st_test_free(pg_be);
+  st_test_free(pg_le);
+  st_test_free(pg_le_2);
+}
+
+static void test_cvt_rfc4175_444le10_to_444be10_2(int w, int h,
+                                                  enum st_simd_level cvt_level,
+                                                  enum st_simd_level back_level) {
+  int ret;
+  size_t fb_pg4_size = w * h * 15 / 4;
+  struct st20_rfc4175_444_10_pg4_le* pg_le =
+      (struct st20_rfc4175_444_10_pg4_le*)st_test_zmalloc(fb_pg4_size);
+  struct st20_rfc4175_444_10_pg4_be* pg_be =
+      (struct st20_rfc4175_444_10_pg4_be*)st_test_zmalloc(fb_pg4_size);
+  struct st20_rfc4175_444_10_pg4_be* pg_be_2 =
+      (struct st20_rfc4175_444_10_pg4_be*)st_test_zmalloc(fb_pg4_size);
+
+  if (!pg_be || !pg_le || !pg_be_2) {
+    EXPECT_EQ(0, 1);
+    if (pg_be) st_test_free(pg_be);
+    if (pg_le) st_test_free(pg_le);
+    if (pg_be_2) st_test_free(pg_be_2);
+    return;
+  }
+
+  st_test_rand_data((uint8_t*)pg_le, fb_pg4_size, 0);
+
+  ret = st20_rfc4175_444le10_to_444be10_simd(pg_le, pg_be, w, h, ST_SIMD_LEVEL_NONE);
+  EXPECT_EQ(0, ret);
+
+  ret = st20_rfc4175_444le10_to_444be10_simd(pg_le, pg_be_2, w, h, cvt_level);
+  EXPECT_EQ(0, ret);
+
+  EXPECT_EQ(0, memcmp(pg_be, pg_be_2, fb_pg4_size));
+
+  st_test_free(pg_be);
+  st_test_free(pg_le);
+  st_test_free(pg_be_2);
+}
+
+TEST(Cvt, rfc4175_444le10_to_444be10) {
+  test_cvt_rfc4175_444le10_to_444be10_2(1920, 1080, ST_SIMD_LEVEL_MAX, ST_SIMD_LEVEL_MAX);
+}
+
+TEST(Cvt, rfc4175_444le10_to_444be10_scalar) {
+  test_cvt_rfc4175_444le10_to_444be10(1920, 1080, ST_SIMD_LEVEL_NONE, ST_SIMD_LEVEL_NONE);
+}
+
+static void test_rotate_rfc4175_444be10_444le10_444p10le(int w, int h,
+                                                         enum st_simd_level cvt1_level,
+                                                         enum st_simd_level cvt2_level,
+                                                         enum st_simd_level cvt3_level) {
+  int ret;
+  size_t fb_pg4_size = w * h * 15 / 4;
+  struct st20_rfc4175_444_10_pg4_be* pg_be =
+      (struct st20_rfc4175_444_10_pg4_be*)st_test_zmalloc(fb_pg4_size);
+  struct st20_rfc4175_444_10_pg4_le* pg_le =
+      (struct st20_rfc4175_444_10_pg4_le*)st_test_zmalloc(fb_pg4_size);
+  size_t planar_size = w * h * 3 * sizeof(uint16_t);
+  uint16_t* p10_u16 = (uint16_t*)st_test_zmalloc(planar_size);
+  struct st20_rfc4175_444_10_pg4_be* pg_be_2 =
+      (struct st20_rfc4175_444_10_pg4_be*)st_test_zmalloc(fb_pg4_size);
+
+  if (!pg_le || !pg_be || !p10_u16 || !pg_be_2) {
+    EXPECT_EQ(0, 1);
+    if (pg_le) st_test_free(pg_le);
+    if (pg_be) st_test_free(pg_be);
+    if (p10_u16) st_test_free(p10_u16);
+    if (pg_be_2) st_test_free(pg_be_2);
+    return;
+  }
+
+  st_test_rand_data((uint8_t*)pg_be, fb_pg4_size, 0);
+
+  ret = st20_rfc4175_444be10_to_444le10_simd(pg_be, pg_le, w, h, cvt1_level);
+  EXPECT_EQ(0, ret);
+
+  ret = st20_rfc4175_444le10_to_yuv444p10le(pg_le, p10_u16, (p10_u16 + w * h),
+                                            (p10_u16 + w * h * 2), w, h);
+  EXPECT_EQ(0, ret);
+
+  ret = st20_444p10le_to_rfc4175_444be10_simd(
+      p10_u16, (p10_u16 + w * h), (p10_u16 + w * h * 2), pg_be_2, w, h, cvt3_level);
+  EXPECT_EQ(0, ret);
+
+  EXPECT_EQ(0, memcmp(pg_be, pg_be_2, fb_pg4_size));
+
+  st_test_free(pg_be);
+  st_test_free(pg_le);
+  st_test_free(pg_be_2);
+  st_test_free(p10_u16);
+}
+
+TEST(Cvt, rotate_rfc4175_444be10_444le10_444p10le_scalar) {
+  test_rotate_rfc4175_444be10_444le10_444p10le(1920, 1080, ST_SIMD_LEVEL_NONE,
+                                               ST_SIMD_LEVEL_NONE, ST_SIMD_LEVEL_NONE);
+}
+
+static void test_rotate_rfc4175_444be10_444p10le_444le10(int w, int h,
+                                                         enum st_simd_level cvt1_level,
+                                                         enum st_simd_level cvt2_level,
+                                                         enum st_simd_level cvt3_level) {
+  int ret;
+  size_t fb_pg4_size = w * h * 15 / 4;
+  struct st20_rfc4175_444_10_pg4_be* pg_be =
+      (struct st20_rfc4175_444_10_pg4_be*)st_test_zmalloc(fb_pg4_size);
+  struct st20_rfc4175_444_10_pg4_le* pg_le =
+      (struct st20_rfc4175_444_10_pg4_le*)st_test_zmalloc(fb_pg4_size);
+  size_t planar_size = w * h * 3 * sizeof(uint16_t);
+  uint16_t* p10_u16 = (uint16_t*)st_test_zmalloc(planar_size);
+  struct st20_rfc4175_444_10_pg4_be* pg_be_2 =
+      (struct st20_rfc4175_444_10_pg4_be*)st_test_zmalloc(fb_pg4_size);
+
+  if (!pg_le || !pg_be || !p10_u16 || !pg_be_2) {
+    EXPECT_EQ(0, 1);
+    if (pg_le) st_test_free(pg_le);
+    if (pg_be) st_test_free(pg_be);
+    if (p10_u16) st_test_free(p10_u16);
+    if (pg_be_2) st_test_free(pg_be_2);
+    return;
+  }
+
+  st_test_rand_data((uint8_t*)pg_be, fb_pg4_size, 0);
+
+  ret = st20_rfc4175_444be10_to_444p10le_simd(pg_be, p10_u16, (p10_u16 + w * h),
+                                              (p10_u16 + w * h * 2), w, h, cvt1_level);
+  EXPECT_EQ(0, ret);
+
+  ret = st20_444p10le_to_rfc4175_444le10(p10_u16, (p10_u16 + w * h),
+                                         (p10_u16 + w * h * 2), pg_le, w, h);
+  EXPECT_EQ(0, ret);
+
+  ret = st20_rfc4175_444le10_to_444be10(pg_le, pg_be_2, w, h);
+  EXPECT_EQ(0, ret);
+
+  EXPECT_EQ(0, memcmp(pg_be, pg_be_2, fb_pg4_size));
+
+  st_test_free(pg_be);
+  st_test_free(pg_le);
+  st_test_free(pg_be_2);
+  st_test_free(p10_u16);
+}
+
+TEST(Cvt, rotate_rfc4175_444be10_44p10le_444le10_scalar) {
+  test_rotate_rfc4175_444be10_444p10le_444le10(1920, 1080, ST_SIMD_LEVEL_NONE,
+                                               ST_SIMD_LEVEL_NONE, ST_SIMD_LEVEL_NONE);
+}
+
 static void test_am824_to_aes3(int blocks) {
   int ret;
   int subframes = blocks * 2 * 192;
