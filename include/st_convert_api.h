@@ -316,7 +316,7 @@ static inline int st20_rfc4175_444be10_to_yuv444p10le(
 static inline int st20_rfc4175_444be10_to_gbrp10le(struct st20_rfc4175_444_10_pg4_be* pg,
                                                    uint16_t* g, uint16_t* b, uint16_t* r,
                                                    uint32_t w, uint32_t h) {
-  return st20_rfc4175_444be10_to_444p10le_simd(pg, g, b, r, w, h, ST_SIMD_LEVEL_MAX);
+  return st20_rfc4175_444be10_to_444p10le_simd(pg, g, r, b, w, h, ST_SIMD_LEVEL_MAX);
 }
 
 /**
