@@ -55,6 +55,11 @@ extern "C" {
  * st20_tx_frame_meta(ST10_TIMESTAMP_FMT_MEDIA_CLK is used)
  */
 #define ST20_TX_FLAG_USER_TIMESTAMP (ST_BIT32(4))
+/**
+ * Flag bit in flags of struct st20_tx_ops.
+ * If enabled, lib will pass ST_EVENT_VSYNC by the notify_event on every epoch start.
+ */
+#define ST20_TX_FLAG_ENABLE_VSYNC (ST_BIT32(5))
 
 /**
  * Flag bit in flags of struct st22_tx_ops.
@@ -83,6 +88,11 @@ extern "C" {
  * tx_frame_meta(ST10_TIMESTAMP_FMT_MEDIA_CLK is used)
  */
 #define ST22_TX_FLAG_USER_TIMESTAMP (ST_BIT32(4))
+/**
+ * Flag bit in flags of struct st20_tx_ops.
+ * If enabled, lib will pass ST_EVENT_VSYNC by the notify_event on every epoch start.
+ */
+#define ST22_TX_FLAG_ENABLE_VSYNC (ST_BIT32(5))
 
 /**
  * Flag bit in flags of struct st20_rx_ops, for non ST_PMD_DPDK_USER.
@@ -90,6 +100,11 @@ extern "C" {
  * Use st20_rx_get_queue_meta to get the queue meta(queue number etc) info.
  */
 #define ST20_RX_FLAG_DATA_PATH_ONLY (ST_BIT32(0))
+/**
+ * Flag bit in flags of struct st20_rx_ops.
+ * If enabled, lib will pass ST_EVENT_VSYNC by the notify_event on every epoch start.
+ */
+#define ST20_RX_FLAG_ENABLE_VSYNC (ST_BIT32(1))
 
 /**
  * Flag bit in flags of struct st20_rx_ops.
@@ -134,6 +149,11 @@ extern "C" {
  * Use st22_rx_get_queue_meta to get the queue meta(queue number etc) info.
  */
 #define ST22_RX_FLAG_DATA_PATH_ONLY (ST_BIT32(0))
+/**
+ * Flag bit in flags of struct st22_rx_ops.
+ * If enabled, lib will pass ST_EVENT_VSYNC by the notify_event on every epoch start.
+ */
+#define ST22_RX_FLAG_ENABLE_VSYNC (ST_BIT32(1))
 
 /**
  * Flag bit in flags of struct st22_rx_ops.

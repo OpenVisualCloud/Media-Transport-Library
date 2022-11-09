@@ -156,6 +156,7 @@ static int rx_st20r_create_transport(struct st20r_rx_ctx* ctx, struct st20r_rx_o
   ops_rx.flags |= ST20_RX_FLAG_DISABLE_MIGRATE;
   if (ops->flags & ST20R_RX_FLAG_DMA_OFFLOAD) ops_rx.flags |= ST20_RX_FLAG_DMA_OFFLOAD;
   if (ops->flags & ST20R_RX_FLAG_HDR_SPLIT) ops_rx.flags |= ST20_RX_FLAG_HDR_SPLIT;
+  if (ops->flags & ST20R_RX_FLAG_ENABLE_VSYNC) ops_rx.flags |= ST20_RX_FLAG_ENABLE_VSYNC;
 
   ops_rx.pacing = ops->pacing;
   ops_rx.width = ops->width;

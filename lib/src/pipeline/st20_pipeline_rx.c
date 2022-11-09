@@ -309,6 +309,7 @@ static int rx_st20p_create_transport(st_handle st, struct st20p_rx_ctx* ctx,
   }
   if (ops->flags & ST20P_RX_FLAG_DATA_PATH_ONLY)
     ops_rx.flags |= ST20_RX_FLAG_DATA_PATH_ONLY;
+  if (ops->flags & ST20P_RX_FLAG_ENABLE_VSYNC) ops_rx.flags |= ST20_RX_FLAG_ENABLE_VSYNC;
   if (ops->flags & ST20P_RX_FLAG_RECEIVE_INCOMPLETE_FRAME)
     ops_rx.flags |= ST20_RX_FLAG_RECEIVE_INCOMPLETE_FRAME;
   if (ops->flags & ST20P_RX_FLAG_DMA_OFFLOAD) ops_rx.flags |= ST20_RX_FLAG_DMA_OFFLOAD;

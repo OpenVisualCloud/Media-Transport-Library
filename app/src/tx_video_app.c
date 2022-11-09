@@ -6,11 +6,9 @@
 
 static int app_tx_notify_event(void* priv, enum st_event event, void* args) {
   if (event == ST_EVENT_VSYNC) {
-#ifdef DEBUG
     struct st_app_tx_video_session* s = priv;
-    struct st10_vsync_meta* meta =
-        args dbg("%s(%d), epoch %" PRIu64 "\n", __func__, s->idx, meta->epoch);
-#endif
+    struct st10_vsync_meta* meta = args;
+    info("%s(%d), epoch %" PRIu64 "\n", __func__, s->idx, meta->epoch);
   }
   return 0;
 }
@@ -672,6 +670,7 @@ static int app_tx_video_init(struct st_app_context* ctx, st_json_video_session_t
   memset(&ops, 0, sizeof(ops));
 
   s->ctx = ctx;
+  s->enable_vsync = false;
 
   snprintf(name, 32, "app_tx_video_%d", idx);
   ops.name = name;
@@ -715,6 +714,7 @@ static int app_tx_video_init(struct st_app_context* ctx, st_json_video_session_t
   ops.notify_event = app_tx_notify_event;
   ops.framebuff_cnt = 2;
   ops.payload_type = video ? video->base.payload_type : ST_APP_PAYLOAD_TYPE_VIDEO;
+  if (s->enable_vsync) ops.flags |= ST20_TX_FLAG_ENABLE_VSYNC;
 
   ret = st20_get_pgroup(ops.fmt, &s->st20_pg);
   if (ret < 0) return ret;

@@ -1645,8 +1645,8 @@ static int tvs_tasklet_handler(void* priv) {
     s = tx_video_session_try_get(mgr, sidx);
     if (!s) continue;
 
-    /* check vsync if it has callback */
-    if (s->ops.notify_event) tv_poll_vsync(impl, s);
+    /* check vsync if it has vsync enabled */
+    if (s->ops.flags & ST20_TX_FLAG_ENABLE_VSYNC) tv_poll_vsync(impl, s);
 
     s->stat_build_ret_code = 0;
     if (s->st22_info)
@@ -3164,6 +3164,7 @@ st22_tx_handle st22_tx_create(st_handle st, struct st22_tx_ops* ops) {
   if (ops->flags & ST22_TX_FLAG_USER_PACING) st20_ops.flags |= ST20_TX_FLAG_USER_PACING;
   if (ops->flags & ST22_TX_FLAG_USER_TIMESTAMP)
     st20_ops.flags |= ST20_TX_FLAG_USER_TIMESTAMP;
+  if (ops->flags & ST22_TX_FLAG_ENABLE_VSYNC) st20_ops.flags |= ST20_TX_FLAG_ENABLE_VSYNC;
   st20_ops.pacing = ops->pacing;
   if (ST22_TYPE_RTP_LEVEL == ops->type)
     st20_ops.type = ST20_TYPE_RTP_LEVEL;

@@ -29,6 +29,12 @@ typedef struct st20r_rx_ctx* st20r_rx_handle;
 #define ST20R_RX_FLAG_DATA_PATH_ONLY (ST_BIT32(0))
 /**
  * Flag bit in flags of struct st20r_rx_ops.
+ * If enabled, lib will pass ST_EVENT_VSYNC by the notify_event on every epoch start.
+ */
+#define ST20R_RX_FLAG_ENABLE_VSYNC (ST_BIT32(1))
+
+/**
+ * Flag bit in flags of struct st20r_rx_ops.
  * If set, lib will pass the incomplete frame to app also.
  * User can check st_frame_status data for the frame integrity
  */

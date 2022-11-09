@@ -305,6 +305,7 @@ static int tx_st20p_create_transport(st_handle st, struct st20p_tx_ctx* ctx,
   if (ops->flags & ST20P_TX_FLAG_USER_PACING) ops_tx.flags |= ST20_TX_FLAG_USER_PACING;
   if (ops->flags & ST20P_TX_FLAG_USER_TIMESTAMP)
     ops_tx.flags |= ST20_TX_FLAG_USER_TIMESTAMP;
+  if (ops->flags & ST20P_TX_FLAG_ENABLE_VSYNC) ops_tx.flags |= ST20_TX_FLAG_ENABLE_VSYNC;
 
   transport = st20_tx_create(st, &ops_tx);
   if (!transport) {

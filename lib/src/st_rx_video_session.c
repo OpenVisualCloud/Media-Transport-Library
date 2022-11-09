@@ -2834,8 +2834,8 @@ static int rvs_tasklet_handler(void* priv) {
     s = rx_video_session_try_get(mgr, sidx);
     if (!s) continue;
 
-    /* check vsync if it has callback */
-    if (s->ops.notify_event) rv_poll_vsync(impl, s);
+    /* check vsync if it has vsync flag enabled */
+    if (s->ops.flags & ST20_RX_FLAG_ENABLE_VSYNC) rv_poll_vsync(impl, s);
 
     pending += rv_tasklet(impl, s, mgr);
     rx_video_session_put(mgr, sidx);
@@ -3839,6 +3839,7 @@ st22_rx_handle st22_rx_create(st_handle st, struct st22_rx_ops* ops) {
   }
   if (ops->flags & ST22_RX_FLAG_DATA_PATH_ONLY)
     st20_ops.flags |= ST20_RX_FLAG_DATA_PATH_ONLY;
+  if (ops->flags & ST22_RX_FLAG_ENABLE_VSYNC) st20_ops.flags |= ST20_RX_FLAG_ENABLE_VSYNC;
   if (ops->flags & ST22_RX_FLAG_RECEIVE_INCOMPLETE_FRAME)
     st20_ops.flags |= ST20_RX_FLAG_RECEIVE_INCOMPLETE_FRAME;
   st20_ops.pacing = ops->pacing;

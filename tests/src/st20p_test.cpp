@@ -557,6 +557,7 @@ struct st20p_rx_digest_test_para {
   enum st_test_level level;
   int fb_cnt;
   bool user_timestamp;
+  bool vsync;
 };
 
 static void test_st20p_init_rx_digest_para(struct st20p_rx_digest_test_para* para) {
@@ -571,6 +572,7 @@ static void test_st20p_init_rx_digest_para(struct st20p_rx_digest_test_para* par
   para->dynamic = false;
   para->level = ST_TEST_LEVEL_MANDATORY;
   para->user_timestamp = false;
+  para->vsync = true;
 }
 
 static void st20p_rx_digest_test(enum st_fps fps[], int width[], int height[],
@@ -664,6 +666,7 @@ static void st20p_rx_digest_test(enum st_fps fps[], int width[], int height[],
       ops_tx.flags |= ST20P_TX_FLAG_EXT_FRAME;
     }
     if (para->user_timestamp) ops_tx.flags |= ST20P_TX_FLAG_USER_TIMESTAMP;
+    if (para->vsync) ops_tx.flags |= ST20P_TX_FLAG_ENABLE_VSYNC;
 
     test_ctx_tx[i]->frame_size = st_frame_size(tx_fmt[i], width[i], height[i]);
 
@@ -817,6 +820,7 @@ static void st20p_rx_digest_test(enum st_fps fps[], int width[], int height[],
     } else if (para->rx_ext) {
       ops_rx.ext_frames = test_ctx_rx[i]->ext_frames;
     }
+    if (para->vsync) ops_rx.flags |= ST20P_RX_FLAG_ENABLE_VSYNC;
 
     test_ctx_rx[i]->frame_size =
         st_frame_size(ops_rx.output_fmt, ops_rx.width, ops_rx.height);

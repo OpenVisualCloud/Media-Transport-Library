@@ -697,6 +697,7 @@ struct st22p_rx_digest_test_para {
   bool check_fps;
   enum st_test_level level;
   bool user_timestamp;
+  bool vsync;
 };
 
 static void test_st22p_init_rx_digest_para(struct st22p_rx_digest_test_para* para) {
@@ -708,6 +709,7 @@ static void test_st22p_init_rx_digest_para(struct st22p_rx_digest_test_para* par
   para->check_fps = true;
   para->level = ST_TEST_LEVEL_MANDATORY;
   para->user_timestamp = false;
+  para->vsync = true;
 }
 
 static void st22p_rx_digest_test(enum st_fps fps[], int width[], int height[],
@@ -800,6 +802,7 @@ static void st22p_rx_digest_test(enum st_fps fps[], int width[], int height[],
     ops_tx.notify_frame_available = test_st22p_tx_frame_available;
     ops_tx.notify_event = test_ctx_notify_event;
     if (para->user_timestamp) ops_tx.flags |= ST22P_TX_FLAG_USER_TIMESTAMP;
+    if (para->vsync) ops_tx.flags |= ST22P_TX_FLAG_ENABLE_VSYNC;
 
     test_ctx_tx[i]->frame_size =
         st_frame_size(ops_tx.input_fmt, ops_tx.width, ops_tx.height);
@@ -872,6 +875,7 @@ static void st22p_rx_digest_test(enum st_fps fps[], int width[], int height[],
     ops_rx.framebuff_cnt = test_ctx_rx[i]->fb_cnt;
     ops_rx.notify_frame_available = test_st22p_rx_frame_available;
     ops_rx.notify_event = test_ctx_notify_event;
+    if (para->vsync) ops_rx.flags |= ST22P_RX_FLAG_ENABLE_VSYNC;
 
     test_ctx_rx[i]->frame_size =
         st_frame_size(ops_rx.output_fmt, ops_rx.width, ops_rx.height);
