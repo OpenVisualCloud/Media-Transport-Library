@@ -268,6 +268,8 @@ class tests_context {
 
 int tests_context_unit(tests_context* ctx);
 
+int test_ctx_notify_event(void* priv, enum st_event event, void* args);
+
 int tx_next_frame(void* priv, uint16_t* next_frame_idx);
 
 #define create_free_max(A, max)                             \

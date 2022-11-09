@@ -540,6 +540,19 @@ struct st10_vsync_meta {
 };
 
 /**
+ * Event type on a media session.
+ */
+enum st_event {
+  /**
+   * vsync(ptp come to a new epoch) event on each frame, freq is fps,
+   * args point to struct st10_vsync_meta.
+   */
+  ST_EVENT_VSYNC = 0,
+  /** max value of this enum */
+  ST_EVENT_MAX,
+};
+
+/**
  * Inline function returning primary port pointer from st_init_params
  * @param p
  *   The pointer to the init parameters.

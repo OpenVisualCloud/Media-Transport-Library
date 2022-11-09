@@ -165,7 +165,7 @@ static int tv_poll_vsync(struct st_main_impl* impl, struct st_tx_video_session_i
   if (cur_tsc > vsync->next_epoch_tsc) {
     uint64_t tsc_delta = cur_tsc - vsync->next_epoch_tsc;
     dbg("%s(%d), vsync with epochs %" PRIu64 "\n", __func__, s->idx, vsync->meta.epoch);
-    s->ops.notify_vsync(s->ops.priv, &vsync->meta);
+    s->ops.notify_event(s->ops.priv, ST_EVENT_VSYNC, &vsync->meta);
     st_vsync_calculate(impl, vsync); /* set next vsync */
     /* check tsc delta for status */
     if (tsc_delta > NS_PER_MS) s->stat_vsync_mismatch++;
@@ -1646,7 +1646,7 @@ static int tvs_tasklet_handler(void* priv) {
     if (!s) continue;
 
     /* check vsync if it has callback */
-    if (s->ops.notify_vsync) tv_poll_vsync(impl, s);
+    if (s->ops.notify_event) tv_poll_vsync(impl, s);
 
     s->stat_build_ret_code = 0;
     if (s->st22_info)
@@ -3179,7 +3179,7 @@ st22_tx_handle st22_tx_create(st_handle st, struct st22_tx_ops* ops) {
   st20_ops.rtp_frame_total_pkts = ops->rtp_frame_total_pkts;
   st20_ops.rtp_pkt_size = ops->rtp_pkt_size;
   st20_ops.notify_rtp_done = ops->notify_rtp_done;
-  st20_ops.notify_vsync = ops->notify_vsync;
+  st20_ops.notify_event = ops->notify_event;
   st_pthread_mutex_lock(&sch->tx_video_mgr_mutex);
   if (ST22_TYPE_RTP_LEVEL == ops->type) {
     s = tv_mgr_attach(&sch->tx_video_mgr, &st20_ops, ST22_SESSION_TYPE_TX_VIDEO, NULL);

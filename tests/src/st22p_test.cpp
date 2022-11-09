@@ -496,15 +496,6 @@ static int test_st22p_rx_frame_available(void* priv) {
   return 0;
 }
 
-static int test_st22p_notify_vsync(void* priv, struct st10_vsync_meta* meta) {
-  tests_context* s = (tests_context*)priv;
-  s->vsync_cnt++;
-  if (!s->first_vsync_time) s->first_vsync_time = st_test_get_monotonic_time();
-  dbg("%s(%d,%p), epoch %lu vsync_cnt %d\n", __func__, s->idx, s, meta->epoch,
-      s->vsync_cnt);
-  return 0;
-}
-
 static void st22p_tx_ops_init(tests_context* st22, struct st22p_tx_ops* ops_tx) {
   auto ctx = st22->ctx;
 
@@ -528,7 +519,7 @@ static void st22p_tx_ops_init(tests_context* st22, struct st22p_tx_ops* ops_tx) 
   ops_tx->notify_frame_available = test_st22p_tx_frame_available;
   st22->frame_size = st_frame_size(ops_tx->input_fmt, ops_tx->width, ops_tx->height);
   ops_tx->codestream_size = st22->frame_size / 8;
-  ops_tx->notify_vsync = test_st22p_notify_vsync;
+  ops_tx->notify_event = test_ctx_notify_event;
 }
 
 static void st22p_rx_ops_init(tests_context* st22, struct st22p_rx_ops* ops_rx) {
@@ -552,7 +543,7 @@ static void st22p_rx_ops_init(tests_context* st22, struct st22p_rx_ops* ops_rx) 
   ops_rx->framebuff_cnt = st22->fb_cnt;
   ops_rx->notify_frame_available = test_st22p_rx_frame_available;
   st22->frame_size = st_frame_size(ops_rx->output_fmt, ops_rx->width, ops_rx->height);
-  ops_rx->notify_vsync = test_st22p_notify_vsync;
+  ops_rx->notify_event = test_ctx_notify_event;
 }
 
 static void st22p_tx_assert_cnt(int expect_s22_tx_cnt) {
@@ -807,7 +798,7 @@ static void st22p_rx_digest_test(enum st_fps fps[], int width[], int height[],
     ops_tx.quality = ST22_QUALITY_MODE_QUALITY;
     ops_tx.framebuff_cnt = test_ctx_tx[i]->fb_cnt;
     ops_tx.notify_frame_available = test_st22p_tx_frame_available;
-    ops_tx.notify_vsync = test_st22p_notify_vsync;
+    ops_tx.notify_event = test_ctx_notify_event;
     if (para->user_timestamp) ops_tx.flags |= ST22P_TX_FLAG_USER_TIMESTAMP;
 
     test_ctx_tx[i]->frame_size =
@@ -880,7 +871,7 @@ static void st22p_rx_digest_test(enum st_fps fps[], int width[], int height[],
     ops_rx.device = ST_PLUGIN_DEVICE_TEST;
     ops_rx.framebuff_cnt = test_ctx_rx[i]->fb_cnt;
     ops_rx.notify_frame_available = test_st22p_rx_frame_available;
-    ops_rx.notify_vsync = test_st22p_notify_vsync;
+    ops_rx.notify_event = test_ctx_notify_event;
 
     test_ctx_rx[i]->frame_size =
         st_frame_size(ops_rx.output_fmt, ops_rx.width, ops_rx.height);
