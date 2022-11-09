@@ -413,6 +413,8 @@ static int parse_video_pg_format(json_object* video_obj, st_json_video_session_t
     video->info.pg_format = ST20_FMT_YUV_422_16BIT;
   } else if (strcmp(pg_format, "YUV_444_10bit") == 0) {
     video->info.pg_format = ST20_FMT_YUV_444_10BIT;
+  } else if (strcmp(pg_format, "YUV_444_12bit") == 0) {
+    video->info.pg_format = ST20_FMT_YUV_444_12BIT;
   } else if (strcmp(pg_format, "YUV_420_8bit") == 0) {
     video->info.pg_format = ST20_FMT_YUV_420_8BIT;
   } else if (strcmp(pg_format, "YUV_420_10bit") == 0) {
@@ -987,16 +989,24 @@ static int parse_st22p_format(json_object* st22p_obj, st_json_st22p_session_t* s
     st22p->info.format = ST_FRAME_FMT_YUV422PACKED8;
   } else if (strcmp(format, "YUV444PLANAR10LE") == 0) {
     st22p->info.format = ST_FRAME_FMT_YUV444PLANAR10LE;
+  } else if (strcmp(format, "YUV444PLANAR12LE") == 0) {
+    st22p->info.format = ST_FRAME_FMT_YUV444PLANAR12LE;
   } else if (strcmp(format, "GBRPLANAR10LE") == 0) {
     st22p->info.format = ST_FRAME_FMT_GBRPLANAR10LE;
+  } else if (strcmp(format, "GBRPLANAR12LE") == 0) {
+    st22p->info.format = ST_FRAME_FMT_GBRPLANAR12LE;
   } else if (strcmp(format, "YUV422RFC4175PG2BE10") == 0) {
     st22p->info.format = ST_FRAME_FMT_YUV422RFC4175PG2BE10;
   } else if (strcmp(format, "YUV422RFC4175PG2BE12") == 0) {
     st22p->info.format = ST_FRAME_FMT_YUV422RFC4175PG2BE12;
   } else if (strcmp(format, "YUV444RFC4175PG4BE10") == 0) {
     st22p->info.format = ST_FRAME_FMT_YUV444RFC4175PG4BE10;
+  } else if (strcmp(format, "YUV444RFC4175PG2BE12") == 0) {
+    st22p->info.format = ST_FRAME_FMT_YUV444RFC4175PG2BE12;
   } else if (strcmp(format, "RGBRFC4175PG4BE10") == 0) {
     st22p->info.format = ST_FRAME_FMT_RGBRFC4175PG4BE10;
+  } else if (strcmp(format, "RGBRFC4175PG2BE12") == 0) {
+    st22p->info.format = ST_FRAME_FMT_RGBRFC4175PG2BE12;
   } else if (strcmp(format, "RGB8") == 0) {
     st22p->info.format = ST_FRAME_FMT_RGB8;
   } else if (strcmp(format, "JPEGXS_CODESTREAM") == 0) {
@@ -1220,16 +1230,24 @@ static int parse_st20p_format(json_object* st20p_obj, st_json_st20p_session_t* s
     st20p->info.format = ST_FRAME_FMT_YUV422PACKED8;
   } else if (strcmp(format, "YUV444PLANAR10LE") == 0) {
     st20p->info.format = ST_FRAME_FMT_YUV444PLANAR10LE;
+  } else if (strcmp(format, "YUV444PLANAR12LE") == 0) {
+    st20p->info.format = ST_FRAME_FMT_YUV444PLANAR12LE;
   } else if (strcmp(format, "GBRPLANAR10LE") == 0) {
     st20p->info.format = ST_FRAME_FMT_GBRPLANAR10LE;
+  } else if (strcmp(format, "GBRPLANAR12LE") == 0) {
+    st20p->info.format = ST_FRAME_FMT_GBRPLANAR12LE;
   } else if (strcmp(format, "YUV422RFC4175PG2BE10") == 0) {
     st20p->info.format = ST_FRAME_FMT_YUV422RFC4175PG2BE10;
   } else if (strcmp(format, "YUV422RFC4175PG2BE12") == 0) {
     st20p->info.format = ST_FRAME_FMT_YUV422RFC4175PG2BE12;
   } else if (strcmp(format, "YUV444RFC4175PG4BE10") == 0) {
     st20p->info.format = ST_FRAME_FMT_YUV444RFC4175PG4BE10;
+  } else if (strcmp(format, "YUV444RFC4175PG2BE12") == 0) {
+    st20p->info.format = ST_FRAME_FMT_YUV444RFC4175PG2BE12;
   } else if (strcmp(format, "RGBRFC4175PG4BE10") == 0) {
     st20p->info.format = ST_FRAME_FMT_RGBRFC4175PG4BE10;
+  } else if (strcmp(format, "RGBRFC4175PG2BE12") == 0) {
+    st20p->info.format = ST_FRAME_FMT_RGBRFC4175PG2BE12;
   } else if (strcmp(format, "RGB8") == 0) {
     st20p->info.format = ST_FRAME_FMT_RGB8;
   } else {
@@ -1254,6 +1272,8 @@ static int parse_st20p_transport_format(json_object* st20p_obj,
     st20p->info.transport_format = ST20_FMT_YUV_422_16BIT;
   } else if (strcmp(t_format, "YUV_444_10bit") == 0) {
     st20p->info.transport_format = ST20_FMT_YUV_444_10BIT;
+  } else if (strcmp(t_format, "YUV_444_12bit") == 0) {
+    st20p->info.transport_format = ST20_FMT_YUV_444_12BIT;
   } else if (strcmp(t_format, "YUV_420_8bit") == 0) {
     st20p->info.transport_format = ST20_FMT_YUV_420_8BIT;
   } else if (strcmp(t_format, "YUV_420_10bit") == 0) {
