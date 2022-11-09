@@ -80,11 +80,11 @@ static int rx_st22p_frame_ready(void* priv, void* frame,
   return 0;
 }
 
-static int rx_st22p_frame_vsync(void* priv, struct st10_vsync_meta* meta) {
+static int rx_st22p_notify_event(void* priv, enum st_event event, void* args) {
   struct st22p_rx_ctx* ctx = priv;
 
-  if (ctx->ops.notify_vsync) {
-    ctx->ops.notify_vsync(ctx->ops.priv, meta);
+  if (ctx->ops.notify_event) {
+    ctx->ops.notify_event(ctx->ops.priv, event, args);
   }
 
   return 0;
@@ -200,6 +200,7 @@ static int rx_st22p_create_transport(st_handle st, struct st22p_rx_ctx* ctx,
   }
   if (ops->flags & ST22P_RX_FLAG_DATA_PATH_ONLY)
     ops_rx.flags |= ST22_RX_FLAG_DATA_PATH_ONLY;
+  if (ops->flags & ST22P_RX_FLAG_ENABLE_VSYNC) ops_rx.flags |= ST22_RX_FLAG_ENABLE_VSYNC;
   if (ops->flags & ST22P_RX_FLAG_RECEIVE_INCOMPLETE_FRAME)
     ops_rx.flags |= ST22_RX_FLAG_RECEIVE_INCOMPLETE_FRAME;
   ops_rx.pacing = ST21_PACING_NARROW;
@@ -212,7 +213,7 @@ static int rx_st22p_create_transport(st_handle st, struct st22p_rx_ctx* ctx,
   ops_rx.framebuff_cnt = ops->framebuff_cnt;
   ops_rx.framebuff_max_size = ctx->max_codestream_size;
   ops_rx.notify_frame_ready = rx_st22p_frame_ready;
-  ops_rx.notify_vsync = rx_st22p_frame_vsync;
+  ops_rx.notify_event = rx_st22p_notify_event;
 
   transport = st22_rx_create(st, &ops_rx);
   if (!transport) {

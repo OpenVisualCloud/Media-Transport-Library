@@ -55,6 +55,11 @@ extern "C" {
  * st20_tx_frame_meta(ST10_TIMESTAMP_FMT_MEDIA_CLK is used)
  */
 #define ST20_TX_FLAG_USER_TIMESTAMP (ST_BIT32(4))
+/**
+ * Flag bit in flags of struct st20_tx_ops.
+ * If enabled, lib will pass ST_EVENT_VSYNC by the notify_event on every epoch start.
+ */
+#define ST20_TX_FLAG_ENABLE_VSYNC (ST_BIT32(5))
 
 /**
  * Flag bit in flags of struct st22_tx_ops.
@@ -83,6 +88,11 @@ extern "C" {
  * tx_frame_meta(ST10_TIMESTAMP_FMT_MEDIA_CLK is used)
  */
 #define ST22_TX_FLAG_USER_TIMESTAMP (ST_BIT32(4))
+/**
+ * Flag bit in flags of struct st22_tx_ops.
+ * If enabled, lib will pass ST_EVENT_VSYNC by the notify_event on every epoch start.
+ */
+#define ST22_TX_FLAG_ENABLE_VSYNC (ST_BIT32(5))
 
 /**
  * Flag bit in flags of struct st20_rx_ops, for non ST_PMD_DPDK_USER.
@@ -90,6 +100,11 @@ extern "C" {
  * Use st20_rx_get_queue_meta to get the queue meta(queue number etc) info.
  */
 #define ST20_RX_FLAG_DATA_PATH_ONLY (ST_BIT32(0))
+/**
+ * Flag bit in flags of struct st20_rx_ops.
+ * If enabled, lib will pass ST_EVENT_VSYNC by the notify_event on every epoch start.
+ */
+#define ST20_RX_FLAG_ENABLE_VSYNC (ST_BIT32(1))
 
 /**
  * Flag bit in flags of struct st20_rx_ops.
@@ -134,6 +149,11 @@ extern "C" {
  * Use st22_rx_get_queue_meta to get the queue meta(queue number etc) info.
  */
 #define ST22_RX_FLAG_DATA_PATH_ONLY (ST_BIT32(0))
+/**
+ * Flag bit in flags of struct st22_rx_ops.
+ * If enabled, lib will pass ST_EVENT_VSYNC by the notify_event on every epoch start.
+ */
+#define ST22_RX_FLAG_ENABLE_VSYNC (ST_BIT32(1))
 
 /**
  * Flag bit in flags of struct st22_rx_ops.
@@ -822,10 +842,12 @@ struct st20_tx_ops {
   int (*notify_rtp_done)(void* priv);
 
   /**
-   * vsync callback, lib will call this when ptp come to a new epoch(frame time).
+   * event callback, lib will call this when there is some event happened.
    * Only non-block method can be used in this callback as it run from lcore routine.
+   * args point to the meta data of each event.
+   * Ex, cast to struct st10_vsync_meta for ST_EVENT_VSYNC.
    */
-  int (*notify_vsync)(void* priv, struct st10_vsync_meta* meta);
+  int (*notify_event)(void* priv, enum st_event event, void* args);
 };
 
 /**
@@ -925,10 +947,12 @@ struct st22_tx_ops {
   int (*notify_rtp_done)(void* priv);
 
   /**
-   * vsync callback, lib will call this when ptp come to a new epoch(frame time).
+   * event callback, lib will call this when there is some event happened.
    * Only non-block method can be used in this callback as it run from lcore routine.
+   * args point to the meta data of each event.
+   * Ex, cast to struct st10_vsync_meta for ST_EVENT_VSYNC.
    */
-  int (*notify_vsync)(void* priv, struct st10_vsync_meta* meta);
+  int (*notify_event)(void* priv, enum st_event event, void* args);
 };
 
 /**
@@ -1095,10 +1119,12 @@ struct st20_rx_ops {
                          struct st20_rx_frame_meta* meta);
 
   /**
-   * vsync callback, lib will call this when ptp come to a new epoch(frame time).
+   * event callback, lib will call this when there is some event happened.
    * Only non-block method can be used in this callback as it run from lcore routine.
+   * args point to the meta data of each event.
+   * Ex, cast to struct st10_vsync_meta for ST_EVENT_VSYNC.
    */
-  int (*notify_vsync)(void* priv, struct st10_vsync_meta* meta);
+  int (*notify_event)(void* priv, enum st_event event, void* args);
 };
 
 /**
@@ -1176,10 +1202,12 @@ struct st22_rx_ops {
   int (*notify_rtp_ready)(void* priv);
 
   /**
-   * vsync callback, lib will call this when ptp come to a new epoch(frame time).
+   * event callback, lib will call this when there is some event happened.
    * Only non-block method can be used in this callback as it run from lcore routine.
+   * args point to the meta data of each event.
+   * Ex, cast to struct st10_vsync_meta for ST_EVENT_VSYNC.
    */
-  int (*notify_vsync)(void* priv, struct st10_vsync_meta* meta);
+  int (*notify_event)(void* priv, enum st_event event, void* args);
 };
 
 /**

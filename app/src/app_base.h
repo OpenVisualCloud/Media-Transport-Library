@@ -115,6 +115,7 @@ struct st_app_tx_video_session {
   bool second_field;
   bool single_line;
   bool slice;
+  bool enable_vsync;
 
   /* rtp info */
   bool st20_rtp_input;

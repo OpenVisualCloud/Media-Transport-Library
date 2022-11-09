@@ -29,6 +29,12 @@ typedef struct st20r_rx_ctx* st20r_rx_handle;
 #define ST20R_RX_FLAG_DATA_PATH_ONLY (ST_BIT32(0))
 /**
  * Flag bit in flags of struct st20r_rx_ops.
+ * If enabled, lib will pass ST_EVENT_VSYNC by the notify_event on every epoch start.
+ */
+#define ST20R_RX_FLAG_ENABLE_VSYNC (ST_BIT32(1))
+
+/**
+ * Flag bit in flags of struct st20r_rx_ops.
  * If set, lib will pass the incomplete frame to app also.
  * User can check st_frame_status data for the frame integrity
  */
@@ -100,10 +106,12 @@ struct st20r_rx_ops {
    */
   int (*notify_frame_ready)(void* priv, void* frame, struct st20_rx_frame_meta* meta);
   /**
-   * vsync callback, lib will call this when ptp come to a new epoch(frame time).
+   * event callback, lib will call this when there is some event happened.
    * Only non-block method can be used in this callback as it run from lcore routine.
+   * args point to the meta data of each event.
+   * Ex, cast to struct st10_vsync_meta for ST_EVENT_VSYNC.
    */
-  int (*notify_vsync)(void* priv, struct st10_vsync_meta* meta);
+  int (*notify_event)(void* priv, enum st_event event, void* args);
 };
 
 /**

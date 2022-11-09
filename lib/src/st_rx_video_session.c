@@ -2814,7 +2814,7 @@ static int rv_poll_vsync(struct st_main_impl* impl, struct st_rx_video_session_i
   if (cur_tsc > vsync->next_epoch_tsc) {
     uint64_t tsc_delta = cur_tsc - vsync->next_epoch_tsc;
     dbg("%s(%d), vsync with epochs %" PRIu64 "\n", __func__, s->idx, vsync->meta.epoch);
-    s->ops.notify_vsync(s->ops.priv, &vsync->meta);
+    s->ops.notify_event(s->ops.priv, ST_EVENT_VSYNC, &vsync->meta);
     st_vsync_calculate(impl, vsync); /* set next vsync */
     /* check tsc delta for status */
     if (tsc_delta > NS_PER_MS) s->stat_vsync_mismatch++;
@@ -2834,8 +2834,8 @@ static int rvs_tasklet_handler(void* priv) {
     s = rx_video_session_try_get(mgr, sidx);
     if (!s) continue;
 
-    /* check vsync if it has callback */
-    if (s->ops.notify_vsync) rv_poll_vsync(impl, s);
+    /* check vsync if it has vsync flag enabled */
+    if (s->ops.flags & ST20_RX_FLAG_ENABLE_VSYNC) rv_poll_vsync(impl, s);
 
     pending += rv_tasklet(impl, s, mgr);
     rx_video_session_put(mgr, sidx);
@@ -3839,6 +3839,7 @@ st22_rx_handle st22_rx_create(st_handle st, struct st22_rx_ops* ops) {
   }
   if (ops->flags & ST22_RX_FLAG_DATA_PATH_ONLY)
     st20_ops.flags |= ST20_RX_FLAG_DATA_PATH_ONLY;
+  if (ops->flags & ST22_RX_FLAG_ENABLE_VSYNC) st20_ops.flags |= ST20_RX_FLAG_ENABLE_VSYNC;
   if (ops->flags & ST22_RX_FLAG_RECEIVE_INCOMPLETE_FRAME)
     st20_ops.flags |= ST20_RX_FLAG_RECEIVE_INCOMPLETE_FRAME;
   st20_ops.pacing = ops->pacing;
@@ -3854,7 +3855,7 @@ st22_rx_handle st22_rx_create(st_handle st, struct st22_rx_ops* ops) {
   st20_ops.rtp_ring_size = ops->rtp_ring_size;
   st20_ops.notify_rtp_ready = ops->notify_rtp_ready;
   st20_ops.framebuff_cnt = ops->framebuff_cnt;
-  st20_ops.notify_vsync = ops->notify_vsync;
+  st20_ops.notify_event = ops->notify_event;
   st_pthread_mutex_lock(&sch->rx_video_mgr_mutex);
   s = rv_mgr_attach(&sch->rx_video_mgr, &st20_ops, ops);
   st_pthread_mutex_unlock(&sch->rx_video_mgr_mutex);

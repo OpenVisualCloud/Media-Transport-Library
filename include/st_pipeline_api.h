@@ -273,6 +273,11 @@ enum st22_quality_mode {
  * tx_frame_meta(ST10_TIMESTAMP_FMT_MEDIA_CLK is used)
  */
 #define ST22P_TX_FLAG_USER_TIMESTAMP (ST_BIT32(4))
+/**
+ * Flag bit in flags of struct st22p_tx_ops.
+ * If enabled, lib will pass ST_EVENT_VSYNC by the notify_event on every epoch start.
+ */
+#define ST22P_TX_FLAG_ENABLE_VSYNC (ST_BIT32(5))
 
 /**
  * Flag bit in flags of struct st20p_tx_ops.
@@ -301,6 +306,11 @@ enum st22_quality_mode {
  * tx_frame_meta(ST10_TIMESTAMP_FMT_MEDIA_CLK is used)
  */
 #define ST20P_TX_FLAG_USER_TIMESTAMP (ST_BIT32(4))
+/**
+ * Flag bit in flags of struct st20p_tx_ops.
+ * If enabled, lib will pass ST_EVENT_VSYNC by the notify_event on every epoch start.
+ */
+#define ST20P_TX_FLAG_ENABLE_VSYNC (ST_BIT32(5))
 
 /**
  * Flag bit in flags of struct st22p_rx_ops, for non ST_PMD_DPDK_USER.
@@ -308,6 +318,11 @@ enum st22_quality_mode {
  * Use st22p_rx_get_queue_meta to get the queue meta(queue number etc) info.
  */
 #define ST22P_RX_FLAG_DATA_PATH_ONLY (ST_BIT32(0))
+/**
+ * Flag bit in flags of struct st22p_rx_ops.
+ * If enabled, lib will pass ST_EVENT_VSYNC by the notify_event on every epoch start.
+ */
+#define ST22P_RX_FLAG_ENABLE_VSYNC (ST_BIT32(1))
 /**
  * Flag bit in flags of struct st22p_rx_ops.
  * If set, lib will pass the incomplete frame to app also.
@@ -321,6 +336,11 @@ enum st22_quality_mode {
  * Use st20p_rx_get_queue_meta to get the queue meta(queue number etc) info.
  */
 #define ST20P_RX_FLAG_DATA_PATH_ONLY (ST_BIT32(0))
+/**
+ * Flag bit in flags of struct st20p_rx_ops.
+ * If enabled, lib will pass ST_EVENT_VSYNC by the notify_event on every epoch start.
+ */
+#define ST20P_RX_FLAG_ENABLE_VSYNC (ST_BIT32(1))
 /**
  * Flag bit in flags of struct st20p_rx_ops.
  * If set, lib will pass the incomplete frame to app also.
@@ -569,10 +589,12 @@ struct st20p_tx_ops {
    */
   int (*notify_frame_done)(void* priv, struct st_frame* frame);
   /**
-   * vsync callback, lib will call this when ptp come to a new epoch(frame time).
+   * event callback, lib will call this when there is some event happened.
    * Only non-block method can be used in this callback as it run from lcore routine.
+   * args point to the meta data of each event.
+   * Ex, cast to struct st10_vsync_meta for ST_EVENT_VSYNC.
    */
-  int (*notify_vsync)(void* priv, struct st10_vsync_meta* meta);
+  int (*notify_event)(void* priv, enum st_event event, void* args);
 };
 
 /** The structure describing how to create a rx st2110-20 pipeline session. */
@@ -620,10 +642,12 @@ struct st20p_rx_ops {
   int (*query_ext_frame)(void* priv, struct st20_ext_frame* ext_frame,
                          struct st20_rx_frame_meta* meta);
   /**
-   * vsync callback, lib will call this when ptp come to a new epoch(frame time).
+   * event callback, lib will call this when there is some event happened.
    * Only non-block method can be used in this callback as it run from lcore routine.
+   * args point to the meta data of each event.
+   * Ex, cast to struct st10_vsync_meta for ST_EVENT_VSYNC.
    */
-  int (*notify_vsync)(void* priv, struct st10_vsync_meta* meta);
+  int (*notify_event)(void* priv, enum st_event event, void* args);
 };
 
 /** The structure describing how to create a tx st2110-22 pipeline session. */
@@ -679,10 +703,12 @@ struct st22p_tx_ops {
    */
   int (*notify_frame_done)(void* priv, struct st_frame* frame);
   /**
-   * vsync callback, lib will call this when ptp come to a new epoch(frame time).
+   * event callback, lib will call this when there is some event happened.
    * Only non-block method can be used in this callback as it run from lcore routine.
+   * args point to the meta data of each event.
+   * Ex, cast to struct st10_vsync_meta for ST_EVENT_VSYNC.
    */
-  int (*notify_vsync)(void* priv, struct st10_vsync_meta* meta);
+  int (*notify_event)(void* priv, enum st_event event, void* args);
 };
 
 /** The structure describing how to create a rx st2110-22 pipeline session. */
@@ -725,10 +751,12 @@ struct st22p_rx_ops {
    */
   int (*notify_frame_available)(void* priv);
   /**
-   * vsync callback, lib will call this when ptp come to a new epoch(frame time).
+   * event callback, lib will call this when there is some event happened.
    * Only non-block method can be used in this callback as it run from lcore routine.
+   * args point to the meta data of each event.
+   * Ex, cast to struct st10_vsync_meta for ST_EVENT_VSYNC.
    */
-  int (*notify_vsync)(void* priv, struct st10_vsync_meta* meta);
+  int (*notify_event)(void* priv, enum st_event event, void* args);
 };
 
 /**

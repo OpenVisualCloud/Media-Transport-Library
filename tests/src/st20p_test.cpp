@@ -240,15 +240,6 @@ static int test_st20p_rx_frame_available(void* priv) {
   return 0;
 }
 
-static int test_st20p_notify_vsync(void* priv, struct st10_vsync_meta* meta) {
-  tests_context* s = (tests_context*)priv;
-  s->vsync_cnt++;
-  if (!s->first_vsync_time) s->first_vsync_time = st_test_get_monotonic_time();
-  dbg("%s(%d,%p), epoch %lu vsync_cnt %d\n", __func__, s->idx, s, meta->epoch,
-      s->vsync_cnt);
-  return 0;
-}
-
 static void st20p_tx_ops_init(tests_context* st20, struct st20p_tx_ops* ops_tx) {
   auto ctx = st20->ctx;
 
@@ -268,7 +259,7 @@ static void st20p_tx_ops_init(tests_context* st20, struct st20p_tx_ops* ops_tx) 
   ops_tx->device = ST_PLUGIN_DEVICE_TEST;
   ops_tx->framebuff_cnt = st20->fb_cnt;
   ops_tx->notify_frame_available = test_st20p_tx_frame_available;
-  ops_tx->notify_vsync = test_st20p_notify_vsync;
+  ops_tx->notify_event = test_ctx_notify_event;
   st20->frame_size = st_frame_size(ops_tx->input_fmt, ops_tx->width, ops_tx->height);
 }
 
@@ -291,7 +282,7 @@ static void st20p_rx_ops_init(tests_context* st20, struct st20p_rx_ops* ops_rx) 
   ops_rx->device = ST_PLUGIN_DEVICE_TEST;
   ops_rx->framebuff_cnt = st20->fb_cnt;
   ops_rx->notify_frame_available = test_st20p_rx_frame_available;
-  ops_rx->notify_vsync = test_st20p_notify_vsync;
+  ops_rx->notify_event = test_ctx_notify_event;
   st20->frame_size = st_frame_size(ops_rx->output_fmt, ops_rx->width, ops_rx->height);
 }
 
@@ -566,6 +557,7 @@ struct st20p_rx_digest_test_para {
   enum st_test_level level;
   int fb_cnt;
   bool user_timestamp;
+  bool vsync;
 };
 
 static void test_st20p_init_rx_digest_para(struct st20p_rx_digest_test_para* para) {
@@ -580,6 +572,7 @@ static void test_st20p_init_rx_digest_para(struct st20p_rx_digest_test_para* par
   para->dynamic = false;
   para->level = ST_TEST_LEVEL_MANDATORY;
   para->user_timestamp = false;
+  para->vsync = true;
 }
 
 static void st20p_rx_digest_test(enum st_fps fps[], int width[], int height[],
@@ -667,12 +660,13 @@ static void st20p_rx_digest_test(enum st_fps fps[], int width[], int height[],
     ops_tx.device = para->device;
     ops_tx.framebuff_cnt = test_ctx_tx[i]->fb_cnt;
     ops_tx.notify_frame_available = test_st20p_tx_frame_available;
-    ops_tx.notify_vsync = test_st20p_notify_vsync;
+    ops_tx.notify_event = test_ctx_notify_event;
     if (para->tx_ext) {
       ops_tx.notify_frame_done = test_st20p_tx_frame_done;
       ops_tx.flags |= ST20P_TX_FLAG_EXT_FRAME;
     }
     if (para->user_timestamp) ops_tx.flags |= ST20P_TX_FLAG_USER_TIMESTAMP;
+    if (para->vsync) ops_tx.flags |= ST20P_TX_FLAG_ENABLE_VSYNC;
 
     test_ctx_tx[i]->frame_size = st_frame_size(tx_fmt[i], width[i], height[i]);
 
@@ -819,13 +813,14 @@ static void st20p_rx_digest_test(enum st_fps fps[], int width[], int height[],
     ops_rx.device = para->device;
     ops_rx.framebuff_cnt = test_ctx_rx[i]->fb_cnt;
     ops_rx.notify_frame_available = test_st20p_rx_frame_available;
-    ops_rx.notify_vsync = test_st20p_notify_vsync;
+    ops_rx.notify_event = test_ctx_notify_event;
     if (para->dynamic) {
       ops_rx.query_ext_frame = test_st20p_rx_query_ext_frame;
       ops_rx.flags |= ST20P_RX_FLAG_RECEIVE_INCOMPLETE_FRAME;
     } else if (para->rx_ext) {
       ops_rx.ext_frames = test_ctx_rx[i]->ext_frames;
     }
+    if (para->vsync) ops_rx.flags |= ST20P_RX_FLAG_ENABLE_VSYNC;
 
     test_ctx_rx[i]->frame_size =
         st_frame_size(ops_rx.output_fmt, ops_rx.width, ops_rx.height);

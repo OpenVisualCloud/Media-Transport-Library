@@ -645,3 +645,17 @@ int tests_context_unit(tests_context* ctx) {
 
   return 0;
 }
+
+int test_ctx_notify_event(void* priv, enum st_event event, void* args) {
+  if (event == ST_EVENT_VSYNC) {
+    tests_context* s = (tests_context*)priv;
+    s->vsync_cnt++;
+    if (!s->first_vsync_time) s->first_vsync_time = st_test_get_monotonic_time();
+#ifdef DEBUG
+    struct st10_vsync_meta* meta = (struct st10_vsync_meta*)args;
+    dbg("%s(%d,%p), epoch %lu vsync_cnt %d\n", __func__, s->idx, s, meta->epoch,
+        s->vsync_cnt);
+#endif
+  }
+  return 0;
+}
