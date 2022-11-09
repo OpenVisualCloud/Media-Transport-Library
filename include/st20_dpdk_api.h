@@ -89,7 +89,7 @@ extern "C" {
  */
 #define ST22_TX_FLAG_USER_TIMESTAMP (ST_BIT32(4))
 /**
- * Flag bit in flags of struct st20_tx_ops.
+ * Flag bit in flags of struct st22_tx_ops.
  * If enabled, lib will pass ST_EVENT_VSYNC by the notify_event on every epoch start.
  */
 #define ST22_TX_FLAG_ENABLE_VSYNC (ST_BIT32(5))
