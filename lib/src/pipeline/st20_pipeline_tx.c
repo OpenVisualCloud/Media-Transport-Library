@@ -44,6 +44,23 @@ static inline int convert_yuv422p12le_to_rfc4175_422be12(void* src, void* dst,
       (struct st20_rfc4175_422_12_pg2_be*)dst, width, height);
 }
 
+static inline int convert_yuv444p10le_to_rfc4175_444be10(void* src, void* dst,
+                                                         uint32_t width,
+                                                         uint32_t height) {
+  uint16_t* p10_u16 = (uint16_t*)src;
+  return st20_yuv444p10le_to_rfc4175_444be10(
+      p10_u16, (p10_u16 + width * height), (p10_u16 + width * height * 2),
+      (struct st20_rfc4175_444_10_pg4_be*)dst, width, height);
+}
+
+static inline int convert_gbrp10le_to_rfc4175_444be10(void* src, void* dst,
+                                                      uint32_t width, uint32_t height) {
+  uint16_t* p10_u16 = (uint16_t*)src;
+  return st20_gbrp10le_to_rfc4175_444be10(
+      p10_u16, (p10_u16 + width * height), (p10_u16 + width * height * 2),
+      (struct st20_rfc4175_444_10_pg4_be*)dst, width, height);
+}
+
 static uint16_t tx_st20p_next_idx(struct st20p_tx_ctx* ctx, uint16_t idx) {
   /* point to next */
   uint16_t next_idx = idx;
@@ -406,6 +423,28 @@ static int tx_st20p_get_converter_internal(struct st20p_tx_ctx* ctx,
       switch (input_fmt) {
         case ST_FRAME_FMT_YUV422PLANAR12LE:
           ctx->convert_func_internal = convert_yuv422p12le_to_rfc4175_422be12;
+          break;
+        default:
+          err("%s(%d), format not supported, input: %s, output: %s\n", __func__, ctx->idx,
+              st_frame_fmt_name(input_fmt), st_frame_fmt_name(output_fmt));
+          return -EIO;
+      }
+      break;
+    case ST_FRAME_FMT_YUV444RFC4175PG4BE10:
+      switch (input_fmt) {
+        case ST_FRAME_FMT_YUV444PLANAR10LE:
+          ctx->convert_func_internal = convert_yuv444p10le_to_rfc4175_444be10;
+          break;
+        default:
+          err("%s(%d), format not supported, input: %s, output: %s\n", __func__, ctx->idx,
+              st_frame_fmt_name(input_fmt), st_frame_fmt_name(output_fmt));
+          return -EIO;
+      }
+      break;
+    case ST_FRAME_FMT_RGBRFC4175PG4BE10:
+      switch (input_fmt) {
+        case ST_FRAME_FMT_GBRPLANAR10LE:
+          ctx->convert_func_internal = convert_gbrp10le_to_rfc4175_444be10;
           break;
         default:
           err("%s(%d), format not supported, input: %s, output: %s\n", __func__, ctx->idx,

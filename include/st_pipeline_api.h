@@ -124,6 +124,20 @@ enum st_frame_fmt {
    * two YUV 422 12 bit pixel groups on 6 bytes, big endian
    */
   ST_FRAME_FMT_YUV422RFC4175PG2BE12,
+  /** YUV 444 planar 10bit little endian */
+  ST_FRAME_FMT_YUV444PLANAR10LE,
+  /**
+   * RFC4175 in ST2110(ST20_FMT_YUV_444_10BIT),
+   * four YUV 444 10 bit pixel groups on 15 bytes, big endian
+   */
+  ST_FRAME_FMT_YUV444RFC4175PG4BE10,
+  /** GBR planar 10bit little endian */
+  ST_FRAME_FMT_GBRPLANAR10LE,
+  /**
+   * RFC4175 in ST2110(ST20_FMT_RGB_10BIT),
+   * four RGB 10 bit pixel groups on 15 bytes, big endian
+   */
+  ST_FRAME_FMT_RGBRFC4175PG4BE10,
   /** ST22 jpegxs codestream */
   ST_FRAME_FMT_JPEGXS_CODESTREAM = 24,
   /** ST22 h264 cbr codestream */
