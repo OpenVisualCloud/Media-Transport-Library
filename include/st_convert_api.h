@@ -341,6 +341,77 @@ static inline int st20_rfc4175_444be10_to_444le10(
 }
 
 /**
+ * Convert rfc4175_444be12 to yuv444p12le with the max optimised SIMD level.
+ *
+ * @param pg
+ *   Point to pg(rfc4175_444be12) data.
+ * @param y
+ *   Point to Y(yuv444p12le) vector.
+ * @param b
+ *   Point to b(yuv444p12le) vector.
+ * @param r
+ *   Point to r(yuv444p12le) vector.
+ * @param w
+ *   The st2110-20(video) width.
+ * @param h
+ *   The st2110-20(video) height.
+ * @return
+ *   - 0 if successful.
+ *   - <0: Error code if convert fail.
+ */
+static inline int st20_rfc4175_444be12_to_yuv444p12le(
+    struct st20_rfc4175_444_12_pg2_be* pg, uint16_t* y, uint16_t* b, uint16_t* r,
+    uint32_t w, uint32_t h) {
+  return st20_rfc4175_444be12_to_444p12le_simd(pg, y, b, r, w, h, ST_SIMD_LEVEL_MAX);
+}
+
+/**
+ * Convert rfc4175_444be12 to gbrp12le with the max optimised SIMD level.
+ *
+ * @param pg
+ *   Point to pg(rfc4175_444be12) data.
+ * @param g
+ *   Point to g(gbrp12le) vector.
+ * @param b
+ *   Point to b(gbrp12le) vector.
+ * @param r
+ *   Point to r(gbrp12le) vector.
+ * @param w
+ *   The st2110-20(video) width.
+ * @param h
+ *   The st2110-20(video) height.
+ * @return
+ *   - 0 if successful.
+ *   - <0: Error code if convert fail.
+ */
+static inline int st20_rfc4175_444be12_to_gbrp12le(struct st20_rfc4175_444_12_pg2_be* pg,
+                                                   uint16_t* g, uint16_t* b, uint16_t* r,
+                                                   uint32_t w, uint32_t h) {
+  return st20_rfc4175_444be12_to_444p12le_simd(pg, g, r, b, w, h, ST_SIMD_LEVEL_MAX);
+}
+
+/**
+ * Convert rfc4175_444be12 to rfc4175_444le12 with the max optimised SIMD level.
+ *
+ * @param pg_be
+ *   Point to pg(rfc4175_444be12) data.
+ * @param pg_le
+ *   Point to pg(rfc4175_444le12) data.
+ * @param w
+ *   The st2110-20(video) width.
+ * @param h
+ *   The st2110-20(video) height.
+ * @return
+ *   - 0 if successful.
+ *   - <0: Error code if convert fail.
+ */
+static inline int st20_rfc4175_444be12_to_444le12(
+    struct st20_rfc4175_444_12_pg2_be* pg_be, struct st20_rfc4175_444_12_pg2_le* pg_le,
+    uint32_t w, uint32_t h) {
+  return st20_rfc4175_444be12_to_444le12_simd(pg_be, pg_le, w, h, ST_SIMD_LEVEL_MAX);
+}
+
+/**
  * Convert yuv422p10le to rfc4175_422be10.
  *
  * @param y
@@ -944,6 +1015,178 @@ static inline int st20_rfc4175_444le10_to_gbrp10le(struct st20_rfc4175_444_10_pg
                                                    uint32_t w, uint32_t h) {
   return st20_rfc4175_444le10_to_444p10le(pg, g, r, b, w, h);
 }
+
+/**
+ * Convert yuv444p12le to rfc4175_444be12.
+ *
+ * @param y
+ *   Point to Y(yuv444p12le) vector.
+ * @param b
+ *   Point to b(yuv444p12le) vector.
+ * @param r
+ *   Point to r(yuv444p12le) vector.
+ * @param pg
+ *   Point to pg(rfc4175_444be12) data.
+ * @param w
+ *   The st2110-20(video) width.
+ * @param h
+ *   The st2110-20(video) height.
+ * @return
+ *   - 0 if successful.
+ *   - <0: Error code if convert fail.
+ */
+static inline int st20_yuv444p12le_to_rfc4175_444be12(
+    uint16_t* y, uint16_t* b, uint16_t* r, struct st20_rfc4175_444_12_pg2_be* pg,
+    uint32_t w, uint32_t h) {
+  return st20_444p12le_to_rfc4175_444be12_simd(y, b, r, pg, w, h, ST_SIMD_LEVEL_MAX);
+}
+
+/**
+ * Convert rfc4175_444le12 to rfc4175_444be12.
+ *
+ * @param pg_le
+ *   Point to pg(rfc4175_444le12) data.
+ * @param pg_be
+ *   Point to pg(rfc4175_444be12) data.
+ * @param w
+ *   The st2110-20(video) width.
+ * @param h
+ *   The st2110-20(video) height.
+ * @return
+ *   - 0 if successful.
+ *   - <0: Error code if convert fail.
+ */
+static inline int st20_rfc4175_444le12_to_444be12(
+    struct st20_rfc4175_444_12_pg2_le* pg_le, struct st20_rfc4175_444_12_pg2_be* pg_be,
+    uint32_t w, uint32_t h) {
+  return st20_rfc4175_444le12_to_444be12_simd(pg_le, pg_be, w, h, ST_SIMD_LEVEL_MAX);
+}
+
+/**
+ * Convert yuv444p12le to rfc4175_444le12.
+ *
+ * @param y
+ *   Point to Y(yuv444p12le) vector.
+ * @param b
+ *   Point to b(yuv444p12le) vector.
+ * @param r
+ *   Point to r(yuv444p12le) vector.
+ * @param pg
+ *   Point to pg(rfc4175_444le12) data.
+ * @param w
+ *   The st2110-20(video) width.
+ * @param h
+ *   The st2110-20(video) height.
+ * @return
+ *   - 0 if successful.
+ *   - <0: Error code if convert fail.
+ */
+static inline int st20_yuv444p12le_to_rfc4175_444le12(
+    uint16_t* y, uint16_t* b, uint16_t* r, struct st20_rfc4175_444_12_pg2_le* pg,
+    uint32_t w, uint32_t h) {
+  return st20_444p12le_to_rfc4175_444le12(y, b, r, pg, w, h);
+}
+
+/**
+ * Convert rfc4175_444le12 to yuv444p12le.
+ *
+ * @param pg
+ *   Point to pg(rfc4175_444le12) data.
+ * @param y
+ *   Point to Y(yuv444p12le) vector.
+ * @param b
+ *   Point to b(yuv444p12le) vector.
+ * @param r
+ *   Point to r(yuv444p12le) vector.
+ * @param w
+ *   The st2110-20(video) width.
+ * @param h
+ *   The st2110-20(video) height.
+ * @return
+ *   - 0 if successful.
+ *   - <0: Error code if convert fail.
+ */
+static inline int st20_rfc4175_444le12_to_yuv444p12le(
+    struct st20_rfc4175_444_12_pg2_le* pg, uint16_t* y, uint16_t* b, uint16_t* r,
+    uint32_t w, uint32_t h) {
+  return st20_rfc4175_444le12_to_444p12le(pg, y, b, r, w, h);
+}
+
+/**
+ * Convert gbrp12le to rfc4175_444be12.
+ *
+ * @param g
+ *   Point to g(gbrp12le) vector.
+ * @param b
+ *   Point to b(gbrp12le) vector.
+ * @param r
+ *   Point to r(gbrp12le) vector.
+ * @param pg
+ *   Point to pg(rfc4175_444be12) data.
+ * @param w
+ *   The st2110-20(video) width.
+ * @param h
+ *   The st2110-20(video) height.
+ * @return
+ *   - 0 if successful.
+ *   - <0: Error code if convert fail.
+ */
+static inline int st20_gbrp12le_to_rfc4175_444be12(uint16_t* g, uint16_t* b, uint16_t* r,
+                                                   struct st20_rfc4175_444_12_pg2_be* pg,
+                                                   uint32_t w, uint32_t h) {
+  return st20_444p12le_to_rfc4175_444be12_simd(g, r, b, pg, w, h, ST_SIMD_LEVEL_MAX);
+}
+
+/**
+ * Convert gbrp12le to rfc4175_444le12.
+ *
+ * @param g
+ *   Point to g(gbrp12le) vector.
+ * @param b
+ *   Point to b(gbrp12le) vector.
+ * @param r
+ *   Point to r(gbrp12le) vector.
+ * @param pg
+ *   Point to pg(rfc4175_444le12) data.
+ * @param w
+ *   The st2110-20(video) width.
+ * @param h
+ *   The st2110-20(video) height.
+ * @return
+ *   - 0 if successful.
+ *   - <0: Error code if convert fail.
+ */
+static inline int st20_gbrp12le_to_rfc4175_444le12(uint16_t* g, uint16_t* b, uint16_t* r,
+                                                   struct st20_rfc4175_444_12_pg2_le* pg,
+                                                   uint32_t w, uint32_t h) {
+  return st20_444p12le_to_rfc4175_444le12(g, r, b, pg, w, h);
+}
+
+/**
+ * Convert rfc4175_444le12 to gbrp12le.
+ *
+ * @param pg
+ *   Point to pg(rfc4175_444le12) data.
+ * @param g
+ *   Point to g(gbrp12le) vector.
+ * @param b
+ *   Point to b(gbrp12le) vector.
+ * @param r
+ *   Point to r(gbrp12le) vector.
+ * @param w
+ *   The st2110-20(video) width.
+ * @param h
+ *   The st2110-20(video) height.
+ * @return
+ *   - 0 if successful.
+ *   - <0: Error code if convert fail.
+ */
+static inline int st20_rfc4175_444le12_to_gbrp12le(struct st20_rfc4175_444_12_pg2_le* pg,
+                                                   uint16_t* g, uint16_t* b, uint16_t* r,
+                                                   uint32_t w, uint32_t h) {
+  return st20_rfc4175_444le12_to_444p12le(pg, g, r, b, w, h);
+}
+
 /**
  * Convert AM824 subframe to AES3 subframe.
  *
