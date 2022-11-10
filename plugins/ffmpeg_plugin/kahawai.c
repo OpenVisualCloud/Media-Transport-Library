@@ -52,6 +52,7 @@ typedef struct KahawaiDemuxerContext {
   char* pixel_format;
   AVRational framerate;
   int fb_cnt;
+  int session_cnt;
 
   st_handle dev_handle;
   st20p_rx_handle rx_handle;
@@ -79,6 +80,9 @@ typedef struct KahawaiDemuxerContext {
     bool stopped;
 #endif
 } KahawaiDemuxerContext;
+
+static st_handle shared_st_handle = NULL;
+static unsigned int active_session_cnt = 0;
 
 static int rx_st20p_frame_available(void* priv) {
   KahawaiDemuxerContext* s = priv;
@@ -155,12 +159,12 @@ static int kahawai_read_header(AVFormatContext* ctx) {
     return AVERROR(EINVAL);
   }
 
+  param.rx_sessions_cnt_max = s->session_cnt;
+  param.tx_sessions_cnt_max = 0;
   param.flags = ST_FLAG_BIND_NUMA | ST_FLAG_DEV_AUTO_START_STOP;
   param.log_level = ST_LOG_LEVEL_INFO;  // log level. ERROR, INFO, WARNING
   param.priv = NULL;                    // usr crx pointer
   param.ptp_get_time_fn = NULL;
-  param.rx_sessions_cnt_max = 1;
-  param.tx_sessions_cnt_max = 0;
   param.lcores = NULL;
 
   if (NULL == s->src_addr) {
@@ -237,12 +241,19 @@ static int kahawai_read_header(AVFormatContext* ctx) {
       av_rescale_q(ctx->packet_size, (AVRational){8, 1}, st->time_base);
 
   // Create device
-  s->dev_handle = st_init(&param);
-  if (!s->dev_handle) {
-    av_log(ctx, AV_LOG_ERROR, "st_init failed\n");
-    return AVERROR(EIO);
+  if (!shared_st_handle) {
+    s->dev_handle = st_init(&param);
+    if (!s->dev_handle) {
+      av_log(ctx, AV_LOG_ERROR, "st_init failed\n");
+      return AVERROR(EIO);
+    }
+    shared_st_handle = s->dev_handle;
+    av_log(ctx, AV_LOG_VERBOSE, "st_init finished\n");
+  } else {
+    s->dev_handle = shared_st_handle;
+    av_log(ctx, AV_LOG_VERBOSE, "use shared st_handle\n");
   }
-  av_log(ctx, AV_LOG_VERBOSE, "st_init finished\n");
+  ++active_session_cnt;
 
   ops_rx.name = "st20p";
   ops_rx.priv = s;                 // Handle of priv_data registered to lib
@@ -508,10 +519,18 @@ static int kahawai_read_close(AVFormatContext* ctx) {
   pthread_cond_destroy(&s->get_frame_cond);
 
   // Destroy device
-  st_uninit(s->dev_handle);
+  if (--active_session_cnt == 0) {
+    if (shared_st_handle) {
+      st_uninit(shared_st_handle);
+      shared_st_handle = NULL;
+      av_log(ctx, AV_LOG_VERBOSE, "st_uninit finished\n");
+    } else {
+      av_log(ctx, AV_LOG_ERROR, "missing st_handle\n");
+    }
+  } else {
+    av_log(ctx, AV_LOG_VERBOSE, "no need to do st_uninit yet\n");
+  }
   s->dev_handle = NULL;
-
-  av_log(ctx, AV_LOG_VERBOSE, "st_uninit finished\n");
 
 #if 0
     for (int i = 0; i < KAHAWAI_FRAME_BUFFER_COUNT; ++i) {
@@ -591,6 +610,14 @@ static const AVOption kahawai_options[] = {
      {.i64 = 8},
      3,
      8,
+     DEC},
+    {"total_sessions",
+     "Total sessions count",
+     OFFSET(session_cnt),
+     AV_OPT_TYPE_INT,
+     {.i64 = 1},
+     1,
+     INT_MAX,
      DEC},
     {NULL},
 };
