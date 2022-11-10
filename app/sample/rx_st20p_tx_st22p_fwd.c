@@ -50,7 +50,7 @@ static int st22_fwd_open_logo(struct st_sample_context* ctx,
     return -EIO;
   }
 
-  s->logo_meta.addr = s->logo_buf;
+  s->logo_meta.addr[0] = s->logo_buf;
   s->logo_meta.fmt = ctx->input_fmt;
   s->logo_meta.width = ctx->logo_width;
   s->logo_meta.height = ctx->logo_height;
@@ -102,7 +102,7 @@ static void fwd_st22_consume_frame(struct rx_st20p_tx_st22p_sample_ctx* s,
       st_pthread_mutex_unlock(&s->wake_mutex);
       continue;
     }
-    st_memcpy(tx_frame->addr, frame->addr, s->framebuff_size);
+    st_memcpy(tx_frame->addr[0], frame->addr[0], s->framebuff_size);
     if (s->logo_buf) {
       st_draw_logo(tx_frame, &s->logo_meta, 16, 16);
     }

@@ -189,10 +189,28 @@ enum st_frame_fmt {
  */
 #define ST_FRAME_FLAG_EXT_BUF (ST_BIT32(0))
 
+#define ST_MAX_PLANES (4)
+
+/** The structure info for external frame */
+struct st_ext_frame {
+  /** Virtual address of external frame */
+  void* addr[ST_MAX_PLANES];
+  /** IOVA of external frame (only for non-convert mode) */
+  st_iova_t iova[ST_MAX_PLANES];
+  /** Linesize of external frame */
+  uint32_t linesize[ST_MAX_PLANES];
+  /** Size of external frame */
+  size_t size;
+  /** Private data for user */
+  void* opaque;
+};
+
 /** The structure info for frame meta. */
 struct st_frame {
   /** frame buffer address */
-  void* addr;
+  void* addr[ST_MAX_PLANES];
+  /** frame buffer linesize */
+  uint32_t linesize[ST_MAX_PLANES];
   /** frame format */
   enum st_frame_fmt fmt;
   /** frame buffer size */
@@ -218,7 +236,7 @@ struct st_frame {
 
   /** priv pointer for lib, do not touch this */
   void* priv;
-  /** priv data for user, get from query_ext_frame callback */
+  /** priv data for user */
   void* opaque;
 };
 
@@ -581,10 +599,16 @@ struct st20p_tx_ops {
   enum st_fps fps;
   /** Session input frame format */
   enum st_frame_fmt input_fmt;
+  /** Linesize for input frame */
+  uint32_t input_linesize[ST_MAX_PLANES];
   /** Session transport frame format */
   enum st20_fmt transport_fmt;
+  /** Linesize for transport frame */
+  uint32_t transport_linesize;
   /** Convert plugin device, auto or special */
   enum st_plugin_device device;
+  /** Array of external frames */
+  struct st_ext_frame* ext_frames;
   /**
    * The frame buffer count requested for one st20 pipeline tx session,
    * should be in range [2, ST20_FB_MAX_COUNT],
@@ -629,12 +653,16 @@ struct st20p_rx_ops {
   enum st_fps fps;
   /** Session transport frame format */
   enum st20_fmt transport_fmt;
+  /** Linesize for transport frame */
+  uint32_t transport_linesize;
   /** Session output frame format */
   enum st_frame_fmt output_fmt;
+  /** Linesize for output frame */
+  uint32_t output_linesize[ST_MAX_PLANES];
   /** Convert plugin device, auto or special */
   enum st_plugin_device device;
-  /** Array of external framebuffers */
-  struct st20_ext_frame* ext_frames;
+  /** Array of external frames */
+  struct st_ext_frame* ext_frames;
   /**
    * The frame buffer count requested for one st20 pipeline rx session,
    * should be in range [2, ST20_FB_MAX_COUNT],
@@ -1204,8 +1232,7 @@ int st20p_tx_put_frame(st20p_tx_handle handle, struct st_frame* frame);
 
 /**
  * Put back the frame which get by st20p_tx_get_frame to the tx
- * with external framebuffer
- * st2110-20 pipeline session.
+ * st2110-20 pipeline session with external framebuffer.
  *
  * @param handle
  *   The handle to the tx st2110-20 pipeline session.
@@ -1218,7 +1245,7 @@ int st20p_tx_put_frame(st20p_tx_handle handle, struct st_frame* frame);
  *   - <0: Error code if put fail.
  */
 int st20p_tx_put_ext_frame(st20p_tx_handle handle, struct st_frame* frame,
-                           struct st20_ext_frame* ext_frame);
+                           struct st_ext_frame* ext_frame);
 
 /**
  * Get the framebuffer pointer from the tx st2110-20 pipeline session.

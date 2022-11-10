@@ -266,7 +266,7 @@ static int tx_st22p_create_transport(st_handle st, struct st22p_tx_ctx* ctx,
 
   struct st22p_tx_frame* frames = ctx->framebuffs;
   for (uint16_t i = 0; i < ctx->framebuff_cnt; i++) {
-    frames[i].dst.addr = st22_tx_get_fb_addr(transport, i);
+    frames[i].dst.addr[0] = st22_tx_get_fb_addr(transport, i);
     frames[i].dst.fmt = ctx->encode_impl->req.req.output_fmt;
     frames[i].dst.buffer_size = ops_tx.framebuff_max_size;
     frames[i].dst.data_size = ops_tx.framebuff_max_size;
@@ -285,9 +285,9 @@ static int tx_st22p_create_transport(st_handle st, struct st22p_tx_ctx* ctx,
 static int tx_st22p_uinit_src_fbs(struct st22p_tx_ctx* ctx) {
   if (ctx->framebuffs) {
     for (uint16_t i = 0; i < ctx->framebuff_cnt; i++) {
-      if (ctx->framebuffs[i].src.addr) {
-        st_rte_free(ctx->framebuffs[i].src.addr);
-        ctx->framebuffs[i].src.addr = NULL;
+      if (ctx->framebuffs[i].src.addr[0]) {
+        st_rte_free(ctx->framebuffs[i].src.addr[0]);
+        ctx->framebuffs[i].src.addr[0] = NULL;
       }
     }
     st_rte_free(ctx->framebuffs);
@@ -322,7 +322,7 @@ static int tx_st22p_init_src_fbs(struct st_main_impl* impl, struct st22p_tx_ctx*
       tx_st22p_uinit_src_fbs(ctx);
       return -ENOMEM;
     }
-    frames[i].src.addr = src;
+    frames[i].src.addr[0] = src;
     frames[i].src.fmt = ops->input_fmt;
     frames[i].src.buffer_size = src_size;
     frames[i].src.data_size = src_size;
@@ -551,7 +551,7 @@ void* st22p_tx_get_fb_addr(st22p_tx_handle handle, uint16_t idx) {
     return NULL;
   }
 
-  return ctx->framebuffs[idx].src.addr;
+  return ctx->framebuffs[idx].src.addr[0];
 }
 
 size_t st22p_tx_frame_size(st22p_tx_handle handle) {

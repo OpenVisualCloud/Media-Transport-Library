@@ -82,7 +82,7 @@ static int st20_fwd_open_logo(struct st_sample_context* ctx,
     return -EIO;
   }
 
-  s->logo_meta.addr = s->logo_buf;
+  s->logo_meta.addr[0] = s->logo_buf;
   s->logo_meta.fmt = ctx->input_fmt;
   s->logo_meta.width = ctx->logo_width;
   s->logo_meta.height = ctx->logo_height;
@@ -100,7 +100,7 @@ static int tx_st20p_frame_done(void* priv, struct st_frame* frame) {
   st20p_rx_handle rx_handle = s->rx_handle;
 
   struct st_frame* rx_frame = rx_st20p_dequeue_frame(s);
-  if (frame->addr != rx_frame->addr) {
+  if (frame->addr[0] != rx_frame->addr[0]) {
     err("%s, frame ooo, should not happen!\n", __func__);
     return -EIO;
   }
@@ -155,13 +155,13 @@ static void fwd_st20_consume_frame(struct rx_st20p_tx_st20p_sample_ctx* s,
       if (s->logo_buf) {
         st_draw_logo(frame, &s->logo_meta, 16, 16);
       }
-      struct st20_ext_frame ext_frame;
-      ext_frame.buf_addr = frame->addr;
-      ext_frame.buf_iova = st_hp_virt2iova(s->st, frame->addr);
-      ext_frame.buf_len = frame->data_size;
+      struct st_ext_frame ext_frame;
+      ext_frame.addr[0] = frame->addr[0];
+      ext_frame.iova[0] = st_hp_virt2iova(s->st, frame->addr[0]);
+      ext_frame.size = frame->data_size;
       st20p_tx_put_ext_frame(tx_handle, tx_frame, &ext_frame);
     } else {
-      st_memcpy(tx_frame->addr, frame->addr, s->framebuff_size);
+      st_memcpy(tx_frame->addr[0], frame->addr[0], s->framebuff_size);
       if (s->logo_buf) {
         st_draw_logo(tx_frame, &s->logo_meta, 16, 16);
       }

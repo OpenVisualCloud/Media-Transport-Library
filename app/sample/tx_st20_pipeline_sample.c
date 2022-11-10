@@ -142,7 +142,7 @@ static int tx_st20p_frame_done(void* priv, struct st_frame* frame) {
 static void tx_st20p_build_frame(struct tx_st20p_sample_ctx* s, struct st_frame* frame) {
   // uint8_t* src = s->frame_cursor;
 
-  // st_memcpy(frame->addr, src, s->frame_size);
+  // st_memcpy(frame->addr[0], src, s->frame_size);
 }
 
 static void* tx_st20p_frame_thread(void* arg) {
@@ -160,10 +160,10 @@ static void* tx_st20p_frame_thread(void* arg) {
       continue;
     }
     if (s->ext) {
-      struct st20_ext_frame ext_frame;
-      ext_frame.buf_addr = s->frame_cursor;
-      ext_frame.buf_iova = s->source_begin_iova + (s->frame_cursor - s->source_begin);
-      ext_frame.buf_len = s->frame_size;
+      struct st_ext_frame ext_frame;
+      ext_frame.addr[0] = s->frame_cursor;
+      ext_frame.iova[0] = s->source_begin_iova + (s->frame_cursor - s->source_begin);
+      ext_frame.size = s->frame_size;
       st20p_tx_put_ext_frame(handle, frame, &ext_frame);
     } else {
       if (s->source_begin) tx_st20p_build_frame(s, frame);

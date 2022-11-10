@@ -65,7 +65,7 @@ static int tx_st22p_open_logo(struct st_sample_context* ctx,
     return -EIO;
   }
 
-  s->logo_meta.addr = s->logo_buf;
+  s->logo_meta.addr[0] = s->logo_buf;
   s->logo_meta.fmt = ctx->input_fmt;
   s->logo_meta.width = ctx->logo_width;
   s->logo_meta.height = ctx->logo_height;
@@ -132,7 +132,7 @@ static void tx_st22p_build_frame(struct tx_st22p_sample_ctx* s, struct st_frame*
   }
   uint8_t* src = s->frame_cursor;
 
-  st_memcpy(frame->addr, src, s->frame_size);
+  st_memcpy(frame->addr[0], src, s->frame_size);
   if (s->logo_buf) {
     st_draw_logo(frame, &s->logo_meta, 16, 16);
   }
