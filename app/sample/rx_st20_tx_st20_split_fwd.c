@@ -180,7 +180,7 @@ static int split_fwd_sample_free_app(struct split_fwd_sample_ctx* app) {
     app->rx_handle = NULL;
   }
   if (app->frame_ring) {
-    struct frame_info* fi;
+    struct frame_info* fi = NULL;
     int ret;
     /* dequeue and free all frames in the ring */
     do {
