@@ -704,6 +704,19 @@ static void st20p_rx_digest_test(enum st_fps fps[], int width[], int height[],
         test_ctx_tx[i]->p_ext_frames[j].addr[0] = test_ctx_tx[i]->ext_fb + j * frame_size;
         test_ctx_tx[i]->p_ext_frames[j].iova[0] =
             test_ctx_tx[i]->ext_fb_iova + j * frame_size;
+        test_ctx_tx[i]->p_ext_frames[j].linesize[0] =
+            st_frame_least_linesize(rx_fmt[i], width[i], 0);
+        uint8_t planes = st_frame_fmt_planes(rx_fmt[i]);
+        for (uint8_t plane = 1; plane < planes; plane++) { /* assume planes continous */
+          test_ctx_tx[i]->p_ext_frames[j].linesize[plane] =
+              st_frame_least_linesize(rx_fmt[i], width[i], plane);
+          test_ctx_tx[i]->p_ext_frames[j].addr[plane] =
+              (uint8_t*)test_ctx_tx[i]->p_ext_frames[j].addr[plane - 1] +
+              test_ctx_tx[i]->p_ext_frames[j].linesize[plane - 1] * height[i];
+          test_ctx_tx[i]->p_ext_frames[j].iova[plane] =
+              test_ctx_tx[i]->p_ext_frames[j].iova[plane - 1] +
+              test_ctx_tx[i]->p_ext_frames[j].linesize[plane - 1] * height[i];
+        }
         test_ctx_tx[i]->p_ext_frames[j].size = frame_size;
       }
     }
@@ -793,6 +806,19 @@ static void st20p_rx_digest_test(enum st_fps fps[], int width[], int height[],
         test_ctx_rx[i]->p_ext_frames[j].addr[0] = test_ctx_rx[i]->ext_fb + j * frame_size;
         test_ctx_rx[i]->p_ext_frames[j].iova[0] =
             test_ctx_rx[i]->ext_fb_iova + j * frame_size;
+        test_ctx_rx[i]->p_ext_frames[j].linesize[0] =
+            st_frame_least_linesize(rx_fmt[i], width[i], 0);
+        uint8_t planes = st_frame_fmt_planes(rx_fmt[i]);
+        for (uint8_t plane = 1; plane < planes; plane++) { /* assume planes continous */
+          test_ctx_rx[i]->p_ext_frames[j].linesize[plane] =
+              st_frame_least_linesize(rx_fmt[i], width[i], plane);
+          test_ctx_rx[i]->p_ext_frames[j].addr[plane] =
+              (uint8_t*)test_ctx_rx[i]->p_ext_frames[j].addr[plane - 1] +
+              test_ctx_rx[i]->p_ext_frames[j].linesize[plane - 1] * height[i];
+          test_ctx_rx[i]->p_ext_frames[j].iova[plane] =
+              test_ctx_rx[i]->p_ext_frames[j].iova[plane - 1] +
+              test_ctx_rx[i]->p_ext_frames[j].linesize[plane - 1] * height[i];
+        }
         test_ctx_rx[i]->p_ext_frames[j].size = frame_size;
       }
     }

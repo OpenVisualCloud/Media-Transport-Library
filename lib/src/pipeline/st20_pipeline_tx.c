@@ -397,7 +397,7 @@ static int tx_st20p_init_src_fbs(struct st_main_impl* impl, struct st20p_tx_ctx*
     frames[i].src.fmt = ops->input_fmt;
     frames[i].src.width = ops->width;
     frames[i].src.height = ops->height;
-    uint8_t planes = st_frame_fmt_planes(frames[i].dst.fmt);
+    uint8_t planes = st_frame_fmt_planes(frames[i].src.fmt);
     if (!ctx->derive) { /* when derive, no need to alloc src frames */
       if (ops->flags & ST20P_TX_FLAG_EXT_FRAME) {
         for (uint8_t plane = 0; plane < planes; plane++) {

@@ -347,7 +347,7 @@ size_t st_frame_least_linesize(enum st_frame_fmt fmt, uint32_t width, uint8_t pl
     case ST_FRAME_FMT_BGRA:
     case ST_FRAME_FMT_RGB8:
       if (plane > 0) {
-        err("%s, invalid plane idx for packed fmt %u\n", __func__, plane);
+        err("%s, invalid plane idx %u for packed fmt\n", __func__, plane);
         break;
       }
       linesize = st_frame_size(fmt, width, 1);
@@ -365,7 +365,7 @@ size_t st_frame_least_linesize(enum st_frame_fmt fmt, uint32_t width, uint8_t pl
           linesize = st_frame_size(fmt, width, 1) / 4;
           break;
         default:
-          err("%s, invalid plane idx for planar fmt %u\n", __func__, plane);
+          err("%s, invalid plane idx %u for 422 planar fmt\n", __func__, plane);
           break;
       }
       break;
@@ -381,7 +381,7 @@ size_t st_frame_least_linesize(enum st_frame_fmt fmt, uint32_t width, uint8_t pl
           linesize = st_frame_size(fmt, width, 1) / 3;
           break;
         default:
-          err("%s, invalid plane idx for planar fmt %u\n", __func__, plane);
+          err("%s, invalid plane idx %u for 444 planar fmt\n", __func__, plane);
           break;
       }
       break;

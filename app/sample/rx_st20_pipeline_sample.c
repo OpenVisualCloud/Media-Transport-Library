@@ -204,7 +204,7 @@ int main(int argc, char** argv) {
         app[i]->ext_frames[j].buf_len = framebuff_size;
       }
       app[i]->ext_idx = 0;
-      // ops_rx.ext_frames = app[i]->ext_frames;
+      /* ops_rx.ext_frames = (convert to st_ext_frame)app[i]->p_ext_frames; */
       /* use dynamic external frames */
       ops_rx.query_ext_frame = rx_st20p_query_ext_frame;
       ops_rx.flags |= ST20P_RX_FLAG_RECEIVE_INCOMPLETE_FRAME;
