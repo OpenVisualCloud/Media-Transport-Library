@@ -134,7 +134,7 @@ static int rx_st20p_frame_ready(void* priv, void* frame,
   }
 
   framebuff->src.addr[0] = frame;
-  // framebuff->src.data_size = meta->frame_total_size;
+  framebuff->src.data_size = meta->frame_total_size;
   framebuff->src.tfmt = meta->tfmt;
   framebuff->src.timestamp = meta->timestamp;
   framebuff->src.status = meta->status;
@@ -384,7 +384,9 @@ static int rx_st20p_create_transport(st_handle st, struct st20p_rx_ctx* ctx,
     frames[i].src.data_size = frames[i].src.buffer_size;
     frames[i].src.width = ops->width;
     frames[i].src.height = ops->height;
-    frames[i].src.linesize[0] = ops->transport_linesize;
+    frames[i].src.linesize[0] = /* rfc4175 uses packed format */
+        RTE_MAX(ops->transport_linesize,
+                st_frame_least_linesize(frames[i].src.fmt, frames[i].src.width, 0));
     frames[i].src.priv = &frames[i];
 
     frames[i].convert_frame.src = &frames[i].src;
@@ -420,7 +422,7 @@ static int rx_st20p_init_dst_fbs(struct st_main_impl* impl, struct st20p_rx_ctx*
   int idx = ctx->idx;
   int soc_id = st_socket_id(impl, ST_PORT_P);
   struct st20p_rx_frame* frames;
-  void* dst;
+  void* dst = NULL;
   size_t dst_size = ctx->dst_size;
 
   ctx->framebuff_cnt = ops->framebuff_cnt;
@@ -434,28 +436,54 @@ static int rx_st20p_init_dst_fbs(struct st_main_impl* impl, struct st20p_rx_ctx*
   for (uint16_t i = 0; i < ctx->framebuff_cnt; i++) {
     frames[i].stat = ST20P_RX_FRAME_FREE;
     frames[i].idx = i;
+    frames[i].dst.fmt = ops->output_fmt;
+    frames[i].dst.width = ops->width;
+    frames[i].dst.height = ops->height;
+    uint8_t planes = st_frame_fmt_planes(frames[i].dst.fmt);
     if (!ctx->derive) { /* when derive, no need to alloc dst frames */
       if (ops->ext_frames) {
         /* use ext frame as dst frame */
-        dst = ops->ext_frames[i].addr[0];
+        for (uint8_t plane = 0; plane < planes; plane++) {
+          frames[i].dst.addr[plane] = ops->ext_frames[i].addr[plane];
+          frames[i].dst.iova[plane] = ops->ext_frames[i].iova[plane];
+          frames[i].dst.linesize[plane] = ops->ext_frames[i].linesize[plane];
+          frames[i].dst.buffer_size = ops->ext_frames[i].size;
+          frames[i].dst.data_size = ops->ext_frames[i].size;
+          frames[i].dst.opaque = ops->ext_frames[i].opaque;
+        }
       } else {
         dst = st_rte_zmalloc_socket(dst_size, soc_id);
+        if (!dst) {
+          err("%s(%d), dst frame malloc fail at %u\n", __func__, idx, i);
+          rx_st20p_uinit_dst_fbs(ctx);
+          return -ENOMEM;
+        }
+        for (uint8_t plane = 0; plane < planes; plane++) {
+          frames[i].dst.linesize[plane] =
+              st_frame_least_linesize(frames[i].dst.fmt, frames[i].dst.width, plane);
+          if (plane == 0) {
+            frames[i].dst.addr[plane] = dst;
+            frames[i].dst.iova[plane] = st_hp_virt2iova(ctx->impl, dst);
+          } else {
+            frames[i].dst.addr[plane] =
+                frames[i].dst.addr[plane - 1] +
+                frames[i].dst.linesize[plane - 1] * frames[i].dst.height;
+            frames[i].dst.iova[plane] =
+                frames[i].dst.iova[plane - 1] +
+                frames[i].dst.linesize[plane - 1] * frames[i].dst.height;
+          }
+        }
+        frames[i].dst.buffer_size = dst_size;
+        frames[i].dst.data_size = dst_size;
       }
-      if (!dst) {
-        err("%s(%d), dst frame malloc fail at %u\n", __func__, idx, i);
+      if (st_frame_sanity_check(&frames[i].dst) < 0) {
+        err("%s(%d), dst frame %d sanity check fail\n", __func__, idx, i);
         rx_st20p_uinit_dst_fbs(ctx);
-        return -ENOMEM;
+        return -EINVAL;
       }
-      frames[i].dst.addr[0] = dst;
-      frames[i].dst.fmt = ops->output_fmt;
-      frames[i].dst.buffer_size = dst_size;
-      frames[i].dst.data_size = dst_size;
-      frames[i].dst.width = ops->width;
-      frames[i].dst.height = ops->height;
       frames[i].dst.priv = &frames[i];
     }
   }
-
   info("%s(%d), size %ld fmt %d with %u frames\n", __func__, idx, dst_size,
        ops->output_fmt, ctx->framebuff_cnt);
   return 0;

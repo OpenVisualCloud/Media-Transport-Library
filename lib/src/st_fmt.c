@@ -197,106 +197,127 @@ static const struct st_frame_fmt_desc st_frame_fmt_descs[] = {
         /* ST_FRAME_FMT_YUV422PLANAR10LE */
         .fmt = ST_FRAME_FMT_YUV422PLANAR10LE,
         .name = "YUV422PLANAR10LE",
+        .planes = 3,
     },
     {
         /* ST_FRAME_FMT_V210 */
         .fmt = ST_FRAME_FMT_V210,
         .name = "V210",
+        .planes = 1,
     },
     {
         /* ST_FRAME_FMT_Y210 */
         .fmt = ST_FRAME_FMT_Y210,
         .name = "Y210",
+        .planes = 1,
     },
     {
         /* ST_FRAME_FMT_YUV422PLANAR8 */
         .fmt = ST_FRAME_FMT_YUV422PLANAR8,
         .name = "YUV422PLANAR8",
+        .planes = 3,
     },
     {
         /* ST_FRAME_FMT_YUV422PACKED8 */
         .fmt = ST_FRAME_FMT_YUV422PACKED8,
         .name = "YUV422PACKED8",
+        .planes = 1,
     },
     {
         /* ST_FRAME_FMT_YUV422PLANAR12LE */
         .fmt = ST_FRAME_FMT_YUV422PLANAR12LE,
         .name = "YUV422PLANAR12LE",
+        .planes = 3,
     },
     {
         /* ST_FRAME_FMT_YUV444PLANAR10LE */
         .fmt = ST_FRAME_FMT_YUV444PLANAR10LE,
         .name = "YUV444PLANAR10LE",
+        .planes = 3,
     },
     {
         /* ST_FRAME_FMT_YUV444PLANAR12LE */
         .fmt = ST_FRAME_FMT_YUV444PLANAR12LE,
         .name = "YUV444PLANAR12LE",
+        .planes = 3,
     },
     {
         /* ST_FRAME_FMT_GBRPLANAR10LE */
         .fmt = ST_FRAME_FMT_GBRPLANAR10LE,
         .name = "GBRPLANAR10LE",
+        .planes = 3,
     },
     {
         /* ST_FRAME_FMT_GBRPLANAR12LE */
         .fmt = ST_FRAME_FMT_GBRPLANAR12LE,
         .name = "GBRPLANAR12LE",
+        .planes = 3,
     },
     {
         /* ST_FRAME_FMT_YUV422RFC4175PG2BE10 */
         .fmt = ST_FRAME_FMT_YUV422RFC4175PG2BE10,
         .name = "YUV422RFC4175PG2BE10",
+        .planes = 1,
     },
     {
         /* ST_FRAME_FMT_YUV422RFC4175PG2BE12 */
         .fmt = ST_FRAME_FMT_YUV422RFC4175PG2BE12,
         .name = "YUV422RFC4175PG2BE12",
+        .planes = 1,
     },
     {
         /* ST_FRAME_FMT_YUV444RFC4175PG4BE10 */
         .fmt = ST_FRAME_FMT_YUV444RFC4175PG4BE10,
         .name = "YUV444RFC4175PG4BE10",
+        .planes = 1,
     },
     {
         /* ST_FRAME_FMT_YUV444RFC4175PG2BE12 */
         .fmt = ST_FRAME_FMT_YUV444RFC4175PG2BE12,
         .name = "YUV444RFC4175PG2BE12",
+        .planes = 1,
     },
     {
         /* ST_FRAME_FMT_RGBRFC4175PG4BE10 */
         .fmt = ST_FRAME_FMT_RGBRFC4175PG4BE10,
         .name = "RGBRFC4175PG4BE10",
+        .planes = 1,
     },
     {
         /* ST_FRAME_FMT_RGBRFC4175PG2BE12 */
         .fmt = ST_FRAME_FMT_RGBRFC4175PG2BE12,
         .name = "RGBRFC4175PG2BE12",
+        .planes = 1,
     },
     {
         /* ST_FRAME_FMT_ARGB */
         .fmt = ST_FRAME_FMT_ARGB,
         .name = "ARGB",
+        .planes = 1,
     },
     {
         /* ST_FRAME_FMT_BGRA */
         .fmt = ST_FRAME_FMT_BGRA,
         .name = "BGRA",
+        .planes = 1,
     },
     {
         /* ST_FRAME_FMT_RGB8 */
         .fmt = ST_FRAME_FMT_RGB8,
         .name = "RGB8",
+        .planes = 1,
     },
     {
         /* ST_FRAME_FMT_JPEGXS_CODESTREAM */
         .fmt = ST_FRAME_FMT_JPEGXS_CODESTREAM,
         .name = "JPEGXS_CODESTREAM",
+        .planes = 1,
     },
     {
         /* ST_FRAME_FMT_H264_CBR_CODESTREAM */
         .fmt = ST_FRAME_FMT_H264_CBR_CODESTREAM,
         .name = "H264_CBR_CODESTREAM",
+        .planes = 1,
     },
 };
 
@@ -306,6 +327,70 @@ static const char* st_pacing_way_names[ST21_TX_PACING_WAY_MAX] = {
 
 const char* st_tx_pacing_way_name(enum st21_tx_pacing_way way) {
   return st_pacing_way_names[way];
+}
+
+size_t st_frame_least_linesize(enum st_frame_fmt fmt, uint32_t width, uint8_t plane) {
+  size_t linesize = 0;
+
+  switch (fmt) {
+    /* packed format */
+    case ST_FRAME_FMT_Y210:
+    case ST_FRAME_FMT_V210:
+    case ST_FRAME_FMT_YUV422PACKED8:
+    case ST_FRAME_FMT_YUV422RFC4175PG2BE10:
+    case ST_FRAME_FMT_YUV422RFC4175PG2BE12:
+    case ST_FRAME_FMT_YUV444RFC4175PG4BE10:
+    case ST_FRAME_FMT_RGBRFC4175PG4BE10:
+    case ST_FRAME_FMT_YUV444RFC4175PG2BE12:
+    case ST_FRAME_FMT_RGBRFC4175PG2BE12:
+    case ST_FRAME_FMT_ARGB:
+    case ST_FRAME_FMT_BGRA:
+    case ST_FRAME_FMT_RGB8:
+      if (plane > 0) {
+        err("%s, invalid plane idx for packed fmt %u\n", __func__, plane);
+        break;
+      }
+      linesize = st_frame_size(fmt, width, 1);
+      break;
+    /* yuv 422 planar */
+    case ST_FRAME_FMT_YUV422PLANAR10LE:
+    case ST_FRAME_FMT_YUV422PLANAR12LE:
+    case ST_FRAME_FMT_YUV422PLANAR8:
+      switch (plane) {
+        case 0:
+          linesize = st_frame_size(fmt, width, 1) / 2;
+          break;
+        case 1:
+        case 2:
+          linesize = st_frame_size(fmt, width, 1) / 4;
+          break;
+        default:
+          err("%s, invalid plane idx for planar fmt %u\n", __func__, plane);
+          break;
+      }
+      break;
+    /* yuv/rgb 444 planar */
+    case ST_FRAME_FMT_YUV444PLANAR10LE:
+    case ST_FRAME_FMT_YUV444PLANAR12LE:
+    case ST_FRAME_FMT_GBRPLANAR10LE:
+    case ST_FRAME_FMT_GBRPLANAR12LE:
+      switch (plane) {
+        case 0:
+        case 1:
+        case 2:
+          linesize = st_frame_size(fmt, width, 1) / 3;
+          break;
+        default:
+          err("%s, invalid plane idx for planar fmt %u\n", __func__, plane);
+          break;
+      }
+      break;
+    default:
+      err("%s, invalid fmt %d\n", __func__, fmt);
+      break;
+  }
+
+  return linesize;
 }
 
 size_t st_frame_size(enum st_frame_fmt fmt, uint32_t width, uint32_t height) {
@@ -358,6 +443,42 @@ size_t st_frame_size(enum st_frame_fmt fmt, uint32_t width, uint32_t height) {
   }
 
   return size;
+}
+
+int st_frame_sanity_check(struct st_frame* frame) {
+  int planes = st_frame_fmt_planes(frame->fmt);
+  if (planes == 0) {
+    err("%s, invalid frame fmt %d\n", __func__, frame->fmt);
+    return -EINVAL;
+  }
+  for (int plane = 0; plane < planes; plane++) {
+    /* check memory address */
+    if (!frame->addr[plane]) {
+      err("%s, invalid frame addr[%d]\n", __func__, plane);
+      return -EINVAL;
+    }
+    /* IOVA not mandatory for st_frame */
+    if (frame->iova[plane] == 0) {
+      dbg("%s, this frame doesn't have IOVA\n", __func__);
+    }
+
+    /* check linesize */
+    if (frame->linesize[plane] <
+        st_frame_least_linesize(frame->fmt, frame->width, plane)) {
+      err("%s, invalid frame linesize[%d]: %" PRIu64 "\n", __func__, plane,
+          frame->linesize[plane]);
+      return -EINVAL;
+    }
+
+    /* check data size */
+    if (frame->data_size > frame->buffer_size) {
+      err("%s, frame data size %" PRIu64 " exceeds buffer size %" PRIu64 "\n", __func__,
+          frame->data_size, frame->buffer_size);
+      return -EINVAL;
+    }
+  }
+
+  return 0;
 }
 
 int st20_get_pgroup(enum st20_fmt fmt, struct st20_pgroup* pg) {
@@ -423,6 +544,19 @@ const char* st_frame_fmt_name(enum st_frame_fmt fmt) {
 
   err("%s, invalid fmt %d\n", __func__, fmt);
   return "unknown";
+}
+
+uint8_t st_frame_fmt_planes(enum st_frame_fmt fmt) {
+  int i;
+
+  for (i = 0; i < ST_ARRAY_SIZE(st_frame_fmt_descs); i++) {
+    if (fmt == st_frame_fmt_descs[i].fmt) {
+      return st_frame_fmt_descs[i].planes;
+    }
+  }
+
+  err("%s, invalid fmt %d\n", __func__, fmt);
+  return 0;
 }
 
 enum st20_fmt st_frame_fmt_to_transport(enum st_frame_fmt fmt) {

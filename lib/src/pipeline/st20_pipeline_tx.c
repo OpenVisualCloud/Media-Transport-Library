@@ -344,7 +344,9 @@ static int tx_st20p_create_transport(st_handle st, struct st20p_tx_ctx* ctx,
     frames[i].dst.data_size = frames[i].dst.buffer_size;
     frames[i].dst.width = ops->width;
     frames[i].dst.height = ops->height;
-    frames[i].dst.linesize[0] = ops->transport_linesize;
+    frames[i].dst.linesize[0] = /* rfc4175 uses packed format */
+        RTE_MAX(ops->transport_linesize,
+                st_frame_least_linesize(frames[i].dst.fmt, frames[i].dst.width, 0));
     frames[i].dst.priv = &frames[i];
 
     frames[i].convert_frame.src = &frames[i].src;
@@ -378,7 +380,7 @@ static int tx_st20p_init_src_fbs(struct st_main_impl* impl, struct st20p_tx_ctx*
   int idx = ctx->idx;
   int soc_id = st_socket_id(impl, ST_PORT_P);
   struct st20p_tx_frame* frames;
-  void* src;
+  void* src = NULL;
   size_t src_size = ctx->src_size;
 
   ctx->framebuff_cnt = ops->framebuff_cnt;
@@ -392,9 +394,15 @@ static int tx_st20p_init_src_fbs(struct st_main_impl* impl, struct st20p_tx_ctx*
   for (uint16_t i = 0; i < ctx->framebuff_cnt; i++) {
     frames[i].stat = ST20P_TX_FRAME_FREE;
     frames[i].idx = i;
+    frames[i].src.fmt = ops->input_fmt;
+    frames[i].src.width = ops->width;
+    frames[i].src.height = ops->height;
+    uint8_t planes = st_frame_fmt_planes(frames[i].dst.fmt);
     if (!ctx->derive) { /* when derive, no need to alloc src frames */
       if (ops->flags & ST20P_TX_FLAG_EXT_FRAME) {
-        frames[i].src.addr[0] = NULL;
+        for (uint8_t plane = 0; plane < planes; plane++) {
+          frames[i].src.addr[plane] = NULL;
+        }
       } else {
         src = st_rte_zmalloc_socket(src_size, soc_id);
         if (!src) {
@@ -402,17 +410,32 @@ static int tx_st20p_init_src_fbs(struct st_main_impl* impl, struct st20p_tx_ctx*
           tx_st20p_uinit_src_fbs(ctx);
           return -ENOMEM;
         }
-        frames[i].src.addr[0] = src;
+        for (uint8_t plane = 0; plane < planes; plane++) {
+          frames[i].src.linesize[plane] =
+              st_frame_least_linesize(frames[i].src.fmt, frames[i].src.width, plane);
+          if (plane == 0) {
+            frames[i].src.addr[plane] = src;
+            frames[i].src.iova[plane] = st_hp_virt2iova(ctx->impl, src);
+          } else {
+            frames[i].src.addr[plane] =
+                frames[i].src.addr[plane - 1] +
+                frames[i].src.linesize[plane - 1] * frames[i].src.height;
+            frames[i].src.iova[plane] =
+                frames[i].src.iova[plane - 1] +
+                frames[i].src.linesize[plane - 1] * frames[i].src.height;
+          }
+        }
+        frames[i].src.buffer_size = src_size;
+        frames[i].src.data_size = src_size;
+        if (st_frame_sanity_check(&frames[i].src) < 0) {
+          err("%s(%d), src frame %d sanity check fail\n", __func__, idx, i);
+          tx_st20p_uinit_src_fbs(ctx);
+          return -EINVAL;
+        }
       }
-      frames[i].src.fmt = ops->input_fmt;
-      frames[i].src.buffer_size = src_size;
-      frames[i].src.data_size = src_size;
-      frames[i].src.width = ops->width;
-      frames[i].src.height = ops->height;
       frames[i].src.priv = &frames[i];
     }
   }
-
   info("%s(%d), size %ld fmt %d with %u frames\n", __func__, idx, src_size,
        ops->transport_fmt, ctx->framebuff_cnt);
   return 0;
@@ -608,6 +631,7 @@ int st20p_tx_put_ext_frame(st20p_tx_handle handle, struct st_frame* frame,
   int idx = ctx->idx;
   struct st20p_tx_frame* framebuff = frame->priv;
   uint16_t producer_idx = framebuff->idx;
+  int ret = 0;
 
   if (ctx->type != ST20_SESSION_TYPE_PIPELINE_TX) {
     err("%s(%d), invalid type %d\n", __func__, idx, ctx->type);
@@ -639,15 +663,28 @@ int st20p_tx_put_ext_frame(st20p_tx_handle handle, struct st_frame* frame,
     trans_ext_frame.buf_addr = ext_frame->addr[0];
     trans_ext_frame.buf_iova = ext_frame->iova[0];
     trans_ext_frame.buf_len = ext_frame->size;
-    int ret = st20_tx_set_ext_frame(ctx->transport, producer_idx, &trans_ext_frame);
+    ret = st20_tx_set_ext_frame(ctx->transport, producer_idx, &trans_ext_frame);
     if (ret < 0) {
       err("%s, set ext framebuffer fail %d fb_idx %d\n", __func__, ret, producer_idx);
       return -EIO;
     }
     framebuff->stat = ST20P_TX_FRAME_CONVERTED;
   } else {
-    framebuff->src.addr[0] = ext_frame->addr[0];
+    uint8_t planes = st_frame_fmt_planes(framebuff->src.fmt);
+    for (uint8_t plane = 0; plane < planes; plane++) {
+      framebuff->src.addr[plane] = ext_frame->addr[plane];
+      framebuff->src.iova[plane] = ext_frame->iova[plane];
+      framebuff->src.linesize[plane] = ext_frame->linesize[plane];
+    }
+    framebuff->src.buffer_size = ext_frame->size;
+    framebuff->src.data_size = ext_frame->size;
     framebuff->src.flags |= ST_FRAME_FLAG_EXT_BUF;
+    ret = st_frame_sanity_check(&framebuff->src);
+    if (ret < 0) {
+      err("%s, ext framebuffer sanity check fail %d fb_idx %d\n", __func__, ret,
+          producer_idx);
+      return -EIO;
+    }
     framebuff->stat = ST20P_TX_FRAME_READY;
     st20_convert_notify_frame_ready(ctx->convert_impl);
   }

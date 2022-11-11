@@ -18,6 +18,7 @@ struct st_fps_timing {
 struct st_frame_fmt_desc {
   enum st_frame_fmt fmt;
   char* name;
+  uint8_t planes;
 };
 
 const char* st_tx_pacing_way_name(enum st21_tx_pacing_way way);
