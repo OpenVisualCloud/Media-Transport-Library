@@ -718,6 +718,7 @@ static void st20p_rx_digest_test(enum st_fps fps[], int width[], int height[],
               test_ctx_tx[i]->p_ext_frames[j].linesize[plane - 1] * height[i];
         }
         test_ctx_tx[i]->p_ext_frames[j].size = frame_size;
+        test_ctx_tx[i]->p_ext_frames[j].opaque = NULL;
       }
     }
 
@@ -820,6 +821,7 @@ static void st20p_rx_digest_test(enum st_fps fps[], int width[], int height[],
               test_ctx_rx[i]->p_ext_frames[j].linesize[plane - 1] * height[i];
         }
         test_ctx_rx[i]->p_ext_frames[j].size = frame_size;
+        test_ctx_rx[i]->p_ext_frames[j].opaque = NULL;
       }
     }
 

@@ -174,6 +174,7 @@ static void* tx_st20p_frame_thread(void* arg) {
             ext_frame.iova[plane - 1] + ext_frame.linesize[plane - 1] * frame->height;
       }
       ext_frame.size = s->frame_size;
+      ext_frame.opaque = NULL;
       st20p_tx_put_ext_frame(handle, frame, &ext_frame);
     } else {
       if (s->source_begin) tx_st20p_build_frame(s, frame);
