@@ -60,7 +60,7 @@ static int st20_fwd_open_logo(struct st_sample_context* ctx,
     return -EIO;
   }
 
-  s->logo_meta.addr = s->logo_buf;
+  s->logo_meta.addr[0] = s->logo_buf;
   s->logo_meta.fmt = ctx->input_fmt;
   s->logo_meta.width = ctx->logo_width;
   s->logo_meta.height = ctx->logo_height;
@@ -202,7 +202,7 @@ static void rx_fwd_consume_frame(struct rx_st20_tx_st20_sample_ctx* s, void* fra
   }
 
   if (s->logo_buf) {
-    tx_frame.addr = frame;
+    tx_frame.addr[0] = frame;
     tx_frame.fmt = s->logo_meta.fmt;
     tx_frame.buffer_size = s->framebuff_size;
     tx_frame.data_size = s->framebuff_size;

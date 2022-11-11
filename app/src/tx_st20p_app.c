@@ -11,9 +11,10 @@ static void app_tx_st20p_display_frame(struct st_app_tx_st20p_session* s,
   if (d && d->front_frame) {
     if (st_pthread_mutex_trylock(&d->display_frame_mutex) == 0) {
       if (frame->fmt == ST_FRAME_FMT_YUV422RFC4175PG2BE10) {
-        st20_rfc4175_422be10_to_422le8(frame->addr, d->front_frame, s->width, s->height);
+        st20_rfc4175_422be10_to_422le8(frame->addr[0], d->front_frame, s->width,
+                                       s->height);
       } else if (frame->fmt == ST_FRAME_FMT_YUV422PACKED8) {
-        st_memcpy(d->front_frame, frame->addr, d->front_frame_size);
+        st_memcpy(d->front_frame, frame->addr[0], d->front_frame_size);
       } else {
         st_pthread_mutex_unlock(&d->display_frame_mutex);
         return;
@@ -43,7 +44,7 @@ static void app_tx_st20p_build_frame(struct st_app_tx_st20p_session* s,
   }
   uint8_t* src = s->st20p_frame_cursor;
 
-  st_memcpy(frame->addr, src, s->st20p_frame_size);
+  st_memcpy(frame->addr[0], src, s->st20p_frame_size);
   /* point to next frame */
   s->st20p_frame_cursor += s->st20p_frame_size;
 

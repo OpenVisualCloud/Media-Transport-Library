@@ -104,7 +104,7 @@ static int rx_st20p_open_source(struct rx_st20p_sample_ctx* s, const char* file)
 static void rx_st20p_consume_frame(struct rx_st20p_sample_ctx* s,
                                    struct st_frame* frame) {
   if (s->dst_cursor + s->frame_size > s->dst_end) s->dst_cursor = s->dst_begin;
-  st_memcpy(s->dst_cursor, frame->addr, s->frame_size);
+  st_memcpy(s->dst_cursor, frame->addr[0], s->frame_size);
   s->dst_cursor += s->frame_size;
   /* parse private data for dynamic ext frame
     if (frame->opaque) {
@@ -204,7 +204,7 @@ int main(int argc, char** argv) {
         app[i]->ext_frames[j].buf_len = framebuff_size;
       }
       app[i]->ext_idx = 0;
-      // ops_rx.ext_frames = app[i]->ext_frames;
+      /* ops_rx.ext_frames = (convert to st_ext_frame)app[i]->p_ext_frames; */
       /* use dynamic external frames */
       ops_rx.query_ext_frame = rx_st20p_query_ext_frame;
       ops_rx.flags |= ST20P_RX_FLAG_RECEIVE_INCOMPLETE_FRAME;

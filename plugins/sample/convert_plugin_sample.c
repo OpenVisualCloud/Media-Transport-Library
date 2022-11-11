@@ -21,14 +21,14 @@ static int convert_frame(struct converter_session* s,
     case ST_FRAME_FMT_YUV422RFC4175PG2BE10:
       switch (frame->dst->fmt) {
         case ST_FRAME_FMT_V210:
-          st20_rfc4175_422be10_to_v210(frame->src->addr, frame->dst->addr,
+          st20_rfc4175_422be10_to_v210(frame->src->addr[0], frame->dst->addr[0],
                                        frame->dst->width, frame->dst->height);
           break;
         case ST_FRAME_FMT_YUV422RFC4175PG2BE10:
-          st_memcpy(frame->dst->addr, frame->src->addr, frame->dst->data_size);
+          st_memcpy(frame->dst->addr[0], frame->src->addr[0], frame->dst->data_size);
           break;
         case ST_FRAME_FMT_YUV422PACKED8:
-          st20_rfc4175_422be10_to_422le8(frame->src->addr, frame->dst->addr,
+          st20_rfc4175_422be10_to_422le8(frame->src->addr[0], frame->dst->addr[0],
                                          frame->dst->width, frame->dst->height);
           break;
         default:

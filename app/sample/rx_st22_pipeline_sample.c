@@ -80,7 +80,7 @@ static int rx_st22p_open_source(struct rx_st22p_sample_ctx* s, const char* file)
 static void rx_st22p_consume_frame(struct rx_st22p_sample_ctx* s,
                                    struct st_frame* frame) {
   if (s->dst_cursor + s->frame_size > s->dst_end) s->dst_cursor = s->dst_begin;
-  st_memcpy(s->dst_cursor, frame->addr, s->frame_size);
+  st_memcpy(s->dst_cursor, frame->addr[0], s->frame_size);
   s->dst_cursor += s->frame_size;
 
   s->fb_recv++;

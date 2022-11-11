@@ -142,7 +142,7 @@ static int tx_st20p_frame_done(void* priv, struct st_frame* frame) {
 static void tx_st20p_build_frame(struct tx_st20p_sample_ctx* s, struct st_frame* frame) {
   // uint8_t* src = s->frame_cursor;
 
-  // st_memcpy(frame->addr, src, s->frame_size);
+  // st_memcpy(frame->addr[0], src, s->frame_size);
 }
 
 static void* tx_st20p_frame_thread(void* arg) {
@@ -160,10 +160,21 @@ static void* tx_st20p_frame_thread(void* arg) {
       continue;
     }
     if (s->ext) {
-      struct st20_ext_frame ext_frame;
-      ext_frame.buf_addr = s->frame_cursor;
-      ext_frame.buf_iova = s->source_begin_iova + (s->frame_cursor - s->source_begin);
-      ext_frame.buf_len = s->frame_size;
+      struct st_ext_frame ext_frame;
+      ext_frame.addr[0] = s->frame_cursor;
+      ext_frame.iova[0] = s->source_begin_iova + (s->frame_cursor - s->source_begin);
+      ext_frame.linesize[0] = st_frame_least_linesize(frame->fmt, frame->width, 0);
+      uint8_t planes = st_frame_fmt_planes(frame->fmt);
+      for (uint8_t plane = 1; plane < planes; plane++) { /* assume planes continous */
+        ext_frame.linesize[plane] =
+            st_frame_least_linesize(frame->fmt, frame->width, plane);
+        ext_frame.addr[plane] = (uint8_t*)ext_frame.addr[plane - 1] +
+                                ext_frame.linesize[plane - 1] * frame->height;
+        ext_frame.iova[plane] =
+            ext_frame.iova[plane - 1] + ext_frame.linesize[plane - 1] * frame->height;
+      }
+      ext_frame.size = s->frame_size;
+      ext_frame.opaque = NULL;
       st20p_tx_put_ext_frame(handle, frame, &ext_frame);
     } else {
       if (s->source_begin) tx_st20p_build_frame(s, frame);

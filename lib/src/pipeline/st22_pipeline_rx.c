@@ -62,7 +62,7 @@ static int rx_st22p_frame_ready(void* priv, void* frame,
     return -EBUSY;
   }
 
-  framebuff->src.addr = frame;
+  framebuff->src.addr[0] = frame;
   framebuff->src.data_size = meta->frame_total_size;
   framebuff->src.tfmt = meta->tfmt;
   framebuff->src.timestamp = meta->timestamp;
@@ -141,7 +141,7 @@ static int rx_st22p_decode_put_frame(void* priv, struct st22_decode_frame_meta* 
   dbg("%s(%d), frame %u result %d\n", __func__, idx, decode_idx, result);
   if (result < 0) {
     /* free the frame */
-    st22_rx_put_framebuff(ctx->transport, framebuff->src.addr);
+    st22_rx_put_framebuff(ctx->transport, framebuff->src.addr[0]);
     framebuff->stat = ST22P_RX_FRAME_FREE;
     rte_atomic32_inc(&ctx->stat_decode_fail);
   } else {
@@ -242,9 +242,9 @@ static int rx_st22p_create_transport(st_handle st, struct st22p_rx_ctx* ctx,
 static int rx_st22p_uinit_dst_fbs(struct st22p_rx_ctx* ctx) {
   if (ctx->framebuffs) {
     for (uint16_t i = 0; i < ctx->framebuff_cnt; i++) {
-      if (ctx->framebuffs[i].dst.addr) {
-        st_rte_free(ctx->framebuffs[i].dst.addr);
-        ctx->framebuffs[i].dst.addr = NULL;
+      if (ctx->framebuffs[i].dst.addr[0]) {
+        st_rte_free(ctx->framebuffs[i].dst.addr[0]);
+        ctx->framebuffs[i].dst.addr[0] = NULL;
       }
     }
     st_rte_free(ctx->framebuffs);
@@ -279,7 +279,7 @@ static int rx_st22p_init_dst_fbs(struct st_main_impl* impl, struct st22p_rx_ctx*
       rx_st22p_uinit_dst_fbs(ctx);
       return -ENOMEM;
     }
-    frames[i].dst.addr = dst;
+    frames[i].dst.addr[0] = dst;
     frames[i].dst.fmt = ops->output_fmt;
     frames[i].dst.buffer_size = dst_size;
     frames[i].dst.data_size = dst_size;
@@ -377,7 +377,7 @@ int st22p_rx_put_frame(st22p_rx_handle handle, struct st_frame* frame) {
   }
 
   /* free the frame */
-  st22_rx_put_framebuff(ctx->transport, framebuff->src.addr);
+  st22_rx_put_framebuff(ctx->transport, framebuff->src.addr[0]);
   framebuff->stat = ST22P_RX_FRAME_FREE;
   dbg("%s(%d), frame %u succ\n", __func__, idx, consumer_idx);
 
@@ -504,7 +504,7 @@ void* st22p_rx_get_fb_addr(st22p_rx_handle handle, uint16_t idx) {
     return NULL;
   }
 
-  return ctx->framebuffs[idx].dst.addr;
+  return ctx->framebuffs[idx].dst.addr[0];
 }
 
 size_t st22p_rx_frame_size(st22p_rx_handle handle) {

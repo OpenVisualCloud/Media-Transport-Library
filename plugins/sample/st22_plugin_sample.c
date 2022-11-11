@@ -20,7 +20,7 @@ static int encode_frame(struct st22_encoder_session* s,
   size_t codestream_size = s->req.max_codestream_size;
 
   /* call the real encode here, sample just copy and sleep */
-  memcpy(frame->dst->addr, frame->src->addr, codestream_size);
+  memcpy(frame->dst->addr[0], frame->src->addr[0], codestream_size);
   st_usleep(10 * 1000);
   /* data size indicate the encode stream size for current frame */
   frame->dst->data_size = codestream_size;
@@ -130,7 +130,7 @@ static int decode_frame(struct st22_decoder_session* s,
   size_t codestream_size = frame->src->data_size;
 
   /* call the real decode here, sample just copy and sleep */
-  memcpy(frame->dst->addr, frame->src->addr, codestream_size);
+  memcpy(frame->dst->addr[0], frame->src->addr[0], codestream_size);
   st_usleep(10 * 1000);
 
   s->frame_cnt++;

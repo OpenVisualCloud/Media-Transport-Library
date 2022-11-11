@@ -24,12 +24,12 @@ static int test_convert_frame(struct test_converter_session* s,
 
   /* copy src sha to the start of convert frame */
   if (req->input_fmt == ST_FRAME_FMT_YUV422PLANAR10LE)
-    memcpy(frame->dst->addr,
-           (uint8_t*)frame->src->addr + frame->src->data_size - SHA256_DIGEST_LENGTH,
+    memcpy(frame->dst->addr[0],
+           (uint8_t*)frame->src->addr[0] + frame->src->data_size - SHA256_DIGEST_LENGTH,
            SHA256_DIGEST_LENGTH);
   else
-    memcpy((uint8_t*)frame->dst->addr + frame->dst->data_size - SHA256_DIGEST_LENGTH,
-           frame->src->addr, SHA256_DIGEST_LENGTH);
+    memcpy((uint8_t*)frame->dst->addr[0] + frame->dst->data_size - SHA256_DIGEST_LENGTH,
+           frame->src->addr[0], SHA256_DIGEST_LENGTH);
   st_usleep(s->sleep_time_us);
 
   s->frame_cnt++;
@@ -221,13 +221,13 @@ static int test_st20p_tx_frame_done(void* priv, struct st_frame* frame) {
   if (!(frame->flags & ST_FRAME_FLAG_EXT_BUF)) return 0;
 
   for (int i = 0; i < s->fb_cnt; ++i) {
-    if (frame->addr == s->ext_fb + i * s->frame_size) {
+    if (frame->addr[0] == s->ext_fb + i * s->frame_size) {
       s->ext_fb_in_use[i] = false;
       return 0;
     }
   }
 
-  err("%s, unknown frame_addr %p\n", __func__, frame->addr);
+  err("%s, unknown frame_addr %p\n", __func__, frame->addr[0]);
 
   return 0;
 }
@@ -356,9 +356,9 @@ static void test_st20p_tx_frame_thread(void* args) {
       frame->timestamp = s->fb_send;
       dbg("%s(%d), timestamp %d\n", __func__, s->idx, s->fb_send);
     }
-    if (s->ext_frames) {
+    if (s->p_ext_frames) {
       int ret = st20p_tx_put_ext_frame((st20p_tx_handle)handle, frame,
-                                       &s->ext_frames[s->ext_idx]);
+                                       &s->p_ext_frames[s->ext_idx]);
       if (ret < 0) {
         err("%s, put ext framebuffer fail %d fb_idx %d\n", __func__, ret, s->ext_idx);
         continue;
@@ -428,7 +428,7 @@ static void test_st20p_rx_frame_thread(void* args) {
     }
 
     unsigned char* sha =
-        (unsigned char*)frame->addr + frame->data_size - SHA256_DIGEST_LENGTH;
+        (unsigned char*)frame->addr[0] + frame->data_size - SHA256_DIGEST_LENGTH;
     int i = 0;
     for (i = 0; i < TEST_SHA_HIST_NUM; i++) {
       unsigned char* target_sha = s->shas[i];
@@ -503,7 +503,7 @@ static void test_internal_st20p_rx_frame_thread(void* args) {
     }
 
     int i = 0;
-    unsigned char* fb = (unsigned char*)frame->addr;
+    unsigned char* fb = (unsigned char*)frame->addr[0];
     SHA256(fb, s->frame_size, result);
     for (i = 0; i < TEST_SHA_HIST_NUM; i++) {
       unsigned char* target_sha = s->shas[i];
@@ -532,9 +532,9 @@ static int test_st20p_rx_query_ext_frame(void* priv, st20_ext_frame* ext_frame,
     return -EIO;
   }
 
-  ext_frame->buf_addr = s->ext_frames[i].buf_addr;
-  ext_frame->buf_iova = s->ext_frames[i].buf_iova;
-  ext_frame->buf_len = s->ext_frames[i].buf_len;
+  ext_frame->buf_addr = s->p_ext_frames[i].addr[0];
+  ext_frame->buf_iova = s->p_ext_frames[i].iova[0];
+  ext_frame->buf_len = s->p_ext_frames[i].size;
   s->ext_fb_in_use[i] = true;
 
   ext_frame->opaque = &s->ext_fb_in_use[i];
@@ -657,6 +657,7 @@ static void st20p_rx_digest_test(enum st_fps fps[], int width[], int height[],
     ops_tx.fps = fps[i];
     ops_tx.input_fmt = tx_fmt[i];
     ops_tx.transport_fmt = t_fmt[i];
+    ops_tx.transport_linesize = 0;
     ops_tx.device = para->device;
     ops_tx.framebuff_cnt = test_ctx_tx[i]->fb_cnt;
     ops_tx.notify_frame_available = test_st20p_tx_frame_available;
@@ -684,8 +685,8 @@ static void st20p_rx_digest_test(enum st_fps fps[], int width[], int height[],
 
     /* init ext frames, only for no convert */
     if (para->tx_ext) {
-      test_ctx_tx[i]->ext_frames = (struct st20_ext_frame*)malloc(
-          sizeof(*test_ctx_tx[i]->ext_frames) * test_ctx_tx[i]->fb_cnt);
+      test_ctx_tx[i]->p_ext_frames = (struct st_ext_frame*)malloc(
+          sizeof(*test_ctx_tx[i]->p_ext_frames) * test_ctx_tx[i]->fb_cnt);
       size_t pg_sz = st_page_size(st);
       size_t fb_size = test_ctx_tx[i]->frame_size * test_ctx_tx[i]->fb_cnt;
       test_ctx_tx[i]->ext_fb_iova_map_sz = st_size_page_align(fb_size, pg_sz); /* align */
@@ -700,10 +701,24 @@ static void st20p_rx_digest_test(enum st_fps fps[], int width[], int height[],
       info("%s, session %d ext_fb %p\n", __func__, i, test_ctx_tx[i]->ext_fb);
 
       for (int j = 0; j < test_ctx_tx[i]->fb_cnt; j++) {
-        test_ctx_tx[i]->ext_frames[j].buf_addr = test_ctx_tx[i]->ext_fb + j * frame_size;
-        test_ctx_tx[i]->ext_frames[j].buf_iova =
+        test_ctx_tx[i]->p_ext_frames[j].addr[0] = test_ctx_tx[i]->ext_fb + j * frame_size;
+        test_ctx_tx[i]->p_ext_frames[j].iova[0] =
             test_ctx_tx[i]->ext_fb_iova + j * frame_size;
-        test_ctx_tx[i]->ext_frames[j].buf_len = frame_size;
+        test_ctx_tx[i]->p_ext_frames[j].linesize[0] =
+            st_frame_least_linesize(rx_fmt[i], width[i], 0);
+        uint8_t planes = st_frame_fmt_planes(rx_fmt[i]);
+        for (uint8_t plane = 1; plane < planes; plane++) { /* assume planes continous */
+          test_ctx_tx[i]->p_ext_frames[j].linesize[plane] =
+              st_frame_least_linesize(rx_fmt[i], width[i], plane);
+          test_ctx_tx[i]->p_ext_frames[j].addr[plane] =
+              (uint8_t*)test_ctx_tx[i]->p_ext_frames[j].addr[plane - 1] +
+              test_ctx_tx[i]->p_ext_frames[j].linesize[plane - 1] * height[i];
+          test_ctx_tx[i]->p_ext_frames[j].iova[plane] =
+              test_ctx_tx[i]->p_ext_frames[j].iova[plane - 1] +
+              test_ctx_tx[i]->p_ext_frames[j].linesize[plane - 1] * height[i];
+        }
+        test_ctx_tx[i]->p_ext_frames[j].size = frame_size;
+        test_ctx_tx[i]->p_ext_frames[j].opaque = NULL;
       }
     }
 
@@ -772,8 +787,8 @@ static void st20p_rx_digest_test(enum st_fps fps[], int width[], int height[],
 
     /* init ext frames, only for no convert */
     if (para->rx_ext) {
-      test_ctx_rx[i]->ext_frames = (struct st20_ext_frame*)malloc(
-          sizeof(*test_ctx_rx[i]->ext_frames) * test_ctx_rx[i]->fb_cnt);
+      test_ctx_rx[i]->p_ext_frames = (struct st_ext_frame*)malloc(
+          sizeof(*test_ctx_rx[i]->p_ext_frames) * test_ctx_rx[i]->fb_cnt);
       size_t frame_size = st_frame_size(rx_fmt[i], width[i], height[i]);
       size_t pg_sz = st_page_size(st);
       size_t fb_size = frame_size * test_ctx_rx[i]->fb_cnt;
@@ -789,10 +804,24 @@ static void st20p_rx_digest_test(enum st_fps fps[], int width[], int height[],
       ASSERT_TRUE(test_ctx_rx[i]->ext_fb_iova != ST_BAD_IOVA);
 
       for (int j = 0; j < test_ctx_rx[i]->fb_cnt; j++) {
-        test_ctx_rx[i]->ext_frames[j].buf_addr = test_ctx_rx[i]->ext_fb + j * frame_size;
-        test_ctx_rx[i]->ext_frames[j].buf_iova =
+        test_ctx_rx[i]->p_ext_frames[j].addr[0] = test_ctx_rx[i]->ext_fb + j * frame_size;
+        test_ctx_rx[i]->p_ext_frames[j].iova[0] =
             test_ctx_rx[i]->ext_fb_iova + j * frame_size;
-        test_ctx_rx[i]->ext_frames[j].buf_len = frame_size;
+        test_ctx_rx[i]->p_ext_frames[j].linesize[0] =
+            st_frame_least_linesize(rx_fmt[i], width[i], 0);
+        uint8_t planes = st_frame_fmt_planes(rx_fmt[i]);
+        for (uint8_t plane = 1; plane < planes; plane++) { /* assume planes continous */
+          test_ctx_rx[i]->p_ext_frames[j].linesize[plane] =
+              st_frame_least_linesize(rx_fmt[i], width[i], plane);
+          test_ctx_rx[i]->p_ext_frames[j].addr[plane] =
+              (uint8_t*)test_ctx_rx[i]->p_ext_frames[j].addr[plane - 1] +
+              test_ctx_rx[i]->p_ext_frames[j].linesize[plane - 1] * height[i];
+          test_ctx_rx[i]->p_ext_frames[j].iova[plane] =
+              test_ctx_rx[i]->p_ext_frames[j].iova[plane - 1] +
+              test_ctx_rx[i]->p_ext_frames[j].linesize[plane - 1] * height[i];
+        }
+        test_ctx_rx[i]->p_ext_frames[j].size = frame_size;
+        test_ctx_rx[i]->p_ext_frames[j].opaque = NULL;
       }
     }
 
@@ -810,6 +839,7 @@ static void st20p_rx_digest_test(enum st_fps fps[], int width[], int height[],
     ops_rx.fps = fps[i];
     ops_rx.output_fmt = rx_fmt[i];
     ops_rx.transport_fmt = t_fmt[i];
+    ops_rx.transport_linesize = 0;
     ops_rx.device = para->device;
     ops_rx.framebuff_cnt = test_ctx_rx[i]->fb_cnt;
     ops_rx.notify_frame_available = test_st20p_rx_frame_available;
@@ -818,7 +848,7 @@ static void st20p_rx_digest_test(enum st_fps fps[], int width[], int height[],
       ops_rx.query_ext_frame = test_st20p_rx_query_ext_frame;
       ops_rx.flags |= ST20P_RX_FLAG_RECEIVE_INCOMPLETE_FRAME;
     } else if (para->rx_ext) {
-      ops_rx.ext_frames = test_ctx_rx[i]->ext_frames;
+      ops_rx.ext_frames = test_ctx_rx[i]->p_ext_frames;
     }
     if (para->vsync) ops_rx.flags |= ST20P_RX_FLAG_ENABLE_VSYNC;
 
@@ -896,7 +926,7 @@ static void st20p_rx_digest_test(enum st_fps fps[], int width[], int height[],
       st_dma_unmap(st, test_ctx_tx[i]->ext_fb, test_ctx_tx[i]->ext_fb_iova,
                    test_ctx_tx[i]->ext_fb_iova_map_sz);
       st_test_free(test_ctx_tx[i]->ext_fb_malloc);
-      st_test_free(test_ctx_tx[i]->ext_frames);
+      st_test_free(test_ctx_tx[i]->p_ext_frames);
     }
     delete test_ctx_tx[i];
   }
@@ -924,7 +954,7 @@ static void st20p_rx_digest_test(enum st_fps fps[], int width[], int height[],
       st_dma_unmap(st, test_ctx_rx[i]->ext_fb, test_ctx_rx[i]->ext_fb_iova,
                    test_ctx_rx[i]->ext_fb_iova_map_sz);
       st_test_free(test_ctx_rx[i]->ext_fb_malloc);
-      st_test_free(test_ctx_rx[i]->ext_frames);
+      st_test_free(test_ctx_rx[i]->p_ext_frames);
     }
     delete test_ctx_rx[i];
   }

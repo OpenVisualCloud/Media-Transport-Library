@@ -256,6 +256,7 @@ class tests_context {
   st_iova_t ext_fb_iova = 0;
   size_t ext_fb_iova_map_sz = 0;
   struct st20_ext_frame* ext_frames;
+  struct st_ext_frame* p_ext_frames;
   int ext_idx = 0;
   bool ext_fb_in_use[3] = {false}; /* assume 3 framebuffer */
   st_dma_mem_handle dma_mem = NULL;

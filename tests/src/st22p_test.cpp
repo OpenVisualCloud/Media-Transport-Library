@@ -24,8 +24,8 @@ static int test_encode_frame(struct test_st22_encoder_session* s,
   if (frame->dst->fmt != req->output_fmt) return -EIO;
 
   /* copy src sha to the start of encode frame */
-  memcpy(frame->dst->addr,
-         (uint8_t*)frame->src->addr + frame->src->data_size - SHA256_DIGEST_LENGTH,
+  memcpy(frame->dst->addr[0],
+         (uint8_t*)frame->src->addr[0] + frame->src->data_size - SHA256_DIGEST_LENGTH,
          SHA256_DIGEST_LENGTH);
   st_usleep(s->sleep_time_us);
   /* data size indicate the encode stream size for current frame */
@@ -171,8 +171,8 @@ static int test_decode_frame(struct test_st22_decoder_session* s,
   if (frame->src->data_size > frame->src->buffer_size) return -EIO;
 
   /* copy sha to the end of decode frame */
-  memcpy((uint8_t*)frame->dst->addr + frame->dst->data_size - SHA256_DIGEST_LENGTH,
-         frame->src->addr, SHA256_DIGEST_LENGTH);
+  memcpy((uint8_t*)frame->dst->addr[0] + frame->dst->data_size - SHA256_DIGEST_LENGTH,
+         frame->src->addr[0], SHA256_DIGEST_LENGTH);
   st_usleep(s->sleep_time_us);
 
   s->frame_cnt++;
@@ -446,11 +446,11 @@ static void frame_draw_logo_test(enum st_frame_fmt fmt, uint32_t w, uint32_t h,
 
   struct st_frame frame_meta;
   struct st_frame logo_meta;
-  frame_meta.addr = frame_buf;
+  frame_meta.addr[0] = frame_buf;
   frame_meta.fmt = fmt;
   frame_meta.width = w;
   frame_meta.height = h;
-  logo_meta.addr = logo_buf;
+  logo_meta.addr[0] = logo_buf;
   logo_meta.fmt = fmt;
   logo_meta.width = logo_w;
   logo_meta.height = logo_h;
@@ -670,7 +670,7 @@ static void test_st22p_rx_frame_thread(void* args) {
     }
 
     unsigned char* sha =
-        (unsigned char*)frame->addr + frame->data_size - SHA256_DIGEST_LENGTH;
+        (unsigned char*)frame->addr[0] + frame->data_size - SHA256_DIGEST_LENGTH;
     int i = 0;
     for (i = 0; i < ST22_TEST_SHA_HIST_NUM; i++) {
       unsigned char* target_sha = s->shas[i];

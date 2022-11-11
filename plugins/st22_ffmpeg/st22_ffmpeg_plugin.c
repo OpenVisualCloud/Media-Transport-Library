@@ -24,7 +24,7 @@ static int encode_frame(struct st22_encoder_session* s,
   AVCodecContext* ctx = s->codec_ctx;
   size_t res_size = s->req.width * s->req.height;
   size_t data_size = 0;
-  void* src_addr = frame->src->addr;
+  void* src_addr = frame->src->addr[0];
   int ret;
   bool measure_time = false;
   uint64_t start_time = 0, end_time = 0;
@@ -68,7 +68,7 @@ static int encode_frame(struct st22_encoder_session* s,
 
     dbg("%s, receive packet %" PRId64 " size %d on frame %d\n", __func__, p->pts, p->size,
         f_idx);
-    st_memcpy(frame->dst->addr + data_size, p->data, p->size);
+    st_memcpy(frame->dst->addr[0] + data_size, p->data, p->size);
     data_size += p->size;
     av_packet_unref(p);
   }
@@ -289,13 +289,13 @@ static int decode_frame(struct st22_decoder_session* s,
   AVPacket* p = s->codec_pkt;
   int ret;
   size_t src_size = frame->src->data_size;
-  void* dst_addr = frame->dst->addr;
+  void* dst_addr = frame->dst->addr[0];
   size_t frame_size = 0;
 
   s->frame_idx++;
 
   av_packet_unref(p);
-  p->data = frame->src->addr;
+  p->data = frame->src->addr[0];
   p->size = src_size;
   ret = avcodec_send_packet(ctx, p);
   if (ret < 0) {

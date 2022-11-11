@@ -189,10 +189,30 @@ enum st_frame_fmt {
  */
 #define ST_FRAME_FLAG_EXT_BUF (ST_BIT32(0))
 
+#define ST_MAX_PLANES (4)
+
+/** The structure info for external frame */
+struct st_ext_frame {
+  /** Each plane's virtual address of external frame */
+  void* addr[ST_MAX_PLANES];
+  /** Each plane's IOVA of external frame */
+  st_iova_t iova[ST_MAX_PLANES];
+  /** Each plane's linesize of external frame, leave as 0 if no line padding */
+  size_t linesize[ST_MAX_PLANES];
+  /** Buffer size of external frame */
+  size_t size;
+  /** Private data for user */
+  void* opaque;
+};
+
 /** The structure info for frame meta. */
 struct st_frame {
-  /** frame buffer address */
-  void* addr;
+  /** frame buffer address of each plane */
+  void* addr[ST_MAX_PLANES];
+  /** frame buffer IOVA of each plane */
+  st_iova_t iova[ST_MAX_PLANES];
+  /** frame buffer linesize of each plane */
+  size_t linesize[ST_MAX_PLANES];
   /** frame format */
   enum st_frame_fmt fmt;
   /** frame buffer size */
@@ -218,7 +238,7 @@ struct st_frame {
 
   /** priv pointer for lib, do not touch this */
   void* priv;
-  /** priv data for user, get from query_ext_frame callback */
+  /** priv data for user */
   void* opaque;
 };
 
@@ -583,8 +603,12 @@ struct st20p_tx_ops {
   enum st_frame_fmt input_fmt;
   /** Session transport frame format */
   enum st20_fmt transport_fmt;
+  /** Linesize for transport frame, only for non-convert mode */
+  size_t transport_linesize;
   /** Convert plugin device, auto or special */
   enum st_plugin_device device;
+  /** Array of external frames */
+  struct st_ext_frame* ext_frames;
   /**
    * The frame buffer count requested for one st20 pipeline tx session,
    * should be in range [2, ST20_FB_MAX_COUNT],
@@ -629,12 +653,14 @@ struct st20p_rx_ops {
   enum st_fps fps;
   /** Session transport frame format */
   enum st20_fmt transport_fmt;
+  /** Linesize for transport frame, only for non-convert mode */
+  size_t transport_linesize;
   /** Session output frame format */
   enum st_frame_fmt output_fmt;
   /** Convert plugin device, auto or special */
   enum st_plugin_device device;
-  /** Array of external framebuffers */
-  struct st20_ext_frame* ext_frames;
+  /** Array of external frames */
+  struct st_ext_frame* ext_frames;
   /**
    * The frame buffer count requested for one st20 pipeline rx session,
    * should be in range [2, ST20_FB_MAX_COUNT],
@@ -1204,8 +1230,7 @@ int st20p_tx_put_frame(st20p_tx_handle handle, struct st_frame* frame);
 
 /**
  * Put back the frame which get by st20p_tx_get_frame to the tx
- * with external framebuffer
- * st2110-20 pipeline session.
+ * st2110-20 pipeline session with external framebuffer.
  *
  * @param handle
  *   The handle to the tx st2110-20 pipeline session.
@@ -1218,7 +1243,7 @@ int st20p_tx_put_frame(st20p_tx_handle handle, struct st_frame* frame);
  *   - <0: Error code if put fail.
  */
 int st20p_tx_put_ext_frame(st20p_tx_handle handle, struct st_frame* frame,
-                           struct st20_ext_frame* ext_frame);
+                           struct st_ext_frame* ext_frame);
 
 /**
  * Get the framebuffer pointer from the tx st2110-20 pipeline session.
@@ -1372,6 +1397,21 @@ int st20p_rx_get_queue_meta(st20p_rx_handle handle, struct st_queue_meta* meta);
 int st20p_rx_get_sch_idx(st20p_rx_handle handle);
 
 /**
+ * Calculate the least linesize per the format, w, plane
+ *
+ * @param fmt
+ *   format.
+ * @param width
+ *   width.
+ * @param plane
+ *   plane index.
+ * @return
+ *   > 0 if successful.
+ *   0: Fail.
+ */
+size_t st_frame_least_linesize(enum st_frame_fmt fmt, uint32_t width, uint8_t plane);
+
+/**
  * Calculate the frame size per the format, w and h
  *
  * @param fmt
@@ -1387,6 +1427,17 @@ int st20p_rx_get_sch_idx(st20p_rx_handle handle);
 size_t st_frame_size(enum st_frame_fmt fmt, uint32_t width, uint32_t height);
 
 /**
+ * St_frame sanity check
+ *
+ * @param frame
+ *   The st_frame pointer.
+ * @return
+ *   0 if successful.
+ *   < 0: Fail.
+ */
+int st_frame_sanity_check(struct st_frame* frame);
+
+/**
  * Get the name of st_frame_fmt
  *
  * @param fmt
@@ -1396,6 +1447,17 @@ size_t st_frame_size(enum st_frame_fmt fmt, uint32_t width, uint32_t height);
  *   NULL: Fail.
  */
 const char* st_frame_fmt_name(enum st_frame_fmt fmt);
+
+/**
+ * Get number of planes of st_frame_fmt
+ *
+ * @param fmt
+ *   format.
+ * @return
+ *   The planes number.
+ *   0: Not match any fmt.
+ */
+uint8_t st_frame_fmt_planes(enum st_frame_fmt fmt);
 
 /**
  * Get st20 transport format from st_frame_fmt

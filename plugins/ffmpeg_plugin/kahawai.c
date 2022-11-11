@@ -408,8 +408,9 @@ static int kahawai_read_packet(AVFormatContext* ctx, AVPacket* pkt) {
     return ret;
   }
 
-  ret = st20_rfc4175_422be10_to_y210((struct st20_rfc4175_422_10_pg2_be*)(s->frame->addr),
-                                     (uint16_t*)pkt->data, s->width, s->height);
+  ret = st20_rfc4175_422be10_to_y210(
+      (struct st20_rfc4175_422_10_pg2_be*)(s->frame->addr[0]), (uint16_t*)pkt->data,
+      s->width, s->height);
   if (ret != 0) {
     av_log(ctx, AV_LOG_ERROR, "st20_rfc4175_422be10_to_y210 failed with %d\n", ret);
 
