@@ -198,126 +198,147 @@ static const struct st_frame_fmt_desc st_frame_fmt_descs[] = {
         .fmt = ST_FRAME_FMT_YUV422PLANAR10LE,
         .name = "YUV422PLANAR10LE",
         .planes = 3,
+        .sampling = ST_FRAME_SAMPLING_422,
     },
     {
         /* ST_FRAME_FMT_V210 */
         .fmt = ST_FRAME_FMT_V210,
         .name = "V210",
         .planes = 1,
+        .sampling = ST_FRAME_SAMPLING_422,
     },
     {
         /* ST_FRAME_FMT_Y210 */
         .fmt = ST_FRAME_FMT_Y210,
         .name = "Y210",
         .planes = 1,
+        .sampling = ST_FRAME_SAMPLING_422,
     },
     {
         /* ST_FRAME_FMT_YUV422PLANAR8 */
         .fmt = ST_FRAME_FMT_YUV422PLANAR8,
         .name = "YUV422PLANAR8",
         .planes = 3,
+        .sampling = ST_FRAME_SAMPLING_422,
     },
     {
         /* ST_FRAME_FMT_YUV422PACKED8 */
         .fmt = ST_FRAME_FMT_YUV422PACKED8,
         .name = "YUV422PACKED8",
         .planes = 1,
+        .sampling = ST_FRAME_SAMPLING_422,
     },
     {
         /* ST_FRAME_FMT_YUV422PLANAR12LE */
         .fmt = ST_FRAME_FMT_YUV422PLANAR12LE,
         .name = "YUV422PLANAR12LE",
         .planes = 3,
+        .sampling = ST_FRAME_SAMPLING_422,
     },
     {
         /* ST_FRAME_FMT_YUV444PLANAR10LE */
         .fmt = ST_FRAME_FMT_YUV444PLANAR10LE,
         .name = "YUV444PLANAR10LE",
         .planes = 3,
+        .sampling = ST_FRAME_SAMPLING_444,
     },
     {
         /* ST_FRAME_FMT_YUV444PLANAR12LE */
         .fmt = ST_FRAME_FMT_YUV444PLANAR12LE,
         .name = "YUV444PLANAR12LE",
         .planes = 3,
+        .sampling = ST_FRAME_SAMPLING_444,
     },
     {
         /* ST_FRAME_FMT_GBRPLANAR10LE */
         .fmt = ST_FRAME_FMT_GBRPLANAR10LE,
         .name = "GBRPLANAR10LE",
         .planes = 3,
+        .sampling = ST_FRAME_SAMPLING_444,
     },
     {
         /* ST_FRAME_FMT_GBRPLANAR12LE */
         .fmt = ST_FRAME_FMT_GBRPLANAR12LE,
         .name = "GBRPLANAR12LE",
         .planes = 3,
+        .sampling = ST_FRAME_SAMPLING_444,
     },
     {
         /* ST_FRAME_FMT_YUV422RFC4175PG2BE10 */
         .fmt = ST_FRAME_FMT_YUV422RFC4175PG2BE10,
         .name = "YUV422RFC4175PG2BE10",
         .planes = 1,
+        .sampling = ST_FRAME_SAMPLING_422,
     },
     {
         /* ST_FRAME_FMT_YUV422RFC4175PG2BE12 */
         .fmt = ST_FRAME_FMT_YUV422RFC4175PG2BE12,
         .name = "YUV422RFC4175PG2BE12",
         .planes = 1,
+        .sampling = ST_FRAME_SAMPLING_422,
     },
     {
         /* ST_FRAME_FMT_YUV444RFC4175PG4BE10 */
         .fmt = ST_FRAME_FMT_YUV444RFC4175PG4BE10,
         .name = "YUV444RFC4175PG4BE10",
         .planes = 1,
+        .sampling = ST_FRAME_SAMPLING_444,
     },
     {
         /* ST_FRAME_FMT_YUV444RFC4175PG2BE12 */
         .fmt = ST_FRAME_FMT_YUV444RFC4175PG2BE12,
         .name = "YUV444RFC4175PG2BE12",
         .planes = 1,
+        .sampling = ST_FRAME_SAMPLING_444,
     },
     {
         /* ST_FRAME_FMT_RGBRFC4175PG4BE10 */
         .fmt = ST_FRAME_FMT_RGBRFC4175PG4BE10,
         .name = "RGBRFC4175PG4BE10",
         .planes = 1,
+        .sampling = ST_FRAME_SAMPLING_444,
     },
     {
         /* ST_FRAME_FMT_RGBRFC4175PG2BE12 */
         .fmt = ST_FRAME_FMT_RGBRFC4175PG2BE12,
         .name = "RGBRFC4175PG2BE12",
         .planes = 1,
+        .sampling = ST_FRAME_SAMPLING_444,
     },
     {
         /* ST_FRAME_FMT_ARGB */
         .fmt = ST_FRAME_FMT_ARGB,
         .name = "ARGB",
         .planes = 1,
+        .sampling = ST_FRAME_SAMPLING_444,
     },
     {
         /* ST_FRAME_FMT_BGRA */
         .fmt = ST_FRAME_FMT_BGRA,
         .name = "BGRA",
         .planes = 1,
+        .sampling = ST_FRAME_SAMPLING_444,
     },
     {
         /* ST_FRAME_FMT_RGB8 */
         .fmt = ST_FRAME_FMT_RGB8,
         .name = "RGB8",
         .planes = 1,
+        .sampling = ST_FRAME_SAMPLING_444,
     },
     {
         /* ST_FRAME_FMT_JPEGXS_CODESTREAM */
         .fmt = ST_FRAME_FMT_JPEGXS_CODESTREAM,
         .name = "JPEGXS_CODESTREAM",
         .planes = 1,
+        .sampling = ST_FRAME_SAMPLING_MAX,
     },
     {
         /* ST_FRAME_FMT_H264_CBR_CODESTREAM */
         .fmt = ST_FRAME_FMT_H264_CBR_CODESTREAM,
         .name = "H264_CBR_CODESTREAM",
         .planes = 1,
+        .sampling = ST_FRAME_SAMPLING_MAX,
     },
 };
 
@@ -332,62 +353,57 @@ const char* st_tx_pacing_way_name(enum st21_tx_pacing_way way) {
 size_t st_frame_least_linesize(enum st_frame_fmt fmt, uint32_t width, uint8_t plane) {
   size_t linesize = 0;
 
-  switch (fmt) {
-    /* packed format */
-    case ST_FRAME_FMT_Y210:
-    case ST_FRAME_FMT_V210:
-    case ST_FRAME_FMT_YUV422PACKED8:
-    case ST_FRAME_FMT_YUV422RFC4175PG2BE10:
-    case ST_FRAME_FMT_YUV422RFC4175PG2BE12:
-    case ST_FRAME_FMT_YUV444RFC4175PG4BE10:
-    case ST_FRAME_FMT_RGBRFC4175PG4BE10:
-    case ST_FRAME_FMT_YUV444RFC4175PG2BE12:
-    case ST_FRAME_FMT_RGBRFC4175PG2BE12:
-    case ST_FRAME_FMT_ARGB:
-    case ST_FRAME_FMT_BGRA:
-    case ST_FRAME_FMT_RGB8:
-      if (plane > 0) {
-        err("%s, invalid plane idx %u for packed fmt\n", __func__, plane);
-        break;
-      }
+  if (st_frame_fmt_planes(fmt) == 1) {
+    if (plane > 0)
+      err("%s, invalid plane idx %u for packed fmt\n", __func__, plane);
+    else
       linesize = st_frame_size(fmt, width, 1);
-      break;
-    /* yuv 422 planar */
-    case ST_FRAME_FMT_YUV422PLANAR10LE:
-    case ST_FRAME_FMT_YUV422PLANAR12LE:
-    case ST_FRAME_FMT_YUV422PLANAR8:
-      switch (plane) {
-        case 0:
-          linesize = st_frame_size(fmt, width, 1) / 2;
-          break;
-        case 1:
-        case 2:
-          linesize = st_frame_size(fmt, width, 1) / 4;
-          break;
-        default:
-          err("%s, invalid plane idx %u for 422 planar fmt\n", __func__, plane);
-          break;
-      }
-      break;
-    /* yuv/rgb 444 planar */
-    case ST_FRAME_FMT_YUV444PLANAR10LE:
-    case ST_FRAME_FMT_YUV444PLANAR12LE:
-    case ST_FRAME_FMT_GBRPLANAR10LE:
-    case ST_FRAME_FMT_GBRPLANAR12LE:
-      switch (plane) {
-        case 0:
-        case 1:
-        case 2:
-          linesize = st_frame_size(fmt, width, 1) / 3;
-          break;
-        default:
-          err("%s, invalid plane idx %u for 444 planar fmt\n", __func__, plane);
-          break;
-      }
-      break;
-    default:
-      err("%s, invalid fmt %d\n", __func__, fmt);
-      break;
+  } else {
+    switch (st_frame_fmt_get_sampling(fmt)) {
+      case ST_FRAME_SAMPLING_422:
+        switch (plane) {
+          case 0:
+            linesize = st_frame_size(fmt, width, 1) / 2;
+            break;
+          case 1:
+          case 2:
+            linesize = st_frame_size(fmt, width, 1) / 4;
+            break;
+          default:
+            err("%s, invalid plane idx %u for 422 planar fmt\n", __func__, plane);
+            break;
+        }
+        break;
+      case ST_FRAME_SAMPLING_444:
+        switch (plane) {
+          case 0:
+          case 1:
+          case 2:
+            linesize = st_frame_size(fmt, width, 1) / 3;
+            break;
+          default:
+            err("%s, invalid plane idx %u for 444 planar fmt\n", __func__, plane);
+            break;
+        }
+        break;
+      case ST_FRAME_SAMPLING_420:
+        switch (plane) {
+          case 0:
+            linesize = st_frame_size(fmt, width, 1) * 4 / 6;
+            break;
+          case 1:
+          case 2:
+            linesize = st_frame_size(fmt, width, 1) / 6;
+            break;
+          default:
+            err("%s, invalid plane idx %u for 422 planar fmt\n", __func__, plane);
+            break;
+        }
+        break;
+      default:
+        err("%s, invalid sampling for fmt %d\n", __func__, fmt);
+        break;
+    }
   }
 
   return linesize;
@@ -557,6 +573,19 @@ uint8_t st_frame_fmt_planes(enum st_frame_fmt fmt) {
 
   err("%s, invalid fmt %d\n", __func__, fmt);
   return 0;
+}
+
+enum st_frame_sampling st_frame_fmt_get_sampling(enum st_frame_fmt fmt) {
+  int i;
+
+  for (i = 0; i < ST_ARRAY_SIZE(st_frame_fmt_descs); i++) {
+    if (fmt == st_frame_fmt_descs[i].fmt) {
+      return st_frame_fmt_descs[i].sampling;
+    }
+  }
+
+  err("%s, invalid fmt %d\n", __func__, fmt);
+  return ST_FRAME_SAMPLING_MAX;
 }
 
 enum st20_fmt st_frame_fmt_to_transport(enum st_frame_fmt fmt) {

@@ -15,15 +15,25 @@ struct st_fps_timing {
   int den;                 /* 1001 for ST_FPS_P59_94 */
 };
 
+enum st_frame_sampling {
+  ST_FRAME_SAMPLING_422 = 0,
+  ST_FRAME_SAMPLING_444, /* YUV444/RGB */
+  ST_FRAME_SAMPLING_420,
+  ST_FRAME_SAMPLING_MAX,
+};
+
 struct st_frame_fmt_desc {
   enum st_frame_fmt fmt;
   char* name;
   uint8_t planes;
+  enum st_frame_sampling sampling;
 };
 
 const char* st_tx_pacing_way_name(enum st21_tx_pacing_way way);
 
 int st_get_fps_timing(enum st_fps fps, struct st_fps_timing* fps_tm);
+
+enum st_frame_sampling st_frame_fmt_get_sampling(enum st_frame_fmt fmt);
 
 int st22_rtp_bandwidth_bps(uint32_t total_pkts, uint16_t pkt_size, enum st_fps fps,
                            uint64_t* bps);
