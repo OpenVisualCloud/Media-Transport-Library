@@ -642,6 +642,11 @@ int st20p_tx_free(st20p_tx_handle handle) {
     ctx->convert_impl = NULL;
   }
 
+  if (ctx->internal_converter) {
+    st_rte_free(ctx->internal_converter);
+    ctx->internal_converter = NULL;
+  }
+
   if (ctx->transport) {
     st20_tx_free(ctx->transport);
     ctx->transport = NULL;
