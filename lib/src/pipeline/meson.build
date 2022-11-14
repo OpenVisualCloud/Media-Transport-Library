@@ -3,6 +3,7 @@
 
 sources += files(
 	'st_plugin.c',
+	'st_frame_convert.c',
 	'st22_pipeline_tx.c',
 	'st22_pipeline_rx.c',
 	'st20_pipeline_tx.c',

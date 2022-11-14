@@ -373,7 +373,7 @@ struct st20_convert_session_impl* st20_get_converter(
   }
   st_pthread_mutex_unlock(&mgr->lock);
 
-  err("%s, fail to get, input fmt: %s, output fmt: %s\n", __func__,
+  err("%s, plugin not found, input fmt: %s, output fmt: %s\n", __func__,
       st_frame_fmt_name(req->req.input_fmt), st_frame_fmt_name(req->req.output_fmt));
   return NULL;
 }
