@@ -42,7 +42,7 @@ struct st20p_rx_ctx {
   pthread_mutex_t lock;
 
   struct st20_convert_session_impl* convert_impl;
-  int (*convert_func_internal)(void* src, void* dst, uint32_t width, uint32_t height);
+  struct st_frame_converter* internal_converter;
   bool ready;
   bool derive;
 

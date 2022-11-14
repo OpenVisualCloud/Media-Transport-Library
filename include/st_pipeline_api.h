@@ -1397,6 +1397,19 @@ int st20p_rx_get_queue_meta(st20p_rx_handle handle, struct st_queue_meta* meta);
 int st20p_rx_get_sch_idx(st20p_rx_handle handle);
 
 /**
+ * Convert color format from source frame to destination frame.
+ *
+ * @param src
+ *   The source frame.
+ * @param dst
+ *   The destination frame.
+ * @return
+ *   - 0: Success.
+ *   - <0: Error code.
+ */
+int st_frame_convert(struct st_frame* src, struct st_frame* dst);
+
+/**
  * Calculate the least linesize per the format, w, plane
  *
  * @param fmt

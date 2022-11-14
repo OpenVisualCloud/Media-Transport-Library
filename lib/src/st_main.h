@@ -22,6 +22,7 @@
 #include <sys/file.h>
 #include <unistd.h>
 
+#include "st_convert.h"
 #include "st_fmt.h"
 #include "st_mem.h"
 #include "st_pkt.h"

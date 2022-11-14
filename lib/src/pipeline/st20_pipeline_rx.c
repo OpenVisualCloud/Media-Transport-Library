@@ -14,77 +14,6 @@ static const char* rx_st20p_stat_name(enum st20p_rx_frame_status stat) {
   return st20p_rx_frame_stat_name[stat];
 }
 
-static inline int convert_rfc4175_422be10_to_422le8(void* src, void* dst, uint32_t width,
-                                                    uint32_t height) {
-  return st20_rfc4175_422be10_to_422le8((struct st20_rfc4175_422_10_pg2_be*)src,
-                                        (struct st20_rfc4175_422_8_pg2_le*)dst, width,
-                                        height);
-}
-
-static inline int convert_rfc4175_422be10_to_v210(void* src, void* dst, uint32_t width,
-                                                  uint32_t height) {
-  return st20_rfc4175_422be10_to_v210((struct st20_rfc4175_422_10_pg2_be*)src,
-                                      (uint8_t*)dst, width, height);
-}
-
-static inline int convert_rfc4175_422be10_to_y210(void* src, void* dst, uint32_t width,
-                                                  uint32_t height) {
-  return st20_rfc4175_422be10_to_y210((struct st20_rfc4175_422_10_pg2_be*)src,
-                                      (uint16_t*)dst, width, height);
-}
-
-static inline int convert_rfc4175_422be10_to_yuv422p10le(void* src, void* dst,
-                                                         uint32_t width,
-                                                         uint32_t height) {
-  uint16_t* p10_u16 = (uint16_t*)dst;
-  return st20_rfc4175_422be10_to_yuv422p10le(
-      (struct st20_rfc4175_422_10_pg2_be*)src, p10_u16, (p10_u16 + width * height),
-      (p10_u16 + width * height * 3 / 2), width, height);
-}
-
-static inline int convert_rfc4175_422be12_to_yuv422p12le(void* src, void* dst,
-                                                         uint32_t width,
-                                                         uint32_t height) {
-  uint16_t* p12_u16 = (uint16_t*)dst;
-  return st20_rfc4175_422be12_to_yuv422p12le(
-      (struct st20_rfc4175_422_12_pg2_be*)src, p12_u16, (p12_u16 + width * height),
-      (p12_u16 + width * height * 3 / 2), width, height);
-}
-
-static inline int convert_rfc4175_444be10_to_yuv444p10le(void* src, void* dst,
-                                                         uint32_t width,
-                                                         uint32_t height) {
-  uint16_t* p10_u16 = (uint16_t*)dst;
-  return st20_rfc4175_444be10_to_yuv444p10le(
-      (struct st20_rfc4175_444_10_pg4_be*)src, p10_u16, (p10_u16 + width * height),
-      (p10_u16 + width * height * 2), width, height);
-}
-
-static inline int convert_rfc4175_444be10_to_gbrp10le(void* src, void* dst,
-                                                      uint32_t width, uint32_t height) {
-  uint16_t* p10_u16 = (uint16_t*)dst;
-  return st20_rfc4175_444be10_to_gbrp10le((struct st20_rfc4175_444_10_pg4_be*)src,
-                                          p10_u16, (p10_u16 + width * height),
-                                          (p10_u16 + width * height * 2), width, height);
-}
-
-static inline int convert_rfc4175_444be12_to_yuv444p12le(void* src, void* dst,
-                                                         uint32_t width,
-                                                         uint32_t height) {
-  uint16_t* p12_u16 = (uint16_t*)dst;
-  return st20_rfc4175_444be12_to_yuv444p12le(
-      (struct st20_rfc4175_444_12_pg2_be*)src, p12_u16, (p12_u16 + width * height),
-      (p12_u16 + width * height * 2), width, height);
-}
-
-static inline int convert_rfc4175_444be12_to_gbrp12le(void* src, void* dst,
-                                                      uint32_t width, uint32_t height) {
-  uint16_t* p12_u16 = (uint16_t*)dst;
-  return st20_rfc4175_444be12_to_gbrp12le((struct st20_rfc4175_444_12_pg2_be*)src,
-                                          p12_u16, (p12_u16 + width * height),
-                                          (p12_u16 + width * height * 2), width, height);
-}
-
 static uint16_t rx_st20p_next_idx(struct st20p_rx_ctx* ctx, uint16_t idx) {
   /* point to next */
   uint16_t next_idx = idx;
@@ -168,7 +97,7 @@ static int rx_st20p_frame_ready(void* priv, void* frame,
   if (ctx->convert_impl) st20_convert_notify_frame_ready(ctx->convert_impl);
 
   /* or ask app to consume with internal converter */
-  if (ctx->convert_func_internal) {
+  if (ctx->internal_converter) {
     if (ctx->ops.notify_frame_available) { /* notify app */
       ctx->ops.notify_frame_available(ctx->ops.priv);
     }
@@ -489,97 +418,6 @@ static int rx_st20p_init_dst_fbs(struct st_main_impl* impl, struct st20p_rx_ctx*
   return 0;
 }
 
-static int rx_st20p_get_converter_internal(struct st20p_rx_ctx* ctx,
-                                           enum st_frame_fmt input_fmt,
-                                           enum st_frame_fmt output_fmt) {
-  switch (input_fmt) {
-    case ST_FRAME_FMT_YUV422RFC4175PG2BE10:
-      switch (output_fmt) {
-        case ST_FRAME_FMT_YUV422PACKED8:
-          ctx->convert_func_internal = convert_rfc4175_422be10_to_422le8;
-          break;
-        case ST_FRAME_FMT_V210:
-          ctx->convert_func_internal = convert_rfc4175_422be10_to_v210;
-          break;
-        case ST_FRAME_FMT_Y210:
-          ctx->convert_func_internal = convert_rfc4175_422be10_to_y210;
-          break;
-        case ST_FRAME_FMT_YUV422PLANAR10LE:
-          ctx->convert_func_internal = convert_rfc4175_422be10_to_yuv422p10le;
-          break;
-        default:
-          err("%s(%d), format not supported, input: %s, output: %s\n", __func__, ctx->idx,
-              st_frame_fmt_name(input_fmt), st_frame_fmt_name(output_fmt));
-          return -EIO;
-      }
-      break;
-    case ST_FRAME_FMT_YUV422RFC4175PG2BE12:
-      switch (output_fmt) {
-        case ST_FRAME_FMT_YUV422PLANAR12LE:
-          ctx->convert_func_internal = convert_rfc4175_422be12_to_yuv422p12le;
-          break;
-        default:
-          err("%s(%d), format not supported, input: %s, output: %s\n", __func__, ctx->idx,
-              st_frame_fmt_name(input_fmt), st_frame_fmt_name(output_fmt));
-          return -EIO;
-      }
-      break;
-    case ST_FRAME_FMT_YUV444RFC4175PG4BE10:
-      switch (output_fmt) {
-        case ST_FRAME_FMT_YUV444PLANAR10LE:
-          ctx->convert_func_internal = convert_rfc4175_444be10_to_yuv444p10le;
-          break;
-        default:
-          err("%s(%d), format not supported, input: %s, output: %s\n", __func__, ctx->idx,
-              st_frame_fmt_name(input_fmt), st_frame_fmt_name(output_fmt));
-          return -EIO;
-      }
-      break;
-    case ST_FRAME_FMT_YUV444RFC4175PG2BE12:
-      switch (output_fmt) {
-        case ST_FRAME_FMT_YUV444PLANAR12LE:
-          ctx->convert_func_internal = convert_rfc4175_444be12_to_yuv444p12le;
-          break;
-        default:
-          err("%s(%d), format not supported, input: %s, output: %s\n", __func__, ctx->idx,
-              st_frame_fmt_name(input_fmt), st_frame_fmt_name(output_fmt));
-          return -EIO;
-      }
-      break;
-    case ST_FRAME_FMT_RGBRFC4175PG4BE10:
-      switch (output_fmt) {
-        case ST_FRAME_FMT_GBRPLANAR10LE:
-          ctx->convert_func_internal = convert_rfc4175_444be10_to_gbrp10le;
-          break;
-        default:
-          err("%s(%d), format not supported, input: %s, output: %s\n", __func__, ctx->idx,
-              st_frame_fmt_name(input_fmt), st_frame_fmt_name(output_fmt));
-          return -EIO;
-      }
-      break;
-    case ST_FRAME_FMT_RGBRFC4175PG2BE12:
-      switch (output_fmt) {
-        case ST_FRAME_FMT_GBRPLANAR12LE:
-          ctx->convert_func_internal = convert_rfc4175_444be12_to_gbrp12le;
-          break;
-        default:
-          err("%s(%d), format not supported, input: %s, output: %s\n", __func__, ctx->idx,
-              st_frame_fmt_name(input_fmt), st_frame_fmt_name(output_fmt));
-          return -EIO;
-      }
-      break;
-    default:
-      err("%s(%d), format not supported, input: %s, output: %s\n", __func__, ctx->idx,
-          st_frame_fmt_name(input_fmt), st_frame_fmt_name(output_fmt));
-      return -EIO;
-  }
-
-  info("%s(%d), succ, input: %s, output: %s\n", __func__, ctx->idx,
-       st_frame_fmt_name(input_fmt), st_frame_fmt_name(output_fmt));
-
-  return 0;
-}
-
 static int rx_st20p_get_converter(struct st_main_impl* impl, struct st20p_rx_ctx* ctx,
                                   struct st20p_rx_ops* ops) {
   int idx = ctx->idx;
@@ -598,14 +436,23 @@ static int rx_st20p_get_converter(struct st_main_impl* impl, struct st20p_rx_ctx
   req.put_frame = rx_st20p_convert_put_frame;
   req.dump = rx_st20p_convert_dump;
 
-  if (req.device == ST_PLUGIN_DEVICE_TEST_INTERNAL) {
-    info("%s(%d), use internal converter for test\n", __func__, idx);
-    return rx_st20p_get_converter_internal(ctx, req.req.input_fmt, req.req.output_fmt);
-  }
   struct st20_convert_session_impl* convert_impl = st20_get_converter(impl, &req);
-  if (!convert_impl) {
-    warn("%s(%d), get converter plugin fail, use internal converter\n", __func__, idx);
-    return rx_st20p_get_converter_internal(ctx, req.req.input_fmt, req.req.output_fmt);
+  if (req.device == ST_PLUGIN_DEVICE_TEST_INTERNAL || !convert_impl) {
+    struct st_frame_converter* converter = NULL;
+    converter = st_rte_zmalloc_socket(sizeof(*converter), st_socket_id(impl, ST_PORT_P));
+    if (!converter) {
+      err("%s, converter malloc fail\n", __func__);
+      return -ENOMEM;
+    }
+    memset(converter, 0, sizeof(*converter));
+    if (st_frame_get_converter(req.req.input_fmt, req.req.output_fmt, converter) < 0) {
+      err("%s, get converter fail\n", __func__);
+      st_rte_free(converter);
+      return -EIO;
+    }
+    ctx->internal_converter = converter;
+    info("%s(%d), use internal converter\n", __func__, idx);
+    return 0;
   }
   ctx->convert_impl = convert_impl;
 
@@ -626,7 +473,7 @@ struct st_frame* st20p_rx_get_frame(st20p_rx_handle handle) {
 
   st_pthread_mutex_lock(&ctx->lock);
 
-  if (ctx->convert_func_internal) { /* convert internal */
+  if (ctx->internal_converter) { /* convert internal */
     framebuff =
         rx_st20p_next_available(ctx, ctx->framebuff_consumer_idx, ST20P_RX_FRAME_READY);
     /* not any ready frame */
@@ -634,8 +481,7 @@ struct st_frame* st20p_rx_get_frame(st20p_rx_handle handle) {
       st_pthread_mutex_unlock(&ctx->lock);
       return NULL;
     }
-    ctx->convert_func_internal(framebuff->src.addr[0], framebuff->dst.addr[0],
-                               framebuff->dst.width, framebuff->dst.height);
+    ctx->internal_converter->convert_func(&framebuff->src, &framebuff->dst);
   } else {
     framebuff = rx_st20p_next_available(ctx, ctx->framebuff_consumer_idx,
                                         ST20P_RX_FRAME_CONVERTED);
@@ -772,6 +618,11 @@ int st20p_rx_free(st20p_rx_handle handle) {
   if (ctx->convert_impl) {
     st20_put_converter(impl, ctx->convert_impl);
     ctx->convert_impl = NULL;
+  }
+
+  if (ctx->internal_converter) {
+    st_rte_free(ctx->internal_converter);
+    ctx->internal_converter = NULL;
   }
 
   if (ctx->transport) {
