@@ -832,8 +832,8 @@ int st20_rfc4175_422be10_to_v210_avx512(struct st20_rfc4175_422_10_pg2_be* pg_be
 
   int pg_cnt = w * h / 2;
   if (pg_cnt % 3 != 0) {
-    printf("%s, invalid pg_cnt %d, pixel group number must be multiple of 3!\n", __func__,
-           pg_cnt);
+    err("%s, invalid pg_cnt %d, pixel group number must be multiple of 3!\n", __func__,
+        pg_cnt);
     return -EINVAL;
   }
 
@@ -874,8 +874,8 @@ int st20_rfc4175_422be10_to_v210_avx512_dma(struct st_dma_lender_dev* dma,
 
   int pg_cnt = w * h / 2;
   if (pg_cnt % 3 != 0) {
-    printf("%s, invalid pg_cnt %d, pixel group number must be multiple of 3!\n", __func__,
-           pg_cnt);
+    err("%s, invalid pg_cnt %d, pixel group number must be multiple of 3!\n", __func__,
+        pg_cnt);
     return -EINVAL;
   }
 
@@ -1632,8 +1632,8 @@ int st20_v210_to_rfc4175_422be10_avx512(uint8_t* pg_v210,
 
   int pg_cnt = w * h / 2;
   if (pg_cnt % 3 != 0) {
-    printf("%s, invalid pg_cnt %d, pixel group number must be multiple of 3!\n", __func__,
-           pg_cnt);
+    err("%s, invalid pg_cnt %d, pixel group number must be multiple of 3!\n", __func__,
+        pg_cnt);
     return -EINVAL;
   }
 
@@ -1676,8 +1676,8 @@ int st20_v210_to_rfc4175_422be10_avx512_dma(struct st_dma_lender_dev* dma,
 
   int pg_cnt = w * h / 2;
   if (pg_cnt % 3 != 0) {
-    printf("%s, invalid pg_cnt %d, pixel group number must be multiple of 3!\n", __func__,
-           pg_cnt);
+    err("%s, invalid pg_cnt %d, pixel group number must be multiple of 3!\n", __func__,
+        pg_cnt);
     return -EINVAL;
   }
 

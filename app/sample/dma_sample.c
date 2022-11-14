@@ -191,12 +191,7 @@ int main(int argc, char** argv) {
   struct st_sample_context ctx;
   int ret;
 
-  /* init sample(st) dev */
-  st_sample_init(&ctx, argc, argv, true, false);
-  // dma port
-  strncpy(ctx.param.dma_dev_port[0], "0000:80:04.0", ST_PORT_MAX_LEN);
-  ctx.param.num_dma_dev_port = 1;
-  ret = st_sample_start(&ctx);
+  ret = st_sample_dma_init(&ctx, argc, argv);
   if (ret < 0) return ret;
 
   /* dma copy with st_hp_*** memory */

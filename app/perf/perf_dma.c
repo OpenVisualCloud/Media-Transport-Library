@@ -2,32 +2,7 @@
  * Copyright(c) 2022 Intel Corporation
  */
 
-#include <errno.h>
-#include <pthread.h>
-#include <st_dpdk_api.h>
-#include <stdbool.h>
-#include <stdio.h>
-#include <stdlib.h>
-#include <string.h>
-#include <unistd.h>
-
-#if 0 /* spr */
-#define NIC_PORT_BDF "0000:94:00.0"
-#define DMA_PORT_BDF "0000:e7:01.0"
-#endif
-
-#if 0 /* icelake */
-#define NIC_PORT_BDF "0000:4b:00.0"
-#define DMA_PORT_BDF "0000:00:01.0"
-#endif
-
-#if 1 /* clx */
-#define NIC_PORT_BDF "0000:af:00.0"
-#define DMA_PORT_BDF "0000:80:04.0"
-#endif
-
-/* local ip address for current bdf port */
-static uint8_t g_local_ip[ST_IP_ADDR_LEN] = {192, 168, 0, 1};
+#include "../sample/sample_util.h"
 
 static inline void rand_data(uint8_t* p, size_t sz, uint8_t base) {
   for (size_t i = 0; i < sz; i++) {
@@ -47,7 +22,7 @@ static int dma_copy_perf(st_handle st, int w, int h, int frames, int pkt_size) {
   /* create user dma dev */
   dma = st_udma_create(st, nb_desc, ST_PORT_P);
   if (!dma) {
-    printf("dma create fail\n");
+    info("dma create fail\n");
     return -EIO;
   }
 
@@ -57,14 +32,14 @@ static int dma_copy_perf(st_handle st, int w, int h, int frames, int pkt_size) {
   /* allocate fb dst and src(with random data) */
   fb_dst = st_hp_malloc(st, fb_size, ST_PORT_P);
   if (!fb_dst) {
-    printf("fb dst create fail\n");
+    info("fb dst create fail\n");
     st_udma_free(dma);
     return -ENOMEM;
   }
   fb_dst_iova = st_hp_virt2iova(st, fb_dst);
   fb_src = st_hp_malloc(st, fb_size, ST_PORT_P);
   if (!fb_dst) {
-    printf("fb src create fail\n");
+    info("fb src create fail\n");
     st_hp_free(st, fb_dst);
     st_udma_free(dma);
     return -ENOMEM;
@@ -85,8 +60,8 @@ static int dma_copy_perf(st_handle st, int w, int h, int frames, int pkt_size) {
   }
   end = clock();
   duration_cpu = (float)(end - start) / CLOCKS_PER_SEC;
-  printf("cpu, time: %f secs with %d frames(%dx%d,%fm), pkt_size %d\n", duration_cpu,
-         frames, w, h, fb_size_m, pkt_size);
+  info("cpu, time: %f secs with %d frames(%dx%d,%fm), pkt_size %d\n", duration_cpu,
+       frames, w, h, fb_size_m, pkt_size);
 
   start = clock();
   for (int idx = 0; idx < frames; idx++) {
@@ -98,9 +73,9 @@ static int dma_copy_perf(st_handle st, int w, int h, int frames, int pkt_size) {
   }
   end = clock();
   duration_simd = (float)(end - start) / CLOCKS_PER_SEC;
-  printf("simd, time: %f secs with %d frames(%dx%d,%fm), pkt_size %d\n", duration_simd,
-         frames, w, h, fb_size_m, pkt_size);
-  printf("simd, %fx performance to cpu\n", duration_cpu / duration_simd);
+  info("simd, time: %f secs with %d frames(%dx%d,%fm), pkt_size %d\n", duration_simd,
+       frames, w, h, fb_size_m, pkt_size);
+  info("simd, %fx performance to cpu\n", duration_cpu / duration_simd);
 
   start = clock();
   for (int idx = 0; idx < frames; idx++) {
@@ -122,10 +97,10 @@ static int dma_copy_perf(st_handle st, int w, int h, int frames, int pkt_size) {
   }
   end = clock();
   duration_dma = (float)(end - start) / CLOCKS_PER_SEC;
-  printf("dma, time: %f secs with %d frames(%dx%d,%fm), pkt_size %d\n", duration_dma,
-         frames, w, h, fb_size_m, pkt_size);
-  printf("dma, %fx performance to cpu\n", duration_cpu / duration_dma);
-  printf("\n");
+  info("dma, time: %f secs with %d frames(%dx%d,%fm), pkt_size %d\n", duration_dma,
+       frames, w, h, fb_size_m, pkt_size);
+  info("dma, %fx performance to cpu\n", duration_cpu / duration_dma);
+  info("\n");
 
   st_hp_free(st, fb_dst);
   st_hp_free(st, fb_src);
@@ -134,48 +109,29 @@ static int dma_copy_perf(st_handle st, int w, int h, int frames, int pkt_size) {
   return 0;
 }
 
-int main() {
-  struct st_init_params param;
-  int session_num = 1;
+int main(int argc, char** argv) {
+  struct st_sample_context ctx;
+  int ret;
 
-  memset(&param, 0, sizeof(param));
-  param.num_ports = 1;
-  strncpy(param.port[ST_PORT_P], NIC_PORT_BDF, ST_PORT_MAX_LEN);
-  memcpy(param.sip_addr[ST_PORT_P], g_local_ip, ST_IP_ADDR_LEN);
-  param.flags = ST_FLAG_BIND_NUMA;       // default bind to numa
-  param.log_level = ST_LOG_LEVEL_ERROR;  // log level. ERROR, INFO, WARNING
-  param.priv = NULL;                     // usr ctx pointer
-  param.ptp_get_time_fn = NULL;
-  param.tx_sessions_cnt_max = session_num;
-  param.rx_sessions_cnt_max = 0;
-  param.lcores = NULL;
-  // dma port
-  strncpy(param.dma_dev_port[0], DMA_PORT_BDF, ST_PORT_MAX_LEN);
-  param.num_dma_dev_port = 1;
+  ret = st_sample_tx_init(&ctx, argc, argv);
+  if (ret < 0) return ret;
 
-  // create device
-  st_handle dev_handle = st_init(&param);
-  if (!dev_handle) {
-    printf("st_init fail\n");
-    return -EIO;
-  }
+  dma_copy_perf(ctx.st, 1920, 1080, 60, 128);
+  dma_copy_perf(ctx.st, 1920 * 2, 1080 * 2, 60, 128);
+  dma_copy_perf(ctx.st, 1920 * 4, 1080 * 4, 60, 128);
+  info("\n");
 
-  dma_copy_perf(dev_handle, 1920, 1080, 60, 128);
-  dma_copy_perf(dev_handle, 1920 * 2, 1080 * 2, 60, 128);
-  dma_copy_perf(dev_handle, 1920 * 4, 1080 * 4, 60, 128);
-  printf("\n");
+  dma_copy_perf(ctx.st, 1920, 1080, 60, 1200);
+  dma_copy_perf(ctx.st, 1920 * 2, 1080 * 2, 60, 1200);
+  dma_copy_perf(ctx.st, 1920 * 4, 1080 * 4, 60, 1200);
+  info("\n");
 
-  dma_copy_perf(dev_handle, 1920, 1080, 60, 1200);
-  dma_copy_perf(dev_handle, 1920 * 2, 1080 * 2, 60, 1200);
-  dma_copy_perf(dev_handle, 1920 * 4, 1080 * 4, 60, 1200);
-  printf("\n");
+  dma_copy_perf(ctx.st, 1920, 1080, 60, 4096);
+  dma_copy_perf(ctx.st, 1920 * 2, 1080 * 2, 60, 4096);
+  dma_copy_perf(ctx.st, 1920 * 4, 1080 * 4, 60, 4096);
+  info("\n");
 
-  dma_copy_perf(dev_handle, 1920, 1080, 60, 4096);
-  dma_copy_perf(dev_handle, 1920 * 2, 1080 * 2, 60, 4096);
-  dma_copy_perf(dev_handle, 1920 * 4, 1080 * 4, 60, 4096);
-  printf("\n");
-
-  // destroy device
-  st_uninit(dev_handle);
-  return 0;
+  /* release sample(st) dev */
+  st_sample_uinit(&ctx);
+  return ret;
 }
