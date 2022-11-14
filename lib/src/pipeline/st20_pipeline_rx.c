@@ -5,7 +5,6 @@
 #include "st20_pipeline_rx.h"
 
 #include "../st_log.h"
-#include "st_frame_convert.h"
 
 static const char* st20p_rx_frame_stat_name[ST20P_RX_FRAME_STATUS_MAX] = {
     "free", "ready", "in_converting", "converted", "in_user",

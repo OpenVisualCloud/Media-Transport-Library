@@ -5,7 +5,8 @@
 #ifndef _ST_LIB_FRAME_CONVERT_HEAD_H_
 #define _ST_LIB_FRAME_CONVERT_HEAD_H_
 
-#include "../st_main.h"
+#include <st_convert_api.h>
+#include <st_pipeline_api.h>
 
 struct st_frame_converter {
   enum st_frame_fmt src_fmt;
