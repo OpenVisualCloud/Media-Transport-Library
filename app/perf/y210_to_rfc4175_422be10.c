@@ -11,23 +11,7 @@
 #include <string.h>
 #include <unistd.h>
 
-#if 0 /* spr */
-#define NIC_PORT_BDF "0000:94:00.0"
-#define DMA_PORT_BDF "0000:e7:01.0"
-#endif
-
-#if 1 /* icelake */
-#define NIC_PORT_BDF "0000:4b:00.0"
-#define DMA_PORT_BDF "0000:00:01.0"
-#endif
-
-#if 0 /* clx */
-#define NIC_PORT_BDF "0000:af:00.0"
-#define DMA_PORT_BDF "0000:80:04.0"
-#endif
-
-/* local ip address for current bdf port */
-static uint8_t g_local_ip[ST_IP_ADDR_LEN] = {192, 168, 0, 1};
+#include "../sample/sample_util.h"
 
 static void fill_rand_y210(uint16_t* p, size_t sz) {
   for (size_t i = 0; i < sz / 2; i++) {
@@ -66,8 +50,8 @@ static int perf_cvt_y210_to_be(st_handle st, int w, int h, int frames, int fb_cn
   }
   end = clock();
   duration = (float)(end - start) / CLOCKS_PER_SEC;
-  printf("scalar, time: %f secs with %d frames(%dx%d,%fm@%d buffers)\n", duration, frames,
-         w, h, fb_size_y210_m, fb_cnt);
+  info("scalar, time: %f secs with %d frames(%dx%d,%fm@%d buffers)\n", duration, frames,
+       w, h, fb_size_y210_m, fb_cnt);
 
   if (cpu_level >= ST_SIMD_LEVEL_AVX512) {
     start = clock();
@@ -79,9 +63,9 @@ static int perf_cvt_y210_to_be(st_handle st, int w, int h, int frames, int fb_cn
     }
     end = clock();
     float duration_simd = (float)(end - start) / CLOCKS_PER_SEC;
-    printf("avx512, time: %f secs with %d frames(%dx%d@%d buffers)\n", duration_simd,
-           frames, w, h, fb_cnt);
-    printf("avx512, %fx performance to scalar\n", duration / duration_simd);
+    info("avx512, time: %f secs with %d frames(%dx%d@%d buffers)\n", duration_simd,
+         frames, w, h, fb_cnt);
+    info("avx512, %fx performance to scalar\n", duration / duration_simd);
     if (dma) {
       start = clock();
       for (int i = 0; i < frames; i++) {
@@ -93,9 +77,9 @@ static int perf_cvt_y210_to_be(st_handle st, int w, int h, int frames, int fb_cn
       }
       end = clock();
       float duration_simd = (float)(end - start) / CLOCKS_PER_SEC;
-      printf("dma+avx512, time: %f secs with %d frames(%dx%d@%d buffers)\n",
-             duration_simd, frames, w, h, fb_cnt);
-      printf("dma+avx512, %fx performance to scalar\n", duration / duration_simd);
+      info("dma+avx512, time: %f secs with %d frames(%dx%d@%d buffers)\n", duration_simd,
+           frames, w, h, fb_cnt);
+      info("dma+avx512, %fx performance to scalar\n", duration / duration_simd);
     }
   }
 
@@ -117,7 +101,7 @@ static void* perf_thread(void* arg) {
     return NULL;
   }
   st_bind_to_lcore(dev_handle, pthread_self(), lcore);
-  printf("%s, run in lcore %u\n", __func__, lcore);
+  info("%s, run in lcore %u\n", __func__, lcore);
 
   perf_cvt_y210_to_be(dev_handle, 640, 480, frames, fb_cnt);
   perf_cvt_y210_to_be(dev_handle, 1280, 720, frames, fb_cnt);
@@ -131,37 +115,17 @@ static void* perf_thread(void* arg) {
 }
 
 int main(int argc, char** argv) {
-  struct st_init_params param;
-  int session_num = 1;
+  struct st_sample_context ctx;
+  int ret;
 
-  memset(&param, 0, sizeof(param));
-  param.num_ports = 1;
-  strncpy(param.port[ST_PORT_P], NIC_PORT_BDF, ST_PORT_MAX_LEN);
-  memcpy(param.sip_addr[ST_PORT_P], g_local_ip, ST_IP_ADDR_LEN);
-  param.flags = ST_FLAG_BIND_NUMA;       // default bind to numa
-  param.log_level = ST_LOG_LEVEL_ERROR;  // log level. ERROR, INFO, WARNING
-  param.priv = NULL;                     // usr ctx pointer
-  param.ptp_get_time_fn = NULL;
-  param.tx_sessions_cnt_max = session_num;
-  param.rx_sessions_cnt_max = 0;
-  param.lcores = NULL;
-  // dma port
-  strncpy(param.dma_dev_port[0], DMA_PORT_BDF, ST_PORT_MAX_LEN);
-  param.num_dma_dev_port = 1;
-
-  // create device
-  st_handle dev_handle = st_init(&param);
-  if (!dev_handle) {
-    printf("st_init fail\n");
-    return -EIO;
-  }
+  ret = st_sample_tx_init(&ctx, argc, argv);
+  if (ret < 0) return ret;
 
   pthread_t thread;
-  pthread_create(&thread, NULL, perf_thread, dev_handle);
+  pthread_create(&thread, NULL, perf_thread, ctx.st);
   pthread_join(thread, NULL);
 
-  // destroy device
-  if (dev_handle) st_uninit(dev_handle);
-
-  return 0;
+  /* release sample(st) dev */
+  st_sample_uinit(&ctx);
+  return ret;
 }

@@ -1782,7 +1782,7 @@ static int rv_parse_st22_boxes(struct st_rx_video_session_impl* s, void* boxes,
 #if 0
   uint8_t* buf = boxes - slot->st22_box_hdr_length;
   for (uint16_t i = 0; i < slot->st22_box_hdr_length; i++) {
-    printf("0x%02x ", buf[i]);
+    info("0x%02x ", buf[i]);
   }
   info("end\n");
 #endif

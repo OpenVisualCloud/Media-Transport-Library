@@ -13,6 +13,7 @@
 #include <string.h>
 #include <unistd.h>
 
+#include "../log.h"
 #include "../plugin_platform.h"
 
 static int convert_frame(struct converter_session* s,
@@ -48,7 +49,7 @@ static void* convert_thread(void* arg) {
   struct st20_convert_frame_meta* frame;
   int result;
 
-  printf("%s(%d), start\n", __func__, s->idx);
+  info("%s(%d), start\n", __func__, s->idx);
   while (!s->stop) {
     frame = st20_converter_get_frame(session_p);
     if (!frame) { /* no frame */
@@ -60,7 +61,7 @@ static void* convert_thread(void* arg) {
     result = convert_frame(s, frame);
     st20_converter_put_frame(session_p, frame, result);
   }
-  printf("%s(%d), stop\n", __func__, s->idx);
+  info("%s(%d), stop\n", __func__, s->idx);
 
   return NULL;
 }
@@ -86,7 +87,7 @@ static st20_convert_priv converter_create_session(void* priv,
 
     ret = pthread_create(&session->convert_thread, NULL, convert_thread, session);
     if (ret < 0) {
-      printf("%s(%d), thread create fail %d\n", __func__, i, ret);
+      info("%s(%d), thread create fail %d\n", __func__, i, ret);
       st_pthread_mutex_destroy(&session->wake_mutex);
       st_pthread_cond_destroy(&session->wake_cond);
       free(session);
@@ -94,12 +95,12 @@ static st20_convert_priv converter_create_session(void* priv,
     }
 
     ctx->converter_sessions[i] = session;
-    printf("%s(%d), input fmt: %s, output fmt: %s\n", __func__, i,
-           st_frame_fmt_name(req->input_fmt), st_frame_fmt_name(req->output_fmt));
+    info("%s(%d), input fmt: %s, output fmt: %s\n", __func__, i,
+         st_frame_fmt_name(req->input_fmt), st_frame_fmt_name(req->output_fmt));
     return session;
   }
 
-  printf("%s, all session slot are used\n", __func__);
+  info("%s, all session slot are used\n", __func__);
   return NULL;
 }
 
@@ -117,8 +118,7 @@ static int converter_free_session(void* priv, st20_convert_priv session) {
   st_pthread_mutex_destroy(&converter_session->wake_mutex);
   st_pthread_cond_destroy(&converter_session->wake_cond);
 
-  printf("%s(%d), total %d convert frames\n", __func__, idx,
-         converter_session->frame_cnt);
+  info("%s(%d), total %d convert frames\n", __func__, idx, converter_session->frame_cnt);
   free(converter_session);
   ctx->converter_sessions[idx] = NULL;
   return 0;
@@ -127,7 +127,7 @@ static int converter_free_session(void* priv, st20_convert_priv session) {
 static int converter_frame_available(void* priv) {
   struct converter_session* s = priv;
 
-  // printf("%s(%d)\n", __func__, s->idx);
+  dbg("%s(%d)\n", __func__, s->idx);
   st_pthread_mutex_lock(&s->wake_mutex);
   st_pthread_cond_signal(&s->wake_cond);
   st_pthread_mutex_unlock(&s->wake_mutex);
@@ -156,12 +156,12 @@ st_plugin_priv st_plugin_create(st_handle st) {
   c_dev.notify_frame_available = converter_frame_available;
   ctx->converter_dev_handle = st20_converter_register(st, &c_dev);
   if (!ctx->converter_dev_handle) {
-    printf("%s, converter register fail\n", __func__);
+    err("%s, converter register fail\n", __func__);
     free(ctx);
     return NULL;
   }
 
-  printf("%s, succ with converter sample plugin\n", __func__);
+  info("%s, succ with converter sample plugin\n", __func__);
   return ctx;
 }
 int st_plugin_free(st_plugin_priv handle) {
@@ -175,7 +175,7 @@ int st_plugin_free(st_plugin_priv handle) {
 
   free(ctx);
 
-  printf("%s, succ with converter sample plugin\n", __func__);
+  info("%s, succ with converter sample plugin\n", __func__);
   return 0;
 }
 

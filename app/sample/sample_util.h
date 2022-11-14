@@ -9,6 +9,7 @@
 #include <fcntl.h>
 #include <pthread.h>
 #include <signal.h>
+#include <st_convert_api.h>
 #include <st_pipeline_api.h>
 #include <stdbool.h>
 #include <stddef.h>
@@ -89,6 +90,10 @@ int st_sample_rx_init(struct st_sample_context* ctx, int argc, char** argv);
 
 int st_sample_fwd_init(struct st_sample_context* ctx, int argc, char** argv);
 
+int st_sample_dma_init(struct st_sample_context* ctx, int argc, char** argv);
+
 int st_sample_uinit(struct st_sample_context* ctx);
+
+void fill_rfc4175_422_10_pg2_data(struct st20_rfc4175_422_10_pg2_be* data, int w, int h);
 
 #endif

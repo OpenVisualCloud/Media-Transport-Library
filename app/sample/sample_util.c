@@ -21,6 +21,7 @@ enum sample_args_cmd {
   SAMPLE_ARG_P_FWD_IP,
   SAMPLE_ARG_LOG_LEVEL,
   SAMPLE_ARG_DEV_AUTO_START,
+  SAMPLE_ARG_DMA_PORT,
 
   SAMPLE_ARG_TX_VIDEO_URL = 0x200,
   SAMPLE_ARG_RX_VIDEO_URL,
@@ -45,6 +46,7 @@ static struct option sample_args_options[] = {
     {"sessions_cnt", required_argument, 0, SAMPLE_ARG_SESSIONS_CNT},
     {"log_level", required_argument, 0, SAMPLE_ARG_LOG_LEVEL},
     {"dev_auto_start", no_argument, 0, SAMPLE_ARG_DEV_AUTO_START},
+    {"dma_port", required_argument, 0, SAMPLE_ARG_DMA_PORT},
 
     {"tx_video_url", required_argument, 0, SAMPLE_ARG_TX_VIDEO_URL},
     {"rx_video_url", required_argument, 0, SAMPLE_ARG_TX_VIDEO_URL},
@@ -72,6 +74,10 @@ static int st_sample_parse_args(struct st_sample_context* ctx, int argc, char** 
       case SAMPLE_ARG_R_PORT:
         snprintf(p->port[ST_PORT_R], sizeof(p->port[ST_PORT_R]), "%s", optarg);
         p->num_ports++;
+        break;
+      case SAMPLE_ARG_DMA_PORT:
+        snprintf(p->dma_dev_port[0], sizeof(p->dma_dev_port[0]), "%s", optarg);
+        p->num_dma_dev_port = 1;
         break;
       case SAMPLE_ARG_P_SIP:
         inet_pton(AF_INET, optarg, st_p_sip_addr(p));
@@ -187,6 +193,8 @@ int st_sample_init(struct st_sample_context* ctx, int argc, char** argv, bool tx
   inet_pton(AF_INET, "239.168.86.20", ctx->fwd_dip_addr[ST_PORT_P]);
   inet_pton(AF_INET, "239.168.86.21", ctx->fwd_dip_addr[ST_PORT_R]);
 
+  strncpy(p->dma_dev_port[0], "0000:80:04.0", ST_PORT_MAX_LEN);
+
   if (!ctx->sessions) ctx->sessions = 1;
   ctx->framebuff_cnt = 3;
   ctx->width = 1920;
@@ -252,3 +260,39 @@ int st_sample_fwd_init(struct st_sample_context* ctx, int argc, char** argv) {
   st_sample_init(ctx, argc, argv, true, true);
   return st_sample_start(ctx);
 };
+
+int st_sample_dma_init(struct st_sample_context* ctx, int argc, char** argv) {
+  /* init sample(st) dev */
+  st_sample_init(ctx, argc, argv, false, false);
+  /* enable dma port */
+  ctx->param.num_dma_dev_port = 1;
+  return st_sample_start(ctx);
+};
+
+void fill_rfc4175_422_10_pg2_data(struct st20_rfc4175_422_10_pg2_be* data, int w, int h) {
+  int pg_size = w * h / 2;
+  uint16_t cb, y0, cr, y1; /* 10 bit */
+
+  y0 = 0x111;
+
+  cb = 0x222;
+  cr = 0x333;
+  y1 = y0 + 1;
+
+  for (int pg = 0; pg < pg_size; pg++) {
+    data->Cb00 = cb >> 2;
+    data->Cb00_ = cb;
+    data->Y00 = y0 >> 4;
+    data->Y00_ = y0;
+    data->Cr00 = cr >> 6;
+    data->Cr00_ = cr;
+    data->Y01 = y1 >> 8;
+    data->Y01_ = y1;
+    data++;
+
+    cb++;
+    y0 += 2;
+    cr++;
+    y1 += 2;
+  }
+}

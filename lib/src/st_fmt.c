@@ -420,7 +420,12 @@ size_t st_frame_size(enum st_frame_fmt fmt, uint32_t width, uint32_t height) {
       size = pixels * 2 * 2; /* 10/12bits in two bytes */
       break;
     case ST_FRAME_FMT_V210:
-      size = pixels * 8 / 3;
+      if (pixels % 3) {
+        err("%s, invalid width %u height %u for v210 fmt, not multiple of 3\n", __func__,
+            width, height);
+      } else {
+        size = pixels * 8 / 3;
+      }
       break;
     case ST_FRAME_FMT_YUV422PLANAR8:
     case ST_FRAME_FMT_YUV422PACKED8:
@@ -515,11 +520,18 @@ size_t st20_frame_size(enum st20_fmt fmt, uint32_t width, uint32_t height) {
   struct st20_pgroup pg;
   int ret = st20_get_pgroup(fmt, &pg);
   if (ret < 0) {
-    err("%s, st20_get_pgroup fail %d\n", __func__, ret);
+    err("%s, st20_get_pgroup fail %d, fmt %d\n", __func__, ret, fmt);
     return 0;
   }
 
-  return (size_t)width * height * pg.size / pg.coverage;
+  size_t size = width * height;
+  if (size % pg.coverage) {
+    err("%s, fmt %d, invalid w %u h %u, not multiple of %u\n", __func__, fmt, width,
+        height, pg.coverage);
+    return 0;
+  }
+
+  return size * pg.size / pg.coverage;
 }
 
 int st_get_fps_timing(enum st_fps fps, struct st_fps_timing* fps_tm) {
