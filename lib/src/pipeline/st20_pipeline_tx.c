@@ -407,6 +407,7 @@ static int tx_st20p_get_converter(struct st_main_impl* impl, struct st20p_tx_ctx
     memset(converter, 0, sizeof(*converter));
     if (st_frame_get_converter(req.req.input_fmt, req.req.output_fmt, converter) < 0) {
       err("%s, get converter fail\n", __func__);
+      st_rte_free(converter);
       return -EIO;
     }
     ctx->internal_converter = converter;
