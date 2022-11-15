@@ -95,7 +95,7 @@ static int convert(struct conv_app_context* ctx) {
     ret = -EIO;
     goto out;
   }
-  info("%s, file size:%ld, %dframes(%ux%u), in %s(%d) out %s(%d)\n", __func__, size,
+  info("%s, file size:%ld, %d frames(%ux%u), in %s(%d) out %s(%d)\n", __func__, size,
        frame_num, w, h, ctx->file_in, fmt_in, ctx->file_out, fmt_out);
 
   fseek(fp_in, 0, SEEK_SET);

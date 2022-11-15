@@ -79,29 +79,55 @@ sudo sysctl -w vm.nr_hugepages=2048
 Pls note the input yuv source file for sample app is the rfc4175 yuv422be10(big edian 10bit) pixel group format which define in ST2110 spec. Kahawai include a simple tools to convert the format from yuv422 planar 10bit little endian format.
 
 ###### 3.3.1 Prepare a yuv422p10le file.
+Below command shows how decode 2 frames from the encoder file, and ocvert from 420 to 422 planar file. Change 'vframes' value if you want to generate more frames.
 ```bash
 wget https://www.larmoire.info/jellyfish/media/jellyfish-3-mbps-hd-hevc-10bit.mkv
-ffmpeg -i jellyfish-3-mbps-hd-hevc-10bit.mkv -vframes 2 -c:v rawvideo yuv420p10le.yuv
-ffmpeg -s 1920x1080 -pix_fmt yuv420p10le -i yuv420p10le.yuv -pix_fmt yuv422p10le yuv422p10le.yuv
+ffmpeg -i jellyfish-3-mbps-hd-hevc-10bit.mkv -vframes 2 -c:v rawvideo yuv420p10le_1080p.yuv
+ffmpeg -s 1920x1080 -pix_fmt yuv420p10le -i yuv420p10le_1080p.yuv -pix_fmt yuv422p10le yuv422p10le_1080p.yuv
 ```
 
 ###### 3.3.2 Convert yuv422p10le to yuv422rfc4175be10
 Below is the command to convert yuv422p10le file to yuv422rfc4175be10 pg format(ST2110-20 supported pg format for 422 10bit)
 ```bash
-./build/app/ConvApp -width 1920 -height 1080 -in_pix_fmt yuv422p10le -i yuv422p10le.yuv -out_pix_fmt yuv422rfc4175be10 -o out_rfc4175.yuv
+./build/app/ConvApp -width 1920 -height 1080 -in_pix_fmt yuv422p10le -i yuv422p10le_1080p.yuv -out_pix_fmt yuv422rfc4175be10 -o yuv422rfc4175be10_1080p.yuv
 ```
+The yuv422rfc4175be10 files can be viewed by YUV Viewer tools(https://github.com/IENT/YUView), below is the custom layout.
+<div align="center">
+<img src="png/yuview_yuv422rfc4175be10_layout.png" align="center" alt="yuview yuv422rfc4175be10 custom layout">
+</div>
 
 ###### 3.3.3 Convert yuv422rfc4175be10 back to yuv422p10le
 Below is the command to convert yuv422rfc4175be10 pg format(ST2110-20 supported pg format for 422 10bit) to yuv422p10le file
 ```
-./build/app/ConvApp -width 1920 -height 1080 -in_pix_fmt yuv422rfc4175be10 -i in_rfc4175.yuv -out_pix_fmt yuv422p10be -o out_yuv422p10le.yuv
+./build/app/ConvApp -width 1920 -height 1080 -in_pix_fmt yuv422rfc4175be10 -i yuv422rfc4175be10_1080p.yuv -out_pix_fmt yuv422p10le -o out_yuv422p10le_1080p.yuv
 ```
 
 ###### 3.3.4 v210 support
 This tools also support v210 format, use "v210" for the in_pix_fmt/out_pix_fmt args instead.
 ```
-./build/app/ConvApp -width 1920 -height 1080 -in_pix_fmt yuv422rfc4175be10 -i in_rfc4175.yuv -out_pix_fmt v210 -o out_v210.yuv
-./build/app/ConvApp -width 1920 -height 1080 -in_pix_fmt v210 -i in_v210.yuv -out_pix_fmt yuv422rfc4175be10 -o out_rfc4175.yuv
+./build/app/ConvApp -width 1920 -height 1080 -in_pix_fmt yuv422rfc4175be10 -i yuv422rfc4175be10_1080p.yuv -out_pix_fmt v210 -o v210_1080p.yuv
+./build/app/ConvApp -width 1920 -height 1080 -in_pix_fmt v210 -i v210_1080p.yuv -out_pix_fmt yuv422rfc4175be10 -o out_yuv422rfc4175be10_1080p.yuv
+```
+
+###### 3.3.5 yuv422 12bit support
+```
+ffmpeg -s 1920x1080 -pix_fmt yuv420p10le -i yuv420p10le_1080p.yuv -pix_fmt yuv422p12le yuv422p12le_1080p.yuv
+./build/app/ConvApp -width 1920 -height 1080 -in_pix_fmt yuv422p12le -i yuv422p12le_1080p.yuv -out_pix_fmt yuv422rfc4175be12 -o yuv422rfc4175be12_1080p.yuv
+./build/app/ConvApp -width 1920 -height 1080 -in_pix_fmt yuv422rfc4175be12 -i yuv422rfc4175be12_1080p.yuv -out_pix_fmt yuv422p12le -o out_yuv422p12le_1080p.yuv
+```
+
+###### 3.3.6 yuv444 10bit support
+```
+ffmpeg -s 1920x1080 -pix_fmt yuv420p10le -i yuv420p10le_1080p.yuv -pix_fmt yuv444p10le yuv444p10le_1080p.yuv
+./build/app/ConvApp -width 1920 -height 1080 -in_pix_fmt yuv444p10le -i yuv444p10le_1080p.yuv -out_pix_fmt yuv444rfc4175be10 -o yuv444rfc4175be10_1080p.yuv
+./build/app/ConvApp -width 1920 -height 1080 -in_pix_fmt yuv444rfc4175be10 -i yuv444rfc4175be10_1080p.yuv -out_pix_fmt yuv444p10le -o out_yuv444p10le_1080p.yuv
+```
+
+###### 3.3.7 yuv444 12bit support
+```
+ffmpeg -s 1920x1080 -pix_fmt yuv420p10le -i yuv420p10le_1080p.yuv -pix_fmt yuv444p12le yuv444p12le_1080p.yuv
+./build/app/ConvApp -width 1920 -height 1080 -in_pix_fmt yuv444p12le -i yuv444p12le_1080p.yuv -out_pix_fmt yuv444rfc4175be12 -o yuv444rfc4175be12_1080p.yuv
+./build/app/ConvApp -width 1920 -height 1080 -in_pix_fmt yuv444rfc4175be12 -i yuv444rfc4175be12_1080p.yuv -out_pix_fmt yuv444p12le -o out_yuv444p12le_1080p.yuv
 ```
 
 #### 3.4 PTP setup(optional):

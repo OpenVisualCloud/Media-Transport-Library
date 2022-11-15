@@ -13,90 +13,105 @@ static const struct st20_pgroup st20_pgroups[] = {
         .fmt = ST20_FMT_YUV_422_8BIT,
         .size = 4,
         .coverage = 2,
+        .name = "ST20_FMT_YUV_422_8BIT",
     },
     {
         /* ST20_FMT_YUV_422_10BIT */
         .fmt = ST20_FMT_YUV_422_10BIT,
         .size = 5,
         .coverage = 2,
+        .name = "ST20_FMT_YUV_422_10BIT",
     },
     {
         /* ST20_FMT_YUV_422_12BIT */
         .fmt = ST20_FMT_YUV_422_12BIT,
         .size = 6,
         .coverage = 2,
+        .name = "ST20_FMT_YUV_422_12BIT",
     },
     {
         /* ST20_FMT_YUV_422_16BIT */
         .fmt = ST20_FMT_YUV_422_16BIT,
         .size = 8,
         .coverage = 2,
+        .name = "ST20_FMT_YUV_422_16BIT",
     },
     {
         /* ST20_FMT_YUV_420_8BIT */
         .fmt = ST20_FMT_YUV_420_8BIT,
         .size = 6,
         .coverage = 4,
+        .name = "ST20_FMT_YUV_420_8BIT",
     },
     {
         /* ST20_FMT_YUV_420_10BIT */
         .fmt = ST20_FMT_YUV_420_10BIT,
         .size = 15,
         .coverage = 8,
+        .name = "ST20_FMT_YUV_420_10BIT",
     },
     {
         /* ST20_FMT_YUV_420_12BIT */
         .fmt = ST20_FMT_YUV_420_12BIT,
         .size = 9,
         .coverage = 4,
+        .name = "ST20_FMT_YUV_420_12BIT",
     },
     {
         /* ST20_FMT_RGB_8BIT */
         .fmt = ST20_FMT_RGB_8BIT,
         .size = 3,
         .coverage = 1,
+        .name = "ST20_FMT_RGB_8BIT",
     },
     {
         /* ST20_FMT_RGB_10BIT */
         .fmt = ST20_FMT_RGB_10BIT,
         .size = 15,
         .coverage = 4,
+        .name = "ST20_FMT_RGB_10BIT",
     },
     {
         /* ST20_FMT_RGB_12BIT */
         .fmt = ST20_FMT_RGB_12BIT,
         .size = 9,
         .coverage = 2,
+        .name = "ST20_FMT_RGB_12BIT",
     },
     {
         /* ST20_FMT_RGB_16BIT */
         .fmt = ST20_FMT_RGB_16BIT,
         .size = 6,
         .coverage = 1,
+        .name = "ST20_FMT_RGB_16BIT",
     },
     {
         /* ST20_FMT_YUV_444_8BIT */
         .fmt = ST20_FMT_YUV_444_8BIT,
         .size = 3,
         .coverage = 1,
+        .name = "ST20_FMT_YUV_444_8BIT",
     },
     {
         /* ST20_FMT_YUV_444_10BIT */
         .fmt = ST20_FMT_YUV_444_10BIT,
         .size = 15,
         .coverage = 4,
+        .name = "ST20_FMT_YUV_444_10BIT",
     },
     {
         /* ST20_FMT_YUV_444_12BIT */
         .fmt = ST20_FMT_YUV_444_12BIT,
         .size = 9,
         .coverage = 2,
+        .name = "ST20_FMT_YUV_444_12BIT",
     },
     {
         /* ST20_FMT_YUV_444_16BIT */
         .fmt = ST20_FMT_YUV_444_16BIT,
         .size = 6,
         .coverage = 1,
+        .name = "ST20_FMT_YUV_444_16BIT",
     },
 };
 
@@ -520,6 +535,16 @@ size_t st20_frame_size(enum st20_fmt fmt, uint32_t width, uint32_t height) {
   }
 
   return size * pg.size / pg.coverage;
+}
+
+const char* st20_frame_fmt_name(enum st20_fmt fmt) {
+  struct st20_pgroup pg;
+  int ret = st20_get_pgroup(fmt, &pg);
+  if (ret < 0) {
+    err("%s, st20_get_pgroup fail %d, fmt %d\n", __func__, ret, fmt);
+    return "unknown";
+  }
+  return pg.name;
 }
 
 int st_get_fps_timing(enum st_fps fps, struct st_fps_timing* fps_tm) {
