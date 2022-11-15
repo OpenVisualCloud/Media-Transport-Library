@@ -360,13 +360,6 @@ enum st22_quality_mode {
  */
 #define ST22P_RX_FLAG_ENABLE_VSYNC (ST_BIT32(1))
 /**
- * Flag bit in flags of struct st20p_rx_ops.
- * Only used for internal convert mode.
- * The external frames are provided by calling
- * st20_rx_get_ext_frame.
- */
-#define ST20P_RX_FLAG_EXT_FRAME (ST_BIT32(2))
-/**
  * Flag bit in flags of struct st22p_rx_ops.
  * If set, lib will pass the incomplete frame to app also.
  * User can check st_frame_status data for the frame integrity
@@ -384,6 +377,13 @@ enum st22_quality_mode {
  * If enabled, lib will pass ST_EVENT_VSYNC by the notify_event on every epoch start.
  */
 #define ST20P_RX_FLAG_ENABLE_VSYNC (ST_BIT32(1))
+/**
+ * Flag bit in flags of struct st20p_rx_ops.
+ * Only used for internal convert mode.
+ * The external frames are provided by calling
+ * st20_rx_get_ext_frame.
+ */
+#define ST20P_RX_FLAG_EXT_FRAME (ST_BIT32(2))
 /**
  * Flag bit in flags of struct st20p_rx_ops.
  * If set, lib will pass the incomplete frame to app also.
