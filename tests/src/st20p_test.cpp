@@ -388,26 +388,12 @@ static void test_st20p_rx_frame_thread(void* args) {
 
   dbg("%s(%d), start\n", __func__, s->idx);
   while (!s->stop) {
-    if (s->rx_get_ext) {
-      frame =
-          st20p_rx_get_ext_frame((st20p_rx_handle)handle, &s->p_ext_frames[s->ext_idx]);
-      if (!frame) { /* no frame */
-        lck.lock();
-        if (!s->stop) s->cv.wait(lck);
-        lck.unlock();
-        continue;
-      }
-      // s->ext_fb_in_use[s->ext_idx] = true;
-      s->ext_idx++;
-      if (s->ext_idx >= s->fb_cnt) s->ext_idx = 0;
-    } else {
-      frame = st20p_rx_get_frame((st20p_rx_handle)handle);
-      if (!frame) { /* no frame */
-        lck.lock();
-        if (!s->stop) s->cv.wait(lck);
-        lck.unlock();
-        continue;
-      }
+    frame = st20p_rx_get_frame((st20p_rx_handle)handle);
+    if (!frame) { /* no frame */
+      lck.lock();
+      if (!s->stop) s->cv.wait(lck);
+      lck.unlock();
+      continue;
     }
 
     if (!st_is_frame_complete(frame->status)) {
@@ -470,12 +456,25 @@ static void test_internal_st20p_rx_frame_thread(void* args) {
 
   dbg("%s(%d), start\n", __func__, s->idx);
   while (!s->stop) {
-    frame = st20p_rx_get_frame((st20p_rx_handle)handle);
-    if (!frame) { /* no frame */
-      lck.lock();
-      if (!s->stop) s->cv.wait(lck);
-      lck.unlock();
-      continue;
+    if (s->rx_get_ext) {
+      frame =
+          st20p_rx_get_ext_frame((st20p_rx_handle)handle, &s->p_ext_frames[s->ext_idx]);
+      if (!frame) { /* no frame */
+        lck.lock();
+        if (!s->stop) s->cv.wait(lck);
+        lck.unlock();
+        continue;
+      }
+      s->ext_idx++;
+      if (s->ext_idx >= s->fb_cnt) s->ext_idx = 0;
+    } else {
+      frame = st20p_rx_get_frame((st20p_rx_handle)handle);
+      if (!frame) { /* no frame */
+        lck.lock();
+        if (!s->stop) s->cv.wait(lck);
+        lck.unlock();
+        continue;
+      }
     }
 
     if (frame->opaque) {
@@ -868,6 +867,7 @@ static void st20p_rx_digest_test(enum st_fps fps[], int width[], int height[],
       ops_rx.ext_frames = test_ctx_rx[i]->p_ext_frames;
     }
     if (para->vsync) ops_rx.flags |= ST20P_RX_FLAG_ENABLE_VSYNC;
+    if (para->rx_get_ext) ops_rx.flags |= ST20P_RX_FLAG_EXT_FRAME;
 
     test_ctx_rx[i]->frame_size =
         st_frame_size(ops_rx.output_fmt, ops_rx.width, ops_rx.height);
