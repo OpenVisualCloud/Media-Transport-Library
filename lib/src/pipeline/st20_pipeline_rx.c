@@ -411,7 +411,8 @@ static int rx_st20p_init_dst_fbs(struct st_main_impl* impl, struct st20p_rx_ctx*
         frames[i].dst.buffer_size = dst_size;
         frames[i].dst.data_size = dst_size;
       }
-      if (st_frame_sanity_check(&frames[i].dst) < 0) {
+      if (!(ops->flags & ST20P_RX_FLAG_EXT_FRAME) &&
+          st_frame_sanity_check(&frames[i].dst) < 0) {
         err("%s(%d), dst frame %d sanity check fail\n", __func__, idx, i);
         rx_st20p_uinit_dst_fbs(ctx);
         return -EINVAL;
@@ -504,6 +505,13 @@ struct st_frame* st20p_rx_get_ext_frame(st20p_rx_handle handle,
   }
   framebuff->dst.data_size = framebuff->dst.buffer_size = ext_frame->size;
   framebuff->dst.opaque = ext_frame->opaque;
+  framebuff->dst.flags |= ST_FRAME_FLAG_EXT_BUF;
+  int ret = st_frame_sanity_check(&framebuff->dst);
+  if (ret < 0) {
+    err("%s, ext framebuffer sanity check fail %d fb_idx %d\n", __func__, ret,
+        ctx->framebuff_consumer_idx);
+    return NULL;
+  }
   ctx->internal_converter->convert_func(&framebuff->src, &framebuff->dst);
 
   framebuff->stat = ST20P_RX_FRAME_IN_USER;
