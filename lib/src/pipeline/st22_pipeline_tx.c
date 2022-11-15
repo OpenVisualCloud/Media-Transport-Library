@@ -349,14 +349,7 @@ static int tx_st22p_get_encoder(struct st_main_impl* impl, struct st22p_tx_ctx* 
   req.req.height = ops->height;
   req.req.fps = ops->fps;
   req.req.input_fmt = ops->input_fmt;
-  if (ops->codec == ST22_CODEC_JPEGXS) {
-    req.req.output_fmt = ST_FRAME_FMT_JPEGXS_CODESTREAM;
-  } else if (ops->codec == ST22_CODEC_H264_CBR) {
-    req.req.output_fmt = ST_FRAME_FMT_H264_CBR_CODESTREAM;
-  } else {
-    err("%s(%d), unknow codec %d\n", __func__, idx, ops->codec);
-    return -EINVAL;
-  }
+  req.req.output_fmt = ctx->codestream_fmt;
   req.req.quality = ops->quality;
   req.req.framebuff_cnt = ops->framebuff_cnt;
   req.req.codec_thread_cnt = ops->codec_thread_cnt;
@@ -441,6 +434,7 @@ st22p_tx_handle st22p_tx_create(st_handle st, struct st22p_tx_ops* ops) {
   int ret;
   int idx = 0; /* todo */
   size_t src_size;
+  enum st_frame_fmt codestream_fmt;
 
   if (impl->type != ST_SESSION_TYPE_MAIN) {
     err("%s, invalid type %d\n", __func__, impl->type);
@@ -458,6 +452,15 @@ st22p_tx_handle st22p_tx_create(st_handle st, struct st22p_tx_ops* ops) {
     return NULL;
   }
 
+  if (ops->codec == ST22_CODEC_JPEGXS) {
+    codestream_fmt = ST_FRAME_FMT_JPEGXS_CODESTREAM;
+  } else if (ops->codec == ST22_CODEC_H264_CBR) {
+    codestream_fmt = ST_FRAME_FMT_H264_CBR_CODESTREAM;
+  } else {
+    err("%s(%d), unknow codec %d\n", __func__, idx, ops->codec);
+    return NULL;
+  }
+
   ctx = st_rte_zmalloc_socket(sizeof(*ctx), st_socket_id(impl, ST_PORT_P));
   if (!ctx) {
     err("%s, ctx malloc fail\n", __func__);
@@ -465,6 +468,7 @@ st22p_tx_handle st22p_tx_create(st_handle st, struct st22p_tx_ops* ops) {
   }
 
   ctx->idx = idx;
+  ctx->codestream_fmt = codestream_fmt;
   ctx->ready = false;
   ctx->impl = impl;
   ctx->type = ST22_SESSION_TYPE_PIPELINE_TX;
@@ -502,6 +506,8 @@ st22p_tx_handle st22p_tx_create(st_handle st, struct st22p_tx_ops* ops) {
 
   /* all ready now */
   ctx->ready = true;
+  info("%s(%d), codestream fmt %s, input fmt: %s\n", __func__, idx,
+       st_frame_fmt_name(ctx->codestream_fmt), st_frame_fmt_name(ops->input_fmt));
 
   if (ctx->ops.notify_frame_available) { /* notify app */
     ctx->ops.notify_frame_available(ctx->ops.priv);

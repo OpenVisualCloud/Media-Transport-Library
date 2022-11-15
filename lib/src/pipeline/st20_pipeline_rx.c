@@ -663,6 +663,8 @@ st20p_rx_handle st20p_rx_create(st_handle st, struct st20p_rx_ops* ops) {
 
   /* all ready now */
   ctx->ready = true;
+  info("%s(%d), transport fmt %s, output fmt %s\n", __func__, idx,
+       st20_frame_fmt_name(ops->transport_fmt), st_frame_fmt_name(ops->output_fmt));
 
   if (ctx->ops.notify_frame_available) { /* notify app */
     ctx->ops.notify_frame_available(ctx->ops.priv);

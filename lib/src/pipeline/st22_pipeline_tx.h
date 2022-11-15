@@ -30,6 +30,7 @@ struct st22p_tx_ctx {
   struct st_main_impl* impl;
   int idx;
   enum st_session_type type; /* for sanity check */
+  enum st_frame_fmt codestream_fmt;
 
   char ops_name[ST_MAX_NAME_LEN];
   struct st22p_tx_ops ops;

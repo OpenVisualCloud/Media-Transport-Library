@@ -2291,9 +2291,9 @@ static int tv_attach(struct st_main_impl* impl, struct st_tx_video_sessions_mgr*
   info("%s(%d), len %d(%d) total %d each line %d type %d flags 0x%x\n", __func__, idx,
        s->st20_pkt_len, s->st20_pkt_size, s->st20_total_pkts, s->st20_pkts_in_line,
        ops->type, ops->flags);
-  info("%s(%d), w %u h %u fmt %d packing %d pt %d, pacing way: %s\n", __func__, idx,
-       ops->width, ops->height, ops->fmt, ops->packing, ops->payload_type,
-       st_tx_pacing_way_name(s->pacing_way[ST_SESSION_PORT_P]));
+  info("%s(%d), w %u h %u fmt %s packing %d pt %d, pacing way: %s\n", __func__, idx,
+       ops->width, ops->height, st20_frame_fmt_name(ops->fmt), ops->packing,
+       ops->payload_type, st_tx_pacing_way_name(s->pacing_way[ST_SESSION_PORT_P]));
   return 0;
 }
 

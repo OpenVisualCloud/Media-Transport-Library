@@ -275,6 +275,8 @@ struct st20_pgroup {
   uint32_t size;
   /** pixel group coverage(pixels), e.g. 2 for YUV422 10 bit */
   uint32_t coverage;
+  /** name */
+  char* name;
 };
 
 /**
