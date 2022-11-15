@@ -325,7 +325,9 @@ enum st22_quality_mode {
 #define ST20P_TX_FLAG_USER_R_MAC (ST_BIT32(1))
 /**
  * Flag bit in flags of struct st20p_tx_ops.
- * Lib uses user allocated memory for frames
+ * Lib uses user allocated memory for frames.
+ * The external frames are provided by calling
+ * st20_tx_put_ext_frame.
  */
 #define ST20P_TX_FLAG_EXT_FRAME (ST_BIT32(2))
 /**
@@ -375,6 +377,13 @@ enum st22_quality_mode {
  * If enabled, lib will pass ST_EVENT_VSYNC by the notify_event on every epoch start.
  */
 #define ST20P_RX_FLAG_ENABLE_VSYNC (ST_BIT32(1))
+/**
+ * Flag bit in flags of struct st20p_rx_ops.
+ * Only used for internal convert mode.
+ * The external frames are provided by calling
+ * st20_rx_get_ext_frame.
+ */
+#define ST20P_RX_FLAG_EXT_FRAME (ST_BIT32(2))
 /**
  * Flag bit in flags of struct st20p_rx_ops.
  * If set, lib will pass the incomplete frame to app also.
@@ -1303,6 +1312,22 @@ st20p_rx_handle st20p_rx_create(st_handle st, struct st20p_rx_ops* ops);
  *   - <0: Error code of the rx st2110-20 pipeline session free.
  */
 int st20p_rx_free(st20p_rx_handle handle);
+
+/**
+ * Get one rx frame from the rx st2110-20 pipeline session with external framebuffer.
+ * This is only used for internal convert mode, the convert is done in this call.
+ * Call st20p_rx_put_frame to return the frame to session.
+ *
+ * @param handle
+ *   The handle to the rx st2110-20 pipeline session.
+ * @param ext_frame
+ *   The pointer to the structure describing external framebuffer.
+ * @return
+ *   - NULL if no avaiable frame in the session.
+ *   - Otherwise, the frame pointer.
+ */
+struct st_frame* st20p_rx_get_ext_frame(st20p_rx_handle handle,
+                                        struct st_ext_frame* ext_frame);
 
 /**
  * Get one rx frame from the rx st2110-20 pipeline session.

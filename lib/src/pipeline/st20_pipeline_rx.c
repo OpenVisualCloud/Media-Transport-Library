@@ -330,7 +330,8 @@ static int rx_st20p_create_transport(st_handle st, struct st20p_rx_ctx* ctx,
 
 static int rx_st20p_uinit_dst_fbs(struct st20p_rx_ctx* ctx) {
   if (ctx->framebuffs) {
-    if (!ctx->derive && !ctx->ops.ext_frames) {
+    if (!ctx->derive && !ctx->ops.ext_frames &&
+        !(ctx->ops.flags & ST20P_RX_FLAG_EXT_FRAME)) {
       /* do not free derived/ext frames */
       for (uint16_t i = 0; i < ctx->framebuff_cnt; i++) {
         if (ctx->framebuffs[i].dst.addr[0]) {
@@ -371,7 +372,7 @@ static int rx_st20p_init_dst_fbs(struct st_main_impl* impl, struct st20p_rx_ctx*
     uint8_t planes = st_frame_fmt_planes(frames[i].dst.fmt);
     if (!ctx->derive) { /* when derive, no need to alloc dst frames */
       if (ops->ext_frames) {
-        /* use ext frame as dst frame */
+        /* use dedicated ext frame as dst frame */
         for (uint8_t plane = 0; plane < planes; plane++) {
           frames[i].dst.addr[plane] = ops->ext_frames[i].addr[plane];
           frames[i].dst.iova[plane] = ops->ext_frames[i].iova[plane];
@@ -379,6 +380,11 @@ static int rx_st20p_init_dst_fbs(struct st_main_impl* impl, struct st20p_rx_ctx*
           frames[i].dst.buffer_size = ops->ext_frames[i].size;
           frames[i].dst.data_size = ops->ext_frames[i].size;
           frames[i].dst.opaque = ops->ext_frames[i].opaque;
+        }
+      } else if (ops->flags & ST20P_RX_FLAG_EXT_FRAME) {
+        for (uint8_t plane = 0; plane < planes; plane++) {
+          frames[i].dst.addr[plane] = NULL;
+          frames[i].dst.iova[plane] = 0;
         }
       } else {
         dst = st_rte_zmalloc_socket(dst_size, soc_id);
@@ -457,6 +463,57 @@ static int rx_st20p_get_converter(struct st_main_impl* impl, struct st20p_rx_ctx
   ctx->convert_impl = convert_impl;
 
   return 0;
+}
+
+struct st_frame* st20p_rx_get_ext_frame(st20p_rx_handle handle,
+                                        struct st_ext_frame* ext_frame) {
+  struct st20p_rx_ctx* ctx = handle;
+  int idx = ctx->idx;
+  struct st20p_rx_frame* framebuff;
+
+  if (ctx->type != ST20_SESSION_TYPE_PIPELINE_RX) {
+    err("%s(%d), invalid type %d\n", __func__, idx, ctx->type);
+    return NULL;
+  }
+
+  if (!(ctx->ops.flags & ST20P_RX_FLAG_EXT_FRAME)) {
+    err("%s(%d), EXT_FRAME flag not enabled\n", __func__, idx);
+    return NULL;
+  }
+
+  if (!ctx->internal_converter) {
+    err("%s(%d), only used for internal converter\n", __func__, idx);
+    return NULL;
+  }
+
+  if (!ctx->ready) return NULL; /* not ready */
+
+  st_pthread_mutex_lock(&ctx->lock);
+
+  framebuff =
+      rx_st20p_next_available(ctx, ctx->framebuff_consumer_idx, ST20P_RX_FRAME_READY);
+  /* not any ready frame */
+  if (!framebuff) {
+    st_pthread_mutex_unlock(&ctx->lock);
+    return NULL;
+  }
+  for (int plane = 0; plane < st_frame_fmt_planes(framebuff->dst.fmt); plane++) {
+    framebuff->dst.addr[plane] = ext_frame->addr[plane];
+    framebuff->dst.iova[plane] = ext_frame->iova[plane];
+    framebuff->dst.linesize[plane] = ext_frame->linesize[plane];
+  }
+  framebuff->dst.data_size = framebuff->dst.buffer_size = ext_frame->size;
+  framebuff->dst.opaque = ext_frame->opaque;
+  ctx->internal_converter->convert_func(&framebuff->src, &framebuff->dst);
+
+  framebuff->stat = ST20P_RX_FRAME_IN_USER;
+  /* point to next */
+  ctx->framebuff_consumer_idx = rx_st20p_next_idx(ctx, framebuff->idx);
+
+  st_pthread_mutex_unlock(&ctx->lock);
+
+  dbg("%s(%d), frame %u succ\n", __func__, idx, framebuff->idx);
+  return &framebuff->dst;
 }
 
 struct st_frame* st20p_rx_get_frame(st20p_rx_handle handle) {
