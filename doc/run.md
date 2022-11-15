@@ -79,7 +79,7 @@ sudo sysctl -w vm.nr_hugepages=2048
 Pls note the input yuv source file for sample app is the rfc4175 yuv422be10(big edian 10bit) pixel group format which define in ST2110 spec. Kahawai include a simple tools to convert the format from yuv422 planar 10bit little endian format.
 
 ###### 3.3.1 Prepare a yuv422p10le file.
-Below command shows how decode 2 frames from the encoder file, and ocvert from 420 to 422 planar file. Change 'vframes' value if you want to generate more frames.
+Below command shows how to decode 2 frames from the encoder file, and convert from 420 to 422 planar file. Change 'vframes' value if you want to generate more frames.
 ```bash
 wget https://www.larmoire.info/jellyfish/media/jellyfish-3-mbps-hd-hevc-10bit.mkv
 ffmpeg -i jellyfish-3-mbps-hd-hevc-10bit.mkv -vframes 2 -c:v rawvideo yuv420p10le_1080p.yuv
