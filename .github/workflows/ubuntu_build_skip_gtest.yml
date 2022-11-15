@@ -1,3 +1,6 @@
+# This file fixes the issue "Handling skipped but required checks".
+# Now we can protect the main branch with gtest checks required.
+# More info refer to https://docs.github.com/en/repositories/configuring-branches-and-merges-in-your-repository/defining-the-mergeability-of-pull-requests/troubleshooting-required-status-checks#handling-skipped-but-required-checks
 name: gtest
 
 on:
