@@ -11,7 +11,7 @@
  *
  */
 
-#include <st20_dpdk_api.h>
+#include "st20_api.h"
 
 #ifndef _ST_PIPELINE_API_HEAD_H_
 #define _ST_PIPELINE_API_HEAD_H_

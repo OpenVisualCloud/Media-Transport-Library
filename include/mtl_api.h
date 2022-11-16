@@ -3,7 +3,7 @@
  */
 
 /**
- * @file st_dpdk_api.h
+ * @file mtl_api.h
  *
  * This header define the public interfaces of Media Transport Library.
  *
@@ -16,14 +16,14 @@
 #include <string.h>
 #include <time.h>
 
-#ifndef _ST_DPDK_API_HEAD_H_
-#define _ST_DPDK_API_HEAD_H_
+#ifndef _MTL_API_HEAD_H_
+#define _MTL_API_HEAD_H_
 
 #if defined(__cplusplus)
 extern "C" {
 #endif
 
-#include <mtl_build_config.h>
+#include "mtl_build_config.h"
 
 /**
  * Macro to compute a version number usable for comparisons

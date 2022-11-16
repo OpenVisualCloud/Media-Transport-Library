@@ -10,11 +10,11 @@
 #include <pcap.h>
 #include <pthread.h>
 #include <signal.h>
-#include <st20_dpdk_api.h>
-#include <st20_redundant_api.h>
-#include <st30_dpdk_api.h>
-#include <st40_dpdk_api.h>
-#include <st_dpdk_api.h>
+#include <mtl/st20_api.h>
+#include <mtl/st20_redundant_api.h>
+#include <mtl/st_pipeline_api.h>
+#include <mtl/st30_api.h>
+#include <mtl/st40_api.h>
 #include <stdbool.h>
 #include <stddef.h>
 #include <stdlib.h>

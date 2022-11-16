@@ -3,16 +3,16 @@
  */
 
 /**
- * @file st20_dpdk_api.h
+ * @file st20_api.h
  *
  * Interfaces to Media Transport Library for st2110-20/22 transport.
  *
  */
 
-#include <st_dpdk_api.h>
+#include "mtl_api.h"
 
-#ifndef _ST20_DPDK_API_HEAD_H_
-#define _ST20_DPDK_API_HEAD_H_
+#ifndef _ST20_API_HEAD_H_
+#define _ST20_API_HEAD_H_
 
 #if defined(__cplusplus)
 extern "C" {

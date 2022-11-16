@@ -4,9 +4,9 @@
 
 #include <json-c/json.h>
 #include <math.h>
-#include <st30_dpdk_api.h>
-#include <st40_dpdk_api.h>
-#include <st_pipeline_api.h>
+#include <mtl/st30_api.h>
+#include <mtl/st40_api.h>
+#include <mtl/st_pipeline_api.h>
 #include <stdbool.h>
 #include <stdio.h>
 #include <stdlib.h>

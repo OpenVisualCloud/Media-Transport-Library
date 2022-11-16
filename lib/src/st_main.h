@@ -14,10 +14,9 @@
 #include <rte_tm.h>
 #include <rte_version.h>
 #include <rte_vfio.h>
-#include <st20_dpdk_api.h>
-#include <st30_dpdk_api.h>
-#include <st40_dpdk_api.h>
-#include <st_dpdk_api.h>
+#include <st20_api.h>
+#include <st30_api.h>
+#include <st40_api.h>
 #include <st_pipeline_api.h>
 #include <sys/file.h>
 #include <unistd.h>

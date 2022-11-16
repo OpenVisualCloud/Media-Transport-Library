@@ -2,8 +2,6 @@
  * Copyright(c) 2022 Intel Corporation
  */
 
-#include <st20_redundant_api.h>
-
 #include "sample_util.h"
 
 struct st20r_sample_ctx {

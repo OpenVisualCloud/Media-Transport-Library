@@ -44,7 +44,7 @@ cc_ver = meson.get_compiler('c').get_id() + '-' + meson.get_compiler('c').versio
 mtl_conf.set_quoted('MTL_COMPILER', cc_ver)
 # build config file
 build_cfg = 'mtl_build_config.h'
-configure_file(output: build_cfg, configuration: mtl_conf, install_dir: 'include')
+configure_file(output: build_cfg, configuration: mtl_conf, install_dir: 'include/mtl')
 
 mtl_lib = []
 
