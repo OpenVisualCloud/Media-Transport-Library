@@ -19,8 +19,8 @@ static bool arp_is_valid_hdr(struct rte_arp_hdr* hdr) {
   return true;
 }
 
-static int arp_receive_request(struct st_main_impl* impl, struct rte_arp_hdr* request,
-                               enum st_port port) {
+static int arp_receive_request(struct mtl_main_impl* impl, struct rte_arp_hdr* request,
+                               enum mtl_port port) {
   if (!arp_is_valid_hdr(request)) return -EINVAL;
 
   if (request->arp_data.arp_tip != *(uint32_t*)st_sip_addr(impl, port)) {
@@ -68,8 +68,8 @@ static int arp_receive_request(struct st_main_impl* impl, struct rte_arp_hdr* re
   return 0;
 }
 
-static int arp_receive_reply(struct st_main_impl* impl, struct rte_arp_hdr* reply,
-                             enum st_port port) {
+static int arp_receive_reply(struct mtl_main_impl* impl, struct rte_arp_hdr* reply,
+                             enum mtl_port port) {
   if (!arp_is_valid_hdr(reply)) return -EINVAL;
 
   if (reply->arp_data.arp_tip != *(uint32_t*)st_sip_addr(impl, port)) {
@@ -92,7 +92,7 @@ static int arp_receive_reply(struct st_main_impl* impl, struct rte_arp_hdr* repl
   return 0;
 }
 
-static int arp_queues_uinit(struct st_main_impl* impl) {
+static int arp_queues_uinit(struct mtl_main_impl* impl) {
   int num_ports = st_num_ports(impl);
   struct st_arp_impl* arp = &impl->arp;
 
@@ -106,7 +106,7 @@ static int arp_queues_uinit(struct st_main_impl* impl) {
   return 0;
 }
 
-static int arp_queues_init(struct st_main_impl* impl) {
+static int arp_queues_init(struct mtl_main_impl* impl) {
   int num_ports = st_num_ports(impl);
   struct st_arp_impl* arp = &impl->arp;
   int ret;
@@ -128,7 +128,7 @@ static int arp_queues_init(struct st_main_impl* impl) {
   return 0;
 }
 
-int st_arp_parse(struct st_main_impl* impl, struct rte_arp_hdr* hdr, enum st_port port) {
+int st_arp_parse(struct mtl_main_impl* impl, struct rte_arp_hdr* hdr, enum mtl_port port) {
   switch (htons(hdr->arp_opcode)) {
     case RTE_ARP_OP_REQUEST:
       arp_receive_request(impl, hdr, port);
@@ -144,8 +144,8 @@ int st_arp_parse(struct st_main_impl* impl, struct rte_arp_hdr* hdr, enum st_por
   return 0;
 }
 
-int st_arp_cni_get_mac(struct st_main_impl* impl, struct rte_ether_addr* ea,
-                       enum st_port port, uint32_t ip) {
+int st_arp_cni_get_mac(struct mtl_main_impl* impl, struct rte_ether_addr* ea,
+                       enum mtl_port port, uint32_t ip) {
   struct st_arp_impl* arp_impl = &impl->arp;
   uint16_t port_id = st_port_id(impl, port);
   uint16_t tx;
@@ -204,7 +204,7 @@ int st_arp_cni_get_mac(struct st_main_impl* impl, struct rte_ether_addr* ea,
   return 0;
 }
 
-int st_arp_init(struct st_main_impl* impl) {
+int st_arp_init(struct mtl_main_impl* impl) {
   int ret;
 
   ret = arp_queues_init(impl);
@@ -213,7 +213,7 @@ int st_arp_init(struct st_main_impl* impl) {
   return 0;
 }
 
-int st_arp_uinit(struct st_main_impl* impl) {
+int st_arp_uinit(struct mtl_main_impl* impl) {
   arp_queues_uinit(impl);
   return 0;
 }

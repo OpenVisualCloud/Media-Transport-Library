@@ -7,11 +7,11 @@
 
 #include "st_main.h"
 
-static inline struct st_sch_mgr* st_sch_get_mgr(struct st_main_impl* impl) {
+static inline struct st_sch_mgr* st_sch_get_mgr(struct mtl_main_impl* impl) {
   return &impl->sch_mgr;
 }
 
-static inline struct st_sch_impl* st_sch_instance(struct st_main_impl* impl, int i) {
+static inline struct st_sch_impl* st_sch_instance(struct mtl_main_impl* impl, int i) {
   return &st_sch_get_mgr(impl)->sch[i];
 }
 
@@ -40,8 +40,8 @@ static inline bool st_sch_has_busy(struct st_sch_impl* sch) {
     return false;
 }
 
-int st_sch_mrg_init(struct st_main_impl* impl, int data_quota_mbs_limit);
-int st_sch_mrg_uinit(struct st_main_impl* impl);
+int st_sch_mrg_init(struct mtl_main_impl* impl, int data_quota_mbs_limit);
+int st_sch_mrg_uinit(struct mtl_main_impl* impl);
 
 struct st_sch_tasklet_impl* st_sch_register_tasklet(
     struct st_sch_impl* sch, struct st_sch_tasklet_ops* tasklet_ops);
@@ -54,14 +54,14 @@ static inline void st_tasklet_set_sleep(struct st_sch_tasklet_impl* tasklet,
 
 int st_sch_add_quota(struct st_sch_impl* sch, int quota_mbs);
 
-struct st_sch_impl* st_sch_get(struct st_main_impl* impl, int quota_mbs,
+struct st_sch_impl* st_sch_get(struct mtl_main_impl* impl, int quota_mbs,
                                enum st_sch_type type, st_sch_mask_t mask);
 int st_sch_put(struct st_sch_impl* sch, int quota_mbs);
 
-int st_sch_start_all(struct st_main_impl* impl);
-int st_sch_stop_all(struct st_main_impl* impl);
+int st_sch_start_all(struct mtl_main_impl* impl);
+int st_sch_stop_all(struct mtl_main_impl* impl);
 
-void st_sch_stat(struct st_main_impl* impl);
+void st_sch_stat(struct mtl_main_impl* impl);
 
 static inline void st_sch_set_cpu_busy(struct st_sch_impl* sch, bool busy) {
   sch->cpu_busy = busy;

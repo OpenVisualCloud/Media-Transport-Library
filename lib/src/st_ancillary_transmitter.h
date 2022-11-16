@@ -7,7 +7,7 @@
 
 #include "st_main.h"
 
-int st_ancillary_transmitter_init(struct st_main_impl* impl, struct st_sch_impl* sch,
+int st_ancillary_transmitter_init(struct mtl_main_impl* impl, struct st_sch_impl* sch,
                                   struct st_tx_ancillary_sessions_mgr* mgr,
                                   struct st_ancillary_transmitter_impl* trs);
 int st_ancillary_transmitter_uinit(struct st_ancillary_transmitter_impl* trs);

@@ -68,22 +68,22 @@ struct tap_rt_context {
   struct overlapped_io reads;
   struct overlapped_io writes;
   char tap_name[MAX_PATH];
-  uint8_t ip_addr[ST_IP_ADDR_LEN];
+  uint8_t ip_addr[MTL_IP_ADDR_LEN];
   struct rte_ether_addr mac_addr;
   unsigned int lcore;
   bool has_lcore;
   bool flow_control;
 };
 
-int st_tap_init(struct st_main_impl* impl);
-int st_tap_uinit(struct st_main_impl* impl);
-int st_tap_handle(struct st_main_impl* impl, enum st_port port, struct rte_mbuf** rx_pkts,
+int st_tap_init(struct mtl_main_impl* impl);
+int st_tap_uinit(struct mtl_main_impl* impl);
+int st_tap_handle(struct mtl_main_impl* impl, enum mtl_port port, struct rte_mbuf** rx_pkts,
                   uint16_t nb_pkts);
 
 #else
-static inline int st_tap_init(struct st_main_impl* impl) { return 0; }
-static inline int st_tap_uinit(struct st_main_impl* impl) { return 0; }
-static inline int st_tap_handle(struct st_main_impl* impl, enum st_port port,
+static inline int st_tap_init(struct mtl_main_impl* impl) { return 0; }
+static inline int st_tap_uinit(struct mtl_main_impl* impl) { return 0; }
+static inline int st_tap_handle(struct mtl_main_impl* impl, enum mtl_port port,
                                 struct rte_mbuf** rx_pkts, uint16_t nb_pkts) {
   return -EIO;
 }

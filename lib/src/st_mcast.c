@@ -48,7 +48,7 @@ static struct rte_ether_addr const mcast_mac_dst = {{0x01, 0x00, 0x5e, 0x00, 0x0
 static struct rte_ether_addr const mcast_mac_query = {
     {0x01, 0x00, 0x5e, 0x00, 0x00, 0x01}};
 
-int mcast_membership_general_query(struct st_main_impl* impl, enum st_port port) {
+int mcast_membership_general_query(struct mtl_main_impl* impl, enum mtl_port port) {
   struct st_mcast_impl* mcast = &impl->mcast;
   struct rte_mbuf* pkt;
   struct rte_ether_hdr* eth_hdr;
@@ -115,8 +115,8 @@ int mcast_membership_general_query(struct st_main_impl* impl, enum st_port port)
 }
 
 /* membership report shaping, refer to RFC3376 - 4.2 */
-static int mcast_membership_report(struct st_main_impl* impl,
-                                   enum mcast_group_record_type type, enum st_port port) {
+static int mcast_membership_report(struct mtl_main_impl* impl,
+                                   enum mcast_group_record_type type, enum mtl_port port) {
   struct st_mcast_impl* mcast = &impl->mcast;
   uint16_t group_num = mcast->group_num[port];
   struct rte_mbuf* pkt;
@@ -205,7 +205,7 @@ static int mcast_membership_report(struct st_main_impl* impl,
 }
 
 static void mcast_membership_report_cb(void* param) {
-  struct st_main_impl* impl = (struct st_main_impl*)param;
+  struct mtl_main_impl* impl = (struct mtl_main_impl*)param;
   int num_ports = st_num_ports(impl);
   int ret;
 
@@ -222,7 +222,7 @@ static void mcast_membership_report_cb(void* param) {
   if (ret < 0) err("%s, set igmp alarm fail %d\n", __func__, ret);
 }
 
-static int mcast_queues_uinit(struct st_main_impl* impl) {
+static int mcast_queues_uinit(struct mtl_main_impl* impl) {
   int num_ports = st_num_ports(impl);
   struct st_mcast_impl* mcast = &impl->mcast;
 
@@ -236,7 +236,7 @@ static int mcast_queues_uinit(struct st_main_impl* impl) {
   return 0;
 }
 
-static int mcast_queues_init(struct st_main_impl* impl) {
+static int mcast_queues_init(struct mtl_main_impl* impl) {
   int num_ports = st_num_ports(impl);
   struct st_mcast_impl* mcast = &impl->mcast;
   int ret;
@@ -348,11 +348,11 @@ static int mcast_inf_remove_mac(struct st_interface* inf,
     return rte_eth_dev_mac_addr_remove(port_id, mcast_mac);
 }
 
-int st_mcast_init(struct st_main_impl* impl) {
+int st_mcast_init(struct mtl_main_impl* impl) {
   struct st_mcast_impl* mcast = &impl->mcast;
   int ret;
 
-  for (int port = 0; port < ST_PORT_MAX; ++port) {
+  for (int port = 0; port < MTL_PORT_MAX; ++port) {
     st_pthread_mutex_init(&mcast->group_mutex[port], NULL);
   }
 
@@ -366,13 +366,13 @@ int st_mcast_init(struct st_main_impl* impl) {
   return 0;
 }
 
-int st_mcast_uinit(struct st_main_impl* impl) {
+int st_mcast_uinit(struct mtl_main_impl* impl) {
   struct st_mcast_impl* mcast = &impl->mcast;
   int ret;
 
   mcast_queues_uinit(impl);
 
-  for (int port = 0; port < ST_PORT_MAX; ++port) {
+  for (int port = 0; port < MTL_PORT_MAX; ++port) {
     st_pthread_mutex_destroy(&mcast->group_mutex[port]);
   }
 
@@ -384,7 +384,7 @@ int st_mcast_uinit(struct st_main_impl* impl) {
 }
 
 /* add a group address to the group ip list */
-int st_mcast_join(struct st_main_impl* impl, uint32_t group_addr, enum st_port port) {
+int st_mcast_join(struct mtl_main_impl* impl, uint32_t group_addr, enum mtl_port port) {
   struct st_mcast_impl* mcast = &impl->mcast;
   struct rte_ether_addr mcast_mac;
   struct st_interface* inf = st_if(impl, port);
@@ -436,7 +436,7 @@ int st_mcast_join(struct st_main_impl* impl, uint32_t group_addr, enum st_port p
 
 /* not implement fast leave report for IGMPv3, just stop sending join report, */
 /* after a while the switch will delete the port in the multicast group */
-int st_mcast_leave(struct st_main_impl* impl, uint32_t group_addr, enum st_port port) {
+int st_mcast_leave(struct mtl_main_impl* impl, uint32_t group_addr, enum mtl_port port) {
   struct st_mcast_impl* mcast = &impl->mcast;
   int group_num = mcast->group_num[port];
   struct st_interface* inf = st_if(impl, port);
@@ -472,7 +472,7 @@ int st_mcast_leave(struct st_main_impl* impl, uint32_t group_addr, enum st_port 
   return 0;
 }
 
-int st_mcast_restore(struct st_main_impl* impl, enum st_port port) {
+int st_mcast_restore(struct mtl_main_impl* impl, enum mtl_port port) {
   struct st_interface* inf = st_if(impl, port);
   uint16_t port_id = inf->port_id;
 
@@ -486,14 +486,14 @@ int st_mcast_restore(struct st_main_impl* impl, enum st_port port) {
   return 0;
 }
 
-int st_mcast_l2_join(struct st_main_impl* impl, struct rte_ether_addr* addr,
-                     enum st_port port) {
+int st_mcast_l2_join(struct mtl_main_impl* impl, struct rte_ether_addr* addr,
+                     enum mtl_port port) {
   struct st_interface* inf = st_if(impl, port);
   return mcast_inf_add_mac(inf, addr);
 }
 
-int st_mcast_l2_leave(struct st_main_impl* impl, struct rte_ether_addr* addr,
-                      enum st_port port) {
+int st_mcast_l2_leave(struct mtl_main_impl* impl, struct rte_ether_addr* addr,
+                      enum mtl_port port) {
   struct st_interface* inf = st_if(impl, port);
   return mcast_inf_remove_mac(inf, addr);
 }

@@ -7,11 +7,11 @@
 
 #include "st_main.h"
 
-void st_tx_video_sessions_stat(struct st_main_impl* impl);
+void st_tx_video_sessions_stat(struct mtl_main_impl* impl);
 
-int st_tx_video_sessions_sch_init(struct st_main_impl* impl, struct st_sch_impl* sch);
+int st_tx_video_sessions_sch_init(struct mtl_main_impl* impl, struct st_sch_impl* sch);
 
-int st_tx_video_sessions_sch_uinit(struct st_main_impl* impl, struct st_sch_impl* sch);
+int st_tx_video_sessions_sch_uinit(struct mtl_main_impl* impl, struct st_sch_impl* sch);
 
 /* call tx_video_session_put always if get successfully */
 static inline struct st_tx_video_session_impl* tx_video_session_get(
@@ -61,7 +61,7 @@ static inline float tx_video_session_get_cpu_busy(struct st_tx_video_session_imp
   return s->cpu_busy_score;
 }
 
-int st_tx_video_session_migrate(struct st_main_impl* impl,
+int st_tx_video_session_migrate(struct mtl_main_impl* impl,
                                 struct st_tx_video_sessions_mgr* mgr,
                                 struct st_tx_video_session_impl* s, int idx);
 

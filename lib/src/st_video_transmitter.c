@@ -28,7 +28,7 @@ static int video_trs_tasklet_stop(void* priv) {
 }
 
 /* warm start for the first packet */
-static int video_trs_rl_warm_up(struct st_main_impl* impl,
+static int video_trs_rl_warm_up(struct mtl_main_impl* impl,
                                 struct st_tx_video_session_impl* s,
                                 enum st_session_port s_port) {
   struct st_tx_video_pacing* pacing = &s->pacing;
@@ -117,7 +117,7 @@ static int video_burst_packet(struct st_tx_video_session_impl* s,
   return 0;
 }
 
-static int _video_trs_rl_tasklet(struct st_main_impl* impl,
+static int _video_trs_rl_tasklet(struct mtl_main_impl* impl,
                                  struct st_tx_video_session_impl* s,
                                  enum st_session_port s_port, int* ret_status) {
   unsigned int bulk = s->bulk;
@@ -262,7 +262,7 @@ static int _video_trs_rl_tasklet(struct st_main_impl* impl,
   return ST_TASKLET_HAS_PENDING;
 }
 
-static int video_trs_rl_tasklet(struct st_main_impl* impl,
+static int video_trs_rl_tasklet(struct mtl_main_impl* impl,
                                 struct st_tx_video_session_impl* s,
                                 enum st_session_port s_port) {
   int pending = ST_TASKLET_ALL_DONE;
@@ -281,7 +281,7 @@ static int video_trs_rl_tasklet(struct st_main_impl* impl,
   return pending;
 }
 
-static int video_trs_tsc_tasklet(struct st_main_impl* impl,
+static int video_trs_tsc_tasklet(struct mtl_main_impl* impl,
                                  struct st_tx_video_session_impl* s,
                                  enum st_session_port s_port) {
   unsigned int bulk = 1; /* only one packet now for tsc */
@@ -399,7 +399,7 @@ static int video_trs_tsc_tasklet(struct st_main_impl* impl,
   return ST_TASKLET_HAS_PENDING;
 }
 
-static int video_trs_ptp_tasklet(struct st_main_impl* impl,
+static int video_trs_ptp_tasklet(struct mtl_main_impl* impl,
                                  struct st_tx_video_session_impl* s,
                                  enum st_session_port s_port) {
   unsigned int bulk = 1; /* only one packet now for tsc */
@@ -411,7 +411,7 @@ static int video_trs_ptp_tasklet(struct st_main_impl* impl,
   /* check if it's pending on the tsc */
   target_ptp = s->trs_target_tsc[s_port];
   if (target_ptp) {
-    cur_ptp = st_get_ptp_time(impl, ST_PORT_P);
+    cur_ptp = st_get_ptp_time(impl, MTL_PORT_P);
     if (cur_ptp < target_ptp) {
       uint64_t delta = target_ptp - cur_ptp;
       if (likely(delta < NS_PER_S)) {
@@ -478,7 +478,7 @@ static int video_trs_ptp_tasklet(struct st_main_impl* impl,
     s->pri_nic_inflight_cnt = 0;
   }
 
-  cur_ptp = st_get_ptp_time(impl, ST_PORT_P);
+  cur_ptp = st_get_ptp_time(impl, MTL_PORT_P);
   target_ptp = st_tx_mbuf_get_ptp(pkts[0]);
   if (cur_ptp < target_ptp) {
     unsigned int i;
@@ -519,7 +519,7 @@ static int video_trs_ptp_tasklet(struct st_main_impl* impl,
 
 static int video_trs_tasklet_handler(void* priv) {
   struct st_video_transmitter_impl* trs = priv;
-  struct st_main_impl* impl = trs->parnet;
+  struct mtl_main_impl* impl = trs->parnet;
   struct st_tx_video_sessions_mgr* mgr = trs->mgr;
   struct st_tx_video_session_impl* s;
   int sidx, s_port;
@@ -559,7 +559,7 @@ int st_video_reslove_pacing_tasklet(struct st_tx_video_session_impl* s,
   return 0;
 }
 
-int st_video_transmitter_init(struct st_main_impl* impl, struct st_sch_impl* sch,
+int st_video_transmitter_init(struct mtl_main_impl* impl, struct st_sch_impl* sch,
                               struct st_tx_video_sessions_mgr* mgr,
                               struct st_video_transmitter_impl* trs) {
   int idx = sch->idx;

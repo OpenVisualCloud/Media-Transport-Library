@@ -16,11 +16,11 @@
 
 #define RFC3550_RTP_HDR_LEN (12)
 
-#define ST_LITTLE_ENDIAN
+#define MTL_LITTLE_ENDIAN
 
 /* The 32-bit audio data */
 struct am824_be {
-#ifdef ST_LITTLE_ENDIAN
+#ifdef MTL_LITTLE_ENDIAN
   uint8_t v : 1;
   uint8_t u : 1;
   uint8_t c : 1;
@@ -42,7 +42,7 @@ struct am824_be {
 typedef struct am824_be am824_t;
 
 struct aes3_le {
-#ifdef ST_LITTLE_ENDIAN
+#ifdef MTL_LITTLE_ENDIAN
   uint8_t preamble : 4;
   uint8_t data_0 : 4;
   uint16_t data_1;

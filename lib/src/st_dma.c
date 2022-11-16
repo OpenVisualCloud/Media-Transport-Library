@@ -6,19 +6,19 @@
 
 #include "st_log.h"
 
-static inline struct st_map_mgr* st_get_map_mgr(struct st_main_impl* impl) {
+static inline struct st_map_mgr* st_get_map_mgr(struct mtl_main_impl* impl) {
   return &impl->map_mgr;
 }
 
-int st_map_add(struct st_main_impl* impl, struct st_map_item* item) {
+int st_map_add(struct mtl_main_impl* impl, struct st_map_item* item) {
   struct st_map_mgr* mgr = st_get_map_mgr(impl);
   void* start = item->vaddr;
   void* end = start + item->size;
   struct st_map_item* i_item;
   void* i_start;
   void* i_end;
-  st_iova_t iova_base = 0x10000; /* assume user IOVA start from 1M */
-  st_iova_t iova_end;
+  mtl_iova_t iova_base = 0x10000; /* assume user IOVA start from 1M */
+  mtl_iova_t iova_end;
 
   st_pthread_mutex_lock(&mgr->mutex);
 
@@ -48,7 +48,7 @@ int st_map_add(struct st_main_impl* impl, struct st_map_item* item) {
   for (int i = 0; i < ST_MAP_MAX_ITEMS; i++) {
     i_item = mgr->items[i];
     if (i_item) continue;
-    i_item = st_rte_zmalloc_socket(sizeof(*i_item), st_socket_id(impl, ST_PORT_P));
+    i_item = st_rte_zmalloc_socket(sizeof(*i_item), st_socket_id(impl, MTL_PORT_P));
     if (!i_item) {
       err("%s, i_item malloc fail\n", __func__);
       st_pthread_mutex_unlock(&mgr->mutex);
@@ -67,7 +67,7 @@ int st_map_add(struct st_main_impl* impl, struct st_map_item* item) {
   return -EIO;
 }
 
-int st_map_remove(struct st_main_impl* impl, struct st_map_item* item) {
+int st_map_remove(struct mtl_main_impl* impl, struct st_map_item* item) {
   struct st_map_mgr* mgr = st_get_map_mgr(impl);
   void* start = item->vaddr;
   void* end = start + item->size;
@@ -99,7 +99,7 @@ int st_map_remove(struct st_main_impl* impl, struct st_map_item* item) {
   return -EIO;
 }
 
-int st_map_init(struct st_main_impl* impl) {
+int st_map_init(struct mtl_main_impl* impl) {
   struct st_map_mgr* mgr = st_get_map_mgr(impl);
 
   st_pthread_mutex_init(&mgr->mutex, NULL);
@@ -107,7 +107,7 @@ int st_map_init(struct st_main_impl* impl) {
   return 0;
 }
 
-int st_map_uinit(struct st_main_impl* impl) {
+int st_map_uinit(struct mtl_main_impl* impl) {
   struct st_map_mgr* mgr = st_get_map_mgr(impl);
   struct st_map_item* item;
 
@@ -129,13 +129,13 @@ int st_map_uinit(struct st_main_impl* impl) {
 #if RTE_VERSION >= RTE_VERSION_NUM(21, 11, 0, 0)
 #include <rte_dmadev.h>
 
-static void dma_copy_test(struct st_main_impl* impl, struct st_dma_lender_dev* dev,
+static void dma_copy_test(struct mtl_main_impl* impl, struct mtl_dma_lender_dev* dev,
                           uint32_t off, uint32_t len) {
   void *dst = NULL, *src = NULL;
   int idx = st_dma_dev_id(dev);
 
-  dst = st_rte_zmalloc_socket(len, st_socket_id(impl, ST_PORT_P));
-  src = st_rte_zmalloc_socket(len, st_socket_id(impl, ST_PORT_P));
+  dst = st_rte_zmalloc_socket(len, st_socket_id(impl, MTL_PORT_P));
+  src = st_rte_zmalloc_socket(len, st_socket_id(impl, MTL_PORT_P));
   memset(src, 0x55, len);
 
   if (dst && src) {
@@ -161,14 +161,14 @@ static void dma_copy_test(struct st_main_impl* impl, struct st_dma_lender_dev* d
   if (src) st_rte_free(src);
 }
 
-static void dma_fill_test(struct st_main_impl* impl, struct st_dma_lender_dev* dev,
+static void dma_fill_test(struct mtl_main_impl* impl, struct mtl_dma_lender_dev* dev,
                           uint32_t off, uint32_t len, uint8_t pattern) {
   void *dst = NULL, *src = NULL;
   int idx = st_dma_dev_id(dev);
   uint64_t pattern_u64 = 0;
 
-  dst = st_rte_zmalloc_socket(len, st_socket_id(impl, ST_PORT_P));
-  src = st_rte_zmalloc_socket(len, st_socket_id(impl, ST_PORT_P));
+  dst = st_rte_zmalloc_socket(len, st_socket_id(impl, MTL_PORT_P));
+  src = st_rte_zmalloc_socket(len, st_socket_id(impl, MTL_PORT_P));
   memset(src, pattern, len);
 
   /* pattern to u64 */
@@ -196,15 +196,15 @@ static void dma_fill_test(struct st_main_impl* impl, struct st_dma_lender_dev* d
   if (src) st_rte_free(src);
 }
 
-static void dma_test(struct st_main_impl* impl) {
+static void dma_test(struct mtl_main_impl* impl) {
   struct st_dma_request_req req;
   req.nb_desc = 128;
   req.max_shared = 1;
   req.sch_idx = 0;
-  req.socket_id = st_socket_id(impl, ST_PORT_P);
+  req.socket_id = st_socket_id(impl, MTL_PORT_P);
   req.priv = NULL;
   req.drop_mbuf_cb = NULL;
-  struct st_dma_lender_dev* dev = st_dma_request_dev(impl, &req);
+  struct mtl_dma_lender_dev* dev = st_dma_request_dev(impl, &req);
   if (!dev) return;
 
   dma_copy_test(impl, dev, 0, 1024);
@@ -215,7 +215,7 @@ static void dma_test(struct st_main_impl* impl) {
 
 static int dma_drop_mbuf(struct st_dma_dev* dma_dev, uint16_t nb_mbuf) {
   struct rte_mbuf* mbuf = NULL;
-  struct st_dma_lender_dev* mbuf_dev;
+  struct mtl_dma_lender_dev* mbuf_dev;
 
   for (uint16_t i = 0; i < nb_mbuf; i++) {
 #if ST_DMA_RTE_RING
@@ -242,7 +242,7 @@ static int dma_drop_mbuf(struct st_dma_dev* dma_dev, uint16_t nb_mbuf) {
   return 0;
 }
 
-static int dma_hw_start(struct st_main_impl* impl, struct st_dma_dev* dev,
+static int dma_hw_start(struct mtl_main_impl* impl, struct st_dma_dev* dev,
                         uint16_t nb_desc) {
   struct rte_dma_info info;
   struct rte_dma_conf dev_config = {.nb_vchans = 1};
@@ -297,7 +297,7 @@ static int dma_hw_stop(struct st_dma_dev* dev) {
   return 0;
 }
 
-static int dma_sw_init(struct st_main_impl* impl, struct st_dma_dev* dev) {
+static int dma_sw_init(struct mtl_main_impl* impl, struct st_dma_dev* dev) {
   int idx = dev->idx;
 #if ST_DMA_RTE_RING
   char ring_name[32];
@@ -307,7 +307,7 @@ static int dma_sw_init(struct st_main_impl* impl, struct st_dma_dev* dev) {
   snprintf(ring_name, 32, "RX-DMA-BORROW-RING-D%d", idx);
   flags = RING_F_SP_ENQ | RING_F_SC_DEQ;
   count = dev->nb_desc;
-  ring = rte_ring_create(ring_name, count, st_socket_id(impl, ST_PORT_P), flags);
+  ring = rte_ring_create(ring_name, count, st_socket_id(impl, MTL_PORT_P), flags);
   if (!ring) {
     err("%s(%d), rte_ring_create fail\n", __func__, idx);
     return -ENOMEM;
@@ -317,7 +317,7 @@ static int dma_sw_init(struct st_main_impl* impl, struct st_dma_dev* dev) {
   dev->inflight_enqueue_idx = 0;
   dev->inflight_dequeue_idx = 0;
   dev->inflight_mbufs = st_rte_zmalloc_socket(sizeof(*dev->inflight_mbufs) * dev->nb_desc,
-                                              st_socket_id(impl, ST_PORT_P));
+                                              st_socket_id(impl, MTL_PORT_P));
   if (!dev->inflight_mbufs) {
     err("%s(%d), inflight_mbufs alloc fail\n", __func__, idx);
     return -ENOMEM;
@@ -356,7 +356,7 @@ static int dma_sw_uinit(struct st_dma_dev* dev) {
   return 0;
 }
 
-static int dma_stat(struct st_main_impl* impl, struct st_dma_dev* dev) {
+static int dma_stat(struct mtl_main_impl* impl, struct st_dma_dev* dev) {
   int16_t dev_id = dev->dev_id;
   int idx = dev->idx;
   struct rte_dma_stats stats;
@@ -374,7 +374,7 @@ static int dma_stat(struct st_main_impl* impl, struct st_dma_dev* dev) {
   return 0;
 }
 
-static int dma_free(struct st_main_impl* impl, struct st_dma_dev* dev) {
+static int dma_free(struct mtl_main_impl* impl, struct st_dma_dev* dev) {
   if (!dev->active) {
     err("%s(%d), not active\n", __func__, dev->idx);
     return -EIO;
@@ -387,11 +387,11 @@ static int dma_free(struct st_main_impl* impl, struct st_dma_dev* dev) {
   return 0;
 }
 
-struct st_dma_lender_dev* st_dma_request_dev(struct st_main_impl* impl,
+struct mtl_dma_lender_dev* st_dma_request_dev(struct mtl_main_impl* impl,
                                              struct st_dma_request_req* req) {
   struct st_dma_mgr* mgr = st_get_dma_mgr(impl);
   struct st_dma_dev* dev;
-  struct st_dma_lender_dev* lender_dev;
+  struct mtl_dma_lender_dev* lender_dev;
   int idx, ret;
 
   if (!mgr->num_dma_dev) return NULL;
@@ -401,7 +401,7 @@ struct st_dma_lender_dev* st_dma_request_dev(struct st_main_impl* impl,
 
   st_pthread_mutex_lock(&mgr->mutex);
   /* first try to find a shared dma */
-  for (idx = 0; idx < ST_DMA_DEV_MAX; idx++) {
+  for (idx = 0; idx < MTL_DMA_DEV_MAX; idx++) {
     dev = &mgr->devs[idx];
     if (dev->active && (dev->sch_idx == req->sch_idx) &&
         (dev->soc_id == req->socket_id) && (dev->nb_session < dev->max_shared)) {
@@ -421,7 +421,7 @@ struct st_dma_lender_dev* st_dma_request_dev(struct st_main_impl* impl,
     }
   }
   /* now try to create a new dma */
-  for (idx = 0; idx < ST_DMA_DEV_MAX; idx++) {
+  for (idx = 0; idx < MTL_DMA_DEV_MAX; idx++) {
     dev = &mgr->devs[idx];
     if (dev->usable && !dev->active && (dev->soc_id == req->socket_id)) {
       ret = dma_hw_start(impl, dev, nb_desc);
@@ -454,7 +454,7 @@ struct st_dma_lender_dev* st_dma_request_dev(struct st_main_impl* impl,
   return NULL;
 }
 
-int st_dma_free_dev(struct st_main_impl* impl, struct st_dma_lender_dev* dev) {
+int st_dma_free_dev(struct mtl_main_impl* impl, struct mtl_dma_lender_dev* dev) {
   struct st_dma_dev* dma_dev = dev->parent;
   int idx = dev->lender_id;
   int dma_idx = dma_dev->idx;
@@ -478,32 +478,32 @@ int st_dma_free_dev(struct st_main_impl* impl, struct st_dma_lender_dev* dev) {
   return 0;
 }
 
-int st_dma_copy(struct st_dma_lender_dev* dev, rte_iova_t dst, rte_iova_t src,
+int st_dma_copy(struct mtl_dma_lender_dev* dev, rte_iova_t dst, rte_iova_t src,
                 uint32_t length) {
   struct st_dma_dev* dma_dev = dev->parent;
   return rte_dma_copy(dma_dev->dev_id, 0, src, dst, length, 0);
 }
 
-int st_dma_fill(struct st_dma_lender_dev* dev, rte_iova_t dst, uint64_t pattern,
+int st_dma_fill(struct mtl_dma_lender_dev* dev, rte_iova_t dst, uint64_t pattern,
                 uint32_t length) {
   struct st_dma_dev* dma_dev = dev->parent;
   return rte_dma_fill(dma_dev->dev_id, 0, pattern, dst, length, 0);
 }
 
-int st_dma_submit(struct st_dma_lender_dev* dev) {
+int st_dma_submit(struct mtl_dma_lender_dev* dev) {
   struct st_dma_dev* dma_dev = dev->parent;
   dma_dev->stat_commit_sum++;
   dma_dev->stat_inflight_sum += dma_dev->nb_inflight;
   return rte_dma_submit(dma_dev->dev_id, 0);
 }
 
-uint16_t st_dma_completed(struct st_dma_lender_dev* dev, uint16_t nb_cpls,
+uint16_t st_dma_completed(struct mtl_dma_lender_dev* dev, uint16_t nb_cpls,
                           uint16_t* last_idx, bool* has_error) {
   struct st_dma_dev* dma_dev = dev->parent;
   return rte_dma_completed(dma_dev->dev_id, 0, nb_cpls, NULL, NULL);
 }
 
-int st_dma_borrow_mbuf(struct st_dma_lender_dev* dev, struct rte_mbuf* mbuf) {
+int st_dma_borrow_mbuf(struct mtl_dma_lender_dev* dev, struct rte_mbuf* mbuf) {
   struct st_dma_dev* dma_dev = dev->parent;
 
   st_rx_mbuf_set_lender(mbuf, dev->lender_id);
@@ -524,11 +524,11 @@ int st_dma_borrow_mbuf(struct st_dma_lender_dev* dev, struct rte_mbuf* mbuf) {
   return 0;
 }
 
-int st_dma_drop_mbuf(struct st_dma_lender_dev* dev, uint16_t nb_mbuf) {
+int st_dma_drop_mbuf(struct mtl_dma_lender_dev* dev, uint16_t nb_mbuf) {
   return dma_drop_mbuf(dev->parent, nb_mbuf);
 }
 
-bool st_dma_full(struct st_dma_lender_dev* dev) {
+bool st_dma_full(struct mtl_dma_lender_dev* dev) {
   struct st_dma_dev* dma_dev = dev->parent;
 #if ST_DMA_RTE_RING
   return rte_ring_full(dma_dev->borrow_queue) ? true : false;
@@ -537,19 +537,19 @@ bool st_dma_full(struct st_dma_lender_dev* dev) {
 #endif
 }
 
-int st_dma_init(struct st_main_impl* impl) {
+int st_dma_init(struct mtl_main_impl* impl) {
   struct st_dma_mgr* mgr = st_get_dma_mgr(impl);
   int16_t dev_id;
   int idx;
   struct st_dma_dev* dev;
   struct rte_dma_info dev_info;
   bool test = false;
-  struct st_dma_lender_dev* lender_dev;
+  struct mtl_dma_lender_dev* lender_dev;
 
   st_pthread_mutex_init(&mgr->mutex, NULL);
 
   /* init idx */
-  for (idx = 0; idx < ST_DMA_DEV_MAX; idx++) {
+  for (idx = 0; idx < MTL_DMA_DEV_MAX; idx++) {
     dev = &mgr->devs[idx];
     dev->idx = idx;
   }
@@ -581,12 +581,12 @@ int st_dma_init(struct st_main_impl* impl) {
   return 0;
 }
 
-int st_dma_uinit(struct st_main_impl* impl) {
+int st_dma_uinit(struct mtl_main_impl* impl) {
   struct st_dma_mgr* mgr = st_get_dma_mgr(impl);
   int idx;
   struct st_dma_dev* dev;
 
-  for (idx = 0; idx < ST_DMA_DEV_MAX; idx++) {
+  for (idx = 0; idx < MTL_DMA_DEV_MAX; idx++) {
     dev = &mgr->devs[idx];
     if (dev->active) {
       warn("%s(%d), still active\n", __func__, idx);
@@ -597,12 +597,12 @@ int st_dma_uinit(struct st_main_impl* impl) {
   return 0;
 }
 
-int st_dma_stat(struct st_main_impl* impl) {
+int st_dma_stat(struct mtl_main_impl* impl) {
   struct st_dma_mgr* mgr = st_get_dma_mgr(impl);
   int idx;
   struct st_dma_dev* dev;
 
-  for (idx = 0; idx < ST_DMA_DEV_MAX; idx++) {
+  for (idx = 0; idx < MTL_DMA_DEV_MAX; idx++) {
     dev = &mgr->devs[idx];
     if (dev->active) dma_stat(impl, dev);
   }
@@ -610,8 +610,8 @@ int st_dma_stat(struct st_main_impl* impl) {
   return 0;
 }
 #else
-int st_dma_init(struct st_main_impl* impl) {
-  struct st_init_params* p = st_get_user_params(impl);
+int st_dma_init(struct mtl_main_impl* impl) {
+  struct mtl_init_params* p = st_get_user_params(impl);
 
   if (p->num_dma_dev_port) {
     err("%s, total dma dev %d requested, but the lib build without dma dev support\n",
@@ -621,34 +621,34 @@ int st_dma_init(struct st_main_impl* impl) {
   return -EINVAL;
 }
 
-int st_dma_uinit(struct st_main_impl* impl) { return -EINVAL; }
+int st_dma_uinit(struct mtl_main_impl* impl) { return -EINVAL; }
 
-int st_dma_stat(struct st_main_impl* impl) { return -EINVAL; }
+int st_dma_stat(struct mtl_main_impl* impl) { return -EINVAL; }
 
-struct st_dma_lender_dev* st_dma_request_dev(struct st_main_impl* impl,
+struct mtl_dma_lender_dev* st_dma_request_dev(struct mtl_main_impl* impl,
                                              struct st_dma_request_req* req) {
   return NULL;
 }
-int st_dma_free_dev(struct st_main_impl* impl, struct st_dma_lender_dev* dev) {
+int st_dma_free_dev(struct mtl_main_impl* impl, struct mtl_dma_lender_dev* dev) {
   return -EINVAL;
 }
-int st_dma_borrow_mbuf(struct st_dma_lender_dev* dev, struct rte_mbuf* mbuf) {
+int st_dma_borrow_mbuf(struct mtl_dma_lender_dev* dev, struct rte_mbuf* mbuf) {
   return -EINVAL;
 }
-int st_dma_drop_mbuf(struct st_dma_lender_dev* dev, uint16_t nb_mbuf) { return -EINVAL; }
-int st_dma_copy(struct st_dma_lender_dev* dev, rte_iova_t dst, rte_iova_t src,
+int st_dma_drop_mbuf(struct mtl_dma_lender_dev* dev, uint16_t nb_mbuf) { return -EINVAL; }
+int st_dma_copy(struct mtl_dma_lender_dev* dev, rte_iova_t dst, rte_iova_t src,
                 uint32_t length) {
   return -EINVAL;
 }
-int st_dma_fill(struct st_dma_lender_dev* dev, rte_iova_t dst, uint64_t pattern,
+int st_dma_fill(struct mtl_dma_lender_dev* dev, rte_iova_t dst, uint64_t pattern,
                 uint32_t length) {
   return -EINVAL;
 }
-int st_dma_submit(struct st_dma_lender_dev* dev) { return -EINVAL; }
-uint16_t st_dma_completed(struct st_dma_lender_dev* dev, uint16_t nb_cpls,
+int st_dma_submit(struct mtl_dma_lender_dev* dev) { return -EINVAL; }
+uint16_t st_dma_completed(struct mtl_dma_lender_dev* dev, uint16_t nb_cpls,
                           uint16_t* last_idx, bool* has_error) {
   return 0;
 }
-bool st_dma_full(struct st_dma_lender_dev* dev) { return true; }
+bool st_dma_full(struct mtl_dma_lender_dev* dev) { return true; }
 
 #endif

@@ -182,7 +182,7 @@ static int app_rx_st22_init(struct st_app_context* ctx, struct st22_app_rx_sessi
   s->bytes_per_frame = s->width * s->height * bpp / 8;
 
   uint32_t soc = 0, b = 0, d = 0, f = 0;
-  sscanf(ctx->para.port[ST_PORT_P], "%x:%x:%x.%x", &soc, &b, &d, &f);
+  sscanf(ctx->para.port[MTL_PORT_P], "%x:%x:%x.%x", &soc, &b, &d, &f);
   snprintf(s->st22_dst_url, ST_APP_URL_MAX_LEN,
            "st22_app%d_%d_%d_%02x_%02x_%02x_%02x.raw", idx, s->width, s->height, soc, b,
            d, f);
@@ -191,13 +191,13 @@ static int app_rx_st22_init(struct st_app_context* ctx, struct st22_app_rx_sessi
   ops.name = name;
   ops.priv = s;
   ops.num_port = ctx->para.num_ports;
-  memcpy(ops.sip_addr[ST_PORT_P], ctx->rx_sip_addr[ST_PORT_P], ST_IP_ADDR_LEN);
-  strncpy(ops.port[ST_PORT_P], ctx->para.port[ST_PORT_P], ST_PORT_MAX_LEN);
-  ops.udp_port[ST_PORT_P] = 15000 + s->idx;
+  memcpy(ops.sip_addr[MTL_PORT_P], ctx->rx_sip_addr[MTL_PORT_P], MTL_IP_ADDR_LEN);
+  strncpy(ops.port[MTL_PORT_P], ctx->para.port[MTL_PORT_P], MTL_PORT_MAX_LEN);
+  ops.udp_port[MTL_PORT_P] = 15000 + s->idx;
   if (ops.num_port > 1) {
-    memcpy(ops.sip_addr[ST_PORT_R], ctx->rx_sip_addr[ST_PORT_R], ST_IP_ADDR_LEN);
-    strncpy(ops.port[ST_PORT_R], ctx->para.port[ST_PORT_R], ST_PORT_MAX_LEN);
-    ops.udp_port[ST_PORT_R] = 15000 + s->idx;
+    memcpy(ops.sip_addr[MTL_PORT_R], ctx->rx_sip_addr[MTL_PORT_R], MTL_IP_ADDR_LEN);
+    strncpy(ops.port[MTL_PORT_R], ctx->para.port[MTL_PORT_R], MTL_PORT_MAX_LEN);
+    ops.udp_port[MTL_PORT_R] = 15000 + s->idx;
   }
   ops.pacing = ST21_PACING_NARROW;
   ops.width = s->width;

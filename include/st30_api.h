@@ -9,7 +9,7 @@
  *
  */
 
-#include "mtl_api.h"
+#include "st_api.h"
 
 #ifndef _ST30_API_HEAD_H_
 #define _ST30_API_HEAD_H_
@@ -31,32 +31,32 @@ typedef struct st_rx_audio_session_handle_impl* st30_rx_handle;
  * Flag bit in flags of struct st30_tx_ops.
  * P TX destination mac assigned by user
  */
-#define ST30_TX_FLAG_USER_P_MAC (ST_BIT32(0))
+#define ST30_TX_FLAG_USER_P_MAC (MTL_BIT32(0))
 /**
  * Flag bit in flags of struct st30_tx_ops.
  * R TX destination mac assigned by user
  */
-#define ST30_TX_FLAG_USER_R_MAC (ST_BIT32(1))
+#define ST30_TX_FLAG_USER_R_MAC (MTL_BIT32(1))
 
 /**
  * Flag bit in flags of struct st30_tx_ops.
  * User control the frame pacing by pass a timestamp in st30_tx_frame_meta,
  * lib will wait until timestamp is reached for each frame.
  */
-#define ST30_TX_FLAG_USER_PACING (ST_BIT32(3))
+#define ST30_TX_FLAG_USER_PACING (MTL_BIT32(3))
 /**
  * Flag bit in flags of struct st30_tx_ops.
  * If enabled, lib will assign the rtp timestamp to the value in
  * st30_tx_frame_meta(ST10_TIMESTAMP_FMT_MEDIA_CLK is used)
  */
-#define ST30_TX_FLAG_USER_TIMESTAMP (ST_BIT32(4))
+#define ST30_TX_FLAG_USER_TIMESTAMP (MTL_BIT32(4))
 
 /**
- * Flag bit in flags of struct st30_rx_ops, for non ST_PMD_DPDK_USER.
+ * Flag bit in flags of struct st30_rx_ops, for non MTL_PMD_DPDK_USER.
  * If set, it's application duty to set the rx flow(queue) and muticast join/drop.
  * Use st30_rx_get_queue_meta to get the queue meta(queue number etc) info.
  */
-#define ST30_RX_FLAG_DATA_PATH_ONLY (ST_BIT32(0))
+#define ST30_RX_FLAG_DATA_PATH_ONLY (MTL_BIT32(0))
 
 /**
  * Payload format of st2110-30/31(audio) streaming
@@ -108,7 +108,7 @@ enum st30_type {
  * A structure describing a AM824 subframe
  */
 struct st31_am824 {
-#ifdef ST_LITTLE_ENDIAN
+#ifdef MTL_LITTLE_ENDIAN
   /** v bit in am824 */
   uint8_t v : 1;
   /** u bit in am824 */
@@ -147,7 +147,7 @@ struct st31_am824 {
  * A structure describing a AES3 subframe
  */
 struct st31_aes3 {
-#ifdef ST_LITTLE_ENDIAN
+#ifdef MTL_LITTLE_ENDIAN
   /** preamble in aes3 */
   uint8_t preamble : 4;
   /** data_0 in aes3 */
@@ -228,13 +228,13 @@ struct st30_tx_ops {
   /** private data to the callback function */
   void* priv;
   /** destination IP address */
-  uint8_t dip_addr[ST_PORT_MAX][ST_IP_ADDR_LEN];
+  uint8_t dip_addr[MTL_PORT_MAX][MTL_IP_ADDR_LEN];
   /** Pcie BDF path like 0000:af:00.0, should align to BDF of st_init */
-  char port[ST_PORT_MAX][ST_PORT_MAX_LEN];
+  char port[MTL_PORT_MAX][MTL_PORT_MAX_LEN];
   /** 1 or 2, num of ports this session attached to */
   uint8_t num_port;
   /** UDP port number */
-  uint16_t udp_port[ST_PORT_MAX];
+  uint16_t udp_port[MTL_PORT_MAX];
 
   /** Session payload format */
   enum st30_fmt fmt;
@@ -264,7 +264,7 @@ struct st30_tx_ops {
    * tx destination mac address.
    * Valid if ST30_TX_FLAG_USER_P(R)_MAC is enabled
    */
-  uint8_t tx_dst_mac[ST_PORT_MAX][6];
+  uint8_t tx_dst_mac[MTL_PORT_MAX][6];
 
   /**
    * the frame buffer count requested for one st30 tx session,
@@ -321,13 +321,13 @@ struct st30_rx_ops {
   /** private data to the callback function */
   void* priv;
   /** source IP address of sender */
-  uint8_t sip_addr[ST_PORT_MAX][ST_IP_ADDR_LEN];
+  uint8_t sip_addr[MTL_PORT_MAX][MTL_IP_ADDR_LEN];
   /** 1 or 2, num of ports this session attached to */
   uint8_t num_port;
   /** Pcie BDF path like 0000:af:00.0, should align to BDF of st_init */
-  char port[ST_PORT_MAX][ST_PORT_MAX_LEN];
+  char port[MTL_PORT_MAX][MTL_PORT_MAX_LEN];
   /** UDP port number */
-  uint16_t udp_port[ST_PORT_MAX];
+  uint16_t udp_port[MTL_PORT_MAX];
   /** flags, value in ST30_RX_FLAG_* */
   uint32_t flags;
 
@@ -403,7 +403,7 @@ struct st30_rx_ops {
  *   - NULL on error.
  *   - Otherwise, the handle to the tx st2110-30(audio) session.
  */
-st30_tx_handle st30_tx_create(st_handle st, struct st30_tx_ops* ops);
+st30_tx_handle st30_tx_create(mtl_handle st, struct st30_tx_ops* ops);
 
 /**
  * Free the tx st2110-30(audio) session.
@@ -519,7 +519,7 @@ int st30_get_sample_rate(enum st30_sampling sampling);
  *   - NULL on error.
  *   - Otherwise, the handle to the rx st2110-30(audio) session.
  */
-st30_rx_handle st30_rx_create(st_handle st, struct st30_rx_ops* ops);
+st30_rx_handle st30_rx_create(mtl_handle st, struct st30_rx_ops* ops);
 
 /**
  * Online update the source info for the rx st2110-30(audio) session.

@@ -18,7 +18,7 @@ struct tv_split_sample_ctx {
   int fb_total;      /* total frame buffers read from yuv file */
   size_t fb_offset;
 
-  st_dma_mem_handle dma_mem;
+  mtl_dma_mem_handle dma_mem;
 };
 
 static int tx_video_next_frame(void* priv, uint16_t* next_frame_idx,
@@ -58,7 +58,7 @@ int tx_video_frame_done(void* priv, uint16_t frame_idx, struct st20_tx_frame_met
 
 int main(int argc, char** argv) {
   int session_num = 4;
-  st_dma_mem_handle dma_mem = NULL;
+  mtl_dma_mem_handle dma_mem = NULL;
   uint8_t* m = NULL;
   size_t map_size = 0;
   struct st_sample_context ctx;
@@ -96,14 +96,14 @@ int main(int argc, char** argv) {
     ops_tx.name = "st20_tx";
     ops_tx.priv = app[i];  // app handle register to lib
     ops_tx.num_port = 1;
-    memcpy(ops_tx.dip_addr[ST_PORT_P], ctx.tx_dip_addr[ST_PORT_P], ST_IP_ADDR_LEN);
-    strncpy(ops_tx.port[ST_PORT_P], ctx.param.port[ST_PORT_P], ST_PORT_MAX_LEN);
+    memcpy(ops_tx.dip_addr[MTL_PORT_P], ctx.tx_dip_addr[MTL_PORT_P], MTL_IP_ADDR_LEN);
+    strncpy(ops_tx.port[MTL_PORT_P], ctx.param.port[MTL_PORT_P], MTL_PORT_MAX_LEN);
 
     struct st20_pgroup st20_pg;
     st20_get_pgroup(ST20_FMT_YUV_422_10BIT, &st20_pg);
 
     ops_tx.flags |= ST20_TX_FLAG_EXT_FRAME;
-    ops_tx.udp_port[ST_PORT_P] = ctx.udp_port + i;
+    ops_tx.udp_port[MTL_PORT_P] = ctx.udp_port + i;
     ops_tx.pacing = ST21_PACING_NARROW;
     ops_tx.packing = ST20_PACKING_GPM_SL;
     ops_tx.type = ST20_TYPE_FRAME_LEVEL;

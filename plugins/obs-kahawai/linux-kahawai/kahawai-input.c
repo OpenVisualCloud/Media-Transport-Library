@@ -42,7 +42,7 @@ struct kh_rx_session {
   char* ip;
   uint16_t udp_port;
   enum st20_fmt fmt;
-  enum st_log_level log_level;
+  enum mtl_log_level log_level;
   /* detected */
   uint32_t width;
   uint32_t height;
@@ -50,7 +50,7 @@ struct kh_rx_session {
 
   /* internal data */
   obs_source_t* source;
-  st_handle dev_handle;
+  mtl_handle dev_handle;
   struct obs_source_frame out;
   size_t plane_offsets[MAX_AV_PLANES];
 
@@ -245,7 +245,7 @@ static void kahawai_defaults(obs_data_t* settings) {
   obs_data_set_default_string(settings, "ip", "192.168.96.188");
   obs_data_set_default_int(settings, "udp_port", 20000);
   obs_data_set_default_int(settings, "fmt", ST20_FMT_YUV_420_8BIT);
-  obs_data_set_default_int(settings, "log_level", ST_LOG_LEVEL_ERROR);
+  obs_data_set_default_int(settings, "log_level", MTL_LOG_LEVEL_ERROR);
 }
 
 /**
@@ -320,11 +320,11 @@ static obs_properties_t* kahawai_properties(void* vptr) {
   obs_property_t* log_level_list =
       obs_properties_add_list(props, "log_level", obs_module_text("LogLevel"),
                               OBS_COMBO_TYPE_LIST, OBS_COMBO_FORMAT_INT);
-  obs_property_list_add_int(log_level_list, "ERROR", ST_LOG_LEVEL_ERROR);
-  obs_property_list_add_int(log_level_list, "INFO", ST_LOG_LEVEL_INFO);
-  obs_property_list_add_int(log_level_list, "NOTICE", ST_LOG_LEVEL_NOTICE);
-  obs_property_list_add_int(log_level_list, "WARNING", ST_LOG_LEVEL_WARNING);
-  obs_property_list_add_int(log_level_list, "DEBUG", ST_LOG_LEVEL_DEBUG);
+  obs_property_list_add_int(log_level_list, "ERROR", MTL_LOG_LEVEL_ERROR);
+  obs_property_list_add_int(log_level_list, "INFO", MTL_LOG_LEVEL_INFO);
+  obs_property_list_add_int(log_level_list, "NOTICE", MTL_LOG_LEVEL_NOTICE);
+  obs_property_list_add_int(log_level_list, "WARNING", MTL_LOG_LEVEL_WARNING);
+  obs_property_list_add_int(log_level_list, "DEBUG", MTL_LOG_LEVEL_DEBUG);
 
   obs_properties_add_button(props, "start", obs_module_text("Start"), on_start_clicked);
   obs_properties_add_button(props, "stop", obs_module_text("Stop"), on_stop_clicked);
@@ -377,16 +377,16 @@ static void kahawai_destroy(void* vptr) {
 }
 
 static void kahawai_init(struct kh_rx_session* s) {
-  struct st_init_params param;
+  struct mtl_init_params param;
 
   memset(&param, 0, sizeof(param));
   param.num_ports = 1;
-  strncpy(param.port[ST_PORT_P], s->port, ST_PORT_MAX_LEN);
-  inet_pton(AF_INET, s->sip, param.sip_addr[ST_PORT_P]);
-  param.pmd[ST_PORT_P] = ST_PMD_DPDK_USER;
-  param.xdp_info[ST_PORT_P].queue_count = 1;
-  param.xdp_info[ST_PORT_P].start_queue = 16;
-  param.flags = ST_FLAG_BIND_NUMA;  // default bind to numa
+  strncpy(param.port[MTL_PORT_P], s->port, MTL_PORT_MAX_LEN);
+  inet_pton(AF_INET, s->sip, param.sip_addr[MTL_PORT_P]);
+  param.pmd[MTL_PORT_P] = MTL_PMD_DPDK_USER;
+  param.xdp_info[MTL_PORT_P].queue_count = 1;
+  param.xdp_info[MTL_PORT_P].start_queue = 16;
+  param.flags = MTL_FLAG_BIND_NUMA;  // default bind to numa
   param.log_level = s->log_level;   // kahawai lib log level
   param.priv = s;                   // usr ctx pointer
   // user regist ptp func, if not regist, the internal ptp will be used
@@ -395,7 +395,7 @@ static void kahawai_init(struct kh_rx_session* s) {
   param.rx_sessions_cnt_max = 1;
   param.lcores = s->lcores;
   // create device
-  st_handle dev_handle = st_init(&param);
+  mtl_handle dev_handle = st_init(&param);
   if (!dev_handle) {
     blog(LOG_ERROR, "st_init fail\n");
     return;
@@ -417,9 +417,9 @@ static void kahawai_init(struct kh_rx_session* s) {
   ops_rx.name = "kahawai-input";
   ops_rx.priv = s;  // app handle register to lib
   ops_rx.num_port = 1;
-  inet_pton(AF_INET, s->ip, ops_rx.sip_addr[ST_PORT_P]);
-  strncpy(ops_rx.port[ST_PORT_P], s->port, ST_PORT_MAX_LEN);
-  ops_rx.udp_port[ST_PORT_P] = s->udp_port;  // user config the udp port.
+  inet_pton(AF_INET, s->ip, ops_rx.sip_addr[MTL_PORT_P]);
+  strncpy(ops_rx.port[MTL_PORT_P], s->port, MTL_PORT_MAX_LEN);
+  ops_rx.udp_port[MTL_PORT_P] = s->udp_port;  // user config the udp port.
   ops_rx.pacing = ST21_PACING_NARROW;
   ops_rx.type = ST20_TYPE_FRAME_LEVEL;
   ops_rx.width = 1920;
@@ -440,8 +440,8 @@ static void kahawai_init(struct kh_rx_session* s) {
   }
   struct st_queue_meta queue_meta;
   st20_rx_get_queue_meta(s->handle, &queue_meta);
-  blog(LOG_DEBUG, "queue_id %u, start_queue %u\n", queue_meta.queue_id[ST_PORT_P],
-       queue_meta.start_queue[ST_PORT_P]);
+  blog(LOG_DEBUG, "queue_id %u, start_queue %u\n", queue_meta.queue_id[MTL_PORT_P],
+       queue_meta.start_queue[MTL_PORT_P]);
   s->stop = false;
   st_pthread_mutex_init(&s->wake_mutex, NULL);
   st_pthread_cond_init(&s->wake_cond, NULL);

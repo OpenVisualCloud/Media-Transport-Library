@@ -26,7 +26,7 @@
 #include "tx_video_app.h"
 
 static struct st_app_context* g_app_ctx; /* only for st_app_sig_handler */
-static enum st_log_level app_log_level;
+static enum mtl_log_level app_log_level;
 
 static void app_stat(void* priv) {
   struct st_app_context* ctx = priv;
@@ -37,9 +37,9 @@ static void app_stat(void* priv) {
   st_app_rx_st20r_sessions_stat(ctx);
 }
 
-void app_set_log_level(enum st_log_level level) { app_log_level = level; }
+void app_set_log_level(enum mtl_log_level level) { app_log_level = level; }
 
-enum st_log_level app_get_log_level(void) { return app_log_level; }
+enum mtl_log_level app_get_log_level(void) { return app_log_level; }
 
 static uint64_t app_ptp_from_tai_time(void* priv) {
   struct st_app_context* ctx = priv;
@@ -49,22 +49,22 @@ static uint64_t app_ptp_from_tai_time(void* priv) {
   return ((uint64_t)spec.tv_sec * NS_PER_S) + spec.tv_nsec;
 }
 
-static void user_param_init(struct st_app_context* ctx, struct st_init_params* p) {
+static void user_param_init(struct st_app_context* ctx, struct mtl_init_params* p) {
   memset(p, 0x0, sizeof(*p));
 
-  p->pmd[ST_PORT_P] = ST_PMD_DPDK_USER;
-  p->pmd[ST_PORT_R] = ST_PMD_DPDK_USER;
+  p->pmd[MTL_PORT_P] = MTL_PMD_DPDK_USER;
+  p->pmd[MTL_PORT_R] = MTL_PMD_DPDK_USER;
   /* defalut start queue set to 1 */
-  p->xdp_info[ST_PORT_P].start_queue = 1;
-  p->xdp_info[ST_PORT_R].start_queue = 1;
-  p->flags |= ST_FLAG_BIND_NUMA; /* default bind to numa */
-  p->flags |= ST_FLAG_TX_VIDEO_MIGRATE;
-  p->flags |= ST_FLAG_RX_VIDEO_MIGRATE;
-  p->flags |= ST_FLAG_RX_SEPARATE_VIDEO_LCORE;
+  p->xdp_info[MTL_PORT_P].start_queue = 1;
+  p->xdp_info[MTL_PORT_R].start_queue = 1;
+  p->flags |= MTL_FLAG_BIND_NUMA; /* default bind to numa */
+  p->flags |= MTL_FLAG_TX_VIDEO_MIGRATE;
+  p->flags |= MTL_FLAG_RX_VIDEO_MIGRATE;
+  p->flags |= MTL_FLAG_RX_SEPARATE_VIDEO_LCORE;
   p->priv = ctx;
   p->ptp_get_time_fn = app_ptp_from_tai_time;
   p->stat_dump_cb_fn = app_stat;
-  p->log_level = ST_LOG_LEVEL_INFO;
+  p->log_level = MTL_LOG_LEVEL_INFO;
   app_set_log_level(p->log_level);
 }
 

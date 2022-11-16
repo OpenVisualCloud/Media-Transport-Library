@@ -1610,7 +1610,7 @@ int st_app_parse_json(st_json_context_t* ctx, const char* filename) {
       json_object* dip_array = st_json_object_object_get(tx_group, "dip");
       if (dip_array != NULL && json_object_get_type(dip_array) == json_type_array) {
         int len = json_object_array_length(dip_array);
-        if (len < 1 || len > ST_PORT_MAX) {
+        if (len < 1 || len > MTL_PORT_MAX) {
           err("%s, wrong dip number\n", __func__);
           ret = -ST_JSON_NOT_VALID;
           goto error;
@@ -1915,7 +1915,7 @@ int st_app_parse_json(st_json_context_t* ctx, const char* filename) {
       json_object* ip_array = st_json_object_object_get(rx_group, "ip");
       if (ip_array != NULL && json_object_get_type(ip_array) == json_type_array) {
         int len = json_object_array_length(ip_array);
-        if (len < 1 || len > ST_PORT_MAX) {
+        if (len < 1 || len > MTL_PORT_MAX) {
           err("%s, wrong dip number\n", __func__);
           ret = -ST_JSON_NOT_VALID;
           goto error;

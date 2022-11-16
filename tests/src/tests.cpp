@@ -79,23 +79,23 @@ struct st_tests_context* st_test_ctx(void) {
   return g_test_ctx;
 }
 
-static int test_args_dma_dev(struct st_init_params* p, const char* in_dev) {
+static int test_args_dma_dev(struct mtl_init_params* p, const char* in_dev) {
   if (!in_dev) return -EIO;
   char devs[128] = {0};
   strncpy(devs, in_dev, 128 - 1);
 
   dbg("%s, dev list %s\n", __func__, devs);
   char* next_dev = strtok(devs, ",");
-  while (next_dev && (p->num_dma_dev_port < ST_DMA_DEV_MAX)) {
+  while (next_dev && (p->num_dma_dev_port < MTL_DMA_DEV_MAX)) {
     dbg("next_dev: %s\n", next_dev);
-    strncpy(p->dma_dev_port[p->num_dma_dev_port], next_dev, ST_PORT_MAX_LEN - 1);
+    strncpy(p->dma_dev_port[p->num_dma_dev_port], next_dev, MTL_PORT_MAX_LEN - 1);
     p->num_dma_dev_port++;
     next_dev = strtok(NULL, ",");
   }
   return 0;
 }
 
-static int test_parse_args(struct st_tests_context* ctx, struct st_init_params* p,
+static int test_parse_args(struct st_tests_context* ctx, struct mtl_init_params* p,
                            int argc, char** argv) {
   int cmd = -1, opt_idx = 0;
   int nb;
@@ -107,11 +107,11 @@ static int test_parse_args(struct st_tests_context* ctx, struct st_init_params* 
 
     switch (cmd) {
       case TEST_ARG_P_PORT:
-        snprintf(p->port[ST_PORT_P], sizeof(p->port[ST_PORT_P]), "%s", optarg);
+        snprintf(p->port[MTL_PORT_P], sizeof(p->port[MTL_PORT_P]), "%s", optarg);
         p->num_ports++;
         break;
       case TEST_ARG_R_PORT:
-        snprintf(p->port[ST_PORT_R], sizeof(p->port[ST_PORT_R]), "%s", optarg);
+        snprintf(p->port[MTL_PORT_R], sizeof(p->port[MTL_PORT_R]), "%s", optarg);
         p->num_ports++;
         break;
       case TEST_ARG_LCORES:
@@ -128,44 +128,44 @@ static int test_parse_args(struct st_tests_context* ctx, struct st_init_params* 
         break;
       case TEST_ARG_LOG_LEVEL:
         if (!strcmp(optarg, "debug"))
-          p->log_level = ST_LOG_LEVEL_DEBUG;
+          p->log_level = MTL_LOG_LEVEL_DEBUG;
         else if (!strcmp(optarg, "info"))
-          p->log_level = ST_LOG_LEVEL_INFO;
+          p->log_level = MTL_LOG_LEVEL_INFO;
         else if (!strcmp(optarg, "notice"))
-          p->log_level = ST_LOG_LEVEL_NOTICE;
+          p->log_level = MTL_LOG_LEVEL_NOTICE;
         else if (!strcmp(optarg, "warning"))
-          p->log_level = ST_LOG_LEVEL_WARNING;
+          p->log_level = MTL_LOG_LEVEL_WARNING;
         else if (!strcmp(optarg, "error"))
-          p->log_level = ST_LOG_LEVEL_ERROR;
+          p->log_level = MTL_LOG_LEVEL_ERROR;
         else
           err("%s, unknow log level %s\n", __func__, optarg);
         break;
       case TEST_ARG_CNI_THREAD:
-        p->flags |= ST_FLAG_CNI_THREAD;
+        p->flags |= MTL_FLAG_CNI_THREAD;
         break;
       case TEST_ARG_RX_MONO_POOL:
-        p->flags |= ST_FLAG_RX_MONO_POOL;
+        p->flags |= MTL_FLAG_RX_MONO_POOL;
         break;
       case TEST_ARG_TX_MONO_POOL:
-        p->flags |= ST_FLAG_TX_MONO_POOL;
+        p->flags |= MTL_FLAG_TX_MONO_POOL;
         break;
       case TEST_ARG_MONO_POOL:
-        p->flags |= ST_FLAG_RX_MONO_POOL;
-        p->flags |= ST_FLAG_TX_MONO_POOL;
+        p->flags |= MTL_FLAG_RX_MONO_POOL;
+        p->flags |= MTL_FLAG_TX_MONO_POOL;
         break;
       case TEST_ARG_RX_SEPARATE_VIDEO_LCORE:
-        p->flags |= ST_FLAG_RX_SEPARATE_VIDEO_LCORE;
+        p->flags |= MTL_FLAG_RX_SEPARATE_VIDEO_LCORE;
         break;
       case TEST_ARG_MIGRATE_ENABLE:
-        p->flags |= ST_FLAG_RX_VIDEO_MIGRATE;
-        p->flags |= ST_FLAG_TX_VIDEO_MIGRATE;
+        p->flags |= MTL_FLAG_RX_VIDEO_MIGRATE;
+        p->flags |= MTL_FLAG_TX_VIDEO_MIGRATE;
         break;
       case TEST_ARG_MIGRATE_DISABLE:
-        p->flags &= ~ST_FLAG_RX_VIDEO_MIGRATE;
-        p->flags &= ~ST_FLAG_TX_VIDEO_MIGRATE;
+        p->flags &= ~MTL_FLAG_RX_VIDEO_MIGRATE;
+        p->flags &= ~MTL_FLAG_TX_VIDEO_MIGRATE;
         break;
       case TEST_ARG_LIB_PTP:
-        p->flags |= ST_FLAG_PTP_ENABLE;
+        p->flags |= MTL_FLAG_PTP_ENABLE;
         p->ptp_get_time_fn = NULL; /* clear the user ptp func */
         break;
       case TEST_ARG_NB_TX_DESC:
@@ -183,32 +183,32 @@ static int test_parse_args(struct st_tests_context* ctx, struct st_init_params* 
           err("%s, unknow log level %s\n", __func__, optarg);
         break;
       case TEST_ARG_AUTO_START_STOP:
-        p->flags |= ST_FLAG_DEV_AUTO_START_STOP;
+        p->flags |= MTL_FLAG_DEV_AUTO_START_STOP;
         break;
       case TEST_ARG_AF_XDP_ZC_DISABLE:
-        p->flags |= ST_FLAG_AF_XDP_ZC_DISABLE;
+        p->flags |= MTL_FLAG_AF_XDP_ZC_DISABLE;
         break;
       case TEST_ARG_START_QUEUE:
-        p->xdp_info[ST_PORT_P].start_queue = atoi(optarg);
-        p->xdp_info[ST_PORT_R].start_queue = atoi(optarg);
+        p->xdp_info[MTL_PORT_P].start_queue = atoi(optarg);
+        p->xdp_info[MTL_PORT_R].start_queue = atoi(optarg);
         break;
       case TEST_ARG_P_START_QUEUE:
-        p->xdp_info[ST_PORT_P].start_queue = atoi(optarg);
+        p->xdp_info[MTL_PORT_P].start_queue = atoi(optarg);
         break;
       case TEST_ARG_R_START_QUEUE:
-        p->xdp_info[ST_PORT_R].start_queue = atoi(optarg);
+        p->xdp_info[MTL_PORT_R].start_queue = atoi(optarg);
         break;
       case TEST_ARG_HDR_SPLIT:
         ctx->hdr_split = true;
         break;
       case TEST_ARG_TASKLET_THREAD:
-        p->flags |= ST_FLAG_TASKLET_THREAD;
+        p->flags |= MTL_FLAG_TASKLET_THREAD;
         break;
       case TEST_ARG_TSC_PACING:
         p->pacing = ST21_TX_PACING_WAY_TSC;
         break;
       case TEST_ARG_RXTX_SIMD_512:
-        p->flags |= ST_FLAG_RXTX_SIMD_512;
+        p->flags |= MTL_FLAG_RXTX_SIMD_512;
         break;
       case TEST_ARG_PACING_WAY:
         if (!strcmp(optarg, "auto"))
@@ -233,7 +233,7 @@ static int test_parse_args(struct st_tests_context* ctx, struct st_init_params* 
 }
 
 static void test_random_ip(struct st_tests_context* ctx) {
-  struct st_init_params* p = &ctx->para;
+  struct mtl_init_params* p = &ctx->para;
   uint8_t* p_ip = st_p_sip_addr(p);
   uint8_t* r_ip = st_r_sip_addr(p);
 
@@ -248,8 +248,8 @@ static void test_random_ip(struct st_tests_context* ctx) {
   r_ip[2] = p_ip[2];
   r_ip[3] = p_ip[3] + 1;
 
-  p_ip = ctx->mcast_ip_addr[ST_PORT_P];
-  r_ip = ctx->mcast_ip_addr[ST_PORT_R];
+  p_ip = ctx->mcast_ip_addr[MTL_PORT_P];
+  r_ip = ctx->mcast_ip_addr[MTL_PORT_R];
   p_ip[0] = 239;
   p_ip[1] = rand() % 0xFF;
   p_ip[2] = rand() % 0xFF;
@@ -282,7 +282,7 @@ static uint64_t test_ptp_from_real_time(void* priv) {
 }
 
 static void test_ctx_init(struct st_tests_context* ctx) {
-  struct st_init_params* p = &ctx->para;
+  struct mtl_init_params* p = &ctx->para;
   int cpus_per_soc = 4;
   char* lcores_list = ctx->lcores_list;
   int pos = 0;
@@ -299,15 +299,15 @@ static void test_ctx_init(struct st_tests_context* ctx) {
   }
 #endif
   memset(p, 0x0, sizeof(*p));
-  p->flags = ST_FLAG_BIND_NUMA; /* default bind to numa */
-  p->log_level = ST_LOG_LEVEL_WARNING;
+  p->flags = MTL_FLAG_BIND_NUMA; /* default bind to numa */
+  p->log_level = MTL_LOG_LEVEL_WARNING;
   p->priv = ctx;
   p->ptp_get_time_fn = test_ptp_from_real_time;
   p->tx_sessions_cnt_max = 16;
   p->rx_sessions_cnt_max = 16;
   /* defalut start queue set to 1 */
-  p->xdp_info[ST_PORT_P].start_queue = 1;
-  p->xdp_info[ST_PORT_R].start_queue = 1;
+  p->xdp_info[MTL_PORT_P].start_queue = 1;
+  p->xdp_info[MTL_PORT_R].start_queue = 1;
 
   /* build default lcore list */
   pos += snprintf(lcores_list + pos, TEST_LCORE_LIST_MAX_LEN - pos, "0-%d",
@@ -374,7 +374,7 @@ TEST(Misc, memcpy) {
   st_memcpy_test(4096 + 100);
 }
 
-static void hp_malloc_test(struct st_tests_context* ctx, size_t size, enum st_port port,
+static void hp_malloc_test(struct st_tests_context* ctx, size_t size, enum mtl_port port,
                            bool zero, bool expect_succ) {
   auto m_handle = ctx->handle;
   void* p;
@@ -399,7 +399,7 @@ static void hp_malloc_test(struct st_tests_context* ctx, size_t size, enum st_po
   }
 }
 
-static void hp_malloc_tests(struct st_tests_context* ctx, enum st_port port, bool zero) {
+static void hp_malloc_tests(struct st_tests_context* ctx, enum mtl_port port, bool zero) {
   hp_malloc_test(ctx, 1, port, zero, true);
   hp_malloc_test(ctx, 1024, port, zero, true);
   hp_malloc_test(ctx, 1024 + 3, port, zero, true);
@@ -409,34 +409,34 @@ TEST(Misc, hp_malloc) {
   auto ctx = (struct st_tests_context*)st_test_ctx();
   int num_port = st_test_num_port(ctx);
 
-  hp_malloc_tests(ctx, ST_PORT_P, false);
-  if (num_port > 1) hp_malloc_tests(ctx, ST_PORT_R, false);
+  hp_malloc_tests(ctx, MTL_PORT_P, false);
+  if (num_port > 1) hp_malloc_tests(ctx, MTL_PORT_R, false);
 }
 
 TEST(Misc, hp_zmalloc) {
   auto ctx = (struct st_tests_context*)st_test_ctx();
   int num_port = st_test_num_port(ctx);
 
-  hp_malloc_tests(ctx, ST_PORT_P, true);
-  if (num_port > 1) hp_malloc_tests(ctx, ST_PORT_R, true);
+  hp_malloc_tests(ctx, MTL_PORT_P, true);
+  if (num_port > 1) hp_malloc_tests(ctx, MTL_PORT_R, true);
 }
 
 TEST(Misc, hp_malloc_expect_fail) {
   auto ctx = (struct st_tests_context*)st_test_ctx();
   int num_port = st_test_num_port(ctx);
 
-  hp_malloc_test(ctx, 0, ST_PORT_P, false, false);
-  hp_malloc_test(ctx, 8, ST_PORT_MAX, false, false);
-  if (num_port > 1) hp_malloc_test(ctx, 0, ST_PORT_R, false, false);
+  hp_malloc_test(ctx, 0, MTL_PORT_P, false, false);
+  hp_malloc_test(ctx, 8, MTL_PORT_MAX, false, false);
+  if (num_port > 1) hp_malloc_test(ctx, 0, MTL_PORT_R, false, false);
 }
 
 TEST(Misc, hp_zmalloc_expect_fail) {
   auto ctx = (struct st_tests_context*)st_test_ctx();
   int num_port = st_test_num_port(ctx);
 
-  hp_malloc_test(ctx, 0, ST_PORT_P, true, false);
-  hp_malloc_test(ctx, 8, ST_PORT_MAX, true, false);
-  if (num_port > 1) hp_malloc_test(ctx, 0, ST_PORT_R, true, false);
+  hp_malloc_test(ctx, 0, MTL_PORT_P, true, false);
+  hp_malloc_test(ctx, 8, MTL_PORT_MAX, true, false);
+  if (num_port > 1) hp_malloc_test(ctx, 0, MTL_PORT_R, true, false);
 }
 
 TEST(Misc, ptp) {
@@ -496,9 +496,9 @@ GTEST_API_ int main(int argc, char** argv) {
   /* parse af xdp pmd info */
   for (int i = 0; i < ctx->para.num_ports; i++) {
     ctx->para.pmd[i] = st_pmd_by_port_name(ctx->para.port[i]);
-    if (ctx->para.pmd[i] != ST_PMD_DPDK_USER) {
+    if (ctx->para.pmd[i] != MTL_PMD_DPDK_USER) {
       st_get_if_ip(ctx->para.port[i], ctx->para.sip_addr[i]);
-      ctx->para.flags |= ST_FLAG_RX_SEPARATE_VIDEO_LCORE;
+      ctx->para.flags |= MTL_FLAG_RX_SEPARATE_VIDEO_LCORE;
       ctx->para.tx_sessions_cnt_max = 8;
       ctx->para.rx_sessions_cnt_max = 8;
       ctx->para.xdp_info[i].queue_count = 8;

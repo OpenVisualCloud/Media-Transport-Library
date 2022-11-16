@@ -5,7 +5,7 @@
 #ifndef _ST_LIB_PKT_HEAD_H_
 #define _ST_LIB_PKT_HEAD_H_
 
-#define ST_LITTLE_ENDIAN /* x86 use little endian */
+#define MTL_LITTLE_ENDIAN /* x86 use little endian */
 
 #define ST_RVRTP_VERSION_2 (2)
 

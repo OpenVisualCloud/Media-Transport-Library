@@ -8,7 +8,7 @@
 
 #include "../st_log.h"
 
-static inline struct st_plugin_mgr* st_get_plugins_mgr(struct st_main_impl* impl) {
+static inline struct st_plugin_mgr* st_get_plugins_mgr(struct mtl_main_impl* impl) {
   return &impl->plugin_mgr;
 }
 
@@ -23,7 +23,7 @@ static int st_plugin_free(struct st_dl_plugin_impl* plugin) {
   return 0;
 }
 
-int st_plugins_init(struct st_main_impl* impl) {
+int st_plugins_init(struct mtl_main_impl* impl) {
   struct st_plugin_mgr* mgr = st_get_plugins_mgr(impl);
 
   st_pthread_mutex_init(&mgr->lock, NULL);
@@ -33,7 +33,7 @@ int st_plugins_init(struct st_main_impl* impl) {
   return 0;
 }
 
-int st_plugins_uinit(struct st_main_impl* impl) {
+int st_plugins_uinit(struct mtl_main_impl* impl) {
   struct st_plugin_mgr* mgr = st_get_plugins_mgr(impl);
 
   for (int i = 0; i < ST_MAX_DL_PLUGINS; i++) {
@@ -78,7 +78,7 @@ int st22_encode_notify_frame_ready(struct st22_encode_session_impl* encoder) {
   return dev->notify_frame_available(session);
 }
 
-int st22_put_encoder(struct st_main_impl* impl,
+int st22_put_encoder(struct mtl_main_impl* impl,
                      struct st22_encode_session_impl* encoder) {
   struct st_plugin_mgr* mgr = st_get_plugins_mgr(impl);
   struct st22_encode_dev_impl* dev_impl = encoder->parnet;
@@ -136,14 +136,14 @@ static bool st22_encoder_is_capable(struct st22_encoder_dev* dev,
   if ((plugin_dev != ST_PLUGIN_DEVICE_AUTO) && (plugin_dev != dev->target_device))
     return false;
 
-  if (!(ST_BIT64(req->req.input_fmt) & dev->input_fmt_caps)) return false;
+  if (!(MTL_BIT64(req->req.input_fmt) & dev->input_fmt_caps)) return false;
 
-  if (!(ST_BIT64(req->req.output_fmt) & dev->output_fmt_caps)) return false;
+  if (!(MTL_BIT64(req->req.output_fmt) & dev->output_fmt_caps)) return false;
 
   return true;
 }
 
-struct st22_encode_session_impl* st22_get_encoder(struct st_main_impl* impl,
+struct st22_encode_session_impl* st22_get_encoder(struct mtl_main_impl* impl,
                                                   struct st22_get_encoder_request* req) {
   struct st_plugin_mgr* mgr = st_get_plugins_mgr(impl);
   struct st22_encoder_dev* dev;
@@ -184,7 +184,7 @@ int st22_decode_notify_frame_ready(struct st22_decode_session_impl* decoder) {
   return dev->notify_frame_available(session);
 }
 
-int st22_put_decoder(struct st_main_impl* impl,
+int st22_put_decoder(struct mtl_main_impl* impl,
                      struct st22_decode_session_impl* decoder) {
   struct st_plugin_mgr* mgr = st_get_plugins_mgr(impl);
   struct st22_decode_dev_impl* dev_impl = decoder->parnet;
@@ -240,14 +240,14 @@ static bool st22_decoder_is_capable(struct st22_decoder_dev* dev,
   if ((plugin_dev != ST_PLUGIN_DEVICE_AUTO) && (plugin_dev != dev->target_device))
     return false;
 
-  if (!(ST_BIT64(req->req.input_fmt) & dev->input_fmt_caps)) return false;
+  if (!(MTL_BIT64(req->req.input_fmt) & dev->input_fmt_caps)) return false;
 
-  if (!(ST_BIT64(req->req.output_fmt) & dev->output_fmt_caps)) return false;
+  if (!(MTL_BIT64(req->req.output_fmt) & dev->output_fmt_caps)) return false;
 
   return true;
 }
 
-struct st22_decode_session_impl* st22_get_decoder(struct st_main_impl* impl,
+struct st22_decode_session_impl* st22_get_decoder(struct mtl_main_impl* impl,
                                                   struct st22_get_decoder_request* req) {
   struct st_plugin_mgr* mgr = st_get_plugins_mgr(impl);
   struct st22_decoder_dev* dev;
@@ -285,7 +285,7 @@ int st20_convert_notify_frame_ready(struct st20_convert_session_impl* converter)
   return dev->notify_frame_available(session);
 }
 
-int st20_put_converter(struct st_main_impl* impl,
+int st20_put_converter(struct mtl_main_impl* impl,
                        struct st20_convert_session_impl* converter) {
   struct st_plugin_mgr* mgr = st_get_plugins_mgr(impl);
   struct st20_convert_dev_impl* dev_impl = converter->parnet;
@@ -341,15 +341,15 @@ static bool st20_converter_is_capable(struct st20_converter_dev* dev,
   if ((plugin_dev != ST_PLUGIN_DEVICE_AUTO) && (plugin_dev != dev->target_device))
     return false;
 
-  if (!(ST_BIT64(req->req.input_fmt) & dev->input_fmt_caps)) return false;
+  if (!(MTL_BIT64(req->req.input_fmt) & dev->input_fmt_caps)) return false;
 
-  if (!(ST_BIT64(req->req.output_fmt) & dev->output_fmt_caps)) return false;
+  if (!(MTL_BIT64(req->req.output_fmt) & dev->output_fmt_caps)) return false;
 
   return true;
 }
 
 struct st20_convert_session_impl* st20_get_converter(
-    struct st_main_impl* impl, struct st20_get_converter_request* req) {
+    struct mtl_main_impl* impl, struct st20_get_converter_request* req) {
   struct st_plugin_mgr* mgr = st_get_plugins_mgr(impl);
   struct st20_converter_dev* dev;
   struct st20_convert_dev_impl* dev_impl;
@@ -420,7 +420,7 @@ static int st20_convert_dev_dump(struct st20_convert_dev_impl* convert) {
   return 0;
 }
 
-int st_plugins_dump(struct st_main_impl* impl) {
+int st_plugins_dump(struct mtl_main_impl* impl) {
   struct st_plugin_mgr* mgr = st_get_plugins_mgr(impl);
   struct st22_encode_dev_impl* encode;
   struct st22_decode_dev_impl* decode;
@@ -455,7 +455,7 @@ int st22_encoder_unregister(st22_encoder_dev_handle handle) {
     return -EIO;
   }
 
-  struct st_main_impl* impl = dev->parnet;
+  struct mtl_main_impl* impl = dev->parnet;
   struct st_plugin_mgr* mgr = st_get_plugins_mgr(impl);
   int idx = dev->idx;
 
@@ -487,7 +487,7 @@ int st22_decoder_unregister(st22_decoder_dev_handle handle) {
     return -EIO;
   }
 
-  struct st_main_impl* impl = dev->parnet;
+  struct mtl_main_impl* impl = dev->parnet;
   struct st_plugin_mgr* mgr = st_get_plugins_mgr(impl);
   int idx = dev->idx;
 
@@ -519,7 +519,7 @@ int st20_converter_unregister(st20_converter_dev_handle handle) {
     return -EIO;
   }
 
-  struct st_main_impl* impl = dev->parnet;
+  struct mtl_main_impl* impl = dev->parnet;
   struct st_plugin_mgr* mgr = st_get_plugins_mgr(impl);
   int idx = dev->idx;
 
@@ -543,9 +543,9 @@ int st20_converter_unregister(st20_converter_dev_handle handle) {
   return 0;
 }
 
-st22_encoder_dev_handle st22_encoder_register(st_handle st,
+st22_encoder_dev_handle st22_encoder_register(mtl_handle st,
                                               struct st22_encoder_dev* dev) {
-  struct st_main_impl* impl = st;
+  struct mtl_main_impl* impl = st;
   struct st_plugin_mgr* mgr = st_get_plugins_mgr(impl);
   struct st22_encode_dev_impl* encode_dev;
 
@@ -571,7 +571,7 @@ st22_encoder_dev_handle st22_encoder_register(st_handle st,
   for (int i = 0; i < ST_MAX_ENCODER_DEV; i++) {
     if (mgr->encode_devs[i]) continue;
     encode_dev =
-        st_rte_zmalloc_socket(sizeof(*encode_dev), st_socket_id(impl, ST_PORT_P));
+        st_rte_zmalloc_socket(sizeof(*encode_dev), st_socket_id(impl, MTL_PORT_P));
     if (!encode_dev) {
       err("%s, encode_dev malloc fail\n", __func__);
       st_pthread_mutex_unlock(&mgr->lock);
@@ -599,9 +599,9 @@ st22_encoder_dev_handle st22_encoder_register(st_handle st,
   return NULL;
 }
 
-st22_decoder_dev_handle st22_decoder_register(st_handle st,
+st22_decoder_dev_handle st22_decoder_register(mtl_handle st,
                                               struct st22_decoder_dev* dev) {
-  struct st_main_impl* impl = st;
+  struct mtl_main_impl* impl = st;
   struct st_plugin_mgr* mgr = st_get_plugins_mgr(impl);
   struct st22_decode_dev_impl* decode_dev;
 
@@ -627,7 +627,7 @@ st22_decoder_dev_handle st22_decoder_register(st_handle st,
   for (int i = 0; i < ST_MAX_DECODER_DEV; i++) {
     if (mgr->decode_devs[i]) continue;
     decode_dev =
-        st_rte_zmalloc_socket(sizeof(*decode_dev), st_socket_id(impl, ST_PORT_P));
+        st_rte_zmalloc_socket(sizeof(*decode_dev), st_socket_id(impl, MTL_PORT_P));
     if (!decode_dev) {
       err("%s, decode_dev malloc fail\n", __func__);
       st_pthread_mutex_unlock(&mgr->lock);
@@ -655,9 +655,9 @@ st22_decoder_dev_handle st22_decoder_register(st_handle st,
   return NULL;
 }
 
-st20_converter_dev_handle st20_converter_register(st_handle st,
+st20_converter_dev_handle st20_converter_register(mtl_handle st,
                                                   struct st20_converter_dev* dev) {
-  struct st_main_impl* impl = st;
+  struct mtl_main_impl* impl = st;
   struct st_plugin_mgr* mgr = st_get_plugins_mgr(impl);
   struct st20_convert_dev_impl* convert_dev;
 
@@ -683,7 +683,7 @@ st20_converter_dev_handle st20_converter_register(st_handle st,
   for (int i = 0; i < ST_MAX_CONVERTER_DEV; i++) {
     if (mgr->convert_devs[i]) continue;
     convert_dev =
-        st_rte_zmalloc_socket(sizeof(*convert_dev), st_socket_id(impl, ST_PORT_P));
+        st_rte_zmalloc_socket(sizeof(*convert_dev), st_socket_id(impl, MTL_PORT_P));
     if (!convert_dev) {
       err("%s, convert_dev malloc fail\n", __func__);
       st_pthread_mutex_unlock(&mgr->lock);
@@ -781,7 +781,7 @@ int st20_converter_put_frame(st20p_convert_session session,
   return session_impl->req.put_frame(session_impl->req.priv, frame, result);
 }
 
-static struct st_dl_plugin_impl* st_plugin_by_path(struct st_main_impl* impl,
+static struct st_dl_plugin_impl* st_plugin_by_path(struct mtl_main_impl* impl,
                                                    const char* path) {
   struct st_plugin_mgr* mgr = st_get_plugins_mgr(impl);
   struct st_dl_plugin_impl* plugin;
@@ -802,8 +802,8 @@ static struct st_dl_plugin_impl* st_plugin_by_path(struct st_main_impl* impl,
   return NULL;
 }
 
-int st_get_plugins_nb(st_handle st) {
-  struct st_main_impl* impl = st;
+int st_get_plugins_nb(mtl_handle st) {
+  struct mtl_main_impl* impl = st;
   struct st_plugin_mgr* mgr = st_get_plugins_mgr(impl);
 
   if (impl->type != ST_SESSION_TYPE_MAIN) {
@@ -814,8 +814,8 @@ int st_get_plugins_nb(st_handle st) {
   return mgr->plugins_nb;
 }
 
-int st_plugin_register(st_handle st, const char* path) {
-  struct st_main_impl* impl = st;
+int st_plugin_register(mtl_handle st, const char* path) {
+  struct mtl_main_impl* impl = st;
   struct st_plugin_mgr* mgr = st_get_plugins_mgr(impl);
   void* dl_handle;
   st_plugin_get_meta_fn get_meta_fn;
@@ -892,7 +892,7 @@ int st_plugin_register(st_handle st, const char* path) {
   st_pthread_mutex_lock(&mgr->plugins_lock);
   for (int i = 0; i < ST_MAX_DL_PLUGINS; i++) {
     if (mgr->plugins[i]) continue;
-    plugin = st_rte_zmalloc_socket(sizeof(*plugin), st_socket_id(impl, ST_PORT_P));
+    plugin = st_rte_zmalloc_socket(sizeof(*plugin), st_socket_id(impl, MTL_PORT_P));
     if (!plugin) {
       st_pthread_mutex_unlock(&mgr->plugins_lock);
       dlclose(dl_handle);
@@ -918,8 +918,8 @@ int st_plugin_register(st_handle st, const char* path) {
   return -EIO;
 }
 
-int st_plugin_unregister(st_handle st, const char* path) {
-  struct st_main_impl* impl = st;
+int st_plugin_unregister(mtl_handle st, const char* path) {
+  struct mtl_main_impl* impl = st;
   struct st_plugin_mgr* mgr = st_get_plugins_mgr(impl);
   struct st_dl_plugin_impl* plugin;
 

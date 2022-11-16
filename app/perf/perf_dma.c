@@ -10,8 +10,8 @@ static inline void rand_data(uint8_t* p, size_t sz, uint8_t base) {
   }
 }
 
-static int dma_copy_perf(st_handle st, int w, int h, int frames, int pkt_size) {
-  st_udma_handle dma;
+static int dma_copy_perf(mtl_handle st, int w, int h, int frames, int pkt_size) {
+  mtl_udma_handle dma;
   int ret;
   uint16_t nb_desc = 1024;
   size_t fb_size = w * h * 5 / 2;            /* rfc4175_422be10 */
@@ -20,24 +20,24 @@ static int dma_copy_perf(st_handle st, int w, int h, int frames, int pkt_size) {
   int fb_dst_iova_off = 0, fb_src_iova_off = 0;
 
   /* create user dma dev */
-  dma = st_udma_create(st, nb_desc, ST_PORT_P);
+  dma = st_udma_create(st, nb_desc, MTL_PORT_P);
   if (!dma) {
     info("dma create fail\n");
     return -EIO;
   }
 
   void *fb_dst = NULL, *fb_src = NULL;
-  st_iova_t fb_dst_iova, fb_src_iova;
+  mtl_iova_t fb_dst_iova, fb_src_iova;
 
   /* allocate fb dst and src(with random data) */
-  fb_dst = st_hp_malloc(st, fb_size, ST_PORT_P);
+  fb_dst = st_hp_malloc(st, fb_size, MTL_PORT_P);
   if (!fb_dst) {
     info("fb dst create fail\n");
     st_udma_free(dma);
     return -ENOMEM;
   }
   fb_dst_iova = st_hp_virt2iova(st, fb_dst);
-  fb_src = st_hp_malloc(st, fb_size, ST_PORT_P);
+  fb_src = st_hp_malloc(st, fb_size, MTL_PORT_P);
   if (!fb_dst) {
     info("fb src create fail\n");
     st_hp_free(st, fb_dst);

@@ -38,164 +38,114 @@ extern "C" {
 /**
  * Get the uint64_t value for a specified bit set(0 to 63).
  */
-#define ST_BIT64(nr) (UINT64_C(1) << (nr))
+#define MTL_BIT64(nr) (UINT64_C(1) << (nr))
 
 /**
  * Get the uint32_t value for a specified bit set(0 to 31).
  */
-#define ST_BIT32(nr) (UINT32_C(1) << (nr))
+#define MTL_BIT32(nr) (UINT32_C(1) << (nr))
 
 /**
  * Max length of a DPDK port name
  */
-#define ST_PORT_MAX_LEN (64)
+#define MTL_PORT_MAX_LEN (64)
 /**
  * Length of a IPV4 address
  */
-#define ST_IP_ADDR_LEN (4)
+#define MTL_IP_ADDR_LEN (4)
 /**
  * Defined if current platform is little endian
  */
-#define ST_LITTLE_ENDIAN /* x86 use little endian */
+#define MTL_LITTLE_ENDIAN /* x86 use little endian */
 
 /**
  * Max bytes in one RTP packet, include payload and header
  * standard UDP is 1460 bytes, and UDP headers are 8 bytes
  * leave 100 for network extra space
  */
-#define ST_PKT_MAX_RTP_BYTES (1460 - 8 - 100)
+#define MTL_PKT_MAX_RTP_BYTES (1460 - 8 - 100)
 
 /**
  * Max allowed number of dma devs
  */
-#define ST_DMA_DEV_MAX (8)
+#define MTL_DMA_DEV_MAX (8)
 
 /**
  * Max length of a pcap dump file name
  */
-#define ST_PCAP_FILE_MAX_LEN (32)
+#define MTL_PCAP_FILE_MAX_LEN (32)
 
 /**
  * Handle to media transport device context
  */
-typedef struct st_main_impl* st_handle;
+typedef struct mtl_main_impl* mtl_handle;
 /**
  * Handle to st user dma device
  */
-typedef struct st_dma_lender_dev* st_udma_handle;
+typedef struct mtl_dma_lender_dev* mtl_udma_handle;
 
 /**
  * IO virtual address type.
  */
-typedef uint64_t st_iova_t;
+typedef uint64_t mtl_iova_t;
 
 /**
  * Handle to dma mem
  */
-typedef struct st_dma_mem* st_dma_mem_handle;
+typedef struct mtl_dma_mem* mtl_dma_mem_handle;
 
 /**
  * Bad IOVA address
  */
-#define ST_BAD_IOVA ((st_iova_t)-1)
+#define MTL_BAD_IOVA ((mtl_iova_t)-1)
 
 /**
  * Macro to align a value, align should be a power-of-two value.
  */
-#define ST_ALIGN(val, align) (((val) + ((align)-1)) & ~((align)-1))
+#define MTL_ALIGN(val, align) (((val) + ((align)-1)) & ~((align)-1))
 
 /**
  * Port logical type
  */
-enum st_port {
-  ST_PORT_P = 0, /**< primary port */
-  ST_PORT_R,     /**< redundant port */
-  ST_PORT_MAX,   /**< max value of this enum */
+enum mtl_port {
+  MTL_PORT_P = 0, /**< primary port */
+  MTL_PORT_R,     /**< redundant port */
+  MTL_PORT_MAX,   /**< max value of this enum */
 };
 
 /**
  * Log level type to media context
  */
-enum st_log_level {
-  ST_LOG_LEVEL_DEBUG = 0, /**< debug log level */
-  ST_LOG_LEVEL_INFO,      /**< info log level */
-  ST_LOG_LEVEL_NOTICE,    /**< notice log level */
-  ST_LOG_LEVEL_WARNING,   /**< warning log level */
-  ST_LOG_LEVEL_ERROR,     /**< error log level */
-  ST_LOG_LEVEL_MAX,       /**< max value of this enum */
+enum mtl_log_level {
+  MTL_LOG_LEVEL_DEBUG = 0, /**< debug log level */
+  MTL_LOG_LEVEL_INFO,      /**< info log level */
+  MTL_LOG_LEVEL_NOTICE,    /**< notice log level */
+  MTL_LOG_LEVEL_WARNING,   /**< warning log level */
+  MTL_LOG_LEVEL_ERROR,     /**< error log level */
+  MTL_LOG_LEVEL_MAX,       /**< max value of this enum */
 };
 
 /**
  * Poll mode driver type
  */
-enum st_pmd_type {
+enum mtl_pmd_type {
   /** DPDK user driver PMD */
-  ST_PMD_DPDK_USER = 0,
+  MTL_PMD_DPDK_USER = 0,
   /** address family(kernel) high performance packet processing */
-  ST_PMD_DPDK_AF_XDP,
+  MTL_PMD_DPDK_AF_XDP,
   /** max value of this enum */
-  ST_PMD_TYPE_MAX,
+  MTL_PMD_TYPE_MAX,
 };
 
 /**
  * SIMD level type
  */
-enum st_simd_level {
-  ST_SIMD_LEVEL_NONE = 0,     /**< Scalar */
-  ST_SIMD_LEVEL_AVX2,         /**< AVX2 */
-  ST_SIMD_LEVEL_AVX512,       /**< AVX512 */
-  ST_SIMD_LEVEL_AVX512_VBMI2, /**< AVX512 VBMI2 */
-  ST_SIMD_LEVEL_MAX,          /**< max value of this enum */
-};
-
-/**
- * Timestamp type of st2110-10
- */
-enum st10_timestamp_fmt {
-  /** the media clock time in nanoseconds since the TAI epoch */
-  ST10_TIMESTAMP_FMT_TAI = 0,
-  /**
-   * the raw media clock value defined in ST2110-10, whose units vary by essence
-   * sampling rate(90k for video, 48K/96K for audio).
-   */
-  ST10_TIMESTAMP_FMT_MEDIA_CLK,
-  /** max value of this enum */
-  ST10_TIMESTAMP_FMT_MAX,
-};
-
-/**
- * FPS type of media streaming, Frame per second or Field per second
- */
-enum st_fps {
-  ST_FPS_P59_94 = 0, /**< 59.94 fps */
-  ST_FPS_P50,        /**< 50 fps */
-  ST_FPS_P29_97,     /**< 29.97 fps */
-  ST_FPS_P25,        /**< 25 fps */
-  ST_FPS_P119_88,    /**< 119.88 fps */
-  ST_FPS_P120,       /**< 120 fps */
-  ST_FPS_P100,       /**< 100 fps */
-  ST_FPS_P60,        /**< 60 fps */
-  ST_FPS_P30,        /**< 30 fps */
-  ST_FPS_P24,        /**< 24 fps */
-  ST_FPS_P23_98,     /**< 23.98 fps */
-  ST_FPS_MAX,        /**< max value of this enum */
-};
-
-/**
- * Frame status type of rx streaming
- */
-enum st_frame_status {
-  /** All pixels of the frame were received */
-  ST_FRAME_STATUS_COMPLETE = 0,
-  /**
-   * There was some packet loss, but the complete frame was reconstructed using packets
-   * from primary and redundant streams
-   */
-  ST_FRAME_STATUS_RECONSTRUCTED,
-  /** Packets were lost */
-  ST_FRAME_STATUS_CORRUPTED,
-  /** Max value of this enum */
-  ST_FRAME_STATUS_MAX,
+enum mtl_simd_level {
+  MTL_SIMD_LEVEL_NONE = 0,     /**< Scalar */
+  MTL_SIMD_LEVEL_AVX2,         /**< AVX2 */
+  MTL_SIMD_LEVEL_AVX512,       /**< AVX512 */
+  MTL_SIMD_LEVEL_AVX512_VBMI2, /**< AVX512 VBMI2 */
+  MTL_SIMD_LEVEL_MAX,          /**< max value of this enum */
 };
 
 /**
@@ -217,147 +167,108 @@ enum st21_tx_pacing_way {
 };
 
 /**
- * A structure describing rfc3550 rtp header, size: 12
- */
-struct st_rfc3550_rtp_hdr {
-#ifdef ST_LITTLE_ENDIAN
-  /** CSRC count(CC) */
-  uint8_t csrc_count : 4;
-  /** extension(X) */
-  uint8_t extension : 1;
-  /** padding(P) */
-  uint8_t padding : 1;
-  /** version(V) */
-  uint8_t version : 2;
-  /** payload type(PT) */
-  uint8_t payload_type : 7;
-  /** marker(M) */
-  uint8_t marker : 1;
-#else
-  /** version(V) */
-  uint8_t version : 2;
-  /** padding(P) */
-  uint8_t padding : 1;
-  /** extension(X) */
-  uint8_t extension : 1;
-  /** CSRC count(CC) */
-  uint8_t csrc_count : 4;
-  /** marker(M) */
-  uint8_t marker : 1;
-  /** payload type(PT) */
-  uint8_t payload_type : 7;
-#endif
-  /** sequence number */
-  uint16_t seq_number;
-  /** timestamp */
-  uint32_t tmstamp;
-  /** synchronization source */
-  uint32_t ssrc;
-} __attribute__((__packed__));
-
-/**
- * Flag bit in flags of struct st_init_params.
+ * Flag bit in flags of struct mtl_init_params.
  * If set, lib will call numa_bind to bind app thread and memory to NIC socket also.
  */
-#define ST_FLAG_BIND_NUMA (ST_BIT64(0))
+#define MTL_FLAG_BIND_NUMA (MTL_BIT64(0))
 /**
- * Flag bit in flags of struct st_init_params.
+ * Flag bit in flags of struct mtl_init_params.
  * Enable built-in PTP implementation, only for PF now.
  * If not enable, it will use system time as the PTP source.
  */
-#define ST_FLAG_PTP_ENABLE (ST_BIT64(1))
+#define MTL_FLAG_PTP_ENABLE (MTL_BIT64(1))
 /**
- * Flag bit in flags of struct st_init_params.
+ * Flag bit in flags of struct mtl_init_params.
  * Separated lcore for RX video(st2110-20/st2110-22) session.
  */
-#define ST_FLAG_RX_SEPARATE_VIDEO_LCORE (ST_BIT64(2))
+#define MTL_FLAG_RX_SEPARATE_VIDEO_LCORE (MTL_BIT64(2))
 /**
- * Flag bit in flags of struct st_init_params.
+ * Flag bit in flags of struct mtl_init_params.
  * Enable migrate mode for tx video session if current LCORE is too busy to handle the
  * tx video tasklet, the busy session may be migrated to a new LCORE.
  * If not enable, tx video will always use static mapping based on quota.
  */
-#define ST_FLAG_TX_VIDEO_MIGRATE (ST_BIT64(3))
+#define MTL_FLAG_TX_VIDEO_MIGRATE (MTL_BIT64(3))
 /**
- * Flag bit in flags of struct st_init_params.
+ * Flag bit in flags of struct mtl_init_params.
  * Enable migrate mode for rx video session if current LCORE is too busy to handle the
  * rx video tasklet, the busy session may be migrated to a new LCORE.
  * If not enable, rx video will always use static mapping based on quota.
  */
-#define ST_FLAG_RX_VIDEO_MIGRATE (ST_BIT64(4))
+#define MTL_FLAG_RX_VIDEO_MIGRATE (MTL_BIT64(4))
 /**
- * Flag bit in flags of struct st_init_params.
+ * Flag bit in flags of struct mtl_init_params.
  * Run the tasklet inside one thread instead of a pinned lcore.
  */
-#define ST_FLAG_TASKLET_THREAD (ST_BIT64(5))
+#define MTL_FLAG_TASKLET_THREAD (MTL_BIT64(5))
 /**
- * Flag bit in flags of struct st_init_params.
+ * Flag bit in flags of struct mtl_init_params.
  * Enable the tasklet sleep if routine report task done.
  */
-#define ST_FLAG_TASKLET_SLEEP (ST_BIT64(6))
+#define MTL_FLAG_TASKLET_SLEEP (MTL_BIT64(6))
 /**
- * Flag bit in flags of struct st_init_params.
+ * Flag bit in flags of struct mtl_init_params.
  * Set the supported SIMD bitwidth of rx/tx burst to 512 bit(AVX512).
  */
-#define ST_FLAG_RXTX_SIMD_512 (ST_BIT64(7))
+#define MTL_FLAG_RXTX_SIMD_512 (MTL_BIT64(7))
 
 /**
- * Flag bit in flags of struct st_init_params, debug usage only.
+ * Flag bit in flags of struct mtl_init_params, debug usage only.
  * dedicate thread for cni message
  */
-#define ST_FLAG_CNI_THREAD (ST_BIT64(16))
+#define MTL_FLAG_CNI_THREAD (MTL_BIT64(16))
 /**
- * Flag bit in flags of struct st_init_params, debug usage only.
+ * Flag bit in flags of struct mtl_init_params, debug usage only.
  * Enable video rx ebu check
  */
-#define ST_FLAG_RX_VIDEO_EBU (ST_BIT64(17))
+#define MTL_FLAG_RX_VIDEO_EBU (MTL_BIT64(17))
 /**
- * Flag bit in flags of struct st_init_params, debug usage only.
+ * Flag bit in flags of struct mtl_init_params, debug usage only.
  * Enable NIC promiscuous mode for RX
  */
-#define ST_FLAG_NIC_RX_PROMISCUOUS (ST_BIT64(20))
+#define MTL_FLAG_NIC_RX_PROMISCUOUS (MTL_BIT64(20))
 /**
- * Flag bit in flags of struct st_init_params, debug usage only.
+ * Flag bit in flags of struct mtl_init_params, debug usage only.
  * use unicast address for ptp PTP_DELAY_REQ message
  */
-#define ST_FLAG_PTP_UNICAST_ADDR (ST_BIT64(21))
+#define MTL_FLAG_PTP_UNICAST_ADDR (MTL_BIT64(21))
 /**
- * Flag bit in flags of struct st_init_params, debug usage only.
+ * Flag bit in flags of struct mtl_init_params, debug usage only.
  * Mono memory pool for all rx queue(sessions)
  */
-#define ST_FLAG_RX_MONO_POOL (ST_BIT64(22))
+#define MTL_FLAG_RX_MONO_POOL (MTL_BIT64(22))
 /**
- * Flag bit in flags of struct st_init_params, debug usage only.
+ * Flag bit in flags of struct mtl_init_params, debug usage only.
  * Do st_start in st_init, st_stop in st_uninit, and skip the st_start/st_stop
  */
-#define ST_FLAG_DEV_AUTO_START_STOP (ST_BIT64(24))
+#define MTL_FLAG_DEV_AUTO_START_STOP (MTL_BIT64(24))
 /**
- * Flag bit in flags of struct st_init_params, debug usage only.
+ * Flag bit in flags of struct mtl_init_params, debug usage only.
  * Enable tasklet time measurement, report status if tasklet run time longer than
  * tasklet_time_thresh_us in st_init_params.
  */
-#define ST_FLAG_TASKLET_TIME_MEASURE (ST_BIT64(25))
+#define MTL_FLAG_TASKLET_TIME_MEASURE (MTL_BIT64(25))
 /**
- * Flag bit in flags of struct st_init_params, debug usage only.
+ * Flag bit in flags of struct mtl_init_params, debug usage only.
  * Disable the zero copy for af_xdp tx video session
  */
-#define ST_FLAG_AF_XDP_ZC_DISABLE (ST_BIT64(26))
+#define MTL_FLAG_AF_XDP_ZC_DISABLE (MTL_BIT64(26))
 /**
- * Flag bit in flags of struct st_init_params, debug usage only.
+ * Flag bit in flags of struct mtl_init_params, debug usage only.
  * Mono memory pool for all tx queue(session)
  */
-#define ST_FLAG_TX_MONO_POOL (ST_BIT64(27))
+#define MTL_FLAG_TX_MONO_POOL (MTL_BIT64(27))
 /**
- * Flag bit in flags of struct st_init_params, debug usage only.
+ * Flag bit in flags of struct mtl_init_params, debug usage only.
  * Disable system rx queues, pls use mcast or manual TX mac.
  */
-#define ST_FLAG_DISABLE_SYSTEM_RX_QUEUES (ST_BIT64(28))
+#define MTL_FLAG_DISABLE_SYSTEM_RX_QUEUES (MTL_BIT64(28))
 
 /**
  * The structure describing how to init af_xdp interface.
  * See https://doc.dpdk.org/guides/nics/af_xdp.html for detail.
  */
-struct st_af_xdp_params {
+struct mtl_af_xdp_params {
   /** starting netdev queue id, must > 0, 0 is reserved for system usage */
   uint8_t start_queue;
   /** total netdev queue number, must > 0 */
@@ -365,23 +276,23 @@ struct st_af_xdp_params {
 };
 
 /**
- * The structure describing how to init the streaming dpdk context.
+ * The structure describing how to init the mtl context.
  * Include the PCIE port and other required info.
  */
-struct st_init_params {
+struct mtl_init_params {
   /** Pcie BDF path like 0000:af:00.0 or enp175s0f0(AF_XDP) */
-  char port[ST_PORT_MAX][ST_PORT_MAX_LEN];
+  char port[MTL_PORT_MAX][MTL_PORT_MAX_LEN];
   /** number of pcie ports, 1 or 2 */
   uint8_t num_ports;
   /** dpdk user pmd or af_xdp */
-  enum st_pmd_type pmd[ST_PORT_MAX];
+  enum mtl_pmd_type pmd[MTL_PORT_MAX];
   /**
-   * af_xdp port info, only for ST_PMD_DPDK_AF_XDP.
-   * ST_PMD_DPDK_AF_XDP will use the IP of kernel itself.
+   * af_xdp port info, only for MTL_PMD_DPDK_AF_XDP.
+   * MTL_PMD_DPDK_AF_XDP will use the IP of kernel itself.
    */
-  struct st_af_xdp_params xdp_info[ST_PORT_MAX];
-  /** source IP of ports, olny for ST_PMD_DPDK_AF_XDP */
-  uint8_t sip_addr[ST_PORT_MAX][ST_IP_ADDR_LEN];
+  struct mtl_af_xdp_params xdp_info[MTL_PORT_MAX];
+  /** source IP of ports, olny for MTL_PMD_DPDK_AF_XDP */
+  uint8_t sip_addr[MTL_PORT_MAX][MTL_IP_ADDR_LEN];
   /**
    * max tx sessions(st20, st22, st30, st40) requested the lib to support,
    * use st_get_cap to query the actual count.
@@ -400,12 +311,12 @@ struct st_init_params {
    */
   char* lcores;
   /** dma(CBDMA or DSA) dev Pcie BDF path like 0000:80:04.0 */
-  char dma_dev_port[ST_DMA_DEV_MAX][ST_PORT_MAX_LEN];
+  char dma_dev_port[MTL_DMA_DEV_MAX][MTL_PORT_MAX_LEN];
   /** number of dma dev ports in dma_dev_port, leave to zero if no dma dev */
   uint8_t num_dma_dev_port;
   /** log level */
-  enum st_log_level log_level;
-  /** flags, value in ST_FLAG_* */
+  enum mtl_log_level log_level;
+  /** flags, value in MTL_FLAG_* */
   uint64_t flags;
   /** private data to the callback function */
   void* priv;
@@ -452,20 +363,9 @@ struct st_init_params {
 };
 
 /**
- * The structure describing the source address(ip addr and port) info for RX.
- * Leave redundant info to zero if the session only has primary port.
+ * A structure used to retrieve capacity for an MTL instance.
  */
-struct st_rx_source_info {
-  /** source IP address of sender */
-  uint8_t sip_addr[ST_PORT_MAX][ST_IP_ADDR_LEN];
-  /** UDP port number */
-  uint16_t udp_port[ST_PORT_MAX];
-};
-
-/**
- * A structure used to retrieve capacity for an ST instance.
- */
-struct st_cap {
+struct mtl_cap {
   /** max tx session count for current transport context */
   uint16_t tx_sessions_cnt_max;
   /** max rx session count for current transport context */
@@ -477,9 +377,9 @@ struct st_cap {
 };
 
 /**
- * A structure used to retrieve state for an ST instance.
+ * A structure used to retrieve state for an MTL instance.
  */
-struct st_stats {
+struct mtl_stats {
   /** st20 tx session count in current transport context */
   uint16_t st20_tx_sessions_cnt;
   /** st22 tx session count in current transport context */
@@ -507,60 +407,13 @@ struct st_stats {
 };
 
 /**
- * Pcap dump meta data for synchronous st**_rx_pcapng_dump.
- */
-struct st_pcap_dump_meta {
-  /** file path for the pcap dump file */
-  char file_name[ST_PCAP_FILE_MAX_LEN];
-  /** number of packets dumped */
-  uint32_t dumped_packets;
-};
-
-/**
- * The structure describing queue info attached to one session.
- */
-struct st_queue_meta {
-  /** 1 or 2, num of ports this session attached to */
-  uint8_t num_port;
-  /** starting netdev queue id */
-  uint8_t start_queue[ST_PORT_MAX];
-  /** queue id this session attached to */
-  uint8_t queue_id[ST_PORT_MAX];
-};
-
-/**
- * Vsync callback meta data
- */
-struct st10_vsync_meta {
-  /** current vsync epoch */
-  uint64_t epoch;
-  /** current ptp time */
-  uint64_t ptp;
-  /** frame time in ns */
-  double frame_time;
-};
-
-/**
- * Event type on a media session.
- */
-enum st_event {
-  /**
-   * vsync(ptp come to a new epoch) event on each frame, freq is fps,
-   * args point to struct st10_vsync_meta.
-   */
-  ST_EVENT_VSYNC = 0,
-  /** max value of this enum */
-  ST_EVENT_MAX,
-};
-
-/**
  * Inline function returning primary port pointer from st_init_params
  * @param p
  *   The pointer to the init parameters.
  * @return
  *     Primary port name pointer
  */
-static inline char* st_p_port(struct st_init_params* p) { return p->port[ST_PORT_P]; }
+static inline char* st_p_port(struct mtl_init_params* p) { return p->port[MTL_PORT_P]; }
 
 /**
  * Inline function returning redundant port pointer from st_init_params
@@ -569,7 +422,7 @@ static inline char* st_p_port(struct st_init_params* p) { return p->port[ST_PORT
  * @return
  *     Redundant port name pointer
  */
-static inline char* st_r_port(struct st_init_params* p) { return p->port[ST_PORT_R]; }
+static inline char* st_r_port(struct mtl_init_params* p) { return p->port[MTL_PORT_R]; }
 
 /**
  * Inline helper function returning primary port source IP address pointer
@@ -579,8 +432,8 @@ static inline char* st_r_port(struct st_init_params* p) { return p->port[ST_PORT
  * @return
  *     Primary port IP address pointer
  */
-static inline uint8_t* st_p_sip_addr(struct st_init_params* p) {
-  return p->sip_addr[ST_PORT_P];
+static inline uint8_t* st_p_sip_addr(struct mtl_init_params* p) {
+  return p->sip_addr[MTL_PORT_P];
 }
 
 /**
@@ -591,8 +444,8 @@ static inline uint8_t* st_p_sip_addr(struct st_init_params* p) {
  * @return
  *     Redundant port IP address pointer
  */
-static inline uint8_t* st_r_sip_addr(struct st_init_params* p) {
-  return p->sip_addr[ST_PORT_R];
+static inline uint8_t* st_r_sip_addr(struct mtl_init_params* p) {
+  return p->sip_addr[MTL_PORT_R];
 }
 
 /**
@@ -611,7 +464,7 @@ const char* st_version(void);
  *   - NULL on error.
  *   - Otherwise, the handle to the media transport device context.
  */
-st_handle st_init(struct st_init_params* p);
+mtl_handle st_init(struct mtl_init_params* p);
 
 /**
  * Un-initialize the media transport device context.
@@ -622,7 +475,7 @@ st_handle st_init(struct st_init_params* p);
  *   - 0: Success, device un-initialized.
  *   - <0: Error code of the device un-initialize.
  */
-int st_uninit(st_handle st);
+int st_uninit(mtl_handle st);
 
 /**
  * Start the media transport device context.
@@ -633,7 +486,7 @@ int st_uninit(st_handle st);
  *   - 0: Success, device started.
  *   - <0: Error code of the device start.
  */
-int st_start(st_handle st);
+int st_start(mtl_handle st);
 
 /**
  * Stop the media transport device context.
@@ -644,7 +497,7 @@ int st_start(st_handle st);
  *   - 0: Success, device stopped.
  *   - <0: Error code of the device stop.
  */
-int st_stop(st_handle st);
+int st_stop(mtl_handle st);
 
 /**
  * Abort the media transport device context.
@@ -656,7 +509,7 @@ int st_stop(st_handle st);
  *   - 0: Success, device aborted.
  *   - <0: Error code of the device abort.
  */
-int st_request_exit(st_handle st);
+int st_request_exit(mtl_handle st);
 
 /**
  * Retrieve the capacity of the media transport device context.
@@ -669,7 +522,7 @@ int st_request_exit(st_handle st);
  *   - 0 if successful.
  *   - <0: Error code if fail.
  */
-int st_get_cap(st_handle st, struct st_cap* cap);
+int st_get_cap(mtl_handle st, struct mtl_cap* cap);
 
 /**
  * Retrieve the stat info of the media transport device context.
@@ -682,7 +535,7 @@ int st_get_cap(st_handle st, struct st_cap* cap);
  *   - 0 if successful.
  *   - <0: Error code if fail.
  */
-int st_get_stats(st_handle st, struct st_stats* stats);
+int st_get_stats(mtl_handle st, struct mtl_stats* stats);
 
 /**
  * Enable or disable sleep mode for sch.
@@ -697,10 +550,10 @@ int st_get_stats(st_handle st, struct st_stats* stats);
  *   - 0: Success.
  *   - <0: Error code.
  */
-int st_sch_enable_sleep(st_handle st, int sch_idx, bool enable);
+int st_sch_enable_sleep(mtl_handle st, int sch_idx, bool enable);
 
 /**
- * Set the sleep us for the sch if ST_FLAG_TASKLET_SLEEP is enabled.
+ * Set the sleep us for the sch if MTL_FLAG_TASKLET_SLEEP is enabled.
  * Debug usage only.
  *
  * @param st
@@ -711,7 +564,7 @@ int st_sch_enable_sleep(st_handle st, int sch_idx, bool enable);
  *   - 0: Success.
  *   - <0: Error code.
  */
-int st_sch_set_sleep_us(st_handle st, uint64_t us);
+int st_sch_set_sleep_us(mtl_handle st, uint64_t us);
 
 /**
  * Request one DPDK lcore from the media transport device context.
@@ -724,7 +577,7 @@ int st_sch_set_sleep_us(st_handle st, uint64_t us);
  *   - 0 if successful.
  *   - <0: Error code if fail.
  */
-int st_get_lcore(st_handle st, unsigned int* lcore);
+int st_get_lcore(mtl_handle st, unsigned int* lcore);
 
 /**
  * Bind one thread to lcore.
@@ -739,7 +592,7 @@ int st_get_lcore(st_handle st, unsigned int* lcore);
  *   - 0 if successful.
  *   - <0: Error code if fail.
  */
-int st_bind_to_lcore(st_handle st, pthread_t thread, unsigned int lcore);
+int st_bind_to_lcore(mtl_handle st, pthread_t thread, unsigned int lcore);
 
 /**
  * Put back the DPDK lcore which requested from the media transport device context.
@@ -752,7 +605,7 @@ int st_bind_to_lcore(st_handle st, pthread_t thread, unsigned int lcore);
  *   - 0 if successful.
  *   - <0: Error code if fail.
  */
-int st_put_lcore(st_handle st, unsigned int lcore);
+int st_put_lcore(mtl_handle st, unsigned int lcore);
 
 /**
  * Performance optimized memcpy, e.g. AVX-512.
@@ -783,7 +636,7 @@ void* st_memcpy(void* dest, const void* src, size_t n);
  *   - NULL on error. Not enough memory, or invalid arguments
  *   - Otherwise, the pointer to the allocated memory.
  */
-void* st_hp_malloc(st_handle st, size_t size, enum st_port port);
+void* st_hp_malloc(mtl_handle st, size_t size, enum mtl_port port);
 
 /**
  * Allocate zero'ed memory from the huge-page area of memory.
@@ -801,7 +654,7 @@ void* st_hp_malloc(st_handle st, size_t size, enum st_port port);
  *   - NULL on error. Not enough memory, or invalid arguments
  *   - Otherwise, the virtual address pointer to the allocated memory.
  */
-void* st_hp_zmalloc(st_handle st, size_t size, enum st_port port);
+void* st_hp_zmalloc(mtl_handle st, size_t size, enum mtl_port port);
 
 /**
  * Frees the memory pointed by the pointer.
@@ -815,7 +668,7 @@ void* st_hp_zmalloc(st_handle st, size_t size, enum st_port port);
  * @param ptr
  *   The virtual address pointer to memory to be freed.
  */
-void st_hp_free(st_handle st, void* ptr);
+void st_hp_free(mtl_handle st, void* ptr);
 
 /**
  * Return the IO address of a virtual address from st_hp_malloc/st_hp_zmalloc
@@ -825,10 +678,10 @@ void st_hp_free(st_handle st, void* ptr);
  * @param vaddr
  *   Virtual address obtained from previous st_hp_malloc/st_hp_zmalloc call
  * @return
- *   ST_BAD_IOVA on error
+ *   MTL_BAD_IOVA on error
  *   otherwise return an address suitable for IO
  */
-st_iova_t st_hp_virt2iova(st_handle st, const void* vaddr);
+mtl_iova_t st_hp_virt2iova(mtl_handle st, const void* vaddr);
 
 /**
  * Return the detected page size on the system.
@@ -838,7 +691,7 @@ st_iova_t st_hp_virt2iova(st_handle st, const void* vaddr);
  * @return
  *   page size
  */
-size_t st_page_size(st_handle st);
+size_t st_page_size(mtl_handle st);
 
 /**
  * Perform DMA mapping with virtual address that can be used for IO.
@@ -852,10 +705,10 @@ size_t st_page_size(st_handle st);
  *   Length of memory segment being mapped.
  *
  * @return
- *   ST_BAD_IOVA on error
+ *   MTL_BAD_IOVA on error
  *   otherwise return an address suitable for IO
  */
-st_iova_t st_dma_map(st_handle st, const void* vaddr, size_t size);
+mtl_iova_t st_dma_map(mtl_handle st, const void* vaddr, size_t size);
 
 /**
  * Perform DMA unmapping on the st_dma_map
@@ -873,7 +726,7 @@ st_iova_t st_dma_map(st_handle st, const void* vaddr, size_t size);
  *   - 0 if successful.
  *   - <0: Error code if fail.
  */
-int st_dma_unmap(st_handle st, const void* vaddr, st_iova_t iova, size_t size);
+int st_dma_unmap(mtl_handle st, const void* vaddr, mtl_iova_t iova, size_t size);
 
 /**
  * Allocate memory block more than required and map valid data to IOVA.
@@ -898,7 +751,7 @@ int st_dma_unmap(st_handle st, const void* vaddr, st_iova_t iova, size_t size);
  *   - NULL on error.
  *   - Otherwise, the handle to the dma mem.
  */
-st_dma_mem_handle st_dma_mem_alloc(st_handle st, size_t size);
+mtl_dma_mem_handle st_dma_mem_alloc(mtl_handle st, size_t size);
 
 /**
  * Free the dma mem memory block.
@@ -909,7 +762,7 @@ st_dma_mem_handle st_dma_mem_alloc(st_handle st, size_t size);
  * @param handle
  *   The handle to the st dma mem.
  */
-void st_dma_mem_free(st_handle st, st_dma_mem_handle handle);
+void st_dma_mem_free(mtl_handle st, mtl_dma_mem_handle handle);
 
 /**
  * Get the begin address of dma mapped memory.
@@ -919,7 +772,7 @@ void st_dma_mem_free(st_handle st, st_dma_mem_handle handle);
  * @return
  *   - Begin address of dma mapped memory.
  */
-void* st_dma_mem_addr(st_dma_mem_handle handle);
+void* st_dma_mem_addr(mtl_dma_mem_handle handle);
 
 /**
  * Get the begin IOVA of dma mapped memory.
@@ -929,7 +782,7 @@ void* st_dma_mem_addr(st_dma_mem_handle handle);
  * @return
  *   - Begin IOVA of dma mapped memory.
  */
-st_iova_t st_dma_mem_iova(st_dma_mem_handle handle);
+mtl_iova_t st_dma_mem_iova(mtl_dma_mem_handle handle);
 
 /**
  * Allocate a user DMA dev from the dma_dev_port(st_init_params) list.
@@ -945,7 +798,7 @@ st_iova_t st_dma_mem_iova(st_dma_mem_handle handle);
  *   - NULL on error.
  *   - Otherwise, the handle to the st user dma dev.
  */
-st_udma_handle st_udma_create(st_handle st, uint16_t nb_desc, enum st_port port);
+mtl_udma_handle st_udma_create(mtl_handle st, uint16_t nb_desc, enum mtl_port port);
 
 /**
  * Free the st user dma dev.
@@ -956,7 +809,7 @@ st_udma_handle st_udma_create(st_handle st, uint16_t nb_desc, enum st_port port)
  *   - 0: Success.
  *   - <0: Error code of the free.
  */
-int st_udma_free(st_udma_handle handle);
+int st_udma_free(mtl_udma_handle handle);
 
 /**
  * Enqueue a copy operation onto the user dma dev.
@@ -964,10 +817,10 @@ int st_udma_free(st_udma_handle handle);
  * @param handle
  *   The handle to the st user dma dev.
  * @param dst
- *   The st_iova_t address of the destination buffer.
+ *   The mtl_iova_t address of the destination buffer.
  *   Must be the memory address by st_hp_virt2iova.
  * @param src
- *   The st_iova_t address of the source buffer.
+ *   The mtl_iova_t address of the source buffer.
  *   Must be the memory address by st_hp_virt2iova.
  * @param length
  *   The length of the data to be copied.
@@ -977,7 +830,7 @@ int st_udma_free(st_udma_handle handle);
  *   - -ENOSPC: if no space left to enqueue.
  *   - other values < 0 on failure.
  */
-int st_udma_copy(st_udma_handle handle, st_iova_t dst, st_iova_t src, uint32_t length);
+int st_udma_copy(mtl_udma_handle handle, mtl_iova_t dst, mtl_iova_t src, uint32_t length);
 
 /**
  * Enqueue a fill operation onto the virtual DMA channel.
@@ -985,7 +838,7 @@ int st_udma_copy(st_udma_handle handle, st_iova_t dst, st_iova_t src, uint32_t l
  * @param handle
  *   The handle to the st user dma dev.
  * @param dst
- *   The st_iova_t address of the destination buffer.
+ *   The mtl_iova_t address of the destination buffer.
  *   Must be the memory address by st_hp_virt2iova.
  * @param pattern
  *   The pattern(u64) to populate the destination buffer with.
@@ -997,7 +850,7 @@ int st_udma_copy(st_udma_handle handle, st_iova_t dst, st_iova_t src, uint32_t l
  *   - -ENOSPC: if no space left to enqueue.
  *   - other values < 0 on failure.
  */
-int st_udma_fill(st_udma_handle handle, st_iova_t dst, uint64_t pattern, uint32_t length);
+int st_udma_fill(mtl_udma_handle handle, mtl_iova_t dst, uint64_t pattern, uint32_t length);
 
 /**
  * Enqueue a fill operation onto the virtual DMA channel.
@@ -1005,7 +858,7 @@ int st_udma_fill(st_udma_handle handle, st_iova_t dst, uint64_t pattern, uint32_
  * @param handle
  *   The handle to the st user dma dev.
  * @param dst
- *   The st_iova_t address of the destination buffer.
+ *   The mtl_iova_t address of the destination buffer.
  *   Must be the memory address by st_hp_virt2iova.
  * @param pattern
  *   The pattern(u8) to populate the destination buffer with.
@@ -1017,7 +870,7 @@ int st_udma_fill(st_udma_handle handle, st_iova_t dst, uint64_t pattern, uint32_
  *   - -ENOSPC: if no space left to enqueue.
  *   - other values < 0 on failure.
  */
-static inline int st_udma_fill_u8(st_udma_handle handle, st_iova_t dst, uint8_t pattern,
+static inline int st_udma_fill_u8(mtl_udma_handle handle, mtl_iova_t dst, uint8_t pattern,
                                   uint32_t length) {
   uint64_t pattern_u64;
   /* pattern to u64 */
@@ -1034,7 +887,7 @@ static inline int st_udma_fill_u8(st_udma_handle handle, st_iova_t dst, uint8_t 
  *   - 0: Success.
  *   - <0: Error code of the submit.
  */
-int st_udma_submit(st_udma_handle handle);
+int st_udma_submit(mtl_udma_handle handle);
 
 /**
  * Return the number of operations that have been successfully completed.
@@ -1048,7 +901,7 @@ int st_udma_submit(st_udma_handle handle);
  *   The number of operations that successfully completed. This return value
  *   must be less than or equal to the value of nb_cpls.
  */
-uint16_t st_udma_completed(st_udma_handle handle, const uint16_t nb_cpls);
+uint16_t st_udma_completed(mtl_udma_handle handle, const uint16_t nb_cpls);
 
 /**
  * Read current time from ptp source.
@@ -1058,7 +911,7 @@ uint16_t st_udma_completed(st_udma_handle handle, const uint16_t nb_cpls);
  * @return
  *   - The time in nanoseconds in current ptp system
  */
-uint64_t st_ptp_read_time(st_handle st);
+uint64_t st_ptp_read_time(mtl_handle st);
 
 /**
  * Get SIMD level current cpu supported.
@@ -1066,7 +919,7 @@ uint64_t st_ptp_read_time(st_handle st);
  * @return
  *   - The simd level
  */
-enum st_simd_level st_get_simd_level(void);
+enum mtl_simd_level st_get_simd_level(void);
 
 /**
  * Get name of CPU simd level
@@ -1076,92 +929,7 @@ enum st_simd_level st_get_simd_level(void);
  * @return
  *     simd level name
  */
-const char* st_get_simd_level_name(enum st_simd_level level);
-
-/**
- * Inline function to check the  rx frame is a completed frame.
- * @param status
- *   The input frame status.
- * @return
- *     Complete or not.
- */
-static inline bool st_is_frame_complete(enum st_frame_status status) {
-  if ((status == ST_FRAME_STATUS_COMPLETE) || (status == ST_FRAME_STATUS_RECONSTRUCTED))
-    return true;
-  else
-    return false;
-}
-
-/**
- * Helper function returning accurate frame rate from enum st_fps
- * @param fps
- *   enum st_fps fps.
- * @return
- *   frame rate number
- */
-double st_frame_rate(enum st_fps fps);
-
-/**
- * Helper function to convert ST10_TIMESTAMP_FMT_TAI to ST10_TIMESTAMP_FMT_MEDIA_CLK.
- *
- * @param tai_ns
- *   time in nanoseconds since the TAI epoch.
- * @param sampling_rate
- *   sampling rate(90k for video, 48K/96K for audio).
- * @return
- *   the raw media clock value defined in ST2110-10, whose units vary by sampling_rate
- */
-uint32_t st10_tai_to_media_clk(uint64_t tai_ns, uint32_t sampling_rate);
-
-/**
- * Helper function to convert ST10_TIMESTAMP_FMT_MEDIA_CLK to nanoseconds.
- *
- * @param media_ts
- *   the raw media clock value defined in ST2110-10, whose units vary by sampling_rate.
- * @param sampling_rate
- *   sampling rate(90k for video, 48K/96K for audio).
- * @return
- *   time in nanoseconds.
- */
-uint64_t st10_media_clk_to_ns(uint32_t media_ts, uint32_t sampling_rate);
-
-/**
- * Helper function to get tai for both ST10_TIMESTAMP_FMT_TAI and
- * ST10_TIMESTAMP_FMT_MEDIA_CLK.
- *
- * @param tfmt
- *   timestamp fmt.
- * @param timestamp
- *   timestamp value with tfmt.
- * @param sampling_rate
- *   sampling rate(90k for video, 48K/96K for audio).
- * @return
- *   time in nanoseconds since the TAI epoch.
- */
-static inline uint64_t st10_get_tai(enum st10_timestamp_fmt tfmt, uint64_t timestamp,
-                                    uint32_t sampling_rate) {
-  if (tfmt == ST10_TIMESTAMP_FMT_TAI) return timestamp;
-  return st10_media_clk_to_ns((uint32_t)timestamp, sampling_rate);
-}
-
-/**
- * Helper function to get media clock value defined in ST2110-10 for both
- * ST10_TIMESTAMP_FMT_TAI and ST10_TIMESTAMP_FMT_MEDIA_CLK.
- *
- * @param tfmt
- *   timestamp fmt.
- * @param timestamp
- *   timestamp value with tfmt.
- * @param sampling_rate
- *   sampling rate(90k for video, 48K/96K for audio).
- * @return
- *   the raw media clock value defined in ST2110-10, whose units vary by sampling_rate.
- */
-static inline uint32_t st10_get_media_clk(enum st10_timestamp_fmt tfmt,
-                                          uint64_t timestamp, uint32_t sampling_rate) {
-  if (tfmt == ST10_TIMESTAMP_FMT_MEDIA_CLK) return (uint32_t)timestamp;
-  return st10_tai_to_media_clk(timestamp, sampling_rate);
-}
+const char* st_get_simd_level_name(enum mtl_simd_level level);
 
 /**
  * Helper function to get pmd type by port name.
@@ -1171,7 +939,7 @@ static inline uint32_t st10_get_media_clk(enum st10_timestamp_fmt tfmt,
  * @return
  *   pmd type.
  */
-enum st_pmd_type st_pmd_by_port_name(const char* port);
+enum mtl_pmd_type st_pmd_by_port_name(const char* port);
 
 /**
  * Helper function to get ip for interface.
@@ -1184,7 +952,7 @@ enum st_pmd_type st_pmd_by_port_name(const char* port);
  *   - 0: Success.
  *   - <0: Error code.
  */
-int st_get_if_ip(char* if_name, uint8_t ip[ST_IP_ADDR_LEN]);
+int st_get_if_ip(char* if_name, uint8_t ip[MTL_IP_ADDR_LEN]);
 
 /**
  * Helper function which align a size with pages

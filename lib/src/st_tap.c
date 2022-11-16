@@ -14,14 +14,14 @@
 #include "st_sch.h"
 #include "st_util.h"
 
-static struct st_main_impl* tap_main_impl;
+static struct mtl_main_impl* tap_main_impl;
 static struct rte_ring* tap_tx_ring;
 
 typedef ULONG (*GetAdaptersInfo_type)(PIP_ADAPTER_INFO AdapterInfo, PULONG SizePointer);
 
 static GetAdaptersInfo_type GetAdaptersInfo_ptr = NULL;
 
-static inline void tap_set_global_impl(struct st_main_impl* impl) {
+static inline void tap_set_global_impl(struct mtl_main_impl* impl) {
   tap_main_impl = impl;
 }
 
@@ -29,8 +29,8 @@ static inline bool io_active(struct overlapped_io* io) {
   return io->iostate == IOSTATE_QUEUED || io->iostate == IOSTATE_IMMEDIATE_RETURN;
 }
 
-static struct st_main_impl* tap_get_global_impl(void) {
-  struct st_main_impl* impl = tap_main_impl;
+static struct mtl_main_impl* tap_get_global_impl(void) {
+  struct mtl_main_impl* impl = tap_main_impl;
   if (!impl) err("%s, global impl not init\n", __func__);
   return impl;
 }
@@ -317,8 +317,8 @@ static struct rte_flow* tap_create_flow(struct st_cni_impl* cni, uint16_t port_i
   memset(&ipv4_spec, 0, sizeof(ipv4_spec));
   memset(&ipv4_mask, 0, sizeof(ipv4_mask));
 
-  memset(&ipv4_mask.hdr.dst_addr, 0xFF, ST_IP_ADDR_LEN);
-  rte_memcpy(&ipv4_spec.hdr.dst_addr, tap_ctx->ip_addr, ST_IP_ADDR_LEN);
+  memset(&ipv4_mask.hdr.dst_addr, 0xFF, MTL_IP_ADDR_LEN);
+  rte_memcpy(&ipv4_spec.hdr.dst_addr, tap_ctx->ip_addr, MTL_IP_ADDR_LEN);
   info("Flow bind to ip address inet %02x %02x %02x %02x \n", tap_ctx->ip_addr[0],
        tap_ctx->ip_addr[1], tap_ctx->ip_addr[2], tap_ctx->ip_addr[3]);
 
@@ -450,7 +450,7 @@ static int tap_get_ipaddress(struct st_cni_impl* cni) {
   return 0;
 }
 
-static int tap_uninit_lcore(struct st_main_impl* impl) {
+static int tap_uninit_lcore(struct mtl_main_impl* impl) {
   struct st_cni_impl* cni = st_get_cni(impl);
   struct tap_rt_context* tap_ctx = (struct tap_rt_context*)cni->tap_context;
 
@@ -468,7 +468,7 @@ static int tap_uninit_lcore(struct st_main_impl* impl) {
 // Write packet to TAP from ring buffer
 // Read packets from TAP driver and directly transfer to NIC card
 static int tap_bkg_thread(void* arg) {
-  struct st_main_impl* impl = arg;
+  struct mtl_main_impl* impl = arg;
   struct st_cni_impl* cni = st_get_cni(impl);
   int num_ports = st_num_ports(impl);
   int i;
@@ -513,7 +513,7 @@ static int tap_bkg_thread(void* arg) {
   return 0;
 }
 
-static int tap_queues_uinit(struct st_main_impl* impl) {
+static int tap_queues_uinit(struct mtl_main_impl* impl) {
   int num_ports = st_num_ports(impl);
   struct st_cni_impl* cni = st_get_cni(impl);
   struct tap_rt_context* tap_ctx = (struct tap_rt_context*)cni->tap_context;
@@ -537,7 +537,7 @@ static int configure_tap() {
   int ret, i;
   char ring_name[32];
   unsigned int flags, count;
-  struct st_main_impl* impl = tap_get_global_impl();
+  struct mtl_main_impl* impl = tap_get_global_impl();
   struct st_cni_impl* cni = st_get_cni(impl);
   struct st_interface* inf = st_if(impl, 0);
   struct iovec(*iovecs)[inf->nb_rx_desc + 1];
@@ -585,7 +585,7 @@ static int configure_tap() {
 
 static bool tap_open_device(struct st_cni_impl* cni,
                             PSP_DEVICE_INTERFACE_DETAIL_DATA dev_ifx_detail) {
-  struct st_main_impl* impl = tap_get_global_impl();
+  struct mtl_main_impl* impl = tap_get_global_impl();
   struct tap_rt_context* tap_ctx = (struct tap_rt_context*)cni->tap_context;
   char* path;
   char tap_device_path[MAX_PATH];
@@ -728,7 +728,7 @@ static PSP_DEVICE_INTERFACE_DETAIL_DATA get_tap_device_interface_detail(HDEVINFO
   return NULL;
 }
 
-static int tap_device_init(struct st_main_impl* impl, struct st_cni_impl* cni) {
+static int tap_device_init(struct mtl_main_impl* impl, struct st_cni_impl* cni) {
   DWORD device_index = 0;
   HDEVINFO dev_info;
   SP_DEVINFO_DATA device_info_data;
@@ -779,7 +779,7 @@ static int tap_device_init(struct st_main_impl* impl, struct st_cni_impl* cni) {
     return -EIO;
 }
 
-static int tap_device_uninit(struct st_main_impl* impl) {
+static int tap_device_uninit(struct mtl_main_impl* impl) {
   struct rte_mbuf* pkts_rx;
   void* data = NULL;
   uint16_t tx;
@@ -798,7 +798,7 @@ static int tap_device_uninit(struct st_main_impl* impl) {
 static const struct rte_eth_txconf dev_tx_port_conf = {.tx_rs_thresh = 1,
                                                        .tx_free_thresh = 1};
 
-static int tap_queues_init(struct st_main_impl* impl, struct st_cni_impl* cni) {
+static int tap_queues_init(struct mtl_main_impl* impl, struct st_cni_impl* cni) {
   int num_ports = st_num_ports(impl);
 
   uint16_t nb_tx_desc;
@@ -856,7 +856,7 @@ static int tap_queues_init(struct st_main_impl* impl, struct st_cni_impl* cni) {
   return 0;
 }
 
-int st_tap_handle(struct st_main_impl* impl, enum st_port port, struct rte_mbuf** rx_pkts,
+int st_tap_handle(struct mtl_main_impl* impl, enum mtl_port port, struct rte_mbuf** rx_pkts,
                   uint16_t nb_pkts) {
   struct st_cni_impl* cni = st_get_cni(impl);
   struct rte_mbuf* pkts_rx[ST_CNI_RX_BURST_SIZE];
@@ -881,7 +881,7 @@ int st_tap_handle(struct st_main_impl* impl, enum st_port port, struct rte_mbuf*
   return 0;
 }
 
-int st_tap_init(struct st_main_impl* impl) {
+int st_tap_init(struct mtl_main_impl* impl) {
   int ret;
   struct st_cni_impl* cni = st_get_cni(impl);
   unsigned int lcore;
@@ -919,7 +919,7 @@ int st_tap_init(struct st_main_impl* impl) {
   return 0;
 }
 
-int st_tap_uinit(struct st_main_impl* impl) {
+int st_tap_uinit(struct mtl_main_impl* impl) {
   struct st_cni_impl* cni = st_get_cni(impl);
 
   rte_atomic32_set(&cni->stop_tap, 1);

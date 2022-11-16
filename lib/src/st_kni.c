@@ -13,14 +13,14 @@
 #include "st_sch.h"
 #include "st_util.h"
 
-static struct st_main_impl* g_kni_main_impl;
+static struct mtl_main_impl* g_kni_main_impl;
 
-static inline void kni_set_global_impl(struct st_main_impl* impl) {
+static inline void kni_set_global_impl(struct mtl_main_impl* impl) {
   g_kni_main_impl = impl;
 }
 
-static struct st_main_impl* kni_get_global_impl(void) {
-  struct st_main_impl* impl = g_kni_main_impl;
+static struct mtl_main_impl* kni_get_global_impl(void) {
+  struct mtl_main_impl* impl = g_kni_main_impl;
 
   if (!impl) err("%s, global impl not init\n", __func__);
 
@@ -72,9 +72,9 @@ static int kni_config_allmulticast(uint16_t port_id, uint8_t to_on) {
 }
 
 static int kni_config_network_if(uint16_t port_id, uint8_t if_up) {
-  struct st_main_impl* impl = kni_get_global_impl();
+  struct mtl_main_impl* impl = kni_get_global_impl();
   struct st_cni_impl* cni = st_get_cni(impl);
-  enum st_port port = st_port_by_id(impl, port_id);
+  enum mtl_port port = st_port_by_id(impl, port_id);
 
   rte_atomic32_set(&cni->if_up[port], if_up);
   info("%s(%d), if_up %d\n", __func__, port, if_up);
@@ -86,7 +86,7 @@ static int kni_config_mac_address(uint16_t port, uint8_t macAddr[]) {
   return 0;
 }
 
-static int kni_assign_ip(struct st_main_impl* impl, enum st_port port) {
+static int kni_assign_ip(struct mtl_main_impl* impl, enum mtl_port port) {
   struct st_cni_impl* cni = st_get_cni(impl);
   int sock, ret;
   uint8_t* ip;
@@ -106,7 +106,7 @@ static int kni_assign_ip(struct st_main_impl* impl, enum st_port port) {
   ifr.ifr_ifru.ifru_addr.sa_family = AF_INET;
   ((struct sockaddr_in*)&ifr.ifr_ifru.ifru_addr)->sin_port = 0;
   memcpy(&((struct sockaddr_in*)&ifr.ifr_ifru.ifru_addr)->sin_addr.s_addr, ip,
-         ST_IP_ADDR_LEN);
+         MTL_IP_ADDR_LEN);
   ret = ioctl(sock, SIOCSIFADDR, &ifr);
   if (ret < 0) err("%s(%d), SIOCSIFADDR IP fail\n", __func__, port);
   info("%s(%d), IP:%d.%d.%d.%d set to KNI %s\n", __func__, port, ip[0], ip[1], ip[2],
@@ -118,7 +118,7 @@ static int kni_assign_ip(struct st_main_impl* impl, enum st_port port) {
 }
 
 static void* kni_bkg_thread(void* arg) {
-  struct st_main_impl* impl = arg;
+  struct mtl_main_impl* impl = arg;
   struct st_cni_impl* cni = st_get_cni(impl);
   int num_ports = st_num_ports(impl);
   int ret, i;
@@ -159,7 +159,7 @@ static void* kni_bkg_thread(void* arg) {
   return NULL;
 }
 
-static int kni_start_port(struct st_main_impl* impl, enum st_port port) {
+static int kni_start_port(struct mtl_main_impl* impl, enum mtl_port port) {
   struct st_cni_impl* cni = st_get_cni(impl);
   uint16_t port_id = st_port_id(impl, port);
   struct rte_kni* rkni;
@@ -184,7 +184,7 @@ static int kni_start_port(struct st_main_impl* impl, enum st_port port) {
   return 0;
 }
 
-static int kni_queues_uinit(struct st_main_impl* impl) {
+static int kni_queues_uinit(struct mtl_main_impl* impl) {
   int num_ports = st_num_ports(impl);
   struct st_cni_impl* cni = st_get_cni(impl);
 
@@ -198,7 +198,7 @@ static int kni_queues_uinit(struct st_main_impl* impl) {
   return 0;
 }
 
-static int kni_queues_init(struct st_main_impl* impl, struct st_cni_impl* cni) {
+static int kni_queues_init(struct mtl_main_impl* impl, struct st_cni_impl* cni) {
   int num_ports = st_num_ports(impl);
   int ret;
 
@@ -216,7 +216,7 @@ static int kni_queues_init(struct st_main_impl* impl, struct st_cni_impl* cni) {
   return 0;
 }
 
-int st_kni_handle(struct st_main_impl* impl, enum st_port port, struct rte_mbuf** rx_pkts,
+int st_kni_handle(struct mtl_main_impl* impl, enum mtl_port port, struct rte_mbuf** rx_pkts,
                   uint16_t nb_pkts) {
   struct st_cni_impl* cni = st_get_cni(impl);
   struct rte_kni* rkni = cni->rkni[port];
@@ -246,7 +246,7 @@ int st_kni_handle(struct st_main_impl* impl, enum st_port port, struct rte_mbuf*
   return 0;
 }
 
-int st_kni_init(struct st_main_impl* impl) {
+int st_kni_init(struct mtl_main_impl* impl) {
   int ret, i;
   int num_ports = st_num_ports(impl);
   struct st_cni_impl* cni = st_get_cni(impl);
@@ -295,7 +295,7 @@ int st_kni_init(struct st_main_impl* impl) {
   return 0;
 }
 
-int st_kni_uinit(struct st_main_impl* impl) {
+int st_kni_uinit(struct mtl_main_impl* impl) {
   struct st_cni_impl* cni = st_get_cni(impl);
   int num_ports = st_num_ports(impl), ret;
   struct rte_kni* rkni;

@@ -408,25 +408,25 @@ static int app_tx_anc_init(struct st_app_context* ctx, st_json_ancillary_session
   ops.name = name;
   ops.priv = s;
   ops.num_port = anc ? anc->base.num_inf : ctx->para.num_ports;
-  memcpy(ops.dip_addr[ST_PORT_P],
-         anc ? anc->base.ip[ST_PORT_P] : ctx->tx_dip_addr[ST_PORT_P], ST_IP_ADDR_LEN);
-  strncpy(ops.port[ST_PORT_P],
-          anc ? anc->base.inf[ST_PORT_P]->name : ctx->para.port[ST_PORT_P],
-          ST_PORT_MAX_LEN);
-  ops.udp_port[ST_PORT_P] = anc ? anc->base.udp_port : (10200 + s->idx);
-  if (ctx->has_tx_dst_mac[ST_PORT_P]) {
-    memcpy(&ops.tx_dst_mac[ST_PORT_P][0], ctx->tx_dst_mac[ST_PORT_P], 6);
+  memcpy(ops.dip_addr[MTL_PORT_P],
+         anc ? anc->base.ip[MTL_PORT_P] : ctx->tx_dip_addr[MTL_PORT_P], MTL_IP_ADDR_LEN);
+  strncpy(ops.port[MTL_PORT_P],
+          anc ? anc->base.inf[MTL_PORT_P]->name : ctx->para.port[MTL_PORT_P],
+          MTL_PORT_MAX_LEN);
+  ops.udp_port[MTL_PORT_P] = anc ? anc->base.udp_port : (10200 + s->idx);
+  if (ctx->has_tx_dst_mac[MTL_PORT_P]) {
+    memcpy(&ops.tx_dst_mac[MTL_PORT_P][0], ctx->tx_dst_mac[MTL_PORT_P], 6);
     ops.flags |= ST40_TX_FLAG_USER_P_MAC;
   }
   if (ops.num_port > 1) {
-    memcpy(ops.dip_addr[ST_PORT_R],
-           anc ? anc->base.ip[ST_PORT_R] : ctx->tx_dip_addr[ST_PORT_R], ST_IP_ADDR_LEN);
-    strncpy(ops.port[ST_PORT_R],
-            anc ? anc->base.inf[ST_PORT_R]->name : ctx->para.port[ST_PORT_R],
-            ST_PORT_MAX_LEN);
-    ops.udp_port[ST_PORT_R] = anc ? anc->base.udp_port : (10200 + s->idx);
-    if (ctx->has_tx_dst_mac[ST_PORT_R]) {
-      memcpy(&ops.tx_dst_mac[ST_PORT_R][0], ctx->tx_dst_mac[ST_PORT_R], 6);
+    memcpy(ops.dip_addr[MTL_PORT_R],
+           anc ? anc->base.ip[MTL_PORT_R] : ctx->tx_dip_addr[MTL_PORT_R], MTL_IP_ADDR_LEN);
+    strncpy(ops.port[MTL_PORT_R],
+            anc ? anc->base.inf[MTL_PORT_R]->name : ctx->para.port[MTL_PORT_R],
+            MTL_PORT_MAX_LEN);
+    ops.udp_port[MTL_PORT_R] = anc ? anc->base.udp_port : (10200 + s->idx);
+    if (ctx->has_tx_dst_mac[MTL_PORT_R]) {
+      memcpy(&ops.tx_dst_mac[MTL_PORT_R][0], ctx->tx_dst_mac[MTL_PORT_R], 6);
       ops.flags |= ST40_TX_FLAG_USER_R_MAC;
     }
   }

@@ -453,8 +453,8 @@ int st20_rfc4175_422be10_to_yuv422p10le_avx512_vbmi(struct st20_rfc4175_422_10_p
 }
 
 int st20_rfc4175_422be10_to_yuv422p10le_avx512_vbmi_dma(
-    struct st_dma_lender_dev* dma, struct st20_rfc4175_422_10_pg2_be* pg_be,
-    st_iova_t pg_be_iova, uint16_t* y, uint16_t* b, uint16_t* r, uint32_t w, uint32_t h) {
+    struct mtl_dma_lender_dev* dma, struct st20_rfc4175_422_10_pg2_be* pg_be,
+    mtl_iova_t pg_be_iova, uint16_t* y, uint16_t* b, uint16_t* r, uint32_t w, uint32_t h) {
   __m512i permute_le_mask = _mm512_loadu_si512(b2l_permute_mask_table_512);
   __m512i srlv_le_mask = _mm512_loadu_si512(b2l_srlv_mask_table_512);
   __m512i srlv_and_mask = _mm512_loadu_si512(b2l_and_mask_table_512);
@@ -636,8 +636,8 @@ int st20_rfc4175_422be10_to_422le10_avx512_vbmi(struct st20_rfc4175_422_10_pg2_b
 }
 
 int st20_rfc4175_422be10_to_422le10_avx512_vbmi_dma(
-    struct st_dma_lender_dev* dma, struct st20_rfc4175_422_10_pg2_be* pg_be,
-    st_iova_t pg_be_iova, struct st20_rfc4175_422_10_pg2_le* pg_le, uint32_t w,
+    struct mtl_dma_lender_dev* dma, struct st20_rfc4175_422_10_pg2_be* pg_be,
+    mtl_iova_t pg_be_iova, struct st20_rfc4175_422_10_pg2_le* pg_le, uint32_t w,
     uint32_t h) {
   __m512i permute_l0 = _mm512_loadu_si512((__m512i*)permute_l0_mask_table);
   __m512i permute_r0 = _mm512_loadu_si512((__m512i*)permute_r0_mask_table);
@@ -810,8 +810,8 @@ int st20_rfc4175_422be10_to_422le8_avx512_vbmi(struct st20_rfc4175_422_10_pg2_be
 }
 
 int st20_rfc4175_422be10_to_422le8_avx512_vbmi_dma(
-    struct st_dma_lender_dev* dma, struct st20_rfc4175_422_10_pg2_be* pg_10,
-    st_iova_t pg_10_iova, struct st20_rfc4175_422_8_pg2_le* pg_8, uint32_t w,
+    struct mtl_dma_lender_dev* dma, struct st20_rfc4175_422_10_pg2_be* pg_10,
+    mtl_iova_t pg_10_iova, struct st20_rfc4175_422_8_pg2_le* pg_8, uint32_t w,
     uint32_t h) {
   __m512i permute_mask = _mm512_loadu_si512((__m512i*)rfc4175be10_to_8_permute_tbl_512);
   __m512i multishift_mask =
@@ -990,9 +990,9 @@ int st20_rfc4175_422be10_to_v210_avx512_vbmi(struct st20_rfc4175_422_10_pg2_be* 
   return 0;
 }
 
-int st20_rfc4175_422be10_to_v210_avx512_vbmi_dma(struct st_dma_lender_dev* dma,
+int st20_rfc4175_422be10_to_v210_avx512_vbmi_dma(struct mtl_dma_lender_dev* dma,
                                                  struct st20_rfc4175_422_10_pg2_be* pg_be,
-                                                 st_iova_t pg_be_iova, uint8_t* pg_v210,
+                                                 mtl_iova_t pg_be_iova, uint8_t* pg_v210,
                                                  uint32_t w, uint32_t h) {
   __m512i permute0_mask = _mm512_loadu_si512((__m512i*)permute0_mask_table_512);
   __m512i multishift0_mask = _mm512_loadu_si512((__m512i*)multishift0_mask_table_512);
@@ -1447,8 +1447,8 @@ int st20_rfc4175_422le10_to_422be10_vbmi(struct st20_rfc4175_422_10_pg2_le* pg_l
 }
 
 int st20_rfc4175_422le10_to_422be10_avx512_vbmi_dma(
-    struct st_dma_lender_dev* dma, struct st20_rfc4175_422_10_pg2_le* pg_le,
-    st_iova_t pg_le_iova, struct st20_rfc4175_422_10_pg2_be* pg_be, uint32_t w,
+    struct mtl_dma_lender_dev* dma, struct st20_rfc4175_422_10_pg2_le* pg_le,
+    mtl_iova_t pg_le_iova, struct st20_rfc4175_422_10_pg2_be* pg_be, uint32_t w,
     uint32_t h) {
   __m512i permute_l0 = _mm512_loadu_si512((__m512i*)rfc4175l2b_permute_l0_tbl);
   __m512i permute_r0 = _mm512_loadu_si512((__m512i*)rfc4175l2b_permute_r0_tbl);
@@ -1698,8 +1698,8 @@ int st20_v210_to_rfc4175_422be10_avx512_vbmi(uint8_t* pg_v210,
   return 0;
 }
 
-int st20_v210_to_rfc4175_422be10_avx512_vbmi_dma(struct st_dma_lender_dev* dma,
-                                                 uint8_t* pg_v210, st_iova_t pg_v210_iova,
+int st20_v210_to_rfc4175_422be10_avx512_vbmi_dma(struct mtl_dma_lender_dev* dma,
+                                                 uint8_t* pg_v210, mtl_iova_t pg_v210_iova,
                                                  struct st20_rfc4175_422_10_pg2_be* pg_be,
                                                  uint32_t w, uint32_t h) {
   __m512i multishift_tbl0 =

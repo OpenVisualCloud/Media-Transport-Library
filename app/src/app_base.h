@@ -83,7 +83,7 @@ struct st_app_frameinfo {
 
 struct st_app_tx_video_session {
   int idx;
-  st_handle st;
+  mtl_handle st;
   st20_tx_handle handle;
   int handle_sch_idx;
 
@@ -205,7 +205,7 @@ struct st_app_tx_anc_session {
 
 struct st_app_rx_video_session {
   int idx;
-  st_handle st;
+  mtl_handle st;
   st20_rx_handle handle;
   st20r_rx_handle st20r_handle; /* for st20r */
   int framebuff_cnt;
@@ -298,7 +298,7 @@ struct st22_app_tx_session {
   size_t bytes_per_frame;
 
   struct st_app_context* ctx;
-  st_handle st;
+  mtl_handle st;
   int lcore;
   int handle_sch_idx;
 
@@ -352,7 +352,7 @@ struct st22_app_rx_session {
 struct st_app_tx_st22p_session {
   int idx;
   st22p_tx_handle handle;
-  st_handle st;
+  mtl_handle st;
   int framebuff_cnt;
   int st22p_frame_size;
   int width;
@@ -375,7 +375,7 @@ struct st_app_tx_st22p_session {
 
 struct st_app_rx_st22p_session {
   int idx;
-  st_handle st;
+  mtl_handle st;
   st22p_rx_handle handle;
   int framebuff_cnt;
   int st22p_frame_size;
@@ -405,7 +405,7 @@ struct st_app_rx_st22p_session {
 struct st_app_tx_st20p_session {
   int idx;
   st20p_tx_handle handle;
-  st_handle st;
+  mtl_handle st;
   int framebuff_cnt;
   int st20p_frame_size;
   int width;
@@ -429,7 +429,7 @@ struct st_app_tx_st20p_session {
 struct st_app_rx_st20p_session {
   int idx;
   st20p_rx_handle handle;
-  st_handle st;
+  mtl_handle st;
   int framebuff_cnt;
   int st20p_frame_size;
   int width;
@@ -461,14 +461,14 @@ struct st_app_var_params {
 
 struct st_app_context {
   st_json_context_t* json_ctx;
-  struct st_init_params para;
+  struct mtl_init_params para;
   struct st_app_var_params var_para;
-  st_handle st;
+  mtl_handle st;
   int test_time_s;
   bool stop;
-  uint8_t tx_dip_addr[ST_PORT_MAX][ST_IP_ADDR_LEN]; /* tx destination IP */
-  bool has_tx_dst_mac[ST_PORT_MAX];
-  uint8_t tx_dst_mac[ST_PORT_MAX][6];
+  uint8_t tx_dip_addr[MTL_PORT_MAX][MTL_IP_ADDR_LEN]; /* tx destination IP */
+  bool has_tx_dst_mac[MTL_PORT_MAX];
+  uint8_t tx_dst_mac[MTL_PORT_MAX][6];
 
   int lcore[ST_APP_MAX_LCORES];
   int rtp_lcore[ST_APP_MAX_LCORES];
@@ -501,7 +501,7 @@ struct st_app_context {
   struct st_app_tx_st20p_session* tx_st20p_sessions;
   int tx_st20p_session_cnt;
 
-  uint8_t rx_sip_addr[ST_PORT_MAX][ST_IP_ADDR_LEN]; /* rx source IP */
+  uint8_t rx_sip_addr[MTL_PORT_MAX][MTL_IP_ADDR_LEN]; /* rx source IP */
 
   struct st_app_rx_video_session* rx_video_sessions;
   int rx_video_session_cnt;

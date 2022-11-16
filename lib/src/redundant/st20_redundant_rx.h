@@ -13,18 +13,18 @@ struct st20r_rx_ctx;
 
 struct st20r_rx_transport {
   st20_rx_handle handle;
-  enum st_port port; /* port this handle attached */
+  enum mtl_port port; /* port this handle attached */
   struct st20r_rx_ctx* parnet;
 };
 
 struct st20r_rx_frame {
   void* frame;
-  enum st_port port;
+  enum mtl_port port;
   struct st20_rx_frame_meta meta;
 };
 
 struct st20r_rx_ctx {
-  struct st_main_impl* impl;
+  struct mtl_main_impl* impl;
   int idx;
   enum st_session_type type; /* for sanity check, must be ST_SESSION_TYPE_RX_VIDEO_R */
 
@@ -33,7 +33,7 @@ struct st20r_rx_ctx {
 
   pthread_mutex_t lock;
   bool ready;
-  struct st20r_rx_transport* transport[ST_PORT_MAX];
+  struct st20r_rx_transport* transport[MTL_PORT_MAX];
 
   /* global status for current frame */
   void* cur_frame;

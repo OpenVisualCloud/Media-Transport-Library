@@ -26,7 +26,7 @@ struct st20p_rx_frame {
 };
 
 struct st20p_rx_ctx {
-  struct st_main_impl* impl;
+  struct mtl_main_impl* impl;
   int idx;
   enum st_session_type type; /* for sanity check */
 

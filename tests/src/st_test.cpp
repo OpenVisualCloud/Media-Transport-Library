@@ -6,8 +6,8 @@
 #include "tests.h"
 
 int st_test_sch_cnt(struct st_tests_context* ctx) {
-  st_handle handle = ctx->handle;
-  struct st_stats stats;
+  mtl_handle handle = ctx->handle;
+  struct mtl_stats stats;
   int ret;
 
   ret = st_get_stats(handle, &stats);
@@ -17,9 +17,9 @@ int st_test_sch_cnt(struct st_tests_context* ctx) {
 }
 
 bool st_test_dma_available(struct st_tests_context* ctx) {
-  st_handle handle = ctx->handle;
-  struct st_stats stats;
-  struct st_cap cap;
+  mtl_handle handle = ctx->handle;
+  struct mtl_stats stats;
+  struct mtl_cap cap;
   int ret;
 
   ret = st_get_stats(handle, &stats);
@@ -36,8 +36,8 @@ bool st_test_dma_available(struct st_tests_context* ctx) {
 
 static void init_expect_fail_test(void) {
   struct st_tests_context* ctx = st_test_ctx();
-  st_handle handle;
-  struct st_init_params para;
+  mtl_handle handle;
+  struct mtl_init_params para;
 
   memset(&para, 0, sizeof(para));
   handle = st_init(&para);
@@ -47,15 +47,15 @@ static void init_expect_fail_test(void) {
   handle = st_init(&para);
   EXPECT_TRUE(handle == NULL);
 
-  memcpy(st_p_sip_addr(&para), ctx->para.sip_addr[ST_PORT_P], ST_IP_ADDR_LEN);
+  memcpy(st_p_sip_addr(&para), ctx->para.sip_addr[MTL_PORT_P], MTL_IP_ADDR_LEN);
   handle = st_init(&para);
   EXPECT_TRUE(handle == NULL);
 
-  snprintf(para.port[ST_PORT_P], sizeof(para.port[ST_PORT_P]), "0000:55:00.0");
+  snprintf(para.port[MTL_PORT_P], sizeof(para.port[MTL_PORT_P]), "0000:55:00.0");
   handle = st_init(&para);
   EXPECT_TRUE(handle == NULL);
 
-  memcpy(st_r_sip_addr(&para), ctx->para.sip_addr[ST_PORT_R], ST_IP_ADDR_LEN);
+  memcpy(st_r_sip_addr(&para), ctx->para.sip_addr[MTL_PORT_R], MTL_IP_ADDR_LEN);
 
   /* test with 0 num_ports */
   para.num_ports = 0;
@@ -87,7 +87,7 @@ TEST(Main, init_expect_fail) { init_expect_fail_test(); }
 
 static void reinit_expect_fail_test(void) {
   struct st_tests_context* ctx = st_test_ctx();
-  st_handle handle;
+  mtl_handle handle;
 
   handle = st_init(&ctx->para);
   EXPECT_TRUE(handle == NULL);
@@ -97,7 +97,7 @@ TEST(Main, re_init_fail) { reinit_expect_fail_test(); }
 
 static void start_stop_test(int repeat) {
   struct st_tests_context* ctx = st_test_ctx();
-  st_handle handle = ctx->handle;
+  mtl_handle handle = ctx->handle;
   int ret;
 
   for (int i = 0; i < repeat; i++) {
@@ -114,7 +114,7 @@ TEST(Main, start_stop_multi) { start_stop_test(5); }
 
 static void start_expect_fail_test(void) {
   struct st_tests_context* ctx = st_test_ctx();
-  st_handle handle = ctx->handle;
+  mtl_handle handle = ctx->handle;
   int ret;
 
   ret = st_start(handle);
@@ -129,7 +129,7 @@ TEST(Main, start_expect_fail) { start_expect_fail_test(); }
 
 static void stop_expect_fail_test(void) {
   struct st_tests_context* ctx = st_test_ctx();
-  st_handle handle = ctx->handle;
+  mtl_handle handle = ctx->handle;
   int ret;
 
   ret = st_stop(handle);
@@ -148,8 +148,8 @@ TEST(Main, stop_expect_fail) { stop_expect_fail_test(); }
 
 TEST(Main, get_cap) {
   struct st_tests_context* ctx = st_test_ctx();
-  st_handle handle = ctx->handle;
-  struct st_cap cap;
+  mtl_handle handle = ctx->handle;
+  struct mtl_cap cap;
   int ret;
 
   ret = st_get_cap(handle, &cap);
@@ -162,8 +162,8 @@ TEST(Main, get_cap) {
 
 TEST(Main, get_stats) {
   struct st_tests_context* ctx = st_test_ctx();
-  st_handle handle = ctx->handle;
-  struct st_stats stats;
+  mtl_handle handle = ctx->handle;
+  struct mtl_stats stats;
   int ret;
 
   ret = st_get_stats(handle, &stats);
@@ -178,8 +178,8 @@ TEST(Main, get_stats) {
 }
 
 static int test_lcore_cnt(struct st_tests_context* ctx) {
-  st_handle handle = ctx->handle;
-  struct st_stats stats;
+  mtl_handle handle = ctx->handle;
+  struct mtl_stats stats;
   int ret;
 
   ret = st_get_stats(handle, &stats);
@@ -189,7 +189,7 @@ static int test_lcore_cnt(struct st_tests_context* ctx) {
 }
 
 static void test_lcore_one(struct st_tests_context* ctx) {
-  st_handle handle = ctx->handle;
+  mtl_handle handle = ctx->handle;
   int base_cnt = test_lcore_cnt(ctx);
   int ret;
   unsigned int lcore;
@@ -210,7 +210,7 @@ TEST(Main, lcore) {
 
 TEST(Main, lcore_max) {
   struct st_tests_context* ctx = st_test_ctx();
-  st_handle handle = ctx->handle;
+  mtl_handle handle = ctx->handle;
   int base_cnt = test_lcore_cnt(ctx), max = 100;
   int ret, i;
   unsigned int lcore[100];
@@ -229,7 +229,7 @@ TEST(Main, lcore_max) {
 
 TEST(Main, lcore_expect_fail) {
   struct st_tests_context* ctx = st_test_ctx();
-  st_handle handle = ctx->handle;
+  mtl_handle handle = ctx->handle;
 
   int ret = st_put_lcore(handle, 10000);
   ASSERT_LT(ret, 0);
@@ -237,8 +237,8 @@ TEST(Main, lcore_expect_fail) {
 }
 
 static bool test_dev_started(struct st_tests_context* ctx) {
-  st_handle handle = ctx->handle;
-  struct st_stats stats;
+  mtl_handle handle = ctx->handle;
+  struct mtl_stats stats;
   int ret;
 
   ret = st_get_stats(handle, &stats);
@@ -252,7 +252,7 @@ static bool test_dev_started(struct st_tests_context* ctx) {
 
 TEST(Main, dev_started) {
   struct st_tests_context* ctx = st_test_ctx();
-  st_handle handle = ctx->handle;
+  mtl_handle handle = ctx->handle;
 
   int ret = st_start(handle);
   EXPECT_GE(ret, 0);

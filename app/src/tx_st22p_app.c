@@ -100,7 +100,7 @@ static int app_tx_st22p_open_source(struct st_app_tx_st22p_session* s) {
     return -EIO;
   }
 
-  s->st22p_source_begin = st_hp_malloc(s->st, i.st_size, ST_PORT_P);
+  s->st22p_source_begin = st_hp_malloc(s->st, i.st_size, MTL_PORT_P);
   if (!s->st22p_source_begin) {
     warn("%s, source malloc on hugepage fail\n", __func__);
     s->st22p_source_begin = m;
@@ -198,26 +198,26 @@ static int app_tx_st22p_init(struct st_app_context* ctx, st_json_st22p_session_t
   ops.name = name;
   ops.priv = s;
   ops.port.num_port = st22p ? st22p->base.num_inf : ctx->para.num_ports;
-  memcpy(ops.port.dip_addr[ST_PORT_P],
-         st22p ? st22p->base.ip[ST_PORT_P] : ctx->tx_dip_addr[ST_PORT_P], ST_IP_ADDR_LEN);
-  strncpy(ops.port.port[ST_PORT_P],
-          st22p ? st22p->base.inf[ST_PORT_P]->name : ctx->para.port[ST_PORT_P],
-          ST_PORT_MAX_LEN);
-  ops.port.udp_port[ST_PORT_P] = st22p ? st22p->base.udp_port : (10000 + s->idx);
-  if (ctx->has_tx_dst_mac[ST_PORT_P]) {
-    memcpy(&ops.tx_dst_mac[ST_PORT_P][0], ctx->tx_dst_mac[ST_PORT_P], 6);
+  memcpy(ops.port.dip_addr[MTL_PORT_P],
+         st22p ? st22p->base.ip[MTL_PORT_P] : ctx->tx_dip_addr[MTL_PORT_P], MTL_IP_ADDR_LEN);
+  strncpy(ops.port.port[MTL_PORT_P],
+          st22p ? st22p->base.inf[MTL_PORT_P]->name : ctx->para.port[MTL_PORT_P],
+          MTL_PORT_MAX_LEN);
+  ops.port.udp_port[MTL_PORT_P] = st22p ? st22p->base.udp_port : (10000 + s->idx);
+  if (ctx->has_tx_dst_mac[MTL_PORT_P]) {
+    memcpy(&ops.tx_dst_mac[MTL_PORT_P][0], ctx->tx_dst_mac[MTL_PORT_P], 6);
     ops.flags |= ST22P_TX_FLAG_USER_P_MAC;
   }
   if (ops.port.num_port > 1) {
-    memcpy(ops.port.dip_addr[ST_PORT_R],
-           st22p ? st22p->base.ip[ST_PORT_R] : ctx->tx_dip_addr[ST_PORT_R],
-           ST_IP_ADDR_LEN);
-    strncpy(ops.port.port[ST_PORT_R],
-            st22p ? st22p->base.inf[ST_PORT_R]->name : ctx->para.port[ST_PORT_R],
-            ST_PORT_MAX_LEN);
-    ops.port.udp_port[ST_PORT_R] = st22p ? st22p->base.udp_port : (10000 + s->idx);
-    if (ctx->has_tx_dst_mac[ST_PORT_R]) {
-      memcpy(&ops.tx_dst_mac[ST_PORT_R][0], ctx->tx_dst_mac[ST_PORT_R], 6);
+    memcpy(ops.port.dip_addr[MTL_PORT_R],
+           st22p ? st22p->base.ip[MTL_PORT_R] : ctx->tx_dip_addr[MTL_PORT_R],
+           MTL_IP_ADDR_LEN);
+    strncpy(ops.port.port[MTL_PORT_R],
+            st22p ? st22p->base.inf[MTL_PORT_R]->name : ctx->para.port[MTL_PORT_R],
+            MTL_PORT_MAX_LEN);
+    ops.port.udp_port[MTL_PORT_R] = st22p ? st22p->base.udp_port : (10000 + s->idx);
+    if (ctx->has_tx_dst_mac[MTL_PORT_R]) {
+      memcpy(&ops.tx_dst_mac[MTL_PORT_R][0], ctx->tx_dst_mac[MTL_PORT_R], 6);
       ops.flags |= ST22P_TX_FLAG_USER_R_MAC;
     }
   }

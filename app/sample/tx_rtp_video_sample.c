@@ -127,9 +127,9 @@ int main(int argc, char** argv) {
     ops_tx.name = "st20_test";
     ops_tx.priv = app[i];  // app handle register to lib
     ops_tx.num_port = 1;
-    memcpy(ops_tx.dip_addr[ST_PORT_P], ctx.tx_dip_addr[ST_PORT_P], ST_IP_ADDR_LEN);
-    strncpy(ops_tx.port[ST_PORT_P], ctx.param.port[ST_PORT_P], ST_PORT_MAX_LEN);
-    ops_tx.udp_port[ST_PORT_P] = ctx.udp_port + i;
+    memcpy(ops_tx.dip_addr[MTL_PORT_P], ctx.tx_dip_addr[MTL_PORT_P], MTL_IP_ADDR_LEN);
+    strncpy(ops_tx.port[MTL_PORT_P], ctx.param.port[MTL_PORT_P], MTL_PORT_MAX_LEN);
+    ops_tx.udp_port[MTL_PORT_P] = ctx.udp_port + i;
     ops_tx.pacing = ST21_PACING_NARROW;
     ops_tx.type = ST20_TYPE_RTP_LEVEL;
     ops_tx.width = ctx.width;

@@ -212,7 +212,7 @@ static int tx_st22p_encode_dump(void* priv) {
   return 0;
 }
 
-static int tx_st22p_create_transport(st_handle st, struct st22p_tx_ctx* ctx,
+static int tx_st22p_create_transport(mtl_handle st, struct st22p_tx_ctx* ctx,
                                      struct st22p_tx_ops* ops) {
   int idx = ctx->idx;
   struct st22_tx_ops ops_tx;
@@ -221,18 +221,18 @@ static int tx_st22p_create_transport(st_handle st, struct st22p_tx_ctx* ctx,
   memset(&ops_tx, 0, sizeof(ops_tx));
   ops_tx.name = ops->name;
   ops_tx.priv = ctx;
-  ops_tx.num_port = RTE_MIN(ops->port.num_port, ST_PORT_MAX);
+  ops_tx.num_port = RTE_MIN(ops->port.num_port, MTL_PORT_MAX);
   for (int i = 0; i < ops_tx.num_port; i++) {
-    memcpy(ops_tx.dip_addr[i], ops->port.dip_addr[i], ST_IP_ADDR_LEN);
-    strncpy(ops_tx.port[i], ops->port.port[i], ST_PORT_MAX_LEN);
+    memcpy(ops_tx.dip_addr[i], ops->port.dip_addr[i], MTL_IP_ADDR_LEN);
+    strncpy(ops_tx.port[i], ops->port.port[i], MTL_PORT_MAX_LEN);
     ops_tx.udp_port[i] = ops->port.udp_port[i];
   }
   if (ops->flags & ST22P_TX_FLAG_USER_P_MAC) {
-    memcpy(&ops_tx.tx_dst_mac[ST_PORT_P][0], &ops->tx_dst_mac[ST_PORT_P][0], 6);
+    memcpy(&ops_tx.tx_dst_mac[MTL_PORT_P][0], &ops->tx_dst_mac[MTL_PORT_P][0], 6);
     ops_tx.flags |= ST22_TX_FLAG_USER_P_MAC;
   }
   if (ops->flags & ST22P_TX_FLAG_USER_R_MAC) {
-    memcpy(&ops_tx.tx_dst_mac[ST_PORT_R][0], &ops->tx_dst_mac[ST_PORT_R][0], 6);
+    memcpy(&ops_tx.tx_dst_mac[MTL_PORT_R][0], &ops->tx_dst_mac[MTL_PORT_R][0], 6);
     ops_tx.flags |= ST22_TX_FLAG_USER_R_MAC;
   }
   if (ops->flags & ST22P_TX_FLAG_DISABLE_BOXES)
@@ -297,10 +297,10 @@ static int tx_st22p_uinit_src_fbs(struct st22p_tx_ctx* ctx) {
   return 0;
 }
 
-static int tx_st22p_init_src_fbs(struct st_main_impl* impl, struct st22p_tx_ctx* ctx,
+static int tx_st22p_init_src_fbs(struct mtl_main_impl* impl, struct st22p_tx_ctx* ctx,
                                  struct st22p_tx_ops* ops) {
   int idx = ctx->idx;
-  int soc_id = st_socket_id(impl, ST_PORT_P);
+  int soc_id = st_socket_id(impl, MTL_PORT_P);
   struct st22p_tx_frame* frames;
   void* src;
   size_t src_size = ctx->src_size;
@@ -336,7 +336,7 @@ static int tx_st22p_init_src_fbs(struct st_main_impl* impl, struct st22p_tx_ctx*
   return 0;
 }
 
-static int tx_st22p_get_encoder(struct st_main_impl* impl, struct st22p_tx_ctx* ctx,
+static int tx_st22p_get_encoder(struct mtl_main_impl* impl, struct st22p_tx_ctx* ctx,
                                 struct st22p_tx_ops* ops) {
   int idx = ctx->idx;
   struct st22_get_encoder_request req;
@@ -428,8 +428,8 @@ int st22p_tx_put_frame(st22p_tx_handle handle, struct st_frame* frame) {
   return 0;
 }
 
-st22p_tx_handle st22p_tx_create(st_handle st, struct st22p_tx_ops* ops) {
-  struct st_main_impl* impl = st;
+st22p_tx_handle st22p_tx_create(mtl_handle st, struct st22p_tx_ops* ops) {
+  struct mtl_main_impl* impl = st;
   struct st22p_tx_ctx* ctx;
   int ret;
   int idx = 0; /* todo */
@@ -461,7 +461,7 @@ st22p_tx_handle st22p_tx_create(st_handle st, struct st22p_tx_ops* ops) {
     return NULL;
   }
 
-  ctx = st_rte_zmalloc_socket(sizeof(*ctx), st_socket_id(impl, ST_PORT_P));
+  ctx = st_rte_zmalloc_socket(sizeof(*ctx), st_socket_id(impl, MTL_PORT_P));
   if (!ctx) {
     err("%s, ctx malloc fail\n", __func__);
     return NULL;
@@ -518,7 +518,7 @@ st22p_tx_handle st22p_tx_create(st_handle st, struct st22p_tx_ops* ops) {
 
 int st22p_tx_free(st22p_tx_handle handle) {
   struct st22p_tx_ctx* ctx = handle;
-  struct st_main_impl* impl = ctx->impl;
+  struct mtl_main_impl* impl = ctx->impl;
 
   if (ctx->type != ST22_SESSION_TYPE_PIPELINE_TX) {
     err("%s(%d), invalid type %d\n", __func__, ctx->idx, ctx->type);

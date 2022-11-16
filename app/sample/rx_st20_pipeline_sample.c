@@ -21,7 +21,7 @@ struct rx_st20p_sample_ctx {
   uint8_t* dst_end;
   uint8_t* dst_cursor;
 
-  st_dma_mem_handle dma_mem;
+  mtl_dma_mem_handle dma_mem;
   struct st20_ext_frame* ext_frames;
   int ext_idx;
   int fb_cnt;
@@ -169,9 +169,9 @@ int main(int argc, char** argv) {
     ops_rx.name = "st20p_test";
     ops_rx.priv = app[i];  // app handle register to lib
     ops_rx.port.num_port = 1;
-    memcpy(ops_rx.port.sip_addr[ST_PORT_P], ctx.rx_sip_addr[ST_PORT_P], ST_IP_ADDR_LEN);
-    strncpy(ops_rx.port.port[ST_PORT_P], ctx.param.port[ST_PORT_P], ST_PORT_MAX_LEN);
-    ops_rx.port.udp_port[ST_PORT_P] = ctx.udp_port + i;
+    memcpy(ops_rx.port.sip_addr[MTL_PORT_P], ctx.rx_sip_addr[MTL_PORT_P], MTL_IP_ADDR_LEN);
+    strncpy(ops_rx.port.port[MTL_PORT_P], ctx.param.port[MTL_PORT_P], MTL_PORT_MAX_LEN);
+    ops_rx.port.udp_port[MTL_PORT_P] = ctx.udp_port + i;
     ops_rx.port.payload_type = ctx.payload_type;
     ops_rx.width = ctx.width;
     ops_rx.height = ctx.height;
@@ -190,7 +190,7 @@ int main(int argc, char** argv) {
           st20_frame_size(ops_rx.transport_fmt, ops_rx.width, ops_rx.height);
       size_t fb_size = framebuff_size * app[i]->fb_cnt;
       /* alloc enough memory to hold framebuffers and map to iova */
-      st_dma_mem_handle dma_mem = st_dma_mem_alloc(ctx.st, fb_size);
+      mtl_dma_mem_handle dma_mem = st_dma_mem_alloc(ctx.st, fb_size);
       if (!dma_mem) {
         err("%s(%d), dma mem alloc/map fail\n", __func__, i);
         ret = -EIO;

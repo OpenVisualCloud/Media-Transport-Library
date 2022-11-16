@@ -5,7 +5,7 @@
 #include "sample_util.h"
 
 struct rx_st20_tx_st20_sample_ctx {
-  st_handle st;
+  mtl_handle st;
   int idx;
   st20_rx_handle rx_handle;
   st20_tx_handle tx_handle;
@@ -44,7 +44,7 @@ static int st20_fwd_open_logo(struct st_sample_context* ctx,
   }
 
   size_t logo_size = st_frame_size(ctx->input_fmt, ctx->logo_width, ctx->logo_height);
-  s->logo_buf = st_hp_malloc(s->st, logo_size, ST_PORT_P);
+  s->logo_buf = st_hp_malloc(s->st, logo_size, MTL_PORT_P);
   if (!s->logo_buf) {
     err("%s, logo buf malloc fail\n", __func__);
     fclose(fp_logo);
@@ -325,9 +325,9 @@ int main(int argc, char** argv) {
   ops_rx.name = "st20_fwd";
   ops_rx.priv = &app;
   ops_rx.num_port = 1;
-  memcpy(ops_rx.sip_addr[ST_PORT_P], ctx.rx_sip_addr[ST_PORT_P], ST_IP_ADDR_LEN);
-  strncpy(ops_rx.port[ST_PORT_P], ctx.param.port[ST_PORT_P], ST_PORT_MAX_LEN);
-  ops_rx.udp_port[ST_PORT_P] = ctx.udp_port;  // user config the udp port.
+  memcpy(ops_rx.sip_addr[MTL_PORT_P], ctx.rx_sip_addr[MTL_PORT_P], MTL_IP_ADDR_LEN);
+  strncpy(ops_rx.port[MTL_PORT_P], ctx.param.port[MTL_PORT_P], MTL_PORT_MAX_LEN);
+  ops_rx.udp_port[MTL_PORT_P] = ctx.udp_port;  // user config the udp port.
   ops_rx.pacing = ST21_PACING_NARROW;
   ops_rx.type = ST20_TYPE_FRAME_LEVEL;
   ops_rx.width = ctx.width;
@@ -351,9 +351,9 @@ int main(int argc, char** argv) {
   ops_tx.name = "st20_fwd";
   ops_tx.priv = &app;
   ops_tx.num_port = 1;
-  memcpy(ops_tx.dip_addr[ST_PORT_P], ctx.fwd_dip_addr[ST_PORT_P], ST_IP_ADDR_LEN);
-  strncpy(ops_tx.port[ST_PORT_P], ctx.param.port[ST_PORT_P], ST_PORT_MAX_LEN);
-  ops_tx.udp_port[ST_PORT_P] = ctx.udp_port;
+  memcpy(ops_tx.dip_addr[MTL_PORT_P], ctx.fwd_dip_addr[MTL_PORT_P], MTL_IP_ADDR_LEN);
+  strncpy(ops_tx.port[MTL_PORT_P], ctx.param.port[MTL_PORT_P], MTL_PORT_MAX_LEN);
+  ops_tx.udp_port[MTL_PORT_P] = ctx.udp_port;
   ops_tx.pacing = ST21_PACING_NARROW;
   ops_tx.type = ST20_TYPE_FRAME_LEVEL;
   ops_tx.width = ctx.width;

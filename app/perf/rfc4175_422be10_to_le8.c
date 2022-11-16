@@ -4,20 +4,20 @@
 
 #include "../sample/sample_util.h"
 
-static int perf_cvt_422_10_pg2_be_to_le8(st_handle st, int w, int h, int frames,
+static int perf_cvt_422_10_pg2_be_to_le8(mtl_handle st, int w, int h, int frames,
                                          int fb_cnt) {
   size_t fb_pg10_size = w * h * 5 / 2;
-  st_udma_handle dma = st_udma_create(st, 128, ST_PORT_P);
+  mtl_udma_handle dma = st_udma_create(st, 128, MTL_PORT_P);
   struct st20_rfc4175_422_10_pg2_be* pg_10 =
       (struct st20_rfc4175_422_10_pg2_be*)st_hp_malloc(st, fb_pg10_size * fb_cnt,
-                                                       ST_PORT_P);
-  st_iova_t pg_10_iova = st_hp_virt2iova(st, pg_10);
-  st_iova_t pg_10_in_iova;
+                                                       MTL_PORT_P);
+  mtl_iova_t pg_10_iova = st_hp_virt2iova(st, pg_10);
+  mtl_iova_t pg_10_in_iova;
   size_t fb_pg8_size = w * h * 2;
   float fb_pg8_size_m = (float)fb_pg8_size / 1024 / 1024;
   struct st20_rfc4175_422_8_pg2_le* pg_8 =
       (struct st20_rfc4175_422_8_pg2_le*)malloc(fb_pg8_size * fb_cnt);
-  enum st_simd_level cpu_level = st_get_simd_level();
+  enum mtl_simd_level cpu_level = st_get_simd_level();
 
   struct st20_rfc4175_422_10_pg2_be* pg_10_in;
   struct st20_rfc4175_422_8_pg2_le* pg_8_out;
@@ -34,19 +34,19 @@ static int perf_cvt_422_10_pg2_be_to_le8(st_handle st, int w, int h, int frames,
   for (int i = 0; i < frames; i++) {
     pg_10_in = pg_10 + (i % fb_cnt) * (fb_pg10_size / sizeof(*pg_10));
     pg_8_out = pg_8 + (i % fb_cnt) * (fb_pg8_size / sizeof(*pg_8));
-    st20_rfc4175_422be10_to_422le8_simd(pg_10_in, pg_8_out, w, h, ST_SIMD_LEVEL_NONE);
+    st20_rfc4175_422be10_to_422le8_simd(pg_10_in, pg_8_out, w, h, MTL_SIMD_LEVEL_NONE);
   }
   end = clock();
   duration = (float)(end - start) / CLOCKS_PER_SEC;
   info("scalar, time: %f secs with %d frames(%dx%d,%fm@%d buffers)\n", duration, frames,
        w, h, fb_pg8_size_m, fb_cnt);
 
-  if (cpu_level >= ST_SIMD_LEVEL_AVX512) {
+  if (cpu_level >= MTL_SIMD_LEVEL_AVX512) {
     start = clock();
     for (int i = 0; i < frames; i++) {
       pg_10_in = pg_10 + (i % fb_cnt) * (fb_pg10_size / sizeof(*pg_10));
       pg_8_out = pg_8 + (i % fb_cnt) * (fb_pg8_size / sizeof(*pg_8));
-      st20_rfc4175_422be10_to_422le8_simd(pg_10_in, pg_8_out, w, h, ST_SIMD_LEVEL_AVX512);
+      st20_rfc4175_422be10_to_422le8_simd(pg_10_in, pg_8_out, w, h, MTL_SIMD_LEVEL_AVX512);
     }
     end = clock();
     float duration_simd = (float)(end - start) / CLOCKS_PER_SEC;
@@ -61,7 +61,7 @@ static int perf_cvt_422_10_pg2_be_to_le8(st_handle st, int w, int h, int frames,
         pg_10_in_iova = pg_10_iova + (i % fb_cnt) * (fb_pg10_size);
         pg_8_out = pg_8 + (i % fb_cnt) * (fb_pg8_size / sizeof(*pg_8));
         st20_rfc4175_422be10_to_422le8_simd_dma(dma, pg_10_in, pg_10_in_iova, pg_8_out, w,
-                                                h, ST_SIMD_LEVEL_AVX512);
+                                                h, MTL_SIMD_LEVEL_AVX512);
       }
       end = clock();
       float duration_simd = (float)(end - start) / CLOCKS_PER_SEC;
@@ -71,13 +71,13 @@ static int perf_cvt_422_10_pg2_be_to_le8(st_handle st, int w, int h, int frames,
     }
   }
 
-  if (cpu_level >= ST_SIMD_LEVEL_AVX512_VBMI2) {
+  if (cpu_level >= MTL_SIMD_LEVEL_AVX512_VBMI2) {
     start = clock();
     for (int i = 0; i < frames; i++) {
       pg_10_in = pg_10 + (i % fb_cnt) * (fb_pg10_size / sizeof(*pg_10));
       pg_8_out = pg_8 + (i % fb_cnt) * (fb_pg8_size / sizeof(*pg_8));
       st20_rfc4175_422be10_to_422le8_simd(pg_10_in, pg_8_out, w, h,
-                                          ST_SIMD_LEVEL_AVX512_VBMI2);
+                                          MTL_SIMD_LEVEL_AVX512_VBMI2);
     }
     end = clock();
     float duration_vbmi = (float)(end - start) / CLOCKS_PER_SEC;
@@ -92,7 +92,7 @@ static int perf_cvt_422_10_pg2_be_to_le8(st_handle st, int w, int h, int frames,
         pg_10_in_iova = pg_10_iova + (i % fb_cnt) * (fb_pg10_size);
         pg_8_out = pg_8 + (i % fb_cnt) * (fb_pg8_size / sizeof(*pg_8));
         st20_rfc4175_422be10_to_422le8_simd_dma(dma, pg_10_in, pg_10_in_iova, pg_8_out, w,
-                                                h, ST_SIMD_LEVEL_AVX512_VBMI2);
+                                                h, MTL_SIMD_LEVEL_AVX512_VBMI2);
       }
       end = clock();
       float duration_vbmi = (float)(end - start) / CLOCKS_PER_SEC;
@@ -110,7 +110,7 @@ static int perf_cvt_422_10_pg2_be_to_le8(st_handle st, int w, int h, int frames,
 }
 
 static void* perf_thread(void* arg) {
-  st_handle dev_handle = arg;
+  mtl_handle dev_handle = arg;
   int frames = 60;
   int fb_cnt = 3;
 

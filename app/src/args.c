@@ -168,7 +168,7 @@ static struct option st_app_args_options[] = {
 
     {0, 0, 0, 0}};
 
-static int app_args_parse_lcores(struct st_init_params* p, char* list) {
+static int app_args_parse_lcores(struct mtl_init_params* p, char* list) {
   if (!list) return -EIO;
 
   dbg("%s, lcore list %s\n", __func__, list);
@@ -183,12 +183,12 @@ static int app_args_parse_p_tx_mac(struct st_app_context* ctx, char* mac_str) {
   if (!mac_str) return -EIO;
   dbg("%s, tx dst mac %s\n", __func__, mac_str);
 
-  mac = &ctx->tx_dst_mac[ST_PORT_P][0];
+  mac = &ctx->tx_dst_mac[MTL_PORT_P][0];
   ret = sscanf(mac_str, "%02hhx:%02hhx:%02hhx:%02hhx:%02hhx:%02hhx", &mac[0], &mac[1],
                &mac[2], &mac[3], &mac[4], &mac[5]);
   if (ret < 0) return ret;
 
-  ctx->has_tx_dst_mac[ST_PORT_P] = true;
+  ctx->has_tx_dst_mac[MTL_PORT_P] = true;
   return 0;
 }
 
@@ -199,32 +199,32 @@ static int app_args_parse_r_tx_mac(struct st_app_context* ctx, char* mac_str) {
   if (!mac_str) return -EIO;
   dbg("%s, tx dst mac %s\n", __func__, mac_str);
 
-  mac = &ctx->tx_dst_mac[ST_PORT_R][0];
+  mac = &ctx->tx_dst_mac[MTL_PORT_R][0];
   ret = sscanf(mac_str, "%02hhx:%02hhx:%02hhx:%02hhx:%02hhx:%02hhx", &mac[0], &mac[1],
                &mac[2], &mac[3], &mac[4], &mac[5]);
   if (ret < 0) return ret;
 
-  ctx->has_tx_dst_mac[ST_PORT_R] = true;
+  ctx->has_tx_dst_mac[MTL_PORT_R] = true;
   return 0;
 }
 
-static int app_args_dma_dev(struct st_init_params* p, char* in_dev) {
+static int app_args_dma_dev(struct mtl_init_params* p, char* in_dev) {
   if (!in_dev) return -EIO;
   char devs[128] = {0};
   strncpy(devs, in_dev, 128 - 1);
 
   dbg("%s, dev list %s\n", __func__, devs);
   char* next_dev = strtok(devs, ",");
-  while (next_dev && (p->num_dma_dev_port < ST_DMA_DEV_MAX)) {
+  while (next_dev && (p->num_dma_dev_port < MTL_DMA_DEV_MAX)) {
     dbg("next_dev: %s\n", next_dev);
-    strncpy(p->dma_dev_port[p->num_dma_dev_port], next_dev, ST_PORT_MAX_LEN - 1);
+    strncpy(p->dma_dev_port[p->num_dma_dev_port], next_dev, MTL_PORT_MAX_LEN - 1);
     p->num_dma_dev_port++;
     next_dev = strtok(NULL, ",");
   }
   return 0;
 }
 
-static int app_args_json(struct st_app_context* ctx, struct st_init_params* p,
+static int app_args_json(struct st_app_context* ctx, struct mtl_init_params* p,
                          char* json_file) {
   ctx->json_ctx = st_app_zmalloc(sizeof(st_json_context_t));
   if (!ctx->json_ctx) {
@@ -262,7 +262,7 @@ static int app_args_json(struct st_app_context* ctx, struct st_init_params* p,
   return 0;
 }
 
-int st_app_parse_args(struct st_app_context* ctx, struct st_init_params* p, int argc,
+int st_app_parse_args(struct st_app_context* ctx, struct mtl_init_params* p, int argc,
                       char** argv) {
   int cmd = -1, optIdx = 0;
   int nb;
@@ -274,11 +274,11 @@ int st_app_parse_args(struct st_app_context* ctx, struct st_init_params* p, int 
 
     switch (cmd) {
       case ST_ARG_P_PORT:
-        snprintf(p->port[ST_PORT_P], sizeof(p->port[ST_PORT_P]), "%s", optarg);
+        snprintf(p->port[MTL_PORT_P], sizeof(p->port[MTL_PORT_P]), "%s", optarg);
         p->num_ports++;
         break;
       case ST_ARG_R_PORT:
-        snprintf(p->port[ST_PORT_R], sizeof(p->port[ST_PORT_R]), "%s", optarg);
+        snprintf(p->port[MTL_PORT_R], sizeof(p->port[MTL_PORT_R]), "%s", optarg);
         p->num_ports++;
         break;
       case ST_ARG_P_SIP:
@@ -288,16 +288,16 @@ int st_app_parse_args(struct st_app_context* ctx, struct st_init_params* p, int 
         inet_pton(AF_INET, optarg, st_r_sip_addr(p));
         break;
       case ST_ARG_P_TX_IP:
-        inet_pton(AF_INET, optarg, ctx->tx_dip_addr[ST_PORT_P]);
+        inet_pton(AF_INET, optarg, ctx->tx_dip_addr[MTL_PORT_P]);
         break;
       case ST_ARG_R_TX_IP:
-        inet_pton(AF_INET, optarg, ctx->tx_dip_addr[ST_PORT_R]);
+        inet_pton(AF_INET, optarg, ctx->tx_dip_addr[MTL_PORT_R]);
         break;
       case ST_ARG_P_RX_IP:
-        inet_pton(AF_INET, optarg, ctx->rx_sip_addr[ST_PORT_P]);
+        inet_pton(AF_INET, optarg, ctx->rx_sip_addr[MTL_PORT_P]);
         break;
       case ST_ARG_R_RX_IP:
-        inet_pton(AF_INET, optarg, ctx->rx_sip_addr[ST_PORT_R]);
+        inet_pton(AF_INET, optarg, ctx->rx_sip_addr[MTL_PORT_R]);
         break;
       case ST_ARG_TX_VIDEO_URL:
         snprintf(ctx->tx_video_url, sizeof(ctx->tx_video_url), "%s", optarg);
@@ -377,35 +377,35 @@ int st_app_parse_args(struct st_app_context* ctx, struct st_init_params* p, int 
         app_args_json(ctx, p, optarg);
         break;
       case ST_ARG_PTP_UNICAST_ADDR:
-        p->flags |= ST_FLAG_PTP_UNICAST_ADDR;
+        p->flags |= MTL_FLAG_PTP_UNICAST_ADDR;
         break;
       case ST_ARG_CNI_THREAD:
-        p->flags |= ST_FLAG_CNI_THREAD;
+        p->flags |= MTL_FLAG_CNI_THREAD;
         break;
       case ST_ARG_TEST_TIME:
         ctx->test_time_s = atoi(optarg);
         break;
       case ST_ARG_RX_EBU:
-        p->flags |= ST_FLAG_RX_VIDEO_EBU;
+        p->flags |= MTL_FLAG_RX_VIDEO_EBU;
         break;
       case ST_ARG_RX_MONO_POOL:
-        p->flags |= ST_FLAG_RX_MONO_POOL;
+        p->flags |= MTL_FLAG_RX_MONO_POOL;
         break;
       case ST_ARG_TX_MONO_POOL:
-        p->flags |= ST_FLAG_TX_MONO_POOL;
+        p->flags |= MTL_FLAG_TX_MONO_POOL;
         break;
       case ST_ARG_MONO_POOL:
-        p->flags |= ST_FLAG_RX_MONO_POOL;
-        p->flags |= ST_FLAG_TX_MONO_POOL;
+        p->flags |= MTL_FLAG_RX_MONO_POOL;
+        p->flags |= MTL_FLAG_TX_MONO_POOL;
         break;
       case ST_ARG_RX_POOL_DATA_SIZE:
         p->rx_pool_data_size = atoi(optarg);
         break;
       case ST_ARG_RX_SEPARATE_VIDEO_LCORE:
-        p->flags |= ST_FLAG_RX_SEPARATE_VIDEO_LCORE;
+        p->flags |= MTL_FLAG_RX_SEPARATE_VIDEO_LCORE;
         break;
       case ST_ARG_RX_MIX_VIDEO_LCORE:
-        p->flags &= ~ST_FLAG_RX_SEPARATE_VIDEO_LCORE;
+        p->flags &= ~MTL_FLAG_RX_SEPARATE_VIDEO_LCORE;
         break;
       case ST_ARG_TSC_PACING:
         p->pacing = ST21_TX_PACING_WAY_TSC;
@@ -429,23 +429,23 @@ int st_app_parse_args(struct st_app_context* ctx, struct st_init_params* p, int 
         app_args_parse_r_tx_mac(ctx, optarg);
         break;
       case ST_ARG_NIC_RX_PROMISCUOUS:
-        p->flags |= ST_FLAG_NIC_RX_PROMISCUOUS;
+        p->flags |= MTL_FLAG_NIC_RX_PROMISCUOUS;
         break;
       case ST_ARG_LIB_PTP:
-        p->flags |= ST_FLAG_PTP_ENABLE;
+        p->flags |= MTL_FLAG_PTP_ENABLE;
         p->ptp_get_time_fn = NULL; /* clear the user ptp func */
         break;
       case ST_ARG_LOG_LEVEL:
         if (!strcmp(optarg, "debug"))
-          p->log_level = ST_LOG_LEVEL_DEBUG;
+          p->log_level = MTL_LOG_LEVEL_DEBUG;
         else if (!strcmp(optarg, "info"))
-          p->log_level = ST_LOG_LEVEL_INFO;
+          p->log_level = MTL_LOG_LEVEL_INFO;
         else if (!strcmp(optarg, "notice"))
-          p->log_level = ST_LOG_LEVEL_NOTICE;
+          p->log_level = MTL_LOG_LEVEL_NOTICE;
         else if (!strcmp(optarg, "warning"))
-          p->log_level = ST_LOG_LEVEL_WARNING;
+          p->log_level = MTL_LOG_LEVEL_WARNING;
         else if (!strcmp(optarg, "error"))
-          p->log_level = ST_LOG_LEVEL_ERROR;
+          p->log_level = MTL_LOG_LEVEL_ERROR;
         else
           err("%s, unknow log level %s\n", __func__, optarg);
         app_set_log_level(p->log_level);
@@ -469,44 +469,44 @@ int st_app_parse_args(struct st_app_context* ctx, struct st_init_params* p, int 
         snprintf(ctx->ttf_file, sizeof(ctx->ttf_file), "%s", optarg);
         break;
       case ST_ARG_AF_XDP_ZC_DISABLE:
-        p->flags |= ST_FLAG_AF_XDP_ZC_DISABLE;
+        p->flags |= MTL_FLAG_AF_XDP_ZC_DISABLE;
         break;
       case ST_ARG_START_QUEUE:
-        p->xdp_info[ST_PORT_P].start_queue = atoi(optarg);
-        p->xdp_info[ST_PORT_R].start_queue = atoi(optarg);
+        p->xdp_info[MTL_PORT_P].start_queue = atoi(optarg);
+        p->xdp_info[MTL_PORT_R].start_queue = atoi(optarg);
         break;
       case ST_ARG_P_START_QUEUE:
-        p->xdp_info[ST_PORT_P].start_queue = atoi(optarg);
+        p->xdp_info[MTL_PORT_P].start_queue = atoi(optarg);
         break;
       case ST_ARG_R_START_QUEUE:
-        p->xdp_info[ST_PORT_R].start_queue = atoi(optarg);
+        p->xdp_info[MTL_PORT_R].start_queue = atoi(optarg);
         break;
       case ST_ARG_TASKLET_TIME:
-        p->flags |= ST_FLAG_TASKLET_TIME_MEASURE;
+        p->flags |= MTL_FLAG_TASKLET_TIME_MEASURE;
         break;
       case ST_ARG_UTC_OFFSET:
         ctx->utc_offset = atoi(optarg);
         break;
       case ST_ARG_NO_SYSTEM_RX_QUEUES:
-        p->flags |= ST_FLAG_DISABLE_SYSTEM_RX_QUEUES;
+        p->flags |= MTL_FLAG_DISABLE_SYSTEM_RX_QUEUES;
         break;
       case ST_ARG_TX_COPY_ONCE:
         ctx->tx_copy_once = true;
         break;
       case ST_ARG_TASKLET_SLEEP:
-        p->flags |= ST_FLAG_TASKLET_SLEEP;
+        p->flags |= MTL_FLAG_TASKLET_SLEEP;
         break;
       case ST_ARG_TASKLET_SLEEP_US:
         ctx->var_para.sch_force_sleep_us = atoi(optarg);
         break;
       case ST_ARG_TASKLET_THREAD:
-        p->flags |= ST_FLAG_TASKLET_THREAD;
+        p->flags |= MTL_FLAG_TASKLET_THREAD;
         break;
       case ST_ARG_APP_THREAD:
         ctx->app_thread = true;
         break;
       case ST_ARG_RXTX_SIMD_512:
-        p->flags |= ST_FLAG_RXTX_SIMD_512;
+        p->flags |= MTL_FLAG_RXTX_SIMD_512;
         break;
       case '?':
         break;

@@ -8,14 +8,14 @@
 #include "st_main.h"
 
 /* ip from 224.x.x.x to 239.x.x.x */
-static inline uint64_t st_is_multicast_ip(uint8_t ip[ST_IP_ADDR_LEN]) {
+static inline uint64_t st_is_multicast_ip(uint8_t ip[MTL_IP_ADDR_LEN]) {
   if (ip[0] >= 224 && ip[0] <= 239)
     return true;
   else
     return false;
 }
 
-static inline uint32_t st_ip_to_u32(uint8_t ip[ST_IP_ADDR_LEN]) {
+static inline uint32_t st_ip_to_u32(uint8_t ip[MTL_IP_ADDR_LEN]) {
   uint32_t group = ((uint32_t)ip[0] << 0);
   group |= ((uint32_t)ip[1] << 8);
   group |= ((uint32_t)ip[2] << 16);
@@ -23,7 +23,7 @@ static inline uint32_t st_ip_to_u32(uint8_t ip[ST_IP_ADDR_LEN]) {
   return group;
 }
 
-static inline void st_u32_to_ip(uint32_t group, uint8_t ip[ST_IP_ADDR_LEN]) {
+static inline void st_u32_to_ip(uint32_t group, uint8_t ip[MTL_IP_ADDR_LEN]) {
   ip[0] = group >> 0;
   ip[1] = group >> 8;
   ip[2] = group >> 16;
@@ -36,25 +36,25 @@ int st_ring_dequeue_clean(struct rte_ring* ring);
 
 void st_mbuf_sanity_check(struct rte_mbuf** mbufs, uint16_t nb, char* tag);
 
-int st_pacing_train_result_add(struct st_main_impl* impl, enum st_port port,
+int st_pacing_train_result_add(struct mtl_main_impl* impl, enum mtl_port port,
                                uint64_t rl_bps, float pad_interval);
 
-int st_pacing_train_result_search(struct st_main_impl* impl, enum st_port port,
+int st_pacing_train_result_search(struct mtl_main_impl* impl, enum mtl_port port,
                                   uint64_t rl_bps, float* pad_interval);
 
-int st_build_port_map(struct st_main_impl* impl, char** ports, enum st_port* maps,
+int st_build_port_map(struct mtl_main_impl* impl, char** ports, enum mtl_port* maps,
                       int num_ports);
 
 /* logical session port to main(physical) port */
-static inline enum st_port st_port_logic2phy(enum st_port* maps,
+static inline enum mtl_port st_port_logic2phy(enum mtl_port* maps,
                                              enum st_session_port logic) {
   return maps[logic];
 }
 
-void st_video_rtp_dump(enum st_port port, int idx, char* tag,
+void st_video_rtp_dump(enum mtl_port port, int idx, char* tag,
                        struct st20_rfc4175_rtp_hdr* rtp);
 
-void st_mbuf_dump(enum st_port port, int idx, char* tag, struct rte_mbuf* m);
+void st_mbuf_dump(enum mtl_port port, int idx, char* tag, struct rte_mbuf* m);
 
 void st_lcore_dump();
 
@@ -68,7 +68,7 @@ static inline bool st_is_valid_payload_type(int payload_type) {
     return false;
 }
 
-void st_eth_macaddr_dump(enum st_port port, char* tag, struct rte_ether_addr* mac_addr);
+void st_eth_macaddr_dump(enum mtl_port port, char* tag, struct rte_ether_addr* mac_addr);
 
 static inline bool st_rx_seq_drop(uint16_t new_id, uint16_t old_id, uint16_t delta) {
   if ((new_id <= old_id) && ((old_id - new_id) < delta))
@@ -77,24 +77,24 @@ static inline bool st_rx_seq_drop(uint16_t new_id, uint16_t old_id, uint16_t del
     return false;
 }
 
-struct rte_mbuf* st_build_pad(struct st_main_impl* impl, struct rte_mempool* mempool,
+struct rte_mbuf* st_build_pad(struct mtl_main_impl* impl, struct rte_mempool* mempool,
                               uint16_t port_id, uint16_t ether_type, uint16_t len);
 
-struct rte_mempool* st_mempool_create_by_ops(struct st_main_impl* impl, enum st_port port,
+struct rte_mempool* st_mempool_create_by_ops(struct mtl_main_impl* impl, enum mtl_port port,
                                              const char* name, unsigned int n,
                                              unsigned int cache_size, uint16_t priv_size,
                                              uint16_t element_size, const char* ops_name);
 
 static inline struct rte_mempool* st_mempool_create(
-    struct st_main_impl* impl, enum st_port port, const char* name, unsigned int n,
+    struct mtl_main_impl* impl, enum mtl_port port, const char* name, unsigned int n,
     unsigned int cache_size, uint16_t priv_size, uint16_t element_size) {
   /* default with stack */
   return st_mempool_create_by_ops(impl, port, name, n, cache_size, priv_size,
                                   element_size, "stack");
 }
 
-static inline struct rte_mempool* st_mempool_create_common(struct st_main_impl* impl,
-                                                           enum st_port port,
+static inline struct rte_mempool* st_mempool_create_common(struct mtl_main_impl* impl,
+                                                           enum mtl_port port,
                                                            const char* name,
                                                            unsigned int n) {
   return st_mempool_create(impl, port, name, n, ST_MBUF_CACHE_SIZE,
@@ -158,6 +158,6 @@ int st_rx_source_info_check(struct st_rx_source_info* src, int num_ports);
 
 int st_frame_trans_uinit(struct st_frame_trans* frame);
 
-int st_vsync_calculate(struct st_main_impl* impl, struct st_vsync_info* vsync);
+int st_vsync_calculate(struct mtl_main_impl* impl, struct st_vsync_info* vsync);
 
 #endif

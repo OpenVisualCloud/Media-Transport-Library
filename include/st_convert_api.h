@@ -41,7 +41,7 @@ extern "C" {
 static inline int st20_rfc4175_422be10_to_yuv422p10le(
     struct st20_rfc4175_422_10_pg2_be* pg, uint16_t* y, uint16_t* b, uint16_t* r,
     uint32_t w, uint32_t h) {
-  return st20_rfc4175_422be10_to_yuv422p10le_simd(pg, y, b, r, w, h, ST_SIMD_LEVEL_MAX);
+  return st20_rfc4175_422be10_to_yuv422p10le_simd(pg, y, b, r, w, h, MTL_SIMD_LEVEL_MAX);
 }
 
 /**
@@ -54,7 +54,7 @@ static inline int st20_rfc4175_422be10_to_yuv422p10le(
  * @param pg_be
  *   Point to pg(rfc4175_422be10) data.
  * @param pg_be_iova
- *   The st_iova_t address of the pg_be buffer.
+ *   The mtl_iova_t address of the pg_be buffer.
  * @param y
  *   Point to Y(yuv422p10le) vector.
  * @param b
@@ -70,10 +70,10 @@ static inline int st20_rfc4175_422be10_to_yuv422p10le(
  *   - <0: Error code if convert fail.
  */
 static inline int st20_rfc4175_422be10_to_yuv422p10le_dma(
-    st_udma_handle udma, struct st20_rfc4175_422_10_pg2_be* pg_be, st_iova_t pg_be_iova,
+    mtl_udma_handle udma, struct st20_rfc4175_422_10_pg2_be* pg_be, mtl_iova_t pg_be_iova,
     uint16_t* y, uint16_t* b, uint16_t* r, uint32_t w, uint32_t h) {
   return st20_rfc4175_422be10_to_yuv422p10le_simd_dma(udma, pg_be, pg_be_iova, y, b, r, w,
-                                                      h, ST_SIMD_LEVEL_MAX);
+                                                      h, MTL_SIMD_LEVEL_MAX);
 }
 
 /**
@@ -94,7 +94,7 @@ static inline int st20_rfc4175_422be10_to_yuv422p10le_dma(
 static inline int st20_rfc4175_422be10_to_422le10(
     struct st20_rfc4175_422_10_pg2_be* pg_be, struct st20_rfc4175_422_10_pg2_le* pg_le,
     uint32_t w, uint32_t h) {
-  return st20_rfc4175_422be10_to_422le10_simd(pg_be, pg_le, w, h, ST_SIMD_LEVEL_MAX);
+  return st20_rfc4175_422be10_to_422le10_simd(pg_be, pg_le, w, h, MTL_SIMD_LEVEL_MAX);
 }
 
 /**
@@ -107,7 +107,7 @@ static inline int st20_rfc4175_422be10_to_422le10(
  * @param pg_be
  *   Point to pg(rfc4175_422be10) data.
  * @param pg_be_iova
- *   The st_iova_t address of the pg_be buffer.
+ *   The mtl_iova_t address of the pg_be buffer.
  * @param pg_le
  *   Point to pg(rfc4175_422le10) data.
  * @param w
@@ -119,10 +119,10 @@ static inline int st20_rfc4175_422be10_to_422le10(
  *   - <0: Error code if convert fail.
  */
 static inline int st20_rfc4175_422be10_to_422le10_dma(
-    st_udma_handle udma, struct st20_rfc4175_422_10_pg2_be* pg_be, st_iova_t pg_be_iova,
+    mtl_udma_handle udma, struct st20_rfc4175_422_10_pg2_be* pg_be, mtl_iova_t pg_be_iova,
     struct st20_rfc4175_422_10_pg2_le* pg_le, uint32_t w, uint32_t h) {
   return st20_rfc4175_422be10_to_422le10_simd_dma(udma, pg_be, pg_be_iova, pg_le, w, h,
-                                                  ST_SIMD_LEVEL_MAX);
+                                                  MTL_SIMD_LEVEL_MAX);
 }
 
 /**
@@ -143,7 +143,7 @@ static inline int st20_rfc4175_422be10_to_422le10_dma(
  */
 static inline int st20_rfc4175_422be10_to_v210(struct st20_rfc4175_422_10_pg2_be* pg_be,
                                                uint8_t* pg_v210, uint32_t w, uint32_t h) {
-  return st20_rfc4175_422be10_to_v210_simd(pg_be, pg_v210, w, h, ST_SIMD_LEVEL_MAX);
+  return st20_rfc4175_422be10_to_v210_simd(pg_be, pg_v210, w, h, MTL_SIMD_LEVEL_MAX);
 }
 
 /**
@@ -156,7 +156,7 @@ static inline int st20_rfc4175_422be10_to_v210(struct st20_rfc4175_422_10_pg2_be
  * @param pg_be
  *   Point to pg(rfc4175_422be10) data.
  * @param pg_be_iova
- *   The st_iova_t address of the pg_be buffer.
+ *   The mtl_iova_t address of the pg_be buffer.
  * @param pg_v210
  *   Point to pg(v210) data.
  * @param w
@@ -168,10 +168,10 @@ static inline int st20_rfc4175_422be10_to_v210(struct st20_rfc4175_422_10_pg2_be
  *   - <0: Error code if convert fail.
  */
 static inline int st20_rfc4175_422be10_to_v210_dma(
-    st_udma_handle udma, struct st20_rfc4175_422_10_pg2_be* pg_be, st_iova_t pg_be_iova,
+    mtl_udma_handle udma, struct st20_rfc4175_422_10_pg2_be* pg_be, mtl_iova_t pg_be_iova,
     uint8_t* pg_v210, uint32_t w, uint32_t h) {
   return st20_rfc4175_422be10_to_v210_simd_dma(udma, pg_be, pg_be_iova, pg_v210, w, h,
-                                               ST_SIMD_LEVEL_MAX);
+                                               MTL_SIMD_LEVEL_MAX);
 }
 
 /**
@@ -192,7 +192,7 @@ static inline int st20_rfc4175_422be10_to_v210_dma(
 static inline int st20_rfc4175_422be10_to_422le8(struct st20_rfc4175_422_10_pg2_be* pg_10,
                                                  struct st20_rfc4175_422_8_pg2_le* pg_8,
                                                  uint32_t w, uint32_t h) {
-  return st20_rfc4175_422be10_to_422le8_simd(pg_10, pg_8, w, h, ST_SIMD_LEVEL_MAX);
+  return st20_rfc4175_422be10_to_422le8_simd(pg_10, pg_8, w, h, MTL_SIMD_LEVEL_MAX);
 }
 
 /**
@@ -205,7 +205,7 @@ static inline int st20_rfc4175_422be10_to_422le8(struct st20_rfc4175_422_10_pg2_
  * @param pg_10
  *   Point to pg(rfc4175_422be10) data.
  * @param pg_10_iova
- *   The st_iova_t address of the pg_10 buffer.
+ *   The mtl_iova_t address of the pg_10 buffer.
  * @param pg_8
  *   Point to pg(rfc4175_422le8) data.
  * @param w
@@ -217,10 +217,10 @@ static inline int st20_rfc4175_422be10_to_422le8(struct st20_rfc4175_422_10_pg2_
  *   - <0: Error code if convert fail.
  */
 static inline int st20_rfc4175_422be10_to_422le8_dma(
-    st_udma_handle udma, struct st20_rfc4175_422_10_pg2_be* pg_10, st_iova_t pg_10_iova,
+    mtl_udma_handle udma, struct st20_rfc4175_422_10_pg2_be* pg_10, mtl_iova_t pg_10_iova,
     struct st20_rfc4175_422_8_pg2_le* pg_8, uint32_t w, uint32_t h) {
   return st20_rfc4175_422be10_to_422le8_simd_dma(udma, pg_10, pg_10_iova, pg_8, w, h,
-                                                 ST_SIMD_LEVEL_MAX);
+                                                 MTL_SIMD_LEVEL_MAX);
 }
 
 /**
@@ -245,7 +245,7 @@ static inline int st20_rfc4175_422be10_to_422le8_dma(
 static inline int st20_rfc4175_422be12_to_yuv422p12le(
     struct st20_rfc4175_422_12_pg2_be* pg, uint16_t* y, uint16_t* b, uint16_t* r,
     uint32_t w, uint32_t h) {
-  return st20_rfc4175_422be12_to_yuv422p12le_simd(pg, y, b, r, w, h, ST_SIMD_LEVEL_MAX);
+  return st20_rfc4175_422be12_to_yuv422p12le_simd(pg, y, b, r, w, h, MTL_SIMD_LEVEL_MAX);
 }
 
 /**
@@ -266,7 +266,7 @@ static inline int st20_rfc4175_422be12_to_yuv422p12le(
 static inline int st20_rfc4175_422be12_to_422le12(
     struct st20_rfc4175_422_12_pg2_be* pg_be, struct st20_rfc4175_422_12_pg2_le* pg_le,
     uint32_t w, uint32_t h) {
-  return st20_rfc4175_422be12_to_422le12_simd(pg_be, pg_le, w, h, ST_SIMD_LEVEL_MAX);
+  return st20_rfc4175_422be12_to_422le12_simd(pg_be, pg_le, w, h, MTL_SIMD_LEVEL_MAX);
 }
 
 /**
@@ -291,7 +291,7 @@ static inline int st20_rfc4175_422be12_to_422le12(
 static inline int st20_rfc4175_444be10_to_yuv444p10le(
     struct st20_rfc4175_444_10_pg4_be* pg, uint16_t* y, uint16_t* b, uint16_t* r,
     uint32_t w, uint32_t h) {
-  return st20_rfc4175_444be10_to_444p10le_simd(pg, y, b, r, w, h, ST_SIMD_LEVEL_MAX);
+  return st20_rfc4175_444be10_to_444p10le_simd(pg, y, b, r, w, h, MTL_SIMD_LEVEL_MAX);
 }
 
 /**
@@ -316,7 +316,7 @@ static inline int st20_rfc4175_444be10_to_yuv444p10le(
 static inline int st20_rfc4175_444be10_to_gbrp10le(struct st20_rfc4175_444_10_pg4_be* pg,
                                                    uint16_t* g, uint16_t* b, uint16_t* r,
                                                    uint32_t w, uint32_t h) {
-  return st20_rfc4175_444be10_to_444p10le_simd(pg, g, r, b, w, h, ST_SIMD_LEVEL_MAX);
+  return st20_rfc4175_444be10_to_444p10le_simd(pg, g, r, b, w, h, MTL_SIMD_LEVEL_MAX);
 }
 
 /**
@@ -337,7 +337,7 @@ static inline int st20_rfc4175_444be10_to_gbrp10le(struct st20_rfc4175_444_10_pg
 static inline int st20_rfc4175_444be10_to_444le10(
     struct st20_rfc4175_444_10_pg4_be* pg_be, struct st20_rfc4175_444_10_pg4_le* pg_le,
     uint32_t w, uint32_t h) {
-  return st20_rfc4175_444be10_to_444le10_simd(pg_be, pg_le, w, h, ST_SIMD_LEVEL_MAX);
+  return st20_rfc4175_444be10_to_444le10_simd(pg_be, pg_le, w, h, MTL_SIMD_LEVEL_MAX);
 }
 
 /**
@@ -362,7 +362,7 @@ static inline int st20_rfc4175_444be10_to_444le10(
 static inline int st20_rfc4175_444be12_to_yuv444p12le(
     struct st20_rfc4175_444_12_pg2_be* pg, uint16_t* y, uint16_t* b, uint16_t* r,
     uint32_t w, uint32_t h) {
-  return st20_rfc4175_444be12_to_444p12le_simd(pg, y, b, r, w, h, ST_SIMD_LEVEL_MAX);
+  return st20_rfc4175_444be12_to_444p12le_simd(pg, y, b, r, w, h, MTL_SIMD_LEVEL_MAX);
 }
 
 /**
@@ -387,7 +387,7 @@ static inline int st20_rfc4175_444be12_to_yuv444p12le(
 static inline int st20_rfc4175_444be12_to_gbrp12le(struct st20_rfc4175_444_12_pg2_be* pg,
                                                    uint16_t* g, uint16_t* b, uint16_t* r,
                                                    uint32_t w, uint32_t h) {
-  return st20_rfc4175_444be12_to_444p12le_simd(pg, g, r, b, w, h, ST_SIMD_LEVEL_MAX);
+  return st20_rfc4175_444be12_to_444p12le_simd(pg, g, r, b, w, h, MTL_SIMD_LEVEL_MAX);
 }
 
 /**
@@ -408,7 +408,7 @@ static inline int st20_rfc4175_444be12_to_gbrp12le(struct st20_rfc4175_444_12_pg
 static inline int st20_rfc4175_444be12_to_444le12(
     struct st20_rfc4175_444_12_pg2_be* pg_be, struct st20_rfc4175_444_12_pg2_le* pg_le,
     uint32_t w, uint32_t h) {
-  return st20_rfc4175_444be12_to_444le12_simd(pg_be, pg_le, w, h, ST_SIMD_LEVEL_MAX);
+  return st20_rfc4175_444be12_to_444le12_simd(pg_be, pg_le, w, h, MTL_SIMD_LEVEL_MAX);
 }
 
 /**
@@ -433,7 +433,7 @@ static inline int st20_rfc4175_444be12_to_444le12(
 static inline int st20_yuv422p10le_to_rfc4175_422be10(
     uint16_t* y, uint16_t* b, uint16_t* r, struct st20_rfc4175_422_10_pg2_be* pg,
     uint32_t w, uint32_t h) {
-  return st20_yuv422p10le_to_rfc4175_422be10_simd(y, b, r, pg, w, h, ST_SIMD_LEVEL_MAX);
+  return st20_yuv422p10le_to_rfc4175_422be10_simd(y, b, r, pg, w, h, MTL_SIMD_LEVEL_MAX);
 }
 
 /**
@@ -464,11 +464,11 @@ static inline int st20_yuv422p10le_to_rfc4175_422be10(
  *   - <0: Error code if convert fail.
  */
 static inline int st20_yuv422p10le_to_rfc4175_422be10_dma(
-    st_udma_handle udma, uint16_t* y, st_iova_t y_iova, uint16_t* b, st_iova_t b_iova,
-    uint16_t* r, st_iova_t r_iova, struct st20_rfc4175_422_10_pg2_be* pg, uint32_t w,
+    mtl_udma_handle udma, uint16_t* y, mtl_iova_t y_iova, uint16_t* b, mtl_iova_t b_iova,
+    uint16_t* r, mtl_iova_t r_iova, struct st20_rfc4175_422_10_pg2_be* pg, uint32_t w,
     uint32_t h) {
   return st20_yuv422p10le_to_rfc4175_422be10_simd_dma(
-      udma, y, y_iova, b, b_iova, r, r_iova, pg, w, h, ST_SIMD_LEVEL_MAX);
+      udma, y, y_iova, b, b_iova, r, r_iova, pg, w, h, MTL_SIMD_LEVEL_MAX);
 }
 
 /**
@@ -490,7 +490,7 @@ static inline int st20_yuv422p10le_to_rfc4175_422be10_dma(
 static inline int st20_v210_to_rfc4175_422be10(uint8_t* pg_v210,
                                                struct st20_rfc4175_422_10_pg2_be* pg_be,
                                                uint32_t w, uint32_t h) {
-  return st20_v210_to_rfc4175_422be10_simd(pg_v210, pg_be, w, h, ST_SIMD_LEVEL_MAX);
+  return st20_v210_to_rfc4175_422be10_simd(pg_v210, pg_be, w, h, MTL_SIMD_LEVEL_MAX);
 }
 
 /**
@@ -514,10 +514,10 @@ static inline int st20_v210_to_rfc4175_422be10(uint8_t* pg_v210,
  *   - <0: Error code if convert fail.
  */
 static inline int st20_v210_to_rfc4175_422be10_dma(
-    st_udma_handle udma, uint8_t* pg_v210, st_iova_t pg_v210_iova,
+    mtl_udma_handle udma, uint8_t* pg_v210, mtl_iova_t pg_v210_iova,
     struct st20_rfc4175_422_10_pg2_be* pg_be, uint32_t w, uint32_t h) {
   return st20_v210_to_rfc4175_422be10_simd_dma(udma, pg_v210, pg_v210_iova, pg_be, w, h,
-                                               ST_SIMD_LEVEL_MAX);
+                                               MTL_SIMD_LEVEL_MAX);
 }
 
 /**
@@ -538,7 +538,7 @@ static inline int st20_v210_to_rfc4175_422be10_dma(
 static inline int st20_rfc4175_422le10_to_422be10(
     struct st20_rfc4175_422_10_pg2_le* pg_le, struct st20_rfc4175_422_10_pg2_be* pg_be,
     uint32_t w, uint32_t h) {
-  return st20_rfc4175_422le10_to_422be10_simd(pg_le, pg_be, w, h, ST_SIMD_LEVEL_MAX);
+  return st20_rfc4175_422le10_to_422be10_simd(pg_le, pg_be, w, h, MTL_SIMD_LEVEL_MAX);
 }
 
 /**
@@ -551,7 +551,7 @@ static inline int st20_rfc4175_422le10_to_422be10(
  * @param pg_le
  *   Point to pg(rfc4175_422le10) data.
  * @param pg_le_iova
- *   The st_iova_t address of the pg_le buffer.
+ *   The mtl_iova_t address of the pg_le buffer.
  * @param pg_be
  *   Point to pg(rfc4175_422be10) data.
  * @param w
@@ -563,10 +563,10 @@ static inline int st20_rfc4175_422le10_to_422be10(
  *   - <0: Error code if convert fail.
  */
 static inline int st20_rfc4175_422le10_to_422be10_dma(
-    st_udma_handle udma, struct st20_rfc4175_422_10_pg2_le* pg_le, st_iova_t pg_le_iova,
+    mtl_udma_handle udma, struct st20_rfc4175_422_10_pg2_le* pg_le, mtl_iova_t pg_le_iova,
     struct st20_rfc4175_422_10_pg2_be* pg_be, uint32_t w, uint32_t h) {
   return st20_rfc4175_422le10_to_422be10_simd_dma(udma, pg_le, pg_le_iova, pg_be, w, h,
-                                                  ST_SIMD_LEVEL_MAX);
+                                                  MTL_SIMD_LEVEL_MAX);
 }
 
 /**
@@ -633,7 +633,7 @@ int st20_rfc4175_422le10_to_yuv422p10le(struct st20_rfc4175_422_10_pg2_le* pg,
  */
 static inline int st20_rfc4175_422le10_to_v210(uint8_t* pg_le, uint8_t* pg_v210,
                                                uint32_t w, uint32_t h) {
-  return st20_rfc4175_422le10_to_v210_simd(pg_le, pg_v210, w, h, ST_SIMD_LEVEL_MAX);
+  return st20_rfc4175_422le10_to_v210_simd(pg_le, pg_v210, w, h, MTL_SIMD_LEVEL_MAX);
 }
 
 /**
@@ -655,7 +655,7 @@ static inline int st20_rfc4175_422le10_to_v210(uint8_t* pg_le, uint8_t* pg_v210,
 static inline int st20_rfc4175_422be10_to_y210(struct st20_rfc4175_422_10_pg2_be* pg_be,
                                                uint16_t* pg_y210, uint32_t w,
                                                uint32_t h) {
-  return st20_rfc4175_422be10_to_y210_simd(pg_be, pg_y210, w, h, ST_SIMD_LEVEL_MAX);
+  return st20_rfc4175_422be10_to_y210_simd(pg_be, pg_y210, w, h, MTL_SIMD_LEVEL_MAX);
 }
 
 /**
@@ -668,7 +668,7 @@ static inline int st20_rfc4175_422be10_to_y210(struct st20_rfc4175_422_10_pg2_be
  * @param pg_be
  *   Point to pg(rfc4175_422be10) data.
  * @param pg_be_iova
- *   The st_iova_t address of the pg_be buffer.
+ *   The mtl_iova_t address of the pg_be buffer.
  * @param pg_y210
  *   Point to pg(y210) data.
  * @param w
@@ -680,10 +680,10 @@ static inline int st20_rfc4175_422be10_to_y210(struct st20_rfc4175_422_10_pg2_be
  *   - <0: Error code if convert fail.
  */
 static inline int st20_rfc4175_422be10_to_y210_dma(
-    st_udma_handle udma, struct st20_rfc4175_422_10_pg2_be* pg_be, st_iova_t pg_be_iova,
+    mtl_udma_handle udma, struct st20_rfc4175_422_10_pg2_be* pg_be, mtl_iova_t pg_be_iova,
     uint16_t* pg_y210, uint32_t w, uint32_t h) {
   return st20_rfc4175_422be10_to_y210_simd_dma(udma, pg_be, pg_be_iova, pg_y210, w, h,
-                                               ST_SIMD_LEVEL_MAX);
+                                               MTL_SIMD_LEVEL_MAX);
 }
 
 /**
@@ -705,7 +705,7 @@ static inline int st20_rfc4175_422be10_to_y210_dma(
 static inline int st20_y210_to_rfc4175_422be10(uint16_t* pg_y210,
                                                struct st20_rfc4175_422_10_pg2_be* pg_be,
                                                uint32_t w, uint32_t h) {
-  return st20_y210_to_rfc4175_422be10_simd(pg_y210, pg_be, w, h, ST_SIMD_LEVEL_MAX);
+  return st20_y210_to_rfc4175_422be10_simd(pg_y210, pg_be, w, h, MTL_SIMD_LEVEL_MAX);
 }
 
 /**
@@ -729,10 +729,10 @@ static inline int st20_y210_to_rfc4175_422be10(uint16_t* pg_y210,
  *   - <0: Error code if convert fail.
  */
 static inline int st20_y210_to_rfc4175_422be10_dma(
-    st_udma_handle udma, uint16_t* pg_y210, st_iova_t pg_y210_iova,
+    mtl_udma_handle udma, uint16_t* pg_y210, mtl_iova_t pg_y210_iova,
     struct st20_rfc4175_422_10_pg2_be* pg_be, uint32_t w, uint32_t h) {
   return st20_y210_to_rfc4175_422be10_simd_dma(udma, pg_y210, pg_y210_iova, pg_be, w, h,
-                                               ST_SIMD_LEVEL_MAX);
+                                               MTL_SIMD_LEVEL_MAX);
 }
 
 /**
@@ -775,7 +775,7 @@ int st20_v210_to_rfc4175_422le10(uint8_t* pg_v210, uint8_t* pg_le, uint32_t w,
 static inline int st20_yuv422p12le_to_rfc4175_422be12(
     uint16_t* y, uint16_t* b, uint16_t* r, struct st20_rfc4175_422_12_pg2_be* pg,
     uint32_t w, uint32_t h) {
-  return st20_yuv422p12le_to_rfc4175_422be12_simd(y, b, r, pg, w, h, ST_SIMD_LEVEL_MAX);
+  return st20_yuv422p12le_to_rfc4175_422be12_simd(y, b, r, pg, w, h, MTL_SIMD_LEVEL_MAX);
 }
 
 /**
@@ -796,7 +796,7 @@ static inline int st20_yuv422p12le_to_rfc4175_422be12(
 static inline int st20_rfc4175_422le12_to_422be12(
     struct st20_rfc4175_422_12_pg2_le* pg_le, struct st20_rfc4175_422_12_pg2_be* pg_be,
     uint32_t w, uint32_t h) {
-  return st20_rfc4175_422le12_to_422be12_simd(pg_le, pg_be, w, h, ST_SIMD_LEVEL_MAX);
+  return st20_rfc4175_422le12_to_422be12_simd(pg_le, pg_be, w, h, MTL_SIMD_LEVEL_MAX);
 }
 
 /**
@@ -867,7 +867,7 @@ int st20_rfc4175_422le12_to_yuv422p12le(struct st20_rfc4175_422_12_pg2_le* pg,
 static inline int st20_yuv444p10le_to_rfc4175_444be10(
     uint16_t* y, uint16_t* b, uint16_t* r, struct st20_rfc4175_444_10_pg4_be* pg,
     uint32_t w, uint32_t h) {
-  return st20_444p10le_to_rfc4175_444be10_simd(y, b, r, pg, w, h, ST_SIMD_LEVEL_MAX);
+  return st20_444p10le_to_rfc4175_444be10_simd(y, b, r, pg, w, h, MTL_SIMD_LEVEL_MAX);
 }
 
 /**
@@ -888,7 +888,7 @@ static inline int st20_yuv444p10le_to_rfc4175_444be10(
 static inline int st20_rfc4175_444le10_to_444be10(
     struct st20_rfc4175_444_10_pg4_le* pg_le, struct st20_rfc4175_444_10_pg4_be* pg_be,
     uint32_t w, uint32_t h) {
-  return st20_rfc4175_444le10_to_444be10_simd(pg_le, pg_be, w, h, ST_SIMD_LEVEL_MAX);
+  return st20_rfc4175_444le10_to_444be10_simd(pg_le, pg_be, w, h, MTL_SIMD_LEVEL_MAX);
 }
 
 /**
@@ -963,7 +963,7 @@ static inline int st20_rfc4175_444le10_to_yuv444p10le(
 static inline int st20_gbrp10le_to_rfc4175_444be10(uint16_t* g, uint16_t* b, uint16_t* r,
                                                    struct st20_rfc4175_444_10_pg4_be* pg,
                                                    uint32_t w, uint32_t h) {
-  return st20_444p10le_to_rfc4175_444be10_simd(g, r, b, pg, w, h, ST_SIMD_LEVEL_MAX);
+  return st20_444p10le_to_rfc4175_444be10_simd(g, r, b, pg, w, h, MTL_SIMD_LEVEL_MAX);
 }
 
 /**
@@ -1038,7 +1038,7 @@ static inline int st20_rfc4175_444le10_to_gbrp10le(struct st20_rfc4175_444_10_pg
 static inline int st20_yuv444p12le_to_rfc4175_444be12(
     uint16_t* y, uint16_t* b, uint16_t* r, struct st20_rfc4175_444_12_pg2_be* pg,
     uint32_t w, uint32_t h) {
-  return st20_444p12le_to_rfc4175_444be12_simd(y, b, r, pg, w, h, ST_SIMD_LEVEL_MAX);
+  return st20_444p12le_to_rfc4175_444be12_simd(y, b, r, pg, w, h, MTL_SIMD_LEVEL_MAX);
 }
 
 /**
@@ -1059,7 +1059,7 @@ static inline int st20_yuv444p12le_to_rfc4175_444be12(
 static inline int st20_rfc4175_444le12_to_444be12(
     struct st20_rfc4175_444_12_pg2_le* pg_le, struct st20_rfc4175_444_12_pg2_be* pg_be,
     uint32_t w, uint32_t h) {
-  return st20_rfc4175_444le12_to_444be12_simd(pg_le, pg_be, w, h, ST_SIMD_LEVEL_MAX);
+  return st20_rfc4175_444le12_to_444be12_simd(pg_le, pg_be, w, h, MTL_SIMD_LEVEL_MAX);
 }
 
 /**
@@ -1134,7 +1134,7 @@ static inline int st20_rfc4175_444le12_to_yuv444p12le(
 static inline int st20_gbrp12le_to_rfc4175_444be12(uint16_t* g, uint16_t* b, uint16_t* r,
                                                    struct st20_rfc4175_444_12_pg2_be* pg,
                                                    uint32_t w, uint32_t h) {
-  return st20_444p12le_to_rfc4175_444be12_simd(g, r, b, pg, w, h, ST_SIMD_LEVEL_MAX);
+  return st20_444p12le_to_rfc4175_444be12_simd(g, r, b, pg, w, h, MTL_SIMD_LEVEL_MAX);
 }
 
 /**

@@ -238,7 +238,7 @@ static int rx_st20p_convert_dump(void* priv) {
   return 0;
 }
 
-static int rx_st20p_create_transport(st_handle st, struct st20p_rx_ctx* ctx,
+static int rx_st20p_create_transport(mtl_handle st, struct st20p_rx_ctx* ctx,
                                      struct st20p_rx_ops* ops) {
   int idx = ctx->idx;
   struct st20_rx_ops ops_rx;
@@ -248,10 +248,10 @@ static int rx_st20p_create_transport(st_handle st, struct st20p_rx_ctx* ctx,
   memset(&ops_rx, 0, sizeof(ops_rx));
   ops_rx.name = ops->name;
   ops_rx.priv = ctx;
-  ops_rx.num_port = RTE_MIN(ops->port.num_port, ST_PORT_MAX);
+  ops_rx.num_port = RTE_MIN(ops->port.num_port, MTL_PORT_MAX);
   for (int i = 0; i < ops_rx.num_port; i++) {
-    memcpy(ops_rx.sip_addr[i], ops->port.sip_addr[i], ST_IP_ADDR_LEN);
-    strncpy(ops_rx.port[i], ops->port.port[i], ST_PORT_MAX_LEN);
+    memcpy(ops_rx.sip_addr[i], ops->port.sip_addr[i], MTL_IP_ADDR_LEN);
+    strncpy(ops_rx.port[i], ops->port.port[i], MTL_PORT_MAX_LEN);
     ops_rx.udp_port[i] = ops->port.udp_port[i];
   }
   if (ops->flags & ST20P_RX_FLAG_DATA_PATH_ONLY)
@@ -278,7 +278,7 @@ static int rx_st20p_create_transport(st_handle st, struct st20p_rx_ctx* ctx,
     if (ops->ext_frames) {
       trans_ext_frames =
           st_rte_zmalloc_socket(sizeof(*trans_ext_frames) * ctx->framebuff_cnt,
-                                st_socket_id(ctx->impl, ST_PORT_P));
+                                st_socket_id(ctx->impl, MTL_PORT_P));
       if (!trans_ext_frames) {
         err("%s, trans_ext_frames malloc fail\n", __func__);
         return -ENOMEM;
@@ -347,10 +347,10 @@ static int rx_st20p_uinit_dst_fbs(struct st20p_rx_ctx* ctx) {
   return 0;
 }
 
-static int rx_st20p_init_dst_fbs(struct st_main_impl* impl, struct st20p_rx_ctx* ctx,
+static int rx_st20p_init_dst_fbs(struct mtl_main_impl* impl, struct st20p_rx_ctx* ctx,
                                  struct st20p_rx_ops* ops) {
   int idx = ctx->idx;
-  int soc_id = st_socket_id(impl, ST_PORT_P);
+  int soc_id = st_socket_id(impl, MTL_PORT_P);
   struct st20p_rx_frame* frames;
   void* dst = NULL;
   size_t dst_size = ctx->dst_size;
@@ -425,7 +425,7 @@ static int rx_st20p_init_dst_fbs(struct st_main_impl* impl, struct st20p_rx_ctx*
   return 0;
 }
 
-static int rx_st20p_get_converter(struct st_main_impl* impl, struct st20p_rx_ctx* ctx,
+static int rx_st20p_get_converter(struct mtl_main_impl* impl, struct st20p_rx_ctx* ctx,
                                   struct st20p_rx_ops* ops) {
   int idx = ctx->idx;
   struct st20_get_converter_request req;
@@ -446,7 +446,7 @@ static int rx_st20p_get_converter(struct st_main_impl* impl, struct st20p_rx_ctx
   struct st20_convert_session_impl* convert_impl = st20_get_converter(impl, &req);
   if (req.device == ST_PLUGIN_DEVICE_TEST_INTERNAL || !convert_impl) {
     struct st_frame_converter* converter = NULL;
-    converter = st_rte_zmalloc_socket(sizeof(*converter), st_socket_id(impl, ST_PORT_P));
+    converter = st_rte_zmalloc_socket(sizeof(*converter), st_socket_id(impl, MTL_PORT_P));
     if (!converter) {
       err("%s, converter malloc fail\n", __func__);
       return -ENOMEM;
@@ -592,8 +592,8 @@ int st20p_rx_put_frame(st20p_rx_handle handle, struct st_frame* frame) {
   return 0;
 }
 
-st20p_rx_handle st20p_rx_create(st_handle st, struct st20p_rx_ops* ops) {
-  struct st_main_impl* impl = st;
+st20p_rx_handle st20p_rx_create(mtl_handle st, struct st20p_rx_ops* ops) {
+  struct mtl_main_impl* impl = st;
   struct st20p_rx_ctx* ctx;
   int ret;
   int idx = 0; /* todo */
@@ -615,7 +615,7 @@ st20p_rx_handle st20p_rx_create(st_handle st, struct st20p_rx_ops* ops) {
     return NULL;
   }
 
-  ctx = st_rte_zmalloc_socket(sizeof(*ctx), st_socket_id(impl, ST_PORT_P));
+  ctx = st_rte_zmalloc_socket(sizeof(*ctx), st_socket_id(impl, MTL_PORT_P));
   if (!ctx) {
     err("%s, ctx malloc fail\n", __func__);
     return NULL;
@@ -675,7 +675,7 @@ st20p_rx_handle st20p_rx_create(st_handle st, struct st20p_rx_ops* ops) {
 
 int st20p_rx_free(st20p_rx_handle handle) {
   struct st20p_rx_ctx* ctx = handle;
-  struct st_main_impl* impl = ctx->impl;
+  struct mtl_main_impl* impl = ctx->impl;
 
   if (ctx->type != ST20_SESSION_TYPE_PIPELINE_RX) {
     err("%s(%d), invalid type %d\n", __func__, ctx->idx, ctx->type);

@@ -5,7 +5,7 @@
 #include "sample_util.h"
 
 struct tx_st22p_sample_ctx {
-  st_handle st;
+  mtl_handle st;
   int idx;
   st22p_tx_handle handle;
 
@@ -49,7 +49,7 @@ static int tx_st22p_open_logo(struct st_sample_context* ctx,
   }
 
   size_t logo_size = st_frame_size(ctx->input_fmt, ctx->logo_width, ctx->logo_height);
-  s->logo_buf = st_hp_malloc(s->st, logo_size, ST_PORT_P);
+  s->logo_buf = st_hp_malloc(s->st, logo_size, MTL_PORT_P);
   if (!s->logo_buf) {
     err("%s, logo buf malloc fail\n", __func__);
     fclose(fp_logo);
@@ -99,7 +99,7 @@ static int tx_st22p_open_source(struct st_sample_context* ctx,
     return -EIO;
   }
 
-  s->source_begin = st_hp_malloc(s->st, i.st_size, ST_PORT_P);
+  s->source_begin = st_hp_malloc(s->st, i.st_size, MTL_PORT_P);
   if (!s->source_begin) {
     err("%s, source malloc on hugepage fail\n", __func__);
     close(fd);
@@ -196,9 +196,9 @@ int main(int argc, char** argv) {
     ops_tx.name = "st22p_test";
     ops_tx.priv = app[i];  // app handle register to lib
     ops_tx.port.num_port = 1;
-    memcpy(ops_tx.port.dip_addr[ST_PORT_P], ctx.tx_dip_addr[ST_PORT_P], ST_IP_ADDR_LEN);
-    strncpy(ops_tx.port.port[ST_PORT_P], ctx.param.port[ST_PORT_P], ST_PORT_MAX_LEN);
-    ops_tx.port.udp_port[ST_PORT_P] = ctx.udp_port + i;
+    memcpy(ops_tx.port.dip_addr[MTL_PORT_P], ctx.tx_dip_addr[MTL_PORT_P], MTL_IP_ADDR_LEN);
+    strncpy(ops_tx.port.port[MTL_PORT_P], ctx.param.port[MTL_PORT_P], MTL_PORT_MAX_LEN);
+    ops_tx.port.udp_port[MTL_PORT_P] = ctx.udp_port + i;
     ops_tx.port.payload_type = ctx.payload_type;
     ops_tx.width = ctx.width;
     ops_tx.height = ctx.height;

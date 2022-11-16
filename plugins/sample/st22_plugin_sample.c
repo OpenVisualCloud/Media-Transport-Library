@@ -229,7 +229,7 @@ static int decoder_frame_available(void* priv) {
   return 0;
 }
 
-st_plugin_priv st_plugin_create(st_handle st) {
+st_plugin_priv st_plugin_create(mtl_handle st) {
   struct st22_sample_ctx* ctx;
 
   ctx = malloc(sizeof(*ctx));
