@@ -116,7 +116,8 @@ int mcast_membership_general_query(struct mtl_main_impl* impl, enum mtl_port por
 
 /* membership report shaping, refer to RFC3376 - 4.2 */
 static int mcast_membership_report(struct mtl_main_impl* impl,
-                                   enum mcast_group_record_type type, enum mtl_port port) {
+                                   enum mcast_group_record_type type,
+                                   enum mtl_port port) {
   struct st_mcast_impl* mcast = &impl->mcast;
   uint16_t group_num = mcast->group_num[port];
   struct rte_mbuf* pkt;

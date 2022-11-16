@@ -850,7 +850,8 @@ int st_udma_copy(mtl_udma_handle handle, mtl_iova_t dst, mtl_iova_t src, uint32_
  *   - -ENOSPC: if no space left to enqueue.
  *   - other values < 0 on failure.
  */
-int st_udma_fill(mtl_udma_handle handle, mtl_iova_t dst, uint64_t pattern, uint32_t length);
+int st_udma_fill(mtl_udma_handle handle, mtl_iova_t dst, uint64_t pattern,
+                 uint32_t length);
 
 /**
  * Enqueue a fill operation onto the virtual DMA channel.

@@ -454,7 +454,8 @@ int st20_rfc4175_422be10_to_yuv422p10le_avx512_vbmi(struct st20_rfc4175_422_10_p
 
 int st20_rfc4175_422be10_to_yuv422p10le_avx512_vbmi_dma(
     struct mtl_dma_lender_dev* dma, struct st20_rfc4175_422_10_pg2_be* pg_be,
-    mtl_iova_t pg_be_iova, uint16_t* y, uint16_t* b, uint16_t* r, uint32_t w, uint32_t h) {
+    mtl_iova_t pg_be_iova, uint16_t* y, uint16_t* b, uint16_t* r, uint32_t w,
+    uint32_t h) {
   __m512i permute_le_mask = _mm512_loadu_si512(b2l_permute_mask_table_512);
   __m512i srlv_le_mask = _mm512_loadu_si512(b2l_srlv_mask_table_512);
   __m512i srlv_and_mask = _mm512_loadu_si512(b2l_and_mask_table_512);
@@ -1699,7 +1700,8 @@ int st20_v210_to_rfc4175_422be10_avx512_vbmi(uint8_t* pg_v210,
 }
 
 int st20_v210_to_rfc4175_422be10_avx512_vbmi_dma(struct mtl_dma_lender_dev* dma,
-                                                 uint8_t* pg_v210, mtl_iova_t pg_v210_iova,
+                                                 uint8_t* pg_v210,
+                                                 mtl_iova_t pg_v210_iova,
                                                  struct st20_rfc4175_422_10_pg2_be* pg_be,
                                                  uint32_t w, uint32_t h) {
   __m512i multishift_tbl0 =

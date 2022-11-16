@@ -10,12 +10,14 @@
 struct st22_encode_session_impl* st22_get_encoder(struct mtl_main_impl* impl,
                                                   struct st22_get_encoder_request* req);
 int st22_encode_notify_frame_ready(struct st22_encode_session_impl* encoder);
-int st22_put_encoder(struct mtl_main_impl* impl, struct st22_encode_session_impl* encoder);
+int st22_put_encoder(struct mtl_main_impl* impl,
+                     struct st22_encode_session_impl* encoder);
 
 struct st22_decode_session_impl* st22_get_decoder(struct mtl_main_impl* impl,
                                                   struct st22_get_decoder_request* req);
 int st22_decode_notify_frame_ready(struct st22_decode_session_impl* encoder);
-int st22_put_decoder(struct mtl_main_impl* impl, struct st22_decode_session_impl* encoder);
+int st22_put_decoder(struct mtl_main_impl* impl,
+                     struct st22_decode_session_impl* encoder);
 
 struct st20_convert_session_impl* st20_get_converter(
     struct mtl_main_impl* impl, struct st20_get_converter_request* req);

@@ -21,7 +21,7 @@ struct st_dma_request_req {
 };
 
 struct mtl_dma_lender_dev* st_dma_request_dev(struct mtl_main_impl* impl,
-                                             struct st_dma_request_req* req);
+                                              struct st_dma_request_req* req);
 int st_dma_free_dev(struct mtl_main_impl* impl, struct mtl_dma_lender_dev* dev);
 
 /* enqueue mbuf for later free, also mark the lender session */

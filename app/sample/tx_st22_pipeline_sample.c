@@ -196,7 +196,8 @@ int main(int argc, char** argv) {
     ops_tx.name = "st22p_test";
     ops_tx.priv = app[i];  // app handle register to lib
     ops_tx.port.num_port = 1;
-    memcpy(ops_tx.port.dip_addr[MTL_PORT_P], ctx.tx_dip_addr[MTL_PORT_P], MTL_IP_ADDR_LEN);
+    memcpy(ops_tx.port.dip_addr[MTL_PORT_P], ctx.tx_dip_addr[MTL_PORT_P],
+           MTL_IP_ADDR_LEN);
     strncpy(ops_tx.port.port[MTL_PORT_P], ctx.param.port[MTL_PORT_P], MTL_PORT_MAX_LEN);
     ops_tx.port.udp_port[MTL_PORT_P] = ctx.udp_port + i;
     ops_tx.port.payload_type = ctx.payload_type;

@@ -260,10 +260,10 @@ struct rte_mbuf* st_build_pad(struct mtl_main_impl* impl, struct rte_mempool* me
   return pad;
 }
 
-struct rte_mempool* st_mempool_create_by_ops(struct mtl_main_impl* impl, enum mtl_port port,
-                                             const char* name, unsigned int n,
-                                             unsigned int cache_size, uint16_t priv_size,
-                                             uint16_t element_size,
+struct rte_mempool* st_mempool_create_by_ops(struct mtl_main_impl* impl,
+                                             enum mtl_port port, const char* name,
+                                             unsigned int n, unsigned int cache_size,
+                                             uint16_t priv_size, uint16_t element_size,
                                              const char* ops_name) {
   if (cache_size && (element_size % cache_size)) { /* align to cache size */
     element_size = (element_size / cache_size + 1) * cache_size;

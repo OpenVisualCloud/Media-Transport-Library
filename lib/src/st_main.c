@@ -228,7 +228,8 @@ static int st_user_params_check(struct mtl_init_params* p) {
     return -EINVAL;
   }
 
-  if ((p->pmd[MTL_PORT_P] >= MTL_PMD_TYPE_MAX) || (p->pmd[MTL_PORT_P] < MTL_PMD_DPDK_USER)) {
+  if ((p->pmd[MTL_PORT_P] >= MTL_PMD_TYPE_MAX) ||
+      (p->pmd[MTL_PORT_P] < MTL_PMD_DPDK_USER)) {
     err("%s, invalid pmd %d\n", __func__, p->pmd[MTL_PORT_P]);
     return -EINVAL;
   }
@@ -975,7 +976,8 @@ int st_udma_free(mtl_udma_handle handle) {
   return st_dma_free_dev(impl, dev);
 }
 
-int st_udma_copy(mtl_udma_handle handle, mtl_iova_t dst, mtl_iova_t src, uint32_t length) {
+int st_udma_copy(mtl_udma_handle handle, mtl_iova_t dst, mtl_iova_t src,
+                 uint32_t length) {
   struct mtl_dma_lender_dev* dev = handle;
 
   if (dev->type != ST_SESSION_TYPE_UDMA) {

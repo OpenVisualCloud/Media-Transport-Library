@@ -286,7 +286,8 @@ static int tv_train_pacing(struct mtl_main_impl* impl, struct st_tx_video_sessio
   return 0;
 }
 
-static int tv_init_pacing(struct mtl_main_impl* impl, struct st_tx_video_session_impl* s) {
+static int tv_init_pacing(struct mtl_main_impl* impl,
+                          struct st_tx_video_session_impl* s) {
   int idx = s->idx;
   struct st_tx_video_pacing* pacing = &s->pacing;
 
@@ -1250,7 +1251,8 @@ static int tv_tasklet_frame(struct mtl_main_impl* impl,
   return done ? ST_TASKLET_ALL_DONE : ST_TASKLET_HAS_PENDING;
 }
 
-static int tv_tasklet_rtp(struct mtl_main_impl* impl, struct st_tx_video_session_impl* s) {
+static int tv_tasklet_rtp(struct mtl_main_impl* impl,
+                          struct st_tx_video_session_impl* s) {
   unsigned int bulk = s->bulk;
   unsigned int n;
 #ifdef DEBUG

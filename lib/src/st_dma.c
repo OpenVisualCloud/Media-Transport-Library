@@ -388,7 +388,7 @@ static int dma_free(struct mtl_main_impl* impl, struct st_dma_dev* dev) {
 }
 
 struct mtl_dma_lender_dev* st_dma_request_dev(struct mtl_main_impl* impl,
-                                             struct st_dma_request_req* req) {
+                                              struct st_dma_request_req* req) {
   struct st_dma_mgr* mgr = st_get_dma_mgr(impl);
   struct st_dma_dev* dev;
   struct mtl_dma_lender_dev* lender_dev;
@@ -626,7 +626,7 @@ int st_dma_uinit(struct mtl_main_impl* impl) { return -EINVAL; }
 int st_dma_stat(struct mtl_main_impl* impl) { return -EINVAL; }
 
 struct mtl_dma_lender_dev* st_dma_request_dev(struct mtl_main_impl* impl,
-                                             struct st_dma_request_req* req) {
+                                              struct st_dma_request_req* req) {
   return NULL;
 }
 int st_dma_free_dev(struct mtl_main_impl* impl, struct mtl_dma_lender_dev* dev) {

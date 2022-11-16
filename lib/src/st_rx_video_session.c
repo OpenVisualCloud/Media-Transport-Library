@@ -1433,7 +1433,8 @@ static int rv_start_pcapng(struct mtl_main_impl* impl, struct st_rx_video_sessio
 }
 #endif
 
-static int rv_dma_dequeue(struct mtl_main_impl* impl, struct st_rx_video_session_impl* s) {
+static int rv_dma_dequeue(struct mtl_main_impl* impl,
+                          struct st_rx_video_session_impl* s) {
   struct mtl_dma_lender_dev* dma_dev = s->dma_dev;
 
   uint16_t nb_dq = st_dma_completed(dma_dev, ST_RX_VIDEO_BURTS_SIZE, NULL, NULL);
@@ -2621,7 +2622,8 @@ static int rv_init_hw(struct mtl_main_impl* impl, struct st_rx_video_session_imp
   return 0;
 }
 
-static int rv_uinit_mcast(struct mtl_main_impl* impl, struct st_rx_video_session_impl* s) {
+static int rv_uinit_mcast(struct mtl_main_impl* impl,
+                          struct st_rx_video_session_impl* s) {
   struct st20_rx_ops* ops = &s->ops;
 
   for (int i = 0; i < ops->num_port; i++) {
@@ -2886,7 +2888,8 @@ void rx_video_session_cal_cpu_busy(struct st_rx_video_session_impl* s) {
   s->dma_busy_score = dma_busy_score;
 }
 
-static int rv_migrate_dma(struct mtl_main_impl* impl, struct st_rx_video_session_impl* s) {
+static int rv_migrate_dma(struct mtl_main_impl* impl,
+                          struct st_rx_video_session_impl* s) {
   rv_free_dma(impl, s);
   rv_init_dma(impl, s);
   return 0;

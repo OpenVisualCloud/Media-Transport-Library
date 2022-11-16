@@ -34,10 +34,12 @@ int st_dev_request_tx_queue(struct mtl_main_impl* impl, enum mtl_port port,
                             uint16_t* queue_id, uint64_t bytes_per_sec);
 int st_dev_request_rx_queue(struct mtl_main_impl* impl, enum mtl_port port,
                             uint16_t* queue_id, struct st_rx_flow* flow);
-int st_dev_free_tx_queue(struct mtl_main_impl* impl, enum mtl_port port, uint16_t queue_id);
-int st_dev_free_rx_queue(struct mtl_main_impl* impl, enum mtl_port port, uint16_t queue_id);
-int st_dev_flush_tx_queue(struct mtl_main_impl* impl, enum mtl_port port, uint16_t queue_id,
-                          struct rte_mbuf* pad);
+int st_dev_free_tx_queue(struct mtl_main_impl* impl, enum mtl_port port,
+                         uint16_t queue_id);
+int st_dev_free_rx_queue(struct mtl_main_impl* impl, enum mtl_port port,
+                         uint16_t queue_id);
+int st_dev_flush_tx_queue(struct mtl_main_impl* impl, enum mtl_port port,
+                          uint16_t queue_id, struct rte_mbuf* pad);
 
 int st_dev_if_init(struct mtl_main_impl* impl);
 int st_dev_if_uinit(struct mtl_main_impl* impl);

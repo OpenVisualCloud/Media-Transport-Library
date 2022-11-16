@@ -75,7 +75,8 @@ static int perf_cvt_422_10_pg2_le_to_be(mtl_handle st, int w, int h, int frames,
     for (int i = 0; i < frames * 1; i++) {
       pg_le_in = pg_le + (i % fb_cnt) * (fb_pg2_size / sizeof(*pg_be));
       pg_be_out = pg_be + (i % fb_cnt) * (fb_pg2_size / sizeof(*pg_le));
-      st20_rfc4175_422le10_to_422be10_simd(pg_le_in, pg_be_out, w, h, MTL_SIMD_LEVEL_AVX2);
+      st20_rfc4175_422le10_to_422be10_simd(pg_le_in, pg_be_out, w, h,
+                                           MTL_SIMD_LEVEL_AVX2);
     }
     end = clock();
     float duration_simd = (float)(end - start) / CLOCKS_PER_SEC;

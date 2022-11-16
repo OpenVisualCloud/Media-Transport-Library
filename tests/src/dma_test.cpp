@@ -77,7 +77,8 @@ TEST(Dma, create_multi) {
   for (int i = 0; i < 10; i++) test_dma_create_one(ctx);
 }
 
-static void _test_dma_copy(mtl_handle st, mtl_udma_handle dma, uint32_t off, uint32_t len) {
+static void _test_dma_copy(mtl_handle st, mtl_udma_handle dma, uint32_t off,
+                           uint32_t len) {
   void *dst = NULL, *src = NULL;
   mtl_iova_t dst_iova, src_iova;
   int ret;

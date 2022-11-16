@@ -137,7 +137,8 @@ static int app_rx_st22p_init(struct st_app_context* ctx,
   ops.priv = s;
   ops.port.num_port = st22p ? st22p->base.num_inf : ctx->para.num_ports;
   memcpy(ops.port.sip_addr[MTL_PORT_P],
-         st22p ? st22p->base.ip[MTL_PORT_P] : ctx->rx_sip_addr[MTL_PORT_P], MTL_IP_ADDR_LEN);
+         st22p ? st22p->base.ip[MTL_PORT_P] : ctx->rx_sip_addr[MTL_PORT_P],
+         MTL_IP_ADDR_LEN);
   strncpy(ops.port.port[MTL_PORT_P],
           st22p ? st22p->base.inf[MTL_PORT_P]->name : ctx->para.port[MTL_PORT_P],
           MTL_PORT_MAX_LEN);

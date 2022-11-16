@@ -183,8 +183,8 @@ TEST(Cvt, rfc4175_422be10_to_yuv422p10le_avx512_vbmi_dma) {
   mtl_udma_handle dma = st_udma_create(handle, 128, MTL_PORT_P);
   if (!dma) return;
 
-  test_cvt_rfc4175_422be10_to_yuv422p10le_dma(dma, 1920, 1080, MTL_SIMD_LEVEL_AVX512_VBMI2,
-                                              MTL_SIMD_LEVEL_AVX512_VBMI2);
+  test_cvt_rfc4175_422be10_to_yuv422p10le_dma(
+      dma, 1920, 1080, MTL_SIMD_LEVEL_AVX512_VBMI2, MTL_SIMD_LEVEL_AVX512_VBMI2);
   test_cvt_rfc4175_422be10_to_yuv422p10le_dma(dma, 722, 111, MTL_SIMD_LEVEL_AVX512_VBMI2,
                                               MTL_SIMD_LEVEL_AVX512_VBMI2);
   test_cvt_rfc4175_422be10_to_yuv422p10le_dma(dma, 722, 111, MTL_SIMD_LEVEL_NONE,
@@ -375,8 +375,8 @@ TEST(Cvt, yuv422p10le_to_rfc4175_422be10_avx512_vbmi_dma) {
   mtl_udma_handle dma = st_udma_create(handle, 128, MTL_PORT_P);
   if (!dma) return;
 
-  test_cvt_yuv422p10le_to_rfc4175_422be10_dma(dma, 1920, 1080, MTL_SIMD_LEVEL_AVX512_VBMI2,
-                                              MTL_SIMD_LEVEL_AVX512_VBMI2);
+  test_cvt_yuv422p10le_to_rfc4175_422be10_dma(
+      dma, 1920, 1080, MTL_SIMD_LEVEL_AVX512_VBMI2, MTL_SIMD_LEVEL_AVX512_VBMI2);
   test_cvt_yuv422p10le_to_rfc4175_422be10_dma(dma, 722, 111, MTL_SIMD_LEVEL_AVX512_VBMI2,
                                               MTL_SIMD_LEVEL_AVX512_VBMI2);
   test_cvt_yuv422p10le_to_rfc4175_422be10_dma(dma, 722, 111, MTL_SIMD_LEVEL_NONE,
@@ -527,11 +527,13 @@ TEST(Cvt, rfc4175_422be10_to_422le10) {
 }
 
 TEST(Cvt, rfc4175_422be10_to_422le10_scalar) {
-  test_cvt_rfc4175_422be10_to_422le10(1920, 1080, MTL_SIMD_LEVEL_NONE, MTL_SIMD_LEVEL_NONE);
+  test_cvt_rfc4175_422be10_to_422le10(1920, 1080, MTL_SIMD_LEVEL_NONE,
+                                      MTL_SIMD_LEVEL_NONE);
 }
 
 TEST(Cvt, rfc4175_422be10_to_422le10_avx2) {
-  test_cvt_rfc4175_422be10_to_422le10(1920, 1080, MTL_SIMD_LEVEL_AVX2, MTL_SIMD_LEVEL_AVX2);
+  test_cvt_rfc4175_422be10_to_422le10(1920, 1080, MTL_SIMD_LEVEL_AVX2,
+                                      MTL_SIMD_LEVEL_AVX2);
   test_cvt_rfc4175_422be10_to_422le10(722, 111, MTL_SIMD_LEVEL_AVX2, MTL_SIMD_LEVEL_AVX2);
   test_cvt_rfc4175_422be10_to_422le10(722, 111, MTL_SIMD_LEVEL_NONE, MTL_SIMD_LEVEL_AVX2);
   test_cvt_rfc4175_422be10_to_422le10(722, 111, MTL_SIMD_LEVEL_AVX2, MTL_SIMD_LEVEL_NONE);
@@ -546,11 +548,14 @@ TEST(Cvt, rfc4175_422be10_to_422le10_avx512) {
                                       MTL_SIMD_LEVEL_AVX512);
   test_cvt_rfc4175_422be10_to_422le10(722, 111, MTL_SIMD_LEVEL_AVX512,
                                       MTL_SIMD_LEVEL_AVX512);
-  test_cvt_rfc4175_422be10_to_422le10(722, 111, MTL_SIMD_LEVEL_NONE, MTL_SIMD_LEVEL_AVX512);
-  test_cvt_rfc4175_422be10_to_422le10(722, 111, MTL_SIMD_LEVEL_AVX512, MTL_SIMD_LEVEL_NONE);
+  test_cvt_rfc4175_422be10_to_422le10(722, 111, MTL_SIMD_LEVEL_NONE,
+                                      MTL_SIMD_LEVEL_AVX512);
+  test_cvt_rfc4175_422be10_to_422le10(722, 111, MTL_SIMD_LEVEL_AVX512,
+                                      MTL_SIMD_LEVEL_NONE);
   int w = 2; /* each pg has two pixels */
   for (int h = 640; h < (640 + 64); h++) {
-    test_cvt_rfc4175_422be10_to_422le10(w, h, MTL_SIMD_LEVEL_AVX512, MTL_SIMD_LEVEL_AVX512);
+    test_cvt_rfc4175_422be10_to_422le10(w, h, MTL_SIMD_LEVEL_AVX512,
+                                        MTL_SIMD_LEVEL_AVX512);
   }
 }
 
@@ -751,15 +756,18 @@ static void test_cvt_rfc4175_422le10_to_422be10_2(int w, int h,
 }
 
 TEST(Cvt, rfc4175_422le10_to_422be10) {
-  test_cvt_rfc4175_422le10_to_422be10_2(1920, 1080, MTL_SIMD_LEVEL_MAX, MTL_SIMD_LEVEL_MAX);
+  test_cvt_rfc4175_422le10_to_422be10_2(1920, 1080, MTL_SIMD_LEVEL_MAX,
+                                        MTL_SIMD_LEVEL_MAX);
 }
 
 TEST(Cvt, rfc4175_422le10_to_422be10_scalar) {
-  test_cvt_rfc4175_422le10_to_422be10(1920, 1080, MTL_SIMD_LEVEL_NONE, MTL_SIMD_LEVEL_NONE);
+  test_cvt_rfc4175_422le10_to_422be10(1920, 1080, MTL_SIMD_LEVEL_NONE,
+                                      MTL_SIMD_LEVEL_NONE);
 }
 
 TEST(Cvt, rfc4175_422le10_to_422be10_avx2) {
-  test_cvt_rfc4175_422le10_to_422be10(1920, 1080, MTL_SIMD_LEVEL_AVX2, MTL_SIMD_LEVEL_AVX2);
+  test_cvt_rfc4175_422le10_to_422be10(1920, 1080, MTL_SIMD_LEVEL_AVX2,
+                                      MTL_SIMD_LEVEL_AVX2);
   test_cvt_rfc4175_422le10_to_422be10(722, 111, MTL_SIMD_LEVEL_AVX2, MTL_SIMD_LEVEL_AVX2);
   test_cvt_rfc4175_422le10_to_422be10(722, 111, MTL_SIMD_LEVEL_NONE, MTL_SIMD_LEVEL_AVX2);
   test_cvt_rfc4175_422le10_to_422be10(722, 111, MTL_SIMD_LEVEL_AVX2, MTL_SIMD_LEVEL_NONE);
@@ -774,11 +782,14 @@ TEST(Cvt, rfc4175_422le10_to_422be10_avx512) {
                                       MTL_SIMD_LEVEL_AVX512);
   test_cvt_rfc4175_422le10_to_422be10(722, 111, MTL_SIMD_LEVEL_AVX512,
                                       MTL_SIMD_LEVEL_AVX512);
-  test_cvt_rfc4175_422le10_to_422be10(722, 111, MTL_SIMD_LEVEL_NONE, MTL_SIMD_LEVEL_AVX512);
-  test_cvt_rfc4175_422le10_to_422be10(722, 111, MTL_SIMD_LEVEL_AVX512, MTL_SIMD_LEVEL_NONE);
+  test_cvt_rfc4175_422le10_to_422be10(722, 111, MTL_SIMD_LEVEL_NONE,
+                                      MTL_SIMD_LEVEL_AVX512);
+  test_cvt_rfc4175_422le10_to_422be10(722, 111, MTL_SIMD_LEVEL_AVX512,
+                                      MTL_SIMD_LEVEL_NONE);
   int w = 2; /* each pg has two pixels */
   for (int h = 640; h < (640 + 64); h++) {
-    test_cvt_rfc4175_422le10_to_422be10(w, h, MTL_SIMD_LEVEL_AVX512, MTL_SIMD_LEVEL_AVX512);
+    test_cvt_rfc4175_422le10_to_422be10(w, h, MTL_SIMD_LEVEL_AVX512,
+                                        MTL_SIMD_LEVEL_AVX512);
   }
 }
 
@@ -925,7 +936,8 @@ static int test_cvt_extend_rfc4175_422le8_to_422be10(
   return 0;
 }
 
-static void test_cvt_rfc4175_422be10_to_422le8(int w, int h, enum mtl_simd_level cvt_level,
+static void test_cvt_rfc4175_422be10_to_422le8(int w, int h,
+                                               enum mtl_simd_level cvt_level,
                                                enum mtl_simd_level back_level) {
   int ret;
   size_t fb_pg2_size_10 = w * h * 5 / 2;
@@ -962,7 +974,8 @@ TEST(Cvt, rfc4175_422be10_to_422le8) {
 }
 
 TEST(Cvt, rfc4175_422be10_to_422le8_scalar) {
-  test_cvt_rfc4175_422be10_to_422le8(1920, 1080, MTL_SIMD_LEVEL_NONE, MTL_SIMD_LEVEL_NONE);
+  test_cvt_rfc4175_422be10_to_422le8(1920, 1080, MTL_SIMD_LEVEL_NONE,
+                                     MTL_SIMD_LEVEL_NONE);
 }
 
 TEST(Cvt, rfc4175_422be10_to_422le8_avx512) {
@@ -970,11 +983,14 @@ TEST(Cvt, rfc4175_422be10_to_422le8_avx512) {
                                      MTL_SIMD_LEVEL_AVX512);
   test_cvt_rfc4175_422be10_to_422le8(722, 111, MTL_SIMD_LEVEL_AVX512,
                                      MTL_SIMD_LEVEL_AVX512);
-  test_cvt_rfc4175_422be10_to_422le8(722, 111, MTL_SIMD_LEVEL_NONE, MTL_SIMD_LEVEL_AVX512);
-  test_cvt_rfc4175_422be10_to_422le8(722, 111, MTL_SIMD_LEVEL_AVX512, MTL_SIMD_LEVEL_NONE);
+  test_cvt_rfc4175_422be10_to_422le8(722, 111, MTL_SIMD_LEVEL_NONE,
+                                     MTL_SIMD_LEVEL_AVX512);
+  test_cvt_rfc4175_422be10_to_422le8(722, 111, MTL_SIMD_LEVEL_AVX512,
+                                     MTL_SIMD_LEVEL_NONE);
   int w = 2; /* each pg has two pixels */
   for (int h = 640; h < (640 + 64); h++) {
-    test_cvt_rfc4175_422be10_to_422le8(w, h, MTL_SIMD_LEVEL_AVX512, MTL_SIMD_LEVEL_AVX512);
+    test_cvt_rfc4175_422be10_to_422le8(w, h, MTL_SIMD_LEVEL_AVX512,
+                                       MTL_SIMD_LEVEL_AVX512);
   }
 }
 
@@ -1156,9 +1172,12 @@ TEST(Cvt, rfc4175_422le10_to_v210_avx512) {
                                    MTL_SIMD_LEVEL_AVX512);
   test_cvt_rfc4175_422le10_to_v210(1920, 1080, MTL_SIMD_LEVEL_AVX512,
                                    MTL_SIMD_LEVEL_AVX512);
-  test_cvt_rfc4175_422le10_to_v210(1920, 1080, MTL_SIMD_LEVEL_NONE, MTL_SIMD_LEVEL_AVX512);
-  test_cvt_rfc4175_422le10_to_v210(1920, 1080, MTL_SIMD_LEVEL_AVX512, MTL_SIMD_LEVEL_NONE);
-  test_cvt_rfc4175_422le10_to_v210(722, 111, MTL_SIMD_LEVEL_AVX512, MTL_SIMD_LEVEL_AVX512);
+  test_cvt_rfc4175_422le10_to_v210(1920, 1080, MTL_SIMD_LEVEL_NONE,
+                                   MTL_SIMD_LEVEL_AVX512);
+  test_cvt_rfc4175_422le10_to_v210(1920, 1080, MTL_SIMD_LEVEL_AVX512,
+                                   MTL_SIMD_LEVEL_NONE);
+  test_cvt_rfc4175_422le10_to_v210(722, 111, MTL_SIMD_LEVEL_AVX512,
+                                   MTL_SIMD_LEVEL_AVX512);
   test_cvt_rfc4175_422le10_to_v210(1921, 1079, MTL_SIMD_LEVEL_AVX512,
                                    MTL_SIMD_LEVEL_AVX512);
 }
@@ -1240,9 +1259,12 @@ TEST(Cvt, rfc4175_422be10_to_v210_avx512) {
                                    MTL_SIMD_LEVEL_AVX512);
   test_cvt_rfc4175_422be10_to_v210(1920, 1080, MTL_SIMD_LEVEL_AVX512,
                                    MTL_SIMD_LEVEL_AVX512);
-  test_cvt_rfc4175_422be10_to_v210(1920, 1080, MTL_SIMD_LEVEL_NONE, MTL_SIMD_LEVEL_AVX512);
-  test_cvt_rfc4175_422be10_to_v210(1920, 1080, MTL_SIMD_LEVEL_AVX512, MTL_SIMD_LEVEL_NONE);
-  test_cvt_rfc4175_422be10_to_v210(722, 111, MTL_SIMD_LEVEL_AVX512, MTL_SIMD_LEVEL_AVX512);
+  test_cvt_rfc4175_422be10_to_v210(1920, 1080, MTL_SIMD_LEVEL_NONE,
+                                   MTL_SIMD_LEVEL_AVX512);
+  test_cvt_rfc4175_422be10_to_v210(1920, 1080, MTL_SIMD_LEVEL_AVX512,
+                                   MTL_SIMD_LEVEL_NONE);
+  test_cvt_rfc4175_422be10_to_v210(722, 111, MTL_SIMD_LEVEL_AVX512,
+                                   MTL_SIMD_LEVEL_AVX512);
   test_cvt_rfc4175_422be10_to_v210(1921, 1079, MTL_SIMD_LEVEL_AVX512,
                                    MTL_SIMD_LEVEL_AVX512);
 }
@@ -1440,9 +1462,12 @@ TEST(Cvt, v210_to_rfc4175_422be10_avx512) {
                                    MTL_SIMD_LEVEL_AVX512);
   test_cvt_v210_to_rfc4175_422be10(1920, 1080, MTL_SIMD_LEVEL_AVX512,
                                    MTL_SIMD_LEVEL_AVX512);
-  test_cvt_v210_to_rfc4175_422be10(1920, 1080, MTL_SIMD_LEVEL_NONE, MTL_SIMD_LEVEL_AVX512);
-  test_cvt_v210_to_rfc4175_422be10(1920, 1080, MTL_SIMD_LEVEL_AVX512, MTL_SIMD_LEVEL_NONE);
-  test_cvt_v210_to_rfc4175_422be10(722, 111, MTL_SIMD_LEVEL_AVX512, MTL_SIMD_LEVEL_AVX512);
+  test_cvt_v210_to_rfc4175_422be10(1920, 1080, MTL_SIMD_LEVEL_NONE,
+                                   MTL_SIMD_LEVEL_AVX512);
+  test_cvt_v210_to_rfc4175_422be10(1920, 1080, MTL_SIMD_LEVEL_AVX512,
+                                   MTL_SIMD_LEVEL_NONE);
+  test_cvt_v210_to_rfc4175_422be10(722, 111, MTL_SIMD_LEVEL_AVX512,
+                                   MTL_SIMD_LEVEL_AVX512);
   test_cvt_v210_to_rfc4175_422be10(1921, 1079, MTL_SIMD_LEVEL_AVX512,
                                    MTL_SIMD_LEVEL_AVX512);
 }
@@ -1462,7 +1487,8 @@ TEST(Cvt, v210_to_rfc4175_422be10_vbmi) {
                                    MTL_SIMD_LEVEL_AVX512_VBMI2);
 }
 
-static void test_cvt_v210_to_rfc4175_422be10_2(int w, int h, enum mtl_simd_level cvt_level,
+static void test_cvt_v210_to_rfc4175_422be10_2(int w, int h,
+                                               enum mtl_simd_level cvt_level,
                                                enum mtl_simd_level back_level) {
   int ret;
   bool fail_case = (w * h % 6); /* do not convert when pg_num is not multiple of 3 */
@@ -1510,7 +1536,8 @@ TEST(Cvt, v210_to_rfc4175_422be10_2) {
 }
 
 TEST(Cvt, v210_to_rfc4175_422be10_2_scalar) {
-  test_cvt_v210_to_rfc4175_422be10_2(1920, 1080, MTL_SIMD_LEVEL_NONE, MTL_SIMD_LEVEL_NONE);
+  test_cvt_v210_to_rfc4175_422be10_2(1920, 1080, MTL_SIMD_LEVEL_NONE,
+                                     MTL_SIMD_LEVEL_NONE);
 }
 
 TEST(Cvt, v210_to_rfc4175_422be10_2_avx512) {
@@ -1704,7 +1731,8 @@ TEST(Cvt, rfc4175_422be10_to_y210_scalar) {
 TEST(Cvt, rfc4175_422be10_to_y210_avx512) {
   test_cvt_rfc4175_422be10_to_y210(1920, 1080, MTL_SIMD_LEVEL_AVX512,
                                    MTL_SIMD_LEVEL_AVX512);
-  test_cvt_rfc4175_422be10_to_y210(722, 111, MTL_SIMD_LEVEL_AVX512, MTL_SIMD_LEVEL_AVX512);
+  test_cvt_rfc4175_422be10_to_y210(722, 111, MTL_SIMD_LEVEL_AVX512,
+                                   MTL_SIMD_LEVEL_AVX512);
   test_cvt_rfc4175_422be10_to_y210(722, 111, MTL_SIMD_LEVEL_NONE, MTL_SIMD_LEVEL_AVX512);
   test_cvt_rfc4175_422be10_to_y210(722, 111, MTL_SIMD_LEVEL_AVX512, MTL_SIMD_LEVEL_NONE);
   int w = 2; /* each pg has two pixels */
@@ -1843,7 +1871,8 @@ TEST(Cvt, y210_to_rfc4175_422be10_scalar) {
 TEST(Cvt, y210_to_rfc4175_422be10_avx512) {
   test_cvt_y210_to_rfc4175_422be10(1920, 1080, MTL_SIMD_LEVEL_AVX512,
                                    MTL_SIMD_LEVEL_AVX512);
-  test_cvt_y210_to_rfc4175_422be10(722, 111, MTL_SIMD_LEVEL_AVX512, MTL_SIMD_LEVEL_AVX512);
+  test_cvt_y210_to_rfc4175_422be10(722, 111, MTL_SIMD_LEVEL_AVX512,
+                                   MTL_SIMD_LEVEL_AVX512);
   test_cvt_y210_to_rfc4175_422be10(722, 111, MTL_SIMD_LEVEL_NONE, MTL_SIMD_LEVEL_AVX512);
   test_cvt_y210_to_rfc4175_422be10(722, 111, MTL_SIMD_LEVEL_AVX512, MTL_SIMD_LEVEL_NONE);
   int w = 2; /* each pg has two pixels */
@@ -2003,8 +2032,8 @@ TEST(Cvt, rotate_rfc4175_422be10_422le10_yuv422p10le_vbmi) {
 }
 
 TEST(Cvt, rotate_rfc4175_422be10_422le10_yuv422p10le_scalar) {
-  test_rotate_rfc4175_422be10_422le10_yuv422p10le(1920, 1080, MTL_SIMD_LEVEL_NONE,
-                                                  MTL_SIMD_LEVEL_NONE, MTL_SIMD_LEVEL_NONE);
+  test_rotate_rfc4175_422be10_422le10_yuv422p10le(
+      1920, 1080, MTL_SIMD_LEVEL_NONE, MTL_SIMD_LEVEL_NONE, MTL_SIMD_LEVEL_NONE);
 }
 
 static void test_rotate_rfc4175_422be10_yuv422p10le_422le10(
@@ -2071,8 +2100,8 @@ TEST(Cvt, rotate_rfc4175_422be10_yuv422p10le_422le10_vbmi) {
 }
 
 TEST(Cvt, rotate_rfc4175_422be10_yuv422p10le_422le10_scalar) {
-  test_rotate_rfc4175_422be10_yuv422p10le_422le10(1920, 1080, MTL_SIMD_LEVEL_NONE,
-                                                  MTL_SIMD_LEVEL_NONE, MTL_SIMD_LEVEL_NONE);
+  test_rotate_rfc4175_422be10_yuv422p10le_422le10(
+      1920, 1080, MTL_SIMD_LEVEL_NONE, MTL_SIMD_LEVEL_NONE, MTL_SIMD_LEVEL_NONE);
 }
 
 static void test_cvt_rfc4175_422be12_to_yuv422p12le(int w, int h,
@@ -2305,7 +2334,8 @@ TEST(Cvt, rfc4175_422be12_to_422le12) {
 }
 
 TEST(Cvt, rfc4175_422be12_to_422le12_scalar) {
-  test_cvt_rfc4175_422be12_to_422le12(1920, 1080, MTL_SIMD_LEVEL_NONE, MTL_SIMD_LEVEL_NONE);
+  test_cvt_rfc4175_422be12_to_422le12(1920, 1080, MTL_SIMD_LEVEL_NONE,
+                                      MTL_SIMD_LEVEL_NONE);
 }
 
 static void test_cvt_rfc4175_422le12_to_422be12(int w, int h,
@@ -2381,11 +2411,13 @@ static void test_cvt_rfc4175_422le12_to_422be12_2(int w, int h,
 }
 
 TEST(Cvt, rfc4175_422le12_to_422be12) {
-  test_cvt_rfc4175_422le12_to_422be12_2(1920, 1080, MTL_SIMD_LEVEL_MAX, MTL_SIMD_LEVEL_MAX);
+  test_cvt_rfc4175_422le12_to_422be12_2(1920, 1080, MTL_SIMD_LEVEL_MAX,
+                                        MTL_SIMD_LEVEL_MAX);
 }
 
 TEST(Cvt, rfc4175_422le12_to_422be12_scalar) {
-  test_cvt_rfc4175_422le12_to_422be12(1920, 1080, MTL_SIMD_LEVEL_NONE, MTL_SIMD_LEVEL_NONE);
+  test_cvt_rfc4175_422le12_to_422be12(1920, 1080, MTL_SIMD_LEVEL_NONE,
+                                      MTL_SIMD_LEVEL_NONE);
 }
 
 static void test_rotate_rfc4175_422be12_422le12_yuv422p12le(
@@ -2433,8 +2465,8 @@ static void test_rotate_rfc4175_422be12_422le12_yuv422p12le(
 }
 
 TEST(Cvt, rotate_rfc4175_422be12_422le12_yuv422p12le_scalar) {
-  test_rotate_rfc4175_422be12_422le12_yuv422p12le(1920, 1080, MTL_SIMD_LEVEL_NONE,
-                                                  MTL_SIMD_LEVEL_NONE, MTL_SIMD_LEVEL_NONE);
+  test_rotate_rfc4175_422be12_422le12_yuv422p12le(
+      1920, 1080, MTL_SIMD_LEVEL_NONE, MTL_SIMD_LEVEL_NONE, MTL_SIMD_LEVEL_NONE);
 }
 
 static void test_rotate_rfc4175_422be12_yuv422p12le_422le12(
@@ -2482,8 +2514,8 @@ static void test_rotate_rfc4175_422be12_yuv422p12le_422le12(
 }
 
 TEST(Cvt, rotate_rfc4175_422be12_yuv422p12le_422le12_scalar) {
-  test_rotate_rfc4175_422be12_yuv422p12le_422le12(1920, 1080, MTL_SIMD_LEVEL_NONE,
-                                                  MTL_SIMD_LEVEL_NONE, MTL_SIMD_LEVEL_NONE);
+  test_rotate_rfc4175_422be12_yuv422p12le_422le12(
+      1920, 1080, MTL_SIMD_LEVEL_NONE, MTL_SIMD_LEVEL_NONE, MTL_SIMD_LEVEL_NONE);
 }
 
 static void test_cvt_rfc4175_444be10_to_444p10le(int w, int h,
@@ -2524,7 +2556,8 @@ static void test_cvt_rfc4175_444be10_to_444p10le(int w, int h,
 }
 
 TEST(Cvt, rfc4175_444be10_to_444p10le) {
-  test_cvt_rfc4175_444be10_to_444p10le(1920, 1080, MTL_SIMD_LEVEL_MAX, MTL_SIMD_LEVEL_MAX);
+  test_cvt_rfc4175_444be10_to_444p10le(1920, 1080, MTL_SIMD_LEVEL_MAX,
+                                       MTL_SIMD_LEVEL_MAX);
 }
 
 TEST(Cvt, rfc4175_444be10_to_444p10le_scalar) {
@@ -2571,7 +2604,8 @@ static void test_cvt_444p10le_to_rfc4175_444be10(int w, int h,
 }
 
 TEST(Cvt, 444p10le_to_rfc4175_444be10) {
-  test_cvt_444p10le_to_rfc4175_444be10(1920, 1080, MTL_SIMD_LEVEL_MAX, MTL_SIMD_LEVEL_MAX);
+  test_cvt_444p10le_to_rfc4175_444be10(1920, 1080, MTL_SIMD_LEVEL_MAX,
+                                       MTL_SIMD_LEVEL_MAX);
 }
 
 TEST(Cvt, 444p10le_to_rfc4175_444be10_scalar) {
@@ -2664,7 +2698,8 @@ static void test_cvt_rfc4175_444le10_to_gbrp10le(int w, int h,
 }
 
 TEST(Cvt, rfc4175_444le10_to_gbrp10le) {
-  test_cvt_rfc4175_444le10_to_gbrp10le(1920, 1080, MTL_SIMD_LEVEL_MAX, MTL_SIMD_LEVEL_MAX);
+  test_cvt_rfc4175_444le10_to_gbrp10le(1920, 1080, MTL_SIMD_LEVEL_MAX,
+                                       MTL_SIMD_LEVEL_MAX);
 }
 
 TEST(Cvt, rfc4175_444le10_to_gbrp10le_scalar) {
@@ -2759,7 +2794,8 @@ static void test_cvt_gbrp10le_to_rfc4175_444le10(int w, int h,
 }
 
 TEST(Cvt, gbrp10le_to_rfc4175_444le10) {
-  test_cvt_gbrp10le_to_rfc4175_444le10(1920, 1080, MTL_SIMD_LEVEL_MAX, MTL_SIMD_LEVEL_MAX);
+  test_cvt_gbrp10le_to_rfc4175_444le10(1920, 1080, MTL_SIMD_LEVEL_MAX,
+                                       MTL_SIMD_LEVEL_MAX);
 }
 
 TEST(Cvt, gbrp10le_to_rfc4175_444le10_scalar) {
@@ -2807,7 +2843,8 @@ TEST(Cvt, rfc4175_444be10_to_444le10) {
 }
 
 TEST(Cvt, rfc4175_444be10_to_444le10_scalar) {
-  test_cvt_rfc4175_444be10_to_444le10(1920, 1080, MTL_SIMD_LEVEL_NONE, MTL_SIMD_LEVEL_NONE);
+  test_cvt_rfc4175_444be10_to_444le10(1920, 1080, MTL_SIMD_LEVEL_NONE,
+                                      MTL_SIMD_LEVEL_NONE);
 }
 
 static void test_cvt_rfc4175_444le10_to_444be10(int w, int h,
@@ -2881,11 +2918,13 @@ static void test_cvt_rfc4175_444le10_to_444be10_2(int w, int h,
 }
 
 TEST(Cvt, rfc4175_444le10_to_444be10) {
-  test_cvt_rfc4175_444le10_to_444be10_2(1920, 1080, MTL_SIMD_LEVEL_MAX, MTL_SIMD_LEVEL_MAX);
+  test_cvt_rfc4175_444le10_to_444be10_2(1920, 1080, MTL_SIMD_LEVEL_MAX,
+                                        MTL_SIMD_LEVEL_MAX);
 }
 
 TEST(Cvt, rfc4175_444le10_to_444be10_scalar) {
-  test_cvt_rfc4175_444le10_to_444be10(1920, 1080, MTL_SIMD_LEVEL_NONE, MTL_SIMD_LEVEL_NONE);
+  test_cvt_rfc4175_444le10_to_444be10(1920, 1080, MTL_SIMD_LEVEL_NONE,
+                                      MTL_SIMD_LEVEL_NONE);
 }
 
 static void test_rotate_rfc4175_444be10_444le10_444p10le(int w, int h,
@@ -3026,7 +3065,8 @@ static void test_cvt_rfc4175_444be12_to_444p12le(int w, int h,
 }
 
 TEST(Cvt, rfc4175_444be12_to_444p12le) {
-  test_cvt_rfc4175_444be12_to_444p12le(1920, 1080, MTL_SIMD_LEVEL_MAX, MTL_SIMD_LEVEL_MAX);
+  test_cvt_rfc4175_444be12_to_444p12le(1920, 1080, MTL_SIMD_LEVEL_MAX,
+                                       MTL_SIMD_LEVEL_MAX);
 }
 
 TEST(Cvt, rfc4175_444be12_to_444p12le_scalar) {
@@ -3073,7 +3113,8 @@ static void test_cvt_444p12le_to_rfc4175_444be12(int w, int h,
 }
 
 TEST(Cvt, 444p12le_to_rfc4175_444be12) {
-  test_cvt_444p12le_to_rfc4175_444be12(1920, 1080, MTL_SIMD_LEVEL_MAX, MTL_SIMD_LEVEL_MAX);
+  test_cvt_444p12le_to_rfc4175_444be12(1920, 1080, MTL_SIMD_LEVEL_MAX,
+                                       MTL_SIMD_LEVEL_MAX);
 }
 
 TEST(Cvt, 444p12le_to_rfc4175_444be12_scalar) {
@@ -3166,7 +3207,8 @@ static void test_cvt_rfc4175_444le12_to_gbrp12le(int w, int h,
 }
 
 TEST(Cvt, rfc4175_444le12_to_gbrp12le) {
-  test_cvt_rfc4175_444le12_to_gbrp12le(1920, 1080, MTL_SIMD_LEVEL_MAX, MTL_SIMD_LEVEL_MAX);
+  test_cvt_rfc4175_444le12_to_gbrp12le(1920, 1080, MTL_SIMD_LEVEL_MAX,
+                                       MTL_SIMD_LEVEL_MAX);
 }
 
 TEST(Cvt, rfc4175_444le12_to_gbrp12le_scalar) {
@@ -3261,7 +3303,8 @@ static void test_cvt_gbrp12le_to_rfc4175_444le12(int w, int h,
 }
 
 TEST(Cvt, gbrp12le_to_rfc4175_444le12) {
-  test_cvt_gbrp12le_to_rfc4175_444le12(1920, 1080, MTL_SIMD_LEVEL_MAX, MTL_SIMD_LEVEL_MAX);
+  test_cvt_gbrp12le_to_rfc4175_444le12(1920, 1080, MTL_SIMD_LEVEL_MAX,
+                                       MTL_SIMD_LEVEL_MAX);
 }
 
 TEST(Cvt, gbrp12le_to_rfc4175_444le12_scalar) {
@@ -3309,7 +3352,8 @@ TEST(Cvt, rfc4175_444be12_to_444le12) {
 }
 
 TEST(Cvt, rfc4175_444be12_to_444le12_scalar) {
-  test_cvt_rfc4175_444be12_to_444le12(1920, 1080, MTL_SIMD_LEVEL_NONE, MTL_SIMD_LEVEL_NONE);
+  test_cvt_rfc4175_444be12_to_444le12(1920, 1080, MTL_SIMD_LEVEL_NONE,
+                                      MTL_SIMD_LEVEL_NONE);
 }
 
 static void test_cvt_rfc4175_444le12_to_444be12(int w, int h,
@@ -3383,11 +3427,13 @@ static void test_cvt_rfc4175_444le12_to_444be12_2(int w, int h,
 }
 
 TEST(Cvt, rfc4175_444le12_to_444be12) {
-  test_cvt_rfc4175_444le12_to_444be12_2(1920, 1080, MTL_SIMD_LEVEL_MAX, MTL_SIMD_LEVEL_MAX);
+  test_cvt_rfc4175_444le12_to_444be12_2(1920, 1080, MTL_SIMD_LEVEL_MAX,
+                                        MTL_SIMD_LEVEL_MAX);
 }
 
 TEST(Cvt, rfc4175_444le12_to_444be12_scalar) {
-  test_cvt_rfc4175_444le12_to_444be12(1920, 1080, MTL_SIMD_LEVEL_NONE, MTL_SIMD_LEVEL_NONE);
+  test_cvt_rfc4175_444le12_to_444be12(1920, 1080, MTL_SIMD_LEVEL_NONE,
+                                      MTL_SIMD_LEVEL_NONE);
 }
 
 static void test_rotate_rfc4175_444be12_444le12_444p12le(int w, int h,

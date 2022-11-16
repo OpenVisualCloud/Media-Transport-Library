@@ -819,7 +819,8 @@ struct st22p_rx_ops {
  *   - NULL: fail.
  *   - Others: the handle to the encode dev context.
  */
-st22_encoder_dev_handle st22_encoder_register(mtl_handle st, struct st22_encoder_dev* dev);
+st22_encoder_dev_handle st22_encoder_register(mtl_handle st,
+                                              struct st22_encoder_dev* dev);
 
 /**
  * Unregister one st22 encoder.
@@ -872,7 +873,8 @@ int st22_encoder_put_frame(st22p_encode_session session,
  *   - NULL: fail.
  *   - Others: the handle to the encode dev
  */
-st22_decoder_dev_handle st22_decoder_register(mtl_handle st, struct st22_decoder_dev* dev);
+st22_decoder_dev_handle st22_decoder_register(mtl_handle st,
+                                              struct st22_decoder_dev* dev);
 
 /**
  * Unregister one st22 decoder.

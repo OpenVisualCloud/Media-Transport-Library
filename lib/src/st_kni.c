@@ -216,8 +216,8 @@ static int kni_queues_init(struct mtl_main_impl* impl, struct st_cni_impl* cni) 
   return 0;
 }
 
-int st_kni_handle(struct mtl_main_impl* impl, enum mtl_port port, struct rte_mbuf** rx_pkts,
-                  uint16_t nb_pkts) {
+int st_kni_handle(struct mtl_main_impl* impl, enum mtl_port port,
+                  struct rte_mbuf** rx_pkts, uint16_t nb_pkts) {
   struct st_cni_impl* cni = st_get_cni(impl);
   struct rte_kni* rkni = cni->rkni[port];
   uint16_t port_id = st_port_id(impl, port);

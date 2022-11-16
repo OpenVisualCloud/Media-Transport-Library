@@ -856,8 +856,8 @@ static int tap_queues_init(struct mtl_main_impl* impl, struct st_cni_impl* cni) 
   return 0;
 }
 
-int st_tap_handle(struct mtl_main_impl* impl, enum mtl_port port, struct rte_mbuf** rx_pkts,
-                  uint16_t nb_pkts) {
+int st_tap_handle(struct mtl_main_impl* impl, enum mtl_port port,
+                  struct rte_mbuf** rx_pkts, uint16_t nb_pkts) {
   struct st_cni_impl* cni = st_get_cni(impl);
   struct rte_mbuf* pkts_rx[ST_CNI_RX_BURST_SIZE];
   uint16_t rx;

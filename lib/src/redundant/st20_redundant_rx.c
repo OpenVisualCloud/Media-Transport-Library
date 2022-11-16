@@ -231,7 +231,8 @@ st20r_rx_handle st20r_rx_create(mtl_handle st, struct st20r_rx_ops* ops) {
     err("%s, invalid num_port %u\n", __func__, num_port);
     return NULL;
   }
-  if (0 == memcmp(ops->sip_addr[MTL_PORT_P], ops->sip_addr[MTL_PORT_R], MTL_IP_ADDR_LEN)) {
+  if (0 ==
+      memcmp(ops->sip_addr[MTL_PORT_P], ops->sip_addr[MTL_PORT_R], MTL_IP_ADDR_LEN)) {
     uint8_t* ip = ops->sip_addr[MTL_PORT_P];
     err("%s, same %d.%d.%d.%d for both ip\n", __func__, ip[0], ip[1], ip[2], ip[3]);
     return NULL;

@@ -387,8 +387,8 @@ static void kahawai_init(struct kh_rx_session* s) {
   param.xdp_info[MTL_PORT_P].queue_count = 1;
   param.xdp_info[MTL_PORT_P].start_queue = 16;
   param.flags = MTL_FLAG_BIND_NUMA;  // default bind to numa
-  param.log_level = s->log_level;   // kahawai lib log level
-  param.priv = s;                   // usr ctx pointer
+  param.log_level = s->log_level;    // kahawai lib log level
+  param.priv = s;                    // usr ctx pointer
   // user regist ptp func, if not regist, the internal ptp will be used
   param.ptp_get_time_fn = NULL;
   param.tx_sessions_cnt_max = 0;

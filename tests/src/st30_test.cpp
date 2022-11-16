@@ -825,11 +825,14 @@ static void st30_rx_update_src_test(enum st30_type type, int tx_sessions,
     ops_tx.priv = test_ctx_tx[i];
     ops_tx.num_port = 1;
     if (2 == i)
-      memcpy(ops_tx.dip_addr[MTL_PORT_P], ctx->mcast_ip_addr[MTL_PORT_R], MTL_IP_ADDR_LEN);
+      memcpy(ops_tx.dip_addr[MTL_PORT_P], ctx->mcast_ip_addr[MTL_PORT_R],
+             MTL_IP_ADDR_LEN);
     else if (1 == i)
-      memcpy(ops_tx.dip_addr[MTL_PORT_P], ctx->mcast_ip_addr[MTL_PORT_P], MTL_IP_ADDR_LEN);
+      memcpy(ops_tx.dip_addr[MTL_PORT_P], ctx->mcast_ip_addr[MTL_PORT_P],
+             MTL_IP_ADDR_LEN);
     else
-      memcpy(ops_tx.dip_addr[MTL_PORT_P], ctx->para.sip_addr[MTL_PORT_R], MTL_IP_ADDR_LEN);
+      memcpy(ops_tx.dip_addr[MTL_PORT_P], ctx->para.sip_addr[MTL_PORT_R],
+             MTL_IP_ADDR_LEN);
     strncpy(ops_tx.port[MTL_PORT_P], ctx->para.port[MTL_PORT_P], MTL_PORT_MAX_LEN);
     ops_tx.udp_port[MTL_PORT_P] = 20000 + i;
     ops_tx.type = type;
@@ -1262,7 +1265,8 @@ static void st30_create_after_start_test(enum st30_type type[],
       ops_tx.name = "st30_test";
       ops_tx.priv = test_ctx_tx[i];
       ops_tx.num_port = 1;
-      memcpy(ops_tx.dip_addr[MTL_PORT_P], ctx->para.sip_addr[MTL_PORT_R], MTL_IP_ADDR_LEN);
+      memcpy(ops_tx.dip_addr[MTL_PORT_P], ctx->para.sip_addr[MTL_PORT_R],
+             MTL_IP_ADDR_LEN);
       strncpy(ops_tx.port[MTL_PORT_P], ctx->para.port[MTL_PORT_P], MTL_PORT_MAX_LEN);
       ops_tx.udp_port[MTL_PORT_P] = 20000 + i;
       ops_tx.type = type[i];
@@ -1303,7 +1307,8 @@ static void st30_create_after_start_test(enum st30_type type[],
       ops_rx.name = "st30_test";
       ops_rx.priv = test_ctx_rx[i];
       ops_rx.num_port = 1;
-      memcpy(ops_rx.sip_addr[MTL_PORT_P], ctx->para.sip_addr[MTL_PORT_P], MTL_IP_ADDR_LEN);
+      memcpy(ops_rx.sip_addr[MTL_PORT_P], ctx->para.sip_addr[MTL_PORT_P],
+             MTL_IP_ADDR_LEN);
       strncpy(ops_rx.port[MTL_PORT_P], ctx->para.port[MTL_PORT_R], MTL_PORT_MAX_LEN);
       ops_rx.udp_port[MTL_PORT_P] = 20000 + i;
       ops_rx.type = type[i];

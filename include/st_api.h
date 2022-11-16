@@ -165,7 +165,6 @@ enum st_event {
   ST_EVENT_MAX,
 };
 
-
 /**
  * Inline function to check the  rx frame is a completed frame.
  * @param status
@@ -250,7 +249,6 @@ static inline uint32_t st10_get_media_clk(enum st10_timestamp_fmt tfmt,
   if (tfmt == ST10_TIMESTAMP_FMT_MEDIA_CLK) return (uint32_t)timestamp;
   return st10_tai_to_media_clk(timestamp, sampling_rate);
 }
-
 
 #if defined(__cplusplus)
 }

@@ -55,7 +55,8 @@ static int perf_cvt_422_10_pg2_to_planar_le(mtl_handle st, int w, int h, int fra
       p10_u16_b_out = p10_u16_b + (i % fb_cnt) * (planar_size / sizeof(*p10_u16_b));
       p10_u16_r_out = p10_u16_r + (i % fb_cnt) * (planar_size / sizeof(*p10_u16_r));
       st20_rfc4175_422be10_to_yuv422p10le_simd(pg_be_in, p10_u16_out, p10_u16_b_out,
-                                               p10_u16_r_out, w, h, MTL_SIMD_LEVEL_AVX512);
+                                               p10_u16_r_out, w, h,
+                                               MTL_SIMD_LEVEL_AVX512);
     }
     end = clock();
     float duration_simd = (float)(end - start) / CLOCKS_PER_SEC;

@@ -47,7 +47,7 @@ int st_build_port_map(struct mtl_main_impl* impl, char** ports, enum mtl_port* m
 
 /* logical session port to main(physical) port */
 static inline enum mtl_port st_port_logic2phy(enum mtl_port* maps,
-                                             enum st_session_port logic) {
+                                              enum st_session_port logic) {
   return maps[logic];
 }
 
@@ -80,10 +80,11 @@ static inline bool st_rx_seq_drop(uint16_t new_id, uint16_t old_id, uint16_t del
 struct rte_mbuf* st_build_pad(struct mtl_main_impl* impl, struct rte_mempool* mempool,
                               uint16_t port_id, uint16_t ether_type, uint16_t len);
 
-struct rte_mempool* st_mempool_create_by_ops(struct mtl_main_impl* impl, enum mtl_port port,
-                                             const char* name, unsigned int n,
-                                             unsigned int cache_size, uint16_t priv_size,
-                                             uint16_t element_size, const char* ops_name);
+struct rte_mempool* st_mempool_create_by_ops(struct mtl_main_impl* impl,
+                                             enum mtl_port port, const char* name,
+                                             unsigned int n, unsigned int cache_size,
+                                             uint16_t priv_size, uint16_t element_size,
+                                             const char* ops_name);
 
 static inline struct rte_mempool* st_mempool_create(
     struct mtl_main_impl* impl, enum mtl_port port, const char* name, unsigned int n,

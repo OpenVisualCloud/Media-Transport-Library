@@ -247,7 +247,8 @@ static void st20p_tx_ops_init(tests_context* st20, struct st20p_tx_ops* ops_tx) 
   ops_tx->name = "st20p_test";
   ops_tx->priv = st20;
   ops_tx->port.num_port = 1;
-  memcpy(ops_tx->port.dip_addr[MTL_PORT_P], ctx->mcast_ip_addr[MTL_PORT_P], MTL_IP_ADDR_LEN);
+  memcpy(ops_tx->port.dip_addr[MTL_PORT_P], ctx->mcast_ip_addr[MTL_PORT_P],
+         MTL_IP_ADDR_LEN);
   strncpy(ops_tx->port.port[MTL_PORT_P], ctx->para.port[MTL_PORT_P], MTL_PORT_MAX_LEN);
   ops_tx->port.udp_port[MTL_PORT_P] = ST20P_TEST_UDP_PORT + st20->idx;
   ops_tx->port.payload_type = ST20P_TEST_PAYLOAD_TYPE;
@@ -270,7 +271,8 @@ static void st20p_rx_ops_init(tests_context* st20, struct st20p_rx_ops* ops_rx) 
   ops_rx->name = "st20p_test";
   ops_rx->priv = st20;
   ops_rx->port.num_port = 1;
-  memcpy(ops_rx->port.sip_addr[MTL_PORT_P], ctx->mcast_ip_addr[MTL_PORT_P], MTL_IP_ADDR_LEN);
+  memcpy(ops_rx->port.sip_addr[MTL_PORT_P], ctx->mcast_ip_addr[MTL_PORT_P],
+         MTL_IP_ADDR_LEN);
   strncpy(ops_rx->port.port[MTL_PORT_P], ctx->para.port[MTL_PORT_R], MTL_PORT_MAX_LEN);
   ops_rx->port.udp_port[MTL_PORT_P] = ST20P_TEST_UDP_PORT + st20->idx;
   ops_rx->port.payload_type = ST20P_TEST_PAYLOAD_TYPE;

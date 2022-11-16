@@ -435,7 +435,8 @@ int st20_rfc4175_422be10_to_yuv422p10le_avx512(struct st20_rfc4175_422_10_pg2_be
 
 int st20_rfc4175_422be10_to_yuv422p10le_avx512_dma(
     struct mtl_dma_lender_dev* dma, struct st20_rfc4175_422_10_pg2_be* pg_be,
-    mtl_iova_t pg_be_iova, uint16_t* y, uint16_t* b, uint16_t* r, uint32_t w, uint32_t h) {
+    mtl_iova_t pg_be_iova, uint16_t* y, uint16_t* b, uint16_t* r, uint32_t w,
+    uint32_t h) {
   __m128i shuffle_le_mask = _mm_loadu_si128((__m128i*)b2l_shuffle_mask_table);
   __m128i srlv_le_mask = _mm_loadu_si128((__m128i*)b2l_srlv_mask_table);
   __m128i srlv_and_mask = _mm_loadu_si128((__m128i*)b2l_and_mask_table);

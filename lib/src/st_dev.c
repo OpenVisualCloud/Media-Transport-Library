@@ -1593,8 +1593,8 @@ int st_dev_request_rx_queue(struct mtl_main_impl* impl, enum mtl_port port,
   return -ENOMEM;
 }
 
-int st_dev_flush_tx_queue(struct mtl_main_impl* impl, enum mtl_port port, uint16_t queue_id,
-                          struct rte_mbuf* pad) {
+int st_dev_flush_tx_queue(struct mtl_main_impl* impl, enum mtl_port port,
+                          uint16_t queue_id, struct rte_mbuf* pad) {
   struct st_interface* inf = st_if(impl, port);
   struct st_tx_queue* tx_queue;
 

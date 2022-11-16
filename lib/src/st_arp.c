@@ -128,7 +128,8 @@ static int arp_queues_init(struct mtl_main_impl* impl) {
   return 0;
 }
 
-int st_arp_parse(struct mtl_main_impl* impl, struct rte_arp_hdr* hdr, enum mtl_port port) {
+int st_arp_parse(struct mtl_main_impl* impl, struct rte_arp_hdr* hdr,
+                 enum mtl_port port) {
   switch (htons(hdr->arp_opcode)) {
     case RTE_ARP_OP_REQUEST:
       arp_receive_request(impl, hdr, port);

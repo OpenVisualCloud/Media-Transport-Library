@@ -77,8 +77,8 @@ struct tap_rt_context {
 
 int st_tap_init(struct mtl_main_impl* impl);
 int st_tap_uinit(struct mtl_main_impl* impl);
-int st_tap_handle(struct mtl_main_impl* impl, enum mtl_port port, struct rte_mbuf** rx_pkts,
-                  uint16_t nb_pkts);
+int st_tap_handle(struct mtl_main_impl* impl, enum mtl_port port,
+                  struct rte_mbuf** rx_pkts, uint16_t nb_pkts);
 
 #else
 static inline int st_tap_init(struct mtl_main_impl* impl) { return 0; }

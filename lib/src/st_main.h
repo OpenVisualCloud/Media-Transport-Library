@@ -238,7 +238,7 @@ struct st_ptp_impl {
   struct st_ptp_port_id master_port_id;
   struct rte_ether_addr master_addr;
   struct st_ptp_port_id our_port_id;
-  struct st_ptp_ipv4_udp dst_udp;   /* for l4 */
+  struct st_ptp_ipv4_udp dst_udp;    /* for l4 */
   uint8_t sip_addr[MTL_IP_ADDR_LEN]; /* source IP */
   enum st_ptp_addr_mode master_addr_mode;
   int16_t master_utc_offset; /* offset to UTC of current master PTP */
@@ -1358,10 +1358,10 @@ struct st_rl_shaper {
 struct st_rx_flow {
   uint8_t dip_addr[MTL_IP_ADDR_LEN]; /* rx destination IP */
   uint8_t sip_addr[MTL_IP_ADDR_LEN]; /* source IP */
-  uint16_t dst_port;                /* udp destination port */
-  int flow_id;                      /* flow id in the eth tool */
-  bool port_flow;                   /* if apply port flow */
-  bool hdr_split;                   /* if request hdr split */
+  uint16_t dst_port;                 /* udp destination port */
+  int flow_id;                       /* flow id in the eth tool */
+  bool port_flow;                    /* if apply port flow */
+  bool hdr_split;                    /* if request hdr split */
   void* hdr_split_mbuf_cb_priv;
 #ifdef ST_HAS_DPDK_HDR_SPLIT /* rte_eth_hdrs_mbuf_callback_fn define with this marco */
   rte_eth_hdrs_mbuf_callback_fn hdr_split_mbuf_cb;
@@ -1487,7 +1487,7 @@ struct mtl_dma_mem {
   size_t alloc_size; /* the malloc size */
   void* addr;        /* the first page aligned address after alloc_addr */
   size_t valid_size; /* the valid data size from user */
-  mtl_iova_t iova;    /* the dma mapped address of addr */
+  mtl_iova_t iova;   /* the dma mapped address of addr */
   size_t iova_size;  /* the iova mapped size */
 };
 
@@ -1803,7 +1803,7 @@ static inline struct rte_device* st_port_device(struct mtl_main_impl* impl,
 }
 
 static inline enum mtl_port_type st_port_type(struct mtl_main_impl* impl,
-                                             enum mtl_port port) {
+                                              enum mtl_port port) {
   return st_if(impl, port)->port_type;
 }
 
@@ -1813,7 +1813,8 @@ static inline uint8_t* st_sip_addr(struct mtl_main_impl* impl, enum mtl_port por
   return st_get_user_params(impl)->sip_addr[port];
 }
 
-static inline enum mtl_pmd_type st_pmd_type(struct mtl_main_impl* impl, enum mtl_port port) {
+static inline enum mtl_pmd_type st_pmd_type(struct mtl_main_impl* impl,
+                                            enum mtl_port port) {
   return st_get_user_params(impl)->pmd[port];
 }
 
@@ -2018,7 +2019,8 @@ static inline struct rte_mempool* st_get_rx_mempool(struct mtl_main_impl* impl,
   return st_if(impl, port)->rx_mbuf_pool;
 }
 
-static inline struct rte_mbuf* st_get_pad(struct mtl_main_impl* impl, enum mtl_port port) {
+static inline struct rte_mbuf* st_get_pad(struct mtl_main_impl* impl,
+                                          enum mtl_port port) {
   return st_if(impl, port)->pad;
 }
 

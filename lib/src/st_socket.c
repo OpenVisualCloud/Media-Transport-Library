@@ -133,7 +133,8 @@ static int socket_arp_get(int sfd, in_addr_t ip, struct rte_ether_addr* ea,
   return 0;
 }
 
-static int socket_query_local_mac(uint8_t ip[MTL_IP_ADDR_LEN], struct rte_ether_addr* ea) {
+static int socket_query_local_mac(uint8_t ip[MTL_IP_ADDR_LEN],
+                                  struct rte_ether_addr* ea) {
   int sock;
   struct ifconf conf;
   struct ifreq* ifr = NULL;
@@ -270,8 +271,8 @@ int st_socket_add_flow(struct mtl_main_impl* impl, enum mtl_port port, uint16_t 
   return 0;
 }
 
-int st_socket_remove_flow(struct mtl_main_impl* impl, enum mtl_port port, uint16_t queue_id,
-                          struct st_rx_flow* flow) {
+int st_socket_remove_flow(struct mtl_main_impl* impl, enum mtl_port port,
+                          uint16_t queue_id, struct st_rx_flow* flow) {
   char cmd[128];
   int ret;
 
@@ -308,8 +309,8 @@ int st_socket_add_flow(struct mtl_main_impl* impl, enum mtl_port port, uint16_t 
   return -ENOTSUP;
 }
 
-int st_socket_remove_flow(struct mtl_main_impl* impl, enum mtl_port port, uint16_t queue_id,
-                          struct st_rx_flow* flow) {
+int st_socket_remove_flow(struct mtl_main_impl* impl, enum mtl_port port,
+                          uint16_t queue_id, struct st_rx_flow* flow) {
   return -ENOTSUP;
 }
 #endif

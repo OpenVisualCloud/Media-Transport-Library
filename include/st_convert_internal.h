@@ -207,7 +207,8 @@ int st20_rfc4175_422be10_to_v210_simd_dma(mtl_udma_handle udma,
  */
 int st20_rfc4175_422be10_to_422le8_simd(struct st20_rfc4175_422_10_pg2_be* pg_10,
                                         struct st20_rfc4175_422_8_pg2_le* pg_8,
-                                        uint32_t w, uint32_t h, enum mtl_simd_level level);
+                                        uint32_t w, uint32_t h,
+                                        enum mtl_simd_level level);
 
 /**
  * Convert rfc4175_422be10 to rfc4175_422le8 with required SIMD level and DMA helper.

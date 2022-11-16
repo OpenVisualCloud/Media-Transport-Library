@@ -21,7 +21,8 @@ int st20_rfc4175_422be10_to_422le8_avx512_vbmi(struct st20_rfc4175_422_10_pg2_be
 
 int st20_rfc4175_422be10_to_422le8_avx512_vbmi_dma(
     struct mtl_dma_lender_dev* dma, struct st20_rfc4175_422_10_pg2_be* pg_10,
-    mtl_iova_t pg_10_iova, struct st20_rfc4175_422_8_pg2_le* pg_8, uint32_t w, uint32_t h);
+    mtl_iova_t pg_10_iova, struct st20_rfc4175_422_8_pg2_le* pg_8, uint32_t w,
+    uint32_t h);
 
 int st20_rfc4175_422le10_to_v210_avx512_vbmi(uint8_t* pg_le, uint8_t* pg_v210, uint32_t w,
                                              uint32_t h);
@@ -61,7 +62,8 @@ int st20_v210_to_rfc4175_422be10_avx512_vbmi(uint8_t* pg_v210,
                                              uint32_t w, uint32_t h);
 
 int st20_v210_to_rfc4175_422be10_avx512_vbmi_dma(struct mtl_dma_lender_dev* dma,
-                                                 uint8_t* pg_v210, mtl_iova_t pg_v210_iova,
+                                                 uint8_t* pg_v210,
+                                                 mtl_iova_t pg_v210_iova,
                                                  struct st20_rfc4175_422_10_pg2_be* pg_be,
                                                  uint32_t w, uint32_t h);
 
