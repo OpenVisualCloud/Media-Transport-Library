@@ -340,20 +340,20 @@ TEST(Misc, version) {
   info("st version: %s\n", version_display);
 
   uint32_t version_no =
-      ST_VERSION_NUM(MTL_VERSION_MAJOR, MTL_VERSION_MINOR, MTL_VERSION_LAST);
-  EXPECT_EQ(ST_VERSION, version_no);
+      MTL_VERSION_NUM(MTL_VERSION_MAJOR, MTL_VERSION_MINOR, MTL_VERSION_LAST);
+  EXPECT_EQ(MTL_VERSION, version_no);
 }
 
 TEST(Misc, version_compare) {
   auto version_next =
-      ST_VERSION_NUM(MTL_VERSION_MAJOR + 1, MTL_VERSION_MINOR, MTL_VERSION_LAST);
-  EXPECT_LT(ST_VERSION, version_next);
+      MTL_VERSION_NUM(MTL_VERSION_MAJOR + 1, MTL_VERSION_MINOR, MTL_VERSION_LAST);
+  EXPECT_LT(MTL_VERSION, version_next);
   version_next =
-      ST_VERSION_NUM(MTL_VERSION_MAJOR, MTL_VERSION_MINOR + 1, MTL_VERSION_LAST);
-  EXPECT_LT(ST_VERSION, version_next);
+      MTL_VERSION_NUM(MTL_VERSION_MAJOR, MTL_VERSION_MINOR + 1, MTL_VERSION_LAST);
+  EXPECT_LT(MTL_VERSION, version_next);
   version_next =
-      ST_VERSION_NUM(MTL_VERSION_MAJOR, MTL_VERSION_MINOR, MTL_VERSION_LAST + 1);
-  EXPECT_LT(ST_VERSION, version_next);
+      MTL_VERSION_NUM(MTL_VERSION_MAJOR, MTL_VERSION_MINOR, MTL_VERSION_LAST + 1);
+  EXPECT_LT(MTL_VERSION, version_next);
 }
 
 static void st_memcpy_test(size_t size) {

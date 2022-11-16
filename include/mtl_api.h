@@ -28,11 +28,12 @@ extern "C" {
 /**
  * Macro to compute a version number usable for comparisons
  */
-#define ST_VERSION_NUM(a, b, c) ((a) << 16 | (b) << 8 | (c))
+#define MTL_VERSION_NUM(a, b, c) ((a) << 16 | (b) << 8 | (c))
 /**
  * All version numbers in one to compare with ST_VERSION_NUM()
  */
-#define ST_VERSION ST_VERSION_NUM(MTL_VERSION_MAJOR, MTL_VERSION_MINOR, MTL_VERSION_LAST)
+#define MTL_VERSION \
+  MTL_VERSION_NUM(MTL_VERSION_MAJOR, MTL_VERSION_MINOR, MTL_VERSION_LAST)
 
 /**
  * Get the uint64_t value for a specified bit set(0 to 63).
