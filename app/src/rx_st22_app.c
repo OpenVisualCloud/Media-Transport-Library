@@ -96,7 +96,7 @@ static void app_rx_st22_decode_frame(struct st22_app_rx_session* s, void* codest
   if (s->st22_dst_cursor + codestream_size > s->st22_dst_end)
     s->st22_dst_cursor = s->st22_dst_begin;
 
-  st_memcpy(s->st22_dst_cursor, codestream_addr, codestream_size);
+  mtl_memcpy(s->st22_dst_cursor, codestream_addr, codestream_size);
   s->st22_dst_cursor += codestream_size;
 
   s->fb_decoded++;

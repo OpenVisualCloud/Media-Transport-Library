@@ -117,7 +117,7 @@ extern "C" {
  * Flag bit in flags of struct st20_rx_ops.
  * Only for ST20_TYPE_FRAME_LEVEL/ST20_TYPE_SLICE_LEVEL.
  * If set, lib will try to allocate DMA memory copy offload from
- * dma_dev_port(st_init_params) list.
+ * dma_dev_port(mtl_init_params) list.
  * Pls note it could fallback to CPU if no DMA device is available.
  */
 #define ST20_RX_FLAG_DMA_OFFLOAD (MTL_BIT32(17))
@@ -806,7 +806,7 @@ struct st20_tx_ops {
   void* priv;
   /** destination IP address */
   uint8_t dip_addr[MTL_PORT_MAX][MTL_IP_ADDR_LEN];
-  /** Pcie BDF path like 0000:af:00.0, should align to BDF of st_init */
+  /** Pcie BDF path like 0000:af:00.0, should align to BDF of mtl_init */
   char port[MTL_PORT_MAX][MTL_PORT_MAX_LEN];
   /** 1 or 2, num of ports this session attached to */
   uint8_t num_port;
@@ -921,7 +921,7 @@ struct st22_tx_ops {
   void* priv;
   /** destination IP address */
   uint8_t dip_addr[MTL_PORT_MAX][MTL_IP_ADDR_LEN];
-  /** Pcie BDF path like 0000:af:00.0, should align to BDF of st_init */
+  /** Pcie BDF path like 0000:af:00.0, should align to BDF of mtl_init */
   char port[MTL_PORT_MAX][MTL_PORT_MAX_LEN];
   /** 1 or 2, num of ports this session attached to */
   uint8_t num_port;
@@ -1060,7 +1060,7 @@ struct st20_rx_ops {
   uint8_t sip_addr[MTL_PORT_MAX][MTL_IP_ADDR_LEN];
   /** 1 or 2, num of ports this session attached to */
   uint8_t num_port;
-  /** Pcie BDF path like 0000:af:00.0, should align to BDF of st_init */
+  /** Pcie BDF path like 0000:af:00.0, should align to BDF of mtl_init */
   char port[MTL_PORT_MAX][MTL_PORT_MAX_LEN];
   /** UDP port number */
   uint16_t udp_port[MTL_PORT_MAX];
@@ -1200,7 +1200,7 @@ struct st22_rx_ops {
   uint8_t sip_addr[MTL_PORT_MAX][MTL_IP_ADDR_LEN];
   /** 1 or 2, num of ports this session attached to */
   uint8_t num_port;
-  /** Pcie BDF path like 0000:af:00.0, should align to BDF of st_init */
+  /** Pcie BDF path like 0000:af:00.0, should align to BDF of mtl_init */
   char port[MTL_PORT_MAX][MTL_PORT_MAX_LEN];
   /** UDP port number */
   uint16_t udp_port[MTL_PORT_MAX];

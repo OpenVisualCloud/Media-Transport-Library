@@ -10,7 +10,7 @@ int st_test_sch_cnt(struct st_tests_context* ctx) {
   struct mtl_stats stats;
   int ret;
 
-  ret = st_get_stats(handle, &stats);
+  ret = mtl_get_stats(handle, &stats);
   if (ret < 0) return ret;
 
   return stats.sch_cnt;
@@ -22,10 +22,10 @@ bool st_test_dma_available(struct st_tests_context* ctx) {
   struct mtl_cap cap;
   int ret;
 
-  ret = st_get_stats(handle, &stats);
+  ret = mtl_get_stats(handle, &stats);
   if (ret < 0) return ret;
 
-  ret = st_get_cap(handle, &cap);
+  ret = mtl_get_cap(handle, &cap);
   if (ret < 0) return ret;
 
   if (stats.dma_dev_cnt < cap.dma_dev_cnt_max)
@@ -40,46 +40,46 @@ static void init_expect_fail_test(void) {
   struct mtl_init_params para;
 
   memset(&para, 0, sizeof(para));
-  handle = st_init(&para);
+  handle = mtl_init(&para);
   EXPECT_TRUE(handle == NULL);
 
   para.num_ports = 1;
-  handle = st_init(&para);
+  handle = mtl_init(&para);
   EXPECT_TRUE(handle == NULL);
 
-  memcpy(st_p_sip_addr(&para), ctx->para.sip_addr[MTL_PORT_P], MTL_IP_ADDR_LEN);
-  handle = st_init(&para);
+  memcpy(mtl_p_sip_addr(&para), ctx->para.sip_addr[MTL_PORT_P], MTL_IP_ADDR_LEN);
+  handle = mtl_init(&para);
   EXPECT_TRUE(handle == NULL);
 
   snprintf(para.port[MTL_PORT_P], sizeof(para.port[MTL_PORT_P]), "0000:55:00.0");
-  handle = st_init(&para);
+  handle = mtl_init(&para);
   EXPECT_TRUE(handle == NULL);
 
-  memcpy(st_r_sip_addr(&para), ctx->para.sip_addr[MTL_PORT_R], MTL_IP_ADDR_LEN);
+  memcpy(mtl_r_sip_addr(&para), ctx->para.sip_addr[MTL_PORT_R], MTL_IP_ADDR_LEN);
 
   /* test with 0 num_ports */
   para.num_ports = 0;
-  handle = st_init(&para);
+  handle = mtl_init(&para);
   EXPECT_TRUE(handle == NULL);
 
   /* test with crazy big num_ports */
   para.num_ports = 100;
-  handle = st_init(&para);
+  handle = mtl_init(&para);
   EXPECT_TRUE(handle == NULL);
 
   /* test with negative big num_ports */
   para.num_ports = -1;
-  handle = st_init(&para);
+  handle = mtl_init(&para);
   EXPECT_TRUE(handle == NULL);
 
   para.num_ports = 1;
   para.tx_sessions_cnt_max = -1;
-  handle = st_init(&para);
+  handle = mtl_init(&para);
   EXPECT_TRUE(handle == NULL);
 
   para.tx_sessions_cnt_max = 1;
   para.rx_sessions_cnt_max = -1;
-  handle = st_init(&para);
+  handle = mtl_init(&para);
   EXPECT_TRUE(handle == NULL);
 }
 
@@ -89,7 +89,7 @@ static void reinit_expect_fail_test(void) {
   struct st_tests_context* ctx = st_test_ctx();
   mtl_handle handle;
 
-  handle = st_init(&ctx->para);
+  handle = mtl_init(&ctx->para);
   EXPECT_TRUE(handle == NULL);
 }
 
@@ -101,9 +101,9 @@ static void start_stop_test(int repeat) {
   int ret;
 
   for (int i = 0; i < repeat; i++) {
-    ret = st_start(handle);
+    ret = mtl_start(handle);
     EXPECT_GE(ret, 0);
-    ret = st_stop(handle);
+    ret = mtl_stop(handle);
     EXPECT_GE(ret, 0);
   }
 }
@@ -117,11 +117,11 @@ static void start_expect_fail_test(void) {
   mtl_handle handle = ctx->handle;
   int ret;
 
-  ret = st_start(handle);
+  ret = mtl_start(handle);
   EXPECT_GE(ret, 0);
-  ret = st_start(handle);
+  ret = mtl_start(handle);
   EXPECT_GE(ret, 0);
-  ret = st_stop(handle);
+  ret = mtl_stop(handle);
   EXPECT_GE(ret, 0);
 }
 
@@ -132,15 +132,15 @@ static void stop_expect_fail_test(void) {
   mtl_handle handle = ctx->handle;
   int ret;
 
-  ret = st_stop(handle);
+  ret = mtl_stop(handle);
   EXPECT_GE(ret, 0);
 
-  ret = st_start(handle);
+  ret = mtl_start(handle);
   EXPECT_GE(ret, 0);
-  ret = st_stop(handle);
+  ret = mtl_stop(handle);
   EXPECT_GE(ret, 0);
 
-  ret = st_stop(handle);
+  ret = mtl_stop(handle);
   EXPECT_GE(ret, 0);
 }
 
@@ -152,7 +152,7 @@ TEST(Main, get_cap) {
   struct mtl_cap cap;
   int ret;
 
-  ret = st_get_cap(handle, &cap);
+  ret = mtl_get_cap(handle, &cap);
   EXPECT_GE(ret, 0);
   EXPECT_GT(cap.tx_sessions_cnt_max, 0);
   EXPECT_GT(cap.rx_sessions_cnt_max, 0);
@@ -166,7 +166,7 @@ TEST(Main, get_stats) {
   struct mtl_stats stats;
   int ret;
 
-  ret = st_get_stats(handle, &stats);
+  ret = mtl_get_stats(handle, &stats);
   EXPECT_GE(ret, 0);
   EXPECT_EQ(stats.st20_tx_sessions_cnt, 0);
   EXPECT_EQ(stats.st30_tx_sessions_cnt, 0);
@@ -182,7 +182,7 @@ static int test_lcore_cnt(struct st_tests_context* ctx) {
   struct mtl_stats stats;
   int ret;
 
-  ret = st_get_stats(handle, &stats);
+  ret = mtl_get_stats(handle, &stats);
   if (ret < 0) return ret;
 
   return stats.lcore_cnt;
@@ -194,10 +194,10 @@ static void test_lcore_one(struct st_tests_context* ctx) {
   int ret;
   unsigned int lcore;
 
-  ret = st_get_lcore(handle, &lcore);
+  ret = mtl_get_lcore(handle, &lcore);
   ASSERT_TRUE(ret >= 0);
   EXPECT_EQ(test_lcore_cnt(ctx), base_cnt + 1);
-  ret = st_put_lcore(handle, lcore);
+  ret = mtl_put_lcore(handle, lcore);
   EXPECT_GE(ret, 0);
   EXPECT_EQ(test_lcore_cnt(ctx), base_cnt);
 }
@@ -216,12 +216,12 @@ TEST(Main, lcore_max) {
   unsigned int lcore[100];
 
   for (i = 0; i < max; i++) {
-    ret = st_get_lcore(handle, &lcore[i]);
+    ret = mtl_get_lcore(handle, &lcore[i]);
     if (ret < 0) break;
   }
   EXPECT_EQ(test_lcore_cnt(ctx), base_cnt + i);
   max = i;
-  for (i = 0; i < max; i++) st_put_lcore(handle, lcore[i]);
+  for (i = 0; i < max; i++) mtl_put_lcore(handle, lcore[i]);
   EXPECT_EQ(test_lcore_cnt(ctx), base_cnt);
 
   test_lcore_one(ctx);
@@ -231,7 +231,7 @@ TEST(Main, lcore_expect_fail) {
   struct st_tests_context* ctx = st_test_ctx();
   mtl_handle handle = ctx->handle;
 
-  int ret = st_put_lcore(handle, 10000);
+  int ret = mtl_put_lcore(handle, 10000);
   ASSERT_LT(ret, 0);
   test_lcore_one(ctx);
 }
@@ -241,7 +241,7 @@ static bool test_dev_started(struct st_tests_context* ctx) {
   struct mtl_stats stats;
   int ret;
 
-  ret = st_get_stats(handle, &stats);
+  ret = mtl_get_stats(handle, &stats);
   if (ret < 0) return ret;
 
   if (stats.dev_started)
@@ -254,10 +254,10 @@ TEST(Main, dev_started) {
   struct st_tests_context* ctx = st_test_ctx();
   mtl_handle handle = ctx->handle;
 
-  int ret = st_start(handle);
+  int ret = mtl_start(handle);
   EXPECT_GE(ret, 0);
   EXPECT_TRUE(test_dev_started(ctx));
-  ret = st_stop(handle);
+  ret = mtl_stop(handle);
   EXPECT_GE(ret, 0);
 }
 
@@ -353,27 +353,27 @@ static void size_page_align_test() {
 
   sz = pg_sz * 1;
   expect_sz = pg_sz * 1;
-  sz = st_size_page_align(sz, pg_sz);
+  sz = mtl_size_page_align(sz, pg_sz);
   EXPECT_EQ(sz, expect_sz);
 
   sz = pg_sz * 1 + 100;
   expect_sz = pg_sz * 2;
-  sz = st_size_page_align(sz, pg_sz);
+  sz = mtl_size_page_align(sz, pg_sz);
   EXPECT_EQ(sz, expect_sz);
 
   sz = pg_sz * 4;
   expect_sz = pg_sz * 4;
-  sz = st_size_page_align(sz, pg_sz);
+  sz = mtl_size_page_align(sz, pg_sz);
   EXPECT_EQ(sz, expect_sz);
 
   sz = pg_sz * 4 - 1;
   expect_sz = pg_sz * 4;
-  sz = st_size_page_align(sz, pg_sz);
+  sz = mtl_size_page_align(sz, pg_sz);
   EXPECT_EQ(sz, expect_sz);
 
   sz = pg_sz * 4 + 1;
   expect_sz = pg_sz * 5;
-  sz = st_size_page_align(sz, pg_sz);
+  sz = mtl_size_page_align(sz, pg_sz);
   EXPECT_EQ(sz, expect_sz);
 }
 

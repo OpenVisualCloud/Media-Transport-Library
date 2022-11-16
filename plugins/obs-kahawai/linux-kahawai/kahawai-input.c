@@ -345,7 +345,7 @@ static void kahawai_terminate(struct kh_rx_session* s) {
   pthread_join(s->thread, NULL);
 
   if (s->dev_handle) {
-    st_stop(s->dev_handle);
+    mtl_stop(s->dev_handle);
   }
 
   if (s->handle) {
@@ -356,7 +356,7 @@ static void kahawai_terminate(struct kh_rx_session* s) {
   pthread_cond_destroy(&s->wake_cond);
 
   if (s->dev_handle) {
-    st_uninit(s->dev_handle);
+    mtl_uninit(s->dev_handle);
     s->dev_handle = NULL;
   }
 
@@ -395,9 +395,9 @@ static void kahawai_init(struct kh_rx_session* s) {
   param.rx_sessions_cnt_max = 1;
   param.lcores = s->lcores;
   // create device
-  mtl_handle dev_handle = st_init(&param);
+  mtl_handle dev_handle = mtl_init(&param);
   if (!dev_handle) {
-    blog(LOG_ERROR, "st_init fail\n");
+    blog(LOG_ERROR, "mtl_init fail\n");
     return;
   }
   s->dev_handle = dev_handle;
@@ -451,7 +451,7 @@ static void kahawai_init(struct kh_rx_session* s) {
     goto error;
   }
 
-  st_start(s->dev_handle);
+  mtl_start(s->dev_handle);
   return;
 
 error:

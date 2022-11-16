@@ -349,7 +349,7 @@ static int mcast_inf_remove_mac(struct st_interface* inf,
     return rte_eth_dev_mac_addr_remove(port_id, mcast_mac);
 }
 
-int st_mcast_init(struct mtl_main_impl* impl) {
+int st_mcamtl_init(struct mtl_main_impl* impl) {
   struct st_mcast_impl* mcast = &impl->mcast;
   int ret;
 

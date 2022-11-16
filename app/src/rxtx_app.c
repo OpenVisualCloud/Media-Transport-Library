@@ -70,7 +70,7 @@ static void user_param_init(struct st_app_context* ctx, struct mtl_init_params* 
 
 static void var_param_init(struct st_app_context* ctx) {
   if (ctx->var_para.sch_force_sleep_us)
-    st_sch_set_sleep_us(ctx->st, ctx->var_para.sch_force_sleep_us);
+    mtl_sch_set_sleep_us(ctx->st, ctx->var_para.sch_force_sleep_us);
 }
 
 static void st_app_ctx_init(struct st_app_context* ctx) {
@@ -123,14 +123,14 @@ int st_app_video_get_lcore(struct st_app_context* ctx, int sch_idx, bool rtp,
 
   if (rtp) {
     if (ctx->rtp_lcore[sch_idx] < 0) {
-      ret = st_get_lcore(ctx->st, &video_lcore);
+      ret = mtl_get_lcore(ctx->st, &video_lcore);
       if (ret < 0) return ret;
       ctx->rtp_lcore[sch_idx] = video_lcore;
       info("%s, new rtp lcore %d for sch idx %d\n", __func__, video_lcore, sch_idx);
     }
   } else {
     if (ctx->lcore[sch_idx] < 0) {
-      ret = st_get_lcore(ctx->st, &video_lcore);
+      ret = mtl_get_lcore(ctx->st, &video_lcore);
       if (ret < 0) return ret;
       ctx->lcore[sch_idx] = video_lcore;
       info("%s, new lcore %d for sch idx %d\n", __func__, video_lcore, sch_idx);
@@ -161,7 +161,7 @@ static void st_app_ctx_free(struct st_app_context* ctx) {
   st22_app_rx_sessions_uinit(ctx);
 
   if (ctx->runtime_session) {
-    if (ctx->st) st_stop(ctx->st);
+    if (ctx->st) mtl_stop(ctx->st);
   }
 
   if (ctx->json_ctx) {
@@ -172,15 +172,15 @@ static void st_app_ctx_free(struct st_app_context* ctx) {
   if (ctx->st) {
     for (int i = 0; i < ST_APP_MAX_LCORES; i++) {
       if (ctx->lcore[i] >= 0) {
-        st_put_lcore(ctx->st, ctx->lcore[i]);
+        mtl_put_lcore(ctx->st, ctx->lcore[i]);
         ctx->lcore[i] = -1;
       }
       if (ctx->rtp_lcore[i] >= 0) {
-        st_put_lcore(ctx->st, ctx->rtp_lcore[i]);
+        mtl_put_lcore(ctx->st, ctx->rtp_lcore[i]);
         ctx->rtp_lcore[i] = -1;
       }
     }
-    st_uninit(ctx->st);
+    mtl_uninit(ctx->st);
     ctx->st = NULL;
   }
 
@@ -215,7 +215,7 @@ static void st_app_sig_handler(int signo) {
   info("%s, signal %d\n", __func__, signo);
   switch (signo) {
     case SIGINT: /* Interrupt from keyboard */
-      if (ctx->st) st_request_exit(ctx->st);
+      if (ctx->st) mtl_request_exit(ctx->st);
       ctx->stop = true;
       break;
   }
@@ -269,7 +269,7 @@ int main(int argc, char** argv) {
 
   /* parse af xdp pmd info */
   for (int i = 0; i < ctx->para.num_ports; i++) {
-    ctx->para.pmd[i] = st_pmd_by_port_name(ctx->para.port[i]);
+    ctx->para.pmd[i] = mtl_pmd_by_port_name(ctx->para.port[i]);
     if (ctx->para.tx_sessions_cnt_max > ctx->para.rx_sessions_cnt_max)
       ctx->para.xdp_info[i].queue_count = ctx->para.tx_sessions_cnt_max;
     else
@@ -281,9 +281,9 @@ int main(int argc, char** argv) {
     ctx->para.nb_rx_hdr_split_queues = ctx->rx_video_session_cnt;
   }
 
-  ctx->st = st_init(&ctx->para);
+  ctx->st = mtl_init(&ctx->para);
   if (!ctx->st) {
-    err("%s, st_init fail\n", __func__);
+    err("%s, mtl_init fail\n", __func__);
     st_app_ctx_free(ctx);
     return -ENOMEM;
   }
@@ -308,7 +308,7 @@ int main(int argc, char** argv) {
   }
 
   if (ctx->runtime_session) {
-    ret = st_start(ctx->st);
+    ret = mtl_start(ctx->st);
     if (ret < 0) {
       err("%s, start dev fail %d\n", __func__, ret);
       st_app_ctx_free(ctx);
@@ -408,7 +408,7 @@ int main(int argc, char** argv) {
   }
 
   if (!ctx->runtime_session) {
-    ret = st_start(ctx->st);
+    ret = mtl_start(ctx->st);
     if (ret < 0) {
       err("%s, start dev fail %d\n", __func__, ret);
       st_app_ctx_free(ctx);
@@ -430,7 +430,7 @@ int main(int argc, char** argv) {
 
   if (!ctx->runtime_session) {
     /* stop st first */
-    if (ctx->st) st_stop(ctx->st);
+    if (ctx->st) mtl_stop(ctx->st);
   }
 
   ret = st_app_result(ctx);

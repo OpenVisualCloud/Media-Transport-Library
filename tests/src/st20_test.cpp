@@ -43,7 +43,7 @@ static int tx_next_video_frame_timestamp(void* priv, uint16_t* next_frame_idx,
 
   if (ctx->user_pacing) {
     meta->tfmt = ST10_TIMESTAMP_FMT_TAI;
-    meta->timestamp = st_ptp_read_time(ctx->ctx->handle) + 25 * 1000 * 1000;
+    meta->timestamp = mtl_ptp_read_time(ctx->ctx->handle) + 25 * 1000 * 1000;
   } else if (ctx->user_timestamp) {
     meta->tfmt = ST10_TIMESTAMP_FMT_MEDIA_CLK;
     meta->timestamp = ctx->fb_send;
@@ -218,7 +218,7 @@ static int tx_frame_lines_ready(void* priv, uint16_t frame_idx,
   if (ctx->lines_ready[frame_idx] + lines > ctx->height)
     lines = ctx->height - ctx->lines_ready[frame_idx];
   if (lines)
-    st_memcpy(fb + offset, ctx->frame_buf[frame_idx] + offset, lines * ctx->stride);
+    mtl_memcpy(fb + offset, ctx->frame_buf[frame_idx] + offset, lines * ctx->stride);
 
   ctx->lines_ready[frame_idx] += lines;
   meta->lines_ready = ctx->lines_ready[frame_idx];
@@ -321,7 +321,7 @@ static int tx_video_build_rtp_packet(tests_context* s, struct st20_rfc4175_rtp_h
     *pkt_len += sizeof(*e_rtp);
   }
   if (s->check_sha) {
-    st_memcpy(payload, s->frame_buf[s->fb_idx % TEST_SHA_HIST_NUM] + offset, data_len);
+    mtl_memcpy(payload, s->frame_buf[s->fb_idx % TEST_SHA_HIST_NUM] + offset, data_len);
   }
 
   s->pkt_idx++;
@@ -432,7 +432,7 @@ static void rx_handle_rtp(tests_context* s, struct st20_rfc4175_rtp_hdr* hdr,
         s->frame_size);
     return;
   }
-  st_memcpy(frame + offset, payload, row_length);
+  mtl_memcpy(frame + offset, payload, row_length);
   if (e_hdr) {
     uint16_t row2_number = ntohs(e_hdr->row_number);
     uint16_t row2_offset = ntohs(e_hdr->row_offset);
@@ -446,7 +446,7 @@ static void rx_handle_rtp(tests_context* s, struct st20_rfc4175_rtp_hdr* hdr,
           offset2, s->frame_size);
       return;
     }
-    st_memcpy(frame + offset2, payload + row_length, row2_length);
+    mtl_memcpy(frame + offset2, payload + row_length, row2_length);
   }
 
   return;
@@ -574,7 +574,7 @@ static void st20_tx_assert_cnt(int expect_s20_tx_cnt) {
   struct mtl_stats stats;
   int ret;
 
-  ret = st_get_stats(handle, &stats);
+  ret = mtl_get_stats(handle, &stats);
   EXPECT_GE(ret, 0);
   EXPECT_EQ(stats.st20_tx_sessions_cnt, expect_s20_tx_cnt);
 }
@@ -585,7 +585,7 @@ static void st20_rx_assert_cnt(int expect_s20_rx_cnt) {
   struct mtl_stats stats;
   int ret;
 
-  ret = st_get_stats(handle, &stats);
+  ret = mtl_get_stats(handle, &stats);
   EXPECT_GE(ret, 0);
   EXPECT_EQ(stats.st20_rx_sessions_cnt, expect_s20_rx_cnt);
 }
@@ -755,9 +755,9 @@ static void st20_tx_fps_test(enum st20_type type[], enum st_fps fps[], int width
     if (ext_buf) {
       test_ctx[i]->ext_frames = (struct st20_ext_frame*)malloc(
           sizeof(*test_ctx[i]->ext_frames) * test_ctx[i]->fb_cnt);
-      size_t pg_sz = st_page_size(m_handle);
+      size_t pg_sz = mtl_page_size(m_handle);
       size_t fb_size = test_ctx[i]->frame_size * test_ctx[i]->fb_cnt;
-      test_ctx[i]->ext_fb_iova_map_sz = st_size_page_align(fb_size, pg_sz); /* align */
+      test_ctx[i]->ext_fb_iova_map_sz = mtl_size_page_align(fb_size, pg_sz); /* align */
       size_t fb_size_malloc = test_ctx[i]->ext_fb_iova_map_sz + pg_sz;
       test_ctx[i]->ext_fb_malloc = st_test_zmalloc(fb_size_malloc);
       ASSERT_TRUE(test_ctx[i]->ext_fb_malloc != NULL);
@@ -783,7 +783,7 @@ static void st20_tx_fps_test(enum st20_type type[], enum st_fps fps[], int width
     }
   }
 
-  ret = st_start(m_handle);
+  ret = mtl_start(m_handle);
   EXPECT_GE(ret, 0);
   sleep(ST20_TRAIN_TIME_S * sessions); /* time for train_pacing */
   if (ctx->para.num_ports > 1)
@@ -804,7 +804,7 @@ static void st20_tx_fps_test(enum st20_type type[], enum st_fps fps[], int width
     }
   }
 
-  ret = st_stop(m_handle);
+  ret = mtl_stop(m_handle);
   EXPECT_GE(ret, 0);
   for (int i = 0; i < sessions; i++) {
     EXPECT_GT(test_ctx[i]->fb_send, 0);
@@ -909,9 +909,10 @@ static void st20_rx_fps_test(enum st20_type type[], enum st_fps fps[], int width
       test_ctx_rx[i]->ext_frames = (struct st20_ext_frame*)malloc(
           sizeof(*test_ctx_rx[i]->ext_frames) * test_ctx_rx[i]->fb_cnt);
       size_t frame_size = st20_frame_size(fmt, width[i], height[i]);
-      size_t pg_sz = st_page_size(m_handle);
+      size_t pg_sz = mtl_page_size(m_handle);
       size_t fb_size = frame_size * test_ctx_rx[i]->fb_cnt;
-      test_ctx_rx[i]->ext_fb_iova_map_sz = st_size_page_align(fb_size, pg_sz); /* align */
+      test_ctx_rx[i]->ext_fb_iova_map_sz =
+          mtl_size_page_align(fb_size, pg_sz); /* align */
       size_t fb_size_malloc = test_ctx_rx[i]->ext_fb_iova_map_sz + pg_sz;
       test_ctx_rx[i]->ext_fb_malloc = st_test_zmalloc(fb_size_malloc);
       ASSERT_TRUE(test_ctx_rx[i]->ext_fb_malloc != NULL);
@@ -963,7 +964,7 @@ static void st20_rx_fps_test(enum st20_type type[], enum st_fps fps[], int width
     }
   }
 
-  ret = st_start(m_handle);
+  ret = mtl_start(m_handle);
   EXPECT_GE(ret, 0);
   sleep(ST20_TRAIN_TIME_S * sessions); /* time for train_pacing */
   sleep(10);
@@ -989,7 +990,7 @@ static void st20_rx_fps_test(enum st20_type type[], enum st_fps fps[], int width
     }
   }
 
-  ret = st_stop(m_handle);
+  ret = mtl_stop(m_handle);
   EXPECT_GE(ret, 0);
   for (int i = 0; i < sessions; i++) {
     EXPECT_GT(test_ctx_rx[i]->fb_rec, 0);
@@ -1358,7 +1359,7 @@ static void st20_rx_update_src_test(enum st20_type type, int tx_sessions) {
     }
   }
 
-  ret = st_start(m_handle);
+  ret = mtl_start(m_handle);
   EXPECT_GE(ret, 0);
   sleep(ST20_TRAIN_TIME_S * tx_sessions); /* time for train_pacing */
   sleep(5);
@@ -1469,7 +1470,7 @@ static void st20_rx_update_src_test(enum st20_type type, int tx_sessions) {
     }
   }
 
-  ret = st_stop(m_handle);
+  ret = mtl_stop(m_handle);
   EXPECT_GE(ret, 0);
 
   /* free all tx and rx */
@@ -1937,7 +1938,7 @@ static void st20_rx_digest_test(enum st20_type tx_type[], enum st20_type rx_type
     EXPECT_GE(ret, 0);
   }
 
-  ret = st_start(m_handle);
+  ret = mtl_start(m_handle);
   EXPECT_GE(ret, 0);
   sleep(ST20_TRAIN_TIME_S * sessions); /* time for train_pacing */
   sleep(10 * 1);
@@ -1970,7 +1971,7 @@ static void st20_rx_digest_test(enum st20_type tx_type[], enum st20_type rx_type
     }
   }
 
-  ret = st_stop(m_handle);
+  ret = mtl_stop(m_handle);
   EXPECT_GE(ret, 0);
   for (int i = 0; i < sessions; i++) {
     EXPECT_GE(test_ctx_rx[i]->fb_rec, 0);
@@ -2696,7 +2697,7 @@ static void st20_rx_meta_test(enum st_fps fps[], int width[], int height[],
     test_ctx_rx[i]->handle = rx_handle[i];
   }
 
-  ret = st_start(m_handle);
+  ret = mtl_start(m_handle);
   EXPECT_GE(ret, 0);
   sleep(ST20_TRAIN_TIME_S * sessions); /* time for train_pacing */
   sleep(10);
@@ -2717,7 +2718,7 @@ static void st20_rx_meta_test(enum st_fps fps[], int width[], int height[],
     test_ctx_rx[i]->stop = true;
   }
 
-  ret = st_stop(m_handle);
+  ret = mtl_stop(m_handle);
   EXPECT_GE(ret, 0);
   for (int i = 0; i < sessions; i++) {
     EXPECT_GE(test_ctx_rx[i]->fb_rec, 0);
@@ -2782,7 +2783,7 @@ static void st20_rx_after_start_test(enum st20_type type[], enum st_fps fps[],
   rtp_thread_tx.resize(sessions);
   rtp_thread_rx.resize(sessions);
 
-  ret = st_start(m_handle);
+  ret = mtl_start(m_handle);
   EXPECT_GE(ret, 0);
 
   for (int r = 0; r < repeat; r++) {
@@ -2915,7 +2916,7 @@ static void st20_rx_after_start_test(enum st20_type type[], enum st_fps fps[],
     sleep(1);
   }
 
-  ret = st_stop(m_handle);
+  ret = mtl_stop(m_handle);
   EXPECT_GE(ret, 0);
 }
 
@@ -3136,7 +3137,7 @@ static void st20_rx_uframe_test(enum st20_type rx_type[], enum st20_packing pack
     }
   }
 
-  ret = st_start(m_handle);
+  ret = mtl_start(m_handle);
   EXPECT_GE(ret, 0);
   sleep(ST20_TRAIN_TIME_S * sessions); /* time for train_pacing */
   sleep(10 * 1);
@@ -3153,7 +3154,7 @@ static void st20_rx_uframe_test(enum st20_type rx_type[], enum st20_packing pack
     digest_thread_rx[i].join();
   }
 
-  ret = st_stop(m_handle);
+  ret = mtl_stop(m_handle);
   EXPECT_GE(ret, 0);
   for (int i = 0; i < sessions; i++) {
     EXPECT_GE(test_ctx_rx[i]->fb_rec, 0);
@@ -3426,7 +3427,7 @@ static void st20_rx_detect_test(enum st20_type tx_type[], enum st20_type rx_type
     }
   }
 
-  ret = st_start(m_handle);
+  ret = mtl_start(m_handle);
   EXPECT_GE(ret, 0);
   sleep(ST20_TRAIN_TIME_S * sessions); /* time for train_pacing */
   sleep(10 * 1);
@@ -3443,7 +3444,7 @@ static void st20_rx_detect_test(enum st20_type tx_type[], enum st20_type rx_type
     rtp_thread_rx[i].join();
   }
 
-  ret = st_stop(m_handle);
+  ret = mtl_stop(m_handle);
   EXPECT_GE(ret, 0);
   for (int i = 0; i < sessions; i++) {
     EXPECT_GE(test_ctx_rx[i]->fb_rec, 0);
@@ -3640,7 +3641,7 @@ static void st20_rx_dump_test(enum st20_type type[], enum st_fps fps[], int widt
     }
   }
 
-  ret = st_start(m_handle);
+  ret = mtl_start(m_handle);
   EXPECT_GE(ret, 0);
   sleep(ST20_TRAIN_TIME_S * sessions); /* time for train_pacing */
 
@@ -3677,7 +3678,7 @@ static void st20_rx_dump_test(enum st20_type type[], enum st_fps fps[], int widt
     }
   }
 
-  ret = st_stop(m_handle);
+  ret = mtl_stop(m_handle);
   EXPECT_GE(ret, 0);
   for (int i = 0; i < sessions; i++) {
     ret = st20_tx_free(tx_handle[i]);
@@ -3815,9 +3816,9 @@ static void st20_tx_ext_frame_rx_digest_test(enum st20_packing packing[],
 
     test_ctx_tx[i]->ext_frames = (struct st20_ext_frame*)malloc(
         sizeof(*test_ctx_tx[i]->ext_frames) * test_ctx_tx[i]->fb_cnt);
-    size_t pg_sz = st_page_size(m_handle);
+    size_t pg_sz = mtl_page_size(m_handle);
     size_t fb_size = test_ctx_tx[i]->frame_size * test_ctx_tx[i]->fb_cnt;
-    test_ctx_tx[i]->ext_fb_iova_map_sz = st_size_page_align(fb_size, pg_sz); /* align */
+    test_ctx_tx[i]->ext_fb_iova_map_sz = mtl_size_page_align(fb_size, pg_sz); /* align */
     size_t fb_size_malloc = test_ctx_tx[i]->ext_fb_iova_map_sz + pg_sz;
     test_ctx_tx[i]->ext_fb_malloc = st_test_zmalloc(fb_size_malloc);
     ASSERT_TRUE(test_ctx_tx[i]->ext_fb_malloc != NULL);
@@ -3862,9 +3863,9 @@ static void st20_tx_ext_frame_rx_digest_test(enum st20_packing packing[],
     test_ctx_rx[i]->ext_frames = (struct st20_ext_frame*)malloc(
         sizeof(*test_ctx_rx[i]->ext_frames) * test_ctx_rx[i]->fb_cnt);
     size_t frame_size = st20_frame_size(fmt[i], width[i], height[i]);
-    size_t pg_sz = st_page_size(m_handle);
+    size_t pg_sz = mtl_page_size(m_handle);
     size_t fb_size = frame_size * test_ctx_rx[i]->fb_cnt;
-    test_ctx_rx[i]->ext_fb_iova_map_sz = st_size_page_align(fb_size, pg_sz); /* align */
+    test_ctx_rx[i]->ext_fb_iova_map_sz = mtl_size_page_align(fb_size, pg_sz); /* align */
     size_t fb_size_malloc = test_ctx_rx[i]->ext_fb_iova_map_sz + pg_sz;
     test_ctx_rx[i]->ext_fb_malloc = st_test_zmalloc(fb_size_malloc);
     ASSERT_TRUE(test_ctx_rx[i]->ext_fb_malloc != NULL);
@@ -3938,7 +3939,7 @@ static void st20_tx_ext_frame_rx_digest_test(enum st20_packing packing[],
     EXPECT_GE(ret, 0);
   }
 
-  ret = st_start(m_handle);
+  ret = mtl_start(m_handle);
   EXPECT_GE(ret, 0);
   sleep(ST20_TRAIN_TIME_S * sessions); /* time for train_pacing */
   sleep(10 * 1);
@@ -3955,7 +3956,7 @@ static void st20_tx_ext_frame_rx_digest_test(enum st20_packing packing[],
     rtp_thread_rx[i].join();
   }
 
-  ret = st_stop(m_handle);
+  ret = mtl_stop(m_handle);
   EXPECT_GE(ret, 0);
   for (int i = 0; i < sessions; i++) {
     EXPECT_GE(test_ctx_rx[i]->fb_rec, 0);
@@ -4196,7 +4197,7 @@ static void st20_tx_user_pacing_test(int width[], int height[], enum st20_fmt fm
     sha_thread_rx[i] = std::thread(st20_digest_rx_frame_check, test_ctx_rx[i]);
   }
 
-  ret = st_start(m_handle);
+  ret = mtl_start(m_handle);
   EXPECT_GE(ret, 0);
   sleep(ST20_TRAIN_TIME_S * sessions); /* time for train_pacing */
   sleep(10 * 1);
@@ -4215,7 +4216,7 @@ static void st20_tx_user_pacing_test(int width[], int height[], enum st20_fmt fm
     sha_thread_rx[i].join();
   }
 
-  ret = st_stop(m_handle);
+  ret = mtl_stop(m_handle);
   EXPECT_GE(ret, 0);
   for (int i = 0; i < sessions; i++) {
     EXPECT_GE(test_ctx_rx[i]->fb_rec, 0);
@@ -4471,7 +4472,7 @@ static void st20_linesize_digest_test(enum st20_packing packing[], enum st_fps f
     EXPECT_GE(ret, 0);
   }
 
-  ret = st_start(m_handle);
+  ret = mtl_start(m_handle);
   EXPECT_GE(ret, 0);
   sleep(ST20_TRAIN_TIME_S * sessions); /* time for train_pacing */
   sleep(10 * 1);
@@ -4488,7 +4489,7 @@ static void st20_linesize_digest_test(enum st20_packing packing[], enum st_fps f
     sha_check[i].join();
   }
 
-  ret = st_stop(m_handle);
+  ret = mtl_stop(m_handle);
   EXPECT_GE(ret, 0);
   for (int i = 0; i < sessions; i++) {
     EXPECT_GE(test_ctx_rx[i]->fb_rec, 0);

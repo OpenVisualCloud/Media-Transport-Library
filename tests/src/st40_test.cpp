@@ -21,7 +21,7 @@ static int tx_anc_next_frame_timestamp(void* priv, uint16_t* next_frame_idx,
   if (!ctx->handle) return -EIO; /* not ready */
 
   meta->tfmt = ST10_TIMESTAMP_FMT_TAI;
-  meta->timestamp = st_ptp_read_time(ctx->ctx->handle) + 40 * 1000 * 1000;
+  meta->timestamp = mtl_ptp_read_time(ctx->ctx->handle) + 40 * 1000 * 1000;
   *next_frame_idx = ctx->fb_idx;
   dbg("%s, next_frame_idx %d\n", __func__, *next_frame_idx);
   ctx->fb_idx++;
@@ -258,7 +258,7 @@ static void st40_tx_assert_cnt(int expect_s40_tx_cnt) {
   struct mtl_stats stats;
   int ret;
 
-  ret = st_get_stats(handle, &stats);
+  ret = mtl_get_stats(handle, &stats);
   EXPECT_GE(ret, 0);
   EXPECT_EQ(stats.st40_tx_sessions_cnt, expect_s40_tx_cnt);
 }
@@ -269,7 +269,7 @@ static void st40_rx_assert_cnt(int expect_s40_rx_cnt) {
   struct mtl_stats stats;
   int ret;
 
-  ret = st_get_stats(handle, &stats);
+  ret = mtl_get_stats(handle, &stats);
   EXPECT_GE(ret, 0);
   EXPECT_EQ(stats.st40_rx_sessions_cnt, expect_s40_rx_cnt);
 }
@@ -397,7 +397,7 @@ static void st40_tx_fps_test(enum st40_type type[], enum st_fps fps[],
     }
   }
 
-  ret = st_start(m_handle);
+  ret = mtl_start(m_handle);
   EXPECT_GE(ret, 0);
   sleep(5);
 
@@ -415,7 +415,7 @@ static void st40_tx_fps_test(enum st40_type type[], enum st_fps fps[],
     }
   }
 
-  ret = st_stop(m_handle);
+  ret = mtl_stop(m_handle);
   EXPECT_GE(ret, 0);
 
   for (int i = 0; i < sessions; i++) {
@@ -557,7 +557,7 @@ static void st40_rx_fps_test(enum st40_type type[], enum st_fps fps[],
     EXPECT_GE(ret, 0);
   }
 
-  ret = st_start(m_handle);
+  ret = mtl_start(m_handle);
   EXPECT_GE(ret, 0);
   sleep(10);
 
@@ -588,7 +588,7 @@ static void st40_rx_fps_test(enum st40_type type[], enum st_fps fps[],
     }
   }
 
-  ret = st_stop(m_handle);
+  ret = mtl_stop(m_handle);
   EXPECT_GE(ret, 0);
   for (int i = 0; i < sessions; i++) {
     EXPECT_GT(test_ctx_rx[i]->fb_rec, 0);
@@ -785,7 +785,7 @@ static void st40_rx_update_src_test(enum st40_type type, int tx_sessions) {
     ASSERT_TRUE(rx_handle[i] != NULL);
   }
 
-  ret = st_start(m_handle);
+  ret = mtl_start(m_handle);
   EXPECT_GE(ret, 0);
   sleep(10);
 
@@ -876,7 +876,7 @@ static void st40_rx_update_src_test(enum st40_type type, int tx_sessions) {
     }
   }
 
-  ret = st_stop(m_handle);
+  ret = mtl_stop(m_handle);
   EXPECT_GE(ret, 0);
 
   /* free all tx and rx */
@@ -925,7 +925,7 @@ static void st40_after_start_test(enum st40_type type[], enum st_fps fps[], int 
   framerate.resize(sessions);
   rtp_thread_tx.resize(sessions);
 
-  ret = st_start(m_handle);
+  ret = mtl_start(m_handle);
   EXPECT_GE(ret, 0);
 
   for (int r = 0; r < repeat; r++) {
@@ -1024,7 +1024,7 @@ static void st40_after_start_test(enum st40_type type[], enum st_fps fps[], int 
     }
   }
 
-  ret = st_stop(m_handle);
+  ret = mtl_stop(m_handle);
   EXPECT_GE(ret, 0);
 }
 

@@ -263,7 +263,7 @@ static void rv_ebu_on_frame(struct st_rx_video_session_impl* s, uint32_t rtp_tms
   ebu->cur_epochs = epochs;
   ebu->vrx_drained_prev = 0;
   ebu->vrx_prev = 0;
-  ebu->cinst_initial_time = pkt_tmstamp;
+  ebu->cinmtl_initial_time = pkt_tmstamp;
   ebu->prev_rtp_ipt_ts = 0;
 
   /* calculate fpt */
@@ -332,7 +332,7 @@ static void rv_ebu_on_packet(struct st_rx_video_session_impl* s, uint32_t rtp_tm
 
   /* Calculate C-inst */
   int exp_cin_pkts =
-      ((pkt_tmstamp - ebu->cinst_initial_time) / trs) * ST_EBU_CINST_DRAIN_FACTOR;
+      ((pkt_tmstamp - ebu->cinmtl_initial_time) / trs) * ST_EBU_CINST_DRAIN_FACTOR;
   int cinst = RTE_MAX(0, pkt_idx - exp_cin_pkts);
 
   ebu->cinst_sum += cinst;
@@ -3754,7 +3754,7 @@ int st20_rx_get_queue_meta(st20_rx_handle handle, struct st_queue_meta* meta) {
 
     if (st_pmd_type(impl, port) == MTL_PMD_DPDK_AF_XDP) {
       /* af_xdp pmd */
-      meta->start_queue[i] = st_start_queue(impl, port);
+      meta->start_queue[i] = mtl_start_queue(impl, port);
     }
     meta->queue_id[i] = s->queue_id[i];
   }
@@ -4076,7 +4076,7 @@ int st22_rx_get_queue_meta(st22_rx_handle handle, struct st_queue_meta* meta) {
 
     if (st_pmd_type(impl, port) == MTL_PMD_DPDK_AF_XDP) {
       /* af_xdp pmd */
-      meta->start_queue[i] = st_start_queue(impl, port);
+      meta->start_queue[i] = mtl_start_queue(impl, port);
     }
     meta->queue_id[i] = s->queue_id[i];
   }

@@ -712,7 +712,7 @@ struct st_rx_video_ebu_stat {
   bool compliant_narrow;
 
   /* Cinst, packet level check */
-  uint64_t cinst_initial_time;
+  uint64_t cinmtl_initial_time;
   int32_t cinst_max;
   int32_t cinst_min;
   uint32_t cinst_cnt;
@@ -987,7 +987,7 @@ struct st_sch_impl {
   struct mtl_main_impl* parnet;
   int idx; /* index for current sch */
   rte_atomic32_t started;
-  rte_atomic32_t request_stop;
+  rte_atomic32_t requemtl_stop;
   rte_atomic32_t stopped;
   rte_atomic32_t active; /* if this sch is active */
   rte_atomic32_t ref_cnt;
@@ -1838,7 +1838,7 @@ static inline int st_num_ports(struct mtl_main_impl* impl) {
 
 bool st_is_valid_socket(struct mtl_main_impl* impl, int soc_id);
 
-static inline uint8_t st_start_queue(struct mtl_main_impl* impl, enum mtl_port port) {
+static inline uint8_t mtl_start_queue(struct mtl_main_impl* impl, enum mtl_port port) {
   return impl->user_para.xdp_info[port].start_queue;
 }
 

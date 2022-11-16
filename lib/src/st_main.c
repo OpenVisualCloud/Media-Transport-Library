@@ -154,9 +154,9 @@ static int st_main_create(struct mtl_main_impl* impl) {
     return ret;
   }
 
-  ret = st_mcast_init(impl);
+  ret = st_mcamtl_init(impl);
   if (ret < 0) {
-    err("%s, st_mcast_init fail %d\n", __func__, ret);
+    err("%s, st_mcamtl_init fail %d\n", __func__, ret);
     return ret;
   }
 
@@ -269,8 +269,8 @@ static int st_user_params_check(struct mtl_init_params* p) {
   }
 
   if (num_ports > 1) {
-    if (0 == strncmp(st_p_port(p), st_r_port(p), MTL_PORT_MAX_LEN)) {
-      err("%s, same %s for both port\n", __func__, st_p_port(p));
+    if (0 == strncmp(mtl_p_port(p), mtl_r_port(p), MTL_PORT_MAX_LEN)) {
+      err("%s, same %s for both port\n", __func__, mtl_p_port(p));
       return -EINVAL;
     }
 
@@ -356,7 +356,7 @@ static int _st_stop(struct mtl_main_impl* impl) {
   return 0;
 }
 
-mtl_handle st_init(struct mtl_init_params* p) {
+mtl_handle mtl_init(struct mtl_init_params* p) {
   struct mtl_main_impl* impl = NULL;
   int socket[MTL_PORT_MAX], ret;
   int num_ports = p->num_ports;
@@ -375,7 +375,7 @@ mtl_handle st_init(struct mtl_init_params* p) {
     err("%s, st_dev_eal_init fail %d\n", __func__, ret);
     return NULL;
   }
-  info("st version: %s, dpdk version: %s\n", st_version(), rte_version());
+  info("st version: %s, dpdk version: %s\n", mtl_version(), rte_version());
 
   for (int i = 0; i < num_ports; i++) {
     if (p->pmd[i] != MTL_PMD_DPDK_USER)
@@ -497,7 +497,7 @@ mtl_handle st_init(struct mtl_init_params* p) {
   }
 
   info("%s, succ, tsc_hz %" PRIu64 "\n", __func__, impl->tsc_hz);
-  info("%s, simd level %s\n", __func__, st_get_simd_level_name(st_get_simd_level()));
+  info("%s, simd level %s\n", __func__, mtl_get_simd_level_name(mtl_get_simd_level()));
   return impl;
 
 err_exit:
@@ -509,7 +509,7 @@ err_exit:
   return NULL;
 }
 
-int st_uninit(mtl_handle st) {
+int mtl_uninit(mtl_handle st) {
   struct mtl_main_impl* impl = st;
   struct mtl_init_params* p = st_get_user_params(impl);
 
@@ -540,7 +540,7 @@ int st_uninit(mtl_handle st) {
   return 0;
 }
 
-int st_start(mtl_handle st) {
+int mtl_start(mtl_handle st) {
   struct mtl_main_impl* impl = st;
 
   if (impl->type != ST_SESSION_TYPE_MAIN) {
@@ -551,7 +551,7 @@ int st_start(mtl_handle st) {
   return _st_start(impl);
 }
 
-int st_stop(mtl_handle st) {
+int mtl_stop(mtl_handle st) {
   struct mtl_main_impl* impl = st;
 
   if (impl->type != ST_SESSION_TYPE_MAIN) {
@@ -564,7 +564,7 @@ int st_stop(mtl_handle st) {
   return _st_stop(impl);
 }
 
-int st_get_lcore(mtl_handle st, unsigned int* lcore) {
+int mtl_get_lcore(mtl_handle st, unsigned int* lcore) {
   struct mtl_main_impl* impl = st;
 
   if (impl->type != ST_SESSION_TYPE_MAIN) {
@@ -575,7 +575,7 @@ int st_get_lcore(mtl_handle st, unsigned int* lcore) {
   return st_dev_get_lcore(impl, lcore);
 }
 
-int st_put_lcore(mtl_handle st, unsigned int lcore) {
+int mtl_put_lcore(mtl_handle st, unsigned int lcore) {
   struct mtl_main_impl* impl = st;
 
   if (impl->type != ST_SESSION_TYPE_MAIN) {
@@ -586,7 +586,7 @@ int st_put_lcore(mtl_handle st, unsigned int lcore) {
   return st_dev_put_lcore(impl, lcore);
 }
 
-int st_bind_to_lcore(mtl_handle st, pthread_t thread, unsigned int lcore) {
+int mtl_bind_to_lcore(mtl_handle st, pthread_t thread, unsigned int lcore) {
   struct mtl_main_impl* impl = st;
 
   if (impl->type != ST_SESSION_TYPE_MAIN) {
@@ -607,7 +607,7 @@ int st_bind_to_lcore(mtl_handle st, pthread_t thread, unsigned int lcore) {
   return 0;
 }
 
-int st_request_exit(mtl_handle st) {
+int mtl_request_exit(mtl_handle st) {
   struct mtl_main_impl* impl = st;
 
   if (impl->type != ST_SESSION_TYPE_MAIN) {
@@ -620,11 +620,11 @@ int st_request_exit(mtl_handle st) {
   return 0;
 }
 
-void* st_memcpy(void* dest, const void* src, size_t n) {
+void* mtl_memcpy(void* dest, const void* src, size_t n) {
   return rte_memcpy(dest, src, n);
 }
 
-void* st_hp_malloc(mtl_handle st, size_t size, enum mtl_port port) {
+void* mtl_hp_malloc(mtl_handle st, size_t size, enum mtl_port port) {
   struct mtl_main_impl* impl = st;
   int num_ports = st_num_ports(impl);
 
@@ -641,7 +641,7 @@ void* st_hp_malloc(mtl_handle st, size_t size, enum mtl_port port) {
   return st_rte_malloc_socket(size, st_socket_id(impl, port));
 }
 
-void* st_hp_zmalloc(mtl_handle st, size_t size, enum mtl_port port) {
+void* mtl_hp_zmalloc(mtl_handle st, size_t size, enum mtl_port port) {
   struct mtl_main_impl* impl = st;
   int num_ports = st_num_ports(impl);
 
@@ -658,13 +658,13 @@ void* st_hp_zmalloc(mtl_handle st, size_t size, enum mtl_port port) {
   return st_rte_zmalloc_socket(size, st_socket_id(impl, port));
 }
 
-void st_hp_free(mtl_handle st, void* ptr) { return st_rte_free(ptr); }
+void mtl_hp_free(mtl_handle st, void* ptr) { return st_rte_free(ptr); }
 
-mtl_iova_t st_hp_virt2iova(mtl_handle st, const void* vaddr) {
+mtl_iova_t mtl_hp_virt2iova(mtl_handle st, const void* vaddr) {
   return rte_malloc_virt2iova(vaddr);
 }
 
-size_t st_page_size(mtl_handle st) {
+size_t mtl_page_size(mtl_handle st) {
   struct mtl_main_impl* impl = st;
 
   if (impl->type != ST_SESSION_TYPE_MAIN) {
@@ -679,7 +679,7 @@ mtl_iova_t st_dma_map(mtl_handle st, const void* vaddr, size_t size) {
   struct mtl_main_impl* impl = st;
   int ret;
   mtl_iova_t iova;
-  size_t page_size = st_page_size(st);
+  size_t page_size = mtl_page_size(st);
 
   if (impl->type != ST_SESSION_TYPE_MAIN) {
     err("%s, invalid type %d\n", __func__, impl->type);
@@ -736,7 +736,7 @@ fail_extmem:
 int st_dma_unmap(mtl_handle st, const void* vaddr, mtl_iova_t iova, size_t size) {
   struct mtl_main_impl* impl = st;
   int ret;
-  size_t page_size = st_page_size(st);
+  size_t page_size = mtl_page_size(st);
 
   if (impl->type != ST_SESSION_TYPE_MAIN) {
     err("%s, invalid type %d\n", __func__, impl->type);
@@ -792,8 +792,8 @@ mtl_dma_mem_handle st_dma_mem_alloc(mtl_handle st, size_t size) {
     return NULL;
   }
 
-  size_t page_size = st_page_size(st);
-  size_t iova_size = st_size_page_align(size, page_size);
+  size_t page_size = mtl_page_size(st);
+  size_t iova_size = mtl_size_page_align(size, page_size);
   size_t alloc_size = iova_size + page_size;
   void* alloc_addr = st_zmalloc(alloc_size);
   if (!alloc_addr) {
@@ -841,7 +841,7 @@ mtl_iova_t st_dma_mem_iova(mtl_dma_mem_handle handle) {
   return mem->iova;
 }
 
-const char* st_version(void) {
+const char* mtl_version(void) {
   static char version[128];
   if (version[0] != 0) return version;
 
@@ -851,7 +851,7 @@ const char* st_version(void) {
   return version;
 }
 
-int st_get_cap(mtl_handle st, struct mtl_cap* cap) {
+int mtl_get_cap(mtl_handle st, struct mtl_cap* cap) {
   struct mtl_main_impl* impl = st;
 
   if (impl->type != ST_SESSION_TYPE_MAIN) {
@@ -866,7 +866,7 @@ int st_get_cap(mtl_handle st, struct mtl_cap* cap) {
   return 0;
 }
 
-int st_get_stats(mtl_handle st, struct mtl_stats* stats) {
+int mtl_get_stats(mtl_handle st, struct mtl_stats* stats) {
   struct mtl_main_impl* impl = st;
   struct st_dma_mgr* mgr = st_get_dma_mgr(impl);
 
@@ -893,7 +893,7 @@ int st_get_stats(mtl_handle st, struct mtl_stats* stats) {
   return 0;
 }
 
-int st_sch_enable_sleep(mtl_handle st, int sch_idx, bool enable) {
+int mtl_sch_enable_sleep(mtl_handle st, int sch_idx, bool enable) {
   struct mtl_main_impl* impl = st;
 
   if (sch_idx > ST_MAX_SCH_NUM) {
@@ -920,7 +920,7 @@ int st_sch_enable_sleep(mtl_handle st, int sch_idx, bool enable) {
   return 0;
 }
 
-int st_sch_set_sleep_us(mtl_handle st, uint64_t us) {
+int mtl_sch_set_sleep_us(mtl_handle st, uint64_t us) {
   struct mtl_main_impl* impl = st;
 
   if (impl->type != ST_SESSION_TYPE_MAIN) {
@@ -933,7 +933,7 @@ int st_sch_set_sleep_us(mtl_handle st, uint64_t us) {
   return 0;
 }
 
-uint64_t st_ptp_read_time(mtl_handle st) {
+uint64_t mtl_ptp_read_time(mtl_handle st) {
   struct mtl_main_impl* impl = st;
 
   if (impl->type != ST_SESSION_TYPE_MAIN) {
@@ -1022,7 +1022,7 @@ uint16_t st_udma_completed(mtl_udma_handle handle, const uint16_t nb_cpls) {
   return st_dma_completed(dev, nb_cpls, NULL, NULL);
 }
 
-enum mtl_simd_level st_get_simd_level(void) {
+enum mtl_simd_level mtl_get_simd_level(void) {
   if (rte_cpu_get_flag_enabled(RTE_CPUFLAG_AVX512VBMI2))
     return MTL_SIMD_LEVEL_AVX512_VBMI2;
   if (rte_cpu_get_flag_enabled(RTE_CPUFLAG_AVX512VL)) return MTL_SIMD_LEVEL_AVX512;
@@ -1038,7 +1038,7 @@ static const char* st_simd_level_names[MTL_SIMD_LEVEL_MAX] = {
     "avx512_vbmi",
 };
 
-const char* st_get_simd_level_name(enum mtl_simd_level level) {
+const char* mtl_get_simd_level_name(enum mtl_simd_level level) {
   if ((level >= MTL_SIMD_LEVEL_MAX) || (level < 0)) {
     err("%s, invalid level %d\n", __func__, level);
     return "unknown";

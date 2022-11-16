@@ -294,7 +294,7 @@ static void st20p_tx_assert_cnt(int expect_st20_tx_cnt) {
   struct mtl_stats stats;
   int ret;
 
-  ret = st_get_stats(handle, &stats);
+  ret = mtl_get_stats(handle, &stats);
   EXPECT_GE(ret, 0);
   EXPECT_EQ(stats.st20_tx_sessions_cnt, expect_st20_tx_cnt);
 }
@@ -305,7 +305,7 @@ static void st20p_rx_assert_cnt(int expect_st20_rx_cnt) {
   struct mtl_stats stats;
   int ret;
 
-  ret = st_get_stats(handle, &stats);
+  ret = mtl_get_stats(handle, &stats);
   EXPECT_GE(ret, 0);
   EXPECT_EQ(stats.st20_rx_sessions_cnt, expect_st20_rx_cnt);
 }
@@ -693,7 +693,7 @@ static void st20p_rx_digest_test(enum st_fps fps[], int width[], int height[],
 
     int sch = st20p_tx_get_sch_idx(tx_handle[i]);
     EXPECT_GE(sch, 0);
-    ret = st_sch_enable_sleep(st, sch, false);
+    ret = mtl_sch_enable_sleep(st, sch, false);
     EXPECT_GE(ret, 0);
 
     /* sha caculate */
@@ -704,9 +704,10 @@ static void st20p_rx_digest_test(enum st_fps fps[], int width[], int height[],
     if (para->tx_ext) {
       test_ctx_tx[i]->p_ext_frames = (struct st_ext_frame*)malloc(
           sizeof(*test_ctx_tx[i]->p_ext_frames) * test_ctx_tx[i]->fb_cnt);
-      size_t pg_sz = st_page_size(st);
+      size_t pg_sz = mtl_page_size(st);
       size_t fb_size = test_ctx_tx[i]->frame_size * test_ctx_tx[i]->fb_cnt;
-      test_ctx_tx[i]->ext_fb_iova_map_sz = st_size_page_align(fb_size, pg_sz); /* align */
+      test_ctx_tx[i]->ext_fb_iova_map_sz =
+          mtl_size_page_align(fb_size, pg_sz); /* align */
       size_t fb_size_malloc = test_ctx_tx[i]->ext_fb_iova_map_sz + pg_sz;
       test_ctx_tx[i]->ext_fb_malloc = st_test_zmalloc(fb_size_malloc);
       ASSERT_TRUE(test_ctx_tx[i]->ext_fb_malloc != NULL);
@@ -808,9 +809,10 @@ static void st20p_rx_digest_test(enum st_fps fps[], int width[], int height[],
       test_ctx_rx[i]->p_ext_frames = (struct st_ext_frame*)malloc(
           sizeof(*test_ctx_rx[i]->p_ext_frames) * test_ctx_rx[i]->fb_cnt);
       size_t frame_size = st_frame_size(rx_fmt[i], width[i], height[i]);
-      size_t pg_sz = st_page_size(st);
+      size_t pg_sz = mtl_page_size(st);
       size_t fb_size = frame_size * test_ctx_rx[i]->fb_cnt;
-      test_ctx_rx[i]->ext_fb_iova_map_sz = st_size_page_align(fb_size, pg_sz); /* align */
+      test_ctx_rx[i]->ext_fb_iova_map_sz =
+          mtl_size_page_align(fb_size, pg_sz); /* align */
       size_t fb_size_malloc = test_ctx_rx[i]->ext_fb_iova_map_sz + pg_sz;
       test_ctx_rx[i]->ext_fb_malloc = st_test_zmalloc(fb_size_malloc);
       ASSERT_TRUE(test_ctx_rx[i]->ext_fb_malloc != NULL);
@@ -879,7 +881,7 @@ static void st20p_rx_digest_test(enum st_fps fps[], int width[], int height[],
 
     int sch = st20p_rx_get_sch_idx(rx_handle[i]);
     EXPECT_GE(sch, 0);
-    ret = st_sch_enable_sleep(st, sch, false);
+    ret = mtl_sch_enable_sleep(st, sch, false);
     EXPECT_GE(ret, 0);
 
     test_ctx_rx[i]->handle = rx_handle[i];
@@ -894,10 +896,10 @@ static void st20p_rx_digest_test(enum st_fps fps[], int width[], int height[],
     EXPECT_GE(ret, 0);
   }
 
-  ret = st_start(st);
+  ret = mtl_start(st);
   EXPECT_GE(ret, 0);
   sleep(10);
-  ret = st_stop(st);
+  ret = mtl_stop(st);
   EXPECT_GE(ret, 0);
 
   for (int i = 0; i < sessions; i++) {

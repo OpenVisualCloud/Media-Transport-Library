@@ -25,7 +25,7 @@ static int convert_frame(struct converter_session* s,
                                        frame->dst->width, frame->dst->height);
           break;
         case ST_FRAME_FMT_YUV422RFC4175PG2BE10:
-          st_memcpy(frame->dst->addr[0], frame->src->addr[0], frame->dst->data_size);
+          mtl_memcpy(frame->dst->addr[0], frame->src->addr[0], frame->dst->data_size);
           break;
         case ST_FRAME_FMT_YUV422PACKED8:
           st20_rfc4175_422be10_to_422le8(frame->src->addr[0], frame->dst->addr[0],

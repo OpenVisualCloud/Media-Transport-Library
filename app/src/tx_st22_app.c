@@ -58,7 +58,7 @@ static int app_tx_st22_frame_done(void* priv, uint16_t frame_idx,
 
 static void app_tx_st22_thread_bind(struct st22_app_tx_session* s) {
   if (s->lcore != -1) {
-    st_bind_to_lcore(s->st, pthread_self(), s->lcore);
+    mtl_bind_to_lcore(s->st, pthread_self(), s->lcore);
   }
 }
 
@@ -88,7 +88,7 @@ static void app_tx_st22_build_frame(struct st22_app_tx_session* s, void* codestr
     src = s->st22_frame_cursor;
   }
   /* call the real encoding here, sample just copy from the file */
-  st_memcpy(dst, src, framesize);
+  mtl_memcpy(dst, src, framesize);
   /* point to next frame */
   s->st22_frame_cursor += framesize;
 

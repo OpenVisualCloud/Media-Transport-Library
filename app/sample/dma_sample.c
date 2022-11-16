@@ -33,25 +33,25 @@ static int dma_copy_sample(mtl_handle st) {
   unsigned char fb_src_shas[SHA256_DIGEST_LENGTH];
 
   /* allocate fb dst and src(with random data) */
-  fb_dst = st_hp_malloc(st, fb_size, MTL_PORT_P);
+  fb_dst = mtl_hp_malloc(st, fb_size, MTL_PORT_P);
   if (!fb_dst) {
     err("fb dst create fail\n");
     st_udma_free(dma);
     return -ENOMEM;
   }
-  fb_dst_iova = st_hp_virt2iova(st, fb_dst);
-  fb_src = st_hp_malloc(st, fb_size, MTL_PORT_P);
+  fb_dst_iova = mtl_hp_virt2iova(st, fb_dst);
+  fb_src = mtl_hp_malloc(st, fb_size, MTL_PORT_P);
   if (!fb_src) {
     err("fb src create fail\n");
-    st_hp_free(st, fb_dst);
+    mtl_hp_free(st, fb_dst);
     st_udma_free(dma);
     return -ENOMEM;
   }
-  fb_src_iova = st_hp_virt2iova(st, fb_src);
+  fb_src_iova = mtl_hp_virt2iova(st, fb_src);
   rand_data((uint8_t*)fb_src, fb_size, 0);
   SHA256((unsigned char*)fb_src, fb_size, fb_src_shas);
 
-  uint64_t start_ns = st_ptp_read_time(st);
+  uint64_t start_ns = mtl_ptp_read_time(st);
   while (fb_dst_iova_off < fb_size) {
     /* try to copy */
     while (fb_src_iova_off < fb_size) {
@@ -69,7 +69,7 @@ static int dma_copy_sample(mtl_handle st) {
     uint16_t nb_dq = st_udma_completed(dma, 32);
     fb_dst_iova_off += element_size * nb_dq;
   }
-  uint64_t end_ns = st_ptp_read_time(st);
+  uint64_t end_ns = mtl_ptp_read_time(st);
 
   /* all copy completed, check sha */
   SHA256((unsigned char*)fb_dst, fb_size, fb_dst_shas);
@@ -81,8 +81,8 @@ static int dma_copy_sample(mtl_handle st) {
          (int)(end_ns - start_ns) / 1000);
   }
 
-  st_hp_free(st, fb_dst);
-  st_hp_free(st, fb_src);
+  mtl_hp_free(st, fb_dst);
+  mtl_hp_free(st, fb_src);
 
   ret = st_udma_free(dma);
   return 0;
@@ -94,7 +94,7 @@ static int dma_map_copy_sample(mtl_handle st) {
   uint16_t nb_desc = 1024;
   int nb_elements = nb_desc * 8, element_size = 1260;
   size_t fb_size = element_size * nb_elements;
-  size_t pg_sz = st_page_size(st);
+  size_t pg_sz = mtl_page_size(st);
   /* 2 more pages to hold the head and tail */
   size_t fb_size_malloc = fb_size + 2 * pg_sz;
   int fb_dst_iova_off = 0, fb_src_iova_off = 0;
@@ -144,7 +144,7 @@ static int dma_map_copy_sample(mtl_handle st) {
   rand_data((uint8_t*)fb_src, fb_size, 0);
   SHA256((unsigned char*)fb_src, fb_size, fb_src_shas);
 
-  uint64_t start_ns = st_ptp_read_time(st);
+  uint64_t start_ns = mtl_ptp_read_time(st);
   while (fb_dst_iova_off < fb_size) {
     /* try to copy */
     while (fb_src_iova_off < fb_size) {
@@ -162,7 +162,7 @@ static int dma_map_copy_sample(mtl_handle st) {
     uint16_t nb_dq = st_udma_completed(dma, 32);
     fb_dst_iova_off += element_size * nb_dq;
   }
-  uint64_t end_ns = st_ptp_read_time(st);
+  uint64_t end_ns = mtl_ptp_read_time(st);
 
   /* all copy completed, check sha */
   SHA256((unsigned char*)fb_dst, fb_size, fb_dst_shas);

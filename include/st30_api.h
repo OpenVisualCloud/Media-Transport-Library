@@ -229,7 +229,7 @@ struct st30_tx_ops {
   void* priv;
   /** destination IP address */
   uint8_t dip_addr[MTL_PORT_MAX][MTL_IP_ADDR_LEN];
-  /** Pcie BDF path like 0000:af:00.0, should align to BDF of st_init */
+  /** Pcie BDF path like 0000:af:00.0, should align to BDF of mtl_init */
   char port[MTL_PORT_MAX][MTL_PORT_MAX_LEN];
   /** 1 or 2, num of ports this session attached to */
   uint8_t num_port;
@@ -324,7 +324,7 @@ struct st30_rx_ops {
   uint8_t sip_addr[MTL_PORT_MAX][MTL_IP_ADDR_LEN];
   /** 1 or 2, num of ports this session attached to */
   uint8_t num_port;
-  /** Pcie BDF path like 0000:af:00.0, should align to BDF of st_init */
+  /** Pcie BDF path like 0000:af:00.0, should align to BDF of mtl_init */
   char port[MTL_PORT_MAX][MTL_PORT_MAX_LEN];
   /** UDP port number */
   uint16_t udp_port[MTL_PORT_MAX];

@@ -30,21 +30,21 @@ static int dma_copy_perf(mtl_handle st, int w, int h, int frames, int pkt_size) 
   mtl_iova_t fb_dst_iova, fb_src_iova;
 
   /* allocate fb dst and src(with random data) */
-  fb_dst = st_hp_malloc(st, fb_size, MTL_PORT_P);
+  fb_dst = mtl_hp_malloc(st, fb_size, MTL_PORT_P);
   if (!fb_dst) {
     info("fb dst create fail\n");
     st_udma_free(dma);
     return -ENOMEM;
   }
-  fb_dst_iova = st_hp_virt2iova(st, fb_dst);
-  fb_src = st_hp_malloc(st, fb_size, MTL_PORT_P);
+  fb_dst_iova = mtl_hp_virt2iova(st, fb_dst);
+  fb_src = mtl_hp_malloc(st, fb_size, MTL_PORT_P);
   if (!fb_dst) {
     info("fb src create fail\n");
-    st_hp_free(st, fb_dst);
+    mtl_hp_free(st, fb_dst);
     st_udma_free(dma);
     return -ENOMEM;
   }
-  fb_src_iova = st_hp_virt2iova(st, fb_src);
+  fb_src_iova = mtl_hp_virt2iova(st, fb_src);
   rand_data((uint8_t*)fb_src, fb_size, 0);
 
   clock_t start, end;
@@ -67,7 +67,7 @@ static int dma_copy_perf(mtl_handle st, int w, int h, int frames, int pkt_size) 
   for (int idx = 0; idx < frames; idx++) {
     size_t copied_size = 0;
     while (copied_size < fb_size) {
-      st_memcpy(fb_src + pkt_size, fb_dst + pkt_size, pkt_size);
+      mtl_memcpy(fb_src + pkt_size, fb_dst + pkt_size, pkt_size);
       copied_size += pkt_size;
     }
   }
@@ -102,8 +102,8 @@ static int dma_copy_perf(mtl_handle st, int w, int h, int frames, int pkt_size) 
   info("dma, %fx performance to cpu\n", duration_cpu / duration_dma);
   info("\n");
 
-  st_hp_free(st, fb_dst);
-  st_hp_free(st, fb_src);
+  mtl_hp_free(st, fb_dst);
+  mtl_hp_free(st, fb_src);
 
   ret = st_udma_free(dma);
   return 0;

@@ -398,7 +398,7 @@ static int rx_st20p_init_dst_fbs(struct mtl_main_impl* impl, struct st20p_rx_ctx
               st_frame_least_linesize(frames[i].dst.fmt, frames[i].dst.width, plane);
           if (plane == 0) {
             frames[i].dst.addr[plane] = dst;
-            frames[i].dst.iova[plane] = st_hp_virt2iova(ctx->impl, dst);
+            frames[i].dst.iova[plane] = mtl_hp_virt2iova(ctx->impl, dst);
           } else {
             frames[i].dst.addr[plane] =
                 frames[i].dst.addr[plane - 1] +

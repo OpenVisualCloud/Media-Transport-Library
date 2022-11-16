@@ -34,7 +34,7 @@ static int st22_fwd_open_logo(struct st_sample_context* ctx,
   }
 
   size_t logo_size = st_frame_size(ctx->input_fmt, ctx->logo_width, ctx->logo_height);
-  s->logo_buf = st_hp_malloc(s->st, logo_size, MTL_PORT_P);
+  s->logo_buf = mtl_hp_malloc(s->st, logo_size, MTL_PORT_P);
   if (!s->logo_buf) {
     err("%s, logo buf malloc fail\n", __func__);
     fclose(fp_logo);
@@ -44,7 +44,7 @@ static int st22_fwd_open_logo(struct st_sample_context* ctx,
   size_t read = fread(s->logo_buf, 1, logo_size, fp_logo);
   if (read != logo_size) {
     err("%s, logo buf read fail\n", __func__);
-    st_hp_free(s->st, s->logo_buf);
+    mtl_hp_free(s->st, s->logo_buf);
     s->logo_buf = NULL;
     fclose(fp_logo);
     return -EIO;
@@ -102,7 +102,7 @@ static void fwd_st22_consume_frame(struct rx_st20p_tx_st22p_sample_ctx* s,
       st_pthread_mutex_unlock(&s->wake_mutex);
       continue;
     }
-    st_memcpy(tx_frame->addr[0], frame->addr[0], s->framebuff_size);
+    mtl_memcpy(tx_frame->addr[0], frame->addr[0], s->framebuff_size);
     if (s->logo_buf) {
       st_draw_logo(tx_frame, &s->logo_meta, 16, 16);
     }
@@ -145,7 +145,7 @@ static int rx_st20p_tx_st22p_free_app(struct rx_st20p_tx_st22p_sample_ctx* app) 
     app->rx_handle = NULL;
   }
   if (app->logo_buf) {
-    st_hp_free(app->st, app->logo_buf);
+    mtl_hp_free(app->st, app->logo_buf);
     app->logo_buf = NULL;
   }
   st_pthread_mutex_destroy(&app->wake_mutex);
@@ -239,7 +239,7 @@ int main(int argc, char** argv) {
   app.ready = true;
 
   // start dev
-  ret = st_start(ctx.st);
+  ret = mtl_start(ctx.st);
 
   while (!ctx.exit) {
     sleep(1);
@@ -254,7 +254,7 @@ int main(int argc, char** argv) {
   info("%s, fb_fwd %d\n", __func__, app.fb_fwd);
 
   // stop dev
-  ret = st_stop(ctx.st);
+  ret = mtl_stop(ctx.st);
 
   // check result
   if (app.fb_fwd <= 0) {

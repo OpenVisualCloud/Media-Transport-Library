@@ -282,10 +282,10 @@ int st_app_parse_args(struct st_app_context* ctx, struct mtl_init_params* p, int
         p->num_ports++;
         break;
       case ST_ARG_P_SIP:
-        inet_pton(AF_INET, optarg, st_p_sip_addr(p));
+        inet_pton(AF_INET, optarg, mtl_p_sip_addr(p));
         break;
       case ST_ARG_R_SIP:
-        inet_pton(AF_INET, optarg, st_r_sip_addr(p));
+        inet_pton(AF_INET, optarg, mtl_r_sip_addr(p));
         break;
       case ST_ARG_P_TX_IP:
         inet_pton(AF_INET, optarg, ctx->tx_dip_addr[MTL_PORT_P]);

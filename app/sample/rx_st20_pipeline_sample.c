@@ -104,7 +104,7 @@ static int rx_st20p_open_source(struct rx_st20p_sample_ctx* s, const char* file)
 static void rx_st20p_consume_frame(struct rx_st20p_sample_ctx* s,
                                    struct st_frame* frame) {
   if (s->dst_cursor + s->frame_size > s->dst_end) s->dst_cursor = s->dst_begin;
-  st_memcpy(s->dst_cursor, frame->addr[0], s->frame_size);
+  mtl_memcpy(s->dst_cursor, frame->addr[0], s->frame_size);
   s->dst_cursor += s->frame_size;
   /* parse private data for dynamic ext frame
     if (frame->opaque) {
@@ -234,7 +234,7 @@ int main(int argc, char** argv) {
   }
 
   // start rx
-  ret = st_start(ctx.st);
+  ret = mtl_start(ctx.st);
 
   while (!ctx.exit) {
     sleep(1);
@@ -253,7 +253,7 @@ int main(int argc, char** argv) {
   }
 
   // stop rx
-  ret = st_stop(ctx.st);
+  ret = mtl_stop(ctx.st);
 
   // check result
   for (int i = 0; i < session_num; i++) {

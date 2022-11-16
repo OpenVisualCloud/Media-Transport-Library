@@ -21,7 +21,7 @@ static int tx_audio_next_frame_timestamp(void* priv, uint16_t* next_frame_idx,
   if (!ctx->handle) return -EIO; /* not ready */
 
   meta->tfmt = ST10_TIMESTAMP_FMT_TAI;
-  meta->timestamp = st_ptp_read_time(ctx->ctx->handle) + 2 * 1000 * 1000 + 500 * 1000;
+  meta->timestamp = mtl_ptp_read_time(ctx->ctx->handle) + 2 * 1000 * 1000 + 500 * 1000;
   *next_frame_idx = ctx->fb_idx;
   dbg("%s, next_frame_idx %d\n", __func__, *next_frame_idx);
   ctx->fb_idx++;
@@ -49,7 +49,7 @@ static int tx_audio_build_rtp_packet(tests_context* s, struct st_rfc3550_rtp_hdr
   if (s->seq_id == 0x10000) s->seq_id = 0;
   if (s->check_sha) {
     uint8_t* payload = (uint8_t*)rtp + sizeof(*rtp);
-    st_memcpy(payload, s->frame_buf[s->fb_idx], s->pkt_data_len);
+    mtl_memcpy(payload, s->frame_buf[s->fb_idx], s->pkt_data_len);
     s->fb_idx++;
     if (s->fb_idx >= TEST_SHA_HIST_NUM) s->fb_idx = 0;
   }
@@ -244,7 +244,7 @@ static void st30_tx_assert_cnt(int expect_s30_tx_cnt) {
   struct mtl_stats stats;
   int ret;
 
-  ret = st_get_stats(handle, &stats);
+  ret = mtl_get_stats(handle, &stats);
   EXPECT_GE(ret, 0);
   EXPECT_EQ(stats.st30_tx_sessions_cnt, expect_s30_tx_cnt);
 }
@@ -255,7 +255,7 @@ static void st30_rx_assert_cnt(int expect_s30_rx_cnt) {
   struct mtl_stats stats;
   int ret;
 
-  ret = st_get_stats(handle, &stats);
+  ret = mtl_get_stats(handle, &stats);
   EXPECT_GE(ret, 0);
   EXPECT_EQ(stats.st30_rx_sessions_cnt, expect_s30_rx_cnt);
 }
@@ -353,7 +353,7 @@ static void st30_tx_fps_test(enum st30_type type[], enum st30_sampling sample[],
     }
   }
 
-  ret = st_start(m_handle);
+  ret = mtl_start(m_handle);
   EXPECT_GE(ret, 0);
   sleep(5);
   for (int i = 0; i < sessions; i++) {
@@ -371,7 +371,7 @@ static void st30_tx_fps_test(enum st30_type type[], enum st30_sampling sample[],
     }
   }
 
-  ret = st_stop(m_handle);
+  ret = mtl_stop(m_handle);
   EXPECT_GE(ret, 0);
   for (int i = 0; i < sessions; i++) {
     EXPECT_GT(test_ctx[i]->fb_send, 0);
@@ -540,7 +540,7 @@ static void st30_rx_fps_test(enum st30_type type[], enum st30_sampling sample[],
     EXPECT_GE(ret, 0);
   }
 
-  ret = st_start(m_handle);
+  ret = mtl_start(m_handle);
   EXPECT_GE(ret, 0);
   sleep(10);
 
@@ -564,7 +564,7 @@ static void st30_rx_fps_test(enum st30_type type[], enum st30_sampling sample[],
     }
   }
 
-  ret = st_stop(m_handle);
+  ret = mtl_stop(m_handle);
   EXPECT_GE(ret, 0);
   for (int i = 0; i < sessions; i++) {
     EXPECT_GT(test_ctx_rx[i]->fb_rec, 0);
@@ -899,7 +899,7 @@ static void st30_rx_update_src_test(enum st30_type type, int tx_sessions,
     test_ctx_rx[i]->handle = rx_handle[i];
   }
 
-  ret = st_start(m_handle);
+  ret = mtl_start(m_handle);
   EXPECT_GE(ret, 0);
   sleep(10);
 
@@ -1000,7 +1000,7 @@ static void st30_rx_update_src_test(enum st30_type type, int tx_sessions,
     }
   }
 
-  ret = st_stop(m_handle);
+  ret = mtl_stop(m_handle);
   EXPECT_GE(ret, 0);
 
   /* free all tx and rx */
@@ -1163,7 +1163,7 @@ static void st30_rx_meta_test(enum st30_fmt fmt[], enum st30_sampling sampling[]
     test_ctx_rx[i]->handle = rx_handle[i];
   }
 
-  ret = st_start(m_handle);
+  ret = mtl_start(m_handle);
   EXPECT_GE(ret, 0);
   sleep(10);
 
@@ -1182,7 +1182,7 @@ static void st30_rx_meta_test(enum st30_fmt fmt[], enum st30_sampling sampling[]
     test_ctx_rx[i]->stop = true;
   }
 
-  ret = st_stop(m_handle);
+  ret = mtl_stop(m_handle);
   EXPECT_GE(ret, 0);
   for (int i = 0; i < sessions; i++) {
     EXPECT_GT(test_ctx_rx[i]->fb_rec, 0);
@@ -1249,7 +1249,7 @@ static void st30_create_after_start_test(enum st30_type type[],
   rtp_thread_tx.resize(sessions);
   rtp_thread_rx.resize(sessions);
 
-  ret = st_start(m_handle);
+  ret = mtl_start(m_handle);
   EXPECT_GE(ret, 0);
 
   for (int r = 0; r < repeat; r++) {
@@ -1372,7 +1372,7 @@ static void st30_create_after_start_test(enum st30_type type[],
     }
   }
 
-  ret = st_stop(m_handle);
+  ret = mtl_stop(m_handle);
   EXPECT_GE(ret, 0);
 }
 

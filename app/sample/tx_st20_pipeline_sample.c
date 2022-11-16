@@ -30,7 +30,7 @@ static int tx_st20p_close_source(struct tx_st20p_sample_ctx* s) {
   if (s->ext) {
     if (s->dma_mem) st_dma_mem_free(s->st, s->dma_mem);
   } else if (s->source_begin) {
-    st_hp_free(s->st, s->source_begin);
+    mtl_hp_free(s->st, s->source_begin);
     s->source_begin = NULL;
   }
 
@@ -93,23 +93,23 @@ init_fb:
     s->frame_cursor = s->source_begin;
     if (m) {
       if (frame_cnt < 2) {
-        st_memcpy(s->source_begin, m, s->frame_size);
-        st_memcpy(s->source_begin + s->frame_size, m, s->frame_size);
+        mtl_memcpy(s->source_begin, m, s->frame_size);
+        mtl_memcpy(s->source_begin + s->frame_size, m, s->frame_size);
       } else {
-        st_memcpy(s->source_begin, m, i.st_size);
+        mtl_memcpy(s->source_begin, m, i.st_size);
       }
     }
     s->source_end = s->source_begin + fbs_size;
     info("%s, source begin at %p, end at %p\n", __func__, s->source_begin, s->source_end);
   } else {
-    s->source_begin = st_hp_zmalloc(s->st, fbs_size, MTL_PORT_P);
+    s->source_begin = mtl_hp_zmalloc(s->st, fbs_size, MTL_PORT_P);
     if (!s->source_begin) {
       err("%s, source malloc on hugepage fail\n", __func__);
       close(fd);
       return -EIO;
     }
     s->frame_cursor = s->source_begin;
-    if (m) st_memcpy(s->source_begin, m, fbs_size);
+    if (m) mtl_memcpy(s->source_begin, m, fbs_size);
     s->source_end = s->source_begin + fbs_size;
   }
 
@@ -142,7 +142,7 @@ static int tx_st20p_frame_done(void* priv, struct st_frame* frame) {
 static void tx_st20p_build_frame(struct tx_st20p_sample_ctx* s, struct st_frame* frame) {
   // uint8_t* src = s->frame_cursor;
 
-  // st_memcpy(frame->addr[0], src, s->frame_size);
+  // mtl_memcpy(frame->addr[0], src, s->frame_size);
 }
 
 static void* tx_st20p_frame_thread(void* arg) {
@@ -274,7 +274,7 @@ int main(int argc, char** argv) {
   }
 
   // start tx
-  ret = st_start(ctx.st);
+  ret = mtl_start(ctx.st);
 
   while (!ctx.exit) {
     sleep(1);
@@ -293,7 +293,7 @@ int main(int argc, char** argv) {
   }
 
   // stop tx
-  ret = st_stop(ctx.st);
+  ret = mtl_stop(ctx.st);
 
   // check result
   for (int i = 0; i < session_num; i++) {

@@ -24,7 +24,7 @@ static void app_rx_st20p_consume_frame(struct st_app_rx_st20p_session* s,
         st20_rfc4175_422be10_to_422le8(frame->addr[0], d->front_frame, s->width,
                                        s->height);
       } else if (frame->fmt == ST_FRAME_FMT_YUV422PACKED8) {
-        st_memcpy(d->front_frame, frame->addr[0], d->front_frame_size);
+        mtl_memcpy(d->front_frame, frame->addr[0], d->front_frame_size);
       } else {
         st_pthread_mutex_unlock(&d->display_frame_mutex);
         return;
@@ -55,7 +55,7 @@ static void* app_rx_st20p_frame_thread(void* arg) {
     s->stat_frame_received++;
     if (s->measure_latency) {
       uint64_t latency_ns;
-      uint64_t ptp_ns = st_ptp_read_time(s->st);
+      uint64_t ptp_ns = mtl_ptp_read_time(s->st);
       uint32_t sampling_rate = 90 * 1000;
 
       if (frame->tfmt == ST10_TIMESTAMP_FMT_MEDIA_CLK) {

@@ -790,7 +790,7 @@ int st40_rx_get_queue_meta(st40_rx_handle handle, struct st_queue_meta* meta) {
 
     if (st_pmd_type(impl, port) == MTL_PMD_DPDK_AF_XDP) {
       /* af_xdp pmd */
-      meta->start_queue[i] = st_start_queue(impl, port);
+      meta->start_queue[i] = mtl_start_queue(impl, port);
     }
     meta->queue_id[i] = s->queue_id[i];
   }

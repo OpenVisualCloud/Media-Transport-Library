@@ -158,8 +158,8 @@ static int tx_ancillary_session_init_hdr(struct mtl_main_impl* impl,
   ipv4->type_of_service = 0;
   ipv4->fragment_offset = ST_IP_DONT_FRAGMENT_FLAG;
   ipv4->next_proto_id = 17;
-  st_memcpy(&ipv4->src_addr, sip, MTL_IP_ADDR_LEN);
-  st_memcpy(&ipv4->dst_addr, dip, MTL_IP_ADDR_LEN);
+  mtl_memcpy(&ipv4->src_addr, sip, MTL_IP_ADDR_LEN);
+  mtl_memcpy(&ipv4->dst_addr, dip, MTL_IP_ADDR_LEN);
 
   /* udp hdr */
   udp->src_port = htons(s->st40_src_port[s_port]);

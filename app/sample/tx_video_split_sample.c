@@ -162,7 +162,7 @@ int main(int argc, char** argv) {
       }
       if (m) {
         void* dst = st_dma_mem_addr(dma_mem);
-        st_memcpy(dst, m, map_size);
+        mtl_memcpy(dst, m, map_size);
         munmap(m, map_size);
       }
     }
@@ -178,14 +178,14 @@ int main(int argc, char** argv) {
   app[3]->fb_offset = app[2]->fb_offset + app[1]->fb_offset;
 
   // start tx
-  ret = st_start(ctx.st);
+  ret = mtl_start(ctx.st);
 
   while (!ctx.exit) {
     sleep(1);
   }
 
   // stop tx
-  ret = st_stop(ctx.st);
+  ret = mtl_stop(ctx.st);
 
   // check result
   for (int i = 0; i < session_num; i++) {

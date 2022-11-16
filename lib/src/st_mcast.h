@@ -72,7 +72,7 @@ struct mcast_mb_query_v3 {
   uint32_t source_addr;
 } __attribute__((__packed__)) __rte_aligned(2);
 
-int st_mcast_init(struct mtl_main_impl* impl);
+int st_mcamtl_init(struct mtl_main_impl* impl);
 int st_mcast_uinit(struct mtl_main_impl* impl);
 int st_mcast_join(struct mtl_main_impl* impl, uint32_t group_addr, enum mtl_port port);
 int st_mcast_leave(struct mtl_main_impl* impl, uint32_t group_addr, enum mtl_port port);

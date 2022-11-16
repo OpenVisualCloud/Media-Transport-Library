@@ -162,10 +162,10 @@ static void* app_tx_anc_pcap_thread(void* arg) {
           udp_hdr =
               (struct udphdr*)(packet + sizeof(struct ether_header) + sizeof(struct ip));
           udp_data_len = ntohs(udp_hdr->uh_ulen) - sizeof(struct udphdr);
-          st_memcpy(usrptr,
-                    packet + sizeof(struct ether_header) + sizeof(struct ip) +
-                        sizeof(struct udphdr),
-                    udp_data_len);
+          mtl_memcpy(usrptr,
+                     packet + sizeof(struct ether_header) + sizeof(struct ip) +
+                         sizeof(struct udphdr),
+                     udp_data_len);
         }
       }
     } else {

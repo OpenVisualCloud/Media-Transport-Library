@@ -109,7 +109,7 @@ int main(int argc, char** argv) {
   }
 
   // start dev
-  ret = st_start(ctx.st);
+  ret = mtl_start(ctx.st);
 
   while (!ctx.exit) {
     sleep(1);
@@ -126,7 +126,7 @@ int main(int argc, char** argv) {
   }
 
   // stop rx
-  ret = st_stop(ctx.st);
+  ret = mtl_stop(ctx.st);
 
   // check result
   for (int i = 0; i < session_num; i++) {

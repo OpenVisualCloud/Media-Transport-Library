@@ -574,7 +574,7 @@ int st20_yuv422p10le_to_rfc4175_422be10_simd(uint16_t* y, uint16_t* b, uint16_t*
                                              struct st20_rfc4175_422_10_pg2_be* pg,
                                              uint32_t w, uint32_t h,
                                              enum mtl_simd_level level) {
-  enum mtl_simd_level cpu_level = st_get_simd_level();
+  enum mtl_simd_level cpu_level = mtl_get_simd_level();
   int ret;
 
   ST_MAY_UNUSED(cpu_level);
@@ -597,7 +597,7 @@ int st20_yuv422p10le_to_rfc4175_422be10_simd_dma(
     mtl_udma_handle udma, uint16_t* y, mtl_iova_t y_iova, uint16_t* b, mtl_iova_t b_iova,
     uint16_t* r, mtl_iova_t r_iova, struct st20_rfc4175_422_10_pg2_be* pg, uint32_t w,
     uint32_t h, enum mtl_simd_level level) {
-  enum mtl_simd_level cpu_level = st_get_simd_level();
+  enum mtl_simd_level cpu_level = mtl_get_simd_level();
   int ret;
 
   ST_MAY_UNUSED(cpu_level);
@@ -643,7 +643,7 @@ int st20_rfc4175_422be10_to_yuv422p10le_simd(struct st20_rfc4175_422_10_pg2_be* 
                                              uint16_t* y, uint16_t* b, uint16_t* r,
                                              uint32_t w, uint32_t h,
                                              enum mtl_simd_level level) {
-  enum mtl_simd_level cpu_level = st_get_simd_level();
+  enum mtl_simd_level cpu_level = mtl_get_simd_level();
   int ret;
 
   ST_MAY_UNUSED(cpu_level);
@@ -677,7 +677,7 @@ int st20_rfc4175_422be10_to_yuv422p10le_simd_dma(mtl_udma_handle udma,
                                                  mtl_iova_t pg_be_iova, uint16_t* y,
                                                  uint16_t* b, uint16_t* r, uint32_t w,
                                                  uint32_t h, enum mtl_simd_level level) {
-  enum mtl_simd_level cpu_level = st_get_simd_level();
+  enum mtl_simd_level cpu_level = mtl_get_simd_level();
   int ret;
 
   ST_MAY_UNUSED(cpu_level);
@@ -789,7 +789,7 @@ int st20_rfc4175_422be10_to_422le10_simd(struct st20_rfc4175_422_10_pg2_be* pg_b
                                          struct st20_rfc4175_422_10_pg2_le* pg_le,
                                          uint32_t w, uint32_t h,
                                          enum mtl_simd_level level) {
-  enum mtl_simd_level cpu_level = st_get_simd_level();
+  enum mtl_simd_level cpu_level = mtl_get_simd_level();
   int ret;
 
   ST_MAY_UNUSED(cpu_level);
@@ -834,7 +834,7 @@ int st20_rfc4175_422be10_to_422le10_simd_dma(mtl_udma_handle udma,
                                              uint32_t w, uint32_t h,
                                              enum mtl_simd_level level) {
   struct mtl_dma_lender_dev* dma = udma;
-  enum mtl_simd_level cpu_level = st_get_simd_level();
+  enum mtl_simd_level cpu_level = mtl_get_simd_level();
   int ret;
 
   ST_MAY_UNUSED(cpu_level);
@@ -897,7 +897,7 @@ int st20_rfc4175_422le10_to_422be10_simd(struct st20_rfc4175_422_10_pg2_le* pg_l
                                          struct st20_rfc4175_422_10_pg2_be* pg_be,
                                          uint32_t w, uint32_t h,
                                          enum mtl_simd_level level) {
-  enum mtl_simd_level cpu_level = st_get_simd_level();
+  enum mtl_simd_level cpu_level = mtl_get_simd_level();
   int ret;
 
   ST_MAY_UNUSED(cpu_level);
@@ -942,7 +942,7 @@ int st20_rfc4175_422le10_to_422be10_simd_dma(mtl_udma_handle udma,
                                              uint32_t w, uint32_t h,
                                              enum mtl_simd_level level) {
   struct mtl_dma_lender_dev* dma = udma;
-  enum mtl_simd_level cpu_level = st_get_simd_level();
+  enum mtl_simd_level cpu_level = mtl_get_simd_level();
   int ret;
 
   ST_MAY_UNUSED(cpu_level);
@@ -992,7 +992,7 @@ int st20_rfc4175_422be10_to_422le8_simd(struct st20_rfc4175_422_10_pg2_be* pg_10
                                         struct st20_rfc4175_422_8_pg2_le* pg_8,
                                         uint32_t w, uint32_t h,
                                         enum mtl_simd_level level) {
-  enum mtl_simd_level cpu_level = st_get_simd_level();
+  enum mtl_simd_level cpu_level = mtl_get_simd_level();
   int ret;
 
   ST_MAY_UNUSED(cpu_level);
@@ -1028,7 +1028,7 @@ int st20_rfc4175_422be10_to_422le8_simd_dma(mtl_udma_handle udma,
                                             uint32_t w, uint32_t h,
                                             enum mtl_simd_level level) {
   struct mtl_dma_lender_dev* dma = udma;
-  enum mtl_simd_level cpu_level = st_get_simd_level();
+  enum mtl_simd_level cpu_level = mtl_get_simd_level();
   int ret;
 
   ST_MAY_UNUSED(cpu_level);
@@ -1099,7 +1099,7 @@ int st20_rfc4175_422le10_to_v210_scalar(uint8_t* pg_le, uint8_t* pg_v210, uint32
 
 int st20_rfc4175_422le10_to_v210_simd(uint8_t* pg_le, uint8_t* pg_v210, uint32_t w,
                                       uint32_t h, enum mtl_simd_level level) {
-  enum mtl_simd_level cpu_level = st_get_simd_level();
+  enum mtl_simd_level cpu_level = mtl_get_simd_level();
   int ret;
 
   ST_MAY_UNUSED(cpu_level);
@@ -1207,7 +1207,7 @@ int st20_rfc4175_422be10_to_v210_scalar(uint8_t* pg_be, uint8_t* pg_v210, uint32
 int st20_rfc4175_422be10_to_v210_simd(struct st20_rfc4175_422_10_pg2_be* pg_be,
                                       uint8_t* pg_v210, uint32_t w, uint32_t h,
                                       enum mtl_simd_level level) {
-  enum mtl_simd_level cpu_level = st_get_simd_level();
+  enum mtl_simd_level cpu_level = mtl_get_simd_level();
   int ret;
 
   ST_MAY_UNUSED(cpu_level);
@@ -1242,7 +1242,7 @@ int st20_rfc4175_422be10_to_v210_simd_dma(mtl_udma_handle udma,
                                           uint32_t w, uint32_t h,
                                           enum mtl_simd_level level) {
   struct mtl_dma_lender_dev* dma = udma;
-  enum mtl_simd_level cpu_level = st_get_simd_level();
+  enum mtl_simd_level cpu_level = mtl_get_simd_level();
   int ret;
 
   ST_MAY_UNUSED(cpu_level);
@@ -1313,7 +1313,7 @@ int st20_v210_to_rfc4175_422be10_scalar(uint8_t* v210, uint8_t* be, uint32_t w,
 int st20_v210_to_rfc4175_422be10_simd(uint8_t* pg_v210,
                                       struct st20_rfc4175_422_10_pg2_be* pg_be,
                                       uint32_t w, uint32_t h, enum mtl_simd_level level) {
-  enum mtl_simd_level cpu_level = st_get_simd_level();
+  enum mtl_simd_level cpu_level = mtl_get_simd_level();
   int ret;
 
   ST_MAY_UNUSED(cpu_level);
@@ -1347,7 +1347,7 @@ int st20_v210_to_rfc4175_422be10_simd_dma(mtl_udma_handle udma, uint8_t* pg_v210
                                           struct st20_rfc4175_422_10_pg2_be* pg_be,
                                           uint32_t w, uint32_t h,
                                           enum mtl_simd_level level) {
-  enum mtl_simd_level cpu_level = st_get_simd_level();
+  enum mtl_simd_level cpu_level = mtl_get_simd_level();
   int ret;
 
   ST_MAY_UNUSED(cpu_level);
@@ -1397,7 +1397,7 @@ int st20_rfc4175_422be10_to_y210_scalar(struct st20_rfc4175_422_10_pg2_be* pg_be
 int st20_rfc4175_422be10_to_y210_simd(struct st20_rfc4175_422_10_pg2_be* pg_be,
                                       uint16_t* pg_y210, uint32_t w, uint32_t h,
                                       enum mtl_simd_level level) {
-  enum mtl_simd_level cpu_level = st_get_simd_level();
+  enum mtl_simd_level cpu_level = mtl_get_simd_level();
   int ret;
 
   ST_MAY_UNUSED(cpu_level);
@@ -1422,7 +1422,7 @@ int st20_rfc4175_422be10_to_y210_simd_dma(mtl_udma_handle udma,
                                           uint32_t w, uint32_t h,
                                           enum mtl_simd_level level) {
   struct mtl_dma_lender_dev* dma = udma;
-  enum mtl_simd_level cpu_level = st_get_simd_level();
+  enum mtl_simd_level cpu_level = mtl_get_simd_level();
   int ret;
 
   ST_MAY_UNUSED(cpu_level);
@@ -1467,7 +1467,7 @@ int st20_y210_to_rfc4175_422be10_scalar(uint16_t* pg_y210,
 int st20_y210_to_rfc4175_422be10_simd(uint16_t* pg_y210,
                                       struct st20_rfc4175_422_10_pg2_be* pg_be,
                                       uint32_t w, uint32_t h, enum mtl_simd_level level) {
-  enum mtl_simd_level cpu_level = st_get_simd_level();
+  enum mtl_simd_level cpu_level = mtl_get_simd_level();
   int ret;
 
   ST_MAY_UNUSED(cpu_level);
@@ -1491,7 +1491,7 @@ int st20_y210_to_rfc4175_422be10_simd_dma(mtl_udma_handle udma, uint16_t* pg_y21
                                           struct st20_rfc4175_422_10_pg2_be* pg_be,
                                           uint32_t w, uint32_t h,
                                           enum mtl_simd_level level) {
-  enum mtl_simd_level cpu_level = st_get_simd_level();
+  enum mtl_simd_level cpu_level = mtl_get_simd_level();
   int ret;
 
   ST_MAY_UNUSED(cpu_level);

@@ -234,8 +234,8 @@ static int test_parse_args(struct st_tests_context* ctx, struct mtl_init_params*
 
 static void test_random_ip(struct st_tests_context* ctx) {
   struct mtl_init_params* p = &ctx->para;
-  uint8_t* p_ip = st_p_sip_addr(p);
-  uint8_t* r_ip = st_r_sip_addr(p);
+  uint8_t* p_ip = mtl_p_sip_addr(p);
+  uint8_t* r_ip = mtl_r_sip_addr(p);
 
   srand(st_test_get_monotonic_time());
 
@@ -330,13 +330,13 @@ static void test_ctx_init(struct st_tests_context* ctx) {
 }
 
 static void test_ctx_uinit(struct st_tests_context* ctx) {
-  st_uninit(ctx->handle);
+  mtl_uninit(ctx->handle);
   ctx->handle = NULL;
   st_test_free(ctx);
 }
 
 TEST(Misc, version) {
-  auto version_display = st_version();
+  auto version_display = mtl_version();
   info("st version: %s\n", version_display);
 
   uint32_t version_no =
@@ -356,7 +356,7 @@ TEST(Misc, version_compare) {
   EXPECT_LT(MTL_VERSION, version_next);
 }
 
-static void st_memcpy_test(size_t size) {
+static void mtl_memcpy_test(size_t size) {
   ASSERT_TRUE(size > 0);
   char src[size];
   char dst[size];
@@ -364,14 +364,14 @@ static void st_memcpy_test(size_t size) {
   for (size_t i = 0; i < size; i++) src[i] = i;
   memset(dst, 0, size);
 
-  st_memcpy(dst, src, size);
+  mtl_memcpy(dst, src, size);
   EXPECT_EQ(0, memcmp(src, dst, size));
 }
 
 TEST(Misc, memcpy) {
-  st_memcpy_test(1);
-  st_memcpy_test(4096);
-  st_memcpy_test(4096 + 100);
+  mtl_memcpy_test(1);
+  mtl_memcpy_test(4096);
+  mtl_memcpy_test(4096 + 100);
 }
 
 static void hp_malloc_test(struct st_tests_context* ctx, size_t size, enum mtl_port port,
@@ -380,9 +380,9 @@ static void hp_malloc_test(struct st_tests_context* ctx, size_t size, enum mtl_p
   void* p;
 
   if (zero)
-    p = st_hp_malloc(m_handle, size, port);
+    p = mtl_hp_malloc(m_handle, size, port);
   else
-    p = st_hp_zmalloc(m_handle, size, port);
+    p = mtl_hp_zmalloc(m_handle, size, port);
   if (expect_succ)
     EXPECT_TRUE(p != NULL);
   else
@@ -395,7 +395,7 @@ static void hp_malloc_test(struct st_tests_context* ctx, size_t size, enum mtl_p
       free(dst);
     }
     memset(p, 0, size);
-    st_hp_free(m_handle, p);
+    mtl_hp_free(m_handle, p);
   }
 }
 
@@ -442,11 +442,11 @@ TEST(Misc, hp_zmalloc_expect_fail) {
 TEST(Misc, ptp) {
   auto ctx = (struct st_tests_context*)st_test_ctx();
   auto handle = ctx->handle;
-  uint64_t ptp = st_ptp_read_time(handle);
+  uint64_t ptp = mtl_ptp_read_time(handle);
   EXPECT_EQ(ptp, ctx->ptp_time);
   /* try again */
   st_usleep(1);
-  ptp = st_ptp_read_time(handle);
+  ptp = mtl_ptp_read_time(handle);
   EXPECT_EQ(ptp, ctx->ptp_time);
 }
 
@@ -454,11 +454,11 @@ static void st10_timestamp_test(uint32_t sampling_rate) {
   auto ctx = (struct st_tests_context*)st_test_ctx();
   auto handle = ctx->handle;
 
-  uint64_t ptp1 = st_ptp_read_time(handle);
+  uint64_t ptp1 = mtl_ptp_read_time(handle);
   uint32_t media1 = st10_tai_to_media_clk(ptp1, sampling_rate);
   /* sleep 100us */
   st_usleep(100);
-  uint64_t ptp2 = st_ptp_read_time(handle);
+  uint64_t ptp2 = mtl_ptp_read_time(handle);
   uint32_t media2 = st10_tai_to_media_clk(ptp2, sampling_rate);
   EXPECT_GT(ptp2, ptp1);
   EXPECT_GT(media2, media1);
@@ -495,9 +495,9 @@ GTEST_API_ int main(int argc, char** argv) {
 
   /* parse af xdp pmd info */
   for (int i = 0; i < ctx->para.num_ports; i++) {
-    ctx->para.pmd[i] = st_pmd_by_port_name(ctx->para.port[i]);
+    ctx->para.pmd[i] = mtl_pmd_by_port_name(ctx->para.port[i]);
     if (ctx->para.pmd[i] != MTL_PMD_DPDK_USER) {
-      st_get_if_ip(ctx->para.port[i], ctx->para.sip_addr[i]);
+      mtl_get_if_ip(ctx->para.port[i], ctx->para.sip_addr[i]);
       ctx->para.flags |= MTL_FLAG_RX_SEPARATE_VIDEO_LCORE;
       ctx->para.tx_sessions_cnt_max = 8;
       ctx->para.rx_sessions_cnt_max = 8;
@@ -510,9 +510,9 @@ GTEST_API_ int main(int argc, char** argv) {
     ctx->para.nb_rx_hdr_split_queues = 1;
   }
 
-  ctx->handle = st_init(&ctx->para);
+  ctx->handle = mtl_init(&ctx->para);
   if (!ctx->handle) {
-    err("%s, st_init fail\n", __func__);
+    err("%s, mtl_init fail\n", __func__);
     return -EIO;
   }
 

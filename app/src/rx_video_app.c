@@ -50,7 +50,7 @@ static void app_rx_video_consume_frame(struct st_app_rx_video_session* s, void* 
     if (st_pthread_mutex_trylock(&d->display_frame_mutex) == 0) {
       if (s->st20_pg.fmt == ST20_FMT_YUV_422_8BIT ||
           s->user_pg.fmt == USER_FMT_YUV_422_8BIT)
-        st_memcpy(d->front_frame, frame, d->front_frame_size);
+        mtl_memcpy(d->front_frame, frame, d->front_frame_size);
       else if (s->st20_pg.fmt == ST20_FMT_YUV_422_10BIT)
         st20_rfc4175_422be10_to_422le8(frame, d->front_frame, s->width, s->height);
       else /* fmt mismatch*/ {
@@ -67,7 +67,7 @@ static void app_rx_video_consume_frame(struct st_app_rx_video_session* s, void* 
       s->st20_dst_cursor = s->st20_dst_begin;
     dbg("%s(%d), dst %p src %p size %ld\n", __func__, s->idx, s->st20_dst_cursor, frame,
         frame_size);
-    st_memcpy(s->st20_dst_cursor, frame, frame_size);
+    mtl_memcpy(s->st20_dst_cursor, frame, frame_size);
     s->st20_dst_cursor += frame_size;
   }
 }
@@ -160,7 +160,7 @@ static int app_rx_video_handle_rtp(struct st_app_rx_video_session* s,
         s->st20_frame_size);
     return -EIO;
   }
-  st_memcpy(frame + offset, payload, row_length);
+  mtl_memcpy(frame + offset, payload, row_length);
   if (e_hdr) {
     uint16_t row2_number = ntohs(e_hdr->row_number);
     uint16_t row2_offset = ntohs(e_hdr->row_offset);
@@ -178,7 +178,7 @@ static int app_rx_video_handle_rtp(struct st_app_rx_video_session* s,
           offset2, s->st20_frame_size);
       return -EIO;
     }
-    st_memcpy(frame + offset2, payload + row_length, row2_length);
+    mtl_memcpy(frame + offset2, payload + row_length, row2_length);
   }
 
   return 0;
@@ -306,7 +306,7 @@ static int app_rx_video_frame_ready(void* priv, void* frame,
   s->stat_frame_received++;
   if (s->measure_latency) {
     uint64_t latency_ns;
-    uint64_t ptp_ns = st_ptp_read_time(s->st);
+    uint64_t ptp_ns = mtl_ptp_read_time(s->st);
     uint32_t sampling_rate = 90 * 1000;
 
     if (meta->tfmt == ST10_TIMESTAMP_FMT_MEDIA_CLK) {
@@ -490,7 +490,7 @@ static int app_rx_video_init(struct st_app_context* ctx, st_json_video_session_t
   st_pthread_mutex_init(&s->st20_wake_mutex, NULL);
   st_pthread_cond_init(&s->st20_wake_cond, NULL);
 
-  if (st_pmd_by_port_name(ops.port[MTL_PORT_P]) == MTL_PMD_DPDK_AF_XDP) {
+  if (mtl_pmd_by_port_name(ops.port[MTL_PORT_P]) == MTL_PMD_DPDK_AF_XDP) {
     snprintf(s->st20_dst_url, ST_APP_URL_MAX_LEN, "st_app%d_%d_%d_%s.yuv", idx, ops.width,
              ops.height, ops.port[MTL_PORT_P]);
   } else {

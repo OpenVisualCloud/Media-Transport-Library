@@ -11,7 +11,7 @@ static void app_tx_st22p_display_frame(struct st_app_tx_st22p_session* s,
   if (d && d->front_frame) {
     if (st_pthread_mutex_trylock(&d->display_frame_mutex) == 0) {
       if (frame->fmt == ST_FRAME_FMT_YUV422PACKED8)
-        st_memcpy(d->front_frame, frame->addr[0], d->front_frame_size);
+        mtl_memcpy(d->front_frame, frame->addr[0], d->front_frame_size);
       else if (frame->fmt == ST_FRAME_FMT_YUV422RFC4175PG2BE10)
         st20_rfc4175_422be10_to_422le8(frame->addr[0], d->front_frame, s->width,
                                        s->height);
@@ -44,7 +44,7 @@ static void app_tx_st22p_build_frame(struct st_app_tx_st22p_session* s,
   }
   uint8_t* src = s->st22p_frame_cursor;
 
-  st_memcpy(frame->addr[0], src, s->st22p_frame_size);
+  mtl_memcpy(frame->addr[0], src, s->st22p_frame_size);
   /* point to next frame */
   s->st22p_frame_cursor += s->st22p_frame_size;
 
@@ -100,7 +100,7 @@ static int app_tx_st22p_open_source(struct st_app_tx_st22p_session* s) {
     return -EIO;
   }
 
-  s->st22p_source_begin = st_hp_malloc(s->st, i.st_size, MTL_PORT_P);
+  s->st22p_source_begin = mtl_hp_malloc(s->st, i.st_size, MTL_PORT_P);
   if (!s->st22p_source_begin) {
     warn("%s, source malloc on hugepage fail\n", __func__);
     s->st22p_source_begin = m;
@@ -109,7 +109,7 @@ static int app_tx_st22p_open_source(struct st_app_tx_st22p_session* s) {
     s->st22p_source_fd = fd;
   } else {
     s->st22p_frame_cursor = s->st22p_source_begin;
-    st_memcpy(s->st22p_source_begin, m, i.st_size);
+    mtl_memcpy(s->st22p_source_begin, m, i.st_size);
     s->st22p_source_end = s->st22p_source_begin + i.st_size;
     close(fd);
   }
@@ -145,7 +145,7 @@ static void app_tx_st22p_stop_source(struct st_app_tx_st22p_session* s) {
 
 static int app_tx_st22p_close_source(struct st_app_tx_st22p_session* s) {
   if (s->st22p_source_fd < 0 && s->st22p_source_begin) {
-    st_hp_free(s->st, s->st22p_source_begin);
+    mtl_hp_free(s->st, s->st22p_source_begin);
     s->st22p_source_begin = NULL;
   }
   if (s->st22p_source_fd >= 0) {

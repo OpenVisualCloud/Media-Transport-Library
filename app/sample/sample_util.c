@@ -80,10 +80,10 @@ static int st_sample_parse_args(struct st_sample_context* ctx, int argc, char** 
         p->num_dma_dev_port = 1;
         break;
       case SAMPLE_ARG_P_SIP:
-        inet_pton(AF_INET, optarg, st_p_sip_addr(p));
+        inet_pton(AF_INET, optarg, mtl_p_sip_addr(p));
         break;
       case SAMPLE_ARG_R_SIP:
-        inet_pton(AF_INET, optarg, st_r_sip_addr(p));
+        inet_pton(AF_INET, optarg, mtl_r_sip_addr(p));
         break;
       case SAMPLE_ARG_P_TX_IP:
         inet_pton(AF_INET, optarg, ctx->tx_dip_addr[MTL_PORT_P]);
@@ -156,7 +156,7 @@ static void sample_sig_handler(int signo) {
   switch (signo) {
     case SIGINT: /* Interrupt from keyboard */
       ctx->exit = true;
-      if (ctx->st) st_request_exit(ctx->st);
+      if (ctx->st) mtl_request_exit(ctx->st);
       break;
   }
 
@@ -177,14 +177,14 @@ int st_sample_init(struct st_sample_context* ctx, int argc, char** argv, bool tx
   /* use different default port/ip for tx and rx */
   if (rx) {
     strncpy(p->port[MTL_PORT_P], "0000:af:01.0", MTL_PORT_MAX_LEN);
-    inet_pton(AF_INET, "192.168.85.80", st_p_sip_addr(p));
+    inet_pton(AF_INET, "192.168.85.80", mtl_p_sip_addr(p));
     strncpy(p->port[MTL_PORT_R], "0000:af:01.1", MTL_PORT_MAX_LEN);
-    inet_pton(AF_INET, "192.168.85.81", st_r_sip_addr(p));
+    inet_pton(AF_INET, "192.168.85.81", mtl_r_sip_addr(p));
   } else {
     strncpy(p->port[MTL_PORT_P], "0000:af:01.1", MTL_PORT_MAX_LEN);
-    inet_pton(AF_INET, "192.168.85.81", st_p_sip_addr(p));
+    inet_pton(AF_INET, "192.168.85.81", mtl_p_sip_addr(p));
     strncpy(p->port[MTL_PORT_R], "0000:af:01.0", MTL_PORT_MAX_LEN);
-    inet_pton(AF_INET, "192.168.85.80", st_r_sip_addr(p));
+    inet_pton(AF_INET, "192.168.85.80", mtl_r_sip_addr(p));
   }
   inet_pton(AF_INET, "239.168.85.20", ctx->tx_dip_addr[MTL_PORT_P]);
   inet_pton(AF_INET, "239.168.85.21", ctx->tx_dip_addr[MTL_PORT_R]);
@@ -228,7 +228,7 @@ int st_sample_start(struct st_sample_context* ctx) {
   struct mtl_init_params* p = &ctx->param;
 
   /* create device */
-  ctx->st = st_init(p);
+  ctx->st = mtl_init(p);
   if (!ctx->st) {
     err("%s, st init fail\n", __func__);
     return -EIO;
@@ -240,7 +240,7 @@ int st_sample_start(struct st_sample_context* ctx) {
 int st_sample_uinit(struct st_sample_context* ctx) {
   /* destroy device */
   if (ctx->st) {
-    st_uninit(ctx->st);
+    mtl_uninit(ctx->st);
     ctx->st = NULL;
   }
   return 0;

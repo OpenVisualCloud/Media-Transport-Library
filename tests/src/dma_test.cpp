@@ -10,7 +10,7 @@ static int test_dma_cnt(struct st_tests_context* ctx) {
   struct mtl_stats stats;
   int ret;
 
-  ret = st_get_stats(handle, &stats);
+  ret = mtl_get_stats(handle, &stats);
   if (ret < 0) return ret;
 
   return stats.dma_dev_cnt;
@@ -83,12 +83,12 @@ static void _test_dma_copy(mtl_handle st, mtl_udma_handle dma, uint32_t off,
   mtl_iova_t dst_iova, src_iova;
   int ret;
 
-  dst = st_hp_malloc(st, len, MTL_PORT_P);
+  dst = mtl_hp_malloc(st, len, MTL_PORT_P);
   ASSERT_TRUE(dst != NULL);
-  dst_iova = st_hp_virt2iova(st, dst);
-  src = st_hp_malloc(st, len, MTL_PORT_P);
+  dst_iova = mtl_hp_virt2iova(st, dst);
+  src = mtl_hp_malloc(st, len, MTL_PORT_P);
   ASSERT_TRUE(src != NULL);
-  src_iova = st_hp_virt2iova(st, src);
+  src_iova = mtl_hp_virt2iova(st, src);
   st_test_rand_data((uint8_t*)src, len, 0);
 
   ret = st_udma_copy(dma, dst_iova + off, src_iova + off, len - off);
@@ -103,8 +103,8 @@ static void _test_dma_copy(mtl_handle st, mtl_udma_handle dma, uint32_t off,
   ret = memcmp((uint8_t*)src + off, (uint8_t*)dst + off, len - off);
   EXPECT_EQ(ret, 0);
 
-  st_hp_free(st, dst);
-  st_hp_free(st, src);
+  mtl_hp_free(st, dst);
+  mtl_hp_free(st, src);
 }
 
 static void test_dma_copy(struct st_tests_context* ctx, uint32_t off, uint32_t len) {
@@ -160,12 +160,12 @@ static void test_dma_copy_fill_async(struct st_tests_context* ctx, bool fill) {
   unsigned char fb_src_shas[SHA256_DIGEST_LENGTH];
 
   /* allocate fb dst and src(with random data) */
-  fb_dst = st_hp_malloc(st, fb_size, MTL_PORT_P);
+  fb_dst = mtl_hp_malloc(st, fb_size, MTL_PORT_P);
   ASSERT_TRUE(fb_dst != NULL);
-  fb_dst_iova = st_hp_virt2iova(st, fb_dst);
-  fb_src = st_hp_malloc(st, fb_size, MTL_PORT_P);
+  fb_dst_iova = mtl_hp_virt2iova(st, fb_dst);
+  fb_src = mtl_hp_malloc(st, fb_size, MTL_PORT_P);
   ASSERT_TRUE(fb_src != NULL);
-  fb_src_iova = st_hp_virt2iova(st, fb_src);
+  fb_src_iova = mtl_hp_virt2iova(st, fb_src);
   if (fill)
     memset(fb_src, pattern, fb_size);
   else
@@ -195,8 +195,8 @@ static void test_dma_copy_fill_async(struct st_tests_context* ctx, bool fill) {
   ret = memcmp(fb_dst_shas, fb_src_shas, SHA256_DIGEST_LENGTH);
   EXPECT_EQ(ret, 0);
 
-  st_hp_free(st, fb_dst);
-  st_hp_free(st, fb_src);
+  mtl_hp_free(st, fb_dst);
+  mtl_hp_free(st, fb_src);
 
   ret = st_udma_free(dma);
   EXPECT_GE(ret, 0);
@@ -242,10 +242,10 @@ static void _test_dma_fill(mtl_handle st, mtl_udma_handle dma, uint32_t off, uin
   mtl_iova_t dst_iova;
   int ret;
 
-  dst = st_hp_malloc(st, len, MTL_PORT_P);
+  dst = mtl_hp_malloc(st, len, MTL_PORT_P);
   ASSERT_TRUE(dst != NULL);
-  dst_iova = st_hp_virt2iova(st, dst);
-  src = st_hp_malloc(st, len, MTL_PORT_P);
+  dst_iova = mtl_hp_virt2iova(st, dst);
+  src = mtl_hp_malloc(st, len, MTL_PORT_P);
   ASSERT_TRUE(src != NULL);
   memset(src, pattern, len);
 
@@ -261,8 +261,8 @@ static void _test_dma_fill(mtl_handle st, mtl_udma_handle dma, uint32_t off, uin
   ret = memcmp((uint8_t*)src + off, (uint8_t*)dst + off, len - off);
   EXPECT_EQ(ret, 0);
 
-  st_hp_free(st, dst);
-  st_hp_free(st, src);
+  mtl_hp_free(st, dst);
+  mtl_hp_free(st, src);
 }
 
 static void test_dma_fill(struct st_tests_context* ctx, uint32_t off, uint32_t len,
@@ -347,7 +347,7 @@ static void _test_dma_map(mtl_handle st, const void* vaddr, size_t size,
 
 static void test_dma_map(struct st_tests_context* ctx, size_t size) {
   auto st = ctx->handle;
-  size_t pg_sz = st_page_size(st);
+  size_t pg_sz = mtl_page_size(st);
   /* 2 more pages to hold the head and tail */
   uint8_t* p = (uint8_t*)malloc(size + 2 * pg_sz);
   ASSERT_TRUE(p != NULL);
@@ -362,14 +362,14 @@ TEST(Dma, map) {
   struct st_tests_context* ctx = st_test_ctx();
   auto st = ctx->handle;
 
-  test_dma_map(ctx, 64 * st_page_size(st));
-  test_dma_map(ctx, 512 * st_page_size(st));
+  test_dma_map(ctx, 64 * mtl_page_size(st));
+  test_dma_map(ctx, 512 * mtl_page_size(st));
 }
 
 TEST(Dma, map_fail) {
   struct st_tests_context* ctx = st_test_ctx();
   auto st = ctx->handle;
-  size_t pg_sz = st_page_size(st);
+  size_t pg_sz = mtl_page_size(st);
   uint8_t* p = (uint8_t*)malloc(pg_sz / 2);
 
   _test_dma_map(st, p, pg_sz / 2, false);
@@ -379,7 +379,7 @@ TEST(Dma, map_fail) {
 
 static void test_dma_remap(struct st_tests_context* ctx, size_t size) {
   auto st = ctx->handle;
-  size_t pg_sz = st_page_size(st);
+  size_t pg_sz = mtl_page_size(st);
   /* 2 more pages to hold the head and tail */
   uint8_t* p = (uint8_t*)malloc(size + 2 * pg_sz);
   ASSERT_TRUE(p != NULL);
@@ -413,12 +413,12 @@ TEST(Dma, map_remap) {
   struct st_tests_context* ctx = st_test_ctx();
   auto st = ctx->handle;
 
-  test_dma_remap(ctx, 64 * st_page_size(st));
+  test_dma_remap(ctx, 64 * mtl_page_size(st));
 }
 
 static void test_dma_map_copy(mtl_handle st, mtl_udma_handle dma, size_t copy_size) {
   void *dst = NULL, *src = NULL;
-  size_t pg_sz = st_page_size(st);
+  size_t pg_sz = mtl_page_size(st);
   /* 2 more pages to hold the head and tail */
   size_t size = copy_size + 2 * pg_sz;
 
@@ -467,7 +467,7 @@ TEST(Dma, map_copy) {
   mtl_udma_handle dma = st_udma_create(st, 128, MTL_PORT_P);
   ASSERT_TRUE(dma != NULL);
 
-  test_dma_map_copy(st, dma, 64 * st_page_size(st));
+  test_dma_map_copy(st, dma, 64 * mtl_page_size(st));
 
   int ret = st_udma_free(dma);
   EXPECT_GE(ret, 0);

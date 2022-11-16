@@ -239,13 +239,13 @@ enum st21_tx_pacing_way {
 #define MTL_FLAG_RX_MONO_POOL (MTL_BIT64(22))
 /**
  * Flag bit in flags of struct mtl_init_params, debug usage only.
- * Do st_start in st_init, st_stop in st_uninit, and skip the st_start/st_stop
+ * Do mtl_start in mtl_init, mtl_stop in mtl_uninit, and skip the mtl_start/mtl_stop
  */
 #define MTL_FLAG_DEV_AUTO_START_STOP (MTL_BIT64(24))
 /**
  * Flag bit in flags of struct mtl_init_params, debug usage only.
  * Enable tasklet time measurement, report status if tasklet run time longer than
- * tasklet_time_thresh_us in st_init_params.
+ * tasklet_time_thresh_us in mtl_init_params.
  */
 #define MTL_FLAG_TASKLET_TIME_MEASURE (MTL_BIT64(25))
 /**
@@ -295,13 +295,13 @@ struct mtl_init_params {
   uint8_t sip_addr[MTL_PORT_MAX][MTL_IP_ADDR_LEN];
   /**
    * max tx sessions(st20, st22, st30, st40) requested the lib to support,
-   * use st_get_cap to query the actual count.
+   * use mtl_get_cap to query the actual count.
    * dpdk context will allocate the hw resources(queues, memory) based on this number.
    */
   uint16_t tx_sessions_cnt_max;
   /**
    * max rx sessions(st20, st22, st30, st40) requested the lib to support,
-   * use st_get_cap to query the actual count.
+   * use mtl_get_cap to query the actual count.
    * dpdk context will allocate the hw resources(queues, memory) based on this number.
    */
   uint16_t rx_sessions_cnt_max;
@@ -372,7 +372,7 @@ struct mtl_cap {
   uint16_t rx_sessions_cnt_max;
   /** max dma dev count for current transport context */
   uint8_t dma_dev_cnt_max;
-  /** the flags in st_init_params */
+  /** the flags in mtl_init_params */
   uint64_t init_flags;
 };
 
@@ -402,49 +402,49 @@ struct mtl_stats {
   uint8_t lcore_cnt;
   /** active dma dev count for current transport context */
   uint8_t dma_dev_cnt;
-  /** if transport device is started(st_start) */
+  /** if transport device is started(mtl_start) */
   uint8_t dev_started;
 };
 
 /**
- * Inline function returning primary port pointer from st_init_params
+ * Inline function returning primary port pointer from mtl_init_params
  * @param p
  *   The pointer to the init parameters.
  * @return
  *     Primary port name pointer
  */
-static inline char* st_p_port(struct mtl_init_params* p) { return p->port[MTL_PORT_P]; }
+static inline char* mtl_p_port(struct mtl_init_params* p) { return p->port[MTL_PORT_P]; }
 
 /**
- * Inline function returning redundant port pointer from st_init_params
+ * Inline function returning redundant port pointer from mtl_init_params
  * @param p
  *   The pointer to the init parameters.
  * @return
  *     Redundant port name pointer
  */
-static inline char* st_r_port(struct mtl_init_params* p) { return p->port[MTL_PORT_R]; }
+static inline char* mtl_r_port(struct mtl_init_params* p) { return p->port[MTL_PORT_R]; }
 
 /**
  * Inline helper function returning primary port source IP address pointer
- * from st_init_params
+ * from mtl_init_params
  * @param p
  *   The pointer to the init parameters.
  * @return
  *     Primary port IP address pointer
  */
-static inline uint8_t* st_p_sip_addr(struct mtl_init_params* p) {
+static inline uint8_t* mtl_p_sip_addr(struct mtl_init_params* p) {
   return p->sip_addr[MTL_PORT_P];
 }
 
 /**
  * Inline helper function returning redundant port source IP address pointer
- * from st_init_params
+ * from mtl_init_params
  * @param p
  *   The pointer to the init parameters.
  * @return
  *     Redundant port IP address pointer
  */
-static inline uint8_t* st_r_sip_addr(struct mtl_init_params* p) {
+static inline uint8_t* mtl_r_sip_addr(struct mtl_init_params* p) {
   return p->sip_addr[MTL_PORT_R];
 }
 
@@ -453,7 +453,7 @@ static inline uint8_t* st_r_sip_addr(struct mtl_init_params* p) {
  * @return
  *     ST version string
  */
-const char* st_version(void);
+const char* mtl_version(void);
 
 /**
  * Initialize the media transport device context which based on DPDK.
@@ -464,7 +464,7 @@ const char* st_version(void);
  *   - NULL on error.
  *   - Otherwise, the handle to the media transport device context.
  */
-mtl_handle st_init(struct mtl_init_params* p);
+mtl_handle mtl_init(struct mtl_init_params* p);
 
 /**
  * Un-initialize the media transport device context.
@@ -475,7 +475,7 @@ mtl_handle st_init(struct mtl_init_params* p);
  *   - 0: Success, device un-initialized.
  *   - <0: Error code of the device un-initialize.
  */
-int st_uninit(mtl_handle st);
+int mtl_uninit(mtl_handle st);
 
 /**
  * Start the media transport device context.
@@ -486,7 +486,7 @@ int st_uninit(mtl_handle st);
  *   - 0: Success, device started.
  *   - <0: Error code of the device start.
  */
-int st_start(mtl_handle st);
+int mtl_start(mtl_handle st);
 
 /**
  * Stop the media transport device context.
@@ -497,7 +497,7 @@ int st_start(mtl_handle st);
  *   - 0: Success, device stopped.
  *   - <0: Error code of the device stop.
  */
-int st_stop(mtl_handle st);
+int mtl_stop(mtl_handle st);
 
 /**
  * Abort the media transport device context.
@@ -509,7 +509,7 @@ int st_stop(mtl_handle st);
  *   - 0: Success, device aborted.
  *   - <0: Error code of the device abort.
  */
-int st_request_exit(mtl_handle st);
+int mtl_request_exit(mtl_handle st);
 
 /**
  * Retrieve the capacity of the media transport device context.
@@ -522,7 +522,7 @@ int st_request_exit(mtl_handle st);
  *   - 0 if successful.
  *   - <0: Error code if fail.
  */
-int st_get_cap(mtl_handle st, struct mtl_cap* cap);
+int mtl_get_cap(mtl_handle st, struct mtl_cap* cap);
 
 /**
  * Retrieve the stat info of the media transport device context.
@@ -535,7 +535,7 @@ int st_get_cap(mtl_handle st, struct mtl_cap* cap);
  *   - 0 if successful.
  *   - <0: Error code if fail.
  */
-int st_get_stats(mtl_handle st, struct mtl_stats* stats);
+int mtl_get_stats(mtl_handle st, struct mtl_stats* stats);
 
 /**
  * Enable or disable sleep mode for sch.
@@ -550,7 +550,7 @@ int st_get_stats(mtl_handle st, struct mtl_stats* stats);
  *   - 0: Success.
  *   - <0: Error code.
  */
-int st_sch_enable_sleep(mtl_handle st, int sch_idx, bool enable);
+int mtl_sch_enable_sleep(mtl_handle st, int sch_idx, bool enable);
 
 /**
  * Set the sleep us for the sch if MTL_FLAG_TASKLET_SLEEP is enabled.
@@ -564,7 +564,7 @@ int st_sch_enable_sleep(mtl_handle st, int sch_idx, bool enable);
  *   - 0: Success.
  *   - <0: Error code.
  */
-int st_sch_set_sleep_us(mtl_handle st, uint64_t us);
+int mtl_sch_set_sleep_us(mtl_handle st, uint64_t us);
 
 /**
  * Request one DPDK lcore from the media transport device context.
@@ -577,7 +577,7 @@ int st_sch_set_sleep_us(mtl_handle st, uint64_t us);
  *   - 0 if successful.
  *   - <0: Error code if fail.
  */
-int st_get_lcore(mtl_handle st, unsigned int* lcore);
+int mtl_get_lcore(mtl_handle st, unsigned int* lcore);
 
 /**
  * Bind one thread to lcore.
@@ -587,12 +587,12 @@ int st_get_lcore(mtl_handle st, unsigned int* lcore);
  * @param thread
  *   the thread wchich request the bind action.
  * @param lcore
- *   the DPDK lcore which requested by st_get_lcore.
+ *   the DPDK lcore which requested by mtl_get_lcore.
  * @return
  *   - 0 if successful.
  *   - <0: Error code if fail.
  */
-int st_bind_to_lcore(mtl_handle st, pthread_t thread, unsigned int lcore);
+int mtl_bind_to_lcore(mtl_handle st, pthread_t thread, unsigned int lcore);
 
 /**
  * Put back the DPDK lcore which requested from the media transport device context.
@@ -600,12 +600,12 @@ int st_bind_to_lcore(mtl_handle st, pthread_t thread, unsigned int lcore);
  * @param st
  *   The handle to the media transport device context.
  * @param lcore
- *   the DPDK lcore which requested by st_get_lcore.
+ *   the DPDK lcore which requested by mtl_get_lcore.
  * @return
  *   - 0 if successful.
  *   - <0: Error code if fail.
  */
-int st_put_lcore(mtl_handle st, unsigned int lcore);
+int mtl_put_lcore(mtl_handle st, unsigned int lcore);
 
 /**
  * Performance optimized memcpy, e.g. AVX-512.
@@ -619,12 +619,12 @@ int st_put_lcore(mtl_handle st, unsigned int lcore);
  * @return
  *   - Pointer to the destination data.
  */
-void* st_memcpy(void* dest, const void* src, size_t n);
+void* mtl_memcpy(void* dest, const void* src, size_t n);
 
 /**
  * Allocate memory from the huge-page area of memory. The memory is not cleared.
  * In NUMA systems, the memory allocated from the same NUMA socket of the port.
- * Note the mmeory is mmap to IOVA already, use st_hp_virt2iova to get the iova.
+ * Note the mmeory is mmap to IOVA already, use mtl_hp_virt2iova to get the iova.
  *
  * @param st
  *   The handle to the media transport device context.
@@ -636,13 +636,13 @@ void* st_memcpy(void* dest, const void* src, size_t n);
  *   - NULL on error. Not enough memory, or invalid arguments
  *   - Otherwise, the pointer to the allocated memory.
  */
-void* st_hp_malloc(mtl_handle st, size_t size, enum mtl_port port);
+void* mtl_hp_malloc(mtl_handle st, size_t size, enum mtl_port port);
 
 /**
  * Allocate zero'ed memory from the huge-page area of memory.
- * Equivalent to st_hp_malloc() except that the memory zone is cleared with zero.
+ * Equivalent to mtl_hp_malloc() except that the memory zone is cleared with zero.
  * In NUMA systems, the memory allocated from the same NUMA socket of the port.
- * Note the mmeory is mmap to IOVA already, use st_hp_virt2iova to get the iova.
+ * Note the mmeory is mmap to IOVA already, use mtl_hp_virt2iova to get the iova.
  *
  * @param st
  *   The handle to the media transport device context.
@@ -654,13 +654,13 @@ void* st_hp_malloc(mtl_handle st, size_t size, enum mtl_port port);
  *   - NULL on error. Not enough memory, or invalid arguments
  *   - Otherwise, the virtual address pointer to the allocated memory.
  */
-void* st_hp_zmalloc(mtl_handle st, size_t size, enum mtl_port port);
+void* mtl_hp_zmalloc(mtl_handle st, size_t size, enum mtl_port port);
 
 /**
  * Frees the memory pointed by the pointer.
  *
  * This pointer must have been returned by a previous call to
- * st_hp_malloc(), st_hp_zmalloc().
+ * mtl_hp_malloc(), mtl_hp_zmalloc().
  * The behaviour is undefined if the pointer does not match this requirement.
  *
  * @param st
@@ -668,20 +668,20 @@ void* st_hp_zmalloc(mtl_handle st, size_t size, enum mtl_port port);
  * @param ptr
  *   The virtual address pointer to memory to be freed.
  */
-void st_hp_free(mtl_handle st, void* ptr);
+void mtl_hp_free(mtl_handle st, void* ptr);
 
 /**
- * Return the IO address of a virtual address from st_hp_malloc/st_hp_zmalloc
+ * Return the IO address of a virtual address from mtl_hp_malloc/mtl_hp_zmalloc
  *
  * @param st
  *   The handle to the media transport device context.
  * @param vaddr
- *   Virtual address obtained from previous st_hp_malloc/st_hp_zmalloc call
+ *   Virtual address obtained from previous mtl_hp_malloc/mtl_hp_zmalloc call
  * @return
  *   MTL_BAD_IOVA on error
  *   otherwise return an address suitable for IO
  */
-mtl_iova_t st_hp_virt2iova(mtl_handle st, const void* vaddr);
+mtl_iova_t mtl_hp_virt2iova(mtl_handle st, const void* vaddr);
 
 /**
  * Return the detected page size on the system.
@@ -691,11 +691,11 @@ mtl_iova_t st_hp_virt2iova(mtl_handle st, const void* vaddr);
  * @return
  *   page size
  */
-size_t st_page_size(mtl_handle st);
+size_t mtl_page_size(mtl_handle st);
 
 /**
  * Perform DMA mapping with virtual address that can be used for IO.
- * The virtual address and size must align to page size(st_page_size).
+ * The virtual address and size must align to page size(mtl_page_size).
  *
  * @param st
  *   The handle to the media transport device context.
@@ -785,7 +785,7 @@ void* st_dma_mem_addr(mtl_dma_mem_handle handle);
 mtl_iova_t st_dma_mem_iova(mtl_dma_mem_handle handle);
 
 /**
- * Allocate a user DMA dev from the dma_dev_port(st_init_params) list.
+ * Allocate a user DMA dev from the dma_dev_port(mtl_init_params) list.
  * In NUMA systems, the dma dev allocated from the same NUMA socket of the port.
  *
  * @param st
@@ -818,10 +818,10 @@ int st_udma_free(mtl_udma_handle handle);
  *   The handle to the st user dma dev.
  * @param dst
  *   The mtl_iova_t address of the destination buffer.
- *   Must be the memory address by st_hp_virt2iova.
+ *   Must be the memory address by mtl_hp_virt2iova.
  * @param src
  *   The mtl_iova_t address of the source buffer.
- *   Must be the memory address by st_hp_virt2iova.
+ *   Must be the memory address by mtl_hp_virt2iova.
  * @param length
  *   The length of the data to be copied.
  *
@@ -839,7 +839,7 @@ int st_udma_copy(mtl_udma_handle handle, mtl_iova_t dst, mtl_iova_t src, uint32_
  *   The handle to the st user dma dev.
  * @param dst
  *   The mtl_iova_t address of the destination buffer.
- *   Must be the memory address by st_hp_virt2iova.
+ *   Must be the memory address by mtl_hp_virt2iova.
  * @param pattern
  *   The pattern(u64) to populate the destination buffer with.
  * @param length
@@ -860,7 +860,7 @@ int st_udma_fill(mtl_udma_handle handle, mtl_iova_t dst, uint64_t pattern,
  *   The handle to the st user dma dev.
  * @param dst
  *   The mtl_iova_t address of the destination buffer.
- *   Must be the memory address by st_hp_virt2iova.
+ *   Must be the memory address by mtl_hp_virt2iova.
  * @param pattern
  *   The pattern(u8) to populate the destination buffer with.
  * @param length
@@ -912,7 +912,7 @@ uint16_t st_udma_completed(mtl_udma_handle handle, const uint16_t nb_cpls);
  * @return
  *   - The time in nanoseconds in current ptp system
  */
-uint64_t st_ptp_read_time(mtl_handle st);
+uint64_t mtl_ptp_read_time(mtl_handle st);
 
 /**
  * Get SIMD level current cpu supported.
@@ -920,7 +920,7 @@ uint64_t st_ptp_read_time(mtl_handle st);
  * @return
  *   - The simd level
  */
-enum mtl_simd_level st_get_simd_level(void);
+enum mtl_simd_level mtl_get_simd_level(void);
 
 /**
  * Get name of CPU simd level
@@ -930,7 +930,7 @@ enum mtl_simd_level st_get_simd_level(void);
  * @return
  *     simd level name
  */
-const char* st_get_simd_level_name(enum mtl_simd_level level);
+const char* mtl_get_simd_level_name(enum mtl_simd_level level);
 
 /**
  * Helper function to get pmd type by port name.
@@ -940,7 +940,7 @@ const char* st_get_simd_level_name(enum mtl_simd_level level);
  * @return
  *   pmd type.
  */
-enum mtl_pmd_type st_pmd_by_port_name(const char* port);
+enum mtl_pmd_type mtl_pmd_by_port_name(const char* port);
 
 /**
  * Helper function to get ip for interface.
@@ -953,7 +953,7 @@ enum mtl_pmd_type st_pmd_by_port_name(const char* port);
  *   - 0: Success.
  *   - <0: Error code.
  */
-int st_get_if_ip(char* if_name, uint8_t ip[MTL_IP_ADDR_LEN]);
+int mtl_get_if_ip(char* if_name, uint8_t ip[MTL_IP_ADDR_LEN]);
 
 /**
  * Helper function which align a size with pages
@@ -965,7 +965,7 @@ int st_get_if_ip(char* if_name, uint8_t ip[MTL_IP_ADDR_LEN]);
  * @return
  *     The aligned size.
  */
-static inline size_t st_size_page_align(size_t sz, size_t pg_sz) {
+static inline size_t mtl_size_page_align(size_t sz, size_t pg_sz) {
   if (sz % pg_sz) sz += pg_sz - (sz % pg_sz);
   return sz;
 }

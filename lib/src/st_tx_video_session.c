@@ -130,7 +130,7 @@ static int tv_alloc_frames(struct mtl_main_impl* impl,
         return -ENOMEM;
       }
       if (st22_info) { /* copy boxes */
-        st_memcpy(frame, &st22_info->st22_boxes, s->st22_box_hdr_length);
+        mtl_memcpy(frame, &st22_info->st22_boxes, s->st22_box_hdr_length);
       }
       frame_info->iova = rte_mem_virt2iova(frame);
       frame_info->addr = frame;
@@ -554,8 +554,8 @@ static int tv_init_hdr(struct mtl_main_impl* impl, struct st_tx_video_session_im
   ipv4->type_of_service = 0;
   ipv4->fragment_offset = ST_IP_DONT_FRAGMENT_FLAG;
   ipv4->next_proto_id = 17;
-  st_memcpy(&ipv4->src_addr, sip, MTL_IP_ADDR_LEN);
-  st_memcpy(&ipv4->dst_addr, dip, MTL_IP_ADDR_LEN);
+  mtl_memcpy(&ipv4->src_addr, sip, MTL_IP_ADDR_LEN);
+  mtl_memcpy(&ipv4->dst_addr, dip, MTL_IP_ADDR_LEN);
 
   /* udp hdr */
   udp->src_port = htons(s->st20_src_port[s_port]);
@@ -581,7 +581,7 @@ static int tv_init_hdr(struct mtl_main_impl* impl, struct st_tx_video_session_im
   if (s->st22_info) {
     struct st22_rfc9134_rtp_hdr* st22_hdr = &s->st22_info->rtp_hdr[s_port];
     /* copy base */
-    st_memcpy(&st22_hdr->base, &rtp->base, sizeof(st22_hdr->base));
+    mtl_memcpy(&st22_hdr->base, &rtp->base, sizeof(st22_hdr->base));
     st22_hdr->trans_order = 1; /* packets sent sequentially */
     st22_hdr->kmode = 0;       /* codestream packetization mode */
     st22_hdr->f_counter_hi = 0;
@@ -679,9 +679,9 @@ static int tv_build_pkt(struct mtl_main_impl* impl, struct st_tx_video_session_i
     /* cross lines with padding case */
     /* do not attach extbuf, copy to data room */
     void* payload = rte_pktmbuf_mtod(pkt_chain, void*);
-    st_memcpy(payload, frame_info->addr + offset, line1_length);
-    st_memcpy(payload + line1_length,
-              frame_info->addr + s->st20_linesize * (line1_number + 1), line2_length);
+    mtl_memcpy(payload, frame_info->addr + offset, line1_length);
+    mtl_memcpy(payload + line1_length,
+               frame_info->addr + s->st20_linesize * (line1_number + 1), line2_length);
   } else {
     /* attach payload to chainbuf */
     rte_pktmbuf_attach_extbuf(pkt_chain, frame_info->addr + offset,

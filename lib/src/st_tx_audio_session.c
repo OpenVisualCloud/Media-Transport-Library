@@ -158,8 +158,8 @@ static int tx_audio_session_init_hdr(struct mtl_main_impl* impl,
   ipv4->fragment_offset = ST_IP_DONT_FRAGMENT_FLAG;
   ipv4->total_length = htons(s->pkt_len + ST_PKT_AUDIO_HDR_LEN);
   ipv4->next_proto_id = 17;
-  st_memcpy(&ipv4->src_addr, sip, MTL_IP_ADDR_LEN);
-  st_memcpy(&ipv4->dst_addr, dip, MTL_IP_ADDR_LEN);
+  mtl_memcpy(&ipv4->src_addr, sip, MTL_IP_ADDR_LEN);
+  mtl_memcpy(&ipv4->dst_addr, dip, MTL_IP_ADDR_LEN);
 
   /* udp hdr */
   udp->src_port = htons(s->st30_src_port[s_port]);

@@ -126,7 +126,7 @@ static int tx_video_next_frame(void* priv, uint16_t* next_frame_idx,
 
     struct st20_ext_frame ext_frame;
     ext_frame.buf_addr = fi[0]->frame_addr + s->fb_offset;
-    ext_frame.buf_iova = st_hp_virt2iova(app->st, fi[0]->frame_addr) + s->fb_offset;
+    ext_frame.buf_iova = mtl_hp_virt2iova(app->st, fi[0]->frame_addr) + s->fb_offset;
     ext_frame.buf_len = 3840 * 2160 * 5 / 4; /* 2 1080p framesize */
     st20_tx_set_ext_frame(s->tx_handle, consumer_idx, &ext_frame);
 
@@ -293,14 +293,14 @@ int main(int argc, char** argv) {
   app.ready = true;
 
   // start dev
-  ret = st_start(ctx.st);
+  ret = mtl_start(ctx.st);
 
   while (!ctx.exit) {
     sleep(1);
   }
 
   // stop dev
-  ret = st_stop(ctx.st);
+  ret = mtl_stop(ctx.st);
   info("%s, fb_fwd %d\n", __func__, app.fb_fwd);
   app.ready = false;
 

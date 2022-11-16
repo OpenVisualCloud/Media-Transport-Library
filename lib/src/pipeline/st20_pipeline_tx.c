@@ -352,7 +352,7 @@ static int tx_st20p_init_src_fbs(struct mtl_main_impl* impl, struct st20p_tx_ctx
               st_frame_least_linesize(frames[i].src.fmt, frames[i].src.width, plane);
           if (plane == 0) {
             frames[i].src.addr[plane] = src;
-            frames[i].src.iova[plane] = st_hp_virt2iova(ctx->impl, src);
+            frames[i].src.iova[plane] = mtl_hp_virt2iova(ctx->impl, src);
           } else {
             frames[i].src.addr[plane] =
                 frames[i].src.addr[plane - 1] +

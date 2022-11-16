@@ -42,7 +42,7 @@ typedef struct st20r_rx_ctx* st20r_rx_handle;
 /**
  * Flag bit in flags of struct st20r_rx_ops.
  * If set, lib will try to allocate DMA memory copy offload from
- * dma_dev_port(st_init_params) list.
+ * dma_dev_port(mtl_init_params) list.
  * Pls note it could fallback to CPU if no DMA device is available.
  */
 #define ST20R_RX_FLAG_DMA_OFFLOAD (MTL_BIT32(17))
@@ -66,7 +66,7 @@ struct st20r_rx_ops {
   uint8_t sip_addr[MTL_PORT_MAX][MTL_IP_ADDR_LEN];
   /** num of ports this session attached to, must be 2 */
   uint8_t num_port;
-  /** Pcie BDF path like 0000:af:00.0, should align to BDF of st_init */
+  /** Pcie BDF path like 0000:af:00.0, should align to BDF of mtl_init */
   char port[MTL_PORT_MAX][MTL_PORT_MAX_LEN];
   /** UDP port number */
   uint16_t udp_port[MTL_PORT_MAX];

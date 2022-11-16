@@ -57,7 +57,7 @@ static int st22_next_video_frame_timestamp(void* priv, uint16_t* next_frame_idx,
   *next_frame_idx = ctx->fb_idx;
   meta->codestream_size = ctx->frame_size;
   meta->tfmt = ST10_TIMESTAMP_FMT_TAI;
-  meta->timestamp = st_ptp_read_time(ctx->ctx->handle) + 35 * 1000 * 1000;
+  meta->timestamp = mtl_ptp_read_time(ctx->ctx->handle) + 35 * 1000 * 1000;
   dbg("%s, next_frame_idx %d frame_size %ld\n", __func__, *next_frame_idx,
       meta->codestream_size);
   ctx->fb_idx++;
@@ -152,7 +152,7 @@ static void st22_tx_assert_cnt(int expect_s22_tx_cnt) {
   struct mtl_stats stats;
   int ret;
 
-  ret = st_get_stats(handle, &stats);
+  ret = mtl_get_stats(handle, &stats);
   EXPECT_GE(ret, 0);
   EXPECT_EQ(stats.st22_tx_sessions_cnt, expect_s22_tx_cnt);
 }
@@ -163,7 +163,7 @@ static void st22_rx_assert_cnt(int expect_s22_rx_cnt) {
   struct mtl_stats stats;
   int ret;
 
-  ret = st_get_stats(handle, &stats);
+  ret = mtl_get_stats(handle, &stats);
   EXPECT_GE(ret, 0);
   EXPECT_EQ(stats.st22_rx_sessions_cnt, expect_s22_rx_cnt);
 }
@@ -230,9 +230,9 @@ static int st22_tx_build_rtp_packet(tests_context* s, struct st22_rfc9134_rtp_hd
   /* todo: build the payload data */
   if (s->check_sha) {
     uint8_t* payload = (uint8_t*)rtp + sizeof(*rtp);
-    st_memcpy(payload,
-              s->frame_buf[s->fb_idx % TEST_SHA_HIST_NUM] + s->pkt_idx * data_len,
-              data_len);
+    mtl_memcpy(payload,
+               s->frame_buf[s->fb_idx % TEST_SHA_HIST_NUM] + s->pkt_idx * data_len,
+               data_len);
   }
 
   s->pkt_idx++;
@@ -298,7 +298,7 @@ static void st22_rx_handle_rtp(tests_context* s, struct st22_rfc9134_rtp_hdr* hd
   if (index < 0) {
     index = index + 0x10000;
   }
-  st_memcpy(frame + index * (mbuf_len - sizeof(*hdr)), payload, mbuf_len - sizeof(*hdr));
+  mtl_memcpy(frame + index * (mbuf_len - sizeof(*hdr)), payload, mbuf_len - sizeof(*hdr));
   return;
 }
 
@@ -475,7 +475,7 @@ static void st22_rx_fps_test(enum st22_type type[], enum st_fps fps[], int width
     test_ctx_rx[i]->handle = rx_handle[i];
   }
 
-  ret = st_start(m_handle);
+  ret = mtl_start(m_handle);
   EXPECT_GE(ret, 0);
   sleep(10);
 
@@ -500,7 +500,7 @@ static void st22_rx_fps_test(enum st22_type type[], enum st_fps fps[], int width
     }
   }
 
-  ret = st_stop(m_handle);
+  ret = mtl_stop(m_handle);
   EXPECT_GE(ret, 0);
   for (int i = 0; i < sessions; i++) {
     EXPECT_GT(test_ctx_rx[i]->fb_rec, 0);
@@ -662,7 +662,7 @@ static void st22_rx_update_src_test(int tx_sessions) {
     ASSERT_TRUE(rx_handle[i] != NULL);
   }
 
-  ret = st_start(m_handle);
+  ret = mtl_start(m_handle);
   EXPECT_GE(ret, 0);
   sleep(10);
 
@@ -738,7 +738,7 @@ static void st22_rx_update_src_test(int tx_sessions) {
     EXPECT_NEAR(framerate[i], expect_framerate[i], expect_framerate[i] * 0.1);
   }
 
-  ret = st_stop(m_handle);
+  ret = mtl_stop(m_handle);
   EXPECT_GE(ret, 0);
 
   /* free all tx and rx */
@@ -784,7 +784,7 @@ static void st22_rx_after_start_test(enum st_fps fps[], int width[], int height[
   expect_framerate.resize(sessions);
   framerate.resize(sessions);
 
-  ret = st_start(m_handle);
+  ret = mtl_start(m_handle);
   EXPECT_GE(ret, 0);
   sleep(1);
 
@@ -910,7 +910,7 @@ static void st22_rx_after_start_test(enum st_fps fps[], int width[], int height[
     sleep(1);
   }
 
-  ret = st_stop(m_handle);
+  ret = mtl_stop(m_handle);
   EXPECT_GE(ret, 0);
 }
 
@@ -1041,7 +1041,7 @@ static void st22_rx_dump_test(enum st_fps fps[], int width[], int height[],
     ASSERT_TRUE(rx_handle[i] != NULL);
   }
 
-  ret = st_start(m_handle);
+  ret = mtl_start(m_handle);
   EXPECT_GE(ret, 0);
 
   sleep(5);
@@ -1061,7 +1061,7 @@ static void st22_rx_dump_test(enum st_fps fps[], int width[], int height[],
     framerate[i] = test_ctx_rx[i]->fb_rec / time_sec;
   }
 
-  ret = st_stop(m_handle);
+  ret = mtl_stop(m_handle);
   EXPECT_GE(ret, 0);
   for (int i = 0; i < sessions; i++) {
     ret = st22_tx_free(tx_handle[i]);
@@ -1281,7 +1281,7 @@ static void st22_rx_digest_test(enum st_fps fps[], int width[], int height[],
     EXPECT_GE(ret, 0);
   }
 
-  ret = st_start(m_handle);
+  ret = mtl_start(m_handle);
   EXPECT_GE(ret, 0);
   sleep(10);
 
@@ -1294,7 +1294,7 @@ static void st22_rx_digest_test(enum st_fps fps[], int width[], int height[],
     sha_check[i].join();
   }
 
-  ret = st_stop(m_handle);
+  ret = mtl_stop(m_handle);
   EXPECT_GE(ret, 0);
   for (int i = 0; i < sessions; i++) {
     EXPECT_GT(test_ctx_rx[i]->fb_rec, 0);
@@ -1443,7 +1443,7 @@ static void st22_tx_user_pacing_test(int width[], int height[], int pkt_data_len
     test_ctx_rx[i]->handle = rx_handle[i];
   }
 
-  ret = st_start(m_handle);
+  ret = mtl_start(m_handle);
   EXPECT_GE(ret, 0);
   sleep(10);
 
@@ -1455,7 +1455,7 @@ static void st22_tx_user_pacing_test(int width[], int height[], int pkt_data_len
     tx_framerate[i] = test_ctx_tx[i]->fb_send / time_sec;
   }
 
-  ret = st_stop(m_handle);
+  ret = mtl_stop(m_handle);
   EXPECT_GE(ret, 0);
   for (int i = 0; i < sessions; i++) {
     EXPECT_GT(test_ctx_rx[i]->fb_rec, 0);
