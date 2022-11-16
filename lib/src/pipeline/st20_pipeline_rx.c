@@ -377,10 +377,9 @@ static int rx_st20p_init_dst_fbs(struct mtl_main_impl* impl, struct st20p_rx_ctx
           frames[i].dst.addr[plane] = ops->ext_frames[i].addr[plane];
           frames[i].dst.iova[plane] = ops->ext_frames[i].iova[plane];
           frames[i].dst.linesize[plane] = ops->ext_frames[i].linesize[plane];
-          frames[i].dst.buffer_size = ops->ext_frames[i].size;
-          frames[i].dst.data_size = ops->ext_frames[i].size;
-          frames[i].dst.opaque = ops->ext_frames[i].opaque;
         }
+        frames[i].dst.buffer_size = frames[i].dst.data_size = ops->ext_frames[i].size;
+        frames[i].dst.opaque = ops->ext_frames[i].opaque;
       } else if (ops->flags & ST20P_RX_FLAG_EXT_FRAME) {
         for (uint8_t plane = 0; plane < planes; plane++) {
           frames[i].dst.addr[plane] = NULL;
