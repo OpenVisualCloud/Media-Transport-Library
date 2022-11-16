@@ -5,7 +5,7 @@
 #ifndef _ST22_PLUGIN_SAMPLE_H_
 #define _ST22_PLUGIN_SAMPLE_H_
 
-#include <st_pipeline_api.h>
+#include <mtl/st_pipeline_api.h>
 
 #define MAX_SAMPLE_ENCODER_SESSIONS (8)
 #define MAX_SAMPLE_DECODER_SESSIONS (8)

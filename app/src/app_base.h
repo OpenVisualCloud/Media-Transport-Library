@@ -7,14 +7,14 @@
 #include <SDL2/SDL_ttf.h>
 #endif
 #include <errno.h>
+#include <mtl/st20_api.h>
+#include <mtl/st20_redundant_api.h>
+#include <mtl/st30_api.h>
+#include <mtl/st40_api.h>
+#include <mtl/st_pipeline_api.h>
 #include <pcap.h>
 #include <pthread.h>
 #include <signal.h>
-#include <mtl/st20_api.h>
-#include <mtl/st20_redundant_api.h>
-#include <mtl/st_pipeline_api.h>
-#include <mtl/st30_api.h>
-#include <mtl/st40_api.h>
 #include <stdbool.h>
 #include <stddef.h>
 #include <stdlib.h>

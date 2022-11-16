@@ -5,7 +5,8 @@
 #ifndef _CONVERT_PLUGIN_SAMPLE_H_
 #define _CONVERT_PLUGIN_SAMPLE_H_
 
-#include <st_pipeline_api.h>
+#include <mtl/st_convert_api.h>
+#include <mtl/st_pipeline_api.h>
 
 #define MAX_COLOR_CONVERT_SESSIONS (8)
 

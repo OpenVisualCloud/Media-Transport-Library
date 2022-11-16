@@ -7,11 +7,11 @@
 
 #include <errno.h>
 #include <fcntl.h>
-#include <pthread.h>
-#include <signal.h>
+#include <mtl/st20_redundant_api.h>
 #include <mtl/st_convert_api.h>
 #include <mtl/st_pipeline_api.h>
-#include <mtl/st20_redundant_api.h>
+#include <pthread.h>
+#include <signal.h>
 #include <stdbool.h>
 #include <stddef.h>
 #include <stdlib.h>

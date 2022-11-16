@@ -9,7 +9,7 @@ add_global_arguments('-DALLOW_EXPERIMENTAL_API', language : 'c')
 
 cc = meson.get_compiler('c')
 
-libst_dpdk_dep = dependency('libst_dpdk', required : true)
+mtl_dep = dependency('mtl', required : true)
 libpthread_dep = cc.find_library('pthread', required : true)
 ffmpeg_avcodec_dep = dependency('libavcodec', required : true)
 ffmpeg_avutil_dep = dependency('libavutil', required : true)
@@ -29,6 +29,6 @@ st22_ffmpeg_plugin_sources = files('st22_ffmpeg_plugin.c')
 shared_library('st_plugin_st22_ffmpeg', st22_ffmpeg_plugin_sources,
   c_args : st22_ffmpeg_plugin_c_args,
   link_args : st22_ffmpeg_plugin_ld_args,
-  dependencies: [libst_dpdk_dep, libpthread_dep, ffmpeg_avcodec_dep, ffmpeg_avutil_dep],
+  dependencies: [mtl_dep, libpthread_dep, ffmpeg_avcodec_dep, ffmpeg_avutil_dep],
   install: true
 )

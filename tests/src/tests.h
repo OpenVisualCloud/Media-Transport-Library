@@ -6,12 +6,11 @@
 
 #include <gtest/gtest.h>
 #include <math.h>
+#include <mtl/st30_api.h>
+#include <mtl/st40_api.h>
+#include <mtl/st_convert_api.h>
+#include <mtl/st_pipeline_api.h>
 #include <openssl/sha.h>
-#include <st20_dpdk_api.h>
-#include <st30_dpdk_api.h>
-#include <st40_dpdk_api.h>
-#include <st_convert_api.h>
-#include <st_pipeline_api.h>
 
 #include <condition_variable>
 #include <mutex>
