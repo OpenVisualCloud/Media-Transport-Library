@@ -9,7 +9,7 @@
 #include "st_simd.h"
 #include "st_util.h"
 
-#ifdef ST_HAS_AVX512_VBMI2
+#ifdef MTL_HAS_AVX512_VBMI2
 static uint8_t b2l_permute_mask_table_512[16 * 4] = {
     /* b0 - b7 */
     1,

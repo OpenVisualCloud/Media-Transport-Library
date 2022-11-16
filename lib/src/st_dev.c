@@ -2006,10 +2006,10 @@ int st_dev_if_init(struct st_main_impl* impl) {
       if (st_has_ptp_service(impl)) {
         inf->max_tx_queues++;
       }
-#ifdef ST_HAS_KNI
+#ifdef MTL_HAS_KNI
       inf->max_tx_queues++; /* kni tx queue */
 #endif
-#ifdef ST_HAS_TAP
+#ifdef MTL_HAS_TAP
       inf->max_tx_queues++; /* tap tx queue */
 #endif
       if (st_no_system_rx_queues(impl)) {
@@ -2021,7 +2021,7 @@ int st_dev_if_init(struct st_main_impl* impl) {
           inf->max_rx_queues++;
           inf->system_rx_queues_end++;
         }
-#ifdef ST_HAS_TAP
+#ifdef MTL_HAS_TAP
         inf->max_rx_queues++;
         inf->system_rx_queues_end++;
 #endif

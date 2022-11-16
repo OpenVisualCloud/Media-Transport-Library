@@ -7,7 +7,7 @@
 
 #include "st_main.h"
 
-#ifdef ST_HAS_TAP
+#ifdef MTL_HAS_TAP
 #ifdef __MINGW32__
 #include <ddk/ndisguid.h>
 #else

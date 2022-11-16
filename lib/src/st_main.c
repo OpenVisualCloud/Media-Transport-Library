@@ -531,7 +531,7 @@ int st_uninit(st_handle st) {
 
   st_dev_uinit(p);
 
-#ifdef ST_HAS_ASAN
+#ifdef MTL_HAS_ASAN
   st_asan_check();
 #endif
 
@@ -844,8 +844,8 @@ const char* st_version(void) {
   static char version[128];
   if (version[0] != 0) return version;
 
-  snprintf(version, sizeof(version), "%d.%d.%d %s %s %s", ST_VERSION_MAJOR,
-           ST_VERSION_MINOR, ST_VERSION_LAST, __TIMESTAMP__, __ST_GIT__, ST_COMPILER);
+  snprintf(version, sizeof(version), "%d.%d.%d %s %s %s", MTL_VERSION_MAJOR,
+           MTL_VERSION_MINOR, MTL_VERSION_LAST, __TIMESTAMP__, __MTL_GIT__, MTL_COMPILER);
 
   return version;
 }

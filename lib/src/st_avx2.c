@@ -9,7 +9,7 @@
 #include "st_simd.h"
 #include "st_util.h"
 
-#ifdef ST_HAS_AVX2
+#ifdef MTL_HAS_AVX2
 ST_TARGET_CODE_START_AVX2
 /* begin st20_rfc4175_422be10_to_422le10_avx2 */
 static uint8_t rfc4175_b2l_shuffle_l0_tbl[16] = {

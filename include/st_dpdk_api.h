@@ -23,7 +23,7 @@
 extern "C" {
 #endif
 
-#include <st_build_config.h>
+#include <mtl_build_config.h>
 
 /**
  * Macro to compute a version number usable for comparisons
@@ -32,7 +32,7 @@ extern "C" {
 /**
  * All version numbers in one to compare with ST_VERSION_NUM()
  */
-#define ST_VERSION ST_VERSION_NUM(ST_VERSION_MAJOR, ST_VERSION_MINOR, ST_VERSION_LAST)
+#define ST_VERSION ST_VERSION_NUM(MTL_VERSION_MAJOR, MTL_VERSION_MINOR, MTL_VERSION_LAST)
 
 /**
  * Get the uint64_t value for a specified bit set(0 to 63).

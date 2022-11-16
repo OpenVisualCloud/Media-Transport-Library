@@ -8,7 +8,7 @@
 #include <rte_arp.h>
 #include <rte_errno.h>
 #include <rte_ethdev.h>
-#ifdef ST_HAS_KNI
+#ifdef MTL_HAS_KNI
 #include <rte_kni.h>
 #endif
 #include <rte_tm.h>
@@ -288,7 +288,7 @@ struct st_cni_impl {
   struct st_sch_tasklet_impl* tasklet;
   /* stat */
   int eth_rx_cnt[ST_PORT_MAX];
-#ifdef ST_HAS_KNI
+#ifdef MTL_HAS_KNI
   bool has_kni_kmod;
   rte_atomic32_t if_up[ST_PORT_MAX];
   struct rte_kni_conf conf[ST_PORT_MAX];
@@ -300,7 +300,7 @@ struct st_cni_impl {
   int kni_rx_cnt[ST_PORT_MAX];
 #endif
 
-#ifdef ST_HAS_TAP
+#ifdef MTL_HAS_TAP
   pthread_t tap_bkg_tid; /* bkg thread id for tap */
   rte_atomic32_t stop_tap;
   uint16_t tap_tx_q_id[ST_PORT_MAX]; /* tap tx queue id */

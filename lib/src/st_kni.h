@@ -7,7 +7,7 @@
 
 #include "st_main.h"
 
-#ifdef ST_HAS_KNI
+#ifdef MTL_HAS_KNI
 int st_kni_init(struct st_main_impl* impl);
 int st_kni_uinit(struct st_main_impl* impl);
 int st_kni_handle(struct st_main_impl* impl, enum st_port port, struct rte_mbuf** rx_pkts,

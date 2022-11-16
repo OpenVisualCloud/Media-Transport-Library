@@ -7,7 +7,7 @@
 #include "st_log.h"
 #include "st_main.h"
 
-#ifdef ST_HAS_ASAN
+#ifdef MTL_HAS_ASAN
 /* additional memleak check for rte_malloc since dpdk asan not support this */
 static int g_st_rte_malloc_cnt;
 

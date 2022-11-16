@@ -117,7 +117,7 @@ int shmget(key_t key, size_t size, int shmflg);
 
 typedef void* pthread_cond_t;
 typedef int pthread_condattr_t;
-#ifdef __ST_BUILD__  // only lib need this typedef, app do not need
+#ifdef __MTL_LIB_BUILD__  // only lib need this typedef
 typedef rte_cpuset_t cpu_set_t;
 #endif
 #define localtime_r(T, Tm) (localtime_s(Tm, T) ? NULL : Tm)

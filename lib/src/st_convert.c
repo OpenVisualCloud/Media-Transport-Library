@@ -7,15 +7,15 @@
 #include "st_log.h"
 #include "st_main.h"
 
-#ifdef ST_HAS_AVX2
+#ifdef MTL_HAS_AVX2
 #include "st_avx2.h"
 #endif
 
-#ifdef ST_HAS_AVX512
+#ifdef MTL_HAS_AVX512
 #include "st_avx512.h"
 #endif
 
-#ifdef ST_HAS_AVX512_VBMI2
+#ifdef MTL_HAS_AVX512_VBMI2
 #include "st_avx512_vbmi.h"
 #endif
 
@@ -580,7 +580,7 @@ int st20_yuv422p10le_to_rfc4175_422be10_simd(uint16_t* y, uint16_t* b, uint16_t*
   ST_MAY_UNUSED(cpu_level);
   ST_MAY_UNUSED(ret);
 
-#ifdef ST_HAS_AVX512
+#ifdef MTL_HAS_AVX512
   if ((level >= ST_SIMD_LEVEL_AVX512) && (cpu_level >= ST_SIMD_LEVEL_AVX512)) {
     dbg("%s, avx512 ways\n", __func__);
     ret = st20_yuv422p10le_to_rfc4175_422be10_avx512(y, b, r, pg, w, h);
@@ -603,7 +603,7 @@ int st20_yuv422p10le_to_rfc4175_422be10_simd_dma(
   ST_MAY_UNUSED(cpu_level);
   ST_MAY_UNUSED(ret);
 
-#ifdef ST_HAS_AVX512
+#ifdef MTL_HAS_AVX512
   if ((level >= ST_SIMD_LEVEL_AVX512) && (cpu_level >= ST_SIMD_LEVEL_AVX512)) {
     dbg("%s, avx512 ways\n", __func__);
     ret = st20_yuv422p10le_to_rfc4175_422be10_avx512_dma(udma, y, y_iova, b, b_iova, r,
@@ -649,7 +649,7 @@ int st20_rfc4175_422be10_to_yuv422p10le_simd(struct st20_rfc4175_422_10_pg2_be* 
   ST_MAY_UNUSED(cpu_level);
   ST_MAY_UNUSED(ret);
 
-#ifdef ST_HAS_AVX512_VBMI2
+#ifdef MTL_HAS_AVX512_VBMI2
   if ((level >= ST_SIMD_LEVEL_AVX512_VBMI2) &&
       (cpu_level >= ST_SIMD_LEVEL_AVX512_VBMI2)) {
     dbg("%s, avx512_vbmi ways\n", __func__);
@@ -659,7 +659,7 @@ int st20_rfc4175_422be10_to_yuv422p10le_simd(struct st20_rfc4175_422_10_pg2_be* 
   }
 #endif
 
-#ifdef ST_HAS_AVX512
+#ifdef MTL_HAS_AVX512
   if ((level >= ST_SIMD_LEVEL_AVX512) && (cpu_level >= ST_SIMD_LEVEL_AVX512)) {
     dbg("%s, avx512 ways\n", __func__);
     ret = st20_rfc4175_422be10_to_yuv422p10le_avx512(pg, y, b, r, w, h);
@@ -683,7 +683,7 @@ int st20_rfc4175_422be10_to_yuv422p10le_simd_dma(st_udma_handle udma,
   ST_MAY_UNUSED(cpu_level);
   ST_MAY_UNUSED(ret);
 
-#ifdef ST_HAS_AVX512_VBMI2
+#ifdef MTL_HAS_AVX512_VBMI2
   if ((level >= ST_SIMD_LEVEL_AVX512_VBMI2) &&
       (cpu_level >= ST_SIMD_LEVEL_AVX512_VBMI2)) {
     dbg("%s, avx512_vbmi ways\n", __func__);
@@ -694,7 +694,7 @@ int st20_rfc4175_422be10_to_yuv422p10le_simd_dma(st_udma_handle udma,
   }
 #endif
 
-#ifdef ST_HAS_AVX512
+#ifdef MTL_HAS_AVX512
   if ((level >= ST_SIMD_LEVEL_AVX512) && (cpu_level >= ST_SIMD_LEVEL_AVX512)) {
     dbg("%s, avx512 ways\n", __func__);
     ret = st20_rfc4175_422be10_to_yuv422p10le_avx512_dma(udma, pg_be, pg_be_iova, y, b, r,
@@ -795,7 +795,7 @@ int st20_rfc4175_422be10_to_422le10_simd(struct st20_rfc4175_422_10_pg2_be* pg_b
   ST_MAY_UNUSED(cpu_level);
   ST_MAY_UNUSED(ret);
 
-#ifdef ST_HAS_AVX512_VBMI2
+#ifdef MTL_HAS_AVX512_VBMI2
   if ((level >= ST_SIMD_LEVEL_AVX512_VBMI2) &&
       (cpu_level >= ST_SIMD_LEVEL_AVX512_VBMI2)) {
     dbg("%s, avx512_vbmi ways\n", __func__);
@@ -805,7 +805,7 @@ int st20_rfc4175_422be10_to_422le10_simd(struct st20_rfc4175_422_10_pg2_be* pg_b
   }
 #endif
 
-#ifdef ST_HAS_AVX512
+#ifdef MTL_HAS_AVX512
   if ((level >= ST_SIMD_LEVEL_AVX512) && (cpu_level >= ST_SIMD_LEVEL_AVX512)) {
     dbg("%s, avx512 ways\n", __func__);
     ret = st20_rfc4175_422be10_to_422le10_avx512(pg_be, pg_le, w, h);
@@ -814,7 +814,7 @@ int st20_rfc4175_422be10_to_422le10_simd(struct st20_rfc4175_422_10_pg2_be* pg_b
   }
 #endif
 
-#ifdef ST_HAS_AVX2
+#ifdef MTL_HAS_AVX2
   if ((level >= ST_SIMD_LEVEL_AVX2) && (cpu_level >= ST_SIMD_LEVEL_AVX2)) {
     dbg("%s, avx2 ways\n", __func__);
     ret = st20_rfc4175_422be10_to_422le10_avx2(pg_be, pg_le, w, h);
@@ -841,7 +841,7 @@ int st20_rfc4175_422be10_to_422le10_simd_dma(st_udma_handle udma,
   ST_MAY_UNUSED(ret);
   ST_MAY_UNUSED(dma);
 
-#ifdef ST_HAS_AVX512_VBMI2
+#ifdef MTL_HAS_AVX512_VBMI2
   if ((level >= ST_SIMD_LEVEL_AVX512_VBMI2) &&
       (cpu_level >= ST_SIMD_LEVEL_AVX512_VBMI2)) {
     dbg("%s, avx512_vbmi ways\n", __func__);
@@ -852,7 +852,7 @@ int st20_rfc4175_422be10_to_422le10_simd_dma(st_udma_handle udma,
   }
 #endif
 
-#ifdef ST_HAS_AVX512
+#ifdef MTL_HAS_AVX512
   if ((level >= ST_SIMD_LEVEL_AVX512) && (cpu_level >= ST_SIMD_LEVEL_AVX512)) {
     dbg("%s, avx512 ways\n", __func__);
     ret = st20_rfc4175_422be10_to_422le10_avx512_dma(dma, pg_be, pg_be_iova, pg_le, w, h);
@@ -903,7 +903,7 @@ int st20_rfc4175_422le10_to_422be10_simd(struct st20_rfc4175_422_10_pg2_le* pg_l
   ST_MAY_UNUSED(cpu_level);
   ST_MAY_UNUSED(ret);
 
-#ifdef ST_HAS_AVX512_VBMI2
+#ifdef MTL_HAS_AVX512_VBMI2
   if ((level >= ST_SIMD_LEVEL_AVX512_VBMI2) &&
       (cpu_level >= ST_SIMD_LEVEL_AVX512_VBMI2)) {
     dbg("%s, avx512_vbmi ways\n", __func__);
@@ -913,7 +913,7 @@ int st20_rfc4175_422le10_to_422be10_simd(struct st20_rfc4175_422_10_pg2_le* pg_l
   }
 #endif
 
-#ifdef ST_HAS_AVX512
+#ifdef MTL_HAS_AVX512
   if ((level >= ST_SIMD_LEVEL_AVX512) && (cpu_level >= ST_SIMD_LEVEL_AVX512)) {
     dbg("%s, avx512 ways\n", __func__);
     ret = st20_rfc4175_422le10_to_422be10_avx512(pg_le, pg_be, w, h);
@@ -922,7 +922,7 @@ int st20_rfc4175_422le10_to_422be10_simd(struct st20_rfc4175_422_10_pg2_le* pg_l
   }
 #endif
 
-#ifdef ST_HAS_AVX2
+#ifdef MTL_HAS_AVX2
   if ((level >= ST_SIMD_LEVEL_AVX2) && (cpu_level >= ST_SIMD_LEVEL_AVX2)) {
     dbg("%s, avx2 ways\n", __func__);
     ret = st20_rfc4175_422le10_to_422be10_avx2(pg_le, pg_be, w, h);
@@ -949,7 +949,7 @@ int st20_rfc4175_422le10_to_422be10_simd_dma(st_udma_handle udma,
   ST_MAY_UNUSED(ret);
   ST_MAY_UNUSED(dma);
 
-#ifdef ST_HAS_AVX512_VBMI2
+#ifdef MTL_HAS_AVX512_VBMI2
   if ((level >= ST_SIMD_LEVEL_AVX512_VBMI2) &&
       (cpu_level >= ST_SIMD_LEVEL_AVX512_VBMI2)) {
     dbg("%s, avx512_vbmi ways\n", __func__);
@@ -960,7 +960,7 @@ int st20_rfc4175_422le10_to_422be10_simd_dma(st_udma_handle udma,
   }
 #endif
 
-#ifdef ST_HAS_AVX512
+#ifdef MTL_HAS_AVX512
   if ((level >= ST_SIMD_LEVEL_AVX512) && (cpu_level >= ST_SIMD_LEVEL_AVX512)) {
     dbg("%s, avx512 ways\n", __func__);
     ret = st20_rfc4175_422le10_to_422be10_avx512_dma(dma, pg_le, pg_le_iova, pg_be, w, h);
@@ -998,7 +998,7 @@ int st20_rfc4175_422be10_to_422le8_simd(struct st20_rfc4175_422_10_pg2_be* pg_10
   ST_MAY_UNUSED(cpu_level);
   ST_MAY_UNUSED(ret);
 
-#ifdef ST_HAS_AVX512_VBMI2
+#ifdef MTL_HAS_AVX512_VBMI2
   if ((level >= ST_SIMD_LEVEL_AVX512_VBMI2) &&
       (cpu_level >= ST_SIMD_LEVEL_AVX512_VBMI2)) {
     dbg("%s, avx512_vbmi ways\n", __func__);
@@ -1008,7 +1008,7 @@ int st20_rfc4175_422be10_to_422le8_simd(struct st20_rfc4175_422_10_pg2_be* pg_10
   }
 #endif
 
-#ifdef ST_HAS_AVX512
+#ifdef MTL_HAS_AVX512
   if ((level >= ST_SIMD_LEVEL_AVX512) && (cpu_level >= ST_SIMD_LEVEL_AVX512)) {
     dbg("%s, avx512 ways\n", __func__);
     ret = st20_rfc4175_422be10_to_422le8_avx512(pg_10, pg_8, w, h);
@@ -1035,7 +1035,7 @@ int st20_rfc4175_422be10_to_422le8_simd_dma(st_udma_handle udma,
   ST_MAY_UNUSED(ret);
   ST_MAY_UNUSED(dma);
 
-#ifdef ST_HAS_AVX512_VBMI2
+#ifdef MTL_HAS_AVX512_VBMI2
   if ((level >= ST_SIMD_LEVEL_AVX512_VBMI2) &&
       (cpu_level >= ST_SIMD_LEVEL_AVX512_VBMI2)) {
     dbg("%s, avx512_vbmi ways\n", __func__);
@@ -1046,7 +1046,7 @@ int st20_rfc4175_422be10_to_422le8_simd_dma(st_udma_handle udma,
   }
 #endif
 
-#ifdef ST_HAS_AVX512
+#ifdef MTL_HAS_AVX512
   if ((level >= ST_SIMD_LEVEL_AVX512) && (cpu_level >= ST_SIMD_LEVEL_AVX512)) {
     dbg("%s, avx512 ways\n", __func__);
     ret = st20_rfc4175_422be10_to_422le8_avx512_dma(dma, pg_10, pg_10_iova, pg_8, w, h);
@@ -1105,7 +1105,7 @@ int st20_rfc4175_422le10_to_v210_simd(uint8_t* pg_le, uint8_t* pg_v210, uint32_t
   ST_MAY_UNUSED(cpu_level);
   ST_MAY_UNUSED(ret);
 
-#ifdef ST_HAS_AVX512_VBMI2
+#ifdef MTL_HAS_AVX512_VBMI2
   if ((level >= ST_SIMD_LEVEL_AVX512_VBMI2) &&
       (cpu_level >= ST_SIMD_LEVEL_AVX512_VBMI2)) {
     dbg("%s, avx512_vbmi ways\n", __func__);
@@ -1115,7 +1115,7 @@ int st20_rfc4175_422le10_to_v210_simd(uint8_t* pg_le, uint8_t* pg_v210, uint32_t
   }
 #endif
 
-#ifdef ST_HAS_AVX512
+#ifdef MTL_HAS_AVX512
   if ((level >= ST_SIMD_LEVEL_AVX512) && (cpu_level >= ST_SIMD_LEVEL_AVX512)) {
     dbg("%s, avx512 ways\n", __func__);
     ret = st20_rfc4175_422le10_to_v210_avx512(pg_le, pg_v210, w, h);
@@ -1213,7 +1213,7 @@ int st20_rfc4175_422be10_to_v210_simd(struct st20_rfc4175_422_10_pg2_be* pg_be,
   ST_MAY_UNUSED(cpu_level);
   ST_MAY_UNUSED(ret);
 
-#ifdef ST_HAS_AVX512_VBMI2
+#ifdef MTL_HAS_AVX512_VBMI2
   if ((level >= ST_SIMD_LEVEL_AVX512_VBMI2) &&
       (cpu_level >= ST_SIMD_LEVEL_AVX512_VBMI2)) {
     dbg("%s, avx512_vbmi ways\n", __func__);
@@ -1223,7 +1223,7 @@ int st20_rfc4175_422be10_to_v210_simd(struct st20_rfc4175_422_10_pg2_be* pg_be,
   }
 #endif
 
-#ifdef ST_HAS_AVX512
+#ifdef MTL_HAS_AVX512
   if ((level >= ST_SIMD_LEVEL_AVX512) && (cpu_level >= ST_SIMD_LEVEL_AVX512)) {
     dbg("%s, avx512 ways\n", __func__);
     ret = st20_rfc4175_422be10_to_v210_avx512(pg_be, pg_v210, w, h);
@@ -1249,7 +1249,7 @@ int st20_rfc4175_422be10_to_v210_simd_dma(st_udma_handle udma,
   ST_MAY_UNUSED(ret);
   ST_MAY_UNUSED(dma);
 
-#ifdef ST_HAS_AVX512_VBMI2
+#ifdef MTL_HAS_AVX512_VBMI2
   if ((level >= ST_SIMD_LEVEL_AVX512_VBMI2) &&
       (cpu_level >= ST_SIMD_LEVEL_AVX512_VBMI2)) {
     dbg("%s, avx512_vbmi ways\n", __func__);
@@ -1260,7 +1260,7 @@ int st20_rfc4175_422be10_to_v210_simd_dma(st_udma_handle udma,
   }
 #endif
 
-#ifdef ST_HAS_AVX512
+#ifdef MTL_HAS_AVX512
   if ((level >= ST_SIMD_LEVEL_AVX512) && (cpu_level >= ST_SIMD_LEVEL_AVX512)) {
     dbg("%s, avx512 ways\n", __func__);
     ret = st20_rfc4175_422be10_to_v210_avx512_dma(dma, pg_be, pg_be_iova, pg_v210, w, h);
@@ -1319,7 +1319,7 @@ int st20_v210_to_rfc4175_422be10_simd(uint8_t* pg_v210,
   ST_MAY_UNUSED(cpu_level);
   ST_MAY_UNUSED(ret);
 
-#ifdef ST_HAS_AVX512_VBMI2
+#ifdef MTL_HAS_AVX512_VBMI2
   if ((level >= ST_SIMD_LEVEL_AVX512_VBMI2) &&
       (cpu_level >= ST_SIMD_LEVEL_AVX512_VBMI2)) {
     dbg("%s, avx512_vbmi ways\n", __func__);
@@ -1329,7 +1329,7 @@ int st20_v210_to_rfc4175_422be10_simd(uint8_t* pg_v210,
   }
 #endif
 
-#ifdef ST_HAS_AVX512
+#ifdef MTL_HAS_AVX512
   if ((level >= ST_SIMD_LEVEL_AVX512) && (cpu_level >= ST_SIMD_LEVEL_AVX512)) {
     dbg("%s, avx512 ways\n", __func__);
     ret = st20_v210_to_rfc4175_422be10_avx512(pg_v210, pg_be, w, h);
@@ -1353,7 +1353,7 @@ int st20_v210_to_rfc4175_422be10_simd_dma(st_udma_handle udma, uint8_t* pg_v210,
   ST_MAY_UNUSED(cpu_level);
   ST_MAY_UNUSED(ret);
 
-#ifdef ST_HAS_AVX512_VBMI2
+#ifdef MTL_HAS_AVX512_VBMI2
   if ((level >= ST_SIMD_LEVEL_AVX512_VBMI2) &&
       (cpu_level >= ST_SIMD_LEVEL_AVX512_VBMI2)) {
     dbg("%s, avx512_vbmi ways\n", __func__);
@@ -1364,7 +1364,7 @@ int st20_v210_to_rfc4175_422be10_simd_dma(st_udma_handle udma, uint8_t* pg_v210,
   }
 #endif
 
-#ifdef ST_HAS_AVX512
+#ifdef MTL_HAS_AVX512
   if ((level >= ST_SIMD_LEVEL_AVX512) && (cpu_level >= ST_SIMD_LEVEL_AVX512)) {
     dbg("%s, avx512 ways\n", __func__);
     ret =
@@ -1403,7 +1403,7 @@ int st20_rfc4175_422be10_to_y210_simd(struct st20_rfc4175_422_10_pg2_be* pg_be,
   ST_MAY_UNUSED(cpu_level);
   ST_MAY_UNUSED(ret);
 
-#ifdef ST_HAS_AVX512
+#ifdef MTL_HAS_AVX512
   if ((level >= ST_SIMD_LEVEL_AVX512) && (cpu_level >= ST_SIMD_LEVEL_AVX512)) {
     dbg("%s, avx512 ways\n", __func__);
     ret = st20_rfc4175_422be10_to_y210_avx512(pg_be, pg_y210, w, h);
@@ -1429,7 +1429,7 @@ int st20_rfc4175_422be10_to_y210_simd_dma(st_udma_handle udma,
   ST_MAY_UNUSED(ret);
   ST_MAY_UNUSED(dma);
 
-#ifdef ST_HAS_AVX512
+#ifdef MTL_HAS_AVX512
   if ((level >= ST_SIMD_LEVEL_AVX512) && (cpu_level >= ST_SIMD_LEVEL_AVX512)) {
     dbg("%s, avx512 ways\n", __func__);
     ret = st20_rfc4175_422be10_to_y210_avx512_dma(dma, pg_be, pg_be_iova, pg_y210, w, h);
@@ -1473,7 +1473,7 @@ int st20_y210_to_rfc4175_422be10_simd(uint16_t* pg_y210,
   ST_MAY_UNUSED(cpu_level);
   ST_MAY_UNUSED(ret);
 
-#ifdef ST_HAS_AVX512
+#ifdef MTL_HAS_AVX512
   if ((level >= ST_SIMD_LEVEL_AVX512) && (cpu_level >= ST_SIMD_LEVEL_AVX512)) {
     dbg("%s, avx512 ways\n", __func__);
     ret = st20_y210_to_rfc4175_422be10_avx512(pg_y210, pg_be, w, h);
@@ -1497,7 +1497,7 @@ int st20_y210_to_rfc4175_422be10_simd_dma(st_udma_handle udma, uint16_t* pg_y210
   ST_MAY_UNUSED(cpu_level);
   ST_MAY_UNUSED(ret);
 
-#ifdef ST_HAS_AVX512
+#ifdef MTL_HAS_AVX512
   if ((level >= ST_SIMD_LEVEL_AVX512) && (cpu_level >= ST_SIMD_LEVEL_AVX512)) {
     dbg("%s, avx512 ways\n", __func__);
     ret =
