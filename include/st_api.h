@@ -168,7 +168,7 @@ enum st_event {
 /**
  * Read current time from ptp source.
  *
- * @param st
+ * @param mt
  *   The handle to the media transport device context.
  * @return
  *   - The time in nanoseconds in current ptp system

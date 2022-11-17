@@ -241,7 +241,7 @@ int st_socket_add_flow(struct mtl_main_impl* impl, enum mtl_port port, uint16_t 
   char out[128]; /* Added rule with ID 15871 */
   int ret;
   int flow_id = -1;
-  uint8_t start_queue = mtl_start_queue(impl, port);
+  uint8_t start_queue = mt_start_queue(impl, port);
 
   if (st_is_multicast_ip(flow->dip_addr)) {
     snprintf(cmd, sizeof(cmd),

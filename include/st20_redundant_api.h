@@ -12,6 +12,7 @@
 #include "st20_api.h"
 
 #ifndef _ST20_REDUNDANT_API_HEAD_H_
+/** Marco for re-inculde protect */
 #define _ST20_REDUNDANT_API_HEAD_H_
 
 #if defined(__cplusplus)
@@ -117,7 +118,7 @@ struct st20r_rx_ops {
 /**
  * Create one rx st2110-20(redundant) session.
  *
- * @param st
+ * @param mt
  *   The handle to the media transport device context.
  * @param ops
  *   The pointer to the structure describing how to create a rx st2110-20(video) session.

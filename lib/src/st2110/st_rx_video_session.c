@@ -3749,7 +3749,7 @@ int st20_rx_get_queue_meta(st20_rx_handle handle, struct st_queue_meta* meta) {
 
     if (st_pmd_type(impl, port) == MTL_PMD_DPDK_AF_XDP) {
       /* af_xdp pmd */
-      meta->start_queue[i] = mtl_start_queue(impl, port);
+      meta->start_queue[i] = mt_start_queue(impl, port);
     }
     meta->queue_id[i] = s->queue_id[i];
   }
@@ -4071,7 +4071,7 @@ int st22_rx_get_queue_meta(st22_rx_handle handle, struct st_queue_meta* meta) {
 
     if (st_pmd_type(impl, port) == MTL_PMD_DPDK_AF_XDP) {
       /* af_xdp pmd */
-      meta->start_queue[i] = mtl_start_queue(impl, port);
+      meta->start_queue[i] = mt_start_queue(impl, port);
     }
     meta->queue_id[i] = s->queue_id[i];
   }

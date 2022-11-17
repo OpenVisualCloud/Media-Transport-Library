@@ -23,46 +23,46 @@
 
 struct st_dev_driver_info {
   char* name;
-  enum mtl_port_type port_type;
+  enum mt_port_type port_type;
   enum st_driver_type drv_type;
 };
 
 static const struct st_dev_driver_info dev_drvs[] = {
     {
         .name = "net_ice",
-        .port_type = MTL_PORT_PF,
+        .port_type = MT_PORT_PF,
         .drv_type = ST_DRV_ICE,
     },
     {
         .name = "net_i40e",
-        .port_type = MTL_PORT_PF,
+        .port_type = MT_PORT_PF,
         .drv_type = ST_DRV_I40E,
     },
     {
         .name = "net_iavf",
-        .port_type = ST_PORT_VF,
+        .port_type = MT_PORT_VF,
         .drv_type = ST_DRV_IAVF,
     },
     {
         .name = "net_af_xdp",
-        .port_type = ST_PORT_AF_XDP,
+        .port_type = MT_PORT_AF_XDP,
         .drv_type = ST_DRV_AF_XDP,
     },
     {
         .name = "net_e1000_igb",
-        .port_type = MTL_PORT_PF,
+        .port_type = MT_PORT_PF,
         .drv_type = ST_DRV_E1000_IGB,
     },
     {
         .name = "net_igc",
-        .port_type = MTL_PORT_PF,
+        .port_type = MT_PORT_PF,
         .drv_type = ST_DRV_IGC,
     },
 };
 
-static int parse_driver_info(const char* driver, enum mtl_port_type* port,
+static int parse_driver_info(const char* driver, enum mt_port_type* port,
                              enum st_driver_type* drv) {
-  for (int i = 0; i < ST_ARRAY_SIZE(dev_drvs); i++) {
+  for (int i = 0; i < MT_ARRAY_SIZE(dev_drvs); i++) {
     if (!strcmp(dev_drvs[i].name, driver)) {
       *port = dev_drvs[i].port_type;
       *drv = dev_drvs[i].drv_type;
@@ -122,7 +122,7 @@ static void dev_eth_stat(struct mtl_main_impl* impl) {
              " Mb/s, pkts, tx: %" PRIu64 ", rx: %" PRIu64 "\n",
              i, orate_m, irate_m, stats.opackets, stats.ipackets);
       if (stats.imissed || stats.ierrors || stats.rx_nombuf ||
-          (stats.oerrors && (ST_PORT_VF != st_port_type(impl, i)))) {
+          (stats.oerrors && (MT_PORT_VF != st_port_type(impl, i)))) {
         err("DEV(%d): Status: imissed %" PRIu64 " ierrors %" PRIu64 " oerrors %" PRIu64
             " rx_nombuf %" PRIu64 "\n",
             i, stats.imissed, stats.ierrors, stats.oerrors, stats.rx_nombuf);
@@ -1445,7 +1445,7 @@ static int dev_if_init_pacing(struct mtl_main_impl* impl, enum mtl_port port) {
   if ((ST21_TX_PACING_WAY_AUTO == inf->tx_pacing_way) ||
       (ST21_TX_PACING_WAY_RL == inf->tx_pacing_way)) {
     /* VF require all q config with RL */
-    if (inf->port_type == ST_PORT_VF) {
+    if (inf->port_type == MT_PORT_VF) {
       ret = dev_init_ratelimit_vf(impl, port);
     } else {
       ret = dev_tx_queue_set_rl_rate(impl, port, 0, ST_DEFAULT_RL_BPS);
@@ -1696,7 +1696,7 @@ int st_dev_create(struct mtl_main_impl* impl) {
   struct mtl_init_params* p = st_get_user_params(impl);
   int ret;
   struct st_interface* inf;
-  enum mtl_port_type port_type;
+  enum mt_port_type port_type;
 
   ret = dev_init_lcores(impl);
   if (ret < 0) return ret;
@@ -1709,7 +1709,7 @@ int st_dev_create(struct mtl_main_impl* impl) {
 
 #if RTE_VERSION >= RTE_VERSION_NUM(21, 11, 0, 0)
     /* DPDK 21.11 support start time sync before rte_eth_dev_start */
-    if ((st_has_ptp_service(impl) || st_has_ebu(impl)) && (port_type == MTL_PORT_PF)) {
+    if ((st_has_ptp_service(impl) || st_has_ebu(impl)) && (port_type == MT_PORT_PF)) {
       ret = dev_start_timesync(impl, i);
       if (ret >= 0) inf->feature |= ST_IF_FEATURE_TIMESYNC;
     }
@@ -1743,7 +1743,7 @@ int st_dev_create(struct mtl_main_impl* impl) {
       }
     }
     /* try to start time sync after rte_eth_dev_start */
-    if ((st_has_ptp_service(impl) || st_has_ebu(impl)) && (port_type == MTL_PORT_PF) &&
+    if ((st_has_ptp_service(impl) || st_has_ebu(impl)) && (port_type == MT_PORT_PF) &&
         !(inf->feature & ST_IF_FEATURE_TIMESYNC)) {
       ret = dev_start_timesync(impl, i);
       if (ret >= 0) inf->feature |= ST_IF_FEATURE_TIMESYNC;
@@ -2031,7 +2031,7 @@ int st_dev_if_init(struct mtl_main_impl* impl) {
     }
 
     /* when using VF, num_queue_pairs will be set as the max of tx/rx */
-    if (inf->port_type == ST_PORT_VF) {
+    if (inf->port_type == MT_PORT_VF) {
       inf->max_tx_queues = RTE_MAX(inf->max_rx_queues, inf->max_tx_queues);
       inf->max_rx_queues = inf->max_tx_queues;
     }

@@ -9,6 +9,8 @@
 #include "mt_socket.h"
 #include "mt_util.h"
 
+#define MT_MCAST_POOL_INC (32)
+
 /* Computing the Internet Checksum based on rfc1071 */
 static uint16_t mcast_msg_checksum(enum mcast_msg_type type, void* msg, uint16_t num) {
   size_t size = 0;
@@ -263,7 +265,7 @@ static int mcast_addr_pool_extend(struct st_interface* inf) {
   struct rte_ether_addr* mc_list;
   size_t mc_list_size;
 
-  if ((inf->mcast_nb % ST_MCAST_POOL_INC) != 0) {
+  if ((inf->mcast_nb % MT_MCAST_POOL_INC) != 0) {
     inf->mcast_nb++;
     return 0;
   }
@@ -273,7 +275,7 @@ static int mcast_addr_pool_extend(struct st_interface* inf) {
    * The previous test guarantees that port->mc_addr_nb is a multiple
    * of MCAST_POOL_INC.
    */
-  mc_list_size = sizeof(struct rte_ether_addr) * (inf->mcast_nb + ST_MCAST_POOL_INC);
+  mc_list_size = sizeof(struct rte_ether_addr) * (inf->mcast_nb + MT_MCAST_POOL_INC);
   mc_list = (struct rte_ether_addr*)realloc(inf->mcast_mac_lists, mc_list_size);
   if (mc_list == NULL) {
     return -ENOMEM;
@@ -321,7 +323,7 @@ static int mcast_inf_add_mac(struct st_interface* inf, struct rte_ether_addr* mc
   }
 
   mcast_addr_pool_append(inf, mcast_mac);
-  if (ST_PORT_VF == inf->port_type)
+  if (MT_PORT_VF == inf->port_type)
     return rte_eth_dev_set_mc_addr_list(port_id, inf->mcast_mac_lists, inf->mcast_nb);
   else
     return rte_eth_dev_mac_addr_add(port_id, mcast_mac, 0);
@@ -343,7 +345,7 @@ static int mcast_inf_remove_mac(struct st_interface* inf,
   }
 
   mcast_addr_pool_remove(inf, i);
-  if (ST_PORT_VF == inf->port_type)
+  if (MT_PORT_VF == inf->port_type)
     return rte_eth_dev_set_mc_addr_list(port_id, inf->mcast_mac_lists, inf->mcast_nb);
   else
     return rte_eth_dev_mac_addr_remove(port_id, mcast_mac);
@@ -477,7 +479,7 @@ int st_mcast_restore(struct mtl_main_impl* impl, enum mtl_port port) {
   struct st_interface* inf = st_if(impl, port);
   uint16_t port_id = inf->port_id;
 
-  if (ST_PORT_VF == inf->port_type) {
+  if (MT_PORT_VF == inf->port_type) {
     rte_eth_dev_set_mc_addr_list(port_id, inf->mcast_mac_lists, inf->mcast_nb);
   } else {
     for (uint32_t i = 0; i < inf->mcast_nb; i++)

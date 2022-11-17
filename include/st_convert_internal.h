@@ -814,7 +814,7 @@ int st20_rfc4175_444le10_to_444be10_simd(struct st20_rfc4175_444_10_pg4_le* pg_l
  *   Point to b(yuv444p10le) or r(gbrp10le) vector.
  * @param r_b
  *   Point to r(yuv444p10le) or b(gbrp10le) vector.
- * @param pg_le
+ * @param pg
  *   Point to pg(rfc4175_444le10) data.
  * @param w
  *   The st2110-20(video) width.
@@ -831,7 +831,7 @@ int st20_444p10le_to_rfc4175_444le10(uint16_t* y_g, uint16_t* b_r, uint16_t* r_b
 /**
  * Convert rfc4175_444le10 to yuv444p10le or gbrp10le.
  *
- * @param pg_le
+ * @param pg
  *   Point to pg(rfc4175_444le10) data.
  * @param y_g
  *   Point to Y(yuv444p10le) or g(gbrp10le) vector.
@@ -882,7 +882,7 @@ int st20_rfc4175_444le12_to_444be12_simd(struct st20_rfc4175_444_12_pg2_le* pg_l
  *   Point to b(yuv444p12le) or r(gbrp12le) vector.
  * @param r_b
  *   Point to r(yuv444p12le) or b(gbrp12le) vector.
- * @param pg_le
+ * @param pg
  *   Point to pg(rfc4175_444le12) data.
  * @param w
  *   The st2110-20(video) width.
@@ -899,7 +899,7 @@ int st20_444p12le_to_rfc4175_444le12(uint16_t* y_g, uint16_t* b_r, uint16_t* r_b
 /**
  * Convert rfc4175_444le12 to yuv444p12le or gbrp12le.
  *
- * @param pg_le
+ * @param pg
  *   Point to pg(rfc4175_444le12) data.
  * @param y_g
  *   Point to Y(yuv444p12le) or g(gbrp12le) vector.
