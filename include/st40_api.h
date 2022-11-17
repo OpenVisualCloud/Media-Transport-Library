@@ -3,16 +3,16 @@
  */
 
 /**
- * @file st40_dpdk_api.h
+ * @file st40_api.h
  *
  * Interfaces to Media Transport Library for st2110-20 transport.
  *
  */
 
-#include <st_dpdk_api.h>
+#include "st_api.h"
 
-#ifndef _ST40_DPDK_API_HEAD_H_
-#define _ST40_DPDK_API_HEAD_H_
+#ifndef _ST40_API_HEAD_H_
+#define _ST40_API_HEAD_H_
 
 #if defined(__cplusplus)
 extern "C" {
@@ -31,31 +31,31 @@ typedef struct st_rx_ancillary_session_handle_impl* st40_rx_handle;
  * Flag bit in flags of struct st40_tx_ops.
  * P TX destination mac assigned by user
  */
-#define ST40_TX_FLAG_USER_P_MAC (ST_BIT32(0))
+#define ST40_TX_FLAG_USER_P_MAC (MTL_BIT32(0))
 /**
  * Flag bit in flags of struct st40_tx_ops.
  * R TX destination mac assigned by user
  */
-#define ST40_TX_FLAG_USER_R_MAC (ST_BIT32(1))
+#define ST40_TX_FLAG_USER_R_MAC (MTL_BIT32(1))
 /**
  * Flag bit in flags of struct st40_tx_ops.
  * User control the frame pacing by pass a timestamp in st40_tx_frame_meta,
  * lib will wait until timestamp is reached for each frame.
  */
-#define ST40_TX_FLAG_USER_PACING (ST_BIT32(3))
+#define ST40_TX_FLAG_USER_PACING (MTL_BIT32(3))
 /**
  * Flag bit in flags of struct st40_tx_ops.
  * If enabled, lib will assign the rtp timestamp to the value in
  * st40_tx_frame_meta(ST10_TIMESTAMP_FMT_MEDIA_CLK is used)
  */
-#define ST40_TX_FLAG_USER_TIMESTAMP (ST_BIT32(4))
+#define ST40_TX_FLAG_USER_TIMESTAMP (MTL_BIT32(4))
 
 /**
- * Flag bit in flags of struct st30_rx_ops, for non ST_PMD_DPDK_USER.
+ * Flag bit in flags of struct st30_rx_ops, for non MTL_PMD_DPDK_USER.
  * If set, it's application duty to set the rx flow(queue) and muticast join/drop.
  * Use st40_rx_get_queue_meta to get the queue meta(queue number etc) info.
  */
-#define ST40_RX_FLAG_DATA_PATH_ONLY (ST_BIT32(0))
+#define ST40_RX_FLAG_DATA_PATH_ONLY (MTL_BIT32(0))
 
 /**
  * Session type of st2110-40(ancillary) streaming
@@ -91,7 +91,7 @@ struct st40_rfc8331_rtp_hdr {
  * A structure describing a st2110-40(ancillary) rfc8331 payload header
  */
 struct st40_rfc8331_payload_hdr {
-#ifdef ST_LITTLE_ENDIAN
+#ifdef MTL_LITTLE_ENDIAN
   union {
     struct {
       /** the source data stream number of the ANC data packet */
@@ -217,13 +217,13 @@ struct st40_tx_ops {
   /** private data to the callback function */
   void* priv;
   /** destination IP address */
-  uint8_t dip_addr[ST_PORT_MAX][ST_IP_ADDR_LEN];
-  /** Pcie BDF path like 0000:af:00.0, should align to BDF of st_init */
-  char port[ST_PORT_MAX][ST_PORT_MAX_LEN];
+  uint8_t dip_addr[MTL_PORT_MAX][MTL_IP_ADDR_LEN];
+  /** Pcie BDF path like 0000:af:00.0, should align to BDF of mtl_init */
+  char port[MTL_PORT_MAX][MTL_PORT_MAX_LEN];
   /** 1 or 2, num of ports this session attached to */
   uint8_t num_port;
   /** UDP port number */
-  uint16_t udp_port[ST_PORT_MAX];
+  uint16_t udp_port[MTL_PORT_MAX];
   /** Session streaming type, frame or RTP */
   enum st40_type type;
   /** Session fps */
@@ -236,7 +236,7 @@ struct st40_tx_ops {
    * tx destination mac address.
    * Valid if ST40_TX_FLAG_USER_P(R)_MAC is enabled
    */
-  uint8_t tx_dst_mac[ST_PORT_MAX][6];
+  uint8_t tx_dst_mac[MTL_PORT_MAX][6];
 
   /**
    * the frame buffer count requested for one st40 tx session,
@@ -288,13 +288,13 @@ struct st40_rx_ops {
   /** private data to the callback function */
   void* priv;
   /** source IP address of sender */
-  uint8_t sip_addr[ST_PORT_MAX][ST_IP_ADDR_LEN];
+  uint8_t sip_addr[MTL_PORT_MAX][MTL_IP_ADDR_LEN];
   /** 1 or 2, num of ports this session attached to */
   uint8_t num_port;
-  /** Pcie BDF path like 0000:af:00.0, should align to BDF of st_init */
-  char port[ST_PORT_MAX][ST_PORT_MAX_LEN];
+  /** Pcie BDF path like 0000:af:00.0, should align to BDF of mtl_init */
+  char port[MTL_PORT_MAX][MTL_PORT_MAX_LEN];
   /** UDP port number */
-  uint16_t udp_port[ST_PORT_MAX];
+  uint16_t udp_port[MTL_PORT_MAX];
   /** flags, value in ST40_RX_FLAG_* */
   uint32_t flags;
 
@@ -322,7 +322,7 @@ struct st40_rx_ops {
  *   - NULL on error.
  *   - Otherwise, the handle to the tx st2110-40(ancillary) session.
  */
-st40_tx_handle st40_tx_create(st_handle st, struct st40_tx_ops* ops);
+st40_tx_handle st40_tx_create(mtl_handle mt, struct st40_tx_ops* ops);
 
 /**
  * Free the tx st2110-40(ancillary) session.
@@ -392,7 +392,7 @@ int st40_tx_put_mbuf(st40_tx_handle handle, void* mbuf, uint16_t len);
  *   - NULL on error.
  *   - Otherwise, the handle to the rx st2110-40(ancillary) session.
  */
-st40_rx_handle st40_rx_create(st_handle st, struct st40_rx_ops* ops);
+st40_rx_handle st40_rx_create(mtl_handle mt, struct st40_rx_ops* ops);
 
 /**
  * Online update the source info for the rx st2110-40(ancillary) session.

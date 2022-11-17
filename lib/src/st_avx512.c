@@ -9,7 +9,7 @@
 #include "st_simd.h"
 #include "st_util.h"
 
-#ifdef ST_HAS_AVX512
+#ifdef MTL_HAS_AVX512
 static uint8_t b2l_shuffle_mask_table[16] = {
     0x01, 0x00, 0x06, 0x05, 0x03, 0x02, 0x08, 0x07, /* b0, b1, r0, r1 */
     0x02, 0x01, 0x04, 0x03, 0x07, 0x06, 0x09, 0x08, /* y0, y1, y2, y3 */
@@ -200,9 +200,9 @@ int st20_rfc4175_422be10_to_422le10_avx512(struct st20_rfc4175_422_10_pg2_be* pg
   return 0;
 }
 
-int st20_rfc4175_422be10_to_422le10_avx512_dma(struct st_dma_lender_dev* dma,
+int st20_rfc4175_422be10_to_422le10_avx512_dma(struct mtl_dma_lender_dev* dma,
                                                struct st20_rfc4175_422_10_pg2_be* pg_be,
-                                               st_iova_t pg_be_iova,
+                                               mtl_iova_t pg_be_iova,
                                                struct st20_rfc4175_422_10_pg2_le* pg_le,
                                                uint32_t w, uint32_t h) {
   __m128i shuffle_l0 = _mm_loadu_si128((__m128i*)shuffle_l0_mask_table);
@@ -434,8 +434,9 @@ int st20_rfc4175_422be10_to_yuv422p10le_avx512(struct st20_rfc4175_422_10_pg2_be
 }
 
 int st20_rfc4175_422be10_to_yuv422p10le_avx512_dma(
-    struct st_dma_lender_dev* dma, struct st20_rfc4175_422_10_pg2_be* pg_be,
-    st_iova_t pg_be_iova, uint16_t* y, uint16_t* b, uint16_t* r, uint32_t w, uint32_t h) {
+    struct mtl_dma_lender_dev* dma, struct st20_rfc4175_422_10_pg2_be* pg_be,
+    mtl_iova_t pg_be_iova, uint16_t* y, uint16_t* b, uint16_t* r, uint32_t w,
+    uint32_t h) {
   __m128i shuffle_le_mask = _mm_loadu_si128((__m128i*)b2l_shuffle_mask_table);
   __m128i srlv_le_mask = _mm_loadu_si128((__m128i*)b2l_srlv_mask_table);
   __m128i srlv_and_mask = _mm_loadu_si128((__m128i*)b2l_and_mask_table);
@@ -672,9 +673,9 @@ int st20_rfc4175_422be10_to_422le8_avx512(struct st20_rfc4175_422_10_pg2_be* pg_
   return 0;
 }
 
-int st20_rfc4175_422be10_to_422le8_avx512_dma(struct st_dma_lender_dev* dma,
+int st20_rfc4175_422be10_to_422le8_avx512_dma(struct mtl_dma_lender_dev* dma,
                                               struct st20_rfc4175_422_10_pg2_be* pg_10,
-                                              st_iova_t pg_10_iova,
+                                              mtl_iova_t pg_10_iova,
                                               struct st20_rfc4175_422_8_pg2_le* pg_8,
                                               uint32_t w, uint32_t h) {
   __m128i shuffle_mask = _mm_loadu_si128((__m128i*)rfc4175be10_to_8_shuffle_tbl_128);
@@ -858,9 +859,9 @@ int st20_rfc4175_422be10_to_v210_avx512(struct st20_rfc4175_422_10_pg2_be* pg_be
   return 0;
 }
 
-int st20_rfc4175_422be10_to_v210_avx512_dma(struct st_dma_lender_dev* dma,
+int st20_rfc4175_422be10_to_v210_avx512_dma(struct mtl_dma_lender_dev* dma,
                                             struct st20_rfc4175_422_10_pg2_be* pg_be,
-                                            st_iova_t pg_be_iova, uint8_t* pg_v210,
+                                            mtl_iova_t pg_be_iova, uint8_t* pg_v210,
                                             uint32_t w, uint32_t h) {
   __m128i shuffle0_mask = _mm_loadu_si128((__m128i*)shuffle0_mask_table_128);
   __m128i sllv0_mask = _mm_loadu_si128((__m128i*)sllv0_mask_table_128);
@@ -1059,10 +1060,10 @@ int st20_yuv422p10le_to_rfc4175_422be10_avx512(uint16_t* y, uint16_t* b, uint16_
   return 0;
 }
 
-int st20_yuv422p10le_to_rfc4175_422be10_avx512_dma(struct st_dma_lender_dev* dma,
-                                                   uint16_t* y, st_iova_t y_iova,
-                                                   uint16_t* b, st_iova_t b_iova,
-                                                   uint16_t* r, st_iova_t r_iova,
+int st20_yuv422p10le_to_rfc4175_422be10_avx512_dma(struct mtl_dma_lender_dev* dma,
+                                                   uint16_t* y, mtl_iova_t y_iova,
+                                                   uint16_t* b, mtl_iova_t b_iova,
+                                                   uint16_t* r, mtl_iova_t r_iova,
                                                    struct st20_rfc4175_422_10_pg2_be* pg,
                                                    uint32_t w, uint32_t h) {
   uint32_t pg_cnt = w * h / 2; /* two pgs in one convert */
@@ -1450,9 +1451,9 @@ int st20_rfc4175_422le10_to_422be10_avx512(struct st20_rfc4175_422_10_pg2_le* pg
   return 0;
 }
 
-int st20_rfc4175_422le10_to_422be10_avx512_dma(struct st_dma_lender_dev* dma,
+int st20_rfc4175_422le10_to_422be10_avx512_dma(struct mtl_dma_lender_dev* dma,
                                                struct st20_rfc4175_422_10_pg2_le* pg_le,
-                                               st_iova_t pg_le_iova,
+                                               mtl_iova_t pg_le_iova,
                                                struct st20_rfc4175_422_10_pg2_be* pg_be,
                                                uint32_t w, uint32_t h) {
   __m128i shuffle_l0 = _mm_loadu_si128((__m128i*)rfc4175_l2b_shuffle_l0_tbl);
@@ -1659,8 +1660,8 @@ int st20_v210_to_rfc4175_422be10_avx512(uint8_t* pg_v210,
   return 0;
 }
 
-int st20_v210_to_rfc4175_422be10_avx512_dma(struct st_dma_lender_dev* dma,
-                                            uint8_t* pg_v210, st_iova_t pg_v210_iova,
+int st20_v210_to_rfc4175_422be10_avx512_dma(struct mtl_dma_lender_dev* dma,
+                                            uint8_t* pg_v210, mtl_iova_t pg_v210_iova,
                                             struct st20_rfc4175_422_10_pg2_be* pg_be,
                                             uint32_t w, uint32_t h) {
   __m128i shuffle_l0 = _mm_loadu_si128((__m128i*)v210_to_rfc4175be_shuffle_l0_tbl_128);
@@ -1829,9 +1830,9 @@ int st20_rfc4175_422be10_to_y210_avx512(struct st20_rfc4175_422_10_pg2_be* pg_be
   return 0;
 }
 
-int st20_rfc4175_422be10_to_y210_avx512_dma(struct st_dma_lender_dev* dma,
+int st20_rfc4175_422be10_to_y210_avx512_dma(struct mtl_dma_lender_dev* dma,
                                             struct st20_rfc4175_422_10_pg2_be* pg_be,
-                                            st_iova_t pg_be_iova, uint16_t* pg_y210,
+                                            mtl_iova_t pg_be_iova, uint16_t* pg_y210,
                                             uint32_t w, uint32_t h) {
   __m128i shuffle_mask = _mm_loadu_si128((__m128i*)rfc4175be_to_y210_shuffle_tbl_128);
   __m128i sllv_mask = _mm_loadu_si128((__m128i*)rfc4175be_to_y210_sllv_tbl_128);
@@ -1999,8 +2000,8 @@ int st20_y210_to_rfc4175_422be10_avx512(uint16_t* pg_y210,
   return 0;
 }
 
-int st20_y210_to_rfc4175_422be10_avx512_dma(struct st_dma_lender_dev* dma,
-                                            uint16_t* pg_y210, st_iova_t pg_y210_iova,
+int st20_y210_to_rfc4175_422be10_avx512_dma(struct mtl_dma_lender_dev* dma,
+                                            uint16_t* pg_y210, mtl_iova_t pg_y210_iova,
                                             struct st20_rfc4175_422_10_pg2_be* pg_be,
                                             uint32_t w, uint32_t h) {
   __m128i srlv_mask = _mm_loadu_si128(

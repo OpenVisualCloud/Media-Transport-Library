@@ -20,7 +20,7 @@ static inline void* st_zmalloc(size_t sz) {
 
 static inline void st_free(void* p) { free(p); }
 
-#ifdef ST_HAS_ASAN
+#ifdef MTL_HAS_ASAN
 int st_asan_check(void);
 void* st_rte_malloc_socket(size_t sz, int socket);
 void* st_rte_zmalloc_socket(size_t sz, int socket);

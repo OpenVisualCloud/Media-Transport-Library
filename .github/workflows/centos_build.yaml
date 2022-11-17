@@ -4,7 +4,7 @@ on: [push, pull_request]
 
 env:
   # Customize the env if
-  ST_BUILD_DISABLE_PCAPNG: true
+  MTL_BUILD_DISABLE_PCAPNG: true
 
 jobs:
   build:

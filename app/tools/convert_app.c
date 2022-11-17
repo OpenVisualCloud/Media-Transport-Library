@@ -3,8 +3,8 @@
  */
 
 #include <assert.h>
-#include <st_convert_api.h>
-#include <st_pipeline_api.h>
+#include <mtl/st_convert_api.h>
+#include <mtl/st_pipeline_api.h>
 #include <stdio.h>
 
 #include "../src/app_platform.h"

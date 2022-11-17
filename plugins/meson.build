@@ -1,7 +1,7 @@
 # SPDX-License-Identifier: BSD-3-Clause
 # Copyright 2022 Intel Corporation
 
-project('st_plugins', 'c', default_options: ['buildtype=release'],
+project('mtl_plugins', 'c', default_options: ['buildtype=release'],
         version: run_command(find_program('cat', 'more'), files('../VERSION'), check: true).stdout().strip(),)
 
 #detect os
@@ -13,7 +13,7 @@ add_global_arguments('-DALLOW_EXPERIMENTAL_API', language : 'c')
 
 cc = meson.get_compiler('c')
 
-libst_dpdk_dep = dependency('libst_dpdk', required : true)
+mtl_dep = dependency('mtl', required : true)
 libpthread_dep = cc.find_library('pthread', required : true)
 
 # add source file
@@ -50,7 +50,7 @@ shared_library('st_plugin_st22_sample', plugins_st22_sample_sources,
   c_args : plugins_c_args,
   link_args : plugins_ld_args,
   # asan should be always the first dep
-  dependencies: [asan_dep, libst_dpdk_dep, libpthread_dep],
+  dependencies: [asan_dep, mtl_dep, libpthread_dep],
   install: true
 )
 
@@ -58,6 +58,6 @@ shared_library('st_plugin_convert_sample', plugins_convert_sample_sources,
   c_args : plugins_c_args,
   link_args : plugins_ld_args,
   # asan should be always the first dep
-  dependencies: [asan_dep, libst_dpdk_dep, libpthread_dep],
+  dependencies: [asan_dep, mtl_dep, libpthread_dep],
   install: true
 )

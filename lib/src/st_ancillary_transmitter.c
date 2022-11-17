@@ -24,7 +24,7 @@ static int st_ancillary_trs_tasklet_start(void* priv) {
 
 static int st_ancillary_trs_tasklet_stop(void* priv) {
   struct st_ancillary_transmitter_impl* trs = priv;
-  struct st_main_impl* impl = trs->parnet;
+  struct mtl_main_impl* impl = trs->parnet;
   struct st_tx_ancillary_sessions_mgr* mgr = trs->mgr;
   int idx = trs->idx, port;
 
@@ -48,10 +48,10 @@ static int st_ancillary_trs_tasklet_stop(void* priv) {
 }
 
 /* pacing handled by session itself */
-static int st_ancillary_trs_session_tasklet(struct st_main_impl* impl,
+static int st_ancillary_trs_session_tasklet(struct mtl_main_impl* impl,
                                             struct st_ancillary_transmitter_impl* trs,
                                             struct st_tx_ancillary_sessions_mgr* mgr,
-                                            enum st_port port) {
+                                            enum mtl_port port) {
   struct rte_ring* ring = mgr->ring[port];
   int ret;
   uint16_t n;
@@ -95,7 +95,7 @@ static int st_ancillary_trs_session_tasklet(struct st_main_impl* impl,
 
 static int st_ancillary_trs_tasklet_handler(void* priv) {
   struct st_ancillary_transmitter_impl* trs = priv;
-  struct st_main_impl* impl = trs->parnet;
+  struct mtl_main_impl* impl = trs->parnet;
   struct st_tx_ancillary_sessions_mgr* mgr = trs->mgr;
   int port;
   int pending = ST_TASKLET_ALL_DONE;
@@ -107,7 +107,7 @@ static int st_ancillary_trs_tasklet_handler(void* priv) {
   return pending;
 }
 
-int st_ancillary_transmitter_init(struct st_main_impl* impl, struct st_sch_impl* sch,
+int st_ancillary_transmitter_init(struct mtl_main_impl* impl, struct st_sch_impl* sch,
                                   struct st_tx_ancillary_sessions_mgr* mgr,
                                   struct st_ancillary_transmitter_impl* trs) {
   int idx = sch->idx;
@@ -144,7 +144,7 @@ int st_ancillary_transmitter_uinit(struct st_ancillary_transmitter_impl* trs) {
     trs->tasklet = NULL;
   }
 
-  info("%s(%d), succ, inflight %d:%d\n", __func__, idx, trs->inflight_cnt[ST_PORT_P],
-       trs->inflight_cnt[ST_PORT_R]);
+  info("%s(%d), succ, inflight %d:%d\n", __func__, idx, trs->inflight_cnt[MTL_PORT_P],
+       trs->inflight_cnt[MTL_PORT_R]);
   return 0;
 }

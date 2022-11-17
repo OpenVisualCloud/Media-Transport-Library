@@ -21,7 +21,7 @@ struct rx_st20p_sample_ctx {
   uint8_t* dst_end;
   uint8_t* dst_cursor;
 
-  st_dma_mem_handle dma_mem;
+  mtl_dma_mem_handle dma_mem;
   struct st20_ext_frame* ext_frames;
   int ext_idx;
   int fb_cnt;
@@ -104,7 +104,7 @@ static int rx_st20p_open_source(struct rx_st20p_sample_ctx* s, const char* file)
 static void rx_st20p_consume_frame(struct rx_st20p_sample_ctx* s,
                                    struct st_frame* frame) {
   if (s->dst_cursor + s->frame_size > s->dst_end) s->dst_cursor = s->dst_begin;
-  st_memcpy(s->dst_cursor, frame->addr[0], s->frame_size);
+  mtl_memcpy(s->dst_cursor, frame->addr[0], s->frame_size);
   s->dst_cursor += s->frame_size;
   /* parse private data for dynamic ext frame
     if (frame->opaque) {
@@ -169,9 +169,10 @@ int main(int argc, char** argv) {
     ops_rx.name = "st20p_test";
     ops_rx.priv = app[i];  // app handle register to lib
     ops_rx.port.num_port = 1;
-    memcpy(ops_rx.port.sip_addr[ST_PORT_P], ctx.rx_sip_addr[ST_PORT_P], ST_IP_ADDR_LEN);
-    strncpy(ops_rx.port.port[ST_PORT_P], ctx.param.port[ST_PORT_P], ST_PORT_MAX_LEN);
-    ops_rx.port.udp_port[ST_PORT_P] = ctx.udp_port + i;
+    memcpy(ops_rx.port.sip_addr[MTL_PORT_P], ctx.rx_sip_addr[MTL_PORT_P],
+           MTL_IP_ADDR_LEN);
+    strncpy(ops_rx.port.port[MTL_PORT_P], ctx.param.port[MTL_PORT_P], MTL_PORT_MAX_LEN);
+    ops_rx.port.udp_port[MTL_PORT_P] = ctx.udp_port + i;
     ops_rx.port.payload_type = ctx.payload_type;
     ops_rx.width = ctx.width;
     ops_rx.height = ctx.height;
@@ -190,7 +191,7 @@ int main(int argc, char** argv) {
           st20_frame_size(ops_rx.transport_fmt, ops_rx.width, ops_rx.height);
       size_t fb_size = framebuff_size * app[i]->fb_cnt;
       /* alloc enough memory to hold framebuffers and map to iova */
-      st_dma_mem_handle dma_mem = st_dma_mem_alloc(ctx.st, fb_size);
+      mtl_dma_mem_handle dma_mem = mtl_dma_mem_alloc(ctx.st, fb_size);
       if (!dma_mem) {
         err("%s(%d), dma mem alloc/map fail\n", __func__, i);
         ret = -EIO;
@@ -199,8 +200,8 @@ int main(int argc, char** argv) {
       app[i]->dma_mem = dma_mem;
 
       for (int j = 0; j < app[i]->fb_cnt; ++j) {
-        app[i]->ext_frames[j].buf_addr = st_dma_mem_addr(dma_mem) + j * framebuff_size;
-        app[i]->ext_frames[j].buf_iova = st_dma_mem_iova(dma_mem) + j * framebuff_size;
+        app[i]->ext_frames[j].buf_addr = mtl_dma_mem_addr(dma_mem) + j * framebuff_size;
+        app[i]->ext_frames[j].buf_iova = mtl_dma_mem_iova(dma_mem) + j * framebuff_size;
         app[i]->ext_frames[j].buf_len = framebuff_size;
       }
       app[i]->ext_idx = 0;
@@ -233,7 +234,7 @@ int main(int argc, char** argv) {
   }
 
   // start rx
-  ret = st_start(ctx.st);
+  ret = mtl_start(ctx.st);
 
   while (!ctx.exit) {
     sleep(1);
@@ -252,7 +253,7 @@ int main(int argc, char** argv) {
   }
 
   // stop rx
-  ret = st_stop(ctx.st);
+  ret = mtl_stop(ctx.st);
 
   // check result
   for (int i = 0; i < session_num; i++) {
@@ -266,7 +267,7 @@ error:
   for (int i = 0; i < session_num; i++) {
     if (app[i]) {
       if (app[i]->handle) st20p_rx_free(app[i]->handle);
-      if (ctx.st && app[i]->dma_mem) st_dma_mem_free(ctx.st, app[i]->dma_mem);
+      if (ctx.st && app[i]->dma_mem) mtl_dma_mem_free(ctx.st, app[i]->dma_mem);
       if (app[i]->ext_frames) free(app[i]->ext_frames);
       st_pthread_mutex_destroy(&app[i]->wake_mutex);
       st_pthread_cond_destroy(&app[i]->wake_cond);

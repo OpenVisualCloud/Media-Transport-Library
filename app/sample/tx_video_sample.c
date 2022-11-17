@@ -21,7 +21,7 @@ struct tv_sample_context {
   uint16_t framebuff_consumer_idx;
   struct st_tx_frame* framebuffs;
 
-  st_dma_mem_handle dma_mem;
+  mtl_dma_mem_handle dma_mem;
 };
 
 static int tx_video_next_frame(void* priv, uint16_t* next_frame_idx,
@@ -103,8 +103,10 @@ static void* tx_video_frame_thread(void* arg) {
     st_pthread_mutex_unlock(&s->wake_mutex);
     if (s->ops.flags & ST20_TX_FLAG_EXT_FRAME) { /* ext frame mode */
       struct st20_ext_frame ext_frame;
-      ext_frame.buf_addr = st_dma_mem_addr(s->dma_mem) + producer_idx * s->framebuff_size;
-      ext_frame.buf_iova = st_dma_mem_iova(s->dma_mem) + producer_idx * s->framebuff_size;
+      ext_frame.buf_addr =
+          mtl_dma_mem_addr(s->dma_mem) + producer_idx * s->framebuff_size;
+      ext_frame.buf_iova =
+          mtl_dma_mem_iova(s->dma_mem) + producer_idx * s->framebuff_size;
       ext_frame.buf_len = s->framebuff_size;
       st20_tx_set_ext_frame(s->handle, producer_idx, &ext_frame);
     } else {
@@ -168,10 +170,10 @@ int main(int argc, char** argv) {
     ops_tx.name = "st20_tx";
     ops_tx.priv = app[i];  // app handle register to lib
     ops_tx.num_port = 1;
-    memcpy(ops_tx.dip_addr[ST_PORT_P], ctx.tx_dip_addr[ST_PORT_P], ST_IP_ADDR_LEN);
-    strncpy(ops_tx.port[ST_PORT_P], ctx.param.port[ST_PORT_P], ST_PORT_MAX_LEN);
+    memcpy(ops_tx.dip_addr[MTL_PORT_P], ctx.tx_dip_addr[MTL_PORT_P], MTL_IP_ADDR_LEN);
+    strncpy(ops_tx.port[MTL_PORT_P], ctx.param.port[MTL_PORT_P], MTL_PORT_MAX_LEN);
     if (ctx.ext_frame) ops_tx.flags |= ST20_TX_FLAG_EXT_FRAME;
-    ops_tx.udp_port[ST_PORT_P] = ctx.udp_port + i;  // udp port
+    ops_tx.udp_port[MTL_PORT_P] = ctx.udp_port + i;  // udp port
     ops_tx.pacing = ST21_PACING_NARROW;
     ops_tx.type = ST20_TYPE_FRAME_LEVEL;
     ops_tx.width = ctx.width;
@@ -203,7 +205,7 @@ int main(int argc, char** argv) {
       */
       size_t fb_size = app[i]->framebuff_size * app[i]->framebuff_cnt;
       /* alloc enough memory to hold framebuffers and map to iova */
-      st_dma_mem_handle dma_mem = st_dma_mem_alloc(ctx.st, fb_size);
+      mtl_dma_mem_handle dma_mem = mtl_dma_mem_alloc(ctx.st, fb_size);
       if (!dma_mem) {
         err("%s(%d), dma mem alloc/map fail\n", __func__, i);
         ret = -EIO;
@@ -224,7 +226,7 @@ int main(int argc, char** argv) {
   }
 
   // start tx
-  ret = st_start(ctx.st);
+  ret = mtl_start(ctx.st);
 
   while (!ctx.exit) {
     sleep(1);
@@ -241,7 +243,7 @@ int main(int argc, char** argv) {
   }
 
   // stop tx
-  ret = st_stop(ctx.st);
+  ret = mtl_stop(ctx.st);
 
   // check result
   for (int i = 0; i < session_num; i++) {
@@ -259,7 +261,7 @@ error:
     st_pthread_mutex_destroy(&app[i]->wake_mutex);
     st_pthread_cond_destroy(&app[i]->wake_cond);
 
-    if (app[i]->dma_mem) st_dma_mem_free(ctx.st, app[i]->dma_mem);
+    if (app[i]->dma_mem) mtl_dma_mem_free(ctx.st, app[i]->dma_mem);
     if (app[i]->framebuffs) free(app[i]->framebuffs);
     free(app[i]);
   }

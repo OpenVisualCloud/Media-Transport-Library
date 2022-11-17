@@ -22,7 +22,7 @@ struct tx {
 };
 
 struct split_fwd_sample_ctx {
-  st_handle st;
+  mtl_handle st;
   st20_rx_handle rx_handle;
 
   struct rte_ring* frame_ring;
@@ -126,7 +126,7 @@ static int tx_video_next_frame(void* priv, uint16_t* next_frame_idx,
 
     struct st20_ext_frame ext_frame;
     ext_frame.buf_addr = fi[0]->frame_addr + s->fb_offset;
-    ext_frame.buf_iova = st_hp_virt2iova(app->st, fi[0]->frame_addr) + s->fb_offset;
+    ext_frame.buf_iova = mtl_hp_virt2iova(app->st, fi[0]->frame_addr) + s->fb_offset;
     ext_frame.buf_len = 3840 * 2160 * 5 / 4; /* 2 1080p framesize */
     st20_tx_set_ext_frame(s->tx_handle, consumer_idx, &ext_frame);
 
@@ -230,9 +230,9 @@ int main(int argc, char** argv) {
   ops_rx.name = "st20_fwd";
   ops_rx.priv = &app;
   ops_rx.num_port = 1;
-  memcpy(ops_rx.sip_addr[ST_PORT_P], ctx.rx_sip_addr[ST_PORT_P], ST_IP_ADDR_LEN);
-  strncpy(ops_rx.port[ST_PORT_P], ctx.param.port[ST_PORT_P], ST_PORT_MAX_LEN);
-  ops_rx.udp_port[ST_PORT_P] = ctx.udp_port;  // user config the udp port.
+  memcpy(ops_rx.sip_addr[MTL_PORT_P], ctx.rx_sip_addr[MTL_PORT_P], MTL_IP_ADDR_LEN);
+  strncpy(ops_rx.port[MTL_PORT_P], ctx.param.port[MTL_PORT_P], MTL_PORT_MAX_LEN);
+  ops_rx.udp_port[MTL_PORT_P] = ctx.udp_port;  // user config the udp port.
   ops_rx.pacing = ST21_PACING_NARROW;
   ops_rx.type = ST20_TYPE_FRAME_LEVEL;
   ops_rx.width = 3840;
@@ -259,9 +259,9 @@ int main(int argc, char** argv) {
     ops_tx.name = "st20_fwd";
     ops_tx.priv = tx;
     ops_tx.num_port = 1;
-    memcpy(ops_tx.dip_addr[ST_PORT_P], ctx.fwd_dip_addr[ST_PORT_P], ST_IP_ADDR_LEN);
-    strncpy(ops_tx.port[ST_PORT_P], ctx.param.port[ST_PORT_P], ST_PORT_MAX_LEN);
-    ops_tx.udp_port[ST_PORT_P] = ctx.udp_port + i;
+    memcpy(ops_tx.dip_addr[MTL_PORT_P], ctx.fwd_dip_addr[MTL_PORT_P], MTL_IP_ADDR_LEN);
+    strncpy(ops_tx.port[MTL_PORT_P], ctx.param.port[MTL_PORT_P], MTL_PORT_MAX_LEN);
+    ops_tx.udp_port[MTL_PORT_P] = ctx.udp_port + i;
     ops_tx.pacing = ST21_PACING_NARROW;
     ops_tx.packing = ST20_PACKING_BPM;
     ops_tx.type = ST20_TYPE_FRAME_LEVEL;
@@ -293,14 +293,14 @@ int main(int argc, char** argv) {
   app.ready = true;
 
   // start dev
-  ret = st_start(ctx.st);
+  ret = mtl_start(ctx.st);
 
   while (!ctx.exit) {
     sleep(1);
   }
 
   // stop dev
-  ret = st_stop(ctx.st);
+  ret = mtl_stop(ctx.st);
   info("%s, fb_fwd %d\n", __func__, app.fb_fwd);
   app.ready = false;
 

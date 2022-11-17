@@ -39,7 +39,7 @@ static inline void ptp_timesync_unlock(struct st_ptp_impl* ptp) { /* todo */
 }
 
 static inline int ptp_get_time_spec(struct st_ptp_impl* ptp, struct timespec* spec) {
-  enum st_port port = ptp->port;
+  enum mtl_port port = ptp->port;
   uint16_t port_id = ptp->port_id;
   int ret;
 
@@ -65,11 +65,11 @@ static uint64_t ptp_get_time(struct st_ptp_impl* ptp) {
   return st_timespec_to_ns(&spec);
 }
 
-static uint64_t ptp_from_eth(struct st_main_impl* impl, enum st_port port) {
+static uint64_t ptp_from_eth(struct mtl_main_impl* impl, enum mtl_port port) {
   return ptp_get_time(st_get_ptp(impl, port));
 }
 
-static void ptp_print_port_id(enum st_port port, struct st_ptp_port_id* pid) {
+static void ptp_print_port_id(enum mtl_port port, struct st_ptp_port_id* pid) {
   uint8_t* id = &pid->clock_identity.id[0];
   info(
       "st_ptp_port_id(%d), port_number: %04x, clk_id: "
@@ -240,7 +240,7 @@ static int ptp_parse_result(struct st_ptp_impl* ptp) {
 }
 
 static void ptp_delay_req_task(struct st_ptp_impl* ptp) {
-  enum st_port port = ptp->port;
+  enum mtl_port port = ptp->port;
   uint16_t port_id = ptp->port_id;
   size_t hdr_offset;
   struct st_ptp_sync_msg* msg;
@@ -446,7 +446,7 @@ static int ptp_parse_follow_up(struct st_ptp_impl* ptp,
 
 static int ptp_parse_annouce(struct st_ptp_impl* ptp, struct st_ptp_announce_msg* msg,
                              enum st_ptp_l_mode mode, struct st_ptp_ipv4_udp* ipv4_hdr) {
-  enum st_port port = ptp->port;
+  enum mtl_port port = ptp->port;
 
   if (!ptp->master_initialized) {
     ptp->master_initialized = true;
@@ -464,7 +464,7 @@ static int ptp_parse_annouce(struct st_ptp_impl* ptp, struct st_ptp_announce_msg
       struct st_ptp_ipv4_udp* dst_udp = &ptp->dst_udp;
 
       rte_memcpy(dst_udp, ipv4_hdr, sizeof(*dst_udp));
-      rte_memcpy(&dst_udp->ip.src_addr, &ptp->sip_addr[0], ST_IP_ADDR_LEN);
+      rte_memcpy(&dst_udp->ip.src_addr, &ptp->sip_addr[0], MTL_IP_ADDR_LEN);
       dst_udp->ip.total_length =
           htons(sizeof(struct st_ptp_ipv4_udp) + sizeof(struct st_ptp_sync_msg));
       dst_udp->ip.hdr_checksum = 0;
@@ -519,8 +519,8 @@ static void ptp_stat_clear(struct st_ptp_impl* ptp) {
   ptp->stat_sync_cnt = 0;
 }
 
-static void ptp_sync_from_user(struct st_main_impl* impl, struct st_ptp_impl* ptp) {
-  enum st_port port = ptp->port;
+static void ptp_sync_from_user(struct mtl_main_impl* impl, struct st_ptp_impl* ptp) {
+  enum mtl_port port = ptp->port;
   uint64_t target_ns = st_get_ptp_time(impl, port);
   uint64_t raw_ns = ptp_get_raw_time(ptp);
   int64_t delta = (int64_t)target_ns - raw_ns;
@@ -562,8 +562,8 @@ static void ptp_sync_from_user_handler(void* param) {
   rte_eal_alarm_set(ST_PTP_EBU_SYNC_MS * 1000, ptp_sync_from_user_handler, ptp);
 }
 
-static int ptp_init(struct st_main_impl* impl, struct st_ptp_impl* ptp,
-                    enum st_port port) {
+static int ptp_init(struct mtl_main_impl* impl, struct st_ptp_impl* ptp,
+                    enum mtl_port port) {
   uint16_t port_id = st_port_id(impl, port);
   struct rte_ether_addr mac;
   int ret;
@@ -584,7 +584,7 @@ static int ptp_init(struct st_main_impl* impl, struct st_ptp_impl* ptp,
   our_port_id->port_number = htons(port_id);  // now allways
   // ptp_print_port_id(port_id, our_port_id);
 
-  rte_memcpy(ip, st_sip_addr(impl, port), ST_IP_ADDR_LEN);
+  rte_memcpy(ip, st_sip_addr(impl, port), MTL_IP_ADDR_LEN);
 
   ptp->impl = impl;
   ptp->port = port;
@@ -593,8 +593,8 @@ static int ptp_init(struct st_main_impl* impl, struct st_ptp_impl* ptp,
   ptp->master_initialized = false;
   ptp->t3_sequence_id = 0x1000 * port;
 
-  struct st_init_params* p = st_get_user_params(impl);
-  if (p->flags & ST_FLAG_PTP_UNICAST_ADDR) {
+  struct mtl_init_params* p = st_get_user_params(impl);
+  if (p->flags & MTL_FLAG_PTP_UNICAST_ADDR) {
     ptp->master_addr_mode = ST_PTP_UNICAST_ADDR;
     info("%s(%d), ST_PTP_UNICAST_ADDR\n", __func__, port);
   } else {
@@ -629,8 +629,8 @@ static int ptp_init(struct st_main_impl* impl, struct st_ptp_impl* ptp,
   /* create rx queue */
   struct st_rx_flow flow;
   memset(&flow, 0, sizeof(flow));
-  rte_memcpy(flow.dip_addr, ptp->mcast_group_addr, ST_IP_ADDR_LEN);
-  rte_memcpy(flow.sip_addr, st_sip_addr(impl, port), ST_IP_ADDR_LEN);
+  rte_memcpy(flow.dip_addr, ptp->mcast_group_addr, MTL_IP_ADDR_LEN);
+  rte_memcpy(flow.sip_addr, st_sip_addr(impl, port), MTL_IP_ADDR_LEN);
   flow.port_flow = false;
   flow.dst_port = ST_PTP_UDP_GEN_PORT;
   ret = st_dev_request_rx_queue(impl, port, &ptp->rx_queue_id, &flow);
@@ -653,8 +653,8 @@ static int ptp_init(struct st_main_impl* impl, struct st_ptp_impl* ptp,
   return 0;
 }
 
-static int ptp_uinit(struct st_main_impl* impl, struct st_ptp_impl* ptp) {
-  enum st_port port = ptp->port;
+static int ptp_uinit(struct mtl_main_impl* impl, struct st_ptp_impl* ptp) {
+  enum mtl_port port = ptp->port;
 
   rte_eal_alarm_cancel(ptp_sync_from_user_handler, ptp);
 #if ST_PTP_USE_TX_TIMER
@@ -684,7 +684,7 @@ static int ptp_uinit(struct st_main_impl* impl, struct st_ptp_impl* ptp) {
 int st_ptp_parse(struct st_ptp_impl* ptp, struct st_ptp_header* hdr, bool vlan,
                  enum st_ptp_l_mode mode, uint16_t timesync,
                  struct st_ptp_ipv4_udp* ipv4_hdr) {
-  enum st_port port = ptp->port;
+  enum mtl_port port = ptp->port;
 
   if (!st_if_has_ptp(ptp->impl, port)) return 0;
 
@@ -735,7 +735,7 @@ int st_ptp_parse(struct st_ptp_impl* ptp, struct st_ptp_header* hdr, bool vlan,
   return 0;
 }
 
-void st_ptp_stat(struct st_main_impl* impl) {
+void st_ptp_stat(struct mtl_main_impl* impl) {
   int num_ports = st_num_ports(impl);
   struct st_ptp_impl* ptp;
   char date_time[64];
@@ -785,7 +785,7 @@ void st_ptp_stat(struct st_main_impl* impl) {
   }
 }
 
-int st_ptp_init(struct st_main_impl* impl) {
+int st_ptp_init(struct mtl_main_impl* impl) {
   int num_ports = st_num_ports(impl);
   int ret;
   struct st_ptp_impl* ptp;
@@ -806,7 +806,7 @@ int st_ptp_init(struct st_main_impl* impl) {
   return 0;
 }
 
-int st_ptp_uinit(struct st_main_impl* impl) {
+int st_ptp_uinit(struct mtl_main_impl* impl) {
   int num_ports = st_num_ports(impl);
   struct st_ptp_impl* ptp;
 
@@ -818,6 +818,6 @@ int st_ptp_uinit(struct st_main_impl* impl) {
   return 0;
 }
 
-uint64_t st_get_raw_ptp_time(struct st_main_impl* impl, enum st_port port) {
+uint64_t st_get_raw_ptp_time(struct mtl_main_impl* impl, enum mtl_port port) {
   return ptp_get_raw_time(st_get_ptp(impl, port));
 }

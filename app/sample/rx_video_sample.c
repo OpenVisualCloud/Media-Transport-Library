@@ -19,7 +19,7 @@ struct rv_sample_context {
   uint16_t framebuff_consumer_idx;
   struct st_rx_frame* framebuffs;
 
-  st_dma_mem_handle dma_mem;
+  mtl_dma_mem_handle dma_mem;
   struct st20_ext_frame* ext_frames;
 };
 
@@ -153,9 +153,9 @@ int main(int argc, char** argv) {
     ops_rx.name = "st20_rx";
     ops_rx.priv = app[i];  // app handle register to lib
     ops_rx.num_port = 1;
-    memcpy(ops_rx.sip_addr[ST_PORT_P], ctx.rx_sip_addr[ST_PORT_P], ST_IP_ADDR_LEN);
-    strncpy(ops_rx.port[ST_PORT_P], ctx.param.port[ST_PORT_P], ST_PORT_MAX_LEN);
-    ops_rx.udp_port[ST_PORT_P] = ctx.udp_port + i;  // user config the udp port.
+    memcpy(ops_rx.sip_addr[MTL_PORT_P], ctx.rx_sip_addr[MTL_PORT_P], MTL_IP_ADDR_LEN);
+    strncpy(ops_rx.port[MTL_PORT_P], ctx.param.port[MTL_PORT_P], MTL_PORT_MAX_LEN);
+    ops_rx.udp_port[MTL_PORT_P] = ctx.udp_port + i;  // user config the udp port.
     ops_rx.pacing = ST21_PACING_NARROW;
     ops_rx.type = ST20_TYPE_FRAME_LEVEL;
     ops_rx.width = ctx.width;
@@ -178,7 +178,7 @@ int main(int argc, char** argv) {
       size_t framebuff_size = st20_frame_size(ops_rx.fmt, ops_rx.width, ops_rx.height);
       size_t fb_size = framebuff_size * app[i]->framebuff_cnt;
       /* alloc enough memory to hold framebuffers and map to iova */
-      st_dma_mem_handle dma_mem = st_dma_mem_alloc(ctx.st, fb_size);
+      mtl_dma_mem_handle dma_mem = mtl_dma_mem_alloc(ctx.st, fb_size);
       if (!dma_mem) {
         err("%s(%d), dma mem alloc/map fail\n", __func__, i);
         ret = -ENOMEM;
@@ -187,8 +187,8 @@ int main(int argc, char** argv) {
       app[i]->dma_mem = dma_mem;
 
       for (int j = 0; j < app[i]->framebuff_cnt; ++j) {
-        app[i]->ext_frames[j].buf_addr = st_dma_mem_addr(dma_mem) + j * framebuff_size;
-        app[i]->ext_frames[j].buf_iova = st_dma_mem_iova(dma_mem) + j * framebuff_size;
+        app[i]->ext_frames[j].buf_addr = mtl_dma_mem_addr(dma_mem) + j * framebuff_size;
+        app[i]->ext_frames[j].buf_iova = mtl_dma_mem_iova(dma_mem) + j * framebuff_size;
         app[i]->ext_frames[j].buf_len = framebuff_size;
       }
       ops_rx.ext_frames = app[i]->ext_frames;
@@ -212,7 +212,7 @@ int main(int argc, char** argv) {
   }
 
   // start dev
-  ret = st_start(ctx.st);
+  ret = mtl_start(ctx.st);
 
   while (!ctx.exit) {
     sleep(1);
@@ -229,7 +229,7 @@ int main(int argc, char** argv) {
   }
 
   // stop rx
-  ret = st_stop(ctx.st);
+  ret = mtl_stop(ctx.st);
 
   // check result
   for (int i = 0; i < session_num; i++) {
@@ -247,7 +247,7 @@ error:
     st_pthread_mutex_destroy(&app[i]->wake_mutex);
     st_pthread_cond_destroy(&app[i]->wake_cond);
 
-    if (app[i]->dma_mem) st_dma_mem_free(ctx.st, app[i]->dma_mem);
+    if (app[i]->dma_mem) mtl_dma_mem_free(ctx.st, app[i]->dma_mem);
     if (app[i]->framebuffs) free(app[i]->framebuffs);
     if (app[i]->ext_frames) free(app[i]->ext_frames);
     free(app[i]);

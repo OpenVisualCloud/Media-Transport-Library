@@ -3,16 +3,16 @@
  */
 
 /**
- * @file st20_dpdk_api.h
+ * @file st20_api.h
  *
  * Interfaces to Media Transport Library for st2110-20/22 transport.
  *
  */
 
-#include <st_dpdk_api.h>
+#include "st_api.h"
 
-#ifndef _ST20_DPDK_API_HEAD_H_
-#define _ST20_DPDK_API_HEAD_H_
+#ifndef _ST20_API_HEAD_H_
+#define _ST20_API_HEAD_H_
 
 #if defined(__cplusplus)
 extern "C" {
@@ -32,79 +32,79 @@ extern "C" {
  * Flag bit in flags of struct st20_tx_ops.
  * P TX destination mac assigned by user
  */
-#define ST20_TX_FLAG_USER_P_MAC (ST_BIT32(0))
+#define ST20_TX_FLAG_USER_P_MAC (MTL_BIT32(0))
 /**
  * Flag bit in flags of struct st20_tx_ops.
  * R TX destination mac assigned by user
  */
-#define ST20_TX_FLAG_USER_R_MAC (ST_BIT32(1))
+#define ST20_TX_FLAG_USER_R_MAC (MTL_BIT32(1))
 /**
  * Flag bit in flags of struct st20_tx_ops.
  * Frame addr set by user for zero-copy, for ST20_TYPE_FRAME_LEVEL
  */
-#define ST20_TX_FLAG_EXT_FRAME (ST_BIT32(2))
+#define ST20_TX_FLAG_EXT_FRAME (MTL_BIT32(2))
 /**
  * Flag bit in flags of struct st20_tx_ops.
  * User control the frame pacing by pass a timestamp in st20_tx_frame_meta,
  * lib will wait until timestamp is reached for each frame.
  */
-#define ST20_TX_FLAG_USER_PACING (ST_BIT32(3))
+#define ST20_TX_FLAG_USER_PACING (MTL_BIT32(3))
 /**
  * Flag bit in flags of struct st20_tx_ops.
  * If enabled, lib will assign the rtp timestamp to the value in
  * st20_tx_frame_meta(ST10_TIMESTAMP_FMT_MEDIA_CLK is used)
  */
-#define ST20_TX_FLAG_USER_TIMESTAMP (ST_BIT32(4))
+#define ST20_TX_FLAG_USER_TIMESTAMP (MTL_BIT32(4))
 /**
  * Flag bit in flags of struct st20_tx_ops.
  * If enabled, lib will pass ST_EVENT_VSYNC by the notify_event on every epoch start.
  */
-#define ST20_TX_FLAG_ENABLE_VSYNC (ST_BIT32(5))
+#define ST20_TX_FLAG_ENABLE_VSYNC (MTL_BIT32(5))
 
 /**
  * Flag bit in flags of struct st22_tx_ops.
  * P TX destination mac assigned by user
  */
-#define ST22_TX_FLAG_USER_P_MAC (ST_BIT32(0))
+#define ST22_TX_FLAG_USER_P_MAC (MTL_BIT32(0))
 /**
  * Flag bit in flags of struct st22_tx_ops.
  * R TX destination mac assigned by user
  */
-#define ST22_TX_FLAG_USER_R_MAC (ST_BIT32(1))
+#define ST22_TX_FLAG_USER_R_MAC (MTL_BIT32(1))
 /**
  * Flag bit in flags of struct st20_tx_ops.
  * Disable ST22 boxes, for ST22_TYPE_FRAME_LEVEL
  */
-#define ST22_TX_FLAG_DISABLE_BOXES (ST_BIT32(2))
+#define ST22_TX_FLAG_DISABLE_BOXES (MTL_BIT32(2))
 /**
  * Flag bit in flags of struct st22_tx_ops.
  * User control the frame pacing by pass a timestamp in st22_tx_frame_meta,
  * lib will wait until timestamp is reached for each frame.
  */
-#define ST22_TX_FLAG_USER_PACING (ST_BIT32(3))
+#define ST22_TX_FLAG_USER_PACING (MTL_BIT32(3))
 /**
  * Flag bit in flags of struct st22_tx_ops.
  * If enabled, lib will assign the rtp timestamp to the value in
  * tx_frame_meta(ST10_TIMESTAMP_FMT_MEDIA_CLK is used)
  */
-#define ST22_TX_FLAG_USER_TIMESTAMP (ST_BIT32(4))
+#define ST22_TX_FLAG_USER_TIMESTAMP (MTL_BIT32(4))
 /**
  * Flag bit in flags of struct st22_tx_ops.
  * If enabled, lib will pass ST_EVENT_VSYNC by the notify_event on every epoch start.
  */
-#define ST22_TX_FLAG_ENABLE_VSYNC (ST_BIT32(5))
+#define ST22_TX_FLAG_ENABLE_VSYNC (MTL_BIT32(5))
 
 /**
- * Flag bit in flags of struct st20_rx_ops, for non ST_PMD_DPDK_USER.
+ * Flag bit in flags of struct st20_rx_ops, for non MTL_PMD_DPDK_USER.
  * If set, it's application duty to set the rx flow(queue) and muticast join/drop.
  * Use st20_rx_get_queue_meta to get the queue meta(queue number etc) info.
  */
-#define ST20_RX_FLAG_DATA_PATH_ONLY (ST_BIT32(0))
+#define ST20_RX_FLAG_DATA_PATH_ONLY (MTL_BIT32(0))
 /**
  * Flag bit in flags of struct st20_rx_ops.
  * If enabled, lib will pass ST_EVENT_VSYNC by the notify_event on every epoch start.
  */
-#define ST20_RX_FLAG_ENABLE_VSYNC (ST_BIT32(1))
+#define ST20_RX_FLAG_ENABLE_VSYNC (MTL_BIT32(1))
 
 /**
  * Flag bit in flags of struct st20_rx_ops.
@@ -112,48 +112,48 @@ extern "C" {
  * If set, lib will pass the incomplete frame to app also by notify_frame_ready.
  * User can check st20_rx_frame_meta data for the frame integrity
  */
-#define ST20_RX_FLAG_RECEIVE_INCOMPLETE_FRAME (ST_BIT32(16))
+#define ST20_RX_FLAG_RECEIVE_INCOMPLETE_FRAME (MTL_BIT32(16))
 /**
  * Flag bit in flags of struct st20_rx_ops.
  * Only for ST20_TYPE_FRAME_LEVEL/ST20_TYPE_SLICE_LEVEL.
  * If set, lib will try to allocate DMA memory copy offload from
- * dma_dev_port(st_init_params) list.
+ * dma_dev_port(mtl_init_params) list.
  * Pls note it could fallback to CPU if no DMA device is available.
  */
-#define ST20_RX_FLAG_DMA_OFFLOAD (ST_BIT32(17))
+#define ST20_RX_FLAG_DMA_OFFLOAD (MTL_BIT32(17))
 /**
  * Flag bit in flags of struct st20_rx_ops.
  * Only for ST20_TYPE_FRAME_LEVEL/ST20_TYPE_SLICE_LEVEL.
  * If set, lib will automatically detect video format.
  * Width, height and fps set by app will be invalid.
  */
-#define ST20_RX_FLAG_AUTO_DETECT (ST_BIT32(18))
+#define ST20_RX_FLAG_AUTO_DETECT (MTL_BIT32(18))
 /**
  * Flag bit in flags of struct st20_rx_ops.
  * Only for ST20_TYPE_FRAME_LEVEL/ST20_TYPE_SLICE_LEVEL.
  * Only ST20_PACKING_BPM stream can enable this offload as software limit
  * Try to enable header split offload feature.
  */
-#define ST20_RX_FLAG_HDR_SPLIT (ST_BIT32(19))
+#define ST20_RX_FLAG_HDR_SPLIT (MTL_BIT32(19))
 /**
  * Flag bit in flags of struct st20_rx_ops.
- * Only for ST20_TYPE_FRAME_LEVEL/ST20_TYPE_SLICE_LEVEL and ST_FLAG_RX_VIDEO_MIGRATE
+ * Only for ST20_TYPE_FRAME_LEVEL/ST20_TYPE_SLICE_LEVEL and MTL_FLAG_RX_VIDEO_MIGRATE
  * is enabled.
  * Always disable MIGRATE for this session.
  */
-#define ST20_RX_FLAG_DISABLE_MIGRATE (ST_BIT32(20))
+#define ST20_RX_FLAG_DISABLE_MIGRATE (MTL_BIT32(20))
 
 /**
- * Flag bit in flags of struct st22_rx_ops, for non ST_PMD_DPDK_USER.
+ * Flag bit in flags of struct st22_rx_ops, for non MTL_PMD_DPDK_USER.
  * If set, it's application duty to set the rx flow(queue) and muticast join/drop.
  * Use st22_rx_get_queue_meta to get the queue meta(queue number etc) info.
  */
-#define ST22_RX_FLAG_DATA_PATH_ONLY (ST_BIT32(0))
+#define ST22_RX_FLAG_DATA_PATH_ONLY (MTL_BIT32(0))
 /**
  * Flag bit in flags of struct st22_rx_ops.
  * If enabled, lib will pass ST_EVENT_VSYNC by the notify_event on every epoch start.
  */
-#define ST22_RX_FLAG_ENABLE_VSYNC (ST_BIT32(1))
+#define ST22_RX_FLAG_ENABLE_VSYNC (MTL_BIT32(1))
 
 /**
  * Flag bit in flags of struct st22_rx_ops.
@@ -161,7 +161,7 @@ extern "C" {
  * If set, lib will pass the incomplete frame to app also by notify_frame_ready.
  * User can check st22_rx_frame_meta data for the frame integrity
  */
-#define ST22_RX_FLAG_RECEIVE_INCOMPLETE_FRAME (ST_BIT32(16))
+#define ST22_RX_FLAG_RECEIVE_INCOMPLETE_FRAME (MTL_BIT32(16))
 
 /**
  * Handle to tx st2110-20(video) session
@@ -463,7 +463,7 @@ struct st20_rfc4175_rtp_hdr {
 struct st22_rfc9134_rtp_hdr {
   /** Rtp rfc3550 base hdr */
   struct st_rfc3550_rtp_hdr base;
-#ifdef ST_LITTLE_ENDIAN
+#ifdef MTL_LITTLE_ENDIAN
   /** F counter high part */
   uint8_t f_counter_hi : 3;
   /** Interlaced information */
@@ -530,7 +530,7 @@ struct st20_rfc4175_extra_rtp_hdr {
 /** Pixel Group describing two image pixels in YUV 4:4:4 or RGB 12-bit format */
 struct st20_rfc4175_444_12_pg2_be {
   uint8_t Cb_R00; /**< First 8 bits for Cb/Red 0 */
-#ifdef ST_LITTLE_ENDIAN
+#ifdef MTL_LITTLE_ENDIAN
   uint8_t Y_G00 : 4;   /**< First 4 bits for Y/Green 0 */
   uint8_t Cb_R00_ : 4; /**< Second 4 bits for Cb/Red 0 */
   uint8_t Y_G00_;      /**< Second 8 bits for Y/Green 0 */
@@ -559,7 +559,7 @@ struct st20_rfc4175_444_12_pg2_be {
 /** Pixel Group describing two image pixels in YUV 4:4:4 or RGB 12-bit format */
 struct st20_rfc4175_444_12_pg2_le {
   uint8_t Cb_R00; /**< First 8 bits for Cb/Red 0 */
-#ifdef ST_LITTLE_ENDIAN
+#ifdef MTL_LITTLE_ENDIAN
   uint8_t Cb_R00_ : 4; /**< Second 4 bits for Cb/Red 0 */
   uint8_t Y_G00 : 4;   /**< First 4 bits for Y/Green 0 */
   uint8_t Y_G00_;      /**< Second 8 bits for Y/Green 0 */
@@ -588,7 +588,7 @@ struct st20_rfc4175_444_12_pg2_le {
 /** Pixel Group describing four image pixels in YUV 4:4:4 or RGB 10-bit format */
 struct st20_rfc4175_444_10_pg4_be {
   uint8_t Cb_R00; /**< First 8 bits for Cb/Red 0 */
-#ifdef ST_LITTLE_ENDIAN
+#ifdef MTL_LITTLE_ENDIAN
   uint8_t Y_G00 : 6;   /**< First 6 bits for Y/Green 0 */
   uint8_t Cb_R00_ : 2; /**< Second 2 bits for Cb/Red 0 */
   uint8_t Cr_B00 : 4;  /**< First 4 bits for Cr/Blue 0 */
@@ -641,7 +641,7 @@ struct st20_rfc4175_444_10_pg4_be {
 /** Pixel Group describing four image pixels in YUV 4:4:4 or RGB 10-bit format */
 struct st20_rfc4175_444_10_pg4_le {
   uint8_t Cb_R00; /**< First 8 bits for Cb/Red 0 */
-#ifdef ST_LITTLE_ENDIAN
+#ifdef MTL_LITTLE_ENDIAN
   uint8_t Cb_R00_ : 2; /**< Second 2 bits for Cb/Red 0 */
   uint8_t Y_G00 : 6;   /**< First 6 bits for Y/Green 0 */
   uint8_t Y_G00_ : 4;  /**< Second 4 bits for Y/Green 0 */
@@ -694,7 +694,7 @@ struct st20_rfc4175_444_10_pg4_le {
 /** Pixel Group describing two image pixels in YUV 4:2:2 12-bit format */
 struct st20_rfc4175_422_12_pg2_be {
   uint8_t Cb00; /**< First 8 bit Blue */
-#ifdef ST_LITTLE_ENDIAN
+#ifdef MTL_LITTLE_ENDIAN
   uint8_t Y00 : 4;   /**< First 4 bits Luminance for Y0 */
   uint8_t Cb00_ : 4; /**< Second 4 bit Blue */
   uint8_t Y00_;      /**< Second 8 bits Luminance for Y0 */
@@ -715,7 +715,7 @@ struct st20_rfc4175_422_12_pg2_be {
 /** Pixel Group describing two image pixels in YUV 4:2:2 12-bit format */
 struct st20_rfc4175_422_12_pg2_le {
   uint8_t Cb00; /**< First 8 bit Blue */
-#ifdef ST_LITTLE_ENDIAN
+#ifdef MTL_LITTLE_ENDIAN
   uint8_t Cb00_ : 4; /**< Second 4 bit Blue */
   uint8_t Y00 : 4;   /**< First 4 bits Luminance for Y0 */
   uint8_t Y00_;      /**< Second 8 bits Luminance for Y0 */
@@ -736,7 +736,7 @@ struct st20_rfc4175_422_12_pg2_le {
 /** Pixel Group describing two image pixels in YUV 4:2:2 10-bit format */
 struct st20_rfc4175_422_10_pg2_be {
   uint8_t Cb00; /**< First 8 bit Blue */
-#ifdef ST_LITTLE_ENDIAN
+#ifdef MTL_LITTLE_ENDIAN
   uint8_t Y00 : 6;   /**< First 6 bits Luminance for Y0 */
   uint8_t Cb00_ : 2; /**< Second 2 bit Blue */
   uint8_t Cr00 : 4;  /**< First 4 bit Red */
@@ -757,7 +757,7 @@ struct st20_rfc4175_422_10_pg2_be {
 /** Pixel Group describing two image pixels in YUV 4:2:2 10-bit format */
 struct st20_rfc4175_422_10_pg2_le {
   uint8_t Cb00; /**< First 8 bit Blue */
-#ifdef ST_LITTLE_ENDIAN
+#ifdef MTL_LITTLE_ENDIAN
   uint8_t Cb00_ : 2; /**< Second 2 bit Blue */
   uint8_t Y00 : 6;   /**< First 6 bits Luminance for Y0 */
   uint8_t Y00_ : 4;  /**< Second 4 bits Luminance for Y0 */
@@ -788,7 +788,7 @@ struct st20_ext_frame {
   /** Virtual address of external framebuffer */
   void* buf_addr;
   /** DMA mapped IOVA of external framebuffer */
-  st_iova_t buf_iova;
+  mtl_iova_t buf_iova;
   /** Length of external framebuffer */
   size_t buf_len;
   /** Private data for user, will be retrived with st_frame or st20_rx_frame_meta */
@@ -805,13 +805,13 @@ struct st20_tx_ops {
   /** private data to the callback function */
   void* priv;
   /** destination IP address */
-  uint8_t dip_addr[ST_PORT_MAX][ST_IP_ADDR_LEN];
-  /** Pcie BDF path like 0000:af:00.0, should align to BDF of st_init */
-  char port[ST_PORT_MAX][ST_PORT_MAX_LEN];
+  uint8_t dip_addr[MTL_PORT_MAX][MTL_IP_ADDR_LEN];
+  /** Pcie BDF path like 0000:af:00.0, should align to BDF of mtl_init */
+  char port[MTL_PORT_MAX][MTL_PORT_MAX_LEN];
   /** 1 or 2, num of ports this session attached to */
   uint8_t num_port;
   /** UDP port number */
-  uint16_t udp_port[ST_PORT_MAX];
+  uint16_t udp_port[MTL_PORT_MAX];
 
   /** Sender pacing type */
   enum st21_pacing pacing;
@@ -842,7 +842,7 @@ struct st20_tx_ops {
    * tx destination mac address.
    * Valid if ST20_TX_FLAG_USER_P(R)_MAC is enabled
    */
-  uint8_t tx_dst_mac[ST_PORT_MAX][6];
+  uint8_t tx_dst_mac[MTL_PORT_MAX][6];
 
   /**
    * the frame buffer count requested for one st20 tx session,
@@ -889,7 +889,7 @@ struct st20_tx_ops {
   uint32_t rtp_frame_total_pkts;
   /**
    * size for each rtp pkt, both the data and rtp header,
-   * must small than ST_PKT_MAX_RTP_BYTES,
+   * must small than MTL_PKT_MAX_RTP_BYTES,
    * only for ST20_TYPE_RTP_LEVEL.
    */
   uint16_t rtp_pkt_size;
@@ -920,13 +920,13 @@ struct st22_tx_ops {
   /** private data to the callback function */
   void* priv;
   /** destination IP address */
-  uint8_t dip_addr[ST_PORT_MAX][ST_IP_ADDR_LEN];
-  /** Pcie BDF path like 0000:af:00.0, should align to BDF of st_init */
-  char port[ST_PORT_MAX][ST_PORT_MAX_LEN];
+  uint8_t dip_addr[MTL_PORT_MAX][MTL_IP_ADDR_LEN];
+  /** Pcie BDF path like 0000:af:00.0, should align to BDF of mtl_init */
+  char port[MTL_PORT_MAX][MTL_PORT_MAX_LEN];
   /** 1 or 2, num of ports this session attached to */
   uint8_t num_port;
   /** UDP port number */
-  uint16_t udp_port[ST_PORT_MAX];
+  uint16_t udp_port[MTL_PORT_MAX];
 
   /** Session streaming type, frame or RTP */
   enum st22_type type;
@@ -949,7 +949,7 @@ struct st22_tx_ops {
    * tx destination mac address.
    * Valid if ST22_TX_FLAG_USER_P(R)_MAC is enabled
    */
-  uint8_t tx_dst_mac[ST_PORT_MAX][6];
+  uint8_t tx_dst_mac[MTL_PORT_MAX][6];
 
   /**
    * the frame buffer count requested for one st22 tx session,
@@ -994,7 +994,7 @@ struct st22_tx_ops {
   uint32_t rtp_frame_total_pkts;
   /**
    * size for each rtp pkt, both the data and rtp header,
-   * must small than ST_PKT_MAX_RTP_BYTES.
+   * must small than MTL_PKT_MAX_RTP_BYTES.
    * for ST22_TYPE_RTP_LEVEL
    */
   uint16_t rtp_pkt_size;
@@ -1057,13 +1057,13 @@ struct st20_rx_ops {
   /** private data to the callback function */
   void* priv;
   /** source IP address of sender */
-  uint8_t sip_addr[ST_PORT_MAX][ST_IP_ADDR_LEN];
+  uint8_t sip_addr[MTL_PORT_MAX][MTL_IP_ADDR_LEN];
   /** 1 or 2, num of ports this session attached to */
   uint8_t num_port;
-  /** Pcie BDF path like 0000:af:00.0, should align to BDF of st_init */
-  char port[ST_PORT_MAX][ST_PORT_MAX_LEN];
+  /** Pcie BDF path like 0000:af:00.0, should align to BDF of mtl_init */
+  char port[MTL_PORT_MAX][MTL_PORT_MAX_LEN];
   /** UDP port number */
-  uint16_t udp_port[ST_PORT_MAX];
+  uint16_t udp_port[MTL_PORT_MAX];
 
   /** Sender pacing type */
   enum st21_pacing pacing;
@@ -1197,13 +1197,13 @@ struct st22_rx_ops {
   /** private data to the callback function */
   void* priv;
   /** source IP address of sender */
-  uint8_t sip_addr[ST_PORT_MAX][ST_IP_ADDR_LEN];
+  uint8_t sip_addr[MTL_PORT_MAX][MTL_IP_ADDR_LEN];
   /** 1 or 2, num of ports this session attached to */
   uint8_t num_port;
-  /** Pcie BDF path like 0000:af:00.0, should align to BDF of st_init */
-  char port[ST_PORT_MAX][ST_PORT_MAX_LEN];
+  /** Pcie BDF path like 0000:af:00.0, should align to BDF of mtl_init */
+  char port[MTL_PORT_MAX][MTL_PORT_MAX_LEN];
   /** UDP port number */
-  uint16_t udp_port[ST_PORT_MAX];
+  uint16_t udp_port[MTL_PORT_MAX];
   /** flags, value in ST22_RX_FLAG_* */
   uint32_t flags;
 
@@ -1281,7 +1281,7 @@ struct st22_rx_ops {
  *   - NULL on error.
  *   - Otherwise, the handle to the tx st2110-20(video) session.
  */
-st20_tx_handle st20_tx_create(st_handle st, struct st20_tx_ops* ops);
+st20_tx_handle st20_tx_create(mtl_handle mt, struct st20_tx_ops* ops);
 
 /**
  * Free the tx st2110-20(video) session.
@@ -1457,7 +1457,7 @@ static inline uint64_t st20_1080p59_yuv422_10bit_bandwidth_mps(void) {
  *   - NULL on error.
  *   - Otherwise, the handle to the tx st2110-22(compressed video) session.
  */
-st22_tx_handle st22_tx_create(st_handle st, struct st22_tx_ops* ops);
+st22_tx_handle st22_tx_create(mtl_handle mt, struct st22_tx_ops* ops);
 
 /**
  * Free the tx st2110-22(compressed video) session.
@@ -1537,7 +1537,7 @@ void* st22_tx_get_fb_addr(st22_tx_handle handle, uint16_t idx);
  *   - NULL on error.
  *   - Otherwise, the handle to the rx st2110-20(video) session.
  */
-st20_rx_handle st20_rx_create(st_handle st, struct st20_rx_ops* ops);
+st20_rx_handle st20_rx_create(mtl_handle mt, struct st20_rx_ops* ops);
 
 /**
  * Online update the source info for the rx st2110-20(video) session.
@@ -1691,7 +1691,7 @@ bool st20_rx_dma_enabled(st20_rx_handle handle);
  *   - NULL on error.
  *   - Otherwise, the handle to the rx st2110-22(compressed video) session.
  */
-st22_rx_handle st22_rx_create(st_handle st, struct st22_rx_ops* ops);
+st22_rx_handle st22_rx_create(mtl_handle mt, struct st22_rx_ops* ops);
 
 /**
  * Online update the source info for the rx st2110-22(compressed video) session.

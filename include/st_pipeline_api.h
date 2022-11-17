@@ -11,7 +11,7 @@
  *
  */
 
-#include <st20_dpdk_api.h>
+#include "st20_api.h"
 
 #ifndef _ST_PIPELINE_API_HEAD_H_
 #define _ST_PIPELINE_API_HEAD_H_
@@ -86,7 +86,7 @@ typedef int (*st_plugin_get_meta_fn)(struct st_plugin_meta* meta);
 /** Get meta function name of plugin */
 #define ST_PLUGIN_GET_META_API "st_plugin_get_meta"
 /** Create function porotype of plugin */
-typedef st_plugin_priv (*st_plugin_create_fn)(st_handle st);
+typedef st_plugin_priv (*st_plugin_create_fn)(mtl_handle mt);
 /** Create function name of plugin */
 #define ST_PLUGIN_CREATE_API "st_plugin_create"
 /** Free function porotype of plugin */
@@ -161,33 +161,33 @@ enum st_frame_fmt {
 };
 
 /** ST format cap of ST_FRAME_FMT_YUV422PLANAR10LE, used in the jpegxs_plugin caps */
-#define ST_FMT_CAP_YUV422PLANAR10LE (ST_BIT64(ST_FRAME_FMT_YUV422PLANAR10LE))
+#define ST_FMT_CAP_YUV422PLANAR10LE (MTL_BIT64(ST_FRAME_FMT_YUV422PLANAR10LE))
 /** ST format cap of ST_FRAME_FMT_V210, used in the jpegxs_plugin caps */
-#define ST_FMT_CAP_V210 (ST_BIT64(ST_FRAME_FMT_V210))
+#define ST_FMT_CAP_V210 (MTL_BIT64(ST_FRAME_FMT_V210))
 /** ST format cap of ST_FRAME_FMT_YUV422PLANAR8, used in the jpegxs_plugin caps */
-#define ST_FMT_CAP_YUV422PLANAR8 (ST_BIT64(ST_FRAME_FMT_YUV422PLANAR8))
+#define ST_FMT_CAP_YUV422PLANAR8 (MTL_BIT64(ST_FRAME_FMT_YUV422PLANAR8))
 /** ST format cap of ST_FRAME_FMT_YUV422PACKED8, used in the jpegxs_plugin caps */
-#define ST_FMT_CAP_YUV422PACKED8 (ST_BIT64(ST_FRAME_FMT_YUV422PACKED8))
+#define ST_FMT_CAP_YUV422PACKED8 (MTL_BIT64(ST_FRAME_FMT_YUV422PACKED8))
 /** ST format cap of ST_FRAME_FMT_YUV422RFC4175PG2BE10, used in the jpegxs_plugin caps */
-#define ST_FMT_CAP_YUV422RFC4175PG2BE10 (ST_BIT64(ST_FRAME_FMT_YUV422RFC4175PG2BE10))
+#define ST_FMT_CAP_YUV422RFC4175PG2BE10 (MTL_BIT64(ST_FRAME_FMT_YUV422RFC4175PG2BE10))
 
 /** ST format cap of ST_FRAME_FMT_ARGB, used in the jpegxs_plugin caps */
-#define ST_FMT_CAP_ARGB (ST_BIT64(ST_FRAME_FMT_ARGB))
+#define ST_FMT_CAP_ARGB (MTL_BIT64(ST_FRAME_FMT_ARGB))
 /** ST format cap of ST_FRAME_FMT_ARGB, used in the jpegxs_plugin caps */
-#define ST_FMT_CAP_BGRA (ST_BIT64(ST_FRAME_FMT_BGRA))
+#define ST_FMT_CAP_BGRA (MTL_BIT64(ST_FRAME_FMT_BGRA))
 /** ST format cap of ST_FRAME_FMT_RGB8, used in the jpegxs_plugin caps */
-#define ST_FMT_CAP_RGB8 (ST_BIT64(ST_FRAME_FMT_RGB8))
+#define ST_FMT_CAP_RGB8 (MTL_BIT64(ST_FRAME_FMT_RGB8))
 
 /** ST format cap of ST_FRAME_FMT_JPEGXS_CODESTREAM, used in the jpegxs_plugin caps */
-#define ST_FMT_CAP_JPEGXS_CODESTREAM (ST_BIT64(ST_FRAME_FMT_JPEGXS_CODESTREAM))
+#define ST_FMT_CAP_JPEGXS_CODESTREAM (MTL_BIT64(ST_FRAME_FMT_JPEGXS_CODESTREAM))
 /** ST format cap of ST_FRAME_FMT_H264_CBR_CODESTREAM, used in the st22_plugin caps */
-#define ST_FMT_CAP_H264_CBR_CODESTREAM (ST_BIT64(ST_FRAME_FMT_H264_CBR_CODESTREAM))
+#define ST_FMT_CAP_H264_CBR_CODESTREAM (MTL_BIT64(ST_FRAME_FMT_H264_CBR_CODESTREAM))
 
 /**
  * Flag bit in flags of struct st_frame.
  * Frame has external buffer attached.
  */
-#define ST_FRAME_FLAG_EXT_BUF (ST_BIT32(0))
+#define ST_FRAME_FLAG_EXT_BUF (MTL_BIT32(0))
 
 #define ST_MAX_PLANES (4)
 
@@ -196,7 +196,7 @@ struct st_ext_frame {
   /** Each plane's virtual address of external frame */
   void* addr[ST_MAX_PLANES];
   /** Each plane's IOVA of external frame */
-  st_iova_t iova[ST_MAX_PLANES];
+  mtl_iova_t iova[ST_MAX_PLANES];
   /** Each plane's linesize of external frame, leave as 0 if no line padding */
   size_t linesize[ST_MAX_PLANES];
   /** Buffer size of external frame */
@@ -210,7 +210,7 @@ struct st_frame {
   /** frame buffer address of each plane */
   void* addr[ST_MAX_PLANES];
   /** frame buffer IOVA of each plane */
-  st_iova_t iova[ST_MAX_PLANES];
+  mtl_iova_t iova[ST_MAX_PLANES];
   /** frame buffer linesize of each plane */
   size_t linesize[ST_MAX_PLANES];
   /** frame format */
@@ -284,125 +284,125 @@ enum st22_quality_mode {
  * Flag bit in flags of struct st22p_tx_ops.
  * P TX destination mac assigned by user
  */
-#define ST22P_TX_FLAG_USER_P_MAC (ST_BIT32(0))
+#define ST22P_TX_FLAG_USER_P_MAC (MTL_BIT32(0))
 /**
  * Flag bit in flags of struct st22p_tx_ops.
  * R TX destination mac assigned by user
  */
-#define ST22P_TX_FLAG_USER_R_MAC (ST_BIT32(1))
+#define ST22P_TX_FLAG_USER_R_MAC (MTL_BIT32(1))
 /**
  * Flag bit in flags of struct st22p_tx_ops.
  * Disable ST22 boxes
  */
-#define ST22P_TX_FLAG_DISABLE_BOXES (ST_BIT32(2))
+#define ST22P_TX_FLAG_DISABLE_BOXES (MTL_BIT32(2))
 /**
  * Flag bit in flags of struct st22p_tx_ops.
  * User control the frame pacing by pass a timestamp in st_frame,
  * lib will wait until timestamp is reached for each frame.
  */
-#define ST22P_TX_FLAG_USER_PACING (ST_BIT32(3))
+#define ST22P_TX_FLAG_USER_PACING (MTL_BIT32(3))
 /**
  * Flag bit in flags of struct st22p_tx_ops.
  * If enabled, lib will assign the rtp timestamp to the value in
  * tx_frame_meta(ST10_TIMESTAMP_FMT_MEDIA_CLK is used)
  */
-#define ST22P_TX_FLAG_USER_TIMESTAMP (ST_BIT32(4))
+#define ST22P_TX_FLAG_USER_TIMESTAMP (MTL_BIT32(4))
 /**
  * Flag bit in flags of struct st22p_tx_ops.
  * If enabled, lib will pass ST_EVENT_VSYNC by the notify_event on every epoch start.
  */
-#define ST22P_TX_FLAG_ENABLE_VSYNC (ST_BIT32(5))
+#define ST22P_TX_FLAG_ENABLE_VSYNC (MTL_BIT32(5))
 
 /**
  * Flag bit in flags of struct st20p_tx_ops.
  * P TX destination mac assigned by user
  */
-#define ST20P_TX_FLAG_USER_P_MAC (ST_BIT32(0))
+#define ST20P_TX_FLAG_USER_P_MAC (MTL_BIT32(0))
 /**
  * Flag bit in flags of struct st20p_tx_ops.
  * R TX destination mac assigned by user
  */
-#define ST20P_TX_FLAG_USER_R_MAC (ST_BIT32(1))
+#define ST20P_TX_FLAG_USER_R_MAC (MTL_BIT32(1))
 /**
  * Flag bit in flags of struct st20p_tx_ops.
  * Lib uses user allocated memory for frames.
  * The external frames are provided by calling
  * st20_tx_put_ext_frame.
  */
-#define ST20P_TX_FLAG_EXT_FRAME (ST_BIT32(2))
+#define ST20P_TX_FLAG_EXT_FRAME (MTL_BIT32(2))
 /**
  * Flag bit in flags of struct st20p_tx_ops.
  * User control the frame pacing by pass a timestamp in st_frame,
  * lib will wait until timestamp is reached for each frame.
  */
-#define ST20P_TX_FLAG_USER_PACING (ST_BIT32(3))
+#define ST20P_TX_FLAG_USER_PACING (MTL_BIT32(3))
 /**
  * Flag bit in flags of struct st20p_tx_ops.
  * If enabled, lib will assign the rtp timestamp to the value in
  * tx_frame_meta(ST10_TIMESTAMP_FMT_MEDIA_CLK is used)
  */
-#define ST20P_TX_FLAG_USER_TIMESTAMP (ST_BIT32(4))
+#define ST20P_TX_FLAG_USER_TIMESTAMP (MTL_BIT32(4))
 /**
  * Flag bit in flags of struct st20p_tx_ops.
  * If enabled, lib will pass ST_EVENT_VSYNC by the notify_event on every epoch start.
  */
-#define ST20P_TX_FLAG_ENABLE_VSYNC (ST_BIT32(5))
+#define ST20P_TX_FLAG_ENABLE_VSYNC (MTL_BIT32(5))
 
 /**
- * Flag bit in flags of struct st22p_rx_ops, for non ST_PMD_DPDK_USER.
+ * Flag bit in flags of struct st22p_rx_ops, for non MTL_PMD_DPDK_USER.
  * If set, it's application duty to set the rx flow(queue) and muticast join/drop.
  * Use st22p_rx_get_queue_meta to get the queue meta(queue number etc) info.
  */
-#define ST22P_RX_FLAG_DATA_PATH_ONLY (ST_BIT32(0))
+#define ST22P_RX_FLAG_DATA_PATH_ONLY (MTL_BIT32(0))
 /**
  * Flag bit in flags of struct st22p_rx_ops.
  * If enabled, lib will pass ST_EVENT_VSYNC by the notify_event on every epoch start.
  */
-#define ST22P_RX_FLAG_ENABLE_VSYNC (ST_BIT32(1))
+#define ST22P_RX_FLAG_ENABLE_VSYNC (MTL_BIT32(1))
 /**
  * Flag bit in flags of struct st22p_rx_ops.
  * If set, lib will pass the incomplete frame to app also.
  * User can check st_frame_status data for the frame integrity
  */
-#define ST22P_RX_FLAG_RECEIVE_INCOMPLETE_FRAME (ST_BIT32(16))
+#define ST22P_RX_FLAG_RECEIVE_INCOMPLETE_FRAME (MTL_BIT32(16))
 
 /**
- * Flag bit in flags of struct st20p_rx_ops, for non ST_PMD_DPDK_USER.
+ * Flag bit in flags of struct st20p_rx_ops, for non MTL_PMD_DPDK_USER.
  * If set, it's application duty to set the rx flow(queue) and muticast join/drop.
  * Use st20p_rx_get_queue_meta to get the queue meta(queue number etc) info.
  */
-#define ST20P_RX_FLAG_DATA_PATH_ONLY (ST_BIT32(0))
+#define ST20P_RX_FLAG_DATA_PATH_ONLY (MTL_BIT32(0))
 /**
  * Flag bit in flags of struct st20p_rx_ops.
  * If enabled, lib will pass ST_EVENT_VSYNC by the notify_event on every epoch start.
  */
-#define ST20P_RX_FLAG_ENABLE_VSYNC (ST_BIT32(1))
+#define ST20P_RX_FLAG_ENABLE_VSYNC (MTL_BIT32(1))
 /**
  * Flag bit in flags of struct st20p_rx_ops.
  * Only used for internal convert mode.
  * The external frames are provided by calling
  * st20_rx_get_ext_frame.
  */
-#define ST20P_RX_FLAG_EXT_FRAME (ST_BIT32(2))
+#define ST20P_RX_FLAG_EXT_FRAME (MTL_BIT32(2))
 /**
  * Flag bit in flags of struct st20p_rx_ops.
  * If set, lib will pass the incomplete frame to app also.
  * User can check st_frame_status data for the frame integrity
  */
-#define ST20P_RX_FLAG_RECEIVE_INCOMPLETE_FRAME (ST_BIT32(16))
+#define ST20P_RX_FLAG_RECEIVE_INCOMPLETE_FRAME (MTL_BIT32(16))
 /**
  * Flag bit in flags of struct st20p_rx_ops.
  * If set, lib will try to allocate DMA memory copy offload from
- * dma_dev_port(st_init_params) list.
+ * dma_dev_port(mtl_init_params) list.
  * Pls note it could fallback to CPU if no DMA device is available.
  */
-#define ST20P_RX_FLAG_DMA_OFFLOAD (ST_BIT32(17))
+#define ST20P_RX_FLAG_DMA_OFFLOAD (MTL_BIT32(17))
 /**
  * Flag bit in flags of struct st20p_rx_ops.
- * Only for ST_FLAG_RX_VIDEO_MIGRATE is enabled.
+ * Only for MTL_FLAG_RX_VIDEO_MIGRATE is enabled.
  * Always disable MIGRATE for this session.
  */
-#define ST20P_RX_FLAG_DISABLE_MIGRATE (ST_BIT32(20))
+#define ST20P_RX_FLAG_DISABLE_MIGRATE (MTL_BIT32(20))
 
 /** The structure info for st plugin encode session create request. */
 struct st22_encoder_create_req {
@@ -562,13 +562,13 @@ struct st20_convert_frame_meta {
 /** The structure info for st tx port, used in creating session. */
 struct st_tx_port {
   /** destination IP address */
-  uint8_t dip_addr[ST_PORT_MAX][ST_IP_ADDR_LEN];
-  /** Pcie BDF path like 0000:af:00.0, should align to BDF of st_init */
-  char port[ST_PORT_MAX][ST_PORT_MAX_LEN];
+  uint8_t dip_addr[MTL_PORT_MAX][MTL_IP_ADDR_LEN];
+  /** Pcie BDF path like 0000:af:00.0, should align to BDF of mtl_init */
+  char port[MTL_PORT_MAX][MTL_PORT_MAX_LEN];
   /** 1 or 2, num of ports this session attached to */
   uint8_t num_port;
   /** UDP port number */
-  uint16_t udp_port[ST_PORT_MAX];
+  uint16_t udp_port[MTL_PORT_MAX];
   /** 7 bits payload type define in RFC3550 */
   uint8_t payload_type;
 };
@@ -576,13 +576,13 @@ struct st_tx_port {
 /** The structure info for st rx port, used in creating session. */
 struct st_rx_port {
   /** source IP address of sender */
-  uint8_t sip_addr[ST_PORT_MAX][ST_IP_ADDR_LEN];
+  uint8_t sip_addr[MTL_PORT_MAX][MTL_IP_ADDR_LEN];
   /** 1 or 2, num of ports this session attached to */
   uint8_t num_port;
-  /** Pcie BDF path like 0000:af:00.0, should align to BDF of st_init */
-  char port[ST_PORT_MAX][ST_PORT_MAX_LEN];
+  /** Pcie BDF path like 0000:af:00.0, should align to BDF of mtl_init */
+  char port[MTL_PORT_MAX][MTL_PORT_MAX_LEN];
   /** UDP port number */
-  uint16_t udp_port[ST_PORT_MAX];
+  uint16_t udp_port[MTL_PORT_MAX];
   /** 7 bits payload type define in RFC3550 */
   uint8_t payload_type;
 };
@@ -601,7 +601,7 @@ struct st20p_tx_ops {
    * tx destination mac address.
    * Valid if ST20P_TX_FLAG_USER_P(R)_MAC is enabled
    */
-  uint8_t tx_dst_mac[ST_PORT_MAX][6];
+  uint8_t tx_dst_mac[MTL_PORT_MAX][6];
   /** Session resolution width */
   uint32_t width;
   /** Session resolution height */
@@ -713,7 +713,7 @@ struct st22p_tx_ops {
    * tx destination mac address.
    * Valid if ST22P_TX_FLAG_USER_P(R)_MAC is enabled
    */
-  uint8_t tx_dst_mac[ST_PORT_MAX][6];
+  uint8_t tx_dst_mac[MTL_PORT_MAX][6];
   /** Session resolution width */
   uint32_t width;
   /** Session resolution height */
@@ -819,7 +819,8 @@ struct st22p_rx_ops {
  *   - NULL: fail.
  *   - Others: the handle to the encode dev context.
  */
-st22_encoder_dev_handle st22_encoder_register(st_handle st, struct st22_encoder_dev* dev);
+st22_encoder_dev_handle st22_encoder_register(mtl_handle mt,
+                                              struct st22_encoder_dev* dev);
 
 /**
  * Unregister one st22 encoder.
@@ -872,7 +873,8 @@ int st22_encoder_put_frame(st22p_encode_session session,
  *   - NULL: fail.
  *   - Others: the handle to the encode dev
  */
-st22_decoder_dev_handle st22_decoder_register(st_handle st, struct st22_decoder_dev* dev);
+st22_decoder_dev_handle st22_decoder_register(mtl_handle mt,
+                                              struct st22_decoder_dev* dev);
 
 /**
  * Unregister one st22 decoder.
@@ -925,7 +927,7 @@ int st22_decoder_put_frame(st22p_decode_session session,
  *   - NULL: fail.
  *   - Others: the handle to the convert dev
  */
-st20_converter_dev_handle st20_converter_register(st_handle st,
+st20_converter_dev_handle st20_converter_register(mtl_handle mt,
                                                   struct st20_converter_dev* dev);
 
 /**
@@ -980,7 +982,7 @@ int st20_converter_put_frame(st20p_convert_session session,
  *   - 0: Success.
  *   - <0: Error code.
  */
-int st_plugin_register(st_handle st, const char* path);
+int st_plugin_register(mtl_handle mt, const char* path);
 
 /**
  * Unregister one st plugin so.
@@ -994,7 +996,7 @@ int st_plugin_register(st_handle st, const char* path);
  *   - 0: Success.
  *   - <0: Error code.
  */
-int st_plugin_unregister(st_handle st, const char* path);
+int st_plugin_unregister(mtl_handle mt, const char* path);
 
 /**
  * Get the number of registered plugins lib.
@@ -1004,7 +1006,7 @@ int st_plugin_unregister(st_handle st, const char* path);
  * @return
  *   - number.
  */
-int st_get_plugins_nb(st_handle st);
+int st_get_plugins_nb(mtl_handle mt);
 
 /**
  * Create one tx st2110-22 pipeline session.
@@ -1018,7 +1020,7 @@ int st_get_plugins_nb(st_handle st);
  *   - NULL on error.
  *   - Otherwise, the handle to the tx st2110-22 pipeline session.
  */
-st22p_tx_handle st22p_tx_create(st_handle st, struct st22p_tx_ops* ops);
+st22p_tx_handle st22p_tx_create(mtl_handle mt, struct st22p_tx_ops* ops);
 
 /**
  * Free the tx st2110-22 pipeline session.
@@ -1092,7 +1094,7 @@ size_t st22p_tx_frame_size(st22p_tx_handle handle);
  *   - NULL on error.
  *   - Otherwise, the handle to the rx st2110-22 pipeline session.
  */
-st22p_rx_handle st22p_rx_create(st_handle st, struct st22p_rx_ops* ops);
+st22p_rx_handle st22p_rx_create(mtl_handle mt, struct st22p_rx_ops* ops);
 
 /**
  * Free the rx st2110-22 pipeline session.
@@ -1198,7 +1200,7 @@ int st22p_rx_get_queue_meta(st22p_rx_handle handle, struct st_queue_meta* meta);
  *   - NULL on error.
  *   - Otherwise, the handle to the tx st2110-20 pipeline session.
  */
-st20p_tx_handle st20p_tx_create(st_handle st, struct st20p_tx_ops* ops);
+st20p_tx_handle st20p_tx_create(mtl_handle mt, struct st20p_tx_ops* ops);
 
 /**
  * Free the tx st2110-20 pipeline session.
@@ -1300,7 +1302,7 @@ int st20p_tx_get_sch_idx(st20p_tx_handle handle);
  *   - NULL on error.
  *   - Otherwise, the handle to the rx st2110-20 pipeline session.
  */
-st20p_rx_handle st20p_rx_create(st_handle st, struct st20p_rx_ops* ops);
+st20p_rx_handle st20p_rx_create(mtl_handle mt, struct st20p_rx_ops* ops);
 
 /**
  * Free the rx st2110-20 pipeline session.

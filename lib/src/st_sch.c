@@ -37,7 +37,7 @@ static void sch_sleep_alarm_handler(void* param) {
   sch_sleep_wakeup(sch);
 }
 
-static int sch_tasklet_sleep(struct st_main_impl* impl, struct st_sch_impl* sch) {
+static int sch_tasklet_sleep(struct mtl_main_impl* impl, struct st_sch_impl* sch) {
   /* get sleep us */
   uint64_t sleep_us = st_sch_default_sleep_us(impl);
   uint64_t force_sleep_us = st_sch_force_sleep_us(impl);
@@ -96,7 +96,7 @@ static int sch_tasklet_sleep(struct st_main_impl* impl, struct st_sch_impl* sch)
 
 static int sch_tasklet_func(void* args) {
   struct st_sch_impl* sch = args;
-  struct st_main_impl* impl = sch->parnet;
+  struct mtl_main_impl* impl = sch->parnet;
   int idx = sch->idx;
   int num_tasklet, i;
   struct st_sch_tasklet_ops* ops;
@@ -123,7 +123,7 @@ static int sch_tasklet_func(void* args) {
 
   sch->sleep_ratio_start_ns = st_get_tsc(impl);
 
-  while (rte_atomic32_read(&sch->request_stop) == 0) {
+  while (rte_atomic32_read(&sch->requemtl_stop) == 0) {
     int pending = ST_TASKLET_ALL_DONE;
 
     num_tasklet = sch->max_tasklet_idx;
@@ -177,7 +177,7 @@ static int sch_start(struct st_sch_impl* sch) {
   }
 
   st_sch_set_cpu_busy(sch, false);
-  rte_atomic32_set(&sch->request_stop, 0);
+  rte_atomic32_set(&sch->requemtl_stop, 0);
   rte_atomic32_set(&sch->stopped, 0);
 
   if (!sch->run_in_thread) {
@@ -217,7 +217,7 @@ static int sch_stop(struct st_sch_impl* sch) {
     return 0;
   }
 
-  rte_atomic32_set(&sch->request_stop, 1);
+  rte_atomic32_set(&sch->requemtl_stop, 1);
   while (rte_atomic32_read(&sch->stopped) == 0) {
     st_sleep_ms(10);
   }
@@ -236,13 +236,13 @@ static int sch_stop(struct st_sch_impl* sch) {
   return 0;
 }
 
-static struct st_sch_impl* sch_request(struct st_main_impl* impl, enum st_sch_type type,
+static struct st_sch_impl* sch_request(struct mtl_main_impl* impl, enum st_sch_type type,
                                        st_sch_mask_t mask) {
   struct st_sch_impl* sch;
 
   for (int sch_idx = 0; sch_idx < ST_MAX_SCH_NUM; sch_idx++) {
     /* mask check */
-    if (!(mask & ST_BIT64(sch_idx))) continue;
+    if (!(mask & MTL_BIT64(sch_idx))) continue;
 
     sch = st_sch_instance(impl, sch_idx);
 
@@ -404,7 +404,7 @@ int st_sch_unregister_tasklet(struct st_sch_tasklet_impl* tasklet) {
 struct st_sch_tasklet_impl* st_sch_register_tasklet(
     struct st_sch_impl* sch, struct st_sch_tasklet_ops* tasklet_ops) {
   int idx = sch->idx;
-  struct st_main_impl* impl = sch->parnet;
+  struct mtl_main_impl* impl = sch->parnet;
   struct st_sch_tasklet_impl* tasklet;
 
   sch_lock(sch);
@@ -414,7 +414,7 @@ struct st_sch_tasklet_impl* st_sch_register_tasklet(
     if (sch->tasklet[i]) continue;
 
     /* find one empty tasklet slot */
-    tasklet = st_rte_zmalloc_socket(sizeof(*tasklet), st_socket_id(impl, ST_PORT_P));
+    tasklet = st_rte_zmalloc_socket(sizeof(*tasklet), st_socket_id(impl, MTL_PORT_P));
     if (!tasklet) {
       err("%s(%d), tasklet malloc fail on %d\n", __func__, idx, i);
       sch_unlock(sch);
@@ -446,7 +446,7 @@ struct st_sch_tasklet_impl* st_sch_register_tasklet(
   return NULL;
 }
 
-int st_sch_mrg_init(struct st_main_impl* impl, int data_quota_mbs_limit) {
+int st_sch_mrg_init(struct mtl_main_impl* impl, int data_quota_mbs_limit) {
   struct st_sch_impl* sch;
   struct st_sch_mgr* mgr = st_sch_get_mgr(impl);
 
@@ -487,7 +487,7 @@ int st_sch_mrg_init(struct st_main_impl* impl, int data_quota_mbs_limit) {
   return 0;
 }
 
-int st_sch_mrg_uinit(struct st_main_impl* impl) {
+int st_sch_mrg_uinit(struct mtl_main_impl* impl) {
   struct st_sch_impl* sch;
   struct st_sch_mgr* mgr = st_sch_get_mgr(impl);
 
@@ -533,7 +533,7 @@ int st_sch_add_quota(struct st_sch_impl* sch, int quota_mbs) {
 
 int st_sch_put(struct st_sch_impl* sch, int quota_mbs) {
   int sidx = sch->idx, ret;
-  struct st_main_impl* impl = sch->parnet;
+  struct mtl_main_impl* impl = sch->parnet;
 
   sch_free_quota(sch, quota_mbs);
 
@@ -561,7 +561,7 @@ int st_sch_put(struct st_sch_impl* sch, int quota_mbs) {
   return 0;
 }
 
-struct st_sch_impl* st_sch_get(struct st_main_impl* impl, int quota_mbs,
+struct st_sch_impl* st_sch_get(struct mtl_main_impl* impl, int quota_mbs,
                                enum st_sch_type type, st_sch_mask_t mask) {
   int ret, idx;
   struct st_sch_impl* sch;
@@ -573,7 +573,7 @@ struct st_sch_impl* st_sch_get(struct st_main_impl* impl, int quota_mbs,
   for (idx = 0; idx < ST_MAX_SCH_NUM; idx++) {
     sch = st_sch_instance(impl, idx);
     /* mask check */
-    if (!(mask & ST_BIT64(idx))) continue;
+    if (!(mask & MTL_BIT64(idx))) continue;
     /* active and busy check */
     if (!st_sch_is_active(sch) || sch->cpu_busy) continue;
     /* quota check */
@@ -619,7 +619,7 @@ struct st_sch_impl* st_sch_get(struct st_main_impl* impl, int quota_mbs,
   return sch;
 }
 
-int st_sch_start_all(struct st_main_impl* impl) {
+int st_sch_start_all(struct mtl_main_impl* impl) {
   int ret = 0;
   struct st_sch_impl* sch;
 
@@ -639,7 +639,7 @@ int st_sch_start_all(struct st_main_impl* impl) {
   return 0;
 }
 
-int st_sch_stop_all(struct st_main_impl* impl) {
+int st_sch_stop_all(struct mtl_main_impl* impl) {
   int ret;
   struct st_sch_impl* sch;
 
@@ -658,7 +658,7 @@ int st_sch_stop_all(struct st_main_impl* impl) {
   return 0;
 }
 
-void st_sch_stat(struct st_main_impl* impl) {
+void st_sch_stat(struct mtl_main_impl* impl) {
   struct st_sch_impl* sch;
 
   for (int sch_idx = 0; sch_idx < ST_MAX_SCH_NUM; sch_idx++) {

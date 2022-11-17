@@ -72,12 +72,12 @@ static void app_tx_audio_build_frame(struct st_app_tx_audio_session* s, void* fr
   if (s->st30_frame_cursor + frame_size > s->st30_source_end) {
     int len = s->st30_source_end - s->st30_frame_cursor;
     len = len / s->pkt_len * s->pkt_len;
-    if (len) st_memcpy(dst, s->st30_frame_cursor, len);
+    if (len) mtl_memcpy(dst, s->st30_frame_cursor, len);
     /* wrap back in the end */
-    st_memcpy(dst + len, s->st30_source_begin, frame_size - len);
+    mtl_memcpy(dst + len, s->st30_source_begin, frame_size - len);
     s->st30_frame_cursor = s->st30_source_begin + frame_size - len;
   } else {
-    st_memcpy(dst, src, s->st30_frame_size);
+    mtl_memcpy(dst, src, s->st30_frame_size);
     s->st30_frame_cursor += s->st30_frame_size;
   }
 }
@@ -158,10 +158,10 @@ static void* app_tx_audio_pcap_thread(void* arg) {
           udp_hdr =
               (struct udphdr*)(packet + sizeof(struct ether_header) + sizeof(struct ip));
           udp_data_len = ntohs(udp_hdr->uh_ulen) - sizeof(struct udphdr);
-          st_memcpy(usrptr,
-                    packet + sizeof(struct ether_header) + sizeof(struct ip) +
-                        sizeof(struct udphdr),
-                    udp_data_len);
+          mtl_memcpy(usrptr,
+                     packet + sizeof(struct ether_header) + sizeof(struct ip) +
+                         sizeof(struct udphdr),
+                     udp_data_len);
         }
       }
     } else {
@@ -202,10 +202,10 @@ static void app_tx_audio_build_rtp(struct st_app_tx_audio_session* s, void* usrp
   s->st30_seq_id++;
 
   if (s->st30_frame_cursor + s->pkt_len > s->st30_source_end) {
-    st_memcpy(payload, s->st30_source_begin, s->pkt_len);
+    mtl_memcpy(payload, s->st30_source_begin, s->pkt_len);
     s->st30_frame_cursor = s->st30_source_begin + s->pkt_len;
   } else {
-    st_memcpy(payload, s->st30_frame_cursor, s->pkt_len);
+    mtl_memcpy(payload, s->st30_frame_cursor, s->pkt_len);
     s->st30_frame_cursor += s->pkt_len;
   }
   *mbuf_len = sizeof(struct st_rfc3550_rtp_hdr) + s->pkt_len;
@@ -377,26 +377,27 @@ static int app_tx_audio_init(struct st_app_context* ctx, st_json_audio_session_t
   ops.name = name;
   ops.priv = s;
   ops.num_port = audio ? audio->base.num_inf : ctx->para.num_ports;
-  memcpy(ops.dip_addr[ST_PORT_P],
-         audio ? audio->base.ip[ST_PORT_P] : ctx->tx_dip_addr[ST_PORT_P], ST_IP_ADDR_LEN);
-  strncpy(ops.port[ST_PORT_P],
-          audio ? audio->base.inf[ST_PORT_P]->name : ctx->para.port[ST_PORT_P],
-          ST_PORT_MAX_LEN);
-  ops.udp_port[ST_PORT_P] = audio ? audio->base.udp_port : (10100 + s->idx);
-  if (ctx->has_tx_dst_mac[ST_PORT_P]) {
-    memcpy(&ops.tx_dst_mac[ST_PORT_P][0], ctx->tx_dst_mac[ST_PORT_P], 6);
+  memcpy(ops.dip_addr[MTL_PORT_P],
+         audio ? audio->base.ip[MTL_PORT_P] : ctx->tx_dip_addr[MTL_PORT_P],
+         MTL_IP_ADDR_LEN);
+  strncpy(ops.port[MTL_PORT_P],
+          audio ? audio->base.inf[MTL_PORT_P]->name : ctx->para.port[MTL_PORT_P],
+          MTL_PORT_MAX_LEN);
+  ops.udp_port[MTL_PORT_P] = audio ? audio->base.udp_port : (10100 + s->idx);
+  if (ctx->has_tx_dst_mac[MTL_PORT_P]) {
+    memcpy(&ops.tx_dst_mac[MTL_PORT_P][0], ctx->tx_dst_mac[MTL_PORT_P], 6);
     ops.flags |= ST30_TX_FLAG_USER_P_MAC;
   }
   if (ops.num_port > 1) {
-    memcpy(ops.dip_addr[ST_PORT_R],
-           audio ? audio->base.ip[ST_PORT_R] : ctx->tx_dip_addr[ST_PORT_R],
-           ST_IP_ADDR_LEN);
-    strncpy(ops.port[ST_PORT_R],
-            audio ? audio->base.inf[ST_PORT_R]->name : ctx->para.port[ST_PORT_R],
-            ST_PORT_MAX_LEN);
-    ops.udp_port[ST_PORT_R] = audio ? audio->base.udp_port : (10100 + s->idx);
-    if (ctx->has_tx_dst_mac[ST_PORT_R]) {
-      memcpy(&ops.tx_dst_mac[ST_PORT_R][0], ctx->tx_dst_mac[ST_PORT_R], 6);
+    memcpy(ops.dip_addr[MTL_PORT_R],
+           audio ? audio->base.ip[MTL_PORT_R] : ctx->tx_dip_addr[MTL_PORT_R],
+           MTL_IP_ADDR_LEN);
+    strncpy(ops.port[MTL_PORT_R],
+            audio ? audio->base.inf[MTL_PORT_R]->name : ctx->para.port[MTL_PORT_R],
+            MTL_PORT_MAX_LEN);
+    ops.udp_port[MTL_PORT_R] = audio ? audio->base.udp_port : (10100 + s->idx);
+    if (ctx->has_tx_dst_mac[MTL_PORT_R]) {
+      memcpy(&ops.tx_dst_mac[MTL_PORT_R][0], ctx->tx_dst_mac[MTL_PORT_R], 6);
       ops.flags |= ST30_TX_FLAG_USER_R_MAC;
     }
   }

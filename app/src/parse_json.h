@@ -4,9 +4,9 @@
 
 #include <json-c/json.h>
 #include <math.h>
-#include <st30_dpdk_api.h>
-#include <st40_dpdk_api.h>
-#include <st_pipeline_api.h>
+#include <mtl/st30_api.h>
+#include <mtl/st40_api.h>
+#include <mtl/st_pipeline_api.h>
 #include <stdbool.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -91,13 +91,13 @@ struct st_video_fmt_desc {
 };
 
 typedef struct st_json_interface {
-  char name[ST_PORT_MAX_LEN];
-  uint8_t ip_addr[ST_IP_ADDR_LEN];
+  char name[MTL_PORT_MAX_LEN];
+  uint8_t ip_addr[MTL_IP_ADDR_LEN];
 } st_json_interface_t;
 
 typedef struct st_json_session_base {
-  uint8_t ip[ST_PORT_MAX][ST_IP_ADDR_LEN];
-  st_json_interface_t* inf[ST_PORT_MAX];
+  uint8_t ip[MTL_PORT_MAX][MTL_IP_ADDR_LEN];
+  st_json_interface_t* inf[MTL_PORT_MAX];
   int num_inf;
   uint16_t udp_port;
   uint8_t payload_type;

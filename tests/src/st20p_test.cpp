@@ -247,9 +247,10 @@ static void st20p_tx_ops_init(tests_context* st20, struct st20p_tx_ops* ops_tx) 
   ops_tx->name = "st20p_test";
   ops_tx->priv = st20;
   ops_tx->port.num_port = 1;
-  memcpy(ops_tx->port.dip_addr[ST_PORT_P], ctx->mcast_ip_addr[ST_PORT_P], ST_IP_ADDR_LEN);
-  strncpy(ops_tx->port.port[ST_PORT_P], ctx->para.port[ST_PORT_P], ST_PORT_MAX_LEN);
-  ops_tx->port.udp_port[ST_PORT_P] = ST20P_TEST_UDP_PORT + st20->idx;
+  memcpy(ops_tx->port.dip_addr[MTL_PORT_P], ctx->mcast_ip_addr[MTL_PORT_P],
+         MTL_IP_ADDR_LEN);
+  strncpy(ops_tx->port.port[MTL_PORT_P], ctx->para.port[MTL_PORT_P], MTL_PORT_MAX_LEN);
+  ops_tx->port.udp_port[MTL_PORT_P] = ST20P_TEST_UDP_PORT + st20->idx;
   ops_tx->port.payload_type = ST20P_TEST_PAYLOAD_TYPE;
   ops_tx->width = 1920;
   ops_tx->height = 1080;
@@ -270,9 +271,10 @@ static void st20p_rx_ops_init(tests_context* st20, struct st20p_rx_ops* ops_rx) 
   ops_rx->name = "st20p_test";
   ops_rx->priv = st20;
   ops_rx->port.num_port = 1;
-  memcpy(ops_rx->port.sip_addr[ST_PORT_P], ctx->mcast_ip_addr[ST_PORT_P], ST_IP_ADDR_LEN);
-  strncpy(ops_rx->port.port[ST_PORT_P], ctx->para.port[ST_PORT_R], ST_PORT_MAX_LEN);
-  ops_rx->port.udp_port[ST_PORT_P] = ST20P_TEST_UDP_PORT + st20->idx;
+  memcpy(ops_rx->port.sip_addr[MTL_PORT_P], ctx->mcast_ip_addr[MTL_PORT_P],
+         MTL_IP_ADDR_LEN);
+  strncpy(ops_rx->port.port[MTL_PORT_P], ctx->para.port[MTL_PORT_R], MTL_PORT_MAX_LEN);
+  ops_rx->port.udp_port[MTL_PORT_P] = ST20P_TEST_UDP_PORT + st20->idx;
   ops_rx->port.payload_type = ST20P_TEST_PAYLOAD_TYPE;
   ops_rx->width = 1920;
   ops_rx->height = 1080;
@@ -289,10 +291,10 @@ static void st20p_rx_ops_init(tests_context* st20, struct st20p_rx_ops* ops_rx) 
 static void st20p_tx_assert_cnt(int expect_st20_tx_cnt) {
   auto ctx = st_test_ctx();
   auto handle = ctx->handle;
-  struct st_stats stats;
+  struct mtl_stats stats;
   int ret;
 
-  ret = st_get_stats(handle, &stats);
+  ret = mtl_get_stats(handle, &stats);
   EXPECT_GE(ret, 0);
   EXPECT_EQ(stats.st20_tx_sessions_cnt, expect_st20_tx_cnt);
 }
@@ -300,10 +302,10 @@ static void st20p_tx_assert_cnt(int expect_st20_tx_cnt) {
 static void st20p_rx_assert_cnt(int expect_st20_rx_cnt) {
   auto ctx = st_test_ctx();
   auto handle = ctx->handle;
-  struct st_stats stats;
+  struct mtl_stats stats;
   int ret;
 
-  ret = st_get_stats(handle, &stats);
+  ret = mtl_get_stats(handle, &stats);
   EXPECT_GE(ret, 0);
   EXPECT_EQ(stats.st20_rx_sessions_cnt, expect_st20_rx_cnt);
 }
@@ -662,10 +664,10 @@ static void st20p_rx_digest_test(enum st_fps fps[], int width[], int height[],
     ops_tx.name = "st20p_test";
     ops_tx.priv = test_ctx_tx[i];
     ops_tx.port.num_port = 1;
-    memcpy(ops_tx.port.dip_addr[ST_PORT_P], ctx->para.sip_addr[ST_PORT_R],
-           ST_IP_ADDR_LEN);
-    strncpy(ops_tx.port.port[ST_PORT_P], ctx->para.port[ST_PORT_P], ST_PORT_MAX_LEN);
-    ops_tx.port.udp_port[ST_PORT_P] = ST20P_TEST_UDP_PORT + i;
+    memcpy(ops_tx.port.dip_addr[MTL_PORT_P], ctx->para.sip_addr[MTL_PORT_R],
+           MTL_IP_ADDR_LEN);
+    strncpy(ops_tx.port.port[MTL_PORT_P], ctx->para.port[MTL_PORT_P], MTL_PORT_MAX_LEN);
+    ops_tx.port.udp_port[MTL_PORT_P] = ST20P_TEST_UDP_PORT + i;
     ops_tx.port.payload_type = ST20P_TEST_PAYLOAD_TYPE;
     ops_tx.width = width[i];
     ops_tx.height = height[i];
@@ -691,7 +693,7 @@ static void st20p_rx_digest_test(enum st_fps fps[], int width[], int height[],
 
     int sch = st20p_tx_get_sch_idx(tx_handle[i]);
     EXPECT_GE(sch, 0);
-    ret = st_sch_enable_sleep(st, sch, false);
+    ret = mtl_sch_enable_sleep(st, sch, false);
     EXPECT_GE(ret, 0);
 
     /* sha caculate */
@@ -702,17 +704,18 @@ static void st20p_rx_digest_test(enum st_fps fps[], int width[], int height[],
     if (para->tx_ext) {
       test_ctx_tx[i]->p_ext_frames = (struct st_ext_frame*)malloc(
           sizeof(*test_ctx_tx[i]->p_ext_frames) * test_ctx_tx[i]->fb_cnt);
-      size_t pg_sz = st_page_size(st);
+      size_t pg_sz = mtl_page_size(st);
       size_t fb_size = test_ctx_tx[i]->frame_size * test_ctx_tx[i]->fb_cnt;
-      test_ctx_tx[i]->ext_fb_iova_map_sz = st_size_page_align(fb_size, pg_sz); /* align */
+      test_ctx_tx[i]->ext_fb_iova_map_sz =
+          mtl_size_page_align(fb_size, pg_sz); /* align */
       size_t fb_size_malloc = test_ctx_tx[i]->ext_fb_iova_map_sz + pg_sz;
       test_ctx_tx[i]->ext_fb_malloc = st_test_zmalloc(fb_size_malloc);
       ASSERT_TRUE(test_ctx_tx[i]->ext_fb_malloc != NULL);
       test_ctx_tx[i]->ext_fb =
-          (uint8_t*)ST_ALIGN((uint64_t)test_ctx_tx[i]->ext_fb_malloc, pg_sz);
+          (uint8_t*)MTL_ALIGN((uint64_t)test_ctx_tx[i]->ext_fb_malloc, pg_sz);
       test_ctx_tx[i]->ext_fb_iova =
-          st_dma_map(st, test_ctx_tx[i]->ext_fb, test_ctx_tx[i]->ext_fb_iova_map_sz);
-      ASSERT_TRUE(test_ctx_tx[i]->ext_fb_iova != ST_BAD_IOVA);
+          mtl_dma_map(st, test_ctx_tx[i]->ext_fb, test_ctx_tx[i]->ext_fb_iova_map_sz);
+      ASSERT_TRUE(test_ctx_tx[i]->ext_fb_iova != MTL_BAD_IOVA);
       info("%s, session %d ext_fb %p\n", __func__, i, test_ctx_tx[i]->ext_fb);
 
       for (int j = 0; j < test_ctx_tx[i]->fb_cnt; j++) {
@@ -806,18 +809,19 @@ static void st20p_rx_digest_test(enum st_fps fps[], int width[], int height[],
       test_ctx_rx[i]->p_ext_frames = (struct st_ext_frame*)malloc(
           sizeof(*test_ctx_rx[i]->p_ext_frames) * test_ctx_rx[i]->fb_cnt);
       size_t frame_size = st_frame_size(rx_fmt[i], width[i], height[i]);
-      size_t pg_sz = st_page_size(st);
+      size_t pg_sz = mtl_page_size(st);
       size_t fb_size = frame_size * test_ctx_rx[i]->fb_cnt;
-      test_ctx_rx[i]->ext_fb_iova_map_sz = st_size_page_align(fb_size, pg_sz); /* align */
+      test_ctx_rx[i]->ext_fb_iova_map_sz =
+          mtl_size_page_align(fb_size, pg_sz); /* align */
       size_t fb_size_malloc = test_ctx_rx[i]->ext_fb_iova_map_sz + pg_sz;
       test_ctx_rx[i]->ext_fb_malloc = st_test_zmalloc(fb_size_malloc);
       ASSERT_TRUE(test_ctx_rx[i]->ext_fb_malloc != NULL);
       test_ctx_rx[i]->ext_fb =
-          (uint8_t*)ST_ALIGN((uint64_t)test_ctx_rx[i]->ext_fb_malloc, pg_sz);
+          (uint8_t*)MTL_ALIGN((uint64_t)test_ctx_rx[i]->ext_fb_malloc, pg_sz);
       test_ctx_rx[i]->ext_fb_iova =
-          st_dma_map(st, test_ctx_rx[i]->ext_fb, test_ctx_rx[i]->ext_fb_iova_map_sz);
+          mtl_dma_map(st, test_ctx_rx[i]->ext_fb, test_ctx_rx[i]->ext_fb_iova_map_sz);
       info("%s, session %d ext_fb %p\n", __func__, i, test_ctx_rx[i]->ext_fb);
-      ASSERT_TRUE(test_ctx_rx[i]->ext_fb_iova != ST_BAD_IOVA);
+      ASSERT_TRUE(test_ctx_rx[i]->ext_fb_iova != MTL_BAD_IOVA);
 
       for (int j = 0; j < test_ctx_rx[i]->fb_cnt; j++) {
         test_ctx_rx[i]->p_ext_frames[j].addr[0] = test_ctx_rx[i]->ext_fb + j * frame_size;
@@ -845,10 +849,10 @@ static void st20p_rx_digest_test(enum st_fps fps[], int width[], int height[],
     ops_rx.name = "st20p_test";
     ops_rx.priv = test_ctx_rx[i];
     ops_rx.port.num_port = 1;
-    memcpy(ops_rx.port.sip_addr[ST_PORT_P], ctx->para.sip_addr[ST_PORT_P],
-           ST_IP_ADDR_LEN);
-    strncpy(ops_rx.port.port[ST_PORT_P], ctx->para.port[ST_PORT_R], ST_PORT_MAX_LEN);
-    ops_rx.port.udp_port[ST_PORT_P] = ST20P_TEST_UDP_PORT + i;
+    memcpy(ops_rx.port.sip_addr[MTL_PORT_P], ctx->para.sip_addr[MTL_PORT_P],
+           MTL_IP_ADDR_LEN);
+    strncpy(ops_rx.port.port[MTL_PORT_P], ctx->para.port[MTL_PORT_R], MTL_PORT_MAX_LEN);
+    ops_rx.port.udp_port[MTL_PORT_P] = ST20P_TEST_UDP_PORT + i;
     ops_rx.port.payload_type = ST20P_TEST_PAYLOAD_TYPE;
     ops_rx.width = width[i];
     ops_rx.height = height[i];
@@ -877,7 +881,7 @@ static void st20p_rx_digest_test(enum st_fps fps[], int width[], int height[],
 
     int sch = st20p_rx_get_sch_idx(rx_handle[i]);
     EXPECT_GE(sch, 0);
-    ret = st_sch_enable_sleep(st, sch, false);
+    ret = mtl_sch_enable_sleep(st, sch, false);
     EXPECT_GE(ret, 0);
 
     test_ctx_rx[i]->handle = rx_handle[i];
@@ -892,10 +896,10 @@ static void st20p_rx_digest_test(enum st_fps fps[], int width[], int height[],
     EXPECT_GE(ret, 0);
   }
 
-  ret = st_start(st);
+  ret = mtl_start(st);
   EXPECT_GE(ret, 0);
   sleep(10);
-  ret = st_stop(st);
+  ret = mtl_stop(st);
   EXPECT_GE(ret, 0);
 
   for (int i = 0; i < sessions; i++) {
@@ -940,8 +944,8 @@ static void st20p_rx_digest_test(enum st_fps fps[], int width[], int height[],
          test_ctx_tx[i]->fb_send, framerate_tx[i], expect_framerate_tx[i]);
     EXPECT_GT(test_ctx_tx[i]->fb_send, 0);
     if (para->tx_ext) {
-      st_dma_unmap(st, test_ctx_tx[i]->ext_fb, test_ctx_tx[i]->ext_fb_iova,
-                   test_ctx_tx[i]->ext_fb_iova_map_sz);
+      mtl_dma_unmap(st, test_ctx_tx[i]->ext_fb, test_ctx_tx[i]->ext_fb_iova,
+                    test_ctx_tx[i]->ext_fb_iova_map_sz);
       st_test_free(test_ctx_tx[i]->ext_fb_malloc);
       st_test_free(test_ctx_tx[i]->p_ext_frames);
     }
@@ -968,8 +972,8 @@ static void st20p_rx_digest_test(enum st_fps fps[], int width[], int height[],
       }
     }
     if (para->rx_ext) {
-      st_dma_unmap(st, test_ctx_rx[i]->ext_fb, test_ctx_rx[i]->ext_fb_iova,
-                   test_ctx_rx[i]->ext_fb_iova_map_sz);
+      mtl_dma_unmap(st, test_ctx_rx[i]->ext_fb, test_ctx_rx[i]->ext_fb_iova,
+                    test_ctx_rx[i]->ext_fb_iova_map_sz);
       st_test_free(test_ctx_rx[i]->ext_fb_malloc);
       st_test_free(test_ctx_rx[i]->p_ext_frames);
     }
