@@ -574,6 +574,7 @@ struct st20p_rx_digest_test_para {
   int fb_cnt;
   bool user_timestamp;
   bool vsync;
+  size_t line_padding_size;
 };
 
 static void test_st20p_init_rx_digest_para(struct st20p_rx_digest_test_para* para) {
@@ -590,6 +591,7 @@ static void test_st20p_init_rx_digest_para(struct st20p_rx_digest_test_para* par
   para->level = ST_TEST_LEVEL_MANDATORY;
   para->user_timestamp = false;
   para->vsync = true;
+  para->line_padding_size = 0;
 }
 
 static void st20p_rx_digest_test(enum st_fps fps[], int width[], int height[],
@@ -686,7 +688,9 @@ static void st20p_rx_digest_test(enum st_fps fps[], int width[], int height[],
     if (para->user_timestamp) ops_tx.flags |= ST20P_TX_FLAG_USER_TIMESTAMP;
     if (para->vsync) ops_tx.flags |= ST20P_TX_FLAG_ENABLE_VSYNC;
 
-    test_ctx_tx[i]->frame_size = st_frame_size(tx_fmt[i], width[i], height[i]);
+    uint8_t planes = st_frame_fmt_planes(tx_fmt[i]);
+    test_ctx_tx[i]->frame_size = st_frame_size(tx_fmt[i], width[i], height[i]) +
+                                 para->line_padding_size * height[i] * planes;
 
     tx_handle[i] = st20p_tx_create(st, &ops_tx);
     ASSERT_TRUE(tx_handle[i] != NULL);
@@ -705,7 +709,7 @@ static void st20p_rx_digest_test(enum st_fps fps[], int width[], int height[],
       test_ctx_tx[i]->p_ext_frames = (struct st_ext_frame*)malloc(
           sizeof(*test_ctx_tx[i]->p_ext_frames) * test_ctx_tx[i]->fb_cnt);
       size_t pg_sz = mtl_page_size(st);
-      size_t fb_size = test_ctx_tx[i]->frame_size * test_ctx_tx[i]->fb_cnt;
+      size_t fb_size = frame_size * test_ctx_tx[i]->fb_cnt;
       test_ctx_tx[i]->ext_fb_iova_map_sz =
           mtl_size_page_align(fb_size, pg_sz); /* align */
       size_t fb_size_malloc = test_ctx_tx[i]->ext_fb_iova_map_sz + pg_sz;
@@ -719,21 +723,23 @@ static void st20p_rx_digest_test(enum st_fps fps[], int width[], int height[],
       info("%s, session %d ext_fb %p\n", __func__, i, test_ctx_tx[i]->ext_fb);
 
       for (int j = 0; j < test_ctx_tx[i]->fb_cnt; j++) {
-        test_ctx_tx[i]->p_ext_frames[j].addr[0] = test_ctx_tx[i]->ext_fb + j * frame_size;
-        test_ctx_tx[i]->p_ext_frames[j].iova[0] =
-            test_ctx_tx[i]->ext_fb_iova + j * frame_size;
-        test_ctx_tx[i]->p_ext_frames[j].linesize[0] =
-            st_frame_least_linesize(rx_fmt[i], width[i], 0);
-        uint8_t planes = st_frame_fmt_planes(rx_fmt[i]);
-        for (uint8_t plane = 1; plane < planes; plane++) { /* assume planes continous */
+        for (uint8_t plane = 0; plane < planes; plane++) { /* assume planes continous */
           test_ctx_tx[i]->p_ext_frames[j].linesize[plane] =
-              st_frame_least_linesize(rx_fmt[i], width[i], plane);
-          test_ctx_tx[i]->p_ext_frames[j].addr[plane] =
-              (uint8_t*)test_ctx_tx[i]->p_ext_frames[j].addr[plane - 1] +
-              test_ctx_tx[i]->p_ext_frames[j].linesize[plane - 1] * height[i];
-          test_ctx_tx[i]->p_ext_frames[j].iova[plane] =
-              test_ctx_tx[i]->p_ext_frames[j].iova[plane - 1] +
-              test_ctx_tx[i]->p_ext_frames[j].linesize[plane - 1] * height[i];
+              st_frame_least_linesize(rx_fmt[i], width[i], plane) +
+              para->line_padding_size;
+          if (plane == 0) {
+            test_ctx_tx[i]->p_ext_frames[j].addr[plane] =
+                test_ctx_tx[i]->ext_fb + j * frame_size;
+            test_ctx_tx[i]->p_ext_frames[j].iova[plane] =
+                test_ctx_tx[i]->ext_fb_iova + j * frame_size;
+          } else {
+            test_ctx_tx[i]->p_ext_frames[j].addr[plane] =
+                (uint8_t*)test_ctx_tx[i]->p_ext_frames[j].addr[plane - 1] +
+                test_ctx_tx[i]->p_ext_frames[j].linesize[plane - 1] * height[i];
+            test_ctx_tx[i]->p_ext_frames[j].iova[plane] =
+                test_ctx_tx[i]->p_ext_frames[j].iova[plane - 1] +
+                test_ctx_tx[i]->p_ext_frames[j].linesize[plane - 1] * height[i];
+          }
         }
         test_ctx_tx[i]->p_ext_frames[j].size = frame_size;
         test_ctx_tx[i]->p_ext_frames[j].opaque = NULL;
@@ -746,7 +752,19 @@ static void st20p_rx_digest_test(enum st_fps fps[], int width[], int height[],
       else
         fb = (uint8_t*)st20p_tx_get_fb_addr(tx_handle[i], frame);
       ASSERT_TRUE(fb != NULL);
-      st_test_rand_data(fb, frame_size, frame);
+      if (!para->line_padding_size)
+        st_test_rand_data(fb, frame_size, frame);
+      else {
+        for (int plane = 0; plane < planes; plane++) {
+          size_t least_line_size = st_frame_least_linesize(tx_fmt[i], width[i], plane);
+          uint8_t* start = (uint8_t*)test_ctx_tx[i]->p_ext_frames[frame].addr[plane];
+          for (int line = 0; line < height[i]; line++) {
+            uint8_t* cur_line =
+                start + test_ctx_tx[i]->p_ext_frames[frame].linesize[plane] * line;
+            st_test_rand_data(cur_line, least_line_size, frame);
+          }
+        }
+      }
       if (tx_fmt[i] == ST_FRAME_FMT_YUV422PLANAR10LE) {
         /* only LSB 10 valid */
         uint16_t* p10_u16 = (uint16_t*)fb;
@@ -800,15 +818,18 @@ static void st20p_rx_digest_test(enum st_fps fps[], int width[], int height[],
     test_ctx_rx[i]->fmt = rx_fmt[i];
     test_ctx_rx[i]->user_timestamp = para->user_timestamp;
     test_ctx_rx[i]->rx_get_ext = para->rx_get_ext;
+    test_ctx_rx[i]->frame_size = st_frame_size(rx_fmt[i], width[i], height[i]);
     /* copy sha */
     memcpy(test_ctx_rx[i]->shas, test_ctx_tx[i]->shas,
            TEST_SHA_HIST_NUM * SHA256_DIGEST_LENGTH);
 
     /* init ext frames, only for no convert */
     if (para->rx_ext) {
+      uint8_t planes = st_frame_fmt_planes(rx_fmt[i]);
       test_ctx_rx[i]->p_ext_frames = (struct st_ext_frame*)malloc(
           sizeof(*test_ctx_rx[i]->p_ext_frames) * test_ctx_rx[i]->fb_cnt);
-      size_t frame_size = st_frame_size(rx_fmt[i], width[i], height[i]);
+      size_t frame_size = st_frame_size(rx_fmt[i], width[i], height[i]) +
+                          para->line_padding_size * height[i] * planes;
       size_t pg_sz = mtl_page_size(st);
       size_t fb_size = frame_size * test_ctx_rx[i]->fb_cnt;
       test_ctx_rx[i]->ext_fb_iova_map_sz =
@@ -824,25 +845,28 @@ static void st20p_rx_digest_test(enum st_fps fps[], int width[], int height[],
       ASSERT_TRUE(test_ctx_rx[i]->ext_fb_iova != MTL_BAD_IOVA);
 
       for (int j = 0; j < test_ctx_rx[i]->fb_cnt; j++) {
-        test_ctx_rx[i]->p_ext_frames[j].addr[0] = test_ctx_rx[i]->ext_fb + j * frame_size;
-        test_ctx_rx[i]->p_ext_frames[j].iova[0] =
-            test_ctx_rx[i]->ext_fb_iova + j * frame_size;
-        test_ctx_rx[i]->p_ext_frames[j].linesize[0] =
-            st_frame_least_linesize(rx_fmt[i], width[i], 0);
-        uint8_t planes = st_frame_fmt_planes(rx_fmt[i]);
-        for (uint8_t plane = 1; plane < planes; plane++) { /* assume planes continous */
+        for (uint8_t plane = 0; plane < planes; plane++) { /* assume planes continous */
           test_ctx_rx[i]->p_ext_frames[j].linesize[plane] =
-              st_frame_least_linesize(rx_fmt[i], width[i], plane);
-          test_ctx_rx[i]->p_ext_frames[j].addr[plane] =
-              (uint8_t*)test_ctx_rx[i]->p_ext_frames[j].addr[plane - 1] +
-              test_ctx_rx[i]->p_ext_frames[j].linesize[plane - 1] * height[i];
-          test_ctx_rx[i]->p_ext_frames[j].iova[plane] =
-              test_ctx_rx[i]->p_ext_frames[j].iova[plane - 1] +
-              test_ctx_rx[i]->p_ext_frames[j].linesize[plane - 1] * height[i];
+              st_frame_least_linesize(rx_fmt[i], width[i], plane) +
+              para->line_padding_size;
+          if (plane == 0) {
+            test_ctx_rx[i]->p_ext_frames[j].addr[plane] =
+                test_ctx_rx[i]->ext_fb + j * frame_size;
+            test_ctx_rx[i]->p_ext_frames[j].iova[plane] =
+                test_ctx_rx[i]->ext_fb_iova + j * frame_size;
+          } else {
+            test_ctx_rx[i]->p_ext_frames[j].addr[plane] =
+                (uint8_t*)test_ctx_rx[i]->p_ext_frames[j].addr[plane - 1] +
+                test_ctx_rx[i]->p_ext_frames[j].linesize[plane - 1] * height[i];
+            test_ctx_rx[i]->p_ext_frames[j].iova[plane] =
+                test_ctx_rx[i]->p_ext_frames[j].iova[plane - 1] +
+                test_ctx_rx[i]->p_ext_frames[j].linesize[plane - 1] * height[i];
+          }
         }
         test_ctx_rx[i]->p_ext_frames[j].size = frame_size;
         test_ctx_rx[i]->p_ext_frames[j].opaque = NULL;
       }
+      test_ctx_rx[i]->frame_size = frame_size;
     }
 
     memset(&ops_rx, 0, sizeof(ops_rx));
@@ -872,9 +896,6 @@ static void st20p_rx_digest_test(enum st_fps fps[], int width[], int height[],
     }
     if (para->vsync) ops_rx.flags |= ST20P_RX_FLAG_ENABLE_VSYNC;
     if (para->rx_get_ext) ops_rx.flags |= ST20P_RX_FLAG_EXT_FRAME;
-
-    test_ctx_rx[i]->frame_size =
-        st_frame_size(ops_rx.output_fmt, ops_rx.width, ops_rx.height);
 
     rx_handle[i] = st20p_rx_create(st, &ops_rx);
     ASSERT_TRUE(rx_handle[i] != NULL);
@@ -1250,6 +1271,47 @@ TEST(St20p, rx_get_ext_digest_1080p_convert_s2) {
   para.device = ST_PLUGIN_DEVICE_TEST_INTERNAL;
   para.rx_ext = true;
   para.rx_get_ext = true;
+
+  st20p_rx_digest_test(fps, width, height, tx_fmt, t_fmt, rx_fmt, &para);
+}
+
+TEST(St20p, tx_rx_ext_digest_1080p_convert_with_padding_s2) {
+  enum st_fps fps[2] = {ST_FPS_P59_94, ST_FPS_P59_94};
+  int width[2] = {1920, 1920};
+  int height[2] = {1080, 1080};
+  enum st_frame_fmt tx_fmt[2] = {ST_FRAME_FMT_YUV422PLANAR10LE, ST_FRAME_FMT_Y210};
+  enum st20_fmt t_fmt[2] = {ST20_FMT_YUV_422_10BIT, ST20_FMT_YUV_422_10BIT};
+  enum st_frame_fmt rx_fmt[2] = {ST_FRAME_FMT_YUV422PLANAR10LE, ST_FRAME_FMT_Y210};
+
+  struct st20p_rx_digest_test_para para;
+  test_st20p_init_rx_digest_para(&para);
+  para.sessions = 2;
+  para.device = ST_PLUGIN_DEVICE_TEST_INTERNAL;
+  para.tx_ext = true;
+  para.rx_ext = true;
+  para.check_fps = false;
+  para.line_padding_size = 1024;
+
+  st20p_rx_digest_test(fps, width, height, tx_fmt, t_fmt, rx_fmt, &para);
+}
+
+TEST(St20p, rx_get_ext_digest_1080p_convert_with_padding_s2) {
+  enum st_fps fps[2] = {ST_FPS_P59_94, ST_FPS_P59_94};
+  int width[2] = {1920, 1920};
+  int height[2] = {1080, 1080};
+  enum st_frame_fmt tx_fmt[2] = {ST_FRAME_FMT_YUV422PLANAR10LE, ST_FRAME_FMT_Y210};
+  enum st20_fmt t_fmt[2] = {ST20_FMT_YUV_422_10BIT, ST20_FMT_YUV_422_10BIT};
+  enum st_frame_fmt rx_fmt[2] = {ST_FRAME_FMT_YUV422PLANAR10LE, ST_FRAME_FMT_Y210};
+
+  struct st20p_rx_digest_test_para para;
+  test_st20p_init_rx_digest_para(&para);
+  para.sessions = 2;
+  para.device = ST_PLUGIN_DEVICE_TEST_INTERNAL;
+  para.tx_ext = true;
+  para.rx_ext = true;
+  para.rx_get_ext = true;
+  para.check_fps = false;
+  para.line_padding_size = 512;
 
   st20p_rx_digest_test(fps, width, height, tx_fmt, t_fmt, rx_fmt, &para);
 }
