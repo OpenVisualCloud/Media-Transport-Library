@@ -395,7 +395,7 @@ struct st30_rx_ops {
 /**
  * Create one tx st2110-30(audio) session.
  *
- * @param st
+ * @param mt
  *   The handle to the media transport device context.
  * @param ops
  *   The pointer to the structure describing how to create a tx st2110-30(audio) session.
@@ -511,7 +511,7 @@ int st30_get_sample_rate(enum st30_sampling sampling);
 /**
  * Create one rx st2110-30(audio) session.
  *
- * @param st
+ * @param mt
  *   The handle to the media transport device context.
  * @param ops
  *   The pointer to the structure describing how to create a rx st2110-30(audio) session.

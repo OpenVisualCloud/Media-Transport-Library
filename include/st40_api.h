@@ -313,7 +313,7 @@ struct st40_rx_ops {
 /**
  * Create one tx st2110-40(ancillary) session.
  *
- * @param st
+ * @param mt
  *   The handle to the media transport device context.
  * @param ops
  *   The pointer to the structure describing how to create a tx st2110-40(ancillary)
@@ -383,7 +383,7 @@ int st40_tx_put_mbuf(st40_tx_handle handle, void* mbuf, uint16_t len);
 /**
  * Create one rx st2110-40(ancillary) session.
  *
- * @param st
+ * @param mt
  *   The handle to the media transport device context.
  * @param ops
  *   The pointer to the structure describing how to create a rx

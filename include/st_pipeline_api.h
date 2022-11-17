@@ -189,6 +189,7 @@ enum st_frame_fmt {
  */
 #define ST_FRAME_FLAG_EXT_BUF (MTL_BIT32(0))
 
+/** Max planes number for one frame */
 #define ST_MAX_PLANES (4)
 
 /** The structure info for external frame */
@@ -811,7 +812,7 @@ struct st22p_rx_ops {
 /**
  * Register one st22 encoder.
  *
- * @param st
+ * @param mt
  *   The handle to the media transport device context.
  * @param dev
  *   The pointer to the structure describing a st plugin encode.
@@ -865,7 +866,7 @@ int st22_encoder_put_frame(st22p_encode_session session,
 /**
  * Register one st22 decoder.
  *
- * @param st
+ * @param mt
  *   The handle to the media transport device context.
  * @param dev
  *   The pointer to the structure describing a st plugin encode.
@@ -919,7 +920,7 @@ int st22_decoder_put_frame(st22p_decode_session session,
 /**
  * Register one st20 converter.
  *
- * @param st
+ * @param mt
  *   The handle to the media transport device context.
  * @param dev
  *   The pointer to the structure describing a st20 plugin convert.
@@ -973,7 +974,7 @@ int st20_converter_put_frame(st20p_convert_session session,
 /**
  * Register one st plugin so.
  *
- * @param st
+ * @param mt
  *   The handle to the media transport device context.
  * @param path
  *   The path to the plugin so.
@@ -987,7 +988,7 @@ int st_plugin_register(mtl_handle mt, const char* path);
 /**
  * Unregister one st plugin so.
  *
- * @param st
+ * @param mt
  *   The handle to the media transport device context.
  * @param path
  *   The path to the plugin so.
@@ -1001,7 +1002,7 @@ int st_plugin_unregister(mtl_handle mt, const char* path);
 /**
  * Get the number of registered plugins lib.
  *
- * @param st
+ * @param mt
  *   The handle to the media transport device context.
  * @return
  *   - number.
@@ -1011,7 +1012,7 @@ int st_get_plugins_nb(mtl_handle mt);
 /**
  * Create one tx st2110-22 pipeline session.
  *
- * @param st
+ * @param mt
  *   The handle to the media transport device context.
  * @param ops
  *   The pointer to the structure describing how to create a tx
@@ -1085,7 +1086,7 @@ size_t st22p_tx_frame_size(st22p_tx_handle handle);
 /**
  * Create one rx st2110-22 pipeline session.
  *
- * @param st
+ * @param mt
  *   The handle to the media transport device context.
  * @param ops
  *   The pointer to the structure describing how to create a rx
@@ -1191,7 +1192,7 @@ int st22p_rx_get_queue_meta(st22p_rx_handle handle, struct st_queue_meta* meta);
 /**
  * Create one tx st2110-20 pipeline session.
  *
- * @param st
+ * @param mt
  *   The handle to the media transport device context.
  * @param ops
  *   The pointer to the structure describing how to create a tx
@@ -1293,7 +1294,7 @@ int st20p_tx_get_sch_idx(st20p_tx_handle handle);
 /**
  * Create one rx st2110-20 pipeline session.
  *
- * @param st
+ * @param mt
  *   The handle to the media transport device context.
  * @param ops
  *   The pointer to the structure describing how to create a rx

@@ -531,7 +531,7 @@ int st_frame_convert(struct st_frame* src, struct st_frame* dst) {
 
 int st_frame_get_converter(enum st_frame_fmt src_fmt, enum st_frame_fmt dst_fmt,
                            struct st_frame_converter* converter) {
-  for (int i = 0; i < ST_ARRAY_SIZE(converters); i++) {
+  for (int i = 0; i < MT_ARRAY_SIZE(converters); i++) {
     if (src_fmt == converters[i].src_fmt && dst_fmt == converters[i].dst_fmt) {
       *converter = converters[i];
       return 0;

@@ -75,6 +75,9 @@ extern "C" {
  */
 #define MTL_PCAP_FILE_MAX_LEN (32)
 
+/** Helper to get array size from arrays */
+#define MT_ARRAY_SIZE(arr) (sizeof(arr) / sizeof(arr[0]))
+
 /**
  * Handle to media transport device context
  */
@@ -469,7 +472,7 @@ mtl_handle mtl_init(struct mtl_init_params* p);
 /**
  * Un-initialize the media transport device context.
  *
- * @param st
+ * @param mt
  *   The handle to the media transport device context.
  * @return
  *   - 0: Success, device un-initialized.
@@ -480,7 +483,7 @@ int mtl_uninit(mtl_handle mt);
 /**
  * Start the media transport device context.
  *
- * @param st
+ * @param mt
  *   The handle to the media transport device context.
  * @return
  *   - 0: Success, device started.
@@ -491,7 +494,7 @@ int mtl_start(mtl_handle mt);
 /**
  * Stop the media transport device context.
  *
- * @param st
+ * @param mt
  *   The handle to the media transport device context.
  * @return
  *   - 0: Success, device stopped.
@@ -503,7 +506,7 @@ int mtl_stop(mtl_handle mt);
  * Abort the media transport device context.
  * Usually called in the exception case, e.g CTRL-C.
  *
- * @param st
+ * @param mt
  *   The handle to the media transport device context.
  * @return
  *   - 0: Success, device aborted.
@@ -514,7 +517,7 @@ int mtl_request_exit(mtl_handle mt);
 /**
  * Retrieve the capacity of the media transport device context.
  *
- * @param st
+ * @param mt
  *   The handle to the media transport device context.
  * @param cap
  *   A pointer to a structure of type *st_cap* to be filled.
@@ -527,7 +530,7 @@ int mtl_get_cap(mtl_handle mt, struct mtl_cap* cap);
 /**
  * Retrieve the stat info of the media transport device context.
  *
- * @param st
+ * @param mt
  *   The handle to the media transport device context.
  * @param stats
  *   A pointer to a structure of type *st_stats* to be filled.
@@ -540,7 +543,7 @@ int mtl_get_stats(mtl_handle mt, struct mtl_stats* stats);
 /**
  * Enable or disable sleep mode for sch.
  *
- * @param st
+ * @param mt
  *   The handle to the media transport device context.
  * @param sch_idx
  *   The sch index, get from st20_tx_get_sch_idx or st20_rx_get_sch_idx.
@@ -556,7 +559,7 @@ int mtl_sch_enable_sleep(mtl_handle mt, int sch_idx, bool enable);
  * Set the sleep us for the sch if MTL_FLAG_TASKLET_SLEEP is enabled.
  * Debug usage only.
  *
- * @param st
+ * @param mt
  *   The handle to the media transport device context.
  * @param us
  *   The max sleep us.
@@ -569,7 +572,7 @@ int mtl_sch_set_sleep_us(mtl_handle mt, uint64_t us);
 /**
  * Request one DPDK lcore from the media transport device context.
  *
- * @param st
+ * @param mt
  *   The handle to the media transport device context.
  * @param lcore
  *   A pointer to the retured lcore number.
@@ -582,7 +585,7 @@ int mtl_get_lcore(mtl_handle mt, unsigned int* lcore);
 /**
  * Bind one thread to lcore.
  *
- * @param st
+ * @param mt
  *   The handle to the media transport device context.
  * @param thread
  *   the thread wchich request the bind action.
@@ -597,7 +600,7 @@ int mtl_bind_to_lcore(mtl_handle mt, pthread_t thread, unsigned int lcore);
 /**
  * Put back the DPDK lcore which requested from the media transport device context.
  *
- * @param st
+ * @param mt
  *   The handle to the media transport device context.
  * @param lcore
  *   the DPDK lcore which requested by mtl_get_lcore.
@@ -626,7 +629,7 @@ void* mtl_memcpy(void* dest, const void* src, size_t n);
  * In NUMA systems, the memory allocated from the same NUMA socket of the port.
  * Note the mmeory is mmap to IOVA already, use mtl_hp_virt2iova to get the iova.
  *
- * @param st
+ * @param mt
  *   The handle to the media transport device context.
  * @param size
  *   Size (in bytes) to be allocated.
@@ -644,7 +647,7 @@ void* mtl_hp_malloc(mtl_handle mt, size_t size, enum mtl_port port);
  * In NUMA systems, the memory allocated from the same NUMA socket of the port.
  * Note the mmeory is mmap to IOVA already, use mtl_hp_virt2iova to get the iova.
  *
- * @param st
+ * @param mt
  *   The handle to the media transport device context.
  * @param size
  *   Size (in bytes) to be allocated.
@@ -663,7 +666,7 @@ void* mtl_hp_zmalloc(mtl_handle mt, size_t size, enum mtl_port port);
  * mtl_hp_malloc(), mtl_hp_zmalloc().
  * The behaviour is undefined if the pointer does not match this requirement.
  *
- * @param st
+ * @param mt
  *   The handle to the media transport device context.
  * @param ptr
  *   The virtual address pointer to memory to be freed.
@@ -673,7 +676,7 @@ void mtl_hp_free(mtl_handle mt, void* ptr);
 /**
  * Return the IO address of a virtual address from mtl_hp_malloc/mtl_hp_zmalloc
  *
- * @param st
+ * @param mt
  *   The handle to the media transport device context.
  * @param vaddr
  *   Virtual address obtained from previous mtl_hp_malloc/mtl_hp_zmalloc call
@@ -686,7 +689,7 @@ mtl_iova_t mtl_hp_virt2iova(mtl_handle mt, const void* vaddr);
 /**
  * Return the detected page size on the system.
  *
- * @param st
+ * @param mt
  *   The handle to the media transport device context.
  * @return
  *   page size
@@ -697,7 +700,7 @@ size_t mtl_page_size(mtl_handle mt);
  * Perform DMA mapping with virtual address that can be used for IO.
  * The virtual address and size must align to page size(mtl_page_size).
  *
- * @param st
+ * @param mt
  *   The handle to the media transport device context.
  * @param vaddr
  *   Virtual address of memory to be mapped and must align to page size.
@@ -713,7 +716,7 @@ mtl_iova_t mtl_dma_map(mtl_handle mt, const void* vaddr, size_t size);
 /**
  * Perform DMA unmapping on the mtl_dma_map
  *
- * @param st
+ * @param mt
  *   The handle to the media transport device context.
  * @param vaddr
  *   Virtual address of memory to be unmapped and must align to page size.
@@ -743,7 +746,7 @@ int mtl_dma_unmap(mtl_handle mt, const void* vaddr, mtl_iova_t iova, size_t size
  *
  * *alloc_addr *addr(page aligned)
  *
- * @param st
+ * @param mt
  *   The handle to the media transport device context.
  * @param size
  *   Size of valid data.
@@ -757,7 +760,7 @@ mtl_dma_mem_handle mtl_dma_mem_alloc(mtl_handle mt, size_t size);
  * Free the dma mem memory block.
  * This will use memset to clear the st dma mem struct.
  *
- * @param st
+ * @param mt
  *   The handle to the media transport device context.
  * @param handle
  *   The handle to the st dma mem.
@@ -788,7 +791,7 @@ mtl_iova_t mtl_dma_mem_iova(mtl_dma_mem_handle handle);
  * Allocate a user DMA dev from the dma_dev_port(mtl_init_params) list.
  * In NUMA systems, the dma dev allocated from the same NUMA socket of the port.
  *
- * @param st
+ * @param mt
  *   The handle to the media transport device context.
  * @param nb_desc
  *   Number of descriptor for the user DMA device
