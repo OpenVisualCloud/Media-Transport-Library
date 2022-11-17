@@ -9,7 +9,7 @@ env:
 
 jobs:
   Build:
-    #if: github.repository == 'OpenVisualCloud/Media-Transport-Library'
+    if: github.repository == 'OpenVisualCloud/Media-Transport-Library'
     runs-on: [Windows, self-hosted]
 
     steps:
