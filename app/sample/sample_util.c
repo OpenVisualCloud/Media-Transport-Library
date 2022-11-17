@@ -59,7 +59,7 @@ static struct option sample_args_options[] = {
 
 static int st_sample_parse_args(struct st_sample_context* ctx, int argc, char** argv) {
   int cmd = -1, optIdx = 0;
-  struct st_init_params* p = &ctx->param;
+  struct mtl_init_params* p = &ctx->param;
 
   while (1) {
     cmd = getopt_long_only(argc, argv, "hv", sample_args_options, &optIdx);
@@ -68,11 +68,11 @@ static int st_sample_parse_args(struct st_sample_context* ctx, int argc, char** 
 
     switch (cmd) {
       case SAMPLE_ARG_P_PORT:
-        snprintf(p->port[ST_PORT_P], sizeof(p->port[ST_PORT_P]), "%s", optarg);
+        snprintf(p->port[MTL_PORT_P], sizeof(p->port[MTL_PORT_P]), "%s", optarg);
         p->num_ports++;
         break;
       case SAMPLE_ARG_R_PORT:
-        snprintf(p->port[ST_PORT_R], sizeof(p->port[ST_PORT_R]), "%s", optarg);
+        snprintf(p->port[MTL_PORT_R], sizeof(p->port[MTL_PORT_R]), "%s", optarg);
         p->num_ports++;
         break;
       case SAMPLE_ARG_DMA_PORT:
@@ -80,42 +80,42 @@ static int st_sample_parse_args(struct st_sample_context* ctx, int argc, char** 
         p->num_dma_dev_port = 1;
         break;
       case SAMPLE_ARG_P_SIP:
-        inet_pton(AF_INET, optarg, st_p_sip_addr(p));
+        inet_pton(AF_INET, optarg, mtl_p_sip_addr(p));
         break;
       case SAMPLE_ARG_R_SIP:
-        inet_pton(AF_INET, optarg, st_r_sip_addr(p));
+        inet_pton(AF_INET, optarg, mtl_r_sip_addr(p));
         break;
       case SAMPLE_ARG_P_TX_IP:
-        inet_pton(AF_INET, optarg, ctx->tx_dip_addr[ST_PORT_P]);
+        inet_pton(AF_INET, optarg, ctx->tx_dip_addr[MTL_PORT_P]);
         break;
       case SAMPLE_ARG_R_TX_IP:
-        inet_pton(AF_INET, optarg, ctx->tx_dip_addr[ST_PORT_R]);
+        inet_pton(AF_INET, optarg, ctx->tx_dip_addr[MTL_PORT_R]);
         break;
       case SAMPLE_ARG_P_RX_IP:
-        inet_pton(AF_INET, optarg, ctx->rx_sip_addr[ST_PORT_P]);
+        inet_pton(AF_INET, optarg, ctx->rx_sip_addr[MTL_PORT_P]);
         break;
       case SAMPLE_ARG_R_RX_IP:
-        inet_pton(AF_INET, optarg, ctx->rx_sip_addr[ST_PORT_R]);
+        inet_pton(AF_INET, optarg, ctx->rx_sip_addr[MTL_PORT_R]);
         break;
       case SAMPLE_ARG_P_FWD_IP:
-        inet_pton(AF_INET, optarg, ctx->fwd_dip_addr[ST_PORT_P]);
+        inet_pton(AF_INET, optarg, ctx->fwd_dip_addr[MTL_PORT_P]);
         break;
       case SAMPLE_ARG_LOG_LEVEL:
         if (!strcmp(optarg, "debug"))
-          p->log_level = ST_LOG_LEVEL_DEBUG;
+          p->log_level = MTL_LOG_LEVEL_DEBUG;
         else if (!strcmp(optarg, "info"))
-          p->log_level = ST_LOG_LEVEL_INFO;
+          p->log_level = MTL_LOG_LEVEL_INFO;
         else if (!strcmp(optarg, "notice"))
-          p->log_level = ST_LOG_LEVEL_NOTICE;
+          p->log_level = MTL_LOG_LEVEL_NOTICE;
         else if (!strcmp(optarg, "warning"))
-          p->log_level = ST_LOG_LEVEL_WARNING;
+          p->log_level = MTL_LOG_LEVEL_WARNING;
         else if (!strcmp(optarg, "error"))
-          p->log_level = ST_LOG_LEVEL_ERROR;
+          p->log_level = MTL_LOG_LEVEL_ERROR;
         else
           err("%s, unknow log level %s\n", __func__, optarg);
         break;
       case SAMPLE_ARG_DEV_AUTO_START:
-        p->flags |= ST_FLAG_DEV_AUTO_START_STOP;
+        p->flags |= MTL_FLAG_DEV_AUTO_START_STOP;
         break;
       case SAMPLE_ARG_TX_VIDEO_URL:
         snprintf(ctx->tx_url, sizeof(ctx->tx_url), "%s", optarg);
@@ -156,7 +156,7 @@ static void sample_sig_handler(int signo) {
   switch (signo) {
     case SIGINT: /* Interrupt from keyboard */
       ctx->exit = true;
-      if (ctx->st) st_request_exit(ctx->st);
+      if (ctx->st) mtl_request_exit(ctx->st);
       break;
   }
 
@@ -165,35 +165,35 @@ static void sample_sig_handler(int signo) {
 
 int st_sample_init(struct st_sample_context* ctx, int argc, char** argv, bool tx,
                    bool rx) {
-  struct st_init_params* p = &ctx->param;
+  struct mtl_init_params* p = &ctx->param;
   memset(ctx, 0, sizeof(*ctx));
 
   g_sample_ctx = ctx;
   signal(SIGINT, sample_sig_handler);
 
-  p->flags |= ST_FLAG_BIND_NUMA; /* default bind to numa */
-  // p->flags |= ST_FLAG_RX_SEPARATE_VIDEO_LCORE;
-  p->log_level = ST_LOG_LEVEL_INFO; /* default to info */
+  p->flags |= MTL_FLAG_BIND_NUMA; /* default bind to numa */
+  // p->flags |= MTL_FLAG_RX_SEPARATE_VIDEO_LCORE;
+  p->log_level = MTL_LOG_LEVEL_INFO; /* default to info */
   /* use different default port/ip for tx and rx */
   if (rx) {
-    strncpy(p->port[ST_PORT_P], "0000:af:01.0", ST_PORT_MAX_LEN);
-    inet_pton(AF_INET, "192.168.85.80", st_p_sip_addr(p));
-    strncpy(p->port[ST_PORT_R], "0000:af:01.1", ST_PORT_MAX_LEN);
-    inet_pton(AF_INET, "192.168.85.81", st_r_sip_addr(p));
+    strncpy(p->port[MTL_PORT_P], "0000:af:01.0", MTL_PORT_MAX_LEN);
+    inet_pton(AF_INET, "192.168.85.80", mtl_p_sip_addr(p));
+    strncpy(p->port[MTL_PORT_R], "0000:af:01.1", MTL_PORT_MAX_LEN);
+    inet_pton(AF_INET, "192.168.85.81", mtl_r_sip_addr(p));
   } else {
-    strncpy(p->port[ST_PORT_P], "0000:af:01.1", ST_PORT_MAX_LEN);
-    inet_pton(AF_INET, "192.168.85.81", st_p_sip_addr(p));
-    strncpy(p->port[ST_PORT_R], "0000:af:01.0", ST_PORT_MAX_LEN);
-    inet_pton(AF_INET, "192.168.85.80", st_r_sip_addr(p));
+    strncpy(p->port[MTL_PORT_P], "0000:af:01.1", MTL_PORT_MAX_LEN);
+    inet_pton(AF_INET, "192.168.85.81", mtl_p_sip_addr(p));
+    strncpy(p->port[MTL_PORT_R], "0000:af:01.0", MTL_PORT_MAX_LEN);
+    inet_pton(AF_INET, "192.168.85.80", mtl_r_sip_addr(p));
   }
-  inet_pton(AF_INET, "239.168.85.20", ctx->tx_dip_addr[ST_PORT_P]);
-  inet_pton(AF_INET, "239.168.85.21", ctx->tx_dip_addr[ST_PORT_R]);
-  inet_pton(AF_INET, "239.168.85.20", ctx->rx_sip_addr[ST_PORT_P]);
-  inet_pton(AF_INET, "239.168.85.21", ctx->rx_sip_addr[ST_PORT_R]);
-  inet_pton(AF_INET, "239.168.86.20", ctx->fwd_dip_addr[ST_PORT_P]);
-  inet_pton(AF_INET, "239.168.86.21", ctx->fwd_dip_addr[ST_PORT_R]);
+  inet_pton(AF_INET, "239.168.85.20", ctx->tx_dip_addr[MTL_PORT_P]);
+  inet_pton(AF_INET, "239.168.85.21", ctx->tx_dip_addr[MTL_PORT_R]);
+  inet_pton(AF_INET, "239.168.85.20", ctx->rx_sip_addr[MTL_PORT_P]);
+  inet_pton(AF_INET, "239.168.85.21", ctx->rx_sip_addr[MTL_PORT_R]);
+  inet_pton(AF_INET, "239.168.86.20", ctx->fwd_dip_addr[MTL_PORT_P]);
+  inet_pton(AF_INET, "239.168.86.21", ctx->fwd_dip_addr[MTL_PORT_R]);
 
-  strncpy(p->dma_dev_port[0], "0000:80:04.0", ST_PORT_MAX_LEN);
+  strncpy(p->dma_dev_port[0], "0000:80:04.0", MTL_PORT_MAX_LEN);
 
   if (!ctx->sessions) ctx->sessions = 1;
   ctx->framebuff_cnt = 3;
@@ -225,10 +225,10 @@ int st_sample_init(struct st_sample_context* ctx, int argc, char** argv, bool tx
 }
 
 int st_sample_start(struct st_sample_context* ctx) {
-  struct st_init_params* p = &ctx->param;
+  struct mtl_init_params* p = &ctx->param;
 
   /* create device */
-  ctx->st = st_init(p);
+  ctx->st = mtl_init(p);
   if (!ctx->st) {
     err("%s, st init fail\n", __func__);
     return -EIO;
@@ -240,7 +240,7 @@ int st_sample_start(struct st_sample_context* ctx) {
 int st_sample_uinit(struct st_sample_context* ctx) {
   /* destroy device */
   if (ctx->st) {
-    st_uninit(ctx->st);
+    mtl_uninit(ctx->st);
     ctx->st = NULL;
   }
   return 0;

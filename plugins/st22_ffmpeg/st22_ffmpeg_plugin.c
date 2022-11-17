@@ -39,12 +39,12 @@ static int encode_frame(struct st22_encoder_session* s,
   f->pict_type = AV_PICTURE_TYPE_I; /* all are i frame */
   f->pts = f_idx;
   /* only YUV422P now */
-  st_memcpy(f->data[0], src_addr, res_size);
+  mtl_memcpy(f->data[0], src_addr, res_size);
   src_addr += res_size;
   res_size /= 2;
-  st_memcpy(f->data[1], src_addr, res_size);
+  mtl_memcpy(f->data[1], src_addr, res_size);
   src_addr += res_size;
-  st_memcpy(f->data[2], src_addr, res_size);
+  mtl_memcpy(f->data[2], src_addr, res_size);
   src_addr += res_size;
 
   ret = avcodec_send_frame(ctx, f);
@@ -68,7 +68,7 @@ static int encode_frame(struct st22_encoder_session* s,
 
     dbg("%s, receive packet %" PRId64 " size %d on frame %d\n", __func__, p->pts, p->size,
         f_idx);
-    st_memcpy(frame->dst->addr[0] + data_size, p->data, p->size);
+    mtl_memcpy(frame->dst->addr[0] + data_size, p->data, p->size);
     data_size += p->size;
     av_packet_unref(p);
   }
@@ -317,12 +317,12 @@ static int decode_frame(struct st22_decoder_session* s,
         f_idx);
     frame_size = f->width * f->height;
     /* only YUV422P now */
-    st_memcpy(dst_addr, f->data[0], frame_size);
+    mtl_memcpy(dst_addr, f->data[0], frame_size);
     dst_addr += frame_size;
     frame_size /= 2;
-    st_memcpy(dst_addr, f->data[1], frame_size);
+    mtl_memcpy(dst_addr, f->data[1], frame_size);
     dst_addr += frame_size;
-    st_memcpy(dst_addr, f->data[2], frame_size);
+    mtl_memcpy(dst_addr, f->data[2], frame_size);
     dst_addr += frame_size;
 
     av_frame_unref(f);
@@ -527,7 +527,7 @@ static int decoder_frame_available(void* priv) {
   return 0;
 }
 
-st_plugin_priv st_plugin_create(st_handle st) {
+st_plugin_priv st_plugin_create(mtl_handle st) {
   struct st22_ffmpeg_ctx* ctx;
 
   ctx = malloc(sizeof(*ctx));

@@ -14,8 +14,8 @@
 #include "st_tap.h"
 #include "st_util.h"
 
-static int cni_rx_handle(struct st_main_impl* impl, struct rte_mbuf* m,
-                         enum st_port port) {
+static int cni_rx_handle(struct mtl_main_impl* impl, struct rte_mbuf* m,
+                         enum mtl_port port) {
   struct st_ptp_impl* ptp = st_get_ptp(impl, port);
   struct rte_ether_hdr* eth_hdr = rte_pktmbuf_mtod(m, struct rte_ether_hdr*);
   uint16_t ether_type, src_port;
@@ -65,7 +65,7 @@ static int cni_rx_handle(struct st_main_impl* impl, struct rte_mbuf* m,
   return 0;
 }
 
-static int cni_traffic(struct st_main_impl* impl) {
+static int cni_traffic(struct mtl_main_impl* impl) {
   struct st_cni_impl* cni = st_get_cni(impl);
   int num_ports = st_num_ports(impl);
   uint16_t port_id;
@@ -106,7 +106,7 @@ static int cni_traffic(struct st_main_impl* impl) {
 }
 
 static void* cni_trafic_thread(void* arg) {
-  struct st_main_impl* impl = arg;
+  struct mtl_main_impl* impl = arg;
   struct st_cni_impl* cni = st_get_cni(impl);
 
   info("%s, start\n", __func__);
@@ -119,7 +119,7 @@ static void* cni_trafic_thread(void* arg) {
   return NULL;
 }
 
-static int cni_trafic_thread_start(struct st_main_impl* impl, struct st_cni_impl* cni) {
+static int cni_trafic_thread_start(struct mtl_main_impl* impl, struct st_cni_impl* cni) {
   int ret;
 
   if (cni->tid) {
@@ -148,7 +148,7 @@ static int cni_trafic_thread_stop(struct st_cni_impl* cni) {
 }
 
 static int cni_tasklet_start(void* priv) {
-  struct st_main_impl* impl = priv;
+  struct mtl_main_impl* impl = priv;
   struct st_cni_impl* cni = st_get_cni(impl);
 
   /* tasklet will take over the cni thread */
@@ -158,7 +158,7 @@ static int cni_tasklet_start(void* priv) {
 }
 
 static int cni_tasklet_stop(void* priv) {
-  struct st_main_impl* impl = priv;
+  struct mtl_main_impl* impl = priv;
   struct st_cni_impl* cni = st_get_cni(impl);
 
   if (cni->lcore_tasklet) cni_trafic_thread_start(impl, cni);
@@ -167,12 +167,12 @@ static int cni_tasklet_stop(void* priv) {
 }
 
 static int cni_tasklet_handlder(void* priv) {
-  struct st_main_impl* impl = priv;
+  struct mtl_main_impl* impl = priv;
 
   return cni_traffic(impl);
 }
 
-static int cni_queues_uinit(struct st_main_impl* impl) {
+static int cni_queues_uinit(struct mtl_main_impl* impl) {
   int num_ports = st_num_ports(impl);
   struct st_cni_impl* cni = st_get_cni(impl);
 
@@ -186,7 +186,7 @@ static int cni_queues_uinit(struct st_main_impl* impl) {
   return 0;
 }
 
-static int cni_queues_init(struct st_main_impl* impl, struct st_cni_impl* cni) {
+static int cni_queues_init(struct mtl_main_impl* impl, struct st_cni_impl* cni) {
   int num_ports = st_num_ports(impl);
   int ret;
 
@@ -212,7 +212,7 @@ static int cni_queues_init(struct st_main_impl* impl, struct st_cni_impl* cni) {
   return 0;
 }
 
-static bool cni_if_need(struct st_main_impl* impl) {
+static bool cni_if_need(struct mtl_main_impl* impl) {
   int num_ports = st_num_ports(impl);
 
   for (int i = 0; i < num_ports; i++) {
@@ -222,7 +222,7 @@ static bool cni_if_need(struct st_main_impl* impl) {
   return false;
 }
 
-void st_cni_stat(struct st_main_impl* impl) {
+void st_cni_stat(struct mtl_main_impl* impl) {
   int num_ports = st_num_ports(impl);
   struct st_cni_impl* cni = st_get_cni(impl);
 
@@ -234,15 +234,15 @@ void st_cni_stat(struct st_main_impl* impl) {
   }
 }
 
-int st_cni_init(struct st_main_impl* impl) {
+int st_cni_init(struct mtl_main_impl* impl) {
   int ret;
   struct st_cni_impl* cni = st_get_cni(impl);
-  struct st_init_params* p = st_get_user_params(impl);
+  struct mtl_init_params* p = st_get_user_params(impl);
 
   cni->used = cni_if_need(impl);
   if (!cni->used) return 0;
 
-  cni->lcore_tasklet = (p->flags & ST_FLAG_CNI_THREAD) ? false : true;
+  cni->lcore_tasklet = (p->flags & MTL_FLAG_CNI_THREAD) ? false : true;
   rte_atomic32_set(&cni->stop_thread, 0);
 
   ret = st_kni_init(impl);
@@ -285,7 +285,7 @@ int st_cni_init(struct st_main_impl* impl) {
   return 0;
 }
 
-int st_cni_uinit(struct st_main_impl* impl) {
+int st_cni_uinit(struct mtl_main_impl* impl) {
   struct st_cni_impl* cni = st_get_cni(impl);
 
   if (cni->tasklet) {
@@ -305,7 +305,7 @@ int st_cni_uinit(struct st_main_impl* impl) {
   return 0;
 }
 
-int st_cni_start(struct st_main_impl* impl) {
+int st_cni_start(struct mtl_main_impl* impl) {
   struct st_cni_impl* cni = st_get_cni(impl);
   int ret;
 
@@ -317,7 +317,7 @@ int st_cni_start(struct st_main_impl* impl) {
   return 0;
 }
 
-int st_cni_stop(struct st_main_impl* impl) {
+int st_cni_stop(struct mtl_main_impl* impl) {
   struct st_cni_impl* cni = st_get_cni(impl);
 
   if (!cni->used) return 0;

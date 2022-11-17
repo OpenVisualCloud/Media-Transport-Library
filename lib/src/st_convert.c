@@ -7,15 +7,15 @@
 #include "st_log.h"
 #include "st_main.h"
 
-#ifdef ST_HAS_AVX2
+#ifdef MTL_HAS_AVX2
 #include "st_avx2.h"
 #endif
 
-#ifdef ST_HAS_AVX512
+#ifdef MTL_HAS_AVX512
 #include "st_avx512.h"
 #endif
 
-#ifdef ST_HAS_AVX512_VBMI2
+#ifdef MTL_HAS_AVX512_VBMI2
 #include "st_avx512_vbmi.h"
 #endif
 
@@ -573,15 +573,15 @@ static int st20_yuv422p10le_to_rfc4175_422be10_scalar(
 int st20_yuv422p10le_to_rfc4175_422be10_simd(uint16_t* y, uint16_t* b, uint16_t* r,
                                              struct st20_rfc4175_422_10_pg2_be* pg,
                                              uint32_t w, uint32_t h,
-                                             enum st_simd_level level) {
-  enum st_simd_level cpu_level = st_get_simd_level();
+                                             enum mtl_simd_level level) {
+  enum mtl_simd_level cpu_level = mtl_get_simd_level();
   int ret;
 
   ST_MAY_UNUSED(cpu_level);
   ST_MAY_UNUSED(ret);
 
-#ifdef ST_HAS_AVX512
-  if ((level >= ST_SIMD_LEVEL_AVX512) && (cpu_level >= ST_SIMD_LEVEL_AVX512)) {
+#ifdef MTL_HAS_AVX512
+  if ((level >= MTL_SIMD_LEVEL_AVX512) && (cpu_level >= MTL_SIMD_LEVEL_AVX512)) {
     dbg("%s, avx512 ways\n", __func__);
     ret = st20_yuv422p10le_to_rfc4175_422be10_avx512(y, b, r, pg, w, h);
     if (ret == 0) return 0;
@@ -594,17 +594,17 @@ int st20_yuv422p10le_to_rfc4175_422be10_simd(uint16_t* y, uint16_t* b, uint16_t*
 }
 
 int st20_yuv422p10le_to_rfc4175_422be10_simd_dma(
-    st_udma_handle udma, uint16_t* y, st_iova_t y_iova, uint16_t* b, st_iova_t b_iova,
-    uint16_t* r, st_iova_t r_iova, struct st20_rfc4175_422_10_pg2_be* pg, uint32_t w,
-    uint32_t h, enum st_simd_level level) {
-  enum st_simd_level cpu_level = st_get_simd_level();
+    mtl_udma_handle udma, uint16_t* y, mtl_iova_t y_iova, uint16_t* b, mtl_iova_t b_iova,
+    uint16_t* r, mtl_iova_t r_iova, struct st20_rfc4175_422_10_pg2_be* pg, uint32_t w,
+    uint32_t h, enum mtl_simd_level level) {
+  enum mtl_simd_level cpu_level = mtl_get_simd_level();
   int ret;
 
   ST_MAY_UNUSED(cpu_level);
   ST_MAY_UNUSED(ret);
 
-#ifdef ST_HAS_AVX512
-  if ((level >= ST_SIMD_LEVEL_AVX512) && (cpu_level >= ST_SIMD_LEVEL_AVX512)) {
+#ifdef MTL_HAS_AVX512
+  if ((level >= MTL_SIMD_LEVEL_AVX512) && (cpu_level >= MTL_SIMD_LEVEL_AVX512)) {
     dbg("%s, avx512 ways\n", __func__);
     ret = st20_yuv422p10le_to_rfc4175_422be10_avx512_dma(udma, y, y_iova, b, b_iova, r,
                                                          r_iova, pg, w, h);
@@ -642,16 +642,16 @@ static int st20_rfc4175_422be10_to_yuv422p10le_scalar(
 int st20_rfc4175_422be10_to_yuv422p10le_simd(struct st20_rfc4175_422_10_pg2_be* pg,
                                              uint16_t* y, uint16_t* b, uint16_t* r,
                                              uint32_t w, uint32_t h,
-                                             enum st_simd_level level) {
-  enum st_simd_level cpu_level = st_get_simd_level();
+                                             enum mtl_simd_level level) {
+  enum mtl_simd_level cpu_level = mtl_get_simd_level();
   int ret;
 
   ST_MAY_UNUSED(cpu_level);
   ST_MAY_UNUSED(ret);
 
-#ifdef ST_HAS_AVX512_VBMI2
-  if ((level >= ST_SIMD_LEVEL_AVX512_VBMI2) &&
-      (cpu_level >= ST_SIMD_LEVEL_AVX512_VBMI2)) {
+#ifdef MTL_HAS_AVX512_VBMI2
+  if ((level >= MTL_SIMD_LEVEL_AVX512_VBMI2) &&
+      (cpu_level >= MTL_SIMD_LEVEL_AVX512_VBMI2)) {
     dbg("%s, avx512_vbmi ways\n", __func__);
     ret = st20_rfc4175_422be10_to_yuv422p10le_avx512_vbmi(pg, y, b, r, w, h);
     if (ret == 0) return 0;
@@ -659,8 +659,8 @@ int st20_rfc4175_422be10_to_yuv422p10le_simd(struct st20_rfc4175_422_10_pg2_be* 
   }
 #endif
 
-#ifdef ST_HAS_AVX512
-  if ((level >= ST_SIMD_LEVEL_AVX512) && (cpu_level >= ST_SIMD_LEVEL_AVX512)) {
+#ifdef MTL_HAS_AVX512
+  if ((level >= MTL_SIMD_LEVEL_AVX512) && (cpu_level >= MTL_SIMD_LEVEL_AVX512)) {
     dbg("%s, avx512 ways\n", __func__);
     ret = st20_rfc4175_422be10_to_yuv422p10le_avx512(pg, y, b, r, w, h);
     if (ret == 0) return 0;
@@ -672,20 +672,20 @@ int st20_rfc4175_422be10_to_yuv422p10le_simd(struct st20_rfc4175_422_10_pg2_be* 
   return st20_rfc4175_422be10_to_yuv422p10le_scalar(pg, y, b, r, w, h);
 }
 
-int st20_rfc4175_422be10_to_yuv422p10le_simd_dma(st_udma_handle udma,
+int st20_rfc4175_422be10_to_yuv422p10le_simd_dma(mtl_udma_handle udma,
                                                  struct st20_rfc4175_422_10_pg2_be* pg_be,
-                                                 st_iova_t pg_be_iova, uint16_t* y,
+                                                 mtl_iova_t pg_be_iova, uint16_t* y,
                                                  uint16_t* b, uint16_t* r, uint32_t w,
-                                                 uint32_t h, enum st_simd_level level) {
-  enum st_simd_level cpu_level = st_get_simd_level();
+                                                 uint32_t h, enum mtl_simd_level level) {
+  enum mtl_simd_level cpu_level = mtl_get_simd_level();
   int ret;
 
   ST_MAY_UNUSED(cpu_level);
   ST_MAY_UNUSED(ret);
 
-#ifdef ST_HAS_AVX512_VBMI2
-  if ((level >= ST_SIMD_LEVEL_AVX512_VBMI2) &&
-      (cpu_level >= ST_SIMD_LEVEL_AVX512_VBMI2)) {
+#ifdef MTL_HAS_AVX512_VBMI2
+  if ((level >= MTL_SIMD_LEVEL_AVX512_VBMI2) &&
+      (cpu_level >= MTL_SIMD_LEVEL_AVX512_VBMI2)) {
     dbg("%s, avx512_vbmi ways\n", __func__);
     ret = st20_rfc4175_422be10_to_yuv422p10le_avx512_vbmi_dma(udma, pg_be, pg_be_iova, y,
                                                               b, r, w, h);
@@ -694,8 +694,8 @@ int st20_rfc4175_422be10_to_yuv422p10le_simd_dma(st_udma_handle udma,
   }
 #endif
 
-#ifdef ST_HAS_AVX512
-  if ((level >= ST_SIMD_LEVEL_AVX512) && (cpu_level >= ST_SIMD_LEVEL_AVX512)) {
+#ifdef MTL_HAS_AVX512
+  if ((level >= MTL_SIMD_LEVEL_AVX512) && (cpu_level >= MTL_SIMD_LEVEL_AVX512)) {
     dbg("%s, avx512 ways\n", __func__);
     ret = st20_rfc4175_422be10_to_yuv422p10le_avx512_dma(udma, pg_be, pg_be_iova, y, b, r,
                                                          w, h);
@@ -788,16 +788,16 @@ int st20_rfc4175_422be10_to_422le10_scalar(struct st20_rfc4175_422_10_pg2_be* pg
 int st20_rfc4175_422be10_to_422le10_simd(struct st20_rfc4175_422_10_pg2_be* pg_be,
                                          struct st20_rfc4175_422_10_pg2_le* pg_le,
                                          uint32_t w, uint32_t h,
-                                         enum st_simd_level level) {
-  enum st_simd_level cpu_level = st_get_simd_level();
+                                         enum mtl_simd_level level) {
+  enum mtl_simd_level cpu_level = mtl_get_simd_level();
   int ret;
 
   ST_MAY_UNUSED(cpu_level);
   ST_MAY_UNUSED(ret);
 
-#ifdef ST_HAS_AVX512_VBMI2
-  if ((level >= ST_SIMD_LEVEL_AVX512_VBMI2) &&
-      (cpu_level >= ST_SIMD_LEVEL_AVX512_VBMI2)) {
+#ifdef MTL_HAS_AVX512_VBMI2
+  if ((level >= MTL_SIMD_LEVEL_AVX512_VBMI2) &&
+      (cpu_level >= MTL_SIMD_LEVEL_AVX512_VBMI2)) {
     dbg("%s, avx512_vbmi ways\n", __func__);
     ret = st20_rfc4175_422be10_to_422le10_avx512_vbmi(pg_be, pg_le, w, h);
     if (ret == 0) return 0;
@@ -805,8 +805,8 @@ int st20_rfc4175_422be10_to_422le10_simd(struct st20_rfc4175_422_10_pg2_be* pg_b
   }
 #endif
 
-#ifdef ST_HAS_AVX512
-  if ((level >= ST_SIMD_LEVEL_AVX512) && (cpu_level >= ST_SIMD_LEVEL_AVX512)) {
+#ifdef MTL_HAS_AVX512
+  if ((level >= MTL_SIMD_LEVEL_AVX512) && (cpu_level >= MTL_SIMD_LEVEL_AVX512)) {
     dbg("%s, avx512 ways\n", __func__);
     ret = st20_rfc4175_422be10_to_422le10_avx512(pg_be, pg_le, w, h);
     if (ret == 0) return 0;
@@ -814,8 +814,8 @@ int st20_rfc4175_422be10_to_422le10_simd(struct st20_rfc4175_422_10_pg2_be* pg_b
   }
 #endif
 
-#ifdef ST_HAS_AVX2
-  if ((level >= ST_SIMD_LEVEL_AVX2) && (cpu_level >= ST_SIMD_LEVEL_AVX2)) {
+#ifdef MTL_HAS_AVX2
+  if ((level >= MTL_SIMD_LEVEL_AVX2) && (cpu_level >= MTL_SIMD_LEVEL_AVX2)) {
     dbg("%s, avx2 ways\n", __func__);
     ret = st20_rfc4175_422be10_to_422le10_avx2(pg_be, pg_le, w, h);
     if (ret == 0) return 0;
@@ -827,23 +827,23 @@ int st20_rfc4175_422be10_to_422le10_simd(struct st20_rfc4175_422_10_pg2_be* pg_b
   return st20_rfc4175_422be10_to_422le10_scalar(pg_be, pg_le, w, h);
 }
 
-int st20_rfc4175_422be10_to_422le10_simd_dma(st_udma_handle udma,
+int st20_rfc4175_422be10_to_422le10_simd_dma(mtl_udma_handle udma,
                                              struct st20_rfc4175_422_10_pg2_be* pg_be,
-                                             st_iova_t pg_be_iova,
+                                             mtl_iova_t pg_be_iova,
                                              struct st20_rfc4175_422_10_pg2_le* pg_le,
                                              uint32_t w, uint32_t h,
-                                             enum st_simd_level level) {
-  struct st_dma_lender_dev* dma = udma;
-  enum st_simd_level cpu_level = st_get_simd_level();
+                                             enum mtl_simd_level level) {
+  struct mtl_dma_lender_dev* dma = udma;
+  enum mtl_simd_level cpu_level = mtl_get_simd_level();
   int ret;
 
   ST_MAY_UNUSED(cpu_level);
   ST_MAY_UNUSED(ret);
   ST_MAY_UNUSED(dma);
 
-#ifdef ST_HAS_AVX512_VBMI2
-  if ((level >= ST_SIMD_LEVEL_AVX512_VBMI2) &&
-      (cpu_level >= ST_SIMD_LEVEL_AVX512_VBMI2)) {
+#ifdef MTL_HAS_AVX512_VBMI2
+  if ((level >= MTL_SIMD_LEVEL_AVX512_VBMI2) &&
+      (cpu_level >= MTL_SIMD_LEVEL_AVX512_VBMI2)) {
     dbg("%s, avx512_vbmi ways\n", __func__);
     ret = st20_rfc4175_422be10_to_422le10_avx512_vbmi_dma(dma, pg_be, pg_be_iova, pg_le,
                                                           w, h);
@@ -852,8 +852,8 @@ int st20_rfc4175_422be10_to_422le10_simd_dma(st_udma_handle udma,
   }
 #endif
 
-#ifdef ST_HAS_AVX512
-  if ((level >= ST_SIMD_LEVEL_AVX512) && (cpu_level >= ST_SIMD_LEVEL_AVX512)) {
+#ifdef MTL_HAS_AVX512
+  if ((level >= MTL_SIMD_LEVEL_AVX512) && (cpu_level >= MTL_SIMD_LEVEL_AVX512)) {
     dbg("%s, avx512 ways\n", __func__);
     ret = st20_rfc4175_422be10_to_422le10_avx512_dma(dma, pg_be, pg_be_iova, pg_le, w, h);
     if (ret == 0) return 0;
@@ -896,16 +896,16 @@ int st20_rfc4175_422le10_to_422be10_scalar(struct st20_rfc4175_422_10_pg2_le* pg
 int st20_rfc4175_422le10_to_422be10_simd(struct st20_rfc4175_422_10_pg2_le* pg_le,
                                          struct st20_rfc4175_422_10_pg2_be* pg_be,
                                          uint32_t w, uint32_t h,
-                                         enum st_simd_level level) {
-  enum st_simd_level cpu_level = st_get_simd_level();
+                                         enum mtl_simd_level level) {
+  enum mtl_simd_level cpu_level = mtl_get_simd_level();
   int ret;
 
   ST_MAY_UNUSED(cpu_level);
   ST_MAY_UNUSED(ret);
 
-#ifdef ST_HAS_AVX512_VBMI2
-  if ((level >= ST_SIMD_LEVEL_AVX512_VBMI2) &&
-      (cpu_level >= ST_SIMD_LEVEL_AVX512_VBMI2)) {
+#ifdef MTL_HAS_AVX512_VBMI2
+  if ((level >= MTL_SIMD_LEVEL_AVX512_VBMI2) &&
+      (cpu_level >= MTL_SIMD_LEVEL_AVX512_VBMI2)) {
     dbg("%s, avx512_vbmi ways\n", __func__);
     ret = st20_rfc4175_422le10_to_422be10_vbmi(pg_le, pg_be, w, h);
     if (ret == 0) return 0;
@@ -913,8 +913,8 @@ int st20_rfc4175_422le10_to_422be10_simd(struct st20_rfc4175_422_10_pg2_le* pg_l
   }
 #endif
 
-#ifdef ST_HAS_AVX512
-  if ((level >= ST_SIMD_LEVEL_AVX512) && (cpu_level >= ST_SIMD_LEVEL_AVX512)) {
+#ifdef MTL_HAS_AVX512
+  if ((level >= MTL_SIMD_LEVEL_AVX512) && (cpu_level >= MTL_SIMD_LEVEL_AVX512)) {
     dbg("%s, avx512 ways\n", __func__);
     ret = st20_rfc4175_422le10_to_422be10_avx512(pg_le, pg_be, w, h);
     if (ret == 0) return 0;
@@ -922,8 +922,8 @@ int st20_rfc4175_422le10_to_422be10_simd(struct st20_rfc4175_422_10_pg2_le* pg_l
   }
 #endif
 
-#ifdef ST_HAS_AVX2
-  if ((level >= ST_SIMD_LEVEL_AVX2) && (cpu_level >= ST_SIMD_LEVEL_AVX2)) {
+#ifdef MTL_HAS_AVX2
+  if ((level >= MTL_SIMD_LEVEL_AVX2) && (cpu_level >= MTL_SIMD_LEVEL_AVX2)) {
     dbg("%s, avx2 ways\n", __func__);
     ret = st20_rfc4175_422le10_to_422be10_avx2(pg_le, pg_be, w, h);
     if (ret == 0) return 0;
@@ -935,23 +935,23 @@ int st20_rfc4175_422le10_to_422be10_simd(struct st20_rfc4175_422_10_pg2_le* pg_l
   return st20_rfc4175_422le10_to_422be10_scalar(pg_le, pg_be, w, h);
 }
 
-int st20_rfc4175_422le10_to_422be10_simd_dma(st_udma_handle udma,
+int st20_rfc4175_422le10_to_422be10_simd_dma(mtl_udma_handle udma,
                                              struct st20_rfc4175_422_10_pg2_le* pg_le,
-                                             st_iova_t pg_le_iova,
+                                             mtl_iova_t pg_le_iova,
                                              struct st20_rfc4175_422_10_pg2_be* pg_be,
                                              uint32_t w, uint32_t h,
-                                             enum st_simd_level level) {
-  struct st_dma_lender_dev* dma = udma;
-  enum st_simd_level cpu_level = st_get_simd_level();
+                                             enum mtl_simd_level level) {
+  struct mtl_dma_lender_dev* dma = udma;
+  enum mtl_simd_level cpu_level = mtl_get_simd_level();
   int ret;
 
   ST_MAY_UNUSED(cpu_level);
   ST_MAY_UNUSED(ret);
   ST_MAY_UNUSED(dma);
 
-#ifdef ST_HAS_AVX512_VBMI2
-  if ((level >= ST_SIMD_LEVEL_AVX512_VBMI2) &&
-      (cpu_level >= ST_SIMD_LEVEL_AVX512_VBMI2)) {
+#ifdef MTL_HAS_AVX512_VBMI2
+  if ((level >= MTL_SIMD_LEVEL_AVX512_VBMI2) &&
+      (cpu_level >= MTL_SIMD_LEVEL_AVX512_VBMI2)) {
     dbg("%s, avx512_vbmi ways\n", __func__);
     ret = st20_rfc4175_422le10_to_422be10_avx512_vbmi_dma(dma, pg_le, pg_le_iova, pg_be,
                                                           w, h);
@@ -960,8 +960,8 @@ int st20_rfc4175_422le10_to_422be10_simd_dma(st_udma_handle udma,
   }
 #endif
 
-#ifdef ST_HAS_AVX512
-  if ((level >= ST_SIMD_LEVEL_AVX512) && (cpu_level >= ST_SIMD_LEVEL_AVX512)) {
+#ifdef MTL_HAS_AVX512
+  if ((level >= MTL_SIMD_LEVEL_AVX512) && (cpu_level >= MTL_SIMD_LEVEL_AVX512)) {
     dbg("%s, avx512 ways\n", __func__);
     ret = st20_rfc4175_422le10_to_422be10_avx512_dma(dma, pg_le, pg_le_iova, pg_be, w, h);
     if (ret == 0) return 0;
@@ -991,16 +991,16 @@ int st20_rfc4175_422be10_to_422le8_scalar(struct st20_rfc4175_422_10_pg2_be* pg_
 int st20_rfc4175_422be10_to_422le8_simd(struct st20_rfc4175_422_10_pg2_be* pg_10,
                                         struct st20_rfc4175_422_8_pg2_le* pg_8,
                                         uint32_t w, uint32_t h,
-                                        enum st_simd_level level) {
-  enum st_simd_level cpu_level = st_get_simd_level();
+                                        enum mtl_simd_level level) {
+  enum mtl_simd_level cpu_level = mtl_get_simd_level();
   int ret;
 
   ST_MAY_UNUSED(cpu_level);
   ST_MAY_UNUSED(ret);
 
-#ifdef ST_HAS_AVX512_VBMI2
-  if ((level >= ST_SIMD_LEVEL_AVX512_VBMI2) &&
-      (cpu_level >= ST_SIMD_LEVEL_AVX512_VBMI2)) {
+#ifdef MTL_HAS_AVX512_VBMI2
+  if ((level >= MTL_SIMD_LEVEL_AVX512_VBMI2) &&
+      (cpu_level >= MTL_SIMD_LEVEL_AVX512_VBMI2)) {
     dbg("%s, avx512_vbmi ways\n", __func__);
     ret = st20_rfc4175_422be10_to_422le8_avx512_vbmi(pg_10, pg_8, w, h);
     if (ret == 0) return 0;
@@ -1008,8 +1008,8 @@ int st20_rfc4175_422be10_to_422le8_simd(struct st20_rfc4175_422_10_pg2_be* pg_10
   }
 #endif
 
-#ifdef ST_HAS_AVX512
-  if ((level >= ST_SIMD_LEVEL_AVX512) && (cpu_level >= ST_SIMD_LEVEL_AVX512)) {
+#ifdef MTL_HAS_AVX512
+  if ((level >= MTL_SIMD_LEVEL_AVX512) && (cpu_level >= MTL_SIMD_LEVEL_AVX512)) {
     dbg("%s, avx512 ways\n", __func__);
     ret = st20_rfc4175_422be10_to_422le8_avx512(pg_10, pg_8, w, h);
     if (ret == 0) return 0;
@@ -1021,23 +1021,23 @@ int st20_rfc4175_422be10_to_422le8_simd(struct st20_rfc4175_422_10_pg2_be* pg_10
   return st20_rfc4175_422be10_to_422le8_scalar(pg_10, pg_8, w, h);
 }
 
-int st20_rfc4175_422be10_to_422le8_simd_dma(st_udma_handle udma,
+int st20_rfc4175_422be10_to_422le8_simd_dma(mtl_udma_handle udma,
                                             struct st20_rfc4175_422_10_pg2_be* pg_10,
-                                            st_iova_t pg_10_iova,
+                                            mtl_iova_t pg_10_iova,
                                             struct st20_rfc4175_422_8_pg2_le* pg_8,
                                             uint32_t w, uint32_t h,
-                                            enum st_simd_level level) {
-  struct st_dma_lender_dev* dma = udma;
-  enum st_simd_level cpu_level = st_get_simd_level();
+                                            enum mtl_simd_level level) {
+  struct mtl_dma_lender_dev* dma = udma;
+  enum mtl_simd_level cpu_level = mtl_get_simd_level();
   int ret;
 
   ST_MAY_UNUSED(cpu_level);
   ST_MAY_UNUSED(ret);
   ST_MAY_UNUSED(dma);
 
-#ifdef ST_HAS_AVX512_VBMI2
-  if ((level >= ST_SIMD_LEVEL_AVX512_VBMI2) &&
-      (cpu_level >= ST_SIMD_LEVEL_AVX512_VBMI2)) {
+#ifdef MTL_HAS_AVX512_VBMI2
+  if ((level >= MTL_SIMD_LEVEL_AVX512_VBMI2) &&
+      (cpu_level >= MTL_SIMD_LEVEL_AVX512_VBMI2)) {
     dbg("%s, avx512_vbmi ways\n", __func__);
     ret = st20_rfc4175_422be10_to_422le8_avx512_vbmi_dma(dma, pg_10, pg_10_iova, pg_8, w,
                                                          h);
@@ -1046,8 +1046,8 @@ int st20_rfc4175_422be10_to_422le8_simd_dma(st_udma_handle udma,
   }
 #endif
 
-#ifdef ST_HAS_AVX512
-  if ((level >= ST_SIMD_LEVEL_AVX512) && (cpu_level >= ST_SIMD_LEVEL_AVX512)) {
+#ifdef MTL_HAS_AVX512
+  if ((level >= MTL_SIMD_LEVEL_AVX512) && (cpu_level >= MTL_SIMD_LEVEL_AVX512)) {
     dbg("%s, avx512 ways\n", __func__);
     ret = st20_rfc4175_422be10_to_422le8_avx512_dma(dma, pg_10, pg_10_iova, pg_8, w, h);
     if (ret == 0) return 0;
@@ -1098,16 +1098,16 @@ int st20_rfc4175_422le10_to_v210_scalar(uint8_t* pg_le, uint8_t* pg_v210, uint32
 }
 
 int st20_rfc4175_422le10_to_v210_simd(uint8_t* pg_le, uint8_t* pg_v210, uint32_t w,
-                                      uint32_t h, enum st_simd_level level) {
-  enum st_simd_level cpu_level = st_get_simd_level();
+                                      uint32_t h, enum mtl_simd_level level) {
+  enum mtl_simd_level cpu_level = mtl_get_simd_level();
   int ret;
 
   ST_MAY_UNUSED(cpu_level);
   ST_MAY_UNUSED(ret);
 
-#ifdef ST_HAS_AVX512_VBMI2
-  if ((level >= ST_SIMD_LEVEL_AVX512_VBMI2) &&
-      (cpu_level >= ST_SIMD_LEVEL_AVX512_VBMI2)) {
+#ifdef MTL_HAS_AVX512_VBMI2
+  if ((level >= MTL_SIMD_LEVEL_AVX512_VBMI2) &&
+      (cpu_level >= MTL_SIMD_LEVEL_AVX512_VBMI2)) {
     dbg("%s, avx512_vbmi ways\n", __func__);
     ret = st20_rfc4175_422le10_to_v210_avx512_vbmi(pg_le, pg_v210, w, h);
     if (ret == 0) return 0;
@@ -1115,8 +1115,8 @@ int st20_rfc4175_422le10_to_v210_simd(uint8_t* pg_le, uint8_t* pg_v210, uint32_t
   }
 #endif
 
-#ifdef ST_HAS_AVX512
-  if ((level >= ST_SIMD_LEVEL_AVX512) && (cpu_level >= ST_SIMD_LEVEL_AVX512)) {
+#ifdef MTL_HAS_AVX512
+  if ((level >= MTL_SIMD_LEVEL_AVX512) && (cpu_level >= MTL_SIMD_LEVEL_AVX512)) {
     dbg("%s, avx512 ways\n", __func__);
     ret = st20_rfc4175_422le10_to_v210_avx512(pg_le, pg_v210, w, h);
     if (ret == 0) return 0;
@@ -1206,16 +1206,16 @@ int st20_rfc4175_422be10_to_v210_scalar(uint8_t* pg_be, uint8_t* pg_v210, uint32
 
 int st20_rfc4175_422be10_to_v210_simd(struct st20_rfc4175_422_10_pg2_be* pg_be,
                                       uint8_t* pg_v210, uint32_t w, uint32_t h,
-                                      enum st_simd_level level) {
-  enum st_simd_level cpu_level = st_get_simd_level();
+                                      enum mtl_simd_level level) {
+  enum mtl_simd_level cpu_level = mtl_get_simd_level();
   int ret;
 
   ST_MAY_UNUSED(cpu_level);
   ST_MAY_UNUSED(ret);
 
-#ifdef ST_HAS_AVX512_VBMI2
-  if ((level >= ST_SIMD_LEVEL_AVX512_VBMI2) &&
-      (cpu_level >= ST_SIMD_LEVEL_AVX512_VBMI2)) {
+#ifdef MTL_HAS_AVX512_VBMI2
+  if ((level >= MTL_SIMD_LEVEL_AVX512_VBMI2) &&
+      (cpu_level >= MTL_SIMD_LEVEL_AVX512_VBMI2)) {
     dbg("%s, avx512_vbmi ways\n", __func__);
     ret = st20_rfc4175_422be10_to_v210_avx512_vbmi(pg_be, pg_v210, w, h);
     if (ret == 0) return 0;
@@ -1223,8 +1223,8 @@ int st20_rfc4175_422be10_to_v210_simd(struct st20_rfc4175_422_10_pg2_be* pg_be,
   }
 #endif
 
-#ifdef ST_HAS_AVX512
-  if ((level >= ST_SIMD_LEVEL_AVX512) && (cpu_level >= ST_SIMD_LEVEL_AVX512)) {
+#ifdef MTL_HAS_AVX512
+  if ((level >= MTL_SIMD_LEVEL_AVX512) && (cpu_level >= MTL_SIMD_LEVEL_AVX512)) {
     dbg("%s, avx512 ways\n", __func__);
     ret = st20_rfc4175_422be10_to_v210_avx512(pg_be, pg_v210, w, h);
     if (ret == 0) return 0;
@@ -1236,22 +1236,22 @@ int st20_rfc4175_422be10_to_v210_simd(struct st20_rfc4175_422_10_pg2_be* pg_be,
   return st20_rfc4175_422be10_to_v210_scalar((uint8_t*)pg_be, pg_v210, w, h);
 }
 
-int st20_rfc4175_422be10_to_v210_simd_dma(st_udma_handle udma,
+int st20_rfc4175_422be10_to_v210_simd_dma(mtl_udma_handle udma,
                                           struct st20_rfc4175_422_10_pg2_be* pg_be,
-                                          st_iova_t pg_be_iova, uint8_t* pg_v210,
+                                          mtl_iova_t pg_be_iova, uint8_t* pg_v210,
                                           uint32_t w, uint32_t h,
-                                          enum st_simd_level level) {
-  struct st_dma_lender_dev* dma = udma;
-  enum st_simd_level cpu_level = st_get_simd_level();
+                                          enum mtl_simd_level level) {
+  struct mtl_dma_lender_dev* dma = udma;
+  enum mtl_simd_level cpu_level = mtl_get_simd_level();
   int ret;
 
   ST_MAY_UNUSED(cpu_level);
   ST_MAY_UNUSED(ret);
   ST_MAY_UNUSED(dma);
 
-#ifdef ST_HAS_AVX512_VBMI2
-  if ((level >= ST_SIMD_LEVEL_AVX512_VBMI2) &&
-      (cpu_level >= ST_SIMD_LEVEL_AVX512_VBMI2)) {
+#ifdef MTL_HAS_AVX512_VBMI2
+  if ((level >= MTL_SIMD_LEVEL_AVX512_VBMI2) &&
+      (cpu_level >= MTL_SIMD_LEVEL_AVX512_VBMI2)) {
     dbg("%s, avx512_vbmi ways\n", __func__);
     ret = st20_rfc4175_422be10_to_v210_avx512_vbmi_dma(dma, pg_be, pg_be_iova, pg_v210, w,
                                                        h);
@@ -1260,8 +1260,8 @@ int st20_rfc4175_422be10_to_v210_simd_dma(st_udma_handle udma,
   }
 #endif
 
-#ifdef ST_HAS_AVX512
-  if ((level >= ST_SIMD_LEVEL_AVX512) && (cpu_level >= ST_SIMD_LEVEL_AVX512)) {
+#ifdef MTL_HAS_AVX512
+  if ((level >= MTL_SIMD_LEVEL_AVX512) && (cpu_level >= MTL_SIMD_LEVEL_AVX512)) {
     dbg("%s, avx512 ways\n", __func__);
     ret = st20_rfc4175_422be10_to_v210_avx512_dma(dma, pg_be, pg_be_iova, pg_v210, w, h);
     if (ret == 0) return 0;
@@ -1312,16 +1312,16 @@ int st20_v210_to_rfc4175_422be10_scalar(uint8_t* v210, uint8_t* be, uint32_t w,
 
 int st20_v210_to_rfc4175_422be10_simd(uint8_t* pg_v210,
                                       struct st20_rfc4175_422_10_pg2_be* pg_be,
-                                      uint32_t w, uint32_t h, enum st_simd_level level) {
-  enum st_simd_level cpu_level = st_get_simd_level();
+                                      uint32_t w, uint32_t h, enum mtl_simd_level level) {
+  enum mtl_simd_level cpu_level = mtl_get_simd_level();
   int ret;
 
   ST_MAY_UNUSED(cpu_level);
   ST_MAY_UNUSED(ret);
 
-#ifdef ST_HAS_AVX512_VBMI2
-  if ((level >= ST_SIMD_LEVEL_AVX512_VBMI2) &&
-      (cpu_level >= ST_SIMD_LEVEL_AVX512_VBMI2)) {
+#ifdef MTL_HAS_AVX512_VBMI2
+  if ((level >= MTL_SIMD_LEVEL_AVX512_VBMI2) &&
+      (cpu_level >= MTL_SIMD_LEVEL_AVX512_VBMI2)) {
     dbg("%s, avx512_vbmi ways\n", __func__);
     ret = st20_v210_to_rfc4175_422be10_avx512_vbmi(pg_v210, pg_be, w, h);
     if (ret == 0) return 0;
@@ -1329,8 +1329,8 @@ int st20_v210_to_rfc4175_422be10_simd(uint8_t* pg_v210,
   }
 #endif
 
-#ifdef ST_HAS_AVX512
-  if ((level >= ST_SIMD_LEVEL_AVX512) && (cpu_level >= ST_SIMD_LEVEL_AVX512)) {
+#ifdef MTL_HAS_AVX512
+  if ((level >= MTL_SIMD_LEVEL_AVX512) && (cpu_level >= MTL_SIMD_LEVEL_AVX512)) {
     dbg("%s, avx512 ways\n", __func__);
     ret = st20_v210_to_rfc4175_422be10_avx512(pg_v210, pg_be, w, h);
     if (ret == 0) return 0;
@@ -1342,20 +1342,20 @@ int st20_v210_to_rfc4175_422be10_simd(uint8_t* pg_v210,
   return st20_v210_to_rfc4175_422be10_scalar(pg_v210, (uint8_t*)pg_be, w, h);
 }
 
-int st20_v210_to_rfc4175_422be10_simd_dma(st_udma_handle udma, uint8_t* pg_v210,
-                                          st_iova_t pg_v210_iova,
+int st20_v210_to_rfc4175_422be10_simd_dma(mtl_udma_handle udma, uint8_t* pg_v210,
+                                          mtl_iova_t pg_v210_iova,
                                           struct st20_rfc4175_422_10_pg2_be* pg_be,
                                           uint32_t w, uint32_t h,
-                                          enum st_simd_level level) {
-  enum st_simd_level cpu_level = st_get_simd_level();
+                                          enum mtl_simd_level level) {
+  enum mtl_simd_level cpu_level = mtl_get_simd_level();
   int ret;
 
   ST_MAY_UNUSED(cpu_level);
   ST_MAY_UNUSED(ret);
 
-#ifdef ST_HAS_AVX512_VBMI2
-  if ((level >= ST_SIMD_LEVEL_AVX512_VBMI2) &&
-      (cpu_level >= ST_SIMD_LEVEL_AVX512_VBMI2)) {
+#ifdef MTL_HAS_AVX512_VBMI2
+  if ((level >= MTL_SIMD_LEVEL_AVX512_VBMI2) &&
+      (cpu_level >= MTL_SIMD_LEVEL_AVX512_VBMI2)) {
     dbg("%s, avx512_vbmi ways\n", __func__);
     ret = st20_v210_to_rfc4175_422be10_avx512_vbmi_dma(udma, pg_v210, pg_v210_iova, pg_be,
                                                        w, h);
@@ -1364,8 +1364,8 @@ int st20_v210_to_rfc4175_422be10_simd_dma(st_udma_handle udma, uint8_t* pg_v210,
   }
 #endif
 
-#ifdef ST_HAS_AVX512
-  if ((level >= ST_SIMD_LEVEL_AVX512) && (cpu_level >= ST_SIMD_LEVEL_AVX512)) {
+#ifdef MTL_HAS_AVX512
+  if ((level >= MTL_SIMD_LEVEL_AVX512) && (cpu_level >= MTL_SIMD_LEVEL_AVX512)) {
     dbg("%s, avx512 ways\n", __func__);
     ret =
         st20_v210_to_rfc4175_422be10_avx512_dma(udma, pg_v210, pg_v210_iova, pg_be, w, h);
@@ -1396,15 +1396,15 @@ int st20_rfc4175_422be10_to_y210_scalar(struct st20_rfc4175_422_10_pg2_be* pg_be
 
 int st20_rfc4175_422be10_to_y210_simd(struct st20_rfc4175_422_10_pg2_be* pg_be,
                                       uint16_t* pg_y210, uint32_t w, uint32_t h,
-                                      enum st_simd_level level) {
-  enum st_simd_level cpu_level = st_get_simd_level();
+                                      enum mtl_simd_level level) {
+  enum mtl_simd_level cpu_level = mtl_get_simd_level();
   int ret;
 
   ST_MAY_UNUSED(cpu_level);
   ST_MAY_UNUSED(ret);
 
-#ifdef ST_HAS_AVX512
-  if ((level >= ST_SIMD_LEVEL_AVX512) && (cpu_level >= ST_SIMD_LEVEL_AVX512)) {
+#ifdef MTL_HAS_AVX512
+  if ((level >= MTL_SIMD_LEVEL_AVX512) && (cpu_level >= MTL_SIMD_LEVEL_AVX512)) {
     dbg("%s, avx512 ways\n", __func__);
     ret = st20_rfc4175_422be10_to_y210_avx512(pg_be, pg_y210, w, h);
     if (ret == 0) return 0;
@@ -1416,21 +1416,21 @@ int st20_rfc4175_422be10_to_y210_simd(struct st20_rfc4175_422_10_pg2_be* pg_be,
   return st20_rfc4175_422be10_to_y210_scalar(pg_be, pg_y210, w, h);
 }
 
-int st20_rfc4175_422be10_to_y210_simd_dma(st_udma_handle udma,
+int st20_rfc4175_422be10_to_y210_simd_dma(mtl_udma_handle udma,
                                           struct st20_rfc4175_422_10_pg2_be* pg_be,
-                                          st_iova_t pg_be_iova, uint16_t* pg_y210,
+                                          mtl_iova_t pg_be_iova, uint16_t* pg_y210,
                                           uint32_t w, uint32_t h,
-                                          enum st_simd_level level) {
-  struct st_dma_lender_dev* dma = udma;
-  enum st_simd_level cpu_level = st_get_simd_level();
+                                          enum mtl_simd_level level) {
+  struct mtl_dma_lender_dev* dma = udma;
+  enum mtl_simd_level cpu_level = mtl_get_simd_level();
   int ret;
 
   ST_MAY_UNUSED(cpu_level);
   ST_MAY_UNUSED(ret);
   ST_MAY_UNUSED(dma);
 
-#ifdef ST_HAS_AVX512
-  if ((level >= ST_SIMD_LEVEL_AVX512) && (cpu_level >= ST_SIMD_LEVEL_AVX512)) {
+#ifdef MTL_HAS_AVX512
+  if ((level >= MTL_SIMD_LEVEL_AVX512) && (cpu_level >= MTL_SIMD_LEVEL_AVX512)) {
     dbg("%s, avx512 ways\n", __func__);
     ret = st20_rfc4175_422be10_to_y210_avx512_dma(dma, pg_be, pg_be_iova, pg_y210, w, h);
     if (ret == 0) return 0;
@@ -1466,15 +1466,15 @@ int st20_y210_to_rfc4175_422be10_scalar(uint16_t* pg_y210,
 
 int st20_y210_to_rfc4175_422be10_simd(uint16_t* pg_y210,
                                       struct st20_rfc4175_422_10_pg2_be* pg_be,
-                                      uint32_t w, uint32_t h, enum st_simd_level level) {
-  enum st_simd_level cpu_level = st_get_simd_level();
+                                      uint32_t w, uint32_t h, enum mtl_simd_level level) {
+  enum mtl_simd_level cpu_level = mtl_get_simd_level();
   int ret;
 
   ST_MAY_UNUSED(cpu_level);
   ST_MAY_UNUSED(ret);
 
-#ifdef ST_HAS_AVX512
-  if ((level >= ST_SIMD_LEVEL_AVX512) && (cpu_level >= ST_SIMD_LEVEL_AVX512)) {
+#ifdef MTL_HAS_AVX512
+  if ((level >= MTL_SIMD_LEVEL_AVX512) && (cpu_level >= MTL_SIMD_LEVEL_AVX512)) {
     dbg("%s, avx512 ways\n", __func__);
     ret = st20_y210_to_rfc4175_422be10_avx512(pg_y210, pg_be, w, h);
     if (ret == 0) return 0;
@@ -1486,19 +1486,19 @@ int st20_y210_to_rfc4175_422be10_simd(uint16_t* pg_y210,
   return st20_y210_to_rfc4175_422be10_scalar(pg_y210, pg_be, w, h);
 }
 
-int st20_y210_to_rfc4175_422be10_simd_dma(st_udma_handle udma, uint16_t* pg_y210,
-                                          st_iova_t pg_y210_iova,
+int st20_y210_to_rfc4175_422be10_simd_dma(mtl_udma_handle udma, uint16_t* pg_y210,
+                                          mtl_iova_t pg_y210_iova,
                                           struct st20_rfc4175_422_10_pg2_be* pg_be,
                                           uint32_t w, uint32_t h,
-                                          enum st_simd_level level) {
-  enum st_simd_level cpu_level = st_get_simd_level();
+                                          enum mtl_simd_level level) {
+  enum mtl_simd_level cpu_level = mtl_get_simd_level();
   int ret;
 
   ST_MAY_UNUSED(cpu_level);
   ST_MAY_UNUSED(ret);
 
-#ifdef ST_HAS_AVX512
-  if ((level >= ST_SIMD_LEVEL_AVX512) && (cpu_level >= ST_SIMD_LEVEL_AVX512)) {
+#ifdef MTL_HAS_AVX512
+  if ((level >= MTL_SIMD_LEVEL_AVX512) && (cpu_level >= MTL_SIMD_LEVEL_AVX512)) {
     dbg("%s, avx512 ways\n", __func__);
     ret =
         st20_y210_to_rfc4175_422be10_avx512_dma(udma, pg_y210, pg_y210_iova, pg_be, w, h);
@@ -1541,7 +1541,7 @@ static int st20_yuv422p12le_to_rfc4175_422be12_scalar(
 int st20_yuv422p12le_to_rfc4175_422be12_simd(uint16_t* y, uint16_t* b, uint16_t* r,
                                              struct st20_rfc4175_422_12_pg2_be* pg,
                                              uint32_t w, uint32_t h,
-                                             enum st_simd_level level) {
+                                             enum mtl_simd_level level) {
   /* the only option */
   return st20_yuv422p12le_to_rfc4175_422be12_scalar(y, b, r, pg, w, h);
 }
@@ -1571,7 +1571,7 @@ static int st20_rfc4175_422be12_to_yuv422p12le_scalar(
 int st20_rfc4175_422be12_to_yuv422p12le_simd(struct st20_rfc4175_422_12_pg2_be* pg,
                                              uint16_t* y, uint16_t* b, uint16_t* r,
                                              uint32_t w, uint32_t h,
-                                             enum st_simd_level level) {
+                                             enum mtl_simd_level level) {
   /* the only option */
   return st20_rfc4175_422be12_to_yuv422p12le_scalar(pg, y, b, r, w, h);
 }
@@ -1656,7 +1656,7 @@ int st20_rfc4175_422be12_to_422le12_scalar(struct st20_rfc4175_422_12_pg2_be* pg
 int st20_rfc4175_422be12_to_422le12_simd(struct st20_rfc4175_422_12_pg2_be* pg_be,
                                          struct st20_rfc4175_422_12_pg2_le* pg_le,
                                          uint32_t w, uint32_t h,
-                                         enum st_simd_level level) {
+                                         enum mtl_simd_level level) {
   /* the only option */
   return st20_rfc4175_422be12_to_422le12_scalar(pg_be, pg_le, w, h);
 }
@@ -1692,7 +1692,7 @@ int st20_rfc4175_422le12_to_422be12_scalar(struct st20_rfc4175_422_12_pg2_le* pg
 int st20_rfc4175_422le12_to_422be12_simd(struct st20_rfc4175_422_12_pg2_le* pg_le,
                                          struct st20_rfc4175_422_12_pg2_be* pg_be,
                                          uint32_t w, uint32_t h,
-                                         enum st_simd_level level) {
+                                         enum mtl_simd_level level) {
   /* the only option */
   return st20_rfc4175_422le12_to_422be12_scalar(pg_le, pg_be, w, h);
 }
@@ -1752,7 +1752,7 @@ static int st20_444p10le_to_rfc4175_444be10_scalar(uint16_t* y_g, uint16_t* b_r,
 int st20_444p10le_to_rfc4175_444be10_simd(uint16_t* y_g, uint16_t* b_r, uint16_t* r_b,
                                           struct st20_rfc4175_444_10_pg4_be* pg,
                                           uint32_t w, uint32_t h,
-                                          enum st_simd_level level) {
+                                          enum mtl_simd_level level) {
   /* the only option */
   return st20_444p10le_to_rfc4175_444be10_scalar(y_g, b_r, r_b, pg, w, h);
 }
@@ -1799,7 +1799,7 @@ static int st20_rfc4175_444be10_to_444p10le_scalar(struct st20_rfc4175_444_10_pg
 int st20_rfc4175_444be10_to_444p10le_simd(struct st20_rfc4175_444_10_pg4_be* pg,
                                           uint16_t* y_g, uint16_t* b_r, uint16_t* r_b,
                                           uint32_t w, uint32_t h,
-                                          enum st_simd_level level) {
+                                          enum mtl_simd_level level) {
   /* the only option */
   return st20_rfc4175_444be10_to_444p10le_scalar(pg, y_g, b_r, r_b, w, h);
 }
@@ -1948,7 +1948,7 @@ int st20_rfc4175_444be10_to_444le10_scalar(struct st20_rfc4175_444_10_pg4_be* pg
 int st20_rfc4175_444be10_to_444le10_simd(struct st20_rfc4175_444_10_pg4_be* pg_be,
                                          struct st20_rfc4175_444_10_pg4_le* pg_le,
                                          uint32_t w, uint32_t h,
-                                         enum st_simd_level level) {
+                                         enum mtl_simd_level level) {
   /* the only option */
   return st20_rfc4175_444be10_to_444le10_scalar(pg_be, pg_le, w, h);
 }
@@ -2008,7 +2008,7 @@ int st20_rfc4175_444le10_to_444be10_scalar(struct st20_rfc4175_444_10_pg4_le* pg
 int st20_rfc4175_444le10_to_444be10_simd(struct st20_rfc4175_444_10_pg4_le* pg_le,
                                          struct st20_rfc4175_444_10_pg4_be* pg_be,
                                          uint32_t w, uint32_t h,
-                                         enum st_simd_level level) {
+                                         enum mtl_simd_level level) {
   /* the only option */
   return st20_rfc4175_444le10_to_444be10_scalar(pg_le, pg_be, w, h);
 }
@@ -2050,7 +2050,7 @@ static int st20_444p12le_to_rfc4175_444be12_scalar(uint16_t* y_g, uint16_t* b_r,
 int st20_444p12le_to_rfc4175_444be12_simd(uint16_t* y_g, uint16_t* b_r, uint16_t* r_b,
                                           struct st20_rfc4175_444_12_pg2_be* pg,
                                           uint32_t w, uint32_t h,
-                                          enum st_simd_level level) {
+                                          enum mtl_simd_level level) {
   /* the only option */
   return st20_444p12le_to_rfc4175_444be12_scalar(y_g, b_r, r_b, pg, w, h);
 }
@@ -2085,7 +2085,7 @@ static int st20_rfc4175_444be12_to_444p12le_scalar(struct st20_rfc4175_444_12_pg
 int st20_rfc4175_444be12_to_444p12le_simd(struct st20_rfc4175_444_12_pg2_be* pg,
                                           uint16_t* y_g, uint16_t* b_r, uint16_t* r_b,
                                           uint32_t w, uint32_t h,
-                                          enum st_simd_level level) {
+                                          enum mtl_simd_level level) {
   /* the only option */
   return st20_rfc4175_444be12_to_444p12le_scalar(pg, y_g, b_r, r_b, w, h);
 }
@@ -2186,7 +2186,7 @@ int st20_rfc4175_444be12_to_444le12_scalar(struct st20_rfc4175_444_12_pg2_be* pg
 int st20_rfc4175_444be12_to_444le12_simd(struct st20_rfc4175_444_12_pg2_be* pg_be,
                                          struct st20_rfc4175_444_12_pg2_le* pg_le,
                                          uint32_t w, uint32_t h,
-                                         enum st_simd_level level) {
+                                         enum mtl_simd_level level) {
   /* the only option */
   return st20_rfc4175_444be12_to_444le12_scalar(pg_be, pg_le, w, h);
 }
@@ -2228,7 +2228,7 @@ int st20_rfc4175_444le12_to_444be12_scalar(struct st20_rfc4175_444_12_pg2_le* pg
 int st20_rfc4175_444le12_to_444be12_simd(struct st20_rfc4175_444_12_pg2_le* pg_le,
                                          struct st20_rfc4175_444_12_pg2_be* pg_be,
                                          uint32_t w, uint32_t h,
-                                         enum st_simd_level level) {
+                                         enum mtl_simd_level level) {
   /* the only option */
   return st20_rfc4175_444le12_to_444be12_scalar(pg_le, pg_be, w, h);
 }

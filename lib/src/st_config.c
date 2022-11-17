@@ -23,7 +23,7 @@ static inline json_object* _json_object_get(json_object* obj, const char* key) {
 }
 #endif
 
-static int config_parse_plugins(struct st_main_impl* impl, json_object* plugins_array) {
+static int config_parse_plugins(struct mtl_main_impl* impl, json_object* plugins_array) {
   if (json_object_get_type(plugins_array) != json_type_array) {
     err("%s, type not array\n", __func__);
     return -EIO;
@@ -50,7 +50,7 @@ static int config_parse_plugins(struct st_main_impl* impl, json_object* plugins_
   return 0;
 }
 
-static int config_parse_json(struct st_main_impl* impl, const char* filename) {
+static int config_parse_json(struct mtl_main_impl* impl, const char* filename) {
   json_object* root_object = json_object_from_file(filename);
   if (root_object == NULL) {
     warn("%s, open json file %s fail\n", __func__, filename);
@@ -66,7 +66,7 @@ static int config_parse_json(struct st_main_impl* impl, const char* filename) {
   return 0;
 }
 
-int st_config_init(struct st_main_impl* impl) {
+int st_config_init(struct mtl_main_impl* impl) {
   const char* cfg_path = getenv("KAHAWAI_CFG_PATH");
 
   if (cfg_path) {
@@ -79,4 +79,4 @@ int st_config_init(struct st_main_impl* impl) {
   return 0;
 }
 
-int st_config_uinit(struct st_main_impl* impl) { return 0; }
+int st_config_uinit(struct mtl_main_impl* impl) { return 0; }

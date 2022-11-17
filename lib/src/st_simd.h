@@ -25,16 +25,16 @@
 
 #define ST_TARGET_CODE_START_SSE4_2 ST_TARGET_CODE_START("sse4.2")
 
-#ifdef ST_HAS_AVX2
+#ifdef MTL_HAS_AVX2
 #define ST_TARGET_CODE_START_AVX2 ST_TARGET_CODE_START("avx2")
 #endif
 
-#ifdef ST_HAS_AVX512
+#ifdef MTL_HAS_AVX512
 #define ST_TARGET_CODE_START_AVX512 \
   ST_TARGET_CODE_START("avx512f,avx512cd,avx512vl,avx512dq,avx512bw")
 #endif
 
-#ifdef ST_HAS_AVX512_VBMI2
+#ifdef MTL_HAS_AVX512_VBMI2
 #define ST_TARGET_CODE_START_AVX512_VBMI2 \
   ST_TARGET_CODE_START(                   \
       "avx512f,avx512cd,avx512vl,avx512dq,avx512bw,avx512vbmi,avx512vbmi2")

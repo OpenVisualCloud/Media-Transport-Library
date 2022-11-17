@@ -6,7 +6,6 @@
 
 #include <errno.h>
 #include <pthread.h>
-#include <st_convert_api.h>
 #include <stdbool.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -26,7 +25,7 @@ static int convert_frame(struct converter_session* s,
                                        frame->dst->width, frame->dst->height);
           break;
         case ST_FRAME_FMT_YUV422RFC4175PG2BE10:
-          st_memcpy(frame->dst->addr[0], frame->src->addr[0], frame->dst->data_size);
+          mtl_memcpy(frame->dst->addr[0], frame->src->addr[0], frame->dst->data_size);
           break;
         case ST_FRAME_FMT_YUV422PACKED8:
           st20_rfc4175_422be10_to_422le8(frame->src->addr[0], frame->dst->addr[0],
@@ -135,7 +134,7 @@ static int converter_frame_available(void* priv) {
   return 0;
 }
 
-st_plugin_priv st_plugin_create(st_handle st) {
+st_plugin_priv st_plugin_create(mtl_handle st) {
   struct convert_ctx* ctx;
 
   ctx = malloc(sizeof(*ctx));

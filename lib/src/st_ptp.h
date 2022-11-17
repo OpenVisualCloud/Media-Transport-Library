@@ -102,18 +102,18 @@ struct st_ptp_delay_resp_msg {
   uint8_t suffix[0];
 } __attribute__((packed));
 
-static inline struct st_ptp_impl* st_get_ptp(struct st_main_impl* impl,
-                                             enum st_port port) {
+static inline struct st_ptp_impl* st_get_ptp(struct mtl_main_impl* impl,
+                                             enum mtl_port port) {
   return &impl->ptp[port];
 }
 
-int st_ptp_init(struct st_main_impl* impl);
-int st_ptp_uinit(struct st_main_impl* impl);
+int st_ptp_init(struct mtl_main_impl* impl);
+int st_ptp_uinit(struct mtl_main_impl* impl);
 
 int st_ptp_parse(struct st_ptp_impl* ptp, struct st_ptp_header* hdr, bool vlan,
                  enum st_ptp_l_mode mode, uint16_t timesync,
                  struct st_ptp_ipv4_udp* ipv4_hdr);
 
-void st_ptp_stat(struct st_main_impl* impl);
+void st_ptp_stat(struct mtl_main_impl* impl);
 
 #endif

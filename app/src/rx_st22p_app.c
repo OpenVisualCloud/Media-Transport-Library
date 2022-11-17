@@ -21,7 +21,7 @@ static void app_rx_st22p_consume_frame(struct st_app_rx_st22p_session* s,
   if (d && d->front_frame) {
     if (st_pthread_mutex_trylock(&d->display_frame_mutex) == 0) {
       if (frame->fmt == ST_FRAME_FMT_YUV422PACKED8)
-        st_memcpy(d->front_frame, frame->addr[0], d->front_frame_size);
+        mtl_memcpy(d->front_frame, frame->addr[0], d->front_frame_size);
       else if (frame->fmt == ST_FRAME_FMT_YUV422RFC4175PG2BE10)
         st20_rfc4175_422be10_to_422le8(frame->addr[0], d->front_frame, s->width,
                                        s->height);
@@ -136,20 +136,21 @@ static int app_rx_st22p_init(struct st_app_context* ctx,
   ops.name = name;
   ops.priv = s;
   ops.port.num_port = st22p ? st22p->base.num_inf : ctx->para.num_ports;
-  memcpy(ops.port.sip_addr[ST_PORT_P],
-         st22p ? st22p->base.ip[ST_PORT_P] : ctx->rx_sip_addr[ST_PORT_P], ST_IP_ADDR_LEN);
-  strncpy(ops.port.port[ST_PORT_P],
-          st22p ? st22p->base.inf[ST_PORT_P]->name : ctx->para.port[ST_PORT_P],
-          ST_PORT_MAX_LEN);
-  ops.port.udp_port[ST_PORT_P] = st22p ? st22p->base.udp_port : (10000 + s->idx);
+  memcpy(ops.port.sip_addr[MTL_PORT_P],
+         st22p ? st22p->base.ip[MTL_PORT_P] : ctx->rx_sip_addr[MTL_PORT_P],
+         MTL_IP_ADDR_LEN);
+  strncpy(ops.port.port[MTL_PORT_P],
+          st22p ? st22p->base.inf[MTL_PORT_P]->name : ctx->para.port[MTL_PORT_P],
+          MTL_PORT_MAX_LEN);
+  ops.port.udp_port[MTL_PORT_P] = st22p ? st22p->base.udp_port : (10000 + s->idx);
   if (ops.port.num_port > 1) {
-    memcpy(ops.port.sip_addr[ST_PORT_R],
-           st22p ? st22p->base.ip[ST_PORT_R] : ctx->rx_sip_addr[ST_PORT_R],
-           ST_IP_ADDR_LEN);
-    strncpy(ops.port.port[ST_PORT_R],
-            st22p ? st22p->base.inf[ST_PORT_R]->name : ctx->para.port[ST_PORT_R],
-            ST_PORT_MAX_LEN);
-    ops.port.udp_port[ST_PORT_R] = st22p ? st22p->base.udp_port : (10000 + s->idx);
+    memcpy(ops.port.sip_addr[MTL_PORT_R],
+           st22p ? st22p->base.ip[MTL_PORT_R] : ctx->rx_sip_addr[MTL_PORT_R],
+           MTL_IP_ADDR_LEN);
+    strncpy(ops.port.port[MTL_PORT_R],
+            st22p ? st22p->base.inf[MTL_PORT_R]->name : ctx->para.port[MTL_PORT_R],
+            MTL_PORT_MAX_LEN);
+    ops.port.udp_port[MTL_PORT_R] = st22p ? st22p->base.udp_port : (10000 + s->idx);
   }
 
   ops.width = st22p ? st22p->info.width : 1920;

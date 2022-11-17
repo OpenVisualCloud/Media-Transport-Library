@@ -6,12 +6,11 @@
 
 #include <gtest/gtest.h>
 #include <math.h>
+#include <mtl/st30_api.h>
+#include <mtl/st40_api.h>
+#include <mtl/st_convert_api.h>
+#include <mtl/st_pipeline_api.h>
 #include <openssl/sha.h>
-#include <st20_dpdk_api.h>
-#include <st30_dpdk_api.h>
-#include <st40_dpdk_api.h>
-#include <st_convert_api.h>
-#include <st_pipeline_api.h>
 
 #include <condition_variable>
 #include <mutex>
@@ -96,10 +95,10 @@ struct test_st22_decoder_session {
 };
 
 struct st_tests_context {
-  struct st_init_params para;
-  st_handle handle;
+  struct mtl_init_params para;
+  mtl_handle handle;
   char lcores_list[TEST_LCORE_LIST_MAX_LEN];
-  uint8_t mcast_ip_addr[ST_PORT_MAX][ST_IP_ADDR_LEN];
+  uint8_t mcast_ip_addr[MTL_PORT_MAX][MTL_IP_ADDR_LEN];
   uint64_t ptp_time;
   enum st_test_level level;
   bool hdr_split;
@@ -253,13 +252,13 @@ class tests_context {
   uint64_t slice_recv_timestamp = 0;
   void* ext_fb_malloc;
   uint8_t* ext_fb = NULL;
-  st_iova_t ext_fb_iova = 0;
+  mtl_iova_t ext_fb_iova = 0;
   size_t ext_fb_iova_map_sz = 0;
   struct st20_ext_frame* ext_frames;
   struct st_ext_frame* p_ext_frames;
   int ext_idx = 0;
   bool ext_fb_in_use[3] = {false}; /* assume 3 framebuffer */
-  st_dma_mem_handle dma_mem = NULL;
+  mtl_dma_mem_handle dma_mem = NULL;
   bool rx_get_ext = false;
 
   bool user_pacing = false;
@@ -294,8 +293,8 @@ int tx_next_frame(void* priv, uint16_t* next_frame_idx);
     for (int i = 0; i < max; i++) {                         \
       handle[i] = A##_create(m_handle, &ops);               \
       if (!handle[i]) break;                                \
-      ops.udp_port[ST_PORT_P]++;                            \
-      ops.udp_port[ST_PORT_R]++;                            \
+      ops.udp_port[MTL_PORT_P]++;                           \
+      ops.udp_port[MTL_PORT_R]++;                           \
       expect_cnt++;                                         \
       A##_assert_cnt(expect_cnt);                           \
       st_usleep(100 * 1000);                                \
@@ -335,8 +334,8 @@ int tx_next_frame(void* priv, uint16_t* next_frame_idx);
     for (int i = 0; i < base; i++) {               \
       handle_base[i] = A##_create(m_handle, &ops); \
       ASSERT_TRUE(handle_base[i]);                 \
-      ops.udp_port[ST_PORT_P]++;                   \
-      ops.udp_port[ST_PORT_R]++;                   \
+      ops.udp_port[MTL_PORT_P]++;                  \
+      ops.udp_port[MTL_PORT_R]++;                  \
       expect_cnt++;                                \
       A##_assert_cnt(expect_cnt);                  \
     }                                              \
@@ -347,8 +346,8 @@ int tx_next_frame(void* priv, uint16_t* next_frame_idx);
       for (int j = 0; j < step; j++) {             \
         handle[j] = A##_create(m_handle, &ops);    \
         ASSERT_TRUE(handle[j] != NULL);            \
-        ops.udp_port[ST_PORT_P]++;                 \
-        ops.udp_port[ST_PORT_R]++;                 \
+        ops.udp_port[MTL_PORT_P]++;                \
+        ops.udp_port[MTL_PORT_R]++;                \
         expect_cnt++;                              \
         A##_assert_cnt(expect_cnt);                \
       }                                            \
@@ -610,8 +609,8 @@ int tx_next_frame(void* priv, uint16_t* next_frame_idx);
     for (int i = 0; i < base; i++) {                     \
       handle_base[i] = A##_create(m_handle, &ops);       \
       ASSERT_TRUE(handle_base[i]);                       \
-      ops.port.udp_port[ST_PORT_P]++;                    \
-      ops.port.udp_port[ST_PORT_R]++;                    \
+      ops.port.udp_port[MTL_PORT_P]++;                   \
+      ops.port.udp_port[MTL_PORT_R]++;                   \
       expect_cnt++;                                      \
       A##_assert_cnt(expect_cnt);                        \
     }                                                    \
@@ -622,8 +621,8 @@ int tx_next_frame(void* priv, uint16_t* next_frame_idx);
       for (int j = 0; j < step; j++) {                   \
         handle[j] = A##_create(m_handle, &ops);          \
         ASSERT_TRUE(handle[j] != NULL);                  \
-        ops.port.udp_port[ST_PORT_P]++;                  \
-        ops.port.udp_port[ST_PORT_R]++;                  \
+        ops.port.udp_port[MTL_PORT_P]++;                 \
+        ops.port.udp_port[MTL_PORT_R]++;                 \
         expect_cnt++;                                    \
         A##_assert_cnt(expect_cnt);                      \
       }                                                  \
@@ -668,8 +667,8 @@ int tx_next_frame(void* priv, uint16_t* next_frame_idx);
     for (int i = 0; i < max; i++) {                         \
       handle[i] = A##_create(m_handle, &ops);               \
       if (!handle[i]) break;                                \
-      ops.port.udp_port[ST_PORT_P]++;                       \
-      ops.port.udp_port[ST_PORT_R]++;                       \
+      ops.port.udp_port[MTL_PORT_P]++;                      \
+      ops.port.udp_port[MTL_PORT_R]++;                      \
       expect_cnt++;                                         \
       A##_assert_cnt(expect_cnt);                           \
     }                                                       \

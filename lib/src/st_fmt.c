@@ -681,9 +681,9 @@ uint64_t st10_media_clk_to_ns(uint32_t media_ts, uint32_t sampling_rate) {
   return ts;
 }
 
-enum st_pmd_type st_pmd_by_port_name(const char* port) {
+enum mtl_pmd_type mtl_pmd_by_port_name(const char* port) {
   char* bdf = strstr(port, ":");
-  return bdf ? ST_PMD_DPDK_USER : ST_PMD_DPDK_AF_XDP;
+  return bdf ? MTL_PMD_DPDK_USER : MTL_PMD_DPDK_AF_XDP;
 }
 
 int st_draw_logo(struct st_frame* frame, struct st_frame* logo, uint32_t x, uint32_t y) {
@@ -712,7 +712,7 @@ int st_draw_logo(struct st_frame* frame, struct st_frame* logo, uint32_t x, uint
   for (uint32_t col = 0; col < logo->height; col++) {
     void* dst = frame->addr[0] + (((col + y) * frame->width) + x) / 2 * 5;
     void* src = logo->addr[0] + (col * logo->width) / 2 * 5;
-    st_memcpy(dst, src, logo_col_size);
+    mtl_memcpy(dst, src, logo_col_size);
   }
 
   return 0;

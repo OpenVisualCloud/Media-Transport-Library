@@ -9,11 +9,11 @@
 #include "st_sch.h"
 #include "st_tx_video_session.h"
 
-static inline struct st_admin* st_get_admin(struct st_main_impl* impl) {
+static inline struct st_admin* st_get_admin(struct mtl_main_impl* impl) {
   return &impl->admin;
 }
 
-static int admin_cal_cpu_busy(struct st_main_impl* impl) {
+static int admin_cal_cpu_busy(struct mtl_main_impl* impl) {
   struct st_sch_impl* sch;
   struct st_tx_video_sessions_mgr* tx_mgr;
   struct st_tx_video_session_impl* tx_s;
@@ -48,7 +48,7 @@ static int admin_cal_cpu_busy(struct st_main_impl* impl) {
   return 0;
 }
 
-static int admin_clear_cpu_busy(struct st_main_impl* impl) {
+static int admin_clear_cpu_busy(struct mtl_main_impl* impl) {
   struct st_sch_impl* sch;
   struct st_tx_video_sessions_mgr* tx_mgr;
   struct st_tx_video_session_impl* tx_s;
@@ -98,7 +98,7 @@ static inline void tx_video_set_sch(struct st_tx_video_session_impl* s,
     s->st20_handle->sch = sch;
 }
 
-static int tx_video_migrate_to(struct st_main_impl* impl,
+static int tx_video_migrate_to(struct mtl_main_impl* impl,
                                struct st_tx_video_session_impl* s,
                                struct st_sch_impl* from_sch, struct st_sch_impl* to_sch) {
   struct st_tx_video_sessions_mgr* to_tx_mgr = &to_sch->tx_video_mgr;
@@ -140,7 +140,7 @@ static int tx_video_migrate_to(struct st_main_impl* impl,
   return 0;
 }
 
-static int admin_tx_video_migrate(struct st_main_impl* impl, bool* migrated) {
+static int admin_tx_video_migrate(struct mtl_main_impl* impl, bool* migrated) {
   struct st_tx_video_session_impl* busy_s = NULL;
   struct st_sch_impl* from_sch = NULL;
   int ret;
@@ -213,7 +213,7 @@ static inline void rx_video_set_sch(struct st_rx_video_session_impl* s,
     s->st20_handle->sch = sch;
 }
 
-static int rx_video_migrate_to(struct st_main_impl* impl,
+static int rx_video_migrate_to(struct mtl_main_impl* impl,
                                struct st_rx_video_session_impl* s,
                                struct st_sch_impl* from_sch, struct st_sch_impl* to_sch) {
   struct st_rx_video_sessions_mgr* to_rx_mgr = &to_sch->rx_video_mgr;
@@ -255,7 +255,7 @@ static int rx_video_migrate_to(struct st_main_impl* impl,
   return 0;
 }
 
-static int admin_rx_video_migrate(struct st_main_impl* impl, bool* migrated) {
+static int admin_rx_video_migrate(struct mtl_main_impl* impl, bool* migrated) {
   struct st_rx_video_session_impl* busy_s = NULL;
   struct st_sch_impl* from_sch = NULL;
   int ret;
@@ -320,13 +320,13 @@ static void admin_wakeup_thread(struct st_admin* admin) {
 }
 
 static void admin_alarm_handler(void* param) {
-  struct st_main_impl* impl = param;
+  struct mtl_main_impl* impl = param;
   struct st_admin* admin = st_get_admin(impl);
 
   admin_wakeup_thread(admin);
 }
 
-static int admin_func(struct st_main_impl* impl) {
+static int admin_func(struct mtl_main_impl* impl) {
   struct st_admin* admin = st_get_admin(impl);
 
   dbg("%s, start\n", __func__);
@@ -350,7 +350,7 @@ static int admin_func(struct st_main_impl* impl) {
 }
 
 static void* admin_thread(void* arg) {
-  struct st_main_impl* impl = arg;
+  struct mtl_main_impl* impl = arg;
   struct st_admin* admin = st_get_admin(impl);
 
   info("%s, start\n", __func__);
@@ -367,7 +367,7 @@ static void* admin_thread(void* arg) {
   return NULL;
 }
 
-int st_admin_init(struct st_main_impl* impl) {
+int st_admin_init(struct mtl_main_impl* impl) {
   struct st_admin* admin = st_get_admin(impl);
 
   admin->period_us = 5 * US_PER_S; /* 5s */
@@ -381,7 +381,7 @@ int st_admin_init(struct st_main_impl* impl) {
   return 0;
 }
 
-int st_admin_uinit(struct st_main_impl* impl) {
+int st_admin_uinit(struct mtl_main_impl* impl) {
   struct st_admin* admin = st_get_admin(impl);
 
   if (admin->admin_tid) {
