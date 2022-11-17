@@ -57,7 +57,7 @@ static int st22_next_video_frame_timestamp(void* priv, uint16_t* next_frame_idx,
   *next_frame_idx = ctx->fb_idx;
   meta->codestream_size = ctx->frame_size;
   meta->tfmt = ST10_TIMESTAMP_FMT_TAI;
-  meta->timestamp = mtl_ptp_read_time(ctx->ctx->handle) + 35 * 1000 * 1000;
+  meta->timestamp = st_ptp_read_time(ctx->ctx->handle) + 35 * 1000 * 1000;
   dbg("%s, next_frame_idx %d frame_size %ld\n", __func__, *next_frame_idx,
       meta->codestream_size);
   ctx->fb_idx++;

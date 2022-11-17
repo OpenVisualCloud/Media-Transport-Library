@@ -708,10 +708,10 @@ size_t mtl_page_size(mtl_handle st);
  *   MTL_BAD_IOVA on error
  *   otherwise return an address suitable for IO
  */
-mtl_iova_t st_dma_map(mtl_handle st, const void* vaddr, size_t size);
+mtl_iova_t mtl_dma_map(mtl_handle st, const void* vaddr, size_t size);
 
 /**
- * Perform DMA unmapping on the st_dma_map
+ * Perform DMA unmapping on the mtl_dma_map
  *
  * @param st
  *   The handle to the media transport device context.
@@ -726,7 +726,7 @@ mtl_iova_t st_dma_map(mtl_handle st, const void* vaddr, size_t size);
  *   - 0 if successful.
  *   - <0: Error code if fail.
  */
-int st_dma_unmap(mtl_handle st, const void* vaddr, mtl_iova_t iova, size_t size);
+int mtl_dma_unmap(mtl_handle st, const void* vaddr, mtl_iova_t iova, size_t size);
 
 /**
  * Allocate memory block more than required and map valid data to IOVA.
@@ -751,7 +751,7 @@ int st_dma_unmap(mtl_handle st, const void* vaddr, mtl_iova_t iova, size_t size)
  *   - NULL on error.
  *   - Otherwise, the handle to the dma mem.
  */
-mtl_dma_mem_handle st_dma_mem_alloc(mtl_handle st, size_t size);
+mtl_dma_mem_handle mtl_dma_mem_alloc(mtl_handle st, size_t size);
 
 /**
  * Free the dma mem memory block.
@@ -762,7 +762,7 @@ mtl_dma_mem_handle st_dma_mem_alloc(mtl_handle st, size_t size);
  * @param handle
  *   The handle to the st dma mem.
  */
-void st_dma_mem_free(mtl_handle st, mtl_dma_mem_handle handle);
+void mtl_dma_mem_free(mtl_handle st, mtl_dma_mem_handle handle);
 
 /**
  * Get the begin address of dma mapped memory.
@@ -772,7 +772,7 @@ void st_dma_mem_free(mtl_handle st, mtl_dma_mem_handle handle);
  * @return
  *   - Begin address of dma mapped memory.
  */
-void* st_dma_mem_addr(mtl_dma_mem_handle handle);
+void* mtl_dma_mem_addr(mtl_dma_mem_handle handle);
 
 /**
  * Get the begin IOVA of dma mapped memory.
@@ -782,7 +782,7 @@ void* st_dma_mem_addr(mtl_dma_mem_handle handle);
  * @return
  *   - Begin IOVA of dma mapped memory.
  */
-mtl_iova_t st_dma_mem_iova(mtl_dma_mem_handle handle);
+mtl_iova_t mtl_dma_mem_iova(mtl_dma_mem_handle handle);
 
 /**
  * Allocate a user DMA dev from the dma_dev_port(mtl_init_params) list.
@@ -798,7 +798,7 @@ mtl_iova_t st_dma_mem_iova(mtl_dma_mem_handle handle);
  *   - NULL on error.
  *   - Otherwise, the handle to the st user dma dev.
  */
-mtl_udma_handle st_udma_create(mtl_handle st, uint16_t nb_desc, enum mtl_port port);
+mtl_udma_handle mtl_udma_create(mtl_handle st, uint16_t nb_desc, enum mtl_port port);
 
 /**
  * Free the st user dma dev.
@@ -809,7 +809,7 @@ mtl_udma_handle st_udma_create(mtl_handle st, uint16_t nb_desc, enum mtl_port po
  *   - 0: Success.
  *   - <0: Error code of the free.
  */
-int st_udma_free(mtl_udma_handle handle);
+int mtl_udma_free(mtl_udma_handle handle);
 
 /**
  * Enqueue a copy operation onto the user dma dev.
@@ -830,7 +830,8 @@ int st_udma_free(mtl_udma_handle handle);
  *   - -ENOSPC: if no space left to enqueue.
  *   - other values < 0 on failure.
  */
-int st_udma_copy(mtl_udma_handle handle, mtl_iova_t dst, mtl_iova_t src, uint32_t length);
+int mtl_udma_copy(mtl_udma_handle handle, mtl_iova_t dst, mtl_iova_t src,
+                  uint32_t length);
 
 /**
  * Enqueue a fill operation onto the virtual DMA channel.
@@ -850,8 +851,8 @@ int st_udma_copy(mtl_udma_handle handle, mtl_iova_t dst, mtl_iova_t src, uint32_
  *   - -ENOSPC: if no space left to enqueue.
  *   - other values < 0 on failure.
  */
-int st_udma_fill(mtl_udma_handle handle, mtl_iova_t dst, uint64_t pattern,
-                 uint32_t length);
+int mtl_udma_fill(mtl_udma_handle handle, mtl_iova_t dst, uint64_t pattern,
+                  uint32_t length);
 
 /**
  * Enqueue a fill operation onto the virtual DMA channel.
@@ -871,12 +872,12 @@ int st_udma_fill(mtl_udma_handle handle, mtl_iova_t dst, uint64_t pattern,
  *   - -ENOSPC: if no space left to enqueue.
  *   - other values < 0 on failure.
  */
-static inline int st_udma_fill_u8(mtl_udma_handle handle, mtl_iova_t dst, uint8_t pattern,
-                                  uint32_t length) {
+static inline int mtl_udma_fill_u8(mtl_udma_handle handle, mtl_iova_t dst,
+                                   uint8_t pattern, uint32_t length) {
   uint64_t pattern_u64;
   /* pattern to u64 */
   memset(&pattern_u64, pattern, sizeof(pattern_u64));
-  return st_udma_fill(handle, dst, pattern_u64, length);
+  return mtl_udma_fill(handle, dst, pattern_u64, length);
 }
 
 /**
@@ -888,7 +889,7 @@ static inline int st_udma_fill_u8(mtl_udma_handle handle, mtl_iova_t dst, uint8_
  *   - 0: Success.
  *   - <0: Error code of the submit.
  */
-int st_udma_submit(mtl_udma_handle handle);
+int mtl_udma_submit(mtl_udma_handle handle);
 
 /**
  * Return the number of operations that have been successfully completed.
@@ -902,17 +903,7 @@ int st_udma_submit(mtl_udma_handle handle);
  *   The number of operations that successfully completed. This return value
  *   must be less than or equal to the value of nb_cpls.
  */
-uint16_t st_udma_completed(mtl_udma_handle handle, const uint16_t nb_cpls);
-
-/**
- * Read current time from ptp source.
- *
- * @param st
- *   The handle to the media transport device context.
- * @return
- *   - The time in nanoseconds in current ptp system
- */
-uint64_t mtl_ptp_read_time(mtl_handle st);
+uint16_t mtl_udma_completed(mtl_udma_handle handle, const uint16_t nb_cpls);
 
 /**
  * Get SIMD level current cpu supported.

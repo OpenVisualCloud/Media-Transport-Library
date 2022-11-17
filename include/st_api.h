@@ -5,7 +5,7 @@
 /**
  * @file st_api.h
  *
- * Interfaces to st2110 transport.
+ * Interfaces to media streaming(st2110) transport.
  *
  */
 
@@ -164,6 +164,16 @@ enum st_event {
   /** max value of this enum */
   ST_EVENT_MAX,
 };
+
+/**
+ * Read current time from ptp source.
+ *
+ * @param st
+ *   The handle to the media transport device context.
+ * @return
+ *   - The time in nanoseconds in current ptp system
+ */
+uint64_t st_ptp_read_time(mtl_handle st);
 
 /**
  * Inline function to check the  rx frame is a completed frame.

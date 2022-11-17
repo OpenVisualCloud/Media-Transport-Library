@@ -133,31 +133,31 @@ static void test_cvt_rfc4175_422be10_to_yuv422p10le_dma(mtl_udma_handle dma, int
 TEST(Cvt, rfc4175_422be10_to_yuv422p10le_dma) {
   struct st_tests_context* ctx = st_test_ctx();
   mtl_handle handle = ctx->handle;
-  mtl_udma_handle dma = st_udma_create(handle, 128, MTL_PORT_P);
+  mtl_udma_handle dma = mtl_udma_create(handle, 128, MTL_PORT_P);
   if (!dma) return;
 
   test_cvt_rfc4175_422be10_to_yuv422p10le_dma(dma, 1920, 1080, MTL_SIMD_LEVEL_MAX,
                                               MTL_SIMD_LEVEL_MAX);
 
-  st_udma_free(dma);
+  mtl_udma_free(dma);
 }
 
 TEST(Cvt, rfc4175_422be10_to_yuv422p10le_scalar_dma) {
   struct st_tests_context* ctx = st_test_ctx();
   mtl_handle handle = ctx->handle;
-  mtl_udma_handle dma = st_udma_create(handle, 128, MTL_PORT_P);
+  mtl_udma_handle dma = mtl_udma_create(handle, 128, MTL_PORT_P);
   if (!dma) return;
 
   test_cvt_rfc4175_422be10_to_yuv422p10le_dma(dma, 1920, 1080, MTL_SIMD_LEVEL_NONE,
                                               MTL_SIMD_LEVEL_NONE);
 
-  st_udma_free(dma);
+  mtl_udma_free(dma);
 }
 
 TEST(Cvt, rfc4175_422be10_to_yuv422p10le_avx512_dma) {
   struct st_tests_context* ctx = st_test_ctx();
   mtl_handle handle = ctx->handle;
-  mtl_udma_handle dma = st_udma_create(handle, 128, MTL_PORT_P);
+  mtl_udma_handle dma = mtl_udma_create(handle, 128, MTL_PORT_P);
   if (!dma) return;
 
   test_cvt_rfc4175_422be10_to_yuv422p10le_dma(dma, 1920, 1080, MTL_SIMD_LEVEL_AVX512,
@@ -174,13 +174,13 @@ TEST(Cvt, rfc4175_422be10_to_yuv422p10le_avx512_dma) {
                                                 MTL_SIMD_LEVEL_AVX512);
   }
 
-  st_udma_free(dma);
+  mtl_udma_free(dma);
 }
 
 TEST(Cvt, rfc4175_422be10_to_yuv422p10le_avx512_vbmi_dma) {
   struct st_tests_context* ctx = st_test_ctx();
   mtl_handle handle = ctx->handle;
-  mtl_udma_handle dma = st_udma_create(handle, 128, MTL_PORT_P);
+  mtl_udma_handle dma = mtl_udma_create(handle, 128, MTL_PORT_P);
   if (!dma) return;
 
   test_cvt_rfc4175_422be10_to_yuv422p10le_dma(
@@ -197,7 +197,7 @@ TEST(Cvt, rfc4175_422be10_to_yuv422p10le_avx512_vbmi_dma) {
                                                 MTL_SIMD_LEVEL_AVX512_VBMI2);
   }
 
-  st_udma_free(dma);
+  mtl_udma_free(dma);
 }
 
 static void test_cvt_yuv422p10le_to_rfc4175_422be10(int w, int h,
@@ -325,31 +325,31 @@ static void test_cvt_yuv422p10le_to_rfc4175_422be10_dma(mtl_udma_handle dma, int
 TEST(Cvt, yuv422p10le_to_rfc4175_422be10_dma) {
   struct st_tests_context* ctx = st_test_ctx();
   mtl_handle handle = ctx->handle;
-  mtl_udma_handle dma = st_udma_create(handle, 128, MTL_PORT_P);
+  mtl_udma_handle dma = mtl_udma_create(handle, 128, MTL_PORT_P);
   if (!dma) return;
 
   test_cvt_yuv422p10le_to_rfc4175_422be10_dma(dma, 1920, 1080, MTL_SIMD_LEVEL_MAX,
                                               MTL_SIMD_LEVEL_MAX);
 
-  st_udma_free(dma);
+  mtl_udma_free(dma);
 }
 
 TEST(Cvt, yuv422p10le_to_rfc4175_422be10_scalar_dma) {
   struct st_tests_context* ctx = st_test_ctx();
   mtl_handle handle = ctx->handle;
-  mtl_udma_handle dma = st_udma_create(handle, 128, MTL_PORT_P);
+  mtl_udma_handle dma = mtl_udma_create(handle, 128, MTL_PORT_P);
   if (!dma) return;
 
   test_cvt_yuv422p10le_to_rfc4175_422be10_dma(dma, 1920, 1080, MTL_SIMD_LEVEL_NONE,
                                               MTL_SIMD_LEVEL_NONE);
 
-  st_udma_free(dma);
+  mtl_udma_free(dma);
 }
 
 TEST(Cvt, yuv422p10le_to_rfc4175_422be10_avx512_dma) {
   struct st_tests_context* ctx = st_test_ctx();
   mtl_handle handle = ctx->handle;
-  mtl_udma_handle dma = st_udma_create(handle, 128, MTL_PORT_P);
+  mtl_udma_handle dma = mtl_udma_create(handle, 128, MTL_PORT_P);
   if (!dma) return;
 
   test_cvt_yuv422p10le_to_rfc4175_422be10_dma(dma, 1920, 1080, MTL_SIMD_LEVEL_AVX512,
@@ -366,13 +366,13 @@ TEST(Cvt, yuv422p10le_to_rfc4175_422be10_avx512_dma) {
                                                 MTL_SIMD_LEVEL_AVX512);
   }
 
-  st_udma_free(dma);
+  mtl_udma_free(dma);
 }
 
 TEST(Cvt, yuv422p10le_to_rfc4175_422be10_avx512_vbmi_dma) {
   struct st_tests_context* ctx = st_test_ctx();
   mtl_handle handle = ctx->handle;
-  mtl_udma_handle dma = st_udma_create(handle, 128, MTL_PORT_P);
+  mtl_udma_handle dma = mtl_udma_create(handle, 128, MTL_PORT_P);
   if (!dma) return;
 
   test_cvt_yuv422p10le_to_rfc4175_422be10_dma(
@@ -389,7 +389,7 @@ TEST(Cvt, yuv422p10le_to_rfc4175_422be10_avx512_vbmi_dma) {
                                                 MTL_SIMD_LEVEL_AVX512_VBMI2);
   }
 
-  st_udma_free(dma);
+  mtl_udma_free(dma);
 }
 
 static void test_cvt_rfc4175_422le10_to_yuv422p10le(int w, int h,
@@ -616,31 +616,31 @@ static void test_cvt_rfc4175_422be10_to_422le10_dma(mtl_udma_handle dma, int w, 
 TEST(Cvt, rfc4175_422be10_to_422le10_dma) {
   struct st_tests_context* ctx = st_test_ctx();
   mtl_handle handle = ctx->handle;
-  mtl_udma_handle dma = st_udma_create(handle, 128, MTL_PORT_P);
+  mtl_udma_handle dma = mtl_udma_create(handle, 128, MTL_PORT_P);
   if (!dma) return;
 
   test_cvt_rfc4175_422be10_to_422le10_dma(dma, 1920, 1080, MTL_SIMD_LEVEL_MAX,
                                           MTL_SIMD_LEVEL_MAX);
   test_cvt_rfc4175_422be10_to_422le10_dma(dma, 1920 * 4, 1080 * 4, MTL_SIMD_LEVEL_MAX,
                                           MTL_SIMD_LEVEL_MAX);
-  st_udma_free(dma);
+  mtl_udma_free(dma);
 }
 
 TEST(Cvt, rfc4175_422be10_to_422le10_scalar_dma) {
   struct st_tests_context* ctx = st_test_ctx();
   mtl_handle handle = ctx->handle;
-  mtl_udma_handle dma = st_udma_create(handle, 128, MTL_PORT_P);
+  mtl_udma_handle dma = mtl_udma_create(handle, 128, MTL_PORT_P);
   if (!dma) return;
 
   test_cvt_rfc4175_422be10_to_422le10_dma(dma, 1920, 1080, MTL_SIMD_LEVEL_NONE,
                                           MTL_SIMD_LEVEL_NONE);
-  st_udma_free(dma);
+  mtl_udma_free(dma);
 }
 
 TEST(Cvt, rfc4175_422be10_to_422le10_avx512_dma) {
   struct st_tests_context* ctx = st_test_ctx();
   mtl_handle handle = ctx->handle;
-  mtl_udma_handle dma = st_udma_create(handle, 128, MTL_PORT_P);
+  mtl_udma_handle dma = mtl_udma_create(handle, 128, MTL_PORT_P);
   if (!dma) return;
 
   test_cvt_rfc4175_422be10_to_422le10_dma(dma, 1920, 1080, MTL_SIMD_LEVEL_AVX512,
@@ -657,13 +657,13 @@ TEST(Cvt, rfc4175_422be10_to_422le10_avx512_dma) {
                                             MTL_SIMD_LEVEL_AVX512);
   }
 
-  st_udma_free(dma);
+  mtl_udma_free(dma);
 }
 
 TEST(Cvt, rfc4175_422be10_to_422le10_avx512_vbmi_dma) {
   struct st_tests_context* ctx = st_test_ctx();
   mtl_handle handle = ctx->handle;
-  mtl_udma_handle dma = st_udma_create(handle, 128, MTL_PORT_P);
+  mtl_udma_handle dma = mtl_udma_create(handle, 128, MTL_PORT_P);
   if (!dma) return;
 
   test_cvt_rfc4175_422be10_to_422le10_dma(dma, 1920, 1080, MTL_SIMD_LEVEL_AVX512_VBMI2,
@@ -680,7 +680,7 @@ TEST(Cvt, rfc4175_422be10_to_422le10_avx512_vbmi_dma) {
                                             MTL_SIMD_LEVEL_AVX512_VBMI2);
   }
 
-  st_udma_free(dma);
+  mtl_udma_free(dma);
 }
 
 static void test_cvt_rfc4175_422le10_to_422be10(int w, int h,
@@ -850,31 +850,31 @@ static void test_cvt_rfc4175_422le10_to_422be10_dma(mtl_udma_handle dma, int w, 
 TEST(Cvt, rfc4175_422le10_to_422be10_dma) {
   struct st_tests_context* ctx = st_test_ctx();
   mtl_handle handle = ctx->handle;
-  mtl_udma_handle dma = st_udma_create(handle, 128, MTL_PORT_P);
+  mtl_udma_handle dma = mtl_udma_create(handle, 128, MTL_PORT_P);
   if (!dma) return;
 
   test_cvt_rfc4175_422le10_to_422be10_dma(dma, 1920, 1080, MTL_SIMD_LEVEL_MAX,
                                           MTL_SIMD_LEVEL_MAX);
   test_cvt_rfc4175_422le10_to_422be10_dma(dma, 1920 * 4, 1080 * 4, MTL_SIMD_LEVEL_MAX,
                                           MTL_SIMD_LEVEL_MAX);
-  st_udma_free(dma);
+  mtl_udma_free(dma);
 }
 
 TEST(Cvt, rfc4175_422le10_to_422be10_scalar_dma) {
   struct st_tests_context* ctx = st_test_ctx();
   mtl_handle handle = ctx->handle;
-  mtl_udma_handle dma = st_udma_create(handle, 128, MTL_PORT_P);
+  mtl_udma_handle dma = mtl_udma_create(handle, 128, MTL_PORT_P);
   if (!dma) return;
 
   test_cvt_rfc4175_422le10_to_422be10_dma(dma, 1920, 1080, MTL_SIMD_LEVEL_NONE,
                                           MTL_SIMD_LEVEL_NONE);
-  st_udma_free(dma);
+  mtl_udma_free(dma);
 }
 
 TEST(Cvt, rfc4175_422le10_to_422be10_avx512_dma) {
   struct st_tests_context* ctx = st_test_ctx();
   mtl_handle handle = ctx->handle;
-  mtl_udma_handle dma = st_udma_create(handle, 128, MTL_PORT_P);
+  mtl_udma_handle dma = mtl_udma_create(handle, 128, MTL_PORT_P);
   if (!dma) return;
 
   test_cvt_rfc4175_422le10_to_422be10_dma(dma, 1920, 1080, MTL_SIMD_LEVEL_AVX512,
@@ -891,13 +891,13 @@ TEST(Cvt, rfc4175_422le10_to_422be10_avx512_dma) {
                                             MTL_SIMD_LEVEL_AVX512);
   }
 
-  st_udma_free(dma);
+  mtl_udma_free(dma);
 }
 
 TEST(Cvt, rfc4175_422le10_to_422be10_avx512_vbmi_dma) {
   struct st_tests_context* ctx = st_test_ctx();
   mtl_handle handle = ctx->handle;
-  mtl_udma_handle dma = st_udma_create(handle, 128, MTL_PORT_P);
+  mtl_udma_handle dma = mtl_udma_create(handle, 128, MTL_PORT_P);
   if (!dma) return;
 
   test_cvt_rfc4175_422le10_to_422be10_dma(dma, 1920, 1080, MTL_SIMD_LEVEL_AVX512_VBMI2,
@@ -914,7 +914,7 @@ TEST(Cvt, rfc4175_422le10_to_422be10_avx512_vbmi_dma) {
                                             MTL_SIMD_LEVEL_AVX512_VBMI2);
   }
 
-  st_udma_free(dma);
+  mtl_udma_free(dma);
 }
 
 static int test_cvt_extend_rfc4175_422le8_to_422be10(
@@ -1049,31 +1049,31 @@ static void test_cvt_rfc4175_422be10_to_422le8_dma(mtl_udma_handle dma, int w, i
 TEST(Cvt, rfc4175_422be10_to_422le8_dma) {
   struct st_tests_context* ctx = st_test_ctx();
   mtl_handle handle = ctx->handle;
-  mtl_udma_handle dma = st_udma_create(handle, 128, MTL_PORT_P);
+  mtl_udma_handle dma = mtl_udma_create(handle, 128, MTL_PORT_P);
   if (!dma) return;
 
   test_cvt_rfc4175_422be10_to_422le8_dma(dma, 1920, 1080, MTL_SIMD_LEVEL_MAX,
                                          MTL_SIMD_LEVEL_MAX);
   test_cvt_rfc4175_422be10_to_422le8_dma(dma, 1920 * 4, 1080 * 4, MTL_SIMD_LEVEL_MAX,
                                          MTL_SIMD_LEVEL_MAX);
-  st_udma_free(dma);
+  mtl_udma_free(dma);
 }
 
 TEST(Cvt, rfc4175_422be10_to_422le8_scalar_dma) {
   struct st_tests_context* ctx = st_test_ctx();
   mtl_handle handle = ctx->handle;
-  mtl_udma_handle dma = st_udma_create(handle, 128, MTL_PORT_P);
+  mtl_udma_handle dma = mtl_udma_create(handle, 128, MTL_PORT_P);
   if (!dma) return;
 
   test_cvt_rfc4175_422be10_to_422le8_dma(dma, 1920, 1080, MTL_SIMD_LEVEL_NONE,
                                          MTL_SIMD_LEVEL_NONE);
-  st_udma_free(dma);
+  mtl_udma_free(dma);
 }
 
 TEST(Cvt, rfc4175_422be10_to_422le8_avx512_dma) {
   struct st_tests_context* ctx = st_test_ctx();
   mtl_handle handle = ctx->handle;
-  mtl_udma_handle dma = st_udma_create(handle, 128, MTL_PORT_P);
+  mtl_udma_handle dma = mtl_udma_create(handle, 128, MTL_PORT_P);
   if (!dma) return;
 
   test_cvt_rfc4175_422be10_to_422le8_dma(dma, 1920, 1080, MTL_SIMD_LEVEL_AVX512,
@@ -1090,13 +1090,13 @@ TEST(Cvt, rfc4175_422be10_to_422le8_avx512_dma) {
                                            MTL_SIMD_LEVEL_AVX512);
   }
 
-  st_udma_free(dma);
+  mtl_udma_free(dma);
 }
 
 TEST(Cvt, rfc4175_422be10_to_422le8_avx512_vbmi_dma) {
   struct st_tests_context* ctx = st_test_ctx();
   mtl_handle handle = ctx->handle;
-  mtl_udma_handle dma = st_udma_create(handle, 128, MTL_PORT_P);
+  mtl_udma_handle dma = mtl_udma_create(handle, 128, MTL_PORT_P);
   if (!dma) return;
 
   test_cvt_rfc4175_422be10_to_422le8_dma(dma, 1920, 1080, MTL_SIMD_LEVEL_AVX512_VBMI2,
@@ -1113,7 +1113,7 @@ TEST(Cvt, rfc4175_422be10_to_422le8_avx512_vbmi_dma) {
                                            MTL_SIMD_LEVEL_AVX512_VBMI2);
   }
 
-  st_udma_free(dma);
+  mtl_udma_free(dma);
 }
 
 static void test_cvt_rfc4175_422le10_to_v210(int w, int h, enum mtl_simd_level cvt_level,
@@ -1340,31 +1340,31 @@ static void test_cvt_rfc4175_422be10_to_v210_dma(mtl_udma_handle dma, int w, int
 TEST(Cvt, rfc4175_422be10_to_v210_dma) {
   struct st_tests_context* ctx = st_test_ctx();
   mtl_handle handle = ctx->handle;
-  mtl_udma_handle dma = st_udma_create(handle, 128, MTL_PORT_P);
+  mtl_udma_handle dma = mtl_udma_create(handle, 128, MTL_PORT_P);
   if (!dma) return;
 
   test_cvt_rfc4175_422be10_to_v210_dma(dma, 1920, 1080, MTL_SIMD_LEVEL_MAX,
                                        MTL_SIMD_LEVEL_MAX);
 
-  st_udma_free(dma);
+  mtl_udma_free(dma);
 }
 
 TEST(Cvt, rfc4175_422be10_to_v210_scalar_dma) {
   struct st_tests_context* ctx = st_test_ctx();
   mtl_handle handle = ctx->handle;
-  mtl_udma_handle dma = st_udma_create(handle, 128, MTL_PORT_P);
+  mtl_udma_handle dma = mtl_udma_create(handle, 128, MTL_PORT_P);
   if (!dma) return;
 
   test_cvt_rfc4175_422be10_to_v210_dma(dma, 1920, 1080, MTL_SIMD_LEVEL_NONE,
                                        MTL_SIMD_LEVEL_NONE);
 
-  st_udma_free(dma);
+  mtl_udma_free(dma);
 }
 
 TEST(Cvt, rfc4175_422be10_to_v210_avx512_dma) {
   struct st_tests_context* ctx = st_test_ctx();
   mtl_handle handle = ctx->handle;
-  mtl_udma_handle dma = st_udma_create(handle, 128, MTL_PORT_P);
+  mtl_udma_handle dma = mtl_udma_create(handle, 128, MTL_PORT_P);
   if (!dma) return;
 
   test_cvt_rfc4175_422be10_to_v210_dma(dma, 1920, 1080, MTL_SIMD_LEVEL_AVX512,
@@ -1380,13 +1380,13 @@ TEST(Cvt, rfc4175_422be10_to_v210_avx512_dma) {
   test_cvt_rfc4175_422be10_to_v210_dma(dma, 1921, 1079, MTL_SIMD_LEVEL_AVX512,
                                        MTL_SIMD_LEVEL_AVX512);
 
-  st_udma_free(dma);
+  mtl_udma_free(dma);
 }
 
 TEST(Cvt, rfc4175_422be10_to_v210_avx512_vbmi_dma) {
   struct st_tests_context* ctx = st_test_ctx();
   mtl_handle handle = ctx->handle;
-  mtl_udma_handle dma = st_udma_create(handle, 128, MTL_PORT_P);
+  mtl_udma_handle dma = mtl_udma_create(handle, 128, MTL_PORT_P);
   if (!dma) return;
 
   test_cvt_rfc4175_422be10_to_v210_dma(dma, 1920, 1080, MTL_SIMD_LEVEL_AVX512_VBMI2,
@@ -1402,7 +1402,7 @@ TEST(Cvt, rfc4175_422be10_to_v210_avx512_vbmi_dma) {
   test_cvt_rfc4175_422be10_to_v210_dma(dma, 1921, 1079, MTL_SIMD_LEVEL_AVX512_VBMI2,
                                        MTL_SIMD_LEVEL_AVX512_VBMI2);
 
-  st_udma_free(dma);
+  mtl_udma_free(dma);
 }
 
 static void test_cvt_v210_to_rfc4175_422be10(int w, int h, enum mtl_simd_level cvt_level,
@@ -1621,31 +1621,31 @@ static void test_cvt_v210_to_rfc4175_422be10_dma(mtl_udma_handle dma, int w, int
 TEST(Cvt, v210_to_rfc4175_422be10_dma) {
   struct st_tests_context* ctx = st_test_ctx();
   mtl_handle handle = ctx->handle;
-  mtl_udma_handle dma = st_udma_create(handle, 128, MTL_PORT_P);
+  mtl_udma_handle dma = mtl_udma_create(handle, 128, MTL_PORT_P);
   if (!dma) return;
 
   test_cvt_v210_to_rfc4175_422be10_dma(dma, 1920, 1080, MTL_SIMD_LEVEL_MAX,
                                        MTL_SIMD_LEVEL_MAX);
 
-  st_udma_free(dma);
+  mtl_udma_free(dma);
 }
 
 TEST(Cvt, v210_to_rfc4175_422be10_scalar_dma) {
   struct st_tests_context* ctx = st_test_ctx();
   mtl_handle handle = ctx->handle;
-  mtl_udma_handle dma = st_udma_create(handle, 128, MTL_PORT_P);
+  mtl_udma_handle dma = mtl_udma_create(handle, 128, MTL_PORT_P);
   if (!dma) return;
 
   test_cvt_v210_to_rfc4175_422be10_dma(dma, 1920, 1080, MTL_SIMD_LEVEL_NONE,
                                        MTL_SIMD_LEVEL_NONE);
 
-  st_udma_free(dma);
+  mtl_udma_free(dma);
 }
 
 TEST(Cvt, v210_to_rfc4175_422be10_avx512_dma) {
   struct st_tests_context* ctx = st_test_ctx();
   mtl_handle handle = ctx->handle;
-  mtl_udma_handle dma = st_udma_create(handle, 128, MTL_PORT_P);
+  mtl_udma_handle dma = mtl_udma_create(handle, 128, MTL_PORT_P);
   if (!dma) return;
 
   test_cvt_v210_to_rfc4175_422be10_dma(dma, 1920, 1080, MTL_SIMD_LEVEL_AVX512,
@@ -1661,13 +1661,13 @@ TEST(Cvt, v210_to_rfc4175_422be10_avx512_dma) {
   test_cvt_v210_to_rfc4175_422be10_dma(dma, 1921, 1079, MTL_SIMD_LEVEL_AVX512,
                                        MTL_SIMD_LEVEL_AVX512);
 
-  st_udma_free(dma);
+  mtl_udma_free(dma);
 }
 
 TEST(Cvt, v210_to_rfc4175_422be10_vbmi_dma) {
   struct st_tests_context* ctx = st_test_ctx();
   mtl_handle handle = ctx->handle;
-  mtl_udma_handle dma = st_udma_create(handle, 128, MTL_PORT_P);
+  mtl_udma_handle dma = mtl_udma_create(handle, 128, MTL_PORT_P);
   if (!dma) return;
 
   test_cvt_v210_to_rfc4175_422be10_dma(dma, 1920, 1080, MTL_SIMD_LEVEL_AVX512_VBMI2,
@@ -1683,7 +1683,7 @@ TEST(Cvt, v210_to_rfc4175_422be10_vbmi_dma) {
   test_cvt_v210_to_rfc4175_422be10_dma(dma, 1921, 1079, MTL_SIMD_LEVEL_AVX512_VBMI2,
                                        MTL_SIMD_LEVEL_AVX512_VBMI2);
 
-  st_udma_free(dma);
+  mtl_udma_free(dma);
 }
 
 static void test_cvt_rfc4175_422be10_to_y210(int w, int h, enum mtl_simd_level cvt_level,
@@ -1781,31 +1781,31 @@ static void test_cvt_rfc4175_422be10_to_y210_dma(mtl_udma_handle dma, int w, int
 TEST(Cvt, rfc4175_422be10_to_y210_dma) {
   struct st_tests_context* ctx = st_test_ctx();
   mtl_handle handle = ctx->handle;
-  mtl_udma_handle dma = st_udma_create(handle, 128, MTL_PORT_P);
+  mtl_udma_handle dma = mtl_udma_create(handle, 128, MTL_PORT_P);
   if (!dma) return;
 
   test_cvt_rfc4175_422be10_to_y210_dma(dma, 1920, 1080, MTL_SIMD_LEVEL_MAX,
                                        MTL_SIMD_LEVEL_MAX);
 
-  st_udma_free(dma);
+  mtl_udma_free(dma);
 }
 
 TEST(Cvt, rfc4175_422be10_to_y210_scalar_dma) {
   struct st_tests_context* ctx = st_test_ctx();
   mtl_handle handle = ctx->handle;
-  mtl_udma_handle dma = st_udma_create(handle, 128, MTL_PORT_P);
+  mtl_udma_handle dma = mtl_udma_create(handle, 128, MTL_PORT_P);
   if (!dma) return;
 
   test_cvt_rfc4175_422be10_to_y210_dma(dma, 1920, 1080, MTL_SIMD_LEVEL_NONE,
                                        MTL_SIMD_LEVEL_NONE);
 
-  st_udma_free(dma);
+  mtl_udma_free(dma);
 }
 
 TEST(Cvt, rfc4175_422be10_to_y210_avx512_dma) {
   struct st_tests_context* ctx = st_test_ctx();
   mtl_handle handle = ctx->handle;
-  mtl_udma_handle dma = st_udma_create(handle, 128, MTL_PORT_P);
+  mtl_udma_handle dma = mtl_udma_create(handle, 128, MTL_PORT_P);
   if (!dma) return;
 
   test_cvt_rfc4175_422be10_to_y210_dma(dma, 1920, 1080, MTL_SIMD_LEVEL_AVX512,
@@ -1822,7 +1822,7 @@ TEST(Cvt, rfc4175_422be10_to_y210_avx512_dma) {
                                          MTL_SIMD_LEVEL_AVX512);
   }
 
-  st_udma_free(dma);
+  mtl_udma_free(dma);
 }
 
 static void test_cvt_y210_to_rfc4175_422be10(int w, int h, enum mtl_simd_level cvt_level,
@@ -1924,31 +1924,31 @@ static void test_cvt_y210_to_rfc4175_422be10_dma(mtl_udma_handle dma, int w, int
 TEST(Cvt, y210_to_rfc4175_422be10_dma) {
   struct st_tests_context* ctx = st_test_ctx();
   mtl_handle handle = ctx->handle;
-  mtl_udma_handle dma = st_udma_create(handle, 128, MTL_PORT_P);
+  mtl_udma_handle dma = mtl_udma_create(handle, 128, MTL_PORT_P);
   if (!dma) return;
 
   test_cvt_y210_to_rfc4175_422be10_dma(dma, 1920, 1080, MTL_SIMD_LEVEL_MAX,
                                        MTL_SIMD_LEVEL_MAX);
 
-  st_udma_free(dma);
+  mtl_udma_free(dma);
 }
 
 TEST(Cvt, y210_to_rfc4175_422be10_scalar_dma) {
   struct st_tests_context* ctx = st_test_ctx();
   mtl_handle handle = ctx->handle;
-  mtl_udma_handle dma = st_udma_create(handle, 128, MTL_PORT_P);
+  mtl_udma_handle dma = mtl_udma_create(handle, 128, MTL_PORT_P);
   if (!dma) return;
 
   test_cvt_y210_to_rfc4175_422be10_dma(dma, 1920, 1080, MTL_SIMD_LEVEL_NONE,
                                        MTL_SIMD_LEVEL_NONE);
 
-  st_udma_free(dma);
+  mtl_udma_free(dma);
 }
 
 TEST(Cvt, y210_to_rfc4175_422be10_avx512_dma) {
   struct st_tests_context* ctx = st_test_ctx();
   mtl_handle handle = ctx->handle;
-  mtl_udma_handle dma = st_udma_create(handle, 128, MTL_PORT_P);
+  mtl_udma_handle dma = mtl_udma_create(handle, 128, MTL_PORT_P);
   if (!dma) return;
 
   test_cvt_y210_to_rfc4175_422be10_dma(dma, 1920, 1080, MTL_SIMD_LEVEL_AVX512,
@@ -1965,7 +1965,7 @@ TEST(Cvt, y210_to_rfc4175_422be10_avx512_dma) {
                                          MTL_SIMD_LEVEL_AVX512);
   }
 
-  st_udma_free(dma);
+  mtl_udma_free(dma);
 }
 
 static void test_rotate_rfc4175_422be10_422le10_yuv422p10le(

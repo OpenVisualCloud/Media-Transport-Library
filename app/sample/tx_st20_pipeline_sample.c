@@ -28,7 +28,7 @@ struct tx_st20p_sample_ctx {
 
 static int tx_st20p_close_source(struct tx_st20p_sample_ctx* s) {
   if (s->ext) {
-    if (s->dma_mem) st_dma_mem_free(s->st, s->dma_mem);
+    if (s->dma_mem) mtl_dma_mem_free(s->st, s->dma_mem);
   } else if (s->source_begin) {
     mtl_hp_free(s->st, s->source_begin);
     s->source_begin = NULL;
@@ -80,7 +80,7 @@ init_fb:
     }
 
     /* alloc enough memory to hold framebuffers and map to iova */
-    mtl_dma_mem_handle dma_mem = st_dma_mem_alloc(s->st, fbs_size);
+    mtl_dma_mem_handle dma_mem = mtl_dma_mem_alloc(s->st, fbs_size);
     if (!dma_mem) {
       err("%s(%d), dma mem alloc/map fail\n", __func__, s->idx);
       close(fd);
@@ -88,8 +88,8 @@ init_fb:
     }
     s->dma_mem = dma_mem;
 
-    s->source_begin = st_dma_mem_addr(dma_mem);
-    s->source_begin_iova = st_dma_mem_iova(dma_mem);
+    s->source_begin = mtl_dma_mem_addr(dma_mem);
+    s->source_begin_iova = mtl_dma_mem_iova(dma_mem);
     s->frame_cursor = s->source_begin;
     if (m) {
       if (frame_cnt < 2) {

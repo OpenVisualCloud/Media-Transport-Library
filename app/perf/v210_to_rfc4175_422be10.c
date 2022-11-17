@@ -14,7 +14,7 @@ static void fill_rand_v210(uint8_t* p, size_t sz) {
 static int perf_cvt_v210_to_be(mtl_handle st, int w, int h, int frames, int fb_cnt) {
   size_t fb_pg2_size = w * h * 5 / 2;
   size_t fb_size_v210 = w * h * 8 / 3;
-  mtl_udma_handle dma = st_udma_create(st, 128, MTL_PORT_P);
+  mtl_udma_handle dma = mtl_udma_create(st, 128, MTL_PORT_P);
   struct st20_rfc4175_422_10_pg2_be* pg_be =
       (struct st20_rfc4175_422_10_pg2_be*)malloc(fb_pg2_size * fb_cnt);
   uint8_t* pg_v210 = (uint8_t*)mtl_hp_malloc(st, fb_size_v210 * fb_cnt, MTL_PORT_P);
@@ -106,7 +106,7 @@ static int perf_cvt_v210_to_be(mtl_handle st, int w, int h, int frames, int fb_c
 
   mtl_hp_free(st, pg_v210);
   free(pg_be);
-  if (dma) st_udma_free(dma);
+  if (dma) mtl_udma_free(dma);
 
   return 0;
 }

@@ -20,7 +20,7 @@ static int dma_copy_perf(mtl_handle st, int w, int h, int frames, int pkt_size) 
   int fb_dst_iova_off = 0, fb_src_iova_off = 0;
 
   /* create user dma dev */
-  dma = st_udma_create(st, nb_desc, MTL_PORT_P);
+  dma = mtl_udma_create(st, nb_desc, MTL_PORT_P);
   if (!dma) {
     info("dma create fail\n");
     return -EIO;
@@ -33,7 +33,7 @@ static int dma_copy_perf(mtl_handle st, int w, int h, int frames, int pkt_size) 
   fb_dst = mtl_hp_malloc(st, fb_size, MTL_PORT_P);
   if (!fb_dst) {
     info("fb dst create fail\n");
-    st_udma_free(dma);
+    mtl_udma_free(dma);
     return -ENOMEM;
   }
   fb_dst_iova = mtl_hp_virt2iova(st, fb_dst);
@@ -41,7 +41,7 @@ static int dma_copy_perf(mtl_handle st, int w, int h, int frames, int pkt_size) 
   if (!fb_dst) {
     info("fb src create fail\n");
     mtl_hp_free(st, fb_dst);
-    st_udma_free(dma);
+    mtl_udma_free(dma);
     return -ENOMEM;
   }
   fb_src_iova = mtl_hp_virt2iova(st, fb_src);
@@ -82,16 +82,16 @@ static int dma_copy_perf(mtl_handle st, int w, int h, int frames, int pkt_size) 
     while (fb_dst_iova_off < fb_size) {
       /* try to copy */
       while (fb_src_iova_off < fb_size) {
-        ret = st_udma_copy(dma, fb_dst_iova + fb_src_iova_off,
-                           fb_src_iova + fb_src_iova_off, pkt_size);
+        ret = mtl_udma_copy(dma, fb_dst_iova + fb_src_iova_off,
+                            fb_src_iova + fb_src_iova_off, pkt_size);
         if (ret < 0) break;
         fb_src_iova_off += pkt_size;
       }
       /* submit */
-      st_udma_submit(dma);
+      mtl_udma_submit(dma);
 
       /* check complete */
-      uint16_t nb_dq = st_udma_completed(dma, 32);
+      uint16_t nb_dq = mtl_udma_completed(dma, 32);
       fb_dst_iova_off += pkt_size * nb_dq;
     }
   }
@@ -105,7 +105,7 @@ static int dma_copy_perf(mtl_handle st, int w, int h, int frames, int pkt_size) 
   mtl_hp_free(st, fb_dst);
   mtl_hp_free(st, fb_src);
 
-  ret = st_udma_free(dma);
+  ret = mtl_udma_free(dma);
   return 0;
 }
 

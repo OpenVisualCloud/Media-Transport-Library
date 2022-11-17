@@ -178,7 +178,7 @@ int main(int argc, char** argv) {
       size_t framebuff_size = st20_frame_size(ops_rx.fmt, ops_rx.width, ops_rx.height);
       size_t fb_size = framebuff_size * app[i]->framebuff_cnt;
       /* alloc enough memory to hold framebuffers and map to iova */
-      mtl_dma_mem_handle dma_mem = st_dma_mem_alloc(ctx.st, fb_size);
+      mtl_dma_mem_handle dma_mem = mtl_dma_mem_alloc(ctx.st, fb_size);
       if (!dma_mem) {
         err("%s(%d), dma mem alloc/map fail\n", __func__, i);
         ret = -ENOMEM;
@@ -187,8 +187,8 @@ int main(int argc, char** argv) {
       app[i]->dma_mem = dma_mem;
 
       for (int j = 0; j < app[i]->framebuff_cnt; ++j) {
-        app[i]->ext_frames[j].buf_addr = st_dma_mem_addr(dma_mem) + j * framebuff_size;
-        app[i]->ext_frames[j].buf_iova = st_dma_mem_iova(dma_mem) + j * framebuff_size;
+        app[i]->ext_frames[j].buf_addr = mtl_dma_mem_addr(dma_mem) + j * framebuff_size;
+        app[i]->ext_frames[j].buf_iova = mtl_dma_mem_iova(dma_mem) + j * framebuff_size;
         app[i]->ext_frames[j].buf_len = framebuff_size;
       }
       ops_rx.ext_frames = app[i]->ext_frames;
@@ -247,7 +247,7 @@ error:
     st_pthread_mutex_destroy(&app[i]->wake_mutex);
     st_pthread_cond_destroy(&app[i]->wake_cond);
 
-    if (app[i]->dma_mem) st_dma_mem_free(ctx.st, app[i]->dma_mem);
+    if (app[i]->dma_mem) mtl_dma_mem_free(ctx.st, app[i]->dma_mem);
     if (app[i]->framebuffs) free(app[i]->framebuffs);
     if (app[i]->ext_frames) free(app[i]->ext_frames);
     free(app[i]);

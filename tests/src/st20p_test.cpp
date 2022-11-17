@@ -714,7 +714,7 @@ static void st20p_rx_digest_test(enum st_fps fps[], int width[], int height[],
       test_ctx_tx[i]->ext_fb =
           (uint8_t*)MTL_ALIGN((uint64_t)test_ctx_tx[i]->ext_fb_malloc, pg_sz);
       test_ctx_tx[i]->ext_fb_iova =
-          st_dma_map(st, test_ctx_tx[i]->ext_fb, test_ctx_tx[i]->ext_fb_iova_map_sz);
+          mtl_dma_map(st, test_ctx_tx[i]->ext_fb, test_ctx_tx[i]->ext_fb_iova_map_sz);
       ASSERT_TRUE(test_ctx_tx[i]->ext_fb_iova != MTL_BAD_IOVA);
       info("%s, session %d ext_fb %p\n", __func__, i, test_ctx_tx[i]->ext_fb);
 
@@ -819,7 +819,7 @@ static void st20p_rx_digest_test(enum st_fps fps[], int width[], int height[],
       test_ctx_rx[i]->ext_fb =
           (uint8_t*)MTL_ALIGN((uint64_t)test_ctx_rx[i]->ext_fb_malloc, pg_sz);
       test_ctx_rx[i]->ext_fb_iova =
-          st_dma_map(st, test_ctx_rx[i]->ext_fb, test_ctx_rx[i]->ext_fb_iova_map_sz);
+          mtl_dma_map(st, test_ctx_rx[i]->ext_fb, test_ctx_rx[i]->ext_fb_iova_map_sz);
       info("%s, session %d ext_fb %p\n", __func__, i, test_ctx_rx[i]->ext_fb);
       ASSERT_TRUE(test_ctx_rx[i]->ext_fb_iova != MTL_BAD_IOVA);
 
@@ -944,8 +944,8 @@ static void st20p_rx_digest_test(enum st_fps fps[], int width[], int height[],
          test_ctx_tx[i]->fb_send, framerate_tx[i], expect_framerate_tx[i]);
     EXPECT_GT(test_ctx_tx[i]->fb_send, 0);
     if (para->tx_ext) {
-      st_dma_unmap(st, test_ctx_tx[i]->ext_fb, test_ctx_tx[i]->ext_fb_iova,
-                   test_ctx_tx[i]->ext_fb_iova_map_sz);
+      mtl_dma_unmap(st, test_ctx_tx[i]->ext_fb, test_ctx_tx[i]->ext_fb_iova,
+                    test_ctx_tx[i]->ext_fb_iova_map_sz);
       st_test_free(test_ctx_tx[i]->ext_fb_malloc);
       st_test_free(test_ctx_tx[i]->p_ext_frames);
     }
@@ -972,8 +972,8 @@ static void st20p_rx_digest_test(enum st_fps fps[], int width[], int height[],
       }
     }
     if (para->rx_ext) {
-      st_dma_unmap(st, test_ctx_rx[i]->ext_fb, test_ctx_rx[i]->ext_fb_iova,
-                   test_ctx_rx[i]->ext_fb_iova_map_sz);
+      mtl_dma_unmap(st, test_ctx_rx[i]->ext_fb, test_ctx_rx[i]->ext_fb_iova,
+                    test_ctx_rx[i]->ext_fb_iova_map_sz);
       st_test_free(test_ctx_rx[i]->ext_fb_malloc);
       st_test_free(test_ctx_rx[i]->p_ext_frames);
     }

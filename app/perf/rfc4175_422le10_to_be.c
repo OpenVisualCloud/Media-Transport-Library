@@ -36,7 +36,7 @@ static void fill_422_10_pg2_le_data(struct st20_rfc4175_422_10_pg2_le* data, int
 static int perf_cvt_422_10_pg2_le_to_be(mtl_handle st, int w, int h, int frames,
                                         int fb_cnt) {
   size_t fb_pg2_size = w * h * 5 / 2;
-  mtl_udma_handle dma = st_udma_create(st, 128, MTL_PORT_P);
+  mtl_udma_handle dma = mtl_udma_create(st, 128, MTL_PORT_P);
   struct st20_rfc4175_422_10_pg2_le* pg_le =
       (struct st20_rfc4175_422_10_pg2_le*)mtl_hp_malloc(st, fb_pg2_size * fb_cnt,
                                                         MTL_PORT_P);
@@ -148,7 +148,7 @@ static int perf_cvt_422_10_pg2_le_to_be(mtl_handle st, int w, int h, int frames,
 
   mtl_hp_free(st, pg_le);
   free(pg_be);
-  if (dma) st_udma_free(dma);
+  if (dma) mtl_udma_free(dma);
 
   return 0;
 }

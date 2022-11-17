@@ -675,7 +675,7 @@ size_t mtl_page_size(mtl_handle st) {
   return st->page_size;
 }
 
-mtl_iova_t st_dma_map(mtl_handle st, const void* vaddr, size_t size) {
+mtl_iova_t mtl_dma_map(mtl_handle st, const void* vaddr, size_t size) {
   struct mtl_main_impl* impl = st;
   int ret;
   mtl_iova_t iova;
@@ -733,7 +733,7 @@ fail_extmem:
   return MTL_BAD_IOVA;
 }
 
-int st_dma_unmap(mtl_handle st, const void* vaddr, mtl_iova_t iova, size_t size) {
+int mtl_dma_unmap(mtl_handle st, const void* vaddr, mtl_iova_t iova, size_t size) {
   struct mtl_main_impl* impl = st;
   int ret;
   size_t page_size = mtl_page_size(st);
@@ -777,7 +777,7 @@ int st_dma_unmap(mtl_handle st, const void* vaddr, mtl_iova_t iova, size_t size)
   return 0;
 }
 
-mtl_dma_mem_handle st_dma_mem_alloc(mtl_handle st, size_t size) {
+mtl_dma_mem_handle mtl_dma_mem_alloc(mtl_handle st, size_t size) {
   struct mtl_main_impl* impl = st;
   struct mtl_dma_mem* mem;
 
@@ -803,7 +803,7 @@ mtl_dma_mem_handle st_dma_mem_alloc(mtl_handle st, size_t size) {
   }
 
   void* addr = (void*)MTL_ALIGN((uint64_t)alloc_addr, page_size);
-  mtl_iova_t iova = st_dma_map(st, addr, iova_size);
+  mtl_iova_t iova = mtl_dma_map(st, addr, iova_size);
   if (iova == MTL_BAD_IOVA) {
     err("%s, dma mem %p map fail\n", __func__, addr);
     st_free(alloc_addr);
@@ -822,20 +822,20 @@ mtl_dma_mem_handle st_dma_mem_alloc(mtl_handle st, size_t size) {
   return mem;
 }
 
-void st_dma_mem_free(mtl_handle st, mtl_dma_mem_handle handle) {
+void mtl_dma_mem_free(mtl_handle st, mtl_dma_mem_handle handle) {
   struct mtl_dma_mem* mem = handle;
-  st_dma_unmap(st, mem->addr, mem->iova, mem->iova_size);
+  mtl_dma_unmap(st, mem->addr, mem->iova, mem->iova_size);
   st_free(mem->alloc_addr);
   st_rte_free(mem);
 }
 
-void* st_dma_mem_addr(mtl_dma_mem_handle handle) {
+void* mtl_dma_mem_addr(mtl_dma_mem_handle handle) {
   struct mtl_dma_mem* mem = handle;
 
   return mem->addr;
 }
 
-mtl_iova_t st_dma_mem_iova(mtl_dma_mem_handle handle) {
+mtl_iova_t mtl_dma_mem_iova(mtl_dma_mem_handle handle) {
   struct mtl_dma_mem* mem = handle;
 
   return mem->iova;
@@ -933,7 +933,7 @@ int mtl_sch_set_sleep_us(mtl_handle st, uint64_t us) {
   return 0;
 }
 
-uint64_t mtl_ptp_read_time(mtl_handle st) {
+uint64_t st_ptp_read_time(mtl_handle st) {
   struct mtl_main_impl* impl = st;
 
   if (impl->type != ST_SESSION_TYPE_MAIN) {
@@ -944,7 +944,7 @@ uint64_t mtl_ptp_read_time(mtl_handle st) {
   return st_get_ptp_time(impl, MTL_PORT_P);
 }
 
-mtl_udma_handle st_udma_create(mtl_handle st, uint16_t nb_desc, enum mtl_port port) {
+mtl_udma_handle mtl_udma_create(mtl_handle st, uint16_t nb_desc, enum mtl_port port) {
   struct mtl_main_impl* impl = st;
   struct st_dma_request_req req;
 
@@ -964,7 +964,7 @@ mtl_udma_handle st_udma_create(mtl_handle st, uint16_t nb_desc, enum mtl_port po
   return dev;
 }
 
-int st_udma_free(mtl_udma_handle handle) {
+int mtl_udma_free(mtl_udma_handle handle) {
   struct mtl_dma_lender_dev* dev = handle;
   struct mtl_main_impl* impl = dev->priv;
 
@@ -976,8 +976,8 @@ int st_udma_free(mtl_udma_handle handle) {
   return st_dma_free_dev(impl, dev);
 }
 
-int st_udma_copy(mtl_udma_handle handle, mtl_iova_t dst, mtl_iova_t src,
-                 uint32_t length) {
+int mtl_udma_copy(mtl_udma_handle handle, mtl_iova_t dst, mtl_iova_t src,
+                  uint32_t length) {
   struct mtl_dma_lender_dev* dev = handle;
 
   if (dev->type != ST_SESSION_TYPE_UDMA) {
@@ -988,8 +988,8 @@ int st_udma_copy(mtl_udma_handle handle, mtl_iova_t dst, mtl_iova_t src,
   return st_dma_copy(dev, dst, src, length);
 }
 
-int st_udma_fill(mtl_udma_handle handle, mtl_iova_t dst, uint64_t pattern,
-                 uint32_t length) {
+int mtl_udma_fill(mtl_udma_handle handle, mtl_iova_t dst, uint64_t pattern,
+                  uint32_t length) {
   struct mtl_dma_lender_dev* dev = handle;
 
   if (dev->type != ST_SESSION_TYPE_UDMA) {
@@ -1000,7 +1000,7 @@ int st_udma_fill(mtl_udma_handle handle, mtl_iova_t dst, uint64_t pattern,
   return st_dma_fill(dev, dst, pattern, length);
 }
 
-int st_udma_submit(mtl_udma_handle handle) {
+int mtl_udma_submit(mtl_udma_handle handle) {
   struct mtl_dma_lender_dev* dev = handle;
 
   if (dev->type != ST_SESSION_TYPE_UDMA) {
@@ -1011,7 +1011,7 @@ int st_udma_submit(mtl_udma_handle handle) {
   return st_dma_submit(dev);
 }
 
-uint16_t st_udma_completed(mtl_udma_handle handle, const uint16_t nb_cpls) {
+uint16_t mtl_udma_completed(mtl_udma_handle handle, const uint16_t nb_cpls) {
   struct mtl_dma_lender_dev* dev = handle;
 
   if (dev->type != ST_SESSION_TYPE_UDMA) {

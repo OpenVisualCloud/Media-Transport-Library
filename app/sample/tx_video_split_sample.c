@@ -32,9 +32,9 @@ static int tx_video_next_frame(void* priv, uint16_t* next_frame_idx,
    * which may need to consider in real production */
   struct st20_ext_frame ext_frame;
   ext_frame.buf_addr =
-      st_dma_mem_addr(s->dma_mem) + s->fb_idx * s->fb_size + s->fb_offset;
+      mtl_dma_mem_addr(s->dma_mem) + s->fb_idx * s->fb_size + s->fb_offset;
   ext_frame.buf_iova =
-      st_dma_mem_iova(s->dma_mem) + s->fb_idx * s->fb_size + s->fb_offset;
+      mtl_dma_mem_iova(s->dma_mem) + s->fb_idx * s->fb_size + s->fb_offset;
   ext_frame.buf_len = s->frame_size * 2;
   st20_tx_set_ext_frame(s->handle, s->nfi, &ext_frame);
 
@@ -154,14 +154,14 @@ int main(int argc, char** argv) {
       }
       close(fd);
     dma_alloc:
-      dma_mem = st_dma_mem_alloc(ctx.st, map_size);
+      dma_mem = mtl_dma_mem_alloc(ctx.st, map_size);
       if (!dma_mem) {
         err("%s(%d), dma mem alloc/map fail\n", __func__, i);
         ret = -EIO;
         goto error;
       }
       if (m) {
-        void* dst = st_dma_mem_addr(dma_mem);
+        void* dst = mtl_dma_mem_addr(dma_mem);
         mtl_memcpy(dst, m, map_size);
         munmap(m, map_size);
       }
@@ -203,7 +203,7 @@ error:
     info("%s(%d), sent frames %d\n", __func__, i, app[i]->fb_send);
     free(app[i]);
   }
-  if (dma_mem) st_dma_mem_free(ctx.st, dma_mem);
+  if (dma_mem) mtl_dma_mem_free(ctx.st, dma_mem);
 
   /* release sample(st) dev */
   st_sample_uinit(&ctx);

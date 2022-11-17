@@ -7,7 +7,7 @@
 static int perf_cvt_422_10_pg2_be_to_le8(mtl_handle st, int w, int h, int frames,
                                          int fb_cnt) {
   size_t fb_pg10_size = w * h * 5 / 2;
-  mtl_udma_handle dma = st_udma_create(st, 128, MTL_PORT_P);
+  mtl_udma_handle dma = mtl_udma_create(st, 128, MTL_PORT_P);
   struct st20_rfc4175_422_10_pg2_be* pg_10 =
       (struct st20_rfc4175_422_10_pg2_be*)mtl_hp_malloc(st, fb_pg10_size * fb_cnt,
                                                         MTL_PORT_P);
@@ -105,7 +105,7 @@ static int perf_cvt_422_10_pg2_be_to_le8(mtl_handle st, int w, int h, int frames
 
   mtl_hp_free(st, pg_10);
   free(pg_8);
-  if (dma) st_udma_free(dma);
+  if (dma) mtl_udma_free(dma);
 
   return 0;
 }

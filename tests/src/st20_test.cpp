@@ -43,7 +43,7 @@ static int tx_next_video_frame_timestamp(void* priv, uint16_t* next_frame_idx,
 
   if (ctx->user_pacing) {
     meta->tfmt = ST10_TIMESTAMP_FMT_TAI;
-    meta->timestamp = mtl_ptp_read_time(ctx->ctx->handle) + 25 * 1000 * 1000;
+    meta->timestamp = st_ptp_read_time(ctx->ctx->handle) + 25 * 1000 * 1000;
   } else if (ctx->user_timestamp) {
     meta->tfmt = ST10_TIMESTAMP_FMT_MEDIA_CLK;
     meta->timestamp = ctx->fb_send;
@@ -764,7 +764,7 @@ static void st20_tx_fps_test(enum st20_type type[], enum st_fps fps[], int width
       test_ctx[i]->ext_fb =
           (uint8_t*)MTL_ALIGN((uint64_t)test_ctx[i]->ext_fb_malloc, pg_sz);
       test_ctx[i]->ext_fb_iova =
-          st_dma_map(m_handle, test_ctx[i]->ext_fb, test_ctx[i]->ext_fb_iova_map_sz);
+          mtl_dma_map(m_handle, test_ctx[i]->ext_fb, test_ctx[i]->ext_fb_iova_map_sz);
       info("%s, session %d ext_fb %p\n", __func__, i, test_ctx[i]->ext_fb);
       ASSERT_TRUE(test_ctx[i]->ext_fb_iova != MTL_BAD_IOVA);
 
@@ -815,8 +815,8 @@ static void st20_tx_fps_test(enum st20_type type[], enum st_fps fps[], int width
     ret = st20_tx_free(handle[i]);
     EXPECT_GE(ret, 0);
     if (ext_buf) {
-      st_dma_unmap(m_handle, test_ctx[i]->ext_fb, test_ctx[i]->ext_fb_iova,
-                   test_ctx[i]->ext_fb_iova_map_sz);
+      mtl_dma_unmap(m_handle, test_ctx[i]->ext_fb, test_ctx[i]->ext_fb_iova,
+                    test_ctx[i]->ext_fb_iova_map_sz);
     }
     tests_context_unit(test_ctx[i]);
     delete test_ctx[i];
@@ -918,8 +918,8 @@ static void st20_rx_fps_test(enum st20_type type[], enum st_fps fps[], int width
       ASSERT_TRUE(test_ctx_rx[i]->ext_fb_malloc != NULL);
       test_ctx_rx[i]->ext_fb =
           (uint8_t*)MTL_ALIGN((uint64_t)test_ctx_rx[i]->ext_fb_malloc, pg_sz);
-      test_ctx_rx[i]->ext_fb_iova = st_dma_map(m_handle, test_ctx_rx[i]->ext_fb,
-                                               test_ctx_rx[i]->ext_fb_iova_map_sz);
+      test_ctx_rx[i]->ext_fb_iova = mtl_dma_map(m_handle, test_ctx_rx[i]->ext_fb,
+                                                test_ctx_rx[i]->ext_fb_iova_map_sz);
       info("%s, session %d ext_fb %p\n", __func__, i, test_ctx_rx[i]->ext_fb);
       ASSERT_TRUE(test_ctx_rx[i]->ext_fb_iova != MTL_BAD_IOVA);
 
@@ -1002,8 +1002,8 @@ static void st20_rx_fps_test(enum st20_type type[], enum st_fps fps[], int width
     ret = st20_rx_free(rx_handle[i]);
     EXPECT_GE(ret, 0);
     if (ext_buf) {
-      st_dma_unmap(m_handle, test_ctx_rx[i]->ext_fb, test_ctx_rx[i]->ext_fb_iova,
-                   test_ctx_rx[i]->ext_fb_iova_map_sz);
+      mtl_dma_unmap(m_handle, test_ctx_rx[i]->ext_fb, test_ctx_rx[i]->ext_fb_iova,
+                    test_ctx_rx[i]->ext_fb_iova_map_sz);
     }
     tests_context_unit(test_ctx_tx[i]);
     tests_context_unit(test_ctx_rx[i]);
@@ -3825,7 +3825,7 @@ static void st20_tx_ext_frame_rx_digest_test(enum st20_packing packing[],
     test_ctx_tx[i]->ext_fb =
         (uint8_t*)MTL_ALIGN((uint64_t)test_ctx_tx[i]->ext_fb_malloc, pg_sz);
     test_ctx_tx[i]->ext_fb_iova =
-        st_dma_map(m_handle, test_ctx_tx[i]->ext_fb, test_ctx_tx[i]->ext_fb_iova_map_sz);
+        mtl_dma_map(m_handle, test_ctx_tx[i]->ext_fb, test_ctx_tx[i]->ext_fb_iova_map_sz);
     ASSERT_TRUE(test_ctx_tx[i]->ext_fb_iova != MTL_BAD_IOVA);
     info("%s, session %d ext_fb %p\n", __func__, i, test_ctx_tx[i]->ext_fb);
 
@@ -3872,7 +3872,7 @@ static void st20_tx_ext_frame_rx_digest_test(enum st20_packing packing[],
     test_ctx_rx[i]->ext_fb =
         (uint8_t*)MTL_ALIGN((uint64_t)test_ctx_rx[i]->ext_fb_malloc, pg_sz);
     test_ctx_rx[i]->ext_fb_iova =
-        st_dma_map(m_handle, test_ctx_rx[i]->ext_fb, test_ctx_rx[i]->ext_fb_iova_map_sz);
+        mtl_dma_map(m_handle, test_ctx_rx[i]->ext_fb, test_ctx_rx[i]->ext_fb_iova_map_sz);
     info("%s, session %d ext_fb %p\n", __func__, i, test_ctx_rx[i]->ext_fb);
     ASSERT_TRUE(test_ctx_rx[i]->ext_fb_iova != MTL_BAD_IOVA);
 
@@ -3975,10 +3975,10 @@ static void st20_tx_ext_frame_rx_digest_test(enum st20_packing packing[],
     EXPECT_GE(ret, 0);
     ret = st20_rx_free(rx_handle[i]);
     EXPECT_GE(ret, 0);
-    st_dma_unmap(m_handle, test_ctx_tx[i]->ext_fb, test_ctx_tx[i]->ext_fb_iova,
-                 test_ctx_tx[i]->ext_fb_iova_map_sz);
-    st_dma_unmap(m_handle, test_ctx_rx[i]->ext_fb, test_ctx_rx[i]->ext_fb_iova,
-                 test_ctx_rx[i]->ext_fb_iova_map_sz);
+    mtl_dma_unmap(m_handle, test_ctx_tx[i]->ext_fb, test_ctx_tx[i]->ext_fb_iova,
+                  test_ctx_tx[i]->ext_fb_iova_map_sz);
+    mtl_dma_unmap(m_handle, test_ctx_rx[i]->ext_fb, test_ctx_rx[i]->ext_fb_iova,
+                  test_ctx_rx[i]->ext_fb_iova_map_sz);
     tests_context_unit(test_ctx_tx[i]);
     tests_context_unit(test_ctx_rx[i]);
     delete test_ctx_tx[i];
@@ -4355,14 +4355,14 @@ static void st20_linesize_digest_test(enum st20_packing packing[], enum st_fps f
       test_ctx_tx[i]->ext_frames = (struct st20_ext_frame*)malloc(
           sizeof(*test_ctx_tx[i]->ext_frames) * test_ctx_tx[i]->fb_cnt);
       size_t fbs_size = fb_size * test_ctx_tx[i]->fb_cnt;
-      mtl_dma_mem_handle dma_mem = st_dma_mem_alloc(m_handle, fbs_size);
+      mtl_dma_mem_handle dma_mem = mtl_dma_mem_alloc(m_handle, fbs_size);
       ASSERT_TRUE(dma_mem != NULL);
       test_ctx_tx[i]->dma_mem = dma_mem;
 
       for (int j = 0; j < test_ctx_tx[i]->fb_cnt; j++) {
         test_ctx_tx[i]->ext_frames[j].buf_addr =
-            (uint8_t*)st_dma_mem_addr(dma_mem) + j * fb_size;
-        test_ctx_tx[i]->ext_frames[j].buf_iova = st_dma_mem_iova(dma_mem) + j * fb_size;
+            (uint8_t*)mtl_dma_mem_addr(dma_mem) + j * fb_size;
+        test_ctx_tx[i]->ext_frames[j].buf_iova = mtl_dma_mem_iova(dma_mem) + j * fb_size;
         test_ctx_tx[i]->ext_frames[j].buf_len = fb_size;
       }
     }
@@ -4408,15 +4408,15 @@ static void st20_linesize_digest_test(enum st20_packing packing[], enum st_fps f
       test_ctx_rx[i]->ext_frames = (struct st20_ext_frame*)malloc(
           sizeof(*test_ctx_rx[i]->ext_frames) * test_ctx_rx[i]->fb_cnt);
       size_t fbs_size = test_ctx_rx[i]->fb_size * test_ctx_rx[i]->fb_cnt;
-      mtl_dma_mem_handle dma_mem = st_dma_mem_alloc(m_handle, fbs_size);
+      mtl_dma_mem_handle dma_mem = mtl_dma_mem_alloc(m_handle, fbs_size);
       ASSERT_TRUE(dma_mem != NULL);
       test_ctx_rx[i]->dma_mem = dma_mem;
 
       for (int j = 0; j < test_ctx_rx[i]->fb_cnt; j++) {
         test_ctx_rx[i]->ext_frames[j].buf_addr =
-            (uint8_t*)st_dma_mem_addr(dma_mem) + j * test_ctx_rx[i]->fb_size;
+            (uint8_t*)mtl_dma_mem_addr(dma_mem) + j * test_ctx_rx[i]->fb_size;
         test_ctx_rx[i]->ext_frames[j].buf_iova =
-            st_dma_mem_iova(dma_mem) + j * test_ctx_rx[i]->fb_size;
+            mtl_dma_mem_iova(dma_mem) + j * test_ctx_rx[i]->fb_size;
         test_ctx_rx[i]->ext_frames[j].buf_len = test_ctx_rx[i]->fb_size;
       }
     }
@@ -4509,8 +4509,8 @@ static void st20_linesize_digest_test(enum st20_packing packing[], enum st_fps f
     ret = st20_rx_free(rx_handle[i]);
     EXPECT_GE(ret, 0);
     if (ext) {
-      st_dma_mem_free(m_handle, test_ctx_tx[i]->dma_mem);
-      st_dma_mem_free(m_handle, test_ctx_rx[i]->dma_mem);
+      mtl_dma_mem_free(m_handle, test_ctx_tx[i]->dma_mem);
+      mtl_dma_mem_free(m_handle, test_ctx_rx[i]->dma_mem);
     }
     tests_context_unit(test_ctx_tx[i]);
     tests_context_unit(test_ctx_rx[i]);
