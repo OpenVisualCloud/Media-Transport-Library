@@ -125,7 +125,7 @@ struct st20r_rx_ops {
  *   - NULL on error.
  *   - Otherwise, the handle to the rx st2110-20(redundant) session.
  */
-st20r_rx_handle st20r_rx_create(mtl_handle st, struct st20r_rx_ops* ops);
+st20r_rx_handle st20r_rx_create(mtl_handle mt, struct st20r_rx_ops* ops);
 
 /**
  * Free the rx st2110-20(redundant) session.

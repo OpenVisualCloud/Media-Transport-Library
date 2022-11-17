@@ -1358,8 +1358,8 @@ static int st_tx_audio_init(struct mtl_main_impl* impl) {
   return 0;
 }
 
-st30_tx_handle st30_tx_create(mtl_handle st, struct st30_tx_ops* ops) {
-  struct mtl_main_impl* impl = st;
+st30_tx_handle st30_tx_create(mtl_handle mt, struct st30_tx_ops* ops) {
+  struct mtl_main_impl* impl = mt;
   struct st_tx_audio_session_handle_impl* s_impl;
   struct st_tx_audio_session_impl* s;
   int ret;

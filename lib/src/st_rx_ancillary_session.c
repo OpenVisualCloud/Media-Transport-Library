@@ -619,8 +619,8 @@ static int st_rx_anc_init(struct mtl_main_impl* impl) {
   return 0;
 }
 
-st40_rx_handle st40_rx_create(mtl_handle st, struct st40_rx_ops* ops) {
-  struct mtl_main_impl* impl = st;
+st40_rx_handle st40_rx_create(mtl_handle mt, struct st40_rx_ops* ops) {
+  struct mtl_main_impl* impl = mt;
   struct st_rx_ancillary_session_handle_impl* s_impl;
   struct st_rx_ancillary_session_impl* s;
   int ret;

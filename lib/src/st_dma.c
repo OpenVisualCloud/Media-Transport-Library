@@ -557,7 +557,7 @@ int st_dma_init(struct mtl_main_impl* impl) {
   idx = 0;
   RTE_DMA_FOREACH_DEV(dev_id) {
     rte_dma_info_get(dev_id, &dev_info);
-    if (!st_is_valid_socket(impl, dev_info.numa_node)) continue;
+    if (!mt_is_valid_socket(impl, dev_info.numa_node)) continue;
     dev = &mgr->devs[idx];
     dev->dev_id = dev_id;
     dev->soc_id = dev_info.numa_node;

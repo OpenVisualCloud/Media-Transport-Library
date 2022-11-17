@@ -2753,8 +2753,8 @@ static int tv_st22_ops_check(struct st22_tx_ops* ops) {
   return 0;
 }
 
-st20_tx_handle st20_tx_create(mtl_handle st, struct st20_tx_ops* ops) {
-  struct mtl_main_impl* impl = st;
+st20_tx_handle st20_tx_create(mtl_handle mt, struct st20_tx_ops* ops) {
+  struct mtl_main_impl* impl = mt;
   struct st_sch_impl* sch;
   struct st_tx_video_session_handle_impl* s_impl;
   struct st_tx_video_session_impl* s;
@@ -3077,8 +3077,8 @@ int st20_tx_free(st20_tx_handle handle) {
   return 0;
 }
 
-st22_tx_handle st22_tx_create(mtl_handle st, struct st22_tx_ops* ops) {
-  struct mtl_main_impl* impl = st;
+st22_tx_handle st22_tx_create(mtl_handle mt, struct st22_tx_ops* ops) {
+  struct mtl_main_impl* impl = mt;
   struct st_sch_impl* sch;
   struct st22_tx_video_session_handle_impl* s_impl;
   struct st_tx_video_session_impl* s;

@@ -543,9 +543,9 @@ int st20_converter_unregister(st20_converter_dev_handle handle) {
   return 0;
 }
 
-st22_encoder_dev_handle st22_encoder_register(mtl_handle st,
+st22_encoder_dev_handle st22_encoder_register(mtl_handle mt,
                                               struct st22_encoder_dev* dev) {
-  struct mtl_main_impl* impl = st;
+  struct mtl_main_impl* impl = mt;
   struct st_plugin_mgr* mgr = st_get_plugins_mgr(impl);
   struct st22_encode_dev_impl* encode_dev;
 
@@ -599,9 +599,9 @@ st22_encoder_dev_handle st22_encoder_register(mtl_handle st,
   return NULL;
 }
 
-st22_decoder_dev_handle st22_decoder_register(mtl_handle st,
+st22_decoder_dev_handle st22_decoder_register(mtl_handle mt,
                                               struct st22_decoder_dev* dev) {
-  struct mtl_main_impl* impl = st;
+  struct mtl_main_impl* impl = mt;
   struct st_plugin_mgr* mgr = st_get_plugins_mgr(impl);
   struct st22_decode_dev_impl* decode_dev;
 
@@ -655,9 +655,9 @@ st22_decoder_dev_handle st22_decoder_register(mtl_handle st,
   return NULL;
 }
 
-st20_converter_dev_handle st20_converter_register(mtl_handle st,
+st20_converter_dev_handle st20_converter_register(mtl_handle mt,
                                                   struct st20_converter_dev* dev) {
-  struct mtl_main_impl* impl = st;
+  struct mtl_main_impl* impl = mt;
   struct st_plugin_mgr* mgr = st_get_plugins_mgr(impl);
   struct st20_convert_dev_impl* convert_dev;
 
@@ -802,8 +802,8 @@ static struct st_dl_plugin_impl* st_plugin_by_path(struct mtl_main_impl* impl,
   return NULL;
 }
 
-int st_get_plugins_nb(mtl_handle st) {
-  struct mtl_main_impl* impl = st;
+int st_get_plugins_nb(mtl_handle mt) {
+  struct mtl_main_impl* impl = mt;
   struct st_plugin_mgr* mgr = st_get_plugins_mgr(impl);
 
   if (impl->type != ST_SESSION_TYPE_MAIN) {
@@ -814,8 +814,8 @@ int st_get_plugins_nb(mtl_handle st) {
   return mgr->plugins_nb;
 }
 
-int st_plugin_register(mtl_handle st, const char* path) {
-  struct mtl_main_impl* impl = st;
+int st_plugin_register(mtl_handle mt, const char* path) {
+  struct mtl_main_impl* impl = mt;
   struct st_plugin_mgr* mgr = st_get_plugins_mgr(impl);
   void* dl_handle;
   st_plugin_get_meta_fn get_meta_fn;
@@ -880,7 +880,7 @@ int st_plugin_register(mtl_handle st, const char* path) {
     dlclose(dl_handle);
     return -EIO;
   }
-  pl_handle = create_fn(st);
+  pl_handle = create_fn(impl);
   if (!pl_handle) {
     err("%s, create_fn run fail in %s\n", __func__, path);
     dlclose(dl_handle);
@@ -918,8 +918,8 @@ int st_plugin_register(mtl_handle st, const char* path) {
   return -EIO;
 }
 
-int st_plugin_unregister(mtl_handle st, const char* path) {
-  struct mtl_main_impl* impl = st;
+int st_plugin_unregister(mtl_handle mt, const char* path) {
+  struct mtl_main_impl* impl = mt;
   struct st_plugin_mgr* mgr = st_get_plugins_mgr(impl);
   struct st_dl_plugin_impl* plugin;
 

@@ -475,7 +475,7 @@ mtl_handle mtl_init(struct mtl_init_params* p);
  *   - 0: Success, device un-initialized.
  *   - <0: Error code of the device un-initialize.
  */
-int mtl_uninit(mtl_handle st);
+int mtl_uninit(mtl_handle mt);
 
 /**
  * Start the media transport device context.
@@ -486,7 +486,7 @@ int mtl_uninit(mtl_handle st);
  *   - 0: Success, device started.
  *   - <0: Error code of the device start.
  */
-int mtl_start(mtl_handle st);
+int mtl_start(mtl_handle mt);
 
 /**
  * Stop the media transport device context.
@@ -497,7 +497,7 @@ int mtl_start(mtl_handle st);
  *   - 0: Success, device stopped.
  *   - <0: Error code of the device stop.
  */
-int mtl_stop(mtl_handle st);
+int mtl_stop(mtl_handle mt);
 
 /**
  * Abort the media transport device context.
@@ -509,7 +509,7 @@ int mtl_stop(mtl_handle st);
  *   - 0: Success, device aborted.
  *   - <0: Error code of the device abort.
  */
-int mtl_request_exit(mtl_handle st);
+int mtl_request_exit(mtl_handle mt);
 
 /**
  * Retrieve the capacity of the media transport device context.
@@ -522,7 +522,7 @@ int mtl_request_exit(mtl_handle st);
  *   - 0 if successful.
  *   - <0: Error code if fail.
  */
-int mtl_get_cap(mtl_handle st, struct mtl_cap* cap);
+int mtl_get_cap(mtl_handle mt, struct mtl_cap* cap);
 
 /**
  * Retrieve the stat info of the media transport device context.
@@ -535,7 +535,7 @@ int mtl_get_cap(mtl_handle st, struct mtl_cap* cap);
  *   - 0 if successful.
  *   - <0: Error code if fail.
  */
-int mtl_get_stats(mtl_handle st, struct mtl_stats* stats);
+int mtl_get_stats(mtl_handle mt, struct mtl_stats* stats);
 
 /**
  * Enable or disable sleep mode for sch.
@@ -550,7 +550,7 @@ int mtl_get_stats(mtl_handle st, struct mtl_stats* stats);
  *   - 0: Success.
  *   - <0: Error code.
  */
-int mtl_sch_enable_sleep(mtl_handle st, int sch_idx, bool enable);
+int mtl_sch_enable_sleep(mtl_handle mt, int sch_idx, bool enable);
 
 /**
  * Set the sleep us for the sch if MTL_FLAG_TASKLET_SLEEP is enabled.
@@ -564,7 +564,7 @@ int mtl_sch_enable_sleep(mtl_handle st, int sch_idx, bool enable);
  *   - 0: Success.
  *   - <0: Error code.
  */
-int mtl_sch_set_sleep_us(mtl_handle st, uint64_t us);
+int mtl_sch_set_sleep_us(mtl_handle mt, uint64_t us);
 
 /**
  * Request one DPDK lcore from the media transport device context.
@@ -577,7 +577,7 @@ int mtl_sch_set_sleep_us(mtl_handle st, uint64_t us);
  *   - 0 if successful.
  *   - <0: Error code if fail.
  */
-int mtl_get_lcore(mtl_handle st, unsigned int* lcore);
+int mtl_get_lcore(mtl_handle mt, unsigned int* lcore);
 
 /**
  * Bind one thread to lcore.
@@ -592,7 +592,7 @@ int mtl_get_lcore(mtl_handle st, unsigned int* lcore);
  *   - 0 if successful.
  *   - <0: Error code if fail.
  */
-int mtl_bind_to_lcore(mtl_handle st, pthread_t thread, unsigned int lcore);
+int mtl_bind_to_lcore(mtl_handle mt, pthread_t thread, unsigned int lcore);
 
 /**
  * Put back the DPDK lcore which requested from the media transport device context.
@@ -605,7 +605,7 @@ int mtl_bind_to_lcore(mtl_handle st, pthread_t thread, unsigned int lcore);
  *   - 0 if successful.
  *   - <0: Error code if fail.
  */
-int mtl_put_lcore(mtl_handle st, unsigned int lcore);
+int mtl_put_lcore(mtl_handle mt, unsigned int lcore);
 
 /**
  * Performance optimized memcpy, e.g. AVX-512.
@@ -636,7 +636,7 @@ void* mtl_memcpy(void* dest, const void* src, size_t n);
  *   - NULL on error. Not enough memory, or invalid arguments
  *   - Otherwise, the pointer to the allocated memory.
  */
-void* mtl_hp_malloc(mtl_handle st, size_t size, enum mtl_port port);
+void* mtl_hp_malloc(mtl_handle mt, size_t size, enum mtl_port port);
 
 /**
  * Allocate zero'ed memory from the huge-page area of memory.
@@ -654,7 +654,7 @@ void* mtl_hp_malloc(mtl_handle st, size_t size, enum mtl_port port);
  *   - NULL on error. Not enough memory, or invalid arguments
  *   - Otherwise, the virtual address pointer to the allocated memory.
  */
-void* mtl_hp_zmalloc(mtl_handle st, size_t size, enum mtl_port port);
+void* mtl_hp_zmalloc(mtl_handle mt, size_t size, enum mtl_port port);
 
 /**
  * Frees the memory pointed by the pointer.
@@ -668,7 +668,7 @@ void* mtl_hp_zmalloc(mtl_handle st, size_t size, enum mtl_port port);
  * @param ptr
  *   The virtual address pointer to memory to be freed.
  */
-void mtl_hp_free(mtl_handle st, void* ptr);
+void mtl_hp_free(mtl_handle mt, void* ptr);
 
 /**
  * Return the IO address of a virtual address from mtl_hp_malloc/mtl_hp_zmalloc
@@ -681,7 +681,7 @@ void mtl_hp_free(mtl_handle st, void* ptr);
  *   MTL_BAD_IOVA on error
  *   otherwise return an address suitable for IO
  */
-mtl_iova_t mtl_hp_virt2iova(mtl_handle st, const void* vaddr);
+mtl_iova_t mtl_hp_virt2iova(mtl_handle mt, const void* vaddr);
 
 /**
  * Return the detected page size on the system.
@@ -691,7 +691,7 @@ mtl_iova_t mtl_hp_virt2iova(mtl_handle st, const void* vaddr);
  * @return
  *   page size
  */
-size_t mtl_page_size(mtl_handle st);
+size_t mtl_page_size(mtl_handle mt);
 
 /**
  * Perform DMA mapping with virtual address that can be used for IO.
@@ -708,7 +708,7 @@ size_t mtl_page_size(mtl_handle st);
  *   MTL_BAD_IOVA on error
  *   otherwise return an address suitable for IO
  */
-mtl_iova_t mtl_dma_map(mtl_handle st, const void* vaddr, size_t size);
+mtl_iova_t mtl_dma_map(mtl_handle mt, const void* vaddr, size_t size);
 
 /**
  * Perform DMA unmapping on the mtl_dma_map
@@ -726,7 +726,7 @@ mtl_iova_t mtl_dma_map(mtl_handle st, const void* vaddr, size_t size);
  *   - 0 if successful.
  *   - <0: Error code if fail.
  */
-int mtl_dma_unmap(mtl_handle st, const void* vaddr, mtl_iova_t iova, size_t size);
+int mtl_dma_unmap(mtl_handle mt, const void* vaddr, mtl_iova_t iova, size_t size);
 
 /**
  * Allocate memory block more than required and map valid data to IOVA.
@@ -751,7 +751,7 @@ int mtl_dma_unmap(mtl_handle st, const void* vaddr, mtl_iova_t iova, size_t size
  *   - NULL on error.
  *   - Otherwise, the handle to the dma mem.
  */
-mtl_dma_mem_handle mtl_dma_mem_alloc(mtl_handle st, size_t size);
+mtl_dma_mem_handle mtl_dma_mem_alloc(mtl_handle mt, size_t size);
 
 /**
  * Free the dma mem memory block.
@@ -762,7 +762,7 @@ mtl_dma_mem_handle mtl_dma_mem_alloc(mtl_handle st, size_t size);
  * @param handle
  *   The handle to the st dma mem.
  */
-void mtl_dma_mem_free(mtl_handle st, mtl_dma_mem_handle handle);
+void mtl_dma_mem_free(mtl_handle mt, mtl_dma_mem_handle handle);
 
 /**
  * Get the begin address of dma mapped memory.
@@ -798,7 +798,7 @@ mtl_iova_t mtl_dma_mem_iova(mtl_dma_mem_handle handle);
  *   - NULL on error.
  *   - Otherwise, the handle to the st user dma dev.
  */
-mtl_udma_handle mtl_udma_create(mtl_handle st, uint16_t nb_desc, enum mtl_port port);
+mtl_udma_handle mtl_udma_create(mtl_handle mt, uint16_t nb_desc, enum mtl_port port);
 
 /**
  * Free the st user dma dev.

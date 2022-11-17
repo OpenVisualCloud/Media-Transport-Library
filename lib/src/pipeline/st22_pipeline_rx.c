@@ -183,7 +183,7 @@ static int rx_st22p_decode_dump(void* priv) {
   return 0;
 }
 
-static int rx_st22p_create_transport(mtl_handle st, struct st22p_rx_ctx* ctx,
+static int rx_st22p_create_transport(struct mtl_main_impl* impl, struct st22p_rx_ctx* ctx,
                                      struct st22p_rx_ops* ops) {
   int idx = ctx->idx;
   struct st22_rx_ops ops_rx;
@@ -215,7 +215,7 @@ static int rx_st22p_create_transport(mtl_handle st, struct st22p_rx_ctx* ctx,
   ops_rx.notify_frame_ready = rx_st22p_frame_ready;
   ops_rx.notify_event = rx_st22p_notify_event;
 
-  transport = st22_rx_create(st, &ops_rx);
+  transport = st22_rx_create(impl, &ops_rx);
   if (!transport) {
     err("%s(%d), transport create fail\n", __func__, idx);
     return -EIO;
@@ -377,8 +377,8 @@ int st22p_rx_put_frame(st22p_rx_handle handle, struct st_frame* frame) {
   return 0;
 }
 
-st22p_rx_handle st22p_rx_create(mtl_handle st, struct st22p_rx_ops* ops) {
-  struct mtl_main_impl* impl = st;
+st22p_rx_handle st22p_rx_create(mtl_handle mt, struct st22p_rx_ops* ops) {
+  struct mtl_main_impl* impl = mt;
   struct st22p_rx_ctx* ctx;
   int ret;
   int idx = 0; /* todo */
@@ -450,7 +450,7 @@ st22p_rx_handle st22p_rx_create(mtl_handle st, struct st22p_rx_ops* ops) {
   }
 
   /* crete transport handle */
-  ret = rx_st22p_create_transport(st, ctx, ops);
+  ret = rx_st22p_create_transport(impl, ctx, ops);
   if (ret < 0) {
     err("%s(%d), create transport fail\n", __func__, idx);
     st22p_rx_free(ctx);

@@ -74,7 +74,7 @@ static int kni_config_allmulticast(uint16_t port_id, uint8_t to_on) {
 static int kni_config_network_if(uint16_t port_id, uint8_t if_up) {
   struct mtl_main_impl* impl = kni_get_global_impl();
   struct st_cni_impl* cni = st_get_cni(impl);
-  enum mtl_port port = st_port_by_id(impl, port_id);
+  enum mtl_port port = mt_port_by_id(impl, port_id);
 
   rte_atomic32_set(&cni->if_up[port], if_up);
   info("%s(%d), if_up %d\n", __func__, port, if_up);

@@ -322,7 +322,7 @@ struct st40_rx_ops {
  *   - NULL on error.
  *   - Otherwise, the handle to the tx st2110-40(ancillary) session.
  */
-st40_tx_handle st40_tx_create(mtl_handle st, struct st40_tx_ops* ops);
+st40_tx_handle st40_tx_create(mtl_handle mt, struct st40_tx_ops* ops);
 
 /**
  * Free the tx st2110-40(ancillary) session.
@@ -392,7 +392,7 @@ int st40_tx_put_mbuf(st40_tx_handle handle, void* mbuf, uint16_t len);
  *   - NULL on error.
  *   - Otherwise, the handle to the rx st2110-40(ancillary) session.
  */
-st40_rx_handle st40_rx_create(mtl_handle st, struct st40_rx_ops* ops);
+st40_rx_handle st40_rx_create(mtl_handle mt, struct st40_rx_ops* ops);
 
 /**
  * Online update the source info for the rx st2110-40(ancillary) session.

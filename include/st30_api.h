@@ -403,7 +403,7 @@ struct st30_rx_ops {
  *   - NULL on error.
  *   - Otherwise, the handle to the tx st2110-30(audio) session.
  */
-st30_tx_handle st30_tx_create(mtl_handle st, struct st30_tx_ops* ops);
+st30_tx_handle st30_tx_create(mtl_handle mt, struct st30_tx_ops* ops);
 
 /**
  * Free the tx st2110-30(audio) session.
@@ -519,7 +519,7 @@ int st30_get_sample_rate(enum st30_sampling sampling);
  *   - NULL on error.
  *   - Otherwise, the handle to the rx st2110-30(audio) session.
  */
-st30_rx_handle st30_rx_create(mtl_handle st, struct st30_rx_ops* ops);
+st30_rx_handle st30_rx_create(mtl_handle mt, struct st30_rx_ops* ops);
 
 /**
  * Online update the source info for the rx st2110-30(audio) session.

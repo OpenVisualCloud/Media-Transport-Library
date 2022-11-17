@@ -86,7 +86,7 @@ typedef int (*st_plugin_get_meta_fn)(struct st_plugin_meta* meta);
 /** Get meta function name of plugin */
 #define ST_PLUGIN_GET_META_API "st_plugin_get_meta"
 /** Create function porotype of plugin */
-typedef st_plugin_priv (*st_plugin_create_fn)(mtl_handle st);
+typedef st_plugin_priv (*st_plugin_create_fn)(mtl_handle mt);
 /** Create function name of plugin */
 #define ST_PLUGIN_CREATE_API "st_plugin_create"
 /** Free function porotype of plugin */
@@ -819,7 +819,7 @@ struct st22p_rx_ops {
  *   - NULL: fail.
  *   - Others: the handle to the encode dev context.
  */
-st22_encoder_dev_handle st22_encoder_register(mtl_handle st,
+st22_encoder_dev_handle st22_encoder_register(mtl_handle mt,
                                               struct st22_encoder_dev* dev);
 
 /**
@@ -873,7 +873,7 @@ int st22_encoder_put_frame(st22p_encode_session session,
  *   - NULL: fail.
  *   - Others: the handle to the encode dev
  */
-st22_decoder_dev_handle st22_decoder_register(mtl_handle st,
+st22_decoder_dev_handle st22_decoder_register(mtl_handle mt,
                                               struct st22_decoder_dev* dev);
 
 /**
@@ -927,7 +927,7 @@ int st22_decoder_put_frame(st22p_decode_session session,
  *   - NULL: fail.
  *   - Others: the handle to the convert dev
  */
-st20_converter_dev_handle st20_converter_register(mtl_handle st,
+st20_converter_dev_handle st20_converter_register(mtl_handle mt,
                                                   struct st20_converter_dev* dev);
 
 /**
@@ -982,7 +982,7 @@ int st20_converter_put_frame(st20p_convert_session session,
  *   - 0: Success.
  *   - <0: Error code.
  */
-int st_plugin_register(mtl_handle st, const char* path);
+int st_plugin_register(mtl_handle mt, const char* path);
 
 /**
  * Unregister one st plugin so.
@@ -996,7 +996,7 @@ int st_plugin_register(mtl_handle st, const char* path);
  *   - 0: Success.
  *   - <0: Error code.
  */
-int st_plugin_unregister(mtl_handle st, const char* path);
+int st_plugin_unregister(mtl_handle mt, const char* path);
 
 /**
  * Get the number of registered plugins lib.
@@ -1006,7 +1006,7 @@ int st_plugin_unregister(mtl_handle st, const char* path);
  * @return
  *   - number.
  */
-int st_get_plugins_nb(mtl_handle st);
+int st_get_plugins_nb(mtl_handle mt);
 
 /**
  * Create one tx st2110-22 pipeline session.
@@ -1020,7 +1020,7 @@ int st_get_plugins_nb(mtl_handle st);
  *   - NULL on error.
  *   - Otherwise, the handle to the tx st2110-22 pipeline session.
  */
-st22p_tx_handle st22p_tx_create(mtl_handle st, struct st22p_tx_ops* ops);
+st22p_tx_handle st22p_tx_create(mtl_handle mt, struct st22p_tx_ops* ops);
 
 /**
  * Free the tx st2110-22 pipeline session.
@@ -1094,7 +1094,7 @@ size_t st22p_tx_frame_size(st22p_tx_handle handle);
  *   - NULL on error.
  *   - Otherwise, the handle to the rx st2110-22 pipeline session.
  */
-st22p_rx_handle st22p_rx_create(mtl_handle st, struct st22p_rx_ops* ops);
+st22p_rx_handle st22p_rx_create(mtl_handle mt, struct st22p_rx_ops* ops);
 
 /**
  * Free the rx st2110-22 pipeline session.
@@ -1200,7 +1200,7 @@ int st22p_rx_get_queue_meta(st22p_rx_handle handle, struct st_queue_meta* meta);
  *   - NULL on error.
  *   - Otherwise, the handle to the tx st2110-20 pipeline session.
  */
-st20p_tx_handle st20p_tx_create(mtl_handle st, struct st20p_tx_ops* ops);
+st20p_tx_handle st20p_tx_create(mtl_handle mt, struct st20p_tx_ops* ops);
 
 /**
  * Free the tx st2110-20 pipeline session.
@@ -1302,7 +1302,7 @@ int st20p_tx_get_sch_idx(st20p_tx_handle handle);
  *   - NULL on error.
  *   - Otherwise, the handle to the rx st2110-20 pipeline session.
  */
-st20p_rx_handle st20p_rx_create(mtl_handle st, struct st20p_rx_ops* ops);
+st20p_rx_handle st20p_rx_create(mtl_handle mt, struct st20p_rx_ops* ops);
 
 /**
  * Free the rx st2110-20 pipeline session.

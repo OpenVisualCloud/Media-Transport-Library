@@ -216,8 +216,8 @@ int st20r_rx_free(st20r_rx_handle handle) {
   return 0;
 }
 
-st20r_rx_handle st20r_rx_create(mtl_handle st, struct st20r_rx_ops* ops) {
-  struct mtl_main_impl* impl = st;
+st20r_rx_handle st20r_rx_create(mtl_handle mt, struct st20r_rx_ops* ops) {
+  struct mtl_main_impl* impl = mt;
   struct st20r_rx_ctx* ctx;
   int ret;
   int idx = 0; /* todo */

@@ -173,7 +173,7 @@ enum st_event {
  * @return
  *   - The time in nanoseconds in current ptp system
  */
-uint64_t st_ptp_read_time(mtl_handle st);
+uint64_t st_ptp_read_time(mtl_handle mt);
 
 /**
  * Inline function to check the  rx frame is a completed frame.

@@ -1807,7 +1807,7 @@ static inline enum mtl_port_type st_port_type(struct mtl_main_impl* impl,
   return st_if(impl, port)->port_type;
 }
 
-enum mtl_port st_port_by_id(struct mtl_main_impl* impl, uint16_t port_id);
+enum mtl_port mt_port_by_id(struct mtl_main_impl* impl, uint16_t port_id);
 
 static inline uint8_t* st_sip_addr(struct mtl_main_impl* impl, enum mtl_port port) {
   return st_get_user_params(impl)->sip_addr[port];
@@ -1836,7 +1836,7 @@ static inline int st_num_ports(struct mtl_main_impl* impl) {
   return RTE_MIN(st_get_user_params(impl)->num_ports, MTL_PORT_MAX);
 }
 
-bool st_is_valid_socket(struct mtl_main_impl* impl, int soc_id);
+bool mt_is_valid_socket(struct mtl_main_impl* impl, int soc_id);
 
 static inline uint8_t mtl_start_queue(struct mtl_main_impl* impl, enum mtl_port port) {
   return impl->user_para.xdp_info[port].start_queue;

@@ -25,7 +25,7 @@
 #include "st_tx_audio_session.h"
 #include "st_util.h"
 
-enum mtl_port st_port_by_id(struct mtl_main_impl* impl, uint16_t port_id) {
+enum mtl_port mt_port_by_id(struct mtl_main_impl* impl, uint16_t port_id) {
   int num_ports = st_num_ports(impl);
   int i;
 
@@ -37,7 +37,7 @@ enum mtl_port st_port_by_id(struct mtl_main_impl* impl, uint16_t port_id) {
   return MTL_PORT_MAX;
 }
 
-bool st_is_valid_socket(struct mtl_main_impl* impl, int soc_id) {
+bool mt_is_valid_socket(struct mtl_main_impl* impl, int soc_id) {
   int num_ports = st_num_ports(impl);
   int i;
 
@@ -61,7 +61,7 @@ static int u64_cmp(const void* a, const void* b) {
   return 0;
 }
 
-static void* st_calibrate_tsc(void* arg) {
+static void* mt_calibrate_tsc(void* arg) {
   struct mtl_main_impl* impl = arg;
   int loop = 100;
   int trim = 10;
@@ -131,7 +131,7 @@ static int st_rx_anc_uinit(struct mtl_main_impl* impl) {
   return 0;
 }
 
-static int st_main_create(struct mtl_main_impl* impl) {
+static int mt_main_create(struct mtl_main_impl* impl) {
   int ret;
 
   ret = st_dev_create(impl);
@@ -190,13 +190,13 @@ static int st_main_create(struct mtl_main_impl* impl) {
     return ret;
   }
 
-  pthread_create(&impl->tsc_cal_tid, NULL, st_calibrate_tsc, impl);
+  pthread_create(&impl->tsc_cal_tid, NULL, mt_calibrate_tsc, impl);
 
   info("%s, succ\n", __func__);
   return 0;
 }
 
-static int st_main_free(struct mtl_main_impl* impl) {
+static int mt_main_free(struct mtl_main_impl* impl) {
   if (impl->tsc_cal_tid) {
     pthread_join(impl->tsc_cal_tid, NULL);
     impl->tsc_cal_tid = 0;
@@ -218,7 +218,7 @@ static int st_main_free(struct mtl_main_impl* impl) {
   return 0;
 }
 
-static int st_user_params_check(struct mtl_init_params* p) {
+static int mt_user_params_check(struct mtl_init_params* p) {
   int num_ports = p->num_ports, ret;
   uint8_t* ip = NULL;
   uint8_t if_ip[MTL_IP_ADDR_LEN];
@@ -321,7 +321,7 @@ static int st_user_params_check(struct mtl_init_params* p) {
   return 0;
 }
 
-static int _st_start(struct mtl_main_impl* impl) {
+static int _mt_start(struct mtl_main_impl* impl) {
   int ret;
 
   if (rte_atomic32_read(&impl->started)) {
@@ -344,7 +344,7 @@ static int _st_start(struct mtl_main_impl* impl) {
   return 0;
 }
 
-static int _st_stop(struct mtl_main_impl* impl) {
+static int _mt_stop(struct mtl_main_impl* impl) {
   if (!rte_atomic32_read(&impl->started)) {
     dbg("%s, not started\n", __func__);
     return 0;
@@ -364,9 +364,9 @@ mtl_handle mtl_init(struct mtl_init_params* p) {
 
   RTE_BUILD_BUG_ON(ST_SESSION_PORT_MAX > (int)MTL_PORT_MAX);
 
-  ret = st_user_params_check(p);
+  ret = mt_user_params_check(p);
   if (ret < 0) {
-    err("%s, st_user_params_check fail %d\n", __func__, ret);
+    err("%s, mt_user_params_check fail %d\n", __func__, ret);
     return NULL;
   }
 
@@ -482,14 +482,14 @@ mtl_handle mtl_init(struct mtl_init_params* p) {
     goto err_exit;
   }
 
-  ret = st_main_create(impl);
+  ret = mt_main_create(impl);
   if (ret < 0) {
     err("%s, st main create fail %d\n", __func__, ret);
     goto err_exit;
   }
 
   if (st_has_auto_start_stop(impl)) {
-    ret = _st_start(impl);
+    ret = _mt_start(impl);
     if (ret < 0) {
       err("%s, st start fail %d\n", __func__, ret);
       goto err_exit;
@@ -509,8 +509,8 @@ err_exit:
   return NULL;
 }
 
-int mtl_uninit(mtl_handle st) {
-  struct mtl_main_impl* impl = st;
+int mtl_uninit(mtl_handle mt) {
+  struct mtl_main_impl* impl = mt;
   struct mtl_init_params* p = st_get_user_params(impl);
 
   if (impl->type != ST_SESSION_TYPE_MAIN) {
@@ -518,14 +518,14 @@ int mtl_uninit(mtl_handle st) {
     return -EIO;
   }
 
-  _st_stop(impl);
+  _mt_stop(impl);
 
   st_tx_audio_uinit(impl);
   st_rx_audio_uinit(impl);
   st_tx_anc_uinit(impl);
   st_rx_anc_uinit(impl);
 
-  st_main_free(impl);
+  mt_main_free(impl);
 
   st_dev_if_uinit(impl);
   st_rte_free(impl);
@@ -540,19 +540,19 @@ int mtl_uninit(mtl_handle st) {
   return 0;
 }
 
-int mtl_start(mtl_handle st) {
-  struct mtl_main_impl* impl = st;
+int mtl_start(mtl_handle mt) {
+  struct mtl_main_impl* impl = mt;
 
   if (impl->type != ST_SESSION_TYPE_MAIN) {
     err("%s, invalid type %d\n", __func__, impl->type);
     return -EIO;
   }
 
-  return _st_start(impl);
+  return _mt_start(impl);
 }
 
-int mtl_stop(mtl_handle st) {
-  struct mtl_main_impl* impl = st;
+int mtl_stop(mtl_handle mt) {
+  struct mtl_main_impl* impl = mt;
 
   if (impl->type != ST_SESSION_TYPE_MAIN) {
     err("%s, invalid type %d\n", __func__, impl->type);
@@ -561,11 +561,11 @@ int mtl_stop(mtl_handle st) {
 
   if (st_has_auto_start_stop(impl)) return 0;
 
-  return _st_stop(impl);
+  return _mt_stop(impl);
 }
 
-int mtl_get_lcore(mtl_handle st, unsigned int* lcore) {
-  struct mtl_main_impl* impl = st;
+int mtl_get_lcore(mtl_handle mt, unsigned int* lcore) {
+  struct mtl_main_impl* impl = mt;
 
   if (impl->type != ST_SESSION_TYPE_MAIN) {
     err("%s, invalid type %d\n", __func__, impl->type);
@@ -575,8 +575,8 @@ int mtl_get_lcore(mtl_handle st, unsigned int* lcore) {
   return st_dev_get_lcore(impl, lcore);
 }
 
-int mtl_put_lcore(mtl_handle st, unsigned int lcore) {
-  struct mtl_main_impl* impl = st;
+int mtl_put_lcore(mtl_handle mt, unsigned int lcore) {
+  struct mtl_main_impl* impl = mt;
 
   if (impl->type != ST_SESSION_TYPE_MAIN) {
     err("%s, invalid type %d\n", __func__, impl->type);
@@ -586,8 +586,8 @@ int mtl_put_lcore(mtl_handle st, unsigned int lcore) {
   return st_dev_put_lcore(impl, lcore);
 }
 
-int mtl_bind_to_lcore(mtl_handle st, pthread_t thread, unsigned int lcore) {
-  struct mtl_main_impl* impl = st;
+int mtl_bind_to_lcore(mtl_handle mt, pthread_t thread, unsigned int lcore) {
+  struct mtl_main_impl* impl = mt;
 
   if (impl->type != ST_SESSION_TYPE_MAIN) {
     err("%s, invalid type %d\n", __func__, impl->type);
@@ -607,8 +607,8 @@ int mtl_bind_to_lcore(mtl_handle st, pthread_t thread, unsigned int lcore) {
   return 0;
 }
 
-int mtl_request_exit(mtl_handle st) {
-  struct mtl_main_impl* impl = st;
+int mtl_request_exit(mtl_handle mt) {
+  struct mtl_main_impl* impl = mt;
 
   if (impl->type != ST_SESSION_TYPE_MAIN) {
     err("%s, invalid type %d\n", __func__, impl->type);
@@ -624,8 +624,8 @@ void* mtl_memcpy(void* dest, const void* src, size_t n) {
   return rte_memcpy(dest, src, n);
 }
 
-void* mtl_hp_malloc(mtl_handle st, size_t size, enum mtl_port port) {
-  struct mtl_main_impl* impl = st;
+void* mtl_hp_malloc(mtl_handle mt, size_t size, enum mtl_port port) {
+  struct mtl_main_impl* impl = mt;
   int num_ports = st_num_ports(impl);
 
   if (impl->type != ST_SESSION_TYPE_MAIN) {
@@ -641,8 +641,8 @@ void* mtl_hp_malloc(mtl_handle st, size_t size, enum mtl_port port) {
   return st_rte_malloc_socket(size, st_socket_id(impl, port));
 }
 
-void* mtl_hp_zmalloc(mtl_handle st, size_t size, enum mtl_port port) {
-  struct mtl_main_impl* impl = st;
+void* mtl_hp_zmalloc(mtl_handle mt, size_t size, enum mtl_port port) {
+  struct mtl_main_impl* impl = mt;
   int num_ports = st_num_ports(impl);
 
   if (impl->type != ST_SESSION_TYPE_MAIN) {
@@ -658,28 +658,28 @@ void* mtl_hp_zmalloc(mtl_handle st, size_t size, enum mtl_port port) {
   return st_rte_zmalloc_socket(size, st_socket_id(impl, port));
 }
 
-void mtl_hp_free(mtl_handle st, void* ptr) { return st_rte_free(ptr); }
+void mtl_hp_free(mtl_handle mt, void* ptr) { return st_rte_free(ptr); }
 
-mtl_iova_t mtl_hp_virt2iova(mtl_handle st, const void* vaddr) {
+mtl_iova_t mtl_hp_virt2iova(mtl_handle mt, const void* vaddr) {
   return rte_malloc_virt2iova(vaddr);
 }
 
-size_t mtl_page_size(mtl_handle st) {
-  struct mtl_main_impl* impl = st;
+size_t mtl_page_size(mtl_handle mt) {
+  struct mtl_main_impl* impl = mt;
 
   if (impl->type != ST_SESSION_TYPE_MAIN) {
     err("%s, invalid type %d\n", __func__, impl->type);
     return 4096;
   }
 
-  return st->page_size;
+  return impl->page_size;
 }
 
-mtl_iova_t mtl_dma_map(mtl_handle st, const void* vaddr, size_t size) {
-  struct mtl_main_impl* impl = st;
+mtl_iova_t mtl_dma_map(mtl_handle mt, const void* vaddr, size_t size) {
+  struct mtl_main_impl* impl = mt;
   int ret;
   mtl_iova_t iova;
-  size_t page_size = mtl_page_size(st);
+  size_t page_size = mtl_page_size(impl);
 
   if (impl->type != ST_SESSION_TYPE_MAIN) {
     err("%s, invalid type %d\n", __func__, impl->type);
@@ -733,10 +733,10 @@ fail_extmem:
   return MTL_BAD_IOVA;
 }
 
-int mtl_dma_unmap(mtl_handle st, const void* vaddr, mtl_iova_t iova, size_t size) {
-  struct mtl_main_impl* impl = st;
+int mtl_dma_unmap(mtl_handle mt, const void* vaddr, mtl_iova_t iova, size_t size) {
+  struct mtl_main_impl* impl = mt;
   int ret;
-  size_t page_size = mtl_page_size(st);
+  size_t page_size = mtl_page_size(impl);
 
   if (impl->type != ST_SESSION_TYPE_MAIN) {
     err("%s, invalid type %d\n", __func__, impl->type);
@@ -777,8 +777,8 @@ int mtl_dma_unmap(mtl_handle st, const void* vaddr, mtl_iova_t iova, size_t size
   return 0;
 }
 
-mtl_dma_mem_handle mtl_dma_mem_alloc(mtl_handle st, size_t size) {
-  struct mtl_main_impl* impl = st;
+mtl_dma_mem_handle mtl_dma_mem_alloc(mtl_handle mt, size_t size) {
+  struct mtl_main_impl* impl = mt;
   struct mtl_dma_mem* mem;
 
   if (impl->type != ST_SESSION_TYPE_MAIN) {
@@ -792,7 +792,7 @@ mtl_dma_mem_handle mtl_dma_mem_alloc(mtl_handle st, size_t size) {
     return NULL;
   }
 
-  size_t page_size = mtl_page_size(st);
+  size_t page_size = mtl_page_size(impl);
   size_t iova_size = mtl_size_page_align(size, page_size);
   size_t alloc_size = iova_size + page_size;
   void* alloc_addr = st_zmalloc(alloc_size);
@@ -803,7 +803,7 @@ mtl_dma_mem_handle mtl_dma_mem_alloc(mtl_handle st, size_t size) {
   }
 
   void* addr = (void*)MTL_ALIGN((uint64_t)alloc_addr, page_size);
-  mtl_iova_t iova = mtl_dma_map(st, addr, iova_size);
+  mtl_iova_t iova = mtl_dma_map(impl, addr, iova_size);
   if (iova == MTL_BAD_IOVA) {
     err("%s, dma mem %p map fail\n", __func__, addr);
     st_free(alloc_addr);
@@ -822,9 +822,9 @@ mtl_dma_mem_handle mtl_dma_mem_alloc(mtl_handle st, size_t size) {
   return mem;
 }
 
-void mtl_dma_mem_free(mtl_handle st, mtl_dma_mem_handle handle) {
+void mtl_dma_mem_free(mtl_handle mt, mtl_dma_mem_handle handle) {
   struct mtl_dma_mem* mem = handle;
-  mtl_dma_unmap(st, mem->addr, mem->iova, mem->iova_size);
+  mtl_dma_unmap(mt, mem->addr, mem->iova, mem->iova_size);
   st_free(mem->alloc_addr);
   st_rte_free(mem);
 }
@@ -851,8 +851,8 @@ const char* mtl_version(void) {
   return version;
 }
 
-int mtl_get_cap(mtl_handle st, struct mtl_cap* cap) {
-  struct mtl_main_impl* impl = st;
+int mtl_get_cap(mtl_handle mt, struct mtl_cap* cap) {
+  struct mtl_main_impl* impl = mt;
 
   if (impl->type != ST_SESSION_TYPE_MAIN) {
     err("%s, invalid type %d\n", __func__, impl->type);
@@ -866,8 +866,8 @@ int mtl_get_cap(mtl_handle st, struct mtl_cap* cap) {
   return 0;
 }
 
-int mtl_get_stats(mtl_handle st, struct mtl_stats* stats) {
-  struct mtl_main_impl* impl = st;
+int mtl_get_stats(mtl_handle mt, struct mtl_stats* stats) {
+  struct mtl_main_impl* impl = mt;
   struct st_dma_mgr* mgr = st_get_dma_mgr(impl);
 
   if (impl->type != ST_SESSION_TYPE_MAIN) {
@@ -893,8 +893,8 @@ int mtl_get_stats(mtl_handle st, struct mtl_stats* stats) {
   return 0;
 }
 
-int mtl_sch_enable_sleep(mtl_handle st, int sch_idx, bool enable) {
-  struct mtl_main_impl* impl = st;
+int mtl_sch_enable_sleep(mtl_handle mt, int sch_idx, bool enable) {
+  struct mtl_main_impl* impl = mt;
 
   if (sch_idx > ST_MAX_SCH_NUM) {
     err("%s, invalid sch_idx %d\n", __func__, sch_idx);
@@ -920,8 +920,8 @@ int mtl_sch_enable_sleep(mtl_handle st, int sch_idx, bool enable) {
   return 0;
 }
 
-int mtl_sch_set_sleep_us(mtl_handle st, uint64_t us) {
-  struct mtl_main_impl* impl = st;
+int mtl_sch_set_sleep_us(mtl_handle mt, uint64_t us) {
+  struct mtl_main_impl* impl = mt;
 
   if (impl->type != ST_SESSION_TYPE_MAIN) {
     err("%s, invalid type %d\n", __func__, impl->type);
@@ -933,8 +933,8 @@ int mtl_sch_set_sleep_us(mtl_handle st, uint64_t us) {
   return 0;
 }
 
-uint64_t st_ptp_read_time(mtl_handle st) {
-  struct mtl_main_impl* impl = st;
+uint64_t st_ptp_read_time(mtl_handle mt) {
+  struct mtl_main_impl* impl = mt;
 
   if (impl->type != ST_SESSION_TYPE_MAIN) {
     err("%s, invalid type %d\n", __func__, impl->type);
@@ -944,8 +944,8 @@ uint64_t st_ptp_read_time(mtl_handle st) {
   return st_get_ptp_time(impl, MTL_PORT_P);
 }
 
-mtl_udma_handle mtl_udma_create(mtl_handle st, uint16_t nb_desc, enum mtl_port port) {
-  struct mtl_main_impl* impl = st;
+mtl_udma_handle mtl_udma_create(mtl_handle mt, uint16_t nb_desc, enum mtl_port port) {
+  struct mtl_main_impl* impl = mt;
   struct st_dma_request_req req;
 
   if (impl->type != ST_SESSION_TYPE_MAIN) {
@@ -1031,7 +1031,7 @@ enum mtl_simd_level mtl_get_simd_level(void) {
   return MTL_SIMD_LEVEL_NONE;
 }
 
-static const char* st_simd_level_names[MTL_SIMD_LEVEL_MAX] = {
+static const char* mt_simd_level_names[MTL_SIMD_LEVEL_MAX] = {
     "none",
     "avx2",
     "avx512",
@@ -1044,5 +1044,5 @@ const char* mtl_get_simd_level_name(enum mtl_simd_level level) {
     return "unknown";
   }
 
-  return st_simd_level_names[level];
+  return mt_simd_level_names[level];
 }

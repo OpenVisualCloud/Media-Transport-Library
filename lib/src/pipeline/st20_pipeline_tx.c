@@ -219,7 +219,7 @@ static int tx_st20p_convert_dump(void* priv) {
   return 0;
 }
 
-static int tx_st20p_create_transport(mtl_handle st, struct st20p_tx_ctx* ctx,
+static int tx_st20p_create_transport(struct mtl_main_impl* impl, struct st20p_tx_ctx* ctx,
                                      struct st20p_tx_ops* ops) {
   int idx = ctx->idx;
   struct st20_tx_ops ops_tx;
@@ -261,7 +261,7 @@ static int tx_st20p_create_transport(mtl_handle st, struct st20p_tx_ctx* ctx,
     ops_tx.flags |= ST20_TX_FLAG_USER_TIMESTAMP;
   if (ops->flags & ST20P_TX_FLAG_ENABLE_VSYNC) ops_tx.flags |= ST20_TX_FLAG_ENABLE_VSYNC;
 
-  transport = st20_tx_create(st, &ops_tx);
+  transport = st20_tx_create(impl, &ops_tx);
   if (!transport) {
     err("%s(%d), transport create fail\n", __func__, idx);
     return -EIO;
@@ -552,8 +552,8 @@ int st20p_tx_put_ext_frame(st20p_tx_handle handle, struct st_frame* frame,
   return 0;
 }
 
-st20p_tx_handle st20p_tx_create(mtl_handle st, struct st20p_tx_ops* ops) {
-  struct mtl_main_impl* impl = st;
+st20p_tx_handle st20p_tx_create(mtl_handle mt, struct st20p_tx_ops* ops) {
+  struct mtl_main_impl* impl = mt;
   struct st20p_tx_ctx* ctx;
   int ret;
   int idx = 0; /* todo */
@@ -614,7 +614,7 @@ st20p_tx_handle st20p_tx_create(mtl_handle st, struct st20p_tx_ops* ops) {
   }
 
   /* crete transport handle */
-  ret = tx_st20p_create_transport(st, ctx, ops);
+  ret = tx_st20p_create_transport(impl, ctx, ops);
   if (ret < 0) {
     err("%s(%d), create transport fail\n", __func__, idx);
     st20p_tx_free(ctx);

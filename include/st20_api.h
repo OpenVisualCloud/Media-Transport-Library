@@ -1281,7 +1281,7 @@ struct st22_rx_ops {
  *   - NULL on error.
  *   - Otherwise, the handle to the tx st2110-20(video) session.
  */
-st20_tx_handle st20_tx_create(mtl_handle st, struct st20_tx_ops* ops);
+st20_tx_handle st20_tx_create(mtl_handle mt, struct st20_tx_ops* ops);
 
 /**
  * Free the tx st2110-20(video) session.
@@ -1457,7 +1457,7 @@ static inline uint64_t st20_1080p59_yuv422_10bit_bandwidth_mps(void) {
  *   - NULL on error.
  *   - Otherwise, the handle to the tx st2110-22(compressed video) session.
  */
-st22_tx_handle st22_tx_create(mtl_handle st, struct st22_tx_ops* ops);
+st22_tx_handle st22_tx_create(mtl_handle mt, struct st22_tx_ops* ops);
 
 /**
  * Free the tx st2110-22(compressed video) session.
@@ -1537,7 +1537,7 @@ void* st22_tx_get_fb_addr(st22_tx_handle handle, uint16_t idx);
  *   - NULL on error.
  *   - Otherwise, the handle to the rx st2110-20(video) session.
  */
-st20_rx_handle st20_rx_create(mtl_handle st, struct st20_rx_ops* ops);
+st20_rx_handle st20_rx_create(mtl_handle mt, struct st20_rx_ops* ops);
 
 /**
  * Online update the source info for the rx st2110-20(video) session.
@@ -1691,7 +1691,7 @@ bool st20_rx_dma_enabled(st20_rx_handle handle);
  *   - NULL on error.
  *   - Otherwise, the handle to the rx st2110-22(compressed video) session.
  */
-st22_rx_handle st22_rx_create(mtl_handle st, struct st22_rx_ops* ops);
+st22_rx_handle st22_rx_create(mtl_handle mt, struct st22_rx_ops* ops);
 
 /**
  * Online update the source info for the rx st2110-22(compressed video) session.

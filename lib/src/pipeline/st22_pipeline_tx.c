@@ -212,7 +212,7 @@ static int tx_st22p_encode_dump(void* priv) {
   return 0;
 }
 
-static int tx_st22p_create_transport(mtl_handle st, struct st22p_tx_ctx* ctx,
+static int tx_st22p_create_transport(struct mtl_main_impl* impl, struct st22p_tx_ctx* ctx,
                                      struct st22p_tx_ops* ops) {
   int idx = ctx->idx;
   struct st22_tx_ops ops_tx;
@@ -257,7 +257,7 @@ static int tx_st22p_create_transport(mtl_handle st, struct st22p_tx_ctx* ctx,
     ops_tx.flags |= ST22_TX_FLAG_DISABLE_BOXES;
   }
 
-  transport = st22_tx_create(st, &ops_tx);
+  transport = st22_tx_create(impl, &ops_tx);
   if (!transport) {
     err("%s(%d), transport create fail\n", __func__, idx);
     return -EIO;
@@ -428,8 +428,8 @@ int st22p_tx_put_frame(st22p_tx_handle handle, struct st_frame* frame) {
   return 0;
 }
 
-st22p_tx_handle st22p_tx_create(mtl_handle st, struct st22p_tx_ops* ops) {
-  struct mtl_main_impl* impl = st;
+st22p_tx_handle st22p_tx_create(mtl_handle mt, struct st22p_tx_ops* ops) {
+  struct mtl_main_impl* impl = mt;
   struct st22p_tx_ctx* ctx;
   int ret;
   int idx = 0; /* todo */
@@ -497,7 +497,7 @@ st22p_tx_handle st22p_tx_create(mtl_handle st, struct st22p_tx_ops* ops) {
   }
 
   /* crete transport handle */
-  ret = tx_st22p_create_transport(st, ctx, ops);
+  ret = tx_st22p_create_transport(impl, ctx, ops);
   if (ret < 0) {
     err("%s(%d), create transport fail\n", __func__, idx);
     st22p_tx_free(ctx);

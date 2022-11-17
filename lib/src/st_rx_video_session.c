@@ -3540,8 +3540,8 @@ st20_rx_handle st20_rx_create_with_mask(struct mtl_main_impl* impl,
   return s_impl;
 }
 
-st20_rx_handle st20_rx_create(mtl_handle st, struct st20_rx_ops* ops) {
-  return st20_rx_create_with_mask(st, ops, ST_SCH_MASK_ALL);
+st20_rx_handle st20_rx_create(mtl_handle mt, struct st20_rx_ops* ops) {
+  return st20_rx_create_with_mask(mt, ops, ST_SCH_MASK_ALL);
 }
 
 int st20_rx_update_source(st20_rx_handle handle, struct st_rx_source_info* src) {
@@ -3762,8 +3762,8 @@ int st20_rx_get_queue_meta(st20_rx_handle handle, struct st_queue_meta* meta) {
   return 0;
 }
 
-st22_rx_handle st22_rx_create(mtl_handle st, struct st22_rx_ops* ops) {
-  struct mtl_main_impl* impl = st;
+st22_rx_handle st22_rx_create(mtl_handle mt, struct st22_rx_ops* ops) {
+  struct mtl_main_impl* impl = mt;
   struct st_sch_impl* sch;
   struct st22_rx_video_session_handle_impl* s_impl;
   struct st_rx_video_session_impl* s;
