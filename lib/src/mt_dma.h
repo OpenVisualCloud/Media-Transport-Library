@@ -17,7 +17,7 @@ struct st_dma_request_req {
   int sch_idx;
   int socket_id;
   void* priv;
-  st_dma_drop_mbuf_cb drop_mbuf_cb;
+  mt_dma_drop_mbuf_cb drop_mbuf_cb;
 };
 
 struct mtl_dma_lender_dev* st_dma_request_dev(struct mtl_main_impl* impl,

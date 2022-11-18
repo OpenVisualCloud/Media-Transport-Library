@@ -77,16 +77,16 @@ struct mt_muf_priv_data {
   };
 };
 
-struct st_ptp_clock_id {
+struct mt_ptp_clock_id {
   uint8_t id[8];
 };
 
-struct st_ptp_port_id {
-  struct st_ptp_clock_id clock_identity;
+struct mt_ptp_port_id {
+  struct mt_ptp_clock_id clock_identity;
   uint16_t port_number;
 } __attribute__((packed));
 
-struct st_ptp_ipv4_udp {
+struct mt_ptp_ipv4_udp {
   struct rte_ipv4_hdr ip;
   struct rte_udp_hdr udp;
 } __attribute__((__packed__));
@@ -98,28 +98,28 @@ enum mt_port_type {
   MT_PORT_AF_XDP,
 };
 
-enum st_driver_type {
-  ST_DRV_ERR = 0,
-  ST_DRV_ICE,       /* ice pf, net_ice */
-  ST_DRV_I40E,      /* flv pf, net_i40e */
-  ST_DRV_IAVF,      /* IA vf, net_iavf */
-  ST_DRV_AF_XDP,    /* af xdp, net_af_xdp */
-  ST_DRV_E1000_IGB, /* e1000 igb, net_e1000_igb */
-  ST_DRV_IGC,       /* igc, net_igc */
+enum mt_driver_type {
+  MT_DRV_ERR = 0,
+  MT_DRV_ICE,       /* ice pf, net_ice */
+  MT_DRV_I40E,      /* flv pf, net_i40e */
+  MT_DRV_IAVF,      /* IA vf, net_iavf */
+  MT_DRV_AF_XDP,    /* af xdp, net_af_xdp */
+  MT_DRV_E1000_IGB, /* e1000 igb, net_e1000_igb */
+  MT_DRV_IGC,       /* igc, net_igc */
 };
 
-enum st_ptp_l_mode {
-  ST_PTP_L2 = 0,
-  ST_PTP_L4,
-  ST_PTP_MAX_MODE,
+enum mt_ptp_l_mode {
+  MT_PTP_L2 = 0,
+  MT_PTP_L4,
+  MT_PTP_MAX_MODE,
 };
 
-enum st_ptp_addr_mode {
-  ST_PTP_MULTICAST_ADDR = 0,
-  ST_PTP_UNICAST_ADDR,
+enum mt_ptp_addr_mode {
+  MT_PTP_MULTICAST_ADDR = 0,
+  MT_PTP_UNICAST_ADDR,
 };
 
-struct st_ptp_impl {
+struct mt_ptp_impl {
   struct mtl_main_impl* impl;
   enum mtl_port port;
   uint16_t port_id;
@@ -131,12 +131,12 @@ struct st_ptp_impl {
 
   uint8_t mcast_group_addr[MTL_IP_ADDR_LEN]; /* 224.0.1.129 */
   bool master_initialized;
-  struct st_ptp_port_id master_port_id;
+  struct mt_ptp_port_id master_port_id;
   struct rte_ether_addr master_addr;
-  struct st_ptp_port_id our_port_id;
-  struct st_ptp_ipv4_udp dst_udp;    /* for l4 */
+  struct mt_ptp_port_id our_port_id;
+  struct mt_ptp_ipv4_udp dst_udp;    /* for l4 */
   uint8_t sip_addr[MTL_IP_ADDR_LEN]; /* source IP */
-  enum st_ptp_addr_mode master_addr_mode;
+  enum mt_ptp_addr_mode master_addr_mode;
   int16_t master_utc_offset; /* offset to UTC of current master PTP */
   int64_t ptp_delta;         /* current delta for PTP */
 
@@ -145,7 +145,7 @@ struct st_ptp_impl {
   uint64_t t2;
   bool t2_vlan;
   uint16_t t2_sequence_id;
-  enum st_ptp_l_mode t2_mode;
+  enum mt_ptp_l_mode t2_mode;
   uint64_t t3;
   uint16_t t3_sequence_id;
   uint64_t t4;
@@ -172,7 +172,7 @@ struct st_ptp_impl {
   int32_t stat_sync_cnt;
 };
 
-struct st_cni_impl {
+struct mt_cni_impl {
   bool used; /* if enable cni */
 
   uint16_t rx_q_id[MTL_PORT_MAX]; /* cni rx queue id */
@@ -180,7 +180,7 @@ struct st_cni_impl {
   pthread_t tid; /* thread id for rx */
   rte_atomic32_t stop_thread;
   bool lcore_tasklet;
-  struct st_sch_tasklet_impl* tasklet;
+  struct mt_sch_tasklet_impl* tasklet;
   /* stat */
   int eth_rx_cnt[MTL_PORT_MAX];
 #ifdef MTL_HAS_KNI
@@ -208,7 +208,7 @@ struct st_cni_impl {
 #endif
 };
 
-struct st_arp_impl {
+struct mt_arp_impl {
   uint32_t ip[MTL_PORT_MAX];
   struct rte_ether_addr ea[MTL_PORT_MAX];
   rte_atomic32_t mac_ready[MTL_PORT_MAX];
@@ -216,7 +216,7 @@ struct st_arp_impl {
   bool tx_q_active[MTL_PORT_MAX];
 };
 
-struct st_mcast_impl {
+struct mt_mcast_impl {
   pthread_mutex_t group_mutex[MTL_PORT_MAX];
   uint32_t group_ip[MTL_PORT_MAX][ST_MCAST_GROUP_MAX];
   uint32_t group_ref_cnt[MTL_PORT_MAX][ST_MCAST_GROUP_MAX];
@@ -225,14 +225,14 @@ struct st_mcast_impl {
   bool tx_q_active[MTL_PORT_MAX];
 };
 
-#define ST_TASKLET_HAS_PENDING (1)
-#define ST_TASKLET_ALL_DONE (0)
+#define MT_TASKLET_HAS_PENDING (1)
+#define MT_TASKLET_ALL_DONE (0)
 
 /*
  * Tasklets share the time slot on a lcore,
  * only non-block method can be used in handler routine.
  */
-struct st_sch_tasklet_ops {
+struct mt_sch_tasklet_ops {
   char* name;
   void* priv; /* private data to the callback */
 
@@ -240,22 +240,22 @@ struct st_sch_tasklet_ops {
   int (*start)(void* priv);
   int (*stop)(void* priv);
   /*
-   * return ST_TASKLET_ALL_DONE if no any pending task, all are done
-   * return ST_TASKLET_HAS_PENDING if it has pending tasks.
+   * return MT_TASKLET_ALL_DONE if no any pending task, all are done
+   * return MT_TASKLET_HAS_PENDING if it has pending tasks.
    */
   int (*handler)(void* priv);
   /*
-   * the recommend sleep time(us) if tasklet report ST_TASKLET_ALL_DONE.
+   * the recommend sleep time(us) if tasklet report MT_TASKLET_ALL_DONE.
    * also this value can be set by st_tasklet_set_sleep at runtime.
    * leave to zero if you don't know.
    */
   uint64_t advice_sleep_us;
 };
 
-struct st_sch_tasklet_impl {
-  struct st_sch_tasklet_ops ops;
+struct mt_sch_tasklet_impl {
+  struct mt_sch_tasklet_ops ops;
   char name[ST_MAX_NAME_LEN];
-  struct st_sch_impl* sch;
+  struct mt_sch_impl* sch;
 
   int idx;
 
@@ -265,20 +265,20 @@ struct st_sch_tasklet_impl {
   uint32_t stat_min_time_us;
 };
 
-enum st_sch_type {
-  ST_SCH_TYPE_DEFAULT = 0,
-  ST_SCH_TYPE_RX_VIDEO_ONLY,
-  ST_SCH_TYPE_MAX,
+enum mt_sch_type {
+  MT_SCH_TYPE_DEFAULT = 0,
+  MT_SCH_TYPE_RX_VIDEO_ONLY,
+  MT_SCH_TYPE_MAX,
 };
 
-typedef uint64_t st_sch_mask_t;
+typedef uint64_t mt_sch_mask_t;
 
 /* all sch */
-#define ST_SCH_MASK_ALL ((st_sch_mask_t)-1)
+#define MT_SCH_MASK_ALL ((mt_sch_mask_t)-1)
 
-struct st_sch_impl {
+struct mt_sch_impl {
   pthread_mutex_t mutex; /* protect sch context */
-  struct st_sch_tasklet_impl* tasklet[MT_MAX_TASKLET_PER_SCH];
+  struct mt_sch_tasklet_impl* tasklet[MT_MAX_TASKLET_PER_SCH];
   int max_tasklet_idx; /* max tasklet index */
   unsigned int lcore;
   bool run_in_thread; /* Run the tasklet inside one thread instead of a pinned lcore. */
@@ -295,7 +295,7 @@ struct st_sch_impl {
   rte_atomic32_t stopped;
   rte_atomic32_t active; /* if this sch is active */
   rte_atomic32_t ref_cnt;
-  enum st_sch_type type;
+  enum mt_sch_type type;
 
   /* one tx video sessions mgr/transmitter for one sch */
   struct st_video_transmitter_impl video_transmitter;
@@ -324,25 +324,25 @@ struct st_sch_impl {
   uint64_t stat_sleep_ns_max;
 };
 
-struct st_sch_mgr {
-  struct st_sch_impl sch[MT_MAX_SCH_NUM];
+struct mt_sch_mgr {
+  struct mt_sch_impl sch[MT_MAX_SCH_NUM];
   /* active sch cnt */
   rte_atomic32_t sch_cnt;
   pthread_mutex_t mgr_mutex; /* protect sch mgr */
 };
 
-struct st_pacing_train_result {
+struct mt_pacing_train_result {
   uint64_t rl_bps;           /* input, byte per sec */
   float pacing_pad_interval; /* result */
 };
 
-struct st_rl_shaper {
+struct mt_rl_shaper {
   uint64_t rl_bps; /* input, byte per sec */
   uint32_t shaper_profile_id;
   int idx;
 };
 
-struct st_rx_flow {
+struct mt_rx_flow {
   uint8_t dip_addr[MTL_IP_ADDR_LEN]; /* rx destination IP */
   uint8_t sip_addr[MTL_IP_ADDR_LEN]; /* source IP */
   uint16_t dst_port;                 /* udp destination port */
@@ -355,30 +355,30 @@ struct st_rx_flow {
 #endif
 };
 
-struct st_rx_queue {
+struct mt_rx_queue {
   uint16_t queue_id;
   bool active;
   struct rte_flow* flow;
-  struct st_rx_flow st_flow;
+  struct mt_rx_flow st_flow;
   struct rte_mempool* mbuf_pool;
   unsigned int mbuf_elements;
   /* pool for hdr split payload */
   struct rte_mempool* mbuf_payload_pool;
 };
 
-struct st_tx_queue {
+struct mt_tx_queue {
   uint16_t queue_id;
   bool active;
   int rl_shapers_mapping; /* map to tx_rl_shapers */
   uint64_t bps;           /* bytes per sec for rate limit */
 };
 
-struct st_interface {
+struct mt_interface {
   enum mtl_port port;
   uint16_t port_id;
   struct rte_device* device;
   enum mt_port_type port_type;
-  enum st_driver_type drv_type;
+  enum mt_driver_type drv_type;
   int socket_id;                          /* socket id for the port */
   uint32_t feature;                       /* MT_IF_FEATURE_* */
   uint32_t link_speed;                    /* ETH_SPEED_NUM_ */
@@ -397,21 +397,21 @@ struct st_interface {
 
   /* tx queue resources */
   int max_tx_queues;
-  struct st_tx_queue* tx_queues;
+  struct mt_tx_queue* tx_queues;
   pthread_mutex_t tx_queues_mutex; /* protect tx_queues */
 
   /* rx queue resources */
   int max_rx_queues;
   int system_rx_queues_end;
   int hdr_split_rx_queues_end;
-  struct st_rx_queue* rx_queues;
+  struct mt_rx_queue* rx_queues;
   pthread_mutex_t rx_queues_mutex; /* protect rx_queues */
 
   /* tx rl info */
-  struct st_rl_shaper tx_rl_shapers[MT_MAX_RL_ITEMS];
+  struct mt_rl_shaper tx_rl_shapers[MT_MAX_RL_ITEMS];
   bool tx_rl_root_active;
   /* video rl pacing train result */
-  struct st_pacing_train_result pt_results[MT_MAX_RL_ITEMS];
+  struct mt_pacing_train_result pt_results[MT_MAX_RL_ITEMS];
 
   /* function ops per interface(pf/vf) */
   uint64_t (*ptp_get_time_fn)(struct mtl_main_impl* impl, enum mtl_port port);
@@ -419,12 +419,12 @@ struct st_interface {
   enum st21_tx_pacing_way tx_pacing_way;
 };
 
-struct st_lcore_shm {
+struct mt_lcore_shm {
   int used;                          /* number of used lcores */
   bool lcores_active[RTE_MAX_LCORE]; /* lcores active map */
 };
 
-typedef int (*st_dma_drop_mbuf_cb)(void* priv, struct rte_mbuf* mbuf);
+typedef int (*mt_dma_drop_mbuf_cb)(void* priv, struct rte_mbuf* mbuf);
 
 struct mtl_dma_lender_dev {
   enum st_session_type type; /* for sanity check */
@@ -435,7 +435,7 @@ struct mtl_dma_lender_dev {
 
   void* priv;
   uint16_t nb_borrowed;
-  st_dma_drop_mbuf_cb cb;
+  mt_dma_drop_mbuf_cb cb;
 };
 
 struct st_dma_dev {
@@ -512,7 +512,7 @@ struct st_var_params {
 };
 
 struct mtl_main_impl {
-  struct st_interface inf[MTL_PORT_MAX];
+  struct mt_interface inf[MTL_PORT_MAX];
 
   struct mtl_init_params user_para;
   struct st_var_params var_para;
@@ -534,25 +534,25 @@ struct mtl_main_impl {
   rte_atomic32_t started;       /* if st dev is started */
   rte_atomic32_t dev_in_reset;  /* if dev is in reset */
   rte_atomic32_t request_exit;  /* request exit, in case for ctrl-c from app */
-  struct st_sch_impl* main_sch; /* system sch */
+  struct mt_sch_impl* main_sch; /* system sch */
 
   /* admin context */
   struct st_admin admin;
 
   /* cni context */
-  struct st_cni_impl cni;
+  struct mt_cni_impl cni;
 
   /* ptp context */
-  struct st_ptp_impl ptp[MTL_PORT_MAX];
+  struct mt_ptp_impl ptp[MTL_PORT_MAX];
 
   /* arp context */
-  struct st_arp_impl arp;
+  struct mt_arp_impl arp;
 
   /* mcast context */
-  struct st_mcast_impl mcast;
+  struct mt_mcast_impl mcast;
 
   /* sch context */
-  struct st_sch_mgr sch_mgr;
+  struct mt_sch_mgr sch_mgr;
 
   /* st plugin dev mgr */
   struct st_plugin_mgr plugin_mgr;
@@ -590,7 +590,7 @@ struct mtl_main_impl {
   /* active lcore cnt */
   rte_atomic32_t lcore_cnt;
 
-  struct st_lcore_shm* lcore_shm;
+  struct mt_lcore_shm* lcore_shm;
   int lcore_shm_id;
   int lcore_lock_fd;
   bool local_lcores_active[RTE_MAX_LCORE]; /* local lcores active map */
@@ -611,7 +611,7 @@ static inline struct mtl_init_params* st_get_user_params(struct mtl_main_impl* i
   return &impl->user_para;
 }
 
-static inline struct st_interface* st_if(struct mtl_main_impl* impl, enum mtl_port port) {
+static inline struct mt_interface* st_if(struct mtl_main_impl* impl, enum mtl_port port) {
   return &impl->inf[port];
 }
 
@@ -798,7 +798,7 @@ static inline bool st_if_has_hdr_split(struct mtl_main_impl* impl, enum mtl_port
     return false;
 }
 
-static inline struct rte_mempool* st_if_hdr_split_pool(struct st_interface* inf,
+static inline struct rte_mempool* st_if_hdr_split_pool(struct mt_interface* inf,
                                                        uint16_t q) {
   return inf->rx_queues[q].mbuf_payload_pool;
 }
@@ -827,7 +827,7 @@ static inline int st_socket_id(struct mtl_main_impl* impl, enum mtl_port port) {
   return st_if(impl, port)->socket_id;
 }
 
-static inline uint32_t st_sch_schedule_ns(struct mtl_main_impl* impl) {
+static inline uint32_t mt_sch_schedule_ns(struct mtl_main_impl* impl) {
   return impl->sch_schedule_ns;
 }
 
@@ -850,15 +850,15 @@ static inline struct st_dma_mgr* st_get_dma_mgr(struct mtl_main_impl* impl) {
   return &impl->dma_mgr;
 }
 
-static inline uint64_t st_sch_default_sleep_us(struct mtl_main_impl* impl) {
+static inline uint64_t mt_sch_default_sleep_us(struct mtl_main_impl* impl) {
   return impl->var_para.sch_default_sleep_us;
 }
 
-static inline uint64_t st_sch_force_sleep_us(struct mtl_main_impl* impl) {
+static inline uint64_t mt_sch_force_sleep_us(struct mtl_main_impl* impl) {
   return impl->var_para.sch_force_sleep_us;
 }
 
-static inline uint64_t st_sch_zero_sleep_thresh_us(struct mtl_main_impl* impl) {
+static inline uint64_t mt_sch_zero_sleep_thresh_us(struct mtl_main_impl* impl) {
   return impl->var_para.sch_zero_sleep_threshold_us;
 }
 
@@ -955,7 +955,7 @@ static inline uint64_t st_tx_mbuf_get_ptp(struct rte_mbuf* mbuf) {
 
 static inline uint64_t st_mbuf_get_hw_time_stamp(struct mtl_main_impl* impl,
                                                  struct rte_mbuf* mbuf) {
-  struct st_ptp_impl* ptp = impl->ptp;
+  struct mt_ptp_impl* ptp = impl->ptp;
   struct timespec spec;
   uint64_t time_stamp =
       *RTE_MBUF_DYNFIELD(mbuf, impl->dynfield_offset, rte_mbuf_timestamp_t*);

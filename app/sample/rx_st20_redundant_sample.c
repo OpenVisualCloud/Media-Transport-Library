@@ -191,12 +191,12 @@ int main(int argc, char** argv) {
   ret = mtl_start(ctx.st);
 
   // rx run
-  sart_time_ns = st_ptp_read_time(ctx.st);
+  sart_time_ns = mt_ptp_read_time(ctx.st);
   while (!ctx.exit) {
     sleep(1);
     loop++;
     if (0 == (loop % 10)) {
-      uint64_t end_time_ns = st_ptp_read_time(ctx.st);
+      uint64_t end_time_ns = mt_ptp_read_time(ctx.st);
       double time_sec = (double)(end_time_ns - sart_time_ns) / (1000 * 1000 * 1000);
       for (int i = 0; i < session_num; i++) {
         int fb_rec = app[i]->fb_rec - app[i]->stat_fb_rec;

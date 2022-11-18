@@ -36,10 +36,10 @@ int st_ring_dequeue_clean(struct rte_ring* ring);
 
 void st_mbuf_sanity_check(struct rte_mbuf** mbufs, uint16_t nb, char* tag);
 
-int st_pacing_train_result_add(struct mtl_main_impl* impl, enum mtl_port port,
+int mt_pacing_train_result_add(struct mtl_main_impl* impl, enum mtl_port port,
                                uint64_t rl_bps, float pad_interval);
 
-int st_pacing_train_result_search(struct mtl_main_impl* impl, enum mtl_port port,
+int mt_pacing_train_result_search(struct mtl_main_impl* impl, enum mtl_port port,
                                   uint64_t rl_bps, float* pad_interval);
 
 int st_build_port_map(struct mtl_main_impl* impl, char** ports, enum mtl_port* maps,

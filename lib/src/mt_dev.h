@@ -30,10 +30,10 @@ int st_dev_stop(struct mtl_main_impl* impl);
 int st_dev_dst_ip_mac(struct mtl_main_impl* impl, uint8_t dip[MTL_IP_ADDR_LEN],
                       struct rte_ether_addr* ea, enum mtl_port port);
 
-int st_dev_request_tx_queue(struct mtl_main_impl* impl, enum mtl_port port,
+int st_dev_requemt_tx_queue(struct mtl_main_impl* impl, enum mtl_port port,
                             uint16_t* queue_id, uint64_t bytes_per_sec);
-int st_dev_request_rx_queue(struct mtl_main_impl* impl, enum mtl_port port,
-                            uint16_t* queue_id, struct st_rx_flow* flow);
+int st_dev_requemt_rx_queue(struct mtl_main_impl* impl, enum mtl_port port,
+                            uint16_t* queue_id, struct mt_rx_flow* flow);
 int st_dev_free_tx_queue(struct mtl_main_impl* impl, enum mtl_port port,
                          uint16_t queue_id);
 int st_dev_free_rx_queue(struct mtl_main_impl* impl, enum mtl_port port,

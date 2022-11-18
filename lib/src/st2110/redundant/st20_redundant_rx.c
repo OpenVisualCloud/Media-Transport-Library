@@ -170,7 +170,7 @@ static int rx_st20r_create_transport(struct st20r_rx_ctx* ctx, struct st20r_rx_o
   if (port == MTL_PORT_P) /* only register vsync to p port now */
     ops_rx.notify_event = rx_st20r_notify_event;
 
-  st_sch_mask_t sch_mask = ST_SCH_MASK_ALL;
+  mt_sch_mask_t sch_mask = MT_SCH_MASK_ALL;
   if (port == MTL_PORT_R) {
     /* let R port select a different sch */
     sch_mask &= ~(MTL_BIT64(st20_rx_get_sch_idx(ctx->transport[MTL_PORT_P]->handle)));

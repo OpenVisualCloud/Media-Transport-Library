@@ -625,6 +625,16 @@ int mtl_put_lcore(mtl_handle mt, unsigned int lcore);
 void* mtl_memcpy(void* dest, const void* src, size_t n);
 
 /**
+ * Read current time from ptp source.
+ *
+ * @param mt
+ *   The handle to the media transport device context.
+ * @return
+ *   - The time in nanoseconds in current ptp system
+ */
+uint64_t mt_ptp_read_time(mtl_handle mt);
+
+/**
  * Allocate memory from the huge-page area of memory. The memory is not cleared.
  * In NUMA systems, the memory allocated from the same NUMA socket of the port.
  * Note the mmeory is mmap to IOVA already, use mtl_hp_virt2iova to get the iova.

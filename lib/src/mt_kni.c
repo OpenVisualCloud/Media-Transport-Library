@@ -72,7 +72,7 @@ static int kni_config_allmulticast(uint16_t port_id, uint8_t to_on) {
 
 static int kni_config_network_if(uint16_t port_id, uint8_t if_up) {
   struct mtl_main_impl* impl = kni_get_global_impl();
-  struct st_cni_impl* cni = st_get_cni(impl);
+  struct mt_cni_impl* cni = st_get_cni(impl);
   enum mtl_port port = mt_port_by_id(impl, port_id);
 
   rte_atomic32_set(&cni->if_up[port], if_up);
@@ -86,7 +86,7 @@ static int kni_config_mac_address(uint16_t port, uint8_t macAddr[]) {
 }
 
 static int kni_assign_ip(struct mtl_main_impl* impl, enum mtl_port port) {
-  struct st_cni_impl* cni = st_get_cni(impl);
+  struct mt_cni_impl* cni = st_get_cni(impl);
   int sock, ret;
   uint8_t* ip;
   struct ifreq ifr;
@@ -118,7 +118,7 @@ static int kni_assign_ip(struct mtl_main_impl* impl, enum mtl_port port) {
 
 static void* kni_bkg_thread(void* arg) {
   struct mtl_main_impl* impl = arg;
-  struct st_cni_impl* cni = st_get_cni(impl);
+  struct mt_cni_impl* cni = st_get_cni(impl);
   int num_ports = st_num_ports(impl);
   int ret, i;
   uint16_t port_id;
@@ -159,7 +159,7 @@ static void* kni_bkg_thread(void* arg) {
 }
 
 static int kni_start_port(struct mtl_main_impl* impl, enum mtl_port port) {
-  struct st_cni_impl* cni = st_get_cni(impl);
+  struct mt_cni_impl* cni = st_get_cni(impl);
   uint16_t port_id = st_port_id(impl, port);
   struct rte_kni* rkni;
   struct rte_kni_ops ops;
@@ -185,7 +185,7 @@ static int kni_start_port(struct mtl_main_impl* impl, enum mtl_port port) {
 
 static int kni_queues_uinit(struct mtl_main_impl* impl) {
   int num_ports = st_num_ports(impl);
-  struct st_cni_impl* cni = st_get_cni(impl);
+  struct mt_cni_impl* cni = st_get_cni(impl);
 
   for (int i = 0; i < num_ports; i++) {
     if (cni->tx_q_active[i]) {
@@ -197,12 +197,12 @@ static int kni_queues_uinit(struct mtl_main_impl* impl) {
   return 0;
 }
 
-static int kni_queues_init(struct mtl_main_impl* impl, struct st_cni_impl* cni) {
+static int kni_queues_init(struct mtl_main_impl* impl, struct mt_cni_impl* cni) {
   int num_ports = st_num_ports(impl);
   int ret;
 
   for (int i = 0; i < num_ports; i++) {
-    ret = st_dev_request_tx_queue(impl, i, &cni->tx_q_id[i], 0);
+    ret = st_dev_requemt_tx_queue(impl, i, &cni->tx_q_id[i], 0);
     if (ret < 0) {
       err("%s(%d), kni_tx_q create fail\n", __func__, i);
       kni_queues_uinit(impl);
@@ -217,7 +217,7 @@ static int kni_queues_init(struct mtl_main_impl* impl, struct st_cni_impl* cni) 
 
 int st_kni_handle(struct mtl_main_impl* impl, enum mtl_port port,
                   struct rte_mbuf** rx_pkts, uint16_t nb_pkts) {
-  struct st_cni_impl* cni = st_get_cni(impl);
+  struct mt_cni_impl* cni = st_get_cni(impl);
   struct rte_kni* rkni = cni->rkni[port];
   uint16_t port_id = st_port_id(impl, port);
 
@@ -248,7 +248,7 @@ int st_kni_handle(struct mtl_main_impl* impl, enum mtl_port port,
 int st_kni_init(struct mtl_main_impl* impl) {
   int ret, i;
   int num_ports = st_num_ports(impl);
-  struct st_cni_impl* cni = st_get_cni(impl);
+  struct mt_cni_impl* cni = st_get_cni(impl);
   uint16_t port_id;
 
   ret = rte_kni_init(num_ports);
@@ -295,7 +295,7 @@ int st_kni_init(struct mtl_main_impl* impl) {
 }
 
 int st_kni_uinit(struct mtl_main_impl* impl) {
-  struct st_cni_impl* cni = st_get_cni(impl);
+  struct mt_cni_impl* cni = st_get_cni(impl);
   int num_ports = st_num_ports(impl), ret;
   struct rte_kni* rkni;
 

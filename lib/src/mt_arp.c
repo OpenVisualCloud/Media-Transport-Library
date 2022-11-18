@@ -80,7 +80,7 @@ static int arp_receive_reply(struct mtl_main_impl* impl, struct rte_arp_hdr* rep
   uint8_t* ip = (uint8_t*)&reply->arp_data.arp_sip;
   info_once("%s(%d), from %d.%d.%d.%d\n", __func__, port, ip[0], ip[1], ip[2], ip[3]);
 
-  struct st_arp_impl* arp_impl = &impl->arp;
+  struct mt_arp_impl* arp_impl = &impl->arp;
 
   /* save to arp impl */
   if (reply->arp_data.arp_sip == arp_impl->ip[port]) {
@@ -94,7 +94,7 @@ static int arp_receive_reply(struct mtl_main_impl* impl, struct rte_arp_hdr* rep
 
 static int arp_queues_uinit(struct mtl_main_impl* impl) {
   int num_ports = st_num_ports(impl);
-  struct st_arp_impl* arp = &impl->arp;
+  struct mt_arp_impl* arp = &impl->arp;
 
   for (int i = 0; i < num_ports; i++) {
     if (arp->tx_q_active[i]) {
@@ -108,14 +108,14 @@ static int arp_queues_uinit(struct mtl_main_impl* impl) {
 
 static int arp_queues_init(struct mtl_main_impl* impl) {
   int num_ports = st_num_ports(impl);
-  struct st_arp_impl* arp = &impl->arp;
+  struct mt_arp_impl* arp = &impl->arp;
   int ret;
 
   for (int i = 0; i < num_ports; i++) {
     /* no arp queues for kernel based pmd */
     if (st_pmd_is_kernel(impl, i)) continue;
 
-    ret = st_dev_request_tx_queue(impl, i, &arp->tx_q_id[i], 0);
+    ret = st_dev_requemt_tx_queue(impl, i, &arp->tx_q_id[i], 0);
     if (ret < 0) {
       err("%s(%d), tx_q create fail\n", __func__, i);
       arp_queues_uinit(impl);
@@ -128,7 +128,7 @@ static int arp_queues_init(struct mtl_main_impl* impl) {
   return 0;
 }
 
-int st_arp_parse(struct mtl_main_impl* impl, struct rte_arp_hdr* hdr,
+int mt_arp_parse(struct mtl_main_impl* impl, struct rte_arp_hdr* hdr,
                  enum mtl_port port) {
   switch (htons(hdr->arp_opcode)) {
     case RTE_ARP_OP_REQUEST:
@@ -138,16 +138,16 @@ int st_arp_parse(struct mtl_main_impl* impl, struct rte_arp_hdr* hdr,
       arp_receive_reply(impl, hdr, port);
       break;
     default:
-      err("%s, st_arp_parse %04x uninplemented\n", __func__, ntohs(hdr->arp_opcode));
+      err("%s, mt_arp_parse %04x uninplemented\n", __func__, ntohs(hdr->arp_opcode));
       return -EINVAL;
   }
 
   return 0;
 }
 
-int st_arp_cni_get_mac(struct mtl_main_impl* impl, struct rte_ether_addr* ea,
+int mt_arp_cni_get_mac(struct mtl_main_impl* impl, struct rte_ether_addr* ea,
                        enum mtl_port port, uint32_t ip) {
-  struct st_arp_impl* arp_impl = &impl->arp;
+  struct mt_arp_impl* arp_impl = &impl->arp;
   uint16_t port_id = st_port_id(impl, port);
   uint16_t tx;
   int retry = 0;
@@ -205,7 +205,7 @@ int st_arp_cni_get_mac(struct mtl_main_impl* impl, struct rte_ether_addr* ea,
   return 0;
 }
 
-int st_arp_init(struct mtl_main_impl* impl) {
+int mt_arp_init(struct mtl_main_impl* impl) {
   int ret;
 
   ret = arp_queues_init(impl);
@@ -214,7 +214,7 @@ int st_arp_init(struct mtl_main_impl* impl) {
   return 0;
 }
 
-int st_arp_uinit(struct mtl_main_impl* impl) {
+int mt_arp_uinit(struct mtl_main_impl* impl) {
   arp_queues_uinit(impl);
   return 0;
 }

@@ -467,7 +467,7 @@ static int tx_ancillary_session_tasklet_frame(struct mtl_main_impl* impl,
 
   if (rte_ring_full(ring_p)) {
     s->stat_build_ret_code = -STI_FRAME_RING_FULL;
-    return ST_TASKLET_ALL_DONE;
+    return MT_TASKLET_ALL_DONE;
   }
 
   if (s->ops.num_port > 1) {
@@ -484,7 +484,7 @@ static int tx_ancillary_session_tasklet_frame(struct mtl_main_impl* impl,
       s->has_inflight[ST_SESSION_PORT_P] = false;
     } else {
       s->stat_build_ret_code = -STI_FRAME_INFLIGHT_ENQUEUE_FAIL;
-      return ST_TASKLET_ALL_DONE;
+      return MT_TASKLET_ALL_DONE;
     }
   }
 
@@ -494,7 +494,7 @@ static int tx_ancillary_session_tasklet_frame(struct mtl_main_impl* impl,
       s->has_inflight[ST_SESSION_PORT_R] = false;
     } else {
       s->stat_build_ret_code = -STI_FRAME_INFLIGHT_R_ENQUEUE_FAIL;
-      return ST_TASKLET_ALL_DONE;
+      return MT_TASKLET_ALL_DONE;
     }
   }
 
@@ -510,7 +510,7 @@ static int tx_ancillary_session_tasklet_frame(struct mtl_main_impl* impl,
     if (ret < 0) { /* no frame ready from app */
       dbg("%s(%d), get_next_frame fail %d\n", __func__, idx, ret);
       s->stat_build_ret_code = -STI_FRAME_APP_GET_FRAME_BUSY;
-      return ST_TASKLET_ALL_DONE;
+      return MT_TASKLET_ALL_DONE;
     }
     /* check frame refcnt */
     struct st_frame_trans* frame = &s->st40_frames[next_frame_idx];
@@ -518,7 +518,7 @@ static int tx_ancillary_session_tasklet_frame(struct mtl_main_impl* impl,
     if (refcnt) {
       err("%s(%d), frame %u refcnt not zero %d\n", __func__, idx, next_frame_idx, refcnt);
       s->stat_build_ret_code = -STI_FRAME_APP_ERR_TX_FRAME;
-      return ST_TASKLET_ALL_DONE;
+      return MT_TASKLET_ALL_DONE;
     }
     rte_atomic32_inc(&frame->refcnt);
     frame->tc_meta = meta;
@@ -563,8 +563,8 @@ static int tx_ancillary_session_tasklet_frame(struct mtl_main_impl* impl,
     // target_tsc);
     if (likely(delta < NS_PER_S)) {
       s->stat_build_ret_code = -STI_TSCTRS_TARGET_TSC_NOT_REACH;
-      return delta < st_sch_schedule_ns(impl) ? ST_TASKLET_HAS_PENDING
-                                              : ST_TASKLET_ALL_DONE;
+      return delta < mt_sch_schedule_ns(impl) ? MT_TASKLET_HAS_PENDING
+                                              : MT_TASKLET_ALL_DONE;
     } else {
       err("%s(%d), invalid tsc cur %" PRIu64 " target %" PRIu64 "\n", __func__, idx,
           cur_tsc, target_tsc);
@@ -579,14 +579,14 @@ static int tx_ancillary_session_tasklet_frame(struct mtl_main_impl* impl,
   if (!pkt_rtp) {
     err("%s(%d), pkt_rtp alloc fail\n", __func__, idx);
     s->stat_build_ret_code = -STI_FRAME_PKT_ALLOC_FAIL;
-    return ST_TASKLET_ALL_DONE;
+    return MT_TASKLET_ALL_DONE;
   }
   pkt = rte_pktmbuf_alloc(hdr_pool_p);
   if (!pkt) {
     err("%s(%d), rte_pktmbuf_alloc fail\n", __func__, idx);
     s->stat_build_ret_code = -STI_FRAME_PKT_ALLOC_FAIL;
     rte_pktmbuf_free(pkt_rtp);
-    return ST_TASKLET_ALL_DONE;
+    return MT_TASKLET_ALL_DONE;
   }
   if (send_r) {
     pkt_r = rte_pktmbuf_alloc(hdr_pool_r);
@@ -595,7 +595,7 @@ static int tx_ancillary_session_tasklet_frame(struct mtl_main_impl* impl,
       s->stat_build_ret_code = -STI_FRAME_PKT_ALLOC_FAIL;
       rte_pktmbuf_free(pkt);
       rte_pktmbuf_free(pkt_rtp);
-      return ST_TASKLET_ALL_DONE;
+      return MT_TASKLET_ALL_DONE;
     }
   }
   tx_ancillary_session_build_rtp_packet(s, pkt_rtp, s->st40_pkt_idx);
@@ -640,7 +640,7 @@ static int tx_ancillary_session_tasklet_frame(struct mtl_main_impl* impl,
     pacing->tsc_time_cursor = 0;
   }
 
-  return done ? ST_TASKLET_ALL_DONE : ST_TASKLET_HAS_PENDING;
+  return done ? MT_TASKLET_ALL_DONE : MT_TASKLET_HAS_PENDING;
 }
 
 static int tx_ancillary_session_tasklet_rtp(struct mtl_main_impl* impl,
@@ -659,7 +659,7 @@ static int tx_ancillary_session_tasklet_rtp(struct mtl_main_impl* impl,
 
   if (rte_ring_full(ring_p)) {
     s->stat_build_ret_code = -STI_RTP_RING_FULL;
-    return ST_TASKLET_ALL_DONE;
+    return MT_TASKLET_ALL_DONE;
   }
 
   if (s->ops.num_port > 1) {
@@ -676,7 +676,7 @@ static int tx_ancillary_session_tasklet_rtp(struct mtl_main_impl* impl,
       s->has_inflight[ST_SESSION_PORT_P] = false;
     } else {
       s->stat_build_ret_code = -STI_RTP_INFLIGHT_ENQUEUE_FAIL;
-      return ST_TASKLET_ALL_DONE;
+      return MT_TASKLET_ALL_DONE;
     }
   }
 
@@ -686,7 +686,7 @@ static int tx_ancillary_session_tasklet_rtp(struct mtl_main_impl* impl,
       s->has_inflight[ST_SESSION_PORT_R] = false;
     } else {
       s->stat_build_ret_code = -STI_RTP_INFLIGHT_ENQUEUE_FAIL;
-      return ST_TASKLET_ALL_DONE;
+      return MT_TASKLET_ALL_DONE;
     }
   }
 
@@ -698,8 +698,8 @@ static int tx_ancillary_session_tasklet_rtp(struct mtl_main_impl* impl,
     // target_tsc);
     if (likely(delta < NS_PER_S)) {
       s->stat_build_ret_code = -STI_TSCTRS_TARGET_TSC_NOT_REACH;
-      return delta < st_sch_schedule_ns(impl) ? ST_TASKLET_HAS_PENDING
-                                              : ST_TASKLET_ALL_DONE;
+      return delta < mt_sch_schedule_ns(impl) ? MT_TASKLET_HAS_PENDING
+                                              : MT_TASKLET_ALL_DONE;
     } else {
       err("%s(%d), invalid tsc cur %" PRIu64 " target %" PRIu64 "\n", __func__, idx,
           cur_tsc, target_tsc);
@@ -713,7 +713,7 @@ static int tx_ancillary_session_tasklet_rtp(struct mtl_main_impl* impl,
   if (rte_ring_sc_dequeue(s->packet_ring, (void**)&pkt_rtp) != 0) {
     dbg("%s(%d), rtp pkts not ready %d\n", __func__, idx, ret);
     s->stat_build_ret_code = -STI_RTP_APP_DEQUEUE_FAIL;
-    return ST_TASKLET_ALL_DONE;
+    return MT_TASKLET_ALL_DONE;
   }
 
   s->ops.notify_rtp_done(s->ops.priv);
@@ -723,7 +723,7 @@ static int tx_ancillary_session_tasklet_rtp(struct mtl_main_impl* impl,
     err("%s(%d), rte_pktmbuf_alloc fail\n", __func__, idx);
     rte_pktmbuf_free(pkt_rtp);
     s->stat_build_ret_code = -STI_RTP_PKT_ALLOC_FAIL;
-    return ST_TASKLET_ALL_DONE;
+    return MT_TASKLET_ALL_DONE;
   }
   if (send_r) {
     pkt_r = rte_pktmbuf_alloc(hdr_pool_r);
@@ -732,7 +732,7 @@ static int tx_ancillary_session_tasklet_rtp(struct mtl_main_impl* impl,
       rte_pktmbuf_free(pkt);
       rte_pktmbuf_free(pkt_rtp);
       s->stat_build_ret_code = -STI_RTP_PKT_ALLOC_FAIL;
-      return ST_TASKLET_ALL_DONE;
+      return MT_TASKLET_ALL_DONE;
     }
   }
 
@@ -764,14 +764,14 @@ static int tx_ancillary_session_tasklet_rtp(struct mtl_main_impl* impl,
     s->stat_build_ret_code = -STI_RTP_PKT_R_ENQUEUE_FAIL;
   }
 
-  return done ? ST_TASKLET_ALL_DONE : ST_TASKLET_HAS_PENDING;
+  return done ? MT_TASKLET_ALL_DONE : MT_TASKLET_HAS_PENDING;
 }
 
 static int tx_ancillary_sessions_tasklet_handler(void* priv) {
   struct st_tx_ancillary_sessions_mgr* mgr = priv;
   struct mtl_main_impl* impl = mgr->parnet;
   struct st_tx_ancillary_session_impl* s;
-  int pending = ST_TASKLET_ALL_DONE;
+  int pending = MT_TASKLET_ALL_DONE;
 
   for (int sidx = 0; sidx < mgr->max_idx; sidx++) {
     s = tx_ancillary_session_try_get(mgr, sidx);
@@ -817,7 +817,7 @@ static int tx_ancillary_sessions_mgr_init_hw(struct mtl_main_impl* impl,
 
   for (int i = 0; i < st_num_ports(impl); i++) {
     /* do we need quota for anc? */
-    ret = st_dev_request_tx_queue(impl, i, &queue, 0);
+    ret = st_dev_requemt_tx_queue(impl, i, &queue, 0);
     if (ret < 0) {
       tx_ancillary_sessions_mgr_uinit_hw(impl, mgr);
       return ret;
@@ -1154,10 +1154,10 @@ int tx_ancillary_session_detach(struct st_tx_ancillary_sessions_mgr* mgr,
 }
 
 static int tx_ancillary_sessions_mgr_init(struct mtl_main_impl* impl,
-                                          struct st_sch_impl* sch,
+                                          struct mt_sch_impl* sch,
                                           struct st_tx_ancillary_sessions_mgr* mgr) {
   int idx = sch->idx;
-  struct st_sch_tasklet_ops ops;
+  struct mt_sch_tasklet_ops ops;
   int ret, i;
 
   RTE_BUILD_BUG_ON(sizeof(struct st_rfc8331_anc_hdr) != 62);
@@ -1182,10 +1182,10 @@ static int tx_ancillary_sessions_mgr_init(struct mtl_main_impl* impl,
   ops.stop = tx_ancillary_sessions_tasklet_stop;
   ops.handler = tx_ancillary_sessions_tasklet_handler;
 
-  mgr->tasklet = st_sch_register_tasklet(sch, &ops);
+  mgr->tasklet = mt_sch_register_tasklet(sch, &ops);
   if (!mgr->tasklet) {
     tx_ancillary_sessions_mgr_uinit_hw(impl, mgr);
-    err("%s(%d), st_sch_register_tasklet fail\n", __func__, idx);
+    err("%s(%d), mt_sch_register_tasklet fail\n", __func__, idx);
     return -EIO;
   }
 
@@ -1293,7 +1293,7 @@ int st_tx_ancillary_sessions_mgr_uinit(struct st_tx_ancillary_sessions_mgr* mgr)
   struct st_tx_ancillary_session_impl* s;
 
   if (mgr->tasklet) {
-    st_sch_unregister_tasklet(mgr->tasklet);
+    mt_sch_unregister_tasklet(mgr->tasklet);
     mgr->tasklet = NULL;
   }
 

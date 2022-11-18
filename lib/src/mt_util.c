@@ -115,9 +115,9 @@ int st_build_port_map(struct mtl_main_impl* impl, char** ports, enum mtl_port* m
   return 0;
 }
 
-int st_pacing_train_result_add(struct mtl_main_impl* impl, enum mtl_port port,
+int mt_pacing_train_result_add(struct mtl_main_impl* impl, enum mtl_port port,
                                uint64_t rl_bps, float pad_interval) {
-  struct st_pacing_train_result* ptr = &st_if(impl, port)->pt_results[0];
+  struct mt_pacing_train_result* ptr = &st_if(impl, port)->pt_results[0];
 
   for (int i = 0; i < MT_MAX_RL_ITEMS; i++) {
     if (ptr[i].rl_bps) continue;
@@ -130,9 +130,9 @@ int st_pacing_train_result_add(struct mtl_main_impl* impl, enum mtl_port port,
   return -ENOMEM;
 }
 
-int st_pacing_train_result_search(struct mtl_main_impl* impl, enum mtl_port port,
+int mt_pacing_train_result_search(struct mtl_main_impl* impl, enum mtl_port port,
                                   uint64_t rl_bps, float* pad_interval) {
-  struct st_pacing_train_result* ptr = &st_if(impl, port)->pt_results[0];
+  struct mt_pacing_train_result* ptr = &st_if(impl, port)->pt_results[0];
 
   for (int i = 0; i < MT_MAX_RL_ITEMS; i++) {
     if (rl_bps == ptr[i].rl_bps) {

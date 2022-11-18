@@ -7,15 +7,15 @@
 
 #include "mt_main.h"
 
-int st_arp_parse(struct mtl_main_impl* impl, struct rte_arp_hdr* hdr, enum mtl_port port);
+int mt_arp_parse(struct mtl_main_impl* impl, struct rte_arp_hdr* hdr, enum mtl_port port);
 
-int st_arp_cni_get_mac(struct mtl_main_impl* impl, struct rte_ether_addr* ea,
+int mt_arp_cni_get_mac(struct mtl_main_impl* impl, struct rte_ether_addr* ea,
                        enum mtl_port port, uint32_t ip);
 
-int st_arp_init(struct mtl_main_impl* impl);
-int st_arp_uinit(struct mtl_main_impl* impl);
+int mt_arp_init(struct mtl_main_impl* impl);
+int mt_arp_uinit(struct mtl_main_impl* impl);
 
-static inline struct st_arp_impl* st_get_arp(struct mtl_main_impl* impl) {
+static inline struct mt_arp_impl* st_get_arp(struct mtl_main_impl* impl) {
   return &impl->arp;
 }
 

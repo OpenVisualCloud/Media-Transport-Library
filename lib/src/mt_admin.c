@@ -14,15 +14,15 @@ static inline struct st_admin* st_get_admin(struct mtl_main_impl* impl) {
 }
 
 static int admin_cal_cpu_busy(struct mtl_main_impl* impl) {
-  struct st_sch_impl* sch;
+  struct mt_sch_impl* sch;
   struct st_tx_video_sessions_mgr* tx_mgr;
   struct st_tx_video_session_impl* tx_s;
   struct st_rx_video_sessions_mgr* rx_mgr;
   struct st_rx_video_session_impl* rx_s;
 
   for (int sch_idx = 0; sch_idx < MT_MAX_SCH_NUM; sch_idx++) {
-    sch = st_sch_instance(impl, sch_idx);
-    if (!st_sch_started(sch)) continue;
+    sch = mt_sch_instance(impl, sch_idx);
+    if (!mt_sch_started(sch)) continue;
 
     /* cal tx video cpu */
     tx_mgr = &sch->tx_video_mgr;
@@ -49,15 +49,15 @@ static int admin_cal_cpu_busy(struct mtl_main_impl* impl) {
 }
 
 static int admin_clear_cpu_busy(struct mtl_main_impl* impl) {
-  struct st_sch_impl* sch;
+  struct mt_sch_impl* sch;
   struct st_tx_video_sessions_mgr* tx_mgr;
   struct st_tx_video_session_impl* tx_s;
   struct st_rx_video_sessions_mgr* rx_mgr;
   struct st_rx_video_session_impl* rx_s;
 
   for (int sch_idx = 0; sch_idx < MT_MAX_SCH_NUM; sch_idx++) {
-    sch = st_sch_instance(impl, sch_idx);
-    if (!st_sch_started(sch)) continue;
+    sch = mt_sch_instance(impl, sch_idx);
+    if (!mt_sch_started(sch)) continue;
 
     /* cal tx video cpu */
     tx_mgr = &sch->tx_video_mgr;
@@ -91,7 +91,7 @@ static inline int tx_video_quota_mbs(struct st_tx_video_session_impl* s) {
 }
 
 static inline void tx_video_set_sch(struct st_tx_video_session_impl* s,
-                                    struct st_sch_impl* sch) {
+                                    struct mt_sch_impl* sch) {
   if (s->st22_handle)
     s->st22_handle->sch = sch;
   else
@@ -100,7 +100,7 @@ static inline void tx_video_set_sch(struct st_tx_video_session_impl* s,
 
 static int tx_video_migrate_to(struct mtl_main_impl* impl,
                                struct st_tx_video_session_impl* s,
-                               struct st_sch_impl* from_sch, struct st_sch_impl* to_sch) {
+                               struct mt_sch_impl* from_sch, struct mt_sch_impl* to_sch) {
   struct st_tx_video_sessions_mgr* to_tx_mgr = &to_sch->tx_video_mgr;
   int to_midx = to_tx_mgr->idx;
   struct st_tx_video_sessions_mgr* from_tx_mgr = &from_sch->tx_video_mgr;
@@ -142,13 +142,13 @@ static int tx_video_migrate_to(struct mtl_main_impl* impl,
 
 static int admin_tx_video_migrate(struct mtl_main_impl* impl, bool* migrated) {
   struct st_tx_video_session_impl* busy_s = NULL;
-  struct st_sch_impl* from_sch = NULL;
+  struct mt_sch_impl* from_sch = NULL;
   int ret;
 
   for (int sch_idx = 0; sch_idx < MT_MAX_SCH_NUM; sch_idx++) {
-    struct st_sch_impl* sch = st_sch_instance(impl, sch_idx);
-    if (!st_sch_started(sch)) continue;
-    if (!st_sch_has_busy(sch)) continue;
+    struct mt_sch_impl* sch = mt_sch_instance(impl, sch_idx);
+    if (!mt_sch_started(sch)) continue;
+    if (!mt_sch_has_busy(sch)) continue;
 
     /* check if any busy session in this cpu */
     struct st_tx_video_session_impl* busy_s_in_sch = NULL;
@@ -163,7 +163,7 @@ static int admin_tx_video_migrate(struct mtl_main_impl* impl, bool* migrated) {
     }
 
     if (busy_s_in_sch) {
-      st_sch_set_cpu_busy(sch, true);
+      mt_sch_set_cpu_busy(sch, true);
       busy_s = busy_s_in_sch; /* last one as the busy one */
       from_sch = sch;
     }
@@ -177,8 +177,8 @@ static int admin_tx_video_migrate(struct mtl_main_impl* impl, bool* migrated) {
   }
 
   dbg("%s, find one busy session(%d,%d)\n", __func__, from_sch->idx, busy_s->idx);
-  struct st_sch_impl* to_sch =
-      st_sch_get(impl, quota_mbs, from_sch->type, ST_SCH_MASK_ALL);
+  struct mt_sch_impl* to_sch =
+      mt_sch_get(impl, quota_mbs, from_sch->type, MT_SCH_MASK_ALL);
   if (!to_sch) {
     err("%s, no idle sch for session(%d,%d)\n", __func__, from_sch->idx, busy_s->idx);
     return -EIO;
@@ -191,7 +191,7 @@ static int admin_tx_video_migrate(struct mtl_main_impl* impl, bool* migrated) {
   ret = tx_video_migrate_to(impl, busy_s, from_sch, to_sch);
   if (ret < 0) {
     err("%s, session(%d,%d) migrate to fail\n", __func__, from_sch->idx, busy_s->idx);
-    st_sch_put(to_sch, quota_mbs);
+    mt_sch_put(to_sch, quota_mbs);
     return ret;
   }
   *migrated = true;
@@ -206,7 +206,7 @@ static inline int rx_video_quota_mbs(struct st_rx_video_session_impl* s) {
 }
 
 static inline void rx_video_set_sch(struct st_rx_video_session_impl* s,
-                                    struct st_sch_impl* sch) {
+                                    struct mt_sch_impl* sch) {
   if (s->st22_handle)
     s->st22_handle->sch = sch;
   else
@@ -215,7 +215,7 @@ static inline void rx_video_set_sch(struct st_rx_video_session_impl* s,
 
 static int rx_video_migrate_to(struct mtl_main_impl* impl,
                                struct st_rx_video_session_impl* s,
-                               struct st_sch_impl* from_sch, struct st_sch_impl* to_sch) {
+                               struct mt_sch_impl* from_sch, struct mt_sch_impl* to_sch) {
   struct st_rx_video_sessions_mgr* to_rx_mgr = &to_sch->rx_video_mgr;
   int to_midx = to_rx_mgr->idx;
   struct st_rx_video_sessions_mgr* from_rx_mgr = &from_sch->rx_video_mgr;
@@ -257,13 +257,13 @@ static int rx_video_migrate_to(struct mtl_main_impl* impl,
 
 static int admin_rx_video_migrate(struct mtl_main_impl* impl, bool* migrated) {
   struct st_rx_video_session_impl* busy_s = NULL;
-  struct st_sch_impl* from_sch = NULL;
+  struct mt_sch_impl* from_sch = NULL;
   int ret;
 
   for (int sch_idx = 0; sch_idx < MT_MAX_SCH_NUM; sch_idx++) {
-    struct st_sch_impl* sch = st_sch_instance(impl, sch_idx);
-    if (!st_sch_started(sch)) continue;
-    if (!st_sch_has_busy(sch)) continue;
+    struct mt_sch_impl* sch = mt_sch_instance(impl, sch_idx);
+    if (!mt_sch_started(sch)) continue;
+    if (!mt_sch_has_busy(sch)) continue;
 
     /* check if any busy session in this cpu */
     struct st_rx_video_session_impl* busy_s_in_sch = NULL;
@@ -278,7 +278,7 @@ static int admin_rx_video_migrate(struct mtl_main_impl* impl, bool* migrated) {
     }
 
     if (busy_s_in_sch) {
-      st_sch_set_cpu_busy(sch, true);
+      mt_sch_set_cpu_busy(sch, true);
       busy_s = busy_s_in_sch; /* last one as the busy one */
       from_sch = sch;
     }
@@ -292,8 +292,8 @@ static int admin_rx_video_migrate(struct mtl_main_impl* impl, bool* migrated) {
   }
 
   dbg("%s, find one busy session(%d,%d)\n", __func__, from_sch->idx, busy_s->idx);
-  struct st_sch_impl* to_sch =
-      st_sch_get(impl, quota_mbs, from_sch->type, ST_SCH_MASK_ALL);
+  struct mt_sch_impl* to_sch =
+      mt_sch_get(impl, quota_mbs, from_sch->type, MT_SCH_MASK_ALL);
   if (!to_sch) {
     err("%s, no idle sch for session(%d,%d)\n", __func__, from_sch->idx, busy_s->idx);
     return -EIO;
@@ -306,7 +306,7 @@ static int admin_rx_video_migrate(struct mtl_main_impl* impl, bool* migrated) {
   ret = rx_video_migrate_to(impl, busy_s, from_sch, to_sch);
   if (ret < 0) {
     err("%s, session(%d,%d) migrate fail\n", __func__, from_sch->idx, busy_s->idx);
-    st_sch_put(to_sch, quota_mbs);
+    mt_sch_put(to_sch, quota_mbs);
     return ret;
   }
   *migrated = true;

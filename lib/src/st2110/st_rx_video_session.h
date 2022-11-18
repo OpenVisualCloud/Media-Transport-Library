@@ -14,9 +14,9 @@
 #define ST_RV_EBU_TSC_SYNC_MS (100) /* sync tsc with ptp period(ms) */
 #define ST_RV_EBU_TSC_SYNC_NS (ST_RV_EBU_TSC_SYNC_MS * 1000 * 1000)
 
-int st_rx_video_sessions_sch_init(struct mtl_main_impl* impl, struct st_sch_impl* sch);
+int st_rx_video_sessions_sch_init(struct mtl_main_impl* impl, struct mt_sch_impl* sch);
 
-int st_rx_video_sessions_sch_uinit(struct mtl_main_impl* impl, struct st_sch_impl* sch);
+int st_rx_video_sessions_sch_uinit(struct mtl_main_impl* impl, struct mt_sch_impl* sch);
 
 void st_rx_video_sessions_stat(struct mtl_main_impl* impl);
 
@@ -56,7 +56,7 @@ static inline void rx_video_session_put(struct st_rx_video_sessions_mgr* mgr, in
 }
 
 st20_rx_handle st20_rx_create_with_mask(struct mtl_main_impl* impl,
-                                        struct st20_rx_ops* ops, st_sch_mask_t sch_mask);
+                                        struct st20_rx_ops* ops, mt_sch_mask_t sch_mask);
 
 void rx_video_session_cal_cpu_busy(struct st_rx_video_session_impl* s);
 void rx_video_session_clear_cpu_busy(struct st_rx_video_session_impl* s);

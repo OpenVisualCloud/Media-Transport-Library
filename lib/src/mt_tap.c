@@ -92,7 +92,7 @@ static void* tap_get_mbuf(struct rte_ring* packet_ring, void** usrptr, uint16_t*
   return pkt;
 }
 
-static int overlapped_result(struct st_cni_impl* cni, struct overlapped_io* io) {
+static int overlapped_result(struct mt_cni_impl* cni, struct overlapped_io* io) {
   int ret = -1;
   BOOL status;
   struct tap_rt_context* tap_ctx = (struct tap_rt_context*)cni->tap_context;
@@ -138,7 +138,7 @@ static int overlapped_result(struct st_cni_impl* cni, struct overlapped_io* io) 
   return ret;
 }
 
-static long readv(struct st_cni_impl* cni, struct iovec* iov, int count) {
+static long readv(struct mt_cni_impl* cni, struct iovec* iov, int count) {
   struct tap_rt_context* tap_ctx = (struct tap_rt_context*)cni->tap_context;
   long rlen = -1, total = 0;
   BOOL status;
@@ -175,7 +175,7 @@ static long readv(struct st_cni_impl* cni, struct iovec* iov, int count) {
   return total;
 }
 
-static long writev(struct st_cni_impl* cni, struct iovec* iov, int count) {
+static long writev(struct mt_cni_impl* cni, struct iovec* iov, int count) {
   long totallen = 0, wlen = -1;
   BOOL status;
   int err;
@@ -209,7 +209,7 @@ static long writev(struct st_cni_impl* cni, struct iovec* iov, int count) {
   return totallen;
 }
 
-static uint16_t tap_tx_packet(struct st_cni_impl* cni, struct rte_mbuf** bufs,
+static uint16_t tap_tx_packet(struct mt_cni_impl* cni, struct rte_mbuf** bufs,
                               uint16_t nb_pkts) {
   int ret = 0;
   struct tap_rt_context* tap_ctx = (struct tap_rt_context*)cni->tap_context;
@@ -234,7 +234,7 @@ static uint16_t tap_tx_packet(struct st_cni_impl* cni, struct rte_mbuf** bufs,
     return 0;
 }
 
-static uint16_t tap_rx_packet(struct st_cni_impl* cni, struct rte_mbuf** bufs,
+static uint16_t tap_rx_packet(struct mt_cni_impl* cni, struct rte_mbuf** bufs,
                               uint16_t nb_pkts) {
   int len;
   uint16_t num_rx = 0;
@@ -287,7 +287,7 @@ end:
   return num_rx;
 }
 
-static struct rte_flow* tap_create_flow(struct st_cni_impl* cni, uint16_t port_id,
+static struct rte_flow* tap_create_flow(struct mt_cni_impl* cni, uint16_t port_id,
                                         uint16_t q) {
   struct rte_flow_attr attr;
   struct rte_flow_item pattern[4];
@@ -397,7 +397,7 @@ static struct rte_flow* tap_create_flow(struct st_cni_impl* cni, uint16_t port_i
   return r_flow;
 }
 
-static int tap_get_ipaddress(struct st_cni_impl* cni) {
+static int tap_get_ipaddress(struct mt_cni_impl* cni) {
   PIP_ADAPTER_INFO pAdapterInfo;
   PIP_ADAPTER_INFO pAdapter = NULL;
   DWORD dwRetVal = 0;
@@ -451,7 +451,7 @@ static int tap_get_ipaddress(struct st_cni_impl* cni) {
 }
 
 static int tap_uninit_lcore(struct mtl_main_impl* impl) {
-  struct st_cni_impl* cni = st_get_cni(impl);
+  struct mt_cni_impl* cni = st_get_cni(impl);
   struct tap_rt_context* tap_ctx = (struct tap_rt_context*)cni->tap_context;
 
   while (rte_atomic32_read(&cni->stop_tap) == 0) {
@@ -469,7 +469,7 @@ static int tap_uninit_lcore(struct mtl_main_impl* impl) {
 // Read packets from TAP driver and directly transfer to NIC card
 static int tap_bkg_thread(void* arg) {
   struct mtl_main_impl* impl = arg;
-  struct st_cni_impl* cni = st_get_cni(impl);
+  struct mt_cni_impl* cni = st_get_cni(impl);
   int num_ports = st_num_ports(impl);
   int i;
   void* data = NULL;
@@ -515,7 +515,7 @@ static int tap_bkg_thread(void* arg) {
 
 static int tap_queues_uinit(struct mtl_main_impl* impl) {
   int num_ports = st_num_ports(impl);
-  struct st_cni_impl* cni = st_get_cni(impl);
+  struct mt_cni_impl* cni = st_get_cni(impl);
   struct tap_rt_context* tap_ctx = (struct tap_rt_context*)cni->tap_context;
   for (int i = 0; i < num_ports; i++) {
     if (cni->tap_tx_q_active[i]) {
@@ -538,8 +538,8 @@ static int configure_tap() {
   char ring_name[32];
   unsigned int flags, count;
   struct mtl_main_impl* impl = tap_get_global_impl();
-  struct st_cni_impl* cni = st_get_cni(impl);
-  struct st_interface* inf = st_if(impl, 0);
+  struct mt_cni_impl* cni = st_get_cni(impl);
+  struct mt_interface* inf = st_if(impl, 0);
   struct iovec(*iovecs)[inf->nb_rx_desc + 1];
   int data_off = RTE_PKTMBUF_HEADROOM;
   struct tap_rt_context* tap_ctx = (struct tap_rt_context*)cni->tap_context;
@@ -583,7 +583,7 @@ static int configure_tap() {
   return 0;
 }
 
-static bool tap_open_device(struct st_cni_impl* cni,
+static bool tap_open_device(struct mt_cni_impl* cni,
                             PSP_DEVICE_INTERFACE_DETAIL_DATA dev_ifx_detail) {
   struct mtl_main_impl* impl = tap_get_global_impl();
   struct tap_rt_context* tap_ctx = (struct tap_rt_context*)cni->tap_context;
@@ -728,7 +728,7 @@ static PSP_DEVICE_INTERFACE_DETAIL_DATA get_tap_device_interface_detail(HDEVINFO
   return NULL;
 }
 
-static int tap_device_init(struct mtl_main_impl* impl, struct st_cni_impl* cni) {
+static int tap_device_init(struct mtl_main_impl* impl, struct mt_cni_impl* cni) {
   DWORD device_index = 0;
   HDEVINFO dev_info;
   SP_DEVINFO_DATA device_info_data;
@@ -783,7 +783,7 @@ static int tap_device_uninit(struct mtl_main_impl* impl) {
   struct rte_mbuf* pkts_rx;
   void* data = NULL;
   uint16_t tx;
-  struct st_cni_impl* cni = st_get_cni(impl);
+  struct mt_cni_impl* cni = st_get_cni(impl);
   struct tap_rt_context* tap_ctx = (struct tap_rt_context*)cni->tap_context;
 
   pkts_rx = tap_get_mbuf(tap_tx_ring, &data, &tx);
@@ -798,7 +798,7 @@ static int tap_device_uninit(struct mtl_main_impl* impl) {
 static const struct rte_eth_txconf dev_tx_port_conf = {.tx_rs_thresh = 1,
                                                        .tx_free_thresh = 1};
 
-static int tap_queues_init(struct mtl_main_impl* impl, struct st_cni_impl* cni) {
+static int tap_queues_init(struct mtl_main_impl* impl, struct mt_cni_impl* cni) {
   int num_ports = st_num_ports(impl);
 
   uint16_t nb_tx_desc;
@@ -811,7 +811,7 @@ static int tap_queues_init(struct mtl_main_impl* impl, struct st_cni_impl* cni) 
     return ret;
   }
   for (i = 0; i < num_ports; i++) {
-    ret = st_dev_request_tx_queue(impl, st_port_id(impl, i), &cni->tap_tx_q_id[i],
+    ret = st_dev_requemt_tx_queue(impl, st_port_id(impl, i), &cni->tap_tx_q_id[i],
                                   1024 * 1024 * 1024);
     if (ret < 0) {
       err("%s(%d), tap_tx_q create fail\n", __func__, i);
@@ -843,7 +843,7 @@ static int tap_queues_init(struct mtl_main_impl* impl, struct st_cni_impl* cni) 
     info("%s(%d), tx q %d\n", __func__, i, cni->tap_tx_q_id[i]);
   }
   for (i = 0; i < num_ports; i++) {
-    ret = st_dev_request_rx_queue(impl, i, &cni->tap_rx_q_id[i], NULL);
+    ret = st_dev_requemt_rx_queue(impl, i, &cni->tap_rx_q_id[i], NULL);
     if (ret < 0) {
       err("%s(%d), tap_rx_q create fail\n", __func__, i);
       tap_queues_uinit(impl);
@@ -858,7 +858,7 @@ static int tap_queues_init(struct mtl_main_impl* impl, struct st_cni_impl* cni) 
 
 int st_tap_handle(struct mtl_main_impl* impl, enum mtl_port port,
                   struct rte_mbuf** rx_pkts, uint16_t nb_pkts) {
-  struct st_cni_impl* cni = st_get_cni(impl);
+  struct mt_cni_impl* cni = st_get_cni(impl);
   struct rte_mbuf* pkts_rx[ST_CNI_RX_BURST_SIZE];
   uint16_t rx;
   int i;
@@ -883,7 +883,7 @@ int st_tap_handle(struct mtl_main_impl* impl, enum mtl_port port,
 
 int st_tap_init(struct mtl_main_impl* impl) {
   int ret;
-  struct st_cni_impl* cni = st_get_cni(impl);
+  struct mt_cni_impl* cni = st_get_cni(impl);
   unsigned int lcore;
   struct tap_rt_context* tap_ctx;
 
@@ -920,7 +920,7 @@ int st_tap_init(struct mtl_main_impl* impl) {
 }
 
 int st_tap_uinit(struct mtl_main_impl* impl) {
-  struct st_cni_impl* cni = st_get_cni(impl);
+  struct mt_cni_impl* cni = st_get_cni(impl);
 
   rte_atomic32_set(&cni->stop_tap, 1);
   if (cni->tap_bkg_tid) {

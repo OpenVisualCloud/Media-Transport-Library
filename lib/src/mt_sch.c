@@ -9,40 +9,40 @@
 #include "st2110/st_rx_video_session.h"
 #include "st2110/st_tx_video_session.h"
 
-static inline void sch_mgr_lock(struct st_sch_mgr* mgr) {
+static inline void sch_mgr_lock(struct mt_sch_mgr* mgr) {
   st_pthread_mutex_lock(&mgr->mgr_mutex);
 }
 
-static inline void sch_mgr_unlock(struct st_sch_mgr* mgr) {
+static inline void sch_mgr_unlock(struct mt_sch_mgr* mgr) {
   st_pthread_mutex_unlock(&mgr->mgr_mutex);
 }
 
-static inline void sch_lock(struct st_sch_impl* sch) {
+static inline void sch_lock(struct mt_sch_impl* sch) {
   st_pthread_mutex_lock(&sch->mutex);
 }
 
-static inline void sch_unlock(struct st_sch_impl* sch) {
+static inline void sch_unlock(struct mt_sch_impl* sch) {
   st_pthread_mutex_unlock(&sch->mutex);
 }
 
-static void sch_sleep_wakeup(struct st_sch_impl* sch) {
+static void sch_sleep_wakeup(struct mt_sch_impl* sch) {
   st_pthread_mutex_lock(&sch->sleep_wake_mutex);
   st_pthread_cond_signal(&sch->sleep_wake_cond);
   st_pthread_mutex_unlock(&sch->sleep_wake_mutex);
 }
 
 static void sch_sleep_alarm_handler(void* param) {
-  struct st_sch_impl* sch = param;
+  struct mt_sch_impl* sch = param;
 
   sch_sleep_wakeup(sch);
 }
 
-static int sch_tasklet_sleep(struct mtl_main_impl* impl, struct st_sch_impl* sch) {
+static int sch_tasklet_sleep(struct mtl_main_impl* impl, struct mt_sch_impl* sch) {
   /* get sleep us */
-  uint64_t sleep_us = st_sch_default_sleep_us(impl);
-  uint64_t force_sleep_us = st_sch_force_sleep_us(impl);
+  uint64_t sleep_us = mt_sch_default_sleep_us(impl);
+  uint64_t force_sleep_us = mt_sch_force_sleep_us(impl);
   int num_tasklet = sch->max_tasklet_idx;
-  struct st_sch_tasklet_impl* tasklet;
+  struct mt_sch_tasklet_impl* tasklet;
   uint64_t advice_sleep_us;
 
   if (force_sleep_us) {
@@ -59,7 +59,7 @@ static int sch_tasklet_sleep(struct mtl_main_impl* impl, struct st_sch_impl* sch
 
   /* sleep now */
   uint64_t start = st_get_tsc(impl);
-  if (sleep_us < st_sch_zero_sleep_thresh_us(impl)) {
+  if (sleep_us < mt_sch_zero_sleep_thresh_us(impl)) {
     st_sleep_ms(0);
   } else {
     struct timespec abs_time;
@@ -95,12 +95,12 @@ static int sch_tasklet_sleep(struct mtl_main_impl* impl, struct st_sch_impl* sch
 }
 
 static int sch_tasklet_func(void* args) {
-  struct st_sch_impl* sch = args;
+  struct mt_sch_impl* sch = args;
   struct mtl_main_impl* impl = sch->parnet;
   int idx = sch->idx;
   int num_tasklet, i;
-  struct st_sch_tasklet_ops* ops;
-  struct st_sch_tasklet_impl* tasklet;
+  struct mt_sch_tasklet_ops* ops;
+  struct mt_sch_tasklet_impl* tasklet;
   bool time_measure = st_has_tasklet_time_measure(impl);
   uint64_t tsc_s = 0;
 
@@ -124,7 +124,7 @@ static int sch_tasklet_func(void* args) {
   sch->sleep_ratio_start_ns = st_get_tsc(impl);
 
   while (rte_atomic32_read(&sch->requemtl_stop) == 0) {
-    int pending = ST_TASKLET_ALL_DONE;
+    int pending = MT_TASKLET_ALL_DONE;
 
     num_tasklet = sch->max_tasklet_idx;
     for (i = 0; i < num_tasklet; i++) {
@@ -141,7 +141,7 @@ static int sch_tasklet_func(void* args) {
         tasklet->stat_time_cnt++;
       }
     }
-    if (sch->allow_sleep && (pending == ST_TASKLET_ALL_DONE)) {
+    if (sch->allow_sleep && (pending == MT_TASKLET_ALL_DONE)) {
       sch_tasklet_sleep(impl, sch);
     }
   }
@@ -164,19 +164,19 @@ static void* sch_tasklet_thread(void* arg) {
   return NULL;
 }
 
-static int sch_start(struct st_sch_impl* sch) {
+static int sch_start(struct mt_sch_impl* sch) {
   int idx = sch->idx;
   int ret;
 
   sch_lock(sch);
 
-  if (st_sch_started(sch)) {
+  if (mt_sch_started(sch)) {
     warn("%s(%d), started already\n", __func__, idx);
     sch_unlock(sch);
     return -EIO;
   }
 
-  st_sch_set_cpu_busy(sch, false);
+  mt_sch_set_cpu_busy(sch, false);
   rte_atomic32_set(&sch->requemtl_stop, 0);
   rte_atomic32_set(&sch->stopped, 0);
 
@@ -206,12 +206,12 @@ static int sch_start(struct st_sch_impl* sch) {
   return 0;
 }
 
-static int sch_stop(struct st_sch_impl* sch) {
+static int sch_stop(struct mt_sch_impl* sch) {
   int idx = sch->idx;
 
   sch_lock(sch);
 
-  if (!st_sch_started(sch)) {
+  if (!mt_sch_started(sch)) {
     warn("%s(%d), not started\n", __func__, idx);
     sch_unlock(sch);
     return 0;
@@ -229,28 +229,28 @@ static int sch_stop(struct st_sch_impl* sch) {
   }
   rte_atomic32_set(&sch->started, 0);
 
-  st_sch_set_cpu_busy(sch, false);
+  mt_sch_set_cpu_busy(sch, false);
 
   info("%s(%d), succ\n", __func__, idx);
   sch_unlock(sch);
   return 0;
 }
 
-static struct st_sch_impl* sch_request(struct mtl_main_impl* impl, enum st_sch_type type,
-                                       st_sch_mask_t mask) {
-  struct st_sch_impl* sch;
+static struct mt_sch_impl* sch_request(struct mtl_main_impl* impl, enum mt_sch_type type,
+                                       mt_sch_mask_t mask) {
+  struct mt_sch_impl* sch;
 
   for (int sch_idx = 0; sch_idx < MT_MAX_SCH_NUM; sch_idx++) {
     /* mask check */
     if (!(mask & MTL_BIT64(sch_idx))) continue;
 
-    sch = st_sch_instance(impl, sch_idx);
+    sch = mt_sch_instance(impl, sch_idx);
 
     sch_lock(sch);
-    if (!st_sch_is_active(sch)) { /* find one free sch */
+    if (!mt_sch_is_active(sch)) { /* find one free sch */
       sch->type = type;
       rte_atomic32_inc(&sch->active);
-      rte_atomic32_inc(&st_sch_get_mgr(impl)->sch_cnt);
+      rte_atomic32_inc(&mt_sch_get_mgr(impl)->sch_cnt);
       sch_unlock(sch);
       return sch;
     }
@@ -261,10 +261,10 @@ static struct st_sch_impl* sch_request(struct mtl_main_impl* impl, enum st_sch_t
   return NULL;
 }
 
-static int sch_free(struct st_sch_impl* sch) {
+static int sch_free(struct mt_sch_impl* sch) {
   int idx = sch->idx;
 
-  if (!st_sch_is_active(sch)) {
+  if (!mt_sch_is_active(sch)) {
     err("%s, sch %d is not allocated\n", __func__, idx);
     return -EIO;
   }
@@ -273,19 +273,19 @@ static int sch_free(struct st_sch_impl* sch) {
   for (int i = 0; i < MT_MAX_TASKLET_PER_SCH; i++) {
     if (sch->tasklet[i]) {
       warn("%s(%d), tasklet %d still active\n", __func__, idx, i);
-      st_sch_unregister_tasklet(sch->tasklet[i]);
+      mt_sch_unregister_tasklet(sch->tasklet[i]);
     }
   }
-  rte_atomic32_dec(&st_sch_get_mgr(sch->parnet)->sch_cnt);
+  rte_atomic32_dec(&mt_sch_get_mgr(sch->parnet)->sch_cnt);
   rte_atomic32_dec(&sch->active);
   sch_unlock(sch);
   return 0;
 }
 
-static int sch_free_quota(struct st_sch_impl* sch, int quota_mbs) {
+static int sch_free_quota(struct mt_sch_impl* sch, int quota_mbs) {
   int idx = sch->idx;
 
-  if (!st_sch_is_active(sch)) {
+  if (!mt_sch_is_active(sch)) {
     err("%s(%d), sch is not allocated\n", __func__, idx);
     return -ENOMEM;
   }
@@ -294,7 +294,7 @@ static int sch_free_quota(struct st_sch_impl* sch, int quota_mbs) {
   sch->data_quota_mbs_total -= quota_mbs;
   if (!sch->data_quota_mbs_total) {
     /* no tx/rx video, change to default */
-    sch->type = ST_SCH_TYPE_DEFAULT;
+    sch->type = MT_SCH_TYPE_DEFAULT;
   }
   sch_unlock(sch);
   info("%s(%d), quota %d total now %d\n", __func__, idx, quota_mbs,
@@ -302,16 +302,16 @@ static int sch_free_quota(struct st_sch_impl* sch, int quota_mbs) {
   return 0;
 }
 
-static bool sch_is_capable(struct st_sch_impl* sch, int quota_mbs,
-                           enum st_sch_type type) {
+static bool sch_is_capable(struct mt_sch_impl* sch, int quota_mbs,
+                           enum mt_sch_type type) {
   if (!quota_mbs) { /* zero quota_mbs can be applied to any type */
     return true;
   }
-  if ((type == ST_SCH_TYPE_RX_VIDEO_ONLY) && (sch->type == ST_SCH_TYPE_DEFAULT)) {
+  if ((type == MT_SCH_TYPE_RX_VIDEO_ONLY) && (sch->type == MT_SCH_TYPE_DEFAULT)) {
     sch_lock(sch);
     if (!sch->data_quota_mbs_total) {
       /* change type to rx video only since no quota on this */
-      sch->type = ST_SCH_TYPE_RX_VIDEO_ONLY;
+      sch->type = MT_SCH_TYPE_RX_VIDEO_ONLY;
       sch_unlock(sch);
       return true;
     }
@@ -323,16 +323,16 @@ static bool sch_is_capable(struct st_sch_impl* sch, int quota_mbs,
     return true;
 }
 
-static void sch_tasklet_stat_clear(struct st_sch_tasklet_impl* tasklet) {
+static void sch_tasklet_stat_clear(struct mt_sch_tasklet_impl* tasklet) {
   tasklet->stat_max_time_us = 0;
   tasklet->stat_min_time_us = (uint32_t)-1;
   tasklet->stat_sum_time_us = 0;
   tasklet->stat_time_cnt = 0;
 }
 
-static void sch_stat(struct st_sch_impl* sch) {
+static void sch_stat(struct mt_sch_impl* sch) {
   int num_tasklet = sch->max_tasklet_idx;
-  struct st_sch_tasklet_impl* tasklet;
+  struct mt_sch_tasklet_impl* tasklet;
   int idx = sch->idx;
   uint32_t avg_us;
 
@@ -361,13 +361,13 @@ static void sch_stat(struct st_sch_impl* sch) {
     sch->stat_sleep_ns_min = -1;
     sch->stat_sleep_ns_max = 0;
   }
-  if (!st_sch_started(sch)) {
+  if (!mt_sch_started(sch)) {
     notice("SCH(%d): still not started\n", idx);
   }
 }
 
-int st_sch_unregister_tasklet(struct st_sch_tasklet_impl* tasklet) {
-  struct st_sch_impl* sch = tasklet->sch;
+int mt_sch_unregister_tasklet(struct mt_sch_tasklet_impl* tasklet) {
+  struct mt_sch_impl* sch = tasklet->sch;
   int sch_idx = sch->idx;
   int idx = tasklet->idx;
 
@@ -380,7 +380,7 @@ int st_sch_unregister_tasklet(struct st_sch_tasklet_impl* tasklet) {
   }
 
   /* todo: support runtime unregister */
-  if (st_sch_started(sch)) {
+  if (mt_sch_started(sch)) {
     err("%s(%d), pls stop sch firstly\n", __func__, sch_idx);
     sch_unlock(sch);
     return -EIO;
@@ -401,11 +401,11 @@ int st_sch_unregister_tasklet(struct st_sch_tasklet_impl* tasklet) {
   return 0;
 }
 
-struct st_sch_tasklet_impl* st_sch_register_tasklet(
-    struct st_sch_impl* sch, struct st_sch_tasklet_ops* tasklet_ops) {
+struct mt_sch_tasklet_impl* mt_sch_register_tasklet(
+    struct mt_sch_impl* sch, struct mt_sch_tasklet_ops* tasklet_ops) {
   int idx = sch->idx;
   struct mtl_main_impl* impl = sch->parnet;
-  struct st_sch_tasklet_impl* tasklet;
+  struct mt_sch_tasklet_impl* tasklet;
 
   sch_lock(sch);
 
@@ -430,7 +430,7 @@ struct st_sch_tasklet_impl* st_sch_register_tasklet(
     sch->tasklet[i] = tasklet;
     sch->max_tasklet_idx = RTE_MAX(sch->max_tasklet_idx, i + 1);
 
-    if (st_sch_started(sch)) {
+    if (mt_sch_started(sch)) {
       if (tasklet_ops->pre_start) tasklet_ops->pre_start(tasklet_ops->priv);
       if (tasklet_ops->start) tasklet_ops->start(tasklet_ops->priv);
     }
@@ -446,14 +446,14 @@ struct st_sch_tasklet_impl* st_sch_register_tasklet(
   return NULL;
 }
 
-int st_sch_mrg_init(struct mtl_main_impl* impl, int data_quota_mbs_limit) {
-  struct st_sch_impl* sch;
-  struct st_sch_mgr* mgr = st_sch_get_mgr(impl);
+int mt_sch_mrg_init(struct mtl_main_impl* impl, int data_quota_mbs_limit) {
+  struct mt_sch_impl* sch;
+  struct mt_sch_mgr* mgr = mt_sch_get_mgr(impl);
 
   st_pthread_mutex_init(&mgr->mgr_mutex, NULL);
 
   for (int sch_idx = 0; sch_idx < MT_MAX_SCH_NUM; sch_idx++) {
-    sch = st_sch_instance(impl, sch_idx);
+    sch = mt_sch_instance(impl, sch_idx);
     st_pthread_mutex_init(&sch->mutex, NULL);
     sch->parnet = impl;
     sch->idx = sch_idx;
@@ -487,12 +487,12 @@ int st_sch_mrg_init(struct mtl_main_impl* impl, int data_quota_mbs_limit) {
   return 0;
 }
 
-int st_sch_mrg_uinit(struct mtl_main_impl* impl) {
-  struct st_sch_impl* sch;
-  struct st_sch_mgr* mgr = st_sch_get_mgr(impl);
+int mt_sch_mrg_uinit(struct mtl_main_impl* impl) {
+  struct mt_sch_impl* sch;
+  struct mt_sch_mgr* mgr = mt_sch_get_mgr(impl);
 
   for (int sch_idx = 0; sch_idx < MT_MAX_SCH_NUM; sch_idx++) {
-    sch = st_sch_instance(impl, sch_idx);
+    sch = mt_sch_instance(impl, sch_idx);
 
     st_pthread_mutex_destroy(&sch->tx_video_mgr_mutex);
     st_pthread_mutex_destroy(&sch->rx_video_mgr_mutex);
@@ -507,10 +507,10 @@ int st_sch_mrg_uinit(struct mtl_main_impl* impl) {
   return 0;
 };
 
-int st_sch_add_quota(struct st_sch_impl* sch, int quota_mbs) {
+int mt_sch_add_quota(struct mt_sch_impl* sch, int quota_mbs) {
   int idx = sch->idx;
 
-  if (!st_sch_is_active(sch)) {
+  if (!mt_sch_is_active(sch)) {
     dbg("%s(%d), sch is not allocated\n", __func__, idx);
     return -ENOMEM;
   }
@@ -531,7 +531,7 @@ int st_sch_add_quota(struct st_sch_impl* sch, int quota_mbs) {
   return -ENOMEM;
 }
 
-int st_sch_put(struct st_sch_impl* sch, int quota_mbs) {
+int mt_sch_put(struct mt_sch_impl* sch, int quota_mbs) {
   int sidx = sch->idx, ret;
   struct mtl_main_impl* impl = sch->parnet;
 
@@ -561,24 +561,24 @@ int st_sch_put(struct st_sch_impl* sch, int quota_mbs) {
   return 0;
 }
 
-struct st_sch_impl* st_sch_get(struct mtl_main_impl* impl, int quota_mbs,
-                               enum st_sch_type type, st_sch_mask_t mask) {
+struct mt_sch_impl* mt_sch_get(struct mtl_main_impl* impl, int quota_mbs,
+                               enum mt_sch_type type, mt_sch_mask_t mask) {
   int ret, idx;
-  struct st_sch_impl* sch;
-  struct st_sch_mgr* mgr = st_sch_get_mgr(impl);
+  struct mt_sch_impl* sch;
+  struct mt_sch_mgr* mgr = mt_sch_get_mgr(impl);
 
   sch_mgr_lock(mgr);
 
   /* first try to find one sch capable with quota */
   for (idx = 0; idx < MT_MAX_SCH_NUM; idx++) {
-    sch = st_sch_instance(impl, idx);
+    sch = mt_sch_instance(impl, idx);
     /* mask check */
     if (!(mask & MTL_BIT64(idx))) continue;
     /* active and busy check */
-    if (!st_sch_is_active(sch) || sch->cpu_busy) continue;
+    if (!mt_sch_is_active(sch) || sch->cpu_busy) continue;
     /* quota check */
     if (!sch_is_capable(sch, quota_mbs, type)) continue;
-    ret = st_sch_add_quota(sch, quota_mbs);
+    ret = mt_sch_add_quota(sch, quota_mbs);
     if (ret >= 0) {
       info("%s(%d), succ with quota_mbs %d\n", __func__, idx, quota_mbs);
       rte_atomic32_inc(&sch->ref_cnt);
@@ -595,9 +595,9 @@ struct st_sch_impl* st_sch_get(struct mtl_main_impl* impl, int quota_mbs,
     return NULL;
   }
   idx = sch->idx;
-  ret = st_sch_add_quota(sch, quota_mbs);
+  ret = mt_sch_add_quota(sch, quota_mbs);
   if (ret < 0) {
-    err("%s(%d), st_sch_add_quota fail %d\n", __func__, idx, ret);
+    err("%s(%d), mt_sch_add_quota fail %d\n", __func__, idx, ret);
     sch_free(sch);
     sch_mgr_unlock(mgr);
     return NULL;
@@ -619,18 +619,18 @@ struct st_sch_impl* st_sch_get(struct mtl_main_impl* impl, int quota_mbs,
   return sch;
 }
 
-int st_sch_start_all(struct mtl_main_impl* impl) {
+int mt_sch_start_all(struct mtl_main_impl* impl) {
   int ret = 0;
-  struct st_sch_impl* sch;
+  struct mt_sch_impl* sch;
 
   /* start active sch */
   for (int sch_idx = 0; sch_idx < MT_MAX_SCH_NUM; sch_idx++) {
-    sch = st_sch_instance(impl, sch_idx);
-    if (st_sch_is_active(sch) && !st_sch_started(sch)) {
+    sch = mt_sch_instance(impl, sch_idx);
+    if (mt_sch_is_active(sch) && !mt_sch_started(sch)) {
       ret = sch_start(sch);
       if (ret < 0) {
         err("%s(%d), sch_start fail %d\n", __func__, sch_idx, ret);
-        st_sch_stop_all(impl);
+        mt_sch_stop_all(impl);
         return ret;
       }
     }
@@ -639,14 +639,14 @@ int st_sch_start_all(struct mtl_main_impl* impl) {
   return 0;
 }
 
-int st_sch_stop_all(struct mtl_main_impl* impl) {
+int mt_sch_stop_all(struct mtl_main_impl* impl) {
   int ret;
-  struct st_sch_impl* sch;
+  struct mt_sch_impl* sch;
 
   /* stop active sch */
   for (int sch_idx = 0; sch_idx < MT_MAX_SCH_NUM; sch_idx++) {
-    sch = st_sch_instance(impl, sch_idx);
-    if (st_sch_is_active(sch) && st_sch_started(sch)) {
+    sch = mt_sch_instance(impl, sch_idx);
+    if (mt_sch_is_active(sch) && mt_sch_started(sch)) {
       ret = sch_stop(sch);
       if (ret < 0) {
         err("%s(%d), sch_stop fail %d\n", __func__, sch_idx, ret);
@@ -658,12 +658,12 @@ int st_sch_stop_all(struct mtl_main_impl* impl) {
   return 0;
 }
 
-void st_sch_stat(struct mtl_main_impl* impl) {
-  struct st_sch_impl* sch;
+void mt_sch_stat(struct mtl_main_impl* impl) {
+  struct mt_sch_impl* sch;
 
   for (int sch_idx = 0; sch_idx < MT_MAX_SCH_NUM; sch_idx++) {
-    sch = st_sch_instance(impl, sch_idx);
-    if (st_sch_started(sch)) {
+    sch = mt_sch_instance(impl, sch_idx);
+    if (mt_sch_started(sch)) {
       sch_stat(sch);
     }
   }

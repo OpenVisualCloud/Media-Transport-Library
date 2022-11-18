@@ -147,27 +147,27 @@ static int mt_main_create(struct mtl_main_impl* impl) {
     return ret;
   }
 
-  ret = st_arp_init(impl);
+  ret = mt_arp_init(impl);
   if (ret < 0) {
-    err("%s, st_arp_init fail %d\n", __func__, ret);
+    err("%s, mt_arp_init fail %d\n", __func__, ret);
     return ret;
   }
 
-  ret = st_mcast_init(impl);
+  ret = mt_mcast_init(impl);
   if (ret < 0) {
-    err("%s, st_mcast_init fail %d\n", __func__, ret);
+    err("%s, mt_mcast_init fail %d\n", __func__, ret);
     return ret;
   }
 
-  ret = st_ptp_init(impl);
+  ret = mt_ptp_init(impl);
   if (ret < 0) {
-    err("%s, st_ptp_init fail %d\n", __func__, ret);
+    err("%s, mt_ptp_init fail %d\n", __func__, ret);
     return ret;
   }
 
-  ret = st_cni_init(impl);
+  ret = mt_cni_init(impl);
   if (ret < 0) {
-    err("%s, st_cni_init fail %d\n", __func__, ret);
+    err("%s, mt_cni_init fail %d\n", __func__, ret);
     return ret;
   }
 
@@ -204,10 +204,10 @@ static int mt_main_free(struct mtl_main_impl* impl) {
   st_config_uinit(impl);
   st_plugins_uinit(impl);
   st_admin_uinit(impl);
-  st_cni_uinit(impl);
-  st_ptp_uinit(impl);
-  st_arp_uinit(impl);
-  st_mcast_uinit(impl);
+  mt_cni_uinit(impl);
+  mt_ptp_uinit(impl);
+  mt_arp_uinit(impl);
+  mt_mcast_uinit(impl);
 
   st_map_uinit(impl);
   st_dma_uinit(impl);
@@ -882,7 +882,7 @@ int mtl_get_stats(mtl_handle mt, struct mtl_stats* stats) {
   stats->st22_rx_sessions_cnt = rte_atomic32_read(&impl->st22_rx_sessions_cnt);
   stats->st30_rx_sessions_cnt = rte_atomic32_read(&impl->st30_rx_sessions_cnt);
   stats->st40_rx_sessions_cnt = rte_atomic32_read(&impl->st40_rx_sessions_cnt);
-  stats->sch_cnt = rte_atomic32_read(&st_sch_get_mgr(impl)->sch_cnt);
+  stats->sch_cnt = rte_atomic32_read(&mt_sch_get_mgr(impl)->sch_cnt);
   stats->lcore_cnt = rte_atomic32_read(&impl->lcore_cnt);
   stats->dma_dev_cnt = rte_atomic32_read(&mgr->num_dma_dev_active);
   if (rte_atomic32_read(&impl->started))
@@ -904,17 +904,17 @@ int mtl_sch_enable_sleep(mtl_handle mt, int sch_idx, bool enable) {
     return -EIO;
   }
 
-  struct st_sch_impl* sch = st_sch_instance(impl, sch_idx);
+  struct mt_sch_impl* sch = mt_sch_instance(impl, sch_idx);
   if (!sch) {
     err("%s(%d), sch instance null\n", __func__, sch_idx);
     return -EIO;
   }
-  if (!st_sch_is_active(sch)) {
+  if (!mt_sch_is_active(sch)) {
     err("%s(%d), not allocated\n", __func__, sch_idx);
     return -EIO;
   }
 
-  st_sch_enable_allow_sleep(sch, enable);
+  mt_sch_enable_allow_sleep(sch, enable);
   info("%s(%d), %s allow sleep\n", __func__, sch_idx, enable ? "enable" : "disable");
   return 0;
 }
@@ -932,7 +932,7 @@ int mtl_sch_set_sleep_us(mtl_handle mt, uint64_t us) {
   return 0;
 }
 
-uint64_t st_ptp_read_time(mtl_handle mt) {
+uint64_t mt_ptp_read_time(mtl_handle mt) {
   struct mtl_main_impl* impl = mt;
 
   if (impl->type != ST_SESSION_TYPE_MAIN) {
