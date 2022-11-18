@@ -8,7 +8,7 @@
 #include "st_main.h"
 
 #ifdef MTL_HAS_AVX2
-ST_TARGET_CODE_START_AVX2
+MT_TARGET_CODE_START_AVX2
 /* begin st20_rfc4175_422be10_to_422le10_avx2 */
 static uint8_t rfc4175_b2l_shuffle_l0_tbl[16] = {
     1,  0,  3,  2,    /* 4 bytes from pg0 */
@@ -215,5 +215,5 @@ int st20_rfc4175_422le10_to_422be10_avx2(struct st20_rfc4175_422_10_pg2_le* pg_l
   return 0;
 }
 /* end st20_rfc4175_422le10_to_422be10_avx2 */
-ST_TARGET_CODE_STOP
+MT_TARGET_CODE_STOP
 #endif

@@ -9,34 +9,34 @@
 
 // Push the SIMD compiler flag online to build the code path
 #if defined(__clang__)
-#define ST_TARGET_CODE_START(Target) \
+#define MT_TARGET_CODE_START(Target) \
   _Pragma(STRINGIFY(                 \
       clang attribute push(__attribute__((target(Target))), apply_to = function)))
-#define ST_TARGET_CODE_STOP _Pragma("clang attribute pop")
+#define MT_TARGET_CODE_STOP _Pragma("clang attribute pop")
 #elif defined(__GNUC__)
-#define ST_TARGET_CODE_START(Target) \
+#define MT_TARGET_CODE_START(Target) \
   _Pragma("GCC push_options") _Pragma(STRINGIFY(GCC target(Target)))
-#define ST_TARGET_CODE_STOP _Pragma("GCC pop_options")
+#define MT_TARGET_CODE_STOP _Pragma("GCC pop_options")
 #else
 // MSVS can use intrinsic without appending the SIMD flag
-#define ST_TARGET_CODE_START(Target)
-#define ST_TARGET_CODE_STOP
+#define MT_TARGET_CODE_START(Target)
+#define MT_TARGET_CODE_STOP
 #endif
 
-#define ST_TARGET_CODE_START_SSE4_2 ST_TARGET_CODE_START("sse4.2")
+#define MT_TARGET_CODE_START_SSE4_2 MT_TARGET_CODE_START("sse4.2")
 
 #ifdef MTL_HAS_AVX2
-#define ST_TARGET_CODE_START_AVX2 ST_TARGET_CODE_START("avx2")
+#define MT_TARGET_CODE_START_AVX2 MT_TARGET_CODE_START("avx2")
 #endif
 
 #ifdef MTL_HAS_AVX512
-#define ST_TARGET_CODE_START_AVX512 \
-  ST_TARGET_CODE_START("avx512f,avx512cd,avx512vl,avx512dq,avx512bw")
+#define MT_TARGET_CODE_START_AVX512 \
+  MT_TARGET_CODE_START("avx512f,avx512cd,avx512vl,avx512dq,avx512bw")
 #endif
 
 #ifdef MTL_HAS_AVX512_VBMI2
-#define ST_TARGET_CODE_START_AVX512_VBMI2 \
-  ST_TARGET_CODE_START(                   \
+#define MT_TARGET_CODE_START_AVX512_VBMI2 \
+  MT_TARGET_CODE_START(                   \
       "avx512f,avx512cd,avx512vl,avx512dq,avx512bw,avx512vbmi,avx512vbmi2")
 #endif
 

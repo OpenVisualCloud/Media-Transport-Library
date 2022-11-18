@@ -2,12 +2,12 @@
  * Copyright(c) 2022 Intel Corporation
  */
 
-#ifndef _ST_LIB_ADMIN_HEAD_H_
-#define _ST_LIB_ADMIN_HEAD_H_
+#ifndef _MT_LIB_ADMIN_HEAD_H_
+#define _MT_LIB_ADMIN_HEAD_H_
 
 #include "mt_main.h"
 
-int st_admin_init(struct mtl_main_impl* impl);
-int st_admin_uinit(struct mtl_main_impl* impl);
+int mt_admin_init(struct mtl_main_impl* impl);
+int mt_admin_uinit(struct mtl_main_impl* impl);
 
 #endif

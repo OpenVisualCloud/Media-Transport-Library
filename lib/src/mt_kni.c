@@ -72,7 +72,7 @@ static int kni_config_allmulticast(uint16_t port_id, uint8_t to_on) {
 
 static int kni_config_network_if(uint16_t port_id, uint8_t if_up) {
   struct mtl_main_impl* impl = kni_get_global_impl();
-  struct st_cni_impl* cni = st_get_cni(impl);
+  struct mt_cni_impl* cni = mt_get_cni(impl);
   enum mtl_port port = mt_port_by_id(impl, port_id);
 
   rte_atomic32_set(&cni->if_up[port], if_up);
@@ -86,7 +86,7 @@ static int kni_config_mac_address(uint16_t port, uint8_t macAddr[]) {
 }
 
 static int kni_assign_ip(struct mtl_main_impl* impl, enum mtl_port port) {
-  struct st_cni_impl* cni = st_get_cni(impl);
+  struct mt_cni_impl* cni = mt_get_cni(impl);
   int sock, ret;
   uint8_t* ip;
   struct ifreq ifr;
@@ -99,7 +99,7 @@ static int kni_assign_ip(struct mtl_main_impl* impl, enum mtl_port port) {
   }
 
   // Assign IP to KNI
-  ip = st_sip_addr(impl, port);
+  ip = mt_sip_addr(impl, port);
   if_name = cni->conf[port].name;
   strncpy(ifr.ifr_name, if_name, sizeof(ifr.ifr_name) - 1);
   ifr.ifr_ifru.ifru_addr.sa_family = AF_INET;
@@ -118,8 +118,8 @@ static int kni_assign_ip(struct mtl_main_impl* impl, enum mtl_port port) {
 
 static void* kni_bkg_thread(void* arg) {
   struct mtl_main_impl* impl = arg;
-  struct st_cni_impl* cni = st_get_cni(impl);
-  int num_ports = st_num_ports(impl);
+  struct mt_cni_impl* cni = mt_get_cni(impl);
+  int num_ports = mt_num_ports(impl);
   int ret, i;
   uint16_t port_id;
   struct rte_kni* rkni;
@@ -132,7 +132,7 @@ static void* kni_bkg_thread(void* arg) {
 
   while (rte_atomic32_read(&cni->stop_kni) == 0) {
     for (i = 0; i < num_ports; i++) {
-      port_id = st_port_id(impl, i);
+      port_id = mt_port_id(impl, i);
       rkni = cni->rkni[i];
 
       rte_eth_link_get_nowait(port_id, &link);
@@ -145,13 +145,13 @@ static void* kni_bkg_thread(void* arg) {
         } else {
           link_status[i] = link.link_status;
           if (link.link_status) {
-            st_sleep_ms(1 * 1000); /* 1s */
+            mt_sleep_ms(1 * 1000); /* 1s */
             kni_assign_ip(impl, i);
           }
         }
       }
     }
-    st_sleep_ms(1 * 1000); /* 1s */
+    mt_sleep_ms(1 * 1000); /* 1s */
   }
 
   info("%s, stop\n", __func__);
@@ -159,8 +159,8 @@ static void* kni_bkg_thread(void* arg) {
 }
 
 static int kni_start_port(struct mtl_main_impl* impl, enum mtl_port port) {
-  struct st_cni_impl* cni = st_get_cni(impl);
-  uint16_t port_id = st_port_id(impl, port);
+  struct mt_cni_impl* cni = mt_get_cni(impl);
+  uint16_t port_id = mt_port_id(impl, port);
   struct rte_kni* rkni;
   struct rte_kni_ops ops;
 
@@ -172,7 +172,7 @@ static int kni_start_port(struct mtl_main_impl* impl, enum mtl_port port) {
   ops.config_promiscusity = kni_config_promiscusity;
   ops.config_allmulticast = kni_config_allmulticast;
 
-  rkni = rte_kni_alloc(st_get_tx_mempool(impl, port), &cni->conf[port], &ops);
+  rkni = rte_kni_alloc(mt_get_tx_mempool(impl, port), &cni->conf[port], &ops);
   if (!rkni) {
     err("%s(%d), rte_kni_alloc fail\n", __func__, port);
     return -ENOMEM;
@@ -184,12 +184,12 @@ static int kni_start_port(struct mtl_main_impl* impl, enum mtl_port port) {
 }
 
 static int kni_queues_uinit(struct mtl_main_impl* impl) {
-  int num_ports = st_num_ports(impl);
-  struct st_cni_impl* cni = st_get_cni(impl);
+  int num_ports = mt_num_ports(impl);
+  struct mt_cni_impl* cni = mt_get_cni(impl);
 
   for (int i = 0; i < num_ports; i++) {
     if (cni->tx_q_active[i]) {
-      st_dev_free_tx_queue(impl, i, cni->tx_q_id[i]);
+      mt_dev_free_tx_queue(impl, i, cni->tx_q_id[i]);
       cni->tx_q_active[i] = false;
     }
   }
@@ -197,12 +197,12 @@ static int kni_queues_uinit(struct mtl_main_impl* impl) {
   return 0;
 }
 
-static int kni_queues_init(struct mtl_main_impl* impl, struct st_cni_impl* cni) {
-  int num_ports = st_num_ports(impl);
+static int kni_queues_init(struct mtl_main_impl* impl, struct mt_cni_impl* cni) {
+  int num_ports = mt_num_ports(impl);
   int ret;
 
   for (int i = 0; i < num_ports; i++) {
-    ret = st_dev_request_tx_queue(impl, i, &cni->tx_q_id[i], 0);
+    ret = mt_dev_requemt_tx_queue(impl, i, &cni->tx_q_id[i], 0);
     if (ret < 0) {
       err("%s(%d), kni_tx_q create fail\n", __func__, i);
       kni_queues_uinit(impl);
@@ -215,11 +215,11 @@ static int kni_queues_init(struct mtl_main_impl* impl, struct st_cni_impl* cni) 
   return 0;
 }
 
-int st_kni_handle(struct mtl_main_impl* impl, enum mtl_port port,
+int mt_kni_handle(struct mtl_main_impl* impl, enum mtl_port port,
                   struct rte_mbuf** rx_pkts, uint16_t nb_pkts) {
-  struct st_cni_impl* cni = st_get_cni(impl);
+  struct mt_cni_impl* cni = mt_get_cni(impl);
   struct rte_kni* rkni = cni->rkni[port];
-  uint16_t port_id = st_port_id(impl, port);
+  uint16_t port_id = mt_port_id(impl, port);
 
   if (!cni->has_kni_kmod) return 0;
 
@@ -245,10 +245,10 @@ int st_kni_handle(struct mtl_main_impl* impl, enum mtl_port port,
   return 0;
 }
 
-int st_kni_init(struct mtl_main_impl* impl) {
+int mt_kni_init(struct mtl_main_impl* impl) {
   int ret, i;
-  int num_ports = st_num_ports(impl);
-  struct st_cni_impl* cni = st_get_cni(impl);
+  int num_ports = mt_num_ports(impl);
+  struct mt_cni_impl* cni = mt_get_cni(impl);
   uint16_t port_id;
 
   ret = rte_kni_init(num_ports);
@@ -267,26 +267,26 @@ int st_kni_init(struct mtl_main_impl* impl) {
 
   for (i = 0; i < num_ports; i++) {
     rte_atomic32_set(&cni->if_up[i], 0);
-    port_id = st_port_id(impl, i);
+    port_id = mt_port_id(impl, i);
 
     ret = kni_init_conf(port_id, &cni->conf[i]);
     if (ret < 0) {
       err("%s(%d), kni_init_conf fail %d\n", __func__, i, ret);
-      st_kni_uinit(impl);
+      mt_kni_uinit(impl);
       return ret;
     }
 
     ret = kni_start_port(impl, i);
     if (ret < 0) {
       err("%s(%d), kni_start_port fail %d\n", __func__, i, ret);
-      st_kni_uinit(impl);
+      mt_kni_uinit(impl);
       return ret;
     }
   }
 
   ret = pthread_create(&cni->kni_bkg_tid, NULL, kni_bkg_thread, impl);
   if (ret < 0) {
-    st_kni_uinit(impl);
+    mt_kni_uinit(impl);
     err("%s, create kni_bkg thread fail\n", __func__);
     return ret;
   }
@@ -294,9 +294,9 @@ int st_kni_init(struct mtl_main_impl* impl) {
   return 0;
 }
 
-int st_kni_uinit(struct mtl_main_impl* impl) {
-  struct st_cni_impl* cni = st_get_cni(impl);
-  int num_ports = st_num_ports(impl), ret;
+int mt_kni_uinit(struct mtl_main_impl* impl) {
+  struct mt_cni_impl* cni = mt_get_cni(impl);
+  int num_ports = mt_num_ports(impl), ret;
   struct rte_kni* rkni;
 
   if (!cni->has_kni_kmod) return 0;

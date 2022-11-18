@@ -27,10 +27,10 @@ static int st_audio_trs_tasklet_stop(void* priv) {
 
   rte_atomic32_set(&mgr->transmitter_started, 0);
 
-  for (port = 0; port < st_num_ports(impl); port++) {
+  for (port = 0; port < mt_num_ports(impl); port++) {
     /* flush all the pkts in the tx ring desc */
-    st_dev_flush_tx_queue(impl, port, mgr->queue_id[port], st_get_pad(impl, port));
-    st_ring_dequeue_clean(mgr->ring[port]);
+    mt_dev_flush_tx_queue(impl, port, mgr->queue_id[port], mt_get_pad(impl, port));
+    mt_ring_dequeue_clean(mgr->ring[port]);
     info("%s(%d), port %d, remaining entries %d\n", __func__, idx, port,
          rte_ring_count(mgr->ring[port]));
 
@@ -62,7 +62,7 @@ static int st_audio_trs_session_tasklet(struct mtl_main_impl* impl,
       trs->inflight[port] = NULL;
     } else {
       mgr->stat_trs_ret_code[port] = -STI_TSCTRS_BURST_INFILGHT_FAIL;
-      return ST_TASKLET_HAS_PENDING;
+      return MT_TASKLET_HAS_PENDING;
     }
     mgr->st30_stat_pkts_burst += n;
   }
@@ -72,7 +72,7 @@ static int st_audio_trs_session_tasklet(struct mtl_main_impl* impl,
     ret = rte_ring_sc_dequeue(ring, (void**)&pkt);
     if (ret < 0) {
       mgr->stat_trs_ret_code[port] = -STI_TSCTRS_DEQUEUE_FAIL;
-      return ST_TASKLET_ALL_DONE; /* all done */
+      return MT_TASKLET_ALL_DONE; /* all done */
     }
 
     n = rte_eth_tx_burst(mgr->port_id[port], mgr->queue_id[port], &pkt, 1);
@@ -81,12 +81,12 @@ static int st_audio_trs_session_tasklet(struct mtl_main_impl* impl,
       trs->inflight[port] = pkt;
       trs->inflight_cnt[port]++;
       mgr->stat_trs_ret_code[port] = -STI_TSCTRS_BURST_INFILGHT_FAIL;
-      return ST_TASKLET_HAS_PENDING;
+      return MT_TASKLET_HAS_PENDING;
     }
   }
 
   mgr->stat_trs_ret_code[port] = 0;
-  return ST_TASKLET_HAS_PENDING; /* may has pending pkt in the ring */
+  return MT_TASKLET_HAS_PENDING; /* may has pending pkt in the ring */
 }
 
 static int st_audio_trs_tasklet_handler(void* priv) {
@@ -94,20 +94,20 @@ static int st_audio_trs_tasklet_handler(void* priv) {
   struct mtl_main_impl* impl = trs->parnet;
   struct st_tx_audio_sessions_mgr* mgr = trs->mgr;
   int port;
-  int pending = ST_TASKLET_ALL_DONE;
+  int pending = MT_TASKLET_ALL_DONE;
 
-  for (port = 0; port < st_num_ports(impl); port++) {
+  for (port = 0; port < mt_num_ports(impl); port++) {
     pending += st_audio_trs_session_tasklet(impl, trs, mgr, port);
   }
 
   return pending;
 }
 
-int st_audio_transmitter_init(struct mtl_main_impl* impl, struct st_sch_impl* sch,
+int st_audio_transmitter_init(struct mtl_main_impl* impl, struct mt_sch_impl* sch,
                               struct st_tx_audio_sessions_mgr* mgr,
                               struct st_audio_transmitter_impl* trs) {
   int idx = sch->idx;
-  struct st_sch_tasklet_ops ops;
+  struct mt_sch_tasklet_ops ops;
 
   trs->parnet = impl;
   trs->idx = idx;
@@ -122,9 +122,9 @@ int st_audio_transmitter_init(struct mtl_main_impl* impl, struct st_sch_impl* sc
   ops.stop = st_audio_trs_tasklet_stop;
   ops.handler = st_audio_trs_tasklet_handler;
 
-  trs->tasklet = st_sch_register_tasklet(sch, &ops);
+  trs->tasklet = mt_sch_register_tasklet(sch, &ops);
   if (!trs->tasklet) {
-    err("%s(%d), st_sch_register_tasklet fail\n", __func__, idx);
+    err("%s(%d), mt_sch_register_tasklet fail\n", __func__, idx);
     return -EIO;
   }
 
@@ -136,7 +136,7 @@ int st_audio_transmitter_uinit(struct st_audio_transmitter_impl* trs) {
   int idx = trs->idx;
 
   if (trs->tasklet) {
-    st_sch_unregister_tasklet(trs->tasklet);
+    mt_sch_unregister_tasklet(trs->tasklet);
     trs->tasklet = NULL;
   }
 

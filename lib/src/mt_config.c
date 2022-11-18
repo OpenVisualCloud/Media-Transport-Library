@@ -66,7 +66,7 @@ static int config_parse_json(struct mtl_main_impl* impl, const char* filename) {
   return 0;
 }
 
-int st_config_init(struct mtl_main_impl* impl) {
+int mt_config_init(struct mtl_main_impl* impl) {
   const char* cfg_path = getenv("KAHAWAI_CFG_PATH");
 
   if (cfg_path) {
@@ -79,4 +79,4 @@ int st_config_init(struct mtl_main_impl* impl) {
   return 0;
 }
 
-int st_config_uinit(struct mtl_main_impl* impl) { return 0; }
+int mt_config_uinit(struct mtl_main_impl* impl) { return 0; }

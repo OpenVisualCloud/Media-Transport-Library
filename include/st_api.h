@@ -166,16 +166,6 @@ enum st_event {
 };
 
 /**
- * Read current time from ptp source.
- *
- * @param mt
- *   The handle to the media transport device context.
- * @return
- *   - The time in nanoseconds in current ptp system
- */
-uint64_t st_ptp_read_time(mtl_handle mt);
-
-/**
  * Inline function to check the  rx frame is a completed frame.
  * @param status
  *   The input frame status.

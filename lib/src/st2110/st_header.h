@@ -378,7 +378,7 @@ struct st_tx_video_sessions_mgr {
   struct mtl_main_impl* parnet;
   int idx;     /* index for current session mgr */
   int max_idx; /* max session index */
-  struct st_sch_tasklet_impl* tasklet;
+  struct mt_sch_tasklet_impl* tasklet;
 
   struct st_tx_video_session_impl* sessions[ST_SCH_MAX_TX_VIDEO_SESSIONS];
   /* protect session, spin(fast) lock as it call from tasklet aslo */
@@ -388,7 +388,7 @@ struct st_tx_video_sessions_mgr {
 struct st_video_transmitter_impl {
   struct mtl_main_impl* parnet;
   struct st_tx_video_sessions_mgr* mgr;
-  struct st_sch_tasklet_impl* tasklet;
+  struct mt_sch_tasklet_impl* tasklet;
   int idx; /* index for current transmitter */
 };
 
@@ -692,7 +692,7 @@ struct st_rx_video_sessions_mgr {
   struct mtl_main_impl* parnet;
   int idx;     /* index for current session mgr */
   int max_idx; /* max session index */
-  struct st_sch_tasklet_impl* tasklet;
+  struct mt_sch_tasklet_impl* tasklet;
 
   struct st_rx_video_session_impl* sessions[ST_SCH_MAX_RX_VIDEO_SESSIONS];
   /* protect session, spin(fast) lock as it call from tasklet aslo */
@@ -763,7 +763,7 @@ struct st_tx_audio_sessions_mgr {
   struct mtl_main_impl* parnet;
   int idx;     /* index for current sessions mgr */
   int max_idx; /* max session index */
-  struct st_sch_tasklet_impl* tasklet;
+  struct mt_sch_tasklet_impl* tasklet;
 
   /* all audio sessions share same ring/queue */
   struct rte_ring* ring[MTL_PORT_MAX];
@@ -786,7 +786,7 @@ struct st_tx_audio_sessions_mgr {
 struct st_audio_transmitter_impl {
   struct mtl_main_impl* parnet;
   struct st_tx_audio_sessions_mgr* mgr;
-  struct st_sch_tasklet_impl* tasklet;
+  struct mt_sch_tasklet_impl* tasklet;
   int idx; /* index for current transmitter */
 
   struct rte_mbuf* inflight[MTL_PORT_MAX]; /* inflight mbuf */
@@ -880,7 +880,7 @@ struct st_rx_audio_sessions_mgr {
   struct mtl_main_impl* parnet;
   int idx;     /* index for current session mgr */
   int max_idx; /* max session index */
-  struct st_sch_tasklet_impl* tasklet;
+  struct mt_sch_tasklet_impl* tasklet;
 
   struct st_rx_audio_session_impl* sessions[ST_MAX_RX_AUDIO_SESSIONS];
   /* protect session, spin(fast) lock as it call from tasklet aslo */
@@ -950,7 +950,7 @@ struct st_tx_ancillary_sessions_mgr {
   struct mtl_main_impl* parnet;
   int idx;     /* index for current sessions mgr */
   int max_idx; /* max session index */
-  struct st_sch_tasklet_impl* tasklet;
+  struct mt_sch_tasklet_impl* tasklet;
 
   /* all anc sessions share same ring/queue */
   struct rte_ring* ring[MTL_PORT_MAX];
@@ -999,7 +999,7 @@ struct st_rx_ancillary_sessions_mgr {
   struct mtl_main_impl* parnet;
   int idx;     /* index for current session mgr */
   int max_idx; /* max session index */
-  struct st_sch_tasklet_impl* tasklet;
+  struct mt_sch_tasklet_impl* tasklet;
 
   struct st_rx_ancillary_session_impl* sessions[ST_MAX_RX_ANC_SESSIONS];
   /* protect session, spin(fast) lock as it call from tasklet aslo */
@@ -1009,7 +1009,7 @@ struct st_rx_ancillary_sessions_mgr {
 struct st_ancillary_transmitter_impl {
   struct mtl_main_impl* parnet;
   struct st_tx_ancillary_sessions_mgr* mgr;
-  struct st_sch_tasklet_impl* tasklet;
+  struct mt_sch_tasklet_impl* tasklet;
   int idx; /* index for current transmitter */
 
   struct rte_mbuf* inflight[MTL_PORT_MAX]; /* inflight mbuf */
@@ -1128,7 +1128,7 @@ struct st_plugin_mgr {
 struct st_tx_video_session_handle_impl {
   struct mtl_main_impl* parnet;
   enum st_session_type type;
-  struct st_sch_impl* sch; /* the sch this session attached */
+  struct mt_sch_impl* sch; /* the sch this session attached */
   int quota_mbs;           /* data quota for this session */
   struct st_tx_video_session_impl* impl;
 };
@@ -1136,7 +1136,7 @@ struct st_tx_video_session_handle_impl {
 struct st22_tx_video_session_handle_impl {
   struct mtl_main_impl* parnet;
   enum st_session_type type;
-  struct st_sch_impl* sch; /* the sch this session attached */
+  struct mt_sch_impl* sch; /* the sch this session attached */
   int quota_mbs;           /* data quota for this session */
   struct st_tx_video_session_impl* impl;
 };
@@ -1156,7 +1156,7 @@ struct st_tx_ancillary_session_handle_impl {
 struct st_rx_video_session_handle_impl {
   struct mtl_main_impl* parnet;
   enum st_session_type type;
-  struct st_sch_impl* sch; /* the sch this session attached */
+  struct mt_sch_impl* sch; /* the sch this session attached */
   int quota_mbs;           /* data quota for this session */
   struct st_rx_video_session_impl* impl;
 };
@@ -1164,7 +1164,7 @@ struct st_rx_video_session_handle_impl {
 struct st22_rx_video_session_handle_impl {
   struct mtl_main_impl* parnet;
   enum st_session_type type;
-  struct st_sch_impl* sch; /* the sch this session attached */
+  struct mt_sch_impl* sch; /* the sch this session attached */
   int quota_mbs;           /* data quota for this session */
   struct st_rx_video_session_impl* impl;
 };

@@ -7,7 +7,7 @@
 
 #include "mt_main.h"
 
-int st_config_init(struct mtl_main_impl* impl);
-int st_config_uinit(struct mtl_main_impl* impl);
+int mt_config_init(struct mtl_main_impl* impl);
+int mt_config_uinit(struct mtl_main_impl* impl);
 
 #endif

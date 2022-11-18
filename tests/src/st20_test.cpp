@@ -43,7 +43,7 @@ static int tx_next_video_frame_timestamp(void* priv, uint16_t* next_frame_idx,
 
   if (ctx->user_pacing) {
     meta->tfmt = ST10_TIMESTAMP_FMT_TAI;
-    meta->timestamp = st_ptp_read_time(ctx->ctx->handle) + 25 * 1000 * 1000;
+    meta->timestamp = mt_ptp_read_time(ctx->ctx->handle) + 25 * 1000 * 1000;
   } else if (ctx->user_timestamp) {
     meta->tfmt = ST10_TIMESTAMP_FMT_MEDIA_CLK;
     meta->timestamp = ctx->fb_send;

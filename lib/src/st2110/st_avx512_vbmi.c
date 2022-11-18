@@ -360,7 +360,7 @@ static uint8_t and1_mask_table_512[16 * 4] = {
 };
 /* end st20_rfc4175_422be10_to_v210_avx512_vbmi */
 
-ST_TARGET_CODE_START_AVX512_VBMI2
+MT_TARGET_CODE_START_AVX512_VBMI2
 int st20_rfc4175_422be10_to_yuv422p10le_avx512_vbmi(struct st20_rfc4175_422_10_pg2_be* pg,
                                                     uint16_t* y, uint16_t* b, uint16_t* r,
                                                     uint32_t w, uint32_t h) {
@@ -468,13 +468,13 @@ int st20_rfc4175_422be10_to_yuv422p10le_avx512_vbmi_dma(
   int soc_id = dma->parent->soc_id;
 
   struct st20_rfc4175_422_10_pg2_be* be_caches =
-      st_rte_zmalloc_socket(cache_size * caches_num, soc_id);
-  struct st_cvt_dma_ctx* ctx = st_cvt_dma_ctx_init(2 * caches_num, soc_id, 2);
+      mt_rte_zmalloc_socket(cache_size * caches_num, soc_id);
+  struct mt_cvt_dma_ctx* ctx = mt_cvt_dma_ctx_init(2 * caches_num, soc_id, 2);
   if (!be_caches || !ctx) {
     err("%s, alloc cache(%d,%" PRIu64 ") fail, %p\n", __func__, cache_pg_cnt, cache_size,
         be_caches);
-    if (be_caches) st_rte_free(be_caches);
-    if (ctx) st_cvt_dma_ctx_uinit(ctx);
+    if (be_caches) mt_rte_free(be_caches);
+    if (ctx) mt_cvt_dma_ctx_uinit(ctx);
     return st20_rfc4175_422be10_to_yuv422p10le_avx512_vbmi(pg_be, y, b, r, w, h);
   }
   rte_iova_t be_caches_iova = rte_malloc_virt2iova(be_caches);
@@ -490,22 +490,22 @@ int st20_rfc4175_422be10_to_yuv422p10le_avx512_vbmi_dma(
 
     int max_tran = i + caches_num;
     max_tran = RTE_MIN(max_tran, cache_batch);
-    int cur_tran = st_cvt_dma_ctx_get_tran(ctx, 0);
+    int cur_tran = mt_cvt_dma_ctx_get_tran(ctx, 0);
     /* push max be dma */
     while (cur_tran < max_tran) {
       rte_iova_t be_cache_iova = be_caches_iova + (cur_tran % caches_num) * cache_size;
-      st_dma_copy_busy(dma, be_cache_iova, pg_be_iova, cache_size);
+      mt_dma_copy_busy(dma, be_cache_iova, pg_be_iova, cache_size);
       pg_be += cache_pg_cnt;
       pg_be_iova += cache_size;
-      st_cvt_dma_ctx_push(ctx, 0);
-      cur_tran = st_cvt_dma_ctx_get_tran(ctx, 0);
+      mt_cvt_dma_ctx_push(ctx, 0);
+      cur_tran = mt_cvt_dma_ctx_get_tran(ctx, 0);
     }
-    st_dma_submit_busy(dma);
+    mt_dma_submit_busy(dma);
 
     /* wait until current be dma copy done */
-    while (st_cvt_dma_ctx_get_done(ctx, 0) < (i + 1)) {
-      uint16_t nb_dq = st_dma_completed(dma, 1, NULL, NULL);
-      if (nb_dq) st_cvt_dma_ctx_pop(ctx);
+    while (mt_cvt_dma_ctx_get_done(ctx, 0) < (i + 1)) {
+      uint16_t nb_dq = mt_dma_completed(dma, 1, NULL, NULL);
+      if (nb_dq) mt_cvt_dma_ctx_pop(ctx);
     }
 
     struct st20_rfc4175_422_10_pg2_be* pg = be_cache;
@@ -535,7 +535,7 @@ int st20_rfc4175_422be10_to_yuv422p10le_avx512_vbmi_dma(
   }
 
   pg_cnt = pg_cnt % cache_pg_cnt;
-  st_rte_free(be_caches);
+  mt_rte_free(be_caches);
 
   /* remaining simd batch */
   int batch = pg_cnt / 8;
@@ -655,14 +655,14 @@ int st20_rfc4175_422be10_to_422le10_avx512_vbmi_dma(
   int soc_id = dma->parent->soc_id;
 
   struct st20_rfc4175_422_10_pg2_be* be_caches =
-      st_rte_zmalloc_socket(cache_size * caches_num, soc_id);
+      mt_rte_zmalloc_socket(cache_size * caches_num, soc_id);
   /* two type be(0) or le(1) */
-  struct st_cvt_dma_ctx* ctx = st_cvt_dma_ctx_init(2 * caches_num, soc_id, 2);
+  struct mt_cvt_dma_ctx* ctx = mt_cvt_dma_ctx_init(2 * caches_num, soc_id, 2);
   if (!be_caches || !ctx) {
     err("%s, alloc cache(%d,%" PRIu64 ") fail, %p\n", __func__, cache_pg_cnt, cache_size,
         be_caches);
-    if (be_caches) st_rte_free(be_caches);
-    if (ctx) st_cvt_dma_ctx_uinit(ctx);
+    if (be_caches) mt_rte_free(be_caches);
+    if (ctx) mt_cvt_dma_ctx_uinit(ctx);
     return st20_rfc4175_422be10_to_422le10_avx512_vbmi(pg_be, pg_le, w, h);
   }
   rte_iova_t be_caches_iova = rte_malloc_virt2iova(be_caches);
@@ -678,22 +678,22 @@ int st20_rfc4175_422be10_to_422le10_avx512_vbmi_dma(
 
     int max_tran = i + caches_num;
     max_tran = RTE_MIN(max_tran, cache_batch);
-    int cur_tran = st_cvt_dma_ctx_get_tran(ctx, 0);
+    int cur_tran = mt_cvt_dma_ctx_get_tran(ctx, 0);
     /* push max be dma */
     while (cur_tran < max_tran) {
       rte_iova_t be_cache_iova = be_caches_iova + (cur_tran % caches_num) * cache_size;
-      st_dma_copy_busy(dma, be_cache_iova, pg_be_iova, cache_size);
+      mt_dma_copy_busy(dma, be_cache_iova, pg_be_iova, cache_size);
       pg_be += cache_pg_cnt;
       pg_be_iova += cache_size;
-      st_cvt_dma_ctx_push(ctx, 0);
-      cur_tran = st_cvt_dma_ctx_get_tran(ctx, 0);
+      mt_cvt_dma_ctx_push(ctx, 0);
+      cur_tran = mt_cvt_dma_ctx_get_tran(ctx, 0);
     }
-    st_dma_submit_busy(dma);
+    mt_dma_submit_busy(dma);
 
     /* wait until current be dma copy done */
-    while (st_cvt_dma_ctx_get_done(ctx, 0) < (i + 1)) {
-      uint16_t nb_dq = st_dma_completed(dma, 1, NULL, NULL);
-      if (nb_dq) st_cvt_dma_ctx_pop(ctx);
+    while (mt_cvt_dma_ctx_get_done(ctx, 0) < (i + 1)) {
+      uint16_t nb_dq = mt_dma_completed(dma, 1, NULL, NULL);
+      if (nb_dq) mt_cvt_dma_ctx_pop(ctx);
     }
 
     struct st20_rfc4175_422_10_pg2_be* be = be_cache;
@@ -719,8 +719,8 @@ int st20_rfc4175_422be10_to_422le10_avx512_vbmi_dma(
   }
 
   pg_cnt = pg_cnt % cache_pg_cnt;
-  st_rte_free(be_caches);
-  st_cvt_dma_ctx_uinit(ctx);
+  mt_rte_free(be_caches);
+  mt_cvt_dma_ctx_uinit(ctx);
 
   /* remaining simd batch */
   int batch = pg_cnt / 12;
@@ -828,14 +828,14 @@ int st20_rfc4175_422be10_to_422le8_avx512_vbmi_dma(
   int soc_id = dma->parent->soc_id;
 
   struct st20_rfc4175_422_10_pg2_be* be10_caches =
-      st_rte_zmalloc_socket(cache_size * caches_num, soc_id);
+      mt_rte_zmalloc_socket(cache_size * caches_num, soc_id);
   /* two type be(0) or le(1) */
-  struct st_cvt_dma_ctx* ctx = st_cvt_dma_ctx_init(2 * caches_num, soc_id, 2);
+  struct mt_cvt_dma_ctx* ctx = mt_cvt_dma_ctx_init(2 * caches_num, soc_id, 2);
   if (!be10_caches || !ctx) {
     err("%s, alloc cache(%d,%" PRIu64 ") fail, %p\n", __func__, cache_pg_cnt, cache_size,
         be10_caches);
-    if (be10_caches) st_rte_free(be10_caches);
-    if (ctx) st_cvt_dma_ctx_uinit(ctx);
+    if (be10_caches) mt_rte_free(be10_caches);
+    if (ctx) mt_cvt_dma_ctx_uinit(ctx);
     return st20_rfc4175_422be10_to_422le8_avx512_vbmi(pg_10, pg_8, w, h);
   }
   rte_iova_t be10_caches_iova = rte_malloc_virt2iova(be10_caches);
@@ -851,23 +851,23 @@ int st20_rfc4175_422be10_to_422le8_avx512_vbmi_dma(
 
     int max_tran = i + caches_num;
     max_tran = RTE_MIN(max_tran, cache_batch);
-    int cur_tran = st_cvt_dma_ctx_get_tran(ctx, 0);
+    int cur_tran = mt_cvt_dma_ctx_get_tran(ctx, 0);
     /* push max be dma */
     while (cur_tran < max_tran) {
       rte_iova_t be10_cache_iova =
           be10_caches_iova + (cur_tran % caches_num) * cache_size;
-      st_dma_copy_busy(dma, be10_cache_iova, pg_10_iova, cache_size);
+      mt_dma_copy_busy(dma, be10_cache_iova, pg_10_iova, cache_size);
       pg_10 += cache_pg_cnt;
       pg_10_iova += cache_size;
-      st_cvt_dma_ctx_push(ctx, 0);
-      cur_tran = st_cvt_dma_ctx_get_tran(ctx, 0);
+      mt_cvt_dma_ctx_push(ctx, 0);
+      cur_tran = mt_cvt_dma_ctx_get_tran(ctx, 0);
     }
-    st_dma_submit_busy(dma);
+    mt_dma_submit_busy(dma);
 
     /* wait until current be dma copy done */
-    while (st_cvt_dma_ctx_get_done(ctx, 0) < (i + 1)) {
-      uint16_t nb_dq = st_dma_completed(dma, 1, NULL, NULL);
-      if (nb_dq) st_cvt_dma_ctx_pop(ctx);
+    while (mt_cvt_dma_ctx_get_done(ctx, 0) < (i + 1)) {
+      uint16_t nb_dq = mt_dma_completed(dma, 1, NULL, NULL);
+      if (nb_dq) mt_cvt_dma_ctx_pop(ctx);
     }
     struct st20_rfc4175_422_10_pg2_be* be_10 = be10_cache;
     int batch = cache_pg_cnt / 12;
@@ -885,8 +885,8 @@ int st20_rfc4175_422be10_to_422le8_avx512_vbmi_dma(
   }
 
   pg_cnt = pg_cnt % cache_pg_cnt;
-  st_rte_free(be10_caches);
-  st_cvt_dma_ctx_uinit(ctx);
+  mt_rte_free(be10_caches);
+  mt_cvt_dma_ctx_uinit(ctx);
 
   /* remaining simd batch */
   int batch = pg_cnt / 12;
@@ -1016,14 +1016,14 @@ int st20_rfc4175_422be10_to_v210_avx512_vbmi_dma(struct mtl_dma_lender_dev* dma,
   int soc_id = dma->parent->soc_id;
 
   struct st20_rfc4175_422_10_pg2_be* be_caches =
-      st_rte_zmalloc_socket(cache_size * caches_num, soc_id);
+      mt_rte_zmalloc_socket(cache_size * caches_num, soc_id);
   /* two type be(0) or le(1) */
-  struct st_cvt_dma_ctx* ctx = st_cvt_dma_ctx_init(2 * caches_num, soc_id, 2);
+  struct mt_cvt_dma_ctx* ctx = mt_cvt_dma_ctx_init(2 * caches_num, soc_id, 2);
   if (!be_caches || !ctx) {
     err("%s, alloc cache(%d,%" PRIu64 ") fail, %p\n", __func__, cache_pg_cnt, cache_size,
         be_caches);
-    if (be_caches) st_rte_free(be_caches);
-    if (ctx) st_cvt_dma_ctx_uinit(ctx);
+    if (be_caches) mt_rte_free(be_caches);
+    if (ctx) mt_cvt_dma_ctx_uinit(ctx);
     return st20_rfc4175_422be10_to_v210_avx512_vbmi(pg_be, pg_v210, w, h);
   }
   rte_iova_t be_caches_iova = rte_malloc_virt2iova(be_caches);
@@ -1039,22 +1039,22 @@ int st20_rfc4175_422be10_to_v210_avx512_vbmi_dma(struct mtl_dma_lender_dev* dma,
 
     int max_tran = i + caches_num;
     max_tran = RTE_MIN(max_tran, cache_batch);
-    int cur_tran = st_cvt_dma_ctx_get_tran(ctx, 0);
+    int cur_tran = mt_cvt_dma_ctx_get_tran(ctx, 0);
     /* push max be dma */
     while (cur_tran < max_tran) {
       rte_iova_t be_cache_iova = be_caches_iova + (cur_tran % caches_num) * cache_size;
-      st_dma_copy_busy(dma, be_cache_iova, pg_be_iova, cache_size);
+      mt_dma_copy_busy(dma, be_cache_iova, pg_be_iova, cache_size);
       pg_be += cache_pg_cnt;
       pg_be_iova += cache_size;
-      st_cvt_dma_ctx_push(ctx, 0);
-      cur_tran = st_cvt_dma_ctx_get_tran(ctx, 0);
+      mt_cvt_dma_ctx_push(ctx, 0);
+      cur_tran = mt_cvt_dma_ctx_get_tran(ctx, 0);
     }
-    st_dma_submit_busy(dma);
+    mt_dma_submit_busy(dma);
 
     /* wait until current be dma copy done */
-    while (st_cvt_dma_ctx_get_done(ctx, 0) < (i + 1)) {
-      uint16_t nb_dq = st_dma_completed(dma, 1, NULL, NULL);
-      if (nb_dq) st_cvt_dma_ctx_pop(ctx);
+    while (mt_cvt_dma_ctx_get_done(ctx, 0) < (i + 1)) {
+      uint16_t nb_dq = mt_dma_completed(dma, 1, NULL, NULL);
+      if (nb_dq) mt_cvt_dma_ctx_pop(ctx);
     }
 
     struct st20_rfc4175_422_10_pg2_be* be = be_cache;
@@ -1079,8 +1079,8 @@ int st20_rfc4175_422be10_to_v210_avx512_vbmi_dma(struct mtl_dma_lender_dev* dma,
   }
 
   pg_cnt = pg_cnt % cache_pg_cnt;
-  st_rte_free(be_caches);
-  st_cvt_dma_ctx_uinit(ctx);
+  mt_rte_free(be_caches);
+  mt_cvt_dma_ctx_uinit(ctx);
 
   /* remaining simd batch */
   int batch = pg_cnt / 12;
@@ -1466,14 +1466,14 @@ int st20_rfc4175_422le10_to_422be10_avx512_vbmi_dma(
   int soc_id = dma->parent->soc_id;
 
   struct st20_rfc4175_422_10_pg2_le* le_caches =
-      st_rte_zmalloc_socket(cache_size * caches_num, soc_id);
+      mt_rte_zmalloc_socket(cache_size * caches_num, soc_id);
   /* two type be(0) or le(1) */
-  struct st_cvt_dma_ctx* ctx = st_cvt_dma_ctx_init(2 * caches_num, soc_id, 2);
+  struct mt_cvt_dma_ctx* ctx = mt_cvt_dma_ctx_init(2 * caches_num, soc_id, 2);
   if (!le_caches || !ctx) {
     err("%s, alloc cache(%d,%" PRIu64 ") fail, %p\n", __func__, cache_pg_cnt, cache_size,
         le_caches);
-    if (le_caches) st_rte_free(le_caches);
-    if (ctx) st_cvt_dma_ctx_uinit(ctx);
+    if (le_caches) mt_rte_free(le_caches);
+    if (ctx) mt_cvt_dma_ctx_uinit(ctx);
     return st20_rfc4175_422be10_to_422le10_avx512_vbmi(pg_be, pg_le, w, h);
   }
   rte_iova_t le_caches_iova = rte_malloc_virt2iova(le_caches);
@@ -1489,22 +1489,22 @@ int st20_rfc4175_422le10_to_422be10_avx512_vbmi_dma(
 
     int max_tran = i + caches_num;
     max_tran = RTE_MIN(max_tran, cache_batch);
-    int cur_tran = st_cvt_dma_ctx_get_tran(ctx, 0);
+    int cur_tran = mt_cvt_dma_ctx_get_tran(ctx, 0);
     /* push max be dma */
     while (cur_tran < max_tran) {
       rte_iova_t be_cache_iova = le_caches_iova + (cur_tran % caches_num) * cache_size;
-      st_dma_copy_busy(dma, be_cache_iova, pg_le_iova, cache_size);
+      mt_dma_copy_busy(dma, be_cache_iova, pg_le_iova, cache_size);
       pg_le += cache_pg_cnt;
       pg_le_iova += cache_size;
-      st_cvt_dma_ctx_push(ctx, 0);
-      cur_tran = st_cvt_dma_ctx_get_tran(ctx, 0);
+      mt_cvt_dma_ctx_push(ctx, 0);
+      cur_tran = mt_cvt_dma_ctx_get_tran(ctx, 0);
     }
-    st_dma_submit_busy(dma);
+    mt_dma_submit_busy(dma);
 
     /* wait until current be dma copy done */
-    while (st_cvt_dma_ctx_get_done(ctx, 0) < (i + 1)) {
-      uint16_t nb_dq = st_dma_completed(dma, 1, NULL, NULL);
-      if (nb_dq) st_cvt_dma_ctx_pop(ctx);
+    while (mt_cvt_dma_ctx_get_done(ctx, 0) < (i + 1)) {
+      uint16_t nb_dq = mt_dma_completed(dma, 1, NULL, NULL);
+      if (nb_dq) mt_cvt_dma_ctx_pop(ctx);
     }
 
     struct st20_rfc4175_422_10_pg2_le* le = le_cache;
@@ -1530,8 +1530,8 @@ int st20_rfc4175_422le10_to_422be10_avx512_vbmi_dma(
   }
 
   pg_cnt = pg_cnt % cache_pg_cnt;
-  st_rte_free(le_caches);
-  st_cvt_dma_ctx_uinit(ctx);
+  mt_rte_free(le_caches);
+  mt_cvt_dma_ctx_uinit(ctx);
 
   /* remaining simd batch */
   int batch = pg_cnt / 12;
@@ -1727,14 +1727,14 @@ int st20_v210_to_rfc4175_422be10_avx512_vbmi_dma(struct mtl_dma_lender_dev* dma,
   size_t cache_size = cache_3_pg_cnt * 16;
   int soc_id = dma->parent->soc_id;
 
-  uint8_t* v210_caches = st_rte_zmalloc_socket(cache_size * caches_num, soc_id);
+  uint8_t* v210_caches = mt_rte_zmalloc_socket(cache_size * caches_num, soc_id);
   /* two type v210(0) or be(1) */
-  struct st_cvt_dma_ctx* ctx = st_cvt_dma_ctx_init(2 * caches_num, soc_id, 2);
+  struct mt_cvt_dma_ctx* ctx = mt_cvt_dma_ctx_init(2 * caches_num, soc_id, 2);
   if (!v210_caches || !ctx) {
     err("%s, alloc cache(%d,%" PRIu64 ") fail, %p\n", __func__, cache_3_pg_cnt,
         cache_size, v210_caches);
-    if (v210_caches) st_rte_free(v210_caches);
-    if (ctx) st_cvt_dma_ctx_uinit(ctx);
+    if (v210_caches) mt_rte_free(v210_caches);
+    if (ctx) mt_cvt_dma_ctx_uinit(ctx);
     return st20_v210_to_rfc4175_422be10_avx512_vbmi(pg_v210, pg_be, w, h);
   }
   rte_iova_t v210_caches_iova = rte_malloc_virt2iova(v210_caches);
@@ -1749,23 +1749,23 @@ int st20_v210_to_rfc4175_422be10_avx512_vbmi_dma(struct mtl_dma_lender_dev* dma,
 
     int max_tran = i + caches_num;
     max_tran = RTE_MIN(max_tran, cache_batch);
-    int cur_tran = st_cvt_dma_ctx_get_tran(ctx, 0);
+    int cur_tran = mt_cvt_dma_ctx_get_tran(ctx, 0);
     /* push max be dma */
     while (cur_tran < max_tran) {
       rte_iova_t v210_cache_iova =
           v210_caches_iova + (cur_tran % caches_num) * cache_size;
-      st_dma_copy_busy(dma, v210_cache_iova, pg_v210_iova, cache_size);
+      mt_dma_copy_busy(dma, v210_cache_iova, pg_v210_iova, cache_size);
       pg_v210 += (cache_3_pg_cnt * 16);
       pg_v210_iova += cache_size;
-      st_cvt_dma_ctx_push(ctx, 0);
-      cur_tran = st_cvt_dma_ctx_get_tran(ctx, 0);
+      mt_cvt_dma_ctx_push(ctx, 0);
+      cur_tran = mt_cvt_dma_ctx_get_tran(ctx, 0);
     }
-    st_dma_submit_busy(dma);
+    mt_dma_submit_busy(dma);
 
     /* wait until current be dma copy done */
-    while (st_cvt_dma_ctx_get_done(ctx, 0) < (i + 1)) {
-      uint16_t nb_dq = st_dma_completed(dma, 1, NULL, NULL);
-      if (nb_dq) st_cvt_dma_ctx_pop(ctx);
+    while (mt_cvt_dma_ctx_get_done(ctx, 0) < (i + 1)) {
+      uint16_t nb_dq = mt_dma_completed(dma, 1, NULL, NULL);
+      if (nb_dq) mt_cvt_dma_ctx_pop(ctx);
     }
 
     uint8_t* v210 = v210_cache;
@@ -1788,8 +1788,8 @@ int st20_v210_to_rfc4175_422be10_avx512_vbmi_dma(struct mtl_dma_lender_dev* dma,
   }
 
   pg_cnt = pg_cnt % (cache_3_pg_cnt * 3);
-  st_rte_free(v210_caches);
-  st_cvt_dma_ctx_uinit(ctx);
+  mt_rte_free(v210_caches);
+  mt_cvt_dma_ctx_uinit(ctx);
 
   /* remaining simd batch */
   int batch = pg_cnt / 12;
@@ -1814,5 +1814,5 @@ int st20_v210_to_rfc4175_422be10_avx512_vbmi_dma(struct mtl_dma_lender_dev* dma,
 
 /* end st20_v210_to_rfc4175_422be10_avx512 */
 
-ST_TARGET_CODE_STOP
+MT_TARGET_CODE_STOP
 #endif

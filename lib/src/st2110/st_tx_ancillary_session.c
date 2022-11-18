@@ -57,7 +57,7 @@ static int tx_ancillary_session_free_frames(struct st_tx_ancillary_session_impl*
       st_frame_trans_uinit(frame);
     }
 
-    st_rte_free(s->st40_frames);
+    mt_rte_free(s->st40_frames);
     s->st40_frames = NULL;
   }
 
@@ -67,8 +67,8 @@ static int tx_ancillary_session_free_frames(struct st_tx_ancillary_session_impl*
 
 static int tx_ancillary_session_alloc_frames(struct mtl_main_impl* impl,
                                              struct st_tx_ancillary_session_impl* s) {
-  enum mtl_port port = st_port_logic2phy(s->port_maps, ST_SESSION_PORT_P);
-  int soc_id = st_socket_id(impl, port);
+  enum mtl_port port = mt_port_logic2phy(s->port_maps, ST_SESSION_PORT_P);
+  int soc_id = mt_socket_id(impl, port);
   int idx = s->idx;
   struct st_frame_trans* frame_info;
 
@@ -78,7 +78,7 @@ static int tx_ancillary_session_alloc_frames(struct mtl_main_impl* impl,
   }
 
   s->st40_frames =
-      st_rte_zmalloc_socket(sizeof(*s->st40_frames) * s->st40_frames_cnt, soc_id);
+      mt_rte_zmalloc_socket(sizeof(*s->st40_frames) * s->st40_frames_cnt, soc_id);
   if (!s->st40_frames) {
     err("%s(%d), st30_frames malloc fail\n", __func__, idx);
     return -ENOMEM;
@@ -93,7 +93,7 @@ static int tx_ancillary_session_alloc_frames(struct mtl_main_impl* impl,
   for (int i = 0; i < s->st40_frames_cnt; i++) {
     frame_info = &s->st40_frames[i];
 
-    void* frame = st_rte_zmalloc_socket(sizeof(struct st40_frame), soc_id);
+    void* frame = mt_rte_zmalloc_socket(sizeof(struct st40_frame), soc_id);
     if (!frame) {
       err("%s(%d), frame malloc fail at %d\n", __func__, idx, i);
       tx_ancillary_session_free_frames(s);
@@ -113,7 +113,7 @@ static int tx_ancillary_session_init_hdr(struct mtl_main_impl* impl,
                                          struct st_tx_ancillary_session_impl* s,
                                          enum st_session_port s_port) {
   int idx = s->idx;
-  enum mtl_port port = st_port_logic2phy(s->port_maps, s_port);
+  enum mtl_port port = mt_port_logic2phy(s->port_maps, s_port);
   struct st40_tx_ops* ops = &s->ops;
   int ret;
   struct st_rfc8331_anc_hdr* hdr = &s->hdr[s_port];
@@ -122,8 +122,8 @@ static int tx_ancillary_session_init_hdr(struct mtl_main_impl* impl,
   struct rte_udp_hdr* udp = &hdr->udp;
   struct st40_rfc8331_rtp_hdr* rtp = &hdr->rtp;
   uint8_t* dip = ops->dip_addr[s_port];
-  uint8_t* sip = st_sip_addr(impl, port);
-  struct rte_ether_addr* d_addr = st_eth_d_addr(eth);
+  uint8_t* sip = mt_sip_addr(impl, port);
+  struct rte_ether_addr* d_addr = mt_eth_d_addr(eth);
 
   /* ether hdr */
   if ((s_port == ST_SESSION_PORT_P) && (ops->flags & ST40_TX_FLAG_USER_P_MAC)) {
@@ -133,15 +133,15 @@ static int tx_ancillary_session_init_hdr(struct mtl_main_impl* impl,
     rte_memcpy(d_addr, &ops->tx_dst_mac[s_port][0], RTE_ETHER_ADDR_LEN);
     info("%s, USER_R_TX_MAC\n", __func__);
   } else {
-    ret = st_dev_dst_ip_mac(impl, dip, d_addr, port);
+    ret = mt_dev_dst_ip_mac(impl, dip, d_addr, port);
     if (ret < 0) {
-      err("%s(%d), st_dev_dst_ip_mac fail %d for %d.%d.%d.%d\n", __func__, idx, ret,
+      err("%s(%d), mt_dev_dst_ip_mac fail %d for %d.%d.%d.%d\n", __func__, idx, ret,
           dip[0], dip[1], dip[2], dip[3]);
       return ret;
     }
   }
 
-  ret = rte_eth_macaddr_get(mgr->port_id[port], st_eth_s_addr(eth));
+  ret = rte_eth_macaddr_get(mgr->port_id[port], mt_eth_s_addr(eth));
   if (ret < 0) {
     err("%s(%d), rte_eth_macaddr_get fail %d for port %d\n", __func__, idx, ret, port);
     return ret;
@@ -153,7 +153,7 @@ static int tx_ancillary_session_init_hdr(struct mtl_main_impl* impl,
   ipv4->version_ihl = (4 << 4) | (sizeof(struct rte_ipv4_hdr) / 4);
   ipv4->time_to_live = 64;
   ipv4->type_of_service = 0;
-  ipv4->fragment_offset = ST_IP_DONT_FRAGMENT_FLAG;
+  ipv4->fragment_offset = MT_IP_DONT_FRAGMENT_FLAG;
   ipv4->next_proto_id = 17;
   mtl_memcpy(&ipv4->src_addr, sip, MTL_IP_ADDR_LEN);
   mtl_memcpy(&ipv4->dst_addr, dip, MTL_IP_ADDR_LEN);
@@ -195,7 +195,7 @@ static int tx_ancillary_session_init_pacing(struct mtl_main_impl* impl,
   pacing->frame_time_sampling =
       (double)(s->fps_tm.sampling_clock_rate) * s->fps_tm.den / s->fps_tm.mul;
   /* always use MTL_PORT_P for ptp now */
-  pacing->cur_epochs = st_get_ptp_time(impl, MTL_PORT_P) / frame_time;
+  pacing->cur_epochs = mt_get_ptp_time(impl, MTL_PORT_P) / frame_time;
   pacing->tsc_time_cursor = 0;
 
   info("%s[%02d], frame_time %f frame_time_sampling %f\n", __func__, idx,
@@ -243,7 +243,7 @@ static int tx_ancillary_session_sync_pacing(struct mtl_main_impl* impl,
   struct st_tx_ancillary_session_pacing* pacing = &s->pacing;
   double frame_time = pacing->frame_time;
   /* always use MTL_PORT_P for ptp now */
-  uint64_t ptp_time = st_get_ptp_time(impl, MTL_PORT_P);
+  uint64_t ptp_time = mt_get_ptp_time(impl, MTL_PORT_P);
   uint64_t epochs;
   double to_epoch_tr_offset;
 
@@ -287,15 +287,15 @@ static int tx_ancillary_session_sync_pacing(struct mtl_main_impl* impl,
   pacing->cur_epochs = epochs;
   pacing->pacing_time_stamp = tx_ancillary_pacing_time_stamp(pacing, epochs);
   pacing->rtp_time_stamp = pacing->pacing_time_stamp;
-  pacing->tsc_time_cursor = (double)st_get_tsc(impl) + to_epoch_tr_offset;
+  pacing->tsc_time_cursor = (double)mt_get_tsc(impl) + to_epoch_tr_offset;
   dbg("%s(%d), epochs %lu time_stamp %u time_cursor %f to_epoch_tr_offset %f\n", __func__,
       idx, pacing->cur_epochs, pacing->pacing_time_stamp, pacing->tsc_time_cursor,
       to_epoch_tr_offset);
 
   if (sync) {
     dbg("%s(%d), delay to epoch_time %f, cur %" PRIu64 "\n", __func__, idx,
-        pacing->tsc_time_cursor, st_get_tsc(impl));
-    st_tsc_delay_to(impl, pacing->tsc_time_cursor);
+        pacing->tsc_time_cursor, mt_get_tsc(impl));
+    mt_tsc_delay_to(impl, pacing->tsc_time_cursor);
   }
 
   return 0;
@@ -425,7 +425,7 @@ static int tx_ancillary_session_build_packet(struct mtl_main_impl* impl,
   }
 
   /* update mbuf */
-  st_mbuf_init_ipv4(pkt);
+  mt_mbuf_init_ipv4(pkt);
   pkt->data_len = sizeof(struct rte_ether_hdr) + sizeof(struct rte_ipv4_hdr) +
                   sizeof(struct rte_udp_hdr);
   pkt->pkt_len = pkt->data_len;
@@ -433,7 +433,7 @@ static int tx_ancillary_session_build_packet(struct mtl_main_impl* impl,
   /* chain the pkt */
   rte_pktmbuf_chain(pkt, pkt_rtp);
   if (!s->eth_has_chain[s_port]) {
-    st_mbuf_chain_sw(pkt, pkt_rtp);
+    mt_mbuf_chain_sw(pkt, pkt_rtp);
   }
 
   udp->dgram_len = htons(pkt->pkt_len - pkt->l2_len - pkt->l3_len);
@@ -457,7 +457,7 @@ static int tx_ancillary_session_tasklet_frame(struct mtl_main_impl* impl,
   struct st_tx_ancillary_session_pacing* pacing = &s->pacing;
   int ret;
   bool send_r = false;
-  enum mtl_port port_p = st_port_logic2phy(s->port_maps, ST_SESSION_PORT_P);
+  enum mtl_port port_p = mt_port_logic2phy(s->port_maps, ST_SESSION_PORT_P);
   enum mtl_port port_r = MTL_PORT_MAX;
   struct rte_mempool* hdr_pool_p = s->mbuf_mempool_hdr[ST_SESSION_PORT_P];
   struct rte_mempool* hdr_pool_r = NULL;
@@ -467,12 +467,12 @@ static int tx_ancillary_session_tasklet_frame(struct mtl_main_impl* impl,
 
   if (rte_ring_full(ring_p)) {
     s->stat_build_ret_code = -STI_FRAME_RING_FULL;
-    return ST_TASKLET_ALL_DONE;
+    return MT_TASKLET_ALL_DONE;
   }
 
   if (s->ops.num_port > 1) {
     send_r = true;
-    port_r = st_port_logic2phy(s->port_maps, ST_SESSION_PORT_R);
+    port_r = mt_port_logic2phy(s->port_maps, ST_SESSION_PORT_R);
     hdr_pool_r = s->mbuf_mempool_hdr[ST_SESSION_PORT_R];
     ring_r = mgr->ring[port_r];
   }
@@ -484,7 +484,7 @@ static int tx_ancillary_session_tasklet_frame(struct mtl_main_impl* impl,
       s->has_inflight[ST_SESSION_PORT_P] = false;
     } else {
       s->stat_build_ret_code = -STI_FRAME_INFLIGHT_ENQUEUE_FAIL;
-      return ST_TASKLET_ALL_DONE;
+      return MT_TASKLET_ALL_DONE;
     }
   }
 
@@ -494,7 +494,7 @@ static int tx_ancillary_session_tasklet_frame(struct mtl_main_impl* impl,
       s->has_inflight[ST_SESSION_PORT_R] = false;
     } else {
       s->stat_build_ret_code = -STI_FRAME_INFLIGHT_R_ENQUEUE_FAIL;
-      return ST_TASKLET_ALL_DONE;
+      return MT_TASKLET_ALL_DONE;
     }
   }
 
@@ -510,7 +510,7 @@ static int tx_ancillary_session_tasklet_frame(struct mtl_main_impl* impl,
     if (ret < 0) { /* no frame ready from app */
       dbg("%s(%d), get_next_frame fail %d\n", __func__, idx, ret);
       s->stat_build_ret_code = -STI_FRAME_APP_GET_FRAME_BUSY;
-      return ST_TASKLET_ALL_DONE;
+      return MT_TASKLET_ALL_DONE;
     }
     /* check frame refcnt */
     struct st_frame_trans* frame = &s->st40_frames[next_frame_idx];
@@ -518,7 +518,7 @@ static int tx_ancillary_session_tasklet_frame(struct mtl_main_impl* impl,
     if (refcnt) {
       err("%s(%d), frame %u refcnt not zero %d\n", __func__, idx, next_frame_idx, refcnt);
       s->stat_build_ret_code = -STI_FRAME_APP_ERR_TX_FRAME;
-      return ST_TASKLET_ALL_DONE;
+      return MT_TASKLET_ALL_DONE;
     }
     rte_atomic32_inc(&frame->refcnt);
     frame->tc_meta = meta;
@@ -555,7 +555,7 @@ static int tx_ancillary_session_tasklet_frame(struct mtl_main_impl* impl,
     frame->tc_meta.timestamp = pacing->rtp_time_stamp;
   }
 
-  uint64_t cur_tsc = st_get_tsc(impl);
+  uint64_t cur_tsc = mt_get_tsc(impl);
   uint64_t target_tsc = pacing->tsc_time_cursor;
   if (cur_tsc < target_tsc) {
     uint64_t delta = target_tsc - cur_tsc;
@@ -563,8 +563,8 @@ static int tx_ancillary_session_tasklet_frame(struct mtl_main_impl* impl,
     // target_tsc);
     if (likely(delta < NS_PER_S)) {
       s->stat_build_ret_code = -STI_TSCTRS_TARGET_TSC_NOT_REACH;
-      return delta < st_sch_schedule_ns(impl) ? ST_TASKLET_HAS_PENDING
-                                              : ST_TASKLET_ALL_DONE;
+      return delta < mt_sch_schedule_ns(impl) ? MT_TASKLET_HAS_PENDING
+                                              : MT_TASKLET_ALL_DONE;
     } else {
       err("%s(%d), invalid tsc cur %" PRIu64 " target %" PRIu64 "\n", __func__, idx,
           cur_tsc, target_tsc);
@@ -579,14 +579,14 @@ static int tx_ancillary_session_tasklet_frame(struct mtl_main_impl* impl,
   if (!pkt_rtp) {
     err("%s(%d), pkt_rtp alloc fail\n", __func__, idx);
     s->stat_build_ret_code = -STI_FRAME_PKT_ALLOC_FAIL;
-    return ST_TASKLET_ALL_DONE;
+    return MT_TASKLET_ALL_DONE;
   }
   pkt = rte_pktmbuf_alloc(hdr_pool_p);
   if (!pkt) {
     err("%s(%d), rte_pktmbuf_alloc fail\n", __func__, idx);
     s->stat_build_ret_code = -STI_FRAME_PKT_ALLOC_FAIL;
     rte_pktmbuf_free(pkt_rtp);
-    return ST_TASKLET_ALL_DONE;
+    return MT_TASKLET_ALL_DONE;
   }
   if (send_r) {
     pkt_r = rte_pktmbuf_alloc(hdr_pool_r);
@@ -595,7 +595,7 @@ static int tx_ancillary_session_tasklet_frame(struct mtl_main_impl* impl,
       s->stat_build_ret_code = -STI_FRAME_PKT_ALLOC_FAIL;
       rte_pktmbuf_free(pkt);
       rte_pktmbuf_free(pkt_rtp);
-      return ST_TASKLET_ALL_DONE;
+      return MT_TASKLET_ALL_DONE;
     }
   }
   tx_ancillary_session_build_rtp_packet(s, pkt_rtp, s->st40_pkt_idx);
@@ -640,7 +640,7 @@ static int tx_ancillary_session_tasklet_frame(struct mtl_main_impl* impl,
     pacing->tsc_time_cursor = 0;
   }
 
-  return done ? ST_TASKLET_ALL_DONE : ST_TASKLET_HAS_PENDING;
+  return done ? MT_TASKLET_ALL_DONE : MT_TASKLET_HAS_PENDING;
 }
 
 static int tx_ancillary_session_tasklet_rtp(struct mtl_main_impl* impl,
@@ -650,7 +650,7 @@ static int tx_ancillary_session_tasklet_rtp(struct mtl_main_impl* impl,
   int ret;
   struct st_tx_ancillary_session_pacing* pacing = &s->pacing;
   bool send_r = false;
-  enum mtl_port port_p = st_port_logic2phy(s->port_maps, ST_SESSION_PORT_P);
+  enum mtl_port port_p = mt_port_logic2phy(s->port_maps, ST_SESSION_PORT_P);
   enum mtl_port port_r = MTL_PORT_MAX;
   struct rte_mempool* hdr_pool_p = s->mbuf_mempool_hdr[ST_SESSION_PORT_P];
   struct rte_mempool* hdr_pool_r = NULL;
@@ -659,12 +659,12 @@ static int tx_ancillary_session_tasklet_rtp(struct mtl_main_impl* impl,
 
   if (rte_ring_full(ring_p)) {
     s->stat_build_ret_code = -STI_RTP_RING_FULL;
-    return ST_TASKLET_ALL_DONE;
+    return MT_TASKLET_ALL_DONE;
   }
 
   if (s->ops.num_port > 1) {
     send_r = true;
-    port_r = st_port_logic2phy(s->port_maps, ST_SESSION_PORT_R);
+    port_r = mt_port_logic2phy(s->port_maps, ST_SESSION_PORT_R);
     hdr_pool_r = s->mbuf_mempool_hdr[ST_SESSION_PORT_R];
     ring_r = mgr->ring[port_r];
   }
@@ -676,7 +676,7 @@ static int tx_ancillary_session_tasklet_rtp(struct mtl_main_impl* impl,
       s->has_inflight[ST_SESSION_PORT_P] = false;
     } else {
       s->stat_build_ret_code = -STI_RTP_INFLIGHT_ENQUEUE_FAIL;
-      return ST_TASKLET_ALL_DONE;
+      return MT_TASKLET_ALL_DONE;
     }
   }
 
@@ -686,11 +686,11 @@ static int tx_ancillary_session_tasklet_rtp(struct mtl_main_impl* impl,
       s->has_inflight[ST_SESSION_PORT_R] = false;
     } else {
       s->stat_build_ret_code = -STI_RTP_INFLIGHT_ENQUEUE_FAIL;
-      return ST_TASKLET_ALL_DONE;
+      return MT_TASKLET_ALL_DONE;
     }
   }
 
-  uint64_t cur_tsc = st_get_tsc(impl);
+  uint64_t cur_tsc = mt_get_tsc(impl);
   uint64_t target_tsc = pacing->tsc_time_cursor;
   if (cur_tsc < target_tsc) {
     uint64_t delta = target_tsc - cur_tsc;
@@ -698,8 +698,8 @@ static int tx_ancillary_session_tasklet_rtp(struct mtl_main_impl* impl,
     // target_tsc);
     if (likely(delta < NS_PER_S)) {
       s->stat_build_ret_code = -STI_TSCTRS_TARGET_TSC_NOT_REACH;
-      return delta < st_sch_schedule_ns(impl) ? ST_TASKLET_HAS_PENDING
-                                              : ST_TASKLET_ALL_DONE;
+      return delta < mt_sch_schedule_ns(impl) ? MT_TASKLET_HAS_PENDING
+                                              : MT_TASKLET_ALL_DONE;
     } else {
       err("%s(%d), invalid tsc cur %" PRIu64 " target %" PRIu64 "\n", __func__, idx,
           cur_tsc, target_tsc);
@@ -713,7 +713,7 @@ static int tx_ancillary_session_tasklet_rtp(struct mtl_main_impl* impl,
   if (rte_ring_sc_dequeue(s->packet_ring, (void**)&pkt_rtp) != 0) {
     dbg("%s(%d), rtp pkts not ready %d\n", __func__, idx, ret);
     s->stat_build_ret_code = -STI_RTP_APP_DEQUEUE_FAIL;
-    return ST_TASKLET_ALL_DONE;
+    return MT_TASKLET_ALL_DONE;
   }
 
   s->ops.notify_rtp_done(s->ops.priv);
@@ -723,7 +723,7 @@ static int tx_ancillary_session_tasklet_rtp(struct mtl_main_impl* impl,
     err("%s(%d), rte_pktmbuf_alloc fail\n", __func__, idx);
     rte_pktmbuf_free(pkt_rtp);
     s->stat_build_ret_code = -STI_RTP_PKT_ALLOC_FAIL;
-    return ST_TASKLET_ALL_DONE;
+    return MT_TASKLET_ALL_DONE;
   }
   if (send_r) {
     pkt_r = rte_pktmbuf_alloc(hdr_pool_r);
@@ -732,7 +732,7 @@ static int tx_ancillary_session_tasklet_rtp(struct mtl_main_impl* impl,
       rte_pktmbuf_free(pkt);
       rte_pktmbuf_free(pkt_rtp);
       s->stat_build_ret_code = -STI_RTP_PKT_ALLOC_FAIL;
-      return ST_TASKLET_ALL_DONE;
+      return MT_TASKLET_ALL_DONE;
     }
   }
 
@@ -764,14 +764,14 @@ static int tx_ancillary_session_tasklet_rtp(struct mtl_main_impl* impl,
     s->stat_build_ret_code = -STI_RTP_PKT_R_ENQUEUE_FAIL;
   }
 
-  return done ? ST_TASKLET_ALL_DONE : ST_TASKLET_HAS_PENDING;
+  return done ? MT_TASKLET_ALL_DONE : MT_TASKLET_HAS_PENDING;
 }
 
 static int tx_ancillary_sessions_tasklet_handler(void* priv) {
   struct st_tx_ancillary_sessions_mgr* mgr = priv;
   struct mtl_main_impl* impl = mgr->parnet;
   struct st_tx_ancillary_session_impl* s;
-  int pending = ST_TASKLET_ALL_DONE;
+  int pending = MT_TASKLET_ALL_DONE;
 
   for (int sidx = 0; sidx < mgr->max_idx; sidx++) {
     s = tx_ancillary_session_try_get(mgr, sidx);
@@ -791,13 +791,13 @@ static int tx_ancillary_sessions_tasklet_handler(void* priv) {
 
 static int tx_ancillary_sessions_mgr_uinit_hw(struct mtl_main_impl* impl,
                                               struct st_tx_ancillary_sessions_mgr* mgr) {
-  for (int i = 0; i < st_num_ports(impl); i++) {
+  for (int i = 0; i < mt_num_ports(impl); i++) {
     if (mgr->ring[i]) {
       rte_ring_free(mgr->ring[i]);
       mgr->ring[i] = NULL;
     }
     if (mgr->queue_active[i]) {
-      st_dev_free_tx_queue(impl, i, mgr->queue_id[i]);
+      mt_dev_free_tx_queue(impl, i, mgr->queue_id[i]);
       mgr->queue_active[i] = false;
     }
   }
@@ -815,21 +815,21 @@ static int tx_ancillary_sessions_mgr_init_hw(struct mtl_main_impl* impl,
   int ret;
   uint16_t queue = 0;
 
-  for (int i = 0; i < st_num_ports(impl); i++) {
+  for (int i = 0; i < mt_num_ports(impl); i++) {
     /* do we need quota for anc? */
-    ret = st_dev_request_tx_queue(impl, i, &queue, 0);
+    ret = mt_dev_requemt_tx_queue(impl, i, &queue, 0);
     if (ret < 0) {
       tx_ancillary_sessions_mgr_uinit_hw(impl, mgr);
       return ret;
     }
     mgr->queue_id[i] = queue;
     mgr->queue_active[i] = true;
-    mgr->port_id[i] = st_port_id(impl, i);
+    mgr->port_id[i] = mt_port_id(impl, i);
 
     snprintf(ring_name, 32, "TX-ANC-RING-M%d-P%d", mgr_idx, i);
     flags = RING_F_MP_HTS_ENQ | RING_F_SC_DEQ; /* multi-producer and single-consumer */
     count = ST_TX_ANC_SESSIONS_RING_SIZE;
-    ring = rte_ring_create(ring_name, count, st_socket_id(impl, i), flags);
+    ring = rte_ring_create(ring_name, count, mt_socket_id(impl, i), flags);
     if (!ring) {
       err("%s(%d), rte_ring_create fail for port %d\n", __func__, mgr_idx, i);
       tx_ancillary_sessions_mgr_uinit_hw(impl, mgr);
@@ -846,8 +846,8 @@ static int tx_ancillary_session_flush_port(struct st_tx_ancillary_sessions_mgr* 
                                            enum mtl_port port) {
   struct mtl_main_impl* impl = mgr->parnet;
   int ret;
-  int burst_pkts = st_if_nb_tx_desc(impl, port);
-  struct rte_mbuf* pad = st_get_pad(impl, port);
+  int burst_pkts = mt_if_nb_tx_desc(impl, port);
+  struct rte_mbuf* pad = mt_get_pad(impl, port);
 
   for (int i = 0; i < burst_pkts; i++) {
     rte_mbuf_refcnt_update(pad, 1);
@@ -869,14 +869,14 @@ static int tx_ancillary_session_flush(struct st_tx_ancillary_sessions_mgr* mgr,
     if (pool && rte_mempool_in_use_count(pool) &&
         rte_atomic32_read(&mgr->transmitter_started)) {
       info("%s(%d,%d), start to flush port %d\n", __func__, mgr_idx, s_idx, i);
-      tx_ancillary_session_flush_port(mgr, st_port_logic2phy(s->port_maps, i));
+      tx_ancillary_session_flush_port(mgr, mt_port_logic2phy(s->port_maps, i));
       info("%s(%d,%d), flush port %d end\n", __func__, mgr_idx, s_idx, i);
 
       int retry = 100; /* max 1000ms */
       while (retry > 0) {
         retry--;
         if (!rte_mempool_in_use_count(pool)) break;
-        st_sleep_ms(10);
+        mt_sleep_ms(10);
       }
       info("%s(%d,%d), check in_use retry %d\n", __func__, mgr_idx, s_idx, retry);
     }
@@ -889,13 +889,13 @@ int tx_ancillary_session_mempool_free(struct st_tx_ancillary_session_impl* s) {
   int ret;
 
   if (s->mbuf_mempool_chain && !s->tx_mono_pool) {
-    ret = st_mempool_free(s->mbuf_mempool_chain);
+    ret = mt_mempool_free(s->mbuf_mempool_chain);
     if (ret >= 0) s->mbuf_mempool_chain = NULL;
   }
 
   for (int i = 0; i < ST_SESSION_PORT_MAX; i++) {
     if (s->mbuf_mempool_hdr[i] && !s->tx_mono_pool) {
-      ret = st_mempool_free(s->mbuf_mempool_hdr[i]);
+      ret = mt_mempool_free(s->mbuf_mempool_hdr[i]);
       if (ret >= 0) s->mbuf_mempool_hdr[i] = NULL;
     }
   }
@@ -931,10 +931,10 @@ static int tx_ancillary_session_mempool_init(struct mtl_main_impl* impl,
   }
 
   for (int i = 0; i < num_port; i++) {
-    port = st_port_logic2phy(s->port_maps, i);
-    n = st_if_nb_tx_desc(impl, port) + ST_TX_ANC_SESSIONS_RING_SIZE;
+    port = mt_port_logic2phy(s->port_maps, i);
+    n = mt_if_nb_tx_desc(impl, port) + ST_TX_ANC_SESSIONS_RING_SIZE;
     if (s->tx_mono_pool) {
-      s->mbuf_mempool_hdr[i] = st_get_tx_mempool(impl, port);
+      s->mbuf_mempool_hdr[i] = mt_get_tx_mempool(impl, port);
       info("%s(%d), use tx mono hdr mempool(%p) for port %d\n", __func__, idx,
            s->mbuf_mempool_hdr[i], i);
     } else if (s->mbuf_mempool_hdr[i]) {
@@ -943,8 +943,8 @@ static int tx_ancillary_session_mempool_init(struct mtl_main_impl* impl,
       char pool_name[32];
       snprintf(pool_name, 32, "TXANCHDR-M%d-R%d-P%d", mgr->idx, idx, i);
       struct rte_mempool* mbuf_pool =
-          st_mempool_create(impl, port, pool_name, n, ST_MBUF_CACHE_SIZE,
-                            sizeof(struct st_muf_priv_data), hdr_room_size);
+          mt_mempool_create(impl, port, pool_name, n, MT_MBUF_CACHE_SIZE,
+                            sizeof(struct mt_muf_priv_data), hdr_room_size);
       if (!mbuf_pool) {
         tx_ancillary_session_mempool_free(s);
         return -ENOMEM;
@@ -953,12 +953,12 @@ static int tx_ancillary_session_mempool_init(struct mtl_main_impl* impl,
     }
   }
 
-  port = st_port_logic2phy(s->port_maps, ST_SESSION_PORT_P);
-  n = st_if_nb_tx_desc(impl, port) + ST_TX_ANC_SESSIONS_RING_SIZE;
+  port = mt_port_logic2phy(s->port_maps, ST_SESSION_PORT_P);
+  n = mt_if_nb_tx_desc(impl, port) + ST_TX_ANC_SESSIONS_RING_SIZE;
   if (ops->type == ST40_TYPE_RTP_LEVEL) n += ops->rtp_ring_size;
 
   if (s->tx_mono_pool) {
-    s->mbuf_mempool_chain = st_get_tx_mempool(impl, port);
+    s->mbuf_mempool_chain = mt_get_tx_mempool(impl, port);
     info("%s(%d), use tx mono chain mempool(%p)\n", __func__, idx, s->mbuf_mempool_chain);
   } else if (s->mbuf_mempool_chain) {
     warn("%s(%d), use previous chain mempool\n", __func__, idx);
@@ -966,8 +966,8 @@ static int tx_ancillary_session_mempool_init(struct mtl_main_impl* impl,
     char pool_name[32];
     snprintf(pool_name, 32, "TXANCCHAIN-M%d-R%d", mgr->idx, idx);
     struct rte_mempool* mbuf_pool =
-        st_mempool_create(impl, port, pool_name, n, ST_MBUF_CACHE_SIZE,
-                          sizeof(struct st_muf_priv_data), chain_room_size);
+        mt_mempool_create(impl, port, pool_name, n, MT_MBUF_CACHE_SIZE,
+                          sizeof(struct mt_muf_priv_data), chain_room_size);
     if (!mbuf_pool) {
       tx_ancillary_session_mempool_free(s);
       return -ENOMEM;
@@ -985,11 +985,11 @@ static int tx_ancillary_session_init_rtp(struct mtl_main_impl* impl,
   struct rte_ring* ring;
   unsigned int flags, count = s->ops.rtp_ring_size;
   int mgr_idx = mgr->idx, idx = s->idx;
-  enum mtl_port port = st_port_logic2phy(s->port_maps, ST_SESSION_PORT_P);
+  enum mtl_port port = mt_port_logic2phy(s->port_maps, ST_SESSION_PORT_P);
 
   snprintf(ring_name, 32, "TX-ANC-PACKET-RING-M%d-R%d", mgr_idx, idx);
   flags = RING_F_SP_ENQ | RING_F_SC_DEQ; /* single-producer and single-consumer */
-  ring = rte_ring_create(ring_name, count, st_socket_id(impl, port), flags);
+  ring = rte_ring_create(ring_name, count, mt_socket_id(impl, port), flags);
   if (!ring) {
     err("%s(%d,%d), rte_ring_create fail\n", __func__, mgr_idx, idx);
     tx_ancillary_session_mempool_free(s);
@@ -1013,7 +1013,7 @@ static int tx_ancillary_session_uinit_sw(struct st_tx_ancillary_sessions_mgr* mg
   }
 
   if (s->packet_ring) {
-    st_ring_dequeue_clean(s->packet_ring);
+    mt_ring_dequeue_clean(s->packet_ring);
     rte_ring_free(s->packet_ring);
     s->packet_ring = NULL;
   }
@@ -1064,7 +1064,7 @@ static int tx_ancillary_session_attach(struct mtl_main_impl* impl,
   char* ports[ST_SESSION_PORT_MAX];
 
   for (int i = 0; i < num_port; i++) ports[i] = ops->port[i];
-  ret = st_build_port_map(impl, ports, s->port_maps, num_port);
+  ret = mt_build_port_map(impl, ports, s->port_maps, num_port);
   if (ret < 0) return ret;
 
   strncpy(s->ops_name, ops->name, ST_MAX_NAME_LEN - 1);
@@ -1072,11 +1072,11 @@ static int tx_ancillary_session_attach(struct mtl_main_impl* impl,
   for (int i = 0; i < num_port; i++) {
     s->st40_src_port[i] = (ops->udp_port[i]) ? (ops->udp_port[i]) : (10200 + idx);
     s->st40_dst_port[i] = s->st40_src_port[i];
-    enum mtl_port port = st_port_logic2phy(s->port_maps, i);
-    s->eth_ipv4_cksum_offload[i] = st_if_has_offload_ipv4_cksum(impl, port);
-    s->eth_has_chain[i] = st_if_has_chain_buff(impl, port);
+    enum mtl_port port = mt_port_logic2phy(s->port_maps, i);
+    s->eth_ipv4_cksum_offload[i] = mt_if_has_offload_ipv4_cksum(impl, port);
+    s->eth_has_chain[i] = mt_if_has_chain_buff(impl, port);
   }
-  s->tx_mono_pool = st_has_tx_mono_pool(impl);
+  s->tx_mono_pool = mt_has_tx_mono_pool(impl);
   s->st40_ipv4_packet_id = 0;
   s->max_pkt_len = ST_PKT_MAX_ETHER_BYTES - sizeof(struct st_rfc8331_anc_hdr);
 
@@ -1154,10 +1154,10 @@ int tx_ancillary_session_detach(struct st_tx_ancillary_sessions_mgr* mgr,
 }
 
 static int tx_ancillary_sessions_mgr_init(struct mtl_main_impl* impl,
-                                          struct st_sch_impl* sch,
+                                          struct mt_sch_impl* sch,
                                           struct st_tx_ancillary_sessions_mgr* mgr) {
   int idx = sch->idx;
-  struct st_sch_tasklet_ops ops;
+  struct mt_sch_tasklet_ops ops;
   int ret, i;
 
   RTE_BUILD_BUG_ON(sizeof(struct st_rfc8331_anc_hdr) != 62);
@@ -1182,10 +1182,10 @@ static int tx_ancillary_sessions_mgr_init(struct mtl_main_impl* impl,
   ops.stop = tx_ancillary_sessions_tasklet_stop;
   ops.handler = tx_ancillary_sessions_tasklet_handler;
 
-  mgr->tasklet = st_sch_register_tasklet(sch, &ops);
+  mgr->tasklet = mt_sch_register_tasklet(sch, &ops);
   if (!mgr->tasklet) {
     tx_ancillary_sessions_mgr_uinit_hw(impl, mgr);
-    err("%s(%d), st_sch_register_tasklet fail\n", __func__, idx);
+    err("%s(%d), mt_sch_register_tasklet fail\n", __func__, idx);
     return -EIO;
   }
 
@@ -1204,7 +1204,7 @@ static struct st_tx_ancillary_session_impl* tx_ancillary_sessions_mgr_attach(
   for (int i = 0; i < ST_MAX_TX_ANC_SESSIONS; i++) {
     if (!tx_ancillary_session_get_empty(mgr, i)) continue;
 
-    s = st_rte_zmalloc_socket(sizeof(*s), st_socket_id(impl, MTL_PORT_P));
+    s = mt_rte_zmalloc_socket(sizeof(*s), mt_socket_id(impl, MTL_PORT_P));
     if (!s) {
       err("%s(%d), session malloc fail on %d\n", __func__, midx, i);
       tx_ancillary_session_put(mgr, i);
@@ -1214,14 +1214,14 @@ static struct st_tx_ancillary_session_impl* tx_ancillary_sessions_mgr_attach(
     if (ret < 0) {
       err("%s(%d), init fail on %d\n", __func__, midx, i);
       tx_ancillary_session_put(mgr, i);
-      st_rte_free(s);
+      mt_rte_free(s);
       return NULL;
     }
     ret = tx_ancillary_session_attach(mgr->parnet, mgr, s, ops);
     if (ret < 0) {
       err("%s(%d), attach fail on %d\n", __func__, midx, i);
       tx_ancillary_session_put(mgr, i);
-      st_rte_free(s);
+      mt_rte_free(s);
       return NULL;
     }
 
@@ -1248,7 +1248,7 @@ static int tx_ancillary_sessions_mgr_detach(struct st_tx_ancillary_sessions_mgr*
 
   tx_ancillary_session_detach(mgr, s);
   mgr->sessions[idx] = NULL;
-  st_rte_free(s);
+  mt_rte_free(s);
 
   tx_ancillary_session_put(mgr, idx);
 
@@ -1293,7 +1293,7 @@ int st_tx_ancillary_sessions_mgr_uinit(struct st_tx_ancillary_sessions_mgr* mgr)
   struct st_tx_ancillary_session_impl* s;
 
   if (mgr->tasklet) {
-    st_sch_unregister_tasklet(mgr->tasklet);
+    mt_sch_unregister_tasklet(mgr->tasklet);
     mgr->tasklet = NULL;
   }
 
@@ -1323,7 +1323,7 @@ static int tx_ancillary_ops_check(struct st40_tx_ops* ops) {
 
   for (int i = 0; i < num_ports; i++) {
     ip = ops->dip_addr[i];
-    ret = st_ip_addr_check(ip);
+    ret = mt_ip_addr_check(ip);
     if (ret < 0) {
       err("%s(%d), invalid ip %d.%d.%d.%d\n", __func__, i, ip[0], ip[1], ip[2], ip[3]);
       return -EINVAL;
@@ -1405,26 +1405,26 @@ st40_tx_handle st40_tx_create(mtl_handle mt, struct st40_tx_ops* ops) {
     return NULL;
   }
 
-  st_pthread_mutex_lock(&impl->tx_anc_mgr_mutex);
+  mt_pthread_mutex_lock(&impl->tx_anc_mgr_mutex);
   ret = st_tx_anc_init(impl);
-  st_pthread_mutex_unlock(&impl->tx_anc_mgr_mutex);
+  mt_pthread_mutex_unlock(&impl->tx_anc_mgr_mutex);
   if (ret < 0) {
     err("%s, st_tx_anc_init fail %d\n", __func__, ret);
     return NULL;
   }
 
-  s_impl = st_rte_zmalloc_socket(sizeof(*s_impl), st_socket_id(impl, MTL_PORT_P));
+  s_impl = mt_rte_zmalloc_socket(sizeof(*s_impl), mt_socket_id(impl, MTL_PORT_P));
   if (!s_impl) {
     err("%s, s_impl malloc fail\n", __func__);
     return NULL;
   }
 
-  st_pthread_mutex_lock(&impl->tx_anc_mgr_mutex);
+  mt_pthread_mutex_lock(&impl->tx_anc_mgr_mutex);
   s = tx_ancillary_sessions_mgr_attach(&impl->tx_anc_mgr, ops);
-  st_pthread_mutex_unlock(&impl->tx_anc_mgr_mutex);
+  mt_pthread_mutex_unlock(&impl->tx_anc_mgr_mutex);
   if (!s) {
     err("%s, tx_ancillary_sessions_mgr_attach fail\n", __func__);
-    st_rte_free(s_impl);
+    mt_rte_free(s_impl);
     return NULL;
   }
 
@@ -1484,7 +1484,7 @@ int st40_tx_put_mbuf(st40_tx_handle handle, void* mbuf, uint16_t len) {
     return -EIO;
   }
 
-  if (!st_rtp_len_valid(len)) {
+  if (!mt_rtp_len_valid(len)) {
     if (len) err("%s, invalid len %d\n", __func__, len);
     rte_pktmbuf_free(mbuf);
     return -EIO;
@@ -1529,12 +1529,12 @@ int st40_tx_free(st40_tx_handle handle) {
   ret = tx_ancillary_sessions_mgr_detach(&impl->tx_anc_mgr, s);
   if (ret < 0) err("%s(%d), tx_ancillary_sessions_mgr_detach fail\n", __func__, idx);
 
-  st_rte_free(s_impl);
+  mt_rte_free(s_impl);
 
   /* update max idx */
-  st_pthread_mutex_lock(&impl->tx_anc_mgr_mutex);
+  mt_pthread_mutex_lock(&impl->tx_anc_mgr_mutex);
   tx_ancillary_sessions_mgr_update(&impl->tx_anc_mgr);
-  st_pthread_mutex_unlock(&impl->tx_anc_mgr_mutex);
+  mt_pthread_mutex_unlock(&impl->tx_anc_mgr_mutex);
 
   rte_atomic32_dec(&impl->st40_tx_sessions_cnt);
   info("%s, succ on session %d\n", __func__, idx);

@@ -9,36 +9,36 @@
 
 #ifdef MTL_HAS_ASAN
 /* additional memleak check for rte_malloc since dpdk asan not support this */
-static int g_st_rte_malloc_cnt;
+static int g_mt_rte_malloc_cnt;
 
-int st_asan_check(void) {
-  if (g_st_rte_malloc_cnt != 0) {
+int mt_asan_check(void) {
+  if (g_mt_rte_malloc_cnt != 0) {
     rte_panic("%s, detect not free memory by rte_malloc, error cnt %d\n", __func__,
-              g_st_rte_malloc_cnt);
+              g_mt_rte_malloc_cnt);
   }
 
   return 0;
 }
 
-void* st_rte_malloc_socket(size_t sz, int socket) {
-  void* p = rte_malloc_socket(ST_DPDK_LIB_NAME, sz, RTE_CACHE_LINE_SIZE, socket);
-  if (p) g_st_rte_malloc_cnt++;
+void* mt_rte_malloc_socket(size_t sz, int socket) {
+  void* p = rte_malloc_socket(MT_DPDK_LIB_NAME, sz, RTE_CACHE_LINE_SIZE, socket);
+  if (p) g_mt_rte_malloc_cnt++;
   return p;
 }
 
-void* st_rte_zmalloc_socket(size_t sz, int socket) {
-  void* p = rte_zmalloc_socket(ST_DPDK_LIB_NAME, sz, RTE_CACHE_LINE_SIZE, socket);
-  if (p) g_st_rte_malloc_cnt++;
+void* mt_rte_zmalloc_socket(size_t sz, int socket) {
+  void* p = rte_zmalloc_socket(MT_DPDK_LIB_NAME, sz, RTE_CACHE_LINE_SIZE, socket);
+  if (p) g_mt_rte_malloc_cnt++;
   return p;
 }
 
-void st_rte_free(void* p) {
+void mt_rte_free(void* p) {
   rte_free(p);
-  g_st_rte_malloc_cnt--;
+  g_mt_rte_malloc_cnt--;
 }
 #endif
 
-bool st_bitmap_test_and_set(uint8_t* bitmap, int idx) {
+bool mt_bitmap_test_and_set(uint8_t* bitmap, int idx) {
   int pos = idx / 8;
   int off = idx % 8;
   uint8_t bits = bitmap[pos];
@@ -51,7 +51,7 @@ bool st_bitmap_test_and_set(uint8_t* bitmap, int idx) {
   return false;
 }
 
-int st_ring_dequeue_clean(struct rte_ring* ring) {
+int mt_ring_dequeue_clean(struct rte_ring* ring) {
   int ret;
   struct rte_mbuf* pkt;
   unsigned int count = rte_ring_count(ring);
@@ -68,7 +68,7 @@ int st_ring_dequeue_clean(struct rte_ring* ring) {
   return 0;
 }
 
-void st_mbuf_sanity_check(struct rte_mbuf** mbufs, uint16_t nb, char* tag) {
+void mt_mbuf_sanity_check(struct rte_mbuf** mbufs, uint16_t nb, char* tag) {
   struct rte_mbuf* mbuf;
 
   for (int i = 0; i < nb; i++) {
@@ -80,9 +80,9 @@ void st_mbuf_sanity_check(struct rte_mbuf** mbufs, uint16_t nb, char* tag) {
   }
 }
 
-int st_build_port_map(struct mtl_main_impl* impl, char** ports, enum mtl_port* maps,
+int mt_build_port_map(struct mtl_main_impl* impl, char** ports, enum mtl_port* maps,
                       int num_ports) {
-  struct mtl_init_params* p = st_get_user_params(impl);
+  struct mtl_init_params* p = mt_get_user_params(impl);
   int main_num_ports = p->num_ports;
 
   if (num_ports > main_num_ports) {
@@ -115,11 +115,11 @@ int st_build_port_map(struct mtl_main_impl* impl, char** ports, enum mtl_port* m
   return 0;
 }
 
-int st_pacing_train_result_add(struct mtl_main_impl* impl, enum mtl_port port,
+int mt_pacing_train_result_add(struct mtl_main_impl* impl, enum mtl_port port,
                                uint64_t rl_bps, float pad_interval) {
-  struct st_pacing_train_result* ptr = &st_if(impl, port)->pt_results[0];
+  struct mt_pacing_train_result* ptr = &mt_if(impl, port)->pt_results[0];
 
-  for (int i = 0; i < ST_MAX_RL_ITEMS; i++) {
+  for (int i = 0; i < MT_MAX_RL_ITEMS; i++) {
     if (ptr[i].rl_bps) continue;
     ptr[i].rl_bps = rl_bps;
     ptr[i].pacing_pad_interval = pad_interval;
@@ -130,11 +130,11 @@ int st_pacing_train_result_add(struct mtl_main_impl* impl, enum mtl_port port,
   return -ENOMEM;
 }
 
-int st_pacing_train_result_search(struct mtl_main_impl* impl, enum mtl_port port,
+int mt_pacing_train_result_search(struct mtl_main_impl* impl, enum mtl_port port,
                                   uint64_t rl_bps, float* pad_interval) {
-  struct st_pacing_train_result* ptr = &st_if(impl, port)->pt_results[0];
+  struct mt_pacing_train_result* ptr = &mt_if(impl, port)->pt_results[0];
 
-  for (int i = 0; i < ST_MAX_RL_ITEMS; i++) {
+  for (int i = 0; i < MT_MAX_RL_ITEMS; i++) {
     if (rl_bps == ptr[i].rl_bps) {
       *pad_interval = ptr[i].pacing_pad_interval;
       return 0;
@@ -173,7 +173,7 @@ void st_video_rtp_dump(enum mtl_port port, int idx, char* tag,
   }
 }
 
-void st_mbuf_dump(enum mtl_port port, int idx, char* tag, struct rte_mbuf* m) {
+void mt_mbuf_dump(enum mtl_port port, int idx, char* tag, struct rte_mbuf* m) {
   struct rte_ether_hdr* eth = rte_pktmbuf_mtod(m, struct rte_ether_hdr*);
   size_t hdr_offset = sizeof(struct rte_ether_hdr);
   struct rte_ipv4_hdr* ipv4 = NULL;
@@ -184,10 +184,10 @@ void st_mbuf_dump(enum mtl_port port, int idx, char* tag, struct rte_mbuf* m) {
 
   if (tag) info("%s(%d,%d), %s\n", __func__, port, idx, tag);
   info("ether_type 0x%x\n", ether_type);
-  mac = &st_eth_d_addr(eth)->addr_bytes[0];
+  mac = &mt_eth_d_addr(eth)->addr_bytes[0];
   info("d_mac %02x:%02x:%02x:%02x:%02x:%02x\n", mac[0], mac[1], mac[2], mac[3], mac[4],
        mac[5]);
-  mac = &st_eth_s_addr(eth)->addr_bytes[0];
+  mac = &mt_eth_s_addr(eth)->addr_bytes[0];
   info("s_mac %02x:%02x:%02x:%02x:%02x:%02x\n", mac[0], mac[1], mac[2], mac[3], mac[4],
        mac[5]);
 
@@ -211,9 +211,9 @@ void st_mbuf_dump(enum mtl_port port, int idx, char* tag, struct rte_mbuf* m) {
   rte_pktmbuf_dump(stdout, m, m->data_len);
 }
 
-void st_lcore_dump() { rte_lcore_dump(stdout); }
+void mt_lcore_dump() { rte_lcore_dump(stdout); }
 
-void st_eth_link_dump(uint16_t port_id) {
+void mt_eth_link_dump(uint16_t port_id) {
   struct rte_eth_link eth_link;
 
   rte_eth_link_get_nowait(port_id, &eth_link);
@@ -223,7 +223,7 @@ void st_eth_link_dump(uint16_t port_id) {
            eth_link.link_duplex, eth_link.link_autoneg);
 }
 
-void st_eth_macaddr_dump(enum mtl_port port, char* tag, struct rte_ether_addr* mac_addr) {
+void mt_eth_macaddr_dump(enum mtl_port port, char* tag, struct rte_ether_addr* mac_addr) {
   if (tag) info("%s(%d), %s\n", __func__, port, tag);
 
   uint8_t* addr = &mac_addr->addr_bytes[0];
@@ -231,7 +231,7 @@ void st_eth_macaddr_dump(enum mtl_port port, char* tag, struct rte_ether_addr* m
        addr[5]);
 }
 
-struct rte_mbuf* st_build_pad(struct mtl_main_impl* impl, struct rte_mempool* mempool,
+struct rte_mbuf* mt_build_pad(struct mtl_main_impl* impl, struct rte_mempool* mempool,
                               uint16_t port_id, uint16_t ether_type, uint16_t len) {
   struct rte_ether_addr src_mac;
   struct rte_mbuf* pad;
@@ -251,16 +251,16 @@ struct rte_mbuf* st_build_pad(struct mtl_main_impl* impl, struct rte_mempool* me
   eth_hdr = rte_pktmbuf_mtod(pad, struct rte_ether_hdr*);
   memset((char*)eth_hdr, 0, len);
   eth_hdr->ether_type = htons(ether_type);
-  st_eth_d_addr(eth_hdr)->addr_bytes[0] = 0x01;
-  st_eth_d_addr(eth_hdr)->addr_bytes[1] = 0x80;
-  st_eth_d_addr(eth_hdr)->addr_bytes[2] = 0xC2;
-  st_eth_d_addr(eth_hdr)->addr_bytes[5] = 0x01;
-  rte_memcpy(st_eth_s_addr(eth_hdr), &src_mac, RTE_ETHER_ADDR_LEN);
+  mt_eth_d_addr(eth_hdr)->addr_bytes[0] = 0x01;
+  mt_eth_d_addr(eth_hdr)->addr_bytes[1] = 0x80;
+  mt_eth_d_addr(eth_hdr)->addr_bytes[2] = 0xC2;
+  mt_eth_d_addr(eth_hdr)->addr_bytes[5] = 0x01;
+  rte_memcpy(mt_eth_s_addr(eth_hdr), &src_mac, RTE_ETHER_ADDR_LEN);
 
   return pad;
 }
 
-struct rte_mempool* st_mempool_create_by_ops(struct mtl_main_impl* impl,
+struct rte_mempool* mt_mempool_create_by_ops(struct mtl_main_impl* impl,
                                              enum mtl_port port, const char* name,
                                              unsigned int n, unsigned int cache_size,
                                              uint16_t priv_size, uint16_t element_size,
@@ -268,9 +268,9 @@ struct rte_mempool* st_mempool_create_by_ops(struct mtl_main_impl* impl,
   if (cache_size && (element_size % cache_size)) { /* align to cache size */
     element_size = (element_size / cache_size + 1) * cache_size;
   }
-  uint16_t data_room_size = element_size + ST_MBUF_HEADROOM_SIZE; /* include head room */
+  uint16_t data_room_size = element_size + MT_MBUF_HEADROOM_SIZE; /* include head room */
   struct rte_mempool* mbuf_pool = rte_pktmbuf_pool_create_by_ops(
-      name, n, cache_size, priv_size, data_room_size, st_socket_id(impl, port), ops_name);
+      name, n, cache_size, priv_size, data_room_size, mt_socket_id(impl, port), ops_name);
   if (!mbuf_pool) {
     err("%s(%d), fail(%s) for %s, n %u\n", __func__, port, rte_strerror(rte_errno), name,
         n);
@@ -282,7 +282,7 @@ struct rte_mempool* st_mempool_create_by_ops(struct mtl_main_impl* impl,
   return mbuf_pool;
 }
 
-int st_mempool_free(struct rte_mempool* mp) {
+int mt_mempool_free(struct rte_mempool* mp) {
   unsigned int in_use_count = rte_mempool_in_use_count(mp);
   if (in_use_count) {
     /* caused by the mbuf is still in nix tx queues? */
@@ -296,7 +296,7 @@ int st_mempool_free(struct rte_mempool* mp) {
 }
 
 /* Computing the Internet Checksum based on rfc1071 */
-uint16_t st_rf1071_check_sum(uint8_t* p, size_t len, bool convert) {
+uint16_t mt_rf1071_check_sum(uint8_t* p, size_t len, bool convert) {
   uint16_t* u16_in = (uint16_t*)p;
   uint16_t check_sum = 0;
   uint32_t sum = 0;
@@ -327,12 +327,12 @@ uint16_t st_rf1071_check_sum(uint8_t* p, size_t len, bool convert) {
   return check_sum;
 }
 
-struct st_u64_fifo* st_u64_fifo_init(int size, int soc_id) {
-  struct st_u64_fifo* fifo = st_rte_zmalloc_socket(sizeof(*fifo), soc_id);
+struct mt_u64_fifo* mt_u64_fifo_init(int size, int soc_id) {
+  struct mt_u64_fifo* fifo = mt_rte_zmalloc_socket(sizeof(*fifo), soc_id);
   if (!fifo) return NULL;
-  uint64_t* data = st_rte_zmalloc_socket(sizeof(*data) * size, soc_id);
+  uint64_t* data = mt_rte_zmalloc_socket(sizeof(*data) * size, soc_id);
   if (!data) {
-    st_rte_free(fifo);
+    mt_rte_free(fifo);
     return NULL;
   }
 
@@ -341,18 +341,18 @@ struct st_u64_fifo* st_u64_fifo_init(int size, int soc_id) {
   return fifo;
 }
 
-int st_u64_fifo_uinit(struct st_u64_fifo* fifo) {
+int mt_u64_fifo_uinit(struct mt_u64_fifo* fifo) {
   if (fifo->used > 0) {
     err("%s, still has %d items\n", __func__, fifo->used);
     return -EIO;
   }
-  st_rte_free(fifo->data);
-  st_rte_free(fifo);
+  mt_rte_free(fifo->data);
+  mt_rte_free(fifo);
   return 0;
 }
 
 /* todo: add overflow check */
-int st_u64_fifo_put(struct st_u64_fifo* fifo, uint64_t item) {
+int mt_u64_fifo_put(struct mt_u64_fifo* fifo, uint64_t item) {
   if (fifo->used >= fifo->size) {
     err("%s, fail as fifo is full(%d)\n", __func__, fifo->size);
     return -EIO;
@@ -365,7 +365,7 @@ int st_u64_fifo_put(struct st_u64_fifo* fifo, uint64_t item) {
 }
 
 /* todo: add overflow check */
-int st_u64_fifo_get(struct st_u64_fifo* fifo, uint64_t* item) {
+int mt_u64_fifo_get(struct mt_u64_fifo* fifo, uint64_t* item) {
   if (fifo->used <= 0) {
     err("%s, fail as empty\n", __func__);
     return -EIO;
@@ -377,51 +377,51 @@ int st_u64_fifo_get(struct st_u64_fifo* fifo, uint64_t* item) {
   return 0;
 }
 
-struct st_cvt_dma_ctx* st_cvt_dma_ctx_init(int fifo_size, int soc_id, int type_num) {
-  struct st_cvt_dma_ctx* ctx = st_rte_zmalloc_socket(sizeof(*ctx), soc_id);
+struct mt_cvt_dma_ctx* mt_cvt_dma_ctx_init(int fifo_size, int soc_id, int type_num) {
+  struct mt_cvt_dma_ctx* ctx = mt_rte_zmalloc_socket(sizeof(*ctx), soc_id);
   if (!ctx) return NULL;
 
-  ctx->fifo = st_u64_fifo_init(fifo_size, soc_id);
+  ctx->fifo = mt_u64_fifo_init(fifo_size, soc_id);
   if (!ctx->fifo) goto fail;
-  ctx->tran = st_rte_zmalloc_socket(sizeof(*ctx->tran) * type_num, soc_id);
+  ctx->tran = mt_rte_zmalloc_socket(sizeof(*ctx->tran) * type_num, soc_id);
   if (!ctx->tran) goto fail;
-  ctx->done = st_rte_zmalloc_socket(sizeof(*ctx->done) * type_num, soc_id);
+  ctx->done = mt_rte_zmalloc_socket(sizeof(*ctx->done) * type_num, soc_id);
   if (!ctx->done) goto fail;
 
   return ctx;
 
 fail:
-  if (ctx->fifo) st_u64_fifo_uinit(ctx->fifo);
-  if (ctx->tran) st_rte_free(ctx->tran);
-  if (ctx->done) st_rte_free(ctx->done);
-  st_rte_free(ctx);
+  if (ctx->fifo) mt_u64_fifo_uinit(ctx->fifo);
+  if (ctx->tran) mt_rte_free(ctx->tran);
+  if (ctx->done) mt_rte_free(ctx->done);
+  mt_rte_free(ctx);
   return NULL;
 }
 
-int st_cvt_dma_ctx_uinit(struct st_cvt_dma_ctx* ctx) {
-  st_u64_fifo_uinit(ctx->fifo);
-  st_rte_free(ctx->tran);
-  st_rte_free(ctx->done);
-  st_rte_free(ctx);
+int mt_cvt_dma_ctx_uinit(struct mt_cvt_dma_ctx* ctx) {
+  mt_u64_fifo_uinit(ctx->fifo);
+  mt_rte_free(ctx->tran);
+  mt_rte_free(ctx->done);
+  mt_rte_free(ctx);
   return 0;
 }
 
-int st_cvt_dma_ctx_push(struct st_cvt_dma_ctx* ctx, int type) {
-  st_u64_fifo_put(ctx->fifo, type);
+int mt_cvt_dma_ctx_push(struct mt_cvt_dma_ctx* ctx, int type) {
+  mt_u64_fifo_put(ctx->fifo, type);
   ctx->tran[type]++;
   dbg("%s, tran %d for type %d\n", __func__, ctx->tran[type], type);
   return 0;
 }
 
-int st_cvt_dma_ctx_pop(struct st_cvt_dma_ctx* ctx) {
+int mt_cvt_dma_ctx_pop(struct mt_cvt_dma_ctx* ctx) {
   uint64_t type = 0;
-  st_u64_fifo_get(ctx->fifo, &type);
+  mt_u64_fifo_get(ctx->fifo, &type);
   ctx->done[type]++;
   dbg("%s, done %d for type %" PRIu64 "\n", __func__, ctx->done[type], type);
   return 0;
 }
 
-int st_run_cmd(const char* cmd, char* out, size_t out_len) {
+int mt_run_cmd(const char* cmd, char* out, size_t out_len) {
   FILE* fp;
   char* ret;
 
@@ -445,7 +445,7 @@ int st_run_cmd(const char* cmd, char* out, size_t out_len) {
   return 0;
 }
 
-int st_ip_addr_check(uint8_t* ip) {
+int mt_ip_addr_check(uint8_t* ip) {
   for (int i = 0; i < MTL_IP_ADDR_LEN; i++) {
     if (ip[i]) return 0;
   }
@@ -459,7 +459,7 @@ int st_rx_source_info_check(struct st_rx_source_info* src, int num_ports) {
 
   for (int i = 0; i < num_ports; i++) {
     ip = src->sip_addr[i];
-    ret = st_ip_addr_check(ip);
+    ret = mt_ip_addr_check(ip);
     if (ret < 0) {
       err("%s(%d), invalid ip %d.%d.%d.%d\n", __func__, i, ip[0], ip[1], ip[2], ip[3]);
       return -EINVAL;
@@ -490,7 +490,7 @@ int st_frame_trans_uinit(struct st_frame_trans* frame) {
   if (frame->addr) {
     if (frame->flags & ST_FT_FLAG_RTE_MALLOC) {
       dbg("%s(%d), free rte mem\n", __func__, idx);
-      st_rte_free(frame->addr);
+      mt_rte_free(frame->addr);
     }
     frame->addr = NULL;
   }
@@ -500,12 +500,12 @@ int st_frame_trans_uinit(struct st_frame_trans* frame) {
 }
 
 int st_vsync_calculate(struct mtl_main_impl* impl, struct st_vsync_info* vsync) {
-  uint64_t ptp_time = st_get_ptp_time(impl, MTL_PORT_P);
+  uint64_t ptp_time = mt_get_ptp_time(impl, MTL_PORT_P);
   uint64_t to_next_epochs;
 
   vsync->meta.epoch = ptp_time / vsync->meta.frame_time + 1;
   to_next_epochs = vsync->meta.epoch * vsync->meta.frame_time - ptp_time;
-  vsync->next_epoch_tsc = st_get_tsc(impl) + to_next_epochs;
+  vsync->next_epoch_tsc = mt_get_tsc(impl) + to_next_epochs;
 
   dbg("%s, to_next_epochs %fms\n", __func__, (float)to_next_epochs / NS_PER_MS);
   return 0;

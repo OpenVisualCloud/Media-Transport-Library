@@ -28,7 +28,7 @@ static uint16_t mcast_msg_checksum(enum mcast_msg_type type, void* msg, uint16_t
       break;
   }
 
-  return st_rf1071_check_sum(msg, size, true);
+  return mt_rf1071_check_sum(msg, size, true);
 }
 
 /* group record shaping, refer to RFC3376 - 4.2.4 */
@@ -51,7 +51,7 @@ static struct rte_ether_addr const mcast_mac_query = {
     {0x01, 0x00, 0x5e, 0x00, 0x00, 0x01}};
 
 int mcast_membership_general_query(struct mtl_main_impl* impl, enum mtl_port port) {
-  struct st_mcast_impl* mcast = &impl->mcast;
+  struct mt_mcast_impl* mcast = &impl->mcast;
   struct rte_mbuf* pkt;
   struct rte_ether_hdr* eth_hdr;
   struct rte_ipv4_hdr* ip_hdr;
@@ -59,15 +59,15 @@ int mcast_membership_general_query(struct mtl_main_impl* impl, enum mtl_port por
   size_t hdr_offset = 0;
   size_t mb_query_len = sizeof(struct mcast_mb_query_v3);
 
-  pkt = rte_pktmbuf_alloc(st_get_tx_mempool(impl, port));
+  pkt = rte_pktmbuf_alloc(mt_get_tx_mempool(impl, port));
   if (!pkt) {
     err("%s, report packet alloc failed\n", __func__);
     return -ENOMEM;
   }
 
   eth_hdr = rte_pktmbuf_mtod_offset(pkt, struct rte_ether_hdr*, hdr_offset);
-  rte_eth_macaddr_get(st_port_id(impl, port), st_eth_s_addr(eth_hdr));
-  rte_ether_addr_copy(&mcast_mac_query, st_eth_d_addr(eth_hdr));
+  rte_eth_macaddr_get(mt_port_id(impl, port), mt_eth_s_addr(eth_hdr));
+  rte_ether_addr_copy(&mcast_mac_query, mt_eth_d_addr(eth_hdr));
   eth_hdr->ether_type = htons(RTE_ETHER_TYPE_IPV4);
   hdr_offset += sizeof(*eth_hdr);
 
@@ -75,11 +75,11 @@ int mcast_membership_general_query(struct mtl_main_impl* impl, enum mtl_port por
   ip_hdr->version_ihl = (4 << 4) | (sizeof(struct rte_ipv4_hdr) / 4);
   ip_hdr->time_to_live = 1;
   ip_hdr->type_of_service = IP_IGMP_DSCP_VALUE;
-  ip_hdr->fragment_offset = ST_IP_DONT_FRAGMENT_FLAG;
+  ip_hdr->fragment_offset = MT_IP_DONT_FRAGMENT_FLAG;
   ip_hdr->hdr_checksum = 0;
   ip_hdr->total_length = htons(sizeof(struct rte_ipv4_hdr) + mb_query_len);
   ip_hdr->next_proto_id = IGMP_PROTOCOL;
-  ip_hdr->src_addr = *(uint32_t*)st_sip_addr(impl, port);
+  ip_hdr->src_addr = *(uint32_t*)mt_sip_addr(impl, port);
   inet_pton(AF_INET, IGMP_QUERY_IP, &ip_hdr->dst_addr);
   hdr_offset += sizeof(*ip_hdr);
 
@@ -102,11 +102,11 @@ int mcast_membership_general_query(struct mtl_main_impl* impl, enum mtl_port por
   }
   mb_query->checksum = htons(checksum);
 
-  st_mbuf_init_ipv4(pkt);
+  mt_mbuf_init_ipv4(pkt);
   pkt->pkt_len = pkt->l2_len + pkt->l3_len + mb_query_len;
   pkt->data_len = pkt->pkt_len;
 
-  uint16_t tx = rte_eth_tx_burst(st_port_id(impl, port), mcast->tx_q_id[port], &pkt, 1);
+  uint16_t tx = rte_eth_tx_burst(mt_port_id(impl, port), mcast->tx_q_id[port], &pkt, 1);
   if (tx < 1) {
     err("%s, send pkt fail\n", __func__);
     rte_pktmbuf_free(pkt);
@@ -120,7 +120,7 @@ int mcast_membership_general_query(struct mtl_main_impl* impl, enum mtl_port por
 static int mcast_membership_report(struct mtl_main_impl* impl,
                                    enum mcast_group_record_type type,
                                    enum mtl_port port) {
-  struct st_mcast_impl* mcast = &impl->mcast;
+  struct mt_mcast_impl* mcast = &impl->mcast;
   uint16_t group_num = mcast->group_num[port];
   struct rte_mbuf* pkt;
   struct rte_ether_hdr* eth_hdr;
@@ -143,15 +143,15 @@ static int mcast_membership_report(struct mtl_main_impl* impl,
 
   dbg("%s(%d), group_num: %d\n", __func__, port, group_num);
 
-  pkt = rte_pktmbuf_alloc(st_get_tx_mempool(impl, port));
+  pkt = rte_pktmbuf_alloc(mt_get_tx_mempool(impl, port));
   if (!pkt) {
     err("%s, report packet alloc failed\n", __func__);
     return -ENOMEM;
   }
 
   eth_hdr = rte_pktmbuf_mtod_offset(pkt, struct rte_ether_hdr*, hdr_offset);
-  rte_eth_macaddr_get(st_port_id(impl, port), st_eth_s_addr(eth_hdr));
-  rte_ether_addr_copy(&mcast_mac_dst, st_eth_d_addr(eth_hdr));
+  rte_eth_macaddr_get(mt_port_id(impl, port), mt_eth_s_addr(eth_hdr));
+  rte_ether_addr_copy(&mcast_mac_dst, mt_eth_d_addr(eth_hdr));
   eth_hdr->ether_type = htons(RTE_ETHER_TYPE_IPV4);
   hdr_offset += sizeof(*eth_hdr);
 
@@ -159,11 +159,11 @@ static int mcast_membership_report(struct mtl_main_impl* impl,
   ip_hdr->version_ihl = (4 << 4) | (sizeof(struct rte_ipv4_hdr) / 4);
   ip_hdr->time_to_live = 1;
   ip_hdr->type_of_service = IP_IGMP_DSCP_VALUE;
-  ip_hdr->fragment_offset = ST_IP_DONT_FRAGMENT_FLAG;
+  ip_hdr->fragment_offset = MT_IP_DONT_FRAGMENT_FLAG;
   ip_hdr->hdr_checksum = 0;
   ip_hdr->total_length = htons(sizeof(struct rte_ipv4_hdr) + mb_report_len);
   ip_hdr->next_proto_id = IGMP_PROTOCOL;
-  ip_hdr->src_addr = *(uint32_t*)st_sip_addr(impl, port);
+  ip_hdr->src_addr = *(uint32_t*)mt_sip_addr(impl, port);
   inet_pton(AF_INET, IGMP_REPORT_IP, &ip_hdr->dst_addr);
   hdr_offset += sizeof(*ip_hdr);
 
@@ -186,18 +186,18 @@ static int mcast_membership_report(struct mtl_main_impl* impl,
   dbg("%s, checksum %d\n", __func__, checksum);
   mb_report->checksum = htons(checksum);
 
-  st_mbuf_init_ipv4(pkt);
+  mt_mbuf_init_ipv4(pkt);
   pkt->pkt_len = pkt->l2_len + pkt->l3_len + mb_report_len;
   pkt->data_len = pkt->pkt_len;
 
 #ifdef MCAST_DEBUG
   /* send packet to kni for capturing */
-  struct st_kni_impl* kni = &impl->kni;
+  struct mt_kni_impl* kni = &impl->kni;
   struct rte_kni* rkni = kni->rkni[port];
   if (rkni) rte_kni_tx_burst(rkni, (struct rte_mbuf**)&report_pkt, 1);
 #endif
 
-  uint16_t tx = rte_eth_tx_burst(st_port_id(impl, port), mcast->tx_q_id[port], &pkt, 1);
+  uint16_t tx = rte_eth_tx_burst(mt_port_id(impl, port), mcast->tx_q_id[port], &pkt, 1);
   if (tx < 1) {
     err("%s, send pkt fail\n", __func__);
     rte_pktmbuf_free(pkt);
@@ -209,11 +209,11 @@ static int mcast_membership_report(struct mtl_main_impl* impl,
 
 static void mcast_membership_report_cb(void* param) {
   struct mtl_main_impl* impl = (struct mtl_main_impl*)param;
-  int num_ports = st_num_ports(impl);
+  int num_ports = mt_num_ports(impl);
   int ret;
 
   for (int port = 0; port < num_ports; port++) {
-    if (!st_pmd_is_kernel(impl, port)) {
+    if (!mt_pmd_is_kernel(impl, port)) {
       ret = mcast_membership_report(impl, MCAST_MODE_IS_EXCLUDE, port);
       if (ret < 0) {
         err("%s(%d), mcast_membership_report fail %d\n", __func__, port, ret);
@@ -226,12 +226,12 @@ static void mcast_membership_report_cb(void* param) {
 }
 
 static int mcast_queues_uinit(struct mtl_main_impl* impl) {
-  int num_ports = st_num_ports(impl);
-  struct st_mcast_impl* mcast = &impl->mcast;
+  int num_ports = mt_num_ports(impl);
+  struct mt_mcast_impl* mcast = &impl->mcast;
 
   for (int i = 0; i < num_ports; i++) {
     if (mcast->tx_q_active[i]) {
-      st_dev_free_tx_queue(impl, i, mcast->tx_q_id[i]);
+      mt_dev_free_tx_queue(impl, i, mcast->tx_q_id[i]);
       mcast->tx_q_active[i] = false;
     }
   }
@@ -240,15 +240,15 @@ static int mcast_queues_uinit(struct mtl_main_impl* impl) {
 }
 
 static int mcast_queues_init(struct mtl_main_impl* impl) {
-  int num_ports = st_num_ports(impl);
-  struct st_mcast_impl* mcast = &impl->mcast;
+  int num_ports = mt_num_ports(impl);
+  struct mt_mcast_impl* mcast = &impl->mcast;
   int ret;
 
   for (int i = 0; i < num_ports; i++) {
     /* no mcast queue for kernel based pmd */
-    if (st_pmd_is_kernel(impl, i)) continue;
+    if (mt_pmd_is_kernel(impl, i)) continue;
 
-    ret = st_dev_request_tx_queue(impl, i, &mcast->tx_q_id[i], 0);
+    ret = mt_dev_requemt_tx_queue(impl, i, &mcast->tx_q_id[i], 0);
     if (ret < 0) {
       err("%s(%d), tx_q create fail\n", __func__, i);
       mcast_queues_uinit(impl);
@@ -261,7 +261,7 @@ static int mcast_queues_init(struct mtl_main_impl* impl) {
   return 0;
 }
 
-static int mcast_addr_pool_extend(struct st_interface* inf) {
+static int mcast_addr_pool_extend(struct mt_interface* inf) {
   struct rte_ether_addr* mc_list;
   size_t mc_list_size;
 
@@ -286,14 +286,14 @@ static int mcast_addr_pool_extend(struct st_interface* inf) {
   return 0;
 }
 
-static int mcast_addr_pool_append(struct st_interface* inf,
+static int mcast_addr_pool_append(struct mt_interface* inf,
                                   struct rte_ether_addr* mc_addr) {
   if (mcast_addr_pool_extend(inf) != 0) return -1;
   rte_ether_addr_copy(mc_addr, &inf->mcast_mac_lists[inf->mcast_nb - 1]);
   return 0;
 }
 
-static void mcast_addr_pool_remove(struct st_interface* inf, uint32_t addr_idx) {
+static void mcast_addr_pool_remove(struct mt_interface* inf, uint32_t addr_idx) {
   inf->mcast_nb--;
   if (addr_idx == inf->mcast_nb) {
     /* No need to recompact the set of multicast addressses. */
@@ -308,7 +308,7 @@ static void mcast_addr_pool_remove(struct st_interface* inf, uint32_t addr_idx) 
           sizeof(struct rte_ether_addr) * (inf->mcast_nb - addr_idx));
 }
 
-static int mcast_inf_add_mac(struct st_interface* inf, struct rte_ether_addr* mcast_mac) {
+static int mcast_inf_add_mac(struct mt_interface* inf, struct rte_ether_addr* mcast_mac) {
   uint16_t port_id = inf->port_id;
   uint32_t i;
 
@@ -329,7 +329,7 @@ static int mcast_inf_add_mac(struct st_interface* inf, struct rte_ether_addr* mc
     return rte_eth_dev_mac_addr_add(port_id, mcast_mac, 0);
 }
 
-static int mcast_inf_remove_mac(struct st_interface* inf,
+static int mcast_inf_remove_mac(struct mt_interface* inf,
                                 struct rte_ether_addr* mcast_mac) {
   uint32_t i;
   uint16_t port_id = inf->port_id;
@@ -351,12 +351,12 @@ static int mcast_inf_remove_mac(struct st_interface* inf,
     return rte_eth_dev_mac_addr_remove(port_id, mcast_mac);
 }
 
-int st_mcast_init(struct mtl_main_impl* impl) {
-  struct st_mcast_impl* mcast = &impl->mcast;
+int mt_mcast_init(struct mtl_main_impl* impl) {
+  struct mt_mcast_impl* mcast = &impl->mcast;
   int ret;
 
   for (int port = 0; port < MTL_PORT_MAX; ++port) {
-    st_pthread_mutex_init(&mcast->group_mutex[port], NULL);
+    mt_pthread_mutex_init(&mcast->group_mutex[port], NULL);
   }
 
   ret = rte_eal_alarm_set(IGMP_JOIN_GROUP_PERIOD_US, mcast_membership_report_cb, impl);
@@ -369,14 +369,14 @@ int st_mcast_init(struct mtl_main_impl* impl) {
   return 0;
 }
 
-int st_mcast_uinit(struct mtl_main_impl* impl) {
-  struct st_mcast_impl* mcast = &impl->mcast;
+int mt_mcast_uinit(struct mtl_main_impl* impl) {
+  struct mt_mcast_impl* mcast = &impl->mcast;
   int ret;
 
   mcast_queues_uinit(impl);
 
   for (int port = 0; port < MTL_PORT_MAX; ++port) {
-    st_pthread_mutex_destroy(&mcast->group_mutex[port]);
+    mt_pthread_mutex_destroy(&mcast->group_mutex[port]);
   }
 
   ret = rte_eal_alarm_cancel(mcast_membership_report_cb, impl);
@@ -387,10 +387,10 @@ int st_mcast_uinit(struct mtl_main_impl* impl) {
 }
 
 /* add a group address to the group ip list */
-int st_mcast_join(struct mtl_main_impl* impl, uint32_t group_addr, enum mtl_port port) {
-  struct st_mcast_impl* mcast = &impl->mcast;
+int mt_mcast_join(struct mtl_main_impl* impl, uint32_t group_addr, enum mtl_port port) {
+  struct mt_mcast_impl* mcast = &impl->mcast;
   struct rte_ether_addr mcast_mac;
-  struct st_interface* inf = st_if(impl, port);
+  struct mt_interface* inf = mt_if(impl, port);
   int group_num = mcast->group_num[port];
   uint8_t* ip = (uint8_t*)&group_addr;
   int ret;
@@ -400,20 +400,20 @@ int st_mcast_join(struct mtl_main_impl* impl, uint32_t group_addr, enum mtl_port
     return -EIO;
   }
 
-  st_pthread_mutex_lock(&mcast->group_mutex[port]);
+  mt_pthread_mutex_lock(&mcast->group_mutex[port]);
   for (int i = 0; i < group_num; ++i) {
     if (mcast->group_ip[port][i] == group_addr) {
       mcast->group_ref_cnt[port][i]++;
-      st_pthread_mutex_unlock(&mcast->group_mutex[port]);
+      mt_pthread_mutex_unlock(&mcast->group_mutex[port]);
       info("%s(%d), group %d.%d.%d.%d ref cnt %u\n", __func__, port, ip[0], ip[1], ip[2],
            ip[3], mcast->group_ref_cnt[port][i]);
       return 0;
     }
   }
-  if (st_pmd_is_kernel(impl, port)) {
-    ret = st_socket_join_mcast(impl, port, group_addr);
+  if (mt_pmd_is_kernel(impl, port)) {
+    ret = mt_socket_join_mcast(impl, port, group_addr);
     if (ret < 0) {
-      st_pthread_mutex_unlock(&mcast->group_mutex[port]);
+      mt_pthread_mutex_unlock(&mcast->group_mutex[port]);
       err("%s(%d), fail(%d) to join socket group %d.%d.%d.%d\n", __func__, port, ret,
           ip[0], ip[1], ip[2], ip[3]);
       return ret;
@@ -422,14 +422,14 @@ int st_mcast_join(struct mtl_main_impl* impl, uint32_t group_addr, enum mtl_port
   mcast->group_ip[port][group_num] = group_addr;
   mcast->group_ref_cnt[port][group_num] = 1;
   mcast->group_num[port]++;
-  st_pthread_mutex_unlock(&mcast->group_mutex[port]);
+  mt_pthread_mutex_unlock(&mcast->group_mutex[port]);
 
   /* add mcast mac to interface */
-  st_mcast_ip_to_mac(ip, &mcast_mac);
+  mt_mcast_ip_to_mac(ip, &mcast_mac);
   mcast_inf_add_mac(inf, &mcast_mac);
 
   /* report to switch to join group */
-  if (!st_pmd_is_kernel(impl, port)) {
+  if (!mt_pmd_is_kernel(impl, port)) {
     mcast_membership_report(impl, MCAST_MODE_IS_EXCLUDE, port);
   }
 
@@ -439,14 +439,14 @@ int st_mcast_join(struct mtl_main_impl* impl, uint32_t group_addr, enum mtl_port
 
 /* not implement fast leave report for IGMPv3, just stop sending join report, */
 /* after a while the switch will delete the port in the multicast group */
-int st_mcast_leave(struct mtl_main_impl* impl, uint32_t group_addr, enum mtl_port port) {
-  struct st_mcast_impl* mcast = &impl->mcast;
+int mt_mcast_leave(struct mtl_main_impl* impl, uint32_t group_addr, enum mtl_port port) {
+  struct mt_mcast_impl* mcast = &impl->mcast;
   int group_num = mcast->group_num[port];
-  struct st_interface* inf = st_if(impl, port);
+  struct mt_interface* inf = mt_if(impl, port);
   uint8_t* ip = (uint8_t*)&group_addr;
   struct rte_ether_addr mcast_mac;
 
-  st_pthread_mutex_lock(&mcast->group_mutex[port]);
+  mt_pthread_mutex_lock(&mcast->group_mutex[port]);
   /* search the group ip list and delete the addr */
   for (int i = 0; i < group_num; ++i) {
     if (mcast->group_ip[port][i] == group_addr) {
@@ -455,28 +455,28 @@ int st_mcast_leave(struct mtl_main_impl* impl, uint32_t group_addr, enum mtl_por
       info("%s(%d), group %d.%d.%d.%d ref cnt %u\n", __func__, port, ip[0], ip[1], ip[2],
            ip[3], mcast->group_ref_cnt[port][i]);
       if (mcast->group_ref_cnt[port][i]) {
-        st_pthread_mutex_unlock(&mcast->group_mutex[port]);
+        mt_pthread_mutex_unlock(&mcast->group_mutex[port]);
         return 0;
       }
       mcast->group_ip[port][i] = mcast->group_ip[port][group_num - 1];
       mcast->group_num[port]--;
-      if (st_pmd_is_kernel(impl, port)) {
-        st_socket_drop_mcast(impl, port, group_addr);
+      if (mt_pmd_is_kernel(impl, port)) {
+        mt_socket_drop_mcast(impl, port, group_addr);
       }
-      st_pthread_mutex_unlock(&mcast->group_mutex[port]);
+      mt_pthread_mutex_unlock(&mcast->group_mutex[port]);
       /* remove mcast mac from interface */
-      st_mcast_ip_to_mac(ip, &mcast_mac);
+      mt_mcast_ip_to_mac(ip, &mcast_mac);
       mcast_inf_remove_mac(inf, &mcast_mac);
       return 0;
     }
   }
-  st_pthread_mutex_unlock(&mcast->group_mutex[port]);
+  mt_pthread_mutex_unlock(&mcast->group_mutex[port]);
   warn("%s, group ip not found, nothing to delete\n", __func__);
   return 0;
 }
 
-int st_mcast_restore(struct mtl_main_impl* impl, enum mtl_port port) {
-  struct st_interface* inf = st_if(impl, port);
+int mt_mcast_restore(struct mtl_main_impl* impl, enum mtl_port port) {
+  struct mt_interface* inf = mt_if(impl, port);
   uint16_t port_id = inf->port_id;
 
   if (MT_PORT_VF == inf->port_type) {
@@ -489,14 +489,14 @@ int st_mcast_restore(struct mtl_main_impl* impl, enum mtl_port port) {
   return 0;
 }
 
-int st_mcast_l2_join(struct mtl_main_impl* impl, struct rte_ether_addr* addr,
+int mt_mcast_l2_join(struct mtl_main_impl* impl, struct rte_ether_addr* addr,
                      enum mtl_port port) {
-  struct st_interface* inf = st_if(impl, port);
+  struct mt_interface* inf = mt_if(impl, port);
   return mcast_inf_add_mac(inf, addr);
 }
 
-int st_mcast_l2_leave(struct mtl_main_impl* impl, struct rte_ether_addr* addr,
+int mt_mcast_l2_leave(struct mtl_main_impl* impl, struct rte_ether_addr* addr,
                       enum mtl_port port) {
-  struct st_interface* inf = st_if(impl, port);
+  struct mt_interface* inf = mt_if(impl, port);
   return mcast_inf_remove_mac(inf, addr);
 }

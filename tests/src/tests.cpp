@@ -260,7 +260,7 @@ static void test_random_ip(struct st_tests_context* ctx) {
   r_ip[3] = p_ip[3] + 1;
 }
 
-static uint64_t test_ptp_from_real_time(void* priv) {
+static uint64_t temt_ptp_from_real_time(void* priv) {
   auto ctx = (struct st_tests_context*)priv;
   struct timespec spec;
 #ifndef WINDOWSENV
@@ -302,7 +302,7 @@ static void test_ctx_init(struct st_tests_context* ctx) {
   p->flags = MTL_FLAG_BIND_NUMA; /* default bind to numa */
   p->log_level = MTL_LOG_LEVEL_WARNING;
   p->priv = ctx;
-  p->ptp_get_time_fn = test_ptp_from_real_time;
+  p->ptp_get_time_fn = temt_ptp_from_real_time;
   p->tx_sessions_cnt_max = 16;
   p->rx_sessions_cnt_max = 16;
   /* defalut start queue set to 1 */
@@ -442,11 +442,11 @@ TEST(Misc, hp_zmalloc_expect_fail) {
 TEST(Misc, ptp) {
   auto ctx = (struct st_tests_context*)st_test_ctx();
   auto handle = ctx->handle;
-  uint64_t ptp = st_ptp_read_time(handle);
+  uint64_t ptp = mt_ptp_read_time(handle);
   EXPECT_EQ(ptp, ctx->ptp_time);
   /* try again */
   st_usleep(1);
-  ptp = st_ptp_read_time(handle);
+  ptp = mt_ptp_read_time(handle);
   EXPECT_EQ(ptp, ctx->ptp_time);
 }
 
@@ -454,11 +454,11 @@ static void st10_timestamp_test(uint32_t sampling_rate) {
   auto ctx = (struct st_tests_context*)st_test_ctx();
   auto handle = ctx->handle;
 
-  uint64_t ptp1 = st_ptp_read_time(handle);
+  uint64_t ptp1 = mt_ptp_read_time(handle);
   uint32_t media1 = st10_tai_to_media_clk(ptp1, sampling_rate);
   /* sleep 100us */
   st_usleep(100);
-  uint64_t ptp2 = st_ptp_read_time(handle);
+  uint64_t ptp2 = mt_ptp_read_time(handle);
   uint32_t media2 = st10_tai_to_media_clk(ptp2, sampling_rate);
   EXPECT_GT(ptp2, ptp1);
   EXPECT_GT(media2, media1);

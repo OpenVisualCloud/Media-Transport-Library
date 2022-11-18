@@ -13,4 +13,9 @@
 #include "../mt_simd.h"
 #include "../mt_util.h"
 
+static inline enum st21_tx_pacing_way st_tx_pacing_way(struct mtl_main_impl* impl,
+                                                       enum mtl_port port) {
+  return mt_if(impl, port)->tx_pacing_way;
+}
+
 #endif
