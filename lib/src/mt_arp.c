@@ -23,12 +23,12 @@ static int arp_receive_request(struct mtl_main_impl* impl, struct rte_arp_hdr* r
                                enum mtl_port port) {
   if (!arp_is_valid_hdr(request)) return -EINVAL;
 
-  if (request->arp_data.arp_tip != *(uint32_t*)st_sip_addr(impl, port)) {
+  if (request->arp_data.arp_tip != *(uint32_t*)mt_sip_addr(impl, port)) {
     dbg("%s(%d), not our arp\n", __func__, port);
     return -EINVAL;
   }
 
-  struct rte_mbuf* rpl_pkt = rte_pktmbuf_alloc(st_get_tx_mempool(impl, port));
+  struct rte_mbuf* rpl_pkt = rte_pktmbuf_alloc(mt_get_tx_mempool(impl, port));
   if (!rpl_pkt) {
     err("%s(%d), rpl_pkt alloc fail\n", __func__, port);
     return -ENOMEM;
@@ -38,7 +38,7 @@ static int arp_receive_request(struct mtl_main_impl* impl, struct rte_arp_hdr* r
       sizeof(struct rte_ether_hdr) + sizeof(struct rte_arp_hdr);
 
   struct rte_ether_hdr* eth = rte_pktmbuf_mtod(rpl_pkt, struct rte_ether_hdr*);
-  uint16_t port_id = st_port_id(impl, port);
+  uint16_t port_id = mt_port_id(impl, port);
 
   rte_eth_macaddr_get(port_id, st_eth_s_addr(eth));
   rte_ether_addr_copy(&request->arp_data.arp_sha, st_eth_d_addr(eth));
@@ -54,7 +54,7 @@ static int arp_receive_request(struct mtl_main_impl* impl, struct rte_arp_hdr* r
   rte_ether_addr_copy(&request->arp_data.arp_sha, &arp->arp_data.arp_tha);
   arp->arp_data.arp_tip = request->arp_data.arp_sip;
   rte_eth_macaddr_get(port_id, &arp->arp_data.arp_sha);
-  arp->arp_data.arp_sip = *(uint32_t*)st_sip_addr(impl, port);
+  arp->arp_data.arp_sip = *(uint32_t*)mt_sip_addr(impl, port);
 
   /* send arp reply packet */
   uint16_t send = rte_eth_tx_burst(port_id, impl->arp.tx_q_id[port], &rpl_pkt, 1);
@@ -72,7 +72,7 @@ static int arp_receive_reply(struct mtl_main_impl* impl, struct rte_arp_hdr* rep
                              enum mtl_port port) {
   if (!arp_is_valid_hdr(reply)) return -EINVAL;
 
-  if (reply->arp_data.arp_tip != *(uint32_t*)st_sip_addr(impl, port)) {
+  if (reply->arp_data.arp_tip != *(uint32_t*)mt_sip_addr(impl, port)) {
     dbg("%s(%d), not our arp\n", __func__, port);
     return -EINVAL;
   }
@@ -93,7 +93,7 @@ static int arp_receive_reply(struct mtl_main_impl* impl, struct rte_arp_hdr* rep
 }
 
 static int arp_queues_uinit(struct mtl_main_impl* impl) {
-  int num_ports = st_num_ports(impl);
+  int num_ports = mt_num_ports(impl);
   struct mt_arp_impl* arp = &impl->arp;
 
   for (int i = 0; i < num_ports; i++) {
@@ -107,13 +107,13 @@ static int arp_queues_uinit(struct mtl_main_impl* impl) {
 }
 
 static int arp_queues_init(struct mtl_main_impl* impl) {
-  int num_ports = st_num_ports(impl);
+  int num_ports = mt_num_ports(impl);
   struct mt_arp_impl* arp = &impl->arp;
   int ret;
 
   for (int i = 0; i < num_ports; i++) {
     /* no arp queues for kernel based pmd */
-    if (st_pmd_is_kernel(impl, i)) continue;
+    if (mt_pmd_is_kernel(impl, i)) continue;
 
     ret = st_dev_requemt_tx_queue(impl, i, &arp->tx_q_id[i], 0);
     if (ret < 0) {
@@ -148,7 +148,7 @@ int mt_arp_parse(struct mtl_main_impl* impl, struct rte_arp_hdr* hdr,
 int mt_arp_cni_get_mac(struct mtl_main_impl* impl, struct rte_ether_addr* ea,
                        enum mtl_port port, uint32_t ip) {
   struct mt_arp_impl* arp_impl = &impl->arp;
-  uint16_t port_id = st_port_id(impl, port);
+  uint16_t port_id = mt_port_id(impl, port);
   uint16_t tx;
   int retry = 0;
   uint8_t* addr = (uint8_t*)&ip;
@@ -160,7 +160,7 @@ int mt_arp_cni_get_mac(struct mtl_main_impl* impl, struct rte_ether_addr* ea,
 
   arp_impl->ip[port] = ip;
 
-  struct rte_mbuf* req_pkt = rte_pktmbuf_alloc(st_get_tx_mempool(impl, port));
+  struct rte_mbuf* req_pkt = rte_pktmbuf_alloc(mt_get_tx_mempool(impl, port));
   if (!req_pkt) return -ENOMEM;
 
   req_pkt->pkt_len = req_pkt->data_len =
@@ -178,7 +178,7 @@ int mt_arp_cni_get_mac(struct mtl_main_impl* impl, struct rte_ether_addr* ea,
   arp->arp_plen = 4;                               // size of fo IP
   arp->arp_opcode = htons(RTE_ARP_OP_REQUEST);
   arp->arp_data.arp_tip = ip;
-  arp->arp_data.arp_sip = *(uint32_t*)st_sip_addr(impl, port);
+  arp->arp_data.arp_sip = *(uint32_t*)mt_sip_addr(impl, port);
   rte_eth_macaddr_get(port_id, &arp->arp_data.arp_sha);
   memset(&arp->arp_data.arp_tha, 0, RTE_ETHER_ADDR_LEN);
 

@@ -16,7 +16,7 @@
 
 static int cni_rx_handle(struct mtl_main_impl* impl, struct rte_mbuf* m,
                          enum mtl_port port) {
-  struct mt_ptp_impl* ptp = st_get_ptp(impl, port);
+  struct mt_ptp_impl* ptp = mt_get_ptp(impl, port);
   struct rte_ether_hdr* eth_hdr = rte_pktmbuf_mtod(m, struct rte_ether_hdr*);
   uint16_t ether_type, src_port;
   struct rte_vlan_hdr* vlan_header;
@@ -66,8 +66,8 @@ static int cni_rx_handle(struct mtl_main_impl* impl, struct rte_mbuf* m,
 }
 
 static int cni_traffic(struct mtl_main_impl* impl) {
-  struct mt_cni_impl* cni = st_get_cni(impl);
-  int num_ports = st_num_ports(impl);
+  struct mt_cni_impl* cni = mt_get_cni(impl);
+  int num_ports = mt_num_ports(impl);
   uint16_t port_id;
   struct rte_mbuf* pkts_rx[ST_CNI_RX_BURST_SIZE];
   uint16_t rx;
@@ -75,8 +75,8 @@ static int cni_traffic(struct mtl_main_impl* impl) {
   bool done = true;
 
   for (int i = 0; i < num_ports; i++) {
-    ptp = st_get_ptp(impl, i);
-    port_id = st_port_id(impl, i);
+    ptp = mt_get_ptp(impl, i);
+    port_id = mt_port_id(impl, i);
 
     /* rx from ptp rx queue */
     if (ptp->rx_queue_active) {
@@ -107,7 +107,7 @@ static int cni_traffic(struct mtl_main_impl* impl) {
 
 static void* cni_trafic_thread(void* arg) {
   struct mtl_main_impl* impl = arg;
-  struct mt_cni_impl* cni = st_get_cni(impl);
+  struct mt_cni_impl* cni = mt_get_cni(impl);
 
   info("%s, start\n", __func__);
   while (rte_atomic32_read(&cni->stop_thread) == 0) {
@@ -149,7 +149,7 @@ static int cni_trafic_thread_stop(struct mt_cni_impl* cni) {
 
 static int cni_tasklet_start(void* priv) {
   struct mtl_main_impl* impl = priv;
-  struct mt_cni_impl* cni = st_get_cni(impl);
+  struct mt_cni_impl* cni = mt_get_cni(impl);
 
   /* tasklet will take over the cni thread */
   if (cni->lcore_tasklet) cni_trafic_thread_stop(cni);
@@ -159,7 +159,7 @@ static int cni_tasklet_start(void* priv) {
 
 static int cni_tasklet_stop(void* priv) {
   struct mtl_main_impl* impl = priv;
-  struct mt_cni_impl* cni = st_get_cni(impl);
+  struct mt_cni_impl* cni = mt_get_cni(impl);
 
   if (cni->lcore_tasklet) cni_trafic_thread_start(impl, cni);
 
@@ -173,8 +173,8 @@ static int cni_tasklet_handlder(void* priv) {
 }
 
 static int cni_queues_uinit(struct mtl_main_impl* impl) {
-  int num_ports = st_num_ports(impl);
-  struct mt_cni_impl* cni = st_get_cni(impl);
+  int num_ports = mt_num_ports(impl);
+  struct mt_cni_impl* cni = mt_get_cni(impl);
 
   for (int i = 0; i < num_ports; i++) {
     if (cni->rx_q_active[i]) {
@@ -187,7 +187,7 @@ static int cni_queues_uinit(struct mtl_main_impl* impl) {
 }
 
 static int cni_queues_init(struct mtl_main_impl* impl, struct mt_cni_impl* cni) {
-  int num_ports = st_num_ports(impl);
+  int num_ports = mt_num_ports(impl);
   int ret;
 
   if (st_no_system_rx_queues(impl)) {
@@ -197,7 +197,7 @@ static int cni_queues_init(struct mtl_main_impl* impl, struct mt_cni_impl* cni) 
 
   for (int i = 0; i < num_ports; i++) {
     /* no cni for kernel based pmd */
-    if (st_pmd_is_kernel(impl, i)) continue;
+    if (mt_pmd_is_kernel(impl, i)) continue;
 
     ret = st_dev_requemt_rx_queue(impl, i, &cni->rx_q_id[i], NULL);
     if (ret < 0) {
@@ -213,18 +213,18 @@ static int cni_queues_init(struct mtl_main_impl* impl, struct mt_cni_impl* cni) 
 }
 
 static bool cni_if_need(struct mtl_main_impl* impl) {
-  int num_ports = st_num_ports(impl);
+  int num_ports = mt_num_ports(impl);
 
   for (int i = 0; i < num_ports; i++) {
-    if (!st_pmd_is_kernel(impl, i)) return true;
+    if (!mt_pmd_is_kernel(impl, i)) return true;
   }
 
   return false;
 }
 
 void mt_cni_stat(struct mtl_main_impl* impl) {
-  int num_ports = st_num_ports(impl);
-  struct mt_cni_impl* cni = st_get_cni(impl);
+  int num_ports = mt_num_ports(impl);
+  struct mt_cni_impl* cni = mt_get_cni(impl);
 
   if (!cni->used) return;
 
@@ -236,8 +236,8 @@ void mt_cni_stat(struct mtl_main_impl* impl) {
 
 int mt_cni_init(struct mtl_main_impl* impl) {
   int ret;
-  struct mt_cni_impl* cni = st_get_cni(impl);
-  struct mtl_init_params* p = st_get_user_params(impl);
+  struct mt_cni_impl* cni = mt_get_cni(impl);
+  struct mtl_init_params* p = mt_get_user_params(impl);
 
   cni->used = cni_if_need(impl);
   if (!cni->used) return 0;
@@ -286,7 +286,7 @@ int mt_cni_init(struct mtl_main_impl* impl) {
 }
 
 int mt_cni_uinit(struct mtl_main_impl* impl) {
-  struct mt_cni_impl* cni = st_get_cni(impl);
+  struct mt_cni_impl* cni = mt_get_cni(impl);
 
   if (cni->tasklet) {
     mt_sch_unregister_tasklet(cni->tasklet);
@@ -306,7 +306,7 @@ int mt_cni_uinit(struct mtl_main_impl* impl) {
 }
 
 int mt_cni_start(struct mtl_main_impl* impl) {
-  struct mt_cni_impl* cni = st_get_cni(impl);
+  struct mt_cni_impl* cni = mt_get_cni(impl);
   int ret;
 
   if (!cni->used) return 0;
@@ -318,7 +318,7 @@ int mt_cni_start(struct mtl_main_impl* impl) {
 }
 
 int mt_cni_stop(struct mtl_main_impl* impl) {
-  struct mt_cni_impl* cni = st_get_cni(impl);
+  struct mt_cni_impl* cni = mt_get_cni(impl);
 
   if (!cni->used) return 0;
 

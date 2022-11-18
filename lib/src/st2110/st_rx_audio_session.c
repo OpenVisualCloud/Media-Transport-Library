@@ -270,7 +270,7 @@ static int rx_audio_session_free_frames(struct st_rx_audio_session_impl* s) {
 
 static int rx_audio_session_alloc_frames(struct mtl_main_impl* impl,
                                          struct st_rx_audio_session_impl* s) {
-  enum mtl_port port = st_port_logic2phy(s->port_maps, ST_SESSION_PORT_P);
+  enum mtl_port port = mt_port_logic2phy(s->port_maps, ST_SESSION_PORT_P);
   int soc_id = st_socket_id(impl, port);
   int idx = s->idx;
   size_t size = s->st30_frame_size;
@@ -325,7 +325,7 @@ static int rx_audio_session_alloc_rtps(struct mtl_main_impl* impl,
   struct rte_ring* ring;
   unsigned int flags, count;
   int mgr_idx = mgr->idx, idx = s->idx;
-  enum mtl_port port = st_port_logic2phy(s->port_maps, ST_SESSION_PORT_P);
+  enum mtl_port port = mt_port_logic2phy(s->port_maps, ST_SESSION_PORT_P);
 
   snprintf(ring_name, 32, "RX-AUDIO-RTP-RING-M%d-R%d", mgr_idx, idx);
   flags = RING_F_SP_ENQ | RING_F_SC_DEQ; /* single-producer and single-consumer */
@@ -365,8 +365,8 @@ static int rx_audio_session_handle_frame_pkt(struct mtl_main_impl* impl,
                                              struct rte_mbuf* mbuf,
                                              enum st_session_port s_port) {
   struct st30_rx_ops* ops = &s->ops;
-  enum mtl_port port = st_port_logic2phy(s->port_maps, s_port);
-  struct mt_interface* inf = st_if(impl, port);
+  enum mtl_port port = mt_port_logic2phy(s->port_maps, s_port);
+  struct mt_interface* inf = mt_if(impl, port);
   size_t hdr_offset =
       sizeof(struct st_rfc3550_audio_hdr) - sizeof(struct st_rfc3550_rtp_hdr);
   struct st_rfc3550_rtp_hdr* rtp =
@@ -449,8 +449,8 @@ static int rx_audio_session_handle_rtp_pkt(struct mtl_main_impl* impl,
                                            struct rte_mbuf* mbuf,
                                            enum st_session_port s_port) {
   struct st30_rx_ops* ops = &s->ops;
-  enum mtl_port port = st_port_logic2phy(s->port_maps, s_port);
-  struct mt_interface* inf = st_if(impl, port);
+  enum mtl_port port = mt_port_logic2phy(s->port_maps, s_port);
+  struct mt_interface* inf = mt_if(impl, port);
   size_t hdr_offset =
       sizeof(struct st_rfc3550_audio_hdr) - sizeof(struct st_rfc3550_rtp_hdr);
   struct st_rfc3550_rtp_hdr* rtp =
@@ -554,7 +554,7 @@ static int rx_audio_session_uinit_hw(struct mtl_main_impl* impl,
   enum mtl_port port;
 
   for (int i = 0; i < num_port; i++) {
-    port = st_port_logic2phy(s->port_maps, i);
+    port = mt_port_logic2phy(s->port_maps, i);
 
     if (s->queue_active[i]) {
       st_dev_free_rx_queue(impl, port, s->queue_id[i]);
@@ -574,16 +574,16 @@ static int rx_audio_session_init_hw(struct mtl_main_impl* impl,
   enum mtl_port port;
 
   for (int i = 0; i < num_port; i++) {
-    port = st_port_logic2phy(s->port_maps, i);
+    port = mt_port_logic2phy(s->port_maps, i);
 
     memset(&flow, 0, sizeof(flow));
     rte_memcpy(flow.dip_addr, s->ops.sip_addr[i], MTL_IP_ADDR_LEN);
-    rte_memcpy(flow.sip_addr, st_sip_addr(impl, port), MTL_IP_ADDR_LEN);
+    rte_memcpy(flow.sip_addr, mt_sip_addr(impl, port), MTL_IP_ADDR_LEN);
     flow.port_flow = true;
     flow.dst_port = s->st30_dst_port[i];
 
     /* no flow for data path only */
-    if (st_pmd_is_kernel(impl, port) && (s->ops.flags & ST30_RX_FLAG_DATA_PATH_ONLY))
+    if (mt_pmd_is_kernel(impl, port) && (s->ops.flags & ST30_RX_FLAG_DATA_PATH_ONLY))
       ret = st_dev_requemt_rx_queue(impl, port, &queue, NULL);
     else
       ret = st_dev_requemt_rx_queue(impl, port, &queue, &flow);
@@ -592,7 +592,7 @@ static int rx_audio_session_init_hw(struct mtl_main_impl* impl,
       return ret;
     }
 
-    s->port_id[i] = st_port_id(impl, port);
+    s->port_id[i] = mt_port_id(impl, port);
     s->queue_id[i] = queue;
     s->queue_active[i] = true;
     info("%s(%d), port(l:%d,p:%d), queue %d udp %d\n", __func__, idx, i, port, queue,
@@ -609,7 +609,7 @@ static int rx_audio_session_uinit_mcast(struct mtl_main_impl* impl,
   for (int i = 0; i < ops->num_port; i++) {
     if (st_is_multicast_ip(ops->sip_addr[i]))
       mt_mcast_leave(impl, st_ip_to_u32(ops->sip_addr[i]),
-                     st_port_logic2phy(s->port_maps, i));
+                     mt_port_logic2phy(s->port_maps, i));
   }
 
   return 0;
@@ -623,13 +623,13 @@ static int rx_audio_session_init_mcast(struct mtl_main_impl* impl,
 
   for (int i = 0; i < ops->num_port; i++) {
     if (!st_is_multicast_ip(ops->sip_addr[i])) continue;
-    port = st_port_logic2phy(s->port_maps, i);
-    if (st_pmd_is_kernel(impl, port) && (ops->flags & ST30_RX_FLAG_DATA_PATH_ONLY)) {
+    port = mt_port_logic2phy(s->port_maps, i);
+    if (mt_pmd_is_kernel(impl, port) && (ops->flags & ST30_RX_FLAG_DATA_PATH_ONLY)) {
       info("%s(%d), skip mcast join for port %d\n", __func__, s->idx, i);
       return 0;
     }
     ret = mt_mcast_join(impl, st_ip_to_u32(ops->sip_addr[i]),
-                        st_port_logic2phy(s->port_maps, i));
+                        mt_port_logic2phy(s->port_maps, i));
     if (ret < 0) return ret;
   }
 
@@ -710,7 +710,7 @@ static int rx_audio_session_attach(struct mtl_main_impl* impl,
   s->st30_stat_pkts_wrong_hdr_dropped = 0;
   s->st30_stat_frames_dropped = 0;
   rte_atomic32_set(&s->st30_stat_frames_received, 0);
-  s->st30_stat_last_time = st_get_monotonic_time();
+  s->st30_stat_last_time = mt_get_monotonic_time();
 
   if (st_has_ebu(impl)) {
     ret = ra_ebu_init(impl, s);
@@ -747,7 +747,7 @@ static int rx_audio_session_attach(struct mtl_main_impl* impl,
 
 static void rx_audio_session_stat(struct st_rx_audio_session_impl* s) {
   int idx = s->idx;
-  uint64_t cur_time_ns = st_get_monotonic_time();
+  uint64_t cur_time_ns = mt_get_monotonic_time();
   double time_sec = (double)(cur_time_ns - s->st30_stat_last_time) / NS_PER_S;
   int frames_received = rte_atomic32_read(&s->st30_stat_frames_received);
   double framerate = frames_received / time_sec;
@@ -1237,9 +1237,9 @@ int st30_rx_get_queue_meta(st30_rx_handle handle, struct st_queue_meta* meta) {
   memset(meta, 0x0, sizeof(*meta));
   meta->num_port = RTE_MIN(s->ops.num_port, MTL_PORT_MAX);
   for (uint8_t i = 0; i < meta->num_port; i++) {
-    port = st_port_logic2phy(s->port_maps, i);
+    port = mt_port_logic2phy(s->port_maps, i);
 
-    if (st_pmd_type(impl, port) == MTL_PMD_DPDK_AF_XDP) {
+    if (mt_pmd_type(impl, port) == MTL_PMD_DPDK_AF_XDP) {
       /* af_xdp pmd */
       meta->start_queue[i] = mt_start_queue(impl, port);
     }

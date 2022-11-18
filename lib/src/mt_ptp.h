@@ -102,7 +102,7 @@ struct mt_ptp_delay_resp_msg {
   uint8_t suffix[0];
 } __attribute__((packed));
 
-static inline struct mt_ptp_impl* st_get_ptp(struct mtl_main_impl* impl,
+static inline struct mt_ptp_impl* mt_get_ptp(struct mtl_main_impl* impl,
                                              enum mtl_port port) {
   return &impl->ptp[port];
 }

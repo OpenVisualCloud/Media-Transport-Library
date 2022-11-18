@@ -59,14 +59,14 @@ int mcast_membership_general_query(struct mtl_main_impl* impl, enum mtl_port por
   size_t hdr_offset = 0;
   size_t mb_query_len = sizeof(struct mcast_mb_query_v3);
 
-  pkt = rte_pktmbuf_alloc(st_get_tx_mempool(impl, port));
+  pkt = rte_pktmbuf_alloc(mt_get_tx_mempool(impl, port));
   if (!pkt) {
     err("%s, report packet alloc failed\n", __func__);
     return -ENOMEM;
   }
 
   eth_hdr = rte_pktmbuf_mtod_offset(pkt, struct rte_ether_hdr*, hdr_offset);
-  rte_eth_macaddr_get(st_port_id(impl, port), st_eth_s_addr(eth_hdr));
+  rte_eth_macaddr_get(mt_port_id(impl, port), st_eth_s_addr(eth_hdr));
   rte_ether_addr_copy(&mcast_mac_query, st_eth_d_addr(eth_hdr));
   eth_hdr->ether_type = htons(RTE_ETHER_TYPE_IPV4);
   hdr_offset += sizeof(*eth_hdr);
@@ -79,7 +79,7 @@ int mcast_membership_general_query(struct mtl_main_impl* impl, enum mtl_port por
   ip_hdr->hdr_checksum = 0;
   ip_hdr->total_length = htons(sizeof(struct rte_ipv4_hdr) + mb_query_len);
   ip_hdr->next_proto_id = IGMP_PROTOCOL;
-  ip_hdr->src_addr = *(uint32_t*)st_sip_addr(impl, port);
+  ip_hdr->src_addr = *(uint32_t*)mt_sip_addr(impl, port);
   inet_pton(AF_INET, IGMP_QUERY_IP, &ip_hdr->dst_addr);
   hdr_offset += sizeof(*ip_hdr);
 
@@ -106,7 +106,7 @@ int mcast_membership_general_query(struct mtl_main_impl* impl, enum mtl_port por
   pkt->pkt_len = pkt->l2_len + pkt->l3_len + mb_query_len;
   pkt->data_len = pkt->pkt_len;
 
-  uint16_t tx = rte_eth_tx_burst(st_port_id(impl, port), mcast->tx_q_id[port], &pkt, 1);
+  uint16_t tx = rte_eth_tx_burst(mt_port_id(impl, port), mcast->tx_q_id[port], &pkt, 1);
   if (tx < 1) {
     err("%s, send pkt fail\n", __func__);
     rte_pktmbuf_free(pkt);
@@ -143,14 +143,14 @@ static int mcast_membership_report(struct mtl_main_impl* impl,
 
   dbg("%s(%d), group_num: %d\n", __func__, port, group_num);
 
-  pkt = rte_pktmbuf_alloc(st_get_tx_mempool(impl, port));
+  pkt = rte_pktmbuf_alloc(mt_get_tx_mempool(impl, port));
   if (!pkt) {
     err("%s, report packet alloc failed\n", __func__);
     return -ENOMEM;
   }
 
   eth_hdr = rte_pktmbuf_mtod_offset(pkt, struct rte_ether_hdr*, hdr_offset);
-  rte_eth_macaddr_get(st_port_id(impl, port), st_eth_s_addr(eth_hdr));
+  rte_eth_macaddr_get(mt_port_id(impl, port), st_eth_s_addr(eth_hdr));
   rte_ether_addr_copy(&mcast_mac_dst, st_eth_d_addr(eth_hdr));
   eth_hdr->ether_type = htons(RTE_ETHER_TYPE_IPV4);
   hdr_offset += sizeof(*eth_hdr);
@@ -163,7 +163,7 @@ static int mcast_membership_report(struct mtl_main_impl* impl,
   ip_hdr->hdr_checksum = 0;
   ip_hdr->total_length = htons(sizeof(struct rte_ipv4_hdr) + mb_report_len);
   ip_hdr->next_proto_id = IGMP_PROTOCOL;
-  ip_hdr->src_addr = *(uint32_t*)st_sip_addr(impl, port);
+  ip_hdr->src_addr = *(uint32_t*)mt_sip_addr(impl, port);
   inet_pton(AF_INET, IGMP_REPORT_IP, &ip_hdr->dst_addr);
   hdr_offset += sizeof(*ip_hdr);
 
@@ -197,7 +197,7 @@ static int mcast_membership_report(struct mtl_main_impl* impl,
   if (rkni) rte_kni_tx_burst(rkni, (struct rte_mbuf**)&report_pkt, 1);
 #endif
 
-  uint16_t tx = rte_eth_tx_burst(st_port_id(impl, port), mcast->tx_q_id[port], &pkt, 1);
+  uint16_t tx = rte_eth_tx_burst(mt_port_id(impl, port), mcast->tx_q_id[port], &pkt, 1);
   if (tx < 1) {
     err("%s, send pkt fail\n", __func__);
     rte_pktmbuf_free(pkt);
@@ -209,11 +209,11 @@ static int mcast_membership_report(struct mtl_main_impl* impl,
 
 static void mcast_membership_report_cb(void* param) {
   struct mtl_main_impl* impl = (struct mtl_main_impl*)param;
-  int num_ports = st_num_ports(impl);
+  int num_ports = mt_num_ports(impl);
   int ret;
 
   for (int port = 0; port < num_ports; port++) {
-    if (!st_pmd_is_kernel(impl, port)) {
+    if (!mt_pmd_is_kernel(impl, port)) {
       ret = mcast_membership_report(impl, MCAST_MODE_IS_EXCLUDE, port);
       if (ret < 0) {
         err("%s(%d), mcast_membership_report fail %d\n", __func__, port, ret);
@@ -226,7 +226,7 @@ static void mcast_membership_report_cb(void* param) {
 }
 
 static int mcast_queues_uinit(struct mtl_main_impl* impl) {
-  int num_ports = st_num_ports(impl);
+  int num_ports = mt_num_ports(impl);
   struct mt_mcast_impl* mcast = &impl->mcast;
 
   for (int i = 0; i < num_ports; i++) {
@@ -240,13 +240,13 @@ static int mcast_queues_uinit(struct mtl_main_impl* impl) {
 }
 
 static int mcast_queues_init(struct mtl_main_impl* impl) {
-  int num_ports = st_num_ports(impl);
+  int num_ports = mt_num_ports(impl);
   struct mt_mcast_impl* mcast = &impl->mcast;
   int ret;
 
   for (int i = 0; i < num_ports; i++) {
     /* no mcast queue for kernel based pmd */
-    if (st_pmd_is_kernel(impl, i)) continue;
+    if (mt_pmd_is_kernel(impl, i)) continue;
 
     ret = st_dev_requemt_tx_queue(impl, i, &mcast->tx_q_id[i], 0);
     if (ret < 0) {
@@ -390,7 +390,7 @@ int mt_mcast_uinit(struct mtl_main_impl* impl) {
 int mt_mcast_join(struct mtl_main_impl* impl, uint32_t group_addr, enum mtl_port port) {
   struct mt_mcast_impl* mcast = &impl->mcast;
   struct rte_ether_addr mcast_mac;
-  struct mt_interface* inf = st_if(impl, port);
+  struct mt_interface* inf = mt_if(impl, port);
   int group_num = mcast->group_num[port];
   uint8_t* ip = (uint8_t*)&group_addr;
   int ret;
@@ -410,7 +410,7 @@ int mt_mcast_join(struct mtl_main_impl* impl, uint32_t group_addr, enum mtl_port
       return 0;
     }
   }
-  if (st_pmd_is_kernel(impl, port)) {
+  if (mt_pmd_is_kernel(impl, port)) {
     ret = st_socket_join_mcast(impl, port, group_addr);
     if (ret < 0) {
       st_pthread_mutex_unlock(&mcast->group_mutex[port]);
@@ -429,7 +429,7 @@ int mt_mcast_join(struct mtl_main_impl* impl, uint32_t group_addr, enum mtl_port
   mcast_inf_add_mac(inf, &mcast_mac);
 
   /* report to switch to join group */
-  if (!st_pmd_is_kernel(impl, port)) {
+  if (!mt_pmd_is_kernel(impl, port)) {
     mcast_membership_report(impl, MCAST_MODE_IS_EXCLUDE, port);
   }
 
@@ -442,7 +442,7 @@ int mt_mcast_join(struct mtl_main_impl* impl, uint32_t group_addr, enum mtl_port
 int mt_mcast_leave(struct mtl_main_impl* impl, uint32_t group_addr, enum mtl_port port) {
   struct mt_mcast_impl* mcast = &impl->mcast;
   int group_num = mcast->group_num[port];
-  struct mt_interface* inf = st_if(impl, port);
+  struct mt_interface* inf = mt_if(impl, port);
   uint8_t* ip = (uint8_t*)&group_addr;
   struct rte_ether_addr mcast_mac;
 
@@ -460,7 +460,7 @@ int mt_mcast_leave(struct mtl_main_impl* impl, uint32_t group_addr, enum mtl_por
       }
       mcast->group_ip[port][i] = mcast->group_ip[port][group_num - 1];
       mcast->group_num[port]--;
-      if (st_pmd_is_kernel(impl, port)) {
+      if (mt_pmd_is_kernel(impl, port)) {
         st_socket_drop_mcast(impl, port, group_addr);
       }
       st_pthread_mutex_unlock(&mcast->group_mutex[port]);
@@ -476,7 +476,7 @@ int mt_mcast_leave(struct mtl_main_impl* impl, uint32_t group_addr, enum mtl_por
 }
 
 int mt_mcast_restore(struct mtl_main_impl* impl, enum mtl_port port) {
-  struct mt_interface* inf = st_if(impl, port);
+  struct mt_interface* inf = mt_if(impl, port);
   uint16_t port_id = inf->port_id;
 
   if (MT_PORT_VF == inf->port_type) {
@@ -491,12 +491,12 @@ int mt_mcast_restore(struct mtl_main_impl* impl, enum mtl_port port) {
 
 int mt_mcast_l2_join(struct mtl_main_impl* impl, struct rte_ether_addr* addr,
                      enum mtl_port port) {
-  struct mt_interface* inf = st_if(impl, port);
+  struct mt_interface* inf = mt_if(impl, port);
   return mcast_inf_add_mac(inf, addr);
 }
 
 int mt_mcast_l2_leave(struct mtl_main_impl* impl, struct rte_ether_addr* addr,
                       enum mtl_port port) {
-  struct mt_interface* inf = st_if(impl, port);
+  struct mt_interface* inf = mt_if(impl, port);
   return mcast_inf_remove_mac(inf, addr);
 }

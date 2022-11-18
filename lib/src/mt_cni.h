@@ -14,7 +14,7 @@ int mt_cni_uinit(struct mtl_main_impl* impl);
 int mt_cni_start(struct mtl_main_impl* impl);
 int mt_cni_stop(struct mtl_main_impl* impl);
 
-static inline struct mt_cni_impl* st_get_cni(struct mtl_main_impl* impl) {
+static inline struct mt_cni_impl* mt_get_cni(struct mtl_main_impl* impl) {
   return &impl->cni;
 }
 

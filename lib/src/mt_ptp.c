@@ -66,7 +66,7 @@ static uint64_t ptp_get_time(struct mt_ptp_impl* ptp) {
 }
 
 static uint64_t ptp_from_eth(struct mtl_main_impl* impl, enum mtl_port port) {
-  return ptp_get_time(st_get_ptp(impl, port));
+  return ptp_get_time(mt_get_ptp(impl, port));
 }
 
 static void ptp_print_port_id(enum mtl_port port, struct mt_ptp_port_id* pid) {
@@ -220,12 +220,12 @@ static int ptp_parse_result(struct mt_ptp_impl* ptp) {
     if (labs(delta) < 10000) {
       ptp->expect_result_cnt++;
       if (!ptp->expect_result_start_ns)
-        ptp->expect_result_start_ns = st_get_monotonic_time();
+        ptp->expect_result_start_ns = mt_get_monotonic_time();
       ptp->expect_result_sum += delta;
       if (ptp->expect_result_cnt >= 10) {
         ptp->expect_result_avg = ptp->expect_result_sum / ptp->expect_result_cnt;
         ptp->expect_result_period_ns =
-            (st_get_monotonic_time() - ptp->expect_result_start_ns) /
+            (mt_get_monotonic_time() - ptp->expect_result_start_ns) /
             (ptp->expect_result_cnt - 1);
         dbg("%s(%d), expect result avg %u, period %fs\n", __func__, ptp->port,
             ptp->expect_result_avg, (float)ptp->expect_result_period_ns / NS_PER_S);
@@ -476,7 +476,7 @@ static int ptp_parse_annouce(struct mt_ptp_impl* ptp, struct mt_ptp_announce_msg
     if (st_has_user_ptp(ptp->impl))
       warn("%s(%d), skip as user provide ptp source already\n", __func__, port);
     else
-      st_if(ptp->impl, port)->ptp_get_time_fn = ptp_from_eth;
+      mt_if(ptp->impl, port)->ptp_get_time_fn = ptp_from_eth;
   }
 
   return 0;
@@ -521,7 +521,7 @@ static void ptp_stat_clear(struct mt_ptp_impl* ptp) {
 
 static void ptp_sync_from_user(struct mtl_main_impl* impl, struct mt_ptp_impl* ptp) {
   enum mtl_port port = ptp->port;
-  uint64_t target_ns = st_get_ptp_time(impl, port);
+  uint64_t target_ns = mt_get_ptp_time(impl, port);
   uint64_t raw_ns = ptp_get_raw_time(ptp);
   int64_t delta = (int64_t)target_ns - raw_ns;
   uint64_t abs_delta = labs(delta);
@@ -564,7 +564,7 @@ static void ptp_sync_from_user_handler(void* param) {
 
 static int ptp_init(struct mtl_main_impl* impl, struct mt_ptp_impl* ptp,
                     enum mtl_port port) {
-  uint16_t port_id = st_port_id(impl, port);
+  uint16_t port_id = mt_port_id(impl, port);
   struct rte_ether_addr mac;
   int ret;
   uint8_t* ip = &ptp->sip_addr[0];
@@ -584,16 +584,16 @@ static int ptp_init(struct mtl_main_impl* impl, struct mt_ptp_impl* ptp,
   our_port_id->port_number = htons(port_id);  // now allways
   // ptp_print_port_id(port_id, our_port_id);
 
-  rte_memcpy(ip, st_sip_addr(impl, port), MTL_IP_ADDR_LEN);
+  rte_memcpy(ip, mt_sip_addr(impl, port), MTL_IP_ADDR_LEN);
 
   ptp->impl = impl;
   ptp->port = port;
   ptp->port_id = port_id;
-  ptp->mbuf_pool = st_get_tx_mempool(impl, port);
+  ptp->mbuf_pool = mt_get_tx_mempool(impl, port);
   ptp->master_initialized = false;
   ptp->t3_sequence_id = 0x1000 * port;
 
-  struct mtl_init_params* p = st_get_user_params(impl);
+  struct mtl_init_params* p = mt_get_user_params(impl);
   if (p->flags & MTL_FLAG_PTP_UNICAST_ADDR) {
     ptp->master_addr_mode = MT_PTP_UNICAST_ADDR;
     info("%s(%d), MT_PTP_UNICAST_ADDR\n", __func__, port);
@@ -603,7 +603,7 @@ static int ptp_init(struct mtl_main_impl* impl, struct mt_ptp_impl* ptp,
 
   ptp_stat_clear(ptp);
 
-  if (!st_if_has_ptp(impl, port)) {
+  if (!mt_if_has_ptp(impl, port)) {
     if (st_has_ebu(impl)) {
       ptp_sync_from_user(impl, ptp);
       rte_eal_alarm_set(MT_PTP_EBU_SYNC_MS * 1000, ptp_sync_from_user_handler, ptp);
@@ -630,7 +630,7 @@ static int ptp_init(struct mtl_main_impl* impl, struct mt_ptp_impl* ptp,
   struct mt_rx_flow flow;
   memset(&flow, 0, sizeof(flow));
   rte_memcpy(flow.dip_addr, ptp->mcast_group_addr, MTL_IP_ADDR_LEN);
-  rte_memcpy(flow.sip_addr, st_sip_addr(impl, port), MTL_IP_ADDR_LEN);
+  rte_memcpy(flow.sip_addr, mt_sip_addr(impl, port), MTL_IP_ADDR_LEN);
   flow.port_flow = false;
   flow.dst_port = MT_PTP_UDP_GEN_PORT;
   ret = st_dev_requemt_rx_queue(impl, port, &ptp->rx_queue_id, &flow);
@@ -663,7 +663,7 @@ static int ptp_uinit(struct mtl_main_impl* impl, struct mt_ptp_impl* ptp) {
   rte_eal_alarm_cancel(ptp_sync_timeout_handler, ptp);
   rte_eal_alarm_cancel(ptp_monitor_handler, ptp);
 
-  if (!st_if_has_ptp(impl, port)) return 0;
+  if (!mt_if_has_ptp(impl, port)) return 0;
 
   mt_mcast_l2_leave(impl, &ptp_l2_multicast_eaddr, port);
   mt_mcast_leave(impl, st_ip_to_u32(ptp->mcast_group_addr), port);
@@ -686,7 +686,7 @@ int mt_ptp_parse(struct mt_ptp_impl* ptp, struct mt_ptp_header* hdr, bool vlan,
                  struct mt_ptp_ipv4_udp* ipv4_hdr) {
   enum mtl_port port = ptp->port;
 
-  if (!st_if_has_ptp(ptp->impl, port)) return 0;
+  if (!mt_if_has_ptp(ptp->impl, port)) return 0;
 
   // dbg("%s(%d), message_type %d\n", __func__, port, hdr->message_type);
   // mt_ptp_print_port_id(port, &hdr->source_port_identity);
@@ -736,7 +736,7 @@ int mt_ptp_parse(struct mt_ptp_impl* ptp, struct mt_ptp_header* hdr, bool vlan,
 }
 
 void mt_ptp_stat(struct mtl_main_impl* impl) {
-  int num_ports = st_num_ports(impl);
+  int num_ports = mt_num_ports(impl);
   struct mt_ptp_impl* ptp;
   char date_time[64];
   struct timespec spec;
@@ -744,16 +744,16 @@ void mt_ptp_stat(struct mtl_main_impl* impl) {
   uint64_t ns;
 
   for (int i = 0; i < num_ports; i++) {
-    ptp = st_get_ptp(impl, i);
+    ptp = mt_get_ptp(impl, i);
 
-    ns = st_get_ptp_time(impl, i);
+    ns = mt_get_ptp_time(impl, i);
     st_ns_to_timespec(ns, &spec);
     spec.tv_sec -= ptp->master_utc_offset; /* display with utc offset */
     localtime_r(&spec.tv_sec, &t);
     strftime(date_time, sizeof(date_time), "%Y-%m-%d %H:%M:%S", &t);
     notice("PTP(%d): time %" PRIu64 ", %s\n", i, ns, date_time);
 
-    if (!st_if_has_ptp(impl, i)) {
+    if (!mt_if_has_ptp(impl, i)) {
       if (st_has_ebu(impl)) {
         notice("PTP(%d): raw ptp %" PRIu64 "\n", i, ptp_get_raw_time(ptp));
         if (ptp->stat_delta_cnt) {
@@ -786,15 +786,15 @@ void mt_ptp_stat(struct mtl_main_impl* impl) {
 }
 
 int mt_ptp_init(struct mtl_main_impl* impl) {
-  int num_ports = st_num_ports(impl);
+  int num_ports = mt_num_ports(impl);
   int ret;
   struct mt_ptp_impl* ptp;
 
   for (int i = 0; i < num_ports; i++) {
     /* no ptp for kernel based pmd */
-    if (st_pmd_is_kernel(impl, i)) continue;
+    if (mt_pmd_is_kernel(impl, i)) continue;
 
-    ptp = st_get_ptp(impl, i);
+    ptp = mt_get_ptp(impl, i);
     ret = ptp_init(impl, ptp, i);
     if (ret < 0) {
       err("%s(%d), ptp_init fail %d\n", __func__, i, ret);
@@ -807,17 +807,17 @@ int mt_ptp_init(struct mtl_main_impl* impl) {
 }
 
 int mt_ptp_uinit(struct mtl_main_impl* impl) {
-  int num_ports = st_num_ports(impl);
+  int num_ports = mt_num_ports(impl);
   struct mt_ptp_impl* ptp;
 
   for (int i = 0; i < num_ports; i++) {
-    ptp = st_get_ptp(impl, i);
+    ptp = mt_get_ptp(impl, i);
     ptp_uinit(impl, ptp);
   }
 
   return 0;
 }
 
-uint64_t st_get_raw_ptp_time(struct mtl_main_impl* impl, enum mtl_port port) {
-  return ptp_get_raw_time(st_get_ptp(impl, port));
+uint64_t mt_get_raw_ptp_time(struct mtl_main_impl* impl, enum mtl_port port) {
+  return ptp_get_raw_time(mt_get_ptp(impl, port));
 }

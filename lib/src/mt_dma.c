@@ -6,12 +6,12 @@
 
 #include "mt_log.h"
 
-static inline struct mt_map_mgr* st_get_map_mgr(struct mtl_main_impl* impl) {
+static inline struct mt_map_mgr* mt_get_map_mgr(struct mtl_main_impl* impl) {
   return &impl->map_mgr;
 }
 
 int mt_map_add(struct mtl_main_impl* impl, struct mt_map_item* item) {
-  struct mt_map_mgr* mgr = st_get_map_mgr(impl);
+  struct mt_map_mgr* mgr = mt_get_map_mgr(impl);
   void* start = item->vaddr;
   void* end = start + item->size;
   struct mt_map_item* i_item;
@@ -68,7 +68,7 @@ int mt_map_add(struct mtl_main_impl* impl, struct mt_map_item* item) {
 }
 
 int mt_map_remove(struct mtl_main_impl* impl, struct mt_map_item* item) {
-  struct mt_map_mgr* mgr = st_get_map_mgr(impl);
+  struct mt_map_mgr* mgr = mt_get_map_mgr(impl);
   void* start = item->vaddr;
   void* end = start + item->size;
   struct mt_map_item* i_item;
@@ -100,7 +100,7 @@ int mt_map_remove(struct mtl_main_impl* impl, struct mt_map_item* item) {
 }
 
 int mt_map_init(struct mtl_main_impl* impl) {
-  struct mt_map_mgr* mgr = st_get_map_mgr(impl);
+  struct mt_map_mgr* mgr = mt_get_map_mgr(impl);
 
   st_pthread_mutex_init(&mgr->mutex, NULL);
 
@@ -108,7 +108,7 @@ int mt_map_init(struct mtl_main_impl* impl) {
 }
 
 int mt_map_uinit(struct mtl_main_impl* impl) {
-  struct mt_map_mgr* mgr = st_get_map_mgr(impl);
+  struct mt_map_mgr* mgr = mt_get_map_mgr(impl);
   struct mt_map_item* item;
 
   for (int i = 0; i < MT_MAP_MAX_ITEMS; i++) {
@@ -389,7 +389,7 @@ static int dma_free(struct mtl_main_impl* impl, struct mt_dma_dev* dev) {
 
 struct mtl_dma_lender_dev* mt_dma_request_dev(struct mtl_main_impl* impl,
                                               struct mt_dma_request_req* req) {
-  struct mt_dma_mgr* mgr = st_get_dma_mgr(impl);
+  struct mt_dma_mgr* mgr = mt_get_dma_mgr(impl);
   struct mt_dma_dev* dev;
   struct mtl_dma_lender_dev* lender_dev;
   int idx, ret;
@@ -458,7 +458,7 @@ int mt_dma_free_dev(struct mtl_main_impl* impl, struct mtl_dma_lender_dev* dev) 
   struct mt_dma_dev* dma_dev = dev->parent;
   int idx = dev->lender_id;
   int dma_idx = dma_dev->idx;
-  struct mt_dma_mgr* mgr = st_get_dma_mgr(impl);
+  struct mt_dma_mgr* mgr = mt_get_dma_mgr(impl);
 
   if (!dev->active) {
     err("%s(%d,%d), not active\n", __func__, dma_idx, idx);
@@ -538,7 +538,7 @@ bool mt_dma_full(struct mtl_dma_lender_dev* dev) {
 }
 
 int mt_dma_init(struct mtl_main_impl* impl) {
-  struct mt_dma_mgr* mgr = st_get_dma_mgr(impl);
+  struct mt_dma_mgr* mgr = mt_get_dma_mgr(impl);
   int16_t dev_id;
   int idx;
   struct mt_dma_dev* dev;
@@ -582,7 +582,7 @@ int mt_dma_init(struct mtl_main_impl* impl) {
 }
 
 int mt_dma_uinit(struct mtl_main_impl* impl) {
-  struct mt_dma_mgr* mgr = st_get_dma_mgr(impl);
+  struct mt_dma_mgr* mgr = mt_get_dma_mgr(impl);
   int idx;
   struct mt_dma_dev* dev;
 
@@ -598,7 +598,7 @@ int mt_dma_uinit(struct mtl_main_impl* impl) {
 }
 
 int mt_dma_stat(struct mtl_main_impl* impl) {
-  struct mt_dma_mgr* mgr = st_get_dma_mgr(impl);
+  struct mt_dma_mgr* mgr = mt_get_dma_mgr(impl);
   int idx;
   struct mt_dma_dev* dev;
 
@@ -611,7 +611,7 @@ int mt_dma_stat(struct mtl_main_impl* impl) {
 }
 #else
 int mt_dma_init(struct mtl_main_impl* impl) {
-  struct mtl_init_params* p = st_get_user_params(impl);
+  struct mtl_init_params* p = mt_get_user_params(impl);
 
   if (p->num_dma_dev_port) {
     err("%s, total dma dev %d requested, but the lib build without dma dev support\n",

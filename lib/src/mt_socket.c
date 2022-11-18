@@ -62,14 +62,14 @@ int st_socket_join_mcast(struct mtl_main_impl* impl, enum mtl_port port, uint32_
   char cmd[128];
   uint8_t ip[MTL_IP_ADDR_LEN];
 
-  if (!st_pmd_is_kernel(impl, port)) {
+  if (!mt_pmd_is_kernel(impl, port)) {
     err("%s(%d), not kernel based pmd\n", __func__, port);
     return -EIO;
   }
 
   st_u32_to_ip(group, ip);
   snprintf(cmd, sizeof(cmd), "ip addr add %u.%u.%u.%u/24 dev %s autojoin", ip[0], ip[1],
-           ip[2], ip[3], st_get_user_params(impl)->port[port]);
+           ip[2], ip[3], mt_get_user_params(impl)->port[port]);
   ret = st_run_cmd(cmd, NULL, 0);
   if (ret < 0) return ret;
 
@@ -82,14 +82,14 @@ int st_socket_drop_mcast(struct mtl_main_impl* impl, enum mtl_port port, uint32_
   char cmd[128];
   uint8_t ip[MTL_IP_ADDR_LEN];
 
-  if (!st_pmd_is_kernel(impl, port)) {
+  if (!mt_pmd_is_kernel(impl, port)) {
     err("%s(%d), not kernel based pmd\n", __func__, port);
     return -EIO;
   }
 
   st_u32_to_ip(group, ip);
   snprintf(cmd, sizeof(cmd), "ip addr del %u.%u.%u.%u/24 dev %s autojoin", ip[0], ip[1],
-           ip[2], ip[3], st_get_user_params(impl)->port[port]);
+           ip[2], ip[3], mt_get_user_params(impl)->port[port]);
   ret = st_run_cmd(cmd, NULL, 0);
   if (ret < 0) return ret;
 
@@ -246,14 +246,14 @@ int st_socket_add_flow(struct mtl_main_impl* impl, enum mtl_port port, uint16_t 
   if (st_is_multicast_ip(flow->dip_addr)) {
     snprintf(cmd, sizeof(cmd),
              "ethtool -N %s flow-type udp4 dst-ip %u.%u.%u.%u dst-port %u action %u",
-             st_get_user_params(impl)->port[port], flow->dip_addr[0], flow->dip_addr[1],
+             mt_get_user_params(impl)->port[port], flow->dip_addr[0], flow->dip_addr[1],
              flow->dip_addr[2], flow->dip_addr[3], flow->dst_port,
              queue_id + start_queue);
   } else {
     snprintf(cmd, sizeof(cmd),
              "ethtool -N %s flow-type udp4 src-ip %u.%u.%u.%u dst-ip %u.%u.%u.%u "
              "dst-port %u action %u",
-             st_get_user_params(impl)->port[port], flow->dip_addr[0], flow->dip_addr[1],
+             mt_get_user_params(impl)->port[port], flow->dip_addr[0], flow->dip_addr[1],
              flow->dip_addr[2], flow->dip_addr[3], flow->sip_addr[0], flow->sip_addr[1],
              flow->sip_addr[2], flow->sip_addr[3], flow->dst_port,
              queue_id + start_queue);
@@ -278,7 +278,7 @@ int st_socket_remove_flow(struct mtl_main_impl* impl, enum mtl_port port,
 
   if (flow->flow_id > 0) {
     snprintf(cmd, sizeof(cmd), "ethtool -N %s delete %d",
-             st_get_user_params(impl)->port[port], flow->flow_id);
+             mt_get_user_params(impl)->port[port], flow->flow_id);
     ret = st_run_cmd(cmd, NULL, 0);
     if (ret < 0) return ret;
     info("%s(%d), succ, flow_id %d, cmd %s\n", __func__, port, flow->flow_id, cmd);

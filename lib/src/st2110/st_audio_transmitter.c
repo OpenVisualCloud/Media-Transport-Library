@@ -27,9 +27,9 @@ static int st_audio_trs_tasklet_stop(void* priv) {
 
   rte_atomic32_set(&mgr->transmitter_started, 0);
 
-  for (port = 0; port < st_num_ports(impl); port++) {
+  for (port = 0; port < mt_num_ports(impl); port++) {
     /* flush all the pkts in the tx ring desc */
-    st_dev_flush_tx_queue(impl, port, mgr->queue_id[port], st_get_pad(impl, port));
+    st_dev_flush_tx_queue(impl, port, mgr->queue_id[port], mt_get_pad(impl, port));
     st_ring_dequeue_clean(mgr->ring[port]);
     info("%s(%d), port %d, remaining entries %d\n", __func__, idx, port,
          rte_ring_count(mgr->ring[port]));
@@ -96,7 +96,7 @@ static int st_audio_trs_tasklet_handler(void* priv) {
   int port;
   int pending = MT_TASKLET_ALL_DONE;
 
-  for (port = 0; port < st_num_ports(impl); port++) {
+  for (port = 0; port < mt_num_ports(impl); port++) {
     pending += st_audio_trs_session_tasklet(impl, trs, mgr, port);
   }
 

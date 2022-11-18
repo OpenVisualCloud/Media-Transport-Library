@@ -38,7 +38,7 @@ static int video_trs_rl_warm_up(struct mtl_main_impl* impl,
   int32_t delta_pkts;
   unsigned int tx;
 
-  cur_tsc = st_get_tsc(impl);
+  cur_tsc = mt_get_tsc(impl);
   delta_pkts = (cur_tsc - target_tsc) / pacing->trs;
   pre_tsc = cur_tsc;
   warm_pkts -= delta_pkts;
@@ -59,7 +59,7 @@ static int video_trs_rl_warm_up(struct mtl_main_impl* impl,
       return 0;
     }
     /* re-calculate the delta */
-    cur_tsc = st_get_tsc(impl);
+    cur_tsc = mt_get_tsc(impl);
     delta_pkts = (cur_tsc - pre_tsc) / pacing->trs;
     pre_tsc = cur_tsc;
     if (delta_pkts > i) {
@@ -144,7 +144,7 @@ static int _video_trs_rl_tasklet(struct mtl_main_impl* impl,
   /* check if it's pending on the first pkt */
   uint64_t target_tsc = s->trs_target_tsc[s_port];
   if (target_tsc) {
-    uint64_t cur_tsc = st_get_tsc(impl);
+    uint64_t cur_tsc = mt_get_tsc(impl);
     if (cur_tsc < target_tsc) {
       uint64_t delta = target_tsc - cur_tsc;
       if (likely(delta < NS_PER_S)) {
@@ -222,7 +222,7 @@ static int _video_trs_rl_tasklet(struct mtl_main_impl* impl,
   }
 
   if (unlikely(!pkt_idx)) {
-    uint64_t cur_tsc = st_get_tsc(impl);
+    uint64_t cur_tsc = mt_get_tsc(impl);
     if (valid_bulk != 0) {
       video_burst_packet(s, s_port, pkts, valid_bulk, true);
     }
@@ -292,7 +292,7 @@ static int video_trs_tsc_tasklet(struct mtl_main_impl* impl,
   /* check if it's pending on the tsc */
   target_tsc = s->trs_target_tsc[s_port];
   if (target_tsc) {
-    cur_tsc = st_get_tsc(impl);
+    cur_tsc = mt_get_tsc(impl);
     if (cur_tsc < target_tsc) {
       uint64_t delta = target_tsc - cur_tsc;
       if (likely(delta < NS_PER_S)) {
@@ -359,7 +359,7 @@ static int video_trs_tsc_tasklet(struct mtl_main_impl* impl,
     s->pri_nic_inflight_cnt = 0;
   }
 
-  cur_tsc = st_get_tsc(impl);
+  cur_tsc = mt_get_tsc(impl);
   target_tsc = st_tx_mbuf_get_tsc(pkts[0]);
   if (cur_tsc < target_tsc) {
     unsigned int i;
@@ -410,7 +410,7 @@ static int video_trs_ptp_tasklet(struct mtl_main_impl* impl,
   /* check if it's pending on the tsc */
   target_ptp = s->trs_target_tsc[s_port];
   if (target_ptp) {
-    cur_ptp = st_get_ptp_time(impl, MTL_PORT_P);
+    cur_ptp = mt_get_ptp_time(impl, MTL_PORT_P);
     if (cur_ptp < target_ptp) {
       uint64_t delta = target_ptp - cur_ptp;
       if (likely(delta < NS_PER_S)) {
@@ -477,7 +477,7 @@ static int video_trs_ptp_tasklet(struct mtl_main_impl* impl,
     s->pri_nic_inflight_cnt = 0;
   }
 
-  cur_ptp = st_get_ptp_time(impl, MTL_PORT_P);
+  cur_ptp = mt_get_ptp_time(impl, MTL_PORT_P);
   target_ptp = st_tx_mbuf_get_ptp(pkts[0]);
   if (cur_ptp < target_ptp) {
     unsigned int i;

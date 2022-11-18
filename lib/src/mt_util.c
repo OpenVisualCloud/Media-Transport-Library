@@ -82,7 +82,7 @@ void st_mbuf_sanity_check(struct rte_mbuf** mbufs, uint16_t nb, char* tag) {
 
 int st_build_port_map(struct mtl_main_impl* impl, char** ports, enum mtl_port* maps,
                       int num_ports) {
-  struct mtl_init_params* p = st_get_user_params(impl);
+  struct mtl_init_params* p = mt_get_user_params(impl);
   int main_num_ports = p->num_ports;
 
   if (num_ports > main_num_ports) {
@@ -117,7 +117,7 @@ int st_build_port_map(struct mtl_main_impl* impl, char** ports, enum mtl_port* m
 
 int mt_pacing_train_result_add(struct mtl_main_impl* impl, enum mtl_port port,
                                uint64_t rl_bps, float pad_interval) {
-  struct mt_pacing_train_result* ptr = &st_if(impl, port)->pt_results[0];
+  struct mt_pacing_train_result* ptr = &mt_if(impl, port)->pt_results[0];
 
   for (int i = 0; i < MT_MAX_RL_ITEMS; i++) {
     if (ptr[i].rl_bps) continue;
@@ -132,7 +132,7 @@ int mt_pacing_train_result_add(struct mtl_main_impl* impl, enum mtl_port port,
 
 int mt_pacing_train_result_search(struct mtl_main_impl* impl, enum mtl_port port,
                                   uint64_t rl_bps, float* pad_interval) {
-  struct mt_pacing_train_result* ptr = &st_if(impl, port)->pt_results[0];
+  struct mt_pacing_train_result* ptr = &mt_if(impl, port)->pt_results[0];
 
   for (int i = 0; i < MT_MAX_RL_ITEMS; i++) {
     if (rl_bps == ptr[i].rl_bps) {
@@ -500,12 +500,12 @@ int st_frame_trans_uinit(struct st_frame_trans* frame) {
 }
 
 int st_vsync_calculate(struct mtl_main_impl* impl, struct st_vsync_info* vsync) {
-  uint64_t ptp_time = st_get_ptp_time(impl, MTL_PORT_P);
+  uint64_t ptp_time = mt_get_ptp_time(impl, MTL_PORT_P);
   uint64_t to_next_epochs;
 
   vsync->meta.epoch = ptp_time / vsync->meta.frame_time + 1;
   to_next_epochs = vsync->meta.epoch * vsync->meta.frame_time - ptp_time;
-  vsync->next_epoch_tsc = st_get_tsc(impl) + to_next_epochs;
+  vsync->next_epoch_tsc = mt_get_tsc(impl) + to_next_epochs;
 
   dbg("%s, to_next_epochs %fms\n", __func__, (float)to_next_epochs / NS_PER_MS);
   return 0;

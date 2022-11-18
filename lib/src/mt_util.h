@@ -46,7 +46,7 @@ int st_build_port_map(struct mtl_main_impl* impl, char** ports, enum mtl_port* m
                       int num_ports);
 
 /* logical session port to main(physical) port */
-static inline enum mtl_port st_port_logic2phy(enum mtl_port* maps,
+static inline enum mtl_port mt_port_logic2phy(enum mtl_port* maps,
                                               enum st_session_port logic) {
   return maps[logic];
 }

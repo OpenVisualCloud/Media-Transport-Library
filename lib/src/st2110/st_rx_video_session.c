@@ -621,7 +621,7 @@ static int rv_free_frames(struct st_rx_video_session_impl* s) {
 
 static int rv_alloc_frames(struct mtl_main_impl* impl,
                            struct st_rx_video_session_impl* s) {
-  enum mtl_port port = st_port_logic2phy(s->port_maps, ST_SESSION_PORT_P);
+  enum mtl_port port = mt_port_logic2phy(s->port_maps, ST_SESSION_PORT_P);
   int soc_id = st_socket_id(impl, port);
   int idx = s->idx;
   size_t size = s->st20_uframe_size ? s->st20_uframe_size : s->st20_fb_size;
@@ -699,7 +699,7 @@ static int rv_alloc_rtps(struct mtl_main_impl* impl, struct st_rx_video_sessions
   struct rte_ring* ring;
   unsigned int flags, count;
   int mgr_idx = mgr->idx, idx = s->idx;
-  enum mtl_port port = st_port_logic2phy(s->port_maps, ST_SESSION_PORT_P);
+  enum mtl_port port = mt_port_logic2phy(s->port_maps, ST_SESSION_PORT_P);
 
   snprintf(ring_name, 32, "RX-VIDEO-RTP-RING-M%d-R%d", mgr_idx, idx);
   flags = RING_F_SP_ENQ | RING_F_SC_DEQ; /* single-producer and single-consumer */
@@ -748,7 +748,7 @@ static int rv_init_hdr_split(struct mtl_main_impl* impl,
   mbufs_total += (mbufs_per_frame - 1);
 
   for (int i = 0; i < num_port; i++) {
-    port = st_port_logic2phy(s->port_maps, i);
+    port = mt_port_logic2phy(s->port_maps, i);
     soc_id = st_socket_id(impl, port);
     size_t frames_size = mbufs_total * ST_VIDEO_BPM_SIZE;
     /* more extra space since rte_mbuf_data_iova_default has offset */
@@ -888,7 +888,7 @@ static int rv_uinit_slot(struct st_rx_video_session_impl* s) {
 }
 
 static int rv_init_slot(struct mtl_main_impl* impl, struct st_rx_video_session_impl* s) {
-  enum mtl_port port = st_port_logic2phy(s->port_maps, ST_SESSION_PORT_P);
+  enum mtl_port port = mt_port_logic2phy(s->port_maps, ST_SESSION_PORT_P);
   int soc_id = st_socket_id(impl, port);
   int idx = s->idx;
   size_t bitmap_size = s->st20_frame_bitmap_size;
@@ -1261,7 +1261,7 @@ static int rv_slice_dma_drop_mbuf(void* priv, struct rte_mbuf* mbuf) {
 }
 
 static int rv_init_dma(struct mtl_main_impl* impl, struct st_rx_video_session_impl* s) {
-  enum mtl_port port = st_port_logic2phy(s->port_maps, ST_SESSION_PORT_P);
+  enum mtl_port port = mt_port_logic2phy(s->port_maps, ST_SESSION_PORT_P);
   int idx = s->idx;
   bool share_dma = true;
   enum st20_type type = s->ops.type;
@@ -1387,7 +1387,7 @@ static int rv_dump_pcapng(struct mtl_main_impl* impl, struct st_rx_video_session
   struct rte_mbuf* pcapng_mbuf[rv];
   int pcapng_mbuf_cnt = 0;
   ssize_t len;
-  struct mt_interface* inf = st_if(impl, st_port_logic2phy(s->port_maps, s_port));
+  struct mt_interface* inf = mt_if(impl, mt_port_logic2phy(s->port_maps, s_port));
 
   for (uint16_t i = 0; i < rv; i++) {
     struct rte_mbuf* mc;
@@ -1567,8 +1567,8 @@ static int rv_handle_frame_pkt(struct st_rx_video_session_impl* s, struct rte_mb
   if (ebu) {
     /* no copy for ebu */
     need_copy = false;
-    enum mtl_port port = st_port_logic2phy(s->port_maps, s_port);
-    struct mt_interface* inf = st_if(impl, port);
+    enum mtl_port port = mt_port_logic2phy(s->port_maps, s_port);
+    struct mt_interface* inf = mt_if(impl, port);
     if (inf->feature & MT_IF_FEATURE_RX_OFFLOAD_TIMESTAMP) {
       rv_ebu_on_packet(s, tmstamp, st_mbuf_get_hw_time_stamp(impl, mbuf), pkt_idx);
     }
@@ -2136,7 +2136,7 @@ static int rv_init_pkt_lcore(struct mtl_main_impl* impl,
   struct rte_ring* ring;
   unsigned int flags, count, lcore;
   int mgr_idx = mgr->idx, idx = s->idx, ret;
-  enum mtl_port port = st_port_logic2phy(s->port_maps, ST_SESSION_PORT_P);
+  enum mtl_port port = mt_port_logic2phy(s->port_maps, ST_SESSION_PORT_P);
 
   snprintf(ring_name, 32, "RX-VIDEO-PKT-RING-M%d-R%d", mgr_idx, idx);
   flags = RING_F_SP_ENQ | RING_F_SC_DEQ; /* single-producer and single-consumer */
@@ -2557,7 +2557,7 @@ static int rv_uinit_hw(struct mtl_main_impl* impl, struct st_rx_video_session_im
   enum mtl_port port;
 
   for (int i = 0; i < num_port; i++) {
-    port = st_port_logic2phy(s->port_maps, i);
+    port = mt_port_logic2phy(s->port_maps, i);
 
     if (s->queue_active[i]) {
       st_dev_free_rx_queue(impl, port, s->queue_id[i]);
@@ -2577,11 +2577,11 @@ static int rv_init_hw(struct mtl_main_impl* impl, struct st_rx_video_session_imp
   enum mtl_port port;
 
   for (int i = 0; i < num_port; i++) {
-    port = st_port_logic2phy(s->port_maps, i);
+    port = mt_port_logic2phy(s->port_maps, i);
 
     memset(&flow, 0, sizeof(flow));
     rte_memcpy(flow.dip_addr, ops->sip_addr[i], MTL_IP_ADDR_LEN);
-    rte_memcpy(flow.sip_addr, st_sip_addr(impl, port), MTL_IP_ADDR_LEN);
+    rte_memcpy(flow.sip_addr, mt_sip_addr(impl, port), MTL_IP_ADDR_LEN);
     flow.port_flow = true;
     flow.dst_port = s->st20_dst_port[i];
     if (rv_is_hdr_split(s)) {
@@ -2599,7 +2599,7 @@ static int rv_init_hw(struct mtl_main_impl* impl, struct st_rx_video_session_imp
     }
 
     /* no flow for data path only */
-    if (st_pmd_is_kernel(impl, port) && (ops->flags & ST20_RX_FLAG_DATA_PATH_ONLY))
+    if (mt_pmd_is_kernel(impl, port) && (ops->flags & ST20_RX_FLAG_DATA_PATH_ONLY))
       ret = st_dev_requemt_rx_queue(impl, port, &queue, NULL);
     else
       ret = st_dev_requemt_rx_queue(impl, port, &queue, &flow);
@@ -2607,7 +2607,7 @@ static int rv_init_hw(struct mtl_main_impl* impl, struct st_rx_video_session_imp
       rv_uinit_hw(impl, s);
       return ret;
     }
-    s->port_id[i] = st_port_id(impl, port);
+    s->port_id[i] = mt_port_id(impl, port);
     s->queue_id[i] = queue;
     s->queue_active[i] = true;
     info("%s(%d), port(l:%d,p:%d), queue %d udp %d\n", __func__, idx, i, port, queue,
@@ -2624,7 +2624,7 @@ static int rv_uinit_mcast(struct mtl_main_impl* impl,
   for (int i = 0; i < ops->num_port; i++) {
     if (st_is_multicast_ip(ops->sip_addr[i]))
       mt_mcast_leave(impl, st_ip_to_u32(ops->sip_addr[i]),
-                     st_port_logic2phy(s->port_maps, i));
+                     mt_port_logic2phy(s->port_maps, i));
   }
 
   return 0;
@@ -2637,8 +2637,8 @@ static int rv_init_mcast(struct mtl_main_impl* impl, struct st_rx_video_session_
 
   for (int i = 0; i < ops->num_port; i++) {
     if (!st_is_multicast_ip(ops->sip_addr[i])) continue;
-    port = st_port_logic2phy(s->port_maps, i);
-    if (st_pmd_is_kernel(impl, port) && (ops->flags & ST20_RX_FLAG_DATA_PATH_ONLY)) {
+    port = mt_port_logic2phy(s->port_maps, i);
+    if (mt_pmd_is_kernel(impl, port) && (ops->flags & ST20_RX_FLAG_DATA_PATH_ONLY)) {
       info("%s(%d), skip mcast join for port %d\n", __func__, s->idx, i);
       return 0;
     }
@@ -2741,7 +2741,7 @@ static int rv_attach(struct mtl_main_impl* impl, struct st_rx_video_sessions_mgr
   rte_atomic32_set(&s->stat_frames_received, 0);
   rte_atomic32_set(&s->cbs_incomplete_frame_cnt, 0);
   rte_atomic32_set(&s->cbs_frame_slot_cnt, 0);
-  s->stat_last_time = st_get_monotonic_time();
+  s->stat_last_time = mt_get_monotonic_time();
   s->dma_nb_desc = 128;
   s->dma_slot = NULL;
   s->dma_dev = NULL;
@@ -2805,7 +2805,7 @@ static int rv_attach(struct mtl_main_impl* impl, struct st_rx_video_sessions_mgr
 
 static int rv_poll_vsync(struct mtl_main_impl* impl, struct st_rx_video_session_impl* s) {
   struct st_vsync_info* vsync = &s->vsync;
-  uint64_t cur_tsc = st_get_tsc(impl);
+  uint64_t cur_tsc = mt_get_tsc(impl);
 
   if (!vsync->init) return 0;
 
@@ -2893,7 +2893,7 @@ static int rv_migrate_dma(struct mtl_main_impl* impl,
 static void rv_stat(struct st_rx_video_sessions_mgr* mgr,
                     struct st_rx_video_session_impl* s) {
   int m_idx = mgr ? mgr->idx : 0, idx = s->idx;
-  uint64_t cur_time_ns = st_get_monotonic_time();
+  uint64_t cur_time_ns = mt_get_monotonic_time();
   double time_sec = (double)(cur_time_ns - s->stat_last_time) / NS_PER_S;
   int frames_received = rte_atomic32_read(&s->stat_frames_received);
   double framerate = frames_received / time_sec;
@@ -3745,9 +3745,9 @@ int st20_rx_get_queue_meta(st20_rx_handle handle, struct st_queue_meta* meta) {
   memset(meta, 0x0, sizeof(*meta));
   meta->num_port = RTE_MIN(s->ops.num_port, MTL_PORT_MAX);
   for (uint8_t i = 0; i < meta->num_port; i++) {
-    port = st_port_logic2phy(s->port_maps, i);
+    port = mt_port_logic2phy(s->port_maps, i);
 
-    if (st_pmd_type(impl, port) == MTL_PMD_DPDK_AF_XDP) {
+    if (mt_pmd_type(impl, port) == MTL_PMD_DPDK_AF_XDP) {
       /* af_xdp pmd */
       meta->start_queue[i] = mt_start_queue(impl, port);
     }
@@ -4067,9 +4067,9 @@ int st22_rx_get_queue_meta(st22_rx_handle handle, struct st_queue_meta* meta) {
   memset(meta, 0x0, sizeof(*meta));
   meta->num_port = RTE_MIN(s->ops.num_port, MTL_PORT_MAX);
   for (uint8_t i = 0; i < meta->num_port; i++) {
-    port = st_port_logic2phy(s->port_maps, i);
+    port = mt_port_logic2phy(s->port_maps, i);
 
-    if (st_pmd_type(impl, port) == MTL_PMD_DPDK_AF_XDP) {
+    if (mt_pmd_type(impl, port) == MTL_PMD_DPDK_AF_XDP) {
       /* af_xdp pmd */
       meta->start_queue[i] = mt_start_queue(impl, port);
     }

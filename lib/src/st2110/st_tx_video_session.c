@@ -88,7 +88,7 @@ static void tv_frame_free_cb(void* addr, void* opaque) {
 
 static int tv_alloc_frames(struct mtl_main_impl* impl,
                            struct st_tx_video_session_impl* s) {
-  enum mtl_port port = st_port_logic2phy(s->port_maps, ST_SESSION_PORT_P);
+  enum mtl_port port = mt_port_logic2phy(s->port_maps, ST_SESSION_PORT_P);
   int soc_id = st_socket_id(impl, port);
   int idx = s->idx;
   struct st_frame_trans* frame_info;
@@ -157,7 +157,7 @@ static int tv_free_frames(struct st_tx_video_session_impl* s) {
 
 static int tv_poll_vsync(struct mtl_main_impl* impl, struct st_tx_video_session_impl* s) {
   struct st_vsync_info* vsync = &s->vsync;
-  uint64_t cur_tsc = st_get_tsc(impl);
+  uint64_t cur_tsc = mt_get_tsc(impl);
 
   if (cur_tsc > vsync->next_epoch_tsc) {
     uint64_t tsc_delta = cur_tsc - vsync->next_epoch_tsc;
@@ -185,7 +185,7 @@ static int double_cmp(const void* a, const void* b) {
 
 static int tv_train_pacing(struct mtl_main_impl* impl, struct st_tx_video_session_impl* s,
                            enum st_session_port s_port) {
-  enum mtl_port port = st_port_logic2phy(s->port_maps, s_port);
+  enum mtl_port port = mt_port_logic2phy(s->port_maps, s_port);
   struct rte_mbuf* pad = s->pad[s_port][ST20_PKT_TYPE_NORMAL];
   int idx = s->idx;
   uint16_t port_id = s->port_id[s_port];
@@ -210,7 +210,7 @@ static int tv_train_pacing(struct mtl_main_impl* impl, struct st_tx_video_sessio
   /* wait tsc calibrate done, pacing need fine tuned TSC */
   st_wait_tsc_stable(impl);
 
-  train_start_time = st_get_tsc(impl);
+  train_start_time = mt_get_tsc(impl);
 
   /* warm stage to consume all nix tx buf */
   pad_pkts = s->st20_total_pkts * 100;
@@ -222,7 +222,7 @@ static int tv_train_pacing(struct mtl_main_impl* impl, struct st_tx_video_sessio
   /* training stage */
   pad_pkts = s->st20_total_pkts * 2;
   for (int loop = 0; loop < loop_cnt; loop++) {
-    uint64_t start = st_get_tsc(impl);
+    uint64_t start = mt_get_tsc(impl);
     for (int i = 0; i < ST20_PKT_TYPE_MAX; i++) {
       pad = s->pad[s_port][i];
       int pkts = s->st20_pkt_info[i].number * 2;
@@ -242,7 +242,7 @@ static int tv_train_pacing(struct mtl_main_impl* impl, struct st_tx_video_sessio
         st_tx_burst_busy(port_id, queue_id, &pad, 1);
       }
     }
-    uint64_t end = st_get_tsc(impl);
+    uint64_t end = mt_get_tsc(impl);
     double time_sec = (double)(end - start) / NS_PER_S;
     array[loop] = pad_pkts / time_sec;
   }
@@ -276,7 +276,7 @@ static int tv_train_pacing(struct mtl_main_impl* impl, struct st_tx_video_sessio
 
   s->pacing.pad_interval = pad_interval;
   mt_pacing_train_result_add(impl, port, rl_bps, pad_interval);
-  train_end_time = st_get_tsc(impl);
+  train_end_time = mt_get_tsc(impl);
   info("%s(%d,%d), trained pad_interval %f pkts_per_frame %f with time %fs\n", __func__,
        idx, s_port, pad_interval, pkts_per_frame,
        (double)(train_end_time - train_start_time) / NS_PER_S);
@@ -310,8 +310,8 @@ static int tv_init_pacing(struct mtl_main_impl* impl,
   }
   pacing->trs = frame_time * ractive / s->st20_total_pkts;
   /* always use MTL_PORT_P for ptp now */
-  pacing->cur_epochs = st_get_ptp_time(impl, MTL_PORT_P) / frame_time;
-  pacing->tsc_time_cursor = st_get_tsc(impl);
+  pacing->cur_epochs = mt_get_ptp_time(impl, MTL_PORT_P) / frame_time;
+  pacing->tsc_time_cursor = mt_get_tsc(impl);
 
   /* 80 percent tr offset time as warmup pkts */
   uint32_t troffset_warm_pkts = pacing->tr_offset / pacing->trs;
@@ -341,7 +341,7 @@ static int tv_init_pacing(struct mtl_main_impl* impl,
   int ret;
 
   for (int i = 0; i < num_port; i++) {
-    port = st_port_logic2phy(s->port_maps, i);
+    port = mt_port_logic2phy(s->port_maps, i);
     /* use system pacing way now */
     s->pacing_way[i] = st_tx_pacing_way(impl, port);
     if (s->pacing_way[i] == ST21_TX_PACING_WAY_RL) {
@@ -377,7 +377,7 @@ static int tv_sync_pacing(struct mtl_main_impl* impl, struct st_tx_video_session
   struct st_tx_video_pacing* pacing = &s->pacing;
   double frame_time = pacing->frame_time;
   /* always use MTL_PORT_P for ptp now */
-  uint64_t ptp_time = st_get_ptp_time(impl, MTL_PORT_P);
+  uint64_t ptp_time = mt_get_ptp_time(impl, MTL_PORT_P);
   uint64_t next_epochs = pacing->cur_epochs + 1;
   uint64_t epochs;
   double to_epoch_tr_offset;
@@ -432,7 +432,7 @@ static int tv_sync_pacing(struct mtl_main_impl* impl, struct st_tx_video_session
   pacing->rtp_time_stamp = pacing->pacing_time_stamp;
   dbg("%s(%d), old time_cursor %fms\n", __func__, idx,
       pacing->tsc_time_cursor / 1000 / 1000);
-  pacing->tsc_time_cursor = (double)st_get_tsc(impl) + to_epoch_tr_offset;
+  pacing->tsc_time_cursor = (double)mt_get_tsc(impl) + to_epoch_tr_offset;
   dbg("%s(%d), epochs %lu time_stamp %u time_cursor %fms to_epoch_tr_offset %fms\n",
       __func__, idx, pacing->cur_epochs, pacing->pacing_time_stamp,
       pacing->tsc_time_cursor / 1000 / 1000, to_epoch_tr_offset / 1000 / 1000);
@@ -440,7 +440,7 @@ static int tv_sync_pacing(struct mtl_main_impl* impl, struct st_tx_video_session
 
   if (sync) {
     dbg("%s(%d), delay to epoch_time %f, cur %" PRIu64 "\n", __func__, idx,
-        pacing->tsc_time_cursor, st_get_tsc(impl));
+        pacing->tsc_time_cursor, mt_get_tsc(impl));
     st_tsc_delay_to(impl, pacing->tsc_time_cursor);
   }
 
@@ -509,7 +509,7 @@ static int tv_init_st22_boxes(struct mtl_main_impl* impl,
 static int tv_init_hdr(struct mtl_main_impl* impl, struct st_tx_video_session_impl* s,
                        enum st_session_port s_port) {
   int idx = s->idx;
-  enum mtl_port port = st_port_logic2phy(s->port_maps, s_port);
+  enum mtl_port port = mt_port_logic2phy(s->port_maps, s_port);
   int ret;
   struct st_rfc4175_video_hdr* hdr = &s->s_hdr[s_port];
   struct rte_ether_hdr* eth = &hdr->eth;
@@ -518,7 +518,7 @@ static int tv_init_hdr(struct mtl_main_impl* impl, struct st_tx_video_session_im
   struct st20_rfc4175_rtp_hdr* rtp = &hdr->rtp;
   struct st20_tx_ops* ops = &s->ops;
   uint8_t* dip = ops->dip_addr[s_port];
-  uint8_t* sip = st_sip_addr(impl, port);
+  uint8_t* sip = mt_sip_addr(impl, port);
   struct rte_ether_addr* d_addr = st_eth_d_addr(eth);
 
   /* ether hdr */
@@ -1237,7 +1237,7 @@ static int tv_tasklet_frame(struct mtl_main_impl* impl,
     s->st20_pkt_idx = 0;
     rte_atomic32_inc(&s->stat_frame_cnt);
 
-    uint64_t frame_end_time = st_get_tsc(impl);
+    uint64_t frame_end_time = mt_get_tsc(impl);
     if (frame_end_time > pacing->tsc_time_cursor) {
       s->stat_exceed_frame_time++;
       dbg("%s(%d), frame %d build time out %fus\n", __func__, idx, s->st20_frame_idx,
@@ -1623,7 +1623,7 @@ static int tv_tasklet_st22(struct mtl_main_impl* impl,
     rte_atomic32_inc(&s->stat_frame_cnt);
     st22_info->frame_idx++;
 
-    uint64_t frame_end_time = st_get_tsc(impl);
+    uint64_t frame_end_time = mt_get_tsc(impl);
     if (frame_end_time > pacing->tsc_time_cursor) {
       s->stat_exceed_frame_time++;
       dbg("%s(%d), frame %d build time out %fus\n", __func__, idx, s->st20_frame_idx,
@@ -1666,7 +1666,7 @@ static int tv_uinit_hw(struct mtl_main_impl* impl, struct st_tx_video_session_im
   int num_port = s->ops.num_port;
 
   for (int i = 0; i < num_port; i++) {
-    port = st_port_logic2phy(s->port_maps, i);
+    port = mt_port_logic2phy(s->port_maps, i);
 
     if (s->ring[i]) {
       st_ring_dequeue_clean(s->ring[i]);
@@ -1707,8 +1707,8 @@ static int tv_init_hw(struct mtl_main_impl* impl, struct st_tx_video_sessions_mg
   enum mtl_port port;
 
   for (int i = 0; i < num_port; i++) {
-    port = st_port_logic2phy(s->port_maps, i);
-    port_id = st_port_id(impl, port);
+    port = mt_port_logic2phy(s->port_maps, i);
+    port_id = mt_port_id(impl, port);
 
     ret = st_dev_requemt_tx_queue(impl, port, &queue, tv_rl_bps(s));
     if (ret < 0) {
@@ -1732,26 +1732,26 @@ static int tv_init_hw(struct mtl_main_impl* impl, struct st_tx_video_sessions_mg
     info("%s(%d,%d), port(l:%d,p:%d), queue %d, count %u\n", __func__, mgr_idx, idx, i,
          port, queue, count);
 
-    if (st_pmd_is_kernel(impl, port) && s->mbuf_mempool_reuse_rx[i]) {
+    if (mt_pmd_is_kernel(impl, port) && s->mbuf_mempool_reuse_rx[i]) {
       if (s->mbuf_mempool_hdr[i]) {
         err("%s(%d,%d), fail to reuse rx, has mempool_hdr for port %d\n", __func__,
             mgr_idx, idx, i);
       } else {
         /* reuse rx mempool for zero copy */
         if (st_has_rx_mono_pool(impl))
-          s->mbuf_mempool_hdr[i] = st_get_rx_mempool(impl, port);
+          s->mbuf_mempool_hdr[i] = mt_get_rx_mempool(impl, port);
         else
-          s->mbuf_mempool_hdr[i] = st_if(impl, port)->rx_queues[queue].mbuf_pool;
+          s->mbuf_mempool_hdr[i] = mt_if(impl, port)->rx_queues[queue].mbuf_pool;
         info("%s(%d,%d), reuse rx mempool(%p) for port %d\n", __func__, mgr_idx, idx,
              s->mbuf_mempool_hdr[i], i);
       }
     }
 
-    if (false & st_pmd_is_kernel(impl, port)) {
+    if (false & mt_pmd_is_kernel(impl, port)) {
       /* disable now, alwasy use no zc mempool for the flush pad */
       pad_mempool = s->mbuf_mempool_hdr[i];
     } else {
-      pad_mempool = st_get_tx_mempool(impl, port);
+      pad_mempool = mt_get_tx_mempool(impl, port);
     }
     for (int j = 0; j < ST20_PKT_TYPE_MAX; j++) {
       if (!s->st20_pkt_info[j].number) continue;
@@ -1838,15 +1838,15 @@ static int tv_mempool_init(struct mtl_main_impl* impl,
   }
 
   for (int i = 0; i < num_port; i++) {
-    port = st_port_logic2phy(s->port_maps, i);
+    port = mt_port_logic2phy(s->port_maps, i);
     if (s->mbuf_mempool_reuse_rx[i]) {
       s->mbuf_mempool_hdr[i] = NULL; /* reuse rx mempool for zero copy */
     } else if (s->tx_mono_pool) {
-      s->mbuf_mempool_hdr[i] = st_get_tx_mempool(impl, port);
+      s->mbuf_mempool_hdr[i] = mt_get_tx_mempool(impl, port);
       info("%s(%d), use tx mono hdr mempool(%p) for port %d\n", __func__, idx,
            s->mbuf_mempool_hdr[i], i);
     } else {
-      n = st_if_nb_tx_desc(impl, port) + s->ring_count;
+      n = mt_if_nb_tx_desc(impl, port) + s->ring_count;
       if (s->mbuf_mempool_hdr[i]) {
         warn("%s(%d), use previous hdr mempool for port %d\n", __func__, idx, i);
       } else {
@@ -1864,12 +1864,12 @@ static int tv_mempool_init(struct mtl_main_impl* impl,
     }
   }
 
-  port = st_port_logic2phy(s->port_maps, ST_SESSION_PORT_P);
-  n = st_if_nb_tx_desc(impl, port) + s->ring_count;
+  port = mt_port_logic2phy(s->port_maps, ST_SESSION_PORT_P);
+  n = mt_if_nb_tx_desc(impl, port) + s->ring_count;
   if (ops->type == ST20_TYPE_RTP_LEVEL) n += ops->rtp_ring_size;
 
   if (s->tx_mono_pool) {
-    s->mbuf_mempool_chain = st_get_tx_mempool(impl, port);
+    s->mbuf_mempool_chain = mt_get_tx_mempool(impl, port);
     info("%s(%d), use tx mono chain mempool(%p)\n", __func__, idx, s->mbuf_mempool_chain);
   } else if (s->mbuf_mempool_chain) {
     warn("%s(%d), use previous chain mempool\n", __func__, idx);
@@ -1895,7 +1895,7 @@ static int tv_init_packet_ring(struct mtl_main_impl* impl,
   struct rte_ring* ring;
   unsigned int flags, count = s->ops.rtp_ring_size;
   int mgr_idx = mgr->idx, idx = s->idx;
-  enum mtl_port port = st_port_logic2phy(s->port_maps, ST_SESSION_PORT_P);
+  enum mtl_port port = mt_port_logic2phy(s->port_maps, ST_SESSION_PORT_P);
 
   snprintf(ring_name, 32, "TX-VIDEO-PACKET-RING-M%d-R%d", mgr_idx, idx);
   flags = RING_F_SP_ENQ | RING_F_SC_DEQ; /* single-producer and single-consumer */
@@ -2203,10 +2203,10 @@ static int tv_attach(struct mtl_main_impl* impl, struct st_tx_video_sessions_mgr
   for (int i = 0; i < num_port; i++) {
     s->st20_src_port[i] = (ops->udp_port[i]) ? (ops->udp_port[i]) : (10000 + idx);
     s->st20_dst_port[i] = s->st20_src_port[i];
-    enum mtl_port port = st_port_logic2phy(s->port_maps, i);
-    s->eth_ipv4_cksum_offload[i] = st_if_has_offload_ipv4_cksum(impl, port);
-    s->eth_has_chain[i] = st_if_has_chain_buff(impl, port);
-    if (st_pmd_is_kernel(impl, port) && st_has_af_xdp_zc(impl)) {
+    enum mtl_port port = mt_port_logic2phy(s->port_maps, i);
+    s->eth_ipv4_cksum_offload[i] = mt_if_has_offload_ipv4_cksum(impl, port);
+    s->eth_has_chain[i] = mt_if_has_chain_buff(impl, port);
+    if (mt_pmd_is_kernel(impl, port) && st_has_af_xdp_zc(impl)) {
       /* enable zero copy for tx */
       s->mbuf_mempool_reuse_rx[i] = true;
     } else {
@@ -2270,7 +2270,7 @@ static int tv_attach(struct mtl_main_impl* impl, struct st_tx_video_sessions_mgr
   s->stat_epoch_troffset_mismatch = 0;
   s->stat_trans_troffset_mismatch = 0;
   rte_atomic32_set(&s->stat_frame_cnt, 0);
-  s->stat_last_time = st_get_monotonic_time();
+  s->stat_last_time = mt_get_monotonic_time();
 
   s->pri_nic_burst_cnt = 0;
   s->pri_nic_inflight_cnt = 0;
@@ -2319,7 +2319,7 @@ void tx_video_session_cal_cpu_busy(struct st_tx_video_session_impl* s) {
 static void tv_stat(struct st_tx_video_sessions_mgr* mgr,
                     struct st_tx_video_session_impl* s) {
   int m_idx = mgr->idx, idx = s->idx;
-  uint64_t cur_time_ns = st_get_monotonic_time();
+  uint64_t cur_time_ns = mt_get_monotonic_time();
   double time_sec = (double)(cur_time_ns - s->stat_last_time) / NS_PER_S;
   int frame_cnt = rte_atomic32_read(&s->stat_frame_cnt);
   double framerate = frame_cnt / time_sec;

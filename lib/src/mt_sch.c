@@ -58,7 +58,7 @@ static int sch_tasklet_sleep(struct mtl_main_impl* impl, struct mt_sch_impl* sch
   dbg("%s(%d), sleep_us %" PRIu64 "\n", __func__, sch->idx, sleep_us);
 
   /* sleep now */
-  uint64_t start = st_get_tsc(impl);
+  uint64_t start = mt_get_tsc(impl);
   if (sleep_us < mt_sch_zero_sleep_thresh_us(impl)) {
     st_sleep_ms(0);
   } else {
@@ -71,7 +71,7 @@ static int sch_tasklet_sleep(struct mtl_main_impl* impl, struct mt_sch_impl* sch
     st_pthread_cond_timedwait(&sch->sleep_wake_cond, &sch->sleep_wake_mutex, &abs_time);
     st_pthread_mutex_unlock(&sch->sleep_wake_mutex);
   }
-  uint64_t end = st_get_tsc(impl);
+  uint64_t end = mt_get_tsc(impl);
   uint64_t delta = end - start;
   sch->stat_sleep_ns += delta;
   sch->stat_sleep_cnt++;
@@ -121,7 +121,7 @@ static int sch_tasklet_func(void* args) {
     if (ops->start) ops->start(ops->priv);
   }
 
-  sch->sleep_ratio_start_ns = st_get_tsc(impl);
+  sch->sleep_ratio_start_ns = mt_get_tsc(impl);
 
   while (rte_atomic32_read(&sch->requemtl_stop) == 0) {
     int pending = MT_TASKLET_ALL_DONE;
@@ -131,10 +131,10 @@ static int sch_tasklet_func(void* args) {
       tasklet = sch->tasklet[i];
       if (!tasklet) continue;
       ops = &tasklet->ops;
-      if (time_measure) tsc_s = st_get_tsc(impl);
+      if (time_measure) tsc_s = mt_get_tsc(impl);
       pending += ops->handler(ops->priv);
       if (time_measure) {
-        uint32_t delta_us = (st_get_tsc(impl) - tsc_s) / 1000;
+        uint32_t delta_us = (mt_get_tsc(impl) - tsc_s) / 1000;
         tasklet->stat_max_time_us = RTE_MAX(tasklet->stat_max_time_us, delta_us);
         tasklet->stat_min_time_us = RTE_MIN(tasklet->stat_min_time_us, delta_us);
         tasklet->stat_sum_time_us += delta_us;

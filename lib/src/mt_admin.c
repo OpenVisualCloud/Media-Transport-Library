@@ -9,7 +9,7 @@
 #include "st2110/st_rx_video_session.h"
 #include "st2110/st_tx_video_session.h"
 
-static inline struct mt_admin* st_get_admin(struct mtl_main_impl* impl) {
+static inline struct mt_admin* mt_get_admin(struct mtl_main_impl* impl) {
   return &impl->admin;
 }
 
@@ -321,13 +321,13 @@ static void admin_wakeup_thread(struct mt_admin* admin) {
 
 static void admin_alarm_handler(void* param) {
   struct mtl_main_impl* impl = param;
-  struct mt_admin* admin = st_get_admin(impl);
+  struct mt_admin* admin = mt_get_admin(impl);
 
   admin_wakeup_thread(admin);
 }
 
 static int admin_func(struct mtl_main_impl* impl) {
-  struct mt_admin* admin = st_get_admin(impl);
+  struct mt_admin* admin = mt_get_admin(impl);
 
   dbg("%s, start\n", __func__);
 
@@ -351,7 +351,7 @@ static int admin_func(struct mtl_main_impl* impl) {
 
 static void* admin_thread(void* arg) {
   struct mtl_main_impl* impl = arg;
-  struct mt_admin* admin = st_get_admin(impl);
+  struct mt_admin* admin = mt_get_admin(impl);
 
   info("%s, start\n", __func__);
   while (rte_atomic32_read(&admin->admin_stop) == 0) {
@@ -368,7 +368,7 @@ static void* admin_thread(void* arg) {
 }
 
 int mt_admin_init(struct mtl_main_impl* impl) {
-  struct mt_admin* admin = st_get_admin(impl);
+  struct mt_admin* admin = mt_get_admin(impl);
 
   admin->period_us = 5 * US_PER_S; /* 5s */
   st_pthread_mutex_init(&admin->admin_wake_mutex, NULL);
@@ -382,7 +382,7 @@ int mt_admin_init(struct mtl_main_impl* impl) {
 }
 
 int mt_admin_uinit(struct mtl_main_impl* impl) {
-  struct mt_admin* admin = st_get_admin(impl);
+  struct mt_admin* admin = mt_get_admin(impl);
 
   if (admin->admin_tid) {
     rte_atomic32_set(&admin->admin_stop, 1);
