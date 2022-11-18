@@ -181,7 +181,7 @@ static int sch_start(struct mt_sch_impl* sch) {
   rte_atomic32_set(&sch->stopped, 0);
 
   if (!sch->run_in_thread) {
-    ret = st_dev_get_lcore(sch->parnet, &sch->lcore);
+    ret = mt_dev_get_lcore(sch->parnet, &sch->lcore);
     if (ret < 0) {
       err("%s(%d), get lcore fail %d\n", __func__, idx, ret);
       sch_unlock(sch);
@@ -223,7 +223,7 @@ static int sch_stop(struct mt_sch_impl* sch) {
   }
   if (!sch->run_in_thread) {
     rte_eal_wait_lcore(sch->lcore);
-    st_dev_put_lcore(sch->parnet, sch->lcore);
+    mt_dev_put_lcore(sch->parnet, sch->lcore);
   } else {
     pthread_join(sch->tid, NULL);
   }

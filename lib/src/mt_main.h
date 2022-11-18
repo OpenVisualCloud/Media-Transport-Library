@@ -989,7 +989,7 @@ static inline uint32_t st_rx_mbuf_get_len(struct rte_mbuf* mbuf) {
 }
 
 static inline uint64_t mt_mbuf_hw_time_stamp(struct mtl_main_impl* impl,
-                                                 struct rte_mbuf* mbuf) {
+                                             struct rte_mbuf* mbuf) {
   struct mt_ptp_impl* ptp = impl->ptp;
   struct timespec spec;
   uint64_t time_stamp =

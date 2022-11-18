@@ -26,7 +26,7 @@ static int cni_rx_handle(struct mtl_main_impl* impl, struct rte_mbuf* m,
   struct mt_ptp_ipv4_udp* ipv4_hdr;
   size_t hdr_offset = sizeof(struct rte_ether_hdr);
 
-  // st_mbuf_dump(port, 0, "cni_rx", m);
+  // mt_mbuf_dump(port, 0, "cni_rx", m);
 
   /* vlan check */
   ether_type = ntohs(eth_hdr->ether_type);
@@ -88,14 +88,14 @@ static int cni_traffic(struct mtl_main_impl* impl) {
         done = false;
       }
     }
-    st_tap_handle(impl, i, pkts_rx, rx);
+    mt_tap_handle(impl, i, pkts_rx, rx);
     /* rx from cni rx queue */
     if (cni->rx_q_active[i]) {
       rx = rte_eth_rx_burst(port_id, cni->rx_q_id[i], pkts_rx, ST_CNI_RX_BURST_SIZE);
       if (rx > 0) {
         cni->eth_rx_cnt[i] += rx;
         for (uint16_t ri = 0; ri < rx; ri++) cni_rx_handle(impl, pkts_rx[ri], i);
-        st_kni_handle(impl, i, pkts_rx, rx);
+        mt_kni_handle(impl, i, pkts_rx, rx);
         mt_free_mbufs(&pkts_rx[0], rx);
         done = false;
       }
@@ -178,7 +178,7 @@ static int cni_queues_uinit(struct mtl_main_impl* impl) {
 
   for (int i = 0; i < num_ports; i++) {
     if (cni->rx_q_active[i]) {
-      st_dev_free_rx_queue(impl, i, cni->rx_q_id[i]);
+      mt_dev_free_rx_queue(impl, i, cni->rx_q_id[i]);
       cni->rx_q_active[i] = false;
     }
   }
@@ -199,7 +199,7 @@ static int cni_queues_init(struct mtl_main_impl* impl, struct mt_cni_impl* cni) 
     /* no cni for kernel based pmd */
     if (mt_pmd_is_kernel(impl, i)) continue;
 
-    ret = st_dev_requemt_rx_queue(impl, i, &cni->rx_q_id[i], NULL);
+    ret = mt_dev_requemt_rx_queue(impl, i, &cni->rx_q_id[i], NULL);
     if (ret < 0) {
       err("%s(%d), kni_rx_q create fail\n", __func__, i);
       cni_queues_uinit(impl);
@@ -245,7 +245,7 @@ int mt_cni_init(struct mtl_main_impl* impl) {
   cni->lcore_tasklet = (p->flags & MTL_FLAG_CNI_THREAD) ? false : true;
   rte_atomic32_set(&cni->stop_thread, 0);
 
-  ret = st_kni_init(impl);
+  ret = mt_kni_init(impl);
   if (ret < 0) return ret;
 
   ret = cni_queues_init(impl, cni);
@@ -254,7 +254,7 @@ int mt_cni_init(struct mtl_main_impl* impl) {
     return ret;
   }
 
-  ret = st_tap_init(impl);
+  ret = mt_tap_init(impl);
   if (ret < 0) return ret;
 
   if (cni->lcore_tasklet) {
@@ -297,9 +297,9 @@ int mt_cni_uinit(struct mtl_main_impl* impl) {
 
   cni_queues_uinit(impl);
 
-  st_kni_uinit(impl);
+  mt_kni_uinit(impl);
 
-  st_tap_uinit(impl);
+  mt_tap_uinit(impl);
 
   info("%s, succ\n", __func__);
   return 0;

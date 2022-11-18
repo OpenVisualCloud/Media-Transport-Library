@@ -685,7 +685,7 @@ static int rv_alloc_frames(struct mtl_main_impl* impl,
 
 static int rv_free_rtps(struct st_rx_video_session_impl* s) {
   if (s->rtps_ring) {
-    st_ring_dequeue_clean(s->rtps_ring);
+    mt_ring_dequeue_clean(s->rtps_ring);
     rte_ring_free(s->rtps_ring);
     s->rtps_ring = NULL;
   }
@@ -1518,7 +1518,7 @@ static int rv_handle_frame_pkt(struct st_rx_video_session_impl* s, struct rte_mb
       s->stat_pkts_idx_oo_bitmap++;
       return -EIO;
     }
-    bool is_set = st_bitmap_test_and_set(bitmap, pkt_idx);
+    bool is_set = mt_bitmap_test_and_set(bitmap, pkt_idx);
     if (is_set) {
       dbg("%s(%d,%d), drop as pkt %d already received\n", __func__, s->idx, s_port,
           pkt_idx);
@@ -1531,7 +1531,7 @@ static int rv_handle_frame_pkt(struct st_rx_video_session_impl* s, struct rte_mb
     if (!line1_number && !line1_offset && ctrl_thread) { /* first packet */
       slot->seq_id_base_u32 = seq_id_u32;
       slot->seq_id_got = true;
-      st_bitmap_test_and_set(bitmap, 0);
+      mt_bitmap_test_and_set(bitmap, 0);
       pkt_idx = 0;
       dbg("%s(%d,%d), seq_id_base %d tmstamp %u\n", __func__, s->idx, s_port, seq_id_u32,
           tmstamp);
@@ -1704,7 +1704,7 @@ static int rv_handle_rtp_pkt(struct st_rx_video_session_impl* s, struct rte_mbuf
       s->stat_pkts_idx_oo_bitmap++;
       return -EIO;
     }
-    bool is_set = st_bitmap_test_and_set(bitmap, pkt_idx);
+    bool is_set = mt_bitmap_test_and_set(bitmap, pkt_idx);
     if (is_set) {
       dbg("%s(%d,%d), drop as pkt %d already received\n", __func__, idx, s_port, pkt_idx);
       s->stat_pkts_redunant_dropped++;
@@ -1716,7 +1716,7 @@ static int rv_handle_rtp_pkt(struct st_rx_video_session_impl* s, struct rte_mbuf
       slot->seq_id_base_u32 = seq_id_u32;
       slot->seq_id_got = true;
       rte_atomic32_inc(&s->stat_frames_received);
-      st_bitmap_test_and_set(bitmap, 0);
+      mt_bitmap_test_and_set(bitmap, 0);
       pkt_idx = 0;
       dbg("%s(%d,%d), seq_id_base %d tmstamp %u\n", __func__, idx, s_port, seq_id,
           tmstamp);
@@ -1844,7 +1844,7 @@ static int rv_handle_st22_pkt(struct st_rx_video_session_impl* s, struct rte_mbu
       s->stat_pkts_idx_oo_bitmap++;
       return -EIO;
     }
-    bool is_set = st_bitmap_test_and_set(bitmap, pkt_idx);
+    bool is_set = mt_bitmap_test_and_set(bitmap, pkt_idx);
     if (is_set) {
       dbg("%s(%d,%d), drop as pkt %d already received\n", __func__, s->idx, s_port,
           pkt_idx);
@@ -1863,7 +1863,7 @@ static int rv_handle_st22_pkt(struct st_rx_video_session_impl* s, struct rte_mbu
       slot->seq_id_base = seq_id;
       slot->st22_payload_length = payload_length;
       slot->seq_id_got = true;
-      st_bitmap_test_and_set(bitmap, 0);
+      mt_bitmap_test_and_set(bitmap, 0);
       pkt_idx = 0;
       dbg("%s(%d,%d), get seq_id %d tmstamp %u, p_counter %u sep_counter %u, "
           "payload_length %u\n",
@@ -1982,7 +1982,7 @@ static int rv_handle_hdr_split_pkt(struct st_rx_video_session_impl* s,
       s->stat_pkts_idx_oo_bitmap++;
       return -EIO;
     }
-    bool is_set = st_bitmap_test_and_set(bitmap, pkt_idx);
+    bool is_set = mt_bitmap_test_and_set(bitmap, pkt_idx);
     if (is_set) {
       dbg("%s(%d,%d), drop as pkt %d already received\n", __func__, s->idx, s_port,
           pkt_idx);
@@ -1994,7 +1994,7 @@ static int rv_handle_hdr_split_pkt(struct st_rx_video_session_impl* s,
     if (!line1_number && !line1_offset) { /* first packet */
       slot->seq_id_base_u32 = seq_id_u32;
       slot->seq_id_got = true;
-      st_bitmap_test_and_set(bitmap, 0);
+      mt_bitmap_test_and_set(bitmap, 0);
       pkt_idx = 0;
       dbg("%s(%d,%d), seq_id_base %d tmstamp %u\n", __func__, s->idx, s_port, seq_id_u32,
           tmstamp);
@@ -2097,12 +2097,12 @@ static int rv_uinit_pkt_lcore(struct mtl_main_impl* impl,
 
   if (s->has_pkt_lcore) {
     rte_eal_wait_lcore(s->pkt_lcore);
-    st_dev_put_lcore(impl, s->pkt_lcore);
+    mt_dev_put_lcore(impl, s->pkt_lcore);
     s->has_pkt_lcore = false;
   }
 
   if (s->pkt_lcore_ring) {
-    st_ring_dequeue_clean(s->pkt_lcore_ring);
+    mt_ring_dequeue_clean(s->pkt_lcore_ring);
     rte_ring_free(s->pkt_lcore_ring);
     s->pkt_lcore_ring = NULL;
   }
@@ -2148,7 +2148,7 @@ static int rv_init_pkt_lcore(struct mtl_main_impl* impl,
   }
   s->pkt_lcore_ring = ring;
 
-  ret = st_dev_get_lcore(impl, &lcore);
+  ret = mt_dev_get_lcore(impl, &lcore);
   if (ret < 0) {
     err("%s(%d,%d), get lcore fail %d\n", __func__, mgr_idx, idx, ret);
     rv_uinit_pkt_lcore(impl, s);
@@ -2560,7 +2560,7 @@ static int rv_uinit_hw(struct mtl_main_impl* impl, struct st_rx_video_session_im
     port = mt_port_logic2phy(s->port_maps, i);
 
     if (s->queue_active[i]) {
-      st_dev_free_rx_queue(impl, port, s->queue_id[i]);
+      mt_dev_free_rx_queue(impl, port, s->queue_id[i]);
       s->queue_active[i] = false;
     }
   }
@@ -2600,9 +2600,9 @@ static int rv_init_hw(struct mtl_main_impl* impl, struct st_rx_video_session_imp
 
     /* no flow for data path only */
     if (mt_pmd_is_kernel(impl, port) && (ops->flags & ST20_RX_FLAG_DATA_PATH_ONLY))
-      ret = st_dev_requemt_rx_queue(impl, port, &queue, NULL);
+      ret = mt_dev_requemt_rx_queue(impl, port, &queue, NULL);
     else
-      ret = st_dev_requemt_rx_queue(impl, port, &queue, &flow);
+      ret = mt_dev_requemt_rx_queue(impl, port, &queue, &flow);
     if (ret < 0) {
       rv_uinit_hw(impl, s);
       return ret;
@@ -2622,8 +2622,8 @@ static int rv_uinit_mcast(struct mtl_main_impl* impl,
   struct st20_rx_ops* ops = &s->ops;
 
   for (int i = 0; i < ops->num_port; i++) {
-    if (st_is_multicast_ip(ops->sip_addr[i]))
-      mt_mcast_leave(impl, st_ip_to_u32(ops->sip_addr[i]),
+    if (mt_is_multicast_ip(ops->sip_addr[i]))
+      mt_mcast_leave(impl, mt_ip_to_u32(ops->sip_addr[i]),
                      mt_port_logic2phy(s->port_maps, i));
   }
 
@@ -2636,13 +2636,13 @@ static int rv_init_mcast(struct mtl_main_impl* impl, struct st_rx_video_session_
   enum mtl_port port;
 
   for (int i = 0; i < ops->num_port; i++) {
-    if (!st_is_multicast_ip(ops->sip_addr[i])) continue;
+    if (!mt_is_multicast_ip(ops->sip_addr[i])) continue;
     port = mt_port_logic2phy(s->port_maps, i);
     if (mt_pmd_is_kernel(impl, port) && (ops->flags & ST20_RX_FLAG_DATA_PATH_ONLY)) {
       info("%s(%d), skip mcast join for port %d\n", __func__, s->idx, i);
       return 0;
     }
-    ret = mt_mcast_join(impl, st_ip_to_u32(ops->sip_addr[i]), port);
+    ret = mt_mcast_join(impl, mt_ip_to_u32(ops->sip_addr[i]), port);
     if (ret < 0) return ret;
   }
 
@@ -2680,7 +2680,7 @@ static int rv_attach(struct mtl_main_impl* impl, struct st_rx_video_sessions_mgr
   char* ports[ST_SESSION_PORT_MAX];
 
   for (int i = 0; i < num_port; i++) ports[i] = ops->port[i];
-  ret = st_build_port_map(impl, ports, s->port_maps, num_port);
+  ret = mt_build_port_map(impl, ports, s->port_maps, num_port);
   if (ret < 0) return ret;
 
   ret = st20_get_pgroup(ops->fmt, &s->st20_pg);
@@ -3292,7 +3292,7 @@ static int rv_ops_check(struct st20_rx_ops* ops) {
 
   for (int i = 0; i < num_ports; i++) {
     ip = ops->sip_addr[i];
-    ret = st_ip_addr_check(ip);
+    ret = mt_ip_addr_check(ip);
     if (ret < 0) {
       err("%s(%d), invalid ip %d.%d.%d.%d\n", __func__, i, ip[0], ip[1], ip[2], ip[3]);
       return -EINVAL;
@@ -3388,7 +3388,7 @@ static int rv_st22_ops_check(struct st22_rx_ops* ops) {
 
   for (int i = 0; i < num_ports; i++) {
     ip = ops->sip_addr[i];
-    ret = st_ip_addr_check(ip);
+    ret = mt_ip_addr_check(ip);
     if (ret < 0) {
       err("%s(%d), invalid ip %d.%d.%d.%d\n", __func__, i, ip[0], ip[1], ip[2], ip[3]);
       return -EINVAL;

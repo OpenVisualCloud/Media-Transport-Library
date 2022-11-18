@@ -98,7 +98,7 @@ static int arp_queues_uinit(struct mtl_main_impl* impl) {
 
   for (int i = 0; i < num_ports; i++) {
     if (arp->tx_q_active[i]) {
-      st_dev_free_tx_queue(impl, i, arp->tx_q_id[i]);
+      mt_dev_free_tx_queue(impl, i, arp->tx_q_id[i]);
       arp->tx_q_active[i] = false;
     }
   }
@@ -115,7 +115,7 @@ static int arp_queues_init(struct mtl_main_impl* impl) {
     /* no arp queues for kernel based pmd */
     if (mt_pmd_is_kernel(impl, i)) continue;
 
-    ret = st_dev_requemt_tx_queue(impl, i, &arp->tx_q_id[i], 0);
+    ret = mt_dev_requemt_tx_queue(impl, i, &arp->tx_q_id[i], 0);
     if (ret < 0) {
       err("%s(%d), tx_q create fail\n", __func__, i);
       arp_queues_uinit(impl);

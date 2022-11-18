@@ -133,9 +133,9 @@ static int tx_ancillary_session_init_hdr(struct mtl_main_impl* impl,
     rte_memcpy(d_addr, &ops->tx_dst_mac[s_port][0], RTE_ETHER_ADDR_LEN);
     info("%s, USER_R_TX_MAC\n", __func__);
   } else {
-    ret = st_dev_dst_ip_mac(impl, dip, d_addr, port);
+    ret = mt_dev_dst_ip_mac(impl, dip, d_addr, port);
     if (ret < 0) {
-      err("%s(%d), st_dev_dst_ip_mac fail %d for %d.%d.%d.%d\n", __func__, idx, ret,
+      err("%s(%d), mt_dev_dst_ip_mac fail %d for %d.%d.%d.%d\n", __func__, idx, ret,
           dip[0], dip[1], dip[2], dip[3]);
       return ret;
     }
@@ -433,7 +433,7 @@ static int tx_ancillary_session_build_packet(struct mtl_main_impl* impl,
   /* chain the pkt */
   rte_pktmbuf_chain(pkt, pkt_rtp);
   if (!s->eth_has_chain[s_port]) {
-    st_mbuf_chain_sw(pkt, pkt_rtp);
+    mt_mbuf_chain_sw(pkt, pkt_rtp);
   }
 
   udp->dgram_len = htons(pkt->pkt_len - pkt->l2_len - pkt->l3_len);
@@ -797,7 +797,7 @@ static int tx_ancillary_sessions_mgr_uinit_hw(struct mtl_main_impl* impl,
       mgr->ring[i] = NULL;
     }
     if (mgr->queue_active[i]) {
-      st_dev_free_tx_queue(impl, i, mgr->queue_id[i]);
+      mt_dev_free_tx_queue(impl, i, mgr->queue_id[i]);
       mgr->queue_active[i] = false;
     }
   }
@@ -817,7 +817,7 @@ static int tx_ancillary_sessions_mgr_init_hw(struct mtl_main_impl* impl,
 
   for (int i = 0; i < mt_num_ports(impl); i++) {
     /* do we need quota for anc? */
-    ret = st_dev_requemt_tx_queue(impl, i, &queue, 0);
+    ret = mt_dev_requemt_tx_queue(impl, i, &queue, 0);
     if (ret < 0) {
       tx_ancillary_sessions_mgr_uinit_hw(impl, mgr);
       return ret;
@@ -889,13 +889,13 @@ int tx_ancillary_session_mempool_free(struct st_tx_ancillary_session_impl* s) {
   int ret;
 
   if (s->mbuf_mempool_chain && !s->tx_mono_pool) {
-    ret = st_mempool_free(s->mbuf_mempool_chain);
+    ret = mt_mempool_free(s->mbuf_mempool_chain);
     if (ret >= 0) s->mbuf_mempool_chain = NULL;
   }
 
   for (int i = 0; i < ST_SESSION_PORT_MAX; i++) {
     if (s->mbuf_mempool_hdr[i] && !s->tx_mono_pool) {
-      ret = st_mempool_free(s->mbuf_mempool_hdr[i]);
+      ret = mt_mempool_free(s->mbuf_mempool_hdr[i]);
       if (ret >= 0) s->mbuf_mempool_hdr[i] = NULL;
     }
   }
@@ -943,7 +943,7 @@ static int tx_ancillary_session_mempool_init(struct mtl_main_impl* impl,
       char pool_name[32];
       snprintf(pool_name, 32, "TXANCHDR-M%d-R%d-P%d", mgr->idx, idx, i);
       struct rte_mempool* mbuf_pool =
-          st_mempool_create(impl, port, pool_name, n, MT_MBUF_CACHE_SIZE,
+          mt_mempool_create(impl, port, pool_name, n, MT_MBUF_CACHE_SIZE,
                             sizeof(struct mt_muf_priv_data), hdr_room_size);
       if (!mbuf_pool) {
         tx_ancillary_session_mempool_free(s);
@@ -966,7 +966,7 @@ static int tx_ancillary_session_mempool_init(struct mtl_main_impl* impl,
     char pool_name[32];
     snprintf(pool_name, 32, "TXANCCHAIN-M%d-R%d", mgr->idx, idx);
     struct rte_mempool* mbuf_pool =
-        st_mempool_create(impl, port, pool_name, n, MT_MBUF_CACHE_SIZE,
+        mt_mempool_create(impl, port, pool_name, n, MT_MBUF_CACHE_SIZE,
                           sizeof(struct mt_muf_priv_data), chain_room_size);
     if (!mbuf_pool) {
       tx_ancillary_session_mempool_free(s);
@@ -1013,7 +1013,7 @@ static int tx_ancillary_session_uinit_sw(struct st_tx_ancillary_sessions_mgr* mg
   }
 
   if (s->packet_ring) {
-    st_ring_dequeue_clean(s->packet_ring);
+    mt_ring_dequeue_clean(s->packet_ring);
     rte_ring_free(s->packet_ring);
     s->packet_ring = NULL;
   }
@@ -1064,7 +1064,7 @@ static int tx_ancillary_session_attach(struct mtl_main_impl* impl,
   char* ports[ST_SESSION_PORT_MAX];
 
   for (int i = 0; i < num_port; i++) ports[i] = ops->port[i];
-  ret = st_build_port_map(impl, ports, s->port_maps, num_port);
+  ret = mt_build_port_map(impl, ports, s->port_maps, num_port);
   if (ret < 0) return ret;
 
   strncpy(s->ops_name, ops->name, ST_MAX_NAME_LEN - 1);
@@ -1323,7 +1323,7 @@ static int tx_ancillary_ops_check(struct st40_tx_ops* ops) {
 
   for (int i = 0; i < num_ports; i++) {
     ip = ops->dip_addr[i];
-    ret = st_ip_addr_check(ip);
+    ret = mt_ip_addr_check(ip);
     if (ret < 0) {
       err("%s(%d), invalid ip %d.%d.%d.%d\n", __func__, i, ip[0], ip[1], ip[2], ip[3]);
       return -EINVAL;

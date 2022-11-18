@@ -8,7 +8,7 @@
 #ifndef _MT_LIB_MEM_HEAD_H_
 #define _MT_LIB_MEM_HEAD_H_
 
-#define MT_DPDK_LIB_NAME "ST_DPDK"
+#define MT_DPDK_LIB_NAME "MT_DPDK"
 
 static inline void* mt_malloc(size_t sz) { return malloc(sz); }
 

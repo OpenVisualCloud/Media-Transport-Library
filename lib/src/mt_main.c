@@ -133,9 +133,9 @@ static int st_rx_anc_uinit(struct mtl_main_impl* impl) {
 static int mt_main_create(struct mtl_main_impl* impl) {
   int ret;
 
-  ret = st_dev_create(impl);
+  ret = mt_dev_create(impl);
   if (ret < 0) {
-    err("%s, st_dev_create fail %d\n", __func__, ret);
+    err("%s, mt_dev_create fail %d\n", __func__, ret);
     return ret;
   }
 
@@ -183,9 +183,9 @@ static int mt_main_create(struct mtl_main_impl* impl) {
     return ret;
   }
 
-  ret = st_config_init(impl);
+  ret = mt_config_init(impl);
   if (ret < 0) {
-    err("%s, st_config_init fail %d\n", __func__, ret);
+    err("%s, mt_config_init fail %d\n", __func__, ret);
     return ret;
   }
 
@@ -201,7 +201,7 @@ static int mt_main_free(struct mtl_main_impl* impl) {
     impl->tsc_cal_tid = 0;
   }
 
-  st_config_uinit(impl);
+  mt_config_uinit(impl);
   st_plugins_uinit(impl);
   mt_admin_uinit(impl);
   mt_cni_uinit(impl);
@@ -212,7 +212,7 @@ static int mt_main_free(struct mtl_main_impl* impl) {
   mt_map_uinit(impl);
   mt_dma_uinit(impl);
 
-  st_dev_free(impl);
+  mt_dev_free(impl);
   info("%s, succ\n", __func__);
   return 0;
 }
@@ -244,7 +244,7 @@ static int mt_user_params_check(struct mtl_init_params* p) {
           p->xdp_info[MTL_PORT_P].start_queue);
       return -EINVAL;
     }
-    ret = st_socket_get_if_ip(p->port[MTL_PORT_P], if_ip);
+    ret = mt_socket_get_if_ip(p->port[MTL_PORT_P], if_ip);
     if (ret < 0) {
       err("%s, get ip fail, if %s for P port\n", __func__, p->port[MTL_PORT_P]);
       return ret;
@@ -290,7 +290,7 @@ static int mt_user_params_check(struct mtl_init_params* p) {
             p->xdp_info[MTL_PORT_R].start_queue);
         return -EINVAL;
       }
-      ret = st_socket_get_if_ip(p->port[MTL_PORT_R], if_ip);
+      ret = mt_socket_get_if_ip(p->port[MTL_PORT_R], if_ip);
       if (ret < 0) {
         err("%s, get ip fail, if %s for R port\n", __func__, p->port[MTL_PORT_R]);
         return ret;
@@ -301,7 +301,7 @@ static int mt_user_params_check(struct mtl_init_params* p) {
   for (int i = 0; i < num_ports; i++) {
     if (p->pmd[i] != MTL_PMD_DPDK_USER) continue;
     ip = p->sip_addr[i];
-    ret = st_ip_addr_check(ip);
+    ret = mt_ip_addr_check(ip);
     if (ret < 0) {
       err("%s(%d), invalid ip %d.%d.%d.%d\n", __func__, i, ip[0], ip[1], ip[2], ip[3]);
       return -EINVAL;
@@ -331,9 +331,9 @@ static int _mt_start(struct mtl_main_impl* impl) {
   /* wait tsc calibrate done, pacing need fine tuned TSC */
   mt_wait_tsc_stable(impl);
 
-  ret = st_dev_start(impl);
+  ret = mt_dev_start(impl);
   if (ret < 0) {
-    err("%s, st_dev_start fail %d\n", __func__, ret);
+    err("%s, mt_dev_start fail %d\n", __func__, ret);
     return ret;
   }
 
@@ -349,7 +349,7 @@ static int _mt_stop(struct mtl_main_impl* impl) {
     return 0;
   }
 
-  st_dev_stop(impl);
+  mt_dev_stop(impl);
   rte_atomic32_set(&impl->started, 0);
   info("%s, succ\n", __func__);
   return 0;
@@ -369,18 +369,18 @@ mtl_handle mtl_init(struct mtl_init_params* p) {
     return NULL;
   }
 
-  ret = st_dev_init(p, &kport_info);
+  ret = mt_dev_init(p, &kport_info);
   if (ret < 0) {
-    err("%s, st_dev_eal_init fail %d\n", __func__, ret);
+    err("%s, mt_dev_eal_init fail %d\n", __func__, ret);
     return NULL;
   }
   info("st version: %s, dpdk version: %s\n", mtl_version(), rte_version());
 
   for (int i = 0; i < num_ports; i++) {
     if (p->pmd[i] != MTL_PMD_DPDK_USER)
-      socket[i] = st_dev_get_socket(kport_info.port[i]);
+      socket[i] = mt_dev_get_socket(kport_info.port[i]);
     else
-      socket[i] = st_dev_get_socket(p->port[i]);
+      socket[i] = mt_dev_get_socket(p->port[i]);
     if (socket[i] < 0) {
       err("%s, get socket fail %d\n", __func__, socket[i]);
       goto err_exit;
@@ -415,7 +415,7 @@ mtl_handle mtl_init(struct mtl_init_params* p) {
   for (int i = 0; i < num_ports; i++) {
     if (p->pmd[i] != MTL_PMD_DPDK_USER) {
       uint8_t if_ip[MTL_IP_ADDR_LEN];
-      ret = st_socket_get_if_ip(impl->user_para.port[i], if_ip);
+      ret = mt_socket_get_if_ip(impl->user_para.port[i], if_ip);
       if (ret < 0) {
         err("%s(%d), get IP fail\n", __func__, i);
         goto err_exit;
@@ -475,7 +475,7 @@ mtl_handle mtl_init(struct mtl_init_params* p) {
 #endif
 
   /* init interface */
-  ret = st_dev_if_init(impl);
+  ret = mt_dev_if_init(impl);
   if (ret < 0) {
     err("%s, st dev if init fail %d\n", __func__, ret);
     goto err_exit;
@@ -501,10 +501,10 @@ mtl_handle mtl_init(struct mtl_init_params* p) {
 
 err_exit:
   if (impl) {
-    st_dev_if_uinit(impl);
+    mt_dev_if_uinit(impl);
     mt_rte_free(impl);
   }
-  st_dev_uinit(p);
+  mt_dev_uinit(p);
   return NULL;
 }
 
@@ -526,10 +526,10 @@ int mtl_uninit(mtl_handle mt) {
 
   mt_main_free(impl);
 
-  st_dev_if_uinit(impl);
+  mt_dev_if_uinit(impl);
   mt_rte_free(impl);
 
-  st_dev_uinit(p);
+  mt_dev_uinit(p);
 
 #ifdef MTL_HAS_ASAN
   mt_asan_check();
@@ -571,7 +571,7 @@ int mtl_get_lcore(mtl_handle mt, unsigned int* lcore) {
     return -EIO;
   }
 
-  return st_dev_get_lcore(impl, lcore);
+  return mt_dev_get_lcore(impl, lcore);
 }
 
 int mtl_put_lcore(mtl_handle mt, unsigned int lcore) {
@@ -582,7 +582,7 @@ int mtl_put_lcore(mtl_handle mt, unsigned int lcore) {
     return -EIO;
   }
 
-  return st_dev_put_lcore(impl, lcore);
+  return mt_dev_put_lcore(impl, lcore);
 }
 
 int mtl_bind_to_lcore(mtl_handle mt, pthread_t thread, unsigned int lcore) {
@@ -593,7 +593,7 @@ int mtl_bind_to_lcore(mtl_handle mt, pthread_t thread, unsigned int lcore) {
     return -EIO;
   }
 
-  if (!st_dev_lcore_valid(impl, lcore)) {
+  if (!mt_dev_lcore_valid(impl, lcore)) {
     err("%s, invalid lcore %d\n", __func__, lcore);
     return -EINVAL;
   }

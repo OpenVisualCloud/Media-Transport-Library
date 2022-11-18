@@ -459,7 +459,7 @@ static int tap_uninit_lcore(struct mtl_main_impl* impl) {
   }
   if (tap_ctx->has_lcore) {
     rte_eal_wait_lcore(tap_ctx->lcore);
-    st_dev_put_lcore(impl, tap_ctx->lcore);
+    mt_dev_put_lcore(impl, tap_ctx->lcore);
   }
   return 0;
 }
@@ -519,17 +519,17 @@ static int tap_queues_uinit(struct mtl_main_impl* impl) {
   struct tap_rt_context* tap_ctx = (struct tap_rt_context*)cni->tap_context;
   for (int i = 0; i < num_ports; i++) {
     if (cni->tap_tx_q_active[i]) {
-      st_dev_free_tx_queue(impl, i, cni->tap_tx_q_id[i]);
+      mt_dev_free_tx_queue(impl, i, cni->tap_tx_q_id[i]);
       cni->tap_tx_q_active[i] = false;
     }
     if (cni->tap_rx_q_active[i]) {
-      st_dev_free_rx_queue(impl, i, cni->tap_rx_q_id[i]);
+      mt_dev_free_rx_queue(impl, i, cni->tap_rx_q_id[i]);
       cni->tap_rx_q_active[i] = false;
     }
   }
   if (tap_ctx->iovecs) rte_free(tap_ctx->iovecs);
   if (tap_ctx->pool) tap_rxq_pool_free(tap_ctx->pool);
-  if (tap_ctx->mp) st_mempool_free(tap_ctx->mp);
+  if (tap_ctx->mp) mt_mempool_free(tap_ctx->mp);
   return 0;
 }
 
@@ -544,7 +544,7 @@ static int configure_tap() {
   int data_off = RTE_PKTMBUF_HEADROOM;
   struct tap_rt_context* tap_ctx = (struct tap_rt_context*)cni->tap_context;
   struct rte_mbuf** tmp = &tap_ctx->pool;
-  struct rte_mempool* mbuf_pool = st_mempool_create(
+  struct rte_mempool* mbuf_pool = mt_mempool_create(
       impl, 0, "tap", inf->nb_rx_desc + ST_TX_VIDEO_SESSIONS_RING_SIZE,
       MT_MBUF_CACHE_SIZE, sizeof(struct mt_muf_priv_data), ST_PKT_MAX_ETHER_BYTES);
   if (!mbuf_pool) {
@@ -811,7 +811,7 @@ static int tap_queues_init(struct mtl_main_impl* impl, struct mt_cni_impl* cni) 
     return ret;
   }
   for (i = 0; i < num_ports; i++) {
-    ret = st_dev_requemt_tx_queue(impl, mt_port_id(impl, i), &cni->tap_tx_q_id[i],
+    ret = mt_dev_requemt_tx_queue(impl, mt_port_id(impl, i), &cni->tap_tx_q_id[i],
                                   1024 * 1024 * 1024);
     if (ret < 0) {
       err("%s(%d), tap_tx_q create fail\n", __func__, i);
@@ -843,7 +843,7 @@ static int tap_queues_init(struct mtl_main_impl* impl, struct mt_cni_impl* cni) 
     info("%s(%d), tx q %d\n", __func__, i, cni->tap_tx_q_id[i]);
   }
   for (i = 0; i < num_ports; i++) {
-    ret = st_dev_requemt_rx_queue(impl, i, &cni->tap_rx_q_id[i], NULL);
+    ret = mt_dev_requemt_rx_queue(impl, i, &cni->tap_rx_q_id[i], NULL);
     if (ret < 0) {
       err("%s(%d), tap_rx_q create fail\n", __func__, i);
       tap_queues_uinit(impl);
@@ -856,7 +856,7 @@ static int tap_queues_init(struct mtl_main_impl* impl, struct mt_cni_impl* cni) 
   return 0;
 }
 
-int st_tap_handle(struct mtl_main_impl* impl, enum mtl_port port,
+int mt_tap_handle(struct mtl_main_impl* impl, enum mtl_port port,
                   struct rte_mbuf** rx_pkts, uint16_t nb_pkts) {
   struct mt_cni_impl* cni = mt_get_cni(impl);
   struct rte_mbuf* pkts_rx[ST_CNI_RX_BURST_SIZE];
@@ -881,7 +881,7 @@ int st_tap_handle(struct mtl_main_impl* impl, enum mtl_port port,
   return 0;
 }
 
-int st_tap_init(struct mtl_main_impl* impl) {
+int mt_tap_init(struct mtl_main_impl* impl) {
   int ret;
   struct mt_cni_impl* cni = mt_get_cni(impl);
   unsigned int lcore;
@@ -901,10 +901,10 @@ int st_tap_init(struct mtl_main_impl* impl) {
 
   rte_atomic32_set(&cni->stop_tap, 0);
   tap_ctx->has_lcore = false;
-  ret = st_dev_get_lcore(impl, &lcore);
+  ret = mt_dev_get_lcore(impl, &lcore);
   if (ret < 0) {
     err("%s, get lcore fail %d\n", __func__, ret);
-    st_tap_uinit(impl);
+    mt_tap_uinit(impl);
     return ret;
   }
   tap_ctx->lcore = lcore;
@@ -912,14 +912,14 @@ int st_tap_init(struct mtl_main_impl* impl) {
   ret = rte_eal_remote_launch(tap_bkg_thread, impl, lcore);
   if (ret < 0) {
     err("%s, launch thread fail %d\n", __func__, ret);
-    st_tap_uinit(impl);
+    mt_tap_uinit(impl);
     return ret;
   }
 
   return 0;
 }
 
-int st_tap_uinit(struct mtl_main_impl* impl) {
+int mt_tap_uinit(struct mtl_main_impl* impl) {
   struct mt_cni_impl* cni = mt_get_cni(impl);
 
   rte_atomic32_set(&cni->stop_tap, 1);

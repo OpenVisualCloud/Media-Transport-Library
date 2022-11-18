@@ -162,7 +162,7 @@ static int rx_ancillary_session_uinit_hw(struct mtl_main_impl* impl,
     port = mt_port_logic2phy(s->port_maps, i);
 
     if (s->queue_active[i]) {
-      st_dev_free_rx_queue(impl, port, s->queue_id[i]);
+      mt_dev_free_rx_queue(impl, port, s->queue_id[i]);
       s->queue_active[i] = false;
     }
   }
@@ -189,9 +189,9 @@ static int rx_ancillary_session_init_hw(struct mtl_main_impl* impl,
 
     /* no flow for data path only */
     if (mt_pmd_is_kernel(impl, port) && (s->ops.flags & ST40_RX_FLAG_DATA_PATH_ONLY))
-      ret = st_dev_requemt_rx_queue(impl, port, &queue, NULL);
+      ret = mt_dev_requemt_rx_queue(impl, port, &queue, NULL);
     else
-      ret = st_dev_requemt_rx_queue(impl, port, &queue, &flow);
+      ret = mt_dev_requemt_rx_queue(impl, port, &queue, &flow);
     if (ret < 0) {
       rx_ancillary_session_uinit_hw(impl, s);
       return ret;
@@ -212,8 +212,8 @@ static int rx_ancillary_session_uinit_mcast(struct mtl_main_impl* impl,
   struct st40_rx_ops* ops = &s->ops;
 
   for (int i = 0; i < ops->num_port; i++) {
-    if (st_is_multicast_ip(ops->sip_addr[i]))
-      mt_mcast_leave(impl, st_ip_to_u32(ops->sip_addr[i]),
+    if (mt_is_multicast_ip(ops->sip_addr[i]))
+      mt_mcast_leave(impl, mt_ip_to_u32(ops->sip_addr[i]),
                      mt_port_logic2phy(s->port_maps, i));
   }
 
@@ -227,13 +227,13 @@ static int rx_ancillary_session_init_mcast(struct mtl_main_impl* impl,
   enum mtl_port port;
 
   for (int i = 0; i < ops->num_port; i++) {
-    if (!st_is_multicast_ip(ops->sip_addr[i])) continue;
+    if (!mt_is_multicast_ip(ops->sip_addr[i])) continue;
     port = mt_port_logic2phy(s->port_maps, i);
     if (mt_pmd_is_kernel(impl, port) && (ops->flags & ST30_RX_FLAG_DATA_PATH_ONLY)) {
       info("%s(%d), skip mcast join for port %d\n", __func__, s->idx, i);
       return 0;
     }
-    ret = mt_mcast_join(impl, st_ip_to_u32(ops->sip_addr[i]),
+    ret = mt_mcast_join(impl, mt_ip_to_u32(ops->sip_addr[i]),
                         mt_port_logic2phy(s->port_maps, i));
     if (ret < 0) return ret;
   }
@@ -270,7 +270,7 @@ static int rx_ancillary_session_init_sw(struct mtl_main_impl* impl,
 static int rx_ancillary_session_uinit_sw(struct mtl_main_impl* impl,
                                          struct st_rx_ancillary_session_impl* s) {
   if (s->packet_ring) {
-    st_ring_dequeue_clean(s->packet_ring);
+    mt_ring_dequeue_clean(s->packet_ring);
     rte_ring_free(s->packet_ring);
     s->packet_ring = NULL;
   }
@@ -287,7 +287,7 @@ static int rx_ancillary_session_attach(struct mtl_main_impl* impl,
   char* ports[ST_SESSION_PORT_MAX];
 
   for (int i = 0; i < num_port; i++) ports[i] = ops->port[i];
-  ret = st_build_port_map(impl, ports, s->port_maps, num_port);
+  ret = mt_build_port_map(impl, ports, s->port_maps, num_port);
   if (ret < 0) return ret;
 
   strncpy(s->ops_name, ops->name, ST_MAX_NAME_LEN - 1);
@@ -567,7 +567,7 @@ static int rx_ancillary_ops_check(struct st40_rx_ops* ops) {
 
   for (int i = 0; i < num_ports; i++) {
     ip = ops->sip_addr[i];
-    ret = st_ip_addr_check(ip);
+    ret = mt_ip_addr_check(ip);
     if (ret < 0) {
       err("%s(%d), invalid ip %d.%d.%d.%d\n", __func__, i, ip[0], ip[1], ip[2], ip[3]);
       return -EINVAL;

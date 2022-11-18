@@ -189,7 +189,7 @@ static int kni_queues_uinit(struct mtl_main_impl* impl) {
 
   for (int i = 0; i < num_ports; i++) {
     if (cni->tx_q_active[i]) {
-      st_dev_free_tx_queue(impl, i, cni->tx_q_id[i]);
+      mt_dev_free_tx_queue(impl, i, cni->tx_q_id[i]);
       cni->tx_q_active[i] = false;
     }
   }
@@ -202,7 +202,7 @@ static int kni_queues_init(struct mtl_main_impl* impl, struct mt_cni_impl* cni) 
   int ret;
 
   for (int i = 0; i < num_ports; i++) {
-    ret = st_dev_requemt_tx_queue(impl, i, &cni->tx_q_id[i], 0);
+    ret = mt_dev_requemt_tx_queue(impl, i, &cni->tx_q_id[i], 0);
     if (ret < 0) {
       err("%s(%d), kni_tx_q create fail\n", __func__, i);
       kni_queues_uinit(impl);
@@ -215,7 +215,7 @@ static int kni_queues_init(struct mtl_main_impl* impl, struct mt_cni_impl* cni) 
   return 0;
 }
 
-int st_kni_handle(struct mtl_main_impl* impl, enum mtl_port port,
+int mt_kni_handle(struct mtl_main_impl* impl, enum mtl_port port,
                   struct rte_mbuf** rx_pkts, uint16_t nb_pkts) {
   struct mt_cni_impl* cni = mt_get_cni(impl);
   struct rte_kni* rkni = cni->rkni[port];
@@ -245,7 +245,7 @@ int st_kni_handle(struct mtl_main_impl* impl, enum mtl_port port,
   return 0;
 }
 
-int st_kni_init(struct mtl_main_impl* impl) {
+int mt_kni_init(struct mtl_main_impl* impl) {
   int ret, i;
   int num_ports = mt_num_ports(impl);
   struct mt_cni_impl* cni = mt_get_cni(impl);
@@ -272,21 +272,21 @@ int st_kni_init(struct mtl_main_impl* impl) {
     ret = kni_init_conf(port_id, &cni->conf[i]);
     if (ret < 0) {
       err("%s(%d), kni_init_conf fail %d\n", __func__, i, ret);
-      st_kni_uinit(impl);
+      mt_kni_uinit(impl);
       return ret;
     }
 
     ret = kni_start_port(impl, i);
     if (ret < 0) {
       err("%s(%d), kni_start_port fail %d\n", __func__, i, ret);
-      st_kni_uinit(impl);
+      mt_kni_uinit(impl);
       return ret;
     }
   }
 
   ret = pthread_create(&cni->kni_bkg_tid, NULL, kni_bkg_thread, impl);
   if (ret < 0) {
-    st_kni_uinit(impl);
+    mt_kni_uinit(impl);
     err("%s, create kni_bkg thread fail\n", __func__);
     return ret;
   }
@@ -294,7 +294,7 @@ int st_kni_init(struct mtl_main_impl* impl) {
   return 0;
 }
 
-int st_kni_uinit(struct mtl_main_impl* impl) {
+int mt_kni_uinit(struct mtl_main_impl* impl) {
   struct mt_cni_impl* cni = mt_get_cni(impl);
   int num_ports = mt_num_ports(impl), ret;
   struct rte_kni* rkni;

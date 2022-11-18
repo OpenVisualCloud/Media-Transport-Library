@@ -75,15 +75,15 @@ struct tap_rt_context {
   bool flow_control;
 };
 
-int st_tap_init(struct mtl_main_impl* impl);
-int st_tap_uinit(struct mtl_main_impl* impl);
-int st_tap_handle(struct mtl_main_impl* impl, enum mtl_port port,
+int mt_tap_init(struct mtl_main_impl* impl);
+int mt_tap_uinit(struct mtl_main_impl* impl);
+int mt_tap_handle(struct mtl_main_impl* impl, enum mtl_port port,
                   struct rte_mbuf** rx_pkts, uint16_t nb_pkts);
 
 #else
-static inline int st_tap_init(struct mtl_main_impl* impl) { return 0; }
-static inline int st_tap_uinit(struct mtl_main_impl* impl) { return 0; }
-static inline int st_tap_handle(struct mtl_main_impl* impl, enum mtl_port port,
+static inline int mt_tap_init(struct mtl_main_impl* impl) { return 0; }
+static inline int mt_tap_uinit(struct mtl_main_impl* impl) { return 0; }
+static inline int mt_tap_handle(struct mtl_main_impl* impl, enum mtl_port port,
                                 struct rte_mbuf** rx_pkts, uint16_t nb_pkts) {
   return -EIO;
 }

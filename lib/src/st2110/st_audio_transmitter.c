@@ -29,8 +29,8 @@ static int st_audio_trs_tasklet_stop(void* priv) {
 
   for (port = 0; port < mt_num_ports(impl); port++) {
     /* flush all the pkts in the tx ring desc */
-    st_dev_flush_tx_queue(impl, port, mgr->queue_id[port], mt_get_pad(impl, port));
-    st_ring_dequeue_clean(mgr->ring[port]);
+    mt_dev_flush_tx_queue(impl, port, mgr->queue_id[port], mt_get_pad(impl, port));
+    mt_ring_dequeue_clean(mgr->ring[port]);
     info("%s(%d), port %d, remaining entries %d\n", __func__, idx, port,
          rte_ring_count(mgr->ring[port]));
 

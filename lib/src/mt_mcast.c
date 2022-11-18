@@ -28,7 +28,7 @@ static uint16_t mcast_msg_checksum(enum mcast_msg_type type, void* msg, uint16_t
       break;
   }
 
-  return st_rf1071_check_sum(msg, size, true);
+  return mt_rf1071_check_sum(msg, size, true);
 }
 
 /* group record shaping, refer to RFC3376 - 4.2.4 */
@@ -192,7 +192,7 @@ static int mcast_membership_report(struct mtl_main_impl* impl,
 
 #ifdef MCAST_DEBUG
   /* send packet to kni for capturing */
-  struct st_kni_impl* kni = &impl->kni;
+  struct mt_kni_impl* kni = &impl->kni;
   struct rte_kni* rkni = kni->rkni[port];
   if (rkni) rte_kni_tx_burst(rkni, (struct rte_mbuf**)&report_pkt, 1);
 #endif
@@ -231,7 +231,7 @@ static int mcast_queues_uinit(struct mtl_main_impl* impl) {
 
   for (int i = 0; i < num_ports; i++) {
     if (mcast->tx_q_active[i]) {
-      st_dev_free_tx_queue(impl, i, mcast->tx_q_id[i]);
+      mt_dev_free_tx_queue(impl, i, mcast->tx_q_id[i]);
       mcast->tx_q_active[i] = false;
     }
   }
@@ -248,7 +248,7 @@ static int mcast_queues_init(struct mtl_main_impl* impl) {
     /* no mcast queue for kernel based pmd */
     if (mt_pmd_is_kernel(impl, i)) continue;
 
-    ret = st_dev_requemt_tx_queue(impl, i, &mcast->tx_q_id[i], 0);
+    ret = mt_dev_requemt_tx_queue(impl, i, &mcast->tx_q_id[i], 0);
     if (ret < 0) {
       err("%s(%d), tx_q create fail\n", __func__, i);
       mcast_queues_uinit(impl);
@@ -411,7 +411,7 @@ int mt_mcast_join(struct mtl_main_impl* impl, uint32_t group_addr, enum mtl_port
     }
   }
   if (mt_pmd_is_kernel(impl, port)) {
-    ret = st_socket_join_mcast(impl, port, group_addr);
+    ret = mt_socket_join_mcast(impl, port, group_addr);
     if (ret < 0) {
       mt_pthread_mutex_unlock(&mcast->group_mutex[port]);
       err("%s(%d), fail(%d) to join socket group %d.%d.%d.%d\n", __func__, port, ret,
@@ -461,7 +461,7 @@ int mt_mcast_leave(struct mtl_main_impl* impl, uint32_t group_addr, enum mtl_por
       mcast->group_ip[port][i] = mcast->group_ip[port][group_num - 1];
       mcast->group_num[port]--;
       if (mt_pmd_is_kernel(impl, port)) {
-        st_socket_drop_mcast(impl, port, group_addr);
+        mt_socket_drop_mcast(impl, port, group_addr);
       }
       mt_pthread_mutex_unlock(&mcast->group_mutex[port]);
       /* remove mcast mac from interface */
