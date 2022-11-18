@@ -25,43 +25,43 @@
 #ifndef _MT_LIB_MAIN_HEAD_H_
 #define _MT_LIB_MAIN_HEAD_H_
 
-#define ST_MAY_UNUSED(x) (void)(x)
+#define MT_MAY_UNUSED(x) (void)(x)
 
-#define ST_MBUF_CACHE_SIZE (128)
-#define ST_MBUF_HEADROOM_SIZE (RTE_PKTMBUF_HEADROOM)          /* 128 */
-#define ST_MBUF_DEFAULT_DATA_SIZE (RTE_MBUF_DEFAULT_DATAROOM) /* 2048 */
+#define MT_MBUF_CACHE_SIZE (128)
+#define MT_MBUF_HEADROOM_SIZE (RTE_PKTMBUF_HEADROOM)          /* 128 */
+#define MT_MBUF_DEFAULT_DATA_SIZE (RTE_MBUF_DEFAULT_DATAROOM) /* 2048 */
 
-#define ST_MAX_SCH_NUM (18)         /* max 18 scheduler lcore */
-#define ST_MAX_TASKLET_PER_SCH (16) /* max 16 tasklet in one scheduler lcore */
+#define MT_MAX_SCH_NUM (18)         /* max 18 scheduler lcore */
+#define MT_MAX_TASKLET_PER_SCH (16) /* max 16 tasklet in one scheduler lcore */
 
 /* max RL items */
-#define ST_MAX_RL_ITEMS (64)
+#define MT_MAX_RL_ITEMS (64)
 
 #define ST_MCAST_GROUP_MAX (60)
 
-#define ST_DMA_MAX_SESSIONS (16)
+#define MT_DMA_MAX_SESSIONS (16)
 /* if use rte ring for dma enqueue/dequeue */
-#define ST_DMA_RTE_RING (1)
+#define MT_DMA_RTE_RING (1)
 
-#define ST_MAP_MAX_ITEMS (256)
+#define MT_MAP_MAX_ITEMS (256)
 
-#define ST_IP_DONT_FRAGMENT_FLAG (0x0040)
+#define MT_IP_DONT_FRAGMENT_FLAG (0x0040)
 
 /* Port supports Rx queue setup after device started. */
-#define ST_IF_FEATURE_RUNTIME_RX_QUEUE (MTL_BIT32(0))
+#define MT_IF_FEATURE_RUNTIME_RX_QUEUE (MTL_BIT32(0))
 /* Timesync enabled on the port */
-#define ST_IF_FEATURE_TIMESYNC (MTL_BIT32(1))
+#define MT_IF_FEATURE_TIMESYNC (MTL_BIT32(1))
 /* Port registers Rx timestamp in mbuf dynamic field */
-#define ST_IF_FEATURE_RX_OFFLOAD_TIMESTAMP (MTL_BIT32(2))
+#define MT_IF_FEATURE_RX_OFFLOAD_TIMESTAMP (MTL_BIT32(2))
 /* Multi segment tx, chain buffer */
-#define ST_IF_FEATURE_TX_MULTI_SEGS (MTL_BIT32(4))
+#define MT_IF_FEATURE_TX_MULTI_SEGS (MTL_BIT32(4))
 /* tx ip hdr checksum offload */
-#define ST_IF_FEATURE_TX_OFFLOAD_IPV4_CKSUM (MTL_BIT32(5))
+#define MT_IF_FEATURE_TX_OFFLOAD_IPV4_CKSUM (MTL_BIT32(5))
 /* Rx queue support hdr split */
-#define ST_IF_FEATURE_RXQ_OFFLOAD_BUFFER_SPLIT (MTL_BIT32(6))
+#define MT_IF_FEATURE_RXQ_OFFLOAD_BUFFER_SPLIT (MTL_BIT32(6))
 
-#define ST_IF_STAT_PORT_CONFIGED (MTL_BIT32(0))
-#define ST_IF_STAT_PORT_STARTED (MTL_BIT32(1))
+#define MT_IF_STAT_PORT_CONFIGED (MTL_BIT32(0))
+#define MT_IF_STAT_PORT_STARTED (MTL_BIT32(1))
 
 #define NS_PER_MS (1000 * 1000)
 #define NS_PER_US (1000)
@@ -70,7 +70,7 @@
 struct mtl_main_impl; /* foward declare */
 
 /* dynamic fields are implemented after rte_mbuf */
-struct st_muf_priv_data {
+struct mt_muf_priv_data {
   union {
     struct st_tx_muf_priv_data tx_priv;
     struct st_rx_muf_priv_data rx_priv;
@@ -278,7 +278,7 @@ typedef uint64_t st_sch_mask_t;
 
 struct st_sch_impl {
   pthread_mutex_t mutex; /* protect sch context */
-  struct st_sch_tasklet_impl* tasklet[ST_MAX_TASKLET_PER_SCH];
+  struct st_sch_tasklet_impl* tasklet[MT_MAX_TASKLET_PER_SCH];
   int max_tasklet_idx; /* max tasklet index */
   unsigned int lcore;
   bool run_in_thread; /* Run the tasklet inside one thread instead of a pinned lcore. */
@@ -325,7 +325,7 @@ struct st_sch_impl {
 };
 
 struct st_sch_mgr {
-  struct st_sch_impl sch[ST_MAX_SCH_NUM];
+  struct st_sch_impl sch[MT_MAX_SCH_NUM];
   /* active sch cnt */
   rte_atomic32_t sch_cnt;
   pthread_mutex_t mgr_mutex; /* protect sch mgr */
@@ -380,11 +380,11 @@ struct st_interface {
   enum mt_port_type port_type;
   enum st_driver_type drv_type;
   int socket_id;                          /* socket id for the port */
-  uint32_t feature;                       /* ST_IF_FEATURE_* */
+  uint32_t feature;                       /* MT_IF_FEATURE_* */
   uint32_t link_speed;                    /* ETH_SPEED_NUM_ */
   struct rte_ether_addr* mcast_mac_lists; /* pool of multicast mac addrs */
   uint32_t mcast_nb;                      /* number of address */
-  uint32_t status;                        /* ST_IF_STAT_* */
+  uint32_t status;                        /* MT_IF_STAT_* */
 
   /* default tx mbuf_pool */
   struct rte_mempool* tx_mbuf_pool;
@@ -408,10 +408,10 @@ struct st_interface {
   pthread_mutex_t rx_queues_mutex; /* protect rx_queues */
 
   /* tx rl info */
-  struct st_rl_shaper tx_rl_shapers[ST_MAX_RL_ITEMS];
+  struct st_rl_shaper tx_rl_shapers[MT_MAX_RL_ITEMS];
   bool tx_rl_root_active;
   /* video rl pacing train result */
-  struct st_pacing_train_result pt_results[ST_MAX_RL_ITEMS];
+  struct st_pacing_train_result pt_results[MT_MAX_RL_ITEMS];
 
   /* function ops per interface(pf/vf) */
   uint64_t (*ptp_get_time_fn)(struct mtl_main_impl* impl, enum mtl_port port);
@@ -449,9 +449,9 @@ struct st_dma_dev {
   uint16_t nb_session; /* number of attached session(lender)s */
   uint16_t max_shared; /* max number of attached session(lender)s */
   /* shared lenders */
-  struct mtl_dma_lender_dev lenders[ST_DMA_MAX_SESSIONS];
+  struct mtl_dma_lender_dev lenders[MT_DMA_MAX_SESSIONS];
   uint16_t nb_inflight; /* not atomic since it's in single thread only */
-#if ST_DMA_RTE_RING
+#if MT_DMA_RTE_RING
   struct rte_ring* borrow_queue; /* borrowed mbufs from rx sessions */
 #else
   uint16_t inflight_enqueue_idx;
@@ -499,7 +499,7 @@ struct st_map_item {
 
 struct st_map_mgr {
   pthread_mutex_t mutex;
-  struct st_map_item* items[ST_MAP_MAX_ITEMS];
+  struct st_map_item* items[MT_MAP_MAX_ITEMS];
 };
 
 struct st_var_params {
@@ -770,7 +770,7 @@ static inline bool st_tasklet_has_sleep(struct mtl_main_impl* impl) {
 }
 
 static inline bool st_if_has_timesync(struct mtl_main_impl* impl, enum mtl_port port) {
-  if (st_if(impl, port)->feature & ST_IF_FEATURE_TIMESYNC)
+  if (st_if(impl, port)->feature & MT_IF_FEATURE_TIMESYNC)
     return true;
   else
     return false;
@@ -778,21 +778,21 @@ static inline bool st_if_has_timesync(struct mtl_main_impl* impl, enum mtl_port 
 
 static inline bool st_if_has_offload_ipv4_cksum(struct mtl_main_impl* impl,
                                                 enum mtl_port port) {
-  if (st_if(impl, port)->feature & ST_IF_FEATURE_TX_OFFLOAD_IPV4_CKSUM)
+  if (st_if(impl, port)->feature & MT_IF_FEATURE_TX_OFFLOAD_IPV4_CKSUM)
     return true;
   else
     return false;
 }
 
 static inline bool st_if_has_chain_buff(struct mtl_main_impl* impl, enum mtl_port port) {
-  if (st_if(impl, port)->feature & ST_IF_FEATURE_TX_MULTI_SEGS)
+  if (st_if(impl, port)->feature & MT_IF_FEATURE_TX_MULTI_SEGS)
     return true;
   else
     return false;
 }
 
 static inline bool st_if_has_hdr_split(struct mtl_main_impl* impl, enum mtl_port port) {
-  if (st_if(impl, port)->feature & ST_IF_FEATURE_RXQ_OFFLOAD_BUFFER_SPLIT)
+  if (st_if(impl, port)->feature & MT_IF_FEATURE_RXQ_OFFLOAD_BUFFER_SPLIT)
     return true;
   else
     return false;
@@ -934,22 +934,22 @@ static inline uint64_t st_get_monotonic_time() {
 }
 
 static inline void st_tx_mbuf_set_tsc(struct rte_mbuf* mbuf, uint64_t time_stamp) {
-  struct st_muf_priv_data* priv = rte_mbuf_to_priv(mbuf);
+  struct mt_muf_priv_data* priv = rte_mbuf_to_priv(mbuf);
   priv->tx_priv.tsc_time_stamp = time_stamp;
 }
 
 static inline uint64_t st_tx_mbuf_get_tsc(struct rte_mbuf* mbuf) {
-  struct st_muf_priv_data* priv = rte_mbuf_to_priv(mbuf);
+  struct mt_muf_priv_data* priv = rte_mbuf_to_priv(mbuf);
   return priv->tx_priv.tsc_time_stamp;
 }
 
 static inline void st_tx_mbuf_set_ptp(struct rte_mbuf* mbuf, uint64_t time_stamp) {
-  struct st_muf_priv_data* priv = rte_mbuf_to_priv(mbuf);
+  struct mt_muf_priv_data* priv = rte_mbuf_to_priv(mbuf);
   priv->tx_priv.ptp_time_stamp = time_stamp;
 }
 
 static inline uint64_t st_tx_mbuf_get_ptp(struct rte_mbuf* mbuf) {
-  struct st_muf_priv_data* priv = rte_mbuf_to_priv(mbuf);
+  struct mt_muf_priv_data* priv = rte_mbuf_to_priv(mbuf);
   return priv->tx_priv.ptp_time_stamp;
 }
 
@@ -965,42 +965,42 @@ static inline uint64_t st_mbuf_get_hw_time_stamp(struct mtl_main_impl* impl,
 }
 
 static inline void st_tx_mbuf_set_idx(struct rte_mbuf* mbuf, uint32_t idx) {
-  struct st_muf_priv_data* priv = rte_mbuf_to_priv(mbuf);
+  struct mt_muf_priv_data* priv = rte_mbuf_to_priv(mbuf);
   priv->tx_priv.idx = idx;
 }
 
 static inline uint32_t st_tx_mbuf_get_idx(struct rte_mbuf* mbuf) {
-  struct st_muf_priv_data* priv = rte_mbuf_to_priv(mbuf);
+  struct mt_muf_priv_data* priv = rte_mbuf_to_priv(mbuf);
   return priv->tx_priv.idx;
 }
 
 static inline void st_rx_mbuf_set_lender(struct rte_mbuf* mbuf, uint32_t lender) {
-  struct st_muf_priv_data* priv = rte_mbuf_to_priv(mbuf);
+  struct mt_muf_priv_data* priv = rte_mbuf_to_priv(mbuf);
   priv->rx_priv.lender = lender;
 }
 
 static inline uint32_t st_rx_mbuf_get_lender(struct rte_mbuf* mbuf) {
-  struct st_muf_priv_data* priv = rte_mbuf_to_priv(mbuf);
+  struct mt_muf_priv_data* priv = rte_mbuf_to_priv(mbuf);
   return priv->rx_priv.lender;
 }
 
 static inline void st_rx_mbuf_set_offset(struct rte_mbuf* mbuf, uint32_t offset) {
-  struct st_muf_priv_data* priv = rte_mbuf_to_priv(mbuf);
+  struct mt_muf_priv_data* priv = rte_mbuf_to_priv(mbuf);
   priv->rx_priv.offset = offset;
 }
 
 static inline uint32_t st_rx_mbuf_get_offset(struct rte_mbuf* mbuf) {
-  struct st_muf_priv_data* priv = rte_mbuf_to_priv(mbuf);
+  struct mt_muf_priv_data* priv = rte_mbuf_to_priv(mbuf);
   return priv->rx_priv.offset;
 }
 
 static inline void st_rx_mbuf_set_len(struct rte_mbuf* mbuf, uint32_t len) {
-  struct st_muf_priv_data* priv = rte_mbuf_to_priv(mbuf);
+  struct mt_muf_priv_data* priv = rte_mbuf_to_priv(mbuf);
   priv->rx_priv.len = len;
 }
 
 static inline uint32_t st_rx_mbuf_get_len(struct rte_mbuf* mbuf) {
-  struct st_muf_priv_data* priv = rte_mbuf_to_priv(mbuf);
+  struct mt_muf_priv_data* priv = rte_mbuf_to_priv(mbuf);
   return priv->rx_priv.len;
 }
 

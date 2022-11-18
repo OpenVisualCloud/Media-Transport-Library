@@ -152,7 +152,7 @@ static int tx_audio_session_init_hdr(struct mtl_main_impl* impl,
   ipv4->version_ihl = (4 << 4) | (sizeof(struct rte_ipv4_hdr) / 4);
   ipv4->time_to_live = 64;
   ipv4->type_of_service = 0;
-  ipv4->fragment_offset = ST_IP_DONT_FRAGMENT_FLAG;
+  ipv4->fragment_offset = MT_IP_DONT_FRAGMENT_FLAG;
   ipv4->total_length = htons(s->pkt_len + ST_PKT_AUDIO_HDR_LEN);
   ipv4->next_proto_id = 17;
   mtl_memcpy(&ipv4->src_addr, sip, MTL_IP_ADDR_LEN);
@@ -893,8 +893,8 @@ static int tx_audio_session_mempool_init(struct mtl_main_impl* impl,
       char pool_name[32];
       snprintf(pool_name, 32, "TXAUDIOHDR-M%d-R%d-P%d", mgr->idx, idx, i);
       struct rte_mempool* mbuf_pool =
-          st_mempool_create(impl, port, pool_name, n, ST_MBUF_CACHE_SIZE,
-                            sizeof(struct st_muf_priv_data), hdr_room_size);
+          st_mempool_create(impl, port, pool_name, n, MT_MBUF_CACHE_SIZE,
+                            sizeof(struct mt_muf_priv_data), hdr_room_size);
       if (!mbuf_pool) {
         tx_audio_session_mempool_free(s);
         return -ENOMEM;
@@ -916,7 +916,7 @@ static int tx_audio_session_mempool_init(struct mtl_main_impl* impl,
     char pool_name[32];
     snprintf(pool_name, 32, "TXAUDIOCHAIN-M%d-R%d", mgr->idx, idx);
     struct rte_mempool* mbuf_pool = st_mempool_create(
-        impl, port, pool_name, n, ST_MBUF_CACHE_SIZE, 0, chain_room_size);
+        impl, port, pool_name, n, MT_MBUF_CACHE_SIZE, 0, chain_room_size);
     if (!mbuf_pool) {
       tx_audio_session_mempool_free(s);
       return -ENOMEM;

@@ -240,7 +240,7 @@ static struct st_sch_impl* sch_request(struct mtl_main_impl* impl, enum st_sch_t
                                        st_sch_mask_t mask) {
   struct st_sch_impl* sch;
 
-  for (int sch_idx = 0; sch_idx < ST_MAX_SCH_NUM; sch_idx++) {
+  for (int sch_idx = 0; sch_idx < MT_MAX_SCH_NUM; sch_idx++) {
     /* mask check */
     if (!(mask & MTL_BIT64(sch_idx))) continue;
 
@@ -270,7 +270,7 @@ static int sch_free(struct st_sch_impl* sch) {
   }
 
   sch_lock(sch);
-  for (int i = 0; i < ST_MAX_TASKLET_PER_SCH; i++) {
+  for (int i = 0; i < MT_MAX_TASKLET_PER_SCH; i++) {
     if (sch->tasklet[i]) {
       warn("%s(%d), tasklet %d still active\n", __func__, idx, i);
       st_sch_unregister_tasklet(sch->tasklet[i]);
@@ -392,7 +392,7 @@ int st_sch_unregister_tasklet(struct st_sch_tasklet_impl* tasklet) {
   st_rte_free(tasklet);
 
   int max_idx = 0;
-  for (int i = 0; i < ST_MAX_TASKLET_PER_SCH; i++) {
+  for (int i = 0; i < MT_MAX_TASKLET_PER_SCH; i++) {
     if (sch->tasklet[i]) max_idx = i + 1;
   }
   sch->max_tasklet_idx = max_idx;
@@ -410,7 +410,7 @@ struct st_sch_tasklet_impl* st_sch_register_tasklet(
   sch_lock(sch);
 
   /* find one empty slot in the mgr */
-  for (int i = 0; i < ST_MAX_TASKLET_PER_SCH; i++) {
+  for (int i = 0; i < MT_MAX_TASKLET_PER_SCH; i++) {
     if (sch->tasklet[i]) continue;
 
     /* find one empty tasklet slot */
@@ -452,7 +452,7 @@ int st_sch_mrg_init(struct mtl_main_impl* impl, int data_quota_mbs_limit) {
 
   st_pthread_mutex_init(&mgr->mgr_mutex, NULL);
 
-  for (int sch_idx = 0; sch_idx < ST_MAX_SCH_NUM; sch_idx++) {
+  for (int sch_idx = 0; sch_idx < MT_MAX_SCH_NUM; sch_idx++) {
     sch = st_sch_instance(impl, sch_idx);
     st_pthread_mutex_init(&sch->mutex, NULL);
     sch->parnet = impl;
@@ -491,7 +491,7 @@ int st_sch_mrg_uinit(struct mtl_main_impl* impl) {
   struct st_sch_impl* sch;
   struct st_sch_mgr* mgr = st_sch_get_mgr(impl);
 
-  for (int sch_idx = 0; sch_idx < ST_MAX_SCH_NUM; sch_idx++) {
+  for (int sch_idx = 0; sch_idx < MT_MAX_SCH_NUM; sch_idx++) {
     sch = st_sch_instance(impl, sch_idx);
 
     st_pthread_mutex_destroy(&sch->tx_video_mgr_mutex);
@@ -570,7 +570,7 @@ struct st_sch_impl* st_sch_get(struct mtl_main_impl* impl, int quota_mbs,
   sch_mgr_lock(mgr);
 
   /* first try to find one sch capable with quota */
-  for (idx = 0; idx < ST_MAX_SCH_NUM; idx++) {
+  for (idx = 0; idx < MT_MAX_SCH_NUM; idx++) {
     sch = st_sch_instance(impl, idx);
     /* mask check */
     if (!(mask & MTL_BIT64(idx))) continue;
@@ -624,7 +624,7 @@ int st_sch_start_all(struct mtl_main_impl* impl) {
   struct st_sch_impl* sch;
 
   /* start active sch */
-  for (int sch_idx = 0; sch_idx < ST_MAX_SCH_NUM; sch_idx++) {
+  for (int sch_idx = 0; sch_idx < MT_MAX_SCH_NUM; sch_idx++) {
     sch = st_sch_instance(impl, sch_idx);
     if (st_sch_is_active(sch) && !st_sch_started(sch)) {
       ret = sch_start(sch);
@@ -644,7 +644,7 @@ int st_sch_stop_all(struct mtl_main_impl* impl) {
   struct st_sch_impl* sch;
 
   /* stop active sch */
-  for (int sch_idx = 0; sch_idx < ST_MAX_SCH_NUM; sch_idx++) {
+  for (int sch_idx = 0; sch_idx < MT_MAX_SCH_NUM; sch_idx++) {
     sch = st_sch_instance(impl, sch_idx);
     if (st_sch_is_active(sch) && st_sch_started(sch)) {
       ret = sch_stop(sch);
@@ -661,7 +661,7 @@ int st_sch_stop_all(struct mtl_main_impl* impl) {
 void st_sch_stat(struct mtl_main_impl* impl) {
   struct st_sch_impl* sch;
 
-  for (int sch_idx = 0; sch_idx < ST_MAX_SCH_NUM; sch_idx++) {
+  for (int sch_idx = 0; sch_idx < MT_MAX_SCH_NUM; sch_idx++) {
     sch = st_sch_instance(impl, sch_idx);
     if (st_sch_started(sch)) {
       sch_stat(sch);

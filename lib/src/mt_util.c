@@ -119,7 +119,7 @@ int st_pacing_train_result_add(struct mtl_main_impl* impl, enum mtl_port port,
                                uint64_t rl_bps, float pad_interval) {
   struct st_pacing_train_result* ptr = &st_if(impl, port)->pt_results[0];
 
-  for (int i = 0; i < ST_MAX_RL_ITEMS; i++) {
+  for (int i = 0; i < MT_MAX_RL_ITEMS; i++) {
     if (ptr[i].rl_bps) continue;
     ptr[i].rl_bps = rl_bps;
     ptr[i].pacing_pad_interval = pad_interval;
@@ -134,7 +134,7 @@ int st_pacing_train_result_search(struct mtl_main_impl* impl, enum mtl_port port
                                   uint64_t rl_bps, float* pad_interval) {
   struct st_pacing_train_result* ptr = &st_if(impl, port)->pt_results[0];
 
-  for (int i = 0; i < ST_MAX_RL_ITEMS; i++) {
+  for (int i = 0; i < MT_MAX_RL_ITEMS; i++) {
     if (rl_bps == ptr[i].rl_bps) {
       *pad_interval = ptr[i].pacing_pad_interval;
       return 0;
@@ -268,7 +268,7 @@ struct rte_mempool* st_mempool_create_by_ops(struct mtl_main_impl* impl,
   if (cache_size && (element_size % cache_size)) { /* align to cache size */
     element_size = (element_size / cache_size + 1) * cache_size;
   }
-  uint16_t data_room_size = element_size + ST_MBUF_HEADROOM_SIZE; /* include head room */
+  uint16_t data_room_size = element_size + MT_MBUF_HEADROOM_SIZE; /* include head room */
   struct rte_mempool* mbuf_pool = rte_pktmbuf_pool_create_by_ops(
       name, n, cache_size, priv_size, data_room_size, st_socket_id(impl, port), ops_name);
   if (!mbuf_pool) {

@@ -98,8 +98,8 @@ static inline struct rte_mempool* st_mempool_create_common(struct mtl_main_impl*
                                                            enum mtl_port port,
                                                            const char* name,
                                                            unsigned int n) {
-  return st_mempool_create(impl, port, name, n, ST_MBUF_CACHE_SIZE,
-                           sizeof(struct st_muf_priv_data), ST_MBUF_DEFAULT_DATA_SIZE);
+  return st_mempool_create(impl, port, name, n, MT_MBUF_CACHE_SIZE,
+                           sizeof(struct mt_muf_priv_data), MT_MBUF_DEFAULT_DATA_SIZE);
 }
 
 int st_mempool_free(struct rte_mempool* mp);

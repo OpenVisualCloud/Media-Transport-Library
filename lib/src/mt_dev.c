@@ -388,7 +388,7 @@ static struct st_rl_shaper* dev_rl_shaper_add(struct mtl_main_impl* impl,
 
   memset(&error, 0, sizeof(error));
 
-  for (int i = 0; i < ST_MAX_RL_ITEMS; i++) {
+  for (int i = 0; i < MT_MAX_RL_ITEMS; i++) {
     if (shapers[i].rl_bps) continue;
 
     shaper_profile_id = ST_SHAPER_PROFILE_ID + i;
@@ -425,7 +425,7 @@ static struct st_rl_shaper* dev_rl_shaper_get(struct mtl_main_impl* impl,
                                               enum mtl_port port, uint64_t bps) {
   struct st_rl_shaper* shapers = &st_if(impl, port)->tx_rl_shapers[0];
 
-  for (int i = 0; i < ST_MAX_RL_ITEMS; i++) {
+  for (int i = 0; i < MT_MAX_RL_ITEMS; i++) {
     if (bps == shapers[i].rl_bps) return &shapers[i];
   }
 
@@ -686,7 +686,7 @@ static int dev_stop_port(struct mtl_main_impl* impl, enum mtl_port port) {
   uint16_t port_id = st_port_id(impl, port);
   struct st_interface* inf = st_if(impl, port);
 
-  if (!(inf->status & ST_IF_STAT_PORT_STARTED)) {
+  if (!(inf->status & MT_IF_STAT_PORT_STARTED)) {
     info("%s(%d), port not started\n", __func__, port);
     return 0;
   }
@@ -694,7 +694,7 @@ static int dev_stop_port(struct mtl_main_impl* impl, enum mtl_port port) {
   ret = rte_eth_dev_stop(port_id);
   if (ret < 0) err("%s(%d), rte_eth_dev_stop fail %d\n", __func__, port, ret);
 
-  inf->status &= ~ST_IF_STAT_PORT_STARTED;
+  inf->status &= ~MT_IF_STAT_PORT_STARTED;
   info("%s(%d), succ\n", __func__, port);
   return 0;
 }
@@ -704,7 +704,7 @@ static int dev_close_port(struct mtl_main_impl* impl, enum mtl_port port) {
   uint16_t port_id = st_port_id(impl, port);
   struct st_interface* inf = st_if(impl, port);
 
-  if (!(inf->status & ST_IF_STAT_PORT_CONFIGED)) {
+  if (!(inf->status & MT_IF_STAT_PORT_CONFIGED)) {
     info("%s(%d), port not started\n", __func__, port);
     return 0;
   }
@@ -712,7 +712,7 @@ static int dev_close_port(struct mtl_main_impl* impl, enum mtl_port port) {
   ret = rte_eth_dev_close(port_id);
   if (ret < 0) err("%s(%d), rte_eth_dev_close fail %d\n", __func__, port, ret);
 
-  inf->status &= ~ST_IF_STAT_PORT_CONFIGED;
+  inf->status &= ~MT_IF_STAT_PORT_CONFIGED;
   info("%s(%d), succ\n", __func__, port);
   return 0;
 }
@@ -794,7 +794,7 @@ static int dev_config_port(struct mtl_main_impl* impl, enum mtl_port port) {
   uint16_t nb_rx_q = inf->max_rx_queues, nb_tx_q = inf->max_tx_queues;
   struct rte_eth_conf port_conf = dev_port_conf;
 
-  if (inf->feature & ST_IF_FEATURE_TX_MULTI_SEGS) {
+  if (inf->feature & MT_IF_FEATURE_TX_MULTI_SEGS) {
 #if RTE_VERSION >= RTE_VERSION_NUM(22, 3, 0, 0)
     port_conf.txmode.offloads |= RTE_ETH_TX_OFFLOAD_MULTI_SEGS;
 #else
@@ -802,7 +802,7 @@ static int dev_config_port(struct mtl_main_impl* impl, enum mtl_port port) {
 #endif
   }
 
-  if (inf->feature & ST_IF_FEATURE_TX_OFFLOAD_IPV4_CKSUM) {
+  if (inf->feature & MT_IF_FEATURE_TX_OFFLOAD_IPV4_CKSUM) {
 #if RTE_VERSION >= RTE_VERSION_NUM(22, 3, 0, 0)
     port_conf.txmode.offloads |= RTE_ETH_TX_OFFLOAD_IPV4_CKSUM;
 #else
@@ -810,7 +810,7 @@ static int dev_config_port(struct mtl_main_impl* impl, enum mtl_port port) {
 #endif
   }
 
-  if (inf->feature & ST_IF_FEATURE_RX_OFFLOAD_TIMESTAMP) {
+  if (inf->feature & MT_IF_FEATURE_RX_OFFLOAD_TIMESTAMP) {
 #if RTE_VERSION >= RTE_VERSION_NUM(22, 3, 0, 0)
     port_conf.rxmode.offloads |= RTE_ETH_RX_OFFLOAD_TIMESTAMP;
 #else
@@ -862,7 +862,7 @@ static int dev_config_port(struct mtl_main_impl* impl, enum mtl_port port) {
     }
   }
 
-  inf->status |= ST_IF_STAT_PORT_CONFIGED;
+  inf->status |= MT_IF_STAT_PORT_CONFIGED;
 
   info("%s(%d), tx_q(%d with %d desc) rx_q (%d with %d desc)\n", __func__, port, nb_tx_q,
        nb_tx_desc, nb_rx_q, nb_rx_desc);
@@ -888,7 +888,7 @@ static int dev_start_port(struct mtl_main_impl* impl, enum mtl_port port) {
     return ret;
   }
 
-  if (inf->feature & ST_IF_FEATURE_RUNTIME_RX_QUEUE) rx_deferred_start = 1;
+  if (inf->feature & MT_IF_FEATURE_RUNTIME_RX_QUEUE) rx_deferred_start = 1;
   rx_port_conf.rx_deferred_start = rx_deferred_start;
 
   struct rte_mempool* mbuf_pool;
@@ -960,7 +960,7 @@ static int dev_start_port(struct mtl_main_impl* impl, enum mtl_port port) {
     err("%s(%d), rte_eth_dev_start fail %d\n", __func__, port, ret);
     return ret;
   }
-  inf->status |= ST_IF_STAT_PORT_STARTED;
+  inf->status |= MT_IF_STAT_PORT_STARTED;
 
   if (st_get_user_params(impl)->flags & MTL_FLAG_NIC_RX_PROMISCUOUS) {
     /* Enable RX in promiscuous mode if it's required. */
@@ -1012,7 +1012,7 @@ int dev_reset_port(struct mtl_main_impl* impl, enum mtl_port port) {
   }
   inf->tx_rl_root_active = false;
   struct st_rl_shaper* shapers = &inf->tx_rl_shapers[0];
-  memset(shapers, 0, sizeof(*shapers) * ST_MAX_RL_ITEMS);
+  memset(shapers, 0, sizeof(*shapers) * MT_MAX_RL_ITEMS);
 
   /* restore rte flow */
   struct st_rx_queue* rx_queue;
@@ -1356,20 +1356,20 @@ static int dev_if_init_rx_queues(struct mtl_main_impl* impl, struct st_interface
 
       if (st_pmd_is_kernel(impl, inf->port)) {
         mbuf_pool = st_mempool_create_by_ops(
-            impl, inf->port, pool_name, mbuf_elements, ST_MBUF_CACHE_SIZE,
-            sizeof(struct st_muf_priv_data), 2048 - ST_MBUF_CACHE_SIZE, NULL);
+            impl, inf->port, pool_name, mbuf_elements, MT_MBUF_CACHE_SIZE,
+            sizeof(struct mt_muf_priv_data), 2048 - MT_MBUF_CACHE_SIZE, NULL);
       } else {
         if (q < inf->system_rx_queues_end)
           mbuf_pool = st_mempool_create_common(impl, inf->port, pool_name, mbuf_elements);
         else {
           uint16_t data_room_sz = ST_PKT_MAX_ETHER_BYTES;
           if (inf->drv_type == ST_DRV_IGC) /* to avoid igc nic split mbuf */
-            data_room_sz = ST_MBUF_DEFAULT_DATA_SIZE;
+            data_room_sz = MT_MBUF_DEFAULT_DATA_SIZE;
           if (impl->rx_pool_data_size) /* user suggested data room size */
             data_room_sz = impl->rx_pool_data_size;
           mbuf_pool = st_mempool_create(impl, inf->port, pool_name, mbuf_elements,
-                                        ST_MBUF_CACHE_SIZE,
-                                        sizeof(struct st_muf_priv_data), data_room_sz);
+                                        MT_MBUF_CACHE_SIZE,
+                                        sizeof(struct mt_muf_priv_data), data_room_sz);
         }
       }
       if (!mbuf_pool) {
@@ -1384,7 +1384,7 @@ static int dev_if_init_rx_queues(struct mtl_main_impl* impl, struct st_interface
           (q < inf->hdr_split_rx_queues_end)) {
         snprintf(pool_name, ST_MAX_NAME_LEN, "ST%d_RX%d_PAYLOAD_POOL", inf->port, q);
         mbuf_pool = st_mempool_create(impl, inf->port, pool_name, mbuf_elements,
-                                      ST_MBUF_CACHE_SIZE, sizeof(struct st_muf_priv_data),
+                                      MT_MBUF_CACHE_SIZE, sizeof(struct mt_muf_priv_data),
                                       ST_PKT_MAX_ETHER_BYTES);
         if (!mbuf_pool) {
           dev_if_uinit_rx_queues(inf);
@@ -1570,7 +1570,7 @@ int st_dev_request_rx_queue(struct mtl_main_impl* impl, enum mtl_port port,
       rx_queue->st_flow = *flow;
     }
 
-    if (inf->feature & ST_IF_FEATURE_RUNTIME_RX_QUEUE) {
+    if (inf->feature & MT_IF_FEATURE_RUNTIME_RX_QUEUE) {
       ret = rte_eth_dev_rx_queue_start(inf->port_id, q);
       if (ret < 0) {
         err("%s(%d), start runtime rx queue %d fail %d\n", __func__, port, q, ret);
@@ -1680,7 +1680,7 @@ int st_dev_free_rx_queue(struct mtl_main_impl* impl, enum mtl_port port,
 #endif
   }
 
-  if (inf->feature & ST_IF_FEATURE_RUNTIME_RX_QUEUE) {
+  if (inf->feature & MT_IF_FEATURE_RUNTIME_RX_QUEUE) {
     ret = rte_eth_dev_rx_queue_stop(inf->port_id, queue_id);
     if (ret < 0)
       err("%s(%d), stop runtime rx queue %d fail %d\n", __func__, port, queue_id, ret);
@@ -1711,7 +1711,7 @@ int st_dev_create(struct mtl_main_impl* impl) {
     /* DPDK 21.11 support start time sync before rte_eth_dev_start */
     if ((st_has_ptp_service(impl) || st_has_ebu(impl)) && (port_type == MT_PORT_PF)) {
       ret = dev_start_timesync(impl, i);
-      if (ret >= 0) inf->feature |= ST_IF_FEATURE_TIMESYNC;
+      if (ret >= 0) inf->feature |= MT_IF_FEATURE_TIMESYNC;
     }
 #endif
 
@@ -1744,9 +1744,9 @@ int st_dev_create(struct mtl_main_impl* impl) {
     }
     /* try to start time sync after rte_eth_dev_start */
     if ((st_has_ptp_service(impl) || st_has_ebu(impl)) && (port_type == MT_PORT_PF) &&
-        !(inf->feature & ST_IF_FEATURE_TIMESYNC)) {
+        !(inf->feature & MT_IF_FEATURE_TIMESYNC)) {
       ret = dev_start_timesync(impl, i);
-      if (ret >= 0) inf->feature |= ST_IF_FEATURE_TIMESYNC;
+      if (ret >= 0) inf->feature |= MT_IF_FEATURE_TIMESYNC;
     }
 
     ret = dev_if_init_pacing(impl, i);
@@ -2037,22 +2037,22 @@ int st_dev_if_init(struct mtl_main_impl* impl) {
     }
 
     if (dev_info.dev_capa & RTE_ETH_DEV_CAPA_RUNTIME_RX_QUEUE_SETUP)
-      inf->feature |= ST_IF_FEATURE_RUNTIME_RX_QUEUE;
+      inf->feature |= MT_IF_FEATURE_RUNTIME_RX_QUEUE;
 
 #if RTE_VERSION >= RTE_VERSION_NUM(22, 3, 0, 0)
     if (dev_info.tx_offload_capa & RTE_ETH_TX_OFFLOAD_MULTI_SEGS)
-      inf->feature |= ST_IF_FEATURE_TX_MULTI_SEGS;
+      inf->feature |= MT_IF_FEATURE_TX_MULTI_SEGS;
 #else
     if (dev_info.tx_offload_capa & DEV_TX_OFFLOAD_MULTI_SEGS)
-      inf->feature |= ST_IF_FEATURE_TX_MULTI_SEGS;
+      inf->feature |= MT_IF_FEATURE_TX_MULTI_SEGS;
 #endif
 
 #if RTE_VERSION >= RTE_VERSION_NUM(22, 3, 0, 0)
     if (dev_info.tx_offload_capa & RTE_ETH_TX_OFFLOAD_IPV4_CKSUM)
-      inf->feature |= ST_IF_FEATURE_TX_OFFLOAD_IPV4_CKSUM;
+      inf->feature |= MT_IF_FEATURE_TX_OFFLOAD_IPV4_CKSUM;
 #else
     if (dev_info.tx_offload_capa & DEV_TX_OFFLOAD_IPV4_CKSUM)
-      inf->feature |= ST_IF_FEATURE_TX_OFFLOAD_IPV4_CKSUM;
+      inf->feature |= MT_IF_FEATURE_TX_OFFLOAD_IPV4_CKSUM;
 #endif
 
     if (st_has_ebu(impl) &&
@@ -2071,12 +2071,12 @@ int st_dev_if_init(struct mtl_main_impl* impl) {
         info("%s, rte_mbuf_dyn_rx_timestamp_register: mbuf dynfield offset: %d\n",
              __func__, impl->dynfield_offset);
       }
-      inf->feature |= ST_IF_FEATURE_RX_OFFLOAD_TIMESTAMP;
+      inf->feature |= MT_IF_FEATURE_RX_OFFLOAD_TIMESTAMP;
     }
 
 #ifdef RTE_ETH_RX_OFFLOAD_BUFFER_SPLIT
     if (dev_info.rx_queue_offload_capa & RTE_ETH_RX_OFFLOAD_BUFFER_SPLIT) {
-      inf->feature |= ST_IF_FEATURE_RXQ_OFFLOAD_BUFFER_SPLIT;
+      inf->feature |= MT_IF_FEATURE_RXQ_OFFLOAD_BUFFER_SPLIT;
       dbg("%s(%d), has rxq hdr split\n", __func__, i);
     }
 #endif

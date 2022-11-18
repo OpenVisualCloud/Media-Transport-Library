@@ -20,7 +20,7 @@ static int admin_cal_cpu_busy(struct mtl_main_impl* impl) {
   struct st_rx_video_sessions_mgr* rx_mgr;
   struct st_rx_video_session_impl* rx_s;
 
-  for (int sch_idx = 0; sch_idx < ST_MAX_SCH_NUM; sch_idx++) {
+  for (int sch_idx = 0; sch_idx < MT_MAX_SCH_NUM; sch_idx++) {
     sch = st_sch_instance(impl, sch_idx);
     if (!st_sch_started(sch)) continue;
 
@@ -55,7 +55,7 @@ static int admin_clear_cpu_busy(struct mtl_main_impl* impl) {
   struct st_rx_video_sessions_mgr* rx_mgr;
   struct st_rx_video_session_impl* rx_s;
 
-  for (int sch_idx = 0; sch_idx < ST_MAX_SCH_NUM; sch_idx++) {
+  for (int sch_idx = 0; sch_idx < MT_MAX_SCH_NUM; sch_idx++) {
     sch = st_sch_instance(impl, sch_idx);
     if (!st_sch_started(sch)) continue;
 
@@ -145,7 +145,7 @@ static int admin_tx_video_migrate(struct mtl_main_impl* impl, bool* migrated) {
   struct st_sch_impl* from_sch = NULL;
   int ret;
 
-  for (int sch_idx = 0; sch_idx < ST_MAX_SCH_NUM; sch_idx++) {
+  for (int sch_idx = 0; sch_idx < MT_MAX_SCH_NUM; sch_idx++) {
     struct st_sch_impl* sch = st_sch_instance(impl, sch_idx);
     if (!st_sch_started(sch)) continue;
     if (!st_sch_has_busy(sch)) continue;
@@ -260,7 +260,7 @@ static int admin_rx_video_migrate(struct mtl_main_impl* impl, bool* migrated) {
   struct st_sch_impl* from_sch = NULL;
   int ret;
 
-  for (int sch_idx = 0; sch_idx < ST_MAX_SCH_NUM; sch_idx++) {
+  for (int sch_idx = 0; sch_idx < MT_MAX_SCH_NUM; sch_idx++) {
     struct st_sch_impl* sch = st_sch_instance(impl, sch_idx);
     if (!st_sch_started(sch)) continue;
     if (!st_sch_has_busy(sch)) continue;

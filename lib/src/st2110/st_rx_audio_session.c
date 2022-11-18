@@ -414,7 +414,7 @@ static int rx_audio_session_handle_frame_pkt(struct mtl_main_impl* impl,
   s->st30_stat_pkts_received++;
   s->st30_pkt_idx++;
 
-  if (st_has_ebu(impl) && inf->feature & ST_IF_FEATURE_RX_OFFLOAD_TIMESTAMP) {
+  if (st_has_ebu(impl) && inf->feature & MT_IF_FEATURE_RX_OFFLOAD_TIMESTAMP) {
     ra_ebu_on_packet(s, tmstamp, st_mbuf_get_hw_time_stamp(impl, mbuf));
   }
 
@@ -487,7 +487,7 @@ static int rx_audio_session_handle_rtp_pkt(struct mtl_main_impl* impl,
   ops->notify_rtp_ready(ops->priv);
   s->st30_stat_pkts_received++;
 
-  if (st_has_ebu(impl) && inf->feature & ST_IF_FEATURE_RX_OFFLOAD_TIMESTAMP) {
+  if (st_has_ebu(impl) && inf->feature & MT_IF_FEATURE_RX_OFFLOAD_TIMESTAMP) {
     ra_ebu_on_packet(s, tmstamp, st_mbuf_get_hw_time_stamp(impl, mbuf));
   }
 

@@ -577,8 +577,8 @@ int st20_yuv422p10le_to_rfc4175_422be10_simd(uint16_t* y, uint16_t* b, uint16_t*
   enum mtl_simd_level cpu_level = mtl_get_simd_level();
   int ret;
 
-  ST_MAY_UNUSED(cpu_level);
-  ST_MAY_UNUSED(ret);
+  MT_MAY_UNUSED(cpu_level);
+  MT_MAY_UNUSED(ret);
 
 #ifdef MTL_HAS_AVX512
   if ((level >= MTL_SIMD_LEVEL_AVX512) && (cpu_level >= MTL_SIMD_LEVEL_AVX512)) {
@@ -600,8 +600,8 @@ int st20_yuv422p10le_to_rfc4175_422be10_simd_dma(
   enum mtl_simd_level cpu_level = mtl_get_simd_level();
   int ret;
 
-  ST_MAY_UNUSED(cpu_level);
-  ST_MAY_UNUSED(ret);
+  MT_MAY_UNUSED(cpu_level);
+  MT_MAY_UNUSED(ret);
 
 #ifdef MTL_HAS_AVX512
   if ((level >= MTL_SIMD_LEVEL_AVX512) && (cpu_level >= MTL_SIMD_LEVEL_AVX512)) {
@@ -646,8 +646,8 @@ int st20_rfc4175_422be10_to_yuv422p10le_simd(struct st20_rfc4175_422_10_pg2_be* 
   enum mtl_simd_level cpu_level = mtl_get_simd_level();
   int ret;
 
-  ST_MAY_UNUSED(cpu_level);
-  ST_MAY_UNUSED(ret);
+  MT_MAY_UNUSED(cpu_level);
+  MT_MAY_UNUSED(ret);
 
 #ifdef MTL_HAS_AVX512_VBMI2
   if ((level >= MTL_SIMD_LEVEL_AVX512_VBMI2) &&
@@ -680,8 +680,8 @@ int st20_rfc4175_422be10_to_yuv422p10le_simd_dma(mtl_udma_handle udma,
   enum mtl_simd_level cpu_level = mtl_get_simd_level();
   int ret;
 
-  ST_MAY_UNUSED(cpu_level);
-  ST_MAY_UNUSED(ret);
+  MT_MAY_UNUSED(cpu_level);
+  MT_MAY_UNUSED(ret);
 
 #ifdef MTL_HAS_AVX512_VBMI2
   if ((level >= MTL_SIMD_LEVEL_AVX512_VBMI2) &&
@@ -792,8 +792,8 @@ int st20_rfc4175_422be10_to_422le10_simd(struct st20_rfc4175_422_10_pg2_be* pg_b
   enum mtl_simd_level cpu_level = mtl_get_simd_level();
   int ret;
 
-  ST_MAY_UNUSED(cpu_level);
-  ST_MAY_UNUSED(ret);
+  MT_MAY_UNUSED(cpu_level);
+  MT_MAY_UNUSED(ret);
 
 #ifdef MTL_HAS_AVX512_VBMI2
   if ((level >= MTL_SIMD_LEVEL_AVX512_VBMI2) &&
@@ -837,9 +837,9 @@ int st20_rfc4175_422be10_to_422le10_simd_dma(mtl_udma_handle udma,
   enum mtl_simd_level cpu_level = mtl_get_simd_level();
   int ret;
 
-  ST_MAY_UNUSED(cpu_level);
-  ST_MAY_UNUSED(ret);
-  ST_MAY_UNUSED(dma);
+  MT_MAY_UNUSED(cpu_level);
+  MT_MAY_UNUSED(ret);
+  MT_MAY_UNUSED(dma);
 
 #ifdef MTL_HAS_AVX512_VBMI2
   if ((level >= MTL_SIMD_LEVEL_AVX512_VBMI2) &&
@@ -900,8 +900,8 @@ int st20_rfc4175_422le10_to_422be10_simd(struct st20_rfc4175_422_10_pg2_le* pg_l
   enum mtl_simd_level cpu_level = mtl_get_simd_level();
   int ret;
 
-  ST_MAY_UNUSED(cpu_level);
-  ST_MAY_UNUSED(ret);
+  MT_MAY_UNUSED(cpu_level);
+  MT_MAY_UNUSED(ret);
 
 #ifdef MTL_HAS_AVX512_VBMI2
   if ((level >= MTL_SIMD_LEVEL_AVX512_VBMI2) &&
@@ -945,9 +945,9 @@ int st20_rfc4175_422le10_to_422be10_simd_dma(mtl_udma_handle udma,
   enum mtl_simd_level cpu_level = mtl_get_simd_level();
   int ret;
 
-  ST_MAY_UNUSED(cpu_level);
-  ST_MAY_UNUSED(ret);
-  ST_MAY_UNUSED(dma);
+  MT_MAY_UNUSED(cpu_level);
+  MT_MAY_UNUSED(ret);
+  MT_MAY_UNUSED(dma);
 
 #ifdef MTL_HAS_AVX512_VBMI2
   if ((level >= MTL_SIMD_LEVEL_AVX512_VBMI2) &&
@@ -995,8 +995,8 @@ int st20_rfc4175_422be10_to_422le8_simd(struct st20_rfc4175_422_10_pg2_be* pg_10
   enum mtl_simd_level cpu_level = mtl_get_simd_level();
   int ret;
 
-  ST_MAY_UNUSED(cpu_level);
-  ST_MAY_UNUSED(ret);
+  MT_MAY_UNUSED(cpu_level);
+  MT_MAY_UNUSED(ret);
 
 #ifdef MTL_HAS_AVX512_VBMI2
   if ((level >= MTL_SIMD_LEVEL_AVX512_VBMI2) &&
@@ -1031,9 +1031,9 @@ int st20_rfc4175_422be10_to_422le8_simd_dma(mtl_udma_handle udma,
   enum mtl_simd_level cpu_level = mtl_get_simd_level();
   int ret;
 
-  ST_MAY_UNUSED(cpu_level);
-  ST_MAY_UNUSED(ret);
-  ST_MAY_UNUSED(dma);
+  MT_MAY_UNUSED(cpu_level);
+  MT_MAY_UNUSED(ret);
+  MT_MAY_UNUSED(dma);
 
 #ifdef MTL_HAS_AVX512_VBMI2
   if ((level >= MTL_SIMD_LEVEL_AVX512_VBMI2) &&
@@ -1102,8 +1102,8 @@ int st20_rfc4175_422le10_to_v210_simd(uint8_t* pg_le, uint8_t* pg_v210, uint32_t
   enum mtl_simd_level cpu_level = mtl_get_simd_level();
   int ret;
 
-  ST_MAY_UNUSED(cpu_level);
-  ST_MAY_UNUSED(ret);
+  MT_MAY_UNUSED(cpu_level);
+  MT_MAY_UNUSED(ret);
 
 #ifdef MTL_HAS_AVX512_VBMI2
   if ((level >= MTL_SIMD_LEVEL_AVX512_VBMI2) &&
@@ -1210,8 +1210,8 @@ int st20_rfc4175_422be10_to_v210_simd(struct st20_rfc4175_422_10_pg2_be* pg_be,
   enum mtl_simd_level cpu_level = mtl_get_simd_level();
   int ret;
 
-  ST_MAY_UNUSED(cpu_level);
-  ST_MAY_UNUSED(ret);
+  MT_MAY_UNUSED(cpu_level);
+  MT_MAY_UNUSED(ret);
 
 #ifdef MTL_HAS_AVX512_VBMI2
   if ((level >= MTL_SIMD_LEVEL_AVX512_VBMI2) &&
@@ -1245,9 +1245,9 @@ int st20_rfc4175_422be10_to_v210_simd_dma(mtl_udma_handle udma,
   enum mtl_simd_level cpu_level = mtl_get_simd_level();
   int ret;
 
-  ST_MAY_UNUSED(cpu_level);
-  ST_MAY_UNUSED(ret);
-  ST_MAY_UNUSED(dma);
+  MT_MAY_UNUSED(cpu_level);
+  MT_MAY_UNUSED(ret);
+  MT_MAY_UNUSED(dma);
 
 #ifdef MTL_HAS_AVX512_VBMI2
   if ((level >= MTL_SIMD_LEVEL_AVX512_VBMI2) &&
@@ -1316,8 +1316,8 @@ int st20_v210_to_rfc4175_422be10_simd(uint8_t* pg_v210,
   enum mtl_simd_level cpu_level = mtl_get_simd_level();
   int ret;
 
-  ST_MAY_UNUSED(cpu_level);
-  ST_MAY_UNUSED(ret);
+  MT_MAY_UNUSED(cpu_level);
+  MT_MAY_UNUSED(ret);
 
 #ifdef MTL_HAS_AVX512_VBMI2
   if ((level >= MTL_SIMD_LEVEL_AVX512_VBMI2) &&
@@ -1350,8 +1350,8 @@ int st20_v210_to_rfc4175_422be10_simd_dma(mtl_udma_handle udma, uint8_t* pg_v210
   enum mtl_simd_level cpu_level = mtl_get_simd_level();
   int ret;
 
-  ST_MAY_UNUSED(cpu_level);
-  ST_MAY_UNUSED(ret);
+  MT_MAY_UNUSED(cpu_level);
+  MT_MAY_UNUSED(ret);
 
 #ifdef MTL_HAS_AVX512_VBMI2
   if ((level >= MTL_SIMD_LEVEL_AVX512_VBMI2) &&
@@ -1400,8 +1400,8 @@ int st20_rfc4175_422be10_to_y210_simd(struct st20_rfc4175_422_10_pg2_be* pg_be,
   enum mtl_simd_level cpu_level = mtl_get_simd_level();
   int ret;
 
-  ST_MAY_UNUSED(cpu_level);
-  ST_MAY_UNUSED(ret);
+  MT_MAY_UNUSED(cpu_level);
+  MT_MAY_UNUSED(ret);
 
 #ifdef MTL_HAS_AVX512
   if ((level >= MTL_SIMD_LEVEL_AVX512) && (cpu_level >= MTL_SIMD_LEVEL_AVX512)) {
@@ -1425,9 +1425,9 @@ int st20_rfc4175_422be10_to_y210_simd_dma(mtl_udma_handle udma,
   enum mtl_simd_level cpu_level = mtl_get_simd_level();
   int ret;
 
-  ST_MAY_UNUSED(cpu_level);
-  ST_MAY_UNUSED(ret);
-  ST_MAY_UNUSED(dma);
+  MT_MAY_UNUSED(cpu_level);
+  MT_MAY_UNUSED(ret);
+  MT_MAY_UNUSED(dma);
 
 #ifdef MTL_HAS_AVX512
   if ((level >= MTL_SIMD_LEVEL_AVX512) && (cpu_level >= MTL_SIMD_LEVEL_AVX512)) {
@@ -1470,8 +1470,8 @@ int st20_y210_to_rfc4175_422be10_simd(uint16_t* pg_y210,
   enum mtl_simd_level cpu_level = mtl_get_simd_level();
   int ret;
 
-  ST_MAY_UNUSED(cpu_level);
-  ST_MAY_UNUSED(ret);
+  MT_MAY_UNUSED(cpu_level);
+  MT_MAY_UNUSED(ret);
 
 #ifdef MTL_HAS_AVX512
   if ((level >= MTL_SIMD_LEVEL_AVX512) && (cpu_level >= MTL_SIMD_LEVEL_AVX512)) {
@@ -1494,8 +1494,8 @@ int st20_y210_to_rfc4175_422be10_simd_dma(mtl_udma_handle udma, uint16_t* pg_y21
   enum mtl_simd_level cpu_level = mtl_get_simd_level();
   int ret;
 
-  ST_MAY_UNUSED(cpu_level);
-  ST_MAY_UNUSED(ret);
+  MT_MAY_UNUSED(cpu_level);
+  MT_MAY_UNUSED(ret);
 
 #ifdef MTL_HAS_AVX512
   if ((level >= MTL_SIMD_LEVEL_AVX512) && (cpu_level >= MTL_SIMD_LEVEL_AVX512)) {

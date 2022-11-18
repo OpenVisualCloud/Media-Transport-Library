@@ -23,7 +23,7 @@ int st_map_add(struct mtl_main_impl* impl, struct st_map_item* item) {
   st_pthread_mutex_lock(&mgr->mutex);
 
   /* first check if any conflict with exist mapping */
-  for (int i = 0; i < ST_MAP_MAX_ITEMS; i++) {
+  for (int i = 0; i < MT_MAP_MAX_ITEMS; i++) {
     i_item = mgr->items[i];
     if (!i_item) continue;
     i_start = i_item->vaddr;
@@ -45,7 +45,7 @@ int st_map_add(struct mtl_main_impl* impl, struct st_map_item* item) {
   item->iova = iova_base;
 
   /* find empty slot and insert */
-  for (int i = 0; i < ST_MAP_MAX_ITEMS; i++) {
+  for (int i = 0; i < MT_MAP_MAX_ITEMS; i++) {
     i_item = mgr->items[i];
     if (i_item) continue;
     i_item = st_rte_zmalloc_socket(sizeof(*i_item), st_socket_id(impl, MTL_PORT_P));
@@ -78,7 +78,7 @@ int st_map_remove(struct mtl_main_impl* impl, struct st_map_item* item) {
   st_pthread_mutex_lock(&mgr->mutex);
 
   /* find slot and delete */
-  for (int i = 0; i < ST_MAP_MAX_ITEMS; i++) {
+  for (int i = 0; i < MT_MAP_MAX_ITEMS; i++) {
     i_item = mgr->items[i];
     if (!i_item) continue;
     i_start = i_item->vaddr;
@@ -111,7 +111,7 @@ int st_map_uinit(struct mtl_main_impl* impl) {
   struct st_map_mgr* mgr = st_get_map_mgr(impl);
   struct st_map_item* item;
 
-  for (int i = 0; i < ST_MAP_MAX_ITEMS; i++) {
+  for (int i = 0; i < MT_MAP_MAX_ITEMS; i++) {
     item = mgr->items[i];
     if (item) {
       warn("%s(%d), still active, vaddr %p\n", __func__, i, item->vaddr);
@@ -218,7 +218,7 @@ static int dma_drop_mbuf(struct st_dma_dev* dma_dev, uint16_t nb_mbuf) {
   struct mtl_dma_lender_dev* mbuf_dev;
 
   for (uint16_t i = 0; i < nb_mbuf; i++) {
-#if ST_DMA_RTE_RING
+#if MT_DMA_RTE_RING
     int ret = rte_ring_sc_dequeue(dma_dev->borrow_queue, (void**)&mbuf);
     if (ret < 0) {
       err("%s(%d), no item to dequeue\n", __func__, dma_dev->idx);
@@ -299,7 +299,7 @@ static int dma_hw_stop(struct st_dma_dev* dev) {
 
 static int dma_sw_init(struct mtl_main_impl* impl, struct st_dma_dev* dev) {
   int idx = dev->idx;
-#if ST_DMA_RTE_RING
+#if MT_DMA_RTE_RING
   char ring_name[32];
   struct rte_ring* ring;
   unsigned int flags, count;
@@ -331,7 +331,7 @@ static int dma_sw_init(struct mtl_main_impl* impl, struct st_dma_dev* dev) {
 static int dma_sw_uinit(struct st_dma_dev* dev) {
   uint16_t nb_inflight = 0;
 
-#if ST_DMA_RTE_RING
+#if MT_DMA_RTE_RING
   if (dev->borrow_queue) {
     nb_inflight = rte_ring_count(dev->borrow_queue);
     if (nb_inflight) {
@@ -428,7 +428,7 @@ struct mtl_dma_lender_dev* st_dma_request_dev(struct mtl_main_impl* impl,
       if (ret < 0) continue;
       dev->nb_desc = nb_desc;
       dev->sch_idx = req->sch_idx;
-      dev->max_shared = RTE_MIN(req->max_shared, ST_DMA_MAX_SESSIONS);
+      dev->max_shared = RTE_MIN(req->max_shared, MT_DMA_MAX_SESSIONS);
       ret = dma_sw_init(impl, dev);
       if (ret < 0) {
         dma_hw_stop(dev);
@@ -507,7 +507,7 @@ int st_dma_borrow_mbuf(struct mtl_dma_lender_dev* dev, struct rte_mbuf* mbuf) {
   struct st_dma_dev* dma_dev = dev->parent;
 
   st_rx_mbuf_set_lender(mbuf, dev->lender_id);
-#if ST_DMA_RTE_RING
+#if MT_DMA_RTE_RING
   int ret = rte_ring_sp_enqueue(dma_dev->borrow_queue, (void*)mbuf);
   if (ret) {
     err("%s, no space for queue\n", __func__);
@@ -530,7 +530,7 @@ int st_dma_drop_mbuf(struct mtl_dma_lender_dev* dev, uint16_t nb_mbuf) {
 
 bool st_dma_full(struct mtl_dma_lender_dev* dev) {
   struct st_dma_dev* dma_dev = dev->parent;
-#if ST_DMA_RTE_RING
+#if MT_DMA_RTE_RING
   return rte_ring_full(dma_dev->borrow_queue) ? true : false;
 #else
   return (dma_dev->nb_inflight < dma_dev->nb_desc) ? false : true;
@@ -566,7 +566,7 @@ int st_dma_init(struct mtl_main_impl* impl) {
     info("%s(%d), dma dev id %u name %s capa 0x%" PRIx64 " numa %d desc %u:%u\n",
          __func__, idx, dev_id, dev_info.dev_name, dev_info.dev_capa, dev_info.numa_node,
          dev_info.min_desc, dev_info.max_desc);
-    for (int render = 0; render < ST_DMA_MAX_SESSIONS; render++) {
+    for (int render = 0; render < MT_DMA_MAX_SESSIONS; render++) {
       lender_dev = &dev->lenders[render];
       lender_dev->parent = dev;
       lender_dev->lender_id = render;

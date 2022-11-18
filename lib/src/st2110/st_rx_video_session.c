@@ -1268,7 +1268,7 @@ static int rv_init_dma(struct mtl_main_impl* impl, struct st_rx_video_session_im
 
   struct st_dma_request_req req;
   req.nb_desc = s->dma_nb_desc;
-  req.max_shared = share_dma ? ST_DMA_MAX_SESSIONS : 1;
+  req.max_shared = share_dma ? MT_DMA_MAX_SESSIONS : 1;
   req.sch_idx = s->parnet->idx;
   req.socket_id = st_socket_id(impl, port);
   req.priv = s;
@@ -1392,7 +1392,7 @@ static int rv_dump_pcapng(struct mtl_main_impl* impl, struct st_rx_video_session
   for (uint16_t i = 0; i < rv; i++) {
     struct rte_mbuf* mc;
     uint64_t timestamp_cycle, timestamp_ns;
-    if (st_has_ebu(impl) && inf->feature & ST_IF_FEATURE_RX_OFFLOAD_TIMESTAMP) {
+    if (st_has_ebu(impl) && inf->feature & MT_IF_FEATURE_RX_OFFLOAD_TIMESTAMP) {
       timestamp_cycle = 0;
       timestamp_ns = st_mbuf_get_hw_time_stamp(impl, mbuf[i]);
     } else {
@@ -1569,7 +1569,7 @@ static int rv_handle_frame_pkt(struct st_rx_video_session_impl* s, struct rte_mb
     need_copy = false;
     enum mtl_port port = st_port_logic2phy(s->port_maps, s_port);
     struct st_interface* inf = st_if(impl, port);
-    if (inf->feature & ST_IF_FEATURE_RX_OFFLOAD_TIMESTAMP) {
+    if (inf->feature & MT_IF_FEATURE_RX_OFFLOAD_TIMESTAMP) {
       rv_ebu_on_packet(s, tmstamp, st_mbuf_get_hw_time_stamp(impl, mbuf), pkt_idx);
     }
   }
@@ -3234,7 +3234,7 @@ void st_rx_video_sessions_stat(struct mtl_main_impl* impl) {
   struct st_rx_video_sessions_mgr* mgr;
   struct st_rx_video_session_impl* s;
 
-  for (int sch_idx = 0; sch_idx < ST_MAX_SCH_NUM; sch_idx++) {
+  for (int sch_idx = 0; sch_idx < MT_MAX_SCH_NUM; sch_idx++) {
     sch = st_sch_instance(impl, sch_idx);
     if (!st_sch_is_active(sch)) continue;
     mgr = &sch->rx_video_mgr;

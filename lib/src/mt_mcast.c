@@ -75,7 +75,7 @@ int mcast_membership_general_query(struct mtl_main_impl* impl, enum mtl_port por
   ip_hdr->version_ihl = (4 << 4) | (sizeof(struct rte_ipv4_hdr) / 4);
   ip_hdr->time_to_live = 1;
   ip_hdr->type_of_service = IP_IGMP_DSCP_VALUE;
-  ip_hdr->fragment_offset = ST_IP_DONT_FRAGMENT_FLAG;
+  ip_hdr->fragment_offset = MT_IP_DONT_FRAGMENT_FLAG;
   ip_hdr->hdr_checksum = 0;
   ip_hdr->total_length = htons(sizeof(struct rte_ipv4_hdr) + mb_query_len);
   ip_hdr->next_proto_id = IGMP_PROTOCOL;
@@ -159,7 +159,7 @@ static int mcast_membership_report(struct mtl_main_impl* impl,
   ip_hdr->version_ihl = (4 << 4) | (sizeof(struct rte_ipv4_hdr) / 4);
   ip_hdr->time_to_live = 1;
   ip_hdr->type_of_service = IP_IGMP_DSCP_VALUE;
-  ip_hdr->fragment_offset = ST_IP_DONT_FRAGMENT_FLAG;
+  ip_hdr->fragment_offset = MT_IP_DONT_FRAGMENT_FLAG;
   ip_hdr->hdr_checksum = 0;
   ip_hdr->total_length = htons(sizeof(struct rte_ipv4_hdr) + mb_report_len);
   ip_hdr->next_proto_id = IGMP_PROTOCOL;

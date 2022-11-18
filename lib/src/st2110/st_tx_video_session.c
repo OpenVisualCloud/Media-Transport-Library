@@ -549,7 +549,7 @@ static int tv_init_hdr(struct mtl_main_impl* impl, struct st_tx_video_session_im
   ipv4->version_ihl = (4 << 4) | (sizeof(struct rte_ipv4_hdr) / 4);
   ipv4->time_to_live = 64;
   ipv4->type_of_service = 0;
-  ipv4->fragment_offset = ST_IP_DONT_FRAGMENT_FLAG;
+  ipv4->fragment_offset = MT_IP_DONT_FRAGMENT_FLAG;
   ipv4->next_proto_id = 17;
   mtl_memcpy(&ipv4->src_addr, sip, MTL_IP_ADDR_LEN);
   mtl_memcpy(&ipv4->dst_addr, dip, MTL_IP_ADDR_LEN);
@@ -1853,8 +1853,8 @@ static int tv_mempool_init(struct mtl_main_impl* impl,
         char pool_name[32];
         snprintf(pool_name, 32, "TXVIDEOHDR-M%d-R%d-P%d", mgr->idx, idx, i);
         struct rte_mempool* mbuf_pool =
-            st_mempool_create(impl, port, pool_name, n, ST_MBUF_CACHE_SIZE,
-                              sizeof(struct st_muf_priv_data), hdr_room_size);
+            st_mempool_create(impl, port, pool_name, n, MT_MBUF_CACHE_SIZE,
+                              sizeof(struct mt_muf_priv_data), hdr_room_size);
         if (!mbuf_pool) {
           tv_mempool_free(s);
           return -ENOMEM;
@@ -1877,7 +1877,7 @@ static int tv_mempool_init(struct mtl_main_impl* impl,
     char pool_name[32];
     snprintf(pool_name, 32, "TXVIDEOCHAIN-M%d-R%d", mgr->idx, idx);
     struct rte_mempool* mbuf_pool = st_mempool_create(
-        impl, port, pool_name, n, ST_MBUF_CACHE_SIZE, 0, chain_room_size);
+        impl, port, pool_name, n, MT_MBUF_CACHE_SIZE, 0, chain_room_size);
     if (!mbuf_pool) {
       tv_mempool_free(s);
       return -ENOMEM;
@@ -2560,7 +2560,7 @@ void st_tx_video_sessions_stat(struct mtl_main_impl* impl) {
   struct st_tx_video_sessions_mgr* mgr;
   struct st_tx_video_session_impl* s;
 
-  for (int sch_idx = 0; sch_idx < ST_MAX_SCH_NUM; sch_idx++) {
+  for (int sch_idx = 0; sch_idx < MT_MAX_SCH_NUM; sch_idx++) {
     sch = st_sch_instance(impl, sch_idx);
     if (!st_sch_started(sch)) continue;
     mgr = &sch->tx_video_mgr;

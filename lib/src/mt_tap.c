@@ -546,7 +546,7 @@ static int configure_tap() {
   struct rte_mbuf** tmp = &tap_ctx->pool;
   struct rte_mempool* mbuf_pool = st_mempool_create(
       impl, 0, "tap", inf->nb_rx_desc + ST_TX_VIDEO_SESSIONS_RING_SIZE,
-      ST_MBUF_CACHE_SIZE, sizeof(struct st_muf_priv_data), ST_PKT_MAX_ETHER_BYTES);
+      MT_MBUF_CACHE_SIZE, sizeof(struct mt_muf_priv_data), ST_PKT_MAX_ETHER_BYTES);
   if (!mbuf_pool) {
     err("%s tap mempool create fail\n", __func__);
     return -ENOMEM;
