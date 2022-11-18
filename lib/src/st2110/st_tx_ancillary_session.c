@@ -57,7 +57,7 @@ static int tx_ancillary_session_free_frames(struct st_tx_ancillary_session_impl*
       st_frame_trans_uinit(frame);
     }
 
-    st_rte_free(s->st40_frames);
+    mt_rte_free(s->st40_frames);
     s->st40_frames = NULL;
   }
 
@@ -78,7 +78,7 @@ static int tx_ancillary_session_alloc_frames(struct mtl_main_impl* impl,
   }
 
   s->st40_frames =
-      st_rte_zmalloc_socket(sizeof(*s->st40_frames) * s->st40_frames_cnt, soc_id);
+      mt_rte_zmalloc_socket(sizeof(*s->st40_frames) * s->st40_frames_cnt, soc_id);
   if (!s->st40_frames) {
     err("%s(%d), st30_frames malloc fail\n", __func__, idx);
     return -ENOMEM;
@@ -93,7 +93,7 @@ static int tx_ancillary_session_alloc_frames(struct mtl_main_impl* impl,
   for (int i = 0; i < s->st40_frames_cnt; i++) {
     frame_info = &s->st40_frames[i];
 
-    void* frame = st_rte_zmalloc_socket(sizeof(struct st40_frame), soc_id);
+    void* frame = mt_rte_zmalloc_socket(sizeof(struct st40_frame), soc_id);
     if (!frame) {
       err("%s(%d), frame malloc fail at %d\n", __func__, idx, i);
       tx_ancillary_session_free_frames(s);
@@ -1204,7 +1204,7 @@ static struct st_tx_ancillary_session_impl* tx_ancillary_sessions_mgr_attach(
   for (int i = 0; i < ST_MAX_TX_ANC_SESSIONS; i++) {
     if (!tx_ancillary_session_get_empty(mgr, i)) continue;
 
-    s = st_rte_zmalloc_socket(sizeof(*s), mt_socket_id(impl, MTL_PORT_P));
+    s = mt_rte_zmalloc_socket(sizeof(*s), mt_socket_id(impl, MTL_PORT_P));
     if (!s) {
       err("%s(%d), session malloc fail on %d\n", __func__, midx, i);
       tx_ancillary_session_put(mgr, i);
@@ -1214,14 +1214,14 @@ static struct st_tx_ancillary_session_impl* tx_ancillary_sessions_mgr_attach(
     if (ret < 0) {
       err("%s(%d), init fail on %d\n", __func__, midx, i);
       tx_ancillary_session_put(mgr, i);
-      st_rte_free(s);
+      mt_rte_free(s);
       return NULL;
     }
     ret = tx_ancillary_session_attach(mgr->parnet, mgr, s, ops);
     if (ret < 0) {
       err("%s(%d), attach fail on %d\n", __func__, midx, i);
       tx_ancillary_session_put(mgr, i);
-      st_rte_free(s);
+      mt_rte_free(s);
       return NULL;
     }
 
@@ -1248,7 +1248,7 @@ static int tx_ancillary_sessions_mgr_detach(struct st_tx_ancillary_sessions_mgr*
 
   tx_ancillary_session_detach(mgr, s);
   mgr->sessions[idx] = NULL;
-  st_rte_free(s);
+  mt_rte_free(s);
 
   tx_ancillary_session_put(mgr, idx);
 
@@ -1405,26 +1405,26 @@ st40_tx_handle st40_tx_create(mtl_handle mt, struct st40_tx_ops* ops) {
     return NULL;
   }
 
-  st_pthread_mutex_lock(&impl->tx_anc_mgr_mutex);
+  mt_pthread_mutex_lock(&impl->tx_anc_mgr_mutex);
   ret = st_tx_anc_init(impl);
-  st_pthread_mutex_unlock(&impl->tx_anc_mgr_mutex);
+  mt_pthread_mutex_unlock(&impl->tx_anc_mgr_mutex);
   if (ret < 0) {
     err("%s, st_tx_anc_init fail %d\n", __func__, ret);
     return NULL;
   }
 
-  s_impl = st_rte_zmalloc_socket(sizeof(*s_impl), mt_socket_id(impl, MTL_PORT_P));
+  s_impl = mt_rte_zmalloc_socket(sizeof(*s_impl), mt_socket_id(impl, MTL_PORT_P));
   if (!s_impl) {
     err("%s, s_impl malloc fail\n", __func__);
     return NULL;
   }
 
-  st_pthread_mutex_lock(&impl->tx_anc_mgr_mutex);
+  mt_pthread_mutex_lock(&impl->tx_anc_mgr_mutex);
   s = tx_ancillary_sessions_mgr_attach(&impl->tx_anc_mgr, ops);
-  st_pthread_mutex_unlock(&impl->tx_anc_mgr_mutex);
+  mt_pthread_mutex_unlock(&impl->tx_anc_mgr_mutex);
   if (!s) {
     err("%s, tx_ancillary_sessions_mgr_attach fail\n", __func__);
-    st_rte_free(s_impl);
+    mt_rte_free(s_impl);
     return NULL;
   }
 
@@ -1529,12 +1529,12 @@ int st40_tx_free(st40_tx_handle handle) {
   ret = tx_ancillary_sessions_mgr_detach(&impl->tx_anc_mgr, s);
   if (ret < 0) err("%s(%d), tx_ancillary_sessions_mgr_detach fail\n", __func__, idx);
 
-  st_rte_free(s_impl);
+  mt_rte_free(s_impl);
 
   /* update max idx */
-  st_pthread_mutex_lock(&impl->tx_anc_mgr_mutex);
+  mt_pthread_mutex_lock(&impl->tx_anc_mgr_mutex);
   tx_ancillary_sessions_mgr_update(&impl->tx_anc_mgr);
-  st_pthread_mutex_unlock(&impl->tx_anc_mgr_mutex);
+  mt_pthread_mutex_unlock(&impl->tx_anc_mgr_mutex);
 
   rte_atomic32_dec(&impl->st40_tx_sessions_cnt);
   info("%s, succ on session %d\n", __func__, idx);

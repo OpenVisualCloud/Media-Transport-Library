@@ -460,7 +460,7 @@ static struct st_rx_ancillary_session_impl* rx_ancillary_sessions_mgr_attach(
   for (int i = 0; i < ST_MAX_RX_ANC_SESSIONS; i++) {
     if (!rx_ancillary_session_get_empty(mgr, i)) continue;
 
-    s = st_rte_zmalloc_socket(sizeof(*s), mt_socket_id(impl, MTL_PORT_P));
+    s = mt_rte_zmalloc_socket(sizeof(*s), mt_socket_id(impl, MTL_PORT_P));
     if (!s) {
       err("%s(%d), session malloc fail on %d\n", __func__, midx, i);
       rx_ancillary_session_put(mgr, i);
@@ -470,14 +470,14 @@ static struct st_rx_ancillary_session_impl* rx_ancillary_sessions_mgr_attach(
     if (ret < 0) {
       err("%s(%d), init fail on %d\n", __func__, midx, i);
       rx_ancillary_session_put(mgr, i);
-      st_rte_free(s);
+      mt_rte_free(s);
       return NULL;
     }
     ret = rx_ancillary_session_attach(mgr->parnet, mgr, s, ops);
     if (ret < 0) {
       err("%s(%d), attach fail on %d\n", __func__, midx, i);
       rx_ancillary_session_put(mgr, i);
-      st_rte_free(s);
+      mt_rte_free(s);
       return NULL;
     }
 
@@ -504,7 +504,7 @@ static int rx_ancillary_sessions_mgr_detach(struct st_rx_ancillary_sessions_mgr*
 
   rx_ancillary_session_detach(mgr->parnet, s);
   mgr->sessions[idx] = NULL;
-  st_rte_free(s);
+  mt_rte_free(s);
 
   rx_ancillary_session_put(mgr, idx);
 
@@ -632,26 +632,26 @@ st40_rx_handle st40_rx_create(mtl_handle mt, struct st40_rx_ops* ops) {
     return NULL;
   }
 
-  st_pthread_mutex_lock(&impl->rx_anc_mgr_mutex);
+  mt_pthread_mutex_lock(&impl->rx_anc_mgr_mutex);
   ret = st_rx_anc_init(impl);
-  st_pthread_mutex_unlock(&impl->rx_anc_mgr_mutex);
+  mt_pthread_mutex_unlock(&impl->rx_anc_mgr_mutex);
   if (ret < 0) {
     err("%s, st_rx_audio_init fail %d\n", __func__, ret);
     return NULL;
   }
 
-  s_impl = st_rte_zmalloc_socket(sizeof(*s_impl), mt_socket_id(impl, MTL_PORT_P));
+  s_impl = mt_rte_zmalloc_socket(sizeof(*s_impl), mt_socket_id(impl, MTL_PORT_P));
   if (!s_impl) {
     err("%s, s_impl malloc fail\n", __func__);
     return NULL;
   }
 
-  st_pthread_mutex_lock(&impl->rx_anc_mgr_mutex);
+  mt_pthread_mutex_lock(&impl->rx_anc_mgr_mutex);
   s = rx_ancillary_sessions_mgr_attach(&impl->rx_anc_mgr, ops);
-  st_pthread_mutex_unlock(&impl->rx_anc_mgr_mutex);
+  mt_pthread_mutex_unlock(&impl->rx_anc_mgr_mutex);
   if (!s) {
     err("%s, rx_ancillary_sessions_mgr_attach fail\n", __func__);
-    st_rte_free(s_impl);
+    mt_rte_free(s_impl);
     return NULL;
   }
 
@@ -711,12 +711,12 @@ int st40_rx_free(st40_rx_handle handle) {
   ret = rx_ancillary_sessions_mgr_detach(&impl->rx_anc_mgr, s);
   if (ret < 0) err("%s(%d), rx_ancillary_sessions_mgr_detach fail\n", __func__, idx);
 
-  st_rte_free(s_impl);
+  mt_rte_free(s_impl);
 
   /* update max idx */
-  st_pthread_mutex_lock(&impl->rx_anc_mgr_mutex);
+  mt_pthread_mutex_lock(&impl->rx_anc_mgr_mutex);
   rx_ancillary_sessions_mgr_update(&impl->rx_anc_mgr);
-  st_pthread_mutex_unlock(&impl->rx_anc_mgr_mutex);
+  mt_pthread_mutex_unlock(&impl->rx_anc_mgr_mutex);
 
   rte_atomic32_dec(&impl->st40_rx_sessions_cnt);
   info("%s, succ on session %d\n", __func__, idx);

@@ -9,32 +9,32 @@
 
 #ifdef MTL_HAS_ASAN
 /* additional memleak check for rte_malloc since dpdk asan not support this */
-static int g_st_rte_malloc_cnt;
+static int g_mt_rte_malloc_cnt;
 
-int st_asan_check(void) {
-  if (g_st_rte_malloc_cnt != 0) {
+int mt_asan_check(void) {
+  if (g_mt_rte_malloc_cnt != 0) {
     rte_panic("%s, detect not free memory by rte_malloc, error cnt %d\n", __func__,
-              g_st_rte_malloc_cnt);
+              g_mt_rte_malloc_cnt);
   }
 
   return 0;
 }
 
-void* st_rte_malloc_socket(size_t sz, int socket) {
-  void* p = rte_malloc_socket(ST_DPDK_LIB_NAME, sz, RTE_CACHE_LINE_SIZE, socket);
-  if (p) g_st_rte_malloc_cnt++;
+void* mt_rte_malloc_socket(size_t sz, int socket) {
+  void* p = rte_malloc_socket(MT_DPDK_LIB_NAME, sz, RTE_CACHE_LINE_SIZE, socket);
+  if (p) g_mt_rte_malloc_cnt++;
   return p;
 }
 
-void* st_rte_zmalloc_socket(size_t sz, int socket) {
-  void* p = rte_zmalloc_socket(ST_DPDK_LIB_NAME, sz, RTE_CACHE_LINE_SIZE, socket);
-  if (p) g_st_rte_malloc_cnt++;
+void* mt_rte_zmalloc_socket(size_t sz, int socket) {
+  void* p = rte_zmalloc_socket(MT_DPDK_LIB_NAME, sz, RTE_CACHE_LINE_SIZE, socket);
+  if (p) g_mt_rte_malloc_cnt++;
   return p;
 }
 
-void st_rte_free(void* p) {
+void mt_rte_free(void* p) {
   rte_free(p);
-  g_st_rte_malloc_cnt--;
+  g_mt_rte_malloc_cnt--;
 }
 #endif
 
@@ -328,11 +328,11 @@ uint16_t st_rf1071_check_sum(uint8_t* p, size_t len, bool convert) {
 }
 
 struct st_u64_fifo* st_u64_fifo_init(int size, int soc_id) {
-  struct st_u64_fifo* fifo = st_rte_zmalloc_socket(sizeof(*fifo), soc_id);
+  struct st_u64_fifo* fifo = mt_rte_zmalloc_socket(sizeof(*fifo), soc_id);
   if (!fifo) return NULL;
-  uint64_t* data = st_rte_zmalloc_socket(sizeof(*data) * size, soc_id);
+  uint64_t* data = mt_rte_zmalloc_socket(sizeof(*data) * size, soc_id);
   if (!data) {
-    st_rte_free(fifo);
+    mt_rte_free(fifo);
     return NULL;
   }
 
@@ -346,8 +346,8 @@ int st_u64_fifo_uinit(struct st_u64_fifo* fifo) {
     err("%s, still has %d items\n", __func__, fifo->used);
     return -EIO;
   }
-  st_rte_free(fifo->data);
-  st_rte_free(fifo);
+  mt_rte_free(fifo->data);
+  mt_rte_free(fifo);
   return 0;
 }
 
@@ -378,31 +378,31 @@ int st_u64_fifo_get(struct st_u64_fifo* fifo, uint64_t* item) {
 }
 
 struct st_cvt_dma_ctx* st_cvt_dma_ctx_init(int fifo_size, int soc_id, int type_num) {
-  struct st_cvt_dma_ctx* ctx = st_rte_zmalloc_socket(sizeof(*ctx), soc_id);
+  struct st_cvt_dma_ctx* ctx = mt_rte_zmalloc_socket(sizeof(*ctx), soc_id);
   if (!ctx) return NULL;
 
   ctx->fifo = st_u64_fifo_init(fifo_size, soc_id);
   if (!ctx->fifo) goto fail;
-  ctx->tran = st_rte_zmalloc_socket(sizeof(*ctx->tran) * type_num, soc_id);
+  ctx->tran = mt_rte_zmalloc_socket(sizeof(*ctx->tran) * type_num, soc_id);
   if (!ctx->tran) goto fail;
-  ctx->done = st_rte_zmalloc_socket(sizeof(*ctx->done) * type_num, soc_id);
+  ctx->done = mt_rte_zmalloc_socket(sizeof(*ctx->done) * type_num, soc_id);
   if (!ctx->done) goto fail;
 
   return ctx;
 
 fail:
   if (ctx->fifo) st_u64_fifo_uinit(ctx->fifo);
-  if (ctx->tran) st_rte_free(ctx->tran);
-  if (ctx->done) st_rte_free(ctx->done);
-  st_rte_free(ctx);
+  if (ctx->tran) mt_rte_free(ctx->tran);
+  if (ctx->done) mt_rte_free(ctx->done);
+  mt_rte_free(ctx);
   return NULL;
 }
 
 int st_cvt_dma_ctx_uinit(struct st_cvt_dma_ctx* ctx) {
   st_u64_fifo_uinit(ctx->fifo);
-  st_rte_free(ctx->tran);
-  st_rte_free(ctx->done);
-  st_rte_free(ctx);
+  mt_rte_free(ctx->tran);
+  mt_rte_free(ctx->done);
+  mt_rte_free(ctx);
   return 0;
 }
 
@@ -490,7 +490,7 @@ int st_frame_trans_uinit(struct st_frame_trans* frame) {
   if (frame->addr) {
     if (frame->flags & ST_FT_FLAG_RTE_MALLOC) {
       dbg("%s(%d), free rte mem\n", __func__, idx);
-      st_rte_free(frame->addr);
+      mt_rte_free(frame->addr);
     }
     frame->addr = NULL;
   }

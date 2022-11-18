@@ -56,7 +56,7 @@ static int tx_audio_session_free_frames(struct st_tx_audio_session_impl* s) {
       st_frame_trans_uinit(frame);
     }
 
-    st_rte_free(s->st30_frames);
+    mt_rte_free(s->st30_frames);
     s->st30_frames = NULL;
   }
 
@@ -77,7 +77,7 @@ static int tx_audio_session_alloc_frames(struct mtl_main_impl* impl,
   }
 
   s->st30_frames =
-      st_rte_zmalloc_socket(sizeof(*s->st30_frames) * s->st30_frames_cnt, soc_id);
+      mt_rte_zmalloc_socket(sizeof(*s->st30_frames) * s->st30_frames_cnt, soc_id);
   if (!s->st30_frames) {
     err("%s(%d), st30_frames malloc fail\n", __func__, idx);
     return -ENOMEM;
@@ -92,7 +92,7 @@ static int tx_audio_session_alloc_frames(struct mtl_main_impl* impl,
   for (int i = 0; i < s->st30_frames_cnt; i++) {
     frame_info = &s->st30_frames[i];
 
-    void* frame = st_rte_zmalloc_socket(s->st30_frame_size, soc_id);
+    void* frame = mt_rte_zmalloc_socket(s->st30_frame_size, soc_id);
     if (!frame) {
       err("%s(%d), rte_malloc %u fail at %d\n", __func__, idx, s->st30_frame_size, i);
       tx_audio_session_free_frames(s);
@@ -1168,7 +1168,7 @@ static struct st_tx_audio_session_impl* tx_audio_sessions_mgr_attach(
   for (int i = 0; i < ST_MAX_TX_AUDIO_SESSIONS; i++) {
     if (!tx_audio_session_get_empty(mgr, i)) continue;
 
-    s = st_rte_zmalloc_socket(sizeof(*s), mt_socket_id(impl, MTL_PORT_P));
+    s = mt_rte_zmalloc_socket(sizeof(*s), mt_socket_id(impl, MTL_PORT_P));
     if (!s) {
       err("%s(%d), session malloc fail on %d\n", __func__, midx, i);
       tx_audio_session_put(mgr, i);
@@ -1178,14 +1178,14 @@ static struct st_tx_audio_session_impl* tx_audio_sessions_mgr_attach(
     if (ret < 0) {
       err("%s(%d), init fail on %d\n", __func__, midx, i);
       tx_audio_session_put(mgr, i);
-      st_rte_free(s);
+      mt_rte_free(s);
       return NULL;
     }
     ret = tx_audio_session_attach(mgr->parnet, mgr, s, ops);
     if (ret < 0) {
       err("%s(%d), attach fail on %d\n", __func__, midx, i);
       tx_audio_session_put(mgr, i);
-      st_rte_free(s);
+      mt_rte_free(s);
       return NULL;
     }
 
@@ -1212,7 +1212,7 @@ static int tx_audio_sessions_mgr_detach(struct st_tx_audio_sessions_mgr* mgr,
 
   tx_audio_session_detach(mgr, s);
   mgr->sessions[idx] = NULL;
-  st_rte_free(s);
+  mt_rte_free(s);
 
   tx_audio_session_put(mgr, idx);
 
@@ -1372,26 +1372,26 @@ st30_tx_handle st30_tx_create(mtl_handle mt, struct st30_tx_ops* ops) {
     return NULL;
   }
 
-  st_pthread_mutex_lock(&impl->tx_a_mgr_mutex);
+  mt_pthread_mutex_lock(&impl->tx_a_mgr_mutex);
   ret = st_tx_audio_init(impl);
-  st_pthread_mutex_unlock(&impl->tx_a_mgr_mutex);
+  mt_pthread_mutex_unlock(&impl->tx_a_mgr_mutex);
   if (ret < 0) {
     err("%s, st_tx_audio_init fail %d\n", __func__, ret);
     return NULL;
   }
 
-  s_impl = st_rte_zmalloc_socket(sizeof(*s_impl), mt_socket_id(impl, MTL_PORT_P));
+  s_impl = mt_rte_zmalloc_socket(sizeof(*s_impl), mt_socket_id(impl, MTL_PORT_P));
   if (!s_impl) {
     err("%s, s_impl malloc fail\n", __func__);
     return NULL;
   }
 
-  st_pthread_mutex_lock(&impl->tx_a_mgr_mutex);
+  mt_pthread_mutex_lock(&impl->tx_a_mgr_mutex);
   s = tx_audio_sessions_mgr_attach(&impl->tx_a_mgr, ops);
-  st_pthread_mutex_unlock(&impl->tx_a_mgr_mutex);
+  mt_pthread_mutex_unlock(&impl->tx_a_mgr_mutex);
   if (!s) {
     err("%s, tx_audio_sessions_mgr_attach fail\n", __func__);
-    st_rte_free(s_impl);
+    mt_rte_free(s_impl);
     return NULL;
   }
 
@@ -1423,12 +1423,12 @@ int st30_tx_free(st30_tx_handle handle) {
   ret = tx_audio_sessions_mgr_detach(&impl->tx_a_mgr, s);
   if (ret < 0) err("%s(%d), st_tx_audio_sessions_mgr_deattach fail\n", __func__, idx);
 
-  st_rte_free(s_impl);
+  mt_rte_free(s_impl);
 
   /* update max idx */
-  st_pthread_mutex_lock(&impl->tx_a_mgr_mutex);
+  mt_pthread_mutex_lock(&impl->tx_a_mgr_mutex);
   tx_audio_sessions_mgr_update(&impl->tx_a_mgr);
-  st_pthread_mutex_unlock(&impl->tx_a_mgr_mutex);
+  mt_pthread_mutex_unlock(&impl->tx_a_mgr_mutex);
 
   rte_atomic32_dec(&impl->st30_tx_sessions_cnt);
   info("%s, succ on session %d\n", __func__, idx);

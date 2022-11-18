@@ -158,9 +158,9 @@ static void dev_stat(struct mtl_main_impl* impl) {
 }
 
 static void dev_stat_wakeup_thread(struct mtl_main_impl* impl) {
-  st_pthread_mutex_lock(&impl->stat_wake_mutex);
-  st_pthread_cond_signal(&impl->stat_wake_cond);
-  st_pthread_mutex_unlock(&impl->stat_wake_mutex);
+  mt_pthread_mutex_lock(&impl->stat_wake_mutex);
+  mt_pthread_cond_signal(&impl->stat_wake_cond);
+  mt_pthread_mutex_unlock(&impl->stat_wake_mutex);
 }
 
 static void dev_stat_alarm_handler(void* param) {
@@ -180,10 +180,10 @@ static void* dev_stat_thread(void* arg) {
 
   info("%s, start\n", __func__);
   while (rte_atomic32_read(&impl->stat_stop) == 0) {
-    st_pthread_mutex_lock(&impl->stat_wake_mutex);
+    mt_pthread_mutex_lock(&impl->stat_wake_mutex);
     if (!rte_atomic32_read(&impl->stat_stop))
-      st_pthread_cond_wait(&impl->stat_wake_cond, &impl->stat_wake_mutex);
-    st_pthread_mutex_unlock(&impl->stat_wake_mutex);
+      mt_pthread_cond_wait(&impl->stat_wake_cond, &impl->stat_wake_mutex);
+    mt_pthread_mutex_unlock(&impl->stat_wake_mutex);
 
     if (!rte_atomic32_read(&impl->stat_stop)) dev_stat(impl);
   }
@@ -204,12 +204,12 @@ static int dev_eal_init(struct mtl_init_params* p, struct mt_kport_info* kport_i
 
   argc = 0;
 
-  argv[argc] = ST_DPDK_LIB_NAME;
+  argv[argc] = MT_DPDK_LIB_NAME;
   argc++;
 #ifndef WINDOWSENV
   argv[argc] = "--file-prefix";
   argc++;
-  argv[argc] = ST_DPDK_LIB_NAME;
+  argv[argc] = MT_DPDK_LIB_NAME;
   argc++;
   argv[argc] = "--match-allocations";
   argc++;
@@ -1037,14 +1037,14 @@ int dev_reset_port(struct mtl_main_impl* impl, enum mtl_port port) {
 
 static int dev_filelock_lock(struct mtl_main_impl* impl) {
   int fd = -1;
-  if (access(ST_FLOCK_PATH, F_OK) < 0) {
-    fd = open(ST_FLOCK_PATH, O_RDONLY | O_CREAT, 0666);
+  if (access(MT_FLOCK_PATH, F_OK) < 0) {
+    fd = open(MT_FLOCK_PATH, O_RDONLY | O_CREAT, 0666);
   } else {
-    fd = open(ST_FLOCK_PATH, O_RDONLY);
+    fd = open(MT_FLOCK_PATH, O_RDONLY);
   }
 
   if (fd < 0) {
-    err("%s, failed to open %s, %s\n", __func__, ST_FLOCK_PATH, strerror(errno));
+    err("%s, failed to open %s, %s\n", __func__, MT_FLOCK_PATH, strerror(errno));
     return -EIO;
   }
   impl->lcore_lock_fd = fd;
@@ -1090,7 +1090,7 @@ int st_dev_get_lcore(struct mtl_main_impl* impl, unsigned int* lcore) {
   do {
     cur_lcore = rte_get_next_lcore(cur_lcore, 1, 0);
 
-    if ((cur_lcore < RTE_MAX_LCORE) && st_socket_match(rte_lcore_to_socket_id(cur_lcore),
+    if ((cur_lcore < RTE_MAX_LCORE) && mt_socket_match(rte_lcore_to_socket_id(cur_lcore),
                                                        mt_socket_id(impl, MTL_PORT_P))) {
       if (!lcore_shm->lcores_active[cur_lcore]) {
         *lcore = cur_lcore;
@@ -1331,7 +1331,7 @@ static int dev_if_uinit_rx_queues(struct mt_interface* inf) {
     }
   }
 
-  st_rte_free(inf->rx_queues);
+  mt_rte_free(inf->rx_queues);
   inf->rx_queues = NULL;
 
   return 0;
@@ -1339,7 +1339,7 @@ static int dev_if_uinit_rx_queues(struct mt_interface* inf) {
 
 static int dev_if_init_rx_queues(struct mtl_main_impl* impl, struct mt_interface* inf) {
   struct mt_rx_queue* rx_queues =
-      st_rte_zmalloc_socket(sizeof(*rx_queues) * inf->max_rx_queues, inf->socket_id);
+      mt_rte_zmalloc_socket(sizeof(*rx_queues) * inf->max_rx_queues, inf->socket_id);
   if (!rx_queues) {
     err("%s(%d), rx_queues not alloc\n", __func__, inf->port);
     return -ENOMEM;
@@ -1395,7 +1395,7 @@ static int dev_if_init_rx_queues(struct mtl_main_impl* impl, struct mt_interface
     }
   }
   inf->rx_queues = rx_queues;
-  st_pthread_mutex_init(&inf->rx_queues_mutex, NULL);
+  mt_pthread_mutex_init(&inf->rx_queues_mutex, NULL);
 
   return 0;
 }
@@ -1413,7 +1413,7 @@ static int dev_if_uinit_tx_queues(struct mt_interface* inf) {
     }
   }
 
-  st_rte_free(inf->tx_queues);
+  mt_rte_free(inf->tx_queues);
   inf->tx_queues = NULL;
 
   return 0;
@@ -1421,7 +1421,7 @@ static int dev_if_uinit_tx_queues(struct mt_interface* inf) {
 
 static int dev_if_init_tx_queues(struct mtl_main_impl* impl, struct mt_interface* inf) {
   struct mt_tx_queue* tx_queues =
-      st_rte_zmalloc_socket(sizeof(*tx_queues) * inf->max_tx_queues, inf->socket_id);
+      mt_rte_zmalloc_socket(sizeof(*tx_queues) * inf->max_tx_queues, inf->socket_id);
   if (!tx_queues) {
     err("%s(%d), tx_queues not alloc\n", __func__, inf->port);
     return -ENOMEM;
@@ -1432,7 +1432,7 @@ static int dev_if_init_tx_queues(struct mtl_main_impl* impl, struct mt_interface
     tx_queues[q].rl_shapers_mapping = -1;
   }
   inf->tx_queues = tx_queues;
-  st_pthread_mutex_init(&inf->tx_queues_mutex, NULL);
+  mt_pthread_mutex_init(&inf->tx_queues_mutex, NULL);
 
   return 0;
 }
@@ -1487,7 +1487,7 @@ int st_dev_requemt_tx_queue(struct mtl_main_impl* impl, enum mtl_port port,
   struct mt_tx_queue* tx_queue;
   int ret;
 
-  st_pthread_mutex_lock(&inf->tx_queues_mutex);
+  mt_pthread_mutex_lock(&inf->tx_queues_mutex);
   for (q = 0; q < inf->max_tx_queues; q++) {
     tx_queue = &inf->tx_queues[q];
     if (!tx_queue->active) {
@@ -1501,7 +1501,7 @@ int st_dev_requemt_tx_queue(struct mtl_main_impl* impl, enum mtl_port port,
       tx_queue->bps = bytes_per_sec;
       tx_queue->active = true;
       *queue_id = q;
-      st_pthread_mutex_unlock(&inf->tx_queues_mutex);
+      mt_pthread_mutex_unlock(&inf->tx_queues_mutex);
       if (inf->tx_pacing_way == ST21_TX_PACING_WAY_RL)
         info("%s(%d), q %d with speed %" PRIu64 "\n", __func__, port, q, bytes_per_sec);
       else
@@ -1509,7 +1509,7 @@ int st_dev_requemt_tx_queue(struct mtl_main_impl* impl, enum mtl_port port,
       return 0;
     }
   }
-  st_pthread_mutex_unlock(&inf->tx_queues_mutex);
+  mt_pthread_mutex_unlock(&inf->tx_queues_mutex);
 
   err("%s(%d), fail to find free tx queue\n", __func__, port);
   return -ENOMEM;
@@ -1522,7 +1522,7 @@ int st_dev_requemt_rx_queue(struct mtl_main_impl* impl, enum mtl_port port,
   int ret;
   struct mt_rx_queue* rx_queue;
 
-  st_pthread_mutex_lock(&inf->rx_queues_mutex);
+  mt_pthread_mutex_lock(&inf->rx_queues_mutex);
   for (q = 0; q < inf->max_rx_queues; q++) {
     rx_queue = &inf->rx_queues[q];
     if (rx_queue->active) continue;
@@ -1534,7 +1534,7 @@ int st_dev_requemt_rx_queue(struct mtl_main_impl* impl, enum mtl_port port,
             inf->port_id, q, flow->hdr_split_mbuf_cb_priv, flow->hdr_split_mbuf_cb);
         if (ret < 0) {
           err("%s(%d), hdrs callback fail %d for queue %d\n", __func__, port, ret, q);
-          st_pthread_mutex_unlock(&inf->rx_queues_mutex);
+          mt_pthread_mutex_unlock(&inf->rx_queues_mutex);
           return -EIO;
         }
       }
@@ -1552,7 +1552,7 @@ int st_dev_requemt_rx_queue(struct mtl_main_impl* impl, enum mtl_port port,
         ret = st_socket_add_flow(impl, port, q, flow);
         if (ret < 0) {
           err("%s(%d), socket add flow fail for queue %d\n", __func__, port, q);
-          st_pthread_mutex_unlock(&inf->rx_queues_mutex);
+          mt_pthread_mutex_unlock(&inf->rx_queues_mutex);
           return -EIO;
         }
       } else {
@@ -1561,7 +1561,7 @@ int st_dev_requemt_rx_queue(struct mtl_main_impl* impl, enum mtl_port port,
         r_flow = dev_rx_queue_create_flow(inf, q, flow);
         if (!r_flow) {
           err("%s(%d), create flow fail for queue %d\n", __func__, port, q);
-          st_pthread_mutex_unlock(&inf->rx_queues_mutex);
+          mt_pthread_mutex_unlock(&inf->rx_queues_mutex);
           return -EIO;
         }
 
@@ -1574,19 +1574,19 @@ int st_dev_requemt_rx_queue(struct mtl_main_impl* impl, enum mtl_port port,
       ret = rte_eth_dev_rx_queue_start(inf->port_id, q);
       if (ret < 0) {
         err("%s(%d), start runtime rx queue %d fail %d\n", __func__, port, q, ret);
-        st_pthread_mutex_unlock(&inf->rx_queues_mutex);
+        mt_pthread_mutex_unlock(&inf->rx_queues_mutex);
         return -EIO;
       }
     }
     rx_queue->active = true;
-    st_pthread_mutex_unlock(&inf->rx_queues_mutex);
+    mt_pthread_mutex_unlock(&inf->rx_queues_mutex);
 
     dev_flush_rx_queue(inf, q);
     *queue_id = q;
     info("%s(%d), q %d\n", __func__, port, q);
     return 0;
   }
-  st_pthread_mutex_unlock(&inf->rx_queues_mutex);
+  mt_pthread_mutex_unlock(&inf->rx_queues_mutex);
 
   err("%s(%d), fail to find free rx queue for %s\n", __func__, port,
       flow && flow->hdr_split ? "hdr_split" : "normal");
@@ -1782,8 +1782,8 @@ int st_dev_create(struct mtl_main_impl* impl) {
   }
 
   /* rte_eth_stats_get fail in alram context for VF, move it to thread */
-  st_pthread_mutex_init(&impl->stat_wake_mutex, NULL);
-  st_pthread_cond_init(&impl->stat_wake_cond, NULL);
+  mt_pthread_mutex_init(&impl->stat_wake_mutex, NULL);
+  mt_pthread_cond_init(&impl->stat_wake_cond, NULL);
   rte_atomic32_set(&impl->stat_stop, 0);
   pthread_create(&impl->stat_tid, NULL, dev_stat_thread, impl);
   if (!p->dump_period_s) p->dump_period_s = ST_DEV_STAT_INTERVAL_S;
@@ -1813,8 +1813,8 @@ int st_dev_free(struct mtl_main_impl* impl) {
     pthread_join(impl->stat_tid, NULL);
     impl->stat_tid = 0;
   }
-  st_pthread_mutex_destroy(&impl->stat_wake_mutex);
-  st_pthread_cond_destroy(&impl->stat_wake_cond);
+  mt_pthread_mutex_destroy(&impl->stat_wake_mutex);
+  mt_pthread_cond_destroy(&impl->stat_wake_cond);
 
   mt_sch_put(impl->main_sch, 0);
 

@@ -52,13 +52,13 @@ static int rx_st22p_frame_ready(void* priv, void* frame,
 
   if (!ctx->ready) return -EBUSY; /* not ready */
 
-  st_pthread_mutex_lock(&ctx->lock);
+  mt_pthread_mutex_lock(&ctx->lock);
   framebuff =
       rx_st22p_next_available(ctx, ctx->framebuff_producer_idx, ST22P_RX_FRAME_FREE);
   /* not any free frame */
   if (!framebuff) {
     rte_atomic32_inc(&ctx->stat_busy);
-    st_pthread_mutex_unlock(&ctx->lock);
+    mt_pthread_mutex_unlock(&ctx->lock);
     return -EBUSY;
   }
 
@@ -72,7 +72,7 @@ static int rx_st22p_frame_ready(void* priv, void* frame,
   framebuff->stat = ST22P_RX_FRAME_READY;
   /* point to next */
   ctx->framebuff_producer_idx = rx_st22p_next_idx(ctx, framebuff->idx);
-  st_pthread_mutex_unlock(&ctx->lock);
+  mt_pthread_mutex_unlock(&ctx->lock);
 
   dbg("%s(%d), frame %u succ\n", __func__, ctx->idx, framebuff->idx);
   st22_decode_notify_frame_ready(ctx->decode_impl);
@@ -102,19 +102,19 @@ static struct st22_decode_frame_meta* rx_st22p_decode_get_frame(void* priv) {
 
   if (!ctx->ready) return NULL; /* not ready */
 
-  st_pthread_mutex_lock(&ctx->lock);
+  mt_pthread_mutex_lock(&ctx->lock);
   framebuff =
       rx_st22p_next_available(ctx, ctx->framebuff_decode_idx, ST22P_RX_FRAME_READY);
   /* not any ready frame */
   if (!framebuff) {
-    st_pthread_mutex_unlock(&ctx->lock);
+    mt_pthread_mutex_unlock(&ctx->lock);
     return NULL;
   }
 
   framebuff->stat = ST22P_RX_FRAME_IN_DECODING;
   /* point to next */
   ctx->framebuff_decode_idx = rx_st22p_next_idx(ctx, framebuff->idx);
-  st_pthread_mutex_unlock(&ctx->lock);
+  mt_pthread_mutex_unlock(&ctx->lock);
 
   dbg("%s(%d), frame %u succ\n", __func__, idx, framebuff->idx);
   return &framebuff->decode_frame;
@@ -243,11 +243,11 @@ static int rx_st22p_uinit_dst_fbs(struct st22p_rx_ctx* ctx) {
   if (ctx->framebuffs) {
     for (uint16_t i = 0; i < ctx->framebuff_cnt; i++) {
       if (ctx->framebuffs[i].dst.addr[0]) {
-        st_rte_free(ctx->framebuffs[i].dst.addr[0]);
+        mt_rte_free(ctx->framebuffs[i].dst.addr[0]);
         ctx->framebuffs[i].dst.addr[0] = NULL;
       }
     }
-    st_rte_free(ctx->framebuffs);
+    mt_rte_free(ctx->framebuffs);
     ctx->framebuffs = NULL;
   }
 
@@ -263,7 +263,7 @@ static int rx_st22p_init_dst_fbs(struct mtl_main_impl* impl, struct st22p_rx_ctx
   size_t dst_size = ctx->dst_size;
 
   ctx->framebuff_cnt = ops->framebuff_cnt;
-  frames = st_rte_zmalloc_socket(sizeof(*frames) * ctx->framebuff_cnt, soc_id);
+  frames = mt_rte_zmalloc_socket(sizeof(*frames) * ctx->framebuff_cnt, soc_id);
   if (!frames) {
     err("%s(%d), frames malloc fail\n", __func__, idx);
     return -ENOMEM;
@@ -273,7 +273,7 @@ static int rx_st22p_init_dst_fbs(struct mtl_main_impl* impl, struct st22p_rx_ctx
   for (uint16_t i = 0; i < ctx->framebuff_cnt; i++) {
     frames[i].stat = ST22P_RX_FRAME_FREE;
     frames[i].idx = i;
-    dst = st_rte_zmalloc_socket(dst_size, soc_id);
+    dst = mt_rte_zmalloc_socket(dst_size, soc_id);
     if (!dst) {
       err("%s(%d), src frame malloc fail at %u\n", __func__, idx, i);
       rx_st22p_uinit_dst_fbs(ctx);
@@ -334,19 +334,19 @@ struct st_frame* st22p_rx_get_frame(st22p_rx_handle handle) {
 
   if (!ctx->ready) return NULL; /* not ready */
 
-  st_pthread_mutex_lock(&ctx->lock);
+  mt_pthread_mutex_lock(&ctx->lock);
   framebuff =
       rx_st22p_next_available(ctx, ctx->framebuff_consumer_idx, ST22P_RX_FRAME_DECODED);
   /* not any decoded frame */
   if (!framebuff) {
-    st_pthread_mutex_unlock(&ctx->lock);
+    mt_pthread_mutex_unlock(&ctx->lock);
     return NULL;
   }
 
   framebuff->stat = ST22P_RX_FRAME_IN_USER;
   /* point to next */
   ctx->framebuff_consumer_idx = rx_st22p_next_idx(ctx, framebuff->idx);
-  st_pthread_mutex_unlock(&ctx->lock);
+  mt_pthread_mutex_unlock(&ctx->lock);
 
   dbg("%s(%d), frame %u succ\n", __func__, idx, framebuff->idx);
   return &framebuff->dst;
@@ -410,7 +410,7 @@ st22p_rx_handle st22p_rx_create(mtl_handle mt, struct st22p_rx_ops* ops) {
     return NULL;
   }
 
-  ctx = st_rte_zmalloc_socket(sizeof(*ctx), mt_socket_id(impl, MTL_PORT_P));
+  ctx = mt_rte_zmalloc_socket(sizeof(*ctx), mt_socket_id(impl, MTL_PORT_P));
   if (!ctx) {
     err("%s, ctx malloc fail\n", __func__);
     return NULL;
@@ -427,7 +427,7 @@ st22p_rx_handle st22p_rx_create(mtl_handle mt, struct st22p_rx_ops* ops) {
   if (!ctx->max_codestream_size) ctx->max_codestream_size = dst_size;
   rte_atomic32_set(&ctx->stat_decode_fail, 0);
   rte_atomic32_set(&ctx->stat_busy, 0);
-  st_pthread_mutex_init(&ctx->lock, NULL);
+  mt_pthread_mutex_init(&ctx->lock, NULL);
 
   /* copy ops */
   strncpy(ctx->ops_name, ops->name, ST_MAX_NAME_LEN - 1);
@@ -489,8 +489,8 @@ int st22p_rx_free(st22p_rx_handle handle) {
   }
   rx_st22p_uinit_dst_fbs(ctx);
 
-  st_pthread_mutex_destroy(&ctx->lock);
-  st_rte_free(ctx);
+  mt_pthread_mutex_destroy(&ctx->lock);
+  mt_rte_free(ctx);
 
   return 0;
 }

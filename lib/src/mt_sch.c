@@ -10,25 +10,25 @@
 #include "st2110/st_tx_video_session.h"
 
 static inline void sch_mgr_lock(struct mt_sch_mgr* mgr) {
-  st_pthread_mutex_lock(&mgr->mgr_mutex);
+  mt_pthread_mutex_lock(&mgr->mgr_mutex);
 }
 
 static inline void sch_mgr_unlock(struct mt_sch_mgr* mgr) {
-  st_pthread_mutex_unlock(&mgr->mgr_mutex);
+  mt_pthread_mutex_unlock(&mgr->mgr_mutex);
 }
 
 static inline void sch_lock(struct mt_sch_impl* sch) {
-  st_pthread_mutex_lock(&sch->mutex);
+  mt_pthread_mutex_lock(&sch->mutex);
 }
 
 static inline void sch_unlock(struct mt_sch_impl* sch) {
-  st_pthread_mutex_unlock(&sch->mutex);
+  mt_pthread_mutex_unlock(&sch->mutex);
 }
 
 static void sch_sleep_wakeup(struct mt_sch_impl* sch) {
-  st_pthread_mutex_lock(&sch->sleep_wake_mutex);
-  st_pthread_cond_signal(&sch->sleep_wake_cond);
-  st_pthread_mutex_unlock(&sch->sleep_wake_mutex);
+  mt_pthread_mutex_lock(&sch->sleep_wake_mutex);
+  mt_pthread_cond_signal(&sch->sleep_wake_cond);
+  mt_pthread_mutex_unlock(&sch->sleep_wake_mutex);
 }
 
 static void sch_sleep_alarm_handler(void* param) {
@@ -63,13 +63,13 @@ static int sch_tasklet_sleep(struct mtl_main_impl* impl, struct mt_sch_impl* sch
     mt_sleep_ms(0);
   } else {
     struct timespec abs_time;
-    clock_gettime(ST_THREAD_TIMEDWAIT_CLOCK_ID, &abs_time);
+    clock_gettime(MT_THREAD_TIMEDWAIT_CLOCK_ID, &abs_time);
     abs_time.tv_sec += 1; /* timeout 1s */
 
     rte_eal_alarm_set(sleep_us, sch_sleep_alarm_handler, sch);
-    st_pthread_mutex_lock(&sch->sleep_wake_mutex);
-    st_pthread_cond_timedwait(&sch->sleep_wake_cond, &sch->sleep_wake_mutex, &abs_time);
-    st_pthread_mutex_unlock(&sch->sleep_wake_mutex);
+    mt_pthread_mutex_lock(&sch->sleep_wake_mutex);
+    mt_pthread_cond_timedwait(&sch->sleep_wake_cond, &sch->sleep_wake_mutex, &abs_time);
+    mt_pthread_mutex_unlock(&sch->sleep_wake_mutex);
   }
   uint64_t end = mt_get_tsc(impl);
   uint64_t delta = end - start;
@@ -389,7 +389,7 @@ int mt_sch_unregister_tasklet(struct mt_sch_tasklet_impl* tasklet) {
   sch->tasklet[idx] = NULL;
   info("%s(%d), tasklet %s unregistered at slot %d\n", __func__, sch_idx, tasklet->name,
        idx);
-  st_rte_free(tasklet);
+  mt_rte_free(tasklet);
 
   int max_idx = 0;
   for (int i = 0; i < MT_MAX_TASKLET_PER_SCH; i++) {
@@ -414,7 +414,7 @@ struct mt_sch_tasklet_impl* mt_sch_register_tasklet(
     if (sch->tasklet[i]) continue;
 
     /* find one empty tasklet slot */
-    tasklet = st_rte_zmalloc_socket(sizeof(*tasklet), mt_socket_id(impl, MTL_PORT_P));
+    tasklet = mt_rte_zmalloc_socket(sizeof(*tasklet), mt_socket_id(impl, MTL_PORT_P));
     if (!tasklet) {
       err("%s(%d), tasklet malloc fail on %d\n", __func__, idx, i);
       sch_unlock(sch);
@@ -450,11 +450,11 @@ int mt_sch_mrg_init(struct mtl_main_impl* impl, int data_quota_mbs_limit) {
   struct mt_sch_impl* sch;
   struct mt_sch_mgr* mgr = mt_sch_get_mgr(impl);
 
-  st_pthread_mutex_init(&mgr->mgr_mutex, NULL);
+  mt_pthread_mutex_init(&mgr->mgr_mutex, NULL);
 
   for (int sch_idx = 0; sch_idx < MT_MAX_SCH_NUM; sch_idx++) {
     sch = mt_sch_instance(impl, sch_idx);
-    st_pthread_mutex_init(&sch->mutex, NULL);
+    mt_pthread_mutex_init(&sch->mutex, NULL);
     sch->parnet = impl;
     sch->idx = sch_idx;
     rte_atomic32_set(&sch->started, 0);
@@ -467,20 +467,20 @@ int mt_sch_mrg_init(struct mtl_main_impl* impl, int data_quota_mbs_limit) {
 
     /* sleep info init */
     sch->allow_sleep = mt_tasklet_has_sleep(impl);
-#if ST_THREAD_TIMEDWAIT_CLOCK_ID != CLOCK_REALTIME
+#if MT_THREAD_TIMEDWAIT_CLOCK_ID != CLOCK_REALTIME
     pthread_condattr_t attr;
     pthread_condattr_init(&attr);
-    pthread_condattr_setclock(&attr, ST_THREAD_TIMEDWAIT_CLOCK_ID);
-    st_pthread_cond_init(&sch->sleep_wake_cond, &attr);
+    pthread_condattr_setclock(&attr, MT_THREAD_TIMEDWAIT_CLOCK_ID);
+    mt_pthread_cond_init(&sch->sleep_wake_cond, &attr);
 #else
-    st_pthread_cond_init(&sch->sleep_wake_cond, NULL);
+    mt_pthread_cond_init(&sch->sleep_wake_cond, NULL);
 #endif
-    st_pthread_mutex_init(&sch->sleep_wake_mutex, NULL);
+    mt_pthread_mutex_init(&sch->sleep_wake_mutex, NULL);
 
     sch->stat_sleep_ns_min = -1;
     /* init mgr lock for video */
-    st_pthread_mutex_init(&sch->tx_video_mgr_mutex, NULL);
-    st_pthread_mutex_init(&sch->rx_video_mgr_mutex, NULL);
+    mt_pthread_mutex_init(&sch->tx_video_mgr_mutex, NULL);
+    mt_pthread_mutex_init(&sch->rx_video_mgr_mutex, NULL);
   }
 
   info("%s, succ with data quota %d M\n", __func__, data_quota_mbs_limit);
@@ -494,16 +494,16 @@ int mt_sch_mrg_uinit(struct mtl_main_impl* impl) {
   for (int sch_idx = 0; sch_idx < MT_MAX_SCH_NUM; sch_idx++) {
     sch = mt_sch_instance(impl, sch_idx);
 
-    st_pthread_mutex_destroy(&sch->tx_video_mgr_mutex);
-    st_pthread_mutex_destroy(&sch->rx_video_mgr_mutex);
+    mt_pthread_mutex_destroy(&sch->tx_video_mgr_mutex);
+    mt_pthread_mutex_destroy(&sch->rx_video_mgr_mutex);
 
-    st_pthread_mutex_destroy(&sch->sleep_wake_mutex);
-    st_pthread_cond_destroy(&sch->sleep_wake_cond);
+    mt_pthread_mutex_destroy(&sch->sleep_wake_mutex);
+    mt_pthread_cond_destroy(&sch->sleep_wake_cond);
 
-    st_pthread_mutex_destroy(&sch->mutex);
+    mt_pthread_mutex_destroy(&sch->mutex);
   }
 
-  st_pthread_mutex_destroy(&mgr->mgr_mutex);
+  mt_pthread_mutex_destroy(&mgr->mgr_mutex);
   return 0;
 };
 
@@ -547,13 +547,13 @@ int mt_sch_put(struct mt_sch_impl* sch, int quota_mbs) {
     if (ret < 0) {
       err("%s(%d), sch_stop fail %d\n", __func__, sidx, ret);
     }
-    st_pthread_mutex_lock(&sch->tx_video_mgr_mutex);
+    mt_pthread_mutex_lock(&sch->tx_video_mgr_mutex);
     st_tx_video_sessions_sch_uinit(impl, sch);
-    st_pthread_mutex_unlock(&sch->tx_video_mgr_mutex);
+    mt_pthread_mutex_unlock(&sch->tx_video_mgr_mutex);
 
-    st_pthread_mutex_lock(&sch->rx_video_mgr_mutex);
+    mt_pthread_mutex_lock(&sch->rx_video_mgr_mutex);
     st_rx_video_sessions_sch_uinit(impl, sch);
-    st_pthread_mutex_unlock(&sch->rx_video_mgr_mutex);
+    mt_pthread_mutex_unlock(&sch->rx_video_mgr_mutex);
 
     sch_free(sch);
   }

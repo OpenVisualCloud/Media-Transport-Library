@@ -260,7 +260,7 @@ static int rx_audio_session_free_frames(struct st_rx_audio_session_impl* s) {
       frame = &s->st30_frames[i];
       st_frame_trans_uinit(frame);
     }
-    st_rte_free(s->st30_frames);
+    mt_rte_free(s->st30_frames);
     s->st30_frames = NULL;
   }
 
@@ -278,7 +278,7 @@ static int rx_audio_session_alloc_frames(struct mtl_main_impl* impl,
   void* frame;
 
   s->st30_frames =
-      st_rte_zmalloc_socket(sizeof(*s->st30_frames) * s->st30_frames_cnt, soc_id);
+      mt_rte_zmalloc_socket(sizeof(*s->st30_frames) * s->st30_frames_cnt, soc_id);
   if (!s->st30_frames) {
     err("%s(%d), st30_frames alloc fail\n", __func__, idx);
     return -ENOMEM;
@@ -293,7 +293,7 @@ static int rx_audio_session_alloc_frames(struct mtl_main_impl* impl,
   for (int i = 0; i < s->st30_frames_cnt; i++) {
     st30_frame = &s->st30_frames[i];
 
-    frame = st_rte_zmalloc_socket(size, soc_id);
+    frame = mt_rte_zmalloc_socket(size, soc_id);
     if (!frame) {
       err("%s(%d), frame malloc %" PRIu64 " fail for %d\n", __func__, idx, size, i);
       rx_audio_session_free_frames(s);
@@ -885,7 +885,7 @@ static struct st_rx_audio_session_impl* rx_audio_sessions_mgr_attach(
   for (int i = 0; i < ST_MAX_RX_AUDIO_SESSIONS; i++) {
     if (!rx_audio_session_get_empty(mgr, i)) continue;
 
-    s = st_rte_zmalloc_socket(sizeof(*s), mt_socket_id(impl, MTL_PORT_P));
+    s = mt_rte_zmalloc_socket(sizeof(*s), mt_socket_id(impl, MTL_PORT_P));
     if (!s) {
       err("%s(%d), session malloc fail on %d\n", __func__, midx, i);
       rx_audio_session_put(mgr, i);
@@ -895,14 +895,14 @@ static struct st_rx_audio_session_impl* rx_audio_sessions_mgr_attach(
     if (ret < 0) {
       err("%s(%d), init fail on %d\n", __func__, midx, i);
       rx_audio_session_put(mgr, i);
-      st_rte_free(s);
+      mt_rte_free(s);
       return NULL;
     }
     ret = rx_audio_session_attach(mgr->parnet, mgr, s, ops);
     if (ret < 0) {
       err("%s(%d), attach fail on %d\n", __func__, midx, i);
       rx_audio_session_put(mgr, i);
-      st_rte_free(s);
+      mt_rte_free(s);
       return NULL;
     }
 
@@ -929,7 +929,7 @@ static int rx_audio_sessions_mgr_detach(struct st_rx_audio_sessions_mgr* mgr,
 
   rx_audio_session_detach(mgr->parnet, s);
   mgr->sessions[idx] = NULL;
-  st_rte_free(s);
+  mt_rte_free(s);
 
   rx_audio_session_put(mgr, idx);
 
@@ -1072,26 +1072,26 @@ st30_rx_handle st30_rx_create(mtl_handle mt, struct st30_rx_ops* ops) {
     return NULL;
   }
 
-  st_pthread_mutex_lock(&impl->rx_a_mgr_mutex);
+  mt_pthread_mutex_lock(&impl->rx_a_mgr_mutex);
   ret = st_rx_audio_init(impl);
-  st_pthread_mutex_unlock(&impl->rx_a_mgr_mutex);
+  mt_pthread_mutex_unlock(&impl->rx_a_mgr_mutex);
   if (ret < 0) {
     err("%s, st_rx_audio_init fail %d\n", __func__, ret);
     return NULL;
   }
 
-  s_impl = st_rte_zmalloc_socket(sizeof(*s_impl), mt_socket_id(impl, MTL_PORT_P));
+  s_impl = mt_rte_zmalloc_socket(sizeof(*s_impl), mt_socket_id(impl, MTL_PORT_P));
   if (!s_impl) {
     err("%s, s_impl malloc fail\n", __func__);
     return NULL;
   }
 
-  st_pthread_mutex_lock(&impl->rx_a_mgr_mutex);
+  mt_pthread_mutex_lock(&impl->rx_a_mgr_mutex);
   s = rx_audio_sessions_mgr_attach(&impl->rx_a_mgr, ops);
-  st_pthread_mutex_unlock(&impl->rx_a_mgr_mutex);
+  mt_pthread_mutex_unlock(&impl->rx_a_mgr_mutex);
   if (!s) {
     err("%s(%d), rx_audio_sessions_mgr_attach fail\n", __func__, sch->idx);
-    st_rte_free(s_impl);
+    mt_rte_free(s_impl);
     return NULL;
   }
 
@@ -1151,12 +1151,12 @@ int st30_rx_free(st30_rx_handle handle) {
   ret = rx_audio_sessions_mgr_detach(&impl->rx_a_mgr, s);
   if (ret < 0) err("%s(%d), st_rx_audio_sessions_mgr_deattach fail\n", __func__, idx);
 
-  st_rte_free(s_impl);
+  mt_rte_free(s_impl);
 
   /* update max idx */
-  st_pthread_mutex_lock(&impl->rx_a_mgr_mutex);
+  mt_pthread_mutex_lock(&impl->rx_a_mgr_mutex);
   rx_audio_sessions_mgr_update(&impl->rx_a_mgr);
-  st_pthread_mutex_unlock(&impl->rx_a_mgr_mutex);
+  mt_pthread_mutex_unlock(&impl->rx_a_mgr_mutex);
 
   rte_atomic32_dec(&impl->st30_rx_sessions_cnt);
   info("%s, succ on session %d\n", __func__, idx);

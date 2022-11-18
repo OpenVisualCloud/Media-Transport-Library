@@ -18,7 +18,7 @@ static int st_plugin_free(struct st_dl_plugin_impl* plugin) {
     dlclose(plugin->dl_handle);
     plugin->dl_handle = NULL;
   }
-  st_rte_free(plugin);
+  mt_rte_free(plugin);
 
   return 0;
 }
@@ -26,8 +26,8 @@ static int st_plugin_free(struct st_dl_plugin_impl* plugin) {
 int st_plugins_init(struct mtl_main_impl* impl) {
   struct st_plugin_mgr* mgr = st_get_plugins_mgr(impl);
 
-  st_pthread_mutex_init(&mgr->lock, NULL);
-  st_pthread_mutex_init(&mgr->plugins_lock, NULL);
+  mt_pthread_mutex_init(&mgr->lock, NULL);
+  mt_pthread_mutex_init(&mgr->plugins_lock, NULL);
 
   info("%s, succ\n", __func__);
   return 0;
@@ -46,26 +46,26 @@ int st_plugins_uinit(struct mtl_main_impl* impl) {
   for (int i = 0; i < ST_MAX_ENCODER_DEV; i++) {
     if (mgr->encode_devs[i]) {
       dbg("%s, still has encode dev in %d\n", __func__, i);
-      st_rte_free(mgr->encode_devs[i]);
+      mt_rte_free(mgr->encode_devs[i]);
       mgr->encode_devs[i] = NULL;
     }
   }
   for (int i = 0; i < ST_MAX_DECODER_DEV; i++) {
     if (mgr->decode_devs[i]) {
       dbg("%s, still has decode dev in %d\n", __func__, i);
-      st_rte_free(mgr->decode_devs[i]);
+      mt_rte_free(mgr->decode_devs[i]);
       mgr->decode_devs[i] = NULL;
     }
   }
   for (int i = 0; i < ST_MAX_CONVERTER_DEV; i++) {
     if (mgr->convert_devs[i]) {
       dbg("%s, still has convert dev in %d\n", __func__, i);
-      st_rte_free(mgr->convert_devs[i]);
+      mt_rte_free(mgr->convert_devs[i]);
       mgr->convert_devs[i] = NULL;
     }
   }
-  st_pthread_mutex_destroy(&mgr->lock);
-  st_pthread_mutex_destroy(&mgr->plugins_lock);
+  mt_pthread_mutex_destroy(&mgr->lock);
+  mt_pthread_mutex_destroy(&mgr->plugins_lock);
 
   return 0;
 }
@@ -86,11 +86,11 @@ int st22_put_encoder(struct mtl_main_impl* impl,
   int idx = dev_impl->idx;
   st22_encode_priv session = encoder->session;
 
-  st_pthread_mutex_lock(&mgr->lock);
+  mt_pthread_mutex_lock(&mgr->lock);
   dev->free_session(dev->priv, session);
   encoder->session = NULL;
   rte_atomic32_dec(&dev_impl->ref_cnt);
-  st_pthread_mutex_unlock(&mgr->lock);
+  mt_pthread_mutex_unlock(&mgr->lock);
 
   info("%s(%d), put session %d succ\n", __func__, idx, encoder->idx);
   return 0;
@@ -150,7 +150,7 @@ struct st22_encode_session_impl* st22_get_encoder(struct mtl_main_impl* impl,
   struct st22_encode_dev_impl* dev_impl;
   struct st22_encode_session_impl* session_impl;
 
-  st_pthread_mutex_lock(&mgr->lock);
+  mt_pthread_mutex_lock(&mgr->lock);
   for (int i = 0; i < ST_MAX_ENCODER_DEV; i++) {
     dev_impl = mgr->encode_devs[i];
     if (!dev_impl) continue;
@@ -165,11 +165,11 @@ struct st22_encode_session_impl* st22_get_encoder(struct mtl_main_impl* impl,
     session_impl = st22_get_encoder_session(dev_impl, req);
     if (session_impl) {
       rte_atomic32_inc(&dev_impl->ref_cnt);
-      st_pthread_mutex_unlock(&mgr->lock);
+      mt_pthread_mutex_unlock(&mgr->lock);
       return session_impl;
     }
   }
-  st_pthread_mutex_unlock(&mgr->lock);
+  mt_pthread_mutex_unlock(&mgr->lock);
 
   err("%s, fail to get, input fmt: %s, output fmt: %s\n", __func__,
       st_frame_fmt_name(req->req.input_fmt), st_frame_fmt_name(req->req.output_fmt));
@@ -192,11 +192,11 @@ int st22_put_decoder(struct mtl_main_impl* impl,
   int idx = dev_impl->idx;
   st22_decode_priv session = decoder->session;
 
-  st_pthread_mutex_lock(&mgr->lock);
+  mt_pthread_mutex_lock(&mgr->lock);
   dev->free_session(dev->priv, session);
   decoder->session = NULL;
   rte_atomic32_dec(&dev_impl->ref_cnt);
-  st_pthread_mutex_unlock(&mgr->lock);
+  mt_pthread_mutex_unlock(&mgr->lock);
 
   info("%s(%d), put session %d succ\n", __func__, idx, decoder->idx);
   return 0;
@@ -254,7 +254,7 @@ struct st22_decode_session_impl* st22_get_decoder(struct mtl_main_impl* impl,
   struct st22_decode_dev_impl* dev_impl;
   struct st22_decode_session_impl* session_impl;
 
-  st_pthread_mutex_lock(&mgr->lock);
+  mt_pthread_mutex_lock(&mgr->lock);
   for (int i = 0; i < ST_MAX_DECODER_DEV; i++) {
     dev_impl = mgr->decode_devs[i];
     if (!dev_impl) continue;
@@ -266,11 +266,11 @@ struct st22_decode_session_impl* st22_get_decoder(struct mtl_main_impl* impl,
     session_impl = st22_get_decoder_session(dev_impl, req);
     if (session_impl) {
       rte_atomic32_inc(&dev_impl->ref_cnt);
-      st_pthread_mutex_unlock(&mgr->lock);
+      mt_pthread_mutex_unlock(&mgr->lock);
       return session_impl;
     }
   }
-  st_pthread_mutex_unlock(&mgr->lock);
+  mt_pthread_mutex_unlock(&mgr->lock);
 
   err("%s, fail to get, input fmt: %s, output fmt: %s\n", __func__,
       st_frame_fmt_name(req->req.input_fmt), st_frame_fmt_name(req->req.output_fmt));
@@ -293,11 +293,11 @@ int st20_put_converter(struct mtl_main_impl* impl,
   int idx = dev_impl->idx;
   st20_convert_priv session = converter->session;
 
-  st_pthread_mutex_lock(&mgr->lock);
+  mt_pthread_mutex_lock(&mgr->lock);
   dev->free_session(dev->priv, session);
   converter->session = NULL;
   rte_atomic32_dec(&dev_impl->ref_cnt);
-  st_pthread_mutex_unlock(&mgr->lock);
+  mt_pthread_mutex_unlock(&mgr->lock);
 
   info("%s(%d), put session %d succ\n", __func__, idx, converter->idx);
   return 0;
@@ -355,7 +355,7 @@ struct st20_convert_session_impl* st20_get_converter(
   struct st20_convert_dev_impl* dev_impl;
   struct st20_convert_session_impl* session_impl;
 
-  st_pthread_mutex_lock(&mgr->lock);
+  mt_pthread_mutex_lock(&mgr->lock);
   for (int i = 0; i < ST_MAX_CONVERTER_DEV; i++) {
     dev_impl = mgr->convert_devs[i];
     if (!dev_impl) continue;
@@ -367,11 +367,11 @@ struct st20_convert_session_impl* st20_get_converter(
     session_impl = st20_get_converter_session(dev_impl, req);
     if (session_impl) {
       rte_atomic32_inc(&dev_impl->ref_cnt);
-      st_pthread_mutex_unlock(&mgr->lock);
+      mt_pthread_mutex_unlock(&mgr->lock);
       return session_impl;
     }
   }
-  st_pthread_mutex_unlock(&mgr->lock);
+  mt_pthread_mutex_unlock(&mgr->lock);
 
   err("%s, plugin not found, input fmt: %s, output fmt: %s\n", __func__,
       st_frame_fmt_name(req->req.input_fmt), st_frame_fmt_name(req->req.output_fmt));
@@ -426,7 +426,7 @@ int st_plugins_dump(struct mtl_main_impl* impl) {
   struct st22_decode_dev_impl* decode;
   struct st20_convert_dev_impl* convert;
 
-  st_pthread_mutex_lock(&mgr->lock);
+  mt_pthread_mutex_lock(&mgr->lock);
   for (int i = 0; i < ST_MAX_ENCODER_DEV; i++) {
     encode = mgr->encode_devs[i];
     if (!encode) continue;
@@ -442,7 +442,7 @@ int st_plugins_dump(struct mtl_main_impl* impl) {
     if (!convert) continue;
     st20_convert_dev_dump(convert);
   }
-  st_pthread_mutex_unlock(&mgr->lock);
+  mt_pthread_mutex_unlock(&mgr->lock);
 
   return 0;
 }
@@ -465,16 +465,16 @@ int st22_encoder_unregister(st22_encoder_dev_handle handle) {
   }
 
   info("%s(%d), unregister %s\n", __func__, idx, dev->name);
-  st_pthread_mutex_lock(&mgr->lock);
+  mt_pthread_mutex_lock(&mgr->lock);
   int ref_cnt = rte_atomic32_read(&dev->ref_cnt);
   if (ref_cnt) {
-    st_pthread_mutex_unlock(&mgr->lock);
+    mt_pthread_mutex_unlock(&mgr->lock);
     err("%s(%d), %s are busy with ref_cnt %d\n", __func__, idx, dev->name, ref_cnt);
     return -EBUSY;
   }
-  st_rte_free(dev);
+  mt_rte_free(dev);
   mgr->encode_devs[idx] = NULL;
-  st_pthread_mutex_unlock(&mgr->lock);
+  mt_pthread_mutex_unlock(&mgr->lock);
 
   return 0;
 }
@@ -497,16 +497,16 @@ int st22_decoder_unregister(st22_decoder_dev_handle handle) {
   }
 
   info("%s(%d), unregister %s\n", __func__, idx, dev->name);
-  st_pthread_mutex_lock(&mgr->lock);
+  mt_pthread_mutex_lock(&mgr->lock);
   int ref_cnt = rte_atomic32_read(&dev->ref_cnt);
   if (ref_cnt) {
-    st_pthread_mutex_unlock(&mgr->lock);
+    mt_pthread_mutex_unlock(&mgr->lock);
     err("%s(%d), %s are busy with ref_cnt %d\n", __func__, idx, dev->name, ref_cnt);
     return -EBUSY;
   }
-  st_rte_free(dev);
+  mt_rte_free(dev);
   mgr->decode_devs[idx] = NULL;
-  st_pthread_mutex_unlock(&mgr->lock);
+  mt_pthread_mutex_unlock(&mgr->lock);
 
   return 0;
 }
@@ -529,16 +529,16 @@ int st20_converter_unregister(st20_converter_dev_handle handle) {
   }
 
   info("%s(%d), unregister %s\n", __func__, idx, dev->name);
-  st_pthread_mutex_lock(&mgr->lock);
+  mt_pthread_mutex_lock(&mgr->lock);
   int ref_cnt = rte_atomic32_read(&dev->ref_cnt);
   if (ref_cnt) {
-    st_pthread_mutex_unlock(&mgr->lock);
+    mt_pthread_mutex_unlock(&mgr->lock);
     err("%s(%d), %s are busy with ref_cnt %d\n", __func__, idx, dev->name, ref_cnt);
     return -EBUSY;
   }
-  st_rte_free(dev);
+  mt_rte_free(dev);
   mgr->convert_devs[idx] = NULL;
-  st_pthread_mutex_unlock(&mgr->lock);
+  mt_pthread_mutex_unlock(&mgr->lock);
 
   return 0;
 }
@@ -567,14 +567,14 @@ st22_encoder_dev_handle st22_encoder_register(mtl_handle mt,
     return NULL;
   }
 
-  st_pthread_mutex_lock(&mgr->lock);
+  mt_pthread_mutex_lock(&mgr->lock);
   for (int i = 0; i < ST_MAX_ENCODER_DEV; i++) {
     if (mgr->encode_devs[i]) continue;
     encode_dev =
-        st_rte_zmalloc_socket(sizeof(*encode_dev), mt_socket_id(impl, MTL_PORT_P));
+        mt_rte_zmalloc_socket(sizeof(*encode_dev), mt_socket_id(impl, MTL_PORT_P));
     if (!encode_dev) {
       err("%s, encode_dev malloc fail\n", __func__);
-      st_pthread_mutex_unlock(&mgr->lock);
+      mt_pthread_mutex_unlock(&mgr->lock);
       return NULL;
     }
     encode_dev->type = ST22_SESSION_TYPE_DEV_ENCODE;
@@ -588,12 +588,12 @@ st22_encoder_dev_handle st22_encoder_register(mtl_handle mt,
       encode_dev->sessions[j].parnet = encode_dev;
     }
     mgr->encode_devs[i] = encode_dev;
-    st_pthread_mutex_unlock(&mgr->lock);
+    mt_pthread_mutex_unlock(&mgr->lock);
     info("%s(%d), %s registered, device %d cap(0x%lx:0x%lx)\n", __func__, i,
          encode_dev->name, dev->target_device, dev->input_fmt_caps, dev->output_fmt_caps);
     return encode_dev;
   }
-  st_pthread_mutex_unlock(&mgr->lock);
+  mt_pthread_mutex_unlock(&mgr->lock);
 
   err("%s, no space, all items are used\n", __func__);
   return NULL;
@@ -623,14 +623,14 @@ st22_decoder_dev_handle st22_decoder_register(mtl_handle mt,
     return NULL;
   }
 
-  st_pthread_mutex_lock(&mgr->lock);
+  mt_pthread_mutex_lock(&mgr->lock);
   for (int i = 0; i < ST_MAX_DECODER_DEV; i++) {
     if (mgr->decode_devs[i]) continue;
     decode_dev =
-        st_rte_zmalloc_socket(sizeof(*decode_dev), mt_socket_id(impl, MTL_PORT_P));
+        mt_rte_zmalloc_socket(sizeof(*decode_dev), mt_socket_id(impl, MTL_PORT_P));
     if (!decode_dev) {
       err("%s, decode_dev malloc fail\n", __func__);
-      st_pthread_mutex_unlock(&mgr->lock);
+      mt_pthread_mutex_unlock(&mgr->lock);
       return NULL;
     }
     decode_dev->type = ST22_SESSION_TYPE_DEV_DECODE;
@@ -644,12 +644,12 @@ st22_decoder_dev_handle st22_decoder_register(mtl_handle mt,
       decode_dev->sessions[j].parnet = decode_dev;
     }
     mgr->decode_devs[i] = decode_dev;
-    st_pthread_mutex_unlock(&mgr->lock);
+    mt_pthread_mutex_unlock(&mgr->lock);
     info("%s(%d), %s registered, device %d cap(0x%lx:0x%lx)\n", __func__, i,
          decode_dev->name, dev->target_device, dev->input_fmt_caps, dev->output_fmt_caps);
     return decode_dev;
   }
-  st_pthread_mutex_unlock(&mgr->lock);
+  mt_pthread_mutex_unlock(&mgr->lock);
 
   err("%s, no space, all items are used\n", __func__);
   return NULL;
@@ -679,14 +679,14 @@ st20_converter_dev_handle st20_converter_register(mtl_handle mt,
     return NULL;
   }
 
-  st_pthread_mutex_lock(&mgr->lock);
+  mt_pthread_mutex_lock(&mgr->lock);
   for (int i = 0; i < ST_MAX_CONVERTER_DEV; i++) {
     if (mgr->convert_devs[i]) continue;
     convert_dev =
-        st_rte_zmalloc_socket(sizeof(*convert_dev), mt_socket_id(impl, MTL_PORT_P));
+        mt_rte_zmalloc_socket(sizeof(*convert_dev), mt_socket_id(impl, MTL_PORT_P));
     if (!convert_dev) {
       err("%s, convert_dev malloc fail\n", __func__);
-      st_pthread_mutex_unlock(&mgr->lock);
+      mt_pthread_mutex_unlock(&mgr->lock);
       return NULL;
     }
     convert_dev->type = ST20_SESSION_TYPE_DEV_CONVERT;
@@ -700,13 +700,13 @@ st20_converter_dev_handle st20_converter_register(mtl_handle mt,
       convert_dev->sessions[j].parnet = convert_dev;
     }
     mgr->convert_devs[i] = convert_dev;
-    st_pthread_mutex_unlock(&mgr->lock);
+    mt_pthread_mutex_unlock(&mgr->lock);
     info("%s(%d), %s registered, device %d cap(0x%lx:0x%lx)\n", __func__, i,
          convert_dev->name, dev->target_device, dev->input_fmt_caps,
          dev->output_fmt_caps);
     return convert_dev;
   }
-  st_pthread_mutex_unlock(&mgr->lock);
+  mt_pthread_mutex_unlock(&mgr->lock);
 
   err("%s, no space, all items are used\n", __func__);
   return NULL;
@@ -786,18 +786,18 @@ static struct st_dl_plugin_impl* st_plugin_by_path(struct mtl_main_impl* impl,
   struct st_plugin_mgr* mgr = st_get_plugins_mgr(impl);
   struct st_dl_plugin_impl* plugin;
 
-  st_pthread_mutex_lock(&mgr->plugins_lock);
+  mt_pthread_mutex_lock(&mgr->plugins_lock);
   for (int i = 0; i < ST_MAX_DL_PLUGINS; i++) {
     plugin = mgr->plugins[i];
     if (plugin) {
       if (!strncmp(plugin->path, path, ST_PLUNGIN_MAX_PATH_LEN - 1)) {
         dbg("%s, %s registered\n", __func__, path);
-        st_pthread_mutex_unlock(&mgr->plugins_lock);
+        mt_pthread_mutex_unlock(&mgr->plugins_lock);
         return plugin;
       }
     }
   }
-  st_pthread_mutex_unlock(&mgr->plugins_lock);
+  mt_pthread_mutex_unlock(&mgr->plugins_lock);
 
   return NULL;
 }
@@ -889,12 +889,12 @@ int st_plugin_register(mtl_handle mt, const char* path) {
 
   struct st_dl_plugin_impl* plugin;
   /* add to the plugins */
-  st_pthread_mutex_lock(&mgr->plugins_lock);
+  mt_pthread_mutex_lock(&mgr->plugins_lock);
   for (int i = 0; i < ST_MAX_DL_PLUGINS; i++) {
     if (mgr->plugins[i]) continue;
-    plugin = st_rte_zmalloc_socket(sizeof(*plugin), mt_socket_id(impl, MTL_PORT_P));
+    plugin = mt_rte_zmalloc_socket(sizeof(*plugin), mt_socket_id(impl, MTL_PORT_P));
     if (!plugin) {
-      st_pthread_mutex_unlock(&mgr->plugins_lock);
+      mt_pthread_mutex_unlock(&mgr->plugins_lock);
       dlclose(dl_handle);
       return -ENOMEM;
     }
@@ -907,11 +907,11 @@ int st_plugin_register(mtl_handle mt, const char* path) {
     plugin->meta = meta;
     mgr->plugins_nb++;
     mgr->plugins[i] = plugin;
-    st_pthread_mutex_unlock(&mgr->plugins_lock);
+    mt_pthread_mutex_unlock(&mgr->plugins_lock);
     info("%s(%d), %s registered, version %d\n", __func__, i, path, meta.version);
     return 0;
   }
-  st_pthread_mutex_unlock(&mgr->plugins_lock);
+  mt_pthread_mutex_unlock(&mgr->plugins_lock);
 
   err("%s, no space, all items are used\n", __func__);
   dlclose(dl_handle);
@@ -923,7 +923,7 @@ int st_plugin_unregister(mtl_handle mt, const char* path) {
   struct st_plugin_mgr* mgr = st_get_plugins_mgr(impl);
   struct st_dl_plugin_impl* plugin;
 
-  st_pthread_mutex_lock(&mgr->plugins_lock);
+  mt_pthread_mutex_lock(&mgr->plugins_lock);
   for (int i = 0; i < ST_MAX_DL_PLUGINS; i++) {
     plugin = mgr->plugins[i];
     if (plugin) {
@@ -931,12 +931,12 @@ int st_plugin_unregister(mtl_handle mt, const char* path) {
         info("%s, unregister %s at %d\n", __func__, path, i);
         st_plugin_free(plugin);
         mgr->plugins[i] = NULL;
-        st_pthread_mutex_unlock(&mgr->plugins_lock);
+        mt_pthread_mutex_unlock(&mgr->plugins_lock);
         return 0;
       }
     }
   }
-  st_pthread_mutex_unlock(&mgr->plugins_lock);
+  mt_pthread_mutex_unlock(&mgr->plugins_lock);
   err("%s, can not find %s\n", __func__, path);
   return -EIO;
 }

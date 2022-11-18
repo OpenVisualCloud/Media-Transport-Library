@@ -60,7 +60,7 @@ static int rx_st20r_frame_ready(void* priv, void* frame,
 
   dbg("%s(%d), get frame %p at port %d\n", __func__, idx, frame, port);
 
-  st_pthread_mutex_lock(&ctx->lock);
+  mt_pthread_mutex_lock(&ctx->lock);
   /* assume p and r has same timestamp */
   if (ctx->cur_timestamp != meta->timestamp) {
     /* new timestamp */
@@ -92,7 +92,7 @@ static int rx_st20r_frame_ready(void* priv, void* frame,
       ret = -EIO; /* smiply drop now, todo later to recover the full frame */
     }
   }
-  st_pthread_mutex_unlock(&ctx->lock);
+  mt_pthread_mutex_unlock(&ctx->lock);
 
   /* always return 0 to supress the error log */
   if (ret < 0) st20_rx_put_framebuff(ctx->transport[port]->handle, frame);
@@ -115,7 +115,7 @@ static int rx_st20r_free_transport(struct st20r_rx_transport* transport) {
     transport->handle = NULL;
   }
 
-  st_rte_free(transport);
+  mt_rte_free(transport);
   return 0;
 }
 
@@ -131,7 +131,7 @@ static int rx_st20r_create_transport(struct st20r_rx_ctx* ctx, struct st20r_rx_o
     return -EIO;
   }
 
-  transport = st_rte_zmalloc_socket(sizeof(*transport), mt_socket_id(impl, MTL_PORT_P));
+  transport = mt_rte_zmalloc_socket(sizeof(*transport), mt_socket_id(impl, MTL_PORT_P));
   if (!ctx) {
     err("%s, transport malloc fail\n", __func__);
     return -ENOMEM;
@@ -206,12 +206,12 @@ int st20r_rx_free(st20r_rx_handle handle) {
     }
   }
 
-  st_pthread_mutex_destroy(&ctx->lock);
+  mt_pthread_mutex_destroy(&ctx->lock);
   if (ctx->frames) {
-    st_rte_free(ctx->frames);
+    mt_rte_free(ctx->frames);
     ctx->frames = NULL;
   }
-  st_rte_free(ctx);
+  mt_rte_free(ctx);
 
   return 0;
 }
@@ -242,14 +242,14 @@ st20r_rx_handle st20r_rx_create(mtl_handle mt, struct st20r_rx_ops* ops) {
     return NULL;
   }
 
-  ctx = st_rte_zmalloc_socket(sizeof(*ctx), mt_socket_id(impl, MTL_PORT_P));
+  ctx = mt_rte_zmalloc_socket(sizeof(*ctx), mt_socket_id(impl, MTL_PORT_P));
   if (!ctx) {
     err("%s, ctx malloc fail\n", __func__);
     return NULL;
   }
 
   ctx->frames_cnt = ops->framebuff_cnt * 2; /* more for redundant */
-  ctx->frames = st_rte_zmalloc_socket(sizeof(*ctx->frames) * ctx->frames_cnt,
+  ctx->frames = mt_rte_zmalloc_socket(sizeof(*ctx->frames) * ctx->frames_cnt,
                                       mt_socket_id(impl, MTL_PORT_P));
   if (!ctx->frames) {
     err("%s, ctx frames malloc fail\n", __func__);
@@ -260,7 +260,7 @@ st20r_rx_handle st20r_rx_create(mtl_handle mt, struct st20r_rx_ops* ops) {
   ctx->idx = idx;
   ctx->impl = impl;
   ctx->type = ST_SESSION_TYPE_RX_VIDEO_R;
-  st_pthread_mutex_init(&ctx->lock, NULL);
+  mt_pthread_mutex_init(&ctx->lock, NULL);
 
   /* copy ops */
   strncpy(ctx->ops_name, ops->name, ST_MAX_NAME_LEN - 1);

@@ -924,7 +924,7 @@ static inline void mt_tsc_delay_to(struct mtl_main_impl* impl, uint64_t target) 
 static inline uint64_t mt_get_monotonic_time() {
   struct timespec ts;
 
-  clock_gettime(ST_CLOCK_MONOTONIC_ID, &ts);
+  clock_gettime(MT_CLOCK_MONOTONIC_ID, &ts);
   return ((uint64_t)ts.tv_sec * NS_PER_S) + ts.tv_nsec;
 }
 

@@ -52,13 +52,13 @@ static int rx_st20p_frame_ready(void* priv, void* frame,
 
   if (!ctx->ready) return -EBUSY; /* not ready */
 
-  st_pthread_mutex_lock(&ctx->lock);
+  mt_pthread_mutex_lock(&ctx->lock);
   framebuff =
       rx_st20p_next_available(ctx, ctx->framebuff_producer_idx, ST20P_RX_FRAME_FREE);
   /* not any free frame */
   if (!framebuff) {
     rte_atomic32_inc(&ctx->stat_busy);
-    st_pthread_mutex_unlock(&ctx->lock);
+    mt_pthread_mutex_unlock(&ctx->lock);
     return -EBUSY;
   }
 
@@ -74,7 +74,7 @@ static int rx_st20p_frame_ready(void* priv, void* frame,
     framebuff->stat = ST20P_RX_FRAME_CONVERTED;
     /* point to next */
     ctx->framebuff_producer_idx = rx_st20p_next_idx(ctx, framebuff->idx);
-    st_pthread_mutex_unlock(&ctx->lock);
+    mt_pthread_mutex_unlock(&ctx->lock);
     if (ctx->ops.notify_frame_available) { /* notify app */
       ctx->ops.notify_frame_available(ctx->ops.priv);
     }
@@ -89,7 +89,7 @@ static int rx_st20p_frame_ready(void* priv, void* frame,
 
   /* point to next */
   ctx->framebuff_producer_idx = rx_st20p_next_idx(ctx, framebuff->idx);
-  st_pthread_mutex_unlock(&ctx->lock);
+  mt_pthread_mutex_unlock(&ctx->lock);
 
   dbg("%s(%d), frame %u succ\n", __func__, ctx->idx, framebuff->idx);
 
@@ -114,23 +114,23 @@ static int rx_st20p_query_ext_frame(void* priv, struct st20_ext_frame* ext_frame
 
   if (!ctx->ready) return -EBUSY; /* not ready */
 
-  st_pthread_mutex_lock(&ctx->lock);
+  mt_pthread_mutex_lock(&ctx->lock);
   framebuff =
       rx_st20p_next_available(ctx, ctx->framebuff_producer_idx, ST20P_RX_FRAME_FREE);
   /* not any free frame */
   if (!framebuff) {
     rte_atomic32_inc(&ctx->stat_busy);
-    st_pthread_mutex_unlock(&ctx->lock);
+    mt_pthread_mutex_unlock(&ctx->lock);
     return -EBUSY;
   }
 
   ret = ctx->ops.query_ext_frame(ctx->ops.priv, ext_frame, meta);
   if (ret < 0) {
-    st_pthread_mutex_unlock(&ctx->lock);
+    mt_pthread_mutex_unlock(&ctx->lock);
     return -EBUSY;
   }
   framebuff->src.opaque = ext_frame->opaque;
-  st_pthread_mutex_unlock(&ctx->lock);
+  mt_pthread_mutex_unlock(&ctx->lock);
 
   return 0;
 }
@@ -157,19 +157,19 @@ static struct st20_convert_frame_meta* rx_st20p_convert_get_frame(void* priv) {
 
   if (!ctx->ready) return NULL; /* not ready */
 
-  st_pthread_mutex_lock(&ctx->lock);
+  mt_pthread_mutex_lock(&ctx->lock);
   framebuff =
       rx_st20p_next_available(ctx, ctx->framebuff_convert_idx, ST20P_RX_FRAME_READY);
   /* not any ready frame */
   if (!framebuff) {
-    st_pthread_mutex_unlock(&ctx->lock);
+    mt_pthread_mutex_unlock(&ctx->lock);
     return NULL;
   }
 
   framebuff->stat = ST20P_RX_FRAME_IN_CONVERTING;
   /* point to next */
   ctx->framebuff_convert_idx = rx_st20p_next_idx(ctx, framebuff->idx);
-  st_pthread_mutex_unlock(&ctx->lock);
+  mt_pthread_mutex_unlock(&ctx->lock);
 
   dbg("%s(%d), frame %u succ\n", __func__, idx, framebuff->idx);
   return &framebuff->convert_frame;
@@ -277,7 +277,7 @@ static int rx_st20p_create_transport(struct mtl_main_impl* impl, struct st20p_rx
     /* ext frame info directly passed down to st20 lib */
     if (ops->ext_frames) {
       trans_ext_frames =
-          st_rte_zmalloc_socket(sizeof(*trans_ext_frames) * ctx->framebuff_cnt,
+          mt_rte_zmalloc_socket(sizeof(*trans_ext_frames) * ctx->framebuff_cnt,
                                 mt_socket_id(ctx->impl, MTL_PORT_P));
       if (!trans_ext_frames) {
         err("%s, trans_ext_frames malloc fail\n", __func__);
@@ -323,7 +323,7 @@ static int rx_st20p_create_transport(struct mtl_main_impl* impl, struct st20p_rx
     frames[i].convert_frame.priv = &frames[i];
   }
 
-  if (trans_ext_frames) st_rte_free(trans_ext_frames);
+  if (trans_ext_frames) mt_rte_free(trans_ext_frames);
 
   return 0;
 }
@@ -335,12 +335,12 @@ static int rx_st20p_uinit_dst_fbs(struct st20p_rx_ctx* ctx) {
       /* do not free derived/ext frames */
       for (uint16_t i = 0; i < ctx->framebuff_cnt; i++) {
         if (ctx->framebuffs[i].dst.addr[0]) {
-          st_rte_free(ctx->framebuffs[i].dst.addr[0]);
+          mt_rte_free(ctx->framebuffs[i].dst.addr[0]);
           ctx->framebuffs[i].dst.addr[0] = NULL;
         }
       }
     }
-    st_rte_free(ctx->framebuffs);
+    mt_rte_free(ctx->framebuffs);
     ctx->framebuffs = NULL;
   }
 
@@ -356,7 +356,7 @@ static int rx_st20p_init_dst_fbs(struct mtl_main_impl* impl, struct st20p_rx_ctx
   size_t dst_size = ctx->dst_size;
 
   ctx->framebuff_cnt = ops->framebuff_cnt;
-  frames = st_rte_zmalloc_socket(sizeof(*frames) * ctx->framebuff_cnt, soc_id);
+  frames = mt_rte_zmalloc_socket(sizeof(*frames) * ctx->framebuff_cnt, soc_id);
   if (!frames) {
     err("%s(%d), frames malloc fail\n", __func__, idx);
     return -ENOMEM;
@@ -386,7 +386,7 @@ static int rx_st20p_init_dst_fbs(struct mtl_main_impl* impl, struct st20p_rx_ctx
           frames[i].dst.iova[plane] = 0;
         }
       } else {
-        dst = st_rte_zmalloc_socket(dst_size, soc_id);
+        dst = mt_rte_zmalloc_socket(dst_size, soc_id);
         if (!dst) {
           err("%s(%d), dst frame malloc fail at %u\n", __func__, idx, i);
           rx_st20p_uinit_dst_fbs(ctx);
@@ -445,7 +445,7 @@ static int rx_st20p_get_converter(struct mtl_main_impl* impl, struct st20p_rx_ct
   struct st20_convert_session_impl* convert_impl = st20_get_converter(impl, &req);
   if (req.device == ST_PLUGIN_DEVICE_TEST_INTERNAL || !convert_impl) {
     struct st_frame_converter* converter = NULL;
-    converter = st_rte_zmalloc_socket(sizeof(*converter), mt_socket_id(impl, MTL_PORT_P));
+    converter = mt_rte_zmalloc_socket(sizeof(*converter), mt_socket_id(impl, MTL_PORT_P));
     if (!converter) {
       err("%s, converter malloc fail\n", __func__);
       return -ENOMEM;
@@ -453,7 +453,7 @@ static int rx_st20p_get_converter(struct mtl_main_impl* impl, struct st20p_rx_ct
     memset(converter, 0, sizeof(*converter));
     if (st_frame_get_converter(req.req.input_fmt, req.req.output_fmt, converter) < 0) {
       err("%s, get converter fail\n", __func__);
-      st_rte_free(converter);
+      mt_rte_free(converter);
       return -EIO;
     }
     ctx->internal_converter = converter;
@@ -488,13 +488,13 @@ struct st_frame* st20p_rx_get_ext_frame(st20p_rx_handle handle,
 
   if (!ctx->ready) return NULL; /* not ready */
 
-  st_pthread_mutex_lock(&ctx->lock);
+  mt_pthread_mutex_lock(&ctx->lock);
 
   framebuff =
       rx_st20p_next_available(ctx, ctx->framebuff_consumer_idx, ST20P_RX_FRAME_READY);
   /* not any ready frame */
   if (!framebuff) {
-    st_pthread_mutex_unlock(&ctx->lock);
+    mt_pthread_mutex_unlock(&ctx->lock);
     return NULL;
   }
   for (int plane = 0; plane < st_frame_fmt_planes(framebuff->dst.fmt); plane++) {
@@ -517,7 +517,7 @@ struct st_frame* st20p_rx_get_ext_frame(st20p_rx_handle handle,
   /* point to next */
   ctx->framebuff_consumer_idx = rx_st20p_next_idx(ctx, framebuff->idx);
 
-  st_pthread_mutex_unlock(&ctx->lock);
+  mt_pthread_mutex_unlock(&ctx->lock);
 
   dbg("%s(%d), frame %u succ\n", __func__, idx, framebuff->idx);
   return &framebuff->dst;
@@ -535,14 +535,14 @@ struct st_frame* st20p_rx_get_frame(st20p_rx_handle handle) {
 
   if (!ctx->ready) return NULL; /* not ready */
 
-  st_pthread_mutex_lock(&ctx->lock);
+  mt_pthread_mutex_lock(&ctx->lock);
 
   if (ctx->internal_converter) { /* convert internal */
     framebuff =
         rx_st20p_next_available(ctx, ctx->framebuff_consumer_idx, ST20P_RX_FRAME_READY);
     /* not any ready frame */
     if (!framebuff) {
-      st_pthread_mutex_unlock(&ctx->lock);
+      mt_pthread_mutex_unlock(&ctx->lock);
       return NULL;
     }
     ctx->internal_converter->convert_func(&framebuff->src, &framebuff->dst);
@@ -551,7 +551,7 @@ struct st_frame* st20p_rx_get_frame(st20p_rx_handle handle) {
                                         ST20P_RX_FRAME_CONVERTED);
     /* not any converted frame */
     if (!framebuff) {
-      st_pthread_mutex_unlock(&ctx->lock);
+      mt_pthread_mutex_unlock(&ctx->lock);
       return NULL;
     }
   }
@@ -560,7 +560,7 @@ struct st_frame* st20p_rx_get_frame(st20p_rx_handle handle) {
   /* point to next */
   ctx->framebuff_consumer_idx = rx_st20p_next_idx(ctx, framebuff->idx);
 
-  st_pthread_mutex_unlock(&ctx->lock);
+  mt_pthread_mutex_unlock(&ctx->lock);
 
   dbg("%s(%d), frame %u succ\n", __func__, idx, framebuff->idx);
   return &framebuff->dst;
@@ -614,7 +614,7 @@ st20p_rx_handle st20p_rx_create(mtl_handle mt, struct st20p_rx_ops* ops) {
     return NULL;
   }
 
-  ctx = st_rte_zmalloc_socket(sizeof(*ctx), mt_socket_id(impl, MTL_PORT_P));
+  ctx = mt_rte_zmalloc_socket(sizeof(*ctx), mt_socket_id(impl, MTL_PORT_P));
   if (!ctx) {
     err("%s, ctx malloc fail\n", __func__);
     return NULL;
@@ -628,7 +628,7 @@ st20p_rx_handle st20p_rx_create(mtl_handle mt, struct st20p_rx_ops* ops) {
   ctx->dst_size = dst_size;
   rte_atomic32_set(&ctx->stat_convert_fail, 0);
   rte_atomic32_set(&ctx->stat_busy, 0);
-  st_pthread_mutex_init(&ctx->lock, NULL);
+  mt_pthread_mutex_init(&ctx->lock, NULL);
 
   /* copy ops */
   strncpy(ctx->ops_name, ops->name, ST_MAX_NAME_LEN - 1);
@@ -687,7 +687,7 @@ int st20p_rx_free(st20p_rx_handle handle) {
   }
 
   if (ctx->internal_converter) {
-    st_rte_free(ctx->internal_converter);
+    mt_rte_free(ctx->internal_converter);
     ctx->internal_converter = NULL;
   }
 
@@ -697,8 +697,8 @@ int st20p_rx_free(st20p_rx_handle handle) {
   }
   rx_st20p_uinit_dst_fbs(ctx);
 
-  st_pthread_mutex_destroy(&ctx->lock);
-  st_rte_free(ctx);
+  mt_pthread_mutex_destroy(&ctx->lock);
+  mt_rte_free(ctx);
 
   return 0;
 }

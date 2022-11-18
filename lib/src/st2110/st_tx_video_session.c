@@ -95,7 +95,7 @@ static int tv_alloc_frames(struct mtl_main_impl* impl,
   struct st22_tx_video_info* st22_info = s->st22_info;
 
   s->st20_frames =
-      st_rte_zmalloc_socket(sizeof(*s->st20_frames) * s->st20_frames_cnt, soc_id);
+      mt_rte_zmalloc_socket(sizeof(*s->st20_frames) * s->st20_frames_cnt, soc_id);
   if (!s->st20_frames) {
     err("%s(%d), st20_frames malloc fail\n", __func__, idx);
     return -ENOMEM;
@@ -120,7 +120,7 @@ static int tv_alloc_frames(struct mtl_main_impl* impl,
       frame_info->flags = ST_FT_FLAG_EXT;
       info("%s(%d), use external framebuffer, skip allocation\n", __func__, idx);
     } else {
-      void* frame = st_rte_zmalloc_socket(s->st20_fb_size, soc_id);
+      void* frame = mt_rte_zmalloc_socket(s->st20_fb_size, soc_id);
       if (!frame) {
         err("%s(%d), rte_malloc %" PRIu64 " fail at %d\n", __func__, idx, s->st20_fb_size,
             i);
@@ -147,7 +147,7 @@ static int tv_free_frames(struct st_tx_video_session_impl* s) {
       st_frame_trans_uinit(frame);
     }
 
-    st_rte_free(s->st20_frames);
+    mt_rte_free(s->st20_frames);
     s->st20_frames = NULL;
   }
 
@@ -1306,7 +1306,7 @@ static int tv_tasklet_rtp(struct mtl_main_impl* impl,
   if (eof)
     dbg("%s(%d), pkts_bulk %d pkt idx %d\n", __func__, idx, pkts_bulk, s->st20_pkt_idx);
 
-  n = st_rte_ring_sc_dequeue_bulk(s->packet_ring, (void**)&pkts_chain, pkts_bulk, NULL);
+  n = mt_rte_ring_sc_dequeue_bulk(s->packet_ring, (void**)&pkts_chain, pkts_bulk, NULL);
   if (n == 0) {
     if (s->stat_user_busy_first) {
       s->stat_user_busy++;
@@ -1941,7 +1941,7 @@ static int tv_uinit_sw(struct st_tx_video_session_impl* s) {
   tv_free_frames(s);
 
   if (s->st22_info) {
-    st_rte_free(s->st22_info);
+    mt_rte_free(s->st22_info);
     s->st22_info = NULL;
   }
 
@@ -1953,7 +1953,7 @@ static int tv_init_st22_frame(struct mtl_main_impl* impl,
                               struct st22_tx_ops* st22_frame_ops) {
   struct st22_tx_video_info* st22_info;
 
-  st22_info = st_rte_zmalloc_socket(sizeof(*st22_info), mt_socket_id(impl, MTL_PORT_P));
+  st22_info = mt_rte_zmalloc_socket(sizeof(*st22_info), mt_socket_id(impl, MTL_PORT_P));
   if (!st22_info) return -ENOMEM;
 
   st22_info->get_next_frame = st22_frame_ops->get_next_frame;
@@ -2428,7 +2428,7 @@ static struct st_tx_video_session_impl* tv_mgr_attach(
   for (int i = 0; i < ST_SCH_MAX_TX_VIDEO_SESSIONS; i++) {
     if (!tx_video_session_get_empty(mgr, i)) continue;
 
-    s = st_rte_zmalloc_socket(sizeof(*s), mt_socket_id(impl, MTL_PORT_P));
+    s = mt_rte_zmalloc_socket(sizeof(*s), mt_socket_id(impl, MTL_PORT_P));
     if (!s) {
       err("%s(%d), session malloc fail on %d\n", __func__, midx, i);
       tx_video_session_put(mgr, i);
@@ -2438,14 +2438,14 @@ static struct st_tx_video_session_impl* tv_mgr_attach(
     if (ret < 0) {
       err("%s(%d), init fail on %d\n", __func__, midx, i);
       tx_video_session_put(mgr, i);
-      st_rte_free(s);
+      mt_rte_free(s);
       return NULL;
     }
     ret = tv_attach(impl, mgr, s, ops, s_type, st22_frame_ops);
     if (ret < 0) {
       err("%s(%d), attach fail on %d\n", __func__, midx, i);
       tx_video_session_put(mgr, i);
-      st_rte_free(s);
+      mt_rte_free(s);
       return NULL;
     }
     mgr->sessions[i] = s;
@@ -2471,7 +2471,7 @@ static int tv_mgr_detach(struct st_tx_video_sessions_mgr* mgr,
 
   tv_detach(mgr->parnet, mgr, s);
   mgr->sessions[idx] = NULL;
-  st_rte_free(s);
+  mt_rte_free(s);
 
   tx_video_session_put(mgr, idx);
 
@@ -2782,7 +2782,7 @@ st20_tx_handle st20_tx_create(mtl_handle mt, struct st20_tx_ops* ops) {
     }
   }
 
-  s_impl = st_rte_zmalloc_socket(sizeof(*s_impl), mt_socket_id(impl, MTL_PORT_P));
+  s_impl = mt_rte_zmalloc_socket(sizeof(*s_impl), mt_socket_id(impl, MTL_PORT_P));
   if (!s_impl) {
     err("%s, s_impl malloc fail\n", __func__);
     return NULL;
@@ -2790,35 +2790,35 @@ st20_tx_handle st20_tx_create(mtl_handle mt, struct st20_tx_ops* ops) {
 
   sch = mt_sch_get(impl, quota_mbs, MT_SCH_TYPE_DEFAULT, MT_SCH_MASK_ALL);
   if (!sch) {
-    st_rte_free(s_impl);
+    mt_rte_free(s_impl);
     err("%s, get sch fail\n", __func__);
     return NULL;
   }
 
-  st_pthread_mutex_lock(&sch->tx_video_mgr_mutex);
+  mt_pthread_mutex_lock(&sch->tx_video_mgr_mutex);
   ret = st_tx_video_sessions_sch_init(impl, sch);
-  st_pthread_mutex_unlock(&sch->tx_video_mgr_mutex);
+  mt_pthread_mutex_unlock(&sch->tx_video_mgr_mutex);
   if (ret < 0) {
     err("%s, tx video sch init fail %d\n", __func__, ret);
     mt_sch_put(sch, quota_mbs);
-    st_rte_free(s_impl);
+    mt_rte_free(s_impl);
     return NULL;
   }
 
-  st_pthread_mutex_lock(&sch->tx_video_mgr_mutex);
+  mt_pthread_mutex_lock(&sch->tx_video_mgr_mutex);
   s = tv_mgr_attach(&sch->tx_video_mgr, ops, ST_SESSION_TYPE_TX_VIDEO, NULL);
-  st_pthread_mutex_unlock(&sch->tx_video_mgr_mutex);
+  mt_pthread_mutex_unlock(&sch->tx_video_mgr_mutex);
   if (!s) {
     err("%s(%d), st_tx_sessions_mgr_attach fail\n", __func__, sch->idx);
     mt_sch_put(sch, quota_mbs);
-    st_rte_free(s_impl);
+    mt_rte_free(s_impl);
     return NULL;
   }
 
   /* update mgr status */
-  st_pthread_mutex_lock(&sch->tx_video_mgr_mutex);
+  mt_pthread_mutex_lock(&sch->tx_video_mgr_mutex);
   tv_mgr_update(&sch->tx_video_mgr);
-  st_pthread_mutex_unlock(&sch->tx_video_mgr_mutex);
+  mt_pthread_mutex_unlock(&sch->tx_video_mgr_mutex);
 
   s_impl->parnet = impl;
   s_impl->type = ST_SESSION_TYPE_TX_VIDEO;
@@ -3053,21 +3053,21 @@ int st20_tx_free(st20_tx_handle handle) {
   idx = s->idx;
   sch_idx = sch->idx;
 
-  st_pthread_mutex_lock(&sch->tx_video_mgr_mutex);
+  mt_pthread_mutex_lock(&sch->tx_video_mgr_mutex);
   ret = tv_mgr_detach(&sch->tx_video_mgr, s);
-  st_pthread_mutex_unlock(&sch->tx_video_mgr_mutex);
+  mt_pthread_mutex_unlock(&sch->tx_video_mgr_mutex);
   if (ret < 0)
     err("%s(%d,%d), st_tx_sessions_mgr_deattach fail\n", __func__, sch_idx, idx);
 
   ret = mt_sch_put(sch, s_impl->quota_mbs);
   if (ret < 0) err("%s(%d, %d), mt_sch_put fail\n", __func__, sch_idx, idx);
 
-  st_rte_free(s_impl);
+  mt_rte_free(s_impl);
 
   /* update mgr status */
-  st_pthread_mutex_lock(&sch->tx_video_mgr_mutex);
+  mt_pthread_mutex_lock(&sch->tx_video_mgr_mutex);
   tv_mgr_update(&sch->tx_video_mgr);
-  st_pthread_mutex_unlock(&sch->tx_video_mgr_mutex);
+  mt_pthread_mutex_unlock(&sch->tx_video_mgr_mutex);
 
   rte_atomic32_dec(&impl->st20_tx_sessions_cnt);
   info("%s, succ on sch %d session %d\n", __func__, sch_idx, idx);
@@ -3116,7 +3116,7 @@ st22_tx_handle st22_tx_create(mtl_handle mt, struct st22_tx_ops* ops) {
     quota_mbs *= ops->num_port;
   }
 
-  s_impl = st_rte_zmalloc_socket(sizeof(*s_impl), mt_socket_id(impl, MTL_PORT_P));
+  s_impl = mt_rte_zmalloc_socket(sizeof(*s_impl), mt_socket_id(impl, MTL_PORT_P));
   if (!s_impl) {
     err("%s, s_impl malloc fail\n", __func__);
     return NULL;
@@ -3124,18 +3124,18 @@ st22_tx_handle st22_tx_create(mtl_handle mt, struct st22_tx_ops* ops) {
 
   sch = mt_sch_get(impl, quota_mbs, MT_SCH_TYPE_DEFAULT, MT_SCH_MASK_ALL);
   if (!sch) {
-    st_rte_free(s_impl);
+    mt_rte_free(s_impl);
     err("%s, get sch fail\n", __func__);
     return NULL;
   }
 
-  st_pthread_mutex_lock(&sch->tx_video_mgr_mutex);
+  mt_pthread_mutex_lock(&sch->tx_video_mgr_mutex);
   ret = st_tx_video_sessions_sch_init(impl, sch);
-  st_pthread_mutex_unlock(&sch->tx_video_mgr_mutex);
+  mt_pthread_mutex_unlock(&sch->tx_video_mgr_mutex);
   if (ret < 0) {
     err("%s, tx video sch init fail fail %d\n", __func__, ret);
     mt_sch_put(sch, quota_mbs);
-    st_rte_free(s_impl);
+    mt_rte_free(s_impl);
     return NULL;
   }
 
@@ -3180,17 +3180,17 @@ st22_tx_handle st22_tx_create(mtl_handle mt, struct st22_tx_ops* ops) {
   st20_ops.rtp_pkt_size = ops->rtp_pkt_size;
   st20_ops.notify_rtp_done = ops->notify_rtp_done;
   st20_ops.notify_event = ops->notify_event;
-  st_pthread_mutex_lock(&sch->tx_video_mgr_mutex);
+  mt_pthread_mutex_lock(&sch->tx_video_mgr_mutex);
   if (ST22_TYPE_RTP_LEVEL == ops->type) {
     s = tv_mgr_attach(&sch->tx_video_mgr, &st20_ops, ST22_SESSION_TYPE_TX_VIDEO, NULL);
   } else {
     s = tv_mgr_attach(&sch->tx_video_mgr, &st20_ops, ST22_SESSION_TYPE_TX_VIDEO, ops);
   }
-  st_pthread_mutex_unlock(&sch->tx_video_mgr_mutex);
+  mt_pthread_mutex_unlock(&sch->tx_video_mgr_mutex);
   if (!s) {
     err("%s(%d), st_tx_sessions_mgr_attach fail\n", __func__, sch->idx);
     mt_sch_put(sch, quota_mbs);
-    st_rte_free(s_impl);
+    mt_rte_free(s_impl);
     return NULL;
   }
 
@@ -3225,21 +3225,21 @@ int st22_tx_free(st22_tx_handle handle) {
   idx = s->idx;
   sch_idx = sch->idx;
 
-  st_pthread_mutex_lock(&sch->tx_video_mgr_mutex);
+  mt_pthread_mutex_lock(&sch->tx_video_mgr_mutex);
   ret = tv_mgr_detach(&sch->tx_video_mgr, s);
-  st_pthread_mutex_unlock(&sch->tx_video_mgr_mutex);
+  mt_pthread_mutex_unlock(&sch->tx_video_mgr_mutex);
   if (ret < 0)
     err("%s(%d,%d), st_tx_sessions_mgr_deattach fail\n", __func__, sch_idx, idx);
 
   ret = mt_sch_put(sch, s_impl->quota_mbs);
   if (ret < 0) err("%s(%d, %d), mt_sch_put fail\n", __func__, sch_idx, idx);
 
-  st_rte_free(s_impl);
+  mt_rte_free(s_impl);
 
   /* update mgr status */
-  st_pthread_mutex_lock(&sch->tx_video_mgr_mutex);
+  mt_pthread_mutex_lock(&sch->tx_video_mgr_mutex);
   tv_mgr_update(&sch->tx_video_mgr);
-  st_pthread_mutex_unlock(&sch->tx_video_mgr_mutex);
+  mt_pthread_mutex_unlock(&sch->tx_video_mgr_mutex);
 
   rte_atomic32_dec(&impl->st22_tx_sessions_cnt);
   info("%s, succ on sch %d session %d\n", __func__, sch_idx, idx);

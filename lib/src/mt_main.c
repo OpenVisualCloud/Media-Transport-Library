@@ -402,7 +402,7 @@ mtl_handle mtl_init(struct mtl_init_params* p) {
   }
 #endif
 
-  impl = st_rte_zmalloc_socket(sizeof(*impl), socket[MTL_PORT_P]);
+  impl = mt_rte_zmalloc_socket(sizeof(*impl), socket[MTL_PORT_P]);
   if (!impl) goto err_exit;
 
   rte_memcpy(&impl->user_para, p, sizeof(*p));
@@ -460,10 +460,10 @@ mtl_handle mtl_init(struct mtl_init_params* p) {
   impl->sch_schedule_ns = 200 * NS_PER_US; /* max schedule ns for mt_sleep_ms(0) */
 
   /* init mgr lock for audio and anc */
-  st_pthread_mutex_init(&impl->tx_a_mgr_mutex, NULL);
-  st_pthread_mutex_init(&impl->rx_a_mgr_mutex, NULL);
-  st_pthread_mutex_init(&impl->tx_anc_mgr_mutex, NULL);
-  st_pthread_mutex_init(&impl->rx_anc_mgr_mutex, NULL);
+  mt_pthread_mutex_init(&impl->tx_a_mgr_mutex, NULL);
+  mt_pthread_mutex_init(&impl->rx_a_mgr_mutex, NULL);
+  mt_pthread_mutex_init(&impl->tx_anc_mgr_mutex, NULL);
+  mt_pthread_mutex_init(&impl->rx_anc_mgr_mutex, NULL);
 
   impl->tsc_hz = rte_get_tsc_hz();
 
@@ -502,7 +502,7 @@ mtl_handle mtl_init(struct mtl_init_params* p) {
 err_exit:
   if (impl) {
     st_dev_if_uinit(impl);
-    st_rte_free(impl);
+    mt_rte_free(impl);
   }
   st_dev_uinit(p);
   return NULL;
@@ -527,12 +527,12 @@ int mtl_uninit(mtl_handle mt) {
   mt_main_free(impl);
 
   st_dev_if_uinit(impl);
-  st_rte_free(impl);
+  mt_rte_free(impl);
 
   st_dev_uinit(p);
 
 #ifdef MTL_HAS_ASAN
-  st_asan_check();
+  mt_asan_check();
 #endif
 
   info("%s, succ\n", __func__);
@@ -637,7 +637,7 @@ void* mtl_hp_malloc(mtl_handle mt, size_t size, enum mtl_port port) {
     return NULL;
   }
 
-  return st_rte_malloc_socket(size, mt_socket_id(impl, port));
+  return mt_rte_malloc_socket(size, mt_socket_id(impl, port));
 }
 
 void* mtl_hp_zmalloc(mtl_handle mt, size_t size, enum mtl_port port) {
@@ -654,10 +654,10 @@ void* mtl_hp_zmalloc(mtl_handle mt, size_t size, enum mtl_port port) {
     return NULL;
   }
 
-  return st_rte_zmalloc_socket(size, mt_socket_id(impl, port));
+  return mt_rte_zmalloc_socket(size, mt_socket_id(impl, port));
 }
 
-void mtl_hp_free(mtl_handle mt, void* ptr) { return st_rte_free(ptr); }
+void mtl_hp_free(mtl_handle mt, void* ptr) { return mt_rte_free(ptr); }
 
 mtl_iova_t mtl_hp_virt2iova(mtl_handle mt, const void* vaddr) {
   return rte_malloc_virt2iova(vaddr);
@@ -785,7 +785,7 @@ mtl_dma_mem_handle mtl_dma_mem_alloc(mtl_handle mt, size_t size) {
     return NULL;
   }
 
-  mem = st_rte_zmalloc_socket(sizeof(*mem), mt_socket_id(impl, MTL_PORT_P));
+  mem = mt_rte_zmalloc_socket(sizeof(*mem), mt_socket_id(impl, MTL_PORT_P));
   if (!mem) {
     err("%s, dma mem malloc fail\n", __func__);
     return NULL;
@@ -794,10 +794,10 @@ mtl_dma_mem_handle mtl_dma_mem_alloc(mtl_handle mt, size_t size) {
   size_t page_size = mtl_page_size(impl);
   size_t iova_size = mtl_size_page_align(size, page_size);
   size_t alloc_size = iova_size + page_size;
-  void* alloc_addr = st_zmalloc(alloc_size);
+  void* alloc_addr = mt_zmalloc(alloc_size);
   if (!alloc_addr) {
     err("%s, dma mem alloc fail\n", __func__);
-    st_rte_free(mem);
+    mt_rte_free(mem);
     return NULL;
   }
 
@@ -805,8 +805,8 @@ mtl_dma_mem_handle mtl_dma_mem_alloc(mtl_handle mt, size_t size) {
   mtl_iova_t iova = mtl_dma_map(impl, addr, iova_size);
   if (iova == MTL_BAD_IOVA) {
     err("%s, dma mem %p map fail\n", __func__, addr);
-    st_free(alloc_addr);
-    st_rte_free(mem);
+    mt_free(alloc_addr);
+    mt_rte_free(mem);
     return NULL;
   }
 
@@ -824,8 +824,8 @@ mtl_dma_mem_handle mtl_dma_mem_alloc(mtl_handle mt, size_t size) {
 void mtl_dma_mem_free(mtl_handle mt, mtl_dma_mem_handle handle) {
   struct mtl_dma_mem* mem = handle;
   mtl_dma_unmap(mt, mem->addr, mem->iova, mem->iova_size);
-  st_free(mem->alloc_addr);
-  st_rte_free(mem);
+  mt_free(mem->alloc_addr);
+  mt_rte_free(mem);
 }
 
 void* mtl_dma_mem_addr(mtl_dma_mem_handle handle) {

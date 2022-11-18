@@ -31,64 +31,64 @@
 #endif /* end of WINDOWSENV */
 
 #ifdef CLOCK_MONOTONIC_RAW
-#define ST_CLOCK_MONOTONIC_ID CLOCK_MONOTONIC_RAW
+#define MT_CLOCK_MONOTONIC_ID CLOCK_MONOTONIC_RAW
 #else
-#define ST_CLOCK_MONOTONIC_ID CLOCK_MONOTONIC
+#define MT_CLOCK_MONOTONIC_ID CLOCK_MONOTONIC
 #endif
 
 #ifdef WINDOWSENV
-#define ST_THREAD_TIMEDWAIT_CLOCK_ID CLOCK_REALTIME
+#define MT_THREAD_TIMEDWAIT_CLOCK_ID CLOCK_REALTIME
 #else
-/* use CLOCK_MONOTONIC for st_pthread_cond_timedwait */
-#define ST_THREAD_TIMEDWAIT_CLOCK_ID CLOCK_MONOTONIC
+/* use CLOCK_MONOTONIC for mt_pthread_cond_timedwait */
+#define MT_THREAD_TIMEDWAIT_CLOCK_ID CLOCK_MONOTONIC
 #endif
 
 #ifdef WINDOWSENV
-#define ST_FLOCK_PATH "c:/temp/kahawai_lcore.lock"
+#define MT_FLOCK_PATH "c:/temp/kahawai_lcore.lock"
 #else
-#define ST_FLOCK_PATH "/tmp/kahawai_lcore.lock"
+#define MT_FLOCK_PATH "/tmp/kahawai_lcore.lock"
 #endif
 
-static inline int st_pthread_mutex_init(pthread_mutex_t* mutex,
+static inline int mt_pthread_mutex_init(pthread_mutex_t* mutex,
                                         pthread_mutexattr_t* attr) {
   return pthread_mutex_init(mutex, attr);
 }
 
-static inline int st_pthread_mutex_lock(pthread_mutex_t* mutex) {
+static inline int mt_pthread_mutex_lock(pthread_mutex_t* mutex) {
   return pthread_mutex_lock(mutex);
 }
 
-static inline int st_pthread_mutex_unlock(pthread_mutex_t* mutex) {
+static inline int mt_pthread_mutex_unlock(pthread_mutex_t* mutex) {
   return pthread_mutex_unlock(mutex);
 }
 
-static inline int st_pthread_mutex_destroy(pthread_mutex_t* mutex) {
+static inline int mt_pthread_mutex_destroy(pthread_mutex_t* mutex) {
   return pthread_mutex_destroy(mutex);
 }
 
-static inline int st_pthread_cond_init(pthread_cond_t* cond,
+static inline int mt_pthread_cond_init(pthread_cond_t* cond,
                                        pthread_condattr_t* cond_attr) {
   return pthread_cond_init(cond, cond_attr);
 }
 
-static inline int st_pthread_cond_wait(pthread_cond_t* cond, pthread_mutex_t* mutex) {
+static inline int mt_pthread_cond_wait(pthread_cond_t* cond, pthread_mutex_t* mutex) {
   return pthread_cond_wait(cond, mutex);
 }
 
-static inline int st_pthread_cond_timedwait(pthread_cond_t* cond, pthread_mutex_t* mutex,
+static inline int mt_pthread_cond_timedwait(pthread_cond_t* cond, pthread_mutex_t* mutex,
                                             const struct timespec* time) {
   return pthread_cond_timedwait(cond, mutex, time);
 }
 
-static inline int st_pthread_cond_destroy(pthread_cond_t* cond) {
+static inline int mt_pthread_cond_destroy(pthread_cond_t* cond) {
   return pthread_cond_destroy(cond);
 }
 
-static inline int st_pthread_cond_signal(pthread_cond_t* cond) {
+static inline int mt_pthread_cond_signal(pthread_cond_t* cond) {
   return pthread_cond_signal(cond);
 }
 
-static inline bool st_socket_match(int cpu_socket, int dev_socket) {
+static inline bool mt_socket_match(int cpu_socket, int dev_socket) {
 #ifdef WINDOWSENV
   return true;  // windows cpu socket always 0
 #else

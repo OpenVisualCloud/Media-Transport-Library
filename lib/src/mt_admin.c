@@ -107,12 +107,12 @@ static int tx_video_migrate_to(struct mtl_main_impl* impl,
   int from_midx = from_tx_mgr->idx;
   int from_idx = s->idx;
 
-  st_pthread_mutex_lock(&to_sch->tx_video_mgr_mutex);
-  st_pthread_mutex_lock(&from_sch->tx_video_mgr_mutex);
+  mt_pthread_mutex_lock(&to_sch->tx_video_mgr_mutex);
+  mt_pthread_mutex_lock(&from_sch->tx_video_mgr_mutex);
   if (!tx_video_session_get(from_tx_mgr, from_idx)) {
     err("%s, get session(%d,%d) fail\n", __func__, from_midx, from_idx);
-    st_pthread_mutex_unlock(&from_sch->tx_video_mgr_mutex);
-    st_pthread_mutex_unlock(&to_sch->tx_video_mgr_mutex);
+    mt_pthread_mutex_unlock(&from_sch->tx_video_mgr_mutex);
+    mt_pthread_mutex_unlock(&to_sch->tx_video_mgr_mutex);
     return -EIO;
   }
   int i;
@@ -131,8 +131,8 @@ static int tx_video_migrate_to(struct mtl_main_impl* impl,
     break;
   }
   tx_video_session_put(from_tx_mgr, from_idx);
-  st_pthread_mutex_unlock(&from_sch->tx_video_mgr_mutex);
-  st_pthread_mutex_unlock(&to_sch->tx_video_mgr_mutex);
+  mt_pthread_mutex_unlock(&from_sch->tx_video_mgr_mutex);
+  mt_pthread_mutex_unlock(&to_sch->tx_video_mgr_mutex);
 
   info("%s, session(%d,%d,%f) move to (%d,%d)\n", __func__, from_midx, from_idx,
        tx_video_session_get_cpu_busy(s), to_midx, i);
@@ -184,9 +184,9 @@ static int admin_tx_video_migrate(struct mtl_main_impl* impl, bool* migrated) {
     return -EIO;
   }
 
-  st_pthread_mutex_lock(&to_sch->tx_video_mgr_mutex);
+  mt_pthread_mutex_lock(&to_sch->tx_video_mgr_mutex);
   st_tx_video_sessions_sch_init(impl, to_sch); /* ensure video sch context */
-  st_pthread_mutex_unlock(&to_sch->tx_video_mgr_mutex);
+  mt_pthread_mutex_unlock(&to_sch->tx_video_mgr_mutex);
 
   ret = tx_video_migrate_to(impl, busy_s, from_sch, to_sch);
   if (ret < 0) {
@@ -222,12 +222,12 @@ static int rx_video_migrate_to(struct mtl_main_impl* impl,
   int from_midx = from_rx_mgr->idx;
   int from_idx = s->idx;
 
-  st_pthread_mutex_lock(&to_sch->rx_video_mgr_mutex);
-  st_pthread_mutex_lock(&from_sch->rx_video_mgr_mutex);
+  mt_pthread_mutex_lock(&to_sch->rx_video_mgr_mutex);
+  mt_pthread_mutex_lock(&from_sch->rx_video_mgr_mutex);
   if (!rx_video_session_get(from_rx_mgr, from_idx)) {
     err("%s, get session(%d,%d) fail\n", __func__, from_midx, from_idx);
-    st_pthread_mutex_unlock(&from_sch->rx_video_mgr_mutex);
-    st_pthread_mutex_unlock(&to_sch->rx_video_mgr_mutex);
+    mt_pthread_mutex_unlock(&from_sch->rx_video_mgr_mutex);
+    mt_pthread_mutex_unlock(&to_sch->rx_video_mgr_mutex);
     return -EIO;
   }
   int i;
@@ -246,8 +246,8 @@ static int rx_video_migrate_to(struct mtl_main_impl* impl,
     break;
   }
   rx_video_session_put(from_rx_mgr, from_idx);
-  st_pthread_mutex_unlock(&from_sch->rx_video_mgr_mutex);
-  st_pthread_mutex_unlock(&to_sch->rx_video_mgr_mutex);
+  mt_pthread_mutex_unlock(&from_sch->rx_video_mgr_mutex);
+  mt_pthread_mutex_unlock(&to_sch->rx_video_mgr_mutex);
 
   info("%s, session(%d,%d,%f) move to (%d,%d)\n", __func__, from_midx, from_idx,
        rx_video_session_get_cpu_busy(s), to_midx, i);
@@ -299,9 +299,9 @@ static int admin_rx_video_migrate(struct mtl_main_impl* impl, bool* migrated) {
     return -EIO;
   }
 
-  st_pthread_mutex_lock(&to_sch->rx_video_mgr_mutex);
+  mt_pthread_mutex_lock(&to_sch->rx_video_mgr_mutex);
   st_rx_video_sessions_sch_init(impl, to_sch); /* ensure video sch context */
-  st_pthread_mutex_unlock(&to_sch->rx_video_mgr_mutex);
+  mt_pthread_mutex_unlock(&to_sch->rx_video_mgr_mutex);
 
   ret = rx_video_migrate_to(impl, busy_s, from_sch, to_sch);
   if (ret < 0) {
@@ -314,9 +314,9 @@ static int admin_rx_video_migrate(struct mtl_main_impl* impl, bool* migrated) {
 }
 
 static void admin_wakeup_thread(struct mt_admin* admin) {
-  st_pthread_mutex_lock(&admin->admin_wake_mutex);
-  st_pthread_cond_signal(&admin->admin_wake_cond);
-  st_pthread_mutex_unlock(&admin->admin_wake_mutex);
+  mt_pthread_mutex_lock(&admin->admin_wake_mutex);
+  mt_pthread_cond_signal(&admin->admin_wake_cond);
+  mt_pthread_mutex_unlock(&admin->admin_wake_mutex);
 }
 
 static void admin_alarm_handler(void* param) {
@@ -355,10 +355,10 @@ static void* admin_thread(void* arg) {
 
   info("%s, start\n", __func__);
   while (rte_atomic32_read(&admin->admin_stop) == 0) {
-    st_pthread_mutex_lock(&admin->admin_wake_mutex);
+    mt_pthread_mutex_lock(&admin->admin_wake_mutex);
     if (!rte_atomic32_read(&admin->admin_stop))
-      st_pthread_cond_wait(&admin->admin_wake_cond, &admin->admin_wake_mutex);
-    st_pthread_mutex_unlock(&admin->admin_wake_mutex);
+      mt_pthread_cond_wait(&admin->admin_wake_cond, &admin->admin_wake_mutex);
+    mt_pthread_mutex_unlock(&admin->admin_wake_mutex);
 
     if (!rte_atomic32_read(&admin->admin_stop)) admin_func(impl);
   }
@@ -371,8 +371,8 @@ int mt_admin_init(struct mtl_main_impl* impl) {
   struct mt_admin* admin = mt_get_admin(impl);
 
   admin->period_us = 5 * US_PER_S; /* 5s */
-  st_pthread_mutex_init(&admin->admin_wake_mutex, NULL);
-  st_pthread_cond_init(&admin->admin_wake_cond, NULL);
+  mt_pthread_mutex_init(&admin->admin_wake_mutex, NULL);
+  mt_pthread_cond_init(&admin->admin_wake_cond, NULL);
   rte_atomic32_set(&admin->admin_stop, 0);
 
   pthread_create(&admin->admin_tid, NULL, admin_thread, impl);
@@ -392,7 +392,7 @@ int mt_admin_uinit(struct mtl_main_impl* impl) {
   }
   rte_eal_alarm_cancel(admin_alarm_handler, impl);
 
-  st_pthread_mutex_destroy(&admin->admin_wake_mutex);
-  st_pthread_cond_destroy(&admin->admin_wake_cond);
+  mt_pthread_mutex_destroy(&admin->admin_wake_mutex);
+  mt_pthread_cond_destroy(&admin->admin_wake_cond);
   return 0;
 }

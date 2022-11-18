@@ -468,12 +468,12 @@ int st20_rfc4175_422be10_to_yuv422p10le_avx512_vbmi_dma(
   int soc_id = dma->parent->soc_id;
 
   struct st20_rfc4175_422_10_pg2_be* be_caches =
-      st_rte_zmalloc_socket(cache_size * caches_num, soc_id);
+      mt_rte_zmalloc_socket(cache_size * caches_num, soc_id);
   struct st_cvt_dma_ctx* ctx = st_cvt_dma_ctx_init(2 * caches_num, soc_id, 2);
   if (!be_caches || !ctx) {
     err("%s, alloc cache(%d,%" PRIu64 ") fail, %p\n", __func__, cache_pg_cnt, cache_size,
         be_caches);
-    if (be_caches) st_rte_free(be_caches);
+    if (be_caches) mt_rte_free(be_caches);
     if (ctx) st_cvt_dma_ctx_uinit(ctx);
     return st20_rfc4175_422be10_to_yuv422p10le_avx512_vbmi(pg_be, y, b, r, w, h);
   }
@@ -535,7 +535,7 @@ int st20_rfc4175_422be10_to_yuv422p10le_avx512_vbmi_dma(
   }
 
   pg_cnt = pg_cnt % cache_pg_cnt;
-  st_rte_free(be_caches);
+  mt_rte_free(be_caches);
 
   /* remaining simd batch */
   int batch = pg_cnt / 8;
@@ -655,13 +655,13 @@ int st20_rfc4175_422be10_to_422le10_avx512_vbmi_dma(
   int soc_id = dma->parent->soc_id;
 
   struct st20_rfc4175_422_10_pg2_be* be_caches =
-      st_rte_zmalloc_socket(cache_size * caches_num, soc_id);
+      mt_rte_zmalloc_socket(cache_size * caches_num, soc_id);
   /* two type be(0) or le(1) */
   struct st_cvt_dma_ctx* ctx = st_cvt_dma_ctx_init(2 * caches_num, soc_id, 2);
   if (!be_caches || !ctx) {
     err("%s, alloc cache(%d,%" PRIu64 ") fail, %p\n", __func__, cache_pg_cnt, cache_size,
         be_caches);
-    if (be_caches) st_rte_free(be_caches);
+    if (be_caches) mt_rte_free(be_caches);
     if (ctx) st_cvt_dma_ctx_uinit(ctx);
     return st20_rfc4175_422be10_to_422le10_avx512_vbmi(pg_be, pg_le, w, h);
   }
@@ -719,7 +719,7 @@ int st20_rfc4175_422be10_to_422le10_avx512_vbmi_dma(
   }
 
   pg_cnt = pg_cnt % cache_pg_cnt;
-  st_rte_free(be_caches);
+  mt_rte_free(be_caches);
   st_cvt_dma_ctx_uinit(ctx);
 
   /* remaining simd batch */
@@ -828,13 +828,13 @@ int st20_rfc4175_422be10_to_422le8_avx512_vbmi_dma(
   int soc_id = dma->parent->soc_id;
 
   struct st20_rfc4175_422_10_pg2_be* be10_caches =
-      st_rte_zmalloc_socket(cache_size * caches_num, soc_id);
+      mt_rte_zmalloc_socket(cache_size * caches_num, soc_id);
   /* two type be(0) or le(1) */
   struct st_cvt_dma_ctx* ctx = st_cvt_dma_ctx_init(2 * caches_num, soc_id, 2);
   if (!be10_caches || !ctx) {
     err("%s, alloc cache(%d,%" PRIu64 ") fail, %p\n", __func__, cache_pg_cnt, cache_size,
         be10_caches);
-    if (be10_caches) st_rte_free(be10_caches);
+    if (be10_caches) mt_rte_free(be10_caches);
     if (ctx) st_cvt_dma_ctx_uinit(ctx);
     return st20_rfc4175_422be10_to_422le8_avx512_vbmi(pg_10, pg_8, w, h);
   }
@@ -885,7 +885,7 @@ int st20_rfc4175_422be10_to_422le8_avx512_vbmi_dma(
   }
 
   pg_cnt = pg_cnt % cache_pg_cnt;
-  st_rte_free(be10_caches);
+  mt_rte_free(be10_caches);
   st_cvt_dma_ctx_uinit(ctx);
 
   /* remaining simd batch */
@@ -1016,13 +1016,13 @@ int st20_rfc4175_422be10_to_v210_avx512_vbmi_dma(struct mtl_dma_lender_dev* dma,
   int soc_id = dma->parent->soc_id;
 
   struct st20_rfc4175_422_10_pg2_be* be_caches =
-      st_rte_zmalloc_socket(cache_size * caches_num, soc_id);
+      mt_rte_zmalloc_socket(cache_size * caches_num, soc_id);
   /* two type be(0) or le(1) */
   struct st_cvt_dma_ctx* ctx = st_cvt_dma_ctx_init(2 * caches_num, soc_id, 2);
   if (!be_caches || !ctx) {
     err("%s, alloc cache(%d,%" PRIu64 ") fail, %p\n", __func__, cache_pg_cnt, cache_size,
         be_caches);
-    if (be_caches) st_rte_free(be_caches);
+    if (be_caches) mt_rte_free(be_caches);
     if (ctx) st_cvt_dma_ctx_uinit(ctx);
     return st20_rfc4175_422be10_to_v210_avx512_vbmi(pg_be, pg_v210, w, h);
   }
@@ -1079,7 +1079,7 @@ int st20_rfc4175_422be10_to_v210_avx512_vbmi_dma(struct mtl_dma_lender_dev* dma,
   }
 
   pg_cnt = pg_cnt % cache_pg_cnt;
-  st_rte_free(be_caches);
+  mt_rte_free(be_caches);
   st_cvt_dma_ctx_uinit(ctx);
 
   /* remaining simd batch */
@@ -1466,13 +1466,13 @@ int st20_rfc4175_422le10_to_422be10_avx512_vbmi_dma(
   int soc_id = dma->parent->soc_id;
 
   struct st20_rfc4175_422_10_pg2_le* le_caches =
-      st_rte_zmalloc_socket(cache_size * caches_num, soc_id);
+      mt_rte_zmalloc_socket(cache_size * caches_num, soc_id);
   /* two type be(0) or le(1) */
   struct st_cvt_dma_ctx* ctx = st_cvt_dma_ctx_init(2 * caches_num, soc_id, 2);
   if (!le_caches || !ctx) {
     err("%s, alloc cache(%d,%" PRIu64 ") fail, %p\n", __func__, cache_pg_cnt, cache_size,
         le_caches);
-    if (le_caches) st_rte_free(le_caches);
+    if (le_caches) mt_rte_free(le_caches);
     if (ctx) st_cvt_dma_ctx_uinit(ctx);
     return st20_rfc4175_422be10_to_422le10_avx512_vbmi(pg_be, pg_le, w, h);
   }
@@ -1530,7 +1530,7 @@ int st20_rfc4175_422le10_to_422be10_avx512_vbmi_dma(
   }
 
   pg_cnt = pg_cnt % cache_pg_cnt;
-  st_rte_free(le_caches);
+  mt_rte_free(le_caches);
   st_cvt_dma_ctx_uinit(ctx);
 
   /* remaining simd batch */
@@ -1727,13 +1727,13 @@ int st20_v210_to_rfc4175_422be10_avx512_vbmi_dma(struct mtl_dma_lender_dev* dma,
   size_t cache_size = cache_3_pg_cnt * 16;
   int soc_id = dma->parent->soc_id;
 
-  uint8_t* v210_caches = st_rte_zmalloc_socket(cache_size * caches_num, soc_id);
+  uint8_t* v210_caches = mt_rte_zmalloc_socket(cache_size * caches_num, soc_id);
   /* two type v210(0) or be(1) */
   struct st_cvt_dma_ctx* ctx = st_cvt_dma_ctx_init(2 * caches_num, soc_id, 2);
   if (!v210_caches || !ctx) {
     err("%s, alloc cache(%d,%" PRIu64 ") fail, %p\n", __func__, cache_3_pg_cnt,
         cache_size, v210_caches);
-    if (v210_caches) st_rte_free(v210_caches);
+    if (v210_caches) mt_rte_free(v210_caches);
     if (ctx) st_cvt_dma_ctx_uinit(ctx);
     return st20_v210_to_rfc4175_422be10_avx512_vbmi(pg_v210, pg_be, w, h);
   }
@@ -1788,7 +1788,7 @@ int st20_v210_to_rfc4175_422be10_avx512_vbmi_dma(struct mtl_dma_lender_dev* dma,
   }
 
   pg_cnt = pg_cnt % (cache_3_pg_cnt * 3);
-  st_rte_free(v210_caches);
+  mt_rte_free(v210_caches);
   st_cvt_dma_ctx_uinit(ctx);
 
   /* remaining simd batch */
