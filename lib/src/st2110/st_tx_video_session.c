@@ -89,7 +89,7 @@ static void tv_frame_free_cb(void* addr, void* opaque) {
 static int tv_alloc_frames(struct mtl_main_impl* impl,
                            struct st_tx_video_session_impl* s) {
   enum mtl_port port = mt_port_logic2phy(s->port_maps, ST_SESSION_PORT_P);
-  int soc_id = st_socket_id(impl, port);
+  int soc_id = mt_socket_id(impl, port);
   int idx = s->idx;
   struct st_frame_trans* frame_info;
   struct st22_tx_video_info* st22_info = s->st22_info;
@@ -208,7 +208,7 @@ static int tv_train_pacing(struct mtl_main_impl* impl, struct st_tx_video_sessio
   }
 
   /* wait tsc calibrate done, pacing need fine tuned TSC */
-  st_wait_tsc_stable(impl);
+  mt_wait_tsc_stable(impl);
 
   train_start_time = mt_get_tsc(impl);
 
@@ -216,7 +216,7 @@ static int tv_train_pacing(struct mtl_main_impl* impl, struct st_tx_video_sessio
   pad_pkts = s->st20_total_pkts * 100;
   for (int i = 0; i < pad_pkts; i++) {
     rte_mbuf_refcnt_update(pad, 1);
-    st_tx_burst_busy(port_id, queue_id, &pad, 1);
+    mt_tx_burst_busy(port_id, queue_id, &pad, 1);
   }
 
   /* training stage */
@@ -234,12 +234,12 @@ static int tv_train_pacing(struct mtl_main_impl* impl, struct st_tx_video_sessio
       int bulk_batch = pkts / bulk;
       for (int j = 0; j < bulk_batch; j++) {
         rte_mbuf_refcnt_update(pad, bulk);
-        st_tx_burst_busy(port_id, queue_id, bulk_pad, bulk);
+        mt_tx_burst_busy(port_id, queue_id, bulk_pad, bulk);
       }
       int remaining = pkts % bulk;
       for (int j = 0; j < remaining; j++) {
         rte_mbuf_refcnt_update(pad, 1);
-        st_tx_burst_busy(port_id, queue_id, &pad, 1);
+        mt_tx_burst_busy(port_id, queue_id, &pad, 1);
       }
     }
     uint64_t end = mt_get_tsc(impl);
@@ -441,7 +441,7 @@ static int tv_sync_pacing(struct mtl_main_impl* impl, struct st_tx_video_session
   if (sync) {
     dbg("%s(%d), delay to epoch_time %f, cur %" PRIu64 "\n", __func__, idx,
         pacing->tsc_time_cursor, mt_get_tsc(impl));
-    st_tsc_delay_to(impl, pacing->tsc_time_cursor);
+    mt_tsc_delay_to(impl, pacing->tsc_time_cursor);
   }
 
   return 0;
@@ -519,7 +519,7 @@ static int tv_init_hdr(struct mtl_main_impl* impl, struct st_tx_video_session_im
   struct st20_tx_ops* ops = &s->ops;
   uint8_t* dip = ops->dip_addr[s_port];
   uint8_t* sip = mt_sip_addr(impl, port);
-  struct rte_ether_addr* d_addr = st_eth_d_addr(eth);
+  struct rte_ether_addr* d_addr = mt_eth_d_addr(eth);
 
   /* ether hdr */
   if ((s_port == ST_SESSION_PORT_P) && (ops->flags & ST20_TX_FLAG_USER_P_MAC)) {
@@ -537,7 +537,7 @@ static int tv_init_hdr(struct mtl_main_impl* impl, struct st_tx_video_session_im
     }
   }
 
-  ret = rte_eth_macaddr_get(s->port_id[s_port], st_eth_s_addr(eth));
+  ret = rte_eth_macaddr_get(s->port_id[s_port], mt_eth_s_addr(eth));
   if (ret < 0) {
     err("%s(%d), rte_eth_macaddr_get fail %d for port %d\n", __func__, idx, ret, s_port);
     return ret;
@@ -663,7 +663,7 @@ static int tv_build_pkt(struct mtl_main_impl* impl, struct st_tx_video_session_i
   }
 
   /* update mbuf */
-  st_mbuf_init_ipv4(pkt);
+  mt_mbuf_init_ipv4(pkt);
   pkt->data_len = sizeof(struct st_rfc4175_video_hdr);
   if (e_rtp) pkt->data_len += sizeof(*e_rtp);
   pkt->pkt_len = pkt->data_len;
@@ -739,7 +739,7 @@ static int tv_build_rtp(struct mtl_main_impl* impl, struct st_tx_video_session_i
   rtp->tmstamp = htonl(s->pacing.rtp_time_stamp);
 
   /* update mbuf */
-  st_mbuf_init_ipv4(pkt);
+  mt_mbuf_init_ipv4(pkt);
   pkt->data_len = sizeof(struct st_base_hdr);
   pkt->pkt_len = pkt->data_len;
 
@@ -903,7 +903,7 @@ static int tv_build_st22(struct mtl_main_impl* impl, struct st_tx_video_session_
   rtp->f_counter_hi = f_counter >> 2;
 
   /* update mbuf */
-  st_mbuf_init_ipv4(pkt);
+  mt_mbuf_init_ipv4(pkt);
   pkt->data_len = sizeof(*hdr);
   pkt->pkt_len = pkt->data_len;
 
@@ -1722,7 +1722,7 @@ static int tv_init_hw(struct mtl_main_impl* impl, struct st_tx_video_sessions_mg
     snprintf(ring_name, 32, "TX-VIDEO-RING-M%d-R%d-P%d", mgr_idx, idx, i);
     flags = RING_F_SP_ENQ | RING_F_SC_DEQ; /* single-producer and single-consumer */
     count = s->ring_count;
-    ring = rte_ring_create(ring_name, count, st_socket_id(impl, i), flags);
+    ring = rte_ring_create(ring_name, count, mt_socket_id(impl, i), flags);
     if (!ring) {
       err("%s(%d,%d), rte_ring_create fail for port %d\n", __func__, mgr_idx, idx, i);
       tv_uinit_hw(impl, s);
@@ -1738,7 +1738,7 @@ static int tv_init_hw(struct mtl_main_impl* impl, struct st_tx_video_sessions_mg
             mgr_idx, idx, i);
       } else {
         /* reuse rx mempool for zero copy */
-        if (st_has_rx_mono_pool(impl))
+        if (mt_has_rx_mono_pool(impl))
           s->mbuf_mempool_hdr[i] = mt_get_rx_mempool(impl, port);
         else
           s->mbuf_mempool_hdr[i] = mt_if(impl, port)->rx_queues[queue].mbuf_pool;
@@ -1899,7 +1899,7 @@ static int tv_init_packet_ring(struct mtl_main_impl* impl,
 
   snprintf(ring_name, 32, "TX-VIDEO-PACKET-RING-M%d-R%d", mgr_idx, idx);
   flags = RING_F_SP_ENQ | RING_F_SC_DEQ; /* single-producer and single-consumer */
-  ring = rte_ring_create(ring_name, count, st_socket_id(impl, port), flags);
+  ring = rte_ring_create(ring_name, count, mt_socket_id(impl, port), flags);
   if (!ring) {
     err("%s(%d,%d), rte_ring_create fail\n", __func__, mgr_idx, idx);
     return -ENOMEM;
@@ -1953,7 +1953,7 @@ static int tv_init_st22_frame(struct mtl_main_impl* impl,
                               struct st22_tx_ops* st22_frame_ops) {
   struct st22_tx_video_info* st22_info;
 
-  st22_info = st_rte_zmalloc_socket(sizeof(*st22_info), st_socket_id(impl, MTL_PORT_P));
+  st22_info = st_rte_zmalloc_socket(sizeof(*st22_info), mt_socket_id(impl, MTL_PORT_P));
   if (!st22_info) return -ENOMEM;
 
   st22_info->get_next_frame = st22_frame_ops->get_next_frame;
@@ -2206,14 +2206,14 @@ static int tv_attach(struct mtl_main_impl* impl, struct st_tx_video_sessions_mgr
     enum mtl_port port = mt_port_logic2phy(s->port_maps, i);
     s->eth_ipv4_cksum_offload[i] = mt_if_has_offload_ipv4_cksum(impl, port);
     s->eth_has_chain[i] = mt_if_has_chain_buff(impl, port);
-    if (mt_pmd_is_kernel(impl, port) && st_has_af_xdp_zc(impl)) {
+    if (mt_pmd_is_kernel(impl, port) && mt_has_af_xdp_zc(impl)) {
       /* enable zero copy for tx */
       s->mbuf_mempool_reuse_rx[i] = true;
     } else {
       s->mbuf_mempool_reuse_rx[i] = false;
     }
   }
-  s->tx_mono_pool = st_has_tx_mono_pool(impl);
+  s->tx_mono_pool = mt_has_tx_mono_pool(impl);
   s->st20_ipv4_packet_id = 0;
 
   s->ring_count = ST_TX_VIDEO_SESSIONS_RING_SIZE;
@@ -2260,7 +2260,7 @@ static int tv_attach(struct mtl_main_impl* impl, struct st_tx_video_sessions_mgr
   /* init advice sleep us */
   double sleep_ns = s->pacing.trs * 128;
   s->advice_sleep_us = sleep_ns / NS_PER_US;
-  if (st_tasklet_has_sleep(impl)) {
+  if (mt_tasklet_has_sleep(impl)) {
     info("%s(%d), advice sleep us %" PRIu64 "\n", __func__, idx, s->advice_sleep_us);
   }
 
@@ -2428,7 +2428,7 @@ static struct st_tx_video_session_impl* tv_mgr_attach(
   for (int i = 0; i < ST_SCH_MAX_TX_VIDEO_SESSIONS; i++) {
     if (!tx_video_session_get_empty(mgr, i)) continue;
 
-    s = st_rte_zmalloc_socket(sizeof(*s), st_socket_id(impl, MTL_PORT_P));
+    s = st_rte_zmalloc_socket(sizeof(*s), mt_socket_id(impl, MTL_PORT_P));
     if (!s) {
       err("%s(%d), session malloc fail on %d\n", __func__, midx, i);
       tx_video_session_put(mgr, i);
@@ -2551,7 +2551,7 @@ static int tv_mgr_update(struct st_tx_video_sessions_mgr* mgr) {
   dbg("%s(%d), sleep us %" PRIu64 ", max_idx %d\n", __func__, mgr->idx, sleep_us,
       max_idx);
   mgr->max_idx = max_idx;
-  if (mgr->tasklet) st_tasklet_set_sleep(mgr->tasklet, sleep_us);
+  if (mgr->tasklet) mt_tasklet_set_sleep(mgr->tasklet, sleep_us);
   return 0;
 }
 
@@ -2664,7 +2664,7 @@ static int tv_ops_check(struct st20_tx_ops* ops) {
       err("%s, invalid rtp_frame_total_pkts %d\n", __func__, ops->rtp_frame_total_pkts);
       return -EINVAL;
     }
-    if (!st_rtp_len_valid(ops->rtp_pkt_size)) {
+    if (!mt_rtp_len_valid(ops->rtp_pkt_size)) {
       err("%s, invalid rtp_pkt_size %d\n", __func__, ops->rtp_pkt_size);
       return -EINVAL;
     }
@@ -2732,7 +2732,7 @@ static int tv_st22_ops_check(struct st22_tx_ops* ops) {
       err("%s, invalid rtp_ring_size %d\n", __func__, ops->rtp_ring_size);
       return -EINVAL;
     }
-    if (!st_rtp_len_valid(ops->rtp_pkt_size)) {
+    if (!mt_rtp_len_valid(ops->rtp_pkt_size)) {
       err("%s, invalid rtp_pkt_size %d\n", __func__, ops->rtp_pkt_size);
       return -EINVAL;
     }
@@ -2776,13 +2776,13 @@ st20_tx_handle st20_tx_create(mtl_handle mt, struct st20_tx_ops* ops) {
   }
   quota_mbs = bps / (1000 * 1000);
   quota_mbs *= ops->num_port;
-  if (!st_has_user_quota(impl)) {
+  if (!mt_has_user_quota(impl)) {
     if (ST20_TYPE_RTP_LEVEL == ops->type) {
       quota_mbs = quota_mbs * ST_QUOTA_TX1080P_PER_SCH / ST_QUOTA_TX1080P_RTP_PER_SCH;
     }
   }
 
-  s_impl = st_rte_zmalloc_socket(sizeof(*s_impl), st_socket_id(impl, MTL_PORT_P));
+  s_impl = st_rte_zmalloc_socket(sizeof(*s_impl), mt_socket_id(impl, MTL_PORT_P));
   if (!s_impl) {
     err("%s, s_impl malloc fail\n", __func__);
     return NULL;
@@ -2986,7 +2986,7 @@ int st20_tx_put_mbuf(st20_tx_handle handle, void* mbuf, uint16_t len) {
   struct rte_ring* packet_ring;
   int idx, ret;
 
-  if (!st_rtp_len_valid(len)) {
+  if (!mt_rtp_len_valid(len)) {
     if (len) err("%s, invalid len %d\n", __func__, len);
     rte_pktmbuf_free(mbuf);
     return -EIO;
@@ -3103,7 +3103,7 @@ st22_tx_handle st22_tx_create(mtl_handle mt, struct st22_tx_ops* ops) {
     }
     quota_mbs = bps / (1000 * 1000);
     quota_mbs *= ops->num_port;
-    if (!st_has_user_quota(impl)) {
+    if (!mt_has_user_quota(impl)) {
       quota_mbs = quota_mbs * ST_QUOTA_TX1080P_PER_SCH / ST_QUOTA_TX1080P_RTP_PER_SCH;
     }
   } else {
@@ -3116,7 +3116,7 @@ st22_tx_handle st22_tx_create(mtl_handle mt, struct st22_tx_ops* ops) {
     quota_mbs *= ops->num_port;
   }
 
-  s_impl = st_rte_zmalloc_socket(sizeof(*s_impl), st_socket_id(impl, MTL_PORT_P));
+  s_impl = st_rte_zmalloc_socket(sizeof(*s_impl), mt_socket_id(impl, MTL_PORT_P));
   if (!s_impl) {
     err("%s, s_impl malloc fail\n", __func__);
     return NULL;
@@ -3288,7 +3288,7 @@ int st22_tx_put_mbuf(st22_tx_handle handle, void* mbuf, uint16_t len) {
   struct rte_ring* packet_ring;
   int idx, ret;
 
-  if (!st_rtp_len_valid(len)) {
+  if (!mt_rtp_len_valid(len)) {
     if (len) err("%s, invalid len %d\n", __func__, len);
     rte_pktmbuf_free(mbuf);
     return -EIO;

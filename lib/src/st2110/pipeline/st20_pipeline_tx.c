@@ -314,7 +314,7 @@ static int tx_st20p_uinit_src_fbs(struct st20p_tx_ctx* ctx) {
 static int tx_st20p_init_src_fbs(struct mtl_main_impl* impl, struct st20p_tx_ctx* ctx,
                                  struct st20p_tx_ops* ops) {
   int idx = ctx->idx;
-  int soc_id = st_socket_id(impl, MTL_PORT_P);
+  int soc_id = mt_socket_id(impl, MTL_PORT_P);
   struct st20p_tx_frame* frames;
   void* src = NULL;
   size_t src_size = ctx->src_size;
@@ -399,7 +399,7 @@ static int tx_st20p_get_converter(struct mtl_main_impl* impl, struct st20p_tx_ct
   struct st20_convert_session_impl* convert_impl = st20_get_converter(impl, &req);
   if (req.device == ST_PLUGIN_DEVICE_TEST_INTERNAL || !convert_impl) {
     struct st_frame_converter* converter = NULL;
-    converter = st_rte_zmalloc_socket(sizeof(*converter), st_socket_id(impl, MTL_PORT_P));
+    converter = st_rte_zmalloc_socket(sizeof(*converter), mt_socket_id(impl, MTL_PORT_P));
     if (!converter) {
       err("%s, converter malloc fail\n", __func__);
       return -ENOMEM;
@@ -575,7 +575,7 @@ st20p_tx_handle st20p_tx_create(mtl_handle mt, struct st20p_tx_ops* ops) {
     return NULL;
   }
 
-  ctx = st_rte_zmalloc_socket(sizeof(*ctx), st_socket_id(impl, MTL_PORT_P));
+  ctx = st_rte_zmalloc_socket(sizeof(*ctx), mt_socket_id(impl, MTL_PORT_P));
   if (!ctx) {
     err("%s, ctx malloc fail\n", __func__);
     return NULL;

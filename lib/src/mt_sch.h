@@ -47,7 +47,7 @@ struct mt_sch_tasklet_impl* mt_sch_register_tasklet(
     struct mt_sch_impl* sch, struct mt_sch_tasklet_ops* tasklet_ops);
 int mt_sch_unregister_tasklet(struct mt_sch_tasklet_impl* tasklet);
 
-static inline void st_tasklet_set_sleep(struct mt_sch_tasklet_impl* tasklet,
+static inline void mt_tasklet_set_sleep(struct mt_sch_tasklet_impl* tasklet,
                                         uint64_t advice_sleep_us) {
   tasklet->ops.advice_sleep_us = advice_sleep_us;
 }

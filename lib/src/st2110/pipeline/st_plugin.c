@@ -571,7 +571,7 @@ st22_encoder_dev_handle st22_encoder_register(mtl_handle mt,
   for (int i = 0; i < ST_MAX_ENCODER_DEV; i++) {
     if (mgr->encode_devs[i]) continue;
     encode_dev =
-        st_rte_zmalloc_socket(sizeof(*encode_dev), st_socket_id(impl, MTL_PORT_P));
+        st_rte_zmalloc_socket(sizeof(*encode_dev), mt_socket_id(impl, MTL_PORT_P));
     if (!encode_dev) {
       err("%s, encode_dev malloc fail\n", __func__);
       st_pthread_mutex_unlock(&mgr->lock);
@@ -627,7 +627,7 @@ st22_decoder_dev_handle st22_decoder_register(mtl_handle mt,
   for (int i = 0; i < ST_MAX_DECODER_DEV; i++) {
     if (mgr->decode_devs[i]) continue;
     decode_dev =
-        st_rte_zmalloc_socket(sizeof(*decode_dev), st_socket_id(impl, MTL_PORT_P));
+        st_rte_zmalloc_socket(sizeof(*decode_dev), mt_socket_id(impl, MTL_PORT_P));
     if (!decode_dev) {
       err("%s, decode_dev malloc fail\n", __func__);
       st_pthread_mutex_unlock(&mgr->lock);
@@ -683,7 +683,7 @@ st20_converter_dev_handle st20_converter_register(mtl_handle mt,
   for (int i = 0; i < ST_MAX_CONVERTER_DEV; i++) {
     if (mgr->convert_devs[i]) continue;
     convert_dev =
-        st_rte_zmalloc_socket(sizeof(*convert_dev), st_socket_id(impl, MTL_PORT_P));
+        st_rte_zmalloc_socket(sizeof(*convert_dev), mt_socket_id(impl, MTL_PORT_P));
     if (!convert_dev) {
       err("%s, convert_dev malloc fail\n", __func__);
       st_pthread_mutex_unlock(&mgr->lock);
@@ -892,7 +892,7 @@ int st_plugin_register(mtl_handle mt, const char* path) {
   st_pthread_mutex_lock(&mgr->plugins_lock);
   for (int i = 0; i < ST_MAX_DL_PLUGINS; i++) {
     if (mgr->plugins[i]) continue;
-    plugin = st_rte_zmalloc_socket(sizeof(*plugin), st_socket_id(impl, MTL_PORT_P));
+    plugin = st_rte_zmalloc_socket(sizeof(*plugin), mt_socket_id(impl, MTL_PORT_P));
     if (!plugin) {
       st_pthread_mutex_unlock(&mgr->plugins_lock);
       dlclose(dl_handle);

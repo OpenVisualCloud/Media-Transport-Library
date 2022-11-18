@@ -729,13 +729,13 @@ static int dev_detect_link(struct mtl_main_impl* impl, enum mtl_port port) {
     rte_eth_link_get_nowait(port_id, &eth_link);
     if (eth_link.link_status) {
       inf->link_speed = eth_link.link_speed;
-      st_eth_link_dump(port_id);
+      mt_eth_link_dump(port_id);
       return 0;
     }
-    st_sleep_ms(100); /* only happen on CVL PF */
+    mt_sleep_ms(100); /* only happen on CVL PF */
   }
 
-  st_eth_link_dump(port_id);
+  mt_eth_link_dump(port_id);
   err("%s(%d), link not connected for %s\n", __func__, port,
       mt_get_user_params(impl)->port[port]);
   return -EIO;
@@ -771,7 +771,7 @@ static int dev_start_timesync(struct mtl_main_impl* impl, enum mtl_port port) {
     }
     dbg("%s(%d), tv_sec %" PRIu64 " tv_nsec %" PRIu64 ", i %d\n", __func__, port,
         spec.tv_sec, spec.tv_nsec, i);
-    st_sleep_ms(10);
+    mt_sleep_ms(10);
   }
   if (i >= max_retry) {
     err("%s(%d), fail to get read time\n", __func__, port);
@@ -1091,7 +1091,7 @@ int st_dev_get_lcore(struct mtl_main_impl* impl, unsigned int* lcore) {
     cur_lcore = rte_get_next_lcore(cur_lcore, 1, 0);
 
     if ((cur_lcore < RTE_MAX_LCORE) && st_socket_match(rte_lcore_to_socket_id(cur_lcore),
-                                                       st_socket_id(impl, MTL_PORT_P))) {
+                                                       mt_socket_id(impl, MTL_PORT_P))) {
       if (!lcore_shm->lcores_active[cur_lcore]) {
         *lcore = cur_lcore;
         lcore_shm->lcores_active[cur_lcore] = true;
@@ -1345,7 +1345,7 @@ static int dev_if_init_rx_queues(struct mtl_main_impl* impl, struct mt_interface
     return -ENOMEM;
   }
 
-  if (!st_has_rx_mono_pool(impl)) {
+  if (!mt_has_rx_mono_pool(impl)) {
     for (uint16_t q = 0; q < inf->max_rx_queues; q++) {
       rx_queues[q].queue_id = q;
       /* Create mempool to hold the rx queue mbufs. */
@@ -1471,7 +1471,7 @@ static uint64_t ptp_from_real_time(struct mtl_main_impl* impl, enum mtl_port por
   struct timespec spec;
 
   clock_gettime(CLOCK_REALTIME, &spec);
-  return st_timespec_to_ns(&spec);
+  return mt_timespec_to_ns(&spec);
 }
 
 static uint64_t ptp_from_user(struct mtl_main_impl* impl, enum mtl_port port) {
@@ -1621,7 +1621,7 @@ int st_dev_flush_tx_queue(struct mtl_main_impl* impl, enum mtl_port port,
   info("%s(%d), queue %u burst_pkts %d\n", __func__, port, queue_id, burst_pkts);
   for (int i = 0; i < burst_pkts; i++) {
     rte_mbuf_refcnt_update(pad, 1);
-    st_tx_burst_busy(inf->port_id, queue_id, &pads[0], 1);
+    mt_tx_burst_busy(inf->port_id, queue_id, &pads[0], 1);
   }
   dbg("%s, end\n", __func__);
   return 0;
@@ -1709,7 +1709,7 @@ int st_dev_create(struct mtl_main_impl* impl) {
 
 #if RTE_VERSION >= RTE_VERSION_NUM(21, 11, 0, 0)
     /* DPDK 21.11 support start time sync before rte_eth_dev_start */
-    if ((st_has_ptp_service(impl) || st_has_ebu(impl)) && (port_type == MT_PORT_PF)) {
+    if ((mt_has_ptp_service(impl) || mt_has_ebu(impl)) && (port_type == MT_PORT_PF)) {
       ret = dev_start_timesync(impl, i);
       if (ret >= 0) inf->feature |= MT_IF_FEATURE_TIMESYNC;
     }
@@ -1724,7 +1724,7 @@ int st_dev_create(struct mtl_main_impl* impl) {
     if (detect_retry > 0) {
       err("%s(%d), sleep 5s before detect link\n", __func__, i);
       /* leave time as reset */
-      st_sleep_ms(5 * 1000);
+      mt_sleep_ms(5 * 1000);
     }
     ret = dev_detect_link(impl, i); /* some port can only detect link after start */
     if (ret < 0) {
@@ -1743,7 +1743,7 @@ int st_dev_create(struct mtl_main_impl* impl) {
       }
     }
     /* try to start time sync after rte_eth_dev_start */
-    if ((st_has_ptp_service(impl) || st_has_ebu(impl)) && (port_type == MT_PORT_PF) &&
+    if ((mt_has_ptp_service(impl) || mt_has_ebu(impl)) && (port_type == MT_PORT_PF) &&
         !(inf->feature & MT_IF_FEATURE_TIMESYNC)) {
       ret = dev_start_timesync(impl, i);
       if (ret >= 0) inf->feature |= MT_IF_FEATURE_TIMESYNC;
@@ -1761,7 +1761,7 @@ int st_dev_create(struct mtl_main_impl* impl) {
 
   /* init sch with one lcore scheduler */
   int data_quota_mbs_per_sch;
-  if (st_has_user_quota(impl)) {
+  if (mt_has_user_quota(impl)) {
     data_quota_mbs_per_sch = mt_get_user_params(impl)->data_quota_mbs_per_sch;
   } else {
     /* default: max ST_QUOTA_TX1080P_PER_SCH sessions 1080p@60fps for tx */
@@ -1990,7 +1990,7 @@ int st_dev_if_init(struct mtl_main_impl* impl) {
     inf->device = dev_info.device;
     inf->tx_pacing_way = p->pacing;
 
-    if (st_has_user_ptp(impl)) /* user provide the ptp source */
+    if (mt_has_user_ptp(impl)) /* user provide the ptp source */
       inf->ptp_get_time_fn = ptp_from_user;
     else
       inf->ptp_get_time_fn = ptp_from_real_time;
@@ -2003,7 +2003,7 @@ int st_dev_if_init(struct mtl_main_impl* impl) {
       inf->system_rx_queues_end = 0;
     } else {
       inf->max_tx_queues = impl->tx_sessions_cnt_max + 2; /* arp, mcast */
-      if (st_has_ptp_service(impl)) {
+      if (mt_has_ptp_service(impl)) {
         inf->max_tx_queues++;
       }
 #ifdef MTL_HAS_KNI
@@ -2012,12 +2012,12 @@ int st_dev_if_init(struct mtl_main_impl* impl) {
 #ifdef MTL_HAS_TAP
       inf->max_tx_queues++; /* tap tx queue */
 #endif
-      if (st_no_system_rx_queues(impl)) {
+      if (mt_no_system_rxq(impl)) {
         inf->max_rx_queues = impl->rx_sessions_cnt_max;
       } else {
         inf->max_rx_queues = impl->rx_sessions_cnt_max + 1; /* cni rx */
         inf->system_rx_queues_end = 1;                      /* cni rx */
-        if (st_has_ptp_service(impl)) {
+        if (mt_has_ptp_service(impl)) {
           inf->max_rx_queues++;
           inf->system_rx_queues_end++;
         }
@@ -2055,7 +2055,7 @@ int st_dev_if_init(struct mtl_main_impl* impl) {
       inf->feature |= MT_IF_FEATURE_TX_OFFLOAD_IPV4_CKSUM;
 #endif
 
-    if (st_has_ebu(impl) &&
+    if (mt_has_ebu(impl) &&
 #if RTE_VERSION >= RTE_VERSION_NUM(22, 3, 0, 0)
         (dev_info.rx_offload_capa & RTE_ETH_RX_OFFLOAD_TIMESTAMP)
 #else
@@ -2092,7 +2092,7 @@ int st_dev_if_init(struct mtl_main_impl* impl) {
     char pool_name[ST_MAX_NAME_LEN];
     struct rte_mempool* mbuf_pool;
     /* Create mempool in memory to hold the system rx mbufs if mono */
-    if (st_has_rx_mono_pool(impl)) {
+    if (mt_has_rx_mono_pool(impl)) {
       mbuf_elements = 1024;
       /* append as rx queues */
       mbuf_elements += inf->max_rx_queues * inf->nb_rx_desc;
@@ -2107,7 +2107,7 @@ int st_dev_if_init(struct mtl_main_impl* impl) {
 
     /* Create default mempool in memory to hold the system tx mbufs */
     mbuf_elements = 1024;
-    if (st_has_tx_mono_pool(impl)) {
+    if (mt_has_tx_mono_pool(impl)) {
       /* append as tx queues, double as tx ring */
       mbuf_elements += inf->max_tx_queues * inf->nb_tx_desc * 2;
     }

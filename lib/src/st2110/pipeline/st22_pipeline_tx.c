@@ -300,7 +300,7 @@ static int tx_st22p_uinit_src_fbs(struct st22p_tx_ctx* ctx) {
 static int tx_st22p_init_src_fbs(struct mtl_main_impl* impl, struct st22p_tx_ctx* ctx,
                                  struct st22p_tx_ops* ops) {
   int idx = ctx->idx;
-  int soc_id = st_socket_id(impl, MTL_PORT_P);
+  int soc_id = mt_socket_id(impl, MTL_PORT_P);
   struct st22p_tx_frame* frames;
   void* src;
   size_t src_size = ctx->src_size;
@@ -461,7 +461,7 @@ st22p_tx_handle st22p_tx_create(mtl_handle mt, struct st22p_tx_ops* ops) {
     return NULL;
   }
 
-  ctx = st_rte_zmalloc_socket(sizeof(*ctx), st_socket_id(impl, MTL_PORT_P));
+  ctx = st_rte_zmalloc_socket(sizeof(*ctx), mt_socket_id(impl, MTL_PORT_P));
   if (!ctx) {
     err("%s, ctx malloc fail\n", __func__);
     return NULL;

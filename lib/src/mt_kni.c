@@ -145,13 +145,13 @@ static void* kni_bkg_thread(void* arg) {
         } else {
           link_status[i] = link.link_status;
           if (link.link_status) {
-            st_sleep_ms(1 * 1000); /* 1s */
+            mt_sleep_ms(1 * 1000); /* 1s */
             kni_assign_ip(impl, i);
           }
         }
       }
     }
-    st_sleep_ms(1 * 1000); /* 1s */
+    mt_sleep_ms(1 * 1000); /* 1s */
   }
 
   info("%s, stop\n", __func__);

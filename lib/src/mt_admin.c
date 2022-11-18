@@ -335,10 +335,10 @@ static int admin_func(struct mtl_main_impl* impl) {
 
   bool migrated = false;
   /* only one migrate(both tx and rx) for this period */
-  if (st_has_tx_video_migrate(impl)) {
+  if (mt_has_tx_video_migrate(impl)) {
     admin_tx_video_migrate(impl, &migrated);
   }
-  if (!migrated && st_has_rx_video_migrate(impl)) {
+  if (!migrated && mt_has_rx_video_migrate(impl)) {
     admin_rx_video_migrate(impl, &migrated);
   }
 

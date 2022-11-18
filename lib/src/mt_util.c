@@ -184,10 +184,10 @@ void st_mbuf_dump(enum mtl_port port, int idx, char* tag, struct rte_mbuf* m) {
 
   if (tag) info("%s(%d,%d), %s\n", __func__, port, idx, tag);
   info("ether_type 0x%x\n", ether_type);
-  mac = &st_eth_d_addr(eth)->addr_bytes[0];
+  mac = &mt_eth_d_addr(eth)->addr_bytes[0];
   info("d_mac %02x:%02x:%02x:%02x:%02x:%02x\n", mac[0], mac[1], mac[2], mac[3], mac[4],
        mac[5]);
-  mac = &st_eth_s_addr(eth)->addr_bytes[0];
+  mac = &mt_eth_s_addr(eth)->addr_bytes[0];
   info("s_mac %02x:%02x:%02x:%02x:%02x:%02x\n", mac[0], mac[1], mac[2], mac[3], mac[4],
        mac[5]);
 
@@ -213,7 +213,7 @@ void st_mbuf_dump(enum mtl_port port, int idx, char* tag, struct rte_mbuf* m) {
 
 void st_lcore_dump() { rte_lcore_dump(stdout); }
 
-void st_eth_link_dump(uint16_t port_id) {
+void mt_eth_link_dump(uint16_t port_id) {
   struct rte_eth_link eth_link;
 
   rte_eth_link_get_nowait(port_id, &eth_link);
@@ -223,7 +223,7 @@ void st_eth_link_dump(uint16_t port_id) {
            eth_link.link_duplex, eth_link.link_autoneg);
 }
 
-void st_eth_macaddr_dump(enum mtl_port port, char* tag, struct rte_ether_addr* mac_addr) {
+void mt_eth_macaddr_dump(enum mtl_port port, char* tag, struct rte_ether_addr* mac_addr) {
   if (tag) info("%s(%d), %s\n", __func__, port, tag);
 
   uint8_t* addr = &mac_addr->addr_bytes[0];
@@ -251,11 +251,11 @@ struct rte_mbuf* st_build_pad(struct mtl_main_impl* impl, struct rte_mempool* me
   eth_hdr = rte_pktmbuf_mtod(pad, struct rte_ether_hdr*);
   memset((char*)eth_hdr, 0, len);
   eth_hdr->ether_type = htons(ether_type);
-  st_eth_d_addr(eth_hdr)->addr_bytes[0] = 0x01;
-  st_eth_d_addr(eth_hdr)->addr_bytes[1] = 0x80;
-  st_eth_d_addr(eth_hdr)->addr_bytes[2] = 0xC2;
-  st_eth_d_addr(eth_hdr)->addr_bytes[5] = 0x01;
-  rte_memcpy(st_eth_s_addr(eth_hdr), &src_mac, RTE_ETHER_ADDR_LEN);
+  mt_eth_d_addr(eth_hdr)->addr_bytes[0] = 0x01;
+  mt_eth_d_addr(eth_hdr)->addr_bytes[1] = 0x80;
+  mt_eth_d_addr(eth_hdr)->addr_bytes[2] = 0xC2;
+  mt_eth_d_addr(eth_hdr)->addr_bytes[5] = 0x01;
+  rte_memcpy(mt_eth_s_addr(eth_hdr), &src_mac, RTE_ETHER_ADDR_LEN);
 
   return pad;
 }
@@ -270,7 +270,7 @@ struct rte_mempool* st_mempool_create_by_ops(struct mtl_main_impl* impl,
   }
   uint16_t data_room_size = element_size + MT_MBUF_HEADROOM_SIZE; /* include head room */
   struct rte_mempool* mbuf_pool = rte_pktmbuf_pool_create_by_ops(
-      name, n, cache_size, priv_size, data_room_size, st_socket_id(impl, port), ops_name);
+      name, n, cache_size, priv_size, data_room_size, mt_socket_id(impl, port), ops_name);
   if (!mbuf_pool) {
     err("%s(%d), fail(%s) for %s, n %u\n", __func__, port, rte_strerror(rte_errno), name,
         n);

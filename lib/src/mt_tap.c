@@ -455,7 +455,7 @@ static int tap_uninit_lcore(struct mtl_main_impl* impl) {
   struct tap_rt_context* tap_ctx = (struct tap_rt_context*)cni->tap_context;
 
   while (rte_atomic32_read(&cni->stop_tap) == 0) {
-    st_sleep_ms(10);
+    mt_sleep_ms(10);
   }
   if (tap_ctx->has_lcore) {
     rte_eal_wait_lcore(tap_ctx->lcore);
@@ -489,7 +489,7 @@ static int tap_bkg_thread(void* arg) {
         if (pkts_tx[0]) {
           tx = tap_tx_packet(cni, pkts_tx, 1);
           if (tx > 0) {
-            st_free_mbufs(pkts_tx, 1);
+            mt_free_mbufs(pkts_tx, 1);
             pkts_tx[0] = NULL;
             count--;
           }
@@ -504,7 +504,7 @@ static int tap_bkg_thread(void* arg) {
       }
     }
     if (rx) {
-      st_free_mbufs(pkts_rx, 1);
+      mt_free_mbufs(pkts_rx, 1);
       pkts_rx[0] = NULL;
     }
   }
@@ -553,7 +553,7 @@ static int configure_tap() {
   }
   tap_ctx->mp = mbuf_pool;
 
-  iovecs = rte_zmalloc_socket("TAP", sizeof(*iovecs), 0, st_socket_id(impl, 0));
+  iovecs = rte_zmalloc_socket("TAP", sizeof(*iovecs), 0, mt_socket_id(impl, 0));
   if (!iovecs) {
     err("%s: Couldn't allocate %d RX descriptors", "TAP", inf->nb_rx_desc);
     return -ENOMEM;
@@ -575,7 +575,7 @@ static int configure_tap() {
   flags = RING_F_SP_ENQ | RING_F_SC_DEQ;
   count = ST_TX_VIDEO_SESSIONS_RING_SIZE;
   snprintf(ring_name, 32, "TX-TAP-PACKET-RING%d", 0);
-  tap_tx_ring = rte_ring_create(ring_name, count, st_socket_id(impl, 0), flags);
+  tap_tx_ring = rte_ring_create(ring_name, count, mt_socket_id(impl, 0), flags);
   if (!tap_tx_ring) {
     err("%s, tx rte_ring_create fail\n", __func__);
     return -ENOMEM;
@@ -788,7 +788,7 @@ static int tap_device_uninit(struct mtl_main_impl* impl) {
 
   pkts_rx = tap_get_mbuf(tap_tx_ring, &data, &tx);
   while (pkts_rx) {
-    st_free_mbufs(&pkts_rx, 1);
+    mt_free_mbufs(&pkts_rx, 1);
     pkts_rx = tap_get_mbuf(tap_tx_ring, &data, &tx);
   }
   if (tap_ctx->tap_handle) CloseHandle(tap_ctx->tap_handle);

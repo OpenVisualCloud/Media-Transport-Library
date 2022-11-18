@@ -257,7 +257,7 @@ static int rx_st22p_uinit_dst_fbs(struct st22p_rx_ctx* ctx) {
 static int rx_st22p_init_dst_fbs(struct mtl_main_impl* impl, struct st22p_rx_ctx* ctx,
                                  struct st22p_rx_ops* ops) {
   int idx = ctx->idx;
-  int soc_id = st_socket_id(impl, MTL_PORT_P);
+  int soc_id = mt_socket_id(impl, MTL_PORT_P);
   struct st22p_rx_frame* frames;
   void* dst;
   size_t dst_size = ctx->dst_size;
@@ -410,7 +410,7 @@ st22p_rx_handle st22p_rx_create(mtl_handle mt, struct st22p_rx_ops* ops) {
     return NULL;
   }
 
-  ctx = st_rte_zmalloc_socket(sizeof(*ctx), st_socket_id(impl, MTL_PORT_P));
+  ctx = st_rte_zmalloc_socket(sizeof(*ctx), mt_socket_id(impl, MTL_PORT_P));
   if (!ctx) {
     err("%s, ctx malloc fail\n", __func__);
     return NULL;

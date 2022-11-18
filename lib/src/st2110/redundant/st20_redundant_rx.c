@@ -131,7 +131,7 @@ static int rx_st20r_create_transport(struct st20r_rx_ctx* ctx, struct st20r_rx_o
     return -EIO;
   }
 
-  transport = st_rte_zmalloc_socket(sizeof(*transport), st_socket_id(impl, MTL_PORT_P));
+  transport = st_rte_zmalloc_socket(sizeof(*transport), mt_socket_id(impl, MTL_PORT_P));
   if (!ctx) {
     err("%s, transport malloc fail\n", __func__);
     return -ENOMEM;
@@ -242,7 +242,7 @@ st20r_rx_handle st20r_rx_create(mtl_handle mt, struct st20r_rx_ops* ops) {
     return NULL;
   }
 
-  ctx = st_rte_zmalloc_socket(sizeof(*ctx), st_socket_id(impl, MTL_PORT_P));
+  ctx = st_rte_zmalloc_socket(sizeof(*ctx), mt_socket_id(impl, MTL_PORT_P));
   if (!ctx) {
     err("%s, ctx malloc fail\n", __func__);
     return NULL;
@@ -250,7 +250,7 @@ st20r_rx_handle st20r_rx_create(mtl_handle mt, struct st20r_rx_ops* ops) {
 
   ctx->frames_cnt = ops->framebuff_cnt * 2; /* more for redundant */
   ctx->frames = st_rte_zmalloc_socket(sizeof(*ctx->frames) * ctx->frames_cnt,
-                                      st_socket_id(impl, MTL_PORT_P));
+                                      mt_socket_id(impl, MTL_PORT_P));
   if (!ctx->frames) {
     err("%s, ctx frames malloc fail\n", __func__);
     st20r_rx_free(ctx);

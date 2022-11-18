@@ -67,7 +67,7 @@ static int tx_audio_session_free_frames(struct st_tx_audio_session_impl* s) {
 static int tx_audio_session_alloc_frames(struct mtl_main_impl* impl,
                                          struct st_tx_audio_session_impl* s) {
   enum mtl_port port = mt_port_logic2phy(s->port_maps, ST_SESSION_PORT_P);
-  int soc_id = st_socket_id(impl, port);
+  int soc_id = mt_socket_id(impl, port);
   int idx = s->idx;
   struct st_frame_trans* frame_info;
 
@@ -122,7 +122,7 @@ static int tx_audio_session_init_hdr(struct mtl_main_impl* impl,
   struct st_rfc3550_rtp_hdr* rtp = &hdr->rtp;
   uint8_t* dip = ops->dip_addr[s_port];
   uint8_t* sip = mt_sip_addr(impl, port);
-  struct rte_ether_addr* d_addr = st_eth_d_addr(eth);
+  struct rte_ether_addr* d_addr = mt_eth_d_addr(eth);
 
   /* ether hdr */
   if ((s_port == ST_SESSION_PORT_P) && (ops->flags & ST30_TX_FLAG_USER_P_MAC)) {
@@ -140,7 +140,7 @@ static int tx_audio_session_init_hdr(struct mtl_main_impl* impl,
     }
   }
 
-  ret = rte_eth_macaddr_get(mgr->port_id[port], st_eth_s_addr(eth));
+  ret = rte_eth_macaddr_get(mgr->port_id[port], mt_eth_s_addr(eth));
   if (ret < 0) {
     err("%s(%d), rte_eth_macaddr_get fail %d for port %d\n", __func__, idx, ret, port);
     return ret;
@@ -294,7 +294,7 @@ static int tx_audio_session_sync_pacing(struct mtl_main_impl* impl,
   if (sync) {
     dbg("%s(%d), delay to epoch_time %f, cur %" PRIu64 "\n", __func__, idx,
         pacing->tsc_time_cursor, mt_get_tsc(impl));
-    st_tsc_delay_to(impl, pacing->tsc_time_cursor);
+    mt_tsc_delay_to(impl, pacing->tsc_time_cursor);
   }
 
   return 0;
@@ -380,7 +380,7 @@ static int tx_audio_session_build_packet(struct mtl_main_impl* impl,
   }
 
   /* update mbuf */
-  st_mbuf_init_ipv4(pkt);
+  mt_mbuf_init_ipv4(pkt);
   pkt->data_len = sizeof(struct rte_ether_hdr) + sizeof(struct rte_ipv4_hdr) +
                   sizeof(struct rte_udp_hdr);
   pkt->pkt_len = pkt->data_len;
@@ -779,7 +779,7 @@ static int tx_audio_sessions_mgr_init_hw(struct mtl_main_impl* impl,
     snprintf(ring_name, 32, "TX-AUDIO-RING-M%d-P%d", mgr_idx, i);
     flags = RING_F_MP_HTS_ENQ | RING_F_SC_DEQ; /* multi-producer and single-consumer */
     count = ST_TX_AUDIO_SESSIONS_RING_SIZE;
-    ring = rte_ring_create(ring_name, count, st_socket_id(impl, i), flags);
+    ring = rte_ring_create(ring_name, count, mt_socket_id(impl, i), flags);
     if (!ring) {
       err("%s(%d), rte_ring_create fail for port %d\n", __func__, mgr_idx, i);
       tx_audio_sessions_mgr_uinit_hw(impl, mgr);
@@ -826,7 +826,7 @@ static int tx_audio_session_flush(struct st_tx_audio_sessions_mgr* mgr,
       while (retry > 0) {
         retry--;
         if (!rte_mempool_in_use_count(pool)) break;
-        st_sleep_ms(10);
+        mt_sleep_ms(10);
       }
       info("%s(%d,%d), check in_use retry %d\n", __func__, mgr_idx, s_idx, retry);
     }
@@ -938,7 +938,7 @@ static int tx_audio_session_init_rtp(struct mtl_main_impl* impl,
 
   snprintf(ring_name, 32, "TX-AUDIO-PACKET-RING-M%d-R%d", mgr_idx, idx);
   flags = RING_F_SP_ENQ | RING_F_SC_DEQ; /* single-producer and single-consumer */
-  ring = rte_ring_create(ring_name, count, st_socket_id(impl, port), flags);
+  ring = rte_ring_create(ring_name, count, mt_socket_id(impl, port), flags);
   if (!ring) {
     err("%s(%d,%d), rte_ring_create fail\n", __func__, mgr_idx, idx);
     tx_audio_session_mempool_free(s);
@@ -1025,7 +1025,7 @@ static int tx_audio_session_attach(struct mtl_main_impl* impl,
     s->eth_ipv4_cksum_offload[i] = mt_if_has_offload_ipv4_cksum(impl, port);
     s->eth_has_chain[i] = mt_if_has_chain_buff(impl, port);
   }
-  s->tx_mono_pool = st_has_tx_mono_pool(impl);
+  s->tx_mono_pool = mt_has_tx_mono_pool(impl);
   s->st30_ipv4_packet_id = 0;
 
   s->st30_frames_cnt = ops->framebuff_cnt;
@@ -1168,7 +1168,7 @@ static struct st_tx_audio_session_impl* tx_audio_sessions_mgr_attach(
   for (int i = 0; i < ST_MAX_TX_AUDIO_SESSIONS; i++) {
     if (!tx_audio_session_get_empty(mgr, i)) continue;
 
-    s = st_rte_zmalloc_socket(sizeof(*s), st_socket_id(impl, MTL_PORT_P));
+    s = st_rte_zmalloc_socket(sizeof(*s), mt_socket_id(impl, MTL_PORT_P));
     if (!s) {
       err("%s(%d), session malloc fail on %d\n", __func__, midx, i);
       tx_audio_session_put(mgr, i);
@@ -1380,7 +1380,7 @@ st30_tx_handle st30_tx_create(mtl_handle mt, struct st30_tx_ops* ops) {
     return NULL;
   }
 
-  s_impl = st_rte_zmalloc_socket(sizeof(*s_impl), st_socket_id(impl, MTL_PORT_P));
+  s_impl = st_rte_zmalloc_socket(sizeof(*s_impl), mt_socket_id(impl, MTL_PORT_P));
   if (!s_impl) {
     err("%s, s_impl malloc fail\n", __func__);
     return NULL;
@@ -1509,7 +1509,7 @@ int st30_tx_put_mbuf(st30_tx_handle handle, void* mbuf, uint16_t len) {
     return -EIO;
   }
 
-  if (!st_rtp_len_valid(len)) {
+  if (!mt_rtp_len_valid(len)) {
     if (len) err("%s, invalid len %d\n", __func__, len);
     rte_pktmbuf_free(mbuf);
     return -EIO;

@@ -271,7 +271,7 @@ static int rx_audio_session_free_frames(struct st_rx_audio_session_impl* s) {
 static int rx_audio_session_alloc_frames(struct mtl_main_impl* impl,
                                          struct st_rx_audio_session_impl* s) {
   enum mtl_port port = mt_port_logic2phy(s->port_maps, ST_SESSION_PORT_P);
-  int soc_id = st_socket_id(impl, port);
+  int soc_id = mt_socket_id(impl, port);
   int idx = s->idx;
   size_t size = s->st30_frame_size;
   struct st_frame_trans* st30_frame;
@@ -334,7 +334,7 @@ static int rx_audio_session_alloc_rtps(struct mtl_main_impl* impl,
     err("%s(%d,%d), invalid rtp_ring_size %d\n", __func__, mgr_idx, idx, count);
     return -ENOMEM;
   }
-  ring = rte_ring_create(ring_name, count, st_socket_id(impl, port), flags);
+  ring = rte_ring_create(ring_name, count, mt_socket_id(impl, port), flags);
   if (!ring) {
     err("%s(%d,%d), rte_ring_create fail\n", __func__, mgr_idx, idx);
     return -ENOMEM;
@@ -414,8 +414,8 @@ static int rx_audio_session_handle_frame_pkt(struct mtl_main_impl* impl,
   s->st30_stat_pkts_received++;
   s->st30_pkt_idx++;
 
-  if (st_has_ebu(impl) && inf->feature & MT_IF_FEATURE_RX_OFFLOAD_TIMESTAMP) {
-    ra_ebu_on_packet(s, tmstamp, st_mbuf_get_hw_time_stamp(impl, mbuf));
+  if (mt_has_ebu(impl) && inf->feature & MT_IF_FEATURE_RX_OFFLOAD_TIMESTAMP) {
+    ra_ebu_on_packet(s, tmstamp, mt_mbuf_hw_time_stamp(impl, mbuf));
   }
 
   // notify frame done
@@ -487,8 +487,8 @@ static int rx_audio_session_handle_rtp_pkt(struct mtl_main_impl* impl,
   ops->notify_rtp_ready(ops->priv);
   s->st30_stat_pkts_received++;
 
-  if (st_has_ebu(impl) && inf->feature & MT_IF_FEATURE_RX_OFFLOAD_TIMESTAMP) {
-    ra_ebu_on_packet(s, tmstamp, st_mbuf_get_hw_time_stamp(impl, mbuf));
+  if (mt_has_ebu(impl) && inf->feature & MT_IF_FEATURE_RX_OFFLOAD_TIMESTAMP) {
+    ra_ebu_on_packet(s, tmstamp, mt_mbuf_hw_time_stamp(impl, mbuf));
   }
 
   return 0;
@@ -712,7 +712,7 @@ static int rx_audio_session_attach(struct mtl_main_impl* impl,
   rte_atomic32_set(&s->st30_stat_frames_received, 0);
   s->st30_stat_last_time = mt_get_monotonic_time();
 
-  if (st_has_ebu(impl)) {
+  if (mt_has_ebu(impl)) {
     ret = ra_ebu_init(impl, s);
     if (ret < 0) {
       err("%s(%d), ra_ebu_init fail %d\n", __func__, idx, ret);
@@ -774,7 +774,7 @@ static void rx_audio_session_stat(struct st_rx_audio_session_impl* s) {
 
 static int rx_audio_session_detach(struct mtl_main_impl* impl,
                                    struct st_rx_audio_session_impl* s) {
-  if (st_has_ebu(impl)) rx_audio_session_ebu_result(s);
+  if (mt_has_ebu(impl)) rx_audio_session_ebu_result(s);
   rx_audio_session_stat(s);
   rx_audio_session_uinit_mcast(impl, s);
   rx_audio_session_uinit_sw(impl, s);
@@ -885,7 +885,7 @@ static struct st_rx_audio_session_impl* rx_audio_sessions_mgr_attach(
   for (int i = 0; i < ST_MAX_RX_AUDIO_SESSIONS; i++) {
     if (!rx_audio_session_get_empty(mgr, i)) continue;
 
-    s = st_rte_zmalloc_socket(sizeof(*s), st_socket_id(impl, MTL_PORT_P));
+    s = st_rte_zmalloc_socket(sizeof(*s), mt_socket_id(impl, MTL_PORT_P));
     if (!s) {
       err("%s(%d), session malloc fail on %d\n", __func__, midx, i);
       rx_audio_session_put(mgr, i);
@@ -1080,7 +1080,7 @@ st30_rx_handle st30_rx_create(mtl_handle mt, struct st30_rx_ops* ops) {
     return NULL;
   }
 
-  s_impl = st_rte_zmalloc_socket(sizeof(*s_impl), st_socket_id(impl, MTL_PORT_P));
+  s_impl = st_rte_zmalloc_socket(sizeof(*s_impl), mt_socket_id(impl, MTL_PORT_P));
   if (!s_impl) {
     err("%s, s_impl malloc fail\n", __func__);
     return NULL;

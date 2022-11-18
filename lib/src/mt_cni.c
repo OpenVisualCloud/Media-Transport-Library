@@ -84,7 +84,7 @@ static int cni_traffic(struct mtl_main_impl* impl) {
       if (rx > 0) {
         cni->eth_rx_cnt[i] += rx;
         for (uint16_t ri = 0; ri < rx; ri++) cni_rx_handle(impl, pkts_rx[ri], i);
-        st_free_mbufs(&pkts_rx[0], rx);
+        mt_free_mbufs(&pkts_rx[0], rx);
         done = false;
       }
     }
@@ -96,7 +96,7 @@ static int cni_traffic(struct mtl_main_impl* impl) {
         cni->eth_rx_cnt[i] += rx;
         for (uint16_t ri = 0; ri < rx; ri++) cni_rx_handle(impl, pkts_rx[ri], i);
         st_kni_handle(impl, i, pkts_rx, rx);
-        st_free_mbufs(&pkts_rx[0], rx);
+        mt_free_mbufs(&pkts_rx[0], rx);
         done = false;
       }
     }
@@ -112,7 +112,7 @@ static void* cni_trafic_thread(void* arg) {
   info("%s, start\n", __func__);
   while (rte_atomic32_read(&cni->stop_thread) == 0) {
     cni_traffic(impl);
-    st_sleep_ms(1);
+    mt_sleep_ms(1);
   }
   info("%s, stop\n", __func__);
 
@@ -190,7 +190,7 @@ static int cni_queues_init(struct mtl_main_impl* impl, struct mt_cni_impl* cni) 
   int num_ports = mt_num_ports(impl);
   int ret;
 
-  if (st_no_system_rx_queues(impl)) {
+  if (mt_no_system_rxq(impl)) {
     warn("%s, disabled as no system rx queues\n", __func__);
     return 0;
   }

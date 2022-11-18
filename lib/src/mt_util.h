@@ -7,6 +7,13 @@
 
 #include "mt_main.h"
 
+static inline bool mt_rtp_len_valid(uint16_t len) {
+  if (len <= 0 || len > MTL_PKT_MAX_RTP_BYTES)
+    return false;
+  else
+    return true;
+}
+
 /* ip from 224.x.x.x to 239.x.x.x */
 static inline uint64_t st_is_multicast_ip(uint8_t ip[MTL_IP_ADDR_LEN]) {
   if (ip[0] >= 224 && ip[0] <= 239)
@@ -58,7 +65,7 @@ void st_mbuf_dump(enum mtl_port port, int idx, char* tag, struct rte_mbuf* m);
 
 void st_lcore_dump();
 
-void st_eth_link_dump(uint16_t port_id);
+void mt_eth_link_dump(uint16_t port_id);
 
 /* 7 bits payload type define in RFC3550 */
 static inline bool st_is_valid_payload_type(int payload_type) {
@@ -68,7 +75,7 @@ static inline bool st_is_valid_payload_type(int payload_type) {
     return false;
 }
 
-void st_eth_macaddr_dump(enum mtl_port port, char* tag, struct rte_ether_addr* mac_addr);
+void mt_eth_macaddr_dump(enum mtl_port port, char* tag, struct rte_ether_addr* mac_addr);
 
 static inline bool st_rx_seq_drop(uint16_t new_id, uint16_t old_id, uint16_t delta) {
   if ((new_id <= old_id) && ((old_id - new_id) < delta))

@@ -55,14 +55,14 @@ static inline uint64_t ptp_get_raw_time(struct mt_ptp_impl* ptp) {
   struct timespec spec;
 
   ptp_get_time_spec(ptp, &spec);
-  return st_timespec_to_ns(&spec);
+  return mt_timespec_to_ns(&spec);
 }
 
 static uint64_t ptp_get_time(struct mt_ptp_impl* ptp) {
   struct timespec spec;
 
   ptp_get_time_spec(ptp, &spec);
-  return st_timespec_to_ns(&spec);
+  return mt_timespec_to_ns(&spec);
 }
 
 static uint64_t ptp_from_eth(struct mtl_main_impl* impl, enum mtl_port port) {
@@ -275,7 +275,7 @@ static void ptp_delay_req_task(struct mt_ptp_impl* ptp) {
     ipv4_hdr->udp.dst_port = ipv4_hdr->udp.src_port;
     ipv4_hdr->ip.time_to_live = 255;
     ipv4_hdr->ip.packet_id = htons(ptp->t3_sequence_id);
-    st_mbuf_init_ipv4(m);
+    mt_mbuf_init_ipv4(m);
     hdr->ether_type = htons(RTE_ETHER_TYPE_IPV4);
   } else {
     hdr->ether_type = htons(RTE_ETHER_TYPE_1588);
@@ -292,8 +292,8 @@ static void ptp_delay_req_task(struct mt_ptp_impl* ptp) {
   ptp->t3_sequence_id++;
   msg->hdr.sequence_id = htons(ptp->t3_sequence_id);
 
-  rte_eth_macaddr_get(port_id, st_eth_s_addr(hdr));
-  ptp_set_master_addr(ptp, st_eth_d_addr(hdr));
+  rte_eth_macaddr_get(port_id, mt_eth_s_addr(hdr));
+  ptp_set_master_addr(ptp, mt_eth_d_addr(hdr));
   m->pkt_len = hdr_offset + sizeof(struct mt_ptp_sync_msg);
   m->data_len = m->pkt_len;
 
@@ -321,10 +321,10 @@ static void ptp_delay_req_task(struct mt_ptp_impl* ptp) {
     ret = rte_eth_timesync_read_tx_timestamp(port_id, &ts);
     ptp_timesync_unlock(ptp);
     if (ret >= 0) {
-      tx_ns = st_timespec_to_ns(&ts);
+      tx_ns = mt_timespec_to_ns(&ts);
       break;
     }
-    st_delay_us(1);
+    mt_delay_us(1);
     max_retry--;
   }
 
@@ -337,7 +337,7 @@ static void ptp_delay_req_task(struct mt_ptp_impl* ptp) {
   rte_eth_timesync_read_time(port_id, &ts);
   ptp_timesync_unlock(ptp);
 
-  uint64_t ptp_ns = st_timespec_to_ns(&ts);
+  uint64_t ptp_ns = mt_timespec_to_ns(&ts);
   uint64_t delta = ptp_ns - tx_ns;
 #define TX_MAX_DELTA (1 * 1000 * 1000) /* 1ms */
   if (unlikely(delta > TX_MAX_DELTA)) {
@@ -393,13 +393,13 @@ static int ptp_parse_sync(struct mt_ptp_impl* ptp, struct mt_ptp_sync_msg* msg, 
 
   ptp_timesync_lock(ptp);
   ret = rte_eth_timesync_read_rx_timestamp(port_id, &timestamp, timesync);
-  if (ret >= 0) rx_ns = st_timespec_to_ns(&timestamp);
+  if (ret >= 0) rx_ns = mt_timespec_to_ns(&timestamp);
   ptp_timesync_unlock(ptp);
 
 #if MT_PTP_CHECK_TX_TIME_STAMP
   uint64_t ptp_ns = 0, delta;
   ret = rte_eth_timesync_read_time(port_id, &timestamp);
-  if (ret >= 0) ptp_ns = st_timespec_to_ns(&timestamp);
+  if (ret >= 0) ptp_ns = mt_timespec_to_ns(&timestamp);
   delta = ptp_ns - rx_ns;
   if (unlikely(delta > RX_MAX_DELTA)) {
     err("%s(%d), rx_ns %" PRIu64 ", delta %" PRIu64 "\n", __func__, ptp->port, rx_ns,
@@ -473,7 +473,7 @@ static int ptp_parse_annouce(struct mt_ptp_impl* ptp, struct mt_ptp_announce_msg
     }
 
     /* point ptp fn to eth if no user assigned ptp source */
-    if (st_has_user_ptp(ptp->impl))
+    if (mt_has_user_ptp(ptp->impl))
       warn("%s(%d), skip as user provide ptp source already\n", __func__, port);
     else
       mt_if(ptp->impl, port)->ptp_get_time_fn = ptp_from_eth;
@@ -604,14 +604,14 @@ static int ptp_init(struct mtl_main_impl* impl, struct mt_ptp_impl* ptp,
   ptp_stat_clear(ptp);
 
   if (!mt_if_has_ptp(impl, port)) {
-    if (st_has_ebu(impl)) {
+    if (mt_has_ebu(impl)) {
       ptp_sync_from_user(impl, ptp);
       rte_eal_alarm_set(MT_PTP_EBU_SYNC_MS * 1000, ptp_sync_from_user_handler, ptp);
     }
     return 0;
   }
 
-  if (st_no_system_rx_queues(impl)) {
+  if (mt_no_system_rxq(impl)) {
     warn("%s(%d), disabled as no system rx queues\n", __func__, port);
     return 0;
   }
@@ -747,14 +747,14 @@ void mt_ptp_stat(struct mtl_main_impl* impl) {
     ptp = mt_get_ptp(impl, i);
 
     ns = mt_get_ptp_time(impl, i);
-    st_ns_to_timespec(ns, &spec);
+    mt_ns_to_timespec(ns, &spec);
     spec.tv_sec -= ptp->master_utc_offset; /* display with utc offset */
     localtime_r(&spec.tv_sec, &t);
     strftime(date_time, sizeof(date_time), "%Y-%m-%d %H:%M:%S", &t);
     notice("PTP(%d): time %" PRIu64 ", %s\n", i, ns, date_time);
 
     if (!mt_if_has_ptp(impl, i)) {
-      if (st_has_ebu(impl)) {
+      if (mt_has_ebu(impl)) {
         notice("PTP(%d): raw ptp %" PRIu64 "\n", i, ptp_get_raw_time(ptp));
         if (ptp->stat_delta_cnt) {
           notice("PTP(%d): delta avr %" PRId64 ", min %" PRId64 ", max %" PRId64

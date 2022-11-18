@@ -41,7 +41,7 @@ bool mt_is_valid_socket(struct mtl_main_impl* impl, int soc_id) {
   int i;
 
   for (i = 0; i < num_ports; i++) {
-    if (soc_id == st_socket_id(impl, i)) return true;
+    if (soc_id == mt_socket_id(impl, i)) return true;
   }
 
   err("%s, invalid soc_id %d\n", __func__, soc_id);
@@ -73,7 +73,7 @@ static void* mt_calibrate_tsc(void* arg) {
     start = mt_get_monotonic_time();
     start_tsc = rte_get_tsc_cycles();
 
-    st_sleep_ms(10);
+    mt_sleep_ms(10);
 
     end = mt_get_monotonic_time();
     end_tsc = rte_get_tsc_cycles();
@@ -329,7 +329,7 @@ static int _mt_start(struct mtl_main_impl* impl) {
   }
 
   /* wait tsc calibrate done, pacing need fine tuned TSC */
-  st_wait_tsc_stable(impl);
+  mt_wait_tsc_stable(impl);
 
   ret = st_dev_start(impl);
   if (ret < 0) {
@@ -457,7 +457,7 @@ mtl_handle mtl_init(struct mtl_init_params* p) {
       warn("%s, invalid rx_pool_data_size %u\n", __func__, p->rx_pool_data_size);
     }
   }
-  impl->sch_schedule_ns = 200 * NS_PER_US; /* max schedule ns for st_sleep_ms(0) */
+  impl->sch_schedule_ns = 200 * NS_PER_US; /* max schedule ns for mt_sleep_ms(0) */
 
   /* init mgr lock for audio and anc */
   st_pthread_mutex_init(&impl->tx_a_mgr_mutex, NULL);
@@ -487,7 +487,7 @@ mtl_handle mtl_init(struct mtl_init_params* p) {
     goto err_exit;
   }
 
-  if (st_has_auto_start_stop(impl)) {
+  if (mt_has_auto_start_stop(impl)) {
     ret = _mt_start(impl);
     if (ret < 0) {
       err("%s, st start fail %d\n", __func__, ret);
@@ -558,7 +558,7 @@ int mtl_stop(mtl_handle mt) {
     return -EIO;
   }
 
-  if (st_has_auto_start_stop(impl)) return 0;
+  if (mt_has_auto_start_stop(impl)) return 0;
 
   return _mt_stop(impl);
 }
@@ -637,7 +637,7 @@ void* mtl_hp_malloc(mtl_handle mt, size_t size, enum mtl_port port) {
     return NULL;
   }
 
-  return st_rte_malloc_socket(size, st_socket_id(impl, port));
+  return st_rte_malloc_socket(size, mt_socket_id(impl, port));
 }
 
 void* mtl_hp_zmalloc(mtl_handle mt, size_t size, enum mtl_port port) {
@@ -654,7 +654,7 @@ void* mtl_hp_zmalloc(mtl_handle mt, size_t size, enum mtl_port port) {
     return NULL;
   }
 
-  return st_rte_zmalloc_socket(size, st_socket_id(impl, port));
+  return st_rte_zmalloc_socket(size, mt_socket_id(impl, port));
 }
 
 void mtl_hp_free(mtl_handle mt, void* ptr) { return st_rte_free(ptr); }
@@ -785,7 +785,7 @@ mtl_dma_mem_handle mtl_dma_mem_alloc(mtl_handle mt, size_t size) {
     return NULL;
   }
 
-  mem = st_rte_zmalloc_socket(sizeof(*mem), st_socket_id(impl, MTL_PORT_P));
+  mem = st_rte_zmalloc_socket(sizeof(*mem), mt_socket_id(impl, MTL_PORT_P));
   if (!mem) {
     err("%s, dma mem malloc fail\n", __func__);
     return NULL;
@@ -955,7 +955,7 @@ mtl_udma_handle mtl_udma_create(mtl_handle mt, uint16_t nb_desc, enum mtl_port p
   req.nb_desc = nb_desc;
   req.max_shared = 1;
   req.sch_idx = 0;
-  req.socket_id = st_socket_id(impl, port);
+  req.socket_id = mt_socket_id(impl, port);
   req.priv = impl;
   req.drop_mbuf_cb = NULL;
   struct mtl_dma_lender_dev* dev = mt_dma_request_dev(impl, &req);

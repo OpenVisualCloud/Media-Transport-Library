@@ -60,7 +60,7 @@ static int sch_tasklet_sleep(struct mtl_main_impl* impl, struct mt_sch_impl* sch
   /* sleep now */
   uint64_t start = mt_get_tsc(impl);
   if (sleep_us < mt_sch_zero_sleep_thresh_us(impl)) {
-    st_sleep_ms(0);
+    mt_sleep_ms(0);
   } else {
     struct timespec abs_time;
     clock_gettime(ST_THREAD_TIMEDWAIT_CLOCK_ID, &abs_time);
@@ -101,7 +101,7 @@ static int sch_tasklet_func(void* args) {
   int num_tasklet, i;
   struct mt_sch_tasklet_ops* ops;
   struct mt_sch_tasklet_impl* tasklet;
-  bool time_measure = st_has_tasklet_time_measure(impl);
+  bool time_measure = mt_has_tasklet_time_measure(impl);
   uint64_t tsc_s = 0;
 
   num_tasklet = sch->max_tasklet_idx;
@@ -219,7 +219,7 @@ static int sch_stop(struct mt_sch_impl* sch) {
 
   rte_atomic32_set(&sch->requemtl_stop, 1);
   while (rte_atomic32_read(&sch->stopped) == 0) {
-    st_sleep_ms(10);
+    mt_sleep_ms(10);
   }
   if (!sch->run_in_thread) {
     rte_eal_wait_lcore(sch->lcore);
@@ -336,7 +336,7 @@ static void sch_stat(struct mt_sch_impl* sch) {
   int idx = sch->idx;
   uint32_t avg_us;
 
-  if (st_has_tasklet_time_measure(sch->parnet)) {
+  if (mt_has_tasklet_time_measure(sch->parnet)) {
     for (int i = 0; i < num_tasklet; i++) {
       tasklet = sch->tasklet[i];
       if (!tasklet) continue;
@@ -414,7 +414,7 @@ struct mt_sch_tasklet_impl* mt_sch_register_tasklet(
     if (sch->tasklet[i]) continue;
 
     /* find one empty tasklet slot */
-    tasklet = st_rte_zmalloc_socket(sizeof(*tasklet), st_socket_id(impl, MTL_PORT_P));
+    tasklet = st_rte_zmalloc_socket(sizeof(*tasklet), mt_socket_id(impl, MTL_PORT_P));
     if (!tasklet) {
       err("%s(%d), tasklet malloc fail on %d\n", __func__, idx, i);
       sch_unlock(sch);
@@ -463,10 +463,10 @@ int mt_sch_mrg_init(struct mtl_main_impl* impl, int data_quota_mbs_limit) {
     sch->max_tasklet_idx = 0;
     sch->data_quota_mbs_total = 0;
     sch->data_quota_mbs_limit = data_quota_mbs_limit;
-    sch->run_in_thread = st_tasklet_has_thread(impl);
+    sch->run_in_thread = mt_tasklet_has_thread(impl);
 
     /* sleep info init */
-    sch->allow_sleep = st_tasklet_has_sleep(impl);
+    sch->allow_sleep = mt_tasklet_has_sleep(impl);
 #if ST_THREAD_TIMEDWAIT_CLOCK_ID != CLOCK_REALTIME
     pthread_condattr_t attr;
     pthread_condattr_init(&attr);

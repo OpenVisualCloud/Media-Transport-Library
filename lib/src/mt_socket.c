@@ -228,7 +228,7 @@ int st_socket_get_mac(struct mtl_main_impl* impl, char* if_name,
       info("%s(%s), waiting arp from %d.%d.%d.%d\n", __func__, if_name, dip[0], dip[1],
            dip[2], dip[3]);
     }
-    st_sleep_ms(100);
+    mt_sleep_ms(100);
   }
 
   close(sock);

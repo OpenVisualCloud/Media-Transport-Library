@@ -253,7 +253,7 @@ static int rx_ancillary_session_init_sw(struct mtl_main_impl* impl,
   snprintf(ring_name, 32, "RX-ANC-PACKET-RING-M%d-R%d", mgr_idx, idx);
   flags = RING_F_SP_ENQ | RING_F_SC_DEQ; /* single-producer and single-consumer */
   count = s->ops.rtp_ring_size;
-  ring = rte_ring_create(ring_name, count, st_socket_id(impl, port), flags);
+  ring = rte_ring_create(ring_name, count, mt_socket_id(impl, port), flags);
   if (count <= 0) {
     err("%s(%d,%d), invalid rtp_ring_size %d\n", __func__, mgr_idx, idx, count);
     return -ENOMEM;
@@ -460,7 +460,7 @@ static struct st_rx_ancillary_session_impl* rx_ancillary_sessions_mgr_attach(
   for (int i = 0; i < ST_MAX_RX_ANC_SESSIONS; i++) {
     if (!rx_ancillary_session_get_empty(mgr, i)) continue;
 
-    s = st_rte_zmalloc_socket(sizeof(*s), st_socket_id(impl, MTL_PORT_P));
+    s = st_rte_zmalloc_socket(sizeof(*s), mt_socket_id(impl, MTL_PORT_P));
     if (!s) {
       err("%s(%d), session malloc fail on %d\n", __func__, midx, i);
       rx_ancillary_session_put(mgr, i);
@@ -640,7 +640,7 @@ st40_rx_handle st40_rx_create(mtl_handle mt, struct st40_rx_ops* ops) {
     return NULL;
   }
 
-  s_impl = st_rte_zmalloc_socket(sizeof(*s_impl), st_socket_id(impl, MTL_PORT_P));
+  s_impl = st_rte_zmalloc_socket(sizeof(*s_impl), mt_socket_id(impl, MTL_PORT_P));
   if (!s_impl) {
     err("%s, s_impl malloc fail\n", __func__);
     return NULL;

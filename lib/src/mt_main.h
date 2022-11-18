@@ -246,7 +246,7 @@ struct mt_sch_tasklet_ops {
   int (*handler)(void* priv);
   /*
    * the recommend sleep time(us) if tasklet report MT_TASKLET_ALL_DONE.
-   * also this value can be set by st_tasklet_set_sleep at runtime.
+   * also this value can be set by mt_tasklet_set_sleep at runtime.
    * leave to zero if you don't know.
    */
   uint64_t advice_sleep_us;
@@ -664,105 +664,105 @@ static inline uint8_t mt_start_queue(struct mtl_main_impl* impl, enum mtl_port p
   return impl->user_para.xdp_info[port].start_queue;
 }
 
-static inline bool st_has_ptp_service(struct mtl_main_impl* impl) {
+static inline bool mt_has_ptp_service(struct mtl_main_impl* impl) {
   if (mt_get_user_params(impl)->flags & MTL_FLAG_PTP_ENABLE)
     return true;
   else
     return false;
 }
 
-static inline bool st_has_auto_start_stop(struct mtl_main_impl* impl) {
+static inline bool mt_has_auto_start_stop(struct mtl_main_impl* impl) {
   if (mt_get_user_params(impl)->flags & MTL_FLAG_DEV_AUTO_START_STOP)
     return true;
   else
     return false;
 }
 
-static inline bool st_has_af_xdp_zc(struct mtl_main_impl* impl) {
+static inline bool mt_has_af_xdp_zc(struct mtl_main_impl* impl) {
   if (mt_get_user_params(impl)->flags & MTL_FLAG_AF_XDP_ZC_DISABLE)
     return false;
   else
     return true;
 }
 
-static inline bool st_has_user_ptp(struct mtl_main_impl* impl) {
+static inline bool mt_has_user_ptp(struct mtl_main_impl* impl) {
   if (mt_get_user_params(impl)->ptp_get_time_fn)
     return true;
   else
     return false;
 }
 
-static inline bool st_has_user_quota(struct mtl_main_impl* impl) {
+static inline bool mt_has_user_quota(struct mtl_main_impl* impl) {
   if (mt_get_user_params(impl)->data_quota_mbs_per_sch)
     return true;
   else
     return false;
 }
 
-static inline bool st_has_ebu(struct mtl_main_impl* impl) {
+static inline bool mt_has_ebu(struct mtl_main_impl* impl) {
   if (mt_get_user_params(impl)->flags & MTL_FLAG_RX_VIDEO_EBU)
     return true;
   else
     return false;
 }
 
-static inline bool st_rx_video_separate_sch(struct mtl_main_impl* impl) {
+static inline bool mt_has_rxv_separate_sch(struct mtl_main_impl* impl) {
   if (mt_get_user_params(impl)->flags & MTL_FLAG_RX_SEPARATE_VIDEO_LCORE)
     return true;
   else
     return false;
 }
 
-static inline bool st_has_tx_video_migrate(struct mtl_main_impl* impl) {
+static inline bool mt_has_tx_video_migrate(struct mtl_main_impl* impl) {
   if (mt_get_user_params(impl)->flags & MTL_FLAG_TX_VIDEO_MIGRATE)
     return true;
   else
     return false;
 }
 
-static inline bool st_has_rx_video_migrate(struct mtl_main_impl* impl) {
+static inline bool mt_has_rx_video_migrate(struct mtl_main_impl* impl) {
   if (mt_get_user_params(impl)->flags & MTL_FLAG_RX_VIDEO_MIGRATE)
     return true;
   else
     return false;
 }
 
-static inline bool st_has_tasklet_time_measure(struct mtl_main_impl* impl) {
+static inline bool mt_has_tasklet_time_measure(struct mtl_main_impl* impl) {
   if (mt_get_user_params(impl)->flags & MTL_FLAG_TASKLET_TIME_MEASURE)
     return true;
   else
     return false;
 }
 
-static inline bool st_has_rx_mono_pool(struct mtl_main_impl* impl) {
+static inline bool mt_has_rx_mono_pool(struct mtl_main_impl* impl) {
   if (mt_get_user_params(impl)->flags & MTL_FLAG_RX_MONO_POOL)
     return true;
   else
     return false;
 }
 
-static inline bool st_has_tx_mono_pool(struct mtl_main_impl* impl) {
+static inline bool mt_has_tx_mono_pool(struct mtl_main_impl* impl) {
   if (mt_get_user_params(impl)->flags & MTL_FLAG_TX_MONO_POOL)
     return true;
   else
     return false;
 }
 
-static inline bool st_no_system_rx_queues(struct mtl_main_impl* impl) {
+static inline bool mt_no_system_rxq(struct mtl_main_impl* impl) {
   if (mt_get_user_params(impl)->flags & MTL_FLAG_DISABLE_SYSTEM_RX_QUEUES)
     return true;
   else
     return false;
 }
 
-static inline bool st_tasklet_has_thread(struct mtl_main_impl* impl) {
+static inline bool mt_tasklet_has_thread(struct mtl_main_impl* impl) {
   if (mt_get_user_params(impl)->flags & MTL_FLAG_TASKLET_THREAD)
     return true;
   else
     return false;
 }
 
-static inline bool st_tasklet_has_sleep(struct mtl_main_impl* impl) {
+static inline bool mt_tasklet_has_sleep(struct mtl_main_impl* impl) {
   if (mt_get_user_params(impl)->flags & MTL_FLAG_TASKLET_SLEEP)
     return true;
   else
@@ -804,7 +804,7 @@ static inline struct rte_mempool* mt_if_hdr_split_pool(struct mt_interface* inf,
 }
 
 static inline bool mt_if_has_ptp(struct mtl_main_impl* impl, enum mtl_port port) {
-  if (st_has_ptp_service(impl) && mt_if_has_timesync(impl, port))
+  if (mt_has_ptp_service(impl) && mt_if_has_timesync(impl, port))
     return true;
   else
     return false;
@@ -818,12 +818,7 @@ static inline uint16_t mt_if_nb_rx_desc(struct mtl_main_impl* impl, enum mtl_por
   return mt_if(impl, port)->nb_rx_desc;
 }
 
-static inline enum st21_tx_pacing_way st_tx_pacing_way(struct mtl_main_impl* impl,
-                                                       enum mtl_port port) {
-  return mt_if(impl, port)->tx_pacing_way;
-}
-
-static inline int st_socket_id(struct mtl_main_impl* impl, enum mtl_port port) {
+static inline int mt_socket_id(struct mtl_main_impl* impl, enum mtl_port port) {
   return mt_if(impl, port)->socket_id;
 }
 
@@ -862,11 +857,11 @@ static inline uint64_t mt_sch_zero_sleep_thresh_us(struct mtl_main_impl* impl) {
   return impl->var_para.sch_zero_sleep_threshold_us;
 }
 
-static inline void st_sleep_ms(unsigned int ms) { return rte_delay_us_sleep(ms * 1000); }
+static inline void mt_sleep_ms(unsigned int ms) { return rte_delay_us_sleep(ms * 1000); }
 
-static inline void st_delay_us(unsigned int us) { return rte_delay_us_block(us); }
+static inline void mt_delay_us(unsigned int us) { return rte_delay_us_block(us); }
 
-static inline void st_tx_burst_busy(uint16_t port_id, uint16_t queue_id,
+static inline void mt_tx_burst_busy(uint16_t port_id, uint16_t queue_id,
                                     struct rte_mbuf** tx_pkts, uint16_t nb_pkts) {
   uint32_t sent = 0;
 
@@ -876,14 +871,14 @@ static inline void st_tx_burst_busy(uint16_t port_id, uint16_t queue_id,
   }
 }
 
-static inline void st_free_mbufs(struct rte_mbuf** pkts, int num) {
+static inline void mt_free_mbufs(struct rte_mbuf** pkts, int num) {
   for (int i = 0; i < num; i++) {
     rte_pktmbuf_free(pkts[i]);
     pkts[i] = NULL;
   }
 }
 
-static inline void st_mbuf_init_ipv4(struct rte_mbuf* pkt) {
+static inline void mt_mbuf_init_ipv4(struct rte_mbuf* pkt) {
   pkt->l2_len = sizeof(struct rte_ether_hdr); /* 14 */
   pkt->l3_len = sizeof(struct rte_ipv4_hdr);  /* 20 */
 #if RTE_VERSION >= RTE_VERSION_NUM(21, 11, 0, 0)
@@ -893,16 +888,16 @@ static inline void st_mbuf_init_ipv4(struct rte_mbuf* pkt) {
 #endif
 }
 
-static inline uint64_t st_timespec_to_ns(const struct timespec* ts) {
+static inline uint64_t mt_timespec_to_ns(const struct timespec* ts) {
   return ((uint64_t)ts->tv_sec * NS_PER_S) + ts->tv_nsec;
 }
 
-static inline void st_ns_to_timespec(uint64_t ns, struct timespec* ts) {
+static inline void mt_ns_to_timespec(uint64_t ns, struct timespec* ts) {
   ts->tv_sec = ns / NS_PER_S;
   ts->tv_nsec = ns % NS_PER_S;
 }
 
-static inline int st_wait_tsc_stable(struct mtl_main_impl* impl) {
+static inline int mt_wait_tsc_stable(struct mtl_main_impl* impl) {
   if (impl->tsc_cal_tid) {
     pthread_join(impl->tsc_cal_tid, NULL);
     impl->tsc_cal_tid = 0;
@@ -920,7 +915,7 @@ static inline uint64_t mt_get_tsc(struct mtl_main_impl* impl) {
 }
 
 /* busy loop until target time reach */
-static inline void st_tsc_delay_to(struct mtl_main_impl* impl, uint64_t target) {
+static inline void mt_tsc_delay_to(struct mtl_main_impl* impl, uint64_t target) {
   while (mt_get_tsc(impl) < target) {
   }
 }
@@ -951,17 +946,6 @@ static inline void st_tx_mbuf_set_ptp(struct rte_mbuf* mbuf, uint64_t time_stamp
 static inline uint64_t st_tx_mbuf_get_ptp(struct rte_mbuf* mbuf) {
   struct mt_muf_priv_data* priv = rte_mbuf_to_priv(mbuf);
   return priv->tx_priv.ptp_time_stamp;
-}
-
-static inline uint64_t st_mbuf_get_hw_time_stamp(struct mtl_main_impl* impl,
-                                                 struct rte_mbuf* mbuf) {
-  struct mt_ptp_impl* ptp = impl->ptp;
-  struct timespec spec;
-  uint64_t time_stamp =
-      *RTE_MBUF_DYNFIELD(mbuf, impl->dynfield_offset, rte_mbuf_timestamp_t*);
-  st_ns_to_timespec(time_stamp, &spec);
-  time_stamp = st_timespec_to_ns(&spec) + ptp->ptp_delta;
-  return time_stamp;
 }
 
 static inline void st_tx_mbuf_set_idx(struct rte_mbuf* mbuf, uint32_t idx) {
@@ -1004,33 +988,37 @@ static inline uint32_t st_rx_mbuf_get_len(struct rte_mbuf* mbuf) {
   return priv->rx_priv.len;
 }
 
+static inline uint64_t mt_mbuf_hw_time_stamp(struct mtl_main_impl* impl,
+                                                 struct rte_mbuf* mbuf) {
+  struct mt_ptp_impl* ptp = impl->ptp;
+  struct timespec spec;
+  uint64_t time_stamp =
+      *RTE_MBUF_DYNFIELD(mbuf, impl->dynfield_offset, rte_mbuf_timestamp_t*);
+  mt_ns_to_timespec(time_stamp, &spec);
+  time_stamp = mt_timespec_to_ns(&spec) + ptp->ptp_delta;
+  return time_stamp;
+}
+
 static inline uint64_t mt_get_ptp_time(struct mtl_main_impl* impl, enum mtl_port port) {
   return mt_if(impl, port)->ptp_get_time_fn(impl, port);
 }
 
 uint64_t mt_get_raw_ptp_time(struct mtl_main_impl* impl, enum mtl_port port);
 
-static inline bool st_rtp_len_valid(uint16_t len) {
-  if (len <= 0 || len > MTL_PKT_MAX_RTP_BYTES)
-    return false;
-  else
-    return true;
-}
-
 #if RTE_VERSION >= RTE_VERSION_NUM(21, 11, 0, 0)
-static inline struct rte_ether_addr* st_eth_s_addr(struct rte_ether_hdr* eth) {
+static inline struct rte_ether_addr* mt_eth_s_addr(struct rte_ether_hdr* eth) {
   return &eth->src_addr;
 }
 
-static inline struct rte_ether_addr* st_eth_d_addr(struct rte_ether_hdr* eth) {
+static inline struct rte_ether_addr* mt_eth_d_addr(struct rte_ether_hdr* eth) {
   return &eth->dst_addr;
 }
 #else
-static inline struct rte_ether_addr* st_eth_s_addr(struct rte_ether_hdr* eth) {
+static inline struct rte_ether_addr* mt_eth_s_addr(struct rte_ether_hdr* eth) {
   return &eth->s_addr;
 }
 
-static inline struct rte_ether_addr* st_eth_d_addr(struct rte_ether_hdr* eth) {
+static inline struct rte_ether_addr* mt_eth_d_addr(struct rte_ether_hdr* eth) {
   return &eth->d_addr;
 }
 #endif

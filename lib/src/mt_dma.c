@@ -48,7 +48,7 @@ int mt_map_add(struct mtl_main_impl* impl, struct mt_map_item* item) {
   for (int i = 0; i < MT_MAP_MAX_ITEMS; i++) {
     i_item = mgr->items[i];
     if (i_item) continue;
-    i_item = st_rte_zmalloc_socket(sizeof(*i_item), st_socket_id(impl, MTL_PORT_P));
+    i_item = st_rte_zmalloc_socket(sizeof(*i_item), mt_socket_id(impl, MTL_PORT_P));
     if (!i_item) {
       err("%s, i_item malloc fail\n", __func__);
       st_pthread_mutex_unlock(&mgr->mutex);
@@ -134,8 +134,8 @@ static void dma_copy_test(struct mtl_main_impl* impl, struct mtl_dma_lender_dev*
   void *dst = NULL, *src = NULL;
   int idx = mt_dma_dev_id(dev);
 
-  dst = st_rte_zmalloc_socket(len, st_socket_id(impl, MTL_PORT_P));
-  src = st_rte_zmalloc_socket(len, st_socket_id(impl, MTL_PORT_P));
+  dst = st_rte_zmalloc_socket(len, mt_socket_id(impl, MTL_PORT_P));
+  src = st_rte_zmalloc_socket(len, mt_socket_id(impl, MTL_PORT_P));
   memset(src, 0x55, len);
 
   if (dst && src) {
@@ -167,8 +167,8 @@ static void dma_fill_test(struct mtl_main_impl* impl, struct mtl_dma_lender_dev*
   int idx = mt_dma_dev_id(dev);
   uint64_t pattern_u64 = 0;
 
-  dst = st_rte_zmalloc_socket(len, st_socket_id(impl, MTL_PORT_P));
-  src = st_rte_zmalloc_socket(len, st_socket_id(impl, MTL_PORT_P));
+  dst = st_rte_zmalloc_socket(len, mt_socket_id(impl, MTL_PORT_P));
+  src = st_rte_zmalloc_socket(len, mt_socket_id(impl, MTL_PORT_P));
   memset(src, pattern, len);
 
   /* pattern to u64 */
@@ -201,7 +201,7 @@ static void dma_test(struct mtl_main_impl* impl) {
   req.nb_desc = 128;
   req.max_shared = 1;
   req.sch_idx = 0;
-  req.socket_id = st_socket_id(impl, MTL_PORT_P);
+  req.socket_id = mt_socket_id(impl, MTL_PORT_P);
   req.priv = NULL;
   req.drop_mbuf_cb = NULL;
   struct mtl_dma_lender_dev* dev = mt_dma_request_dev(impl, &req);
@@ -307,7 +307,7 @@ static int dma_sw_init(struct mtl_main_impl* impl, struct mt_dma_dev* dev) {
   snprintf(ring_name, 32, "RX-DMA-BORROW-RING-D%d", idx);
   flags = RING_F_SP_ENQ | RING_F_SC_DEQ;
   count = dev->nb_desc;
-  ring = rte_ring_create(ring_name, count, st_socket_id(impl, MTL_PORT_P), flags);
+  ring = rte_ring_create(ring_name, count, mt_socket_id(impl, MTL_PORT_P), flags);
   if (!ring) {
     err("%s(%d), rte_ring_create fail\n", __func__, idx);
     return -ENOMEM;
@@ -317,7 +317,7 @@ static int dma_sw_init(struct mtl_main_impl* impl, struct mt_dma_dev* dev) {
   dev->inflight_enqueue_idx = 0;
   dev->inflight_dequeue_idx = 0;
   dev->inflight_mbufs = st_rte_zmalloc_socket(sizeof(*dev->inflight_mbufs) * dev->nb_desc,
-                                              st_socket_id(impl, MTL_PORT_P));
+                                              mt_socket_id(impl, MTL_PORT_P));
   if (!dev->inflight_mbufs) {
     err("%s(%d), inflight_mbufs alloc fail\n", __func__, idx);
     return -ENOMEM;

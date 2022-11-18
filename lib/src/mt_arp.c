@@ -40,8 +40,8 @@ static int arp_receive_request(struct mtl_main_impl* impl, struct rte_arp_hdr* r
   struct rte_ether_hdr* eth = rte_pktmbuf_mtod(rpl_pkt, struct rte_ether_hdr*);
   uint16_t port_id = mt_port_id(impl, port);
 
-  rte_eth_macaddr_get(port_id, st_eth_s_addr(eth));
-  rte_ether_addr_copy(&request->arp_data.arp_sha, st_eth_d_addr(eth));
+  rte_eth_macaddr_get(port_id, mt_eth_s_addr(eth));
+  rte_ether_addr_copy(&request->arp_data.arp_sha, mt_eth_d_addr(eth));
   eth->ether_type = htons(RTE_ETHER_TYPE_ARP);  // ARP_PROTOCOL
 
   struct rte_arp_hdr* arp =
@@ -167,8 +167,8 @@ int mt_arp_cni_get_mac(struct mtl_main_impl* impl, struct rte_ether_addr* ea,
       sizeof(struct rte_ether_hdr) + sizeof(struct rte_arp_hdr);
 
   struct rte_ether_hdr* eth = rte_pktmbuf_mtod(req_pkt, struct rte_ether_hdr*);
-  rte_eth_macaddr_get(port_id, st_eth_s_addr(eth));
-  memset(st_eth_d_addr(eth), 0xFF, RTE_ETHER_ADDR_LEN);
+  rte_eth_macaddr_get(port_id, mt_eth_s_addr(eth));
+  memset(mt_eth_d_addr(eth), 0xFF, RTE_ETHER_ADDR_LEN);
   eth->ether_type = htons(RTE_ETHER_TYPE_ARP);  // ARP_PROTOCOL
   struct rte_arp_hdr* arp =
       rte_pktmbuf_mtod_offset(req_pkt, struct rte_arp_hdr*, sizeof(struct rte_ether_hdr));
@@ -193,7 +193,7 @@ int mt_arp_cni_get_mac(struct mtl_main_impl* impl, struct rte_ether_addr* ea,
 
     if (rte_atomic32_read(&impl->request_exit)) return -EIO;
 
-    st_sleep_ms(100);
+    mt_sleep_ms(100);
     retry++;
     if (0 == (retry % 50))
       info("%s(%d), waiting arp from %d.%d.%d.%d\n", __func__, port, addr[0], addr[1],
