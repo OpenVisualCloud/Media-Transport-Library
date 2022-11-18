@@ -149,7 +149,7 @@ static void dev_stat(struct mtl_main_impl* impl) {
   if (impl->tx_a_init) st_tx_audio_sessions_stat(impl);
   if (impl->tx_anc_init) st_tx_ancillary_sessions_stat(impl);
   st_rx_video_sessions_stat(impl);
-  st_dma_stat(impl);
+  mt_dma_stat(impl);
   if (impl->rx_a_init) st_rx_audio_sessions_stat(impl);
   if (impl->rx_anc_init) st_rx_ancillary_sessions_stat(impl);
   st_plugins_dump(impl);
@@ -192,7 +192,7 @@ static void* dev_stat_thread(void* arg) {
   return NULL;
 }
 
-static int dev_eal_init(struct mtl_init_params* p, struct st_kport_info* kport_info) {
+static int dev_eal_init(struct mtl_init_params* p, struct mt_kport_info* kport_info) {
   char* argv[ST_EAL_MAX_ARGS];
   int argc, ret;
   int num_ports = RTE_MIN(p->num_ports, MTL_PORT_MAX);
@@ -1864,7 +1864,7 @@ int st_dev_get_socket(const char* port) {
   return soc_id;
 }
 
-int st_dev_init(struct mtl_init_params* p, struct st_kport_info* kport_info) {
+int st_dev_init(struct mtl_init_params* p, struct mt_kport_info* kport_info) {
   int ret;
 
   ret = dev_eal_init(p, kport_info);

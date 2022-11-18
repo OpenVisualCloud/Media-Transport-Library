@@ -429,7 +429,7 @@ typedef int (*mt_dma_drop_mbuf_cb)(void* priv, struct rte_mbuf* mbuf);
 struct mtl_dma_lender_dev {
   enum st_session_type type; /* for sanity check */
 
-  struct st_dma_dev* parent;
+  struct mt_dma_dev* parent;
   int lender_id;
   bool active;
 
@@ -438,7 +438,7 @@ struct mtl_dma_lender_dev {
   mt_dma_drop_mbuf_cb cb;
 };
 
-struct st_dma_dev {
+struct mt_dma_dev {
   int16_t dev_id;
   uint16_t nb_desc;
   bool active;
@@ -462,8 +462,8 @@ struct st_dma_dev {
   uint64_t stat_commit_sum;
 };
 
-struct st_dma_mgr {
-  struct st_dma_dev devs[MTL_DMA_DEV_MAX];
+struct mt_dma_mgr {
+  struct mt_dma_dev devs[MTL_DMA_DEV_MAX];
   pthread_mutex_t mutex; /* protect devs */
   uint8_t num_dma_dev;
   rte_atomic32_t num_dma_dev_active;
@@ -478,7 +478,7 @@ struct mtl_dma_mem {
   size_t iova_size;  /* the iova mapped size */
 };
 
-struct st_admin {
+struct mt_admin {
   uint64_t period_us;
   pthread_t admin_tid;
   pthread_cond_t admin_wake_cond;
@@ -486,23 +486,23 @@ struct st_admin {
   rte_atomic32_t admin_stop;
 };
 
-struct st_kport_info {
+struct mt_kport_info {
   /* dpdk port name for kernel port */
   char port[MTL_PORT_MAX][MTL_PORT_MAX_LEN];
 };
 
-struct st_map_item {
+struct mt_map_item {
   void* vaddr;
   size_t size;
   mtl_iova_t iova; /* iova address */
 };
 
-struct st_map_mgr {
+struct mt_map_mgr {
   pthread_mutex_t mutex;
-  struct st_map_item* items[MT_MAP_MAX_ITEMS];
+  struct mt_map_item* items[MT_MAP_MAX_ITEMS];
 };
 
-struct st_var_params {
+struct mt_var_params {
   /* default sleep time(us) for sch tasklet sleep */
   uint64_t sch_default_sleep_us;
   /* force sleep time(us) for sch tasklet sleep */
@@ -515,8 +515,8 @@ struct mtl_main_impl {
   struct mt_interface inf[MTL_PORT_MAX];
 
   struct mtl_init_params user_para;
-  struct st_var_params var_para;
-  struct st_kport_info kport_info;
+  struct mt_var_params var_para;
+  struct mt_kport_info kport_info;
   enum st_session_type type; /* for sanity check */
   uint64_t tsc_hz;
   pthread_t tsc_cal_tid;
@@ -537,7 +537,7 @@ struct mtl_main_impl {
   struct mt_sch_impl* main_sch; /* system sch */
 
   /* admin context */
-  struct st_admin admin;
+  struct mt_admin admin;
 
   /* cni context */
   struct mt_cni_impl cni;
@@ -598,9 +598,9 @@ struct mtl_main_impl {
   /* rx timestamp register */
   int dynfield_offset;
 
-  struct st_dma_mgr dma_mgr;
+  struct mt_dma_mgr dma_mgr;
 
-  struct st_map_mgr map_mgr;
+  struct mt_map_mgr map_mgr;
 
   uint16_t pkt_udp_suggest_max_size;
   uint16_t rx_pool_data_size;
@@ -846,7 +846,7 @@ static inline struct rte_mbuf* st_get_pad(struct mtl_main_impl* impl,
   return st_if(impl, port)->pad;
 }
 
-static inline struct st_dma_mgr* st_get_dma_mgr(struct mtl_main_impl* impl) {
+static inline struct mt_dma_mgr* st_get_dma_mgr(struct mtl_main_impl* impl) {
   return &impl->dma_mgr;
 }
 

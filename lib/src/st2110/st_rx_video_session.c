@@ -1109,7 +1109,7 @@ static struct st_rx_video_slot_impl* rv_slot_by_tmstamp(
   }
 
   dbg("%s(%d): new tmstamp %u\n", __func__, s->idx, tmstamp);
-  if (s->dma_dev && !st_dma_empty(s->dma_dev)) {
+  if (s->dma_dev && !mt_dma_empty(s->dma_dev)) {
     /* still in progress of previous frame, drop current pkt */
     rte_atomic32_inc(&s->dma_previous_busy_cnt);
     dbg("%s(%d): still has dma inflight %u\n", __func__, s->idx,
@@ -1247,7 +1247,7 @@ static void rv_st22_slot_drop_frame(struct st_rx_video_session_impl* s,
 
 static int rv_free_dma(struct mtl_main_impl* impl, struct st_rx_video_session_impl* s) {
   if (s->dma_dev) {
-    st_dma_free_dev(impl, s->dma_dev);
+    mt_dma_free_dev(impl, s->dma_dev);
     s->dma_dev = NULL;
   }
 
@@ -1266,7 +1266,7 @@ static int rv_init_dma(struct mtl_main_impl* impl, struct st_rx_video_session_im
   bool share_dma = true;
   enum st20_type type = s->ops.type;
 
-  struct st_dma_request_req req;
+  struct mt_dma_request_req req;
   req.nb_desc = s->dma_nb_desc;
   req.max_shared = share_dma ? MT_DMA_MAX_SESSIONS : 1;
   req.sch_idx = s->parnet->idx;
@@ -1276,7 +1276,7 @@ static int rv_init_dma(struct mtl_main_impl* impl, struct st_rx_video_session_im
     req.drop_mbuf_cb = rv_slice_dma_drop_mbuf;
   else
     req.drop_mbuf_cb = NULL;
-  struct mtl_dma_lender_dev* dma_dev = st_dma_request_dev(impl, &req);
+  struct mtl_dma_lender_dev* dma_dev = mt_dma_request_dev(impl, &req);
   if (!dma_dev) {
     info("%s(%d), fail, can not request dma dev\n", __func__, idx);
     return -EIO;
@@ -1284,8 +1284,8 @@ static int rv_init_dma(struct mtl_main_impl* impl, struct st_rx_video_session_im
 
   s->dma_dev = dma_dev;
 
-  info("%s(%d), succ, dma %d lender id %u\n", __func__, idx, st_dma_dev_id(dma_dev),
-       st_dma_lender_id(dma_dev));
+  info("%s(%d), succ, dma %d lender id %u\n", __func__, idx, mt_dma_dev_id(dma_dev),
+       mt_dma_lender_id(dma_dev));
   return 0;
 }
 
@@ -1432,16 +1432,16 @@ static int rv_dma_dequeue(struct mtl_main_impl* impl,
                           struct st_rx_video_session_impl* s) {
   struct mtl_dma_lender_dev* dma_dev = s->dma_dev;
 
-  uint16_t nb_dq = st_dma_completed(dma_dev, ST_RX_VIDEO_BURTS_SIZE, NULL, NULL);
+  uint16_t nb_dq = mt_dma_completed(dma_dev, ST_RX_VIDEO_BURTS_SIZE, NULL, NULL);
 
   if (nb_dq) {
     dbg("%s(%d), nb_dq %u\n", __func__, s->idx, nb_dq);
-    st_dma_drop_mbuf(dma_dev, nb_dq);
+    mt_dma_drop_mbuf(dma_dev, nb_dq);
   }
 
   /* all dma action finished */
   struct st_rx_video_slot_impl* dma_slot = s->dma_slot;
-  if (st_dma_empty(dma_dev) && dma_slot) {
+  if (mt_dma_empty(dma_dev) && dma_slot) {
     dbg("%s(%d), nb_dq %u\n", __func__, s->idx, nb_dq);
     int32_t frame_recv_size = rv_slot_get_frame_size(s, dma_slot);
     if (frame_recv_size >= s->st20_frame_size) {
@@ -1598,11 +1598,11 @@ static int rv_handle_frame_pkt(struct st_rx_video_session_impl* s, struct rte_mb
       rte_memcpy(slot->frame + (line1_number + 1) * s->st20_linesize,
                  payload + line1_length, payload_length - line1_length);
     } else if (dma_dev && (payload_length > ST_RX_VIDEO_DMA_MIN_SIZE) &&
-               !st_dma_full(dma_dev)) {
+               !mt_dma_full(dma_dev)) {
       rte_iova_t payload_iova =
           rte_pktmbuf_iova_offset(mbuf, sizeof(struct st_rfc4175_video_hdr));
       if (extra_rtp) payload_iova += sizeof(*extra_rtp);
-      ret = st_dma_copy(dma_dev, slot->frame_iova + offset, payload_iova, payload_length);
+      ret = mt_dma_copy(dma_dev, slot->frame_iova + offset, payload_iova, payload_length);
       if (ret < 0) {
         /* use cpu copy if dma copy fail */
         rte_memcpy(slot->frame + offset, payload, payload_length);
@@ -1610,7 +1610,7 @@ static int rv_handle_frame_pkt(struct st_rx_video_session_impl* s, struct rte_mb
         /* abstrct dma dev takes ownership of this mbuf */
         st_rx_mbuf_set_offset(mbuf, offset);
         st_rx_mbuf_set_len(mbuf, payload_length);
-        ret = st_dma_borrow_mbuf(dma_dev, mbuf);
+        ret = mt_dma_borrow_mbuf(dma_dev, mbuf);
         if (ret) { /* never happen in real life */
           err("%s(%d,%d), mbuf copied but not enqueued \n", __func__, s->idx, s_port);
           /* mbuf freed and dma copy will operate an invalid src! */
@@ -1641,7 +1641,7 @@ static int rv_handle_frame_pkt(struct st_rx_video_session_impl* s, struct rte_mb
   size_t frame_recv_size = rv_slot_get_frame_size(s, slot);
   bool end_frame = false;
   if (dma_dev) {
-    if (frame_recv_size >= s->st20_frame_size && st_dma_empty(dma_dev)) end_frame = true;
+    if (frame_recv_size >= s->st20_frame_size && mt_dma_empty(dma_dev)) end_frame = true;
   } else {
     if (frame_recv_size >= s->st20_frame_size) end_frame = true;
   }
@@ -2490,7 +2490,7 @@ static int rv_tasklet(struct mtl_main_impl* impl, struct st_rx_video_session_imp
   if (s->dma_dev) {
     rv_dma_dequeue(impl, s);
     /* check if has pending pkts in dma */
-    if (!st_dma_empty(s->dma_dev)) done = false;
+    if (!mt_dma_empty(s->dma_dev)) done = false;
   }
 
   for (int s_port = 0; s_port < num_port; s_port++) {
@@ -2547,7 +2547,7 @@ static int rv_tasklet(struct mtl_main_impl* impl, struct st_rx_video_session_imp
   }
 
   /* submit if any */
-  if (dma_copy && s->dma_dev) st_dma_submit(s->dma_dev);
+  if (dma_copy && s->dma_dev) mt_dma_submit(s->dma_dev);
 
   return done ? MT_TASKLET_ALL_DONE : MT_TASKLET_HAS_PENDING;
 }

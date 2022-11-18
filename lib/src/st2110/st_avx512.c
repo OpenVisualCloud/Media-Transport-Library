@@ -246,17 +246,17 @@ int st20_rfc4175_422be10_to_422le10_avx512_dma(struct mtl_dma_lender_dev* dma,
     /* push max be dma */
     while (cur_tran < max_tran) {
       rte_iova_t be_cache_iova = be_caches_iova + (cur_tran % caches_num) * cache_size;
-      st_dma_copy_busy(dma, be_cache_iova, pg_be_iova, cache_size);
+      mt_dma_copy_busy(dma, be_cache_iova, pg_be_iova, cache_size);
       pg_be += cache_pg_cnt;
       pg_be_iova += cache_size;
       st_cvt_dma_ctx_push(ctx, 0);
       cur_tran = st_cvt_dma_ctx_get_tran(ctx, 0);
     }
-    st_dma_submit_busy(dma);
+    mt_dma_submit_busy(dma);
 
     /* wait until current be dma copy done */
     while (st_cvt_dma_ctx_get_done(ctx, 0) < (i + 1)) {
-      uint16_t nb_dq = st_dma_completed(dma, 1, NULL, NULL);
+      uint16_t nb_dq = mt_dma_completed(dma, 1, NULL, NULL);
       if (nb_dq) st_cvt_dma_ctx_pop(ctx);
     }
 
@@ -476,17 +476,17 @@ int st20_rfc4175_422be10_to_yuv422p10le_avx512_dma(
     /* push max be dma */
     while (cur_tran < max_tran) {
       rte_iova_t be_cache_iova = be_caches_iova + (cur_tran % caches_num) * cache_size;
-      st_dma_copy_busy(dma, be_cache_iova, pg_be_iova, cache_size);
+      mt_dma_copy_busy(dma, be_cache_iova, pg_be_iova, cache_size);
       pg_be += cache_pg_cnt;
       pg_be_iova += cache_size;
       st_cvt_dma_ctx_push(ctx, 0);
       cur_tran = st_cvt_dma_ctx_get_tran(ctx, 0);
     }
-    st_dma_submit_busy(dma);
+    mt_dma_submit_busy(dma);
 
     /* wait until current be dma copy done */
     while (st_cvt_dma_ctx_get_done(ctx, 0) < (i + 1)) {
-      uint16_t nb_dq = st_dma_completed(dma, 1, NULL, NULL);
+      uint16_t nb_dq = mt_dma_completed(dma, 1, NULL, NULL);
       if (nb_dq) st_cvt_dma_ctx_pop(ctx);
     }
 
@@ -720,17 +720,17 @@ int st20_rfc4175_422be10_to_422le8_avx512_dma(struct mtl_dma_lender_dev* dma,
     while (cur_tran < max_tran) {
       rte_iova_t be10_cache_iova =
           be10_caches_iova + (cur_tran % caches_num) * cache_size;
-      st_dma_copy_busy(dma, be10_cache_iova, pg_10_iova, cache_size);
+      mt_dma_copy_busy(dma, be10_cache_iova, pg_10_iova, cache_size);
       pg_10 += cache_pg_cnt;
       pg_10_iova += cache_size;
       st_cvt_dma_ctx_push(ctx, 0);
       cur_tran = st_cvt_dma_ctx_get_tran(ctx, 0);
     }
-    st_dma_submit_busy(dma);
+    mt_dma_submit_busy(dma);
 
     /* wait until current be dma copy done */
     while (st_cvt_dma_ctx_get_done(ctx, 0) < (i + 1)) {
-      uint16_t nb_dq = st_dma_completed(dma, 1, NULL, NULL);
+      uint16_t nb_dq = mt_dma_completed(dma, 1, NULL, NULL);
       if (nb_dq) st_cvt_dma_ctx_pop(ctx);
     }
     struct st20_rfc4175_422_10_pg2_be* be_10 = be10_cache;
@@ -912,17 +912,17 @@ int st20_rfc4175_422be10_to_v210_avx512_dma(struct mtl_dma_lender_dev* dma,
     /* push max be dma */
     while (cur_tran < max_tran) {
       rte_iova_t be_cache_iova = be_caches_iova + (cur_tran % caches_num) * cache_size;
-      st_dma_copy_busy(dma, be_cache_iova, pg_be_iova, cache_size);
+      mt_dma_copy_busy(dma, be_cache_iova, pg_be_iova, cache_size);
       pg_be += cache_pg_cnt;
       pg_be_iova += cache_size;
       st_cvt_dma_ctx_push(ctx, 0);
       cur_tran = st_cvt_dma_ctx_get_tran(ctx, 0);
     }
-    st_dma_submit_busy(dma);
+    mt_dma_submit_busy(dma);
 
     /* wait until current be dma copy done */
     while (st_cvt_dma_ctx_get_done(ctx, 0) < (i + 1)) {
-      uint16_t nb_dq = st_dma_completed(dma, 1, NULL, NULL);
+      uint16_t nb_dq = mt_dma_completed(dma, 1, NULL, NULL);
       if (nb_dq) st_cvt_dma_ctx_pop(ctx);
     }
 
@@ -1105,30 +1105,30 @@ int st20_yuv422p10le_to_rfc4175_422be10_avx512_dma(struct mtl_dma_lender_dev* dm
     while (cur_tran < max_tran) {
       rte_iova_t cache_iova = le_caches_iova + (cur_tran % caches_num) * cache_size;
 
-      st_dma_copy_busy(dma, cache_iova, y_iova, cache_size / 2);
+      mt_dma_copy_busy(dma, cache_iova, y_iova, cache_size / 2);
       y += (cache_pg_cnt * 2); /* two y in one pg */
       y_iova += cache_size / 2;
       st_cvt_dma_ctx_push(ctx, 0);
       cache_iova += cache_size / 2;
 
-      st_dma_copy_busy(dma, cache_iova, b_iova, cache_size / 4);
+      mt_dma_copy_busy(dma, cache_iova, b_iova, cache_size / 4);
       b += cache_pg_cnt;
       b_iova += cache_size / 4;
       st_cvt_dma_ctx_push(ctx, 1);
       cache_iova += cache_size / 4;
 
-      st_dma_copy_busy(dma, cache_iova, r_iova, cache_size / 4);
+      mt_dma_copy_busy(dma, cache_iova, r_iova, cache_size / 4);
       r += cache_pg_cnt;
       r_iova += cache_size / 4;
       st_cvt_dma_ctx_push(ctx, 2);
 
       cur_tran = st_cvt_dma_ctx_get_tran(ctx, 2);
     }
-    st_dma_submit_busy(dma);
+    mt_dma_submit_busy(dma);
 
     /* wait until current be dma copy done */
     while (st_cvt_dma_ctx_get_done(ctx, 2) < (i + 1)) {
-      uint16_t nb_dq = st_dma_completed(dma, 1, NULL, NULL);
+      uint16_t nb_dq = mt_dma_completed(dma, 1, NULL, NULL);
       if (nb_dq) st_cvt_dma_ctx_pop(ctx);
     }
 
@@ -1497,17 +1497,17 @@ int st20_rfc4175_422le10_to_422be10_avx512_dma(struct mtl_dma_lender_dev* dma,
     /* push max be dma */
     while (cur_tran < max_tran) {
       rte_iova_t le_cache_iova = le_caches_iova + (cur_tran % caches_num) * cache_size;
-      st_dma_copy_busy(dma, le_cache_iova, pg_le_iova, cache_size);
+      mt_dma_copy_busy(dma, le_cache_iova, pg_le_iova, cache_size);
       pg_le += cache_pg_cnt;
       pg_le_iova += cache_size;
       st_cvt_dma_ctx_push(ctx, 0);
       cur_tran = st_cvt_dma_ctx_get_tran(ctx, 0);
     }
-    st_dma_submit_busy(dma);
+    mt_dma_submit_busy(dma);
 
     /* wait until current be dma copy done */
     while (st_cvt_dma_ctx_get_done(ctx, 0) < (i + 1)) {
-      uint16_t nb_dq = st_dma_completed(dma, 1, NULL, NULL);
+      uint16_t nb_dq = mt_dma_completed(dma, 1, NULL, NULL);
       if (nb_dq) st_cvt_dma_ctx_pop(ctx);
     }
 
@@ -1714,17 +1714,17 @@ int st20_v210_to_rfc4175_422be10_avx512_dma(struct mtl_dma_lender_dev* dma,
     while (cur_tran < max_tran) {
       rte_iova_t v210_cache_iova =
           v210_caches_iova + (cur_tran % caches_num) * cache_size;
-      st_dma_copy_busy(dma, v210_cache_iova, pg_v210_iova, cache_size);
+      mt_dma_copy_busy(dma, v210_cache_iova, pg_v210_iova, cache_size);
       pg_v210 += cache_size;
       pg_v210_iova += cache_size;
       st_cvt_dma_ctx_push(ctx, 0);
       cur_tran = st_cvt_dma_ctx_get_tran(ctx, 0);
     }
-    st_dma_submit_busy(dma);
+    mt_dma_submit_busy(dma);
 
     /* wait until current be dma copy done */
     while (st_cvt_dma_ctx_get_done(ctx, 0) < (i + 1)) {
-      uint16_t nb_dq = st_dma_completed(dma, 1, NULL, NULL);
+      uint16_t nb_dq = mt_dma_completed(dma, 1, NULL, NULL);
       if (nb_dq) st_cvt_dma_ctx_pop(ctx);
     }
 
@@ -1875,17 +1875,17 @@ int st20_rfc4175_422be10_to_y210_avx512_dma(struct mtl_dma_lender_dev* dma,
     /* push max be dma */
     while (cur_tran < max_tran) {
       rte_iova_t be_cache_iova = be_caches_iova + (cur_tran % caches_num) * cache_size;
-      st_dma_copy_busy(dma, be_cache_iova, pg_be_iova, cache_size);
+      mt_dma_copy_busy(dma, be_cache_iova, pg_be_iova, cache_size);
       pg_be += cache_pg_cnt;
       pg_be_iova += cache_size;
       st_cvt_dma_ctx_push(ctx, 0);
       cur_tran = st_cvt_dma_ctx_get_tran(ctx, 0);
     }
-    st_dma_submit_busy(dma);
+    mt_dma_submit_busy(dma);
 
     /* wait until current be dma copy done */
     while (st_cvt_dma_ctx_get_done(ctx, 0) < (i + 1)) {
-      uint16_t nb_dq = st_dma_completed(dma, 1, NULL, NULL);
+      uint16_t nb_dq = mt_dma_completed(dma, 1, NULL, NULL);
       if (nb_dq) st_cvt_dma_ctx_pop(ctx);
     }
     struct st20_rfc4175_422_10_pg2_be* be = be_cache;
@@ -2045,17 +2045,17 @@ int st20_y210_to_rfc4175_422be10_avx512_dma(struct mtl_dma_lender_dev* dma,
     while (cur_tran < max_tran) {
       rte_iova_t y210_cache_iova =
           y210_caches_iova + (cur_tran % caches_num) * cache_size;
-      st_dma_copy_busy(dma, y210_cache_iova, pg_y210_iova, cache_size);
+      mt_dma_copy_busy(dma, y210_cache_iova, pg_y210_iova, cache_size);
       pg_y210 += 4 * cache_pg_cnt;
       pg_y210_iova += cache_size;
       st_cvt_dma_ctx_push(ctx, 0);
       cur_tran = st_cvt_dma_ctx_get_tran(ctx, 0);
     }
-    st_dma_submit_busy(dma);
+    mt_dma_submit_busy(dma);
 
     /* wait until current be dma copy done */
     while (st_cvt_dma_ctx_get_done(ctx, 0) < (i + 1)) {
-      uint16_t nb_dq = st_dma_completed(dma, 1, NULL, NULL);
+      uint16_t nb_dq = mt_dma_completed(dma, 1, NULL, NULL);
       if (nb_dq) st_cvt_dma_ctx_pop(ctx);
     }
     uint16_t* y210 = y210_cache;

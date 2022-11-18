@@ -18,7 +18,7 @@
 
 int st_dev_get_socket(const char* port);
 
-int st_dev_init(struct mtl_init_params* p, struct st_kport_info* kport_info);
+int st_dev_init(struct mtl_init_params* p, struct mt_kport_info* kport_info);
 int st_dev_uinit(struct mtl_init_params* p);
 
 int st_dev_create(struct mtl_main_impl* impl);

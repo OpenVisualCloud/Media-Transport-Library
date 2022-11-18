@@ -139,11 +139,11 @@ static int mt_main_create(struct mtl_main_impl* impl) {
     return ret;
   }
 
-  st_dma_init(impl);
+  mt_dma_init(impl);
 
-  ret = st_map_init(impl);
+  ret = mt_map_init(impl);
   if (ret < 0) {
-    err("%s, st_map_init fail %d\n", __func__, ret);
+    err("%s, mt_map_init fail %d\n", __func__, ret);
     return ret;
   }
 
@@ -171,9 +171,9 @@ static int mt_main_create(struct mtl_main_impl* impl) {
     return ret;
   }
 
-  ret = st_admin_init(impl);
+  ret = mt_admin_init(impl);
   if (ret < 0) {
-    err("%s, st_admin_init fail %d\n", __func__, ret);
+    err("%s, mt_admin_init fail %d\n", __func__, ret);
     return ret;
   }
 
@@ -203,14 +203,14 @@ static int mt_main_free(struct mtl_main_impl* impl) {
 
   st_config_uinit(impl);
   st_plugins_uinit(impl);
-  st_admin_uinit(impl);
+  mt_admin_uinit(impl);
   mt_cni_uinit(impl);
   mt_ptp_uinit(impl);
   mt_arp_uinit(impl);
   mt_mcast_uinit(impl);
 
-  st_map_uinit(impl);
-  st_dma_uinit(impl);
+  mt_map_uinit(impl);
+  mt_dma_uinit(impl);
 
   st_dev_free(impl);
   info("%s, succ\n", __func__);
@@ -359,7 +359,7 @@ mtl_handle mtl_init(struct mtl_init_params* p) {
   struct mtl_main_impl* impl = NULL;
   int socket[MTL_PORT_MAX], ret;
   int num_ports = p->num_ports;
-  struct st_kport_info kport_info;
+  struct mt_kport_info kport_info;
 
   RTE_BUILD_BUG_ON(ST_SESSION_PORT_MAX > (int)MTL_PORT_MAX);
 
@@ -700,11 +700,11 @@ mtl_iova_t mtl_dma_map(mtl_handle mt, const void* vaddr, size_t size) {
     return MTL_BAD_IOVA;
   }
 
-  struct st_map_item item;
+  struct mt_map_item item;
   item.vaddr = (void*)vaddr;
   item.size = size;
   item.iova = MTL_BAD_IOVA; /* let map to find one suitable iova for us */
-  ret = st_map_add(impl, &item);
+  ret = mt_map_add(impl, &item);
   if (ret < 0) return MTL_BAD_IOVA;
   iova = item.iova;
 
@@ -728,7 +728,7 @@ mtl_iova_t mtl_dma_map(mtl_handle mt, const void* vaddr, size_t size) {
 fail_map:
   rte_extmem_unregister((void*)vaddr, size);
 fail_extmem:
-  st_map_remove(impl, &item);
+  mt_map_remove(impl, &item);
   return MTL_BAD_IOVA;
 }
 
@@ -757,11 +757,11 @@ int mtl_dma_unmap(mtl_handle mt, const void* vaddr, mtl_iova_t iova, size_t size
     return -EINVAL;
   }
 
-  struct st_map_item item;
+  struct mt_map_item item;
   item.vaddr = (void*)vaddr;
   item.size = size;
   item.iova = iova;
-  ret = st_map_remove(impl, &item);
+  ret = mt_map_remove(impl, &item);
   if (ret < 0) return ret;
 
   /* only unmap for MTL_PORT_P now */
@@ -867,7 +867,7 @@ int mtl_get_cap(mtl_handle mt, struct mtl_cap* cap) {
 
 int mtl_get_stats(mtl_handle mt, struct mtl_stats* stats) {
   struct mtl_main_impl* impl = mt;
-  struct st_dma_mgr* mgr = st_get_dma_mgr(impl);
+  struct mt_dma_mgr* mgr = st_get_dma_mgr(impl);
 
   if (impl->type != ST_SESSION_TYPE_MAIN) {
     err("%s, invalid type %d\n", __func__, impl->type);
@@ -945,7 +945,7 @@ uint64_t mt_ptp_read_time(mtl_handle mt) {
 
 mtl_udma_handle mtl_udma_create(mtl_handle mt, uint16_t nb_desc, enum mtl_port port) {
   struct mtl_main_impl* impl = mt;
-  struct st_dma_request_req req;
+  struct mt_dma_request_req req;
 
   if (impl->type != ST_SESSION_TYPE_MAIN) {
     err("%s, invalid type %d\n", __func__, impl->type);
@@ -958,7 +958,7 @@ mtl_udma_handle mtl_udma_create(mtl_handle mt, uint16_t nb_desc, enum mtl_port p
   req.socket_id = st_socket_id(impl, port);
   req.priv = impl;
   req.drop_mbuf_cb = NULL;
-  struct mtl_dma_lender_dev* dev = st_dma_request_dev(impl, &req);
+  struct mtl_dma_lender_dev* dev = mt_dma_request_dev(impl, &req);
   if (dev) dev->type = ST_SESSION_TYPE_UDMA;
   return dev;
 }
@@ -972,7 +972,7 @@ int mtl_udma_free(mtl_udma_handle handle) {
     return -EIO;
   }
 
-  return st_dma_free_dev(impl, dev);
+  return mt_dma_free_dev(impl, dev);
 }
 
 int mtl_udma_copy(mtl_udma_handle handle, mtl_iova_t dst, mtl_iova_t src,
@@ -984,7 +984,7 @@ int mtl_udma_copy(mtl_udma_handle handle, mtl_iova_t dst, mtl_iova_t src,
     return -EIO;
   }
 
-  return st_dma_copy(dev, dst, src, length);
+  return mt_dma_copy(dev, dst, src, length);
 }
 
 int mtl_udma_fill(mtl_udma_handle handle, mtl_iova_t dst, uint64_t pattern,
@@ -996,7 +996,7 @@ int mtl_udma_fill(mtl_udma_handle handle, mtl_iova_t dst, uint64_t pattern,
     return -EIO;
   }
 
-  return st_dma_fill(dev, dst, pattern, length);
+  return mt_dma_fill(dev, dst, pattern, length);
 }
 
 int mtl_udma_submit(mtl_udma_handle handle) {
@@ -1007,7 +1007,7 @@ int mtl_udma_submit(mtl_udma_handle handle) {
     return -EIO;
   }
 
-  return st_dma_submit(dev);
+  return mt_dma_submit(dev);
 }
 
 uint16_t mtl_udma_completed(mtl_udma_handle handle, const uint16_t nb_cpls) {
@@ -1018,7 +1018,7 @@ uint16_t mtl_udma_completed(mtl_udma_handle handle, const uint16_t nb_cpls) {
     return -EIO;
   }
 
-  return st_dma_completed(dev, nb_cpls, NULL, NULL);
+  return mt_dma_completed(dev, nb_cpls, NULL, NULL);
 }
 
 enum mtl_simd_level mtl_get_simd_level(void) {

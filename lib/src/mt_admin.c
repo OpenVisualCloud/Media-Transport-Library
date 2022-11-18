@@ -9,7 +9,7 @@
 #include "st2110/st_rx_video_session.h"
 #include "st2110/st_tx_video_session.h"
 
-static inline struct st_admin* st_get_admin(struct mtl_main_impl* impl) {
+static inline struct mt_admin* st_get_admin(struct mtl_main_impl* impl) {
   return &impl->admin;
 }
 
@@ -313,7 +313,7 @@ static int admin_rx_video_migrate(struct mtl_main_impl* impl, bool* migrated) {
   return 0;
 }
 
-static void admin_wakeup_thread(struct st_admin* admin) {
+static void admin_wakeup_thread(struct mt_admin* admin) {
   st_pthread_mutex_lock(&admin->admin_wake_mutex);
   st_pthread_cond_signal(&admin->admin_wake_cond);
   st_pthread_mutex_unlock(&admin->admin_wake_mutex);
@@ -321,13 +321,13 @@ static void admin_wakeup_thread(struct st_admin* admin) {
 
 static void admin_alarm_handler(void* param) {
   struct mtl_main_impl* impl = param;
-  struct st_admin* admin = st_get_admin(impl);
+  struct mt_admin* admin = st_get_admin(impl);
 
   admin_wakeup_thread(admin);
 }
 
 static int admin_func(struct mtl_main_impl* impl) {
-  struct st_admin* admin = st_get_admin(impl);
+  struct mt_admin* admin = st_get_admin(impl);
 
   dbg("%s, start\n", __func__);
 
@@ -351,7 +351,7 @@ static int admin_func(struct mtl_main_impl* impl) {
 
 static void* admin_thread(void* arg) {
   struct mtl_main_impl* impl = arg;
-  struct st_admin* admin = st_get_admin(impl);
+  struct mt_admin* admin = st_get_admin(impl);
 
   info("%s, start\n", __func__);
   while (rte_atomic32_read(&admin->admin_stop) == 0) {
@@ -367,8 +367,8 @@ static void* admin_thread(void* arg) {
   return NULL;
 }
 
-int st_admin_init(struct mtl_main_impl* impl) {
-  struct st_admin* admin = st_get_admin(impl);
+int mt_admin_init(struct mtl_main_impl* impl) {
+  struct mt_admin* admin = st_get_admin(impl);
 
   admin->period_us = 5 * US_PER_S; /* 5s */
   st_pthread_mutex_init(&admin->admin_wake_mutex, NULL);
@@ -381,8 +381,8 @@ int st_admin_init(struct mtl_main_impl* impl) {
   return 0;
 }
 
-int st_admin_uinit(struct mtl_main_impl* impl) {
-  struct st_admin* admin = st_get_admin(impl);
+int mt_admin_uinit(struct mtl_main_impl* impl) {
+  struct mt_admin* admin = st_get_admin(impl);
 
   if (admin->admin_tid) {
     rte_atomic32_set(&admin->admin_stop, 1);
