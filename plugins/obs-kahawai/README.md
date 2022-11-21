@@ -27,4 +27,3 @@ obs
 ## TODO
 ### auto detect vfio-pci NIC ports
 ### auto detect NIC numa to provide usable lcores
-### use st20 pipeline api
