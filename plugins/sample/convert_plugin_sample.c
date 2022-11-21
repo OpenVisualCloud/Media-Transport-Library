@@ -146,8 +146,8 @@ st_plugin_priv st_plugin_create(mtl_handle st) {
   c_dev.name = "color_convert_sample";
   c_dev.priv = ctx;
   c_dev.target_device = ST_PLUGIN_DEVICE_CPU;
-  c_dev.input_fmt_caps = ST_FMT_CAP_YUV422PLANAR10LE | ST_FMT_CAP_UYVY |
-                         ST_FMT_CAP_V210 | ST_FMT_CAP_YUV422RFC4175PG2BE10;
+  c_dev.input_fmt_caps = ST_FMT_CAP_YUV422PLANAR10LE | ST_FMT_CAP_UYVY | ST_FMT_CAP_V210 |
+                         ST_FMT_CAP_YUV422RFC4175PG2BE10;
   c_dev.output_fmt_caps = ST_FMT_CAP_YUV422PLANAR10LE | ST_FMT_CAP_UYVY |
                           ST_FMT_CAP_V210 | ST_FMT_CAP_YUV422RFC4175PG2BE10;
   c_dev.create_session = converter_create_session;

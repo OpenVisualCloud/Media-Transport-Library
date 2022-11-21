@@ -306,8 +306,7 @@ static void fmt_frame_equal_transport_test() {
   EXPECT_FALSE(equal);
   equal = st_frame_fmt_equal_transport(ST_FRAME_FMT_YUV422PLANAR8, ST20_FMT_YUV_422_8BIT);
   EXPECT_FALSE(equal);
-  equal =
-      st_frame_fmt_equal_transport(ST_FRAME_FMT_UYVY, ST20_FMT_YUV_422_12BIT);
+  equal = st_frame_fmt_equal_transport(ST_FRAME_FMT_UYVY, ST20_FMT_YUV_422_12BIT);
   EXPECT_FALSE(equal);
 }
 
