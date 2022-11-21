@@ -1395,7 +1395,6 @@ static int dev_if_init_rx_queues(struct mtl_main_impl* impl, struct mt_interface
     }
   }
   inf->rx_queues = rx_queues;
-  mt_pthread_mutex_init(&inf->rx_queues_mutex, NULL);
 
   return 0;
 }
@@ -1432,7 +1431,6 @@ static int dev_if_init_tx_queues(struct mtl_main_impl* impl, struct mt_interface
     tx_queues[q].rl_shapers_mapping = -1;
   }
   inf->tx_queues = tx_queues;
-  mt_pthread_mutex_init(&inf->tx_queues_mutex, NULL);
 
   return 0;
 }
@@ -1480,7 +1478,23 @@ static uint64_t ptp_from_user(struct mtl_main_impl* impl, enum mtl_port port) {
   return p->ptp_get_time_fn(p->priv);
 }
 
-int mt_dev_requemt_tx_queue(struct mtl_main_impl* impl, enum mtl_port port,
+uint16_t mt_dev_tx_sys_queue_burst(struct mtl_main_impl* impl, enum mtl_port port,
+                                   struct rte_mbuf** tx_pkts, uint16_t nb_pkts) {
+  struct mt_interface* inf = mt_if(impl, port);
+
+  if (!inf->tx_sys_queue_active) {
+    err("%s(%d), tx sys queue not active\n", __func__, port);
+    return 0;
+  }
+
+  uint16_t tx;
+  mt_pthread_mutex_lock(&inf->tx_sys_queue_mutex);
+  tx = rte_eth_tx_burst(inf->port_id, inf->tx_sys_queue, tx_pkts, nb_pkts);
+  mt_pthread_mutex_unlock(&inf->tx_sys_queue_mutex);
+  return tx;
+}
+
+int mt_dev_request_tx_queue(struct mtl_main_impl* impl, enum mtl_port port,
                             uint16_t* queue_id, uint64_t bytes_per_sec) {
   struct mt_interface* inf = mt_if(impl, port);
   uint16_t q;
@@ -1515,7 +1529,7 @@ int mt_dev_requemt_tx_queue(struct mtl_main_impl* impl, enum mtl_port port,
   return -ENOMEM;
 }
 
-int mt_dev_requemt_rx_queue(struct mtl_main_impl* impl, enum mtl_port port,
+int mt_dev_request_rx_queue(struct mtl_main_impl* impl, enum mtl_port port,
                             uint16_t* queue_id, struct mt_rx_flow* flow) {
   struct mt_interface* inf = mt_if(impl, port);
   uint16_t q;
@@ -1922,6 +1936,11 @@ int mt_dev_if_uinit(struct mtl_main_impl* impl) {
   for (int i = 0; i < num_ports; i++) {
     inf = mt_if(impl, i);
 
+    if (inf->tx_sys_queue_active) {
+      mt_dev_free_tx_queue(impl, i, inf->tx_sys_queue);
+      inf->tx_sys_queue_active = false;
+    }
+
     if (inf->pad) {
       rte_pktmbuf_free(inf->pad);
       inf->pad = NULL;
@@ -1944,6 +1963,10 @@ int mt_dev_if_uinit(struct mtl_main_impl* impl) {
       ret = mt_mempool_free(inf->rx_mbuf_pool);
       if (ret >= 0) inf->rx_mbuf_pool = NULL;
     }
+
+    mt_pthread_mutex_destroy(&inf->tx_queues_mutex);
+    mt_pthread_mutex_destroy(&inf->rx_queues_mutex);
+    mt_pthread_mutex_destroy(&inf->tx_sys_queue_mutex);
 
     dev_close_port(impl, i);
   }
@@ -1989,6 +2012,9 @@ int mt_dev_if_init(struct mtl_main_impl* impl) {
     inf->port_id = port_id;
     inf->device = dev_info.device;
     inf->tx_pacing_way = p->pacing;
+    mt_pthread_mutex_init(&inf->tx_queues_mutex, NULL);
+    mt_pthread_mutex_init(&inf->rx_queues_mutex, NULL);
+    mt_pthread_mutex_init(&inf->tx_sys_queue_mutex, NULL);
 
     if (mt_has_user_ptp(impl)) /* user provide the ptp source */
       inf->ptp_get_time_fn = ptp_from_user;
@@ -2002,10 +2028,8 @@ int mt_dev_if_init(struct mtl_main_impl* impl) {
       inf->max_rx_queues = inf->max_tx_queues;
       inf->system_rx_queues_end = 0;
     } else {
-      inf->max_tx_queues = impl->tx_sessions_cnt_max + 2; /* arp, mcast */
-      if (mt_has_ptp_service(impl)) {
-        inf->max_tx_queues++;
-      }
+      /* arp, mcast, ptp use shared sys queue */
+      inf->max_tx_queues = impl->tx_sessions_cnt_max + 1;
 #ifdef MTL_HAS_KNI
       inf->max_tx_queues++; /* kni tx queue */
 #endif
@@ -2137,6 +2161,14 @@ int mt_dev_if_init(struct mtl_main_impl* impl) {
       mt_dev_if_uinit(impl);
       return -ENOMEM;
     }
+
+    ret = mt_dev_request_tx_queue(impl, i, &inf->tx_sys_queue, 0);
+    if (ret < 0) {
+      err("%s(%d), tx sys queue request fail\n", __func__, i);
+      mt_dev_if_uinit(impl);
+      return -ENOMEM;
+    }
+    inf->tx_sys_queue_active = true;
 
     info("%s(%d), port_id %d port_type %d drv_type %d\n", __func__, i, port_id,
          inf->port_type, inf->drv_type);

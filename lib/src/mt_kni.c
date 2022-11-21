@@ -183,43 +183,10 @@ static int kni_start_port(struct mtl_main_impl* impl, enum mtl_port port) {
   return 0;
 }
 
-static int kni_queues_uinit(struct mtl_main_impl* impl) {
-  int num_ports = mt_num_ports(impl);
-  struct mt_cni_impl* cni = mt_get_cni(impl);
-
-  for (int i = 0; i < num_ports; i++) {
-    if (cni->tx_q_active[i]) {
-      mt_dev_free_tx_queue(impl, i, cni->tx_q_id[i]);
-      cni->tx_q_active[i] = false;
-    }
-  }
-
-  return 0;
-}
-
-static int kni_queues_init(struct mtl_main_impl* impl, struct mt_cni_impl* cni) {
-  int num_ports = mt_num_ports(impl);
-  int ret;
-
-  for (int i = 0; i < num_ports; i++) {
-    ret = mt_dev_requemt_tx_queue(impl, i, &cni->tx_q_id[i], 0);
-    if (ret < 0) {
-      err("%s(%d), kni_tx_q create fail\n", __func__, i);
-      kni_queues_uinit(impl);
-      return ret;
-    }
-    cni->tx_q_active[i] = true;
-    info("%s(%d), tx q %d\n", __func__, i, cni->tx_q_id[i]);
-  }
-
-  return 0;
-}
-
 int mt_kni_handle(struct mtl_main_impl* impl, enum mtl_port port,
                   struct rte_mbuf** rx_pkts, uint16_t nb_pkts) {
   struct mt_cni_impl* cni = mt_get_cni(impl);
   struct rte_kni* rkni = cni->rkni[port];
-  uint16_t port_id = mt_port_id(impl, port);
 
   if (!cni->has_kni_kmod) return 0;
 
@@ -238,7 +205,7 @@ int mt_kni_handle(struct mtl_main_impl* impl, enum mtl_port port,
   if (rx > 0) {
     cni->kni_rx_cnt[port] += rx;
     // dbg("%s(%d), rte_kni_rx_burst %d\n", __func__, port, rx);
-    rte_eth_tx_burst(port_id, cni->tx_q_id[port], pkts_rx, rx);
+    mt_dev_tx_sys_queue_burst(impl, port, pkts_rx, rx);
     /* How to handle the pkts not bursted? */
   }
 
@@ -253,7 +220,7 @@ int mt_kni_init(struct mtl_main_impl* impl) {
 
   ret = rte_kni_init(num_ports);
   if (ret < 0) {
-    info("%s, rte_kni_init fail %d\n", __func__, ret);
+    err("%s, rte_kni_init fail %d\n", __func__, ret);
     cni->has_kni_kmod = false;
     return 0;
   }
@@ -261,9 +228,6 @@ int mt_kni_init(struct mtl_main_impl* impl) {
   cni->has_kni_kmod = true;
   rte_atomic32_set(&cni->stop_kni, 0);
   kni_set_global_impl(impl);
-
-  ret = kni_queues_init(impl, cni);
-  if (ret < 0) return ret;
 
   for (i = 0; i < num_ports; i++) {
     rte_atomic32_set(&cni->if_up[i], 0);
@@ -315,8 +279,6 @@ int mt_kni_uinit(struct mtl_main_impl* impl) {
       if (ret < 0) err("%s(%d), rte_kni_release fail %d\n", __func__, i, ret);
     }
   }
-
-  kni_queues_uinit(impl);
 
   rte_kni_close();
   kni_set_global_impl(NULL);

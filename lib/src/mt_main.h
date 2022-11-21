@@ -123,8 +123,7 @@ struct mt_ptp_impl {
   struct mtl_main_impl* impl;
   enum mtl_port port;
   uint16_t port_id;
-  uint16_t tx_queue_id;
-  bool tx_queue_active;
+
   uint16_t rx_queue_id;
   bool rx_queue_active;
   struct rte_mempool* mbuf_pool;
@@ -183,6 +182,7 @@ struct mt_cni_impl {
   struct mt_sch_tasklet_impl* tasklet;
   /* stat */
   int eth_rx_cnt[MTL_PORT_MAX];
+
 #ifdef MTL_HAS_KNI
   bool has_kni_kmod;
   rte_atomic32_t if_up[MTL_PORT_MAX];
@@ -190,8 +190,6 @@ struct mt_cni_impl {
   struct rte_kni* rkni[MTL_PORT_MAX];
   pthread_t kni_bkg_tid; /* bkg thread id for kni */
   rte_atomic32_t stop_kni;
-  uint16_t tx_q_id[MTL_PORT_MAX]; /* cni tx queue id */
-  bool tx_q_active[MTL_PORT_MAX];
   int kni_rx_cnt[MTL_PORT_MAX];
 #endif
 
@@ -212,8 +210,6 @@ struct mt_arp_impl {
   uint32_t ip[MTL_PORT_MAX];
   struct rte_ether_addr ea[MTL_PORT_MAX];
   rte_atomic32_t mac_ready[MTL_PORT_MAX];
-  uint16_t tx_q_id[MTL_PORT_MAX]; /* arp tx queue id */
-  bool tx_q_active[MTL_PORT_MAX];
 };
 
 struct mt_mcast_impl {
@@ -221,8 +217,6 @@ struct mt_mcast_impl {
   uint32_t group_ip[MTL_PORT_MAX][ST_MCAST_GROUP_MAX];
   uint32_t group_ref_cnt[MTL_PORT_MAX][ST_MCAST_GROUP_MAX];
   uint16_t group_num[MTL_PORT_MAX];
-  uint16_t tx_q_id[MTL_PORT_MAX]; /* mcast tx queue id */
-  bool tx_q_active[MTL_PORT_MAX];
 };
 
 #define MT_TASKLET_HAS_PENDING (1)
@@ -291,7 +285,7 @@ struct mt_sch_impl {
   struct mtl_main_impl* parnet;
   int idx; /* index for current sch */
   rte_atomic32_t started;
-  rte_atomic32_t requemtl_stop;
+  rte_atomic32_t request_stop;
   rte_atomic32_t stopped;
   rte_atomic32_t active; /* if this sch is active */
   rte_atomic32_t ref_cnt;
@@ -399,6 +393,11 @@ struct mt_interface {
   int max_tx_queues;
   struct mt_tx_queue* tx_queues;
   pthread_mutex_t tx_queues_mutex; /* protect tx_queues */
+
+  /* the shared tx sys queue */
+  uint16_t tx_sys_queue;
+  bool tx_sys_queue_active;
+  pthread_mutex_t tx_sys_queue_mutex; /* protect tx_sys_queue */
 
   /* rx queue resources */
   int max_rx_queues;

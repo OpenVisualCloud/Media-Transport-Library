@@ -199,7 +199,7 @@ static int cni_queues_init(struct mtl_main_impl* impl, struct mt_cni_impl* cni) 
     /* no cni for kernel based pmd */
     if (mt_pmd_is_kernel(impl, i)) continue;
 
-    ret = mt_dev_requemt_rx_queue(impl, i, &cni->rx_q_id[i], NULL);
+    ret = mt_dev_request_rx_queue(impl, i, &cni->rx_q_id[i], NULL);
     if (ret < 0) {
       err("%s(%d), kni_rx_q create fail\n", __func__, i);
       cni_queues_uinit(impl);

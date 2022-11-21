@@ -123,7 +123,7 @@ static int sch_tasklet_func(void* args) {
 
   sch->sleep_ratio_start_ns = mt_get_tsc(impl);
 
-  while (rte_atomic32_read(&sch->requemtl_stop) == 0) {
+  while (rte_atomic32_read(&sch->request_stop) == 0) {
     int pending = MT_TASKLET_ALL_DONE;
 
     num_tasklet = sch->max_tasklet_idx;
@@ -177,7 +177,7 @@ static int sch_start(struct mt_sch_impl* sch) {
   }
 
   mt_sch_set_cpu_busy(sch, false);
-  rte_atomic32_set(&sch->requemtl_stop, 0);
+  rte_atomic32_set(&sch->request_stop, 0);
   rte_atomic32_set(&sch->stopped, 0);
 
   if (!sch->run_in_thread) {
@@ -217,7 +217,7 @@ static int sch_stop(struct mt_sch_impl* sch) {
     return 0;
   }
 
-  rte_atomic32_set(&sch->requemtl_stop, 1);
+  rte_atomic32_set(&sch->request_stop, 1);
   while (rte_atomic32_read(&sch->stopped) == 0) {
     mt_sleep_ms(10);
   }

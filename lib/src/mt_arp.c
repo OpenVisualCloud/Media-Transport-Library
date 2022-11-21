@@ -57,7 +57,7 @@ static int arp_receive_request(struct mtl_main_impl* impl, struct rte_arp_hdr* r
   arp->arp_data.arp_sip = *(uint32_t*)mt_sip_addr(impl, port);
 
   /* send arp reply packet */
-  uint16_t send = rte_eth_tx_burst(port_id, impl->arp.tx_q_id[port], &rpl_pkt, 1);
+  uint16_t send = mt_dev_tx_sys_queue_burst(impl, port, &rpl_pkt, 1);
   if (send < 1) {
     err_once("%s(%d), rte_eth_tx_burst fail\n", __func__, port);
     rte_pktmbuf_free(rpl_pkt);
@@ -92,42 +92,6 @@ static int arp_receive_reply(struct mtl_main_impl* impl, struct rte_arp_hdr* rep
   return 0;
 }
 
-static int arp_queues_uinit(struct mtl_main_impl* impl) {
-  int num_ports = mt_num_ports(impl);
-  struct mt_arp_impl* arp = &impl->arp;
-
-  for (int i = 0; i < num_ports; i++) {
-    if (arp->tx_q_active[i]) {
-      mt_dev_free_tx_queue(impl, i, arp->tx_q_id[i]);
-      arp->tx_q_active[i] = false;
-    }
-  }
-
-  return 0;
-}
-
-static int arp_queues_init(struct mtl_main_impl* impl) {
-  int num_ports = mt_num_ports(impl);
-  struct mt_arp_impl* arp = &impl->arp;
-  int ret;
-
-  for (int i = 0; i < num_ports; i++) {
-    /* no arp queues for kernel based pmd */
-    if (mt_pmd_is_kernel(impl, i)) continue;
-
-    ret = mt_dev_requemt_tx_queue(impl, i, &arp->tx_q_id[i], 0);
-    if (ret < 0) {
-      err("%s(%d), tx_q create fail\n", __func__, i);
-      arp_queues_uinit(impl);
-      return ret;
-    }
-    arp->tx_q_active[i] = true;
-    info("%s(%d), tx q %d\n", __func__, i, arp->tx_q_id[i]);
-  }
-
-  return 0;
-}
-
 int mt_arp_parse(struct mtl_main_impl* impl, struct rte_arp_hdr* hdr,
                  enum mtl_port port) {
   switch (htons(hdr->arp_opcode)) {
@@ -152,11 +116,6 @@ int mt_arp_cni_get_mac(struct mtl_main_impl* impl, struct rte_ether_addr* ea,
   uint16_t tx;
   int retry = 0;
   uint8_t* addr = (uint8_t*)&ip;
-
-  if (!arp_impl->tx_q_active[port]) {
-    err("%s(%d), tx_q not active\n", __func__, port);
-    return -EIO;
-  }
 
   arp_impl->ip[port] = ip;
 
@@ -185,7 +144,7 @@ int mt_arp_cni_get_mac(struct mtl_main_impl* impl, struct rte_ether_addr* ea,
   /* send arp request packet */
   while (rte_atomic32_read(&arp_impl->mac_ready[port]) == 0) {
     rte_mbuf_refcnt_update(req_pkt, 1);
-    tx = rte_eth_tx_burst(port_id, arp_impl->tx_q_id[port], &req_pkt, 1);
+    tx = mt_dev_tx_sys_queue_burst(impl, port, &req_pkt, 1);
     if (tx < 1) {
       err("%s, rte_eth_tx_burst fail\n", __func__);
       rte_mbuf_refcnt_update(req_pkt, -1);
@@ -205,16 +164,6 @@ int mt_arp_cni_get_mac(struct mtl_main_impl* impl, struct rte_ether_addr* ea,
   return 0;
 }
 
-int mt_arp_init(struct mtl_main_impl* impl) {
-  int ret;
+int mt_arp_init(struct mtl_main_impl* impl) { return 0; }
 
-  ret = arp_queues_init(impl);
-  if (ret < 0) return ret;
-
-  return 0;
-}
-
-int mt_arp_uinit(struct mtl_main_impl* impl) {
-  arp_queues_uinit(impl);
-  return 0;
-}
+int mt_arp_uinit(struct mtl_main_impl* impl) { return 0; }

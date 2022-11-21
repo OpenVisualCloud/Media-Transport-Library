@@ -1710,7 +1710,7 @@ static int tv_init_hw(struct mtl_main_impl* impl, struct st_tx_video_sessions_mg
     port = mt_port_logic2phy(s->port_maps, i);
     port_id = mt_port_id(impl, port);
 
-    ret = mt_dev_requemt_tx_queue(impl, port, &queue, tv_rl_bps(s));
+    ret = mt_dev_request_tx_queue(impl, port, &queue, tv_rl_bps(s));
     if (ret < 0) {
       tv_uinit_hw(impl, s);
       return ret;

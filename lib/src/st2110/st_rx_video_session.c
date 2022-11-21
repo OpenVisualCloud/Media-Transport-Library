@@ -2600,9 +2600,9 @@ static int rv_init_hw(struct mtl_main_impl* impl, struct st_rx_video_session_imp
 
     /* no flow for data path only */
     if (mt_pmd_is_kernel(impl, port) && (ops->flags & ST20_RX_FLAG_DATA_PATH_ONLY))
-      ret = mt_dev_requemt_rx_queue(impl, port, &queue, NULL);
+      ret = mt_dev_request_rx_queue(impl, port, &queue, NULL);
     else
-      ret = mt_dev_requemt_rx_queue(impl, port, &queue, &flow);
+      ret = mt_dev_request_rx_queue(impl, port, &queue, &flow);
     if (ret < 0) {
       rv_uinit_hw(impl, s);
       return ret;

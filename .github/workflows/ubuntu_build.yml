@@ -47,3 +47,8 @@ jobs:
       run: |
         rm build -rf
         ./build.sh debug
+
+    - name: Build with kni
+      run: |
+        rm build -rf
+        MTL_BUILD_ENABLE_KNI=true ./build.sh
