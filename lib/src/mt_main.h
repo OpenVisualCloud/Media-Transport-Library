@@ -182,6 +182,7 @@ struct mt_cni_impl {
   struct mt_sch_tasklet_impl* tasklet;
   /* stat */
   int eth_rx_cnt[MTL_PORT_MAX];
+
 #ifdef MTL_HAS_KNI
   bool has_kni_kmod;
   rte_atomic32_t if_up[MTL_PORT_MAX];
@@ -189,8 +190,6 @@ struct mt_cni_impl {
   struct rte_kni* rkni[MTL_PORT_MAX];
   pthread_t kni_bkg_tid; /* bkg thread id for kni */
   rte_atomic32_t stop_kni;
-  uint16_t tx_q_id[MTL_PORT_MAX]; /* cni tx queue id */
-  bool tx_q_active[MTL_PORT_MAX];
   int kni_rx_cnt[MTL_PORT_MAX];
 #endif
 
