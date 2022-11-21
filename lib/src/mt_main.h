@@ -286,7 +286,7 @@ struct mt_sch_impl {
   struct mtl_main_impl* parnet;
   int idx; /* index for current sch */
   rte_atomic32_t started;
-  rte_atomic32_t requestl_stop;
+  rte_atomic32_t request_stop;
   rte_atomic32_t stopped;
   rte_atomic32_t active; /* if this sch is active */
   rte_atomic32_t ref_cnt;
