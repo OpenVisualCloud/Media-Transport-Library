@@ -220,7 +220,7 @@ int mt_kni_init(struct mtl_main_impl* impl) {
 
   ret = rte_kni_init(num_ports);
   if (ret < 0) {
-    info("%s, rte_kni_init fail %d\n", __func__, ret);
+    err("%s, rte_kni_init fail %d\n", __func__, ret);
     cni->has_kni_kmod = false;
     return 0;
   }

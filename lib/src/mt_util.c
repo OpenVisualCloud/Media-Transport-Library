@@ -13,7 +13,7 @@ static int g_mt_rte_malloc_cnt;
 
 int mt_asan_check(void) {
   if (g_mt_rte_malloc_cnt != 0) {
-    rte_panic("%s, detect not free memory by rte_malloc, error cnt %d\n", __func__,
+    rte_panic("%s, detect not free memory by rte_malloc, leak cnt %d\n", __func__,
               g_mt_rte_malloc_cnt);
   }
 
