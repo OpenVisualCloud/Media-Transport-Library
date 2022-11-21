@@ -225,9 +225,9 @@ static const struct st_frame_fmt_desc st_frame_fmt_descs[] = {
         .sampling = ST_FRAME_SAMPLING_422,
     },
     {
-        /* ST_FRAME_FMT_YUV422PACKED8 */
-        .fmt = ST_FRAME_FMT_YUV422PACKED8,
-        .name = "YUV422PACKED8",
+        /* ST_FRAME_FMT_UYVY */
+        .fmt = ST_FRAME_FMT_UYVY,
+        .name = "UYVY",
         .planes = 1,
         .sampling = ST_FRAME_SAMPLING_422,
     },
@@ -295,6 +295,13 @@ static const struct st_frame_fmt_desc st_frame_fmt_descs[] = {
         .sampling = ST_FRAME_SAMPLING_444,
     },
     {
+        /* ST_FRAME_FMT_YUV420PACKED8 */
+        .fmt = ST_FRAME_FMT_YUV420PACKED8,
+        .name = "YUV420PACKED8",
+        .planes = 1,
+        .sampling = ST_FRAME_SAMPLING_420,
+    },
+    {
         /* ST_FRAME_FMT_RGBRFC4175PG4BE10 */
         .fmt = ST_FRAME_FMT_RGBRFC4175PG4BE10,
         .name = "RGBRFC4175PG4BE10",
@@ -340,6 +347,13 @@ static const struct st_frame_fmt_desc st_frame_fmt_descs[] = {
         /* ST_FRAME_FMT_H264_CBR_CODESTREAM */
         .fmt = ST_FRAME_FMT_H264_CBR_CODESTREAM,
         .name = "H264_CBR_CODESTREAM",
+        .planes = 1,
+        .sampling = ST_FRAME_SAMPLING_MAX,
+    },
+    {
+        /* ST_FRAME_FMT_ANY */
+        .fmt = ST_FRAME_FMT_ANY,
+        .name = "ANY",
         .planes = 1,
         .sampling = ST_FRAME_SAMPLING_MAX,
     },
@@ -431,7 +445,7 @@ size_t st_frame_size(enum st_frame_fmt fmt, uint32_t width, uint32_t height) {
       }
       break;
     case ST_FRAME_FMT_YUV422PLANAR8:
-    case ST_FRAME_FMT_YUV422PACKED8:
+    case ST_FRAME_FMT_UYVY:
       size = pixels * 2;
       break;
     case ST_FRAME_FMT_YUV444PLANAR10LE:
@@ -460,6 +474,9 @@ size_t st_frame_size(enum st_frame_fmt fmt, uint32_t width, uint32_t height) {
       break;
     case ST_FRAME_FMT_RGB8:
       size = pixels * 3; /* 8 bits RGB pixel in a 24 bits */
+      break;
+    case ST_FRAME_FMT_YUV420PACKED8:
+      size = st20_frame_size(ST20_FMT_YUV_420_8BIT, width, height);
       break;
     default:
       err("%s, invalid fmt %d\n", __func__, fmt);
@@ -617,7 +634,7 @@ enum st20_fmt st_frame_fmt_to_transport(enum st_frame_fmt fmt) {
   switch (fmt) {
     case ST_FRAME_FMT_YUV422RFC4175PG2BE10:
       return ST20_FMT_YUV_422_10BIT;
-    case ST_FRAME_FMT_YUV422PACKED8:
+    case ST_FRAME_FMT_UYVY:
       return ST20_FMT_YUV_422_8BIT;
     case ST_FRAME_FMT_YUV422RFC4175PG2BE12:
       return ST20_FMT_YUV_422_12BIT;
@@ -625,6 +642,8 @@ enum st20_fmt st_frame_fmt_to_transport(enum st_frame_fmt fmt) {
       return ST20_FMT_YUV_444_10BIT;
     case ST_FRAME_FMT_YUV444RFC4175PG2BE12:
       return ST20_FMT_YUV_444_12BIT;
+    case ST_FRAME_FMT_YUV420PACKED8:
+      return ST20_FMT_YUV_420_8BIT;
     case ST_FRAME_FMT_RGBRFC4175PG4BE10:
       return ST20_FMT_RGB_10BIT;
     case ST_FRAME_FMT_RGBRFC4175PG2BE12:
@@ -642,13 +661,15 @@ enum st_frame_fmt st_frame_fmt_from_transport(enum st20_fmt tfmt) {
     case ST20_FMT_YUV_422_10BIT:
       return ST_FRAME_FMT_YUV422RFC4175PG2BE10;
     case ST20_FMT_YUV_422_8BIT:
-      return ST_FRAME_FMT_YUV422PACKED8;
+      return ST_FRAME_FMT_UYVY;
     case ST20_FMT_YUV_422_12BIT:
       return ST_FRAME_FMT_YUV422RFC4175PG2BE12;
     case ST20_FMT_YUV_444_10BIT:
       return ST_FRAME_FMT_YUV444RFC4175PG4BE10;
     case ST20_FMT_YUV_444_12BIT:
       return ST_FRAME_FMT_YUV444RFC4175PG2BE12;
+    case ST20_FMT_YUV_420_8BIT:
+      return ST_FRAME_FMT_YUV420PACKED8;
     case ST20_FMT_RGB_10BIT:
       return ST_FRAME_FMT_RGBRFC4175PG4BE10;
     case ST20_FMT_RGB_12BIT:
@@ -662,6 +683,8 @@ enum st_frame_fmt st_frame_fmt_from_transport(enum st20_fmt tfmt) {
 }
 
 bool st_frame_fmt_equal_transport(enum st_frame_fmt fmt, enum st20_fmt tfmt) {
+  if (fmt == ST_FRAME_FMT_ANY) return true;
+
   enum st_frame_fmt to_fmt = st_frame_fmt_from_transport(tfmt);
 
   if (to_fmt == ST_FRAME_FMT_MAX) return false;

@@ -37,7 +37,7 @@ struct kh_rx_session {
   uint32_t width;
   uint32_t height;
   enum st_fps fps;
-  enum st_frame_fmt out_fmt;
+  enum video_format v_fmt;
   enum st20_fmt t_fmt;
   enum mtl_log_level log_level;
   uint8_t framebuffer_cnt;
@@ -45,8 +45,6 @@ struct kh_rx_session {
   /* internal data */
   obs_source_t* source;
   mtl_handle dev_handle;
-  struct obs_source_frame out;
-  size_t plane_offsets[MAX_AV_PLANES];
 
   int idx;
   st20p_rx_handle handle;
@@ -62,12 +60,17 @@ static void kahawai_init(struct kh_rx_session* s);
 static void kahawai_terminate(struct kh_rx_session* s);
 static void kahawai_update(void* vptr, obs_data_t* settings);
 
-static inline enum video_format kahawai_to_obs_video_format(enum st_frame_fmt fmt) {
+static inline enum st_frame_fmt obs_to_kahawai_output_format(enum video_format fmt) {
   switch (fmt) {
-    case ST_FRAME_FMT_YUV422PACKED8:
-      return VIDEO_FORMAT_UYVY;
+    case VIDEO_FORMAT_UYVY: /* UYVY can be converted from YUV422BE10 */
+      return ST_FRAME_FMT_UYVY;
+    case VIDEO_FORMAT_NV12:
+    case VIDEO_FORMAT_I420:
+    case VIDEO_FORMAT_YUY2:
+    case VIDEO_FORMAT_YVYU:
+      return ST_FRAME_FMT_ANY;
     default:
-      return VIDEO_FORMAT_NONE;
+      return ST_FRAME_FMT_MAX;
   }
 }
 
@@ -80,8 +83,7 @@ static void kahawai_prep_obs_frame(struct kh_rx_session* s,
   memset(frame, 0, sizeof(struct obs_source_frame));
   memset(plane_offsets, 0, sizeof(size_t) * MAX_AV_PLANES);
 
-  /* get obs fmt from st here */
-  const enum video_format format = kahawai_to_obs_video_format(s->out_fmt);
+  const enum video_format format = s->v_fmt;
 
   frame->width = s->width;
   frame->height = s->height;
@@ -90,18 +92,26 @@ static void kahawai_prep_obs_frame(struct kh_rx_session* s,
                                          frame->color_matrix, frame->color_range_min,
                                          frame->color_range_max);
 
-  switch (s->out_fmt) {
-#if 0
-    case ST20_FMT_YUV_420_8BIT:
+  switch (format) {
+    case VIDEO_FORMAT_I420:
       frame->linesize[0] = s->width;
       frame->linesize[1] = s->width / 2;
       frame->linesize[2] = s->width / 2;
       plane_offsets[1] = s->width * s->height;
       plane_offsets[2] = s->width * s->height * 5 / 4;
       break;
-#endif
+    case VIDEO_FORMAT_NV12:
+      frame->linesize[0] = s->width;
+      frame->linesize[1] = s->width;
+      plane_offsets[1] = s->width * s->height;
+      break;
+    case VIDEO_FORMAT_UYVY:
+    case VIDEO_FORMAT_YUY2:
+    case VIDEO_FORMAT_YVYU:
+      frame->linesize[0] = s->width * 2;
+      break;
     default:
-      frame->linesize[0] = s->width * 2; /* only uyvy */
+      frame->linesize[0] = s->width * 2;
       break;
   }
 }
@@ -126,12 +136,15 @@ static void* kahawai_thread(void* vptr) {
   uint64_t frames;
   st20p_rx_handle handle = s->handle;
   struct st_frame* frame;
+  struct obs_source_frame out;
+  size_t plane_offsets[MAX_AV_PLANES];
 
   blog(LOG_DEBUG, "%s: new rx thread", s->port);
   os_set_thread_name("kahawai: rx");
 
   // start
   frames = 0;
+  kahawai_prep_obs_frame(s, &out, plane_offsets);
   blog(LOG_DEBUG, "%s: obs frame prepared", s->port);
 
   while (!s->stop) {
@@ -144,13 +157,13 @@ static void* kahawai_thread(void* vptr) {
     }
     st_pthread_mutex_unlock(&s->wake_mutex);
 
-    for (uint8_t i = 0; i < st_frame_fmt_planes(frame->fmt); ++i)
-      s->out.data[i] = frame->addr[i];
+    for (uint_fast32_t i = 0; i < MAX_AV_PLANES; ++i)
+      out.data[i] = frame->addr[0] + plane_offsets[i];
+    out.timestamp = frame->timestamp;
 
-    obs_source_output_video(s->source, &s->out);
-    frames++;
-
+    obs_source_output_video(s->source, &out);
     st20p_rx_put_frame(handle, frame);
+    frames++;
   }
 
   blog(LOG_INFO, "%s: Stopped rx after %" PRIu64 " frames", s->port, frames);
@@ -173,7 +186,7 @@ static void kahawai_defaults(obs_data_t* settings) {
   obs_data_set_default_int(settings, "height", 1080);
   obs_data_set_default_int(settings, "fps", ST_FPS_P59_94);
   obs_data_set_default_int(settings, "t_fmt", ST20_FMT_YUV_420_10BIT);
-  obs_data_set_default_int(settings, "out_fmt", ST_FRAME_FMT_YUV422PACKED8);
+  obs_data_set_default_int(settings, "v_fmt", VIDEO_FORMAT_UYVY);
   obs_data_set_default_int(settings, "framebuffer_cnt", 3);
   obs_data_set_default_int(settings, "log_level", MTL_LOG_LEVEL_ERROR);
 }
@@ -264,16 +277,21 @@ static obs_properties_t* kahawai_properties(void* vptr) {
   obs_property_t* t_fmt_list =
       obs_properties_add_list(props, "t_fmt", obs_module_text("TransportFormat"),
                               OBS_COMBO_TYPE_LIST, OBS_COMBO_FORMAT_INT);
-  obs_property_list_add_int(t_fmt_list, obs_module_text("YUV422BE10"),
+  obs_property_list_add_int(t_fmt_list, obs_module_text("YUV422_10bit"),
                             ST20_FMT_YUV_422_10BIT);
-  obs_property_list_add_int(t_fmt_list, obs_module_text("YUV422BE8"),
+  obs_property_list_add_int(t_fmt_list, obs_module_text("YUV422_8bit"),
                             ST20_FMT_YUV_422_8BIT);
+  obs_property_list_add_int(t_fmt_list, obs_module_text("YUV420_8bit"),
+                            ST20_FMT_YUV_420_8BIT);
 
-  obs_property_t* out_fmt_list =
-      obs_properties_add_list(props, "out_fmt", obs_module_text("OutputFormat"),
+  obs_property_t* v_fmt_list =
+      obs_properties_add_list(props, "v_fmt", obs_module_text("VideoFormat"),
                               OBS_COMBO_TYPE_LIST, OBS_COMBO_FORMAT_INT);
-  obs_property_list_add_int(out_fmt_list, obs_module_text("UYVY"),
-                            ST_FRAME_FMT_YUV422PACKED8);
+  obs_property_list_add_int(v_fmt_list, obs_module_text("UYVY"), VIDEO_FORMAT_UYVY);
+  obs_property_list_add_int(v_fmt_list, obs_module_text("YUY2"), VIDEO_FORMAT_YUY2);
+  obs_property_list_add_int(v_fmt_list, obs_module_text("YVYU"), VIDEO_FORMAT_YVYU);
+  obs_property_list_add_int(v_fmt_list, obs_module_text("I420"), VIDEO_FORMAT_I420);
+  obs_property_list_add_int(v_fmt_list, obs_module_text("NV12"), VIDEO_FORMAT_NV12);
 
   obs_property_t* log_level_list =
       obs_properties_add_list(props, "log_level", obs_module_text("LogLevel"),
@@ -367,7 +385,7 @@ static void kahawai_init(struct kh_rx_session* s) {
   ops_rx.width = s->width;
   ops_rx.height = s->height;
   ops_rx.fps = s->fps;
-  ops_rx.output_fmt = s->out_fmt;
+  ops_rx.output_fmt = obs_to_kahawai_output_format(s->v_fmt);
   ops_rx.transport_fmt = s->t_fmt;
   ops_rx.framebuff_cnt = s->framebuffer_cnt;
   ops_rx.port.payload_type = s->payload_type;
@@ -410,7 +428,7 @@ static void kahawai_update(void* vptr, obs_data_t* settings) {
   s->height = obs_data_get_int(settings, "height");
   s->fps = obs_data_get_int(settings, "fps");
   s->t_fmt = obs_data_get_int(settings, "t_fmt");
-  s->out_fmt = obs_data_get_int(settings, "out_fmt");
+  s->v_fmt = obs_data_get_int(settings, "v_fmt");
   s->framebuffer_cnt = obs_data_get_int(settings, "framebuffer_cnt");
   s->log_level = obs_data_get_int(settings, "log_level");
 }

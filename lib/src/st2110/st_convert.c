@@ -435,7 +435,7 @@ static const struct st_frame_converter converters[] = {
     },
     {
         .src_fmt = ST_FRAME_FMT_YUV422RFC4175PG2BE10,
-        .dst_fmt = ST_FRAME_FMT_YUV422PACKED8,
+        .dst_fmt = ST_FRAME_FMT_UYVY,
         .convert_func = convert_rfc4175_422be10_to_422le8,
     },
     {

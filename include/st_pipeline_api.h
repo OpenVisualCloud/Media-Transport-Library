@@ -105,7 +105,12 @@ enum st_frame_fmt {
   /** YUV 422 planar 8bit */
   ST_FRAME_FMT_YUV422PLANAR8,
   /** YUV 422 packed 8bit(aka ST20_FMT_YUV_422_8BIT) */
-  ST_FRAME_FMT_YUV422PACKED8,
+  ST_FRAME_FMT_UYVY,
+  /**
+   * RFC4175 in ST2110(ST20_FMT_YUV_422_8BIT),
+   * two YUV 422 8 bit pixel groups on 4 bytes
+   */
+  ST_FRAME_FMT_YUV422PACKED8 = ST_FRAME_FMT_UYVY,
   /**
    * RFC4175 in ST2110(ST20_FMT_YUV_422_10BIT),
    * two YUV 422 10 bit pixel groups on 5 bytes, big endian
@@ -138,6 +143,8 @@ enum st_frame_fmt {
    * two YUV 444 12 bit pixel groups on 9 bytes, big endian
    */
   ST_FRAME_FMT_YUV444RFC4175PG2BE12,
+  /** YUV 420 packed 8bit(aka ST20_FMT_YUV_420_8BIT) */
+  ST_FRAME_FMT_YUV420PACKED8,
   /** GBR planar 10bit little endian */
   ST_FRAME_FMT_GBRPLANAR10LE,
   /**
@@ -156,6 +163,13 @@ enum st_frame_fmt {
   ST_FRAME_FMT_JPEGXS_CODESTREAM = 24,
   /** ST22 h264 cbr codestream */
   ST_FRAME_FMT_H264_CBR_CODESTREAM,
+  /** User defined format.
+   * This is used when user wants to directly transport none-RFC4175 formats like
+   * YUY2/I420/NV12. When this input/output format is set, the frame is identical to
+   * transport frame without conversion. User should take care of the frame size and
+   * planes info.
+   */
+  ST_FRAME_FMT_ANY,
   /** max value of this enum */
   ST_FRAME_FMT_MAX,
 };
@@ -166,8 +180,8 @@ enum st_frame_fmt {
 #define ST_FMT_CAP_V210 (MTL_BIT64(ST_FRAME_FMT_V210))
 /** ST format cap of ST_FRAME_FMT_YUV422PLANAR8, used in the jpegxs_plugin caps */
 #define ST_FMT_CAP_YUV422PLANAR8 (MTL_BIT64(ST_FRAME_FMT_YUV422PLANAR8))
-/** ST format cap of ST_FRAME_FMT_YUV422PACKED8, used in the jpegxs_plugin caps */
-#define ST_FMT_CAP_YUV422PACKED8 (MTL_BIT64(ST_FRAME_FMT_YUV422PACKED8))
+/** ST format cap of ST_FRAME_FMT_UYVY, used in the jpegxs_plugin caps */
+#define ST_FMT_CAP_UYVY (MTL_BIT64(ST_FRAME_FMT_UYVY))
 /** ST format cap of ST_FRAME_FMT_YUV422RFC4175PG2BE10, used in the jpegxs_plugin caps */
 #define ST_FMT_CAP_YUV422RFC4175PG2BE10 (MTL_BIT64(ST_FRAME_FMT_YUV422RFC4175PG2BE10))
 

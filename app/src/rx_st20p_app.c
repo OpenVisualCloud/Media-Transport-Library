@@ -23,7 +23,7 @@ static void app_rx_st20p_consume_frame(struct st_app_rx_st20p_session* s,
       if (frame->fmt == ST_FRAME_FMT_YUV422RFC4175PG2BE10) {
         st20_rfc4175_422be10_to_422le8(frame->addr[0], d->front_frame, s->width,
                                        s->height);
-      } else if (frame->fmt == ST_FRAME_FMT_YUV422PACKED8) {
+      } else if (frame->fmt == ST_FRAME_FMT_UYVY) {
         mtl_memcpy(d->front_frame, frame->addr[0], d->front_frame_size);
       } else {
         st_pthread_mutex_unlock(&d->display_frame_mutex);

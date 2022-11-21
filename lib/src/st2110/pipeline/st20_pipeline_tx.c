@@ -333,8 +333,8 @@ static int tx_st20p_init_src_fbs(struct mtl_main_impl* impl, struct st20p_tx_ctx
     frames[i].src.fmt = ops->input_fmt;
     frames[i].src.width = ops->width;
     frames[i].src.height = ops->height;
-    uint8_t planes = st_frame_fmt_planes(frames[i].src.fmt);
     if (!ctx->derive) { /* when derive, no need to alloc src frames */
+      uint8_t planes = st_frame_fmt_planes(frames[i].src.fmt);
       if (ops->flags & ST20P_TX_FLAG_EXT_FRAME) {
         for (uint8_t plane = 0; plane < planes; plane++) {
           frames[i].src.addr[plane] = NULL;
@@ -569,7 +569,10 @@ st20p_tx_handle st20p_tx_create(mtl_handle mt, struct st20p_tx_ops* ops) {
     return NULL;
   }
 
-  src_size = st_frame_size(ops->input_fmt, ops->width, ops->height);
+  if (ops->input_fmt == ST_FRAME_FMT_ANY)
+    src_size = st20_frame_size(ops->transport_fmt, ops->width, ops->height);
+  else
+    src_size = st_frame_size(ops->input_fmt, ops->width, ops->height);
   if (!src_size) {
     err("%s(%d), get src size fail\n", __func__, idx);
     return NULL;

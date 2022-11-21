@@ -369,8 +369,8 @@ static int rx_st20p_init_dst_fbs(struct mtl_main_impl* impl, struct st20p_rx_ctx
     frames[i].dst.fmt = ops->output_fmt;
     frames[i].dst.width = ops->width;
     frames[i].dst.height = ops->height;
-    uint8_t planes = st_frame_fmt_planes(frames[i].dst.fmt);
     if (!ctx->derive) { /* when derive, no need to alloc dst frames */
+      uint8_t planes = st_frame_fmt_planes(frames[i].dst.fmt);
       if (ops->ext_frames) {
         /* use dedicated ext frame as dst frame */
         for (uint8_t plane = 0; plane < planes; plane++) {
@@ -608,7 +608,10 @@ st20p_rx_handle st20p_rx_create(mtl_handle mt, struct st20p_rx_ops* ops) {
     return NULL;
   }
 
-  dst_size = st_frame_size(ops->output_fmt, ops->width, ops->height);
+  if (ops->output_fmt == ST_FRAME_FMT_ANY)
+    dst_size = st20_frame_size(ops->transport_fmt, ops->width, ops->height);
+  else
+    dst_size = st_frame_size(ops->output_fmt, ops->width, ops->height);
   if (!dst_size) {
     err("%s(%d), get dst size fail\n", __func__, idx);
     return NULL;

@@ -27,7 +27,7 @@ static int convert_frame(struct converter_session* s,
         case ST_FRAME_FMT_YUV422RFC4175PG2BE10:
           mtl_memcpy(frame->dst->addr[0], frame->src->addr[0], frame->dst->data_size);
           break;
-        case ST_FRAME_FMT_YUV422PACKED8:
+        case ST_FRAME_FMT_UYVY:
           st20_rfc4175_422be10_to_422le8(frame->src->addr[0], frame->dst->addr[0],
                                          frame->dst->width, frame->dst->height);
           break;
@@ -146,9 +146,9 @@ st_plugin_priv st_plugin_create(mtl_handle st) {
   c_dev.name = "color_convert_sample";
   c_dev.priv = ctx;
   c_dev.target_device = ST_PLUGIN_DEVICE_CPU;
-  c_dev.input_fmt_caps = ST_FMT_CAP_YUV422PLANAR10LE | ST_FMT_CAP_YUV422PACKED8 |
+  c_dev.input_fmt_caps = ST_FMT_CAP_YUV422PLANAR10LE | ST_FMT_CAP_UYVY |
                          ST_FMT_CAP_V210 | ST_FMT_CAP_YUV422RFC4175PG2BE10;
-  c_dev.output_fmt_caps = ST_FMT_CAP_YUV422PLANAR10LE | ST_FMT_CAP_YUV422PACKED8 |
+  c_dev.output_fmt_caps = ST_FMT_CAP_YUV422PLANAR10LE | ST_FMT_CAP_UYVY |
                           ST_FMT_CAP_V210 | ST_FMT_CAP_YUV422RFC4175PG2BE10;
   c_dev.create_session = converter_create_session;
   c_dev.free_session = converter_free_session;
