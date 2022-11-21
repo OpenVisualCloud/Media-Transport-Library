@@ -811,7 +811,7 @@ static int tap_queues_init(struct mtl_main_impl* impl, struct mt_cni_impl* cni) 
     return ret;
   }
   for (i = 0; i < num_ports; i++) {
-    ret = mt_dev_requemt_tx_queue(impl, mt_port_id(impl, i), &cni->tap_tx_q_id[i],
+    ret = mt_dev_request_tx_queue(impl, mt_port_id(impl, i), &cni->tap_tx_q_id[i],
                                   1024 * 1024 * 1024);
     if (ret < 0) {
       err("%s(%d), tap_tx_q create fail\n", __func__, i);
@@ -843,7 +843,7 @@ static int tap_queues_init(struct mtl_main_impl* impl, struct mt_cni_impl* cni) 
     info("%s(%d), tx q %d\n", __func__, i, cni->tap_tx_q_id[i]);
   }
   for (i = 0; i < num_ports; i++) {
-    ret = mt_dev_requemt_rx_queue(impl, i, &cni->tap_rx_q_id[i], NULL);
+    ret = mt_dev_request_rx_queue(impl, i, &cni->tap_rx_q_id[i], NULL);
     if (ret < 0) {
       err("%s(%d), tap_rx_q create fail\n", __func__, i);
       tap_queues_uinit(impl);

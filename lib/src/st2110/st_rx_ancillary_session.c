@@ -189,9 +189,9 @@ static int rx_ancillary_session_init_hw(struct mtl_main_impl* impl,
 
     /* no flow for data path only */
     if (mt_pmd_is_kernel(impl, port) && (s->ops.flags & ST40_RX_FLAG_DATA_PATH_ONLY))
-      ret = mt_dev_requemt_rx_queue(impl, port, &queue, NULL);
+      ret = mt_dev_request_rx_queue(impl, port, &queue, NULL);
     else
-      ret = mt_dev_requemt_rx_queue(impl, port, &queue, &flow);
+      ret = mt_dev_request_rx_queue(impl, port, &queue, &flow);
     if (ret < 0) {
       rx_ancillary_session_uinit_hw(impl, s);
       return ret;

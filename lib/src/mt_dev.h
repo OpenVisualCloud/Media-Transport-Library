@@ -30,9 +30,9 @@ int mt_dev_stop(struct mtl_main_impl* impl);
 int mt_dev_dst_ip_mac(struct mtl_main_impl* impl, uint8_t dip[MTL_IP_ADDR_LEN],
                       struct rte_ether_addr* ea, enum mtl_port port);
 
-int mt_dev_requemt_tx_queue(struct mtl_main_impl* impl, enum mtl_port port,
+int mt_dev_request_tx_queue(struct mtl_main_impl* impl, enum mtl_port port,
                             uint16_t* queue_id, uint64_t bytes_per_sec);
-int mt_dev_requemt_rx_queue(struct mtl_main_impl* impl, enum mtl_port port,
+int mt_dev_request_rx_queue(struct mtl_main_impl* impl, enum mtl_port port,
                             uint16_t* queue_id, struct mt_rx_flow* flow);
 int mt_dev_free_tx_queue(struct mtl_main_impl* impl, enum mtl_port port,
                          uint16_t queue_id);
@@ -40,6 +40,9 @@ int mt_dev_free_rx_queue(struct mtl_main_impl* impl, enum mtl_port port,
                          uint16_t queue_id);
 int mt_dev_flush_tx_queue(struct mtl_main_impl* impl, enum mtl_port port,
                           uint16_t queue_id, struct rte_mbuf* pad);
+
+uint16_t mt_dev_tx_sys_queue_burst(struct mtl_main_impl* impl, enum mtl_port port,
+                                   struct rte_mbuf** tx_pkts, uint16_t nb_pkts);
 
 int mt_dev_if_init(struct mtl_main_impl* impl);
 int mt_dev_if_uinit(struct mtl_main_impl* impl);

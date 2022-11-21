@@ -202,7 +202,7 @@ static int kni_queues_init(struct mtl_main_impl* impl, struct mt_cni_impl* cni) 
   int ret;
 
   for (int i = 0; i < num_ports; i++) {
-    ret = mt_dev_requemt_tx_queue(impl, i, &cni->tx_q_id[i], 0);
+    ret = mt_dev_request_tx_queue(impl, i, &cni->tx_q_id[i], 0);
     if (ret < 0) {
       err("%s(%d), kni_tx_q create fail\n", __func__, i);
       kni_queues_uinit(impl);

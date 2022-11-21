@@ -817,7 +817,7 @@ static int tx_ancillary_sessions_mgr_init_hw(struct mtl_main_impl* impl,
 
   for (int i = 0; i < mt_num_ports(impl); i++) {
     /* do we need quota for anc? */
-    ret = mt_dev_requemt_tx_queue(impl, i, &queue, 0);
+    ret = mt_dev_request_tx_queue(impl, i, &queue, 0);
     if (ret < 0) {
       tx_ancillary_sessions_mgr_uinit_hw(impl, mgr);
       return ret;

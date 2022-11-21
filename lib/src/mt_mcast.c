@@ -51,7 +51,6 @@ static struct rte_ether_addr const mcast_mac_query = {
     {0x01, 0x00, 0x5e, 0x00, 0x00, 0x01}};
 
 int mcast_membership_general_query(struct mtl_main_impl* impl, enum mtl_port port) {
-  struct mt_mcast_impl* mcast = &impl->mcast;
   struct rte_mbuf* pkt;
   struct rte_ether_hdr* eth_hdr;
   struct rte_ipv4_hdr* ip_hdr;
@@ -106,7 +105,7 @@ int mcast_membership_general_query(struct mtl_main_impl* impl, enum mtl_port por
   pkt->pkt_len = pkt->l2_len + pkt->l3_len + mb_query_len;
   pkt->data_len = pkt->pkt_len;
 
-  uint16_t tx = rte_eth_tx_burst(mt_port_id(impl, port), mcast->tx_q_id[port], &pkt, 1);
+  uint16_t tx = mt_dev_tx_sys_queue_burst(impl, port, &pkt, 1);
   if (tx < 1) {
     err("%s, send pkt fail\n", __func__);
     rte_pktmbuf_free(pkt);
@@ -134,11 +133,6 @@ static int mcast_membership_report(struct mtl_main_impl* impl,
   if (group_num <= 0) {
     dbg("%s(%d), no group to join\n", __func__, port);
     return 0;
-  }
-
-  if (!mcast->tx_q_active[port]) {
-    dbg("%s(%d), tx_q_active not active\n", __func__, port);
-    return -EIO;
   }
 
   dbg("%s(%d), group_num: %d\n", __func__, port, group_num);
@@ -197,7 +191,7 @@ static int mcast_membership_report(struct mtl_main_impl* impl,
   if (rkni) rte_kni_tx_burst(rkni, (struct rte_mbuf**)&report_pkt, 1);
 #endif
 
-  uint16_t tx = rte_eth_tx_burst(mt_port_id(impl, port), mcast->tx_q_id[port], &pkt, 1);
+  uint16_t tx = mt_dev_tx_sys_queue_burst(impl, port, &pkt, 1);
   if (tx < 1) {
     err("%s, send pkt fail\n", __func__);
     rte_pktmbuf_free(pkt);
@@ -223,42 +217,6 @@ static void mcast_membership_report_cb(void* param) {
 
   ret = rte_eal_alarm_set(IGMP_JOIN_GROUP_PERIOD_US, mcast_membership_report_cb, impl);
   if (ret < 0) err("%s, set igmp alarm fail %d\n", __func__, ret);
-}
-
-static int mcast_queues_uinit(struct mtl_main_impl* impl) {
-  int num_ports = mt_num_ports(impl);
-  struct mt_mcast_impl* mcast = &impl->mcast;
-
-  for (int i = 0; i < num_ports; i++) {
-    if (mcast->tx_q_active[i]) {
-      mt_dev_free_tx_queue(impl, i, mcast->tx_q_id[i]);
-      mcast->tx_q_active[i] = false;
-    }
-  }
-
-  return 0;
-}
-
-static int mcast_queues_init(struct mtl_main_impl* impl) {
-  int num_ports = mt_num_ports(impl);
-  struct mt_mcast_impl* mcast = &impl->mcast;
-  int ret;
-
-  for (int i = 0; i < num_ports; i++) {
-    /* no mcast queue for kernel based pmd */
-    if (mt_pmd_is_kernel(impl, i)) continue;
-
-    ret = mt_dev_requemt_tx_queue(impl, i, &mcast->tx_q_id[i], 0);
-    if (ret < 0) {
-      err("%s(%d), tx_q create fail\n", __func__, i);
-      mcast_queues_uinit(impl);
-      return ret;
-    }
-    mcast->tx_q_active[i] = true;
-    info("%s(%d), tx q %d\n", __func__, i, mcast->tx_q_id[i]);
-  }
-
-  return 0;
 }
 
 static int mcast_addr_pool_extend(struct mt_interface* inf) {
@@ -362,9 +320,6 @@ int mt_mcast_init(struct mtl_main_impl* impl) {
   ret = rte_eal_alarm_set(IGMP_JOIN_GROUP_PERIOD_US, mcast_membership_report_cb, impl);
   if (ret < 0) err("%s, set igmp alarm fail %d\n", __func__, ret);
 
-  ret = mcast_queues_init(impl);
-  if (ret < 0) return ret;
-
   info("%s, report every %d seconds\n", __func__, IGMP_JOIN_GROUP_PERIOD_S);
   return 0;
 }
@@ -372,8 +327,6 @@ int mt_mcast_init(struct mtl_main_impl* impl) {
 int mt_mcast_uinit(struct mtl_main_impl* impl) {
   struct mt_mcast_impl* mcast = &impl->mcast;
   int ret;
-
-  mcast_queues_uinit(impl);
 
   for (int port = 0; port < MTL_PORT_MAX; ++port) {
     mt_pthread_mutex_destroy(&mcast->group_mutex[port]);

@@ -304,7 +304,7 @@ static void ptp_delay_req_task(struct mt_ptp_impl* ptp) {
   ptp_timesync_unlock(ptp);
 #endif
   // mt_mbuf_dump(port, 0, "PTP_DELAY_REQ", m);
-  uint16_t tx = rte_eth_tx_burst(port_id, ptp->tx_queue_id, &m, 1);
+  uint16_t tx = mt_dev_tx_sys_queue_burst(ptp->impl, port, &m, 1);
   if (tx < 1) {
     rte_pktmbuf_free(m);
     err("%s(%d), rte_eth_tx_burst fail\n", __func__, port);
@@ -616,14 +616,6 @@ static int ptp_init(struct mtl_main_impl* impl, struct mt_ptp_impl* ptp,
     return 0;
   }
 
-  /* create tx queue */
-  ret = mt_dev_requemt_tx_queue(impl, port, &ptp->tx_queue_id, 0);
-  if (ret < 0) {
-    err("%s(%d), ptp_tx_q create fail\n", __func__, port);
-    return ret;
-  }
-  ptp->tx_queue_active = true;
-
   inet_pton(AF_INET, "224.0.1.129", ptp->mcast_group_addr);
 
   /* create rx queue */
@@ -633,7 +625,7 @@ static int ptp_init(struct mtl_main_impl* impl, struct mt_ptp_impl* ptp,
   rte_memcpy(flow.sip_addr, mt_sip_addr(impl, port), MTL_IP_ADDR_LEN);
   flow.port_flow = false;
   flow.dst_port = MT_PTP_UDP_GEN_PORT;
-  ret = mt_dev_requemt_rx_queue(impl, port, &ptp->rx_queue_id, &flow);
+  ret = mt_dev_request_rx_queue(impl, port, &ptp->rx_queue_id, &flow);
   if (ret < 0) {
     err("%s(%d), ptp_rx_q create fail\n", __func__, port);
     return ret;
@@ -648,8 +640,8 @@ static int ptp_init(struct mtl_main_impl* impl, struct mt_ptp_impl* ptp,
   }
   mt_mcast_l2_join(impl, &ptp_l2_multicast_eaddr, port);
 
-  info("%s(%d), queue %d %d, sip: %d.%d.%d.%d\n", __func__, port, ptp->tx_queue_id,
-       ptp->rx_queue_id, ip[0], ip[1], ip[2], ip[3]);
+  info("%s(%d), rx queue %d, sip: %d.%d.%d.%d\n", __func__, port, ptp->rx_queue_id, ip[0],
+       ip[1], ip[2], ip[3]);
   return 0;
 }
 
@@ -668,10 +660,6 @@ static int ptp_uinit(struct mtl_main_impl* impl, struct mt_ptp_impl* ptp) {
   mt_mcast_l2_leave(impl, &ptp_l2_multicast_eaddr, port);
   mt_mcast_leave(impl, mt_ip_to_u32(ptp->mcast_group_addr), port);
 
-  if (ptp->tx_queue_active) {
-    mt_dev_free_tx_queue(impl, port, ptp->tx_queue_id);
-    ptp->tx_queue_active = false;
-  }
   if (ptp->rx_queue_active) {
     mt_dev_free_rx_queue(impl, port, ptp->rx_queue_id);
     ptp->rx_queue_active = false;
