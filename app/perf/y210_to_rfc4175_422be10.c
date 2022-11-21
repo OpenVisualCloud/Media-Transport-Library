@@ -117,14 +117,24 @@ int main(int argc, char** argv) {
   struct st_sample_context ctx;
   int ret;
 
-  ret = st_sample_tx_init(&ctx, argc, argv);
+  memset(&ctx, 0, sizeof(ctx));
+  ret = tx_sample_parse_args(&ctx, argc, argv);
   if (ret < 0) return ret;
+
+  ctx.st = mtl_init(&ctx.param);
+  if (!ctx.st) {
+    err("%s: mtl_init fail\n", __func__);
+    return -EIO;
+  }
 
   pthread_t thread;
   pthread_create(&thread, NULL, perf_thread, ctx.st);
   pthread_join(thread, NULL);
 
   /* release sample(st) dev */
-  st_sample_uinit(&ctx);
+  if (ctx.st) {
+    mtl_uninit(ctx.st);
+    ctx.st = NULL;
+  }
   return ret;
 }
