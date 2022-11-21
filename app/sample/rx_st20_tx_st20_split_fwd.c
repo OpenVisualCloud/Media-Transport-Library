@@ -203,12 +203,17 @@ int main(int argc, char** argv) {
   int ret;
 
   /* init sample(st) dev */
-  st_sample_init(&ctx, argc, argv, true, false);
+  memset(&ctx, 0, sizeof(ctx));
+  sample_parse_args(&ctx, argc, argv, true, false);
   ctx.sessions = session_num;
   ctx.param.tx_sessions_cnt_max = session_num;
   ctx.param.rx_sessions_cnt_max = 1;
-  ret = st_sample_start(&ctx);
-  if (ret < 0) return ret;
+
+  ctx.st = mtl_init(&ctx.param);
+  if (!ctx.st) {
+    err("%s: mtl_init fail\n", __func__);
+    return -EIO;
+  }
 
   struct split_fwd_sample_ctx app;
   memset(&app, 0, sizeof(app));
@@ -315,6 +320,9 @@ error:
   split_fwd_sample_free_app(&app);
 
   /* release sample(st) dev */
-  st_sample_uinit(&ctx);
+  if (ctx.st) {
+    mtl_uninit(ctx.st);
+    ctx.st = NULL;
+  }
   return ret;
 }

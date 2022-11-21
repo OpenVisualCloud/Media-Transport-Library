@@ -55,7 +55,7 @@ static void* app_rx_st20p_frame_thread(void* arg) {
     s->stat_frame_received++;
     if (s->measure_latency) {
       uint64_t latency_ns;
-      uint64_t ptp_ns = mt_ptp_read_time(s->st);
+      uint64_t ptp_ns = mtl_ptp_read_time(s->st);
       uint32_t sampling_rate = 90 * 1000;
 
       if (frame->tfmt == ST10_TIMESTAMP_FMT_MEDIA_CLK) {

@@ -234,8 +234,15 @@ int main(int argc, char** argv) {
   int ret;
 
   /* init sample(st) dev */
-  ret = st_sample_fwd_init(&ctx, argc, argv);
+  memset(&ctx, 0, sizeof(ctx));
+  ret = fwd_sample_parse_args(&ctx, argc, argv);
   if (ret < 0) return ret;
+
+  ctx.st = mtl_init(&ctx.param);
+  if (!ctx.st) {
+    err("%s: mtl_init fail\n", __func__);
+    return -EIO;
+  }
 
   struct rx_st20p_tx_st20p_sample_ctx app;
   memset(&app, 0, sizeof(app));
@@ -354,6 +361,9 @@ error:
   rx_st20p_tx_st20p_free_app(&app);
 
   /* release sample(st) dev */
-  st_sample_uinit(&ctx);
+  if (ctx.st) {
+    mtl_uninit(ctx.st);
+    ctx.st = NULL;
+  }
   return ret;
 }

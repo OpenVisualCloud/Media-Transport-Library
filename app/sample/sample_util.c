@@ -163,10 +163,9 @@ static void sample_sig_handler(int signo) {
   return;
 }
 
-int st_sample_init(struct st_sample_context* ctx, int argc, char** argv, bool tx,
-                   bool rx) {
+int sample_parse_args(struct st_sample_context* ctx, int argc, char** argv, bool tx,
+                      bool rx) {
   struct mtl_init_params* p = &ctx->param;
-  memset(ctx, 0, sizeof(*ctx));
 
   g_sample_ctx = ctx;
   signal(SIGINT, sample_sig_handler);
@@ -224,49 +223,24 @@ int st_sample_init(struct st_sample_context* ctx, int argc, char** argv, bool tx
   return 0;
 }
 
-int st_sample_start(struct st_sample_context* ctx) {
-  struct mtl_init_params* p = &ctx->param;
-
-  /* create device */
-  ctx->st = mtl_init(p);
-  if (!ctx->st) {
-    err("%s, st init fail\n", __func__);
-    return -EIO;
-  }
-
-  return 0;
-}
-
-int st_sample_uinit(struct st_sample_context* ctx) {
-  /* destroy device */
-  if (ctx->st) {
-    mtl_uninit(ctx->st);
-    ctx->st = NULL;
-  }
-  return 0;
-}
-
-int st_sample_tx_init(struct st_sample_context* ctx, int argc, char** argv) {
-  st_sample_init(ctx, argc, argv, true, false);
-  return st_sample_start(ctx);
+int tx_sample_parse_args(struct st_sample_context* ctx, int argc, char** argv) {
+  return sample_parse_args(ctx, argc, argv, true, false);
 };
 
-int st_sample_rx_init(struct st_sample_context* ctx, int argc, char** argv) {
-  st_sample_init(ctx, argc, argv, false, true);
-  return st_sample_start(ctx);
+int rx_sample_parse_args(struct st_sample_context* ctx, int argc, char** argv) {
+  return sample_parse_args(ctx, argc, argv, false, true);
 };
 
-int st_sample_fwd_init(struct st_sample_context* ctx, int argc, char** argv) {
-  st_sample_init(ctx, argc, argv, true, true);
-  return st_sample_start(ctx);
+int fwd_sample_parse_args(struct st_sample_context* ctx, int argc, char** argv) {
+  return sample_parse_args(ctx, argc, argv, true, true);
 };
 
-int st_sample_dma_init(struct st_sample_context* ctx, int argc, char** argv) {
+int dma_sample_parse_args(struct st_sample_context* ctx, int argc, char** argv) {
   /* init sample(st) dev */
-  st_sample_init(ctx, argc, argv, false, false);
+  sample_parse_args(ctx, argc, argv, false, false);
   /* enable dma port */
   ctx->param.num_dma_dev_port = 1;
-  return st_sample_start(ctx);
+  return 0;
 };
 
 void fill_rfc4175_422_10_pg2_data(struct st20_rfc4175_422_10_pg2_be* data, int w, int h) {
