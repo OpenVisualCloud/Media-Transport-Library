@@ -4,10 +4,10 @@
 
 #include <arpa/inet.h>
 #include <inttypes.h>
+#include <mtl/st_pipeline_api.h>
 #include <obs/obs-module.h>
 #include <obs/util/bmem.h>
 #include <obs/util/threading.h>
-#include <st20_dpdk_api.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -16,20 +16,12 @@
 
 #include "../../plugin_platform.h"
 
-#define FRAMEBUFF_CNT (2)
-#define PAYLOAD_TYPE (112)
-
 #define KH_RX_SESSION(voidptr) struct kh_rx_session* s = voidptr;
 
 #define timeval2ns(tv) \
   (((uint64_t)tv.tv_sec * 1000000000) + ((uint64_t)tv.tv_usec * 1000))
 
 #define blog(level, msg, ...) blog(level, "kahawai-input: " msg, ##__VA_ARGS__)
-
-struct st_rx_frame {
-  void* frame;
-  size_t size;
-};
 
 /**
  * Data structure for the kahawai source
@@ -41,12 +33,14 @@ struct kh_rx_session {
   char* sip;
   char* ip;
   uint16_t udp_port;
-  enum st20_fmt fmt;
-  enum mtl_log_level log_level;
-  /* detected */
+  uint8_t payload_type;
   uint32_t width;
   uint32_t height;
   enum st_fps fps;
+  enum st_frame_fmt out_fmt;
+  enum st20_fmt t_fmt;
+  enum mtl_log_level log_level;
+  uint8_t framebuffer_cnt;
 
   /* internal data */
   obs_source_t* source;
@@ -55,18 +49,12 @@ struct kh_rx_session {
   size_t plane_offsets[MAX_AV_PLANES];
 
   int idx;
-  void* handle;
+  st20p_rx_handle handle;
 
   bool stop;
   pthread_t thread;
   pthread_cond_t wake_cond;
   pthread_mutex_t wake_mutex;
-
-  uint16_t framebuff_producer_idx;
-  uint16_t framebuff_consumer_idx;
-  struct st_rx_frame* framebuffs;
-
-  volatile bool detected;
 };
 
 /* forward declarations */
@@ -74,11 +62,9 @@ static void kahawai_init(struct kh_rx_session* s);
 static void kahawai_terminate(struct kh_rx_session* s);
 static void kahawai_update(void* vptr, obs_data_t* settings);
 
-static inline enum video_format kahawai_to_obs_video_format(enum st20_fmt fmt) {
+static inline enum video_format kahawai_to_obs_video_format(enum st_frame_fmt fmt) {
   switch (fmt) {
-    case ST20_FMT_YUV_420_8BIT:
-      return VIDEO_FORMAT_I420;
-    case ST20_FMT_YUV_422_8BIT:
+    case ST_FRAME_FMT_YUV422PACKED8:
       return VIDEO_FORMAT_UYVY;
     default:
       return VIDEO_FORMAT_NONE;
@@ -95,7 +81,7 @@ static void kahawai_prep_obs_frame(struct kh_rx_session* s,
   memset(plane_offsets, 0, sizeof(size_t) * MAX_AV_PLANES);
 
   /* get obs fmt from st here */
-  const enum video_format format = kahawai_to_obs_video_format(s->fmt);
+  const enum video_format format = kahawai_to_obs_video_format(s->out_fmt);
 
   frame->width = s->width;
   frame->height = s->height;
@@ -104,7 +90,8 @@ static void kahawai_prep_obs_frame(struct kh_rx_session* s,
                                          frame->color_matrix, frame->color_range_min,
                                          frame->color_range_max);
 
-  switch (s->fmt) {
+  switch (s->out_fmt) {
+#if 0
     case ST20_FMT_YUV_420_8BIT:
       frame->linesize[0] = s->width;
       frame->linesize[1] = s->width / 2;
@@ -112,70 +99,21 @@ static void kahawai_prep_obs_frame(struct kh_rx_session* s,
       plane_offsets[1] = s->width * s->height;
       plane_offsets[2] = s->width * s->height * 5 / 4;
       break;
+#endif
     default:
       frame->linesize[0] = s->width * 2; /* only uyvy */
       break;
   }
 }
 
-static int rx_video_enqueue_frame(struct kh_rx_session* s, void* frame, size_t size) {
-  uint16_t producer_idx = s->framebuff_producer_idx;
-  struct st_rx_frame* framebuff = &s->framebuffs[producer_idx];
-
-  if (framebuff->frame) {
-    return -EBUSY;
-  }
-
-  framebuff->frame = frame;
-  framebuff->size = size;
-  /* point to next */
-  producer_idx++;
-  if (producer_idx >= FRAMEBUFF_CNT) producer_idx = 0;
-  s->framebuff_producer_idx = producer_idx;
-  return 0;
-}
-
-static int rx_video_frame_ready(void* priv, void* frame,
-                                struct st20_rx_frame_meta* meta) {
+static int notify_frame_available(void* priv) {
   KH_RX_SESSION(priv);
 
   if (!s->handle) return -EIO;
 
-  /* incomplete frame */
-  if (!st_is_frame_complete(meta->status)) {
-    st20_rx_put_framebuff(s->handle, frame);
-    return 0;
-  }
-
   st_pthread_mutex_lock(&s->wake_mutex);
-  int ret = rx_video_enqueue_frame(s, frame, meta->frame_total_size);
-  if (ret < 0) {
-    blog(LOG_ERROR, "%s(%d), frame %p dropped\n", __func__, s->idx, frame);
-    /* free the queue */
-    st20_rx_put_framebuff(s->handle, frame);
-    st_pthread_mutex_unlock(&s->wake_mutex);
-    return ret;
-  }
   st_pthread_cond_signal(&s->wake_cond);
   st_pthread_mutex_unlock(&s->wake_mutex);
-
-  return 0;
-}
-
-static int rx_video_detected(void* priv, const struct st20_detect_meta* meta,
-                             struct st20_detect_reply* reply) {
-  KH_RX_SESSION(priv);
-
-  s->width = meta->width;
-  s->height = meta->height;
-  s->fps = meta->fps;
-
-  kahawai_prep_obs_frame(s, &s->out, s->plane_offsets);
-  s->detected = true;
-
-  blog(LOG_INFO, "Video info detected, frame created");
-  blog(LOG_INFO, "width: %u height: %u", s->width, s->height);
-  blog(LOG_INFO, "framerate: %.2f fps", st_frame_rate(s->fps));
 
   return 0;
 }
@@ -185,48 +123,34 @@ static int rx_video_detected(void* priv, const struct st20_detect_meta* meta,
  */
 static void* kahawai_thread(void* vptr) {
   KH_RX_SESSION(vptr);
-  uint8_t* start;
   uint64_t frames;
+  st20p_rx_handle handle = s->handle;
+  struct st_frame* frame;
 
   blog(LOG_DEBUG, "%s: new rx thread", s->port);
   os_set_thread_name("kahawai: rx");
 
   // start
   frames = 0;
-
-  int consumer_idx;
-  struct st_rx_frame* framebuff;
   blog(LOG_DEBUG, "%s: obs frame prepared", s->port);
 
   while (!s->stop) {
-    st_pthread_mutex_lock(&s->wake_mutex);
-    consumer_idx = s->framebuff_consumer_idx;
-    framebuff = &s->framebuffs[consumer_idx];
-    if (!framebuff->frame) {
-      /* no ready frame */
+    frame = st20p_rx_get_frame(handle);
+    if (!frame) { /* no frame */
+      st_pthread_mutex_lock(&s->wake_mutex);
       if (!s->stop) st_pthread_cond_wait(&s->wake_cond, &s->wake_mutex);
       st_pthread_mutex_unlock(&s->wake_mutex);
       continue;
     }
     st_pthread_mutex_unlock(&s->wake_mutex);
 
-    if (s->detected) {
-      start = (uint8_t*)framebuff->frame;
+    for (uint8_t i = 0; i < st_frame_fmt_planes(frame->fmt); ++i)
+      s->out.data[i] = frame->addr[i];
 
-      for (uint_fast32_t i = 0; i < MAX_AV_PLANES; ++i)
-        s->out.data[i] = start + s->plane_offsets[i];
-      obs_source_output_video(s->source, &s->out);
-      frames++;
-    }
+    obs_source_output_video(s->source, &s->out);
+    frames++;
 
-    st20_rx_put_framebuff(s->handle, framebuff->frame);
-    /* point to next */
-    st_pthread_mutex_lock(&s->wake_mutex);
-    framebuff->frame = NULL;
-    consumer_idx++;
-    if (consumer_idx >= FRAMEBUFF_CNT) consumer_idx = 0;
-    s->framebuff_consumer_idx = consumer_idx;
-    st_pthread_mutex_unlock(&s->wake_mutex);
+    st20p_rx_put_frame(handle, frame);
   }
 
   blog(LOG_INFO, "%s: Stopped rx after %" PRIu64 " frames", s->port, frames);
@@ -241,10 +165,16 @@ static const char* kahawai_getname(void* unused) {
 static void kahawai_defaults(obs_data_t* settings) {
   obs_data_set_default_string(settings, "port", "0000:4b:00.1");
   obs_data_set_default_string(settings, "lcores", "4,5");
-  obs_data_set_default_string(settings, "sip", "192.168.96.189");
-  obs_data_set_default_string(settings, "ip", "192.168.96.188");
+  obs_data_set_default_string(settings, "sip", "192.168.96.2");
+  obs_data_set_default_string(settings, "ip", "192.168.96.1");
   obs_data_set_default_int(settings, "udp_port", 20000);
-  obs_data_set_default_int(settings, "fmt", ST20_FMT_YUV_420_8BIT);
+  obs_data_set_default_int(settings, "payload_type", 112);
+  obs_data_set_default_int(settings, "width", 1920);
+  obs_data_set_default_int(settings, "height", 1080);
+  obs_data_set_default_int(settings, "fps", ST_FPS_P59_94);
+  obs_data_set_default_int(settings, "t_fmt", ST20_FMT_YUV_420_10BIT);
+  obs_data_set_default_int(settings, "out_fmt", ST_FRAME_FMT_YUV422PACKED8);
+  obs_data_set_default_int(settings, "framebuffer_cnt", 3);
   obs_data_set_default_int(settings, "log_level", MTL_LOG_LEVEL_ERROR);
 }
 
@@ -311,11 +241,39 @@ static obs_properties_t* kahawai_properties(void* vptr) {
   obs_properties_add_text(props, "ip", obs_module_text("IP"), OBS_TEXT_DEFAULT);
 
   obs_properties_add_int(props, "udp_port", obs_module_text("UdpPort"), 1000, 65536, 1);
+  obs_properties_add_int(props, "payload_type", obs_module_text("PayloadType"), 0, 255,
+                         1);
+  obs_properties_add_int(props, "framebuffer_cnt", obs_module_text("FramebuffCnt"), 2,
+                         128, 1);
+  obs_properties_add_int(props, "width", obs_module_text("Width"), 1, 65535, 1);
+  obs_properties_add_int(props, "height", obs_module_text("Height"), 1, 65535, 1);
+  obs_property_t* fps_list = obs_properties_add_list(
+      props, "fps", obs_module_text("FPS"), OBS_COMBO_TYPE_LIST, OBS_COMBO_FORMAT_INT);
+  obs_property_list_add_int(fps_list, obs_module_text("23.98"), ST_FPS_P23_98);
+  obs_property_list_add_int(fps_list, obs_module_text("24"), ST_FPS_P24);
+  obs_property_list_add_int(fps_list, obs_module_text("25"), ST_FPS_P25);
+  obs_property_list_add_int(fps_list, obs_module_text("29.97"), ST_FPS_P29_97);
+  obs_property_list_add_int(fps_list, obs_module_text("30"), ST_FPS_P30);
+  obs_property_list_add_int(fps_list, obs_module_text("50"), ST_FPS_P50);
+  obs_property_list_add_int(fps_list, obs_module_text("59.94"), ST_FPS_P59_94);
+  obs_property_list_add_int(fps_list, obs_module_text("60"), ST_FPS_P60);
+  obs_property_list_add_int(fps_list, obs_module_text("100"), ST_FPS_P100);
+  obs_property_list_add_int(fps_list, obs_module_text("119.88"), ST_FPS_P119_88);
+  obs_property_list_add_int(fps_list, obs_module_text("120"), ST_FPS_P120);
 
-  obs_property_t* fmt_list = obs_properties_add_list(
-      props, "fmt", obs_module_text("Format"), OBS_COMBO_TYPE_LIST, OBS_COMBO_FORMAT_INT);
-  obs_property_list_add_int(fmt_list, obs_module_text("I420"), ST20_FMT_YUV_420_8BIT);
-  obs_property_list_add_int(fmt_list, obs_module_text("UYVY"), ST20_FMT_YUV_422_8BIT);
+  obs_property_t* t_fmt_list =
+      obs_properties_add_list(props, "t_fmt", obs_module_text("TransportFormat"),
+                              OBS_COMBO_TYPE_LIST, OBS_COMBO_FORMAT_INT);
+  obs_property_list_add_int(t_fmt_list, obs_module_text("YUV422BE10"),
+                            ST20_FMT_YUV_422_10BIT);
+  obs_property_list_add_int(t_fmt_list, obs_module_text("YUV422BE8"),
+                            ST20_FMT_YUV_422_8BIT);
+
+  obs_property_t* out_fmt_list =
+      obs_properties_add_list(props, "out_fmt", obs_module_text("OutputFormat"),
+                              OBS_COMBO_TYPE_LIST, OBS_COMBO_FORMAT_INT);
+  obs_property_list_add_int(out_fmt_list, obs_module_text("UYVY"),
+                            ST_FRAME_FMT_YUV422PACKED8);
 
   obs_property_t* log_level_list =
       obs_properties_add_list(props, "log_level", obs_module_text("LogLevel"),
@@ -349,7 +307,7 @@ static void kahawai_terminate(struct kh_rx_session* s) {
   }
 
   if (s->handle) {
-    st20_rx_free(s->handle);
+    st20p_rx_free(s->handle);
     s->handle = NULL;
   }
   pthread_mutex_destroy(&s->wake_mutex);
@@ -358,11 +316,6 @@ static void kahawai_terminate(struct kh_rx_session* s) {
   if (s->dev_handle) {
     mtl_uninit(s->dev_handle);
     s->dev_handle = NULL;
-  }
-
-  if (s->framebuffs) {
-    free(s->framebuffs);
-    s->framebuffs = NULL;
   }
 }
 
@@ -401,47 +354,32 @@ static void kahawai_init(struct kh_rx_session* s) {
     return;
   }
   s->dev_handle = dev_handle;
-
   s->idx = 0;
-  s->framebuffs = (struct st_rx_frame*)malloc(sizeof(*s->framebuffs) * FRAMEBUFF_CNT);
-  if (!s->framebuffs) {
-    blog(LOG_ERROR, "%s(%d), framebuffs malloc fail\n", __func__, s->idx);
-    goto error;
-  }
-  for (uint16_t j = 0; j < FRAMEBUFF_CNT; j++) s->framebuffs[j].frame = NULL;
-  s->framebuff_producer_idx = 0;
-  s->framebuff_consumer_idx = 0;
 
-  struct st20_rx_ops ops_rx;
+  struct st20p_rx_ops ops_rx;
   memset(&ops_rx, 0, sizeof(ops_rx));
   ops_rx.name = "kahawai-input";
   ops_rx.priv = s;  // app handle register to lib
-  ops_rx.num_port = 1;
-  inet_pton(AF_INET, s->ip, ops_rx.sip_addr[MTL_PORT_P]);
-  strncpy(ops_rx.port[MTL_PORT_P], s->port, MTL_PORT_MAX_LEN);
-  ops_rx.udp_port[MTL_PORT_P] = s->udp_port;  // user config the udp port.
-  ops_rx.pacing = ST21_PACING_NARROW;
-  ops_rx.type = ST20_TYPE_FRAME_LEVEL;
-  ops_rx.width = 1920;
-  ops_rx.height = 1080;
-  ops_rx.fps = ST_FPS_P59_94;
-  ops_rx.fmt = s->fmt;
-  ops_rx.framebuff_cnt = FRAMEBUFF_CNT;
-  ops_rx.payload_type = PAYLOAD_TYPE;
+  ops_rx.port.num_port = 1;
+  inet_pton(AF_INET, s->ip, ops_rx.port.sip_addr[MTL_PORT_P]);
+  strncpy(ops_rx.port.port[MTL_PORT_P], s->port, MTL_PORT_MAX_LEN);
+  ops_rx.port.udp_port[MTL_PORT_P] = s->udp_port;  // user config the udp port.
+  ops_rx.width = s->width;
+  ops_rx.height = s->height;
+  ops_rx.fps = s->fps;
+  ops_rx.output_fmt = s->out_fmt;
+  ops_rx.transport_fmt = s->t_fmt;
+  ops_rx.framebuff_cnt = s->framebuffer_cnt;
+  ops_rx.port.payload_type = s->payload_type;
   // app regist non-block func, app get a frame ready notification info by this cb
-  ops_rx.notify_frame_ready = rx_video_frame_ready;
-  ops_rx.notify_detected = rx_video_detected;
-  ops_rx.flags |= ST20_RX_FLAG_AUTO_DETECT;
+  ops_rx.notify_frame_available = notify_frame_available;
 
-  s->handle = st20_rx_create(dev_handle, &ops_rx);
+  s->handle = st20p_rx_create(dev_handle, &ops_rx);
   if (!s->handle) {
     blog(LOG_ERROR, "rx_session is not correctly created\n");
     goto error;
   }
-  struct st_queue_meta queue_meta;
-  st20_rx_get_queue_meta(s->handle, &queue_meta);
-  blog(LOG_DEBUG, "queue_id %u, start_queue %u\n", queue_meta.queue_id[MTL_PORT_P],
-       queue_meta.start_queue[MTL_PORT_P]);
+
   s->stop = false;
   st_pthread_mutex_init(&s->wake_mutex, NULL);
   st_pthread_cond_init(&s->wake_cond, NULL);
@@ -467,7 +405,13 @@ static void kahawai_update(void* vptr, obs_data_t* settings) {
   s->sip = (char*)obs_data_get_string(settings, "sip");
   s->ip = (char*)obs_data_get_string(settings, "ip");
   s->udp_port = obs_data_get_int(settings, "udp_port");
-  s->fmt = obs_data_get_int(settings, "fmt");
+  s->payload_type = obs_data_get_int(settings, "payload_type");
+  s->width = obs_data_get_int(settings, "width");
+  s->height = obs_data_get_int(settings, "height");
+  s->fps = obs_data_get_int(settings, "fps");
+  s->t_fmt = obs_data_get_int(settings, "t_fmt");
+  s->out_fmt = obs_data_get_int(settings, "out_fmt");
+  s->framebuffer_cnt = obs_data_get_int(settings, "framebuffer_cnt");
   s->log_level = obs_data_get_int(settings, "log_level");
 }
 
