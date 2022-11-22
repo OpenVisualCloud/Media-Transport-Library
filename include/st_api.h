@@ -71,8 +71,8 @@ enum st_frame_status {
 /**
  * A structure describing rfc3550 rtp header, size: 12
  */
-struct st_rfc3550_rtp_hdr {
 #ifdef MTL_LITTLE_ENDIAN
+MTL_PACK(struct st_rfc3550_rtp_hdr {
   /** CSRC count(CC) */
   uint8_t csrc_count : 4;
   /** extension(X) */
@@ -85,27 +85,36 @@ struct st_rfc3550_rtp_hdr {
   uint8_t payload_type : 7;
   /** marker(M) */
   uint8_t marker : 1;
-#else
-  /** version(V) */
-  uint8_t version : 2;
-  /** padding(P) */
-  uint8_t padding : 1;
-  /** extension(X) */
-  uint8_t extension : 1;
-  /** CSRC count(CC) */
-  uint8_t csrc_count : 4;
-  /** marker(M) */
-  uint8_t marker : 1;
-  /** payload type(PT) */
-  uint8_t payload_type : 7;
-#endif
   /** sequence number */
   uint16_t seq_number;
   /** timestamp */
   uint32_t tmstamp;
   /** synchronization source */
   uint32_t ssrc;
-} __attribute__((__packed__));
+});
+
+#else
+MTL_PACK(struct st_rfc3550_rtp_hdr {
+  /** version(V) */
+  uint8_t version : 2;
+  /** padding(P) */
+  uint8_t padding : 1;
+  /** extension(X) */
+  uint8_t extension : 1;
+  /** CSRC count(CC) */
+  uint8_t csrc_count : 4;
+  /** marker(M) */
+  uint8_t marker : 1;
+  /** payload type(PT) */
+  uint8_t payload_type : 7;
+  /** sequence number */
+  uint16_t seq_number;
+  /** timestamp */
+  uint32_t tmstamp;
+  /** synchronization source */
+  uint32_t ssrc;
+});
+#endif
 
 /**
  * The structure describing the source address(ip addr and port) info for RX.

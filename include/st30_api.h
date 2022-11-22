@@ -107,8 +107,8 @@ enum st30_type {
 /**
  * A structure describing a AM824 subframe
  */
-struct st31_am824 {
 #ifdef MTL_LITTLE_ENDIAN
+MTL_PACK(struct st31_am824 {
   /** v bit in am824 */
   uint8_t v : 1;
   /** u bit in am824 */
@@ -123,31 +123,35 @@ struct st31_am824 {
   uint8_t b : 1;
   /** unused 2 bits in am824 */
   uint8_t unused : 2;
-#else
-  /** unused 2 bits in am824 */
-  uint8_t unused : 2;
-  /** b bit in am824 */
-  uint8_t b : 1;
-  /** f bit in am824 */
-  uint8_t f : 1;
-  /** p bit in am824 */
-  uint8_t p : 1;
-  /** c bit in am824 */
-  uint8_t c : 1;
-  /** u bit in am824 */
-  uint8_t u : 1;
-  /** v bit in am824 */
-  uint8_t v : 1;
-#endif
   /** data in am824 */
   uint8_t data[3];
-} __attribute__((__packed__));
+});
+#else
+MTL_PACK(struct st31_am824 {
+  /** unused 2 bits in am824 */
+  uint8_t unused : 2;
+  /** b bit in am824 */
+  uint8_t b : 1;
+  /** f bit in am824 */
+  uint8_t f : 1;
+  /** p bit in am824 */
+  uint8_t p : 1;
+  /** c bit in am824 */
+  uint8_t c : 1;
+  /** u bit in am824 */
+  uint8_t u : 1;
+  /** v bit in am824 */
+  uint8_t v : 1;
+  /** data in am824 */
+  uint8_t data[3];
+});
+#endif
 
 /**
  * A structure describing a AES3 subframe
  */
-struct st31_aes3 {
 #ifdef MTL_LITTLE_ENDIAN
+MTL_PACK(struct st31_aes3 {
   /** preamble in aes3 */
   uint8_t preamble : 4;
   /** data_0 in aes3 */
@@ -164,7 +168,9 @@ struct st31_aes3 {
   uint8_t c : 1;
   /** p bit in aes3 */
   uint8_t p : 1;
+});
 #else
+MTL_PACK(struct st31_aes3 {
   /** data_0 in aes3 */
   uint8_t data_0 : 4;
   /** preamble in aes3 */
@@ -181,8 +187,8 @@ struct st31_aes3 {
   uint8_t v : 1;
   /** data_2 in aes3 */
   uint8_t data_2 : 4;
+});
 #endif
-} __attribute__((__packed__));
 
 /**
  * Frame meta data of st2110-30(audio) tx streaming

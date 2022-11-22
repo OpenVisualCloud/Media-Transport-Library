@@ -444,7 +444,7 @@ struct st22_rx_frame_meta {
 /**
  * A structure describing a st2110-20(video) rfc4175 rtp header, size: 20
  */
-struct st20_rfc4175_rtp_hdr {
+MTL_PACK(struct st20_rfc4175_rtp_hdr {
   /** Rtp rfc3550 base hdr */
   struct st_rfc3550_rtp_hdr base;
   /** Extended Sequence Number */
@@ -455,15 +455,15 @@ struct st20_rfc4175_rtp_hdr {
   uint16_t row_number;
   /** Offset of the first pixel of the payload data within the scan line */
   uint16_t row_offset;
-} __attribute__((__packed__));
+});
 
 /**
  * A structure describing a st2110-22(video) rfc9134 rtp header, size: 16
  */
-struct st22_rfc9134_rtp_hdr {
+#ifdef MTL_LITTLE_ENDIAN
+MTL_PACK(struct st22_rfc9134_rtp_hdr {
   /** Rtp rfc3550 base hdr */
   struct st_rfc3550_rtp_hdr base;
-#ifdef MTL_LITTLE_ENDIAN
   /** F counter high part */
   uint8_t f_counter_hi : 3;
   /** Interlaced information */
@@ -487,7 +487,11 @@ struct st22_rfc9134_rtp_hdr {
 
   /** P counter low part */
   uint8_t p_counter_lo;
+});
 #else
+MTL_PACK(struct st22_rfc9134_rtp_hdr {
+  /** Rtp rfc3550 base hdr */
+  struct st_rfc3550_rtp_hdr base;
   /** Transmission mode */
   uint8_t trans_order : 1;
   /** pacKetization mode */
@@ -511,26 +515,26 @@ struct st22_rfc9134_rtp_hdr {
 
   /** P counter low part */
   uint8_t p_counter_lo;
+});
 #endif
-} __attribute__((__packed__));
 
 /**
  * A structure describing a st2110-20(video) rfc4175 rtp additional header.
  * if Continuation bit is set in struct st20_rfc4175_rtp_hdr. size: 6
  */
-struct st20_rfc4175_extra_rtp_hdr {
+MTL_PACK(struct st20_rfc4175_extra_rtp_hdr {
   /** Number of octets of data included from this scan line */
   uint16_t row_length;
   /** Scan line number */
   uint16_t row_number;
   /** Offset of the first pixel of the payload data within the scan line */
   uint16_t row_offset;
-} __attribute__((__packed__));
+});
 
 /** Pixel Group describing two image pixels in YUV 4:4:4 or RGB 12-bit format */
-struct st20_rfc4175_444_12_pg2_be {
-  uint8_t Cb_R00; /**< First 8 bits for Cb/Red 0 */
 #ifdef MTL_LITTLE_ENDIAN
+MTL_PACK(struct st20_rfc4175_444_12_pg2_be {
+  uint8_t Cb_R00;      /**< First 8 bits for Cb/Red 0 */
   uint8_t Y_G00 : 4;   /**< First 4 bits for Y/Green 0 */
   uint8_t Cb_R00_ : 4; /**< Second 4 bits for Cb/Red 0 */
   uint8_t Y_G00_;      /**< Second 8 bits for Y/Green 0 */
@@ -541,7 +545,11 @@ struct st20_rfc4175_444_12_pg2_be {
   uint8_t Y_G01;       /**< First 8 bits for Y/Green 1 */
   uint8_t Cr_B01 : 4;  /**< First 4 bits for Cr/Blue 1 */
   uint8_t Y_G01_ : 4;  /**< Second 4 bits for Y/Green 1 */
+  uint8_t Cr_B01_;     /**< Second 8 bits for Cr/Blue 1 */
+});
 #else
+MTL_PACK(struct st20_rfc4175_444_12_pg2_be {
+  uint8_t Cb_R00;      /**< First 8 bits for Cb/Red 0 */
   uint8_t Cb_R00_ : 4; /**< Second 4 bits for Cb/Red 0 */
   uint8_t Y_G00 : 4;   /**< First 4 bits for Y/Green 0 */
   uint8_t Y_G00_;      /**< Second 8 bits for Y/Green 0 */
@@ -552,14 +560,14 @@ struct st20_rfc4175_444_12_pg2_be {
   uint8_t Y_G01;       /**< First 8 bits for Y/Green 1 */
   uint8_t Y_G01_ : 4;  /**< Second 4 bits for Y/Green 1 */
   uint8_t Cr_B01 : 4;  /**< First 4 bits for Cr/Blue 1 */
+  uint8_t Cr_B01_;     /**< Second 8 bits for Cr/Blue 1 */
+});
 #endif
-  uint8_t Cr_B01_; /**< Second 8 bits for Cr/Blue 1 */
-} __attribute__((__packed__));
 
 /** Pixel Group describing two image pixels in YUV 4:4:4 or RGB 12-bit format */
-struct st20_rfc4175_444_12_pg2_le {
-  uint8_t Cb_R00; /**< First 8 bits for Cb/Red 0 */
 #ifdef MTL_LITTLE_ENDIAN
+MTL_PACK(struct st20_rfc4175_444_12_pg2_le {
+  uint8_t Cb_R00;      /**< First 8 bits for Cb/Red 0 */
   uint8_t Cb_R00_ : 4; /**< Second 4 bits for Cb/Red 0 */
   uint8_t Y_G00 : 4;   /**< First 4 bits for Y/Green 0 */
   uint8_t Y_G00_;      /**< Second 8 bits for Y/Green 0 */
@@ -570,7 +578,11 @@ struct st20_rfc4175_444_12_pg2_le {
   uint8_t Y_G01;       /**< First 8 bits for Y/Green 1 */
   uint8_t Y_G01_ : 4;  /**< Second 4 bits for Y/Green 1 */
   uint8_t Cr_B01 : 4;  /**< First 4 bits for Cr/Blue 1 */
+  uint8_t Cr_B01_;     /**< Second 8 bits for Cr/Blue 1 */
+});
 #else
+MTL_PACK(struct st20_rfc4175_444_12_pg2_le {
+  uint8_t Cb_R00;      /**< First 8 bits for Cb/Red 0 */
   uint8_t Y_G00 : 4;   /**< First 4 bits for Y/Green 0 */
   uint8_t Cb_R00_ : 4; /**< Second 4 bits for Cb/Red 0 */
   uint8_t Y_G00_;      /**< Second 8 bits for Y/Green 0 */
@@ -581,14 +593,14 @@ struct st20_rfc4175_444_12_pg2_le {
   uint8_t Y_G01;       /**< First 8 bits for Y/Green 1 */
   uint8_t Cr_B01 : 4;  /**< First 4 bits for Cr/Blue 1 */
   uint8_t Y_G01_ : 4;  /**< Second 4 bits for Y/Green 1 */
+  uint8_t Cr_B01_;     /**< Second 8 bits for Cr/Blue 1 */
+});
 #endif
-  uint8_t Cr_B01_; /**< Second 8 bits for Cr/Blue 1 */
-} __attribute__((__packed__));
 
 /** Pixel Group describing four image pixels in YUV 4:4:4 or RGB 10-bit format */
-struct st20_rfc4175_444_10_pg4_be {
-  uint8_t Cb_R00; /**< First 8 bits for Cb/Red 0 */
 #ifdef MTL_LITTLE_ENDIAN
+MTL_PACK(struct st20_rfc4175_444_10_pg4_be {
+  uint8_t Cb_R00;      /**< First 8 bits for Cb/Red 0 */
   uint8_t Y_G00 : 6;   /**< First 6 bits for Y/Green 0 */
   uint8_t Cb_R00_ : 2; /**< Second 2 bits for Cb/Red 0 */
   uint8_t Cr_B00 : 4;  /**< First 4 bits for Cr/Blue 0 */
@@ -611,7 +623,11 @@ struct st20_rfc4175_444_10_pg4_be {
   uint8_t Cb_R03_ : 4; /**< Second 4 bits for Cb/Red 3 */
   uint8_t Cr_B03 : 2;  /**< First 2 bits for Cr/Blue 3 */
   uint8_t Y_G03_ : 6;  /**< Second 6 bits for Y/Green 3 */
+  uint8_t Cr_B03_;     /**< Second 8 bits for Cr/Blue 1 */
+});
 #else
+MTL_PACK(struct st20_rfc4175_444_10_pg4_be {
+  uint8_t Cb_R00;      /**< First 8 bits for Cb/Red 0 */
   uint8_t Cb_R00_ : 2; /**< Second 2 bits for Cb/Red 0 */
   uint8_t Y_G00 : 6;   /**< First 6 bits for Y/Green 0 */
   uint8_t Y_G00_ : 4;  /**< Second 4 bits for Y/Green 0 */
@@ -634,14 +650,14 @@ struct st20_rfc4175_444_10_pg4_be {
   uint8_t Y_G03 : 4;   /**< First 4 bits for Y/Green 3 */
   uint8_t Y_G03_ : 6;  /**< Second 6 bits for Y/Green 3 */
   uint8_t Cr_B03 : 2;  /**< First 2 bits for Cr/Blue 3 */
+  uint8_t Cr_B03_;     /**< Second 8 bits for Cr/Blue 1 */
+});
 #endif
-  uint8_t Cr_B03_; /**< Second 8 bits for Cr/Blue 1 */
-} __attribute__((__packed__));
 
 /** Pixel Group describing four image pixels in YUV 4:4:4 or RGB 10-bit format */
-struct st20_rfc4175_444_10_pg4_le {
-  uint8_t Cb_R00; /**< First 8 bits for Cb/Red 0 */
 #ifdef MTL_LITTLE_ENDIAN
+MTL_PACK(struct st20_rfc4175_444_10_pg4_le {
+  uint8_t Cb_R00;      /**< First 8 bits for Cb/Red 0 */
   uint8_t Cb_R00_ : 2; /**< Second 2 bits for Cb/Red 0 */
   uint8_t Y_G00 : 6;   /**< First 6 bits for Y/Green 0 */
   uint8_t Y_G00_ : 4;  /**< Second 4 bits for Y/Green 0 */
@@ -664,7 +680,11 @@ struct st20_rfc4175_444_10_pg4_le {
   uint8_t Y_G03 : 4;   /**< First 4 bits for Y/Green 3 */
   uint8_t Y_G03_ : 6;  /**< Second 6 bits for Y/Green 3 */
   uint8_t Cr_B03 : 2;  /**< First 2 bits for Cr/Blue 3 */
+  uint8_t Cr_B03_;     /**< Second 8 bits for Cr/Blue 1 */
+});
 #else
+MTL_PACK(struct st20_rfc4175_444_10_pg4_le {
+  uint8_t Cb_R00;      /**< First 8 bits for Cb/Red 0 */
   uint8_t Y_G00 : 6;   /**< First 6 bits for Y/Green 0 */
   uint8_t Cb_R00_ : 2; /**< Second 2 bits for Cb/Red 0 */
   uint8_t Cr_B00 : 4;  /**< First 4 bits for Cr/Blue 0 */
@@ -687,101 +707,117 @@ struct st20_rfc4175_444_10_pg4_le {
   uint8_t Cb_R03_ : 4; /**< Second 4 bits for Cb/Red 3 */
   uint8_t Cr_B03 : 2;  /**< First 2 bits for Cr/Blue 3 */
   uint8_t Y_G03_ : 6;  /**< Second 6 bits for Y/Green 3 */
+  uint8_t Cr_B03_;     /**< Second 8 bits for Cr/Blue 1 */
+});
 #endif
-  uint8_t Cr_B03_; /**< Second 8 bits for Cr/Blue 1 */
-} __attribute__((__packed__));
 
 /** Pixel Group describing two image pixels in YUV 4:2:2 12-bit format */
-struct st20_rfc4175_422_12_pg2_be {
-  uint8_t Cb00; /**< First 8 bit Blue */
 #ifdef MTL_LITTLE_ENDIAN
+MTL_PACK(struct st20_rfc4175_422_12_pg2_be {
+  uint8_t Cb00;      /**< First 8 bit Blue */
   uint8_t Y00 : 4;   /**< First 4 bits Luminance for Y0 */
   uint8_t Cb00_ : 4; /**< Second 4 bit Blue */
   uint8_t Y00_;      /**< Second 8 bits Luminance for Y0 */
   uint8_t Cr00;      /**< First 8 bit Red */
   uint8_t Y01 : 4;   /**< First 4 bits Luminance for Y1 */
   uint8_t Cr00_ : 4; /**< Second 4 bit Red */
+  uint8_t Y01_;      /**< Second 8 bits Luminance for Y1 */
+});
 #else
-  uint8_t Cb00_ : 4;   /**< Second 4 bit Blue */
-  uint8_t Y00 : 4;     /**< First 4 bits Luminance for Y0 */
-  uint8_t Y00_;        /**< Second 8 bits Luminance for Y0 */
-  uint8_t Cr00;        /**< First 8 bit Red */
-  uint8_t Cr00_ : 4;   /**< Second 4 bit Red */
-  uint8_t Y01 : 4;     /**< First 4 bits Luminance for Y1 */
-#endif
-  uint8_t Y01_; /**< Second 8 bits Luminance for Y1 */
-} __attribute__((__packed__));
-
-/** Pixel Group describing two image pixels in YUV 4:2:2 12-bit format */
-struct st20_rfc4175_422_12_pg2_le {
-  uint8_t Cb00; /**< First 8 bit Blue */
-#ifdef MTL_LITTLE_ENDIAN
+MTL_PACK(struct st20_rfc4175_422_12_pg2_be {
+  uint8_t Cb00;      /**< First 8 bit Blue */
   uint8_t Cb00_ : 4; /**< Second 4 bit Blue */
   uint8_t Y00 : 4;   /**< First 4 bits Luminance for Y0 */
   uint8_t Y00_;      /**< Second 8 bits Luminance for Y0 */
   uint8_t Cr00;      /**< First 8 bit Red */
   uint8_t Cr00_ : 4; /**< Second 4 bit Red */
   uint8_t Y01 : 4;   /**< First 4 bits Luminance for Y1 */
-#else
-  uint8_t Y00 : 4;     /**< First 4 bits Luminance for Y0 */
-  uint8_t Cb00_ : 4;   /**< Second 4 bit Blue */
-  uint8_t Y00_;        /**< Second 8 bits Luminance for Y0 */
-  uint8_t Cr00;        /**< First 8 bit Red */
-  uint8_t Y01 : 4;     /**< First 4 bits Luminance for Y1 */
-  uint8_t Cr00_ : 4;   /**< Second 4 bit Red */
+  uint8_t Y01_;      /**< Second 8 bits Luminance for Y1 */
+});
 #endif
-  uint8_t Y01_; /**< Second 8 bits Luminance for Y1 */
-} __attribute__((__packed__));
+
+/** Pixel Group describing two image pixels in YUV 4:2:2 12-bit format */
+#ifdef MTL_LITTLE_ENDIAN
+MTL_PACK(struct st20_rfc4175_422_12_pg2_le {
+  uint8_t Cb00;      /**< First 8 bit Blue */
+  uint8_t Cb00_ : 4; /**< Second 4 bit Blue */
+  uint8_t Y00 : 4;   /**< First 4 bits Luminance for Y0 */
+  uint8_t Y00_;      /**< Second 8 bits Luminance for Y0 */
+  uint8_t Cr00;      /**< First 8 bit Red */
+  uint8_t Cr00_ : 4; /**< Second 4 bit Red */
+  uint8_t Y01 : 4;   /**< First 4 bits Luminance for Y1 */
+  uint8_t Y01_;      /**< Second 8 bits Luminance for Y1 */
+});
+#else
+MTL_PACK(struct st20_rfc4175_422_12_pg2_le {
+  uint8_t Cb00;      /**< First 8 bit Blue */
+  uint8_t Y00 : 4;   /**< First 4 bits Luminance for Y0 */
+  uint8_t Cb00_ : 4; /**< Second 4 bit Blue */
+  uint8_t Y00_;      /**< Second 8 bits Luminance for Y0 */
+  uint8_t Cr00;      /**< First 8 bit Red */
+  uint8_t Y01 : 4;   /**< First 4 bits Luminance for Y1 */
+  uint8_t Cr00_ : 4; /**< Second 4 bit Red */
+  uint8_t Y01_;      /**< Second 8 bits Luminance for Y1 */
+});
+#endif
 
 /** Pixel Group describing two image pixels in YUV 4:2:2 10-bit format */
-struct st20_rfc4175_422_10_pg2_be {
-  uint8_t Cb00; /**< First 8 bit Blue */
 #ifdef MTL_LITTLE_ENDIAN
+MTL_PACK(struct st20_rfc4175_422_10_pg2_be {
+  uint8_t Cb00;      /**< First 8 bit Blue */
   uint8_t Y00 : 6;   /**< First 6 bits Luminance for Y0 */
   uint8_t Cb00_ : 2; /**< Second 2 bit Blue */
   uint8_t Cr00 : 4;  /**< First 4 bit Red */
   uint8_t Y00_ : 4;  /**< Second 4 bits Luminance for Y0 */
   uint8_t Y01 : 2;   /**< First 2 bits Luminance for Y1 */
   uint8_t Cr00_ : 6; /**< Second 6 bit Red */
+  uint8_t Y01_;      /**< Second 8 bits Luminance for Y1 */
+});
 #else
-  uint8_t Cb00_ : 2;   /**< Second 2 bit Blue */
-  uint8_t Y00 : 6;     /**< First 6 bits Luminance for Y0 */
-  uint8_t Y00_ : 4;    /**< Second 4 bits Luminance for Y0 */
-  uint8_t Cr00 : 4;    /**< First 4 bit Red */
-  uint8_t Cr00_ : 6;   /**< Second 6 bit Red */
-  uint8_t Y01 : 2;     /**< First 2 bits Luminance for Y1 */
-#endif
-  uint8_t Y01_; /**< Second 8 bits Luminance for Y1 */
-} __attribute__((__packed__));
-
-/** Pixel Group describing two image pixels in YUV 4:2:2 10-bit format */
-struct st20_rfc4175_422_10_pg2_le {
-  uint8_t Cb00; /**< First 8 bit Blue */
-#ifdef MTL_LITTLE_ENDIAN
+MTL_PACK(struct st20_rfc4175_422_10_pg2_be {
+  uint8_t Cb00;      /**< First 8 bit Blue */
   uint8_t Cb00_ : 2; /**< Second 2 bit Blue */
   uint8_t Y00 : 6;   /**< First 6 bits Luminance for Y0 */
   uint8_t Y00_ : 4;  /**< Second 4 bits Luminance for Y0 */
   uint8_t Cr00 : 4;  /**< First 4 bit Red */
   uint8_t Cr00_ : 6; /**< Second 6 bit Red */
   uint8_t Y01 : 2;   /**< First 2 bits Luminance for Y1 */
-#else
-  uint8_t Y00 : 6;     /**< First 6 bits Luminance for Y0 */
-  uint8_t Cb00_ : 2;   /**< Second 2 bit Blue */
-  uint8_t Cr00 : 4;    /**< First 4 bit Red */
-  uint8_t Y00_ : 4;    /**< Second 4 bits Luminance for Y0 */
-  uint8_t Y01 : 2;     /**< First 2 bits Luminance for Y1 */
-  uint8_t Cr00_ : 6;   /**< Second 6 bit Red */
+  uint8_t Y01_;      /**< Second 8 bits Luminance for Y1 */
+});
 #endif
-  uint8_t Y01_; /**< Second 8 bits Luminance for Y1 */
-} __attribute__((__packed__));
+
+/** Pixel Group describing two image pixels in YUV 4:2:2 10-bit format */
+#ifdef MTL_LITTLE_ENDIAN
+MTL_PACK(struct st20_rfc4175_422_10_pg2_le {
+  uint8_t Cb00;      /**< First 8 bit Blue */
+  uint8_t Cb00_ : 2; /**< Second 2 bit Blue */
+  uint8_t Y00 : 6;   /**< First 6 bits Luminance for Y0 */
+  uint8_t Y00_ : 4;  /**< Second 4 bits Luminance for Y0 */
+  uint8_t Cr00 : 4;  /**< First 4 bit Red */
+  uint8_t Cr00_ : 6; /**< Second 6 bit Red */
+  uint8_t Y01 : 2;   /**< First 2 bits Luminance for Y1 */
+  uint8_t Y01_;      /**< Second 8 bits Luminance for Y1 */
+});
+#else
+MTL_PACK(struct st20_rfc4175_422_10_pg2_le {
+  uint8_t Cb00;      /**< First 8 bit Blue */
+  uint8_t Y00 : 6;   /**< First 6 bits Luminance for Y0 */
+  uint8_t Cb00_ : 2; /**< Second 2 bit Blue */
+  uint8_t Cr00 : 4;  /**< First 4 bit Red */
+  uint8_t Y00_ : 4;  /**< Second 4 bits Luminance for Y0 */
+  uint8_t Y01 : 2;   /**< First 2 bits Luminance for Y1 */
+  uint8_t Cr00_ : 6; /**< Second 6 bit Red */
+  uint8_t Y01_;      /**< Second 8 bits Luminance for Y1 */
+});
+#endif
 
 /** Pixel Group describing two image pixels in YUV 4:2:2 8-bit format */
-struct st20_rfc4175_422_8_pg2_le {
+MTL_PACK(struct st20_rfc4175_422_8_pg2_le {
   uint8_t Cb00; /**< 8 bit Blue */
   uint8_t Y00;  /**< 8 bit Y0 */
   uint8_t Cr00; /**< 8 bit Red */
   uint8_t Y01;  /**< 8 bit Y1 */
-} __attribute__((__packed__));
+});
 
 /** External framebuffer */
 struct st20_ext_frame {
