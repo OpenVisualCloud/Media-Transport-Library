@@ -108,8 +108,7 @@ enum st30_type {
  * A structure describing a AM824 subframe
  */
 #ifdef MTL_LITTLE_ENDIAN
-PACK(
-struct st31_am824 {
+PACK(struct st31_am824 {
   /** v bit in am824 */
   uint8_t v : 1;
   /** u bit in am824 */
@@ -128,8 +127,7 @@ struct st31_am824 {
   uint8_t data[3];
 });
 #else
-PACK(
-struct st31_am824 {
+PACK(struct st31_am824 {
   /** unused 2 bits in am824 */
   uint8_t unused : 2;
   /** b bit in am824 */
@@ -153,8 +151,7 @@ struct st31_am824 {
  * A structure describing a AES3 subframe
  */
 #ifdef MTL_LITTLE_ENDIAN
-PACK(
-struct st31_aes3 {
+PACK(struct st31_aes3 {
   /** preamble in aes3 */
   uint8_t preamble : 4;
   /** data_0 in aes3 */
@@ -173,8 +170,7 @@ struct st31_aes3 {
   uint8_t p : 1;
 });
 #else
-PACK(
-struct st31_aes3 {
+PACK(struct st31_aes3 {
   /** data_0 in aes3 */
   uint8_t data_0 : 4;
   /** preamble in aes3 */
