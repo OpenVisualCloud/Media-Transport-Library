@@ -445,6 +445,7 @@ size_t st_frame_size(enum st_frame_fmt fmt, uint32_t width, uint32_t height) {
       }
       break;
     case ST_FRAME_FMT_YUV422PLANAR8:
+    case ST_FRAME_FMT_YUV422CUSTOM8:
     case ST_FRAME_FMT_UYVY:
       size = pixels * 2;
       break;
