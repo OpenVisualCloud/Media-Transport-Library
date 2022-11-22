@@ -685,11 +685,13 @@ enum st_frame_fmt st_frame_fmt_from_transport(enum st20_fmt tfmt) {
 }
 
 bool st_frame_fmt_equal_transport(enum st_frame_fmt fmt, enum st20_fmt tfmt) {
-  enum st20_fmt to_fmt = st_frame_fmt_to_transport(fmt);
+  if (fmt == ST_FRAME_FMT_YUV422CUSTOM8 || fmt == ST_FRAME_FMT_YUV420CUSTOM8) return true;
 
-  if (to_fmt == ST20_FMT_MAX) return false;
+  enum st_frame_fmt to_fmt = st_frame_fmt_from_transport(tfmt);
 
-  return (tfmt == to_fmt) ? true : false;
+  if (to_fmt == ST_FRAME_FMT_MAX) return false;
+
+  return (fmt == to_fmt) ? true : false;
 }
 
 uint32_t st10_tai_to_media_clk(uint64_t tai_ns, uint32_t sampling_rate) {
