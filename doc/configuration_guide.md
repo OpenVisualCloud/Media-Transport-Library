@@ -107,7 +107,7 @@ Items in each element of the "video" array
 
 ​	**video_format (string):** `"i1080p59", "i1080p50", "i1080p29", "i720p59", "i720p50", "i720p29", "i2160p59", "i2160p50", "i2160p29"` video format
 
-​	**pg_format (string):** `"YUV_422_10bit"` pixel group format
+​	**pg_format (string):** `"YUV_422_10bit"`, `"YUV_422_12bit"`, `"YUV_444_10bit"`, `"YUV_444_12bit"`, `"RGB_10bit"`, `"RGB_12bit"` pixel group format
 
 ​	**video_url (string):** video source
 
@@ -179,7 +179,7 @@ Items in each element of the "video" array
 
 ​	**video_format (string):** `"i1080p59", "i1080p50", "i1080p29", "i720p59", "i720p50", "i720p29", "i2160p59", "i2160p50", "i2160p29"` video format
 
-​	**pg_format (string):** `"YUV_422_10bit"` pixel group format
+​	**pg_format (string):** `"YUV_422_10bit"`, `"YUV_422_12bit"`, `"YUV_444_10bit"`, `"YUV_444_12bit"`, `"RGB_10bit"`, `"RGB_12bit"` pixel group format
 
 ​	**user_pg_format (string):** `"YUV_422_8bit"` user required pixel group format
 
