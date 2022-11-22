@@ -65,11 +65,16 @@ int main(int argc, char** argv) {
   int ret;
 
   /* init sample(st) dev */
-  st_sample_init(&ctx, argc, argv, true, false);
+  memset(&ctx, 0, sizeof(ctx));
+  sample_parse_args(&ctx, argc, argv, true, false);
   ctx.sessions = session_num;
   ctx.param.tx_sessions_cnt_max = session_num;
-  ret = st_sample_start(&ctx);
-  if (ret < 0) return ret;
+
+  ctx.st = mtl_init(&ctx.param);
+  if (!ctx.st) {
+    err("%s: mtl_init fail\n", __func__);
+    return -EIO;
+  }
 
   st20_tx_handle tx_handle[session_num];
   memset(tx_handle, 0, sizeof(tx_handle));
@@ -206,6 +211,9 @@ error:
   if (dma_mem) mtl_dma_mem_free(ctx.st, dma_mem);
 
   /* release sample(st) dev */
-  st_sample_uinit(&ctx);
+  if (ctx.st) {
+    mtl_uninit(ctx.st);
+    ctx.st = NULL;
+  }
   return ret;
 }

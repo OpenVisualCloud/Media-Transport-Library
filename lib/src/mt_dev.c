@@ -62,7 +62,7 @@ static const struct mt_dev_driver_info dev_drvs[] = {
 
 static int parse_driver_info(const char* driver, enum mt_port_type* port,
                              enum mt_driver_type* drv) {
-  for (int i = 0; i < MT_ARRAY_SIZE(dev_drvs); i++) {
+  for (int i = 0; i < MTL_ARRAY_SIZE(dev_drvs); i++) {
     if (!strcmp(dev_drvs[i].name, driver)) {
       *port = dev_drvs[i].port_type;
       *drv = dev_drvs[i].drv_type;

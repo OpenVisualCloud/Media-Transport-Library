@@ -526,7 +526,7 @@ int st_frame_sanity_check(struct st_frame* frame) {
 int st20_get_pgroup(enum st20_fmt fmt, struct st20_pgroup* pg) {
   int i;
 
-  for (i = 0; i < MT_ARRAY_SIZE(st20_pgroups); i++) {
+  for (i = 0; i < MTL_ARRAY_SIZE(st20_pgroups); i++) {
     if (fmt == st20_pgroups[i].fmt) {
       *pg = st20_pgroups[i];
       return 0;
@@ -568,7 +568,7 @@ const char* st20_frame_fmt_name(enum st20_fmt fmt) {
 int st_get_fps_timing(enum st_fps fps, struct st_fps_timing* fps_tm) {
   int i;
 
-  for (i = 0; i < MT_ARRAY_SIZE(st_fps_timings); i++) {
+  for (i = 0; i < MTL_ARRAY_SIZE(st_fps_timings); i++) {
     if (fps == st_fps_timings[i].fps) {
       *fps_tm = st_fps_timings[i];
       return 0;
@@ -582,7 +582,7 @@ int st_get_fps_timing(enum st_fps fps, struct st_fps_timing* fps_tm) {
 double st_frame_rate(enum st_fps fps) {
   int i;
 
-  for (i = 0; i < MT_ARRAY_SIZE(st_fps_timings); i++) {
+  for (i = 0; i < MTL_ARRAY_SIZE(st_fps_timings); i++) {
     if (fps == st_fps_timings[i].fps) {
       return (double)st_fps_timings[i].mul / st_fps_timings[i].den;
     }
@@ -595,7 +595,7 @@ double st_frame_rate(enum st_fps fps) {
 const char* st_frame_fmt_name(enum st_frame_fmt fmt) {
   int i;
 
-  for (i = 0; i < MT_ARRAY_SIZE(st_frame_fmt_descs); i++) {
+  for (i = 0; i < MTL_ARRAY_SIZE(st_frame_fmt_descs); i++) {
     if (fmt == st_frame_fmt_descs[i].fmt) {
       return st_frame_fmt_descs[i].name;
     }
@@ -608,7 +608,7 @@ const char* st_frame_fmt_name(enum st_frame_fmt fmt) {
 uint8_t st_frame_fmt_planes(enum st_frame_fmt fmt) {
   int i;
 
-  for (i = 0; i < MT_ARRAY_SIZE(st_frame_fmt_descs); i++) {
+  for (i = 0; i < MTL_ARRAY_SIZE(st_frame_fmt_descs); i++) {
     if (fmt == st_frame_fmt_descs[i].fmt) {
       return st_frame_fmt_descs[i].planes;
     }
@@ -621,7 +621,7 @@ uint8_t st_frame_fmt_planes(enum st_frame_fmt fmt) {
 enum st_frame_sampling st_frame_fmt_get_sampling(enum st_frame_fmt fmt) {
   int i;
 
-  for (i = 0; i < MT_ARRAY_SIZE(st_frame_fmt_descs); i++) {
+  for (i = 0; i < MTL_ARRAY_SIZE(st_frame_fmt_descs); i++) {
     if (fmt == st_frame_fmt_descs[i].fmt) {
       return st_frame_fmt_descs[i].sampling;
     }

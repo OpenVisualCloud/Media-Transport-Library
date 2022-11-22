@@ -932,7 +932,7 @@ int mtl_sch_set_sleep_us(mtl_handle mt, uint64_t us) {
   return 0;
 }
 
-uint64_t mt_ptp_read_time(mtl_handle mt) {
+uint64_t mtl_ptp_read_time(mtl_handle mt) {
   struct mtl_main_impl* impl = mt;
 
   if (impl->type != ST_SESSION_TYPE_MAIN) {

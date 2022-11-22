@@ -21,7 +21,7 @@ static int tx_audio_next_frame_timestamp(void* priv, uint16_t* next_frame_idx,
   if (!ctx->handle) return -EIO; /* not ready */
 
   meta->tfmt = ST10_TIMESTAMP_FMT_TAI;
-  meta->timestamp = mt_ptp_read_time(ctx->ctx->handle) + 2 * 1000 * 1000 + 500 * 1000;
+  meta->timestamp = mtl_ptp_read_time(ctx->ctx->handle) + 2 * 1000 * 1000 + 500 * 1000;
   *next_frame_idx = ctx->fb_idx;
   dbg("%s, next_frame_idx %d\n", __func__, *next_frame_idx);
   ctx->fb_idx++;

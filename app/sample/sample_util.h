@@ -80,20 +80,16 @@ struct st_sample_context {
   bool exit;
 };
 
-int st_sample_init(struct st_sample_context* ctx, int argc, char** argv, bool tx,
-                   bool rx);
+int sample_parse_args(struct st_sample_context* ctx, int argc, char** argv, bool tx,
+                      bool rx);
 
-int st_sample_start(struct st_sample_context* ctx);
+int tx_sample_parse_args(struct st_sample_context* ctx, int argc, char** argv);
 
-int st_sample_tx_init(struct st_sample_context* ctx, int argc, char** argv);
+int rx_sample_parse_args(struct st_sample_context* ctx, int argc, char** argv);
 
-int st_sample_rx_init(struct st_sample_context* ctx, int argc, char** argv);
+int fwd_sample_parse_args(struct st_sample_context* ctx, int argc, char** argv);
 
-int st_sample_fwd_init(struct st_sample_context* ctx, int argc, char** argv);
-
-int st_sample_dma_init(struct st_sample_context* ctx, int argc, char** argv);
-
-int st_sample_uinit(struct st_sample_context* ctx);
+int dma_sample_parse_args(struct st_sample_context* ctx, int argc, char** argv);
 
 void fill_rfc4175_422_10_pg2_data(struct st20_rfc4175_422_10_pg2_be* data, int w, int h);
 

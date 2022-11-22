@@ -113,8 +113,15 @@ int main(int argc, char** argv) {
   struct st_sample_context ctx;
   int ret;
 
-  ret = st_sample_tx_init(&ctx, argc, argv);
+  memset(&ctx, 0, sizeof(ctx));
+  ret = tx_sample_parse_args(&ctx, argc, argv);
   if (ret < 0) return ret;
+
+  ctx.st = mtl_init(&ctx.param);
+  if (!ctx.st) {
+    err("%s: mtl_init fail\n", __func__);
+    return -EIO;
+  }
 
   dma_copy_perf(ctx.st, 1920, 1080, 60, 128);
   dma_copy_perf(ctx.st, 1920 * 2, 1080 * 2, 60, 128);
@@ -132,6 +139,9 @@ int main(int argc, char** argv) {
   info("\n");
 
   /* release sample(st) dev */
-  st_sample_uinit(&ctx);
+  if (ctx.st) {
+    mtl_uninit(ctx.st);
+    ctx.st = NULL;
+  }
   return ret;
 }

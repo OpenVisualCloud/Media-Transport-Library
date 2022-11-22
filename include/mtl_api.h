@@ -76,7 +76,7 @@ extern "C" {
 #define MTL_PCAP_FILE_MAX_LEN (32)
 
 /** Helper to get array size from arrays */
-#define MT_ARRAY_SIZE(arr) (sizeof(arr) / sizeof(arr[0]))
+#define MTL_ARRAY_SIZE(arr) (sizeof(arr) / sizeof(arr[0]))
 
 /**
  * Handle to media transport device context
@@ -632,7 +632,7 @@ void* mtl_memcpy(void* dest, const void* src, size_t n);
  * @return
  *   - The time in nanoseconds in current ptp system
  */
-uint64_t mt_ptp_read_time(mtl_handle mt);
+uint64_t mtl_ptp_read_time(mtl_handle mt);
 
 /**
  * Allocate memory from the huge-page area of memory. The memory is not cleared.

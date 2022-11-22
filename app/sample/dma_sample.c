@@ -51,7 +51,7 @@ static int dma_copy_sample(mtl_handle st) {
   rand_data((uint8_t*)fb_src, fb_size, 0);
   SHA256((unsigned char*)fb_src, fb_size, fb_src_shas);
 
-  uint64_t start_ns = mt_ptp_read_time(st);
+  uint64_t start_ns = mtl_ptp_read_time(st);
   while (fb_dst_iova_off < fb_size) {
     /* try to copy */
     while (fb_src_iova_off < fb_size) {
@@ -69,7 +69,7 @@ static int dma_copy_sample(mtl_handle st) {
     uint16_t nb_dq = mtl_udma_completed(dma, 32);
     fb_dst_iova_off += element_size * nb_dq;
   }
-  uint64_t end_ns = mt_ptp_read_time(st);
+  uint64_t end_ns = mtl_ptp_read_time(st);
 
   /* all copy completed, check sha */
   SHA256((unsigned char*)fb_dst, fb_size, fb_dst_shas);
@@ -144,7 +144,7 @@ static int dma_map_copy_sample(mtl_handle st) {
   rand_data((uint8_t*)fb_src, fb_size, 0);
   SHA256((unsigned char*)fb_src, fb_size, fb_src_shas);
 
-  uint64_t start_ns = mt_ptp_read_time(st);
+  uint64_t start_ns = mtl_ptp_read_time(st);
   while (fb_dst_iova_off < fb_size) {
     /* try to copy */
     while (fb_src_iova_off < fb_size) {
@@ -162,7 +162,7 @@ static int dma_map_copy_sample(mtl_handle st) {
     uint16_t nb_dq = mtl_udma_completed(dma, 32);
     fb_dst_iova_off += element_size * nb_dq;
   }
-  uint64_t end_ns = mt_ptp_read_time(st);
+  uint64_t end_ns = mtl_ptp_read_time(st);
 
   /* all copy completed, check sha */
   SHA256((unsigned char*)fb_dst, fb_size, fb_dst_shas);
@@ -191,8 +191,15 @@ int main(int argc, char** argv) {
   struct st_sample_context ctx;
   int ret;
 
-  ret = st_sample_dma_init(&ctx, argc, argv);
+  memset(&ctx, 0, sizeof(ctx));
+  ret = dma_sample_parse_args(&ctx, argc, argv);
   if (ret < 0) return ret;
+
+  ctx.st = mtl_init(&ctx.param);
+  if (!ctx.st) {
+    err("%s: mtl_init fail\n", __func__);
+    return -EIO;
+  }
 
   /* dma copy with st_hp_*** memory */
   ret = dma_copy_sample(ctx.st);
@@ -203,6 +210,9 @@ int main(int argc, char** argv) {
 
 exit:
   /* release sample(st) dev */
-  st_sample_uinit(&ctx);
+  if (ctx.st) {
+    mtl_uninit(ctx.st);
+    ctx.st = NULL;
+  }
   return ret;
 }

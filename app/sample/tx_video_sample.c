@@ -132,8 +132,15 @@ int main(int argc, char** argv) {
   int ret;
 
   /* init sample(st) dev */
-  ret = st_sample_tx_init(&ctx, argc, argv);
+  memset(&ctx, 0, sizeof(ctx));
+  ret = tx_sample_parse_args(&ctx, argc, argv);
   if (ret < 0) return ret;
+
+  ctx.st = mtl_init(&ctx.param);
+  if (!ctx.st) {
+    err("%s: mtl_init fail\n", __func__);
+    return -EIO;
+  }
 
   uint32_t session_num = ctx.sessions;
   st20_tx_handle tx_handle[session_num];
@@ -267,6 +274,9 @@ error:
   }
 
   /* release sample(st) dev */
-  st_sample_uinit(&ctx);
+  if (ctx.st) {
+    mtl_uninit(ctx.st);
+    ctx.st = NULL;
+  }
   return ret;
 }
