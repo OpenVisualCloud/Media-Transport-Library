@@ -1167,8 +1167,8 @@ static int parse_st22p_format(json_object* st22p_obj, st_json_st22p_session_t* s
     st22p->info.format = ST_FRAME_FMT_V210;
   } else if (strcmp(format, "YUV422PLANAR8") == 0) {
     st22p->info.format = ST_FRAME_FMT_YUV422PLANAR8;
-  } else if (strcmp(format, "YUV422PACKED8") == 0) {
-    st22p->info.format = ST_FRAME_FMT_YUV422PACKED8;
+  } else if (strcmp(format, "UYVY") == 0) {
+    st22p->info.format = ST_FRAME_FMT_UYVY;
   } else if (strcmp(format, "YUV444PLANAR10LE") == 0) {
     st22p->info.format = ST_FRAME_FMT_YUV444PLANAR10LE;
   } else if (strcmp(format, "YUV444PLANAR12LE") == 0) {
@@ -1408,8 +1408,8 @@ static int parse_st20p_format(json_object* st20p_obj, st_json_st20p_session_t* s
     st20p->info.format = ST_FRAME_FMT_Y210;
   } else if (strcmp(format, "YUV422PLANAR8") == 0) {
     st20p->info.format = ST_FRAME_FMT_YUV422PLANAR8;
-  } else if (strcmp(format, "YUV422PACKED8") == 0) {
-    st20p->info.format = ST_FRAME_FMT_YUV422PACKED8;
+  } else if (strcmp(format, "UYVY") == 0) {
+    st20p->info.format = ST_FRAME_FMT_UYVY;
   } else if (strcmp(format, "YUV444PLANAR10LE") == 0) {
     st20p->info.format = ST_FRAME_FMT_YUV444PLANAR10LE;
   } else if (strcmp(format, "YUV444PLANAR12LE") == 0) {

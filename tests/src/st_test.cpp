@@ -294,7 +294,7 @@ static void fmt_frame_equal_transport_test() {
   equal = st_frame_fmt_equal_transport(ST_FRAME_FMT_YUV422RFC4175PG2BE10,
                                        ST20_FMT_YUV_422_10BIT);
   EXPECT_TRUE(equal);
-  equal = st_frame_fmt_equal_transport(ST_FRAME_FMT_YUV422PACKED8, ST20_FMT_YUV_422_8BIT);
+  equal = st_frame_fmt_equal_transport(ST_FRAME_FMT_UYVY, ST20_FMT_YUV_422_8BIT);
   EXPECT_TRUE(equal);
   equal = st_frame_fmt_equal_transport(ST_FRAME_FMT_RGB8, ST20_FMT_RGB_8BIT);
   EXPECT_TRUE(equal);
@@ -306,8 +306,7 @@ static void fmt_frame_equal_transport_test() {
   EXPECT_FALSE(equal);
   equal = st_frame_fmt_equal_transport(ST_FRAME_FMT_YUV422PLANAR8, ST20_FMT_YUV_422_8BIT);
   EXPECT_FALSE(equal);
-  equal =
-      st_frame_fmt_equal_transport(ST_FRAME_FMT_YUV422PACKED8, ST20_FMT_YUV_422_12BIT);
+  equal = st_frame_fmt_equal_transport(ST_FRAME_FMT_UYVY, ST20_FMT_YUV_422_12BIT);
   EXPECT_FALSE(equal);
 }
 
@@ -319,7 +318,7 @@ static void fmt_frame_fom_transport_test() {
   to_fmt = st_frame_fmt_from_transport(ST20_FMT_YUV_422_10BIT);
   EXPECT_TRUE(to_fmt == ST_FRAME_FMT_YUV422RFC4175PG2BE10);
   to_fmt = st_frame_fmt_from_transport(ST20_FMT_YUV_422_8BIT);
-  EXPECT_TRUE(to_fmt == ST_FRAME_FMT_YUV422PACKED8);
+  EXPECT_TRUE(to_fmt == ST_FRAME_FMT_UYVY);
   to_fmt = st_frame_fmt_from_transport(ST20_FMT_RGB_8BIT);
   EXPECT_TRUE(to_fmt == ST_FRAME_FMT_RGB8);
 
@@ -334,7 +333,7 @@ static void fmt_frame_to_transport_test() {
 
   to_fmt = st_frame_fmt_to_transport(ST_FRAME_FMT_YUV422RFC4175PG2BE10);
   EXPECT_TRUE(to_fmt == ST20_FMT_YUV_422_10BIT);
-  to_fmt = st_frame_fmt_to_transport(ST_FRAME_FMT_YUV422PACKED8);
+  to_fmt = st_frame_fmt_to_transport(ST_FRAME_FMT_UYVY);
   EXPECT_TRUE(to_fmt == ST20_FMT_YUV_422_8BIT);
   to_fmt = st_frame_fmt_to_transport(ST_FRAME_FMT_RGB8);
   EXPECT_TRUE(to_fmt == ST20_FMT_RGB_8BIT);

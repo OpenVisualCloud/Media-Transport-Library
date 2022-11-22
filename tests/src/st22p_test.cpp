@@ -380,7 +380,7 @@ static void frame_size_test() {
   EXPECT_GT(size, 0);
   size = st_frame_size(ST_FRAME_FMT_YUV422PLANAR8, w, h);
   EXPECT_GT(size, 0);
-  size = st_frame_size(ST_FRAME_FMT_YUV422PACKED8, w, h);
+  size = st_frame_size(ST_FRAME_FMT_UYVY, w, h);
   EXPECT_GT(size, 0);
   size = st_frame_size(ST_FRAME_FMT_YUV422RFC4175PG2BE10, w, h);
   EXPECT_GT(size, 0);
@@ -406,7 +406,7 @@ static void frame_name_test() {
   EXPECT_NE(result, 0);
   result = strcmp(fail, st_frame_fmt_name(ST_FRAME_FMT_YUV422PLANAR8));
   EXPECT_NE(result, 0);
-  result = strcmp(fail, st_frame_fmt_name(ST_FRAME_FMT_YUV422PACKED8));
+  result = strcmp(fail, st_frame_fmt_name(ST_FRAME_FMT_UYVY));
   EXPECT_NE(result, 0);
   result = strcmp(fail, st_frame_fmt_name(ST_FRAME_FMT_YUV422RFC4175PG2BE10));
   EXPECT_NE(result, 0);
