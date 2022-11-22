@@ -18,14 +18,6 @@
 extern "C" {
 #endif
 
-#ifdef __GNUC__
-#define PACK(__Declaration__) __Declaration__ __attribute__((__packed__))
-#endif
-
-#ifdef _MSC_VER
-#define PACK(__Declaration__) __pragma(pack(push, 1)) __Declaration__ __pragma(pack(pop))
-#endif
-
 /**
  * Timestamp type of st2110-10
  */
@@ -80,7 +72,7 @@ enum st_frame_status {
  * A structure describing rfc3550 rtp header, size: 12
  */
 #ifdef MTL_LITTLE_ENDIAN
-PACK(struct st_rfc3550_rtp_hdr {
+MTL_PACK(struct st_rfc3550_rtp_hdr {
   /** CSRC count(CC) */
   uint8_t csrc_count : 4;
   /** extension(X) */
@@ -102,7 +94,7 @@ PACK(struct st_rfc3550_rtp_hdr {
 });
 
 #else
-PACK(struct st_rfc3550_rtp_hdr {
+MTL_PACK(struct st_rfc3550_rtp_hdr {
   /** version(V) */
   uint8_t version : 2;
   /** padding(P) */

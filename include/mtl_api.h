@@ -25,6 +25,18 @@ extern "C" {
 
 #include "mtl_build_config.h"
 
+
+/**
+ * Compiler specific pack specifier
+ */
+#ifdef __GNUC__
+#define MTL_PACK(__Declaration__) __Declaration__ __attribute__((__packed__))
+#endif
+
+#ifdef _MSC_VER
+#define MTL_PACK(__Declaration__) __pragma(pack(push, 1)) __Declaration__ __pragma(pack(pop))
+#endif
+
 /**
  * Macro to compute a version number usable for comparisons
  */
