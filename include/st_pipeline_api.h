@@ -143,8 +143,18 @@ enum st_frame_fmt {
    * two YUV 444 12 bit pixel groups on 9 bytes, big endian
    */
   ST_FRAME_FMT_YUV444RFC4175PG2BE12,
-  /** YUV 420 packed 8bit(aka ST20_FMT_YUV_420_8BIT) */
-  ST_FRAME_FMT_YUV420PACKED8,
+  /** Customized YUV 420 8bit, set transport format as ST20_FMT_YUV_420_8BIT.
+   * This is used when user wants to directly transport none-RFC4175 formats like
+   * I420/NV12. When this input/output format is set, the frame is identical to
+   * transport frame without conversion. The frame should not have lines padding.
+   */
+  ST_FRAME_FMT_YUV420CUSTOM8,
+  /** Customized YUV 422 8bit, set transport format as ST20_FMT_YUV_422_8BIT.
+   * This is used when user wants to directly transport none-RFC4175 formats like
+   * YUY2. When this input/output format is set, the frame is identical to
+   * transport frame without conversion. The frame should not have lines padding.
+   */
+  ST_FRAME_FMT_YUV422CUSTOM8,
   /** GBR planar 10bit little endian */
   ST_FRAME_FMT_GBRPLANAR10LE,
   /**
@@ -163,13 +173,6 @@ enum st_frame_fmt {
   ST_FRAME_FMT_JPEGXS_CODESTREAM = 24,
   /** ST22 h264 cbr codestream */
   ST_FRAME_FMT_H264_CBR_CODESTREAM,
-  /** User defined format.
-   * This is used when user wants to directly transport none-RFC4175 formats like
-   * YUY2/I420/NV12. When this input/output format is set, the frame is identical to
-   * transport frame without conversion. User should take care of the frame size and
-   * planes info.
-   */
-  ST_FRAME_FMT_ANY,
   /** max value of this enum */
   ST_FRAME_FMT_MAX,
 };

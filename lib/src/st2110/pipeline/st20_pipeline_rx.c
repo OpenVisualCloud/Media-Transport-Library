@@ -608,10 +608,7 @@ st20p_rx_handle st20p_rx_create(mtl_handle mt, struct st20p_rx_ops* ops) {
     return NULL;
   }
 
-  if (ops->output_fmt == ST_FRAME_FMT_ANY)
-    dst_size = st20_frame_size(ops->transport_fmt, ops->width, ops->height);
-  else
-    dst_size = st_frame_size(ops->output_fmt, ops->width, ops->height);
+  dst_size = st_frame_size(ops->output_fmt, ops->width, ops->height);
   if (!dst_size) {
     err("%s(%d), get dst size fail\n", __func__, idx);
     return NULL;

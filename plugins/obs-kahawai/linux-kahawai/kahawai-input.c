@@ -66,9 +66,10 @@ static inline enum st_frame_fmt obs_to_kahawai_output_format(enum video_format f
       return ST_FRAME_FMT_UYVY;
     case VIDEO_FORMAT_NV12:
     case VIDEO_FORMAT_I420:
+      return ST_FRAME_FMT_YUV420CUSTOM8;
     case VIDEO_FORMAT_YUY2:
     case VIDEO_FORMAT_YVYU:
-      return ST_FRAME_FMT_ANY;
+      return ST_FRAME_FMT_YUV422CUSTOM8;
     default:
       return ST_FRAME_FMT_MAX;
   }

@@ -569,10 +569,7 @@ st20p_tx_handle st20p_tx_create(mtl_handle mt, struct st20p_tx_ops* ops) {
     return NULL;
   }
 
-  if (ops->input_fmt == ST_FRAME_FMT_ANY)
-    src_size = st20_frame_size(ops->transport_fmt, ops->width, ops->height);
-  else
-    src_size = st_frame_size(ops->input_fmt, ops->width, ops->height);
+  src_size = st_frame_size(ops->input_fmt, ops->width, ops->height);
   if (!src_size) {
     err("%s(%d), get src size fail\n", __func__, idx);
     return NULL;
