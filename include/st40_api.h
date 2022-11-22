@@ -69,6 +69,7 @@ enum st40_type {
 /**
  * A structure describing a st2110-40(ancillary) rfc8331 rtp header
  */
+PACK(
 struct st40_rfc8331_rtp_hdr {
   /** Rtp rfc3550 base hdr */
   struct st_rfc3550_rtp_hdr base;
@@ -85,13 +86,14 @@ struct st40_rfc8331_rtp_hdr {
     /** reserved */
     uint32_t reserved : 22;
   };
-} __attribute__((__packed__));
+});
 
 /**
  * A structure describing a st2110-40(ancillary) rfc8331 payload header
  */
-struct st40_rfc8331_payload_hdr {
 #ifdef MTL_LITTLE_ENDIAN
+PACK(
+struct st40_rfc8331_payload_hdr {
   union {
     struct {
       /** the source data stream number of the ANC data packet */
@@ -122,7 +124,10 @@ struct st40_rfc8331_payload_hdr {
     /** Handle to make operating on second_hdr_chunk buffer easier */
     uint32_t swaped_second_hdr_chunk;
   };
+});
 #else
+PACK(
+struct st40_rfc8331_payload_hdr {
   union {
     struct {
       /** the ANC data uses luma (Y) data channel */
@@ -153,8 +158,9 @@ struct st40_rfc8331_payload_hdr {
     /** Handle to make operating on second_hdr_chunk buffer easier */
     uint32_t swaped_second_hdr_chunk;
   };
+});
 #endif
-} __attribute__((__packed__));
+
 
 /**
  * Structure for ST2110-40(ancillary) meta
