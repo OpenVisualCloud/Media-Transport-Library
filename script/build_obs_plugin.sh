@@ -30,7 +30,7 @@ fi
 WORKSPACE=$PWD
 OBS_PLUGIN_BUILD_DIR=${WORKSPACE}/build/obs_plugin
 
-# build obs ffmpeg plugin
+# build obs plugin
 pushd plugins/obs-mtl/linux-mtl
 meson ${OBS_PLUGIN_BUILD_DIR} -Dbuildtype=$buildtype
 popd

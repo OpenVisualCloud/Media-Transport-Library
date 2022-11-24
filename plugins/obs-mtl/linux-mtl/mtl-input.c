@@ -2,6 +2,7 @@
  * Copyright(c) 2022 Intel Corporation
  */
 
+#include "../../plugin_platform.h"
 #include "linux-mtl.h"
 
 #define MTL_RX_SESSION(voidptr) struct mtl_rx_session* s = voidptr;
@@ -88,9 +89,9 @@ static int notify_frame_available(void* priv) {
 
   if (!s->handle) return -EIO;
 
-  pthread_mutex_lock(&s->wake_mutex);
-  pthread_cond_signal(&s->wake_cond);
-  pthread_mutex_unlock(&s->wake_mutex);
+  st_pthread_mutex_lock(&s->wake_mutex);
+  st_pthread_cond_signal(&s->wake_cond);
+  st_pthread_mutex_unlock(&s->wake_mutex);
 
   return 0;
 }
@@ -117,12 +118,12 @@ static void* mtl_thread(void* vptr) {
   while (!s->stop) {
     frame = st20p_rx_get_frame(handle);
     if (!frame) { /* no frame */
-      pthread_mutex_lock(&s->wake_mutex);
-      if (!s->stop) pthread_cond_wait(&s->wake_cond, &s->wake_mutex);
-      pthread_mutex_unlock(&s->wake_mutex);
+      st_pthread_mutex_lock(&s->wake_mutex);
+      if (!s->stop) st_pthread_cond_wait(&s->wake_cond, &s->wake_mutex);
+      st_pthread_mutex_unlock(&s->wake_mutex);
       continue;
     }
-    pthread_mutex_unlock(&s->wake_mutex);
+    st_pthread_mutex_unlock(&s->wake_mutex);
 
     for (uint_fast32_t i = 0; i < MAX_AV_PLANES; ++i)
       out.data[i] = frame->addr[0] + plane_offsets[i];
@@ -282,9 +283,9 @@ static obs_properties_t* mtl_input_properties(void* vptr) {
 
 static void mtl_input_terminate(struct mtl_rx_session* s) {
   s->stop = true;
-  pthread_mutex_lock(&s->wake_mutex);
-  pthread_cond_signal(&s->wake_cond);
-  pthread_mutex_unlock(&s->wake_mutex);
+  st_pthread_mutex_lock(&s->wake_mutex);
+  st_pthread_cond_signal(&s->wake_cond);
+  st_pthread_mutex_unlock(&s->wake_mutex);
   pthread_join(s->thread, NULL);
 
   if (s->dev_handle) {
@@ -295,8 +296,8 @@ static void mtl_input_terminate(struct mtl_rx_session* s) {
     st20p_rx_free(s->handle);
     s->handle = NULL;
   }
-  pthread_mutex_destroy(&s->wake_mutex);
-  pthread_cond_destroy(&s->wake_cond);
+  st_pthread_mutex_destroy(&s->wake_mutex);
+  st_pthread_cond_destroy(&s->wake_cond);
 
   if (s->dev_handle) {
     mtl_uninit(s->dev_handle);
@@ -366,8 +367,8 @@ static void mtl_input_init(struct mtl_rx_session* s) {
   }
 
   s->stop = false;
-  pthread_mutex_init(&s->wake_mutex, NULL);
-  pthread_cond_init(&s->wake_cond, NULL);
+  st_pthread_mutex_init(&s->wake_mutex, NULL);
+  st_pthread_cond_init(&s->wake_cond, NULL);
   int ret = pthread_create(&s->thread, NULL, mtl_thread, s);
   if (ret < 0) {
     blog(LOG_ERROR, "%s(%d), app_thread create fail\n", __func__, ret);
