@@ -56,9 +56,8 @@ static void mtl_prep_obs_frame(struct mtl_rx_session* s, struct obs_source_frame
   frame->width = s->width;
   frame->height = s->height;
   frame->format = format;
-  video_format_get_parameters_for_format(VIDEO_CS_DEFAULT, VIDEO_RANGE_DEFAULT, format,
-                                         frame->color_matrix, frame->color_range_min,
-                                         frame->color_range_max);
+  video_format_get_parameters(VIDEO_CS_DEFAULT, VIDEO_RANGE_DEFAULT, frame->color_matrix,
+                              frame->color_range_min, frame->color_range_max);
 
   switch (format) {
     case VIDEO_FORMAT_I420:
