@@ -1,16 +1,16 @@
-# obs-kahawai
-obs source plguin for kahawai
+# obs-mtl
+obs source plguin for MTL
 
 ## Build and Use
-### build kahawai library
+### build MTL library
 refer to: [build guide](../../doc/build.md)
 
 ### build & install obs-studio to /usr/local/
 refer to: https://obsproject.com/wiki/build-instructions-for-linux
 
-### build linux-kahawai
+### build linux-mtl
 ``` shell
-cd linux-kahawai
+cd linux-mtl
 meson build
 meson complile -C build
 sudo meson install -C build
@@ -22,7 +22,7 @@ sudo meson install -C build
 obs
 ```
 
-### add kahawai input source
+### add MTL input source
 
 ## TODO
 ### auto detect vfio-pci NIC ports
