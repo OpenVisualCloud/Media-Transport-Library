@@ -347,23 +347,12 @@ static int tx_st20p_init_src_fbs(struct mtl_main_impl* impl, struct st20p_tx_ctx
           tx_st20p_uinit_src_fbs(ctx);
           return -ENOMEM;
         }
-        for (uint8_t plane = 0; plane < planes; plane++) {
-          frames[i].src.linesize[plane] =
-              st_frame_least_linesize(frames[i].src.fmt, frames[i].src.width, plane);
-          if (plane == 0) {
-            frames[i].src.addr[plane] = src;
-            frames[i].src.iova[plane] = mtl_hp_virt2iova(ctx->impl, src);
-          } else {
-            frames[i].src.addr[plane] =
-                frames[i].src.addr[plane - 1] +
-                frames[i].src.linesize[plane - 1] * frames[i].src.height;
-            frames[i].src.iova[plane] =
-                frames[i].src.iova[plane - 1] +
-                frames[i].src.linesize[plane - 1] * frames[i].src.height;
-          }
-        }
         frames[i].src.buffer_size = src_size;
         frames[i].src.data_size = src_size;
+        /* init plane */
+        st_frame_init_plane_single_src(&frames[i].src, src,
+                                       mtl_hp_virt2iova(ctx->impl, src));
+        /* check plane */
         if (st_frame_sanity_check(&frames[i].src) < 0) {
           err("%s(%d), src frame %d sanity check fail\n", __func__, idx, i);
           tx_st20p_uinit_src_fbs(ctx);

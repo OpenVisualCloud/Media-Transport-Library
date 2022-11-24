@@ -7,7 +7,7 @@
 
 #include <libavcodec/avcodec.h>
 #include <libavutil/opt.h>
-#include <st_pipeline_api.h>
+#include <mtl/st_pipeline_api.h>
 
 #define MAX_ST22_ENCODER_SESSIONS (8)
 #define MAX_ST22_DECODER_SESSIONS (8)

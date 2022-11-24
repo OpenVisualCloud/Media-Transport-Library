@@ -233,7 +233,7 @@ struct st_frame {
   size_t linesize[ST_MAX_PLANES];
   /** frame format */
   enum st_frame_fmt fmt;
-  /** frame buffer size */
+  /** frame buffer size, include all planes */
   size_t buffer_size;
   /**
    * frame valid data size, may <= buffer_size for one encoded frame.
@@ -1507,6 +1507,17 @@ int st_frame_sanity_check(struct st_frame* frame);
 const char* st_frame_fmt_name(enum st_frame_fmt fmt);
 
 /**
+ * Get st_frame_fmt from name
+ *
+ * @param name
+ *   name.
+ * @return
+ *   The frmae fmt.
+ *   ST_FRAME_FMT_MAX: Fail.
+ */
+enum st_frame_fmt st_frame_name_to_fmt(const char* name);
+
+/**
  * Get number of planes of st_frame_fmt
  *
  * @param fmt
@@ -1568,6 +1579,18 @@ bool st_frame_fmt_equal_transport(enum st_frame_fmt fmt, enum st20_fmt tfmt);
  *   - <0: Error code if put fail.
  */
 int st_draw_logo(struct st_frame* frame, struct st_frame* logo, uint32_t x, uint32_t y);
+
+/**
+ * Helper to get st frame plane size
+ *
+ * @param frame
+ *   The st_frame pointer.
+ * @return
+ *   size
+ */
+static inline size_t st_frame_plane_size(struct st_frame* frame, uint8_t plane) {
+  return frame->linesize[plane] * frame->height;
+}
 
 #if defined(__cplusplus)
 }

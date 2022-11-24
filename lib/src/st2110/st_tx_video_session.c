@@ -1489,8 +1489,9 @@ static int tv_tasklet_st22(struct mtl_main_impl* impl,
       st22_info->st22_total_pkts = frame_size / s->st20_pkt_len;
       if (frame_size % s->st20_pkt_len) st22_info->st22_total_pkts++;
       s->st20_total_pkts = st22_info->st22_total_pkts;
-      /* wa for attach_extbuf issue with too less pkts */
-      if (s->st20_total_pkts < 40) s->st20_total_pkts = 40;
+      /* wa for attach_extbuf issue(no free cb) when too less pkts */
+      if (s->st20_total_pkts < st22_info->st22_min_pkts)
+        s->st20_total_pkts = st22_info->st22_min_pkts;
       st22_info->cur_frame_size = frame_size;
       s->st20_frame_idx = next_frame_idx;
       s->st20_frame_stat = ST21_TX_STAT_SENDING_PKTS;
@@ -1506,8 +1507,8 @@ static int tv_tasklet_st22(struct mtl_main_impl* impl,
       frame->tx_st22_meta.timestamp = pacing->rtp_time_stamp;
       dbg("%s(%d), next_frame_idx %d(%d pkts) start\n", __func__, idx, next_frame_idx,
           s->st20_total_pkts);
-      dbg("%s(%d), codestream_size %ld time_stamp %u\n", __func__, idx, codestream_size,
-          pacing->rtp_time_stamp);
+      dbg("%s(%d), codestream_size %" PRId64 "(%d st22 pkts) time_stamp %u\n", __func__,
+          idx, codestream_size, st22_info->st22_total_pkts, pacing->rtp_time_stamp);
     }
   }
 
@@ -1958,6 +1959,8 @@ static int tv_init_st22_frame(struct mtl_main_impl* impl,
 
   st22_info->get_next_frame = st22_frame_ops->get_next_frame;
   st22_info->notify_frame_done = st22_frame_ops->notify_frame_done;
+  st22_info->st22_min_pkts = mt_if_nb_tx_desc(impl, MTL_PORT_P) / s->st20_frames_cnt + 1;
+  dbg("%s(%d), st22_min_pkts %d\n", __func__, s->idx, st22_info->st22_min_pkts);
 
   s->st22_info = st22_info;
 
@@ -2336,8 +2339,13 @@ static void tv_stat(struct st_tx_video_sessions_mgr* mgr,
   s->stat_pkts_burst = 0;
   s->trs_inflight_cnt[0] = 0;
   s->inflight_cnt[0] = 0;
-  s->stat_pkts_dummy = 0;
-  s->stat_pkts_burst_dummy = 0;
+
+  if (s->stat_pkts_dummy) {
+    notice("TX_VIDEO_SESSION(%d,%d): dummy pkts %u, burst %u\n", m_idx, idx,
+           s->stat_pkts_dummy, s->stat_pkts_burst_dummy);
+    s->stat_pkts_dummy = 0;
+    s->stat_pkts_burst_dummy = 0;
+  }
 
   if (s->stat_epoch_troffset_mismatch) {
     notice("TX_VIDEO_SESSION(%d,%d): mismatch epoch troffset %u\n", m_idx, idx,

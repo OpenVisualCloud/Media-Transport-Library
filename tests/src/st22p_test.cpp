@@ -420,6 +420,10 @@ static void frame_name_test() {
 
   result = strcmp(fail, st_frame_fmt_name(ST_FRAME_FMT_MAX));
   EXPECT_EQ(result, 0);
+
+  EXPECT_EQ(st_frame_name_to_fmt("YUV422PLANAR10LE"), ST_FRAME_FMT_YUV422PLANAR10LE);
+  EXPECT_EQ(st_frame_name_to_fmt("UYVY"), ST_FRAME_FMT_UYVY);
+  EXPECT_EQ(st_frame_name_to_fmt("UNKNOWN"), ST_FRAME_FMT_MAX);
 }
 
 TEST(St22p, frame_size) { frame_size_test(); }

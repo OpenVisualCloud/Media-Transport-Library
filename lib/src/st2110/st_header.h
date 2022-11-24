@@ -250,6 +250,7 @@ struct st22_tx_video_info {
 
   struct st22_boxes st22_boxes;
   int st22_total_pkts;
+  int st22_min_pkts;
 };
 
 struct st_vsync_info {

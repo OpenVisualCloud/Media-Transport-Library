@@ -80,7 +80,14 @@ static int rx_st22p_open_source(struct rx_st22p_sample_ctx* s, const char* file)
 static void rx_st22p_consume_frame(struct rx_st22p_sample_ctx* s,
                                    struct st_frame* frame) {
   if (s->dst_cursor + s->frame_size > s->dst_end) s->dst_cursor = s->dst_begin;
-  mtl_memcpy(s->dst_cursor, frame->addr[0], s->frame_size);
+
+  uint8_t planes = st_frame_fmt_planes(frame->fmt);
+  uint8_t* dst = s->dst_cursor;
+  for (uint8_t plane = 0; plane < planes; plane++) {
+    size_t plane_sz = st_frame_plane_size(frame, plane);
+    mtl_memcpy(dst, frame->addr[plane], plane_sz);
+    dst += plane_sz;
+  }
   s->dst_cursor += s->frame_size;
 
   s->fb_recv++;
@@ -143,7 +150,7 @@ int main(int argc, char** argv) {
 
     struct st22p_rx_ops ops_rx;
     memset(&ops_rx, 0, sizeof(ops_rx));
-    ops_rx.name = "st22p_test";
+    ops_rx.name = "st22p_sample";
     ops_rx.priv = app[i];  // app handle register to lib
     ops_rx.port.num_port = 1;
     memcpy(ops_rx.port.sip_addr[MTL_PORT_P], ctx.rx_sip_addr[MTL_PORT_P],
@@ -156,7 +163,7 @@ int main(int argc, char** argv) {
     ops_rx.fps = ctx.fps;
     ops_rx.output_fmt = ctx.st22p_output_fmt;
     ops_rx.pack_type = ST22_PACK_CODESTREAM;
-    ops_rx.codec = ST22_CODEC_JPEGXS;
+    ops_rx.codec = ctx.st22p_codec;
     ops_rx.device = ST_PLUGIN_DEVICE_AUTO;
     ops_rx.max_codestream_size = 0; /* let lib to decide */
     ops_rx.framebuff_cnt = ctx.framebuff_cnt;

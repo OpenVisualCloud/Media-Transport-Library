@@ -151,6 +151,9 @@ static struct st22_encode_frame_meta* tx_st22p_encode_get_frame(void* priv) {
   return &framebuff->encode_frame;
 }
 
+/* min frame size should be capable of bulk pkts */
+#define ST22_ENCODE_MIN_FRAME_SZ ((ST_SESSION_MAX_BULK + 1) * MTL_PKT_MAX_RTP_BYTES)
+
 static int tx_st22p_encode_put_frame(void* priv, struct st22_encode_frame_meta* frame,
                                      int result) {
   struct st22p_tx_ctx* ctx = priv;
@@ -173,10 +176,11 @@ static int tx_st22p_encode_put_frame(void* priv, struct st22_encode_frame_meta* 
 
   dbg("%s(%d), frame %u result %d data_size %ld\n", __func__, idx, encode_idx, result,
       data_size);
-  if ((result < 0) || (data_size <= 0) || (data_size > max_size)) {
-    info("%s(%d), invalid frame %u result %d data_size %" PRIu64 " max_size %" PRIu64
-         "\n",
-         __func__, idx, encode_idx, result, data_size, max_size);
+  if ((result < 0) || (data_size <= ST22_ENCODE_MIN_FRAME_SZ) || (data_size > max_size)) {
+    info("%s(%d), invalid frame %u result %d data_size %" PRIu64
+         ", allowed min %u max %" PRIu64 "\n",
+         __func__, idx, encode_idx, result, data_size, ST22_ENCODE_MIN_FRAME_SZ,
+         max_size);
     framebuff->stat = ST22P_TX_FRAME_FREE;
     if (ctx->ops.notify_frame_available) { /* notify app */
       ctx->ops.notify_frame_available(ctx->ops.priv);
@@ -322,13 +326,20 @@ static int tx_st22p_init_src_fbs(struct mtl_main_impl* impl, struct st22p_tx_ctx
       tx_st22p_uinit_src_fbs(ctx);
       return -ENOMEM;
     }
-    frames[i].src.addr[0] = src;
     frames[i].src.fmt = ops->input_fmt;
     frames[i].src.buffer_size = src_size;
     frames[i].src.data_size = src_size;
     frames[i].src.width = ops->width;
     frames[i].src.height = ops->height;
     frames[i].src.priv = &frames[i];
+    /* init plane */
+    st_frame_init_plane_single_src(&frames[i].src, src, mtl_hp_virt2iova(ctx->impl, src));
+    /* check plane */
+    if (st_frame_sanity_check(&frames[i].src) < 0) {
+      err("%s(%d), src frame %d sanity check fail\n", __func__, idx, i);
+      tx_st22p_uinit_src_fbs(ctx);
+      return -EINVAL;
+    }
   }
 
   info("%s(%d), size %ld fmt %d with %u frames\n", __func__, idx, src_size,

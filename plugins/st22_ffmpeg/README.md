@@ -40,18 +40,12 @@ ffmpeg -s 1920x1080 -pix_fmt yuv420p -i yuv420p8le.yuv -pix_fmt yuv422p test_pla
         },
 ```
 
-#### 3.3 Prepare a yuv422p8le file.
-Modify tx_st22_pipeline_sample.c and rx_st22_pipeline_sample.c to use h264 codec.
+#### 3.3 Run the sample with tx and rx based on h264 CBR.
+Tx run:
 ```bash
-ops_tx.codec = ST22_CODEC_H264_CBR;
+./build/app/TxSt22PipelineSample --st22_codec h264_cbr --st22_fmt YUV422PLANAR8 --tx_url test_planar8.yuv
 ```
+Rx run:
 ```bash
-ops_rx.codec = ST22_CODEC_H264_CBR;
-```
-Build and run TxSt22PipelineSample, RxSt22PipelineSample.
-```bash
-ST_PORT_P=0000:af:00.1 ./build/app/TxSt22PipelineSample
-```
-```bash
-ST_PORT_P=0000:af:00.0 ./build/app/RxSt22PipelineSample
+./build/app/RxSt22PipelineSample --st22_codec h264_cbr --st22_fmt YUV422PLANAR8 --rx_url out_planar8.yuv
 ```
