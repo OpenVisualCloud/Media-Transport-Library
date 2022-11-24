@@ -392,23 +392,11 @@ static int rx_st20p_init_dst_fbs(struct mtl_main_impl* impl, struct st20p_rx_ctx
           rx_st20p_uinit_dst_fbs(ctx);
           return -ENOMEM;
         }
-        for (uint8_t plane = 0; plane < planes; plane++) {
-          frames[i].dst.linesize[plane] =
-              st_frame_least_linesize(frames[i].dst.fmt, frames[i].dst.width, plane);
-          if (plane == 0) {
-            frames[i].dst.addr[plane] = dst;
-            frames[i].dst.iova[plane] = mtl_hp_virt2iova(ctx->impl, dst);
-          } else {
-            frames[i].dst.addr[plane] =
-                frames[i].dst.addr[plane - 1] +
-                frames[i].dst.linesize[plane - 1] * frames[i].dst.height;
-            frames[i].dst.iova[plane] =
-                frames[i].dst.iova[plane - 1] +
-                frames[i].dst.linesize[plane - 1] * frames[i].dst.height;
-          }
-        }
         frames[i].dst.buffer_size = dst_size;
         frames[i].dst.data_size = dst_size;
+        /* init plane */
+        st_frame_init_plane_single_src(&frames[i].dst, dst,
+                                       mtl_hp_virt2iova(ctx->impl, dst));
       }
       if (!(ops->flags & ST20P_RX_FLAG_EXT_FRAME) &&
           st_frame_sanity_check(&frames[i].dst) < 0) {

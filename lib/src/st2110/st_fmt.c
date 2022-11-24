@@ -605,6 +605,19 @@ const char* st_frame_fmt_name(enum st_frame_fmt fmt) {
   return "unknown";
 }
 
+enum st_frame_fmt st_frame_name_to_fmt(const char* name) {
+  int i;
+
+  for (i = 0; i < MTL_ARRAY_SIZE(st_frame_fmt_descs); i++) {
+    if (!strcmp(name, st_frame_fmt_descs[i].name)) {
+      return st_frame_fmt_descs[i].fmt;
+    }
+  }
+
+  err("%s, invalid name %s\n", __func__, name);
+  return ST_FRAME_FMT_MAX;
+}
+
 uint8_t st_frame_fmt_planes(enum st_frame_fmt fmt) {
   int i;
 
@@ -925,5 +938,22 @@ int st30_get_sample_rate(enum st30_sampling sampling) {
     default:
       err("%s, wrong sampling %d\n", __func__, sampling);
       return -EINVAL;
+  }
+}
+
+void st_frame_init_plane_single_src(struct st_frame* frame, void* addr, mtl_iova_t iova) {
+  uint8_t planes = st_frame_fmt_planes(frame->fmt);
+
+  for (uint8_t plane = 0; plane < planes; plane++) {
+    frame->linesize[plane] = st_frame_least_linesize(frame->fmt, frame->width, plane);
+    if (plane == 0) {
+      frame->addr[plane] = addr;
+      frame->iova[plane] = iova;
+    } else {
+      frame->addr[plane] =
+          frame->addr[plane - 1] + frame->linesize[plane - 1] * frame->height;
+      frame->iova[plane] =
+          frame->iova[plane - 1] + frame->linesize[plane - 1] * frame->height;
+    }
   }
 }

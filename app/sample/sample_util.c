@@ -30,6 +30,8 @@ enum sample_args_cmd {
   SAMPLE_ARG_HEIGHT,
   SAMPLE_ARG_SESSIONS_CNT,
   SAMPLE_ARG_EXT_FRAME,
+  SAMPLE_ARG_ST22_CODEC,
+  SAMPLE_ARG_ST22_FRAME_FMT,
   SAMPLE_ARG_MAX,
 };
 
@@ -48,16 +50,18 @@ static struct option sample_args_options[] = {
     {"dev_auto_start", no_argument, 0, SAMPLE_ARG_DEV_AUTO_START},
     {"dma_port", required_argument, 0, SAMPLE_ARG_DMA_PORT},
 
-    {"tx_video_url", required_argument, 0, SAMPLE_ARG_TX_VIDEO_URL},
-    {"rx_video_url", required_argument, 0, SAMPLE_ARG_TX_VIDEO_URL},
+    {"tx_url", required_argument, 0, SAMPLE_ARG_TX_VIDEO_URL},
+    {"rx_url", required_argument, 0, SAMPLE_ARG_RX_VIDEO_URL},
     {"logo_url", required_argument, 0, SAMPLE_ARG_LOGO_URL},
     {"width", required_argument, 0, SAMPLE_ARG_WIDTH},
     {"height", required_argument, 0, SAMPLE_ARG_HEIGHT},
     {"ext_frame", no_argument, 0, SAMPLE_ARG_EXT_FRAME},
+    {"st22_codec", required_argument, 0, SAMPLE_ARG_ST22_CODEC},
+    {"st22_fmt", required_argument, 0, SAMPLE_ARG_ST22_FRAME_FMT},
 
     {0, 0, 0, 0}};
 
-static int st_sample_parse_args(struct st_sample_context* ctx, int argc, char** argv) {
+static int _sample_parse_args(struct st_sample_context* ctx, int argc, char** argv) {
   int cmd = -1, optIdx = 0;
   struct mtl_init_params* p = &ctx->param;
 
@@ -138,6 +142,24 @@ static int st_sample_parse_args(struct st_sample_context* ctx, int argc, char** 
       case SAMPLE_ARG_EXT_FRAME:
         ctx->ext_frame = true;
         break;
+      case SAMPLE_ARG_ST22_CODEC:
+        if (!strcmp(optarg, "jpegxs"))
+          ctx->st22p_codec = ST22_CODEC_JPEGXS;
+        else if (!strcmp(optarg, "h264_cbr"))
+          ctx->st22p_codec = ST22_CODEC_H264_CBR;
+        else
+          err("%s, unknown codec %s\n", __func__, optarg);
+        break;
+      case SAMPLE_ARG_ST22_FRAME_FMT: {
+        enum st_frame_fmt fmt = st_frame_name_to_fmt(optarg);
+        if (fmt < ST_FRAME_FMT_MAX) {
+          ctx->st22p_input_fmt = fmt;
+          ctx->st22p_output_fmt = fmt;
+        } else {
+          err("%s, unknown fmt %s\n", __func__, optarg);
+        }
+        break;
+      }
       case '?':
         break;
       default:
@@ -202,8 +224,6 @@ int sample_parse_args(struct st_sample_context* ctx, int argc, char** argv, bool
   ctx->fmt = ST20_FMT_YUV_422_10BIT;
   ctx->input_fmt = ST_FRAME_FMT_YUV422RFC4175PG2BE10;
   ctx->output_fmt = ST_FRAME_FMT_YUV422RFC4175PG2BE10;
-  ctx->st22p_input_fmt = ST_FRAME_FMT_YUV422PLANAR10LE;
-  ctx->st22p_output_fmt = ST_FRAME_FMT_YUV422PLANAR10LE;
   ctx->udp_port = 20000;
   ctx->payload_type = 112;
   strncpy(ctx->tx_url, "test.yuv", sizeof(ctx->tx_url));
@@ -213,7 +233,11 @@ int sample_parse_args(struct st_sample_context* ctx, int argc, char** argv, bool
   ctx->logo_width = 200;
   ctx->logo_height = 200;
 
-  st_sample_parse_args(ctx, argc, argv);
+  ctx->st22p_input_fmt = ST_FRAME_FMT_YUV422PLANAR10LE;
+  ctx->st22p_output_fmt = ST_FRAME_FMT_YUV422PLANAR10LE;
+  ctx->st22p_codec = ST22_CODEC_JPEGXS;
+
+  _sample_parse_args(ctx, argc, argv);
 
   if (tx) p->tx_sessions_cnt_max = ctx->sessions;
   if (rx) p->rx_sessions_cnt_max = ctx->sessions;

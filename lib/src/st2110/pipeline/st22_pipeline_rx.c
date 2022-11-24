@@ -279,13 +279,20 @@ static int rx_st22p_init_dst_fbs(struct mtl_main_impl* impl, struct st22p_rx_ctx
       rx_st22p_uinit_dst_fbs(ctx);
       return -ENOMEM;
     }
-    frames[i].dst.addr[0] = dst;
     frames[i].dst.fmt = ops->output_fmt;
     frames[i].dst.buffer_size = dst_size;
     frames[i].dst.data_size = dst_size;
     frames[i].dst.width = ops->width;
     frames[i].dst.height = ops->height;
     frames[i].dst.priv = &frames[i];
+    /* init plane */
+    st_frame_init_plane_single_src(&frames[i].dst, dst, mtl_hp_virt2iova(ctx->impl, dst));
+    /* check plane */
+    if (st_frame_sanity_check(&frames[i].dst) < 0) {
+      err("%s(%d), dst frame %d sanity check fail\n", __func__, idx, i);
+      rx_st22p_uinit_dst_fbs(ctx);
+      return -EINVAL;
+    }
   }
 
   info("%s(%d), size %ld fmt %d with %u frames\n", __func__, idx, dst_size,

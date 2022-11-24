@@ -64,8 +64,6 @@ struct st_sample_context {
   enum st20_fmt fmt;
   enum st_frame_fmt input_fmt;
   enum st_frame_fmt output_fmt;
-  enum st_frame_fmt st22p_input_fmt;
-  enum st_frame_fmt st22p_output_fmt;
   uint16_t framebuff_cnt;
   uint16_t udp_port;
   uint8_t payload_type;
@@ -76,6 +74,10 @@ struct st_sample_context {
   char logo_url[ST_SAMPLE_URL_MAX_LEN];
   uint32_t logo_width;
   uint32_t logo_height;
+
+  enum st_frame_fmt st22p_input_fmt;
+  enum st_frame_fmt st22p_output_fmt;
+  enum st22_codec st22p_codec; /* st22 codec */
 
   bool exit;
 };

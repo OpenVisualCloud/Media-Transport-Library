@@ -132,7 +132,16 @@ static void tx_st22p_build_frame(struct tx_st22p_sample_ctx* s, struct st_frame*
   }
   uint8_t* src = s->frame_cursor;
 
-  mtl_memcpy(frame->addr[0], src, s->frame_size);
+  uint8_t planes = st_frame_fmt_planes(frame->fmt);
+  for (uint8_t plane = 0; plane < planes; plane++) {
+    size_t plane_sz = st_frame_plane_size(frame, plane);
+    dbg("%s(%d), src frame, plane %u size %lu addr %p\n", __func__, s->idx, plane,
+        plane_sz, frame->addr[plane]);
+    dbg("%s(%d), plane %u src addr %p\n", __func__, s->idx, plane, src);
+    mtl_memcpy(frame->addr[plane], src, plane_sz);
+    src += plane_sz;
+  }
+
   if (s->logo_buf) {
     st_draw_logo(frame, &s->logo_meta, 16, 16);
   }
@@ -200,7 +209,7 @@ int main(int argc, char** argv) {
 
     struct st22p_tx_ops ops_tx;
     memset(&ops_tx, 0, sizeof(ops_tx));
-    ops_tx.name = "st22p_test";
+    ops_tx.name = "st22p_sample";
     ops_tx.priv = app[i];  // app handle register to lib
     ops_tx.port.num_port = 1;
     memcpy(ops_tx.port.dip_addr[MTL_PORT_P], ctx.tx_dip_addr[MTL_PORT_P],
@@ -213,7 +222,7 @@ int main(int argc, char** argv) {
     ops_tx.fps = ctx.fps;
     ops_tx.input_fmt = ctx.st22p_input_fmt;
     ops_tx.pack_type = ST22_PACK_CODESTREAM;
-    ops_tx.codec = ST22_CODEC_JPEGXS;
+    ops_tx.codec = ctx.st22p_codec;
     ops_tx.device = ST_PLUGIN_DEVICE_AUTO;
     ops_tx.quality = ST22_QUALITY_MODE_QUALITY;
     ops_tx.codec_thread_cnt = 2;

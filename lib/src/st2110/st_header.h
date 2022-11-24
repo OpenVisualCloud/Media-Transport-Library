@@ -250,6 +250,7 @@ struct st22_tx_video_info {
 
   struct st22_boxes st22_boxes;
   int st22_total_pkts;
+  int st22_min_pkts;
 };
 
 struct st_vsync_info {
@@ -338,6 +339,7 @@ struct st_tx_video_session_impl {
   uint32_t st20_rtp_time;    /* keep track of rtp time */
   int st21_vrx_narrow;       /* pass criteria for narrow */
   int st21_vrx_wide;         /* pass criteria for wide */
+  int st20_min_pkts;
 
   struct st20_packet_group_info st20_pkt_info[ST20_PKT_TYPE_MAX];
   struct rte_mbuf* pad[ST_SESSION_PORT_MAX][ST20_PKT_TYPE_MAX];
