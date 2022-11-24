@@ -25,5 +25,6 @@ obs
 ### add MTL input source
 
 ## TODO
-### auto detect vfio-pci NIC ports
-### auto detect NIC numa to provide usable lcores
+### output plugin   -   high
+### auto detect vfio-pci NIC ports  -   middle
+### auto detect NIC numa to provide usable lcores   -   low

@@ -11,11 +11,15 @@ MODULE_EXPORT const char* obs_module_description(void) {
 }
 
 extern struct obs_source_info mtl_input;
+#if TODO_OUTPUT
 extern struct obs_output_info mtl_output;
+#endif
 
 bool obs_module_load(void) {
   obs_register_source(&mtl_input);
+#if TODO_OUTPUT
   obs_register_output(&mtl_output);
+#endif
 
   obs_data_t* obs_settings = obs_data_create();
 

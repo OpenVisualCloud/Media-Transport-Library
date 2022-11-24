@@ -4,6 +4,8 @@
 
 #include "linux-mtl.h"
 
+#if TODO_OUTPUT
+
 #define MTL_TX_SESSION(voidptr) struct mtl_tx_session* s = voidptr;
 
 /**
@@ -246,3 +248,5 @@ struct obs_output_info mtl_output = {
     .get_defaults = mtl_output_defaults,
     .get_properties = mtl_output_properties,
 };
+
+#endif
