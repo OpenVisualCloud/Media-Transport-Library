@@ -5,7 +5,7 @@ obs source plguin for MTL
 ### build MTL library
 refer to: [build guide](../../doc/build.md)
 
-### build & install obs-studio to /usr/local/
+### build & install obs-studio
 refer to: https://obsproject.com/wiki/build-instructions-for-linux
 
 ### build linux-mtl
