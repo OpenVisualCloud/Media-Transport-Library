@@ -17,7 +17,8 @@ struct st_ext_frame {
   void* addr[ST_MAX_PLANES];
   /** Each plane's IOVA of external frame */
   mtl_iova_t iova[ST_MAX_PLANES];
-  /** Each plane's linesize of external frame, leave as 0 if no line padding */
+  /** Each plane's linesize of external frame,
+   * if no padding, can be calculated from st_frame_least_linesize */
   size_t linesize[ST_MAX_PLANES];
   /** Buffer size of external frame */
   size_t size;
@@ -91,7 +92,7 @@ rx_handle = st20p_rx_create(st, &ops_rx);
 
 use as the general API
 
-#### 2.3.2 dynamic frames usage - convert mode
+#### 2.3.2 dynamic frames - convert mode
 
 in ops, set the flag
 
@@ -117,7 +118,7 @@ use_frame(your_frame_handle);
 
 user should maintain the lifetime of frames
 
-#### 2.3.3 dynamic frames usage - no convert mode
+#### 2.3.3 dynamic frames - no convert mode
 
 (the same usage as raw video api 3.3.2)  
 implement and set query_ext_frame callback and set incomplete frame flag
@@ -161,7 +162,7 @@ struct st20_ext_frame {
 
 ### 3.2 st20_tx usages
 
-#### 3.2.1 dynamic frames usage
+#### 3.2.1 dynamic frames
 
 in ops, set the flag
 
@@ -179,7 +180,7 @@ st20_tx_set_ext_frame(s->handle, idx, &ext_frame);
 
 ### 3.3 st20_rx usages
 
-#### 3.3.1 dedicated frames usage
+#### 3.3.1 dedicated frames
 
 set the ext_frames array in ops
 
@@ -197,7 +198,7 @@ rx_handle = st20_rx_creat(st, &ops_rx);
 
 use as the general API
 
-#### 3.3.2 dynamic frames usage
+#### 3.3.2 dynamic frames
 
 implement and set query_ext_frame callback and set incomplete frame flag
 
