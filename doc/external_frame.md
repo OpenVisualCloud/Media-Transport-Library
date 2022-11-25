@@ -32,42 +32,40 @@ struct st_ext_frame {
 
 in ops, set the flag
 
-    ```c
-    ops_tx.flags |= ST20P_TX_FLAG_EXT_FRAME;
-    ```
+```c
+ops_tx.flags |= ST20P_TX_FLAG_EXT_FRAME;
+```
 
 when sending a frame, get the frame and put with ext_frame info
 
-    ```c
-    frame = st20p_tx_get_frame(handle);
-    struct st_ext_frame ext_frame;
-    uint8_t planes = st_frame_fmt_planes(frame->fmt);
-    for(int i = 0; i < planes; i++) {
-        ext_frame.addr[i] = your_addr[i];
-        ext_frame.iova[i] = your_iova[i]; // must provide IOVA for no convert mode
-        ext_frame.linesize[i] = your_linesize[i];
-    }
-    ext_frame.size = your_frame_size;
-    ext_frame.opaque = your_frame_handle;
-    st20p_tx_put_ext_frame(handle, frame, &ext_frame);
-    ```
+```c
+frame = st20p_tx_get_frame(handle);
+struct st_ext_frame ext_frame;
+uint8_t planes = st_frame_fmt_planes(frame->fmt);
+for(int i = 0; i < planes; i++) {
+    ext_frame.addr[i] = your_addr[i];
+    ext_frame.iova[i] = your_iova[i]; // must provide IOVA for no convert mode
+    ext_frame.linesize[i] = your_linesize[i];
+}
+ext_frame.size = your_frame_size;
+ext_frame.opaque = your_frame_handle;
+st20p_tx_put_ext_frame(handle, frame, &ext_frame);
+```
 
 when the library finished handling the frame, it will notify by callback, you can return the frame buffer here
 
-    ```c
-    // set the callback in ops
-    ops_tx.notify_frame_done = tx_st20p_frame_done;
-    // ...
-    // implement the callback
-    static int tx_st20p_frame_done(void* priv, struct st_frame* frame) {
-        ctx* s = priv;
-
-        your_frame_handle = frame->opaque;
-        your_frame_free(your_frame_handle);
-
-        return 0;
-    }
-    ```
+```c
+// set the callback in ops
+ops_tx.notify_frame_done = tx_st20p_frame_done;
+// ...
+// implement the callback
+static int tx_st20p_frame_done(void* priv, struct st_frame*frame) {
+    ctx* s = priv;
+    your_frame_handle = frame->opaque;
+    your_frame_free(your_frame_handle);
+    return 0;
+}
+```
 
 ### 2.3 st20p_rx usages
 
@@ -75,21 +73,21 @@ when the library finished handling the frame, it will notify by callback, you ca
 
 set the ext_frames array in ops
 
-    ```c
-    struct st_ext_frame ext_frames[fb_cnt];
-    for (int i = 0; i < fb_cnt; ++i) {
-        uint8_t planes = st_frame_fmt_planes(frame->fmt);
-        for(int plane = 0; plane < planes; plane++) {
-            ext_frames[i].addr[plane] = your_addr[plane];
-            ext_frames[i].iova[plane] = your_iova[plane]; // must provide IOVA for no convert mode
-            ext_frames[i].linesize[plane] = your_linesize[plane];
-        }
-        ext_frames[i].size = your_frame_size;
-        ext_frames[i].opaque = your_frame_handle;
+```c
+struct st_ext_frame ext_frames[fb_cnt];
+for (int i = 0; i < fb_cnt; ++i) {
+    uint8_t planes = st_frame_fmt_planes(frame->fmt);
+    for(int plane = 0; plane < planes; plane++) {
+        ext_frames[i].addr[plane] = your_addr[plane];
+        ext_frames[i].iova[plane] = your_iova[plane]; // must provide IOVA for no convert mode
+        ext_frames[i].linesize[plane] = your_linesize[plane];
     }
-    ops_rx.ext_frames = ext_frames;
-    rx_handle = st20p_rx_create(st, &ops_rx);
-    ```
+    ext_frames[i].size = your_frame_size;
+    ext_frames[i].opaque = your_frame_handle;
+}
+ops_rx.ext_frames = ext_frames;
+rx_handle = st20p_rx_create(st, &ops_rx);
+```
 
 use as the general API
 
@@ -97,9 +95,9 @@ use as the general API
 
 in ops, set the flag
 
-    ```c
-    ops_rx.flags |= ST20P_RX_FLAG_EXT_FRAME;
-    ```
+```c
+ops_rx.flags |= ST20P_RX_FLAG_EXT_FRAME;
+```
 
 when receiving a frame, get the frame with ext_frame info and put the frame
 
@@ -110,24 +108,22 @@ user should maintain the lifetime of frames
 (the same usage as raw video api 3.3.2)  
 implement and set query_ext_frame callback and set incomplete frame flag
 
-    ```c
-    // set the callback in ops
-    // set the incomplete frame flag
-    ops_rx.query_ext_frame = rx_query_ext_frame;
-    ops_rx.flags |= ST20P_RX_FLAG_RECEIVE_INCOMPLETE_FRAME;
-    //...
-    //implement the callback
-    static int rx_query_ext_frame(void* priv, st20_ext_frame* ext_frame, struct st20_rx_frame_meta* meta) {
-        ctx* s = (ctx*)priv;
-
-        ext_frame->buf_addr = your_addr[0];
-        ext_frame->buf_iova = your_iova[0];
-        ext_frame->buf_len = your_frame_size;
-        ext_frame->opaque = your_frame_handle;
-
-        return 0;
-    }
-    ```
+```c
+// set the callback in ops
+// set the incomplete frame flag
+ops_rx.query_ext_frame = rx_query_ext_frame;
+ops_rx.flags |= ST20P_RX_FLAG_RECEIVE_INCOMPLETE_FRAME;
+//...
+//implement the callback
+static int rx_query_ext_frame(void* priv, st20_ext_frame*ext_frame, struct st20_rx_frame_meta* meta) {
+    ctx* s = (ctx*)priv;
+    ext_frame->buf_addr = your_addr[0];
+    ext_frame->buf_iova = your_iova[0];
+    ext_frame->buf_len = your_frame_size;
+    ext_frame->opaque = your_frame_handle;
+    return 0;
+}
+```
 
 use as the general API, user should maintain the lifetime of frames
 
@@ -155,17 +151,17 @@ struct st20_ext_frame {
 
 in ops, set the flag
 
-    ```c
-    ops_rx.flags |= ST20_TX_FLAG_EXT_FRAME;
-    ```
+```c
+ops_rx.flags |=ST20_TX_FLAG_EXT_FRAME;
+```
 
 explcitly set the ext frame, and in query_next_frame callback, provide the index
 
-    ```c
-    st20_tx_set_ext_frame(s->handle, idx, &ext_frame);
-    // in query_next_frame
-    *next_frame_idx = idx;
-    ```
+```c
+st20_tx_set_ext_fram(s->handle, idx, &ext_frame);
+// in query_next_frame
+*next_frame_idx = idx;
+```
 
 ### 3.3 st20_rx usages
 
@@ -173,17 +169,17 @@ explcitly set the ext frame, and in query_next_frame callback, provide the index
 
 set the ext_frames array in ops
 
-    ```c
-    struct st20_ext_frame ext_frames[fb_cnt];
-    for (int i = 0; i < fb_cnt; ++i) {
-        ext_frames[i].buf_addr = your_addr;
-        ext_frames[i].buf_iova = your_iova;
-        ext_frames[i].buf_len = your_frame_size;
-        ext_frames[i].opaque = your_frame_handle;
-    }
-    ops_rx.ext_frames = ext_frames;
-    rx_handle = st20_rx_create(st, &ops_rx);
-    ```
+```c
+struct st20_ext_frameext_frames[fb_cnt];
+for (int i = 0; i < fb_cnt;++i) {
+    ext_frames[i].buf_addr = your_addr;
+    ext_frames[i].buf_iova = your_iova;
+    ext_frames[i].buf_len = your_frame_size;
+    ext_frames[i].opaque = your_frame_handle;
+}
+ops_rx.ext_frames =ext_frames;
+rx_handle = st20_rx_creat(st, &ops_rx);
+```
 
 use as the general API
 
@@ -191,23 +187,21 @@ use as the general API
 
 implement and set query_ext_frame callback and set incomplete frame flag
 
-    ```c
-    // set the callback in ops
-    // set the incomplete frame flag
-    ops_rx.query_ext_frame = rx_query_ext_frame;
-    ops_rx.flags |= ST20_RX_FLAG_RECEIVE_INCOMPLETE_FRAME;
-    //...
-    //implement the callback
-    static int rx_query_ext_frame(void* priv, st20_ext_frame* ext_frame, struct st20_rx_frame_meta* meta) {
-        ctx* s = (ctx*)priv;
-
-        ext_frame->buf_addr = your_addr;
-        ext_frame->buf_iova = your_iova;
-        ext_frame->buf_len = your_frame_size;
-        ext_frame->opaque = your_frame_handle;
-
-        return 0;
-    }
-    ```
+```c
+// set the callback in ops
+// set the incomplete frameflag
+ops_rx.query_ext_frame =rx_query_ext_frame;
+ops_rx.flags |=ST20_RX_FLAG_RECEIVE_INCOMPLEE_FRAME;
+//...
+//implement the callback
+static int rx_query_ext_fram(void* priv, st20_ext_frame*ext_frame, structst20_rx_frame_meta* meta) {
+    ctx* s = (ctx*)priv;
+    ext_frame->buf_addr = your_addr;
+    ext_frame->buf_iova = your_iova;
+    ext_frame->buf_len = your_frame_size;
+    ext_frame->opaque = your_frame_handle;
+    return 0;
+}
+```
 
 use as the general API, user should maintain the lifetime of frames
