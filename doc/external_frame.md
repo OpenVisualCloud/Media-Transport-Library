@@ -39,7 +39,7 @@ ops_tx.flags |= ST20P_TX_FLAG_EXT_FRAME;
 when sending a frame, get the frame and put with ext_frame info
 
 ```c
-frame = st20p_tx_get_frame(handle);
+frame = st20p_tx_get_frame(tx_handle);
 struct st_ext_frame ext_frame;
 uint8_t planes = st_frame_fmt_planes(frame->fmt);
 for(int i = 0; i < planes; i++) {
@@ -49,7 +49,7 @@ for(int i = 0; i < planes; i++) {
 }
 ext_frame.size = your_frame_size;
 ext_frame.opaque = your_frame_handle;
-st20p_tx_put_ext_frame(handle, frame, &ext_frame);
+st20p_tx_put_ext_frame(tx_handle, frame, &ext_frame);
 ```
 
 when the library finished handling the frame, it will notify by callback, you can return the frame buffer here
@@ -100,6 +100,20 @@ ops_rx.flags |= ST20P_RX_FLAG_EXT_FRAME;
 ```
 
 when receiving a frame, get the frame with ext_frame info and put the frame
+
+```c
+struct st_ext_frame ext_frame;
+uint8_t planes = st_frame_fmt_planes(frame->fmt);
+for(int i = 0; i < planes; i++) {
+    ext_frame.addr[i] = your_addr[i];
+    ext_frame.linesize[i] = your_linesize[i];
+}
+ext_frame.size = your_frame_size;
+ext_frame.opaque = your_frame_handle;
+frame = st20p_rx_get_ext_frame(rx_handle, &ext_frame);
+st20p_rx_put_frame(rx_handle, frame); // you can put it right away
+use_frame(your_frame_handle);
+```
 
 user should maintain the lifetime of frames
 
@@ -158,7 +172,7 @@ ops_rx.flags |=ST20_TX_FLAG_EXT_FRAME;
 explcitly set the ext frame, and in query_next_frame callback, provide the index
 
 ```c
-st20_tx_set_ext_fram(s->handle, idx, &ext_frame);
+st20_tx_set_ext_frame(s->handle, idx, &ext_frame);
 // in query_next_frame
 *next_frame_idx = idx;
 ```
@@ -194,7 +208,7 @@ ops_rx.query_ext_frame =rx_query_ext_frame;
 ops_rx.flags |=ST20_RX_FLAG_RECEIVE_INCOMPLEE_FRAME;
 //...
 //implement the callback
-static int rx_query_ext_fram(void* priv, st20_ext_frame*ext_frame, structst20_rx_frame_meta* meta) {
+static int rx_query_ext_frame(void* priv, st20_ext_frame*ext_frame, structst20_rx_frame_meta* meta) {
     ctx* s = (ctx*)priv;
     ext_frame->buf_addr = your_addr;
     ext_frame->buf_iova = your_iova;
