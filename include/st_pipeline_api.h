@@ -224,7 +224,8 @@ struct st_ext_frame {
   void* addr[ST_MAX_PLANES];
   /** Each plane's IOVA of external frame */
   mtl_iova_t iova[ST_MAX_PLANES];
-  /** Each plane's linesize of external frame */
+  /** Each plane's linesize of external frame,
+   * if no padding, can be calculated from st_frame_least_linesize */
   size_t linesize[ST_MAX_PLANES];
   /** Buffer size of external frame */
   size_t size;
