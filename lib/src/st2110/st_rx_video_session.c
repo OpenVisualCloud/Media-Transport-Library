@@ -1388,6 +1388,7 @@ static int rv_dump_pcapng(struct mtl_main_impl* impl, struct st_rx_video_session
   int pcapng_mbuf_cnt = 0;
   ssize_t len;
   struct mt_interface* inf = mt_if(impl, mt_port_logic2phy(s->port_maps, s_port));
+  uint16_t queue_id = mt_dev_rx_queue_id(s->queue[s_port]);
 
   for (uint16_t i = 0; i < rv; i++) {
     struct rte_mbuf* mc;
@@ -1399,7 +1400,7 @@ static int rv_dump_pcapng(struct mtl_main_impl* impl, struct st_rx_video_session
       timestamp_cycle = rte_get_tsc_cycles();
       timestamp_ns = 0;
     }
-    mc = rte_pcapng_copy(s->port_id[s_port], s->queue_id[s_port], mbuf[i], s->pcapng_pool,
+    mc = rte_pcapng_copy(s->port_id[s_port], queue_id, mbuf[i], s->pcapng_pool,
                          ST_PKT_MAX_ETHER_BYTES, timestamp_cycle, timestamp_ns,
                          RTE_PCAPNG_DIRECTION_IN);
     if (mc == NULL) {
@@ -2494,9 +2495,8 @@ static int rv_tasklet(struct mtl_main_impl* impl, struct st_rx_video_session_imp
   }
 
   for (int s_port = 0; s_port < num_port; s_port++) {
-    if (!s->queue_active[s_port]) continue;
-    rv = rte_eth_rx_burst(s->port_id[s_port], s->queue_id[s_port], &mbuf[0],
-                          ST_RX_VIDEO_BURTS_SIZE);
+    if (!s->queue[s_port]) continue;
+    rv = mt_dev_rx_burst(s->queue[s_port], &mbuf[0], ST_RX_VIDEO_BURTS_SIZE);
     s->pri_nic_burst_cnt++;
     if (s->pri_nic_burst_cnt > ST_VIDEO_STAT_UPDATE_INTERVAL) {
       rte_atomic32_add(&s->nic_burst_cnt, s->pri_nic_burst_cnt);
@@ -2554,14 +2554,11 @@ static int rv_tasklet(struct mtl_main_impl* impl, struct st_rx_video_session_imp
 
 static int rv_uinit_hw(struct mtl_main_impl* impl, struct st_rx_video_session_impl* s) {
   int num_port = s->ops.num_port;
-  enum mtl_port port;
 
   for (int i = 0; i < num_port; i++) {
-    port = mt_port_logic2phy(s->port_maps, i);
-
-    if (s->queue_active[i]) {
-      mt_dev_free_rx_queue(impl, port, s->queue_id[i]);
-      s->queue_active[i] = false;
+    if (s->queue[i]) {
+      mt_dev_put_rx_queue(impl, s->queue[i]);
+      s->queue[i] = NULL;
     }
   }
 
@@ -2571,8 +2568,6 @@ static int rv_uinit_hw(struct mtl_main_impl* impl, struct st_rx_video_session_im
 static int rv_init_hw(struct mtl_main_impl* impl, struct st_rx_video_session_impl* s) {
   struct st20_rx_ops* ops = &s->ops;
   int idx = s->idx, num_port = ops->num_port;
-  int ret;
-  uint16_t queue;
   struct mt_rx_flow flow;
   enum mtl_port port;
 
@@ -2600,18 +2595,16 @@ static int rv_init_hw(struct mtl_main_impl* impl, struct st_rx_video_session_imp
 
     /* no flow for data path only */
     if (mt_pmd_is_kernel(impl, port) && (ops->flags & ST20_RX_FLAG_DATA_PATH_ONLY))
-      ret = mt_dev_request_rx_queue(impl, port, &queue, NULL);
+      s->queue[i] = mt_dev_get_rx_queue(impl, port, NULL);
     else
-      ret = mt_dev_request_rx_queue(impl, port, &queue, &flow);
-    if (ret < 0) {
+      s->queue[i] = mt_dev_get_rx_queue(impl, port, &flow);
+    if (!s->queue[i]) {
       rv_uinit_hw(impl, s);
-      return ret;
+      return -EIO;
     }
     s->port_id[i] = mt_port_id(impl, port);
-    s->queue_id[i] = queue;
-    s->queue_active[i] = true;
-    info("%s(%d), port(l:%d,p:%d), queue %d udp %d\n", __func__, idx, i, port, queue,
-         flow.dst_port);
+    info("%s(%d), port(l:%d,p:%d), queue %d udp %d\n", __func__, idx, i, port,
+         mt_dev_rx_queue_id(s->queue[i]), flow.dst_port);
   }
 
   return 0;
@@ -3751,7 +3744,7 @@ int st20_rx_get_queue_meta(st20_rx_handle handle, struct st_queue_meta* meta) {
       /* af_xdp pmd */
       meta->start_queue[i] = mt_start_queue(impl, port);
     }
-    meta->queue_id[i] = s->queue_id[i];
+    meta->queue_id[i] = mt_dev_rx_queue_id(s->queue[i]);
   }
 
   return 0;
@@ -4073,7 +4066,7 @@ int st22_rx_get_queue_meta(st22_rx_handle handle, struct st_queue_meta* meta) {
       /* af_xdp pmd */
       meta->start_queue[i] = mt_start_queue(impl, port);
     }
-    meta->queue_id[i] = s->queue_id[i];
+    meta->queue_id[i] = mt_dev_rx_queue_id(s->queue[i]);
   }
 
   return 0;

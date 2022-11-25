@@ -59,7 +59,7 @@ static int arp_receive_request(struct mtl_main_impl* impl, struct rte_arp_hdr* r
   /* send arp reply packet */
   uint16_t send = mt_dev_tx_sys_queue_burst(impl, port, &rpl_pkt, 1);
   if (send < 1) {
-    err_once("%s(%d), rte_eth_tx_burst fail\n", __func__, port);
+    err_once("%s(%d), tx fail\n", __func__, port);
     rte_pktmbuf_free(rpl_pkt);
   }
 
@@ -146,7 +146,7 @@ int mt_arp_cni_get_mac(struct mtl_main_impl* impl, struct rte_ether_addr* ea,
     rte_mbuf_refcnt_update(req_pkt, 1);
     tx = mt_dev_tx_sys_queue_burst(impl, port, &req_pkt, 1);
     if (tx < 1) {
-      err("%s, rte_eth_tx_burst fail\n", __func__);
+      err("%s, tx fail\n", __func__);
       rte_mbuf_refcnt_update(req_pkt, -1);
     }
 

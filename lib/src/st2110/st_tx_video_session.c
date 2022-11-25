@@ -188,8 +188,7 @@ static int tv_train_pacing(struct mtl_main_impl* impl, struct st_tx_video_sessio
   enum mtl_port port = mt_port_logic2phy(s->port_maps, s_port);
   struct rte_mbuf* pad = s->pad[s_port][ST20_PKT_TYPE_NORMAL];
   int idx = s->idx;
-  uint16_t port_id = s->port_id[s_port];
-  uint16_t queue_id = s->queue_id[s_port];
+  struct mt_tx_queue* queue = s->queue[s_port];
   unsigned int bulk = s->bulk;
   int pad_pkts, ret;
   int loop_cnt = 30;
@@ -216,7 +215,7 @@ static int tv_train_pacing(struct mtl_main_impl* impl, struct st_tx_video_sessio
   pad_pkts = s->st20_total_pkts * 100;
   for (int i = 0; i < pad_pkts; i++) {
     rte_mbuf_refcnt_update(pad, 1);
-    mt_tx_burst_busy(port_id, queue_id, &pad, 1);
+    mt_dev_tx_burst_busy(queue, &pad, 1);
   }
 
   /* training stage */
@@ -234,12 +233,12 @@ static int tv_train_pacing(struct mtl_main_impl* impl, struct st_tx_video_sessio
       int bulk_batch = pkts / bulk;
       for (int j = 0; j < bulk_batch; j++) {
         rte_mbuf_refcnt_update(pad, bulk);
-        mt_tx_burst_busy(port_id, queue_id, bulk_pad, bulk);
+        mt_dev_tx_burst_busy(queue, bulk_pad, bulk);
       }
       int remaining = pkts % bulk;
       for (int j = 0; j < remaining; j++) {
         rte_mbuf_refcnt_update(pad, 1);
-        mt_tx_burst_busy(port_id, queue_id, &pad, 1);
+        mt_dev_tx_burst_busy(queue, &pad, 1);
       }
     }
     uint64_t end = mt_get_tsc(impl);
@@ -1663,24 +1662,21 @@ static int tvs_tasklet_handler(void* priv) {
 }
 
 static int tv_uinit_hw(struct mtl_main_impl* impl, struct st_tx_video_session_impl* s) {
-  enum mtl_port port;
   int num_port = s->ops.num_port;
 
   for (int i = 0; i < num_port; i++) {
-    port = mt_port_logic2phy(s->port_maps, i);
-
     if (s->ring[i]) {
       mt_ring_dequeue_clean(s->ring[i]);
       rte_ring_free(s->ring[i]);
       s->ring[i] = NULL;
     }
 
-    if (s->queue_active[i]) {
+    if (s->queue[i]) {
       struct rte_mbuf* pad = s->pad[i][ST20_PKT_TYPE_NORMAL];
       /* flush all the pkts in the tx ring desc */
-      if (pad) mt_dev_flush_tx_queue(impl, port, s->queue_id[i], pad);
-      mt_dev_free_tx_queue(impl, port, s->queue_id[i]);
-      s->queue_active[i] = false;
+      if (pad) mt_dev_flush_tx_queue(impl, s->queue[i], pad);
+      mt_dev_put_tx_queue(impl, s->queue[i]);
+      s->queue[i] = NULL;
     }
 
     for (int j = 0; j < ST20_PKT_TYPE_MAX; j++) {
@@ -1700,25 +1696,23 @@ static int tv_init_hw(struct mtl_main_impl* impl, struct st_tx_video_sessions_mg
   struct rte_ring* ring;
   char ring_name[32];
   int mgr_idx = mgr->idx, idx = s->idx, num_port = s->ops.num_port;
-  int ret;
-  uint16_t queue = 0;
   uint16_t port_id;
   struct rte_mempool* pad_mempool;
   struct rte_mbuf* pad;
   enum mtl_port port;
+  uint16_t queue_id;
 
   for (int i = 0; i < num_port; i++) {
     port = mt_port_logic2phy(s->port_maps, i);
     port_id = mt_port_id(impl, port);
-
-    ret = mt_dev_request_tx_queue(impl, port, &queue, tv_rl_bps(s));
-    if (ret < 0) {
-      tv_uinit_hw(impl, s);
-      return ret;
-    }
-    s->queue_id[i] = queue;
-    s->queue_active[i] = true;
     s->port_id[i] = port_id;
+
+    s->queue[i] = mt_dev_get_tx_queue(impl, port, tv_rl_bps(s));
+    if (!s->queue[i]) {
+      tv_uinit_hw(impl, s);
+      return -EIO;
+    }
+    queue_id = mt_dev_tx_queue_id(s->queue[i]);
 
     snprintf(ring_name, 32, "TX-VIDEO-RING-M%d-R%d-P%d", mgr_idx, idx, i);
     flags = RING_F_SP_ENQ | RING_F_SC_DEQ; /* single-producer and single-consumer */
@@ -1731,7 +1725,7 @@ static int tv_init_hw(struct mtl_main_impl* impl, struct st_tx_video_sessions_mg
     }
     s->ring[i] = ring;
     info("%s(%d,%d), port(l:%d,p:%d), queue %d, count %u\n", __func__, mgr_idx, idx, i,
-         port, queue, count);
+         port, queue_id, count);
 
     if (mt_pmd_is_kernel(impl, port) && s->mbuf_mempool_reuse_rx[i]) {
       if (s->mbuf_mempool_hdr[i]) {
@@ -1742,7 +1736,7 @@ static int tv_init_hw(struct mtl_main_impl* impl, struct st_tx_video_sessions_mg
         if (mt_has_rx_mono_pool(impl))
           s->mbuf_mempool_hdr[i] = mt_get_rx_mempool(impl, port);
         else
-          s->mbuf_mempool_hdr[i] = mt_if(impl, port)->rx_queues[queue].mbuf_pool;
+          s->mbuf_mempool_hdr[i] = mt_if(impl, port)->rx_queues[queue_id].mbuf_pool;
         info("%s(%d,%d), reuse rx mempool(%p) for port %d\n", __func__, mgr_idx, idx,
              s->mbuf_mempool_hdr[i], i);
       }

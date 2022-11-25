@@ -273,8 +273,7 @@ struct st_tx_video_session_impl {
   struct rte_ring* ring[ST_SESSION_PORT_MAX];
   struct rte_ring* packet_ring; /* rtp ring */
   uint16_t port_id[ST_SESSION_PORT_MAX];
-  uint16_t queue_id[ST_SESSION_PORT_MAX];
-  uint16_t queue_active[ST_SESSION_PORT_MAX];
+  struct mt_tx_queue* queue[ST_SESSION_PORT_MAX];
   int idx; /* index for current tx_session */
   uint64_t advice_sleep_us;
 
@@ -579,8 +578,7 @@ struct st_rx_video_session_impl {
   uint64_t advice_sleep_us;
 
   enum mtl_port port_maps[ST_SESSION_PORT_MAX];
-  uint16_t queue_id[ST_SESSION_PORT_MAX]; /* queue id for the session */
-  bool queue_active[ST_SESSION_PORT_MAX];
+  struct mt_rx_queue* queue[ST_SESSION_PORT_MAX];
   uint16_t port_id[ST_SESSION_PORT_MAX];
   uint16_t st20_src_port[ST_SESSION_PORT_MAX]; /* udp port */
   uint16_t st20_dst_port[ST_SESSION_PORT_MAX]; /* udp port */
@@ -769,8 +767,7 @@ struct st_tx_audio_sessions_mgr {
   /* all audio sessions share same ring/queue */
   struct rte_ring* ring[MTL_PORT_MAX];
   uint16_t port_id[MTL_PORT_MAX];
-  uint16_t queue_id[MTL_PORT_MAX];
-  uint16_t queue_active[MTL_PORT_MAX];
+  struct mt_tx_queue* queue[MTL_PORT_MAX];
 
   struct st_tx_audio_session_impl* sessions[ST_MAX_TX_AUDIO_SESSIONS];
   /* protect session, spin(fast) lock as it call from tasklet aslo */
@@ -838,8 +835,7 @@ struct st_rx_audio_session_impl {
   char ops_name[ST_MAX_NAME_LEN];
 
   enum mtl_port port_maps[ST_SESSION_PORT_MAX];
-  uint16_t queue_id[ST_SESSION_PORT_MAX]; /* queue id for the session */
-  bool queue_active[ST_SESSION_PORT_MAX];
+  struct mt_rx_queue* queue[ST_SESSION_PORT_MAX];
   uint16_t port_id[ST_SESSION_PORT_MAX];
 
   uint16_t st30_src_port[ST_SESSION_PORT_MAX]; /* udp port */
@@ -956,8 +952,7 @@ struct st_tx_ancillary_sessions_mgr {
   /* all anc sessions share same ring/queue */
   struct rte_ring* ring[MTL_PORT_MAX];
   uint16_t port_id[MTL_PORT_MAX];
-  uint16_t queue_id[MTL_PORT_MAX];
-  uint16_t queue_active[MTL_PORT_MAX];
+  struct mt_tx_queue* queue[MTL_PORT_MAX];
 
   struct st_tx_ancillary_session_impl* sessions[ST_MAX_TX_ANC_SESSIONS];
   /* protect session, spin(fast) lock as it call from tasklet aslo */
@@ -977,8 +972,7 @@ struct st_rx_ancillary_session_impl {
   char ops_name[ST_MAX_NAME_LEN];
 
   enum mtl_port port_maps[ST_SESSION_PORT_MAX];
-  uint16_t queue_id[ST_SESSION_PORT_MAX]; /* queue id for the session */
-  bool queue_active[ST_SESSION_PORT_MAX];
+  struct mt_rx_queue* queue[ST_SESSION_PORT_MAX];
   uint16_t port_id[ST_SESSION_PORT_MAX];
   struct rte_ring* packet_ring;
 

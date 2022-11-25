@@ -796,9 +796,9 @@ static int tx_ancillary_sessions_mgr_uinit_hw(struct mtl_main_impl* impl,
       rte_ring_free(mgr->ring[i]);
       mgr->ring[i] = NULL;
     }
-    if (mgr->queue_active[i]) {
-      mt_dev_free_tx_queue(impl, i, mgr->queue_id[i]);
-      mgr->queue_active[i] = false;
+    if (mgr->queue[i]) {
+      mt_dev_put_tx_queue(impl, mgr->queue[i]);
+      mgr->queue[i] = NULL;
     }
   }
 
@@ -812,19 +812,15 @@ static int tx_ancillary_sessions_mgr_init_hw(struct mtl_main_impl* impl,
   struct rte_ring* ring;
   char ring_name[32];
   int mgr_idx = mgr->idx;
-  int ret;
-  uint16_t queue = 0;
 
   for (int i = 0; i < mt_num_ports(impl); i++) {
-    /* do we need quota for anc? */
-    ret = mt_dev_request_tx_queue(impl, i, &queue, 0);
-    if (ret < 0) {
-      tx_ancillary_sessions_mgr_uinit_hw(impl, mgr);
-      return ret;
-    }
-    mgr->queue_id[i] = queue;
-    mgr->queue_active[i] = true;
     mgr->port_id[i] = mt_port_id(impl, i);
+    /* do we need quota for anc? */
+    mgr->queue[i] = mt_dev_get_tx_queue(impl, i, 0);
+    if (!mgr->queue[i]) {
+      tx_ancillary_sessions_mgr_uinit_hw(impl, mgr);
+      return -EIO;
+    }
 
     snprintf(ring_name, 32, "TX-ANC-RING-M%d-P%d", mgr_idx, i);
     flags = RING_F_MP_HTS_ENQ | RING_F_SC_DEQ; /* multi-producer and single-consumer */
@@ -836,7 +832,8 @@ static int tx_ancillary_sessions_mgr_init_hw(struct mtl_main_impl* impl,
       return -ENOMEM;
     }
     mgr->ring[i] = ring;
-    info("%s(%d,%d), succ, queue %d\n", __func__, mgr_idx, i, queue);
+    info("%s(%d,%d), succ, queue %d\n", __func__, mgr_idx, i,
+         mt_dev_tx_queue_id(mgr->queue[i]));
   }
 
   return 0;

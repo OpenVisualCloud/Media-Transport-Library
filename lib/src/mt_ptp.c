@@ -307,7 +307,7 @@ static void ptp_delay_req_task(struct mt_ptp_impl* ptp) {
   uint16_t tx = mt_dev_tx_sys_queue_burst(ptp->impl, port, &m, 1);
   if (tx < 1) {
     rte_pktmbuf_free(m);
-    err("%s(%d), rte_eth_tx_burst fail\n", __func__, port);
+    err("%s(%d), tx fail\n", __func__, port);
     return;
   }
 
@@ -625,12 +625,11 @@ static int ptp_init(struct mtl_main_impl* impl, struct mt_ptp_impl* ptp,
   rte_memcpy(flow.sip_addr, mt_sip_addr(impl, port), MTL_IP_ADDR_LEN);
   flow.port_flow = false;
   flow.dst_port = MT_PTP_UDP_GEN_PORT;
-  ret = mt_dev_request_rx_queue(impl, port, &ptp->rx_queue_id, &flow);
+  ptp->rx_queue = mt_dev_get_rx_queue(impl, port, &flow);
   if (ret < 0) {
-    err("%s(%d), ptp_rx_q create fail\n", __func__, port);
+    err("%s(%d), ptp rx q create fail\n", __func__, port);
     return ret;
   }
-  ptp->rx_queue_active = true;
 
   /* join mcast */
   ret = mt_mcast_join(impl, mt_ip_to_u32(ptp->mcast_group_addr), port);
@@ -640,8 +639,8 @@ static int ptp_init(struct mtl_main_impl* impl, struct mt_ptp_impl* ptp,
   }
   mt_mcast_l2_join(impl, &ptp_l2_multicast_eaddr, port);
 
-  info("%s(%d), rx queue %d, sip: %d.%d.%d.%d\n", __func__, port, ptp->rx_queue_id, ip[0],
-       ip[1], ip[2], ip[3]);
+  info("%s(%d), rx queue %d, sip: %d.%d.%d.%d\n", __func__, port,
+       mt_dev_rx_queue_id(ptp->rx_queue), ip[0], ip[1], ip[2], ip[3]);
   return 0;
 }
 
@@ -660,9 +659,9 @@ static int ptp_uinit(struct mtl_main_impl* impl, struct mt_ptp_impl* ptp) {
   mt_mcast_l2_leave(impl, &ptp_l2_multicast_eaddr, port);
   mt_mcast_leave(impl, mt_ip_to_u32(ptp->mcast_group_addr), port);
 
-  if (ptp->rx_queue_active) {
-    mt_dev_free_rx_queue(impl, port, ptp->rx_queue_id);
-    ptp->rx_queue_active = false;
+  if (ptp->rx_queue) {
+    mt_dev_put_rx_queue(impl, ptp->rx_queue);
+    ptp->rx_queue = NULL;
   }
 
   info("%s(%d), succ\n", __func__, port);
