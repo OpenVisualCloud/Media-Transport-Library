@@ -488,6 +488,8 @@ size_t st_frame_size(enum st_frame_fmt fmt, uint32_t width, uint32_t height) {
 }
 
 int st_frame_sanity_check(struct st_frame* frame) {
+  RTE_BUILD_BUG_ON(ST_FRAME_FMT_MAX > 64);
+
   int planes = st_frame_fmt_planes(frame->fmt);
   if (planes == 0) {
     err("%s, invalid frame fmt %d\n", __func__, frame->fmt);

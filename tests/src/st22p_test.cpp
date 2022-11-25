@@ -369,66 +369,6 @@ TEST(St22p, plugin_register_fail) {
                        false);
 }
 
-static void frame_size_test() {
-  uint32_t w = 1920;
-  uint32_t h = 1080;
-  size_t size;
-
-  size = st_frame_size(ST_FRAME_FMT_YUV422PLANAR10LE, w, h);
-  EXPECT_GT(size, 0);
-  size = st_frame_size(ST_FRAME_FMT_V210, w, h);
-  EXPECT_GT(size, 0);
-  size = st_frame_size(ST_FRAME_FMT_YUV422PLANAR8, w, h);
-  EXPECT_GT(size, 0);
-  size = st_frame_size(ST_FRAME_FMT_UYVY, w, h);
-  EXPECT_GT(size, 0);
-  size = st_frame_size(ST_FRAME_FMT_YUV422RFC4175PG2BE10, w, h);
-  EXPECT_GT(size, 0);
-
-  size = st_frame_size(ST_FRAME_FMT_ARGB, w, h);
-  EXPECT_GT(size, 0);
-  size = st_frame_size(ST_FRAME_FMT_BGRA, w, h);
-  EXPECT_GT(size, 0);
-  size = st_frame_size(ST_FRAME_FMT_RGB8, w, h);
-  EXPECT_GT(size, 0);
-
-  size = st_frame_size(ST_FRAME_FMT_MAX, w, h);
-  EXPECT_EQ(size, 0);
-}
-
-static void frame_name_test() {
-  int result;
-  const char* fail = "unknown";
-
-  result = strcmp(fail, st_frame_fmt_name(ST_FRAME_FMT_YUV422PLANAR10LE));
-  EXPECT_NE(result, 0);
-  result = strcmp(fail, st_frame_fmt_name(ST_FRAME_FMT_V210));
-  EXPECT_NE(result, 0);
-  result = strcmp(fail, st_frame_fmt_name(ST_FRAME_FMT_YUV422PLANAR8));
-  EXPECT_NE(result, 0);
-  result = strcmp(fail, st_frame_fmt_name(ST_FRAME_FMT_UYVY));
-  EXPECT_NE(result, 0);
-  result = strcmp(fail, st_frame_fmt_name(ST_FRAME_FMT_YUV422RFC4175PG2BE10));
-  EXPECT_NE(result, 0);
-
-  result = strcmp(fail, st_frame_fmt_name(ST_FRAME_FMT_ARGB));
-  EXPECT_NE(result, 0);
-  result = strcmp(fail, st_frame_fmt_name(ST_FRAME_FMT_BGRA));
-  EXPECT_NE(result, 0);
-  result = strcmp(fail, st_frame_fmt_name(ST_FRAME_FMT_RGB8));
-  EXPECT_NE(result, 0);
-
-  result = strcmp(fail, st_frame_fmt_name(ST_FRAME_FMT_MAX));
-  EXPECT_EQ(result, 0);
-
-  EXPECT_EQ(st_frame_name_to_fmt("YUV422PLANAR10LE"), ST_FRAME_FMT_YUV422PLANAR10LE);
-  EXPECT_EQ(st_frame_name_to_fmt("UYVY"), ST_FRAME_FMT_UYVY);
-  EXPECT_EQ(st_frame_name_to_fmt("UNKNOWN"), ST_FRAME_FMT_MAX);
-}
-
-TEST(St22p, frame_size) { frame_size_test(); }
-TEST(St22p, frame_name) { frame_name_test(); }
-
 static void frame_draw_logo_test(enum st_frame_fmt fmt, uint32_t w, uint32_t h,
                                  uint32_t logo_w, uint32_t logo_h, uint32_t x, uint32_t y,
                                  bool expect) {

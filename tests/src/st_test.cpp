@@ -286,7 +286,7 @@ static void st20_frame_size_test() {
   EXPECT_EQ(size, expect_size);
 }
 
-TEST(Main, frame_size) { st20_frame_size_test(); }
+TEST(Main, st20_frame_size) { st20_frame_size_test(); }
 
 static void fmt_frame_equal_transport_test() {
   bool equal;
@@ -345,6 +345,92 @@ static void fmt_frame_to_transport_test() {
 }
 
 TEST(Main, fmt_to_transport) { fmt_frame_to_transport_test(); }
+
+static void frame_api_test() {
+  uint32_t w = 1920;
+  uint32_t h = 1080;
+  size_t size;
+  enum st_frame_fmt fmt;
+
+  /* yuv */
+  for (int i = ST_FRAME_FMT_YUV_START; i < ST_FRAME_FMT_YUV_END; i++) {
+    fmt = (enum st_frame_fmt)i;
+    size = st_frame_size(fmt, w, h);
+    EXPECT_GT(size, 0);
+    EXPECT_GT(st_frame_fmt_planes(fmt), 0);
+    EXPECT_GT(st_frame_least_linesize(fmt, w, 0), 0);
+  }
+  /* rgb */
+  for (int i = ST_FRAME_FMT_RGB_START; i < ST_FRAME_FMT_RGB_END; i++) {
+    fmt = (enum st_frame_fmt)i;
+    size = st_frame_size(fmt, w, h);
+    EXPECT_GT(size, 0);
+    EXPECT_GT(st_frame_fmt_planes(fmt), 0);
+    EXPECT_GT(st_frame_least_linesize(fmt, w, 0), 0);
+  }
+  /* codestream */
+  for (int i = ST_FRAME_FMT_CODESTREAM_START; i < ST_FRAME_FMT_CODESTREAM_END; i++) {
+    fmt = (enum st_frame_fmt)i;
+    size = st_frame_size(fmt, w, h);
+    EXPECT_EQ(size, 0);
+    EXPECT_EQ(st_frame_fmt_planes(fmt), 1);
+    EXPECT_EQ(st_frame_least_linesize(fmt, w, 0), 0);
+  }
+
+  /* invalid fmt */
+  size = st_frame_size(ST_FRAME_FMT_YUV_END, w, h);
+  EXPECT_EQ(size, 0);
+  size = st_frame_size(ST_FRAME_FMT_RGB_END, w, h);
+  EXPECT_EQ(size, 0);
+  size = st_frame_size(ST_FRAME_FMT_CODESTREAM_END, w, h);
+  EXPECT_EQ(size, 0);
+  size = st_frame_size(ST_FRAME_FMT_MAX, w, h);
+  EXPECT_EQ(size, 0);
+}
+
+static void frame_name_test() {
+  int result;
+  const char* fail = "unknown";
+  const char* name;
+  enum st_frame_fmt fmt;
+
+  /* yuv */
+  for (int i = ST_FRAME_FMT_YUV_START; i < ST_FRAME_FMT_YUV_END; i++) {
+    fmt = (enum st_frame_fmt)i;
+    name = st_frame_fmt_name(fmt);
+    EXPECT_NE(strcmp(fail, name), 0);
+    EXPECT_EQ(st_frame_name_to_fmt(name), fmt);
+  }
+  /* rgb */
+  for (int i = ST_FRAME_FMT_RGB_START; i < ST_FRAME_FMT_RGB_END; i++) {
+    fmt = (enum st_frame_fmt)i;
+    name = st_frame_fmt_name(fmt);
+    EXPECT_NE(strcmp(fail, name), 0);
+    EXPECT_EQ(st_frame_name_to_fmt(name), fmt);
+  }
+  /* codestream */
+  for (int i = ST_FRAME_FMT_CODESTREAM_START; i < ST_FRAME_FMT_CODESTREAM_END; i++) {
+    fmt = (enum st_frame_fmt)i;
+    name = st_frame_fmt_name(fmt);
+    EXPECT_NE(strcmp(fail, name), 0);
+    EXPECT_EQ(st_frame_name_to_fmt(name), fmt);
+  }
+
+  /* invalid fmt */
+  result = strcmp(fail, st_frame_fmt_name(ST_FRAME_FMT_YUV_END));
+  EXPECT_EQ(result, 0);
+  result = strcmp(fail, st_frame_fmt_name(ST_FRAME_FMT_RGB_END));
+  EXPECT_EQ(result, 0);
+  result = strcmp(fail, st_frame_fmt_name(ST_FRAME_FMT_CODESTREAM_END));
+  EXPECT_EQ(result, 0);
+  result = strcmp(fail, st_frame_fmt_name(ST_FRAME_FMT_MAX));
+  EXPECT_EQ(result, 0);
+  /* invalid name */
+  EXPECT_EQ(st_frame_name_to_fmt(fail), ST_FRAME_FMT_MAX);
+}
+
+TEST(Main, frame_api) { frame_api_test(); }
+TEST(Main, frame_name) { frame_name_test(); }
 
 static void size_page_align_test() {
   size_t pg_sz = 4096;

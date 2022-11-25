@@ -96,106 +96,115 @@ typedef int (*st_plugin_free_fn)(st_plugin_priv handle);
 
 /** Frame format */
 enum st_frame_fmt {
+  /** Start of yuv format list */
+  ST_FRAME_FMT_YUV_START = 0,
   /** YUV 422 planar 10bit little endian */
   ST_FRAME_FMT_YUV422PLANAR10LE = 0,
   /** YUV 422 packed, 3 samples on a 32-bit word, 10 bits per sample */
-  ST_FRAME_FMT_V210,
+  ST_FRAME_FMT_V210 = 1,
   /** YUV 422 packed, 16 bits per sample with least significant 6 paddings */
-  ST_FRAME_FMT_Y210,
+  ST_FRAME_FMT_Y210 = 2,
   /** YUV 422 planar 8bit */
-  ST_FRAME_FMT_YUV422PLANAR8,
+  ST_FRAME_FMT_YUV422PLANAR8 = 3,
   /** YUV 422 packed 8bit(aka ST20_FMT_YUV_422_8BIT) */
-  ST_FRAME_FMT_UYVY,
-  /**
-   * RFC4175 in ST2110(ST20_FMT_YUV_422_8BIT),
-   * two YUV 422 8 bit pixel groups on 4 bytes
-   */
-  ST_FRAME_FMT_YUV422PACKED8 = ST_FRAME_FMT_UYVY,
+  ST_FRAME_FMT_UYVY = 4,
   /**
    * RFC4175 in ST2110(ST20_FMT_YUV_422_10BIT),
    * two YUV 422 10 bit pixel groups on 5 bytes, big endian
    */
-  ST_FRAME_FMT_YUV422RFC4175PG2BE10,
-  /** one ARGB pixel per 32 bit word, 8 bits per sample */
-  ST_FRAME_FMT_ARGB = 8,
-  /** one BGRA pixel per 32 bit word, 8 bits per sample */
-  ST_FRAME_FMT_BGRA,
-  /** one RGB pixel per 24 bit word, 8 bits per sample(aka ST20_FMT_RGB_8BIT) */
-  ST_FRAME_FMT_RGB8,
+  ST_FRAME_FMT_YUV422RFC4175PG2BE10 = 5,
   /** YUV 422 planar 12bit little endian */
-  ST_FRAME_FMT_YUV422PLANAR12LE,
+  ST_FRAME_FMT_YUV422PLANAR12LE = 6,
   /**
    * RFC4175 in ST2110(ST20_FMT_YUV_422_12BIT),
    * two YUV 422 12 bit pixel groups on 6 bytes, big endian
    */
-  ST_FRAME_FMT_YUV422RFC4175PG2BE12,
+  ST_FRAME_FMT_YUV422RFC4175PG2BE12 = 7,
   /** YUV 444 planar 10bit little endian */
-  ST_FRAME_FMT_YUV444PLANAR10LE,
+  ST_FRAME_FMT_YUV444PLANAR10LE = 8,
   /**
    * RFC4175 in ST2110(ST20_FMT_YUV_444_10BIT),
    * four YUV 444 10 bit pixel groups on 15 bytes, big endian
    */
-  ST_FRAME_FMT_YUV444RFC4175PG4BE10,
+  ST_FRAME_FMT_YUV444RFC4175PG4BE10 = 9,
   /** YUV 444 planar 12bit little endian */
-  ST_FRAME_FMT_YUV444PLANAR12LE,
+  ST_FRAME_FMT_YUV444PLANAR12LE = 10,
   /**
    * RFC4175 in ST2110(ST20_FMT_YUV_444_12BIT),
    * two YUV 444 12 bit pixel groups on 9 bytes, big endian
    */
-  ST_FRAME_FMT_YUV444RFC4175PG2BE12,
+  ST_FRAME_FMT_YUV444RFC4175PG2BE12 = 11,
   /** Customized YUV 420 8bit, set transport format as ST20_FMT_YUV_420_8BIT.
    * This is used when user wants to directly transport none-RFC4175 formats like
    * I420/NV12. When this input/output format is set, the frame is identical to
    * transport frame without conversion. The frame should not have lines padding.
    */
-  ST_FRAME_FMT_YUV420CUSTOM8,
+  ST_FRAME_FMT_YUV420CUSTOM8 = 12,
   /** Customized YUV 422 8bit, set transport format as ST20_FMT_YUV_422_8BIT.
    * This is used when user wants to directly transport none-RFC4175 formats like
    * YUY2. When this input/output format is set, the frame is identical to
    * transport frame without conversion. The frame should not have lines padding.
    */
-  ST_FRAME_FMT_YUV422CUSTOM8,
+  ST_FRAME_FMT_YUV422CUSTOM8 = 13,
+  /** End of yuv format list, new yuv should be inserted before this */
+  ST_FRAME_FMT_YUV_END,
+
+  /** Start of rgb format list */
+  ST_FRAME_FMT_RGB_START = 32,
+  /** one ARGB pixel per 32 bit word, 8 bits per sample */
+  ST_FRAME_FMT_ARGB = 32,
+  /** one BGRA pixel per 32 bit word, 8 bits per sample */
+  ST_FRAME_FMT_BGRA = 33,
+  /** one RGB pixel per 24 bit word, 8 bits per sample(aka ST20_FMT_RGB_8BIT) */
+  ST_FRAME_FMT_RGB8 = 34,
   /** GBR planar 10bit little endian */
-  ST_FRAME_FMT_GBRPLANAR10LE,
+  ST_FRAME_FMT_GBRPLANAR10LE = 35,
   /**
    * RFC4175 in ST2110(ST20_FMT_RGB_10BIT),
    * four RGB 10 bit pixel groups on 15 bytes, big endian
    */
-  ST_FRAME_FMT_RGBRFC4175PG4BE10,
+  ST_FRAME_FMT_RGBRFC4175PG4BE10 = 36,
   /** GBR planar 12bit little endian */
-  ST_FRAME_FMT_GBRPLANAR12LE,
+  ST_FRAME_FMT_GBRPLANAR12LE = 37,
   /**
    * RFC4175 in ST2110(ST20_FMT_RGB_12BIT),
    * two RGB 12 bit pixel groups on 9 bytes, big endian
    */
-  ST_FRAME_FMT_RGBRFC4175PG2BE12,
+  ST_FRAME_FMT_RGBRFC4175PG2BE12 = 38,
+  /** End of rgb format list, new rgb should be inserted before this */
+  ST_FRAME_FMT_RGB_END,
+
+  /** Start of codestream format list */
+  ST_FRAME_FMT_CODESTREAM_START = 56,
   /** ST22 jpegxs codestream */
-  ST_FRAME_FMT_JPEGXS_CODESTREAM = 24,
+  ST_FRAME_FMT_JPEGXS_CODESTREAM = 56,
   /** ST22 h264 cbr codestream */
-  ST_FRAME_FMT_H264_CBR_CODESTREAM,
-  /** max value of this enum */
+  ST_FRAME_FMT_H264_CBR_CODESTREAM = 57,
+  /** End of codestream format list */
+  ST_FRAME_FMT_CODESTREAM_END,
+  /** max value(< sizeof(uint64_t)) of this enum */
   ST_FRAME_FMT_MAX,
 };
 
-/** ST format cap of ST_FRAME_FMT_YUV422PLANAR10LE, used in the jpegxs_plugin caps */
+/** ST format cap of ST_FRAME_FMT_YUV422PLANAR10LE */
 #define ST_FMT_CAP_YUV422PLANAR10LE (MTL_BIT64(ST_FRAME_FMT_YUV422PLANAR10LE))
-/** ST format cap of ST_FRAME_FMT_V210, used in the jpegxs_plugin caps */
+/** ST format cap of ST_FRAME_FMT_V210 */
 #define ST_FMT_CAP_V210 (MTL_BIT64(ST_FRAME_FMT_V210))
-/** ST format cap of ST_FRAME_FMT_YUV422PLANAR8, used in the jpegxs_plugin caps */
+/** ST format cap of ST_FRAME_FMT_YUV422PLANAR8 */
 #define ST_FMT_CAP_YUV422PLANAR8 (MTL_BIT64(ST_FRAME_FMT_YUV422PLANAR8))
-/** ST format cap of ST_FRAME_FMT_UYVY, used in the jpegxs_plugin caps */
+/** ST format cap of ST_FRAME_FMT_UYVY */
 #define ST_FMT_CAP_UYVY (MTL_BIT64(ST_FRAME_FMT_UYVY))
-/** ST format cap of ST_FRAME_FMT_YUV422RFC4175PG2BE10, used in the jpegxs_plugin caps */
+/** ST format cap of ST_FRAME_FMT_YUV422RFC4175PG2BE10 */
 #define ST_FMT_CAP_YUV422RFC4175PG2BE10 (MTL_BIT64(ST_FRAME_FMT_YUV422RFC4175PG2BE10))
 
-/** ST format cap of ST_FRAME_FMT_ARGB, used in the jpegxs_plugin caps */
+/** ST format cap of ST_FRAME_FMT_ARGB */
 #define ST_FMT_CAP_ARGB (MTL_BIT64(ST_FRAME_FMT_ARGB))
-/** ST format cap of ST_FRAME_FMT_ARGB, used in the jpegxs_plugin caps */
+/** ST format cap of ST_FRAME_FMT_ARGB */
 #define ST_FMT_CAP_BGRA (MTL_BIT64(ST_FRAME_FMT_BGRA))
-/** ST format cap of ST_FRAME_FMT_RGB8, used in the jpegxs_plugin caps */
+/** ST format cap of ST_FRAME_FMT_RGB8 */
 #define ST_FMT_CAP_RGB8 (MTL_BIT64(ST_FRAME_FMT_RGB8))
 
-/** ST format cap of ST_FRAME_FMT_JPEGXS_CODESTREAM, used in the jpegxs_plugin caps */
+/** ST format cap of ST_FRAME_FMT_JPEGXS_CODESTREAM, used in the st22_plugin caps */
 #define ST_FMT_CAP_JPEGXS_CODESTREAM (MTL_BIT64(ST_FRAME_FMT_JPEGXS_CODESTREAM))
 /** ST format cap of ST_FRAME_FMT_H264_CBR_CODESTREAM, used in the st22_plugin caps */
 #define ST_FMT_CAP_H264_CBR_CODESTREAM (MTL_BIT64(ST_FRAME_FMT_H264_CBR_CODESTREAM))
@@ -215,7 +224,7 @@ struct st_ext_frame {
   void* addr[ST_MAX_PLANES];
   /** Each plane's IOVA of external frame */
   mtl_iova_t iova[ST_MAX_PLANES];
-  /** Each plane's linesize of external frame, leave as 0 if no line padding */
+  /** Each plane's linesize of external frame */
   size_t linesize[ST_MAX_PLANES];
   /** Buffer size of external frame */
   size_t size;
@@ -1585,6 +1594,8 @@ int st_draw_logo(struct st_frame* frame, struct st_frame* logo, uint32_t x, uint
  *
  * @param frame
  *   The st_frame pointer.
+ * @param plane
+ *   The plane index.
  * @return
  *   size
  */
