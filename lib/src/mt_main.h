@@ -124,8 +124,7 @@ struct mt_ptp_impl {
   enum mtl_port port;
   uint16_t port_id;
 
-  uint16_t rx_queue_id;
-  bool rx_queue_active;
+  struct mt_rx_queue* rx_queue;
   struct rte_mempool* mbuf_pool;
 
   uint8_t mcast_group_addr[MTL_IP_ADDR_LEN]; /* 224.0.1.129 */
@@ -174,9 +173,8 @@ struct mt_ptp_impl {
 struct mt_cni_impl {
   bool used; /* if enable cni */
 
-  uint16_t rx_q_id[MTL_PORT_MAX]; /* cni rx queue id */
-  bool rx_q_active[MTL_PORT_MAX];
-  pthread_t tid; /* thread id for rx */
+  struct mt_rx_queue* rx_q[MTL_PORT_MAX]; /* cni rx queue */
+  pthread_t tid;                          /* thread id for rx */
   rte_atomic32_t stop_thread;
   bool lcore_tasklet;
   struct mt_sch_tasklet_impl* tasklet;
@@ -196,10 +194,8 @@ struct mt_cni_impl {
 #ifdef MTL_HAS_TAP
   pthread_t tap_bkg_tid; /* bkg thread id for tap */
   rte_atomic32_t stop_tap;
-  uint16_t tap_tx_q_id[MTL_PORT_MAX]; /* tap tx queue id */
-  bool tap_tx_q_active[MTL_PORT_MAX];
-  uint16_t tap_rx_q_id[MTL_PORT_MAX]; /* tap rx queue id */
-  bool tap_rx_q_active[MTL_PORT_MAX];
+  struct mt_tx_queue* tap_tx_q[MTL_PORT_MAX]; /* tap tx queue */
+  struct mt_rx_queue* tap_rx_q[MTL_PORT_MAX]; /* tap rx queue */
   int tap_rx_cnt[MTL_PORT_MAX];
   rte_atomic32_t tap_if_up[MTL_PORT_MAX];
   void* tap_context;
@@ -350,6 +346,8 @@ struct mt_rx_flow {
 };
 
 struct mt_rx_queue {
+  enum mtl_port port;
+  uint16_t port_id;
   uint16_t queue_id;
   bool active;
   struct rte_flow* flow;
@@ -361,6 +359,8 @@ struct mt_rx_queue {
 };
 
 struct mt_tx_queue {
+  enum mtl_port port;
+  uint16_t port_id;
   uint16_t queue_id;
   bool active;
   int rl_shapers_mapping; /* map to tx_rl_shapers */
@@ -395,8 +395,7 @@ struct mt_interface {
   pthread_mutex_t tx_queues_mutex; /* protect tx_queues */
 
   /* the shared tx sys queue */
-  uint16_t tx_sys_queue;
-  bool tx_sys_queue_active;
+  struct mt_tx_queue* tx_sys_queue;
   pthread_mutex_t tx_sys_queue_mutex; /* protect tx_sys_queue */
 
   /* rx queue resources */
@@ -859,16 +858,6 @@ static inline uint64_t mt_sch_zero_sleep_thresh_us(struct mtl_main_impl* impl) {
 static inline void mt_sleep_ms(unsigned int ms) { return rte_delay_us_sleep(ms * 1000); }
 
 static inline void mt_delay_us(unsigned int us) { return rte_delay_us_block(us); }
-
-static inline void mt_tx_burst_busy(uint16_t port_id, uint16_t queue_id,
-                                    struct rte_mbuf** tx_pkts, uint16_t nb_pkts) {
-  uint32_t sent = 0;
-
-  /* Send this vector with busy looping */
-  while (sent < nb_pkts) {
-    sent += rte_eth_tx_burst(port_id, queue_id, &tx_pkts[sent], nb_pkts - sent);
-  }
-}
 
 static inline void mt_free_mbufs(struct rte_mbuf** pkts, int num) {
   for (int i = 0; i < num; i++) {

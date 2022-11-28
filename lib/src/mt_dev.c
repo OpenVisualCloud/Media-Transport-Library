@@ -323,15 +323,14 @@ int dev_rx_runtime_queue_start(struct mtl_main_impl* impl, enum mtl_port port) {
 }
 
 /* flush all the old bufs in the rx queue already */
-static int dev_flush_rx_queue(struct mt_interface* inf, uint16_t queue) {
-  uint16_t port_id = inf->port_id;
+static int dev_flush_rx_queue(struct mt_interface* inf, struct mt_rx_queue* queue) {
   int mbuf_size = 128;
   int loop = inf->nb_rx_desc / mbuf_size;
   struct rte_mbuf* mbuf[mbuf_size];
   uint16_t rv;
 
   for (int i = 0; i < loop; i++) {
-    rv = rte_eth_rx_burst(port_id, queue, &mbuf[0], mbuf_size);
+    rv = mt_dev_rx_burst(queue, &mbuf[0], mbuf_size);
     if (rv) rte_pktmbuf_free_bulk(&mbuf[0], rv);
   }
 
@@ -1348,6 +1347,9 @@ static int dev_if_init_rx_queues(struct mtl_main_impl* impl, struct mt_interface
   if (!mt_has_rx_mono_pool(impl)) {
     for (uint16_t q = 0; q < inf->max_rx_queues; q++) {
       rx_queues[q].queue_id = q;
+      rx_queues[q].port = inf->port;
+      rx_queues[q].port_id = inf->port_id;
+
       /* Create mempool to hold the rx queue mbufs. */
       unsigned int mbuf_elements = inf->nb_rx_desc + 1024;
       char pool_name[ST_MAX_NAME_LEN];
@@ -1427,6 +1429,8 @@ static int dev_if_init_tx_queues(struct mtl_main_impl* impl, struct mt_interface
   }
 
   for (uint16_t q = 0; q < inf->max_tx_queues; q++) {
+    tx_queues[q].port = inf->port;
+    tx_queues[q].port_id = inf->port_id;
     tx_queues[q].queue_id = q;
     tx_queues[q].rl_shapers_mapping = -1;
   }
@@ -1482,20 +1486,20 @@ uint16_t mt_dev_tx_sys_queue_burst(struct mtl_main_impl* impl, enum mtl_port por
                                    struct rte_mbuf** tx_pkts, uint16_t nb_pkts) {
   struct mt_interface* inf = mt_if(impl, port);
 
-  if (!inf->tx_sys_queue_active) {
+  if (!inf->tx_sys_queue) {
     err("%s(%d), tx sys queue not active\n", __func__, port);
     return 0;
   }
 
   uint16_t tx;
   mt_pthread_mutex_lock(&inf->tx_sys_queue_mutex);
-  tx = rte_eth_tx_burst(inf->port_id, inf->tx_sys_queue, tx_pkts, nb_pkts);
+  tx = mt_dev_tx_burst(inf->tx_sys_queue, tx_pkts, nb_pkts);
   mt_pthread_mutex_unlock(&inf->tx_sys_queue_mutex);
   return tx;
 }
 
-int mt_dev_request_tx_queue(struct mtl_main_impl* impl, enum mtl_port port,
-                            uint16_t* queue_id, uint64_t bytes_per_sec) {
+struct mt_tx_queue* mt_dev_get_tx_queue(struct mtl_main_impl* impl, enum mtl_port port,
+                                        uint64_t bytes_per_sec) {
   struct mt_interface* inf = mt_if(impl, port);
   uint16_t q;
   struct mt_tx_queue* tx_queue;
@@ -1514,23 +1518,22 @@ int mt_dev_request_tx_queue(struct mtl_main_impl* impl, enum mtl_port port,
       }
       tx_queue->bps = bytes_per_sec;
       tx_queue->active = true;
-      *queue_id = q;
       mt_pthread_mutex_unlock(&inf->tx_queues_mutex);
       if (inf->tx_pacing_way == ST21_TX_PACING_WAY_RL)
         info("%s(%d), q %d with speed %" PRIu64 "\n", __func__, port, q, bytes_per_sec);
       else
         info("%s(%d), q %d without rl\n", __func__, port, q);
-      return 0;
+      return tx_queue;
     }
   }
   mt_pthread_mutex_unlock(&inf->tx_queues_mutex);
 
   err("%s(%d), fail to find free tx queue\n", __func__, port);
-  return -ENOMEM;
+  return NULL;
 }
 
-int mt_dev_request_rx_queue(struct mtl_main_impl* impl, enum mtl_port port,
-                            uint16_t* queue_id, struct mt_rx_flow* flow) {
+struct mt_rx_queue* mt_dev_get_rx_queue(struct mtl_main_impl* impl, enum mtl_port port,
+                                        struct mt_rx_flow* flow) {
   struct mt_interface* inf = mt_if(impl, port);
   uint16_t q;
   int ret;
@@ -1549,7 +1552,7 @@ int mt_dev_request_rx_queue(struct mtl_main_impl* impl, enum mtl_port port,
         if (ret < 0) {
           err("%s(%d), hdrs callback fail %d for queue %d\n", __func__, port, ret, q);
           mt_pthread_mutex_unlock(&inf->rx_queues_mutex);
-          return -EIO;
+          return NULL;
         }
       }
 #endif
@@ -1567,7 +1570,7 @@ int mt_dev_request_rx_queue(struct mtl_main_impl* impl, enum mtl_port port,
         if (ret < 0) {
           err("%s(%d), socket add flow fail for queue %d\n", __func__, port, q);
           mt_pthread_mutex_unlock(&inf->rx_queues_mutex);
-          return -EIO;
+          return NULL;
         }
       } else {
         struct rte_flow* r_flow;
@@ -1576,7 +1579,7 @@ int mt_dev_request_rx_queue(struct mtl_main_impl* impl, enum mtl_port port,
         if (!r_flow) {
           err("%s(%d), create flow fail for queue %d\n", __func__, port, q);
           mt_pthread_mutex_unlock(&inf->rx_queues_mutex);
-          return -EIO;
+          return NULL;
         }
 
         rx_queue->flow = r_flow;
@@ -1589,39 +1592,27 @@ int mt_dev_request_rx_queue(struct mtl_main_impl* impl, enum mtl_port port,
       if (ret < 0) {
         err("%s(%d), start runtime rx queue %d fail %d\n", __func__, port, q, ret);
         mt_pthread_mutex_unlock(&inf->rx_queues_mutex);
-        return -EIO;
+        return NULL;
       }
     }
     rx_queue->active = true;
     mt_pthread_mutex_unlock(&inf->rx_queues_mutex);
 
-    dev_flush_rx_queue(inf, q);
-    *queue_id = q;
+    dev_flush_rx_queue(inf, rx_queue);
     info("%s(%d), q %d\n", __func__, port, q);
-    return 0;
+    return rx_queue;
   }
   mt_pthread_mutex_unlock(&inf->rx_queues_mutex);
 
   err("%s(%d), fail to find free rx queue for %s\n", __func__, port,
       flow && flow->hdr_split ? "hdr_split" : "normal");
-  return -ENOMEM;
+  return NULL;
 }
 
-int mt_dev_flush_tx_queue(struct mtl_main_impl* impl, enum mtl_port port,
-                          uint16_t queue_id, struct rte_mbuf* pad) {
-  struct mt_interface* inf = mt_if(impl, port);
-  struct mt_tx_queue* tx_queue;
-
-  if (queue_id >= inf->max_tx_queues) {
-    err("%s(%d), invalid queue %d\n", __func__, port, queue_id);
-    return -EIO;
-  }
-
-  tx_queue = &inf->tx_queues[queue_id];
-  if (!tx_queue->active) {
-    err("%s(%d), queue %d is not allocated\n", __func__, port, queue_id);
-    return -EIO;
-  }
+int mt_dev_flush_tx_queue(struct mtl_main_impl* impl, struct mt_tx_queue* queue,
+                          struct rte_mbuf* pad) {
+  enum mtl_port port = queue->port;
+  uint16_t queue_id = queue->queue_id;
 
   int burst_pkts;
   if (mt_pmd_is_af_xdp(impl, port)) {
@@ -1635,16 +1626,17 @@ int mt_dev_flush_tx_queue(struct mtl_main_impl* impl, enum mtl_port port,
   info("%s(%d), queue %u burst_pkts %d\n", __func__, port, queue_id, burst_pkts);
   for (int i = 0; i < burst_pkts; i++) {
     rte_mbuf_refcnt_update(pad, 1);
-    mt_tx_burst_busy(inf->port_id, queue_id, &pads[0], 1);
+    mt_dev_tx_burst_busy(queue, &pads[0], 1);
   }
   dbg("%s, end\n", __func__);
   return 0;
 }
 
-int mt_dev_free_tx_queue(struct mtl_main_impl* impl, enum mtl_port port,
-                         uint16_t queue_id) {
+int mt_dev_put_tx_queue(struct mtl_main_impl* impl, struct mt_tx_queue* queue) {
+  enum mtl_port port = queue->port;
   struct mt_interface* inf = mt_if(impl, port);
   struct mt_tx_queue* tx_queue;
+  uint16_t queue_id = queue->queue_id;
 
   if (queue_id >= inf->max_tx_queues) {
     err("%s(%d), invalid queue %d\n", __func__, port, queue_id);
@@ -1656,15 +1648,20 @@ int mt_dev_free_tx_queue(struct mtl_main_impl* impl, enum mtl_port port,
     err("%s(%d), queue %d is not allocated\n", __func__, port, queue_id);
     return -EIO;
   }
+  if (queue != tx_queue) {
+    err("%s(%d), queue %d ctx mismatch\n", __func__, port, queue_id);
+    return -EIO;
+  }
 
   tx_queue->active = false;
   info("%s(%d), q %d\n", __func__, port, queue_id);
   return 0;
 }
 
-int mt_dev_free_rx_queue(struct mtl_main_impl* impl, enum mtl_port port,
-                         uint16_t queue_id) {
+int mt_dev_put_rx_queue(struct mtl_main_impl* impl, struct mt_rx_queue* queue) {
+  enum mtl_port port = queue->port;
   struct mt_interface* inf = mt_if(impl, port);
+  uint16_t queue_id = queue->queue_id;
   int ret;
   struct mt_rx_queue* rx_queue;
   struct mt_rx_flow* st_flow;
@@ -1936,9 +1933,9 @@ int mt_dev_if_uinit(struct mtl_main_impl* impl) {
   for (int i = 0; i < num_ports; i++) {
     inf = mt_if(impl, i);
 
-    if (inf->tx_sys_queue_active) {
-      mt_dev_free_tx_queue(impl, i, inf->tx_sys_queue);
-      inf->tx_sys_queue_active = false;
+    if (inf->tx_sys_queue) {
+      mt_dev_put_tx_queue(impl, inf->tx_sys_queue);
+      inf->tx_sys_queue = NULL;
     }
 
     if (inf->pad) {
@@ -2162,13 +2159,12 @@ int mt_dev_if_init(struct mtl_main_impl* impl) {
       return -ENOMEM;
     }
 
-    ret = mt_dev_request_tx_queue(impl, i, &inf->tx_sys_queue, 0);
-    if (ret < 0) {
-      err("%s(%d), tx sys queue request fail\n", __func__, i);
+    inf->tx_sys_queue = mt_dev_get_tx_queue(impl, i, 0);
+    if (!inf->tx_sys_queue) {
+      err("%s(%d), tx sys queue get fail\n", __func__, i);
       mt_dev_if_uinit(impl);
       return -ENOMEM;
     }
-    inf->tx_sys_queue_active = true;
 
     info("%s(%d), port_id %d port_type %d drv_type %d\n", __func__, i, port_id,
          inf->port_type, inf->drv_type);

@@ -123,9 +123,8 @@ static int rx_ancillary_session_tasklet(struct mtl_main_impl* impl,
   bool done = true;
 
   for (int s_port = 0; s_port < num_port; s_port++) {
-    if (!s->queue_active[s_port]) continue;
-    rv = rte_eth_rx_burst(s->port_id[s_port], s->queue_id[s_port], &mbuf[0],
-                          ST_RX_ANCILLARY_BURTS_SIZE);
+    if (!s->queue[s_port]) continue;
+    rv = mt_dev_rx_burst(s->queue[s_port], &mbuf[0], ST_RX_ANCILLARY_BURTS_SIZE);
     if (rv > 0) {
       for (uint16_t i = 0; i < rv; i++)
         rx_ancillary_session_handle_pkt(impl, s, mbuf[i], s_port);
@@ -156,14 +155,11 @@ static int rx_ancillary_sessions_tasklet_handler(void* priv) {
 static int rx_ancillary_session_uinit_hw(struct mtl_main_impl* impl,
                                          struct st_rx_ancillary_session_impl* s) {
   int num_port = s->ops.num_port;
-  enum mtl_port port;
 
   for (int i = 0; i < num_port; i++) {
-    port = mt_port_logic2phy(s->port_maps, i);
-
-    if (s->queue_active[i]) {
-      mt_dev_free_rx_queue(impl, port, s->queue_id[i]);
-      s->queue_active[i] = false;
+    if (s->queue[i]) {
+      mt_dev_put_rx_queue(impl, s->queue[i]);
+      s->queue[i] = NULL;
     }
   }
 
@@ -173,13 +169,12 @@ static int rx_ancillary_session_uinit_hw(struct mtl_main_impl* impl,
 static int rx_ancillary_session_init_hw(struct mtl_main_impl* impl,
                                         struct st_rx_ancillary_session_impl* s) {
   int idx = s->idx, num_port = s->ops.num_port;
-  int ret;
-  uint16_t queue;
   struct mt_rx_flow flow;
   enum mtl_port port;
 
   for (int i = 0; i < num_port; i++) {
     port = mt_port_logic2phy(s->port_maps, i);
+    s->port_id[i] = mt_port_id(impl, port);
 
     memset(&flow, 0, sizeof(flow));
     rte_memcpy(flow.dip_addr, s->ops.sip_addr[i], MTL_IP_ADDR_LEN);
@@ -189,19 +184,16 @@ static int rx_ancillary_session_init_hw(struct mtl_main_impl* impl,
 
     /* no flow for data path only */
     if (mt_pmd_is_kernel(impl, port) && (s->ops.flags & ST40_RX_FLAG_DATA_PATH_ONLY))
-      ret = mt_dev_request_rx_queue(impl, port, &queue, NULL);
+      s->queue[i] = mt_dev_get_rx_queue(impl, port, NULL);
     else
-      ret = mt_dev_request_rx_queue(impl, port, &queue, &flow);
-    if (ret < 0) {
+      s->queue[i] = mt_dev_get_rx_queue(impl, port, &flow);
+    if (!s->queue[i]) {
       rx_ancillary_session_uinit_hw(impl, s);
-      return ret;
+      return -EIO;
     }
 
-    s->port_id[i] = mt_port_id(impl, port);
-    s->queue_id[i] = queue;
-    s->queue_active[i] = true;
-    info("%s(%d), port(l:%d,p:%d), queue %d udp %d\n", __func__, idx, i, port, queue,
-         flow.dst_port);
+    info("%s(%d), port(l:%d,p:%d), queue %d udp %d\n", __func__, idx, i, port,
+         mt_dev_rx_queue_id(s->queue[i]), flow.dst_port);
   }
 
   return 0;
@@ -788,7 +780,7 @@ int st40_rx_get_queue_meta(st40_rx_handle handle, struct st_queue_meta* meta) {
       /* af_xdp pmd */
       meta->start_queue[i] = mt_start_queue(impl, port);
     }
-    meta->queue_id[i] = s->queue_id[i];
+    meta->queue_id[i] = mt_dev_rx_queue_id(s->queue[i]);
   }
 
   return 0;

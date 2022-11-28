@@ -68,7 +68,6 @@ static int cni_rx_handle(struct mtl_main_impl* impl, struct rte_mbuf* m,
 static int cni_traffic(struct mtl_main_impl* impl) {
   struct mt_cni_impl* cni = mt_get_cni(impl);
   int num_ports = mt_num_ports(impl);
-  uint16_t port_id;
   struct rte_mbuf* pkts_rx[ST_CNI_RX_BURST_SIZE];
   uint16_t rx;
   struct mt_ptp_impl* ptp;
@@ -76,11 +75,10 @@ static int cni_traffic(struct mtl_main_impl* impl) {
 
   for (int i = 0; i < num_ports; i++) {
     ptp = mt_get_ptp(impl, i);
-    port_id = mt_port_id(impl, i);
 
     /* rx from ptp rx queue */
-    if (ptp->rx_queue_active) {
-      rx = rte_eth_rx_burst(port_id, ptp->rx_queue_id, pkts_rx, ST_CNI_RX_BURST_SIZE);
+    if (ptp->rx_queue) {
+      rx = mt_dev_rx_burst(ptp->rx_queue, pkts_rx, ST_CNI_RX_BURST_SIZE);
       if (rx > 0) {
         cni->eth_rx_cnt[i] += rx;
         for (uint16_t ri = 0; ri < rx; ri++) cni_rx_handle(impl, pkts_rx[ri], i);
@@ -90,8 +88,8 @@ static int cni_traffic(struct mtl_main_impl* impl) {
     }
     mt_tap_handle(impl, i, pkts_rx, rx);
     /* rx from cni rx queue */
-    if (cni->rx_q_active[i]) {
-      rx = rte_eth_rx_burst(port_id, cni->rx_q_id[i], pkts_rx, ST_CNI_RX_BURST_SIZE);
+    if (cni->rx_q[i]) {
+      rx = mt_dev_rx_burst(cni->rx_q[i], pkts_rx, ST_CNI_RX_BURST_SIZE);
       if (rx > 0) {
         cni->eth_rx_cnt[i] += rx;
         for (uint16_t ri = 0; ri < rx; ri++) cni_rx_handle(impl, pkts_rx[ri], i);
@@ -177,9 +175,9 @@ static int cni_queues_uinit(struct mtl_main_impl* impl) {
   struct mt_cni_impl* cni = mt_get_cni(impl);
 
   for (int i = 0; i < num_ports; i++) {
-    if (cni->rx_q_active[i]) {
-      mt_dev_free_rx_queue(impl, i, cni->rx_q_id[i]);
-      cni->rx_q_active[i] = false;
+    if (cni->rx_q[i]) {
+      mt_dev_put_rx_queue(impl, cni->rx_q[i]);
+      cni->rx_q[i] = NULL;
     }
   }
 
@@ -188,7 +186,6 @@ static int cni_queues_uinit(struct mtl_main_impl* impl) {
 
 static int cni_queues_init(struct mtl_main_impl* impl, struct mt_cni_impl* cni) {
   int num_ports = mt_num_ports(impl);
-  int ret;
 
   if (mt_no_system_rxq(impl)) {
     warn("%s, disabled as no system rx queues\n", __func__);
@@ -199,14 +196,14 @@ static int cni_queues_init(struct mtl_main_impl* impl, struct mt_cni_impl* cni) 
     /* no cni for kernel based pmd */
     if (mt_pmd_is_kernel(impl, i)) continue;
 
-    ret = mt_dev_request_rx_queue(impl, i, &cni->rx_q_id[i], NULL);
-    if (ret < 0) {
-      err("%s(%d), kni_rx_q create fail\n", __func__, i);
+    /* sys queue, no flow */
+    cni->rx_q[i] = mt_dev_get_rx_queue(impl, i, NULL);
+    if (!cni->rx_q[i]) {
+      err("%s(%d), rx q get fail\n", __func__, i);
       cni_queues_uinit(impl);
-      return ret;
+      return -EIO;
     }
-    cni->rx_q_active[i] = true;
-    info("%s(%d), rx q %d\n", __func__, i, cni->rx_q_id[i]);
+    info("%s(%d), rx q %d\n", __func__, i, mt_dev_rx_queue_id(cni->rx_q[i]));
   }
 
   return 0;

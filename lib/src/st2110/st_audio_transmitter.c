@@ -29,7 +29,7 @@ static int st_audio_trs_tasklet_stop(void* priv) {
 
   for (port = 0; port < mt_num_ports(impl); port++) {
     /* flush all the pkts in the tx ring desc */
-    mt_dev_flush_tx_queue(impl, port, mgr->queue_id[port], mt_get_pad(impl, port));
+    mt_dev_flush_tx_queue(impl, mgr->queue[port], mt_get_pad(impl, port));
     mt_ring_dequeue_clean(mgr->ring[port]);
     info("%s(%d), port %d, remaining entries %d\n", __func__, idx, port,
          rte_ring_count(mgr->ring[port]));
@@ -57,7 +57,7 @@ static int st_audio_trs_session_tasklet(struct mtl_main_impl* impl,
   /* check if any inflight pkts in transmitter */
   pkt = trs->inflight[port];
   if (pkt) {
-    n = rte_eth_tx_burst(mgr->port_id[port], mgr->queue_id[port], &pkt, 1);
+    n = mt_dev_tx_burst(mgr->queue[port], &pkt, 1);
     if (n >= 1) {
       trs->inflight[port] = NULL;
     } else {
@@ -75,7 +75,7 @@ static int st_audio_trs_session_tasklet(struct mtl_main_impl* impl,
       return MT_TASKLET_ALL_DONE; /* all done */
     }
 
-    n = rte_eth_tx_burst(mgr->port_id[port], mgr->queue_id[port], &pkt, 1);
+    n = mt_dev_tx_burst(mgr->queue[port], &pkt, 1);
     mgr->st30_stat_pkts_burst += n;
     if (n < 1) {
       trs->inflight[port] = pkt;
