@@ -28,7 +28,7 @@ struct st20p_rx_frame {
 struct st20p_rx_ctx {
   struct mtl_main_impl* impl;
   int idx;
-  enum st_session_type type; /* for sanity check */
+  enum mt_handle_type type; /* for sanity check */
 
   char ops_name[ST_MAX_NAME_LEN];
   struct st20p_rx_ops ops;

@@ -26,7 +26,7 @@ struct st20r_rx_frame {
 struct st20r_rx_ctx {
   struct mtl_main_impl* impl;
   int idx;
-  enum st_session_type type; /* for sanity check, must be ST_SESSION_TYPE_RX_VIDEO_R */
+  enum mt_handle_type type; /* for sanity check, must be MT_HANDLE_RX_VIDEO_R */
 
   char ops_name[ST_MAX_NAME_LEN];
   struct st20r_rx_ops ops;

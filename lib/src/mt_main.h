@@ -425,7 +425,7 @@ struct mt_lcore_shm {
 typedef int (*mt_dma_drop_mbuf_cb)(void* priv, struct rte_mbuf* mbuf);
 
 struct mtl_dma_lender_dev {
-  enum st_session_type type; /* for sanity check */
+  enum mt_handle_type type; /* for sanity check */
 
   struct mt_dma_dev* parent;
   int lender_id;
@@ -515,7 +515,7 @@ struct mtl_main_impl {
   struct mtl_init_params user_para;
   struct mt_var_params var_para;
   struct mt_kport_info kport_info;
-  enum st_session_type type; /* for sanity check */
+  enum mt_handle_type type; /* for sanity check */
   uint64_t tsc_hz;
   pthread_t tsc_cal_tid;
 

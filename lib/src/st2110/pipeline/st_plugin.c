@@ -113,7 +113,7 @@ static struct st22_encode_session_impl* st22_get_encoder_session(
       session_impl->session = session;
       session_impl->codestream_max_size = create_req->max_codestream_size;
       session_impl->req = *req;
-      session_impl->type = ST22_SESSION_TYPE_PIPELINE_ENCODE;
+      session_impl->type = MT_ST22_HANDLE_PIPELINE_ENCODE;
       info("%s(%d), get one session at %d on dev %s, max codestream size %ld\n", __func__,
            idx, i, dev->name, session_impl->codestream_max_size);
       info("%s(%d), input fmt: %s, output fmt: %s\n", __func__, idx,
@@ -218,7 +218,7 @@ static struct st22_decode_session_impl* st22_get_decoder_session(
     if (session) {
       session_impl->session = session;
       session_impl->req = *req;
-      session_impl->type = ST22_SESSION_TYPE_PIPELINE_DECODE;
+      session_impl->type = MT_ST22_HANDLE_PIPELINE_DECODE;
       info("%s(%d), get one session at %d on dev %s\n", __func__, idx, i, dev->name);
       info("%s(%d), input fmt: %s, output fmt: %s\n", __func__, idx,
            st_frame_fmt_name(req->req.input_fmt), st_frame_fmt_name(req->req.output_fmt));
@@ -319,7 +319,7 @@ static struct st20_convert_session_impl* st20_get_converter_session(
     if (session) {
       session_impl->session = session;
       session_impl->req = *req;
-      session_impl->type = ST20_SESSION_TYPE_PIPELINE_CONVERT;
+      session_impl->type = MT_ST20_HANDLE_PIPELINE_CONVERT;
       info("%s(%d), get one session at %d on dev %s\n", __func__, idx, i, dev->name);
       info("%s(%d), input fmt: %s, output fmt: %s\n", __func__, idx,
            st_frame_fmt_name(req->req.input_fmt), st_frame_fmt_name(req->req.output_fmt));
@@ -450,7 +450,7 @@ int st_plugins_dump(struct mtl_main_impl* impl) {
 int st22_encoder_unregister(st22_encoder_dev_handle handle) {
   struct st22_encode_dev_impl* dev = handle;
 
-  if (dev->type != ST22_SESSION_TYPE_DEV_ENCODE) {
+  if (dev->type != MT_ST22_HANDLE_DEV_ENCODE) {
     err("%s, invalid type %d\n", __func__, dev->type);
     return -EIO;
   }
@@ -482,7 +482,7 @@ int st22_encoder_unregister(st22_encoder_dev_handle handle) {
 int st22_decoder_unregister(st22_decoder_dev_handle handle) {
   struct st22_decode_dev_impl* dev = handle;
 
-  if (dev->type != ST22_SESSION_TYPE_DEV_DECODE) {
+  if (dev->type != MT_ST22_HANDLE_DEV_DECODE) {
     err("%s, invalid type %d\n", __func__, dev->type);
     return -EIO;
   }
@@ -514,7 +514,7 @@ int st22_decoder_unregister(st22_decoder_dev_handle handle) {
 int st20_converter_unregister(st20_converter_dev_handle handle) {
   struct st20_convert_dev_impl* dev = handle;
 
-  if (dev->type != ST20_SESSION_TYPE_DEV_CONVERT) {
+  if (dev->type != MT_ST20_HANDLE_DEV_CONVERT) {
     err("%s, invalid type %d\n", __func__, dev->type);
     return -EIO;
   }
@@ -549,7 +549,7 @@ st22_encoder_dev_handle st22_encoder_register(mtl_handle mt,
   struct st_plugin_mgr* mgr = st_get_plugins_mgr(impl);
   struct st22_encode_dev_impl* encode_dev;
 
-  if (impl->type != ST_SESSION_TYPE_MAIN) {
+  if (impl->type != MT_HANDLE_MAIN) {
     err("%s, invalid type %d\n", __func__, impl->type);
     return NULL;
   }
@@ -577,7 +577,7 @@ st22_encoder_dev_handle st22_encoder_register(mtl_handle mt,
       mt_pthread_mutex_unlock(&mgr->lock);
       return NULL;
     }
-    encode_dev->type = ST22_SESSION_TYPE_DEV_ENCODE;
+    encode_dev->type = MT_ST22_HANDLE_DEV_ENCODE;
     encode_dev->parnet = impl;
     encode_dev->idx = i;
     rte_atomic32_set(&encode_dev->ref_cnt, 0);
@@ -605,7 +605,7 @@ st22_decoder_dev_handle st22_decoder_register(mtl_handle mt,
   struct st_plugin_mgr* mgr = st_get_plugins_mgr(impl);
   struct st22_decode_dev_impl* decode_dev;
 
-  if (impl->type != ST_SESSION_TYPE_MAIN) {
+  if (impl->type != MT_HANDLE_MAIN) {
     err("%s, invalid type %d\n", __func__, impl->type);
     return NULL;
   }
@@ -633,7 +633,7 @@ st22_decoder_dev_handle st22_decoder_register(mtl_handle mt,
       mt_pthread_mutex_unlock(&mgr->lock);
       return NULL;
     }
-    decode_dev->type = ST22_SESSION_TYPE_DEV_DECODE;
+    decode_dev->type = MT_ST22_HANDLE_DEV_DECODE;
     decode_dev->parnet = impl;
     decode_dev->idx = i;
     rte_atomic32_set(&decode_dev->ref_cnt, 0);
@@ -661,7 +661,7 @@ st20_converter_dev_handle st20_converter_register(mtl_handle mt,
   struct st_plugin_mgr* mgr = st_get_plugins_mgr(impl);
   struct st20_convert_dev_impl* convert_dev;
 
-  if (impl->type != ST_SESSION_TYPE_MAIN) {
+  if (impl->type != MT_HANDLE_MAIN) {
     err("%s, invalid type %d\n", __func__, impl->type);
     return NULL;
   }
@@ -689,7 +689,7 @@ st20_converter_dev_handle st20_converter_register(mtl_handle mt,
       mt_pthread_mutex_unlock(&mgr->lock);
       return NULL;
     }
-    convert_dev->type = ST20_SESSION_TYPE_DEV_CONVERT;
+    convert_dev->type = MT_ST20_HANDLE_DEV_CONVERT;
     convert_dev->parnet = impl;
     convert_dev->idx = i;
     rte_atomic32_set(&convert_dev->ref_cnt, 0);
@@ -715,7 +715,7 @@ st20_converter_dev_handle st20_converter_register(mtl_handle mt,
 struct st22_encode_frame_meta* st22_encoder_get_frame(st22p_encode_session session) {
   struct st22_encode_session_impl* session_impl = session;
 
-  if (session_impl->type != ST22_SESSION_TYPE_PIPELINE_ENCODE) {
+  if (session_impl->type != MT_ST22_HANDLE_PIPELINE_ENCODE) {
     err("%s(%d), invalid type %d\n", __func__, session_impl->idx, session_impl->type);
     return NULL;
   }
@@ -727,7 +727,7 @@ int st22_encoder_put_frame(st22p_encode_session session,
                            struct st22_encode_frame_meta* frame, int result) {
   struct st22_encode_session_impl* session_impl = session;
 
-  if (session_impl->type != ST22_SESSION_TYPE_PIPELINE_ENCODE) {
+  if (session_impl->type != MT_ST22_HANDLE_PIPELINE_ENCODE) {
     err("%s(%d), invalid type %d\n", __func__, session_impl->idx, session_impl->type);
     return -EIO;
   }
@@ -738,7 +738,7 @@ int st22_encoder_put_frame(st22p_encode_session session,
 struct st22_decode_frame_meta* st22_decoder_get_frame(st22p_decode_session session) {
   struct st22_decode_session_impl* session_impl = session;
 
-  if (session_impl->type != ST22_SESSION_TYPE_PIPELINE_DECODE) {
+  if (session_impl->type != MT_ST22_HANDLE_PIPELINE_DECODE) {
     err("%s(%d), invalid type %d\n", __func__, session_impl->idx, session_impl->type);
     return NULL;
   }
@@ -750,7 +750,7 @@ int st22_decoder_put_frame(st22p_decode_session session,
                            struct st22_decode_frame_meta* frame, int result) {
   struct st22_decode_session_impl* session_impl = session;
 
-  if (session_impl->type != ST22_SESSION_TYPE_PIPELINE_DECODE) {
+  if (session_impl->type != MT_ST22_HANDLE_PIPELINE_DECODE) {
     err("%s(%d), invalid type %d\n", __func__, session_impl->idx, session_impl->type);
     return -EIO;
   }
@@ -761,7 +761,7 @@ int st22_decoder_put_frame(st22p_decode_session session,
 struct st20_convert_frame_meta* st20_converter_get_frame(st20p_convert_session session) {
   struct st20_convert_session_impl* session_impl = session;
 
-  if (session_impl->type != ST20_SESSION_TYPE_PIPELINE_CONVERT) {
+  if (session_impl->type != MT_ST20_HANDLE_PIPELINE_CONVERT) {
     err("%s(%d), invalid type %d\n", __func__, session_impl->idx, session_impl->type);
     return NULL;
   }
@@ -773,7 +773,7 @@ int st20_converter_put_frame(st20p_convert_session session,
                              struct st20_convert_frame_meta* frame, int result) {
   struct st20_convert_session_impl* session_impl = session;
 
-  if (session_impl->type != ST20_SESSION_TYPE_PIPELINE_CONVERT) {
+  if (session_impl->type != MT_ST20_HANDLE_PIPELINE_CONVERT) {
     err("%s(%d), invalid type %d\n", __func__, session_impl->idx, session_impl->type);
     return -EIO;
   }
@@ -806,7 +806,7 @@ int st_get_plugins_nb(mtl_handle mt) {
   struct mtl_main_impl* impl = mt;
   struct st_plugin_mgr* mgr = st_get_plugins_mgr(impl);
 
-  if (impl->type != ST_SESSION_TYPE_MAIN) {
+  if (impl->type != MT_HANDLE_MAIN) {
     err("%s, invalid type %d\n", __func__, impl->type);
     return 0;
   }
@@ -832,7 +832,7 @@ int st_plugin_register(mtl_handle mt, const char* path) {
 
   memset(&meta, 0, sizeof(meta));
 
-  if (impl->type != ST_SESSION_TYPE_MAIN) {
+  if (impl->type != MT_HANDLE_MAIN) {
     err("%s, invalid type %d\n", __func__, impl->type);
     return -EIO;
   }
