@@ -95,7 +95,7 @@ static struct st22_decode_frame_meta* rx_st22p_decode_get_frame(void* priv) {
   int idx = ctx->idx;
   struct st22p_rx_frame* framebuff;
 
-  if (ctx->type != ST22_SESSION_TYPE_PIPELINE_RX) {
+  if (ctx->type != MT_ST22_HANDLE_PIPELINE_RX) {
     err("%s(%d), invalid type %d\n", __func__, idx, ctx->type);
     return NULL;
   }
@@ -127,7 +127,7 @@ static int rx_st22p_decode_put_frame(void* priv, struct st22_decode_frame_meta* 
   struct st22p_rx_frame* framebuff = frame->priv;
   uint16_t decode_idx = framebuff->idx;
 
-  if (ctx->type != ST22_SESSION_TYPE_PIPELINE_RX) {
+  if (ctx->type != MT_ST22_HANDLE_PIPELINE_RX) {
     err("%s(%d), invalid type %d\n", __func__, idx, ctx->type);
     return -EIO;
   }
@@ -334,7 +334,7 @@ struct st_frame* st22p_rx_get_frame(st22p_rx_handle handle) {
   int idx = ctx->idx;
   struct st22p_rx_frame* framebuff;
 
-  if (ctx->type != ST22_SESSION_TYPE_PIPELINE_RX) {
+  if (ctx->type != MT_ST22_HANDLE_PIPELINE_RX) {
     err("%s(%d), invalid type %d\n", __func__, idx, ctx->type);
     return NULL;
   }
@@ -365,7 +365,7 @@ int st22p_rx_put_frame(st22p_rx_handle handle, struct st_frame* frame) {
   struct st22p_rx_frame* framebuff = frame->priv;
   uint16_t consumer_idx = framebuff->idx;
 
-  if (ctx->type != ST22_SESSION_TYPE_PIPELINE_RX) {
+  if (ctx->type != MT_ST22_HANDLE_PIPELINE_RX) {
     err("%s(%d), invalid type %d\n", __func__, idx, ctx->type);
     return -EIO;
   }
@@ -392,7 +392,7 @@ st22p_rx_handle st22p_rx_create(mtl_handle mt, struct st22p_rx_ops* ops) {
   size_t dst_size;
   enum st_frame_fmt codestream_fmt;
 
-  if (impl->type != ST_SESSION_TYPE_MAIN) {
+  if (impl->type != MT_HANDLE_MAIN) {
     err("%s, invalid type %d\n", __func__, impl->type);
     return NULL;
   }
@@ -427,7 +427,7 @@ st22p_rx_handle st22p_rx_create(mtl_handle mt, struct st22p_rx_ops* ops) {
   ctx->ready = false;
   ctx->codestream_fmt = codestream_fmt;
   ctx->impl = impl;
-  ctx->type = ST22_SESSION_TYPE_PIPELINE_RX;
+  ctx->type = MT_ST22_HANDLE_PIPELINE_RX;
   ctx->dst_size = dst_size;
   /* use the possible max size */
   ctx->max_codestream_size = ops->max_codestream_size;
@@ -480,7 +480,7 @@ int st22p_rx_free(st22p_rx_handle handle) {
   struct st22p_rx_ctx* ctx = handle;
   struct mtl_main_impl* impl = ctx->impl;
 
-  if (ctx->type != ST22_SESSION_TYPE_PIPELINE_RX) {
+  if (ctx->type != MT_ST22_HANDLE_PIPELINE_RX) {
     err("%s(%d), invalid type %d\n", __func__, ctx->idx, ctx->type);
     return -EIO;
   }
@@ -506,7 +506,7 @@ void* st22p_rx_get_fb_addr(st22p_rx_handle handle, uint16_t idx) {
   struct st22p_rx_ctx* ctx = handle;
   int cidx = ctx->idx;
 
-  if (ctx->type != ST22_SESSION_TYPE_PIPELINE_RX) {
+  if (ctx->type != MT_ST22_HANDLE_PIPELINE_RX) {
     err("%s(%d), invalid type %d\n", __func__, cidx, ctx->type);
     return NULL;
   }
@@ -524,7 +524,7 @@ size_t st22p_rx_frame_size(st22p_rx_handle handle) {
   struct st22p_rx_ctx* ctx = handle;
   int cidx = ctx->idx;
 
-  if (ctx->type != ST22_SESSION_TYPE_PIPELINE_RX) {
+  if (ctx->type != MT_ST22_HANDLE_PIPELINE_RX) {
     err("%s(%d), invalid type %d\n", __func__, cidx, ctx->type);
     return 0;
   }
@@ -536,7 +536,7 @@ int st22p_rx_get_queue_meta(st22p_rx_handle handle, struct st_queue_meta* meta) 
   struct st22p_rx_ctx* ctx = handle;
   int cidx = ctx->idx;
 
-  if (ctx->type != ST22_SESSION_TYPE_PIPELINE_RX) {
+  if (ctx->type != MT_ST22_HANDLE_PIPELINE_RX) {
     err("%s(%d), invalid type %d\n", __func__, cidx, ctx->type);
     return 0;
   }
@@ -549,7 +549,7 @@ int st22p_rx_pcapng_dump(st22p_rx_handle handle, uint32_t max_dump_packets, bool
   struct st22p_rx_ctx* ctx = handle;
   int cidx = ctx->idx;
 
-  if (ctx->type != ST22_SESSION_TYPE_PIPELINE_RX) {
+  if (ctx->type != MT_ST22_HANDLE_PIPELINE_RX) {
     err("%s(%d), invalid type %d\n", __func__, cidx, ctx->type);
     return -EIO;
   }

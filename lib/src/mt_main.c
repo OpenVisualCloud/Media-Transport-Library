@@ -361,7 +361,7 @@ mtl_handle mtl_init(struct mtl_init_params* p) {
   int num_ports = p->num_ports;
   struct mt_kport_info kport_info;
 
-  RTE_BUILD_BUG_ON(ST_SESSION_PORT_MAX > (int)MTL_PORT_MAX);
+  RTE_BUILD_BUG_ON(MT_SESSION_PORT_MAX > (int)MTL_PORT_MAX);
 
   ret = mt_user_params_check(p);
   if (ret < 0) {
@@ -411,7 +411,7 @@ mtl_handle mtl_init(struct mtl_init_params* p) {
   impl->var_para.sch_zero_sleep_threshold_us = 200;
 
   rte_memcpy(&impl->kport_info, &kport_info, sizeof(kport_info));
-  impl->type = ST_SESSION_TYPE_MAIN;
+  impl->type = MT_HANDLE_MAIN;
   for (int i = 0; i < num_ports; i++) {
     if (p->pmd[i] != MTL_PMD_DPDK_USER) {
       uint8_t if_ip[MTL_IP_ADDR_LEN];
@@ -512,7 +512,7 @@ int mtl_uninit(mtl_handle mt) {
   struct mtl_main_impl* impl = mt;
   struct mtl_init_params* p = mt_get_user_params(impl);
 
-  if (impl->type != ST_SESSION_TYPE_MAIN) {
+  if (impl->type != MT_HANDLE_MAIN) {
     err("%s, invalid type %d\n", __func__, impl->type);
     return -EIO;
   }
@@ -542,7 +542,7 @@ int mtl_uninit(mtl_handle mt) {
 int mtl_start(mtl_handle mt) {
   struct mtl_main_impl* impl = mt;
 
-  if (impl->type != ST_SESSION_TYPE_MAIN) {
+  if (impl->type != MT_HANDLE_MAIN) {
     err("%s, invalid type %d\n", __func__, impl->type);
     return -EIO;
   }
@@ -553,7 +553,7 @@ int mtl_start(mtl_handle mt) {
 int mtl_stop(mtl_handle mt) {
   struct mtl_main_impl* impl = mt;
 
-  if (impl->type != ST_SESSION_TYPE_MAIN) {
+  if (impl->type != MT_HANDLE_MAIN) {
     err("%s, invalid type %d\n", __func__, impl->type);
     return -EIO;
   }
@@ -566,7 +566,7 @@ int mtl_stop(mtl_handle mt) {
 int mtl_get_lcore(mtl_handle mt, unsigned int* lcore) {
   struct mtl_main_impl* impl = mt;
 
-  if (impl->type != ST_SESSION_TYPE_MAIN) {
+  if (impl->type != MT_HANDLE_MAIN) {
     err("%s, invalid type %d\n", __func__, impl->type);
     return -EIO;
   }
@@ -577,7 +577,7 @@ int mtl_get_lcore(mtl_handle mt, unsigned int* lcore) {
 int mtl_put_lcore(mtl_handle mt, unsigned int lcore) {
   struct mtl_main_impl* impl = mt;
 
-  if (impl->type != ST_SESSION_TYPE_MAIN) {
+  if (impl->type != MT_HANDLE_MAIN) {
     err("%s, invalid type %d\n", __func__, impl->type);
     return -EIO;
   }
@@ -588,7 +588,7 @@ int mtl_put_lcore(mtl_handle mt, unsigned int lcore) {
 int mtl_bind_to_lcore(mtl_handle mt, pthread_t thread, unsigned int lcore) {
   struct mtl_main_impl* impl = mt;
 
-  if (impl->type != ST_SESSION_TYPE_MAIN) {
+  if (impl->type != MT_HANDLE_MAIN) {
     err("%s, invalid type %d\n", __func__, impl->type);
     return -EIO;
   }
@@ -609,7 +609,7 @@ int mtl_bind_to_lcore(mtl_handle mt, pthread_t thread, unsigned int lcore) {
 int mtl_request_exit(mtl_handle mt) {
   struct mtl_main_impl* impl = mt;
 
-  if (impl->type != ST_SESSION_TYPE_MAIN) {
+  if (impl->type != MT_HANDLE_MAIN) {
     err("%s, invalid type %d\n", __func__, impl->type);
     return -EIO;
   }
@@ -627,7 +627,7 @@ void* mtl_hp_malloc(mtl_handle mt, size_t size, enum mtl_port port) {
   struct mtl_main_impl* impl = mt;
   int num_ports = mt_num_ports(impl);
 
-  if (impl->type != ST_SESSION_TYPE_MAIN) {
+  if (impl->type != MT_HANDLE_MAIN) {
     err("%s, invalid type %d\n", __func__, impl->type);
     return NULL;
   }
@@ -644,7 +644,7 @@ void* mtl_hp_zmalloc(mtl_handle mt, size_t size, enum mtl_port port) {
   struct mtl_main_impl* impl = mt;
   int num_ports = mt_num_ports(impl);
 
-  if (impl->type != ST_SESSION_TYPE_MAIN) {
+  if (impl->type != MT_HANDLE_MAIN) {
     err("%s, invalid type %d\n", __func__, impl->type);
     return NULL;
   }
@@ -666,7 +666,7 @@ mtl_iova_t mtl_hp_virt2iova(mtl_handle mt, const void* vaddr) {
 size_t mtl_page_size(mtl_handle mt) {
   struct mtl_main_impl* impl = mt;
 
-  if (impl->type != ST_SESSION_TYPE_MAIN) {
+  if (impl->type != MT_HANDLE_MAIN) {
     err("%s, invalid type %d\n", __func__, impl->type);
     return 4096;
   }
@@ -680,7 +680,7 @@ mtl_iova_t mtl_dma_map(mtl_handle mt, const void* vaddr, size_t size) {
   mtl_iova_t iova;
   size_t page_size = mtl_page_size(impl);
 
-  if (impl->type != ST_SESSION_TYPE_MAIN) {
+  if (impl->type != MT_HANDLE_MAIN) {
     err("%s, invalid type %d\n", __func__, impl->type);
     return MTL_BAD_IOVA;
   }
@@ -737,7 +737,7 @@ int mtl_dma_unmap(mtl_handle mt, const void* vaddr, mtl_iova_t iova, size_t size
   int ret;
   size_t page_size = mtl_page_size(impl);
 
-  if (impl->type != ST_SESSION_TYPE_MAIN) {
+  if (impl->type != MT_HANDLE_MAIN) {
     err("%s, invalid type %d\n", __func__, impl->type);
     return -EIO;
   }
@@ -780,7 +780,7 @@ mtl_dma_mem_handle mtl_dma_mem_alloc(mtl_handle mt, size_t size) {
   struct mtl_main_impl* impl = mt;
   struct mtl_dma_mem* mem;
 
-  if (impl->type != ST_SESSION_TYPE_MAIN) {
+  if (impl->type != MT_HANDLE_MAIN) {
     err("%s, invalid type %d\n", __func__, impl->type);
     return NULL;
   }
@@ -853,7 +853,7 @@ const char* mtl_version(void) {
 int mtl_get_cap(mtl_handle mt, struct mtl_cap* cap) {
   struct mtl_main_impl* impl = mt;
 
-  if (impl->type != ST_SESSION_TYPE_MAIN) {
+  if (impl->type != MT_HANDLE_MAIN) {
     err("%s, invalid type %d\n", __func__, impl->type);
     return -EIO;
   }
@@ -869,7 +869,7 @@ int mtl_get_stats(mtl_handle mt, struct mtl_stats* stats) {
   struct mtl_main_impl* impl = mt;
   struct mt_dma_mgr* mgr = mt_get_dma_mgr(impl);
 
-  if (impl->type != ST_SESSION_TYPE_MAIN) {
+  if (impl->type != MT_HANDLE_MAIN) {
     err("%s, invalid type %d\n", __func__, impl->type);
     return -EIO;
   }
@@ -899,7 +899,7 @@ int mtl_sch_enable_sleep(mtl_handle mt, int sch_idx, bool enable) {
     err("%s, invalid sch_idx %d\n", __func__, sch_idx);
     return -EIO;
   }
-  if (impl->type != ST_SESSION_TYPE_MAIN) {
+  if (impl->type != MT_HANDLE_MAIN) {
     err("%s, invalid type %d\n", __func__, impl->type);
     return -EIO;
   }
@@ -922,7 +922,7 @@ int mtl_sch_enable_sleep(mtl_handle mt, int sch_idx, bool enable) {
 int mtl_sch_set_sleep_us(mtl_handle mt, uint64_t us) {
   struct mtl_main_impl* impl = mt;
 
-  if (impl->type != ST_SESSION_TYPE_MAIN) {
+  if (impl->type != MT_HANDLE_MAIN) {
     err("%s, invalid type %d\n", __func__, impl->type);
     return -EIO;
   }
@@ -935,7 +935,7 @@ int mtl_sch_set_sleep_us(mtl_handle mt, uint64_t us) {
 uint64_t mtl_ptp_read_time(mtl_handle mt) {
   struct mtl_main_impl* impl = mt;
 
-  if (impl->type != ST_SESSION_TYPE_MAIN) {
+  if (impl->type != MT_HANDLE_MAIN) {
     err("%s, invalid type %d\n", __func__, impl->type);
     return 0;
   }
@@ -947,7 +947,7 @@ mtl_udma_handle mtl_udma_create(mtl_handle mt, uint16_t nb_desc, enum mtl_port p
   struct mtl_main_impl* impl = mt;
   struct mt_dma_request_req req;
 
-  if (impl->type != ST_SESSION_TYPE_MAIN) {
+  if (impl->type != MT_HANDLE_MAIN) {
     err("%s, invalid type %d\n", __func__, impl->type);
     return NULL;
   }
@@ -959,7 +959,7 @@ mtl_udma_handle mtl_udma_create(mtl_handle mt, uint16_t nb_desc, enum mtl_port p
   req.priv = impl;
   req.drop_mbuf_cb = NULL;
   struct mtl_dma_lender_dev* dev = mt_dma_request_dev(impl, &req);
-  if (dev) dev->type = ST_SESSION_TYPE_UDMA;
+  if (dev) dev->type = MT_HANDLE_UDMA;
   return dev;
 }
 
@@ -967,7 +967,7 @@ int mtl_udma_free(mtl_udma_handle handle) {
   struct mtl_dma_lender_dev* dev = handle;
   struct mtl_main_impl* impl = dev->priv;
 
-  if (dev->type != ST_SESSION_TYPE_UDMA) {
+  if (dev->type != MT_HANDLE_UDMA) {
     err("%s, invalid type %d\n", __func__, dev->type);
     return -EIO;
   }
@@ -979,7 +979,7 @@ int mtl_udma_copy(mtl_udma_handle handle, mtl_iova_t dst, mtl_iova_t src,
                   uint32_t length) {
   struct mtl_dma_lender_dev* dev = handle;
 
-  if (dev->type != ST_SESSION_TYPE_UDMA) {
+  if (dev->type != MT_HANDLE_UDMA) {
     err("%s, invalid type %d\n", __func__, dev->type);
     return -EIO;
   }
@@ -991,7 +991,7 @@ int mtl_udma_fill(mtl_udma_handle handle, mtl_iova_t dst, uint64_t pattern,
                   uint32_t length) {
   struct mtl_dma_lender_dev* dev = handle;
 
-  if (dev->type != ST_SESSION_TYPE_UDMA) {
+  if (dev->type != MT_HANDLE_UDMA) {
     err("%s, invalid type %d\n", __func__, dev->type);
     return -EIO;
   }
@@ -1002,7 +1002,7 @@ int mtl_udma_fill(mtl_udma_handle handle, mtl_iova_t dst, uint64_t pattern,
 int mtl_udma_submit(mtl_udma_handle handle) {
   struct mtl_dma_lender_dev* dev = handle;
 
-  if (dev->type != ST_SESSION_TYPE_UDMA) {
+  if (dev->type != MT_HANDLE_UDMA) {
     err("%s, invalid type %d\n", __func__, dev->type);
     return -EIO;
   }
@@ -1013,7 +1013,7 @@ int mtl_udma_submit(mtl_udma_handle handle) {
 uint16_t mtl_udma_completed(mtl_udma_handle handle, const uint16_t nb_cpls) {
   struct mtl_dma_lender_dev* dev = handle;
 
-  if (dev->type != ST_SESSION_TYPE_UDMA) {
+  if (dev->type != MT_HANDLE_UDMA) {
     err("%s, invalid type %d\n", __func__, dev->type);
     return -EIO;
   }

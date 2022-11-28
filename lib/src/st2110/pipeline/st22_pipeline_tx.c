@@ -126,7 +126,7 @@ static struct st22_encode_frame_meta* tx_st22p_encode_get_frame(void* priv) {
   int idx = ctx->idx;
   struct st22p_tx_frame* framebuff;
 
-  if (ctx->type != ST22_SESSION_TYPE_PIPELINE_TX) {
+  if (ctx->type != MT_ST22_HANDLE_PIPELINE_TX) {
     err("%s(%d), invalid type %d\n", __func__, idx, ctx->type);
     return NULL;
   }
@@ -163,7 +163,7 @@ static int tx_st22p_encode_put_frame(void* priv, struct st22_encode_frame_meta* 
   size_t data_size = frame->dst->data_size;
   size_t max_size = ctx->encode_impl->codestream_max_size;
 
-  if (ctx->type != ST22_SESSION_TYPE_PIPELINE_TX) {
+  if (ctx->type != MT_ST22_HANDLE_PIPELINE_TX) {
     err("%s(%d), invalid type %d\n", __func__, idx, ctx->type);
     return -EIO;
   }
@@ -390,7 +390,7 @@ struct st_frame* st22p_tx_get_frame(st22p_tx_handle handle) {
   int idx = ctx->idx;
   struct st22p_tx_frame* framebuff;
 
-  if (ctx->type != ST22_SESSION_TYPE_PIPELINE_TX) {
+  if (ctx->type != MT_ST22_HANDLE_PIPELINE_TX) {
     err("%s(%d), invalid type %d\n", __func__, idx, ctx->type);
     return NULL;
   }
@@ -421,7 +421,7 @@ int st22p_tx_put_frame(st22p_tx_handle handle, struct st_frame* frame) {
   struct st22p_tx_frame* framebuff = frame->priv;
   uint16_t producer_idx = framebuff->idx;
 
-  if (ctx->type != ST22_SESSION_TYPE_PIPELINE_TX) {
+  if (ctx->type != MT_ST22_HANDLE_PIPELINE_TX) {
     err("%s(%d), invalid type %d\n", __func__, idx, ctx->type);
     return -EIO;
   }
@@ -447,7 +447,7 @@ st22p_tx_handle st22p_tx_create(mtl_handle mt, struct st22p_tx_ops* ops) {
   size_t src_size;
   enum st_frame_fmt codestream_fmt;
 
-  if (impl->type != ST_SESSION_TYPE_MAIN) {
+  if (impl->type != MT_HANDLE_MAIN) {
     err("%s, invalid type %d\n", __func__, impl->type);
     return NULL;
   }
@@ -482,7 +482,7 @@ st22p_tx_handle st22p_tx_create(mtl_handle mt, struct st22p_tx_ops* ops) {
   ctx->codestream_fmt = codestream_fmt;
   ctx->ready = false;
   ctx->impl = impl;
-  ctx->type = ST22_SESSION_TYPE_PIPELINE_TX;
+  ctx->type = MT_ST22_HANDLE_PIPELINE_TX;
   ctx->src_size = src_size;
   rte_atomic32_set(&ctx->stat_encode_fail, 0);
   mt_pthread_mutex_init(&ctx->lock, NULL);
@@ -531,7 +531,7 @@ int st22p_tx_free(st22p_tx_handle handle) {
   struct st22p_tx_ctx* ctx = handle;
   struct mtl_main_impl* impl = ctx->impl;
 
-  if (ctx->type != ST22_SESSION_TYPE_PIPELINE_TX) {
+  if (ctx->type != MT_ST22_HANDLE_PIPELINE_TX) {
     err("%s(%d), invalid type %d\n", __func__, ctx->idx, ctx->type);
     return -EIO;
   }
@@ -557,7 +557,7 @@ void* st22p_tx_get_fb_addr(st22p_tx_handle handle, uint16_t idx) {
   struct st22p_tx_ctx* ctx = handle;
   int cidx = ctx->idx;
 
-  if (ctx->type != ST22_SESSION_TYPE_PIPELINE_TX) {
+  if (ctx->type != MT_ST22_HANDLE_PIPELINE_TX) {
     err("%s(%d), invalid type %d\n", __func__, cidx, ctx->type);
     return NULL;
   }
@@ -575,7 +575,7 @@ size_t st22p_tx_frame_size(st22p_tx_handle handle) {
   struct st22p_tx_ctx* ctx = handle;
   int cidx = ctx->idx;
 
-  if (ctx->type != ST22_SESSION_TYPE_PIPELINE_TX) {
+  if (ctx->type != MT_ST22_HANDLE_PIPELINE_TX) {
     err("%s(%d), invalid type %d\n", __func__, cidx, ctx->type);
     return 0;
   }

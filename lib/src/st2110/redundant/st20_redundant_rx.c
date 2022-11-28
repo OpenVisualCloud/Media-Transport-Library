@@ -192,7 +192,7 @@ static int rx_st20r_create_transport(struct st20r_rx_ctx* ctx, struct st20r_rx_o
 int st20r_rx_free(st20r_rx_handle handle) {
   struct st20r_rx_ctx* ctx = handle;
 
-  if (ctx->type != ST_SESSION_TYPE_RX_VIDEO_R) {
+  if (ctx->type != MT_HANDLE_RX_VIDEO_R) {
     err("%s(%d), invalid type %d\n", __func__, ctx->idx, ctx->type);
     return -EIO;
   }
@@ -223,7 +223,7 @@ st20r_rx_handle st20r_rx_create(mtl_handle mt, struct st20r_rx_ops* ops) {
   int idx = 0; /* todo */
   int num_port = ops->num_port;
 
-  if (impl->type != ST_SESSION_TYPE_MAIN) {
+  if (impl->type != MT_HANDLE_MAIN) {
     err("%s, invalid st type %d\n", __func__, impl->type);
     return NULL;
   }
@@ -259,7 +259,7 @@ st20r_rx_handle st20r_rx_create(mtl_handle mt, struct st20r_rx_ops* ops) {
 
   ctx->idx = idx;
   ctx->impl = impl;
-  ctx->type = ST_SESSION_TYPE_RX_VIDEO_R;
+  ctx->type = MT_HANDLE_RX_VIDEO_R;
   mt_pthread_mutex_init(&ctx->lock, NULL);
 
   /* copy ops */
@@ -283,7 +283,7 @@ st20r_rx_handle st20r_rx_create(mtl_handle mt, struct st20r_rx_ops* ops) {
 int st20r_rx_put_frame(st20r_rx_handle handle, void* frame) {
   struct st20r_rx_ctx* ctx = handle;
 
-  if (ctx->type != ST_SESSION_TYPE_RX_VIDEO_R) {
+  if (ctx->type != MT_HANDLE_RX_VIDEO_R) {
     err("%s(%d), invalid type %d\n", __func__, ctx->idx, ctx->type);
     return -EIO;
   }
@@ -294,7 +294,7 @@ int st20r_rx_put_frame(st20r_rx_handle handle, void* frame) {
 size_t st20r_rx_get_framebuffer_size(st20r_rx_handle handle) {
   struct st20r_rx_ctx* ctx = handle;
 
-  if (ctx->type != ST_SESSION_TYPE_RX_VIDEO_R) {
+  if (ctx->type != MT_HANDLE_RX_VIDEO_R) {
     err("%s(%d), invalid type %d\n", __func__, ctx->idx, ctx->type);
     return -EIO;
   }
@@ -305,7 +305,7 @@ size_t st20r_rx_get_framebuffer_size(st20r_rx_handle handle) {
 int st20r_rx_get_framebuffer_count(st20r_rx_handle handle) {
   struct st20r_rx_ctx* ctx = handle;
 
-  if (ctx->type != ST_SESSION_TYPE_RX_VIDEO_R) {
+  if (ctx->type != MT_HANDLE_RX_VIDEO_R) {
     err("%s(%d), invalid type %d\n", __func__, ctx->idx, ctx->type);
     return -EIO;
   }
@@ -318,7 +318,7 @@ int st20r_rx_pcapng_dump(st20r_rx_handle handle, uint32_t max_dump_packets, bool
   struct st20r_rx_ctx* ctx = handle;
   int ret = 0;
 
-  if (ctx->type != ST_SESSION_TYPE_RX_VIDEO_R) {
+  if (ctx->type != MT_HANDLE_RX_VIDEO_R) {
     err("%s(%d), invalid type %d\n", __func__, ctx->idx, ctx->type);
     return -EIO;
   }

@@ -129,7 +129,7 @@ static struct st20_convert_frame_meta* tx_st20p_convert_get_frame(void* priv) {
   int idx = ctx->idx;
   struct st20p_tx_frame* framebuff;
 
-  if (ctx->type != ST20_SESSION_TYPE_PIPELINE_TX) {
+  if (ctx->type != MT_ST20_HANDLE_PIPELINE_TX) {
     err("%s(%d), invalid type %d\n", __func__, idx, ctx->type);
     return NULL;
   }
@@ -162,7 +162,7 @@ static int tx_st20p_convert_put_frame(void* priv, struct st20_convert_frame_meta
   uint16_t convert_idx = framebuff->idx;
   size_t data_size = frame->dst->data_size;
 
-  if (ctx->type != ST20_SESSION_TYPE_PIPELINE_TX) {
+  if (ctx->type != MT_ST20_HANDLE_PIPELINE_TX) {
     err("%s(%d), invalid type %d\n", __func__, idx, ctx->type);
     return -EIO;
   }
@@ -413,7 +413,7 @@ struct st_frame* st20p_tx_get_frame(st20p_tx_handle handle) {
   int idx = ctx->idx;
   struct st20p_tx_frame* framebuff;
 
-  if (ctx->type != ST20_SESSION_TYPE_PIPELINE_TX) {
+  if (ctx->type != MT_ST20_HANDLE_PIPELINE_TX) {
     err("%s(%d), invalid type %d\n", __func__, idx, ctx->type);
     return NULL;
   }
@@ -446,7 +446,7 @@ int st20p_tx_put_frame(st20p_tx_handle handle, struct st_frame* frame) {
   struct st20p_tx_frame* framebuff = frame->priv;
   uint16_t producer_idx = framebuff->idx;
 
-  if (ctx->type != ST20_SESSION_TYPE_PIPELINE_TX) {
+  if (ctx->type != MT_ST20_HANDLE_PIPELINE_TX) {
     err("%s(%d), invalid type %d\n", __func__, idx, ctx->type);
     return -EIO;
   }
@@ -479,7 +479,7 @@ int st20p_tx_put_ext_frame(st20p_tx_handle handle, struct st_frame* frame,
   uint16_t producer_idx = framebuff->idx;
   int ret = 0;
 
-  if (ctx->type != ST20_SESSION_TYPE_PIPELINE_TX) {
+  if (ctx->type != MT_ST20_HANDLE_PIPELINE_TX) {
     err("%s(%d), invalid type %d\n", __func__, idx, ctx->type);
     return -EIO;
   }
@@ -548,7 +548,7 @@ st20p_tx_handle st20p_tx_create(mtl_handle mt, struct st20p_tx_ops* ops) {
   int idx = 0; /* todo */
   size_t src_size;
 
-  if (impl->type != ST_SESSION_TYPE_MAIN) {
+  if (impl->type != MT_HANDLE_MAIN) {
     err("%s, invalid type %d\n", __func__, impl->type);
     return NULL;
   }
@@ -574,7 +574,7 @@ st20p_tx_handle st20p_tx_create(mtl_handle mt, struct st20p_tx_ops* ops) {
   ctx->ready = false;
   ctx->derive = st_frame_fmt_equal_transport(ops->input_fmt, ops->transport_fmt);
   ctx->impl = impl;
-  ctx->type = ST20_SESSION_TYPE_PIPELINE_TX;
+  ctx->type = MT_ST20_HANDLE_PIPELINE_TX;
   ctx->src_size = src_size;
   rte_atomic32_set(&ctx->stat_convert_fail, 0);
   rte_atomic32_set(&ctx->stat_busy, 0);
@@ -626,7 +626,7 @@ int st20p_tx_free(st20p_tx_handle handle) {
   struct st20p_tx_ctx* ctx = handle;
   struct mtl_main_impl* impl = ctx->impl;
 
-  if (ctx->type != ST20_SESSION_TYPE_PIPELINE_TX) {
+  if (ctx->type != MT_ST20_HANDLE_PIPELINE_TX) {
     err("%s(%d), invalid type %d\n", __func__, ctx->idx, ctx->type);
     return -EIO;
   }
@@ -657,7 +657,7 @@ void* st20p_tx_get_fb_addr(st20p_tx_handle handle, uint16_t idx) {
   struct st20p_tx_ctx* ctx = handle;
   int cidx = ctx->idx;
 
-  if (ctx->type != ST20_SESSION_TYPE_PIPELINE_TX) {
+  if (ctx->type != MT_ST20_HANDLE_PIPELINE_TX) {
     err("%s(%d), invalid type %d\n", __func__, cidx, ctx->type);
     return NULL;
   }
@@ -676,7 +676,7 @@ size_t st20p_tx_frame_size(st20p_tx_handle handle) {
   struct st20p_tx_ctx* ctx = handle;
   int cidx = ctx->idx;
 
-  if (ctx->type != ST20_SESSION_TYPE_PIPELINE_TX) {
+  if (ctx->type != MT_ST20_HANDLE_PIPELINE_TX) {
     err("%s(%d), invalid type %d\n", __func__, cidx, ctx->type);
     return 0;
   }
@@ -688,7 +688,7 @@ int st20p_tx_get_sch_idx(st20p_tx_handle handle) {
   struct st20p_tx_ctx* ctx = handle;
   int cidx = ctx->idx;
 
-  if (ctx->type != ST20_SESSION_TYPE_PIPELINE_TX) {
+  if (ctx->type != MT_ST20_HANDLE_PIPELINE_TX) {
     err("%s(%d), invalid type %d\n", __func__, cidx, ctx->type);
     return 0;
   }
