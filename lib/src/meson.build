@@ -28,3 +28,4 @@ endif
 endif
 
 subdir('st2110')
+subdir('udp')

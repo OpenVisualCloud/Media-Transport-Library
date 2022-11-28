@@ -1944,10 +1944,10 @@ int mt_dev_dst_ip_mac(struct mtl_main_impl* impl, uint8_t dip[MTL_IP_ADDR_LEN],
     }
   }
 
-  info("%s(%d), ip: %d.%d.%d.%d, mac: %02hhx:%02hhx:%02hhx:%02hhx:%02hhx:%02hhx\n",
-       __func__, port, dip[0], dip[1], dip[2], dip[3], ea->addr_bytes[0],
-       ea->addr_bytes[1], ea->addr_bytes[2], ea->addr_bytes[3], ea->addr_bytes[4],
-       ea->addr_bytes[5]);
+  dbg("%s(%d), ip: %d.%d.%d.%d, mac: %02hhx:%02hhx:%02hhx:%02hhx:%02hhx:%02hhx\n",
+      __func__, port, dip[0], dip[1], dip[2], dip[3], ea->addr_bytes[0],
+      ea->addr_bytes[1], ea->addr_bytes[2], ea->addr_bytes[3], ea->addr_bytes[4],
+      ea->addr_bytes[5]);
   return 0;
 }
 
