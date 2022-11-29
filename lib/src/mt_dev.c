@@ -1910,7 +1910,6 @@ int mt_dev_dst_ip_mac(struct mtl_main_impl* impl, uint8_t dip[MTL_IP_ADDR_LEN],
         return ret;
       }
     } else {
-      mt_reset_arp(impl, port);
       ret = mt_arp_cni_get_mac(impl, ea, port, mt_ip_to_u32(dip));
       if (ret < 0) {
         err("%s(%d), failed to get mac from cni %d\n", __func__, port, ret);

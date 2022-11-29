@@ -37,7 +37,9 @@
 /* max RL items */
 #define MT_MAX_RL_ITEMS (64)
 
-#define ST_MCAST_GROUP_MAX (60)
+#define MT_ARP_ENTRY_MAX (60)
+
+#define MT_MCAST_GROUP_MAX (60)
 
 #define MT_DMA_MAX_SESSIONS (16)
 /* if use rte ring for dma enqueue/dequeue */
@@ -203,15 +205,15 @@ struct mt_cni_impl {
 };
 
 struct mt_arp_impl {
-  uint32_t ip[MTL_PORT_MAX];
-  struct rte_ether_addr ea[MTL_PORT_MAX];
-  rte_atomic32_t mac_ready[MTL_PORT_MAX];
+  uint32_t ip[MTL_PORT_MAX][MT_ARP_ENTRY_MAX];
+  struct rte_ether_addr ea[MTL_PORT_MAX][MT_ARP_ENTRY_MAX];
+  rte_atomic32_t mac_ready[MTL_PORT_MAX][MT_ARP_ENTRY_MAX];
 };
 
 struct mt_mcast_impl {
   pthread_mutex_t group_mutex[MTL_PORT_MAX];
-  uint32_t group_ip[MTL_PORT_MAX][ST_MCAST_GROUP_MAX];
-  uint32_t group_ref_cnt[MTL_PORT_MAX][ST_MCAST_GROUP_MAX];
+  uint32_t group_ip[MTL_PORT_MAX][MT_MCAST_GROUP_MAX];
+  uint32_t group_ref_cnt[MTL_PORT_MAX][MT_MCAST_GROUP_MAX];
   uint16_t group_num[MTL_PORT_MAX];
 };
 
