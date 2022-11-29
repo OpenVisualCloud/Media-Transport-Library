@@ -1325,10 +1325,9 @@ static int rv_start_pcapng(struct mtl_main_impl* impl, struct st_rx_video_sessio
     return -EIO;
   }
 
-  struct rte_mempool* mp = rte_pktmbuf_pool_create_by_ops(
-      "pcapng_test_pool", 256, 0, 0, rte_pcapng_mbuf_size(pkt_len),
-      mt_socket_id(impl, port), "ring_mp_sc");
-
+  struct rte_mempool* mp =
+      mt_mempool_create_by_ops(impl, port, "pcapng_test_pool", 256, MT_MBUF_CACHE_SIZE, 0,
+                               rte_pcapng_mbuf_size(pkt_len), "ring_mp_sc");
   if (mp == NULL) {
     err("%s(%d), failed to create pcapng mempool\n", __func__, idx);
     rte_pcapng_close(pcapng);
@@ -1376,7 +1375,7 @@ static int rv_stop_pcapng(struct st_rx_video_session_impl* s) {
   }
 
   if (s->pcapng_pool) {
-    rte_mempool_free(s->pcapng_pool);
+    mt_mempool_free(s->pcapng_pool);
     s->pcapng_pool = NULL;
   }
   return 0;

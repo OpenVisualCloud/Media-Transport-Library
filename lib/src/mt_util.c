@@ -11,10 +11,17 @@
 /* additional memleak check for rte_malloc since dpdk asan not support this */
 static int g_mt_rte_malloc_cnt;
 
+static int g_mt_mempool_create_cnt;
+
 int mt_asan_check(void) {
   if (g_mt_rte_malloc_cnt != 0) {
     rte_panic("%s, detect not free memory by rte_malloc, leak cnt %d\n", __func__,
               g_mt_rte_malloc_cnt);
+  }
+
+  if (g_mt_mempool_create_cnt != 0) {
+    rte_panic("%s, detect not free mempool, leak cnt %d\n", __func__,
+              g_mt_mempool_create_cnt);
   }
 
   return 0;
@@ -278,6 +285,9 @@ struct rte_mempool* mt_mempool_create_by_ops(struct mtl_main_impl* impl,
     float size_m = (float)n * (data_room_size + priv_size) / (1024 * 1024);
     info("%s(%d), succ at %p size %fm n %u d %u for %s\n", __func__, port, mbuf_pool,
          size_m, n, element_size, name);
+#ifdef MTL_HAS_ASAN
+    g_mt_mempool_create_cnt++;
+#endif
   }
   return mbuf_pool;
 }
@@ -292,6 +302,10 @@ int mt_mempool_free(struct rte_mempool* mp) {
   /* no any in-use mbuf */
   info("%s, free mempool %s\n", __func__, mp->name);
   rte_mempool_free(mp);
+#ifdef MTL_HAS_ASAN
+  g_mt_mempool_create_cnt--;
+#endif
+
   return 0;
 }
 
