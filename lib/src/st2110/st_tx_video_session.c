@@ -549,7 +549,7 @@ static int tv_init_hdr(struct mtl_main_impl* impl, struct st_tx_video_session_im
   ipv4->time_to_live = 64;
   ipv4->type_of_service = 0;
   ipv4->fragment_offset = MT_IP_DONT_FRAGMENT_FLAG;
-  ipv4->next_proto_id = 17;
+  ipv4->next_proto_id = IPPROTO_UDP;
   mtl_memcpy(&ipv4->src_addr, sip, MTL_IP_ADDR_LEN);
   mtl_memcpy(&ipv4->dst_addr, dip, MTL_IP_ADDR_LEN);
 
@@ -704,12 +704,12 @@ static int tv_build_pkt(struct mtl_main_impl* impl, struct st_tx_video_session_i
 
 static int tv_build_rtp(struct mtl_main_impl* impl, struct st_tx_video_session_impl* s,
                         struct rte_mbuf* pkt, struct rte_mbuf* pkt_chain) {
-  struct st_base_hdr* hdr;
+  struct mt_udp_hdr* hdr;
   struct rte_ipv4_hdr* ipv4;
   struct st_rfc3550_rtp_hdr* rtp;
   struct rte_udp_hdr* udp;
 
-  hdr = rte_pktmbuf_mtod(pkt, struct st_base_hdr*);
+  hdr = rte_pktmbuf_mtod(pkt, struct mt_udp_hdr*);
   ipv4 = &hdr->ipv4;
   udp = &hdr->udp;
   rtp = rte_pktmbuf_mtod(pkt_chain, struct st_rfc3550_rtp_hdr*);
@@ -739,7 +739,7 @@ static int tv_build_rtp(struct mtl_main_impl* impl, struct st_tx_video_session_i
 
   /* update mbuf */
   mt_mbuf_init_ipv4(pkt);
-  pkt->data_len = sizeof(struct st_base_hdr);
+  pkt->data_len = sizeof(struct mt_udp_hdr);
   pkt->pkt_len = pkt->data_len;
 
   /* chain the pkt */
@@ -761,11 +761,11 @@ static int tv_build_redundant_rtp(struct st_tx_video_session_impl* s,
                                   struct rte_mbuf* pkt_r, struct rte_mbuf* pkt_base,
                                   struct rte_mbuf* pkt_chain) {
   struct rte_ipv4_hdr *ipv4, *ipv4_base;
-  struct st_base_hdr *hdr, *hdr_base;
+  struct mt_udp_hdr *hdr, *hdr_base;
 
-  hdr = rte_pktmbuf_mtod(pkt_r, struct st_base_hdr*);
+  hdr = rte_pktmbuf_mtod(pkt_r, struct mt_udp_hdr*);
   ipv4 = &hdr->ipv4;
-  hdr_base = rte_pktmbuf_mtod(pkt_base, struct st_base_hdr*);
+  hdr_base = rte_pktmbuf_mtod(pkt_base, struct mt_udp_hdr*);
   ipv4_base = &hdr_base->ipv4;
 
   /* copy the hdr: eth, ip, udp */
@@ -1818,7 +1818,7 @@ static int tv_mempool_init(struct mtl_main_impl* impl,
     /* attach extbuf used, only placeholder mbuf */
     chain_room_size = 0;
   } else if (ops->type == ST20_TYPE_RTP_LEVEL) {
-    hdr_room_size = sizeof(struct st_base_hdr);
+    hdr_room_size = sizeof(struct mt_udp_hdr);
     chain_room_size = s->rtp_pkt_max_size;
   } else { /* frame level */
     hdr_room_size = sizeof(struct st_rfc4175_video_hdr);
@@ -2029,7 +2029,7 @@ static int tv_init_pkt(struct mtl_main_impl* impl, struct st_tx_video_session_im
     s->st20_pkt_info[ST20_PKT_TYPE_NORMAL].number = s->st20_total_pkts;
   } else if (type == ST20_TYPE_RTP_LEVEL) { /* rtp path */
     s->st20_total_pkts = ops->rtp_frame_total_pkts;
-    s->st20_pkt_size = ops->rtp_pkt_size + sizeof(struct st_base_hdr);
+    s->st20_pkt_size = ops->rtp_pkt_size + sizeof(struct mt_udp_hdr);
     s->st20_pkt_len = ops->rtp_pkt_size; /* not used in rtp, just set a value */
     /* assume all are normal */
     s->st20_pkt_info[ST20_PKT_TYPE_NORMAL].size = s->st20_pkt_size;

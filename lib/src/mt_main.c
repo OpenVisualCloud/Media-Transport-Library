@@ -362,6 +362,7 @@ mtl_handle mtl_init(struct mtl_init_params* p) {
   struct mt_kport_info kport_info;
 
   RTE_BUILD_BUG_ON(MT_SESSION_PORT_MAX > (int)MTL_PORT_MAX);
+  RTE_BUILD_BUG_ON(sizeof(struct mt_udp_hdr) != 42);
 
   ret = mt_user_params_check(p);
   if (ret < 0) {

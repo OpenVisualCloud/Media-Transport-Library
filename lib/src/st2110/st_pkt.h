@@ -29,13 +29,6 @@
 #define ST_EBU_PASS "PASSED"
 #define ST_EBU_FAIL "FAILED"
 
-/* total size: 42 */
-struct st_base_hdr {
-  struct rte_ether_hdr eth; /* size: 14 */
-  struct rte_ipv4_hdr ipv4; /* size: 20 */
-  struct rte_udp_hdr udp;   /* size: 8 */
-} __attribute__((__packed__)) __rte_aligned(2);
-
 /* total size: 54 */
 struct st_rfc3550_hdr {
   struct rte_ether_hdr eth;      /* size: 14 */

@@ -154,7 +154,7 @@ static int tx_ancillary_session_init_hdr(struct mtl_main_impl* impl,
   ipv4->time_to_live = 64;
   ipv4->type_of_service = 0;
   ipv4->fragment_offset = MT_IP_DONT_FRAGMENT_FLAG;
-  ipv4->next_proto_id = 17;
+  ipv4->next_proto_id = IPPROTO_UDP;
   mtl_memcpy(&ipv4->src_addr, sip, MTL_IP_ADDR_LEN);
   mtl_memcpy(&ipv4->dst_addr, dip, MTL_IP_ADDR_LEN);
 
@@ -387,12 +387,12 @@ static int tx_ancillary_session_build_packet(struct mtl_main_impl* impl,
                                              struct rte_mbuf* pkt,
                                              struct rte_mbuf* pkt_rtp,
                                              enum mt_session_port s_port) {
-  struct st_base_hdr* hdr;
+  struct mt_udp_hdr* hdr;
   struct rte_ipv4_hdr* ipv4;
   struct rte_udp_hdr* udp;
   struct st40_tx_ops* ops = &s->ops;
 
-  hdr = rte_pktmbuf_mtod(pkt, struct st_base_hdr*);
+  hdr = rte_pktmbuf_mtod(pkt, struct mt_udp_hdr*);
   ipv4 = &hdr->ipv4;
   udp = &hdr->udp;
 
@@ -920,7 +920,7 @@ static int tx_ancillary_session_mempool_init(struct mtl_main_impl* impl,
   enum mtl_port port;
   unsigned int n;
 
-  uint16_t hdr_room_size = sizeof(struct st_base_hdr);
+  uint16_t hdr_room_size = sizeof(struct mt_udp_hdr);
   uint16_t chain_room_size = ST_PKT_MAX_ETHER_BYTES - hdr_room_size;
 
   if (!tx_ancillary_session_has_chain_buf(s)) {
