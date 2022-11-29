@@ -348,7 +348,7 @@ int mt_mcast_join(struct mtl_main_impl* impl, uint32_t group_addr, enum mtl_port
   uint8_t* ip = (uint8_t*)&group_addr;
   int ret;
 
-  if (group_num >= ST_MCAST_GROUP_MAX) {
+  if (group_num >= MT_MCAST_GROUP_MAX) {
     err("%s, reach max multicast group number!\n", __func__);
     return -EIO;
   }

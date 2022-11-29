@@ -82,12 +82,18 @@ static int arp_receive_reply(struct mtl_main_impl* impl, struct rte_arp_hdr* rep
 
   struct mt_arp_impl* arp_impl = &impl->arp;
 
-  /* save to arp impl */
-  if (reply->arp_data.arp_sip == arp_impl->ip[port]) {
-    memcpy(arp_impl->ea[port].addr_bytes, reply->arp_data.arp_sha.addr_bytes,
-           RTE_ETHER_ADDR_LEN);
-    rte_atomic32_set(&arp_impl->mac_ready[port], 1);
+  /* save to arp table */
+  int i;
+  for (i = 0; i < MT_ARP_ENTRY_MAX; i++) {
+    if (arp_impl->ip[port][i] == reply->arp_data.arp_sip) break;
   }
+  if (i >= MT_ARP_ENTRY_MAX) {
+    dbg("%s(%d), not our arp\n", __func__, port);
+    return -EINVAL;
+  }
+  memcpy(arp_impl->ea[port][i].addr_bytes, reply->arp_data.arp_sha.addr_bytes,
+         RTE_ETHER_ADDR_LEN);
+  rte_atomic32_set(&arp_impl->mac_ready[port][i], 1);
 
   return 0;
 }
@@ -117,7 +123,23 @@ int mt_arp_cni_get_mac(struct mtl_main_impl* impl, struct rte_ether_addr* ea,
   int retry = 0;
   uint8_t* addr = (uint8_t*)&ip;
 
-  arp_impl->ip[port] = ip;
+  int i;
+  for (i = 0; i < MT_ARP_ENTRY_MAX; i++) {
+    if (arp_impl->ip[port][i] == ip &&
+        rte_atomic32_read(&arp_impl->mac_ready[port][i]) == 1) {
+      /* get cached mac addr */
+      memcpy(ea->addr_bytes, arp_impl->ea[port][i].addr_bytes, RTE_ETHER_ADDR_LEN);
+      return 0;
+    }
+    if (arp_impl->ip[port][i] == 0) break;
+  }
+  if (i >= MT_ARP_ENTRY_MAX) {
+    /* arp table full, flush it */
+    mt_reset_arp(impl, port);
+    i = 0;
+  }
+  arp_impl->ip[port][i] = ip;
+  rte_atomic32_set(&arp_impl->mac_ready[port][i], 0);
 
   struct rte_mbuf* req_pkt = rte_pktmbuf_alloc(mt_get_tx_mempool(impl, port));
   if (!req_pkt) return -ENOMEM;
@@ -142,7 +164,7 @@ int mt_arp_cni_get_mac(struct mtl_main_impl* impl, struct rte_ether_addr* ea,
   memset(&arp->arp_data.arp_tha, 0, RTE_ETHER_ADDR_LEN);
 
   /* send arp request packet */
-  while (rte_atomic32_read(&arp_impl->mac_ready[port]) == 0) {
+  while (rte_atomic32_read(&arp_impl->mac_ready[port][i]) == 0) {
     rte_mbuf_refcnt_update(req_pkt, 1);
     tx = mt_dev_tx_sys_queue_burst(impl, port, &req_pkt, 1);
     if (tx < 1) {
@@ -152,13 +174,13 @@ int mt_arp_cni_get_mac(struct mtl_main_impl* impl, struct rte_ether_addr* ea,
 
     if (rte_atomic32_read(&impl->request_exit)) return -EIO;
 
-    mt_sleep_ms(100);
+    mt_sleep_ms(500);
     retry++;
-    if (0 == (retry % 50))
+    if (0 == (retry % 10))
       info("%s(%d), waiting arp from %d.%d.%d.%d\n", __func__, port, addr[0], addr[1],
            addr[2], addr[3]);
   }
-  memcpy(ea->addr_bytes, arp_impl->ea[port].addr_bytes, RTE_ETHER_ADDR_LEN);
+  memcpy(ea->addr_bytes, arp_impl->ea[port][i].addr_bytes, RTE_ETHER_ADDR_LEN);
   rte_pktmbuf_free(req_pkt);
 
   return 0;

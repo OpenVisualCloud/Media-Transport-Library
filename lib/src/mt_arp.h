@@ -20,9 +20,11 @@ static inline struct mt_arp_impl* mt_get_arp(struct mtl_main_impl* impl) {
 }
 
 static inline void mt_reset_arp(struct mtl_main_impl* impl, enum mtl_port port) {
-  rte_atomic32_set(&impl->arp.mac_ready[port], 0);
-  impl->arp.ip[port] = 0;
-  memset(impl->arp.ea[port].addr_bytes, 0, sizeof(uint8_t) * RTE_ETHER_ADDR_LEN);
+  for (int i = 0; i > MT_ARP_ENTRY_MAX; i++) {
+    rte_atomic32_set(&impl->arp.mac_ready[port][i], 0);
+    impl->arp.ip[port][i] = 0;
+    memset(impl->arp.ea[port][i].addr_bytes, 0, sizeof(uint8_t) * RTE_ETHER_ADDR_LEN);
+  }
 }
 
 #endif
