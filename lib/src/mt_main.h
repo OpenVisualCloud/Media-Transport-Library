@@ -531,9 +531,10 @@ struct mtl_main_impl {
   rte_atomic32_t stat_stop;
 
   /* dev context */
-  rte_atomic32_t started;       /* if st dev is started */
-  rte_atomic32_t dev_in_reset;  /* if dev is in reset */
-  rte_atomic32_t request_exit;  /* request exit, in case for ctrl-c from app */
+  rte_atomic32_t instance_started;  /* if mt instance is started */
+  rte_atomic32_t instance_in_reset; /* if mt instance is in reset */
+  /* if mt instance is aborted, in case for ctrl-c from app */
+  rte_atomic32_t instance_aborted;
   struct mt_sch_impl* main_sch; /* system sch */
 
   /* admin context */
@@ -820,6 +821,27 @@ static inline uint16_t mt_if_nb_rx_desc(struct mtl_main_impl* impl, enum mtl_por
 
 static inline int mt_socket_id(struct mtl_main_impl* impl, enum mtl_port port) {
   return mt_if(impl, port)->socket_id;
+}
+
+static inline bool mt_started(struct mtl_main_impl* impl) {
+  if (rte_atomic32_read(&impl->instance_started))
+    return true;
+  else
+    return false;
+}
+
+static inline bool mt_in_reset(struct mtl_main_impl* impl) {
+  if (rte_atomic32_read(&impl->instance_in_reset))
+    return true;
+  else
+    return false;
+}
+
+static inline bool mt_aborted(struct mtl_main_impl* impl) {
+  if (rte_atomic32_read(&impl->instance_aborted))
+    return true;
+  else
+    return false;
 }
 
 static inline uint32_t mt_sch_schedule_ns(struct mtl_main_impl* impl) {

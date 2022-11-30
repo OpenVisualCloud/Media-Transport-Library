@@ -192,10 +192,15 @@ static int socket_query_local_mac(uint8_t ip[MTL_IP_ADDR_LEN],
 }
 
 int mt_socket_get_mac(struct mtl_main_impl* impl, char* if_name,
-                      uint8_t dip[MTL_IP_ADDR_LEN], struct rte_ether_addr* ea) {
+                      uint8_t dip[MTL_IP_ADDR_LEN], struct rte_ether_addr* ea,
+                      int timeout_ms) {
   int sock, ret;
   struct sockaddr_in addr;
   char dummy_buf[4];
+  int max_retry = 0;
+  int sleep_interval_ms = 100;
+
+  if (timeout_ms) max_retry = (timeout_ms / sleep_interval_ms) + 1;
 
   ret = socket_query_local_mac(dip, ea);
   if (ret >= 0) {
@@ -216,19 +221,23 @@ int mt_socket_get_mac(struct mtl_main_impl* impl, char* if_name,
 
   int retry = 0;
   while (socket_arp_get(sock, addr.sin_addr.s_addr, ea, if_name) < 0) {
-    sendto(sock, dummy_buf, 0, 0, (struct sockaddr*)&addr, sizeof(struct sockaddr_in));
-
-    if (rte_atomic32_read(&impl->request_exit)) {
-      close(sock);
+    if (mt_aborted(impl)) {
+      err("%s, fail as user aborted\n", __func__);
       return -EIO;
     }
+    if ((max_retry > 0) && (retry > max_retry)) {
+      err("%s, fail as timeout to %d ms\n", __func__, timeout_ms);
+      return -EIO;
+    }
+
+    sendto(sock, dummy_buf, 0, 0, (struct sockaddr*)&addr, sizeof(struct sockaddr_in));
 
     retry++;
     if (0 == (retry % 50)) {
       info("%s(%s), waiting arp from %d.%d.%d.%d\n", __func__, if_name, dip[0], dip[1],
            dip[2], dip[3]);
     }
-    mt_sleep_ms(100);
+    mt_sleep_ms(sleep_interval_ms);
   }
 
   close(sock);
@@ -300,7 +309,8 @@ int mt_socket_drop_mcast(struct mtl_main_impl* impl, enum mtl_port port, uint32_
 }
 
 int mt_socket_get_mac(struct mtl_main_impl* impl, char* if_name,
-                      uint8_t dip[MTL_IP_ADDR_LEN], struct rte_ether_addr* ea) {
+                      uint8_t dip[MTL_IP_ADDR_LEN], struct rte_ether_addr* ea,
+                      int timeout_ms) {
   return -ENOTSUP;
 }
 

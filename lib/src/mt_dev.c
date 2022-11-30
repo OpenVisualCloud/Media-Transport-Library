@@ -138,9 +138,12 @@ static void dev_eth_stat(struct mtl_main_impl* impl) {
 static void dev_stat(struct mtl_main_impl* impl) {
   struct mtl_init_params* p = mt_get_user_params(impl);
 
-  if (rte_atomic32_read(&impl->dev_in_reset)) return;
+  if (mt_in_reset(impl)) {
+    notice("* *    M T    D E V   I N   R E S E T   * * \n");
+    return;
+  }
 
-  notice("* *    S T    D E V   S T A T E   * * \n");
+  notice("* *    M T    D E V   S T A T E   * * \n");
   dev_eth_stat(impl);
   mt_ptp_stat(impl);
   mt_cni_stat(impl);
@@ -978,12 +981,12 @@ int dev_reset_port(struct mtl_main_impl* impl, enum mtl_port port) {
   struct mt_interface* inf = mt_if(impl, port);
   struct rte_flow* flow;
 
-  if (rte_atomic32_read(&impl->started)) {
-    err("%s, only allowed when dev is in stop state\n", __func__);
+  if (mt_started(impl)) {
+    err("%s, only allowed when instance is in stop state\n", __func__);
     return -EIO;
   }
 
-  rte_atomic32_set(&impl->dev_in_reset, 1);
+  rte_atomic32_set(&impl->instance_in_reset, 1);
 
   mt_cni_stop(impl);
 
@@ -992,14 +995,14 @@ int dev_reset_port(struct mtl_main_impl* impl, enum mtl_port port) {
   ret = dev_config_port(impl, port);
   if (ret < 0) {
     err("%s(%d), dev_config_port fail %d\n", __func__, port, ret);
-    rte_atomic32_set(&impl->dev_in_reset, 0);
+    rte_atomic32_set(&impl->instance_in_reset, 0);
     return ret;
   }
 
   ret = dev_start_port(impl, port);
   if (ret < 0) {
     err("%s(%d), dev_start_port fail %d\n", __func__, port, ret);
-    rte_atomic32_set(&impl->dev_in_reset, 0);
+    rte_atomic32_set(&impl->instance_in_reset, 0);
     return ret;
   }
 
@@ -1022,7 +1025,7 @@ int dev_reset_port(struct mtl_main_impl* impl, enum mtl_port port) {
       flow = dev_rx_queue_create_flow(inf, rx_q, &rx_queue->st_flow);
       if (!flow) {
         err("%s(%d), dev_rx_queue_create_flow fail for q %d\n", __func__, port, rx_q);
-        rte_atomic32_set(&impl->dev_in_reset, 0);
+        rte_atomic32_set(&impl->instance_in_reset, 0);
         return -EIO;
       }
       rx_queue->flow = flow;
@@ -1609,6 +1612,22 @@ struct mt_rx_queue* mt_dev_get_rx_queue(struct mtl_main_impl* impl, enum mtl_por
   return NULL;
 }
 
+uint16_t mt_dev_tx_burst_busy(struct mtl_main_impl* impl, struct mt_tx_queue* queue,
+                              struct rte_mbuf** tx_pkts, uint16_t nb_pkts) {
+  uint16_t sent = 0;
+
+  /* Send this vector with busy looping */
+  while (sent < nb_pkts) {
+    if (mt_aborted(impl)) {
+      warn("%s(%u), fail as user aborted\n", __func__, mt_dev_tx_queue_id(queue));
+      return sent;
+    }
+    sent += mt_dev_tx_burst(queue, &tx_pkts[sent], nb_pkts - sent);
+  }
+
+  return sent;
+}
+
 int mt_dev_flush_tx_queue(struct mtl_main_impl* impl, struct mt_tx_queue* queue,
                           struct rte_mbuf* pad) {
   enum mtl_port port = queue->port;
@@ -1626,7 +1645,7 @@ int mt_dev_flush_tx_queue(struct mtl_main_impl* impl, struct mt_tx_queue* queue,
   info("%s(%d), queue %u burst_pkts %d\n", __func__, port, queue_id, burst_pkts);
   for (int i = 0; i < burst_pkts; i++) {
     rte_mbuf_refcnt_update(pad, 1);
-    mt_dev_tx_burst_busy(queue, &pads[0], 1);
+    mt_dev_tx_burst_busy(impl, queue, &pads[0], 1);
   }
   dbg("%s, end\n", __func__);
   return 0;
@@ -1895,7 +1914,7 @@ int mt_dev_uinit(struct mtl_init_params* p) {
 }
 
 int mt_dev_dst_ip_mac(struct mtl_main_impl* impl, uint8_t dip[MTL_IP_ADDR_LEN],
-                      struct rte_ether_addr* ea, enum mtl_port port) {
+                      struct rte_ether_addr* ea, enum mtl_port port, int timeout_ms) {
   int ret;
 
   if (mt_is_multicast_ip(dip)) {
@@ -1904,13 +1923,14 @@ int mt_dev_dst_ip_mac(struct mtl_main_impl* impl, uint8_t dip[MTL_IP_ADDR_LEN],
     info("%s(%d), start to get mac for ip %d.%d.%d.%d\n", __func__, port, dip[0], dip[1],
          dip[2], dip[3]);
     if (mt_pmd_is_kernel(impl, port)) {
-      ret = mt_socket_get_mac(impl, mt_get_user_params(impl)->port[port], dip, ea);
+      ret = mt_socket_get_mac(impl, mt_get_user_params(impl)->port[port], dip, ea,
+                              timeout_ms);
       if (ret < 0) {
         err("%s(%d), failed to get mac from socket %d\n", __func__, port, ret);
         return ret;
       }
     } else {
-      ret = mt_arp_cni_get_mac(impl, ea, port, mt_ip_to_u32(dip));
+      ret = mt_arp_cni_get_mac(impl, ea, port, mt_ip_to_u32(dip), timeout_ms);
       if (ret < 0) {
         err("%s(%d), failed to get mac from cni %d\n", __func__, port, ret);
         return ret;

@@ -323,7 +323,7 @@ static int mt_user_params_check(struct mtl_init_params* p) {
 static int _mt_start(struct mtl_main_impl* impl) {
   int ret;
 
-  if (rte_atomic32_read(&impl->started)) {
+  if (mt_started(impl)) {
     dbg("%s, started already\n", __func__);
     return 0;
   }
@@ -337,20 +337,20 @@ static int _mt_start(struct mtl_main_impl* impl) {
     return ret;
   }
 
-  rte_atomic32_set(&impl->started, 1);
+  rte_atomic32_set(&impl->instance_started, 1);
 
   info("%s, succ, avail ports %d\n", __func__, rte_eth_dev_count_avail());
   return 0;
 }
 
 static int _mt_stop(struct mtl_main_impl* impl) {
-  if (!rte_atomic32_read(&impl->started)) {
+  if (!mt_started(impl)) {
     dbg("%s, not started\n", __func__);
     return 0;
   }
 
   mt_dev_stop(impl);
-  rte_atomic32_set(&impl->started, 0);
+  rte_atomic32_set(&impl->instance_started, 0);
   info("%s, succ\n", __func__);
   return 0;
 }
@@ -428,9 +428,9 @@ mtl_handle mtl_init(struct mtl_init_params* p) {
     impl->inf[i].socket_id = socket[i];
     info("%s(%d), socket_id %d\n", __func__, i, socket[i]);
   }
-  rte_atomic32_set(&impl->started, 0);
-  rte_atomic32_set(&impl->request_exit, 0);
-  rte_atomic32_set(&impl->dev_in_reset, 0);
+  rte_atomic32_set(&impl->instance_started, 0);
+  rte_atomic32_set(&impl->instance_aborted, 0);
+  rte_atomic32_set(&impl->instance_in_reset, 0);
   impl->lcore_lock_fd = -1;
   impl->tx_sessions_cnt_max = RTE_MIN(180, p->tx_sessions_cnt_max);
   impl->rx_sessions_cnt_max = RTE_MIN(180, p->rx_sessions_cnt_max);
@@ -615,7 +615,7 @@ int mtl_abort(mtl_handle mt) {
     return -EIO;
   }
 
-  rte_atomic32_set(&impl->request_exit, 1);
+  rte_atomic32_set(&impl->instance_aborted, 1);
 
   return 0;
 }
@@ -886,7 +886,7 @@ int mtl_get_stats(mtl_handle mt, struct mtl_stats* stats) {
   stats->sch_cnt = rte_atomic32_read(&mt_sch_get_mgr(impl)->sch_cnt);
   stats->lcore_cnt = rte_atomic32_read(&impl->lcore_cnt);
   stats->dma_dev_cnt = rte_atomic32_read(&mgr->num_dma_dev_active);
-  if (rte_atomic32_read(&impl->started))
+  if (mt_started(impl))
     stats->dev_started = 1;
   else
     stats->dev_started = 0;
