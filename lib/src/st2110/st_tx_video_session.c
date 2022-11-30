@@ -215,7 +215,7 @@ static int tv_train_pacing(struct mtl_main_impl* impl, struct st_tx_video_sessio
   pad_pkts = s->st20_total_pkts * 100;
   for (int i = 0; i < pad_pkts; i++) {
     rte_mbuf_refcnt_update(pad, 1);
-    mt_dev_tx_burst_busy(impl, queue, &pad, 1);
+    mt_dev_tx_burst_busy(impl, queue, &pad, 1, 10);
   }
 
   /* training stage */
@@ -233,12 +233,12 @@ static int tv_train_pacing(struct mtl_main_impl* impl, struct st_tx_video_sessio
       int bulk_batch = pkts / bulk;
       for (int j = 0; j < bulk_batch; j++) {
         rte_mbuf_refcnt_update(pad, bulk);
-        mt_dev_tx_burst_busy(impl, queue, bulk_pad, bulk);
+        mt_dev_tx_burst_busy(impl, queue, bulk_pad, bulk, 10);
       }
       int remaining = pkts % bulk;
       for (int j = 0; j < remaining; j++) {
         rte_mbuf_refcnt_update(pad, 1);
-        mt_dev_tx_burst_busy(impl, queue, &pad, 1);
+        mt_dev_tx_burst_busy(impl, queue, &pad, 1, 10);
       }
     }
     uint64_t end = mt_get_tsc(impl);

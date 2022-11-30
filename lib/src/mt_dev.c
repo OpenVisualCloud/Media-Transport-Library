@@ -1613,14 +1613,20 @@ struct mt_rx_queue* mt_dev_get_rx_queue(struct mtl_main_impl* impl, enum mtl_por
 }
 
 uint16_t mt_dev_tx_burst_busy(struct mtl_main_impl* impl, struct mt_tx_queue* queue,
-                              struct rte_mbuf** tx_pkts, uint16_t nb_pkts) {
+                              struct rte_mbuf** tx_pkts, uint16_t nb_pkts,
+                              int timeout_ms) {
   uint16_t sent = 0;
+  uint64_t start_ts = mt_get_tsc(impl);
 
   /* Send this vector with busy looping */
   while (sent < nb_pkts) {
-    if (mt_aborted(impl)) {
-      warn("%s(%u), fail as user aborted\n", __func__, mt_dev_tx_queue_id(queue));
-      return sent;
+    if (timeout_ms > 0) {
+      int ms = (mt_get_tsc(impl) - start_ts) / NS_PER_MS;
+      if (ms > timeout_ms) {
+        warn("%s(%u), fail as timeout to %d ms\n", __func__, mt_dev_tx_queue_id(queue),
+             timeout_ms);
+        return sent;
+      }
     }
     sent += mt_dev_tx_burst(queue, &tx_pkts[sent], nb_pkts - sent);
   }
@@ -1645,7 +1651,7 @@ int mt_dev_flush_tx_queue(struct mtl_main_impl* impl, struct mt_tx_queue* queue,
   info("%s(%d), queue %u burst_pkts %d\n", __func__, port, queue_id, burst_pkts);
   for (int i = 0; i < burst_pkts; i++) {
     rte_mbuf_refcnt_update(pad, 1);
-    mt_dev_tx_burst_busy(impl, queue, &pads[0], 1);
+    mt_dev_tx_burst_busy(impl, queue, &pads[0], 1, 10);
   }
   dbg("%s, end\n", __func__);
   return 0;

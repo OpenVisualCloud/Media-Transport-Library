@@ -43,7 +43,8 @@ static inline uint16_t mt_dev_tx_burst(struct mt_tx_queue* queue,
   return rte_eth_tx_burst(queue->port_id, queue->queue_id, tx_pkts, nb_pkts);
 }
 uint16_t mt_dev_tx_burst_busy(struct mtl_main_impl* impl, struct mt_tx_queue* queue,
-                              struct rte_mbuf** tx_pkts, uint16_t nb_pkts);
+                              struct rte_mbuf** tx_pkts, uint16_t nb_pkts,
+                              int timeout_ms);
 
 uint16_t mt_dev_tx_sys_queue_burst(struct mtl_main_impl* impl, enum mtl_port port,
                                    struct rte_mbuf** tx_pkts, uint16_t nb_pkts);
