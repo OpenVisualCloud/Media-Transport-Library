@@ -215,7 +215,7 @@ static void st_app_sig_handler(int signo) {
   info("%s, signal %d\n", __func__, signo);
   switch (signo) {
     case SIGINT: /* Interrupt from keyboard */
-      if (ctx->st) mtl_request_exit(ctx->st);
+      if (ctx->st) mtl_abort(ctx->st);
       ctx->stop = true;
       break;
   }

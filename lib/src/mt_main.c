@@ -607,7 +607,7 @@ int mtl_bind_to_lcore(mtl_handle mt, pthread_t thread, unsigned int lcore) {
   return 0;
 }
 
-int mtl_request_exit(mtl_handle mt) {
+int mtl_abort(mtl_handle mt) {
   struct mtl_main_impl* impl = mt;
 
   if (impl->type != MT_HANDLE_MAIN) {

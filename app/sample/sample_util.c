@@ -178,7 +178,7 @@ static void sample_sig_handler(int signo) {
   switch (signo) {
     case SIGINT: /* Interrupt from keyboard */
       ctx->exit = true;
-      if (ctx->st) mtl_request_exit(ctx->st);
+      if (ctx->st) mtl_abort(ctx->st);
       break;
   }
 

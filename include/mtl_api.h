@@ -524,7 +524,7 @@ int mtl_stop(mtl_handle mt);
  *   - 0: Success, device aborted.
  *   - <0: Error code of the device abort.
  */
-int mtl_request_exit(mtl_handle mt);
+int mtl_abort(mtl_handle mt);
 
 /**
  * Retrieve the capacity of the media transport device context.
