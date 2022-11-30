@@ -6,26 +6,26 @@
 #include "tests.h"
 
 int st_test_sch_cnt(struct st_tests_context* ctx) {
-  st_handle handle = ctx->handle;
-  struct st_stats stats;
+  mtl_handle handle = ctx->handle;
+  struct mtl_stats stats;
   int ret;
 
-  ret = st_get_stats(handle, &stats);
+  ret = mtl_get_stats(handle, &stats);
   if (ret < 0) return ret;
 
   return stats.sch_cnt;
 }
 
 bool st_test_dma_available(struct st_tests_context* ctx) {
-  st_handle handle = ctx->handle;
-  struct st_stats stats;
-  struct st_cap cap;
+  mtl_handle handle = ctx->handle;
+  struct mtl_stats stats;
+  struct mtl_cap cap;
   int ret;
 
-  ret = st_get_stats(handle, &stats);
+  ret = mtl_get_stats(handle, &stats);
   if (ret < 0) return ret;
 
-  ret = st_get_cap(handle, &cap);
+  ret = mtl_get_cap(handle, &cap);
   if (ret < 0) return ret;
 
   if (stats.dma_dev_cnt < cap.dma_dev_cnt_max)
@@ -36,50 +36,50 @@ bool st_test_dma_available(struct st_tests_context* ctx) {
 
 static void init_expect_fail_test(void) {
   struct st_tests_context* ctx = st_test_ctx();
-  st_handle handle;
-  struct st_init_params para;
+  mtl_handle handle;
+  struct mtl_init_params para;
 
   memset(&para, 0, sizeof(para));
-  handle = st_init(&para);
+  handle = mtl_init(&para);
   EXPECT_TRUE(handle == NULL);
 
   para.num_ports = 1;
-  handle = st_init(&para);
+  handle = mtl_init(&para);
   EXPECT_TRUE(handle == NULL);
 
-  memcpy(st_p_sip_addr(&para), ctx->para.sip_addr[ST_PORT_P], ST_IP_ADDR_LEN);
-  handle = st_init(&para);
+  memcpy(mtl_p_sip_addr(&para), ctx->para.sip_addr[MTL_PORT_P], MTL_IP_ADDR_LEN);
+  handle = mtl_init(&para);
   EXPECT_TRUE(handle == NULL);
 
-  snprintf(para.port[ST_PORT_P], sizeof(para.port[ST_PORT_P]), "0000:55:00.0");
-  handle = st_init(&para);
+  snprintf(para.port[MTL_PORT_P], sizeof(para.port[MTL_PORT_P]), "0000:55:00.0");
+  handle = mtl_init(&para);
   EXPECT_TRUE(handle == NULL);
 
-  memcpy(st_r_sip_addr(&para), ctx->para.sip_addr[ST_PORT_R], ST_IP_ADDR_LEN);
+  memcpy(mtl_r_sip_addr(&para), ctx->para.sip_addr[MTL_PORT_R], MTL_IP_ADDR_LEN);
 
   /* test with 0 num_ports */
   para.num_ports = 0;
-  handle = st_init(&para);
+  handle = mtl_init(&para);
   EXPECT_TRUE(handle == NULL);
 
   /* test with crazy big num_ports */
   para.num_ports = 100;
-  handle = st_init(&para);
+  handle = mtl_init(&para);
   EXPECT_TRUE(handle == NULL);
 
   /* test with negative big num_ports */
   para.num_ports = -1;
-  handle = st_init(&para);
+  handle = mtl_init(&para);
   EXPECT_TRUE(handle == NULL);
 
   para.num_ports = 1;
   para.tx_sessions_cnt_max = -1;
-  handle = st_init(&para);
+  handle = mtl_init(&para);
   EXPECT_TRUE(handle == NULL);
 
   para.tx_sessions_cnt_max = 1;
   para.rx_sessions_cnt_max = -1;
-  handle = st_init(&para);
+  handle = mtl_init(&para);
   EXPECT_TRUE(handle == NULL);
 }
 
@@ -87,9 +87,9 @@ TEST(Main, init_expect_fail) { init_expect_fail_test(); }
 
 static void reinit_expect_fail_test(void) {
   struct st_tests_context* ctx = st_test_ctx();
-  st_handle handle;
+  mtl_handle handle;
 
-  handle = st_init(&ctx->para);
+  handle = mtl_init(&ctx->para);
   EXPECT_TRUE(handle == NULL);
 }
 
@@ -97,13 +97,13 @@ TEST(Main, re_init_fail) { reinit_expect_fail_test(); }
 
 static void start_stop_test(int repeat) {
   struct st_tests_context* ctx = st_test_ctx();
-  st_handle handle = ctx->handle;
+  mtl_handle handle = ctx->handle;
   int ret;
 
   for (int i = 0; i < repeat; i++) {
-    ret = st_start(handle);
+    ret = mtl_start(handle);
     EXPECT_GE(ret, 0);
-    ret = st_stop(handle);
+    ret = mtl_stop(handle);
     EXPECT_GE(ret, 0);
   }
 }
@@ -114,14 +114,14 @@ TEST(Main, start_stop_multi) { start_stop_test(5); }
 
 static void start_expect_fail_test(void) {
   struct st_tests_context* ctx = st_test_ctx();
-  st_handle handle = ctx->handle;
+  mtl_handle handle = ctx->handle;
   int ret;
 
-  ret = st_start(handle);
+  ret = mtl_start(handle);
   EXPECT_GE(ret, 0);
-  ret = st_start(handle);
+  ret = mtl_start(handle);
   EXPECT_GE(ret, 0);
-  ret = st_stop(handle);
+  ret = mtl_stop(handle);
   EXPECT_GE(ret, 0);
 }
 
@@ -129,18 +129,18 @@ TEST(Main, start_expect_fail) { start_expect_fail_test(); }
 
 static void stop_expect_fail_test(void) {
   struct st_tests_context* ctx = st_test_ctx();
-  st_handle handle = ctx->handle;
+  mtl_handle handle = ctx->handle;
   int ret;
 
-  ret = st_stop(handle);
+  ret = mtl_stop(handle);
   EXPECT_GE(ret, 0);
 
-  ret = st_start(handle);
+  ret = mtl_start(handle);
   EXPECT_GE(ret, 0);
-  ret = st_stop(handle);
+  ret = mtl_stop(handle);
   EXPECT_GE(ret, 0);
 
-  ret = st_stop(handle);
+  ret = mtl_stop(handle);
   EXPECT_GE(ret, 0);
 }
 
@@ -148,11 +148,11 @@ TEST(Main, stop_expect_fail) { stop_expect_fail_test(); }
 
 TEST(Main, get_cap) {
   struct st_tests_context* ctx = st_test_ctx();
-  st_handle handle = ctx->handle;
-  struct st_cap cap;
+  mtl_handle handle = ctx->handle;
+  struct mtl_cap cap;
   int ret;
 
-  ret = st_get_cap(handle, &cap);
+  ret = mtl_get_cap(handle, &cap);
   EXPECT_GE(ret, 0);
   EXPECT_GT(cap.tx_sessions_cnt_max, 0);
   EXPECT_GT(cap.rx_sessions_cnt_max, 0);
@@ -162,11 +162,11 @@ TEST(Main, get_cap) {
 
 TEST(Main, get_stats) {
   struct st_tests_context* ctx = st_test_ctx();
-  st_handle handle = ctx->handle;
-  struct st_stats stats;
+  mtl_handle handle = ctx->handle;
+  struct mtl_stats stats;
   int ret;
 
-  ret = st_get_stats(handle, &stats);
+  ret = mtl_get_stats(handle, &stats);
   EXPECT_GE(ret, 0);
   EXPECT_EQ(stats.st20_tx_sessions_cnt, 0);
   EXPECT_EQ(stats.st30_tx_sessions_cnt, 0);
@@ -178,26 +178,26 @@ TEST(Main, get_stats) {
 }
 
 static int test_lcore_cnt(struct st_tests_context* ctx) {
-  st_handle handle = ctx->handle;
-  struct st_stats stats;
+  mtl_handle handle = ctx->handle;
+  struct mtl_stats stats;
   int ret;
 
-  ret = st_get_stats(handle, &stats);
+  ret = mtl_get_stats(handle, &stats);
   if (ret < 0) return ret;
 
   return stats.lcore_cnt;
 }
 
 static void test_lcore_one(struct st_tests_context* ctx) {
-  st_handle handle = ctx->handle;
+  mtl_handle handle = ctx->handle;
   int base_cnt = test_lcore_cnt(ctx);
   int ret;
   unsigned int lcore;
 
-  ret = st_get_lcore(handle, &lcore);
+  ret = mtl_get_lcore(handle, &lcore);
   ASSERT_TRUE(ret >= 0);
   EXPECT_EQ(test_lcore_cnt(ctx), base_cnt + 1);
-  ret = st_put_lcore(handle, lcore);
+  ret = mtl_put_lcore(handle, lcore);
   EXPECT_GE(ret, 0);
   EXPECT_EQ(test_lcore_cnt(ctx), base_cnt);
 }
@@ -210,18 +210,18 @@ TEST(Main, lcore) {
 
 TEST(Main, lcore_max) {
   struct st_tests_context* ctx = st_test_ctx();
-  st_handle handle = ctx->handle;
+  mtl_handle handle = ctx->handle;
   int base_cnt = test_lcore_cnt(ctx), max = 100;
   int ret, i;
   unsigned int lcore[100];
 
   for (i = 0; i < max; i++) {
-    ret = st_get_lcore(handle, &lcore[i]);
+    ret = mtl_get_lcore(handle, &lcore[i]);
     if (ret < 0) break;
   }
   EXPECT_EQ(test_lcore_cnt(ctx), base_cnt + i);
   max = i;
-  for (i = 0; i < max; i++) st_put_lcore(handle, lcore[i]);
+  for (i = 0; i < max; i++) mtl_put_lcore(handle, lcore[i]);
   EXPECT_EQ(test_lcore_cnt(ctx), base_cnt);
 
   test_lcore_one(ctx);
@@ -229,19 +229,19 @@ TEST(Main, lcore_max) {
 
 TEST(Main, lcore_expect_fail) {
   struct st_tests_context* ctx = st_test_ctx();
-  st_handle handle = ctx->handle;
+  mtl_handle handle = ctx->handle;
 
-  int ret = st_put_lcore(handle, 10000);
+  int ret = mtl_put_lcore(handle, 10000);
   ASSERT_LT(ret, 0);
   test_lcore_one(ctx);
 }
 
 static bool test_dev_started(struct st_tests_context* ctx) {
-  st_handle handle = ctx->handle;
-  struct st_stats stats;
+  mtl_handle handle = ctx->handle;
+  struct mtl_stats stats;
   int ret;
 
-  ret = st_get_stats(handle, &stats);
+  ret = mtl_get_stats(handle, &stats);
   if (ret < 0) return ret;
 
   if (stats.dev_started)
@@ -252,12 +252,12 @@ static bool test_dev_started(struct st_tests_context* ctx) {
 
 TEST(Main, dev_started) {
   struct st_tests_context* ctx = st_test_ctx();
-  st_handle handle = ctx->handle;
+  mtl_handle handle = ctx->handle;
 
-  int ret = st_start(handle);
+  int ret = mtl_start(handle);
   EXPECT_GE(ret, 0);
   EXPECT_TRUE(test_dev_started(ctx));
-  ret = st_stop(handle);
+  ret = mtl_stop(handle);
   EXPECT_GE(ret, 0);
 }
 
@@ -286,7 +286,7 @@ static void st20_frame_size_test() {
   EXPECT_EQ(size, expect_size);
 }
 
-TEST(Main, frame_size) { st20_frame_size_test(); }
+TEST(Main, st20_frame_size) { st20_frame_size_test(); }
 
 static void fmt_frame_equal_transport_test() {
   bool equal;
@@ -294,7 +294,7 @@ static void fmt_frame_equal_transport_test() {
   equal = st_frame_fmt_equal_transport(ST_FRAME_FMT_YUV422RFC4175PG2BE10,
                                        ST20_FMT_YUV_422_10BIT);
   EXPECT_TRUE(equal);
-  equal = st_frame_fmt_equal_transport(ST_FRAME_FMT_YUV422PACKED8, ST20_FMT_YUV_422_8BIT);
+  equal = st_frame_fmt_equal_transport(ST_FRAME_FMT_UYVY, ST20_FMT_YUV_422_8BIT);
   EXPECT_TRUE(equal);
   equal = st_frame_fmt_equal_transport(ST_FRAME_FMT_RGB8, ST20_FMT_RGB_8BIT);
   EXPECT_TRUE(equal);
@@ -306,8 +306,7 @@ static void fmt_frame_equal_transport_test() {
   EXPECT_FALSE(equal);
   equal = st_frame_fmt_equal_transport(ST_FRAME_FMT_YUV422PLANAR8, ST20_FMT_YUV_422_8BIT);
   EXPECT_FALSE(equal);
-  equal =
-      st_frame_fmt_equal_transport(ST_FRAME_FMT_YUV422PACKED8, ST20_FMT_YUV_422_12BIT);
+  equal = st_frame_fmt_equal_transport(ST_FRAME_FMT_UYVY, ST20_FMT_YUV_422_12BIT);
   EXPECT_FALSE(equal);
 }
 
@@ -319,7 +318,7 @@ static void fmt_frame_fom_transport_test() {
   to_fmt = st_frame_fmt_from_transport(ST20_FMT_YUV_422_10BIT);
   EXPECT_TRUE(to_fmt == ST_FRAME_FMT_YUV422RFC4175PG2BE10);
   to_fmt = st_frame_fmt_from_transport(ST20_FMT_YUV_422_8BIT);
-  EXPECT_TRUE(to_fmt == ST_FRAME_FMT_YUV422PACKED8);
+  EXPECT_TRUE(to_fmt == ST_FRAME_FMT_UYVY);
   to_fmt = st_frame_fmt_from_transport(ST20_FMT_RGB_8BIT);
   EXPECT_TRUE(to_fmt == ST_FRAME_FMT_RGB8);
 
@@ -334,7 +333,7 @@ static void fmt_frame_to_transport_test() {
 
   to_fmt = st_frame_fmt_to_transport(ST_FRAME_FMT_YUV422RFC4175PG2BE10);
   EXPECT_TRUE(to_fmt == ST20_FMT_YUV_422_10BIT);
-  to_fmt = st_frame_fmt_to_transport(ST_FRAME_FMT_YUV422PACKED8);
+  to_fmt = st_frame_fmt_to_transport(ST_FRAME_FMT_UYVY);
   EXPECT_TRUE(to_fmt == ST20_FMT_YUV_422_8BIT);
   to_fmt = st_frame_fmt_to_transport(ST_FRAME_FMT_RGB8);
   EXPECT_TRUE(to_fmt == ST20_FMT_RGB_8BIT);
@@ -347,33 +346,119 @@ static void fmt_frame_to_transport_test() {
 
 TEST(Main, fmt_to_transport) { fmt_frame_to_transport_test(); }
 
+static void frame_api_test() {
+  uint32_t w = 1920;
+  uint32_t h = 1080;
+  size_t size;
+  enum st_frame_fmt fmt;
+
+  /* yuv */
+  for (int i = ST_FRAME_FMT_YUV_START; i < ST_FRAME_FMT_YUV_END; i++) {
+    fmt = (enum st_frame_fmt)i;
+    size = st_frame_size(fmt, w, h);
+    EXPECT_GT(size, 0);
+    EXPECT_GT(st_frame_fmt_planes(fmt), 0);
+    EXPECT_GT(st_frame_least_linesize(fmt, w, 0), 0);
+  }
+  /* rgb */
+  for (int i = ST_FRAME_FMT_RGB_START; i < ST_FRAME_FMT_RGB_END; i++) {
+    fmt = (enum st_frame_fmt)i;
+    size = st_frame_size(fmt, w, h);
+    EXPECT_GT(size, 0);
+    EXPECT_GT(st_frame_fmt_planes(fmt), 0);
+    EXPECT_GT(st_frame_least_linesize(fmt, w, 0), 0);
+  }
+  /* codestream */
+  for (int i = ST_FRAME_FMT_CODESTREAM_START; i < ST_FRAME_FMT_CODESTREAM_END; i++) {
+    fmt = (enum st_frame_fmt)i;
+    size = st_frame_size(fmt, w, h);
+    EXPECT_EQ(size, 0);
+    EXPECT_EQ(st_frame_fmt_planes(fmt), 1);
+    EXPECT_EQ(st_frame_least_linesize(fmt, w, 0), 0);
+  }
+
+  /* invalid fmt */
+  size = st_frame_size(ST_FRAME_FMT_YUV_END, w, h);
+  EXPECT_EQ(size, 0);
+  size = st_frame_size(ST_FRAME_FMT_RGB_END, w, h);
+  EXPECT_EQ(size, 0);
+  size = st_frame_size(ST_FRAME_FMT_CODESTREAM_END, w, h);
+  EXPECT_EQ(size, 0);
+  size = st_frame_size(ST_FRAME_FMT_MAX, w, h);
+  EXPECT_EQ(size, 0);
+}
+
+static void frame_name_test() {
+  int result;
+  const char* fail = "unknown";
+  const char* name;
+  enum st_frame_fmt fmt;
+
+  /* yuv */
+  for (int i = ST_FRAME_FMT_YUV_START; i < ST_FRAME_FMT_YUV_END; i++) {
+    fmt = (enum st_frame_fmt)i;
+    name = st_frame_fmt_name(fmt);
+    EXPECT_NE(strcmp(fail, name), 0);
+    EXPECT_EQ(st_frame_name_to_fmt(name), fmt);
+  }
+  /* rgb */
+  for (int i = ST_FRAME_FMT_RGB_START; i < ST_FRAME_FMT_RGB_END; i++) {
+    fmt = (enum st_frame_fmt)i;
+    name = st_frame_fmt_name(fmt);
+    EXPECT_NE(strcmp(fail, name), 0);
+    EXPECT_EQ(st_frame_name_to_fmt(name), fmt);
+  }
+  /* codestream */
+  for (int i = ST_FRAME_FMT_CODESTREAM_START; i < ST_FRAME_FMT_CODESTREAM_END; i++) {
+    fmt = (enum st_frame_fmt)i;
+    name = st_frame_fmt_name(fmt);
+    EXPECT_NE(strcmp(fail, name), 0);
+    EXPECT_EQ(st_frame_name_to_fmt(name), fmt);
+  }
+
+  /* invalid fmt */
+  result = strcmp(fail, st_frame_fmt_name(ST_FRAME_FMT_YUV_END));
+  EXPECT_EQ(result, 0);
+  result = strcmp(fail, st_frame_fmt_name(ST_FRAME_FMT_RGB_END));
+  EXPECT_EQ(result, 0);
+  result = strcmp(fail, st_frame_fmt_name(ST_FRAME_FMT_CODESTREAM_END));
+  EXPECT_EQ(result, 0);
+  result = strcmp(fail, st_frame_fmt_name(ST_FRAME_FMT_MAX));
+  EXPECT_EQ(result, 0);
+  /* invalid name */
+  EXPECT_EQ(st_frame_name_to_fmt(fail), ST_FRAME_FMT_MAX);
+}
+
+TEST(Main, frame_api) { frame_api_test(); }
+TEST(Main, frame_name) { frame_name_test(); }
+
 static void size_page_align_test() {
   size_t pg_sz = 4096;
   size_t sz, expect_sz;
 
   sz = pg_sz * 1;
   expect_sz = pg_sz * 1;
-  sz = st_size_page_align(sz, pg_sz);
+  sz = mtl_size_page_align(sz, pg_sz);
   EXPECT_EQ(sz, expect_sz);
 
   sz = pg_sz * 1 + 100;
   expect_sz = pg_sz * 2;
-  sz = st_size_page_align(sz, pg_sz);
+  sz = mtl_size_page_align(sz, pg_sz);
   EXPECT_EQ(sz, expect_sz);
 
   sz = pg_sz * 4;
   expect_sz = pg_sz * 4;
-  sz = st_size_page_align(sz, pg_sz);
+  sz = mtl_size_page_align(sz, pg_sz);
   EXPECT_EQ(sz, expect_sz);
 
   sz = pg_sz * 4 - 1;
   expect_sz = pg_sz * 4;
-  sz = st_size_page_align(sz, pg_sz);
+  sz = mtl_size_page_align(sz, pg_sz);
   EXPECT_EQ(sz, expect_sz);
 
   sz = pg_sz * 4 + 1;
   expect_sz = pg_sz * 5;
-  sz = st_size_page_align(sz, pg_sz);
+  sz = mtl_size_page_align(sz, pg_sz);
   EXPECT_EQ(sz, expect_sz);
 }
 

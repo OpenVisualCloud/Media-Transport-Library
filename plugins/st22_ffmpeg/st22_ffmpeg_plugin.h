@@ -7,7 +7,7 @@
 
 #include <libavcodec/avcodec.h>
 #include <libavutil/opt.h>
-#include <st_pipeline_api.h>
+#include <mtl/st_pipeline_api.h>
 
 #define MAX_ST22_ENCODER_SESSIONS (8)
 #define MAX_ST22_DECODER_SESSIONS (8)
@@ -60,7 +60,7 @@ struct st22_ffmpeg_ctx {
 
 /* the APIs for plugin */
 int st_plugin_get_meta(struct st_plugin_meta* meta);
-st_plugin_priv st_plugin_create(st_handle st);
+st_plugin_priv st_plugin_create(mtl_handle st);
 int st_plugin_free(st_plugin_priv handle);
 
 #endif

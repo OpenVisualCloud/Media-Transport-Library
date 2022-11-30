@@ -90,5 +90,5 @@ The dir incldue the simple sample code for how to develop application quickly ba
 ./build/app/RxSt20RedundantSample --p_port 0000:af:01.0 --r_port 0000:af:01.1 --p_sip 192.168.77.11 --r_sip 192.168.77.12 --p_rx_ip 239.168.77.20 --r_rx_ip 239.168.77.21
 ```
 
-## 4. Dma samle:
+## 4. DMA sample:
 [dma_sample.c](dma_sample.c): A DMA sample code.

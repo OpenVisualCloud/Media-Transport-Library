@@ -24,8 +24,8 @@ static int test_encode_frame(struct test_st22_encoder_session* s,
   if (frame->dst->fmt != req->output_fmt) return -EIO;
 
   /* copy src sha to the start of encode frame */
-  memcpy(frame->dst->addr,
-         (uint8_t*)frame->src->addr + frame->src->data_size - SHA256_DIGEST_LENGTH,
+  memcpy(frame->dst->addr[0],
+         (uint8_t*)frame->src->addr[0] + frame->src->data_size - SHA256_DIGEST_LENGTH,
          SHA256_DIGEST_LENGTH);
   st_usleep(s->sleep_time_us);
   /* data size indicate the encode stream size for current frame */
@@ -171,8 +171,8 @@ static int test_decode_frame(struct test_st22_decoder_session* s,
   if (frame->src->data_size > frame->src->buffer_size) return -EIO;
 
   /* copy sha to the end of decode frame */
-  memcpy((uint8_t*)frame->dst->addr + frame->dst->data_size - SHA256_DIGEST_LENGTH,
-         frame->src->addr, SHA256_DIGEST_LENGTH);
+  memcpy((uint8_t*)frame->dst->addr[0] + frame->dst->data_size - SHA256_DIGEST_LENGTH,
+         frame->src->addr[0], SHA256_DIGEST_LENGTH);
   st_usleep(s->sleep_time_us);
 
   s->frame_cnt++;
@@ -369,62 +369,6 @@ TEST(St22p, plugin_register_fail) {
                        false);
 }
 
-static void frame_size_test() {
-  uint32_t w = 1920;
-  uint32_t h = 1080;
-  size_t size;
-
-  size = st_frame_size(ST_FRAME_FMT_YUV422PLANAR10LE, w, h);
-  EXPECT_GT(size, 0);
-  size = st_frame_size(ST_FRAME_FMT_V210, w, h);
-  EXPECT_GT(size, 0);
-  size = st_frame_size(ST_FRAME_FMT_YUV422PLANAR8, w, h);
-  EXPECT_GT(size, 0);
-  size = st_frame_size(ST_FRAME_FMT_YUV422PACKED8, w, h);
-  EXPECT_GT(size, 0);
-  size = st_frame_size(ST_FRAME_FMT_YUV422RFC4175PG2BE10, w, h);
-  EXPECT_GT(size, 0);
-
-  size = st_frame_size(ST_FRAME_FMT_ARGB, w, h);
-  EXPECT_GT(size, 0);
-  size = st_frame_size(ST_FRAME_FMT_BGRA, w, h);
-  EXPECT_GT(size, 0);
-  size = st_frame_size(ST_FRAME_FMT_RGB8, w, h);
-  EXPECT_GT(size, 0);
-
-  size = st_frame_size(ST_FRAME_FMT_MAX, w, h);
-  EXPECT_EQ(size, 0);
-}
-
-static void frame_name_test() {
-  int result;
-  const char* fail = "unknown";
-
-  result = strcmp(fail, st_frame_fmt_name(ST_FRAME_FMT_YUV422PLANAR10LE));
-  EXPECT_NE(result, 0);
-  result = strcmp(fail, st_frame_fmt_name(ST_FRAME_FMT_V210));
-  EXPECT_NE(result, 0);
-  result = strcmp(fail, st_frame_fmt_name(ST_FRAME_FMT_YUV422PLANAR8));
-  EXPECT_NE(result, 0);
-  result = strcmp(fail, st_frame_fmt_name(ST_FRAME_FMT_YUV422PACKED8));
-  EXPECT_NE(result, 0);
-  result = strcmp(fail, st_frame_fmt_name(ST_FRAME_FMT_YUV422RFC4175PG2BE10));
-  EXPECT_NE(result, 0);
-
-  result = strcmp(fail, st_frame_fmt_name(ST_FRAME_FMT_ARGB));
-  EXPECT_NE(result, 0);
-  result = strcmp(fail, st_frame_fmt_name(ST_FRAME_FMT_BGRA));
-  EXPECT_NE(result, 0);
-  result = strcmp(fail, st_frame_fmt_name(ST_FRAME_FMT_RGB8));
-  EXPECT_NE(result, 0);
-
-  result = strcmp(fail, st_frame_fmt_name(ST_FRAME_FMT_MAX));
-  EXPECT_EQ(result, 0);
-}
-
-TEST(St22p, frame_size) { frame_size_test(); }
-TEST(St22p, frame_name) { frame_name_test(); }
-
 static void frame_draw_logo_test(enum st_frame_fmt fmt, uint32_t w, uint32_t h,
                                  uint32_t logo_w, uint32_t logo_h, uint32_t x, uint32_t y,
                                  bool expect) {
@@ -432,25 +376,25 @@ static void frame_draw_logo_test(enum st_frame_fmt fmt, uint32_t w, uint32_t h,
   auto st = ctx->handle;
   size_t logo_size = st_frame_size(fmt, logo_w, logo_h);
   size_t frame_size = st_frame_size(fmt, w, h);
-  void* frame_buf = st_hp_malloc(st, frame_size, ST_PORT_P);
+  void* frame_buf = mtl_hp_malloc(st, frame_size, MTL_PORT_P);
   if (!frame_buf) {
     err("%s, frame_buf malloc fail\n", __func__);
     return;
   }
-  void* logo_buf = st_hp_malloc(st, logo_size, ST_PORT_P);
+  void* logo_buf = mtl_hp_malloc(st, logo_size, MTL_PORT_P);
   if (!logo_buf) {
     err("%s, logo_buf malloc fail\n", __func__);
-    st_hp_free(st, frame_buf);
+    mtl_hp_free(st, frame_buf);
     return;
   }
 
   struct st_frame frame_meta;
   struct st_frame logo_meta;
-  frame_meta.addr = frame_buf;
+  frame_meta.addr[0] = frame_buf;
   frame_meta.fmt = fmt;
   frame_meta.width = w;
   frame_meta.height = h;
-  logo_meta.addr = logo_buf;
+  logo_meta.addr[0] = logo_buf;
   logo_meta.fmt = fmt;
   logo_meta.width = logo_w;
   logo_meta.height = logo_h;
@@ -461,8 +405,8 @@ static void frame_draw_logo_test(enum st_frame_fmt fmt, uint32_t w, uint32_t h,
   else
     EXPECT_LT(ret, 0);
 
-  st_hp_free(st, logo_buf);
-  st_hp_free(st, frame_buf);
+  mtl_hp_free(st, logo_buf);
+  mtl_hp_free(st, frame_buf);
 }
 
 TEST(St22p, draw_logo_rfc4175_1080p) {
@@ -503,9 +447,10 @@ static void st22p_tx_ops_init(tests_context* st22, struct st22p_tx_ops* ops_tx) 
   ops_tx->name = "st22p_test";
   ops_tx->priv = st22;
   ops_tx->port.num_port = 1;
-  memcpy(ops_tx->port.dip_addr[ST_PORT_P], ctx->mcast_ip_addr[ST_PORT_P], ST_IP_ADDR_LEN);
-  strncpy(ops_tx->port.port[ST_PORT_P], ctx->para.port[ST_PORT_P], ST_PORT_MAX_LEN);
-  ops_tx->port.udp_port[ST_PORT_P] = ST22P_TEST_UDP_PORT + st22->idx;
+  memcpy(ops_tx->port.dip_addr[MTL_PORT_P], ctx->mcast_ip_addr[MTL_PORT_P],
+         MTL_IP_ADDR_LEN);
+  strncpy(ops_tx->port.port[MTL_PORT_P], ctx->para.port[MTL_PORT_P], MTL_PORT_MAX_LEN);
+  ops_tx->port.udp_port[MTL_PORT_P] = ST22P_TEST_UDP_PORT + st22->idx;
   ops_tx->port.payload_type = ST22P_TEST_PAYLOAD_TYPE;
   ops_tx->width = 1920;
   ops_tx->height = 1080;
@@ -529,9 +474,10 @@ static void st22p_rx_ops_init(tests_context* st22, struct st22p_rx_ops* ops_rx) 
   ops_rx->name = "st22p_test";
   ops_rx->priv = st22;
   ops_rx->port.num_port = 1;
-  memcpy(ops_rx->port.sip_addr[ST_PORT_P], ctx->mcast_ip_addr[ST_PORT_P], ST_IP_ADDR_LEN);
-  strncpy(ops_rx->port.port[ST_PORT_P], ctx->para.port[ST_PORT_R], ST_PORT_MAX_LEN);
-  ops_rx->port.udp_port[ST_PORT_P] = ST22P_TEST_UDP_PORT + st22->idx;
+  memcpy(ops_rx->port.sip_addr[MTL_PORT_P], ctx->mcast_ip_addr[MTL_PORT_P],
+         MTL_IP_ADDR_LEN);
+  strncpy(ops_rx->port.port[MTL_PORT_P], ctx->para.port[MTL_PORT_R], MTL_PORT_MAX_LEN);
+  ops_rx->port.udp_port[MTL_PORT_P] = ST22P_TEST_UDP_PORT + st22->idx;
   ops_rx->port.payload_type = ST22P_TEST_PAYLOAD_TYPE;
   ops_rx->width = 1920;
   ops_rx->height = 1080;
@@ -549,10 +495,10 @@ static void st22p_rx_ops_init(tests_context* st22, struct st22p_rx_ops* ops_rx) 
 static void st22p_tx_assert_cnt(int expect_s22_tx_cnt) {
   auto ctx = st_test_ctx();
   auto handle = ctx->handle;
-  struct st_stats stats;
+  struct mtl_stats stats;
   int ret;
 
-  ret = st_get_stats(handle, &stats);
+  ret = mtl_get_stats(handle, &stats);
   EXPECT_GE(ret, 0);
   EXPECT_EQ(stats.st22_tx_sessions_cnt, expect_s22_tx_cnt);
 }
@@ -560,10 +506,10 @@ static void st22p_tx_assert_cnt(int expect_s22_tx_cnt) {
 static void st22p_rx_assert_cnt(int expect_s22_rx_cnt) {
   auto ctx = st_test_ctx();
   auto handle = ctx->handle;
-  struct st_stats stats;
+  struct mtl_stats stats;
   int ret;
 
-  ret = st_get_stats(handle, &stats);
+  ret = mtl_get_stats(handle, &stats);
   EXPECT_GE(ret, 0);
   EXPECT_EQ(stats.st22_rx_sessions_cnt, expect_s22_rx_cnt);
 }
@@ -670,7 +616,7 @@ static void test_st22p_rx_frame_thread(void* args) {
     }
 
     unsigned char* sha =
-        (unsigned char*)frame->addr + frame->data_size - SHA256_DIGEST_LENGTH;
+        (unsigned char*)frame->addr[0] + frame->data_size - SHA256_DIGEST_LENGTH;
     int i = 0;
     for (i = 0; i < ST22_TEST_SHA_HIST_NUM; i++) {
       unsigned char* target_sha = s->shas[i];
@@ -785,10 +731,10 @@ static void st22p_rx_digest_test(enum st_fps fps[], int width[], int height[],
     ops_tx.name = "st22p_test";
     ops_tx.priv = test_ctx_tx[i];
     ops_tx.port.num_port = 1;
-    memcpy(ops_tx.port.dip_addr[ST_PORT_P], ctx->para.sip_addr[ST_PORT_R],
-           ST_IP_ADDR_LEN);
-    strncpy(ops_tx.port.port[ST_PORT_P], ctx->para.port[ST_PORT_P], ST_PORT_MAX_LEN);
-    ops_tx.port.udp_port[ST_PORT_P] = ST22P_TEST_UDP_PORT + i;
+    memcpy(ops_tx.port.dip_addr[MTL_PORT_P], ctx->para.sip_addr[MTL_PORT_R],
+           MTL_IP_ADDR_LEN);
+    strncpy(ops_tx.port.port[MTL_PORT_P], ctx->para.port[MTL_PORT_P], MTL_PORT_MAX_LEN);
+    ops_tx.port.udp_port[MTL_PORT_P] = ST22P_TEST_UDP_PORT + i;
     ops_tx.port.payload_type = ST22P_TEST_PAYLOAD_TYPE;
     ops_tx.width = width[i];
     ops_tx.height = height[i];
@@ -860,10 +806,10 @@ static void st22p_rx_digest_test(enum st_fps fps[], int width[], int height[],
     ops_rx.name = "st22p_test";
     ops_rx.priv = test_ctx_rx[i];
     ops_rx.port.num_port = 1;
-    memcpy(ops_rx.port.sip_addr[ST_PORT_P], ctx->para.sip_addr[ST_PORT_P],
-           ST_IP_ADDR_LEN);
-    strncpy(ops_rx.port.port[ST_PORT_P], ctx->para.port[ST_PORT_R], ST_PORT_MAX_LEN);
-    ops_rx.port.udp_port[ST_PORT_P] = ST22P_TEST_UDP_PORT + i;
+    memcpy(ops_rx.port.sip_addr[MTL_PORT_P], ctx->para.sip_addr[MTL_PORT_P],
+           MTL_IP_ADDR_LEN);
+    strncpy(ops_rx.port.port[MTL_PORT_P], ctx->para.port[MTL_PORT_R], MTL_PORT_MAX_LEN);
+    ops_rx.port.udp_port[MTL_PORT_P] = ST22P_TEST_UDP_PORT + i;
     ops_rx.port.payload_type = ST22P_TEST_PAYLOAD_TYPE;
     ops_rx.width = width[i];
     ops_rx.height = height[i];
@@ -892,10 +838,10 @@ static void st22p_rx_digest_test(enum st_fps fps[], int width[], int height[],
     EXPECT_GE(ret, 0);
   }
 
-  ret = st_start(st);
+  ret = mtl_start(st);
   EXPECT_GE(ret, 0);
   sleep(10);
-  ret = st_stop(st);
+  ret = mtl_stop(st);
   EXPECT_GE(ret, 0);
 
   for (int i = 0; i < sessions; i++) {

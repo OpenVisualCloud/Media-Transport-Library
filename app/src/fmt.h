@@ -2,7 +2,7 @@
  * Copyright(c) 2022 Intel Corporation
  */
 
-#include <st_convert_api.h>
+#include <mtl/st_convert_api.h>
 
 #include "app_platform.h"
 

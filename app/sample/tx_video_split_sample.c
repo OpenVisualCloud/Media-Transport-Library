@@ -18,7 +18,7 @@ struct tv_split_sample_ctx {
   int fb_total;      /* total frame buffers read from yuv file */
   size_t fb_offset;
 
-  st_dma_mem_handle dma_mem;
+  mtl_dma_mem_handle dma_mem;
 };
 
 static int tx_video_next_frame(void* priv, uint16_t* next_frame_idx,
@@ -32,9 +32,9 @@ static int tx_video_next_frame(void* priv, uint16_t* next_frame_idx,
    * which may need to consider in real production */
   struct st20_ext_frame ext_frame;
   ext_frame.buf_addr =
-      st_dma_mem_addr(s->dma_mem) + s->fb_idx * s->fb_size + s->fb_offset;
+      mtl_dma_mem_addr(s->dma_mem) + s->fb_idx * s->fb_size + s->fb_offset;
   ext_frame.buf_iova =
-      st_dma_mem_iova(s->dma_mem) + s->fb_idx * s->fb_size + s->fb_offset;
+      mtl_dma_mem_iova(s->dma_mem) + s->fb_idx * s->fb_size + s->fb_offset;
   ext_frame.buf_len = s->frame_size * 2;
   st20_tx_set_ext_frame(s->handle, s->nfi, &ext_frame);
 
@@ -58,18 +58,23 @@ int tx_video_frame_done(void* priv, uint16_t frame_idx, struct st20_tx_frame_met
 
 int main(int argc, char** argv) {
   int session_num = 4;
-  st_dma_mem_handle dma_mem = NULL;
+  mtl_dma_mem_handle dma_mem = NULL;
   uint8_t* m = NULL;
   size_t map_size = 0;
   struct st_sample_context ctx;
   int ret;
 
   /* init sample(st) dev */
-  st_sample_init(&ctx, argc, argv, true, false);
+  memset(&ctx, 0, sizeof(ctx));
+  sample_parse_args(&ctx, argc, argv, true, false);
   ctx.sessions = session_num;
   ctx.param.tx_sessions_cnt_max = session_num;
-  ret = st_sample_start(&ctx);
-  if (ret < 0) return ret;
+
+  ctx.st = mtl_init(&ctx.param);
+  if (!ctx.st) {
+    err("%s: mtl_init fail\n", __func__);
+    return -EIO;
+  }
 
   st20_tx_handle tx_handle[session_num];
   memset(tx_handle, 0, sizeof(tx_handle));
@@ -96,14 +101,14 @@ int main(int argc, char** argv) {
     ops_tx.name = "st20_tx";
     ops_tx.priv = app[i];  // app handle register to lib
     ops_tx.num_port = 1;
-    memcpy(ops_tx.dip_addr[ST_PORT_P], ctx.tx_dip_addr[ST_PORT_P], ST_IP_ADDR_LEN);
-    strncpy(ops_tx.port[ST_PORT_P], ctx.param.port[ST_PORT_P], ST_PORT_MAX_LEN);
+    memcpy(ops_tx.dip_addr[MTL_PORT_P], ctx.tx_dip_addr[MTL_PORT_P], MTL_IP_ADDR_LEN);
+    strncpy(ops_tx.port[MTL_PORT_P], ctx.param.port[MTL_PORT_P], MTL_PORT_MAX_LEN);
 
     struct st20_pgroup st20_pg;
     st20_get_pgroup(ST20_FMT_YUV_422_10BIT, &st20_pg);
 
     ops_tx.flags |= ST20_TX_FLAG_EXT_FRAME;
-    ops_tx.udp_port[ST_PORT_P] = ctx.udp_port + i;
+    ops_tx.udp_port[MTL_PORT_P] = ctx.udp_port + i;
     ops_tx.pacing = ST21_PACING_NARROW;
     ops_tx.packing = ST20_PACKING_GPM_SL;
     ops_tx.type = ST20_TYPE_FRAME_LEVEL;
@@ -154,15 +159,15 @@ int main(int argc, char** argv) {
       }
       close(fd);
     dma_alloc:
-      dma_mem = st_dma_mem_alloc(ctx.st, map_size);
+      dma_mem = mtl_dma_mem_alloc(ctx.st, map_size);
       if (!dma_mem) {
         err("%s(%d), dma mem alloc/map fail\n", __func__, i);
         ret = -EIO;
         goto error;
       }
       if (m) {
-        void* dst = st_dma_mem_addr(dma_mem);
-        st_memcpy(dst, m, map_size);
+        void* dst = mtl_dma_mem_addr(dma_mem);
+        mtl_memcpy(dst, m, map_size);
         munmap(m, map_size);
       }
     }
@@ -178,14 +183,14 @@ int main(int argc, char** argv) {
   app[3]->fb_offset = app[2]->fb_offset + app[1]->fb_offset;
 
   // start tx
-  ret = st_start(ctx.st);
+  ret = mtl_start(ctx.st);
 
   while (!ctx.exit) {
     sleep(1);
   }
 
   // stop tx
-  ret = st_stop(ctx.st);
+  ret = mtl_stop(ctx.st);
 
   // check result
   for (int i = 0; i < session_num; i++) {
@@ -203,9 +208,12 @@ error:
     info("%s(%d), sent frames %d\n", __func__, i, app[i]->fb_send);
     free(app[i]);
   }
-  if (dma_mem) st_dma_mem_free(ctx.st, dma_mem);
+  if (dma_mem) mtl_dma_mem_free(ctx.st, dma_mem);
 
   /* release sample(st) dev */
-  st_sample_uinit(&ctx);
+  if (ctx.st) {
+    mtl_uninit(ctx.st);
+    ctx.st = NULL;
+  }
   return ret;
 }

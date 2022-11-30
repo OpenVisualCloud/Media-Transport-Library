@@ -5,7 +5,7 @@
 #include "sample_util.h"
 
 struct rx_st20p_tx_st22p_sample_ctx {
-  st_handle st;
+  mtl_handle st;
   int idx;
   st20p_rx_handle rx_handle;
   st22p_tx_handle tx_handle;
@@ -34,7 +34,7 @@ static int st22_fwd_open_logo(struct st_sample_context* ctx,
   }
 
   size_t logo_size = st_frame_size(ctx->input_fmt, ctx->logo_width, ctx->logo_height);
-  s->logo_buf = st_hp_malloc(s->st, logo_size, ST_PORT_P);
+  s->logo_buf = mtl_hp_malloc(s->st, logo_size, MTL_PORT_P);
   if (!s->logo_buf) {
     err("%s, logo buf malloc fail\n", __func__);
     fclose(fp_logo);
@@ -44,13 +44,13 @@ static int st22_fwd_open_logo(struct st_sample_context* ctx,
   size_t read = fread(s->logo_buf, 1, logo_size, fp_logo);
   if (read != logo_size) {
     err("%s, logo buf read fail\n", __func__);
-    st_hp_free(s->st, s->logo_buf);
+    mtl_hp_free(s->st, s->logo_buf);
     s->logo_buf = NULL;
     fclose(fp_logo);
     return -EIO;
   }
 
-  s->logo_meta.addr = s->logo_buf;
+  s->logo_meta.addr[0] = s->logo_buf;
   s->logo_meta.fmt = ctx->input_fmt;
   s->logo_meta.width = ctx->logo_width;
   s->logo_meta.height = ctx->logo_height;
@@ -102,7 +102,7 @@ static void fwd_st22_consume_frame(struct rx_st20p_tx_st22p_sample_ctx* s,
       st_pthread_mutex_unlock(&s->wake_mutex);
       continue;
     }
-    st_memcpy(tx_frame->addr, frame->addr, s->framebuff_size);
+    mtl_memcpy(tx_frame->addr[0], frame->addr[0], s->framebuff_size);
     if (s->logo_buf) {
       st_draw_logo(tx_frame, &s->logo_meta, 16, 16);
     }
@@ -145,7 +145,7 @@ static int rx_st20p_tx_st22p_free_app(struct rx_st20p_tx_st22p_sample_ctx* app) 
     app->rx_handle = NULL;
   }
   if (app->logo_buf) {
-    st_hp_free(app->st, app->logo_buf);
+    mtl_hp_free(app->st, app->logo_buf);
     app->logo_buf = NULL;
   }
   st_pthread_mutex_destroy(&app->wake_mutex);
@@ -160,8 +160,15 @@ int main(int argc, char** argv) {
   int ret;
 
   /* init sample(st) dev */
-  ret = st_sample_fwd_init(&ctx, argc, argv);
+  memset(&ctx, 0, sizeof(ctx));
+  ret = fwd_sample_parse_args(&ctx, argc, argv);
   if (ret < 0) return ret;
+
+  ctx.st = mtl_init(&ctx.param);
+  if (!ctx.st) {
+    err("%s: mtl_init fail\n", __func__);
+    return -EIO;
+  }
 
   struct rx_st20p_tx_st22p_sample_ctx app;
   memset(&app, 0, sizeof(app));
@@ -176,9 +183,9 @@ int main(int argc, char** argv) {
   ops_rx.name = "st20p_test";
   ops_rx.priv = &app;  // app handle register to lib
   ops_rx.port.num_port = 1;
-  memcpy(ops_rx.port.sip_addr[ST_PORT_P], ctx.rx_sip_addr[ST_PORT_P], ST_IP_ADDR_LEN);
-  strncpy(ops_rx.port.port[ST_PORT_P], ctx.param.port[ST_PORT_P], ST_PORT_MAX_LEN);
-  ops_rx.port.udp_port[ST_PORT_P] = ctx.udp_port;
+  memcpy(ops_rx.port.sip_addr[MTL_PORT_P], ctx.rx_sip_addr[MTL_PORT_P], MTL_IP_ADDR_LEN);
+  strncpy(ops_rx.port.port[MTL_PORT_P], ctx.param.port[MTL_PORT_P], MTL_PORT_MAX_LEN);
+  ops_rx.port.udp_port[MTL_PORT_P] = ctx.udp_port;
   ops_rx.port.payload_type = ctx.payload_type;
   ops_rx.width = ctx.width;
   ops_rx.height = ctx.height;
@@ -202,9 +209,9 @@ int main(int argc, char** argv) {
   ops_tx.name = "st22_fwd";
   ops_tx.priv = &app;  // app handle register to lib
   ops_tx.port.num_port = 1;
-  memcpy(ops_tx.port.dip_addr[ST_PORT_P], ctx.fwd_dip_addr[ST_PORT_P], ST_IP_ADDR_LEN);
-  strncpy(ops_tx.port.port[ST_PORT_P], ctx.param.port[ST_PORT_P], ST_PORT_MAX_LEN);
-  ops_tx.port.udp_port[ST_PORT_P] = ctx.udp_port;
+  memcpy(ops_tx.port.dip_addr[MTL_PORT_P], ctx.fwd_dip_addr[MTL_PORT_P], MTL_IP_ADDR_LEN);
+  strncpy(ops_tx.port.port[MTL_PORT_P], ctx.param.port[MTL_PORT_P], MTL_PORT_MAX_LEN);
+  ops_tx.port.udp_port[MTL_PORT_P] = ctx.udp_port;
   ops_tx.port.payload_type = ctx.payload_type;
   ops_tx.width = ctx.width;
   ops_tx.height = ctx.height;
@@ -239,7 +246,7 @@ int main(int argc, char** argv) {
   app.ready = true;
 
   // start dev
-  ret = st_start(ctx.st);
+  ret = mtl_start(ctx.st);
 
   while (!ctx.exit) {
     sleep(1);
@@ -254,7 +261,7 @@ int main(int argc, char** argv) {
   info("%s, fb_fwd %d\n", __func__, app.fb_fwd);
 
   // stop dev
-  ret = st_stop(ctx.st);
+  ret = mtl_stop(ctx.st);
 
   // check result
   if (app.fb_fwd <= 0) {
@@ -267,6 +274,9 @@ error:
   rx_st20p_tx_st22p_free_app(&app);
 
   /* release sample(st) dev */
-  st_sample_uinit(&ctx);
+  if (ctx.st) {
+    mtl_uninit(ctx.st);
+    ctx.st = NULL;
+  }
   return ret;
 }

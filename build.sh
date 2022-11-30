@@ -14,19 +14,35 @@ function usage()
 buildtype=release
 disable_pcapng=false
 enable_asan=false
+enable_kni=false
+enable_tap=false
 
-if [ -n "$ST_BUILD_DISABLE_PCAPNG" ];  then
-    if [ $ST_BUILD_DISABLE_PCAPNG == "true" ]; then
+if [ -n "$MTL_BUILD_DISABLE_PCAPNG" ];  then
+    if [ $MTL_BUILD_DISABLE_PCAPNG == "true" ]; then
         disable_pcapng=true
         echo "Disable pcapng function."
     fi
 fi
 
-if [ -n "$ST_BUILD_ENABLE_ASAN" ];  then
-    if [ $ST_BUILD_ENABLE_ASAN == "true" ]; then
+if [ -n "$MTL_BUILD_ENABLE_ASAN" ];  then
+    if [ $MTL_BUILD_ENABLE_ASAN == "true" ]; then
         enable_asan=true
         buildtype=debug # use debug build as default for asan
         echo "Enable asan check."
+    fi
+fi
+
+if [ -n "$MTL_BUILD_ENABLE_KNI" ];  then
+    if [ $MTL_BUILD_ENABLE_KNI == "true" ]; then
+        enable_kni=true
+        echo "Enable kni"
+    fi
+fi
+
+if [ -n "$MTL_BUILD_ENABLE_TAP" ];  then
+    if [ $MTL_BUILD_ENABLE_TAP == "true" ]; then
+        enable_tap=true
+        echo "Enable tap"
     fi
 fi
 
@@ -58,7 +74,7 @@ TEST_BUILD_DIR=${WORKSPACE}/build/tests
 PLUGINS_BUILD_DIR=${WORKSPACE}/build/plugins
 
 # build lib
-meson ${LIB_BUILD_DIR} -Dbuildtype=$buildtype -Ddisable_pcapng=$disable_pcapng -Denable_asan=$enable_asan
+meson ${LIB_BUILD_DIR} -Dbuildtype=$buildtype -Ddisable_pcapng=$disable_pcapng -Denable_asan=$enable_asan -Denable_kni=$enable_kni -Denable_tap=$enable_tap
 pushd ${LIB_BUILD_DIR}
 ninja
 sudo ninja install

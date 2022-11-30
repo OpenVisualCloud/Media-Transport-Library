@@ -22,9 +22,7 @@ static int encode_frame(struct st22_encoder_session* s,
   AVFrame* f = s->codec_frame;
   AVPacket* p = s->codec_pkt;
   AVCodecContext* ctx = s->codec_ctx;
-  size_t res_size = s->req.width * s->req.height;
   size_t data_size = 0;
-  void* src_addr = frame->src->addr;
   int ret;
   bool measure_time = false;
   uint64_t start_time = 0, end_time = 0;
@@ -39,13 +37,9 @@ static int encode_frame(struct st22_encoder_session* s,
   f->pict_type = AV_PICTURE_TYPE_I; /* all are i frame */
   f->pts = f_idx;
   /* only YUV422P now */
-  st_memcpy(f->data[0], src_addr, res_size);
-  src_addr += res_size;
-  res_size /= 2;
-  st_memcpy(f->data[1], src_addr, res_size);
-  src_addr += res_size;
-  st_memcpy(f->data[2], src_addr, res_size);
-  src_addr += res_size;
+  mtl_memcpy(f->data[0], frame->src->addr[0], st_frame_plane_size(frame->src, 0));
+  mtl_memcpy(f->data[1], frame->src->addr[1], st_frame_plane_size(frame->src, 1));
+  mtl_memcpy(f->data[2], frame->src->addr[2], st_frame_plane_size(frame->src, 2));
 
   ret = avcodec_send_frame(ctx, f);
   s->frame_idx++;
@@ -68,7 +62,7 @@ static int encode_frame(struct st22_encoder_session* s,
 
     dbg("%s, receive packet %" PRId64 " size %d on frame %d\n", __func__, p->pts, p->size,
         f_idx);
-    st_memcpy(frame->dst->addr + data_size, p->data, p->size);
+    mtl_memcpy(frame->dst->addr[0] + data_size, p->data, p->size);
     data_size += p->size;
     av_packet_unref(p);
   }
@@ -81,6 +75,8 @@ exit:
   }
   s->frame_cnt++;
   frame->dst->data_size = data_size;
+  dbg("%s(%d), bitstream data size %" PRIu64 " on frame %d\n", __func__, idx, data_size,
+      f_idx);
   return data_size > 0 ? 0 : -EIO;
 }
 
@@ -169,7 +165,7 @@ static int encoder_init_session(struct st22_encoder_session* session,
   /* bit per second */
   int64_t bit_rate = (req->codestream_size * 8) * fps;
   bit_rate = bit_rate * 7 / 10;
-  bit_rate /= 10; /* temp for fps */
+  // bit_rate /= 10; /* temp for fps */
   c->bit_rate = bit_rate;
   c->rc_max_rate = bit_rate;
   c->rc_buffer_size = bit_rate * 3;
@@ -289,13 +285,12 @@ static int decode_frame(struct st22_decoder_session* s,
   AVPacket* p = s->codec_pkt;
   int ret;
   size_t src_size = frame->src->data_size;
-  void* dst_addr = frame->dst->addr;
   size_t frame_size = 0;
 
   s->frame_idx++;
 
   av_packet_unref(p);
-  p->data = frame->src->addr;
+  p->data = frame->src->addr[0];
   p->size = src_size;
   ret = avcodec_send_packet(ctx, p);
   if (ret < 0) {
@@ -317,13 +312,10 @@ static int decode_frame(struct st22_decoder_session* s,
         f_idx);
     frame_size = f->width * f->height;
     /* only YUV422P now */
-    st_memcpy(dst_addr, f->data[0], frame_size);
-    dst_addr += frame_size;
+    mtl_memcpy(frame->dst->addr[0], f->data[0], frame_size);
     frame_size /= 2;
-    st_memcpy(dst_addr, f->data[1], frame_size);
-    dst_addr += frame_size;
-    st_memcpy(dst_addr, f->data[2], frame_size);
-    dst_addr += frame_size;
+    mtl_memcpy(frame->dst->addr[1], f->data[1], frame_size);
+    mtl_memcpy(frame->dst->addr[2], f->data[2], frame_size);
 
     av_frame_unref(f);
   }
@@ -527,7 +519,7 @@ static int decoder_frame_available(void* priv) {
   return 0;
 }
 
-st_plugin_priv st_plugin_create(st_handle st) {
+st_plugin_priv st_plugin_create(mtl_handle st) {
   struct st22_ffmpeg_ctx* ctx;
 
   ctx = malloc(sizeof(*ctx));

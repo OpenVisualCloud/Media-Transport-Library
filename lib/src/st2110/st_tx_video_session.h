@@ -1,0 +1,68 @@
+/* SPDX-License-Identifier: BSD-3-Clause
+ * Copyright(c) 2022 Intel Corporation
+ */
+
+#ifndef _ST_LIB_TX_VIDEO_SESSION_HEAD_H_
+#define _ST_LIB_TX_VIDEO_SESSION_HEAD_H_
+
+#include "st_main.h"
+
+void st_tx_video_sessions_stat(struct mtl_main_impl* impl);
+
+int st_tx_video_sessions_sch_init(struct mtl_main_impl* impl, struct mt_sch_impl* sch);
+
+int st_tx_video_sessions_sch_uinit(struct mtl_main_impl* impl, struct mt_sch_impl* sch);
+
+/* call tx_video_session_put always if get successfully */
+static inline struct st_tx_video_session_impl* tx_video_session_get(
+    struct st_tx_video_sessions_mgr* mgr, int idx) {
+  rte_spinlock_lock(&mgr->mutex[idx]);
+  struct st_tx_video_session_impl* s = mgr->sessions[idx];
+  if (!s) rte_spinlock_unlock(&mgr->mutex[idx]);
+  return s;
+}
+
+/* call tx_video_session_put always if get successfully */
+static inline struct st_tx_video_session_impl* tx_video_session_try_get(
+    struct st_tx_video_sessions_mgr* mgr, int idx) {
+  if (!rte_spinlock_trylock(&mgr->mutex[idx])) return NULL;
+  struct st_tx_video_session_impl* s = mgr->sessions[idx];
+  if (!s) rte_spinlock_unlock(&mgr->mutex[idx]);
+  return s;
+}
+
+/* call tx_video_session_put always if get successfully */
+static inline bool tx_video_session_get_empty(struct st_tx_video_sessions_mgr* mgr,
+                                              int idx) {
+  rte_spinlock_lock(&mgr->mutex[idx]);
+  struct st_tx_video_session_impl* s = mgr->sessions[idx];
+  if (s) {
+    rte_spinlock_unlock(&mgr->mutex[idx]); /* not null, unlock it */
+    return false;
+  } else {
+    return true;
+  }
+}
+
+static inline void tx_video_session_put(struct st_tx_video_sessions_mgr* mgr, int idx) {
+  rte_spinlock_unlock(&mgr->mutex[idx]);
+}
+
+void tx_video_session_cal_cpu_busy(struct st_tx_video_session_impl* s);
+void tx_video_session_clear_cpu_busy(struct st_tx_video_session_impl* s);
+
+static inline bool tx_video_session_is_cpu_busy(struct st_tx_video_session_impl* s) {
+  if (s->cpu_busy_score > 95.0) return true;
+
+  return false;
+}
+
+static inline float tx_video_session_get_cpu_busy(struct st_tx_video_session_impl* s) {
+  return s->cpu_busy_score;
+}
+
+int st_tx_video_session_migrate(struct mtl_main_impl* impl,
+                                struct st_tx_video_sessions_mgr* mgr,
+                                struct st_tx_video_session_impl* s, int idx);
+
+#endif

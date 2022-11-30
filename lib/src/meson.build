@@ -2,44 +2,29 @@
 # Copyright 2022 Intel Corporation
 
 sources = files(
-	'st_main.c',
-	'st_dev.c',
-	'st_sch.c',
-	'st_cni.c',
-	'st_ptp.c',
-	'st_fmt.c',
-	'st_arp.c',
-	'st_mcast.c',
-	'st_util.c',
-	'st_tx_video_session.c',
-	'st_video_transmitter.c',
-	'st_rx_video_session.c',
-	'st_tx_audio_session.c',
-	'st_audio_transmitter.c',
-	'st_rx_audio_session.c',
-	'st_tx_ancillary_session.c',
-	'st_rx_ancillary_session.c',
-	'st_ancillary_transmitter.c',
-	'st_ancillary.c',
-	'st_dma.c',
-	'st_avx2.c',
-	'st_avx512.c',
-	'st_avx512_vbmi.c',
-	'st_admin.c',
-	'st_config.c',
-	'st_socket.c',
+  'mt_main.c',
+  'mt_dev.c',
+  'mt_sch.c',
+  'mt_cni.c',
+  'mt_ptp.c',
+  'mt_arp.c',
+  'mt_mcast.c',
+  'mt_util.c',
+  'mt_dma.c',
+  'mt_admin.c',
+  'mt_config.c',
+  'mt_socket.c',
 )
 
 if get_option('enable_kni') == true
-  sources += files('st_kni.c')
+  sources += files('mt_kni.c')
 endif
 
 if is_windows
 if get_option('enable_tap') == true
-  sources += files('st_tap.c')
+  sources += files('mt_tap.c')
 endif
   sources += files('../windows/win_posix.c')
 endif
 
-subdir('pipeline')
-subdir('redundant')
+subdir('st2110')

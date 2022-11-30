@@ -19,7 +19,7 @@ static void app_tx_video_display_frame(struct st_app_tx_video_session* s, void* 
   if (d && d->front_frame) {
     if (st_pthread_mutex_trylock(&d->display_frame_mutex) == 0) {
       if (s->st20_pg.fmt == ST20_FMT_YUV_422_8BIT)
-        st_memcpy(d->front_frame, frame, d->front_frame_size);
+        mtl_memcpy(d->front_frame, frame, d->front_frame_size);
       else if (s->st20_pg.fmt == ST20_FMT_YUV_422_10BIT)
         st20_rfc4175_422be10_to_422le8(frame, d->front_frame, s->width, s->height);
       else /* fmt mismatch*/ {
@@ -116,7 +116,7 @@ static int app_tx_video_rtp_done(void* priv) {
 
 static void app_tx_video_thread_bind(struct st_app_tx_video_session* s) {
   if (s->lcore != -1) {
-    st_bind_to_lcore(s->st, pthread_self(), s->lcore);
+    mtl_bind_to_lcore(s->st, pthread_self(), s->lcore);
   }
 }
 
@@ -139,7 +139,7 @@ static void app_tx_video_build_frame(struct st_app_tx_video_session* s, void* fr
                                      size_t frame_size) {
   uint8_t* src = s->st20_frame_cursor;
 
-  if (!s->ctx->tx_copy_once || !s->st20_frames_copied) st_memcpy(frame, src, frame_size);
+  if (!s->ctx->tx_copy_once || !s->st20_frames_copied) mtl_memcpy(frame, src, frame_size);
   /* point to next frame */
   s->st20_frame_cursor += frame_size;
   if (s->st20_frame_cursor + frame_size > s->st20_source_end) {
@@ -169,7 +169,7 @@ static void app_tx_video_build_slice(struct st_app_tx_video_session* s,
     st_usleep(1);
   }
 
-  st_memcpy(dst, src, bytes_per_slice);
+  mtl_memcpy(dst, src, bytes_per_slice);
   dst += bytes_per_slice;
   src += bytes_per_slice;
   lines_build += s->lines_per_slice;
@@ -184,7 +184,7 @@ static void app_tx_video_build_slice(struct st_app_tx_video_session* s,
     int bytes_slice = framebuff->size / s->height * lines;
 
     lines_build += lines;
-    st_memcpy(dst, src, bytes_slice);
+    mtl_memcpy(dst, src, bytes_slice);
     dst += bytes_slice;
     src += bytes_slice;
 
@@ -287,10 +287,10 @@ static void* app_tx_video_pcap_thread(void* arg) {
           udp_hdr =
               (struct udphdr*)(packet + sizeof(struct ether_header) + sizeof(struct ip));
           udp_data_len = ntohs(udp_hdr->uh_ulen) - sizeof(struct udphdr);
-          st_memcpy(usrptr,
-                    packet + sizeof(struct ether_header) + sizeof(struct ip) +
-                        sizeof(struct udphdr),
-                    udp_data_len);
+          mtl_memcpy(usrptr,
+                     packet + sizeof(struct ether_header) + sizeof(struct ip) +
+                         sizeof(struct udphdr),
+                     udp_data_len);
         }
       }
     } else {
@@ -330,7 +330,7 @@ static int app_tx_video_init_rtp(struct st_app_tx_video_session* s,
 
   if (ops->packing == ST20_PACKING_GPM_SL) {
     /* calculate pkts in line for rtp */
-    size_t bytes_in_pkt = ST_PKT_MAX_RTP_BYTES - sizeof(*rtp);
+    size_t bytes_in_pkt = MTL_PKT_MAX_RTP_BYTES - sizeof(*rtp);
     s->st20_pkts_in_line = (s->st20_bytes_in_line / bytes_in_pkt) + 1;
     s->st20_total_pkts = height * s->st20_pkts_in_line;
     int pixels_in_pkts = (ops->width + s->st20_pkts_in_line - 1) / s->st20_pkts_in_line;
@@ -346,7 +346,7 @@ static int app_tx_video_init_rtp(struct st_app_tx_video_session* s,
          s->st20_pkt_data_len);
   } else if (ops->packing == ST20_PACKING_GPM) {
     int max_data_len =
-        ST_PKT_MAX_RTP_BYTES - sizeof(*rtp) - sizeof(struct st20_rfc4175_extra_rtp_hdr);
+        MTL_PKT_MAX_RTP_BYTES - sizeof(*rtp) - sizeof(struct st20_rfc4175_extra_rtp_hdr);
     int pg_per_pkt = max_data_len / s->st20_pg.size;
     s->st20_total_pkts =
         (ceil)((double)ops->width * height / (s->st20_pg.coverage * pg_per_pkt));
@@ -358,7 +358,7 @@ static int app_tx_video_init_rtp(struct st_app_tx_video_session* s,
 
   ops->rtp_frame_total_pkts = s->st20_total_pkts;
   if (s->st20_pcap_input)
-    ops->rtp_pkt_size = ST_PKT_MAX_RTP_BYTES;
+    ops->rtp_pkt_size = MTL_PKT_MAX_RTP_BYTES;
   else {
     ops->rtp_pkt_size = s->st20_pkt_data_len + sizeof(*rtp);
     if (ops->packing != ST20_PACKING_GPM_SL) /* no extra for GPM_SL */
@@ -399,7 +399,7 @@ static int app_tx_video_build_rtp_packet(struct st_app_tx_video_session* s,
   }
 
   /* copy base hdr */
-  st_memcpy(rtp, &s->st20_rtp_base, sizeof(*rtp));
+  mtl_memcpy(rtp, &s->st20_rtp_base, sizeof(*rtp));
   /* update hdr */
   if (s->st20_second_field)
     rtp->row_number = htons(row_number | ST20_SECOND_FIELD);
@@ -433,18 +433,18 @@ static int app_tx_video_build_rtp_packet(struct st_app_tx_video_session* s,
   }
 
   if (!s->interlaced)
-    st_memcpy(payload, frame + offset, data_len);
+    mtl_memcpy(payload, frame + offset, data_len);
   else {
     if (s->st20_second_field)
-      st_memcpy(payload,
-                frame + ((2 * row_number + 1) * s->width + row_offset) /
-                            s->st20_pg.coverage * s->st20_pg.size,
-                data_len);
+      mtl_memcpy(payload,
+                 frame + ((2 * row_number + 1) * s->width + row_offset) /
+                             s->st20_pg.coverage * s->st20_pg.size,
+                 data_len);
     else
-      st_memcpy(payload,
-                frame + (2 * row_number * s->width + row_offset) / s->st20_pg.coverage *
-                            s->st20_pg.size,
-                data_len);
+      mtl_memcpy(payload,
+                 frame + (2 * row_number * s->width + row_offset) / s->st20_pg.coverage *
+                             s->st20_pg.size,
+                 data_len);
   }
 
   s->st20_pkt_idx++;
@@ -537,7 +537,7 @@ static int app_tx_video_open_source(struct st_app_tx_video_session* s) {
       return -EIO;
     }
 
-    s->st20_source_begin = st_hp_malloc(s->st, i.st_size, ST_PORT_P);
+    s->st20_source_begin = mtl_hp_malloc(s->st, i.st_size, MTL_PORT_P);
     if (!s->st20_source_begin) {
       warn("%s, source malloc on hugepage fail\n", __func__);
       s->st20_source_begin = m;
@@ -546,7 +546,7 @@ static int app_tx_video_open_source(struct st_app_tx_video_session* s) {
       s->st20_source_fd = fd;
     } else {
       s->st20_frame_cursor = s->st20_source_begin;
-      st_memcpy(s->st20_source_begin, m, i.st_size);
+      mtl_memcpy(s->st20_source_begin, m, i.st_size);
       s->st20_source_end = s->st20_source_begin + i.st_size;
       close(fd);
     }
@@ -597,7 +597,7 @@ static void app_tx_video_stop_source(struct st_app_tx_video_session* s) {
 
 static int app_tx_video_close_source(struct st_app_tx_video_session* s) {
   if (s->st20_source_fd < 0 && s->st20_source_begin) {
-    st_hp_free(s->st, s->st20_source_begin);
+    mtl_hp_free(s->st, s->st20_source_begin);
     s->st20_source_begin = NULL;
   }
   if (s->st20_source_fd >= 0) {
@@ -676,26 +676,27 @@ static int app_tx_video_init(struct st_app_context* ctx, st_json_video_session_t
   ops.name = name;
   ops.priv = s;
   ops.num_port = video ? video->base.num_inf : ctx->para.num_ports;
-  memcpy(ops.dip_addr[ST_PORT_P],
-         video ? video->base.ip[ST_PORT_P] : ctx->tx_dip_addr[ST_PORT_P], ST_IP_ADDR_LEN);
-  strncpy(ops.port[ST_PORT_P],
-          video ? video->base.inf[ST_PORT_P]->name : ctx->para.port[ST_PORT_P],
-          ST_PORT_MAX_LEN);
-  ops.udp_port[ST_PORT_P] = video ? video->base.udp_port : (10000 + s->idx);
-  if (ctx->has_tx_dst_mac[ST_PORT_P]) {
-    memcpy(&ops.tx_dst_mac[ST_PORT_P][0], ctx->tx_dst_mac[ST_PORT_P], 6);
+  memcpy(ops.dip_addr[MTL_PORT_P],
+         video ? video->base.ip[MTL_PORT_P] : ctx->tx_dip_addr[MTL_PORT_P],
+         MTL_IP_ADDR_LEN);
+  strncpy(ops.port[MTL_PORT_P],
+          video ? video->base.inf[MTL_PORT_P]->name : ctx->para.port[MTL_PORT_P],
+          MTL_PORT_MAX_LEN);
+  ops.udp_port[MTL_PORT_P] = video ? video->base.udp_port : (10000 + s->idx);
+  if (ctx->has_tx_dst_mac[MTL_PORT_P]) {
+    memcpy(&ops.tx_dst_mac[MTL_PORT_P][0], ctx->tx_dst_mac[MTL_PORT_P], 6);
     ops.flags |= ST20_TX_FLAG_USER_P_MAC;
   }
   if (ops.num_port > 1) {
-    memcpy(ops.dip_addr[ST_PORT_R],
-           video ? video->base.ip[ST_PORT_R] : ctx->tx_dip_addr[ST_PORT_R],
-           ST_IP_ADDR_LEN);
-    strncpy(ops.port[ST_PORT_R],
-            video ? video->base.inf[ST_PORT_R]->name : ctx->para.port[ST_PORT_R],
-            ST_PORT_MAX_LEN);
-    ops.udp_port[ST_PORT_R] = video ? video->base.udp_port : (10000 + s->idx);
-    if (ctx->has_tx_dst_mac[ST_PORT_R]) {
-      memcpy(&ops.tx_dst_mac[ST_PORT_R][0], ctx->tx_dst_mac[ST_PORT_R], 6);
+    memcpy(ops.dip_addr[MTL_PORT_R],
+           video ? video->base.ip[MTL_PORT_R] : ctx->tx_dip_addr[MTL_PORT_R],
+           MTL_IP_ADDR_LEN);
+    strncpy(ops.port[MTL_PORT_R],
+            video ? video->base.inf[MTL_PORT_R]->name : ctx->para.port[MTL_PORT_R],
+            MTL_PORT_MAX_LEN);
+    ops.udp_port[MTL_PORT_R] = video ? video->base.udp_port : (10000 + s->idx);
+    if (ctx->has_tx_dst_mac[MTL_PORT_R]) {
+      memcpy(&ops.tx_dst_mac[MTL_PORT_R][0], ctx->tx_dst_mac[MTL_PORT_R], 6);
       ops.flags |= ST20_TX_FLAG_USER_R_MAC;
     }
   }

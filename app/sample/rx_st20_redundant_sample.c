@@ -2,8 +2,6 @@
  * Copyright(c) 2022 Intel Corporation
  */
 
-#include <st20_redundant_api.h>
-
 #include "sample_util.h"
 
 struct st20r_sample_ctx {
@@ -117,10 +115,15 @@ int main(int argc, char** argv) {
   int ret;
 
   /* init sample(st) dev */
-  st_sample_init(&ctx, argc, argv, true, false);
+  memset(&ctx, 0, sizeof(ctx));
+  sample_parse_args(&ctx, argc, argv, true, false);
   ctx.param.num_ports = 2; /* force to 2 */
-  ret = st_sample_start(&ctx);
-  if (ret < 0) return ret;
+
+  ctx.st = mtl_init(&ctx.param);
+  if (!ctx.st) {
+    err("%s: mtl_init fail\n", __func__);
+    return -EIO;
+  }
 
   uint32_t session_num = ctx.sessions;
   st20r_rx_handle rx_handle[session_num];
@@ -159,12 +162,12 @@ int main(int argc, char** argv) {
     ops_rx.name = "st20r_test";
     ops_rx.priv = app[i];  // app handle register to lib
     ops_rx.num_port = 2;
-    memcpy(ops_rx.sip_addr[ST_PORT_P], ctx.rx_sip_addr[ST_PORT_P], ST_IP_ADDR_LEN);
-    memcpy(ops_rx.sip_addr[ST_PORT_R], ctx.rx_sip_addr[ST_PORT_R], ST_IP_ADDR_LEN);
-    strncpy(ops_rx.port[ST_PORT_P], ctx.param.port[ST_PORT_P], ST_PORT_MAX_LEN);
-    strncpy(ops_rx.port[ST_PORT_R], ctx.param.port[ST_PORT_R], ST_PORT_MAX_LEN);
-    ops_rx.udp_port[ST_PORT_P] = ctx.udp_port + i;
-    ops_rx.udp_port[ST_PORT_R] = ctx.udp_port + i;
+    memcpy(ops_rx.sip_addr[MTL_PORT_P], ctx.rx_sip_addr[MTL_PORT_P], MTL_IP_ADDR_LEN);
+    memcpy(ops_rx.sip_addr[MTL_PORT_R], ctx.rx_sip_addr[MTL_PORT_R], MTL_IP_ADDR_LEN);
+    strncpy(ops_rx.port[MTL_PORT_P], ctx.param.port[MTL_PORT_P], MTL_PORT_MAX_LEN);
+    strncpy(ops_rx.port[MTL_PORT_R], ctx.param.port[MTL_PORT_R], MTL_PORT_MAX_LEN);
+    ops_rx.udp_port[MTL_PORT_P] = ctx.udp_port + i;
+    ops_rx.udp_port[MTL_PORT_R] = ctx.udp_port + i;
     ops_rx.width = ctx.width;
     ops_rx.height = ctx.height;
     ops_rx.fps = ctx.fps;
@@ -190,15 +193,15 @@ int main(int argc, char** argv) {
   }
 
   // start dev
-  ret = st_start(ctx.st);
+  ret = mtl_start(ctx.st);
 
   // rx run
-  sart_time_ns = st_ptp_read_time(ctx.st);
+  sart_time_ns = mtl_ptp_read_time(ctx.st);
   while (!ctx.exit) {
     sleep(1);
     loop++;
     if (0 == (loop % 10)) {
-      uint64_t end_time_ns = st_ptp_read_time(ctx.st);
+      uint64_t end_time_ns = mtl_ptp_read_time(ctx.st);
       double time_sec = (double)(end_time_ns - sart_time_ns) / (1000 * 1000 * 1000);
       for (int i = 0; i < session_num; i++) {
         int fb_rec = app[i]->fb_rec - app[i]->stat_fb_rec;
@@ -221,7 +224,7 @@ int main(int argc, char** argv) {
   }
 
   // stop rx
-  ret = st_stop(ctx.st);
+  ret = mtl_stop(ctx.st);
 
   // check result
   for (int i = 0; i < session_num; i++) {
@@ -243,6 +246,9 @@ error:
   }
 
   /* release sample(st) dev */
-  st_sample_uinit(&ctx);
+  if (ctx.st) {
+    mtl_uninit(ctx.st);
+    ctx.st = NULL;
+  }
   return ret;
 }

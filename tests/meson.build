@@ -1,7 +1,7 @@
 # SPDX-License-Identifier: BSD-3-Clause
 # Copyright 2022 Intel Corporation
 
-project('st_test', 'cpp', default_options: ['buildtype=release'],
+project('mtl_test', 'cpp', default_options: ['buildtype=release'],
         version: run_command(find_program('cat', 'more'), files('../VERSION'), check: true).stdout().strip(),)
 
 exec_env = host_machine.system()
@@ -13,7 +13,7 @@ cpp_c = meson.get_compiler('cpp')
 # allow experimental api
 add_global_arguments('-DALLOW_EXPERIMENTAL_API', language : 'c')
 
-libst_dpdk = dependency('libst_dpdk', required : true)
+mtl = dependency('mtl', required : true)
 gtest = dependency('gtest', required : true)
 libpthread = cpp_c.find_library('pthread', required : true)
 if not is_windows
@@ -65,5 +65,5 @@ executable('KahawaiTest', sources,
   cpp_args : test_cpp_args,
   link_args: test_ld_args,
   # asan should be always the first dep
-  dependencies: [asan_dep, libst_dpdk, gtest, libnuma, libopenssl, libpthread]
+  dependencies: [asan_dep, mtl, gtest, libnuma, libopenssl, libpthread]
 )

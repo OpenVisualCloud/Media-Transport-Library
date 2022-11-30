@@ -24,12 +24,12 @@ static int test_convert_frame(struct test_converter_session* s,
 
   /* copy src sha to the start of convert frame */
   if (req->input_fmt == ST_FRAME_FMT_YUV422PLANAR10LE)
-    memcpy(frame->dst->addr,
-           (uint8_t*)frame->src->addr + frame->src->data_size - SHA256_DIGEST_LENGTH,
+    memcpy(frame->dst->addr[0],
+           (uint8_t*)frame->src->addr[0] + frame->src->data_size - SHA256_DIGEST_LENGTH,
            SHA256_DIGEST_LENGTH);
   else
-    memcpy((uint8_t*)frame->dst->addr + frame->dst->data_size - SHA256_DIGEST_LENGTH,
-           frame->src->addr, SHA256_DIGEST_LENGTH);
+    memcpy((uint8_t*)frame->dst->addr[0] + frame->dst->data_size - SHA256_DIGEST_LENGTH,
+           frame->src->addr[0], SHA256_DIGEST_LENGTH);
   st_usleep(s->sleep_time_us);
 
   s->frame_cnt++;
@@ -221,13 +221,13 @@ static int test_st20p_tx_frame_done(void* priv, struct st_frame* frame) {
   if (!(frame->flags & ST_FRAME_FLAG_EXT_BUF)) return 0;
 
   for (int i = 0; i < s->fb_cnt; ++i) {
-    if (frame->addr == s->ext_fb + i * s->frame_size) {
+    if (frame->addr[0] == s->ext_fb + i * s->frame_size) {
       s->ext_fb_in_use[i] = false;
       return 0;
     }
   }
 
-  err("%s, unknown frame_addr %p\n", __func__, frame->addr);
+  err("%s, unknown frame_addr %p\n", __func__, frame->addr[0]);
 
   return 0;
 }
@@ -247,9 +247,10 @@ static void st20p_tx_ops_init(tests_context* st20, struct st20p_tx_ops* ops_tx) 
   ops_tx->name = "st20p_test";
   ops_tx->priv = st20;
   ops_tx->port.num_port = 1;
-  memcpy(ops_tx->port.dip_addr[ST_PORT_P], ctx->mcast_ip_addr[ST_PORT_P], ST_IP_ADDR_LEN);
-  strncpy(ops_tx->port.port[ST_PORT_P], ctx->para.port[ST_PORT_P], ST_PORT_MAX_LEN);
-  ops_tx->port.udp_port[ST_PORT_P] = ST20P_TEST_UDP_PORT + st20->idx;
+  memcpy(ops_tx->port.dip_addr[MTL_PORT_P], ctx->mcast_ip_addr[MTL_PORT_P],
+         MTL_IP_ADDR_LEN);
+  strncpy(ops_tx->port.port[MTL_PORT_P], ctx->para.port[MTL_PORT_P], MTL_PORT_MAX_LEN);
+  ops_tx->port.udp_port[MTL_PORT_P] = ST20P_TEST_UDP_PORT + st20->idx;
   ops_tx->port.payload_type = ST20P_TEST_PAYLOAD_TYPE;
   ops_tx->width = 1920;
   ops_tx->height = 1080;
@@ -270,9 +271,10 @@ static void st20p_rx_ops_init(tests_context* st20, struct st20p_rx_ops* ops_rx) 
   ops_rx->name = "st20p_test";
   ops_rx->priv = st20;
   ops_rx->port.num_port = 1;
-  memcpy(ops_rx->port.sip_addr[ST_PORT_P], ctx->mcast_ip_addr[ST_PORT_P], ST_IP_ADDR_LEN);
-  strncpy(ops_rx->port.port[ST_PORT_P], ctx->para.port[ST_PORT_R], ST_PORT_MAX_LEN);
-  ops_rx->port.udp_port[ST_PORT_P] = ST20P_TEST_UDP_PORT + st20->idx;
+  memcpy(ops_rx->port.sip_addr[MTL_PORT_P], ctx->mcast_ip_addr[MTL_PORT_P],
+         MTL_IP_ADDR_LEN);
+  strncpy(ops_rx->port.port[MTL_PORT_P], ctx->para.port[MTL_PORT_R], MTL_PORT_MAX_LEN);
+  ops_rx->port.udp_port[MTL_PORT_P] = ST20P_TEST_UDP_PORT + st20->idx;
   ops_rx->port.payload_type = ST20P_TEST_PAYLOAD_TYPE;
   ops_rx->width = 1920;
   ops_rx->height = 1080;
@@ -289,10 +291,10 @@ static void st20p_rx_ops_init(tests_context* st20, struct st20p_rx_ops* ops_rx) 
 static void st20p_tx_assert_cnt(int expect_st20_tx_cnt) {
   auto ctx = st_test_ctx();
   auto handle = ctx->handle;
-  struct st_stats stats;
+  struct mtl_stats stats;
   int ret;
 
-  ret = st_get_stats(handle, &stats);
+  ret = mtl_get_stats(handle, &stats);
   EXPECT_GE(ret, 0);
   EXPECT_EQ(stats.st20_tx_sessions_cnt, expect_st20_tx_cnt);
 }
@@ -300,10 +302,10 @@ static void st20p_tx_assert_cnt(int expect_st20_tx_cnt) {
 static void st20p_rx_assert_cnt(int expect_st20_rx_cnt) {
   auto ctx = st_test_ctx();
   auto handle = ctx->handle;
-  struct st_stats stats;
+  struct mtl_stats stats;
   int ret;
 
-  ret = st_get_stats(handle, &stats);
+  ret = mtl_get_stats(handle, &stats);
   EXPECT_GE(ret, 0);
   EXPECT_EQ(stats.st20_rx_sessions_cnt, expect_st20_rx_cnt);
 }
@@ -356,9 +358,9 @@ static void test_st20p_tx_frame_thread(void* args) {
       frame->timestamp = s->fb_send;
       dbg("%s(%d), timestamp %d\n", __func__, s->idx, s->fb_send);
     }
-    if (s->ext_frames) {
+    if (s->p_ext_frames) {
       int ret = st20p_tx_put_ext_frame((st20p_tx_handle)handle, frame,
-                                       &s->ext_frames[s->ext_idx]);
+                                       &s->p_ext_frames[s->ext_idx]);
       if (ret < 0) {
         err("%s, put ext framebuffer fail %d fb_idx %d\n", __func__, ret, s->ext_idx);
         continue;
@@ -428,7 +430,7 @@ static void test_st20p_rx_frame_thread(void* args) {
     }
 
     unsigned char* sha =
-        (unsigned char*)frame->addr + frame->data_size - SHA256_DIGEST_LENGTH;
+        (unsigned char*)frame->addr[0] + frame->data_size - SHA256_DIGEST_LENGTH;
     int i = 0;
     for (i = 0; i < TEST_SHA_HIST_NUM; i++) {
       unsigned char* target_sha = s->shas[i];
@@ -456,12 +458,25 @@ static void test_internal_st20p_rx_frame_thread(void* args) {
 
   dbg("%s(%d), start\n", __func__, s->idx);
   while (!s->stop) {
-    frame = st20p_rx_get_frame((st20p_rx_handle)handle);
-    if (!frame) { /* no frame */
-      lck.lock();
-      if (!s->stop) s->cv.wait(lck);
-      lck.unlock();
-      continue;
+    if (s->rx_get_ext) {
+      frame =
+          st20p_rx_get_ext_frame((st20p_rx_handle)handle, &s->p_ext_frames[s->ext_idx]);
+      if (!frame) { /* no frame */
+        lck.lock();
+        if (!s->stop) s->cv.wait(lck);
+        lck.unlock();
+        continue;
+      }
+      s->ext_idx++;
+      if (s->ext_idx >= s->fb_cnt) s->ext_idx = 0;
+    } else {
+      frame = st20p_rx_get_frame((st20p_rx_handle)handle);
+      if (!frame) { /* no frame */
+        lck.lock();
+        if (!s->stop) s->cv.wait(lck);
+        lck.unlock();
+        continue;
+      }
     }
 
     if (frame->opaque) {
@@ -503,7 +518,7 @@ static void test_internal_st20p_rx_frame_thread(void* args) {
     }
 
     int i = 0;
-    unsigned char* fb = (unsigned char*)frame->addr;
+    unsigned char* fb = (unsigned char*)frame->addr[0];
     SHA256(fb, s->frame_size, result);
     for (i = 0; i < TEST_SHA_HIST_NUM; i++) {
       unsigned char* target_sha = s->shas[i];
@@ -532,9 +547,9 @@ static int test_st20p_rx_query_ext_frame(void* priv, st20_ext_frame* ext_frame,
     return -EIO;
   }
 
-  ext_frame->buf_addr = s->ext_frames[i].buf_addr;
-  ext_frame->buf_iova = s->ext_frames[i].buf_iova;
-  ext_frame->buf_len = s->ext_frames[i].buf_len;
+  ext_frame->buf_addr = s->p_ext_frames[i].addr[0];
+  ext_frame->buf_iova = s->p_ext_frames[i].iova[0];
+  ext_frame->buf_len = s->p_ext_frames[i].size;
   s->ext_fb_in_use[i] = true;
 
   ext_frame->opaque = &s->ext_fb_in_use[i];
@@ -552,12 +567,14 @@ struct st20p_rx_digest_test_para {
   int timeout_ms;
   bool tx_ext;
   bool rx_ext;
+  bool rx_get_ext;
   bool check_fps;
   bool dynamic;
   enum st_test_level level;
   int fb_cnt;
   bool user_timestamp;
   bool vsync;
+  size_t line_padding_size;
 };
 
 static void test_st20p_init_rx_digest_para(struct st20p_rx_digest_test_para* para) {
@@ -568,11 +585,13 @@ static void test_st20p_init_rx_digest_para(struct st20p_rx_digest_test_para* par
   para->timeout_ms = 0;
   para->tx_ext = false;
   para->rx_ext = false;
+  para->rx_get_ext = false;
   para->check_fps = true;
   para->dynamic = false;
   para->level = ST_TEST_LEVEL_MANDATORY;
   para->user_timestamp = false;
   para->vsync = true;
+  para->line_padding_size = 0;
 }
 
 static void st20p_rx_digest_test(enum st_fps fps[], int width[], int height[],
@@ -647,16 +666,17 @@ static void st20p_rx_digest_test(enum st_fps fps[], int width[], int height[],
     ops_tx.name = "st20p_test";
     ops_tx.priv = test_ctx_tx[i];
     ops_tx.port.num_port = 1;
-    memcpy(ops_tx.port.dip_addr[ST_PORT_P], ctx->para.sip_addr[ST_PORT_R],
-           ST_IP_ADDR_LEN);
-    strncpy(ops_tx.port.port[ST_PORT_P], ctx->para.port[ST_PORT_P], ST_PORT_MAX_LEN);
-    ops_tx.port.udp_port[ST_PORT_P] = ST20P_TEST_UDP_PORT + i;
+    memcpy(ops_tx.port.dip_addr[MTL_PORT_P], ctx->para.sip_addr[MTL_PORT_R],
+           MTL_IP_ADDR_LEN);
+    strncpy(ops_tx.port.port[MTL_PORT_P], ctx->para.port[MTL_PORT_P], MTL_PORT_MAX_LEN);
+    ops_tx.port.udp_port[MTL_PORT_P] = ST20P_TEST_UDP_PORT + i;
     ops_tx.port.payload_type = ST20P_TEST_PAYLOAD_TYPE;
     ops_tx.width = width[i];
     ops_tx.height = height[i];
     ops_tx.fps = fps[i];
     ops_tx.input_fmt = tx_fmt[i];
     ops_tx.transport_fmt = t_fmt[i];
+    ops_tx.transport_linesize = 0;
     ops_tx.device = para->device;
     ops_tx.framebuff_cnt = test_ctx_tx[i]->fb_cnt;
     ops_tx.notify_frame_available = test_st20p_tx_frame_available;
@@ -668,14 +688,16 @@ static void st20p_rx_digest_test(enum st_fps fps[], int width[], int height[],
     if (para->user_timestamp) ops_tx.flags |= ST20P_TX_FLAG_USER_TIMESTAMP;
     if (para->vsync) ops_tx.flags |= ST20P_TX_FLAG_ENABLE_VSYNC;
 
-    test_ctx_tx[i]->frame_size = st_frame_size(tx_fmt[i], width[i], height[i]);
+    uint8_t planes = st_frame_fmt_planes(tx_fmt[i]);
+    test_ctx_tx[i]->frame_size = st_frame_size(tx_fmt[i], width[i], height[i]) +
+                                 para->line_padding_size * height[i] * planes;
 
     tx_handle[i] = st20p_tx_create(st, &ops_tx);
     ASSERT_TRUE(tx_handle[i] != NULL);
 
     int sch = st20p_tx_get_sch_idx(tx_handle[i]);
     EXPECT_GE(sch, 0);
-    ret = st_sch_enable_sleep(st, sch, false);
+    ret = mtl_sch_enable_sleep(st, sch, false);
     EXPECT_GE(ret, 0);
 
     /* sha caculate */
@@ -684,26 +706,43 @@ static void st20p_rx_digest_test(enum st_fps fps[], int width[], int height[],
 
     /* init ext frames, only for no convert */
     if (para->tx_ext) {
-      test_ctx_tx[i]->ext_frames = (struct st20_ext_frame*)malloc(
-          sizeof(*test_ctx_tx[i]->ext_frames) * test_ctx_tx[i]->fb_cnt);
-      size_t pg_sz = st_page_size(st);
-      size_t fb_size = test_ctx_tx[i]->frame_size * test_ctx_tx[i]->fb_cnt;
-      test_ctx_tx[i]->ext_fb_iova_map_sz = st_size_page_align(fb_size, pg_sz); /* align */
+      test_ctx_tx[i]->p_ext_frames = (struct st_ext_frame*)malloc(
+          sizeof(*test_ctx_tx[i]->p_ext_frames) * test_ctx_tx[i]->fb_cnt);
+      size_t pg_sz = mtl_page_size(st);
+      size_t fb_size = frame_size * test_ctx_tx[i]->fb_cnt;
+      test_ctx_tx[i]->ext_fb_iova_map_sz =
+          mtl_size_page_align(fb_size, pg_sz); /* align */
       size_t fb_size_malloc = test_ctx_tx[i]->ext_fb_iova_map_sz + pg_sz;
       test_ctx_tx[i]->ext_fb_malloc = st_test_zmalloc(fb_size_malloc);
       ASSERT_TRUE(test_ctx_tx[i]->ext_fb_malloc != NULL);
       test_ctx_tx[i]->ext_fb =
-          (uint8_t*)ST_ALIGN((uint64_t)test_ctx_tx[i]->ext_fb_malloc, pg_sz);
+          (uint8_t*)MTL_ALIGN((uint64_t)test_ctx_tx[i]->ext_fb_malloc, pg_sz);
       test_ctx_tx[i]->ext_fb_iova =
-          st_dma_map(st, test_ctx_tx[i]->ext_fb, test_ctx_tx[i]->ext_fb_iova_map_sz);
-      ASSERT_TRUE(test_ctx_tx[i]->ext_fb_iova != ST_BAD_IOVA);
+          mtl_dma_map(st, test_ctx_tx[i]->ext_fb, test_ctx_tx[i]->ext_fb_iova_map_sz);
+      ASSERT_TRUE(test_ctx_tx[i]->ext_fb_iova != MTL_BAD_IOVA);
       info("%s, session %d ext_fb %p\n", __func__, i, test_ctx_tx[i]->ext_fb);
 
       for (int j = 0; j < test_ctx_tx[i]->fb_cnt; j++) {
-        test_ctx_tx[i]->ext_frames[j].buf_addr = test_ctx_tx[i]->ext_fb + j * frame_size;
-        test_ctx_tx[i]->ext_frames[j].buf_iova =
-            test_ctx_tx[i]->ext_fb_iova + j * frame_size;
-        test_ctx_tx[i]->ext_frames[j].buf_len = frame_size;
+        for (uint8_t plane = 0; plane < planes; plane++) { /* assume planes continous */
+          test_ctx_tx[i]->p_ext_frames[j].linesize[plane] =
+              st_frame_least_linesize(rx_fmt[i], width[i], plane) +
+              para->line_padding_size;
+          if (plane == 0) {
+            test_ctx_tx[i]->p_ext_frames[j].addr[plane] =
+                test_ctx_tx[i]->ext_fb + j * frame_size;
+            test_ctx_tx[i]->p_ext_frames[j].iova[plane] =
+                test_ctx_tx[i]->ext_fb_iova + j * frame_size;
+          } else {
+            test_ctx_tx[i]->p_ext_frames[j].addr[plane] =
+                (uint8_t*)test_ctx_tx[i]->p_ext_frames[j].addr[plane - 1] +
+                test_ctx_tx[i]->p_ext_frames[j].linesize[plane - 1] * height[i];
+            test_ctx_tx[i]->p_ext_frames[j].iova[plane] =
+                test_ctx_tx[i]->p_ext_frames[j].iova[plane - 1] +
+                test_ctx_tx[i]->p_ext_frames[j].linesize[plane - 1] * height[i];
+          }
+        }
+        test_ctx_tx[i]->p_ext_frames[j].size = frame_size;
+        test_ctx_tx[i]->p_ext_frames[j].opaque = NULL;
       }
     }
 
@@ -713,7 +752,19 @@ static void st20p_rx_digest_test(enum st_fps fps[], int width[], int height[],
       else
         fb = (uint8_t*)st20p_tx_get_fb_addr(tx_handle[i], frame);
       ASSERT_TRUE(fb != NULL);
-      st_test_rand_data(fb, frame_size, frame);
+      if (!para->line_padding_size)
+        st_test_rand_data(fb, frame_size, frame);
+      else {
+        for (int plane = 0; plane < planes; plane++) {
+          size_t least_line_size = st_frame_least_linesize(tx_fmt[i], width[i], plane);
+          uint8_t* start = (uint8_t*)test_ctx_tx[i]->p_ext_frames[frame].addr[plane];
+          for (int line = 0; line < height[i]; line++) {
+            uint8_t* cur_line =
+                start + test_ctx_tx[i]->p_ext_frames[frame].linesize[plane] * line;
+            st_test_rand_data(cur_line, least_line_size, frame);
+          }
+        }
+      }
       if (tx_fmt[i] == ST_FRAME_FMT_YUV422PLANAR10LE) {
         /* only LSB 10 valid */
         uint16_t* p10_u16 = (uint16_t*)fb;
@@ -766,50 +817,73 @@ static void st20p_rx_digest_test(enum st_fps fps[], int width[], int height[],
     test_ctx_rx[i]->height = height[i];
     test_ctx_rx[i]->fmt = rx_fmt[i];
     test_ctx_rx[i]->user_timestamp = para->user_timestamp;
+    test_ctx_rx[i]->rx_get_ext = para->rx_get_ext;
+    test_ctx_rx[i]->frame_size = st_frame_size(rx_fmt[i], width[i], height[i]);
     /* copy sha */
     memcpy(test_ctx_rx[i]->shas, test_ctx_tx[i]->shas,
            TEST_SHA_HIST_NUM * SHA256_DIGEST_LENGTH);
 
     /* init ext frames, only for no convert */
     if (para->rx_ext) {
-      test_ctx_rx[i]->ext_frames = (struct st20_ext_frame*)malloc(
-          sizeof(*test_ctx_rx[i]->ext_frames) * test_ctx_rx[i]->fb_cnt);
-      size_t frame_size = st_frame_size(rx_fmt[i], width[i], height[i]);
-      size_t pg_sz = st_page_size(st);
+      uint8_t planes = st_frame_fmt_planes(rx_fmt[i]);
+      test_ctx_rx[i]->p_ext_frames = (struct st_ext_frame*)malloc(
+          sizeof(*test_ctx_rx[i]->p_ext_frames) * test_ctx_rx[i]->fb_cnt);
+      size_t frame_size = st_frame_size(rx_fmt[i], width[i], height[i]) +
+                          para->line_padding_size * height[i] * planes;
+      size_t pg_sz = mtl_page_size(st);
       size_t fb_size = frame_size * test_ctx_rx[i]->fb_cnt;
-      test_ctx_rx[i]->ext_fb_iova_map_sz = st_size_page_align(fb_size, pg_sz); /* align */
+      test_ctx_rx[i]->ext_fb_iova_map_sz =
+          mtl_size_page_align(fb_size, pg_sz); /* align */
       size_t fb_size_malloc = test_ctx_rx[i]->ext_fb_iova_map_sz + pg_sz;
       test_ctx_rx[i]->ext_fb_malloc = st_test_zmalloc(fb_size_malloc);
       ASSERT_TRUE(test_ctx_rx[i]->ext_fb_malloc != NULL);
       test_ctx_rx[i]->ext_fb =
-          (uint8_t*)ST_ALIGN((uint64_t)test_ctx_rx[i]->ext_fb_malloc, pg_sz);
+          (uint8_t*)MTL_ALIGN((uint64_t)test_ctx_rx[i]->ext_fb_malloc, pg_sz);
       test_ctx_rx[i]->ext_fb_iova =
-          st_dma_map(st, test_ctx_rx[i]->ext_fb, test_ctx_rx[i]->ext_fb_iova_map_sz);
+          mtl_dma_map(st, test_ctx_rx[i]->ext_fb, test_ctx_rx[i]->ext_fb_iova_map_sz);
       info("%s, session %d ext_fb %p\n", __func__, i, test_ctx_rx[i]->ext_fb);
-      ASSERT_TRUE(test_ctx_rx[i]->ext_fb_iova != ST_BAD_IOVA);
+      ASSERT_TRUE(test_ctx_rx[i]->ext_fb_iova != MTL_BAD_IOVA);
 
       for (int j = 0; j < test_ctx_rx[i]->fb_cnt; j++) {
-        test_ctx_rx[i]->ext_frames[j].buf_addr = test_ctx_rx[i]->ext_fb + j * frame_size;
-        test_ctx_rx[i]->ext_frames[j].buf_iova =
-            test_ctx_rx[i]->ext_fb_iova + j * frame_size;
-        test_ctx_rx[i]->ext_frames[j].buf_len = frame_size;
+        for (uint8_t plane = 0; plane < planes; plane++) { /* assume planes continous */
+          test_ctx_rx[i]->p_ext_frames[j].linesize[plane] =
+              st_frame_least_linesize(rx_fmt[i], width[i], plane) +
+              para->line_padding_size;
+          if (plane == 0) {
+            test_ctx_rx[i]->p_ext_frames[j].addr[plane] =
+                test_ctx_rx[i]->ext_fb + j * frame_size;
+            test_ctx_rx[i]->p_ext_frames[j].iova[plane] =
+                test_ctx_rx[i]->ext_fb_iova + j * frame_size;
+          } else {
+            test_ctx_rx[i]->p_ext_frames[j].addr[plane] =
+                (uint8_t*)test_ctx_rx[i]->p_ext_frames[j].addr[plane - 1] +
+                test_ctx_rx[i]->p_ext_frames[j].linesize[plane - 1] * height[i];
+            test_ctx_rx[i]->p_ext_frames[j].iova[plane] =
+                test_ctx_rx[i]->p_ext_frames[j].iova[plane - 1] +
+                test_ctx_rx[i]->p_ext_frames[j].linesize[plane - 1] * height[i];
+          }
+        }
+        test_ctx_rx[i]->p_ext_frames[j].size = frame_size;
+        test_ctx_rx[i]->p_ext_frames[j].opaque = NULL;
       }
+      test_ctx_rx[i]->frame_size = frame_size;
     }
 
     memset(&ops_rx, 0, sizeof(ops_rx));
     ops_rx.name = "st20p_test";
     ops_rx.priv = test_ctx_rx[i];
     ops_rx.port.num_port = 1;
-    memcpy(ops_rx.port.sip_addr[ST_PORT_P], ctx->para.sip_addr[ST_PORT_P],
-           ST_IP_ADDR_LEN);
-    strncpy(ops_rx.port.port[ST_PORT_P], ctx->para.port[ST_PORT_R], ST_PORT_MAX_LEN);
-    ops_rx.port.udp_port[ST_PORT_P] = ST20P_TEST_UDP_PORT + i;
+    memcpy(ops_rx.port.sip_addr[MTL_PORT_P], ctx->para.sip_addr[MTL_PORT_P],
+           MTL_IP_ADDR_LEN);
+    strncpy(ops_rx.port.port[MTL_PORT_P], ctx->para.port[MTL_PORT_R], MTL_PORT_MAX_LEN);
+    ops_rx.port.udp_port[MTL_PORT_P] = ST20P_TEST_UDP_PORT + i;
     ops_rx.port.payload_type = ST20P_TEST_PAYLOAD_TYPE;
     ops_rx.width = width[i];
     ops_rx.height = height[i];
     ops_rx.fps = fps[i];
     ops_rx.output_fmt = rx_fmt[i];
     ops_rx.transport_fmt = t_fmt[i];
+    ops_rx.transport_linesize = 0;
     ops_rx.device = para->device;
     ops_rx.framebuff_cnt = test_ctx_rx[i]->fb_cnt;
     ops_rx.notify_frame_available = test_st20p_rx_frame_available;
@@ -817,20 +891,18 @@ static void st20p_rx_digest_test(enum st_fps fps[], int width[], int height[],
     if (para->dynamic) {
       ops_rx.query_ext_frame = test_st20p_rx_query_ext_frame;
       ops_rx.flags |= ST20P_RX_FLAG_RECEIVE_INCOMPLETE_FRAME;
-    } else if (para->rx_ext) {
-      ops_rx.ext_frames = test_ctx_rx[i]->ext_frames;
+    } else if (para->rx_ext && !para->rx_get_ext) {
+      ops_rx.ext_frames = test_ctx_rx[i]->p_ext_frames;
     }
     if (para->vsync) ops_rx.flags |= ST20P_RX_FLAG_ENABLE_VSYNC;
-
-    test_ctx_rx[i]->frame_size =
-        st_frame_size(ops_rx.output_fmt, ops_rx.width, ops_rx.height);
+    if (para->rx_get_ext) ops_rx.flags |= ST20P_RX_FLAG_EXT_FRAME;
 
     rx_handle[i] = st20p_rx_create(st, &ops_rx);
     ASSERT_TRUE(rx_handle[i] != NULL);
 
     int sch = st20p_rx_get_sch_idx(rx_handle[i]);
     EXPECT_GE(sch, 0);
-    ret = st_sch_enable_sleep(st, sch, false);
+    ret = mtl_sch_enable_sleep(st, sch, false);
     EXPECT_GE(ret, 0);
 
     test_ctx_rx[i]->handle = rx_handle[i];
@@ -845,10 +917,10 @@ static void st20p_rx_digest_test(enum st_fps fps[], int width[], int height[],
     EXPECT_GE(ret, 0);
   }
 
-  ret = st_start(st);
+  ret = mtl_start(st);
   EXPECT_GE(ret, 0);
   sleep(10);
-  ret = st_stop(st);
+  ret = mtl_stop(st);
   EXPECT_GE(ret, 0);
 
   for (int i = 0; i < sessions; i++) {
@@ -893,10 +965,10 @@ static void st20p_rx_digest_test(enum st_fps fps[], int width[], int height[],
          test_ctx_tx[i]->fb_send, framerate_tx[i], expect_framerate_tx[i]);
     EXPECT_GT(test_ctx_tx[i]->fb_send, 0);
     if (para->tx_ext) {
-      st_dma_unmap(st, test_ctx_tx[i]->ext_fb, test_ctx_tx[i]->ext_fb_iova,
-                   test_ctx_tx[i]->ext_fb_iova_map_sz);
+      mtl_dma_unmap(st, test_ctx_tx[i]->ext_fb, test_ctx_tx[i]->ext_fb_iova,
+                    test_ctx_tx[i]->ext_fb_iova_map_sz);
       st_test_free(test_ctx_tx[i]->ext_fb_malloc);
-      st_test_free(test_ctx_tx[i]->ext_frames);
+      st_test_free(test_ctx_tx[i]->p_ext_frames);
     }
     delete test_ctx_tx[i];
   }
@@ -921,10 +993,10 @@ static void st20p_rx_digest_test(enum st_fps fps[], int width[], int height[],
       }
     }
     if (para->rx_ext) {
-      st_dma_unmap(st, test_ctx_rx[i]->ext_fb, test_ctx_rx[i]->ext_fb_iova,
-                   test_ctx_rx[i]->ext_fb_iova_map_sz);
+      mtl_dma_unmap(st, test_ctx_rx[i]->ext_fb, test_ctx_rx[i]->ext_fb_iova,
+                    test_ctx_rx[i]->ext_fb_iova_map_sz);
       st_test_free(test_ctx_rx[i]->ext_fb_malloc);
-      st_test_free(test_ctx_rx[i]->ext_frames);
+      st_test_free(test_ctx_rx[i]->p_ext_frames);
     }
     delete test_ctx_rx[i];
   }
@@ -1181,6 +1253,65 @@ TEST(St20p, rx_dynamic_ext_digest_1080p_no_convert_s2) {
   para.device = ST_PLUGIN_DEVICE_TEST_INTERNAL;
   para.rx_ext = true;
   para.dynamic = true;
+
+  st20p_rx_digest_test(fps, width, height, tx_fmt, t_fmt, rx_fmt, &para);
+}
+
+TEST(St20p, rx_get_ext_digest_1080p_convert_s2) {
+  enum st_fps fps[2] = {ST_FPS_P29_97, ST_FPS_P59_94};
+  int width[2] = {1920, 1280};
+  int height[2] = {1080, 720};
+  enum st_frame_fmt tx_fmt[2] = {ST_FRAME_FMT_YUV422PLANAR10LE, ST_FRAME_FMT_Y210};
+  enum st20_fmt t_fmt[2] = {ST20_FMT_YUV_422_10BIT, ST20_FMT_YUV_422_10BIT};
+  enum st_frame_fmt rx_fmt[2] = {ST_FRAME_FMT_YUV422PLANAR10LE, ST_FRAME_FMT_Y210};
+
+  struct st20p_rx_digest_test_para para;
+  test_st20p_init_rx_digest_para(&para);
+  para.sessions = 2;
+  para.device = ST_PLUGIN_DEVICE_TEST_INTERNAL;
+  para.rx_ext = true;
+  para.rx_get_ext = true;
+
+  st20p_rx_digest_test(fps, width, height, tx_fmt, t_fmt, rx_fmt, &para);
+}
+
+TEST(St20p, tx_rx_ext_digest_1080p_convert_with_padding_s2) {
+  enum st_fps fps[2] = {ST_FPS_P59_94, ST_FPS_P59_94};
+  int width[2] = {1920, 1920};
+  int height[2] = {1080, 1080};
+  enum st_frame_fmt tx_fmt[2] = {ST_FRAME_FMT_YUV422PLANAR10LE, ST_FRAME_FMT_Y210};
+  enum st20_fmt t_fmt[2] = {ST20_FMT_YUV_422_10BIT, ST20_FMT_YUV_422_10BIT};
+  enum st_frame_fmt rx_fmt[2] = {ST_FRAME_FMT_YUV422PLANAR10LE, ST_FRAME_FMT_Y210};
+
+  struct st20p_rx_digest_test_para para;
+  test_st20p_init_rx_digest_para(&para);
+  para.sessions = 2;
+  para.device = ST_PLUGIN_DEVICE_TEST_INTERNAL;
+  para.tx_ext = true;
+  para.rx_ext = true;
+  para.check_fps = false;
+  para.line_padding_size = 1024;
+
+  st20p_rx_digest_test(fps, width, height, tx_fmt, t_fmt, rx_fmt, &para);
+}
+
+TEST(St20p, rx_get_ext_digest_1080p_convert_with_padding_s2) {
+  enum st_fps fps[2] = {ST_FPS_P59_94, ST_FPS_P59_94};
+  int width[2] = {1920, 1920};
+  int height[2] = {1080, 1080};
+  enum st_frame_fmt tx_fmt[2] = {ST_FRAME_FMT_YUV422PLANAR10LE, ST_FRAME_FMT_Y210};
+  enum st20_fmt t_fmt[2] = {ST20_FMT_YUV_422_10BIT, ST20_FMT_YUV_422_10BIT};
+  enum st_frame_fmt rx_fmt[2] = {ST_FRAME_FMT_YUV422PLANAR10LE, ST_FRAME_FMT_Y210};
+
+  struct st20p_rx_digest_test_para para;
+  test_st20p_init_rx_digest_para(&para);
+  para.sessions = 2;
+  para.device = ST_PLUGIN_DEVICE_TEST_INTERNAL;
+  para.tx_ext = true;
+  para.rx_ext = true;
+  para.rx_get_ext = true;
+  para.check_fps = false;
+  para.line_padding_size = 512;
 
   st20p_rx_digest_test(fps, width, height, tx_fmt, t_fmt, rx_fmt, &para);
 }

@@ -28,6 +28,10 @@ on:
       - VERSION
       - .github/workflows/ubuntu_build_with_gtest.yml
 
+concurrency: 
+  group: ${{ github.head_ref || github.run_id }}
+  cancel-in-progress: true
+
 env:
   # Customize the env if
   BUILD_TYPE: Release

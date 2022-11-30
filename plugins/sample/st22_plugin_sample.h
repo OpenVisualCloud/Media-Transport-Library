@@ -5,7 +5,7 @@
 #ifndef _ST22_PLUGIN_SAMPLE_H_
 #define _ST22_PLUGIN_SAMPLE_H_
 
-#include <st_pipeline_api.h>
+#include <mtl/st_pipeline_api.h>
 
 #define MAX_SAMPLE_ENCODER_SESSIONS (8)
 #define MAX_SAMPLE_DECODER_SESSIONS (8)
@@ -45,7 +45,7 @@ struct st22_sample_ctx {
 
 /* the APIs for plugin */
 int st_plugin_get_meta(struct st_plugin_meta* meta);
-st_plugin_priv st_plugin_create(st_handle st);
+st_plugin_priv st_plugin_create(mtl_handle st);
 int st_plugin_free(st_plugin_priv handle);
 
 #endif

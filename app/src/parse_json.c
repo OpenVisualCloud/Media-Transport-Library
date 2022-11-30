@@ -87,6 +87,20 @@ static const struct st_video_fmt_desc st_video_fmt_descs[] = {
         .fps = ST_FPS_P30,
     },
     {
+        .fmt = VIDEO_FORMAT_720P_24FPS,
+        .name = "i720p24",
+        .width = 1280,
+        .height = 720,
+        .fps = ST_FPS_P24,
+    },
+    {
+        .fmt = VIDEO_FORMAT_720P_23FPS,
+        .name = "i720p23",
+        .width = 1280,
+        .height = 720,
+        .fps = ST_FPS_P23_98,
+    },
+    {
         .fmt = VIDEO_FORMAT_1080P_119FPS,
         .name = "i1080p119",
         .width = 1920,
@@ -134,6 +148,20 @@ static const struct st_video_fmt_desc st_video_fmt_descs[] = {
         .width = 1920,
         .height = 1080,
         .fps = ST_FPS_P30,
+    },
+    {
+        .fmt = VIDEO_FORMAT_1080P_24FPS,
+        .name = "i1080p24",
+        .width = 1920,
+        .height = 1080,
+        .fps = ST_FPS_P24,
+    },
+    {
+        .fmt = VIDEO_FORMAT_1080P_23FPS,
+        .name = "i1080p23",
+        .width = 1920,
+        .height = 1080,
+        .fps = ST_FPS_P23_98,
     },
     {
         .fmt = VIDEO_FORMAT_1080I_59FPS,
@@ -199,6 +227,20 @@ static const struct st_video_fmt_desc st_video_fmt_descs[] = {
         .fps = ST_FPS_P30,
     },
     {
+        .fmt = VIDEO_FORMAT_2160P_24FPS,
+        .name = "i2160p24",
+        .width = 3840,
+        .height = 2160,
+        .fps = ST_FPS_P24,
+    },
+    {
+        .fmt = VIDEO_FORMAT_2160P_23FPS,
+        .name = "i2160p23",
+        .width = 3840,
+        .height = 2160,
+        .fps = ST_FPS_P23_98,
+    },
+    {
         .fmt = VIDEO_FORMAT_4320P_119FPS,
         .name = "i4320p119",
         .width = 7680,
@@ -246,6 +288,146 @@ static const struct st_video_fmt_desc st_video_fmt_descs[] = {
         .width = 7680,
         .height = 4320,
         .fps = ST_FPS_P30,
+    },
+    {
+        .fmt = VIDEO_FORMAT_4320P_24FPS,
+        .name = "i4320p24",
+        .width = 7680,
+        .height = 4320,
+        .fps = ST_FPS_P24,
+    },
+    {
+        .fmt = VIDEO_FORMAT_4320P_23FPS,
+        .name = "i4320p23",
+        .width = 7680,
+        .height = 4320,
+        .fps = ST_FPS_P23_98,
+    },
+    {
+        .fmt = VIDEO_FORMAT_DCI1080P_119FPS,
+        .name = "idci1080p119",
+        .width = 2048,
+        .height = 1080,
+        .fps = ST_FPS_P119_88,
+    },
+    {
+        .fmt = VIDEO_FORMAT_DCI1080P_60FPS,
+        .name = "idci1080p60",
+        .width = 2048,
+        .height = 1080,
+        .fps = ST_FPS_P60,
+    },
+    {
+        .fmt = VIDEO_FORMAT_DCI1080P_59FPS,
+        .name = "idci1080p59",
+        .width = 2048,
+        .height = 1080,
+        .fps = ST_FPS_P59_94,
+    },
+    {
+        .fmt = VIDEO_FORMAT_DCI1080P_50FPS,
+        .name = "idci1080p50",
+        .width = 2048,
+        .height = 1080,
+        .fps = ST_FPS_P50,
+    },
+    {
+        .fmt = VIDEO_FORMAT_DCI1080P_30FPS,
+        .name = "idci1080p30",
+        .width = 2048,
+        .height = 1080,
+        .fps = ST_FPS_P30,
+    },
+    {
+        .fmt = VIDEO_FORMAT_DCI1080P_29FPS,
+        .name = "idci1080p29",
+        .width = 2048,
+        .height = 1080,
+        .fps = ST_FPS_P29_97,
+    },
+    {
+        .fmt = VIDEO_FORMAT_DCI1080P_25FPS,
+        .name = "idci1080p25",
+        .width = 2048,
+        .height = 1080,
+        .fps = ST_FPS_P25,
+    },
+    {
+        .fmt = VIDEO_FORMAT_DCI1080P_24FPS,
+        .name = "idci1080p24",
+        .width = 2048,
+        .height = 1080,
+        .fps = ST_FPS_P24,
+    },
+    {
+        .fmt = VIDEO_FORMAT_DCI1080P_23FPS,
+        .name = "idci1080p23",
+        .width = 2048,
+        .height = 1080,
+        .fps = ST_FPS_P23_98,
+    },
+    {
+        .fmt = VIDEO_FORMAT_DCI2160P_119FPS,
+        .name = "idci2160p119",
+        .width = 4096,
+        .height = 2160,
+        .fps = ST_FPS_P119_88,
+    },
+    {
+        .fmt = VIDEO_FORMAT_DCI2160P_60FPS,
+        .name = "idci2160p60",
+        .width = 4096,
+        .height = 2160,
+        .fps = ST_FPS_P60,
+    },
+    {
+        .fmt = VIDEO_FORMAT_DCI2160P_59FPS,
+        .name = "idci2160p59",
+        .width = 4096,
+        .height = 2160,
+        .fps = ST_FPS_P59_94,
+    },
+    {
+        .fmt = VIDEO_FORMAT_DCI2160P_50FPS,
+        .name = "idci2160p50",
+        .width = 4096,
+        .height = 2160,
+        .fps = ST_FPS_P50,
+    },
+    {
+        .fmt = VIDEO_FORMAT_DCI2160P_30FPS,
+        .name = "idci2160p30",
+        .width = 4096,
+        .height = 2160,
+        .fps = ST_FPS_P30,
+    },
+    {
+        .fmt = VIDEO_FORMAT_DCI2160P_29FPS,
+        .name = "idci2160p29",
+        .width = 4096,
+        .height = 2160,
+        .fps = ST_FPS_P29_97,
+    },
+    {
+        .fmt = VIDEO_FORMAT_DCI2160P_25FPS,
+        .name = "idci2160p25",
+        .width = 4096,
+        .height = 2160,
+        .fps = ST_FPS_P25,
+    },
+    {
+        .fmt = VIDEO_FORMAT_DCI2160P_24FPS,
+        .name = "idci2160p24",
+        .width = 4096,
+        .height = 2160,
+        .fps = ST_FPS_P24,
+    },
+    {
+        .fmt = VIDEO_FORMAT_DCI2160P_23FPS,
+        .name = "idci2160p23",
+        .width = 4096,
+        .height = 2160,
+        .fps = ST_FPS_P23_98,
     },
     {
         .fmt = VIDEO_FORMAT_AUTO,
@@ -985,8 +1167,8 @@ static int parse_st22p_format(json_object* st22p_obj, st_json_st22p_session_t* s
     st22p->info.format = ST_FRAME_FMT_V210;
   } else if (strcmp(format, "YUV422PLANAR8") == 0) {
     st22p->info.format = ST_FRAME_FMT_YUV422PLANAR8;
-  } else if (strcmp(format, "YUV422PACKED8") == 0) {
-    st22p->info.format = ST_FRAME_FMT_YUV422PACKED8;
+  } else if (strcmp(format, "UYVY") == 0) {
+    st22p->info.format = ST_FRAME_FMT_UYVY;
   } else if (strcmp(format, "YUV444PLANAR10LE") == 0) {
     st22p->info.format = ST_FRAME_FMT_YUV444PLANAR10LE;
   } else if (strcmp(format, "YUV444PLANAR12LE") == 0) {
@@ -1226,8 +1408,8 @@ static int parse_st20p_format(json_object* st20p_obj, st_json_st20p_session_t* s
     st20p->info.format = ST_FRAME_FMT_Y210;
   } else if (strcmp(format, "YUV422PLANAR8") == 0) {
     st20p->info.format = ST_FRAME_FMT_YUV422PLANAR8;
-  } else if (strcmp(format, "YUV422PACKED8") == 0) {
-    st20p->info.format = ST_FRAME_FMT_YUV422PACKED8;
+  } else if (strcmp(format, "UYVY") == 0) {
+    st20p->info.format = ST_FRAME_FMT_UYVY;
   } else if (strcmp(format, "YUV444PLANAR10LE") == 0) {
     st20p->info.format = ST_FRAME_FMT_YUV444PLANAR10LE;
   } else if (strcmp(format, "YUV444PLANAR12LE") == 0) {
@@ -1610,7 +1792,7 @@ int st_app_parse_json(st_json_context_t* ctx, const char* filename) {
       json_object* dip_array = st_json_object_object_get(tx_group, "dip");
       if (dip_array != NULL && json_object_get_type(dip_array) == json_type_array) {
         int len = json_object_array_length(dip_array);
-        if (len < 1 || len > ST_PORT_MAX) {
+        if (len < 1 || len > MTL_PORT_MAX) {
           err("%s, wrong dip number\n", __func__);
           ret = -ST_JSON_NOT_VALID;
           goto error;
@@ -1915,7 +2097,7 @@ int st_app_parse_json(st_json_context_t* ctx, const char* filename) {
       json_object* ip_array = st_json_object_object_get(rx_group, "ip");
       if (ip_array != NULL && json_object_get_type(ip_array) == json_type_array) {
         int len = json_object_array_length(ip_array);
-        if (len < 1 || len > ST_PORT_MAX) {
+        if (len < 1 || len > MTL_PORT_MAX) {
           err("%s, wrong dip number\n", __func__);
           ret = -ST_JSON_NOT_VALID;
           goto error;

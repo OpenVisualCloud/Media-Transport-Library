@@ -5,7 +5,7 @@
 #include "sample_util.h"
 
 struct tx_st20p_sample_ctx {
-  st_handle st;
+  mtl_handle st;
   int idx;
   st20p_tx_handle handle;
 
@@ -18,19 +18,19 @@ struct tx_st20p_sample_ctx {
 
   size_t frame_size;
   uint8_t* source_begin;
-  st_iova_t source_begin_iova;
+  mtl_iova_t source_begin_iova;
   uint8_t* source_end;
   uint8_t* frame_cursor;
 
   bool ext;
-  st_dma_mem_handle dma_mem;
+  mtl_dma_mem_handle dma_mem;
 };
 
 static int tx_st20p_close_source(struct tx_st20p_sample_ctx* s) {
   if (s->ext) {
-    if (s->dma_mem) st_dma_mem_free(s->st, s->dma_mem);
+    if (s->dma_mem) mtl_dma_mem_free(s->st, s->dma_mem);
   } else if (s->source_begin) {
-    st_hp_free(s->st, s->source_begin);
+    mtl_hp_free(s->st, s->source_begin);
     s->source_begin = NULL;
   }
 
@@ -80,7 +80,7 @@ init_fb:
     }
 
     /* alloc enough memory to hold framebuffers and map to iova */
-    st_dma_mem_handle dma_mem = st_dma_mem_alloc(s->st, fbs_size);
+    mtl_dma_mem_handle dma_mem = mtl_dma_mem_alloc(s->st, fbs_size);
     if (!dma_mem) {
       err("%s(%d), dma mem alloc/map fail\n", __func__, s->idx);
       close(fd);
@@ -88,28 +88,28 @@ init_fb:
     }
     s->dma_mem = dma_mem;
 
-    s->source_begin = st_dma_mem_addr(dma_mem);
-    s->source_begin_iova = st_dma_mem_iova(dma_mem);
+    s->source_begin = mtl_dma_mem_addr(dma_mem);
+    s->source_begin_iova = mtl_dma_mem_iova(dma_mem);
     s->frame_cursor = s->source_begin;
     if (m) {
       if (frame_cnt < 2) {
-        st_memcpy(s->source_begin, m, s->frame_size);
-        st_memcpy(s->source_begin + s->frame_size, m, s->frame_size);
+        mtl_memcpy(s->source_begin, m, s->frame_size);
+        mtl_memcpy(s->source_begin + s->frame_size, m, s->frame_size);
       } else {
-        st_memcpy(s->source_begin, m, i.st_size);
+        mtl_memcpy(s->source_begin, m, i.st_size);
       }
     }
     s->source_end = s->source_begin + fbs_size;
     info("%s, source begin at %p, end at %p\n", __func__, s->source_begin, s->source_end);
   } else {
-    s->source_begin = st_hp_zmalloc(s->st, fbs_size, ST_PORT_P);
+    s->source_begin = mtl_hp_zmalloc(s->st, fbs_size, MTL_PORT_P);
     if (!s->source_begin) {
       err("%s, source malloc on hugepage fail\n", __func__);
       close(fd);
       return -EIO;
     }
     s->frame_cursor = s->source_begin;
-    if (m) st_memcpy(s->source_begin, m, fbs_size);
+    if (m) mtl_memcpy(s->source_begin, m, fbs_size);
     s->source_end = s->source_begin + fbs_size;
   }
 
@@ -142,7 +142,7 @@ static int tx_st20p_frame_done(void* priv, struct st_frame* frame) {
 static void tx_st20p_build_frame(struct tx_st20p_sample_ctx* s, struct st_frame* frame) {
   // uint8_t* src = s->frame_cursor;
 
-  // st_memcpy(frame->addr, src, s->frame_size);
+  // mtl_memcpy(frame->addr[0], src, s->frame_size);
 }
 
 static void* tx_st20p_frame_thread(void* arg) {
@@ -160,10 +160,21 @@ static void* tx_st20p_frame_thread(void* arg) {
       continue;
     }
     if (s->ext) {
-      struct st20_ext_frame ext_frame;
-      ext_frame.buf_addr = s->frame_cursor;
-      ext_frame.buf_iova = s->source_begin_iova + (s->frame_cursor - s->source_begin);
-      ext_frame.buf_len = s->frame_size;
+      struct st_ext_frame ext_frame;
+      ext_frame.addr[0] = s->frame_cursor;
+      ext_frame.iova[0] = s->source_begin_iova + (s->frame_cursor - s->source_begin);
+      ext_frame.linesize[0] = st_frame_least_linesize(frame->fmt, frame->width, 0);
+      uint8_t planes = st_frame_fmt_planes(frame->fmt);
+      for (uint8_t plane = 1; plane < planes; plane++) { /* assume planes continous */
+        ext_frame.linesize[plane] =
+            st_frame_least_linesize(frame->fmt, frame->width, plane);
+        ext_frame.addr[plane] = (uint8_t*)ext_frame.addr[plane - 1] +
+                                ext_frame.linesize[plane - 1] * frame->height;
+        ext_frame.iova[plane] =
+            ext_frame.iova[plane - 1] + ext_frame.linesize[plane - 1] * frame->height;
+      }
+      ext_frame.size = s->frame_size;
+      ext_frame.opaque = NULL;
       st20p_tx_put_ext_frame(handle, frame, &ext_frame);
     } else {
       if (s->source_begin) tx_st20p_build_frame(s, frame);
@@ -187,8 +198,15 @@ int main(int argc, char** argv) {
   int ret;
 
   /* init sample(st) dev */
-  ret = st_sample_tx_init(&ctx, argc, argv);
+  memset(&ctx, 0, sizeof(ctx));
+  ret = tx_sample_parse_args(&ctx, argc, argv);
   if (ret < 0) return ret;
+
+  ctx.st = mtl_init(&ctx.param);
+  if (!ctx.st) {
+    err("%s: mtl_init fail\n", __func__);
+    return -EIO;
+  }
 
   uint32_t session_num = ctx.sessions;
   struct tx_st20p_sample_ctx* app[session_num];
@@ -214,13 +232,15 @@ int main(int argc, char** argv) {
     ops_tx.name = "st20p_test";
     ops_tx.priv = app[i];  // app handle register to lib
     ops_tx.port.num_port = ctx.param.num_ports;
-    memcpy(ops_tx.port.dip_addr[ST_PORT_P], ctx.tx_dip_addr[ST_PORT_P], ST_IP_ADDR_LEN);
-    strncpy(ops_tx.port.port[ST_PORT_P], ctx.param.port[ST_PORT_P], ST_PORT_MAX_LEN);
-    ops_tx.port.udp_port[ST_PORT_P] = ctx.udp_port + i;
+    memcpy(ops_tx.port.dip_addr[MTL_PORT_P], ctx.tx_dip_addr[MTL_PORT_P],
+           MTL_IP_ADDR_LEN);
+    strncpy(ops_tx.port.port[MTL_PORT_P], ctx.param.port[MTL_PORT_P], MTL_PORT_MAX_LEN);
+    ops_tx.port.udp_port[MTL_PORT_P] = ctx.udp_port + i;
     if (ops_tx.port.num_port > 1) {
-      memcpy(ops_tx.port.dip_addr[ST_PORT_R], ctx.tx_dip_addr[ST_PORT_R], ST_IP_ADDR_LEN);
-      strncpy(ops_tx.port.port[ST_PORT_R], ctx.param.port[ST_PORT_R], ST_PORT_MAX_LEN);
-      ops_tx.port.udp_port[ST_PORT_R] = ctx.udp_port + i;
+      memcpy(ops_tx.port.dip_addr[MTL_PORT_R], ctx.tx_dip_addr[MTL_PORT_R],
+             MTL_IP_ADDR_LEN);
+      strncpy(ops_tx.port.port[MTL_PORT_R], ctx.param.port[MTL_PORT_R], MTL_PORT_MAX_LEN);
+      ops_tx.port.udp_port[MTL_PORT_R] = ctx.udp_port + i;
     }
     ops_tx.port.payload_type = ctx.payload_type;
     ops_tx.width = ctx.width;
@@ -261,7 +281,7 @@ int main(int argc, char** argv) {
   }
 
   // start tx
-  ret = st_start(ctx.st);
+  ret = mtl_start(ctx.st);
 
   while (!ctx.exit) {
     sleep(1);
@@ -280,7 +300,7 @@ int main(int argc, char** argv) {
   }
 
   // stop tx
-  ret = st_stop(ctx.st);
+  ret = mtl_stop(ctx.st);
 
   // check result
   for (int i = 0; i < session_num; i++) {
@@ -301,6 +321,9 @@ error:
   }
 
   /* release sample(st) dev */
-  st_sample_uinit(&ctx);
+  if (ctx.st) {
+    mtl_uninit(ctx.st);
+    ctx.st = NULL;
+  }
   return ret;
 }

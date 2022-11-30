@@ -5,7 +5,7 @@
 #include "sample_util.h"
 
 struct tx_st22p_sample_ctx {
-  st_handle st;
+  mtl_handle st;
   int idx;
   st22p_tx_handle handle;
 
@@ -28,12 +28,12 @@ struct tx_st22p_sample_ctx {
 
 static int tx_st22p_close_source(struct tx_st22p_sample_ctx* s) {
   if (s->source_begin) {
-    st_hp_free(s->st, s->source_begin);
+    mtl_hp_free(s->st, s->source_begin);
     s->source_begin = NULL;
   }
 
   if (s->logo_buf) {
-    st_hp_free(s->st, s->logo_buf);
+    mtl_hp_free(s->st, s->logo_buf);
     s->logo_buf = NULL;
   }
 
@@ -49,7 +49,7 @@ static int tx_st22p_open_logo(struct st_sample_context* ctx,
   }
 
   size_t logo_size = st_frame_size(ctx->input_fmt, ctx->logo_width, ctx->logo_height);
-  s->logo_buf = st_hp_malloc(s->st, logo_size, ST_PORT_P);
+  s->logo_buf = mtl_hp_malloc(s->st, logo_size, MTL_PORT_P);
   if (!s->logo_buf) {
     err("%s, logo buf malloc fail\n", __func__);
     fclose(fp_logo);
@@ -59,13 +59,13 @@ static int tx_st22p_open_logo(struct st_sample_context* ctx,
   size_t read = fread(s->logo_buf, 1, logo_size, fp_logo);
   if (read != logo_size) {
     err("%s, logo buf read fail\n", __func__);
-    st_hp_free(s->st, s->logo_buf);
+    mtl_hp_free(s->st, s->logo_buf);
     s->logo_buf = NULL;
     fclose(fp_logo);
     return -EIO;
   }
 
-  s->logo_meta.addr = s->logo_buf;
+  s->logo_meta.addr[0] = s->logo_buf;
   s->logo_meta.fmt = ctx->input_fmt;
   s->logo_meta.width = ctx->logo_width;
   s->logo_meta.height = ctx->logo_height;
@@ -99,7 +99,7 @@ static int tx_st22p_open_source(struct st_sample_context* ctx,
     return -EIO;
   }
 
-  s->source_begin = st_hp_malloc(s->st, i.st_size, ST_PORT_P);
+  s->source_begin = mtl_hp_malloc(s->st, i.st_size, MTL_PORT_P);
   if (!s->source_begin) {
     err("%s, source malloc on hugepage fail\n", __func__);
     close(fd);
@@ -107,7 +107,7 @@ static int tx_st22p_open_source(struct st_sample_context* ctx,
   }
 
   s->frame_cursor = s->source_begin;
-  st_memcpy(s->source_begin, m, i.st_size);
+  mtl_memcpy(s->source_begin, m, i.st_size);
   s->source_end = s->source_begin + i.st_size;
   close(fd);
 
@@ -132,7 +132,16 @@ static void tx_st22p_build_frame(struct tx_st22p_sample_ctx* s, struct st_frame*
   }
   uint8_t* src = s->frame_cursor;
 
-  st_memcpy(frame->addr, src, s->frame_size);
+  uint8_t planes = st_frame_fmt_planes(frame->fmt);
+  for (uint8_t plane = 0; plane < planes; plane++) {
+    size_t plane_sz = st_frame_plane_size(frame, plane);
+    dbg("%s(%d), src frame, plane %u size %lu addr %p\n", __func__, s->idx, plane,
+        plane_sz, frame->addr[plane]);
+    dbg("%s(%d), plane %u src addr %p\n", __func__, s->idx, plane, src);
+    mtl_memcpy(frame->addr[plane], src, plane_sz);
+    src += plane_sz;
+  }
+
   if (s->logo_buf) {
     st_draw_logo(frame, &s->logo_meta, 16, 16);
   }
@@ -170,8 +179,15 @@ int main(int argc, char** argv) {
   int ret;
 
   /* init sample(st) dev */
-  ret = st_sample_tx_init(&ctx, argc, argv);
+  memset(&ctx, 0, sizeof(ctx));
+  ret = tx_sample_parse_args(&ctx, argc, argv);
   if (ret < 0) return ret;
+
+  ctx.st = mtl_init(&ctx.param);
+  if (!ctx.st) {
+    err("%s: mtl_init fail\n", __func__);
+    return -EIO;
+  }
 
   uint32_t session_num = ctx.sessions;
   struct tx_st22p_sample_ctx* app[session_num];
@@ -193,19 +209,20 @@ int main(int argc, char** argv) {
 
     struct st22p_tx_ops ops_tx;
     memset(&ops_tx, 0, sizeof(ops_tx));
-    ops_tx.name = "st22p_test";
+    ops_tx.name = "st22p_sample";
     ops_tx.priv = app[i];  // app handle register to lib
     ops_tx.port.num_port = 1;
-    memcpy(ops_tx.port.dip_addr[ST_PORT_P], ctx.tx_dip_addr[ST_PORT_P], ST_IP_ADDR_LEN);
-    strncpy(ops_tx.port.port[ST_PORT_P], ctx.param.port[ST_PORT_P], ST_PORT_MAX_LEN);
-    ops_tx.port.udp_port[ST_PORT_P] = ctx.udp_port + i;
+    memcpy(ops_tx.port.dip_addr[MTL_PORT_P], ctx.tx_dip_addr[MTL_PORT_P],
+           MTL_IP_ADDR_LEN);
+    strncpy(ops_tx.port.port[MTL_PORT_P], ctx.param.port[MTL_PORT_P], MTL_PORT_MAX_LEN);
+    ops_tx.port.udp_port[MTL_PORT_P] = ctx.udp_port + i;
     ops_tx.port.payload_type = ctx.payload_type;
     ops_tx.width = ctx.width;
     ops_tx.height = ctx.height;
     ops_tx.fps = ctx.fps;
     ops_tx.input_fmt = ctx.st22p_input_fmt;
     ops_tx.pack_type = ST22_PACK_CODESTREAM;
-    ops_tx.codec = ST22_CODEC_JPEGXS;
+    ops_tx.codec = ctx.st22p_codec;
     ops_tx.device = ST_PLUGIN_DEVICE_AUTO;
     ops_tx.quality = ST22_QUALITY_MODE_QUALITY;
     ops_tx.codec_thread_cnt = 2;
@@ -233,7 +250,7 @@ int main(int argc, char** argv) {
   }
 
   // start tx
-  ret = st_start(ctx.st);
+  ret = mtl_start(ctx.st);
 
   while (!ctx.exit) {
     sleep(1);
@@ -252,7 +269,7 @@ int main(int argc, char** argv) {
   }
 
   // stop tx
-  ret = st_stop(ctx.st);
+  ret = mtl_stop(ctx.st);
 
   // check result
   for (int i = 0; i < session_num; i++) {
@@ -273,6 +290,9 @@ error:
   }
 
   /* release sample(st) dev */
-  st_sample_uinit(&ctx);
+  if (ctx.st) {
+    mtl_uninit(ctx.st);
+    ctx.st = NULL;
+  }
   return ret;
 }

@@ -222,14 +222,14 @@ first set PKGCONFIG path:
 ```
 set PKG_CONFIG_PATH=c:\dpdk\lib\pkgconfig;c:\json-c\lib\pkgconfig
 ```
-### 4.1 Build libst_dpdk
+### 4.1 Build libmtl
 ```
-meson build --prefix=c:\libst_dpdk -Ddpdk_root_dir=c:\code\dpdk <--- your dpdk source code directory
+meson build --prefix=c:\libmtl -Ddpdk_root_dir=c:\code\dpdk <--- your dpdk source code directory
 ninja -C build install
 ```
 ### 4.2 Build app
 ```
-set PKG_CONFIG_PATH=c:\dpdk\lib\pkgconfig;c:\libst_dpdk\lib\pkgconfig;c:\gtest\lib\pkgconfig;c:\openssl\lib\pkgconfig;c:\json-c\lib\pkgconfig;c:\SDL2\lib\pkgconfig
+set PKG_CONFIG_PATH=c:\dpdk\lib\pkgconfig;c:\libmtl\lib\pkgconfig;c:\gtest\lib\pkgconfig;c:\openssl\lib\pkgconfig;c:\json-c\lib\pkgconfig;c:\SDL2\lib\pkgconfig
 cd app
 meson build
 ninja -C build
