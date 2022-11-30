@@ -63,7 +63,7 @@ jobs:
         ./build-doc.sh
         cd ../../
 
-     - name: Build ffmpeg plugin
+    - name: Build ffmpeg plugin
       run: |
         cd plugins/ffmpeg_plugin/
         ./build_ffmpeg_plugin.sh
