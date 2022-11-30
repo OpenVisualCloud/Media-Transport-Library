@@ -61,3 +61,11 @@ jobs:
         pushd kahawai\tests
         meson build
         ninja -C build
+
+    - name: Build kahawai with TAP
+      env:
+        PKG_CONFIG_PATH: 'C:\dpdk\lib\pkgconfig;C:\kahawai\mingw-w64-x86_64-gtest-1.11.0-6\lib\pkgconfig;C:\kahawai\mingw-w64-x86_64-openssl-1.1.1.o-3\lib\pkgconfig;C:\kahawai\mingw-w64-x86_64-json-c-0.16-1\lib\pkgconfig;C:\kahawai\SDL2-2.0.22\x86_64-w64-mingw32\lib\pkgconfig'
+      run: |
+        cd kahawai
+        meson tap_build --prefix=c:\libmtl -Ddpdk_root_dir=${{github.workspace}}\dpdk -Denable_tap=true
+        ninja -C tap_build
