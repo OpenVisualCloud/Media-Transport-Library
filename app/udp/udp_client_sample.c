@@ -37,7 +37,7 @@ static void* udp_client_thread(void* arg) {
     if (send != udp_len) {
       dbg("%s(%d), only send %d bytes\n", __func__, s->idx, (int)send);
     }
-    // usleep(1000);
+    usleep(1000);
   }
   info("%s(%d), stop\n", __func__, s->idx);
 
@@ -49,7 +49,7 @@ int main(int argc, char** argv) {
   int ret;
 
   memset(&ctx, 0, sizeof(ctx));
-  ret = fwd_sample_parse_args(&ctx, argc, argv);
+  ret = sample_parse_args(&ctx, argc, argv, true, false, true);
   if (ret < 0) return ret;
 
   ctx.st = mtl_init(&ctx.param);

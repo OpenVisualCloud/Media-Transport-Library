@@ -21,7 +21,7 @@
 extern "C" {
 #endif
 
-/** Standard UDP is 1460 bytes */
+/** Standard UDP is 1460 bytes, mtu is 1500 */
 #define MUDP_MAX_BYTES (1460)
 
 /**

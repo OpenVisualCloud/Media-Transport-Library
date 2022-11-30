@@ -257,9 +257,10 @@ mudp_handle mudp_socket(mtl_handle mt, int domain, int type, int protocol) {
   s->port = port;
   s->element_nb = mt_if_nb_tx_desc(impl, port) + 512;
   s->element_size = MUDP_MAX_BYTES;
-  s->arp_timeout_ms = 5000;
+  s->arp_timeout_ms = 0;
   s->tx_timeout_ms = 10;
   s->txq_bps = MUDP_DEFAULT_RL_BPS;
+  s->rx_burst_pkts = 128;
 
   ret = udp_init_hdr(impl, s);
   if (ret < 0) {
@@ -374,6 +375,7 @@ ssize_t mudp_recvfrom(mudp_handle ut, void* buf, size_t len, int flags,
   struct mtl_main_impl* impl = s->parnet;
   int idx = s->idx;
   int ret;
+  ssize_t data_len = 0;
 
   /* init rxq if not */
   if (!udp_get_flag(s, MUDP_RXQ_ALLOC)) {
@@ -384,5 +386,30 @@ ssize_t mudp_recvfrom(mudp_handle ut, void* buf, size_t len, int flags,
     }
   }
 
-  return 0;
+  struct rte_mbuf* pkt[128];
+  uint16_t rx = mt_dev_rx_burst(s->rxq, pkt, 128);
+  if (rx > 0) {
+    struct mt_udp_hdr* hdr = rte_pktmbuf_mtod(pkt[0], struct mt_udp_hdr*);
+    struct rte_ipv4_hdr* ipv4 = &hdr->ipv4;
+    struct rte_udp_hdr* udp = &hdr->udp;
+
+    if (ipv4->next_proto_id == IPPROTO_UDP) {
+      void* payload = (void*)(udp + 1);
+      ssize_t payload_len = ntohs(udp->dgram_len) - sizeof(*udp);
+
+      if (payload_len < len) {
+        rte_memcpy(buf, payload, payload_len);
+        data_len = payload_len;
+      } else {
+        err("%s(%d), payload len %d > buf len %d\n", __func__, idx, (int)payload_len,
+            (int)len);
+      }
+    } else {
+      err("%s(%d), not udp pkt %u\n", __func__, idx, ipv4->next_proto_id);
+    }
+
+    rte_pktmbuf_free_bulk(&pkt[0], rx);
+  }
+
+  return data_len;
 }

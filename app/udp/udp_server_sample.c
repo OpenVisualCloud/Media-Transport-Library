@@ -16,14 +16,21 @@ struct udp_server_sample_ctx {
   pthread_mutex_t wake_mutex;
 
   mudp_handle socket;
+  struct sockaddr_in listen_addr;
 };
 
 static void* udp_server_thread(void* arg) {
   struct udp_server_sample_ctx* s = arg;
   mudp_handle socket = s->socket;
+  ssize_t udp_len = MUDP_MAX_BYTES;
+  char buf[udp_len];
 
   info("%s(%d), start socket %p\n", __func__, s->idx, socket);
   while (!s->stop) {
+    ssize_t recv = mudp_recvfrom(socket, buf, sizeof(buf), 0, NULL, NULL);
+    if (recv > 0) {
+      dbg("%s(%d), recv %d bytes\n", __func__, s->idx, (int)recv);
+    }
   }
   info("%s(%d), stop\n", __func__, s->idx);
 
@@ -35,7 +42,7 @@ int main(int argc, char** argv) {
   int ret;
 
   memset(&ctx, 0, sizeof(ctx));
-  ret = fwd_sample_parse_args(&ctx, argc, argv);
+  ret = sample_parse_args(&ctx, argc, argv, false, true, true);
   if (ret < 0) return ret;
 
   ctx.st = mtl_init(&ctx.param);
@@ -44,7 +51,6 @@ int main(int argc, char** argv) {
     return -EIO;
   }
 
-  struct sockaddr_in serv_addr;
   uint32_t session_num = ctx.sessions;
   struct udp_server_sample_ctx* app[session_num];
   memset(app, 0, sizeof(app));
@@ -70,9 +76,11 @@ int main(int argc, char** argv) {
       ret = -EIO;
       goto error;
     }
-    mudp_init_sockaddr_any(&serv_addr, ctx.udp_port);
-    ret =
-        mudp_bind(app[i]->socket, (const struct sockaddr*)&serv_addr, sizeof(serv_addr));
+    // mudp_init_sockaddr(&app[i]->listen_addr, ctx.rx_sip_addr[MTL_PORT_P],
+    // ctx.udp_port);
+    mudp_init_sockaddr_any(&app[i]->listen_addr, ctx.udp_port);
+    ret = mudp_bind(app[i]->socket, (const struct sockaddr*)&app[i]->listen_addr,
+                    sizeof(app[i]->listen_addr));
     if (ret < 0) {
       err("%s(%d), bind fail %d\n", __func__, i, ret);
       goto error;
@@ -84,9 +92,6 @@ int main(int argc, char** argv) {
       goto error;
     }
   }
-
-  // start dev
-  ret = mtl_start(ctx.st);
 
   while (!ctx.exit) {
     sleep(1);
@@ -100,9 +105,6 @@ int main(int argc, char** argv) {
     st_pthread_mutex_unlock(&app[i]->wake_mutex);
     pthread_join(app[i]->thread, NULL);
   }
-
-  // stop dev
-  ret = mtl_stop(ctx.st);
 
 error:
   for (int i = 0; i < session_num; i++) {

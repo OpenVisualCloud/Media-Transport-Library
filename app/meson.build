@@ -308,12 +308,12 @@ executable('UdpServerSample', upd_server_sample_sources,
   c_args : app_c_args,
   link_args: app_ld_args,
   # asan should be always the first dep
-  dependencies: [asan_dep, mtl]
+  dependencies: [asan_dep, mtl, libpthread]
 )
 
 executable('UdpClientSample', upd_client_sample_sources,
   c_args : app_c_args,
   link_args: app_ld_args,
   # asan should be always the first dep
-  dependencies: [asan_dep, mtl]
+  dependencies: [asan_dep, mtl, libpthread]
 )
