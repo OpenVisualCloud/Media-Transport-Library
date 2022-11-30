@@ -8,7 +8,9 @@ env:
 
 jobs:
   build:
+    if: github.repository == 'OpenVisualCloud/Media-Transport-Library'
     runs-on: ${{ matrix.os }}
+    timeout-minutes: 60
     container:
       image: ubuntu:latest
     strategy:
@@ -29,6 +31,7 @@ jobs:
         apt-get install -y llvm clang
         apt-get install -y dpdk-dev
         apt-get install -y doxygen
+        apt-get install -y nasm yasm
 
     - name: Install the python package
       run: pip install pyelftools ninja
@@ -58,4 +61,10 @@ jobs:
       run: |
         cd doc/doxygen
         ./build-doc.sh
+        cd ../../
+
+     - name: Build ffmpeg plugin
+      run: |
+        cd plugins/ffmpeg_plugin/
+        ./build_ffmpeg_plugin.sh
         cd ../../

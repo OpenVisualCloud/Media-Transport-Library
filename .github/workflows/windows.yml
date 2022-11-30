@@ -11,6 +11,7 @@ jobs:
   Build:
     if: github.repository == 'OpenVisualCloud/Media-Transport-Library'
     runs-on: [Windows, self-hosted]
+    timeout-minutes: 60
 
     steps:
     - name: checkout kahawai repo
