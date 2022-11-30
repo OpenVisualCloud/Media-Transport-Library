@@ -1,4 +1,4 @@
-From 93fe30bd1844c369824cfd4a1f7c30680a91e173 Mon Sep 17 00:00:00 2001
+From 84ae76d17203d7c25e2a4532d959f01560f1c9c2 Mon Sep 17 00:00:00 2001
 From: Jing Sun <jing.a.sun@intel.com>
 Date: Thu, 10 Nov 2022 10:43:36 +0800
 Subject: [PATCH 1/1] avdevice/kahawai: Add the kahawai input device plugin
@@ -11,14 +11,14 @@ Signed-off-by: Jing Sun <jing.a.sun@intel.com>
  3 files changed, 6 insertions(+)
 
 diff --git a/configure b/configure
-index 414fde7f8b..27b5fee6ea 100755
+index 414fde7f8b..de1959d89c 100755
 --- a/configure
 +++ b/configure
 @@ -216,6 +216,7 @@ External library support:
                             if openssl, libtls or mbedtls is not used [no]
    --disable-iconv          disable iconv [autodetect]
    --enable-jni             enable JNI support [no]
-+  --enable-libst_dpdk      enable Kahawai indev [no]
++  --enable-mtl             enable Kahawai indev [no]
    --enable-ladspa          enable LADSPA audio filtering [no]
    --enable-libaom          enable AV1 video encoding/decoding via libaom [no]
    --enable-libaribb24      enable ARIB text and caption decoding via libaribb24 [no]
@@ -26,7 +26,7 @@ index 414fde7f8b..27b5fee6ea 100755
      libspeex
      libsrt
      libssh
-+    libst_dpdk
++    mtl
      libsvtav1
      libtensorflow
      libtesseract
@@ -34,7 +34,7 @@ index 414fde7f8b..27b5fee6ea 100755
  iec61883_indev_deps="libiec61883"
  jack_indev_deps="libjack"
  jack_indev_deps_any="sem_timedwait dispatch_dispatch_h"
-+kahawai_indev_deps="libst_dpdk"
++kahawai_indev_deps="mtl"
  kmsgrab_indev_deps="libdrm"
  lavfi_indev_deps="avfilter"
  libcdio_indev_deps="libcdio"
@@ -42,7 +42,7 @@ index 414fde7f8b..27b5fee6ea 100755
  enabled gmp               && require gmp gmp.h mpz_export -lgmp
  enabled gnutls            && require_pkg_config gnutls gnutls gnutls/gnutls.h gnutls_global_init
  enabled jni               && { [ $target_os = "android" ] && check_headers jni.h && enabled pthreads || die "ERROR: jni not found"; }
-+enabled libst_dpdk        && require_pkg_config libst_dpdk "libst_dpdk >= 22.12.0" st_dpdk_api.h st_init
++enabled mtl               && require_pkg_config mtl "mtl >= 22.12.0" mtl/st_pipeline_api.h mtl_init
  enabled ladspa            && require_headers "ladspa.h dlfcn.h"
  enabled libaom            && require_pkg_config libaom "aom >= 1.0.0" aom/aom_codec.h aom_codec_version
  enabled libaribb24        && { check_pkg_config libaribb24 "aribb24 > 1.0.3" "aribb24/aribb24.h" arib_instance_new ||

@@ -13,7 +13,7 @@ build_ffmpeg(){
     git reset --hard aa28df74ab197c49a05fecc40c81e0f8ec4ad0c3
     cp -f ../kahawai.c ./libavdevice/
     git am --whitespace=fix ../0001-avdevice-kahawai-Add-the-kahawai-input-device-plugin.patch
-    ./configure --enable-shared --disable-static --enable-nonfree --enable-pic --enable-gpl --enable-libst_dpdk
+    ./configure --enable-shared --disable-static --enable-nonfree --enable-pic --enable-gpl --enable-mtl
     make clean
     make -j32
     sudo make install
