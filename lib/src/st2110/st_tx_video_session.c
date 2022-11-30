@@ -215,7 +215,7 @@ static int tv_train_pacing(struct mtl_main_impl* impl, struct st_tx_video_sessio
   pad_pkts = s->st20_total_pkts * 100;
   for (int i = 0; i < pad_pkts; i++) {
     rte_mbuf_refcnt_update(pad, 1);
-    mt_dev_tx_burst_busy(queue, &pad, 1);
+    mt_dev_tx_burst_busy(impl, queue, &pad, 1, 10);
   }
 
   /* training stage */
@@ -233,12 +233,12 @@ static int tv_train_pacing(struct mtl_main_impl* impl, struct st_tx_video_sessio
       int bulk_batch = pkts / bulk;
       for (int j = 0; j < bulk_batch; j++) {
         rte_mbuf_refcnt_update(pad, bulk);
-        mt_dev_tx_burst_busy(queue, bulk_pad, bulk);
+        mt_dev_tx_burst_busy(impl, queue, bulk_pad, bulk, 10);
       }
       int remaining = pkts % bulk;
       for (int j = 0; j < remaining; j++) {
         rte_mbuf_refcnt_update(pad, 1);
-        mt_dev_tx_burst_busy(queue, &pad, 1);
+        mt_dev_tx_burst_busy(impl, queue, &pad, 1, 10);
       }
     }
     uint64_t end = mt_get_tsc(impl);
@@ -528,10 +528,10 @@ static int tv_init_hdr(struct mtl_main_impl* impl, struct st_tx_video_session_im
     rte_memcpy(d_addr, &ops->tx_dst_mac[s_port][0], RTE_ETHER_ADDR_LEN);
     info("%s, USER_R_TX_MAC\n", __func__);
   } else {
-    ret = mt_dev_dst_ip_mac(impl, dip, d_addr, port);
+    ret = mt_dev_dst_ip_mac(impl, dip, d_addr, port, 0);
     if (ret < 0) {
-      err("%s(%d), mt_dev_dst_ip_mac fail %d for %d.%d.%d.%d\n", __func__, idx, ret,
-          dip[0], dip[1], dip[2], dip[3]);
+      err("%s(%d), get mac fail %d for %d.%d.%d.%d\n", __func__, idx, ret, dip[0], dip[1],
+          dip[2], dip[3]);
       return ret;
     }
   }

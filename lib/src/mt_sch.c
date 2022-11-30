@@ -603,8 +603,8 @@ struct mt_sch_impl* mt_sch_get(struct mtl_main_impl* impl, int quota_mbs,
     return NULL;
   }
 
-  /* start the sch if dev is started */
-  if (rte_atomic32_read(&impl->started)) {
+  /* start the sch if instance is started */
+  if (mt_started(impl)) {
     ret = sch_start(sch);
     if (ret < 0) {
       err("%s(%d), start sch fail %d\n", __func__, idx, ret);

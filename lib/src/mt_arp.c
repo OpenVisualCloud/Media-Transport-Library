@@ -116,12 +116,16 @@ int mt_arp_parse(struct mtl_main_impl* impl, struct rte_arp_hdr* hdr,
 }
 
 int mt_arp_cni_get_mac(struct mtl_main_impl* impl, struct rte_ether_addr* ea,
-                       enum mtl_port port, uint32_t ip) {
+                       enum mtl_port port, uint32_t ip, int timeout_ms) {
   struct mt_arp_impl* arp_impl = &impl->arp;
   uint16_t port_id = mt_port_id(impl, port);
   uint16_t tx;
   int retry = 0;
   uint8_t* addr = (uint8_t*)&ip;
+  int max_retry = 0;
+  int sleep_interval_ms = 500;
+
+  if (timeout_ms) max_retry = (timeout_ms / sleep_interval_ms) + 1;
 
   int i;
   for (i = 0; i < MT_ARP_ENTRY_MAX; i++) {
@@ -165,16 +169,23 @@ int mt_arp_cni_get_mac(struct mtl_main_impl* impl, struct rte_ether_addr* ea,
 
   /* send arp request packet */
   while (rte_atomic32_read(&arp_impl->mac_ready[port][i]) == 0) {
+    if (mt_aborted(impl)) {
+      err("%s(%d), fail as user aborted\n", __func__, port);
+      return -EIO;
+    }
+    if ((max_retry > 0) && (retry > max_retry)) {
+      err("%s(%d), fail as timeout to %d ms\n", __func__, port, timeout_ms);
+      return -EIO;
+    }
+
     rte_mbuf_refcnt_update(req_pkt, 1);
     tx = mt_dev_tx_sys_queue_burst(impl, port, &req_pkt, 1);
     if (tx < 1) {
-      err("%s, tx fail\n", __func__);
+      err("%s(%d), tx fail\n", __func__, port);
       rte_mbuf_refcnt_update(req_pkt, -1);
     }
 
-    if (rte_atomic32_read(&impl->request_exit)) return -EIO;
-
-    mt_sleep_ms(500);
+    mt_sleep_ms(sleep_interval_ms);
     retry++;
     if (0 == (retry % 10))
       info("%s(%d), waiting arp from %d.%d.%d.%d\n", __func__, port, addr[0], addr[1],

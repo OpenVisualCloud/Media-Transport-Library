@@ -28,7 +28,7 @@ int mt_dev_start(struct mtl_main_impl* impl);
 int mt_dev_stop(struct mtl_main_impl* impl);
 
 int mt_dev_dst_ip_mac(struct mtl_main_impl* impl, uint8_t dip[MTL_IP_ADDR_LEN],
-                      struct rte_ether_addr* ea, enum mtl_port port);
+                      struct rte_ether_addr* ea, enum mtl_port port, int timeout_ms);
 
 struct mt_tx_queue* mt_dev_get_tx_queue(struct mtl_main_impl* impl, enum mtl_port port,
                                         uint64_t bytes_per_sec);
@@ -42,15 +42,9 @@ static inline uint16_t mt_dev_tx_burst(struct mt_tx_queue* queue,
                                        struct rte_mbuf** tx_pkts, uint16_t nb_pkts) {
   return rte_eth_tx_burst(queue->port_id, queue->queue_id, tx_pkts, nb_pkts);
 }
-static inline void mt_dev_tx_burst_busy(struct mt_tx_queue* queue,
-                                        struct rte_mbuf** tx_pkts, uint16_t nb_pkts) {
-  uint32_t sent = 0;
-
-  /* Send this vector with busy looping */
-  while (sent < nb_pkts) {
-    sent += mt_dev_tx_burst(queue, &tx_pkts[sent], nb_pkts - sent);
-  }
-}
+uint16_t mt_dev_tx_burst_busy(struct mtl_main_impl* impl, struct mt_tx_queue* queue,
+                              struct rte_mbuf** tx_pkts, uint16_t nb_pkts,
+                              int timeout_ms);
 
 uint16_t mt_dev_tx_sys_queue_burst(struct mtl_main_impl* impl, enum mtl_port port,
                                    struct rte_mbuf** tx_pkts, uint16_t nb_pkts);
