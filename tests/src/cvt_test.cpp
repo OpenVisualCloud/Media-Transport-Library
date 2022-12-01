@@ -3645,23 +3645,25 @@ static void frame_malloc(struct st_frame* frame, uint8_t rand, bool align) {
     fb_size += frame->linesize[plane] * frame->height;
   }
   uint8_t* fb = (uint8_t*)st_test_zmalloc(fb_size);
-  if (rand) st_test_rand_data(fb, fb_size, rand);
-  if (frame->fmt == ST_FRAME_FMT_YUV422PLANAR10LE) {
-    /* only LSB 10 valid */
-    uint16_t* p10_u16 = (uint16_t*)fb;
-    for (size_t j = 0; j < (fb_size / 2); j++) {
-      p10_u16[j] &= 0x3ff; /* only 10 bit */
-    }
-  } else if (frame->fmt == ST_FRAME_FMT_Y210) {
-    /* only MSB 10 valid */
-    uint16_t* y210_u16 = (uint16_t*)fb;
-    for (size_t j = 0; j < (fb_size / 2); j++) {
-      y210_u16[j] &= 0xffc0; /* only 10 bit */
-    }
-  } else if (frame->fmt == ST_FRAME_FMT_V210) {
-    uint32_t* v210_word = (uint32_t*)fb;
-    for (size_t j = 0; j < (fb_size / 4); j++) {
-      v210_word[j] &= 0x3fffffff; /* only 30 bit */
+  if (rand) { /* fill the framebuffer */
+    st_test_rand_data(fb, fb_size, rand);
+    if (frame->fmt == ST_FRAME_FMT_YUV422PLANAR10LE) {
+      /* only LSB 10 valid */
+      uint16_t* p10_u16 = (uint16_t*)fb;
+      for (size_t j = 0; j < (fb_size / 2); j++) {
+        p10_u16[j] &= 0x3ff; /* only 10 bit */
+      }
+    } else if (frame->fmt == ST_FRAME_FMT_Y210) {
+      /* only MSB 10 valid */
+      uint16_t* y210_u16 = (uint16_t*)fb;
+      for (size_t j = 0; j < (fb_size / 2); j++) {
+        y210_u16[j] &= 0xffc0; /* only 10 bit */
+      }
+    } else if (frame->fmt == ST_FRAME_FMT_V210) {
+      uint32_t* v210_word = (uint32_t*)fb;
+      for (size_t j = 0; j < (fb_size / 4); j++) {
+        v210_word[j] &= 0x3fffffff; /* only 30 bit */
+      }
     }
   }
   for (int plane = 0; plane < planes; plane++) {
