@@ -3635,3 +3635,251 @@ TEST(Cvt, st31_aes3_to_am824) {
   test_aes3_to_am824(10);
   test_aes3_to_am824(100);
 }
+
+static void frame_malloc(struct st_frame* frame, uint8_t rand, bool align) {
+  int planes = st_frame_fmt_planes(frame->fmt);
+  size_t fb_size = 0;
+  for (int plane = 0; plane < planes; plane++) {
+    size_t least_line_size = st_frame_least_linesize(frame->fmt, frame->width, plane);
+    frame->linesize[plane] = align ? MTL_ALIGN(least_line_size, 512) : least_line_size;
+    fb_size += frame->linesize[plane] * frame->height;
+  }
+  uint8_t* fb = (uint8_t*)st_test_zmalloc(fb_size);
+  if (rand) { /* fill the framebuffer */
+    st_test_rand_data(fb, fb_size, rand);
+    if (frame->fmt == ST_FRAME_FMT_YUV422PLANAR10LE) {
+      /* only LSB 10 valid */
+      uint16_t* p10_u16 = (uint16_t*)fb;
+      for (size_t j = 0; j < (fb_size / 2); j++) {
+        p10_u16[j] &= 0x3ff; /* only 10 bit */
+      }
+    } else if (frame->fmt == ST_FRAME_FMT_Y210) {
+      /* only MSB 10 valid */
+      uint16_t* y210_u16 = (uint16_t*)fb;
+      for (size_t j = 0; j < (fb_size / 2); j++) {
+        y210_u16[j] &= 0xffc0; /* only 10 bit */
+      }
+    } else if (frame->fmt == ST_FRAME_FMT_V210) {
+      uint32_t* v210_word = (uint32_t*)fb;
+      for (size_t j = 0; j < (fb_size / 4); j++) {
+        v210_word[j] &= 0x3fffffff; /* only 30 bit */
+      }
+    }
+  }
+  for (int plane = 0; plane < planes; plane++) {
+    if (plane == 0)
+      frame->addr[plane] = fb;
+    else
+      frame->addr[plane] =
+          (uint8_t*)frame->addr[plane - 1] + st_frame_plane_size(frame, plane - 1);
+  }
+  frame->data_size = frame->buffer_size = fb_size;
+}
+
+static void frame_free(struct st_frame* frame) {
+  if (frame->addr[0]) st_test_free(frame->addr[0]);
+  int planes = st_frame_fmt_planes(frame->fmt);
+  for (int plane = 0; plane < planes; plane++) {
+    frame->addr[plane] = NULL;
+  }
+}
+
+static int frame_compare_each_line(struct st_frame* old_frame,
+                                   struct st_frame* new_frame) {
+  int ret = 0;
+  int planes = st_frame_fmt_planes(old_frame->fmt);
+  for (int plane = 0; plane < planes; plane++) {
+    for (uint32_t line = 0; line < old_frame->height; line++) {
+      uint8_t* old_addr =
+          (uint8_t*)old_frame->addr[plane] + old_frame->linesize[plane] * line;
+      uint8_t* new_addr =
+          (uint8_t*)new_frame->addr[plane] + new_frame->linesize[plane] * line;
+      ret += memcmp(old_addr, new_addr,
+                    st_frame_least_linesize(old_frame->fmt, old_frame->width, plane));
+    }
+  }
+
+  return ret;
+}
+
+static void test_st_frame_convert(struct st_frame* src, struct st_frame* dst,
+                                  struct st_frame* new_src, bool expect_fail) {
+  int ret;
+  ret = st_frame_convert(src, dst);
+  if (expect_fail)
+    EXPECT_NE(0, ret);
+  else
+    EXPECT_EQ(0, ret);
+
+  ret = st_frame_convert(dst, new_src);
+  if (expect_fail)
+    EXPECT_NE(0, ret);
+  else
+    EXPECT_EQ(0, ret);
+
+  if (!expect_fail) {
+    ret = frame_compare_each_line(src, new_src);
+    EXPECT_EQ(0, ret);
+  }
+}
+
+TEST(Cvt, st_frame_convert_fail_resolution) {
+  struct st_frame src, dst, new_src;
+  src.fmt = new_src.fmt = ST_FRAME_FMT_YUV422RFC4175PG2BE10;
+  dst.fmt = ST_FRAME_FMT_Y210;
+
+  src.width = new_src.width = dst.width = 1920;
+  src.height = new_src.height = 1080;
+  dst.height = 1088;
+  test_st_frame_convert(&src, &dst, &new_src, true);
+
+  src.width = new_src.width = 1920;
+  dst.width = 1280;
+  src.height = new_src.height = dst.height = 1080;
+  test_st_frame_convert(&src, &dst, &new_src, true);
+
+  src.width = new_src.width = 1920;
+  src.height = new_src.height = 1080;
+  dst.width = 3840;
+  dst.height = 2160;
+  test_st_frame_convert(&src, &dst, &new_src, true);
+}
+
+TEST(Cvt, st_frame_convert_fail_fmt) {
+  struct st_frame src, dst, new_src;
+
+  src.width = new_src.width = dst.width = 1920;
+  src.height = new_src.height = dst.height = 1080;
+
+  src.fmt = new_src.fmt = ST_FRAME_FMT_YUV422RFC4175PG2BE10;
+  dst.fmt = ST_FRAME_FMT_YUV444PLANAR10LE;
+  test_st_frame_convert(&src, &dst, &new_src, true);
+
+  src.fmt = new_src.fmt = ST_FRAME_FMT_Y210;
+  dst.fmt = ST_FRAME_FMT_V210;
+  test_st_frame_convert(&src, &dst, &new_src, true);
+
+  src.fmt = new_src.fmt = ST_FRAME_FMT_GBRPLANAR10LE;
+  dst.fmt = ST_FRAME_FMT_YUV420CUSTOM8;
+  test_st_frame_convert(&src, &dst, &new_src, true);
+}
+
+TEST(Cvt, st_frame_convert_rotate_no_padding) {
+  struct st_frame src, dst, new_src;
+
+  src.width = new_src.width = dst.width = 1920;
+  src.height = new_src.height = dst.height = 1080;
+  src.fmt = new_src.fmt = ST_FRAME_FMT_YUV422RFC4175PG2BE10;
+  dst.fmt = ST_FRAME_FMT_Y210;
+  frame_malloc(&src, 1, false);
+  frame_malloc(&dst, 0, false);
+  frame_malloc(&new_src, 0, false);
+  test_st_frame_convert(&src, &dst, &new_src, false);
+  frame_free(&src);
+  frame_free(&dst);
+  frame_free(&new_src);
+
+  src.width = new_src.width = dst.width = 3840;
+  src.height = new_src.height = dst.height = 2160;
+  src.fmt = new_src.fmt = ST_FRAME_FMT_V210;
+  dst.fmt = ST_FRAME_FMT_YUV422RFC4175PG2BE10;
+  frame_malloc(&src, 2, false);
+  frame_malloc(&dst, 0, false);
+  frame_malloc(&new_src, 0, false);
+  test_st_frame_convert(&src, &dst, &new_src, false);
+  frame_free(&src);
+  frame_free(&dst);
+  frame_free(&new_src);
+
+  src.width = new_src.width = dst.width = 1920;
+  src.height = new_src.height = dst.height = 1080;
+  src.fmt = new_src.fmt = ST_FRAME_FMT_YUV422RFC4175PG2BE10;
+  dst.fmt = ST_FRAME_FMT_YUV422PLANAR10LE;
+  frame_malloc(&src, 3, false);
+  frame_malloc(&dst, 0, false);
+  frame_malloc(&new_src, 0, false);
+  test_st_frame_convert(&src, &dst, &new_src, false);
+  frame_free(&src);
+  frame_free(&dst);
+  frame_free(&new_src);
+}
+
+TEST(Cvt, st_frame_convert_rotate_padding) {
+  struct st_frame src, dst, new_src;
+
+  src.width = new_src.width = dst.width = 1920;
+  src.height = new_src.height = dst.height = 1080;
+  src.fmt = new_src.fmt = ST_FRAME_FMT_YUV422RFC4175PG2BE10;
+  dst.fmt = ST_FRAME_FMT_YUV422PLANAR10LE;
+  frame_malloc(&src, 1, true);
+  frame_malloc(&dst, 0, true);
+  frame_malloc(&new_src, 0, true);
+  test_st_frame_convert(&src, &dst, &new_src, false);
+  frame_free(&src);
+  frame_free(&dst);
+  frame_free(&new_src);
+
+  src.width = new_src.width = dst.width = 3840;
+  src.height = new_src.height = dst.height = 2160;
+  src.fmt = new_src.fmt = ST_FRAME_FMT_Y210;
+  dst.fmt = ST_FRAME_FMT_YUV422RFC4175PG2BE10;
+  frame_malloc(&src, 2, true);
+  frame_malloc(&dst, 0, true);
+  frame_malloc(&new_src, 0, true);
+  test_st_frame_convert(&src, &dst, &new_src, false);
+  frame_free(&src);
+  frame_free(&dst);
+  frame_free(&new_src);
+
+  src.width = new_src.width = dst.width = 1920;
+  src.height = new_src.height = dst.height = 1080;
+  src.fmt = new_src.fmt = ST_FRAME_FMT_YUV422RFC4175PG2BE10;
+  dst.fmt = ST_FRAME_FMT_Y210;
+  frame_malloc(&src, 3, true);
+  frame_malloc(&dst, 0, true);
+  frame_malloc(&new_src, 0, true);
+  test_st_frame_convert(&src, &dst, &new_src, false);
+  frame_free(&src);
+  frame_free(&dst);
+  frame_free(&new_src);
+}
+
+TEST(Cvt, st_frame_convert_rotate_mix_padding) {
+  struct st_frame src, dst, new_src;
+
+  src.width = new_src.width = dst.width = 1920;
+  src.height = new_src.height = dst.height = 1080;
+  src.fmt = new_src.fmt = ST_FRAME_FMT_YUV422RFC4175PG2BE10;
+  dst.fmt = ST_FRAME_FMT_YUV422PLANAR10LE;
+  frame_malloc(&src, 1, false);
+  frame_malloc(&dst, 0, true);
+  frame_malloc(&new_src, 0, true);
+  test_st_frame_convert(&src, &dst, &new_src, false);
+  frame_free(&src);
+  frame_free(&dst);
+  frame_free(&new_src);
+
+  src.width = new_src.width = dst.width = 3840;
+  src.height = new_src.height = dst.height = 2160;
+  src.fmt = new_src.fmt = ST_FRAME_FMT_Y210;
+  dst.fmt = ST_FRAME_FMT_YUV422RFC4175PG2BE10;
+  frame_malloc(&src, 2, true);
+  frame_malloc(&dst, 0, false);
+  frame_malloc(&new_src, 0, true);
+  test_st_frame_convert(&src, &dst, &new_src, false);
+  frame_free(&src);
+  frame_free(&dst);
+  frame_free(&new_src);
+
+  src.width = new_src.width = dst.width = 1920;
+  src.height = new_src.height = dst.height = 1080;
+  src.fmt = new_src.fmt = ST_FRAME_FMT_YUV422RFC4175PG2BE10;
+  dst.fmt = ST_FRAME_FMT_Y210;
+  frame_malloc(&src, 3, true);
+  frame_malloc(&dst, 0, true);
+  frame_malloc(&new_src, 0, false);
+  test_st_frame_convert(&src, &dst, &new_src, false);
+  frame_free(&src);
+  frame_free(&dst);
+  frame_free(&new_src);
+}
