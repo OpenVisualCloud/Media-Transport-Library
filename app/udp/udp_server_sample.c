@@ -16,7 +16,10 @@ struct udp_server_sample_ctx {
   pthread_mutex_t wake_mutex;
 
   mudp_handle socket;
-  struct sockaddr_in listen_addr;
+  struct sockaddr_in client_addr;
+
+  int send_cnt;
+  int recv_cnt;
 };
 
 static void* udp_server_thread(void* arg) {
@@ -28,13 +31,30 @@ static void* udp_server_thread(void* arg) {
   info("%s(%d), start socket %p\n", __func__, s->idx, socket);
   while (!s->stop) {
     ssize_t recv = mudp_recvfrom(socket, buf, sizeof(buf), 0, NULL, NULL);
-    if (recv > 0) {
-      dbg("%s(%d), recv %d bytes\n", __func__, s->idx, (int)recv);
+    if (recv < 0) {
+      dbg("%s(%d), recv fail %d\n", __func__, s->idx, (int)recv);
+      continue;
     }
+    s->recv_cnt++;
+    dbg("%s(%d), recv %d bytes\n", __func__, s->idx, (int)recv);
+    ssize_t send =
+        mudp_sendto(socket, buf, recv, 0, (const struct sockaddr*)&s->client_addr,
+                    sizeof(s->client_addr));
+    if (send != recv) {
+      err("%s(%d), only send %d bytes\n", __func__, s->idx, (int)send);
+      continue;
+    }
+    s->send_cnt++;
   }
   info("%s(%d), stop\n", __func__, s->idx);
 
   return NULL;
+}
+
+static void udp_server_status(struct udp_server_sample_ctx* s) {
+  info("%s(%d), send %d pkts recv %d pkts\n", __func__, s->idx, s->send_cnt, s->recv_cnt);
+  s->send_cnt = 0;
+  s->recv_cnt = 0;
 }
 
 int main(int argc, char** argv) {
@@ -47,7 +67,7 @@ int main(int argc, char** argv) {
 
   ctx.st = mtl_init(&ctx.param);
   if (!ctx.st) {
-    err("%s: mtl_init fail\n", __func__);
+    err("%s, mtl_init fail\n", __func__);
     return -EIO;
   }
 
@@ -76,11 +96,9 @@ int main(int argc, char** argv) {
       ret = -EIO;
       goto error;
     }
-    // mudp_init_sockaddr(&app[i]->listen_addr, ctx.rx_sip_addr[MTL_PORT_P],
-    // ctx.udp_port);
-    mudp_init_sockaddr_any(&app[i]->listen_addr, ctx.udp_port);
-    ret = mudp_bind(app[i]->socket, (const struct sockaddr*)&app[i]->listen_addr,
-                    sizeof(app[i]->listen_addr));
+    mudp_init_sockaddr(&app[i]->client_addr, ctx.rx_sip_addr[MTL_PORT_P], ctx.udp_port);
+    ret = mudp_bind(app[i]->socket, (const struct sockaddr*)&app[i]->client_addr,
+                    sizeof(app[i]->client_addr));
     if (ret < 0) {
       err("%s(%d), bind fail %d\n", __func__, i, ret);
       goto error;
@@ -93,8 +111,16 @@ int main(int argc, char** argv) {
     }
   }
 
+  int time_s = 0;
   while (!ctx.exit) {
     sleep(1);
+    /* display server status every 10s */
+    time_s++;
+    if ((time_s % 10) == 0) {
+      for (int i = 0; i < session_num; i++) {
+        udp_server_status(app[i]);
+      }
+    }
   }
 
   // stop app thread
