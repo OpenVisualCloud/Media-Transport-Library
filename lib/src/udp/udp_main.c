@@ -479,8 +479,9 @@ dequeue:
     return copied;
   }
 
+  uint16_t rx;
 rx_pool:
-  uint16_t rx = udp_rx(impl, s);
+  rx = udp_rx(impl, s);
   if (rx) { /* dequeue again as rx succ */
     goto dequeue;
   }

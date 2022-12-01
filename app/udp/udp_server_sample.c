@@ -96,7 +96,8 @@ int main(int argc, char** argv) {
       ret = -EIO;
       goto error;
     }
-    mudp_init_sockaddr(&app[i]->client_addr, ctx.rx_sip_addr[MTL_PORT_P], ctx.udp_port);
+    mudp_init_sockaddr(&app[i]->client_addr, ctx.rx_sip_addr[MTL_PORT_P],
+                       ctx.udp_port + i);
     ret = mudp_bind(app[i]->socket, (const struct sockaddr*)&app[i]->client_addr,
                     sizeof(app[i]->client_addr));
     if (ret < 0) {
