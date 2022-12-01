@@ -40,6 +40,7 @@ jobs:
   Build:
     if: github.repository == 'OpenVisualCloud/Media-Transport-Library'
     runs-on: [Ubuntu, self-hosted]
+    timeout-minutes: 60
 
     steps:
     - uses: actions/checkout@v3

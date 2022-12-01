@@ -8,7 +8,9 @@ env:
 
 jobs:
   build:
+    if: github.repository == 'OpenVisualCloud/Media-Transport-Library'
     runs-on: ${{ matrix.os }}
+    timeout-minutes: 60
     container:
       image: quay.io/centos/centos:stream8
     strategy:
