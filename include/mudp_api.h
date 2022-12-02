@@ -9,9 +9,6 @@
  *
  */
 
-#include <netinet/in.h>
-#include <sys/socket.h>
-
 #include "mtl_api.h"
 
 #ifndef _MUDP_API_HEAD_H_

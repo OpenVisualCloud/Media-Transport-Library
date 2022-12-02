@@ -2,10 +2,12 @@
  * Copyright(c) 2022 Intel Corporation
  */
 
-#include <mtl/mudp_api.h>
-#include <openssl/sha.h>
-
 #include "../sample/sample_util.h"
+
+/* include "struct sockaddr_in" define before include mudp_api */
+// clang-format off
+#include <mtl/mudp_api.h>
+// clang-format on
 
 struct udp_client_sample_ctx {
   mtl_handle st;
