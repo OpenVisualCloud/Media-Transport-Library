@@ -1581,6 +1581,7 @@ static int rv_handle_frame_pkt(struct st_rx_video_session_impl* s, struct rte_mb
     pg_meta->row_number = line1_number;
     pg_meta->row_offset = line1_offset;
     pg_meta->pg_cnt = line1_length / s->st20_pg.size;
+    pg_meta->timestamp = tmstamp;
     ops->uframe_pg_callback(ops->priv, slot->frame, pg_meta);
     if (extra_rtp) {
       pg_meta->payload = payload + line1_length;

@@ -45,6 +45,62 @@ static struct st20p_rx_frame* rx_st20p_next_available(
   return NULL;
 }
 
+int rx_st20p_packet_convert(void* priv, void* frame,
+                            struct st20_rx_uframe_pg_meta* meta) {
+  struct st20p_rx_ctx* ctx = priv;
+  struct st20p_rx_frame* framebuff;
+  int ret = 0;
+  struct st20_rfc4175_422_10_pg2_be* src = meta->payload;
+  mt_pthread_mutex_lock(&ctx->lock);
+  if (meta->row_number == 0 && meta->row_offset == 0) {
+    /* first packet of frame */
+    framebuff =
+        rx_st20p_next_available(ctx, ctx->framebuff_producer_idx, ST20P_RX_FRAME_FREE);
+    framebuff->stat = ST20P_RX_FRAME_IN_CONVERTING;
+    framebuff->dst.timestamp = meta->timestamp;
+  } else {
+    framebuff = rx_st20p_next_available(ctx, ctx->framebuff_producer_idx,
+                                        ST20P_RX_FRAME_IN_CONVERTING);
+    if (framebuff && framebuff->dst.timestamp != meta->timestamp) {
+      dbg("%s(%d), not this frame, find next one\n", __func__, ctx->idx);
+      framebuff =
+          rx_st20p_next_available(ctx, framebuff->idx, ST20P_RX_FRAME_IN_CONVERTING);
+      if (framebuff && framebuff->dst.timestamp != meta->timestamp) {
+        /* should never happen */
+        err("%s(%d), wrong frame timestamp\n", __func__, ctx->idx);
+        return -EIO;
+      }
+    }
+  }
+  if (!framebuff) {
+    rte_atomic32_inc(&ctx->stat_busy);
+    mt_pthread_mutex_unlock(&ctx->lock);
+    return -EBUSY;
+  }
+  mt_pthread_mutex_unlock(&ctx->lock);
+  if (ctx->ops.output_fmt == ST_FRAME_FMT_YUV422PLANAR10LE) {
+    uint8_t* y = (uint8_t*)framebuff->dst.addr[0] +
+                 framebuff->dst.linesize[0] * meta->row_number + meta->row_offset * 2;
+    uint8_t* b = (uint8_t*)framebuff->dst.addr[1] +
+                 framebuff->dst.linesize[1] * meta->row_number + meta->row_offset;
+    uint8_t* r = (uint8_t*)framebuff->dst.addr[2] +
+                 framebuff->dst.linesize[2] * meta->row_number + meta->row_offset;
+    ret = st20_rfc4175_422be10_to_yuv422p10le(src, (uint16_t*)y, (uint16_t*)b,
+                                              (uint16_t*)r, meta->pg_cnt, 2);
+  } else if (ctx->ops.output_fmt == ST_FRAME_FMT_Y210) {
+    uint8_t* dst = (uint8_t*)framebuff->dst.addr[0] +
+                   framebuff->dst.linesize[0] * meta->row_number + meta->row_offset * 4;
+    ret = st20_rfc4175_422be10_to_y210(src, (uint16_t*)dst, meta->pg_cnt, 2);
+  } else if (ctx->ops.output_fmt == ST_FRAME_FMT_UYVY) {
+    uint8_t* dst = (uint8_t*)framebuff->dst.addr[0] +
+                   framebuff->dst.linesize[0] * meta->row_number + meta->row_offset * 2;
+    ret = st20_rfc4175_422be10_to_422le8(src, (struct st20_rfc4175_422_8_pg2_le*)dst,
+                                         meta->pg_cnt, 2);
+  }
+
+  return ret;
+}
+
 static int rx_st20p_frame_ready(void* priv, void* frame,
                                 struct st20_rx_frame_meta* meta) {
   struct st20p_rx_ctx* ctx = priv;
@@ -53,8 +109,22 @@ static int rx_st20p_frame_ready(void* priv, void* frame,
   if (!ctx->ready) return -EBUSY; /* not ready */
 
   mt_pthread_mutex_lock(&ctx->lock);
-  framebuff =
-      rx_st20p_next_available(ctx, ctx->framebuff_producer_idx, ST20P_RX_FRAME_FREE);
+  if (ctx->ops.flags & ST20P_RX_FLAG_PKT_CONVERT) {
+    framebuff = rx_st20p_next_available(ctx, ctx->framebuff_producer_idx,
+                                        ST20P_RX_FRAME_IN_CONVERTING);
+    if (framebuff && framebuff->dst.timestamp != meta->timestamp) {
+      dbg("%s(%d), not this frame, find next one\n", __func__, ctx->idx);
+      framebuff =
+          rx_st20p_next_available(ctx, framebuff->idx, ST20P_RX_FRAME_IN_CONVERTING);
+      if (framebuff && framebuff->dst.timestamp != meta->timestamp) {
+        /* should never happen */
+        err("%s(%d), wrong frame timestamp\n", __func__, ctx->idx);
+        return -EIO;
+      }
+    }
+  } else
+    framebuff =
+        rx_st20p_next_available(ctx, ctx->framebuff_producer_idx, ST20P_RX_FRAME_FREE);
   /* not any free frame */
   if (!framebuff) {
     rte_atomic32_inc(&ctx->stat_busy);
@@ -64,13 +134,13 @@ static int rx_st20p_frame_ready(void* priv, void* frame,
 
   framebuff->src.addr[0] = frame;
   framebuff->src.data_size = meta->frame_total_size;
-  framebuff->src.tfmt = meta->tfmt;
-  framebuff->src.timestamp = meta->timestamp;
-  framebuff->src.status = meta->status;
+  framebuff->src.tfmt = framebuff->dst.tfmt = meta->tfmt;
+  framebuff->src.timestamp = framebuff->dst.timestamp = meta->timestamp;
+  framebuff->src.status = framebuff->dst.status = meta->status;
 
   /* ask app to consume src frame directly */
-  if (ctx->derive) {
-    framebuff->dst = framebuff->src;
+  if (ctx->derive || (ctx->ops.flags & ST20P_RX_FLAG_PKT_CONVERT)) {
+    if (ctx->derive) framebuff->dst = framebuff->src;
     framebuff->stat = ST20P_RX_FRAME_CONVERTED;
     /* point to next */
     ctx->framebuff_producer_idx = rx_st20p_next_idx(ctx, framebuff->idx);
@@ -80,11 +150,6 @@ static int rx_st20p_frame_ready(void* priv, void* frame,
     }
     return 0;
   }
-
-  framebuff->dst.tfmt = meta->tfmt;
-  framebuff->dst.status = meta->status;
-  /* set dst timestamp to same as src? */
-  framebuff->dst.timestamp = meta->timestamp;
   framebuff->stat = ST20P_RX_FRAME_READY;
 
   /* point to next */
@@ -262,6 +327,21 @@ static int rx_st20p_create_transport(struct mtl_main_impl* impl, struct st20p_rx
   if (ops->flags & ST20P_RX_FLAG_DMA_OFFLOAD) ops_rx.flags |= ST20_RX_FLAG_DMA_OFFLOAD;
   if (ops->flags & ST20P_RX_FLAG_DISABLE_MIGRATE)
     ops_rx.flags |= ST20_RX_FLAG_DISABLE_MIGRATE;
+  if (ops->flags & ST20P_RX_FLAG_PKT_CONVERT) {
+    uint64_t pkt_cvt_output_cap =
+        ST_FMT_CAP_YUV422PLANAR10LE | ST_FMT_CAP_Y210 | ST_FMT_CAP_UYVY;
+    if (ops->transport_fmt != ST20_FMT_YUV_422_10BIT) {
+      err("%s(%d), only 422 10bit support packet convert\n", __func__, idx);
+      return -EIO;
+    }
+    if (!(MTL_BIT64(ops->output_fmt) & pkt_cvt_output_cap)) {
+      err("%s(%d), %s not supported by packet convert\n", __func__, idx,
+          st_frame_fmt_name(ops->output_fmt));
+      return -EIO;
+    }
+    ops_rx.uframe_pg_callback = rx_st20p_packet_convert;
+    ops_rx.uframe_size = st20_frame_size(ops->transport_fmt, ops->width, ops->height);
+  }
   ops_rx.pacing = ST21_PACING_NARROW;
   ops_rx.width = ops->width;
   ops_rx.height = ops->height;
@@ -623,7 +703,7 @@ st20p_rx_handle st20p_rx_create(mtl_handle mt, struct st20p_rx_ops* ops) {
   ctx->ops = *ops;
 
   /* get one suitable convert device */
-  if (!ctx->derive) {
+  if (!ctx->derive && !(ctx->ops.flags & ST20P_RX_FLAG_PKT_CONVERT)) {
     ret = rx_st20p_get_converter(impl, ctx, ops);
     if (ret < 0) {
       err("%s(%d), get converter fail %d\n", __func__, idx, ret);
