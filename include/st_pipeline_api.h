@@ -190,6 +190,8 @@ enum st_frame_fmt {
 #define ST_FMT_CAP_YUV422PLANAR10LE (MTL_BIT64(ST_FRAME_FMT_YUV422PLANAR10LE))
 /** ST format cap of ST_FRAME_FMT_V210 */
 #define ST_FMT_CAP_V210 (MTL_BIT64(ST_FRAME_FMT_V210))
+/** ST format cap of ST_FRAME_FMT_Y210 */
+#define ST_FMT_CAP_Y210 (MTL_BIT64(ST_FRAME_FMT_Y210))
 /** ST format cap of ST_FRAME_FMT_YUV422PLANAR8 */
 #define ST_FMT_CAP_YUV422PLANAR8 (MTL_BIT64(ST_FRAME_FMT_YUV422PLANAR8))
 /** ST format cap of ST_FRAME_FMT_UYVY */
@@ -412,6 +414,13 @@ enum st22_quality_mode {
  * st20_rx_get_ext_frame.
  */
 #define ST20P_RX_FLAG_EXT_FRAME (MTL_BIT32(2))
+/**
+ * Flag bit in flags of struct st20p_rx_ops.
+ * Only used for internal convert mode and limited formats:
+ * ST_FRAME_FMT_YUV422PLANAR10LE, ST_FRAME_FMT_Y210, ST_FRAME_FMT_UYVY
+ * Perform the color format conversion on each packet.
+ */
+#define ST20P_RX_FLAG_PKT_CONVERT (MTL_BIT32(3))
 /**
  * Flag bit in flags of struct st20p_rx_ops.
  * If set, lib will pass the incomplete frame to app also.

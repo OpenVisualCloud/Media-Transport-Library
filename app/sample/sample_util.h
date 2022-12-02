@@ -83,7 +83,7 @@ struct st_sample_context {
 };
 
 int sample_parse_args(struct st_sample_context* ctx, int argc, char** argv, bool tx,
-                      bool rx);
+                      bool rx, bool unicast);
 
 int tx_sample_parse_args(struct st_sample_context* ctx, int argc, char** argv);
 

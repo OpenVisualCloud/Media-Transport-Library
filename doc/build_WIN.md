@@ -93,7 +93,7 @@ Libs.private:
 
 #### 3.2.3 Find C:\dpdk\lib\pkgconfig\libdpdk-libs.pc, change the libs define to below
 ```
-Libs:-L${libdir} -lrte_latencystats -lrte_gso -lrte_bus_pci -lrte_gro -lrte_cfgfile -lrte_bitratestats -lrte_timer -lrte_hash -lrte_metrics -lrte_cmdline -lrte_pci -lrte_ethdev -lrte_meter -lrte_net -lrte_net_ice -lrte_net_iavf -lrte_common_iavf -lrte_mbuf -lrte_mempool -lrte_stack -lrte_mempool_stack -lrte_mempool_ring -lrte_rcu -lrte_ring -lrte_eal -lrte_telemetry -lrte_kvargs -lrte_dmadev -lrte_dma_ioat
+Libs:-L${libdir} -lrte_latencystats -lrte_gso -lrte_bus_pci -lrte_gro -lrte_cfgfile -lrte_bitratestats -lrte_timer -lrte_hash -lrte_metrics -lrte_cmdline -lrte_pci -lrte_ethdev -lrte_meter -lrte_net -lrte_net_ice -lrte_net_iavf -lrte_common_iavf -lrte_net_i40e -lrte_mbuf -lrte_mempool -lrte_stack -lrte_mempool_stack -lrte_mempool_ring -lrte_rcu -lrte_ring -lrte_eal -lrte_telemetry -lrte_kvargs -lrte_dmadev -lrte_dma_ioat
 ```
 
 ## 3.3 Add pkg-config

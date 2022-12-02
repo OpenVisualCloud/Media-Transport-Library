@@ -116,7 +116,7 @@ int main(int argc, char** argv) {
 
   /* init sample(st) dev */
   memset(&ctx, 0, sizeof(ctx));
-  sample_parse_args(&ctx, argc, argv, true, false);
+  sample_parse_args(&ctx, argc, argv, true, false, false);
   ctx.param.num_ports = 2; /* force to 2 */
 
   ctx.st = mtl_init(&ctx.param);
