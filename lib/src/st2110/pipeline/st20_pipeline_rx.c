@@ -45,8 +45,8 @@ static struct st20p_rx_frame* rx_st20p_next_available(
   return NULL;
 }
 
-int rx_st20p_packet_convert(void* priv, void* frame,
-                            struct st20_rx_uframe_pg_meta* meta) {
+static int rx_st20p_packet_convert(void* priv, void* frame,
+                                   struct st20_rx_uframe_pg_meta* meta) {
   struct st20p_rx_ctx* ctx = priv;
   struct st20p_rx_frame* framebuff;
   int ret = 0;

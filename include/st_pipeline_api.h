@@ -416,7 +416,8 @@ enum st22_quality_mode {
 #define ST20P_RX_FLAG_EXT_FRAME (MTL_BIT32(2))
 /**
  * Flag bit in flags of struct st20p_rx_ops.
- * Only used for internal convert mode.
+ * Only used for internal convert mode and limited formats:
+ * ST_FRAME_FMT_YUV422PLANAR10LE, ST_FRAME_FMT_Y210, ST_FRAME_FMT_UYVY
  * Perform the color format conversion on each packet.
  */
 #define ST20P_RX_FLAG_PKT_CONVERT (MTL_BIT32(3))
