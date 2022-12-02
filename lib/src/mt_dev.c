@@ -1926,8 +1926,8 @@ int mt_dev_dst_ip_mac(struct mtl_main_impl* impl, uint8_t dip[MTL_IP_ADDR_LEN],
   if (mt_is_multicast_ip(dip)) {
     mt_mcast_ip_to_mac(dip, ea);
   } else {
-    info("%s(%d), start to get mac for ip %d.%d.%d.%d\n", __func__, port, dip[0], dip[1],
-         dip[2], dip[3]);
+    dbg("%s(%d), start to get mac for ip %d.%d.%d.%d\n", __func__, port, dip[0], dip[1],
+        dip[2], dip[3]);
     if (mt_pmd_is_kernel(impl, port)) {
       ret = mt_socket_get_mac(impl, mt_get_user_params(impl)->port[port], dip, ea,
                               timeout_ms);
@@ -1944,10 +1944,10 @@ int mt_dev_dst_ip_mac(struct mtl_main_impl* impl, uint8_t dip[MTL_IP_ADDR_LEN],
     }
   }
 
-  info("%s(%d), ip: %d.%d.%d.%d, mac: %02hhx:%02hhx:%02hhx:%02hhx:%02hhx:%02hhx\n",
-       __func__, port, dip[0], dip[1], dip[2], dip[3], ea->addr_bytes[0],
-       ea->addr_bytes[1], ea->addr_bytes[2], ea->addr_bytes[3], ea->addr_bytes[4],
-       ea->addr_bytes[5]);
+  dbg("%s(%d), ip: %d.%d.%d.%d, mac: %02hhx:%02hhx:%02hhx:%02hhx:%02hhx:%02hhx\n",
+      __func__, port, dip[0], dip[1], dip[2], dip[3], ea->addr_bytes[0],
+      ea->addr_bytes[1], ea->addr_bytes[2], ea->addr_bytes[3], ea->addr_bytes[4],
+      ea->addr_bytes[5]);
   return 0;
 }
 

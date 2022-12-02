@@ -30,6 +30,7 @@ enum mt_handle_type {
   MT_ST20_HANDLE_DEV_CONVERT = 29,
 
   MT_HANDLE_UDMA = 40,
+  MT_HANDLE_UDP = 41,
 
   MT_HANDLE_MAX,
 };
