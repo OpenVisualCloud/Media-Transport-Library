@@ -75,15 +75,31 @@ devcon.exe update netuio.inf "PCI\VEN_8086&DEV_1592"
 
 #### 4.1 Update NIC FW and driver to latest version.
 Refer to https://www.intel.com/content/www/us/en/download/15084/intel-ethernet-adapter-complete-driver-pack.html
-#### 4.2 Copy the ICE driver related DDP file ice-1.3.26.0.pkg to the same directory as rxtxapp.exe file, can download from Intel site:
-https://downloadmirror.intel.com/681886/26_6.zip
+
+#### 4.2 Update the ICE DDP package file: ice.pkg.
+Get the latest ddp file(ice-1.3.30.0.pkg) from https://www.intel.com/content/www/us/en/download/19630/intel-network-adapter-driver-for-e810-series-devices-under-linux.html, unzip the driver and goto ddp directory.  
+Windows ICE driver will try to search DDP with path "c:\dpdk\lib\ice.pkg" or ".\ice.pkg", please put the latest ddp file there and rename to ice.pkg, otherwise it will see below error if you run the MTL app.
+```
+ice_load_pkg(): failed to search file path
+ice_dev_init(): Failed to load the DDP package, Use safe-mode-support=1 to enter Safe Mode
+```
+
 #### 4.3 Create the temp folder in root directory c:\temp
 
 ## 5. Windows TAP support enable:
 #### 5.1 Download openVPN driver by searching "OpenVPN-2.5.6-I601-amd64.msi" and download the installation file
-#### 5.2 Install windows TAP driver, in the Control Panel->Network and Internet->Network Connections, find the "OpenVPN TAP-Windows6" device, set the adaptor IP address, such as 192.168.2.2
-#### 5.3 Go to the kahawai library source code,find the meson_options.txt, change the option "enable_tap" to true and recompile the whole library
-#### 5.4 Run rxtxapp.exe, and ping 192.168.2.2 from other machine in the same network such as 192.168.2.3, if have reply, the TAP works
+
+#### 5.2 Install windows TAP driver
+In the Control Panel->Network and Internet->Network Connections, find the "OpenVPN TAP-Windows6" device, set the adaptor IP address, such as 192.168.2.2
+
+#### 5.3 Rebuild and install MTL lib with "-Denable_tap=true"
+```
+meson tap_build --prefix=c:\libmtl -Ddpdk_root_dir=${DPDK_SRC_DIR} -Denable_tap=true
+ninja -C tap_build install
+```
+
+#### 5.4 Run rxtxapp.exe
+Ping 192.168.2.2 from other machine in the same network such as 192.168.2.3, if have reply, the TAP works.
 
 ## 6. Run and test:
 You can bind the app to the cpu socket 0 ( if your NIC is inserted into the pcie slot belongs to cpu socket 0 )as following:

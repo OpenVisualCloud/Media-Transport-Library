@@ -574,6 +574,7 @@ struct st20p_rx_digest_test_para {
   int fb_cnt;
   bool user_timestamp;
   bool vsync;
+  bool pkt_convert;
   size_t line_padding_size;
 };
 
@@ -591,6 +592,7 @@ static void test_st20p_init_rx_digest_para(struct st20p_rx_digest_test_para* par
   para->level = ST_TEST_LEVEL_MANDATORY;
   para->user_timestamp = false;
   para->vsync = true;
+  para->pkt_convert = false;
   para->line_padding_size = 0;
 }
 
@@ -896,6 +898,7 @@ static void st20p_rx_digest_test(enum st_fps fps[], int width[], int height[],
     }
     if (para->vsync) ops_rx.flags |= ST20P_RX_FLAG_ENABLE_VSYNC;
     if (para->rx_get_ext) ops_rx.flags |= ST20P_RX_FLAG_EXT_FRAME;
+    if (para->pkt_convert) ops_rx.flags |= ST20P_RX_FLAG_PKT_CONVERT;
 
     rx_handle[i] = st20p_rx_create(st, &ops_rx);
     ASSERT_TRUE(rx_handle[i] != NULL);
@@ -1120,6 +1123,24 @@ TEST(St20p, digest_1080p_no_convert_s2) {
   st20p_rx_digest_test(fps, width, height, tx_fmt, t_fmt, rx_fmt, &para);
 }
 
+TEST(St20p, digest_1080p_packet_convert_s2) {
+  enum st_fps fps[2] = {ST_FPS_P50, ST_FPS_P59_94};
+  int width[2] = {1920, 1920};
+  int height[2] = {1080, 1080};
+  enum st_frame_fmt tx_fmt[2] = {ST_FRAME_FMT_YUV422PLANAR10LE, ST_FRAME_FMT_Y210};
+  enum st20_fmt t_fmt[2] = {ST20_FMT_YUV_422_10BIT, ST20_FMT_YUV_422_10BIT};
+  enum st_frame_fmt rx_fmt[2] = {ST_FRAME_FMT_YUV422PLANAR10LE, ST_FRAME_FMT_Y210};
+
+  struct st20p_rx_digest_test_para para;
+  test_st20p_init_rx_digest_para(&para);
+  para.sessions = 2;
+  para.device = ST_PLUGIN_DEVICE_TEST_INTERNAL;
+  para.check_fps = false;
+  para.pkt_convert = true;
+
+  st20p_rx_digest_test(fps, width, height, tx_fmt, t_fmt, rx_fmt, &para);
+}
+
 TEST(St20p, tx_ext_digest_1080p_no_convert_s2) {
   enum st_fps fps[2] = {ST_FPS_P50, ST_FPS_P59_94};
   int width[2] = {1920, 1920};
@@ -1192,6 +1213,25 @@ TEST(St20p, rx_ext_digest_1080p_convert_s2) {
   para.device = ST_PLUGIN_DEVICE_TEST_INTERNAL;
   para.rx_ext = true;
   para.check_fps = false;
+
+  st20p_rx_digest_test(fps, width, height, tx_fmt, t_fmt, rx_fmt, &para);
+}
+
+TEST(St20p, rx_ext_digest_1080p_packet_convert_s2) {
+  enum st_fps fps[2] = {ST_FPS_P50, ST_FPS_P59_94};
+  int width[2] = {1920, 1920};
+  int height[2] = {1080, 1080};
+  enum st_frame_fmt tx_fmt[2] = {ST_FRAME_FMT_YUV422PLANAR10LE, ST_FRAME_FMT_Y210};
+  enum st20_fmt t_fmt[2] = {ST20_FMT_YUV_422_10BIT, ST20_FMT_YUV_422_10BIT};
+  enum st_frame_fmt rx_fmt[2] = {ST_FRAME_FMT_YUV422PLANAR10LE, ST_FRAME_FMT_Y210};
+
+  struct st20p_rx_digest_test_para para;
+  test_st20p_init_rx_digest_para(&para);
+  para.sessions = 2;
+  para.device = ST_PLUGIN_DEVICE_TEST_INTERNAL;
+  para.rx_ext = true;
+  para.check_fps = false;
+  para.pkt_convert = true;
 
   st20p_rx_digest_test(fps, width, height, tx_fmt, t_fmt, rx_fmt, &para);
 }
@@ -1312,6 +1352,27 @@ TEST(St20p, rx_get_ext_digest_1080p_convert_with_padding_s2) {
   para.rx_get_ext = true;
   para.check_fps = false;
   para.line_padding_size = 512;
+
+  st20p_rx_digest_test(fps, width, height, tx_fmt, t_fmt, rx_fmt, &para);
+}
+
+TEST(St20p, tx_rx_ext_digest_1080p_packet_convert_with_padding_s2) {
+  enum st_fps fps[2] = {ST_FPS_P59_94, ST_FPS_P59_94};
+  int width[2] = {1920, 1920};
+  int height[2] = {1080, 1080};
+  enum st_frame_fmt tx_fmt[2] = {ST_FRAME_FMT_YUV422PLANAR10LE, ST_FRAME_FMT_Y210};
+  enum st20_fmt t_fmt[2] = {ST20_FMT_YUV_422_10BIT, ST20_FMT_YUV_422_10BIT};
+  enum st_frame_fmt rx_fmt[2] = {ST_FRAME_FMT_YUV422PLANAR10LE, ST_FRAME_FMT_Y210};
+
+  struct st20p_rx_digest_test_para para;
+  test_st20p_init_rx_digest_para(&para);
+  para.sessions = 2;
+  para.device = ST_PLUGIN_DEVICE_TEST_INTERNAL;
+  para.tx_ext = true;
+  para.rx_ext = true;
+  para.check_fps = false;
+  para.line_padding_size = 1024;
+  para.pkt_convert = true;
 
   st20p_rx_digest_test(fps, width, height, tx_fmt, t_fmt, rx_fmt, &para);
 }

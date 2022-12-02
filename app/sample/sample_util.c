@@ -186,7 +186,7 @@ static void sample_sig_handler(int signo) {
 }
 
 int sample_parse_args(struct st_sample_context* ctx, int argc, char** argv, bool tx,
-                      bool rx) {
+                      bool rx, bool unicast) {
   struct mtl_init_params* p = &ctx->param;
 
   g_sample_ctx = ctx;
@@ -203,14 +203,21 @@ int sample_parse_args(struct st_sample_context* ctx, int argc, char** argv, bool
     inet_pton(AF_INET, "192.168.85.81", mtl_r_sip_addr(p));
   } else {
     strncpy(p->port[MTL_PORT_P], "0000:af:01.1", MTL_PORT_MAX_LEN);
-    inet_pton(AF_INET, "192.168.85.81", mtl_p_sip_addr(p));
+    inet_pton(AF_INET, "192.168.85.60", mtl_p_sip_addr(p));
     strncpy(p->port[MTL_PORT_R], "0000:af:01.0", MTL_PORT_MAX_LEN);
-    inet_pton(AF_INET, "192.168.85.80", mtl_r_sip_addr(p));
+    inet_pton(AF_INET, "192.168.85.61", mtl_r_sip_addr(p));
   }
-  inet_pton(AF_INET, "239.168.85.20", ctx->tx_dip_addr[MTL_PORT_P]);
-  inet_pton(AF_INET, "239.168.85.21", ctx->tx_dip_addr[MTL_PORT_R]);
-  inet_pton(AF_INET, "239.168.85.20", ctx->rx_sip_addr[MTL_PORT_P]);
-  inet_pton(AF_INET, "239.168.85.21", ctx->rx_sip_addr[MTL_PORT_R]);
+  if (unicast) {
+    inet_pton(AF_INET, "192.168.85.80", ctx->tx_dip_addr[MTL_PORT_P]);
+    inet_pton(AF_INET, "192.168.85.81", ctx->tx_dip_addr[MTL_PORT_R]);
+    inet_pton(AF_INET, "192.168.85.60", ctx->rx_sip_addr[MTL_PORT_P]);
+    inet_pton(AF_INET, "192.168.85.61", ctx->rx_sip_addr[MTL_PORT_R]);
+  } else {
+    inet_pton(AF_INET, "239.168.85.20", ctx->tx_dip_addr[MTL_PORT_P]);
+    inet_pton(AF_INET, "239.168.85.21", ctx->tx_dip_addr[MTL_PORT_R]);
+    inet_pton(AF_INET, "239.168.85.20", ctx->rx_sip_addr[MTL_PORT_P]);
+    inet_pton(AF_INET, "239.168.85.21", ctx->rx_sip_addr[MTL_PORT_R]);
+  }
   inet_pton(AF_INET, "239.168.86.20", ctx->fwd_dip_addr[MTL_PORT_P]);
   inet_pton(AF_INET, "239.168.86.21", ctx->fwd_dip_addr[MTL_PORT_R]);
 
@@ -248,20 +255,20 @@ int sample_parse_args(struct st_sample_context* ctx, int argc, char** argv, bool
 }
 
 int tx_sample_parse_args(struct st_sample_context* ctx, int argc, char** argv) {
-  return sample_parse_args(ctx, argc, argv, true, false);
+  return sample_parse_args(ctx, argc, argv, true, false, false);
 };
 
 int rx_sample_parse_args(struct st_sample_context* ctx, int argc, char** argv) {
-  return sample_parse_args(ctx, argc, argv, false, true);
+  return sample_parse_args(ctx, argc, argv, false, true, false);
 };
 
 int fwd_sample_parse_args(struct st_sample_context* ctx, int argc, char** argv) {
-  return sample_parse_args(ctx, argc, argv, true, true);
+  return sample_parse_args(ctx, argc, argv, true, true, false);
 };
 
 int dma_sample_parse_args(struct st_sample_context* ctx, int argc, char** argv) {
   /* init sample(st) dev */
-  sample_parse_args(ctx, argc, argv, false, false);
+  sample_parse_args(ctx, argc, argv, false, false, false);
   /* enable dma port */
   ctx->param.num_dma_dev_port = 1;
   return 0;

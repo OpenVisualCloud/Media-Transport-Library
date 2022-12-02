@@ -66,7 +66,7 @@ int main(int argc, char** argv) {
 
   /* init sample(st) dev */
   memset(&ctx, 0, sizeof(ctx));
-  sample_parse_args(&ctx, argc, argv, true, false);
+  sample_parse_args(&ctx, argc, argv, true, false, false);
   ctx.sessions = session_num;
   ctx.param.tx_sessions_cnt_max = session_num;
 

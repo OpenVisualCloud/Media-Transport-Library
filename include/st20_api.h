@@ -394,6 +394,8 @@ struct st20_rx_uframe_pg_meta {
   uint16_t row_offset;
   /** How many pixel groups in current meta */
   uint32_t pg_cnt;
+  /** Frame timestamp */
+  uint64_t timestamp;
 };
 
 /**
