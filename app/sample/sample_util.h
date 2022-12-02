@@ -49,6 +49,12 @@
 
 #define ST_SAMPLE_URL_MAX_LEN (256)
 
+enum sample_udp_mode {
+  SAMPLE_UDP_DEFAULT = 0, /* client/server mode */
+  SAMPLE_UDP_TRANSPORT,   /* transport only */
+  SAMPLE_UDP_MODE_MAX,
+};
+
 struct st_sample_context {
   mtl_handle st;
   struct mtl_init_params param;
@@ -78,6 +84,9 @@ struct st_sample_context {
   enum st_frame_fmt st22p_input_fmt;
   enum st_frame_fmt st22p_output_fmt;
   enum st22_codec st22p_codec; /* st22 codec */
+
+  enum sample_udp_mode udp_mode;
+  uint64_t udp_tx_bps;
 
   bool exit;
 };

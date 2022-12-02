@@ -32,6 +32,10 @@ enum sample_args_cmd {
   SAMPLE_ARG_EXT_FRAME,
   SAMPLE_ARG_ST22_CODEC,
   SAMPLE_ARG_ST22_FRAME_FMT,
+
+  SAMPLE_ARG_UDP_MODE,
+  SAMPLE_ARG_UDP_TX_BPS_G,
+
   SAMPLE_ARG_MAX,
 };
 
@@ -58,6 +62,9 @@ static struct option sample_args_options[] = {
     {"ext_frame", no_argument, 0, SAMPLE_ARG_EXT_FRAME},
     {"st22_codec", required_argument, 0, SAMPLE_ARG_ST22_CODEC},
     {"st22_fmt", required_argument, 0, SAMPLE_ARG_ST22_FRAME_FMT},
+
+    {"udp_mode", required_argument, 0, SAMPLE_ARG_UDP_MODE},
+    {"udp_tx_bps_g", required_argument, 0, SAMPLE_ARG_UDP_TX_BPS_G},
 
     {0, 0, 0, 0}};
 
@@ -160,6 +167,17 @@ static int _sample_parse_args(struct st_sample_context* ctx, int argc, char** ar
         }
         break;
       }
+      case SAMPLE_ARG_UDP_MODE:
+        if (!strcmp(optarg, "default"))
+          ctx->udp_mode = SAMPLE_UDP_DEFAULT;
+        else if (!strcmp(optarg, "transport"))
+          ctx->udp_mode = SAMPLE_UDP_TRANSPORT;
+        else
+          err("%s, unknow udp_mode %s\n", __func__, optarg);
+        break;
+      case SAMPLE_ARG_UDP_TX_BPS_G:
+        ctx->udp_tx_bps = ((uint64_t)atoi(optarg)) * 1024 * 1024 * 1024;
+        break;
       case '?':
         break;
       default:

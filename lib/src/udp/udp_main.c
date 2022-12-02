@@ -177,7 +177,7 @@ static int udp_init_txq(struct mtl_main_impl* impl, struct mudp_impl* s) {
   int idx = s->idx;
 
   /* queue, alloc rxq in the bind */
-  s->txq = mt_dev_get_tx_queue(impl, port, s->txq_bps);
+  s->txq = mt_dev_get_tx_queue(impl, port, s->txq_bps / 8);
   if (!s->txq) {
     err("%s(%d), get tx queue fail\n", __func__, idx);
     udp_uinit_txq(impl, s);
@@ -493,4 +493,40 @@ rx_pool:
 
   dbg("%s(%d), timeout to %d ms\n", __func__, idx, s->rx_timeout_ms);
   return -ETIMEDOUT;
+}
+
+int mudp_set_tx_rate(mudp_handle ut, uint64_t bps) {
+  struct mudp_impl* s = ut;
+  int idx = s->idx;
+
+  if (s->type != MT_HANDLE_UDP) {
+    err("%s(%d), invalid type %d\n", __func__, idx, s->type);
+    return -EIO;
+  }
+
+  if (udp_get_flag(s, MUDP_TXQ_ALLOC)) {
+    err("%s(%d), txq already alloced\n", __func__, idx);
+    return -EINVAL;
+  }
+
+  if (!bps) { /* todo: add more bps check */
+    err("%s(%d), invalid bps: %" PRIu64 "\n", __func__, idx, bps);
+    return -EINVAL;
+  }
+
+  s->txq_bps = bps;
+  info("%s(%d), new bps: %" PRIu64 "\n", __func__, idx, bps);
+  return 0;
+}
+
+uint64_t mudp_get_tx_rate(mudp_handle ut) {
+  struct mudp_impl* s = ut;
+  int idx = s->idx;
+
+  if (s->type != MT_HANDLE_UDP) {
+    err("%s(%d), invalid type %d\n", __func__, idx, s->type);
+    return -EIO;
+  }
+
+  return s->txq_bps;
 }

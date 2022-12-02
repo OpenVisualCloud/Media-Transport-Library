@@ -115,6 +115,29 @@ ssize_t mudp_recvfrom(mudp_handle ut, void* buf, size_t len, int flags,
                       struct sockaddr* src_addr, socklen_t* addrlen);
 
 /**
+ * Set the rate(speed) for one udp transport socket. Call before mudp_bind.
+ *
+ * @param ut
+ *   The handle to udp transport socket.
+ * @param bps
+ *   Bit per second.
+ * @return
+ *   - 0: Success.
+ *   - <0: Error code.
+ */
+int mudp_set_tx_rate(mudp_handle ut, uint64_t bps);
+
+/**
+ * Get the rate(speed) for one udp transport socket.
+ *
+ * @param ut
+ *   The handle to udp transport socket.
+ * @return
+ *   - bps, Bit per second.
+ */
+uint64_t mudp_get_tx_rate(mudp_handle ut);
+
+/**
  * Helper to init a IPv4 ANY addr.
  *
  * @param saddr
