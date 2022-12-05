@@ -205,6 +205,7 @@ struct mt_cni_impl {
 };
 
 struct mt_arp_impl {
+  pthread_mutex_t mutex; /* entry protect */
   uint32_t ip[MT_ARP_ENTRY_MAX];
   struct rte_ether_addr ea[MT_ARP_ENTRY_MAX];
   rte_atomic32_t mac_ready[MT_ARP_ENTRY_MAX];
