@@ -205,9 +205,9 @@ struct mt_cni_impl {
 };
 
 struct mt_arp_impl {
-  uint32_t ip[MTL_PORT_MAX][MT_ARP_ENTRY_MAX];
-  struct rte_ether_addr ea[MTL_PORT_MAX][MT_ARP_ENTRY_MAX];
-  rte_atomic32_t mac_ready[MTL_PORT_MAX][MT_ARP_ENTRY_MAX];
+  uint32_t ip[MT_ARP_ENTRY_MAX];
+  struct rte_ether_addr ea[MT_ARP_ENTRY_MAX];
+  rte_atomic32_t mac_ready[MT_ARP_ENTRY_MAX];
 };
 
 struct mt_mcast_impl {
@@ -547,7 +547,7 @@ struct mtl_main_impl {
   struct mt_ptp_impl ptp[MTL_PORT_MAX];
 
   /* arp context */
-  struct mt_arp_impl arp;
+  struct mt_arp_impl arp[MTL_PORT_MAX];
 
   /* mcast context */
   struct mt_mcast_impl mcast[MTL_PORT_MAX];
