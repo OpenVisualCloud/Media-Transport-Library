@@ -211,10 +211,10 @@ struct mt_arp_impl {
 };
 
 struct mt_mcast_impl {
-  pthread_mutex_t group_mutex[MTL_PORT_MAX];
-  uint32_t group_ip[MTL_PORT_MAX][MT_MCAST_GROUP_MAX];
-  uint32_t group_ref_cnt[MTL_PORT_MAX][MT_MCAST_GROUP_MAX];
-  uint16_t group_num[MTL_PORT_MAX];
+  pthread_mutex_t group_mutex;
+  uint32_t group_ip[MT_MCAST_GROUP_MAX];
+  uint32_t group_ref_cnt[MT_MCAST_GROUP_MAX];
+  uint16_t group_num;
 };
 
 #define MT_TASKLET_HAS_PENDING (1)
@@ -550,7 +550,7 @@ struct mtl_main_impl {
   struct mt_arp_impl arp;
 
   /* mcast context */
-  struct mt_mcast_impl mcast;
+  struct mt_mcast_impl mcast[MTL_PORT_MAX];
 
   /* sch context */
   struct mt_sch_mgr sch_mgr;
