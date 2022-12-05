@@ -205,16 +205,17 @@ struct mt_cni_impl {
 };
 
 struct mt_arp_impl {
-  uint32_t ip[MTL_PORT_MAX][MT_ARP_ENTRY_MAX];
-  struct rte_ether_addr ea[MTL_PORT_MAX][MT_ARP_ENTRY_MAX];
-  rte_atomic32_t mac_ready[MTL_PORT_MAX][MT_ARP_ENTRY_MAX];
+  pthread_mutex_t mutex; /* entry protect */
+  uint32_t ip[MT_ARP_ENTRY_MAX];
+  struct rte_ether_addr ea[MT_ARP_ENTRY_MAX];
+  rte_atomic32_t mac_ready[MT_ARP_ENTRY_MAX];
 };
 
 struct mt_mcast_impl {
-  pthread_mutex_t group_mutex[MTL_PORT_MAX];
-  uint32_t group_ip[MTL_PORT_MAX][MT_MCAST_GROUP_MAX];
-  uint32_t group_ref_cnt[MTL_PORT_MAX][MT_MCAST_GROUP_MAX];
-  uint16_t group_num[MTL_PORT_MAX];
+  pthread_mutex_t group_mutex;
+  uint32_t group_ip[MT_MCAST_GROUP_MAX];
+  uint32_t group_ref_cnt[MT_MCAST_GROUP_MAX];
+  uint16_t group_num;
 };
 
 #define MT_TASKLET_HAS_PENDING (1)
@@ -547,10 +548,10 @@ struct mtl_main_impl {
   struct mt_ptp_impl ptp[MTL_PORT_MAX];
 
   /* arp context */
-  struct mt_arp_impl arp;
+  struct mt_arp_impl arp[MTL_PORT_MAX];
 
   /* mcast context */
-  struct mt_mcast_impl mcast;
+  struct mt_mcast_impl mcast[MTL_PORT_MAX];
 
   /* sch context */
   struct mt_sch_mgr sch_mgr;

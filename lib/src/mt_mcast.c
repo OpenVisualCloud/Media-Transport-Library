@@ -11,6 +11,11 @@
 
 #define MT_MCAST_POOL_INC (32)
 
+static inline struct mt_mcast_impl* get_mcast(struct mtl_main_impl* impl,
+                                              enum mtl_port port) {
+  return &impl->mcast[port];
+}
+
 /* Computing the Internet Checksum based on rfc1071 */
 static uint16_t mcast_msg_checksum(enum mcast_msg_type type, void* msg, uint16_t num) {
   size_t size = 0;
@@ -119,8 +124,8 @@ int mcast_membership_general_query(struct mtl_main_impl* impl, enum mtl_port por
 static int mcast_membership_report(struct mtl_main_impl* impl,
                                    enum mcast_group_record_type type,
                                    enum mtl_port port) {
-  struct mt_mcast_impl* mcast = &impl->mcast;
-  uint16_t group_num = mcast->group_num[port];
+  struct mt_mcast_impl* mcast = get_mcast(impl, port);
+  uint16_t group_num = mcast->group_num;
   struct rte_mbuf* pkt;
   struct rte_ether_hdr* eth_hdr;
   struct rte_ipv4_hdr* ip_hdr;
@@ -170,7 +175,7 @@ static int mcast_membership_report(struct mtl_main_impl* impl,
   hdr_offset += sizeof(struct mcast_mb_report_v3_wo_gr);
   group_records = rte_pktmbuf_mtod_offset(pkt, struct mcast_group_record*, hdr_offset);
   for (int i = 0; i < group_num; i++) {
-    mcast_create_group_record(mcast->group_ip[port][i], type, &group_records[i]);
+    mcast_create_group_record(mcast->group_ip[i], type, &group_records[i]);
   }
   uint16_t checksum = mcast_msg_checksum(MEMBERSHIP_REPORT_V3, mb_report, group_num);
   if (checksum <= 0) {
@@ -310,11 +315,12 @@ static int mcast_inf_remove_mac(struct mt_interface* inf,
 }
 
 int mt_mcast_init(struct mtl_main_impl* impl) {
-  struct mt_mcast_impl* mcast = &impl->mcast;
   int ret;
 
   for (int port = 0; port < MTL_PORT_MAX; ++port) {
-    mt_pthread_mutex_init(&mcast->group_mutex[port], NULL);
+    struct mt_mcast_impl* mcast = get_mcast(impl, port);
+
+    mt_pthread_mutex_init(&mcast->group_mutex, NULL);
   }
 
   ret = rte_eal_alarm_set(IGMP_JOIN_GROUP_PERIOD_US, mcast_membership_report_cb, impl);
@@ -325,11 +331,12 @@ int mt_mcast_init(struct mtl_main_impl* impl) {
 }
 
 int mt_mcast_uinit(struct mtl_main_impl* impl) {
-  struct mt_mcast_impl* mcast = &impl->mcast;
   int ret;
 
   for (int port = 0; port < MTL_PORT_MAX; ++port) {
-    mt_pthread_mutex_destroy(&mcast->group_mutex[port]);
+    struct mt_mcast_impl* mcast = get_mcast(impl, port);
+
+    mt_pthread_mutex_destroy(&mcast->group_mutex);
   }
 
   ret = rte_eal_alarm_cancel(mcast_membership_report_cb, impl);
@@ -341,10 +348,10 @@ int mt_mcast_uinit(struct mtl_main_impl* impl) {
 
 /* add a group address to the group ip list */
 int mt_mcast_join(struct mtl_main_impl* impl, uint32_t group_addr, enum mtl_port port) {
-  struct mt_mcast_impl* mcast = &impl->mcast;
+  struct mt_mcast_impl* mcast = get_mcast(impl, port);
   struct rte_ether_addr mcast_mac;
   struct mt_interface* inf = mt_if(impl, port);
-  int group_num = mcast->group_num[port];
+  int group_num = mcast->group_num;
   uint8_t* ip = (uint8_t*)&group_addr;
   int ret;
 
@@ -353,29 +360,29 @@ int mt_mcast_join(struct mtl_main_impl* impl, uint32_t group_addr, enum mtl_port
     return -EIO;
   }
 
-  mt_pthread_mutex_lock(&mcast->group_mutex[port]);
+  mt_pthread_mutex_lock(&mcast->group_mutex);
   for (int i = 0; i < group_num; ++i) {
-    if (mcast->group_ip[port][i] == group_addr) {
-      mcast->group_ref_cnt[port][i]++;
-      mt_pthread_mutex_unlock(&mcast->group_mutex[port]);
+    if (mcast->group_ip[i] == group_addr) {
+      mcast->group_ref_cnt[i]++;
+      mt_pthread_mutex_unlock(&mcast->group_mutex);
       info("%s(%d), group %d.%d.%d.%d ref cnt %u\n", __func__, port, ip[0], ip[1], ip[2],
-           ip[3], mcast->group_ref_cnt[port][i]);
+           ip[3], mcast->group_ref_cnt[i]);
       return 0;
     }
   }
   if (mt_pmd_is_kernel(impl, port)) {
     ret = mt_socket_join_mcast(impl, port, group_addr);
     if (ret < 0) {
-      mt_pthread_mutex_unlock(&mcast->group_mutex[port]);
+      mt_pthread_mutex_unlock(&mcast->group_mutex);
       err("%s(%d), fail(%d) to join socket group %d.%d.%d.%d\n", __func__, port, ret,
           ip[0], ip[1], ip[2], ip[3]);
       return ret;
     }
   }
-  mcast->group_ip[port][group_num] = group_addr;
-  mcast->group_ref_cnt[port][group_num] = 1;
-  mcast->group_num[port]++;
-  mt_pthread_mutex_unlock(&mcast->group_mutex[port]);
+  mcast->group_ip[group_num] = group_addr;
+  mcast->group_ref_cnt[group_num] = 1;
+  mcast->group_num++;
+  mt_pthread_mutex_unlock(&mcast->group_mutex);
 
   /* add mcast mac to interface */
   mt_mcast_ip_to_mac(ip, &mcast_mac);
@@ -393,37 +400,37 @@ int mt_mcast_join(struct mtl_main_impl* impl, uint32_t group_addr, enum mtl_port
 /* not implement fast leave report for IGMPv3, just stop sending join report, */
 /* after a while the switch will delete the port in the multicast group */
 int mt_mcast_leave(struct mtl_main_impl* impl, uint32_t group_addr, enum mtl_port port) {
-  struct mt_mcast_impl* mcast = &impl->mcast;
-  int group_num = mcast->group_num[port];
+  struct mt_mcast_impl* mcast = get_mcast(impl, port);
+  int group_num = mcast->group_num;
   struct mt_interface* inf = mt_if(impl, port);
   uint8_t* ip = (uint8_t*)&group_addr;
   struct rte_ether_addr mcast_mac;
 
-  mt_pthread_mutex_lock(&mcast->group_mutex[port]);
+  mt_pthread_mutex_lock(&mcast->group_mutex);
   /* search the group ip list and delete the addr */
   for (int i = 0; i < group_num; ++i) {
-    if (mcast->group_ip[port][i] == group_addr) {
+    if (mcast->group_ip[i] == group_addr) {
       dbg("%s, found group ip in the group list, delete it\n", __func__);
-      mcast->group_ref_cnt[port][i]--;
+      mcast->group_ref_cnt[i]--;
       info("%s(%d), group %d.%d.%d.%d ref cnt %u\n", __func__, port, ip[0], ip[1], ip[2],
-           ip[3], mcast->group_ref_cnt[port][i]);
-      if (mcast->group_ref_cnt[port][i]) {
-        mt_pthread_mutex_unlock(&mcast->group_mutex[port]);
+           ip[3], mcast->group_ref_cnt[i]);
+      if (mcast->group_ref_cnt[i]) {
+        mt_pthread_mutex_unlock(&mcast->group_mutex);
         return 0;
       }
-      mcast->group_ip[port][i] = mcast->group_ip[port][group_num - 1];
-      mcast->group_num[port]--;
+      mcast->group_ip[i] = mcast->group_ip[group_num - 1];
+      mcast->group_num--;
       if (mt_pmd_is_kernel(impl, port)) {
         mt_socket_drop_mcast(impl, port, group_addr);
       }
-      mt_pthread_mutex_unlock(&mcast->group_mutex[port]);
+      mt_pthread_mutex_unlock(&mcast->group_mutex);
       /* remove mcast mac from interface */
       mt_mcast_ip_to_mac(ip, &mcast_mac);
       mcast_inf_remove_mac(inf, &mcast_mac);
       return 0;
     }
   }
-  mt_pthread_mutex_unlock(&mcast->group_mutex[port]);
+  mt_pthread_mutex_unlock(&mcast->group_mutex);
   warn("%s, group ip not found, nothing to delete\n", __func__);
   return 0;
 }
