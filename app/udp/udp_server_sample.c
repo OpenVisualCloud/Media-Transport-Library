@@ -53,6 +53,26 @@ static void* udp_server_thread(void* arg) {
   return NULL;
 }
 
+static void* udp_server_transport_thread(void* arg) {
+  struct udp_server_sample_ctx* s = arg;
+  mudp_handle socket = s->socket;
+  ssize_t udp_len = MUDP_MAX_BYTES;
+  char buf[udp_len];
+
+  info("%s(%d), start socket %p\n", __func__, s->idx, socket);
+  while (!s->stop) {
+    ssize_t recv = mudp_recvfrom(socket, buf, sizeof(buf), 0, NULL, NULL);
+    if (recv < 0) {
+      dbg("%s(%d), recv fail %d\n", __func__, s->idx, (int)recv);
+      continue;
+    }
+    s->recv_cnt++;
+  }
+  info("%s(%d), stop\n", __func__, s->idx);
+
+  return NULL;
+}
+
 static void udp_server_status(struct udp_server_sample_ctx* s) {
   info("%s(%d), send %d pkts recv %d pkts\n", __func__, s->idx, s->send_cnt, s->recv_cnt);
   s->send_cnt = 0;
@@ -98,6 +118,7 @@ int main(int argc, char** argv) {
       ret = -EIO;
       goto error;
     }
+    if (ctx.udp_tx_bps) mudp_set_tx_rate(app[i]->socket, ctx.udp_tx_bps);
     mudp_init_sockaddr(&app[i]->client_addr, ctx.rx_sip_addr[MTL_PORT_P],
                        ctx.udp_port + i);
     ret = mudp_bind(app[i]->socket, (const struct sockaddr*)&app[i]->client_addr,
@@ -107,9 +128,12 @@ int main(int argc, char** argv) {
       goto error;
     }
 
-    ret = pthread_create(&app[i]->thread, NULL, udp_server_thread, app[i]);
+    if (ctx.udp_mode == SAMPLE_UDP_TRANSPORT)
+      ret = pthread_create(&app[i]->thread, NULL, udp_server_transport_thread, app[i]);
+    else
+      ret = pthread_create(&app[i]->thread, NULL, udp_server_thread, app[i]);
     if (ret < 0) {
-      err("%s(%d), thread create fail %d\n", __func__, ret, i);
+      err("%s(%d), thread create fail %d\n", __func__, i, ret);
       goto error;
     }
   }
@@ -129,10 +153,13 @@ int main(int argc, char** argv) {
   // stop app thread
   for (int i = 0; i < session_num; i++) {
     app[i]->stop = true;
+    info("%s(%d), stop thread\n", __func__, i);
     st_pthread_mutex_lock(&app[i]->wake_mutex);
     st_pthread_cond_signal(&app[i]->wake_cond);
     st_pthread_mutex_unlock(&app[i]->wake_mutex);
+    info("%s(%d), join thread\n", __func__, i);
     pthread_join(app[i]->thread, NULL);
+    info("%s(%d), join thread succ\n", __func__, i);
   }
 
 error:

@@ -200,6 +200,13 @@ static int udp_init_txq(struct mtl_main_impl* impl, struct mudp_impl* s) {
 }
 
 static int udp_uinit_rxq(struct mtl_main_impl* impl, struct mudp_impl* s) {
+  if (udp_get_flag(s, MUDP_RX_MCAST_JOINED)) {
+    struct sockaddr_in* addr_in = &s->bind_addr;
+    uint8_t* ip = (uint8_t*)&addr_in->sin_addr;
+    mt_mcast_leave(impl, mt_ip_to_u32(ip), s->port);
+    udp_clear_flag(s, MUDP_RX_MCAST_JOINED);
+  }
+
   if (s->rxq) {
     mt_dev_put_rx_queue(impl, s->rxq);
     s->rxq = NULL;
@@ -247,6 +254,16 @@ static int udp_init_rxq(struct mtl_main_impl* impl, struct mudp_impl* s) {
     return -ENOMEM;
   }
   s->rx_ring = ring;
+
+  if (mt_is_multicast_ip(ip)) {
+    int ret = mt_mcast_join(impl, mt_ip_to_u32(ip), port);
+    if (ret < 0) {
+      err("%s(%d), mcast join fail\n", __func__, idx);
+      udp_uinit_rxq(impl, s);
+      return ret;
+    }
+    udp_set_flag(s, MUDP_RX_MCAST_JOINED);
+  }
 
   info("%s(%d), succ, ip %u.%u.%u.%u port %u\n", __func__, idx, ip[0], ip[1], ip[2],
        ip[3], flow.dst_port);
@@ -312,6 +329,9 @@ mudp_handle mudp_socket(mtl_handle mt, int domain, int type, int protocol) {
 
   ret = udp_verfiy_socket_args(domain, type, protocol);
   if (ret < 0) return NULL;
+
+  /* make sure tsc is ready, mudp_recvfrom will use tsc */
+  mt_wait_tsc_stable(impl);
 
   s = mt_rte_zmalloc_socket(sizeof(*s), mt_socket_id(impl, port));
   if (!s) {
@@ -487,7 +507,7 @@ rx_pool:
   }
 
   int ms = (mt_get_tsc(impl) - start_ts) / NS_PER_MS;
-  if (ms < s->rx_timeout_ms) {
+  if ((ms < s->rx_timeout_ms) && !mt_aborted(impl)) {
     goto rx_pool;
   }
 
