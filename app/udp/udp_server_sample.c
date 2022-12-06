@@ -153,13 +153,11 @@ int main(int argc, char** argv) {
   // stop app thread
   for (int i = 0; i < session_num; i++) {
     app[i]->stop = true;
-    info("%s(%d), stop thread\n", __func__, i);
+    dbg("%s(%d), stop thread\n", __func__, i);
     st_pthread_mutex_lock(&app[i]->wake_mutex);
     st_pthread_cond_signal(&app[i]->wake_cond);
     st_pthread_mutex_unlock(&app[i]->wake_mutex);
-    info("%s(%d), join thread\n", __func__, i);
     pthread_join(app[i]->thread, NULL);
-    info("%s(%d), join thread succ\n", __func__, i);
   }
 
 error:

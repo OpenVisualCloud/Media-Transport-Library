@@ -138,6 +138,75 @@ int mudp_set_tx_rate(mudp_handle ut, uint64_t bps);
 uint64_t mudp_get_tx_rate(mudp_handle ut);
 
 /**
+ * Set the tx timeout(ms) for one udp transport socket.
+ *
+ * @param ut
+ *   The handle to udp transport socket.
+ * @param ms
+ *   Tx timeout ms.
+ * @return
+ *   - 0: Success.
+ *   - <0: Error code.
+ */
+int mudp_set_tx_timeout_ms(mudp_handle ut, int ms);
+
+/**
+ * Get the tx timeout value for one udp transport socket.
+ *
+ * @param ut
+ *   The handle to udp transport socket.
+ * @return
+ *   - tx timeout: ms.
+ */
+int mudp_get_tx_timeout_ms(mudp_handle ut);
+
+/**
+ * Set the rx timeout(ms) for one udp transport socket.
+ *
+ * @param ut
+ *   The handle to udp transport socket.
+ * @param ms
+ *   Rx timeout ms.
+ * @return
+ *   - 0: Success.
+ *   - <0: Error code.
+ */
+int mudp_set_rx_timeout_ms(mudp_handle ut, int ms);
+
+/**
+ * Get the rx timeout value for one udp transport socket.
+ *
+ * @param ut
+ *   The handle to udp transport socket.
+ * @return
+ *   - Rx timeout: ms.
+ */
+int mudp_get_tx_timeout_ms(mudp_handle ut);
+
+/**
+ * Set the arp timeout(ms) for one udp transport socket.
+ *
+ * @param ut
+ *   The handle to udp transport socket.
+ * @param ms
+ *   Arp timeout ms.
+ * @return
+ *   - 0: Success.
+ *   - <0: Error code.
+ */
+int mudp_set_arp_timeout_ms(mudp_handle ut, int ms);
+
+/**
+ * Get the arp timeout value for one udp transport socket.
+ *
+ * @param ut
+ *   The handle to udp transport socket.
+ * @return
+ *   - arp timeout: ms.
+ */
+int mudp_get_arp_timeout_ms(mudp_handle ut);
+
+/**
  * Helper to init a IPv4 ANY addr.
  *
  * @param saddr
