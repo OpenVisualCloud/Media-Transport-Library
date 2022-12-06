@@ -3962,7 +3962,7 @@ static void st20_tx_ext_frame_rx_digest_test(enum st20_packing packing[],
     EXPECT_GE(test_ctx_rx[i]->fb_rec, 0);
     EXPECT_GT(test_ctx_rx[i]->check_sha_frame_cnt, 0);
 
-    EXPECT_LE(test_ctx_rx[i]->incomplete_frame_cnt, 2);
+    EXPECT_LE(test_ctx_rx[i]->incomplete_frame_cnt, 4);
     EXPECT_EQ(test_ctx_rx[i]->incomplete_slice_cnt, 0);
     EXPECT_EQ(test_ctx_rx[i]->fail_cnt, 0);
     info("%s, session %d fb_rec %d framerate %f fb_send %d\n", __func__, i,
