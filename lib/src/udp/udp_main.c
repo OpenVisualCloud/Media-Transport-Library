@@ -177,7 +177,7 @@ static int udp_init_txq(struct mtl_main_impl* impl, struct mudp_impl* s) {
   int idx = s->idx;
 
   /* queue, alloc rxq in the bind */
-  s->txq = mt_dev_get_tx_queue(impl, port, s->txq_bps);
+  s->txq = mt_dev_get_tx_queue(impl, port, s->txq_bps / 8);
   if (!s->txq) {
     err("%s(%d), get tx queue fail\n", __func__, idx);
     udp_uinit_txq(impl, s);
@@ -200,6 +200,13 @@ static int udp_init_txq(struct mtl_main_impl* impl, struct mudp_impl* s) {
 }
 
 static int udp_uinit_rxq(struct mtl_main_impl* impl, struct mudp_impl* s) {
+  if (udp_get_flag(s, MUDP_RX_MCAST_JOINED)) {
+    struct sockaddr_in* addr_in = &s->bind_addr;
+    uint8_t* ip = (uint8_t*)&addr_in->sin_addr;
+    mt_mcast_leave(impl, mt_ip_to_u32(ip), s->port);
+    udp_clear_flag(s, MUDP_RX_MCAST_JOINED);
+  }
+
   if (s->rxq) {
     mt_dev_put_rx_queue(impl, s->rxq);
     s->rxq = NULL;
@@ -247,6 +254,16 @@ static int udp_init_rxq(struct mtl_main_impl* impl, struct mudp_impl* s) {
     return -ENOMEM;
   }
   s->rx_ring = ring;
+
+  if (mt_is_multicast_ip(ip)) {
+    int ret = mt_mcast_join(impl, mt_ip_to_u32(ip), port);
+    if (ret < 0) {
+      err("%s(%d), mcast join fail\n", __func__, idx);
+      udp_uinit_rxq(impl, s);
+      return ret;
+    }
+    udp_set_flag(s, MUDP_RX_MCAST_JOINED);
+  }
 
   info("%s(%d), succ, ip %u.%u.%u.%u port %u\n", __func__, idx, ip[0], ip[1], ip[2],
        ip[3], flow.dst_port);
@@ -312,6 +329,9 @@ mudp_handle mudp_socket(mtl_handle mt, int domain, int type, int protocol) {
 
   ret = udp_verfiy_socket_args(domain, type, protocol);
   if (ret < 0) return NULL;
+
+  /* make sure tsc is ready, mudp_recvfrom will use tsc */
+  mt_wait_tsc_stable(impl);
 
   s = mt_rte_zmalloc_socket(sizeof(*s), mt_socket_id(impl, port));
   if (!s) {
@@ -487,10 +507,124 @@ rx_pool:
   }
 
   int ms = (mt_get_tsc(impl) - start_ts) / NS_PER_MS;
-  if (ms < s->rx_timeout_ms) {
+  if ((ms < s->rx_timeout_ms) && !mt_aborted(impl)) {
     goto rx_pool;
   }
 
   dbg("%s(%d), timeout to %d ms\n", __func__, idx, s->rx_timeout_ms);
   return -ETIMEDOUT;
+}
+
+int mudp_set_tx_rate(mudp_handle ut, uint64_t bps) {
+  struct mudp_impl* s = ut;
+  int idx = s->idx;
+
+  if (s->type != MT_HANDLE_UDP) {
+    err("%s(%d), invalid type %d\n", __func__, idx, s->type);
+    return -EIO;
+  }
+
+  if (udp_get_flag(s, MUDP_TXQ_ALLOC)) {
+    err("%s(%d), txq already alloced\n", __func__, idx);
+    return -EINVAL;
+  }
+
+  if (!bps) { /* todo: add more bps check */
+    err("%s(%d), invalid bps: %" PRIu64 "\n", __func__, idx, bps);
+    return -EINVAL;
+  }
+
+  s->txq_bps = bps;
+  info("%s(%d), new bps: %" PRIu64 "\n", __func__, idx, bps);
+  return 0;
+}
+
+uint64_t mudp_get_tx_rate(mudp_handle ut) {
+  struct mudp_impl* s = ut;
+  int idx = s->idx;
+
+  if (s->type != MT_HANDLE_UDP) {
+    err("%s(%d), invalid type %d\n", __func__, idx, s->type);
+    return -EIO;
+  }
+
+  return s->txq_bps;
+}
+
+int mudp_set_tx_timeout_ms(mudp_handle ut, int ms) {
+  struct mudp_impl* s = ut;
+  int idx = s->idx;
+
+  if (s->type != MT_HANDLE_UDP) {
+    err("%s(%d), invalid type %d\n", __func__, idx, s->type);
+    return -EIO;
+  }
+
+  s->tx_timeout_ms = ms;
+  info("%s(%d), new timeout: %u ms\n", __func__, idx, ms);
+  return 0;
+}
+
+int mudp_get_tx_timeout_ms(mudp_handle ut) {
+  struct mudp_impl* s = ut;
+  int idx = s->idx;
+
+  if (s->type != MT_HANDLE_UDP) {
+    err("%s(%d), invalid type %d\n", __func__, idx, s->type);
+    return -EIO;
+  }
+
+  return s->tx_timeout_ms;
+}
+
+int mudp_set_rx_timeout_ms(mudp_handle ut, int ms) {
+  struct mudp_impl* s = ut;
+  int idx = s->idx;
+
+  if (s->type != MT_HANDLE_UDP) {
+    err("%s(%d), invalid type %d\n", __func__, idx, s->type);
+    return -EIO;
+  }
+
+  s->rx_timeout_ms = ms;
+  info("%s(%d), new timeout: %u ms\n", __func__, idx, ms);
+  return 0;
+}
+
+int mudp_get_rx_timeout_ms(mudp_handle ut) {
+  struct mudp_impl* s = ut;
+  int idx = s->idx;
+
+  if (s->type != MT_HANDLE_UDP) {
+    err("%s(%d), invalid type %d\n", __func__, idx, s->type);
+    return -EIO;
+  }
+
+  return s->rx_timeout_ms;
+}
+
+int mudp_set_arp_timeout_ms(mudp_handle ut, int ms) {
+  struct mudp_impl* s = ut;
+  int idx = s->idx;
+
+  if (s->type != MT_HANDLE_UDP) {
+    err("%s(%d), invalid type %d\n", __func__, idx, s->type);
+    return -EIO;
+  }
+
+  s->arp_timeout_ms = ms;
+  info("%s(%d), new timeout: %u ms\n", __func__, idx, ms);
+  return 0;
+}
+
+int mudp_get_arp_timeout_ms(mudp_handle ut) {
+  struct mudp_impl* s = ut;
+  int idx = s->idx;
+
+  if (s->type != MT_HANDLE_UDP) {
+    err("%s(%d), invalid type %d\n", __func__, idx, s->type);
+    return -EIO;
+  }
+
+  return s->arp_timeout_ms;
 }
