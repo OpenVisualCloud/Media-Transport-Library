@@ -7,6 +7,7 @@
 #include <mudp_api.h>
 
 #include "../mt_log.h"
+#include "../mt_stat.h"
 
 static inline void udp_set_flag(struct mudp_impl* s, uint32_t flag) { s->flags |= flag; }
 
@@ -117,6 +118,7 @@ static int udp_build_tx_pkt(struct mtl_main_impl* impl, struct mudp_impl* s,
     ipv4->hdr_checksum = rte_ipv4_cksum(ipv4);
   }
 
+  s->stat_pkt_build++;
   return 0;
 }
 
@@ -285,6 +287,8 @@ static uint16_t udp_rx(struct mtl_main_impl* impl, struct mudp_impl* s) {
   struct rte_mbuf* valid_mbuf[rx];
   uint16_t valid_mbuf_cnt = 0;
 
+  s->stat_pkt_rx += rx;
+
   /* check if valid udp pkt */
   for (uint16_t i = 0; i < rx; i++) {
     struct mt_udp_hdr* hdr = rte_pktmbuf_mtod(pkt[i], struct mt_udp_hdr*);
@@ -315,6 +319,24 @@ static uint16_t udp_rx(struct mtl_main_impl* impl, struct mudp_impl* s) {
   }
 
   return n;
+}
+
+static int udp_stat_dump(void* priv) {
+  struct mudp_impl* s = priv;
+  int idx = s->idx;
+  if (s->stat_pkt_build) {
+    info("%s(%d), pkt build %d tx %d\n", __func__, idx, s->stat_pkt_build,
+         s->stat_pkt_tx);
+    s->stat_pkt_build = 0;
+    s->stat_pkt_tx = 0;
+  }
+  if (s->stat_pkt_rx) {
+    info("%s(%d), pkt rx %d deliver %d\n", __func__, idx, s->stat_pkt_rx,
+         s->stat_pkt_deliver);
+    s->stat_pkt_rx = 0;
+    s->stat_pkt_deliver = 0;
+  }
+  return 0;
 }
 
 mudp_handle mudp_socket(mtl_handle mt, int domain, int type, int protocol) {
@@ -358,6 +380,13 @@ mudp_handle mudp_socket(mtl_handle mt, int domain, int type, int protocol) {
     return NULL;
   }
 
+  ret = mt_stat_register(impl, udp_stat_dump, s);
+  if (ret < 0) {
+    err("%s(%d), hdr init fail\n", __func__, idx);
+    mudp_close(s);
+    return NULL;
+  }
+
   info("%s(%d), succ\n", __func__, idx);
   return s;
 }
@@ -371,6 +400,8 @@ int mudp_close(mudp_handle ut) {
     err("%s(%d), invalid type %d\n", __func__, idx, s->type);
     return -EIO;
   }
+
+  mt_stat_unregister(impl, udp_stat_dump, s);
 
   udp_uinit_txq(impl, s);
   udp_uinit_rxq(impl, s);
@@ -454,6 +485,7 @@ ssize_t mudp_sendto(mudp_handle ut, const void* buf, size_t len, int flags,
     rte_pktmbuf_free(m);
     return -EIO;
   }
+  s->stat_pkt_tx++;
 
   return len;
 }
@@ -490,6 +522,7 @@ dequeue:
     if (payload_len <= len) {
       rte_memcpy(buf, payload, payload_len);
       copied = payload_len;
+      s->stat_pkt_deliver++;
     } else {
       err("%s(%d), payload len %d buf len %d\n", __func__, idx, (int)payload_len,
           (int)len);

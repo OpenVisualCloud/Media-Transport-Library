@@ -15,6 +15,7 @@
 #include "mt_ptp.h"
 #include "mt_sch.h"
 #include "mt_socket.h"
+#include "mt_stat.h"
 #include "mt_util.h"
 #include "st2110/pipeline/st_plugin.h"
 #include "st2110/st_ancillary_transmitter.h"
@@ -189,6 +190,12 @@ static int mt_main_create(struct mtl_main_impl* impl) {
     return ret;
   }
 
+  ret = mt_stat_init(impl);
+  if (ret < 0) {
+    err("%s, mt stat init fail %d\n", __func__, ret);
+    return ret;
+  }
+
   pthread_create(&impl->tsc_cal_tid, NULL, mt_calibrate_tsc, impl);
 
   info("%s, succ\n", __func__);
@@ -213,6 +220,7 @@ static int mt_main_free(struct mtl_main_impl* impl) {
   mt_dma_uinit(impl);
 
   mt_dev_free(impl);
+  mt_stat_uinit(impl);
   info("%s, succ\n", __func__);
   return 0;
 }
