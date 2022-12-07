@@ -2314,7 +2314,7 @@ void tx_video_session_cal_cpu_busy(struct st_tx_video_session_impl* s) {
 }
 
 static void tv_stat(struct st_tx_video_sessions_mgr* mgr,
-                    struct st_tx_video_session_impl* s) {
+                    struct st_tx_video_session_impl* s, bool in_stop) {
   int m_idx = mgr->idx, idx = s->idx;
   uint64_t cur_time_ns = mt_get_monotonic_time();
   double time_sec = (double)(cur_time_ns - s->stat_last_time) / NS_PER_S;
@@ -2380,7 +2380,7 @@ static void tv_stat(struct st_tx_video_sessions_mgr* mgr,
            s->stat_vsync_mismatch);
     s->stat_vsync_mismatch = 0;
   }
-  if (frame_cnt <= 0) {
+  if ((frame_cnt <= 0) && !in_stop) {
     /* error level */
     err("TX_VIDEO_SESSION(%d,%d:%s): build ret %d, trs ret %d:%d\n", m_idx, idx,
         s->ops_name, s->stat_build_ret_code, s->stat_trs_ret_code[MT_SESSION_PORT_P],
@@ -2405,7 +2405,7 @@ static void tv_stat(struct st_tx_video_sessions_mgr* mgr,
 
 static int tv_detach(struct mtl_main_impl* impl, struct st_tx_video_sessions_mgr* mgr,
                      struct st_tx_video_session_impl* s) {
-  tv_stat(mgr, s);
+  tv_stat(mgr, s, true);
   /* must uinit hw firstly as frame use shared external buffer */
   tv_uinit_hw(impl, s);
   tv_uinit_sw(s);
@@ -2569,7 +2569,7 @@ void st_tx_video_sessions_stat(struct mtl_main_impl* impl) {
     for (int j = 0; j < mgr->max_idx; j++) {
       s = tx_video_session_get(mgr, j);
       if (!s) continue;
-      tv_stat(mgr, s);
+      tv_stat(mgr, s, false);
       tx_video_session_put(mgr, j);
     }
   }
