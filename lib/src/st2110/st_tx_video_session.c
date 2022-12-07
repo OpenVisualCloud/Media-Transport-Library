@@ -60,22 +60,10 @@ static void tv_notify_frame_done(struct st_tx_video_session_impl* s, uint16_t fr
 }
 
 static void tv_frame_free_cb(void* addr, void* opaque) {
-  struct st_tx_video_session_impl* s = opaque;
-  uint16_t frame_idx;
-  int idx = s->idx;
-  struct st_frame_trans* frame_info;
+  struct st_frame_trans* frame_info = opaque;
+  struct st_tx_video_session_impl* s = frame_info->priv;
 
-  for (frame_idx = 0; frame_idx < s->st20_frames_cnt; ++frame_idx) {
-    frame_info = &s->st20_frames[frame_idx];
-    if ((addr >= frame_info->addr) && (addr < (frame_info->addr + s->st20_fb_size)))
-      break;
-  }
-  if (frame_idx >= s->st20_frames_cnt) {
-    err("%s(%d), addr %p do not belong to the session\n", __func__, idx, addr);
-    return;
-  }
-
-  tv_notify_frame_done(s, frame_idx);
+  tv_notify_frame_done(s, frame_info->idx);
   rte_atomic32_dec(&frame_info->refcnt);
   /* clear ext frame info */
   if (frame_info->flags & ST_FT_FLAG_EXT) {
@@ -83,7 +71,7 @@ static void tv_frame_free_cb(void* addr, void* opaque) {
     frame_info->iova = 0;
   }
 
-  dbg("%s(%d), succ frame_idx %u\n", __func__, idx, frame_idx);
+  dbg("%s(%d), succ frame_idx %u\n", __func__, s->idx, frame_info->idx);
 }
 
 static int tv_alloc_frames(struct mtl_main_impl* impl,
@@ -111,7 +99,7 @@ static int tv_alloc_frames(struct mtl_main_impl* impl,
     frame_info = &s->st20_frames[i];
 
     frame_info->sh_info.free_cb = tv_frame_free_cb;
-    frame_info->sh_info.fcb_opaque = s;
+    frame_info->sh_info.fcb_opaque = frame_info;
     rte_mbuf_ext_refcnt_set(&frame_info->sh_info, 0);
 
     if (s->ops.flags & ST20_TX_FLAG_EXT_FRAME) {
@@ -133,6 +121,7 @@ static int tv_alloc_frames(struct mtl_main_impl* impl,
       frame_info->addr = frame;
       frame_info->flags = ST_FT_FLAG_RTE_MALLOC;
     }
+    frame_info->priv = s;
   }
 
   dbg("%s(%d), succ\n", __func__, idx);
@@ -2872,8 +2861,7 @@ int st20_tx_set_ext_frame(st20_tx_handle handle, uint16_t idx,
 
   for (int i = 0; i < s->st20_frames_cnt; i++) {
     if (addr == s->st20_frames[i].addr) {
-      err("buffer %p still in tansport!\n", addr);
-      return -EIO;
+      warn_once("%s(%d), buffer %p still in tansport!\n", __func__, s_idx, addr);
     }
   }
 
