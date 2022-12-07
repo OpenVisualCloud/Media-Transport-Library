@@ -11,6 +11,10 @@
 * csc: add y210 format support, y210 is the format for GPU yuv422 layout.
 * sch/tasklet: enhance sleep feature with timer based sleep and user control.
 * build: add AddressSanitizer(aka ASan) support, see asan.md
+* fps: add full fps support, see README.md.
+* st20p: add new st_frame_convert api; add external frame mode and packet level convert mode. See st_pipeline_api.h
+* plugin: implement OBS Studio source plugin, support UYVY/NV12/I420 formats.
+* Ext frame: add documentation for ext_frame, see external_frame.md.
 
 ## Change log for 22.09:
 * License: update to BSD-3
