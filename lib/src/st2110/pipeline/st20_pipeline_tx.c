@@ -497,9 +497,6 @@ int st20p_tx_put_ext_frame(st20p_tx_handle handle, struct st_frame* frame,
 
   uint8_t planes = st_frame_fmt_planes(framebuff->src.fmt);
   if (ctx->derive) {
-    framebuff->dst.addr[0] = ext_frame->addr[0];
-    framebuff->dst.iova[0] = ext_frame->iova[0];
-    framebuff->dst.flags |= ST_FRAME_FLAG_EXT_BUF;
     struct st20_ext_frame trans_ext_frame;
     trans_ext_frame.buf_addr = ext_frame->addr[0];
     trans_ext_frame.buf_iova = ext_frame->iova[0];
@@ -510,6 +507,9 @@ int st20p_tx_put_ext_frame(st20p_tx_handle handle, struct st_frame* frame,
       err("%s, set ext framebuffer fail %d fb_idx %d\n", __func__, ret, producer_idx);
       return -EIO;
     }
+    framebuff->dst.addr[0] = ext_frame->addr[0];
+    framebuff->dst.iova[0] = ext_frame->iova[0];
+    framebuff->dst.flags |= ST_FRAME_FLAG_EXT_BUF;
     framebuff->stat = ST20P_TX_FRAME_CONVERTED;
   } else {
     for (int plane = 0; plane < planes; plane++) {

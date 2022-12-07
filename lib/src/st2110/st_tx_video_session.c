@@ -2870,6 +2870,13 @@ int st20_tx_set_ext_frame(st20_tx_handle handle, uint16_t idx,
     return -EIO;
   }
 
+  for (int i = 0; i < s->st20_frames_cnt; i++) {
+    if (addr == s->st20_frames[i].addr) {
+      err("buffer %p still in tansport!\n", addr);
+      return -EIO;
+    }
+  }
+
   if (idx >= s->st20_frames_cnt) {
     err("%s(%d), invalid idx %d, should be in range [0, %d]\n", __func__, s_idx, idx,
         s->st20_frames_cnt);
