@@ -19,6 +19,7 @@
 
 #include "mt_mem.h"
 #include "mt_platform.h"
+#include "mt_queue.h"
 #include "mt_quirk.h"
 #include "st2110/st_header.h"
 
@@ -512,6 +513,23 @@ struct mt_var_params {
   uint64_t sch_zero_sleep_threshold_us;
 };
 
+typedef int (*mt_stat_cb_t)(void* priv);
+struct mt_stat_item {
+  /* stat dump callback func */
+  mt_stat_cb_t cb_func;
+  /* stat dump callback private data */
+  void* cb_priv;
+  /* linked list */
+  MT_TAILQ_ENTRY(mt_stat_item) next;
+};
+/* List of stat items */
+MT_TAILQ_HEAD(mt_stat_items_list, mt_stat_item);
+
+struct mt_stat_mgr {
+  pthread_mutex_t mutex;
+  struct mt_stat_items_list head;
+};
+
 struct mtl_main_impl {
   struct mt_interface inf[MTL_PORT_MAX];
 
@@ -530,6 +548,7 @@ struct mtl_main_impl {
   pthread_cond_t stat_wake_cond;
   pthread_mutex_t stat_wake_mutex;
   rte_atomic32_t stat_stop;
+  struct mt_stat_mgr stat_mgr;
 
   /* dev context */
   rte_atomic32_t instance_started;  /* if mt instance is started */

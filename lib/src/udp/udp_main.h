@@ -47,6 +47,13 @@ struct mudp_impl {
   int rx_timeout_ms;
 
   uint32_t flags;
+
+  /* stat */
+  /* do we need atomic here? atomic may impact the performance */
+  int stat_pkt_build;
+  int stat_pkt_tx;
+  int stat_pkt_rx;
+  int stat_pkt_deliver;
 };
 
 #endif
