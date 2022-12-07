@@ -1081,7 +1081,7 @@ static int tx_audio_session_attach(struct mtl_main_impl* impl,
   return 0;
 }
 
-static void tx_audio_session_stat(struct st_tx_audio_session_impl* s, bool in_stop) {
+static void tx_audio_session_stat(struct st_tx_audio_session_impl* s) {
   int idx = s->idx;
   int frame_cnt = rte_atomic32_read(&s->st30_stat_frame_cnt);
 
@@ -1096,7 +1096,7 @@ static void tx_audio_session_stat(struct st_tx_audio_session_impl* s, bool in_st
     notice("TX_AUDIO_SESSION(%d): st30 epoch mismatch %d\n", idx, s->st30_epoch_mismatch);
     s->st30_epoch_mismatch = 0;
   }
-  if ((frame_cnt <= 0) && !in_stop) {
+  if (frame_cnt <= 0) {
     /* error level */
     err("TX_AUDIO_SESSION(%d): build ret %d\n", idx, s->stat_build_ret_code);
   }
@@ -1110,7 +1110,7 @@ static void tx_audio_session_stat(struct st_tx_audio_session_impl* s, bool in_st
 
 static int tx_audio_session_detach(struct st_tx_audio_sessions_mgr* mgr,
                                    struct st_tx_audio_session_impl* s) {
-  tx_audio_session_stat(s, true);
+  tx_audio_session_stat(s);
   tx_audio_session_uinit_sw(mgr, s);
   return 0;
 }
@@ -1259,7 +1259,7 @@ void st_tx_audio_sessions_stat(struct mtl_main_impl* impl) {
   for (int j = 0; j < mgr->max_idx; j++) {
     s = tx_audio_session_get(mgr, j);
     if (!s) continue;
-    tx_audio_session_stat(s, false);
+    tx_audio_session_stat(s);
     tx_audio_session_put(mgr, j);
   }
   if (mgr->st30_stat_pkts_burst > 0) {

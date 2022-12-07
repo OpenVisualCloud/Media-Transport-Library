@@ -1118,8 +1118,7 @@ static int tx_ancillary_session_attach(struct mtl_main_impl* impl,
   return 0;
 }
 
-static void tx_ancillary_session_stat(struct st_tx_ancillary_session_impl* s,
-                                      bool in_stop) {
+static void tx_ancillary_session_stat(struct st_tx_ancillary_session_impl* s) {
   int idx = s->idx;
   int frame_cnt = rte_atomic32_read(&s->st40_stat_frame_cnt);
 
@@ -1133,7 +1132,7 @@ static void tx_ancillary_session_stat(struct st_tx_ancillary_session_impl* s,
     notice("TX_ANC_SESSION(%d): st40 epoch mismatch %d\n", idx, s->st40_epoch_mismatch);
     s->st40_epoch_mismatch = 0;
   }
-  if ((frame_cnt <= 0) && !in_stop) {
+  if (frame_cnt <= 0) { /* may error state */
     err("TX_ANC_SESSION(%d): build ret %d\n", idx, s->stat_build_ret_code);
   }
 
@@ -1146,7 +1145,7 @@ static void tx_ancillary_session_stat(struct st_tx_ancillary_session_impl* s,
 
 int tx_ancillary_session_detach(struct st_tx_ancillary_sessions_mgr* mgr,
                                 struct st_tx_ancillary_session_impl* s) {
-  tx_ancillary_session_stat(s, true);
+  tx_ancillary_session_stat(s);
   tx_ancillary_session_uinit_sw(mgr, s);
   return 0;
 }
@@ -1271,7 +1270,7 @@ void st_tx_ancillary_sessions_stat(struct mtl_main_impl* impl) {
   for (int j = 0; j < mgr->max_idx; j++) {
     s = tx_ancillary_session_get(mgr, j);
     if (!s) continue;
-    tx_ancillary_session_stat(s, false);
+    tx_ancillary_session_stat(s);
     tx_ancillary_session_put(mgr, j);
   }
   if (mgr->st40_stat_pkts_burst > 0) {
