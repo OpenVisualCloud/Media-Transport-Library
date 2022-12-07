@@ -62,8 +62,13 @@ static void tv_notify_frame_done(struct st_tx_video_session_impl* s, uint16_t fr
 static void tv_frame_free_cb(void* addr, void* opaque) {
   struct st_frame_trans* frame_info = opaque;
   struct st_tx_video_session_impl* s = frame_info->priv;
+  int s_idx = s->idx, frame_idx = frame_info->idx;
 
-  tv_notify_frame_done(s, frame_info->idx);
+  if ((addr < frame_info->addr) || (addr >= (frame_info->addr + s->st20_fb_size)))
+    err("%s(%d), addr %p does not belong to frame %d\n", __func__, s_idx, addr,
+        frame_idx);
+
+  tv_notify_frame_done(s, frame_idx);
   rte_atomic32_dec(&frame_info->refcnt);
   /* clear ext frame info */
   if (frame_info->flags & ST_FT_FLAG_EXT) {
@@ -71,7 +76,7 @@ static void tv_frame_free_cb(void* addr, void* opaque) {
     frame_info->iova = 0;
   }
 
-  dbg("%s(%d), succ frame_idx %u\n", __func__, s->idx, frame_info->idx);
+  dbg("%s(%d), succ frame_idx %d\n", __func__, s_idx, frame_idx);
 }
 
 static int tv_alloc_frames(struct mtl_main_impl* impl,
