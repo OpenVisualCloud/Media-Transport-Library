@@ -2381,10 +2381,9 @@ static void tv_stat(struct st_tx_video_sessions_mgr* mgr,
     s->stat_vsync_mismatch = 0;
   }
   if (frame_cnt <= 0) {
-    /* error level */
-    err("TX_VIDEO_SESSION(%d,%d:%s): build ret %d, trs ret %d:%d\n", m_idx, idx,
-        s->ops_name, s->stat_build_ret_code, s->stat_trs_ret_code[MT_SESSION_PORT_P],
-        s->stat_trs_ret_code[MT_SESSION_PORT_R]);
+    warn("TX_VIDEO_SESSION(%d,%d:%s): build ret %d, trs ret %d:%d\n", m_idx, idx,
+         s->ops_name, s->stat_build_ret_code, s->stat_trs_ret_code[MT_SESSION_PORT_P],
+         s->stat_trs_ret_code[MT_SESSION_PORT_R]);
   }
 
   /* check frame busy stat */
