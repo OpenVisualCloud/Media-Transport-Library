@@ -5,6 +5,8 @@
 #ifndef _MT_LIB_QUEUE_HEAD_H_
 #define _MT_LIB_QUEUE_HEAD_H_
 
+#include <sys/queue.h>
+
 /* Macros compatible with system's sys/queue.h */
 #define MT_TAILQ_HEAD(name, type) RTE_TAILQ_HEAD(name, type)
 #define MT_TAILQ_ENTRY(type) RTE_TAILQ_ENTRY(type)
