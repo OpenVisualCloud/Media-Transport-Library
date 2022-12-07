@@ -501,7 +501,6 @@ int st20p_tx_put_ext_frame(st20p_tx_handle handle, struct st_frame* frame,
     trans_ext_frame.buf_addr = ext_frame->addr[0];
     trans_ext_frame.buf_iova = ext_frame->iova[0];
     trans_ext_frame.buf_len = ext_frame->size;
-    trans_ext_frame.opaque = ext_frame->opaque;
     ret = st20_tx_set_ext_frame(ctx->transport, producer_idx, &trans_ext_frame);
     if (ret < 0) {
       err("%s, set ext framebuffer fail %d fb_idx %d\n", __func__, ret, producer_idx);
@@ -509,6 +508,7 @@ int st20p_tx_put_ext_frame(st20p_tx_handle handle, struct st_frame* frame,
     }
     framebuff->dst.addr[0] = ext_frame->addr[0];
     framebuff->dst.iova[0] = ext_frame->iova[0];
+    framebuff->dst.opaque = ext_frame->opaque;
     framebuff->dst.flags |= ST_FRAME_FLAG_EXT_BUF;
     framebuff->stat = ST20P_TX_FRAME_CONVERTED;
   } else {
