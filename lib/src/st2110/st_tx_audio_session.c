@@ -1097,8 +1097,7 @@ static void tx_audio_session_stat(struct st_tx_audio_session_impl* s) {
     s->st30_epoch_mismatch = 0;
   }
   if (frame_cnt <= 0) {
-    /* error level */
-    err("TX_AUDIO_SESSION(%d): build ret %d\n", idx, s->stat_build_ret_code);
+    warn("TX_AUDIO_SESSION(%d): build ret %d\n", idx, s->stat_build_ret_code);
   }
 
   if (s->stat_error_user_timestamp) {
@@ -1267,8 +1266,8 @@ void st_tx_audio_sessions_stat(struct mtl_main_impl* impl) {
     mgr->st30_stat_pkts_burst = 0;
   } else {
     if (mgr->max_idx > 0) {
-      err("TX_AUDIO_SESSION: trs ret %d:%d\n", mgr->stat_trs_ret_code[MTL_PORT_P],
-          mgr->stat_trs_ret_code[MTL_PORT_R]);
+      warn("TX_AUDIO_SESSION: trs ret %d:%d\n", mgr->stat_trs_ret_code[MTL_PORT_P],
+           mgr->stat_trs_ret_code[MTL_PORT_R]);
     }
   }
 }

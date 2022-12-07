@@ -300,7 +300,7 @@ static void test_ctx_init(struct st_tests_context* ctx) {
 #endif
   memset(p, 0x0, sizeof(*p));
   p->flags = MTL_FLAG_BIND_NUMA; /* default bind to numa */
-  p->log_level = MTL_LOG_LEVEL_WARNING;
+  p->log_level = MTL_LOG_LEVEL_ERROR;
   p->priv = ctx;
   p->ptp_get_time_fn = temt_ptp_from_real_time;
   p->tx_sessions_cnt_max = 16;
