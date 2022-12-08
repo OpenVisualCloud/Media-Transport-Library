@@ -8,13 +8,20 @@
 * build: add clang support. See "Build with clang" section in build.md.
 * tx: add user pacing control, see ST20_TX_FLAG_USER_PACING, ST30_TX_FLAG_USER_PACING, ST40_TX_FLAG_USER_PACING.
 * video: add notify_vsync callback which happened when epoch time change to a new frame, vsync period is same to fps. See notify_vsync parameter in the session create ops for detail.
-* csc: add y210 format support, y210 is the format for GPU yuv422 layout.
+* csc: add y210 format support, y210 is the format for GPU 10bit yuv422 layout.
 * sch/tasklet: enhance sleep feature with timer based sleep and user control.
 * build: add AddressSanitizer(aka ASan) support, see asan.md
 * fps: add full fps support, see README.md.
-* st20p: add new st_frame_convert api; add external frame mode and packet level convert mode. See st_pipeline_api.h
 * plugin: implement OBS Studio source plugin, support UYVY/NV12/I420 formats.
-* Ext frame: add documentation for ext_frame, see external_frame.md.
+* ext frame: add external frame support, see doc/external_frame.md.
+* build: rename package name to mtl, also API naming prefix to mtl_xxx.
+* st20p: add YUV_422_12bit YUV_444_10bit YUV_444_12bit RGB_10bit RGB_12bit support.
+* plugin: add ffmpeg support with MTL package, see plugins/ffmpeg_plugin/.
+* st20p: add packet level convert mode, see ST20P_RX_FLAG_PKT_CONVERT.
+* arp: cache the results to a table, the second arp request can use the history results directly.
+* st20p: add plane and linesize support, see struct st_frame.
+* st20p: add st_frame_convert API which both the source and destination are st_frame.
+* sample: add MSDK encode sample with MTL source, see app/msdk.
 
 ## Change log for 22.09:
 * License: update to BSD-3
