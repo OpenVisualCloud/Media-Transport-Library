@@ -22,6 +22,7 @@
 * arp: cache the results to a table, the second arp request can use the history results directly.
 * st20p: add plane and linesize support, see struct st_frame.
 * st20p: add st_frame_convert API which both the source and destination are st_frame.
+* sample: add MSDK encode sample with MTL source, see app/msdk.
 
 ## Change log for 22.09:
 * License: update to BSD-3
