@@ -12,9 +12,8 @@
 * sch/tasklet: enhance sleep feature with timer based sleep and user control.
 * build: add AddressSanitizer(aka ASan) support, see asan.md
 * fps: add full fps support, see README.md.
-* st20p: add new st_frame_convert api; add external frame mode and packet level convert mode. See st_pipeline_api.h
 * plugin: implement OBS Studio source plugin, support UYVY/NV12/I420 formats.
-* Ext frame: add documentation for ext_frame, see external_frame.md.
+* ext frame: add external frame support, see doc/external_frame.md.
 * build: rename package name to mtl, also API naming prefix to mtl_xxx.
 * st20p: add YUV_422_12bit YUV_444_10bit YUV_444_12bit RGB_10bit RGB_12bit support.
 * plugin: add ffmpeg support with MTL package, see plugins/ffmpeg_plugin/.
