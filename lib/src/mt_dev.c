@@ -919,7 +919,13 @@ static int dev_start_port(struct mtl_main_impl* impl, enum mtl_port port) {
       struct rte_eth_rxseg_split* rx_seg;
 
       rx_seg = &rx_usegs[0].split;
+#if RTE_VERSION >= RTE_VERSION_NUM(22, 11, 0, 0)
+      rx_seg->proto_hdr =
+          RTE_PTYPE_L2_ETHER | RTE_PTYPE_L3_IPV4_EXT_UNKNOWN | RTE_PTYPE_L4_UDP;
+#else
       rx_seg->proto_hdr = RTE_PTYPE_L4_UDP;
+#endif
+
       rx_seg->offset = 0;
       rx_seg->length = 0;
       rx_seg->mp = mbuf_pool;
