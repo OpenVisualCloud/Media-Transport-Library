@@ -5,10 +5,14 @@
 #include "udp_main.h"
 
 #include <mudp_api.h>
-#include <poll.h>
 
 #include "../mt_log.h"
 #include "../mt_stat.h"
+
+#ifndef POLLIN /* For windows */
+/* There is data to read */
+#define POLLIN 0x001
+#endif
 
 static inline void udp_set_flag(struct mudp_impl* s, uint32_t flag) { s->flags |= flag; }
 

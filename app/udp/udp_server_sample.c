@@ -11,6 +11,11 @@
 #include <mtl/mudp_api.h>
 // clang-format on
 
+#ifndef POLLIN /* For windows */
+/* There is data to read */
+#define POLLIN 0x001
+#endif
+
 struct udp_server_sample_ctx {
   mtl_handle st;
   int idx;
@@ -114,7 +119,7 @@ static void* udp_server_transport_poll_thread(void* arg) {
 
 static void* udp_servers_poll_thread(void* arg) {
   struct udp_server_samples_ctx* ctxs = arg;
-  struct udp_server_sample_ctx* s;
+  struct udp_server_sample_ctx* s = NULL;
   int apps_cnt = ctxs->apps_cnt;
   mudp_handle socket;
   ssize_t udp_len = MUDP_MAX_BYTES;
@@ -128,7 +133,7 @@ static void* udp_servers_poll_thread(void* arg) {
     fds[i].events = POLLIN;
   }
 
-  info("%s, start socket %p\n", __func__, s);
+  info("%s, start at %p\n", __func__, ctxs);
   while (!ctxs->stop) {
     int ret = mudp_poll(fds, apps_cnt, 100);
     if (ret <= 0) continue;
