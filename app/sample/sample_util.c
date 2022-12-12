@@ -172,6 +172,10 @@ static int _sample_parse_args(struct st_sample_context* ctx, int argc, char** ar
           ctx->udp_mode = SAMPLE_UDP_DEFAULT;
         else if (!strcmp(optarg, "transport"))
           ctx->udp_mode = SAMPLE_UDP_TRANSPORT;
+        else if (!strcmp(optarg, "transport_poll"))
+          ctx->udp_mode = SAMPLE_UDP_TRANSPORT_POLL;
+        else if (!strcmp(optarg, "transport_unify_poll"))
+          ctx->udp_mode = SAMPLE_UDP_TRANSPORT_UNIFY_POLL;
         else
           err("%s, unknow udp_mode %s\n", __func__, optarg);
         break;

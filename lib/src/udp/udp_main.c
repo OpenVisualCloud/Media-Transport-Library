@@ -5,6 +5,7 @@
 #include "udp_main.h"
 
 #include <mudp_api.h>
+#include <poll.h>
 
 #include "../mt_log.h"
 #include "../mt_stat.h"
@@ -64,6 +65,26 @@ static int udp_verfiy_sendto_args(size_t len, int flags, const struct sockaddr_i
   if (flags) {
     err("%s, invalid flags %d\n", __func__, flags);
     return -EINVAL;
+  }
+
+  return 0;
+}
+
+static int udp_verfiy_poll(struct mudp_pollfd* fds, mudp_nfds_t nfds, int timeout) {
+  if (!fds) {
+    err("%s, NULL fds\n", __func__);
+    return -EINVAL;
+  }
+  if (nfds <= 0) {
+    err("%s, invalid nfds %d\n", __func__, (int)nfds);
+    return -EINVAL;
+  }
+  for (mudp_nfds_t i = 0; i < nfds; i++) {
+    if (!(fds[i].events & POLLIN)) {
+      err("%s(%d), invalid events 0x%x\n", __func__, (int)i, fds[i].events);
+      return -EINVAL;
+    }
+    fds[i].revents = 0;
   }
 
   return 0;
@@ -488,6 +509,60 @@ ssize_t mudp_sendto(mudp_handle ut, const void* buf, size_t len, int flags,
   s->stat_pkt_tx++;
 
   return len;
+}
+
+int mudp_poll(struct mudp_pollfd* fds, mudp_nfds_t nfds, int timeout) {
+  int ret = udp_verfiy_poll(fds, nfds, timeout);
+  if (ret < 0) return ret;
+
+  struct mudp_impl* s = fds[0].fd;
+  struct mtl_main_impl* impl = s->parnet;
+  uint64_t start_ts = mt_get_tsc(impl);
+  int rc;
+  uint16_t rx;
+
+  /* init rxq if not */
+  for (mudp_nfds_t i = 0; i < nfds; i++) {
+    s = fds[i].fd;
+    if (!udp_get_flag(s, MUDP_RXQ_ALLOC)) {
+      ret = udp_init_rxq(impl, s);
+      if (ret < 0) {
+        err("%s(%d), init rxq fail\n", __func__, s->idx);
+        return ret;
+      }
+    }
+  }
+
+  /* first check if it has any pending pkt in the ring */
+pool_in:
+  rc = 0;
+  for (mudp_nfds_t i = 0; i < nfds; i++) {
+    s = fds[i].fd;
+    unsigned int count = rte_ring_count(s->rx_ring);
+    if (count > 0) {
+      rc++;
+      fds[i].revents = POLLIN;
+      dbg("%s(%d), ring count %u\n", __func__, s->idx, count);
+    }
+  }
+  if (rc > 0) return rc;
+
+  /* rx poll */
+rx_pool:
+  rx = 0;
+  for (mudp_nfds_t i = 0; i < nfds; i++) {
+    s = fds[i].fd;
+    rx += udp_rx(impl, s);
+  }
+  if (rx > 0) goto pool_in;
+
+  int ms = (mt_get_tsc(impl) - start_ts) / NS_PER_MS;
+  if ((ms < timeout) && !mt_aborted(impl)) {
+    goto rx_pool;
+  }
+
+  dbg("%s, timeout to %d ms\n", __func__, timeout);
+  return 0;
 }
 
 ssize_t mudp_recvfrom(mudp_handle ut, void* buf, size_t len, int flags,

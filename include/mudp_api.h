@@ -93,6 +93,41 @@ ssize_t mudp_sendto(mudp_handle ut, const void* buf, size_t len, int flags,
                     const struct sockaddr* dest_addr, socklen_t addrlen);
 
 /**
+ * The structure describing a polling request on mudp.
+ */
+struct mudp_pollfd {
+  /** The handle to udp transport socket. */
+  mudp_handle fd;
+  /** requested events, only support POLLIN(data to read) */
+  short events;
+  /** returned events */
+  short revents;
+};
+
+/**
+ * Alias to nfds_t
+ */
+typedef unsigned long int mudp_nfds_t;
+
+/**
+ * Poll the udp transport socket, blocks until one of the events occurs.
+ * Only support POLLIN now.
+ *
+ * @param fds
+ *   Point to mudp_pollfd request.
+ * @param nfds
+ *   The number of request in fds.
+ * @param timeout
+ *   timeout value in ms.
+ * @return
+ *   - > 0: Success, returns a nonnegative value which is the number of elements
+ *          in the fds whose revents fields have been set to a nonzero value.
+ *   - =0: Timeout.
+ *   - <0: Error code.
+ */
+int mudp_poll(struct mudp_pollfd* fds, mudp_nfds_t nfds, int timeout);
+
+/**
  * Receive data on the udp transport socket.
  *
  * @param ut

@@ -165,7 +165,9 @@ int main(int argc, char** argv) {
       goto error;
     }
 
-    if (ctx.udp_mode == SAMPLE_UDP_TRANSPORT)
+    if ((ctx.udp_mode == SAMPLE_UDP_TRANSPORT) ||
+        (ctx.udp_mode == SAMPLE_UDP_TRANSPORT_POLL) ||
+        (ctx.udp_mode == SAMPLE_UDP_TRANSPORT_UNIFY_POLL))
       ret = pthread_create(&app[i]->thread, NULL, udp_client_transport_thread, app[i]);
     else
       ret = pthread_create(&app[i]->thread, NULL, udp_client_thread, app[i]);
