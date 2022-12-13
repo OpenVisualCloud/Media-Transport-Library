@@ -161,11 +161,19 @@ struct mt_ptp_impl {
   uint64_t expect_result_start_ns;
   uint64_t expect_result_period_ns;
 
+  /* calculate sw frequency */
+  uint64_t last_sync_ts;
+  double coefficient;
+
   /* status */
   int64_t stat_delta_min;
   int64_t stat_delta_max;
   int32_t stat_delta_cnt;
   int64_t stat_delta_sum;
+  int64_t stat_correct_delta_min;
+  int64_t stat_correct_delta_max;
+  int32_t stat_correct_delta_cnt;
+  int64_t stat_correct_delta_sum;
   int32_t stat_rx_sync_err;
   int32_t stat_tx_sync_err;
   int32_t stat_result_err;
