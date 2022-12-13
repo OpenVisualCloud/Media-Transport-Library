@@ -39,8 +39,9 @@ static inline void ptp_timesync_unlock(struct mt_ptp_impl* ptp) { /* todo */
 }
 
 static inline uint64_t ptp_correct_ts(struct mt_ptp_impl* ptp, uint64_t ts) {
-  uint64_t ts_local_advanced = ts - ptp->last_sync_ts;
-  return ptp->coefficient * ts_local_advanced + ts;
+  int64_t ts_local_advanced = ts - ptp->last_sync_ts;
+  int64_t ts_ptp_advanced = ptp->coefficient * ts_local_advanced;
+  return ptp->last_sync_ts + ts_ptp_advanced;
 }
 
 static inline int ptp_get_time_spec(struct mt_ptp_impl* ptp, struct timespec* spec) {
@@ -117,7 +118,9 @@ static inline void ptp_set_master_addr(struct mt_ptp_impl* ptp,
 }
 
 static void ptp_adjust_delta(struct mt_ptp_impl* ptp, int64_t delta) {
-  ptp->coefficient = (double)delta / (ptp_get_raw_time(ptp) - ptp->last_sync_ts);
+  uint64_t ts_s = ptp_get_raw_time(ptp);
+  uint64_t ts_m = ts_s + delta;
+  ptp->coefficient = (double)(ts_m - ptp->last_sync_ts) / (ts_s - ptp->last_sync_ts);
   ptp_timesync_lock(ptp);
   rte_eth_timesync_adjust_time(ptp->port_id, delta);
   ptp_timesync_unlock(ptp);
