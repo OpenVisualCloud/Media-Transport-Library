@@ -12,6 +12,7 @@
 #include <net/if.h>
 #include <net/if_arp.h>
 #include <numa.h>
+#include <poll.h>
 #include <sys/ioctl.h>
 #include <sys/shm.h>
 #include <sys/socket.h>

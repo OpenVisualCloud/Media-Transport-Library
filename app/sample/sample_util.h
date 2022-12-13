@@ -50,8 +50,14 @@
 #define ST_SAMPLE_URL_MAX_LEN (256)
 
 enum sample_udp_mode {
-  SAMPLE_UDP_DEFAULT = 0, /* client/server mode */
-  SAMPLE_UDP_TRANSPORT,   /* transport only */
+  /* client/server mode */
+  SAMPLE_UDP_DEFAULT = 0,
+  /* transport only */
+  SAMPLE_UDP_TRANSPORT,
+  /* transport with poll */
+  SAMPLE_UDP_TRANSPORT_POLL,
+  /* transport with unify poll */
+  SAMPLE_UDP_TRANSPORT_UNIFY_POLL,
   SAMPLE_UDP_MODE_MAX,
 };
 
