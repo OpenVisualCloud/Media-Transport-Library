@@ -1589,7 +1589,9 @@ struct mt_rx_queue* mt_dev_get_rx_queue(struct mtl_main_impl* impl, enum mtl_por
 
         r_flow = dev_rx_queue_create_flow(inf, q, flow);
         if (!r_flow) {
-          err("%s(%d), create flow fail for queue %d\n", __func__, port, q);
+          uint8_t* ip = flow->dip_addr;
+          err("%s(%d), create flow fail for queue %d, ip %u.%u.%u.%u port %u\n", __func__,
+              port, q, ip[0], ip[1], ip[2], ip[3], flow->dst_port);
           mt_pthread_mutex_unlock(&inf->rx_queues_mutex);
           return NULL;
         }
@@ -1611,7 +1613,13 @@ struct mt_rx_queue* mt_dev_get_rx_queue(struct mtl_main_impl* impl, enum mtl_por
     mt_pthread_mutex_unlock(&inf->rx_queues_mutex);
 
     dev_flush_rx_queue(inf, rx_queue);
-    info("%s(%d), q %d\n", __func__, port, q);
+    if (flow) {
+      uint8_t* ip = flow->dip_addr;
+      info("%s(%d), q %u ip %u.%u.%u.%u port %u\n", __func__, port, q, ip[0], ip[1],
+           ip[2], ip[3], flow->dst_port);
+    } else {
+      info("%s(%d), q %u\n", __func__, port, q);
+    }
     return rx_queue;
   }
   mt_pthread_mutex_unlock(&inf->rx_queues_mutex);

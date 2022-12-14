@@ -412,7 +412,7 @@ mudp_handle mudp_socket(mtl_handle mt, int domain, int type, int protocol) {
     return NULL;
   }
 
-  info("%s(%d), succ\n", __func__, idx);
+  info("%s(%d), succ, socket %p\n", __func__, idx, s);
   return s;
 }
 
@@ -602,6 +602,19 @@ dequeue:
       rte_memcpy(buf, payload, payload_len);
       copied = payload_len;
       s->stat_pkt_deliver++;
+
+      if (src_addr) { /* only AF_INET now*/
+        struct sockaddr_in addr_in;
+        struct rte_ipv4_hdr* ipv4 = &hdr->ipv4;
+
+        memset(&addr_in, 0, sizeof(addr_in));
+        addr_in.sin_family = AF_INET;
+        addr_in.sin_port = udp->src_port;
+        addr_in.sin_addr.s_addr = ipv4->src_addr;
+        dbg("%s(%d), dst port %u src port %u\n", __func__, idx, ntohs(udp->dst_port),
+            ntohs(udp->src_port));
+        rte_memcpy((void*)src_addr, &addr_in, *addrlen);
+      }
     } else {
       err("%s(%d), payload len %d buf len %d\n", __func__, idx, (int)payload_len,
           (int)len);

@@ -440,8 +440,14 @@ mtl_handle mtl_init(struct mtl_init_params* p) {
   rte_atomic32_set(&impl->instance_aborted, 0);
   rte_atomic32_set(&impl->instance_in_reset, 0);
   impl->lcore_lock_fd = -1;
-  impl->tx_sessions_cnt_max = RTE_MIN(180, p->tx_sessions_cnt_max);
-  impl->rx_sessions_cnt_max = RTE_MIN(180, p->rx_sessions_cnt_max);
+  if (p->tx_sessions_cnt_max)
+    impl->tx_sessions_cnt_max = RTE_MIN(180, p->tx_sessions_cnt_max);
+  else
+    impl->tx_sessions_cnt_max = 64;
+  if (p->rx_sessions_cnt_max)
+    impl->rx_sessions_cnt_max = RTE_MIN(180, p->rx_sessions_cnt_max);
+  else
+    impl->rx_sessions_cnt_max = 64;
   info("%s, max sessions tx %d rx %d, flags 0x%" PRIx64 "\n", __func__,
        impl->tx_sessions_cnt_max, impl->rx_sessions_cnt_max,
        mt_get_user_params(impl)->flags);
