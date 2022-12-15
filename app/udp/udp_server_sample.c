@@ -2,8 +2,6 @@
  * Copyright(c) 2022 Intel Corporation
  */
 
-#include <poll.h>
-
 #include "../sample/sample_util.h"
 
 /* include "struct sockaddr_in" define before include mudp_api */
