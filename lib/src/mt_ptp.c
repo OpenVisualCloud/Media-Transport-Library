@@ -194,7 +194,7 @@ static int ptp_parse_result(struct mt_ptp_impl* ptp) {
   int64_t correct_delta = ((int64_t)ptp->t4 - ptp_correct_ts(ptp, ptp->t3)) -
                           ((int64_t)ptp_correct_ts(ptp, ptp->t2) - ptp->t1);
   correct_delta /= 2;
-  info("%s(%d), correct_delta %ld\n", __func__, ptp->port, correct_delta);
+  dbg("%s(%d), correct_delta %ld\n", __func__, ptp->port, correct_delta);
   /* cancel the monitor */
   rte_eal_alarm_cancel(ptp_sync_timeout_handler, ptp);
   rte_eal_alarm_cancel(ptp_monitor_handler, ptp);
