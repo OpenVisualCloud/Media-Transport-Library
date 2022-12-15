@@ -57,15 +57,6 @@ static inline int ptp_get_time_spec(struct mt_ptp_impl* ptp, struct timespec* sp
   return ret;
 }
 
-static inline uint64_t ptp_get_correct_time(struct mt_ptp_impl* ptp) {
-  struct timespec spec;
-
-  ptp_get_time_spec(ptp, &spec);
-  uint64_t ts = mt_timespec_to_ns(&spec);
-  if (ptp->coefficient != 1.0) ts = ptp_correct_ts(ptp, ts);
-  return ts;
-}
-
 static inline uint64_t ptp_get_raw_time(struct mt_ptp_impl* ptp) {
   struct timespec spec;
 
@@ -73,15 +64,15 @@ static inline uint64_t ptp_get_raw_time(struct mt_ptp_impl* ptp) {
   return mt_timespec_to_ns(&spec);
 }
 
-static uint64_t ptp_get_time(struct mt_ptp_impl* ptp) {
+static uint64_t ptp_get_correct_time(struct mt_ptp_impl* ptp) {
   struct timespec spec;
 
   ptp_get_time_spec(ptp, &spec);
-  return mt_timespec_to_ns(&spec);
+  return ptp_correct_ts(ptp, mt_timespec_to_ns(&spec));
 }
 
 static uint64_t ptp_from_eth(struct mtl_main_impl* impl, enum mtl_port port) {
-  return ptp_get_time(mt_get_ptp(impl, port));
+  return ptp_get_correct_time(mt_get_ptp(impl, port));
 }
 
 static void ptp_print_port_id(enum mtl_port port, struct mt_ptp_port_id* pid) {
@@ -124,9 +115,9 @@ static void ptp_adjust_delta(struct mt_ptp_impl* ptp, int64_t delta) {
   ptp_timesync_lock(ptp);
   rte_eth_timesync_adjust_time(ptp->port_id, delta);
   ptp_timesync_unlock(ptp);
-  ptp->last_sync_ts = ptp_get_raw_time(ptp);
+  ptp->last_sync_ts = ts_m;
   dbg("%s(%d), delta %" PRId64 ", co %.15lf, ptp %" PRIu64 "\n", __func__, ptp->port,
-      delta, ptp->coefficient, ptp_get_raw_time(ptp));
+      delta, ptp->coefficient, ts_m);
   ptp->ptp_delta += delta;
 
   if (5 == ptp->delta_result_cnt) /* clear the first 5 results */
@@ -625,6 +616,7 @@ static int ptp_init(struct mtl_main_impl* impl, struct mt_ptp_impl* ptp,
   ptp->mbuf_pool = mt_get_tx_mempool(impl, port);
   ptp->master_initialized = false;
   ptp->t3_sequence_id = 0x1000 * port;
+  ptp->coefficient = 1.0;
 
   struct mtl_init_params* p = mt_get_user_params(impl);
   if (p->flags & MTL_FLAG_PTP_UNICAST_ADDR) {
@@ -633,8 +625,6 @@ static int ptp_init(struct mtl_main_impl* impl, struct mt_ptp_impl* ptp,
   } else {
     ptp->master_addr_mode = MT_PTP_MULTICAST_ADDR;
   }
-
-  ptp->coefficient = 1.0;
 
   ptp_stat_clear(ptp);
 
@@ -848,5 +838,5 @@ int mt_ptp_uinit(struct mtl_main_impl* impl) {
 }
 
 uint64_t mt_get_raw_ptp_time(struct mtl_main_impl* impl, enum mtl_port port) {
-  return ptp_get_correct_time(mt_get_ptp(impl, port));
+  return ptp_get_raw_time(mt_get_ptp(impl, port));
 }
