@@ -840,3 +840,11 @@ int mt_ptp_uinit(struct mtl_main_impl* impl) {
 uint64_t mt_get_raw_ptp_time(struct mtl_main_impl* impl, enum mtl_port port) {
   return ptp_get_raw_time(mt_get_ptp(impl, port));
 }
+
+uint64_t mt_mbuf_hw_time_stamp(struct mtl_main_impl* impl, struct rte_mbuf* mbuf) {
+  struct mt_ptp_impl* ptp = impl->ptp;
+  uint64_t time_stamp =
+      *RTE_MBUF_DYNFIELD(mbuf, impl->dynfield_offset, rte_mbuf_timestamp_t*);
+  time_stamp += ptp->ptp_delta;
+  return ptp_correct_ts(ptp, time_stamp);
+}

@@ -1028,18 +1028,7 @@ static inline uint32_t st_rx_mbuf_get_len(struct rte_mbuf* mbuf) {
   return priv->rx_priv.len;
 }
 
-static inline uint64_t mt_mbuf_hw_time_stamp(struct mtl_main_impl* impl,
-                                             struct rte_mbuf* mbuf) {
-  struct mt_ptp_impl* ptp = impl->ptp;
-  struct timespec spec;
-  uint64_t time_stamp =
-      *RTE_MBUF_DYNFIELD(mbuf, impl->dynfield_offset, rte_mbuf_timestamp_t*);
-  mt_ns_to_timespec(time_stamp, &spec);
-  time_stamp = mt_timespec_to_ns(&spec);
-  int64_t ts_local_advanced = time_stamp - ptp->last_sync_ts;
-  int64_t ts_ptp_advanced = ptp->coefficient * ts_local_advanced;
-  return ptp->last_sync_ts + ts_ptp_advanced;
-}
+uint64_t mt_mbuf_hw_time_stamp(struct mtl_main_impl* impl, struct rte_mbuf* mbuf);
 
 static inline uint64_t mt_get_ptp_time(struct mtl_main_impl* impl, enum mtl_port port) {
   return mt_if(impl, port)->ptp_get_time_fn(impl, port);
