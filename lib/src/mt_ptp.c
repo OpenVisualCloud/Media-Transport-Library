@@ -108,16 +108,40 @@ static inline void ptp_set_master_addr(struct mt_ptp_impl* ptp,
   }
 }
 
-static void ptp_adjust_delta(struct mt_ptp_impl* ptp, int64_t delta) {
+static void ptp_coeffcient_result_reset(struct mt_ptp_impl* ptp) {
+  ptp->coefficient_result_sum = 0.0;
+  ptp->coefficient_result_min = 2.0;
+  ptp->coefficient_result_max = 0.0;
+  ptp->coefficient_result_cnt = 0;
+}
+
+static void ptp_calculate_coefficient(struct mt_ptp_impl* ptp, int64_t delta) {
   uint64_t ts_s = ptp_get_raw_time(ptp);
   uint64_t ts_m = ts_s + delta;
-  ptp->coefficient = (double)(ts_m - ptp->last_sync_ts) / (ts_s - ptp->last_sync_ts);
-  ptp_timesync_lock(ptp);
-  rte_eth_timesync_adjust_time(ptp->port_id, delta);
-  ptp_timesync_unlock(ptp);
+  double coefficient = (double)(ts_m - ptp->last_sync_ts) / (ts_s - ptp->last_sync_ts);
+  ptp->coefficient_result_sum += coefficient;
+  ptp->coefficient_result_min = RTE_MIN(coefficient, ptp->coefficient_result_min);
+  ptp->coefficient_result_max = RTE_MAX(coefficient, ptp->coefficient_result_max);
+  ptp->coefficient_result_cnt++;
+  if (ptp->coefficient_result_cnt == 10) {
+    /* get every 10 results' average */
+    ptp->coefficient_result_sum -= ptp->coefficient_result_min;
+    ptp->coefficient_result_sum -= ptp->coefficient_result_max;
+    ptp->coefficient = ptp->coefficient_result_sum / 8;
+    ptp_coeffcient_result_reset(ptp);
+  }
   ptp->last_sync_ts = ts_m;
   dbg("%s(%d), delta %" PRId64 ", co %.15lf, ptp %" PRIu64 "\n", __func__, ptp->port,
       delta, ptp->coefficient, ts_m);
+}
+
+static void ptp_adjust_delta(struct mt_ptp_impl* ptp, int64_t delta) {
+  ptp_timesync_lock(ptp);
+  rte_eth_timesync_adjust_time(ptp->port_id, delta);
+  ptp_timesync_unlock(ptp);
+
+  dbg("%s(%d), delta %" PRId64 ", ptp %" PRIu64 "\n", __func__, ptp->port, delta,
+      ptp_get_raw_time(ptp));
   ptp->ptp_delta += delta;
 
   if (5 == ptp->delta_result_cnt) /* clear the first 5 results */
@@ -195,6 +219,12 @@ static int ptp_parse_result(struct mt_ptp_impl* ptp) {
                           ((int64_t)ptp_correct_ts(ptp, ptp->t2) - ptp->t1);
   correct_delta /= 2;
   dbg("%s(%d), correct_delta %ld\n", __func__, ptp->port, correct_delta);
+  /* update correct delta result */
+  ptp->stat_correct_delta_min = RTE_MIN(correct_delta, ptp->stat_correct_delta_min);
+  ptp->stat_correct_delta_max = RTE_MAX(correct_delta, ptp->stat_correct_delta_max);
+  ptp->stat_correct_delta_cnt++;
+  ptp->stat_correct_delta_sum += labs(correct_delta);
+
   /* cancel the monitor */
   rte_eal_alarm_cancel(ptp_sync_timeout_handler, ptp);
   rte_eal_alarm_cancel(ptp_monitor_handler, ptp);
@@ -227,6 +257,7 @@ static int ptp_parse_result(struct mt_ptp_impl* ptp) {
   }
   ptp->delta_result_err = 0;
 
+  ptp_calculate_coefficient(ptp, delta);
   ptp_adjust_delta(ptp, delta);
   ptp_t_result_clear(ptp);
 
@@ -249,12 +280,6 @@ static int ptp_parse_result(struct mt_ptp_impl* ptp) {
       ptp_expect_result_clear(ptp);
     }
   }
-
-  /* update correct delta result */
-  ptp->stat_correct_delta_min = RTE_MIN(correct_delta, ptp->stat_correct_delta_min);
-  ptp->stat_correct_delta_max = RTE_MAX(correct_delta, ptp->stat_correct_delta_max);
-  ptp->stat_correct_delta_cnt++;
-  ptp->stat_correct_delta_sum += labs(correct_delta);
 
   return 0;
 }
@@ -617,6 +642,7 @@ static int ptp_init(struct mtl_main_impl* impl, struct mt_ptp_impl* ptp,
   ptp->master_initialized = false;
   ptp->t3_sequence_id = 0x1000 * port;
   ptp->coefficient = 1.0;
+  ptp_coeffcient_result_reset(ptp);
 
   struct mtl_init_params* p = mt_get_user_params(impl);
   if (p->flags & MTL_FLAG_PTP_UNICAST_ADDR) {
