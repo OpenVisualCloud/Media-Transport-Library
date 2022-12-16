@@ -164,6 +164,10 @@ struct mt_ptp_impl {
   /* calculate sw frequency */
   uint64_t last_sync_ts;
   double coefficient;
+  double coefficient_result_sum;
+  double coefficient_result_min;
+  double coefficient_result_max;
+  int32_t coefficient_result_cnt;
 
   /* status */
   int64_t stat_delta_min;
