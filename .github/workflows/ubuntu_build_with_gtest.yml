@@ -64,6 +64,9 @@ jobs:
     needs: Build
     runs-on: [Ubuntu, self-hosted]
     steps:
+      - name: Kill running test
+        run: pkill --signal SIGINT KahawaiTest
+
       - name: Binding network adapter
         run: |
           ./script/nicctl.sh bind_pmd 0000:31:00.0
