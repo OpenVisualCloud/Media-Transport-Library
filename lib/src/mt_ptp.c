@@ -116,6 +116,7 @@ static void ptp_coeffcient_result_reset(struct mt_ptp_impl* ptp) {
 }
 
 static void ptp_calculate_coefficient(struct mt_ptp_impl* ptp, int64_t delta) {
+  if (delta > 1000 * 1000) return;
   uint64_t ts_s = ptp_get_raw_time(ptp);
   uint64_t ts_m = ts_s + delta;
   double coefficient = (double)(ts_m - ptp->last_sync_ts) / (ts_s - ptp->last_sync_ts);
@@ -123,6 +124,8 @@ static void ptp_calculate_coefficient(struct mt_ptp_impl* ptp, int64_t delta) {
   ptp->coefficient_result_min = RTE_MIN(coefficient, ptp->coefficient_result_min);
   ptp->coefficient_result_max = RTE_MAX(coefficient, ptp->coefficient_result_max);
   ptp->coefficient_result_cnt++;
+  if (ptp->coefficient - 1.0 < 1e-9) /* store first result */
+    ptp->coefficient = coefficient;
   if (ptp->coefficient_result_cnt == 10) {
     /* get every 10 results' average */
     ptp->coefficient_result_sum -= ptp->coefficient_result_min;
