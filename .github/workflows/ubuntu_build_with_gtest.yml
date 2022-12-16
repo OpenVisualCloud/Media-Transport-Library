@@ -65,7 +65,14 @@ jobs:
     runs-on: [Ubuntu, self-hosted]
     steps:
       - name: Kill running test
-        run: pkill --signal SIGINT KahawaiTest
+        run: |
+          pkill --signal SIGINT KahawaiTest
+          exitstatus=$?
+          if [ $exitstatus -eq 0 ]; then
+              echo "done"
+          elif [ $exitstatus -eq 1]; then
+              echo "no running test"
+          fi
 
       - name: Binding network adapter
         run: |
