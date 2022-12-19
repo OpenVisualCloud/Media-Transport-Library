@@ -223,10 +223,12 @@ int mt_socket_get_mac(struct mtl_main_impl* impl, char* if_name,
   while (socket_arp_get(sock, addr.sin_addr.s_addr, ea, if_name) < 0) {
     if (mt_aborted(impl)) {
       err("%s, fail as user aborted\n", __func__);
+      close(sock);
       return -EIO;
     }
     if ((max_retry > 0) && (retry > max_retry)) {
       err("%s, fail as timeout to %d ms\n", __func__, timeout_ms);
+      close(sock);
       return -EIO;
     }
 
