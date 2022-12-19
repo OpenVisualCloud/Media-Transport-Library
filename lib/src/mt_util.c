@@ -30,16 +30,20 @@ int mt_asan_check(void) {
 void* mt_rte_malloc_socket(size_t sz, int socket) {
   void* p = rte_malloc_socket(MT_DPDK_LIB_NAME, sz, RTE_CACHE_LINE_SIZE, socket);
   if (p) g_mt_rte_malloc_cnt++;
+  info("%s, sz %" PRIu64 ", socket %d, addr %p\n", __func__, sz, socket, p);
+  rte_dump_stack();
   return p;
 }
 
 void* mt_rte_zmalloc_socket(size_t sz, int socket) {
   void* p = rte_zmalloc_socket(MT_DPDK_LIB_NAME, sz, RTE_CACHE_LINE_SIZE, socket);
   if (p) g_mt_rte_malloc_cnt++;
+  info("%s, sz %" PRIu64 ", socket %d, addr %p\n", __func__, sz, socket, p);
   return p;
 }
 
 void mt_rte_free(void* p) {
+  info("%s, addr %p\n", __func__, p);
   rte_free(p);
   g_mt_rte_malloc_cnt--;
 }
