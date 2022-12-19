@@ -3645,6 +3645,7 @@ static void frame_malloc(struct st_frame* frame, uint8_t rand, bool align) {
     fb_size += frame->linesize[plane] * frame->height;
   }
   uint8_t* fb = (uint8_t*)st_test_zmalloc(fb_size);
+  if (!fb) return;
   if (rand) { /* fill the framebuffer */
     st_test_rand_data(fb, fb_size, rand);
     if (frame->fmt == ST_FRAME_FMT_YUV422PLANAR10LE) {

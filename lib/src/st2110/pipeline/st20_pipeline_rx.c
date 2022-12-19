@@ -56,8 +56,10 @@ static int rx_st20p_packet_convert(void* priv, void* frame,
     /* first packet of frame */
     framebuff =
         rx_st20p_next_available(ctx, ctx->framebuff_producer_idx, ST20P_RX_FRAME_FREE);
-    framebuff->stat = ST20P_RX_FRAME_IN_CONVERTING;
-    framebuff->dst.timestamp = meta->timestamp;
+    if (framebuff) {
+      framebuff->stat = ST20P_RX_FRAME_IN_CONVERTING;
+      framebuff->dst.timestamp = meta->timestamp;
+    }
   } else {
     framebuff = rx_st20p_next_available(ctx, ctx->framebuff_producer_idx,
                                         ST20P_RX_FRAME_IN_CONVERTING);
@@ -68,6 +70,7 @@ static int rx_st20p_packet_convert(void* priv, void* frame,
       if (framebuff && framebuff->dst.timestamp != meta->timestamp) {
         /* should never happen */
         err("%s(%d), wrong frame timestamp\n", __func__, ctx->idx);
+        mt_pthread_mutex_unlock(&ctx->lock);
         return -EIO;
       }
     }
@@ -118,6 +121,7 @@ static int rx_st20p_frame_ready(void* priv, void* frame,
           rx_st20p_next_available(ctx, framebuff->idx, ST20P_RX_FRAME_IN_CONVERTING);
       if (framebuff && framebuff->dst.timestamp != meta->timestamp) {
         /* should never happen */
+        mt_pthread_mutex_unlock(&ctx->lock);
         err("%s(%d), wrong frame timestamp\n", __func__, ctx->idx);
         return -EIO;
       }
@@ -577,6 +581,7 @@ struct st_frame* st20p_rx_get_ext_frame(st20p_rx_handle handle,
   if (ret < 0) {
     err("%s, ext framebuffer sanity check fail %d fb_idx %d\n", __func__, ret,
         ctx->framebuff_consumer_idx);
+    mt_pthread_mutex_unlock(&ctx->lock);
     return NULL;
   }
   ctx->internal_converter->convert_func(&framebuff->src, &framebuff->dst);

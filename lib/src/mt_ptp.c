@@ -626,9 +626,9 @@ static int ptp_init(struct mtl_main_impl* impl, struct mt_ptp_impl* ptp,
   flow.port_flow = false;
   flow.dst_port = MT_PTP_UDP_GEN_PORT;
   ptp->rx_queue = mt_dev_get_rx_queue(impl, port, &flow);
-  if (ret < 0) {
+  if (!ptp->rx_queue) {
     err("%s(%d), ptp rx q create fail\n", __func__, port);
-    return ret;
+    return -EIO;
   }
 
   /* join mcast */

@@ -132,7 +132,7 @@ static int rx_st20r_create_transport(struct st20r_rx_ctx* ctx, struct st20r_rx_o
   }
 
   transport = mt_rte_zmalloc_socket(sizeof(*transport), mt_socket_id(impl, MTL_PORT_P));
-  if (!ctx) {
+  if (!transport) {
     err("%s, transport malloc fail\n", __func__);
     return -ENOMEM;
   }

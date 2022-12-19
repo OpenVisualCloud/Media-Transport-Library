@@ -108,7 +108,7 @@ static int udp_build_tx_pkt(struct mtl_main_impl* impl, struct mudp_impl* s,
   pkt->pkt_len = pkt->data_len;
 
   /* copy payload */
-  void* payload = (void*)(udp + 1);
+  void* payload = &udp[1];
   mtl_memcpy(payload, buf, len);
 
   udp->dgram_len = htons(pkt->pkt_len - pkt->l2_len - pkt->l3_len);
@@ -515,7 +515,7 @@ dequeue:
   if (ret >= 0) {
     struct mt_udp_hdr* hdr = rte_pktmbuf_mtod(pkt, struct mt_udp_hdr*);
     struct rte_udp_hdr* udp = &hdr->udp;
-    void* payload = (void*)(udp + 1);
+    void* payload = &udp[1];
     ssize_t payload_len = ntohs(udp->dgram_len) - sizeof(*udp);
     dbg("%s(%d), payload_len %d bytes\n", __func__, idx, (int)payload_len);
 
