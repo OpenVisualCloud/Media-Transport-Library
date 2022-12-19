@@ -3,7 +3,7 @@
  */
 
 /**
- * @file mudi_sockfd_api.h
+ * @file mudp_sockfd_api.h
  *
  * Interfaces to udp transport context.
  * API has same parameters to standard socket.h

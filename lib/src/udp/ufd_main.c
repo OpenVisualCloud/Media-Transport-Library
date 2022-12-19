@@ -146,10 +146,9 @@ static struct ufd_mt_ctx* ufd_create_mt_ctx(void) {
 
   /* init mtl context */
   struct mtl_init_params* p = &ctx->mt_params;
-  p->flags |= MTL_FLAG_BIND_NUMA;    /* default bind to numa */
-  p->log_level = MTL_LOG_LEVEL_INFO; /* default to info */
-  p->tx_sessions_cnt_max = 16;
-  p->rx_sessions_cnt_max = 16;
+  p->flags |= MTL_FLAG_BIND_NUMA;     /* default bind to numa */
+  p->flags |= MTL_FLAG_UDP_TRANSPORT; /* udp transport */
+  p->log_level = MTL_LOG_LEVEL_INFO;  /* default to info */
 
   /* get user config from json */
   int ret = ufd_config_init(ctx);
