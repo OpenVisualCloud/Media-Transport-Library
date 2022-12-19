@@ -37,6 +37,10 @@
 #define MT_CLOCK_MONOTONIC_ID CLOCK_MONOTONIC
 #endif
 
+#ifdef WINDOWSENV
+typedef unsigned long int nfds_t;
+#endif
+
 #ifndef POLLIN /* For windows */
 /* There is data to read */
 #define POLLIN 0x001

@@ -7,9 +7,26 @@
 #include "../mt_log.h"
 #include "udp_main.h"
 
-static pthread_mutex_t g_ufd_mt_ctx_lock = PTHREAD_MUTEX_INITIALIZER;
 static struct ufd_mt_ctx* g_ufd_mt_ctx;
 
+#ifdef WINDOWSENV
+/* no PTHREAD_MUTEX_INITIALIZER support for win */
+#define UFD_CTX_SPIN_LOCK
+#endif
+
+#ifdef UFD_CTX_SPIN_LOCK
+static rte_spinlock_t g_ufd_mt_ctx_lock = RTE_SPINLOCK_INITIALIZER;
+static inline int ufd_mtl_ctx_lock(void) {
+  rte_spinlock_lock(&g_ufd_mt_ctx_lock);
+  return 0;
+}
+
+static inline int ufd_mtl_ctx_unlock(void) {
+  rte_spinlock_unlock(&g_ufd_mt_ctx_lock);
+  return 0;
+}
+#else
+static pthread_mutex_t g_ufd_mt_ctx_lock = PTHREAD_MUTEX_INITIALIZER;
 static inline int ufd_mtl_ctx_lock(void) {
   return mt_pthread_mutex_lock(&g_ufd_mt_ctx_lock);
 }
@@ -17,6 +34,7 @@ static inline int ufd_mtl_ctx_lock(void) {
 static inline int ufd_mtl_ctx_unlock(void) {
   return mt_pthread_mutex_unlock(&g_ufd_mt_ctx_lock);
 }
+#endif
 
 static inline int ufd_idx2fd(struct ufd_mt_ctx* ctx, int idx) {
   return (ctx->fd_base + idx);
