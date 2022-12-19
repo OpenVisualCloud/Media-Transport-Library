@@ -9,11 +9,6 @@
 #include "../mt_log.h"
 #include "../mt_stat.h"
 
-#ifndef POLLIN /* For windows */
-/* There is data to read */
-#define POLLIN 0x001
-#endif
-
 static inline void udp_set_flag(struct mudp_impl* s, uint32_t flag) { s->flags |= flag; }
 
 static inline void udp_clear_flag(struct mudp_impl* s, uint32_t flag) {
@@ -27,7 +22,7 @@ static inline bool udp_get_flag(struct mudp_impl* s, uint32_t flag) {
     return false;
 }
 
-static int udp_verfiy_socket_args(int domain, int type, int protocol) {
+int mudp_verfiy_socket_args(int domain, int type, int protocol) {
   if (domain != AF_INET) {
     err("%s, invalid domain %d\n", __func__, domain);
     return -EINVAL;
@@ -374,7 +369,7 @@ mudp_handle mudp_socket(mtl_handle mt, int domain, int type, int protocol) {
   int idx = mudp_idx;
   mudp_idx++;
 
-  ret = udp_verfiy_socket_args(domain, type, protocol);
+  ret = mudp_verfiy_socket_args(domain, type, protocol);
   if (ret < 0) return NULL;
 
   /* make sure tsc is ready, mudp_recvfrom will use tsc */

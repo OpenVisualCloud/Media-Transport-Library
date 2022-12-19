@@ -38,6 +38,15 @@
 #endif
 
 #ifdef WINDOWSENV
+typedef unsigned long int nfds_t;
+#endif
+
+#ifndef POLLIN /* For windows */
+/* There is data to read */
+#define POLLIN 0x001
+#endif
+
+#ifdef WINDOWSENV
 #define MT_THREAD_TIMEDWAIT_CLOCK_ID CLOCK_REALTIME
 #else
 /* use CLOCK_MONOTONIC for mt_pthread_cond_timedwait */

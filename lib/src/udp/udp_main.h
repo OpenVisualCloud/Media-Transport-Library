@@ -56,4 +56,6 @@ struct mudp_impl {
   int stat_pkt_deliver;
 };
 
+int mudp_verfiy_socket_args(int domain, int type, int protocol);
+
 #endif

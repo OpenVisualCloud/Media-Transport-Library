@@ -442,11 +442,11 @@ mtl_handle mtl_init(struct mtl_init_params* p) {
   impl->lcore_lock_fd = -1;
   if (p->tx_sessions_cnt_max)
     impl->tx_sessions_cnt_max = RTE_MIN(180, p->tx_sessions_cnt_max);
-  else
+  else if (p->flags & MTL_FLAG_UDP_TRANSPORT)
     impl->tx_sessions_cnt_max = 64;
   if (p->rx_sessions_cnt_max)
     impl->rx_sessions_cnt_max = RTE_MIN(180, p->rx_sessions_cnt_max);
-  else
+  else if (p->flags & MTL_FLAG_UDP_TRANSPORT)
     impl->rx_sessions_cnt_max = 64;
   info("%s, max sessions tx %d rx %d, flags 0x%" PRIx64 "\n", __func__,
        impl->tx_sessions_cnt_max, impl->rx_sessions_cnt_max,
