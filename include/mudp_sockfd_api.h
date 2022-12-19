@@ -8,7 +8,8 @@
  * Interfaces to udp transport context.
  * API has same parameters to standard socket.h
  * Use should pass a json cfg file to the lib to use these APIs. Like below:
- * MUFD_CFG_PATH=mufd_cfg.json ./your_app
+ * MUFD_CFG=app/udp/ufd_client.json ./build/app/UfdClientSample
+ * Refer to app/udp/ufd_client.json for a sample json config file.
  *
  */
 
@@ -21,7 +22,8 @@
 extern "C" {
 #endif
 
-#define MUFD_CFG_ENV "MUFD_CFG_PATH"
+/** The MUFD_CFG file env name */
+#define MUFD_CFG_ENV_NAME "MUFD_CFG"
 
 /**
  * Create a sockfd udp transport socket.

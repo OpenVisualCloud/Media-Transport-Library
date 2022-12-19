@@ -118,13 +118,14 @@ out:
 }
 
 static int ufd_config_init(struct ufd_mt_ctx* ctx) {
-  const char* cfg_path = getenv("UFD_CFG_PATH");
+  const char* cfg_path = getenv(MUFD_CFG_ENV_NAME);
   int ret;
 
   if (cfg_path) {
-    info("%s, UFD_CFG_PATH: %s\n", __func__, cfg_path);
+    info("%s, env %s: %s\n", __func__, MUFD_CFG_ENV_NAME, cfg_path);
     ret = ufd_parse_json(ctx, cfg_path);
   } else {
+    /* fallback path */
     ret = ufd_parse_json(ctx, "ufd.json");
   }
 
