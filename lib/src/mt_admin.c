@@ -191,9 +191,10 @@ static int admin_tx_video_migrate(struct mtl_main_impl* impl, bool* migrated) {
   ret = tx_video_migrate_to(impl, busy_s, from_sch, to_sch);
   if (ret < 0) {
     err("%s, session(%d,%d) migrate to fail\n", __func__, from_sch->idx, busy_s->idx);
-    mt_sch_put(to_sch, quota_mbs);
+    mt_sch_put(to_sch, quota_mbs); /* put back new sch */
     return ret;
   }
+  mt_sch_put(from_sch, quota_mbs); /* put back old sch */
   *migrated = true;
   return 0;
 }
@@ -306,9 +307,10 @@ static int admin_rx_video_migrate(struct mtl_main_impl* impl, bool* migrated) {
   ret = rx_video_migrate_to(impl, busy_s, from_sch, to_sch);
   if (ret < 0) {
     err("%s, session(%d,%d) migrate fail\n", __func__, from_sch->idx, busy_s->idx);
-    mt_sch_put(to_sch, quota_mbs);
+    mt_sch_put(to_sch, quota_mbs); /* put back new sch */
     return ret;
   }
+  mt_sch_put(from_sch, quota_mbs); /* put back old sch */
   *migrated = true;
   return 0;
 }

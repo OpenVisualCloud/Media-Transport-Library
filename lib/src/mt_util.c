@@ -8,6 +8,7 @@
 #include "mt_main.h"
 
 #ifdef MTL_HAS_ASAN
+// #define MT_ASAN_MALLOC_PRINT
 /* additional memleak check for rte_malloc since dpdk asan not support this */
 static int g_mt_rte_malloc_cnt;
 
@@ -30,16 +31,28 @@ int mt_asan_check(void) {
 void* mt_rte_malloc_socket(size_t sz, int socket) {
   void* p = rte_malloc_socket(MT_DPDK_LIB_NAME, sz, RTE_CACHE_LINE_SIZE, socket);
   if (p) g_mt_rte_malloc_cnt++;
+#ifdef MT_ASAN_MALLOC_PRINT
+  info("%s, sz %" PRIu64 ", socket %d, addr %p\n", __func__, sz, socket, p);
+  rte_dump_stack();
+#endif
   return p;
 }
 
 void* mt_rte_zmalloc_socket(size_t sz, int socket) {
   void* p = rte_zmalloc_socket(MT_DPDK_LIB_NAME, sz, RTE_CACHE_LINE_SIZE, socket);
   if (p) g_mt_rte_malloc_cnt++;
+#ifdef MT_ASAN_MALLOC_PRINT
+  info("%s, sz %" PRIu64 ", socket %d, addr %p\n", __func__, sz, socket, p);
+  rte_dump_stack();
+#endif
   return p;
 }
 
 void mt_rte_free(void* p) {
+#ifdef MT_ASAN_MALLOC_PRINT
+  info("%s, addr %p\n", __func__, p);
+  rte_dump_stack();
+#endif
   rte_free(p);
   g_mt_rte_malloc_cnt--;
 }
