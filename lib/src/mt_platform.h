@@ -37,6 +37,11 @@
 #define MT_CLOCK_MONOTONIC_ID CLOCK_MONOTONIC
 #endif
 
+#ifndef POLLIN /* For windows */
+/* There is data to read */
+#define POLLIN 0x001
+#endif
+
 #ifdef WINDOWSENV
 #define MT_THREAD_TIMEDWAIT_CLOCK_ID CLOCK_REALTIME
 #else

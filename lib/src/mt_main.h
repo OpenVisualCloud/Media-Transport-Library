@@ -11,6 +11,7 @@
 #ifdef MTL_HAS_KNI
 #include <rte_kni.h>
 #endif
+#include <json-c/json.h>
 #include <rte_tm.h>
 #include <rte_version.h>
 #include <rte_vfio.h>
@@ -1055,6 +1056,20 @@ static inline struct rte_ether_addr* mt_eth_s_addr(struct rte_ether_hdr* eth) {
 
 static inline struct rte_ether_addr* mt_eth_d_addr(struct rte_ether_hdr* eth) {
   return &eth->d_addr;
+}
+#endif
+
+#if (JSON_C_VERSION_NUM >= ((0 << 16) | (13 << 8) | 0)) || \
+    (JSON_C_VERSION_NUM < ((0 << 16) | (10 << 8) | 0))
+static inline json_object* mt_json_object_get(json_object* obj, const char* key) {
+  return json_object_object_get(obj, key);
+}
+#else
+static inline json_object* mt_json_object_get(json_object* obj, const char* key) {
+  json_object* value;
+  int ret = json_object_object_get_ex(obj, key, &value);
+  if (ret) return value;
+  return NULL;
 }
 #endif
 

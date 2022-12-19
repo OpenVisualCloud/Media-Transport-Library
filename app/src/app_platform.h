@@ -41,6 +41,11 @@
 #define ST_CLOCK_MONOTONIC_ID CLOCK_MONOTONIC
 #endif
 
+#ifndef POLLIN /* For windows */
+/* There is data to read */
+#define POLLIN 0x001
+#endif
+
 enum st_tx_frame_status {
   ST_TX_FRAME_FREE = 0,
   ST_TX_FRAME_READY,

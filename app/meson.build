@@ -317,3 +317,17 @@ executable('UdpClientSample', upd_client_sample_sources,
   # asan should be always the first dep
   dependencies: [asan_dep, mtl, libpthread]
 )
+
+executable('UfdServerSample', ufd_server_sample_sources,
+  c_args : app_c_args,
+  link_args: app_ld_args,
+  # asan should be always the first dep
+  dependencies: [asan_dep, mtl, libpthread]
+)
+
+executable('UfdClientSample', ufd_client_sample_sources,
+  c_args : app_c_args,
+  link_args: app_ld_args,
+  # asan should be always the first dep
+  dependencies: [asan_dep, mtl, libpthread]
+)

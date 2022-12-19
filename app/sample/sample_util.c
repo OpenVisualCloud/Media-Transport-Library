@@ -201,6 +201,7 @@ static void sample_sig_handler(int signo) {
     case SIGINT: /* Interrupt from keyboard */
       ctx->exit = true;
       if (ctx->st) mtl_abort(ctx->st);
+      if (ctx->sig_handler) ctx->sig_handler(signo);
       break;
   }
 
@@ -268,8 +269,8 @@ int sample_parse_args(struct st_sample_context* ctx, int argc, char** argv, bool
 
   _sample_parse_args(ctx, argc, argv);
 
-  if (tx) p->tx_sessions_cnt_max = ctx->sessions;
-  if (rx) p->rx_sessions_cnt_max = ctx->sessions;
+  p->tx_sessions_cnt_max = ctx->sessions;
+  p->rx_sessions_cnt_max = ctx->sessions;
   /* always enable 1 port */
   if (!p->num_ports) p->num_ports = 1;
 

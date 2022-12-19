@@ -95,6 +95,7 @@ struct st_sample_context {
   uint64_t udp_tx_bps;
 
   bool exit;
+  void (*sig_handler)(int signo);
 };
 
 int sample_parse_args(struct st_sample_context* ctx, int argc, char** argv, bool tx,
