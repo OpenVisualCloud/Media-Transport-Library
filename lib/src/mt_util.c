@@ -8,17 +8,55 @@
 #include "mt_main.h"
 
 #ifdef MTL_HAS_ASAN
-// #define MT_ASAN_MALLOC_PRINT
-/* additional memleak check for rte_malloc since dpdk asan not support this */
-static int g_mt_rte_malloc_cnt;
+#include <execinfo.h>
 
+#define MAX_BT_SIZE 32
+/* backtrace info */
+struct mt_backtrace_info {
+  void* pointer;
+  size_t size;
+  char** bt_strings;
+  int bt_size;
+  MT_TAILQ_ENTRY(mt_backtrace_info) next;
+};
+
+/* List of backtrace info */
+MT_TAILQ_HEAD(mt_backtrace_info_list, mt_backtrace_info);
+struct mt_backtrace_info_list g_bt_head;
+pthread_mutex_t g_bt_mutex;
+
+/* additional memleak check for mempool_create since dpdk asan not support this */
 static int g_mt_mempool_create_cnt;
 
+int mt_asan_init(void) {
+  mt_pthread_mutex_init(&g_bt_mutex, NULL);
+  MT_TAILQ_INIT(&g_bt_head);
+  return 0;
+}
+
 int mt_asan_check(void) {
-  if (g_mt_rte_malloc_cnt != 0) {
-    rte_panic("%s, detect not free memory by rte_malloc, leak cnt %d\n", __func__,
-              g_mt_rte_malloc_cnt);
+  /* check if any not freed */
+  int leak_cnt = 0;
+  struct mt_backtrace_info* bt_info = NULL;
+  while ((bt_info = MT_TAILQ_FIRST(&g_bt_head))) {
+    info("%s, \033[31mleak of %" PRIu64 " byte(s) at %p\033[0m\n", __func__,
+         bt_info->size, bt_info->pointer);
+    if (bt_info->bt_strings) {
+      info("%s, backtrace info:\n", __func__);
+      for (int i = 0; i < bt_info->bt_size; ++i) {
+        info("%s, %s\n", __func__, bt_info->bt_strings[i]);
+      }
+      mt_free(bt_info->bt_strings);
+      bt_info->bt_strings = NULL;
+    }
+    MT_TAILQ_REMOVE(&g_bt_head, bt_info, next);
+    rte_free(bt_info->pointer);
+    mt_free(bt_info);
+    leak_cnt++;
   }
+  info("%s, \033[33mfound %d mem leak(s) in total\033[0m\n", __func__, leak_cnt);
+
+  mt_pthread_mutex_destroy(&g_bt_mutex);
 
   if (g_mt_mempool_create_cnt != 0) {
     rte_panic("%s, detect not free mempool, leak cnt %d\n", __func__,
@@ -30,31 +68,56 @@ int mt_asan_check(void) {
 
 void* mt_rte_malloc_socket(size_t sz, int socket) {
   void* p = rte_malloc_socket(MT_DPDK_LIB_NAME, sz, RTE_CACHE_LINE_SIZE, socket);
-  if (p) g_mt_rte_malloc_cnt++;
-#ifdef MT_ASAN_MALLOC_PRINT
-  info("%s, sz %" PRIu64 ", socket %d, addr %p\n", __func__, sz, socket, p);
-  rte_dump_stack();
-#endif
+  if (p) {
+    struct mt_backtrace_info* bt_info = mt_zmalloc(sizeof(*bt_info));
+    if (bt_info) {
+      bt_info->pointer = p;
+      bt_info->size = sz;
+      void* buffer[MAX_BT_SIZE];
+      bt_info->bt_size = backtrace(buffer, MAX_BT_SIZE);
+      bt_info->bt_strings = backtrace_symbols(buffer, bt_info->bt_size);
+      mt_pthread_mutex_lock(&g_bt_mutex);
+      MT_TAILQ_INSERT_TAIL(&g_bt_head, bt_info, next);
+      mt_pthread_mutex_unlock(&g_bt_mutex);
+    }
+  }
   return p;
 }
 
 void* mt_rte_zmalloc_socket(size_t sz, int socket) {
   void* p = rte_zmalloc_socket(MT_DPDK_LIB_NAME, sz, RTE_CACHE_LINE_SIZE, socket);
-  if (p) g_mt_rte_malloc_cnt++;
-#ifdef MT_ASAN_MALLOC_PRINT
-  info("%s, sz %" PRIu64 ", socket %d, addr %p\n", __func__, sz, socket, p);
-  rte_dump_stack();
-#endif
+  if (p) {
+    /* insert bt_info to list */
+    struct mt_backtrace_info* bt_info = mt_zmalloc(sizeof(*bt_info));
+    if (bt_info) {
+      bt_info->pointer = p;
+      bt_info->size = sz;
+      void* buffer[MAX_BT_SIZE];
+      bt_info->bt_size = backtrace(buffer, MAX_BT_SIZE);
+      bt_info->bt_strings = backtrace_symbols(buffer, bt_info->bt_size);
+      mt_pthread_mutex_lock(&g_bt_mutex);
+      MT_TAILQ_INSERT_TAIL(&g_bt_head, bt_info, next);
+      mt_pthread_mutex_unlock(&g_bt_mutex);
+    }
+  }
   return p;
 }
 
 void mt_rte_free(void* p) {
-#ifdef MT_ASAN_MALLOC_PRINT
-  info("%s, addr %p\n", __func__, p);
-  rte_dump_stack();
-#endif
+  /* remove bt_info in list */
+  struct mt_backtrace_info *bt_info, *tmp_bt_info;
+  mt_pthread_mutex_lock(&g_bt_mutex);
+  for (bt_info = MT_TAILQ_FIRST(&g_bt_head); bt_info != NULL; bt_info = tmp_bt_info) {
+    tmp_bt_info = MT_TAILQ_NEXT(bt_info, next);
+    if (bt_info->pointer == p) {
+      MT_TAILQ_REMOVE(&g_bt_head, bt_info, next);
+      if (bt_info->bt_strings) mt_free(bt_info->bt_strings);
+      mt_free(bt_info);
+      break;
+    }
+  }
+  mt_pthread_mutex_unlock(&g_bt_mutex);
   rte_free(p);
-  g_mt_rte_malloc_cnt--;
 }
 #endif
 
