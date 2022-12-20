@@ -210,23 +210,29 @@ static void ptp_sync_timeout_handler(void* param) {
 
 static int ptp_parse_result(struct mt_ptp_impl* ptp) {
   int64_t delta = ((int64_t)ptp->t4 - ptp->t3) - ((int64_t)ptp->t2 - ptp->t1);
+  int64_t path_delay = ((int64_t)ptp->t2 - ptp->t1) + ((int64_t)ptp->t4 - ptp->t3);
   uint64_t abs_delta, expect_delta;
 
   dbg("%s(%d), t1 %" PRIu64 " t2 %" PRIu64 " t3 %" PRIu64 " t4 %" PRIu64 "\n", __func__,
       ptp->port, ptp->t1, ptp->t2, ptp->t3, ptp->t4);
 
   delta /= 2;
+  path_delay /= 2;
   abs_delta = labs(delta);
   /* measure frequency corrected delta */
   int64_t correct_delta = ((int64_t)ptp->t4 - ptp_correct_ts(ptp, ptp->t3)) -
                           ((int64_t)ptp_correct_ts(ptp, ptp->t2) - ptp->t1);
   correct_delta /= 2;
   dbg("%s(%d), correct_delta %ld\n", __func__, ptp->port, correct_delta);
-  /* update correct delta result */
+  /* update correct delta and path delay result */
   ptp->stat_correct_delta_min = RTE_MIN(correct_delta, ptp->stat_correct_delta_min);
   ptp->stat_correct_delta_max = RTE_MAX(correct_delta, ptp->stat_correct_delta_max);
   ptp->stat_correct_delta_cnt++;
   ptp->stat_correct_delta_sum += labs(correct_delta);
+  ptp->stat_path_delay_min = RTE_MIN(path_delay, ptp->stat_path_delay_min);
+  ptp->stat_path_delay_max = RTE_MAX(path_delay, ptp->stat_path_delay_max);
+  ptp->stat_path_delay_cnt++;
+  ptp->stat_path_delay_sum += labs(path_delay);
 
   /* cancel the monitor */
   rte_eal_alarm_cancel(ptp_sync_timeout_handler, ptp);
@@ -564,6 +570,10 @@ static void ptp_stat_clear(struct mt_ptp_impl* ptp) {
   ptp->stat_correct_delta_sum = 0;
   ptp->stat_correct_delta_min = INT_MAX;
   ptp->stat_correct_delta_max = INT_MIN;
+  ptp->stat_path_delay_cnt = 0;
+  ptp->stat_path_delay_sum = 0;
+  ptp->stat_path_delay_min = INT_MAX;
+  ptp->stat_path_delay_max = INT_MIN;
   ptp->stat_rx_sync_err = 0;
   ptp->stat_tx_sync_err = 0;
   ptp->stat_result_err = 0;
@@ -809,21 +819,26 @@ void mt_ptp_stat(struct mtl_main_impl* impl) {
     }
 
     if (ptp->stat_delta_cnt)
-      notice("PTP(%d): mode %s, delta avr %" PRId64 ", min %" PRId64 ", max %" PRId64
-             ", cnt %d\n",
-             i, ptp_mode_str(ptp->t2_mode), ptp->stat_delta_sum / ptp->stat_delta_cnt,
-             ptp->stat_delta_min, ptp->stat_delta_max, ptp->stat_delta_cnt);
+      notice("PTP(%d): delta avg %" PRId64 ", min %" PRId64 ", max %" PRId64 ", cnt %d\n",
+             i, ptp->stat_delta_sum / ptp->stat_delta_cnt, ptp->stat_delta_min,
+             ptp->stat_delta_max, ptp->stat_delta_cnt);
     else
       notice("PTP(%d): not connected\n", i);
     if (ptp->stat_correct_delta_cnt)
-      notice("PTP(%d): mode %s, correct_delta avr %" PRId64 ", min %" PRId64
-             ", max %" PRId64 ", cnt %d\n",
-             i, ptp_mode_str(ptp->t2_mode),
-             ptp->stat_correct_delta_sum / ptp->stat_correct_delta_cnt,
+      notice("PTP(%d): correct_delta avg %" PRId64 ", min %" PRId64 ", max %" PRId64
+             ", cnt %d\n",
+             i, ptp->stat_correct_delta_sum / ptp->stat_correct_delta_cnt,
              ptp->stat_correct_delta_min, ptp->stat_correct_delta_max,
              ptp->stat_correct_delta_cnt);
-    notice("PTP(%d): sync cnt %d, expect avg %d@%fs\n", i, ptp->stat_sync_cnt,
-           ptp->expect_result_avg, (float)ptp->expect_result_period_ns / NS_PER_S);
+    if (ptp->stat_path_delay_cnt)
+      notice("PTP(%d): path_delay avg %" PRId64 ", min %" PRId64 ", max %" PRId64
+             ", cnt %d\n",
+             i, ptp->stat_path_delay_sum / ptp->stat_path_delay_cnt,
+             ptp->stat_path_delay_min, ptp->stat_path_delay_max,
+             ptp->stat_path_delay_cnt);
+    notice("PTP(%d): mode %s, sync cnt %d, expect avg %d@%fs\n", i,
+           ptp_mode_str(ptp->t2_mode), ptp->stat_sync_cnt, ptp->expect_result_avg,
+           (float)ptp->expect_result_period_ns / NS_PER_S);
     if (ptp->stat_rx_sync_err || ptp->stat_result_err || ptp->stat_tx_sync_err)
       notice("PTP(%d): rx time error %d, tx time error %d, delta result error %d\n", i,
              ptp->stat_rx_sync_err, ptp->stat_tx_sync_err, ptp->stat_result_err);
