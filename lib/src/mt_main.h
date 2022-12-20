@@ -179,6 +179,10 @@ struct mt_ptp_impl {
   int64_t stat_correct_delta_max;
   int32_t stat_correct_delta_cnt;
   int64_t stat_correct_delta_sum;
+  int64_t stat_path_delay_min;
+  int64_t stat_path_delay_max;
+  int32_t stat_path_delay_cnt;
+  int64_t stat_path_delay_sum;
   int32_t stat_rx_sync_err;
   int32_t stat_tx_sync_err;
   int32_t stat_result_err;
