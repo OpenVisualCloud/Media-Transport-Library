@@ -535,6 +535,7 @@ int st20_rfc4175_422be10_to_yuv422p10le_avx512_vbmi_dma(
   }
 
   pg_cnt = pg_cnt % cache_pg_cnt;
+  mt_cvt_dma_ctx_uinit(ctx);
   mt_rte_free(be_caches);
 
   /* remaining simd batch */
