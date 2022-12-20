@@ -281,6 +281,7 @@ int st20_rfc4175_422be10_to_422le10_avx512_dma(struct mtl_dma_lender_dev* dma,
   }
 
   pg_cnt = pg_cnt % cache_pg_cnt;
+  mt_cvt_dma_ctx_uinit(ctx);
   mt_rte_free(be_caches);
 
   /* remaining simd batch */
@@ -537,6 +538,7 @@ int st20_rfc4175_422be10_to_yuv422p10le_avx512_dma(
   }
 
   pg_cnt = pg_cnt % cache_pg_cnt;
+  mt_cvt_dma_ctx_uinit(ctx);
   mt_rte_free(be_caches);
 
   /* remaining simd batch */
@@ -947,6 +949,7 @@ int st20_rfc4175_422be10_to_v210_avx512_dma(struct mtl_dma_lender_dev* dma,
   }
 
   pg_cnt = pg_cnt % cache_pg_cnt;
+  mt_cvt_dma_ctx_uinit(ctx);
   mt_rte_free(be_caches);
 
   /* remaining simd batch */
@@ -1174,6 +1177,7 @@ int st20_yuv422p10le_to_rfc4175_422be10_avx512_dma(struct mtl_dma_lender_dev* dm
   }
 
   pg_cnt = pg_cnt % cache_pg_cnt;
+  mt_cvt_dma_ctx_uinit(ctx);
   mt_rte_free(le_caches);
 
   /* each __m128i batch handle 4 __m128i, each __m128i with 2 pg group */
@@ -1532,6 +1536,7 @@ int st20_rfc4175_422le10_to_422be10_avx512_dma(struct mtl_dma_lender_dev* dma,
   }
 
   pg_cnt = pg_cnt % cache_pg_cnt;
+  mt_cvt_dma_ctx_uinit(ctx);
   mt_rte_free(le_caches);
 
   /* remaining simd batch */
@@ -1750,6 +1755,7 @@ int st20_v210_to_rfc4175_422be10_avx512_dma(struct mtl_dma_lender_dev* dma,
   }
 
   pg_cnt = pg_cnt % cache_pg_cnt;
+  mt_cvt_dma_ctx_uinit(ctx);
   mt_rte_free(v210_caches);
 
   /* remaining simd batch */
