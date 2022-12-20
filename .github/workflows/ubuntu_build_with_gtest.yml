@@ -64,9 +64,9 @@ jobs:
     needs: Build
     runs-on: [Ubuntu, self-hosted]
     steps:
-      - name: Kill previous test case
+      - name: Kill previous gtest routine
         run: |
-          killall -SIGINT KahawaiTest
+          killall -SIGINT KahawaiTest || true
 
       - name: Binding network adapter
         run: |
