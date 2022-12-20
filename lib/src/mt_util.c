@@ -22,8 +22,8 @@ struct mt_backtrace_info {
 
 /* List of backtrace info */
 MT_TAILQ_HEAD(mt_backtrace_info_list, mt_backtrace_info);
-struct mt_backtrace_info_list g_bt_head;
-pthread_mutex_t g_bt_mutex;
+static struct mt_backtrace_info_list g_bt_head;
+static pthread_mutex_t g_bt_mutex;
 
 /* additional memleak check for mempool_create since dpdk asan not support this */
 static int g_mt_mempool_create_cnt;
@@ -50,11 +50,12 @@ int mt_asan_check(void) {
       bt_info->bt_strings = NULL;
     }
     MT_TAILQ_REMOVE(&g_bt_head, bt_info, next);
-    rte_free(bt_info->pointer);
+    rte_free(bt_info->pointer); /* free the leak from rte_malloc */
     mt_free(bt_info);
     leak_cnt++;
   }
-  info("%s, \033[33mfound %d mem leak(s) in total\033[0m\n", __func__, leak_cnt);
+  if (leak_cnt)
+    info("%s, \033[33mfound %d rte_malloc leak(s) in total\033[0m\n", __func__, leak_cnt);
 
   mt_pthread_mutex_destroy(&g_bt_mutex);
 
@@ -69,6 +70,7 @@ int mt_asan_check(void) {
 void* mt_rte_malloc_socket(size_t sz, int socket) {
   void* p = rte_malloc_socket(MT_DPDK_LIB_NAME, sz, RTE_CACHE_LINE_SIZE, socket);
   if (p) {
+    /* insert bt_info to list */
     struct mt_backtrace_info* bt_info = mt_zmalloc(sizeof(*bt_info));
     if (bt_info) {
       bt_info->pointer = p;
@@ -104,7 +106,7 @@ void* mt_rte_zmalloc_socket(size_t sz, int socket) {
 }
 
 void mt_rte_free(void* p) {
-  /* remove bt_info in list */
+  /* remove bt_info from list */
   struct mt_backtrace_info *bt_info, *tmp_bt_info;
   mt_pthread_mutex_lock(&g_bt_mutex);
   for (bt_info = MT_TAILQ_FIRST(&g_bt_head); bt_info != NULL; bt_info = tmp_bt_info) {
