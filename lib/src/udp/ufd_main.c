@@ -44,8 +44,30 @@ static inline int ufd_fd2idx(struct ufd_mt_ctx* ctx, int fd) {
   return (fd - ctx->fd_base);
 }
 
+static int ufd_free_slot(struct ufd_mt_ctx* ctx, struct ufd_slot* slot) {
+  int idx = slot->idx;
+
+  if (ctx->slots[idx] != slot) {
+    err("%s(%d), slot mismatch %p %p\n", __func__, idx, ctx->slots[idx], slot);
+  }
+
+  if (slot->handle) {
+    mudp_close(slot->handle);
+    slot->handle = NULL;
+  }
+  mt_rte_free(slot);
+  ctx->slots[idx] = NULL;
+  return 0;
+}
+
 static int ufd_free_mt_ctx(struct ufd_mt_ctx* ctx) {
   if (ctx->slots) {
+    for (int i = 0; i < ctx->slots_nb_max; i++) {
+      /* check if any not free slot */
+      if (!ctx->slots[i]) continue;
+      warn("%s, not close slot on idx %d\n", __func__, i);
+      ufd_free_slot(ctx, ctx->slots[i]);
+    }
     mt_rte_free(ctx->slots);
     ctx->slots = NULL;
   }
@@ -85,8 +107,8 @@ static int ufd_parse_interfaces(struct ufd_mt_ctx* ctx, json_object* obj) {
 }
 
 static int ufd_parse_json(struct ufd_mt_ctx* ctx, const char* filename) {
-  json_object* root_object = json_object_from_file(filename);
-  if (root_object == NULL) {
+  json_object* root = json_object_from_file(filename);
+  if (root == NULL) {
     err("%s, open json file %s fail\n", __func__, filename);
     return -EIO;
   }
@@ -94,7 +116,7 @@ static int ufd_parse_json(struct ufd_mt_ctx* ctx, const char* filename) {
   int ret = -EIO;
 
   /* parse interfaces for system */
-  json_object* interfaces_array = mt_json_object_get(root_object, "interfaces");
+  json_object* interfaces_array = mt_json_object_get(root, "interfaces");
   if (interfaces_array == NULL ||
       json_object_get_type(interfaces_array) != json_type_array) {
     err("%s, can not parse interfaces\n", __func__);
@@ -110,10 +132,38 @@ static int ufd_parse_json(struct ufd_mt_ctx* ctx, const char* filename) {
   ret = ufd_parse_interfaces(ctx, json_object_array_get_idx(interfaces_array, 0));
   if (ret < 0) goto out;
 
+  struct mtl_init_params* p = &ctx->mt_params;
+  json_object* obj;
+
+  obj = mt_json_object_get(root, "nb_nic_queues");
+  if (obj) {
+    int nb_nic_queues = json_object_get_int(obj);
+    if ((nb_nic_queues < 0) || (nb_nic_queues > 512)) {
+      err("%s, invalid nb_nic_queues %d\n", __func__, nb_nic_queues);
+      ret = -EINVAL;
+      goto out;
+    }
+    p->tx_sessions_cnt_max = nb_nic_queues;
+    p->rx_sessions_cnt_max = nb_nic_queues;
+    info("%s, nb_nic_queues %d\n", __func__, nb_nic_queues);
+  }
+
+  obj = mt_json_object_get(root, "nb_udp_sockets");
+  if (obj) {
+    int nb_udp_sockets = json_object_get_int(obj);
+    if ((nb_udp_sockets < 0) || (nb_udp_sockets > 4096)) {
+      err("%s, invalid nb_udp_sockets %d\n", __func__, nb_udp_sockets);
+      ret = -EINVAL;
+      goto out;
+    }
+    ctx->slots_nb_max = nb_udp_sockets;
+    info("%s, nb_udp_sockets %d\n", __func__, nb_udp_sockets);
+  }
+
   ret = 0;
 
 out:
-  json_object_put(root_object);
+  json_object_put(root);
   return ret;
 }
 
@@ -174,6 +224,7 @@ static struct ufd_mt_ctx* ufd_create_mt_ctx(void) {
     return NULL;
   }
 
+  info("%s, succ, slots_nb_max %d\n", __func__, ctx->slots_nb_max);
   return ctx;
 }
 
@@ -193,20 +244,11 @@ static struct ufd_mt_ctx* ufd_get_mt_ctx(bool create) {
   return ctx;
 }
 
-static int ufd_free_slot(struct ufd_mt_ctx* ctx, struct ufd_slot* slot) {
-  int idx = slot->idx;
-
-  if (ctx->slots[idx] != slot) {
-    err("%s(%d), slot mismatch %p %p\n", __func__, idx, ctx->slots[idx], slot);
-  }
-
-  if (slot->handle) {
-    mudp_close(slot->handle);
-    slot->handle = NULL;
-  }
-  mt_rte_free(slot);
-  ctx->slots[idx] = NULL;
-  return 0;
+static void ufd_clear_mt_ctx(void) {
+  ufd_mtl_ctx_lock();
+  g_ufd_mt_ctx = NULL;
+  ufd_mtl_ctx_unlock();
+  dbg("%s, succ\n", __func__);
 }
 
 static inline struct ufd_slot* ufd_fd2slot(int sockfd) {
@@ -291,7 +333,23 @@ ssize_t mufd_sendto(int sockfd, const void* buf, size_t len, int flags,
   return mudp_sendto(slot->handle, buf, len, flags, dest_addr, addrlen);
 }
 
-int mufd_poll(struct pollfd* fds, nfds_t nfds, int timeout) { return 0; }
+int mufd_poll(struct pollfd* fds, nfds_t nfds, int timeout) {
+  struct mudp_pollfd mfds[nfds];
+  struct ufd_slot* slot;
+
+  for (nfds_t i = 0; i < nfds; i++) {
+    dbg("%s, fd %d\n", __func__, fds[i].fd);
+    slot = ufd_fd2slot(fds[i].fd);
+    mfds[i].fd = slot->handle;
+    mfds[i].events = fds[i].events;
+  }
+
+  int ret = mudp_poll(mfds, nfds, timeout);
+  for (nfds_t i = 0; i < nfds; i++) {
+    fds[i].revents = mfds[i].revents;
+  }
+  return ret;
+}
 
 ssize_t mufd_recvfrom(int sockfd, void* buf, size_t len, int flags,
                       struct sockaddr* src_addr, socklen_t* addrlen) {
@@ -301,8 +359,17 @@ ssize_t mufd_recvfrom(int sockfd, void* buf, size_t len, int flags,
 
 int mufd_cleanup(void) {
   struct ufd_mt_ctx* ctx = ufd_get_mt_ctx(false);
-  if (ctx) ufd_free_mt_ctx(ctx);
+  if (ctx) {
+    ufd_free_mt_ctx(ctx);
+    ufd_clear_mt_ctx();
+  }
   return 0;
+}
+
+/* lib destructor to cleanup the resources */
+RTE_FINI(mufd_finish) {
+  mufd_cleanup();
+  dbg("%s, succ\n", __func__);
 }
 
 int mufd_abort(void) {
@@ -311,6 +378,12 @@ int mufd_abort(void) {
   return 0;
 }
 
-int mufd_set_tx_rate(int sockfd, uint64_t bps) { return 0; }
+int mufd_set_tx_rate(int sockfd, uint64_t bps) {
+  struct ufd_slot* slot = ufd_fd2slot(sockfd);
+  return mudp_set_tx_rate(slot->handle, bps);
+}
 
-uint64_t mufd_get_tx_rate(int sockfd) { return 0; }
+uint64_t mufd_get_tx_rate(int sockfd) {
+  struct ufd_slot* slot = ufd_fd2slot(sockfd);
+  return mudp_get_tx_rate(slot->handle);
+}

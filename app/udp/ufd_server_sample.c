@@ -284,6 +284,5 @@ error:
   st_pthread_mutex_destroy(&ctxs.wake_mutex);
   st_pthread_cond_destroy(&ctxs.wake_cond);
 
-  mufd_cleanup();
   return ret;
 }

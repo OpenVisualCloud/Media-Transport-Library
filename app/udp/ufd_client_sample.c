@@ -212,6 +212,5 @@ error:
     }
   }
 
-  mufd_cleanup();
   return ret;
 }
