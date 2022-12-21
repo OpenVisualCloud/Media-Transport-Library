@@ -375,6 +375,10 @@ int mufd_fcntl(int sockfd, int cmd, ...) {
   struct ufd_slot* slot = ufd_fd2slot(sockfd);
   int idx = slot->idx;
 
+#ifdef WINDOWSENV
+  err("%s(%d), invalid cmd %d, not support on windows\n", __func__, idx, cmd);
+  return -1;
+#else
   if (cmd != F_SETFD) {
     err("%s(%d), invalid cmd %d\n", __func__, idx, cmd);
     return -1;
@@ -382,6 +386,7 @@ int mufd_fcntl(int sockfd, int cmd, ...) {
 
   dbg("%s(%d), cmd %d\n", __func__, idx, cmd);
   return 0;
+#endif
 }
 
 int mufd_cleanup(void) {
