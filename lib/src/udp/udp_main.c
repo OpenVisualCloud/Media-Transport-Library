@@ -713,10 +713,14 @@ int mudp_getsockopt(mudp_handle ut, int level, int optname, void* optval,
 
   switch (optname) {
     case SO_SNDBUF:
+#ifdef SO_SNDBUFFORCE
     case SO_SNDBUFFORCE:
+#endif
       return udp_get_sndbuf(s, optval, optlen);
     case SO_RCVBUF:
+#ifdef SO_RCVBUFFORCE
     case SO_RCVBUFFORCE:
+#endif
       return udp_get_rcvbuf(s, optval, optlen);
     default:
       err("%s(%d), unknown optname %d\n", __func__, idx, optname);
@@ -738,10 +742,14 @@ int mudp_setsockopt(mudp_handle ut, int level, int optname, const void* optval,
 
   switch (optname) {
     case SO_SNDBUF:
+#ifdef SO_SNDBUFFORCE
     case SO_SNDBUFFORCE:
+#endif
       return udp_set_sndbuf(s, optval, optlen);
     case SO_RCVBUF:
+#ifdef SO_RCVBUFFORCE
     case SO_RCVBUFFORCE:
+#endif
       return udp_set_rcvbuf(s, optval, optlen);
     default:
       err("%s(%d), unknown optname %d\n", __func__, idx, optname);
