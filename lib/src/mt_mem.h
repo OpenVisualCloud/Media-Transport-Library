@@ -21,6 +21,7 @@ static inline void* mt_zmalloc(size_t sz) {
 static inline void mt_free(void* p) { free(p); }
 
 #ifdef MTL_HAS_ASAN
+int mt_asan_init(void);
 int mt_asan_check(void);
 void* mt_rte_malloc_socket(size_t sz, int socket);
 void* mt_rte_zmalloc_socket(size_t sz, int socket);

@@ -4,7 +4,7 @@
 
 #include "mt_stat.h"
 
-//#define DEBUG
+// #define DEBUG
 #include "mt_log.h"
 
 static inline struct mt_stat_mgr* get_stat_mgr(struct mtl_main_impl* impl) {
@@ -42,10 +42,11 @@ int mt_stat_register(struct mtl_main_impl* impl, mt_stat_cb_t cb, void* priv) {
 
 int mt_stat_unregister(struct mtl_main_impl* impl, mt_stat_cb_t cb, void* priv) {
   struct mt_stat_mgr* mgr = get_stat_mgr(impl);
-  struct mt_stat_item* item;
+  struct mt_stat_item *item, *tmp_item;
 
   mt_pthread_mutex_lock(&mgr->mutex);
-  MT_TAILQ_FOREACH(item, &mgr->head, next) {
+  for (item = MT_TAILQ_FIRST(&mgr->head); item != NULL; item = tmp_item) {
+    tmp_item = MT_TAILQ_NEXT(item, next);
     if ((item->cb_func == cb && item->cb_priv == priv)) {
       /* found the matched item, remove it */
       MT_TAILQ_REMOVE(&mgr->head, item, next);
@@ -75,7 +76,7 @@ int mt_stat_uinit(struct mtl_main_impl* impl) {
   struct mt_stat_item* item;
 
   /* check if any not unregister */
-  MT_TAILQ_FOREACH(item, &mgr->head, next) {
+  while ((item = MT_TAILQ_FIRST(&mgr->head))) {
     warn("%s, %p not unregister\n", __func__, item->cb_priv);
     MT_TAILQ_REMOVE(&mgr->head, item, next);
     mt_free(item);
