@@ -171,7 +171,7 @@ int mudp_getsockopt(mudp_handle ut, int level, int optname, void* optval,
                     socklen_t* optlen);
 
 /**
- * getsockopt on the udp transport socket.
+ * setsockopt on the udp transport socket.
  *
  * @param ut
  *   The handle to udp transport socket.

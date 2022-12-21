@@ -16,6 +16,7 @@
 #include "mudp_api.h"
 
 #ifndef _MUDP_SOCKFD_API_HEAD_H_
+/** Marco for re-inculde protect */
 #define _MUDP_SOCKFD_API_HEAD_H_
 
 #if defined(__cplusplus)
@@ -150,7 +151,7 @@ ssize_t mufd_recvfrom(int sockfd, void* buf, size_t len, int flags,
 int mufd_getsockopt(int sockfd, int level, int optname, void* optval, socklen_t* optlen);
 
 /**
- * getsockopt on the udp transport socket.
+ * setsockopt on the udp transport socket.
  *
  * @param sockfd
  *   the sockfd by mufd_socket.
@@ -198,8 +199,6 @@ int mufd_cleanup(void);
  * Abort the mufd context.
  * Usually called in the exception case, e.g CTRL-C.
  *
- * @param mt
- *   The handle to the media transport device context.
  * @return
  *   - 0: Success, device aborted.
  *   - <0: Error code of the device abort.
