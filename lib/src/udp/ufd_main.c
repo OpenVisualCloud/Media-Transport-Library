@@ -254,7 +254,10 @@ static void ufd_clear_mt_ctx(void) {
 static inline struct ufd_slot* ufd_fd2slot(int sockfd) {
   struct ufd_mt_ctx* ctx = ufd_get_mt_ctx(false);
   int idx = ufd_fd2idx(ctx, sockfd);
-  return ctx->slots[idx];
+  struct ufd_slot* slot = ctx->slots[idx];
+
+  if (!slot) err("%s, invalid sockfd %d\n", __func__, sockfd);
+  return slot;
 }
 
 int mufd_socket(int domain, int type, int protocol) {
@@ -355,6 +358,35 @@ ssize_t mufd_recvfrom(int sockfd, void* buf, size_t len, int flags,
                       struct sockaddr* src_addr, socklen_t* addrlen) {
   struct ufd_slot* slot = ufd_fd2slot(sockfd);
   return mudp_recvfrom(slot->handle, buf, len, flags, src_addr, addrlen);
+}
+
+int mufd_getsockopt(int sockfd, int level, int optname, void* optval, socklen_t* optlen) {
+  struct ufd_slot* slot = ufd_fd2slot(sockfd);
+  return mudp_getsockopt(slot->handle, level, optname, optval, optlen);
+}
+
+int mufd_setsockopt(int sockfd, int level, int optname, const void* optval,
+                    socklen_t optlen) {
+  struct ufd_slot* slot = ufd_fd2slot(sockfd);
+  return mudp_setsockopt(slot->handle, level, optname, optval, optlen);
+}
+
+int mufd_fcntl(int sockfd, int cmd, ...) {
+  struct ufd_slot* slot = ufd_fd2slot(sockfd);
+  int idx = slot->idx;
+
+#ifdef WINDOWSENV
+  err("%s(%d), invalid cmd %d, not support on windows\n", __func__, idx, cmd);
+  return -1;
+#else
+  if (cmd != F_SETFD) {
+    err("%s(%d), invalid cmd %d\n", __func__, idx, cmd);
+    return -1;
+  }
+
+  dbg("%s(%d), cmd %d\n", __func__, idx, cmd);
+  return 0;
+#endif
 }
 
 int mufd_cleanup(void) {

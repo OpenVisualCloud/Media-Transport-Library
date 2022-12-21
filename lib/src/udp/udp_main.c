@@ -359,6 +359,64 @@ static int udp_stat_dump(void* priv) {
   return 0;
 }
 
+static int udp_get_sndbuf(struct mudp_impl* s, void* optval, socklen_t* optlen) {
+  int idx = s->idx;
+  size_t sz = sizeof(uint32_t);
+
+  if (*optlen != sz) {
+    err("%s(%d), invalid *optlen %d\n", __func__, idx, (int)(*optlen));
+    return -EINVAL;
+  }
+
+  mtl_memcpy(optval, &s->sndbuf_sz, sz);
+  return 0;
+}
+
+static int udp_get_rcvbuf(struct mudp_impl* s, void* optval, socklen_t* optlen) {
+  int idx = s->idx;
+  size_t sz = sizeof(uint32_t);
+
+  if (*optlen != sz) {
+    err("%s(%d), invalid *optlen %d\n", __func__, idx, (int)(*optlen));
+    return -EINVAL;
+  }
+
+  mtl_memcpy(optval, &s->rcvbuf_sz, sz);
+  return 0;
+}
+
+static int udp_set_sndbuf(struct mudp_impl* s, const void* optval, socklen_t optlen) {
+  int idx = s->idx;
+  size_t sz = sizeof(uint32_t);
+  uint32_t sndbuf_sz;
+
+  if (optlen != sz) {
+    err("%s(%d), invalid optlen %d\n", __func__, idx, (int)optlen);
+    return -EINVAL;
+  }
+
+  sndbuf_sz = *((uint32_t*)optval);
+  info("%s(%d), sndbuf_sz %u\n", __func__, idx, sndbuf_sz);
+  s->sndbuf_sz = sndbuf_sz;
+  return 0;
+}
+
+static int udp_set_rcvbuf(struct mudp_impl* s, const void* optval, socklen_t optlen) {
+  int idx = s->idx;
+  size_t sz = sizeof(uint32_t);
+  uint32_t rcvbuf_sz;
+
+  if (optlen != sz) {
+    err("%s(%d), invalid optlen %d\n", __func__, idx, (int)optlen);
+    return -EINVAL;
+  }
+
+  rcvbuf_sz = *((uint32_t*)optval);
+  info("%s(%d), rcvbuf_sz %u\n", __func__, idx, rcvbuf_sz);
+  s->rcvbuf_sz = rcvbuf_sz;
+  return 0;
+}
+
 mudp_handle mudp_socket(mtl_handle mt, int domain, int type, int protocol) {
   int ret;
   struct mtl_main_impl* impl = mt;
@@ -392,6 +450,8 @@ mudp_handle mudp_socket(mtl_handle mt, int domain, int type, int protocol) {
   s->txq_bps = MUDP_DEFAULT_RL_BPS;
   s->rx_burst_pkts = 128;
   s->rx_ring_thresh = s->rx_burst_pkts / 2;
+  s->sndbuf_sz = 10 * 1024;
+  s->rcvbuf_sz = 10 * 1024;
 
   ret = udp_init_hdr(impl, s);
   if (ret < 0) {
@@ -615,7 +675,7 @@ dequeue:
           (int)len);
     }
     rte_pktmbuf_free(pkt);
-    dbg("%s(%d), copied %d bytes\n", __func__, idx, (int)copied);
+    dbg("%s(%d), copied %d bytes, flags %d\n", __func__, idx, (int)copied, flags);
     return copied;
   }
 
@@ -626,13 +686,77 @@ rx_pool:
     goto dequeue;
   }
 
+  /* return EAGAIN if MSG_DONTWAIT is set */
+  if (flags & MSG_DONTWAIT) {
+    errno = EAGAIN;
+    return -EAGAIN;
+  }
+
   int ms = (mt_get_tsc(impl) - start_ts) / NS_PER_MS;
   if ((ms < s->rx_timeout_ms) && !mt_aborted(impl)) {
     goto rx_pool;
   }
 
-  dbg("%s(%d), timeout to %d ms\n", __func__, idx, s->rx_timeout_ms);
+  dbg("%s(%d), timeout to %d ms, flags %d\n", __func__, idx, s->rx_timeout_ms, flags);
   return -ETIMEDOUT;
+}
+
+int mudp_getsockopt(mudp_handle ut, int level, int optname, void* optval,
+                    socklen_t* optlen) {
+  struct mudp_impl* s = ut;
+  int idx = s->idx;
+
+  if (level != SOL_SOCKET) {
+    err("%s(%d), unknown level %d\n", __func__, idx, level);
+    return -EINVAL;
+  }
+
+  switch (optname) {
+    case SO_SNDBUF:
+#ifdef SO_SNDBUFFORCE
+    case SO_SNDBUFFORCE:
+#endif
+      return udp_get_sndbuf(s, optval, optlen);
+    case SO_RCVBUF:
+#ifdef SO_RCVBUFFORCE
+    case SO_RCVBUFFORCE:
+#endif
+      return udp_get_rcvbuf(s, optval, optlen);
+    default:
+      err("%s(%d), unknown optname %d\n", __func__, idx, optname);
+      return -EINVAL;
+  }
+
+  return 0;
+}
+
+int mudp_setsockopt(mudp_handle ut, int level, int optname, const void* optval,
+                    socklen_t optlen) {
+  struct mudp_impl* s = ut;
+  int idx = s->idx;
+
+  if (level != SOL_SOCKET) {
+    err("%s(%d), unknown level %d\n", __func__, idx, level);
+    return -EINVAL;
+  }
+
+  switch (optname) {
+    case SO_SNDBUF:
+#ifdef SO_SNDBUFFORCE
+    case SO_SNDBUFFORCE:
+#endif
+      return udp_set_sndbuf(s, optval, optlen);
+    case SO_RCVBUF:
+#ifdef SO_RCVBUFFORCE
+    case SO_RCVBUFFORCE:
+#endif
+      return udp_set_rcvbuf(s, optval, optlen);
+    default:
+      err("%s(%d), unknown optname %d\n", __func__, idx, optname);
+      return -EINVAL;
+  }
+
+  return 0;
 }
 
 int mudp_set_tx_rate(mudp_handle ut, uint64_t bps) {

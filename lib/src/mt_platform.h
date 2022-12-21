@@ -46,6 +46,10 @@ typedef unsigned long int nfds_t;
 #define POLLIN 0x001
 #endif
 
+#ifndef MSG_DONTWAIT /* For windows */
+#define MSG_DONTWAIT (0x40)
+#endif
+
 #ifdef WINDOWSENV
 #define MT_THREAD_TIMEDWAIT_CLOCK_ID CLOCK_REALTIME
 #else

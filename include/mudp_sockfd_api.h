@@ -16,6 +16,7 @@
 #include "mudp_api.h"
 
 #ifndef _MUDP_SOCKFD_API_HEAD_H_
+/** Marco for re-inculde protect */
 #define _MUDP_SOCKFD_API_HEAD_H_
 
 #if defined(__cplusplus)
@@ -129,6 +130,60 @@ int mufd_poll(struct pollfd* fds, nfds_t nfds, int timeout);
 ssize_t mufd_recvfrom(int sockfd, void* buf, size_t len, int flags,
                       struct sockaddr* src_addr, socklen_t* addrlen);
 
+/**
+ * getsockopt on the udp transport socket.
+ *
+ * @param sockfd
+ *   the sockfd by mufd_socket.
+ * @param level
+ *   the sockets API level, only SOL_SOCKET.
+ * @param optname
+      specified options are passed uninterpreted to the appropriate protocol
+      module for interpretation.
+ * @param optval
+      identify a buffer in which the value for the requested option.
+ * @param optlen
+      identify a buffer len for the requested option.
+ * @return
+ *   - 0: Success.
+ *   - <0: Error code.
+ */
+int mufd_getsockopt(int sockfd, int level, int optname, void* optval, socklen_t* optlen);
+
+/**
+ * setsockopt on the udp transport socket.
+ *
+ * @param sockfd
+ *   the sockfd by mufd_socket.
+ * @param level
+ *   the sockets API level, only SOL_SOCKET.
+ * @param optname
+      specified options are passed uninterpreted to the appropriate protocol
+      module for interpretation.
+ * @param optval
+      identify a buffer in which the value for the requested option.
+ * @param optlen
+      identify a buffer len for the requested option.
+ * @return
+ *   - 0: Success.
+ *   - <0: Error code.
+ */
+int mufd_setsockopt(int sockfd, int level, int optname, const void* optval,
+                    socklen_t optlen);
+
+/**
+ * manipulate file descriptor on the udp transport socket.
+ *
+ * @param sockfd
+ *   the sockfd by mufd_socket.
+ * @param cmd
+ *   cmd.
+ * @return
+ *   - 0: Success.
+ *   - <0: Error code.
+ */
+int mufd_fcntl(int sockfd, int cmd, ...);
+
 /* below are the extra APIs */
 
 /**
@@ -144,8 +199,6 @@ int mufd_cleanup(void);
  * Abort the mufd context.
  * Usually called in the exception case, e.g CTRL-C.
  *
- * @param mt
- *   The handle to the media transport device context.
  * @return
  *   - 0: Success, device aborted.
  *   - <0: Error code of the device abort.
