@@ -150,6 +150,48 @@ ssize_t mudp_recvfrom(mudp_handle ut, void* buf, size_t len, int flags,
                       struct sockaddr* src_addr, socklen_t* addrlen);
 
 /**
+ * getsockopt on the udp transport socket.
+ *
+ * @param ut
+ *   The handle to udp transport socket.
+ * @param level
+ *   the sockets API level, only SOL_SOCKET.
+ * @param optname
+      specified options are passed uninterpreted to the appropriate protocol
+      module for interpretation.
+ * @param optval
+      identify a buffer in which the value for the requested option.
+ * @param optlen
+      identify a buffer len for the requested option.
+ * @return
+ *   - 0: Success.
+ *   - <0: Error code.
+ */
+int mudp_getsockopt(mudp_handle ut, int level, int optname, void* optval,
+                    socklen_t* optlen);
+
+/**
+ * getsockopt on the udp transport socket.
+ *
+ * @param ut
+ *   The handle to udp transport socket.
+ * @param level
+ *   the sockets API level, only SOL_SOCKET.
+ * @param optname
+      specified options are passed uninterpreted to the appropriate protocol
+      module for interpretation.
+ * @param optval
+      identify a buffer in which the value for the requested option.
+ * @param optlen
+      identify a buffer len for the requested option.
+ * @return
+ *   - 0: Success.
+ *   - <0: Error code.
+ */
+int mudp_setsockopt(mudp_handle ut, int level, int optname, const void* optval,
+                    socklen_t optlen);
+
+/**
  * Set the rate(speed) for one udp transport socket. Call before mudp_bind.
  *
  * @param ut

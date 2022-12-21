@@ -48,6 +48,11 @@ struct mudp_impl {
 
   uint32_t flags;
 
+  /* send buffer size */
+  uint32_t sndbuf_sz;
+  /* receive buffer size */
+  uint32_t rcvbuf_sz;
+
   /* stat */
   /* do we need atomic here? atomic may impact the performance */
   int stat_pkt_build;
