@@ -286,10 +286,9 @@ static int ptp_parse_result(struct mt_ptp_impl* ptp) {
     ptp_calculate_coefficient(ptp, delta);
   else /* fine tune coefficient */
     ptp_update_coefficient(ptp, correct_delta);
-
+  ptp->last_sync_ts = ptp->t4 + delta;
   ptp_adjust_delta(ptp, delta);
   ptp_t_result_clear(ptp);
-  ptp->last_sync_ts = ptp->t4 + delta;
 
   if (ptp->delta_result_cnt > 10) {
     if (labs(delta) < 10000) {
