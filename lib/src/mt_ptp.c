@@ -20,6 +20,10 @@
 
 #define MT_PTP_EBU_SYNC_MS (10)
 
+#define MT_PTP_KP 2e-9
+#define MT_PTP_KI 0
+#define MTL_PTP_USE_PI
+
 static char* ptp_mode_strs[MT_PTP_MAX_MODE] = {
     "l2",
     "l4",
@@ -115,9 +119,25 @@ static void ptp_coeffcient_result_reset(struct mt_ptp_impl* ptp) {
   ptp->coefficient_result_cnt = 0;
 }
 
+static void ptp_update_coefficient(struct mt_ptp_impl* ptp, int64_t error) {
+  if (error > 1000 * 1000) return;
+  ptp->integral += (error + ptp->prev_error) / 2;
+  ptp->prev_error = error;
+  double u = MT_PTP_KP * error + MT_PTP_KI * ptp->integral;
+  if (ptp->t2_mode == MT_PTP_L4) u /= 4; /* sync interval is 0.25s for l4 */
+  ptp->coefficient += RTE_MIN(RTE_MAX(u, -1e-6), 1e-6);
+  ptp->coefficient_result_sum += ptp->coefficient;
+  ptp->coefficient_result_min = RTE_MIN(ptp->coefficient, ptp->coefficient_result_min);
+  ptp->coefficient_result_max = RTE_MAX(ptp->coefficient, ptp->coefficient_result_max);
+  ptp->coefficient_result_cnt++;
+
+  // ptp->last_sync_ts = ts_m;
+  info("%s(%d), error %" PRId64 ", u %.15lf\n", __func__, ptp->port, error, u);
+}
+
 static void ptp_calculate_coefficient(struct mt_ptp_impl* ptp, int64_t delta) {
   if (delta > 1000 * 1000) return;
-  uint64_t ts_s = ptp_get_raw_time(ptp);
+  uint64_t ts_s = ptp->t4;
   uint64_t ts_m = ts_s + delta;
   double coefficient = (double)(ts_m - ptp->last_sync_ts) / (ts_s - ptp->last_sync_ts);
   ptp->coefficient_result_sum += coefficient;
@@ -133,7 +153,7 @@ static void ptp_calculate_coefficient(struct mt_ptp_impl* ptp, int64_t delta) {
     ptp->coefficient = ptp->coefficient_result_sum / 8;
     ptp_coeffcient_result_reset(ptp);
   }
-  ptp->last_sync_ts = ts_m;
+  ptp->last_sync_ts = ptp->t4 + delta;
   dbg("%s(%d), delta %" PRId64 ", co %.15lf, ptp %" PRIu64 "\n", __func__, ptp->port,
       delta, ptp->coefficient, ts_m);
 }
@@ -266,7 +286,12 @@ static int ptp_parse_result(struct mt_ptp_impl* ptp) {
   }
   ptp->delta_result_err = 0;
 
-  ptp_calculate_coefficient(ptp, delta);
+  if (labs(correct_delta) > 1000)
+    ptp_calculate_coefficient(ptp, delta);
+  else {
+    ptp->last_sync_ts = ptp->t4 + delta;
+    ptp_update_coefficient(ptp, correct_delta);
+  }
   ptp_adjust_delta(ptp, delta);
   ptp_t_result_clear(ptp);
 

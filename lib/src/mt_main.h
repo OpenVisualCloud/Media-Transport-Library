@@ -171,6 +171,10 @@ struct mt_ptp_impl {
   double coefficient_result_max;
   int32_t coefficient_result_cnt;
 
+  /* pi controller */
+  double integral;
+  int64_t prev_error;
+
   /* status */
   int64_t stat_delta_min;
   int64_t stat_delta_max;
