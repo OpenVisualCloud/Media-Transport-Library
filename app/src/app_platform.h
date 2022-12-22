@@ -20,6 +20,7 @@
 #include <netinet/ip.h>
 #include <netinet/udp.h>
 #include <numa.h>
+#include <poll.h>
 #include <sys/ioctl.h>
 #include <sys/shm.h>
 #include <sys/socket.h>
@@ -38,6 +39,15 @@
 #define ST_CLOCK_MONOTONIC_ID CLOCK_MONOTONIC_RAW
 #else
 #define ST_CLOCK_MONOTONIC_ID CLOCK_MONOTONIC
+#endif
+
+#ifndef POLLIN /* For windows */
+/* There is data to read */
+#define POLLIN 0x001
+#endif
+
+#ifdef WINDOWSENV
+typedef unsigned long int nfds_t;
 #endif
 
 enum st_tx_frame_status {

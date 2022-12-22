@@ -12,6 +12,7 @@
 #include "mt_ptp.h"
 #include "mt_sch.h"
 #include "mt_socket.h"
+#include "mt_stat.h"
 #include "mt_util.h"
 #include "st2110/pipeline/st_plugin.h"
 #include "st2110/st_rx_ancillary_session.h"
@@ -157,6 +158,8 @@ static void dev_stat(struct mtl_main_impl* impl) {
   if (impl->rx_anc_init) st_rx_ancillary_sessions_stat(impl);
   st_plugins_dump(impl);
   if (p->stat_dump_cb_fn) p->stat_dump_cb_fn(p->priv);
+  /* todo: move all above to stat framework */
+  mt_stat_dump(impl);
   notice("* *    E N D    S T A T E   * * \n\n");
 }
 
@@ -916,7 +919,13 @@ static int dev_start_port(struct mtl_main_impl* impl, enum mtl_port port) {
       struct rte_eth_rxseg_split* rx_seg;
 
       rx_seg = &rx_usegs[0].split;
+#if RTE_VERSION >= RTE_VERSION_NUM(22, 11, 0, 0)
+      rx_seg->proto_hdr =
+          RTE_PTYPE_L2_ETHER | RTE_PTYPE_L3_IPV4_EXT_UNKNOWN | RTE_PTYPE_L4_UDP;
+#else
       rx_seg->proto_hdr = RTE_PTYPE_L4_UDP;
+#endif
+
       rx_seg->offset = 0;
       rx_seg->length = 0;
       rx_seg->mp = mbuf_pool;
@@ -1580,7 +1589,9 @@ struct mt_rx_queue* mt_dev_get_rx_queue(struct mtl_main_impl* impl, enum mtl_por
 
         r_flow = dev_rx_queue_create_flow(inf, q, flow);
         if (!r_flow) {
-          err("%s(%d), create flow fail for queue %d\n", __func__, port, q);
+          uint8_t* ip = flow->dip_addr;
+          err("%s(%d), create flow fail for queue %d, ip %u.%u.%u.%u port %u\n", __func__,
+              port, q, ip[0], ip[1], ip[2], ip[3], flow->dst_port);
           mt_pthread_mutex_unlock(&inf->rx_queues_mutex);
           return NULL;
         }
@@ -1602,7 +1613,13 @@ struct mt_rx_queue* mt_dev_get_rx_queue(struct mtl_main_impl* impl, enum mtl_por
     mt_pthread_mutex_unlock(&inf->rx_queues_mutex);
 
     dev_flush_rx_queue(inf, rx_queue);
-    info("%s(%d), q %d\n", __func__, port, q);
+    if (flow) {
+      uint8_t* ip = flow->dip_addr;
+      info("%s(%d), q %u ip %u.%u.%u.%u port %u\n", __func__, port, q, ip[0], ip[1],
+           ip[2], ip[3], flow->dst_port);
+    } else {
+      info("%s(%d), q %u\n", __func__, port, q);
+    }
     return rx_queue;
   }
   mt_pthread_mutex_unlock(&inf->rx_queues_mutex);

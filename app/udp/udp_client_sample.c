@@ -75,6 +75,32 @@ static void* udp_client_thread(void* arg) {
   return NULL;
 }
 
+static void* udp_client_transport_thread(void* arg) {
+  struct udp_client_sample_ctx* s = arg;
+  mudp_handle socket = s->socket;
+
+  ssize_t udp_len = 1024;
+  char send_buf[udp_len];
+  for (ssize_t i = 0; i < udp_len; i++) {
+    send_buf[i] = i;
+  }
+
+  info("%s(%d), start socket %p\n", __func__, s->idx, socket);
+  while (!s->stop) {
+    ssize_t send =
+        mudp_sendto(socket, send_buf, sizeof(send_buf), 0,
+                    (const struct sockaddr*)&s->serv_addr, sizeof(s->serv_addr));
+    if (send != udp_len) {
+      err("%s(%d), only send %d bytes\n", __func__, s->idx, (int)send);
+      continue;
+    }
+    s->send_cnt++;
+  }
+  info("%s(%d), stop\n", __func__, s->idx);
+
+  return NULL;
+}
+
 static void udp_client_status(struct udp_client_sample_ctx* s) {
   info("%s(%d), send %d pkts recv %d pkts\n", __func__, s->idx, s->send_cnt, s->recv_cnt);
   s->send_cnt = 0;
@@ -96,6 +122,8 @@ int main(int argc, char** argv) {
   memset(&ctx, 0, sizeof(ctx));
   ret = sample_parse_args(&ctx, argc, argv, true, false, true);
   if (ret < 0) return ret;
+
+  ctx.param.flags |= MTL_FLAG_UDP_TRANSPORT; /* udp transport */
 
   ctx.st = mtl_init(&ctx.param);
   if (!ctx.st) {
@@ -130,6 +158,7 @@ int main(int argc, char** argv) {
       ret = -EIO;
       goto error;
     }
+    if (ctx.udp_tx_bps) mudp_set_tx_rate(app[i]->socket, ctx.udp_tx_bps);
 
     ret = mudp_bind(app[i]->socket, (const struct sockaddr*)&app[i]->serv_addr,
                     sizeof(app[i]->serv_addr));
@@ -138,7 +167,12 @@ int main(int argc, char** argv) {
       goto error;
     }
 
-    ret = pthread_create(&app[i]->thread, NULL, udp_client_thread, app[i]);
+    if ((ctx.udp_mode == SAMPLE_UDP_TRANSPORT) ||
+        (ctx.udp_mode == SAMPLE_UDP_TRANSPORT_POLL) ||
+        (ctx.udp_mode == SAMPLE_UDP_TRANSPORT_UNIFY_POLL))
+      ret = pthread_create(&app[i]->thread, NULL, udp_client_transport_thread, app[i]);
+    else
+      ret = pthread_create(&app[i]->thread, NULL, udp_client_thread, app[i]);
     if (ret < 0) {
       err("%s(%d), thread create fail %d\n", __func__, ret, i);
       goto error;

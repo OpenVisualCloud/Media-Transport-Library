@@ -2508,7 +2508,7 @@ static int rv_tasklet(struct mtl_main_impl* impl, struct st_rx_video_session_imp
     if (rv > 0) done = false;
 
 #ifdef ST_PCAPNG_ENABLED /* dump mbufs to pcapng file */
-    if (s->pcapng != NULL) {
+    if ((s->pcapng != NULL) && (s->pcapng_max_pkts)) {
       if (s->pcapng_dumped_pkts < s->pcapng_max_pkts) {
         rv_dump_pcapng(impl, s, mbuf,
                        RTE_MIN(rv, s->pcapng_max_pkts - s->pcapng_dumped_pkts), s_port);

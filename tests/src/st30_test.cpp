@@ -380,7 +380,7 @@ static void st30_tx_fps_test(enum st30_type type[], enum st30_sampling sample[],
     EXPECT_NEAR(framerate[i], expect_framerate, expect_framerate * 0.1);
     ret = st30_tx_free(handle[i]);
     EXPECT_GE(ret, 0);
-    st_test_free(test_ctx[i]);
+    delete test_ctx[i];
   }
 }
 

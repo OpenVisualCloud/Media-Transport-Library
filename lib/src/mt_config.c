@@ -4,24 +4,7 @@
 
 #include "mt_config.h"
 
-#include <json-c/json.h>
-
 #include "mt_log.h"
-
-#if (JSON_C_VERSION_NUM >= ((0 << 16) | (13 << 8) | 0)) || \
-    (JSON_C_VERSION_NUM < ((0 << 16) | (10 << 8) | 0))
-static inline json_object* _json_object_get(json_object* obj, const char* key) {
-  return json_object_object_get(obj, key);
-}
-#else
-static inline json_object* _json_object_get(json_object* obj, const char* key) {
-  json_object* value;
-  int ret = json_object_object_get_ex(obj, key, &value);
-  if (ret) return value;
-  err("%s, can not get object with key: %s!\n", __func__, key);
-  return NULL;
-}
-#endif
 
 static int config_parse_plugins(struct mtl_main_impl* impl, json_object* plugins_array) {
   if (json_object_get_type(plugins_array) != json_type_array) {
@@ -35,13 +18,13 @@ static int config_parse_plugins(struct mtl_main_impl* impl, json_object* plugins
     json_object* plugin_obj = json_object_array_get_idx(plugins_array, i);
     if (!plugin_obj) continue;
     json_object* obj;
-    obj = _json_object_get(plugin_obj, "enabled");
+    obj = mt_json_object_get(plugin_obj, "enabled");
     if (obj && !json_object_get_boolean(obj)) continue;
     const char* name = NULL;
-    obj = _json_object_get(plugin_obj, "name");
+    obj = mt_json_object_get(plugin_obj, "name");
     if (obj) name = json_object_get_string(obj);
     const char* path = NULL;
-    obj = _json_object_get(plugin_obj, "path");
+    obj = mt_json_object_get(plugin_obj, "path");
     if (obj) path = json_object_get_string(obj);
     if (!name || !path) continue;
     st_plugin_register(impl, path);
@@ -59,7 +42,7 @@ static int config_parse_json(struct mtl_main_impl* impl, const char* filename) {
   info("%s, parse %s with json-c version: %s\n", __func__, filename, json_c_version());
 
   /* parse plugins for system */
-  json_object* plugins_array = _json_object_get(root_object, "plugins");
+  json_object* plugins_array = mt_json_object_get(root_object, "plugins");
   if (plugins_array) config_parse_plugins(impl, plugins_array);
 
   json_object_put(root_object);

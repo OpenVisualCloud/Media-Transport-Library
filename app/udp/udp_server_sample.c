@@ -24,6 +24,16 @@ struct udp_server_sample_ctx {
   int recv_cnt;
 };
 
+struct udp_server_samples_ctx {
+  struct udp_server_sample_ctx** apps;
+  int apps_cnt;
+
+  bool stop;
+  pthread_t thread;
+  pthread_cond_t wake_cond;
+  pthread_mutex_t wake_mutex;
+};
+
 static void* udp_server_thread(void* arg) {
   struct udp_server_sample_ctx* s = arg;
   mudp_handle socket = s->socket;
@@ -53,6 +63,90 @@ static void* udp_server_thread(void* arg) {
   return NULL;
 }
 
+static void* udp_server_transport_thread(void* arg) {
+  struct udp_server_sample_ctx* s = arg;
+  mudp_handle socket = s->socket;
+  ssize_t udp_len = MUDP_MAX_BYTES;
+  char buf[udp_len];
+
+  info("%s(%d), start socket %p\n", __func__, s->idx, socket);
+  while (!s->stop) {
+    ssize_t recv = mudp_recvfrom(socket, buf, sizeof(buf), 0, NULL, NULL);
+    if (recv < 0) {
+      dbg("%s(%d), recv fail %d\n", __func__, s->idx, (int)recv);
+      continue;
+    }
+    s->recv_cnt++;
+  }
+  info("%s(%d), stop\n", __func__, s->idx);
+
+  return NULL;
+}
+
+static void* udp_server_transport_poll_thread(void* arg) {
+  struct udp_server_sample_ctx* s = arg;
+  mudp_handle socket = s->socket;
+  ssize_t udp_len = MUDP_MAX_BYTES;
+  char buf[udp_len];
+
+  struct mudp_pollfd fds[1];
+  memset(fds, 0, sizeof(fds));
+  fds[0].fd = socket;
+  fds[0].events = POLLIN;
+
+  info("%s(%d), start socket %p\n", __func__, s->idx, socket);
+  while (!s->stop) {
+    int ret = mudp_poll(fds, 1, 100);
+    if (ret <= 0) continue;
+    ssize_t recv = mudp_recvfrom(socket, buf, sizeof(buf), 0, NULL, NULL);
+    if (recv < 0) {
+      err("%s(%d), recv fail %d\n", __func__, s->idx, (int)recv);
+      continue;
+    }
+    s->recv_cnt++;
+  }
+  info("%s(%d), stop\n", __func__, s->idx);
+
+  return NULL;
+}
+
+static void* udp_servers_poll_thread(void* arg) {
+  struct udp_server_samples_ctx* ctxs = arg;
+  struct udp_server_sample_ctx* s = NULL;
+  int apps_cnt = ctxs->apps_cnt;
+  mudp_handle socket;
+  ssize_t udp_len = MUDP_MAX_BYTES;
+  char buf[udp_len];
+
+  struct mudp_pollfd fds[apps_cnt];
+  memset(fds, 0, sizeof(fds));
+  for (int i = 0; i < apps_cnt; i++) {
+    s = ctxs->apps[i];
+    fds[i].fd = s->socket;
+    fds[i].events = POLLIN;
+  }
+
+  info("%s, start at %p\n", __func__, ctxs);
+  while (!ctxs->stop) {
+    int ret = mudp_poll(fds, apps_cnt, 100);
+    if (ret <= 0) continue;
+    for (int i = 0; i < apps_cnt; i++) {
+      if (!fds[i].revents) continue; /* pkt not ready */
+      s = ctxs->apps[i];
+      socket = s->socket;
+      ssize_t recv = mudp_recvfrom(socket, buf, sizeof(buf), 0, NULL, NULL);
+      if (recv < 0) {
+        err("%s(%d), recv fail %d\n", __func__, s->idx, (int)recv);
+        continue;
+      }
+      s->recv_cnt++;
+    }
+  }
+  info("%s, stop\n", __func__);
+
+  return NULL;
+}
+
 static void udp_server_status(struct udp_server_sample_ctx* s) {
   info("%s(%d), send %d pkts recv %d pkts\n", __func__, s->idx, s->send_cnt, s->recv_cnt);
   s->send_cnt = 0;
@@ -61,11 +155,14 @@ static void udp_server_status(struct udp_server_sample_ctx* s) {
 
 int main(int argc, char** argv) {
   struct st_sample_context ctx;
+  struct udp_server_samples_ctx ctxs;
   int ret;
 
   memset(&ctx, 0, sizeof(ctx));
   ret = sample_parse_args(&ctx, argc, argv, false, true, true);
   if (ret < 0) return ret;
+
+  ctx.param.flags |= MTL_FLAG_UDP_TRANSPORT; /* udp transport */
 
   ctx.st = mtl_init(&ctx.param);
   if (!ctx.st) {
@@ -76,6 +173,20 @@ int main(int argc, char** argv) {
   uint32_t session_num = ctx.sessions;
   struct udp_server_sample_ctx* app[session_num];
   memset(app, 0, sizeof(app));
+
+  ctxs.apps = NULL;
+  ctxs.stop = false;
+  st_pthread_mutex_init(&ctxs.wake_mutex, NULL);
+  st_pthread_cond_init(&ctxs.wake_cond, NULL);
+  if (ctx.udp_mode == SAMPLE_UDP_TRANSPORT_UNIFY_POLL) {
+    ctxs.apps = malloc(sizeof(*ctxs.apps) * session_num);
+    if (!ctxs.apps) {
+      err("%s, app ctxs malloc fail\n", __func__);
+      ret = -ENOMEM;
+      goto error;
+    }
+    ctxs.apps_cnt = session_num;
+  }
 
   for (int i = 0; i < session_num; i++) {
     app[i] = malloc(sizeof(*app[i]));
@@ -98,6 +209,7 @@ int main(int argc, char** argv) {
       ret = -EIO;
       goto error;
     }
+    if (ctx.udp_tx_bps) mudp_set_tx_rate(app[i]->socket, ctx.udp_tx_bps);
     mudp_init_sockaddr(&app[i]->client_addr, ctx.rx_sip_addr[MTL_PORT_P],
                        ctx.udp_port + i);
     ret = mudp_bind(app[i]->socket, (const struct sockaddr*)&app[i]->client_addr,
@@ -107,9 +219,21 @@ int main(int argc, char** argv) {
       goto error;
     }
 
-    ret = pthread_create(&app[i]->thread, NULL, udp_server_thread, app[i]);
+    if (ctx.udp_mode == SAMPLE_UDP_TRANSPORT) {
+      ret = pthread_create(&app[i]->thread, NULL, udp_server_transport_thread, app[i]);
+    } else if (ctx.udp_mode == SAMPLE_UDP_TRANSPORT_POLL) {
+      ret =
+          pthread_create(&app[i]->thread, NULL, udp_server_transport_poll_thread, app[i]);
+    } else if (ctx.udp_mode == SAMPLE_UDP_TRANSPORT_UNIFY_POLL) {
+      ctxs.apps[i] = app[i];
+      if ((i + 1) == session_num) {
+        ret = pthread_create(&ctxs.thread, NULL, udp_servers_poll_thread, &ctxs);
+      }
+    } else {
+      ret = pthread_create(&app[i]->thread, NULL, udp_server_thread, app[i]);
+    }
     if (ret < 0) {
-      err("%s(%d), thread create fail %d\n", __func__, ret, i);
+      err("%s(%d), thread create fail %d\n", __func__, i, ret);
       goto error;
     }
   }
@@ -126,13 +250,23 @@ int main(int argc, char** argv) {
     }
   }
 
-  // stop app thread
-  for (int i = 0; i < session_num; i++) {
-    app[i]->stop = true;
-    st_pthread_mutex_lock(&app[i]->wake_mutex);
-    st_pthread_cond_signal(&app[i]->wake_cond);
-    st_pthread_mutex_unlock(&app[i]->wake_mutex);
-    pthread_join(app[i]->thread, NULL);
+  if (ctx.udp_mode == SAMPLE_UDP_TRANSPORT_UNIFY_POLL) {
+    ctxs.stop = true;
+    dbg("%s(%d), stop ctxs thread\n", __func__, i);
+    st_pthread_mutex_lock(&ctxs.wake_mutex);
+    st_pthread_cond_signal(&ctxs.wake_cond);
+    st_pthread_mutex_unlock(&ctxs.wake_mutex);
+    pthread_join(ctxs.thread, NULL);
+  } else {
+    // stop app thread
+    for (int i = 0; i < session_num; i++) {
+      app[i]->stop = true;
+      dbg("%s(%d), stop thread\n", __func__, i);
+      st_pthread_mutex_lock(&app[i]->wake_mutex);
+      st_pthread_cond_signal(&app[i]->wake_cond);
+      st_pthread_mutex_unlock(&app[i]->wake_mutex);
+      pthread_join(app[i]->thread, NULL);
+    }
   }
 
 error:
@@ -144,6 +278,9 @@ error:
       free(app[i]);
     }
   }
+  if (ctxs.apps) free(ctxs.apps);
+  st_pthread_mutex_destroy(&ctxs.wake_mutex);
+  st_pthread_cond_destroy(&ctxs.wake_cond);
   /* release sample(st) dev */
   if (ctx.st) {
     mtl_uninit(ctx.st);

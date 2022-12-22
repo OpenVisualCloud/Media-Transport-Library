@@ -129,88 +129,59 @@ int mt_map_uinit(struct mtl_main_impl* impl) {
 #if RTE_VERSION >= RTE_VERSION_NUM(21, 11, 0, 0)
 #include <rte_dmadev.h>
 
-static void dma_copy_test(struct mtl_main_impl* impl, struct mtl_dma_lender_dev* dev,
-                          uint32_t off, uint32_t len) {
+static int dma_copy_test(struct mtl_main_impl* impl, struct mtl_dma_lender_dev* dev,
+                         uint32_t off, uint32_t len) {
   void *dst = NULL, *src = NULL;
   int idx = mt_dma_dev_id(dev);
+  int ret = -EIO;
 
   dst = mt_rte_zmalloc_socket(len, mt_socket_id(impl, MTL_PORT_P));
   src = mt_rte_zmalloc_socket(len, mt_socket_id(impl, MTL_PORT_P));
   memset(src, 0x55, len);
 
   if (dst && src) {
-    int ret = mt_dma_copy(dev, rte_malloc_virt2iova(dst) + off,
-                          rte_malloc_virt2iova(src) + off, len - off);
-    dbg("%s(%d), copy ret %d off %u len %u\n", __func__, idx, ret, off, len);
-    if (ret >= 0) {
-      ret = mt_dma_submit(dev);
-      dbg("%s(%d), submit ret %d\n", __func__, idx, ret);
-      if (ret >= 0) {
-        uint16_t nb_dq = 0;
-        while (nb_dq < 1) {
-          nb_dq = mt_dma_completed(dev, 32, NULL, NULL);
-          dbg("%s(%d), nb_dq %d\n", __func__, idx, nb_dq);
-        }
-      }
+    ret = mt_dma_copy(dev, rte_malloc_virt2iova(dst) + off,
+                      rte_malloc_virt2iova(src) + off, len - off);
+    if (ret < 0) {
+      err("%s(%d), copy fail %d\n", __func__, idx, ret);
+      goto exit;
     }
-    info("%s(%d), result %d off %u len %u\n", __func__, idx,
-         memcmp(src + off, dst + off, len - off), off, len);
+    dbg("%s(%d), copy ret %d off %u len %u\n", __func__, idx, ret, off, len);
+
+    ret = mt_dma_submit(dev);
+    if (ret < 0) {
+      err("%s(%d), submit fail %d\n", __func__, idx, ret);
+      goto exit;
+    }
+
+    uint16_t nb_dq = 0;
+    int sleep_interval_ms = 10;
+    int max_retry = 100; /* timeout 1s */
+    int retry = 0;
+    while (nb_dq < 1) {
+      nb_dq = mt_dma_completed(dev, 32, NULL, NULL);
+      dbg("%s(%d), nb_dq %d\n", __func__, idx, nb_dq);
+      retry++;
+      if (retry > max_retry) {
+        ret = -ETIMEDOUT;
+        err("%s(%d), poll timeout\n", __func__, idx);
+        goto exit;
+      }
+      mt_sleep_ms(sleep_interval_ms);
+    }
+    if (!memcmp(src + off, dst + off, len - off)) {
+      ret = 0;
+    } else {
+      err("%s(%d), memcmp fail\n", __func__, idx);
+      ret = -EIO;
+    }
   }
 
+exit:
   if (dst) mt_rte_free(dst);
   if (src) mt_rte_free(src);
-}
 
-static void dma_fill_test(struct mtl_main_impl* impl, struct mtl_dma_lender_dev* dev,
-                          uint32_t off, uint32_t len, uint8_t pattern) {
-  void *dst = NULL, *src = NULL;
-  int idx = mt_dma_dev_id(dev);
-  uint64_t pattern_u64 = 0;
-
-  dst = mt_rte_zmalloc_socket(len, mt_socket_id(impl, MTL_PORT_P));
-  src = mt_rte_zmalloc_socket(len, mt_socket_id(impl, MTL_PORT_P));
-  memset(src, pattern, len);
-
-  /* pattern to u64 */
-  memset(&pattern_u64, pattern, sizeof(pattern_u64));
-
-  if (dst && src) {
-    int ret = mt_dma_fill(dev, rte_malloc_virt2iova(dst) + off, pattern_u64, len - off);
-    dbg("%s(%d), copy ret %d off %u len %u\n", __func__, idx, ret, off, len);
-    if (ret >= 0) {
-      ret = mt_dma_submit(dev);
-      dbg("%s(%d), submit ret %d\n", __func__, idx, ret);
-      if (ret >= 0) {
-        uint16_t nb_dq = 0;
-        while (nb_dq < 1) {
-          nb_dq = mt_dma_completed(dev, 32, NULL, NULL);
-          dbg("%s(%d), nb_dq %d\n", __func__, idx, nb_dq);
-        }
-      }
-    }
-    info("%s(%d), result %d off %u len %u\n", __func__, idx,
-         memcmp(src + off, dst + off, len - off), off, len);
-  }
-
-  if (dst) mt_rte_free(dst);
-  if (src) mt_rte_free(src);
-}
-
-static void dma_test(struct mtl_main_impl* impl) {
-  struct mt_dma_request_req req;
-  req.nb_desc = 128;
-  req.max_shared = 1;
-  req.sch_idx = 0;
-  req.socket_id = mt_socket_id(impl, MTL_PORT_P);
-  req.priv = NULL;
-  req.drop_mbuf_cb = NULL;
-  struct mtl_dma_lender_dev* dev = mt_dma_request_dev(impl, &req);
-  if (!dev) return;
-
-  dma_copy_test(impl, dev, 0, 1024);
-  dma_fill_test(impl, dev, 0, 1024, 0x5a);
-
-  mt_dma_free_dev(impl, dev);
+  return ret;
 }
 
 static int dma_drop_mbuf(struct mt_dma_dev* dma_dev, uint16_t nb_mbuf) {
@@ -281,10 +252,8 @@ static int dma_hw_start(struct mtl_main_impl* impl, struct mt_dma_dev* dev,
     return ret;
   }
 
-  /* WA to fix stop fail if no any copy task submitted */
-  dma_copy_test(impl, &dev->lenders[0], 0, 32);
-
-  return 0;
+  /* perform the copy ops check */
+  return dma_copy_test(impl, &dev->lenders[0], 0, 32);
 }
 
 static int dma_hw_stop(struct mt_dma_dev* dev) {
@@ -425,12 +394,17 @@ struct mtl_dma_lender_dev* mt_dma_request_dev(struct mtl_main_impl* impl,
     dev = &mgr->devs[idx];
     if (dev->usable && !dev->active && (dev->soc_id == req->socket_id)) {
       ret = dma_hw_start(impl, dev, nb_desc);
-      if (ret < 0) continue;
+      if (ret < 0) {
+        err("%s(%d), dma hw start fail %d\n", __func__, idx, ret);
+        dev->usable = false; /* mark to un-usable */
+        continue;
+      }
       dev->nb_desc = nb_desc;
       dev->sch_idx = req->sch_idx;
       dev->max_shared = RTE_MIN(req->max_shared, MT_DMA_MAX_SESSIONS);
       ret = dma_sw_init(impl, dev);
       if (ret < 0) {
+        err("%s(%d), dma sw init fail %d\n", __func__, idx, ret);
         dma_hw_stop(dev);
         continue;
       }
@@ -543,7 +517,6 @@ int mt_dma_init(struct mtl_main_impl* impl) {
   int idx;
   struct mt_dma_dev* dev;
   struct rte_dma_info dev_info;
-  bool test = false;
   struct mtl_dma_lender_dev* lender_dev;
 
   mt_pthread_mutex_init(&mgr->mutex, NULL);
@@ -575,8 +548,6 @@ int mt_dma_init(struct mtl_main_impl* impl) {
     idx++;
   }
   mgr->num_dma_dev = idx;
-
-  if (test && mgr->num_dma_dev) dma_test(impl);
 
   return 0;
 }

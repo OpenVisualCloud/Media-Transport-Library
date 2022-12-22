@@ -226,6 +226,11 @@ enum st21_tx_pacing_way {
  * Set the supported SIMD bitwidth of rx/tx burst to 512 bit(AVX512).
  */
 #define MTL_FLAG_RXTX_SIMD_512 (MTL_BIT64(7))
+/**
+ * Flag bit in flags of struct mtl_init_params.
+ * Enable the UDP transport feature support.
+ */
+#define MTL_FLAG_UDP_TRANSPORT (MTL_BIT64(8))
 
 /**
  * Flag bit in flags of struct mtl_init_params, debug usage only.
@@ -295,31 +300,36 @@ struct mtl_af_xdp_params {
  * Include the PCIE port and other required info.
  */
 struct mtl_init_params {
-  /** Pcie BDF path like 0000:af:00.0 or enp175s0f0(AF_XDP) */
+  /* below are mandatory parameters */
+  /** Pcie BDF(ex: 0000:af:00.0) or enp175s0f0(AF_XDP) */
   char port[MTL_PORT_MAX][MTL_PORT_MAX_LEN];
-  /** number of pcie ports, 1 or 2 */
+  /** number of pcie ports, 1 or 2, mandatory */
   uint8_t num_ports;
-  /** dpdk user pmd or af_xdp */
-  enum mtl_pmd_type pmd[MTL_PORT_MAX];
-  /**
-   * af_xdp port info, only for MTL_PMD_DPDK_AF_XDP.
-   * MTL_PMD_DPDK_AF_XDP will use the IP of kernel itself.
-   */
-  struct mtl_af_xdp_params xdp_info[MTL_PORT_MAX];
   /** source IP of ports, olny for MTL_PMD_DPDK_AF_XDP */
   uint8_t sip_addr[MTL_PORT_MAX][MTL_IP_ADDR_LEN];
   /**
    * max tx sessions(st20, st22, st30, st40) requested the lib to support,
    * use mtl_get_cap to query the actual count.
    * dpdk context will allocate the hw resources(queues, memory) based on this number.
+   * 0: allocate all tx queues on init.
    */
   uint16_t tx_sessions_cnt_max;
   /**
    * max rx sessions(st20, st22, st30, st40) requested the lib to support,
    * use mtl_get_cap to query the actual count.
    * dpdk context will allocate the hw resources(queues, memory) based on this number.
+   * 0: allocate all rx queues on init.
    */
   uint16_t rx_sessions_cnt_max;
+
+  /* below are optional parameters */
+  /** dpdk user pmd or af_xdp */
+  enum mtl_pmd_type pmd[MTL_PORT_MAX];
+  /**
+   * af_xdp port info, mandatory for MTL_PMD_DPDK_AF_XDP.
+   * MTL_PMD_DPDK_AF_XDP will use the IP of kernel itself.
+   */
+  struct mtl_af_xdp_params xdp_info[MTL_PORT_MAX];
   /**
    * logical cores list can be used, e.g. "28,29,30,31".
    * NULL means determined by system itself
