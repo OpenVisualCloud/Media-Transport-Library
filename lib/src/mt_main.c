@@ -15,6 +15,7 @@
 #include "mt_ptp.h"
 #include "mt_sch.h"
 #include "mt_socket.h"
+#include "mt_stat.h"
 #include "mt_util.h"
 #include "st2110/pipeline/st_plugin.h"
 #include "st2110/st_ancillary_transmitter.h"
@@ -189,6 +190,12 @@ static int mt_main_create(struct mtl_main_impl* impl) {
     return ret;
   }
 
+  ret = mt_stat_init(impl);
+  if (ret < 0) {
+    err("%s, mt stat init fail %d\n", __func__, ret);
+    return ret;
+  }
+
   pthread_create(&impl->tsc_cal_tid, NULL, mt_calibrate_tsc, impl);
 
   info("%s, succ\n", __func__);
@@ -213,6 +220,7 @@ static int mt_main_free(struct mtl_main_impl* impl) {
   mt_dma_uinit(impl);
 
   mt_dev_free(impl);
+  mt_stat_uinit(impl);
   info("%s, succ\n", __func__);
   return 0;
 }
@@ -361,6 +369,10 @@ mtl_handle mtl_init(struct mtl_init_params* p) {
   int num_ports = p->num_ports;
   struct mt_kport_info kport_info;
 
+#ifdef MTL_HAS_ASAN
+  mt_asan_init();
+#endif
+
   RTE_BUILD_BUG_ON(MT_SESSION_PORT_MAX > (int)MTL_PORT_MAX);
   RTE_BUILD_BUG_ON(sizeof(struct mt_udp_hdr) != 42);
 
@@ -432,8 +444,14 @@ mtl_handle mtl_init(struct mtl_init_params* p) {
   rte_atomic32_set(&impl->instance_aborted, 0);
   rte_atomic32_set(&impl->instance_in_reset, 0);
   impl->lcore_lock_fd = -1;
-  impl->tx_sessions_cnt_max = RTE_MIN(180, p->tx_sessions_cnt_max);
-  impl->rx_sessions_cnt_max = RTE_MIN(180, p->rx_sessions_cnt_max);
+  if (p->tx_sessions_cnt_max)
+    impl->tx_sessions_cnt_max = RTE_MIN(180, p->tx_sessions_cnt_max);
+  else if (p->flags & MTL_FLAG_UDP_TRANSPORT)
+    impl->tx_sessions_cnt_max = 64;
+  if (p->rx_sessions_cnt_max)
+    impl->rx_sessions_cnt_max = RTE_MIN(180, p->rx_sessions_cnt_max);
+  else if (p->flags & MTL_FLAG_UDP_TRANSPORT)
+    impl->rx_sessions_cnt_max = 64;
   info("%s, max sessions tx %d rx %d, flags 0x%" PRIx64 "\n", __func__,
        impl->tx_sessions_cnt_max, impl->rx_sessions_cnt_max,
        mt_get_user_params(impl)->flags);

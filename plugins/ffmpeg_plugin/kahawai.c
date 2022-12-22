@@ -2,8 +2,6 @@
  * Kahawai raw video demuxer
  * Copyright (c) 2022 Intel
  *
- * This file is part of FFmpeg.
- *
  * FFmpeg is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
@@ -54,6 +52,7 @@ typedef struct KahawaiDemuxerContext {
   int fb_cnt;
   int session_cnt;
   bool ext_frames_mode;
+  char* dma_dev;
 
   mtl_handle dev_handle;
   st20p_rx_handle rx_handle;
@@ -71,14 +70,6 @@ typedef struct KahawaiDemuxerContext {
   AVBufferRef** av_buffers_keepers;
   int last_frame_num;
   struct st_frame* last_frame;
-
-#if 0
-    pthread_cond_t read_packet_cond;
-    pthread_mutex_t read_packet_mutex;
-
-    pthread_t frame_thread;
-    bool stopped;
-#endif
 } KahawaiDemuxerContext;
 
 static mtl_handle shared_st_handle = NULL;
@@ -93,32 +84,6 @@ static int rx_st20p_frame_available(void* priv) {
 
   return 0;
 }
-
-#if 0
-static void *rx_st20p_frame_thread(void* arg)
-{
-    KahawaiDemuxerContext *s = (KahawaiDemuxerContext *)arg;
-    st20p_rx_handle handle = s->rx_handle;
-
-    struct st_frame *frame = NULL;
-
-    while (!s->stopped) {
-        frame = st20p_rx_get_frame(s->rx_handle);
-        if (!frame) {
-            pthread_mutex_lock(&(s->get_frame_mutex));
-            pthread_cond_wait(&(s->get_frame_cond), &(s->get_frame_mutex));
-            pthread_mutex_unlock(&(s->get_frame_mutex));
-        } else {
-            pthread_mutex_lock(&(s->read_packet_mutex));
-            s->frame = frame;
-            pthread_cond_signal(&(s->read_packet_cond));
-            pthread_mutex_unlock(&(s->read_packet_mutex));
-        }
-    }
-
-    return NULL;
-}
-#endif
 
 static int kahawai_read_header(AVFormatContext* ctx) {
   KahawaiDemuxerContext* s = ctx->priv_data;
@@ -208,7 +173,7 @@ static int kahawai_read_header(AVFormatContext* ctx) {
   ops_rx.transport_fmt = ST20_FMT_YUV_422_10BIT;
 
   if (s->ext_frames_mode) {
-    ops_rx.output_fmt = ST_FRAME_FMT_Y210;
+    ops_rx.output_fmt = ST_FRAME_FMT_YUV422PLANAR10LE;
   } else {
     ops_rx.output_fmt = ST_FRAME_FMT_YUV422RFC4175PG2BE10;
   }
@@ -230,6 +195,19 @@ static int kahawai_read_header(AVFormatContext* ctx) {
   if (ret >= sizeof(fps_table)) {
     av_log(ctx, AV_LOG_ERROR, "Frame rate %0.2f is not supported\n", ((float)fps / 100));
     return AVERROR(EINVAL);
+  }
+
+  if (NULL == s->dma_dev) {
+    av_log(ctx, AV_LOG_VERBOSE, "DMA disabled\n");
+  } else {
+    if (!s->ext_frames_mode) {
+      av_log(ctx, AV_LOG_WARNING, "Turned off DMA for ext_frames_mode disabled\n");
+    } else {
+      av_log(ctx, AV_LOG_VERBOSE, "DMA enabled on %s\n", s->dma_dev);
+      param.num_dma_dev_port = 1;
+      strncpy(param.dma_dev_port[0], s->dma_dev, MTL_PORT_MAX_LEN);
+      ops_rx.flags = ST20_RX_FLAG_DMA_OFFLOAD;
+    }
   }
 
   st = avformat_new_stream(ctx, NULL);
@@ -316,7 +294,13 @@ static int kahawai_read_header(AVFormatContext* ctx) {
       }
 
       s->ext_frames[i].addr[0] = s->av_buffers[i]->data;
-      s->ext_frames[i].linesize[0] = s->width * 4;
+      s->ext_frames[i].linesize[0] = s->width * 2;
+      s->ext_frames[i].addr[1] =
+          (void*)((unsigned long)s->ext_frames[i].addr[0] + (s->width * s->height * 2));
+      s->ext_frames[i].linesize[1] = s->width;
+      s->ext_frames[i].addr[2] =
+          (void*)((unsigned long)s->ext_frames[i].addr[1] + (s->width * s->height));
+      s->ext_frames[i].linesize[2] = s->width;
       s->ext_frames[i].size = ctx->packet_size;
 
       av_log(ctx, AV_LOG_VERBOSE, "Allocated Framebuf[%d]: 0x%lx\n", i,
@@ -354,26 +338,6 @@ static int kahawai_read_header(AVFormatContext* ctx) {
   s->last_frame_num = -1;
   s->last_frame = NULL;
 
-#if 0
-    s->stopped = false;
-
-    pthread_mutex_init(&(s->read_packet_mutex), NULL);
-    pthread_cond_init(&(s->read_packet_cond), NULL);
-
-    ret = pthread_create(&(s->frame_thread), NULL, rx_st20p_frame_thread, s);
-    if (ret != 0) {
-        av_log(ctx, AV_LOG_ERROR, "rx_st20p_frame_thread creation failed with %d\n", ret);
-
-        st20p_rx_free(s->rx_handle);
-        s->rx_handle = NULL;
-
-        mtl_uninit(s->dev_handle);
-        s->dev_handle = NULL;
-
-        return AVERROR(EINVAL);
-    }
-#endif
-
   return 0;
 }
 
@@ -383,16 +347,6 @@ static int kahawai_read_packet(AVFormatContext* ctx, AVPacket* pkt) {
   int ret = 0;
 
   av_log(ctx, AV_LOG_VERBOSE, "kahawai_read_packet triggered\n");
-
-#if 0
-    for (int i = 0; i < KAHAWAI_FRAME_BUFFER_COUNT; ++i) {
-        av_log(ctx, AV_LOG_ERROR, "Before av_buffers[%d]: 0x%lx size %d\n", i, s->av_buffers[i]->data, s->av_buffers[i]->size);
-        av_log(ctx, AV_LOG_ERROR, "Before av_buffers_keepers[%d]: 0x%lx size %d\n", i, s->av_buffers_keepers[i]->data, s->av_buffers_keepers[i]->size);
-    }
-
-    pthread_mutex_lock(&(s->read_packet_mutex));
-    pthread_cond_wait(&(s->read_packet_cond), &(s->read_packet_mutex));
-#endif
 
   if (s->ext_frames_mode) {
     if (s->last_frame) {
@@ -430,17 +384,6 @@ static int kahawai_read_packet(AVFormatContext* ctx, AVPacket* pkt) {
   if (s->ext_frames_mode) {
     s->last_frame = s->frame;
   }
-
-#if 0
-    if (!s->frame && !s->stopped) {
-        av_log(ctx, AV_LOG_ERROR, "Empty frame handle\n");
-
-        s->stopped = true;
-        pthread_mutex_unlock(&(s->read_packet_mutex));
-
-        return AVERROR(EIO);
-    }
-#endif
 
   if (s->frame->data_size != s->output_frame_size) {
     av_log(ctx, AV_LOG_ERROR, "Unexpected frame size received: %lu (%lu expected)\n",
@@ -480,11 +423,13 @@ static int kahawai_read_packet(AVFormatContext* ctx, AVPacket* pkt) {
       return ret;
     }
 
-    ret = st20_rfc4175_422be10_to_y210(
+    ret = st20_rfc4175_422be10_to_yuv422p10le(
         (struct st20_rfc4175_422_10_pg2_be*)(s->frame->addr[0]), (uint16_t*)pkt->data,
-        s->width, s->height);
+        (uint16_t*)(pkt->data + (s->width * s->height * 2)),
+        (uint16_t*)(pkt->data + (s->width * s->height * 3)), s->width, s->height);
     if (ret != 0) {
-      av_log(ctx, AV_LOG_ERROR, "st20_rfc4175_422be10_to_y210 failed with %d\n", ret);
+      av_log(ctx, AV_LOG_ERROR, "st20_rfc4175_422be10_to_yuv422p10le failed with %d\n",
+             ret);
       // s->stopped = true;
       // pthread_mutex_unlock(&(s->read_packet_mutex));
       return ret;
@@ -505,24 +450,6 @@ static int kahawai_read_close(AVFormatContext* ctx) {
   KahawaiDemuxerContext* s = ctx->priv_data;
 
   av_log(ctx, AV_LOG_VERBOSE, "kahawai_read_close triggered\n");
-
-#if 0
-    s->stopped = true;
-
-    pthread_cond_signal(&(s->get_frame_cond));
-    pthread_cond_signal(&(s->read_packet_cond));
-
-    pthread_join(s->frame_thread, NULL);
-    av_log(ctx, AV_LOG_VERBOSE, "rx_st20p_frame_thread finished\n");
-
-    pthread_mutex_destroy(&s->read_packet_mutex);
-    pthread_cond_destroy(&s->read_packet_cond);
-
-    if (s->last_frame) {
-        st20p_rx_put_frame(s->rx_handle, s->last_frame);
-        s->last_frame = NULL;
-    }
-#endif
 
   if (s->frame) {
     av_log(ctx, AV_LOG_VERBOSE, "Put a frame: 0x%lx\n",
@@ -563,14 +490,14 @@ static int kahawai_read_close(AVFormatContext* ctx) {
   s->dev_handle = NULL;
 
   if (s->ext_frames_mode) {
-    for (int i = 0; i < s->fb_cnt; ++i) {
-      av_buffer_unref(&s->av_buffers_keepers[i]);
-      av_buffer_unref(&s->av_buffers[i]);
-    }
-
     if (s->ext_frames) {
       free(s->ext_frames);
       s->ext_frames = NULL;
+    }
+
+    for (int i = 0; i < s->fb_cnt; ++i) {
+      if (i != s->last_frame_num) av_buffer_unref(&(s->av_buffers[i]));
+      av_buffer_unref(&(s->av_buffers_keepers[i]));
     }
 
     if (s->av_buffers) {
@@ -659,12 +586,18 @@ static const AVOption kahawai_options[] = {
      DEC},
     {"ext_frames_mode",
      "Enable external frames mode",
-     OFFSET(ext_frames),
+     OFFSET(ext_frames_mode),
      AV_OPT_TYPE_BOOL,
      {.i64 = 1},
      0,
      1,
      DEC},
+    {"dma_dev",
+     "DMA device node",
+     OFFSET(dma_dev),
+     AV_OPT_TYPE_STRING,
+     {.str = NULL},
+     .flags = DEC},
     {NULL},
 };
 

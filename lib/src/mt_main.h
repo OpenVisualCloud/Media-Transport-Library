@@ -11,6 +11,7 @@
 #ifdef MTL_HAS_KNI
 #include <rte_kni.h>
 #endif
+#include <json-c/json.h>
 #include <rte_tm.h>
 #include <rte_version.h>
 #include <rte_vfio.h>
@@ -19,6 +20,7 @@
 
 #include "mt_mem.h"
 #include "mt_platform.h"
+#include "mt_queue.h"
 #include "mt_quirk.h"
 #include "st2110/st_header.h"
 
@@ -160,11 +162,27 @@ struct mt_ptp_impl {
   uint64_t expect_result_start_ns;
   uint64_t expect_result_period_ns;
 
+  /* calculate sw frequency */
+  uint64_t last_sync_ts;
+  double coefficient;
+  double coefficient_result_sum;
+  double coefficient_result_min;
+  double coefficient_result_max;
+  int32_t coefficient_result_cnt;
+
   /* status */
   int64_t stat_delta_min;
   int64_t stat_delta_max;
   int32_t stat_delta_cnt;
   int64_t stat_delta_sum;
+  int64_t stat_correct_delta_min;
+  int64_t stat_correct_delta_max;
+  int32_t stat_correct_delta_cnt;
+  int64_t stat_correct_delta_sum;
+  int64_t stat_path_delay_min;
+  int64_t stat_path_delay_max;
+  int32_t stat_path_delay_cnt;
+  int64_t stat_path_delay_sum;
   int32_t stat_rx_sync_err;
   int32_t stat_tx_sync_err;
   int32_t stat_result_err;
@@ -205,16 +223,17 @@ struct mt_cni_impl {
 };
 
 struct mt_arp_impl {
-  uint32_t ip[MTL_PORT_MAX][MT_ARP_ENTRY_MAX];
-  struct rte_ether_addr ea[MTL_PORT_MAX][MT_ARP_ENTRY_MAX];
-  rte_atomic32_t mac_ready[MTL_PORT_MAX][MT_ARP_ENTRY_MAX];
+  pthread_mutex_t mutex; /* entry protect */
+  uint32_t ip[MT_ARP_ENTRY_MAX];
+  struct rte_ether_addr ea[MT_ARP_ENTRY_MAX];
+  rte_atomic32_t mac_ready[MT_ARP_ENTRY_MAX];
 };
 
 struct mt_mcast_impl {
-  pthread_mutex_t group_mutex[MTL_PORT_MAX];
-  uint32_t group_ip[MTL_PORT_MAX][MT_MCAST_GROUP_MAX];
-  uint32_t group_ref_cnt[MTL_PORT_MAX][MT_MCAST_GROUP_MAX];
-  uint16_t group_num[MTL_PORT_MAX];
+  pthread_mutex_t group_mutex;
+  uint32_t group_ip[MT_MCAST_GROUP_MAX];
+  uint32_t group_ref_cnt[MT_MCAST_GROUP_MAX];
+  uint16_t group_num;
 };
 
 #define MT_TASKLET_HAS_PENDING (1)
@@ -511,6 +530,23 @@ struct mt_var_params {
   uint64_t sch_zero_sleep_threshold_us;
 };
 
+typedef int (*mt_stat_cb_t)(void* priv);
+struct mt_stat_item {
+  /* stat dump callback func */
+  mt_stat_cb_t cb_func;
+  /* stat dump callback private data */
+  void* cb_priv;
+  /* linked list */
+  MT_TAILQ_ENTRY(mt_stat_item) next;
+};
+/* List of stat items */
+MT_TAILQ_HEAD(mt_stat_items_list, mt_stat_item);
+
+struct mt_stat_mgr {
+  pthread_mutex_t mutex;
+  struct mt_stat_items_list head;
+};
+
 struct mtl_main_impl {
   struct mt_interface inf[MTL_PORT_MAX];
 
@@ -529,6 +565,7 @@ struct mtl_main_impl {
   pthread_cond_t stat_wake_cond;
   pthread_mutex_t stat_wake_mutex;
   rte_atomic32_t stat_stop;
+  struct mt_stat_mgr stat_mgr;
 
   /* dev context */
   rte_atomic32_t instance_started;  /* if mt instance is started */
@@ -547,10 +584,10 @@ struct mtl_main_impl {
   struct mt_ptp_impl ptp[MTL_PORT_MAX];
 
   /* arp context */
-  struct mt_arp_impl arp;
+  struct mt_arp_impl arp[MTL_PORT_MAX];
 
   /* mcast context */
-  struct mt_mcast_impl mcast;
+  struct mt_mcast_impl mcast[MTL_PORT_MAX];
 
   /* sch context */
   struct mt_sch_mgr sch_mgr;
@@ -1000,16 +1037,7 @@ static inline uint32_t st_rx_mbuf_get_len(struct rte_mbuf* mbuf) {
   return priv->rx_priv.len;
 }
 
-static inline uint64_t mt_mbuf_hw_time_stamp(struct mtl_main_impl* impl,
-                                             struct rte_mbuf* mbuf) {
-  struct mt_ptp_impl* ptp = impl->ptp;
-  struct timespec spec;
-  uint64_t time_stamp =
-      *RTE_MBUF_DYNFIELD(mbuf, impl->dynfield_offset, rte_mbuf_timestamp_t*);
-  mt_ns_to_timespec(time_stamp, &spec);
-  time_stamp = mt_timespec_to_ns(&spec) + ptp->ptp_delta;
-  return time_stamp;
-}
+uint64_t mt_mbuf_hw_time_stamp(struct mtl_main_impl* impl, struct rte_mbuf* mbuf);
 
 static inline uint64_t mt_get_ptp_time(struct mtl_main_impl* impl, enum mtl_port port) {
   return mt_if(impl, port)->ptp_get_time_fn(impl, port);
@@ -1032,6 +1060,20 @@ static inline struct rte_ether_addr* mt_eth_s_addr(struct rte_ether_hdr* eth) {
 
 static inline struct rte_ether_addr* mt_eth_d_addr(struct rte_ether_hdr* eth) {
   return &eth->d_addr;
+}
+#endif
+
+#if (JSON_C_VERSION_NUM >= ((0 << 16) | (13 << 8) | 0)) || \
+    (JSON_C_VERSION_NUM < ((0 << 16) | (10 << 8) | 0))
+static inline json_object* mt_json_object_get(json_object* obj, const char* key) {
+  return json_object_object_get(obj, key);
+}
+#else
+static inline json_object* mt_json_object_get(json_object* obj, const char* key) {
+  json_object* value;
+  int ret = json_object_object_get_ex(obj, key, &value);
+  if (ret) return value;
+  return NULL;
 }
 #endif
 

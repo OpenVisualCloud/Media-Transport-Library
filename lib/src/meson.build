@@ -14,6 +14,7 @@ sources = files(
   'mt_admin.c',
   'mt_config.c',
   'mt_socket.c',
+  'mt_stat.c',
 )
 
 if get_option('enable_kni') == true

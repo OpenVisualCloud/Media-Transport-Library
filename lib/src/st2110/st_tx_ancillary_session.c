@@ -1132,8 +1132,8 @@ static void tx_ancillary_session_stat(struct st_tx_ancillary_session_impl* s) {
     notice("TX_ANC_SESSION(%d): st40 epoch mismatch %d\n", idx, s->st40_epoch_mismatch);
     s->st40_epoch_mismatch = 0;
   }
-  if (frame_cnt <= 0) { /* may error state */
-    err("TX_ANC_SESSION(%d): build ret %d\n", idx, s->stat_build_ret_code);
+  if (frame_cnt <= 0) {
+    warn("TX_ANC_SESSION(%d): build ret %d\n", idx, s->stat_build_ret_code);
   }
 
   if (s->stat_error_user_timestamp) {
@@ -1278,8 +1278,8 @@ void st_tx_ancillary_sessions_stat(struct mtl_main_impl* impl) {
     mgr->st40_stat_pkts_burst = 0;
   } else {
     if (mgr->max_idx > 0) {
-      err("TX_ANC_SESSION: trs ret %d:%d\n", mgr->stat_trs_ret_code[MTL_PORT_P],
-          mgr->stat_trs_ret_code[MTL_PORT_R]);
+      warn("TX_ANC_SESSION: trs ret %d:%d\n", mgr->stat_trs_ret_code[MTL_PORT_P],
+           mgr->stat_trs_ret_code[MTL_PORT_R]);
     }
   }
 }

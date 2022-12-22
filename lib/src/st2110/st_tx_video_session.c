@@ -60,20 +60,13 @@ static void tv_notify_frame_done(struct st_tx_video_session_impl* s, uint16_t fr
 }
 
 static void tv_frame_free_cb(void* addr, void* opaque) {
-  struct st_tx_video_session_impl* s = opaque;
-  uint16_t frame_idx;
-  int idx = s->idx;
-  struct st_frame_trans* frame_info;
+  struct st_frame_trans* frame_info = opaque;
+  struct st_tx_video_session_impl* s = frame_info->priv;
+  int s_idx = s->idx, frame_idx = frame_info->idx;
 
-  for (frame_idx = 0; frame_idx < s->st20_frames_cnt; ++frame_idx) {
-    frame_info = &s->st20_frames[frame_idx];
-    if ((addr >= frame_info->addr) && (addr < (frame_info->addr + s->st20_fb_size)))
-      break;
-  }
-  if (frame_idx >= s->st20_frames_cnt) {
-    err("%s(%d), addr %p do not belong to the session\n", __func__, idx, addr);
-    return;
-  }
+  if ((addr < frame_info->addr) || (addr >= (frame_info->addr + s->st20_fb_size)))
+    err("%s(%d), addr %p does not belong to frame %d\n", __func__, s_idx, addr,
+        frame_idx);
 
   tv_notify_frame_done(s, frame_idx);
   rte_atomic32_dec(&frame_info->refcnt);
@@ -83,7 +76,7 @@ static void tv_frame_free_cb(void* addr, void* opaque) {
     frame_info->iova = 0;
   }
 
-  dbg("%s(%d), succ frame_idx %u\n", __func__, idx, frame_idx);
+  dbg("%s(%d), succ frame_idx %d\n", __func__, s_idx, frame_idx);
 }
 
 static int tv_alloc_frames(struct mtl_main_impl* impl,
@@ -111,7 +104,7 @@ static int tv_alloc_frames(struct mtl_main_impl* impl,
     frame_info = &s->st20_frames[i];
 
     frame_info->sh_info.free_cb = tv_frame_free_cb;
-    frame_info->sh_info.fcb_opaque = s;
+    frame_info->sh_info.fcb_opaque = frame_info;
     rte_mbuf_ext_refcnt_set(&frame_info->sh_info, 0);
 
     if (s->ops.flags & ST20_TX_FLAG_EXT_FRAME) {
@@ -133,6 +126,7 @@ static int tv_alloc_frames(struct mtl_main_impl* impl,
       frame_info->addr = frame;
       frame_info->flags = ST_FT_FLAG_RTE_MALLOC;
     }
+    frame_info->priv = s;
   }
 
   dbg("%s(%d), succ\n", __func__, idx);
@@ -2381,10 +2375,9 @@ static void tv_stat(struct st_tx_video_sessions_mgr* mgr,
     s->stat_vsync_mismatch = 0;
   }
   if (frame_cnt <= 0) {
-    /* error level */
-    err("TX_VIDEO_SESSION(%d,%d:%s): build ret %d, trs ret %d:%d\n", m_idx, idx,
-        s->ops_name, s->stat_build_ret_code, s->stat_trs_ret_code[MT_SESSION_PORT_P],
-        s->stat_trs_ret_code[MT_SESSION_PORT_R]);
+    warn("TX_VIDEO_SESSION(%d,%d:%s): build ret %d, trs ret %d:%d\n", m_idx, idx,
+         s->ops_name, s->stat_build_ret_code, s->stat_trs_ret_code[MT_SESSION_PORT_P],
+         s->stat_trs_ret_code[MT_SESSION_PORT_R]);
   }
 
   /* check frame busy stat */
@@ -2869,6 +2862,12 @@ int st20_tx_set_ext_frame(st20_tx_handle handle, uint16_t idx,
   if (iova_addr == MTL_BAD_IOVA || iova_addr == 0) {
     err("%s(%d), invalid ext frame iova 0x%" PRIx64 "\n", __func__, s_idx, iova_addr);
     return -EIO;
+  }
+
+  for (int i = 0; i < s->st20_frames_cnt; i++) {
+    if (addr == s->st20_frames[i].addr) {
+      warn_once("%s(%d), buffer %p still in tansport!\n", __func__, s_idx, addr);
+    }
   }
 
   if (idx >= s->st20_frames_cnt) {

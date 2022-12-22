@@ -12,6 +12,7 @@
 #include <net/if.h>
 #include <net/if_arp.h>
 #include <numa.h>
+#include <poll.h>
 #include <sys/ioctl.h>
 #include <sys/shm.h>
 #include <sys/socket.h>
@@ -34,6 +35,19 @@
 #define MT_CLOCK_MONOTONIC_ID CLOCK_MONOTONIC_RAW
 #else
 #define MT_CLOCK_MONOTONIC_ID CLOCK_MONOTONIC
+#endif
+
+#ifdef WINDOWSENV
+typedef unsigned long int nfds_t;
+#endif
+
+#ifndef POLLIN /* For windows */
+/* There is data to read */
+#define POLLIN 0x001
+#endif
+
+#ifndef MSG_DONTWAIT /* For windows */
+#define MSG_DONTWAIT (0x40)
 #endif
 
 #ifdef WINDOWSENV
