@@ -46,6 +46,10 @@
 #define POLLIN 0x001
 #endif
 
+#ifdef WINDOWSENV
+typedef unsigned long int nfds_t;
+#endif
+
 enum st_tx_frame_status {
   ST_TX_FRAME_FREE = 0,
   ST_TX_FRAME_READY,
