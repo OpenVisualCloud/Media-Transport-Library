@@ -675,14 +675,8 @@ static int ptp_init(struct mtl_main_impl* impl, struct mt_ptp_impl* ptp,
   ptp->master_initialized = false;
   ptp->t3_sequence_id = 0x1000 * port;
   ptp->coefficient = 1.0;
-  if (impl->user_para.kp < 1e-15)
-    ptp->kp = MT_PTP_DEFAULT_KP;
-  else
-    ptp->kp = impl->user_para.kp;
-  if (impl->user_para.ki < 1e-15)
-    ptp->ki = MT_PTP_DEFAULT_KI;
-  else
-    ptp->ki = impl->user_para.ki;
+  ptp->kp = impl->user_para.kp < 1e-15 ? MT_PTP_DEFAULT_KP : impl->user_para.kp;
+  ptp->ki = impl->user_para.ki < 1e-15 ? MT_PTP_DEFAULT_KI : impl->user_para.ki;
   ptp->use_pi = (impl->user_para.flags & MTL_FLAG_PTP_PI);
   if (ptp->use_pi)
     info("%s(%d), use pi controller, kp %e, ki %e\n", __func__, port, ptp->kp, ptp->ki);
