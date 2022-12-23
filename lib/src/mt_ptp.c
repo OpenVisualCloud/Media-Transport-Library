@@ -119,7 +119,6 @@ static void ptp_coeffcient_result_reset(struct mt_ptp_impl* ptp) {
 }
 
 static void ptp_update_coefficient(struct mt_ptp_impl* ptp, int64_t error) {
-  if (error > 1000 * 1000) return;
   ptp->integral += (error + ptp->prev_error) / 2;
   ptp->prev_error = error;
   double offset = ptp->kp * error + ptp->ki * ptp->integral;
@@ -130,7 +129,7 @@ static void ptp_update_coefficient(struct mt_ptp_impl* ptp, int64_t error) {
 
 static void ptp_calculate_coefficient(struct mt_ptp_impl* ptp, int64_t delta) {
   if (delta > 1000 * 1000) return;
-  uint64_t ts_s = ptp->t4;
+  uint64_t ts_s = ptp_get_raw_time(ptp);
   uint64_t ts_m = ts_s + delta;
   double coefficient = (double)(ts_m - ptp->last_sync_ts) / (ts_s - ptp->last_sync_ts);
   ptp->coefficient_result_sum += coefficient;
@@ -146,6 +145,7 @@ static void ptp_calculate_coefficient(struct mt_ptp_impl* ptp, int64_t delta) {
     ptp->coefficient = ptp->coefficient_result_sum / 8;
     ptp_coeffcient_result_reset(ptp);
   }
+  ptp->last_sync_ts = ts_m;
   dbg("%s(%d), delta %" PRId64 ", co %.15lf, ptp %" PRIu64 "\n", __func__, ptp->port,
       delta, ptp->coefficient, ts_m);
 }
@@ -277,11 +277,16 @@ static int ptp_parse_result(struct mt_ptp_impl* ptp) {
     }
   }
   ptp->delta_result_err = 0;
-  if (ptp->use_pi && labs(correct_delta) < 1000) /* fine tune coefficient */
+
+  if (ptp->use_pi && labs(correct_delta) < 1000) {
+    /* fine tune coefficient */
     ptp_update_coefficient(ptp, correct_delta);
-  else /* re-calculate coefficient */
+    ptp->last_sync_ts = ptp_get_raw_time(ptp) + delta; /* approximation */
+  } else {
+    /* re-calculate coefficient */
     ptp_calculate_coefficient(ptp, delta);
-  ptp->last_sync_ts = ptp->t4 + path_delay; /* approximation */
+  }
+
   ptp_adjust_delta(ptp, delta);
   ptp_t_result_clear(ptp);
 
