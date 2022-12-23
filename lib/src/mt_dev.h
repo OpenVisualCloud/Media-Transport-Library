@@ -68,4 +68,6 @@ int mt_dev_put_lcore(struct mtl_main_impl* impl, unsigned int lcore);
 int mt_dev_get_lcore(struct mtl_main_impl* impl, unsigned int* lcore);
 bool mt_dev_lcore_valid(struct mtl_main_impl* impl, unsigned int lcore);
 
+uint32_t mt_dev_softrss(uint32_t* input_tuple, uint32_t input_len);
+
 #endif

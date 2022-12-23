@@ -10,6 +10,7 @@
 // #define DEBUG
 #include "mt_log.h"
 #include "mt_ptp.h"
+#include "mt_rss.h"
 #include "mt_sch.h"
 #include "mt_tap.h"
 #include "mt_util.h"
@@ -98,6 +99,10 @@ static int cni_traffic(struct mtl_main_impl* impl) {
         done = false;
       }
     }
+    /* trigger rss rx */
+    if (cni->rss[i]) {
+      mt_rss_rx_burst(cni->rss[i], ST_CNI_RX_BURST_SIZE);
+    }
   }
 
   return done ? MT_TASKLET_ALL_DONE : MT_TASKLET_HAS_PENDING;
@@ -170,6 +175,19 @@ static int cni_tasklet_handlder(void* priv) {
   return cni_traffic(impl);
 }
 
+static int cni_rss_mbuf_cb(void* priv, struct rte_mbuf** mbuf, uint16_t nb) {
+  struct mt_cni_rss_priv* rss_priv = priv;
+  struct mtl_main_impl* impl = rss_priv->impl;
+  enum mtl_port port = rss_priv->port;
+  struct mt_cni_impl* cni = mt_get_cni(impl);
+
+  cni->eth_rx_cnt[port] += nb;
+  for (uint16_t ri = 0; ri < nb; ri++) cni_rx_handle(impl, mbuf[ri], port);
+  mt_kni_handle(impl, port, mbuf, nb);
+
+  return 0;
+}
+
 static int cni_queues_uinit(struct mtl_main_impl* impl) {
   int num_ports = mt_num_ports(impl);
   struct mt_cni_impl* cni = mt_get_cni(impl);
@@ -178,6 +196,10 @@ static int cni_queues_uinit(struct mtl_main_impl* impl) {
     if (cni->rx_q[i]) {
       mt_dev_put_rx_queue(impl, cni->rx_q[i]);
       cni->rx_q[i] = NULL;
+    }
+    if (cni->rss[i]) {
+      mt_rss_put(cni->rss[i]);
+      cni->rss[i] = NULL;
     }
   }
 
@@ -196,14 +218,32 @@ static int cni_queues_init(struct mtl_main_impl* impl, struct mt_cni_impl* cni) 
     /* no cni for kernel based pmd */
     if (mt_pmd_is_kernel(impl, i)) continue;
 
+    cni->rss_priv[i].impl = impl;
+    cni->rss_priv[i].port = i;
+
     /* sys queue, no flow */
-    cni->rx_q[i] = mt_dev_get_rx_queue(impl, i, NULL);
-    if (!cni->rx_q[i]) {
-      err("%s(%d), rx q get fail\n", __func__, i);
-      cni_queues_uinit(impl);
-      return -EIO;
+    if (mt_has_rss(impl, i)) {
+      struct mt_rss_flow flow;
+      memset(&flow, 0, sizeof(flow));
+      flow.no_udp = true;
+      flow.priv = &cni->rss_priv[i];
+      flow.cb = cni_rss_mbuf_cb;
+      cni->rss[i] = mt_rss_get(impl, i, &flow);
+      if (!cni->rss[i]) {
+        err("%s(%d), rss get fail\n", __func__, i);
+        cni_queues_uinit(impl);
+        return -EIO;
+      }
+      info("%s(%d), rss q %d\n", __func__, i, mt_rss_queue_id(cni->rss[i]));
+    } else {
+      cni->rx_q[i] = mt_dev_get_rx_queue(impl, i, NULL);
+      if (!cni->rx_q[i]) {
+        err("%s(%d), rx q get fail\n", __func__, i);
+        cni_queues_uinit(impl);
+        return -EIO;
+      }
+      info("%s(%d), rx q %d\n", __func__, i, mt_dev_rx_queue_id(cni->rx_q[i]));
     }
-    info("%s(%d), rx q %d\n", __func__, i, mt_dev_rx_queue_id(cni->rx_q[i]));
   }
 
   return 0;

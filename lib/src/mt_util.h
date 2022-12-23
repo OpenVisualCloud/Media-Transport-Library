@@ -62,6 +62,7 @@ void st_video_rtp_dump(enum mtl_port port, int idx, char* tag,
                        struct st20_rfc4175_rtp_hdr* rtp);
 
 void mt_mbuf_dump(enum mtl_port port, int idx, char* tag, struct rte_mbuf* m);
+void mt_mbuf_dump_hdr(enum mtl_port port, int idx, char* tag, struct rte_mbuf* m);
 
 void mt_lcore_dump();
 

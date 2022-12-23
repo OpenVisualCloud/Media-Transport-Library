@@ -35,6 +35,7 @@ enum sample_args_cmd {
 
   SAMPLE_ARG_UDP_MODE,
   SAMPLE_ARG_UDP_TX_BPS_G,
+  SAMPLE_ARG_UDP_RSS,
 
   SAMPLE_ARG_MAX,
 };
@@ -65,6 +66,7 @@ static struct option sample_args_options[] = {
 
     {"udp_mode", required_argument, 0, SAMPLE_ARG_UDP_MODE},
     {"udp_tx_bps_g", required_argument, 0, SAMPLE_ARG_UDP_TX_BPS_G},
+    {"rss", no_argument, 0, SAMPLE_ARG_UDP_RSS},
 
     {0, 0, 0, 0}};
 
@@ -181,6 +183,9 @@ static int _sample_parse_args(struct st_sample_context* ctx, int argc, char** ar
         break;
       case SAMPLE_ARG_UDP_TX_BPS_G:
         ctx->udp_tx_bps = ((uint64_t)atoi(optarg)) * 1024 * 1024 * 1024;
+        break;
+      case SAMPLE_ARG_UDP_RSS:
+        ctx->rss = true;
         break;
       case '?':
         break;
