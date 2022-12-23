@@ -172,8 +172,11 @@ struct mt_ptp_impl {
   int32_t coefficient_result_cnt;
 
   /* pi controller */
-  double integral;
-  int64_t prev_error;
+  bool use_pi;        /* use pi controller */
+  double kp;          /* proportional gain */
+  double ki;          /* integral gain */
+  double integral;    /* integral value */
+  int64_t prev_error; /* previous error (correct_delta) */
 
   /* status */
   int64_t stat_delta_min;
