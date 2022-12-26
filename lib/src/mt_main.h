@@ -557,6 +557,7 @@ struct mt_stat_mgr {
 
 enum mt_rss_mode {
   MT_RSS_MODE_NONE = 0,
+  MT_RSS_MODE_L3,
   MT_RSS_MODE_L4, /* both l3 and l4 */
   MT_RSS_MODE_MAX,
 };

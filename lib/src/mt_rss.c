@@ -59,16 +59,24 @@ static int rss_uinit(struct mt_rss_impl* rss) {
   return 0;
 }
 
-static uint32_t rss_flow_hash(struct mt_rss_flow* flow) {
+static uint32_t rss_flow_hash(struct mt_rss_flow* flow, enum mt_rss_mode rss) {
   struct rte_ipv4_tuple tuple;
+  uint32_t len;
 
   if (flow->no_udp) return 0;
 
-  rte_memcpy(&tuple.src_addr, flow->sip_addr, MTL_IP_ADDR_LEN);
-  rte_memcpy(&tuple.dst_addr, flow->dip_addr, MTL_IP_ADDR_LEN);
-  tuple.sport = htons(flow->src_port);
-  tuple.dport = htons(flow->dst_port);
-  return mt_dev_softrss((uint32_t*)&tuple, RTE_THASH_V4_L4_LEN);
+  if (rss == MT_RSS_MODE_L4)
+    len = RTE_THASH_V4_L4_LEN;
+  else
+    len = RTE_THASH_V4_L3_LEN;
+
+  tuple.src_addr = RTE_IPV4(flow->dip_addr[0], flow->dip_addr[1], flow->dip_addr[2],
+                            flow->dip_addr[3]);
+  tuple.dst_addr = RTE_IPV4(flow->sip_addr[0], flow->sip_addr[1], flow->sip_addr[2],
+                            flow->sip_addr[3]);
+  tuple.sport = flow->dst_port;
+  tuple.dport = flow->src_port;
+  return mt_dev_softrss((uint32_t*)&tuple, len);
 }
 
 struct mt_rss_entry* mt_rss_get(struct mtl_main_impl* impl, enum mtl_port port,
@@ -79,7 +87,7 @@ struct mt_rss_entry* mt_rss_get(struct mtl_main_impl* impl, enum mtl_port port,
   }
 
   struct mt_rss_impl* rss = rss_ctx_get(impl, port);
-  uint32_t hash = rss_flow_hash(flow);
+  uint32_t hash = rss_flow_hash(flow, impl->rss_mode);
   uint16_t q = (hash % RTE_ETH_RETA_GROUP_SIZE) % rss->max_rss_queues;
   struct mt_rss_queue* rss_queue = &rss->rss_queues[q];
   struct mt_rss_entry* entry =
