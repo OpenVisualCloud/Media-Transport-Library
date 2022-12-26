@@ -835,7 +835,7 @@ static int dev_config_port(struct mtl_main_impl* impl, enum mtl_port port) {
     struct rte_eth_rss_conf* rss_conf;
     rss_conf = &port_conf.rx_adv_conf.rss_conf;
 
-    rss_conf->rss_key = mt_hash_key_symmetric; /* do we need special key? */
+    rss_conf->rss_key = mt_hash_key_symmetric;
     rss_conf->rss_key_len = MT_HASH_KEY_LENGTH;
     rss_conf->rss_hf = RTE_ETH_RSS_IPV4;
     if (rss_conf->rss_hf != (inf->dev_info.flow_type_rss_offloads & rss_conf->rss_hf)) {

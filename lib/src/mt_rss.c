@@ -94,6 +94,7 @@ struct mt_rss_entry* mt_rss_get(struct mtl_main_impl* impl, enum mtl_port port,
   entry->hash = hash;
 
   mt_pthread_mutex_lock(&rss_queue->mutex);
+  /* todo: insert rss entry by rbtree? */
   MT_TAILQ_INSERT_TAIL(&rss_queue->head, entry, next);
   mt_pthread_mutex_unlock(&rss_queue->mutex);
 
@@ -136,9 +137,11 @@ uint16_t mt_rss_rx_burst(struct mt_rss_entry* entry, uint16_t nb_pkts) {
     dbg("%s(%u), pkt %u rss %u\n", __func__, q, i, hash);
     MT_TAILQ_FOREACH(rss_entry, &rss_queue->head, next) {
       /* check if this is the matched hash or sys entry */
+      /* todo: handle if two entries has same hash, and bulk mode */
       if ((hash == rss_entry->hash) ||
           (rss_entry->flow.no_udp && (ipv4->next_proto_id != IPPROTO_UDP))) {
         rss_entry->flow.cb(rss_entry->flow.priv, &pkts[i], 1);
+        break;
       }
     }
   }
