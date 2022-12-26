@@ -13,6 +13,7 @@
 #include "mt_log.h"
 #include "mt_mcast.h"
 #include "mt_ptp.h"
+#include "mt_rss.h"
 #include "mt_sch.h"
 #include "mt_socket.h"
 #include "mt_stat.h"
@@ -142,6 +143,12 @@ static int mt_main_create(struct mtl_main_impl* impl) {
 
   mt_dma_init(impl);
 
+  ret = mt_rss_init(impl);
+  if (ret < 0) {
+    err("%s, mt_rss_init fail %d\n", __func__, ret);
+    return ret;
+  }
+
   ret = mt_map_init(impl);
   if (ret < 0) {
     err("%s, mt_map_init fail %d\n", __func__, ret);
@@ -218,6 +225,7 @@ static int mt_main_free(struct mtl_main_impl* impl) {
 
   mt_map_uinit(impl);
   mt_dma_uinit(impl);
+  mt_rss_uinit(impl);
 
   mt_dev_free(impl);
   mt_stat_uinit(impl);
@@ -455,6 +463,10 @@ mtl_handle mtl_init(struct mtl_init_params* p) {
   info("%s, max sessions tx %d rx %d, flags 0x%" PRIx64 "\n", __func__,
        impl->tx_sessions_cnt_max, impl->rx_sessions_cnt_max,
        mt_get_user_params(impl)->flags);
+  /* parse rss config */
+  if ((p->flags & MTL_FLAG_UDP_TRANSPORT) && (p->flags & MTL_FLAG_UDP_TRANSPORT_RSS)) {
+    impl->rss_mode = MT_RSS_MODE_L4;
+  }
   impl->pkt_udp_suggest_max_size = MTL_PKT_MAX_RTP_BYTES;
   if (p->pkt_udp_suggest_max_size) {
     if ((p->pkt_udp_suggest_max_size > 1000) &&
@@ -519,11 +531,7 @@ mtl_handle mtl_init(struct mtl_init_params* p) {
   return impl;
 
 err_exit:
-  if (impl) {
-    mt_dev_if_uinit(impl);
-    mt_rte_free(impl);
-  }
-  mt_dev_uinit(p);
+  mtl_uninit(impl);
   return NULL;
 }
 

@@ -790,6 +790,13 @@ static const struct rte_eth_conf dev_port_conf = {.txmode = {
                                                       .offloads = 0,
                                                   }};
 
+#define MT_HASH_KEY_LENGTH (40)
+static uint8_t mt_hash_key_symmetric[MT_HASH_KEY_LENGTH] = {
+    0x6D, 0x5A, 0x6D, 0x5A, 0x6D, 0x5A, 0x6D, 0x5A, 0x6D, 0x5A, 0x6D, 0x5A, 0x6D, 0x5A,
+    0x6D, 0x5A, 0x6D, 0x5A, 0x6D, 0x5A, 0x6D, 0x5A, 0x6D, 0x5A, 0x6D, 0x5A, 0x6D, 0x5A,
+    0x6D, 0x5A, 0x6D, 0x5A, 0x6D, 0x5A, 0x6D, 0x5A, 0x6D, 0x5A, 0x6D, 0x5A,
+};
+
 static int dev_config_port(struct mtl_main_impl* impl, enum mtl_port port) {
   uint16_t nb_rx_desc = MT_DEV_RX_DESC, nb_tx_desc = MT_DEV_TX_DESC;
   int ret;
@@ -821,6 +828,22 @@ static int dev_config_port(struct mtl_main_impl* impl, enum mtl_port port) {
 #else
     port_conf.rxmode.offloads |= DEV_RX_OFFLOAD_TIMESTAMP;
 #endif
+  }
+
+  dbg("%s(%d), rss mode %d\n", __func__, port, impl->rss_mode);
+  if (impl->rss_mode == MT_RSS_MODE_L4) {
+    struct rte_eth_rss_conf* rss_conf;
+    rss_conf = &port_conf.rx_adv_conf.rss_conf;
+
+    rss_conf->rss_key = mt_hash_key_symmetric;
+    rss_conf->rss_key_len = MT_HASH_KEY_LENGTH;
+    rss_conf->rss_hf = RTE_ETH_RSS_IPV4;
+    if (rss_conf->rss_hf != (inf->dev_info.flow_type_rss_offloads & rss_conf->rss_hf)) {
+      err("%s(%d), not support rss l4 offload %" PRIx64 "\n", __func__, port,
+          rss_conf->rss_hf);
+      return -EIO;
+    }
+    port_conf.rxmode.mq_mode = RTE_ETH_MQ_RX_RSS;
   }
 
   ret = rte_eth_dev_configure(port_id, nb_rx_q, nb_tx_q, &port_conf);
@@ -885,13 +908,6 @@ static int dev_start_port(struct mtl_main_impl* impl, enum mtl_port port) {
   uint8_t rx_deferred_start = 0;
   struct rte_eth_txconf tx_port_conf;
   struct rte_eth_rxconf rx_port_conf;
-  struct rte_eth_dev_info dev_info;
-
-  ret = rte_eth_dev_info_get(port_id, &dev_info);
-  if (ret < 0) {
-    err("%s(%d), rte_eth_dev_info_get fail %d\n", __func__, port, ret);
-    return ret;
-  }
 
   if (inf->feature & MT_IF_FEATURE_RUNTIME_RX_QUEUE) rx_deferred_start = 1;
   rx_port_conf.rx_deferred_start = rx_deferred_start;
@@ -905,7 +921,7 @@ static int dev_start_port(struct mtl_main_impl* impl, enum mtl_port port) {
       return -ENOMEM;
     }
 
-    rx_port_conf = dev_info.default_rxconf;
+    rx_port_conf = inf->dev_info.default_rxconf;
 
     rx_port_conf.offloads = 0;
     rx_port_conf.rx_nseg = 0;
@@ -957,7 +973,7 @@ static int dev_start_port(struct mtl_main_impl* impl, enum mtl_port port) {
   }
 
   for (uint16_t q = 0; q < nb_tx_q; q++) {
-    tx_port_conf = dev_info.default_txconf;
+    tx_port_conf = inf->dev_info.default_txconf;
     ret = rte_eth_tx_queue_setup(port_id, q, nb_tx_desc, socket_id, &tx_port_conf);
     if (ret < 0) {
       err("%s(%d), rte_eth_tx_queue_setup fail %d for queue %d\n", __func__, port, ret,
@@ -1551,6 +1567,11 @@ struct mt_rx_queue* mt_dev_get_rx_queue(struct mtl_main_impl* impl, enum mtl_por
   int ret;
   struct mt_rx_queue* rx_queue;
 
+  if (mt_has_rss(impl, port)) {
+    err("%s(%d), conflict with rss mode, use rss api instead\n", __func__, port);
+    return NULL;
+  }
+
   mt_pthread_mutex_lock(&inf->rx_queues_mutex);
   for (q = 0; q < inf->max_rx_queues; q++) {
     rx_queue = &inf->rx_queues[q];
@@ -2018,12 +2039,13 @@ int mt_dev_if_init(struct mtl_main_impl* impl) {
   struct mtl_init_params* p = mt_get_user_params(impl);
   uint16_t port_id;
   char* port;
-  struct rte_eth_dev_info dev_info;
+  struct rte_eth_dev_info* dev_info;
   struct mt_interface* inf;
   int ret;
 
   for (int i = 0; i < num_ports; i++) {
     inf = mt_if(impl, i);
+    dev_info = &inf->dev_info;
 
     if (mt_pmd_is_kernel(impl, i))
       port = impl->kport_info.port[i];
@@ -2035,13 +2057,13 @@ int mt_dev_if_init(struct mtl_main_impl* impl) {
       mt_dev_if_uinit(impl);
       return ret;
     }
-    rte_eth_dev_info_get(port_id, &dev_info);
+    rte_eth_dev_info_get(port_id, dev_info);
     if (ret < 0) {
       err("%s, rte_eth_dev_info_get fail for %s\n", __func__, port);
       mt_dev_if_uinit(impl);
       return ret;
     }
-    ret = parse_driver_info(dev_info.driver_name, &inf->port_type, &inf->drv_type);
+    ret = parse_driver_info(dev_info->driver_name, &inf->port_type, &inf->drv_type);
     if (ret < 0) {
       err("%s, parse_driver_info fail(%d) for %s\n", __func__, ret, port);
       mt_dev_if_uinit(impl);
@@ -2049,7 +2071,6 @@ int mt_dev_if_init(struct mtl_main_impl* impl) {
     }
     inf->port = i;
     inf->port_id = port_id;
-    inf->device = dev_info.device;
     inf->tx_pacing_way = p->pacing;
     mt_pthread_mutex_init(&inf->tx_queues_mutex, NULL);
     mt_pthread_mutex_init(&inf->rx_queues_mutex, NULL);
@@ -2075,7 +2096,7 @@ int mt_dev_if_init(struct mtl_main_impl* impl) {
 #ifdef MTL_HAS_TAP
       inf->max_tx_queues++; /* tap tx queue */
 #endif
-      if (mt_no_system_rxq(impl)) {
+      if (mt_no_system_rxq(impl) || mt_has_rss(impl, i)) {
         inf->max_rx_queues = impl->rx_sessions_cnt_max;
       } else {
         inf->max_rx_queues = impl->rx_sessions_cnt_max + 1; /* cni rx */
@@ -2099,30 +2120,30 @@ int mt_dev_if_init(struct mtl_main_impl* impl) {
       inf->max_rx_queues = inf->max_tx_queues;
     }
 
-    if (dev_info.dev_capa & RTE_ETH_DEV_CAPA_RUNTIME_RX_QUEUE_SETUP)
+    if (dev_info->dev_capa & RTE_ETH_DEV_CAPA_RUNTIME_RX_QUEUE_SETUP)
       inf->feature |= MT_IF_FEATURE_RUNTIME_RX_QUEUE;
 
 #if RTE_VERSION >= RTE_VERSION_NUM(22, 3, 0, 0)
-    if (dev_info.tx_offload_capa & RTE_ETH_TX_OFFLOAD_MULTI_SEGS)
+    if (dev_info->tx_offload_capa & RTE_ETH_TX_OFFLOAD_MULTI_SEGS)
       inf->feature |= MT_IF_FEATURE_TX_MULTI_SEGS;
 #else
-    if (dev_info.tx_offload_capa & DEV_TX_OFFLOAD_MULTI_SEGS)
+    if (dev_info->tx_offload_capa & DEV_TX_OFFLOAD_MULTI_SEGS)
       inf->feature |= MT_IF_FEATURE_TX_MULTI_SEGS;
 #endif
 
 #if RTE_VERSION >= RTE_VERSION_NUM(22, 3, 0, 0)
-    if (dev_info.tx_offload_capa & RTE_ETH_TX_OFFLOAD_IPV4_CKSUM)
+    if (dev_info->tx_offload_capa & RTE_ETH_TX_OFFLOAD_IPV4_CKSUM)
       inf->feature |= MT_IF_FEATURE_TX_OFFLOAD_IPV4_CKSUM;
 #else
-    if (dev_info.tx_offload_capa & DEV_TX_OFFLOAD_IPV4_CKSUM)
+    if (dev_info->tx_offload_capa & DEV_TX_OFFLOAD_IPV4_CKSUM)
       inf->feature |= MT_IF_FEATURE_TX_OFFLOAD_IPV4_CKSUM;
 #endif
 
     if (mt_has_ebu(impl) &&
 #if RTE_VERSION >= RTE_VERSION_NUM(22, 3, 0, 0)
-        (dev_info.rx_offload_capa & RTE_ETH_RX_OFFLOAD_TIMESTAMP)
+        (dev_info->rx_offload_capa & RTE_ETH_RX_OFFLOAD_TIMESTAMP)
 #else
-        (dev_info.rx_offload_capa & DEV_RX_OFFLOAD_TIMESTAMP)
+        (dev_info->rx_offload_capa & DEV_RX_OFFLOAD_TIMESTAMP)
 #endif
     ) {
       if (!impl->dynfield_offset) {
@@ -2138,7 +2159,7 @@ int mt_dev_if_init(struct mtl_main_impl* impl) {
     }
 
 #ifdef RTE_ETH_RX_OFFLOAD_BUFFER_SPLIT
-    if (dev_info.rx_queue_offload_capa & RTE_ETH_RX_OFFLOAD_BUFFER_SPLIT) {
+    if (dev_info->rx_queue_offload_capa & RTE_ETH_RX_OFFLOAD_BUFFER_SPLIT) {
       inf->feature |= MT_IF_FEATURE_RXQ_OFFLOAD_BUFFER_SPLIT;
       dbg("%s(%d), has rxq hdr split\n", __func__, i);
     }
@@ -2211,10 +2232,10 @@ int mt_dev_if_init(struct mtl_main_impl* impl) {
     info("%s(%d), port_id %d port_type %d drv_type %d\n", __func__, i, port_id,
          inf->port_type, inf->drv_type);
     info("%s(%d), dev_capa 0x%" PRIx64 ", offload 0x%" PRIx64 ":0x%" PRIx64
-         " queue offload 0x%" PRIx64 ":0x%" PRIx64 "\n",
-         __func__, i, dev_info.dev_capa, dev_info.tx_offload_capa,
-         dev_info.tx_offload_capa, dev_info.tx_queue_offload_capa,
-         dev_info.rx_queue_offload_capa);
+         " queue offload 0x%" PRIx64 ":0x%" PRIx64 ", rss : 0x%" PRIx64 "\n",
+         __func__, i, dev_info->dev_capa, dev_info->tx_offload_capa,
+         dev_info->tx_offload_capa, dev_info->tx_queue_offload_capa,
+         dev_info->rx_queue_offload_capa, dev_info->flow_type_rss_offloads);
     info("%s(%d), system_rx_queues_end %d hdr_split_rx_queues_end %d\n", __func__, i,
          inf->system_rx_queues_end, inf->hdr_split_rx_queues_end);
     uint8_t* ip = p->sip_addr[i];
@@ -2227,4 +2248,12 @@ int mt_dev_if_init(struct mtl_main_impl* impl) {
   }
 
   return 0;
+}
+
+uint32_t mt_dev_softrss(uint32_t* input_tuple, uint32_t input_len) {
+  for (uint32_t i = 0; i < input_len; i++) {
+    input_tuple[i] = htonl(input_tuple[i]);
+  }
+
+  return rte_softrss(input_tuple, input_len, mt_hash_key_symmetric);
 }

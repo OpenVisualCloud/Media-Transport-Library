@@ -8,6 +8,7 @@
 #include <rte_arp.h>
 #include <rte_errno.h>
 #include <rte_ethdev.h>
+#include <rte_thash.h>
 #ifdef MTL_HAS_KNI
 #include <rte_kni.h>
 #endif
@@ -190,11 +191,18 @@ struct mt_ptp_impl {
   int32_t stat_sync_cnt;
 };
 
+struct mt_cni_rss_priv {
+  struct mtl_main_impl* impl;
+  enum mtl_port port;
+};
+
 struct mt_cni_impl {
   bool used; /* if enable cni */
 
   struct mt_rx_queue* rx_q[MTL_PORT_MAX]; /* cni rx queue */
-  pthread_t tid;                          /* thread id for rx */
+  struct mt_rss_entry* rss[MTL_PORT_MAX]; /* cni rss queue */
+  struct mt_cni_rss_priv rss_priv[MTL_PORT_MAX];
+  pthread_t tid; /* thread id for rx */
   rte_atomic32_t stop_thread;
   bool lcore_tasklet;
   struct mt_sch_tasklet_impl* tasklet;
@@ -391,7 +399,7 @@ struct mt_tx_queue {
 struct mt_interface {
   enum mtl_port port;
   uint16_t port_id;
-  struct rte_device* device;
+  struct rte_eth_dev_info dev_info;
   enum mt_port_type port_type;
   enum mt_driver_type drv_type;
   int socket_id;                          /* socket id for the port */
@@ -547,6 +555,58 @@ struct mt_stat_mgr {
   struct mt_stat_items_list head;
 };
 
+enum mt_rss_mode {
+  MT_RSS_MODE_NONE = 0,
+  MT_RSS_MODE_L4, /* both l3 and l4 */
+  MT_RSS_MODE_MAX,
+};
+
+typedef int (*mt_rss_mbuf_cb)(void* priv, struct rte_mbuf** mbuf, uint16_t nb);
+
+struct mt_rss_flow {
+  /* rx destination IP */
+  uint8_t dip_addr[MTL_IP_ADDR_LEN];
+  /* source IP */
+  uint8_t sip_addr[MTL_IP_ADDR_LEN];
+  /* udp destination port */
+  uint16_t dst_port;
+  /* udp source port */
+  uint16_t src_port;
+  /* not the udp stream, queue 0 */
+  bool no_udp;
+  /* priv data to the cb */
+  void* priv;
+  /* call back of the received mbufs by mt_rss_rx_burst */
+  mt_rss_mbuf_cb cb;
+};
+
+struct mt_rss_impl; /* foward delcare */
+
+struct mt_rss_entry {
+  uint16_t queue_id;
+  struct mt_rss_flow flow;
+  struct mt_rss_impl* rss;
+  uint32_t hash;
+  /* linked list */
+  MT_TAILQ_ENTRY(mt_rss_entry) next;
+};
+MT_TAILQ_HEAD(mt_rss_entrys_list, mt_rss_entry);
+
+struct mt_rss_queue {
+  uint16_t port_id;
+  uint16_t queue_id;
+  /* List of rss entry */
+  struct mt_rss_entrys_list head;
+  pthread_mutex_t mutex;
+};
+
+struct mt_rss_impl {
+  enum mtl_port port;
+  /* rss queue resources */
+  int max_rss_queues;
+  struct mt_rss_queue* rss_queues;
+};
+
 struct mtl_main_impl {
   struct mt_interface inf[MTL_PORT_MAX];
 
@@ -559,6 +619,10 @@ struct mtl_main_impl {
 
   enum rte_iova_mode iova_mode;
   size_t page_size;
+
+  /* rss */
+  enum mt_rss_mode rss_mode;
+  struct mt_rss_impl* rss[MTL_PORT_MAX];
 
   /* stat */
   pthread_t stat_tid;
@@ -659,7 +723,7 @@ static inline uint16_t mt_port_id(struct mtl_main_impl* impl, enum mtl_port port
 
 static inline struct rte_device* mt_port_device(struct mtl_main_impl* impl,
                                                 enum mtl_port port) {
-  return mt_if(impl, port)->device;
+  return mt_if(impl, port)->dev_info.device;
 }
 
 static inline enum mt_port_type mt_port_type(struct mtl_main_impl* impl,
@@ -781,6 +845,13 @@ static inline bool mt_has_rx_mono_pool(struct mtl_main_impl* impl) {
 
 static inline bool mt_has_tx_mono_pool(struct mtl_main_impl* impl) {
   if (mt_get_user_params(impl)->flags & MTL_FLAG_TX_MONO_POOL)
+    return true;
+  else
+    return false;
+}
+
+static inline bool mt_has_rss(struct mtl_main_impl* impl, enum mtl_port port) {
+  if (impl->rss_mode != MT_RSS_MODE_NONE)
     return true;
   else
     return false;

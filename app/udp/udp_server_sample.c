@@ -163,6 +163,11 @@ int main(int argc, char** argv) {
   if (ret < 0) return ret;
 
   ctx.param.flags |= MTL_FLAG_UDP_TRANSPORT; /* udp transport */
+  if (ctx.rss) {
+    ctx.param.flags |= MTL_FLAG_UDP_TRANSPORT_RSS;
+    ctx.param.tx_sessions_cnt_max = 16;
+    ctx.param.rx_sessions_cnt_max = 16;
+  }
 
   ctx.st = mtl_init(&ctx.param);
   if (!ctx.st) {

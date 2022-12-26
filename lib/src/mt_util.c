@@ -258,7 +258,7 @@ void st_video_rtp_dump(enum mtl_port port, int idx, char* tag,
   }
 }
 
-void mt_mbuf_dump(enum mtl_port port, int idx, char* tag, struct rte_mbuf* m) {
+void mt_mbuf_dump_hdr(enum mtl_port port, int idx, char* tag, struct rte_mbuf* m) {
   struct rte_ether_hdr* eth = rte_pktmbuf_mtod(m, struct rte_ether_hdr*);
   size_t hdr_offset = sizeof(struct rte_ether_hdr);
   struct rte_ipv4_hdr* ipv4 = NULL;
@@ -292,7 +292,10 @@ void mt_mbuf_dump(enum mtl_port port, int idx, char* tag, struct rte_mbuf* m) {
   if (udp) {
     info("dst_port %d src_port %d\n", ntohs(udp->dst_port), ntohs(udp->src_port));
   }
+}
 
+void mt_mbuf_dump(enum mtl_port port, int idx, char* tag, struct rte_mbuf* m) {
+  mt_mbuf_dump_hdr(port, idx, tag, m);
   rte_pktmbuf_dump(stdout, m, m->data_len);
 }
 

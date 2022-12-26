@@ -26,7 +26,7 @@ int mt_stat_register(struct mtl_main_impl* impl, mt_stat_cb_t cb, void* priv) {
   struct mt_stat_mgr* mgr = get_stat_mgr(impl);
   struct mt_stat_item* item = mt_zmalloc(sizeof(*item));
   if (!item) {
-    info("%s, malloc fail\n", __func__);
+    err("%s, malloc fail\n", __func__);
     return -ENOMEM;
   }
   item->cb_func = cb;

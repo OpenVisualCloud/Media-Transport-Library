@@ -233,6 +233,10 @@ static int udp_uinit_rxq(struct mtl_main_impl* impl, struct mudp_impl* s) {
     mt_dev_put_rx_queue(impl, s->rxq);
     s->rxq = NULL;
   }
+  if (s->rss) {
+    mt_rss_put(s->rss);
+    s->rss = NULL;
+  }
 
   if (s->rx_ring) {
     mt_ring_dequeue_clean(s->rx_ring);
@@ -244,29 +248,92 @@ static int udp_uinit_rxq(struct mtl_main_impl* impl, struct mudp_impl* s) {
   return 0;
 }
 
+static uint16_t udp_rx_handle(struct mudp_impl* s, struct rte_mbuf** pkts,
+                              uint16_t nb_pkts) {
+  int idx = s->idx;
+  struct rte_mbuf* valid_mbuf[nb_pkts];
+  uint16_t valid_mbuf_cnt = 0;
+  uint16_t n = 0;
+
+  s->stat_pkt_rx += nb_pkts;
+
+  /* check if valid udp pkt */
+  for (uint16_t i = 0; i < nb_pkts; i++) {
+    struct mt_udp_hdr* hdr = rte_pktmbuf_mtod(pkts[i], struct mt_udp_hdr*);
+    struct rte_ipv4_hdr* ipv4 = &hdr->ipv4;
+
+    if (ipv4->next_proto_id == IPPROTO_UDP) {
+      valid_mbuf[valid_mbuf_cnt] = pkts[i];
+      valid_mbuf_cnt++;
+      rte_mbuf_refcnt_update(pkts[i], 1);
+    } else { /* invalid pkt */
+      warn("%s(%d), not udp pkt %u\n", __func__, idx, ipv4->next_proto_id);
+    }
+  }
+
+  /* enqueue the valid mbuf */
+  if (valid_mbuf_cnt) {
+    n = rte_ring_sp_enqueue_bulk(s->rx_ring, (void**)&valid_mbuf[0], valid_mbuf_cnt,
+                                 NULL);
+    if (!n) {
+      dbg("%s(%d), %u pkts enqueue fail\n", __func__, idx, valid_mbuf_cnt);
+      rte_pktmbuf_free_bulk(&valid_mbuf[0], valid_mbuf_cnt);
+    }
+  }
+
+  return n;
+}
+
+static int udp_rss_mbuf_cb(void* priv, struct rte_mbuf** mbuf, uint16_t nb) {
+  struct mudp_impl* s = priv;
+  udp_rx_handle(s, mbuf, nb);
+  return 0;
+}
+
 static int udp_init_rxq(struct mtl_main_impl* impl, struct mudp_impl* s) {
   enum mtl_port port = s->port;
   int idx = s->idx;
   struct sockaddr_in* addr_in = &s->bind_addr;
   uint8_t* ip = (uint8_t*)&addr_in->sin_addr;
+  uint16_t queue_id;
 
-  struct mt_rx_flow flow;
-  memset(&flow, 0, sizeof(flow));
-  rte_memcpy(flow.dip_addr, ip, MTL_IP_ADDR_LEN);
-  rte_memcpy(flow.sip_addr, mt_sip_addr(impl, port), MTL_IP_ADDR_LEN);
-  flow.port_flow = true;
-  flow.dst_port = ntohs(addr_in->sin_port);
-  s->rxq = mt_dev_get_rx_queue(impl, port, &flow);
-  if (!s->rxq) {
-    err("%s(%d), get rx queue fail\n", __func__, idx);
-    udp_uinit_rxq(impl, s);
-    return -EIO;
+  if (mt_has_rss(impl, port)) {
+    struct mt_rss_flow flow;
+    memset(&flow, 0, sizeof(flow));
+    flow.priv = s;
+    flow.cb = udp_rss_mbuf_cb;
+    rte_memcpy(flow.dip_addr, ip, MTL_IP_ADDR_LEN);
+    rte_memcpy(flow.sip_addr, mt_sip_addr(impl, port), MTL_IP_ADDR_LEN);
+    flow.dst_port = ntohs(addr_in->sin_port);
+    flow.src_port = flow.dst_port;
+    s->rss = mt_rss_get(impl, port, &flow);
+    if (!s->rss) {
+      err("%s(%d), get rss fail\n", __func__, idx);
+      udp_uinit_rxq(impl, s);
+      return -EIO;
+    }
+    queue_id = mt_rss_queue_id(s->rss);
+  } else {
+    struct mt_rx_flow flow;
+    memset(&flow, 0, sizeof(flow));
+    rte_memcpy(flow.dip_addr, ip, MTL_IP_ADDR_LEN);
+    rte_memcpy(flow.sip_addr, mt_sip_addr(impl, port), MTL_IP_ADDR_LEN);
+    flow.port_flow = true;
+    flow.dst_port = ntohs(addr_in->sin_port);
+    s->rxq = mt_dev_get_rx_queue(impl, port, &flow);
+    if (!s->rxq) {
+      err("%s(%d), get rx queue fail\n", __func__, idx);
+      udp_uinit_rxq(impl, s);
+      return -EIO;
+    }
+    queue_id = mt_dev_rx_queue_id(s->rxq);
   }
+  s->rxq_id = queue_id;
 
   char ring_name[32];
   struct rte_ring* ring;
   unsigned int flags, count;
-  snprintf(ring_name, 32, "MUDP-RX-P%d-Q%u", port, mt_dev_rx_queue_id(s->rxq));
+  snprintf(ring_name, 32, "MUDP-RX-P%d-Q%u-%d", port, queue_id, idx);
   flags = RING_F_SP_ENQ | RING_F_SC_DEQ; /* single-producer and single-consumer */
   count = s->rx_burst_pkts * 2;
   ring = rte_ring_create(ring_name, count, mt_socket_id(impl, port), flags);
@@ -288,56 +355,21 @@ static int udp_init_rxq(struct mtl_main_impl* impl, struct mudp_impl* s) {
   }
 
   info("%s(%d), succ, ip %u.%u.%u.%u port %u\n", __func__, idx, ip[0], ip[1], ip[2],
-       ip[3], flow.dst_port);
+       ip[3], ntohs(addr_in->sin_port));
   udp_set_flag(s, MUDP_RXQ_ALLOC);
   return 0;
 }
 
 static uint16_t udp_rx(struct mtl_main_impl* impl, struct mudp_impl* s) {
-  int idx = s->idx;
   uint16_t rx_burst = s->rx_burst_pkts;
-  struct rte_mbuf* pkt[rx_burst];
-  uint16_t rx = mt_dev_rx_burst(s->rxq, pkt, rx_burst);
-  uint16_t n = 0;
+  struct rte_mbuf* pkts[rx_burst];
 
+  if (s->rss) return mt_rss_rx_burst(s->rss, rx_burst);
+
+  uint16_t rx = mt_dev_rx_burst(s->rxq, pkts, rx_burst);
   if (!rx) return 0; /* no pkt */
-
-  struct rte_mbuf* free_mbuf[rx];
-  uint16_t free_mbuf_cnt = 0;
-  struct rte_mbuf* valid_mbuf[rx];
-  uint16_t valid_mbuf_cnt = 0;
-
-  s->stat_pkt_rx += rx;
-
-  /* check if valid udp pkt */
-  for (uint16_t i = 0; i < rx; i++) {
-    struct mt_udp_hdr* hdr = rte_pktmbuf_mtod(pkt[i], struct mt_udp_hdr*);
-    struct rte_ipv4_hdr* ipv4 = &hdr->ipv4;
-
-    if (ipv4->next_proto_id == IPPROTO_UDP) {
-      valid_mbuf[valid_mbuf_cnt] = pkt[i];
-      valid_mbuf_cnt++;
-    } else { /* invalid pkt, free directly */
-      warn("%s(%d), not udp pkt %u\n", __func__, idx, ipv4->next_proto_id);
-      free_mbuf[free_mbuf_cnt] = pkt[i];
-      free_mbuf_cnt++;
-    }
-  }
-
-  /* enqueue the valid mbuf */
-  if (valid_mbuf_cnt) {
-    n = rte_ring_sp_enqueue_bulk(s->rx_ring, (void**)&valid_mbuf[0], valid_mbuf_cnt,
-                                 NULL);
-    if (!n) {
-      warn("%s(%d), %u pkts enqueue fail\n", __func__, idx, valid_mbuf_cnt);
-      rte_pktmbuf_free_bulk(&valid_mbuf[0], valid_mbuf_cnt);
-    }
-  }
-  /* free the invalid mbuf */
-  if (free_mbuf_cnt) {
-    rte_pktmbuf_free_bulk(&free_mbuf[0], free_mbuf_cnt);
-  }
-
+  uint16_t n = udp_rx_handle(s, pkts, rx);
+  rte_pktmbuf_free_bulk(&pkts[0], rx);
   return n;
 }
 
@@ -351,8 +383,8 @@ static int udp_stat_dump(void* priv) {
     s->stat_pkt_tx = 0;
   }
   if (s->stat_pkt_rx) {
-    info("%s(%d), pkt rx %d deliver %d\n", __func__, idx, s->stat_pkt_rx,
-         s->stat_pkt_deliver);
+    info("%s(%d), pkt rx %d deliver %d, %s mode, rxq %u\n", __func__, idx, s->stat_pkt_rx,
+         s->stat_pkt_deliver, s->rss ? "rss" : "queue", s->rxq_id);
     s->stat_pkt_rx = 0;
     s->stat_pkt_deliver = 0;
   }
