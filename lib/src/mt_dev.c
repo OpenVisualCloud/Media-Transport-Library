@@ -791,11 +791,15 @@ static const struct rte_eth_conf dev_port_conf = {.txmode = {
                                                   }};
 
 #define MT_HASH_KEY_LENGTH (40)
-static uint8_t mt_hash_key_symmetric[MT_HASH_KEY_LENGTH] = {
-    0x6D, 0x5A, 0x6D, 0x5A, 0x6D, 0x5A, 0x6D, 0x5A, 0x6D, 0x5A, 0x6D, 0x5A, 0x6D, 0x5A,
-    0x6D, 0x5A, 0x6D, 0x5A, 0x6D, 0x5A, 0x6D, 0x5A, 0x6D, 0x5A, 0x6D, 0x5A, 0x6D, 0x5A,
-    0x6D, 0x5A, 0x6D, 0x5A, 0x6D, 0x5A, 0x6D, 0x5A, 0x6D, 0x5A, 0x6D, 0x5A,
+// clang-format off
+static uint8_t mt_rss_hash_key[MT_HASH_KEY_LENGTH] = {
+  0x6d, 0x5a, 0x56, 0xda, 0x25, 0x5b, 0x0e, 0xc2,
+  0x41, 0x67, 0x25, 0x3d, 0x43, 0xa3, 0x8f, 0xb0,
+  0xd0, 0xca, 0x2b, 0xcb, 0xae, 0x7b, 0x30, 0xb4,
+  0x77, 0xcb, 0x2d, 0xa3, 0x80, 0x30, 0xf2, 0x0c,
+  0x6a, 0x42, 0xb7, 0x3b, 0xbe, 0xac, 0x01, 0xfa,
 };
+// clang-format on
 
 static int dev_config_port(struct mtl_main_impl* impl, enum mtl_port port) {
   uint16_t nb_rx_desc = MT_DEV_RX_DESC, nb_tx_desc = MT_DEV_TX_DESC;
@@ -831,16 +835,23 @@ static int dev_config_port(struct mtl_main_impl* impl, enum mtl_port port) {
   }
 
   dbg("%s(%d), rss mode %d\n", __func__, port, impl->rss_mode);
-  if (impl->rss_mode == MT_RSS_MODE_L4) {
+  if (impl->rss_mode != MT_RSS_MODE_NONE) {
     struct rte_eth_rss_conf* rss_conf;
     rss_conf = &port_conf.rx_adv_conf.rss_conf;
 
-    rss_conf->rss_key = mt_hash_key_symmetric;
+    rss_conf->rss_key = mt_rss_hash_key;
     rss_conf->rss_key_len = MT_HASH_KEY_LENGTH;
-    rss_conf->rss_hf = RTE_ETH_RSS_IPV4;
+    if (impl->rss_mode == MT_RSS_MODE_L4) {
+      rss_conf->rss_hf = RTE_ETH_RSS_NONFRAG_IPV4_UDP;
+    } else if (impl->rss_mode == MT_RSS_MODE_L3) {
+      rss_conf->rss_hf = RTE_ETH_RSS_IPV4;
+    } else {
+      err("%s(%d), not support rss_mode %d\n", __func__, port, impl->rss_mode);
+      return -EIO;
+    }
     if (rss_conf->rss_hf != (inf->dev_info.flow_type_rss_offloads & rss_conf->rss_hf)) {
-      err("%s(%d), not support rss l4 offload %" PRIx64 "\n", __func__, port,
-          rss_conf->rss_hf);
+      err("%s(%d), not support rss offload %" PRIx64 ", mode %d\n", __func__, port,
+          rss_conf->rss_hf, impl->rss_mode);
       return -EIO;
     }
     port_conf.rxmode.mq_mode = RTE_ETH_MQ_RX_RSS;
@@ -2251,9 +2262,5 @@ int mt_dev_if_init(struct mtl_main_impl* impl) {
 }
 
 uint32_t mt_dev_softrss(uint32_t* input_tuple, uint32_t input_len) {
-  for (uint32_t i = 0; i < input_len; i++) {
-    input_tuple[i] = htonl(input_tuple[i]);
-  }
-
-  return rte_softrss(input_tuple, input_len, mt_hash_key_symmetric);
+  return rte_softrss(input_tuple, input_len, mt_rss_hash_key);
 }
