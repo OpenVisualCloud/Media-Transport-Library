@@ -608,6 +608,50 @@ struct mt_rss_impl {
   struct mt_rss_queue* rss_queues;
 };
 
+typedef int (*mt_sq_mbuf_cb)(void* priv, struct rte_mbuf** mbuf, uint16_t nb);
+
+struct mt_sq_flow {
+  /* rx destination IP */
+  uint8_t dip_addr[MTL_IP_ADDR_LEN];
+  /* source IP */
+  uint8_t sip_addr[MTL_IP_ADDR_LEN];
+  /* udp destination port */
+  uint16_t dst_port;
+  /* cni queue */
+  bool sys_queue;
+  /* priv data to the cb */
+  void* priv;
+  /* call back of the received mbufs by mt_sq_rx_burst */
+  mt_sq_mbuf_cb cb;
+};
+
+struct mt_sq_impl; /* foward delcare */
+
+struct mt_sq_entry {
+  uint16_t queue_id;
+  struct mt_sq_flow flow;
+  struct mt_sq_impl* parnet;
+  uint32_t hash;
+  /* linked list */
+  MT_TAILQ_ENTRY(mt_sq_entry) next;
+};
+MT_TAILQ_HEAD(mt_sq_entrys_list, mt_sq_entry);
+
+struct mt_sq_queue {
+  uint16_t port_id;
+  uint16_t queue_id;
+  /* List of sq entry */
+  struct mt_sq_entrys_list head;
+  pthread_mutex_t mutex;
+};
+
+struct mt_sq_impl {
+  enum mtl_port port;
+  /* sq queue resources */
+  int max_sq_queues;
+  struct mt_sq_queue* sq_queues;
+};
+
 struct mtl_main_impl {
   struct mt_interface inf[MTL_PORT_MAX];
 
@@ -624,6 +668,8 @@ struct mtl_main_impl {
   /* rss */
   enum mt_rss_mode rss_mode;
   struct mt_rss_impl* rss[MTL_PORT_MAX];
+  /* shared queue mgr */
+  struct mt_sq_impl* sq[MTL_PORT_MAX];
 
   /* stat */
   pthread_t stat_tid;
@@ -853,6 +899,13 @@ static inline bool mt_has_tx_mono_pool(struct mtl_main_impl* impl) {
 
 static inline bool mt_has_rss(struct mtl_main_impl* impl, enum mtl_port port) {
   if (impl->rss_mode != MT_RSS_MODE_NONE)
+    return true;
+  else
+    return false;
+}
+
+static inline bool mt_shared_queue(struct mtl_main_impl* impl, enum mtl_port port) {
+  if (mt_get_user_params(impl)->flags & MTL_FLAG_UDP_TRANSPORT_SQ)
     return true;
   else
     return false;

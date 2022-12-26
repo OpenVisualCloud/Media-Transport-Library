@@ -463,10 +463,8 @@ mtl_handle mtl_init(struct mtl_init_params* p) {
   info("%s, max sessions tx %d rx %d, flags 0x%" PRIx64 "\n", __func__,
        impl->tx_sessions_cnt_max, impl->rx_sessions_cnt_max,
        mt_get_user_params(impl)->flags);
-  /* parse rss config */
-  if ((p->flags & MTL_FLAG_UDP_TRANSPORT) && (p->flags & MTL_FLAG_UDP_TRANSPORT_RSS)) {
-    impl->rss_mode = MT_RSS_MODE_L4;
-  }
+  /* parse rss config, not use now */
+  impl->rss_mode = MT_RSS_MODE_NONE;
   impl->pkt_udp_suggest_max_size = MTL_PKT_MAX_RTP_BYTES;
   if (p->pkt_udp_suggest_max_size) {
     if ((p->pkt_udp_suggest_max_size > 1000) &&

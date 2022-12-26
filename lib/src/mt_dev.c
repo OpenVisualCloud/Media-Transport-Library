@@ -1544,6 +1544,11 @@ struct mt_tx_queue* mt_dev_get_tx_queue(struct mtl_main_impl* impl, enum mtl_por
   struct mt_tx_queue* tx_queue;
   int ret;
 
+  if (mt_shared_queue(impl, port)) {
+    warn("%s(%d), conflict with shared queue mode, use sq api instead\n", __func__, port);
+    // return NULL; todo
+  }
+
   mt_pthread_mutex_lock(&inf->tx_queues_mutex);
   for (q = 0; q < inf->max_tx_queues; q++) {
     tx_queue = &inf->tx_queues[q];
@@ -1581,6 +1586,11 @@ struct mt_rx_queue* mt_dev_get_rx_queue(struct mtl_main_impl* impl, enum mtl_por
   if (mt_has_rss(impl, port)) {
     err("%s(%d), conflict with rss mode, use rss api instead\n", __func__, port);
     return NULL;
+  }
+
+  if (mt_shared_queue(impl, port)) {
+    err("%s(%d), conflict with shared queue mode, use sq api instead\n", __func__, port);
+    // return NULL;
   }
 
   mt_pthread_mutex_lock(&inf->rx_queues_mutex);
@@ -2102,15 +2112,19 @@ int mt_dev_if_init(struct mtl_main_impl* impl) {
       inf->max_rx_queues = inf->max_tx_queues;
       inf->system_rx_queues_end = 0;
     } else {
-      /* arp, mcast, ptp use shared sys queue */
-      inf->max_tx_queues = impl->tx_sessions_cnt_max + 1;
+      if (mt_shared_queue(impl, i)) {
+        inf->max_tx_queues = impl->tx_sessions_cnt_max;
+      } else {
+        /* arp, mcast, ptp use shared sys queue */
+        inf->max_tx_queues = impl->tx_sessions_cnt_max + 1;
 #ifdef MTL_HAS_KNI
-      inf->max_tx_queues++; /* kni tx queue */
+        inf->max_tx_queues++; /* kni tx queue */
 #endif
 #ifdef MTL_HAS_TAP
-      inf->max_tx_queues++; /* tap tx queue */
+        inf->max_tx_queues++; /* tap tx queue */
 #endif
-      if (mt_no_system_rxq(impl) || mt_has_rss(impl, i)) {
+      }
+      if (mt_no_system_rxq(impl) || mt_has_rss(impl, i) || mt_shared_queue(impl, i)) {
         inf->max_rx_queues = impl->rx_sessions_cnt_max;
       } else {
         inf->max_rx_queues = impl->rx_sessions_cnt_max + 1; /* cni rx */

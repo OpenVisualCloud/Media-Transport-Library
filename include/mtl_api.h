@@ -233,9 +233,9 @@ enum st21_tx_pacing_way {
 #define MTL_FLAG_UDP_TRANSPORT (MTL_BIT64(8))
 /**
  * Flag bit in flags of struct mtl_init_params.
- * Enable RSS for the UDP transport.
+ * Enable shared queue for the UDP transport.
  */
-#define MTL_FLAG_UDP_TRANSPORT_RSS (MTL_BIT64(9))
+#define MTL_FLAG_UDP_TRANSPORT_SQ (MTL_BIT64(9))
 
 /**
  * Flag bit in flags of struct mtl_init_params, debug usage only.
