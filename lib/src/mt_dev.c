@@ -1901,7 +1901,10 @@ int mt_dev_free(struct mtl_main_impl* impl) {
   mt_pthread_mutex_destroy(&impl->stat_wake_mutex);
   mt_pthread_cond_destroy(&impl->stat_wake_cond);
 
-  mt_sch_put(impl->main_sch, 0);
+  if (impl->main_sch) {
+    mt_sch_put(impl->main_sch, 0);
+    impl->main_sch = NULL;
+  }
 
   mt_sch_mrg_uinit(impl);
   dev_uinit_lcores(impl);

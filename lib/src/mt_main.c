@@ -531,7 +531,7 @@ mtl_handle mtl_init(struct mtl_init_params* p) {
   return impl;
 
 err_exit:
-  mtl_uninit(impl);
+  if (impl) mtl_uninit(impl);
   return NULL;
 }
 
