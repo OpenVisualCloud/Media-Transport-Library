@@ -70,9 +70,10 @@ bool mt_dev_lcore_valid(struct mtl_main_impl* impl, unsigned int lcore);
 
 uint32_t mt_dev_softrss(uint32_t* input_tuple, uint32_t input_len);
 
-int mt_dev_create_rx_flow(struct mtl_main_impl* impl, enum mtl_port port, uint16_t q,
-                          struct mt_rx_flow* flow, struct mt_rx_flow_result* result);
+struct mt_rx_flow_rsp* mt_dev_create_rx_flow(struct mtl_main_impl* impl,
+                                             enum mtl_port port, uint16_t q,
+                                             struct mt_rx_flow* flow);
 int mt_dev_free_rx_flow(struct mtl_main_impl* impl, enum mtl_port port,
-                        struct mt_rx_flow_result* result);
+                        struct mt_rx_flow_rsp* rsp);
 
 #endif

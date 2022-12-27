@@ -113,7 +113,6 @@ struct mt_rsq_entry* mt_rsq_get(struct mtl_main_impl* impl, enum mtl_port port,
   uint32_t hash = rsq_flow_hash(flow);
   uint16_t q = (hash % RTE_ETH_RETA_GROUP_SIZE) % rsqm->max_rsq_queues;
   struct mt_rsq_queue* rsq_queue = &rsqm->rsq_queues[q];
-  int ret;
   struct mt_rsq_entry* entry =
       mt_rte_zmalloc_socket(sizeof(*entry), mt_socket_id(impl, port));
   if (!entry) {
@@ -122,14 +121,13 @@ struct mt_rsq_entry* mt_rsq_get(struct mtl_main_impl* impl, enum mtl_port port,
   }
   entry->queue_id = q;
   entry->parnet = rsqm;
-  entry->flow_result.flow_id = -1;
   rte_memcpy(&entry->flow, flow, sizeof(entry->flow));
   entry->dst_port_net = htons(flow->dst_port);
 
   if (!flow->sys_queue) {
-    ret = mt_dev_create_rx_flow(impl, port, q, flow, &entry->flow_result);
-    if (ret < 0) {
-      err("%s(%u), create flow fail %d\n", __func__, q, ret);
+    entry->flow_rsp = mt_dev_create_rx_flow(impl, port, q, flow);
+    if (!entry->flow_rsp) {
+      err("%s(%u), create flow fail\n", __func__, q);
       return NULL;
     }
   }
@@ -155,7 +153,10 @@ int mt_rsq_put(struct mt_rsq_entry* entry) {
   rte_atomic32_dec(&rsq_queue->entry_cnt);
   mt_pthread_mutex_unlock(&rsq_queue->mutex);
 
-  mt_dev_free_rx_flow(rsqm->parnet, rsqm->port, &entry->flow_result);
+  if (entry->flow_rsp) {
+    mt_dev_free_rx_flow(rsqm->parnet, rsqm->port, entry->flow_rsp);
+    entry->flow_rsp = NULL;
+  }
   mt_rte_free(entry);
   return 0;
 }

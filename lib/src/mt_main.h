@@ -384,7 +384,7 @@ struct mt_rx_flow {
   mt_rsq_mbuf_cb cb;
 };
 
-struct mt_rx_flow_result {
+struct mt_rx_flow_rsp {
   int flow_id; /* flow id for afxdp */
   struct rte_flow* flow;
   uint16_t queue_id;
@@ -396,7 +396,7 @@ struct mt_rx_queue {
   uint16_t queue_id;
   bool active;
   struct mt_rx_flow flow;
-  struct mt_rx_flow_result flow_result;
+  struct mt_rx_flow_rsp* flow_rsp;
   struct rte_mempool* mbuf_pool;
   unsigned int mbuf_elements;
   /* pool for hdr split payload */
@@ -630,7 +630,7 @@ struct mt_rsq_entry {
   uint16_t queue_id;
   struct mt_rx_flow flow;
   uint16_t dst_port_net;
-  struct mt_rx_flow_result flow_result;
+  struct mt_rx_flow_rsp* flow_rsp;
   struct mt_rsq_impl* parnet;
   /* linked list */
   MT_TAILQ_ENTRY(mt_rsq_entry) next;
@@ -675,6 +675,7 @@ struct mtl_main_impl {
   struct mt_rss_impl* rss[MTL_PORT_MAX];
   /* shared rx queue mgr */
   struct mt_rsq_impl* rsq[MTL_PORT_MAX];
+  struct mt_tsq_impl* tsq[MTL_PORT_MAX];
 
   /* stat */
   pthread_t stat_tid;

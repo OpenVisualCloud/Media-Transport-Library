@@ -22,6 +22,12 @@
 #include "st2110/st_tx_audio_session.h"
 #include "st2110/st_tx_video_session.h"
 
+static struct mt_rx_flow_rsp* dev_if_create_rx_flow(struct mtl_main_impl* impl,
+                                                    enum mtl_port port, uint16_t q,
+                                                    struct mt_rx_flow* flow);
+static int dev_if_free_rx_flow(struct mtl_main_impl* impl, enum mtl_port port,
+                               struct mt_rx_flow_rsp* rsp);
+
 struct mt_dev_driver_info {
   char* name;
   enum mt_port_type port_type;
@@ -1055,9 +1061,10 @@ int dev_reset_port(struct mtl_main_impl* impl, enum mtl_port port) {
   struct mt_rx_queue* rx_queue;
   for (uint16_t rx_q = 0; rx_q < inf->max_rx_queues; rx_q++) {
     rx_queue = &inf->rx_queues[rx_q];
-    if (rx_queue->flow_result.flow) {
-      rx_queue->flow_result.flow = dev_rx_queue_create_flow(inf, rx_q, &rx_queue->flow);
-      if (!rx_queue->flow_result.flow) {
+    if (rx_queue->flow_rsp) {
+      mt_rte_free(rx_queue->flow_rsp);
+      rx_queue->flow_rsp = dev_if_create_rx_flow(impl, port, rx_q, &rx_queue->flow);
+      if (!rx_queue->flow_rsp) {
         err("%s(%d), restore flow fail for q %d\n", __func__, port, rx_q);
         rte_atomic32_set(&impl->instance_in_reset, 0);
         return -EIO;
@@ -1321,10 +1328,9 @@ err_unlock:
   return ret;
 }
 
-static int dev_if_uinit_rx_queues(struct mt_interface* inf) {
+static int dev_if_uinit_rx_queues(struct mtl_main_impl* impl, struct mt_interface* inf) {
   enum mtl_port port = inf->port;
   struct mt_rx_queue* rx_queue;
-  struct rte_flow_error error;
 
   if (!inf->rx_queues) return 0;
 
@@ -1333,10 +1339,10 @@ static int dev_if_uinit_rx_queues(struct mt_interface* inf) {
     if (rx_queue->active) {
       warn("%s(%d), rx queue %d still active\n", __func__, port, q);
     }
-    if (rx_queue->flow_result.flow) {
-      warn("%s(%d), rte flow %d still active\n", __func__, port, q);
-      rte_flow_destroy(inf->port_id, rx_queue->flow_result.flow, &error);
-      rx_queue->flow_result.flow = NULL;
+    if (rx_queue->flow_rsp) {
+      warn("%s(%d), flow %d still active\n", __func__, port, q);
+      dev_if_free_rx_flow(impl, port, rx_queue->flow_rsp);
+      rx_queue->flow_rsp = NULL;
     }
     if (rx_queue->mbuf_pool) {
       mt_mempool_free(rx_queue->mbuf_pool);
@@ -1367,7 +1373,6 @@ static int dev_if_init_rx_queues(struct mtl_main_impl* impl, struct mt_interface
       rx_queues[q].queue_id = q;
       rx_queues[q].port = inf->port;
       rx_queues[q].port_id = inf->port_id;
-      rx_queues[q].flow_result.flow_id = -1;
 
       /* Create mempool to hold the rx queue mbufs. */
       unsigned int mbuf_elements = inf->nb_rx_desc + 1024;
@@ -1394,7 +1399,7 @@ static int dev_if_init_rx_queues(struct mtl_main_impl* impl, struct mt_interface
         }
       }
       if (!mbuf_pool) {
-        dev_if_uinit_rx_queues(inf);
+        dev_if_uinit_rx_queues(impl, inf);
         return -ENOMEM;
       }
       rx_queues[q].mbuf_pool = mbuf_pool;
@@ -1408,7 +1413,7 @@ static int dev_if_init_rx_queues(struct mtl_main_impl* impl, struct mt_interface
                                       MT_MBUF_CACHE_SIZE, sizeof(struct mt_muf_priv_data),
                                       ST_PKT_MAX_ETHER_BYTES);
         if (!mbuf_pool) {
-          dev_if_uinit_rx_queues(inf);
+          dev_if_uinit_rx_queues(impl, inf);
           return -ENOMEM;
         }
         rx_queues[q].mbuf_payload_pool = mbuf_pool;
@@ -1488,29 +1493,30 @@ static int dev_if_init_pacing(struct mtl_main_impl* impl, enum mtl_port port) {
   return 0;
 }
 
-static int dev_if_create_rx_flow(struct mtl_main_impl* impl, enum mtl_port port,
-                                 uint16_t q, struct mt_rx_flow* flow,
-                                 struct mt_rx_flow_result* result) {
+static struct mt_rx_flow_rsp* dev_if_create_rx_flow(struct mtl_main_impl* impl,
+                                                    enum mtl_port port, uint16_t q,
+                                                    struct mt_rx_flow* flow) {
   struct mt_interface* inf = mt_if(impl, port);
   int ret;
   uint8_t* ip = flow->dip_addr;
 
   if (q >= inf->max_rx_queues) {
     err("%s(%d), invalid q %u\n", __func__, port, q);
-    return -EINVAL;
+    return NULL;
   }
 
-  result->flow_id = -1;
-  result->flow = NULL;
-  result->queue_id = q;
+  struct mt_rx_flow_rsp* rsp = mt_rte_zmalloc_socket(sizeof(*rsp), inf->socket_id);
+  rsp->flow_id = -1;
+  rsp->queue_id = q;
 
   if (mt_pmd_is_kernel(impl, port)) {
     ret = mt_socket_add_flow(impl, port, q, flow);
     if (ret < 0) {
       err("%s(%d), socket add flow fail for queue %d\n", __func__, port, q);
-      return ret;
+      mt_rte_free(rsp);
+      return NULL;
     }
-    result->flow_id = ret;
+    rsp->flow_id = ret;
   } else {
     struct rte_flow* r_flow;
 
@@ -1518,32 +1524,33 @@ static int dev_if_create_rx_flow(struct mtl_main_impl* impl, enum mtl_port port,
     if (!r_flow) {
       err("%s(%d), create flow fail for queue %d, ip %u.%u.%u.%u port %u\n", __func__,
           port, q, ip[0], ip[1], ip[2], ip[3], flow->dst_port);
-      return -EIO;
+      mt_rte_free(rsp);
+      return NULL;
     }
 
-    result->flow = r_flow;
+    rsp->flow = r_flow;
   }
 
-  return 0;
+  return rsp;
 }
 
 static int dev_if_free_rx_flow(struct mtl_main_impl* impl, enum mtl_port port,
-                               struct mt_rx_flow_result* result) {
+                               struct mt_rx_flow_rsp* rsp) {
   struct mt_interface* inf = mt_if(impl, port);
   struct rte_flow_error error;
 
-  if (result->flow_id > 0) {
-    mt_socket_remove_flow(impl, port, result->flow_id);
-    result->flow_id = -1;
+  if (rsp->flow_id > 0) {
+    mt_socket_remove_flow(impl, port, rsp->flow_id);
+    rsp->flow_id = -1;
   }
-  if (result->flow) {
-    int ret = rte_flow_destroy(inf->port_id, result->flow, &error);
+  if (rsp->flow) {
+    int ret = rte_flow_destroy(inf->port_id, rsp->flow, &error);
     if (ret < 0) {
-      err("%s(%d), flow destroy fail for queue %d\n", __func__, inf->port,
-          result->queue_id);
+      err("%s(%d), flow destroy fail for queue %d\n", __func__, inf->port, rsp->queue_id);
     }
-    result->flow = NULL;
+    rsp->flow = NULL;
   }
+  mt_rte_free(rsp);
   return 0;
 }
 
@@ -1654,13 +1661,16 @@ struct mt_rx_queue* mt_dev_get_rx_queue(struct mtl_main_impl* impl, enum mtl_por
     }
 
     /* free the dummmy flow if any */
-    dev_if_free_rx_flow(impl, port, &rx_queue->flow_result);
+    if (rx_queue->flow_rsp) {
+      dev_if_free_rx_flow(impl, port, rx_queue->flow_rsp);
+      rx_queue->flow_rsp = NULL;
+    }
 
     memset(&rx_queue->flow, 0, sizeof(rx_queue->flow));
     if (flow) {
-      ret = dev_if_create_rx_flow(impl, port, q, flow, &rx_queue->flow_result);
-      if (ret < 0) {
-        err("%s(%d), socket add flow fail for queue %d\n", __func__, port, q);
+      rx_queue->flow_rsp = dev_if_create_rx_flow(impl, port, q, flow);
+      if (!rx_queue->flow_rsp) {
+        err("%s(%d), create flow fail for queue %d\n", __func__, port, q);
         mt_pthread_mutex_unlock(&inf->rx_queues_mutex);
         return NULL;
       }
@@ -1671,7 +1681,10 @@ struct mt_rx_queue* mt_dev_get_rx_queue(struct mtl_main_impl* impl, enum mtl_por
       ret = rte_eth_dev_rx_queue_start(inf->port_id, q);
       if (ret < 0) {
         err("%s(%d), start runtime rx queue %d fail %d\n", __func__, port, q, ret);
-        dev_if_free_rx_flow(impl, port, &rx_queue->flow_result);
+        if (rx_queue->flow_rsp) {
+          dev_if_free_rx_flow(impl, port, rx_queue->flow_rsp);
+          rx_queue->flow_rsp = NULL;
+        }
         mt_pthread_mutex_unlock(&inf->rx_queues_mutex);
         return NULL;
       }
@@ -1785,7 +1798,10 @@ int mt_dev_put_rx_queue(struct mtl_main_impl* impl, struct mt_rx_queue* queue) {
     return -EIO;
   }
 
-  dev_if_free_rx_flow(impl, port, &rx_queue->flow_result);
+  if (rx_queue->flow_rsp) {
+    dev_if_free_rx_flow(impl, port, rx_queue->flow_rsp);
+    rx_queue->flow_rsp = NULL;
+  }
 
   if (rx_queue->flow.hdr_split) {
 #ifdef ST_HAS_DPDK_HDR_SPLIT
@@ -2050,7 +2066,7 @@ int mt_dev_if_uinit(struct mtl_main_impl* impl) {
     }
 
     dev_if_uinit_tx_queues(inf);
-    dev_if_uinit_rx_queues(inf);
+    dev_if_uinit_rx_queues(impl, inf);
 
     if (inf->mcast_mac_lists) {
       warn("%s(%d), mcast_mac_lists still active\n", __func__, i);
@@ -2301,24 +2317,25 @@ uint32_t mt_dev_softrss(uint32_t* input_tuple, uint32_t input_len) {
   return rte_softrss(input_tuple, input_len, mt_rss_hash_key);
 }
 
-int mt_dev_create_rx_flow(struct mtl_main_impl* impl, enum mtl_port port, uint16_t q,
-                          struct mt_rx_flow* flow, struct mt_rx_flow_result* result) {
+struct mt_rx_flow_rsp* mt_dev_create_rx_flow(struct mtl_main_impl* impl,
+                                             enum mtl_port port, uint16_t q,
+                                             struct mt_rx_flow* flow) {
   struct mt_interface* inf = mt_if(impl, port);
-  int ret;
+  struct mt_rx_flow_rsp* rsp;
 
   if (q >= inf->max_rx_queues) {
     err("%s(%d), invalid q %u\n", __func__, port, q);
-    return -EINVAL;
+    return NULL;
   }
 
   mt_pthread_mutex_lock(&inf->rx_queues_mutex);
-  ret = dev_if_create_rx_flow(impl, port, q, flow, result);
+  rsp = dev_if_create_rx_flow(impl, port, q, flow);
   mt_pthread_mutex_unlock(&inf->rx_queues_mutex);
 
-  return ret;
+  return rsp;
 }
 
 int mt_dev_free_rx_flow(struct mtl_main_impl* impl, enum mtl_port port,
-                        struct mt_rx_flow_result* result) {
-  return dev_if_free_rx_flow(impl, port, result);
+                        struct mt_rx_flow_rsp* rsp) {
+  return dev_if_free_rx_flow(impl, port, rsp);
 }
