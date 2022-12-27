@@ -191,7 +191,7 @@ struct mt_ptp_impl {
   int32_t stat_sync_cnt;
 };
 
-struct mt_cni_rss_priv {
+struct mt_cni_priv {
   struct mtl_main_impl* impl;
   enum mtl_port port;
 };
@@ -200,8 +200,8 @@ struct mt_cni_impl {
   bool used; /* if enable cni */
 
   struct mt_rx_queue* rx_q[MTL_PORT_MAX]; /* cni rx queue */
-  struct mt_rss_entry* rss[MTL_PORT_MAX]; /* cni rss queue */
-  struct mt_cni_rss_priv rss_priv[MTL_PORT_MAX];
+  struct mt_rsq_entry* rsq[MTL_PORT_MAX]; /* cni rsq queue */
+  struct mt_cni_priv cni_priv[MTL_PORT_MAX];
   pthread_t tid; /* thread id for rx */
   rte_atomic32_t stop_thread;
   bool lcore_tasklet;
@@ -361,17 +361,33 @@ struct mt_rl_shaper {
   int idx;
 };
 
+typedef int (*mt_rsq_mbuf_cb)(void* priv, struct rte_mbuf** mbuf, uint16_t nb);
+
+/* request of rx flow */
 struct mt_rx_flow {
+  /* for cni queue */
+  bool sys_queue;
+  /* mandatory if not sys_queue */
   uint8_t dip_addr[MTL_IP_ADDR_LEN]; /* rx destination IP */
   uint8_t sip_addr[MTL_IP_ADDR_LEN]; /* source IP */
-  uint16_t dst_port;                 /* udp destination port */
-  int flow_id;                       /* flow id in the eth tool */
   bool port_flow;                    /* if apply port flow */
-  bool hdr_split;                    /* if request hdr split */
+  uint16_t dst_port;                 /* udp destination port */
+  /* optional */
+  bool hdr_split; /* if request hdr split */
   void* hdr_split_mbuf_cb_priv;
 #ifdef ST_HAS_DPDK_HDR_SPLIT /* rte_eth_hdrs_mbuf_callback_fn define with this marco */
   rte_eth_hdrs_mbuf_callback_fn hdr_split_mbuf_cb;
 #endif
+  /* priv data to the cb for shared queue */
+  void* priv;
+  /* call back of the received mbufs by mt_rsq_burst */
+  mt_rsq_mbuf_cb cb;
+};
+
+struct mt_rx_flow_result {
+  int flow_id; /* flow id for afxdp */
+  struct rte_flow* flow;
+  uint16_t queue_id;
 };
 
 struct mt_rx_queue {
@@ -379,8 +395,8 @@ struct mt_rx_queue {
   uint16_t port_id;
   uint16_t queue_id;
   bool active;
-  struct rte_flow* flow;
-  struct mt_rx_flow st_flow;
+  struct mt_rx_flow flow;
+  struct mt_rx_flow_result flow_result;
   struct rte_mempool* mbuf_pool;
   unsigned int mbuf_elements;
   /* pool for hdr split payload */
@@ -608,48 +624,37 @@ struct mt_rss_impl {
   struct mt_rss_queue* rss_queues;
 };
 
-typedef int (*mt_sq_mbuf_cb)(void* priv, struct rte_mbuf** mbuf, uint16_t nb);
+struct mt_rsq_impl; /* foward delcare */
 
-struct mt_sq_flow {
-  /* rx destination IP */
-  uint8_t dip_addr[MTL_IP_ADDR_LEN];
-  /* source IP */
-  uint8_t sip_addr[MTL_IP_ADDR_LEN];
-  /* udp destination port */
-  uint16_t dst_port;
-  /* cni queue */
-  bool sys_queue;
-  /* priv data to the cb */
-  void* priv;
-  /* call back of the received mbufs by mt_sq_rx_burst */
-  mt_sq_mbuf_cb cb;
-};
-
-struct mt_sq_impl; /* foward delcare */
-
-struct mt_sq_entry {
+struct mt_rsq_entry {
   uint16_t queue_id;
-  struct mt_sq_flow flow;
-  struct mt_sq_impl* parnet;
-  uint32_t hash;
+  struct mt_rx_flow flow;
+  uint16_t dst_port_net;
+  struct mt_rx_flow_result flow_result;
+  struct mt_rsq_impl* parnet;
   /* linked list */
-  MT_TAILQ_ENTRY(mt_sq_entry) next;
+  MT_TAILQ_ENTRY(mt_rsq_entry) next;
 };
-MT_TAILQ_HEAD(mt_sq_entrys_list, mt_sq_entry);
+MT_TAILQ_HEAD(mt_rsq_entrys_list, mt_rsq_entry);
 
-struct mt_sq_queue {
+struct mt_rsq_queue {
   uint16_t port_id;
   uint16_t queue_id;
-  /* List of sq entry */
-  struct mt_sq_entrys_list head;
+  /* List of rsq entry */
+  struct mt_rsq_entrys_list head;
   pthread_mutex_t mutex;
+  rte_atomic32_t entry_cnt;
+  /* stat */
+  int stat_pkts_recv;
+  int stat_pkts_deliver;
 };
 
-struct mt_sq_impl {
+struct mt_rsq_impl {
+  struct mtl_main_impl* parnet;
   enum mtl_port port;
-  /* sq queue resources */
-  int max_sq_queues;
-  struct mt_sq_queue* sq_queues;
+  /* sq rx queue resources */
+  int max_rsq_queues;
+  struct mt_rsq_queue* rsq_queues;
 };
 
 struct mtl_main_impl {
@@ -668,8 +673,8 @@ struct mtl_main_impl {
   /* rss */
   enum mt_rss_mode rss_mode;
   struct mt_rss_impl* rss[MTL_PORT_MAX];
-  /* shared queue mgr */
-  struct mt_sq_impl* sq[MTL_PORT_MAX];
+  /* shared rx queue mgr */
+  struct mt_rsq_impl* rsq[MTL_PORT_MAX];
 
   /* stat */
   pthread_t stat_tid;
@@ -724,9 +729,10 @@ struct mtl_main_impl {
   bool rx_anc_init;
   pthread_mutex_t rx_anc_mgr_mutex; /* protect rx_anc_mgr */
 
-  /* max sessions supported */
-  uint16_t tx_sessions_cnt_max;
-  uint16_t rx_sessions_cnt_max;
+  /* max queues user requested */
+  uint16_t user_tx_queues_cnt;
+  uint16_t user_rx_queues_cnt;
+
   /* cnt for open sessions */
   rte_atomic32_t st20_tx_sessions_cnt;
   rte_atomic32_t st22_tx_sessions_cnt;
@@ -904,8 +910,22 @@ static inline bool mt_has_rss(struct mtl_main_impl* impl, enum mtl_port port) {
     return false;
 }
 
+static inline bool mt_udp_transport(struct mtl_main_impl* impl, enum mtl_port port) {
+  if (mt_get_user_params(impl)->transport == MTL_TRANSPORT_UDP)
+    return true;
+  else
+    return false;
+}
+
+static inline bool mt_st2110_transport(struct mtl_main_impl* impl, enum mtl_port port) {
+  if (mt_get_user_params(impl)->transport == MTL_TRANSPORT_ST2110)
+    return true;
+  else
+    return false;
+}
+
 static inline bool mt_shared_queue(struct mtl_main_impl* impl, enum mtl_port port) {
-  if (mt_get_user_params(impl)->flags & MTL_FLAG_UDP_TRANSPORT_SQ)
+  if (mt_get_user_params(impl)->flags & MTL_FLAG_SHARED_QUEUE)
     return true;
   else
     return false;

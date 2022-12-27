@@ -8,7 +8,7 @@
 #include "../mt_dev.h"
 #include "../mt_main.h"
 #include "../mt_mcast.h"
-#include "../mt_rss.h"
+#include "../mt_shared_queue.h"
 #include "../mt_util.h"
 
 /* if bind or not */
@@ -36,7 +36,7 @@ struct mudp_impl {
   uint64_t txq_bps; /* bit per sec for q */
   struct mt_tx_queue* txq;
   struct mt_rx_queue* rxq;
-  struct mt_rss_entry* rss;
+  struct mt_rsq_entry* rsq;
   uint16_t rxq_id;
   struct rte_ring* rx_ring;
   uint16_t rx_burst_pkts;

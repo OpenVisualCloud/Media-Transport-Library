@@ -153,6 +153,18 @@ enum mtl_pmd_type {
 };
 
 /**
+ * Transport type
+ */
+enum mtl_transport_type {
+  /** st2110 protocol transport */
+  MTL_TRANSPORT_ST2110 = 0,
+  /** udp transport */
+  MTL_TRANSPORT_UDP,
+  /** max value of this enum */
+  MTL_TRANSPORT_TYPE_MAX,
+};
+
+/**
  * SIMD level type
  */
 enum mtl_simd_level {
@@ -228,14 +240,9 @@ enum st21_tx_pacing_way {
 #define MTL_FLAG_RXTX_SIMD_512 (MTL_BIT64(7))
 /**
  * Flag bit in flags of struct mtl_init_params.
- * Enable the UDP transport feature support.
+ * Enable shared queue for tx and rx, only support in MTL_TRANSPORT_UDP now.
  */
-#define MTL_FLAG_UDP_TRANSPORT (MTL_BIT64(8))
-/**
- * Flag bit in flags of struct mtl_init_params.
- * Enable shared queue for the UDP transport.
- */
-#define MTL_FLAG_UDP_TRANSPORT_SQ (MTL_BIT64(9))
+#define MTL_FLAG_SHARED_QUEUE (MTL_BIT64(8))
 
 /**
  * Flag bit in flags of struct mtl_init_params, debug usage only.
@@ -312,22 +319,37 @@ struct mtl_init_params {
   uint8_t num_ports;
   /** source IP of ports, olny for MTL_PMD_DPDK_AF_XDP */
   uint8_t sip_addr[MTL_PORT_MAX][MTL_IP_ADDR_LEN];
+
+  /* below are optional parameters */
+  /** transport type, st2110 or udp */
+  enum mtl_transport_type transport;
   /**
+   * mandatory for MTL_TRANSPORT_ST2110.
    * max tx sessions(st20, st22, st30, st40) requested the lib to support,
    * use mtl_get_cap to query the actual count.
    * dpdk context will allocate the hw resources(queues, memory) based on this number.
-   * 0: allocate all tx queues on init.
    */
   uint16_t tx_sessions_cnt_max;
   /**
+   * mandatory for MTL_TRANSPORT_ST2110.
    * max rx sessions(st20, st22, st30, st40) requested the lib to support,
    * use mtl_get_cap to query the actual count.
    * dpdk context will allocate the hw resources(queues, memory) based on this number.
-   * 0: allocate all rx queues on init.
    */
   uint16_t rx_sessions_cnt_max;
+  /**
+   * Only for MTL_TRANSPORT_UDP.
+   * max tx queues requested the lib to support.
+   * 0 means let lib to decide how many queues will be allocated.
+   */
+  uint16_t tx_queues_cnt_max;
+  /**
+   * Only for MTL_TRANSPORT_UDP.
+   * max rx queues requested the lib to support.
+   * 0 means let lib to decide how many queues will be allocated.
+   */
+  uint16_t rx_queues_cnt_max;
 
-  /* below are optional parameters */
   /** dpdk user pmd or af_xdp */
   enum mtl_pmd_type pmd[MTL_PORT_MAX];
   /**

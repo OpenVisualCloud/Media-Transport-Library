@@ -7,15 +7,15 @@
 
 #include "mt_main.h"
 
-int mt_sq_init(struct mtl_main_impl* impl);
-int mt_sq_uinit(struct mtl_main_impl* impl);
+int mt_rsq_init(struct mtl_main_impl* impl);
+int mt_rsq_uinit(struct mtl_main_impl* impl);
 
-struct mt_sq_entry* mt_sq_get(struct mtl_main_impl* impl, enum mtl_port port,
-                              struct mt_sq_flow* flow);
-static inline uint16_t mt_sq_queue_id(struct mt_sq_entry* entry) {
+struct mt_rsq_entry* mt_rsq_get(struct mtl_main_impl* impl, enum mtl_port port,
+                                struct mt_rx_flow* flow);
+static inline uint16_t mt_rsq_queue_id(struct mt_rsq_entry* entry) {
   return entry->queue_id;
 }
-uint16_t mt_sq_rx_burst(struct mt_sq_entry* entry, uint16_t nb_pkts);
-int mt_sq_put(struct mt_sq_entry* entry);
+uint16_t mt_rsq_burst(struct mt_rsq_entry* entry, uint16_t nb_pkts);
+int mt_rsq_put(struct mt_rsq_entry* entry);
 
 #endif

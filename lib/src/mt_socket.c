@@ -277,22 +277,21 @@ int mt_socket_add_flow(struct mtl_main_impl* impl, enum mtl_port port, uint16_t 
     info("%s(%d), unknown out: %s\n", __func__, port, out);
     return ret;
   }
-  flow->flow_id = flow_id;
-  info("%s(%d), succ, flow_id %d, cmd %s\n", __func__, port, flow->flow_id, cmd);
-  return 0;
+
+  info("%s(%d), succ, flow_id %d, cmd %s\n", __func__, port, flow_id, cmd);
+  return flow_id;
 }
 
-int mt_socket_remove_flow(struct mtl_main_impl* impl, enum mtl_port port,
-                          uint16_t queue_id, struct mt_rx_flow* flow) {
+int mt_socket_remove_flow(struct mtl_main_impl* impl, enum mtl_port port, int flow_id) {
   char cmd[128];
   int ret;
 
-  if (flow->flow_id > 0) {
+  if (flow_id > 0) {
     snprintf(cmd, sizeof(cmd), "ethtool -N %s delete %d",
-             mt_get_user_params(impl)->port[port], flow->flow_id);
+             mt_get_user_params(impl)->port[port], flow_id);
     ret = mt_run_cmd(cmd, NULL, 0);
     if (ret < 0) return ret;
-    info("%s(%d), succ, flow_id %d, cmd %s\n", __func__, port, flow->flow_id, cmd);
+    info("%s(%d), succ, flow_id %d, cmd %s\n", __func__, port, flow_id, cmd);
   }
 
   return 0;
@@ -321,8 +320,7 @@ int mt_socket_add_flow(struct mtl_main_impl* impl, enum mtl_port port, uint16_t 
   return -ENOTSUP;
 }
 
-int mt_socket_remove_flow(struct mtl_main_impl* impl, enum mtl_port port,
-                          uint16_t queue_id, struct mt_rx_flow* flow) {
+int mt_socket_remove_flow(struct mtl_main_impl* impl, enum mtl_port port, int flow_id) {
   return -ENOTSUP;
 }
 #endif
