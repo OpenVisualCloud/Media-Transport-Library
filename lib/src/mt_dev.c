@@ -689,6 +689,9 @@ static struct rte_flow* dev_rx_queue_create_flow(struct mt_interface* inf, uint1
     return NULL;
   }
 
+  uint8_t* ip = flow->dip_addr;
+  info("%s(%d), queue %u succ, ip %u.%u.%u.%u port %u\n", __func__, inf->port, q, ip[0],
+       ip[1], ip[2], ip[3], flow->dst_port);
   return r_flow;
 }
 
