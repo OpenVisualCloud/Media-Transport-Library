@@ -108,7 +108,7 @@ static int udp_build_tx_pkt(struct mtl_main_impl* impl, struct mudp_impl* s,
   uint8_t* dip = (uint8_t*)&addr_in->sin_addr;
   ret = mt_dev_dst_ip_mac(impl, dip, d_addr, port, s->arp_timeout_ms);
   if (ret < 0) {
-    err("%s(%d), mt_dev_dst_ip_mac fail %d for %d.%d.%d.%d\n", __func__, idx, ret, dip[0],
+    err("%s(%d), mt_dev_dst_ip_mac fail %d for %u.%u.%u.%u\n", __func__, idx, ret, dip[0],
         dip[1], dip[2], dip[3]);
     return ret;
   }
@@ -233,9 +233,9 @@ static int udp_uinit_rxq(struct mtl_main_impl* impl, struct mudp_impl* s) {
     mt_dev_put_rx_queue(impl, s->rxq);
     s->rxq = NULL;
   }
-  if (s->rss) {
-    mt_rss_put(s->rss);
-    s->rss = NULL;
+  if (s->rsq) {
+    mt_rsq_put(s->rsq);
+    s->rsq = NULL;
   }
 
   if (s->rx_ring) {
@@ -284,7 +284,7 @@ static uint16_t udp_rx_handle(struct mudp_impl* s, struct rte_mbuf** pkts,
   return n;
 }
 
-static int udp_rss_mbuf_cb(void* priv, struct rte_mbuf** mbuf, uint16_t nb) {
+static int udp_rsq_mbuf_cb(void* priv, struct rte_mbuf** mbuf, uint16_t nb) {
   struct mudp_impl* s = priv;
   udp_rx_handle(s, mbuf, nb);
   return 0;
@@ -297,29 +297,24 @@ static int udp_init_rxq(struct mtl_main_impl* impl, struct mudp_impl* s) {
   uint8_t* ip = (uint8_t*)&addr_in->sin_addr;
   uint16_t queue_id;
 
-  if (mt_has_rss(impl, port)) {
-    struct mt_rss_flow flow;
-    memset(&flow, 0, sizeof(flow));
-    flow.priv = s;
-    flow.cb = udp_rss_mbuf_cb;
-    rte_memcpy(flow.dip_addr, ip, MTL_IP_ADDR_LEN);
-    rte_memcpy(flow.sip_addr, mt_sip_addr(impl, port), MTL_IP_ADDR_LEN);
-    flow.dst_port = ntohs(addr_in->sin_port);
-    flow.src_port = flow.dst_port;
-    s->rss = mt_rss_get(impl, port, &flow);
-    if (!s->rss) {
-      err("%s(%d), get rss fail\n", __func__, idx);
+  struct mt_rx_flow flow;
+  memset(&flow, 0, sizeof(flow));
+  rte_memcpy(flow.dip_addr, ip, MTL_IP_ADDR_LEN);
+  rte_memcpy(flow.sip_addr, mt_sip_addr(impl, port), MTL_IP_ADDR_LEN);
+  flow.port_flow = true;
+  flow.dst_port = ntohs(addr_in->sin_port);
+  flow.priv = s;
+  flow.cb = udp_rsq_mbuf_cb;
+
+  if (mt_shared_queue(impl, port)) {
+    s->rsq = mt_rsq_get(impl, port, &flow);
+    if (!s->rsq) {
+      err("%s(%d), get rsq fail\n", __func__, idx);
       udp_uinit_rxq(impl, s);
       return -EIO;
     }
-    queue_id = mt_rss_queue_id(s->rss);
+    queue_id = mt_rsq_queue_id(s->rsq);
   } else {
-    struct mt_rx_flow flow;
-    memset(&flow, 0, sizeof(flow));
-    rte_memcpy(flow.dip_addr, ip, MTL_IP_ADDR_LEN);
-    rte_memcpy(flow.sip_addr, mt_sip_addr(impl, port), MTL_IP_ADDR_LEN);
-    flow.port_flow = true;
-    flow.dst_port = ntohs(addr_in->sin_port);
     s->rxq = mt_dev_get_rx_queue(impl, port, &flow);
     if (!s->rxq) {
       err("%s(%d), get rx queue fail\n", __func__, idx);
@@ -364,7 +359,7 @@ static uint16_t udp_rx(struct mtl_main_impl* impl, struct mudp_impl* s) {
   uint16_t rx_burst = s->rx_burst_pkts;
   struct rte_mbuf* pkts[rx_burst];
 
-  if (s->rss) return mt_rss_rx_burst(s->rss, rx_burst);
+  if (s->rsq) return mt_rsq_burst(s->rsq, rx_burst);
 
   uint16_t rx = mt_dev_rx_burst(s->rxq, pkts, rx_burst);
   if (!rx) return 0; /* no pkt */
@@ -383,8 +378,8 @@ static int udp_stat_dump(void* priv) {
     s->stat_pkt_tx = 0;
   }
   if (s->stat_pkt_rx) {
-    info("%s(%d), pkt rx %d deliver %d, %s mode, rxq %u\n", __func__, idx, s->stat_pkt_rx,
-         s->stat_pkt_deliver, s->rss ? "rss" : "queue", s->rxq_id);
+    info("%s(%d), pkt rx %d deliver %d, %s rxq %u\n", __func__, idx, s->stat_pkt_rx,
+         s->stat_pkt_deliver, s->rsq ? "shared" : "dedicated", s->rxq_id);
     s->stat_pkt_rx = 0;
     s->stat_pkt_deliver = 0;
   }

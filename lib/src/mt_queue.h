@@ -15,6 +15,7 @@
 #define MT_TAILQ_NEXT(elem, field) RTE_TAILQ_NEXT(elem, field)
 
 #define MT_TAILQ_INSERT_TAIL(head, elem, filed) TAILQ_INSERT_TAIL(head, elem, filed)
+#define MT_TAILQ_INSERT_HEAD(head, elem, filed) TAILQ_INSERT_HEAD(head, elem, filed)
 #define MT_TAILQ_REMOVE(head, elem, filed) TAILQ_REMOVE(head, elem, filed)
 #define MT_TAILQ_INIT(head) TAILQ_INIT(head)
 

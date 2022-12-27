@@ -15,6 +15,7 @@
 #include "mt_ptp.h"
 #include "mt_rss.h"
 #include "mt_sch.h"
+#include "mt_shared_queue.h"
 #include "mt_socket.h"
 #include "mt_stat.h"
 #include "mt_util.h"
@@ -135,6 +136,12 @@ static int st_rx_anc_uinit(struct mtl_main_impl* impl) {
 static int mt_main_create(struct mtl_main_impl* impl) {
   int ret;
 
+  ret = mt_stat_init(impl);
+  if (ret < 0) {
+    err("%s, mt stat init fail %d\n", __func__, ret);
+    return ret;
+  }
+
   ret = mt_dev_create(impl);
   if (ret < 0) {
     err("%s, mt_dev_create fail %d\n", __func__, ret);
@@ -146,6 +153,12 @@ static int mt_main_create(struct mtl_main_impl* impl) {
   ret = mt_rss_init(impl);
   if (ret < 0) {
     err("%s, mt_rss_init fail %d\n", __func__, ret);
+    return ret;
+  }
+
+  ret = mt_rsq_init(impl);
+  if (ret < 0) {
+    err("%s, mt_rsq_init fail %d\n", __func__, ret);
     return ret;
   }
 
@@ -197,12 +210,6 @@ static int mt_main_create(struct mtl_main_impl* impl) {
     return ret;
   }
 
-  ret = mt_stat_init(impl);
-  if (ret < 0) {
-    err("%s, mt stat init fail %d\n", __func__, ret);
-    return ret;
-  }
-
   pthread_create(&impl->tsc_cal_tid, NULL, mt_calibrate_tsc, impl);
 
   info("%s, succ\n", __func__);
@@ -226,6 +233,7 @@ static int mt_main_free(struct mtl_main_impl* impl) {
   mt_map_uinit(impl);
   mt_dma_uinit(impl);
   mt_rss_uinit(impl);
+  mt_rsq_uinit(impl);
 
   mt_dev_free(impl);
   mt_stat_uinit(impl);
@@ -452,21 +460,30 @@ mtl_handle mtl_init(struct mtl_init_params* p) {
   rte_atomic32_set(&impl->instance_aborted, 0);
   rte_atomic32_set(&impl->instance_in_reset, 0);
   impl->lcore_lock_fd = -1;
-  if (p->tx_sessions_cnt_max)
-    impl->tx_sessions_cnt_max = RTE_MIN(180, p->tx_sessions_cnt_max);
-  else if (p->flags & MTL_FLAG_UDP_TRANSPORT)
-    impl->tx_sessions_cnt_max = 64;
-  if (p->rx_sessions_cnt_max)
-    impl->rx_sessions_cnt_max = RTE_MIN(180, p->rx_sessions_cnt_max);
-  else if (p->flags & MTL_FLAG_UDP_TRANSPORT)
-    impl->rx_sessions_cnt_max = 64;
-  info("%s, max sessions tx %d rx %d, flags 0x%" PRIx64 "\n", __func__,
-       impl->tx_sessions_cnt_max, impl->rx_sessions_cnt_max,
-       mt_get_user_params(impl)->flags);
-  /* parse rss config */
-  if ((p->flags & MTL_FLAG_UDP_TRANSPORT) && (p->flags & MTL_FLAG_UDP_TRANSPORT_RSS)) {
-    impl->rss_mode = MT_RSS_MODE_L4;
+  if (p->transport == MTL_TRANSPORT_ST2110) {
+    if (p->tx_sessions_cnt_max)
+      impl->user_tx_queues_cnt = RTE_MIN(180, p->tx_sessions_cnt_max);
+    if (p->rx_sessions_cnt_max)
+      impl->user_rx_queues_cnt = RTE_MIN(180, p->rx_sessions_cnt_max);
+  } else if (p->transport == MTL_TRANSPORT_UDP) {
+    if (p->tx_queues_cnt_max)
+      impl->user_tx_queues_cnt = p->tx_queues_cnt_max;
+    else
+      impl->user_tx_queues_cnt = 64;
+    if (p->rx_queues_cnt_max)
+      impl->user_rx_queues_cnt = p->rx_queues_cnt_max;
+    else
+      impl->user_rx_queues_cnt = 64;
+  } else {
+    err("%s, invalid transport %d\n", __func__, p->transport);
+    ret = -EINVAL;
+    goto err_exit;
   }
+  info("%s, max user queues tx %d rx %d, flags 0x%" PRIx64 "\n", __func__,
+       impl->user_tx_queues_cnt, impl->user_rx_queues_cnt,
+       mt_get_user_params(impl)->flags);
+  /* parse rss config, not use now */
+  impl->rss_mode = MT_RSS_MODE_NONE;
   impl->pkt_udp_suggest_max_size = MTL_PKT_MAX_RTP_BYTES;
   if (p->pkt_udp_suggest_max_size) {
     if ((p->pkt_udp_suggest_max_size > 1000) &&
@@ -885,8 +902,8 @@ int mtl_get_cap(mtl_handle mt, struct mtl_cap* cap) {
     return -EIO;
   }
 
-  cap->tx_sessions_cnt_max = impl->tx_sessions_cnt_max;
-  cap->rx_sessions_cnt_max = impl->rx_sessions_cnt_max;
+  cap->tx_sessions_cnt_max = impl->user_tx_queues_cnt;
+  cap->rx_sessions_cnt_max = impl->user_rx_queues_cnt;
   cap->dma_dev_cnt_max = impl->dma_mgr.num_dma_dev;
   cap->init_flags = mt_get_user_params(impl)->flags;
   return 0;

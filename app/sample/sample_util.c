@@ -22,6 +22,8 @@ enum sample_args_cmd {
   SAMPLE_ARG_LOG_LEVEL,
   SAMPLE_ARG_DEV_AUTO_START,
   SAMPLE_ARG_DMA_PORT,
+  SAMPLE_ARG_SHARED_QUEUES,
+  SAMPLE_ARG_QUEUES_CNT,
 
   SAMPLE_ARG_TX_VIDEO_URL = 0x200,
   SAMPLE_ARG_RX_VIDEO_URL,
@@ -33,9 +35,8 @@ enum sample_args_cmd {
   SAMPLE_ARG_ST22_CODEC,
   SAMPLE_ARG_ST22_FRAME_FMT,
 
-  SAMPLE_ARG_UDP_MODE,
+  SAMPLE_ARG_UDP_MODE = 0x300,
   SAMPLE_ARG_UDP_TX_BPS_G,
-  SAMPLE_ARG_UDP_RSS,
 
   SAMPLE_ARG_MAX,
 };
@@ -54,6 +55,8 @@ static struct option sample_args_options[] = {
     {"log_level", required_argument, 0, SAMPLE_ARG_LOG_LEVEL},
     {"dev_auto_start", no_argument, 0, SAMPLE_ARG_DEV_AUTO_START},
     {"dma_port", required_argument, 0, SAMPLE_ARG_DMA_PORT},
+    {"shared_queues", no_argument, 0, SAMPLE_ARG_SHARED_QUEUES},
+    {"queues_cnt", required_argument, 0, SAMPLE_ARG_QUEUES_CNT},
 
     {"tx_url", required_argument, 0, SAMPLE_ARG_TX_VIDEO_URL},
     {"rx_url", required_argument, 0, SAMPLE_ARG_RX_VIDEO_URL},
@@ -66,7 +69,6 @@ static struct option sample_args_options[] = {
 
     {"udp_mode", required_argument, 0, SAMPLE_ARG_UDP_MODE},
     {"udp_tx_bps_g", required_argument, 0, SAMPLE_ARG_UDP_TX_BPS_G},
-    {"rss", no_argument, 0, SAMPLE_ARG_UDP_RSS},
 
     {0, 0, 0, 0}};
 
@@ -130,6 +132,13 @@ static int _sample_parse_args(struct st_sample_context* ctx, int argc, char** ar
       case SAMPLE_ARG_DEV_AUTO_START:
         p->flags |= MTL_FLAG_DEV_AUTO_START_STOP;
         break;
+      case SAMPLE_ARG_SHARED_QUEUES:
+        p->flags |= MTL_FLAG_SHARED_QUEUE;
+        break;
+      case SAMPLE_ARG_QUEUES_CNT:
+        p->rx_queues_cnt_max = atoi(optarg);
+        p->tx_queues_cnt_max = p->rx_queues_cnt_max;
+        break;
       case SAMPLE_ARG_TX_VIDEO_URL:
         snprintf(ctx->tx_url, sizeof(ctx->tx_url), "%s", optarg);
         break;
@@ -183,9 +192,6 @@ static int _sample_parse_args(struct st_sample_context* ctx, int argc, char** ar
         break;
       case SAMPLE_ARG_UDP_TX_BPS_G:
         ctx->udp_tx_bps = ((uint64_t)atoi(optarg)) * 1024 * 1024 * 1024;
-        break;
-      case SAMPLE_ARG_UDP_RSS:
-        ctx->rss = true;
         break;
       case '?':
         break;
@@ -271,6 +277,9 @@ int sample_parse_args(struct st_sample_context* ctx, int argc, char** argv, bool
   ctx->st22p_input_fmt = ST_FRAME_FMT_YUV422PLANAR10LE;
   ctx->st22p_output_fmt = ST_FRAME_FMT_YUV422PLANAR10LE;
   ctx->st22p_codec = ST22_CODEC_JPEGXS;
+
+  p->tx_queues_cnt_max = 8;
+  p->rx_queues_cnt_max = 8;
 
   _sample_parse_args(ctx, argc, argv);
 

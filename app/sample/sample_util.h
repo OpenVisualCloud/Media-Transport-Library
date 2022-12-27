@@ -92,7 +92,6 @@ struct st_sample_context {
   enum st22_codec st22p_codec; /* st22 codec */
 
   enum sample_udp_mode udp_mode;
-  bool rss;
   uint64_t udp_tx_bps;
 
   bool exit;
