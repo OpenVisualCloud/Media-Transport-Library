@@ -6,6 +6,7 @@ FROM ubuntu
 ENV http_proxy=$http_proxy
 ENV https_proxy=$http_proxy
 ENV no_proxy=$no_proxy
+ENV dpdk_ver=22.11
 
 ENV DEBIAN_FRONTEND=noninteractive
 
@@ -26,18 +27,10 @@ RUN git config --global http.proxy $http_proxy && \
     git config --global user.name "Your Name"
 RUN cd /tmp/ && git clone https://github.com/DPDK/dpdk.git && \
     cd dpdk && \
-    git checkout v22.07 && \
-    git switch -c v22.07
+    git checkout v$dpdk_ver && \
+    git switch -c v$dpdk_ver
 RUN cd /tmp/dpdk && \
-    git am $mtl_kahawai/patches/dpdk/22.07/0001-pcapng-add-ns-timestamp-for-copy-api.patch && \
-    git am $mtl_kahawai/patches/dpdk/22.07/0002-net-af_xdp-parse-numa-node-id-from-sysfs.patch && \
-    git am $mtl_kahawai/patches/dpdk/22.07/0003-net-iavf-refine-queue-rate-limit-configure.patch && \
-    git am $mtl_kahawai/patches/dpdk/22.07/0004-net-ice-revert-PF-ICE-rate-limit-to-non-queue-group-.patch && \
-    git am $mtl_kahawai/patches/dpdk/22.07/0005-net-iavf-support-max-burst-size-configuration.patch && \
-    git am $mtl_kahawai/patches/dpdk/22.07/0006-net-ice-support-max-burst-size-configuration.patch && \
-    git am $mtl_kahawai/patches/dpdk/22.07/0007-Add-support-for-i225-IT-ethernet-device-into-igc-pmd.patch && \
-    git am $mtl_kahawai/patches/dpdk/22.07/0008-Change-to-enable-PTP.patch && \
-    git am $mtl_kahawai/patches/dpdk/22.07/0009-ice-fix-ice_interrupt_handler-panic-when-stop.patch && \
+    git am $mtl_kahawai/patches/dpdk/$dpdk_ver/*.patch && \
     meson build && \
     ninja -C build && \
     ninja -C build install && \

@@ -70,10 +70,11 @@ jobs:
 
       - name: Binding network adapter
         run: |
-          ./script/nicctl.sh bind_pmd 0000:31:00.0
-          ./script/nicctl.sh bind_pmd 0000:31:00.1
-          ./dpdk/usertools/dpdk-devbind.py -b vfio-pci 0000:00:01.0
-          ./dpdk/usertools/dpdk-devbind.py -b vfio-pci 0000:00:01.1
+          sudo ./script/nicctl.sh bind_pmd 0000:31:00.0
+          sudo ./script/nicctl.sh bind_pmd 0000:31:00.1
+          sudo ./dpdk/usertools/dpdk-devbind.py -b vfio-pci 0000:00:01.0
+          sudo ./dpdk/usertools/dpdk-devbind.py -b vfio-pci 0000:00:01.1
 
       - name: Run test case
-        run: sudo ./build/tests/KahawaiTest --auto_start_stop --p_port 0000:31:00.0 --r_port 0000:31:00.1 --dma_dev 0000:00:01.0,0000:00:01.1
+        run: |
+          sudo bash -c 'export LD_LIBRARY_PATH=/usr/local/lib/x86_64-linux-gnu/:/usr/local/lib/; ./build/tests/KahawaiTest --auto_start_stop --p_port 0000:31:00.0 --r_port 0000:31:00.1 --dma_dev 0000:00:01.0,0000:00:01.1'
