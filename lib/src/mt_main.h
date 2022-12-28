@@ -448,6 +448,7 @@ struct mt_interface {
 
   /* the shared tx sys queue */
   struct mt_tx_queue* tx_sys_queue;
+  struct mt_tsq_entry* tsq_sys_entry;
   pthread_mutex_t tx_sys_queue_mutex; /* protect tx_sys_queue */
 
   /* rx queue resources */
@@ -662,6 +663,45 @@ struct mt_rsq_impl {
   /* sq rx queue resources */
   int max_rsq_queues;
   struct mt_rsq_queue* rsq_queues;
+};
+
+/* request of tx shared queue flow */
+struct mt_tsq_flow {
+  bool sys_queue;
+  /* mandatory if not sys_queue */
+  uint8_t dip_addr[MTL_IP_ADDR_LEN]; /* tx destination IP */
+  uint16_t dst_port;                 /* udp destination port */
+};
+
+struct mt_tsq_impl; /* foward delcare */
+
+struct mt_tsq_entry {
+  uint16_t queue_id;
+  struct mt_tsq_flow flow;
+  struct mt_tsq_impl* parnet;
+  /* linked list */
+  MT_TAILQ_ENTRY(mt_tsq_entry) next;
+};
+MT_TAILQ_HEAD(mt_tsq_entrys_list, mt_tsq_entry);
+
+struct mt_tsq_queue {
+  uint16_t port_id;
+  uint16_t queue_id;
+  /* List of rsq entry */
+  struct mt_tsq_entrys_list head;
+  pthread_mutex_t mutex;
+  pthread_mutex_t tx_mutex;
+  rte_atomic32_t entry_cnt;
+  /* stat */
+  int stat_pkts_send;
+};
+
+struct mt_tsq_impl {
+  struct mtl_main_impl* parnet;
+  enum mtl_port port;
+  /* sq tx queue resources */
+  int max_tsq_queues;
+  struct mt_tsq_queue* tsq_queues;
 };
 
 struct mtl_main_impl {
@@ -1007,6 +1047,19 @@ static inline uint16_t mt_if_nb_tx_desc(struct mtl_main_impl* impl, enum mtl_por
 
 static inline uint16_t mt_if_nb_rx_desc(struct mtl_main_impl* impl, enum mtl_port port) {
   return mt_if(impl, port)->nb_rx_desc;
+}
+
+static inline uint16_t mt_if_nb_tx_burst(struct mtl_main_impl* impl, enum mtl_port port) {
+  uint16_t burst_pkts;
+
+  if (mt_pmd_is_af_xdp(impl, port)) {
+    /* same umem for both tx and rx */
+    burst_pkts = mt_if_nb_rx_desc(impl, port);
+  } else {
+    burst_pkts = mt_if_nb_tx_desc(impl, port);
+  }
+
+  return burst_pkts;
 }
 
 static inline int mt_socket_id(struct mtl_main_impl* impl, enum mtl_port port) {

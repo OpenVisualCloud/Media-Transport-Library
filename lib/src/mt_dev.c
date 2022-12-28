@@ -11,6 +11,7 @@
 #include "mt_mcast.h"
 #include "mt_ptp.h"
 #include "mt_sch.h"
+#include "mt_shared_queue.h"
 #include "mt_socket.h"
 #include "mt_stat.h"
 #include "mt_util.h"
@@ -1574,14 +1575,17 @@ uint16_t mt_dev_tx_sys_queue_burst(struct mtl_main_impl* impl, enum mtl_port por
                                    struct rte_mbuf** tx_pkts, uint16_t nb_pkts) {
   struct mt_interface* inf = mt_if(impl, port);
 
-  if (!inf->tx_sys_queue) {
-    err("%s(%d), tx sys queue not active\n", __func__, port);
+  if (!inf->tx_sys_queue && !inf->tsq_sys_entry) {
+    err("%s(%d), tx/tsq sys queue not active\n", __func__, port);
     return 0;
   }
 
   uint16_t tx;
   mt_pthread_mutex_lock(&inf->tx_sys_queue_mutex);
-  tx = mt_dev_tx_burst(inf->tx_sys_queue, tx_pkts, nb_pkts);
+  if (inf->tx_sys_queue)
+    tx = mt_dev_tx_burst(inf->tx_sys_queue, tx_pkts, nb_pkts);
+  else
+    tx = mt_tsq_burst(inf->tsq_sys_entry, tx_pkts, nb_pkts);
   mt_pthread_mutex_unlock(&inf->tx_sys_queue_mutex);
   return tx;
 }
@@ -1594,8 +1598,8 @@ struct mt_tx_queue* mt_dev_get_tx_queue(struct mtl_main_impl* impl, enum mtl_por
   int ret;
 
   if (mt_shared_queue(impl, port)) {
-    warn("%s(%d), conflict with shared queue mode, use sq api instead\n", __func__, port);
-    // return NULL; todo
+    err("%s(%d), conflict with shared queue mode, use sq api instead\n", __func__, port);
+    return NULL;
   }
 
   mt_pthread_mutex_lock(&inf->tx_queues_mutex);
@@ -1739,12 +1743,7 @@ int mt_dev_flush_tx_queue(struct mtl_main_impl* impl, struct mt_tx_queue* queue,
   enum mtl_port port = queue->port;
   uint16_t queue_id = queue->queue_id;
 
-  int burst_pkts;
-  if (mt_pmd_is_af_xdp(impl, port)) {
-    burst_pkts = mt_if_nb_rx_desc(impl, port); /* same umem for both tx and rx */
-  } else {
-    burst_pkts = mt_if_nb_tx_desc(impl, port);
-  }
+  int burst_pkts = mt_if_nb_tx_burst(impl, port);
   struct rte_mbuf* pads[1];
   pads[0] = pad;
 
@@ -2058,11 +2057,6 @@ int mt_dev_if_uinit(struct mtl_main_impl* impl) {
   for (int i = 0; i < num_ports; i++) {
     inf = mt_if(impl, i);
 
-    if (inf->tx_sys_queue) {
-      mt_dev_put_tx_queue(impl, inf->tx_sys_queue);
-      inf->tx_sys_queue = NULL;
-    }
-
     if (inf->pad) {
       rte_pktmbuf_free(inf->pad);
       inf->pad = NULL;
@@ -2288,13 +2282,6 @@ int mt_dev_if_init(struct mtl_main_impl* impl) {
       return -ENOMEM;
     }
 
-    inf->tx_sys_queue = mt_dev_get_tx_queue(impl, i, 0);
-    if (!inf->tx_sys_queue) {
-      err("%s(%d), tx sys queue get fail\n", __func__, i);
-      mt_dev_if_uinit(impl);
-      return -ENOMEM;
-    }
-
     info("%s(%d), port_id %d port_type %d drv_type %d\n", __func__, i, port_id,
          inf->port_type, inf->drv_type);
     info("%s(%d), dev_capa 0x%" PRIx64 ", offload 0x%" PRIx64 ":0x%" PRIx64
@@ -2311,6 +2298,55 @@ int mt_dev_if_init(struct mtl_main_impl* impl) {
     info("%s(%d), mac: %02x:%02x:%02x:%02x:%02x:%02x\n", __func__, i, mac.addr_bytes[0],
          mac.addr_bytes[1], mac.addr_bytes[2], mac.addr_bytes[3], mac.addr_bytes[4],
          mac.addr_bytes[5]);
+  }
+
+  return 0;
+}
+
+int mt_dev_if_pre_uinit(struct mtl_main_impl* impl) {
+  int num_ports = mt_num_ports(impl);
+  struct mt_interface* inf;
+
+  for (int i = 0; i < num_ports; i++) {
+    inf = mt_if(impl, i);
+
+    if (inf->tx_sys_queue) {
+      mt_dev_put_tx_queue(impl, inf->tx_sys_queue);
+      inf->tx_sys_queue = NULL;
+    }
+    if (inf->tsq_sys_entry) {
+      mt_tsq_put(inf->tsq_sys_entry);
+      inf->tsq_sys_entry = NULL;
+    }
+  }
+
+  return 0;
+}
+
+int mt_dev_if_post_init(struct mtl_main_impl* impl) {
+  int num_ports = mt_num_ports(impl);
+  struct mt_interface* inf;
+
+  for (int i = 0; i < num_ports; i++) {
+    inf = mt_if(impl, i);
+    if (mt_shared_queue(impl, i)) {
+      struct mt_tsq_flow flow;
+      memset(&flow, 0, sizeof(flow));
+      flow.sys_queue = true;
+      inf->tsq_sys_entry = mt_tsq_get(impl, i, &flow);
+      if (!inf->tsq_sys_entry) {
+        err("%s(%d), tsq sys entry get fail\n", __func__, i);
+        mt_dev_if_pre_uinit(impl);
+        return -ENOMEM;
+      }
+    } else {
+      inf->tx_sys_queue = mt_dev_get_tx_queue(impl, i, 0);
+      if (!inf->tx_sys_queue) {
+        err("%s(%d), tx sys queue get fail\n", __func__, i);
+        mt_dev_if_pre_uinit(impl);
+        return -ENOMEM;
+      }
+    }
   }
 
   return 0;
