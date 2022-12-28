@@ -20,6 +20,9 @@
 
 #define MT_PTP_EBU_SYNC_MS (10)
 
+#define MT_PTP_DEFAULT_KP 5e-10 /* to be tuned */
+#define MT_PTP_DEFAULT_KI 1e-10 /* to be tuned */
+
 static char* ptp_mode_strs[MT_PTP_MAX_MODE] = {
     "l2",
     "l4",
@@ -115,6 +118,15 @@ static void ptp_coeffcient_result_reset(struct mt_ptp_impl* ptp) {
   ptp->coefficient_result_cnt = 0;
 }
 
+static void ptp_update_coefficient(struct mt_ptp_impl* ptp, int64_t error) {
+  ptp->integral += (error + ptp->prev_error) / 2;
+  ptp->prev_error = error;
+  double offset = ptp->kp * error + ptp->ki * ptp->integral;
+  if (ptp->t2_mode == MT_PTP_L4) offset /= 4; /* where sync interval is 0.25s for l4 */
+  ptp->coefficient += RTE_MIN(RTE_MAX(offset, -1e-7), 1e-7);
+  dbg("%s(%d), error %" PRId64 ", offset %.15lf\n", __func__, ptp->port, error, offset);
+}
+
 static void ptp_calculate_coefficient(struct mt_ptp_impl* ptp, int64_t delta) {
   if (delta > 1000 * 1000) return;
   uint64_t ts_s = ptp_get_raw_time(ptp);
@@ -124,7 +136,7 @@ static void ptp_calculate_coefficient(struct mt_ptp_impl* ptp, int64_t delta) {
   ptp->coefficient_result_min = RTE_MIN(coefficient, ptp->coefficient_result_min);
   ptp->coefficient_result_max = RTE_MAX(coefficient, ptp->coefficient_result_max);
   ptp->coefficient_result_cnt++;
-  if (ptp->coefficient - 1.0 < 1e-9) /* store first result */
+  if (ptp->coefficient - 1.0 < 1e-15) /* store first result */
     ptp->coefficient = coefficient;
   if (ptp->coefficient_result_cnt == 10) {
     /* get every 10 results' average */
@@ -266,7 +278,15 @@ static int ptp_parse_result(struct mt_ptp_impl* ptp) {
   }
   ptp->delta_result_err = 0;
 
-  ptp_calculate_coefficient(ptp, delta);
+  if (ptp->use_pi && labs(correct_delta) < 1000) {
+    /* fine tune coefficient */
+    ptp_update_coefficient(ptp, correct_delta);
+    ptp->last_sync_ts = ptp_get_raw_time(ptp) + delta; /* approximation */
+  } else {
+    /* re-calculate coefficient */
+    ptp_calculate_coefficient(ptp, delta);
+  }
+
   ptp_adjust_delta(ptp, delta);
   ptp_t_result_clear(ptp);
 
@@ -655,7 +675,11 @@ static int ptp_init(struct mtl_main_impl* impl, struct mt_ptp_impl* ptp,
   ptp->master_initialized = false;
   ptp->t3_sequence_id = 0x1000 * port;
   ptp->coefficient = 1.0;
-  ptp_coeffcient_result_reset(ptp);
+  ptp->kp = impl->user_para.kp < 1e-15 ? MT_PTP_DEFAULT_KP : impl->user_para.kp;
+  ptp->ki = impl->user_para.ki < 1e-15 ? MT_PTP_DEFAULT_KI : impl->user_para.ki;
+  ptp->use_pi = (impl->user_para.flags & MTL_FLAG_PTP_PI);
+  if (ptp->use_pi)
+    info("%s(%d), use pi controller, kp %e, ki %e\n", __func__, port, ptp->kp, ptp->ki);
 
   struct mtl_init_params* p = mt_get_user_params(impl);
   if (p->flags & MTL_FLAG_PTP_UNICAST_ADDR) {
@@ -666,6 +690,7 @@ static int ptp_init(struct mtl_main_impl* impl, struct mt_ptp_impl* ptp,
   }
 
   ptp_stat_clear(ptp);
+  ptp_coeffcient_result_reset(ptp);
 
   if (!mt_if_has_ptp(impl, port)) {
     if (mt_has_ebu(impl)) {
