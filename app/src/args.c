@@ -82,6 +82,9 @@ enum st_args_cmd {
   ST_ARG_TASKLET_SLEEP_US,
   ST_ARG_APP_THREAD,
   ST_ARG_RXTX_SIMD_512,
+  ST_ARG_PTP_PI,
+  ST_ARG_PTP_KP,
+  ST_ARG_PTP_KI,
   ST_ARG_MAX,
 };
 
@@ -165,6 +168,9 @@ static struct option st_app_args_options[] = {
     {"tasklet_sleep_us", required_argument, 0, ST_ARG_TASKLET_SLEEP_US},
     {"app_thread", no_argument, 0, ST_ARG_APP_THREAD},
     {"rxtx_simd_512", no_argument, 0, ST_ARG_RXTX_SIMD_512},
+    {"pi", no_argument, 0, ST_ARG_PTP_PI},
+    {"kp", required_argument, 0, ST_ARG_PTP_KP},
+    {"ki", required_argument, 0, ST_ARG_PTP_KI},
 
     {0, 0, 0, 0}};
 
@@ -507,6 +513,15 @@ int st_app_parse_args(struct st_app_context* ctx, struct mtl_init_params* p, int
         break;
       case ST_ARG_RXTX_SIMD_512:
         p->flags |= MTL_FLAG_RXTX_SIMD_512;
+        break;
+      case ST_ARG_PTP_PI:
+        p->flags |= MTL_FLAG_PTP_PI;
+        break;
+      case ST_ARG_PTP_KP:
+        p->kp = strtod(optarg, NULL);
+        break;
+      case ST_ARG_PTP_KI:
+        p->ki = strtod(optarg, NULL);
         break;
       case '?':
         break;

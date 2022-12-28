@@ -226,6 +226,11 @@ enum st21_tx_pacing_way {
  * Set the supported SIMD bitwidth of rx/tx burst to 512 bit(AVX512).
  */
 #define MTL_FLAG_RXTX_SIMD_512 (MTL_BIT64(7))
+/**
+ * Flag bit in flags of struct mtl_init_params.
+ * Use PI controller for built-in PTP implementation, only for PF now.
+ */
+#define MTL_FLAG_PTP_PI (MTL_BIT64(9))
 
 /**
  * Flag bit in flags of struct mtl_init_params, debug usage only.
@@ -375,6 +380,14 @@ struct mtl_init_params {
    * The st21 tx pacing way, leave to zero(auto) if you don't known the detail.
    */
   enum st21_tx_pacing_way pacing;
+  /**
+   * The ptp pi controller proportional gain.
+   */
+  double kp;
+  /**
+   * The ptp pi controller integral gain.
+   */
+  double ki;
 };
 
 /**
