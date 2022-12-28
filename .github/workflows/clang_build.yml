@@ -65,6 +65,6 @@ jobs:
 
     - name: Build ffmpeg plugin
       run: |
-        cd plugins/ffmpeg_plugin/
+        cd ecosystem/ffmpeg_plugin/
         ./build_ffmpeg_plugin.sh
         cd ../../
