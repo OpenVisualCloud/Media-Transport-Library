@@ -35,6 +35,7 @@ struct mudp_impl {
 
   uint64_t txq_bps; /* bit per sec for q */
   struct mt_tx_queue* txq;
+  struct mt_tsq_entry* tsq;
   struct mt_rx_queue* rxq;
   struct mt_rsq_entry* rsq;
   uint16_t rxq_id;

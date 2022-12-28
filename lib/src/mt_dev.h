@@ -63,6 +63,8 @@ static inline uint16_t mt_dev_rx_burst(struct mt_rx_queue* queue,
 
 int mt_dev_if_init(struct mtl_main_impl* impl);
 int mt_dev_if_uinit(struct mtl_main_impl* impl);
+int mt_dev_if_post_init(struct mtl_main_impl* impl);
+int mt_dev_if_pre_uinit(struct mtl_main_impl* impl);
 
 int mt_dev_put_lcore(struct mtl_main_impl* impl, unsigned int lcore);
 int mt_dev_get_lcore(struct mtl_main_impl* impl, unsigned int* lcore);

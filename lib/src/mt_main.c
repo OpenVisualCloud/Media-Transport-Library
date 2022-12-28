@@ -161,6 +161,17 @@ static int mt_main_create(struct mtl_main_impl* impl) {
     err("%s, mt_rsq_init fail %d\n", __func__, ret);
     return ret;
   }
+  ret = mt_tsq_init(impl);
+  if (ret < 0) {
+    err("%s, mt_tsq_init fail %d\n", __func__, ret);
+    return ret;
+  }
+
+  ret = mt_dev_if_post_init(impl);
+  if (ret < 0) {
+    err("%s, if post init fail %d\n", __func__, ret);
+    return ret;
+  }
 
   ret = mt_map_init(impl);
   if (ret < 0) {
@@ -232,8 +243,10 @@ static int mt_main_free(struct mtl_main_impl* impl) {
 
   mt_map_uinit(impl);
   mt_dma_uinit(impl);
+  mt_dev_if_pre_uinit(impl);
   mt_rss_uinit(impl);
   mt_rsq_uinit(impl);
+  mt_tsq_uinit(impl);
 
   mt_dev_free(impl);
   mt_stat_uinit(impl);
