@@ -76,4 +76,7 @@ jobs:
           ./dpdk/usertools/dpdk-devbind.py -b vfio-pci 0000:00:01.1
 
       - name: Run test case
-        run: sudo ./build/tests/KahawaiTest --auto_start_stop --p_port 0000:31:00.0 --r_port 0000:31:00.1 --dma_dev 0000:00:01.0,0000:00:01.1
+        run: |
+          export LD_LIBRARY_PATH=/usr/local/lib/x86_64-linux-gnu/:/usr/local/lib/
+          ldd ./build/tests/KahawaiTest
+          ./build/tests/KahawaiTest --auto_start_stop --p_port 0000:31:00.0 --r_port 0000:31:00.1 --dma_dev 0000:00:01.0,0000:00:01.1
