@@ -39,7 +39,7 @@ https://sourceforge.net/projects/mingw-w64/files/Toolchains%20targetting%20Win64
 
 ##### 3.1.1 Download DPDK sources from:
 
-https://fast.dpdk.org/rel/dpdk-22.07.tar.xz
+https://fast.dpdk.org/rel/dpdk-22.11.tar.xz
 
 ##### 3.1.2 Unpack the sources
 To unpack you can use 7-zip:
@@ -48,7 +48,7 @@ To unpack you can use 7-zip:
 
 •	Select 7-zip -> Extract Here / Extract to
 
-##### 3.1.3 Patch dpdk-22.07 with custom patches
+##### 3.1.3 Patch dpdk-22.11 with custom patches
 
 Install git for Windows version
 Run the following commands using gitbash:
@@ -60,9 +60,7 @@ patch -p1 < {path_to_repo_dir}/libraries.media.st2110.kahawai/patches/dpdk/{dpdk
 patch -p1 < {path_to_repo_dir}/libraries.media.st2110.kahawai/patches/dpdk/{dpdk_dir_ver}/0004-net-ice-revert-PF-ICE-rate-limit-to-non-queue-group-.patch
 patch -p1 < {path_to_repo_dir}/libraries.media.st2110.kahawai/patches/dpdk/{dpdk_dir_ver}/0005-net-iavf-support-max-burst-size-configuration.patch
 patch -p1 < {path_to_repo_dir}/libraries.media.st2110.kahawai/patches/dpdk/{dpdk_dir_ver}/0006-net-ice-support-max-burst-size-configuration.patch
-patch -p1 < {path_to_repo_dir}/libraries.media.st2110.kahawai/patches/dpdk/{dpdk_dir_ver}/0007-Add-support-for-i225-IT-ethernet-device-into-igc-pmd.patch
-patch -p1 < {path_to_repo_dir}/libraries.media.st2110.kahawai/patches/dpdk/{dpdk_dir_ver}/0008-Change-to-enable-PTP.patch
-patch -p1 < {path_to_repo_dir}/libraries.media.st2110.kahawai/patches/dpdk/{dpdk_dir_ver}/0009-ice-fix-ice_interrupt_handler-panic-when-stop.patch
+patch -p1 < {path_to_repo_dir}/libraries.media.st2110.kahawai/patches/dpdk/{dpdk_dir_ver}/0007-Change-to-enable-PTP.patch
 ```
 Then apply windows platform dpdk patch
 ```
@@ -82,7 +80,7 @@ patch -p1 < {path_to_repo_dir}/libraries.media.st2110.kahawai/patches/dpdk/{dpdk
 ### 3.2 Build and install DPDK
 Execute the commands below in windows command prompt:
 ```
-cd  C:\path_to\dpdk-21.11
+cd  C:\path_to\dpdk-22.11
 meson build --prefix=c:\dpdk
 ninja -C build install 
 ```

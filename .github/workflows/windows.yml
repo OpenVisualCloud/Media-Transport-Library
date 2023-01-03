@@ -5,7 +5,7 @@ on: [push, pull_request]
 env:
   # Customize the env if
   BUILD_TYPE: Release
-  DPDK_VERSION: 22.07
+  DPDK_VERSION: 22.11
 
 jobs:
   Build:
