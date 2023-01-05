@@ -1,6 +1,8 @@
 {
     "nb_udp_sockets" : "64",
     "nb_nic_queues" : "8",
+    "nic_shared_queues": true,
+    "log_level" : "info",
     "interfaces": [
         {
             "port": "0000:af:01.1",
