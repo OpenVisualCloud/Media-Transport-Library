@@ -8,25 +8,8 @@
 #include "udp_main.h"
 
 static struct ufd_mt_ctx* g_ufd_mt_ctx;
+static pthread_mutex_t g_ufd_mt_ctx_lock;
 
-#ifdef WINDOWSENV
-/* no PTHREAD_MUTEX_INITIALIZER support for win */
-#define UFD_CTX_SPIN_LOCK
-#endif
-
-#ifdef UFD_CTX_SPIN_LOCK
-static rte_spinlock_t g_ufd_mt_ctx_lock = RTE_SPINLOCK_INITIALIZER;
-static inline int ufd_mtl_ctx_lock(void) {
-  rte_spinlock_lock(&g_ufd_mt_ctx_lock);
-  return 0;
-}
-
-static inline int ufd_mtl_ctx_unlock(void) {
-  rte_spinlock_unlock(&g_ufd_mt_ctx_lock);
-  return 0;
-}
-#else
-static pthread_mutex_t g_ufd_mt_ctx_lock = PTHREAD_MUTEX_INITIALIZER;
 static inline int ufd_mtl_ctx_lock(void) {
   return mt_pthread_mutex_lock(&g_ufd_mt_ctx_lock);
 }
@@ -34,7 +17,16 @@ static inline int ufd_mtl_ctx_lock(void) {
 static inline int ufd_mtl_ctx_unlock(void) {
   return mt_pthread_mutex_unlock(&g_ufd_mt_ctx_lock);
 }
-#endif
+
+static int ufd_init_global(void) {
+  mt_pthread_mutex_init(&g_ufd_mt_ctx_lock, NULL);
+  return 0;
+}
+
+static int ufd_uinit_global(void) {
+  mt_pthread_mutex_destroy(&g_ufd_mt_ctx_lock);
+  return 0;
+}
 
 static inline int ufd_idx2fd(struct ufd_mt_ctx* ctx, int idx) {
   return (ctx->fd_base + idx);
@@ -143,8 +135,8 @@ static int ufd_parse_json(struct ufd_mt_ctx* ctx, const char* filename) {
       ret = -EINVAL;
       goto out;
     }
-    p->tx_sessions_cnt_max = nb_nic_queues;
-    p->rx_sessions_cnt_max = nb_nic_queues;
+    p->tx_queues_cnt_max = nb_nic_queues;
+    p->rx_queues_cnt_max = nb_nic_queues;
     info("%s, nb_nic_queues %d\n", __func__, nb_nic_queues);
   }
 
@@ -158,6 +150,33 @@ static int ufd_parse_json(struct ufd_mt_ctx* ctx, const char* filename) {
     }
     ctx->slots_nb_max = nb_udp_sockets;
     info("%s, nb_udp_sockets %d\n", __func__, nb_udp_sockets);
+  }
+
+  obj = mt_json_object_get(root, "nic_shared_queues");
+  if (obj) {
+    if (json_object_get_boolean(obj)) {
+      info("%s, shared queues enabled\n", __func__);
+      p->flags |= MTL_FLAG_SHARED_QUEUE;
+    }
+  }
+
+  obj = mt_json_object_get(root, "log_level");
+  if (obj) {
+    const char* str = json_object_get_string(obj);
+    if (str) {
+      if (!strcmp(str, "debug"))
+        p->log_level = MTL_LOG_LEVEL_DEBUG;
+      else if (!strcmp(str, "info"))
+        p->log_level = MTL_LOG_LEVEL_INFO;
+      else if (!strcmp(str, "notice"))
+        p->log_level = MTL_LOG_LEVEL_NOTICE;
+      else if (!strcmp(str, "warning"))
+        p->log_level = MTL_LOG_LEVEL_WARNING;
+      else if (!strcmp(str, "error"))
+        p->log_level = MTL_LOG_LEVEL_ERROR;
+      else
+        err("%s, unknow log level %s\n", __func__, str);
+    }
   }
 
   ret = 0;
@@ -398,9 +417,16 @@ int mufd_cleanup(void) {
   return 0;
 }
 
+/* lib constructors to init the resources */
+RTE_INIT(mufd_init) {
+  ufd_init_global();
+  dbg("%s, succ\n", __func__);
+}
+
 /* lib destructor to cleanup the resources */
 RTE_FINI(mufd_finish) {
   mufd_cleanup();
+  ufd_uinit_global();
   dbg("%s, succ\n", __func__);
 }
 
