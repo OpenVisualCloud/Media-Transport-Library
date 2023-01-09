@@ -49,12 +49,12 @@ static int rx_st20p_frame_available(void* priv) {
 static int fwd_frame_downsample(struct rx_st20p_tx_st20p_sample_ctx* s,
                                 struct st_frame* old_frame, struct st_frame* new_frame) {
   for (int line = 0; line < new_frame->height; line++) {
+    uint8_t* src = old_frame->addr[0] + old_frame->linesize[0] * line * 2;
+    uint8_t* dst = new_frame->addr[0] + new_frame->linesize[0] * line;
     for (int pg = 0; pg < new_frame->width / s->st20_pg.coverage; pg++) {
-      uint8_t* src = old_frame->addr[0] + old_frame->linesize[0] * line * 2 +
-                     s->st20_pg.size * pg * 2;
-      uint8_t* dst =
-          new_frame->addr[0] + new_frame->linesize[0] * line + s->st20_pg.size * pg;
       mtl_memcpy(dst, src, s->st20_pg.size);
+      src += 2 * s->st20_pg.size;
+      dst += s->st20_pg.size;
     }
   }
   return 0;
