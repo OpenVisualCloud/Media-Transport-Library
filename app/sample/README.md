@@ -26,12 +26,17 @@ The dir incldue the simple sample code for how to develop application quickly ba
 
 [rx_st20p_tx_st22p_fwd.c](rx_st20p_tx_st22p_fwd.c): A demo application which receive a st20 stream and output as st22 compressed stream with logo rendering.
 ```bash
-./build/app/RxSt20pTxSt22pFwd --p_port 0000:af:01.1 --p_sip 192.168.75.22 --p_rx_ip 239.168.75.20 --p_tx_ip 239.168.75.21
+./build/app/RxSt20pTxSt22pFwd --p_port 0000:af:01.1 --p_sip 192.168.75.22 --p_rx_ip 239.168.75.20 --p_fwd_ip 239.168.75.21
 ```
 
 [rx_st20p_tx_st20p_fwd.c](rx_st20p_tx_st20p_fwd.c): A demo application which receive a st20 stream and output as st20 stream with logo rendering.
 ```bash
-./build/app/RxSt20pTxSt20pFwd --p_port 0000:af:01.1 --p_sip 192.168.75.22 --p_rx_ip 239.168.75.20 --p_tx_ip 239.168.75.21
+./build/app/RxSt20pTxSt20pFwd --p_port 0000:af:01.1 --p_sip 192.168.75.22 --p_rx_ip 239.168.75.20 --p_fwd_ip 239.168.75.21
+```
+
+[rx_st20p_tx_st20p_downsample_fwd.c](rx_st20p_tx_st20p_fwd.c): A demo application which receive a 4k st20 stream and output as st20 stream downscaled to 1080p.
+```bash
+./build/app/RxSt20pTxSt20pDownsampleFwd --p_port 0000:af:01.1 --p_sip 192.168.75.22 --p_rx_ip 239.168.75.20 --p_fwd_ip 239.168.75.21 --width 3840 --height 2160
 ```
 
 ## 3. Samples which based on low level APIs for advanced usage:
@@ -82,7 +87,7 @@ The dir incldue the simple sample code for how to develop application quickly ba
 
 [rx_st20_tx_st20_split_fwd.c](rx_st20_tx_st20_split_fwd.c): Receive 4k frames from rx, do square quad division and send with 4 1080p sessions.
 ```bash
-./build/app/RxSt20TxSt20SplitFwd --p_port 0000:af:01.1 --p_sip 192.168.75.22 --p_rx_ip 239.168.75.20 --p_tx_ip 239.168.75.20
+./build/app/RxSt20TxSt20SplitFwd --p_port 0000:af:01.1 --p_sip 192.168.75.22 --p_rx_ip 239.168.75.20 --p_fwd_ip 239.168.75.20
 ```
 
 [rx_st20_redundant_sample.c](rx_st20_redundant_sample.c): A rx video(st2110-20) redundant application based on frame interface, application need handle the color format conversion in case the user format is not the one defined in RFC4175.
