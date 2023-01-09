@@ -229,6 +229,23 @@ int mufd_set_tx_rate(int sockfd, uint64_t bps);
 uint64_t mufd_get_tx_rate(int sockfd);
 
 /**
+ * Create a sockfd udp transport socket on one PCIE port.
+ *
+ * @param domain
+ *   A communication domain, only AF_INET(IPv4) now.
+ * @param type
+ *   Which specifies the communication semantics, only SOCK_DGRAM now.
+ * @param protocol
+ *   Specifies a particular protocol to be used with the socket, only zero now.
+ * @param port
+ *   Specifies the PCIE port, MTL_PORT_P or MTL_PORT_R.
+ * @return
+ *   - >=0: Success, the sockfd.
+ *   - <0: Error code.
+ */
+int mufd_socket_port(int domain, int type, int protocol, enum mtl_port port);
+
+/**
  * Helper to init a IPv4 ANY addr.
  *
  * @param saddr

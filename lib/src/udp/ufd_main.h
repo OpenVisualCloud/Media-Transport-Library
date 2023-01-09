@@ -22,7 +22,6 @@ struct ufd_slot {
 struct ufd_mt_ctx {
   struct mtl_init_params mt_params;
   struct mtl_main_impl* mt;
-  int socket;
   int fd_base;
   uint64_t txq_bps; /* bit per sec for q */
 
