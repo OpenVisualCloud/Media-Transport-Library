@@ -218,6 +218,7 @@ static int udp_init_txq(struct mtl_main_impl* impl, struct mudp_impl* s,
       return -ENOMEM;
     }
     queue_id = mt_tsq_queue_id(s->tsq);
+    mt_tsq_set_bps(impl, s->tsq, s->txq_bps / 8);
   } else {
     s->txq = mt_dev_get_tx_queue(impl, port, s->txq_bps / 8);
     if (!s->txq) {
@@ -831,8 +832,11 @@ int mudp_set_tx_rate(mudp_handle ut, uint64_t bps) {
     return -EINVAL;
   }
 
-  s->txq_bps = bps;
-  info("%s(%d), new bps: %" PRIu64 "\n", __func__, idx, bps);
+  if (bps != s->txq_bps) {
+    s->txq_bps = bps;
+    info("%s(%d), new bps: %" PRIu64 "\n", __func__, idx, bps);
+  }
+
   return 0;
 }
 

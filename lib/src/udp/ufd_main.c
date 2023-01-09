@@ -179,6 +179,30 @@ static int ufd_parse_json(struct ufd_mt_ctx* ctx, const char* filename) {
     }
   }
 
+  obj = mt_json_object_get(root, "fd_base");
+  if (obj) {
+    int fd_base = json_object_get_int(obj);
+    if (fd_base < 0) {
+      err("%s, invalid fd_base %d\n", __func__, fd_base);
+      ret = -EINVAL;
+      goto out;
+    }
+    ctx->fd_base = fd_base;
+    info("%s, fd_base %d\n", __func__, fd_base);
+  }
+
+  obj = mt_json_object_get(root, "nic_queue_rate_limit_g");
+  if (obj) {
+    int rl_bps_g = json_object_get_int(obj);
+    if (rl_bps_g < 0) {
+      err("%s, invalid rl_bps_g %d\n", __func__, rl_bps_g);
+      ret = -EINVAL;
+      goto out;
+    }
+    ctx->txq_bps = rl_bps_g * 1000 * 1000 * 1000;
+    info("%s, nic_queue_rate_limit_g %d\n", __func__, rl_bps_g);
+  }
+
   ret = 0;
 
 out:
@@ -211,6 +235,7 @@ static struct ufd_mt_ctx* ufd_create_mt_ctx(void) {
 
   ctx->slots_nb_max = 1024;
   ctx->fd_base = UFD_FD_BASE_DEFAULT;
+  ctx->txq_bps = MUDP_DEFAULT_RL_BPS;
   mt_pthread_mutex_init(&ctx->slots_lock, NULL);
 
   /* init mtl context */
@@ -325,6 +350,8 @@ int mufd_socket(int domain, int type, int protocol) {
     ufd_free_slot(ctx, slot);
     return -ENOMEM;
   }
+
+  mudp_set_tx_rate(slot->handle, ctx->txq_bps);
 
   info("%s(%d), succ, fd %d\n", __func__, idx, fd);
   return fd;

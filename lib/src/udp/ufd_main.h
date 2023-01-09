@@ -24,6 +24,7 @@ struct ufd_mt_ctx {
   struct mtl_main_impl* mt;
   int socket;
   int fd_base;
+  uint64_t txq_bps; /* bit per sec for q */
 
   int slots_nb_max;
   int slot_last_idx;

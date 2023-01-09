@@ -449,6 +449,20 @@ int mt_tsq_flush(struct mtl_main_impl* impl, struct mt_tsq_entry* entry,
   return 0;
 }
 
+int mt_tsq_set_bps(struct mtl_main_impl* impl, struct mt_tsq_entry* entry,
+                   uint64_t bytes_per_sec) {
+  struct mt_tsq_impl* tsqm = entry->parnet;
+  enum mtl_port port = tsqm->port;
+  struct mt_tsq_queue* tsq_queue = &tsqm->tsq_queues[entry->queue_id];
+  uint16_t q = entry->queue_id;
+
+  mt_pthread_mutex_lock(&tsq_queue->tx_mutex);
+  mt_dev_set_tx_bps(impl, port, q, bytes_per_sec);
+  mt_pthread_mutex_unlock(&tsq_queue->tx_mutex);
+
+  return 0;
+}
+
 int mt_tsq_init(struct mtl_main_impl* impl) {
   int num_ports = mt_num_ports(impl);
   int ret;
