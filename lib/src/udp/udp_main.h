@@ -20,7 +20,7 @@
 /* if mcast joined or not */
 #define MUDP_RX_MCAST_JOINED (MTL_BIT32(3))
 
-/* 10g */
+/* 1g */
 #define MUDP_DEFAULT_RL_BPS (1ul * 1024 * 1024 * 1024)
 
 struct mudp_impl {

@@ -531,8 +531,8 @@ static int dev_tx_queue_set_rl_rate(struct mtl_main_impl* impl, enum mtl_port po
       return ret;
     }
     tx_queue->rl_shapers_mapping = shaper->idx;
-    info("%s(%d), q %d link to shaper id %d\n", __func__, port, queue,
-         shaper->shaper_profile_id);
+    info("%s(%d), q %d link to shaper id %d(%" PRIu64 ")\n", __func__, port, queue,
+         shaper->shaper_profile_id, shaper->rl_bps);
   }
 
   ret = rte_tm_hierarchy_commit(port_id, 1, &error);
@@ -1588,6 +1588,22 @@ uint16_t mt_dev_tx_sys_queue_burst(struct mtl_main_impl* impl, enum mtl_port por
     tx = mt_tsq_burst(inf->tsq_sys_entry, tx_pkts, nb_pkts);
   mt_pthread_mutex_unlock(&inf->tx_sys_queue_mutex);
   return tx;
+}
+
+int mt_dev_set_tx_bps(struct mtl_main_impl* impl, enum mtl_port port, uint16_t q,
+                      uint64_t bytes_per_sec) {
+  struct mt_interface* inf = mt_if(impl, port);
+
+  if (q >= inf->max_tx_queues) {
+    err("%s(%d), invalid queue %d\n", __func__, port, q);
+    return -EIO;
+  }
+
+  if (inf->tx_pacing_way == ST21_TX_PACING_WAY_RL) {
+    dev_tx_queue_set_rl_rate(impl, port, q, bytes_per_sec);
+  }
+
+  return 0;
 }
 
 struct mt_tx_queue* mt_dev_get_tx_queue(struct mtl_main_impl* impl, enum mtl_port port,

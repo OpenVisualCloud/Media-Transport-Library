@@ -2,7 +2,9 @@
     "nb_udp_sockets" : "64",
     "nb_nic_queues" : "8",
     "nic_shared_queues": true,
+    "nic_queue_rate_limit_g": "2",
     "log_level" : "info",
+    "fd_base" : "20000",
     "interfaces": [
         {
             "port": "0000:af:01.0",
