@@ -1474,6 +1474,19 @@ int st20p_rx_get_sch_idx(st20p_rx_handle handle);
 int st_frame_convert(struct st_frame* src, struct st_frame* dst);
 
 /**
+ * Downsample frame size to destination frame.
+ *
+ * @param src
+ *   The source frame.
+ * @param dst
+ *   The destination frame.
+ * @return
+ *   - 0: Success.
+ *   - <0: Error code.
+ */
+int st_frame_downsample(struct st_frame* src, struct st_frame* dst);
+
+/**
  * Calculate the least linesize per the format, w, plane
  *
  * @param fmt
