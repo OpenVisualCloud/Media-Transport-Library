@@ -59,7 +59,7 @@ static void fwd_st20_consume_frame(struct rx_st20p_tx_st20p_sample_ctx* s,
       continue;
     }
 
-    st_frame_downsample(frame, tx_frame);
+    st_frame_downsample(frame, tx_frame, 0);
     st20p_tx_put_frame(tx_handle, tx_frame);
 
     s->fb_fwd++;

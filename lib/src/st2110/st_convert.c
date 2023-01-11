@@ -544,7 +544,7 @@ int st_frame_get_converter(enum st_frame_fmt src_fmt, enum st_frame_fmt dst_fmt,
 }
 
 static int downsample_rfc4175_422be10_wh_half(struct st_frame* old_frame,
-                                              struct st_frame* new_frame) {
+                                              struct st_frame* new_frame, int idx) {
   enum mtl_simd_level cpu_level = mtl_get_simd_level();
   int ret;
 
@@ -553,13 +553,33 @@ static int downsample_rfc4175_422be10_wh_half(struct st_frame* old_frame,
 
   uint32_t width = new_frame->width;
   uint32_t height = new_frame->height;
+  uint32_t src_linesize = old_frame->linesize[0];
+  uint32_t dst_linesize = new_frame->linesize[0];
+  uint8_t* src_start = old_frame->addr[0];
+  uint8_t* dst_start = new_frame->addr[0];
+  /* check the idx and set src offset */
+  switch (idx) {
+    case 0:
+      break;
+    case 1:
+      src_start += 5;
+      break;
+    case 2:
+      src_start += src_linesize;
+      break;
+    case 3:
+      src_start += src_linesize + 5;
+      break;
+    default:
+      err("%s, wrong sample idx %d\n", __func__, idx);
+      return -EINVAL;
+  }
 
 #ifdef MTL_HAS_AVX512_VBMI2
   if (cpu_level >= MTL_SIMD_LEVEL_AVX512_VBMI2) {
     dbg("%s, avx512_vbmi way\n", __func__);
     ret = st20_downsample_rfc4175_422be10_wh_half_avx512_vbmi(
-        old_frame->addr[0], new_frame->addr[0], width, height, old_frame->linesize[0],
-        new_frame->linesize[0]);
+        src_start, dst_start, width, height, src_linesize, dst_linesize);
     if (ret == 0) return 0;
     err("%s, avx512_vbmi way failed %d\n", __func__, ret);
   }
@@ -567,8 +587,8 @@ static int downsample_rfc4175_422be10_wh_half(struct st_frame* old_frame,
 
   /* scalar fallback */
   for (int line = 0; line < height; line++) {
-    uint8_t* src = old_frame->addr[0] + old_frame->linesize[0] * line * 2;
-    uint8_t* dst = new_frame->addr[0] + new_frame->linesize[0] * line;
+    uint8_t* src = src_start + src_linesize * line * 2;
+    uint8_t* dst = dst_start + dst_linesize * line;
     for (int pg = 0; pg < width / 2; pg++) {
       mtl_memcpy(dst, src, 5);
       src += 2 * 5;
@@ -578,11 +598,11 @@ static int downsample_rfc4175_422be10_wh_half(struct st_frame* old_frame,
   return 0;
 }
 
-int st_frame_downsample(struct st_frame* src, struct st_frame* dst) {
+int st_frame_downsample(struct st_frame* src, struct st_frame* dst, int idx) {
   if (src->fmt == ST_FRAME_FMT_YUV422RFC4175PG2BE10 &&
       dst->fmt == ST_FRAME_FMT_YUV422RFC4175PG2BE10) {
     if (src->width == dst->width * 2 && src->height == dst->height * 2) {
-      return downsample_rfc4175_422be10_wh_half(src, dst);
+      return downsample_rfc4175_422be10_wh_half(src, dst, idx);
     }
   }
 
