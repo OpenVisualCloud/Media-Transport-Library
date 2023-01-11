@@ -20,10 +20,13 @@ struct udp_client_sample_ctx {
   mudp_handle socket;
   struct sockaddr_in serv_addr;
 
+  int udp_len;
+
   int send_cnt;
   int recv_cnt;
   int recv_fail_cnt;
   int recv_err_cnt;
+  uint64_t last_stat_time;
 };
 
 static void* udp_client_thread(void* arg) {
@@ -79,13 +82,13 @@ static void* udp_client_transport_thread(void* arg) {
   struct udp_client_sample_ctx* s = arg;
   mudp_handle socket = s->socket;
 
-  ssize_t udp_len = 1024;
+  ssize_t udp_len = s->udp_len;
   char send_buf[udp_len];
   for (ssize_t i = 0; i < udp_len; i++) {
     send_buf[i] = i;
   }
 
-  info("%s(%d), start socket %p\n", __func__, s->idx, socket);
+  info("%s(%d), start socket %p, udp len %d\n", __func__, s->idx, socket, (int)udp_len);
   while (!s->stop) {
     ssize_t send =
         mudp_sendto(socket, send_buf, sizeof(send_buf), 0,
@@ -102,7 +105,14 @@ static void* udp_client_transport_thread(void* arg) {
 }
 
 static void udp_client_status(struct udp_client_sample_ctx* s) {
-  info("%s(%d), send %d pkts recv %d pkts\n", __func__, s->idx, s->send_cnt, s->recv_cnt);
+  uint64_t cur_ts = sample_get_monotonic_time();
+  double time_sec = (double)(cur_ts - s->last_stat_time) / NS_PER_S;
+  double bps = (double)s->send_cnt * s->udp_len * 8 / time_sec;
+  double bps_g = bps / (1000 * 1000 * 1000);
+  s->last_stat_time = cur_ts;
+
+  info("%s(%d), send %d pkts(%fg/s) recv %d pkts\n", __func__, s->idx, s->send_cnt, bps_g,
+       s->recv_cnt);
   s->send_cnt = 0;
   s->recv_cnt = 0;
   if (s->recv_fail_cnt) {
@@ -146,6 +156,10 @@ int main(int argc, char** argv) {
     app[i]->idx = i;
     app[i]->stop = false;
     app[i]->st = ctx.st;
+    if (ctx.udp_len)
+      app[i]->udp_len = ctx.udp_len;
+    else
+      app[i]->udp_len = 1024;
     st_pthread_mutex_init(&app[i]->wake_mutex, NULL);
     st_pthread_cond_init(&app[i]->wake_cond, NULL);
 
@@ -176,6 +190,7 @@ int main(int argc, char** argv) {
       err("%s(%d), thread create fail %d\n", __func__, ret, i);
       goto error;
     }
+    app[i]->last_stat_time = sample_get_monotonic_time();
   }
 
   int time_s = 0;
