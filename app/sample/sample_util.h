@@ -49,6 +49,10 @@
 
 #define ST_SAMPLE_URL_MAX_LEN (256)
 
+#ifndef NS_PER_S
+#define NS_PER_S (1000000000)
+#endif
+
 enum sample_udp_mode {
   /* client/server mode */
   SAMPLE_UDP_DEFAULT = 0,
@@ -93,6 +97,7 @@ struct st_sample_context {
 
   enum sample_udp_mode udp_mode;
   uint64_t udp_tx_bps;
+  int udp_len;
 
   bool exit;
   void (*sig_handler)(int signo);
@@ -110,5 +115,13 @@ int fwd_sample_parse_args(struct st_sample_context* ctx, int argc, char** argv);
 int dma_sample_parse_args(struct st_sample_context* ctx, int argc, char** argv);
 
 void fill_rfc4175_422_10_pg2_data(struct st20_rfc4175_422_10_pg2_be* data, int w, int h);
+
+/* Monotonic time (in nanoseconds) since some unspecified starting point. */
+static inline uint64_t sample_get_monotonic_time() {
+  struct timespec ts;
+
+  clock_gettime(ST_CLOCK_MONOTONIC_ID, &ts);
+  return ((uint64_t)ts.tv_sec * NS_PER_S) + ts.tv_nsec;
+}
 
 #endif
