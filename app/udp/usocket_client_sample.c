@@ -43,12 +43,12 @@ static void* usocket_client_thread(void* arg) {
   int idx_pos = udp_len / 2;
   int send_idx = 0;
 
-  info("%s(%d), start socket %d usocket len %d\n", __func__, s->idx, socket, (int)udp_len);
+  info("%s(%d), start socket %d usocket len %d\n", __func__, s->idx, socket,
+       (int)udp_len);
   while (!s->stop) {
     send_buf[idx_pos] = send_idx++;
-    ssize_t send =
-        sendto(socket, send_buf, sizeof(send_buf), 0,
-                    (const struct sockaddr*)&s->serv_addr, sizeof(s->serv_addr));
+    ssize_t send = sendto(socket, send_buf, sizeof(send_buf), 0,
+                          (const struct sockaddr*)&s->serv_addr, sizeof(s->serv_addr));
     if (send != udp_len) {
       err("%s(%d), only send %d bytes\n", __func__, s->idx, (int)send);
       continue;
@@ -88,11 +88,11 @@ static void* usocket_client_transport_thread(void* arg) {
     send_buf[i] = i;
   }
 
-  info("%s(%d), start socket %d, usocket len %d\n", __func__, s->idx, socket, (int)udp_len);
+  info("%s(%d), start socket %d, usocket len %d\n", __func__, s->idx, socket,
+       (int)udp_len);
   while (!s->stop) {
-    ssize_t send =
-        sendto(socket, send_buf, sizeof(send_buf), 0,
-                    (const struct sockaddr*)&s->serv_addr, sizeof(s->serv_addr));
+    ssize_t send = sendto(socket, send_buf, sizeof(send_buf), 0,
+                          (const struct sockaddr*)&s->serv_addr, sizeof(s->serv_addr));
     if (send != udp_len) {
       err("%s(%d), only send %d bytes\n", __func__, s->idx, (int)send);
       continue;
@@ -164,9 +164,10 @@ int main(int argc, char** argv) {
       goto error;
     }
 
-	mudp_init_sockaddr(&app[i]->bind_addr, ctx.param.sip_addr[MTL_PORT_P], ctx.udp_port + i);
+    mudp_init_sockaddr(&app[i]->bind_addr, ctx.param.sip_addr[MTL_PORT_P],
+                       ctx.udp_port + i);
     ret = bind(app[i]->socket, (const struct sockaddr*)&app[i]->bind_addr,
-                    sizeof(app[i]->bind_addr));
+               sizeof(app[i]->bind_addr));
     if (ret < 0) {
       err("%s(%d), bind fail %d\n", __func__, i, ret);
       goto error;
@@ -175,8 +176,8 @@ int main(int argc, char** argv) {
     struct timeval tv;
     tv.tv_sec = 0;
     tv.tv_usec = 1000;
-	ret = setsockopt(app[i]->socket, SOL_SOCKET, SO_RCVTIMEO, &tv, sizeof(tv));
-	if (ret < 0) {
+    ret = setsockopt(app[i]->socket, SOL_SOCKET, SO_RCVTIMEO, &tv, sizeof(tv));
+    if (ret < 0) {
       err("%s(%d), SO_RCVTIMEO fail %d\n", __func__, i, ret);
       goto error;
     }
@@ -184,7 +185,8 @@ int main(int argc, char** argv) {
     if ((ctx.udp_mode == SAMPLE_UDP_TRANSPORT) ||
         (ctx.udp_mode == SAMPLE_UDP_TRANSPORT_POLL) ||
         (ctx.udp_mode == SAMPLE_UDP_TRANSPORT_UNIFY_POLL))
-      ret = pthread_create(&app[i]->thread, NULL, usocket_client_transport_thread, app[i]);
+      ret =
+          pthread_create(&app[i]->thread, NULL, usocket_client_transport_thread, app[i]);
     else
       ret = pthread_create(&app[i]->thread, NULL, usocket_client_thread, app[i]);
     if (ret < 0) {
