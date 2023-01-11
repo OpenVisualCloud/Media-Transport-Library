@@ -543,6 +543,55 @@ int st_frame_get_converter(enum st_frame_fmt src_fmt, enum st_frame_fmt dst_fmt,
   return -EINVAL;
 }
 
+static int downsample_rfc4175_422be10_wh_half(struct st_frame* old_frame,
+                                              struct st_frame* new_frame) {
+  enum mtl_simd_level cpu_level = mtl_get_simd_level();
+  int ret;
+
+  MT_MAY_UNUSED(cpu_level);
+  MT_MAY_UNUSED(ret);
+
+  uint32_t width = new_frame->width;
+  uint32_t height = new_frame->height;
+
+#ifdef MTL_HAS_AVX512_VBMI2
+  if (cpu_level >= MTL_SIMD_LEVEL_AVX512_VBMI2) {
+    dbg("%s, avx512_vbmi way\n", __func__);
+    ret = st20_downsample_rfc4175_422be10_wh_half_avx512_vbmi(
+        old_frame->addr[0], new_frame->addr[0], width, height, old_frame->linesize[0],
+        new_frame->linesize[0]);
+    if (ret == 0) return 0;
+    err("%s, avx512_vbmi way failed %d\n", __func__, ret);
+  }
+#endif
+
+  /* scalar fallback */
+  for (int line = 0; line < height; line++) {
+    uint8_t* src = old_frame->addr[0] + old_frame->linesize[0] * line * 2;
+    uint8_t* dst = new_frame->addr[0] + new_frame->linesize[0] * line;
+    for (int pg = 0; pg < width / 2; pg++) {
+      mtl_memcpy(dst, src, 5);
+      src += 2 * 5;
+      dst += 5;
+    }
+  }
+  return 0;
+}
+
+int st_frame_downsample(struct st_frame* src, struct st_frame* dst) {
+  if (src->fmt == ST_FRAME_FMT_YUV422RFC4175PG2BE10 &&
+      dst->fmt == ST_FRAME_FMT_YUV422RFC4175PG2BE10) {
+    if (src->width == dst->width * 2 && src->height == dst->height * 2) {
+      return downsample_rfc4175_422be10_wh_half(src, dst);
+    }
+  }
+
+  err("%s, downsample not supported, source: %s %ux%u, dest: %s %ux%u\n", __func__,
+      st_frame_fmt_name(src->fmt), src->width, src->height, st_frame_fmt_name(dst->fmt),
+      dst->width, dst->height);
+  return -EINVAL;
+}
+
 static int st20_yuv422p10le_to_rfc4175_422be10_scalar(
     uint16_t* y, uint16_t* b, uint16_t* r, struct st20_rfc4175_422_10_pg2_be* pg,
     uint32_t w, uint32_t h) {

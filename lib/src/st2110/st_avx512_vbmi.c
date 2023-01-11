@@ -1812,8 +1812,39 @@ int st20_v210_to_rfc4175_422be10_avx512_vbmi_dma(struct mtl_dma_lender_dev* dma,
 
   return 0;
 }
+/* end st20_v210_to_rfc4175_422be10_avx512_vbmi */
 
-/* end st20_v210_to_rfc4175_422be10_avx512 */
+int st20_downsample_rfc4175_422be10_wh_half_avx512_vbmi(uint8_t* pg_old, uint8_t* pg_new,
+                                                        uint32_t w, uint32_t h,
+                                                        uint32_t linesize_old,
+                                                        uint32_t linesize_new) {
+  int new_pg_in_zmm = 6;
+  __mmask64 k = 0b1111100000111110000011111000001111100000111110000011111;
+  /* calculate batch size */
+  int new_pg_per_line = w / 2;
+  int batches = new_pg_per_line / new_pg_in_zmm;
+  for (int line = 0; line < h; line++) {
+    /* calculate offset */
+    uint8_t* src = pg_old + linesize_old * line * 2;
+    uint8_t* dst = pg_new + linesize_new * line;
+    /* for each batch */
+    for (int i = 0; i < batches; i++) {
+      __m512i input = _mm512_loadu_si512(src);
+      _mm512_mask_compressstoreu_epi8(dst, k, input);
+      src += new_pg_in_zmm * 2 * 5;
+      dst += new_pg_in_zmm * 5;
+    }
+    /* handle left pgs */
+    int left = new_pg_per_line % new_pg_in_zmm;
+    while (left) {
+      mtl_memcpy(dst, src, 5);
+      src += 2 * 5;
+      dst += 5;
+      left--;
+    }
+  }
+  return 0;
+}
 
 MT_TARGET_CODE_STOP
 #endif

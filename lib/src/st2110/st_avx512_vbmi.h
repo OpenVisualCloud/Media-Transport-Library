@@ -67,4 +67,9 @@ int st20_v210_to_rfc4175_422be10_avx512_vbmi_dma(struct mtl_dma_lender_dev* dma,
                                                  struct st20_rfc4175_422_10_pg2_be* pg_be,
                                                  uint32_t w, uint32_t h);
 
+int st20_downsample_rfc4175_422be10_wh_half_avx512_vbmi(uint8_t* pg_old, uint8_t* pg_new,
+                                                        uint32_t w, uint32_t h,
+                                                        uint32_t linesize_old,
+                                                        uint32_t linesize_new);
+
 #endif
