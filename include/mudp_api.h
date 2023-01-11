@@ -284,6 +284,26 @@ int mudp_set_arp_timeout_ms(mudp_handle ut, int ms);
 int mudp_get_arp_timeout_ms(mudp_handle ut);
 
 /**
+ * Create a udp transport socket on a PCIE port.
+ *
+ * @param mt
+ *   The pointer to the media transport device context.
+ * @param domain
+ *   A communication domain, only AF_INET(IPv4) now.
+ * @param type
+ *   Which specifies the communication semantics, only SOCK_DGRAM now.
+ * @param protocol
+ *   Specifies a particular protocol to be used with the socket, only zero now.
+ * @param port
+ *   Specifies the PCIE port, MTL_PORT_P or MTL_PORT_R.
+ * @return
+ *   - NULL on error.
+ *   - Otherwise, the handle to a udp transport socket.
+ */
+mudp_handle mudp_socket_port(mtl_handle mt, int domain, int type, int protocol,
+                             enum mtl_port port);
+
+/**
  * Helper to init a IPv4 ANY addr.
  *
  * @param saddr

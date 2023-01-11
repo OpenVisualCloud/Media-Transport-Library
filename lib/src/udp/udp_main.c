@@ -394,15 +394,17 @@ static uint16_t udp_rx(struct mtl_main_impl* impl, struct mudp_impl* s) {
 static int udp_stat_dump(void* priv) {
   struct mudp_impl* s = priv;
   int idx = s->idx;
+  enum mtl_port port = s->port;
+
   if (s->stat_pkt_build) {
-    info("%s(%d), pkt build %d tx %d\n", __func__, idx, s->stat_pkt_build,
+    info("%s(%d,%d), pkt build %d tx %d\n", __func__, port, idx, s->stat_pkt_build,
          s->stat_pkt_tx);
     s->stat_pkt_build = 0;
     s->stat_pkt_tx = 0;
   }
   if (s->stat_pkt_rx) {
-    info("%s(%d), pkt rx %d deliver %d, %s rxq %u\n", __func__, idx, s->stat_pkt_rx,
-         s->stat_pkt_deliver, s->rsq ? "shared" : "dedicated", s->rxq_id);
+    info("%s(%d,%d), pkt rx %d deliver %d, %s rxq %u\n", __func__, port, idx,
+         s->stat_pkt_rx, s->stat_pkt_deliver, s->rsq ? "shared" : "dedicated", s->rxq_id);
     s->stat_pkt_rx = 0;
     s->stat_pkt_deliver = 0;
   }
@@ -467,11 +469,11 @@ static int udp_set_rcvbuf(struct mudp_impl* s, const void* optval, socklen_t opt
   return 0;
 }
 
-mudp_handle mudp_socket(mtl_handle mt, int domain, int type, int protocol) {
+mudp_handle mudp_socket_port(mtl_handle mt, int domain, int type, int protocol,
+                             enum mtl_port port) {
   int ret;
   struct mtl_main_impl* impl = mt;
   struct mudp_impl* s;
-  enum mtl_port port = MTL_PORT_P;
 
   static int mudp_idx = 0;
   int idx = mudp_idx;
@@ -519,6 +521,10 @@ mudp_handle mudp_socket(mtl_handle mt, int domain, int type, int protocol) {
 
   info("%s(%d), succ, socket %p\n", __func__, idx, s);
   return s;
+}
+
+mudp_handle mudp_socket(mtl_handle mt, int domain, int type, int protocol) {
+  return mudp_socket_port(mt, domain, type, protocol, MTL_PORT_P);
 }
 
 int mudp_close(mudp_handle ut) {

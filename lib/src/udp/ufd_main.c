@@ -72,7 +72,8 @@ static int ufd_free_mt_ctx(struct ufd_mt_ctx* ctx) {
   return 0;
 }
 
-static int ufd_parse_interfaces(struct ufd_mt_ctx* ctx, json_object* obj) {
+static int ufd_parse_interfaces(struct ufd_mt_ctx* ctx, json_object* obj,
+                                enum mtl_port port) {
   struct mtl_init_params* p = &ctx->mt_params;
 
   const char* name = json_object_get_string(mt_json_object_get(obj, "port"));
@@ -80,14 +81,14 @@ static int ufd_parse_interfaces(struct ufd_mt_ctx* ctx, json_object* obj) {
     err("%s, no port in the json interface\n", __func__);
     return -EINVAL;
   }
-  snprintf(p->port[MTL_PORT_P], MTL_PORT_MAX_LEN, "%s", name);
+  snprintf(p->port[port], MTL_PORT_MAX_LEN, "%s", name);
 
   const char* sip = json_object_get_string(mt_json_object_get(obj, "ip"));
   if (!sip) {
     err("%s, no ip in the json interface\n", __func__);
     return -EINVAL;
   }
-  int ret = inet_pton(AF_INET, sip, p->sip_addr[MTL_PORT_P]);
+  int ret = inet_pton(AF_INET, sip, p->sip_addr[port]);
   if (ret != 1) {
     err("%s, inet pton fail ip %s\n", __func__, sip);
     return -EINVAL;
@@ -116,13 +117,15 @@ static int ufd_parse_json(struct ufd_mt_ctx* ctx, const char* filename) {
     goto out;
   }
   int num_interfaces = json_object_array_length(interfaces_array);
-  if (num_interfaces != 1) {
-    err("%s, only support one, interfaces nb %d\n", __func__, num_interfaces);
+  if ((num_interfaces > MTL_PORT_MAX) || (num_interfaces <= 0)) {
+    err("%s, invalid interfaces nb %d\n", __func__, num_interfaces);
     ret = -EINVAL;
     goto out;
   }
-  ret = ufd_parse_interfaces(ctx, json_object_array_get_idx(interfaces_array, 0));
-  if (ret < 0) goto out;
+  for (int i = 0; i < num_interfaces; i++) {
+    ret = ufd_parse_interfaces(ctx, json_object_array_get_idx(interfaces_array, i), i);
+    if (ret < 0) goto out;
+  }
 
   struct mtl_init_params* p = &ctx->mt_params;
   json_object* obj;
@@ -258,10 +261,9 @@ static struct ufd_mt_ctx* ufd_create_mt_ctx(void) {
     ufd_free_mt_ctx(ctx);
     return NULL;
   }
-  ctx->socket = mt_socket_id(ctx->mt, MTL_PORT_P);
 
-  ctx->slots =
-      mt_rte_zmalloc_socket(sizeof(*ctx->slots) * ctx->slots_nb_max, ctx->socket);
+  ctx->slots = mt_rte_zmalloc_socket(sizeof(*ctx->slots) * ctx->slots_nb_max,
+                                     mt_socket_id(ctx->mt, MTL_PORT_P));
   if (!ctx->slots) {
     err("%s, slots malloc fail\n", __func__);
     ufd_free_mt_ctx(ctx);
@@ -304,7 +306,7 @@ static inline struct ufd_slot* ufd_fd2slot(int sockfd) {
   return slot;
 }
 
-int mufd_socket(int domain, int type, int protocol) {
+int mufd_socket_port(int domain, int type, int protocol, enum mtl_port port) {
   int ret;
   struct ufd_mt_ctx* ctx;
   struct ufd_slot* slot = NULL;
@@ -316,13 +318,17 @@ int mufd_socket(int domain, int type, int protocol) {
     err("%s, fail to get ufd mt ctx\n", __func__);
     return -EIO;
   }
+  if ((port < 0) || (port >= ctx->mt_params.num_ports)) {
+    err("%s, invalid port %d\n", __func__, port);
+    return -EINVAL;
+  }
 
   /* find one empty slot */
   mt_pthread_mutex_lock(&ctx->slots_lock);
   for (int i = 0; i < ctx->slots_nb_max; i++) {
     if (ctx->slots[i]) continue;
     /* create a slot */
-    slot = mt_rte_zmalloc_socket(sizeof(*slot), ctx->socket);
+    slot = mt_rte_zmalloc_socket(sizeof(*slot), mt_socket_id(ctx->mt, port));
     if (!slot) {
       err("%s, slot malloc fail\n", __func__);
       mt_pthread_mutex_unlock(&ctx->slots_lock);
@@ -355,6 +361,10 @@ int mufd_socket(int domain, int type, int protocol) {
 
   info("%s(%d), succ, fd %d\n", __func__, idx, fd);
   return fd;
+}
+
+int mufd_socket(int domain, int type, int protocol) {
+  return mufd_socket_port(domain, type, protocol, MTL_PORT_P);
 }
 
 int mufd_close(int sockfd) {
