@@ -226,9 +226,13 @@ int main(int argc, char** argv) {
     if (ctx.udp_tx_bps) mudp_set_tx_rate(app[i]->socket, ctx.udp_tx_bps);
     mudp_init_sockaddr(&app[i]->client_addr, ctx.rx_sip_addr[MTL_PORT_P],
                        ctx.udp_port + i);
+    bool mcast = mudp_is_multicast(&app[i]->client_addr);
 
-    mudp_init_sockaddr(&app[i]->bind_addr, ctx.param.sip_addr[MTL_PORT_P],
-                       ctx.udp_port + i);
+    if (mcast) /* bind to any addr for mcast */
+      mudp_init_sockaddr_any(&app[i]->bind_addr, ctx.udp_port + i);
+    else
+      mudp_init_sockaddr(&app[i]->bind_addr, ctx.param.sip_addr[MTL_PORT_P],
+                         ctx.udp_port + i);
     ret = mudp_bind(app[i]->socket, (const struct sockaddr*)&app[i]->bind_addr,
                     sizeof(app[i]->bind_addr));
     if (ret < 0) {
@@ -243,6 +247,22 @@ int main(int argc, char** argv) {
     if (ret < 0) {
       err("%s(%d), SO_RCVTIMEO fail %d\n", __func__, i, ret);
       goto error;
+    }
+
+    if (mcast) {
+      struct ip_mreq mreq;
+      memset(&mreq, 0, sizeof(mreq));
+      /* multicast addr */
+      mreq.imr_multiaddr.s_addr = app[i]->client_addr.sin_addr.s_addr;
+      /* local nic src ip */
+      memcpy(&mreq.imr_interface.s_addr, ctx.param.sip_addr[MTL_PORT_P], MTL_IP_ADDR_LEN);
+      ret = mudp_setsockopt(app[i]->socket, IPPROTO_IP, IP_ADD_MEMBERSHIP, &mreq,
+                            sizeof(mreq));
+      if (ret < 0) {
+        err("%s(%d), join multicast fail %d\n", __func__, i, ret);
+        goto error;
+      }
+      info("%s(%d), join multicast succ\n", __func__, i);
     }
 
     if (ctx.udp_mode == SAMPLE_UDP_TRANSPORT) {
@@ -299,7 +319,21 @@ int main(int argc, char** argv) {
 error:
   for (int i = 0; i < session_num; i++) {
     if (app[i]) {
-      if (app[i]->socket) mudp_close(app[i]->socket);
+      if (app[i]->socket) {
+        bool mcast = mudp_is_multicast(&app[i]->client_addr);
+        if (mcast) {
+          struct ip_mreq mreq;
+          memset(&mreq, 0, sizeof(mreq));
+          /* multicast addr */
+          mreq.imr_multiaddr.s_addr = app[i]->client_addr.sin_addr.s_addr;
+          /* local nic src ip */
+          memcpy(&mreq.imr_interface.s_addr, ctx.param.sip_addr[MTL_PORT_P],
+                 MTL_IP_ADDR_LEN);
+          mudp_setsockopt(app[i]->socket, IPPROTO_IP, IP_DROP_MEMBERSHIP, &mreq,
+                          sizeof(mreq));
+        }
+        mudp_close(app[i]->socket);
+      }
       st_pthread_mutex_destroy(&app[i]->wake_mutex);
       st_pthread_cond_destroy(&app[i]->wake_cond);
       free(app[i]);

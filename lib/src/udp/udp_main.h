@@ -17,6 +17,8 @@
 #define MUDP_TXQ_ALLOC (MTL_BIT32(1))
 /* if rxq alloc or not */
 #define MUDP_RXQ_ALLOC (MTL_BIT32(2))
+/* if mcast init or not */
+#define MUDP_MCAST_INIT (MTL_BIT32(3))
 
 /* 1g */
 #define MUDP_DEFAULT_RL_BPS (1ul * 1024 * 1024 * 1024)
@@ -47,6 +49,10 @@ struct mudp_impl {
   int arp_timeout_ms;
   int tx_timeout_ms;
   int rx_timeout_ms;
+
+  uint32_t* mcast_addrs;
+  int mcast_addrs_nb;
+  pthread_mutex_t mcast_addrs_mutex;
 
   uint32_t flags;
 

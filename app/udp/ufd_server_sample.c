@@ -22,6 +22,8 @@ struct ufd_server_sample_ctx {
 
   int send_cnt;
   int recv_cnt;
+  ssize_t recv_len;
+  uint64_t last_stat_time;
 };
 
 struct ufd_server_samples_ctx {
@@ -48,6 +50,7 @@ static void* ufd_server_thread(void* arg) {
       continue;
     }
     s->recv_cnt++;
+    s->recv_len += recv;
     dbg("%s(%d), recv %d bytes\n", __func__, s->idx, (int)recv);
     ssize_t send =
         mufd_sendto(socket, buf, recv, 0, (const struct sockaddr*)&s->client_addr,
@@ -77,6 +80,7 @@ static void* ufd_server_transport_thread(void* arg) {
       continue;
     }
     s->recv_cnt++;
+    s->recv_len += recv;
   }
   info("%s(%d), stop\n", __func__, s->idx);
 
@@ -104,6 +108,7 @@ static void* ufd_server_transport_poll_thread(void* arg) {
       continue;
     }
     s->recv_cnt++;
+    s->recv_len += recv;
   }
   info("%s(%d), stop\n", __func__, s->idx);
 
@@ -148,9 +153,17 @@ static void* ufd_servers_poll_thread(void* arg) {
 }
 
 static void ufd_server_status(struct ufd_server_sample_ctx* s) {
-  info("%s(%d), send %d pkts recv %d pkts\n", __func__, s->idx, s->send_cnt, s->recv_cnt);
+  uint64_t cur_ts = sample_get_monotonic_time();
+  double time_sec = (double)(cur_ts - s->last_stat_time) / NS_PER_S;
+  double bps = (double)s->recv_len * 8 / time_sec;
+  double bps_g = bps / (1000 * 1000 * 1000);
+  s->last_stat_time = cur_ts;
+
+  info("%s(%d), send %d pkts recv %d pkts(%fg/s)\n", __func__, s->idx, s->send_cnt,
+       s->recv_cnt, bps_g);
   s->send_cnt = 0;
   s->recv_cnt = 0;
+  s->recv_len = 0;
 }
 
 static void ufd_server_sig_handler(int signo) {
@@ -215,9 +228,13 @@ int main(int argc, char** argv) {
     if (ctx.udp_tx_bps) mufd_set_tx_rate(app[i]->socket, ctx.udp_tx_bps);
     mufd_init_sockaddr(&app[i]->client_addr, ctx.rx_sip_addr[MTL_PORT_P],
                        ctx.udp_port + i);
+    bool mcast = mudp_is_multicast(&app[i]->client_addr);
 
-    mudp_init_sockaddr(&app[i]->bind_addr, ctx.param.sip_addr[MTL_PORT_P],
-                       ctx.udp_port + i);
+    if (mcast) /* bind to any addr for mcast */
+      mudp_init_sockaddr_any(&app[i]->bind_addr, ctx.udp_port + i);
+    else
+      mudp_init_sockaddr(&app[i]->bind_addr, ctx.param.sip_addr[MTL_PORT_P],
+                         ctx.udp_port + i);
     ret = mufd_bind(app[i]->socket, (const struct sockaddr*)&app[i]->bind_addr,
                     sizeof(app[i]->bind_addr));
     if (ret < 0) {
@@ -232,6 +249,22 @@ int main(int argc, char** argv) {
     if (ret < 0) {
       err("%s(%d), SO_RCVTIMEO fail %d\n", __func__, i, ret);
       goto error;
+    }
+
+    if (mcast) {
+      struct ip_mreq mreq;
+      memset(&mreq, 0, sizeof(mreq));
+      /* multicast addr */
+      mreq.imr_multiaddr.s_addr = app[i]->client_addr.sin_addr.s_addr;
+      /* local nic src ip */
+      memcpy(&mreq.imr_interface.s_addr, ctx.param.sip_addr[MTL_PORT_P], MTL_IP_ADDR_LEN);
+      ret = mufd_setsockopt(app[i]->socket, IPPROTO_IP, IP_ADD_MEMBERSHIP, &mreq,
+                            sizeof(mreq));
+      if (ret < 0) {
+        err("%s(%d), join multicast fail %d\n", __func__, i, ret);
+        goto error;
+      }
+      info("%s(%d), join multicast succ\n", __func__, i);
     }
 
     if (ctx.udp_mode == SAMPLE_UDP_TRANSPORT) {
@@ -251,6 +284,7 @@ int main(int argc, char** argv) {
       err("%s(%d), thread create fail %d\n", __func__, i, ret);
       goto error;
     }
+    app[i]->last_stat_time = sample_get_monotonic_time();
   }
 
   int time_s = 0;
@@ -287,7 +321,21 @@ int main(int argc, char** argv) {
 error:
   for (int i = 0; i < session_num; i++) {
     if (app[i]) {
-      if (app[i]->socket >= 0) mufd_close(app[i]->socket);
+      if (app[i]->socket >= 0) {
+        bool mcast = mudp_is_multicast(&app[i]->client_addr);
+        if (mcast) {
+          struct ip_mreq mreq;
+          memset(&mreq, 0, sizeof(mreq));
+          /* multicast addr */
+          mreq.imr_multiaddr.s_addr = app[i]->client_addr.sin_addr.s_addr;
+          /* local nic src ip */
+          memcpy(&mreq.imr_interface.s_addr, ctx.param.sip_addr[MTL_PORT_P],
+                 MTL_IP_ADDR_LEN);
+          mufd_setsockopt(app[i]->socket, IPPROTO_IP, IP_DROP_MEMBERSHIP, &mreq,
+                          sizeof(mreq));
+        }
+        mufd_close(app[i]->socket);
+      }
       st_pthread_mutex_destroy(&app[i]->wake_mutex);
       st_pthread_cond_destroy(&app[i]->wake_cond);
       free(app[i]);
