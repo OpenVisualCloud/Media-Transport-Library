@@ -336,6 +336,16 @@ static void inline mudp_init_sockaddr(struct sockaddr_in* saddr,
   saddr->sin_port = htons(port);
 }
 
+/**
+ * Helper to check if one addr is multicast.
+ *
+ * @param saddr
+ *   Point to addr.
+ * @return
+ *   - multicast or not.
+ */
+bool mudp_is_multicast(const struct sockaddr_in* saddr);
+
 #if defined(__cplusplus)
 }
 #endif

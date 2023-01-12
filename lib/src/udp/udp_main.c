@@ -953,3 +953,10 @@ int mudp_get_arp_timeout_ms(mudp_handle ut) {
 
   return s->arp_timeout_ms;
 }
+
+bool mudp_is_multicast(const struct sockaddr_in* saddr) {
+  uint8_t* ip = (uint8_t*)&saddr->sin_addr;
+  bool mcast = mt_is_multicast_ip(ip);
+  dbg("%s, ip %u.%u.%u.%u\n", __func__, ip[0], ip[1], ip[2], ip[3]);
+  return mcast;
+}
