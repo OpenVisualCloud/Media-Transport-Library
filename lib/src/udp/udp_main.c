@@ -561,6 +561,8 @@ static int udp_add_membership(struct mudp_impl* s, const void* optval, socklen_t
     if (!s->mcast_addrs[i]) {
       s->mcast_addrs[i] = group_addr;
       added = true;
+      info("%s(%d), add %d.%d.%d.%d on %d\n", __func__, port, ip[0], ip[1], ip[2], ip[3],
+           i);
       break;
     }
   }
@@ -601,6 +603,8 @@ static int udp_drop_membership(struct mudp_impl* s, const void* optval,
     if (s->mcast_addrs[i] == group_addr) {
       found = true;
       s->mcast_addrs[i] = 0;
+      info("%s(%d), drop %d.%d.%d.%d on %d\n", __func__, port, ip[0], ip[1], ip[2], ip[3],
+           i);
       break;
     }
   }
