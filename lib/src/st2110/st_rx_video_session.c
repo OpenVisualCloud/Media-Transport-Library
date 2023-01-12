@@ -2577,7 +2577,6 @@ static int rv_init_hw(struct mtl_main_impl* impl, struct st_rx_video_session_imp
     memset(&flow, 0, sizeof(flow));
     rte_memcpy(flow.dip_addr, ops->sip_addr[i], MTL_IP_ADDR_LEN);
     rte_memcpy(flow.sip_addr, mt_sip_addr(impl, port), MTL_IP_ADDR_LEN);
-    flow.port_flow = true;
     flow.dst_port = s->st20_dst_port[i];
     if (rv_is_hdr_split(s)) {
       flow.hdr_split = true;

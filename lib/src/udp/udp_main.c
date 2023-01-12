@@ -245,13 +245,6 @@ static int udp_init_txq(struct mtl_main_impl* impl, struct mudp_impl* s,
 }
 
 static int udp_uinit_rxq(struct mtl_main_impl* impl, struct mudp_impl* s) {
-  if (udp_get_flag(s, MUDP_RX_MCAST_JOINED)) {
-    struct sockaddr_in* addr_in = &s->bind_addr;
-    uint8_t* ip = (uint8_t*)&addr_in->sin_addr;
-    mt_mcast_leave(impl, mt_ip_to_u32(ip), s->port);
-    udp_clear_flag(s, MUDP_RX_MCAST_JOINED);
-  }
-
   if (s->rxq) {
     mt_dev_put_rx_queue(impl, s->rxq);
     s->rxq = NULL;
@@ -317,14 +310,11 @@ static int udp_init_rxq(struct mtl_main_impl* impl, struct mudp_impl* s) {
   enum mtl_port port = s->port;
   int idx = s->idx;
   struct sockaddr_in* addr_in = &s->bind_addr;
-  uint8_t* ip = (uint8_t*)&addr_in->sin_addr;
   uint16_t queue_id;
 
   struct mt_rx_flow flow;
   memset(&flow, 0, sizeof(flow));
-  rte_memcpy(flow.dip_addr, ip, MTL_IP_ADDR_LEN);
-  rte_memcpy(flow.sip_addr, mt_sip_addr(impl, port), MTL_IP_ADDR_LEN);
-  flow.port_flow = true;
+  flow.no_ip_flow = true;
   flow.dst_port = ntohs(addr_in->sin_port);
   flow.priv = s;
   flow.cb = udp_rsq_mbuf_cb;
@@ -362,18 +352,7 @@ static int udp_init_rxq(struct mtl_main_impl* impl, struct mudp_impl* s) {
   }
   s->rx_ring = ring;
 
-  if (mt_is_multicast_ip(ip)) {
-    int ret = mt_mcast_join(impl, mt_ip_to_u32(ip), port);
-    if (ret < 0) {
-      err("%s(%d), mcast join fail\n", __func__, idx);
-      udp_uinit_rxq(impl, s);
-      return ret;
-    }
-    udp_set_flag(s, MUDP_RX_MCAST_JOINED);
-  }
-
-  info("%s(%d), succ, ip %u.%u.%u.%u port %u\n", __func__, idx, ip[0], ip[1], ip[2],
-       ip[3], ntohs(addr_in->sin_port));
+  info("%s(%d), succ, port %u\n", __func__, idx, ntohs(addr_in->sin_port));
   udp_set_flag(s, MUDP_RXQ_ALLOC);
   return 0;
 }
@@ -469,6 +448,41 @@ static int udp_set_rcvbuf(struct mudp_impl* s, const void* optval, socklen_t opt
   return 0;
 }
 
+static int udp_get_rcvtimeo(struct mudp_impl* s, void* optval, socklen_t* optlen) {
+  int idx = s->idx;
+  struct timeval* tv;
+  size_t sz = sizeof(*tv);
+  int ms;
+
+  if (*optlen != sz) {
+    err("%s(%d), invalid *optlen %d\n", __func__, idx, (int)(*optlen));
+    return -EINVAL;
+  }
+
+  ms = mudp_get_rx_timeout_ms(s);
+  tv = (struct timeval*)optval;
+  tv->tv_sec = ms / 1000;
+  tv->tv_usec = (ms % 1000) * 1000;
+  return 0;
+}
+
+static int udp_set_rcvtimeo(struct mudp_impl* s, const void* optval, socklen_t optlen) {
+  int idx = s->idx;
+  const struct timeval* tv;
+  size_t sz = sizeof(*tv);
+  int ms;
+
+  if (optlen != sz) {
+    err("%s(%d), invalid optlen %d\n", __func__, idx, (int)optlen);
+    return -EINVAL;
+  }
+
+  tv = (const struct timeval*)optval;
+  ms = tv->tv_sec * 1000 + tv->tv_usec / 1000;
+  mudp_set_rx_timeout_ms(s, ms);
+  return 0;
+}
+
 mudp_handle mudp_socket_port(mtl_handle mt, int domain, int type, int protocol,
                              enum mtl_port port) {
   int ret;
@@ -498,7 +512,7 @@ mudp_handle mudp_socket_port(mtl_handle mt, int domain, int type, int protocol,
   s->element_size = MUDP_MAX_BYTES;
   s->arp_timeout_ms = 0;
   s->tx_timeout_ms = 10;
-  s->rx_timeout_ms = 10;
+  s->rx_timeout_ms = 1000 * 1;
   s->txq_bps = MUDP_DEFAULT_RL_BPS;
   s->rx_burst_pkts = 128;
   s->rx_ring_thresh = s->rx_burst_pkts / 2;
@@ -782,6 +796,8 @@ int mudp_getsockopt(mudp_handle ut, int level, int optname, void* optval,
     case SO_RCVBUFFORCE:
 #endif
       return udp_get_rcvbuf(s, optval, optlen);
+    case SO_RCVTIMEO:
+      return udp_get_rcvtimeo(s, optval, optlen);
     default:
       err("%s(%d), unknown optname %d\n", __func__, idx, optname);
       return -EINVAL;
@@ -811,6 +827,8 @@ int mudp_setsockopt(mudp_handle ut, int level, int optname, const void* optval,
     case SO_RCVBUFFORCE:
 #endif
       return udp_set_rcvbuf(s, optval, optlen);
+    case SO_RCVTIMEO:
+      return udp_set_rcvtimeo(s, optval, optlen);
     default:
       err("%s(%d), unknown optname %d\n", __func__, idx, optname);
       return -EINVAL;

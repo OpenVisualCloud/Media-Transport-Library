@@ -176,8 +176,6 @@ uint16_t mt_rsq_burst(struct mt_rsq_entry* entry, uint16_t nb_pkts) {
   uint16_t rx;
   struct mt_rsq_entry* rsq_entry;
   struct mt_udp_hdr* hdr;
-  struct rte_ipv4_hdr* ipv4;
-  uint8_t* sip;
   struct rte_udp_hdr* udp;
 
   mt_pthread_mutex_lock(&rsq_queue->mutex);
@@ -186,15 +184,13 @@ uint16_t mt_rsq_burst(struct mt_rsq_entry* entry, uint16_t nb_pkts) {
   rsq_queue->stat_pkts_recv += rx;
   for (uint16_t i = 0; i < rx; i++) {
     hdr = rte_pktmbuf_mtod(pkts[i], struct mt_udp_hdr*);
-    ipv4 = &hdr->ipv4;
-    sip = (uint8_t*)&ipv4->src_addr;
     udp = &hdr->udp;
-    dbg("%s(%u), pkt %u ip %u.%u.%u.%u, port dst %u src %u\n", __func__, q, i, sip[0],
-        sip[1], sip[2], sip[3], ntohs(udp->dst_port), ntohs(udp->src_port));
+    dbg("%s(%u), pkt %u ip %u.%u.%u.%u, port dst %u src %u\n", __func__, q, i,
+        ntohs(udp->dst_port), ntohs(udp->src_port));
     MT_TAILQ_FOREACH(rsq_entry, &rsq_queue->head, next) {
       /* check if this is the matched pkt or sys entry */
-      if (!memcmp(sip, rsq_entry->flow.dip_addr, MTL_IP_ADDR_LEN) &&
-          (rsq_entry->dst_port_net == udp->dst_port)) {
+      /* only check udp port now, todo chech ip if ip_flow is enabled */
+      if (rsq_entry->dst_port_net == udp->dst_port) {
         rsq_entry->flow.cb(rsq_entry->flow.priv, &pkts[i], 1);
         rsq_queue->stat_pkts_deliver++;
         break;

@@ -258,7 +258,7 @@ int mudp_set_rx_timeout_ms(mudp_handle ut, int ms);
  * @return
  *   - Rx timeout: ms.
  */
-int mudp_get_tx_timeout_ms(mudp_handle ut);
+int mudp_get_rx_timeout_ms(mudp_handle ut);
 
 /**
  * Set the arp timeout(ms) for one udp transport socket.

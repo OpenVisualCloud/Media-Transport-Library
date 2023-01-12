@@ -19,6 +19,7 @@ struct udp_client_sample_ctx {
 
   mudp_handle socket;
   struct sockaddr_in serv_addr;
+  struct sockaddr_in bind_addr;
 
   int udp_len;
 
@@ -173,10 +174,21 @@ int main(int argc, char** argv) {
     }
     if (ctx.udp_tx_bps) mudp_set_tx_rate(app[i]->socket, ctx.udp_tx_bps);
 
-    ret = mudp_bind(app[i]->socket, (const struct sockaddr*)&app[i]->serv_addr,
-                    sizeof(app[i]->serv_addr));
+    mudp_init_sockaddr(&app[i]->bind_addr, ctx.param.sip_addr[MTL_PORT_P],
+                       ctx.udp_port + i);
+    ret = mudp_bind(app[i]->socket, (const struct sockaddr*)&app[i]->bind_addr,
+                    sizeof(app[i]->bind_addr));
     if (ret < 0) {
       err("%s(%d), bind fail %d\n", __func__, i, ret);
+      goto error;
+    }
+
+    struct timeval tv;
+    tv.tv_sec = 0;
+    tv.tv_usec = 1000;
+    ret = mudp_setsockopt(app[i]->socket, SOL_SOCKET, SO_RCVTIMEO, &tv, sizeof(tv));
+    if (ret < 0) {
+      err("%s(%d), SO_RCVTIMEO fail %d\n", __func__, i, ret);
       goto error;
     }
 

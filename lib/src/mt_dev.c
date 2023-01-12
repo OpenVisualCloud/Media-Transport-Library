@@ -612,9 +612,18 @@ static struct rte_flow* dev_rx_queue_create_flow(struct mt_interface* inf, uint1
   struct rte_flow_error error;
   struct rte_flow* r_flow;
   int ret;
+  bool has_ip_flow = true;
+  bool has_port_flow = true;
 
   uint16_t port_id = inf->port_id;
   enum mt_driver_type drv_type = inf->drv_type;
+
+  /* igc drv not support ip flow */
+  if (drv_type == MT_DRV_IGC) has_ip_flow = false;
+  /* no ip flow requested */
+  if (flow->no_ip_flow) has_ip_flow = false;
+  /* no port flow requested */
+  if (flow->no_port_flow) has_port_flow = false;
 
   /* only raw flow can be applied on the hdr split queue */
   if (mt_if_hdr_split_pool(inf, q)) {
@@ -633,7 +642,7 @@ static struct rte_flow* dev_rx_queue_create_flow(struct mt_interface* inf, uint1
   memset(&ipv4_mask, 0, sizeof(ipv4_mask));
   ipv4_spec.hdr.next_proto_id = IPPROTO_UDP;
 
-  if (drv_type != MT_DRV_IGC) {
+  if (has_ip_flow) {
     memset(&ipv4_mask.hdr.dst_addr, 0xFF, MTL_IP_ADDR_LEN);
     if (mt_is_multicast_ip(flow->dip_addr)) {
       rte_memcpy(&ipv4_spec.hdr.dst_addr, flow->dip_addr, MTL_IP_ADDR_LEN);
@@ -644,8 +653,8 @@ static struct rte_flow* dev_rx_queue_create_flow(struct mt_interface* inf, uint1
     }
   }
 
-  /* udp flow */
-  if (flow->port_flow) {
+  /* udp port flow */
+  if (has_port_flow) {
     memset(&udp_spec, 0, sizeof(udp_spec));
     memset(&udp_mask, 0, sizeof(udp_mask));
     udp_spec.hdr.dst_port = htons(flow->dst_port);
@@ -662,12 +671,12 @@ static struct rte_flow* dev_rx_queue_create_flow(struct mt_interface* inf, uint1
 
   memset(pattern, 0, sizeof(pattern));
   pattern[0].type = RTE_FLOW_ITEM_TYPE_ETH;
-  pattern[0].spec = (drv_type == MT_DRV_IGC) ? NULL : &eth_spec;
-  pattern[0].mask = (drv_type == MT_DRV_IGC) ? NULL : &eth_mask;
+  pattern[0].spec = has_ip_flow ? &eth_spec : NULL;
+  pattern[0].mask = has_ip_flow ? &eth_mask : NULL;
   pattern[1].type = RTE_FLOW_ITEM_TYPE_IPV4;
   pattern[1].spec = &ipv4_spec;
   pattern[1].mask = &ipv4_mask;
-  if (flow->port_flow) {
+  if (has_port_flow) {
     pattern[2].type = RTE_FLOW_ITEM_TYPE_UDP;
     pattern[2].spec = &udp_spec;
     pattern[2].mask = &udp_mask;
