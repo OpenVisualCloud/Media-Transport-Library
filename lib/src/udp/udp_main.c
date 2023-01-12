@@ -483,6 +483,137 @@ static int udp_set_rcvtimeo(struct mudp_impl* s, const void* optval, socklen_t o
   return 0;
 }
 
+static int udp_init_mcast(struct mtl_main_impl* impl, struct mudp_impl* s) {
+  int idx = s->idx;
+  enum mtl_port port = s->port;
+
+  if (s->mcast_addrs) {
+    err("%s(%d), mcast addrs already init\n", __func__, idx);
+    return -EIO;
+  }
+  s->mcast_addrs = mt_rte_zmalloc_socket(sizeof(*s->mcast_addrs) * s->mcast_addrs_nb,
+                                         mt_socket_id(impl, port));
+  if (!s->mcast_addrs) {
+    err("%s(%d), mcast addrs malloc fail\n", __func__, idx);
+    return -ENOMEM;
+  }
+
+  udp_set_flag(s, MUDP_MCAST_INIT);
+  return 0;
+}
+
+static int udp_uinit_mcast(struct mtl_main_impl* impl, struct mudp_impl* s) {
+  int idx = s->idx;
+
+  if (!s->mcast_addrs) {
+    dbg("%s(%d), mcast addrs not init\n", __func__, idx);
+    return 0;
+  }
+
+  for (int i = 0; i < s->mcast_addrs_nb; i++) {
+    if (s->mcast_addrs[i]) {
+      warn("%s(%d), mcast still active on %d\n", __func__, idx, i);
+      break;
+    }
+  }
+
+  mt_rte_free(s->mcast_addrs);
+  s->mcast_addrs = NULL;
+  udp_clear_flag(s, MUDP_MCAST_INIT);
+  return 0;
+}
+
+static int udp_add_membership(struct mudp_impl* s, const void* optval, socklen_t optlen) {
+  int idx = s->idx;
+  struct mtl_main_impl* impl = s->parnet;
+  enum mtl_port port = s->port;
+  const struct ip_mreq* mreq;
+  size_t sz = sizeof(*mreq);
+  uint8_t* ip;
+  int ret;
+
+  if (optlen != sz) {
+    err("%s(%d), invalid optlen %d\n", __func__, idx, (int)optlen);
+    return -EINVAL;
+  }
+
+  /* init mcast if not */
+  if (!udp_get_flag(s, MUDP_MCAST_INIT)) {
+    ret = udp_init_mcast(impl, s);
+    if (ret < 0) {
+      err("%s(%d), init mcast fail\n", __func__, idx);
+      return ret;
+    }
+  }
+
+  mreq = (const struct ip_mreq*)optval;
+  ip = (uint8_t*)&mreq->imr_multiaddr.s_addr;
+  uint32_t group_addr = mt_ip_to_u32(ip);
+  ret = mt_mcast_join(s->parnet, group_addr, port);
+  if (ret < 0) {
+    err("%s(%d), join mcast fail\n", __func__, idx);
+    return ret;
+  }
+
+  bool added = false;
+  mt_pthread_mutex_lock(&s->mcast_addrs_mutex);
+  for (int i = 0; i < s->mcast_addrs_nb; i++) {
+    if (!s->mcast_addrs[i]) {
+      s->mcast_addrs[i] = group_addr;
+      added = true;
+      break;
+    }
+  }
+  mt_pthread_mutex_unlock(&s->mcast_addrs_mutex);
+  if (!added) {
+    err("%s(%d), record mcast fail\n", __func__, idx);
+    mt_mcast_leave(s->parnet, group_addr, port);
+    return -EIO;
+  }
+
+  return 0;
+}
+
+static int udp_drop_membership(struct mudp_impl* s, const void* optval,
+                               socklen_t optlen) {
+  int idx = s->idx;
+  enum mtl_port port = s->port;
+  const struct ip_mreq* mreq;
+  size_t sz = sizeof(*mreq);
+  uint8_t* ip;
+
+  if (optlen != sz) {
+    err("%s(%d), invalid optlen %d\n", __func__, idx, (int)optlen);
+    return -EINVAL;
+  }
+  if (!s->mcast_addrs) {
+    err("%s(%d), mcast addrs not init\n", __func__, idx);
+    return -EIO;
+  }
+
+  mreq = (const struct ip_mreq*)optval;
+  ip = (uint8_t*)&mreq->imr_multiaddr.s_addr;
+  uint32_t group_addr = mt_ip_to_u32(ip);
+
+  bool found = false;
+  mt_pthread_mutex_lock(&s->mcast_addrs_mutex);
+  for (int i = 0; i < s->mcast_addrs_nb; i++) {
+    if (s->mcast_addrs[i] == group_addr) {
+      found = true;
+      s->mcast_addrs[i] = 0;
+      break;
+    }
+  }
+  mt_pthread_mutex_unlock(&s->mcast_addrs_mutex);
+  if (!found) {
+    err("%s(%d), record mcast not found\n", __func__, idx);
+    return -EIO;
+  }
+
+  mt_mcast_leave(s->parnet, group_addr, port);
+  return 0;
+}
+
 mudp_handle mudp_socket_port(mtl_handle mt, int domain, int type, int protocol,
                              enum mtl_port port) {
   int ret;
@@ -518,6 +649,8 @@ mudp_handle mudp_socket_port(mtl_handle mt, int domain, int type, int protocol,
   s->rx_ring_thresh = s->rx_burst_pkts / 2;
   s->sndbuf_sz = 10 * 1024;
   s->rcvbuf_sz = 10 * 1024;
+  s->mcast_addrs_nb = 16; /* max 16 mcast address */
+  mt_pthread_mutex_init(&s->mcast_addrs_mutex, NULL);
 
   ret = udp_init_hdr(impl, s);
   if (ret < 0) {
@@ -555,7 +688,9 @@ int mudp_close(mudp_handle ut) {
 
   udp_uinit_txq(impl, s);
   udp_uinit_rxq(impl, s);
+  udp_uinit_mcast(impl, s);
 
+  mt_pthread_mutex_destroy(&s->mcast_addrs_mutex);
   mt_rte_free(s);
   info("%s(%d), succ\n", __func__, idx);
   return 0;
@@ -780,26 +915,28 @@ int mudp_getsockopt(mudp_handle ut, int level, int optname, void* optval,
   struct mudp_impl* s = ut;
   int idx = s->idx;
 
-  if (level != SOL_SOCKET) {
-    err("%s(%d), unknown level %d\n", __func__, idx, level);
-    return -EINVAL;
-  }
-
-  switch (optname) {
-    case SO_SNDBUF:
+  switch (level) {
+    case SOL_SOCKET: {
+      switch (optname) {
+        case SO_SNDBUF:
 #ifdef SO_SNDBUFFORCE
-    case SO_SNDBUFFORCE:
+        case SO_SNDBUFFORCE:
 #endif
-      return udp_get_sndbuf(s, optval, optlen);
-    case SO_RCVBUF:
+          return udp_get_sndbuf(s, optval, optlen);
+        case SO_RCVBUF:
 #ifdef SO_RCVBUFFORCE
-    case SO_RCVBUFFORCE:
+        case SO_RCVBUFFORCE:
 #endif
-      return udp_get_rcvbuf(s, optval, optlen);
-    case SO_RCVTIMEO:
-      return udp_get_rcvtimeo(s, optval, optlen);
+          return udp_get_rcvbuf(s, optval, optlen);
+        case SO_RCVTIMEO:
+          return udp_get_rcvtimeo(s, optval, optlen);
+        default:
+          err("%s(%d), unknown optname %d for SOL_SOCKET\n", __func__, idx, optname);
+          return -EINVAL;
+      }
+    }
     default:
-      err("%s(%d), unknown optname %d\n", __func__, idx, optname);
+      err("%s(%d), unknown level %d\n", __func__, idx, level);
       return -EINVAL;
   }
 
@@ -811,26 +948,39 @@ int mudp_setsockopt(mudp_handle ut, int level, int optname, const void* optval,
   struct mudp_impl* s = ut;
   int idx = s->idx;
 
-  if (level != SOL_SOCKET) {
-    err("%s(%d), unknown level %d\n", __func__, idx, level);
-    return -EINVAL;
-  }
-
-  switch (optname) {
-    case SO_SNDBUF:
+  switch (level) {
+    case SOL_SOCKET: {
+      switch (optname) {
+        case SO_SNDBUF:
 #ifdef SO_SNDBUFFORCE
-    case SO_SNDBUFFORCE:
+        case SO_SNDBUFFORCE:
 #endif
-      return udp_set_sndbuf(s, optval, optlen);
-    case SO_RCVBUF:
+          return udp_set_sndbuf(s, optval, optlen);
+        case SO_RCVBUF:
 #ifdef SO_RCVBUFFORCE
-    case SO_RCVBUFFORCE:
+        case SO_RCVBUFFORCE:
 #endif
-      return udp_set_rcvbuf(s, optval, optlen);
-    case SO_RCVTIMEO:
-      return udp_set_rcvtimeo(s, optval, optlen);
+          return udp_set_rcvbuf(s, optval, optlen);
+        case SO_RCVTIMEO:
+          return udp_set_rcvtimeo(s, optval, optlen);
+        default:
+          err("%s(%d), unknown optname %d for SOL_SOCKET\n", __func__, idx, optname);
+          return -EINVAL;
+      }
+    }
+    case IPPROTO_IP: {
+      switch (optname) {
+        case IP_ADD_MEMBERSHIP:
+          return udp_add_membership(s, optval, optlen);
+        case IP_DROP_MEMBERSHIP:
+          return udp_drop_membership(s, optval, optlen);
+        default:
+          err("%s(%d), unknown optname %d for IPPROTO_IP\n", __func__, idx, optname);
+          return -EINVAL;
+      }
+    }
     default:
-      err("%s(%d), unknown optname %d\n", __func__, idx, optname);
+      err("%s(%d), unknown level %d\n", __func__, idx, level);
       return -EINVAL;
   }
 
