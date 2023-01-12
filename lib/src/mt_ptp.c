@@ -712,7 +712,7 @@ static int ptp_init(struct mtl_main_impl* impl, struct mt_ptp_impl* ptp,
   memset(&flow, 0, sizeof(flow));
   rte_memcpy(flow.dip_addr, ptp->mcast_group_addr, MTL_IP_ADDR_LEN);
   rte_memcpy(flow.sip_addr, mt_sip_addr(impl, port), MTL_IP_ADDR_LEN);
-  flow.port_flow = false;
+  flow.no_port_flow = true;
   flow.dst_port = MT_PTP_UDP_GEN_PORT;
   ptp->rx_queue = mt_dev_get_rx_queue(impl, port, &flow);
   if (!ptp->rx_queue) {

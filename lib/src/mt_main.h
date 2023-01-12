@@ -374,11 +374,13 @@ typedef int (*mt_rsq_mbuf_cb)(void* priv, struct rte_mbuf** mbuf, uint16_t nb);
 struct mt_rx_flow {
   /* for cni queue */
   bool sys_queue;
-  /* mandatory if not sys_queue */
+  bool no_ip_flow; /* no ip flow, only use port flow, for udp transport */
+  /* mandatory if not no_ip_flow */
   uint8_t dip_addr[MTL_IP_ADDR_LEN]; /* rx destination IP */
   uint8_t sip_addr[MTL_IP_ADDR_LEN]; /* source IP */
-  bool port_flow;                    /* if apply port flow */
+  bool no_port_flow;                 /* if apply port flow or not */
   uint16_t dst_port;                 /* udp destination port */
+
   /* optional */
   bool hdr_split; /* if request hdr split */
   void* hdr_split_mbuf_cb_priv;

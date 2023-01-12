@@ -17,8 +17,6 @@
 #define MUDP_TXQ_ALLOC (MTL_BIT32(1))
 /* if rxq alloc or not */
 #define MUDP_RXQ_ALLOC (MTL_BIT32(2))
-/* if mcast joined or not */
-#define MUDP_RX_MCAST_JOINED (MTL_BIT32(3))
 
 /* 1g */
 #define MUDP_DEFAULT_RL_BPS (1ul * 1024 * 1024 * 1024)
