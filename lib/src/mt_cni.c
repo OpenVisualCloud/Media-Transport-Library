@@ -27,7 +27,7 @@ static int cni_rx_handle(struct mtl_main_impl* impl, struct rte_mbuf* m,
   struct mt_ptp_ipv4_udp* ipv4_hdr;
   size_t hdr_offset = sizeof(struct rte_ether_hdr);
 
-  // mt_mbuf_dump(port, 0, "cni_rx", m);
+  // mt_mbuf_dump_hdr(port, 0, "cni_rx", m);
 
   /* vlan check */
   ether_type = ntohs(eth_hdr->ether_type);

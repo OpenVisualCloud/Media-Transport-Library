@@ -41,10 +41,13 @@ static void* ufd_server_thread(void* arg) {
   int socket = s->socket;
   ssize_t ufd_len = MUDP_MAX_BYTES;
   char buf[ufd_len];
+  struct sockaddr_in cli_addr;
+  socklen_t cli_addr_len = sizeof(cli_addr);
 
   info("%s(%d), start socket %d\n", __func__, s->idx, socket);
   while (!s->stop) {
-    ssize_t recv = mufd_recvfrom(socket, buf, sizeof(buf), 0, NULL, NULL);
+    ssize_t recv = mufd_recvfrom(socket, buf, sizeof(buf), 0, (struct sockaddr*)&cli_addr,
+                                 &cli_addr_len);
     if (recv < 0) {
       dbg("%s(%d), recv fail %d\n", __func__, s->idx, (int)recv);
       continue;
@@ -52,9 +55,8 @@ static void* ufd_server_thread(void* arg) {
     s->recv_cnt++;
     s->recv_len += recv;
     dbg("%s(%d), recv %d bytes\n", __func__, s->idx, (int)recv);
-    ssize_t send =
-        mufd_sendto(socket, buf, recv, 0, (const struct sockaddr*)&s->client_addr,
-                    sizeof(s->client_addr));
+    ssize_t send = mufd_sendto(socket, buf, recv, 0, (const struct sockaddr*)&cli_addr,
+                               cli_addr_len);
     if (send != recv) {
       err("%s(%d), only send %d bytes\n", __func__, s->idx, (int)send);
       continue;
