@@ -1,0 +1,11 @@
+# SPDX-License-Identifier: BSD-3-Clause
+# Copyright 2023 Intel Corporation
+
+# global-owner
+* @jianxind @ricmli
+
+# lib owner
+/lib/ @jianxind @ricmli
+
+# app owner
+/app/ @jianxind @ricmli
