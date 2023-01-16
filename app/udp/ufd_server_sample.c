@@ -24,6 +24,9 @@ struct ufd_server_sample_ctx {
   int recv_cnt;
   ssize_t recv_len;
   uint64_t last_stat_time;
+
+  int send_cnt_total;
+  int recv_cnt_total;
 };
 
 struct ufd_server_samples_ctx {
@@ -53,6 +56,7 @@ static void* ufd_server_thread(void* arg) {
       continue;
     }
     s->recv_cnt++;
+    s->recv_cnt_total++;
     s->recv_len += recv;
     dbg("%s(%d), recv %d bytes\n", __func__, s->idx, (int)recv);
     ssize_t send = mufd_sendto(socket, buf, recv, 0, (const struct sockaddr*)&cli_addr,
@@ -62,6 +66,7 @@ static void* ufd_server_thread(void* arg) {
       continue;
     }
     s->send_cnt++;
+    s->send_cnt_total++;
   }
   info("%s(%d), stop\n", __func__, s->idx);
 
@@ -82,6 +87,7 @@ static void* ufd_server_transport_thread(void* arg) {
       continue;
     }
     s->recv_cnt++;
+    s->recv_cnt_total++;
     s->recv_len += recv;
   }
   info("%s(%d), stop\n", __func__, s->idx);
@@ -110,6 +116,7 @@ static void* ufd_server_transport_poll_thread(void* arg) {
       continue;
     }
     s->recv_cnt++;
+    s->recv_cnt_total++;
     s->recv_len += recv;
   }
   info("%s(%d), stop\n", __func__, s->idx);
@@ -147,6 +154,8 @@ static void* ufd_servers_poll_thread(void* arg) {
         continue;
       }
       s->recv_cnt++;
+      s->recv_cnt_total++;
+      s->recv_len += recv;
     }
   }
   info("%s, stop\n", __func__);
@@ -317,6 +326,21 @@ int main(int argc, char** argv) {
       st_pthread_cond_signal(&app[i]->wake_cond);
       st_pthread_mutex_unlock(&app[i]->wake_mutex);
       pthread_join(app[i]->thread, NULL);
+    }
+  }
+
+  // check result
+  ret = 0;
+  for (int i = 0; i < session_num; i++) {
+    info("%s(%d), recv_cnt_total %d\n", __func__, i, app[i]->recv_cnt_total);
+    if (app[i]->recv_cnt_total <= 0) {
+      ret += -EIO;
+    }
+    if (ctx.udp_mode == SAMPLE_UDP_DEFAULT) {
+      info("%s(%d), send_cnt_total %d\n", __func__, i, app[i]->send_cnt_total);
+      if (app[i]->send_cnt_total <= 0) {
+        ret += -EIO;
+      }
     }
   }
 

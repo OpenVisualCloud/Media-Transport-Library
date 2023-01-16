@@ -3,7 +3,7 @@
     "nb_nic_queues" : "8",
     "nic_shared_queues": true,
     "nic_queue_rate_limit_g": "2",
-    "log_level" : "info",
+    "log_level" : "notice",
     "fd_base" : "20000",
     "interfaces": [
         {
