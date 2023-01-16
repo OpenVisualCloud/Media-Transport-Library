@@ -206,7 +206,7 @@ static int app_tx_st22p_init(struct st_app_context* ctx, st_json_st22p_session_t
           MTL_PORT_MAX_LEN);
   ops.port.udp_port[MTL_PORT_P] = st22p ? st22p->base.udp_port : (10000 + s->idx);
   if (ctx->has_tx_dst_mac[MTL_PORT_P]) {
-    memcpy(&ops.tx_dst_mac[MTL_PORT_P][0], ctx->tx_dst_mac[MTL_PORT_P], 6);
+    memcpy(&ops.tx_dst_mac[MTL_PORT_P][0], ctx->tx_dst_mac[MTL_PORT_P], MTL_MAC_ADDR_LEN);
     ops.flags |= ST22P_TX_FLAG_USER_P_MAC;
   }
   if (ops.port.num_port > 1) {
@@ -218,7 +218,8 @@ static int app_tx_st22p_init(struct st_app_context* ctx, st_json_st22p_session_t
             MTL_PORT_MAX_LEN);
     ops.port.udp_port[MTL_PORT_R] = st22p ? st22p->base.udp_port : (10000 + s->idx);
     if (ctx->has_tx_dst_mac[MTL_PORT_R]) {
-      memcpy(&ops.tx_dst_mac[MTL_PORT_R][0], ctx->tx_dst_mac[MTL_PORT_R], 6);
+      memcpy(&ops.tx_dst_mac[MTL_PORT_R][0], ctx->tx_dst_mac[MTL_PORT_R],
+             MTL_MAC_ADDR_LEN);
       ops.flags |= ST22P_TX_FLAG_USER_R_MAC;
     }
   }

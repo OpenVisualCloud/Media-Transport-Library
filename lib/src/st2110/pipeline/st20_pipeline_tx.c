@@ -235,11 +235,13 @@ static int tx_st20p_create_transport(struct mtl_main_impl* impl, struct st20p_tx
     ops_tx.udp_port[i] = ops->port.udp_port[i];
   }
   if (ops->flags & ST20P_TX_FLAG_USER_P_MAC) {
-    memcpy(&ops_tx.tx_dst_mac[MTL_PORT_P][0], &ops->tx_dst_mac[MTL_PORT_P][0], 6);
+    memcpy(&ops_tx.tx_dst_mac[MTL_PORT_P][0], &ops->tx_dst_mac[MTL_PORT_P][0],
+           MTL_MAC_ADDR_LEN);
     ops_tx.flags |= ST20_TX_FLAG_USER_P_MAC;
   }
   if (ops->flags & ST20P_TX_FLAG_USER_R_MAC) {
-    memcpy(&ops_tx.tx_dst_mac[MTL_PORT_R][0], &ops->tx_dst_mac[MTL_PORT_R][0], 6);
+    memcpy(&ops_tx.tx_dst_mac[MTL_PORT_R][0], &ops->tx_dst_mac[MTL_PORT_R][0],
+           MTL_MAC_ADDR_LEN);
     ops_tx.flags |= ST20_TX_FLAG_USER_R_MAC;
   }
   ops_tx.pacing = ST21_PACING_NARROW;

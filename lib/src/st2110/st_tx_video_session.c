@@ -3149,7 +3149,8 @@ st22_tx_handle st22_tx_create(mtl_handle mt, struct st22_tx_ops* ops) {
   strncpy(st20_ops.port[MTL_PORT_P], ops->port[MTL_PORT_P], MTL_PORT_MAX_LEN);
   st20_ops.udp_port[MTL_PORT_P] = ops->udp_port[MTL_PORT_P];
   if (ops->flags & ST22_TX_FLAG_USER_P_MAC) {
-    memcpy(&st20_ops.tx_dst_mac[MTL_PORT_P][0], &ops->tx_dst_mac[MTL_PORT_P][0], 6);
+    memcpy(&st20_ops.tx_dst_mac[MTL_PORT_P][0], &ops->tx_dst_mac[MTL_PORT_P][0],
+           MTL_MAC_ADDR_LEN);
     st20_ops.flags |= ST20_TX_FLAG_USER_P_MAC;
   }
   if (ops->num_port > 1) {
@@ -3157,7 +3158,8 @@ st22_tx_handle st22_tx_create(mtl_handle mt, struct st22_tx_ops* ops) {
     strncpy(st20_ops.port[MTL_PORT_R], ops->port[MTL_PORT_R], MTL_PORT_MAX_LEN);
     st20_ops.udp_port[MTL_PORT_R] = ops->udp_port[MTL_PORT_R];
     if (ops->flags & ST22_TX_FLAG_USER_R_MAC) {
-      memcpy(&st20_ops.tx_dst_mac[MTL_PORT_R][0], &ops->tx_dst_mac[MTL_PORT_R][0], 6);
+      memcpy(&st20_ops.tx_dst_mac[MTL_PORT_R][0], &ops->tx_dst_mac[MTL_PORT_R][0],
+             MTL_MAC_ADDR_LEN);
       st20_ops.flags |= ST20_TX_FLAG_USER_R_MAC;
     }
   }
