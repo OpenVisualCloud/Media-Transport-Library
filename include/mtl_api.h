@@ -66,6 +66,10 @@ extern "C" {
  */
 #define MTL_IP_ADDR_LEN (4)
 /**
+ * Length of a mac address
+ */
+#define MTL_MAC_ADDR_LEN (6)
+/**
  * Defined if current platform is little endian
  */
 #define MTL_LITTLE_ENDIAN /* x86 use little endian */

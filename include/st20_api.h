@@ -880,7 +880,7 @@ struct st20_tx_ops {
    * tx destination mac address.
    * Valid if ST20_TX_FLAG_USER_P(R)_MAC is enabled
    */
-  uint8_t tx_dst_mac[MTL_PORT_MAX][6];
+  uint8_t tx_dst_mac[MTL_PORT_MAX][MTL_MAC_ADDR_LEN];
 
   /**
    * the frame buffer count requested for one st20 tx session,
@@ -987,7 +987,7 @@ struct st22_tx_ops {
    * tx destination mac address.
    * Valid if ST22_TX_FLAG_USER_P(R)_MAC is enabled
    */
-  uint8_t tx_dst_mac[MTL_PORT_MAX][6];
+  uint8_t tx_dst_mac[MTL_PORT_MAX][MTL_MAC_ADDR_LEN];
 
   /**
    * the frame buffer count requested for one st22 tx session,

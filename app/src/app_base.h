@@ -468,7 +468,7 @@ struct st_app_context {
   bool stop;
   uint8_t tx_dip_addr[MTL_PORT_MAX][MTL_IP_ADDR_LEN]; /* tx destination IP */
   bool has_tx_dst_mac[MTL_PORT_MAX];
-  uint8_t tx_dst_mac[MTL_PORT_MAX][6];
+  uint8_t tx_dst_mac[MTL_PORT_MAX][MTL_MAC_ADDR_LEN];
 
   int lcore[ST_APP_MAX_LCORES];
   int rtp_lcore[ST_APP_MAX_LCORES];
