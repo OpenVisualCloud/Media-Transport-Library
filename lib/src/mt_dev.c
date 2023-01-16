@@ -528,7 +528,9 @@ static int dev_tx_queue_set_rl_rate(struct mtl_main_impl* impl, enum mtl_port po
          shaper->shaper_profile_id);
   }
 
+  mt_pthread_mutex_lock(&inf->vf_cmd_mutex);
   ret = rte_tm_hierarchy_commit(port_id, 1, &error);
+  mt_pthread_mutex_unlock(&inf->vf_cmd_mutex);
   if (ret < 0) {
     err("%s(%d), commit error (%d)%s\n", __func__, port, ret, error.message);
     return ret;
@@ -579,7 +581,9 @@ static struct rte_flow* dev_rx_queue_create_flow_raw(struct mt_interface* inf, u
   action[0].conf = &to_queue;
   action[1].type = RTE_FLOW_ACTION_TYPE_END;
 
+  mt_pthread_mutex_lock(&inf->vf_cmd_mutex);
   r_flow = rte_flow_create(port_id, &attr, pattern, action, &error);
+  mt_pthread_mutex_unlock(&inf->vf_cmd_mutex);
   if (!r_flow) {
     err("%s(%d), rte_flow_create fail for queue %d, %s\n", __func__, port_id, q,
         error.message);
@@ -676,7 +680,9 @@ static struct rte_flow* dev_rx_queue_create_flow(struct mt_interface* inf, uint1
     return NULL;
   }
 
+  mt_pthread_mutex_lock(&inf->vf_cmd_mutex);
   r_flow = rte_flow_create(port_id, &attr, pattern, action, &error);
+  mt_pthread_mutex_unlock(&inf->vf_cmd_mutex);
   if (!r_flow) {
     err("%s(%d), rte_flow_create fail for queue %d, %s\n", __func__, port_id, q,
         error.message);
@@ -1992,6 +1998,7 @@ int mt_dev_if_uinit(struct mtl_main_impl* impl) {
     mt_pthread_mutex_destroy(&inf->tx_queues_mutex);
     mt_pthread_mutex_destroy(&inf->rx_queues_mutex);
     mt_pthread_mutex_destroy(&inf->tx_sys_queue_mutex);
+    mt_pthread_mutex_destroy(&inf->vf_cmd_mutex);
 
     dev_close_port(impl, i);
   }
@@ -2040,6 +2047,7 @@ int mt_dev_if_init(struct mtl_main_impl* impl) {
     mt_pthread_mutex_init(&inf->tx_queues_mutex, NULL);
     mt_pthread_mutex_init(&inf->rx_queues_mutex, NULL);
     mt_pthread_mutex_init(&inf->tx_sys_queue_mutex, NULL);
+    mt_pthread_mutex_init(&inf->vf_cmd_mutex, NULL);
 
     if (mt_has_user_ptp(impl)) /* user provide the ptp source */
       inf->ptp_get_time_fn = ptp_from_user;
