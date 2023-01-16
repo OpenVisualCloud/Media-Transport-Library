@@ -442,6 +442,11 @@ struct mt_interface {
   uint16_t nb_rx_desc;
 
   struct rte_mbuf* pad;
+  /*
+   * protect rl and fdir for vf.
+   * _atomic_set_cmd(): There is incomplete cmd 112
+   */
+  pthread_mutex_t vf_cmd_mutex;
 
   /* tx queue resources */
   int max_tx_queues;
