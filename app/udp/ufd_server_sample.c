@@ -24,6 +24,9 @@ struct ufd_server_sample_ctx {
   int recv_cnt;
   ssize_t recv_len;
   uint64_t last_stat_time;
+
+  int send_cnt_total;
+  int recv_cnt_total;
 };
 
 struct ufd_server_samples_ctx {
@@ -41,25 +44,29 @@ static void* ufd_server_thread(void* arg) {
   int socket = s->socket;
   ssize_t ufd_len = MUDP_MAX_BYTES;
   char buf[ufd_len];
+  struct sockaddr_in cli_addr;
+  socklen_t cli_addr_len = sizeof(cli_addr);
 
   info("%s(%d), start socket %d\n", __func__, s->idx, socket);
   while (!s->stop) {
-    ssize_t recv = mufd_recvfrom(socket, buf, sizeof(buf), 0, NULL, NULL);
+    ssize_t recv = mufd_recvfrom(socket, buf, sizeof(buf), 0, (struct sockaddr*)&cli_addr,
+                                 &cli_addr_len);
     if (recv < 0) {
       dbg("%s(%d), recv fail %d\n", __func__, s->idx, (int)recv);
       continue;
     }
     s->recv_cnt++;
+    s->recv_cnt_total++;
     s->recv_len += recv;
     dbg("%s(%d), recv %d bytes\n", __func__, s->idx, (int)recv);
-    ssize_t send =
-        mufd_sendto(socket, buf, recv, 0, (const struct sockaddr*)&s->client_addr,
-                    sizeof(s->client_addr));
+    ssize_t send = mufd_sendto(socket, buf, recv, 0, (const struct sockaddr*)&cli_addr,
+                               cli_addr_len);
     if (send != recv) {
       err("%s(%d), only send %d bytes\n", __func__, s->idx, (int)send);
       continue;
     }
     s->send_cnt++;
+    s->send_cnt_total++;
   }
   info("%s(%d), stop\n", __func__, s->idx);
 
@@ -80,6 +87,7 @@ static void* ufd_server_transport_thread(void* arg) {
       continue;
     }
     s->recv_cnt++;
+    s->recv_cnt_total++;
     s->recv_len += recv;
   }
   info("%s(%d), stop\n", __func__, s->idx);
@@ -108,6 +116,7 @@ static void* ufd_server_transport_poll_thread(void* arg) {
       continue;
     }
     s->recv_cnt++;
+    s->recv_cnt_total++;
     s->recv_len += recv;
   }
   info("%s(%d), stop\n", __func__, s->idx);
@@ -145,6 +154,8 @@ static void* ufd_servers_poll_thread(void* arg) {
         continue;
       }
       s->recv_cnt++;
+      s->recv_cnt_total++;
+      s->recv_len += recv;
     }
   }
   info("%s, stop\n", __func__);
@@ -315,6 +326,21 @@ int main(int argc, char** argv) {
       st_pthread_cond_signal(&app[i]->wake_cond);
       st_pthread_mutex_unlock(&app[i]->wake_mutex);
       pthread_join(app[i]->thread, NULL);
+    }
+  }
+
+  // check result
+  ret = 0;
+  for (int i = 0; i < session_num; i++) {
+    info("%s(%d), recv_cnt_total %d\n", __func__, i, app[i]->recv_cnt_total);
+    if (app[i]->recv_cnt_total <= 0) {
+      ret += -EIO;
+    }
+    if (ctx.udp_mode == SAMPLE_UDP_DEFAULT) {
+      info("%s(%d), send_cnt_total %d\n", __func__, i, app[i]->send_cnt_total);
+      if (app[i]->send_cnt_total <= 0) {
+        ret += -EIO;
+      }
     }
   }
 

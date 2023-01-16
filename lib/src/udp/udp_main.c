@@ -142,6 +142,17 @@ static int udp_build_tx_pkt(struct mtl_main_impl* impl, struct mudp_impl* s,
   return 0;
 }
 
+static int udp_bind_port(struct mudp_impl* s, uint16_t bind_port) {
+  int idx = s->idx;
+
+  /* save bind port number */
+  s->bind_port = bind_port;
+  /* update src port for tx also */
+  s->hdr.udp.src_port = htons(bind_port);
+  info("%s(%d), bind port %u\n", __func__, idx, bind_port);
+  return 0;
+}
+
 static int udp_init_hdr(struct mtl_main_impl* impl, struct mudp_impl* s) {
   struct mt_udp_hdr* hdr = &s->hdr;
   struct rte_ether_hdr* eth = &hdr->eth;
@@ -309,13 +320,12 @@ static int udp_rsq_mbuf_cb(void* priv, struct rte_mbuf** mbuf, uint16_t nb) {
 static int udp_init_rxq(struct mtl_main_impl* impl, struct mudp_impl* s) {
   enum mtl_port port = s->port;
   int idx = s->idx;
-  struct sockaddr_in* addr_in = &s->bind_addr;
   uint16_t queue_id;
 
   struct mt_rx_flow flow;
   memset(&flow, 0, sizeof(flow));
   flow.no_ip_flow = true;
-  flow.dst_port = ntohs(addr_in->sin_port);
+  flow.dst_port = s->bind_port;
   flow.priv = s;
   flow.cb = udp_rsq_mbuf_cb;
 
@@ -352,7 +362,7 @@ static int udp_init_rxq(struct mtl_main_impl* impl, struct mudp_impl* s) {
   }
   s->rx_ring = ring;
 
-  info("%s(%d), succ, port %u\n", __func__, idx, ntohs(addr_in->sin_port));
+  info("%s(%d), succ, port %u\n", __func__, idx, s->bind_port);
   udp_set_flag(s, MUDP_RXQ_ALLOC);
   return 0;
 }
@@ -663,6 +673,9 @@ mudp_handle mudp_socket_port(mtl_handle mt, int domain, int type, int protocol,
     return NULL;
   }
 
+  /* todo: use random port, now hardcode to 0xAAAA plus index */
+  udp_bind_port(s, 43690 + idx);
+
   ret = mt_stat_register(impl, udp_stat_dump, s);
   if (ret < 0) {
     err("%s(%d), hdr init fail\n", __func__, idx);
@@ -718,10 +731,8 @@ int mudp_bind(mudp_handle ut, const struct sockaddr* addr, socklen_t addrlen) {
   /* uinit rx if any */
   udp_uinit_rxq(impl, s);
 
-  /* save bind addr */
-  s->bind_addr = *addr_in;
-  /* update hdr */
-  s->hdr.udp.src_port = addr_in->sin_port;
+  /* set bind port */
+  udp_bind_port(s, htons(addr_in->sin_port));
   udp_set_flag(s, MUDP_BIND);
   return 0;
 }

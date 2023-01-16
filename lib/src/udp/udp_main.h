@@ -31,7 +31,7 @@ struct mudp_impl {
   enum mtl_port port;
   struct mt_udp_hdr hdr;
   uint16_t ipv4_packet_id;
-  struct sockaddr_in bind_addr;
+  uint16_t bind_port;
 
   uint64_t txq_bps; /* bit per sec for q */
   struct mt_tx_queue* txq;

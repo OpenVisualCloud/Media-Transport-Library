@@ -18,7 +18,6 @@ struct ufd_client_sample_ctx {
 
   int socket;
   struct sockaddr_in serv_addr;
-  struct sockaddr_in bind_addr;
 
   int udp_len;
 
@@ -27,6 +26,9 @@ struct ufd_client_sample_ctx {
   int recv_fail_cnt;
   int recv_err_cnt;
   uint64_t last_stat_time;
+
+  int send_cnt_total;
+  int recv_cnt_total;
 };
 
 static void* ufd_client_thread(void* arg) {
@@ -54,6 +56,7 @@ static void* ufd_client_thread(void* arg) {
       continue;
     }
     s->send_cnt++;
+    s->send_cnt_total++;
 
     ssize_t recv = mufd_recvfrom(socket, recv_buf, sizeof(recv_buf), 0, NULL, NULL);
     if (recv != ufd_len) {
@@ -72,6 +75,7 @@ static void* ufd_client_thread(void* arg) {
     }
     dbg("%s(%d), recv reply %d bytes succ\n", __func__, s->idx, (int)ufd_len);
     s->recv_cnt++;
+    s->recv_cnt_total++;
   }
   info("%s(%d), stop\n", __func__, s->idx);
 
@@ -98,6 +102,7 @@ static void* ufd_client_transport_thread(void* arg) {
       continue;
     }
     s->send_cnt++;
+    s->send_cnt_total++;
   }
   info("%s(%d), stop\n", __func__, s->idx);
 
@@ -177,15 +182,6 @@ int main(int argc, char** argv) {
     }
     if (ctx.udp_tx_bps) mufd_set_tx_rate(app[i]->socket, ctx.udp_tx_bps);
 
-    mudp_init_sockaddr(&app[i]->bind_addr, ctx.param.sip_addr[MTL_PORT_P],
-                       ctx.udp_port + i);
-    ret = mufd_bind(app[i]->socket, (const struct sockaddr*)&app[i]->bind_addr,
-                    sizeof(app[i]->bind_addr));
-    if (ret < 0) {
-      err("%s(%d), bind fail %d\n", __func__, i, ret);
-      goto error;
-    }
-
     struct timeval tv;
     tv.tv_sec = 0;
     tv.tv_usec = 1000;
@@ -227,6 +223,21 @@ int main(int argc, char** argv) {
     st_pthread_cond_signal(&app[i]->wake_cond);
     st_pthread_mutex_unlock(&app[i]->wake_mutex);
     pthread_join(app[i]->thread, NULL);
+  }
+
+  // check result
+  ret = 0;
+  for (int i = 0; i < session_num; i++) {
+    info("%s(%d), send_cnt_total %d\n", __func__, i, app[i]->send_cnt_total);
+    if (app[i]->send_cnt_total <= 0) {
+      ret += -EIO;
+    }
+    if (ctx.udp_mode == SAMPLE_UDP_DEFAULT) {
+      info("%s(%d), recv_cnt_total %d\n", __func__, i, app[i]->recv_cnt_total);
+      if (app[i]->recv_cnt_total <= 0) {
+        ret += -EIO;
+      }
+    }
   }
 
 error:

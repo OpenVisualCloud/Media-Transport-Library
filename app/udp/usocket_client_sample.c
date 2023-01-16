@@ -18,7 +18,6 @@ struct usocket_client_sample_ctx {
 
   int socket;
   struct sockaddr_in serv_addr;
-  struct sockaddr_in bind_addr;
 
   int udp_len;
 
@@ -161,15 +160,6 @@ int main(int argc, char** argv) {
     if (app[i]->socket < 0) {
       err("%s(%d), socket create fail %d\n", __func__, i, app[i]->socket);
       ret = -EIO;
-      goto error;
-    }
-
-    mudp_init_sockaddr(&app[i]->bind_addr, ctx.param.sip_addr[MTL_PORT_P],
-                       ctx.udp_port + i);
-    ret = bind(app[i]->socket, (const struct sockaddr*)&app[i]->bind_addr,
-               sizeof(app[i]->bind_addr));
-    if (ret < 0) {
-      err("%s(%d), bind fail %d\n", __func__, i, ret);
       goto error;
     }
 
