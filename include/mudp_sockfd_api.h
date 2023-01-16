@@ -206,6 +206,20 @@ int mufd_cleanup(void);
 int mufd_abort(void);
 
 /**
+ * Set the tx dst mac for the udp transport socket. MTL focus on data plane and only has
+ * ARP support. For the WAN transport, user can use this API to mannual set the dst mac.
+ *
+ * @param sockfd
+ *   The handle to udp transport socket.
+ * @param mac
+ *   The mac address.
+ * @return
+ *   - 0: Success.
+ *   - <0: Error code.
+ */
+int mufd_set_tx_mac(int sockfd, uint8_t mac[MTL_MAC_ADDR_LEN]);
+
+/**
  * Set the rate(speed) for one udp transport socket. Call before mudp_bind.
  *
  * @param sockfd

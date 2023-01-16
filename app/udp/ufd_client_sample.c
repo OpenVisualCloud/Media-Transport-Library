@@ -181,6 +181,8 @@ int main(int argc, char** argv) {
       goto error;
     }
     if (ctx.udp_tx_bps) mufd_set_tx_rate(app[i]->socket, ctx.udp_tx_bps);
+    if (ctx.has_tx_dst_mac[MTL_PORT_P])
+      mufd_set_tx_mac(app[i]->socket, ctx.tx_dst_mac[MTL_PORT_P]);
 
     struct timeval tv;
     tv.tv_sec = 0;

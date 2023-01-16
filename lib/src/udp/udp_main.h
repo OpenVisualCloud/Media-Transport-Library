@@ -19,6 +19,8 @@
 #define MUDP_RXQ_ALLOC (MTL_BIT32(2))
 /* if mcast init or not */
 #define MUDP_MCAST_INIT (MTL_BIT32(3))
+/* if tx mac is defined by user */
+#define MUDP_TX_USER_MAC (MTL_BIT32(4))
 
 /* 1g */
 #define MUDP_DEFAULT_RL_BPS (1ul * 1024 * 1024 * 1024)
@@ -49,6 +51,7 @@ struct mudp_impl {
   int arp_timeout_ms;
   int tx_timeout_ms;
   int rx_timeout_ms;
+  uint8_t user_mac[MTL_MAC_ADDR_LEN];
 
   uint32_t* mcast_addrs;
   int mcast_addrs_nb;

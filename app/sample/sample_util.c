@@ -24,6 +24,8 @@ enum sample_args_cmd {
   SAMPLE_ARG_DMA_PORT,
   SAMPLE_ARG_SHARED_QUEUES,
   SAMPLE_ARG_QUEUES_CNT,
+  SAMPLE_ARG_P_TX_DST_MAC,
+  SAMPLE_ARG_R_TX_DST_MAC,
 
   SAMPLE_ARG_TX_VIDEO_URL = 0x200,
   SAMPLE_ARG_RX_VIDEO_URL,
@@ -58,6 +60,8 @@ static struct option sample_args_options[] = {
     {"dma_port", required_argument, 0, SAMPLE_ARG_DMA_PORT},
     {"shared_queues", no_argument, 0, SAMPLE_ARG_SHARED_QUEUES},
     {"queues_cnt", required_argument, 0, SAMPLE_ARG_QUEUES_CNT},
+    {"p_tx_dst_mac", required_argument, 0, SAMPLE_ARG_P_TX_DST_MAC},
+    {"r_tx_dst_mac", required_argument, 0, SAMPLE_ARG_R_TX_DST_MAC},
 
     {"tx_url", required_argument, 0, SAMPLE_ARG_TX_VIDEO_URL},
     {"rx_url", required_argument, 0, SAMPLE_ARG_RX_VIDEO_URL},
@@ -73,6 +77,23 @@ static struct option sample_args_options[] = {
     {"udp_tx_bps_g", required_argument, 0, SAMPLE_ARG_UDP_TX_BPS_G},
 
     {0, 0, 0, 0}};
+
+static int sample_args_parse_tx_mac(struct st_sample_context* ctx, char* mac_str,
+                                    enum mtl_port port) {
+  int ret;
+  uint8_t* mac;
+
+  if (!mac_str) return -EIO;
+  dbg("%s, tx dst mac %s\n", __func__, mac_str);
+
+  mac = &ctx->tx_dst_mac[port][0];
+  ret = sscanf(mac_str, "%02hhx:%02hhx:%02hhx:%02hhx:%02hhx:%02hhx", &mac[0], &mac[1],
+               &mac[2], &mac[3], &mac[4], &mac[5]);
+  if (ret < 0) return ret;
+
+  ctx->has_tx_dst_mac[port] = true;
+  return 0;
+}
 
 static int _sample_parse_args(struct st_sample_context* ctx, int argc, char** argv) {
   int cmd = -1, optIdx = 0;
@@ -140,6 +161,12 @@ static int _sample_parse_args(struct st_sample_context* ctx, int argc, char** ar
       case SAMPLE_ARG_QUEUES_CNT:
         p->rx_queues_cnt_max = atoi(optarg);
         p->tx_queues_cnt_max = p->rx_queues_cnt_max;
+        break;
+      case SAMPLE_ARG_P_TX_DST_MAC:
+        sample_args_parse_tx_mac(ctx, optarg, MTL_PORT_P);
+        break;
+      case SAMPLE_ARG_R_TX_DST_MAC:
+        sample_args_parse_tx_mac(ctx, optarg, MTL_PORT_R);
         break;
       case SAMPLE_ARG_TX_VIDEO_URL:
         snprintf(ctx->tx_url, sizeof(ctx->tx_url), "%s", optarg);
