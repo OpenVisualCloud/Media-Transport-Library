@@ -182,35 +182,20 @@ static int app_args_parse_lcores(struct mtl_init_params* p, char* list) {
   return 0;
 }
 
-static int app_args_parse_p_tx_mac(struct st_app_context* ctx, char* mac_str) {
+static int app_args_parse_tx_mac(struct st_app_context* ctx, char* mac_str,
+                                 enum mtl_port port) {
   int ret;
   uint8_t* mac;
 
   if (!mac_str) return -EIO;
   dbg("%s, tx dst mac %s\n", __func__, mac_str);
 
-  mac = &ctx->tx_dst_mac[MTL_PORT_P][0];
+  mac = &ctx->tx_dst_mac[port][0];
   ret = sscanf(mac_str, "%02hhx:%02hhx:%02hhx:%02hhx:%02hhx:%02hhx", &mac[0], &mac[1],
                &mac[2], &mac[3], &mac[4], &mac[5]);
   if (ret < 0) return ret;
 
-  ctx->has_tx_dst_mac[MTL_PORT_P] = true;
-  return 0;
-}
-
-static int app_args_parse_r_tx_mac(struct st_app_context* ctx, char* mac_str) {
-  int ret;
-  uint8_t* mac;
-
-  if (!mac_str) return -EIO;
-  dbg("%s, tx dst mac %s\n", __func__, mac_str);
-
-  mac = &ctx->tx_dst_mac[MTL_PORT_R][0];
-  ret = sscanf(mac_str, "%02hhx:%02hhx:%02hhx:%02hhx:%02hhx:%02hhx", &mac[0], &mac[1],
-               &mac[2], &mac[3], &mac[4], &mac[5]);
-  if (ret < 0) return ret;
-
-  ctx->has_tx_dst_mac[MTL_PORT_R] = true;
+  ctx->has_tx_dst_mac[port] = true;
   return 0;
 }
 
@@ -429,10 +414,10 @@ int st_app_parse_args(struct st_app_context* ctx, struct mtl_init_params* p, int
         }
         break;
       case ST_ARG_P_TX_DST_MAC:
-        app_args_parse_p_tx_mac(ctx, optarg);
+        app_args_parse_tx_mac(ctx, optarg, MTL_PORT_P);
         break;
       case ST_ARG_R_TX_DST_MAC:
-        app_args_parse_r_tx_mac(ctx, optarg);
+        app_args_parse_tx_mac(ctx, optarg, MTL_PORT_R);
         break;
       case ST_ARG_NIC_RX_PROMISCUOUS:
         p->flags |= MTL_FLAG_NIC_RX_PROMISCUOUS;

@@ -106,11 +106,15 @@ static int udp_build_tx_pkt(struct mtl_main_impl* impl, struct mudp_impl* s,
   /* eth */
   struct rte_ether_addr* d_addr = mt_eth_d_addr(eth);
   uint8_t* dip = (uint8_t*)&addr_in->sin_addr;
-  ret = mt_dev_dst_ip_mac(impl, dip, d_addr, port, s->arp_timeout_ms);
-  if (ret < 0) {
-    err("%s(%d), mt_dev_dst_ip_mac fail %d for %u.%u.%u.%u\n", __func__, idx, ret, dip[0],
-        dip[1], dip[2], dip[3]);
-    return ret;
+  if (udp_get_flag(s, MUDP_TX_USER_MAC)) {
+    rte_memcpy(d_addr->addr_bytes, s->user_mac, RTE_ETHER_ADDR_LEN);
+  } else {
+    ret = mt_dev_dst_ip_mac(impl, dip, d_addr, port, s->arp_timeout_ms);
+    if (ret < 0) {
+      err("%s(%d), mt_dev_dst_ip_mac fail %d for %u.%u.%u.%u\n", __func__, idx, ret,
+          dip[0], dip[1], dip[2], dip[3]);
+      return ret;
+    }
   }
 
   /* ip */
@@ -999,6 +1003,22 @@ int mudp_setsockopt(mudp_handle ut, int level, int optname, const void* optval,
       return -EINVAL;
   }
 
+  return 0;
+}
+
+int mudp_set_tx_mac(mudp_handle ut, uint8_t mac[MTL_MAC_ADDR_LEN]) {
+  struct mudp_impl* s = ut;
+  int idx = s->idx;
+
+  if (s->type != MT_HANDLE_UDP) {
+    err("%s(%d), invalid type %d\n", __func__, idx, s->type);
+    return -EIO;
+  }
+
+  rte_memcpy(s->user_mac, mac, MTL_MAC_ADDR_LEN);
+  udp_set_flag(s, MUDP_TX_USER_MAC);
+  info("%s(%d), mac: %02hhx:%02hhx:%02hhx:%02hhx:%02hhx:%02hhx\n", __func__, idx, mac[0],
+       mac[1], mac[2], mac[3], mac[4], mac[5]);
   return 0;
 }
 

@@ -127,10 +127,10 @@ static int tx_ancillary_session_init_hdr(struct mtl_main_impl* impl,
 
   /* ether hdr */
   if ((s_port == MT_SESSION_PORT_P) && (ops->flags & ST40_TX_FLAG_USER_P_MAC)) {
-    rte_memcpy(d_addr, &ops->tx_dst_mac[s_port][0], RTE_ETHER_ADDR_LEN);
+    rte_memcpy(d_addr->addr_bytes, &ops->tx_dst_mac[s_port][0], RTE_ETHER_ADDR_LEN);
     info("%s, USER_P_TX_MAC\n", __func__);
   } else if ((s_port == MT_SESSION_PORT_R) && (ops->flags & ST40_TX_FLAG_USER_R_MAC)) {
-    rte_memcpy(d_addr, &ops->tx_dst_mac[s_port][0], RTE_ETHER_ADDR_LEN);
+    rte_memcpy(d_addr->addr_bytes, &ops->tx_dst_mac[s_port][0], RTE_ETHER_ADDR_LEN);
     info("%s, USER_R_TX_MAC\n", __func__);
   } else {
     ret = mt_dev_dst_ip_mac(impl, dip, d_addr, port, 0);

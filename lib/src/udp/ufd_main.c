@@ -473,6 +473,11 @@ int mufd_abort(void) {
   return 0;
 }
 
+int mufd_set_tx_mac(int sockfd, uint8_t mac[MTL_MAC_ADDR_LEN]) {
+  struct ufd_slot* slot = ufd_fd2slot(sockfd);
+  return mudp_set_tx_mac(slot->handle, mac);
+}
+
 int mufd_set_tx_rate(int sockfd, uint64_t bps) {
   struct ufd_slot* slot = ufd_fd2slot(sockfd);
   return mudp_set_tx_rate(slot->handle, bps);

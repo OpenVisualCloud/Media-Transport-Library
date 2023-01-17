@@ -73,6 +73,8 @@ struct st_sample_context {
   uint8_t fwd_dip_addr[MTL_PORT_MAX][MTL_IP_ADDR_LEN]; /* fwd destination IP */
   char tx_url[ST_SAMPLE_URL_MAX_LEN];
   char rx_url[ST_SAMPLE_URL_MAX_LEN];
+  bool has_tx_dst_mac[MTL_PORT_MAX];
+  uint8_t tx_dst_mac[MTL_PORT_MAX][MTL_MAC_ADDR_LEN];
 
   uint32_t width;
   uint32_t height;
