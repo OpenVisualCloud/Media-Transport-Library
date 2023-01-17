@@ -118,7 +118,7 @@ static int tx_video_next_frame(void* priv, uint16_t* next_frame_idx,
   int consumer_idx = s->fb_idx;
 
   struct frame_info* fi = TAILQ_FIRST(&app->q);
-  if (fi) { /* peak the frame from ring */
+  if (fi) {
     ret = 0;
     *next_frame_idx = consumer_idx;
     meta->tfmt = ST10_TIMESTAMP_FMT_MEDIA_CLK;
@@ -171,15 +171,17 @@ static int split_fwd_sample_free_app(struct split_fwd_sample_ctx* app) {
       app->tx[i].tx_handle = NULL;
     }
   }
-  if (app->rx_handle) {
-    st20_rx_free(app->rx_handle);
-    app->rx_handle = NULL;
-  }
+
   struct frame_info* fi = NULL;
   while (!TAILQ_EMPTY(&app->q)) {
     fi = TAILQ_FIRST(&app->q);
     TAILQ_REMOVE(&app->q, fi, tailq);
+    st20_rx_put_framebuff(app->rx_handle, fi->frame_addr);
     free(fi);
+  }
+  if (app->rx_handle) {
+    st20_rx_free(app->rx_handle);
+    app->rx_handle = NULL;
   }
 
   return 0;
