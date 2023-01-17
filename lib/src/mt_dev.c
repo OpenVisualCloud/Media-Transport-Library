@@ -2055,7 +2055,7 @@ int mt_dev_dst_ip_mac(struct mtl_main_impl* impl, uint8_t dip[MTL_IP_ADDR_LEN],
 
   if (mt_is_multicast_ip(dip)) {
     mt_mcast_ip_to_mac(dip, ea);
-  } else {
+  } else if (mt_is_lan_ip(dip, mt_sip_addr(impl, port), mt_sip_netmask(impl, port))) {
     dbg("%s(%d), start to get mac for ip %d.%d.%d.%d\n", __func__, port, dip[0], dip[1],
         dip[2], dip[3]);
     if (mt_pmd_is_kernel(impl, port)) {
@@ -2072,6 +2072,11 @@ int mt_dev_dst_ip_mac(struct mtl_main_impl* impl, uint8_t dip[MTL_IP_ADDR_LEN],
         return ret;
       }
     }
+  } else {
+    /* todo: add support for wan */
+    err_once("%s(%d), ip %d.%d.%d.%d is not mcast or lan\n", __func__, port, dip[0],
+             dip[1], dip[2], dip[3]);
+    return -EIO;
   }
 
   dbg("%s(%d), ip: %d.%d.%d.%d, mac: %02hhx:%02hhx:%02hhx:%02hhx:%02hhx:%02hhx\n",
@@ -2325,7 +2330,9 @@ int mt_dev_if_init(struct mtl_main_impl* impl) {
     info("%s(%d), system_rx_queues_end %d hdr_split_rx_queues_end %d\n", __func__, i,
          inf->system_rx_queues_end, inf->hdr_split_rx_queues_end);
     uint8_t* ip = p->sip_addr[i];
-    info("%s(%d), sip: %d.%d.%d.%d\n", __func__, i, ip[0], ip[1], ip[2], ip[3]);
+    info("%s(%d), sip: %u.%u.%u.%u\n", __func__, i, ip[0], ip[1], ip[2], ip[3]);
+    uint8_t* nm = p->netmask[i];
+    info("%s(%d), netmask: %u.%u.%u.%u\n", __func__, i, nm[0], nm[1], nm[2], nm[3]);
     struct rte_ether_addr mac;
     rte_eth_macaddr_get(port_id, &mac);
     info("%s(%d), mac: %02x:%02x:%02x:%02x:%02x:%02x\n", __func__, i, mac.addr_bytes[0],

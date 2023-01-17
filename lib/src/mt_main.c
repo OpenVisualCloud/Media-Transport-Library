@@ -258,6 +258,7 @@ static int mt_user_params_check(struct mtl_init_params* p) {
   int num_ports = p->num_ports, ret;
   uint8_t* ip = NULL;
   uint8_t if_ip[MTL_IP_ADDR_LEN];
+  uint8_t if_netmask[MTL_IP_ADDR_LEN];
 
   if ((num_ports > MTL_PORT_MAX) || (num_ports <= 0)) {
     err("%s, invalid num_ports %d\n", __func__, num_ports);
@@ -281,7 +282,7 @@ static int mt_user_params_check(struct mtl_init_params* p) {
           p->xdp_info[MTL_PORT_P].start_queue);
       return -EINVAL;
     }
-    ret = mt_socket_get_if_ip(p->port[MTL_PORT_P], if_ip);
+    ret = mt_socket_get_if_ip(p->port[MTL_PORT_P], if_ip, if_netmask);
     if (ret < 0) {
       err("%s, get ip fail, if %s for P port\n", __func__, p->port[MTL_PORT_P]);
       return ret;
@@ -327,7 +328,7 @@ static int mt_user_params_check(struct mtl_init_params* p) {
             p->xdp_info[MTL_PORT_R].start_queue);
         return -EINVAL;
       }
-      ret = mt_socket_get_if_ip(p->port[MTL_PORT_R], if_ip);
+      ret = mt_socket_get_if_ip(p->port[MTL_PORT_R], if_ip, if_netmask);
       if (ret < 0) {
         err("%s, get ip fail, if %s for R port\n", __func__, p->port[MTL_PORT_R]);
         return ret;
@@ -457,13 +458,23 @@ mtl_handle mtl_init(struct mtl_init_params* p) {
   for (int i = 0; i < num_ports; i++) {
     if (p->pmd[i] != MTL_PMD_DPDK_USER) {
       uint8_t if_ip[MTL_IP_ADDR_LEN];
-      ret = mt_socket_get_if_ip(impl->user_para.port[i], if_ip);
+      uint8_t if_netmask[MTL_IP_ADDR_LEN];
+      ret = mt_socket_get_if_ip(impl->user_para.port[i], if_ip, if_netmask);
       if (ret < 0) {
         err("%s(%d), get IP fail\n", __func__, i);
         goto err_exit;
       }
-      /* update the sip */
+      /* update the sip and net mask */
       rte_memcpy(impl->user_para.sip_addr[i], if_ip, MTL_IP_ADDR_LEN);
+      rte_memcpy(impl->user_para.netmask[i], if_netmask, MTL_IP_ADDR_LEN);
+    } else { /* MTL_PMD_DPDK_USER */
+      uint32_t netmask = mt_ip_to_u32(impl->user_para.netmask[i]);
+      if (!netmask) { /* set to default if user not set a netmask */
+        impl->user_para.netmask[i][0] = 255;
+        impl->user_para.netmask[i][1] = 255;
+        impl->user_para.netmask[i][2] = 255;
+        impl->user_para.netmask[i][3] = 0;
+      }
     }
     /* update socket */
     impl->inf[i].socket_id = socket[i];
