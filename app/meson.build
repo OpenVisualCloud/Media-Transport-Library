@@ -312,7 +312,7 @@ executable('RxSt20pTxSt20pSplitFwd', rx_st20p_tx_st20p_split_fwd_sources,
   c_args : app_c_args,
   link_args: app_ld_args,
   # asan should be always the first dep
-  dependencies: [asan_dep, mtl]
+  dependencies: [asan_dep, mtl, libpthread]
 )
 
 executable('UdpServerSample', upd_server_sample_sources,

@@ -127,7 +127,7 @@ static int tx_video_next_frame(void* priv, uint16_t* next_frame_idx,
     struct st20_ext_frame ext_frame;
     ext_frame.buf_addr = fi->frame_addr + s->fb_offset;
     ext_frame.buf_iova = mtl_hp_virt2iova(app->st, fi->frame_addr) + s->fb_offset;
-    ext_frame.buf_len = 3840 * 2160 * 5 / 4; /* 2 1080p framesize */
+    ext_frame.buf_len = app->fb_size / 2;
     st20_tx_set_ext_frame(s->tx_handle, consumer_idx, &ext_frame);
 
     atomic_fetch_add(&fi->refcnt, 1);
@@ -199,6 +199,9 @@ int main(int argc, char** argv) {
   ctx.param.tx_sessions_cnt_max = session_num;
   ctx.param.rx_sessions_cnt_max = 1;
 
+  struct st20_pgroup st20_pg;
+  st20_get_pgroup(ctx.fmt, &st20_pg);
+
   ctx.st = mtl_init(&ctx.param);
   if (!ctx.st) {
     err("%s: mtl_init fail\n", __func__);
@@ -221,8 +224,8 @@ int main(int argc, char** argv) {
   ops_rx.udp_port[MTL_PORT_P] = ctx.udp_port;  // user config the udp port.
   ops_rx.pacing = ST21_PACING_NARROW;
   ops_rx.type = ST20_TYPE_FRAME_LEVEL;
-  ops_rx.width = 3840;
-  ops_rx.height = 2160;
+  ops_rx.width = ctx.width;
+  ops_rx.height = ctx.height;
   ops_rx.fps = ctx.fps;
   ops_rx.fmt = ctx.fmt;
   ops_rx.framebuff_cnt = FB_CNT;
@@ -251,9 +254,9 @@ int main(int argc, char** argv) {
     ops_tx.pacing = ST21_PACING_NARROW;
     ops_tx.packing = ST20_PACKING_BPM;
     ops_tx.type = ST20_TYPE_FRAME_LEVEL;
-    ops_tx.width = 1920;
-    ops_tx.height = 1080;
-    ops_tx.linesize = 9600; /* double 1080p linesize */
+    ops_tx.width = ctx.width / 2;
+    ops_tx.height = ctx.height / 2;
+    ops_tx.linesize = ctx.width * st20_pg.size / st20_pg.coverage;
     ops_tx.fps = ctx.fps;
     ops_tx.fmt = ctx.fmt;
     ops_tx.payload_type = ctx.payload_type;
@@ -271,11 +274,11 @@ int main(int argc, char** argv) {
     tx->tx_handle = tx_handle;
   }
 
-  app.tx[0].fb_offset = 0;               /* origin */
-  app.tx[1].fb_offset = 4800;            /* 1080p linesize */
-  app.tx[2].fb_offset = 1920 * 1080 * 5; /* 2 1080p framesize */
+  app.tx[0].fb_offset = 0; /* origin */
+  app.tx[1].fb_offset = (ctx.width / 2) * st20_pg.size / st20_pg.coverage;
+  app.tx[2].fb_offset = (ctx.width / 2) * ctx.height * st20_pg.size / st20_pg.coverage;
   app.tx[3].fb_offset = app.tx[2].fb_offset + app.tx[1].fb_offset;
-  app.fb_size = 3840 * 2160 * 5 / 2; /* 4k framesize */
+  app.fb_size = ctx.width * ctx.height * st20_pg.size / st20_pg.coverage;
 
   app.ready = true;
 

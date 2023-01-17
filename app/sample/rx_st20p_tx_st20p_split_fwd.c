@@ -20,7 +20,6 @@ struct split_fwd_sample_ctx {
   pthread_mutex_t wake_mutex;
 
   int fb_fwd;
-  struct st20_pgroup st20_pg;
 };
 
 static int tx_st20p_frame_available(void* priv) { return 0; }
@@ -122,8 +121,6 @@ int main(int argc, char** argv) {
   st_pthread_mutex_init(&app.wake_mutex, NULL);
   st_pthread_cond_init(&app.wake_cond, NULL);
 
-  st20_get_pgroup(ST20_FMT_YUV_422_10BIT, &app.st20_pg);
-
   struct st20p_rx_ops ops_rx;
   memset(&ops_rx, 0, sizeof(ops_rx));
   ops_rx.name = "st20p_rx";
@@ -186,12 +183,13 @@ int main(int argc, char** argv) {
     goto error;
   }
 
+  struct st20_pgroup st20_pg;
+  st20_get_pgroup(ctx.fmt, &st20_pg);
   app.fb_offset[0] = 0;
-  app.fb_offset[1] = (ctx.width / 2) * app.st20_pg.size / app.st20_pg.coverage;
-  app.fb_offset[2] =
-      (ctx.width / 2) * ctx.height * app.st20_pg.size / app.st20_pg.coverage;
+  app.fb_offset[1] = (ctx.width / 2) * st20_pg.size / st20_pg.coverage;
+  app.fb_offset[2] = (ctx.width / 2) * ctx.height * st20_pg.size / st20_pg.coverage;
   app.fb_offset[3] = app.fb_offset[2] + app.fb_offset[1];
-  app.fb_size = ctx.width * ctx.height * app.st20_pg.size / app.st20_pg.coverage;
+  app.fb_size = ctx.width * ctx.height * st20_pg.size / st20_pg.coverage;
 
   app.ready = true;
 
