@@ -2361,6 +2361,9 @@ int mt_dev_if_post_init(struct mtl_main_impl* impl) {
   struct mt_interface* inf;
 
   for (int i = 0; i < num_ports; i++) {
+    /* no sys queue for kernel based pmd */
+    if (mt_pmd_is_kernel(impl, i)) continue;
+
     inf = mt_if(impl, i);
     if (mt_shared_queue(impl, i)) {
       struct mt_tsq_flow flow;
