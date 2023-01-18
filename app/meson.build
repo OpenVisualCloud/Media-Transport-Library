@@ -301,15 +301,19 @@ executable('TxVideoSplitSample', video_tx_split_sample_sources,
   dependencies: [asan_dep, mtl]
 )
 
-# TODO: allow windows to link with dpdk_dep.
-if not is_windows
 executable('RxSt20TxSt20SplitFwd', rx_st20_tx_st20_split_fwd_sources,
   c_args : app_c_args,
   link_args: app_ld_args,
   # asan should be always the first dep
-  dependencies: [asan_dep, mtl, dpdk_dep]
+  dependencies: [asan_dep, mtl]
 )
-endif
+
+executable('RxSt20pTxSt20pSplitFwd', rx_st20p_tx_st20p_split_fwd_sources,
+  c_args : app_c_args,
+  link_args: app_ld_args,
+  # asan should be always the first dep
+  dependencies: [asan_dep, mtl, libpthread]
+)
 
 executable('UdpServerSample', upd_server_sample_sources,
   c_args : app_c_args,

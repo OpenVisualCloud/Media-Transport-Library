@@ -34,7 +34,7 @@ static int tx_st20p_frame_available(void* priv) {
 }
 
 static int rx_st20p_frame_available(void* priv) {
-  struct rx_st20p_tx_st20p_sample_ctx* s = (struct rx_st20p_tx_st20p_sample_ctx*)priv;
+  struct rx_st20p_tx_st20p_sample_ctx* s = priv;
 
   if (!s->ready) return -EIO;
 

@@ -2,7 +2,9 @@
  * Copyright(c) 2022 Intel Corporation
  */
 
-#include <rte_ring.h>
+#include <inttypes.h>
+#include <stdatomic.h>
+#include <sys/queue.h>
 
 #include "sample_util.h"
 
@@ -10,11 +12,14 @@
 
 struct frame_info {
   void* frame_addr;
-  int refcnt;
+  atomic_int refcnt;
   uint64_t tmstamp;
+  TAILQ_ENTRY(frame_info) tailq;
 };
 
-struct tx {
+TAILQ_HEAD(frameq, frame_info);
+
+struct tx_ctx {
   void* app;
   st20_tx_handle tx_handle;
   size_t fb_offset;
@@ -25,10 +30,10 @@ struct split_fwd_sample_ctx {
   mtl_handle st;
   st20_rx_handle rx_handle;
 
-  struct rte_ring* frame_ring;
+  struct frameq q;
   struct frame_info* sending_frames[FB_CNT];
 
-  struct tx tx[4];
+  struct tx_ctx tx[4];
   size_t fb_size;
 
   bool ready;
@@ -52,14 +57,13 @@ static int sending_frames_insert(struct split_fwd_sample_ctx* app,
   return 0;
 }
 
-static int sending_frames_delete(struct split_fwd_sample_ctx* app, void* frame_addr) {
+static int sending_frames_delete(struct split_fwd_sample_ctx* app, uint64_t tmstamp) {
   int i;
   for (i = 0; i < FB_CNT; i++) {
     struct frame_info* fi = app->sending_frames[i];
-    if (fi && fi->frame_addr <= frame_addr &&
-        frame_addr < fi->frame_addr + app->fb_size) {
-      fi->refcnt--;
-      if (fi->refcnt == 0) {
+    if (fi && fi->tmstamp == tmstamp) {
+      atomic_fetch_sub(&fi->refcnt, 1);
+      if (atomic_load(&fi->refcnt) == 0) {
         /* all tx sent, release the frame */
         st20_rx_put_framebuff(app->rx_handle, fi->frame_addr);
         free(fi);
@@ -70,7 +74,7 @@ static int sending_frames_delete(struct split_fwd_sample_ctx* app, void* frame_a
     }
   }
   if (i >= FB_CNT) {
-    err("%s, frame %p not found\n", __func__, frame_addr);
+    err("%s, frame %" PRIu64 " not found\n", __func__, tmstamp);
     return -EIO;
   }
   return 0;
@@ -98,17 +102,14 @@ static int rx_st20_frame_ready(void* priv, void* frame, struct st20_rx_frame_met
   fi->refcnt = 0;
   fi->tmstamp = meta->timestamp;
 
-  if (-ENOBUFS == rte_ring_sp_enqueue(s->frame_ring, fi)) {
-    err("%s, enqueue frame fail\n", __func__);
-    return -EIO;
-  }
+  TAILQ_INSERT_TAIL(&s->q, fi, tailq);
 
   return 0;
 }
 
 static int tx_video_next_frame(void* priv, uint16_t* next_frame_idx,
                                struct st20_tx_frame_meta* meta) {
-  struct tx* s = priv;
+  struct tx_ctx* s = priv;
   struct split_fwd_sample_ctx* app = s->app;
 
   if (!app->ready) return -EIO;
@@ -116,32 +117,28 @@ static int tx_video_next_frame(void* priv, uint16_t* next_frame_idx,
   int ret;
   int consumer_idx = s->fb_idx;
 
-  struct frame_info* fi[1];
-  uint32_t n = rte_ring_dequeue_bulk_start(app->frame_ring, (void**)&fi, 1, NULL);
-  if (n != 0) { /* peak the frame from ring */
+  struct frame_info* fi = TAILQ_FIRST(&app->q);
+  if (fi) {
     ret = 0;
     *next_frame_idx = consumer_idx;
     meta->tfmt = ST10_TIMESTAMP_FMT_MEDIA_CLK;
-    meta->timestamp = fi[0]->tmstamp;
+    meta->timestamp = fi->tmstamp;
 
     struct st20_ext_frame ext_frame;
-    ext_frame.buf_addr = fi[0]->frame_addr + s->fb_offset;
-    ext_frame.buf_iova = mtl_hp_virt2iova(app->st, fi[0]->frame_addr) + s->fb_offset;
-    ext_frame.buf_len = 3840 * 2160 * 5 / 4; /* 2 1080p framesize */
+    ext_frame.buf_addr = fi->frame_addr + s->fb_offset;
+    ext_frame.buf_iova = mtl_hp_virt2iova(app->st, fi->frame_addr) + s->fb_offset;
+    ext_frame.buf_len = app->fb_size / 2;
     st20_tx_set_ext_frame(s->tx_handle, consumer_idx, &ext_frame);
 
-    fi[0]->refcnt++;
-    if (fi[0]->refcnt < 4) {
-      /* keep it */
-      rte_ring_dequeue_finish(app->frame_ring, 0);
-    } else {
-      /* all tx set, remove from ring */
-      rte_ring_dequeue_finish(app->frame_ring, n);
+    atomic_fetch_add(&fi->refcnt, 1);
+    if (atomic_load(&fi->refcnt) == 4) {
+      /* all tx set, remove from queue */
+      TAILQ_REMOVE(&app->q, fi, tailq);
       /* track the sending frame */
-      ret = sending_frames_insert(app, fi[0]);
+      ret = sending_frames_insert(app, fi);
       if (ret < 0) {
-        st20_rx_put_framebuff(app->rx_handle, fi[0]->frame_addr);
-        free(fi[0]);
+        st20_rx_put_framebuff(app->rx_handle, fi->frame_addr);
+        free(fi);
       }
     }
 
@@ -158,12 +155,11 @@ static int tx_video_next_frame(void* priv, uint16_t* next_frame_idx,
 
 static int tx_video_frame_done(void* priv, uint16_t frame_idx,
                                struct st20_tx_frame_meta* meta) {
-  struct tx* s = priv;
+  struct tx_ctx* s = priv;
   struct split_fwd_sample_ctx* app = s->app;
-  void* frame_addr = st20_tx_get_framebuffer(s->tx_handle, frame_idx);
 
   /* try to release the sending frame */
-  if (app->ready) sending_frames_delete(s->app, frame_addr);
+  if (app->ready) sending_frames_delete(app, meta->timestamp);
 
   return 0;
 }
@@ -175,23 +171,17 @@ static int split_fwd_sample_free_app(struct split_fwd_sample_ctx* app) {
       app->tx[i].tx_handle = NULL;
     }
   }
+
+  struct frame_info* fi = NULL;
+  while (!TAILQ_EMPTY(&app->q)) {
+    fi = TAILQ_FIRST(&app->q);
+    TAILQ_REMOVE(&app->q, fi, tailq);
+    st20_rx_put_framebuff(app->rx_handle, fi->frame_addr);
+    free(fi);
+  }
   if (app->rx_handle) {
     st20_rx_free(app->rx_handle);
     app->rx_handle = NULL;
-  }
-  if (app->frame_ring) {
-    struct frame_info* fi = NULL;
-    int ret;
-    /* dequeue and free all frames in the ring */
-    do {
-      ret = rte_ring_sc_dequeue(app->frame_ring, (void**)&fi);
-      if (ret < 0) break;
-      dbg("%s, fi %p in frame_ring\n", __func__, fi);
-      free(fi);
-    } while (1);
-
-    rte_ring_free(app->frame_ring);
-    app->frame_ring = NULL;
   }
 
   return 0;
@@ -209,6 +199,9 @@ int main(int argc, char** argv) {
   ctx.param.tx_sessions_cnt_max = session_num;
   ctx.param.rx_sessions_cnt_max = 1;
 
+  struct st20_pgroup st20_pg;
+  st20_get_pgroup(ctx.fmt, &st20_pg);
+
   ctx.st = mtl_init(&ctx.param);
   if (!ctx.st) {
     err("%s: mtl_init fail\n", __func__);
@@ -219,16 +212,7 @@ int main(int argc, char** argv) {
   memset(&app, 0, sizeof(app));
   app.st = ctx.st;
 
-  /* this sample schedules all sessions on single core,
-   * so the ring created is not multi-thread safe */
-  struct rte_ring* frame_ring =
-      rte_ring_create("frame_ring", FB_CNT, SOCKET_ID_ANY, RING_F_SP_ENQ | RING_F_SC_DEQ);
-  if (!frame_ring) {
-    err("%s, ring create fail\n", __func__);
-    ret = -EIO;
-    goto error;
-  }
-  app.frame_ring = frame_ring;
+  TAILQ_INIT(&app.q);
 
   struct st20_rx_ops ops_rx;
   memset(&ops_rx, 0, sizeof(ops_rx));
@@ -240,8 +224,8 @@ int main(int argc, char** argv) {
   ops_rx.udp_port[MTL_PORT_P] = ctx.udp_port;  // user config the udp port.
   ops_rx.pacing = ST21_PACING_NARROW;
   ops_rx.type = ST20_TYPE_FRAME_LEVEL;
-  ops_rx.width = 3840;
-  ops_rx.height = 2160;
+  ops_rx.width = ctx.width;
+  ops_rx.height = ctx.height;
   ops_rx.fps = ctx.fps;
   ops_rx.fmt = ctx.fmt;
   ops_rx.framebuff_cnt = FB_CNT;
@@ -257,7 +241,7 @@ int main(int argc, char** argv) {
   app.rx_handle = rx_handle;
 
   for (int i = 0; i < 4; i++) {
-    struct tx* tx = &app.tx[i];
+    struct tx_ctx* tx = &app.tx[i];
     tx->app = &app;
     struct st20_tx_ops ops_tx;
     memset(&ops_tx, 0, sizeof(ops_tx));
@@ -270,13 +254,14 @@ int main(int argc, char** argv) {
     ops_tx.pacing = ST21_PACING_NARROW;
     ops_tx.packing = ST20_PACKING_BPM;
     ops_tx.type = ST20_TYPE_FRAME_LEVEL;
-    ops_tx.width = 1920;
-    ops_tx.height = 1080;
-    ops_tx.linesize = 9600; /* double 1080p linesize */
+    ops_tx.width = ctx.width / 2;
+    ops_tx.height = ctx.height / 2;
+    ops_tx.linesize = ctx.width * st20_pg.size / st20_pg.coverage;
     ops_tx.fps = ctx.fps;
     ops_tx.fmt = ctx.fmt;
     ops_tx.payload_type = ctx.payload_type;
     ops_tx.flags |= ST20_TX_FLAG_EXT_FRAME;
+    ops_tx.flags |= ST20_TX_FLAG_USER_TIMESTAMP;
     ops_tx.framebuff_cnt = FB_CNT;
     ops_tx.get_next_frame = tx_video_next_frame;
     ops_tx.notify_frame_done = tx_video_frame_done;
@@ -289,11 +274,11 @@ int main(int argc, char** argv) {
     tx->tx_handle = tx_handle;
   }
 
-  app.tx[0].fb_offset = 0;               /* origin */
-  app.tx[1].fb_offset = 4800;            /* 1080p linesize */
-  app.tx[2].fb_offset = 1920 * 1080 * 5; /* 2 1080p framesize */
+  app.tx[0].fb_offset = 0; /* origin */
+  app.tx[1].fb_offset = (ctx.width / 2) * st20_pg.size / st20_pg.coverage;
+  app.tx[2].fb_offset = (ctx.width / 2) * ctx.height * st20_pg.size / st20_pg.coverage;
   app.tx[3].fb_offset = app.tx[2].fb_offset + app.tx[1].fb_offset;
-  app.fb_size = 3840 * 2160 * 5 / 2; /* 4k framesize */
+  app.fb_size = ctx.width * ctx.height * st20_pg.size / st20_pg.coverage;
 
   app.ready = true;
 
