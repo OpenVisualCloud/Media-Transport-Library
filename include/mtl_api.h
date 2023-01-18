@@ -338,6 +338,13 @@ struct mtl_init_params {
    */
   uint8_t netmask[MTL_PORT_MAX][MTL_IP_ADDR_LEN];
   /**
+   * gateway of ports, mandatory if need wan support.
+   * User can use "route -n" to get gateway before bind the port to DPDK PMD.
+   * For MTL_PMD_DPDK_AF_XDP, lib will try to fetch gateway by route command
+   * if this value is not assigned.
+   */
+  uint8_t gateway[MTL_PORT_MAX][MTL_IP_ADDR_LEN];
+  /**
    * mandatory for MTL_TRANSPORT_ST2110.
    * max tx sessions(st20, st22, st30, st40) requested the lib to support,
    * use mtl_get_cap to query the actual count.

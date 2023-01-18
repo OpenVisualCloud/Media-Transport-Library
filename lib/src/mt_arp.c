@@ -91,7 +91,10 @@ static int arp_receive_reply(struct mtl_main_impl* impl, struct rte_arp_hdr* rep
   }
 
   uint8_t* ip = (uint8_t*)&reply->arp_data.arp_sip;
-  info_once("%s(%d), from %d.%d.%d.%d\n", __func__, port, ip[0], ip[1], ip[2], ip[3]);
+  uint8_t* addr_bytes = reply->arp_data.arp_sha.addr_bytes;
+  info_once("%s(%d), from %d.%d.%d.%d, mac: %02hhx:%02hhx:%02hhx:%02hhx:%02hhx:%02hhx\n",
+            __func__, port, ip[0], ip[1], ip[2], ip[3], addr_bytes[0], addr_bytes[1],
+            addr_bytes[2], addr_bytes[3], addr_bytes[4], addr_bytes[5]);
 
   struct mt_arp_impl* arp_impl = get_arp(impl, port);
 

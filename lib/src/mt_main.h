@@ -849,6 +849,10 @@ static inline uint8_t* mt_sip_netmask(struct mtl_main_impl* impl, enum mtl_port 
   return mt_get_user_params(impl)->netmask[port];
 }
 
+static inline uint8_t* mt_sip_gatway(struct mtl_main_impl* impl, enum mtl_port port) {
+  return mt_get_user_params(impl)->gateway[port];
+}
+
 static inline enum mtl_pmd_type mt_pmd_type(struct mtl_main_impl* impl,
                                             enum mtl_port port) {
   return mt_get_user_params(impl)->pmd[port];

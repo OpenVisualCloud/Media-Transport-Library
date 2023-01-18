@@ -28,6 +28,8 @@ enum sample_args_cmd {
   SAMPLE_ARG_R_TX_DST_MAC,
   SAMPLE_ARG_P_NETMASK,
   SAMPLE_ARG_R_NETMASK,
+  SAMPLE_ARG_P_GATEWAY,
+  SAMPLE_ARG_R_GATEWAY,
 
   SAMPLE_ARG_TX_VIDEO_URL = 0x200,
   SAMPLE_ARG_RX_VIDEO_URL,
@@ -66,6 +68,8 @@ static struct option sample_args_options[] = {
     {"r_tx_dst_mac", required_argument, 0, SAMPLE_ARG_R_TX_DST_MAC},
     {"p_netmask", required_argument, 0, SAMPLE_ARG_P_NETMASK},
     {"r_netmask", required_argument, 0, SAMPLE_ARG_R_NETMASK},
+    {"p_gateway", required_argument, 0, SAMPLE_ARG_P_GATEWAY},
+    {"r_gateway", required_argument, 0, SAMPLE_ARG_R_GATEWAY},
 
     {"tx_url", required_argument, 0, SAMPLE_ARG_TX_VIDEO_URL},
     {"rx_url", required_argument, 0, SAMPLE_ARG_RX_VIDEO_URL},
@@ -147,6 +151,12 @@ static int _sample_parse_args(struct st_sample_context* ctx, int argc, char** ar
         break;
       case SAMPLE_ARG_R_NETMASK:
         inet_pton(AF_INET, optarg, p->netmask[MTL_PORT_R]);
+        break;
+      case SAMPLE_ARG_P_GATEWAY:
+        inet_pton(AF_INET, optarg, p->gateway[MTL_PORT_P]);
+        break;
+      case SAMPLE_ARG_R_GATEWAY:
+        inet_pton(AF_INET, optarg, p->gateway[MTL_PORT_R]);
         break;
       case SAMPLE_ARG_LOG_LEVEL:
         if (!strcmp(optarg, "debug"))

@@ -459,6 +459,7 @@ mtl_handle mtl_init(struct mtl_init_params* p) {
     if (p->pmd[i] != MTL_PMD_DPDK_USER) {
       uint8_t if_ip[MTL_IP_ADDR_LEN];
       uint8_t if_netmask[MTL_IP_ADDR_LEN];
+      uint8_t if_gateway[MTL_IP_ADDR_LEN];
       ret = mt_socket_get_if_ip(impl->user_para.port[i], if_ip, if_netmask);
       if (ret < 0) {
         err("%s(%d), get IP fail\n", __func__, i);
@@ -467,6 +468,14 @@ mtl_handle mtl_init(struct mtl_init_params* p) {
       /* update the sip and net mask */
       rte_memcpy(impl->user_para.sip_addr[i], if_ip, MTL_IP_ADDR_LEN);
       rte_memcpy(impl->user_para.netmask[i], if_netmask, MTL_IP_ADDR_LEN);
+      if (!mt_ip_to_u32(impl->user_para.gateway[i])) {
+        /* try to fetch gateway */
+        ret = mt_socket_get_if_gateway(impl->user_para.port[i], if_gateway);
+        if (ret >= 0) {
+          info("%s(%d), get gateway succ from if\n", __func__, i);
+          rte_memcpy(impl->user_para.gateway[i], if_gateway, MTL_IP_ADDR_LEN);
+        }
+      }
     } else { /* MTL_PMD_DPDK_USER */
       uint32_t netmask = mt_ip_to_u32(impl->user_para.netmask[i]);
       if (!netmask) { /* set to default if user not set a netmask */

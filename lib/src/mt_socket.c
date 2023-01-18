@@ -43,6 +43,30 @@ int mt_socket_get_if_ip(char* if_name, uint8_t ip[MTL_IP_ADDR_LEN],
   return 0;
 }
 
+int mt_socket_get_if_gateway(char* if_name, uint8_t gateway[MTL_IP_ADDR_LEN]) {
+  char cmd[256];
+  char out[256];
+
+  snprintf(cmd, sizeof(cmd), "route -n | grep 'UG' | grep '%s' | awk '{print $2}'",
+           if_name);
+  int ret = mt_run_cmd(cmd, out, sizeof(out));
+  if (ret < 0) return ret;
+
+  uint8_t a, b, c, d;
+  ret = sscanf(out, "%" SCNu8 ".%" SCNu8 ".%" SCNu8 ".%" SCNu8 "", &a, &b, &c, &d);
+  if (ret < 0) {
+    info("%s, cmd: %s fail\n", __func__, cmd);
+    return ret;
+  }
+
+  info("%s, cmd %s out %s\n", __func__, cmd, out);
+  gateway[0] = a;
+  gateway[1] = b;
+  gateway[2] = c;
+  gateway[3] = d;
+  return 0;
+}
+
 int mt_socket_get_if_mac(char* if_name, struct rte_ether_addr* ea) {
   int sock, ret;
   struct ifreq ifr;
@@ -309,6 +333,10 @@ int mt_socket_remove_flow(struct mtl_main_impl* impl, enum mtl_port port, int fl
 #else
 int mt_socket_get_if_ip(char* if_name, uint8_t ip[MTL_IP_ADDR_LEN],
                         uint8_t netmask[MTL_IP_ADDR_LEN]) {
+  return -ENOTSUP;
+}
+
+int mt_socket_get_if_gateway(char* if_name, uint8_t gateway[MTL_IP_ADDR_LEN]) {
   return -ENOTSUP;
 }
 
