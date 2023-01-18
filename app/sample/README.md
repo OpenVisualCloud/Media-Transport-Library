@@ -39,6 +39,16 @@ The dir incldue the simple sample code for how to develop application quickly ba
 ./build/app/RxSt20pTxSt20pDownsampleFwd --p_port 0000:af:01.1 --p_sip 192.168.75.22 --p_rx_ip 239.168.75.20 --p_fwd_ip 239.168.75.21 --width 3840 --height 2160
 ```
 
+[rx_st20p_tx_st20p_split_fwd.c](rx_st20p_tx_st20p_split_fwd.c): Receive 4k frames from rx, do square quad division and send with 4 1080p sessions.
+```bash
+./build/app/RxSt20pTxSt20pSplitFwd --p_port 0000:af:01.1 --p_sip 192.168.75.22 --p_rx_ip 239.168.75.20 --p_fwd_ip 239.168.75.20 --width 3840 --height 2160
+```
+
+[rx_st20p_tx_st20p_merge_fwd.c](rx_st20p_tx_st20p_merge_fwd.c): Receive 4 1080p sessions from rx, merge to single 4k st20 stream and send out.
+```bash
+./build/app/RxSt20pTxSt20pMergeFwd --p_port 0000:af:01.1 --p_sip 192.168.75.22 --p_rx_ip 239.168.75.20 --p_fwd_ip 239.168.75.20 --width 3840 --height 2160
+```
+
 ## 3. Samples which based on low level APIs for advanced usage:
 [tx_video_sample.c](tx_video_sample.c): A tx video(st2110-20) application based on frame interface, application need charge the color format conversion in case the user format is not the one defined in RFC4175.
 ```bash
@@ -87,7 +97,7 @@ The dir incldue the simple sample code for how to develop application quickly ba
 
 [rx_st20_tx_st20_split_fwd.c](rx_st20_tx_st20_split_fwd.c): Receive 4k frames from rx, do square quad division and send with 4 1080p sessions.
 ```bash
-./build/app/RxSt20TxSt20SplitFwd --p_port 0000:af:01.1 --p_sip 192.168.75.22 --p_rx_ip 239.168.75.20 --p_fwd_ip 239.168.75.20
+./build/app/RxSt20TxSt20SplitFwd --p_port 0000:af:01.1 --p_sip 192.168.75.22 --p_rx_ip 239.168.75.20 --p_fwd_ip 239.168.75.20 --width 3840 --height 2160
 ```
 
 [rx_st20_redundant_sample.c](rx_st20_redundant_sample.c): A rx video(st2110-20) redundant application based on frame interface, application need handle the color format conversion in case the user format is not the one defined in RFC4175.
