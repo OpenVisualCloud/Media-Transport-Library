@@ -322,16 +322,28 @@ struct mtl_af_xdp_params {
  */
 struct mtl_init_params {
   /* below are mandatory parameters */
-  /** Pcie BDF(ex: 0000:af:00.0) or enp175s0f0(AF_XDP) */
+  /** Pcie BDF(ex: 0000:af:00.0) or enp175s0f0(MTL_PMD_DPDK_AF_XDP) */
   char port[MTL_PORT_MAX][MTL_PORT_MAX_LEN];
   /** number of pcie ports, 1 or 2, mandatory */
   uint8_t num_ports;
-  /** source IP of ports, olny for MTL_PMD_DPDK_AF_XDP */
+  /** source IP of ports, for MTL_PMD_DPDK_USER */
   uint8_t sip_addr[MTL_PORT_MAX][MTL_IP_ADDR_LEN];
 
   /* below are optional parameters */
   /** transport type, st2110 or udp */
   enum mtl_transport_type transport;
+  /**
+   * net mask of ports, for MTL_PMD_DPDK_USER.
+   * Lib will use 255.255.255.0 if this value is blank
+   */
+  uint8_t netmask[MTL_PORT_MAX][MTL_IP_ADDR_LEN];
+  /**
+   * gateway of ports, mandatory if need wan support.
+   * User can use "route -n" to get gateway before bind the port to DPDK PMD.
+   * For MTL_PMD_DPDK_AF_XDP, lib will try to fetch gateway by route command
+   * if this value is not assigned.
+   */
+  uint8_t gateway[MTL_PORT_MAX][MTL_IP_ADDR_LEN];
   /**
    * mandatory for MTL_TRANSPORT_ST2110.
    * max tx sessions(st20, st22, st30, st40) requested the lib to support,
@@ -1023,7 +1035,8 @@ enum mtl_pmd_type mtl_pmd_by_port_name(const char* port);
  *   - 0: Success.
  *   - <0: Error code.
  */
-int mtl_get_if_ip(char* if_name, uint8_t ip[MTL_IP_ADDR_LEN]);
+int mtl_get_if_ip(char* if_name, uint8_t ip[MTL_IP_ADDR_LEN],
+                  uint8_t netmask[MTL_IP_ADDR_LEN]);
 
 /**
  * Helper function which align a size with pages

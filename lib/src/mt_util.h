@@ -15,11 +15,21 @@ static inline bool mt_rtp_len_valid(uint16_t len) {
 }
 
 /* ip from 224.x.x.x to 239.x.x.x */
-static inline uint64_t mt_is_multicast_ip(uint8_t ip[MTL_IP_ADDR_LEN]) {
+static inline bool mt_is_multicast_ip(uint8_t ip[MTL_IP_ADDR_LEN]) {
   if (ip[0] >= 224 && ip[0] <= 239)
     return true;
   else
     return false;
+}
+
+/* if it is a local address area */
+static inline bool mt_is_lan_ip(uint8_t ip[MTL_IP_ADDR_LEN], uint8_t sip[MTL_IP_ADDR_LEN],
+                                uint8_t netmask[MTL_IP_ADDR_LEN]) {
+  for (int i = 0; i < MTL_IP_ADDR_LEN; i++) {
+    if ((ip[i] & netmask[i]) != (sip[i] & netmask[i])) return false;
+  }
+
+  return true;
 }
 
 static inline uint32_t mt_ip_to_u32(uint8_t ip[MTL_IP_ADDR_LEN]) {

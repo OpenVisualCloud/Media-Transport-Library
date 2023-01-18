@@ -497,7 +497,7 @@ GTEST_API_ int main(int argc, char** argv) {
   for (int i = 0; i < ctx->para.num_ports; i++) {
     ctx->para.pmd[i] = mtl_pmd_by_port_name(ctx->para.port[i]);
     if (ctx->para.pmd[i] != MTL_PMD_DPDK_USER) {
-      mtl_get_if_ip(ctx->para.port[i], ctx->para.sip_addr[i]);
+      mtl_get_if_ip(ctx->para.port[i], ctx->para.sip_addr[i], ctx->para.netmask[i]);
       ctx->para.flags |= MTL_FLAG_RX_SEPARATE_VIDEO_LCORE;
       ctx->para.tx_sessions_cnt_max = 8;
       ctx->para.rx_sessions_cnt_max = 8;

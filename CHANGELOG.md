@@ -1,6 +1,7 @@
 # Change log
 
 ## Change log for 23.03:
+* mtl_init_params: add gateway and netmask support for wan.
 
 ## Change log for 22.12:
 * tasklet: add thread and sleep option for core usage, see ST_FLAG_TASKLET_THREAD and ST_FLAG_TASKLET_SLEEP.
