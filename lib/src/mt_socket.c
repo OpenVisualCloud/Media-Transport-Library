@@ -59,7 +59,7 @@ int mt_socket_get_if_gateway(char* if_name, uint8_t gateway[MTL_IP_ADDR_LEN]) {
     return ret;
   }
 
-  info("%s, cmd %s out %s\n", __func__, cmd, out);
+  dbg("%s, cmd %s out %s\n", __func__, cmd, out);
   gateway[0] = a;
   gateway[1] = b;
   gateway[2] = c;
