@@ -4,8 +4,6 @@
 
 #include "sample_util.h"
 
-#define FB_CNT (4) /* 2 is not enough for this case */
-
 struct rx_ctx {
   st20p_rx_handle rx_handle;
   size_t fb_offset;
@@ -153,7 +151,7 @@ int main(int argc, char** argv) {
   ops_tx.input_fmt = ctx.input_fmt;
   ops_tx.transport_fmt = ctx.fmt;
   ops_tx.device = ST_PLUGIN_DEVICE_AUTO;
-  ops_tx.framebuff_cnt = FB_CNT;
+  ops_tx.framebuff_cnt = ctx.framebuff_cnt;
   /* do we need the original timestamp */
   // ops_tx.flags |= ST20P_TX_FLAG_USER_TIMESTAMP;
   ops_tx.notify_frame_available = tx_st20p_frame_available;
@@ -184,7 +182,7 @@ int main(int argc, char** argv) {
     ops_rx.transport_fmt = ctx.fmt;
     ops_rx.output_fmt = ctx.output_fmt;
     ops_rx.device = ST_PLUGIN_DEVICE_AUTO;
-    ops_rx.framebuff_cnt = FB_CNT;
+    ops_rx.framebuff_cnt = ctx.framebuff_cnt;
     ops_rx.notify_frame_available = rx_st20p_frame_available;
 
     st20p_rx_handle rx_handle = st20p_rx_create(ctx.st, &ops_rx);
