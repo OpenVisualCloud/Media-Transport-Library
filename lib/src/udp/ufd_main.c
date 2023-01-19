@@ -94,6 +94,15 @@ static int ufd_parse_interfaces(struct ufd_mt_ctx* ctx, json_object* obj,
     return -EINVAL;
   }
 
+  json_object* obj_item = mt_json_object_get(obj, "netmask");
+  if (obj_item) {
+    inet_pton(AF_INET, json_object_get_string(obj_item), p->netmask[port]);
+  }
+  obj_item = mt_json_object_get(obj, "gateway");
+  if (obj_item) {
+    inet_pton(AF_INET, json_object_get_string(obj_item), p->gateway[port]);
+  }
+
   p->num_ports++;
 
   return 0;
