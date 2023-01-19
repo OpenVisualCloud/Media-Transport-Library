@@ -76,6 +76,10 @@ List all interfaces that can be used by app
 
 ​	**ip (string):** interface assigned IP
 
+​	**netmask (string):** interface netmask(optional), for example: 255.255.254.0
+
+​	**gateway (string):** interface gateway(optional), for example: 172.16.10.1, use "route -n" to check the gateway address before binding port to DPDK PMD.
+
 
 > Session group contains a group of sessions which use some common settings, there can be 0 or multiple video/audio/ancillary sessions in one group, and there can be 0 or multiple tx/rx session groups in the following parts in case you have multiple destination IP. (see [example config](../config/test_tx_1port_1v_2dest.json))
 

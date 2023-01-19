@@ -20,6 +20,10 @@ enum st_args_cmd {
   ST_ARG_R_RX_IP,
   ST_ARG_P_SIP,
   ST_ARG_R_SIP,
+  ST_ARG_P_NETMASK,
+  ST_ARG_R_NETMASK,
+  ST_ARG_P_GATEWAY,
+  ST_ARG_R_GATEWAY,
 
   ST_ARG_TX_VIDEO_URL = 0x200,
   ST_ARG_TX_VIDEO_SESSIONS_CNT,
@@ -105,6 +109,10 @@ static struct option st_app_args_options[] = {
     {"r_rx_ip", required_argument, 0, ST_ARG_R_RX_IP},
     {"p_sip", required_argument, 0, ST_ARG_P_SIP},
     {"r_sip", required_argument, 0, ST_ARG_R_SIP},
+    {"p_netmask", required_argument, 0, ST_ARG_P_NETMASK},
+    {"r_netmask", required_argument, 0, ST_ARG_R_NETMASK},
+    {"p_gateway", required_argument, 0, ST_ARG_P_GATEWAY},
+    {"r_gateway", required_argument, 0, ST_ARG_R_GATEWAY},
 
     {"tx_video_url", required_argument, 0, ST_ARG_TX_VIDEO_URL},
     {"tx_video_sessions_count", required_argument, 0, ST_ARG_TX_VIDEO_SESSIONS_CNT},
@@ -243,6 +251,8 @@ static int app_args_json(struct st_app_context* ctx, struct mtl_init_params* p,
   for (int i = 0; i < ctx->json_ctx->num_interfaces; ++i) {
     snprintf(p->port[i], sizeof(p->port[i]), "%s", ctx->json_ctx->interfaces[i].name);
     memcpy(p->sip_addr[i], ctx->json_ctx->interfaces[i].ip_addr, sizeof(p->sip_addr[i]));
+    memcpy(p->netmask[i], ctx->json_ctx->interfaces[i].netmask, sizeof(p->netmask[i]));
+    memcpy(p->gateway[i], ctx->json_ctx->interfaces[i].gateway, sizeof(p->gateway[i]));
     p->num_ports++;
   }
   if (ctx->json_ctx->sch_quota) {
@@ -289,6 +299,18 @@ int st_app_parse_args(struct st_app_context* ctx, struct mtl_init_params* p, int
         break;
       case ST_ARG_R_RX_IP:
         inet_pton(AF_INET, optarg, ctx->rx_sip_addr[MTL_PORT_R]);
+        break;
+      case ST_ARG_P_NETMASK:
+        inet_pton(AF_INET, optarg, p->netmask[MTL_PORT_P]);
+        break;
+      case ST_ARG_R_NETMASK:
+        inet_pton(AF_INET, optarg, p->netmask[MTL_PORT_R]);
+        break;
+      case ST_ARG_P_GATEWAY:
+        inet_pton(AF_INET, optarg, p->gateway[MTL_PORT_P]);
+        break;
+      case ST_ARG_R_GATEWAY:
+        inet_pton(AF_INET, optarg, p->gateway[MTL_PORT_R]);
         break;
       case ST_ARG_TX_VIDEO_URL:
         snprintf(ctx->tx_video_url, sizeof(ctx->tx_video_url), "%s", optarg);

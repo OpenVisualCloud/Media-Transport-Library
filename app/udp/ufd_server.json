@@ -3,12 +3,14 @@
     "nb_nic_queues" : "8",
     "nic_shared_queues": true,
     "nic_queue_rate_limit_g": "2",
-    "log_level" : "notice",
+    "log_level" : "info",
     "fd_base" : "20000",
     "interfaces": [
         {
             "port": "0000:af:01.0",
-            "ip": "192.168.85.80"
+            "ip": "192.168.85.80",
+            "netmask": "255.255.254.0",
+            "gateway": "192.168.84.1",
         }
     ],
 }
