@@ -471,6 +471,15 @@ static int st_json_parse_interfaces(json_object* interface_obj,
   const char* ip = json_object_get_string(st_json_object_object_get(interface_obj, "ip"));
   if (ip) inet_pton(AF_INET, ip, interface->ip_addr);
 
+  json_object* obj = st_json_object_object_get(interface_obj, "netmask");
+  if (obj) {
+    inet_pton(AF_INET, json_object_get_string(obj), interface->netmask);
+  }
+  obj = st_json_object_object_get(interface_obj, "gateway");
+  if (obj) {
+    inet_pton(AF_INET, json_object_get_string(obj), interface->gateway);
+  }
+
   return ST_JSON_SUCCESS;
 }
 
@@ -1685,6 +1694,11 @@ int st_app_parse_json(st_json_context_t* ctx, const char* filename) {
     goto error;
   }
   int num_interfaces = json_object_array_length(interfaces_array);
+  if (num_interfaces > MTL_PORT_MAX) {
+    err("%s, invalid num_interfaces %d\n", __func__, num_interfaces);
+    ret = -ST_JSON_NOT_VALID;
+    goto error;
+  }
   ctx->interfaces =
       (st_json_interface_t*)st_app_zmalloc(num_interfaces * sizeof(st_json_interface_t));
   if (!ctx->interfaces) {
