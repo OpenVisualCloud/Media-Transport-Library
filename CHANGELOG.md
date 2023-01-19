@@ -2,6 +2,8 @@
 
 ## Change log for 23.03:
 * mtl_init_params: add gateway and netmask support for wan.
+* udp: introduce a highly efficient udp stack support, see mudp_api.h
+* udp: add POSIX socket compatible(file descriptor) API support, see mudp_sockfd_api.h
 
 ## Change log for 22.12:
 * tasklet: add thread and sleep option for core usage, see ST_FLAG_TASKLET_THREAD and ST_FLAG_TASKLET_SLEEP.
