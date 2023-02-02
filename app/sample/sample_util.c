@@ -390,3 +390,31 @@ void fill_rfc4175_422_10_pg2_data(struct st20_rfc4175_422_10_pg2_be* data, int w
     y1 += 2;
   }
 }
+
+void fill_rfc4175_422_12_pg2_data(struct st20_rfc4175_422_12_pg2_be* data, int w, int h) {
+  int pg_size = w * h / 2;
+  uint16_t cb, y0, cr, y1; /* 12 bit */
+
+  y0 = 0x111;
+
+  cb = 0x222;
+  cr = 0x333;
+  y1 = y0 + 1;
+
+  for (int pg = 0; pg < pg_size; pg++) {
+    data->Cb00 = cb >> 4;
+    data->Cb00_ = cb;
+    data->Y00 = y0 >> 8;
+    data->Y00_ = y0;
+    data->Cr00 = cr >> 4;
+    data->Cr00_ = cr;
+    data->Y01 = y1 >> 8;
+    data->Y01_ = y1;
+    data++;
+
+    cb++;
+    y0 += 2;
+    cr++;
+    y1 += 2;
+  }
+}

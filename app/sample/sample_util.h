@@ -118,6 +118,8 @@ int dma_sample_parse_args(struct st_sample_context* ctx, int argc, char** argv);
 
 void fill_rfc4175_422_10_pg2_data(struct st20_rfc4175_422_10_pg2_be* data, int w, int h);
 
+void fill_rfc4175_422_12_pg2_data(struct st20_rfc4175_422_12_pg2_be* data, int w, int h);
+
 /* Monotonic time (in nanoseconds) since some unspecified starting point. */
 static inline uint64_t sample_get_monotonic_time() {
   struct timespec ts;

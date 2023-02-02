@@ -1726,7 +1726,49 @@ int st20_rfc4175_422be12_to_422le12_simd(struct st20_rfc4175_422_12_pg2_be* pg_b
                                          struct st20_rfc4175_422_12_pg2_le* pg_le,
                                          uint32_t w, uint32_t h,
                                          enum mtl_simd_level level) {
-  /* the only option */
+  enum mtl_simd_level cpu_level = mtl_get_simd_level();
+  int ret;
+
+  MT_MAY_UNUSED(cpu_level);
+  MT_MAY_UNUSED(ret);
+
+#ifdef MTL_HAS_AVX512
+  if ((level >= MTL_SIMD_LEVEL_AVX512) && (cpu_level >= MTL_SIMD_LEVEL_AVX512)) {
+    dbg("%s, avx512 ways\n", __func__);
+    ret = st20_rfc4175_422be12_to_422le12_avx512(pg_be, pg_le, w, h);
+    if (ret == 0) return 0;
+    dbg("%s, avx512 ways failed\n", __func__);
+  }
+#endif
+
+  /* the last option */
+  return st20_rfc4175_422be12_to_422le12_scalar(pg_be, pg_le, w, h);
+}
+
+int st20_rfc4175_422be12_to_422le12_simd_dma(mtl_udma_handle udma,
+                                             struct st20_rfc4175_422_12_pg2_be* pg_be,
+                                             mtl_iova_t pg_be_iova,
+                                             struct st20_rfc4175_422_12_pg2_le* pg_le,
+                                             uint32_t w, uint32_t h,
+                                             enum mtl_simd_level level) {
+  struct mtl_dma_lender_dev* dma = udma;
+  enum mtl_simd_level cpu_level = mtl_get_simd_level();
+  int ret;
+
+  MT_MAY_UNUSED(cpu_level);
+  MT_MAY_UNUSED(ret);
+  MT_MAY_UNUSED(dma);
+
+#ifdef MTL_HAS_AVX512
+  if ((level >= MTL_SIMD_LEVEL_AVX512) && (cpu_level >= MTL_SIMD_LEVEL_AVX512)) {
+    dbg("%s, avx512 ways\n", __func__);
+    ret = st20_rfc4175_422be12_to_422le12_avx512_dma(dma, pg_be, pg_be_iova, pg_le, w, h);
+    if (ret == 0) return 0;
+    dbg("%s, avx512 ways failed\n", __func__);
+  }
+#endif
+
+  /* the last option */
   return st20_rfc4175_422be12_to_422le12_scalar(pg_be, pg_le, w, h);
 }
 
