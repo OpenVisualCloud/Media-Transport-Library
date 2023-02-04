@@ -291,6 +291,37 @@ int st20_rfc4175_422be12_to_422le12_simd(struct st20_rfc4175_422_12_pg2_be* pg_b
                                          enum mtl_simd_level level);
 
 /**
+ * Convert rfc4175_422be12 to rfc4175_422le12 with required SIMD level and DMA helper.
+ * Note the level may downgrade to the SIMD which system really support.
+ * Profiling shows gain with 4k/8k solution due to LLC cache miss migration, thus pls
+ * only applied with 4k/8k.
+ *
+ * @param udma
+ *   Point to dma engine.
+ * @param pg_be
+ *   Point to pg(rfc4175_422be12) data.
+ * @param pg_be_iova
+ *   The mtl_iova_t address of the pg_be buffer.
+ * @param pg_le
+ *   Point to pg(rfc4175_422le12) data.
+ * @param w
+ *   The st2110-20(video) width.
+ * @param h
+ *   The st2110-20(video) height.
+ * @param level
+ *   simd level.
+ * @return
+ *   - 0 if successful.
+ *   - <0: Error code if convert fail.
+ */
+int st20_rfc4175_422be12_to_422le12_simd_dma(mtl_udma_handle udma,
+                                             struct st20_rfc4175_422_12_pg2_be* pg_be,
+                                             mtl_iova_t pg_be_iova,
+                                             struct st20_rfc4175_422_12_pg2_le* pg_le,
+                                             uint32_t w, uint32_t h,
+                                             enum mtl_simd_level level);
+
+/**
  * Convert rfc4175_444be10 to yuv444p10le/gbrp10le with required SIMD level.
  * Note the level may downgrade to the SIMD which system really support.
  *
