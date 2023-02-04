@@ -6,9 +6,11 @@
 [![Test](https://github.com/OpenVisualCloud/Media-Transport-Library/actions/workflows/ubuntu_build_with_gtest.yml/badge.svg)](https://github.com/OpenVisualCloud/Media-Transport-Library/actions/workflows/ubuntu_build_with_gtest.yml)
 
 ## 1. Overview:
-The Media Transport Library(Kahawai) is a solution based on DPDK prepared for transmitting and receiving high quality video with low latency. It include a compliant implementation to the SMPTE ST 2110 Professional Media Over Managed IP Networks suite of standards.
+The Media Transport Library(Kahawai) is a solution based on DPDK prepared for transmitting and receiving media data with high throughput and low latency. It include a efficient user space udp stack support, beside UDP, it also has a built-in compliant implementation to the SMPTE ST 2110 Professional Media Over Managed IP Networks suite of standards.
 
 #### 1.1 Features:
+* User-space UDP stack with POSIX socket compatible API.
+###### 1.1.1 ST2110 features:
 * ST2110-10, ST2110-20, ST2110-21, ST2110-30, ST2110-40, ST2110-22, ST2022-7
 * 1080p, 720p, 4k, 8k and other
 * FPS: 120, 119.88, 100, 60, 59.94, 50, 30, 29.97, 25, 24, 23.98
@@ -28,18 +30,21 @@ Kahawai also develope SIMD CSC(color space format covert), DMA, plugin interface
 Please refer to [build guide](doc/build.md) for how to build DPDK, the library and the sample application.<br>
 For Windows, please refer to [Win build guide](doc/build_WIN.md) for how to build.
 
-## 3. Run:
+## 3. Run ST2110:
 Please refer to [run guide](doc/run.md) for how to setup and run the demo pipeline application.<br>
 For Windows, please refer to [Win run guide](doc/run_WIN.md) for how to setup and run the demo.<br>
 For VF and VM support under Linux, please refer to [vf guide](doc/vf.md) for how to setup VF based on SRIOV, [vm guide](doc/vm.md) for how to setup VM based on VF passthrough.
 
-## 4. Programmers guide:
+## 4. ST2110 Programmers guide:
 For how to develop application quickly based on Kahawai library, pls refer to [sample code](app/sample).
 
-## 5. How to Contribute:
+## 5. User space UDP stack guide:
+From 23.03.0 version, Media transport library extend the support to user-space UDP stack which run directly under current process context for performance consideration. Other user-space UDP stack usually run with client-service architect, it introduce a cross-core message cost which hurt the performance. Our stack are running NIC tx/rx function from the sendto/recvfrom API directly which save the cross-core call and keep the data affinity(LLC) to the UDP consumer. For how to use the UDP api, pls refer to [udp sample code](app/udp).
+
+## 6. How to Contribute:
 We welcome community contributions to the Media Transport Library project. If you have any ideas/issues, please share it with us by the github issues or opening a pull request.
 
-#### 5.1 Coding style:
+#### 6.1 Coding style:
 Run below command before opening a PR.
 ```bash
 ./format-coding.sh
