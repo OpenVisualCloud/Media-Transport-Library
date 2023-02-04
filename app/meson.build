@@ -161,6 +161,13 @@ executable('PerfY210ToRfc4175422be10', perf_y210_to_rfc4175_422be10_sources,
   dependencies: [asan_dep, mtl, libpthread]
 )
 
+executable('PerfRfc4175422be12ToLe', perf_rfc4175_422be12_to_le_sources,
+  c_args : app_c_args,
+  link_args: app_ld_args,
+  # asan should be always the first dep
+  dependencies: [asan_dep, mtl, libpthread]
+)
+
 executable('TxVideoSample', video_tx_sample_sources,
   c_args : app_c_args,
   link_args: app_ld_args,

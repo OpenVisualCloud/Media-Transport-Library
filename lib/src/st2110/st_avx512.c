@@ -2120,5 +2120,191 @@ int st20_y210_to_rfc4175_422be10_avx512_dma(struct mtl_dma_lender_dev* dma,
 }
 /* end st20_y210_to_rfc4175_422be10_avx512 */
 
+/* begin st20_rfc4175_422be12_to_422le12_avx512 */
+static uint8_t be12_to_le12_shuffle0_tbl_128[16] = {
+    1,     0,     2,     1,     /* pg0,cb,y0 */
+    4,     3,     5,     4,     /* pg0,cr,y1 */
+    1 + 6, 0 + 6, 2 + 6, 1 + 6, /* pg1,cb,y0 */
+    4 + 6, 3 + 6, 5 + 6, 4 + 6, /* pg1,cr,y1 */
+};
+
+static uint8_t be12_to_le12_shuffle1_tbl_128[16] = {
+    0,     1,     2,     4,     5,     6,     /*pg0*/
+    0 + 8, 1 + 8, 2 + 8, 4 + 8, 5 + 8, 6 + 8, /*pg1*/
+    0x80,  0x80,  0x80,  0x80,                /*zeros*/
+};
+
+int st20_rfc4175_422be12_to_422le12_avx512(struct st20_rfc4175_422_12_pg2_be* pg_be,
+                                           struct st20_rfc4175_422_12_pg2_le* pg_le,
+                                           uint32_t w, uint32_t h) {
+  __m128i shuffle0 = _mm_loadu_si128((__m128i*)be12_to_le12_shuffle0_tbl_128);
+  __m128i shuffle1 = _mm_loadu_si128((__m128i*)be12_to_le12_shuffle1_tbl_128);
+  __mmask16 k = 0xFFF; /* each __m128i with 2 pg group, 12 bytes */
+
+  int pg_cnt = w * h / 2;
+  dbg("%s, pg_cnt %d\n", __func__, pg_cnt);
+  int batch = pg_cnt / 2;
+
+  for (int i = 0; i < batch; i++) {
+    __m128i input = _mm_maskz_loadu_epi8(k, (__m128i*)pg_be);
+    __m128i shuffle0_result = _mm_shuffle_epi8(input, shuffle0);
+    __m128i sr_result = _mm_srli_epi32(shuffle0_result, 4);
+    __m128i result = _mm_shuffle_epi8(sr_result, shuffle1);
+
+    /* store to the first 12 bytes after dest address */
+    _mm_mask_storeu_epi8((__m128i*)pg_le, k, result);
+
+    pg_be += 2;
+    pg_le += 2;
+  }
+
+  int left = pg_cnt % 2;
+  while (left) {
+    uint16_t cb, y0, cr, y1;
+
+    cb = (pg_be->Cb00 << 4) + pg_be->Cb00_;
+    y0 = (pg_be->Y00 << 8) + pg_be->Y00_;
+    cr = (pg_be->Cr00 << 4) + pg_be->Cr00_;
+    y1 = (pg_be->Y01 << 8) + pg_be->Y01_;
+
+    pg_le->Cb00 = cb;
+    pg_le->Cb00_ = cb >> 8;
+    pg_le->Y00 = y0;
+    pg_le->Y00_ = y0 >> 4;
+    pg_le->Cr00 = cr;
+    pg_le->Cr00_ = cr >> 8;
+    pg_le->Y01 = y1;
+    pg_le->Y01_ = y1 >> 4;
+
+    pg_be++;
+    pg_le++;
+    left--;
+  }
+
+  return 0;
+}
+
+int st20_rfc4175_422be12_to_422le12_avx512_dma(struct mtl_dma_lender_dev* dma,
+                                               struct st20_rfc4175_422_12_pg2_be* pg_be,
+                                               mtl_iova_t pg_be_iova,
+                                               struct st20_rfc4175_422_12_pg2_le* pg_le,
+                                               uint32_t w, uint32_t h) {
+  __m128i shuffle0 = _mm_loadu_si128((__m128i*)be12_to_le12_shuffle0_tbl_128);
+  __m128i shuffle1 = _mm_loadu_si128((__m128i*)be12_to_le12_shuffle1_tbl_128);
+  __mmask16 k = 0xFFF; /* each __m128i with 2 pg group, 12 bytes */
+  int pg_cnt = w * h / 2;
+
+  int caches_num = 4;
+  int cache_pg_cnt = (256 * 1024) / sizeof(*pg_be); /* pg cnt for each cache */
+  int align = caches_num * 2; /* align to simd pg groups and caches_num */
+  cache_pg_cnt = cache_pg_cnt / align * align;
+  size_t cache_size = cache_pg_cnt * sizeof(*pg_be);
+  int soc_id = dma->parent->soc_id;
+
+  struct st20_rfc4175_422_12_pg2_be* be_caches =
+      mt_rte_zmalloc_socket(cache_size * caches_num, soc_id);
+  struct mt_cvt_dma_ctx* ctx = mt_cvt_dma_ctx_init(2 * caches_num, soc_id, 2);
+  if (!be_caches || !ctx) {
+    err("%s, alloc cache(%d,%" PRIu64 ") fail, %p\n", __func__, cache_pg_cnt, cache_size,
+        be_caches);
+    if (be_caches) mt_rte_free(be_caches);
+    if (ctx) mt_cvt_dma_ctx_uinit(ctx);
+    return st20_rfc4175_422be12_to_422le12_avx512(pg_be, pg_le, w, h);
+  }
+  rte_iova_t be_caches_iova = rte_malloc_virt2iova(be_caches);
+
+  /* first with caches batch step */
+  int cache_batch = pg_cnt / cache_pg_cnt;
+  dbg("%s, pg_cnt %d cache_pg_cnt %d caches_num %d cache_batch %d\n", __func__, pg_cnt,
+      cache_pg_cnt, caches_num, cache_batch);
+  for (int i = 0; i < cache_batch; i++) {
+    struct st20_rfc4175_422_12_pg2_be* be_cache =
+        be_caches + (i % caches_num) * cache_pg_cnt;
+    dbg("%s, cache batch idx %d\n", __func__, i);
+
+    int max_tran = i + caches_num;
+    max_tran = RTE_MIN(max_tran, cache_batch);
+    int cur_tran = mt_cvt_dma_ctx_get_tran(ctx, 0);
+    /* push max be dma */
+    while (cur_tran < max_tran) {
+      rte_iova_t be_cache_iova = be_caches_iova + (cur_tran % caches_num) * cache_size;
+      mt_dma_copy_busy(dma, be_cache_iova, pg_be_iova, cache_size);
+      pg_be += cache_pg_cnt;
+      pg_be_iova += cache_size;
+      mt_cvt_dma_ctx_push(ctx, 0);
+      cur_tran = mt_cvt_dma_ctx_get_tran(ctx, 0);
+    }
+    mt_dma_submit_busy(dma);
+
+    /* wait until current be dma copy done */
+    while (mt_cvt_dma_ctx_get_done(ctx, 0) < (i + 1)) {
+      uint16_t nb_dq = mt_dma_completed(dma, 1, NULL, NULL);
+      if (nb_dq) mt_cvt_dma_ctx_pop(ctx);
+    }
+
+    struct st20_rfc4175_422_12_pg2_be* be = be_cache;
+    int batch = cache_pg_cnt / 2;
+    for (int j = 0; j < batch; j++) {
+      __m128i input = _mm_maskz_loadu_epi8(k, (__m128i*)be);
+      __m128i shuffle0_result = _mm_shuffle_epi8(input, shuffle0);
+      __m128i sr_result = _mm_srli_epi32(shuffle0_result, 4);
+      __m128i result = _mm_shuffle_epi8(sr_result, shuffle1);
+
+      /* store to the first 15 bytes after dest address */
+      _mm_mask_storeu_epi8((__m128i*)pg_le, k, result);
+
+      be += 2;
+      pg_le += 2;
+    }
+  }
+
+  pg_cnt = pg_cnt % cache_pg_cnt;
+  mt_cvt_dma_ctx_uinit(ctx);
+  mt_rte_free(be_caches);
+
+  /* remaining simd batch */
+  int batch = pg_cnt / 2;
+  for (int i = 0; i < batch; i++) {
+    __m128i input = _mm_maskz_loadu_epi8(k, (__m128i*)pg_be);
+    __m128i shuffle0_result = _mm_shuffle_epi8(input, shuffle0);
+    __m128i sr_result = _mm_srli_epi32(shuffle0_result, 4);
+    __m128i result = _mm_shuffle_epi8(sr_result, shuffle1);
+
+    /* store to the first 15 bytes after dest address */
+    _mm_mask_storeu_epi8((__m128i*)pg_le, k, result);
+
+    pg_be += 2;
+    pg_le += 2;
+  }
+
+  /* remaining scalar batch */
+  int left = pg_cnt % 2;
+  while (left) {
+    uint16_t cb, y0, cr, y1;
+
+    cb = (pg_be->Cb00 << 4) + pg_be->Cb00_;
+    y0 = (pg_be->Y00 << 8) + pg_be->Y00_;
+    cr = (pg_be->Cr00 << 4) + pg_be->Cr00_;
+    y1 = (pg_be->Y01 << 8) + pg_be->Y01_;
+
+    pg_le->Cb00 = cb;
+    pg_le->Cb00_ = cb >> 8;
+    pg_le->Y00 = y0;
+    pg_le->Y00_ = y0 >> 4;
+    pg_le->Cr00 = cr;
+    pg_le->Cr00_ = cr >> 8;
+    pg_le->Y01 = y1;
+    pg_le->Y01_ = y1 >> 4;
+
+    pg_be++;
+    pg_le++;
+    left--;
+  }
+
+  return 0;
+}
+
+/* end st20_rfc4175_422be12_to_422le12_avx512 */
+
 MT_TARGET_CODE_STOP
 #endif
