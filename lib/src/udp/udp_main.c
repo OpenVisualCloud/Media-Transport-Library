@@ -706,6 +706,7 @@ int mudp_close(mudp_handle ut) {
   }
 
   mt_stat_unregister(impl, udp_stat_dump, s);
+  udp_stat_dump(s);
 
   udp_uinit_txq(impl, s);
   udp_uinit_rxq(impl, s);
@@ -737,6 +738,13 @@ int mudp_bind(mudp_handle ut, const struct sockaddr* addr, socklen_t addrlen) {
 
   /* set bind port */
   udp_bind_port(s, htons(addr_in->sin_port));
+
+  ret = udp_init_rxq(impl, s);
+  if (ret < 0) {
+    err("%s(%d), init rxq fail\n", __func__, idx);
+    return ret;
+  }
+
   udp_set_flag(s, MUDP_BIND);
   return 0;
 }

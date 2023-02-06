@@ -10,30 +10,13 @@
 #include <mtl/st40_api.h>
 #include <mtl/st_convert_api.h>
 #include <mtl/st_pipeline_api.h>
-#include <openssl/sha.h>
 
-#include <condition_variable>
-#include <mutex>
-#include <queue>
-
-#include "test_platform.h"
+#include "test_util.h"
 
 #define TEST_LCORE_LIST_MAX_LEN (128)
 #define TEST_SHA_HIST_NUM (2)
 #define ST22_TEST_SHA_HIST_NUM (3)
 #define TEST_MAX_SHA_HIST_NUM (3)
-
-#define TEST_DATA_FIXED_PATTER (0)
-
-#ifndef NS_PER_S
-#define NS_PER_S (1000000000)
-#endif
-
-enum st_test_level {
-  ST_TEST_LEVEL_ALL = 0,
-  ST_TEST_LEVEL_MANDATORY,
-  ST_TEST_LEVEL_MAX, /* max value of this enum */
-};
 
 #define MAX_TEST_ENCODER_SESSIONS (8)
 #define MAX_TEST_DECODER_SESSIONS (8)
@@ -121,12 +104,6 @@ static inline int st_test_num_port(struct st_tests_context* ctx) {
   return ctx->para.num_ports;
 }
 
-static inline void* st_test_zmalloc(size_t sz) {
-  void* p = malloc(sz);
-  if (p) memset(p, 0x0, sz);
-  return p;
-}
-
 static inline void st_test_jxs_fail_interval(struct st_tests_context* ctx, int interval) {
   ctx->plugin_fail_interval = interval;
 }
@@ -144,35 +121,6 @@ static inline void st_test_jxs_rand_ratio(struct st_tests_context* ctx, int rand
   ctx->plugin_rand_ratio = rand_ratio;
 }
 
-static inline void st_test_free(void* p) { free(p); }
-
-static inline void st_test_rand_data(uint8_t* p, size_t sz, uint8_t base) {
-  for (size_t i = 0; i < sz; i++) {
-#if TEST_DATA_FIXED_PATTER
-    p[i] = base + i;
-#else
-    p[i] = rand();
-#endif
-  }
-}
-
-static inline void st_test_rand_v210(uint8_t* p, size_t sz, uint8_t base) {
-  for (size_t i = 0; i < sz; i++) {
-#if TEST_DATA_FIXED_PATTER
-    p[i] = base + i;
-#else
-    p[i] = rand();
-#endif
-    if ((i % 4) == 3) p[i] &= 0x3F;
-  }
-}
-
-int st_test_check_patter(uint8_t* p, size_t sz, uint8_t base);
-
-int st_test_cmp(uint8_t* s1, uint8_t* s2, size_t sz);
-
-int st_test_cmp_u16(uint16_t* s1, uint16_t* s2, size_t sz);
-
 int st_test_sch_cnt(struct st_tests_context* ctx);
 
 bool st_test_dma_available(struct st_tests_context* ctx);
@@ -185,15 +133,6 @@ int st_test_convert_plugin_register(struct st_tests_context* ctx);
 
 int st_test_convert_plugin_unregister(struct st_tests_context* ctx);
 
-/* Monotonic time (in nanoseconds) since some unspecified starting point. */
-static inline uint64_t st_test_get_monotonic_time() {
-  struct timespec ts;
-
-  clock_gettime(ST_CLOCK_MONOTONIC_ID, &ts);
-  return ((uint64_t)ts.tv_sec * NS_PER_S) + ts.tv_nsec;
-}
-
-void test_sha_dump(const char* tag, unsigned char* sha);
 void sha_frame_check(void* args);
 
 class tests_context {
