@@ -307,7 +307,6 @@ struct mufd_override_params {
  * @param p
  *   The pointer to the rt parameters.
  * @return
- * @return
  *   - >=0: Success.
  *   - <0: Error code.
  */

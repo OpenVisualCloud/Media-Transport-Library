@@ -468,6 +468,13 @@ int mufd_cleanup(void) {
     ufd_free_mt_ctx(ctx);
     ufd_clear_mt_ctx();
   }
+
+  struct mufd_override_params* rt_para = g_rt_para;
+  if (rt_para) {
+    mt_free(rt_para);
+    g_rt_para = NULL;
+  }
+
   return 0;
 }
 
@@ -517,7 +524,7 @@ int mufd_commit_override_params(struct mufd_override_params* p) {
     return -ENOMEM;
   }
   rte_memcpy(out, p, sizeof(*p));
-  g_rt_para = p;
+  g_rt_para = out;
   info("%s, succ\n", __func__);
   return 0;
 }
