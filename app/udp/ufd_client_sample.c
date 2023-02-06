@@ -143,10 +143,23 @@ static void ufd_client_sig_handler(int signo) {
 int main(int argc, char** argv) {
   struct st_sample_context ctx;
   int ret;
+  struct mufd_override_params override;
+  bool has_override = false;
 
   memset(&ctx, 0, sizeof(ctx));
   ret = sample_parse_args(&ctx, argc, argv, true, false, true);
   if (ret < 0) return ret;
+
+  memset(&override, 0, sizeof(override));
+  override.log_level = MTL_LOG_LEVEL_INFO;
+  /* check if user has assigned log level */
+  if (ctx.param.log_level != MTL_LOG_LEVEL_INFO) {
+    has_override = true;
+    override.log_level = ctx.param.log_level;
+  }
+  if (has_override) {
+    mufd_commit_override_params(&override);
+  }
 
   ctx.sig_handler = ufd_client_sig_handler;
 

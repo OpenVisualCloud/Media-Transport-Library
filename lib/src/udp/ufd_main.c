@@ -9,6 +9,7 @@
 
 static struct ufd_mt_ctx* g_ufd_mt_ctx;
 static pthread_mutex_t g_ufd_mt_ctx_lock;
+static struct mufd_override_params* g_rt_para;
 
 static inline int ufd_mtl_ctx_lock(void) {
   return mt_pthread_mutex_lock(&g_ufd_mt_ctx_lock);
@@ -239,6 +240,7 @@ static int ufd_config_init(struct ufd_mt_ctx* ctx) {
 
 static struct ufd_mt_ctx* ufd_create_mt_ctx(void) {
   struct ufd_mt_ctx* ctx = mt_zmalloc(sizeof(*ctx));
+  struct mufd_override_params* rt_para = g_rt_para;
 
   if (!ctx) { /* create a new ctx */
     err("%s, malloc ctx mem fail\n", __func__);
@@ -262,6 +264,12 @@ static struct ufd_mt_ctx* ufd_create_mt_ctx(void) {
     err("%s, ufd config init fail %d\n", __func__, ret);
     ufd_free_mt_ctx(ctx);
     return NULL;
+  }
+
+  /* overide config if it runtime config */
+  if (rt_para) {
+    info("%s, overide runtime config\n", __func__);
+    p->log_level = rt_para->log_level;
   }
 
   ctx->mt = mtl_init(p);
@@ -495,4 +503,21 @@ int mufd_set_tx_rate(int sockfd, uint64_t bps) {
 uint64_t mufd_get_tx_rate(int sockfd) {
   struct ufd_slot* slot = ufd_fd2slot(sockfd);
   return mudp_get_tx_rate(slot->handle);
+}
+
+int mufd_commit_override_params(struct mufd_override_params* p) {
+  if (g_rt_para) {
+    err("%s, already committed\n", __func__);
+    return -EIO;
+  }
+
+  struct mufd_override_params* out = mt_zmalloc(sizeof(*out));
+  if (!out) {
+    err("%s, malloc out fail\n", __func__);
+    return -ENOMEM;
+  }
+  rte_memcpy(out, p, sizeof(*p));
+  g_rt_para = p;
+  info("%s, succ\n", __func__);
+  return 0;
 }
