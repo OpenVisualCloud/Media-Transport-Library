@@ -7,6 +7,8 @@
 struct rx_ctx {
   st20p_rx_handle rx_handle;
   size_t fb_offset;
+  pthread_cond_t rx_wake_cond;
+  pthread_mutex_t rx_wake_mutex;
   void* app;
 };
 
@@ -20,8 +22,8 @@ struct merge_fwd_sample_ctx {
   bool ready;
   bool stop;
   pthread_t fwd_thread;
-  pthread_cond_t wake_cond;
-  pthread_mutex_t wake_mutex;
+  pthread_cond_t tx_wake_cond;
+  pthread_mutex_t tx_wake_mutex;
 
   int fb_fwd;
   bool sync_tmstamp;
@@ -32,9 +34,9 @@ static int tx_st20p_frame_available(void* priv) {
 
   if (!s->ready) return -EIO;
 
-  st_pthread_mutex_lock(&s->wake_mutex);
-  st_pthread_cond_signal(&s->wake_cond);
-  st_pthread_mutex_unlock(&s->wake_mutex);
+  st_pthread_mutex_lock(&s->tx_wake_mutex);
+  st_pthread_cond_signal(&s->tx_wake_cond);
+  st_pthread_mutex_unlock(&s->tx_wake_mutex);
 
   return 0;
 }
@@ -45,9 +47,9 @@ static int rx_st20p_frame_available(void* priv) {
 
   if (!app->ready) return -EIO;
 
-  st_pthread_mutex_lock(&app->wake_mutex);
-  st_pthread_cond_signal(&app->wake_cond);
-  st_pthread_mutex_unlock(&app->wake_mutex);
+  st_pthread_mutex_lock(&s->rx_wake_mutex);
+  st_pthread_cond_signal(&s->rx_wake_cond);
+  st_pthread_mutex_unlock(&s->rx_wake_mutex);
 
   return 0;
 }
@@ -56,27 +58,41 @@ static void* tx_st20p_fwd_thread(void* args) {
   struct merge_fwd_sample_ctx* s = args;
   st20p_tx_handle tx_handle = s->tx_handle;
   struct st_frame* frame;
+  uint64_t tx_tmstamp = 0;
 
   while (!s->stop) {
     frame = st20p_tx_get_frame(tx_handle);
     if (!frame) { /* no frame */
-      st_pthread_mutex_lock(&s->wake_mutex);
-      if (!s->stop) st_pthread_cond_wait(&s->wake_cond, &s->wake_mutex);
-      st_pthread_mutex_unlock(&s->wake_mutex);
+      st_pthread_mutex_lock(&s->tx_wake_mutex);
+      if (!s->stop) st_pthread_cond_wait(&s->tx_wake_cond, &s->tx_wake_mutex);
+      st_pthread_mutex_unlock(&s->tx_wake_mutex);
       continue;
     }
 
     for (int i = 0; i < 4; i++) {
-      st20p_rx_handle rx_handle = s->rx[i].rx_handle;
-      struct st_frame* rx_frame = st20p_rx_get_frame(rx_handle);
-      if (!rx_frame) { /* no frame */
-        dbg("%s(%d), fail to get rx frame\n", __func__, i);
-        continue;
+      struct rx_ctx* rx = &s->rx[i];
+      st20p_rx_handle rx_handle = rx->rx_handle;
+      struct st_frame* rx_frame = NULL;
+
+      while (!s->stop && !rx_frame) {
+        rx_frame = st20p_rx_get_frame(rx_handle);
+        if (!rx_frame) { /* no frame */
+          st_pthread_mutex_lock(&rx->rx_wake_mutex);
+          if (!s->stop) st_pthread_cond_wait(&rx->rx_wake_cond, &rx->rx_wake_mutex);
+          st_pthread_mutex_unlock(&rx->rx_wake_mutex);
+          continue;
+        }
       }
-      /* may need to sync tmstamp */
+
+      if (s->sync_tmstamp) {
+        /* let's check timestamp */
+        uint64_t tmstamp = rx_frame->timestamp;
+        if (!tx_tmstamp) tx_tmstamp = tmstamp;
+        info("%s, rx tmstamp %lu, tx tmstamp %lu\n", __func__, tmstamp, tx_tmstamp);
+      }
 
       uint8_t* src = rx_frame->addr[0];
-      uint8_t* dst = frame->addr[0] + s->rx[i].fb_offset;
+      uint8_t* dst = frame->addr[0] + rx->fb_offset;
       uint32_t src_linesize = rx_frame->linesize[0];
       uint32_t dst_linesize = frame->linesize[0];
       for (int line = 0; line < rx_frame->height; line++) {
@@ -87,6 +103,7 @@ static void* tx_st20p_fwd_thread(void* args) {
 
       st20p_rx_put_frame(rx_handle, rx_frame);
     }
+    tx_tmstamp = 0;
 
     st20p_tx_put_frame(tx_handle, frame);
   }
@@ -100,13 +117,15 @@ static int split_fwd_sample_free_app(struct merge_fwd_sample_ctx* app) {
       st20p_rx_free(app->rx[i].rx_handle);
       app->rx[i].rx_handle = NULL;
     }
+    st_pthread_mutex_destroy(&app->rx[i].rx_wake_mutex);
+    st_pthread_cond_destroy(&app->rx[i].rx_wake_cond);
   }
   if (app->tx_handle) {
     st20p_tx_free(app->tx_handle);
     app->tx_handle = NULL;
   }
-  st_pthread_mutex_destroy(&app->wake_mutex);
-  st_pthread_cond_destroy(&app->wake_cond);
+  st_pthread_mutex_destroy(&app->tx_wake_mutex);
+  st_pthread_cond_destroy(&app->tx_wake_cond);
 
   return 0;
 }
@@ -132,8 +151,8 @@ int main(int argc, char** argv) {
   struct merge_fwd_sample_ctx app;
   memset(&app, 0, sizeof(app));
   app.st = ctx.st;
-  st_pthread_mutex_init(&app.wake_mutex, NULL);
-  st_pthread_cond_init(&app.wake_cond, NULL);
+  st_pthread_mutex_init(&app.tx_wake_mutex, NULL);
+  st_pthread_cond_init(&app.tx_wake_cond, NULL);
   app.sync_tmstamp = false;
 
   struct st20p_tx_ops ops_tx;
@@ -165,6 +184,8 @@ int main(int argc, char** argv) {
 
   for (int i = 0; i < 4; i++) {
     struct rx_ctx* rx = &app.rx[i];
+    st_pthread_mutex_init(&rx->rx_wake_mutex, NULL);
+    st_pthread_cond_init(&rx->rx_wake_cond, NULL);
     rx->app = &app;
     struct st20p_rx_ops ops_rx;
     memset(&ops_rx, 0, sizeof(ops_rx));
@@ -220,9 +241,15 @@ int main(int argc, char** argv) {
 
   // stop fwd thread
   app.stop = true;
-  st_pthread_mutex_lock(&app.wake_mutex);
-  st_pthread_cond_signal(&app.wake_cond);
-  st_pthread_mutex_unlock(&app.wake_mutex);
+  st_pthread_mutex_lock(&app.tx_wake_mutex);
+  st_pthread_cond_signal(&app.tx_wake_cond);
+  st_pthread_mutex_unlock(&app.tx_wake_mutex);
+  for (int i = 0; i < 4; i++) {
+    struct rx_ctx* rx = &app.rx[i];
+    st_pthread_mutex_lock(&rx->rx_wake_mutex);
+    st_pthread_cond_signal(&rx->rx_wake_cond);
+    st_pthread_mutex_unlock(&rx->rx_wake_mutex);
+  }
   pthread_join(app.fwd_thread, NULL);
 
   // stop dev
