@@ -191,10 +191,23 @@ int main(int argc, char** argv) {
   struct st_sample_context ctx;
   struct ufd_server_samples_ctx ctxs;
   int ret;
+  struct mufd_override_params override;
+  bool has_override = false;
 
   memset(&ctx, 0, sizeof(ctx));
   ret = sample_parse_args(&ctx, argc, argv, false, true, true);
   if (ret < 0) return ret;
+
+  memset(&override, 0, sizeof(override));
+  override.log_level = MTL_LOG_LEVEL_INFO;
+  /* check if user has assigned log level */
+  if (ctx.param.log_level != MTL_LOG_LEVEL_INFO) {
+    has_override = true;
+    override.log_level = ctx.param.log_level;
+  }
+  if (has_override) {
+    mufd_commit_override_params(&override);
+  }
 
   ctx.sig_handler = ufd_server_sig_handler;
 

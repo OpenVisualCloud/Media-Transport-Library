@@ -328,6 +328,8 @@ struct mtl_init_params {
   uint8_t num_ports;
   /** source IP of ports, for MTL_PMD_DPDK_USER */
   uint8_t sip_addr[MTL_PORT_MAX][MTL_IP_ADDR_LEN];
+  /** log level */
+  enum mtl_log_level log_level;
 
   /* below are optional parameters */
   /** transport type, st2110 or udp */
@@ -387,8 +389,6 @@ struct mtl_init_params {
   char dma_dev_port[MTL_DMA_DEV_MAX][MTL_PORT_MAX_LEN];
   /** number of dma dev ports in dma_dev_port, leave to zero if no dma dev */
   uint8_t num_dma_dev_port;
-  /** log level */
-  enum mtl_log_level log_level;
   /** flags, value in MTL_FLAG_* */
   uint64_t flags;
   /** private data to the callback function */

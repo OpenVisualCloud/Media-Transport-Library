@@ -292,6 +292,26 @@ static void inline mufd_init_sockaddr(struct sockaddr_in* saddr,
   saddr->sin_port = htons(port);
 }
 
+/**
+ * All config should be parsed from MUFD_CFG_ENV_NAME json config file.
+ * But we still need some runtime args(ex: log level) for debug usage.
+ */
+struct mufd_override_params {
+  /** log level */
+  enum mtl_log_level log_level;
+};
+
+/**
+ * Commit the runtime parameters of mufd instance.
+ *
+ * @param p
+ *   The pointer to the rt parameters.
+ * @return
+ *   - >=0: Success.
+ *   - <0: Error code.
+ */
+int mufd_commit_override_params(struct mufd_override_params* p);
+
 #if defined(__cplusplus)
 }
 #endif
