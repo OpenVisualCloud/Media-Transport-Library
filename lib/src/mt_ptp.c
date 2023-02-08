@@ -199,7 +199,7 @@ static void ptp_monitor_handler(void* param) {
   ptp->stat_sync_timeout_err++;
   if (ptp->expect_result_avg && expect_result_period_us) {
     ptp_adjust_delta(ptp, ptp->expect_result_avg);
-    dbg("%s(%d), next timer %ld\n", __func__, ptp->port, expect_result_period_us);
+    dbg("%s(%d), next timer %" PRIu64 "\n", __func__, ptp->port, expect_result_period_us);
     rte_eal_alarm_set(expect_result_period_us, ptp_monitor_handler, ptp);
   }
 }
@@ -213,7 +213,7 @@ static void ptp_sync_timeout_handler(void* param) {
   ptp->stat_sync_timeout_err++;
   if (ptp->expect_result_avg) {
     ptp_adjust_delta(ptp, ptp->expect_result_avg);
-    dbg("%s(%d), next timer %ld\n", __func__, ptp->port, expect_result_period_us);
+    dbg("%s(%d), next timer %" PRIu64 "\n", __func__, ptp->port, expect_result_period_us);
     if (expect_result_period_us) {
       rte_eal_alarm_set(expect_result_period_us, ptp_monitor_handler, ptp);
     }
@@ -235,7 +235,7 @@ static int ptp_parse_result(struct mt_ptp_impl* ptp) {
   int64_t correct_delta = ((int64_t)ptp->t4 - ptp_correct_ts(ptp, ptp->t3)) -
                           ((int64_t)ptp_correct_ts(ptp, ptp->t2) - ptp->t1);
   correct_delta /= 2;
-  dbg("%s(%d), correct_delta %ld\n", __func__, ptp->port, correct_delta);
+  dbg("%s(%d), correct_delta %" PRId64 "\n", __func__, ptp->port, correct_delta);
   /* update correct delta and path delay result */
   ptp->stat_correct_delta_min = RTE_MIN(correct_delta, ptp->stat_correct_delta_min);
   ptp->stat_correct_delta_max = RTE_MAX(correct_delta, ptp->stat_correct_delta_max);

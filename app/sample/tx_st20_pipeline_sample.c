@@ -52,12 +52,13 @@ static int tx_st20p_open_source(struct tx_st20p_sample_ctx* s, char* file) {
 
   fstat(fd, &i);
   if (i.st_size < s->frame_size) {
-    err("%s, %s file size small then a frame %ld\n", __func__, file, s->frame_size);
+    err("%s, %s file size small then a frame %" PRIu64 "\n", __func__, file,
+        s->frame_size);
     close(fd);
     return -EIO;
   }
   if (i.st_size % s->frame_size) {
-    err("%s, %s file size should be multiple of frame size %ld\n", __func__, file,
+    err("%s, %s file size should be multiple of frame size %" PRIu64 "\n", __func__, file,
         s->frame_size);
     close(fd);
     return -EIO;

@@ -491,7 +491,7 @@ static int rx_st20p_init_dst_fbs(struct mtl_main_impl* impl, struct st20p_rx_ctx
       frames[i].dst.priv = &frames[i];
     }
   }
-  info("%s(%d), size %ld fmt %d with %u frames\n", __func__, idx, dst_size,
+  info("%s(%d), size %" PRIu64 " fmt %d with %u frames\n", __func__, idx, dst_size,
        ops->output_fmt, ctx->framebuff_cnt);
   return 0;
 }

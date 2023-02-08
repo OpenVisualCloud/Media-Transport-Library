@@ -114,8 +114,8 @@ static struct st22_encode_session_impl* st22_get_encoder_session(
       session_impl->codestream_max_size = create_req->max_codestream_size;
       session_impl->req = *req;
       session_impl->type = MT_ST22_HANDLE_PIPELINE_ENCODE;
-      info("%s(%d), get one session at %d on dev %s, max codestream size %ld\n", __func__,
-           idx, i, dev->name, session_impl->codestream_max_size);
+      info("%s(%d), get one session at %d on dev %s, max codestream size %" PRIu64 "\n",
+           __func__, idx, i, dev->name, session_impl->codestream_max_size);
       info("%s(%d), input fmt: %s, output fmt: %s\n", __func__, idx,
            st_frame_fmt_name(req->req.input_fmt), st_frame_fmt_name(req->req.output_fmt));
       return session_impl;

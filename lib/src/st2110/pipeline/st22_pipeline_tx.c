@@ -66,8 +66,8 @@ static int tx_st22p_next_frame(void* priv, uint16_t* next_frame_idx,
   if (ctx->ops.flags & (ST22P_TX_FLAG_USER_PACING | ST22P_TX_FLAG_USER_TIMESTAMP)) {
     meta->tfmt = framebuff->src.tfmt;
     meta->timestamp = framebuff->src.timestamp;
-    dbg("%s(%d), frame %u succ timestamp %lu\n", __func__, ctx->idx, framebuff->idx,
-        meta->timestamp);
+    dbg("%s(%d), frame %u succ timestamp %" PRIu64 "\n", __func__, ctx->idx,
+        framebuff->idx, meta->timestamp);
   }
   meta->codestream_size = framebuff->dst.data_size;
   /* point to next */
@@ -174,8 +174,8 @@ static int tx_st22p_encode_put_frame(void* priv, struct st22_encode_frame_meta* 
     return -EIO;
   }
 
-  dbg("%s(%d), frame %u result %d data_size %ld\n", __func__, idx, encode_idx, result,
-      data_size);
+  dbg("%s(%d), frame %u result %d data_size %" PRIu64 "\n", __func__, idx, encode_idx,
+      result, data_size);
   if ((result < 0) || (data_size <= ST22_ENCODE_MIN_FRAME_SZ) || (data_size > max_size)) {
     info("%s(%d), invalid frame %u result %d data_size %" PRIu64
          ", allowed min %u max %" PRIu64 "\n",
@@ -344,7 +344,7 @@ static int tx_st22p_init_src_fbs(struct mtl_main_impl* impl, struct st22p_tx_ctx
     }
   }
 
-  info("%s(%d), size %ld fmt %d with %u frames\n", __func__, idx, src_size,
+  info("%s(%d), size %" PRIu64 " fmt %d with %u frames\n", __func__, idx, src_size,
        ops->input_fmt, ctx->framebuff_cnt);
   return 0;
 }

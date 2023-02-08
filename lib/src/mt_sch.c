@@ -201,7 +201,7 @@ static int sch_start(struct mt_sch_impl* sch) {
   if (!sch->run_in_thread)
     info("%s(%d), succ on lcore %u\n", __func__, idx, sch->lcore);
   else
-    info("%s(%d), succ on tid %lu\n", __func__, idx, sch->tid);
+    info("%s(%d), succ on tid %" PRIu64 "\n", __func__, idx, sch->tid);
   sch_unlock(sch);
   return 0;
 }

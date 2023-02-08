@@ -173,11 +173,11 @@ static int tx_st20p_convert_put_frame(void* priv, struct st20_convert_frame_meta
     return -EIO;
   }
 
-  dbg("%s(%d), frame %u result %d data_size %ld\n", __func__, idx, convert_idx, result,
-      data_size);
+  dbg("%s(%d), frame %u result %d data_size %" PRIu64 "\n", __func__, idx, convert_idx,
+      result, data_size);
   if ((result < 0) || (data_size <= 0)) {
-    info("%s(%d), frame %u result %d data_size %ld\n", __func__, idx, convert_idx, result,
-         data_size);
+    info("%s(%d), frame %u result %d data_size %" PRIu64 "\n", __func__, idx, convert_idx,
+         result, data_size);
     framebuff->stat = ST20P_TX_FRAME_FREE;
     if (ctx->ops.notify_frame_available) { /* notify app */
       ctx->ops.notify_frame_available(ctx->ops.priv);
@@ -364,7 +364,7 @@ static int tx_st20p_init_src_fbs(struct mtl_main_impl* impl, struct st20p_tx_ctx
       frames[i].src.priv = &frames[i];
     }
   }
-  info("%s(%d), size %ld fmt %d with %u frames\n", __func__, idx, src_size,
+  info("%s(%d), size %" PRIu64 " fmt %d with %u frames\n", __func__, idx, src_size,
        ops->transport_fmt, ctx->framebuff_cnt);
   return 0;
 }

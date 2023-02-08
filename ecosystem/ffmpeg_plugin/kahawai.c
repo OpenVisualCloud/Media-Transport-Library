@@ -386,7 +386,8 @@ static int kahawai_read_packet(AVFormatContext* ctx, AVPacket* pkt) {
   }
 
   if (s->frame->data_size != s->output_frame_size) {
-    av_log(ctx, AV_LOG_ERROR, "Unexpected frame size received: %lu (%lu expected)\n",
+    av_log(ctx, AV_LOG_ERROR,
+           "Unexpected frame size received: %" PRIu64 " (%" PRIu64 " expected)\n",
            s->frame->data_size, s->output_frame_size);
     // s->stopped = true;
     // pthread_mutex_unlock(&(s->read_packet_mutex));
@@ -441,7 +442,7 @@ static int kahawai_read_packet(AVFormatContext* ctx, AVPacket* pkt) {
   }
   pkt->pts = pkt->dts = s->frame_counter++;
   s->frame = NULL;
-  av_log(ctx, AV_LOG_VERBOSE, "Got POC %ld\n", pkt->pts);
+  av_log(ctx, AV_LOG_VERBOSE, "Got POC %" PRIu64 "\n", pkt->pts);
 
   return 0;
 }
