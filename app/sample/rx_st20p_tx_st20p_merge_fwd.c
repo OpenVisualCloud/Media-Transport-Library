@@ -103,14 +103,9 @@ loop_entry:
             st20p_tx_put_frame(tx_handle, frame);
             goto loop_entry; /* start new tx frame */
           } else if (tx_tmstamp > tmstamp) {
-            if (rx_restore_frame && i > rx_restore_idx) {
-              warn("%s, clear outdated frame %" PRIu64 "", __func__, tmstamp);
-              st20p_rx_put_frame(rx_handle, rx_frame);
-              continue; /* continue while: get new rx farme */
-            }
-            err("%s, older timestamp occurs %" PRIu64 ", new %" PRIu64
-                ", should never happen!\n",
-                __func__, tmstamp, tx_tmstamp);
+            warn("%s, clear outdated frame %" PRIu64 "\n", __func__, tmstamp);
+            st20p_rx_put_frame(rx_handle, rx_frame);
+            continue; /* continue while: get new rx farme */
           }
         }
 
