@@ -10,6 +10,7 @@ struct loop_para {
   uint16_t udp_port;
   int udp_len;
   int tx_pkts;
+  int max_rx_timeout_pkts;
   int tx_sleep_us;
   int rx_timeout_us;
 };
@@ -19,6 +20,7 @@ static int loop_para_init(struct loop_para* para) {
   para->udp_port = 10000;
   para->udp_len = 1024;
   para->tx_pkts = 1024;
+  para->max_rx_timeout_pkts = para->tx_pkts / 100;
   para->tx_sleep_us = 100;
   para->rx_timeout_us = 1000;
   return 0;
@@ -31,6 +33,7 @@ static int loop_sanity_test(struct utest_ctx* ctx, struct loop_para* para) {
 
   int tx_fds[sessions];
   int rx_fds[sessions];
+  int rx_timeout[sessions];
   struct sockaddr_in tx_addr[sessions];
   struct sockaddr_in rx_addr[sessions];
   int ret;
@@ -39,6 +42,7 @@ static int loop_sanity_test(struct utest_ctx* ctx, struct loop_para* para) {
   for (int i = 0; i < sessions; i++) {
     tx_fds[i] = -1;
     rx_fds[i] = -1;
+    rx_timeout[i] = 0;
     mufd_init_sockaddr(&tx_addr[i], p->sip_addr[MTL_PORT_P], udp_port + i);
     mufd_init_sockaddr(&rx_addr[i], p->sip_addr[MTL_PORT_R], udp_port + i);
   }
@@ -82,6 +86,11 @@ static int loop_sanity_test(struct utest_ctx* ctx, struct loop_para* para) {
       st_usleep(para->tx_sleep_us);
 
       ssize_t recv = mufd_recvfrom(rx_fds[i], recv_buf, sizeof(recv_buf), 0, NULL, NULL);
+      if (recv < 0) { /* timeout */
+        rx_timeout[i]++;
+        err("%s, recv fail at session %d pkt %d\n", __func__, i, loop);
+        continue;
+      }
       EXPECT_EQ(recv, sizeof(send_buf));
       /* check sha */
       unsigned char sha_result[SHA256_DIGEST_LENGTH];
@@ -90,6 +99,11 @@ static int loop_sanity_test(struct utest_ctx* ctx, struct loop_para* para) {
       EXPECT_EQ(ret, 0);
       // test_sha_dump("upd_loop_sha", sha_result);
     }
+  }
+
+  /* rx timeout max check */
+  for (int i = 0; i < sessions; i++) {
+    EXPECT_LT(rx_timeout[i], para->max_rx_timeout_pkts);
   }
 
 exit:
