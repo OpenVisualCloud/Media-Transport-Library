@@ -94,6 +94,7 @@ static int loop_sanity_test(struct utest_ctx* ctx, struct loop_para* para) {
       int payload_len = udp_len - SHA256_DIGEST_LENGTH;
 
       st_test_rand_data((uint8_t*)send_buf, payload_len, 0);
+      send_buf[0] = i;
       SHA256((unsigned char*)send_buf, payload_len,
              (unsigned char*)send_buf + payload_len);
 
@@ -109,6 +110,8 @@ static int loop_sanity_test(struct utest_ctx* ctx, struct loop_para* para) {
         continue;
       }
       EXPECT_EQ(recv, sizeof(send_buf));
+      /* check idx */
+      EXPECT_EQ(send_buf[0], recv_buf[0]);
       /* check sha */
       unsigned char sha_result[SHA256_DIGEST_LENGTH];
       SHA256((unsigned char*)recv_buf, payload_len, sha_result);
@@ -129,6 +132,8 @@ static int loop_sanity_test(struct utest_ctx* ctx, struct loop_para* para) {
           continue;
         }
         EXPECT_EQ(recv, sizeof(send_buf));
+        /* check idx */
+        EXPECT_EQ(send_buf[0], recv_buf[0]);
         /* check sha */
         SHA256((unsigned char*)recv_buf, payload_len, sha_result);
         ret = memcmp(recv_buf + payload_len, sha_result, SHA256_DIGEST_LENGTH);
