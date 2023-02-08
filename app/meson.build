@@ -308,12 +308,15 @@ executable('TxVideoSplitSample', video_tx_split_sample_sources,
   dependencies: [asan_dep, mtl]
 )
 
+# WA: no <sys/queue.h> for windows
+if not is_windows
 executable('RxSt20TxSt20SplitFwd', rx_st20_tx_st20_split_fwd_sources,
   c_args : app_c_args,
   link_args: app_ld_args,
   # asan should be always the first dep
   dependencies: [asan_dep, mtl]
 )
+endif
 
 executable('RxSt20pTxSt20pSplitFwd', rx_st20p_tx_st20p_split_fwd_sources,
   c_args : app_c_args,
@@ -357,6 +360,8 @@ executable('UfdClientSample', ufd_client_sample_sources,
   dependencies: [asan_dep, mtl, libpthread]
 )
 
+# WA: no socket/poll API for windows
+if not is_windows
 executable('UsocketServerSample', usocket_server_sample_sources,
   c_args : app_c_args,
   link_args: app_ld_args,
@@ -370,3 +375,4 @@ executable('UsocketClientSample', usocket_client_sample_sources,
   # asan should be always the first dep
   dependencies: [asan_dep, mtl, libpthread]
 )
+endif
