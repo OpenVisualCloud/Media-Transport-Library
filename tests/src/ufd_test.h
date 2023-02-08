@@ -5,13 +5,6 @@
 #pragma once
 
 #include <gtest/gtest.h>
-#include <math.h>
-#include <openssl/sha.h>
-#include <poll.h>
-
-#include <condition_variable>
-#include <mutex>
-#include <queue>
 
 #include "test_util.h"
 
