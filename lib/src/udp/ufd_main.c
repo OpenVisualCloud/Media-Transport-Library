@@ -10,6 +10,7 @@
 static struct ufd_mt_ctx* g_ufd_mt_ctx;
 static pthread_mutex_t g_ufd_mt_ctx_lock;
 static struct mufd_override_params* g_rt_para;
+static struct mufd_init_params* g_init_para;
 
 static inline int ufd_mtl_ctx_lock(void) {
   return mt_pthread_mutex_lock(&g_ufd_mt_ctx_lock);
@@ -30,11 +31,11 @@ static int ufd_uinit_global(void) {
 }
 
 static inline int ufd_idx2fd(struct ufd_mt_ctx* ctx, int idx) {
-  return (ctx->fd_base + idx);
+  return (ctx->init_params.fd_base + idx);
 }
 
 static inline int ufd_fd2idx(struct ufd_mt_ctx* ctx, int fd) {
-  return (fd - ctx->fd_base);
+  return (fd - ctx->init_params.fd_base);
 }
 
 static int ufd_free_slot(struct ufd_mt_ctx* ctx, struct ufd_slot* slot) {
@@ -55,7 +56,7 @@ static int ufd_free_slot(struct ufd_mt_ctx* ctx, struct ufd_slot* slot) {
 
 static int ufd_free_mt_ctx(struct ufd_mt_ctx* ctx) {
   if (ctx->slots) {
-    for (int i = 0; i < ctx->slots_nb_max; i++) {
+    for (int i = 0; i < ctx->init_params.slots_nb_max; i++) {
       /* check if any not free slot */
       if (!ctx->slots[i]) continue;
       warn("%s, not close slot on idx %d\n", __func__, i);
@@ -73,9 +74,9 @@ static int ufd_free_mt_ctx(struct ufd_mt_ctx* ctx) {
   return 0;
 }
 
-static int ufd_parse_interfaces(struct ufd_mt_ctx* ctx, json_object* obj,
+static int ufd_parse_interfaces(struct mufd_init_params* init, json_object* obj,
                                 enum mtl_port port) {
-  struct mtl_init_params* p = &ctx->mt_params;
+  struct mtl_init_params* p = &init->mt_params;
 
   const char* name = json_object_get_string(mt_json_object_get(obj, "port"));
   if (!name) {
@@ -109,7 +110,7 @@ static int ufd_parse_interfaces(struct ufd_mt_ctx* ctx, json_object* obj,
   return 0;
 }
 
-static int ufd_parse_json(struct ufd_mt_ctx* ctx, const char* filename) {
+static int ufd_parse_json(struct mufd_init_params* init, const char* filename) {
   json_object* root = json_object_from_file(filename);
   if (root == NULL) {
     err("%s, open json file %s fail\n", __func__, filename);
@@ -133,11 +134,11 @@ static int ufd_parse_json(struct ufd_mt_ctx* ctx, const char* filename) {
     goto out;
   }
   for (int i = 0; i < num_interfaces; i++) {
-    ret = ufd_parse_interfaces(ctx, json_object_array_get_idx(interfaces_array, i), i);
+    ret = ufd_parse_interfaces(init, json_object_array_get_idx(interfaces_array, i), i);
     if (ret < 0) goto out;
   }
 
-  struct mtl_init_params* p = &ctx->mt_params;
+  struct mtl_init_params* p = &init->mt_params;
   json_object* obj;
 
   obj = mt_json_object_get(root, "nb_nic_queues");
@@ -161,7 +162,7 @@ static int ufd_parse_json(struct ufd_mt_ctx* ctx, const char* filename) {
       ret = -EINVAL;
       goto out;
     }
-    ctx->slots_nb_max = nb_udp_sockets;
+    init->slots_nb_max = nb_udp_sockets;
     info("%s, nb_udp_sockets %d\n", __func__, nb_udp_sockets);
   }
 
@@ -200,7 +201,7 @@ static int ufd_parse_json(struct ufd_mt_ctx* ctx, const char* filename) {
       ret = -EINVAL;
       goto out;
     }
-    ctx->fd_base = fd_base;
+    init->fd_base = fd_base;
     info("%s, fd_base %d\n", __func__, fd_base);
   }
 
@@ -212,7 +213,7 @@ static int ufd_parse_json(struct ufd_mt_ctx* ctx, const char* filename) {
       ret = -EINVAL;
       goto out;
     }
-    ctx->txq_bps = rl_bps_g * 1000 * 1000 * 1000;
+    init->txq_bps = rl_bps_g * 1000 * 1000 * 1000;
     info("%s, nic_queue_rate_limit_g %d\n", __func__, rl_bps_g);
   }
 
@@ -229,10 +230,10 @@ static int ufd_config_init(struct ufd_mt_ctx* ctx) {
 
   if (cfg_path) {
     info("%s, env %s: %s\n", __func__, MUFD_CFG_ENV_NAME, cfg_path);
-    ret = ufd_parse_json(ctx, cfg_path);
+    ret = ufd_parse_json(&ctx->init_params, cfg_path);
   } else {
     /* fallback path */
-    ret = ufd_parse_json(ctx, "ufd.json");
+    ret = ufd_parse_json(&ctx->init_params, "ufd.json");
   }
 
   return ret;
@@ -241,35 +242,41 @@ static int ufd_config_init(struct ufd_mt_ctx* ctx) {
 static struct ufd_mt_ctx* ufd_create_mt_ctx(void) {
   struct ufd_mt_ctx* ctx = mt_zmalloc(sizeof(*ctx));
   struct mufd_override_params* rt_para = g_rt_para;
+  struct mufd_init_params* init_para = g_init_para;
 
   if (!ctx) { /* create a new ctx */
     err("%s, malloc ctx mem fail\n", __func__);
     return NULL;
   }
 
-  ctx->slots_nb_max = 1024;
-  ctx->fd_base = UFD_FD_BASE_DEFAULT;
-  ctx->txq_bps = MUDP_DEFAULT_RL_BPS;
+  ctx->init_params.slots_nb_max = 1024;
+  ctx->init_params.fd_base = UFD_FD_BASE_DEFAULT;
+  ctx->init_params.txq_bps = MUDP_DEFAULT_RL_BPS;
   mt_pthread_mutex_init(&ctx->slots_lock, NULL);
 
   /* init mtl context */
-  struct mtl_init_params* p = &ctx->mt_params;
+  struct mtl_init_params* p = &ctx->init_params.mt_params;
   p->flags |= MTL_FLAG_BIND_NUMA;    /* default bind to numa */
   p->log_level = MTL_LOG_LEVEL_INFO; /* default to info */
   p->transport = MTL_TRANSPORT_UDP;
 
-  /* get user config from json */
-  int ret = ufd_config_init(ctx);
-  if (ret < 0) {
-    err("%s, ufd config init fail %d\n", __func__, ret);
-    ufd_free_mt_ctx(ctx);
-    return NULL;
-  }
+  if (init_para) { /* init case selected */
+    info("%s, runtime config path\n", __func__);
+    rte_memcpy(p, init_para, sizeof(*p));
+  } else {
+    /* get user config from json */
+    int ret = ufd_config_init(ctx);
+    if (ret < 0) {
+      err("%s, ufd config init fail %d\n", __func__, ret);
+      ufd_free_mt_ctx(ctx);
+      return NULL;
+    }
 
-  /* overide config if it runtime config */
-  if (rt_para) {
-    info("%s, overide runtime config\n", __func__);
-    p->log_level = rt_para->log_level;
+    /* overide config if it runtime config */
+    if (rt_para) {
+      info("%s, applied overide config\n", __func__);
+      p->log_level = rt_para->log_level;
+    }
   }
 
   ctx->mt = mtl_init(p);
@@ -279,7 +286,7 @@ static struct ufd_mt_ctx* ufd_create_mt_ctx(void) {
     return NULL;
   }
 
-  ctx->slots = mt_rte_zmalloc_socket(sizeof(*ctx->slots) * ctx->slots_nb_max,
+  ctx->slots = mt_rte_zmalloc_socket(sizeof(*ctx->slots) * ctx->init_params.slots_nb_max,
                                      mt_socket_id(ctx->mt, MTL_PORT_P));
   if (!ctx->slots) {
     err("%s, slots malloc fail\n", __func__);
@@ -287,7 +294,7 @@ static struct ufd_mt_ctx* ufd_create_mt_ctx(void) {
     return NULL;
   }
 
-  info("%s, succ, slots_nb_max %d\n", __func__, ctx->slots_nb_max);
+  info("%s, succ, slots_nb_max %d\n", __func__, ctx->init_params.slots_nb_max);
   return ctx;
 }
 
@@ -335,14 +342,14 @@ int mufd_socket_port(int domain, int type, int protocol, enum mtl_port port) {
     err("%s, fail to get ufd mt ctx\n", __func__);
     return -EIO;
   }
-  if ((port < 0) || (port >= ctx->mt_params.num_ports)) {
+  if ((port < 0) || (port >= ctx->init_params.mt_params.num_ports)) {
     err("%s, invalid port %d\n", __func__, port);
     return -EINVAL;
   }
 
   /* find one empty slot */
   mt_pthread_mutex_lock(&ctx->slots_lock);
-  for (int i = 0; i < ctx->slots_nb_max; i++) {
+  for (int i = 0; i < ctx->init_params.slots_nb_max; i++) {
     if (ctx->slots[i]) continue;
     /* create a slot */
     slot = mt_rte_zmalloc_socket(sizeof(*slot), mt_socket_id(ctx->mt, port));
@@ -374,7 +381,7 @@ int mufd_socket_port(int domain, int type, int protocol, enum mtl_port port) {
     return -ENOMEM;
   }
 
-  mudp_set_tx_rate(slot->handle, ctx->txq_bps);
+  mudp_set_tx_rate(slot->handle, ctx->init_params.txq_bps);
 
   info("%s(%d), succ, fd %d\n", __func__, idx, fd);
   return fd;
@@ -475,6 +482,12 @@ int mufd_cleanup(void) {
     g_rt_para = NULL;
   }
 
+  struct mufd_init_params* init_para = g_init_para;
+  if (init_para) {
+    mt_free(init_para);
+    g_init_para = NULL;
+  }
+
   return 0;
 }
 
@@ -525,6 +538,23 @@ int mufd_commit_override_params(struct mufd_override_params* p) {
   }
   rte_memcpy(out, p, sizeof(*p));
   g_rt_para = out;
+  info("%s, succ\n", __func__);
+  return 0;
+}
+
+int mufd_commit_init_params(struct mufd_init_params* p) {
+  if (g_init_para) {
+    err("%s, already committed\n", __func__);
+    return -EIO;
+  }
+
+  struct mufd_init_params* out = mt_zmalloc(sizeof(*out));
+  if (!out) {
+    err("%s, malloc out fail\n", __func__);
+    return -ENOMEM;
+  }
+  rte_memcpy(out, p, sizeof(*p));
+  g_init_para = out;
   info("%s, succ\n", __func__);
   return 0;
 }
