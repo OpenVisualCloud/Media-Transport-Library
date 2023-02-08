@@ -58,9 +58,14 @@ static void* tx_st20p_fwd_thread(void* args) {
   struct merge_fwd_sample_ctx* s = args;
   st20p_tx_handle tx_handle = s->tx_handle;
   struct st_frame* frame;
-  uint64_t tx_tmstamp = 0;
 
+  /* in case when timestamp mismatch */
+  struct st_frame* rx_restore_frame = NULL;
+  int rx_restore_idx = -1;
+
+loop_entry:
   while (!s->stop) {
+    uint64_t tx_tmstamp = 0;
     frame = st20p_tx_get_frame(tx_handle);
     if (!frame) { /* no frame */
       st_pthread_mutex_lock(&s->tx_wake_mutex);
@@ -75,35 +80,62 @@ static void* tx_st20p_fwd_thread(void* args) {
       struct st_frame* rx_frame = NULL;
 
       while (!s->stop && !rx_frame) {
-        rx_frame = st20p_rx_get_frame(rx_handle);
-        if (!rx_frame) { /* no frame */
-          st_pthread_mutex_lock(&rx->rx_wake_mutex);
-          if (!s->stop) st_pthread_cond_wait(&rx->rx_wake_cond, &rx->rx_wake_mutex);
-          st_pthread_mutex_unlock(&rx->rx_wake_mutex);
-          continue;
+        if (rx_restore_frame && rx_restore_idx == i) {
+          rx_frame = rx_restore_frame;
+        } else {
+          rx_frame = st20p_rx_get_frame(rx_handle);
+          if (!rx_frame) { /* no frame */
+            st_pthread_mutex_lock(&rx->rx_wake_mutex);
+            if (!s->stop) st_pthread_cond_wait(&rx->rx_wake_cond, &rx->rx_wake_mutex);
+            st_pthread_mutex_unlock(&rx->rx_wake_mutex);
+            continue;
+          }
         }
-      }
+        if (s->sync_tmstamp) {
+          uint64_t tmstamp = rx_frame->timestamp;
+          if (!tx_tmstamp) tx_tmstamp = tmstamp;
+          if (tx_tmstamp < tmstamp) {
+            err("%s, newer timestamp occurs %" PRIu64 ", frame %" PRIu64
+                " may have dropped packets\n",
+                __func__, tmstamp, tx_tmstamp);
+            rx_restore_frame = rx_frame;
+            rx_restore_idx = i;
+            st20p_tx_put_frame(tx_handle, frame);
+            goto loop_entry; /* start new tx frame */
+          } else if (tx_tmstamp > tmstamp) {
+            if (rx_restore_frame && i > rx_restore_idx) {
+              warn("%s, clear outdated frame %" PRIu64 "", __func__, tmstamp);
+              st20p_rx_put_frame(rx_handle, rx_frame);
+              continue; /* continue while: get new rx farme */
+            }
+            err("%s, older timestamp occurs %" PRIu64 ", new %" PRIu64
+                ", should never happen!\n",
+                __func__, tmstamp, tx_tmstamp);
+          }
+        }
 
-      if (s->sync_tmstamp) {
-        /* let's check timestamp */
-        uint64_t tmstamp = rx_frame->timestamp;
-        if (!tx_tmstamp) tx_tmstamp = tmstamp;
-        info("%s, rx tmstamp %lu, tx tmstamp %lu\n", __func__, tmstamp, tx_tmstamp);
-      }
+        /* copy frame */
+        uint8_t* src = rx_frame->addr[0];
+        uint8_t* dst = frame->addr[0] + rx->fb_offset;
+        uint32_t src_linesize = rx_frame->linesize[0];
+        uint32_t dst_linesize = frame->linesize[0];
+        for (int line = 0; line < rx_frame->height; line++) {
+          mtl_memcpy(dst, src, src_linesize);
+          src += src_linesize;
+          dst += dst_linesize;
+        }
 
-      uint8_t* src = rx_frame->addr[0];
-      uint8_t* dst = frame->addr[0] + rx->fb_offset;
-      uint32_t src_linesize = rx_frame->linesize[0];
-      uint32_t dst_linesize = frame->linesize[0];
-      for (int line = 0; line < rx_frame->height; line++) {
-        mtl_memcpy(dst, src, src_linesize);
-        src += src_linesize;
-        dst += dst_linesize;
+        st20p_rx_put_frame(rx_handle, rx_frame);
       }
-
-      st20p_rx_put_frame(rx_handle, rx_frame);
     }
-    tx_tmstamp = 0;
+    if (s->sync_tmstamp) {
+      frame->tfmt = ST10_TIMESTAMP_FMT_MEDIA_CLK;
+      frame->timestamp = tx_tmstamp;
+
+      /* reset status */
+      rx_restore_frame = NULL;
+      rx_restore_idx = -1;
+    }
 
     st20p_tx_put_frame(tx_handle, frame);
   }
@@ -141,6 +173,8 @@ int main(int argc, char** argv) {
   ctx.sessions = session_num;
   ctx.param.tx_sessions_cnt_max = 1;
   ctx.param.rx_sessions_cnt_max = session_num;
+  ctx.param.flags |=
+      MTL_FLAG_RX_SEPARATE_VIDEO_LCORE; /* use seperate lcores for tx and rx */
 
   ctx.st = mtl_init(&ctx.param);
   if (!ctx.st) {
@@ -153,7 +187,8 @@ int main(int argc, char** argv) {
   app.st = ctx.st;
   st_pthread_mutex_init(&app.tx_wake_mutex, NULL);
   st_pthread_cond_init(&app.tx_wake_cond, NULL);
-  app.sync_tmstamp = false;
+  app.sync_tmstamp = true; /* make sure frames to be merged have same timestamp, otherwise
+                              disable this option */
 
   struct st20p_tx_ops ops_tx;
   memset(&ops_tx, 0, sizeof(ops_tx));
@@ -171,8 +206,7 @@ int main(int argc, char** argv) {
   ops_tx.transport_fmt = ctx.fmt;
   ops_tx.device = ST_PLUGIN_DEVICE_AUTO;
   ops_tx.framebuff_cnt = ctx.framebuff_cnt;
-  /* do we need the original timestamp */
-  // ops_tx.flags |= ST20P_TX_FLAG_USER_TIMESTAMP;
+  if (app.sync_tmstamp) ops_tx.flags |= ST20P_TX_FLAG_USER_TIMESTAMP;
   ops_tx.notify_frame_available = tx_st20p_frame_available;
   st20p_tx_handle tx_handle = st20p_tx_create(ctx.st, &ops_tx);
   if (!tx_handle) {
