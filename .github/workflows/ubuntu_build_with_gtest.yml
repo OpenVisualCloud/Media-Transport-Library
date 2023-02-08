@@ -57,7 +57,9 @@ jobs:
       run: ./script/build_dpdk.sh
 
     - name: Build
-      run: ./build.sh
+      run: |
+        ./build.sh
+        sudo ldconfig
   
   Test:
     if: github.repository == 'OpenVisualCloud/Media-Transport-Library'
@@ -77,4 +79,6 @@ jobs:
 
       - name: Run test case
         run: |
+          sudo ./build/tests/KahawaiUfdTest --p_port 0000:31:00.0 --r_port 0000:31:00.1
+          sudo ./build/tests/KahawaiUfdTest --p_port 0000:31:00.0 --r_port 0000:31:00.1 --queue_mode shared
           sudo bash -c 'export LD_LIBRARY_PATH=/usr/local/lib/x86_64-linux-gnu/:/usr/local/lib/; ./build/tests/KahawaiTest --auto_start_stop --p_port 0000:31:00.0 --r_port 0000:31:00.1 --dma_dev 0000:00:01.0,0000:00:01.1'

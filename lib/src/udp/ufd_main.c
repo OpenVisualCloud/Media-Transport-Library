@@ -249,16 +249,12 @@ static struct ufd_mt_ctx* ufd_create_mt_ctx(void) {
     return NULL;
   }
 
-  ctx->init_params.slots_nb_max = 1024;
-  ctx->init_params.fd_base = UFD_FD_BASE_DEFAULT;
-  ctx->init_params.txq_bps = MUDP_DEFAULT_RL_BPS;
   mt_pthread_mutex_init(&ctx->slots_lock, NULL);
 
   /* init mtl context */
   struct mtl_init_params* p = &ctx->init_params.mt_params;
   p->flags |= MTL_FLAG_BIND_NUMA;    /* default bind to numa */
   p->log_level = MTL_LOG_LEVEL_INFO; /* default to info */
-  p->transport = MTL_TRANSPORT_UDP;
 
   if (init_para) { /* init case selected */
     info("%s, runtime config path\n", __func__);
@@ -278,6 +274,14 @@ static struct ufd_mt_ctx* ufd_create_mt_ctx(void) {
       p->log_level = rt_para->log_level;
     }
   }
+
+  /* force udp mode */
+  p->transport = MTL_TRANSPORT_UDP;
+
+  /* assign a default if not set by user */
+  if (!ctx->init_params.slots_nb_max) ctx->init_params.slots_nb_max = 1024;
+  if (!ctx->init_params.fd_base) ctx->init_params.fd_base = UFD_FD_BASE_DEFAULT;
+  if (!ctx->init_params.txq_bps) ctx->init_params.txq_bps = MUDP_DEFAULT_RL_BPS;
 
   ctx->mt = mtl_init(p);
   if (!ctx->mt) {
@@ -374,7 +378,7 @@ int mufd_socket_port(int domain, int type, int protocol, enum mtl_port port) {
   /* update slot last idx */
   ctx->slot_last_idx = idx;
 
-  slot->handle = mudp_socket(ctx->mt, domain, type, protocol);
+  slot->handle = mudp_socket_port(ctx->mt, domain, type, protocol, port);
   if (!slot->handle) {
     err("%s, socket create fail\n", __func__);
     ufd_free_slot(ctx, slot);

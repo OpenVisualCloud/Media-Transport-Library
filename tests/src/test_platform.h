@@ -12,12 +12,19 @@
 #endif
 #else /* Linux */
 #include <arpa/inet.h>
+#include <poll.h>
 #endif
+
 #include <unistd.h>
+
 #ifdef CLOCK_MONOTONIC_RAW
 #define ST_CLOCK_MONOTONIC_ID CLOCK_MONOTONIC_RAW
 #else
 #define ST_CLOCK_MONOTONIC_ID CLOCK_MONOTONIC
+#endif
+
+#ifdef WINDOWSENV
+typedef unsigned long int nfds_t;
 #endif
 
 static inline int st_pthread_mutex_init(pthread_mutex_t* mutex,

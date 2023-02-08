@@ -5,4 +5,4 @@
 
 set -e
 
-find . -regex '.*\.\(cpp\|hpp\|cc\|c\|h\)' -exec clang-format -i {} \;
+find . -regex '.*\.\(cpp\|hpp\|cc\|c\|h\)' -exec clang-format --verbose -i {} \;
