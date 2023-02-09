@@ -92,12 +92,12 @@ static int convert(struct conv_app_context* ctx) {
   long size = ftell(fp_in);
   int frame_num = size / frame_size_in;
   if (frame_num < 0) {
-    err("%s, err size %" PRIu64 "\n", __func__, size);
+    err("%s, err size %ld\n", __func__, size);
     ret = -EIO;
     goto out;
   }
-  info("%s, file size:%" PRIu64 ", %d frames(%ux%u), in %s(%d) out %s(%d)\n", __func__,
-       size, frame_num, w, h, ctx->file_in, fmt_in, ctx->file_out, fmt_out);
+  info("%s, file size:%ld, %d frames(%ux%u), in %s(%d) out %s(%d)\n", __func__, size,
+       frame_num, w, h, ctx->file_in, fmt_in, ctx->file_out, fmt_out);
 
   fseek(fp_in, 0, SEEK_SET);
   for (int i = 0; i < frame_num; i++) {
