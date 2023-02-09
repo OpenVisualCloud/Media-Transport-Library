@@ -65,7 +65,7 @@ static void* app_rx_st20p_frame_thread(void* arg) {
       } else {
         latency_ns = ptp_ns - frame->timestamp;
       }
-      dbg("%s, latency_us %lu\n", __func__, latency_ns / 1000);
+      dbg("%s, latency_us %" PRIu64 "\n", __func__, latency_ns / 1000);
       s->stat_latency_us_sum += latency_ns / 1000;
     }
 

@@ -48,7 +48,7 @@ static int tx_next_video_frame_timestamp(void* priv, uint16_t* next_frame_idx,
     meta->tfmt = ST10_TIMESTAMP_FMT_MEDIA_CLK;
     meta->timestamp = ctx->fb_send;
   }
-  dbg("%s, next_frame_idx %u timestamp %lu\n", __func__, *next_frame_idx,
+  dbg("%s, next_frame_idx %u timestamp %" PRIu64 "\n", __func__, *next_frame_idx,
       meta->timestamp);
   ctx->fb_idx++;
   if (ctx->fb_idx >= ctx->fb_cnt) ctx->fb_idx = 0;
@@ -428,7 +428,7 @@ static void rx_handle_rtp(tests_context* s, struct st20_rfc4175_rtp_hdr* hdr,
   uint32_t offset =
       (row_number * s->width + row_offset) / s->st20_pg.coverage * s->st20_pg.size;
   if ((offset + row_length) > s->frame_size) {
-    err("%s(%d: invalid offset %u frame size %ld\n", __func__, idx, offset,
+    err("%s(%d: invalid offset %u frame size %" PRIu64 "\n", __func__, idx, offset,
         s->frame_size);
     return;
   }
@@ -442,8 +442,8 @@ static void rx_handle_rtp(tests_context* s, struct st20_rfc4175_rtp_hdr* hdr,
     uint32_t offset2 =
         (row2_number * s->width + row2_offset) / s->st20_pg.coverage * s->st20_pg.size;
     if ((offset2 + row2_length) > s->frame_size) {
-      err("%s(%d: invalid offset %u frame size %ld for extra hdr\n", __func__, idx,
-          offset2, s->frame_size);
+      err("%s(%d: invalid offset %u frame size %" PRIu64 " for extra hdr\n", __func__,
+          idx, offset2, s->frame_size);
       return;
     }
     mtl_memcpy(frame + offset2, payload + row_length, row2_length);
@@ -1555,7 +1555,7 @@ static int st20_digest_rx_frame_ready(void* priv, void* frame,
 static void dump_slice_meta(struct st20_rx_slice_meta* meta) {
   info("%s, width %u height %u fps %d fmd %d field %d\n", __func__, meta->width,
        meta->height, meta->fps, meta->fmt, meta->second_field);
-  info("%s, frame total size %ld recv size %ld recv lines %u\n", __func__,
+  info("%s, frame total size %" PRIu64 " recv size %" PRIu64 " recv lines %u\n", __func__,
        meta->frame_total_size, meta->frame_recv_size, meta->frame_recv_lines);
 }
 
@@ -1585,7 +1585,8 @@ static int st20_digest_rx_slice_ready(void* priv, void* frame,
       meta->frame_recv_lines * meta->width * st20_pg.size / st20_pg.coverage;
   if (meta->frame_recv_size < frame_ready_size) {
     ctx->incomplete_slice_cnt++;
-    dbg("%s, recv_size err %ld %ld\n", __func__, meta->frame_recv_size, frame_ready_size);
+    dbg("%s, recv_size err %" PRIu64 " %" PRIu64 "\n", __func__, meta->frame_recv_size,
+        frame_ready_size);
   }
   if (meta->frame_recv_lines < ctx->slice_recv_lines) {
     ctx->incomplete_slice_cnt++;
@@ -1596,7 +1597,7 @@ static int st20_digest_rx_slice_ready(void* priv, void* frame,
   } else {
     if (ctx->slice_recv_timestamp != meta->timestamp) {
       ctx->incomplete_slice_cnt++;
-      dbg("%s, time stamp err %ld %ld\n", __func__, meta->timestamp,
+      dbg("%s, time stamp err %" PRIu64 " %" PRIu64 "\n", __func__, meta->timestamp,
           ctx->slice_recv_timestamp);
     }
   }

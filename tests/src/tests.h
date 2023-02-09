@@ -5,6 +5,7 @@
 #pragma once
 
 #include <gtest/gtest.h>
+#include <inttypes.h>
 #include <math.h>
 #include <mtl/st30_api.h>
 #include <mtl/st40_api.h>

@@ -36,7 +36,7 @@ static int test_encode_frame(struct test_st22_encoder_session* s,
   frame->dst->data_size = codestream_size;
 
   s->frame_cnt++;
-  dbg("%s(%d), succ, codestream_size %ld\n", __func__, s->idx, codestream_size);
+  dbg("%s(%d), succ, codestream_size %" PRIu64 "\n", __func__, s->idx, codestream_size);
 
   /* simulate fail and timeout */
   if (s->fail_interval) {
@@ -117,7 +117,7 @@ static st22_encode_priv test_encoder_create_session(void* priv,
     ctx->encoder_sessions[i] = session;
     dbg("%s(%d), input fmt: %s, output fmt: %s\n", __func__, i,
         st_frame_fmt_name(req->input_fmt), st_frame_fmt_name(req->output_fmt));
-    dbg("%s(%d), frame_max_size %ld\n", __func__, i, frame_max_size);
+    dbg("%s(%d), frame_max_size %" PRIu64 "\n", __func__, i, frame_max_size);
     return session;
   }
 
@@ -567,7 +567,7 @@ static void test_st22p_tx_frame_thread(void* args) {
     s->fb_send++;
     if (!s->start_time) {
       s->start_time = st_test_get_monotonic_time();
-      dbg("%s(%d), start_time %ld\n", __func__, s->idx, s->start_time);
+      dbg("%s(%d), start_time %" PRIu64 "\n", __func__, s->idx, s->start_time);
     }
   }
   dbg("%s(%d), stop\n", __func__, s->idx);
@@ -595,7 +595,7 @@ static void test_st22p_rx_frame_thread(void* args) {
     if (frame->width != s->width) s->incomplete_frame_cnt++;
     if (frame->height != s->height) s->incomplete_frame_cnt++;
     if (frame->fmt != s->fmt) s->incomplete_frame_cnt++;
-    dbg("%s(%d), timestamp %ld\n", __func__, s->idx, frame->timestamp);
+    dbg("%s(%d), timestamp %" PRIu64 "\n", __func__, s->idx, frame->timestamp);
     if (frame->timestamp == timestamp) s->incomplete_frame_cnt++;
     timestamp = frame->timestamp;
 
@@ -608,8 +608,8 @@ static void test_st22p_rx_frame_thread(void* args) {
          */
         if (((uint32_t)frame->timestamp - s->pre_timestamp) > 4) {
           s->incomplete_frame_cnt++;
-          err("%s(%d), frame user timestamp %lu pre_timestamp %u\n", __func__, s->idx,
-              frame->timestamp, s->pre_timestamp);
+          err("%s(%d), frame user timestamp %" PRIu64 " pre_timestamp %u\n", __func__,
+              s->idx, frame->timestamp, s->pre_timestamp);
         }
       }
       s->pre_timestamp = (uint32_t)frame->timestamp;

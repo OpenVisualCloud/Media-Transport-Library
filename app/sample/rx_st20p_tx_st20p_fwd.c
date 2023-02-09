@@ -138,8 +138,8 @@ static void fwd_st20_consume_frame(struct rx_st20p_tx_st20p_sample_ctx* s,
   struct st_frame* tx_frame;
 
   if (frame->data_size != s->framebuff_size) {
-    err("%s(%d), mismatch frame size %ld %ld\n", __func__, s->idx, frame->data_size,
-        s->framebuff_size);
+    err("%s(%d), mismatch frame size %" PRIu64 " %" PRIu64 "\n", __func__, s->idx,
+        frame->data_size, s->framebuff_size);
     return;
   }
 

@@ -102,11 +102,12 @@ static void ra_ebu_result(struct st_rx_audio_session_impl* s) {
   ebu->dpvr_avg = ra_ebu_calculate_avg(ebu->dpvr_cnt, ebu->dpvr_sum);
   /* print every 5 results */
   if (ebu_result->ebu_result_num % 5 == 0) {
-    info("%s(%d), Delta Packet vs RTP AVG %.2f (us) MIN %ld (us) MAX %ld (us) test %s!\n",
+    info("%s(%d), Delta Packet vs RTP AVG %.2f (us) MIN %" PRId64 " (us) MAX %" PRId64
+         " (us) test %s!\n",
          __func__, idx, ebu->dpvr_avg, ebu->dpvr_min, ebu->dpvr_max,
          ra_ebu_dpvr_result(s));
-    info("%s(%d), Maximum Timestamped Delay Factor %ld (us) test %s!\n\n", __func__, idx,
-         ebu->tsdf_max, ra_ebu_tsdf_result(s));
+    info("%s(%d), Maximum Timestamped Delay Factor %" PRIu64 " (us) test %s!\n\n",
+         __func__, idx, ebu->tsdf_max, ra_ebu_tsdf_result(s));
   } else {
     ra_ebu_dpvr_result(s);
     ra_ebu_tsdf_result(s);

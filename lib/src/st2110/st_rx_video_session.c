@@ -660,8 +660,8 @@ static int rv_alloc_frames(struct mtl_main_impl* impl,
       st20_frame->addr = frame;
       st20_frame->iova = frame_iova;
       st20_frame->flags = ST_FT_FLAG_EXT;
-      info("%s(%d), attach external frame %d, addr %p, iova %ld\n", __func__, idx, i,
-           frame, frame_iova);
+      info("%s(%d), attach external frame %d, addr %p, iova %" PRIu64 "\n", __func__, idx,
+           i, frame, frame_iova);
     } else if (rv_is_hdr_split(s) || rv_is_dynamic_ext_frame(s)) {
       st20_frame->iova = 0; /* detect later */
       st20_frame->addr = NULL;
@@ -2432,8 +2432,8 @@ static int rv_handle_detect_pkt(struct st_rx_video_session_impl* s, struct rte_m
           }
           s->slice_lines = reply.slice_lines;
           s->st20_uframe_size = reply.uframe_size;
-          info("%s(%d), detected, slice_lines %u, uframe_size %ld\n", __func__, s->idx,
-               s->slice_lines, s->st20_uframe_size);
+          info("%s(%d), detected, slice_lines %u, uframe_size %" PRIu64 "\n", __func__,
+               s->idx, s->slice_lines, s->st20_uframe_size);
         }
         if (!s->slice_lines) s->slice_lines = ops->height / 32;
         s->slice_size =

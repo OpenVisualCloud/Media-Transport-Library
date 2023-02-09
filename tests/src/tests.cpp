@@ -465,7 +465,7 @@ static void st10_timestamp_test(uint32_t sampling_rate) {
 
   uint64_t ns_delta = st10_media_clk_to_ns(media2 - media1, sampling_rate);
   uint64_t expect_delta = ptp2 - ptp1;
-  dbg("%s, delta %lu %lu\n", __func__, ns_delta, expect_delta);
+  dbg("%s, delta %" PRIu64 " %" PRIu64 "\n", __func__, ns_delta, expect_delta);
   EXPECT_NEAR(ns_delta, expect_delta, expect_delta * 0.5);
 }
 
@@ -615,7 +615,7 @@ int test_ctx_notify_event(void* priv, enum st_event event, void* args) {
     if (!s->first_vsync_time) s->first_vsync_time = st_test_get_monotonic_time();
 #ifdef DEBUG
     struct st10_vsync_meta* meta = (struct st10_vsync_meta*)args;
-    dbg("%s(%d,%p), epoch %lu vsync_cnt %d\n", __func__, s->idx, s, meta->epoch,
+    dbg("%s(%d,%p), epoch %" PRIu64 " vsync_cnt %d\n", __func__, s->idx, s, meta->epoch,
         s->vsync_cnt);
 #endif
   }

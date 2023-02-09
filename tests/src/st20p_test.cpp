@@ -375,7 +375,7 @@ static void test_st20p_tx_frame_thread(void* args) {
     s->fb_send++;
     if (!s->start_time) {
       s->start_time = st_test_get_monotonic_time();
-      dbg("%s(%d), start_time %ld\n", __func__, s->idx, s->start_time);
+      dbg("%s(%d), start_time %" PRIu64 "\n", __func__, s->idx, s->start_time);
     }
   }
   dbg("%s(%d), stop\n", __func__, s->idx);
@@ -409,7 +409,7 @@ static void test_st20p_rx_frame_thread(void* args) {
     if (frame->width != s->width) s->incomplete_frame_cnt++;
     if (frame->height != s->height) s->incomplete_frame_cnt++;
     if (frame->fmt != s->fmt) s->incomplete_frame_cnt++;
-    dbg("%s(%d), timestamp %ld\n", __func__, s->idx, frame->timestamp);
+    dbg("%s(%d), timestamp %" PRIu64 "\n", __func__, s->idx, frame->timestamp);
     if (frame->timestamp == timestamp) s->incomplete_frame_cnt++;
     timestamp = frame->timestamp;
 
@@ -422,8 +422,8 @@ static void test_st20p_rx_frame_thread(void* args) {
          */
         if (((uint32_t)frame->timestamp - s->pre_timestamp) > 4) {
           s->incomplete_frame_cnt++;
-          err("%s(%d), frame user timestamp %lu pre_timestamp %u\n", __func__, s->idx,
-              frame->timestamp, s->pre_timestamp);
+          err("%s(%d), frame user timestamp %" PRIu64 " pre_timestamp %u\n", __func__,
+              s->idx, frame->timestamp, s->pre_timestamp);
         }
       }
       s->pre_timestamp = (uint32_t)frame->timestamp;
@@ -497,7 +497,7 @@ static void test_internal_st20p_rx_frame_thread(void* args) {
     if (frame->width != s->width) s->incomplete_frame_cnt++;
     if (frame->height != s->height) s->incomplete_frame_cnt++;
     if (frame->fmt != s->fmt) s->incomplete_frame_cnt++;
-    dbg("%s(%d), timestamp %ld\n", __func__, s->idx, frame->timestamp);
+    dbg("%s(%d), timestamp %" PRIu64 "\n", __func__, s->idx, frame->timestamp);
     if (frame->timestamp == timestamp) s->incomplete_frame_cnt++;
     timestamp = frame->timestamp;
 
@@ -510,8 +510,8 @@ static void test_internal_st20p_rx_frame_thread(void* args) {
          */
         if (((uint32_t)frame->timestamp - s->pre_timestamp) > 4) {
           s->incomplete_frame_cnt++;
-          err("%s(%d), frame user timestamp %lu pre_timestamp %u\n", __func__, s->idx,
-              frame->timestamp, s->pre_timestamp);
+          err("%s(%d), frame user timestamp %" PRIu64 " pre_timestamp %u\n", __func__,
+              s->idx, frame->timestamp, s->pre_timestamp);
         }
       }
       s->pre_timestamp = (uint32_t)frame->timestamp;

@@ -185,7 +185,7 @@ static int app_tx_st22_open_source(struct st22_app_tx_session* s) {
 
   fstat(fd, &i);
   if (i.st_size < s->bytes_per_frame) {
-    err("%s, %s file size small then a frame %ld\n", __func__, s->st22_source_url,
+    err("%s, %s file size small then a frame %" PRIu64 "\n", __func__, s->st22_source_url,
         s->bytes_per_frame);
     close(fd);
     return -EIO;
@@ -327,7 +327,7 @@ static int app_tx_st22_init(struct st_app_context* ctx, struct st22_app_tx_sessi
     return ret;
   }
 
-  info("%s(%d), bytes_per_frame %ld\n", __func__, idx, s->bytes_per_frame);
+  info("%s(%d), bytes_per_frame %" PRIu64 "\n", __func__, idx, s->bytes_per_frame);
   return 0;
 }
 

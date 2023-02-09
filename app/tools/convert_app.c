@@ -3,6 +3,7 @@
  */
 
 #include <assert.h>
+#include <inttypes.h>
 #include <mtl/st_convert_api.h>
 #include <mtl/st_pipeline_api.h>
 #include <stdio.h>

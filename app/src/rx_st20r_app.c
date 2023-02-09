@@ -45,8 +45,8 @@ static void app_rx_st20r_consume_frame(struct st_app_rx_video_session* s, void* 
   } else {
     if (s->st20_dst_cursor + frame_size > s->st20_dst_end)
       s->st20_dst_cursor = s->st20_dst_begin;
-    dbg("%s(%d), dst %p src %p size %ld\n", __func__, s->idx, s->st20_dst_cursor, frame,
-        frame_size);
+    dbg("%s(%d), dst %p src %p size %" PRIu64 "\n", __func__, s->idx, s->st20_dst_cursor,
+        frame, frame_size);
     mtl_memcpy(s->st20_dst_cursor, frame, frame_size);
     s->st20_dst_cursor += frame_size;
   }
@@ -177,7 +177,7 @@ static int app_rx_st20r_frame_ready(void* priv, void* frame,
     } else {
       latency_ns = ptp_ns - meta->timestamp;
     }
-    dbg("%s, latency_us %lu\n", __func__, latency_ns / 1000);
+    dbg("%s, latency_us %" PRIu64 "\n", __func__, latency_ns / 1000);
     s->stat_latency_us_sum += latency_ns / 1000;
   }
   s->stat_frame_total_received++;

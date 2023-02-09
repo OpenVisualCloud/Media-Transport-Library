@@ -10,6 +10,7 @@ struct rx_ctx {
   pthread_cond_t rx_wake_cond;
   pthread_mutex_t rx_wake_mutex;
   void* app;
+  int fb_rcv;
 };
 
 struct merge_fwd_sample_ctx {
@@ -105,6 +106,7 @@ loop_entry:
           } else if (tx_tmstamp > tmstamp) {
             warn("%s, clear outdated frame %" PRIu64 "\n", __func__, tmstamp);
             st20p_rx_put_frame(rx_handle, rx_frame);
+            rx_frame = NULL;
             continue; /* continue while: get new rx farme */
           }
         }
@@ -121,6 +123,7 @@ loop_entry:
         }
 
         st20p_rx_put_frame(rx_handle, rx_frame);
+        rx->fb_rcv++;
       }
     }
     if (s->sync_tmstamp) {
@@ -133,6 +136,7 @@ loop_entry:
     }
 
     st20p_tx_put_frame(tx_handle, frame);
+    s->fb_fwd++;
   }
 
   return NULL;
@@ -283,6 +287,9 @@ int main(int argc, char** argv) {
 
   // stop dev
   ret = mtl_stop(ctx.st);
+  for (int i = 0; i < 4; i++) {
+    info("%s, rx[%d] fb_received %d\n", __func__, i, app.rx[i].fb_rcv);
+  }
   info("%s, fb_fwd %d\n", __func__, app.fb_fwd);
   app.ready = false;
 

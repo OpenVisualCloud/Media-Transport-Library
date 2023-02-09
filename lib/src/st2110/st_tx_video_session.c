@@ -426,7 +426,8 @@ static int tv_sync_pacing(struct mtl_main_impl* impl, struct st_tx_video_session
   dbg("%s(%d), old time_cursor %fms\n", __func__, idx,
       pacing->tsc_time_cursor / 1000 / 1000);
   pacing->tsc_time_cursor = (double)mt_get_tsc(impl) + to_epoch_tr_offset;
-  dbg("%s(%d), epochs %lu time_stamp %u time_cursor %fms to_epoch_tr_offset %fms\n",
+  dbg("%s(%d), epochs %" PRIu64
+      " time_stamp %u time_cursor %fms to_epoch_tr_offset %fms\n",
       __func__, idx, pacing->cur_epochs, pacing->pacing_time_stamp,
       pacing->tsc_time_cursor / 1000 / 1000, to_epoch_tr_offset / 1000 / 1000);
   pacing->ptp_time_cursor = ptp_tr_offset_time;

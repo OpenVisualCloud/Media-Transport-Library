@@ -242,7 +242,7 @@ static st22_encode_priv encoder_create_session(void* priv, st22p_encode_session 
     ctx->encoder_sessions[i] = session;
     info("%s(%d), input fmt: %s, output fmt: %s\n", __func__, i,
          st_frame_fmt_name(req->input_fmt), st_frame_fmt_name(req->output_fmt));
-    info("%s(%d), max_codestream_size %ld\n", __func__, i,
+    info("%s(%d), max_codestream_size %" PRIu64 "\n", __func__, i,
          session->req.max_codestream_size);
     return session;
   }

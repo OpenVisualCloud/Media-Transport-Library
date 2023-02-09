@@ -87,7 +87,8 @@ static int tx_st22p_open_source(struct st_sample_context* ctx,
 
   fstat(fd, &i);
   if (i.st_size < s->frame_size) {
-    err("%s, %s file size small then a frame %ld\n", __func__, file, s->frame_size);
+    err("%s, %s file size small then a frame %" PRIu64 "\n", __func__, file,
+        s->frame_size);
     close(fd);
     return -EIO;
   }
@@ -135,7 +136,7 @@ static void tx_st22p_build_frame(struct tx_st22p_sample_ctx* s, struct st_frame*
   uint8_t planes = st_frame_fmt_planes(frame->fmt);
   for (uint8_t plane = 0; plane < planes; plane++) {
     size_t plane_sz = st_frame_plane_size(frame, plane);
-    dbg("%s(%d), src frame, plane %u size %lu addr %p\n", __func__, s->idx, plane,
+    dbg("%s(%d), src frame, plane %u size %" PRIu64 " addr %p\n", __func__, s->idx, plane,
         plane_sz, frame->addr[plane]);
     dbg("%s(%d), plane %u src addr %p\n", __func__, s->idx, plane, src);
     mtl_memcpy(frame->addr[plane], src, plane_sz);

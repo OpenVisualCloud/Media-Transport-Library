@@ -39,10 +39,11 @@ test_cpp_args += ['-Wall']
 if is_windows
   test_c_args += ['-DWINDOWSENV']
   test_cpp_args += ['-DWINDOWSENV']
+  test_c_args += ['-D__USE_MINGW_ANSI_STDIO']
+  test_cpp_args += ['-D__USE_MINGW_ANSI_STDIO']
+  test_cpp_args += ['-D__STDC_FORMAT_MACROS']
   test_c_args += ['-Wno-sign-compare']
   test_cpp_args += ['-Wno-sign-compare']
-  test_c_args += ['-Wformat=0']
-  test_cpp_args += ['-Wformat=0']
 endif
 
 if is_windows

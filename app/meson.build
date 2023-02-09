@@ -48,7 +48,6 @@ if is_windows
   libpcap =[]
   mingw_root_dir = 'c:\mingw64'
   app_c_args += ['-DWINDOWSENV','-D_WIN32_WINNT=0x0600']
-  app_c_args += ['-Wformat=0']
   app_c_args += ['-D__USE_MINGW_ANSI_STDIO']
   mingw_include_dir = mingw_root_dir + '''\include'''
   windows_include_dir = '..\..\lib\windows'

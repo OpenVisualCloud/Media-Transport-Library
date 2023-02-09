@@ -233,11 +233,11 @@ static int kahawai_read_header(AVFormatContext* ctx) {
       return AVERROR(EIO);
     }
     shared_st_handle = s->dev_handle;
-    av_log(ctx, AV_LOG_VERBOSE, "mtl_init finished: st_handle 0x%lx\n",
+    av_log(ctx, AV_LOG_VERBOSE, "mtl_init finished: st_handle 0x%" PRIx64 "\n",
            (unsigned long)shared_st_handle);
   } else {
     s->dev_handle = shared_st_handle;
-    av_log(ctx, AV_LOG_VERBOSE, "use shared st_handle 0x%lx\n",
+    av_log(ctx, AV_LOG_VERBOSE, "use shared st_handle 0x%" PRIx64 "\n",
            (unsigned long)shared_st_handle);
   }
   ++active_session_cnt;
@@ -303,7 +303,7 @@ static int kahawai_read_header(AVFormatContext* ctx) {
       s->ext_frames[i].linesize[2] = s->width;
       s->ext_frames[i].size = ctx->packet_size;
 
-      av_log(ctx, AV_LOG_VERBOSE, "Allocated Framebuf[%d]: 0x%lx\n", i,
+      av_log(ctx, AV_LOG_VERBOSE, "Allocated Framebuf[%d]: 0x%" PRIx64 "\n", i,
              (unsigned long)s->av_buffers[i]->data);
     }
     ops_rx.ext_frames = s->ext_frames;
@@ -315,7 +315,7 @@ static int kahawai_read_header(AVFormatContext* ctx) {
   pthread_mutex_init(&(s->get_frame_mutex), NULL);
   pthread_cond_init(&(s->get_frame_cond), NULL);
 
-  av_log(ctx, AV_LOG_VERBOSE, "st20p_rx_create st_handle 0x%lx\n",
+  av_log(ctx, AV_LOG_VERBOSE, "st20p_rx_create st_handle 0x%" PRIx64 "\n",
          (unsigned long)s->dev_handle);
   av_log(ctx, AV_LOG_VERBOSE, "udp_port %d\n", s->udp_port);
 
@@ -350,7 +350,7 @@ static int kahawai_read_packet(AVFormatContext* ctx, AVPacket* pkt) {
 
   if (s->ext_frames_mode) {
     if (s->last_frame) {
-      av_log(ctx, AV_LOG_VERBOSE, "st20p_rx_put_frame: 0x%lx\n",
+      av_log(ctx, AV_LOG_VERBOSE, "st20p_rx_put_frame: 0x%" PRIx64 "\n",
              (unsigned long)(s->last_frame->addr[0]));
       st20p_rx_put_frame(s->rx_handle, s->last_frame);
       s->last_frame = NULL;
@@ -378,7 +378,7 @@ static int kahawai_read_packet(AVFormatContext* ctx, AVPacket* pkt) {
       return AVERROR(EIO);
     }
   }
-  av_log(ctx, AV_LOG_VERBOSE, "st20p_rx_get_frame: 0x%lx\n",
+  av_log(ctx, AV_LOG_VERBOSE, "st20p_rx_get_frame: 0x%" PRIx64 "\n",
          (unsigned long)(s->frame->addr[0]));
 
   if (s->ext_frames_mode) {
@@ -386,7 +386,8 @@ static int kahawai_read_packet(AVFormatContext* ctx, AVPacket* pkt) {
   }
 
   if (s->frame->data_size != s->output_frame_size) {
-    av_log(ctx, AV_LOG_ERROR, "Unexpected frame size received: %lu (%lu expected)\n",
+    av_log(ctx, AV_LOG_ERROR,
+           "Unexpected frame size received: %" PRIu64 " (%" PRIu64 " expected)\n",
            s->frame->data_size, s->output_frame_size);
     // s->stopped = true;
     // pthread_mutex_unlock(&(s->read_packet_mutex));
@@ -395,7 +396,7 @@ static int kahawai_read_packet(AVFormatContext* ctx, AVPacket* pkt) {
 
   if (s->ext_frames_mode) {
     while (frame_num < s->fb_cnt) {
-      av_log(ctx, AV_LOG_VERBOSE, "Checked Framebuf[%d]: 0x%lx\n", frame_num,
+      av_log(ctx, AV_LOG_VERBOSE, "Checked Framebuf[%d]: 0x%" PRIx64 "\n", frame_num,
              (unsigned long)s->av_buffers[frame_num]->data);
       if (s->av_buffers[frame_num]->data == s->frame->addr[0]) {
         break;
@@ -412,7 +413,7 @@ static int kahawai_read_packet(AVFormatContext* ctx, AVPacket* pkt) {
     pkt->buf = s->av_buffers[frame_num];
     pkt->data = s->av_buffers[frame_num]->data;
     pkt->size = s->av_buffers[frame_num]->size;
-    av_log(ctx, AV_LOG_DEBUG, "pkt data 0x%lx size %d data[0]=%u\n",
+    av_log(ctx, AV_LOG_DEBUG, "pkt data 0x%" PRIx64 " size %d data[0]=%u\n",
            (unsigned long)pkt->data, pkt->size, pkt->data[0]);
   } else {
     ret = av_new_packet(pkt, ctx->packet_size);
@@ -435,13 +436,13 @@ static int kahawai_read_packet(AVFormatContext* ctx, AVPacket* pkt) {
       return ret;
     }
     st20p_rx_put_frame(s->rx_handle, s->frame);
-    av_log(ctx, AV_LOG_VERBOSE, "st20p_rx_put_frame: 0x%lx\n",
+    av_log(ctx, AV_LOG_VERBOSE, "st20p_rx_put_frame: 0x%" PRIx64 "\n",
            (unsigned long)(s->frame->addr[0]));
     // pthread_mutex_unlock(&(s->read_packet_mutex));
   }
   pkt->pts = pkt->dts = s->frame_counter++;
   s->frame = NULL;
-  av_log(ctx, AV_LOG_VERBOSE, "Got POC %ld\n", pkt->pts);
+  av_log(ctx, AV_LOG_VERBOSE, "Got POC %" PRIu64 "\n", pkt->pts);
 
   return 0;
 }
@@ -452,7 +453,7 @@ static int kahawai_read_close(AVFormatContext* ctx) {
   av_log(ctx, AV_LOG_VERBOSE, "kahawai_read_close triggered\n");
 
   if (s->frame) {
-    av_log(ctx, AV_LOG_VERBOSE, "Put a frame: 0x%lx\n",
+    av_log(ctx, AV_LOG_VERBOSE, "Put a frame: 0x%" PRIx64 "\n",
            (unsigned long)(s->frame->addr[0]));
     st20p_rx_put_frame(s->rx_handle, s->frame);
     s->frame = NULL;
@@ -460,7 +461,7 @@ static int kahawai_read_close(AVFormatContext* ctx) {
 
   if (s->ext_frames_mode) {
     if (s->last_frame) {
-      av_log(ctx, AV_LOG_VERBOSE, "Put a frame: 0x%lx\n",
+      av_log(ctx, AV_LOG_VERBOSE, "Put a frame: 0x%" PRIx64 "\n",
              (unsigned long)(s->last_frame->addr[0]));
       st20p_rx_put_frame(s->rx_handle, s->last_frame);
       s->last_frame = NULL;

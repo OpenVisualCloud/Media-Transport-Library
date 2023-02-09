@@ -95,8 +95,8 @@ static int rx_st20p_open_source(struct rx_st20p_sample_ctx* s, const char* file)
   s->dst_cursor = m;
   s->dst_end = m + f_size;
   s->dst_fd = fd;
-  info("%s(%d), save %d framebuffers to file %s(%p,%ld)\n", __func__, idx, fb_cnt, file,
-       m, f_size);
+  info("%s(%d), save %d framebuffers to file %s(%p,%" PRIu64 ")\n", __func__, idx, fb_cnt,
+       file, m, f_size);
 
   return 0;
 }

@@ -144,7 +144,7 @@ int main(int argc, char** argv) {
       struct stat st;
       fstat(fd, &st);
       if (st.st_size < (app[i]->fb_size * app[i]->fb_cnt)) {
-        err("%s, %s file size too small %ld\n", __func__, ctx.tx_url, st.st_size);
+        err("%s, %s file size too small %" PRIu64 "\n", __func__, ctx.tx_url, st.st_size);
         close(fd);
         ret = -EIO;
         goto error;
