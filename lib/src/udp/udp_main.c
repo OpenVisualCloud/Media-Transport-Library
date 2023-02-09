@@ -834,8 +834,15 @@ int mudp_poll(struct mudp_pollfd* fds, mudp_nfds_t nfds, int timeout) {
     }
   }
 
-  /* first check if it has any pending pkt in the ring */
-pool_in:
+/* rx from nic firstly */
+rx_pool:
+  rx = 0;
+  for (mudp_nfds_t i = 0; i < nfds; i++) {
+    s = fds[i].fd;
+    rx += udp_rx(impl, s);
+  }
+
+  /* check the ready fds */
   rc = 0;
   for (mudp_nfds_t i = 0; i < nfds; i++) {
     s = fds[i].fd;
@@ -848,15 +855,7 @@ pool_in:
   }
   if (rc > 0) return rc;
 
-  /* rx poll */
-rx_pool:
-  rx = 0;
-  for (mudp_nfds_t i = 0; i < nfds; i++) {
-    s = fds[i].fd;
-    rx += udp_rx(impl, s);
-  }
-  if (rx > 0) goto pool_in;
-
+  /* check if timeout */
   int ms = (mt_get_tsc(impl) - start_ts) / NS_PER_MS;
   if ((ms < timeout) && !mt_aborted(impl)) {
     goto rx_pool;
