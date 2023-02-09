@@ -29,7 +29,6 @@ plugins_c_args += ['-Wall']
 plugins_c_args += ['-msse4.2']
 
 if is_windows
-  plugins_c_args += ['-Wformat=0']
   libdpdklinkflags = run_command('pkg-config', '--static', '--libs', 'libdpdk')
   plugins_ld_args += ['-lmingw32','-lws2_32','-lDbghelp','-lSetupapi','-ldinput8', '-ldxguid', '-ldxerr8', '-lwinmm', '-limm32','-lversion','-lwpcap','-lPacket','-lSDL2','-lSDL2Main','-lmman','-ljson-c','-ldl']
   plugins_ld_args += ['-Wl,--whole-archive']
