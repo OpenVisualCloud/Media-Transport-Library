@@ -93,6 +93,12 @@ static void utest_random_ip(struct utest_ctx* ctx) {
   r_ip[1] = p_ip[1];
   r_ip[2] = p_ip[2];
   r_ip[3] = p_ip[3] + 1;
+
+  p_ip = ctx->mcast_ip_addr;
+  p_ip[0] = 239;
+  p_ip[1] = 187;
+  p_ip[2] = rand() % 0xFF;
+  p_ip[3] = rand() % 0xFF;
 }
 
 static void utest_ctx_init(struct utest_ctx* ctx) {
