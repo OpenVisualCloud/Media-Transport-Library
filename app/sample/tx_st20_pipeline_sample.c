@@ -140,9 +140,9 @@ static int tx_st20p_frame_done(void* priv, struct st_frame* frame) {
 }
 
 static void tx_st20p_build_frame(struct tx_st20p_sample_ctx* s, struct st_frame* frame) {
-  // uint8_t* src = s->frame_cursor;
+  uint8_t* src = s->frame_cursor;
 
-  // mtl_memcpy(frame->addr[0], src, s->frame_size);
+  mtl_memcpy(frame->addr[0], src, s->frame_size);
 }
 
 static void* tx_st20p_frame_thread(void* arg) {
