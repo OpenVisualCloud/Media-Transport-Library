@@ -157,7 +157,7 @@ TEST(Main, get_cap) {
   EXPECT_GT(cap.tx_sessions_cnt_max, 0);
   EXPECT_GT(cap.rx_sessions_cnt_max, 0);
   info("dma dev count %u\n", cap.dma_dev_cnt_max);
-  info("init_flags 0x%lx\n", cap.init_flags);
+  info("init_flags 0x%" PRIx64 "\n", cap.init_flags);
 }
 
 TEST(Main, get_stats) {

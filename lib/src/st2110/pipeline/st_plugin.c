@@ -589,8 +589,9 @@ st22_encoder_dev_handle st22_encoder_register(mtl_handle mt,
     }
     mgr->encode_devs[i] = encode_dev;
     mt_pthread_mutex_unlock(&mgr->lock);
-    info("%s(%d), %s registered, device %d cap(0x%lx:0x%lx)\n", __func__, i,
-         encode_dev->name, dev->target_device, dev->input_fmt_caps, dev->output_fmt_caps);
+    info("%s(%d), %s registered, device %d cap(0x%" PRIx64 ":0x%" PRIx64 ")\n", __func__,
+         i, encode_dev->name, dev->target_device, dev->input_fmt_caps,
+         dev->output_fmt_caps);
     return encode_dev;
   }
   mt_pthread_mutex_unlock(&mgr->lock);
@@ -645,8 +646,9 @@ st22_decoder_dev_handle st22_decoder_register(mtl_handle mt,
     }
     mgr->decode_devs[i] = decode_dev;
     mt_pthread_mutex_unlock(&mgr->lock);
-    info("%s(%d), %s registered, device %d cap(0x%lx:0x%lx)\n", __func__, i,
-         decode_dev->name, dev->target_device, dev->input_fmt_caps, dev->output_fmt_caps);
+    info("%s(%d), %s registered, device %d cap(0x%" PRIx64 ":0x%" PRIx64 ")\n", __func__,
+         i, decode_dev->name, dev->target_device, dev->input_fmt_caps,
+         dev->output_fmt_caps);
     return decode_dev;
   }
   mt_pthread_mutex_unlock(&mgr->lock);
@@ -701,8 +703,8 @@ st20_converter_dev_handle st20_converter_register(mtl_handle mt,
     }
     mgr->convert_devs[i] = convert_dev;
     mt_pthread_mutex_unlock(&mgr->lock);
-    info("%s(%d), %s registered, device %d cap(0x%lx:0x%lx)\n", __func__, i,
-         convert_dev->name, dev->target_device, dev->input_fmt_caps,
+    info("%s(%d), %s registered, device %d cap(0x%" PRIx64 ":0x%" PRIx64 ")\n", __func__,
+         i, convert_dev->name, dev->target_device, dev->input_fmt_caps,
          dev->output_fmt_caps);
     return convert_dev;
   }

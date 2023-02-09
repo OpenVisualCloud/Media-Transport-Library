@@ -1333,7 +1333,7 @@ static int dev_init_lcores(struct mtl_main_impl* impl) {
     memset(lcore_shm, 0, sizeof(*lcore_shm));
 
   impl->lcore_shm = lcore_shm;
-  info("%s, shared memory attached at %p nattch %" PRIu64 "\n", __func__, impl->lcore_shm,
+  info("%s, shared memory attached at %p nattch %lu\n", __func__, impl->lcore_shm,
        stat.shm_nattch);
   ret = dev_filelock_unlock(impl);
   if (ret < 0) {
