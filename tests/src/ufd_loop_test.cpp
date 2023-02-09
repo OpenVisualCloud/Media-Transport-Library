@@ -15,9 +15,11 @@ struct loop_para {
   int rx_timeout_us;
 
   bool dual_loop;
+  bool mcast;
 };
 
 static int loop_para_init(struct loop_para* para) {
+  memset(para, 0x0, sizeof(*para));
   para->sessions = 1;
   para->udp_port = 10000;
   para->udp_len = 1024;
@@ -26,6 +28,7 @@ static int loop_para_init(struct loop_para* para) {
   para->tx_sleep_us = 100;
   para->rx_timeout_us = 1000;
   para->dual_loop = false;
+  para->mcast = false;
   return 0;
 }
 
@@ -47,8 +50,13 @@ static int loop_sanity_test(struct utest_ctx* ctx, struct loop_para* para) {
     tx_fds[i] = -1;
     rx_fds[i] = -1;
     rx_timeout[i] = 0;
-    mufd_init_sockaddr(&tx_addr[i], p->sip_addr[MTL_PORT_P], udp_port + i);
-    mufd_init_sockaddr(&rx_addr[i], p->sip_addr[MTL_PORT_R], udp_port + i);
+    if (para->mcast) {
+      mufd_init_sockaddr(&tx_addr[i], ctx->mcast_ip_addr, udp_port + i);
+      mufd_init_sockaddr(&rx_addr[i], ctx->mcast_ip_addr, udp_port + i);
+    } else {
+      mufd_init_sockaddr(&tx_addr[i], p->sip_addr[MTL_PORT_P], udp_port + i);
+      mufd_init_sockaddr(&rx_addr[i], p->sip_addr[MTL_PORT_R], udp_port + i);
+    }
   }
 
   for (int i = 0; i < sessions; i++) {
@@ -85,6 +93,19 @@ static int loop_sanity_test(struct utest_ctx* ctx, struct loop_para* para) {
     ret = mufd_setsockopt(rx_fds[i], SOL_SOCKET, SO_RCVTIMEO, &tv, sizeof(tv));
     EXPECT_GE(ret, 0);
     if (ret < 0) goto exit;
+
+    if (para->mcast) {
+      struct ip_mreq mreq;
+      memset(&mreq, 0, sizeof(mreq));
+      /* multicast addr */
+      mreq.imr_multiaddr.s_addr = rx_addr[i].sin_addr.s_addr;
+      /* local nic src ip */
+      memcpy(&mreq.imr_interface.s_addr, p->sip_addr[MTL_PORT_P], MTL_IP_ADDR_LEN);
+      ret =
+          mufd_setsockopt(rx_fds[i], IPPROTO_IP, IP_ADD_MEMBERSHIP, &mreq, sizeof(mreq));
+      EXPECT_GE(ret, 0);
+      if (ret < 0) goto exit;
+    }
   }
 
   for (int loop = 0; loop < para->tx_pkts; loop++) {
@@ -150,7 +171,20 @@ static int loop_sanity_test(struct utest_ctx* ctx, struct loop_para* para) {
 exit:
   for (int i = 0; i < sessions; i++) {
     if (tx_fds[i] > 0) mufd_close(tx_fds[i]);
-    if (rx_fds[i] > 0) mufd_close(rx_fds[i]);
+    if (rx_fds[i] > 0) {
+      if (para->mcast) {
+        struct ip_mreq mreq;
+        memset(&mreq, 0, sizeof(mreq));
+        /* multicast addr */
+        mreq.imr_multiaddr.s_addr = rx_addr[i].sin_addr.s_addr;
+        /* local nic src ip */
+        memcpy(&mreq.imr_interface.s_addr, p->sip_addr[MTL_PORT_P], MTL_IP_ADDR_LEN);
+        ret = mufd_setsockopt(rx_fds[i], IPPROTO_IP, IP_DROP_MEMBERSHIP, &mreq,
+                              sizeof(mreq));
+        EXPECT_GE(ret, 0);
+      }
+      mufd_close(rx_fds[i]);
+    }
   }
   return 0;
 }
@@ -242,6 +276,44 @@ TEST(Loop, dual_multi_shared_max) {
 
   loop_para_init(&para);
   para.dual_loop = true;
+  para.sessions = mufd_get_sessions_max_nb() / 2;
+  para.tx_pkts = 32;
+  para.max_rx_timeout_pkts = para.tx_pkts / 2;
+  para.tx_sleep_us = 0;
+  loop_sanity_test(ctx, &para);
+}
+
+TEST(Loop, mcast_single) {
+  struct utest_ctx* ctx = utest_get_ctx();
+  struct loop_para para;
+
+  loop_para_init(&para);
+  para.mcast = true;
+  loop_sanity_test(ctx, &para);
+}
+
+TEST(Loop, mcast_multi) {
+  struct utest_ctx* ctx = utest_get_ctx();
+  struct loop_para para;
+
+  loop_para_init(&para);
+  para.mcast = true;
+  para.sessions = 5;
+  para.tx_sleep_us = 100;
+  loop_sanity_test(ctx, &para);
+}
+
+TEST(Loop, mcast_multi_shared_max) {
+  struct utest_ctx* ctx = utest_get_ctx();
+  struct loop_para para;
+
+  if (!(ctx->init_params.mt_params.flags & MTL_FLAG_SHARED_QUEUE)) {
+    err("%s, skip as it's not shared mode\n", __func__);
+    return;
+  }
+
+  loop_para_init(&para);
+  para.mcast = true;
   para.sessions = mufd_get_sessions_max_nb() / 2;
   para.tx_pkts = 32;
   para.max_rx_timeout_pkts = para.tx_pkts / 2;

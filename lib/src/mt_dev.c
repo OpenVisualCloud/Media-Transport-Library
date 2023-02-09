@@ -1557,15 +1557,27 @@ static int dev_if_free_rx_flow(struct mtl_main_impl* impl, enum mtl_port port,
                                struct mt_rx_flow_rsp* rsp) {
   struct mt_interface* inf = mt_if(impl, port);
   struct rte_flow_error error;
+  int ret;
+  int max_retry = 5;
+  int retry = 0;
 
+retry:
   if (rsp->flow_id > 0) {
     mt_socket_remove_flow(impl, port, rsp->flow_id);
     rsp->flow_id = -1;
   }
   if (rsp->flow) {
-    int ret = rte_flow_destroy(inf->port_id, rsp->flow, &error);
+    mt_pthread_mutex_lock(&inf->vf_cmd_mutex);
+    ret = rte_flow_destroy(inf->port_id, rsp->flow, &error);
+    mt_pthread_mutex_unlock(&inf->vf_cmd_mutex);
     if (ret < 0) {
-      err("%s(%d), flow destroy fail for queue %d\n", __func__, inf->port, rsp->queue_id);
+      err("%s(%d), flow destroy fail, queue %d, retry %d\n", __func__, inf->port,
+          rsp->queue_id, retry);
+      retry++;
+      if (retry < max_retry) {
+        mt_sleep_ms(10); /* WA: to wait pf finish the vf request */
+        goto retry;
+      }
     }
     rsp->flow = NULL;
   }
