@@ -686,6 +686,7 @@ struct mt_tsq_entry {
   uint16_t queue_id;
   struct mt_tsq_flow flow;
   struct mt_tsq_impl* parnet;
+  struct rte_mempool* tx_pool;
   /* linked list */
   MT_TAILQ_ENTRY(mt_tsq_entry) next;
 };
@@ -694,6 +695,8 @@ MT_TAILQ_HEAD(mt_tsq_entrys_list, mt_tsq_entry);
 struct mt_tsq_queue {
   uint16_t port_id;
   uint16_t queue_id;
+  /* shared tx mempool */
+  struct rte_mempool* tx_pool;
   /* List of rsq entry */
   struct mt_tsq_entrys_list head;
   pthread_mutex_t mutex;

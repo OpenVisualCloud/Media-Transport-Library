@@ -44,6 +44,15 @@ struct mufd_init_params {
  */
 int mufd_commit_init_params(struct mufd_init_params* p);
 
+/**
+ * Get the session nb of mufd context.
+ *
+ * @return
+ *   - >=0: Success, the number.
+ *   - <0: Error code.
+ */
+int mufd_get_sessions_max_nb(void);
+
 #if defined(__cplusplus)
 }
 #endif

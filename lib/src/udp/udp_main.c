@@ -194,21 +194,26 @@ static int udp_init_hdr(struct mtl_main_impl* impl, struct mudp_impl* s) {
 }
 
 static int udp_uinit_txq(struct mtl_main_impl* impl, struct mudp_impl* s) {
+  enum mtl_port port = s->port;
+
   if (s->txq) {
     /* flush all the pkts in the tx pool */
-    mt_dev_flush_tx_queue(impl, s->txq, mt_get_pad(impl, s->port));
+    mt_dev_flush_tx_queue(impl, s->txq, mt_get_pad(impl, port));
     mt_dev_put_tx_queue(impl, s->txq);
     s->txq = NULL;
   }
   if (s->tsq) {
     /* flush all the pkts in the tx pool */
-    mt_tsq_flush(impl, s->tsq, mt_get_pad(impl, s->port));
+    mt_tsq_flush(impl, s->tsq, mt_get_pad(impl, port));
     mt_tsq_put(s->tsq);
     s->tsq = NULL;
   }
-  if (s->tx_pool) {
-    mt_mempool_free(s->tx_pool);
-    s->tx_pool = NULL;
+  if (!mt_shared_queue(impl, port)) {
+    /* tsq use same mempool for shared queue */
+    if (s->tx_pool) {
+      mt_mempool_free(s->tx_pool);
+      s->tx_pool = NULL;
+    }
   }
 
   udp_clear_flag(s, MUDP_TXQ_ALLOC);
@@ -234,6 +239,7 @@ static int udp_init_txq(struct mtl_main_impl* impl, struct mudp_impl* s,
     }
     queue_id = mt_tsq_queue_id(s->tsq);
     mt_tsq_set_bps(impl, s->tsq, s->txq_bps / 8);
+    s->tx_pool = mt_tsq_mempool(s->tsq);
   } else {
     s->txq = mt_dev_get_tx_queue(impl, port, s->txq_bps / 8);
     if (!s->txq) {
@@ -242,18 +248,18 @@ static int udp_init_txq(struct mtl_main_impl* impl, struct mudp_impl* s,
       return -EIO;
     }
     queue_id = mt_dev_tx_queue_id(s->txq);
-  }
 
-  char pool_name[32];
-  snprintf(pool_name, 32, "MUDP-TX-P%d-Q%u-%d", port, queue_id, idx);
-  struct rte_mempool* pool = mt_mempool_create(impl, port, pool_name, s->element_nb,
-                                               MT_MBUF_CACHE_SIZE, 0, s->element_size);
-  if (!pool) {
-    err("%s(%d), mempool create fail\n", __func__, idx);
-    udp_uinit_txq(impl, s);
-    return -ENOMEM;
+    char pool_name[32];
+    snprintf(pool_name, 32, "MUDP-TX-P%d-Q%u-%d", port, queue_id, idx);
+    struct rte_mempool* pool = mt_mempool_create(impl, port, pool_name, s->element_nb,
+                                                 MT_MBUF_CACHE_SIZE, 0, s->element_size);
+    if (!pool) {
+      err("%s(%d), mempool create fail\n", __func__, idx);
+      udp_uinit_txq(impl, s);
+      return -ENOMEM;
+    }
+    s->tx_pool = pool;
   }
-  s->tx_pool = pool;
 
   udp_set_flag(s, MUDP_TXQ_ALLOC);
   return 0;

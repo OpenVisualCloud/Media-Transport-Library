@@ -8,6 +8,7 @@
 #include "mt_log.h"
 #include "mt_stat.h"
 #include "mt_util.h"
+#include "mudp_api.h"
 
 static inline struct mt_rsq_impl* rsq_ctx_get(struct mtl_main_impl* impl,
                                               enum mtl_port port) {
@@ -288,6 +289,10 @@ static int tsq_uinit(struct mt_tsq_impl* tsq) {
         MT_TAILQ_REMOVE(&tsq_queue->head, entry, next);
         tsq_entry_free(entry);
       }
+      if (tsq_queue->tx_pool) {
+        mt_mempool_free(tsq_queue->tx_pool);
+        tsq_queue->tx_pool = NULL;
+      }
       mt_pthread_mutex_destroy(&tsq_queue->mutex);
       mt_pthread_mutex_destroy(&tsq_queue->tx_mutex);
     }
@@ -360,7 +365,7 @@ struct mt_tsq_entry* mt_tsq_get(struct mtl_main_impl* impl, enum mtl_port port,
   struct mt_tsq_entry* entry =
       mt_rte_zmalloc_socket(sizeof(*entry), mt_socket_id(impl, port));
   if (!entry) {
-    err("%s(%u), entry malloc fail\n", __func__, q);
+    err("%s(%d:%u), entry malloc fail\n", __func__, port, q);
     return NULL;
   }
   entry->queue_id = q;
@@ -368,9 +373,25 @@ struct mt_tsq_entry* mt_tsq_get(struct mtl_main_impl* impl, enum mtl_port port,
   rte_memcpy(&entry->flow, flow, sizeof(entry->flow));
 
   mt_pthread_mutex_lock(&tsq_queue->mutex);
+  if (!tsq_queue->tx_pool) {
+    char pool_name[32];
+    snprintf(pool_name, 32, "TSQ-P%d-Q%u", port, q);
+    struct rte_mempool* pool =
+        mt_mempool_create(impl, port, pool_name, mt_if_nb_tx_desc(impl, port) + 512,
+                          MT_MBUF_CACHE_SIZE, 0, MUDP_MAX_BYTES);
+    if (!pool) {
+      err("%s(%d:%u), mempool create fail\n", __func__, port, q);
+      mt_pthread_mutex_unlock(&tsq_queue->mutex);
+      mt_rte_free(entry);
+      return NULL;
+    }
+    tsq_queue->tx_pool = pool;
+  }
   MT_TAILQ_INSERT_HEAD(&tsq_queue->head, entry, next);
   rte_atomic32_inc(&tsq_queue->entry_cnt);
   mt_pthread_mutex_unlock(&tsq_queue->mutex);
+
+  entry->tx_pool = tsq_queue->tx_pool;
 
   uint8_t* ip = flow->dip_addr;
   info("%s(%d), q %u ip %u.%u.%u.%u, port %u hash %u\n", __func__, port, q, ip[0], ip[1],

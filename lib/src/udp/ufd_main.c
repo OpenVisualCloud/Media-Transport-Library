@@ -38,6 +38,10 @@ static inline int ufd_fd2idx(struct ufd_mt_ctx* ctx, int fd) {
   return (fd - ctx->init_params.fd_base);
 }
 
+static inline int ufd_max_slot(struct ufd_mt_ctx* ctx) {
+  return ctx->init_params.slots_nb_max;
+}
+
 static int ufd_free_slot(struct ufd_mt_ctx* ctx, struct ufd_slot* slot) {
   int idx = slot->idx;
 
@@ -56,7 +60,7 @@ static int ufd_free_slot(struct ufd_mt_ctx* ctx, struct ufd_slot* slot) {
 
 static int ufd_free_mt_ctx(struct ufd_mt_ctx* ctx) {
   if (ctx->slots) {
-    for (int i = 0; i < ctx->init_params.slots_nb_max; i++) {
+    for (int i = 0; i < ufd_max_slot(ctx); i++) {
       /* check if any not free slot */
       if (!ctx->slots[i]) continue;
       warn("%s, not close slot on idx %d\n", __func__, i);
@@ -290,7 +294,7 @@ static struct ufd_mt_ctx* ufd_create_mt_ctx(void) {
     return NULL;
   }
 
-  ctx->slots = mt_rte_zmalloc_socket(sizeof(*ctx->slots) * ctx->init_params.slots_nb_max,
+  ctx->slots = mt_rte_zmalloc_socket(sizeof(*ctx->slots) * ufd_max_slot(ctx),
                                      mt_socket_id(ctx->mt, MTL_PORT_P));
   if (!ctx->slots) {
     err("%s, slots malloc fail\n", __func__);
@@ -298,7 +302,7 @@ static struct ufd_mt_ctx* ufd_create_mt_ctx(void) {
     return NULL;
   }
 
-  info("%s, succ, slots_nb_max %d\n", __func__, ctx->init_params.slots_nb_max);
+  info("%s, succ, slots_nb_max %d\n", __func__, ufd_max_slot(ctx));
   return ctx;
 }
 
@@ -353,7 +357,7 @@ int mufd_socket_port(int domain, int type, int protocol, enum mtl_port port) {
 
   /* find one empty slot */
   mt_pthread_mutex_lock(&ctx->slots_lock);
-  for (int i = 0; i < ctx->init_params.slots_nb_max; i++) {
+  for (int i = 0; i < ufd_max_slot(ctx); i++) {
     if (ctx->slots[i]) continue;
     /* create a slot */
     slot = mt_rte_zmalloc_socket(sizeof(*slot), mt_socket_id(ctx->mt, port));
@@ -369,7 +373,7 @@ int mufd_socket_port(int domain, int type, int protocol, enum mtl_port port) {
   mt_pthread_mutex_unlock(&ctx->slots_lock);
 
   if (!slot) {
-    err("%s, all slot used\n", __func__);
+    err("%s, all slot used, max allowed %d\n", __func__, ufd_max_slot(ctx));
     return -ENOMEM;
   }
 
@@ -561,4 +565,14 @@ int mufd_commit_init_params(struct mufd_init_params* p) {
   g_init_para = out;
   info("%s, succ\n", __func__);
   return 0;
+}
+
+int mufd_get_sessions_max_nb(void) {
+  struct ufd_mt_ctx* ctx = ufd_get_mt_ctx(true);
+  if (!ctx) {
+    err("%s, fail to get ufd mt ctx\n", __func__);
+    return -EIO;
+  }
+
+  return ufd_max_slot(ctx);
 }
