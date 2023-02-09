@@ -106,6 +106,136 @@ static void utest_ctx_init(struct utest_ctx* ctx) {
 
 static void utest_ctx_uinit(struct utest_ctx* ctx) { st_test_free(ctx); }
 
+static void socket_single_test(enum mtl_port port) {
+  int ret = mufd_socket_port(AF_INET, SOCK_DGRAM, 0, port);
+  EXPECT_GE(ret, 0);
+  if (ret < 0) return;
+
+  int fd = ret;
+  ret = mufd_close(fd);
+  EXPECT_GE(ret, 0);
+}
+
+TEST(Api, socket_single) { socket_single_test(MTL_PORT_P); }
+TEST(Api, socket_single_r) { socket_single_test(MTL_PORT_R); }
+
+static void socket_expect_fail_test(enum mtl_port port) {
+  int ret;
+
+  ret = mufd_socket_port(AF_INET6, SOCK_DGRAM, 0, port);
+  EXPECT_LT(ret, 0);
+  ret = mufd_socket_port(AF_INET, SOCK_STREAM, 0, port);
+  EXPECT_LT(ret, 0);
+}
+
+TEST(Api, socket_expect_fail) {
+  socket_expect_fail_test(MTL_PORT_P);
+  int ret = mufd_socket_port(AF_INET, SOCK_STREAM, 0, MTL_PORT_MAX);
+  EXPECT_LT(ret, 0);
+}
+TEST(Api, socket_expect_fail_r) { socket_expect_fail_test(MTL_PORT_R); }
+
+static void socket_max_test(enum mtl_port port) {
+  int ret;
+  int max = mufd_get_sessions_max_nb();
+
+  EXPECT_GT(max, 0);
+  info("%s(%d), max %d\n", __func__, port, max);
+
+  int fds[max];
+  for (int i = 0; i < max; i++) {
+    ret = mufd_socket_port(AF_INET, SOCK_DGRAM, 0, port);
+    EXPECT_GE(ret, 0);
+    fds[i] = ret;
+  }
+
+  /* all slots created, expect fail */
+  ret = mufd_socket_port(AF_INET, SOCK_DGRAM, 0, port);
+  EXPECT_LT(ret, 0);
+  ret = mufd_socket_port(AF_INET, SOCK_DGRAM, 0, port);
+  EXPECT_LT(ret, 0);
+
+  for (int i = 0; i < max; i++) {
+    ret = mufd_close(fds[i]);
+    EXPECT_GE(ret, 0);
+  }
+}
+
+TEST(Api, socket_max) { socket_max_test(MTL_PORT_P); }
+TEST(Api, socket_max_r) { socket_max_test(MTL_PORT_R); }
+
+template <typename OPT_TYPE>
+static void socketopt_double(OPT_TYPE* i) {
+  OPT_TYPE value = *i;
+  *i = value * 2;
+}
+
+template <typename OPT_TYPE>
+static void socketopt_half(OPT_TYPE* i) {
+  OPT_TYPE value = *i;
+  *i = value / 2;
+}
+
+template <typename OPT_TYPE>
+static void socketopt_test(int level, int optname) {
+  int ret = mufd_socket(AF_INET, SOCK_DGRAM, 0);
+  EXPECT_GE(ret, 0);
+  if (ret < 0) return;
+  int fd = ret;
+
+  /* get */
+  OPT_TYPE bufsize;
+  socklen_t val_size = sizeof(bufsize);
+  ret = mufd_getsockopt(fd, level, optname, &bufsize, &val_size);
+  EXPECT_GE(ret, 0);
+
+  /* double */
+  socketopt_double<OPT_TYPE>(&bufsize);
+  ret = mufd_setsockopt(fd, level, optname, (const void*)&bufsize, val_size);
+  EXPECT_GE(ret, 0);
+  /* read again */
+  OPT_TYPE bufsize_read;
+  ret = mufd_getsockopt(fd, level, optname, &bufsize_read, &val_size);
+  EXPECT_GE(ret, 0);
+  ret = memcmp(&bufsize, &bufsize_read, val_size);
+  EXPECT_EQ(ret, 0);
+
+  /* revert back */
+  socketopt_half<OPT_TYPE>(&bufsize);
+  ret = mufd_setsockopt(fd, level, optname, (const void*)&bufsize, val_size);
+  EXPECT_GE(ret, 0);
+  /* read again */
+  ret = mufd_getsockopt(fd, level, optname, &bufsize_read, &val_size);
+  EXPECT_GE(ret, 0);
+  ret = memcmp(&bufsize, &bufsize_read, val_size);
+  EXPECT_EQ(ret, 0);
+
+  /* expect fail */
+  val_size *= 2;
+  ret = mufd_getsockopt(fd, level, optname, &bufsize, &val_size);
+  EXPECT_LT(ret, 0);
+  ret = mufd_setsockopt(fd, level, optname, (const void*)&bufsize, val_size);
+  EXPECT_LT(ret, 0);
+
+  ret = mufd_close(fd);
+  EXPECT_GE(ret, 0);
+}
+
+TEST(Api, socket_snd_buf) { socketopt_test<uint32_t>(SOL_SOCKET, SO_SNDBUF); }
+TEST(Api, socket_rcv_buf) { socketopt_test<uint32_t>(SOL_SOCKET, SO_RCVBUF); }
+
+template <>
+void socketopt_double(struct timeval* i) {
+  i->tv_sec *= 2;
+  i->tv_usec *= 2;
+}
+template <>
+void socketopt_half(struct timeval* i) {
+  i->tv_sec /= 2;
+  i->tv_usec /= 2;
+}
+TEST(Api, socket_rcvtimeo) { socketopt_test<struct timeval>(SOL_SOCKET, SO_RCVTIMEO); }
+
 GTEST_API_ int main(int argc, char** argv) {
   struct utest_ctx* ctx;
   int ret;
