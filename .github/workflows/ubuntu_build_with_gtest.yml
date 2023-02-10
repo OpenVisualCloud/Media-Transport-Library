@@ -36,8 +36,8 @@ env:
   # Customize the env if
   BUILD_TYPE: Release
   DPDK_VERSION: 22.11
-  TEST_PORT_P: ${{  env.TEST_PORT_P  }}
-  TEST_PORT_R: ${{  env.TEST_PORT_R  }}
+  TEST_PORT_P: 0000:31:00.0
+  TEST_PORT_R: 0000:31:00.1
   TEST_DMA_PORT_P: 0000:00:01.0
   TEST_DMA_PORT_R: 0000:00:01.1
 
