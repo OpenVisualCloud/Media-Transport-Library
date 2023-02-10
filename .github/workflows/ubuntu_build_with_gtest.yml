@@ -35,6 +35,7 @@ concurrency:
 env:
   # Customize the env if
   BUILD_TYPE: Release
+  DPDK_VERSION: 22.11
 
 jobs:
   Build:
@@ -54,13 +55,13 @@ jobs:
       run: pip install pyelftools ninja
 
     - name: Build dpdk
-      run: ./script/build_dpdk.sh
+      run: ./script/build_dpdk.sh ${{  env.DPDK_VERSION  }}
 
     - name: Build
       run: |
         ./build.sh
         sudo ldconfig
-  
+
   Test:
     if: github.repository == 'OpenVisualCloud/Media-Transport-Library'
     needs: Build
@@ -77,8 +78,14 @@ jobs:
           sudo ./dpdk/usertools/dpdk-devbind.py -b vfio-pci 0000:00:01.0
           sudo ./dpdk/usertools/dpdk-devbind.py -b vfio-pci 0000:00:01.1
 
-      - name: Run test case
+      - name: Run ufd test case
         run: |
           sudo ./build/tests/KahawaiUfdTest --p_port 0000:31:00.0 --r_port 0000:31:00.1
+
+      - name: Run shared ufd test case
+        run: |
           sudo ./build/tests/KahawaiUfdTest --p_port 0000:31:00.0 --r_port 0000:31:00.1 --queue_mode shared
-          sudo bash -c 'export LD_LIBRARY_PATH=/usr/local/lib/x86_64-linux-gnu/:/usr/local/lib/; ./build/tests/KahawaiTest --auto_start_stop --p_port 0000:31:00.0 --r_port 0000:31:00.1 --dma_dev 0000:00:01.0,0000:00:01.1'
+
+      - name: Run st2100 test case
+        run: |
+          sudo ./build/tests/KahawaiTest --auto_start_stop --p_port 0000:31:00.0 --r_port 0000:31:00.1 --dma_dev 0000:00:01.0,0000:00:01.1

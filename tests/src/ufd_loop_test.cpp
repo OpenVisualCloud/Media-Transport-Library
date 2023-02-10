@@ -130,7 +130,7 @@ static int loop_sanity_test(struct utest_ctx* ctx, struct loop_para* para) {
                          (const struct sockaddr*)&rx_addr[i], sizeof(rx_addr[i]));
       EXPECT_EQ(send, sizeof(send_buf));
     }
-    st_usleep(para->tx_sleep_us);
+    if (para->tx_sleep_us) st_usleep(para->tx_sleep_us);
 
     if (para->use_poll) {
       int poll_succ = 0;
@@ -189,7 +189,7 @@ static int loop_sanity_test(struct utest_ctx* ctx, struct loop_para* para) {
                            (const struct sockaddr*)&tx_addr[i], sizeof(tx_addr[i]));
         EXPECT_EQ(send, sizeof(send_buf));
       }
-      st_usleep(para->tx_sleep_us);
+      if (para->tx_sleep_us) st_usleep(para->tx_sleep_us);
 
       for (int i = 0; i < sessions; i++) {
         recv = mufd_recvfrom(tx_fds[i], recv_buf, sizeof(recv_buf), 0, NULL, NULL);
@@ -297,6 +297,17 @@ TEST(Loop, poll_multi) {
   para.use_poll = true;
   para.sessions = 5;
   para.tx_sleep_us = 100;
+  loop_sanity_test(ctx, &para);
+}
+
+TEST(Loop, poll_multi_no_sleep) {
+  struct utest_ctx* ctx = utest_get_ctx();
+  struct loop_para para;
+
+  loop_para_init(&para);
+  para.use_poll = true;
+  para.sessions = 10;
+  para.tx_sleep_us = 0;
   loop_sanity_test(ctx, &para);
 }
 

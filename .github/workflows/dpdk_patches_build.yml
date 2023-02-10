@@ -5,14 +5,16 @@ on:
     paths:
       - 'patches/dpdk/**'
       - .github/workflows/dpdk_patches_build.yml
+      - script/build_dpdk.sh
   pull_request:
     paths:
       - 'patches/dpdk/**'
       - .github/workflows/dpdk_patches_build.yml
+      - script/build_dpdk.sh
 
 env:
   # Customize the env if
-  ST_BUILD_DISABLE_PCAPNG: false
+  DPDK_VERSION: 22.11
 
 jobs:
   build:
@@ -45,7 +47,7 @@ jobs:
         git config --global user.name "Your Name"
 
     - name: Build dpdk
-      run: ./script/build_dpdk.sh
+      run: ./script/build_dpdk.sh ${{  env.DPDK_VERSION  }}
 
     - name: Build
       run: |
