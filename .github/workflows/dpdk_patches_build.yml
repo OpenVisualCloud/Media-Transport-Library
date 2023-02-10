@@ -25,6 +25,11 @@ jobs:
         os: [ubuntu-latest]
 
     steps:
+    - name: Update to latest git
+      run: |
+        apt-get update -y
+        apt-get install -y git
+
     - name: checkout kahawai repo
       uses: actions/checkout@v3
 
