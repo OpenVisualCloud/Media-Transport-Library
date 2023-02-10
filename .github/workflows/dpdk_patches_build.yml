@@ -56,7 +56,7 @@ jobs:
     - name: Apply dpdk patches
       run: |
         cd dpdk
-        git am ../kahawai/patches/dpdk/${{  env.DPDK_VERSION  }}/*.patch
+        git am ../patches/dpdk/${{  env.DPDK_VERSION  }}/*.patch
 
     - name: Build dpdk
       run: |
