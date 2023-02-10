@@ -820,7 +820,6 @@ int mudp_poll(struct mudp_pollfd* fds, mudp_nfds_t nfds, int timeout) {
   struct mtl_main_impl* impl = s->parnet;
   uint64_t start_ts = mt_get_tsc(impl);
   int rc;
-  uint16_t rx;
 
   /* init rxq if not */
   for (mudp_nfds_t i = 0; i < nfds; i++) {
@@ -834,12 +833,11 @@ int mudp_poll(struct mudp_pollfd* fds, mudp_nfds_t nfds, int timeout) {
     }
   }
 
-/* rx from nic firstly */
+  /* rx from nic firstly */
 rx_pool:
-  rx = 0;
   for (mudp_nfds_t i = 0; i < nfds; i++) {
     s = fds[i].fd;
-    rx += udp_rx(impl, s);
+    udp_rx(impl, s);
   }
 
   /* check the ready fds */
