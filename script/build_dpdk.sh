@@ -5,7 +5,6 @@
 
 set -e
 
-# Run from top, for CI job
 if [ -n "$1" ];  then
   dpdk_ver=$1
 else
