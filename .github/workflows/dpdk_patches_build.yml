@@ -35,11 +35,6 @@ jobs:
         ref: v${{  env.DPDK_VERSION  }}
         path: dpdk
 
-    - uses: DoozyX/clang-format-lint-action@v0.14
-      with:
-        source: '.'
-        extensions: 'hpp,h,cpp,c,cc'
-
     - name: Install the build dependency
       run: |
         apt-get update -y
