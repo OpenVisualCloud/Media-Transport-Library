@@ -90,6 +90,7 @@ jobs:
       - name: Kill previous gtest routine
         run: |
           sudo killall -SIGINT KahawaiTest || true
+          sudo killall -SIGINT KahawaiUfdTest || true
 
       - name: Binding network adapter
         run: |
