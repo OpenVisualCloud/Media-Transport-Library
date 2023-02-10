@@ -1548,6 +1548,8 @@ static struct mt_rx_flow_rsp* dev_if_create_rx_flow(struct mtl_main_impl* impl,
     }
 
     rsp->flow = r_flow;
+    /* WA to aviod iavf_flow_create fail in 1000+ mudp close at same time */
+    if (inf->port_type == MT_PORT_VF) mt_sleep_ms(1);
   }
 
   return rsp;
@@ -1582,6 +1584,8 @@ retry:
     rsp->flow = NULL;
   }
   mt_rte_free(rsp);
+  /* WA to aviod iavf_flow_destroy fail in 1000+ mudp close at same time */
+  if (inf->port_type == MT_PORT_VF) mt_sleep_ms(1);
   return 0;
 }
 
