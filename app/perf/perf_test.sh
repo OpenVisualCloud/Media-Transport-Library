@@ -30,6 +30,7 @@ perf_func PerfV210ToRfc4175422be10
 perf_func PerfRfc4175422be10ToY210
 perf_func PerfY210ToRfc4175422be10
 perf_func PerfRfc4175422be12ToLe
+perf_func PerfRfc4175422be12ToP12Le
 perf_func PerfDma
 
 echo "****** All Perf test OK ******"

@@ -1641,8 +1641,50 @@ int st20_rfc4175_422be12_to_yuv422p12le_simd(struct st20_rfc4175_422_12_pg2_be* 
                                              uint16_t* y, uint16_t* b, uint16_t* r,
                                              uint32_t w, uint32_t h,
                                              enum mtl_simd_level level) {
-  /* the only option */
+  enum mtl_simd_level cpu_level = mtl_get_simd_level();
+  int ret;
+
+  MT_MAY_UNUSED(cpu_level);
+  MT_MAY_UNUSED(ret);
+
+#ifdef MTL_HAS_AVX512
+  if ((level >= MTL_SIMD_LEVEL_AVX512) && (cpu_level >= MTL_SIMD_LEVEL_AVX512)) {
+    dbg("%s, avx512 ways\n", __func__);
+    ret = st20_rfc4175_422be12_to_yuv422p12le_avx512(pg, y, b, r, w, h);
+    if (ret == 0) return 0;
+    dbg("%s, avx512 ways failed\n", __func__);
+  }
+#endif
+
+  /* the last option */
   return st20_rfc4175_422be12_to_yuv422p12le_scalar(pg, y, b, r, w, h);
+}
+
+int st20_rfc4175_422be12_to_yuv422p12le_simd_dma(mtl_udma_handle udma,
+                                                 struct st20_rfc4175_422_12_pg2_be* pg_be,
+                                                 mtl_iova_t pg_be_iova, uint16_t* y,
+                                                 uint16_t* b, uint16_t* r, uint32_t w,
+                                                 uint32_t h, enum mtl_simd_level level) {
+  struct mtl_dma_lender_dev* dma = udma;
+  enum mtl_simd_level cpu_level = mtl_get_simd_level();
+  int ret;
+
+  MT_MAY_UNUSED(cpu_level);
+  MT_MAY_UNUSED(ret);
+  MT_MAY_UNUSED(dma);
+
+#ifdef MTL_HAS_AVX512
+  if ((level >= MTL_SIMD_LEVEL_AVX512) && (cpu_level >= MTL_SIMD_LEVEL_AVX512)) {
+    dbg("%s, avx512 ways\n", __func__);
+    ret = st20_rfc4175_422be12_to_yuv422p12le_avx512_dma(udma, pg_be, pg_be_iova, y, b, r,
+                                                         w, h);
+    if (ret == 0) return 0;
+    dbg("%s, avx512 ways failed\n", __func__);
+  }
+#endif
+
+  /* the last option */
+  return st20_rfc4175_422be12_to_yuv422p12le_scalar(pg_be, y, b, r, w, h);
 }
 
 int st20_yuv422p12le_to_rfc4175_422le12(uint16_t* y, uint16_t* b, uint16_t* r,

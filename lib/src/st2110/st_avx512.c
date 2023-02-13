@@ -24,6 +24,7 @@ static uint16_t be10_to_ple_and_mask_tbl_128[8] = {
 };
 
 /*
+ * for all 10, 12, 14 or 16 bit to permute
  * {B0, R0, Y0, Y1}, {B1, R1, Y2, Y3}, {B2, R2, Y4, Y5}, {B3, R3, Y6, Y7}
  * to
  * {B0, B1, B2, B3}, {R0, R1, R2, R3}, {Y0, Y1, Y2, Y3}, {Y4, Y5, Y6, Y7},
@@ -2308,5 +2309,325 @@ int st20_rfc4175_422be12_to_422le12_avx512_dma(struct mtl_dma_lender_dev* dma,
   return 0;
 }
 /* end st20_rfc4175_422be12_to_422le12_avx512 */
+
+/* begin st20_rfc4175_422be12_to_yuv422p12le_avx512 */
+static uint8_t be12_to_ple_shuffle_tbl_128[16] = {
+    1, 0, 1 + 6, 0 + 6, 4,     3,     4 + 6, 3 + 6, /* b0, b1, r0, r1 */
+    2, 1, 5,     4,     2 + 6, 1 + 6, 5 + 6, 4 + 6, /* y0, y1, y2, y3 */
+};
+
+static uint16_t be12_to_ple_srlv_tbl_128[8] = {
+    4, 4, 4, 4, 0, 0, 0, 0,
+};
+
+static uint16_t be12_to_ple_and_mask_tbl_128[8] = {
+    0x0fff, 0x0fff, 0x0fff, 0x0fff, 0x0fff, 0x0fff, 0x0fff, 0x0fff,
+};
+
+int st20_rfc4175_422be12_to_yuv422p12le_avx512(struct st20_rfc4175_422_12_pg2_be* pg,
+                                               uint16_t* y, uint16_t* b, uint16_t* r,
+                                               uint32_t w, uint32_t h) {
+  __m128i shuffle_le_mask = _mm_loadu_si128((__m128i*)be12_to_ple_shuffle_tbl_128);
+  __m128i srlv_le_mask = _mm_loadu_si128((__m128i*)be12_to_ple_srlv_tbl_128);
+  __m128i srlv_and_mask = _mm_loadu_si128((__m128i*)be12_to_ple_and_mask_tbl_128);
+  __m512i permute_mask = _mm512_loadu_si512((__m512i*)be10_to_ple_permute_tbl_512);
+  __mmask16 k = 0xFFF; /* each __m128i with 2 pg group, 12 bytes */
+  int pg_cnt = w * h / 2;
+  dbg("%s, pg_cnt %d\n", __func__, pg_cnt);
+
+  /* each m512i batch handle 4 __m512i(16 __m128i), each __m128i with 2 pg group */
+  while (pg_cnt >= 32) {
+    /* cvt the result to __m128i(2 pg group) */
+    __m128i stage_m128i[16];
+    for (int j = 0; j < 16; j++) {
+      __m128i input = _mm_maskz_loadu_epi8(k, (__m128i*)pg);
+      __m128i shuffle_le_result = _mm_shuffle_epi8(input, shuffle_le_mask);
+      __m128i srlv_le_result = _mm_srlv_epi16(shuffle_le_result, srlv_le_mask);
+      stage_m128i[j] = _mm_and_si128(srlv_le_result, srlv_and_mask);
+      pg += 2;
+    }
+    /* shift result to m128i */
+    __m512i stage_m512i[4];
+    for (int j = 0; j < 4; j++) {
+      /* {B0, R0, Y0, Y1}, {B1, R1, Y2, Y3}, {B2, R2, Y4, Y5}, {B3, R3, Y6, Y7} */
+      __m512i input_m512i = _mm512_loadu_si512((__m512i*)&stage_m128i[j * 4]);
+      /* {B0, B1, B2, B3}, {R0, R1, R2, R3}, {Y0, Y1, Y2, Y3}, {Y4, Y5, Y6, Y7} */
+      stage_m512i[j] = _mm512_permutexvar_epi32(permute_mask, input_m512i);
+    }
+    /* shift m128i to m512i */
+    /* {B0, R0, Y0, Y1}, {B1, R1, Y2, Y3}, {B2, R2, Y4, Y5}, {B3, R3, Y6, Y7} */
+    __m512i result_m512i[4];
+    /* {B0, R0, B1, R1} */
+    result_m512i[0] = _mm512_shuffle_i32x4(stage_m512i[0], stage_m512i[1], 0b01000100);
+    /* {Y0, Y1, Y2, Y3} */
+    result_m512i[1] = _mm512_shuffle_i32x4(stage_m512i[0], stage_m512i[1], 0b11101110);
+    _mm512_storeu_si512((__m512i*)y, result_m512i[1]);
+    y += 32;
+    /* {B2, R2, B3, R3} */
+    result_m512i[2] = _mm512_shuffle_i32x4(stage_m512i[2], stage_m512i[3], 0b01000100);
+    /* {Y4, Y5, Y6, Y7} */
+    result_m512i[3] = _mm512_shuffle_i32x4(stage_m512i[2], stage_m512i[3], 0b11101110);
+    _mm512_storeu_si512((__m512i*)y, result_m512i[3]);
+    y += 32;
+    __m512i b_result_m512i =
+        _mm512_shuffle_i32x4(result_m512i[0], result_m512i[2], 0b10001000);
+    _mm512_storeu_si512((__m512i*)b, b_result_m512i);
+    b += 32;
+    __m512i r_result_m512i =
+        _mm512_shuffle_i32x4(result_m512i[0], result_m512i[2], 0b11011101);
+    _mm512_storeu_si512((__m512i*)r, r_result_m512i);
+    r += 32;
+
+    pg_cnt -= 32;
+  }
+
+  /* each __m128i batch handle 4 16 __m128i, each __m128i with 2 pg group */
+  while (pg_cnt >= 8) {
+    __m128i stage_m128i[4];
+    for (int j = 0; j < 4; j++) {
+      __m128i input = _mm_maskz_loadu_epi8(k, (__m128i*)pg);
+      __m128i shuffle_le_result = _mm_shuffle_epi8(input, shuffle_le_mask);
+      __m128i srlv_le_result = _mm_srlv_epi16(shuffle_le_result, srlv_le_mask);
+      stage_m128i[j] = _mm_and_si128(srlv_le_result, srlv_and_mask);
+      pg += 2;
+    }
+    // {B0, R0, Y0, Y1}, {B1, R1, Y2, Y3}, {B2, R2, Y4, Y5}, {B3, R3, Y6, Y7}
+    __m512i stage_m512i = _mm512_loadu_si512((__m512i*)&stage_m128i[0]);
+    /* {B0, B1, B2, B3}, {R0, R1, R2, R3}, {Y0, Y1, Y2, Y3}, {Y4, Y5, Y6, Y7} */
+    __m512i permute = _mm512_permutexvar_epi32(permute_mask, stage_m512i);
+
+    __m128i result_B = _mm512_extracti32x4_epi32(permute, 0);
+    __m128i result_R = _mm512_extracti32x4_epi32(permute, 1);
+    __m128i result_Y0 = _mm512_extracti32x4_epi32(permute, 2);
+    __m128i result_Y1 = _mm512_extracti32x4_epi32(permute, 3);
+
+    _mm_storeu_si128((__m128i*)b, result_B);
+    b += 2 * 4;
+    _mm_storeu_si128((__m128i*)r, result_R);
+    r += 2 * 4;
+    _mm_storeu_si128((__m128i*)y, result_Y0);
+    y += 2 * 4;
+    _mm_storeu_si128((__m128i*)y, result_Y1);
+    y += 2 * 4;
+
+    pg_cnt -= 8;
+  }
+
+  dbg("%s, remaining pg_cnt %d\n", __func__, pg_cnt);
+  while (pg_cnt > 0) {
+    st20_unpack_pg2be_422le12(pg, b, y, r, y + 1);
+    b++;
+    r++;
+    y += 2;
+    pg++;
+
+    pg_cnt--;
+  }
+
+  return 0;
+}
+
+int st20_rfc4175_422be12_to_yuv422p12le_avx512_dma(
+    struct mtl_dma_lender_dev* dma, struct st20_rfc4175_422_12_pg2_be* pg_be,
+    mtl_iova_t pg_be_iova, uint16_t* y, uint16_t* b, uint16_t* r, uint32_t w,
+    uint32_t h) {
+  __m128i shuffle_le_mask = _mm_loadu_si128((__m128i*)be12_to_ple_shuffle_tbl_128);
+  __m128i srlv_le_mask = _mm_loadu_si128((__m128i*)be12_to_ple_srlv_tbl_128);
+  __m128i srlv_and_mask = _mm_loadu_si128((__m128i*)be12_to_ple_and_mask_tbl_128);
+  __m512i permute_mask = _mm512_loadu_si512((__m512i*)be10_to_ple_permute_tbl_512);
+  __mmask16 k = 0xFFF; /* each __m128i with 2 pg group, 12 bytes */
+  int pg_cnt = w * h / 2;
+
+  int caches_num = 4;
+  int cache_pg_cnt = (256 * 1024) / sizeof(*pg_be); /* pg cnt for each cache */
+  int align = caches_num * 32; /* align to simd pg groups and caches_num */
+  cache_pg_cnt = cache_pg_cnt / align * align;
+  size_t cache_size = cache_pg_cnt * sizeof(*pg_be);
+  int soc_id = dma->parent->soc_id;
+
+  struct st20_rfc4175_422_12_pg2_be* be_caches =
+      mt_rte_zmalloc_socket(cache_size * caches_num, soc_id);
+  struct mt_cvt_dma_ctx* ctx = mt_cvt_dma_ctx_init(2 * caches_num, soc_id, 2);
+  if (!be_caches || !ctx) {
+    err("%s, alloc cache(%d,%" PRIu64 ") fail, %p\n", __func__, cache_pg_cnt, cache_size,
+        be_caches);
+    if (be_caches) mt_rte_free(be_caches);
+    if (ctx) mt_cvt_dma_ctx_uinit(ctx);
+    return st20_rfc4175_422be12_to_yuv422p12le_avx512(pg_be, y, b, r, w, h);
+  }
+  rte_iova_t be_caches_iova = rte_malloc_virt2iova(be_caches);
+
+  /* first with caches batch step */
+  int cache_batch = pg_cnt / cache_pg_cnt;
+  dbg("%s, pg_cnt %d cache_pg_cnt %d caches_num %d cache_batch %d\n", __func__, pg_cnt,
+      cache_pg_cnt, caches_num, cache_batch);
+  for (int i = 0; i < cache_batch; i++) {
+    struct st20_rfc4175_422_12_pg2_be* be_cache =
+        be_caches + (i % caches_num) * cache_pg_cnt;
+    dbg("%s, cache batch idx %d\n", __func__, i);
+
+    int max_tran = i + caches_num;
+    max_tran = RTE_MIN(max_tran, cache_batch);
+    int cur_tran = mt_cvt_dma_ctx_get_tran(ctx, 0);
+    /* push max be dma */
+    while (cur_tran < max_tran) {
+      rte_iova_t be_cache_iova = be_caches_iova + (cur_tran % caches_num) * cache_size;
+      mt_dma_copy_busy(dma, be_cache_iova, pg_be_iova, cache_size);
+      pg_be += cache_pg_cnt;
+      pg_be_iova += cache_size;
+      mt_cvt_dma_ctx_push(ctx, 0);
+      cur_tran = mt_cvt_dma_ctx_get_tran(ctx, 0);
+    }
+    mt_dma_submit_busy(dma);
+
+    /* wait until current be dma copy done */
+    while (mt_cvt_dma_ctx_get_done(ctx, 0) < (i + 1)) {
+      uint16_t nb_dq = mt_dma_completed(dma, 1, NULL, NULL);
+      if (nb_dq) mt_cvt_dma_ctx_pop(ctx);
+    }
+
+    struct st20_rfc4175_422_12_pg2_be* pg = be_cache;
+    int batch = cache_pg_cnt / 32;
+    for (int j = 0; j < batch; j++) {
+      /* cvt the result to __m128i(2 pg group) */
+      __m128i stage_m128i[16];
+      for (int j = 0; j < 16; j++) {
+        __m128i input = _mm_maskz_loadu_epi8(k, (__m128i*)pg);
+        __m128i shuffle_le_result = _mm_shuffle_epi8(input, shuffle_le_mask);
+        __m128i srlv_le_result = _mm_srlv_epi16(shuffle_le_result, srlv_le_mask);
+        stage_m128i[j] = _mm_and_si128(srlv_le_result, srlv_and_mask);
+        pg += 2;
+      }
+      /* shift result to m128i */
+      __m512i stage_m512i[4];
+      for (int j = 0; j < 4; j++) {
+        /* {B0, R0, Y0, Y1}, {B1, R1, Y2, Y3}, {B2, R2, Y4, Y5}, {B3, R3, Y6, Y7} */
+        __m512i input_m512i = _mm512_loadu_si512((__m512i*)&stage_m128i[j * 4]);
+        /* {B0, B1, B2, B3}, {R0, R1, R2, R3}, {Y0, Y1, Y2, Y3}, {Y4, Y5, Y6, Y7} */
+        stage_m512i[j] = _mm512_permutexvar_epi32(permute_mask, input_m512i);
+      }
+      /* shift m128i to m512i */
+      /* {B0, R0, Y0, Y1}, {B1, R1, Y2, Y3}, {B2, R2, Y4, Y5}, {B3, R3, Y6, Y7} */
+      __m512i result_m512i[4];
+      /* {B0, R0, B1, R1} */
+      result_m512i[0] = _mm512_shuffle_i32x4(stage_m512i[0], stage_m512i[1], 0b01000100);
+      /* {Y0, Y1, Y2, Y3} */
+      result_m512i[1] = _mm512_shuffle_i32x4(stage_m512i[0], stage_m512i[1], 0b11101110);
+      _mm512_storeu_si512((__m512i*)y, result_m512i[1]);
+      y += 32;
+      /* {B2, R2, B3, R3} */
+      result_m512i[2] = _mm512_shuffle_i32x4(stage_m512i[2], stage_m512i[3], 0b01000100);
+      /* {Y4, Y5, Y6, Y7} */
+      result_m512i[3] = _mm512_shuffle_i32x4(stage_m512i[2], stage_m512i[3], 0b11101110);
+      _mm512_storeu_si512((__m512i*)y, result_m512i[3]);
+      y += 32;
+      __m512i b_result_m512i =
+          _mm512_shuffle_i32x4(result_m512i[0], result_m512i[2], 0b10001000);
+      _mm512_storeu_si512((__m512i*)b, b_result_m512i);
+      b += 32;
+      __m512i r_result_m512i =
+          _mm512_shuffle_i32x4(result_m512i[0], result_m512i[2], 0b11011101);
+      _mm512_storeu_si512((__m512i*)r, r_result_m512i);
+      r += 32;
+    }
+  }
+
+  pg_cnt = pg_cnt % cache_pg_cnt;
+  mt_cvt_dma_ctx_uinit(ctx);
+  mt_rte_free(be_caches);
+
+  /* remaining simd batch */
+  int batch = pg_cnt / 32;
+  /* each m512i batch handle 4 __m512i(16 __m128i), each __m128i with 2 pg group */
+  for (int i = 0; i < batch; i++) {
+    /* cvt the result to __m128i(2 pg group) */
+    __m128i stage_m128i[16];
+    for (int j = 0; j < 16; j++) {
+      __m128i input = _mm_maskz_loadu_epi8(k, (__m128i*)pg_be);
+      __m128i shuffle_le_result = _mm_shuffle_epi8(input, shuffle_le_mask);
+      __m128i srlv_le_result = _mm_srlv_epi16(shuffle_le_result, srlv_le_mask);
+      stage_m128i[j] = _mm_and_si128(srlv_le_result, srlv_and_mask);
+      pg_be += 2;
+    }
+    /* shift result to m128i */
+    __m512i stage_m512i[4];
+    for (int j = 0; j < 4; j++) {
+      /* {B0, R0, Y0, Y1}, {B1, R1, Y2, Y3}, {B2, R2, Y4, Y5}, {B3, R3, Y6, Y7} */
+      __m512i input_m512i = _mm512_loadu_si512((__m512i*)&stage_m128i[j * 4]);
+      /* {B0, B1, B2, B3}, {R0, R1, R2, R3}, {Y0, Y1, Y2, Y3}, {Y4, Y5, Y6, Y7} */
+      stage_m512i[j] = _mm512_permutexvar_epi32(permute_mask, input_m512i);
+    }
+    /* shift m128i to m512i */
+    /* {B0, R0, Y0, Y1}, {B1, R1, Y2, Y3}, {B2, R2, Y4, Y5}, {B3, R3, Y6, Y7} */
+    __m512i result_m512i[4];
+    /* {B0, R0, B1, R1} */
+    result_m512i[0] = _mm512_shuffle_i32x4(stage_m512i[0], stage_m512i[1], 0b01000100);
+    /* {Y0, Y1, Y2, Y3} */
+    result_m512i[1] = _mm512_shuffle_i32x4(stage_m512i[0], stage_m512i[1], 0b11101110);
+    _mm512_storeu_si512((__m512i*)y, result_m512i[1]);
+    y += 32;
+    /* {B2, R2, B3, R3} */
+    result_m512i[2] = _mm512_shuffle_i32x4(stage_m512i[2], stage_m512i[3], 0b01000100);
+    /* {Y4, Y5, Y6, Y7} */
+    result_m512i[3] = _mm512_shuffle_i32x4(stage_m512i[2], stage_m512i[3], 0b11101110);
+    _mm512_storeu_si512((__m512i*)y, result_m512i[3]);
+    y += 32;
+    __m512i b_result_m512i =
+        _mm512_shuffle_i32x4(result_m512i[0], result_m512i[2], 0b10001000);
+    _mm512_storeu_si512((__m512i*)b, b_result_m512i);
+    b += 32;
+    __m512i r_result_m512i =
+        _mm512_shuffle_i32x4(result_m512i[0], result_m512i[2], 0b11011101);
+    _mm512_storeu_si512((__m512i*)r, r_result_m512i);
+    r += 32;
+  }
+  pg_cnt = pg_cnt % 32;
+
+  batch = pg_cnt / 8;
+  /* each __m128i batch handle 4 16 __m128i, each __m128i with 2 pg group */
+  for (int i = 0; i < batch; i++) {
+    __m128i stage_m128i[4];
+    for (int j = 0; j < 4; j++) {
+      __m128i input = _mm_maskz_loadu_epi8(k, (__m128i*)pg_be);
+      __m128i shuffle_le_result = _mm_shuffle_epi8(input, shuffle_le_mask);
+      __m128i srlv_le_result = _mm_srlv_epi16(shuffle_le_result, srlv_le_mask);
+      stage_m128i[j] = _mm_and_si128(srlv_le_result, srlv_and_mask);
+      pg_be += 2;
+    }
+    // {B0, R0, Y0, Y1}, {B1, R1, Y2, Y3}, {B2, R2, Y4, Y5}, {B3, R3, Y6, Y7}
+    __m512i stage_m512i = _mm512_loadu_si512((__m512i*)&stage_m128i[0]);
+    /* {B0, B1, B2, B3}, {R0, R1, R2, R3}, {Y0, Y1, Y2, Y3}, {Y4, Y5, Y6, Y7} */
+    __m512i permute = _mm512_permutexvar_epi32(permute_mask, stage_m512i);
+
+    __m128i result_B = _mm512_extracti32x4_epi32(permute, 0);
+    __m128i result_R = _mm512_extracti32x4_epi32(permute, 1);
+    __m128i result_Y0 = _mm512_extracti32x4_epi32(permute, 2);
+    __m128i result_Y1 = _mm512_extracti32x4_epi32(permute, 3);
+
+    _mm_storeu_si128((__m128i*)b, result_B);
+    b += 2 * 4;
+    _mm_storeu_si128((__m128i*)r, result_R);
+    r += 2 * 4;
+    _mm_storeu_si128((__m128i*)y, result_Y0);
+    y += 2 * 4;
+    _mm_storeu_si128((__m128i*)y, result_Y1);
+    y += 2 * 4;
+  }
+  pg_cnt = pg_cnt % 8;
+
+  /* remaining scalar batch */
+  while (pg_cnt > 0) {
+    st20_unpack_pg2be_422le12(pg_be, b, y, r, y + 1);
+    b++;
+    r++;
+    y += 2;
+    pg_be++;
+
+    pg_cnt--;
+  }
+
+  return 0;
+}
+/* end st20_rfc4175_422be12_to_yuv422p12le_avx512 */
 MT_TARGET_CODE_STOP
 #endif
