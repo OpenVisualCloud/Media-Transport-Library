@@ -764,6 +764,9 @@ int st20_get_bandwidth_bps(int width, int height, enum st20_fmt fmt, enum st_fps
   struct st_fps_timing fps_tm;
   int ret;
 
+  memset(&pg, 0, sizeof(pg));
+  memset(&fps_tm, 0, sizeof(fps_tm));
+
   ret = st20_get_pgroup(fmt, &pg);
   if (ret < 0) return ret;
 
@@ -781,6 +784,8 @@ int st22_rtp_bandwidth_bps(uint32_t total_pkts, uint16_t pkt_size, enum st_fps f
   struct st_fps_timing fps_tm;
   int ret;
 
+  memset(&fps_tm, 0, sizeof(fps_tm));
+
   ret = st_get_fps_timing(fps, &fps_tm);
   if (ret < 0) return ret;
 
@@ -793,6 +798,8 @@ int st22_rtp_bandwidth_bps(uint32_t total_pkts, uint16_t pkt_size, enum st_fps f
 int st22_frame_bandwidth_bps(size_t frame_size, enum st_fps fps, uint64_t* bps) {
   struct st_fps_timing fps_tm;
   int ret;
+
+  memset(&fps_tm, 0, sizeof(fps_tm));
 
   ret = st_get_fps_timing(fps, &fps_tm);
   if (ret < 0) return ret;

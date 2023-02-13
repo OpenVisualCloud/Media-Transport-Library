@@ -47,6 +47,8 @@ if is_windows
   mtl_include_dir += include_directories(dpdk_root_dir + '''\lib\eal\windows\include\''')
   mtl_include_dir += include_directories(dpdk_root_dir + '''\lib\kni\''')
   mtl_c_args += ['-static','-DWINDOWSENV','-D__USE_MINGW_ANSI_STDIO','-D_WIN32_WINNT=0x0600','-mno-ms-bitfields']
+  # For issues: "Error: invalid register for .seh_savexmm", see https://gcc.gnu.org/bugzilla/show_bug.cgi?id=65782
+  mtl_c_args += ['-fno-asynchronous-unwind-tables']
   mtl_link_c_args += ['-static','-limagehlp', '-lsetupapi', '-lWs2_32']
   mtl_link_c_args += ['-Wl,--whole-archive']
   mtl_link_c_args += [dpdklibs.stdout().strip().split()]
