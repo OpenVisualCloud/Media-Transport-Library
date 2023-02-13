@@ -854,12 +854,10 @@ static int tap_queues_init(struct mtl_main_impl* impl, struct mt_cni_impl* cni) 
   return 0;
 }
 
-int mt_tap_handle(struct mtl_main_impl* impl, enum mtl_port port,
-                  struct rte_mbuf** rx_pkts, uint16_t nb_pkts) {
+int mt_tap_handle(struct mtl_main_impl* impl, enum mtl_port port) {
   struct mt_cni_impl* cni = mt_get_cni(impl);
   struct rte_mbuf* pkts_rx[ST_CNI_RX_BURST_SIZE];
   uint16_t rx;
-  int i;
 
   if (rte_atomic32_read(&cni->stop_tap)) {
     return -EBUSY;
@@ -869,8 +867,8 @@ int mt_tap_handle(struct mtl_main_impl* impl, enum mtl_port port,
     rx = mt_dev_rx_burst(cni->tap_rx_q[port], pkts_rx, ST_CNI_RX_BURST_SIZE);
 
     if (rx > 0) {
-      cni->eth_rx_cnt[i] += rx;
-      for (i = 0; i < rx; i++) {
+      cni->eth_rx_cnt[port] += rx;
+      for (int i = 0; i < rx; i++) {
         tap_put_mbuf(tap_tx_ring, pkts_rx[i]);
       }
     }
