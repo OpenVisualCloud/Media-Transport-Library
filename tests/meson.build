@@ -37,13 +37,10 @@ test_cpp_args += ['-Werror']
 test_cpp_args += ['-Wall']
 
 if is_windows
-  test_c_args += ['-DWINDOWSENV', '-D__USE_MINGW_ANSI_STDIO', '-Wno-sign-compare', '-D_WIN32_WINNT=0x0600']
-  test_cpp_args += ['-DWINDOWSENV', '-D__USE_MINGW_ANSI_STDIO', '-D__STDC_FORMAT_MACROS', '-Wno-sign-compare', '-D_WIN32_WINNT=0x0600']
-endif
-
-if is_windows
+  test_c_args += ['-DWINDOWSENV', '-D__USE_MINGW_ANSI_STDIO', '-D_WIN32_WINNT=0x0600']
+  test_cpp_args += ['-DWINDOWSENV', '-D__USE_MINGW_ANSI_STDIO', '-D__STDC_FORMAT_MACROS', '-D_WIN32_WINNT=0x0600']
   libdpdklinkflags = run_command('pkg-config', '--static', '--libs', 'libdpdk')
-  test_ld_args += ['-static-libstdc++','-lmingw32','-lws2_32','-lDbghelp','-lSetupapi','-ldinput8', '-ldxguid', '-ldxerr8', '-lwinmm', '-limm32','-lversion','-ljson-c','-ldl']
+  test_ld_args += ['-static-libstdc++','-lmingw32','-lws2_32','-lDbghelp','-lSetupapi','-ldinput8', '-ldxguid', '-ldxerr8', '-lwinmm', '-limm32','-lversion','-ldl']
 endif
 
 # default no asan dep
