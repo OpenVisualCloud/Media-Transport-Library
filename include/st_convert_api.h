@@ -249,6 +249,38 @@ static inline int st20_rfc4175_422be12_to_yuv422p12le(
 }
 
 /**
+ * Convert rfc4175_422be12 to yuv422p12le with the max optimised SIMD level and DMA
+ * helper. Profiling shows gain with 4k/8k solution due to LLC cache miss migration, thus
+ * pls only applied with 4k/8k.
+ *
+ * @param udma
+ *   Point to dma engine.
+ * @param pg_be
+ *   Point to pg(rfc4175_422be12) data.
+ * @param pg_be_iova
+ *   The mtl_iova_t address of the pg_be buffer.
+ * @param y
+ *   Point to Y(yuv422p12le) vector.
+ * @param b
+ *   Point to b(yuv422p12le) vector.
+ * @param r
+ *   Point to r(yuv422p12le) vector.
+ * @param w
+ *   The st2110-20(video) width.
+ * @param h
+ *   The st2110-20(video) height.
+ * @return
+ *   - 0 if successful.
+ *   - <0: Error code if convert fail.
+ */
+static inline int st20_rfc4175_422be12_to_yuv422p12le_dma(
+    mtl_udma_handle udma, struct st20_rfc4175_422_12_pg2_be* pg_be, mtl_iova_t pg_be_iova,
+    uint16_t* y, uint16_t* b, uint16_t* r, uint32_t w, uint32_t h) {
+  return st20_rfc4175_422be12_to_yuv422p12le_simd_dma(udma, pg_be, pg_be_iova, y, b, r, w,
+                                                      h, MTL_SIMD_LEVEL_MAX);
+}
+
+/**
  * Convert rfc4175_422be12 to rfc4175_422le12 with the max optimised SIMD level.
  *
  * @param pg_be
