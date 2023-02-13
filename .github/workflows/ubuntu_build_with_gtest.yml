@@ -6,7 +6,6 @@ on:
       - 'include/**'
       - 'lib/**'
       - 'patches/dpdk/**'
-      - script/build_dpdk.sh
       - 'tests/**'
       - build.sh
       - kahawai.json
@@ -19,7 +18,6 @@ on:
       - 'include/**'
       - 'lib/**'
       - 'patches/dpdk/**'
-      - script/build_dpdk.sh
       - 'tests/**'
       - build.sh
       - kahawai.json
@@ -35,6 +33,11 @@ concurrency:
 env:
   # Customize the env if
   BUILD_TYPE: Release
+  DPDK_VERSION: 22.11
+  TEST_PORT_P: 0000:31:00.0
+  TEST_PORT_R: 0000:31:00.1
+  TEST_DMA_PORT_P: 0000:00:01.0
+  TEST_DMA_PORT_R: 0000:00:01.1
 
 jobs:
   Build:
@@ -43,7 +46,15 @@ jobs:
     timeout-minutes: 60
 
     steps:
-    - uses: actions/checkout@v3
+    - name: checkout kahawai repo
+      uses: actions/checkout@v3
+
+    - name: checkout dpdk repo
+      uses: actions/checkout@v3
+      with:
+        repository: 'DPDK/dpdk'
+        ref: v${{  env.DPDK_VERSION  }}
+        path: dpdk
 
     - name: Install the build dependency
       run: |
@@ -53,14 +64,24 @@ jobs:
     - name: Install the python package
       run: pip install pyelftools ninja
 
+    - name: Apply dpdk patches
+      run: |
+        cd dpdk
+        git am ../patches/dpdk/${{  env.DPDK_VERSION  }}/*.patch
+
     - name: Build dpdk
-      run: ./script/build_dpdk.sh
+      run: |
+        cd dpdk
+        meson build
+        ninja -C build
+        cd build
+        sudo ninja install
 
     - name: Build
       run: |
         ./build.sh
         sudo ldconfig
-  
+
   Test:
     if: github.repository == 'OpenVisualCloud/Media-Transport-Library'
     needs: Build
@@ -69,16 +90,23 @@ jobs:
       - name: Kill previous gtest routine
         run: |
           sudo killall -SIGINT KahawaiTest || true
+          sudo killall -SIGINT KahawaiUfdTest || true
 
       - name: Binding network adapter
         run: |
-          sudo ./script/nicctl.sh bind_pmd 0000:31:00.0
-          sudo ./script/nicctl.sh bind_pmd 0000:31:00.1
-          sudo ./dpdk/usertools/dpdk-devbind.py -b vfio-pci 0000:00:01.0
-          sudo ./dpdk/usertools/dpdk-devbind.py -b vfio-pci 0000:00:01.1
+          sudo ./script/nicctl.sh bind_pmd ${{  env.TEST_PORT_P  }} || true
+          sudo ./script/nicctl.sh bind_pmd ${{  env.TEST_PORT_R  }} || true
+          sudo ./dpdk/usertools/dpdk-devbind.py -b vfio-pci ${{  env.TEST_DMA_PORT_P  }} || true
+          sudo ./dpdk/usertools/dpdk-devbind.py -b vfio-pci ${{  env.TEST_DMA_PORT_R  }} || true
 
-      - name: Run test case
+      - name: Run ufd test case
         run: |
-          sudo ./build/tests/KahawaiUfdTest --p_port 0000:31:00.0 --r_port 0000:31:00.1
-          sudo ./build/tests/KahawaiUfdTest --p_port 0000:31:00.0 --r_port 0000:31:00.1 --queue_mode shared
-          sudo bash -c 'export LD_LIBRARY_PATH=/usr/local/lib/x86_64-linux-gnu/:/usr/local/lib/; ./build/tests/KahawaiTest --auto_start_stop --p_port 0000:31:00.0 --r_port 0000:31:00.1 --dma_dev 0000:00:01.0,0000:00:01.1'
+          sudo ./build/tests/KahawaiUfdTest --p_port ${{  env.TEST_PORT_P  }} --r_port ${{  env.TEST_PORT_R  }}
+
+      - name: Run shared ufd test case
+        run: |
+          sudo ./build/tests/KahawaiUfdTest --p_port ${{  env.TEST_PORT_P  }} --r_port ${{  env.TEST_PORT_R  }} --queue_mode shared
+
+      - name: Run st2100 test case
+        run: |
+          sudo ./build/tests/KahawaiTest --auto_start_stop --p_port ${{  env.TEST_PORT_P  }} --r_port ${{  env.TEST_PORT_R  }} --dma_dev ${{  env.TEST_DMA_PORT_P  }},${{  env.TEST_DMA_PORT_R  }}

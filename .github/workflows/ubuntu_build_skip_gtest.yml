@@ -9,7 +9,6 @@ on:
       - 'include/**'
       - 'lib/**'
       - 'patches/dpdk/**'
-      - script/build_dpdk.sh
       - 'tests/**'
       - build.sh
       - kahawai.json
@@ -22,7 +21,6 @@ on:
       - 'include/**'
       - 'lib/**'
       - 'patches/dpdk/**'
-      - script/build_dpdk.sh
       - 'tests/**'
       - build.sh
       - kahawai.json

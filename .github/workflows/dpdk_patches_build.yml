@@ -12,7 +12,7 @@ on:
 
 env:
   # Customize the env if
-  ST_BUILD_DISABLE_PCAPNG: false
+  DPDK_VERSION: 22.11
 
 jobs:
   build:
@@ -25,11 +25,20 @@ jobs:
         os: [ubuntu-latest]
 
     steps:
-    - uses: actions/checkout@v3
-    - uses: DoozyX/clang-format-lint-action@v0.14
+    - name: Update to latest git
+      run: |
+        apt-get update -y
+        apt-get install -y git
+
+    - name: checkout kahawai repo
+      uses: actions/checkout@v3
+
+    - name: checkout dpdk repo
+      uses: actions/checkout@v3
       with:
-        source: '.'
-        extensions: 'hpp,h,cpp,c,cc'
+        repository: 'DPDK/dpdk'
+        ref: v${{  env.DPDK_VERSION  }}
+        path: dpdk
 
     - name: Install the build dependency
       run: |
@@ -44,8 +53,18 @@ jobs:
         git config --global user.email "you@example.com"
         git config --global user.name "Your Name"
 
+    - name: Apply dpdk patches
+      run: |
+        cd dpdk
+        git am ../patches/dpdk/${{  env.DPDK_VERSION  }}/*.patch
+
     - name: Build dpdk
-      run: ./script/build_dpdk.sh
+      run: |
+        cd dpdk
+        meson build
+        ninja -C build
+        cd build
+        sudo ninja install
 
     - name: Build
       run: |

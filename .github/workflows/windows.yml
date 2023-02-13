@@ -61,7 +61,7 @@ jobs:
 
     - name: Build tests
       env:
-        PKG_CONFIG_PATH: 'c:\dpdk\lib\pkgconfig;C:\libmtl\lib\pkgconfig;C:\kahawai\mingw-w64-x86_64-gtest-1.11.0-6\lib\pkgconfig;C:\kahawai\mingw-w64-x86_64-openssl-1.1.1.o-3\lib\pkgconfig;C:\kahawai\mingw-w64-x86_64-json-c-0.16-1\lib\pkgconfig;C:\kahawai\SDL2-2.0.22\x86_64-w64-mingw32\lib\pkgconfig'
+        PKG_CONFIG_PATH: 'c:\dpdk\lib\pkgconfig;C:\libmtl\lib\pkgconfig;C:\kahawai\mingw-w64-x86_64-gtest-1.11.0-6\lib\pkgconfig;C:\kahawai\mingw-w64-x86_64-openssl-1.1.1.o-3\lib\pkgconfig;C:\kahawai\mingw-w64-x86_64-json-c-0.16-1\lib\pkgconfig;'
       run: |
         cd kahawai\tests
         meson build
