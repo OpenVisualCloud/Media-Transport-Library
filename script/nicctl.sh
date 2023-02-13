@@ -67,7 +67,7 @@ create_vf() {
         #ip link set $port vf $i trust on
         dpdk-devbind.py -b vfio-pci $vf
         if [ $? -eq 0 ]; then
-            echo "Bind $vf to vfio success"
+            echo "Bind $vf to vfio-pci success"
         fi
     done
 }
@@ -87,8 +87,8 @@ if [ -z "$cmd" ]; then
 fi
 
 bdf=$2
-ice=`dpdk-devbind.py -s | grep $bdf | grep ice`
-i40e=`dpdk-devbind.py -s | grep $bdf | grep i40e`
+ice=$(dpdk-devbind.py -s | { grep $bdf || true; } | { grep ice || true; })
+i40e=$(dpdk-devbind.py -s | { grep $bdf || true; } | { grep i40e || true; })
 if [ -z "$ice" ] && [ -z "$i40e" ]; then
     echo "$bdf is not ice(CVL) or i40e(FLV)"
     exit 1
@@ -98,6 +98,9 @@ port=`dpdk-devbind.py -s | grep "$bdf.*if" | sed -e s/.*if=//g | awk '{print $1;
 if [ $cmd == "bind_kernel" ]; then
     if [ -z "$port" ]; then
         bind_kernel
+        echo "Bind bdf: $bdf to kernel succ"
+    else
+        echo "bdf: $bdf to kernel $port already"
     fi
     exit 0
 fi
@@ -108,6 +111,7 @@ if [ $cmd == "bind_pmd" ]; then
         ip link set $port down
     fi
     dpdk-devbind.py -b vfio-pci $bdf
+    echo "Bind bdf: $bdf to vfio-pci succ"
     exit 0
 fi
 
@@ -116,12 +120,13 @@ fi
 if [ -z "$port" ]; then
     bind_kernel
     port=`dpdk-devbind.py -s | grep "$bdf.*if" | sed -e s/.*if=//g | awk '{print $1;}'`
+    echo "Bind bdf: $bdf to kernel $port succ"
 fi
 
 if [ $cmd == "disable_vf" ]; then
     disable_vf
+    echo "Disable vf bdf: $bdf $port succ"
 fi
-
 
 if [ $cmd == "create_dcf_vf" ]; then
     if [ -z "$ice" ]; then
@@ -137,6 +142,7 @@ if [ $cmd == "create_dcf_vf" ]; then
     fi
     disable_vf
     create_dcf_vf $numvfs
+    echo "Create dcf vf bdf: $bdf $port succ"
 fi
 
 if [ $cmd == "create_vf" ]; then
@@ -149,5 +155,6 @@ if [ $cmd == "create_vf" ]; then
     modprobe vfio-pci
     disable_vf
     create_vf $numvfs
+    echo "Create vf bdf: $bdf $port succ"
 fi
 
