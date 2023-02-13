@@ -46,7 +46,7 @@ if is_windows
   mtl_include_dir += include_directories('''.\windows\''')
   mtl_include_dir += include_directories(dpdk_root_dir + '''\lib\eal\windows\include\''')
   mtl_include_dir += include_directories(dpdk_root_dir + '''\lib\kni\''')
-  mtl_c_args += ['-static','-DWINDOWSENV','-D__USE_MINGW_ANSI_STDIO','-D_WIN32_WINNT=0x0600','-Wno-maybe-uninitialized','-mno-ms-bitfields', '-Og']
+  mtl_c_args += ['-static','-DWINDOWSENV','-D__USE_MINGW_ANSI_STDIO','-D_WIN32_WINNT=0x0600','-mno-ms-bitfields']
   mtl_link_c_args += ['-static','-limagehlp', '-lsetupapi', '-lWs2_32']
   mtl_link_c_args += ['-Wl,--whole-archive']
   mtl_link_c_args += [dpdklibs.stdout().strip().split()]
