@@ -8,7 +8,9 @@
 #include "st_main.h"
 
 #ifdef MTL_HAS_AVX512_VBMI2
-static uint8_t b2l_permute_mask_table_512[16 * 4] = {
+MT_TARGET_CODE_START_AVX512_VBMI2
+/* begin st20_rfc4175_422be10_to_yuv422p10le_avx512_vbmi */
+static uint8_t be10_to_ple_permute_tbl_512[16 * 4] = {
     /* b0 - b7 */
     1,
     0,
@@ -79,7 +81,7 @@ static uint8_t b2l_permute_mask_table_512[16 * 4] = {
     8 + 30,
 };
 
-static uint16_t b2l_srlv_mask_table_512[8 * 4] = {
+static uint16_t be10_to_ple_srlv_tbl_512[8 * 4] = {
     /* b0 - b7 */
     0x0006,
     0x0006,
@@ -118,7 +120,7 @@ static uint16_t b2l_srlv_mask_table_512[8 * 4] = {
     0x0000,
 };
 
-static uint16_t b2l_and_mask_table_512[8 * 4] = {
+static uint16_t be10_to_ple_and_tbl_512[8 * 4] = {
     /* b0 - b7 */
     0x03ff,
     0x03ff,
@@ -157,216 +159,12 @@ static uint16_t b2l_and_mask_table_512[8 * 4] = {
     0x03ff,
 };
 
-/* for st20_rfc4175_422be10_to_422le10_avx512_vbmi */
-static uint8_t permute_l0_mask_table[64] = {
-    1,       0,       3,       2,       /* 4 bytes from pg0 */
-    6,       5,       8,       7,       /* 4 bytes from pg1 */
-    11,      10,      13,      12,      /* 4 bytes from pg2 */
-    0,       5,       10,      63,      /* 5th bytes from pg0,pg1,pg2, and a padding */
-    1 + 15,  0 + 15,  3 + 15,  2 + 15,  /* 4 bytes from pg3 */
-    6 + 15,  5 + 15,  8 + 15,  7 + 15,  /* 4 bytes from pg4 */
-    11 + 15, 10 + 15, 13 + 15, 12 + 15, /* 4 bytes from pg5 */
-    0 + 15,  5 + 15,  10 + 15, 63,      /* 5th bytes from pg3,pg4,pg5, and a padding */
-    1 + 30,  0 + 30,  3 + 30,  2 + 30,  /* 4 bytes from pg6 */
-    6 + 30,  5 + 30,  8 + 30,  7 + 30,  /* 4 bytes from pg7 */
-    11 + 30, 10 + 30, 13 + 30, 12 + 30, /* 4 bytes from pg8 */
-    0 + 30,  5 + 30,  10 + 30, 63,      /* 5th bytes from pg6,pg7,pg8, and a padding */
-    1 + 45,  0 + 45,  3 + 45,  2 + 45,  /* 4 bytes from pg9 */
-    6 + 45,  5 + 45,  8 + 45,  7 + 45,  /* 4 bytes from pg10 */
-    11 + 45, 10 + 45, 13 + 45, 12 + 45, /* 4 bytes from pg11 */
-    0 + 45,  5 + 45,  10 + 45, 63,      /* 5th bytes from pg9,pg10,pg11, and a padding */
-};
-
-static uint8_t and_l0_mask_table[64] = {
-    0x00, 0xFF, 0xF0, 0x3F, 0x00, 0xFF, 0xF0, 0x3F, 0x00, 0xFF, 0xF0, 0x3F, 0x00,
-    0x03, 0x03, 0x03, 0x00, 0xFF, 0xF0, 0x3F, 0x00, 0xFF, 0xF0, 0x3F, 0x00, 0xFF,
-    0xF0, 0x3F, 0x00, 0x03, 0x03, 0x03, 0x00, 0xFF, 0xF0, 0x3F, 0x00, 0xFF, 0xF0,
-    0x3F, 0x00, 0xFF, 0xF0, 0x3F, 0x00, 0x03, 0x03, 0x03, 0x00, 0xFF, 0xF0, 0x3F,
-    0x00, 0xFF, 0xF0, 0x3F, 0x00, 0xFF, 0xF0, 0x3F, 0x00, 0x03, 0x03, 0x03,
-};
-
-static uint8_t permute_r0_mask_table[64] = {
-    2,       1,       4,       3,       /* 4 bytes from pg0 */
-    7,       6,       9,       8,       /* 4 bytes from pg1 */
-    12,      11,      14,      13,      /* 4 bytes from pg2 */
-    63,      4,       9,       14,      /* 1st bytes from pg0,pg1,pg2, and a padding */
-    2 + 15,  1 + 15,  4 + 15,  3 + 15,  /* 4 bytes from pg3 */
-    7 + 15,  6 + 15,  9 + 15,  8 + 15,  /* 4 bytes from pg4 */
-    12 + 15, 11 + 15, 14 + 15, 13 + 15, /* 4 bytes from pg5 */
-    63,      4 + 15,  9 + 15,  14 + 15, /* 1st bytes from pg3,pg4,pg5, and a padding */
-    2 + 30,  1 + 30,  4 + 30,  3 + 30,  /* 4 bytes from pg6 */
-    7 + 30,  6 + 30,  9 + 30,  8 + 30,  /* 4 bytes from pg7 */
-    12 + 30, 11 + 30, 14 + 30, 13 + 30, /* 4 bytes from pg8 */
-    63,      4 + 30,  9 + 30,  14 + 30, /* 1st bytes from pg6,pg7,pg8, and a padding */
-    2 + 45,  1 + 45,  4 + 45,  3 + 45,  /* 4 bytes from pg6 */
-    7 + 45,  6 + 45,  9 + 45,  8 + 45,  /* 4 bytes from pg7 */
-    12 + 45, 11 + 45, 14 + 45, 13 + 45, /* 4 bytes from pg8 */
-    63,      4 + 45,  9 + 45,  14 + 45, /* 1st bytes from pg9,pg10,pg11, and a padding */
-};
-
-static uint8_t and_r0_mask_table[64] = {
-    0xFC, 0x0F, 0xFF, 0x00, 0xFC, 0x0F, 0xFF, 0x00, 0xFC, 0x0F, 0xFF, 0x00, 0xC0,
-    0xC0, 0xC0, 0x00, 0xFC, 0x0F, 0xFF, 0x00, 0xFC, 0x0F, 0xFF, 0x00, 0xFC, 0x0F,
-    0xFF, 0x00, 0xC0, 0xC0, 0xC0, 0x00, 0xFC, 0x0F, 0xFF, 0x00, 0xFC, 0x0F, 0xFF,
-    0x00, 0xFC, 0x0F, 0xFF, 0x00, 0xC0, 0xC0, 0xC0, 0x00, 0xFC, 0x0F, 0xFF, 0x00,
-    0xFC, 0x0F, 0xFF, 0x00, 0xFC, 0x0F, 0xFF, 0x00, 0xC0, 0xC0, 0xC0, 0x00,
-};
-
-static uint8_t permute_l1_mask_table[64] = {
-    1,      13,      2,       3,       0,      /* pg0 */
-    5,      14,      6,       7,       4,      /* pg1 */
-    9,      15,      10,      11,      8,      /* pg2 */
-    1 + 16, 13 + 16, 2 + 16,  3 + 16,  0 + 16, /* pg3 */
-    5 + 16, 14 + 16, 6 + 16,  7 + 16,  4 + 16, /* pg4 */
-    9 + 16, 15 + 16, 10 + 16, 11 + 16, 8 + 16, /* pg5 */
-    1 + 32, 13 + 32, 2 + 32,  3 + 32,  0 + 32, /* pg6 */
-    5 + 32, 14 + 32, 6 + 32,  7 + 32,  4 + 32, /* pg7 */
-    9 + 32, 15 + 32, 10 + 32, 11 + 32, 8 + 32, /* pg8 */
-    1 + 48, 13 + 48, 2 + 48,  3 + 48,  0 + 48, /* pg9 */
-    5 + 48, 14 + 48, 6 + 48,  7 + 48,  4 + 48, /* pg10 */
-    9 + 48, 15 + 48, 10 + 48, 11 + 48, 8 + 48, /* pg11 */
-    60,     60,      60,      60,              /* zeros */
-};
-
-static uint8_t permute_r1_mask_table[64] = {
-    3,       0,      1,      12,      2,       /* pg0 */
-    7,       4,      5,      13,      6,       /* pg1 */
-    11,      8,      9,      14,      10,      /* pg2 */
-    3 + 16,  0 + 16, 1 + 16, 12 + 16, 2 + 16,  /* pg3 */
-    7 + 16,  4 + 16, 5 + 16, 13 + 16, 6 + 16,  /* pg4 */
-    11 + 16, 8 + 16, 9 + 16, 14 + 16, 10 + 16, /* pg5 */
-    3 + 32,  0 + 32, 1 + 32, 12 + 32, 2 + 32,  /* pg6 */
-    7 + 32,  4 + 32, 5 + 32, 13 + 32, 6 + 32,  /* pg7 */
-    11 + 32, 8 + 32, 9 + 32, 14 + 32, 10 + 32, /* pg8 */
-    3 + 48,  0 + 48, 1 + 48, 12 + 48, 2 + 48,  /* pg9 */
-    7 + 48,  4 + 48, 5 + 48, 13 + 48, 6 + 48,  /* pg10 */
-    11 + 48, 8 + 48, 9 + 48, 14 + 48, 10 + 48, /* pg11 */
-    63,      63,     63,     63,               /* zeros */
-};
-/* end st20_rfc4175_422be10_to_422le10_avx512_vbmi */
-
-/* for st20_rfc4175_422be10_to_422le8_avx512_vbmi */
-static uint8_t rfc4175be10_to_8_permute_tbl_512[16 * 4] = {
-    0,      4,      3,      2,      1,      /* pg0 - xmm0 */
-    0 + 5,  2 + 5,  1 + 5,                  /* pg1 */
-    4 + 5,  3 + 5,  2 + 5,                  /* pg1 across 64 bit lane */
-    0 + 10, 4 + 10, 3 + 10, 2 + 10, 1 + 10, /* pg2 */
-    0 + 15, 4 + 15, 3 + 15, 2 + 15, 1 + 15, /* pg3 - xmm1 */
-    0 + 20, 2 + 20, 1 + 20,                 /* pg4 */
-    4 + 20, 3 + 20, 2 + 20,                 /* pg4 across 64 bit lane */
-    0 + 25, 4 + 25, 3 + 25, 2 + 25, 1 + 25, /* pg5 */
-    0 + 30, 4 + 30, 3 + 30, 2 + 30, 1 + 30, /* pg6 - xmm2 */
-    0 + 35, 2 + 35, 1 + 35,                 /* pg7 */
-    4 + 35, 3 + 35, 2 + 35,                 /* pg7 across 64 bit lane */
-    0 + 40, 4 + 40, 3 + 40, 2 + 40, 1 + 40, /* pg8 */
-    0 + 45, 4 + 45, 3 + 45, 2 + 45, 1 + 45, /* pg9 - xmm3 */
-    0 + 50, 2 + 50, 1 + 50,                 /* pg10 */
-    4 + 50, 3 + 50, 2 + 50,                 /* pg10 across 64 bit lane */
-    0 + 55, 4 + 55, 3 + 55, 2 + 55, 1 + 55, /* pg11 */
-};
-static uint8_t rfc4175be10_to_8_multishift_tbl_512[16 * 4] = {
-    0,  30, 20, 10, /* pg0 */
-    0,  0,  40, 54, /* pg1, first half */
-    12, 2,  0,  0,  /* pg1, second half */
-    24, 54, 44, 34, /* pg2 */
-    0,  30, 20, 10, /* pg3 */
-    0,  0,  40, 54, /* pg4, first half */
-    12, 2,  0,  0,  /* pg4, second half */
-    24, 54, 44, 34, /* pg5 */
-    0,  30, 20, 10, /* pg6 */
-    0,  0,  40, 54, /* pg7, first half */
-    12, 2,  0,  0,  /* pg7, second half */
-    24, 54, 44, 34, /* pg8 */
-    0,  30, 20, 10, /* pg9 */
-    0,  0,  40, 54, /* pg10, first half */
-    12, 2,  0,  0,  /* pg10, second half */
-    24, 54, 44, 34, /* pg11 */
-};
-/* end st20_rfc4175_422be10_to_422le8_avx512_vbmi */
-
-/* for st20_rfc4175_422le10_to_v210_avx512_vbmi */
-static uint8_t permute_mask_table_512[16 * 4] = {
-    0,      1,      2,      3,       4,       5,       6,       7,
-    7,      8,      9,      10,      11,      12,      13,      14, /* pg0-2 */
-    0 + 15, 1 + 15, 2 + 15, 3 + 15,  4 + 15,  5 + 15,  6 + 15,  7 + 15,
-    7 + 15, 8 + 15, 9 + 15, 10 + 15, 11 + 15, 12 + 15, 13 + 15, 14 + 15, /* pg3-5 */
-    0 + 30, 1 + 30, 2 + 30, 3 + 30,  4 + 30,  5 + 30,  6 + 30,  7 + 30,
-    7 + 30, 8 + 30, 9 + 30, 10 + 30, 11 + 30, 12 + 30, 13 + 30, 14 + 30, /* pg6-8 */
-    0 + 45, 1 + 45, 2 + 45, 3 + 45,  4 + 45,  5 + 45,  6 + 45,  7 + 45,
-    7 + 45, 8 + 45, 9 + 45, 10 + 45, 11 + 45, 12 + 45, 13 + 45, 14 + 45, /* pg9-11 */
-};
-
-static uint8_t multishift_mask_table_512[16 * 4] = {
-    0, 8, 16, 24, 30, 38, 46, 54, 4, 12, 20, 28, 34, 42, 50, 58,
-    0, 8, 16, 24, 30, 38, 46, 54, 4, 12, 20, 28, 34, 42, 50, 58,
-    0, 8, 16, 24, 30, 38, 46, 54, 4, 12, 20, 28, 34, 42, 50, 58,
-    0, 8, 16, 24, 30, 38, 46, 54, 4, 12, 20, 28, 34, 42, 50, 58,
-};
-static uint8_t padding_mask_table_512[16 * 4] = {
-    0xFF, 0xFF, 0xFF, 0x3F, 0xFF, 0xFF, 0xFF, 0x3F, 0xFF, 0xFF, 0xFF, 0x3F, 0xFF,
-    0xFF, 0xFF, 0x3F, 0xFF, 0xFF, 0xFF, 0x3F, 0xFF, 0xFF, 0xFF, 0x3F, 0xFF, 0xFF,
-    0xFF, 0x3F, 0xFF, 0xFF, 0xFF, 0x3F, 0xFF, 0xFF, 0xFF, 0x3F, 0xFF, 0xFF, 0xFF,
-    0x3F, 0xFF, 0xFF, 0xFF, 0x3F, 0xFF, 0xFF, 0xFF, 0x3F, 0xFF, 0xFF, 0xFF, 0x3F,
-    0xFF, 0xFF, 0xFF, 0x3F, 0xFF, 0xFF, 0xFF, 0x3F, 0xFF, 0xFF, 0xFF, 0x3F,
-};
-/* end st20_rfc4175_422le10_to_v210_avx512_vbmi */
-
-/* for st20_rfc4175_422be10_to_v210_avx512_vbmi */
-static uint8_t permute0_mask_table_512[16 * 4] = {
-    1,      0,      3,       2,       4,       3,       7,       6,
-    8,      7,      11,      10,      12,      11,      14,      13, /* pg 0-2 */
-    1 + 15, 0 + 15, 3 + 15,  2 + 15,  4 + 15,  3 + 15,  7 + 15,  6 + 15,
-    8 + 15, 7 + 15, 11 + 15, 10 + 15, 12 + 15, 11 + 15, 14 + 15, 13 + 15, /* pg 3-5 */
-    1 + 30, 0 + 30, 3 + 30,  2 + 30,  4 + 30,  3 + 30,  7 + 30,  6 + 30,
-    8 + 30, 7 + 30, 11 + 30, 10 + 30, 12 + 30, 11 + 30, 14 + 30, 13 + 30, /* pg 6-8 */
-    1 + 45, 0 + 45, 3 + 45,  2 + 45,  4 + 45,  3 + 45,  7 + 45,  6 + 45,
-    8 + 45, 7 + 45, 11 + 45, 10 + 45, 12 + 45, 11 + 45, 14 + 45, 13 + 45, /* pg 9-11 */
-};
-static uint8_t multishift0_mask_table_512[16 * 4] = {
-    6, 14, 14, 22, 32, 40, 48, 56, 2, 10, 18, 26, 36, 44, 44, 52, /* pg 0-2 */
-    6, 14, 14, 22, 32, 40, 48, 56, 2, 10, 18, 26, 36, 44, 44, 52, /* pg 3-5 */
-    6, 14, 14, 22, 32, 40, 48, 56, 2, 10, 18, 26, 36, 44, 44, 52, /* pg 6-8 */
-    6, 14, 14, 22, 32, 40, 48, 56, 2, 10, 18, 26, 36, 44, 44, 52, /* pg 9-11 */
-};
-static uint8_t and0_mask_table_512[16 * 4] = {
-    0xFF, 0x03, 0xF0, 0x3F, 0xFF, 0x03, 0xF0, 0x3F, 0xFF, 0x03, 0xF0, 0x3F, 0xFF,
-    0x03, 0xF0, 0x3F, 0xFF, 0x03, 0xF0, 0x3F, 0xFF, 0x03, 0xF0, 0x3F, 0xFF, 0x03,
-    0xF0, 0x3F, 0xFF, 0x03, 0xF0, 0x3F, 0xFF, 0x03, 0xF0, 0x3F, 0xFF, 0x03, 0xF0,
-    0x3F, 0xFF, 0x03, 0xF0, 0x3F, 0xFF, 0x03, 0xF0, 0x3F, 0xFF, 0x03, 0xF0, 0x3F,
-    0xFF, 0x03, 0xF0, 0x3F, 0xFF, 0x03, 0xF0, 0x3F, 0xFF, 0x03, 0xF0, 0x3F,
-};
-static uint8_t permute1_mask_table_512[16 * 4] = {
-    63, 2,      1,      63, 63, 6,       5,       63,
-    63, 9,      8,      63, 63, 13,      12,      63, /* pg 0-2 */
-    63, 2 + 15, 1 + 15, 63, 63, 6 + 15,  5 + 15,  63,
-    63, 9 + 15, 8 + 15, 63, 63, 13 + 15, 12 + 15, 63, /* pg 3-5 */
-    63, 2 + 30, 1 + 30, 63, 63, 6 + 30,  5 + 30,  63,
-    63, 9 + 30, 8 + 30, 63, 63, 13 + 30, 12 + 30, 63, /* pg 6-8 */
-    63, 2 + 45, 1 + 45, 63, 63, 6 + 45,  5 + 45,  63,
-    63, 9 + 45, 8 + 45, 63, 63, 13 + 45, 12 + 45, 63, /* pg 9-11 */
-};
-static uint8_t multishift1_mask_table_512[16 * 4] = {
-    0, 10, 18, 0, 0, 44, 52, 0, 0, 6, 14, 0, 0, 40, 48, 0, /* pg 0-2 */
-    0, 10, 18, 0, 0, 44, 52, 0, 0, 6, 14, 0, 0, 40, 48, 0, /* pg 3-5 */
-    0, 10, 18, 0, 0, 44, 52, 0, 0, 6, 14, 0, 0, 40, 48, 0, /* pg 6-8 */
-    0, 10, 18, 0, 0, 44, 52, 0, 0, 6, 14, 0, 0, 40, 48, 0, /* pg 9-11 */
-};
-static uint8_t and1_mask_table_512[16 * 4] = {
-    0x00, 0xFC, 0x0F, 0x00, 0x00, 0xFC, 0x0F, 0x00, 0x00, 0xFC, 0x0F, 0x00, 0x00,
-    0xFC, 0x0F, 0x00, 0x00, 0xFC, 0x0F, 0x00, 0x00, 0xFC, 0x0F, 0x00, 0x00, 0xFC,
-    0x0F, 0x00, 0x00, 0xFC, 0x0F, 0x00, 0x00, 0xFC, 0x0F, 0x00, 0x00, 0xFC, 0x0F,
-    0x00, 0x00, 0xFC, 0x0F, 0x00, 0x00, 0xFC, 0x0F, 0x00, 0x00, 0xFC, 0x0F, 0x00,
-    0x00, 0xFC, 0x0F, 0x00, 0x00, 0xFC, 0x0F, 0x00, 0x00, 0xFC, 0x0F, 0x00,
-};
-/* end st20_rfc4175_422be10_to_v210_avx512_vbmi */
-
-MT_TARGET_CODE_START_AVX512_VBMI2
 int st20_rfc4175_422be10_to_yuv422p10le_avx512_vbmi(struct st20_rfc4175_422_10_pg2_be* pg,
                                                     uint16_t* y, uint16_t* b, uint16_t* r,
                                                     uint32_t w, uint32_t h) {
-  __m512i permute_le_mask = _mm512_loadu_si512(b2l_permute_mask_table_512);
-  __m512i srlv_le_mask = _mm512_loadu_si512(b2l_srlv_mask_table_512);
-  __m512i srlv_and_mask = _mm512_loadu_si512(b2l_and_mask_table_512);
+  __m512i permute_le_mask = _mm512_loadu_si512(be10_to_ple_permute_tbl_512);
+  __m512i srlv_le_mask = _mm512_loadu_si512(be10_to_ple_srlv_tbl_512);
+  __m512i srlv_and_mask = _mm512_loadu_si512(be10_to_ple_and_tbl_512);
   __mmask64 k = 0xFFFFFFFFFF; /* each __m512i with 2*4 pg group, 40 bytes */
 
   int pg_cnt = w * h / 2;
@@ -454,9 +252,9 @@ int st20_rfc4175_422be10_to_yuv422p10le_avx512_vbmi_dma(
     struct mtl_dma_lender_dev* dma, struct st20_rfc4175_422_10_pg2_be* pg_be,
     mtl_iova_t pg_be_iova, uint16_t* y, uint16_t* b, uint16_t* r, uint32_t w,
     uint32_t h) {
-  __m512i permute_le_mask = _mm512_loadu_si512(b2l_permute_mask_table_512);
-  __m512i srlv_le_mask = _mm512_loadu_si512(b2l_srlv_mask_table_512);
-  __m512i srlv_and_mask = _mm512_loadu_si512(b2l_and_mask_table_512);
+  __m512i permute_le_mask = _mm512_loadu_si512(be10_to_ple_permute_tbl_512);
+  __m512i srlv_le_mask = _mm512_loadu_si512(be10_to_ple_srlv_tbl_512);
+  __m512i srlv_and_mask = _mm512_loadu_si512(be10_to_ple_and_tbl_512);
   __mmask64 k = 0xFFFFFFFFFF; /* each __m512i with 2*4 pg group, 40 bytes */
   int pg_cnt = w * h / 2;
 
@@ -578,16 +376,104 @@ int st20_rfc4175_422be10_to_yuv422p10le_avx512_vbmi_dma(
 
   return 0;
 }
+/* end st20_rfc4175_422be10_to_yuv422p10le_avx512_vbmi */
+
+/* begin st20_rfc4175_422be10_to_422le10_avx512_vbmi */
+static uint8_t be10_to_le_permute_l0_tbl_512[64] = {
+    1,       0,       3,       2,       /* 4 bytes from pg0 */
+    6,       5,       8,       7,       /* 4 bytes from pg1 */
+    11,      10,      13,      12,      /* 4 bytes from pg2 */
+    0,       5,       10,      63,      /* 5th bytes from pg0,pg1,pg2, and a padding */
+    1 + 15,  0 + 15,  3 + 15,  2 + 15,  /* 4 bytes from pg3 */
+    6 + 15,  5 + 15,  8 + 15,  7 + 15,  /* 4 bytes from pg4 */
+    11 + 15, 10 + 15, 13 + 15, 12 + 15, /* 4 bytes from pg5 */
+    0 + 15,  5 + 15,  10 + 15, 63,      /* 5th bytes from pg3,pg4,pg5, and a padding */
+    1 + 30,  0 + 30,  3 + 30,  2 + 30,  /* 4 bytes from pg6 */
+    6 + 30,  5 + 30,  8 + 30,  7 + 30,  /* 4 bytes from pg7 */
+    11 + 30, 10 + 30, 13 + 30, 12 + 30, /* 4 bytes from pg8 */
+    0 + 30,  5 + 30,  10 + 30, 63,      /* 5th bytes from pg6,pg7,pg8, and a padding */
+    1 + 45,  0 + 45,  3 + 45,  2 + 45,  /* 4 bytes from pg9 */
+    6 + 45,  5 + 45,  8 + 45,  7 + 45,  /* 4 bytes from pg10 */
+    11 + 45, 10 + 45, 13 + 45, 12 + 45, /* 4 bytes from pg11 */
+    0 + 45,  5 + 45,  10 + 45, 63,      /* 5th bytes from pg9,pg10,pg11, and a padding */
+};
+
+static uint8_t be10_to_le_and_l0_tbl_512[64] = {
+    0x00, 0xFF, 0xF0, 0x3F, 0x00, 0xFF, 0xF0, 0x3F, 0x00, 0xFF, 0xF0, 0x3F, 0x00,
+    0x03, 0x03, 0x03, 0x00, 0xFF, 0xF0, 0x3F, 0x00, 0xFF, 0xF0, 0x3F, 0x00, 0xFF,
+    0xF0, 0x3F, 0x00, 0x03, 0x03, 0x03, 0x00, 0xFF, 0xF0, 0x3F, 0x00, 0xFF, 0xF0,
+    0x3F, 0x00, 0xFF, 0xF0, 0x3F, 0x00, 0x03, 0x03, 0x03, 0x00, 0xFF, 0xF0, 0x3F,
+    0x00, 0xFF, 0xF0, 0x3F, 0x00, 0xFF, 0xF0, 0x3F, 0x00, 0x03, 0x03, 0x03,
+};
+
+static uint8_t be10_to_le_permute_r0_tbl_512[64] = {
+    2,       1,       4,       3,       /* 4 bytes from pg0 */
+    7,       6,       9,       8,       /* 4 bytes from pg1 */
+    12,      11,      14,      13,      /* 4 bytes from pg2 */
+    63,      4,       9,       14,      /* 1st bytes from pg0,pg1,pg2, and a padding */
+    2 + 15,  1 + 15,  4 + 15,  3 + 15,  /* 4 bytes from pg3 */
+    7 + 15,  6 + 15,  9 + 15,  8 + 15,  /* 4 bytes from pg4 */
+    12 + 15, 11 + 15, 14 + 15, 13 + 15, /* 4 bytes from pg5 */
+    63,      4 + 15,  9 + 15,  14 + 15, /* 1st bytes from pg3,pg4,pg5, and a padding */
+    2 + 30,  1 + 30,  4 + 30,  3 + 30,  /* 4 bytes from pg6 */
+    7 + 30,  6 + 30,  9 + 30,  8 + 30,  /* 4 bytes from pg7 */
+    12 + 30, 11 + 30, 14 + 30, 13 + 30, /* 4 bytes from pg8 */
+    63,      4 + 30,  9 + 30,  14 + 30, /* 1st bytes from pg6,pg7,pg8, and a padding */
+    2 + 45,  1 + 45,  4 + 45,  3 + 45,  /* 4 bytes from pg6 */
+    7 + 45,  6 + 45,  9 + 45,  8 + 45,  /* 4 bytes from pg7 */
+    12 + 45, 11 + 45, 14 + 45, 13 + 45, /* 4 bytes from pg8 */
+    63,      4 + 45,  9 + 45,  14 + 45, /* 1st bytes from pg9,pg10,pg11, and a padding */
+};
+
+static uint8_t be10_to_le_and_r0_tbl_512[64] = {
+    0xFC, 0x0F, 0xFF, 0x00, 0xFC, 0x0F, 0xFF, 0x00, 0xFC, 0x0F, 0xFF, 0x00, 0xC0,
+    0xC0, 0xC0, 0x00, 0xFC, 0x0F, 0xFF, 0x00, 0xFC, 0x0F, 0xFF, 0x00, 0xFC, 0x0F,
+    0xFF, 0x00, 0xC0, 0xC0, 0xC0, 0x00, 0xFC, 0x0F, 0xFF, 0x00, 0xFC, 0x0F, 0xFF,
+    0x00, 0xFC, 0x0F, 0xFF, 0x00, 0xC0, 0xC0, 0xC0, 0x00, 0xFC, 0x0F, 0xFF, 0x00,
+    0xFC, 0x0F, 0xFF, 0x00, 0xFC, 0x0F, 0xFF, 0x00, 0xC0, 0xC0, 0xC0, 0x00,
+};
+
+static uint8_t be10_to_le_permute_l1_tbl_512[64] = {
+    1,      13,      2,       3,       0,      /* pg0 */
+    5,      14,      6,       7,       4,      /* pg1 */
+    9,      15,      10,      11,      8,      /* pg2 */
+    1 + 16, 13 + 16, 2 + 16,  3 + 16,  0 + 16, /* pg3 */
+    5 + 16, 14 + 16, 6 + 16,  7 + 16,  4 + 16, /* pg4 */
+    9 + 16, 15 + 16, 10 + 16, 11 + 16, 8 + 16, /* pg5 */
+    1 + 32, 13 + 32, 2 + 32,  3 + 32,  0 + 32, /* pg6 */
+    5 + 32, 14 + 32, 6 + 32,  7 + 32,  4 + 32, /* pg7 */
+    9 + 32, 15 + 32, 10 + 32, 11 + 32, 8 + 32, /* pg8 */
+    1 + 48, 13 + 48, 2 + 48,  3 + 48,  0 + 48, /* pg9 */
+    5 + 48, 14 + 48, 6 + 48,  7 + 48,  4 + 48, /* pg10 */
+    9 + 48, 15 + 48, 10 + 48, 11 + 48, 8 + 48, /* pg11 */
+    60,     60,      60,      60,              /* zeros */
+};
+
+static uint8_t be10_to_le_permute_r1_tbl_512[64] = {
+    3,       0,      1,      12,      2,       /* pg0 */
+    7,       4,      5,      13,      6,       /* pg1 */
+    11,      8,      9,      14,      10,      /* pg2 */
+    3 + 16,  0 + 16, 1 + 16, 12 + 16, 2 + 16,  /* pg3 */
+    7 + 16,  4 + 16, 5 + 16, 13 + 16, 6 + 16,  /* pg4 */
+    11 + 16, 8 + 16, 9 + 16, 14 + 16, 10 + 16, /* pg5 */
+    3 + 32,  0 + 32, 1 + 32, 12 + 32, 2 + 32,  /* pg6 */
+    7 + 32,  4 + 32, 5 + 32, 13 + 32, 6 + 32,  /* pg7 */
+    11 + 32, 8 + 32, 9 + 32, 14 + 32, 10 + 32, /* pg8 */
+    3 + 48,  0 + 48, 1 + 48, 12 + 48, 2 + 48,  /* pg9 */
+    7 + 48,  4 + 48, 5 + 48, 13 + 48, 6 + 48,  /* pg10 */
+    11 + 48, 8 + 48, 9 + 48, 14 + 48, 10 + 48, /* pg11 */
+    63,      63,     63,     63,               /* zeros */
+};
 
 int st20_rfc4175_422be10_to_422le10_avx512_vbmi(struct st20_rfc4175_422_10_pg2_be* pg_be,
                                                 struct st20_rfc4175_422_10_pg2_le* pg_le,
                                                 uint32_t w, uint32_t h) {
-  __m512i permute_l0 = _mm512_loadu_si512((__m512i*)permute_l0_mask_table);
-  __m512i permute_r0 = _mm512_loadu_si512((__m512i*)permute_r0_mask_table);
-  __m512i and_l0 = _mm512_loadu_si512((__m512i*)and_l0_mask_table);
-  __m512i and_r0 = _mm512_loadu_si512((__m512i*)and_r0_mask_table);
-  __m512i permute_l1 = _mm512_loadu_si512((__m512i*)permute_l1_mask_table);
-  __m512i permute_r1 = _mm512_loadu_si512((__m512i*)permute_r1_mask_table);
+  __m512i permute_l0 = _mm512_loadu_si512((__m512i*)be10_to_le_permute_l0_tbl_512);
+  __m512i permute_r0 = _mm512_loadu_si512((__m512i*)be10_to_le_permute_r0_tbl_512);
+  __m512i and_l0 = _mm512_loadu_si512((__m512i*)be10_to_le_and_l0_tbl_512);
+  __m512i and_r0 = _mm512_loadu_si512((__m512i*)be10_to_le_and_r0_tbl_512);
+  __m512i permute_l1 = _mm512_loadu_si512((__m512i*)be10_to_le_permute_l1_tbl_512);
+  __m512i permute_r1 = _mm512_loadu_si512((__m512i*)be10_to_le_permute_r1_tbl_512);
   __mmask16 k = 0x7FFF; /* each __m512i with 12 pg group, 60 bytes */
 
   int pg_cnt = w * h / 2;
@@ -639,12 +525,12 @@ int st20_rfc4175_422be10_to_422le10_avx512_vbmi_dma(
     struct mtl_dma_lender_dev* dma, struct st20_rfc4175_422_10_pg2_be* pg_be,
     mtl_iova_t pg_be_iova, struct st20_rfc4175_422_10_pg2_le* pg_le, uint32_t w,
     uint32_t h) {
-  __m512i permute_l0 = _mm512_loadu_si512((__m512i*)permute_l0_mask_table);
-  __m512i permute_r0 = _mm512_loadu_si512((__m512i*)permute_r0_mask_table);
-  __m512i and_l0 = _mm512_loadu_si512((__m512i*)and_l0_mask_table);
-  __m512i and_r0 = _mm512_loadu_si512((__m512i*)and_r0_mask_table);
-  __m512i permute_l1 = _mm512_loadu_si512((__m512i*)permute_l1_mask_table);
-  __m512i permute_r1 = _mm512_loadu_si512((__m512i*)permute_r1_mask_table);
+  __m512i permute_l0 = _mm512_loadu_si512((__m512i*)be10_to_le_permute_l0_tbl_512);
+  __m512i permute_r0 = _mm512_loadu_si512((__m512i*)be10_to_le_permute_r0_tbl_512);
+  __m512i and_l0 = _mm512_loadu_si512((__m512i*)be10_to_le_and_l0_tbl_512);
+  __m512i and_r0 = _mm512_loadu_si512((__m512i*)be10_to_le_and_r0_tbl_512);
+  __m512i permute_l1 = _mm512_loadu_si512((__m512i*)be10_to_le_permute_l1_tbl_512);
+  __m512i permute_r1 = _mm512_loadu_si512((__m512i*)be10_to_le_permute_r1_tbl_512);
   __mmask16 k = 0x7FFF; /* each __m512i with 12 pg group, 60 bytes */
   int pg_cnt = w * h / 2;
 
@@ -767,13 +653,51 @@ int st20_rfc4175_422be10_to_422le10_avx512_vbmi_dma(
 
   return 0;
 }
+/* end st20_rfc4175_422be10_to_422le10_avx512_vbmi */
+
+/* begin st20_rfc4175_422be10_to_422le8_avx512_vbmi */
+static uint8_t be10_to_le8_permute_tbl_512[16 * 4] = {
+    0,      4,      3,      2,      1,      /* pg0 - xmm0 */
+    0 + 5,  2 + 5,  1 + 5,                  /* pg1 */
+    4 + 5,  3 + 5,  2 + 5,                  /* pg1 across 64 bit lane */
+    0 + 10, 4 + 10, 3 + 10, 2 + 10, 1 + 10, /* pg2 */
+    0 + 15, 4 + 15, 3 + 15, 2 + 15, 1 + 15, /* pg3 - xmm1 */
+    0 + 20, 2 + 20, 1 + 20,                 /* pg4 */
+    4 + 20, 3 + 20, 2 + 20,                 /* pg4 across 64 bit lane */
+    0 + 25, 4 + 25, 3 + 25, 2 + 25, 1 + 25, /* pg5 */
+    0 + 30, 4 + 30, 3 + 30, 2 + 30, 1 + 30, /* pg6 - xmm2 */
+    0 + 35, 2 + 35, 1 + 35,                 /* pg7 */
+    4 + 35, 3 + 35, 2 + 35,                 /* pg7 across 64 bit lane */
+    0 + 40, 4 + 40, 3 + 40, 2 + 40, 1 + 40, /* pg8 */
+    0 + 45, 4 + 45, 3 + 45, 2 + 45, 1 + 45, /* pg9 - xmm3 */
+    0 + 50, 2 + 50, 1 + 50,                 /* pg10 */
+    4 + 50, 3 + 50, 2 + 50,                 /* pg10 across 64 bit lane */
+    0 + 55, 4 + 55, 3 + 55, 2 + 55, 1 + 55, /* pg11 */
+};
+static uint8_t be10_to_le8_multishift_tbl_512[16 * 4] = {
+    0,  30, 20, 10, /* pg0 */
+    0,  0,  40, 54, /* pg1, first half */
+    12, 2,  0,  0,  /* pg1, second half */
+    24, 54, 44, 34, /* pg2 */
+    0,  30, 20, 10, /* pg3 */
+    0,  0,  40, 54, /* pg4, first half */
+    12, 2,  0,  0,  /* pg4, second half */
+    24, 54, 44, 34, /* pg5 */
+    0,  30, 20, 10, /* pg6 */
+    0,  0,  40, 54, /* pg7, first half */
+    12, 2,  0,  0,  /* pg7, second half */
+    24, 54, 44, 34, /* pg8 */
+    0,  30, 20, 10, /* pg9 */
+    0,  0,  40, 54, /* pg10, first half */
+    12, 2,  0,  0,  /* pg10, second half */
+    24, 54, 44, 34, /* pg11 */
+};
 
 int st20_rfc4175_422be10_to_422le8_avx512_vbmi(struct st20_rfc4175_422_10_pg2_be* pg_10,
                                                struct st20_rfc4175_422_8_pg2_le* pg_8,
                                                uint32_t w, uint32_t h) {
-  __m512i permute_mask = _mm512_loadu_si512((__m512i*)rfc4175be10_to_8_permute_tbl_512);
-  __m512i multishift_mask =
-      _mm512_loadu_si512((__m512i*)rfc4175be10_to_8_multishift_tbl_512);
+  __m512i permute_mask = _mm512_loadu_si512((__m512i*)be10_to_le8_permute_tbl_512);
+  __m512i multishift_mask = _mm512_loadu_si512((__m512i*)be10_to_le8_multishift_tbl_512);
   __mmask16 k_load = 0x7FFF; /* each __m512i with 12 pg group, 60 bytes */
   __mmask32 k_compress = 0xDBDBDBDB;
   int pg_cnt = w * h / 2;
@@ -813,9 +737,8 @@ int st20_rfc4175_422be10_to_422le8_avx512_vbmi_dma(
     struct mtl_dma_lender_dev* dma, struct st20_rfc4175_422_10_pg2_be* pg_10,
     mtl_iova_t pg_10_iova, struct st20_rfc4175_422_8_pg2_le* pg_8, uint32_t w,
     uint32_t h) {
-  __m512i permute_mask = _mm512_loadu_si512((__m512i*)rfc4175be10_to_8_permute_tbl_512);
-  __m512i multishift_mask =
-      _mm512_loadu_si512((__m512i*)rfc4175be10_to_8_multishift_tbl_512);
+  __m512i permute_mask = _mm512_loadu_si512((__m512i*)be10_to_le8_permute_tbl_512);
+  __m512i multishift_mask = _mm512_loadu_si512((__m512i*)be10_to_le8_multishift_tbl_512);
   __mmask16 k_load = 0x7FFF; /* each __m512i with 12 pg group, 60 bytes */
   __mmask32 k_compress = 0xDBDBDBDB;
   int pg_cnt = w * h / 2;
@@ -919,12 +842,39 @@ int st20_rfc4175_422be10_to_422le8_avx512_vbmi_dma(
 
   return 0;
 }
+/* end st20_rfc4175_422be10_to_422le8_avx512_vbmi */
+
+/* begin st20_rfc4175_422le10_to_v210_avx512_vbmi */
+static uint8_t le10_to_v210_permute_tbl_512[16 * 4] = {
+    0,      1,      2,      3,       4,       5,       6,       7,
+    7,      8,      9,      10,      11,      12,      13,      14, /* pg0-2 */
+    0 + 15, 1 + 15, 2 + 15, 3 + 15,  4 + 15,  5 + 15,  6 + 15,  7 + 15,
+    7 + 15, 8 + 15, 9 + 15, 10 + 15, 11 + 15, 12 + 15, 13 + 15, 14 + 15, /* pg3-5 */
+    0 + 30, 1 + 30, 2 + 30, 3 + 30,  4 + 30,  5 + 30,  6 + 30,  7 + 30,
+    7 + 30, 8 + 30, 9 + 30, 10 + 30, 11 + 30, 12 + 30, 13 + 30, 14 + 30, /* pg6-8 */
+    0 + 45, 1 + 45, 2 + 45, 3 + 45,  4 + 45,  5 + 45,  6 + 45,  7 + 45,
+    7 + 45, 8 + 45, 9 + 45, 10 + 45, 11 + 45, 12 + 45, 13 + 45, 14 + 45, /* pg9-11 */
+};
+
+static uint8_t le10_to_v210_multishift_tbl_512[16 * 4] = {
+    0, 8, 16, 24, 30, 38, 46, 54, 4, 12, 20, 28, 34, 42, 50, 58,
+    0, 8, 16, 24, 30, 38, 46, 54, 4, 12, 20, 28, 34, 42, 50, 58,
+    0, 8, 16, 24, 30, 38, 46, 54, 4, 12, 20, 28, 34, 42, 50, 58,
+    0, 8, 16, 24, 30, 38, 46, 54, 4, 12, 20, 28, 34, 42, 50, 58,
+};
+static uint8_t le10_to_v210_and_tbl_512[16 * 4] = {
+    0xFF, 0xFF, 0xFF, 0x3F, 0xFF, 0xFF, 0xFF, 0x3F, 0xFF, 0xFF, 0xFF, 0x3F, 0xFF,
+    0xFF, 0xFF, 0x3F, 0xFF, 0xFF, 0xFF, 0x3F, 0xFF, 0xFF, 0xFF, 0x3F, 0xFF, 0xFF,
+    0xFF, 0x3F, 0xFF, 0xFF, 0xFF, 0x3F, 0xFF, 0xFF, 0xFF, 0x3F, 0xFF, 0xFF, 0xFF,
+    0x3F, 0xFF, 0xFF, 0xFF, 0x3F, 0xFF, 0xFF, 0xFF, 0x3F, 0xFF, 0xFF, 0xFF, 0x3F,
+    0xFF, 0xFF, 0xFF, 0x3F, 0xFF, 0xFF, 0xFF, 0x3F, 0xFF, 0xFF, 0xFF, 0x3F,
+};
 
 int st20_rfc4175_422le10_to_v210_avx512_vbmi(uint8_t* pg_le, uint8_t* pg_v210, uint32_t w,
                                              uint32_t h) {
-  __m512i permute_mask = _mm512_loadu_si512((__m512i*)permute_mask_table_512);
-  __m512i multishift_mask = _mm512_loadu_si512((__m512i*)multishift_mask_table_512);
-  __m512i padding_mask = _mm512_loadu_si512((__m512i*)padding_mask_table_512);
+  __m512i permute_mask = _mm512_loadu_si512((__m512i*)le10_to_v210_permute_tbl_512);
+  __m512i multishift_mask = _mm512_loadu_si512((__m512i*)le10_to_v210_multishift_tbl_512);
+  __m512i padding_mask = _mm512_loadu_si512((__m512i*)le10_to_v210_and_tbl_512);
   __mmask16 k = 0x7FFF; /* each __m512i with 12 pg group, 60 bytes */
 
   int pg_cnt = w * h / 2;
@@ -950,15 +900,66 @@ int st20_rfc4175_422le10_to_v210_avx512_vbmi(uint8_t* pg_le, uint8_t* pg_v210, u
 
   return 0;
 }
+/* end st20_rfc4175_422le10_to_v210_avx512_vbmi */
+
+/* begin st20_rfc4175_422be10_to_v210_avx512_vbmi */
+static uint8_t be10_to_v210_permute0_tbl_512[16 * 4] = {
+    1,      0,      3,       2,       4,       3,       7,       6,
+    8,      7,      11,      10,      12,      11,      14,      13, /* pg 0-2 */
+    1 + 15, 0 + 15, 3 + 15,  2 + 15,  4 + 15,  3 + 15,  7 + 15,  6 + 15,
+    8 + 15, 7 + 15, 11 + 15, 10 + 15, 12 + 15, 11 + 15, 14 + 15, 13 + 15, /* pg 3-5 */
+    1 + 30, 0 + 30, 3 + 30,  2 + 30,  4 + 30,  3 + 30,  7 + 30,  6 + 30,
+    8 + 30, 7 + 30, 11 + 30, 10 + 30, 12 + 30, 11 + 30, 14 + 30, 13 + 30, /* pg 6-8 */
+    1 + 45, 0 + 45, 3 + 45,  2 + 45,  4 + 45,  3 + 45,  7 + 45,  6 + 45,
+    8 + 45, 7 + 45, 11 + 45, 10 + 45, 12 + 45, 11 + 45, 14 + 45, 13 + 45, /* pg 9-11 */
+};
+static uint8_t be10_to_v210_multishift0_tbl_512[16 * 4] = {
+    6, 14, 14, 22, 32, 40, 48, 56, 2, 10, 18, 26, 36, 44, 44, 52, /* pg 0-2 */
+    6, 14, 14, 22, 32, 40, 48, 56, 2, 10, 18, 26, 36, 44, 44, 52, /* pg 3-5 */
+    6, 14, 14, 22, 32, 40, 48, 56, 2, 10, 18, 26, 36, 44, 44, 52, /* pg 6-8 */
+    6, 14, 14, 22, 32, 40, 48, 56, 2, 10, 18, 26, 36, 44, 44, 52, /* pg 9-11 */
+};
+static uint8_t be10_to_v210_and0_tbl_512[16 * 4] = {
+    0xFF, 0x03, 0xF0, 0x3F, 0xFF, 0x03, 0xF0, 0x3F, 0xFF, 0x03, 0xF0, 0x3F, 0xFF,
+    0x03, 0xF0, 0x3F, 0xFF, 0x03, 0xF0, 0x3F, 0xFF, 0x03, 0xF0, 0x3F, 0xFF, 0x03,
+    0xF0, 0x3F, 0xFF, 0x03, 0xF0, 0x3F, 0xFF, 0x03, 0xF0, 0x3F, 0xFF, 0x03, 0xF0,
+    0x3F, 0xFF, 0x03, 0xF0, 0x3F, 0xFF, 0x03, 0xF0, 0x3F, 0xFF, 0x03, 0xF0, 0x3F,
+    0xFF, 0x03, 0xF0, 0x3F, 0xFF, 0x03, 0xF0, 0x3F, 0xFF, 0x03, 0xF0, 0x3F,
+};
+static uint8_t be10_to_v210_permute1_tbl_512[16 * 4] = {
+    63, 2,      1,      63, 63, 6,       5,       63,
+    63, 9,      8,      63, 63, 13,      12,      63, /* pg 0-2 */
+    63, 2 + 15, 1 + 15, 63, 63, 6 + 15,  5 + 15,  63,
+    63, 9 + 15, 8 + 15, 63, 63, 13 + 15, 12 + 15, 63, /* pg 3-5 */
+    63, 2 + 30, 1 + 30, 63, 63, 6 + 30,  5 + 30,  63,
+    63, 9 + 30, 8 + 30, 63, 63, 13 + 30, 12 + 30, 63, /* pg 6-8 */
+    63, 2 + 45, 1 + 45, 63, 63, 6 + 45,  5 + 45,  63,
+    63, 9 + 45, 8 + 45, 63, 63, 13 + 45, 12 + 45, 63, /* pg 9-11 */
+};
+static uint8_t be10_to_v210_multishift1_tbl_512[16 * 4] = {
+    0, 10, 18, 0, 0, 44, 52, 0, 0, 6, 14, 0, 0, 40, 48, 0, /* pg 0-2 */
+    0, 10, 18, 0, 0, 44, 52, 0, 0, 6, 14, 0, 0, 40, 48, 0, /* pg 3-5 */
+    0, 10, 18, 0, 0, 44, 52, 0, 0, 6, 14, 0, 0, 40, 48, 0, /* pg 6-8 */
+    0, 10, 18, 0, 0, 44, 52, 0, 0, 6, 14, 0, 0, 40, 48, 0, /* pg 9-11 */
+};
+static uint8_t be10_to_v210_and1_tbl_512[16 * 4] = {
+    0x00, 0xFC, 0x0F, 0x00, 0x00, 0xFC, 0x0F, 0x00, 0x00, 0xFC, 0x0F, 0x00, 0x00,
+    0xFC, 0x0F, 0x00, 0x00, 0xFC, 0x0F, 0x00, 0x00, 0xFC, 0x0F, 0x00, 0x00, 0xFC,
+    0x0F, 0x00, 0x00, 0xFC, 0x0F, 0x00, 0x00, 0xFC, 0x0F, 0x00, 0x00, 0xFC, 0x0F,
+    0x00, 0x00, 0xFC, 0x0F, 0x00, 0x00, 0xFC, 0x0F, 0x00, 0x00, 0xFC, 0x0F, 0x00,
+    0x00, 0xFC, 0x0F, 0x00, 0x00, 0xFC, 0x0F, 0x00, 0x00, 0xFC, 0x0F, 0x00,
+};
 
 int st20_rfc4175_422be10_to_v210_avx512_vbmi(struct st20_rfc4175_422_10_pg2_be* pg_be,
                                              uint8_t* pg_v210, uint32_t w, uint32_t h) {
-  __m512i permute0_mask = _mm512_loadu_si512((__m512i*)permute0_mask_table_512);
-  __m512i multishift0_mask = _mm512_loadu_si512((__m512i*)multishift0_mask_table_512);
-  __m512i and0_mask = _mm512_loadu_si512((__m512i*)and0_mask_table_512);
-  __m512i permute1_mask = _mm512_loadu_si512((__m512i*)permute1_mask_table_512);
-  __m512i multishift1_mask = _mm512_loadu_si512((__m512i*)multishift1_mask_table_512);
-  __m512i and1_mask = _mm512_loadu_si512((__m512i*)and1_mask_table_512);
+  __m512i permute0_mask = _mm512_loadu_si512((__m512i*)be10_to_v210_permute0_tbl_512);
+  __m512i multishift0_mask =
+      _mm512_loadu_si512((__m512i*)be10_to_v210_multishift0_tbl_512);
+  __m512i and0_mask = _mm512_loadu_si512((__m512i*)be10_to_v210_and0_tbl_512);
+  __m512i permute1_mask = _mm512_loadu_si512((__m512i*)be10_to_v210_permute1_tbl_512);
+  __m512i multishift1_mask =
+      _mm512_loadu_si512((__m512i*)be10_to_v210_multishift1_tbl_512);
+  __m512i and1_mask = _mm512_loadu_si512((__m512i*)be10_to_v210_and1_tbl_512);
   __mmask16 k = 0x7FFF; /* each __m512i with 12 pg group, 60 bytes */
 
   int pg_cnt = w * h / 2;
@@ -994,12 +995,14 @@ int st20_rfc4175_422be10_to_v210_avx512_vbmi_dma(struct mtl_dma_lender_dev* dma,
                                                  struct st20_rfc4175_422_10_pg2_be* pg_be,
                                                  mtl_iova_t pg_be_iova, uint8_t* pg_v210,
                                                  uint32_t w, uint32_t h) {
-  __m512i permute0_mask = _mm512_loadu_si512((__m512i*)permute0_mask_table_512);
-  __m512i multishift0_mask = _mm512_loadu_si512((__m512i*)multishift0_mask_table_512);
-  __m512i and0_mask = _mm512_loadu_si512((__m512i*)and0_mask_table_512);
-  __m512i permute1_mask = _mm512_loadu_si512((__m512i*)permute1_mask_table_512);
-  __m512i multishift1_mask = _mm512_loadu_si512((__m512i*)multishift1_mask_table_512);
-  __m512i and1_mask = _mm512_loadu_si512((__m512i*)and1_mask_table_512);
+  __m512i permute0_mask = _mm512_loadu_si512((__m512i*)be10_to_v210_permute0_tbl_512);
+  __m512i multishift0_mask =
+      _mm512_loadu_si512((__m512i*)be10_to_v210_multishift0_tbl_512);
+  __m512i and0_mask = _mm512_loadu_si512((__m512i*)be10_to_v210_and0_tbl_512);
+  __m512i permute1_mask = _mm512_loadu_si512((__m512i*)be10_to_v210_permute1_tbl_512);
+  __m512i multishift1_mask =
+      _mm512_loadu_si512((__m512i*)be10_to_v210_multishift1_tbl_512);
+  __m512i and1_mask = _mm512_loadu_si512((__m512i*)be10_to_v210_and1_tbl_512);
   __mmask16 k = 0x7FFF; /* each __m512i with 12 pg group, 60 bytes */
 
   int pg_cnt = w * h / 2;
@@ -1105,8 +1108,10 @@ int st20_rfc4175_422be10_to_v210_avx512_vbmi_dma(struct mtl_dma_lender_dev* dma,
 
   return 0;
 }
+/* end st20_rfc4175_422be10_to_v210_avx512_vbmi */
 
-static uint16_t vbmi_l2b_sllv_mask_table[8 * 4] = {
+/* begin st20_yuv422p10le_to_rfc4175_422be10_vbmi */
+static uint16_t ple_to_be10_sllv_tbl_512[8 * 4] = {
     /* 0-15, b0 - b7 */
     0x0006,
     0x0006,
@@ -1145,7 +1150,7 @@ static uint16_t vbmi_l2b_sllv_mask_table[8 * 4] = {
     0x0000,
 };
 
-static uint8_t vbmi_l2b_permute_hi_mask_table[16 * 4] = {
+static uint8_t ple_to_be10_permute_hi_tbl_512[16 * 4] = {
     1 + (2 * 0), 0 + (2 * 0), 16 + (4 * 0), 32 + (2 * 0), 18 + (4 * 0), /* pg0 */
     1 + (2 * 1), 0 + (2 * 1), 16 + (4 * 1), 32 + (2 * 1), 18 + (4 * 1), /* pg1 */
     1 + (2 * 2), 0 + (2 * 2), 16 + (4 * 2), 32 + (2 * 2), 18 + (4 * 2), /* pg2 */
@@ -1162,7 +1167,7 @@ static uint8_t vbmi_l2b_permute_hi_mask_table[16 * 4] = {
     0x00,        0x00,        0x00, /* 54-63 */
 };
 
-static uint8_t vbmi_l2b_permute_lo_mask_table[16 * 4] = {
+static uint8_t ple_to_be10_permute_lo_tbl_512[16 * 4] = {
     0,    17 + (4 * 0), 33 + (2 * 0), 19 + (4 * 0), 0,                      /* pg0 */
     0,    17 + (4 * 1), 33 + (2 * 1), 19 + (4 * 1), 0,                      /* pg1 */
     0,    17 + (4 * 2), 33 + (2 * 2), 19 + (4 * 2), 0,                      /* pg2 */
@@ -1176,7 +1181,7 @@ static uint8_t vbmi_l2b_permute_lo_mask_table[16 * 4] = {
     0x00, 0x00,         0x00,         0x00,         0x00, 0x00, 0x00, 0x00, /* 54-63 */
 };
 
-static uint8_t vbmi_l2b_and_lo_mask_table[16 * 4] = {
+static uint8_t ple_to_be10_and_lo_tbl_512[16 * 4] = {
     0x00, 0xFF, 0xFF, 0xFF, 0x00,                   /* pg0 */
     0x00, 0xFF, 0xFF, 0xFF, 0x00,                   /* pg1 */
     0x00, 0xFF, 0xFF, 0xFF, 0x00,                   /* pg2 */
@@ -1195,10 +1200,10 @@ int st20_yuv422p10le_to_rfc4175_422be10_vbmi(uint16_t* y, uint16_t* b, uint16_t*
                                              uint32_t w, uint32_t h) {
   uint32_t pg_cnt = w * h / 2; /* two pgs in one convert */
   uint16_t cb, y0, cr, y1;
-  __m512i sllv_le_mask = _mm512_loadu_si512(vbmi_l2b_sllv_mask_table);
-  __m512i permute_hi_mask = _mm512_loadu_si512(vbmi_l2b_permute_hi_mask_table);
-  __m512i permute_lo_mask = _mm512_loadu_si512(vbmi_l2b_permute_lo_mask_table);
-  __m512i and_lo_mask = _mm512_loadu_si512(vbmi_l2b_and_lo_mask_table);
+  __m512i sllv_le_mask = _mm512_loadu_si512(ple_to_be10_sllv_tbl_512);
+  __m512i permute_hi_mask = _mm512_loadu_si512(ple_to_be10_permute_hi_tbl_512);
+  __m512i permute_lo_mask = _mm512_loadu_si512(ple_to_be10_permute_lo_tbl_512);
+  __m512i and_lo_mask = _mm512_loadu_si512(ple_to_be10_and_lo_tbl_512);
   __mmask64 k = 0xFFFFFFFFFF; /* each __m512i with 2*4 pg group, 40 bytes */
   __m512i zero = _mm512_setzero_si512();
 
@@ -1254,8 +1259,10 @@ int st20_yuv422p10le_to_rfc4175_422be10_vbmi(uint16_t* y, uint16_t* b, uint16_t*
 
   return 0;
 }
+/* end st20_yuv422p10le_to_rfc4175_422be10_vbmi */
 
-static uint8_t rfc4175l2b_permute_l0_tbl[64] = {
+/* begin st20_rfc4175_422le10_to_422be10_vbmi */
+static uint8_t le10_to_be_permute_l0_tbl_512[64] = {
     /* simd 0 */
     0x01, 0x02, 0x03, 0x04, /* 4 bytes from pg0 */
     0x06, 0x07, 0x08, 0x09, /* 4 bytes from pg1 */
@@ -1278,7 +1285,7 @@ static uint8_t rfc4175l2b_permute_l0_tbl[64] = {
     0x04 + 45, 0x09 + 45, 0x0E + 45, 0x3F,      /* 5th bytes from pg0,pg1,pg2 */
 };
 
-static uint8_t rfc4175l2b_and_l0_tbl[64] = {
+static uint8_t le10_to_be_and_l0_tbl_512[64] = {
     /* simd 0 */
     0xF0, 0x3F, 0x00, 0xFF, /* pg0 */
     0xF0, 0x3F, 0x00, 0xFF, /* pg1 */
@@ -1301,7 +1308,7 @@ static uint8_t rfc4175l2b_and_l0_tbl[64] = {
     0x00, 0x03, 0x03, 0x03, /* 5th bytes from pg0,pg1,pg2 */
 };
 
-static uint8_t rfc4175l2b_permute_l1_tbl[64] = {
+static uint8_t le10_to_be_permute_l1_tbl_512[64] = {
     /* simd 0 */
     0x02, 0x01, 0x00, 0x0D, 0x03, /* pg0 */
     0x02, 0x05, 0x04, 0x0E, 0x07, /* pg1 */
@@ -1322,7 +1329,7 @@ static uint8_t rfc4175l2b_permute_l1_tbl[64] = {
     0x02, 0x02, 0x02, 0x02, /* zeros */
 };
 
-static uint8_t rfc4175l2b_permute_r0_tbl[64] = {
+static uint8_t le10_to_be_permute_r0_tbl_512[64] = {
     /* simd 0 */
     0x00, 0x01, 0x02, 0x03, /* 4 bytes from pg0 */
     0x05, 0x06, 0x07, 0x08, /* 4 bytes from pg1 */
@@ -1345,7 +1352,7 @@ static uint8_t rfc4175l2b_permute_r0_tbl[64] = {
     0x3F, 0x00 + 45, 0x05 + 45, 0x0A + 45,      /* 5th bytes from pg0,pg1,pg2 */
 };
 
-static uint8_t rfc4175l2b_and_r0_tbl[64] = {
+static uint8_t le10_to_be_and_r0_tbl_512[64] = {
     /* simd 0 */
     0xFF, 0x00, 0xFC, 0x0F, /* pg0 */
     0xFF, 0x00, 0xFC, 0x0F, /* pg1 */
@@ -1368,7 +1375,7 @@ static uint8_t rfc4175l2b_and_r0_tbl[64] = {
     0xC0, 0xC0, 0xC0, 0x00, /* 5th bytes from pg0,pg1,pg2 */
 };
 
-static uint8_t rfc4175l2b_permute_r1_tbl[64] = {
+static uint8_t le10_to_be_permute_r1_tbl_512[64] = {
     /* simd 0 */
     0x00, 0x0C, 0x03, 0x02, 0x3F, /* pg0 */
     0x04, 0x0D, 0x07, 0x06, 0x3F, /* pg1 */
@@ -1392,12 +1399,12 @@ static uint8_t rfc4175l2b_permute_r1_tbl[64] = {
 int st20_rfc4175_422le10_to_422be10_vbmi(struct st20_rfc4175_422_10_pg2_le* pg_le,
                                          struct st20_rfc4175_422_10_pg2_be* pg_be,
                                          uint32_t w, uint32_t h) {
-  __m512i permute_l0 = _mm512_loadu_si512((__m512i*)rfc4175l2b_permute_l0_tbl);
-  __m512i permute_r0 = _mm512_loadu_si512((__m512i*)rfc4175l2b_permute_r0_tbl);
-  __m512i and_l0 = _mm512_loadu_si512((__m512i*)rfc4175l2b_and_l0_tbl);
-  __m512i and_r0 = _mm512_loadu_si512((__m512i*)rfc4175l2b_and_r0_tbl);
-  __m512i permute_l1 = _mm512_loadu_si512((__m512i*)rfc4175l2b_permute_l1_tbl);
-  __m512i permute_r1 = _mm512_loadu_si512((__m512i*)rfc4175l2b_permute_r1_tbl);
+  __m512i permute_l0 = _mm512_loadu_si512((__m512i*)le10_to_be_permute_l0_tbl_512);
+  __m512i permute_r0 = _mm512_loadu_si512((__m512i*)le10_to_be_permute_r0_tbl_512);
+  __m512i and_l0 = _mm512_loadu_si512((__m512i*)le10_to_be_and_l0_tbl_512);
+  __m512i and_r0 = _mm512_loadu_si512((__m512i*)le10_to_be_and_r0_tbl_512);
+  __m512i permute_l1 = _mm512_loadu_si512((__m512i*)le10_to_be_permute_l1_tbl_512);
+  __m512i permute_r1 = _mm512_loadu_si512((__m512i*)le10_to_be_permute_r1_tbl_512);
   __mmask16 k = 0x7FFF; /* each __m512i with 12 pg group, 60 bytes */
 
   int pg_cnt = w * h / 2;
@@ -1450,12 +1457,12 @@ int st20_rfc4175_422le10_to_422be10_avx512_vbmi_dma(
     struct mtl_dma_lender_dev* dma, struct st20_rfc4175_422_10_pg2_le* pg_le,
     mtl_iova_t pg_le_iova, struct st20_rfc4175_422_10_pg2_be* pg_be, uint32_t w,
     uint32_t h) {
-  __m512i permute_l0 = _mm512_loadu_si512((__m512i*)rfc4175l2b_permute_l0_tbl);
-  __m512i permute_r0 = _mm512_loadu_si512((__m512i*)rfc4175l2b_permute_r0_tbl);
-  __m512i and_l0 = _mm512_loadu_si512((__m512i*)rfc4175l2b_and_l0_tbl);
-  __m512i and_r0 = _mm512_loadu_si512((__m512i*)rfc4175l2b_and_r0_tbl);
-  __m512i permute_l1 = _mm512_loadu_si512((__m512i*)rfc4175l2b_permute_l1_tbl);
-  __m512i permute_r1 = _mm512_loadu_si512((__m512i*)rfc4175l2b_permute_r1_tbl);
+  __m512i permute_l0 = _mm512_loadu_si512((__m512i*)le10_to_be_permute_l0_tbl_512);
+  __m512i permute_r0 = _mm512_loadu_si512((__m512i*)le10_to_be_permute_r0_tbl_512);
+  __m512i and_l0 = _mm512_loadu_si512((__m512i*)le10_to_be_and_l0_tbl_512);
+  __m512i and_r0 = _mm512_loadu_si512((__m512i*)le10_to_be_and_r0_tbl_512);
+  __m512i permute_l1 = _mm512_loadu_si512((__m512i*)le10_to_be_permute_l1_tbl_512);
+  __m512i permute_r1 = _mm512_loadu_si512((__m512i*)le10_to_be_permute_r1_tbl_512);
   __mmask16 k = 0x7FFF; /* each __m512i with 12 pg group, 60 bytes */
   int pg_cnt = w * h / 2;
 
@@ -1579,9 +1586,10 @@ int st20_rfc4175_422le10_to_422be10_avx512_vbmi_dma(
 
   return 0;
 }
+/* end st20_rfc4175_422le10_to_422be10_vbmi */
 
 /* begin st20_v210_to_rfc4175_422be10_avx512_vbmi */
-static uint8_t v210_to_rfc4175be_multishift_tbl0_512[16 * 4] = {
+static uint8_t v210_to_be10_multishift0_tbl_512[16 * 4] = {
     2,  14, 6,  40, 32, /* pg0 - xmm0 */
     44, 56, 48,         /* pg1 */
     18, 10,             /* pg1 */
@@ -1604,14 +1612,14 @@ static uint8_t v210_to_rfc4175be_multishift_tbl0_512[16 * 4] = {
     0,                  /* not used */
 };
 
-static uint8_t v210_to_rfc4175be_shuffle_tbl_512[16 * 4] = {
+static uint8_t v210_to_be10_shuffle_tbl_512[16 * 4] = {
     1, 2, 3, 0, 4, 5, 8, 9, 9, 10, 11, 8, 12, 13, 14, 15, /* xmm0 */
     1, 2, 3, 0, 4, 5, 8, 9, 9, 10, 11, 8, 12, 13, 14, 15, /* xmm1 */
     1, 2, 3, 0, 4, 5, 8, 9, 9, 10, 11, 8, 12, 13, 14, 15, /* xmm2 */
     1, 2, 3, 0, 4, 5, 8, 9, 9, 10, 11, 8, 12, 13, 14, 15, /* xmm3 */
 };
 
-static uint8_t v210_to_rfc4175be_multishift_tbl1_512[16 * 4] = {
+static uint8_t v210_to_be10_multishift1_tbl_512[16 * 4] = {
     0,  18, 18, 10, 0, /* pg0 - xmm0 */
     0,  36, 54,        /* pg1 */
     22, 0,             /* pg1 */
@@ -1634,7 +1642,7 @@ static uint8_t v210_to_rfc4175be_multishift_tbl1_512[16 * 4] = {
     0,                 /* not used */
 };
 
-static uint8_t v210_to_rfc4175be_multishift_and_tbl0_512[16 * 4] = {
+static uint8_t v210_to_be10_and_tbl_512[16 * 4] = {
     0xFF, 0x3F, 0xF0, 0x03, 0xFF, /* pg0 - xmm0 */
     0xFF, 0x3F, 0xF0,             /* pg1 */
     0x03, 0xFF,                   /* pg1 */
@@ -1660,13 +1668,12 @@ static uint8_t v210_to_rfc4175be_multishift_and_tbl0_512[16 * 4] = {
 int st20_v210_to_rfc4175_422be10_avx512_vbmi(uint8_t* pg_v210,
                                              struct st20_rfc4175_422_10_pg2_be* pg_be,
                                              uint32_t w, uint32_t h) {
-  __m512i multishift_tbl0 =
-      _mm512_loadu_si512((__m512i*)v210_to_rfc4175be_multishift_tbl0_512);
-  __m512i shuffle_tbl = _mm512_loadu_si512((__m512i*)v210_to_rfc4175be_shuffle_tbl_512);
-  __m512i multishift_tbl1 =
-      _mm512_loadu_si512((__m512i*)v210_to_rfc4175be_multishift_tbl1_512);
-  __m512i multishift_and_tbl0 =
-      _mm512_loadu_si512((__m512i*)v210_to_rfc4175be_multishift_and_tbl0_512);
+  __m512i multishift0_mask =
+      _mm512_loadu_si512((__m512i*)v210_to_be10_multishift0_tbl_512);
+  __m512i shuffle_mask = _mm512_loadu_si512((__m512i*)v210_to_be10_shuffle_tbl_512);
+  __m512i multishift1_mask =
+      _mm512_loadu_si512((__m512i*)v210_to_be10_multishift1_tbl_512);
+  __m512i and_mask = _mm512_loadu_si512((__m512i*)v210_to_be10_and_tbl_512);
 
   __mmask64 k_store =
       0x7FFF7FFF7FFF7FFF; /* each __m128i with 3 pg group, 15 bytes, 4*xmms*/
@@ -1681,12 +1688,12 @@ int st20_v210_to_rfc4175_422be10_avx512_vbmi(uint8_t* pg_v210,
   int batch = pg_cnt / 12;
   for (int i = 0; i < batch; i++) {
     __m512i input = _mm512_loadu_si512((__m512i*)pg_v210);
-    __m512i multishift0_result = _mm512_multishift_epi64_epi8(multishift_tbl0, input);
-    __m512i shuffle_result = _mm512_shuffle_epi8(input, shuffle_tbl);
+    __m512i multishift0_result = _mm512_multishift_epi64_epi8(multishift0_mask, input);
+    __m512i shuffle_result = _mm512_shuffle_epi8(input, shuffle_mask);
     __m512i multishift1_result =
-        _mm512_multishift_epi64_epi8(multishift_tbl1, shuffle_result);
-    __m512i and0_result = _mm512_and_si512(multishift0_result, multishift_and_tbl0);
-    __m512i and1_result = _mm512_andnot_si512(multishift_and_tbl0, multishift1_result);
+        _mm512_multishift_epi64_epi8(multishift1_mask, shuffle_result);
+    __m512i and0_result = _mm512_and_si512(multishift0_result, and_mask);
+    __m512i and1_result = _mm512_andnot_si512(and_mask, multishift1_result);
     __m512i result = _mm512_or_si512(and0_result, and1_result);
 
     _mm512_mask_compressstoreu_epi8((__m512i*)pg_be, k_store, result);
@@ -1703,13 +1710,12 @@ int st20_v210_to_rfc4175_422be10_avx512_vbmi_dma(struct mtl_dma_lender_dev* dma,
                                                  mtl_iova_t pg_v210_iova,
                                                  struct st20_rfc4175_422_10_pg2_be* pg_be,
                                                  uint32_t w, uint32_t h) {
-  __m512i multishift_tbl0 =
-      _mm512_loadu_si512((__m512i*)v210_to_rfc4175be_multishift_tbl0_512);
-  __m512i shuffle_tbl = _mm512_loadu_si512((__m512i*)v210_to_rfc4175be_shuffle_tbl_512);
-  __m512i multishift_tbl1 =
-      _mm512_loadu_si512((__m512i*)v210_to_rfc4175be_multishift_tbl1_512);
-  __m512i multishift_and_tbl0 =
-      _mm512_loadu_si512((__m512i*)v210_to_rfc4175be_multishift_and_tbl0_512);
+  __m512i multishift0_mask =
+      _mm512_loadu_si512((__m512i*)v210_to_be10_multishift0_tbl_512);
+  __m512i shuffle_mask = _mm512_loadu_si512((__m512i*)v210_to_be10_shuffle_tbl_512);
+  __m512i multishift1_mask =
+      _mm512_loadu_si512((__m512i*)v210_to_be10_multishift1_tbl_512);
+  __m512i and_mask = _mm512_loadu_si512((__m512i*)v210_to_be10_and_tbl_512);
 
   __mmask64 k_store =
       0x7FFF7FFF7FFF7FFF; /* each __m128i with 3 pg group, 15 bytes, 4*xmms */
@@ -1773,12 +1779,12 @@ int st20_v210_to_rfc4175_422be10_avx512_vbmi_dma(struct mtl_dma_lender_dev* dma,
     int batch = cache_3_pg_cnt / 4;
     for (int j = 0; j < batch; j++) {
       __m512i input = _mm512_loadu_si512((__m512i*)v210);
-      __m512i multishift0_result = _mm512_multishift_epi64_epi8(multishift_tbl0, input);
-      __m512i shuffle_result = _mm512_shuffle_epi8(input, shuffle_tbl);
+      __m512i multishift0_result = _mm512_multishift_epi64_epi8(multishift0_mask, input);
+      __m512i shuffle_result = _mm512_shuffle_epi8(input, shuffle_mask);
       __m512i multishift1_result =
-          _mm512_multishift_epi64_epi8(multishift_tbl1, shuffle_result);
-      __m512i and0_result = _mm512_and_si512(multishift0_result, multishift_and_tbl0);
-      __m512i and1_result = _mm512_andnot_si512(multishift_and_tbl0, multishift1_result);
+          _mm512_multishift_epi64_epi8(multishift1_mask, shuffle_result);
+      __m512i and0_result = _mm512_and_si512(multishift0_result, and_mask);
+      __m512i and1_result = _mm512_andnot_si512(and_mask, multishift1_result);
       __m512i result = _mm512_or_si512(and0_result, and1_result);
 
       _mm512_mask_compressstoreu_epi8((__m512i*)pg_be, k_store, result);
@@ -1796,12 +1802,12 @@ int st20_v210_to_rfc4175_422be10_avx512_vbmi_dma(struct mtl_dma_lender_dev* dma,
   int batch = pg_cnt / 12;
   for (int i = 0; i < batch; i++) {
     __m512i input = _mm512_loadu_si512((__m512i*)pg_v210);
-    __m512i multishift0_result = _mm512_multishift_epi64_epi8(multishift_tbl0, input);
-    __m512i shuffle_result = _mm512_shuffle_epi8(input, shuffle_tbl);
+    __m512i multishift0_result = _mm512_multishift_epi64_epi8(multishift0_mask, input);
+    __m512i shuffle_result = _mm512_shuffle_epi8(input, shuffle_mask);
     __m512i multishift1_result =
-        _mm512_multishift_epi64_epi8(multishift_tbl1, shuffle_result);
-    __m512i and0_result = _mm512_and_si512(multishift0_result, multishift_and_tbl0);
-    __m512i and1_result = _mm512_andnot_si512(multishift_and_tbl0, multishift1_result);
+        _mm512_multishift_epi64_epi8(multishift1_mask, shuffle_result);
+    __m512i and0_result = _mm512_and_si512(multishift0_result, and_mask);
+    __m512i and1_result = _mm512_andnot_si512(and_mask, multishift1_result);
     __m512i result = _mm512_or_si512(and0_result, and1_result);
 
     _mm512_mask_compressstoreu_epi8((__m512i*)pg_be, k_store, result);
@@ -1845,6 +1851,5 @@ int st20_downsample_rfc4175_422be10_wh_half_avx512_vbmi(uint8_t* pg_old, uint8_t
   }
   return 0;
 }
-
 MT_TARGET_CODE_STOP
 #endif

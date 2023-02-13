@@ -567,14 +567,14 @@ int st20_rfc4175_422be10_to_422le10_avx512_dma(struct mtl_dma_lender_dev* dma,
 /* end st20_rfc4175_422be10_to_422le10_avx512 */
 
 /* begin st20_rfc4175_422be10_to_422le8_avx512 */
-static uint8_t be10_to_le8_shuffl0_tbl_128[16] = {
+static uint8_t be10_to_le8_shuffle0_tbl_128[16] = {
     1,     0,     2,     1,     3,     2,     4,     3,     /* pg0 */
     1 + 5, 0 + 5, 2 + 5, 1 + 5, 3 + 5, 2 + 5, 4 + 5, 3 + 5, /* pg1 */
 };
 static uint16_t be10_to_le8_sllv_tbl_128[8] = {
     0, 2, 4, 6, 0, 2, 4, 6,
 };
-static uint8_t be10_to_le8_shuffl1_tbl_128[16] = {
+static uint8_t be10_to_le8_shuffle1_tbl_128[16] = {
     1,    3,    5,    7,    9,    11,   13,   15,   /* pg0, pg1 */
     0x80, 0x80, 0x80, 0x80, 0x80, 0x80, 0x80, 0x80, /* zeros */
 };
@@ -582,9 +582,9 @@ static uint8_t be10_to_le8_shuffl1_tbl_128[16] = {
 int st20_rfc4175_422be10_to_422le8_avx512(struct st20_rfc4175_422_10_pg2_be* pg_10,
                                           struct st20_rfc4175_422_8_pg2_le* pg_8,
                                           uint32_t w, uint32_t h) {
-  __m128i shuffle_mask = _mm_loadu_si128((__m128i*)be10_to_le8_shuffl_tbl_128);
+  __m128i shuffle_mask = _mm_loadu_si128((__m128i*)be10_to_le8_shuffle0_tbl_128);
   __m128i sllv_mask = _mm_loadu_si128((__m128i*)be10_to_le8_sllv_tbl_128);
-  __m128i sllv_shuffle_mask = _mm_loadu_si128((__m128i*)be10_to_le8_shuffl1_tbl_128);
+  __m128i sllv_shuffle_mask = _mm_loadu_si128((__m128i*)be10_to_le8_shuffle1_tbl_128);
   __mmask16 k = 0x3FF; /* each __m128i with 2 pg group, 10 bytes */
   int pg_cnt = w * h / 2;
   dbg("%s, pg_cnt %d\n", __func__, pg_cnt);
@@ -622,9 +622,9 @@ int st20_rfc4175_422be10_to_422le8_avx512_dma(struct mtl_dma_lender_dev* dma,
                                               mtl_iova_t pg_10_iova,
                                               struct st20_rfc4175_422_8_pg2_le* pg_8,
                                               uint32_t w, uint32_t h) {
-  __m128i shuffle_mask = _mm_loadu_si128((__m128i*)be10_to_le8_shuffl_tbl_128);
+  __m128i shuffle_mask = _mm_loadu_si128((__m128i*)be10_to_le8_shuffle0_tbl_128);
   __m128i sllv_mask = _mm_loadu_si128((__m128i*)be10_to_le8_sllv_tbl_128);
-  __m128i sllv_shuffle_mask = _mm_loadu_si128((__m128i*)be10_to_le8_shuffl1_tbl_128);
+  __m128i sllv_shuffle_mask = _mm_loadu_si128((__m128i*)be10_to_le8_shuffle1_tbl_128);
   __mmask16 k = 0x3FF; /* each __m128i with 2 pg group, 10 bytes */
   int pg_cnt = w * h / 2;
   dbg("%s, pg_cnt %d\n", __func__, pg_cnt);
@@ -730,7 +730,7 @@ int st20_rfc4175_422be10_to_422le8_avx512_dma(struct mtl_dma_lender_dev* dma,
 /* end st20_rfc4175_422be10_to_422le8_avx512 */
 
 /* begin st20_rfc4175_422le10_to_v210_avx512 */
-static uint8_t le10_to_v210_shuffl_r_tbl_128[16] = {
+static uint8_t le10_to_v210_shuffle_r_tbl_128[16] = {
     0, 1, 2, 3, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14,
 };
 static uint32_t le10_to_v210_srlv_tbl_128[4] = {
@@ -752,7 +752,7 @@ static uint8_t le10_to_v210_and_tbl_128[16] = {
 
 int st20_rfc4175_422le10_to_v210_avx512(uint8_t* pg_le, uint8_t* pg_v210, uint32_t w,
                                         uint32_t h) {
-  __m128i shuffle_r_mask = _mm_loadu_si128((__m128i*)le10_to_v210_shuffl_r_tbl_128);
+  __m128i shuffle_r_mask = _mm_loadu_si128((__m128i*)le10_to_v210_shuffle_r_tbl_128);
   __m128i srlv_mask = _mm_loadu_si128((__m128i*)le10_to_v210_srlv_tbl_128);
   __m128i sllv_mask = _mm_loadu_si128((__m128i*)le10_to_v210_sllv_tbl_128);
   __m128i padding_mask = _mm_loadu_si128((__m128i*)le10_to_v210_and_tbl_128);
