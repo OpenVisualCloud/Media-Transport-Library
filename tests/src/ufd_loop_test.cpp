@@ -128,7 +128,7 @@ static int loop_sanity_test(struct utest_ctx* ctx, struct loop_para* para) {
 
       send = mufd_sendto(tx_fds[i], send_buf, sizeof(send_buf), 0,
                          (const struct sockaddr*)&rx_addr[i], sizeof(rx_addr[i]));
-      EXPECT_EQ(send, sizeof(send_buf));
+      EXPECT_EQ((size_t)send, sizeof(send_buf));
     }
     if (para->tx_sleep_us) st_usleep(para->tx_sleep_us);
 
@@ -169,7 +169,7 @@ static int loop_sanity_test(struct utest_ctx* ctx, struct loop_para* para) {
         err("%s, recv fail at session %d pkt %d\n", __func__, i, loop);
         continue;
       }
-      EXPECT_EQ(recv, sizeof(send_buf));
+      EXPECT_EQ((size_t)recv, sizeof(send_buf));
       /* check idx */
       EXPECT_EQ((char)i, recv_buf[0]);
       /* check sha */
@@ -187,7 +187,7 @@ static int loop_sanity_test(struct utest_ctx* ctx, struct loop_para* para) {
                (unsigned char*)send_buf + payload_len);
         send = mufd_sendto(rx_fds[i], send_buf, sizeof(send_buf), 0,
                            (const struct sockaddr*)&tx_addr[i], sizeof(tx_addr[i]));
-        EXPECT_EQ(send, sizeof(send_buf));
+        EXPECT_EQ((size_t)send, sizeof(send_buf));
       }
       if (para->tx_sleep_us) st_usleep(para->tx_sleep_us);
 
@@ -198,7 +198,7 @@ static int loop_sanity_test(struct utest_ctx* ctx, struct loop_para* para) {
           err("%s, back recv fail at session %d pkt %d\n", __func__, i, loop);
           continue;
         }
-        EXPECT_EQ(recv, sizeof(send_buf));
+        EXPECT_EQ((size_t)recv, sizeof(send_buf));
         /* check idx */
         EXPECT_EQ((char)i, recv_buf[0]);
         /* check sha */

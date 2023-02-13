@@ -341,7 +341,7 @@ TEST(Misc, version) {
 
   uint32_t version_no =
       MTL_VERSION_NUM(MTL_VERSION_MAJOR, MTL_VERSION_MINOR, MTL_VERSION_LAST);
-  EXPECT_EQ(MTL_VERSION, version_no);
+  EXPECT_EQ((uint32_t)MTL_VERSION, version_no);
 }
 
 TEST(Misc, version_compare) {
