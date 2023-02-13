@@ -131,7 +131,17 @@ ffmpeg -s 1920x1080 -pix_fmt yuv420p10le -i yuv420p10le_1080p.yuv -pix_fmt yuv44
 ```
 
 #### 3.4 PTP setup(optional):
-Precision Time Protocol (PTP) provides global microsecond accuracy timing of all essences. Typical deployment include a PTP grandmaster within the network, and clients use tools(ex. ptp4l) to sync with the grandmaster. Kahawai library also include a built-in PTP implementation, sample app provide a option to enable it, see 3.6 for how to enable. The built-in PTP is disabled as default, Kahawai will use the system time source(clock_gettime) as PTP clock. If built-in PTP is enabled, Kahawai will select the internal NIC time as PTP source.
+Precision Time Protocol (PTP) provides global microsecond accuracy timing of all essences. Typical deployment include a PTP grandmaster within the network, and clients use tools(ex. ptp4l) to sync with the grandmaster. Kahawai library also include a built-in PTP implementation, sample app provide a option to enable it, see 3.6 for how to enable. The built-in PTP is disabled as default, Kahawai will use the system time source(clock_gettime) prvoide by user application as PTP clock. If built-in PTP is enabled, Kahawai will select the internal NIC time as PTP source.
+
+###### 3.4.1 ptp4l setup sample:
+Firstly run ptp4l to sync the PHC time with grandmaster, customize the interface as your setup.
+```shell
+sudo ptp4l -i ens801f2 -m -s -H
+```
+Then run phc2sys to sync the PHC time to system time, please make sure NTP service is diabled as it has conflict with phc2sys.
+```shell
+sudo phc2sys -s ens801f2 -m -w
+```
 
 #### 3.5 Run sample app with json config
 Below is the command to run one video tx/rx session with json config, customize the config item in json as your setup.
@@ -272,4 +282,21 @@ ST: dev_create_port(0), link not connected
 #### 5.7 Bind BDF port back to kernel mode:
 ```bash
 sudo ./script/nicctl.sh bind_kernel 0000:af:00.0
+```
+
+#### 5.8 How to find the BDF number:
+```bash
+lspci | grep Eth
+```
+
+#### 5.9 Lower fps if ptp4l&phc2sys is enabled:
+You could see below similar epoch drop log, it's likely caused by NTP and phc2sys are both adjusting the sysytem, please disable NTP service.
+```
+MT: DEV(0): Avr rate, tx: 4789 Mb/s, rx: 0 Mb/s, pkts, tx: 4525950, rx: 9
+MT: PTP(0): time 1676254936223518377, 2023-02-13 10:22:16
+MT: CNI(0): eth_rx_cnt 9
+MT: TX_VIDEO_SESSION(0,0:app_tx_video_0): fps 27.499879, frame 275 pkts 4526532:4525984 inflight 279856:279869, cpu busy 75.286346
+MT: TX_VIDEO_SESSION(0,0): dummy pkts 550, burst 550
+MT: TX_VIDEO_SESSION(0,0): mismatch epoch troffset 275
+MT: TX_VIDEO_SESSION(0,0): epoch drop 275
 ```
