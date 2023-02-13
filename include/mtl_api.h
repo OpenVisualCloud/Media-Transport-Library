@@ -304,6 +304,11 @@ enum st21_tx_pacing_way {
  * Disable system rx queues, pls use mcast or manual TX mac.
  */
 #define MTL_FLAG_DISABLE_SYSTEM_RX_QUEUES (MTL_BIT64(28))
+/**
+ * Flag bit in flags of struct mtl_init_params, debug usage only.
+ * Force to get ptp time from tsc source.
+ */
+#define MTL_FLAG_PTP_SOURCE_TSC (MTL_BIT64(29))
 
 /**
  * The structure describing how to init af_xdp interface.

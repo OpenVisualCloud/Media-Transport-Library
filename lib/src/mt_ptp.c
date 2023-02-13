@@ -546,8 +546,10 @@ static int ptp_parse_annouce(struct mt_ptp_impl* ptp, struct mt_ptp_announce_msg
           htons(sizeof(struct rte_udp_hdr) + sizeof(struct mt_ptp_sync_msg));
     }
 
-    /* point ptp fn to eth if no user assigned ptp source */
-    if (mt_has_user_ptp(ptp->impl))
+    /* point ptp fn to eth phc */
+    if (mt_ptp_tsc_source(ptp->impl))
+      warn("%s(%d), skip as ptp force to tsc\n", __func__, port);
+    else if (mt_has_user_ptp(ptp->impl))
       warn("%s(%d), skip as user provide ptp source already\n", __func__, port);
     else
       mt_if(ptp->impl, port)->ptp_get_time_fn = ptp_from_eth;

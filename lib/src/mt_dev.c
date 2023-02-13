@@ -1590,16 +1590,19 @@ retry:
 }
 
 static uint64_t ptp_from_real_time(struct mtl_main_impl* impl, enum mtl_port port) {
-  struct timespec spec;
-
-  clock_gettime(CLOCK_REALTIME, &spec);
-  return mt_timespec_to_ns(&spec);
+  return mt_get_real_time();
 }
 
 static uint64_t ptp_from_user(struct mtl_main_impl* impl, enum mtl_port port) {
   struct mtl_init_params* p = mt_get_user_params(impl);
 
   return p->ptp_get_time_fn(p->priv);
+}
+
+static uint64_t ptp_from_tsc(struct mtl_main_impl* impl, enum mtl_port port) {
+  struct mt_interface* inf = mt_if(impl, port);
+  uint64_t tsc = mt_get_tsc(impl);
+  return inf->real_time_base + tsc - inf->tsc_time_base;
 }
 
 uint16_t mt_dev_tx_sys_queue_burst(struct mtl_main_impl* impl, enum mtl_port port,
@@ -2197,10 +2200,17 @@ int mt_dev_if_init(struct mtl_main_impl* impl) {
     mt_pthread_mutex_init(&inf->tx_sys_queue_mutex, NULL);
     mt_pthread_mutex_init(&inf->vf_cmd_mutex, NULL);
 
-    if (mt_has_user_ptp(impl)) /* user provide the ptp source */
+    if (mt_ptp_tsc_source(impl)) {
+      info("%s(%d), use tsc ptp source\n", __func__, i);
+      inf->ptp_get_time_fn = ptp_from_tsc;
+    } else if (mt_has_user_ptp(impl)) {
+      /* user provide the ptp source */
+      info("%s(%d), use user ptp source\n", __func__, i);
       inf->ptp_get_time_fn = ptp_from_user;
-    else
+    } else {
+      info("%s(%d), use mt ptp source\n", __func__, i);
       inf->ptp_get_time_fn = ptp_from_real_time;
+    }
 
     /* set max tx/rx queues */
     if (p->pmd[i] == MTL_PMD_DPDK_AF_XDP) {
@@ -2449,4 +2459,19 @@ struct mt_rx_flow_rsp* mt_dev_create_rx_flow(struct mtl_main_impl* impl,
 int mt_dev_free_rx_flow(struct mtl_main_impl* impl, enum mtl_port port,
                         struct mt_rx_flow_rsp* rsp) {
   return dev_if_free_rx_flow(impl, port, rsp);
+}
+
+int mt_dev_tsc_done_action(struct mtl_main_impl* impl) {
+  int num_ports = mt_num_ports(impl);
+  struct mt_interface* inf;
+
+  for (int i = 0; i < num_ports; i++) {
+    inf = mt_if(impl, i);
+
+    /* tsc stable now */
+    inf->real_time_base = mt_get_real_time();
+    inf->tsc_time_base = mt_get_tsc(impl);
+  }
+
+  return 0;
 }
