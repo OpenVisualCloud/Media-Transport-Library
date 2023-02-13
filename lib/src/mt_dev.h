@@ -72,6 +72,8 @@ int mt_dev_put_lcore(struct mtl_main_impl* impl, unsigned int lcore);
 int mt_dev_get_lcore(struct mtl_main_impl* impl, unsigned int* lcore);
 bool mt_dev_lcore_valid(struct mtl_main_impl* impl, unsigned int lcore);
 
+int mt_dev_tsc_done_action(struct mtl_main_impl* impl);
+
 uint32_t mt_dev_softrss(uint32_t* input_tuple, uint32_t input_len);
 
 struct mt_rx_flow_rsp* mt_dev_create_rx_flow(struct mtl_main_impl* impl,

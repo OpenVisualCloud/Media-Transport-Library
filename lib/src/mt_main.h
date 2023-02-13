@@ -475,6 +475,10 @@ struct mt_interface {
   uint64_t (*ptp_get_time_fn)(struct mtl_main_impl* impl, enum mtl_port port);
 
   enum st21_tx_pacing_way tx_pacing_way;
+
+  /* time base for MTL_FLAG_PTP_SOURCE_TSC*/
+  uint64_t tsc_time_base;
+  uint64_t real_time_base;
 };
 
 struct mt_lcore_shm {
@@ -1004,6 +1008,13 @@ static inline bool mt_no_system_rxq(struct mtl_main_impl* impl) {
     return false;
 }
 
+static inline bool mt_ptp_tsc_source(struct mtl_main_impl* impl) {
+  if (mt_get_user_params(impl)->flags & MTL_FLAG_PTP_SOURCE_TSC)
+    return true;
+  else
+    return false;
+}
+
 static inline bool mt_tasklet_has_thread(struct mtl_main_impl* impl) {
   if (mt_get_user_params(impl)->flags & MTL_FLAG_TASKLET_THREAD)
     return true;
@@ -1194,11 +1205,18 @@ static inline void mt_tsc_delay_to(struct mtl_main_impl* impl, uint64_t target) 
 }
 
 /* Monotonic time (in nanoseconds) since some unspecified starting point. */
-static inline uint64_t mt_get_monotonic_time() {
+static inline uint64_t mt_get_monotonic_time(void) {
   struct timespec ts;
 
   clock_gettime(MT_CLOCK_MONOTONIC_ID, &ts);
-  return ((uint64_t)ts.tv_sec * NS_PER_S) + ts.tv_nsec;
+  return mt_timespec_to_ns(&ts);
+}
+
+static inline uint64_t mt_get_real_time(void) {
+  struct timespec ts;
+
+  clock_gettime(CLOCK_REALTIME, &ts);
+  return mt_timespec_to_ns(&ts);
 }
 
 static inline void st_tx_mbuf_set_tsc(struct rte_mbuf* mbuf, uint64_t time_stamp) {

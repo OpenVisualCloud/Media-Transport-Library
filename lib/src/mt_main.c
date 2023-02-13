@@ -88,6 +88,7 @@ static void* mt_calibrate_tsc(void* arg) {
     tsc_hz_sum += array[i];
   }
   impl->tsc_hz = tsc_hz_sum / (loop - trim * 2);
+  mt_dev_tsc_done_action(impl);
 
   info("%s, tscHz %" PRIu64 "\n", __func__, impl->tsc_hz);
   return NULL;
