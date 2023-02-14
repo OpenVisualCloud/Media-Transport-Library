@@ -351,41 +351,42 @@ static void frame_api_test() {
   uint32_t h = 1080;
   size_t size;
   enum st_frame_fmt fmt;
+  size_t szero = 0;
 
   /* yuv */
   for (int i = ST_FRAME_FMT_YUV_START; i < ST_FRAME_FMT_YUV_END; i++) {
     fmt = (enum st_frame_fmt)i;
     size = st_frame_size(fmt, w, h);
-    EXPECT_GT(size, 0);
+    EXPECT_GT(size, szero);
     EXPECT_GT(st_frame_fmt_planes(fmt), 0);
-    EXPECT_GT(st_frame_least_linesize(fmt, w, 0), 0);
+    EXPECT_GT(st_frame_least_linesize(fmt, w, 0), szero);
   }
   /* rgb */
   for (int i = ST_FRAME_FMT_RGB_START; i < ST_FRAME_FMT_RGB_END; i++) {
     fmt = (enum st_frame_fmt)i;
     size = st_frame_size(fmt, w, h);
-    EXPECT_GT(size, 0);
+    EXPECT_GT(size, szero);
     EXPECT_GT(st_frame_fmt_planes(fmt), 0);
-    EXPECT_GT(st_frame_least_linesize(fmt, w, 0), 0);
+    EXPECT_GT(st_frame_least_linesize(fmt, w, 0), szero);
   }
   /* codestream */
   for (int i = ST_FRAME_FMT_CODESTREAM_START; i < ST_FRAME_FMT_CODESTREAM_END; i++) {
     fmt = (enum st_frame_fmt)i;
     size = st_frame_size(fmt, w, h);
-    EXPECT_EQ(size, 0);
+    EXPECT_EQ(size, szero);
     EXPECT_EQ(st_frame_fmt_planes(fmt), 1);
-    EXPECT_EQ(st_frame_least_linesize(fmt, w, 0), 0);
+    EXPECT_EQ(st_frame_least_linesize(fmt, w, 0), szero);
   }
 
   /* invalid fmt */
   size = st_frame_size(ST_FRAME_FMT_YUV_END, w, h);
-  EXPECT_EQ(size, 0);
+  EXPECT_EQ(size, szero);
   size = st_frame_size(ST_FRAME_FMT_RGB_END, w, h);
-  EXPECT_EQ(size, 0);
+  EXPECT_EQ(size, szero);
   size = st_frame_size(ST_FRAME_FMT_CODESTREAM_END, w, h);
-  EXPECT_EQ(size, 0);
+  EXPECT_EQ(size, szero);
   size = st_frame_size(ST_FRAME_FMT_MAX, w, h);
-  EXPECT_EQ(size, 0);
+  EXPECT_EQ(size, szero);
 }
 
 static void frame_name_test() {

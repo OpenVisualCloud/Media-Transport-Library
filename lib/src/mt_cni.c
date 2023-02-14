@@ -87,7 +87,7 @@ static int cni_traffic(struct mtl_main_impl* impl) {
         done = false;
       }
     }
-    mt_tap_handle(impl, i, pkts_rx, rx);
+    mt_tap_handle(impl, i);
     /* rx from cni rx queue */
     if (cni->rx_q[i]) {
       rx = mt_dev_rx_burst(cni->rx_q[i], pkts_rx, ST_CNI_RX_BURST_SIZE);

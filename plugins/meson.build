@@ -30,7 +30,7 @@ plugins_c_args += ['-msse4.2']
 
 if is_windows
   libdpdklinkflags = run_command('pkg-config', '--static', '--libs', 'libdpdk')
-  plugins_ld_args += ['-lmingw32','-lws2_32','-lDbghelp','-lSetupapi','-ldinput8', '-ldxguid', '-ldxerr8', '-lwinmm', '-limm32','-lversion','-lwpcap','-lPacket','-lSDL2','-lSDL2Main','-lmman','-ljson-c','-ldl']
+  plugins_ld_args += ['-lmingw32','-lws2_32','-lDbghelp','-lSetupapi','-ldinput8', '-ldxguid', '-ldxerr8', '-lwinmm', '-limm32', '-lversion', '-lwpcap', '-lPacket', '-lmman', '-ldl']
   plugins_ld_args += ['-Wl,--whole-archive']
   plugins_ld_args += [libdpdklinkflags.stdout().strip().split()]
   plugins_ld_args += ['-Wl,--no-whole-archive']
