@@ -35,12 +35,6 @@ enum mt_handle_type {
   MT_HANDLE_MAX,
 };
 
-enum mt_session_port {
-  MT_SESSION_PORT_P = 0, /* primary session(logical) port */
-  MT_SESSION_PORT_R,     /* redundant session(logical) port */
-  MT_SESSION_PORT_MAX,
-};
-
 /* total size: 42 */
 struct mt_udp_hdr {
   struct rte_ether_hdr eth; /* size: 14 */

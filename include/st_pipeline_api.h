@@ -599,13 +599,13 @@ struct st20_convert_frame_meta {
 /** The structure info for st tx port, used in creating session. */
 struct st_tx_port {
   /** destination IP address */
-  uint8_t dip_addr[MTL_PORT_MAX][MTL_IP_ADDR_LEN];
+  uint8_t dip_addr[MTL_SESSION_PORT_MAX][MTL_IP_ADDR_LEN];
   /** Pcie BDF path like 0000:af:00.0, should align to BDF of mtl_init */
-  char port[MTL_PORT_MAX][MTL_PORT_MAX_LEN];
+  char port[MTL_SESSION_PORT_MAX][MTL_PORT_MAX_LEN];
   /** 1 or 2, num of ports this session attached to */
   uint8_t num_port;
   /** UDP port number */
-  uint16_t udp_port[MTL_PORT_MAX];
+  uint16_t udp_port[MTL_SESSION_PORT_MAX];
   /** 7 bits payload type define in RFC3550 */
   uint8_t payload_type;
 };
@@ -613,13 +613,13 @@ struct st_tx_port {
 /** The structure info for st rx port, used in creating session. */
 struct st_rx_port {
   /** source IP address of sender */
-  uint8_t sip_addr[MTL_PORT_MAX][MTL_IP_ADDR_LEN];
+  uint8_t sip_addr[MTL_SESSION_PORT_MAX][MTL_IP_ADDR_LEN];
   /** 1 or 2, num of ports this session attached to */
   uint8_t num_port;
   /** Pcie BDF path like 0000:af:00.0, should align to BDF of mtl_init */
-  char port[MTL_PORT_MAX][MTL_PORT_MAX_LEN];
+  char port[MTL_SESSION_PORT_MAX][MTL_PORT_MAX_LEN];
   /** UDP port number */
-  uint16_t udp_port[MTL_PORT_MAX];
+  uint16_t udp_port[MTL_SESSION_PORT_MAX];
   /** 7 bits payload type define in RFC3550 */
   uint8_t payload_type;
 };
@@ -638,7 +638,7 @@ struct st20p_tx_ops {
    * tx destination mac address.
    * Valid if ST20P_TX_FLAG_USER_P(R)_MAC is enabled
    */
-  uint8_t tx_dst_mac[MTL_PORT_MAX][MTL_MAC_ADDR_LEN];
+  uint8_t tx_dst_mac[MTL_SESSION_PORT_MAX][MTL_MAC_ADDR_LEN];
   /** Session resolution width */
   uint32_t width;
   /** Session resolution height */
@@ -750,7 +750,7 @@ struct st22p_tx_ops {
    * tx destination mac address.
    * Valid if ST22P_TX_FLAG_USER_P(R)_MAC is enabled
    */
-  uint8_t tx_dst_mac[MTL_PORT_MAX][MTL_MAC_ADDR_LEN];
+  uint8_t tx_dst_mac[MTL_SESSION_PORT_MAX][MTL_MAC_ADDR_LEN];
   /** Session resolution width */
   uint32_t width;
   /** Session resolution height */

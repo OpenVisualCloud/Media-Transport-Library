@@ -404,7 +404,7 @@ mtl_handle mtl_init(struct mtl_init_params* p) {
   mt_asan_init();
 #endif
 
-  RTE_BUILD_BUG_ON(MT_SESSION_PORT_MAX > (int)MTL_PORT_MAX);
+  RTE_BUILD_BUG_ON(MTL_SESSION_PORT_MAX > (int)MTL_PORT_MAX);
   RTE_BUILD_BUG_ON(sizeof(struct mt_udp_hdr) != 42);
 
   ret = mt_user_params_check(p);
