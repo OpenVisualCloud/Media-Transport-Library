@@ -543,13 +543,17 @@ int st_frame_get_converter(enum st_frame_fmt src_fmt, enum st_frame_fmt dst_fmt,
   return -EINVAL;
 }
 
-static int downsample_rfc4175_422be10_wh_half(struct st_frame* old_frame,
-                                              struct st_frame* new_frame, int idx) {
+static int downsample_rfc4175_wh_half(struct st_frame* old_frame,
+                                      struct st_frame* new_frame, int idx) {
   enum mtl_simd_level cpu_level = mtl_get_simd_level();
   int ret;
 
   MT_MAY_UNUSED(cpu_level);
   MT_MAY_UNUSED(ret);
+
+  enum st20_fmt t_fmt = st_frame_fmt_to_transport(new_frame->fmt);
+  struct st20_pgroup st20_pg;
+  st20_get_pgroup(t_fmt, &st20_pg);
 
   uint32_t width = new_frame->width;
   uint32_t height = new_frame->height;
@@ -562,13 +566,13 @@ static int downsample_rfc4175_422be10_wh_half(struct st_frame* old_frame,
     case 0:
       break;
     case 1:
-      src_start += 5;
+      src_start += st20_pg.size;
       break;
     case 2:
       src_start += src_linesize;
       break;
     case 3:
-      src_start += src_linesize + 5;
+      src_start += src_linesize + st20_pg.size;
       break;
     default:
       err("%s, wrong sample idx %d\n", __func__, idx);
@@ -578,9 +582,11 @@ static int downsample_rfc4175_422be10_wh_half(struct st_frame* old_frame,
 #ifdef MTL_HAS_AVX512_VBMI2
   if (cpu_level >= MTL_SIMD_LEVEL_AVX512_VBMI2) {
     dbg("%s, avx512_vbmi way\n", __func__);
-    ret = st20_downsample_rfc4175_422be10_wh_half_avx512_vbmi(
-        src_start, dst_start, width, height, src_linesize, dst_linesize);
-    if (ret == 0) return 0;
+    if (t_fmt == ST20_FMT_YUV_422_10BIT) {
+      ret = st20_downsample_rfc4175_422be10_wh_half_avx512_vbmi(
+          src_start, dst_start, width, height, src_linesize, dst_linesize);
+      if (ret == 0) return 0;
+    }
     err("%s, avx512_vbmi way failed %d\n", __func__, ret);
   }
 #endif
@@ -589,20 +595,22 @@ static int downsample_rfc4175_422be10_wh_half(struct st_frame* old_frame,
   for (int line = 0; line < height; line++) {
     uint8_t* src = src_start + src_linesize * line * 2;
     uint8_t* dst = dst_start + dst_linesize * line;
-    for (int pg = 0; pg < width / 2; pg++) {
-      mtl_memcpy(dst, src, 5);
-      src += 2 * 5;
-      dst += 5;
+    for (int pg = 0; pg < width / st20_pg.coverage; pg++) {
+      mtl_memcpy(dst, src, st20_pg.size);
+      src += 2 * st20_pg.size;
+      dst += st20_pg.size;
     }
   }
   return 0;
 }
 
 int st_frame_downsample(struct st_frame* src, struct st_frame* dst, int idx) {
-  if (src->fmt == ST_FRAME_FMT_YUV422RFC4175PG2BE10 &&
-      dst->fmt == ST_FRAME_FMT_YUV422RFC4175PG2BE10) {
-    if (src->width == dst->width * 2 && src->height == dst->height * 2) {
-      return downsample_rfc4175_422be10_wh_half(src, dst, idx);
+  if (src->fmt == dst->fmt) {
+    enum st20_fmt t_fmt = st_frame_fmt_to_transport(src->fmt);
+    if (t_fmt != ST20_FMT_MAX) {
+      if (src->width == dst->width * 2 && src->height == dst->height * 2) {
+        return downsample_rfc4175_wh_half(src, dst, idx);
+      }
     }
   }
 
