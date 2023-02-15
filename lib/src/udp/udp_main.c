@@ -315,6 +315,7 @@ static uint16_t udp_rx_handle(struct mudp_impl* s, struct rte_mbuf** pkts,
     if (!n) {
       dbg("%s(%d), %u pkts enqueue fail\n", __func__, idx, valid_mbuf_cnt);
       rte_pktmbuf_free_bulk(&valid_mbuf[0], valid_mbuf_cnt);
+      s->stat_pkt_rx_enq_fail += valid_mbuf_cnt;
     }
   }
 
@@ -396,16 +397,22 @@ static int udp_stat_dump(void* priv) {
   enum mtl_port port = s->port;
 
   if (s->stat_pkt_build) {
-    info("%s(%d,%d), pkt build %d tx %d\n", __func__, port, idx, s->stat_pkt_build,
-         s->stat_pkt_tx);
+    notice("%s(%d,%d), pkt build %u tx %u\n", __func__, port, idx, s->stat_pkt_build,
+           s->stat_pkt_tx);
     s->stat_pkt_build = 0;
     s->stat_pkt_tx = 0;
   }
   if (s->stat_pkt_rx) {
-    info("%s(%d,%d), pkt rx %d deliver %d, %s rxq %u\n", __func__, port, idx,
-         s->stat_pkt_rx, s->stat_pkt_deliver, s->rsq ? "shared" : "dedicated", s->rxq_id);
+    notice("%s(%d,%d), pkt rx %u deliver %u, %s rxq %u\n", __func__, port, idx,
+           s->stat_pkt_rx, s->stat_pkt_deliver, s->rsq ? "shared" : "dedicated",
+           s->rxq_id);
     s->stat_pkt_rx = 0;
     s->stat_pkt_deliver = 0;
+  }
+  if (s->stat_pkt_rx_enq_fail) {
+    warn("%s(%d,%d), pkt rx %u enqueue fail\n", __func__, port, idx,
+         s->stat_pkt_rx_enq_fail);
+    s->stat_pkt_rx_enq_fail = 0;
   }
   return 0;
 }
@@ -833,11 +840,12 @@ int mudp_poll(struct mudp_pollfd* fds, mudp_nfds_t nfds, int timeout) {
     }
   }
 
-  /* rx from nic firstly */
+  /* rx from nic firstly if no pending pkt for each fd */
 rx_pool:
   for (mudp_nfds_t i = 0; i < nfds; i++) {
     s = fds[i].fd;
-    udp_rx(impl, s);
+    unsigned int count = rte_ring_count(s->rx_ring);
+    if (!count) udp_rx(impl, s);
   }
 
   /* check the ready fds */
