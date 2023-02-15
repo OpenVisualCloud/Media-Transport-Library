@@ -170,6 +170,30 @@ static int ufd_parse_json(struct mufd_init_params* init, const char* filename) {
     info("%s, nb_udp_sockets %d\n", __func__, nb_udp_sockets);
   }
 
+  obj = mt_json_object_get(root, "nb_tx_desc");
+  if (obj) {
+    int nb_tx_desc = json_object_get_int(obj);
+    if ((nb_tx_desc < 0) || (nb_tx_desc > 4096)) {
+      err("%s, invalid nb_tx_desc %d\n", __func__, nb_tx_desc);
+      ret = -EINVAL;
+      goto out;
+    }
+    p->nb_tx_desc = nb_tx_desc;
+    info("%s, nb_tx_desc %d\n", __func__, nb_tx_desc);
+  }
+
+  obj = mt_json_object_get(root, "nb_rx_desc");
+  if (obj) {
+    int nb_rx_desc = json_object_get_int(obj);
+    if ((nb_rx_desc < 0) || (nb_rx_desc > 4096)) {
+      err("%s, invalid nb_rx_desc %d\n", __func__, nb_rx_desc);
+      ret = -EINVAL;
+      goto out;
+    }
+    p->nb_tx_desc = nb_rx_desc;
+    info("%s, nb_rx_desc %d\n", __func__, nb_rx_desc);
+  }
+
   obj = mt_json_object_get(root, "nic_shared_queues");
   if (obj) {
     if (json_object_get_boolean(obj)) {

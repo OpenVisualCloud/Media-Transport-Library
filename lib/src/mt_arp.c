@@ -118,6 +118,43 @@ static int arp_receive_reply(struct mtl_main_impl* impl, struct rte_arp_hdr* rep
   return 0;
 }
 
+static int arp_send_req(struct mtl_main_impl* impl, enum mtl_port port, uint32_t ip) {
+  uint16_t port_id = mt_port_id(impl, port);
+  struct rte_mbuf* req_pkt = rte_pktmbuf_alloc(mt_get_tx_mempool(impl, port));
+  if (!req_pkt) {
+    err("%s(%d), req_pkt malloc fail\n", __func__, port);
+    return -ENOMEM;
+  }
+
+  req_pkt->pkt_len = req_pkt->data_len =
+      sizeof(struct rte_ether_hdr) + sizeof(struct rte_arp_hdr);
+
+  struct rte_ether_hdr* eth = rte_pktmbuf_mtod(req_pkt, struct rte_ether_hdr*);
+  rte_eth_macaddr_get(port_id, mt_eth_s_addr(eth));
+  memset(mt_eth_d_addr(eth), 0xFF, RTE_ETHER_ADDR_LEN);
+  eth->ether_type = htons(RTE_ETHER_TYPE_ARP);  // ARP_PROTOCOL
+  struct rte_arp_hdr* arp =
+      rte_pktmbuf_mtod_offset(req_pkt, struct rte_arp_hdr*, sizeof(struct rte_ether_hdr));
+  arp->arp_hardware = htons(RTE_ARP_HRD_ETHER);
+  arp->arp_protocol = htons(RTE_ETHER_TYPE_IPV4);  // IP protocol
+  arp->arp_hlen = RTE_ETHER_ADDR_LEN;              // size of MAC
+  arp->arp_plen = 4;                               // size of fo IP
+  arp->arp_opcode = htons(RTE_ARP_OP_REQUEST);
+  arp->arp_data.arp_tip = ip;
+  arp->arp_data.arp_sip = *(uint32_t*)mt_sip_addr(impl, port);
+  rte_eth_macaddr_get(port_id, &arp->arp_data.arp_sha);
+  memset(&arp->arp_data.arp_tha, 0, RTE_ETHER_ADDR_LEN);
+
+  uint16_t send = mt_dev_tx_sys_queue_burst(impl, port, &req_pkt, 1);
+  if (send < 1) {
+    err("%s(%d), tx fail\n", __func__, port);
+    rte_pktmbuf_free(req_pkt);
+    return -EIO;
+  }
+
+  return 0;
+}
+
 int mt_arp_parse(struct mtl_main_impl* impl, struct rte_arp_hdr* hdr,
                  enum mtl_port port) {
   switch (htons(hdr->arp_opcode)) {
@@ -138,8 +175,6 @@ int mt_arp_parse(struct mtl_main_impl* impl, struct rte_arp_hdr* hdr,
 int mt_arp_cni_get_mac(struct mtl_main_impl* impl, struct rte_ether_addr* ea,
                        enum mtl_port port, uint32_t ip, int timeout_ms) {
   struct mt_arp_impl* arp_impl = get_arp(impl, port);
-  uint16_t port_id = mt_port_id(impl, port);
-  uint16_t tx;
   int retry = 0;
   uint8_t* addr = (uint8_t*)&ip;
   int max_retry = 0;
@@ -154,12 +189,15 @@ int mt_arp_cni_get_mac(struct mtl_main_impl* impl, struct rte_ether_addr* ea,
       mt_pthread_mutex_unlock(&arp_impl->mutex);
       /* wait the result */
       while (!rte_atomic32_read(&arp_impl->mac_ready[i])) {
+        arp_send_req(impl, port, ip); /* send arp request packet */
+
         if (mt_aborted(impl)) {
           err("%s(%d), cache fail as user aborted\n", __func__, port);
           return -EIO;
         }
-        if ((max_retry > 0) && (retry > max_retry)) {
-          err("%s(%d), cache fail as timeout to %d ms\n", __func__, port, timeout_ms);
+        if (retry >= max_retry) {
+          if (max_retry) /* log only if not zero timeout */
+            err("%s(%d), cache fail as timeout to %d ms\n", __func__, port, timeout_ms);
           return -EIO;
         }
         mt_sleep_ms(sleep_interval_ms);
@@ -185,44 +223,17 @@ int mt_arp_cni_get_mac(struct mtl_main_impl* impl, struct rte_ether_addr* ea,
   rte_atomic32_set(&arp_impl->mac_ready[i], 0);
   mt_pthread_mutex_unlock(&arp_impl->mutex);
 
-  struct rte_mbuf* req_pkt = rte_pktmbuf_alloc(mt_get_tx_mempool(impl, port));
-  if (!req_pkt) return -ENOMEM;
-
-  req_pkt->pkt_len = req_pkt->data_len =
-      sizeof(struct rte_ether_hdr) + sizeof(struct rte_arp_hdr);
-
-  struct rte_ether_hdr* eth = rte_pktmbuf_mtod(req_pkt, struct rte_ether_hdr*);
-  rte_eth_macaddr_get(port_id, mt_eth_s_addr(eth));
-  memset(mt_eth_d_addr(eth), 0xFF, RTE_ETHER_ADDR_LEN);
-  eth->ether_type = htons(RTE_ETHER_TYPE_ARP);  // ARP_PROTOCOL
-  struct rte_arp_hdr* arp =
-      rte_pktmbuf_mtod_offset(req_pkt, struct rte_arp_hdr*, sizeof(struct rte_ether_hdr));
-  arp->arp_hardware = htons(RTE_ARP_HRD_ETHER);
-  arp->arp_protocol = htons(RTE_ETHER_TYPE_IPV4);  // IP protocol
-  arp->arp_hlen = RTE_ETHER_ADDR_LEN;              // size of MAC
-  arp->arp_plen = 4;                               // size of fo IP
-  arp->arp_opcode = htons(RTE_ARP_OP_REQUEST);
-  arp->arp_data.arp_tip = ip;
-  arp->arp_data.arp_sip = *(uint32_t*)mt_sip_addr(impl, port);
-  rte_eth_macaddr_get(port_id, &arp->arp_data.arp_sha);
-  memset(&arp->arp_data.arp_tha, 0, RTE_ETHER_ADDR_LEN);
-
-  /* send arp request packet */
   while (rte_atomic32_read(&arp_impl->mac_ready[i]) == 0) {
+    arp_send_req(impl, port, ip); /* send arp request packet */
+
     if (mt_aborted(impl)) {
       err("%s(%d), fail as user aborted\n", __func__, port);
       return -EIO;
     }
-    if ((max_retry > 0) && (retry > max_retry)) {
-      err("%s(%d), fail as timeout to %d ms\n", __func__, port, timeout_ms);
+    if (retry >= max_retry) {
+      if (max_retry) /* log only if not zero timeout */
+        err("%s(%d), fail as timeout to %d ms\n", __func__, port, timeout_ms);
       return -EIO;
-    }
-
-    rte_mbuf_refcnt_update(req_pkt, 1);
-    tx = mt_dev_tx_sys_queue_burst(impl, port, &req_pkt, 1);
-    if (tx < 1) {
-      err("%s(%d), tx fail\n", __func__, port);
-      rte_mbuf_refcnt_update(req_pkt, -1);
     }
 
     mt_sleep_ms(sleep_interval_ms);
@@ -232,7 +243,6 @@ int mt_arp_cni_get_mac(struct mtl_main_impl* impl, struct rte_ether_addr* ea,
            addr[2], addr[3]);
   }
   memcpy(ea->addr_bytes, arp_impl->ea[i].addr_bytes, RTE_ETHER_ADDR_LEN);
-  rte_pktmbuf_free(req_pkt);
 
   return 0;
 }

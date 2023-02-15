@@ -67,6 +67,7 @@ struct mudp_impl {
   /* stat */
   /* do we need atomic here? atomic may impact the performance */
   uint32_t stat_pkt_build;
+  uint32_t stat_pkt_arp_fail;
   uint32_t stat_pkt_tx;
   uint32_t stat_pkt_rx;
   uint32_t stat_pkt_rx_enq_fail;

@@ -91,7 +91,7 @@ static int udp_verfiy_poll(struct mudp_pollfd* fds, mudp_nfds_t nfds, int timeou
 
 static int udp_build_tx_pkt(struct mtl_main_impl* impl, struct mudp_impl* s,
                             struct rte_mbuf* pkt, const void* buf, size_t len,
-                            const struct sockaddr_in* addr_in) {
+                            const struct sockaddr_in* addr_in, int arp_timeout_ms) {
   struct mt_udp_hdr* hdr = rte_pktmbuf_mtod(pkt, struct mt_udp_hdr*);
   struct rte_ether_hdr* eth = &hdr->eth;
   struct rte_ipv4_hdr* ipv4 = &hdr->ipv4;
@@ -109,10 +109,12 @@ static int udp_build_tx_pkt(struct mtl_main_impl* impl, struct mudp_impl* s,
   if (udp_get_flag(s, MUDP_TX_USER_MAC)) {
     rte_memcpy(d_addr->addr_bytes, s->user_mac, RTE_ETHER_ADDR_LEN);
   } else {
-    ret = mt_dev_dst_ip_mac(impl, dip, d_addr, port, s->arp_timeout_ms);
+    ret = mt_dev_dst_ip_mac(impl, dip, d_addr, port, arp_timeout_ms);
     if (ret < 0) {
-      err("%s(%d), mt_dev_dst_ip_mac fail %d for %u.%u.%u.%u\n", __func__, idx, ret,
-          dip[0], dip[1], dip[2], dip[3]);
+      if (arp_timeout_ms) /* log only if not zero timeout */
+        err("%s(%d), mt_dev_dst_ip_mac fail %d for %u.%u.%u.%u\n", __func__, idx, ret,
+            dip[0], dip[1], dip[2], dip[3]);
+      s->stat_pkt_arp_fail++;
       return ret;
     }
   }
@@ -414,6 +416,10 @@ static int udp_stat_dump(void* priv) {
          s->stat_pkt_rx_enq_fail);
     s->stat_pkt_rx_enq_fail = 0;
   }
+  if (s->stat_pkt_arp_fail) {
+    warn("%s(%d,%d), pkt %u arp fail\n", __func__, port, idx, s->stat_pkt_arp_fail);
+    s->stat_pkt_arp_fail = 0;
+  }
   return 0;
 }
 
@@ -672,7 +678,8 @@ mudp_handle mudp_socket_port(mtl_handle mt, int domain, int type, int protocol,
   s->port = port;
   s->element_nb = mt_if_nb_tx_desc(impl, port) + 512;
   s->element_size = MUDP_MAX_BYTES;
-  s->arp_timeout_ms = 0;
+  /* No dependcy to arp for kernel based udp stack */
+  s->arp_timeout_ms = MT_DEV_TIMEOUT_ZERO;
   s->tx_timeout_ms = 10;
   s->rx_timeout_ms = 1000 * 1;
   s->txq_bps = MUDP_DEFAULT_RL_BPS;
@@ -767,6 +774,7 @@ ssize_t mudp_sendto(mudp_handle ut, const void* buf, size_t len, int flags,
   struct mudp_impl* s = ut;
   struct mtl_main_impl* impl = s->parnet;
   int idx = s->idx;
+  int arp_timeout_ms = s->arp_timeout_ms;
   int ret;
   struct rte_mbuf* m;
 
@@ -797,11 +805,16 @@ ssize_t mudp_sendto(mudp_handle ut, const void* buf, size_t len, int flags,
     return -ENOMEM;
   }
 
-  ret = udp_build_tx_pkt(impl, s, m, buf, len, addr_in);
+  ret = udp_build_tx_pkt(impl, s, m, buf, len, addr_in, arp_timeout_ms);
   if (ret < 0) {
-    err("%s(%d), build pkt fail %d\n", __func__, idx, ret);
     rte_pktmbuf_free(m);
-    return ret;
+    if (arp_timeout_ms) {
+      err("%s(%d), build pkt fail %d\n", __func__, idx, ret);
+      return ret;
+    } else {
+      mt_delay_us(1);
+      return len;
+    }
   }
 
   uint16_t tx;
