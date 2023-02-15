@@ -24,6 +24,7 @@ rx_st20_tx_st20_split_fwd_sources = files('rx_st20_tx_st20_split_fwd.c', 'sample
 rx_st20p_tx_st20p_split_fwd_sources = files('rx_st20p_tx_st20p_split_fwd.c', 'sample_util.c')
 rx_st20p_tx_st20p_merge_fwd_sources = files('rx_st20p_tx_st20p_merge_fwd.c', 'sample_util.c')
 rx_st20p_tx_st20p_downsample_fwd_sources = files('rx_st20p_tx_st20p_downsample_fwd.c', 'sample_util.c')
+rx_st20p_tx_st20p_downsample_merge_fwd_sources = files('rx_st20p_tx_st20p_downsample_merge_fwd.c', 'sample_util.c')
 
 redundant_rx_st20_sample_sources = files('rx_st20_redundant_sample.c', 'sample_util.c')
 

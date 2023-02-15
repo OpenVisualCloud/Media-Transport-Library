@@ -49,6 +49,11 @@ The dir incldue the simple sample code for how to develop application quickly ba
 ./build/app/RxSt20pTxSt20pMergeFwd --p_port 0000:af:01.1 --p_sip 192.168.75.22 --p_rx_ip 239.168.75.20 --p_fwd_ip 239.168.75.20 --width 3840 --height 2160
 ```
 
+[rx_st20p_tx_st20p_downsample_merge_fwd.c](rx_st20p_tx_st20p_merge_fwd.c): Receive 4 1080p sessions from rx, downsample and merge to single 1080p st20 stream and send out.
+```bash
+./build/app/RxSt20pTxSt20pMergeFwd --p_port 0000:af:01.1 --p_sip 192.168.75.22 --p_rx_ip 239.168.75.20 --p_fwd_ip 239.168.75.20
+```
+
 ## 3. Samples which based on low level APIs for advanced usage:
 [tx_video_sample.c](tx_video_sample.c): A tx video(st2110-20) application based on frame interface, application need charge the color format conversion in case the user format is not the one defined in RFC4175.
 ```bash
