@@ -546,7 +546,7 @@ int st_frame_get_converter(enum st_frame_fmt src_fmt, enum st_frame_fmt dst_fmt,
 static int downsample_rfc4175_wh_half(struct st_frame* old_frame,
                                       struct st_frame* new_frame, int idx) {
   enum mtl_simd_level cpu_level = mtl_get_simd_level();
-  int ret;
+  int ret = 0;
 
   MT_MAY_UNUSED(cpu_level);
   MT_MAY_UNUSED(ret);
@@ -580,14 +580,14 @@ static int downsample_rfc4175_wh_half(struct st_frame* old_frame,
   }
 
 #ifdef MTL_HAS_AVX512_VBMI2
-  if (cpu_level >= MTL_SIMD_LEVEL_AVX512_VBMI2) {
-    dbg("%s, avx512_vbmi way\n", __func__);
-    if (t_fmt == ST20_FMT_YUV_422_10BIT) {
+  if (t_fmt == ST20_FMT_YUV_422_10BIT) { /* temp only 422be10 implemented */
+    if (cpu_level >= MTL_SIMD_LEVEL_AVX512_VBMI2) {
+      dbg("%s, avx512_vbmi way\n", __func__);
       ret = st20_downsample_rfc4175_422be10_wh_half_avx512_vbmi(
           src_start, dst_start, width, height, src_linesize, dst_linesize);
       if (ret == 0) return 0;
+      err("%s, avx512_vbmi way failed %d\n", __func__, ret);
     }
-    err("%s, avx512_vbmi way failed %d\n", __func__, ret);
   }
 #endif
 
@@ -606,8 +606,7 @@ static int downsample_rfc4175_wh_half(struct st_frame* old_frame,
 
 int st_frame_downsample(struct st_frame* src, struct st_frame* dst, int idx) {
   if (src->fmt == dst->fmt) {
-    enum st20_fmt t_fmt = st_frame_fmt_to_transport(src->fmt);
-    if (t_fmt != ST20_FMT_MAX) {
+    if (st_frame_fmt_to_transport(src->fmt) != ST20_FMT_MAX) {
       if (src->width == dst->width * 2 && src->height == dst->height * 2) {
         return downsample_rfc4175_wh_half(src, dst, idx);
       }
