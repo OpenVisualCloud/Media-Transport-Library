@@ -237,11 +237,18 @@ struct mt_cni_impl {
 #endif
 };
 
+struct mt_arp_entry {
+  uint32_t ip;
+  struct rte_ether_addr ea;
+  rte_atomic32_t mac_ready;
+};
+
 struct mt_arp_impl {
-  pthread_mutex_t mutex; /* entry protect */
-  uint32_t ip[MT_ARP_ENTRY_MAX];
-  struct rte_ether_addr ea[MT_ARP_ENTRY_MAX];
-  rte_atomic32_t mac_ready[MT_ARP_ENTRY_MAX];
+  pthread_mutex_t mutex; /* arp impl protect */
+  struct mt_arp_entry entries[MT_ARP_ENTRY_MAX];
+  bool timer_active;
+  enum mtl_port port;
+  struct mtl_main_impl* parnet;
 };
 
 struct mt_mcast_impl {
