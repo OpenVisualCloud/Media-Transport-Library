@@ -242,6 +242,61 @@ void socketopt_half(struct timeval* i) {
 }
 TEST(Api, socket_rcvtimeo) { socketopt_test<struct timeval>(SOL_SOCKET, SO_RCVTIMEO); }
 
+static int check_r_port_alive(struct mtl_init_params* p) {
+  int tx_fd = -1;
+  int rx_fd = -1;
+  int ret = -EIO;
+  struct sockaddr_in tx_addr;
+  struct sockaddr_in rx_addr;
+  size_t payload_len = 1024;
+  char send_buf[payload_len];
+  char recv_buf[payload_len];
+  st_test_rand_data((uint8_t*)send_buf, payload_len, 0);
+  /* max timeout 3 min */
+  int sleep_ms = 10;
+  int max_retry = 1000 / sleep_ms * 60 * 3;
+  int retry = 0;
+  ret = -ETIMEDOUT;
+
+  mufd_init_sockaddr(&tx_addr, p->sip_addr[MTL_PORT_P], 20000);
+  mufd_init_sockaddr(&rx_addr, p->sip_addr[MTL_PORT_R], 20000);
+
+  ret = mufd_socket_port(AF_INET, SOCK_DGRAM, 0, MTL_PORT_P);
+  if (ret < 0) goto out;
+  tx_fd = ret;
+
+  ret = mufd_socket_port(AF_INET, SOCK_DGRAM, 0, MTL_PORT_R);
+  if (ret < 0) goto out;
+  rx_fd = ret;
+
+  ret = mufd_bind(rx_fd, (const struct sockaddr*)&rx_addr, sizeof(rx_addr));
+  if (ret < 0) goto out;
+
+  struct timeval tv;
+  tv.tv_sec = 0;
+  tv.tv_usec = 1000;
+  ret = mufd_setsockopt(rx_fd, SOL_SOCKET, SO_RCVTIMEO, &tv, sizeof(tv));
+  if (ret < 0) goto out;
+
+  while (retry < max_retry) {
+    mufd_sendto(tx_fd, send_buf, sizeof(send_buf), 0, (const struct sockaddr*)&rx_addr,
+                sizeof(rx_addr));
+    ssize_t recv = mufd_recvfrom(rx_fd, recv_buf, sizeof(recv_buf), 0, NULL, NULL);
+    if (recv > 0) {
+      info("%s, rx port alive at %d\n", __func__, retry);
+      ret = 0;
+      break;
+    }
+    retry++;
+    st_usleep(sleep_ms * 1000);
+  }
+
+out:
+  if (tx_fd > 0) mufd_close(tx_fd);
+  if (rx_fd > 0) mufd_close(rx_fd);
+  return ret;
+}
+
 GTEST_API_ int main(int argc, char** argv) {
   struct utest_ctx* ctx;
   int ret;
@@ -272,7 +327,10 @@ GTEST_API_ int main(int argc, char** argv) {
 
   uint64_t start_time_ns = st_test_get_monotonic_time();
 
-  ret = RUN_ALL_TESTS();
+  /* before test we should make sure the rx port is ready */
+  ret = check_r_port_alive(&ctx->init_params.mt_params);
+
+  if (ret >= 0) ret = RUN_ALL_TESTS();
 
   uint64_t end_time_ns = st_test_get_monotonic_time();
   int time_s = (end_time_ns - start_time_ns) / NS_PER_S;
