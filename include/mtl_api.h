@@ -129,7 +129,7 @@ typedef struct mtl_dma_mem* mtl_dma_mem_handle;
 enum mtl_port {
   MTL_PORT_P = 0, /**< primary port */
   MTL_PORT_R,     /**< redundant port */
-  MTL_PORT_MAX,   /**< max value of this enum */
+  MTL_PORT_MAX = 32,   /**< max value of this enum */
 };
 
 /**
