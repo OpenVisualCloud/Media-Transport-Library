@@ -12,7 +12,7 @@ TEST_TIME_SEC=100
 #TEST_TIME_SEC=20
 TEST_LOOP=1
 
-TEST_JSON_LIST='loop_json/*.json'
+TEST_JSON_LIST='multi_port_json/*.json'
 #echo $TEST_JSON_LIST
 
 export KAHAWAI_CFG_PATH=../../kahawai.json
