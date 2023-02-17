@@ -22,7 +22,8 @@ static int rx_st20r_frame_pop(struct st20r_rx_ctx* ctx, void* frame) {
   return -EIO;
 }
 
-static int rx_st20r_frame_push(struct st20r_rx_ctx* ctx, void* frame, enum mtl_port port,
+static int rx_st20r_frame_push(struct st20r_rx_ctx* ctx, void* frame,
+                               enum mtl_session_port port,
                                struct st20_rx_frame_meta* meta) {
   struct st20r_rx_frame* rx_frame;
   int ret;
@@ -53,7 +54,7 @@ static int rx_st20r_frame_ready(void* priv, void* frame,
   struct st20r_rx_transport* transport = priv;
   struct st20r_rx_ctx* ctx = transport->parnet;
   int idx = ctx->idx;
-  enum mtl_port port = transport->port;
+  enum mtl_session_port port = transport->port;
   int ret = -EIO;
 
   if (!ctx->ready) return -EBUSY; /* not ready */
@@ -80,7 +81,7 @@ static int rx_st20r_frame_ready(void* priv, void* frame,
     if (st_is_frame_complete(meta->status)) {
       if (!ctx->cur_frame_complete) {
         /* full frame get at r session */
-        ret = rx_st20r_frame_push(ctx, frame, transport->port, meta);
+        ret = rx_st20r_frame_push(ctx, frame, port, meta);
         if (ret >= 0) {
           ctx->cur_frame_complete = true;
           info("%s(%d), push frame %p at r_port %d\n", __func__, idx, frame, port);

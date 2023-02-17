@@ -13,13 +13,13 @@ struct st20r_rx_ctx;
 
 struct st20r_rx_transport {
   st20_rx_handle handle;
-  enum mtl_port port; /* port this handle attached */
+  enum mtl_session_port port; /* port this handle attached */
   struct st20r_rx_ctx* parnet;
 };
 
 struct st20r_rx_frame {
   void* frame;
-  enum mtl_port port;
+  enum mtl_session_port port;
   struct st20_rx_frame_meta meta;
 };
 
