@@ -258,8 +258,8 @@ struct st_tx_video_session_impl {
   struct st_tx_video_pacing pacing;
   enum st21_tx_pacing_way pacing_way[MTL_SESSION_PORT_MAX];
   int (*pacing_tasklet_func[MTL_SESSION_PORT_MAX])(struct mtl_main_impl* impl,
-                                                  struct st_tx_video_session_impl* s,
-                                                  enum mtl_session_port s_port);
+                                                   struct st_tx_video_session_impl* s,
+                                                   enum mtl_session_port s_port);
 
   struct st_vsync_info vsync;
 

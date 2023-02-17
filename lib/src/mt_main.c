@@ -261,98 +261,70 @@ static int mt_user_params_check(struct mtl_init_params* p) {
   uint8_t if_ip[MTL_IP_ADDR_LEN];
   uint8_t if_netmask[MTL_IP_ADDR_LEN];
 
-  if ((num_ports > MTL_PORT_MAX) || (num_ports <= 0)) {
-    err("%s, invalid num_ports %d\n", __func__, num_ports);
-    return -EINVAL;
-  }
-
-  if ((p->pmd[MTL_PORT_P] >= MTL_PMD_TYPE_MAX) ||
-      (p->pmd[MTL_PORT_P] < MTL_PMD_DPDK_USER)) {
-    err("%s, invalid pmd %d\n", __func__, p->pmd[MTL_PORT_P]);
-    return -EINVAL;
-  }
-
-  if (p->pmd[MTL_PORT_P] == MTL_PMD_DPDK_AF_XDP) {
-    if (p->xdp_info[MTL_PORT_P].queue_count <= 0) {
-      err("%s, invalid queue_count %u for P port\n", __func__,
-          p->xdp_info[MTL_PORT_P].queue_count);
-      return -EINVAL;
-    }
-    if (p->xdp_info[MTL_PORT_P].start_queue <= 0) {
-      err("%s, invalid start_queue %u for P port\n", __func__,
-          p->xdp_info[MTL_PORT_P].start_queue);
-      return -EINVAL;
-    }
-    ret = mt_socket_get_if_ip(p->port[MTL_PORT_P], if_ip, if_netmask);
-    if (ret < 0) {
-      err("%s, get ip fail, if %s for P port\n", __func__, p->port[MTL_PORT_P]);
-      return ret;
-    }
-  }
-
-  if (p->tx_sessions_cnt_max < 0) {
-    err("%s, invalid tx_sessions_cnt_max %u\n", __func__, p->tx_sessions_cnt_max);
-    return -EINVAL;
-  }
-
-  if (p->rx_sessions_cnt_max < 0) {
-    err("%s, invalid rx_sessions_cnt_max %u\n", __func__, p->rx_sessions_cnt_max);
-    return -EINVAL;
-  }
-
+  /* hdr split queues check */
   if (p->nb_rx_hdr_split_queues > p->rx_sessions_cnt_max) {
     err("%s, too large nb_rx_hdr_split_queues %u, max %u\n", __func__,
         p->nb_rx_hdr_split_queues, p->rx_sessions_cnt_max);
     return -EINVAL;
   }
 
-  if (num_ports > 1) {
-    if (0 == strncmp(mtl_p_port(p), mtl_r_port(p), MTL_PORT_MAX_LEN)) {
-      err("%s, same %s for both port\n", __func__, mtl_p_port(p));
+  /* num_ports check */
+  if ((num_ports > MTL_PORT_MAX) || (num_ports <= 0)) {
+    err("%s, invalid num_ports %d\n", __func__, num_ports);
+    return -EINVAL;
+  }
+  /* info check for each port */
+  for (int i = 0; i < num_ports; i++) {
+    enum mtl_pmd_type pmd = p->pmd[i];
+
+    /* type check */
+    if ((pmd >= MTL_PMD_TYPE_MAX) || (pmd < 0)) {
+      err("%s(%d), invalid pmd type %d\n", __func__, i, pmd);
       return -EINVAL;
     }
 
-    if ((p->pmd[MTL_PORT_R] >= MTL_PMD_TYPE_MAX) ||
-        (p->pmd[MTL_PORT_R] < MTL_PMD_DPDK_USER)) {
-      err("%s, invalid pmd %d for r port\n", __func__, p->pmd[MTL_PORT_R]);
-      return -EINVAL;
-    }
-
-    if (p->pmd[MTL_PORT_R] == MTL_PMD_DPDK_AF_XDP) {
-      if (p->xdp_info[MTL_PORT_R].queue_count <= 0) {
-        err("%s, invalid queue_count %u for R port\n", __func__,
-            p->xdp_info[MTL_PORT_R].queue_count);
+    /* af xdp check */
+    if (pmd == MTL_PMD_DPDK_AF_XDP) {
+      if (p->xdp_info[i].queue_count <= 0) {
+        err("%s(%d), invalid queue_count %u\n", __func__, i, p->xdp_info[i].queue_count);
         return -EINVAL;
       }
-      if (p->xdp_info[MTL_PORT_R].start_queue <= 0) {
-        err("%s, invalid start_queue %u for R port\n", __func__,
-            p->xdp_info[MTL_PORT_R].start_queue);
+      if (p->xdp_info[i].start_queue <= 0) {
+        err("%s(%d), invalid start_queue %u\n", __func__, i, p->xdp_info[i].start_queue);
         return -EINVAL;
       }
-      ret = mt_socket_get_if_ip(p->port[MTL_PORT_R], if_ip, if_netmask);
+      ret = mt_socket_get_if_ip(p->port[i], if_ip, if_netmask);
       if (ret < 0) {
-        err("%s, get ip fail, if %s for R port\n", __func__, p->port[MTL_PORT_R]);
+        err("%s(%d), get ip fail from if %s for P port\n", __func__, i, p->port[i]);
         return ret;
       }
     }
-  }
-
-  for (int i = 0; i < num_ports; i++) {
-    if (p->pmd[i] != MTL_PMD_DPDK_USER) continue;
-    ip = p->sip_addr[i];
-    ret = mt_ip_addr_check(ip);
-    if (ret < 0) {
-      err("%s(%d), invalid ip %d.%d.%d.%d\n", __func__, i, ip[0], ip[1], ip[2], ip[3]);
-      return -EINVAL;
+    if (p->pmd[i] == MTL_PMD_DPDK_USER) {
+      ip = p->sip_addr[i];
+      ret = mt_ip_addr_check(ip);
+      if (ret < 0) {
+        err("%s(%d), invalid ip %d.%d.%d.%d\n", __func__, i, ip[0], ip[1], ip[2], ip[3]);
+        return -EINVAL;
+      }
     }
-  }
 
-  if ((num_ports > 1) && (p->pmd[0] == MTL_PMD_DPDK_USER) &&
-      (p->pmd[1] == MTL_PMD_DPDK_USER)) {
-    if (0 == memcmp(p->sip_addr[0], p->sip_addr[1], MTL_IP_ADDR_LEN)) {
-      ip = p->sip_addr[0];
-      err("%s, same %d.%d.%d.%d for both ip\n", __func__, ip[0], ip[1], ip[2], ip[3]);
-      return -EINVAL;
+    if (i > 0) {
+      for (int j = 0; j < i; j++) {
+        /* check if duplicate port name */
+        if (0 == strncmp(p->port[i], p->port[j], MTL_PORT_MAX_LEN)) {
+          err("%s, same name %s for port %d and %d\n", __func__, p->port[i], i, j);
+          return -EINVAL;
+        }
+        /* check if duplicate ip */
+        if ((p->pmd[i] == MTL_PMD_DPDK_USER) && (p->pmd[j] == MTL_PMD_DPDK_USER)) {
+          if (0 == memcmp(p->sip_addr[i], p->sip_addr[j], MTL_IP_ADDR_LEN)) {
+            ip = p->sip_addr[j];
+            err("%s, same ip %d.%d.%d.%d for port %d and %d\n", __func__, ip[0], ip[1],
+                ip[2], ip[3], i, j);
+            return -EINVAL;
+          }
+        }
+      }
     }
   }
 
