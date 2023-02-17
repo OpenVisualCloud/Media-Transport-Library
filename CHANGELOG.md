@@ -1,9 +1,14 @@
 # Change log
 
 ## Change log for 23.03:
+* dpdk: upgrade dpdk version to latest 22.11 for both windows and linux.
+* ptp: add pi controller and software frequency adjust to improve the accuracy to ~100ns.
 * mtl_init_params: add gateway and netmask support for wan.
 * udp: introduce a highly efficient udp stack support, see mudp_api.h
 * udp: add POSIX socket compatible(file descriptor) API support, see mudp_sockfd_api.h
+* udp: add sample code, see app/udp
+* arp: add zero timeout support for UDP stack.
+* mtl_init_params: add multi port support, user can initial MTL instance with up to 8 ports. See tests/script/multi_port_json/ for how to use from RxTxApp.
 
 ## Change log for 22.12:
 * tasklet: add thread and sleep option for core usage, see ST_FLAG_TASKLET_THREAD and ST_FLAG_TASKLET_SLEEP.
