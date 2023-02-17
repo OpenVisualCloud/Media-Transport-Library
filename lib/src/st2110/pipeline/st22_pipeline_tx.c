@@ -225,19 +225,19 @@ static int tx_st22p_create_transport(struct mtl_main_impl* impl, struct st22p_tx
   memset(&ops_tx, 0, sizeof(ops_tx));
   ops_tx.name = ops->name;
   ops_tx.priv = ctx;
-  ops_tx.num_port = RTE_MIN(ops->port.num_port, MTL_PORT_MAX);
+  ops_tx.num_port = RTE_MIN(ops->port.num_port, MTL_SESSION_PORT_MAX);
   for (int i = 0; i < ops_tx.num_port; i++) {
     memcpy(ops_tx.dip_addr[i], ops->port.dip_addr[i], MTL_IP_ADDR_LEN);
     strncpy(ops_tx.port[i], ops->port.port[i], MTL_PORT_MAX_LEN);
     ops_tx.udp_port[i] = ops->port.udp_port[i];
   }
   if (ops->flags & ST22P_TX_FLAG_USER_P_MAC) {
-    memcpy(&ops_tx.tx_dst_mac[MTL_PORT_P][0], &ops->tx_dst_mac[MTL_PORT_P][0],
+    memcpy(&ops_tx.tx_dst_mac[MTL_SESSION_PORT_P][0], &ops->tx_dst_mac[MTL_PORT_P][0],
            MTL_MAC_ADDR_LEN);
     ops_tx.flags |= ST22_TX_FLAG_USER_P_MAC;
   }
   if (ops->flags & ST22P_TX_FLAG_USER_R_MAC) {
-    memcpy(&ops_tx.tx_dst_mac[MTL_PORT_R][0], &ops->tx_dst_mac[MTL_PORT_R][0],
+    memcpy(&ops_tx.tx_dst_mac[MTL_SESSION_PORT_R][0], &ops->tx_dst_mac[MTL_PORT_R][0],
            MTL_MAC_ADDR_LEN);
     ops_tx.flags |= ST22_TX_FLAG_USER_R_MAC;
   }

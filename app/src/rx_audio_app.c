@@ -217,21 +217,21 @@ static int app_rx_audio_init(struct st_app_context* ctx, st_json_audio_session_t
   ops.name = name;
   ops.priv = s;
   ops.num_port = audio ? audio->base.num_inf : ctx->para.num_ports;
-  memcpy(ops.sip_addr[MTL_PORT_P],
-         audio ? audio->base.ip[MTL_PORT_P] : ctx->rx_sip_addr[MTL_PORT_P],
+  memcpy(ops.sip_addr[MTL_SESSION_PORT_P],
+         audio ? audio->base.ip[MTL_SESSION_PORT_P] : ctx->rx_sip_addr[MTL_PORT_P],
          MTL_IP_ADDR_LEN);
-  strncpy(ops.port[MTL_PORT_P],
-          audio ? audio->base.inf[MTL_PORT_P]->name : ctx->para.port[MTL_PORT_P],
+  strncpy(ops.port[MTL_SESSION_PORT_P],
+          audio ? audio->base.inf[MTL_SESSION_PORT_P]->name : ctx->para.port[MTL_PORT_P],
           MTL_PORT_MAX_LEN);
-  ops.udp_port[MTL_PORT_P] = audio ? audio->base.udp_port : (10100 + s->idx);
+  ops.udp_port[MTL_SESSION_PORT_P] = audio ? audio->base.udp_port : (10100 + s->idx);
   if (ops.num_port > 1) {
-    memcpy(ops.sip_addr[MTL_PORT_R],
-           audio ? audio->base.ip[MTL_PORT_R] : ctx->rx_sip_addr[MTL_PORT_R],
+    memcpy(ops.sip_addr[MTL_SESSION_PORT_R],
+           audio ? audio->base.ip[MTL_SESSION_PORT_R] : ctx->rx_sip_addr[MTL_PORT_R],
            MTL_IP_ADDR_LEN);
-    strncpy(ops.port[MTL_PORT_R],
+    strncpy(ops.port[MTL_SESSION_PORT_R],
             audio ? audio->base.inf[MTL_PORT_R]->name : ctx->para.port[MTL_PORT_R],
             MTL_PORT_MAX_LEN);
-    ops.udp_port[MTL_PORT_R] = audio ? audio->base.udp_port : (10100 + s->idx);
+    ops.udp_port[MTL_SESSION_PORT_R] = audio ? audio->base.udp_port : (10100 + s->idx);
   }
   ops.notify_frame_ready = app_rx_audio_frame_done;
   ops.notify_rtp_ready = app_rx_audio_rtp_ready;

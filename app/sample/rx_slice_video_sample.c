@@ -173,9 +173,11 @@ int main(int argc, char** argv) {
     ops_rx.name = "st20_test";
     ops_rx.priv = app[i];  // app handle register to lib
     ops_rx.num_port = 1;
-    memcpy(ops_rx.sip_addr[MTL_PORT_P], ctx.rx_sip_addr[MTL_PORT_P], MTL_IP_ADDR_LEN);
-    strncpy(ops_rx.port[MTL_PORT_P], ctx.param.port[MTL_PORT_P], MTL_PORT_MAX_LEN);
-    ops_rx.udp_port[MTL_PORT_P] = ctx.udp_port + i;  // user config the udp port.
+    memcpy(ops_rx.sip_addr[MTL_SESSION_PORT_P], ctx.rx_sip_addr[MTL_PORT_P],
+           MTL_IP_ADDR_LEN);
+    strncpy(ops_rx.port[MTL_SESSION_PORT_P], ctx.param.port[MTL_PORT_P],
+            MTL_PORT_MAX_LEN);
+    ops_rx.udp_port[MTL_SESSION_PORT_P] = ctx.udp_port + i;  // user config the udp port.
     ops_rx.pacing = ST21_PACING_NARROW;
     ops_rx.type = ST20_TYPE_SLICE_LEVEL;
     ops_rx.width = ctx.width;

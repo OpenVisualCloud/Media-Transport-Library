@@ -332,9 +332,10 @@ int main(int argc, char** argv) {
   ops_rx.name = "st20_fwd";
   ops_rx.priv = &app;
   ops_rx.num_port = 1;
-  memcpy(ops_rx.sip_addr[MTL_PORT_P], ctx.rx_sip_addr[MTL_PORT_P], MTL_IP_ADDR_LEN);
-  strncpy(ops_rx.port[MTL_PORT_P], ctx.param.port[MTL_PORT_P], MTL_PORT_MAX_LEN);
-  ops_rx.udp_port[MTL_PORT_P] = ctx.udp_port;  // user config the udp port.
+  memcpy(ops_rx.sip_addr[MTL_SESSION_PORT_P], ctx.rx_sip_addr[MTL_PORT_P],
+         MTL_IP_ADDR_LEN);
+  strncpy(ops_rx.port[MTL_SESSION_PORT_P], ctx.param.port[MTL_PORT_P], MTL_PORT_MAX_LEN);
+  ops_rx.udp_port[MTL_SESSION_PORT_P] = ctx.udp_port;  // user config the udp port.
   ops_rx.pacing = ST21_PACING_NARROW;
   ops_rx.type = ST20_TYPE_FRAME_LEVEL;
   ops_rx.width = ctx.width;
@@ -358,9 +359,10 @@ int main(int argc, char** argv) {
   ops_tx.name = "st20_fwd";
   ops_tx.priv = &app;
   ops_tx.num_port = 1;
-  memcpy(ops_tx.dip_addr[MTL_PORT_P], ctx.fwd_dip_addr[MTL_PORT_P], MTL_IP_ADDR_LEN);
-  strncpy(ops_tx.port[MTL_PORT_P], ctx.param.port[MTL_PORT_P], MTL_PORT_MAX_LEN);
-  ops_tx.udp_port[MTL_PORT_P] = ctx.udp_port;
+  memcpy(ops_tx.dip_addr[MTL_SESSION_PORT_P], ctx.fwd_dip_addr[MTL_PORT_P],
+         MTL_IP_ADDR_LEN);
+  strncpy(ops_tx.port[MTL_SESSION_PORT_P], ctx.param.port[MTL_PORT_P], MTL_PORT_MAX_LEN);
+  ops_tx.udp_port[MTL_SESSION_PORT_P] = ctx.udp_port;
   ops_tx.pacing = ST21_PACING_NARROW;
   ops_tx.type = ST20_TYPE_FRAME_LEVEL;
   ops_tx.width = ctx.width;

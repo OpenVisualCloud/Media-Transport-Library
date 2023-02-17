@@ -977,7 +977,7 @@ static int rx_audio_ops_check(struct st30_rx_ops* ops) {
   int num_ports = ops->num_port, ret;
   uint8_t* ip;
 
-  if ((num_ports > MTL_PORT_MAX) || (num_ports <= 0)) {
+  if ((num_ports > MTL_SESSION_PORT_MAX) || (num_ports <= 0)) {
     err("%s, invalid num_ports %d\n", __func__, num_ports);
     return -EINVAL;
   }
@@ -1227,7 +1227,7 @@ int st30_rx_get_queue_meta(st30_rx_handle handle, struct st_queue_meta* meta) {
   impl = s_impl->parnet;
 
   memset(meta, 0x0, sizeof(*meta));
-  meta->num_port = RTE_MIN(s->ops.num_port, MTL_PORT_MAX);
+  meta->num_port = RTE_MIN(s->ops.num_port, MTL_SESSION_PORT_MAX);
   for (uint8_t i = 0; i < meta->num_port; i++) {
     port = mt_port_logic2phy(s->port_maps, i);
 

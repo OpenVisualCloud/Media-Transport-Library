@@ -3277,7 +3277,7 @@ static int rv_ops_check(struct st20_rx_ops* ops) {
   uint8_t* ip;
   enum st20_type type = ops->type;
 
-  if ((num_ports > MTL_PORT_MAX) || (num_ports <= 0)) {
+  if ((num_ports > MTL_SESSION_PORT_MAX) || (num_ports <= 0)) {
     err("%s, invalid num_ports %d\n", __func__, num_ports);
     return -EINVAL;
   }
@@ -3373,7 +3373,7 @@ static int rv_st22_ops_check(struct st22_rx_ops* ops) {
   int num_ports = ops->num_port, ret;
   uint8_t* ip;
 
-  if ((num_ports > MTL_PORT_MAX) || (num_ports <= 0)) {
+  if ((num_ports > MTL_SESSION_PORT_MAX) || (num_ports <= 0)) {
     err("%s, invalid num_ports %d\n", __func__, num_ports);
     return -EINVAL;
   }
@@ -3735,7 +3735,7 @@ int st20_rx_get_queue_meta(st20_rx_handle handle, struct st_queue_meta* meta) {
   impl = s_impl->parnet;
 
   memset(meta, 0x0, sizeof(*meta));
-  meta->num_port = RTE_MIN(s->ops.num_port, MTL_PORT_MAX);
+  meta->num_port = RTE_MIN(s->ops.num_port, MTL_SESSION_PORT_MAX);
   for (uint8_t i = 0; i < meta->num_port; i++) {
     port = mt_port_logic2phy(s->port_maps, i);
 
@@ -3820,13 +3820,10 @@ st22_rx_handle st22_rx_create(mtl_handle mt, struct st22_rx_ops* ops) {
   st20_ops.name = ops->name;
   st20_ops.priv = ops->priv;
   st20_ops.num_port = ops->num_port;
-  memcpy(st20_ops.sip_addr[MTL_PORT_P], ops->sip_addr[MTL_PORT_P], MTL_IP_ADDR_LEN);
-  strncpy(st20_ops.port[MTL_PORT_P], ops->port[MTL_PORT_P], MTL_PORT_MAX_LEN);
-  st20_ops.udp_port[MTL_PORT_P] = ops->udp_port[MTL_PORT_P];
-  if (ops->num_port > 1) {
-    memcpy(st20_ops.sip_addr[MTL_PORT_R], ops->sip_addr[MTL_PORT_R], MTL_IP_ADDR_LEN);
-    strncpy(st20_ops.port[MTL_PORT_R], ops->port[MTL_PORT_R], MTL_PORT_MAX_LEN);
-    st20_ops.udp_port[MTL_PORT_R] = ops->udp_port[MTL_PORT_R];
+  for (int i = 0; i < ops->num_port; i++) {
+    memcpy(st20_ops.sip_addr[i], ops->sip_addr[i], MTL_IP_ADDR_LEN);
+    strncpy(st20_ops.port[i], ops->port[i], MTL_PORT_MAX_LEN);
+    st20_ops.udp_port[i] = ops->udp_port[i];
   }
   if (ops->flags & ST22_RX_FLAG_DATA_PATH_ONLY)
     st20_ops.flags |= ST20_RX_FLAG_DATA_PATH_ONLY;
@@ -4057,7 +4054,7 @@ int st22_rx_get_queue_meta(st22_rx_handle handle, struct st_queue_meta* meta) {
   impl = s_impl->parnet;
 
   memset(meta, 0x0, sizeof(*meta));
-  meta->num_port = RTE_MIN(s->ops.num_port, MTL_PORT_MAX);
+  meta->num_port = RTE_MIN(s->ops.num_port, MTL_SESSION_PORT_MAX);
   for (uint8_t i = 0; i < meta->num_port; i++) {
     port = mt_port_logic2phy(s->port_maps, i);
 

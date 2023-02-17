@@ -2614,7 +2614,7 @@ static int tv_ops_check(struct st20_tx_ops* ops) {
   int num_ports = ops->num_port, ret;
   uint8_t* ip;
 
-  if ((num_ports > MTL_PORT_MAX) || (num_ports <= 0)) {
+  if ((num_ports > MTL_SESSION_PORT_MAX) || (num_ports <= 0)) {
     err("%s, invalid num_ports %d\n", __func__, num_ports);
     return -EINVAL;
   }
@@ -2682,7 +2682,7 @@ static int tv_st22_ops_check(struct st22_tx_ops* ops) {
   int num_ports = ops->num_port, ret;
   uint8_t* ip;
 
-  if ((num_ports > MTL_PORT_MAX) || (num_ports <= 0)) {
+  if ((num_ports > MTL_SESSION_PORT_MAX) || (num_ports <= 0)) {
     err("%s, invalid num_ports %d\n", __func__, num_ports);
     return -EINVAL;
   }
@@ -3146,21 +3146,20 @@ st22_tx_handle st22_tx_create(mtl_handle mt, struct st22_tx_ops* ops) {
   st20_ops.name = ops->name;
   st20_ops.priv = ops->priv;
   st20_ops.num_port = ops->num_port;
-  memcpy(st20_ops.dip_addr[MTL_PORT_P], ops->dip_addr[MTL_PORT_P], MTL_IP_ADDR_LEN);
-  strncpy(st20_ops.port[MTL_PORT_P], ops->port[MTL_PORT_P], MTL_PORT_MAX_LEN);
-  st20_ops.udp_port[MTL_PORT_P] = ops->udp_port[MTL_PORT_P];
+  for (int i = 0; i < ops->num_port; i++) {
+    memcpy(st20_ops.dip_addr[i], ops->dip_addr[i], MTL_IP_ADDR_LEN);
+    strncpy(st20_ops.port[i], ops->port[i], MTL_PORT_MAX_LEN);
+    st20_ops.udp_port[i] = ops->udp_port[i];
+  }
   if (ops->flags & ST22_TX_FLAG_USER_P_MAC) {
-    memcpy(&st20_ops.tx_dst_mac[MTL_PORT_P][0], &ops->tx_dst_mac[MTL_PORT_P][0],
-           MTL_MAC_ADDR_LEN);
+    memcpy(&st20_ops.tx_dst_mac[MTL_SESSION_PORT_P][0],
+           &ops->tx_dst_mac[MTL_SESSION_PORT_P][0], MTL_MAC_ADDR_LEN);
     st20_ops.flags |= ST20_TX_FLAG_USER_P_MAC;
   }
   if (ops->num_port > 1) {
-    memcpy(st20_ops.dip_addr[MTL_PORT_R], ops->dip_addr[MTL_PORT_R], MTL_IP_ADDR_LEN);
-    strncpy(st20_ops.port[MTL_PORT_R], ops->port[MTL_PORT_R], MTL_PORT_MAX_LEN);
-    st20_ops.udp_port[MTL_PORT_R] = ops->udp_port[MTL_PORT_R];
     if (ops->flags & ST22_TX_FLAG_USER_R_MAC) {
-      memcpy(&st20_ops.tx_dst_mac[MTL_PORT_R][0], &ops->tx_dst_mac[MTL_PORT_R][0],
-             MTL_MAC_ADDR_LEN);
+      memcpy(&st20_ops.tx_dst_mac[MTL_SESSION_PORT_R][0],
+             &ops->tx_dst_mac[MTL_SESSION_PORT_R][0], MTL_MAC_ADDR_LEN);
       st20_ops.flags |= ST20_TX_FLAG_USER_R_MAC;
     }
   }

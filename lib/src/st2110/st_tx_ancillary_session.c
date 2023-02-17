@@ -1278,8 +1278,9 @@ void st_tx_ancillary_sessions_stat(struct mtl_main_impl* impl) {
     mgr->st40_stat_pkts_burst = 0;
   } else {
     if (mgr->max_idx > 0) {
-      warn("TX_ANC_SESSION: trs ret %d:%d\n", mgr->stat_trs_ret_code[MTL_PORT_P],
-           mgr->stat_trs_ret_code[MTL_PORT_R]);
+      for (int i = 0; i < mt_num_ports(impl); i++) {
+        warn("TX_ANC_SESSION: trs ret %d:%d\n", i, mgr->stat_trs_ret_code[i]);
+      }
     }
   }
 }
@@ -1313,7 +1314,7 @@ static int tx_ancillary_ops_check(struct st40_tx_ops* ops) {
   int num_ports = ops->num_port, ret;
   uint8_t* ip;
 
-  if ((num_ports > MTL_PORT_MAX) || (num_ports <= 0)) {
+  if ((num_ports > MTL_SESSION_PORT_MAX) || (num_ports <= 0)) {
     err("%s, invalid num_ports %d\n", __func__, num_ports);
     return -EINVAL;
   }

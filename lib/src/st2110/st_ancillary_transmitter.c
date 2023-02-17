@@ -141,7 +141,8 @@ int st_ancillary_transmitter_uinit(struct st_ancillary_transmitter_impl* trs) {
     trs->tasklet = NULL;
   }
 
-  info("%s(%d), succ, inflight %d:%d\n", __func__, idx, trs->inflight_cnt[MTL_PORT_P],
-       trs->inflight_cnt[MTL_PORT_R]);
+  for (int i = 0; i < mt_num_ports(trs->parnet); i++) {
+    info("%s(%d), succ, inflight %d:%d\n", __func__, idx, i, trs->inflight_cnt[i]);
+  }
   return 0;
 }

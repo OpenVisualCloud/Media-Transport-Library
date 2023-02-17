@@ -1088,8 +1088,8 @@ static void tx_audio_session_stat(struct st_tx_audio_session_impl* s) {
   rte_atomic32_set(&s->st30_stat_frame_cnt, 0);
 
   notice("TX_AUDIO_SESSION(%d:%s): frame cnt %d, pkt cnt %d, inflight count %d: %d\n",
-         idx, s->ops_name, frame_cnt, s->st30_stat_pkt_cnt, s->inflight_cnt[MTL_PORT_P],
-         s->inflight_cnt[MTL_PORT_R]);
+         idx, s->ops_name, frame_cnt, s->st30_stat_pkt_cnt,
+         s->inflight_cnt[MTL_SESSION_PORT_P], s->inflight_cnt[MTL_SESSION_PORT_R]);
   s->st30_stat_pkt_cnt = 0;
 
   if (s->st30_epoch_mismatch) {
@@ -1266,8 +1266,9 @@ void st_tx_audio_sessions_stat(struct mtl_main_impl* impl) {
     mgr->st30_stat_pkts_burst = 0;
   } else {
     if (mgr->max_idx > 0) {
-      warn("TX_AUDIO_SESSION: trs ret %d:%d\n", mgr->stat_trs_ret_code[MTL_PORT_P],
-           mgr->stat_trs_ret_code[MTL_PORT_R]);
+      for (int i = 0; i < mt_num_ports(impl); i++) {
+        warn("TX_AUDIO_SESSION: trs ret %d:%d\n", i, mgr->stat_trs_ret_code[i]);
+      }
     }
   }
 }
@@ -1276,7 +1277,7 @@ static int tx_audio_ops_check(struct st30_tx_ops* ops) {
   int num_ports = ops->num_port, ret;
   uint8_t* ip;
 
-  if ((num_ports > MTL_PORT_MAX) || (num_ports <= 0)) {
+  if ((num_ports > MTL_SESSION_PORT_MAX) || (num_ports <= 0)) {
     err("%s, invalid num_ports %d\n", __func__, num_ports);
     return -EINVAL;
   }

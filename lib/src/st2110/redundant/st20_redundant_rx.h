@@ -33,7 +33,7 @@ struct st20r_rx_ctx {
 
   pthread_mutex_t lock;
   bool ready;
-  struct st20r_rx_transport* transport[MTL_PORT_MAX];
+  struct st20r_rx_transport* transport[MTL_SESSION_PORT_MAX];
 
   /* global status for current frame */
   void* cur_frame;
