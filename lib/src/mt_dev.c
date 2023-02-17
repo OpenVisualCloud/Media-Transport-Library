@@ -2078,13 +2078,13 @@ int dev_arp_mac(struct mtl_main_impl* impl, uint8_t dip[MTL_IP_ADDR_LEN],
     ret = mt_socket_get_mac(impl, mt_get_user_params(impl)->port[port], dip, ea,
                             timeout_ms);
     if (ret < 0) {
-      err("%s(%d), failed to get mac from socket %d\n", __func__, port, ret);
+      dbg("%s(%d), failed to get mac from socket %d\n", __func__, port, ret);
       return ret;
     }
   } else {
     ret = mt_arp_cni_get_mac(impl, ea, port, mt_ip_to_u32(dip), timeout_ms);
     if (ret < 0) {
-      err("%s(%d), failed to get mac from cni %d\n", __func__, port, ret);
+      dbg("%s(%d), failed to get mac from cni %d\n", __func__, port, ret);
       return ret;
     }
   }
@@ -2094,14 +2094,17 @@ int dev_arp_mac(struct mtl_main_impl* impl, uint8_t dip[MTL_IP_ADDR_LEN],
 
 int mt_dev_dst_ip_mac(struct mtl_main_impl* impl, uint8_t dip[MTL_IP_ADDR_LEN],
                       struct rte_ether_addr* ea, enum mtl_port port, int timeout_ms) {
+  int ret;
+
   if (mt_is_multicast_ip(dip)) {
     mt_mcast_ip_to_mac(dip, ea);
+    ret = 0;
   } else if (mt_is_lan_ip(dip, mt_sip_addr(impl, port), mt_sip_netmask(impl, port))) {
-    dev_arp_mac(impl, dip, ea, port, timeout_ms);
+    ret = dev_arp_mac(impl, dip, ea, port, timeout_ms);
   } else {
     uint8_t* gatway = mt_sip_gatway(impl, port);
     if (mt_ip_to_u32(gatway)) {
-      dev_arp_mac(impl, gatway, ea, port, timeout_ms);
+      ret = dev_arp_mac(impl, gatway, ea, port, timeout_ms);
     } else {
       err("%s(%d), ip %d.%d.%d.%d is wan but no gateway support\n", __func__, port,
           dip[0], dip[1], dip[2], dip[3]);
@@ -2113,7 +2116,7 @@ int mt_dev_dst_ip_mac(struct mtl_main_impl* impl, uint8_t dip[MTL_IP_ADDR_LEN],
       __func__, port, dip[0], dip[1], dip[2], dip[3], ea->addr_bytes[0],
       ea->addr_bytes[1], ea->addr_bytes[2], ea->addr_bytes[3], ea->addr_bytes[4],
       ea->addr_bytes[5]);
-  return 0;
+  return ret;
 }
 
 int mt_dev_if_uinit(struct mtl_main_impl* impl) {

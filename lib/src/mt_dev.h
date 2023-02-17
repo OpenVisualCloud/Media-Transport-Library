@@ -7,12 +7,16 @@
 
 #include "mt_main.h"
 
+/* default desc nb for tx and rx */
 #define MT_DEV_RX_DESC (4096 / 2)
 #define MT_DEV_TX_DESC (4096 / 8)
 
 #define MT_DEV_STAT_INTERVAL_S (10) /* 10s */
 #define MT_DEV_STAT_INTERVAL_US(s) (s * US_PER_S)
 #define MT_DEV_STAT_M_UNIT (1000 * 1000)
+
+#define MT_DEV_TIMEOUT_INFINITE (INT_MAX)
+#define MT_DEV_TIMEOUT_ZERO (0)
 
 #define MT_EAL_MAX_ARGS (32)
 

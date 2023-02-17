@@ -255,19 +255,21 @@ int mt_socket_get_mac(struct mtl_main_impl* impl, char* if_name,
 
   int retry = 0;
   while (socket_arp_get(sock, addr.sin_addr.s_addr, ea, if_name) < 0) {
+    memset(dummy_buf, 0, sizeof(dummy_buf));
+    /* tx one dummy pkt to send arp request */
+    sendto(sock, dummy_buf, 0, 0, (struct sockaddr*)&addr, sizeof(struct sockaddr_in));
+
     if (mt_aborted(impl)) {
       err("%s, fail as user aborted\n", __func__);
       close(sock);
       return -EIO;
     }
-    if ((max_retry > 0) && (retry > max_retry)) {
-      err("%s, fail as timeout to %d ms\n", __func__, timeout_ms);
+    if (retry >= max_retry) {
+      if (max_retry) /* log only if not zero timeout */
+        err("%s, fail as timeout to %d ms\n", __func__, timeout_ms);
       close(sock);
       return -EIO;
     }
-
-    sendto(sock, dummy_buf, 0, 0, (struct sockaddr*)&addr, sizeof(struct sockaddr_in));
-
     retry++;
     if (0 == (retry % 50)) {
       info("%s(%s), waiting arp from %d.%d.%d.%d\n", __func__, if_name, dip[0], dip[1],

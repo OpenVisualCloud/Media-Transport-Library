@@ -66,10 +66,12 @@ struct mudp_impl {
 
   /* stat */
   /* do we need atomic here? atomic may impact the performance */
-  int stat_pkt_build;
-  int stat_pkt_tx;
-  int stat_pkt_rx;
-  int stat_pkt_deliver;
+  uint32_t stat_pkt_build;
+  uint32_t stat_pkt_arp_fail;
+  uint32_t stat_pkt_tx;
+  uint32_t stat_pkt_rx;
+  uint32_t stat_pkt_rx_enq_fail;
+  uint32_t stat_pkt_deliver;
 };
 
 int mudp_verfiy_socket_args(int domain, int type, int protocol);
