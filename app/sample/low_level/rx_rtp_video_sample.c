@@ -2,7 +2,7 @@
  * Copyright(c) 2022 Intel Corporation
  */
 
-#include "sample_util.h"
+#include "../sample_util.h"
 
 struct rv_rtp_sample_ctx {
   int idx;

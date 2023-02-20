@@ -2,7 +2,7 @@
  * Copyright(c) 2023 Intel Corporation
  */
 
-#include "sample_util.h"
+#include "../sample_util.h"
 
 struct tx_ctx {
   st20p_tx_handle tx_handle;
