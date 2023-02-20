@@ -6,7 +6,7 @@
 #include <stdatomic.h>
 #include <sys/queue.h>
 
-#include "sample_util.h"
+#include "../sample_util.h"
 
 #define FB_CNT (4) /* 2 is not enough for this case */
 

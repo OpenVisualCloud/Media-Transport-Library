@@ -4,7 +4,7 @@
 
 #include <openssl/sha.h>
 
-#include "sample_util.h"
+#include "../sample_util.h"
 
 static inline void rand_data(uint8_t* p, size_t sz, uint8_t base) {
   for (size_t i = 0; i < sz; i++) {

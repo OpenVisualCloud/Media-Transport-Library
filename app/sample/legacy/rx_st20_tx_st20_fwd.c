@@ -2,7 +2,7 @@
  * Copyright(c) 2022 Intel Corporation
  */
 
-#include "sample_util.h"
+#include "../sample_util.h"
 
 struct rx_st20_tx_st20_sample_ctx {
   mtl_handle st;
