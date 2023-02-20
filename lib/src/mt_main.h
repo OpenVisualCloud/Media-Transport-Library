@@ -110,6 +110,7 @@ enum mt_driver_type {
   MT_DRV_AF_XDP,    /* af xdp, net_af_xdp */
   MT_DRV_E1000_IGB, /* e1000 igb, net_e1000_igb */
   MT_DRV_IGC,       /* igc, net_igc */
+  MT_DRV_ENA,       /* ena, net_ena */
 };
 
 enum mt_ptp_l_mode {

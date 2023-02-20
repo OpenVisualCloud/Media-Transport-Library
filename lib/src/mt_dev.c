@@ -66,6 +66,11 @@ static const struct mt_dev_driver_info dev_drvs[] = {
         .port_type = MT_PORT_PF,
         .drv_type = MT_DRV_IGC,
     },
+    {
+        .name = "net_ena",
+        .port_type = MT_PORT_VF,
+        .drv_type = MT_DRV_ENA,
+    },
 };
 
 static int parse_driver_info(const char* driver, enum mt_port_type* port,
