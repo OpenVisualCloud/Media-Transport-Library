@@ -234,13 +234,13 @@ struct st30_tx_ops {
   /** private data to the callback function */
   void* priv;
   /** destination IP address */
-  uint8_t dip_addr[MTL_PORT_MAX][MTL_IP_ADDR_LEN];
+  uint8_t dip_addr[MTL_SESSION_PORT_MAX][MTL_IP_ADDR_LEN];
   /** Pcie BDF path like 0000:af:00.0, should align to BDF of mtl_init */
-  char port[MTL_PORT_MAX][MTL_PORT_MAX_LEN];
+  char port[MTL_SESSION_PORT_MAX][MTL_PORT_MAX_LEN];
   /** 1 or 2, num of ports this session attached to */
   uint8_t num_port;
   /** UDP port number */
-  uint16_t udp_port[MTL_PORT_MAX];
+  uint16_t udp_port[MTL_SESSION_PORT_MAX];
 
   /** Session payload format */
   enum st30_fmt fmt;
@@ -270,7 +270,7 @@ struct st30_tx_ops {
    * tx destination mac address.
    * Valid if ST30_TX_FLAG_USER_P(R)_MAC is enabled
    */
-  uint8_t tx_dst_mac[MTL_PORT_MAX][MTL_MAC_ADDR_LEN];
+  uint8_t tx_dst_mac[MTL_SESSION_PORT_MAX][MTL_MAC_ADDR_LEN];
 
   /**
    * the frame buffer count requested for one st30 tx session,
@@ -327,13 +327,13 @@ struct st30_rx_ops {
   /** private data to the callback function */
   void* priv;
   /** source IP address of sender */
-  uint8_t sip_addr[MTL_PORT_MAX][MTL_IP_ADDR_LEN];
+  uint8_t sip_addr[MTL_SESSION_PORT_MAX][MTL_IP_ADDR_LEN];
   /** 1 or 2, num of ports this session attached to */
   uint8_t num_port;
   /** Pcie BDF path like 0000:af:00.0, should align to BDF of mtl_init */
-  char port[MTL_PORT_MAX][MTL_PORT_MAX_LEN];
+  char port[MTL_SESSION_PORT_MAX][MTL_PORT_MAX_LEN];
   /** UDP port number */
-  uint16_t udp_port[MTL_PORT_MAX];
+  uint16_t udp_port[MTL_SESSION_PORT_MAX];
   /** flags, value in ST30_RX_FLAG_* */
   uint32_t flags;
 

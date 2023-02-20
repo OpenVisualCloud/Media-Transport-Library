@@ -251,21 +251,22 @@ static int app_rx_st20r_init(struct st_app_context* ctx, st_json_video_session_t
   ops.name = name;
   ops.priv = s;
   ops.num_port = video ? video->base.num_inf : ctx->para.num_ports;
-  memcpy(ops.sip_addr[MTL_PORT_P],
-         video ? video->base.ip[MTL_PORT_P] : ctx->rx_sip_addr[MTL_PORT_P],
+  memcpy(ops.sip_addr[MTL_SESSION_PORT_P],
+         video ? video->base.ip[MTL_SESSION_PORT_P] : ctx->rx_sip_addr[MTL_PORT_P],
          MTL_IP_ADDR_LEN);
-  strncpy(ops.port[MTL_PORT_P],
+  strncpy(ops.port[MTL_SESSION_PORT_P],
           video ? video->base.inf[MTL_PORT_P]->name : ctx->para.port[MTL_PORT_P],
           MTL_PORT_MAX_LEN);
-  ops.udp_port[MTL_PORT_P] = video ? video->base.udp_port : (10000 + s->idx);
+  ops.udp_port[MTL_SESSION_PORT_P] = video ? video->base.udp_port : (10000 + s->idx);
   if (ops.num_port > 1) {
-    memcpy(ops.sip_addr[MTL_PORT_R],
-           video ? video->base.ip[MTL_PORT_R] : ctx->rx_sip_addr[MTL_PORT_R],
+    memcpy(ops.sip_addr[MTL_SESSION_PORT_R],
+           video ? video->base.ip[MTL_SESSION_PORT_R] : ctx->rx_sip_addr[MTL_PORT_R],
            MTL_IP_ADDR_LEN);
-    strncpy(ops.port[MTL_PORT_R],
-            video ? video->base.inf[MTL_PORT_R]->name : ctx->para.port[MTL_PORT_R],
-            MTL_PORT_MAX_LEN);
-    ops.udp_port[MTL_PORT_R] = video ? video->base.udp_port : (10000 + s->idx);
+    strncpy(
+        ops.port[MTL_SESSION_PORT_R],
+        video ? video->base.inf[MTL_SESSION_PORT_R]->name : ctx->para.port[MTL_PORT_R],
+        MTL_PORT_MAX_LEN);
+    ops.udp_port[MTL_SESSION_PORT_R] = video ? video->base.udp_port : (10000 + s->idx);
   }
   ops.pacing = ST21_PACING_NARROW;
   ops.flags = ST20R_RX_FLAG_DMA_OFFLOAD;
@@ -281,12 +282,12 @@ static int app_rx_st20r_init(struct st_app_context* ctx, st_json_video_session_t
   st_pthread_mutex_init(&s->st20_wake_mutex, NULL);
   st_pthread_cond_init(&s->st20_wake_cond, NULL);
 
-  if (mtl_pmd_by_port_name(ops.port[MTL_PORT_P]) == MTL_PMD_DPDK_AF_XDP) {
+  if (mtl_pmd_by_port_name(ops.port[MTL_SESSION_PORT_P]) == MTL_PMD_DPDK_AF_XDP) {
     snprintf(s->st20_dst_url, ST_APP_URL_MAX_LEN, "st_app%d_%d_%d_%s.yuv", idx, ops.width,
-             ops.height, ops.port[MTL_PORT_P]);
+             ops.height, ops.port[MTL_SESSION_PORT_P]);
   } else {
     uint32_t soc = 0, b = 0, d = 0, f = 0;
-    sscanf(ops.port[MTL_PORT_P], "%x:%x:%x.%x", &soc, &b, &d, &f);
+    sscanf(ops.port[MTL_SESSION_PORT_P], "%x:%x:%x.%x", &soc, &b, &d, &f);
     snprintf(s->st20_dst_url, ST_APP_URL_MAX_LEN,
              "st_app%d_%d_%d_%02x_%02x_%02x-%02x.yuv", idx, ops.width, ops.height, soc, b,
              d, f);

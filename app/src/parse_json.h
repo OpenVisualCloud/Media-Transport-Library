@@ -124,8 +124,8 @@ typedef struct st_json_interface {
 } st_json_interface_t;
 
 typedef struct st_json_session_base {
-  uint8_t ip[MTL_PORT_MAX][MTL_IP_ADDR_LEN];
-  st_json_interface_t* inf[MTL_PORT_MAX];
+  uint8_t ip[MTL_SESSION_PORT_MAX][MTL_IP_ADDR_LEN];
+  st_json_interface_t* inf[MTL_SESSION_PORT_MAX];
   int num_inf;
   uint16_t udp_port;
   uint8_t payload_type;

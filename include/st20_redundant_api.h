@@ -64,13 +64,13 @@ struct st20r_rx_ops {
   /** private data to the callback function */
   void* priv;
   /** source IP address of sender */
-  uint8_t sip_addr[MTL_PORT_MAX][MTL_IP_ADDR_LEN];
+  uint8_t sip_addr[MTL_SESSION_PORT_MAX][MTL_IP_ADDR_LEN];
   /** num of ports this session attached to, must be 2 */
   uint8_t num_port;
   /** Pcie BDF path like 0000:af:00.0, should align to BDF of mtl_init */
-  char port[MTL_PORT_MAX][MTL_PORT_MAX_LEN];
+  char port[MTL_SESSION_PORT_MAX][MTL_PORT_MAX_LEN];
   /** UDP port number */
-  uint16_t udp_port[MTL_PORT_MAX];
+  uint16_t udp_port[MTL_SESSION_PORT_MAX];
 
   /** Sender pacing type */
   enum st21_pacing pacing;

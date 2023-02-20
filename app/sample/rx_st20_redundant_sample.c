@@ -162,12 +162,16 @@ int main(int argc, char** argv) {
     ops_rx.name = "st20r_test";
     ops_rx.priv = app[i];  // app handle register to lib
     ops_rx.num_port = 2;
-    memcpy(ops_rx.sip_addr[MTL_PORT_P], ctx.rx_sip_addr[MTL_PORT_P], MTL_IP_ADDR_LEN);
-    memcpy(ops_rx.sip_addr[MTL_PORT_R], ctx.rx_sip_addr[MTL_PORT_R], MTL_IP_ADDR_LEN);
-    strncpy(ops_rx.port[MTL_PORT_P], ctx.param.port[MTL_PORT_P], MTL_PORT_MAX_LEN);
-    strncpy(ops_rx.port[MTL_PORT_R], ctx.param.port[MTL_PORT_R], MTL_PORT_MAX_LEN);
-    ops_rx.udp_port[MTL_PORT_P] = ctx.udp_port + i;
-    ops_rx.udp_port[MTL_PORT_R] = ctx.udp_port + i;
+    memcpy(ops_rx.sip_addr[MTL_SESSION_PORT_P], ctx.rx_sip_addr[MTL_PORT_P],
+           MTL_IP_ADDR_LEN);
+    memcpy(ops_rx.sip_addr[MTL_SESSION_PORT_R], ctx.rx_sip_addr[MTL_PORT_R],
+           MTL_IP_ADDR_LEN);
+    strncpy(ops_rx.port[MTL_SESSION_PORT_P], ctx.param.port[MTL_PORT_P],
+            MTL_PORT_MAX_LEN);
+    strncpy(ops_rx.port[MTL_SESSION_PORT_R], ctx.param.port[MTL_PORT_R],
+            MTL_PORT_MAX_LEN);
+    ops_rx.udp_port[MTL_SESSION_PORT_P] = ctx.udp_port + i;
+    ops_rx.udp_port[MTL_SESSION_PORT_R] = ctx.udp_port + i;
     ops_rx.width = ctx.width;
     ops_rx.height = ctx.height;
     ops_rx.fps = ctx.fps;

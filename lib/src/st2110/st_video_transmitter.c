@@ -29,7 +29,7 @@ static int video_trs_tasklet_stop(void* priv) {
 /* warm start for the first packet */
 static int video_trs_rl_warm_up(struct mtl_main_impl* impl,
                                 struct st_tx_video_session_impl* s,
-                                enum mt_session_port s_port) {
+                                enum mtl_session_port s_port) {
   struct st_tx_video_pacing* pacing = &s->pacing;
   uint64_t target_tsc = s->trs_target_tsc[s_port];
   uint64_t cur_tsc, pre_tsc;
@@ -72,7 +72,7 @@ static int video_trs_rl_warm_up(struct mtl_main_impl* impl,
 }
 
 static int video_burst_packet(struct st_tx_video_session_impl* s,
-                              enum mt_session_port s_port, struct rte_mbuf** pkts,
+                              enum mtl_session_port s_port, struct rte_mbuf** pkts,
                               int bulk, bool use_two) {
   struct st_tx_video_pacing* pacing = &s->pacing;
   int tx = mt_dev_tx_burst(s->queue[s_port], &pkts[0], bulk);
@@ -117,7 +117,7 @@ static int video_burst_packet(struct st_tx_video_session_impl* s,
 
 static int _video_trs_rl_tasklet(struct mtl_main_impl* impl,
                                  struct st_tx_video_session_impl* s,
-                                 enum mt_session_port s_port, int* ret_status) {
+                                 enum mtl_session_port s_port, int* ret_status) {
   unsigned int bulk = s->bulk;
   struct rte_ring* ring = s->ring[s_port];
   int idx = s->idx;
@@ -261,7 +261,7 @@ static int _video_trs_rl_tasklet(struct mtl_main_impl* impl,
 
 static int video_trs_rl_tasklet(struct mtl_main_impl* impl,
                                 struct st_tx_video_session_impl* s,
-                                enum mt_session_port s_port) {
+                                enum mtl_session_port s_port) {
   int pending = MT_TASKLET_ALL_DONE;
   int ret_status = 0;
 
@@ -280,7 +280,7 @@ static int video_trs_rl_tasklet(struct mtl_main_impl* impl,
 
 static int video_trs_tsc_tasklet(struct mtl_main_impl* impl,
                                  struct st_tx_video_session_impl* s,
-                                 enum mt_session_port s_port) {
+                                 enum mtl_session_port s_port) {
   unsigned int bulk = 1; /* only one packet now for tsc */
   struct rte_ring* ring = s->ring[s_port];
   int idx = s->idx, tx;
@@ -398,7 +398,7 @@ static int video_trs_tsc_tasklet(struct mtl_main_impl* impl,
 
 static int video_trs_ptp_tasklet(struct mtl_main_impl* impl,
                                  struct st_tx_video_session_impl* s,
-                                 enum mt_session_port s_port) {
+                                 enum mtl_session_port s_port) {
   unsigned int bulk = 1; /* only one packet now for tsc */
   struct rte_ring* ring = s->ring[s_port];
   int idx = s->idx, tx;
@@ -536,7 +536,7 @@ static int video_trs_tasklet_handler(void* priv) {
 }
 
 int st_video_reslove_pacing_tasklet(struct st_tx_video_session_impl* s,
-                                    enum mt_session_port port) {
+                                    enum mtl_session_port port) {
   int idx = s->idx;
 
   switch (s->pacing_way[port]) {

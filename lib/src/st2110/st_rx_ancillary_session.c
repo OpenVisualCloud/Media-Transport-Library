@@ -69,7 +69,7 @@ static int rx_ancillary_sessions_tasklet_stop(void* priv) {
 static int rx_ancillary_session_handle_pkt(struct mtl_main_impl* impl,
                                            struct st_rx_ancillary_session_impl* s,
                                            struct rte_mbuf* mbuf,
-                                           enum mt_session_port s_port) {
+                                           enum mtl_session_port s_port) {
   struct st40_rx_ops* ops = &s->ops;
   size_t hdr_offset = sizeof(struct st_rfc3550_hdr) - sizeof(struct st_rfc3550_rtp_hdr);
   struct st_rfc3550_rtp_hdr* rtp =
@@ -239,7 +239,7 @@ static int rx_ancillary_session_init_sw(struct mtl_main_impl* impl,
   struct rte_ring* ring;
   unsigned int flags, count;
   int mgr_idx = mgr->idx, idx = s->idx;
-  enum mtl_port port = mt_port_logic2phy(s->port_maps, MT_SESSION_PORT_P);
+  enum mtl_port port = mt_port_logic2phy(s->port_maps, MTL_SESSION_PORT_P);
 
   snprintf(ring_name, 32, "RX-ANC-PACKET-RING-M%d-R%d", mgr_idx, idx);
   flags = RING_F_SP_ENQ | RING_F_SC_DEQ; /* single-producer and single-consumer */
@@ -275,7 +275,7 @@ static int rx_ancillary_session_attach(struct mtl_main_impl* impl,
                                        struct st40_rx_ops* ops) {
   int ret;
   int idx = s->idx, num_port = ops->num_port;
-  char* ports[MT_SESSION_PORT_MAX];
+  char* ports[MTL_SESSION_PORT_MAX];
 
   for (int i = 0; i < num_port; i++) ports[i] = ops->port[i];
   ret = mt_build_port_map(impl, ports, s->port_maps, num_port);
@@ -551,7 +551,7 @@ static int rx_ancillary_ops_check(struct st40_rx_ops* ops) {
   int num_ports = ops->num_port, ret;
   uint8_t* ip;
 
-  if ((num_ports > MTL_PORT_MAX) || (num_ports <= 0)) {
+  if ((num_ports > MTL_SESSION_PORT_MAX) || (num_ports <= 0)) {
     err("%s, invalid num_ports %d\n", __func__, num_ports);
     return -EINVAL;
   }
@@ -771,7 +771,7 @@ int st40_rx_get_queue_meta(st40_rx_handle handle, struct st_queue_meta* meta) {
   impl = s_impl->parnet;
 
   memset(meta, 0x0, sizeof(*meta));
-  meta->num_port = RTE_MIN(s->ops.num_port, MTL_PORT_MAX);
+  meta->num_port = RTE_MIN(s->ops.num_port, MTL_SESSION_PORT_MAX);
   for (uint8_t i = 0; i < meta->num_port; i++) {
     port = mt_port_logic2phy(s->port_maps, i);
 
