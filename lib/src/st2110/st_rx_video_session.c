@@ -1386,7 +1386,8 @@ static int rv_dump_pcapng(struct mtl_main_impl* impl, struct st_rx_video_session
   struct rte_mbuf* pcapng_mbuf[rv];
   int pcapng_mbuf_cnt = 0;
   ssize_t len;
-  struct mt_interface* inf = mt_if(impl, mt_port_logic2phy(s->port_maps, s_port));
+  enum mtl_port port = mt_port_logic2phy(s->port_maps, s_port);
+  struct mt_interface* inf = mt_if(impl, port);
   uint16_t queue_id = mt_dev_rx_queue_id(s->queue[s_port]);
 
   for (uint16_t i = 0; i < rv; i++) {
@@ -1394,7 +1395,7 @@ static int rv_dump_pcapng(struct mtl_main_impl* impl, struct st_rx_video_session
     uint64_t timestamp_cycle, timestamp_ns;
     if (mt_has_ebu(impl) && inf->feature & MT_IF_FEATURE_RX_OFFLOAD_TIMESTAMP) {
       timestamp_cycle = 0;
-      timestamp_ns = mt_mbuf_hw_time_stamp(impl, mbuf[i]);
+      timestamp_ns = mt_mbuf_hw_time_stamp(impl, mbuf[i], port);
     } else {
       timestamp_cycle = rte_get_tsc_cycles();
       timestamp_ns = 0;
@@ -1570,7 +1571,7 @@ static int rv_handle_frame_pkt(struct st_rx_video_session_impl* s, struct rte_mb
     enum mtl_port port = mt_port_logic2phy(s->port_maps, s_port);
     struct mt_interface* inf = mt_if(impl, port);
     if (inf->feature & MT_IF_FEATURE_RX_OFFLOAD_TIMESTAMP) {
-      rv_ebu_on_packet(s, tmstamp, mt_mbuf_hw_time_stamp(impl, mbuf), pkt_idx);
+      rv_ebu_on_packet(s, tmstamp, mt_mbuf_hw_time_stamp(impl, mbuf, port), pkt_idx);
     }
   }
   if (s->st20_uframe_size) {
