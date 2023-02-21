@@ -10,6 +10,7 @@
 // #define DEBUG
 #include "mt_log.h"
 #include "mt_ptp.h"
+#include "mt_rss.h"
 #include "mt_sch.h"
 #include "mt_shared_queue.h"
 #include "mt_tap.h"
@@ -102,6 +103,10 @@ static int cni_traffic(struct mtl_main_impl* impl) {
     /* trigger rsq rx */
     if (cni->rsq[i]) {
       mt_rsq_burst(cni->rsq[i], ST_CNI_RX_BURST_SIZE);
+    }
+    /* trigger rss rx */
+    if (cni->rss[i]) {
+      mt_rss_burst(cni->rss[i], ST_CNI_RX_BURST_SIZE);
     }
   }
 
@@ -201,6 +206,10 @@ static int cni_queues_uinit(struct mtl_main_impl* impl) {
       mt_rsq_put(cni->rsq[i]);
       cni->rsq[i] = NULL;
     }
+    if (cni->rss[i]) {
+      mt_rss_put(cni->rss[i]);
+      cni->rss[i] = NULL;
+    }
   }
 
   return 0;
@@ -228,7 +237,15 @@ static int cni_queues_init(struct mtl_main_impl* impl, struct mt_cni_impl* cni) 
     flow.cb = cni_rsq_mbuf_cb;
 
     /* sys queue, no flow */
-    if (mt_shared_queue(impl, i)) {
+    if (mt_has_rss(impl, i)) {
+      cni->rss[i] = mt_rss_get(impl, i, &flow);
+      if (!cni->rss[i]) {
+        err("%s(%d), rss get fail\n", __func__, i);
+        cni_queues_uinit(impl);
+        return -EIO;
+      }
+      info("%s(%d), rss q %d\n", __func__, i, mt_rss_queue_id(cni->rss[i]));
+    } else if (mt_shared_queue(impl, i)) {
       cni->rsq[i] = mt_rsq_get(impl, i, &flow);
       if (!cni->rsq[i]) {
         err("%s(%d), rsq get fail\n", __func__, i);

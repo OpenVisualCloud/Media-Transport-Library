@@ -208,6 +208,7 @@ struct mt_cni_impl {
 
   struct mt_rx_queue* rx_q[MTL_PORT_MAX]; /* cni rx queue */
   struct mt_rsq_entry* rsq[MTL_PORT_MAX]; /* cni rsq queue */
+  struct mt_rss_entry* rss[MTL_PORT_MAX]; /* cni rss queue */
   struct mt_cni_priv cni_priv[MTL_PORT_MAX];
   pthread_t tid; /* thread id for rx */
   rte_atomic32_t stop_thread;
@@ -396,7 +397,7 @@ struct mt_rx_flow {
 #endif
   /* priv data to the cb for shared queue */
   void* priv;
-  /* call back of the received mbufs by mt_rsq_burst */
+  /* call back of the received mbufs by mt_rsq_burst or mt_rss_burst */
   mt_rsq_mbuf_cb cb;
 };
 
@@ -604,30 +605,11 @@ enum mt_rss_mode {
   MT_RSS_MODE_MAX,
 };
 
-typedef int (*mt_rss_mbuf_cb)(void* priv, struct rte_mbuf** mbuf, uint16_t nb);
-
-struct mt_rss_flow {
-  /* rx destination IP */
-  uint8_t dip_addr[MTL_IP_ADDR_LEN];
-  /* source IP */
-  uint8_t sip_addr[MTL_IP_ADDR_LEN];
-  /* udp destination port */
-  uint16_t dst_port;
-  /* udp source port */
-  uint16_t src_port;
-  /* not the udp stream, queue 0 */
-  bool no_udp;
-  /* priv data to the cb */
-  void* priv;
-  /* call back of the received mbufs by mt_rss_rx_burst */
-  mt_rss_mbuf_cb cb;
-};
-
 struct mt_rss_impl; /* foward delcare */
 
 struct mt_rss_entry {
   uint16_t queue_id;
-  struct mt_rss_flow flow;
+  struct mt_rx_flow flow;
   struct mt_rss_impl* rss;
   uint32_t hash;
   /* linked list */
