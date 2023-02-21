@@ -366,7 +366,7 @@ static int rv_ebu_init(struct mtl_main_impl* impl, struct st_rx_video_session_im
   frame_time = (double)1000000000.0 * fps_tm.den / fps_tm.mul;
 
   int st20_total_pkts = s->detector.pkt_per_frame;
-  err("%s(%d), st20_total_pkts %d\n", __func__, idx, st20_total_pkts);
+  info("%s(%d), st20_total_pkts %d\n", __func__, idx, st20_total_pkts);
   if (!st20_total_pkts) {
     err("%s(%d), can not get total packets number\n", __func__, idx);
     return -EINVAL;

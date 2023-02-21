@@ -58,9 +58,8 @@ patch -p1 < {path_to_repo_dir}/libraries.media.st2110.kahawai/patches/dpdk/{dpdk
 patch -p1 < {path_to_repo_dir}/libraries.media.st2110.kahawai/patches/dpdk/{dpdk_dir_ver}/0002-net-af_xdp-parse-numa-node-id-from-sysfs.patch
 patch -p1 < {path_to_repo_dir}/libraries.media.st2110.kahawai/patches/dpdk/{dpdk_dir_ver}/0003-net-iavf-refine-queue-rate-limit-configure.patch
 patch -p1 < {path_to_repo_dir}/libraries.media.st2110.kahawai/patches/dpdk/{dpdk_dir_ver}/0004-net-ice-revert-PF-ICE-rate-limit-to-non-queue-group-.patch
-patch -p1 < {path_to_repo_dir}/libraries.media.st2110.kahawai/patches/dpdk/{dpdk_dir_ver}/0005-net-iavf-support-max-burst-size-configuration.patch
-patch -p1 < {path_to_repo_dir}/libraries.media.st2110.kahawai/patches/dpdk/{dpdk_dir_ver}/0006-net-ice-support-max-burst-size-configuration.patch
-patch -p1 < {path_to_repo_dir}/libraries.media.st2110.kahawai/patches/dpdk/{dpdk_dir_ver}/0007-Change-to-enable-PTP.patch
+patch -p1 < {path_to_repo_dir}/libraries.media.st2110.kahawai/patches/dpdk/{dpdk_dir_ver}/0005-ice-set-ICE_SCHED_DFLT_BURST_SIZE-to-2048.patch
+patch -p1 < {path_to_repo_dir}/libraries.media.st2110.kahawai/patches/dpdk/{dpdk_dir_ver}/0006-Change-to-enable-PTP.patch
 ```
 Then apply windows platform dpdk patch
 ```
