@@ -248,7 +248,7 @@ static int dev_eal_init(struct mtl_init_params* p, struct mt_kport_info* kport_i
       /* save port name */
       snprintf(kport_info->port[i], MTL_PORT_MAX_LEN, "net_af_xdp%d", i);
     } else {
-      snprintf(port_param, 2 * MTL_PORT_MAX_LEN, "%s,max_burst_size=2048", p->port[i]);
+      snprintf(port_param, 2 * MTL_PORT_MAX_LEN, "%s", p->port[i]);
     }
     info("%s(%d), port_param: %s\n", __func__, i, port_param);
     argv[argc] = port_param;

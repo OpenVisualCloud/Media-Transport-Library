@@ -1,7 +1,7 @@
 {
     "plugins": [
         {
-            "enabled": 1,
+            "enabled": 0,
             "name": "intopix_jpegxs_cpu",
             "path": "/usr/local/lib/x86_64-linux-gnu/libst_plugin_intopix_cpu.so"
         },

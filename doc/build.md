@@ -34,9 +34,8 @@ git am $dpdk_st_kahawai/patches/dpdk/22.11/0001-pcapng-add-ns-timestamp-for-copy
 git am $dpdk_st_kahawai/patches/dpdk/22.11/0002-net-af_xdp-parse-numa-node-id-from-sysfs.patch
 git am $dpdk_st_kahawai/patches/dpdk/22.11/0003-net-iavf-refine-queue-rate-limit-configure.patch
 git am $dpdk_st_kahawai/patches/dpdk/22.11/0004-net-ice-revert-PF-ICE-rate-limit-to-non-queue-group-.patch
-git am $dpdk_st_kahawai/patches/dpdk/22.11/0005-net-iavf-support-max-burst-size-configuration.patch
-git am $dpdk_st_kahawai/patches/dpdk/22.11/0006-net-ice-support-max-burst-size-configuration.patch
-git am $dpdk_st_kahawai/patches/dpdk/22.11/0007-Change-to-enable-PTP.patch
+git am $dpdk_st_kahawai/patches/dpdk/22.11/0005-ice-set-ICE_SCHED_DFLT_BURST_SIZE-to-2048.patch
+git am $dpdk_st_kahawai/patches/dpdk/22.11/0006-Change-to-enable-PTP.patch
 ```
 
 #### 2.3 Build and install DPDK library

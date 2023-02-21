@@ -10,7 +10,7 @@ Apply the all patches under [ice_driver](../patches/ice_drv/1.9.11/)
 ```bash
 git am $dpdk_st_kahawai/patches/ice_drv/1.9.11/0001-ice-linux-fix-incorrect-memcpy-size.patch
 git am $dpdk_st_kahawai/patches/ice_drv/1.9.11/0002-vf-support-kahawai-runtime-rl-queue.patch
-git am $dpdk_st_kahawai/patches/ice_drv/1.9.11/0003-vf-support-burst-config.patch
+git am $dpdk_st_kahawai/patches/ice_drv/1.9.11/0003-ice-set-ICE_SCHED_DFLT_BURST_SIZE-to-2048.patch
 git am $dpdk_st_kahawai/patches/ice_drv/1.9.11/0004-version-update-to-kahawai.patch
 ```
 
