@@ -16,7 +16,7 @@ static int arp_start_arp_timer(struct mt_arp_impl* arp_impl);
 
 static inline struct mt_arp_impl* get_arp(struct mtl_main_impl* impl,
                                           enum mtl_port port) {
-  return &impl->arp[port];
+  return impl->arp[port];
 }
 
 static void arp_reset(struct mt_arp_impl* arp) {
@@ -321,22 +321,40 @@ get_result:
 }
 
 int mt_arp_init(struct mtl_main_impl* impl) {
-  for (int port = 0; port < MTL_PORT_MAX; ++port) {
-    struct mt_arp_impl* arp = get_arp(impl, port);
+  int num_ports = mt_num_ports(impl);
+  int socket = mt_socket_id(impl, MTL_PORT_P);
+
+  for (int i = 0; i < num_ports; i++) {
+    struct mt_arp_impl* arp = mt_rte_zmalloc_socket(sizeof(*arp), socket);
+    if (!arp) {
+      err("%s(%d), arp malloc fail\n", __func__, i);
+      mt_arp_uinit(impl);
+      return -ENOMEM;
+    }
 
     mt_pthread_mutex_init(&arp->mutex, NULL);
-    arp->port = port;
+    arp->port = i;
     arp->parnet = impl;
+
+    /* assign arp instance */
+    impl->arp[i] = arp;
   }
 
   return 0;
 }
 
 int mt_arp_uinit(struct mtl_main_impl* impl) {
-  for (int port = 0; port < MTL_PORT_MAX; ++port) {
-    struct mt_arp_impl* arp = get_arp(impl, port);
+  int num_ports = mt_num_ports(impl);
+
+  for (int i = 0; i < num_ports; i++) {
+    struct mt_arp_impl* arp = get_arp(impl, i);
+    if (!arp) continue;
 
     mt_pthread_mutex_destroy(&arp->mutex);
+
+    /* free the memory */
+    mt_rte_free(arp);
+    impl->arp[i] = NULL;
   }
 
   return 0;

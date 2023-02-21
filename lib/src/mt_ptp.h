@@ -104,7 +104,7 @@ struct mt_ptp_delay_resp_msg {
 
 static inline struct mt_ptp_impl* mt_get_ptp(struct mtl_main_impl* impl,
                                              enum mtl_port port) {
-  return &impl->ptp[port];
+  return impl->ptp[port];
 }
 
 int mt_ptp_init(struct mtl_main_impl* impl);

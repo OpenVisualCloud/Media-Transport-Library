@@ -766,13 +766,11 @@ struct mtl_main_impl {
   struct mt_cni_impl cni;
 
   /* ptp context */
-  struct mt_ptp_impl ptp[MTL_PORT_MAX];
-
+  struct mt_ptp_impl* ptp[MTL_PORT_MAX];
   /* arp context */
-  struct mt_arp_impl arp[MTL_PORT_MAX];
-
+  struct mt_arp_impl* arp[MTL_PORT_MAX];
   /* mcast context */
-  struct mt_mcast_impl mcast[MTL_PORT_MAX];
+  struct mt_mcast_impl* mcast[MTL_PORT_MAX];
 
   /* sch context */
   struct mt_sch_mgr sch_mgr;
@@ -1286,7 +1284,8 @@ static inline uint32_t st_rx_mbuf_get_len(struct rte_mbuf* mbuf) {
   return priv->rx_priv.len;
 }
 
-uint64_t mt_mbuf_hw_time_stamp(struct mtl_main_impl* impl, struct rte_mbuf* mbuf);
+uint64_t mt_mbuf_hw_time_stamp(struct mtl_main_impl* impl, struct rte_mbuf* mbuf,
+                               enum mtl_port port);
 
 static inline uint64_t mt_get_ptp_time(struct mtl_main_impl* impl, enum mtl_port port) {
   return mt_if(impl, port)->ptp_get_time_fn(impl, port);
