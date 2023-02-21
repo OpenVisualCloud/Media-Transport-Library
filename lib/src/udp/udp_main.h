@@ -8,6 +8,7 @@
 #include "../mt_dev.h"
 #include "../mt_main.h"
 #include "../mt_mcast.h"
+#include "../mt_rss.h"
 #include "../mt_shared_queue.h"
 #include "../mt_util.h"
 
@@ -40,6 +41,7 @@ struct mudp_impl {
   struct mt_tsq_entry* tsq;
   struct mt_rx_queue* rxq;
   struct mt_rsq_entry* rsq;
+  struct mt_rss_entry* rss;
   uint16_t rxq_id;
   struct rte_ring* rx_ring;
   uint16_t rx_burst_pkts;

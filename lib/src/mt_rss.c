@@ -59,11 +59,11 @@ static int rss_uinit(struct mt_rss_impl* rss) {
   return 0;
 }
 
-static uint32_t rss_flow_hash(struct mt_rss_flow* flow, enum mt_rss_mode rss) {
+static uint32_t rss_flow_hash(struct mt_rx_flow* flow, enum mt_rss_mode rss) {
   struct rte_ipv4_tuple tuple;
   uint32_t len;
 
-  if (flow->no_udp) return 0;
+  if (flow->sys_queue) return 0;
 
   if (rss == MT_RSS_MODE_L4)
     len = RTE_THASH_V4_L4_LEN;
@@ -75,12 +75,12 @@ static uint32_t rss_flow_hash(struct mt_rss_flow* flow, enum mt_rss_mode rss) {
   tuple.dst_addr = RTE_IPV4(flow->sip_addr[0], flow->sip_addr[1], flow->sip_addr[2],
                             flow->sip_addr[3]);
   tuple.sport = flow->dst_port;
-  tuple.dport = flow->src_port;
+  tuple.dport = tuple.sport; /* temp use dst_port now */
   return mt_dev_softrss((uint32_t*)&tuple, len);
 }
 
 struct mt_rss_entry* mt_rss_get(struct mtl_main_impl* impl, enum mtl_port port,
-                                struct mt_rss_flow* flow) {
+                                struct mt_rx_flow* flow) {
   if (!mt_has_rss(impl, port)) {
     err("%s(%d), rss not enabled\n", __func__, port);
     return NULL;
@@ -147,7 +147,7 @@ uint16_t mt_rss_burst(struct mt_rss_entry* entry, uint16_t nb_pkts) {
       /* check if this is the matched hash or sys entry */
       /* todo: handle if two entries has same hash, and bulk mode */
       if ((hash == rss_entry->hash) ||
-          (rss_entry->flow.no_udp && (ipv4->next_proto_id != IPPROTO_UDP))) {
+          (rss_entry->flow.sys_queue && (ipv4->next_proto_id != IPPROTO_UDP))) {
         rss_entry->flow.cb(rss_entry->flow.priv, &pkts[i], 1);
         break;
       }

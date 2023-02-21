@@ -276,6 +276,10 @@ static int udp_uinit_rxq(struct mtl_main_impl* impl, struct mudp_impl* s) {
     mt_rsq_put(s->rsq);
     s->rsq = NULL;
   }
+  if (s->rss) {
+    mt_rss_put(s->rss);
+    s->rss = NULL;
+  }
 
   if (s->rx_ring) {
     mt_ring_dequeue_clean(s->rx_ring);
@@ -342,7 +346,15 @@ static int udp_init_rxq(struct mtl_main_impl* impl, struct mudp_impl* s) {
   flow.priv = s;
   flow.cb = udp_rsq_mbuf_cb;
 
-  if (mt_shared_queue(impl, port)) {
+  if (mt_has_rss(impl, port)) {
+    s->rss = mt_rss_get(impl, port, &flow);
+    if (!s->rss) {
+      err("%s(%d), get rss fail\n", __func__, idx);
+      udp_uinit_rxq(impl, s);
+      return -EIO;
+    }
+    queue_id = mt_rss_queue_id(s->rss);
+  } else if (mt_shared_queue(impl, port)) {
     s->rsq = mt_rsq_get(impl, port, &flow);
     if (!s->rsq) {
       err("%s(%d), get rsq fail\n", __func__, idx);
@@ -385,12 +397,19 @@ static uint16_t udp_rx(struct mtl_main_impl* impl, struct mudp_impl* s) {
   struct rte_mbuf* pkts[rx_burst];
 
   if (s->rsq) return mt_rsq_burst(s->rsq, rx_burst);
+  if (s->rss) return mt_rss_burst(s->rss, rx_burst);
 
   uint16_t rx = mt_dev_rx_burst(s->rxq, pkts, rx_burst);
   if (!rx) return 0; /* no pkt */
   uint16_t n = udp_rx_handle(s, pkts, rx);
   rte_pktmbuf_free_bulk(&pkts[0], rx);
   return n;
+}
+
+static char* udp_rxq_mode(struct mudp_impl* s) {
+  if (s->rsq) return "shared";
+  if (s->rss) return "rss";
+  return "dedicated";
 }
 
 static int udp_stat_dump(void* priv) {
@@ -406,8 +425,7 @@ static int udp_stat_dump(void* priv) {
   }
   if (s->stat_pkt_rx) {
     notice("%s(%d,%d), pkt rx %u deliver %u, %s rxq %u\n", __func__, port, idx,
-           s->stat_pkt_rx, s->stat_pkt_deliver, s->rsq ? "shared" : "dedicated",
-           s->rxq_id);
+           s->stat_pkt_rx, s->stat_pkt_deliver, udp_rxq_mode(s), s->rxq_id);
     s->stat_pkt_rx = 0;
     s->stat_pkt_deliver = 0;
   }
