@@ -542,7 +542,7 @@ struct st_rx_video_sessions_mgr; /* forward declare */
 struct st_rx_session_priv {
   void* session;
   struct mtl_main_impl* impl;
-  enum mtl_port port;
+  enum mtl_session_port s_port;
 };
 
 struct st_rx_video_session_impl {

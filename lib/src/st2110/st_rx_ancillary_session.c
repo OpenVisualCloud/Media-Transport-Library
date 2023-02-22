@@ -114,12 +114,13 @@ static int rx_ancillary_session_handle_pkt(struct mtl_main_impl* impl,
 
   return 0;
 }
+
 static int rx_ancillary_session_handle_mbuf(void* priv, struct rte_mbuf** mbuf,
                                             uint16_t nb) {
   struct st_rx_session_priv* s_priv = priv;
   struct st_rx_ancillary_session_impl* s = s_priv->session;
   struct mtl_main_impl* impl = s_priv->impl;
-  enum mtl_port s_port = s_priv->port;
+  enum mtl_session_port s_port = s_priv->s_port;
 
   for (uint16_t i = 0; i < nb; i++)
     rx_ancillary_session_handle_pkt(impl, s, mbuf[i], s_port);
@@ -196,7 +197,7 @@ static int rx_ancillary_session_init_hw(struct mtl_main_impl* impl,
 
     s->priv[i].session = s;
     s->priv[i].impl = impl;
-    s->priv[i].port = port;
+    s->priv[i].s_port = i;
 
     memset(&flow, 0, sizeof(flow));
     rte_memcpy(flow.dip_addr, s->ops.sip_addr[i], MTL_IP_ADDR_LEN);

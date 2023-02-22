@@ -2478,7 +2478,7 @@ static int rv_handle_detect_pkt(struct st_rx_video_session_impl* s, struct rte_m
 static int rv_handle_mbuf(void* priv, struct rte_mbuf** mbuf, uint16_t nb) {
   struct st_rx_session_priv* s_priv = priv;
   struct st_rx_video_session_impl* s = s_priv->session;
-  enum mtl_port s_port = s_priv->port;
+  enum mtl_session_port s_port = s_priv->s_port;
 
   struct rte_ring* pkt_ring = s->pkt_lcore_ring;
   bool ctl_thread = pkt_ring ? false : true;
@@ -2589,7 +2589,7 @@ static int rv_init_hw(struct mtl_main_impl* impl, struct st_rx_video_session_imp
 
     s->priv[i].session = s;
     s->priv[i].impl = impl;
-    s->priv[i].port = port;
+    s->priv[i].s_port = i;
 
     memset(&flow, 0, sizeof(flow));
     rte_memcpy(flow.dip_addr, ops->sip_addr[i], MTL_IP_ADDR_LEN);
