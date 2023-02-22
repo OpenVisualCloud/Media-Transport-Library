@@ -2478,7 +2478,6 @@ static int rv_handle_detect_pkt(struct st_rx_video_session_impl* s, struct rte_m
 static int rv_handle_mbuf(void* priv, struct rte_mbuf** mbuf, uint16_t nb) {
   struct st_rx_session_priv* s_priv = priv;
   struct st_rx_video_session_impl* s = s_priv->session;
-  struct mtl_main_impl* impl = s_priv->impl;
   enum mtl_port s_port = s_priv->port;
 
   struct rte_ring* pkt_ring = s->pkt_lcore_ring;
@@ -2486,6 +2485,7 @@ static int rv_handle_mbuf(void* priv, struct rte_mbuf** mbuf, uint16_t nb) {
   int ret = 0;
 
 #ifdef ST_PCAPNG_ENABLED /* dump mbufs to pcapng file */
+  struct mtl_main_impl* impl = s_priv->impl;
   if ((s->pcapng != NULL) && (s->pcapng_max_pkts)) {
     if (s->pcapng_dumped_pkts < s->pcapng_max_pkts) {
       rv_dump_pcapng(impl, s, mbuf,
