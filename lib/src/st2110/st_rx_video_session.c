@@ -9,8 +9,6 @@
 #include "../mt_log.h"
 #include "st_fmt.h"
 
-#define RV_PKT_NOT_FREE (1)
-
 static int rv_init_pkt_handler(struct st_rx_video_session_impl* s);
 static int rvs_mgr_update(struct st_rx_video_sessions_mgr* mgr);
 
@@ -1521,8 +1519,8 @@ static int rv_handle_frame_pkt(struct st_rx_video_session_impl* s, struct rte_mb
     }
     bool is_set = mt_bitmap_test_and_set(bitmap, pkt_idx);
     if (is_set) {
-      dbg("%s(%d,%d), drop as pkt %d already received\n", __func__, s->idx, s_port,
-          pkt_idx);
+      info("%s(%d,%d), drop as pkt %d already received\n", __func__, s->idx, s_port,
+           pkt_idx);
       s->stat_pkts_redunant_dropped++;
       slot->pkts_redunant_received++;
       return -EIO;
@@ -1561,7 +1559,6 @@ static int rv_handle_frame_pkt(struct st_rx_video_session_impl* s, struct rte_mb
   }
 
   bool need_copy = true;
-  bool dma_copy = false;
   struct mtl_dma_lender_dev* dma_dev = s->dma_dev;
   struct mtl_main_impl* impl = rv_get_impl(s);
   bool ebu = mt_has_ebu(impl);
@@ -1618,7 +1615,7 @@ static int rv_handle_frame_pkt(struct st_rx_video_session_impl* s, struct rte_mb
           /* mbuf freed and dma copy will operate an invalid src! */
           rte_pktmbuf_free(mbuf);
         }
-        dma_copy = true;
+        s->dma_copy = true;
         s->stat_pkts_dma++;
       }
     } else {
@@ -1635,7 +1632,7 @@ static int rv_handle_frame_pkt(struct st_rx_video_session_impl* s, struct rte_mb
   slot->pkts_received++;
 
   /* slice */
-  if (slot->slice_info && !dma_copy) { /* ST20_TYPE_SLICE_LEVEL */
+  if (slot->slice_info && !s->dma_copy) { /* ST20_TYPE_SLICE_LEVEL */
     rv_slice_add(s, slot, offset, payload_length);
   }
 
@@ -1656,8 +1653,7 @@ static int rv_handle_frame_pkt(struct st_rx_video_session_impl* s, struct rte_mb
     rv_slot_full_frame(s, slot);
   }
 
-  /* indicate caller not to free mbuf as dma copy */
-  return dma_copy ? RV_PKT_NOT_FREE : 0;
+  return 0;
 }
 
 static int rv_handle_rtp_pkt(struct st_rx_video_session_impl* s, struct rte_mbuf* mbuf,
@@ -1742,7 +1738,7 @@ static int rv_handle_rtp_pkt(struct st_rx_video_session_impl* s, struct rte_mbuf
   ops->notify_rtp_ready(ops->priv);
   s->stat_pkts_received++;
 
-  return RV_PKT_NOT_FREE;
+  return 0;
 }
 
 struct st22_box {
@@ -2479,14 +2475,53 @@ static int rv_handle_detect_pkt(struct st_rx_video_session_impl* s, struct rte_m
   return 0;
 }
 
+static int rv_handle_mbuf(void* priv, struct rte_mbuf** mbuf, uint16_t nb) {
+  struct st_rx_session_priv* s_priv = priv;
+  struct st_rx_video_session_impl* s = s_priv->session;
+  struct mtl_main_impl* impl = s_priv->impl;
+  enum mtl_port s_port = s_priv->port;
+
+  struct rte_ring* pkt_ring = s->pkt_lcore_ring;
+  bool ctl_thread = pkt_ring ? false : true;
+  int ret = 0;
+
+#ifdef ST_PCAPNG_ENABLED /* dump mbufs to pcapng file */
+  if ((s->pcapng != NULL) && (s->pcapng_max_pkts)) {
+    if (s->pcapng_dumped_pkts < s->pcapng_max_pkts) {
+      rv_dump_pcapng(impl, s, mbuf,
+                     RTE_MIN(nb, s->pcapng_max_pkts - s->pcapng_dumped_pkts), s_port);
+    } else { /* got enough packets, stop dumping */
+      info("%s(%d,%d), pcapng dump finished, dumped %u packets, dropped %u pcakets\n",
+           __func__, s->idx, s_port, s->pcapng_dumped_pkts, s->pcapng_dropped_pkts);
+      rv_stop_pcapng(s);
+    }
+  }
+#endif
+
+  if (pkt_ring) {
+    /* first pass to the pkt ring if it has pkt handling lcore */
+    unsigned int n =
+        rte_ring_sp_enqueue_bulk(s->pkt_lcore_ring, (void**)&mbuf[0], nb, NULL);
+    nb -= n; /* n is zero or rx */
+    s->stat_pkts_enqueue_fallback += nb;
+  }
+  if (!nb) return 0;
+
+  s->pri_nic_inflight_cnt++;
+
+  /* now dispatch the pkts to handler */
+  for (uint16_t i = 0; i < nb; i++) {
+    ret += s->pkt_handler(s, mbuf[i], s_port, ctl_thread);
+  }
+  return ret;
+}
+
 static int rv_tasklet(struct mtl_main_impl* impl, struct st_rx_video_session_impl* s,
                       struct st_rx_video_sessions_mgr* mgr) {
   struct rte_mbuf* mbuf[ST_RX_VIDEO_BURTS_SIZE];
   uint16_t rv;
-  int num_port = s->ops.num_port, ret;
-  struct rte_ring* pkt_ring = s->pkt_lcore_ring;
-  bool ctl_thread = pkt_ring ? false : true;
-  bool dma_copy = false;
+  int num_port = s->ops.num_port;
+
   bool done = true;
 
   if (s->dma_dev) {
@@ -2494,10 +2529,21 @@ static int rv_tasklet(struct mtl_main_impl* impl, struct st_rx_video_session_imp
     /* check if has pending pkts in dma */
     if (!mt_dma_empty(s->dma_dev)) done = false;
   }
+  s->dma_copy = false;
 
   for (int s_port = 0; s_port < num_port; s_port++) {
-    if (!s->queue[s_port]) continue;
-    rv = mt_dev_rx_burst(s->queue[s_port], &mbuf[0], ST_RX_VIDEO_BURTS_SIZE);
+    if (s->rss[s_port]) {
+      rv = mt_rss_burst(s->rss[s_port], ST_RX_VIDEO_BURTS_SIZE);
+    } else if (s->queue[s_port]) {
+      rv = mt_dev_rx_burst(s->queue[s_port], &mbuf[0], ST_RX_VIDEO_BURTS_SIZE);
+      if (rv) {
+        rv_handle_mbuf(&s->priv[s_port], &mbuf[0], rv);
+        rte_pktmbuf_free_bulk(&mbuf[0], rv);
+      }
+    } else {
+      continue;
+    }
+
     s->pri_nic_burst_cnt++;
     if (s->pri_nic_burst_cnt > ST_VIDEO_STAT_UPDATE_INTERVAL) {
       rte_atomic32_add(&s->nic_burst_cnt, s->pri_nic_burst_cnt);
@@ -2506,49 +2552,11 @@ static int rv_tasklet(struct mtl_main_impl* impl, struct st_rx_video_session_imp
       s->pri_nic_inflight_cnt = 0;
     }
 
-    if (rv > 0) done = false;
-
-#ifdef ST_PCAPNG_ENABLED /* dump mbufs to pcapng file */
-    if ((s->pcapng != NULL) && (s->pcapng_max_pkts)) {
-      if (s->pcapng_dumped_pkts < s->pcapng_max_pkts) {
-        rv_dump_pcapng(impl, s, mbuf,
-                       RTE_MIN(rv, s->pcapng_max_pkts - s->pcapng_dumped_pkts), s_port);
-      } else { /* got enough packets, stop dumping */
-        info("%s(%d,%d), pcapng dump finished, dumped %u packets, dropped %u pcakets\n",
-             __func__, s->idx, s_port, s->pcapng_dumped_pkts, s->pcapng_dropped_pkts);
-        rv_stop_pcapng(s);
-      }
-    }
-#endif
-
-    if (pkt_ring) {
-      /* first pass to the pkt ring if it has pkt handling lcore */
-      unsigned int n =
-          rte_ring_sp_enqueue_bulk(s->pkt_lcore_ring, (void**)&mbuf[0], rv, NULL);
-      rv -= n; /* n is zero or rx */
-      s->stat_pkts_enqueue_fallback += rv;
-    }
-    if (!rv) continue;
-
-    s->pri_nic_inflight_cnt++;
-
-    /* now dispatch the pkts to handler */
-    struct rte_mbuf* free_mbuf[rv];
-    int free_mbuf_cnt = 0;
-    for (uint16_t i = 0; i < rv; i++) {
-      ret = s->pkt_handler(s, mbuf[i], s_port, ctl_thread);
-      if (ret != RV_PKT_NOT_FREE) {
-        free_mbuf[free_mbuf_cnt] = mbuf[i];
-        free_mbuf_cnt++;
-      } else {
-        dma_copy = true;
-      }
-    }
-    rte_pktmbuf_free_bulk(&free_mbuf[0], free_mbuf_cnt);
+    if (rv) done = false;
   }
 
   /* submit if any */
-  if (dma_copy && s->dma_dev) mt_dma_submit(s->dma_dev);
+  if (s->dma_copy && s->dma_dev) mt_dma_submit(s->dma_dev);
 
   return done ? MT_TASKLET_ALL_DONE : MT_TASKLET_HAS_PENDING;
 }
@@ -2560,6 +2568,10 @@ static int rv_uinit_hw(struct mtl_main_impl* impl, struct st_rx_video_session_im
     if (s->queue[i]) {
       mt_dev_put_rx_queue(impl, s->queue[i]);
       s->queue[i] = NULL;
+    }
+    if (s->rss[i]) {
+      mt_rss_put(s->rss[i]);
+      s->rss[i] = NULL;
     }
   }
 
@@ -2574,6 +2586,10 @@ static int rv_init_hw(struct mtl_main_impl* impl, struct st_rx_video_session_imp
 
   for (int i = 0; i < num_port; i++) {
     port = mt_port_logic2phy(s->port_maps, i);
+
+    s->priv[i].session = s;
+    s->priv[i].impl = impl;
+    s->priv[i].port = port;
 
     memset(&flow, 0, sizeof(flow));
     rte_memcpy(flow.dip_addr, ops->sip_addr[i], MTL_IP_ADDR_LEN);
@@ -2596,15 +2612,21 @@ static int rv_init_hw(struct mtl_main_impl* impl, struct st_rx_video_session_imp
     /* no flow for data path only */
     if (mt_pmd_is_kernel(impl, port) && (ops->flags & ST20_RX_FLAG_DATA_PATH_ONLY))
       s->queue[i] = mt_dev_get_rx_queue(impl, port, NULL);
-    else
+    else if (mt_has_rss(impl, port)) {
+      flow.priv = &s->priv[i];
+      flow.cb = rv_handle_mbuf;
+      s->rss[i] = mt_rss_get(impl, port, &flow);
+    } else
       s->queue[i] = mt_dev_get_rx_queue(impl, port, &flow);
-    if (!s->queue[i]) {
+    if (!s->queue[i] && !s->rss[i]) {
       rv_uinit_hw(impl, s);
       return -EIO;
     }
     s->port_id[i] = mt_port_id(impl, port);
     info("%s(%d), port(l:%d,p:%d), queue %d udp %d\n", __func__, idx, i, port,
-         mt_dev_rx_queue_id(s->queue[i]), flow.dst_port);
+         mt_has_rss(impl, port) ? mt_rss_queue_id(s->rss[i])
+                                : mt_dev_rx_queue_id(s->queue[i]),
+         flow.dst_port);
   }
 
   return 0;

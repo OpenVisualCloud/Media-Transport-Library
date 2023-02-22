@@ -484,6 +484,7 @@ static int rx_audio_session_handle_rtp_pkt(struct mtl_main_impl* impl,
     s->st30_stat_pkts_rtp_ring_full++;
     return -EIO;
   }
+  rte_mbuf_refcnt_update(mbuf, 1); /* free when app put */
 
   ops->notify_rtp_ready(ops->priv);
   s->st30_stat_pkts_received++;
@@ -495,37 +496,47 @@ static int rx_audio_session_handle_rtp_pkt(struct mtl_main_impl* impl,
   return 0;
 }
 
+static int rx_audio_session_handle_mbuf(void* priv, struct rte_mbuf** mbuf, uint16_t nb) {
+  struct st_rx_session_priv* s_priv = priv;
+  struct st_rx_audio_session_impl* s = s_priv->session;
+  struct mtl_main_impl* impl = s_priv->impl;
+  enum mtl_port s_port = s_priv->port;
+  enum st30_type st30_type = s->ops.type;
+
+  if (ST30_TYPE_FRAME_LEVEL == st30_type) {
+    for (uint16_t i = 0; i < nb; i++)
+      rx_audio_session_handle_frame_pkt(impl, s, mbuf[i], s_port);
+  } else {
+    for (uint16_t i = 0; i < nb; i++) {
+      rx_audio_session_handle_rtp_pkt(impl, s, mbuf[i], s_port);
+    }
+  }
+
+  return 0;
+}
+
 static int rx_audio_session_tasklet(struct mtl_main_impl* impl,
                                     struct st_rx_audio_session_impl* s) {
   struct rte_mbuf* mbuf[ST_RX_AUDIO_BURTS_SIZE];
   uint16_t rv;
-  int num_port = s->ops.num_port, ret;
-  enum st30_type st30_type = s->ops.type;
+  int num_port = s->ops.num_port;
+
   bool done = true;
 
   for (int s_port = 0; s_port < num_port; s_port++) {
-    if (!s->queue[s_port]) continue;
-    rv = mt_dev_rx_burst(s->queue[s_port], &mbuf[0], ST_RX_AUDIO_BURTS_SIZE);
-    if (rv > 0) {
-      if (ST30_TYPE_FRAME_LEVEL == st30_type) {
-        for (uint16_t i = 0; i < rv; i++)
-          rx_audio_session_handle_frame_pkt(impl, s, mbuf[i], s_port);
+    if (s->rss[s_port]) {
+      rv = mt_rss_burst(s->rss[s_port], ST_RX_AUDIO_BURTS_SIZE);
+    } else if (s->queue[s_port]) {
+      rv = mt_dev_rx_burst(s->queue[s_port], &mbuf[0], ST_RX_AUDIO_BURTS_SIZE);
+      if (rv) {
+        rx_audio_session_handle_mbuf(&s->priv[s_port], &mbuf[0], rv);
         rte_pktmbuf_free_bulk(&mbuf[0], rv);
-      } else {
-        struct rte_mbuf* free_mbuf[ST_RX_AUDIO_BURTS_SIZE];
-        int free_mbuf_cnt = 0;
-
-        for (uint16_t i = 0; i < rv; i++) {
-          ret = rx_audio_session_handle_rtp_pkt(impl, s, mbuf[i], s_port);
-          if (ret < 0) { /* set to free if it is dropped pkt */
-            free_mbuf[free_mbuf_cnt] = mbuf[i];
-            free_mbuf_cnt++;
-          }
-        }
-        rte_pktmbuf_free_bulk(&free_mbuf[0], free_mbuf_cnt);
       }
-      done = false;
+    } else {
+      continue;
     }
+
+    if (rv) done = false;
   }
 
   return done ? MT_TASKLET_ALL_DONE : MT_TASKLET_HAS_PENDING;
@@ -572,6 +583,10 @@ static int rx_audio_session_init_hw(struct mtl_main_impl* impl,
     port = mt_port_logic2phy(s->port_maps, i);
     s->port_id[i] = mt_port_id(impl, port);
 
+    s->priv[i].session = s;
+    s->priv[i].impl = impl;
+    s->priv[i].port = port;
+
     memset(&flow, 0, sizeof(flow));
     rte_memcpy(flow.dip_addr, s->ops.sip_addr[i], MTL_IP_ADDR_LEN);
     rte_memcpy(flow.sip_addr, mt_sip_addr(impl, port), MTL_IP_ADDR_LEN);
@@ -580,15 +595,21 @@ static int rx_audio_session_init_hw(struct mtl_main_impl* impl,
     /* no flow for data path only */
     if (mt_pmd_is_kernel(impl, port) && (s->ops.flags & ST30_RX_FLAG_DATA_PATH_ONLY))
       s->queue[i] = mt_dev_get_rx_queue(impl, port, NULL);
-    else
+    else if (mt_has_rss(impl, port)) {
+      flow.priv = &s->priv[i];
+      flow.cb = rx_audio_session_handle_mbuf;
+      s->rss[i] = mt_rss_get(impl, port, &flow);
+    } else
       s->queue[i] = mt_dev_get_rx_queue(impl, port, &flow);
-    if (!s->queue[i]) {
+    if (!s->queue[i] && !s->rss[i]) {
       rx_audio_session_uinit_hw(impl, s);
       return -EIO;
     }
 
     info("%s(%d), port(l:%d,p:%d), queue %d udp %d\n", __func__, idx, i, port,
-         mt_dev_rx_queue_id(s->queue[i]), flow.dst_port);
+         mt_has_rss(impl, port) ? mt_rss_queue_id(s->rss[i])
+                                : mt_dev_rx_queue_id(s->queue[i]),
+         flow.dst_port);
   }
 
   return 0;

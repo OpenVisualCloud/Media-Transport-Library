@@ -90,6 +90,7 @@ enum st_args_cmd {
   ST_ARG_PTP_KP,
   ST_ARG_PTP_KI,
   ST_ARG_PTP_TSC,
+  ST_ARG_RSS_MODE,
   ST_ARG_MAX,
 };
 
@@ -181,6 +182,7 @@ static struct option st_app_args_options[] = {
     {"kp", required_argument, 0, ST_ARG_PTP_KP},
     {"ki", required_argument, 0, ST_ARG_PTP_KI},
     {"ptp_tsc", no_argument, 0, ST_ARG_PTP_TSC},
+    {"rss_mode", required_argument, 0, ST_ARG_RSS_MODE},
 
     {0, 0, 0, 0}};
 
@@ -534,6 +536,14 @@ int st_app_parse_args(struct st_app_context* ctx, struct mtl_init_params* p, int
         break;
       case ST_ARG_PTP_TSC:
         p->flags |= MTL_FLAG_PTP_SOURCE_TSC;
+        break;
+      case ST_ARG_RSS_MODE:
+        if (!strcmp(optarg, "l3"))
+          p->rss_mode = MT_RSS_MODE_L3;
+        else if (!strcmp(optarg, "l4"))
+          p->rss_mode = MT_RSS_MODE_L4;
+        else
+          err("%s, unknow rss mode %s\n", __func__, optarg);
         break;
       case '?':
         break;

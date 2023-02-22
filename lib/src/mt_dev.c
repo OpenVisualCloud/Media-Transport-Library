@@ -2245,7 +2245,7 @@ int mt_dev_if_init(struct mtl_main_impl* impl) {
         inf->max_tx_queues++; /* tap tx queue */
 #endif
       }
-      if (mt_no_system_rxq(impl) || mt_has_rss(impl, i) || mt_udp_transport(impl, i)) {
+      if (mt_no_system_rxq(impl) || mt_udp_transport(impl, i)) {
         inf->max_rx_queues = impl->user_rx_queues_cnt;
       } else {
         inf->max_rx_queues = impl->user_rx_queues_cnt + 1; /* cni rx */
