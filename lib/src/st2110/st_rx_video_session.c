@@ -1519,8 +1519,8 @@ static int rv_handle_frame_pkt(struct st_rx_video_session_impl* s, struct rte_mb
     }
     bool is_set = mt_bitmap_test_and_set(bitmap, pkt_idx);
     if (is_set) {
-      info("%s(%d,%d), drop as pkt %d already received\n", __func__, s->idx, s_port,
-           pkt_idx);
+      dbg("%s(%d,%d), drop as pkt %d already received\n", __func__, s->idx, s_port,
+          pkt_idx);
       s->stat_pkts_redunant_dropped++;
       slot->pkts_redunant_received++;
       return -EIO;

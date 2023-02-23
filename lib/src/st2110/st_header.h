@@ -661,7 +661,6 @@ struct st_rx_video_session_impl {
   struct st_rx_video_ebu_stat ebu;
   struct st_rx_video_ebu_result ebu_result;
 
-  /* ret > 0 if it's handled by DMA */
   int (*pkt_handler)(struct st_rx_video_session_impl* s, struct rte_mbuf* mbuf,
                      enum mtl_session_port s_port, bool ctrl_thread);
 };
