@@ -568,6 +568,10 @@ static int rx_audio_session_uinit_hw(struct mtl_main_impl* impl,
       mt_dev_put_rx_queue(impl, s->queue[i]);
       s->queue[i] = NULL;
     }
+    if (s->rss[i]) {
+      mt_rss_put(s->rss[i]);
+      s->rss[i] = NULL;
+    }
   }
 
   return 0;

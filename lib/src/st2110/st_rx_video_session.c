@@ -1610,11 +1610,8 @@ static int rv_handle_frame_pkt(struct st_rx_video_session_impl* s, struct rte_mb
         st_rx_mbuf_set_offset(mbuf, offset);
         st_rx_mbuf_set_len(mbuf, payload_length);
         ret = mt_dma_borrow_mbuf(dma_dev, mbuf);
-        if (ret) { /* never happen in real life */
+        if (ret)
           err("%s(%d,%d), mbuf copied but not enqueued \n", __func__, s->idx, s_port);
-          /* mbuf freed and dma copy will operate an invalid src! */
-          rte_pktmbuf_free(mbuf);
-        }
         s->dma_copy = true;
         s->stat_pkts_dma++;
       }
@@ -1734,6 +1731,7 @@ static int rv_handle_rtp_pkt(struct st_rx_video_session_impl* s, struct rte_mbuf
     s->stat_pkts_rtp_ring_full++;
     return -EIO;
   }
+  rte_mbuf_refcnt_update(mbuf, 1); /* free when app put */
 
   ops->notify_rtp_ready(ops->priv);
   s->stat_pkts_received++;
@@ -2502,7 +2500,8 @@ static int rv_handle_mbuf(void* priv, struct rte_mbuf** mbuf, uint16_t nb) {
     /* first pass to the pkt ring if it has pkt handling lcore */
     unsigned int n =
         rte_ring_sp_enqueue_bulk(s->pkt_lcore_ring, (void**)&mbuf[0], nb, NULL);
-    nb -= n; /* n is zero or rx */
+    for (uint16_t i = 0; i < n; i++) rte_mbuf_refcnt_update(mbuf[i], 1);
+    nb -= n; /* n is zero or nb */
     s->stat_pkts_enqueue_fallback += nb;
   }
   if (!nb) return 0;
