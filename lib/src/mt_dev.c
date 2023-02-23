@@ -916,7 +916,10 @@ static int dev_config_port(struct mtl_main_impl* impl, enum mtl_port port) {
   inf->nb_tx_desc = nb_tx_desc;
   inf->nb_rx_desc = nb_rx_desc;
 
-  if (!mt_pmd_is_kernel(impl, port)) {
+  if (inf->drv_type == MT_DRV_ENA) {
+    warn("%s(%d), driver %s does not support ptype\n", __func__, port,
+         inf->dev_info.driver_name);
+  } else if (!mt_pmd_is_kernel(impl, port)) {
     /* enable PTYPE for packet classification by NIC */
     uint32_t ptypes[16];
     uint32_t set_ptypes[16];
