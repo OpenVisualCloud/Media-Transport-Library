@@ -1558,6 +1558,7 @@ static int rv_handle_frame_pkt(struct st_rx_video_session_impl* s, struct rte_mb
     return -EIO;
   }
 
+  bool dma_copy = false;
   bool need_copy = true;
   struct mtl_dma_lender_dev* dma_dev = s->dma_dev;
   struct mtl_main_impl* impl = rv_get_impl(s);
@@ -1612,7 +1613,7 @@ static int rv_handle_frame_pkt(struct st_rx_video_session_impl* s, struct rte_mb
         ret = mt_dma_borrow_mbuf(dma_dev, mbuf);
         if (ret)
           err("%s(%d,%d), mbuf copied but not enqueued \n", __func__, s->idx, s_port);
-        s->dma_copy = true;
+        dma_copy = true;
         s->stat_pkts_dma++;
       }
     } else {
@@ -1629,7 +1630,7 @@ static int rv_handle_frame_pkt(struct st_rx_video_session_impl* s, struct rte_mb
   slot->pkts_received++;
 
   /* slice */
-  if (slot->slice_info && !s->dma_copy) { /* ST20_TYPE_SLICE_LEVEL */
+  if (slot->slice_info && !dma_copy) { /* ST20_TYPE_SLICE_LEVEL */
     rv_slice_add(s, slot, offset, payload_length);
   }
 
@@ -1649,6 +1650,8 @@ static int rv_handle_frame_pkt(struct st_rx_video_session_impl* s, struct rte_mb
     /* end of frame */
     rv_slot_full_frame(s, slot);
   }
+
+  if (dma_copy) s->dma_copy = true;
 
   return 0;
 }

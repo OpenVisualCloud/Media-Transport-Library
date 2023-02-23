@@ -601,10 +601,10 @@ struct st_rx_video_session_impl {
   struct st20_rx_slice_meta slice_meta;
 
   /* dma dev */
-  bool dma_copy;
   struct mtl_dma_lender_dev* dma_dev;
   uint16_t dma_nb_desc;
   struct st_rx_video_slot_impl* dma_slot;
+  bool dma_copy;
 #ifdef ST_PCAPNG_ENABLED
   /* pcap dumper */
   uint32_t pcapng_dumped_pkts;
