@@ -39,6 +39,7 @@ enum test_args_cmd {
   TEST_ARG_TSC_PACING,
   TEST_ARG_RXTX_SIMD_512,
   TEST_ARG_PACING_WAY,
+  TEST_ARG_RSS_MODE,
 };
 
 static struct option test_args_options[] = {
@@ -70,6 +71,7 @@ static struct option test_args_options[] = {
     {"tsc", no_argument, 0, TEST_ARG_TSC_PACING},
     {"rxtx_simd_512", no_argument, 0, TEST_ARG_RXTX_SIMD_512},
     {"pacing_way", required_argument, 0, TEST_ARG_PACING_WAY},
+    {"rss_mode", required_argument, 0, TEST_ARG_RSS_MODE},
 
     {0, 0, 0, 0}};
 
@@ -223,6 +225,14 @@ static int test_parse_args(struct st_tests_context* ctx, struct mtl_init_params*
           p->pacing = ST21_TX_PACING_WAY_PTP;
         else
           err("%s, unknow pacing way %s\n", __func__, optarg);
+        break;
+      case TEST_ARG_RSS_MODE:
+        if (!strcmp(optarg, "l3"))
+          p->rss_mode = MT_RSS_MODE_L3;
+        else if (!strcmp(optarg, "l4"))
+          p->rss_mode = MT_RSS_MODE_L4;
+        else
+          err("%s, unknow rss mode %s\n", __func__, optarg);
         break;
       default:
         break;

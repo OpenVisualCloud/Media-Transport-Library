@@ -172,6 +172,20 @@ enum mtl_pmd_type {
 };
 
 /**
+ * RSS mode
+ */
+enum mt_rss_mode {
+  /* not using rss */
+  MT_RSS_MODE_NONE = 0,
+  /* l3(ipv4) rss mode */
+  MT_RSS_MODE_L3,
+  /* l4(ipv4+port) rss mode */
+  MT_RSS_MODE_L4,
+  /** max value of this enum */
+  MT_RSS_MODE_MAX,
+};
+
+/**
  * Transport type
  */
 enum mtl_transport_type {
@@ -461,6 +475,10 @@ struct mtl_init_params {
    * The ptp pi controller integral gain.
    */
   double ki;
+  /**
+   * Suggest using rss (L3 or L4) for rx packets direction.
+   */
+  enum mt_rss_mode rss_mode;
 };
 
 /**

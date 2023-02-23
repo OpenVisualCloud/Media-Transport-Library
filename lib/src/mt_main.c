@@ -489,7 +489,7 @@ mtl_handle mtl_init(struct mtl_init_params* p) {
        impl->user_tx_queues_cnt, impl->user_rx_queues_cnt,
        mt_get_user_params(impl)->flags);
   /* parse rss config, not use now */
-  impl->rss_mode = MT_RSS_MODE_NONE;
+  impl->rss_mode = p->rss_mode;
   impl->pkt_udp_suggest_max_size = MTL_PKT_MAX_RTP_BYTES;
   if (p->pkt_udp_suggest_max_size) {
     if ((p->pkt_udp_suggest_max_size > 1000) &&

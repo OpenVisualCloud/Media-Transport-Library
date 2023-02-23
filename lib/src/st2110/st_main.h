@@ -9,6 +9,7 @@
 #include "../mt_dma.h"
 #include "../mt_main.h"
 #include "../mt_mcast.h"
+#include "../mt_rss.h"
 #include "../mt_sch.h"
 #include "../mt_simd.h"
 #include "../mt_util.h"

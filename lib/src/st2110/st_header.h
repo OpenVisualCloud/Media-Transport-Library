@@ -539,9 +539,16 @@ struct st_rx_video_hdr_split_info {
 
 struct st_rx_video_sessions_mgr; /* forward declare */
 
+struct st_rx_session_priv {
+  void* session;
+  struct mtl_main_impl* impl;
+  enum mtl_session_port s_port;
+};
+
 struct st_rx_video_session_impl {
   int idx; /* index for current session */
   struct st_rx_video_sessions_mgr* parnet;
+  struct st_rx_session_priv priv[MTL_SESSION_PORT_MAX];
 
   struct st20_rx_ops ops;
   char ops_name[ST_MAX_NAME_LEN];
@@ -549,6 +556,7 @@ struct st_rx_video_session_impl {
 
   enum mtl_port port_maps[MTL_SESSION_PORT_MAX];
   struct mt_rx_queue* queue[MTL_SESSION_PORT_MAX];
+  struct mt_rss_entry* rss[MTL_SESSION_PORT_MAX];
   uint16_t port_id[MTL_SESSION_PORT_MAX];
   uint16_t st20_src_port[MTL_SESSION_PORT_MAX]; /* udp port */
   uint16_t st20_dst_port[MTL_SESSION_PORT_MAX]; /* udp port */
@@ -596,6 +604,7 @@ struct st_rx_video_session_impl {
   struct mtl_dma_lender_dev* dma_dev;
   uint16_t dma_nb_desc;
   struct st_rx_video_slot_impl* dma_slot;
+  bool dma_copy;
 #ifdef ST_PCAPNG_ENABLED
   /* pcap dumper */
   uint32_t pcapng_dumped_pkts;
@@ -652,7 +661,6 @@ struct st_rx_video_session_impl {
   struct st_rx_video_ebu_stat ebu;
   struct st_rx_video_ebu_result ebu_result;
 
-  /* ret > 0 if it's handled by DMA */
   int (*pkt_handler)(struct st_rx_video_session_impl* s, struct rte_mbuf* mbuf,
                      enum mtl_session_port s_port, bool ctrl_thread);
 };
@@ -803,9 +811,11 @@ struct st_rx_audio_session_impl {
   int idx; /* index for current session */
   struct st30_rx_ops ops;
   char ops_name[ST_MAX_NAME_LEN];
+  struct st_rx_session_priv priv[MTL_SESSION_PORT_MAX];
 
   enum mtl_port port_maps[MTL_SESSION_PORT_MAX];
   struct mt_rx_queue* queue[MTL_SESSION_PORT_MAX];
+  struct mt_rss_entry* rss[MTL_SESSION_PORT_MAX];
   uint16_t port_id[MTL_SESSION_PORT_MAX];
 
   uint16_t st30_src_port[MTL_SESSION_PORT_MAX]; /* udp port */
@@ -940,9 +950,11 @@ struct st_rx_ancillary_session_impl {
   int idx; /* index for current session */
   struct st40_rx_ops ops;
   char ops_name[ST_MAX_NAME_LEN];
+  struct st_rx_session_priv priv[MTL_SESSION_PORT_MAX];
 
   enum mtl_port port_maps[MTL_SESSION_PORT_MAX];
   struct mt_rx_queue* queue[MTL_SESSION_PORT_MAX];
+  struct mt_rss_entry* rss[MTL_SESSION_PORT_MAX];
   uint16_t port_id[MTL_SESSION_PORT_MAX];
   struct rte_ring* packet_ring;
 

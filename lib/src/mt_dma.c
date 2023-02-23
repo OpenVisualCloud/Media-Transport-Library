@@ -495,6 +495,9 @@ int mt_dma_borrow_mbuf(struct mtl_dma_lender_dev* dev, struct rte_mbuf* mbuf) {
 #endif
   dma_dev->nb_inflight++;
   dev->nb_borrowed++;
+
+  rte_mbuf_refcnt_update(mbuf, 1);
+
   return 0;
 }
 
