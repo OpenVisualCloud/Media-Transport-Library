@@ -9,6 +9,7 @@
 #include "../mt_main.h"
 #include "../mt_mcast.h"
 #include "../mt_rss.h"
+#include "../mt_sch.h"
 #include "../mt_shared_queue.h"
 #include "../mt_util.h"
 
@@ -30,6 +31,8 @@ struct mudp_impl {
   struct mtl_main_impl* parnet;
   enum mt_handle_type type;
   int idx;
+  char name[64];
+  bool alive;
 
   enum mtl_port port;
   struct mt_udp_hdr hdr;
@@ -49,6 +52,10 @@ struct mudp_impl {
   struct rte_mempool* tx_pool;
   uint16_t element_size;
   unsigned int element_nb;
+
+  pthread_cond_t lcore_wake_cond;
+  pthread_mutex_t lcore_wake_mutex;
+  struct mt_sch_tasklet_impl* lcore_tasklet;
 
   int arp_timeout_ms;
   int tx_timeout_ms;
@@ -74,6 +81,8 @@ struct mudp_impl {
   uint32_t stat_pkt_rx;
   uint32_t stat_pkt_rx_enq_fail;
   uint32_t stat_pkt_deliver;
+  uint32_t stat_timedwait;
+  uint32_t stat_timedwait_timeout;
 };
 
 int mudp_verfiy_socket_args(int domain, int type, int protocol);

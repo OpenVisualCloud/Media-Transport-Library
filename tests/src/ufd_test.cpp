@@ -15,6 +15,7 @@ enum utest_args_cmd {
   UTEST_ARG_R_PORT,
   UTEST_ARG_LOG_LEVEL,
   UTEST_ARG_QUEUE_MODE,
+  UTEST_ARG_UDP_LCORE,
 };
 
 static struct option utest_args_options[] = {
@@ -22,6 +23,7 @@ static struct option utest_args_options[] = {
     {"r_port", required_argument, 0, UTEST_ARG_R_PORT},
     {"log_level", required_argument, 0, UTEST_ARG_LOG_LEVEL},
     {"queue_mode", required_argument, 0, UTEST_ARG_QUEUE_MODE},
+    {"udp_lcore", no_argument, 0, UTEST_ARG_UDP_LCORE},
     {0, 0, 0, 0}};
 
 static struct utest_ctx* g_utest_ctx;
@@ -69,6 +71,9 @@ static int utest_parse_args(struct utest_ctx* ctx, int argc, char** argv) {
           p->flags &= ~MTL_FLAG_SHARED_QUEUE;
         else
           err("%s, unknow queue mode %s\n", __func__, optarg);
+        break;
+      case UTEST_ARG_UDP_LCORE:
+        p->flags |= MTL_FLAG_UDP_LCORE;
         break;
       default:
         break;

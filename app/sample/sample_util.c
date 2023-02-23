@@ -31,6 +31,7 @@ enum sample_args_cmd {
   SAMPLE_ARG_P_GATEWAY,
   SAMPLE_ARG_R_GATEWAY,
   SAMPLE_ARG_PTP_TSC,
+  SAMPLE_ARG_UDP_LCORE,
 
   SAMPLE_ARG_TX_VIDEO_URL = 0x200,
   SAMPLE_ARG_RX_VIDEO_URL,
@@ -72,6 +73,7 @@ static struct option sample_args_options[] = {
     {"p_gateway", required_argument, 0, SAMPLE_ARG_P_GATEWAY},
     {"r_gateway", required_argument, 0, SAMPLE_ARG_R_GATEWAY},
     {"ptp_tsc", no_argument, 0, SAMPLE_ARG_PTP_TSC},
+    {"udp_lcore", no_argument, 0, SAMPLE_ARG_UDP_LCORE},
 
     {"tx_url", required_argument, 0, SAMPLE_ARG_TX_VIDEO_URL},
     {"rx_url", required_argument, 0, SAMPLE_ARG_RX_VIDEO_URL},
@@ -182,6 +184,9 @@ static int _sample_parse_args(struct st_sample_context* ctx, int argc, char** ar
         break;
       case SAMPLE_ARG_PTP_TSC:
         p->flags |= MTL_FLAG_PTP_SOURCE_TSC;
+        break;
+      case SAMPLE_ARG_UDP_LCORE:
+        p->flags |= MTL_FLAG_UDP_LCORE;
         break;
       case SAMPLE_ARG_QUEUES_CNT:
         p->rx_queues_cnt_max = atoi(optarg);

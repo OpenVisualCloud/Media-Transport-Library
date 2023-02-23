@@ -9,6 +9,8 @@
 * udp: add sample code, see app/udp
 * arp: add zero timeout support for UDP stack.
 * mtl_init_params: add multi port support, user can initial MTL instance with up to 8 ports. See tests/script/multi_port_json/ for how to use from RxTxApp.
+* sch/tasklet: add runtime unregister support.
+* udp: add lcore daemon mode support for rx, see MTL_FLAG_UDP_LCORE.
 
 ## Change log for 22.12:
 * tasklet: add thread and sleep option for core usage, see ST_FLAG_TASKLET_THREAD and ST_FLAG_TASKLET_SLEEP.
