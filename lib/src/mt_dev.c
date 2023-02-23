@@ -2247,6 +2247,8 @@ int mt_dev_if_init(struct mtl_main_impl* impl) {
       }
       if (mt_no_system_rxq(impl) || mt_udp_transport(impl, i)) {
         inf->max_rx_queues = impl->user_rx_queues_cnt;
+      } else if (mt_has_rss(impl, i)) {
+        inf->max_rx_queues = impl->user_rx_queues_cnt * 2;
       } else {
         inf->max_rx_queues = impl->user_rx_queues_cnt + 1; /* cni rx */
         inf->system_rx_queues_end = 1;                     /* cni rx */

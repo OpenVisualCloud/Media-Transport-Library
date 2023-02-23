@@ -480,7 +480,6 @@ uint16_t mt_dma_completed(struct mtl_dma_lender_dev* dev, uint16_t nb_cpls,
 int mt_dma_borrow_mbuf(struct mtl_dma_lender_dev* dev, struct rte_mbuf* mbuf) {
   struct mt_dma_dev* dma_dev = dev->parent;
 
-  rte_mbuf_refcnt_update(mbuf, 1);
   st_rx_mbuf_set_lender(mbuf, dev->lender_id);
 #if MT_DMA_RTE_RING
   int ret = rte_ring_sp_enqueue(dma_dev->borrow_queue, (void*)mbuf);
@@ -496,6 +495,9 @@ int mt_dma_borrow_mbuf(struct mtl_dma_lender_dev* dev, struct rte_mbuf* mbuf) {
 #endif
   dma_dev->nb_inflight++;
   dev->nb_borrowed++;
+
+  rte_mbuf_refcnt_update(mbuf, 1);
+
   return 0;
 }
 
