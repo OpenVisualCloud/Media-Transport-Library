@@ -177,4 +177,6 @@ int st_frame_trans_uinit(struct st_frame_trans* frame);
 
 int st_vsync_calculate(struct mtl_main_impl* impl, struct st_vsync_info* vsync);
 
+static inline const char* mt_msg_safe(const char* msg) { return msg ? msg : "null"; }
+
 #endif
