@@ -876,7 +876,7 @@ static int dev_config_port(struct mtl_main_impl* impl, enum mtl_port port) {
   }
 
   dbg("%s(%d), rss mode %d\n", __func__, port, impl->rss_mode);
-  if (impl->rss_mode != MT_RSS_MODE_NONE) {
+  if (mt_has_rss(impl, port)) {
     struct rte_eth_rss_conf* rss_conf;
     rss_conf = &port_conf.rx_adv_conf.rss_conf;
 
@@ -896,6 +896,12 @@ static int dev_config_port(struct mtl_main_impl* impl, enum mtl_port port) {
       return -EIO;
     }
     port_conf.rxmode.mq_mode = RTE_ETH_MQ_RX_RSS;
+    if (inf->drv_type == MT_DRV_ENA) {
+      info(
+          "%s(%d), ena hardware cannot modify rss hash fileds, will use rss for "
+          "TCP & UDP\n",
+          __func__, port);
+    }
   }
 
   ret = rte_eth_dev_configure(port_id, nb_rx_q, nb_tx_q, &port_conf);
