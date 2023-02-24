@@ -643,7 +643,6 @@ static struct rte_flow* dev_rx_queue_create_flow(struct mt_interface* inf, uint1
   bool has_port_flow = true;
 
   uint16_t port_id = inf->port_id;
-  enum mt_driver_type drv_type = inf->drv_type;
 
   memset(&error, 0, sizeof(error));
 
