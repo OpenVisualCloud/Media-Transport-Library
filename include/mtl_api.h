@@ -281,6 +281,11 @@ enum st21_tx_pacing_way {
  * Use PI controller for built-in PTP implementation, only for PF now.
  */
 #define MTL_FLAG_PTP_PI (MTL_BIT64(9))
+/**
+ * Flag bit in flags of struct mtl_init_params.
+ * Enable background lcore mode for MTL_TRANSPORT_UDP.
+ */
+#define MTL_FLAG_UDP_LCORE (MTL_BIT64(10))
 
 /**
  * Flag bit in flags of struct mtl_init_params, debug usage only.
@@ -438,6 +443,8 @@ struct mtl_init_params {
   void (*stat_dump_cb_fn)(void* priv);
   /** data quota for each lcore, 0 means determined by lib */
   uint32_t data_quota_mbs_per_sch;
+  /** the number of tasklets for each lcore, 0 means determined by lib */
+  uint32_t taskelts_nb_per_sch;
   /**
    * number of transmit descriptors for each NIC TX queue, 0 means determined by lib.
    * It will affect the memory usage and the performance.

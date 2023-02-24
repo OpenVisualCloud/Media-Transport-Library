@@ -129,4 +129,6 @@ static inline uint64_t sample_get_monotonic_time() {
   return ((uint64_t)ts.tv_sec * NS_PER_S) + ts.tv_nsec;
 }
 
+int ufd_override_check(struct st_sample_context* ctx);
+
 #endif

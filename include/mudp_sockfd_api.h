@@ -299,6 +299,10 @@ static void inline mufd_init_sockaddr(struct sockaddr_in* saddr,
 struct mufd_override_params {
   /** log level */
   enum mtl_log_level log_level;
+  /** shared queue mode */
+  bool shared_queue;
+  /** lcore mode */
+  bool lcore_mode;
 };
 
 /**

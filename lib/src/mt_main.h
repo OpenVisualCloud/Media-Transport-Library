@@ -34,8 +34,7 @@
 #define MT_MBUF_HEADROOM_SIZE (RTE_PKTMBUF_HEADROOM)          /* 128 */
 #define MT_MBUF_DEFAULT_DATA_SIZE (RTE_MBUF_DEFAULT_DATAROOM) /* 2048 */
 
-#define MT_MAX_SCH_NUM (18)         /* max 18 scheduler lcore */
-#define MT_MAX_TASKLET_PER_SCH (16) /* max 16 tasklet in one scheduler lcore */
+#define MT_MAX_SCH_NUM (18) /* max 18 scheduler lcore */
 
 /* max RL items */
 #define MT_MAX_RL_ITEMS (64)
@@ -292,6 +291,8 @@ struct mt_sch_tasklet_impl {
   struct mt_sch_impl* sch;
 
   int idx;
+  bool request_exit;
+  bool ack_exit;
 
   uint32_t stat_max_time_us;
   uint64_t stat_sum_time_us;
@@ -312,7 +313,8 @@ typedef uint64_t mt_sch_mask_t;
 
 struct mt_sch_impl {
   pthread_mutex_t mutex; /* protect sch context */
-  struct mt_sch_tasklet_impl* tasklet[MT_MAX_TASKLET_PER_SCH];
+  struct mt_sch_tasklet_impl** tasklet;
+  int nb_tasklets;     /* the number of tasklet in current sch */
   int max_tasklet_idx; /* max tasklet index */
   unsigned int lcore;
   bool run_in_thread; /* Run the tasklet inside one thread instead of a pinned lcore. */
@@ -749,6 +751,7 @@ struct mtl_main_impl {
 
   /* sch context */
   struct mt_sch_mgr sch_mgr;
+  uint32_t taskelts_nb_per_sch;
 
   /* st plugin dev mgr */
   struct st_plugin_mgr plugin_mgr;
@@ -962,6 +965,13 @@ static inline bool mt_has_rss(struct mtl_main_impl* impl, enum mtl_port port) {
 
 static inline bool mt_udp_transport(struct mtl_main_impl* impl, enum mtl_port port) {
   if (mt_get_user_params(impl)->transport == MTL_TRANSPORT_UDP)
+    return true;
+  else
+    return false;
+}
+
+static inline bool mt_udp_lcore(struct mtl_main_impl* impl, enum mtl_port port) {
+  if (mt_get_user_params(impl)->flags & MTL_FLAG_UDP_LCORE)
     return true;
   else
     return false;

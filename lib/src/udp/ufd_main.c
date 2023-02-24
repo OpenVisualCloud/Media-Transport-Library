@@ -202,6 +202,14 @@ static int ufd_parse_json(struct mufd_init_params* init, const char* filename) {
     }
   }
 
+  obj = mt_json_object_get(root, "udp_lcore");
+  if (obj) {
+    if (json_object_get_boolean(obj)) {
+      info("%s, udp lcore enabled\n", __func__);
+      p->flags |= MTL_FLAG_UDP_LCORE;
+    }
+  }
+
   obj = mt_json_object_get(root, "log_level");
   if (obj) {
     const char* str = json_object_get_string(obj);
@@ -300,6 +308,8 @@ static struct ufd_mt_ctx* ufd_create_mt_ctx(void) {
     if (rt_para) {
       info("%s, applied overide config\n", __func__);
       p->log_level = rt_para->log_level;
+      if (rt_para->shared_queue) p->flags |= MTL_FLAG_SHARED_QUEUE;
+      if (rt_para->lcore_mode) p->flags |= MTL_FLAG_UDP_LCORE;
     }
   }
 
@@ -310,6 +320,10 @@ static struct ufd_mt_ctx* ufd_create_mt_ctx(void) {
   if (!ctx->init_params.slots_nb_max) ctx->init_params.slots_nb_max = 1024;
   if (!ctx->init_params.fd_base) ctx->init_params.fd_base = UFD_FD_BASE_DEFAULT;
   if (!ctx->init_params.txq_bps) ctx->init_params.txq_bps = MUDP_DEFAULT_RL_BPS;
+
+  /* udp lcore and shared queue, set taskelts_nb_per_sch to allow max slots */
+  if ((p->flags & MTL_FLAG_SHARED_QUEUE) && (p->flags & MTL_FLAG_UDP_LCORE))
+    p->taskelts_nb_per_sch = ctx->init_params.slots_nb_max + 8;
 
   ctx->mt = mtl_init(p);
   if (!ctx->mt) {
