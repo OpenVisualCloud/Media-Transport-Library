@@ -895,7 +895,6 @@ static int dev_config_port(struct mtl_main_impl* impl, enum mtl_port port) {
           rss_conf->rss_hf, impl->rss_mode);
       return -EIO;
     }
-    rte_eth_dev_rss_hash_update(port_id, rss_conf);
     port_conf.rxmode.mq_mode = RTE_ETH_MQ_RX_RSS;
   }
 
