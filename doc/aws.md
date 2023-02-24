@@ -135,7 +135,27 @@ export LD_LIBRARY_PATH=/usr/local/lib64/
 
 ## 8. Known issues
 
-2M hugepages cannot be used under no_iommu mode or with igb_uio driver. As one 1080p frame needs 5MB memory, when buffer allocated, the physical memory may locate on different but not continious pages, this will cause invalid payload sent from TX.
+### 8.1 2M hugepages cannot be used under no_iommu mode or with igb_uio driver
+
+As one 1080p frame needs 5MB memory, when buffer allocated, the physical memory may locate on different but not continious pages, this will cause invalid payload sent from TX.
+
+You have to enable 1G hugepages.
+
+### 8.2 No ptype support
+
+```shell
+MT: Warn: dev_config_port(0), failed to setup all ptype, only 0 supported
+```
+
+This is ENA PMD limitation, can be ignored for now.
+
+### 8.3 Setting RSS hash fields is not supported
+
+```shell
+ena_rss_hash_set(): Setting RSS hash fields is not supported. Using default values: 0xc30
+```
+
+This is ENA NIC hardware limitation, can be ignored for now.
 
 ## Reference link
 
