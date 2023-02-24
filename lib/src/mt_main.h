@@ -110,6 +110,13 @@ enum mt_driver_type {
   MT_DRV_AF_XDP,    /* af xdp, net_af_xdp */
   MT_DRV_E1000_IGB, /* e1000 igb, net_e1000_igb */
   MT_DRV_IGC,       /* igc, net_igc */
+  MT_DRV_ENA,       /* ena, net_ena */
+};
+
+enum mt_flow_type {
+  MT_FLOW_ALL,
+  MT_FLOW_NO_IP,
+  MT_FLOW_NONE,
 };
 
 enum mt_ptp_l_mode {
@@ -437,6 +444,8 @@ struct mt_interface {
   struct rte_eth_dev_info dev_info;
   enum mt_port_type port_type;
   enum mt_driver_type drv_type;
+  enum mt_flow_type flow_type;
+  enum mt_rss_mode rss_mode;
   int socket_id;                          /* socket id for the port */
   uint32_t feature;                       /* MT_IF_FEATURE_* */
   uint32_t link_speed;                    /* ETH_SPEED_NUM_ */
@@ -716,7 +725,6 @@ struct mtl_main_impl {
   size_t page_size;
 
   /* rss */
-  enum mt_rss_mode rss_mode;
   struct mt_rss_impl* rss[MTL_PORT_MAX];
   /* shared rx queue mgr */
   struct mt_rsq_impl* rsq[MTL_PORT_MAX];
@@ -957,10 +965,7 @@ static inline bool mt_has_tx_mono_pool(struct mtl_main_impl* impl) {
 }
 
 static inline bool mt_has_rss(struct mtl_main_impl* impl, enum mtl_port port) {
-  if (impl->rss_mode != MT_RSS_MODE_NONE)
-    return true;
-  else
-    return false;
+  return mt_if(impl, port)->rss_mode != MT_RSS_MODE_NONE;
 }
 
 static inline bool mt_udp_transport(struct mtl_main_impl* impl, enum mtl_port port) {
