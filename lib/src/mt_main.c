@@ -458,11 +458,6 @@ mtl_handle mtl_init(struct mtl_init_params* p) {
         impl->user_para.netmask[i][3] = 0;
       }
     }
-    /* enable rss if no flow support */
-    if (mt_if(impl, i)->flow_type == MT_FLOW_NONE)
-      mt_if(impl, i)->rss_mode = MT_RSS_MODE_L4;
-    else /* user suggest rss mode */
-      mt_if(impl, i)->rss_mode = p->rss_mode;
     /* update socket */
     mt_if(impl, i)->socket_id = socket[i];
     info("%s(%d), socket_id %d\n", __func__, i, socket[i]);

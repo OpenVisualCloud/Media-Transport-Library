@@ -2239,6 +2239,12 @@ int mt_dev_if_init(struct mtl_main_impl* impl) {
       inf->ptp_get_time_fn = ptp_from_real_time;
     }
 
+    /* enable rss if no flow support */
+    if (inf->flow_type == MT_FLOW_NONE)
+      inf->rss_mode = MT_RSS_MODE_L4;
+    else /* user suggest rss mode */
+      inf->rss_mode = p->rss_mode;
+
     /* set max tx/rx queues */
     if (p->pmd[i] == MTL_PMD_DPDK_AF_XDP) {
       /* af_xdp queues(ring pairs) count indicate by user */
