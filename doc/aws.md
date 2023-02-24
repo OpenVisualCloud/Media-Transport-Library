@@ -132,10 +132,12 @@ export LD_LIBRARY_PATH=/usr/local/lib64/
 
 ## 8. Known issues
 
-2M hugepages cannot be used under no_iommu mode or with igb_uio driver. As one 1080p frame needs 5MB memory, when buffer allocated, the physical memory may locate on different but not continues pages, this will cause invalid payload sent from TX.
+2M hugepages cannot be used under no_iommu mode or with igb_uio driver. As one 1080p frame needs 5MB memory, when buffer allocated, the physical memory may locate on different but not continious pages, this will cause invalid payload sent from TX.
 
 ## Reference link
 
 [ENA driver repo](https://github.com/amzn/amzn-drivers/tree/master/userspace/dpdk)
+
 [ENA PMD doc](https://doc.dpdk.org/guides/nics/ena.html)
+
 [AWS blog(cn)](https://www.infoq.cn/article/EcQFplTWfdrvumULjo9t)
