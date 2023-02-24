@@ -64,6 +64,8 @@ Choose same subnet for all new interfaces, set the right security groups for you
 
 Right-click on your running instance, go to Networking > Attach network interface, choose an idle interface.
 
+After attaching the interface, remember the Private IPv4 address allocated by AWS, this will be used by kahawai as interface IP.
+
 ### 5.3 Bind interface to DPDK PMD
 
 Load vfio-pci module, enable no-iommu mode if IOMMU is not supported.
@@ -86,7 +88,23 @@ dpdk-devbind.py -s
 
 Refer to [run.md](./run.md) after section 3.3.
 
-Features not supported on ENA:
+### IP configuration
+
+Configure the AWS reserved private IP in json.
+
+For example, the Private IPv4 address is 172.31.42.123, the subnet IPv4 CIDR is 172.31.32.0/20, you can edit the interfaces in json:
+
+```json
+    "interfaces": [
+        {
+            "name": "0000:00:06.0",
+            "ip": "172.31.42.123",
+            "netmask": "255.255.240.0"
+        }
+    ],
+```
+
+### Features not supported on ENA
 
 * **PTP** (use system real_time)
 * **Rate Limiting** based pacing (use TSC pacing)
