@@ -33,6 +33,7 @@ struct mt_dev_driver_info {
   char* name;
   enum mt_port_type port_type;
   enum mt_driver_type drv_type;
+  enum mt_flow_type flow_type;
 };
 
 static const struct mt_dev_driver_info dev_drvs[] = {
@@ -40,45 +41,53 @@ static const struct mt_dev_driver_info dev_drvs[] = {
         .name = "net_ice",
         .port_type = MT_PORT_PF,
         .drv_type = MT_DRV_ICE,
+        .flow_type = MT_FLOW_ALL,
     },
     {
         .name = "net_i40e",
         .port_type = MT_PORT_PF,
         .drv_type = MT_DRV_I40E,
+        .flow_type = MT_FLOW_ALL,
     },
     {
         .name = "net_iavf",
         .port_type = MT_PORT_VF,
         .drv_type = MT_DRV_IAVF,
+        .flow_type = MT_FLOW_ALL,
     },
     {
         .name = "net_af_xdp",
         .port_type = MT_PORT_AF_XDP,
         .drv_type = MT_DRV_AF_XDP,
+        .flow_type = MT_FLOW_ALL,
     },
     {
         .name = "net_e1000_igb",
         .port_type = MT_PORT_PF,
         .drv_type = MT_DRV_E1000_IGB,
+        .flow_type = MT_FLOW_ALL,
     },
     {
         .name = "net_igc",
         .port_type = MT_PORT_PF,
         .drv_type = MT_DRV_IGC,
+        .flow_type = MT_FLOW_NO_IP,
     },
     {
         .name = "net_ena",
         .port_type = MT_PORT_VF,
         .drv_type = MT_DRV_ENA,
+        .flow_type = MT_FLOW_NONE,
     },
 };
 
 static int parse_driver_info(const char* driver, enum mt_port_type* port,
-                             enum mt_driver_type* drv) {
+                             enum mt_driver_type* drv, enum mt_flow_type* flow) {
   for (int i = 0; i < MTL_ARRAY_SIZE(dev_drvs); i++) {
     if (!strcmp(dev_drvs[i].name, driver)) {
       *port = dev_drvs[i].port_type;
       *drv = dev_drvs[i].drv_type;
+      *flow = dev_drvs[i].flow_type;
       return 0;
     }
   }
@@ -638,8 +647,8 @@ static struct rte_flow* dev_rx_queue_create_flow(struct mt_interface* inf, uint1
 
   memset(&error, 0, sizeof(error));
 
-  /* igc drv not support ip flow */
-  if (drv_type == MT_DRV_IGC) has_ip_flow = false;
+  /* drv not support ip flow */
+  if (inf->flow_type == MT_FLOW_NO_IP) has_ip_flow = false;
   /* no ip flow requested */
   if (flow->no_ip_flow) has_ip_flow = false;
   /* no port flow requested */
@@ -875,33 +884,27 @@ static int dev_config_port(struct mtl_main_impl* impl, enum mtl_port port) {
 #endif
   }
 
-  dbg("%s(%d), rss mode %d\n", __func__, port, impl->rss_mode);
+  dbg("%s(%d), rss mode %d\n", __func__, port, inf->rss_mode);
   if (mt_has_rss(impl, port)) {
     struct rte_eth_rss_conf* rss_conf;
     rss_conf = &port_conf.rx_adv_conf.rss_conf;
 
     rss_conf->rss_key = mt_rss_hash_key;
     rss_conf->rss_key_len = MT_HASH_KEY_LENGTH;
-    if (impl->rss_mode == MT_RSS_MODE_L4) {
+    if (inf->rss_mode == MT_RSS_MODE_L4) {
       rss_conf->rss_hf = RTE_ETH_RSS_NONFRAG_IPV4_UDP;
-    } else if (impl->rss_mode == MT_RSS_MODE_L3) {
+    } else if (inf->rss_mode == MT_RSS_MODE_L3) {
       rss_conf->rss_hf = RTE_ETH_RSS_IPV4;
     } else {
-      err("%s(%d), not support rss_mode %d\n", __func__, port, impl->rss_mode);
+      err("%s(%d), not support rss_mode %d\n", __func__, port, inf->rss_mode);
       return -EIO;
     }
     if (rss_conf->rss_hf != (inf->dev_info.flow_type_rss_offloads & rss_conf->rss_hf)) {
       err("%s(%d), not support rss offload %" PRIx64 ", mode %d\n", __func__, port,
-          rss_conf->rss_hf, impl->rss_mode);
+          rss_conf->rss_hf, inf->rss_mode);
       return -EIO;
     }
     port_conf.rxmode.mq_mode = RTE_ETH_MQ_RX_RSS;
-    if (inf->drv_type == MT_DRV_ENA) {
-      info(
-          "%s(%d), ena hardware does not support rss hash fileds modification, will use "
-          "rss for TCP & UDP traffic by default\n",
-          __func__, port);
-    }
   }
 
   ret = rte_eth_dev_configure(port_id, nb_rx_q, nb_tx_q, &port_conf);
@@ -922,10 +925,7 @@ static int dev_config_port(struct mtl_main_impl* impl, enum mtl_port port) {
   inf->nb_tx_desc = nb_tx_desc;
   inf->nb_rx_desc = nb_rx_desc;
 
-  if (inf->drv_type == MT_DRV_ENA) {
-    warn("%s(%d), driver %s does not support ptype\n", __func__, port,
-         inf->dev_info.driver_name);
-  } else if (!mt_pmd_is_kernel(impl, port)) {
+  if (!mt_pmd_is_kernel(impl, port)) {
     /* enable PTYPE for packet classification by NIC */
     uint32_t ptypes[16];
     uint32_t set_ptypes[16];
@@ -945,9 +945,8 @@ static int dev_config_port(struct mtl_main_impl* impl, enum mtl_port port) {
         return ret;
       }
     } else {
-      err("%s(%d), failed to setup all ptype, only %d supported\n", __func__, port,
-          num_ptypes);
-      return -EIO;
+      warn("%s(%d), failed to setup all ptype, only %d supported\n", __func__, port,
+           num_ptypes);
     }
   }
 
@@ -2214,7 +2213,8 @@ int mt_dev_if_init(struct mtl_main_impl* impl) {
       mt_dev_if_uinit(impl);
       return ret;
     }
-    ret = parse_driver_info(dev_info->driver_name, &inf->port_type, &inf->drv_type);
+    ret = parse_driver_info(dev_info->driver_name, &inf->port_type, &inf->drv_type,
+                            &inf->flow_type);
     if (ret < 0) {
       err("%s, parse_driver_info fail(%d) for %s\n", __func__, ret, port);
       mt_dev_if_uinit(impl);
@@ -2227,11 +2227,6 @@ int mt_dev_if_init(struct mtl_main_impl* impl) {
     mt_pthread_mutex_init(&inf->rx_queues_mutex, NULL);
     mt_pthread_mutex_init(&inf->tx_sys_queue_mutex, NULL);
     mt_pthread_mutex_init(&inf->vf_cmd_mutex, NULL);
-
-    if (inf->drv_type == MT_DRV_ENA) {
-      info("%s(%d), use rss for ena nic\n", __func__, i);
-      impl->rss_mode = MT_RSS_MODE_L4;
-    }
 
     if (mt_ptp_tsc_source(impl)) {
       info("%s(%d), use tsc ptp source\n", __func__, i);
