@@ -898,8 +898,8 @@ static int dev_config_port(struct mtl_main_impl* impl, enum mtl_port port) {
     port_conf.rxmode.mq_mode = RTE_ETH_MQ_RX_RSS;
     if (inf->drv_type == MT_DRV_ENA) {
       info(
-          "%s(%d), ena hardware cannot modify rss hash fileds, will use rss for "
-          "TCP & UDP\n",
+          "%s(%d), ena hardware does not support rss hash fileds modification, will use "
+          "rss for TCP & UDP traffic by default\n",
           __func__, port);
     }
   }

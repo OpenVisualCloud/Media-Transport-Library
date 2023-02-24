@@ -33,7 +33,8 @@ For Windows, please refer to [Win build guide](doc/build_WIN.md) for how to buil
 ## 3. Run ST2110:
 Please refer to [run guide](doc/run.md) for how to setup and run the demo pipeline application.<br>
 For Windows, please refer to [Win run guide](doc/run_WIN.md) for how to setup and run the demo.<br>
-For VF and VM support under Linux, please refer to [vf guide](doc/vf.md) for how to setup VF based on SRIOV, [vm guide](doc/vm.md) for how to setup VM based on VF passthrough.
+For VF and VM support under Linux, please refer to [vf guide](doc/vf.md) for how to setup VF based on SRIOV, [vm guide](doc/vm.md) for how to setup VM based on VF passthrough.<br>
+Fo AWS (cloud environment), please refer to [AWS run guide](doc/aws.md) for how to setup and run the demo.
 
 ## 4. ST2110 Programmers guide:
 For how to develop application quickly based on Kahawai library, pls refer to [sample code](app/sample).

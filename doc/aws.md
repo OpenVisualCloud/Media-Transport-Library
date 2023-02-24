@@ -18,7 +18,7 @@ Currently with no-iommu mode you have to enable 1G hugepage.
 
 ```shell
 # under root user
-echo GRUB_CMDLINE_LINUX=”default_hugepagesz=1G hugepagesz=1G hugepages=4”>>/etc/default/grub
+echo GRUB_CMDLINE_LINUX="default_hugepagesz=1G hugepagesz=1G hugepages=4">>/etc/default/grub
 grub2-mkconfig -o /boot/grub2/grub.cfg
 ```
 
@@ -47,14 +47,15 @@ If you use bare metal, you can turn on IOMMU refer to [run.md](./run.md).
 If you use VM, set NO-IOMMU mode for vfio after each boot.
 
 ```shell
+# under root user
 echo 1 > /sys/module/vfio/parameters/enable_unsafe_noiommu_mode
 ```
 
 ## 5. Attach interfaces for DPDK
 
-### 5.1 Create interfaces
+> If you attach extra interfaces before starting the instance, you may not get the public DNS for ssh. The best practice is to **attach after** / **detach before** start.
 
-(If you attach extra interfaces before starting the instance, you may not get the public DNS for ssh.)
+### 5.1 Create interfaces
 
 Go to  EC2 > Network interfaces > Create network interface.
 
@@ -71,6 +72,7 @@ After attaching the interface, remember the Private IPv4 address allocated by AW
 Load vfio-pci module, enable no-iommu mode if IOMMU is not supported.
 
 ```shell
+# under root user
 modprobe vfio-pci
 # echo 1 > /sys/module/vfio/parameters/enable_unsafe_noiommu_mode
 ```
@@ -78,6 +80,7 @@ modprobe vfio-pci
 Unbind the interface from kernel driver and bind to PMD.
 
 ```shell
+# under root user
 ifconfig eth1 down
 dpdk-devbind.py -b vfio-pci 0000:00:06.0
 # check the interfaces
@@ -88,7 +91,7 @@ dpdk-devbind.py -s
 
 Refer to [run.md](./run.md) after section 3.3.
 
-### IP configuration
+### 6.1 IP configuration
 
 Configure the AWS reserved private IP in json.
 
@@ -104,17 +107,17 @@ For example, the Private IPv4 address is 172.31.42.123, the subnet IPv4 CIDR is 
     ],
 ```
 
-### Features not supported on ENA
+### 6.2 Features not supported on ENA
 
 * **PTP** (use system real_time)
-* **Rate Limiting** based pacing (use TSC pacing)
-* **Rte_flow** (use RSS queues)
+* **Rate Limiting** (use TSC for pacing)
+* **rte_flow** (use RSS queues)
 
 ## 7. General FAQ
 
 **Q:** Compiler cannot find some dependencies.
 
-**A:** run below commands
+**A:** run below commands or add to `/etc/profile`
 
 ```shell
 export PATH=$PATH:/usr/local/bin/
@@ -126,7 +129,7 @@ export LD_LIBRARY_PATH=/usr/local/lib64/
 
 **Q:** Cannot find ninja.
 
-**A:** Edit build.sh, remove `sudo` in it, then run build.sh under root user.
+**A:** Edit `build.sh`, remove `sudo` in it, then run `build.sh` under root user.
 
 ---
 
@@ -140,4 +143,4 @@ export LD_LIBRARY_PATH=/usr/local/lib64/
 
 [ENA PMD doc](https://doc.dpdk.org/guides/nics/ena.html)
 
-[AWS blog(cn)](https://www.infoq.cn/article/EcQFplTWfdrvumULjo9t)
+[AWS blog (cn)](https://www.infoq.cn/article/EcQFplTWfdrvumULjo9t)
