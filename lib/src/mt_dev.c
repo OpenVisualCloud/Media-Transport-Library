@@ -2222,6 +2222,11 @@ int mt_dev_if_init(struct mtl_main_impl* impl) {
     mt_pthread_mutex_init(&inf->tx_sys_queue_mutex, NULL);
     mt_pthread_mutex_init(&inf->vf_cmd_mutex, NULL);
 
+    if (inf->drv_type == MT_DRV_ENA) {
+      info("%s(%d), use rss for ena nic\n", __func__, i);
+      impl->rss_mode = MT_RSS_MODE_L4;
+    }
+
     if (mt_ptp_tsc_source(impl)) {
       info("%s(%d), use tsc ptp source\n", __func__, i);
       inf->ptp_get_time_fn = ptp_from_tsc;
