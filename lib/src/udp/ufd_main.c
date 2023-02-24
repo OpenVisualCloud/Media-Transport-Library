@@ -308,6 +308,8 @@ static struct ufd_mt_ctx* ufd_create_mt_ctx(void) {
     if (rt_para) {
       info("%s, applied overide config\n", __func__);
       p->log_level = rt_para->log_level;
+      if (rt_para->shared_queue) p->flags |= MTL_FLAG_SHARED_QUEUE;
+      if (rt_para->lcore_mode) p->flags |= MTL_FLAG_UDP_LCORE;
     }
   }
 

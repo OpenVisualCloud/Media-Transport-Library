@@ -486,7 +486,6 @@ mtl_handle mtl_init(struct mtl_init_params* p) {
       if (p->flags & MTL_FLAG_UDP_LCORE)
         impl->taskelts_nb_per_sch = impl->user_rx_queues_cnt + 8;
     }
-
   } else {
     err("%s, invalid transport %d\n", __func__, p->transport);
     ret = -EINVAL;
