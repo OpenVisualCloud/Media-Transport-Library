@@ -1,4 +1,4 @@
-name: Clang build
+name: FFmpeg plugin build
 
 on: [push, pull_request]
 
@@ -19,6 +19,8 @@ jobs:
         os: [ubuntu-latest]
 
     steps:
+    - uses: actions/checkout@v3
+
     - name: Install the build dependency
       run: |
         apt-get update -y
