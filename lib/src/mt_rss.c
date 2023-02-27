@@ -129,8 +129,10 @@ uint16_t mt_rss_burst(struct mt_rss_entry* entry, uint16_t nb_pkts) {
   uint16_t q = entry->queue_id;
   struct mt_rss_queue* rss_queue = &rss->rss_queues[q];
   struct rte_mbuf* pkts[nb_pkts];
+  struct rte_mbuf* rss_pkts[nb_pkts];
   uint16_t rx;
   struct mt_rss_entry* rss_entry;
+  struct mt_rss_entry* last_rss_entry = NULL;
   uint32_t hash;
   struct mt_udp_hdr* hdr;
   struct rte_ipv4_hdr* ipv4;
@@ -138,6 +140,7 @@ uint16_t mt_rss_burst(struct mt_rss_entry* entry, uint16_t nb_pkts) {
   mt_pthread_mutex_lock(&rss_queue->mutex);
   rx = rte_eth_rx_burst(rss_queue->port_id, q, pkts, nb_pkts);
   if (rx) dbg("%s(%u), rx pkts %u\n", __func__, q, rx);
+  int rss_pkts_nb = 0;
   for (uint16_t i = 0; i < rx; i++) {
     hash = pkts[i]->hash.rss;
     hdr = rte_pktmbuf_mtod(pkts[i], struct mt_udp_hdr*);
@@ -145,14 +148,23 @@ uint16_t mt_rss_burst(struct mt_rss_entry* entry, uint16_t nb_pkts) {
     dbg("%s(%u), pkt %u rss %u\n", __func__, q, i, hash);
     MT_TAILQ_FOREACH(rss_entry, &rss_queue->head, next) {
       /* check if this is the matched hash or sys entry */
-      /* todo: handle if two entries has same hash, and bulk mode */
       if ((hash == rss_entry->hash) ||
           (rss_entry->flow.sys_queue && (ipv4->next_proto_id != IPPROTO_UDP))) {
-        rss_entry->flow.cb(rss_entry->flow.priv, &pkts[i], 1);
+        if (rss_entry != last_rss_entry) {
+          if (rss_pkts_nb)
+            last_rss_entry->flow.cb(last_rss_entry->flow.priv, &rss_pkts[0], rss_pkts_nb);
+          last_rss_entry = rss_entry;
+          rss_pkts_nb = 0;
+          rss_pkts[rss_pkts_nb++] = pkts[i];
+        } else {
+          rss_pkts[rss_pkts_nb++] = pkts[i];
+        }
         break;
       }
     }
   }
+  if (rss_pkts_nb)
+    rss_entry->flow.cb(last_rss_entry->flow.priv, &rss_pkts[0], rss_pkts_nb);
   mt_pthread_mutex_unlock(&rss_queue->mutex);
 
   rte_pktmbuf_free_bulk(&pkts[0], rx);
