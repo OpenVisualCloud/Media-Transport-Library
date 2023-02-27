@@ -155,16 +155,14 @@ uint16_t mt_rss_burst(struct mt_rss_entry* entry, uint16_t nb_pkts) {
             last_rss_entry->flow.cb(last_rss_entry->flow.priv, &rss_pkts[0], rss_pkts_nb);
           last_rss_entry = rss_entry;
           rss_pkts_nb = 0;
-          rss_pkts[rss_pkts_nb++] = pkts[i];
-        } else {
-          rss_pkts[rss_pkts_nb++] = pkts[i];
         }
+        rss_pkts[rss_pkts_nb++] = pkts[i];
         break;
       }
     }
   }
   if (rss_pkts_nb)
-    rss_entry->flow.cb(last_rss_entry->flow.priv, &rss_pkts[0], rss_pkts_nb);
+    last_rss_entry->flow.cb(last_rss_entry->flow.priv, &rss_pkts[0], rss_pkts_nb);
   mt_pthread_mutex_unlock(&rss_queue->mutex);
 
   rte_pktmbuf_free_bulk(&pkts[0], rx);
