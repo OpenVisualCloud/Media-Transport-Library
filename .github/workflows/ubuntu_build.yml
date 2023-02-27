@@ -29,8 +29,7 @@ jobs:
         apt-get update -y
         apt-get install -y sudo git gcc meson python3 python3-pip pkg-config libnuma-dev libjson-c-dev libpcap-dev libgtest-dev libsdl2-dev libsdl2-ttf-dev libssl-dev
         apt-get install -y dpdk-dev
-        apt-get install -y libavcodec-dev
-        apt-get install -y libobs-dev
+        apt-get install -y doxygen
 
     - name: Install the python package
       run: pip install pyelftools ninja
@@ -44,14 +43,6 @@ jobs:
       run: |
         ./build.sh
 
-    - name: Build st22 ffmpeg plugin
-      run: |
-        ./script/build_st22_ffmpeg_plugin.sh
-
-    - name: Build obs plugin
-      run: |
-        ./script/build_obs_plugin.sh
-
     - name: Build with debug
       run: |
         rm build -rf
@@ -61,3 +52,9 @@ jobs:
       run: |
         rm build -rf
         MTL_BUILD_ENABLE_KNI=true ./build.sh
+
+    - name: doxygen
+      run: |
+        cd doc/doxygen
+        ./build-doc.sh
+        cd ../../
