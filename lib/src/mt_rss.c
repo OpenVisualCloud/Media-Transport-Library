@@ -87,7 +87,7 @@ struct mt_rss_entry* mt_rss_get(struct mtl_main_impl* impl, enum mtl_port port,
   }
 
   struct mt_rss_impl* rss = rss_ctx_get(impl, port);
-  uint32_t hash = rss_flow_hash(flow, impl->rss_mode);
+  uint32_t hash = rss_flow_hash(flow, mt_if(impl, port)->rss_mode);
   uint16_t q = (hash % RTE_ETH_RETA_GROUP_SIZE) % rss->max_rss_queues;
   struct mt_rss_queue* rss_queue = &rss->rss_queues[q];
   struct mt_rss_entry* entry =
@@ -192,7 +192,7 @@ int mt_rss_init(struct mtl_main_impl* impl) {
       mt_rss_uinit(impl);
       return ret;
     }
-    info("%s(%d), succ, rss mode %d\n", __func__, i, impl->rss_mode);
+    info("%s(%d), succ, rss mode %d\n", __func__, i, mt_if(impl, i)->rss_mode);
   }
 
   return 0;
