@@ -77,7 +77,7 @@ PLUGINS_BUILD_DIR=${WORKSPACE}/build/plugins
 meson "${LIB_BUILD_DIR}" -Dbuildtype="$buildtype" -Ddisable_pcapng="$disable_pcapng" -Denable_asan="$enable_asan" -Denable_kni="$enable_kni" -Denable_tap="$enable_tap"
 pushd "${LIB_BUILD_DIR}"
 ninja
-sudo ninja install
+ninja install
 popd
 
 # build app
@@ -102,5 +102,5 @@ meson "${PLUGINS_BUILD_DIR}" -Dbuildtype="$buildtype" -Denable_asan="$enable_asa
 popd
 pushd "${PLUGINS_BUILD_DIR}"
 ninja
-sudo ninja install
+ninja install
 popd
