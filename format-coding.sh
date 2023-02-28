@@ -21,3 +21,4 @@ find . -regex '.*\.\(cpp\|hpp\|cc\|c\|h\)' -exec clang-format --verbose -i {} \;
 # actionlint
 # markdownlint-cli
 # docker run -v $PWD:/workdir --rm ghcr.io/igorshubovych/markdownlint-cli:latest "*.md" -f
+# textlint
