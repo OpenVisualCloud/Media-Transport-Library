@@ -856,7 +856,8 @@ static int dev_config_port(struct mtl_main_impl* impl, enum mtl_port port) {
   struct mtl_init_params* p = mt_get_user_params(impl);
   uint16_t port_id = mt_port_id(impl, port);
   struct mt_interface* inf = mt_if(impl, port);
-  uint16_t nb_rx_q = inf->max_rx_queues, nb_tx_q = inf->max_tx_queues;
+  uint16_t nb_rx_q = RTE_MIN(inf->max_rx_queues, inf->dev_info.max_rx_queues);
+  uint16_t nb_tx_q = RTE_MIN(inf->max_tx_queues, inf->dev_info.max_tx_queues);
   struct rte_eth_conf port_conf = dev_port_conf;
 
   if (inf->feature & MT_IF_FEATURE_TX_MULTI_SEGS) {
