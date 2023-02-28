@@ -120,7 +120,7 @@ user should maintain the lifetime of frames
 
 #### 2.3.3 dynamic frames - no convert mode
 
-(the same usage as raw video api 3.3.2)  
+(the same usage as raw video API 3.3.2)  
 implement and set query_ext_frame callback and set incomplete frame flag
 
 ```c

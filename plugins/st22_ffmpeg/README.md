@@ -16,7 +16,7 @@ sudo yum install libavcodec-devel
 
 #### 1.3 Build directly from ffmpeg source code
 
-Follow the guide in ffmpeg website.
+Follow the guide in ffmpeg site.
 
 ## 2. Build and install
 

@@ -107,7 +107,7 @@ ice_dev_init(): Failed to load the DDP package, Use safe-mode-support=1 to enter
 
 #### 5.2 Install windows TAP driver
 
-In the Control Panel->Network and Internet->Network Connections, find the "OpenVPN TAP-Windows6" device, set the adaptor IP address, such as 192.168.2.2
+In the Control Panel->Network and internet->Network Connections, find the "OpenVPN TAP-Windows6" device, set the adaptor IP address, such as 192.168.2.2
 
 #### 5.3 Rebuild and install MTL lib with "-Denable_tap=true"
 
@@ -130,4 +130,4 @@ To identify the socket if you do not know it, in the NIC card driver property pa
 start /Node 0 /B .\build\app\RxTxApp --config_file config\test_tx_1port_1v.json
 ```
 
-Pls refer to section 3, 4, 5 in [linux run guide](run.md) for how to run the sample application, windows share same code base with linux, the app/lib behavior is same.
+Pls refer to section 3, 4, 5 in [linux run guide](run.md) for how to run the sample application, windows share same codebase with linux, the app/lib behavior is same.

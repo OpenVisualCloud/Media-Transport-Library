@@ -50,11 +50,11 @@ For how to develop application quickly based on Kahawai library, pls refer to [s
 
 ## 5. User space UDP stack guide
 
-From 23.03.0 version, Media transport library extend the support to user-space UDP stack which run directly under current process context for performance consideration. Other user-space UDP stack usually run with client-service architect, it introduce a cross-core message cost which hurt the performance. Our stack are running NIC tx/rx function from the sendto/recvfrom API directly which save the cross-core call and keep the data affinity(LLC) to the UDP consumer. For how to use the UDP api, pls refer to [udp sample code](app/udp).
+From 23.03.0 version, Media transport library extend the support to user-space UDP stack which run directly under current process context for performance consideration. Other user-space UDP stack usually run with client-service architect, it introduce a cross-core message cost which hurt the performance. Our stack are running NIC tx/rx function from the sendto/recvfrom API directly which save the cross-core call and keep the data affinity(LLC) to the UDP consumer. For how to use the UDP API, pls refer to [udp sample code](app/udp).
 
 ## 6. How to Contribute
 
-We welcome community contributions to the Media Transport Library project. If you have any ideas/issues, please share it with us by the github issues or opening a pull request.
+We welcome community contributions to the Media Transport Library project. If you have any ideas/issues, please share it with us by the GitHub issues or opening a pull request.
 
 #### 6.1 Coding style
 

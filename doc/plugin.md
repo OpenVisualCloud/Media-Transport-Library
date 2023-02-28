@@ -2,7 +2,7 @@
 
 ## 1. Introduction
 
-Kahawai introduce plugin lib support from v22.06. With plugin, it's possible to add 3rd party add-ons to the running system, ex a CPU/GPU/FPGA based jpegxs codec, a color space format converting acceleration, or others.
+Kahawai introduce plugin lib support from v22.06. With plugin, it's possible to add third-party add-ons to the running system, ex a CPU/GPU/FPGA based jpegxs codec, a color space format converting acceleration, or others.
 
 Kahawai will try to load plugin libs during the st_init routine, it will search the plugins from the user json config file and parse the plugin version and symbol. If all the sanity check is fine, Kahawai will add the plugin to the list and call the create function which exported by the plugin lib. A plugin should do all the register work in the create function, and do the release in the free function.
 
