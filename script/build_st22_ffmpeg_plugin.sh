@@ -32,9 +32,9 @@ ST22_FFMPEG_PLUGIN_BUILD_DIR=${WORKSPACE}/build/st22_ffmpeg_plugin
 
 # build st22 ffmpeg plugin
 pushd plugins/st22_ffmpeg/
-meson ${ST22_FFMPEG_PLUGIN_BUILD_DIR} -Dbuildtype=$buildtype
+meson "${ST22_FFMPEG_PLUGIN_BUILD_DIR}" -Dbuildtype="$buildtype"
 popd
-pushd ${ST22_FFMPEG_PLUGIN_BUILD_DIR}
+pushd "${ST22_FFMPEG_PLUGIN_BUILD_DIR}"
 ninja
 sudo ninja install
 popd

@@ -5,7 +5,7 @@
 
 # check out msdk code
 git clone https://github.com/Intel-Media-SDK/MediaSDK.git
-cd MediaSDK
+cd MediaSDK || exit
 git checkout intel-mediasdk-22.6.4
 git switch -c v22.6.4
 

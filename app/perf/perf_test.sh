@@ -16,7 +16,7 @@ LOG_LEVEL=notice
 perf_func() {
 	local perf_prog=$1
 	echo "Start to run: ${perf_prog}"
-	${TEST_BIN_PATH}/${perf_prog} --log_level ${LOG_LEVEL} --p_port ${ST_PORT} --p_sip ${ST_SIP} --dma_port ${DMA_PORT}
+	"${TEST_BIN_PATH}"/"${perf_prog}" --log_level "${LOG_LEVEL}" --p_port "${ST_PORT}" --p_sip "${ST_SIP}" --dma_port "${DMA_PORT}"
 	echo ""
 }
 
