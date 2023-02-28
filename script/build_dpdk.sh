@@ -20,11 +20,11 @@ if [ ! -d "dpdk" ];then
   git clone https://github.com/DPDK/dpdk.git
 fi
 cd dpdk
-git checkout v$dpdk_ver
-git switch -c v$dpdk_ver
+git checkout v"$dpdk_ver"
+git switch -c v"$dpdk_ver"
 
 # apply the patches
-git am ../patches/dpdk/$dpdk_ver/*.patch
+git am ../patches/dpdk/"$dpdk_ver"/*.patch
 
 # build and install dpdk now
 meson build

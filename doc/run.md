@@ -1,43 +1,55 @@
-@page run_linux Running in Linux
 # Run Guide
+
 The Kahawai library required VFIO(IOMMU) and huge page to run, it also support non-root run thus it can be easily deployed within docker/k8s env.
 
 ## 1. System setup
 
-#### 1.1 Enable IOMMU(VT-D and VT-X) in BIOS.
+### 1.1 Enable IOMMU(VT-D and VT-X) in BIOS
 
-#### 1.2 Enable IOMMU in kernel
-###### 1.2.1 Ubuntu/Debian:
+### 1.2 Enable IOMMU in kernel
+
+#### 1.2.1 Ubuntu/Debian
+
 Edit GRUB_CMDLINE_LINUX_DEFAULT item in /etc/default/grub file, append below parameters into GRUB_CMDLINE_LINUX_DEFAULT item.
+
 ```bash
 intel_iommu=on iommu=pt
 ```
+
 then:
+
 ```bash
 sudo update-grub
 sudo reboot
 ```
-###### 1.2.2 Centos:
+
+#### 1.2.2 Centos
+
 ```bash
 sudo grubby --update-kernel=ALL --args="intel_iommu=on iommu=pt"
 sudo reboot
 ```
 
-#### 1.3 Double check iommu_groups is created by kernel after reboot.
+### 1.3 Double check iommu_groups is created by kernel after reboot
+
 ```bash
 ls -l /sys/kernel/iommu_groups/
 ```
 
-## 2. NIC setup:
+## 2. NIC setup
 
-#### 2.1 Update NIC FW and driver to latest version.
-Refer to https://www.intel.com/content/www/us/en/download/15084/intel-ethernet-adapter-complete-driver-pack.html
+### 2.1 Update NIC FW and driver to latest version
+
+Refer to <https://www.intel.com/content/www/us/en/download/15084/intel-ethernet-adapter-complete-driver-pack.html>
 
 After upgraded, please double check the DDP version is right(>1.3.30.0) from dmesg.
+
 ```bash
 The DDP package was successfully loaded: ICE OS Default Package (mc) version 1.3.30.0
 ```
+
 Use below command to update if it's not latest, the DDP package can be found at the latest Intel ice driver.
+
 ```bash
 cd /usr/lib/firmware/updates/intel/ice/ddp
 cp <latest_ddp_dir>/ice-1.3.30.0.pkg ./
@@ -47,108 +59,141 @@ rmmod ice
 modprobe ice
 ```
 
-#### 2.2 Bind NIC to DPDK PMD mode.
+### 2.2 Bind NIC to DPDK PMD mode
+
 Below is the command to bind BDF 0000:af:00.0 to PF PMD mode, customize the BDF port as your setup.
+
 ```bash
 sudo ./script/nicctl.sh bind_pmd 0000:af:00.0
 ```
+
 Doubel check if iommu is enabled if you see below error.
+
 ```bash
 Error: bind failed for 0000:af:00.0 - Cannot bind to driver vfio-pci: [Errno 19] No such device
 Error: unbind failed for 0000:af:00.0 - Cannot open /sys/bus/pci/drivers//unbind: [Errno 13] Permission denied:
 ```
+
 ```bash
 ls -l /sys/kernel/iommu_groups/
 ```
 
-## 3. Run the sample application:
-#### 3.1 VFIO access for non-root run:
+## 3. Run the sample application
+
+### 3.1 VFIO access for non-root run
+
 Add VFIO dev permissions to current user:
+
 ```bash
 # change <USER> to the user name currently login.
 sudo chown -R <USER>:<USER> /dev/vfio/
 ```
 
-#### 3.2 Huge page setup:
+### 3.2 Huge page setup
+
 e.g Enable 2048 2M huge pages, in total 4g memory.
+
 ```bash
 sudo sysctl -w vm.nr_hugepages=2048
 ```
 
-#### 3.3 Prepare source files:
+### 3.3 Prepare source files
+
 Pls note the input yuv source file for sample app is the rfc4175 yuv422be10(big edian 10bit) pixel group format which define in ST2110 spec. Kahawai include a simple tools to convert the format from yuv422 planar 10bit little endian format.
 
-###### 3.3.1 Prepare a yuv422p10le file.
+#### 3.3.1 Prepare a yuv422p10le file
+
 Below command shows how to decode 2 frames from the encoder file, and convert from 420 to 422 planar file. Change 'vframes' value if you want to generate more frames.
+
 ```bash
 wget https://www.larmoire.info/jellyfish/media/jellyfish-3-mbps-hd-hevc-10bit.mkv
 ffmpeg -i jellyfish-3-mbps-hd-hevc-10bit.mkv -vframes 2 -c:v rawvideo yuv420p10le_1080p.yuv
 ffmpeg -s 1920x1080 -pix_fmt yuv420p10le -i yuv420p10le_1080p.yuv -pix_fmt yuv422p10le yuv422p10le_1080p.yuv
 ```
 
-###### 3.3.2 Convert yuv422p10le to yuv422rfc4175be10
+#### 3.3.2 Convert yuv422p10le to yuv422rfc4175be10
+
 Below is the command to convert yuv422p10le file to yuv422rfc4175be10 pg format(ST2110-20 supported pg format for 422 10bit)
+
 ```bash
 ./build/app/ConvApp -width 1920 -height 1080 -in_pix_fmt yuv422p10le -i yuv422p10le_1080p.yuv -out_pix_fmt yuv422rfc4175be10 -o yuv422rfc4175be10_1080p.yuv
 ```
-The yuv422rfc4175be10 files can be viewed by YUV Viewer tools(https://github.com/IENT/YUView), below is the custom layout.
+
+The yuv422rfc4175be10 files can be viewed by YUV Viewer tools(<https://github.com/IENT/YUView>), below is the custom layout.
 <div align="center">
 <img src="png/yuview_yuv422rfc4175be10_layout.png" align="center" alt="yuview yuv422rfc4175be10 custom layout">
 </div>
 
-###### 3.3.3 Convert yuv422rfc4175be10 back to yuv422p10le
+#### 3.3.3 Convert yuv422rfc4175be10 back to yuv422p10le
+
 Below is the command to convert yuv422rfc4175be10 pg format(ST2110-20 supported pg format for 422 10bit) to yuv422p10le file
-```
+
+```bash
 ./build/app/ConvApp -width 1920 -height 1080 -in_pix_fmt yuv422rfc4175be10 -i yuv422rfc4175be10_1080p.yuv -out_pix_fmt yuv422p10le -o out_yuv422p10le_1080p.yuv
 ```
 
-###### 3.3.4 v210 support
+#### 3.3.4 v210 support
+
 This tools also support v210 format, use "v210" for the in_pix_fmt/out_pix_fmt args instead.
-```
+
+```bash
 ./build/app/ConvApp -width 1920 -height 1080 -in_pix_fmt yuv422rfc4175be10 -i yuv422rfc4175be10_1080p.yuv -out_pix_fmt v210 -o v210_1080p.yuv
 ./build/app/ConvApp -width 1920 -height 1080 -in_pix_fmt v210 -i v210_1080p.yuv -out_pix_fmt yuv422rfc4175be10 -o out_yuv422rfc4175be10_1080p.yuv
 ```
 
-###### 3.3.5 yuv422 12bit support
-```
+#### 3.3.5 yuv422 12bit support
+
+```bash
 ffmpeg -s 1920x1080 -pix_fmt yuv420p10le -i yuv420p10le_1080p.yuv -pix_fmt yuv422p12le yuv422p12le_1080p.yuv
 ./build/app/ConvApp -width 1920 -height 1080 -in_pix_fmt yuv422p12le -i yuv422p12le_1080p.yuv -out_pix_fmt yuv422rfc4175be12 -o yuv422rfc4175be12_1080p.yuv
 ./build/app/ConvApp -width 1920 -height 1080 -in_pix_fmt yuv422rfc4175be12 -i yuv422rfc4175be12_1080p.yuv -out_pix_fmt yuv422p12le -o out_yuv422p12le_1080p.yuv
 ```
 
-###### 3.3.6 yuv444 10bit support
-```
+#### 3.3.6 yuv444 10bit support
+
+```bash
 ffmpeg -s 1920x1080 -pix_fmt yuv420p10le -i yuv420p10le_1080p.yuv -pix_fmt yuv444p10le yuv444p10le_1080p.yuv
 ./build/app/ConvApp -width 1920 -height 1080 -in_pix_fmt yuv444p10le -i yuv444p10le_1080p.yuv -out_pix_fmt yuv444rfc4175be10 -o yuv444rfc4175be10_1080p.yuv
 ./build/app/ConvApp -width 1920 -height 1080 -in_pix_fmt yuv444rfc4175be10 -i yuv444rfc4175be10_1080p.yuv -out_pix_fmt yuv444p10le -o out_yuv444p10le_1080p.yuv
 ```
 
-###### 3.3.7 yuv444 12bit support
-```
+#### 3.3.7 yuv444 12bit support
+
+```bash
 ffmpeg -s 1920x1080 -pix_fmt yuv420p10le -i yuv420p10le_1080p.yuv -pix_fmt yuv444p12le yuv444p12le_1080p.yuv
 ./build/app/ConvApp -width 1920 -height 1080 -in_pix_fmt yuv444p12le -i yuv444p12le_1080p.yuv -out_pix_fmt yuv444rfc4175be12 -o yuv444rfc4175be12_1080p.yuv
 ./build/app/ConvApp -width 1920 -height 1080 -in_pix_fmt yuv444rfc4175be12 -i yuv444rfc4175be12_1080p.yuv -out_pix_fmt yuv444p12le -o out_yuv444p12le_1080p.yuv
 ```
 
-#### 3.4 PTP setup(optional):
-Precision Time Protocol (PTP) provides global microsecond accuracy timing of all essences. Typical deployment include a PTP grandmaster within the network, and clients use tools(ex. ptp4l) to sync with the grandmaster. Kahawai library also include a built-in PTP implementation, sample app provide a option to enable it, see 3.6 for how to enable. The built-in PTP is disabled as default, Kahawai will use the system time source(clock_gettime) prvoide by user application as PTP clock. If built-in PTP is enabled, Kahawai will select the internal NIC time as PTP source.
+### 3.4 PTP setup(optional)
 
-###### 3.4.1 ptp4l setup sample:
+Precision Time Protocol (PTP) provides global microsecond accuracy timing of all essences. Typical deployment include a PTP grandmaster within the network, and clients use tools(ex. ptp4l) to sync with the grandmaster. Kahawai library also include a built-in PTP implementation, sample app provide a option to enable it, see 3.6 for how to enable.
+The built-in PTP is disabled as default, Kahawai will use the system time source(clock_gettime) prvoide by user application as PTP clock. If built-in PTP is enabled, Kahawai will select the internal NIC time as PTP source.
+
+#### 3.4.1 ptp4l setup sample
+
 Firstly run ptp4l to sync the PHC time with grandmaster, customize the interface as your setup.
+
 ```shell
 sudo ptp4l -i ens801f2 -m -s -H
 ```
+
 Then run phc2sys to sync the PHC time to system time, please make sure NTP service is diabled as it has conflict with phc2sys.
+
 ```shell
 sudo phc2sys -s ens801f2 -m -w
 ```
 
-#### 3.5 Run sample app with json config
+### 3.5 Run sample app with json config
+
 Below is the command to run one video tx/rx session with json config, customize the config item in json as your setup.
+
 ```bash
 ./build/app/RxTxApp --config_file config/test_tx_1port_1v.json
 ```
+
 If it runs well, you will see below similar log output periodically.
+
 ```bash
 ST: * *    S T    D E V   S T A T E   * *
 ST: DEV(0): Avr rate, tx: 2638 Mb/s, rx: 0 Mb/s, pkts, tx: 2613182, rx: 80
@@ -159,11 +204,15 @@ ST: CNI(0): eth_rx_cnt 80
 ST: TX_VIDEO_SESSION(0,0): fps 60.099933, pkts build 2593192 burst 2593192
 ST: * *    E N D    S T A T E   * 
 ```
+
 Then run a rx in another node/port.
+
 ```bash
 ./build/app/RxTxApp --config_file config/test_rx_1port_1v.json
 ```
+
 If it runs well, you will see below similar log output periodically.
+
 ```bash
 ST: * *    S T    D E V   S T A T E   * *
 ST: DEV(0): Avr rate, tx: 0 Mb/s, rx: 2614 Mb/s, pkts, tx: 12, rx: 2589728
@@ -175,11 +224,13 @@ ST: RX_VIDEO_SESSION(0,0): fps 59.899925, received frames 599, pkts 2589686
 app_rx_video_stat(0), fps 59.899932, 599 frame received
 ST: * *    E N D    S T A T E   * *
 ```
+
 Kahawai also provide many loop test(1 port as tx, 1 port as rx) config file , pls refer to [loop config](../tests/script/).
 
 For the supported parameters in the json, please refer to [JSON configuration guide](configuration_guide.md) for detail.
 
-#### 3.6 Available parameters in sample app
+### 3.6 Available parameters in sample app
+
 ```bash
 --config_file <URL>                  : the json config file path
 --ptp                                : Enable the built-in Kahawai PTP, default is disabled and system time is selected as PTP time source
@@ -212,86 +263,113 @@ For the supported parameters in the json, please refer to [JSON configuration gu
 --rxtx_simd_512                      : debug option, enable dpdk simd 512 path for rx/tx burst function, see --force-max-simd-bitwidth=512 in dpdk for detail.
 ```
 
-## 4. Tests:
+## 4. Tests
+
 Kahawai include many automate test cases based on gtest, below is the example command to run, customize the argument as your setup.
+
 ```bash
 ./build/tests/KahawaiTest --p_port 0000:af:00.0 --r_port 0000:af:00.1
 ```
+
 BTW, the test required large huge page settings, pls expend it to 8g.
+
 ```bash
 sudo sysctl -w vm.nr_hugepages=4096
 ```
 
-## 5. FAQs:
-#### 5.1 Notes after reboot.
+## 5. FAQs
+
+### 5.1 Notes after reboot
+
 Sometimes after reboot, OS will update to a new kernel version, remember to rebuild the fw/DDP version.
 
-#### 5.2 Notes for non-root run:
+### 5.2 Notes for non-root run
+
 When running as non-root user, there may be some additional resource limits that are imposed by the system.
 
-#### 5.2.1 RLIMIT_MEMLOCK:
+### 5.2.1 RLIMIT_MEMLOCK
+
 RLIMIT_MEMLOCK (amount of pinned pages the process is allowed to have), if you see below error at Kahawai start up, it's likely caused by too small RLIMIT_MEMLOCK settings.
-```
+
+```bash
 EAL: Cannot set up DMA remapping, error 12 (Cannot allocate memory)
 EAL: 0000:af:01.0 DMA remapping failed, error 12 (Cannot allocate memory)
 EAL: Requested device 0000:af:01.0 cannot be used
 ```
+
 Pls
+
 ```bash
 # Edit /etc/security/limits.conf, append below two lines at the end of file, change <USER> to the user name currently login.
 <USER>    hard   memlock           unlimited
 <USER>    soft   memlock           unlimited
 sudo reboot
 ```
+
 After reboot, double check the limit is disabled.
+
 ```bash
 ulimit -a | grep "max locked memory"
 max locked memory       (kbytes, -l) unlimited
 ```
 
-#### 5.3 BDF port not bind to DPDK PMD mode:
+### 5.3 BDF port not bind to DPDK PMD mode
+
 Below error indicate the port driver is not settings to DPDK PMD mode, run nicctl.sh to config it.
+
 ```bash
 ST: st_dev_get_socket, failed to locate 0000:86:20.0. Please run nicctl.sh
 ```
 
-#### 5.4 Hugepage not available
+### 5.4 Hugepage not available
+
 If you see below hugepage error when running, it's caused by neither 1G nor 2M huge page exist in current setup.
+
 ```bash
 EAL: FATAL: Cannot get hugepage information.
 EAL: Cannot get hugepage information.
 ```
+
 Below error generally means mbuf pool create fail as no enough huge pages available, try to allocate more.
+
 ```bash
 ST: st_init, mbuf_pool create fail
 ```
 
-#### 5.5 No access to vfio device
+### 5.5 No access to vfio device
+
 Please add current user the access to the dev if below error message.
+
 ```bash
 EAL: Cannot open /dev/vfio/147: Permission denied
 EAL: Failed to open VFIO group 147
 ```
 
-#### 5.6 Link not connected
+### 5.6 Link not connected
+
 Below error indicate the link of physical port is not connected to a network, pls confirm the cable link is working.
+
 ```bash
 ST: dev_create_port(0), link not connected
 ```
 
-#### 5.7 Bind BDF port back to kernel mode:
+### 5.7 Bind BDF port back to kernel mode
+
 ```bash
 sudo ./script/nicctl.sh bind_kernel 0000:af:00.0
 ```
 
-#### 5.8 How to find the BDF number:
+### 5.8 How to find the BDF number
+
 ```bash
 lspci | grep Eth
 ```
 
-#### 5.9 Lower fps if ptp4l&phc2sys is enabled:
+### 5.9 Lower fps if ptp4l&phc2sys is enabled
+
 You could see below similar epoch drop log, it's likely caused by NTP and phc2sys are both adjusting the sysytem, please disable NTP service.
-```
+
+```bash
 MT: DEV(0): Avr rate, tx: 4789 Mb/s, rx: 0 Mb/s, pkts, tx: 4525950, rx: 9
 MT: PTP(0): time 1676254936223518377, 2023-02-13 10:22:16
 MT: CNI(0): eth_rx_cnt 9

@@ -34,10 +34,10 @@ test_udp() {
 	local udp_mode=$4
 
 	echo "${name}: start ${tx_prog}"
-	${TEST_BIN_PATH}/${tx_prog} --log_level ${LOG_LEVEL} --p_port ${ST_PORT_TX} --p_sip ${ST_SIP_TX} --p_tx_ip ${ST_TX_IP} --udp_mode ${udp_mode} --sessions_cnt ${SESSIONS_CNT} &
+	"${TEST_BIN_PATH}"/"${tx_prog}" --log_level "${LOG_LEVEL}" --p_port "${ST_PORT_TX}" --p_sip "${ST_SIP_TX}" --p_tx_ip "${ST_TX_IP}" --udp_mode "${udp_mode}" --sessions_cnt "${SESSIONS_CNT}" &
 	pid_tx=$!
 	echo "${name}: start ${rx_prog}"
-	${TEST_BIN_PATH}/${rx_prog} --log_level ${LOG_LEVEL} --p_port ${ST_PORT_RX} --p_sip ${ST_SIP_RX} --p_rx_ip ${ST_RX_IP} --udp_mode ${udp_mode} --sessions_cnt ${SESSIONS_CNT} &
+	"${TEST_BIN_PATH}"/"${rx_prog}" --log_level "${LOG_LEVEL}" --p_port "${ST_PORT_RX}" --p_sip "${ST_SIP_RX}" --p_rx_ip "${ST_RX_IP}" --udp_mode "${udp_mode}" --sessions_cnt "${SESSIONS_CNT}" &
 	pid_rx=$!
 	echo "${name}: pid_tx ${pid_tx}, pid_rx ${pid_rx}, wait ${TEST_TIME_SEC}s"
 	sleep ${TEST_TIME_SEC}
@@ -60,25 +60,25 @@ test_ufd() {
 	local udp_mode=$4
 
 	echo "${name}: start ${tx_prog}, shared queue: ${SHARED_QUEUE}, lcore: ${UDP_LCORE}"
-	if [ $SHARED_QUEUE == "true" ] && [ $UDP_LCORE == "true" ]; then
-		MUFD_CFG=${MUFD_TX_CFG} ${TEST_BIN_PATH}/${tx_prog} --log_level ${LOG_LEVEL} --p_tx_ip ${ST_TX_IP} --udp_mode ${udp_mode} --sessions_cnt ${SESSIONS_CNT} --shared_queue --udp_lcore &
-	elif [ $SHARED_QUEUE == "true" ]; then
-		MUFD_CFG=${MUFD_TX_CFG} ${TEST_BIN_PATH}/${tx_prog} --log_level ${LOG_LEVEL} --p_tx_ip ${ST_TX_IP} --udp_mode ${udp_mode} --sessions_cnt ${SESSIONS_CNT} --shared_queue &
-	elif [ $UDP_LCORE == "true" ]; then
-		MUFD_CFG=${MUFD_TX_CFG} ${TEST_BIN_PATH}/${tx_prog} --log_level ${LOG_LEVEL} --p_tx_ip ${ST_TX_IP} --udp_mode ${udp_mode} --sessions_cnt ${SESSIONS_CNT} --udp_lcore &
+	if [ "$SHARED_QUEUE" == "true" ] && [ "$UDP_LCORE" == "true" ]; then
+		MUFD_CFG="${MUFD_TX_CFG}" "${TEST_BIN_PATH}"/"${tx_prog}" --log_level "${LOG_LEVEL}" --p_tx_ip "${ST_TX_IP}" --udp_mode "${udp_mode}" --sessions_cnt "${SESSIONS_CNT}" --shared_queue --udp_lcore &
+	elif [ "$SHARED_QUEUE" == "true" ]; then
+		MUFD_CFG="${MUFD_TX_CFG}" "${TEST_BIN_PATH}"/"${tx_prog}" --log_level "${LOG_LEVEL}" --p_tx_ip "${ST_TX_IP}" --udp_mode "${udp_mode}" --sessions_cnt "${SESSIONS_CNT}" --shared_queue &
+	elif [ "$UDP_LCORE" == "true" ]; then
+		MUFD_CFG="${MUFD_TX_CFG}" "${TEST_BIN_PATH}"/"${tx_prog}" --log_level "${LOG_LEVEL}" --p_tx_ip "${ST_TX_IP}" --udp_mode "${udp_mode}" --sessions_cnt "${SESSIONS_CNT}" --udp_lcore &
 	else
-		MUFD_CFG=${MUFD_TX_CFG} ${TEST_BIN_PATH}/${tx_prog} --log_level ${LOG_LEVEL} --p_tx_ip ${ST_TX_IP} --udp_mode ${udp_mode} --sessions_cnt ${SESSIONS_CNT} &
+		MUFD_CFG="${MUFD_TX_CFG}" "${TEST_BIN_PATH}"/"${tx_prog}" --log_level "${LOG_LEVEL}" --p_tx_ip "${ST_TX_IP}" --udp_mode "${udp_mode}" --sessions_cnt "${SESSIONS_CNT}" &
 	fi
 	pid_tx=$!
 	echo "${name}: start ${rx_prog}, shared queue: ${SHARED_QUEUE}, lcore: ${UDP_LCORE}"
-	if [ $SHARED_QUEUE == "true" ] && [ $UDP_LCORE == "true" ]; then
-		MUFD_CFG=${MUFD_RX_CFG} ${TEST_BIN_PATH}/${rx_prog} --log_level ${LOG_LEVEL} --p_rx_ip ${ST_RX_IP} --udp_mode ${udp_mode} --sessions_cnt ${SESSIONS_CNT} --shared_queue --udp_lcore &
-	elif [ $SHARED_QUEUE == "true" ]; then
-		MUFD_CFG=${MUFD_RX_CFG} ${TEST_BIN_PATH}/${rx_prog} --log_level ${LOG_LEVEL} --p_rx_ip ${ST_RX_IP} --udp_mode ${udp_mode} --sessions_cnt ${SESSIONS_CNT} --shared_queue &
-	elif [ $UDP_LCORE == "true" ]; then
-		MUFD_CFG=${MUFD_RX_CFG} ${TEST_BIN_PATH}/${rx_prog} --log_level ${LOG_LEVEL} --p_rx_ip ${ST_RX_IP} --udp_mode ${udp_mode} --sessions_cnt ${SESSIONS_CNT} --udp_lcore &
+	if [ "$SHARED_QUEUE" == "true" ] && [ "$UDP_LCORE" == "true" ]; then
+		MUFD_CFG="${MUFD_RX_CFG}" "${TEST_BIN_PATH}"/"${rx_prog}" --log_level "${LOG_LEVEL}" --p_rx_ip "${ST_RX_IP}" --udp_mode "${udp_mode}" --sessions_cnt "${SESSIONS_CNT}" --shared_queue --udp_lcore &
+	elif [ "$SHARED_QUEUE" == "true" ]; then
+		MUFD_CFG="${MUFD_RX_CFG}" "${TEST_BIN_PATH}"/"${rx_prog}" --log_level "${LOG_LEVEL}" --p_rx_ip "${ST_RX_IP}" --udp_mode "${udp_mode}" --sessions_cnt "${SESSIONS_CNT}" --shared_queue &
+	elif [ "$UDP_LCORE" == "true" ]; then
+		MUFD_CFG="${MUFD_RX_CFG}" "${TEST_BIN_PATH}"/"${rx_prog}" --log_level "${LOG_LEVEL}" --p_rx_ip "${ST_RX_IP}" --udp_mode "${udp_mode}" --sessions_cnt "${SESSIONS_CNT}" --udp_lcore &
 	else
-		MUFD_CFG=${MUFD_RX_CFG} ${TEST_BIN_PATH}/${rx_prog} --log_level ${LOG_LEVEL} --p_rx_ip ${ST_RX_IP} --udp_mode ${udp_mode} --sessions_cnt ${SESSIONS_CNT} &
+		MUFD_CFG="${MUFD_RX_CFG}" "${TEST_BIN_PATH}"/"${rx_prog}" --log_level "${LOG_LEVEL}" --p_rx_ip "${ST_RX_IP}" --udp_mode "${udp_mode}" --sessions_cnt "${SESSIONS_CNT}" &
 	fi
 	pid_rx=$!
 	echo "${name}: pid_tx ${pid_tx}, pid_rx ${pid_rx}, wait ${TEST_TIME_SEC}s"
@@ -102,10 +102,10 @@ test_ufd_mcast() {
 	local udp_mode=$4
 
 	echo "${name}: start ${tx_prog}"
-	MUFD_CFG=${MUFD_TX_CFG} ${TEST_BIN_PATH}/${tx_prog} --log_level ${LOG_LEVEL} --p_tx_ip ${ST_MCAST_IP} --udp_mode ${udp_mode} --sessions_cnt ${SESSIONS_CNT} &
+	MUFD_CFG="${MUFD_TX_CFG}" "${TEST_BIN_PATH}"/"${tx_prog}" --log_level "${LOG_LEVEL}" --p_tx_ip "${ST_MCAST_IP}" --udp_mode "${udp_mode}" --sessions_cnt "${SESSIONS_CNT}" &
 	pid_tx=$!
 	echo "${name}: start ${rx_prog}"
-	MUFD_CFG=${MUFD_RX_CFG} ${TEST_BIN_PATH}/${rx_prog} --log_level ${LOG_LEVEL} --p_rx_ip ${ST_MCAST_IP} --udp_mode ${udp_mode} --sessions_cnt ${SESSIONS_CNT} &
+	MUFD_CFG="${MUFD_RX_CFG}" "${TEST_BIN_PATH}"/"${rx_prog}" --log_level "${LOG_LEVEL}" --p_rx_ip "${ST_MCAST_IP}" --udp_mode "${udp_mode}" --sessions_cnt "${SESSIONS_CNT}" &
 	pid_rx=$!
 	echo "${name}: pid_tx ${pid_tx}, pid_rx ${pid_rx}, wait ${TEST_TIME_SEC}s"
 	sleep ${TEST_TIME_SEC}

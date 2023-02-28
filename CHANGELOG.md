@@ -1,6 +1,7 @@
-# Change log
+# Changelog
 
-## Change log for 23.03:
+## Changelog for 23.03
+
 * dpdk: upgrade dpdk version to latest 22.11 for both windows and linux.
 * ptp: add pi controller and software frequency adjust to improve the accuracy to ~100ns.
 * mtl_init_params: add gateway and netmask support for wan.
@@ -12,9 +13,10 @@
 * sch/tasklet: add runtime unregister support.
 * udp: add lcore daemon mode support for rx, see MTL_FLAG_UDP_LCORE.
 
-## Change log for 22.12:
+## Changelog for 22.12
+
 * tasklet: add thread and sleep option for core usage, see ST_FLAG_TASKLET_THREAD and ST_FLAG_TASKLET_SLEEP.
-* tx: add user time stamp control, see ST20_TX_FLAG_USER_TIMESTAMP/ST30_TX_FLAG_USER_TIMESTAMP/ST40_TX_FLAG_USER_TIMESTAMP.
+* tx: add user timestamp control, see ST20_TX_FLAG_USER_TIMESTAMP/ST30_TX_FLAG_USER_TIMESTAMP/ST40_TX_FLAG_USER_TIMESTAMP.
 * rx/video: add dual core redundant mode support. See st20_redundant_api.h for detail. Header split only support this dual core redundant mode.
 * lib/log: add noice level log, see ST_LOG_LEVEL_NOTICE.
 * build: add clang support. See "Build with clang" section in build.md.
@@ -35,7 +37,8 @@
 * st20p: add st_frame_convert API which both the source and destination are st_frame.
 * sample: add MSDK encode sample with MTL source, see app/msdk.
 
-## Change log for 22.09:
+## Changelog for 22.09
+
 * License: update to BSD-3
 * dpdk: update DPDK to v22.07
 * ice: update driver to 1.9.11
@@ -51,11 +54,12 @@
 * Windows: support DSA for rx offload.
 * Windows: add TAP driver support.
 * API: change st20_frame_meta to st20_rx_frame_meta, also add st20_tx_frame_meta for get_next_frame of st20 tx.
-* API: change st_frame_meta to st_frame, also change the callback arg of st20p.notify_frame_done from void* to struct st_frame*.
+* API: change st_frame_meta to st_frame, also change the callback arg of st20p.notify_frame_done from (void*) to struct (st_frame*).
 * plugin: add kahawai as a plugin to OBS, only rx path now.
 * fps: add 120(119.88) fps support, see ST_FPS_P119_88.
 
-## Change log for 22.06:
+## Changelog for 22.06
+
 * User frame mode with uframe_pg_callback for rx video session.
 * Color format SIMD convert API between RFC4175 YUV422 10bit BE and other LE format, see st_convert_api.h.
 * SIMD build and runtime framework.
@@ -70,7 +74,8 @@
 * tx/st20: runtime session create/free features, adding runtime ratelimit support.
 * st30: support 125us and 80us in audio pacing
 
-## Change log for Beta 22.04:
+## Changelog for Beta 22.04
+
 * Enabled field mode to support 1080i,PAL,NTSC with narrow pacing.
 * Mempool usage optimization for both TX/RX, each TX session has dedicated mempool, one mempool for each RX queue. It also improve LLC affinity extremely.
 * DMA offload support for RX video, lcore usage reduced.
@@ -85,9 +90,10 @@
 * PCAP dump API support for RX video session.
 * Support for yuv444 8, 10, 12, 16 bit.
 
-## Change log for V0.7.1:
+## Changelog for V0.7.1
+
 * Dynamic IP address change support for RX video session.
-* Provide meta data info in the RX callback.
+* Provide metadata info in the RX callback.
 * Full audio channels support.
 * GPM(general packet mode) and BPM(block packet mode) support for TX.
 * 8K resolution support for both TX and RX.
@@ -95,5 +101,6 @@
 * Add rtp path sample code.
 * Add ST2110-22 sample code.
 
-## Change log for first version V0.7.0:
+## Changelog for first version V0.7.0
+
 * First version with new design based on DPDK 21.08.

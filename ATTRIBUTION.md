@@ -1,23 +1,25 @@
-Component: json-c<br>
-Repository: https://github.com/json-c/json-c<br>
-License: https://github.com/json-c/json-c/wiki#license
+# Media Transport Library
 
-Component: OpenSSL<br>
-Repository: https://github.com/openssl/openssl<br>
-License: https://github.com/openssl/openssl/blob/master/LICENSE.txt
+Component: json-c</br>
+Repository: "https://github.com/json-c/json-c"</br>
+License: "https://github.com/json-c/json-c/wiki#license"
 
-Component: googletest<br>
-Repository: https://github.com/google/googletest<br>
-License: https://github.com/openssl/openssl/blob/master/LICENSE.txt
+Component: OpenSSL</br>
+Repository: "https://github.com/openssl/openssl"</br>
+License: "https://github.com/openssl/openssl/blob/master/LICENSE.txt"
 
-Component: DPDK<br>
-Repository: https://github.com/google/googletest<br>
-License: https://github.com/google/googletest/blob/main/LICENSE
+Component: googletest</br>
+Repository: "https://github.com/google/googletest"</br>
+License: "https://github.com/openssl/openssl/blob/master/LICENSE.txt"
 
-Component: Simple DirectMedia Layer (SDL2)<br>
-Repository: https://github.com/libsdl-org<br>
-License: https://github.com/libsdl-org/SDL/blob/main/LICENSE.txt
+Component: DPDK</br>
+Repository: "https://github.com/google/googletest"</br>
+License: "https://github.com/google/googletest/blob/main/LICENSE"
 
-Component: libpcap<br>
-Repository: https://github.com/the-tcpdump-group/libpcap<br>
-License: https://github.com/the-tcpdump-group/libpcap/blob/master/LICENSE
+Component: Simple DirectMedia Layer (SDL2)</br>
+Repository: "https://github.com/libsdl-org"</br>
+License: "https://github.com/libsdl-org/SDL/blob/main/LICENSE.txt"
+
+Component: libpcap</br>
+Repository: "https://github.com/the-tcpdump-group/libpcap"</br>
+License: "https://github.com/the-tcpdump-group/libpcap/blob/master/LICENSE"

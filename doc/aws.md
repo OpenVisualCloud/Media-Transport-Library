@@ -159,7 +159,7 @@ This is ENA NIC hardware limitation, can be ignored for now.
 
 ## Reference link
 
-[ENA driver repo](https://github.com/amzn/amzn-drivers/tree/master/userspace/dpdk)
+[ENA driver repository](https://github.com/amzn/amzn-drivers/tree/master/userspace/dpdk)
 
 [ENA PMD doc](https://doc.dpdk.org/guides/nics/ena.html)
 

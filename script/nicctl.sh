@@ -22,18 +22,17 @@ create_dcf_vf() {
     # Hard code
 
     # Enable VFs
-    echo $numvfs > /sys/bus/pci/devices/$bdf/sriov_numvfs
+    echo "$numvfs" > /sys/bus/pci/devices/"$bdf"/sriov_numvfs
 
     #enable trust
-    ip link set $port vf 0 trust on
+    ip link set "$port" vf 0 trust on
 
     # Start to bind to DCF VFIO
-    for ((i=0;i<$numvfs;i++)); do
+    for ((i=0;i<"$numvfs";i++)); do
         vfpath="/sys/bus/pci/devices/$bdf/virtfn$i"
-        vf=`readlink $vfpath | awk -F/ '{print $NF;}'`
-        if [ $i -ne 1 ]; then
-            dpdk-devbind.py -b vfio-pci $vf
-            if [ $? -eq 0 ]; then
+        vf=$(readlink "$vfpath" | awk -F/ '{print $NF;}')
+        if [ "$i" -ne 1 ]; then
+            if dpdk-devbind.py -b vfio-pci "$vf"; then
                 echo "Bind $vf to dcf vfio success"
             fi
         fi
@@ -42,31 +41,30 @@ create_dcf_vf() {
 
 bind_kernel() {
     if [ -n "$ice" ]; then
-        dpdk-devbind.py -b ice $bdf
+        dpdk-devbind.py -b ice "$bdf"
     fi
     if [ -n "$i40e" ]; then
-        dpdk-devbind.py -b i40e $bdf
+        dpdk-devbind.py -b i40e "$bdf"
     fi
 }
 
 disable_vf() {
-    echo 0 > /sys/bus/pci/devices/$bdf/sriov_numvfs
+    echo 0 > /sys/bus/pci/devices/"$bdf"/sriov_numvfs
 }
 
 create_vf() {
     local numvfs=$1
 
     # Enable VFs
-    echo $numvfs > /sys/bus/pci/devices/$bdf/sriov_numvfs
+    echo "$numvfs" > /sys/bus/pci/devices/"$bdf"/sriov_numvfs
 
     # Start to bind to VFIO
-    for ((i=0;i<$numvfs;i++)); do
+    for ((i=0;i<numvfs;i++)); do
         vfpath="/sys/bus/pci/devices/$bdf/virtfn$i"
-        vf=`readlink $vfpath | awk -F/ '{print $NF;}'`
+        vf=$(readlink "$vfpath" | awk -F/ '{print $NF;}')
         #enable trust
         #ip link set $port vf $i trust on
-        dpdk-devbind.py -b vfio-pci $vf
-        if [ $? -eq 0 ]; then
+        if dpdk-devbind.py -b vfio-pci "$vf"; then
             echo "Bind $vf to vfio-pci success"
         fi
     done
@@ -74,8 +72,8 @@ create_vf() {
 
 cmdlist=("bind_kernel" "create_vf" "disable_vf" "bind_pmd" "create_dcf_vf")
 
-for c in ${cmdlist[@]}; do
-   if [ $c == $1 ]; then
+for c in "${cmdlist[@]}"; do
+   if [ "$c" == "$1" ]; then
        cmd=$c
        break
    fi
@@ -87,15 +85,15 @@ if [ -z "$cmd" ]; then
 fi
 
 bdf=$2
-ice=$(dpdk-devbind.py -s | { grep $bdf || true; } | { grep ice || true; })
-i40e=$(dpdk-devbind.py -s | { grep $bdf || true; } | { grep i40e || true; })
+ice=$(dpdk-devbind.py -s | { grep "$bdf" || true; } | { grep ice || true; })
+i40e=$(dpdk-devbind.py -s | { grep "$bdf" || true; } | { grep i40e || true; })
 if [ -z "$ice" ] && [ -z "$i40e" ]; then
     echo "$bdf is not ice(CVL) or i40e(FLV)"
     exit 1
 fi
 
-port=`dpdk-devbind.py -s | grep "$bdf.*if" | sed -e s/.*if=//g | awk '{print $1;}'`
-if [ $cmd == "bind_kernel" ]; then
+port=$(dpdk-devbind.py -s | grep "$bdf.*if" | sed -e s/.*if=//g | awk '{print $1;}')
+if [ "$cmd" == "bind_kernel" ]; then
     if [ -z "$port" ]; then
         bind_kernel
         echo "Bind bdf: $bdf to kernel succ"
@@ -105,12 +103,12 @@ if [ $cmd == "bind_kernel" ]; then
     exit 0
 fi
 
-if [ $cmd == "bind_pmd" ]; then
+if [ "$cmd" == "bind_pmd" ]; then
     modprobe vfio-pci
     if [ -n "$port" ]; then
-        ip link set $port down
+        ip link set "$port" down
     fi
-    dpdk-devbind.py -b vfio-pci $bdf
+    dpdk-devbind.py -b vfio-pci "$bdf"
     echo "Bind bdf: $bdf to vfio-pci succ"
     exit 0
 fi
@@ -119,16 +117,16 @@ fi
 
 if [ -z "$port" ]; then
     bind_kernel
-    port=`dpdk-devbind.py -s | grep "$bdf.*if" | sed -e s/.*if=//g | awk '{print $1;}'`
+    port=$(dpdk-devbind.py -s | grep "$bdf.*if" | sed -e s/.*if=//g | awk '{print $1;}')
     echo "Bind bdf: $bdf to kernel $port succ"
 fi
 
-if [ $cmd == "disable_vf" ]; then
+if [ "$cmd" == "disable_vf" ]; then
     disable_vf
     echo "Disable vf bdf: $bdf $port succ"
 fi
 
-if [ $cmd == "create_dcf_vf" ]; then
+if [ "$cmd" == "create_dcf_vf" ]; then
     if [ -z "$ice" ]; then
         echo "only CVL device is allowed"
         exit 1
@@ -145,7 +143,7 @@ if [ $cmd == "create_dcf_vf" ]; then
     echo "Create dcf vf bdf: $bdf $port succ"
 fi
 
-if [ $cmd == "create_vf" ]; then
+if [ "$cmd" == "create_vf" ]; then
     if [ -n "$3" ]; then
         numvfs=$(($3+0))
     else

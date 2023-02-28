@@ -1,7 +1,5 @@
 #!/bin/bash -ex
 
-EX_PATH=${PWD}
-
 build_openh264(){
     if [ ! -d "./openh264" ];then
         git clone https://github.com/cisco/openh264.git

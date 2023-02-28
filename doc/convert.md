@@ -1,18 +1,27 @@
 # Color Format Convert Guide
 
 ## Introduction
+
 Kahawai introduces color format SIMD convert API from v22.06, which can be used to conversion between RFC4175 YUV422 10bit BE and common LE formats.  
+
 ### The SIMD API
+
 Kahawai supports SIMD flags detection both in compile stage and runtime.<br>
-The default function `st20_<src_format>_to_<dest_format>` will try to use the maximum SIMD level supported on the platform, and user can also specify the maximum SIMD level by calling `st20_<src_format>_to_<dest_format>_simd`. 
+The default function `st20_<src_format>_to_<dest_format>` will try to use the maximum SIMD level supported on the platform, and user can also specify the maximum SIMD level by calling `st20_<src_format>_to_<dest_format>_simd`.
 For full API usage please refer to [st_convert_api.h](../include/st_convert_api.h) and [st_convert_internal.h](../include/st_convert_internal.h).
+
 ### The DMA Helper API
-While converting ultra high definition video frames, the LLC load miss rate will be high due to wide rage memory access. To reduce the LLC load miss, Kahawai introduces DMA helper for the convert API. The source date is preloaded to the software cache blocks with DMA engine before the SIMD batch processing, so the SIMD load functions can always hit the cache. This API is implemented with synchronous dma_copy, so the conversion speed is not always optimized. It is helpful for 4K or 8K senario.<br>
+
+While converting ultra high definition video frames, the LLC load miss rate will be high due to wide rage memory access. To reduce the LLC load miss, Kahawai introduces DMA helper for the convert API.
+The source date is preloaded to the software cache blocks with DMA engine before the SIMD batch processing, so the SIMD load functions can always hit the cache. This API is implemented with synchronous dma_copy, so the conversion speed is not always optimized.
+It is helpful for 4K or 8K senario.<br>
 To use the functions `st20_<src_format>_to_<dest_format>_dma`, the DMA device needs to be aquired first and st_udma_handle is passed here. For DMA device creation please refer to [dma_sample.c](../app/sample/dma_sample.c).
 For full API usage please refer to [st_convert_api.h](../include/st_convert_api.h).
 
 ## Supported Conversion
+
 ### 4:2:2 10 bits
+
 | src_format| dest_format | scalar | avx2 | avx512 | avx512_vbmi |
 | :---      |     :---    | :----: |:----:| :----: |    :----:   |
 | rfc4175_422be10   | yuv422p10le       | &#x2705; |          | &#x2705; | &#x2705; |
@@ -29,6 +38,7 @@ For full API usage please refer to [st_convert_api.h](../include/st_convert_api.
 | y210              | rfc4175_422be10   | &#x2705; |          | &#x2705; |          |
 
 ### 4:2:2 12 bits
+
 | src_format| dest_format | scalar | avx2 | avx512 | avx512_vbmi |
 | :---      |     :---    | :----: |:----:| :----: |    :----:   |
 | rfc4175_422be12   | yuv422p12le       | &#x2705; |          | &#x2705; |          |
@@ -39,6 +49,7 @@ For full API usage please refer to [st_convert_api.h](../include/st_convert_api.
 | yuv422p12le       | rfc4175_422le12   | &#x2705; |          |          |          |
 
 ### 4:4:4 10 bits
+
 | src_format| dest_format | scalar | avx2 | avx512 | avx512_vbmi |
 | :---      |     :---    | :----: |:----:| :----: |    :----:   |
 | rfc4175_444be10   | yuv444p10le       | &#x2705; |          |          |          |
@@ -53,6 +64,7 @@ For full API usage please refer to [st_convert_api.h](../include/st_convert_api.
 | gbrp10le          | rfc4175_444le10   | &#x2705; |          |          |          |
 
 ### 4:4:4 12 bits
+
 | src_format| dest_format | scalar | avx2 | avx512 | avx512_vbmi |
 | :---      |     :---    | :----: |:----:| :----: |    :----:   |
 | rfc4175_444be12   | yuv444p12le       | &#x2705; |          |          |          |
@@ -67,7 +79,9 @@ For full API usage please refer to [st_convert_api.h](../include/st_convert_api.
 | gbrp12le          | rfc4175_444le12   | &#x2705; |          |          |          |
 
 ## Formats For Reference
+
 ### rfc4175_422le10
+
 Color space: YUV (YCbCr)<br>
 Sample: 422<br>
 Packed/planar: packed<br>
@@ -76,7 +90,8 @@ Bytes/pixels: 5/2<br>
 Endian: LE<br>
 Memory Layout:<br>
 UYVY10bit LE (1 pixel group)<br>
-```
+
+```bash
  0                   1                   2                   3
  0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9
 +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
@@ -86,6 +101,7 @@ UYVY10bit LE (1 pixel group)<br>
 ```
 
 ### rfc4175_422be10
+
 Color space: YUV<br>
 Sample: 422<br>
 Packed/planar: packed<br>
@@ -94,14 +110,17 @@ Bytes/pixels: 5/2<br>
 Endian: BE<br>
 Memory Layout:<br>
 UYVY10bit BE (1 pixel group)<br>
-```
+
+```bash
  0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9
 +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
 |       U       |     Y0    | U_|   V   |  Y0_  | Y1|     V_    |      Y1_      |
 +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
 |      0x0      |      0x1      |      0x2      |      0x3      |      0x4      |
 ```
+
 ### rfc4175_422le12
+
 Color space: YUV (YCbCr)<br>
 Sample: 422<br>
 Packed/planar: packed<br>
@@ -110,7 +129,8 @@ Bytes/pixels: 6/2<br>
 Endian: LE<br>
 Memory Layout:<br>
 UYVY12bit LE (1 pixel group)<br>
-```
+
+```bash
  0                       1                       2                       3
  0 1 2 3 4 5 6 7 8 9 A B 0 1 2 3 4 5 6 7 8 9 A B 0 1 2 3 4 5 6 7 8 9 A B 0 1 2 3 4 5 6 7 8 9 A B
 +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
@@ -120,6 +140,7 @@ UYVY12bit LE (1 pixel group)<br>
 ```
 
 ### rfc4175_422be12
+
 Color space: YUV<br>
 Sample: 422<br>
 Packed/planar: packed<br>
@@ -128,7 +149,8 @@ Bytes/pixels: 6/2<br>
 Endian: BE<br>
 Memory Layout:<br>
 UYVY12bit BE (1 pixel group)<br>
-```
+
+```bash
  0 1 2 3 4 5 6 7 8 9 A B 0 1 2 3 4 5 6 7 8 9 A B 0 1 2 3 4 5 6 7 8 9 A B 0 1 2 3 4 5 6 7 8 9 A B
 +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
 |       U       |   Y0  |   U_  |      Y0_      |       V       |   Y1  |   V_  |      Y1_      |
@@ -137,6 +159,7 @@ UYVY12bit BE (1 pixel group)<br>
 ```
 
 ### rfc4175_444le10
+
 Color space: YUV (YCbCr) or RGB<br>
 Sample: 444<br>
 Packed/planar: packed<br>
@@ -145,7 +168,8 @@ Bytes/pixels: 15/4<br>
 Endian: LE<br>
 Memory Layout:<br>
 UYVY10bit/RGB10bit LE (1 pixel group)<br>
-```
+
+```bash
  0                   1                   2                   3                   4                   5                   6                   7                   8                   9                   10                  11
  0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9
 +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
@@ -155,6 +179,7 @@ UYVY10bit/RGB10bit LE (1 pixel group)<br>
 ```
 
 ### rfc4175_444le12
+
 Color space: YUV (YCbCr) or RGB<br>
 Sample: 444<br>
 Packed/planar: packed<br>
@@ -163,7 +188,8 @@ Bytes/pixels: 9/2<br>
 Endian: LE<br>
 Memory Layout:<br>
 UYVY12bit/RGB12bit LE (1 pixel group)<br>
-```
+
+```bash
  0                       1                       2                       3                       4                       5
  0 1 2 3 4 5 6 7 8 9 A B 0 1 2 3 4 5 6 7 8 9 A B 0 1 2 3 4 5 6 7 8 9 A B 0 1 2 3 4 5 6 7 8 9 A B 0 1 2 3 4 5 6 7 8 9 A B 0 1 2 3 4 5 6 7 8 9 A B
 +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
@@ -171,7 +197,9 @@ UYVY12bit/RGB12bit LE (1 pixel group)<br>
 +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
 |      0x0      |      0x1      |      0x2      |      0x3      |      0x4      |      0x5      |      0x6      |      0x7      |      0x8      |
 ```
+
 ### v210
+
 Color space: YUV<br>
 Sample: 422<br>
 Packed/planar: packed<br>
@@ -180,7 +208,8 @@ Bytes/pixels: 16/6<br>
 Endian: LE<br>
 Memory Layout:<br>
 V210 (3 pixel groups)<br>
-```
+
+```bash
  0                   1                   2                       
  0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9     
 +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
@@ -208,6 +237,7 @@ V210 (3 pixel groups)<br>
 ```
 
 ### rfc4175_422le8
+
 Color space: YUV<br>
 Sample: 422<br>
 Packed/planar: packed<br>
@@ -216,7 +246,8 @@ Bytes/pixels: 4/2<br>
 Endian: LE<br>
 Memory Layout:<br>
 UYVY LE (1 pixel group)<br>
-```
+
+```bash
  0               1               2               3
  0 1 2 3 4 5 6 7 0 1 2 3 4 5 6 7 0 1 2 3 4 5 6 7 0 1 2 3 4 5 6 7 
 +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
@@ -226,6 +257,7 @@ UYVY LE (1 pixel group)<br>
 ```
 
 ### yuv422p10le
+
 Color space: YUV<br>
 Sample: 422<br>
 Packed/planar: planar<br>
@@ -234,7 +266,8 @@ Bytes/pixels: 8/2<br>
 Endian: LE<br>
 Memory Layout:<br>
 YUV42210bitPlanar LE<br>
-```
+
+```bash
 Y channel (w*h*2):
  0                               1
  0 1 2 3 4 5 6 7 8 9 A B C D E F 0 1 2 3 4 5 6 7 8 9 A B C D E F
@@ -261,6 +294,7 @@ V channel (w*h):
 ```
 
 ### y210
+
 Color space: YUV<br>
 Sample: 422<br>
 Packed/planar: packed<br>
@@ -269,7 +303,8 @@ Bytes/pixels: 8/2<br>
 Endian: LE<br>
 Memory Layout:<br>
 Y210 (1 pixel group)
-```
+
+```bash
  0                               1
  0 1 2 3 4 5 6 7 8 9 A B C D E F 0 1 2 3 4 5 6 7 8 9 A B C D E F
 +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
@@ -283,7 +318,9 @@ Y210 (1 pixel group)
 +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
 |      0x4      |      0x5      |      0x6      |      0x7      | 
 ```
+
 ### yuv422p12le
+
 Color space: YU<br>
 Sample: 422<br>
 Packed/planar: planar<br>
@@ -292,7 +329,8 @@ Bytes/pixels: 8/2<br>
 Endian: LE<br>
 Memory Layout:<br>
 YUV42212bitPlanar LE<br>
-```
+
+```bash
 Y channel (w*h*2):
  0                               1
  0 1 2 3 4 5 6 7 8 9 A B C D E F 0 1 2 3 4 5 6 7 8 9 A B C D E F
@@ -319,6 +357,7 @@ V channel (w*h):
 ```
 
 ### yuv444p10le
+
 Color space: YUV<br>
 Sample: 444<br>
 Packed/planar: planar<br>
@@ -327,7 +366,8 @@ Bytes/pixels: 8/2<br>
 Endian: LE<br>
 Memory Layout:<br>
 YUV44410bitPlanar LE<br>
-```
+
+```bash
 Y channel (w*h*2):
  0                               1
  0 1 2 3 4 5 6 7 8 9 A B C D E F 0 1 2 3 4 5 6 7 8 9 A B C D E F
@@ -354,6 +394,7 @@ V channel (w*h*2):
 ```
 
 ### yuv444p12le
+
 Color space: YUV<br>
 Sample: 444<br>
 Packed/planar: planar<br>
@@ -362,7 +403,8 @@ Bytes/pixels: 8/2<br>
 Endian: LE<br>
 Memory Layout:<br>
 YUV44412bitPlanar LE<br>
-```
+
+```bash
 Y channel (w*h*2):
  0                               1
  0 1 2 3 4 5 6 7 8 9 A B C D E F 0 1 2 3 4 5 6 7 8 9 A B C D E F
@@ -389,6 +431,7 @@ V channel (w*h*2):
 ```
 
 ### gbrp10le
+
 Color space: RGB<br>
 Sample: 444<br>
 Packed/planar: planar<br>
@@ -397,7 +440,8 @@ Bytes/pixels: 8/2<br>
 Endian: LE<br>
 Memory Layout:<br>
 GBR10bitPlanar LE<br>
-```
+
+```bash
 Y channel (w*h*2):
  0                               1
  0 1 2 3 4 5 6 7 8 9 A B C D E F 0 1 2 3 4 5 6 7 8 9 A B C D E F
@@ -424,6 +468,7 @@ V channel (w*h*2):
 ```
 
 ### gbrp12le
+
 Color space: RGB<br>
 Sample: 444<br>
 Packed/planar: planar<br>
@@ -432,7 +477,8 @@ Bytes/pixels: 8/2<br>
 Endian: LE<br>
 Memory Layout:<br>
 GBR12bitPlanar LE<br>
-```
+
+```bash
 Y channel (w*h*2):
  0                               1
  0 1 2 3 4 5 6 7 8 9 A B C D E F 0 1 2 3 4 5 6 7 8 9 A B C D E F
