@@ -36,30 +36,30 @@ devcon.exe install virt2phys.inf root\virt2phys
 ##### 2.1.3 Make sure that the driver was installed
 
 ##### 2.1.4 When there is a problem with driver installation are needed more steps
- 
-Test sign the driver using a test certificate and then boot the Windows in ��Test mode��, or
 
-Use the boot time option to ��Disable driver signature enforcement��
+Test sign the driver using a test certificate and then boot the Windows in "Test mode", or
+
+Use the boot time option to "Disable driver signature enforcement"
 
 ##### 2.1.5 Manually install virt2phys steps for Windows Server
 
-From Device Manager, Action menu, select ��Add legacy hardware��. 
- 
-It will launch the ��Add Hardware Wizard��. Click ��Next��
+From Device Manager, Action menu, select "Add legacy hardware".
 
-Select second option ��Install the hardware that I manually select from a list��
+It will launch the "Add Hardware Wizard". Click "Next"
 
-On the next screen, ��Kernel bypass�� will be shown as a device class
- 
-Select it and click ��Next��.
+Select second option "Install the hardware that I manually select from a list"
+
+On the next screen, "Kernel bypass" will be shown as a device class
+
+Select it and click "Next".
 
 Click "Have Disk".
 
 Find location of your virt2phys.inf driver.
 
-Select it and click ��Next��.
+Select it and click "Next".
 
-The previously installed drivers will now be installed for the ��Virtual to physical address translator�� device
+The previously installed drivers will now be installed for the "Virtual to physical address translator" device
 
 #### 2.1.6 Here we just go through next and finish buttons
 
