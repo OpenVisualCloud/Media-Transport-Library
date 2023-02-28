@@ -1,5 +1,3 @@
-@page js_config JSON Configuration Guide
-
 # JSON Configuration Guide
 
 Kahawai sample app can use json file to configure sessions. this documentation explains how to write the json files.
@@ -160,7 +158,7 @@ Common settings for following sessions in the group:
 
 ​ **interfaces (array-int):** interfaces/ports used by the sessions, at least 1 primary interface, the second is redundant interface
 
-#### video (array of video sessions)
+#### video (array of video sessions) for RX
 
 Items in each element of the "video" array
 
@@ -184,7 +182,7 @@ Items in each element of the "video" array
 
 ​ **display (bool):** `true, false` display video frames with SDL, only works with YUV 422 10bit and 8bit stream
 
-#### audio (array of audio sessions)
+#### audio (array of audio sessions) for RX
 
 Items in each element of the "audio" array
 
@@ -206,7 +204,7 @@ Items in each element of the "audio" array
 
 ​ **audio_url (string):** audio reference file
 
-#### ancillary (array of ancillary sessions)
+#### ancillary (array of ancillary sessions) for RX
 
 Items in each element of the "ancillary" array
 

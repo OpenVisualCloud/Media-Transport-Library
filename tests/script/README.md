@@ -15,7 +15,7 @@
 
 Loop test with all json files under loop_json dir.
 
-#### 2.1. Customize the port and IP(Optional)
+### 2.1. Customize the port and IP(Optional)
 
 ```bash
 cd loop_json/
@@ -33,7 +33,7 @@ Use the random IP for json config file, run:
 ./random_ip.sh
 ```
 
-#### 2.2. Run the loop test
+### 2.2. Run the loop test
 
 ```bash
 ./loop_test.sh
@@ -49,7 +49,7 @@ Run below cmd for the software ebu test with loop mode.
 
 AFXDP loop test with all json files under afxdp_json dir.
 
-#### 3.1. Setup the env(Optional)
+### 3.1. Setup the env(Optional)
 
 ```bash
 cd afxdp_json/
@@ -61,7 +61,7 @@ Edit the setup.sh as the setup and also the json files, then run:
 ./setup.sh
 ```
 
-#### 3.2. Run the AFXDP loop test
+### 3.2. Run the AFXDP loop test
 
 ```bash
 ./afxdp_test.sh
@@ -75,7 +75,7 @@ Edit the setup.sh as the setup and also the json files, then run:
 
 ## 5. Header split test(PF PMD mode only)
 
-#### 5.1. Bind to PF pmd mode with root
+### 5.1. Bind to PF pmd mode with root
 
 ```bash
 export PATH=$PATH:/usr/local/bin/
@@ -83,7 +83,7 @@ export PATH=$PATH:/usr/local/bin/
 ../../script/nicctl.sh bind_pmd 0000:af:00.1
 ```
 
-#### 5.2. Run the test with loop json
+### 5.2. Run the test with loop json
 
 ```bash
 ./hdr_split_test.sh

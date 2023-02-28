@@ -10,11 +10,11 @@
 
 The Media Transport Library(Kahawai) is a solution based on DPDK prepared for transmitting and receiving media data with high throughput and low latency. It include a efficient user space udp stack support, beside UDP, it also has a built-in compliant implementation to the SMPTE ST 2110 Professional Media Over Managed IP Networks suite of standards.
 
-#### 1.1 Features
+### 1.1 Features
 
 * User-space UDP stack with POSIX socket compatible API.
 
-###### 1.1.1 ST2110 features
+#### 1.1.1 ST2110 features
 
 * ST2110-10, ST2110-20, ST2110-21, ST2110-30, ST2110-40, ST2110-22, ST2022-7
 * 1080p, 720p, 4k, 8k and other
@@ -22,7 +22,7 @@ The Media Transport Library(Kahawai) is a solution based on DPDK prepared for tr
 * All the video format listed in ST2110-20, include YUV 4:2:2 10bit and others.
 * CSC support status: [status](doc/convert.md)
 
-#### 1.2 Architecture
+### 1.2 Architecture
 
 Media transport library takes advantage DPDK features to implement a highly efficient, real-time & low-latency media transport stack, software based media transport makes it feasible for edge and cloud deployment based on COTS hardware.<br>
 Kahawai introduce a tasklet async based scheduler to fully utilize CPU resources, easy integration with different packet processing unit and accelerators.<br>
@@ -50,16 +50,45 @@ For how to develop application quickly based on Kahawai library, pls refer to [s
 
 ## 5. User space UDP stack guide
 
-From 23.03.0 version, Media transport library extend the support to user-space UDP stack which run directly under current process context for performance consideration. Other user-space UDP stack usually run with client-service architect, it introduce a cross-core message cost which hurt the performance. Our stack are running NIC tx/rx function from the sendto/recvfrom API directly which save the cross-core call and keep the data affinity(LLC) to the UDP consumer. For how to use the UDP API, pls refer to [udp sample code](app/udp).
+From 23.03.0 version, Media transport library extend the support to user-space UDP stack which run directly under current process context for performance consideration. Other user-space UDP stack usually run with client-service architect, it introduce a cross-core message cost which hurt the performance.
+Our stack are running NIC tx/rx function from the sendto/recvfrom API directly which save the cross-core call and keep the data affinity(LLC) to the UDP consumer.
+
+For how to use the UDP API, pls refer to [udp sample code](app/udp).
 
 ## 6. How to Contribute
 
 We welcome community contributions to the Media Transport Library project. If you have any ideas/issues, please share it with us by the GitHub issues or opening a pull request.
 
-#### 6.1 Coding style
+### 6.1 Coding style
 
-Run below command before opening a PR.
+We use super-linter action for the style check.
 
+For C/C++ coding, run below command to quickly fix the style.
 ```bash
 ./format-coding.sh
+```
+
+For others, please check with below example command inside the docker.
+```bash
+# super-linter
+docker run -it --rm  -v "$PWD":/opt/ --entrypoint /bin/bash github/super-linter
+
+cd /opt/
+
+# echo "shell check"
+find ./ -name "*.sh" -exec shellcheck {} \;
+
+# hadolint check
+hadolint docker/ubuntu.dockerfile
+
+# actionlint check
+actionlint
+
+# markdownlint check
+find ./ -name "*.md" -exec markdownlint {} -c .markdown-lint.yml \;
+# find ./ -name "*.md" -exec markdownlint {} --fix -c .markdown-lint.yml \;
+
+# textlint
+find ./ -name "*.md" -exec textlint {} \;
+# find ./ -name "*.md" -exec textlint {} --fix \;
 ```

@@ -2,11 +2,11 @@
 
 ## 1. Update driver version to 1.9.11 with patches
 
-#### 1.1 Get driver version with 1.9.11
+### 1.1 Get driver version with 1.9.11
 
 Download CVL 1.9.11 driver from Intel website: <https://www.intel.com/content/www/us/en/download/19630/intel-network-adapter-driver-for-e810-series-devices-under-linux.html>.
 
-#### 1.2 Patch with Kahawai RL patches
+### 1.2 Patch with Kahawai RL patches
 
 Apply the all patches under [ice_driver](../patches/ice_drv/1.9.11/)
 
@@ -17,7 +17,7 @@ git am $dpdk_st_kahawai/patches/ice_drv/1.9.11/0003-ice-set-ICE_SCHED_DFLT_BURST
 git am $dpdk_st_kahawai/patches/ice_drv/1.9.11/0004-version-update-to-kahawai.patch
 ```
 
-#### 1.3 Build and install the driver
+### 1.3 Build and install the driver
 
 Pls refer to below command for build and install
 
@@ -75,7 +75,7 @@ Bind 0000:af:01.5 to vfio success
 
 ## 3. FAQs
 
-#### 2.1 vfio_pci not loaded
+### 3.1 vfio_pci not loaded
 
 If you see below error while creating VF, run "modprobe vfio_pci" to install the VFIO_PCI kernel module.
 

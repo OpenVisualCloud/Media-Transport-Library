@@ -6,7 +6,7 @@ Kahawai support DMA feature to offload the cpu memory copy for better rx video s
 
 ## 2. DMA driver bind to PMD(vfio-pci) mode
 
-#### 2.1 Locate the available DMA port
+### 2.1 Locate the available DMA port
 
 ```bash
 dpdk-devbind.py -s | grep CBDMA
@@ -39,7 +39,7 @@ Pls check the output to find the VF BDF info, ex 0000:80:04.0 on the socket 1, 0
 0000:80:04.7 'Sky Lake-E CBDMA Registers 2021' drv=ioatdma unused=vfio-pci
 ```
 
-#### 2.2 Bind ports to PMD(vfio-pci)
+### 2.2 Bind ports to PMD(vfio-pci)
 
 Below example bind 0000:80:04.0,0000:80:04.1,0000:80:04.2 to PMD(vfio-pci) mode.
 

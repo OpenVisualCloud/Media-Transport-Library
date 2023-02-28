@@ -6,11 +6,21 @@
 
 ## How to run
 
-One-session example: ffmpeg -framerate 60 -pixel_format yuv422p10le -width 1920 -height 1080 -udp_port 20000 -port 0000:31:00.0 -local_addr "192.168.96.2" -src_addr "239.168.85.20" -dma_dev "0000:00:01.0" -ext_frames_mode 1 -f kahawai -i "k" -vframes 2000 -f rawvideo /dev/null -y"
+One-session example:
+```bash
+ffmpeg -framerate 60 -pixel_format yuv422p10le -width 1920 -height 1080 -udp_port 20000 -port 0000:31:00.0 -local_addr "192.168.96.2" -src_addr "239.168.85.20" -dma_dev "0000:00:01.0" -ext_frames_mode 1 -f kahawai -i "k" -vframes 2000 -f rawvideo /dev/null -y"
+```
 
-Two-sessions example: ffmpeg -framerate 60 -pixel_format yuv422p10le -width 1920 -height 1080 -udp_port 20000 -port 0000:31:00.0 -local_addr "192.168.96.2" -src_addr "239.168.85.20" -total_sessions 2 -ext_frames_mode 1 -f kahawai -i "1" -framerate 60 -pixel_format yuv422p10le -width 1920 -height 1080 -udp_port 20001 -port 0000:31:00.0 -local_addr "192.168.96.3" -src_addr "239.168.85.20" -total_sessions 2 -ext_frames_mode 1 -f kahawai -i "2" -map 0:0 -vframes 5000 -f rawvideo /dev/null -y -map 1:0 -vframes 5000 -f rawvideo /dev/null -y
+Two-sessions example:
+```bash
+<!-- markdownlint-disable line-length -->
+ffmpeg -framerate 60 -pixel_format yuv422p10le -width 1920 -height 1080 -udp_port 20000 -port 0000:31:00.0 -local_addr "192.168.96.2" -src_addr "239.168.85.20" -total_sessions 2 -ext_frames_mode 1 -f kahawai -i "1" -framerate 60 -pixel_format yuv422p10le -width 1920 -height 1080 -udp_port 20001 -port 0000:31:00.0 -local_addr "192.168.96.3" -src_addr "239.168.85.20" -total_sessions 2 -ext_frames_mode 1 -f kahawai -i "2" -map 0:0 -vframes 5000 -f rawvideo /dev/null -y -map 1:0 -vframes 5000 -f rawvideo /dev/null -y
+```
 
-With openh264 encoder example: ffmpeg -framerate 60 -pixel_format yuv422p10le -width 1920 -height 1080 -udp_port 20000 -port 0000:31:00.0 -local_addr "192.168.96.2" -src_addr "239.168.85.20" -dma_dev "0000:00:01.0" -ext_frames_mode 1 -f kahawai -i "k" -vframes 2000 -c:v libopenh264 out.264 -y
+With openh264 encoder example:
+```bash
+ffmpeg -framerate 60 -pixel_format yuv422p10le -width 1920 -height 1080 -udp_port 20000 -port 0000:31:00.0 -local_addr "192.168.96.2" -src_addr "239.168.85.20" -dma_dev "0000:00:01.0" -ext_frames_mode 1 -f kahawai -i "k" -vframes 2000 -c:v libopenh264 out.264 -y
+```
 
 Parameters description:
 

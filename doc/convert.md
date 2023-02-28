@@ -12,7 +12,9 @@ For full API usage please refer to [st_convert_api.h](../include/st_convert_api.
 
 ### The DMA Helper API
 
-While converting ultra high definition video frames, the LLC load miss rate will be high due to wide rage memory access. To reduce the LLC load miss, Kahawai introduces DMA helper for the convert API. The source date is preloaded to the software cache blocks with DMA engine before the SIMD batch processing, so the SIMD load functions can always hit the cache. This API is implemented with synchronous dma_copy, so the conversion speed is not always optimized. It is helpful for 4K or 8K senario.<br>
+While converting ultra high definition video frames, the LLC load miss rate will be high due to wide rage memory access. To reduce the LLC load miss, Kahawai introduces DMA helper for the convert API.
+The source date is preloaded to the software cache blocks with DMA engine before the SIMD batch processing, so the SIMD load functions can always hit the cache. This API is implemented with synchronous dma_copy, so the conversion speed is not always optimized.
+It is helpful for 4K or 8K senario.<br>
 To use the functions `st20_<src_format>_to_<dest_format>_dma`, the DMA device needs to be aquired first and st_udma_handle is passed here. For DMA device creation please refer to [dma_sample.c](../app/sample/dma_sample.c).
 For full API usage please refer to [st_convert_api.h](../include/st_convert_api.h).
 
@@ -89,7 +91,7 @@ Endian: LE<br>
 Memory Layout:<br>
 UYVY10bit LE (1 pixel group)<br>
 
-```
+```bash
  0                   1                   2                   3
  0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9
 +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
@@ -109,7 +111,7 @@ Endian: BE<br>
 Memory Layout:<br>
 UYVY10bit BE (1 pixel group)<br>
 
-```
+```bash
  0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9
 +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
 |       U       |     Y0    | U_|   V   |  Y0_  | Y1|     V_    |      Y1_      |
@@ -128,7 +130,7 @@ Endian: LE<br>
 Memory Layout:<br>
 UYVY12bit LE (1 pixel group)<br>
 
-```
+```bash
  0                       1                       2                       3
  0 1 2 3 4 5 6 7 8 9 A B 0 1 2 3 4 5 6 7 8 9 A B 0 1 2 3 4 5 6 7 8 9 A B 0 1 2 3 4 5 6 7 8 9 A B
 +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
@@ -148,7 +150,7 @@ Endian: BE<br>
 Memory Layout:<br>
 UYVY12bit BE (1 pixel group)<br>
 
-```
+```bash
  0 1 2 3 4 5 6 7 8 9 A B 0 1 2 3 4 5 6 7 8 9 A B 0 1 2 3 4 5 6 7 8 9 A B 0 1 2 3 4 5 6 7 8 9 A B
 +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
 |       U       |   Y0  |   U_  |      Y0_      |       V       |   Y1  |   V_  |      Y1_      |
@@ -167,7 +169,7 @@ Endian: LE<br>
 Memory Layout:<br>
 UYVY10bit/RGB10bit LE (1 pixel group)<br>
 
-```
+```bash
  0                   1                   2                   3                   4                   5                   6                   7                   8                   9                   10                  11
  0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9
 +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
@@ -187,7 +189,7 @@ Endian: LE<br>
 Memory Layout:<br>
 UYVY12bit/RGB12bit LE (1 pixel group)<br>
 
-```
+```bash
  0                       1                       2                       3                       4                       5
  0 1 2 3 4 5 6 7 8 9 A B 0 1 2 3 4 5 6 7 8 9 A B 0 1 2 3 4 5 6 7 8 9 A B 0 1 2 3 4 5 6 7 8 9 A B 0 1 2 3 4 5 6 7 8 9 A B 0 1 2 3 4 5 6 7 8 9 A B
 +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
@@ -207,7 +209,7 @@ Endian: LE<br>
 Memory Layout:<br>
 V210 (3 pixel groups)<br>
 
-```
+```bash
  0                   1                   2                       
  0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9     
 +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
@@ -245,7 +247,7 @@ Endian: LE<br>
 Memory Layout:<br>
 UYVY LE (1 pixel group)<br>
 
-```
+```bash
  0               1               2               3
  0 1 2 3 4 5 6 7 0 1 2 3 4 5 6 7 0 1 2 3 4 5 6 7 0 1 2 3 4 5 6 7 
 +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
@@ -265,7 +267,7 @@ Endian: LE<br>
 Memory Layout:<br>
 YUV42210bitPlanar LE<br>
 
-```
+```bash
 Y channel (w*h*2):
  0                               1
  0 1 2 3 4 5 6 7 8 9 A B C D E F 0 1 2 3 4 5 6 7 8 9 A B C D E F
@@ -302,7 +304,7 @@ Endian: LE<br>
 Memory Layout:<br>
 Y210 (1 pixel group)
 
-```
+```bash
  0                               1
  0 1 2 3 4 5 6 7 8 9 A B C D E F 0 1 2 3 4 5 6 7 8 9 A B C D E F
 +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
@@ -328,7 +330,7 @@ Endian: LE<br>
 Memory Layout:<br>
 YUV42212bitPlanar LE<br>
 
-```
+```bash
 Y channel (w*h*2):
  0                               1
  0 1 2 3 4 5 6 7 8 9 A B C D E F 0 1 2 3 4 5 6 7 8 9 A B C D E F
@@ -365,7 +367,7 @@ Endian: LE<br>
 Memory Layout:<br>
 YUV44410bitPlanar LE<br>
 
-```
+```bash
 Y channel (w*h*2):
  0                               1
  0 1 2 3 4 5 6 7 8 9 A B C D E F 0 1 2 3 4 5 6 7 8 9 A B C D E F
@@ -402,7 +404,7 @@ Endian: LE<br>
 Memory Layout:<br>
 YUV44412bitPlanar LE<br>
 
-```
+```bash
 Y channel (w*h*2):
  0                               1
  0 1 2 3 4 5 6 7 8 9 A B C D E F 0 1 2 3 4 5 6 7 8 9 A B C D E F
@@ -439,7 +441,7 @@ Endian: LE<br>
 Memory Layout:<br>
 GBR10bitPlanar LE<br>
 
-```
+```bash
 Y channel (w*h*2):
  0                               1
  0 1 2 3 4 5 6 7 8 9 A B C D E F 0 1 2 3 4 5 6 7 8 9 A B C D E F
@@ -476,7 +478,7 @@ Endian: LE<br>
 Memory Layout:<br>
 GBR12bitPlanar LE<br>
 
-```
+```bash
 Y channel (w*h*2):
  0                               1
  0 1 2 3 4 5 6 7 8 9 A B C D E F 0 1 2 3 4 5 6 7 8 9 A B C D E F

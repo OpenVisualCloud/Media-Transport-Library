@@ -11,7 +11,7 @@ APP used: RxTxApp reference app.
 
 ## 2. benchmark result
 
-#### 2.1 transmitter in frame mode
+### 2.1 transmitter in frame mode
 
 following table shows the benchmark of max tx session number.
 format | 1 port with 1 NIC | 2 port with 2 NIC

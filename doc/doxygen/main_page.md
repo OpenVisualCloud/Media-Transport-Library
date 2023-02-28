@@ -1,3 +1,4 @@
+# mainpage Overview
 @mainpage Overview
 
 @section intro Introduction
@@ -7,7 +8,8 @@ ST 2110 is replacement for SDI which allows for better transmission and receptio
 \image HTML streamsOverview.png "Streams Overview" width=60%
 \n
 \n
-The Media Transport Library is a solution based on DPDK (Data Plane Development Kit) for transmitting and receiving raw video. Raw video RTP (real time protocol) is based on the SMPTE ST 2110-21 standard. This solution is able to process high quality, full HD streams, without encoding. Connections with "no compression" and high speed network packets processing (utilizing DPDK) provides high quality and low latency transmission.
+The Media Transport Library is a solution based on DPDK (Data Plane Development Kit) for transmitting and receiving raw video. Raw video RTP (real time protocol) is based on the SMPTE ST 2110-21 standard. This solution is able to process high quality, full HD streams, without encoding.
+Connections with "no compression" and high speed network packets processing (utilizing DPDK) provides high quality and low latency transmission.
 \n
 \n
 \image HTML EssenceStreams.png "Essence Streams" width=70%

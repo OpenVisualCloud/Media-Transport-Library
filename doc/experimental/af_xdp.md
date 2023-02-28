@@ -2,11 +2,12 @@
 
 ## 1. Backgroud
 
-AF_XDP is an address family that is optimized for high performance packet processing inside kernel stack based on BPF and XDP. AF_XDP sockets enable the possibility for XDP program to redirect packets to a memory buffer in userspace. DPDK has built-in AF_XDP poll mode driver support. For the details pls refer to <https://www.kernel.org/doc/HTML/latest/networking/af_xdp.html> and <https://doc.dpdk.org/guides/nics/af_xdp.html>. With AF_XDP, Kahawai get the benefits with all linux network stack support, downsides is little performance gap compared to full DPDK user PMD.
+AF_XDP is an address family that is optimized for high performance packet processing inside kernel stack based on BPF and XDP. AF_XDP sockets enable the possibility for XDP program to redirect packets to a memory buffer in userspace. DPDK has built-in AF_XDP poll mode driver support. For the details pls refer to <https://www.kernel.org/doc/HTML/latest/networking/af_xdp.html> and <https://doc.dpdk.org/guides/nics/af_xdp.html>.
+With AF_XDP, Kahawai get the benefits with all linux network stack support, downsides is little performance gap compared to full DPDK user PMD.
 
 ## 2. DPDK build with AF_XDP PMD
 
-#### 2.1 Install libxdp and libbpf
+### 2.1 Install libxdp and libbpf
 
 Get lastest source code release from <https://github.com/libbpf/libbpf/releases> and <https://github.com/xdp-project/xdp-tools/releases>, and follow the guide to build and install from source. Use “pkg-config --libs libxdp” and “pkg-config --libs libbpf” to check if the package are correctly installed.
 
@@ -16,7 +17,7 @@ Check <https://github.com/DPDK/dpdk/blob/main/drivers/net/af_xdp/meson.build>.
 
 ## 3. Setup
 
-#### 3.1 Update kernel(>5.10) and NIC driver to latest version((>=1.9.11) )
+### 3.1 Update kernel(>5.10) and NIC driver to latest version((>=1.9.11) )
 
 Double check the kernel version.
 
@@ -30,7 +31,7 @@ Double check the driver version is right from dmesg.
 [22818.047860] ice: Intel(R) Ethernet Connection E800 Series Linux Driver - version 1.9.11
 ```
 
-#### 3.2 Update DDP package version(>1.3.30)
+### 3.2 Update DDP package version(>1.3.30)
 
 Double check the DDP version is right from dmesg.
 
@@ -49,7 +50,7 @@ rmmod ice
 modprobe ice
 ```
 
-#### 3.3 Assing IP and tuned settings
+### 3.3 Assing IP and tuned settings
 
 Below is the command to assign an IP in case no DHCP support in your setup
 
@@ -81,7 +82,7 @@ Refer to [afxdp config](../tests/script/afxdp_json/) for how to config the AF_XD
 
 ## 5. FAQs
 
-#### 5.1 No IP assigned
+### 5.1 No IP assigned
 
 If you see below error while running rxtxapp with AFXDP json, pls assign IP for the port.
 

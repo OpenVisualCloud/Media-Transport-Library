@@ -11,7 +11,7 @@ The dir incldue the simple sample code for how to develop application quickly ba
 [ufd_server_sample.c](ufd_server_sample.c): A udp client(tx) application based on POSIX socket compatible(file descriptor) UDP API.<br>
 [ufd_server.json](ufd_server.json): The sample configuration file for server sample.<br>
 
-#### 2.1 Run
+### 2.1 Run
 
 Customize the p_tx_ip args and the ufd_client.json/ufd_server.json as your setup
 

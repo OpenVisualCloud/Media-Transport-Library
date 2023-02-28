@@ -93,7 +93,7 @@ edit vm0
 
 ### Setup Kahawai build env, refer to build.md
 
-### PTP setup
+### PTP setup for VM
 
 1. enable ptp-kvm kernel module, reboot vm
 
@@ -101,14 +101,15 @@ edit vm0
     echo ptp_kvm > /etc/modules-load.d/ptp_kvm.conf
     ```
 
-2. change chronyd config to use PHC0:  
-edit /etc/chrony/chrony.conf, delete "pool …"  
-add a line "refclock PHC /dev/ptp0 poll 2"  
+2. change chronyd config to use PHC0:
+edit /etc/chrony/chrony.conf, delete "pool …"<br>
+add a line "refclock PHC /dev/ptp0 poll 2"
+
 3. restart chronyd  
 
-    ```
+    ```shell
     systemctl restart chronyd
-    ```  
+    ```
 
 4. check the time sync status, error should be tens of nanosenonds when ready
 
