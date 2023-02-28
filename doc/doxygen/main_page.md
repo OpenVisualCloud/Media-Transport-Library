@@ -1,6 +1,5 @@
 @mainpage Overview
 
-
 @section intro Introduction
 ST 2110 is replacement for SDI which allows for better transmission and reception of various essence streams (video, audio, ancillary) across an IP network.
 \n
@@ -28,6 +27,7 @@ RFC 826         |   Address Resolution Protocol (ARP)
 RFC 3376 and RFC 2236       |   Internet Group Management Protocol (IGMP), Version 3
 
 NOTE: The library supports transmission of the three essence streams:
+
 * Video
 * Audio
 * Ancillary data

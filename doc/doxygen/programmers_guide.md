@@ -4,11 +4,11 @@
 
 @subsection software_interactions_flow_tx_frame Transmitter frame mode
 
- lib takes resposibilty of rtp encapsulation 
+ lib takes resposibilty of rtp encapsulation
 
  Below pseudo code presenting flows from application to the library for transmitter in frame mode.
 
- you could refer app/sample/tx_video_sample.c for the whole sample 
+ you could refer app/sample/tx_video_sample.c for the whole sample
 
 ```bash
 //create device
@@ -69,6 +69,7 @@ for (i = 0; i < session_num; i++)
 //destroy device
 st_uninit(dev_handle);
 ```
+
 app thread to get the frame buf and feed data to it, you could refer tx_video_app.c in app/src folder
 
 ```bash
@@ -86,10 +87,11 @@ static void* app_tx_video_frame_thread(void* arg) {
   xxxxx
 }
 ```
+
 \n
 
 @subsection software_interactions_flow_tx_rtp Transmitter rtp mode
- 
+
  app takes resposibilty of rtp encapsulation
 
  Below pseudo code presenting flows from application to the library for transmitter in rtp mode.
@@ -158,6 +160,7 @@ st_uninit(dev_handle);
 ```
 
 app thread to feed encapsulated rtp buf, you could refer tx_video_app.c in app/src folder
+
 ```bash
 static void* app_tx_video_rtp_thread(void* arg) {
   //wait the rtp tx done notification from notify_rtp_done if there is no available mbuf in the rte ring.
@@ -174,7 +177,6 @@ static void* app_tx_video_rtp_thread(void* arg) {
 }
 ```
 
-
 \n
 
 @subsection software_interactions_flow_rx_frame Receiver frame mode
@@ -183,7 +185,7 @@ static void* app_tx_video_rtp_thread(void* arg) {
 
  Below pseudo code presenting flows from application to the library for receiver in frame mode.
 
- you could refer app/sample/rx_video_sample.c for the whole sample 
+ you could refer app/sample/rx_video_sample.c for the whole sample
 
 ```bash
 //create device
@@ -240,6 +242,7 @@ for (i = 0; i < session_num; i++)
 //destroy device
 st_uninit(dev_handle);
 ```
+
 app thread to get the frame buf, dispose it and return to lib.you could refer rx_video_app.c in app/src folder
 
 ```bash
@@ -340,4 +343,5 @@ static void* app_rx_video_rtp_thread(void* arg) {
   xxxxx
 }
 ```
+
 \n
