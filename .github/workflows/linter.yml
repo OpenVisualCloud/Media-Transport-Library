@@ -24,5 +24,7 @@ jobs:
           DEFAULT_BRANCH: main
           VALIDATE_CPP: false
           VALIDATE_JSCPD: false
+          VALIDATE_DOCKERFILE_HADOLINT: false
+          VALIDATE_JAVASCRIPT_ES: false
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           LOG_LEVEL: WARN

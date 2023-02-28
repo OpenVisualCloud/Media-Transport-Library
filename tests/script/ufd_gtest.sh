@@ -21,22 +21,22 @@ fi
 echo "P_PORT: $P_PORT, R_PORT: $R_PORT"
 
 echo "Test with dedicated queue mode"
-./build/tests/KahawaiUfdTest --p_port $P_PORT --r_port $R_PORT
+./build/tests/KahawaiUfdTest --p_port "$P_PORT" --r_port "$R_PORT"
 echo "Test OK"
 echo ""
 
 echo "Test with dedicated queue and lcore mode"
-./build/tests/KahawaiUfdTest --p_port $P_PORT --r_port $R_PORT --udp_lcore
+./build/tests/KahawaiUfdTest --p_port "$P_PORT" --r_port "$R_PORT" --udp_lcore
 echo "Test OK"
 echo ""
 
 echo "Test with shared queue mode"
-./build/tests/KahawaiUfdTest --p_port $P_PORT --r_port $R_PORT --queue_mode shared
+./build/tests/KahawaiUfdTest --p_port "$P_PORT" --r_port "$R_PORT" --queue_mode shared
 echo "Test OK"
 echo ""
 
 echo "Test with shared queue and lcore mode"
-./build/tests/KahawaiUfdTest --p_port $P_PORT --r_port $R_PORT --queue_mode shared --udp_lcore
+./build/tests/KahawaiUfdTest --p_port "$P_PORT" --r_port "$R_PORT" --queue_mode shared --udp_lcore
 echo "Test OK"
 echo ""
 echo "All done"
