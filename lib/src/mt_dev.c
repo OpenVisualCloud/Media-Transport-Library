@@ -2282,6 +2282,9 @@ int mt_dev_if_init(struct mtl_main_impl* impl) {
       inf->hdr_split_rx_queues_end =
           inf->system_rx_queues_end + p->nb_rx_hdr_split_queues;
     }
+    /* max tx/rx queues don't exceed dev limit */
+    inf->max_tx_queues = RTE_MIN(inf->max_tx_queues, dev_info->max_tx_queues);
+    inf->max_rx_queues = RTE_MIN(inf->max_rx_queues, dev_info->max_rx_queues);
 
     /* when using VF, num_queue_pairs will be set as the max of tx/rx */
     if (inf->port_type == MT_PORT_VF) {
