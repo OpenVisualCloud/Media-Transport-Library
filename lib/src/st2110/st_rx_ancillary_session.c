@@ -43,6 +43,14 @@ static inline void rx_ancillary_session_put(struct st_rx_ancillary_sessions_mgr*
   rte_spinlock_unlock(&mgr->mutex[idx]);
 }
 
+static inline uint16_t rx_ancillary_queue_id(struct st_rx_ancillary_session_impl* s,
+                                             enum mtl_session_port s_port) {
+  if (s->rss[s_port])
+    return mt_rss_queue_id(s->rss[s_port]);
+  else
+    return mt_dev_rx_queue_id(s->queue[s_port]);
+}
+
 static int rx_ancillary_session_init(struct mtl_main_impl* impl,
                                      struct st_rx_ancillary_sessions_mgr* mgr,
                                      struct st_rx_ancillary_session_impl* s, int idx) {
@@ -223,9 +231,7 @@ static int rx_ancillary_session_init_hw(struct mtl_main_impl* impl,
     }
 
     info("%s(%d), port(l:%d,p:%d), queue %d udp %d\n", __func__, idx, i, port,
-         mt_has_rss(impl, port) ? mt_rss_queue_id(s->rss[i])
-                                : mt_dev_rx_queue_id(s->queue[i]),
-         flow.dst_port);
+         rx_ancillary_queue_id(s, i), flow.dst_port);
   }
 
   return 0;
@@ -812,7 +818,7 @@ int st40_rx_get_queue_meta(st40_rx_handle handle, struct st_queue_meta* meta) {
       /* af_xdp pmd */
       meta->start_queue[i] = mt_start_queue(impl, port);
     }
-    meta->queue_id[i] = mt_dev_rx_queue_id(s->queue[i]);
+    meta->queue_id[i] = rx_ancillary_queue_id(s, i);
   }
 
   return 0;

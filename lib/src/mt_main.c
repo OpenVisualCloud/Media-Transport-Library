@@ -1076,6 +1076,17 @@ uint16_t mtl_udma_completed(mtl_udma_handle handle, const uint16_t nb_cpls) {
   return mt_dma_completed(dev, nb_cpls, NULL, NULL);
 }
 
+enum mt_rss_mode mtl_rss_mode_get(mtl_handle mt) {
+  struct mtl_main_impl* impl = mt;
+
+  if (impl->type != MT_HANDLE_MAIN) {
+    err("%s, invalid type %d\n", __func__, impl->type);
+    return MT_RSS_MODE_MAX;
+  }
+
+  return mt_get_rss(impl, MTL_PORT_P);
+}
+
 enum mtl_simd_level mtl_get_simd_level(void) {
   if (rte_cpu_get_flag_enabled(RTE_CPUFLAG_AVX512VBMI2))
     return MTL_SIMD_LEVEL_AVX512_VBMI2;

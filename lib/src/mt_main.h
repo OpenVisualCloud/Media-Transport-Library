@@ -964,8 +964,13 @@ static inline bool mt_has_tx_mono_pool(struct mtl_main_impl* impl) {
     return false;
 }
 
+static inline enum mt_rss_mode mt_get_rss(struct mtl_main_impl* impl,
+                                          enum mtl_port port) {
+  return mt_if(impl, port)->rss_mode;
+}
+
 static inline bool mt_has_rss(struct mtl_main_impl* impl, enum mtl_port port) {
-  return mt_if(impl, port)->rss_mode != MT_RSS_MODE_NONE;
+  return mt_get_rss(impl, port) != MT_RSS_MODE_NONE;
 }
 
 static inline bool mt_udp_transport(struct mtl_main_impl* impl, enum mtl_port port) {

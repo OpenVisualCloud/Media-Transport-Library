@@ -1,0 +1,30 @@
+From 03248c4bf5b3f11f7dbe8f815de0f8a7401d25d0 Mon Sep 17 00:00:00 2001
+From: Frank Du <frank.du@intel.com>
+Date: Tue, 28 Feb 2023 16:12:21 +0800
+Subject: [PATCH 7/7] net/iavf: not include ipv4_port for
+ RTE_ETH_RSS_NONFRAG_IPV4_UDP
+
+RTE_ETH_RSS_NONFRAG_IPV4_UDP hash is consist of l3 src/dst and l4 udp
+src_port and dst_port
+
+Signed-off-by: Frank Du <frank.du@intel.com>
+---
+ drivers/net/iavf/iavf_hash.c | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/drivers/net/iavf/iavf_hash.c b/drivers/net/iavf/iavf_hash.c
+index ae6fb38594..479eaf3c56 100644
+--- a/drivers/net/iavf/iavf_hash.c
++++ b/drivers/net/iavf/iavf_hash.c
+@@ -244,7 +244,7 @@ struct virtchnl_proto_hdrs inner_ipv4_tmplt = {
+ };
+ 
+ struct virtchnl_proto_hdrs inner_ipv4_udp_tmplt = {
+-	TUNNEL_LEVEL_INNER, 2, {{proto_hdr_ipv4_with_prot, proto_hdr_udp}}
++	TUNNEL_LEVEL_INNER, 2, {{proto_hdr_ipv4, proto_hdr_udp}}
+ };
+ 
+ struct virtchnl_proto_hdrs inner_ipv4_tcp_tmplt = {
+-- 
+2.34.1
+

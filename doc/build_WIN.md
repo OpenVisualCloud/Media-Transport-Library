@@ -59,28 +59,29 @@ Run the following commands using gitbash:
 Execute below command in Git bash
 
 ```bash
-patch -p1 < {path_to_repo_dir}/libraries.media.st2110.kahawai/patches/dpdk/{dpdk_dir_ver}/0001-pcapng-add-ns-timestamp-for-copy-api.patch
-patch -p1 < {path_to_repo_dir}/libraries.media.st2110.kahawai/patches/dpdk/{dpdk_dir_ver}/0002-net-af_xdp-parse-numa-node-id-from-sysfs.patch
-patch -p1 < {path_to_repo_dir}/libraries.media.st2110.kahawai/patches/dpdk/{dpdk_dir_ver}/0003-net-iavf-refine-queue-rate-limit-configure.patch
-patch -p1 < {path_to_repo_dir}/libraries.media.st2110.kahawai/patches/dpdk/{dpdk_dir_ver}/0004-net-ice-revert-PF-ICE-rate-limit-to-non-queue-group-.patch
-patch -p1 < {path_to_repo_dir}/libraries.media.st2110.kahawai/patches/dpdk/{dpdk_dir_ver}/0005-ice-set-ICE_SCHED_DFLT_BURST_SIZE-to-2048.patch
-patch -p1 < {path_to_repo_dir}/libraries.media.st2110.kahawai/patches/dpdk/{dpdk_dir_ver}/0006-Change-to-enable-PTP.patch
+patch -p1 < {path_to_repo_dir}/Media-Transport-Library/patches/dpdk/22.11/0001-pcapng-add-ns-timestamp-for-copy-api.patch
+patch -p1 < {path_to_repo_dir}/Media-Transport-Library/patches/dpdk/22.11/0002-net-af_xdp-parse-numa-node-id-from-sysfs.patch
+patch -p1 < {path_to_repo_dir}/Media-Transport-Library/patches/dpdk/22.11/0003-net-iavf-refine-queue-rate-limit-configure.patch
+patch -p1 < {path_to_repo_dir}/Media-Transport-Library/patches/dpdk/22.11/0004-net-ice-revert-PF-ICE-rate-limit-to-non-queue-group-.patch
+patch -p1 < {path_to_repo_dir}/Media-Transport-Library/patches/dpdk/22.11/0005-ice-set-ICE_SCHED_DFLT_BURST_SIZE-to-2048.patch
+patch -p1 < {path_to_repo_dir}/Media-Transport-Library/patches/dpdk/22.11/0006-Change-to-enable-PTP.patch
+patch -p1 < {path_to_repo_dir}/Media-Transport-Library/patches/dpdk/22.11/0007-net-iavf-not-include-ipv4_port-for-RTE_ETH_RSS_NONFR.patch
 ```
 
 Then apply windows platform dpdk patch
 
 ```bash
-patch -p1 < {path_to_repo_dir}/libraries.media.st2110.kahawai/patches/dpdk/{dpdk_dir_ver}/windows/0001-Add-DDP-package-load-support-in-windows.patch
-patch -p1 < {path_to_repo_dir}/libraries.media.st2110.kahawai/patches/dpdk/{dpdk_dir_ver}/windows/0002-Change-list-remove-and-add-position-to-avoid-race-co.patch
-patch -p1 < {path_to_repo_dir}/libraries.media.st2110.kahawai/patches/dpdk/{dpdk_dir_ver}/windows/0003-Mingw-compiler-do-have-same-implementation.patch
-patch -p1 < {path_to_repo_dir}/libraries.media.st2110.kahawai/patches/dpdk/{dpdk_dir_ver}/windows/0004-Mingw-do-have-pthread-implementation-change-to-adapt.patch
-patch -p1 < {path_to_repo_dir}/libraries.media.st2110.kahawai/patches/dpdk/{dpdk_dir_ver}/windows/0005-To-change-for-windows-trained-pad_interval-pass-in-v.patch
-patch -p1 < {path_to_repo_dir}/libraries.media.st2110.kahawai/patches/dpdk/{dpdk_dir_ver}/windows/0006-Add-Windows-10-May-2019-and-newer-version-1GB-huge-p.patch
-patch -p1 < {path_to_repo_dir}/libraries.media.st2110.kahawai/patches/dpdk/{dpdk_dir_ver}/windows/0007-Enable-descriptor-prefetch-for-CBDMA-version-3.4.patch
-patch -p1 < {path_to_repo_dir}/libraries.media.st2110.kahawai/patches/dpdk/{dpdk_dir_ver}/windows/0008-Windows-need-set-the-timer-resolution-to-maximum-to-.patch
-patch -p1 < {path_to_repo_dir}/libraries.media.st2110.kahawai/patches/dpdk/{dpdk_dir_ver}/windows/0009-Windows-dsa-driver-need-set-to-reset-status-first.patch
-patch -p1 < {path_to_repo_dir}/libraries.media.st2110.kahawai/patches/dpdk/{dpdk_dir_ver}/windows/0010-Windows-version-currently-no-BPF-support.patch
-patch -p1 < {path_to_repo_dir}/libraries.media.st2110.kahawai/patches/dpdk/{dpdk_dir_ver}/windows/0011-Remove-affinity-binding-for-windows-will-have-perfor.patch
+patch -p1 < {path_to_repo_dir}/Media-Transport-Library/patches/dpdk/22.11/windows/0001-Add-DDP-package-load-support-in-windows.patch
+patch -p1 < {path_to_repo_dir}/Media-Transport-Library/patches/dpdk/22.11/windows/0002-Change-list-remove-and-add-position-to-avoid-race-co.patch
+patch -p1 < {path_to_repo_dir}/Media-Transport-Library/patches/dpdk/22.11/windows/0003-Mingw-compiler-do-have-same-implementation.patch
+patch -p1 < {path_to_repo_dir}/Media-Transport-Library/patches/dpdk/22.11/windows/0004-Mingw-do-have-pthread-implementation-change-to-adapt.patch
+patch -p1 < {path_to_repo_dir}/Media-Transport-Library/patches/dpdk/22.11/windows/0005-To-change-for-windows-trained-pad_interval-pass-in-v.patch
+patch -p1 < {path_to_repo_dir}/Media-Transport-Library/patches/dpdk/22.11/windows/0006-Add-Windows-10-May-2019-and-newer-version-1GB-huge-p.patch
+patch -p1 < {path_to_repo_dir}/Media-Transport-Library/patches/dpdk/22.11/windows/0007-Enable-descriptor-prefetch-for-CBDMA-version-3.4.patch
+patch -p1 < {path_to_repo_dir}/Media-Transport-Library/patches/dpdk/22.11/windows/0008-Windows-need-set-the-timer-resolution-to-maximum-to-.patch
+patch -p1 < {path_to_repo_dir}/Media-Transport-Library/patches/dpdk/22.11/windows/0009-Windows-dsa-driver-need-set-to-reset-status-first.patch
+patch -p1 < {path_to_repo_dir}/Media-Transport-Library/patches/dpdk/22.11/windows/0010-Windows-version-currently-no-BPF-support.patch
+patch -p1 < {path_to_repo_dir}/Media-Transport-Library/patches/dpdk/22.11/windows/0011-Remove-affinity-binding-for-windows-will-have-perfor.patch
 ```
 
 ### 3.2 Build and install DPDK
@@ -88,7 +89,7 @@ patch -p1 < {path_to_repo_dir}/libraries.media.st2110.kahawai/patches/dpdk/{dpdk
 Execute the commands below in windows command prompt:
 
 ```bash
-cd  C:\path_to\dpdk-22.11
+cd  C:\path_to\dpdk
 meson build --prefix=c:\dpdk
 ninja -C build install 
 ```
@@ -242,7 +243,7 @@ C:\mingw64\x86_64-w64-mingw32\include
 
 C:\mingw64\lib
 
-## 4. Open command prompt goto libraries.media.st2110.kahawai dir run
+## 4. Open command prompt goto Media-Transport-Library dir run
 
 first set PKGCONFIG path:
 
