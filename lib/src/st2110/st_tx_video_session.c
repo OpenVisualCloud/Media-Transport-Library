@@ -677,7 +677,8 @@ static int tv_build_pkt(struct mtl_main_impl* impl, struct st_tx_video_session_i
     /* attach payload to chainbuf */
     rte_pktmbuf_attach_extbuf(pkt_chain, frame_info->addr + offset,
                               frame_info->iova + offset, left_len, &frame_info->sh_info);
-    rte_mbuf_ext_refcnt_update(&frame_info->sh_info, 1);
+    if (s->eth_has_chain[MTL_SESSION_PORT_P])
+      rte_mbuf_ext_refcnt_update(&frame_info->sh_info, 1);
   }
   pkt_chain->data_len = pkt_chain->pkt_len = left_len;
 
@@ -1202,6 +1203,9 @@ static int tv_tasklet_frame(struct mtl_main_impl* impl,
     s->stat_pkts_build++;
   }
 
+  if (!s->eth_has_chain[MTL_SESSION_PORT_P]) /* pkts_chain done used for copy */
+    rte_pktmbuf_free_bulk(pkts_chain, bulk);
+
   bool done = false;
   n = rte_ring_sp_enqueue_bulk(ring_p, (void**)&pkts[0], bulk, NULL);
   if (n == 0) {
@@ -1230,6 +1234,20 @@ static int tv_tasklet_frame(struct mtl_main_impl* impl,
     s->st20_frame_stat = ST21_TX_STAT_WAIT_FRAME;
     s->st20_pkt_idx = 0;
     rte_atomic32_inc(&s->stat_frame_cnt);
+
+    if (!s->eth_has_chain[MTL_SESSION_PORT_P]) { /* extbuf not used so callback needs to
+                                                    be manually triggered */
+      struct st_frame_trans* frame_info = &s->st20_frames[s->st20_frame_idx];
+      if (rte_atomic32_read(&frame_info->refcnt) != 0) {
+        tv_notify_frame_done(s, s->st20_frame_idx);
+        rte_atomic32_dec(&frame_info->refcnt);
+      }
+      /* clear ext frame info */
+      if (frame_info->flags & ST_FT_FLAG_EXT) {
+        frame_info->addr = NULL;
+        frame_info->iova = 0;
+      }
+    }
 
     uint64_t frame_end_time = mt_get_tsc(impl);
     if (frame_end_time > pacing->tsc_time_cursor) {
