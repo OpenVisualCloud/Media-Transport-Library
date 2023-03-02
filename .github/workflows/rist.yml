@@ -1,4 +1,4 @@
-name: OBS build
+name: rist with mtl
 
 on: [push, pull_request]
 
@@ -42,4 +42,4 @@ jobs:
     - name: Build librist with mtl
       run: |
         cd ecosystem/librist/
-        ./build_with_mtl.sh
+        ./build_librist_mtl.sh
