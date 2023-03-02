@@ -372,10 +372,6 @@ mtl_handle mtl_init(struct mtl_init_params* p) {
   int num_ports = p->num_ports;
   struct mt_kport_info kport_info;
 
-#ifdef MTL_HAS_ASAN
-  mt_asan_init();
-#endif
-
   RTE_BUILD_BUG_ON(MTL_SESSION_PORT_MAX > (int)MTL_PORT_MAX);
   RTE_BUILD_BUG_ON(sizeof(struct mt_udp_hdr) != 42);
 
@@ -416,6 +412,10 @@ mtl_handle mtl_init(struct mtl_init_params* p) {
     numa_bind(mask);
     numa_bitmask_free(mask);
   }
+#endif
+
+#ifdef MTL_HAS_ASAN
+  mt_asan_init();
 #endif
 
   impl = mt_rte_zmalloc_socket(sizeof(*impl), socket[MTL_PORT_P]);
