@@ -611,6 +611,12 @@ static void st40_rx_fps_test(enum st40_type type[], enum st_fps fps[],
     if (check_sha) {
       EXPECT_GT(test_ctx_rx[i]->check_sha_frame_cnt, 0);
     }
+    /* free all payload in buf_q */
+    while (!test_ctx_rx[i]->buf_q.empty()) {
+      void* frame = test_ctx_rx[i]->buf_q.front();
+      st_test_free(frame);
+      test_ctx_rx[i]->buf_q.pop();
+    }
     st40_tx_frame_uinit(test_ctx_tx[i]);
     delete test_ctx_tx[i];
     delete test_ctx_rx[i];

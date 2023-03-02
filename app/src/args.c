@@ -540,8 +540,10 @@ int st_app_parse_args(struct st_app_context* ctx, struct mtl_init_params* p, int
       case ST_ARG_RSS_MODE:
         if (!strcmp(optarg, "l3"))
           p->rss_mode = MT_RSS_MODE_L3;
-        else if (!strcmp(optarg, "l4"))
-          p->rss_mode = MT_RSS_MODE_L4;
+        else if (!strcmp(optarg, "l4_udp"))
+          p->rss_mode = MT_RSS_MODE_L4_UDP;
+        else if (!strcmp(optarg, "none"))
+          p->rss_mode = MT_RSS_MODE_NONE;
         else
           err("%s, unknow rss mode %s\n", __func__, optarg);
         break;

@@ -13,6 +13,14 @@ static inline double ra_ebu_pass_rate(struct st_rx_audio_ebu_result* ebu_result,
   return (double)pass * 100 / ebu_result->ebu_result_num;
 }
 
+static inline uint16_t rx_audio_queue_id(struct st_rx_audio_session_impl* s,
+                                         enum mtl_session_port s_port) {
+  if (s->rss[s_port])
+    return mt_rss_queue_id(s->rss[s_port]);
+  else
+    return mt_dev_rx_queue_id(s->queue[s_port]);
+}
+
 static void rx_audio_session_ebu_result(struct st_rx_audio_session_impl* s) {
   int idx = s->idx;
   struct st_rx_audio_ebu_info* ebu_info = &s->ebu_info;
@@ -611,9 +619,7 @@ static int rx_audio_session_init_hw(struct mtl_main_impl* impl,
     }
 
     info("%s(%d), port(l:%d,p:%d), queue %d udp %d\n", __func__, idx, i, port,
-         mt_has_rss(impl, port) ? mt_rss_queue_id(s->rss[i])
-                                : mt_dev_rx_queue_id(s->queue[i]),
-         flow.dst_port);
+         rx_audio_queue_id(s, i), flow.dst_port);
   }
 
   return 0;
@@ -1260,7 +1266,7 @@ int st30_rx_get_queue_meta(st30_rx_handle handle, struct st_queue_meta* meta) {
       /* af_xdp pmd */
       meta->start_queue[i] = mt_start_queue(impl, port);
     }
-    meta->queue_id[i] = mt_dev_rx_queue_id(s->queue[i]);
+    meta->queue_id[i] = rx_audio_queue_id(s, i);
   }
 
   return 0;

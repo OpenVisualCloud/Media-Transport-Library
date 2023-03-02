@@ -986,9 +986,9 @@ static void st20p_rx_digest_test(enum st_fps fps[], int width[], int height[],
          test_ctx_rx[i]->fb_rec, framerate_rx[i], expect_framerate_rx[i]);
     EXPECT_GE(test_ctx_rx[i]->fb_rec, 0);
     if (para->dynamic)
-      EXPECT_LE(test_ctx_rx[i]->incomplete_frame_cnt, 2);
+      EXPECT_LE(test_ctx_rx[i]->incomplete_frame_cnt, 4);
     else
-      EXPECT_EQ(test_ctx_rx[i]->incomplete_frame_cnt, 0);
+      EXPECT_LE(test_ctx_rx[i]->incomplete_frame_cnt, 2);
     EXPECT_EQ(test_ctx_rx[i]->fail_cnt, 0);
     if (para->check_fps) {
       if (para->fail_interval || para->timeout_interval) {

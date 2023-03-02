@@ -890,7 +890,7 @@ static int dev_config_port(struct mtl_main_impl* impl, enum mtl_port port) {
 
     rss_conf->rss_key = mt_rss_hash_key;
     rss_conf->rss_key_len = MT_HASH_KEY_LENGTH;
-    if (inf->rss_mode == MT_RSS_MODE_L4) {
+    if (inf->rss_mode == MT_RSS_MODE_L4_UDP) {
       rss_conf->rss_hf = RTE_ETH_RSS_NONFRAG_IPV4_UDP;
     } else if (inf->rss_mode == MT_RSS_MODE_L3) {
       rss_conf->rss_hf = RTE_ETH_RSS_IPV4;
@@ -2242,7 +2242,7 @@ int mt_dev_if_init(struct mtl_main_impl* impl) {
     inf->rss_mode = p->rss_mode;
     /* enable rss if no flow support */
     if (inf->flow_type == MT_FLOW_NONE && inf->rss_mode == MT_RSS_MODE_NONE)
-      inf->rss_mode = MT_RSS_MODE_L4;
+      inf->rss_mode = MT_RSS_MODE_L4_UDP;
 
     /* set max tx/rx queues */
     if (p->pmd[i] == MTL_PMD_DPDK_AF_XDP) {

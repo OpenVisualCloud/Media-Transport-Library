@@ -42,6 +42,11 @@ git am $dpdk_st_kahawai/patches/dpdk/22.11/0003-net-iavf-refine-queue-rate-limit
 git am $dpdk_st_kahawai/patches/dpdk/22.11/0004-net-ice-revert-PF-ICE-rate-limit-to-non-queue-group-.patch
 git am $dpdk_st_kahawai/patches/dpdk/22.11/0005-ice-set-ICE_SCHED_DFLT_BURST_SIZE-to-2048.patch
 git am $dpdk_st_kahawai/patches/dpdk/22.11/0006-Change-to-enable-PTP.patch
+git am $dpdk_st_kahawai/patches/dpdk/22.11/0007-net-iavf-not-include-ipv4_port-for-RTE_ETH_RSS_NONFR.patch
+```
+or just am all patches by one command.
+```bash
+git am $dpdk_st_kahawai/patches/dpdk/22.11/*.patch
 ```
 
 ### 2.3 Build and install DPDK library

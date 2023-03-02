@@ -261,6 +261,7 @@ For the supported parameters in the json, please refer to [JSON configuration gu
 --tasklet_sleep_us                   : debug option, set the sleep us value if tasklet decide to enter sleep state.
 --app_thread                         : debug option, run the app thread under a common os thread instead of a pinned lcore.
 --rxtx_simd_512                      : debug option, enable dpdk simd 512 path for rx/tx burst function, see --force-max-simd-bitwidth=512 in dpdk for detail.
+--rss_mode <mode>                    : debug option, manual rss mode, mode: "l4_udp", "none"
 ```
 
 ## 4. Tests

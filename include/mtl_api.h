@@ -175,12 +175,12 @@ enum mtl_pmd_type {
  * RSS mode
  */
 enum mt_rss_mode {
-  /* not using rss */
+  /** not using rss */
   MT_RSS_MODE_NONE = 0,
-  /* l3(ipv4) rss mode */
+  /** l3(ipv4) rss mode, both l3 src and dst */
   MT_RSS_MODE_L3,
-  /* l4(ipv4+port) rss mode */
-  MT_RSS_MODE_L4,
+  /** l4(ipv4) udp rss mode, l3 src and dst, and udp src port and dst port */
+  MT_RSS_MODE_L4_UDP,
   /** max value of this enum */
   MT_RSS_MODE_MAX,
 };
@@ -1040,6 +1040,16 @@ int mtl_udma_submit(mtl_udma_handle handle);
  *   must be less than or equal to the value of nb_cpls.
  */
 uint16_t mtl_udma_completed(mtl_udma_handle handle, const uint16_t nb_cpls);
+
+/**
+ * Get the rss mode.
+ *
+ * @param mt
+ *   The handle to the media transport device context.
+ * @return
+ *   - enum mt_rss_mode.
+ */
+enum mt_rss_mode mtl_rss_mode_get(mtl_handle mt);
 
 /**
  * Get SIMD level current cpu supported.

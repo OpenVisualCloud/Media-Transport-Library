@@ -65,7 +65,7 @@ static uint32_t rss_flow_hash(struct mt_rx_flow* flow, enum mt_rss_mode rss) {
 
   if (flow->sys_queue) return 0;
 
-  if (rss == MT_RSS_MODE_L4)
+  if (rss == MT_RSS_MODE_L4_UDP)
     len = RTE_THASH_V4_L4_LEN;
   else
     len = RTE_THASH_V4_L3_LEN;
@@ -87,7 +87,7 @@ struct mt_rss_entry* mt_rss_get(struct mtl_main_impl* impl, enum mtl_port port,
   }
 
   struct mt_rss_impl* rss = rss_ctx_get(impl, port);
-  uint32_t hash = rss_flow_hash(flow, mt_if(impl, port)->rss_mode);
+  uint32_t hash = rss_flow_hash(flow, mt_get_rss(impl, port));
   uint16_t q = (hash % RTE_ETH_RETA_GROUP_SIZE) % rss->max_rss_queues;
   struct mt_rss_queue* rss_queue = &rss->rss_queues[q];
   struct mt_rss_entry* entry =
@@ -202,7 +202,7 @@ int mt_rss_init(struct mtl_main_impl* impl) {
       mt_rss_uinit(impl);
       return ret;
     }
-    info("%s(%d), succ, rss mode %d\n", __func__, i, mt_if(impl, i)->rss_mode);
+    info("%s(%d), succ, rss mode %d\n", __func__, i, mt_get_rss(impl, i));
   }
 
   return 0;

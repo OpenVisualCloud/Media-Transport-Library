@@ -21,6 +21,14 @@ static inline struct mtl_main_impl* rv_get_impl(struct st_rx_video_session_impl*
   return s->parnet->parnet;
 }
 
+static inline uint16_t rv_queue_id(struct st_rx_video_session_impl* s,
+                                   enum mtl_session_port s_port) {
+  if (s->rss[s_port])
+    return mt_rss_queue_id(s->rss[s_port]);
+  else
+    return mt_dev_rx_queue_id(s->queue[s_port]);
+}
+
 static void rv_ebu_final_result(struct st_rx_video_session_impl* s) {
   int idx = s->idx;
   struct st_rx_video_ebu_result* ebu_result = &s->ebu_result;
@@ -1380,13 +1388,14 @@ static int rv_stop_pcapng(struct st_rx_video_session_impl* s) {
 }
 
 static int rv_dump_pcapng(struct mtl_main_impl* impl, struct st_rx_video_session_impl* s,
-                          struct rte_mbuf** mbuf, uint16_t rv, int s_port) {
+                          struct rte_mbuf** mbuf, uint16_t rv,
+                          enum mtl_session_port s_port) {
   struct rte_mbuf* pcapng_mbuf[rv];
   int pcapng_mbuf_cnt = 0;
   ssize_t len;
   enum mtl_port port = mt_port_logic2phy(s->port_maps, s_port);
   struct mt_interface* inf = mt_if(impl, port);
-  uint16_t queue_id = mt_dev_rx_queue_id(s->queue[s_port]);
+  uint16_t queue_id = rv_queue_id(s, s_port);
 
   for (uint16_t i = 0; i < rv; i++) {
     struct rte_mbuf* mc;
@@ -2626,9 +2635,7 @@ static int rv_init_hw(struct mtl_main_impl* impl, struct st_rx_video_session_imp
     }
     s->port_id[i] = mt_port_id(impl, port);
     info("%s(%d), port(l:%d,p:%d), queue %d udp %d\n", __func__, idx, i, port,
-         mt_has_rss(impl, port) ? mt_rss_queue_id(s->rss[i])
-                                : mt_dev_rx_queue_id(s->queue[i]),
-         flow.dst_port);
+         rv_queue_id(s, i), flow.dst_port);
   }
 
   return 0;
@@ -3768,7 +3775,7 @@ int st20_rx_get_queue_meta(st20_rx_handle handle, struct st_queue_meta* meta) {
       /* af_xdp pmd */
       meta->start_queue[i] = mt_start_queue(impl, port);
     }
-    meta->queue_id[i] = mt_dev_rx_queue_id(s->queue[i]);
+    meta->queue_id[i] = rv_queue_id(s, i);
   }
 
   return 0;
@@ -4087,7 +4094,7 @@ int st22_rx_get_queue_meta(st22_rx_handle handle, struct st_queue_meta* meta) {
       /* af_xdp pmd */
       meta->start_queue[i] = mt_start_queue(impl, port);
     }
-    meta->queue_id[i] = mt_dev_rx_queue_id(s->queue[i]);
+    meta->queue_id[i] = rv_queue_id(s, i);
   }
 
   return 0;

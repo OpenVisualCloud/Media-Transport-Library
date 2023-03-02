@@ -372,10 +372,6 @@ mtl_handle mtl_init(struct mtl_init_params* p) {
   int num_ports = p->num_ports;
   struct mt_kport_info kport_info;
 
-#ifdef MTL_HAS_ASAN
-  mt_asan_init();
-#endif
-
   RTE_BUILD_BUG_ON(MTL_SESSION_PORT_MAX > (int)MTL_PORT_MAX);
   RTE_BUILD_BUG_ON(sizeof(struct mt_udp_hdr) != 42);
 
@@ -416,6 +412,10 @@ mtl_handle mtl_init(struct mtl_init_params* p) {
     numa_bind(mask);
     numa_bitmask_free(mask);
   }
+#endif
+
+#ifdef MTL_HAS_ASAN
+  mt_asan_init();
 #endif
 
   impl = mt_rte_zmalloc_socket(sizeof(*impl), socket[MTL_PORT_P]);
@@ -1074,6 +1074,17 @@ uint16_t mtl_udma_completed(mtl_udma_handle handle, const uint16_t nb_cpls) {
   }
 
   return mt_dma_completed(dev, nb_cpls, NULL, NULL);
+}
+
+enum mt_rss_mode mtl_rss_mode_get(mtl_handle mt) {
+  struct mtl_main_impl* impl = mt;
+
+  if (impl->type != MT_HANDLE_MAIN) {
+    err("%s, invalid type %d\n", __func__, impl->type);
+    return MT_RSS_MODE_MAX;
+  }
+
+  return mt_get_rss(impl, MTL_PORT_P);
 }
 
 enum mtl_simd_level mtl_get_simd_level(void) {
