@@ -387,7 +387,7 @@ static int tx_audio_session_build_packet(struct mtl_main_impl* impl,
 
   /* chain the pkt */
   rte_pktmbuf_chain(pkt, pkt_rtp);
-  if (!s->eth_has_chain[s_port]) {
+  if (s->tx_no_chain) {
     mt_mbuf_chain_sw(pkt, pkt_rtp);
   }
 
@@ -1023,9 +1023,11 @@ static int tx_audio_session_attach(struct mtl_main_impl* impl,
       s->st30_src_port[i] = s->st30_dst_port[i];
     enum mtl_port port = mt_port_logic2phy(s->port_maps, i);
     s->eth_ipv4_cksum_offload[i] = mt_if_has_offload_ipv4_cksum(impl, port);
-    s->eth_has_chain[i] = mt_if_has_chain_buff(impl, port);
+    s->eth_has_chain[i] = mt_if_has_multi_seg(impl, port);
   }
   s->tx_mono_pool = mt_has_tx_mono_pool(impl);
+  /* manually disable chain or any port can't support chain */
+  s->tx_no_chain = mt_has_tx_no_chain(impl) || !tx_audio_session_has_chain_buf(s);
   s->st30_ipv4_packet_id = 0;
 
   s->st30_frames_cnt = ops->framebuff_cnt;

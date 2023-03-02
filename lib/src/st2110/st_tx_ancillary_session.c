@@ -432,7 +432,7 @@ static int tx_ancillary_session_build_packet(struct mtl_main_impl* impl,
 
   /* chain the pkt */
   rte_pktmbuf_chain(pkt, pkt_rtp);
-  if (!s->eth_has_chain[s_port]) {
+  if (s->tx_no_chain) {
     mt_mbuf_chain_sw(pkt, pkt_rtp);
   }
 
@@ -1074,9 +1074,11 @@ static int tx_ancillary_session_attach(struct mtl_main_impl* impl,
       s->st40_src_port[i] = s->st40_dst_port[i];
     enum mtl_port port = mt_port_logic2phy(s->port_maps, i);
     s->eth_ipv4_cksum_offload[i] = mt_if_has_offload_ipv4_cksum(impl, port);
-    s->eth_has_chain[i] = mt_if_has_chain_buff(impl, port);
+    s->eth_has_chain[i] = mt_if_has_multi_seg(impl, port);
   }
   s->tx_mono_pool = mt_has_tx_mono_pool(impl);
+  /* manually disable chain or any port can't support chain */
+  s->tx_no_chain = mt_has_tx_no_chain(impl) || !tx_ancillary_session_has_chain_buf(s);
   s->st40_ipv4_packet_id = 0;
   s->max_pkt_len = ST_PKT_MAX_ETHER_BYTES - sizeof(struct st_rfc8331_anc_hdr);
 
