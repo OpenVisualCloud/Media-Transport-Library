@@ -14,4 +14,5 @@ cd librist
 git am ../*.patch
 
 # build now
-./build_with_mtl.sh
+meson build -Duse_mtl=true
+ninja -C build
