@@ -781,15 +781,12 @@ static void st22p_rx_digest_test(enum st_fps fps[], int width[], int height[],
   }
 
   for (int i = 0; i < sessions; i++) {
-    expect_framerate_rx[i] = expect_framerate_tx[i];
     if (para->fail_interval) {
       /* loss in the tx */
-      expect_framerate_rx[i] =
-          expect_framerate_rx[i] * (para->fail_interval - 1) / para->fail_interval;
-      /* loss in the rx */
-      expect_framerate_rx[i] =
-          expect_framerate_rx[i] * (para->fail_interval - 1) / para->fail_interval;
+      expect_framerate_tx[i] =
+          expect_framerate_tx[i] * (para->fail_interval - 1) / para->fail_interval;
     }
+    expect_framerate_rx[i] = expect_framerate_tx[i];
     test_ctx_rx[i] = new tests_context();
     ASSERT_TRUE(test_ctx_tx[i] != NULL);
 
