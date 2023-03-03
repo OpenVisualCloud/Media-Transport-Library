@@ -91,6 +91,7 @@ enum st_args_cmd {
   ST_ARG_PTP_KI,
   ST_ARG_PTP_TSC,
   ST_ARG_RSS_MODE,
+  ST_ARG_RANDOM_SRC_PORT,
   ST_ARG_MAX,
 };
 
@@ -183,6 +184,7 @@ static struct option st_app_args_options[] = {
     {"ki", required_argument, 0, ST_ARG_PTP_KI},
     {"ptp_tsc", no_argument, 0, ST_ARG_PTP_TSC},
     {"rss_mode", required_argument, 0, ST_ARG_RSS_MODE},
+    {"random_src_port", no_argument, 0, ST_ARG_RANDOM_SRC_PORT},
 
     {0, 0, 0, 0}};
 
@@ -536,6 +538,9 @@ int st_app_parse_args(struct st_app_context* ctx, struct mtl_init_params* p, int
         break;
       case ST_ARG_PTP_TSC:
         p->flags |= MTL_FLAG_PTP_SOURCE_TSC;
+        break;
+      case ST_ARG_RANDOM_SRC_PORT:
+        p->flags |= MTL_FLAG_RANDOM_SRC_PORT;
         break;
       case ST_ARG_RSS_MODE:
         if (!strcmp(optarg, "l3"))

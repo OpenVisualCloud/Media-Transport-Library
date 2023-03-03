@@ -312,6 +312,8 @@ static void test_ctx_init(struct st_tests_context* ctx) {
 #endif
   memset(p, 0x0, sizeof(*p));
   p->flags = MTL_FLAG_BIND_NUMA; /* default bind to numa */
+  /* enable if we fix the rss */
+  // p->flags |= MTL_FLAG_RANDOM_SRC_PORT;
   p->log_level = MTL_LOG_LEVEL_ERROR;
   p->priv = ctx;
   p->ptp_get_time_fn = test_ptp_from_real_time;

@@ -605,3 +605,18 @@ int st_vsync_calculate(struct mtl_main_impl* impl, struct st_vsync_info* vsync) 
   dbg("%s, to_next_epochs %fms\n", __func__, (float)to_next_epochs / NS_PER_MS);
   return 0;
 }
+
+uint16_t mt_random_port(uint16_t base_port) {
+  uint16_t port = base_port;
+  uint8_t r = rand() & 0xFF;
+
+  /* todo: random generation with awareness of other sessions */
+  if (r & 0x80) {
+    r &= 0x7F;
+    port -= r;
+  } else {
+    port += r;
+  }
+
+  return port;
+}
