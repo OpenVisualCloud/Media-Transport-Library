@@ -176,8 +176,8 @@ static int tx_audio_session_init_hdr(struct mtl_main_impl* impl,
                           : ST_RARTP_PAYLOAD_TYPE_PCM_AUDIO;
   rtp->ssrc = htonl(s->idx + 0x223450);
 
-  info("%s(%d), succ, dst ip:port %d.%d.%d.%d:%d, port %d\n", __func__, idx, dip[0],
-       dip[1], dip[2], dip[3], s->st30_dst_port[s_port], s_port);
+  info("%s(%d,%d), ip %u.%u.%u.%u port %u:%u\n", __func__, idx, s_port, dip[0], dip[1],
+       dip[2], dip[3], s->st30_src_port[s_port], s->st30_dst_port[s_port]);
   info("%s(%d), mac: %02hhx:%02hhx:%02hhx:%02hhx:%02hhx:%02hhx\n", __func__, idx,
        d_addr->addr_bytes[0], d_addr->addr_bytes[1], d_addr->addr_bytes[2],
        d_addr->addr_bytes[3], d_addr->addr_bytes[4], d_addr->addr_bytes[5]);
@@ -1016,8 +1016,11 @@ static int tx_audio_session_attach(struct mtl_main_impl* impl,
   strncpy(s->ops_name, ops->name, ST_MAX_NAME_LEN - 1);
   s->ops = *ops;
   for (int i = 0; i < num_port; i++) {
-    s->st30_src_port[i] = (ops->udp_port[i]) ? (ops->udp_port[i]) : (10100 + idx);
-    s->st30_dst_port[i] = s->st30_src_port[i];
+    s->st30_dst_port[i] = (ops->udp_port[i]) ? (ops->udp_port[i]) : (10100 + idx);
+    if (mt_random_src_port(impl))
+      s->st30_src_port[i] = mt_random_port(s->st30_dst_port[i]);
+    else
+      s->st30_src_port[i] = s->st30_dst_port[i];
     enum mtl_port port = mt_port_logic2phy(s->port_maps, i);
     s->eth_ipv4_cksum_offload[i] = mt_if_has_offload_ipv4_cksum(impl, port);
     s->eth_has_chain[i] = mt_if_has_chain_buff(impl, port);

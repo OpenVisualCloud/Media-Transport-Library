@@ -286,6 +286,11 @@ enum st21_tx_pacing_way {
  * Enable background lcore mode for MTL_TRANSPORT_UDP.
  */
 #define MTL_FLAG_UDP_LCORE (MTL_BIT64(10))
+/**
+ * Flag bit in flags of struct mtl_init_params.
+ * Enable random source port for MTL_TRANSPORT_ST2110 tx.
+ */
+#define MTL_FLAG_RANDOM_SRC_PORT (MTL_BIT64(11))
 
 /**
  * Flag bit in flags of struct mtl_init_params, debug usage only.
