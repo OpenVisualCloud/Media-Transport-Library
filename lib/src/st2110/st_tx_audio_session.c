@@ -464,9 +464,6 @@ static int tx_audio_session_build_packet_chain(struct st_tx_audio_session_impl* 
 
   /* chain the pkt */
   rte_pktmbuf_chain(pkt, pkt_rtp);
-  if (s->tx_no_chain) {
-    mt_mbuf_chain_sw(pkt, pkt_rtp);
-  }
 
   udp->dgram_len = htons(pkt->pkt_len - pkt->l2_len - pkt->l3_len);
   ipv4->total_length = htons(pkt->pkt_len - pkt->l2_len);

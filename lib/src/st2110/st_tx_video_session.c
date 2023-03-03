@@ -914,9 +914,6 @@ static int tv_build_rtp_chain(struct mtl_main_impl* impl,
 
   /* chain the pkt */
   rte_pktmbuf_chain(pkt, pkt_chain);
-  if (s->tx_no_chain) {
-    mt_mbuf_chain_sw(pkt, pkt_chain);
-  }
 
   udp->dgram_len = htons(pkt->pkt_len - pkt->l2_len - pkt->l3_len);
   ipv4->total_length = htons(pkt->pkt_len - pkt->l2_len);
@@ -955,9 +952,6 @@ static int tv_build_rtp_redundant_chain(struct st_tx_video_session_impl* s,
   pkt_r->nb_segs = 2;
   /* chain mbuf */
   pkt_r->next = pkt_chain;
-  if (s->tx_no_chain) {
-    mt_mbuf_chain_sw(pkt_r, pkt_chain);
-  }
 
   rte_mbuf_refcnt_update(pkt_chain, 1);
   hdr->udp.dgram_len = htons(pkt_r->pkt_len - pkt_r->l2_len - pkt_r->l3_len);
@@ -1150,10 +1144,6 @@ static int tv_build_st22_redundant_chain(struct st_tx_video_session_impl* s,
   pkt_r->nb_segs = 2;
   /* chain mbuf */
   pkt_r->next = pkt_chain;
-
-  if (s->tx_no_chain) {
-    mt_mbuf_chain_sw(pkt_r, pkt_chain);
-  }
 
   rte_mbuf_refcnt_update(pkt_chain, 1);
   hdr->udp.dgram_len = htons(pkt_r->pkt_len - pkt_r->l2_len - pkt_r->l3_len);
