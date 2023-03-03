@@ -80,6 +80,9 @@ int mt_dev_tsc_done_action(struct mtl_main_impl* impl);
 
 uint32_t mt_dev_softrss(uint32_t* input_tuple, uint32_t input_len);
 
+uint16_t mt_dev_rss_hash_queue(struct mtl_main_impl* impl, enum mtl_port port,
+                               uint32_t hash);
+
 struct mt_rx_flow_rsp* mt_dev_create_rx_flow(struct mtl_main_impl* impl,
                                              enum mtl_port port, uint16_t q,
                                              struct mt_rx_flow* flow);

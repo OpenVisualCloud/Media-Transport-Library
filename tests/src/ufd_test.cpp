@@ -16,6 +16,7 @@ enum utest_args_cmd {
   UTEST_ARG_LOG_LEVEL,
   UTEST_ARG_QUEUE_MODE,
   UTEST_ARG_UDP_LCORE,
+  UTEST_ARG_RSS_MODE,
 };
 
 static struct option utest_args_options[] = {
@@ -24,6 +25,7 @@ static struct option utest_args_options[] = {
     {"log_level", required_argument, 0, UTEST_ARG_LOG_LEVEL},
     {"queue_mode", required_argument, 0, UTEST_ARG_QUEUE_MODE},
     {"udp_lcore", no_argument, 0, UTEST_ARG_UDP_LCORE},
+    {"rss_mode", required_argument, 0, UTEST_ARG_RSS_MODE},
     {0, 0, 0, 0}};
 
 static struct utest_ctx* g_utest_ctx;
@@ -74,6 +76,22 @@ static int utest_parse_args(struct utest_ctx* ctx, int argc, char** argv) {
         break;
       case UTEST_ARG_UDP_LCORE:
         p->flags |= MTL_FLAG_UDP_LCORE;
+        break;
+      case UTEST_ARG_RSS_MODE:
+        if (!strcmp(optarg, "l3"))
+          p->rss_mode = MT_RSS_MODE_L3;
+        else if (!strcmp(optarg, "l3_l4"))
+          p->rss_mode = MT_RSS_MODE_L3_L4;
+        else if (!strcmp(optarg, "l3_l4_dst_port_only"))
+          p->rss_mode = MT_RSS_MODE_L3_L4_DP_ONLY;
+        else if (!strcmp(optarg, "l3_da_l4_dst_port_only"))
+          p->rss_mode = MT_RSS_MODE_L3_DA_L4_DP_ONLY;
+        else if (!strcmp(optarg, "l4_dst_port_only"))
+          p->rss_mode = MT_RSS_MODE_L4_DP_ONLY;
+        else if (!strcmp(optarg, "none"))
+          p->rss_mode = MT_RSS_MODE_NONE;
+        else
+          err("%s, unknow rss mode %s\n", __func__, optarg);
         break;
       default:
         break;

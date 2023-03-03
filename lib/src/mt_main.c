@@ -1084,7 +1084,7 @@ enum mt_rss_mode mtl_rss_mode_get(mtl_handle mt) {
     return MT_RSS_MODE_MAX;
   }
 
-  return mt_get_rss(impl, MTL_PORT_P);
+  return mt_get_rss_mode(impl, MTL_PORT_P);
 }
 
 enum mtl_simd_level mtl_get_simd_level(void) {

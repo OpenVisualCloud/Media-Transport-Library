@@ -8,6 +8,19 @@
 #include "mt_log.h"
 #include "mt_util.h"
 
+static const char* rss_mode_names[MT_RSS_MODE_MAX] = {
+    "none",
+    "l3",
+    "l3_l4",
+    "l3_l4_dst_port_only",
+    "l3_da_l4_dst_port_only",
+    "l4_dst_port_only",
+};
+
+static const char* rss_mode_name(enum mt_rss_mode rss_mode) {
+  return rss_mode_names[rss_mode];
+}
+
 static inline struct mt_rss_impl* rss_ctx_get(struct mtl_main_impl* impl,
                                               enum mtl_port port) {
   return impl->rss[port];
@@ -59,24 +72,71 @@ static int rss_uinit(struct mt_rss_impl* rss) {
   return 0;
 }
 
-static uint32_t rss_flow_hash(struct mt_rx_flow* flow, enum mt_rss_mode rss) {
-  struct rte_ipv4_tuple tuple;
-  uint32_t len;
+static enum mt_rss_mode rss_flow_mode(struct mt_rx_flow* flow) {
+  if (flow->no_port_flow)
+    return MT_RSS_MODE_L3;
+  else if (flow->no_ip_flow)
+    return MT_RSS_MODE_L4_DP_ONLY;
+  else if (mt_is_multicast_ip(flow->dip_addr))
+    return MT_RSS_MODE_L3_DA_L4_DP_ONLY;
+  else
+    return MT_RSS_MODE_L3_L4_DP_ONLY;
+}
+
+static int rss_flow_check(struct mtl_main_impl* impl, enum mtl_port port,
+                          struct mt_rx_flow* flow) {
+  enum mt_rss_mode sys_rss_mode = mt_get_rss_mode(impl, port);
+  enum mt_rss_mode flow_rss_mode = rss_flow_mode(flow);
 
   if (flow->sys_queue) return 0;
 
-  if (rss == MT_RSS_MODE_L4_UDP)
-    len = RTE_THASH_V4_L4_LEN;
-  else
-    len = RTE_THASH_V4_L3_LEN;
+  if (sys_rss_mode == flow_rss_mode) return 0;
 
-  tuple.src_addr = RTE_IPV4(flow->dip_addr[0], flow->dip_addr[1], flow->dip_addr[2],
-                            flow->dip_addr[3]);
-  tuple.dst_addr = RTE_IPV4(flow->sip_addr[0], flow->sip_addr[1], flow->sip_addr[2],
-                            flow->sip_addr[3]);
-  tuple.sport = flow->dst_port;
-  tuple.dport = tuple.sport; /* temp use dst_port now */
-  return mt_dev_softrss((uint32_t*)&tuple, len);
+  err("%s(%d), flow require rss %s but sys is set to %s\n", __func__, port,
+      rss_mode_name(flow_rss_mode), rss_mode_name(sys_rss_mode));
+  return -EIO;
+}
+
+static uint32_t rss_flow_hash(struct mt_rx_flow* flow, enum mt_rss_mode rss) {
+  uint32_t tuple[4];
+  uint32_t len = 0;
+
+  if (flow->sys_queue) return 0;
+
+  uint32_t src_addr = RTE_IPV4(flow->dip_addr[0], flow->dip_addr[1], flow->dip_addr[2],
+                               flow->dip_addr[3]);
+  uint32_t dst_addr = RTE_IPV4(flow->sip_addr[0], flow->sip_addr[1], flow->sip_addr[2],
+                               flow->sip_addr[3]);
+  uint32_t port = flow->dst_port;
+
+  if (rss == MT_RSS_MODE_L3) {
+    tuple[0] = src_addr;
+    tuple[1] = dst_addr;
+    len = 2;
+  } else if (rss == MT_RSS_MODE_L3_L4) {
+    tuple[0] = src_addr;
+    tuple[1] = dst_addr;
+    /* temp use dst_port now */
+    tuple[2] = (port << 16) | port;
+    len = 3;
+  } else if (rss == MT_RSS_MODE_L3_L4_DP_ONLY) {
+    tuple[0] = src_addr;
+    tuple[1] = dst_addr;
+    tuple[2] = (port << 16) | 0;
+    len = 3;
+  } else if (rss == MT_RSS_MODE_L3_DA_L4_DP_ONLY) {
+    tuple[0] = src_addr;
+    tuple[1] = (port << 16) | 0;
+    len = 2;
+  } else if (rss == MT_RSS_MODE_L4_DP_ONLY) {
+    tuple[0] = (port << 16) | 0;
+    len = 1;
+  } else {
+    err("%s(%d), not support rss mode %d\n", __func__, port, rss);
+    return 0;
+  }
+
+  return mt_dev_softrss(tuple, len);
 }
 
 struct mt_rss_entry* mt_rss_get(struct mtl_main_impl* impl, enum mtl_port port,
@@ -85,10 +145,11 @@ struct mt_rss_entry* mt_rss_get(struct mtl_main_impl* impl, enum mtl_port port,
     err("%s(%d), rss not enabled\n", __func__, port);
     return NULL;
   }
+  if (rss_flow_check(impl, port, flow) < 0) return NULL;
 
   struct mt_rss_impl* rss = rss_ctx_get(impl, port);
-  uint32_t hash = rss_flow_hash(flow, mt_get_rss(impl, port));
-  uint16_t q = (hash % RTE_ETH_RETA_GROUP_SIZE) % rss->max_rss_queues;
+  uint32_t hash = rss_flow_hash(flow, mt_get_rss_mode(impl, port));
+  uint16_t q = mt_dev_rss_hash_queue(impl, port, hash);
   struct mt_rss_queue* rss_queue = &rss->rss_queues[q];
   struct mt_rss_entry* entry =
       mt_rte_zmalloc_socket(sizeof(*entry), mt_socket_id(impl, port));
@@ -202,7 +263,7 @@ int mt_rss_init(struct mtl_main_impl* impl) {
       mt_rss_uinit(impl);
       return ret;
     }
-    info("%s(%d), succ, rss mode %d\n", __func__, i, mt_get_rss(impl, i));
+    info("%s(%d), rss mode %s\n", __func__, i, rss_mode_name(mt_get_rss_mode(impl, i)));
   }
 
   return 0;

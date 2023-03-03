@@ -66,6 +66,8 @@ patch -p1 < {path_to_repo_dir}/Media-Transport-Library/patches/dpdk/22.11/0004-n
 patch -p1 < {path_to_repo_dir}/Media-Transport-Library/patches/dpdk/22.11/0005-ice-set-ICE_SCHED_DFLT_BURST_SIZE-to-2048.patch
 patch -p1 < {path_to_repo_dir}/Media-Transport-Library/patches/dpdk/22.11/0006-Change-to-enable-PTP.patch
 patch -p1 < {path_to_repo_dir}/Media-Transport-Library/patches/dpdk/22.11/0007-net-iavf-not-include-ipv4_port-for-RTE_ETH_RSS_NONFR.patch
+patch -p1 < {path_to_repo_dir}/Media-Transport-Library/patches/dpdk/22.11/0008-net-ice-add-dst-src-only-support-for-rss-l3-and-l4.patch
+patch -p1 < {path_to_repo_dir}/Media-Transport-Library/patches/dpdk/22.11/0009-ethdev-disable-rss-hf-refine-in-dev-configure.patch
 ```
 
 Then apply windows platform dpdk patch

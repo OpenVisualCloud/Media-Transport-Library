@@ -19,6 +19,19 @@ struct loop_para {
   bool use_poll;
 };
 
+static bool loop_dedicated_mode(struct utest_ctx* ctx) {
+  struct mtl_init_params* p = &ctx->init_params.mt_params;
+
+  if (p->flags & MTL_FLAG_SHARED_QUEUE) {
+    return false;
+  }
+  if (p->rss_mode != MT_RSS_MODE_NONE) {
+    return false;
+  }
+
+  return true;
+}
+
 static int loop_para_init(struct loop_para* para) {
   memset(para, 0x0, sizeof(*para));
   para->sessions = 1;
@@ -267,8 +280,8 @@ TEST(Loop, multi_shared_max) {
   struct utest_ctx* ctx = utest_get_ctx();
   struct loop_para para;
 
-  if (!(ctx->init_params.mt_params.flags & MTL_FLAG_SHARED_QUEUE)) {
-    err("%s, skip as it's not shared mode\n", __func__);
+  if (loop_dedicated_mode(ctx)) {
+    info("%s, skip as it's dedicated queue mode\n", __func__);
     return;
   }
 
@@ -315,8 +328,8 @@ TEST(Loop, poll_shared_max) {
   struct utest_ctx* ctx = utest_get_ctx();
   struct loop_para para;
 
-  if (!(ctx->init_params.mt_params.flags & MTL_FLAG_SHARED_QUEUE)) {
-    err("%s, skip as it's not shared mode\n", __func__);
+  if (loop_dedicated_mode(ctx)) {
+    info("%s, skip as it's dedicated queue mode\n", __func__);
     return;
   }
 
@@ -364,8 +377,8 @@ TEST(Loop, dual_multi_shared_max) {
   struct utest_ctx* ctx = utest_get_ctx();
   struct loop_para para;
 
-  if (!(ctx->init_params.mt_params.flags & MTL_FLAG_SHARED_QUEUE)) {
-    err("%s, skip as it's not shared mode\n", __func__);
+  if (loop_dedicated_mode(ctx)) {
+    info("%s, skip as it's dedicated queue mode\n", __func__);
     return;
   }
 
@@ -402,8 +415,8 @@ TEST(Loop, mcast_multi_shared_max) {
   struct utest_ctx* ctx = utest_get_ctx();
   struct loop_para para;
 
-  if (!(ctx->init_params.mt_params.flags & MTL_FLAG_SHARED_QUEUE)) {
-    err("%s, skip as it's not shared mode\n", __func__);
+  if (loop_dedicated_mode(ctx)) {
+    info("%s, skip as it's dedicated queue mode\n", __func__);
     return;
   }
 

@@ -12,7 +12,7 @@ else
   P_PORT=0000:af:01.0
 fi
 if [ -n "$2" ];  then
-  R_PORT=$1
+  R_PORT=$2
 else
   # default to latest 22.11
   R_PORT=0000:af:01.1
@@ -39,5 +39,16 @@ echo "Test with shared queue and lcore mode"
 ./build/tests/KahawaiUfdTest --p_port "$P_PORT" --r_port "$R_PORT" --queue_mode shared --udp_lcore
 echo "Test OK"
 echo ""
+
+echo "Test with rss mode"
+./build/tests/KahawaiUfdTest --p_port "$P_PORT" --r_port "$R_PORT" --queue_mode shared --rss_mode l4_dst_port_only
+echo "Test OK"
+echo ""
+
+echo "Test with rss and lcore mode"
+./build/tests/KahawaiUfdTest --p_port "$P_PORT" --r_port "$R_PORT" --queue_mode shared --udp_lcore --rss_mode l4_dst_port_only
+echo "Test OK"
+echo ""
+
 echo "All done"
 

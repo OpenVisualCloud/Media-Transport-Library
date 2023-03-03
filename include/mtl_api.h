@@ -177,10 +177,16 @@ enum mtl_pmd_type {
 enum mt_rss_mode {
   /** not using rss */
   MT_RSS_MODE_NONE = 0,
-  /** l3(ipv4) rss mode, both l3 src and dst */
+  /** hash with both l3 src and dst, not use now */
   MT_RSS_MODE_L3,
-  /** l4(ipv4) udp rss mode, l3 src and dst, and udp src port and dst port */
-  MT_RSS_MODE_L4_UDP,
+  /** hash with l3 src and dst address, l4 src port and dst port, not use now */
+  MT_RSS_MODE_L3_L4,
+  /** hash with l3 src and dst address, l4 dst port only, for st2110 unicast */
+  MT_RSS_MODE_L3_L4_DP_ONLY,
+  /** hash with l3 dst address only, l4 dst port only, for st2110 multicast */
+  MT_RSS_MODE_L3_DA_L4_DP_ONLY,
+  /** hash with l4 dst port only, for udp transport */
+  MT_RSS_MODE_L4_DP_ONLY,
   /** max value of this enum */
   MT_RSS_MODE_MAX,
 };

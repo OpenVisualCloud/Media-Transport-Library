@@ -43,6 +43,8 @@ git am $dpdk_st_kahawai/patches/dpdk/22.11/0004-net-ice-revert-PF-ICE-rate-limit
 git am $dpdk_st_kahawai/patches/dpdk/22.11/0005-ice-set-ICE_SCHED_DFLT_BURST_SIZE-to-2048.patch
 git am $dpdk_st_kahawai/patches/dpdk/22.11/0006-Change-to-enable-PTP.patch
 git am $dpdk_st_kahawai/patches/dpdk/22.11/0007-net-iavf-not-include-ipv4_port-for-RTE_ETH_RSS_NONFR.patch
+git am $dpdk_st_kahawai/patches/dpdk/22.11/0008-net-ice-add-dst-src-only-support-for-rss-l3-and-l4.patch
+git am $dpdk_st_kahawai/patches/dpdk/22.11/0009-ethdev-disable-rss-hf-refine-in-dev-configure.patch
 ```
 or just am all patches by one command.
 ```bash

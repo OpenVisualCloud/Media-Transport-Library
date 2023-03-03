@@ -32,8 +32,8 @@ echo "Test OK"
 echo ""
 
 echo "Test with st2110 RSS l4 udp"
-#./build/tests/KahawaiTest --auto_start_stop --p_port "$P_PORT" --r_port "$R_PORT" --dma_dev "$DMA_PORT" --rss_mode l4_udp --gtest_filter="Main.*:St20p.*"
-./build/tests/KahawaiTest --auto_start_stop --p_port "$P_PORT" --r_port "$R_PORT" --dma_dev "$DMA_PORT" --rss_mode l4_udp
+#./build/tests/KahawaiTest --auto_start_stop --p_port "$P_PORT" --r_port "$R_PORT" --dma_dev "$DMA_PORT" --rss_mode l4_dst_port_only --gtest_filter="Main.*:St20p.*"
+./build/tests/KahawaiTest --auto_start_stop --p_port "$P_PORT" --r_port "$R_PORT" --dma_dev "$DMA_PORT" --rss_mode l4_dst_port_only
 echo "Test OK"
 echo ""
 
