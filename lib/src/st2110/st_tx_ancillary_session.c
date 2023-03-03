@@ -312,6 +312,127 @@ static int tx_ancillary_sessions_tasklet_start(void* priv) { return 0; }
 
 static int tx_ancillary_sessions_tasklet_stop(void* priv) { return 0; }
 
+static int tx_ancillary_session_update_redundant(struct st_tx_ancillary_session_impl* s,
+                                                 struct rte_mbuf* pkt) {
+  struct mt_udp_hdr* hdr = rte_pktmbuf_mtod(pkt, struct mt_udp_hdr*);
+  struct rte_ipv4_hdr* ipv4 = &hdr->ipv4;
+  struct rte_udp_hdr* udp = &hdr->udp;
+
+  /* update the hdr: eth, ip, udp */
+  rte_memcpy(&hdr->eth, &s->hdr[MTL_SESSION_PORT_R].eth, sizeof(hdr->eth));
+  ipv4->src_addr = s->hdr[MTL_SESSION_PORT_R].ipv4.src_addr;
+  ipv4->dst_addr = s->hdr[MTL_SESSION_PORT_R].ipv4.dst_addr;
+  udp->src_port = s->hdr[MTL_SESSION_PORT_R].udp.src_port;
+  udp->dst_port = s->hdr[MTL_SESSION_PORT_R].udp.dst_port;
+
+  if (!s->eth_ipv4_cksum_offload[MTL_SESSION_PORT_R]) {
+    /* generate cksum if no offload */
+    ipv4->hdr_checksum = rte_ipv4_cksum(ipv4);
+  }
+
+  return 0;
+}
+
+static int tx_ancillary_session_build_packet(struct st_tx_ancillary_session_impl* s,
+                                             struct rte_mbuf* pkt) {
+  struct mt_udp_hdr* hdr;
+  struct rte_ipv4_hdr* ipv4;
+  struct rte_udp_hdr* udp;
+  struct st40_rfc8331_rtp_hdr* rtp;
+
+  hdr = rte_pktmbuf_mtod(pkt, struct mt_udp_hdr*);
+  ipv4 = &hdr->ipv4;
+  udp = &hdr->udp;
+  rtp = (struct st40_rfc8331_rtp_hdr*)&udp[1];
+
+  /* copy the hdr: eth, ip, udp */
+  rte_memcpy(&hdr->eth, &s->hdr[MTL_SESSION_PORT_P].eth, sizeof(hdr->eth));
+  rte_memcpy(ipv4, &s->hdr[MTL_SESSION_PORT_P].ipv4, sizeof(hdr->ipv4));
+  rte_memcpy(udp, &s->hdr[MTL_SESSION_PORT_P].udp, sizeof(hdr->udp));
+
+  /* update ipv4 hdr */
+  ipv4->packet_id = htons(s->st40_ipv4_packet_id);
+  s->st40_ipv4_packet_id++;
+
+  /* update mbuf */
+  mt_mbuf_init_ipv4(pkt);
+  pkt->data_len = sizeof(struct rte_ether_hdr) + sizeof(struct rte_ipv4_hdr) +
+                  sizeof(struct rte_udp_hdr);
+
+  rte_memcpy(rtp, &s->hdr[MTL_SESSION_PORT_P].rtp, sizeof(*rtp));
+
+  /* update rtp */
+  rtp->base.seq_number = htons(s->st40_seq_id);
+  rtp->seq_number_ext = htons(s->st40_ext_seq_id);
+  if (s->st40_seq_id == 0xFFFF) s->st40_ext_seq_id++;
+  s->st40_seq_id++;
+  rtp->base.tmstamp = htonl(s->pacing.rtp_time_stamp);
+
+  /* Set place for payload just behind rtp header */
+  uint8_t* payload = (uint8_t*)&rtp[1];
+  struct st_frame_trans* frame_info = &s->st40_frames[s->st40_frame_idx];
+  uint32_t offset = s->st40_pkt_idx * s->max_pkt_len;
+  void* src_addr = frame_info->addr + offset;
+  struct st40_frame* src = src_addr;
+  int anc_count = src->meta_num;
+  int total_udw = 0;
+  int idx = 0;
+  for (idx = s->st40_pkt_idx; idx < anc_count; idx++) {
+    uint16_t udw_size = src->meta[idx].udw_size;
+    total_udw += udw_size;
+    if ((total_udw * 10 / 8) > s->max_pkt_len) break;
+    struct st40_rfc8331_payload_hdr* pktBuff =
+        (struct st40_rfc8331_payload_hdr*)(payload);
+    pktBuff->first_hdr_chunk.c = src->meta[idx].c;
+    pktBuff->first_hdr_chunk.line_number = src->meta[idx].line_number;
+    pktBuff->first_hdr_chunk.horizontal_offset = src->meta[idx].hori_offset;
+    pktBuff->first_hdr_chunk.s = src->meta[idx].s;
+    pktBuff->first_hdr_chunk.stream_num = src->meta[idx].stream_num;
+    pktBuff->second_hdr_chunk.did = st40_add_parity_bits(src->meta[idx].did);
+    pktBuff->second_hdr_chunk.sdid = st40_add_parity_bits(src->meta[idx].sdid);
+    pktBuff->second_hdr_chunk.data_count = st40_add_parity_bits(udw_size);
+
+    pktBuff->swaped_first_hdr_chunk = htonl(pktBuff->swaped_first_hdr_chunk);
+    pktBuff->swaped_second_hdr_chunk = htonl(pktBuff->swaped_second_hdr_chunk);
+    int i = 0;
+    int offset = src->meta[idx].udw_offset;
+    for (; i < udw_size; i++) {
+      st40_set_udw(i + 3, st40_add_parity_bits(src->data[offset++]),
+                   (uint8_t*)&pktBuff->second_hdr_chunk);
+    }
+    uint16_t checksum = 0;
+    checksum = st40_calc_checksum(3 + udw_size, (uint8_t*)&pktBuff->second_hdr_chunk);
+    st40_set_udw(i + 3, checksum, (uint8_t*)&pktBuff->second_hdr_chunk);
+
+    uint16_t total_size =
+        ((3 + udw_size + 1) * 10) / 8;  // Calculate size of the
+                                        // 10-bit words: DID, SDID, DATA_COUNT
+                                        // + size of buffer with data + checksum
+    total_size = (4 - total_size % 4) + total_size;  // Calculate word align to the 32-bit
+                                                     // word of ANC data packet
+    uint16_t size_to_send =
+        sizeof(struct st40_rfc8331_payload_hdr) - 4 + total_size;  // Full size of one ANC
+    payload = payload + size_to_send;
+  }
+  int payload_size = payload - (uint8_t*)&rtp[1];
+  pkt->data_len += payload_size + sizeof(struct st40_rfc8331_rtp_hdr);
+  pkt->pkt_len = pkt->data_len;
+  rtp->length = htons(payload_size);
+  rtp->anc_count = idx - s->st40_pkt_idx;
+  rtp->f = 0b00;
+  if (idx == anc_count) rtp->base.marker = 1;
+
+  udp->dgram_len = htons(pkt->pkt_len - pkt->l2_len - pkt->l3_len);
+  ipv4->total_length = htons(pkt->pkt_len - pkt->l2_len);
+
+  if (!s->eth_ipv4_cksum_offload[MTL_SESSION_PORT_P]) {
+    /* generate cksum if no offload */
+    ipv4->hdr_checksum = rte_ipv4_cksum(ipv4);
+  }
+
+  return idx;
+}
+
 static int tx_ancillary_session_build_rtp_packet(struct st_tx_ancillary_session_impl* s,
                                                  struct rte_mbuf* pkt, int anc_idx) {
   struct st40_rfc8331_rtp_hdr* rtp;
@@ -382,11 +503,11 @@ static int tx_ancillary_session_build_rtp_packet(struct st_tx_ancillary_session_
   return idx;
 }
 
-static int tx_ancillary_session_build_packet(struct mtl_main_impl* impl,
-                                             struct st_tx_ancillary_session_impl* s,
-                                             struct rte_mbuf* pkt,
-                                             struct rte_mbuf* pkt_rtp,
-                                             enum mtl_session_port s_port) {
+static int tx_ancillary_session_build_packet_chain(struct mtl_main_impl* impl,
+                                                   struct st_tx_ancillary_session_impl* s,
+                                                   struct rte_mbuf* pkt,
+                                                   struct rte_mbuf* pkt_rtp,
+                                                   enum mtl_session_port s_port) {
   struct mt_udp_hdr* hdr;
   struct rte_ipv4_hdr* ipv4;
   struct rte_udp_hdr* udp;
@@ -432,9 +553,6 @@ static int tx_ancillary_session_build_packet(struct mtl_main_impl* impl,
 
   /* chain the pkt */
   rte_pktmbuf_chain(pkt, pkt_rtp);
-  if (s->tx_no_chain) {
-    mt_mbuf_chain_sw(pkt, pkt_rtp);
-  }
 
   udp->dgram_len = htons(pkt->pkt_len - pkt->l2_len - pkt->l3_len);
   ipv4->total_length = htons(pkt->pkt_len - pkt->l2_len);
@@ -573,37 +691,54 @@ static int tx_ancillary_session_tasklet_frame(struct mtl_main_impl* impl,
 
   struct rte_mbuf* pkt = NULL;
   struct rte_mbuf* pkt_r = NULL;
-  struct rte_mbuf* pkt_rtp = NULL;
 
-  pkt_rtp = rte_pktmbuf_alloc(chain_pool);
-  if (!pkt_rtp) {
-    err("%s(%d), pkt_rtp alloc fail\n", __func__, idx);
-    s->stat_build_ret_code = -STI_FRAME_PKT_ALLOC_FAIL;
-    return MT_TASKLET_ALL_DONE;
-  }
   pkt = rte_pktmbuf_alloc(hdr_pool_p);
   if (!pkt) {
     err("%s(%d), rte_pktmbuf_alloc fail\n", __func__, idx);
     s->stat_build_ret_code = -STI_FRAME_PKT_ALLOC_FAIL;
-    rte_pktmbuf_free(pkt_rtp);
     return MT_TASKLET_ALL_DONE;
   }
-  if (send_r) {
-    pkt_r = rte_pktmbuf_alloc(hdr_pool_r);
-    if (!pkt_r) {
-      err("%s(%d), rte_pktmbuf_alloc fail\n", __func__, idx);
-      s->stat_build_ret_code = -STI_FRAME_PKT_ALLOC_FAIL;
+
+  if (!s->tx_no_chain) {
+    struct rte_mbuf* pkt_rtp = rte_pktmbuf_alloc(chain_pool);
+    if (!pkt_rtp) {
+      err("%s(%d), pkt_rtp alloc fail\n", __func__, idx);
       rte_pktmbuf_free(pkt);
-      rte_pktmbuf_free(pkt_rtp);
+      s->stat_build_ret_code = -STI_FRAME_PKT_ALLOC_FAIL;
       return MT_TASKLET_ALL_DONE;
     }
+    tx_ancillary_session_build_rtp_packet(s, pkt_rtp, s->st40_pkt_idx);
+    tx_ancillary_session_build_packet_chain(impl, s, pkt, pkt_rtp, MTL_SESSION_PORT_P);
+
+    if (send_r) {
+      pkt_r = rte_pktmbuf_alloc(hdr_pool_r);
+      if (!pkt_r) {
+        err("%s(%d), rte_pktmbuf_alloc fail\n", __func__, idx);
+        s->stat_build_ret_code = -STI_FRAME_PKT_ALLOC_FAIL;
+        rte_pktmbuf_free(pkt);
+        rte_pktmbuf_free(pkt_rtp);
+        return MT_TASKLET_ALL_DONE;
+      }
+      tx_ancillary_session_build_packet_chain(impl, s, pkt_r, pkt_rtp,
+                                              MTL_SESSION_PORT_R);
+    }
+  } else {
+    tx_ancillary_session_build_packet(s, pkt);
+    if (send_r) {
+      pkt_r = rte_pktmbuf_copy(pkt, hdr_pool_r, 0, UINT32_MAX);
+      if (!pkt_r) {
+        err("%s(%d), rte_pktmbuf_copy redundant fail\n", __func__, idx);
+        rte_pktmbuf_free(pkt);
+        s->stat_build_ret_code = -STI_FRAME_PKT_ALLOC_FAIL;
+        return MT_TASKLET_ALL_DONE;
+      }
+      tx_ancillary_session_update_redundant(s, pkt_r);
+    }
   }
-  tx_ancillary_session_build_rtp_packet(s, pkt_rtp, s->st40_pkt_idx);
-  tx_ancillary_session_build_packet(impl, s, pkt, pkt_rtp, MTL_SESSION_PORT_P);
+
   st_tx_mbuf_set_idx(pkt, s->st40_pkt_idx);
   st_tx_mbuf_set_tsc(pkt, pacing->tsc_time_cursor);
   if (send_r) {
-    tx_ancillary_session_build_packet(impl, s, pkt_r, pkt_rtp, MTL_SESSION_PORT_R);
     st_tx_mbuf_set_idx(pkt_r, s->st40_pkt_idx);
     st_tx_mbuf_set_tsc(pkt_r, pacing->tsc_time_cursor);
   }
@@ -736,12 +871,12 @@ static int tx_ancillary_session_tasklet_rtp(struct mtl_main_impl* impl,
     }
   }
 
-  tx_ancillary_session_build_packet(impl, s, pkt, pkt_rtp, MTL_SESSION_PORT_P);
+  tx_ancillary_session_build_packet_chain(impl, s, pkt, pkt_rtp, MTL_SESSION_PORT_P);
   st_tx_mbuf_set_idx(pkt, s->st40_pkt_idx);
   st_tx_mbuf_set_tsc(pkt, pacing->tsc_time_cursor);
 
   if (send_r) {
-    tx_ancillary_session_build_packet(impl, s, pkt_r, pkt_rtp, MTL_SESSION_PORT_R);
+    tx_ancillary_session_build_packet_chain(impl, s, pkt_r, pkt_rtp, MTL_SESSION_PORT_R);
     st_tx_mbuf_set_idx(pkt_r, s->st40_pkt_idx);
     st_tx_mbuf_set_tsc(pkt_r, pacing->tsc_time_cursor);
   }
