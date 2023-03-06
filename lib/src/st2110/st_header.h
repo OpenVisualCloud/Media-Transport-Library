@@ -112,10 +112,12 @@ struct st_rx_muf_priv_data {
 struct st_frame_trans {
   /* todo: use struct st_frame as base */
   int idx;
-  void* addr;            /* virtual address */
-  rte_iova_t iova;       /* iova for hw */
-  rte_atomic32_t refcnt; /* 0 means it's free */
-  void* priv;            /* private data for lib */
+  void* addr;              /* virtual address */
+  rte_iova_t iova;         /* iova for hw */
+  rte_iova_t* iova_table;  /* iova table for hw */
+  uint16_t iova_table_len; /* iova table len for hw */
+  rte_atomic32_t refcnt;   /* 0 means it's free */
+  void* priv;              /* private data for lib */
 
   uint32_t flags;                          /* ST_FT_FLAG_* */
   struct rte_mbuf_ext_shared_info sh_info; /* for st20 tx ext shared */
