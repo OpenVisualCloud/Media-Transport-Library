@@ -118,6 +118,7 @@ static int tv_frame_create_iova_table(struct st_tx_video_session_impl* s,
     /* touch the page before getting its IOVA */
     *(volatile char*)addr = 0;
     iovas[i] = rte_mem_virt2iova(addr);
+    info("%s(%d), va: %p, iova: %" PRIu64 "\n", __func__, s->idx, addr, iovas[i]);
   }
   frame_info->iova_table = iovas;
   frame_info->iova_table_len = num_pages;
