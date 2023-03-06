@@ -964,6 +964,13 @@ static inline bool mt_has_tx_mono_pool(struct mtl_main_impl* impl) {
     return false;
 }
 
+static inline bool mt_has_tx_no_chain(struct mtl_main_impl* impl) {
+  if (mt_get_user_params(impl)->flags & MTL_FLAG_TX_NO_CHAIN)
+    return true;
+  else
+    return false;
+}
+
 static inline enum mt_rss_mode mt_get_rss(struct mtl_main_impl* impl,
                                           enum mtl_port port) {
   return mt_if(impl, port)->rss_mode;
@@ -1051,7 +1058,7 @@ static inline bool mt_if_has_offload_ipv4_cksum(struct mtl_main_impl* impl,
     return false;
 }
 
-static inline bool mt_if_has_chain_buff(struct mtl_main_impl* impl, enum mtl_port port) {
+static inline bool mt_if_has_multi_seg(struct mtl_main_impl* impl, enum mtl_port port) {
   if (mt_if(impl, port)->feature & MT_IF_FEATURE_TX_MULTI_SEGS)
     return true;
   else

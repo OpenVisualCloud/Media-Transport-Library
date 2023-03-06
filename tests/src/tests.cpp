@@ -40,6 +40,7 @@ enum test_args_cmd {
   TEST_ARG_RXTX_SIMD_512,
   TEST_ARG_PACING_WAY,
   TEST_ARG_RSS_MODE,
+  TEST_ARG_TX_NO_CHAIN,
 };
 
 static struct option test_args_options[] = {
@@ -72,6 +73,7 @@ static struct option test_args_options[] = {
     {"rxtx_simd_512", no_argument, 0, TEST_ARG_RXTX_SIMD_512},
     {"pacing_way", required_argument, 0, TEST_ARG_PACING_WAY},
     {"rss_mode", required_argument, 0, TEST_ARG_RSS_MODE},
+    {"tx_no_chain", no_argument, 0, TEST_ARG_TX_NO_CHAIN},
 
     {0, 0, 0, 0}};
 
@@ -235,6 +237,9 @@ static int test_parse_args(struct st_tests_context* ctx, struct mtl_init_params*
           p->rss_mode = MT_RSS_MODE_NONE;
         else
           err("%s, unknow rss mode %s\n", __func__, optarg);
+        break;
+      case TEST_ARG_TX_NO_CHAIN:
+        p->flags |= MTL_FLAG_TX_NO_CHAIN;
         break;
       default:
         break;

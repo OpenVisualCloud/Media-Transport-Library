@@ -348,6 +348,12 @@ enum st21_tx_pacing_way {
  * Force to get ptp time from tsc source.
  */
 #define MTL_FLAG_PTP_SOURCE_TSC (MTL_BIT64(29))
+/**
+ * Flag bit in flags of struct mtl_init_params, debug usage only.
+ * Disable TX chain mbuf, use same mbuf for header and payload.
+ * Will do memcpy from framebuffer to packet payload.
+ */
+#define MTL_FLAG_TX_NO_CHAIN (MTL_BIT64(30))
 
 /**
  * The structure describing how to init af_xdp interface.
