@@ -796,10 +796,15 @@ static int tv_build_st20_chain(struct st_tx_video_session_impl* s, struct rte_mb
     mtl_memcpy(payload, frame_info->addr + offset, line1_length);
     mtl_memcpy(payload + line1_length,
                frame_info->addr + s->st20_linesize * (line1_number + 1), line2_length);
+  } else if (!mt_virt_2_iova_continuous(frame_info->addr + offset,
+                                        frame_info->addr + offset + left_len)) {
+    void* payload = rte_pktmbuf_mtod(pkt_chain, void*);
+    mtl_memcpy(payload, frame_info->addr + offset, left_len);
   } else {
     /* attach payload to chainbuf */
     rte_pktmbuf_attach_extbuf(pkt_chain, frame_info->addr + offset,
-                              frame_info->iova + offset, left_len, &frame_info->sh_info);
+                              rte_mem_virt2iova(frame_info->addr + offset), left_len,
+                              &frame_info->sh_info);
     rte_mbuf_ext_refcnt_update(&frame_info->sh_info, 1);
   }
   pkt_chain->data_len = pkt_chain->pkt_len = left_len;
@@ -2027,7 +2032,8 @@ static int tv_mempool_init(struct mtl_main_impl* impl,
       hdr_room_size += sizeof(struct st20_rfc4175_extra_rtp_hdr);
     /* attach extbuf used, only placeholder mbuf */
     chain_room_size = 0;
-    if (s->st20_linesize > s->st20_bytes_in_line) { /* lines have padding */
+    if (s->st20_linesize > s->st20_bytes_in_line ||
+        1 == rte_vfio_noiommu_is_enabled()) {    /* lines have padding */
       if (s->ops.packing != ST20_PACKING_GPM_SL) /* and there is packet acrossing lines */
         /* since only part of packets have cross line payload, do we need all mbuf to
          * have data room size? */

@@ -169,4 +169,8 @@ uint16_t mt_random_port(uint16_t base_port);
 
 static inline const char* mt_msg_safe(const char* msg) { return msg ? msg : "null"; }
 
+static inline bool mt_virt_2_iova_continuous(void* start, void* end) {
+  return (end - start) == (rte_mem_virt2iova(end) - rte_mem_virt2iova(start));
+}
+
 #endif
