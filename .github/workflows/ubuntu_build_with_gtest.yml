@@ -108,11 +108,11 @@ jobs:
 
       - name: Run shared ufd test case with lcore
         run: |
-          sudo ./build/tests/KahawaiUfdTest --p_port ${{  env.TEST_PORT_P  }} --r_port ${{  env.TEST_PORT_R  }} --queue_mode shared -udp_lcore
+          sudo ./build/tests/KahawaiUfdTest --p_port ${{  env.TEST_PORT_P  }} --r_port ${{  env.TEST_PORT_R  }} --queue_mode shared --udp_lcore
 
       - name: Run ufd test case with rss
         run: |
-          sudo ./build/tests/KahawaiUfdTest --p_port ${{  env.TEST_PORT_P  }} --r_port ${{  env.TEST_PORT_R  }} --queue_mode shared -udp_lcore --rss_mode l4_dst_port_only
+          sudo ./build/tests/KahawaiUfdTest --p_port ${{  env.TEST_PORT_P  }} --r_port ${{  env.TEST_PORT_R  }} --queue_mode shared --rss_mode l4_dst_port_only
 
       - name: Run st2110 test case
         run: |

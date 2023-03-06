@@ -271,20 +271,25 @@ static void test_random_ip(struct st_tests_context* ctx) {
   r_ip[2] = p_ip[2];
   r_ip[3] = p_ip[3] + 1;
 
-  p_ip = ctx->mcast_ip_addr[MTL_PORT_P];
-  r_ip = ctx->mcast_ip_addr[MTL_PORT_R];
   /* MT_RSS_MODE_L3_L4_DP_ONLY not support mcast */
-  if (p->rss_mode == MT_RSS_MODE_L3_L4_DP_ONLY)
-    p_ip[0] = 198;
-  else
+  if (p->rss_mode == MT_RSS_MODE_L3_L4_DP_ONLY) {
+    memcpy(ctx->mcast_ip_addr[MTL_PORT_P], mtl_r_sip_addr(p),
+           sizeof(ctx->mcast_ip_addr[MTL_PORT_P]));
+    memcpy(ctx->mcast_ip_addr[MTL_PORT_R], mtl_p_sip_addr(p),
+           sizeof(ctx->mcast_ip_addr[MTL_PORT_R]));
+  } else {
+    p_ip = ctx->mcast_ip_addr[MTL_PORT_P];
+    r_ip = ctx->mcast_ip_addr[MTL_PORT_R];
+
     p_ip[0] = 239;
-  p_ip[1] = rand() % 0xFF;
-  p_ip[2] = rand() % 0xFF;
-  p_ip[3] = rand() % 0xFF;
-  r_ip[0] = p_ip[0];
-  r_ip[1] = p_ip[1];
-  r_ip[2] = p_ip[2];
-  r_ip[3] = p_ip[3] + 1;
+    p_ip[1] = rand() % 0xFF;
+    p_ip[2] = rand() % 0xFF;
+    p_ip[3] = rand() % 0xFF;
+    r_ip[0] = p_ip[0];
+    r_ip[1] = p_ip[1];
+    r_ip[2] = p_ip[2];
+    r_ip[3] = p_ip[3] + 1;
+  }
 }
 
 static uint64_t test_ptp_from_real_time(void* priv) {

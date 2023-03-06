@@ -12,7 +12,7 @@ else
   P_PORT=0000:af:01.0
 fi
 if [ -n "$2" ];  then
-  R_PORT=$1
+  R_PORT=$2
 else
   # default
   R_PORT=0000:af:01.1
@@ -32,8 +32,8 @@ echo "Test OK"
 echo ""
 
 echo "Test with st2110 RSS l4 udp"
-#./build/tests/KahawaiTest --auto_start_stop --p_port "$P_PORT" --r_port "$R_PORT" --dma_dev "$DMA_PORT" --rss_mode l4_dst_port_only --gtest_filter="Main.*:St20p.*"
-./build/tests/KahawaiTest --auto_start_stop --p_port "$P_PORT" --r_port "$R_PORT" --dma_dev "$DMA_PORT" --rss_mode l4_dst_port_only
+./build/tests/KahawaiTest --auto_start_stop --p_port "$P_PORT" --r_port "$R_PORT" --dma_dev "$DMA_PORT" --rss_mode l3_l4_dst_port_only --gtest_filter="Main.*:St20p.*"
+#./build/tests/KahawaiTest --auto_start_stop --p_port "$P_PORT" --r_port "$R_PORT" --dma_dev "$DMA_PORT" --rss_mode l3_l4_dst_port_only
 echo "Test OK"
 echo ""
 
