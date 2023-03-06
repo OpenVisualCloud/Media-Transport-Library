@@ -823,6 +823,7 @@ void mt_ptp_stat(struct mtl_main_impl* impl) {
 
   for (int i = 0; i < num_ports; i++) {
     ptp = mt_get_ptp(impl, i);
+    if (!ptp) continue;
 
     ns = mt_get_ptp_time(impl, i);
     mt_ns_to_timespec(ns, &spec);
