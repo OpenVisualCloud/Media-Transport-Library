@@ -79,6 +79,15 @@ static void tv_frame_free_cb(void* addr, void* opaque) {
   dbg("%s(%d), succ frame_idx %d\n", __func__, s_idx, frame_idx);
 }
 
+static bool tv_frame_payload_cross_page(struct st_tx_video_session_impl* s, size_t offset,
+                                        size_t len) {
+  size_t back_offset_start = s->st20_fb_size - offset;
+  uint16_t page_idx_start = back_offset_start / RTE_PGSIZE_2M;
+  size_t back_offset_end = s->st20_fb_size + len - offset;
+  uint16_t page_idx_end = back_offset_end / RTE_PGSIZE_2M;
+  return page_idx_end != page_idx_start;
+}
+
 static rte_iova_t tv_frame_get_offset_iova(struct st_tx_video_session_impl* s,
                                            struct st_frame_trans* frame_info,
                                            size_t offset) {
@@ -92,14 +101,14 @@ static rte_iova_t tv_frame_get_offset_iova(struct st_tx_video_session_impl* s,
     return frame_info->iova_table[page_idx] + page_offset;
   }
 
-  err("%s(%d), get iova fail\n", __func__, frame_info->idx);
+  err("%s(%d,%d), get iova fail\n", __func__, s->idx, frame_info->idx);
   return MTL_BAD_IOVA;
 }
 
 static int tv_frame_create_iova_table(struct st_tx_video_session_impl* s,
                                       struct st_frame_trans* frame_info) {
   if (rte_eal_iova_mode() != RTE_IOVA_PA) {
-    dbg("%s(%d), no need to create IOVA table\n", __func__, s->idx);
+    dbg("%s(%d,%d), no need to create IOVA table\n", __func__, s->idx, frame_info->idx);
     return 0;
   }
 
@@ -117,13 +126,14 @@ static int tv_frame_create_iova_table(struct st_tx_video_session_impl* s,
 
   /* get IOVA of each page */
   for (uint16_t i = 0; i < num_pages; i++) {
-    size_t back_offset = RTE_PGSIZE_2M * (i+1);
+    size_t back_offset = RTE_PGSIZE_2M * (i + 1);
     void* addr = RTE_PTR_SUB(after_end_addr, back_offset);
 
     /* touch the page before getting its IOVA */
     *(volatile char*)addr = 0;
     iovas[i] = rte_mem_virt2iova(addr);
-    info("%s(%d), va: %p, iova: 0x%" PRIx64 "\n", __func__, s->idx, addr, iovas[i]);
+    info("%s(%d,%d), va: %p, iova(pa): 0x%" PRIx64 "\n", __func__, s->idx,
+         frame_info->idx, addr, iovas[i]);
   }
   frame_info->iova_table = iovas;
   frame_info->iova_table_len = num_pages;
@@ -848,6 +858,10 @@ static int tv_build_st20_chain(struct st_tx_video_session_impl* s, struct rte_mb
     mtl_memcpy(payload, frame_info->addr + offset, line1_length);
     mtl_memcpy(payload + line1_length,
                frame_info->addr + s->st20_linesize * (line1_number + 1), line2_length);
+  } else if (rte_eal_iova_mode() == RTE_IOVA_PA &&
+             tv_frame_payload_cross_page(s, offset, left_len)) {
+    void* payload = rte_pktmbuf_mtod(pkt_chain, void*);
+    mtl_memcpy(payload, frame_info->addr + offset, left_len);
   } else {
     /* attach payload to chainbuf */
     rte_pktmbuf_attach_extbuf(pkt_chain, frame_info->addr + offset,
@@ -2081,12 +2095,14 @@ static int tv_mempool_init(struct mtl_main_impl* impl,
       hdr_room_size += sizeof(struct st20_rfc4175_extra_rtp_hdr);
     /* attach extbuf used, only placeholder mbuf */
     chain_room_size = 0;
-    if (s->st20_linesize > s->st20_bytes_in_line ||
-        1 == rte_vfio_noiommu_is_enabled()) {    /* lines have padding */
-      if (s->ops.packing != ST20_PACKING_GPM_SL) /* and there is packet acrossing lines */
-        /* since only part of packets have cross line payload, do we need all mbuf to
-         * have data room size? */
-        chain_room_size = s->st20_pkt_len;
+    if ((s->st20_linesize > s->st20_bytes_in_line &&
+         s->ops.packing != ST20_PACKING_GPM_SL) ||
+        rte_eal_iova_mode() == RTE_IOVA_PA) { /* lines have padding */
+                                              /* and there is packet acrossing lines */
+                                              /* or in IOVA:PA mode*/
+      /* since only part of packets have cross line(or page) payload, do we need all mbuf
+       * to have data room size? */
+      chain_room_size = s->st20_pkt_len;
     }
   }
 
