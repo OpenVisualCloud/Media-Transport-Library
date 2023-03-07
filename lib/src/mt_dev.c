@@ -925,8 +925,7 @@ static int dev_config_port(struct mtl_main_impl* impl, enum mtl_port port) {
       rss_conf->rss_hf = RTE_ETH_RSS_NONFRAG_IPV4_UDP | RTE_ETH_RSS_L4_DST_ONLY |
                          RTE_ETH_RSS_L3_DST_ONLY;
     } else if (inf->rss_mode == MT_RSS_MODE_L4_DP_ONLY) {
-      rss_conf->rss_hf = RTE_ETH_RSS_NONFRAG_IPV4_UDP | RTE_ETH_RSS_L4_DST_ONLY |
-                         RTE_ETH_RSS_L3_DST_ONLY | RTE_ETH_RSS_L3_SRC_ONLY;
+      rss_conf->rss_hf = RTE_ETH_RSS_PORT | RTE_ETH_RSS_L4_DST_ONLY;
     } else {
       err("%s(%d), not support rss_mode %d\n", __func__, port, inf->rss_mode);
       return -EIO;
