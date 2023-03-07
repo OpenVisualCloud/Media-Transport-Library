@@ -85,7 +85,7 @@ static rte_iova_t tv_frame_get_offset_iova(struct st_tx_video_session_impl* s,
   if (rte_eal_iova_mode() != RTE_IOVA_PA) return frame_info->iova + offset;
   void* addr = RTE_PTR_ADD(frame_info->addr, offset);
   struct st_page_info* page;
-  for (uint16_t i = 0; i < num_pages; i++) {
+  for (uint16_t i = 0; i < frame_info->page_table_len; i++) {
     page = &frame_info->page_table[i];
     if (addr >= page->addr && addr < RTE_PTR_ADD(page->addr, page->len))
       return page->iova + RTE_PTR_DIFF(addr, page->addr);
@@ -116,7 +116,7 @@ static int tv_frame_create_page_table(struct st_tx_video_session_impl* s,
 
   void* addr = frame_info->addr;
   /* get IOVA start of each page */
-  for (uint16_t i = 0; i < frame_info->page_table_len; i++) {
+  for (uint16_t i = 0; i < num_pages; i++) {
     /* touch the page before getting its IOVA */
     *(volatile char*)addr = 0;
     pages[i].addr = addr;
