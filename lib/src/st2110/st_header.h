@@ -108,14 +108,23 @@ struct st_rx_muf_priv_data {
 /* ext frame by application */
 #define ST_FT_FLAG_EXT (MTL_BIT32(1))
 
+/* IOVA mapping info of each page in frame, used for IOVA:PA mode */
+struct st_page_info {
+  rte_iova_t iova; /* page begin iova */
+  void* addr;      /* page begin va */
+  size_t len;      /* page length */
+};
+
 /* describe the frame used in transport(both tx and rx) */
 struct st_frame_trans {
   /* todo: use struct st_frame as base */
   int idx;
-  void* addr;            /* virtual address */
-  rte_iova_t iova;       /* iova for hw */
-  rte_atomic32_t refcnt; /* 0 means it's free */
-  void* priv;            /* private data for lib */
+  void* addr;                      /* virtual address */
+  rte_iova_t iova;                 /* iova for hw */
+  struct st_page_info* page_table; /* page table for hw, used for IOVA:PA mode */
+  uint16_t page_table_len;         /* page table len for hw, used for IOVA:PA mode */
+  rte_atomic32_t refcnt;           /* 0 means it's free */
+  void* priv;                      /* private data for lib */
 
   uint32_t flags;                          /* ST_FT_FLAG_* */
   struct rte_mbuf_ext_shared_info sh_info; /* for st20 tx ext shared */

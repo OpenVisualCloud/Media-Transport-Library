@@ -79,6 +79,68 @@ static void tv_frame_free_cb(void* addr, void* opaque) {
   dbg("%s(%d), succ frame_idx %d\n", __func__, s_idx, frame_idx);
 }
 
+static rte_iova_t tv_frame_get_offset_iova(struct st_tx_video_session_impl* s,
+                                           struct st_frame_trans* frame_info,
+                                           size_t offset) {
+  if (rte_eal_iova_mode() != RTE_IOVA_PA) return frame_info->iova + offset;
+  void* addr = RTE_PTR_ADD(frame_info->addr, offset);
+  struct st_page_info* page;
+  for (uint16_t i = 0; i < frame_info->page_table_len; i++) {
+    page = &frame_info->page_table[i];
+    if (addr >= page->addr && addr < RTE_PTR_ADD(page->addr, page->len))
+      return page->iova + RTE_PTR_DIFF(addr, page->addr);
+  }
+
+  err("%s(%d,%d), offset %" PRIu64 " get iova fail\n", __func__, s->idx, frame_info->idx,
+      offset);
+  return MTL_BAD_IOVA;
+}
+
+static int tv_frame_create_page_table(struct st_tx_video_session_impl* s,
+                                      struct st_frame_trans* frame_info) {
+  if (rte_eal_iova_mode() != RTE_IOVA_PA) {
+    dbg("%s(%d,%d), no need to create IOVA table\n", __func__, s->idx, frame_info->idx);
+    return 0;
+  }
+
+  /* calculate num pages of 2m hp */
+  uint16_t num_pages =
+      RTE_PTR_DIFF(RTE_PTR_ALIGN(frame_info->addr + s->st20_fb_size, RTE_PGSIZE_2M),
+                   RTE_PTR_ALIGN_FLOOR(frame_info->addr, RTE_PGSIZE_2M)) /
+      RTE_PGSIZE_2M;
+
+  struct st_page_info* pages = mt_zmalloc(sizeof(*pages) * num_pages);
+  if (pages == NULL) {
+    err("%s(%d), pages info malloc fail\n", __func__, s->idx);
+    return -ENOMEM;
+  }
+
+  void* addr = frame_info->addr;
+  /* get IOVA start of each page */
+  for (uint16_t i = 0; i < num_pages; i++) {
+    /* touch the page before getting its IOVA */
+    *(volatile char*)addr = 0;
+    pages[i].addr = addr;
+    pages[i].iova = rte_mem_virt2iova(addr);
+    void* next_addr = RTE_PTR_ALIGN(RTE_PTR_ADD(addr, 1), RTE_PGSIZE_2M);
+    pages[i].len = RTE_PTR_DIFF(next_addr, addr);
+    addr = next_addr;
+    info("%s(%d,%d), va: %p, iova(pa): 0x%" PRIx64 ", len: %" PRIu64 "\n", __func__,
+         s->idx, frame_info->idx, pages[i].addr, pages[i].iova, pages[i].len);
+  }
+
+  frame_info->page_table = pages;
+  frame_info->page_table_len = num_pages;
+  return 0;
+}
+
+static inline bool tv_frame_payload_cross_page(struct st_tx_video_session_impl* s,
+                                               struct st_frame_trans* frame_info,
+                                               size_t offset, size_t len) {
+  return ((tv_frame_get_offset_iova(s, frame_info, offset + len - 1) -
+           tv_frame_get_offset_iova(s, frame_info, offset)) != len - 1);
+}
+
 static int tv_alloc_frames(struct mtl_main_impl* impl,
                            struct st_tx_video_session_impl* s) {
   enum mtl_port port = mt_port_logic2phy(s->port_maps, MTL_SESSION_PORT_P);
@@ -125,6 +187,7 @@ static int tv_alloc_frames(struct mtl_main_impl* impl,
       frame_info->iova = rte_mem_virt2iova(frame);
       frame_info->addr = frame;
       frame_info->flags = ST_FT_FLAG_RTE_MALLOC;
+      tv_frame_create_page_table(s, frame_info);
     }
     frame_info->priv = s;
   }
@@ -796,10 +859,15 @@ static int tv_build_st20_chain(struct st_tx_video_session_impl* s, struct rte_mb
     mtl_memcpy(payload, frame_info->addr + offset, line1_length);
     mtl_memcpy(payload + line1_length,
                frame_info->addr + s->st20_linesize * (line1_number + 1), line2_length);
+  } else if (rte_eal_iova_mode() == RTE_IOVA_PA &&
+             tv_frame_payload_cross_page(s, frame_info, offset, left_len)) {
+    void* payload = rte_pktmbuf_mtod(pkt_chain, void*);
+    mtl_memcpy(payload, frame_info->addr + offset, left_len);
   } else {
     /* attach payload to chainbuf */
     rte_pktmbuf_attach_extbuf(pkt_chain, frame_info->addr + offset,
-                              frame_info->iova + offset, left_len, &frame_info->sh_info);
+                              tv_frame_get_offset_iova(s, frame_info, offset), left_len,
+                              &frame_info->sh_info);
     rte_mbuf_ext_refcnt_update(&frame_info->sh_info, 1);
   }
   pkt_chain->data_len = pkt_chain->pkt_len = left_len;
@@ -1089,9 +1157,16 @@ static int tv_build_st22_chain(struct st_tx_video_session_impl* s, struct rte_mb
 
   /* attach payload to chainbuf */
   struct st_frame_trans* frame_info = &s->st20_frames[s->st20_frame_idx];
-  rte_pktmbuf_attach_extbuf(pkt_chain, frame_info->addr + offset,
-                            frame_info->iova + offset, left_len, &frame_info->sh_info);
-  rte_mbuf_ext_refcnt_update(&frame_info->sh_info, 1);
+  if (rte_eal_iova_mode() == RTE_IOVA_PA &&
+      tv_frame_payload_cross_page(s, frame_info, offset, left_len)) { /* copy payload */
+    void* payload = rte_pktmbuf_mtod(pkt_chain, void*);
+    mtl_memcpy(payload, frame_info->addr + offset, left_len);
+  } else { /* attach payload */
+    rte_pktmbuf_attach_extbuf(pkt_chain, frame_info->addr + offset,
+                              tv_frame_get_offset_iova(s, frame_info, offset), left_len,
+                              &frame_info->sh_info);
+    rte_mbuf_ext_refcnt_update(&frame_info->sh_info, 1);
+  }
 
   pkt_chain->data_len = pkt_chain->pkt_len = left_len;
 
@@ -2027,11 +2102,13 @@ static int tv_mempool_init(struct mtl_main_impl* impl,
       hdr_room_size += sizeof(struct st20_rfc4175_extra_rtp_hdr);
     /* attach extbuf used, only placeholder mbuf */
     chain_room_size = 0;
-    if (s->st20_linesize > s->st20_bytes_in_line) { /* lines have padding */
-      if (s->ops.packing != ST20_PACKING_GPM_SL) /* and there is packet acrossing lines */
-        /* since only part of packets have cross line payload, do we need all mbuf to
-         * have data room size? */
-        chain_room_size = s->st20_pkt_len;
+    /* when lines have padding and there is packet acrossing lines, or in IOVA:PA mode*/
+    if ((s->st20_linesize > s->st20_bytes_in_line &&
+         s->ops.packing != ST20_PACKING_GPM_SL) ||
+        rte_eal_iova_mode() == RTE_IOVA_PA) {
+      /* since only part of packets have cross line(or page) payload, do we need all mbuf
+       * to have data room size? */
+      chain_room_size = s->st20_pkt_len;
     }
   }
 
