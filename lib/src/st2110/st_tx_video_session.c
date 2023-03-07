@@ -79,15 +79,6 @@ static void tv_frame_free_cb(void* addr, void* opaque) {
   dbg("%s(%d), succ frame_idx %d\n", __func__, s_idx, frame_idx);
 }
 
-static bool tv_frame_payload_cross_page(struct st_tx_video_session_impl* s, size_t offset,
-                                        size_t len) {
-  size_t back_offset_start = s->st20_fb_size - offset;
-  uint16_t page_idx_start = back_offset_start / RTE_PGSIZE_2M;
-  size_t back_offset_end = s->st20_fb_size + len - offset;
-  uint16_t page_idx_end = back_offset_end / RTE_PGSIZE_2M;
-  return page_idx_end != page_idx_start;
-}
-
 static rte_iova_t tv_frame_get_offset_iova(struct st_tx_video_session_impl* s,
                                            struct st_frame_trans* frame_info,
                                            size_t offset) {
@@ -138,6 +129,13 @@ static int tv_frame_create_iova_table(struct st_tx_video_session_impl* s,
   frame_info->iova_table = iovas;
   frame_info->iova_table_len = num_pages;
   return 0;
+}
+
+static inline bool tv_frame_payload_cross_page(struct st_tx_video_session_impl* s,
+                                               struct st_frame_trans* frame_info,
+                                               size_t offset, size_t len) {
+  return ((tv_frame_get_offset_iova(s, frame_info, offset + len) -
+           tv_frame_get_offset_iova(s, frame_info, offset)) != len);
 }
 
 static int tv_alloc_frames(struct mtl_main_impl* impl,
@@ -859,7 +857,7 @@ static int tv_build_st20_chain(struct st_tx_video_session_impl* s, struct rte_mb
     mtl_memcpy(payload + line1_length,
                frame_info->addr + s->st20_linesize * (line1_number + 1), line2_length);
   } else if (rte_eal_iova_mode() == RTE_IOVA_PA &&
-             tv_frame_payload_cross_page(s, offset, left_len)) {
+             tv_frame_payload_cross_page(s, frame_info, offset, left_len)) {
     void* payload = rte_pktmbuf_mtod(pkt_chain, void*);
     mtl_memcpy(payload, frame_info->addr + offset, left_len);
   } else {
@@ -1156,10 +1154,16 @@ static int tv_build_st22_chain(struct st_tx_video_session_impl* s, struct rte_mb
 
   /* attach payload to chainbuf */
   struct st_frame_trans* frame_info = &s->st20_frames[s->st20_frame_idx];
-  rte_pktmbuf_attach_extbuf(pkt_chain, frame_info->addr + offset,
-                            tv_frame_get_offset_iova(s, frame_info, offset), left_len,
-                            &frame_info->sh_info);
-  rte_mbuf_ext_refcnt_update(&frame_info->sh_info, 1);
+  if (rte_eal_iova_mode() == RTE_IOVA_PA &&
+      tv_frame_payload_cross_page(s, frame_info, offset, left_len)) { /* copy payload */
+    void* payload = rte_pktmbuf_mtod(pkt_chain, void*);
+    mtl_memcpy(payload, frame_info->addr + offset, left_len);
+  } else { /* attach payload */
+    rte_pktmbuf_attach_extbuf(pkt_chain, frame_info->addr + offset,
+                              tv_frame_get_offset_iova(s, frame_info, offset), left_len,
+                              &frame_info->sh_info);
+    rte_mbuf_ext_refcnt_update(&frame_info->sh_info, 1);
+  }
 
   pkt_chain->data_len = pkt_chain->pkt_len = left_len;
 
