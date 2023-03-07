@@ -118,7 +118,7 @@ static int tv_frame_create_iova_table(struct st_tx_video_session_impl* s,
   /* get IOVA of each page */
   for (uint16_t i = 0; i < num_pages; i++) {
     size_t back_offset = RTE_PGSIZE_2M * i;
-    void* addr = RTE_PTR_SUB(frame_info->addr + s->st20_fb_size, back_offset);
+    void* addr = RTE_PTR_SUB(after_end_addr, back_offset);
 
     /* touch the page before getting its IOVA */
     *(volatile char*)addr = 0;
