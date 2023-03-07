@@ -116,7 +116,7 @@ static int tv_frame_create_page_table(struct st_tx_video_session_impl* s,
 
   void* addr = frame_info->addr;
   /* get IOVA start of each page */
-  for (uint16_t i = 0; i < num_pages; i++) {
+  for (uint16_t i = 0; i < frame_info->page_table_len; i++) {
     /* touch the page before getting its IOVA */
     *(volatile char*)addr = 0;
     pages[i].addr = addr;
