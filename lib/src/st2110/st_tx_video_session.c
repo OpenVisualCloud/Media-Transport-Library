@@ -3186,7 +3186,6 @@ int st20_tx_set_ext_frame(st20_tx_handle handle, uint16_t idx,
 
   frame->addr = addr;
   frame->iova = iova_addr;
-  tv_frame_create_page_table(s, frame);
   return 0;
 }
 
