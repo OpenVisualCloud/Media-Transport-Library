@@ -102,17 +102,17 @@ jobs:
         run: |
           sudo ./build/tests/KahawaiUfdTest --p_port ${{  env.TEST_PORT_P  }} --r_port ${{  env.TEST_PORT_R  }}
 
-      - name: Run ufd test case with lcore
-        run: |
-          sudo ./build/tests/KahawaiUfdTest --p_port ${{  env.TEST_PORT_P  }} --r_port ${{  env.TEST_PORT_R  }} --udp_lcore
-
       - name: Run shared ufd test case
         run: |
           sudo ./build/tests/KahawaiUfdTest --p_port ${{  env.TEST_PORT_P  }} --r_port ${{  env.TEST_PORT_R  }} --queue_mode shared
 
       - name: Run shared ufd test case with lcore
         run: |
-          sudo ./build/tests/KahawaiUfdTest --p_port ${{  env.TEST_PORT_P  }} --r_port ${{  env.TEST_PORT_R  }} --queue_mode shared -udp_lcore
+          sudo ./build/tests/KahawaiUfdTest --p_port ${{  env.TEST_PORT_P  }} --r_port ${{  env.TEST_PORT_R  }} --queue_mode shared --udp_lcore
+
+      - name: Run ufd test case with rss
+        run: |
+          sudo ./build/tests/KahawaiUfdTest --p_port ${{  env.TEST_PORT_P  }} --r_port ${{  env.TEST_PORT_R  }} --queue_mode shared --udp_lcore --rss_mode l4_dst_port_only
 
       - name: Run st2110 test case
         run: |
@@ -120,4 +120,4 @@ jobs:
 
       - name: Run st2110 st20p test case with rss and tx_no_chain
         run: |
-          sudo ./build/tests/KahawaiTest --p_port ${{  env.TEST_PORT_P  }} --r_port ${{  env.TEST_PORT_R  }} --dma_dev ${{  env.TEST_DMA_PORT_P  }},${{  env.TEST_DMA_PORT_R  }} --rss_mode l4_udp --tx_no_chain --gtest_filter=Main.*:St20p.*
+          sudo ./build/tests/KahawaiTest --p_port ${{  env.TEST_PORT_P  }} --r_port ${{  env.TEST_PORT_R  }} --dma_dev ${{  env.TEST_DMA_PORT_P  }},${{  env.TEST_DMA_PORT_R  }} --rss_mode l3_l4_dst_port_only --tx_no_chain --gtest_filter=Main.*:St20p.*

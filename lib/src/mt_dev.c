@@ -850,6 +850,31 @@ static uint8_t mt_rss_hash_key[MT_HASH_KEY_LENGTH] = {
 };
 // clang-format on
 
+/* 1:1 map with hash % reta_size % max_rx_queues */
+static int dev_config_rss_reta(struct mt_interface* inf) {
+  enum mtl_port port = inf->port;
+  uint16_t reta_size = inf->dev_info.reta_size;
+  int reta_group_size = reta_size / RTE_ETH_RETA_GROUP_SIZE;
+  struct rte_eth_rss_reta_entry64 entries[reta_group_size];
+  int ret;
+
+  memset(entries, 0, sizeof(entries));
+  for (int i = 0; i < reta_group_size; i++) {
+    entries[i].mask = UINT64_MAX;
+    for (int j = 0; j < RTE_ETH_RETA_GROUP_SIZE; j++) {
+      entries[i].reta[j] = (i * RTE_ETH_RETA_GROUP_SIZE + j) % inf->max_rx_queues;
+    }
+  }
+  ret = rte_eth_dev_rss_reta_update(inf->port_id, entries, reta_size);
+  if (ret < 0) {
+    err("%s(%d), rss reta update fail %d\n", __func__, port, ret);
+    return ret;
+  }
+
+  info("%s(%d), reta size %u\n", __func__, port, reta_size);
+  return 0;
+}
+
 static int dev_config_port(struct mtl_main_impl* impl, enum mtl_port port) {
   uint16_t nb_rx_desc = MT_DEV_RX_DESC, nb_tx_desc = MT_DEV_TX_DESC;
   int ret;
@@ -890,10 +915,17 @@ static int dev_config_port(struct mtl_main_impl* impl, enum mtl_port port) {
 
     rss_conf->rss_key = mt_rss_hash_key;
     rss_conf->rss_key_len = MT_HASH_KEY_LENGTH;
-    if (inf->rss_mode == MT_RSS_MODE_L4_UDP) {
-      rss_conf->rss_hf = RTE_ETH_RSS_NONFRAG_IPV4_UDP;
-    } else if (inf->rss_mode == MT_RSS_MODE_L3) {
+    if (inf->rss_mode == MT_RSS_MODE_L3) {
       rss_conf->rss_hf = RTE_ETH_RSS_IPV4;
+    } else if (inf->rss_mode == MT_RSS_MODE_L3_L4) {
+      rss_conf->rss_hf = RTE_ETH_RSS_NONFRAG_IPV4_UDP;
+    } else if (inf->rss_mode == MT_RSS_MODE_L3_L4_DP_ONLY) {
+      rss_conf->rss_hf = RTE_ETH_RSS_NONFRAG_IPV4_UDP | RTE_ETH_RSS_L4_DST_ONLY;
+    } else if (inf->rss_mode == MT_RSS_MODE_L3_DA_L4_DP_ONLY) {
+      rss_conf->rss_hf = RTE_ETH_RSS_NONFRAG_IPV4_UDP | RTE_ETH_RSS_L4_DST_ONLY |
+                         RTE_ETH_RSS_L3_DST_ONLY;
+    } else if (inf->rss_mode == MT_RSS_MODE_L4_DP_ONLY) {
+      rss_conf->rss_hf = RTE_ETH_RSS_PORT | RTE_ETH_RSS_L4_DST_ONLY;
     } else {
       err("%s(%d), not support rss_mode %d\n", __func__, port, inf->rss_mode);
       return -EIO;
@@ -934,7 +966,7 @@ static int dev_config_port(struct mtl_main_impl* impl, enum mtl_port port) {
                           RTE_PTYPE_L4_FRAG;
     int num_ptypes =
         rte_eth_dev_get_supported_ptypes(port_id, ptype_mask, ptypes, RTE_DIM(ptypes));
-    for (int i = 0; i < num_ptypes; i += 1) {
+    for (int i = 0; i < num_ptypes; i++) {
       set_ptypes[i] = ptypes[i];
     }
     if (num_ptypes >= 5) {
@@ -946,6 +978,14 @@ static int dev_config_port(struct mtl_main_impl* impl, enum mtl_port port) {
     } else {
       warn("%s(%d), failed to setup all ptype, only %d supported\n", __func__, port,
            num_ptypes);
+    }
+  }
+
+  if (mt_has_rss(impl, port)) {
+    ret = dev_config_rss_reta(inf);
+    if (ret < 0) {
+      err("%s(%d), rss reta config fail %d\n", __func__, port, ret);
+      return ret;
     }
   }
 
@@ -2222,6 +2262,7 @@ int mt_dev_if_init(struct mtl_main_impl* impl) {
     inf->port = i;
     inf->port_id = port_id;
     inf->tx_pacing_way = p->pacing;
+    dbg("%s(%d), reta_size %u\n", __func__, i, dev_info->reta_size);
     mt_pthread_mutex_init(&inf->tx_queues_mutex, NULL);
     mt_pthread_mutex_init(&inf->rx_queues_mutex, NULL);
     mt_pthread_mutex_init(&inf->tx_sys_queue_mutex, NULL);
@@ -2242,7 +2283,7 @@ int mt_dev_if_init(struct mtl_main_impl* impl) {
     inf->rss_mode = p->rss_mode;
     /* enable rss if no flow support */
     if (inf->flow_type == MT_FLOW_NONE && inf->rss_mode == MT_RSS_MODE_NONE)
-      inf->rss_mode = MT_RSS_MODE_L4_UDP;
+      inf->rss_mode = MT_RSS_MODE_L3_L4_DP_ONLY;
 
     /* set max tx/rx queues */
     if (p->pmd[i] == MTL_PMD_DPDK_AF_XDP) {
@@ -2473,6 +2514,13 @@ int mt_dev_if_post_init(struct mtl_main_impl* impl) {
 
 uint32_t mt_dev_softrss(uint32_t* input_tuple, uint32_t input_len) {
   return rte_softrss(input_tuple, input_len, mt_rss_hash_key);
+}
+
+/* map with dev_config_rss_reta */
+uint16_t mt_dev_rss_hash_queue(struct mtl_main_impl* impl, enum mtl_port port,
+                               uint32_t hash) {
+  struct mt_interface* inf = mt_if(impl, port);
+  return (hash % inf->dev_info.reta_size) % inf->max_rx_queues;
 }
 
 struct mt_rx_flow_rsp* mt_dev_create_rx_flow(struct mtl_main_impl* impl,

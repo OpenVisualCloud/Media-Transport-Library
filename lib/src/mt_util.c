@@ -608,6 +608,8 @@ int st_vsync_calculate(struct mtl_main_impl* impl, struct st_vsync_info* vsync) 
 
 uint16_t mt_random_port(uint16_t base_port) {
   uint16_t port = base_port;
+
+  srand(mt_get_monotonic_time());
   uint8_t r = rand() & 0xFF;
 
   /* todo: random generation with awareness of other sessions */
