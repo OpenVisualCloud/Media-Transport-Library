@@ -591,10 +591,10 @@ int st_frame_trans_uinit(struct st_frame_trans* frame) {
   }
   frame->iova = 0;
 
-  if (frame->iova_table) {
-    mt_free(frame->iova_table);
-    frame->iova_table = NULL;
-    frame->iova_table_len = 0;
+  if (frame->page_table) {
+    mt_free(frame->page_table);
+    frame->page_table = NULL;
+    frame->page_table_len = 0;
   }
 
   return 0;
