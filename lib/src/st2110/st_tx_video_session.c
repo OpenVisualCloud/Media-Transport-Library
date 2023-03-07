@@ -105,7 +105,7 @@ static int tv_frame_create_page_table(struct st_tx_video_session_impl* s,
   /* calculate num pages of 2m hp */
   uint16_t num_pages =
       RTE_PTR_DIFF(RTE_PTR_ALIGN(frame_info->addr + s->st20_fb_size, RTE_PGSIZE_2M),
-                   RTE_PTR_ALIGN_CEIL(frame_info->addr, RTE_PGSIZE_2M)) /
+                   RTE_PTR_ALIGN_FLOOR(frame_info->addr, RTE_PGSIZE_2M)) /
       RTE_PGSIZE_2M;
 
   struct st_page_info* pages = mt_zmalloc(sizeof(*pages) * num_pages);
