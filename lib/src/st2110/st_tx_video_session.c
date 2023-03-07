@@ -87,12 +87,11 @@ static rte_iova_t tv_frame_get_offset_iova(struct st_tx_video_session_impl* s,
   size_t back_offset = s->st20_fb_size - offset;
   uint16_t page_idx = back_offset / RTE_PGSIZE_2M;
 
-  if (page_idx < frame_info->iova_table_len) {
+  if (page_idx < frame_info->iova_table_len - 1) {
     size_t page_offset = RTE_PGSIZE_2M - back_offset % RTE_PGSIZE_2M;
     return frame_info->iova_table[page_idx] + page_offset;
-  } else if (page_idx == frame_info->iova_table_len) {
-    size_t page_back_offset = back_offset % RTE_PGSIZE_2M;
-    return frame_info->iova_table[page_idx - 1] - page_back_offset;
+  } else if (page_idx == frame_info->iova_table_len - 1) {
+    return frame_info->iova_table[page_idx] + offset;
   }
 
   err("%s(%d,%d), get iova fail\n", __func__, s->idx, frame_info->idx);
@@ -107,7 +106,7 @@ static int tv_frame_create_iova_table(struct st_tx_video_session_impl* s,
   }
 
   /* the addr after buffer end is aligned to hugepage size */
-  void* after_end_addr = RTE_PTR_ADD(frame_info->addr, s->st20_fb_size);
+  void* after_end_addr = frame_info->addr + s->st20_fb_size;
 
   /* calculate num pages of 2m hp */
   uint16_t num_pages = RTE_ALIGN(s->st20_fb_size, RTE_PGSIZE_2M) / RTE_PGSIZE_2M;
@@ -118,10 +117,12 @@ static int tv_frame_create_iova_table(struct st_tx_video_session_impl* s,
     return -ENOMEM;
   }
 
+  void* addr = NULL;
+  uint16_t i;
   /* get IOVA of each page */
-  for (uint16_t i = 0; i < num_pages - 1; i++) {
+  for (i = 0; i < num_pages - 1; i++) {
     size_t back_offset = RTE_PGSIZE_2M * (i + 1);
-    void* addr = RTE_PTR_SUB(after_end_addr, back_offset);
+    addr = RTE_PTR_SUB(after_end_addr, back_offset);
 
     /* touch the page before getting its IOVA */
     *(volatile char*)addr = 0;
@@ -129,8 +130,13 @@ static int tv_frame_create_iova_table(struct st_tx_video_session_impl* s,
     info("%s(%d,%d), va: %p, iova(pa): 0x%" PRIx64 "\n", __func__, s->idx,
          frame_info->idx, addr, iovas[i]);
   }
+  /* get the IOVA of frame start */
+  addr = frame_info->addr;
+  *(volatile char*)addr = 0;
+  iovas[i] = rte_mem_virt2iova(addr);
+
   frame_info->iova_table = iovas;
-  frame_info->iova_table_len = num_pages - 1;
+  frame_info->iova_table_len = num_pages;
   return 0;
 }
 
