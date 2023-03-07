@@ -137,8 +137,8 @@ static int tv_frame_create_page_table(struct st_tx_video_session_impl* s,
 static inline bool tv_frame_payload_cross_page(struct st_tx_video_session_impl* s,
                                                struct st_frame_trans* frame_info,
                                                size_t offset, size_t len) {
-  return ((tv_frame_get_offset_iova(s, frame_info, offset + len) -
-           tv_frame_get_offset_iova(s, frame_info, offset)) != len);
+  return ((tv_frame_get_offset_iova(s, frame_info, offset + len - 1) -
+           tv_frame_get_offset_iova(s, frame_info, offset)) != len - 1);
 }
 
 static int tv_alloc_frames(struct mtl_main_impl* impl,
