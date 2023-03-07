@@ -113,7 +113,7 @@ struct st_page_info {
   rte_iova_t iova; /* page begin iova */
   void* addr;      /* page begin va */
   size_t len;      /* page length */
-}
+};
 
 /* describe the frame used in transport(both tx and rx) */
 struct st_frame_trans {
