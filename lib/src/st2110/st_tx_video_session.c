@@ -90,6 +90,9 @@ static rte_iova_t tv_frame_get_offset_iova(struct st_tx_video_session_impl* s,
   if (page_idx < frame_info->iova_table_len) {
     size_t page_offset = RTE_PGSIZE_2M - back_offset % RTE_PGSIZE_2M;
     return frame_info->iova_table[page_idx] + page_offset;
+  } else if (page_idx == frame_info->iova_table_len) {
+    size_t page_back_offset = back_offset % RTE_PGSIZE_2M;
+    return frame_info->iova_table[page_idx - 1] - page_back_offset;
   }
 
   err("%s(%d,%d), get iova fail\n", __func__, s->idx, frame_info->idx);
@@ -98,7 +101,7 @@ static rte_iova_t tv_frame_get_offset_iova(struct st_tx_video_session_impl* s,
 
 static int tv_frame_create_iova_table(struct st_tx_video_session_impl* s,
                                       struct st_frame_trans* frame_info) {
-  if (rte_eal_iova_mode() != RTE_IOVA_PA) {
+  if (rte_eal_iova_mode() != RTE_IOVA_PA || s->st20_fb_size <= RTE_PGSIZE_2M) {
     dbg("%s(%d,%d), no need to create IOVA table\n", __func__, s->idx, frame_info->idx);
     return 0;
   }
@@ -116,7 +119,7 @@ static int tv_frame_create_iova_table(struct st_tx_video_session_impl* s,
   }
 
   /* get IOVA of each page */
-  for (uint16_t i = 0; i < num_pages; i++) {
+  for (uint16_t i = 0; i < num_pages - 1; i++) {
     size_t back_offset = RTE_PGSIZE_2M * (i + 1);
     void* addr = RTE_PTR_SUB(after_end_addr, back_offset);
 
@@ -127,7 +130,7 @@ static int tv_frame_create_iova_table(struct st_tx_video_session_impl* s,
          frame_info->idx, addr, iovas[i]);
   }
   frame_info->iova_table = iovas;
-  frame_info->iova_table_len = num_pages;
+  frame_info->iova_table_len = num_pages - 1;
   return 0;
 }
 
@@ -2099,11 +2102,10 @@ static int tv_mempool_init(struct mtl_main_impl* impl,
       hdr_room_size += sizeof(struct st20_rfc4175_extra_rtp_hdr);
     /* attach extbuf used, only placeholder mbuf */
     chain_room_size = 0;
+    /* when lines have padding and there is packet acrossing lines, or in IOVA:PA mode*/
     if ((s->st20_linesize > s->st20_bytes_in_line &&
          s->ops.packing != ST20_PACKING_GPM_SL) ||
-        rte_eal_iova_mode() == RTE_IOVA_PA) { /* lines have padding */
-                                              /* and there is packet acrossing lines */
-                                              /* or in IOVA:PA mode*/
+        rte_eal_iova_mode() == RTE_IOVA_PA) {
       /* since only part of packets have cross line(or page) payload, do we need all mbuf
        * to have data room size? */
       chain_room_size = s->st20_pkt_len;
