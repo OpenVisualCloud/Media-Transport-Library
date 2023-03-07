@@ -79,14 +79,16 @@ static void tv_frame_free_cb(void* addr, void* opaque) {
   dbg("%s(%d), succ frame_idx %d\n", __func__, s_idx, frame_idx);
 }
 
-static rte_iova_t tv_frame_get_offset_iova(struct st_frame_trans* frame_info,
+static rte_iova_t tv_frame_get_offset_iova(struct st_tx_video_session_impl* s,
+                                           struct st_frame_trans* frame_info,
                                            size_t offset) {
   if (rte_eal_iova_mode() != RTE_IOVA_PA) return frame_info->iova + offset;
 
-  uint16_t page_idx = offset / RTE_PGSIZE_2M;
+  size_t back_offset = s->st20_fb_size - offset;
+  uint16_t page_idx = back_offset / RTE_PGSIZE_2M;
 
   if (page_idx < frame_info->iova_table_len) {
-    size_t page_offset = offset % RTE_PGSIZE_2M;
+    size_t page_offset = RTE_PGSIZE_2M - back_offset % RTE_PGSIZE_2M;
     return frame_info->iova_table[page_idx] + page_offset;
   }
 
@@ -101,6 +103,9 @@ static int tv_frame_create_iova_table(struct st_tx_video_session_impl* s,
     return 0;
   }
 
+  /* the addr after buffer end is aligned to hugepage size */
+  void* after_end_addr = RTE_PTR_ADD(frame_info->addr, s->st20_fb_size);
+
   /* calculate num pages of 2m hp */
   uint16_t num_pages = RTE_ALIGN(s->st20_fb_size, RTE_PGSIZE_2M) / RTE_PGSIZE_2M;
 
@@ -112,8 +117,8 @@ static int tv_frame_create_iova_table(struct st_tx_video_session_impl* s,
 
   /* get IOVA of each page */
   for (uint16_t i = 0; i < num_pages; i++) {
-    size_t offset = RTE_PGSIZE_2M * i;
-    void* addr = RTE_PTR_ADD(frame_info->addr, offset);
+    size_t back_offset = RTE_PGSIZE_2M * i;
+    void* addr = RTE_PTR_SUB(frame_info->addr + s->st20_fb_size, back_offset);
 
     /* touch the page before getting its IOVA */
     *(volatile char*)addr = 0;
@@ -846,7 +851,7 @@ static int tv_build_st20_chain(struct st_tx_video_session_impl* s, struct rte_mb
   } else {
     /* attach payload to chainbuf */
     rte_pktmbuf_attach_extbuf(pkt_chain, frame_info->addr + offset,
-                              tv_frame_get_offset_iova(frame_info, offset), left_len,
+                              tv_frame_get_offset_iova(s, frame_info, offset), left_len,
                               &frame_info->sh_info);
     rte_mbuf_ext_refcnt_update(&frame_info->sh_info, 1);
   }
@@ -1138,7 +1143,7 @@ static int tv_build_st22_chain(struct st_tx_video_session_impl* s, struct rte_mb
   /* attach payload to chainbuf */
   struct st_frame_trans* frame_info = &s->st20_frames[s->st20_frame_idx];
   rte_pktmbuf_attach_extbuf(pkt_chain, frame_info->addr + offset,
-                            tv_frame_get_offset_iova(frame_info, offset), left_len,
+                            tv_frame_get_offset_iova(s, frame_info, offset), left_len,
                             &frame_info->sh_info);
   rte_mbuf_ext_refcnt_update(&frame_info->sh_info, 1);
 
