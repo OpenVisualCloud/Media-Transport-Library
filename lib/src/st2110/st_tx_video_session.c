@@ -91,7 +91,8 @@ static rte_iova_t tv_frame_get_offset_iova(struct st_tx_video_session_impl* s,
       return page->iova + RTE_PTR_DIFF(addr, page->addr);
   }
 
-  err("%s(%d,%d), get iova fail\n", __func__, s->idx, frame_info->idx);
+  err("%s(%d,%d), offset %" PRIu64 " get iova fail\n", __func__, s->idx, frame_info->idx,
+      offset);
   return MTL_BAD_IOVA;
 }
 
