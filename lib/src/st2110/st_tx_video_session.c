@@ -1462,10 +1462,8 @@ static int tv_tasklet_frame(struct mtl_main_impl* impl,
     } else {
       if (s->tx_no_chain)
         tv_build_st20(s, pkts[i]);
-      else {
+      else
         tv_build_st20_chain(s, pkts[i], pkts_chain[i]);
-      }
-
       st_tx_mbuf_set_idx(pkts[i], s->st20_pkt_idx);
     }
     pacing_set_mbuf_time_stamp(pkts[i], pacing);
@@ -1481,7 +1479,7 @@ static int tv_tasklet_frame(struct mtl_main_impl* impl,
             rte_pktmbuf_free_bulk(pkts, bulk);
             rte_pktmbuf_free_bulk(pkts_r, bulk);
             s->stat_build_ret_code = -STI_FRAME_PKT_ALLOC_FAIL;
-            s->st20_pkt_idx -= i;
+            s->st20_pkt_idx -= i; /* todo: revert all status */
             return MT_TASKLET_ALL_DONE;
           }
           tv_update_redundant(s, pkts_r[i]);
@@ -1870,9 +1868,8 @@ static int tv_tasklet_st22(struct mtl_main_impl* impl,
       } else {
         if (s->tx_no_chain)
           tv_build_st22(s, pkts[i]);
-        else {
+        else
           tv_build_st22_chain(s, pkts[i], pkts_chain[i]);
-        }
         st_tx_mbuf_set_idx(pkts[i], s->st20_pkt_idx);
       }
       pacing_set_mbuf_time_stamp(pkts[i], pacing);
@@ -1888,7 +1885,7 @@ static int tv_tasklet_st22(struct mtl_main_impl* impl,
               rte_pktmbuf_free_bulk(pkts, bulk);
               rte_pktmbuf_free_bulk(pkts_r, bulk);
               s->stat_build_ret_code = -STI_ST22_PKT_ALLOC_FAIL;
-              s->st20_pkt_idx -= i;
+              s->st20_pkt_idx -= i; /* todo: revert all status */
               return MT_TASKLET_ALL_DONE;
             }
             tv_update_redundant(s, pkts_r[i]);
