@@ -5,7 +5,7 @@
 
 set -e
 
-user=`whoami`
+user=$(whoami)
 
 function usage()
 {
@@ -79,7 +79,7 @@ PLUGINS_BUILD_DIR=${WORKSPACE}/build/plugins
 meson "${LIB_BUILD_DIR}" -Dbuildtype="$buildtype" -Ddisable_pcapng="$disable_pcapng" -Denable_asan="$enable_asan" -Denable_kni="$enable_kni" -Denable_tap="$enable_tap"
 pushd "${LIB_BUILD_DIR}"
 ninja
-if [ $user == "root" ]; then
+if [ "$user" == "root" ]; then
     ninja install
 else
     sudo ninja install
@@ -108,7 +108,7 @@ meson "${PLUGINS_BUILD_DIR}" -Dbuildtype="$buildtype" -Denable_asan="$enable_asa
 popd
 pushd "${PLUGINS_BUILD_DIR}"
 ninja
-if [ $user == "root" ]; then
+if [ "$user" == "root" ]; then
     ninja install
 else
     sudo ninja install
