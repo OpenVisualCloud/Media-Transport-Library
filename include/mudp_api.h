@@ -298,6 +298,45 @@ int mudp_set_arp_timeout_ms(mudp_handle ut, int ms);
 int mudp_get_arp_timeout_ms(mudp_handle ut);
 
 /**
+ * Set the count for rx ring in udp transport.
+ *
+ * @param ut
+ *   The handle to udp transport socket.
+ * @param count
+ *   RX ring count.
+ * @return
+ *   - 0: Success.
+ *   - <0: Error code.
+ */
+int mudp_set_rx_ring_count(mudp_handle ut, unsigned int count);
+
+/**
+ * Set the count for wake thresh for lcore mode.
+ *
+ * @param ut
+ *   The handle to udp transport socket.
+ * @param count
+ *   Wake threshold count.
+ * @return
+ *   - 0: Success.
+ *   - <0: Error code.
+ */
+int mudp_set_wake_thresh_count(mudp_handle ut, unsigned int count);
+
+/**
+ * Set wake timeout(ms) for lcore mode.
+ *
+ * @param ut
+ *   The handle to udp transport socket.
+ * @param ms
+ *   Timeout value in ms.
+ * @return
+ *   - 0: Success.
+ *   - <0: Error code.
+ */
+int mudp_set_wake_timeout(mudp_handle ut, int ms);
+
+/**
  * Create a udp transport socket on a PCIE port.
  *
  * @param mt
