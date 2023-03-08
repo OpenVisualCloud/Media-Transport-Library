@@ -1124,7 +1124,7 @@ ssize_t mudp_sendto(mudp_handle ut, const void* buf, size_t len, int flags,
       err("%s(%d), build pkt fail %d\n", __func__, idx, ret);
       return ret;
     } else {
-      mt_delay_us(1);
+      mt_sleep_us(1);
       return len;
     }
   }
