@@ -6,6 +6,9 @@
     "nic_queue_rate_limit_g": "2",
     "log_level" : "info",
     "fd_base" : "20000",
+    "rx_ring_count" : "1024",
+    "wake_thresh_count" : "32",
+    "wake_timeout_ms" : "1",
     "interfaces": [
         {
             "port": "0000:af:01.1",

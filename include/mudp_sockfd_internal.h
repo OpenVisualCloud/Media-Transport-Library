@@ -31,6 +31,12 @@ struct mufd_init_params {
   int fd_base;
   /** bit per sec for q */
   uint64_t txq_bps;
+  /** rx ring count */
+  unsigned int rx_ring_count;
+  /** wakeup when rte_ring_count(s->rx_ring) reach this threshold */
+  unsigned int wake_thresh_count;
+  /** wakeup when timeout with last wakeup */
+  int wake_timeout_ms;
 };
 
 /**

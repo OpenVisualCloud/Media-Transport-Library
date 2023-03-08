@@ -47,8 +47,8 @@ struct mudp_impl {
   struct mt_rss_entry* rss;
   uint16_t rxq_id;
   struct rte_ring* rx_ring;
+  unsigned int rx_ring_count;
   uint16_t rx_burst_pkts;
-  uint16_t rx_ring_thresh;
   struct rte_mempool* tx_pool;
   uint16_t element_size;
   unsigned int element_nb;
@@ -56,6 +56,12 @@ struct mudp_impl {
   pthread_cond_t lcore_wake_cond;
   pthread_mutex_t lcore_wake_mutex;
   struct mt_sch_tasklet_impl* lcore_tasklet;
+  /* bulk wakeup mode */
+  /* wakeup when rte_ring_count(s->rx_ring) reach this threshold */
+  unsigned int wake_thresh_count;
+  /* wakeup when timeout with last wakeup */
+  int wake_timeout_ms;
+  uint64_t wake_tsc_last;
 
   int arp_timeout_ms;
   int tx_timeout_ms;
