@@ -2246,7 +2246,7 @@ int mt_dev_if_init(struct mtl_main_impl* impl) {
       mt_dev_if_uinit(impl);
       return ret;
     }
-    rte_eth_dev_info_get(port_id, dev_info);
+    ret = rte_eth_dev_info_get(port_id, dev_info);
     if (ret < 0) {
       err("%s, rte_eth_dev_info_get fail for %s\n", __func__, port);
       mt_dev_if_uinit(impl);
