@@ -61,7 +61,7 @@ struct mudp_impl {
   /* wakeup when rte_ring_count(s->rx_ring) reach this threshold */
   unsigned int wake_thresh_count;
   /* wakeup when timeout with last wakeup */
-  int wake_timeout_us;
+  unsigned int wake_timeout_us;
   uint64_t wake_tsc_last;
 
   unsigned int arp_timeout_us;
