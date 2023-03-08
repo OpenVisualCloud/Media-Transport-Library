@@ -4428,7 +4428,7 @@ static void st20_linesize_digest_test(enum st20_packing packing[], enum st_fps f
       ASSERT_TRUE(fb != NULL);
 
       for (int line = 0; line < total_lines; line++) {
-        st_test_rand_data(fb + test_ctx_tx[i]->stride, bytes_per_line, frame);
+        st_test_rand_data(fb + test_ctx_tx[i]->stride * line, bytes_per_line, frame);
       }
       unsigned char* result = test_ctx_tx[i]->shas[frame];
       SHA256((unsigned char*)fb, fb_size, result);
