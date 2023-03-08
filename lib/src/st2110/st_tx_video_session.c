@@ -858,7 +858,7 @@ static int tv_build_st20_chain(struct st_tx_video_session_impl* s, struct rte_mb
     rte_pktmbuf_free(pkt_chain);
     pkt_chain = rte_pktmbuf_alloc(s->mbuf_mempool_common);
     if (!pkt_chain) {
-      err("%s(%d), pkts chain realloc fail %d\n", __func__, s->idx, s->st20_pkt_idx);
+      dbg("%s(%d), pkts chain realloc fail %d\n", __func__, s->idx, s->st20_pkt_idx);
       return -ENOMEM;
     }
     /* do not attach extbuf, copy to data room */
@@ -1457,8 +1457,17 @@ static int tv_tasklet_frame(struct mtl_main_impl* impl,
     } else {
       if (s->tx_no_chain)
         tv_build_st20(s, pkts[i]);
-      else
-        tv_build_st20_chain(s, pkts[i], pkts_chain[i]);
+      else {
+        ret = tv_build_st20_chain(s, pkts[i], pkts_chain[i]);
+        if (ret == -ENOMEM) {
+          rte_pktmbuf_free_bulk(pkts, bulk);
+          rte_pktmbuf_free_bulk(pkts_r, bulk);
+          rte_pktmbuf_free_bulk(pkts_chain, bulk);
+          s->stat_build_ret_code = -STI_FRAME_PKT_ALLOC_FAIL;
+          return MT_TASKLET_ALL_DONE;
+        }
+      }
+
       st_tx_mbuf_set_idx(pkts[i], s->st20_pkt_idx);
     }
     pacing_set_mbuf_time_stamp(pkts[i], pacing);
@@ -1862,8 +1871,16 @@ static int tv_tasklet_st22(struct mtl_main_impl* impl,
       } else {
         if (s->tx_no_chain)
           tv_build_st22(s, pkts[i]);
-        else
-          tv_build_st22_chain(s, pkts[i], pkts_chain[i]);
+        else {
+          ret = tv_build_st22_chain(s, pkts[i], pkts_chain[i]);
+          if (ret == -ENOMEM) {
+            rte_pktmbuf_free_bulk(pkts, bulk);
+            rte_pktmbuf_free_bulk(pkts_r, bulk);
+            rte_pktmbuf_free_bulk(pkts_chain, bulk);
+            s->stat_build_ret_code = -STI_FRAME_PKT_ALLOC_FAIL;
+            return MT_TASKLET_ALL_DONE;
+          }
+        }
         st_tx_mbuf_set_idx(pkts[i], s->st20_pkt_idx);
       }
       pacing_set_mbuf_time_stamp(pkts[i], pacing);
