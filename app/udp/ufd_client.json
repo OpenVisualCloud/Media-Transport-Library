@@ -7,8 +7,9 @@
     "log_level" : "info",
     "fd_base" : "20000",
     "rx_ring_count" : "1024",
+    "rx_poll_sleep_us" : "10",
     "wake_thresh_count" : "32",
-    "wake_timeout_ms" : "1",
+    "wake_timeout_us" : "1000",
     "interfaces": [
         {
             "port": "0000:af:01.1",

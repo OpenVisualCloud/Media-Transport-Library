@@ -49,6 +49,7 @@ struct mudp_impl {
   struct rte_ring* rx_ring;
   unsigned int rx_ring_count;
   uint16_t rx_burst_pkts;
+  unsigned int rx_poll_sleep_us;
   struct rte_mempool* tx_pool;
   uint16_t element_size;
   unsigned int element_nb;
@@ -60,12 +61,12 @@ struct mudp_impl {
   /* wakeup when rte_ring_count(s->rx_ring) reach this threshold */
   unsigned int wake_thresh_count;
   /* wakeup when timeout with last wakeup */
-  int wake_timeout_ms;
+  int wake_timeout_us;
   uint64_t wake_tsc_last;
 
-  int arp_timeout_ms;
-  int tx_timeout_ms;
-  int rx_timeout_ms;
+  unsigned int arp_timeout_us;
+  unsigned int tx_timeout_us;
+  unsigned int rx_timeout_us;
   uint8_t user_mac[MTL_MAC_ADDR_LEN];
 
   uint32_t* mcast_addrs;
