@@ -859,6 +859,7 @@ static int tv_build_st20_chain(struct st_tx_video_session_impl* s, struct rte_mb
     pkt_chain = rte_pktmbuf_alloc(s->mbuf_mempool_common);
     if (!pkt_chain) {
       dbg("%s(%d), pkts chain realloc fail %d\n", __func__, s->idx, s->st20_pkt_idx);
+      s->stat_pkts_chain_realloc_fail++; /* we can do nothing but count */
       return -ENOMEM;
     }
     /* do not attach extbuf, copy to data room */
@@ -872,9 +873,11 @@ static int tv_build_st20_chain(struct st_tx_video_session_impl* s, struct rte_mb
     rte_pktmbuf_free(pkt_chain);
     pkt_chain = rte_pktmbuf_alloc(s->mbuf_mempool_common);
     if (!pkt_chain) {
-      err("%s(%d), pkts chain realloc fail %d\n", __func__, s->idx, s->st20_pkt_idx);
+      dbg("%s(%d), pkts chain realloc fail %d\n", __func__, s->idx, s->st20_pkt_idx);
+      s->stat_pkts_chain_realloc_fail++; /* we can do nothing but count */
       return -ENOMEM;
     }
+    /* do not attach extbuf, copy to data room */
     void* payload = rte_pktmbuf_mtod(pkt_chain, void*);
     mtl_memcpy(payload, frame_info->addr + offset, left_len);
   } else {
@@ -1173,14 +1176,16 @@ static int tv_build_st22_chain(struct st_tx_video_session_impl* s, struct rte_mb
   /* attach payload to chainbuf */
   struct st_frame_trans* frame_info = &s->st20_frames[s->st20_frame_idx];
   if (rte_eal_iova_mode() == RTE_IOVA_PA &&
-      tv_frame_payload_cross_page(s, frame_info, offset, left_len)) { /* copy payload */
+      tv_frame_payload_cross_page(s, frame_info, offset, left_len)) {
     /* reallocate from common mempool */
     rte_pktmbuf_free(pkt_chain);
     pkt_chain = rte_pktmbuf_alloc(s->mbuf_mempool_common);
     if (!pkt_chain) {
-      err("%s(%d), pkts chain realloc fail %d\n", __func__, s->idx, s->st20_pkt_idx);
+      dbg("%s(%d), pkts chain realloc fail %d\n", __func__, s->idx, s->st20_pkt_idx);
+      s->stat_pkts_chain_realloc_fail++; /* we can do nothing but count */
       return -ENOMEM;
     }
+    /* do not attach extbuf, copy to data room */
     void* payload = rte_pktmbuf_mtod(pkt_chain, void*);
     mtl_memcpy(payload, frame_info->addr + offset, left_len);
   } else { /* attach payload */
@@ -1458,15 +1463,7 @@ static int tv_tasklet_frame(struct mtl_main_impl* impl,
       if (s->tx_no_chain)
         tv_build_st20(s, pkts[i]);
       else {
-        ret = tv_build_st20_chain(s, pkts[i], pkts_chain[i]);
-        if (ret == -ENOMEM) {
-          rte_pktmbuf_free_bulk(pkts, bulk);
-          rte_pktmbuf_free_bulk(pkts_r, bulk);
-          rte_pktmbuf_free_bulk(pkts_chain, bulk);
-          s->stat_build_ret_code = -STI_FRAME_PKT_ALLOC_FAIL;
-          s->st20_pkt_idx -= i;
-          return MT_TASKLET_ALL_DONE;
-        }
+        tv_build_st20_chain(s, pkts[i], pkts_chain[i]);
       }
 
       st_tx_mbuf_set_idx(pkts[i], s->st20_pkt_idx);
@@ -1874,15 +1871,7 @@ static int tv_tasklet_st22(struct mtl_main_impl* impl,
         if (s->tx_no_chain)
           tv_build_st22(s, pkts[i]);
         else {
-          ret = tv_build_st22_chain(s, pkts[i], pkts_chain[i]);
-          if (ret == -ENOMEM) {
-            rte_pktmbuf_free_bulk(pkts, bulk);
-            rte_pktmbuf_free_bulk(pkts_r, bulk);
-            rte_pktmbuf_free_bulk(pkts_chain, bulk);
-            s->stat_build_ret_code = -STI_FRAME_PKT_ALLOC_FAIL;
-            s->st20_pkt_idx -= i;
-            return MT_TASKLET_ALL_DONE;
-          }
+          tv_build_st22_chain(s, pkts[i], pkts_chain[i]);
         }
         st_tx_mbuf_set_idx(pkts[i], s->st20_pkt_idx);
       }
@@ -2704,6 +2693,12 @@ static void tv_stat(struct st_tx_video_sessions_mgr* mgr,
     notice("TX_VIDEO_SESSION(%d,%d): vsync mismatch cnt %u\n", m_idx, idx,
            s->stat_vsync_mismatch);
     s->stat_vsync_mismatch = 0;
+  }
+  if (s->stat_pkts_chain_realloc_fail) {
+    notice("TX_VIDEO_SESSION(%d,%d): chain pkt realloc fail cnt %u\n", m_idx, idx,
+           s->stat_pkts_chain_realloc_fail);
+    notice("TX_VIDEO_SESSION(%d,%d): SERIOUS MEMORY ISSUE!\n", m_idx, idx);
+    s->stat_pkts_chain_realloc_fail = 0;
   }
   if (frame_cnt <= 0) {
     warn("TX_VIDEO_SESSION(%d,%d:%s): build ret %d, trs ret %d:%d\n", m_idx, idx,
