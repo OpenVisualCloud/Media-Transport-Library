@@ -253,6 +253,42 @@ static int ufd_parse_json(struct mufd_init_params* init, const char* filename) {
     info("%s, nic_queue_rate_limit_g %d\n", __func__, rl_bps_g);
   }
 
+  obj = mt_json_object_get(root, "rx_ring_count");
+  if (obj) {
+    int rx_ring_count = json_object_get_int(obj);
+    if (rx_ring_count < 0) {
+      err("%s, invalid rx_ring_count %d\n", __func__, rx_ring_count);
+      ret = -EINVAL;
+      goto out;
+    }
+    init->rx_ring_count = rx_ring_count;
+    info("%s, rx_ring_count %d\n", __func__, rx_ring_count);
+  }
+
+  obj = mt_json_object_get(root, "wake_thresh_count");
+  if (obj) {
+    int wake_thresh_count = json_object_get_int(obj);
+    if (wake_thresh_count < 0) {
+      err("%s, invalid wake_thresh_count %d\n", __func__, wake_thresh_count);
+      ret = -EINVAL;
+      goto out;
+    }
+    init->wake_thresh_count = wake_thresh_count;
+    info("%s, wake_thresh_count %d\n", __func__, wake_thresh_count);
+  }
+
+  obj = mt_json_object_get(root, "wake_timeout_ms");
+  if (obj) {
+    int wake_timeout_ms = json_object_get_int(obj);
+    if (wake_timeout_ms < 0) {
+      err("%s, invalid wake_thresh_count %d\n", __func__, wake_timeout_ms);
+      ret = -EINVAL;
+      goto out;
+    }
+    init->wake_timeout_ms = wake_timeout_ms;
+    info("%s, wake_timeout_ms %d\n", __func__, wake_timeout_ms);
+  }
+
   ret = 0;
 
 out:
@@ -428,6 +464,12 @@ int mufd_socket_port(int domain, int type, int protocol, enum mtl_port port) {
   }
 
   mudp_set_tx_rate(slot->handle, ctx->init_params.txq_bps);
+  if (ctx->init_params.rx_ring_count)
+    mudp_set_rx_ring_count(slot->handle, ctx->init_params.rx_ring_count);
+  if (ctx->init_params.wake_thresh_count)
+    mudp_set_wake_thresh_count(slot->handle, ctx->init_params.wake_thresh_count);
+  if (ctx->init_params.wake_timeout_ms)
+    mudp_set_wake_timeout(slot->handle, ctx->init_params.wake_timeout_ms);
 
   info("%s(%d), succ, fd %d\n", __func__, idx, fd);
   return fd;
