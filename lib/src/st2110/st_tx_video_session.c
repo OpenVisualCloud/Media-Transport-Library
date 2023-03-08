@@ -679,7 +679,7 @@ static int tv_build_st20(struct st_tx_video_session_impl* s, struct rte_mbuf* pk
   struct st20_tx_ops* ops = &s->ops;
   uint32_t offset;
   uint16_t line1_number, line1_offset;
-  uint16_t line1_length, line2_length;
+  uint16_t line1_length = 0, line2_length = 0;
   bool single_line = (ops->packing == ST20_PACKING_GPM_SL);
   struct st_frame_trans* frame_info = &s->st20_frames[s->st20_frame_idx];
 
@@ -783,7 +783,7 @@ static int tv_build_st20_chain(struct st_tx_video_session_impl* s, struct rte_mb
   struct st20_tx_ops* ops = &s->ops;
   uint32_t offset;
   uint16_t line1_number, line1_offset;
-  uint16_t line1_length, line2_length;
+  uint16_t line1_length = 0, line2_length = 0;
   bool single_line = (ops->packing == ST20_PACKING_GPM_SL);
   struct st_frame_trans* frame_info = &s->st20_frames[s->st20_frame_idx];
 
