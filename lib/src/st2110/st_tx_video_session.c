@@ -869,14 +869,6 @@ static int tv_build_st20_chain(struct st_tx_video_session_impl* s, struct rte_mb
                frame_info->addr + s->st20_linesize * (line1_number + 1), line2_length);
   } else if (rte_eal_iova_mode() == RTE_IOVA_PA &&
              tv_frame_payload_cross_page(s, frame_info, offset, left_len)) {
-    /* re-allocate from copy chain mempool */
-    rte_pktmbuf_free(pkt_chain);
-    pkt_chain = rte_pktmbuf_alloc(s->mbuf_mempool_copy_chain);
-    if (!pkt_chain) {
-      dbg("%s(%d), pkts chain realloc fail %d\n", __func__, s->idx, s->st20_pkt_idx);
-      s->stat_pkts_chain_realloc_fail++; /* we can do nothing but count */
-      return -ENOMEM;
-    }
     /* do not attach extbuf, copy to data room */
     void* payload = rte_pktmbuf_mtod(pkt_chain, void*);
     mtl_memcpy(payload, frame_info->addr + offset, left_len);
@@ -1177,14 +1169,6 @@ static int tv_build_st22_chain(struct st_tx_video_session_impl* s, struct rte_mb
   struct st_frame_trans* frame_info = &s->st20_frames[s->st20_frame_idx];
   if (rte_eal_iova_mode() == RTE_IOVA_PA &&
       tv_frame_payload_cross_page(s, frame_info, offset, left_len)) {
-    /* re-allocate from copy chain mempool */
-    rte_pktmbuf_free(pkt_chain);
-    pkt_chain = rte_pktmbuf_alloc(s->mbuf_mempool_copy_chain);
-    if (!pkt_chain) {
-      dbg("%s(%d), pkts chain realloc fail %d\n", __func__, s->idx, s->st20_pkt_idx);
-      s->stat_pkts_chain_realloc_fail++; /* we can do nothing but count */
-      return -ENOMEM;
-    }
     /* do not attach extbuf, copy to data room */
     void* payload = rte_pktmbuf_mtod(pkt_chain, void*);
     mtl_memcpy(payload, frame_info->addr + offset, left_len);
@@ -2135,6 +2119,8 @@ static int tv_mempool_init(struct mtl_main_impl* impl,
       hdr_room_size += sizeof(struct st20_rfc4175_extra_rtp_hdr);
     /* attach extbuf used, only placeholder mbuf */
     chain_room_size = 0;
+    if (rte_eal_iova_mode() == RTE_IOVA_PA) /* need copy for cross page pkts*/
+      chain_room_size = s->st20_pkt_len;
   }
 
   for (int i = 0; i < num_port; i++) {
@@ -2187,14 +2173,10 @@ static int tv_mempool_init(struct mtl_main_impl* impl,
       s->mbuf_mempool_chain = mbuf_pool;
 
       /* has copy (not attach extbuf) and chain mbuf, create a special mempool */
-      bool copy_twice = s->st20_linesize > s->st20_bytes_in_line &&
-                        s->ops.packing != ST20_PACKING_GPM_SL;
-      if (copy_twice || rte_eal_iova_mode() == RTE_IOVA_PA) {
+      if (s->st20_linesize > s->st20_bytes_in_line &&
+          s->ops.packing != ST20_PACKING_GPM_SL) {
         chain_room_size = s->st20_pkt_len;
-        if (copy_twice)
-          n /= s->st20_total_pkts / s->st20_pkt_info[ST20_PKT_TYPE_EXTRA].number;
-        else
-          n /= s->st20_total_pkts / (s->st20_fb_size / RTE_PGSIZE_2M);
+        n /= s->st20_total_pkts / s->st20_pkt_info[ST20_PKT_TYPE_EXTRA].number;
         char pool_name[32];
         snprintf(pool_name, 32, "TXVIDEOCOPYCHAIN-M%d-R%d", mgr->idx, idx);
         struct rte_mempool* mbuf_pool = mt_mempool_create(
