@@ -293,6 +293,13 @@ static int dev_eal_init(struct mtl_init_params* p, struct mt_kport_info* kport_i
     argc++;
   }
 
+  if (p->iova_pa) {
+    argv[argc] = "--iova-mode";
+    argc++;
+    argv[argc] = "pa";
+    argc++;
+  }
+
   argv[argc] = "--log-level";
   argc++;
   if (p->log_level == MTL_LOG_LEVEL_DEBUG) {

@@ -503,6 +503,10 @@ struct mtl_init_params {
    * Suggest using rss (L3 or L4) for rx packets direction.
    */
   enum mt_rss_mode rss_mode;
+  /**
+   * Force to use DPDK IOVA PA mode.
+   */
+  bool iova_pa;
 };
 
 /**

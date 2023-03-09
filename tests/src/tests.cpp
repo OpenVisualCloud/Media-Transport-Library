@@ -41,6 +41,7 @@ enum test_args_cmd {
   TEST_ARG_PACING_WAY,
   TEST_ARG_RSS_MODE,
   TEST_ARG_TX_NO_CHAIN,
+  TEST_ARG_IOVA_PA_MODE,
 };
 
 static struct option test_args_options[] = {
@@ -74,6 +75,7 @@ static struct option test_args_options[] = {
     {"pacing_way", required_argument, 0, TEST_ARG_PACING_WAY},
     {"rss_mode", required_argument, 0, TEST_ARG_RSS_MODE},
     {"tx_no_chain", no_argument, 0, TEST_ARG_TX_NO_CHAIN},
+    {"iova_pa_mode", no_argument, 0, TEST_ARG_IOVA_PA_MODE},
 
     {0, 0, 0, 0}};
 
@@ -246,6 +248,9 @@ static int test_parse_args(struct st_tests_context* ctx, struct mtl_init_params*
         break;
       case TEST_ARG_TX_NO_CHAIN:
         p->flags |= MTL_FLAG_TX_NO_CHAIN;
+        break;
+      case TEST_ARG_IOVA_PA_MODE:
+        p->iova_pa = true;
         break;
       default:
         break;
