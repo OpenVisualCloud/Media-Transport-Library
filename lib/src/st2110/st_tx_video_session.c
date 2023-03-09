@@ -856,7 +856,7 @@ static int tv_build_st20_chain(struct st_tx_video_session_impl* s, struct rte_mb
     /* cross lines with padding case */
     /* reallocate from common mempool */
     rte_pktmbuf_free(pkt_chain);
-    pkt_chain = rte_pktmbuf_alloc(s->mbuf_mempool_common);
+    pkt_chain = rte_pktmbuf_alloc(s->mbuf_mempool_copy_chain);
     if (!pkt_chain) {
       dbg("%s(%d), pkts chain realloc fail %d\n", __func__, s->idx, s->st20_pkt_idx);
       s->stat_pkts_chain_realloc_fail++; /* we can do nothing but count */
@@ -871,7 +871,7 @@ static int tv_build_st20_chain(struct st_tx_video_session_impl* s, struct rte_mb
              tv_frame_payload_cross_page(s, frame_info, offset, left_len)) {
     /* reallocate from common mempool */
     rte_pktmbuf_free(pkt_chain);
-    pkt_chain = rte_pktmbuf_alloc(s->mbuf_mempool_common);
+    pkt_chain = rte_pktmbuf_alloc(s->mbuf_mempool_copy_chain);
     if (!pkt_chain) {
       dbg("%s(%d), pkts chain realloc fail %d\n", __func__, s->idx, s->st20_pkt_idx);
       s->stat_pkts_chain_realloc_fail++; /* we can do nothing but count */
@@ -1179,7 +1179,7 @@ static int tv_build_st22_chain(struct st_tx_video_session_impl* s, struct rte_mb
       tv_frame_payload_cross_page(s, frame_info, offset, left_len)) {
     /* reallocate from common mempool */
     rte_pktmbuf_free(pkt_chain);
-    pkt_chain = rte_pktmbuf_alloc(s->mbuf_mempool_common);
+    pkt_chain = rte_pktmbuf_alloc(s->mbuf_mempool_copy_chain);
     if (!pkt_chain) {
       dbg("%s(%d), pkts chain realloc fail %d\n", __func__, s->idx, s->st20_pkt_idx);
       s->stat_pkts_chain_realloc_fail++; /* we can do nothing but count */
@@ -2079,6 +2079,10 @@ static int tv_mempool_free(struct st_tx_video_session_impl* s) {
     ret = mt_mempool_free(s->mbuf_mempool_chain);
     if (ret >= 0) s->mbuf_mempool_chain = NULL;
   }
+  if (s->mbuf_mempool_copy_chain && !s->tx_mono_pool) {
+    ret = mt_mempool_free(s->mbuf_mempool_copy_chain);
+    if (ret >= 0) s->mbuf_mempool_copy_chain = NULL;
+  }
 
   for (int i = 0; i < MTL_SESSION_PORT_MAX; i++) {
     if (s->mbuf_mempool_hdr[i]) {
@@ -2167,10 +2171,8 @@ static int tv_mempool_init(struct mtl_main_impl* impl,
     n = mt_if_nb_tx_desc(impl, port) + s->ring_count;
     if (ops->type == ST20_TYPE_RTP_LEVEL) n += ops->rtp_ring_size;
 
-    s->mbuf_mempool_common = mt_get_tx_mempool(impl, port);
-
     if (s->tx_mono_pool) {
-      s->mbuf_mempool_chain = s->mbuf_mempool_common;
+      s->mbuf_mempool_chain = mt_get_tx_mempool(impl, port);
       info("%s(%d), use tx mono chain mempool(%p)\n", __func__, idx,
            s->mbuf_mempool_chain);
     } else {
@@ -2183,6 +2185,26 @@ static int tv_mempool_init(struct mtl_main_impl* impl,
         return -ENOMEM;
       }
       s->mbuf_mempool_chain = mbuf_pool;
+
+      /* has copy (not attach extbuf) and chain mbuf, create a special mempool */
+      bool copy_twice = s->st20_linesize > s->st20_bytes_in_line &&
+                        s->ops.packing != ST20_PACKING_GPM_SL;
+      if (copy_twice || rte_eal_iova_mode() == RTE_IOVA_PA) {
+        chain_room_size = s->st20_pkt_len;
+        if (copy_twice)
+          n /= s->st20_total_pkts / s->st20_pkt_info[ST20_PKT_TYPE_EXTRA].number;
+        else
+          n /= s->st20_total_pkts / (s->st20_fb_size / RTE_PGSIZE_2M);
+        char pool_name[32];
+        snprintf(pool_name, 32, "TXVIDEOCOPYCHAIN-M%d-R%d", mgr->idx, idx);
+        struct rte_mempool* mbuf_pool = mt_mempool_create(
+            impl, port, pool_name, n, MT_MBUF_CACHE_SIZE, 0, chain_room_size);
+        if (!mbuf_pool) {
+          tv_mempool_free(s);
+          return -ENOMEM;
+        }
+        s->mbuf_mempool_copy_chain = mbuf_pool;
+      }
     }
   }
 
