@@ -854,7 +854,7 @@ static int tv_build_st20_chain(struct st_tx_video_session_impl* s, struct rte_mb
 
   if (e_rtp && s->st20_linesize > s->st20_bytes_in_line) {
     /* cross lines with padding case */
-    /* reallocate from common mempool */
+    /* re-allocate from copy chain mempool */
     rte_pktmbuf_free(pkt_chain);
     pkt_chain = rte_pktmbuf_alloc(s->mbuf_mempool_copy_chain);
     if (!pkt_chain) {
@@ -869,7 +869,7 @@ static int tv_build_st20_chain(struct st_tx_video_session_impl* s, struct rte_mb
                frame_info->addr + s->st20_linesize * (line1_number + 1), line2_length);
   } else if (rte_eal_iova_mode() == RTE_IOVA_PA &&
              tv_frame_payload_cross_page(s, frame_info, offset, left_len)) {
-    /* reallocate from common mempool */
+    /* re-allocate from copy chain mempool */
     rte_pktmbuf_free(pkt_chain);
     pkt_chain = rte_pktmbuf_alloc(s->mbuf_mempool_copy_chain);
     if (!pkt_chain) {
@@ -1177,7 +1177,7 @@ static int tv_build_st22_chain(struct st_tx_video_session_impl* s, struct rte_mb
   struct st_frame_trans* frame_info = &s->st20_frames[s->st20_frame_idx];
   if (rte_eal_iova_mode() == RTE_IOVA_PA &&
       tv_frame_payload_cross_page(s, frame_info, offset, left_len)) {
-    /* reallocate from common mempool */
+    /* re-allocate from copy chain mempool */
     rte_pktmbuf_free(pkt_chain);
     pkt_chain = rte_pktmbuf_alloc(s->mbuf_mempool_copy_chain);
     if (!pkt_chain) {
