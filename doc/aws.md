@@ -12,25 +12,13 @@ Instance example:
 
 ![instance](png/instance.png)
 
-## 2. Hugepage setting
+## 2. Install MTL and other software
 
-Currently with no-iommu mode you have to enable 1G hugepage.
-
-```shell
-# under root user
-echo GRUB_CMDLINE_LINUX="default_hugepagesz=1G hugepagesz=1G hugepages=4">>/etc/default/grub
-grub2-mkconfig -o /boot/grub2/grub.cfg
-```
-
-Reboot instance.
-
-## 3. Install MTL and other software
-
-### 3.1 Build and install DPDK & MTL
+### 2.1 Build and install DPDK & MTL
 
 Refer to CentOS part of [build.md](./build.md).
 
-### 3.2 Apply vfio-pci patches
+### 2.2 Apply vfio-pci patches
 
 Since the default vfio driver does not support WC, ENA has some patches for the kernel.
 
@@ -40,7 +28,7 @@ cd amzn-drivers/userspace/dpdk/enav2-vfio-patch
 sudo get-vfio-with-wc.sh
 ```
 
-## 4. IOMMU Setting
+## 3. IOMMU Setting
 
 If you use bare metal, you can turn on IOMMU refer to [run.md](./run.md).
 
@@ -51,23 +39,23 @@ If you use VM, set NO-IOMMU mode for vfio after each boot.
 echo 1 > /sys/module/vfio/parameters/enable_unsafe_noiommu_mode
 ```
 
-## 5. Attach interfaces for DPDK
+## 4. Attach interfaces for DPDK
 
 > If you attach extra interfaces before starting the instance, you may not get the public DNS for ssh. The best practice is to **attach after** / **detach before** start.
 
-### 5.1 Create interfaces
+### 4.1 Create interfaces
 
 Go to  EC2 > Network interfaces > Create network interface.
 
 Choose same subnet for all new interfaces, set the right security groups for your RTP/UDP streams.
 
-### 5.2 Attach interfaces
+### 4.2 Attach interfaces
 
 Right-click on your running instance, go to Networking > Attach network interface, choose an idle interface.
 
 After attaching the interface, remember the Private IPv4 address allocated by AWS, this will be used by kahawai as interface IP.
 
-### 5.3 Bind interface to DPDK PMD
+### 4.3 Bind interface to DPDK PMD
 
 Load vfio-pci module, enable no-iommu mode if IOMMU is not supported.
 
@@ -87,11 +75,11 @@ dpdk-devbind.py -b vfio-pci 0000:00:06.0
 dpdk-devbind.py -s
 ```
 
-## 6. Run the application
+## 5. Run the application
 
-Refer to [run.md](./run.md) after section 3.3.
+Refer to [run.md](./run.md) section 3.2.
 
-### 6.1 IP configuration
+### 5.1 IP configuration
 
 Configure the AWS reserved private IP in json.
 
@@ -107,13 +95,13 @@ For example, the Private IPv4 address is 172.31.42.123, the subnet IPv4 CIDR is 
     ],
 ```
 
-### 6.2 Features not supported on ENA
+### 5.2 Features not supported on ENA
 
 * **PTP** (use system real_time)
 * **Rate Limiting** (use TSC for pacing)
 * **rte_flow** (use RSS queues)
 
-## 7. General FAQ
+## 6. General FAQ
 
 **Q:** Compiler cannot find some dependencies.
 
@@ -133,15 +121,9 @@ export LD_LIBRARY_PATH=/usr/local/lib64/
 
 ---
 
-## 8. Known issues
+## 7. Known issues
 
-### 8.1 2M hugepages cannot be used under no_iommu mode or with igb_uio driver
-
-As one 1080p frame needs 5MB memory, when buffer allocated, the physical memory may locate on different but not continious pages, this will cause invalid payload sent from TX.
-
-You have to enable 1G hugepages.
-
-### 8.2 No ptype support
+### 7.1 No ptype support
 
 ```shell
 MT: Warn: dev_config_port(0), failed to setup all ptype, only 0 supported
@@ -149,7 +131,7 @@ MT: Warn: dev_config_port(0), failed to setup all ptype, only 0 supported
 
 This is ENA PMD limitation, can be ignored for now.
 
-### 8.3 Setting RSS hash fields is not supported
+### 7.2 Setting RSS hash fields is not supported
 
 ```shell
 ena_rss_hash_set(): Setting RSS hash fields is not supported. Using default values: 0xc30

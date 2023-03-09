@@ -243,6 +243,7 @@ struct st_tx_video_session_impl {
   struct rte_mempool* mbuf_mempool_hdr[MTL_SESSION_PORT_MAX];
   bool mbuf_mempool_reuse_rx[MTL_SESSION_PORT_MAX]; /* af_xdp zero copy */
   struct rte_mempool* mbuf_mempool_chain;
+  struct rte_mempool* mbuf_mempool_copy_chain;
   bool tx_mono_pool; /* if reuse tx mono pool */
   bool tx_no_chain;  /* if tx not use chain mbuf */
   /* if the eth dev support chain buff */
@@ -340,6 +341,7 @@ struct st_tx_video_session_impl {
   int stat_pkts_dummy;
   int stat_pkts_burst;
   int stat_pkts_burst_dummy;
+  int stat_pkts_chain_realloc_fail;
   int stat_trs_ret_code[MTL_SESSION_PORT_MAX];
   int stat_build_ret_code;
   uint64_t stat_last_time;
