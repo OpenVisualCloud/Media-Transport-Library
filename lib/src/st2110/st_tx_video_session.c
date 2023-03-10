@@ -107,7 +107,7 @@ static int tv_frame_create_page_table(struct st_tx_video_session_impl* s,
   info("%s(%d,%d), hugepage size %" PRIu64 "\n", __func__, s->idx, frame_info->idx,
        hugepage_sz);
 
-  /* calculate num pages of 2m hp */
+  /* calculate num hugepages */
   uint16_t num_pages =
       RTE_PTR_DIFF(RTE_PTR_ALIGN(frame_info->addr + s->st20_fb_size, hugepage_sz),
                    RTE_PTR_ALIGN_FLOOR(frame_info->addr, hugepage_sz)) /
