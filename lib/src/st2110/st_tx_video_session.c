@@ -82,7 +82,7 @@ static void tv_frame_free_cb(void* addr, void* opaque) {
 static rte_iova_t tv_frame_get_offset_iova(struct st_tx_video_session_impl* s,
                                            struct st_frame_trans* frame_info,
                                            size_t offset) {
-  if (rte_eal_iova_mode() != RTE_IOVA_PA) return frame_info->iova + offset;
+  if (frame_info->page_table_len == 0) return frame_info->iova + offset;
   void* addr = RTE_PTR_ADD(frame_info->addr, offset);
   struct st_page_info* page;
   for (uint16_t i = 0; i < frame_info->page_table_len; i++) {
@@ -98,45 +98,50 @@ static rte_iova_t tv_frame_get_offset_iova(struct st_tx_video_session_impl* s,
 
 static int tv_frame_create_page_table(struct st_tx_video_session_impl* s,
                                       struct st_frame_trans* frame_info) {
-  if (rte_eal_iova_mode() != RTE_IOVA_PA) {
-    dbg("%s(%d,%d), no need to create IOVA table\n", __func__, s->idx, frame_info->idx);
-    return 0;
+  struct rte_memseg* mseg = rte_mem_virt2memseg(frame_info->addr, NULL);
+  if (mseg == NULL) {
+    err("%s(%d,%d), get mseg fail\n", __func__, s->idx, frame_info->idx);
+    return -EIO;
   }
+  size_t hugepage_sz = mseg->hugepage_sz;
+  info("%s(%d,%d), hugepage size %" PRIu64 "\n", __func__, s->idx, frame_info->idx,
+       hugepage_sz);
 
   /* calculate num pages of 2m hp */
   uint16_t num_pages =
-      RTE_PTR_DIFF(RTE_PTR_ALIGN(frame_info->addr + s->st20_fb_size, RTE_PGSIZE_2M),
-                   RTE_PTR_ALIGN_FLOOR(frame_info->addr, RTE_PGSIZE_2M)) /
-      RTE_PGSIZE_2M;
+      RTE_PTR_DIFF(RTE_PTR_ALIGN(frame_info->addr + s->st20_fb_size, hugepage_sz),
+                   RTE_PTR_ALIGN_FLOOR(frame_info->addr, hugepage_sz)) /
+      hugepage_sz;
 
   struct st_page_info* pages = mt_zmalloc(sizeof(*pages) * num_pages);
   if (pages == NULL) {
-    err("%s(%d), pages info malloc fail\n", __func__, s->idx);
+    err("%s(%d,%d), pages info malloc fail\n", __func__, s->idx, frame_info->idx);
     return -ENOMEM;
   }
 
-  void* addr = frame_info->addr;
   /* get IOVA start of each page */
+  void* addr = frame_info->addr;
   for (uint16_t i = 0; i < num_pages; i++) {
     /* touch the page before getting its IOVA */
     *(volatile char*)addr = 0;
-    pages[i].addr = addr;
     pages[i].iova = rte_mem_virt2iova(addr);
-    void* next_addr = RTE_PTR_ALIGN(RTE_PTR_ADD(addr, 1), RTE_PGSIZE_2M);
+    pages[i].addr = addr;
+    void* next_addr = RTE_PTR_ALIGN(RTE_PTR_ADD(addr, 1), hugepage_sz);
     pages[i].len = RTE_PTR_DIFF(next_addr, addr);
     addr = next_addr;
-    info("%s(%d,%d), va: %p, iova(pa): 0x%" PRIx64 ", len: %" PRIu64 "\n", __func__,
-         s->idx, frame_info->idx, pages[i].addr, pages[i].iova, pages[i].len);
+    info("%s(%d,%d), seg %u, va %p, iova 0x%" PRIx64 ", len %" PRIu64 "\n", __func__,
+         s->idx, frame_info->idx, i, pages[i].addr, pages[i].iova, pages[i].len);
   }
-
   frame_info->page_table = pages;
   frame_info->page_table_len = num_pages;
+
   return 0;
 }
 
 static inline bool tv_frame_payload_cross_page(struct st_tx_video_session_impl* s,
                                                struct st_frame_trans* frame_info,
                                                size_t offset, size_t len) {
+  if (frame_info->page_table_len == 0) return false;
   return ((tv_frame_get_offset_iova(s, frame_info, offset + len - 1) -
            tv_frame_get_offset_iova(s, frame_info, offset)) != len - 1);
 }
@@ -187,7 +192,7 @@ static int tv_alloc_frames(struct mtl_main_impl* impl,
       frame_info->iova = rte_mem_virt2iova(frame);
       frame_info->addr = frame;
       frame_info->flags = ST_FT_FLAG_RTE_MALLOC;
-      tv_frame_create_page_table(s, frame_info);
+      if (impl->iova_mode == RTE_IOVA_PA) tv_frame_create_page_table(s, frame_info);
     }
     frame_info->priv = s;
   }
@@ -867,8 +872,7 @@ static int tv_build_st20_chain(struct st_tx_video_session_impl* s, struct rte_mb
     mtl_memcpy(payload, frame_info->addr + offset, line1_length);
     mtl_memcpy(payload + line1_length,
                frame_info->addr + s->st20_linesize * (line1_number + 1), line2_length);
-  } else if (rte_eal_iova_mode() == RTE_IOVA_PA &&
-             tv_frame_payload_cross_page(s, frame_info, offset, left_len)) {
+  } else if (tv_frame_payload_cross_page(s, frame_info, offset, left_len)) {
     /* do not attach extbuf, copy to data room */
     void* payload = rte_pktmbuf_mtod(pkt_chain, void*);
     mtl_memcpy(payload, frame_info->addr + offset, left_len);
@@ -1167,8 +1171,7 @@ static int tv_build_st22_chain(struct st_tx_video_session_impl* s, struct rte_mb
 
   /* attach payload to chainbuf */
   struct st_frame_trans* frame_info = &s->st20_frames[s->st20_frame_idx];
-  if (rte_eal_iova_mode() == RTE_IOVA_PA &&
-      tv_frame_payload_cross_page(s, frame_info, offset, left_len)) {
+  if (tv_frame_payload_cross_page(s, frame_info, offset, left_len)) {
     /* do not attach extbuf, copy to data room */
     void* payload = rte_pktmbuf_mtod(pkt_chain, void*);
     mtl_memcpy(payload, frame_info->addr + offset, left_len);
@@ -2119,7 +2122,7 @@ static int tv_mempool_init(struct mtl_main_impl* impl,
       hdr_room_size += sizeof(struct st20_rfc4175_extra_rtp_hdr);
     /* attach extbuf used, only placeholder mbuf */
     chain_room_size = 0;
-    if (rte_eal_iova_mode() == RTE_IOVA_PA) /* need copy for cross page pkts*/
+    if (impl->iova_mode == RTE_IOVA_PA) /* need copy for cross page pkts*/
       chain_room_size = s->st20_pkt_len;
   }
 
