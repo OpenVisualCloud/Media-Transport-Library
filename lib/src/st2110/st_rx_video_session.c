@@ -738,7 +738,8 @@ static int rv_alloc_frames(struct mtl_main_impl* impl,
       st20_frame->flags = ST_FT_FLAG_RTE_MALLOC;
       st20_frame->addr = frame;
       st20_frame->iova = rte_malloc_virt2iova(frame);
-      if (impl->iova_mode == RTE_IOVA_PA) rv_frame_create_page_table(s, st20_frame);
+      if (impl->iova_mode == RTE_IOVA_PA && s->dma_dev)
+        rv_frame_create_page_table(s, st20_frame);
     }
   }
 
@@ -2286,6 +2287,12 @@ static int rv_init_sw(struct mtl_main_impl* impl, struct st_rx_video_sessions_mg
     }
   }
 
+  /* try to request dma dev */
+  if (st20_is_frame_type(type) && (ops->flags & ST20_RX_FLAG_DMA_OFFLOAD) &&
+      !s->st20_uframe_size && !rv_is_hdr_split(s)) {
+    rv_init_dma(impl, s);
+  }
+
   if (st22_ops) {
     ret = rv_init_st22(impl, s, st22_ops);
     if (ret < 0) {
@@ -2336,12 +2343,6 @@ static int rv_init_sw(struct mtl_main_impl* impl, struct st_rx_video_sessions_mg
     pg_meta->frame_total_size = s->st20_frame_size;
     pg_meta->uframe_total_size = s->st20_uframe_size;
     info("%s(%d), uframe size %" PRIu64 "\n", __func__, idx, s->st20_uframe_size);
-  }
-
-  /* try to request dma dev */
-  if (st20_is_frame_type(type) && (ops->flags & ST20_RX_FLAG_DMA_OFFLOAD) &&
-      !s->st20_uframe_size && !rv_is_hdr_split(s)) {
-    rv_init_dma(impl, s);
   }
 
   s->has_pkt_lcore = false;

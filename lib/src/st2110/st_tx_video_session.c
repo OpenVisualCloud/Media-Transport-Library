@@ -192,7 +192,8 @@ static int tv_alloc_frames(struct mtl_main_impl* impl,
       frame_info->iova = rte_mem_virt2iova(frame);
       frame_info->addr = frame;
       frame_info->flags = ST_FT_FLAG_RTE_MALLOC;
-      if (impl->iova_mode == RTE_IOVA_PA) tv_frame_create_page_table(s, frame_info);
+      if (impl->iova_mode == RTE_IOVA_PA && !s->tx_no_chain)
+        tv_frame_create_page_table(s, frame_info);
     }
     frame_info->priv = s;
   }
