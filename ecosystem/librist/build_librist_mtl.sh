@@ -9,6 +9,7 @@ set -e
 rm librist -rf
 git clone https://code.videolan.org/rist/librist.git
 cd librist
+git checkout d364e491
 
 # apply the patches
 git am ../*.patch
