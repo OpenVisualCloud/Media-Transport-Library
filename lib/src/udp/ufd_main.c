@@ -277,16 +277,28 @@ static int ufd_parse_json(struct mufd_init_params* init, const char* filename) {
     info("%s, wake_thresh_count %d\n", __func__, wake_thresh_count);
   }
 
-  obj = mt_json_object_get(root, "wake_timeout_ms");
+  obj = mt_json_object_get(root, "wake_timeout_us");
   if (obj) {
-    int wake_timeout_ms = json_object_get_int(obj);
-    if (wake_timeout_ms < 0) {
-      err("%s, invalid wake_thresh_count %d\n", __func__, wake_timeout_ms);
+    int wake_timeout_us = json_object_get_int(obj);
+    if (wake_timeout_us < 0) {
+      err("%s, invalid wake_timeout_us %d\n", __func__, wake_timeout_us);
       ret = -EINVAL;
       goto out;
     }
-    init->wake_timeout_ms = wake_timeout_ms;
-    info("%s, wake_timeout_ms %d\n", __func__, wake_timeout_ms);
+    init->wake_timeout_us = wake_timeout_us;
+    info("%s, wake_timeout_us %d\n", __func__, wake_timeout_us);
+  }
+
+  obj = mt_json_object_get(root, "rx_poll_sleep_us");
+  if (obj) {
+    int rx_poll_sleep_us = json_object_get_int(obj);
+    if (rx_poll_sleep_us < 0) {
+      err("%s, invalid rx_poll_sleep_us %d\n", __func__, rx_poll_sleep_us);
+      ret = -EINVAL;
+      goto out;
+    }
+    init->rx_poll_sleep_us = rx_poll_sleep_us;
+    info("%s, rx_poll_sleep_us %d\n", __func__, rx_poll_sleep_us);
   }
 
   ret = 0;
@@ -468,8 +480,10 @@ int mufd_socket_port(int domain, int type, int protocol, enum mtl_port port) {
     mudp_set_rx_ring_count(slot->handle, ctx->init_params.rx_ring_count);
   if (ctx->init_params.wake_thresh_count)
     mudp_set_wake_thresh_count(slot->handle, ctx->init_params.wake_thresh_count);
-  if (ctx->init_params.wake_timeout_ms)
-    mudp_set_wake_timeout(slot->handle, ctx->init_params.wake_timeout_ms);
+  if (ctx->init_params.wake_timeout_us)
+    mudp_set_wake_timeout(slot->handle, ctx->init_params.wake_timeout_us);
+  if (ctx->init_params.rx_poll_sleep_us)
+    mudp_set_rx_poll_sleep(slot->handle, ctx->init_params.rx_poll_sleep_us);
 
   info("%s(%d), succ, fd %d\n", __func__, idx, fd);
   return fd;

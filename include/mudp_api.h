@@ -229,7 +229,7 @@ int mudp_set_tx_rate(mudp_handle ut, uint64_t bps);
 uint64_t mudp_get_tx_rate(mudp_handle ut);
 
 /**
- * Set the tx timeout(ms) for one udp transport socket.
+ * Set the tx timeout(us) for one udp transport socket.
  *
  * @param ut
  *   The handle to udp transport socket.
@@ -239,7 +239,7 @@ uint64_t mudp_get_tx_rate(mudp_handle ut);
  *   - 0: Success.
  *   - <0: Error code.
  */
-int mudp_set_tx_timeout_ms(mudp_handle ut, int ms);
+int mudp_set_tx_timeout(mudp_handle ut, unsigned int us);
 
 /**
  * Get the tx timeout value for one udp transport socket.
@@ -247,22 +247,22 @@ int mudp_set_tx_timeout_ms(mudp_handle ut, int ms);
  * @param ut
  *   The handle to udp transport socket.
  * @return
- *   - tx timeout: ms.
+ *   - tx timeout: us.
  */
-int mudp_get_tx_timeout_ms(mudp_handle ut);
+unsigned int mudp_get_tx_timeout(mudp_handle ut);
 
 /**
- * Set the rx timeout(ms) for one udp transport socket.
+ * Set the rx timeout(us) for one udp transport socket.
  *
  * @param ut
  *   The handle to udp transport socket.
  * @param ms
- *   Rx timeout ms.
+ *   Rx timeout us.
  * @return
  *   - 0: Success.
  *   - <0: Error code.
  */
-int mudp_set_rx_timeout_ms(mudp_handle ut, int ms);
+int mudp_set_rx_timeout(mudp_handle ut, unsigned int us);
 
 /**
  * Get the rx timeout value for one udp transport socket.
@@ -270,22 +270,22 @@ int mudp_set_rx_timeout_ms(mudp_handle ut, int ms);
  * @param ut
  *   The handle to udp transport socket.
  * @return
- *   - Rx timeout: ms.
+ *   - Rx timeout: us.
  */
-int mudp_get_rx_timeout_ms(mudp_handle ut);
+unsigned int mudp_get_rx_timeout(mudp_handle ut);
 
 /**
- * Set the arp timeout(ms) for one udp transport socket.
+ * Set the arp timeout(us) for one udp transport socket.
  *
  * @param ut
  *   The handle to udp transport socket.
  * @param ms
- *   Arp timeout ms.
+ *   Arp timeout us.
  * @return
  *   - 0: Success.
  *   - <0: Error code.
  */
-int mudp_set_arp_timeout_ms(mudp_handle ut, int ms);
+int mudp_set_arp_timeout(mudp_handle ut, unsigned int us);
 
 /**
  * Get the arp timeout value for one udp transport socket.
@@ -293,9 +293,9 @@ int mudp_set_arp_timeout_ms(mudp_handle ut, int ms);
  * @param ut
  *   The handle to udp transport socket.
  * @return
- *   - arp timeout: ms.
+ *   - arp timeout: us.
  */
-int mudp_get_arp_timeout_ms(mudp_handle ut);
+unsigned int mudp_get_arp_timeout(mudp_handle ut);
 
 /**
  * Set the count for rx ring in udp transport.
@@ -329,12 +329,25 @@ int mudp_set_wake_thresh_count(mudp_handle ut, unsigned int count);
  * @param ut
  *   The handle to udp transport socket.
  * @param ms
- *   Timeout value in ms.
+ *   Timeout value in us.
  * @return
  *   - 0: Success.
  *   - <0: Error code.
  */
-int mudp_set_wake_timeout(mudp_handle ut, int ms);
+int mudp_set_wake_timeout(mudp_handle ut, unsigned int us);
+
+/**
+ * Set rx poll sleep(ms) time.
+ *
+ * @param ut
+ *   The handle to udp transport socket.
+ * @param ms
+ *   Time to sleep inside poll, value in us.
+ * @return
+ *   - 0: Success.
+ *   - <0: Error code.
+ */
+int mudp_set_rx_poll_sleep(mudp_handle ut, unsigned int us);
 
 /**
  * Create a udp transport socket on a PCIE port.

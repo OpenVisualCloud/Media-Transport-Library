@@ -36,7 +36,9 @@ struct mufd_init_params {
   /** wakeup when rte_ring_count(s->rx_ring) reach this threshold */
   unsigned int wake_thresh_count;
   /** wakeup when timeout with last wakeup */
-  int wake_timeout_ms;
+  unsigned int wake_timeout_us;
+  /** rx poll sleep time */
+  unsigned int rx_poll_sleep_us;
 };
 
 /**

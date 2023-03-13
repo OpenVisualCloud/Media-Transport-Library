@@ -384,8 +384,8 @@ static int udp_tasklet_handlder(void* priv) {
   unsigned int count = rte_ring_count(s->rx_ring);
   if (count > 0) {
     uint64_t tsc = mt_get_tsc(impl);
-    int ms = (tsc - s->wake_tsc_last) / NS_PER_MS;
-    if ((count > s->wake_thresh_count) || (ms > s->wake_timeout_ms)) {
+    int us = (tsc - s->wake_tsc_last) / NS_PER_US;
+    if ((count > s->wake_thresh_count) || (us > s->wake_timeout_us)) {
       udp_wakeup(s);
       s->wake_tsc_last = tsc;
     }
@@ -511,6 +511,10 @@ static int udp_stat_dump(void* priv) {
     warn("%s(%d,%d), pkt %u arp fail\n", __func__, port, idx, s->stat_pkt_arp_fail);
     s->stat_pkt_arp_fail = 0;
   }
+  if (s->stat_tx_retry) {
+    warn("%s(%d,%d), pkt tx retry %u\n", __func__, port, idx, s->stat_tx_retry);
+    s->stat_tx_retry = 0;
+  }
   if (s->stat_timedwait) {
     notice("%s(%d,%d), timedwait %u timeout %u\n", __func__, port, idx, s->stat_timedwait,
            s->stat_timedwait_timeout);
@@ -582,17 +586,17 @@ static int udp_get_rcvtimeo(struct mudp_impl* s, void* optval, socklen_t* optlen
   int idx = s->idx;
   struct timeval* tv;
   size_t sz = sizeof(*tv);
-  int ms;
+  unsigned int us;
 
   if (*optlen != sz) {
     err("%s(%d), invalid *optlen %d\n", __func__, idx, (int)(*optlen));
     return -EINVAL;
   }
 
-  ms = mudp_get_rx_timeout_ms(s);
+  us = mudp_get_rx_timeout(s);
   tv = (struct timeval*)optval;
-  tv->tv_sec = ms / 1000;
-  tv->tv_usec = (ms % 1000) * 1000;
+  tv->tv_sec = us / US_PER_S;
+  tv->tv_usec = us % US_PER_S;
   return 0;
 }
 
@@ -600,7 +604,7 @@ static int udp_set_rcvtimeo(struct mudp_impl* s, const void* optval, socklen_t o
   int idx = s->idx;
   const struct timeval* tv;
   size_t sz = sizeof(*tv);
-  int ms;
+  unsigned int us;
 
   if (optlen != sz) {
     err("%s(%d), invalid optlen %d\n", __func__, idx, (int)optlen);
@@ -608,8 +612,8 @@ static int udp_set_rcvtimeo(struct mudp_impl* s, const void* optval, socklen_t o
   }
 
   tv = (const struct timeval*)optval;
-  ms = tv->tv_sec * 1000 + tv->tv_usec / 1000;
-  mudp_set_rx_timeout_ms(s, ms);
+  us = tv->tv_sec * 1000 * 1000 + tv->tv_usec;
+  mudp_set_rx_timeout(s, us);
   return 0;
 }
 
@@ -814,12 +818,13 @@ rx_pool:
     return -EAGAIN;
   }
 
-  int ms = (mt_get_tsc(impl) - start_ts) / NS_PER_MS;
-  if ((ms < s->rx_timeout_ms) && udp_alive(s)) {
+  unsigned int us = (mt_get_tsc(impl) - start_ts) / NS_PER_US;
+  if ((us < s->rx_timeout_us) && udp_alive(s)) {
+    if (s->rx_poll_sleep_us) mt_sleep_us(s->rx_poll_sleep_us);
     goto rx_pool;
   }
 
-  dbg("%s(%d), timeout to %d ms, flags %d\n", __func__, s->idx, s->rx_timeout_ms, flags);
+  dbg("%s(%d), timeout to %d ms, flags %d\n", __func__, s->idx, s->rx_timeout_us, flags);
   return -ETIMEDOUT;
 }
 
@@ -855,6 +860,7 @@ rx_poll:
   /* check if timeout */
   int ms = (mt_get_tsc(impl) - start_ts) / NS_PER_MS;
   if ((ms < timeout) && udp_alive(s)) {
+    if (s->rx_poll_sleep_us) mt_sleep_us(s->rx_poll_sleep_us);
     goto rx_poll;
   }
 
@@ -862,24 +868,17 @@ rx_poll:
   return 0;
 }
 
-static void udp_timedwait_lcore(struct mudp_impl* s, int timeout_ms) {
-  int idx = s->idx;
-
-  if (timeout_ms < 0) {
-    err("%s(%d), invalid timeout %d ms\n", __func__, idx, timeout_ms);
-    return;
-  }
-
+static void udp_timedwait_lcore(struct mudp_impl* s, unsigned int us) {
   mt_pthread_mutex_lock(&s->lcore_wake_mutex);
   if (udp_alive(s)) {
     struct timespec time;
     clock_gettime(MT_THREAD_TIMEDWAIT_CLOCK_ID, &time);
     uint64_t ns = mt_timespec_to_ns(&time);
-    ns += timeout_ms * NS_PER_MS;
+    ns += us * NS_PER_US;
     mt_ns_to_timespec(ns, &time);
     s->stat_timedwait++;
     int ret = mt_pthread_cond_timedwait(&s->lcore_wake_cond, &s->lcore_wake_mutex, &time);
-    dbg("%s(%d), timedwait ret %d\n", __func__, idx, ret);
+    dbg("%s(%d), timedwait ret %d\n", __func__, s->idx, ret);
     if (ret == ETIMEDOUT) s->stat_timedwait_timeout++;
   }
   mt_pthread_mutex_unlock(&s->lcore_wake_mutex);
@@ -902,10 +901,10 @@ dequeue:
     return -EAGAIN;
   }
 
-  int ms = (mt_get_tsc(impl) - start_ts) / NS_PER_MS;
-  int timeout = s->rx_timeout_ms;
-  if (ms < timeout) {
-    udp_timedwait_lcore(s, timeout - ms);
+  unsigned int us = (mt_get_tsc(impl) - start_ts) / NS_PER_US;
+  unsigned int timeout = s->rx_timeout_us;
+  if (us < timeout) {
+    udp_timedwait_lcore(s, timeout - us);
     goto dequeue;
   }
 
@@ -974,12 +973,13 @@ mudp_handle mudp_socket_port(mtl_handle mt, int domain, int type, int protocol,
   s->element_nb = mt_if_nb_tx_desc(impl, port) + 512;
   s->element_size = MUDP_MAX_BYTES;
   /* No dependcy to arp for kernel based udp stack */
-  s->arp_timeout_ms = MT_DEV_TIMEOUT_ZERO;
-  s->tx_timeout_ms = 10;
-  s->rx_timeout_ms = 1000 * 1;
+  s->arp_timeout_us = MT_DEV_TIMEOUT_ZERO;
+  s->tx_timeout_us = 10 * US_PER_MS;
+  s->rx_timeout_us = US_PER_S;
   s->txq_bps = MUDP_DEFAULT_RL_BPS;
   s->rx_burst_pkts = 128;
   s->rx_ring_count = 1024;
+  s->rx_poll_sleep_us = 10;
   s->sndbuf_sz = 10 * 1024;
   s->rcvbuf_sz = 10 * 1024;
   s->mcast_addrs_nb = 16; /* max 16 mcast address */
@@ -996,7 +996,7 @@ mudp_handle mudp_socket_port(mtl_handle mt, int domain, int type, int protocol,
   mt_pthread_cond_init(&s->lcore_wake_cond, NULL);
 #endif
   s->wake_thresh_count = 32;
-  s->wake_timeout_ms = 1;
+  s->wake_timeout_us = 1000;
   s->wake_tsc_last = mt_get_tsc(impl);
 
   ret = udp_init_hdr(impl, s);
@@ -1090,7 +1090,7 @@ ssize_t mudp_sendto(mudp_handle ut, const void* buf, size_t len, int flags,
   struct mudp_impl* s = ut;
   struct mtl_main_impl* impl = s->parnet;
   int idx = s->idx;
-  int arp_timeout_ms = s->arp_timeout_ms;
+  int arp_timeout_ms = s->arp_timeout_us / 1000;
   int ret;
   struct rte_mbuf* m;
 
@@ -1128,22 +1128,35 @@ ssize_t mudp_sendto(mudp_handle ut, const void* buf, size_t len, int flags,
       err("%s(%d), build pkt fail %d\n", __func__, idx, ret);
       return ret;
     } else {
-      mt_delay_us(1);
+      mt_sleep_us(1);
+      /* align to kernel behavior which sendto succ even if arp not resloved */
       return len;
     }
   }
 
-  uint16_t tx;
-  if (s->txq)
-    tx = mt_dev_tx_burst_busy(impl, s->txq, &m, 1, s->tx_timeout_ms);
-  else
-    tx = mt_tsq_burst_busy(impl, s->tsq, &m, 1, s->tx_timeout_ms);
-  if (tx < 1) {
-    err("%s(%d), tx pkt fail %d\n", __func__, idx, ret);
-    rte_pktmbuf_free(m);
-    return -EIO;
+  uint64_t start_ts = mt_get_tsc(impl);
+  while (1) {
+    uint16_t sent;
+
+    if (s->tsq)
+      sent = mt_tsq_burst(s->tsq, &m, 1);
+    else
+      sent = mt_dev_tx_burst(s->txq, &m, 1);
+    if (sent >= 1) { /* burst succ */
+      s->stat_pkt_tx++;
+      break;
+    }
+
+    /* check timeout */
+    unsigned int us = (mt_get_tsc(impl) - start_ts) / NS_PER_US;
+    if (us > s->tx_timeout_us) {
+      warn("%s(%d), fail as timeout %u us\n", __func__, idx, s->tx_timeout_us);
+      rte_pktmbuf_free(m);
+      return -ETIMEDOUT;
+    }
+    s->stat_tx_retry++;
+    mt_sleep_us(1);
   }
-  s->stat_pkt_tx++;
 
   return len;
 }
@@ -1327,7 +1340,7 @@ uint64_t mudp_get_tx_rate(mudp_handle ut) {
   return s->txq_bps;
 }
 
-int mudp_set_tx_timeout_ms(mudp_handle ut, int ms) {
+int mudp_set_tx_timeout(mudp_handle ut, unsigned int us) {
   struct mudp_impl* s = ut;
   int idx = s->idx;
 
@@ -1336,12 +1349,12 @@ int mudp_set_tx_timeout_ms(mudp_handle ut, int ms) {
     return -EIO;
   }
 
-  s->tx_timeout_ms = ms;
-  info("%s(%d), new timeout: %u ms\n", __func__, idx, ms);
+  s->tx_timeout_us = us;
+  info("%s(%d), new timeout: %u us\n", __func__, idx, us);
   return 0;
 }
 
-int mudp_get_tx_timeout_ms(mudp_handle ut) {
+unsigned int mudp_get_tx_timeout(mudp_handle ut) {
   struct mudp_impl* s = ut;
   int idx = s->idx;
 
@@ -1350,10 +1363,10 @@ int mudp_get_tx_timeout_ms(mudp_handle ut) {
     return -EIO;
   }
 
-  return s->tx_timeout_ms;
+  return s->tx_timeout_us;
 }
 
-int mudp_set_rx_timeout_ms(mudp_handle ut, int ms) {
+int mudp_set_rx_timeout(mudp_handle ut, unsigned int us) {
   struct mudp_impl* s = ut;
   int idx = s->idx;
 
@@ -1362,12 +1375,12 @@ int mudp_set_rx_timeout_ms(mudp_handle ut, int ms) {
     return -EIO;
   }
 
-  s->rx_timeout_ms = ms;
-  info("%s(%d), new timeout: %u ms\n", __func__, idx, ms);
+  s->rx_timeout_us = us;
+  info("%s(%d), new timeout: %u us\n", __func__, idx, us);
   return 0;
 }
 
-int mudp_get_rx_timeout_ms(mudp_handle ut) {
+unsigned int mudp_get_rx_timeout(mudp_handle ut) {
   struct mudp_impl* s = ut;
   int idx = s->idx;
 
@@ -1376,10 +1389,10 @@ int mudp_get_rx_timeout_ms(mudp_handle ut) {
     return -EIO;
   }
 
-  return s->rx_timeout_ms;
+  return s->rx_timeout_us;
 }
 
-int mudp_set_arp_timeout_ms(mudp_handle ut, int ms) {
+int mudp_set_arp_timeout(mudp_handle ut, unsigned int us) {
   struct mudp_impl* s = ut;
   int idx = s->idx;
 
@@ -1388,12 +1401,12 @@ int mudp_set_arp_timeout_ms(mudp_handle ut, int ms) {
     return -EIO;
   }
 
-  s->arp_timeout_ms = ms;
-  info("%s(%d), new timeout: %u ms\n", __func__, idx, ms);
+  s->arp_timeout_us = us;
+  info("%s(%d), new timeout: %u ms\n", __func__, idx, us);
   return 0;
 }
 
-int mudp_get_arp_timeout_ms(mudp_handle ut) {
+unsigned int mudp_get_arp_timeout(mudp_handle ut) {
   struct mudp_impl* s = ut;
   int idx = s->idx;
 
@@ -1402,7 +1415,7 @@ int mudp_get_arp_timeout_ms(mudp_handle ut) {
     return -EIO;
   }
 
-  return s->arp_timeout_ms;
+  return s->arp_timeout_us;
 }
 
 int mudp_set_rx_ring_count(mudp_handle ut, unsigned int count) {
@@ -1438,7 +1451,7 @@ int mudp_set_wake_thresh_count(mudp_handle ut, unsigned int count) {
   return 0;
 }
 
-int mudp_set_wake_timeout(mudp_handle ut, int ms) {
+int mudp_set_wake_timeout(mudp_handle ut, unsigned int us) {
   struct mudp_impl* s = ut;
   int idx = s->idx;
 
@@ -1448,7 +1461,21 @@ int mudp_set_wake_timeout(mudp_handle ut, int ms) {
   }
 
   /* add value check? */
-  s->wake_timeout_ms = ms;
+  s->wake_timeout_us = us;
+  return 0;
+}
+
+int mudp_set_rx_poll_sleep(mudp_handle ut, unsigned int us) {
+  struct mudp_impl* s = ut;
+  int idx = s->idx;
+
+  if (s->type != MT_HANDLE_UDP) {
+    err("%s(%d), invalid type %d\n", __func__, idx, s->type);
+    return -EIO;
+  }
+
+  /* add value check? */
+  s->rx_poll_sleep_us = us;
   return 0;
 }
 
