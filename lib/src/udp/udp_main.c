@@ -511,6 +511,10 @@ static int udp_stat_dump(void* priv) {
     warn("%s(%d,%d), pkt %u arp fail\n", __func__, port, idx, s->stat_pkt_arp_fail);
     s->stat_pkt_arp_fail = 0;
   }
+  if (s->stat_tx_retry) {
+    warn("%s(%d,%d), pkt tx retry %u\n", __func__, port, idx, s->stat_tx_retry);
+    s->stat_tx_retry = 0;
+  }
   if (s->stat_timedwait) {
     notice("%s(%d,%d), timedwait %u timeout %u\n", __func__, port, idx, s->stat_timedwait,
            s->stat_timedwait_timeout);
@@ -1125,21 +1129,34 @@ ssize_t mudp_sendto(mudp_handle ut, const void* buf, size_t len, int flags,
       return ret;
     } else {
       mt_sleep_us(1);
+      /* align to kernel behavior which sendto succ even if arp not resloved */
       return len;
     }
   }
 
-  uint16_t tx;
-  if (s->txq)
-    tx = mt_dev_tx_burst_busy(impl, s->txq, &m, 1, s->tx_timeout_us / US_PER_MS);
-  else
-    tx = mt_tsq_burst_busy(impl, s->tsq, &m, 1, s->tx_timeout_us / US_PER_MS);
-  if (tx < 1) {
-    err("%s(%d), tx pkt fail %d timeout %u us\n", __func__, idx, ret, s->tx_timeout_us);
-    rte_pktmbuf_free(m);
-    return -EIO;
+  uint64_t start_ts = mt_get_tsc(impl);
+  while (1) {
+    uint16_t sent;
+
+    if (s->tsq)
+      sent = mt_tsq_burst(s->tsq, &m, 1);
+    else
+      sent += mt_dev_tx_burst(s->txq, &m, 1);
+    if (sent >= 1) { /* burst succ */
+      s->stat_pkt_tx++;
+      break;
+    }
+
+    /* check timeout */
+    unsigned int us = (mt_get_tsc(impl) - start_ts) / NS_PER_US;
+    if (us > s->tx_timeout_us) {
+      warn("%s(%d), fail as timeout %u us\n", __func__, idx, s->tx_timeout_us);
+      rte_pktmbuf_free(m);
+      return -ETIMEDOUT;
+    }
+    s->stat_tx_retry++;
+    mt_sleep_us(1);
   }
-  s->stat_pkt_tx++;
 
   return len;
 }

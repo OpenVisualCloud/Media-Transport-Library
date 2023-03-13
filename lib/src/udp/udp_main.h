@@ -85,6 +85,7 @@ struct mudp_impl {
   uint32_t stat_pkt_build;
   uint32_t stat_pkt_arp_fail;
   uint32_t stat_pkt_tx;
+  uint32_t stat_tx_retry;
   uint32_t stat_pkt_rx;
   uint32_t stat_pkt_rx_enq_fail;
   uint32_t stat_pkt_deliver;
