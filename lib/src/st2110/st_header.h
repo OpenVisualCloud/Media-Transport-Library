@@ -391,8 +391,7 @@ struct st_rx_video_slot_impl {
   uint16_t seq_id_base;     /* seq id for the first packt */
   uint32_t seq_id_base_u32; /* seq id for the first packt with u32 */
   bool seq_id_got;
-  void* frame; /* only for frame type */
-  rte_iova_t frame_iova;
+  struct st_frame_trans* frame; /* only for frame type */
   uint8_t* frame_bitmap;
   size_t frame_recv_size;           /* for frame type */
   size_t pkt_lcore_frame_recv_size; /* frame_recv_size for pkt lcore */

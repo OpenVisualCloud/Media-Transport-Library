@@ -592,22 +592,11 @@ static struct st_frame_trans* rv_get_frame(struct st_rx_video_session_impl* s) {
   return NULL;
 }
 
-static int rv_put_frame(struct st_rx_video_session_impl* s, void* frame) {
-  int idx = s->idx;
-  struct st_frame_trans* st20_frame;
-
-  for (int i = 0; i < s->st20_frames_cnt; i++) {
-    st20_frame = &s->st20_frames[i];
-
-    if (st20_frame->addr == frame) {
-      dbg("%s(%d), put frame at %d\n", __func__, idx, i);
-      rte_atomic32_dec(&st20_frame->refcnt);
-      return 0;
-    }
-  }
-
-  err("%s(%d), invalid frame %p\n", __func__, idx, frame);
-  return -EIO;
+static int rv_put_frame(struct st_rx_video_session_impl* s,
+                        struct st_frame_trans* frame) {
+  dbg("%s(%d), put frame at %d\n", __func__, s->idx, frame->idx);
+  rte_atomic32_dec(&frame->refcnt);
+  return 0;
 }
 
 static int rv_free_frames(struct st_rx_video_session_impl* s) {
@@ -623,6 +612,73 @@ static int rv_free_frames(struct st_rx_video_session_impl* s) {
 
   dbg("%s(%d), succ\n", __func__, s->idx);
   return 0;
+}
+
+static rte_iova_t rv_frame_get_offset_iova(struct st_rx_video_session_impl* s,
+                                           struct st_frame_trans* frame_info,
+                                           size_t offset) {
+  if (frame_info->page_table_len == 0) return frame_info->iova + offset;
+  void* addr = RTE_PTR_ADD(frame_info->addr, offset);
+  struct st_page_info* page;
+  for (uint16_t i = 0; i < frame_info->page_table_len; i++) {
+    page = &frame_info->page_table[i];
+    if (addr >= page->addr && addr < RTE_PTR_ADD(page->addr, page->len))
+      return page->iova + RTE_PTR_DIFF(addr, page->addr);
+  }
+
+  err("%s(%d,%d), offset %" PRIu64 " get iova fail\n", __func__, s->idx, frame_info->idx,
+      offset);
+  return MTL_BAD_IOVA;
+}
+
+static int rv_frame_create_page_table(struct st_rx_video_session_impl* s,
+                                      struct st_frame_trans* frame_info) {
+  struct rte_memseg* mseg = rte_mem_virt2memseg(frame_info->addr, NULL);
+  if (mseg == NULL) {
+    err("%s(%d,%d), get mseg fail\n", __func__, s->idx, frame_info->idx);
+    return -EIO;
+  }
+  size_t hugepage_sz = mseg->hugepage_sz;
+  info("%s(%d,%d), hugepage size %" PRIu64 "\n", __func__, s->idx, frame_info->idx,
+       hugepage_sz);
+
+  /* calculate num hugepages */
+  uint16_t num_pages =
+      RTE_PTR_DIFF(RTE_PTR_ALIGN(frame_info->addr + s->st20_fb_size, hugepage_sz),
+                   RTE_PTR_ALIGN_FLOOR(frame_info->addr, hugepage_sz)) /
+      hugepage_sz;
+
+  struct st_page_info* pages = mt_zmalloc(sizeof(*pages) * num_pages);
+  if (pages == NULL) {
+    err("%s(%d,%d), pages info malloc fail\n", __func__, s->idx, frame_info->idx);
+    return -ENOMEM;
+  }
+
+  /* get IOVA start of each page */
+  void* addr = frame_info->addr;
+  for (uint16_t i = 0; i < num_pages; i++) {
+    /* touch the page before getting its IOVA */
+    *(volatile char*)addr = 0;
+    pages[i].iova = rte_mem_virt2iova(addr);
+    pages[i].addr = addr;
+    void* next_addr = RTE_PTR_ALIGN(RTE_PTR_ADD(addr, 1), hugepage_sz);
+    pages[i].len = RTE_PTR_DIFF(next_addr, addr);
+    addr = next_addr;
+    info("%s(%d,%d), seg %u, va %p, iova 0x%" PRIx64 ", len %" PRIu64 "\n", __func__,
+         s->idx, frame_info->idx, i, pages[i].addr, pages[i].iova, pages[i].len);
+  }
+  frame_info->page_table = pages;
+  frame_info->page_table_len = num_pages;
+
+  return 0;
+}
+
+static inline bool rv_frame_payload_cross_page(struct st_rx_video_session_impl* s,
+                                               struct st_frame_trans* frame_info,
+                                               size_t offset, size_t len) {
+  if (frame_info->page_table_len == 0) return false;
+  return ((rv_frame_get_offset_iova(s, frame_info, offset + len - 1) -
+           rv_frame_get_offset_iova(s, frame_info, offset)) != len - 1);
 }
 
 static int rv_alloc_frames(struct mtl_main_impl* impl,
@@ -682,6 +738,8 @@ static int rv_alloc_frames(struct mtl_main_impl* impl,
       st20_frame->flags = ST_FT_FLAG_RTE_MALLOC;
       st20_frame->addr = frame;
       st20_frame->iova = rte_malloc_virt2iova(frame);
+      if (impl->iova_mode == RTE_IOVA_PA && s->dma_dev)
+        rv_frame_create_page_table(s, st20_frame);
     }
   }
 
@@ -967,7 +1025,7 @@ static void rv_frame_notify(struct st_rx_video_session_impl* s,
     int ret = -EIO;
     dbg("%s(%d): tmstamp %u\n", __func__, s->idx, slot->tmstamp);
     if (ops->notify_frame_ready)
-      ret = ops->notify_frame_ready(ops->priv, slot->frame, meta);
+      ret = ops->notify_frame_ready(ops->priv, slot->frame->addr, meta);
     if (ret < 0) {
       err("%s(%d), notify_frame_ready return fail %d\n", __func__, s->idx, ret);
       rv_put_frame(s, slot->frame);
@@ -981,7 +1039,7 @@ static void rv_frame_notify(struct st_rx_video_session_impl* s,
     rte_atomic32_inc(&s->cbs_incomplete_frame_cnt);
     /* notify the incomplete frame if user required */
     if (ops->flags & ST20_RX_FLAG_RECEIVE_INCOMPLETE_FRAME) {
-      ops->notify_frame_ready(ops->priv, slot->frame, meta);
+      ops->notify_frame_ready(ops->priv, slot->frame->addr, meta);
     } else {
       rv_put_frame(s, slot->frame);
       slot->frame = NULL;
@@ -1007,7 +1065,7 @@ static void rv_st22_frame_notify(struct st_rx_video_session_impl* s,
   if (st_is_frame_complete(status)) {
     rte_atomic32_inc(&s->stat_frames_received);
     if (st22_info->notify_frame_ready)
-      ret = st22_info->notify_frame_ready(ops->priv, slot->frame, meta);
+      ret = st22_info->notify_frame_ready(ops->priv, slot->frame->addr, meta);
     if (ret < 0) {
       err("%s(%d), notify_frame_ready return fail %d\n", __func__, s->idx, ret);
       rv_put_frame(s, slot->frame);
@@ -1018,7 +1076,7 @@ static void rv_st22_frame_notify(struct st_rx_video_session_impl* s,
     rte_atomic32_inc(&s->cbs_incomplete_frame_cnt);
     /* notify the incomplete frame if user required */
     if (ops->flags & ST20_RX_FLAG_RECEIVE_INCOMPLETE_FRAME) {
-      st22_info->notify_frame_ready(ops->priv, slot->frame, meta);
+      st22_info->notify_frame_ready(ops->priv, slot->frame->addr, meta);
     } else {
       rv_put_frame(s, slot->frame);
       slot->frame = NULL;
@@ -1037,7 +1095,7 @@ static void rv_slice_notify(struct st_rx_video_session_impl* s,
   meta->second_field = slot->second_field;
   meta->frame_recv_size = rv_slot_get_frame_size(s, slot);
   meta->frame_recv_lines = slice_info->ready_slices * s->slice_lines;
-  ops->notify_slice_ready(ops->priv, slot->frame, meta);
+  ops->notify_slice_ready(ops->priv, slot->frame->addr, meta);
   s->stat_slices_received++;
 }
 
@@ -1176,8 +1234,7 @@ static struct st_rx_video_slot_impl* rv_slot_by_tmstamp(
     frame_info->flags |= ST_FT_FLAG_EXT;
     meta->opaque = ext_frame.opaque;
   }
-  slot->frame = frame_info->addr;
-  slot->frame_iova = frame_info->iova;
+  slot->frame = frame_info;
 
   s->dma_slot = slot;
 
@@ -1187,8 +1244,8 @@ static struct st_rx_video_slot_impl* rv_slot_by_tmstamp(
 
   rte_atomic32_inc(&s->cbs_frame_slot_cnt);
 
-  dbg("%s(%d): assign slot %d frame %p for tmstamp %u\n", __func__, s->idx, slot_idx,
-      slot->frame, tmstamp);
+  dbg("%s(%d): assign slot %d framebuff %p for tmstamp %u\n", __func__, s->idx, slot_idx,
+      slot->frame->addr, tmstamp);
   return slot;
 }
 
@@ -1590,31 +1647,33 @@ static int rv_handle_frame_pkt(struct st_rx_video_session_impl* s, struct rte_mb
     pg_meta->row_offset = line1_offset;
     pg_meta->pg_cnt = line1_length / s->st20_pg.size;
     pg_meta->timestamp = tmstamp;
-    ops->uframe_pg_callback(ops->priv, slot->frame, pg_meta);
+    ops->uframe_pg_callback(ops->priv, slot->frame->addr, pg_meta);
     if (extra_rtp) {
       pg_meta->payload = payload + line1_length;
       pg_meta->row_length = ntohs(extra_rtp->row_length);
       pg_meta->row_number = ntohs(extra_rtp->row_number);
       pg_meta->row_offset = ntohs(extra_rtp->row_offset);
       pg_meta->pg_cnt = pg_meta->row_length / s->st20_pg.size;
-      ops->uframe_pg_callback(ops->priv, slot->frame, pg_meta);
+      ops->uframe_pg_callback(ops->priv, slot->frame->addr, pg_meta);
     }
   } else if (need_copy) {
     /* copy the payload to target frame by dma or cpu */
     if (extra_rtp && s->st20_linesize > s->st20_bytes_in_line) {
       /* packet acrosses line padding, copy two lines data */
-      rte_memcpy(slot->frame + offset, payload, line1_length);
-      rte_memcpy(slot->frame + (line1_number + 1) * s->st20_linesize,
+      rte_memcpy(slot->frame->addr + offset, payload, line1_length);
+      rte_memcpy(slot->frame->addr + (line1_number + 1) * s->st20_linesize,
                  payload + line1_length, payload_length - line1_length);
     } else if (dma_dev && (payload_length > ST_RX_VIDEO_DMA_MIN_SIZE) &&
-               !mt_dma_full(dma_dev)) {
+               !mt_dma_full(dma_dev) &&
+               !rv_frame_payload_cross_page(s, slot->frame, offset, payload_length)) {
       rte_iova_t payload_iova =
           rte_pktmbuf_iova_offset(mbuf, sizeof(struct st_rfc4175_video_hdr));
       if (extra_rtp) payload_iova += sizeof(*extra_rtp);
-      ret = mt_dma_copy(dma_dev, slot->frame_iova + offset, payload_iova, payload_length);
+      ret = mt_dma_copy(dma_dev, rv_frame_get_offset_iova(s, slot->frame, offset),
+                        payload_iova, payload_length);
       if (ret < 0) {
         /* use cpu copy if dma copy fail */
-        rte_memcpy(slot->frame + offset, payload, payload_length);
+        rte_memcpy(slot->frame->addr + offset, payload, payload_length);
       } else {
         /* abstrct dma dev takes ownership of this mbuf */
         st_rx_mbuf_set_offset(mbuf, offset);
@@ -1626,7 +1685,7 @@ static int rv_handle_frame_pkt(struct st_rx_video_session_impl* s, struct rte_mb
         s->stat_pkts_dma++;
       }
     } else {
-      rte_memcpy(slot->frame + offset, payload, payload_length);
+      rte_memcpy(slot->frame->addr + offset, payload, payload_length);
     }
   }
 
@@ -1653,7 +1712,7 @@ static int rv_handle_frame_pkt(struct st_rx_video_session_impl* s, struct rte_mb
   }
   if (end_frame) {
     dbg("%s(%d,%d): full frame on %p(%" PRIu64 ")\n", __func__, s->idx, s_port,
-        slot->frame, frame_recv_size);
+        slot->frame->addr, frame_recv_size);
     dbg("%s(%d,%d): tmstamp %u slot %d\n", __func__, s->idx, s_port, slot->tmstamp,
         slot->idx);
     /* end of frame */
@@ -1907,7 +1966,7 @@ static int rv_handle_st22_pkt(struct st_rx_video_session_impl* s, struct rte_mbu
     s->stat_pkts_offset_dropped++;
     return -EIO;
   }
-  rte_memcpy(slot->frame + offset, payload, payload_length);
+  rte_memcpy(slot->frame->addr + offset, payload, payload_length);
   rv_slot_add_frame_size(s, slot, payload_length);
   s->stat_pkts_received++;
   slot->pkts_received++;
@@ -2066,7 +2125,7 @@ static int rv_handle_hdr_split_pkt(struct st_rx_video_session_impl* s,
   }
 
   if (need_copy) {
-    rte_memcpy(slot->frame + offset, payload, payload_length);
+    rte_memcpy(slot->frame->addr + offset, payload, payload_length);
   }
 
   rv_slot_add_frame_size(s, slot, payload_length);
@@ -2081,7 +2140,7 @@ static int rv_handle_hdr_split_pkt(struct st_rx_video_session_impl* s,
   /* check if frame is full */
   size_t frame_recv_size = rv_slot_get_frame_size(s, slot);
   if (frame_recv_size >= s->st20_frame_size) {
-    dbg("%s(%d,%d): full frame on %p(%d)\n", __func__, s->idx, s_port, slot->frame,
+    dbg("%s(%d,%d): full frame on %p(%d)\n", __func__, s->idx, s_port, slot->frame->addr,
         frame_recv_size);
     dbg("%s(%d,%d): tmstamp %u slot %d\n", __func__, s->idx, s_port, slot->tmstamp,
         slot->idx);
@@ -2228,6 +2287,12 @@ static int rv_init_sw(struct mtl_main_impl* impl, struct st_rx_video_sessions_mg
     }
   }
 
+  /* try to request dma dev */
+  if (st20_is_frame_type(type) && (ops->flags & ST20_RX_FLAG_DMA_OFFLOAD) &&
+      !s->st20_uframe_size && !rv_is_hdr_split(s)) {
+    rv_init_dma(impl, s);
+  }
+
   if (st22_ops) {
     ret = rv_init_st22(impl, s, st22_ops);
     if (ret < 0) {
@@ -2278,12 +2343,6 @@ static int rv_init_sw(struct mtl_main_impl* impl, struct st_rx_video_sessions_mg
     pg_meta->frame_total_size = s->st20_frame_size;
     pg_meta->uframe_total_size = s->st20_uframe_size;
     info("%s(%d), uframe size %" PRIu64 "\n", __func__, idx, s->st20_uframe_size);
-  }
-
-  /* try to request dma dev */
-  if (st20_is_frame_type(type) && (ops->flags & ST20_RX_FLAG_DMA_OFFLOAD) &&
-      !s->st20_uframe_size && !rv_is_hdr_split(s)) {
-    rv_init_dma(impl, s);
   }
 
   s->has_pkt_lcore = false;
@@ -3655,9 +3714,10 @@ int st20_rx_free(st20_rx_handle handle) {
   return 0;
 }
 
-int st20_rx_put_framebuff(st20_rx_handle handle, void* frame) {
+int st20_rx_put_framebuff(st20_rx_handle handle, void* framebuff) {
   struct st_rx_video_session_handle_impl* s_impl = handle;
   struct st_rx_video_session_impl* s;
+  struct st_frame_trans* st20_frame;
 
   if (s_impl->type != MT_HANDLE_RX_VIDEO) {
     err("%s, invalid type %d\n", __func__, s_impl->type);
@@ -3666,7 +3726,16 @@ int st20_rx_put_framebuff(st20_rx_handle handle, void* frame) {
 
   s = s_impl->impl;
 
-  return rv_put_frame(s, frame);
+  for (int i = 0; i < s->st20_frames_cnt; i++) {
+    st20_frame = &s->st20_frames[i];
+    if (st20_frame->addr == framebuff) {
+      dbg("%s(%d), put frame at %d\n", __func__, s->idx, i);
+      return rv_put_frame(s, st20_frame);
+    }
+  }
+
+  err("%s(%d), invalid frame %p\n", __func__, s->idx, framebuff);
+  return -EIO;
 }
 
 size_t st20_rx_get_framebuffer_size(st20_rx_handle handle) {
@@ -4033,9 +4102,10 @@ void st22_rx_put_mbuf(st22_rx_handle handle, void* mbuf) {
   if (pkt) rte_pktmbuf_free(pkt);
 }
 
-int st22_rx_put_framebuff(st22_rx_handle handle, void* frame) {
+int st22_rx_put_framebuff(st22_rx_handle handle, void* framebuff) {
   struct st22_rx_video_session_handle_impl* s_impl = handle;
   struct st_rx_video_session_impl* s;
+  struct st_frame_trans* st20_frame;
 
   if (s_impl->type != MT_ST22_HANDLE_RX_VIDEO) {
     err("%s, invalid type %d\n", __func__, s_impl->type);
@@ -4044,7 +4114,16 @@ int st22_rx_put_framebuff(st22_rx_handle handle, void* frame) {
 
   s = s_impl->impl;
 
-  return rv_put_frame(s, frame);
+  for (int i = 0; i < s->st20_frames_cnt; i++) {
+    st20_frame = &s->st20_frames[i];
+    if (st20_frame->addr == framebuff) {
+      dbg("%s(%d), put frame at %d\n", __func__, s->idx, i);
+      return rv_put_frame(s, st20_frame);
+    }
+  }
+
+  err("%s(%d), invalid frame %p\n", __func__, s->idx, framebuff);
+  return -EIO;
 }
 
 void* st22_rx_get_fb_addr(st22_rx_handle handle, uint16_t idx) {

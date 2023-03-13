@@ -721,7 +721,7 @@ struct mtl_main_impl {
   uint64_t tsc_hz;
   pthread_t tsc_cal_tid;
 
-  enum rte_iova_mode iova_mode;
+  enum rte_iova_mode iova_mode; /* current IOVA mode */
   size_t page_size;
 
   /* rss */
