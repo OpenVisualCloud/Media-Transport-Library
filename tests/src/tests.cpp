@@ -41,7 +41,7 @@ enum test_args_cmd {
   TEST_ARG_PACING_WAY,
   TEST_ARG_RSS_MODE,
   TEST_ARG_TX_NO_CHAIN,
-  TEST_ARG_IOVA_PA_MODE,
+  TEST_ARG_IOVA_MODE,
 };
 
 static struct option test_args_options[] = {
@@ -75,15 +75,13 @@ static struct option test_args_options[] = {
     {"pacing_way", required_argument, 0, TEST_ARG_PACING_WAY},
     {"rss_mode", required_argument, 0, TEST_ARG_RSS_MODE},
     {"tx_no_chain", no_argument, 0, TEST_ARG_TX_NO_CHAIN},
-    {"iova_pa_mode", no_argument, 0, TEST_ARG_IOVA_PA_MODE},
+    {"iova_mode", required_argument, 0, TEST_ARG_IOVA_MODE},
 
     {0, 0, 0, 0}};
 
 static struct st_tests_context* g_test_ctx;
 
-struct st_tests_context* st_test_ctx(void) {
-  return g_test_ctx;
-}
+struct st_tests_context* st_test_ctx(void) { return g_test_ctx; }
 
 static int test_args_dma_dev(struct mtl_init_params* p, const char* in_dev) {
   if (!in_dev) return -EIO;
@@ -249,8 +247,13 @@ static int test_parse_args(struct st_tests_context* ctx, struct mtl_init_params*
       case TEST_ARG_TX_NO_CHAIN:
         p->flags |= MTL_FLAG_TX_NO_CHAIN;
         break;
-      case TEST_ARG_IOVA_PA_MODE:
-        p->iova_pa = true;
+      case TEST_ARG_IOVA_MODE:
+        if (!strcmp(optarg, "va"))
+          p->iova_mode = MT_IOVA_MODE_VA;
+        else if (!strcmp(optarg, "pa"))
+          p->iova_mode = MT_IOVA_MODE_PA;
+        else
+          err("%s, unknow iova mode %s\n", __func__, optarg);
         break;
       default:
         break;

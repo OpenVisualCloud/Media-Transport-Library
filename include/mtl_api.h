@@ -192,6 +192,20 @@ enum mt_rss_mode {
 };
 
 /**
+ * IOVA mode
+ */
+enum mt_iova_mode {
+  /** let DPDK to choose IOVA mode */
+  MT_IOVA_MODE_AUTO = 0,
+  /** using IOVA VA mode */
+  MT_IOVA_MODE_VA,
+  /** using IOVA PA mode */
+  MT_IOVA_MODE_PA,
+  /** max value of this enum */
+  MT_IOVA_MODE_MAX,
+};
+
+/**
  * Transport type
  */
 enum mtl_transport_type {
@@ -504,9 +518,9 @@ struct mtl_init_params {
    */
   enum mt_rss_mode rss_mode;
   /**
-   * Force to use DPDK IOVA PA mode.
+   * Select default or force IOVA mode.
    */
-  bool iova_pa;
+  enum mt_iova_mode iova_mode;
 };
 
 /**

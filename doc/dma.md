@@ -68,4 +68,4 @@ BTW, the gtest support --dma_dev also, pls pass the DMA setup for the DMA test.
 
 ## 3. DMA sample code for application usage
 
-Refer to [dma_sample.c](../app/sample/dma_sample.c) for how to use DMA in application side, use st_hp_virt2iova(for st_hp_malloc) or st_dma_map(for malloc) to get the IOVA address.
+Refer to [dma_sample.c](../app/sample/dma/dma_sample.c) for how to use DMA in application side, use st_hp_virt2iova(for st_hp_malloc) or st_dma_map(for malloc) to get the IOVA address.
