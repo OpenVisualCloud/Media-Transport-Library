@@ -1141,7 +1141,7 @@ ssize_t mudp_sendto(mudp_handle ut, const void* buf, size_t len, int flags,
     if (s->tsq)
       sent = mt_tsq_burst(s->tsq, &m, 1);
     else
-      sent += mt_dev_tx_burst(s->txq, &m, 1);
+      sent = mt_dev_tx_burst(s->txq, &m, 1);
     if (sent >= 1) { /* burst succ */
       s->stat_pkt_tx++;
       break;
