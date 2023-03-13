@@ -120,4 +120,4 @@ jobs:
 
       - name: Run st2110 st20p test case with rss in IOVA PA mode
         run: |
-          sudo ./build/tests/KahawaiTest --p_port ${{  env.TEST_PORT_P  }} --r_port ${{  env.TEST_PORT_R  }} --dma_dev ${{  env.TEST_DMA_PORT_P  }},${{  env.TEST_DMA_PORT_R  }} --rss_mode l3_l4_dst_port_only --iova_pa_mode --gtest_filter=Main.*:St20p*:-*ext*
+          sudo ./build/tests/KahawaiTest --p_port ${{  env.TEST_PORT_P  }} --r_port ${{  env.TEST_PORT_R  }} --dma_dev ${{  env.TEST_DMA_PORT_P  }},${{  env.TEST_DMA_PORT_R  }} --rss_mode l3_l4_dst_port_only --iova_mode pa --gtest_filter=Main.*:St20p*:-*ext*
