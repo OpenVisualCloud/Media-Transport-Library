@@ -25,6 +25,6 @@ shared_library('mtl_udp_preload', udp_preload_sources,
   c_args : udp_preload_c_args,
   link_args : udp_preload_ld_args,
   # asan should be always the first dep
-  dependencies: [asan_dep, mtl_dep],
+  dependencies: [asan_dep, mtl_dep, libdl_dep],
   install: true
 )

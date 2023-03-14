@@ -19,6 +19,8 @@ SESSIONS_CNT=2
 MUFD_RX_CFG=ufd_server.json
 MUFD_TX_CFG=ufd_client.json
 
+MTL_LD_PRELOAD=/usr/local/lib/x86_64-linux-gnu/libmtl_udp_preload.so
+
 TEST_BIN_PATH=../../build/app
 LOG_LEVEL=notice
 
@@ -121,6 +123,32 @@ test_ufd_mcast() {
 	echo ""
 }
 
+test_upl() {
+	local name=$1
+	local tx_prog=$2
+	local rx_prog=$3
+	local udp_mode=$4
+
+	echo "${name}: start ${tx_prog}"
+	LD_PRELOAD="${MTL_LD_PRELOAD}" MUFD_CFG="${MUFD_TX_CFG}" "${TEST_BIN_PATH}"/"${tx_prog}" --log_level "${LOG_LEVEL}" --p_sip "${ST_SIP_TX}" --p_tx_ip "${ST_TX_IP}" --udp_mode "${udp_mode}" --sessions_cnt "${SESSIONS_CNT}" &
+	pid_tx=$!
+	echo "${name}: start ${rx_prog}"
+	LD_PRELOAD="${MTL_LD_PRELOAD}" MUFD_CFG="${MUFD_RX_CFG}" "${TEST_BIN_PATH}"/"${rx_prog}" --log_level "${LOG_LEVEL}" --p_sip "${ST_SIP_RX}" --p_rx_ip "${ST_RX_IP}" --udp_mode "${udp_mode}" --sessions_cnt "${SESSIONS_CNT}" &
+	pid_rx=$!
+	echo "${name}: pid_tx ${pid_tx}, pid_rx ${pid_rx}, wait ${TEST_TIME_SEC}s"
+	sleep ${TEST_TIME_SEC}
+
+	echo "${name}: wait all thread ending"
+	kill -SIGINT ${pid_tx}
+	kill -SIGINT ${pid_rx}
+	wait ${pid_tx}
+	echo "${name}: ${tx_prog} exit"
+	wait ${pid_rx}
+	echo "${name}: ${rx_prog} exit"
+	echo "${name}: ****** Done ******"
+	echo ""
+}
+
 # test udp
 test_udp udp_default UdpClientSample UdpServerSample default
 test_udp udp_transport UdpClientSample UdpServerSample transport
@@ -161,6 +189,12 @@ UDP_LCORE=false
 
 # test ufd mcast
 test_ufd_mcast ufd_mcast UfdClientSample UfdServerSample transport_poll
+
+# test upl
+test_upl upl_default UsocketClientSample UsocketServerSample default
+test_upl upl_transport UsocketClientSample UsocketServerSample transport
+test_upl upl_transport_poll UsocketClientSample UsocketServerSample transport_poll
+test_upl upl_transport_unify_poll UsocketClientSample UsocketServerSample transport_unify_poll
 
 echo "****** All test OK ******"
 

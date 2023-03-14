@@ -120,7 +120,7 @@ static void __attribute__((constructor)) upl_init() {
 
   ret = mufd_init_context();
   if (ret < 0) {
-    warn("%s, mufd init fail %d, fallback to kernel socket\n", __func__, ret);
+    warn("%s, mufd init fail %d, fallback to posix socket\n", __func__, ret);
   } else {
     ctx->mtl_fd_base = mufd_base_fd();
     ctx->has_mtl_udp = true;
