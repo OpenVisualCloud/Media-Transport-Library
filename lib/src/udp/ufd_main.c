@@ -395,15 +395,19 @@ static struct ufd_mt_ctx* ufd_create_mt_ctx(void) {
 static struct ufd_mt_ctx* ufd_get_mt_ctx(bool create) {
   struct ufd_mt_ctx* ctx = NULL;
 
-  /* get the mt ctx */
-  ufd_mtl_ctx_lock();
-  ctx = g_ufd_mt_ctx;
-  if (!ctx && create) { /* create a new ctx */
-    info("%s, start to create mt ctx\n", __func__);
-    ctx = ufd_create_mt_ctx();
-    g_ufd_mt_ctx = ctx;
+  if (create) { /* require lock as get/create the mt ctx */
+    ufd_mtl_ctx_lock();
+    ctx = g_ufd_mt_ctx;
+    if (!ctx) { /* create a new ctx */
+      info("%s, start to create mt ctx\n", __func__);
+      ctx = ufd_create_mt_ctx();
+      g_ufd_mt_ctx = ctx;
+    }
+    ufd_mtl_ctx_unlock();
+  } else {
+    /* no lock need for pure global get */
+    ctx = g_ufd_mt_ctx;
   }
-  ufd_mtl_ctx_unlock();
 
   return ctx;
 }
