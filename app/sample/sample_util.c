@@ -9,7 +9,7 @@
 
 /* include "struct sockaddr_in" define before include mudp_sockfd_api */
 // clang-format off
-#include <mtl/mudp_sockfd_api.h>
+#include <mtl/mudp_sockfd_internal.h>
 // clang-format on
 
 enum sample_args_cmd {

@@ -31,15 +31,15 @@ static inline bool udp_alive(struct mudp_impl* s) {
 
 int mudp_verfiy_socket_args(int domain, int type, int protocol) {
   if (domain != AF_INET) {
-    err("%s, invalid domain %d\n", __func__, domain);
+    info("%s, invalid domain %d\n", __func__, domain);
     return -EINVAL;
   }
   if (type != SOCK_DGRAM) {
-    err("%s, invalid type %d\n", __func__, type);
+    info("%s, invalid type %d\n", __func__, type);
     return -EINVAL;
   }
   if (protocol != 0) {
-    err("%s, invalid protocol %d\n", __func__, protocol);
+    info("%s, invalid protocol %d\n", __func__, protocol);
     return -EINVAL;
   }
 
