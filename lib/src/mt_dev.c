@@ -2450,7 +2450,7 @@ int mt_dev_if_init(struct mtl_main_impl* impl) {
     info("%s(%d), dev_capa 0x%" PRIx64 ", offload 0x%" PRIx64 ":0x%" PRIx64
          " queue offload 0x%" PRIx64 ":0x%" PRIx64 ", rss : 0x%" PRIx64 "\n",
          __func__, i, dev_info->dev_capa, dev_info->tx_offload_capa,
-         dev_info->tx_offload_capa, dev_info->tx_queue_offload_capa,
+         dev_info->rx_offload_capa, dev_info->tx_queue_offload_capa,
          dev_info->rx_queue_offload_capa, dev_info->flow_type_rss_offloads);
     info("%s(%d), system_rx_queues_end %d hdr_split_rx_queues_end %d\n", __func__, i,
          inf->system_rx_queues_end, inf->hdr_split_rx_queues_end);

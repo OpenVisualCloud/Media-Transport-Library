@@ -88,6 +88,8 @@ static int rss_flow_check(struct mtl_main_impl* impl, enum mtl_port port,
   enum mt_rss_mode sys_rss_mode = mt_get_rss_mode(impl, port);
   enum mt_rss_mode flow_rss_mode = rss_flow_mode(flow);
 
+  if (mt_if(impl, port)->drv_type == MT_DRV_ENA) return 0;
+
   if (flow->sys_queue) return 0;
 
   if (sys_rss_mode == flow_rss_mode) return 0;
