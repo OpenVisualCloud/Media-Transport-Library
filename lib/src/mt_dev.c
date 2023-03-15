@@ -991,14 +991,6 @@ static int dev_config_port(struct mtl_main_impl* impl, enum mtl_port port) {
     }
   }
 
-  if (mt_has_rss(impl, port)) {
-    ret = dev_config_rss_reta(inf);
-    if (ret < 0) {
-      err("%s(%d), rss reta config fail %d\n", __func__, port, ret);
-      return ret;
-    }
-  }
-
   inf->status |= MT_IF_STAT_PORT_CONFIGED;
 
   info("%s(%d), tx_q(%d with %d desc) rx_q (%d with %d desc)\n", __func__, port, nb_tx_q,
@@ -1097,6 +1089,14 @@ static int dev_start_port(struct mtl_main_impl* impl, enum mtl_port port) {
     return ret;
   }
   inf->status |= MT_IF_STAT_PORT_STARTED;
+
+  if (mt_has_rss(impl, port)) {
+    ret = dev_config_rss_reta(inf);
+    if (ret < 0) {
+      err("%s(%d), rss reta config fail %d\n", __func__, port, ret);
+      return ret;
+    }
+  }
 
   if (mt_get_user_params(impl)->flags & MTL_FLAG_NIC_RX_PROMISCUOUS) {
     /* Enable RX in promiscuous mode if it's required. */
