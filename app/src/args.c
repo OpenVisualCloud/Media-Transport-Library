@@ -392,6 +392,8 @@ int st_app_parse_args(struct st_app_context* ctx, struct mtl_init_params* p, int
           p->pacing = ST21_TX_PACING_WAY_TSC;
         else if (!strcmp(optarg, "ptp"))
           p->pacing = ST21_TX_PACING_WAY_PTP;
+        else if (!strcmp(optarg, "be"))
+          p->pacing = ST21_TX_PACING_WAY_BE;
         else
           err("%s, unknow pacing way %s\n", __func__, optarg);
         break;
