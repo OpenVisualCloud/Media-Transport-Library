@@ -308,6 +308,21 @@ executable('RxSt20TxSt20Fwd', rx_st20_tx_st20_fwd_sources,
   dependencies: [asan_dep, mtl, libpthread]
 )
 
+# Ext frame samples app
+executable('TxSt20pExtFrameSample', pipeline_tx_st20_ext_frame_sample_sources,
+  c_args : app_c_args,
+  link_args: app_ld_args,
+  # asan should be always the first dep
+  dependencies: [asan_dep, mtl, libpthread]
+)
+
+executable('RxSt20pDynExtFrameSample', pipeline_rx_st20_dyn_ext_frame_sample_sources,
+  c_args : app_c_args,
+  link_args: app_ld_args,
+  # asan should be always the first dep
+  dependencies: [asan_dep, mtl, libpthread]
+)
+
 # Low level video samples app
 executable('TxRtpVideoSample', video_tx_rtp_sample_sources,
   c_args : app_c_args,

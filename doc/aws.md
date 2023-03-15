@@ -139,6 +139,10 @@ ena_rss_hash_set(): Setting RSS hash fields is not supported. Using default valu
 
 This is ENA NIC hardware limitation, can be ignored for now.
 
+### 7.3 The max video stream supported is 4k 30fps / 1080p 120fps
+
+The bandwidth for single TX flow is limited to 5-10 Gbps.
+
 ## Reference link
 
 [ENA driver repository](https://github.com/amzn/amzn-drivers/tree/master/userspace/dpdk)
