@@ -1,0 +1,28 @@
+From 7a8e3569d779f476a2ab9ba52ec8468e7886eb25 Mon Sep 17 00:00:00 2001
+From: Ric Li <ming3.li@intel.com>
+Date: Fri, 10 Mar 2023 15:56:10 +0800
+Subject: [PATCH] net/ena: add dst/src only support for rss l3 and l4
+
+Signed-off-by: Ric Li <ming3.li@intel.com>
+---
+ drivers/net/ena/ena_ethdev.h | 4 +++-
+ 1 file changed, 3 insertions(+), 1 deletion(-)
+
+diff --git a/drivers/net/ena/ena_ethdev.h b/drivers/net/ena/ena_ethdev.h
+index 4d27fba585..45290881bb 100644
+--- a/drivers/net/ena/ena_ethdev.h
++++ b/drivers/net/ena/ena_ethdev.h
+@@ -63,7 +63,9 @@
+ #define ENA_HASH_KEY_SIZE		40
+ 
+ #define ENA_ALL_RSS_HF (RTE_ETH_RSS_NONFRAG_IPV4_TCP | RTE_ETH_RSS_NONFRAG_IPV4_UDP | \
+-			RTE_ETH_RSS_NONFRAG_IPV6_TCP | RTE_ETH_RSS_NONFRAG_IPV6_UDP)
++			RTE_ETH_RSS_NONFRAG_IPV6_TCP | RTE_ETH_RSS_NONFRAG_IPV6_UDP | \
++			RTE_ETH_RSS_PORT | RTE_ETH_RSS_L4_DST_ONLY | RTE_ETH_RSS_L4_SRC_ONLY | \
++			RTE_ETH_RSS_L3_DST_ONLY | RTE_ETH_RSS_L3_SRC_ONLY)
+ 
+ #define ENA_IO_TXQ_IDX(q)		(2 * (q))
+ #define ENA_IO_RXQ_IDX(q)		(2 * (q) + 1)
+-- 
+2.34.1
+
