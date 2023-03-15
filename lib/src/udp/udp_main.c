@@ -31,15 +31,15 @@ static inline bool udp_alive(struct mudp_impl* s) {
 
 int mudp_verfiy_socket_args(int domain, int type, int protocol) {
   if (domain != AF_INET) {
-    err("%s, invalid domain %d\n", __func__, domain);
+    info("%s, invalid domain %d\n", __func__, domain);
     return -EINVAL;
   }
   if (type != SOCK_DGRAM) {
-    err("%s, invalid type %d\n", __func__, type);
+    info("%s, invalid type %d\n", __func__, type);
     return -EINVAL;
   }
   if (protocol != 0) {
-    err("%s, invalid protocol %d\n", __func__, protocol);
+    info("%s, invalid protocol %d\n", __func__, protocol);
     return -EINVAL;
   }
 
@@ -1261,6 +1261,9 @@ int mudp_setsockopt(mudp_handle ut, int level, int optname, const void* optval,
           return udp_set_rcvbuf(s, optval, optlen);
         case SO_RCVTIMEO:
           return udp_set_rcvtimeo(s, optval, optlen);
+        case SO_REUSEADDR: /* skip now */
+          info("%s(%d), skip SO_REUSEADDR\n", __func__, idx);
+          return 0;
         default:
           err("%s(%d), unknown optname %d for SOL_SOCKET\n", __func__, idx, optname);
           return -EINVAL;

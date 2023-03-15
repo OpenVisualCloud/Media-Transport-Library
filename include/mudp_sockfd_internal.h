@@ -14,9 +14,35 @@
 /** Marco for re-inculde protect */
 #define _MUDP_SOCKFD_INTERNAL_HEAD_H_
 
+#include "mtl_api.h"
+
 #if defined(__cplusplus)
 extern "C" {
 #endif
+
+/**
+ * All config should be parsed from MUFD_CFG_ENV_NAME json config file.
+ * But we still need some runtime args(ex: log level) for debug usage.
+ */
+struct mufd_override_params {
+  /** log level */
+  enum mtl_log_level log_level;
+  /** shared queue mode */
+  bool shared_queue;
+  /** lcore mode */
+  bool lcore_mode;
+};
+
+/**
+ * Commit the runtime parameters of mufd instance.
+ *
+ * @param p
+ *   The pointer to the rt parameters.
+ * @return
+ *   - >=0: Success.
+ *   - <0: Error code.
+ */
+int mufd_commit_override_params(struct mufd_override_params* p);
 
 /**
  * All init params should be parsed from MUFD_CFG_ENV_NAME json config file.
@@ -60,6 +86,24 @@ int mufd_commit_init_params(struct mufd_init_params* p);
  *   - <0: Error code.
  */
 int mufd_get_sessions_max_nb(void);
+
+/**
+ * Init mufd context with json config from MUFD_CFG_ENV_NAME env.
+ *
+ * @return
+ *   - >=0: Success.
+ *   - <0: Error code.
+ */
+int mufd_init_context(void);
+
+/**
+ * Get the base fd of mufd context.
+ *
+ * @return
+ *   - >=0: Success, the base fd.
+ *   - <0: Error code.
+ */
+int mufd_base_fd(void);
 
 #if defined(__cplusplus)
 }

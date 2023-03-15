@@ -232,8 +232,9 @@ static int ufd_parse_json(struct mufd_init_params* init, const char* filename) {
   obj = mt_json_object_get(root, "fd_base");
   if (obj) {
     int fd_base = json_object_get_int(obj);
-    if (fd_base < 0) {
-      err("%s, invalid fd_base %d\n", __func__, fd_base);
+    if (fd_base < UFD_FD_BASE_DEFAULT) {
+      err("%s, invalid fd_base %d, must bigger than %d\n", __func__, fd_base,
+          UFD_FD_BASE_DEFAULT);
       ret = -EINVAL;
       goto out;
     }
@@ -503,7 +504,7 @@ int mufd_close(int sockfd) {
   struct ufd_slot* slot = ufd_fd2slot(sockfd);
 
   if (!slot) {
-    info("%s(%d), null slot for fd %d\n", __func__, idx, sockfd);
+    err("%s(%d), null slot for fd %d\n", __func__, idx, sockfd);
     return -EIO;
   }
 
@@ -598,13 +599,13 @@ int mufd_cleanup(void) {
 }
 
 /* lib constructors to init the resources */
-RTE_INIT(mufd_init) {
+RTE_INIT_PRIO(mufd_init_global, BUS) {
   ufd_init_global();
   dbg("%s, succ\n", __func__);
 }
 
 /* lib destructor to cleanup the resources */
-RTE_FINI(mufd_finish) {
+RTE_FINI_PRIO(mufd_finish_global, BUS) {
   mufd_cleanup();
   ufd_uinit_global();
   dbg("%s, succ\n", __func__);
@@ -673,4 +674,16 @@ int mufd_get_sessions_max_nb(void) {
   }
 
   return ufd_max_slot(ctx);
+}
+
+int mufd_init_context(void) {
+  struct ufd_mt_ctx* ctx = ufd_get_mt_ctx(true);
+  if (!ctx) return -EIO;
+  return 0;
+}
+
+int mufd_base_fd(void) {
+  struct ufd_mt_ctx* ctx = ufd_get_mt_ctx(true);
+  if (!ctx) return -EIO;
+  return ctx->init_params.fd_base;
 }
