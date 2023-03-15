@@ -202,6 +202,7 @@ ssize_t sendto(int sockfd, const void* buf, size_t len, int flags,
     return -EIO;
   }
 
+  dbg("%s(%d), len %d\n", __func__, sockfd, (int)len);
   if (upl_is_mtl_scoket(ctx, sockfd))
     return mufd_sendto(sockfd, buf, len, flags, dest_addr, addrlen);
   else
@@ -280,9 +281,15 @@ int fcntl(int sockfd, int cmd, va_list args) {
     err("%s, ctx init fail, pls check setup\n", __func__);
     return -EIO;
   }
+  info("%s, sockfd %d cmd %d\n", __func__, sockfd, cmd);
 
   if (upl_is_mtl_scoket(ctx, sockfd))
     return mufd_fcntl(sockfd, cmd, args);
   else
     return ctx->libc_fn.fcntl(sockfd, cmd, args);
+}
+
+int fcntl64(int sockfd, int cmd, va_list args) {
+  info("%s, sockfd %d cmd %d\n", __func__, sockfd, cmd);
+  return fcntl(sockfd, cmd, args);
 }

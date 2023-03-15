@@ -1261,6 +1261,9 @@ int mudp_setsockopt(mudp_handle ut, int level, int optname, const void* optval,
           return udp_set_rcvbuf(s, optval, optlen);
         case SO_RCVTIMEO:
           return udp_set_rcvtimeo(s, optval, optlen);
+        case SO_REUSEADDR: /* skip now */
+          info("%s(%d), skip SO_REUSEADDR\n", __func__, idx);
+          return 0;
         default:
           err("%s(%d), unknown optname %d for SOL_SOCKET\n", __func__, idx, optname);
           return -EINVAL;
