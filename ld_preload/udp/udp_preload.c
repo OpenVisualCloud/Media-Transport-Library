@@ -39,51 +39,25 @@ static void* upl_open_libc(void) {
 }
 
 static int upl_get_libc_fn(struct upl_functions* fns, void* dl_handle) {
-  fns->socket = dlsym(dl_handle, "socket");
-  if (!fns->socket) {
-    err("%s, dlsym socket fail\n", __func__);
-    return -EIO;
-  }
-  fns->close = dlsym(dl_handle, "close");
-  if (!fns->close) {
-    err("%s, dlsym close fail\n", __func__);
-    return -EIO;
-  }
-  fns->bind = dlsym(dl_handle, "bind");
-  if (!fns->bind) {
-    err("%s, dlsym bind fail\n", __func__);
-    return -EIO;
-  }
-  fns->sendto = dlsym(dl_handle, "sendto");
-  if (!fns->sendto) {
-    err("%s, dlsym sendto fail\n", __func__);
-    return -EIO;
-  }
-  fns->poll = dlsym(dl_handle, "poll");
-  if (!fns->sendto) {
-    err("%s, dlsym sendto fail\n", __func__);
-    return -EIO;
-  }
-  fns->recvfrom = dlsym(dl_handle, "recvfrom");
-  if (!fns->recvfrom) {
-    err("%s, dlsym recvfrom fail\n", __func__);
-    return -EIO;
-  }
-  fns->getsockopt = dlsym(dl_handle, "getsockopt");
-  if (!fns->getsockopt) {
-    err("%s, dlsym getsockopt fail\n", __func__);
-    return -EIO;
-  }
-  fns->setsockopt = dlsym(dl_handle, "setsockopt");
-  if (!fns->setsockopt) {
-    err("%s, dlsym setsockopt fail\n", __func__);
-    return -EIO;
-  }
-  fns->fcntl = dlsym(dl_handle, "fcntl");
-  if (!fns->fcntl) {
-    err("%s, dlsym fcntl fail\n", __func__);
-    return -EIO;
-  }
+#define UPL_LIBC_FN(__name)                          \
+  do {                                               \
+    fns->__name = dlsym(dl_handle, #__name);         \
+    if (!fns->__name) {                              \
+      err("%s, dlsym %s fail\n", __func__, #__name); \
+      return -EIO;                                   \
+    }                                                \
+  } while (0)
+
+  UPL_LIBC_FN(socket);
+  UPL_LIBC_FN(close);
+  UPL_LIBC_FN(bind);
+  UPL_LIBC_FN(sendto);
+  UPL_LIBC_FN(poll);
+  UPL_LIBC_FN(recvfrom);
+  UPL_LIBC_FN(getsockopt);
+  UPL_LIBC_FN(setsockopt);
+  UPL_LIBC_FN(fcntl);
+  UPL_LIBC_FN(fcntl64);
 
   info("%s, succ\n", __func__);
   return 0;

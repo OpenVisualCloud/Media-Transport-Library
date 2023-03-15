@@ -64,6 +64,7 @@ struct upl_functions {
   int (*setsockopt)(int sockfd, int level, int optname, const void* optval,
                     socklen_t optlen);
   int (*fcntl)(int sockfd, int cmd, ...);
+  int (*fcntl64)(int sockfd, int cmd, ...);
 };
 
 struct upl_ctx {
