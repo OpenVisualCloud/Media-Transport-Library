@@ -99,7 +99,7 @@ For example, the Private IPv4 address is 172.31.42.123, the subnet IPv4 CIDR is 
 
 * **PTP** (use CLOCK_REAL_TIME which may be synced to NTP)
 * **Rate Limiting** (use TSC for pacing)
-* **rte_flow** (use RSS queues)
+* **rte_flow** (use RSS queues, but no src/dst only support)
 
 ## 6. General FAQ
 

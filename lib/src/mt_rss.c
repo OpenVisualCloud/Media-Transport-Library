@@ -93,7 +93,7 @@ static int rss_flow_check(struct mtl_main_impl* impl, enum mtl_port port,
   if (sys_rss_mode == flow_rss_mode) return 0;
 
   if (sys_rss_mode == MT_RSS_MODE_L3_L4 && flow_rss_mode == MT_RSS_MODE_L3_L4_DP_ONLY) {
-    warn("%s(%d), require l3_l4_dst_port_only but only l3_l4 allowed", __func__, port);
+    warn("%s(%d), require l3_l4_dst_port_only but only l3_l4 allowed\n", __func__, port);
     return 0;
   }
 
