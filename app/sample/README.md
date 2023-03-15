@@ -30,7 +30,7 @@ The dir incldue the simple sample code for how to develop application quickly ba
 ./build/app/RxSt22PipelineSample --p_port 0000:af:01.1 --p_sip 192.168.75.22 --p_rx_ip 239.168.75.22
 ```
 
-## 3. Foward pipeline samples
+## 3. Forward pipeline samples
 
 [rx_st20p_tx_st22p_fwd.c](fwd/rx_st20p_tx_st22p_fwd.c): A demo application which receive a st20 stream and output as st22 compressed stream with logo rendering.
 
@@ -149,3 +149,17 @@ The dir incldue the simple sample code for how to develop application quickly ba
 ## 7. DMA sample
 
 [dma_sample.c](dma/dma_sample.c): A DMA sample code.
+
+## 8. Ext frame sample
+
+[tx_st20_pipeline_ext_frame_sample.c](ext_frame/tx_st20_pipeline_ext_frame_sample.c): A tx video(st2110-20) application based on pipeline interface, library will not allocate memory for sending buffers but use those provided by user.
+
+```bash
+./build/app/TxSt20pExtFrameSample --p_port 0000:af:01.0 --p_sip 192.168.75.11 --p_tx_ip 239.168.75.20
+```
+
+[rx_st20_pipeline_dyn_ext_frame_sample.c](ext_frame/rx_st20_pipeline_dyn_ext_frame_sample.c): A rx video(st2110-20) application based on pipeline interface, library will not allocate memory for receiving buffers but queries for user frame buffer to fill.
+
+```bash
+./build/app/RxSt20pDynExtFrameSample --p_port 0000:af:01.1 --p_sip 192.168.75.22 --p_rx_ip 239.168.75.20
+```
