@@ -79,8 +79,6 @@ dpdk-devbind.py -s
 
 Refer to [run.md](./run.md) after section 3.2.
 
-The ENA HW does not support RSS hash fields modification, please run `RxTxAPP` with args `--rss_mdoe l3_l4`.
-
 ### 5.1 IP configuration
 
 Configure the AWS reserved private IP in json.
@@ -133,7 +131,7 @@ This is ENA PMD limitation, can be ignored for now.
 ena_rss_hash_set(): Setting RSS hash fields is not supported. Using default values: 0xc30
 ```
 
-This is ENA NIC hardware limitation, can be ignored for now.
+The ENA HW does not support RSS hash fields modification, the app will require same src port and dst port for the stream.
 
 ### 7.3 The max video stream supported is 4k 30fps / 1080p 120fps
 
