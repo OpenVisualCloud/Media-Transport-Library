@@ -991,14 +991,6 @@ static int dev_config_port(struct mtl_main_impl* impl, enum mtl_port port) {
     }
   }
 
-  if (mt_has_rss(impl, port)) {
-    ret = dev_config_rss_reta(inf);
-    if (ret < 0) {
-      err("%s(%d), rss reta config fail %d\n", __func__, port, ret);
-      return ret;
-    }
-  }
-
   inf->status |= MT_IF_STAT_PORT_CONFIGED;
 
   info("%s(%d), tx_q(%d with %d desc) rx_q (%d with %d desc)\n", __func__, port, nb_tx_q,
@@ -1097,6 +1089,14 @@ static int dev_start_port(struct mtl_main_impl* impl, enum mtl_port port) {
     return ret;
   }
   inf->status |= MT_IF_STAT_PORT_STARTED;
+
+  if (mt_has_rss(impl, port)) {
+    ret = dev_config_rss_reta(inf);
+    if (ret < 0) {
+      err("%s(%d), rss reta config fail %d\n", __func__, port, ret);
+      return ret;
+    }
+  }
 
   if (mt_get_user_params(impl)->flags & MTL_FLAG_NIC_RX_PROMISCUOUS) {
     /* Enable RX in promiscuous mode if it's required. */
@@ -2292,8 +2292,12 @@ int mt_dev_if_init(struct mtl_main_impl* impl) {
 
     inf->rss_mode = p->rss_mode;
     /* enable rss if no flow support */
-    if (inf->flow_type == MT_FLOW_NONE && inf->rss_mode == MT_RSS_MODE_NONE)
-      inf->rss_mode = MT_RSS_MODE_L3_L4_DP_ONLY;
+    if (inf->flow_type == MT_FLOW_NONE && inf->rss_mode == MT_RSS_MODE_NONE) {
+      if (inf->drv_type == MT_DRV_ENA)
+        inf->rss_mode = MT_RSS_MODE_L3_L4; /* only rss l3 and l4 support */
+      else
+        inf->rss_mode = MT_RSS_MODE_L3_L4_DP_ONLY;
+    }
 
     /* set max tx/rx queues */
     if (p->pmd[i] == MTL_PMD_DPDK_AF_XDP) {
@@ -2450,7 +2454,7 @@ int mt_dev_if_init(struct mtl_main_impl* impl) {
     info("%s(%d), dev_capa 0x%" PRIx64 ", offload 0x%" PRIx64 ":0x%" PRIx64
          " queue offload 0x%" PRIx64 ":0x%" PRIx64 ", rss : 0x%" PRIx64 "\n",
          __func__, i, dev_info->dev_capa, dev_info->tx_offload_capa,
-         dev_info->tx_offload_capa, dev_info->tx_queue_offload_capa,
+         dev_info->rx_offload_capa, dev_info->tx_queue_offload_capa,
          dev_info->rx_queue_offload_capa, dev_info->flow_type_rss_offloads);
     info("%s(%d), system_rx_queues_end %d hdr_split_rx_queues_end %d\n", __func__, i,
          inf->system_rx_queues_end, inf->hdr_split_rx_queues_end);

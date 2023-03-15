@@ -77,7 +77,7 @@ dpdk-devbind.py -s
 
 ## 5. Run the application
 
-Refer to [run.md](./run.md) section 3.2.
+Refer to [run.md](./run.md) after section 3.2.
 
 ### 5.1 IP configuration
 
@@ -97,9 +97,9 @@ For example, the Private IPv4 address is 172.31.42.123, the subnet IPv4 CIDR is 
 
 ### 5.2 Features not supported on ENA
 
-* **PTP** (use system real_time)
+* **PTP** (use CLOCK_REAL_TIME which may be synced to NTP)
 * **Rate Limiting** (use TSC for pacing)
-* **rte_flow** (use RSS queues)
+* **rte_flow** (use RSS queues, but no src/dst only support)
 
 ## 6. General FAQ
 
@@ -112,12 +112,6 @@ export PATH=$PATH:/usr/local/bin/
 export PKG_CONFIG_PATH=/usr/local/lib64/pkgconfig/
 export LD_LIBRARY_PATH=/usr/local/lib64/
 ```
-
----
-
-**Q:** Cannot find ninja.
-
-**A:** Edit `build.sh`, remove `sudo` in it, then run `build.sh` under root user.
 
 ---
 
@@ -137,11 +131,34 @@ This is ENA PMD limitation, can be ignored for now.
 ena_rss_hash_set(): Setting RSS hash fields is not supported. Using default values: 0xc30
 ```
 
-This is ENA NIC hardware limitation, can be ignored for now.
+The ENA HW does not support RSS hash fields modification, the app will require same src port and dst port for the stream.
 
 ### 7.3 The max video stream supported is 4k 30fps / 1080p 120fps
 
 The bandwidth for single TX flow is limited to 5-10 Gbps.
+
+### 7.4 The stats (bandwidth/packets) printed is accumulated
+
+```shell
+MT: * *    M T    D E V   S T A T E   * *
+MT: DEV(0): Avr rate, tx: 0 Mb/s, rx: 9949 Mb/s, pkts, tx: 1, rx: 9398772
+MT: PTP(0): time 1678865906652331011, 2023-03-15 07:38:26
+MT: CNI(0): eth_rx_cnt 0
+MT: RX_VIDEO_SESSION(0,0:app_rx_video_0): fps 59.899867 frames 599 pkts 2466553, cpu busy 3.162677
+MT: RX_VIDEO_SESSION(0,1:app_rx_video_1): fps 59.899889 frames 599 pkts 2466549, cpu busy 3.167438
+MT: * *    E N D    S T A T E   * *
+
+MT: * *    M T    D E V   S T A T E   * *
+MT: DEV(0): Avr rate, tx: 0 Mb/s, rx: 15171 Mb/s, pkts, tx: 1, rx: 14331553
+MT: PTP(0): time 1678865916652358408, 2023-03-15 07:38:36
+MT: CNI(0): eth_rx_cnt 0
+MT: RX_VIDEO_SESSION(0,0:app_rx_video_0): fps 59.999859 frames 600 pkts 2466386, cpu busy 3.168126
+MT: RX_VIDEO_SESSION(0,1:app_rx_video_1): fps 59.999859 frames 600 pkts 2466384, cpu busy 3.171664
+MT: * *    E N D    S T A T E   * *
+
+```
+
+ENA PMD does not implement stats_reset.
 
 ## Reference link
 
