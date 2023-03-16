@@ -67,6 +67,11 @@ struct upl_functions {
   int (*fcntl64)(int sockfd, int cmd, ...);
 };
 
+struct upl_ufd_entry {
+  int ufd;
+  int kfd;
+};
+
 struct upl_ctx {
   bool init_succ;
 

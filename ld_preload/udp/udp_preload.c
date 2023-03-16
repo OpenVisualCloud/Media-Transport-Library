@@ -117,29 +117,52 @@ static bool upl_is_mtl_scoket(struct upl_ctx* ctx, int fd) {
 
 int socket(int domain, int type, int protocol) {
   struct upl_ctx* ctx = upl_get_ctx();
-  int fd;
+  int kfd;
+  int ret;
 
   dbg("%s, domain %d type %d protocol %d\n", __func__, domain, type, protocol);
-
   if (!ctx->init_succ) {
     err("%s, ctx init fail, pls check setup\n", __func__);
     return -EIO;
   }
 
-  if (ctx->has_mtl_udp) {
-    fd = mufd_socket(domain, type, protocol);
-    if (fd >= 0) {
-      info("%s, mufd %d for domain %d type %d protocol %d\n", __func__, fd, domain, type,
-           protocol);
-      return fd;
-    }
+  kfd = ctx->libc_fn.socket(domain, type, protocol);
+  if (kfd < 0) {
+    err("%s, create kfd fail %d for domain %d type %d protocol %d\n", __func__, kfd,
+        domain, type, protocol);
+    return kfd;
   }
 
-  /* the last option */
-  fd = ctx->libc_fn.socket(domain, type, protocol);
-  info("%s, libc fd %d for domain %d type %d protocol %d\n", __func__, fd, domain, type,
-       protocol);
-  return fd;
+  if (!ctx->has_mtl_udp) return kfd;
+  ret = mufd_socket_check(domain, type, protocol);
+  if (ret < 0) return kfd; /* not support by mufd */
+
+  int ufd = mufd_socket(domain, type, protocol);
+  if (ufd < 0) {
+    err("%s, create ufd fail %d for domain %d type %d protocol %d\n", __func__, ufd,
+        domain, type, protocol);
+    return kfd; /* return kfd for fallback path */
+  }
+
+  struct upl_ufd_entry* opaque = upl_zmalloc(sizeof(*opaque));
+  if (!opaque) {
+    err("%s, opaque malloc fail for ufd %d\n", __func__, ufd);
+    mufd_close(ufd);
+    return kfd; /* return kfd for fallback path */
+  }
+  opaque->kfd = kfd;
+  opaque->ufd = ufd;
+  ret = mufd_set_opaque(ufd, opaque);
+  if (ret < 0) {
+    err("%s, opaque set fail for ufd %d\n", __func__, ufd);
+    upl_free(opaque);
+    mufd_close(ufd);
+    return kfd; /* return kfd for fallback path */
+  }
+
+  info("%s, ufd %d kfd %d for domain %d type %d protocol %d\n", __func__, ufd, kfd,
+       domain, type, protocol);
+  return ufd;
 }
 
 int close(int sockfd) {
@@ -149,10 +172,16 @@ int close(int sockfd) {
     return -EIO;
   }
 
-  if (upl_is_mtl_scoket(ctx, sockfd))
-    return mufd_close(sockfd);
-  else
-    return ctx->libc_fn.close(sockfd);
+  if (!upl_is_mtl_scoket(ctx, sockfd)) return ctx->libc_fn.close(sockfd);
+
+  struct upl_ufd_entry* opaque = mufd_get_opaque(sockfd);
+  int kfd = opaque->kfd;
+
+  mufd_close(sockfd);
+  upl_free(opaque);
+  info("%s, ufd %d kfd %d\n", __func__, sockfd, kfd);
+  /* close the kfd */
+  return ctx->libc_fn.close(kfd);
 }
 
 int bind(int sockfd, const struct sockaddr* addr, socklen_t addrlen) {
@@ -264,6 +293,15 @@ int fcntl(int sockfd, int cmd, va_list args) {
 }
 
 int fcntl64(int sockfd, int cmd, va_list args) {
+  struct upl_ctx* ctx = upl_get_ctx();
+  if (!ctx->init_succ) {
+    err("%s, ctx init fail, pls check setup\n", __func__);
+    return -EIO;
+  }
   info("%s, sockfd %d cmd %d\n", __func__, sockfd, cmd);
-  return fcntl(sockfd, cmd, args);
+
+  if (upl_is_mtl_scoket(ctx, sockfd))
+    return mufd_fcntl(sockfd, cmd, args);
+  else
+    return ctx->libc_fn.fcntl64(sockfd, cmd, args);
 }
