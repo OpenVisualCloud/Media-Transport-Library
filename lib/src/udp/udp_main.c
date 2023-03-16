@@ -49,11 +49,32 @@ int mudp_verfiy_socket_args(int domain, int type, int protocol) {
 static int udp_verfiy_addr(const struct sockaddr_in* addr, socklen_t addrlen) {
   if (addr->sin_family != AF_INET) {
     err("%s, invalid sa_family %d\n", __func__, addr->sin_family);
-    return -1;
+    return -EINVAL;
   }
   if (addrlen != sizeof(*addr)) {
     err("%s, invalid addrlen %d\n", __func__, (int)addrlen);
-    return -1;
+    return -EINVAL;
+  }
+
+  return 0;
+}
+
+static int udp_verfiy_bind_addr(struct mudp_impl* s, const struct sockaddr_in* addr,
+                                socklen_t addrlen) {
+  int idx = s->idx;
+  int ret;
+
+  ret = udp_verfiy_addr(addr, addrlen);
+  if (ret < 0) return ret;
+
+  /* check if our IP or any IP */
+  in_addr_t s_addr = addr->sin_addr.s_addr;
+  if (s_addr == INADDR_ANY) return 0;
+  if (memcmp(&s_addr, mt_sip_addr(s->parnet, s->port), MTL_IP_ADDR_LEN)) {
+    uint8_t* ip = (uint8_t*)&s_addr;
+    err("%s(%d), invalid bind ip %u.%u.%u.%u\n", __func__, idx, ip[0], ip[1], ip[2],
+        ip[3]);
+    return -EINVAL;
   }
 
   return 0;
@@ -1066,7 +1087,7 @@ int mudp_bind(mudp_handle ut, const struct sockaddr* addr, socklen_t addrlen) {
     return -EIO;
   }
 
-  ret = udp_verfiy_addr(addr_in, addrlen);
+  ret = udp_verfiy_bind_addr(s, addr_in, addrlen);
   if (ret < 0) return ret;
 
   /* uinit rx if any */
