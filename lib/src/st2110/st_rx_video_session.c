@@ -1922,10 +1922,14 @@ static int rv_handle_st22_pkt(struct st_rx_video_session_impl* s, struct rte_mbu
   } else {
     /* first packet */
     if (!pkt_counter) { /* first packet */
-      ret = rv_parse_st22_boxes(s, payload, slot);
-      if (ret < 0) {
-        s->stat_pkts_idx_dropped++;
-        return -EIO;
+      if (s->st22_ops_flags & ST22_RX_FLAG_DISABLE_BOXES) {
+        slot->st22_box_hdr_length = 0;
+      } else {
+        ret = rv_parse_st22_boxes(s, payload, slot);
+        if (ret < 0) {
+          s->stat_pkts_idx_dropped++;
+          return -EIO;
+        }
       }
       slot->seq_id_base = seq_id;
       slot->st22_payload_length = payload_length;
@@ -2795,6 +2799,7 @@ static int rv_attach(struct mtl_main_impl* impl, struct st_rx_video_sessions_mgr
   if (st22_ops) {
     s->st20_frame_size = st22_ops->framebuff_max_size;
     s->st20_fb_size = s->st20_frame_size;
+    s->st22_ops_flags = st22_ops->flags;
   } else
     s->st20_frame_size = ops->width * ops->height * s->st20_pg.size / s->st20_pg.coverage;
   s->st20_uframe_size = ops->uframe_size;

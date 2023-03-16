@@ -72,7 +72,7 @@ extern "C" {
  */
 #define ST22_TX_FLAG_USER_R_MAC (MTL_BIT32(1))
 /**
- * Flag bit in flags of struct st20_tx_ops.
+ * Flag bit in flags of struct st22_tx_ops.
  * Disable ST22 boxes, for ST22_TYPE_FRAME_LEVEL
  */
 #define ST22_TX_FLAG_DISABLE_BOXES (MTL_BIT32(2))
@@ -154,6 +154,11 @@ extern "C" {
  * If enabled, lib will pass ST_EVENT_VSYNC by the notify_event on every epoch start.
  */
 #define ST22_RX_FLAG_ENABLE_VSYNC (MTL_BIT32(1))
+/**
+ * Flag bit in flags of struct st22_rx_ops.
+ * Disable ST22 boxes, for ST22_TYPE_FRAME_LEVEL
+ */
+#define ST22_RX_FLAG_DISABLE_BOXES (MTL_BIT32(2))
 
 /**
  * Flag bit in flags of struct st22_rx_ops.
