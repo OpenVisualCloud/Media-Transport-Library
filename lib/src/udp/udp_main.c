@@ -31,15 +31,15 @@ static inline bool udp_alive(struct mudp_impl* s) {
 
 int mudp_verfiy_socket_args(int domain, int type, int protocol) {
   if (domain != AF_INET) {
-    info("%s, invalid domain %d\n", __func__, domain);
+    dbg("%s, invalid domain %d\n", __func__, domain);
     return -EINVAL;
   }
   if (type != SOCK_DGRAM) {
-    info("%s, invalid type %d\n", __func__, type);
+    dbg("%s, invalid type %d\n", __func__, type);
     return -EINVAL;
   }
   if (protocol != 0) {
-    info("%s, invalid protocol %d\n", __func__, protocol);
+    dbg("%s, invalid protocol %d\n", __func__, protocol);
     return -EINVAL;
   }
 
@@ -49,11 +49,33 @@ int mudp_verfiy_socket_args(int domain, int type, int protocol) {
 static int udp_verfiy_addr(const struct sockaddr_in* addr, socklen_t addrlen) {
   if (addr->sin_family != AF_INET) {
     err("%s, invalid sa_family %d\n", __func__, addr->sin_family);
-    return -1;
+    return -EINVAL;
   }
   if (addrlen != sizeof(*addr)) {
     err("%s, invalid addrlen %d\n", __func__, (int)addrlen);
-    return -1;
+    return -EINVAL;
+  }
+
+  return 0;
+}
+
+static int udp_verfiy_bind_addr(struct mudp_impl* s, const struct sockaddr_in* addr,
+                                socklen_t addrlen) {
+  int idx = s->idx;
+  int ret;
+
+  ret = udp_verfiy_addr(addr, addrlen);
+  if (ret < 0) return ret;
+
+  /* check if our IP or any IP */
+  if (addr->sin_addr.s_addr == INADDR_ANY)
+    return 0; /* kernel mcast bind use INADDR_ANY */
+  /* should we support INADDR_LOOPBACK? */
+  if (memcmp(&addr->sin_addr.s_addr, mt_sip_addr(s->parnet, s->port), MTL_IP_ADDR_LEN)) {
+    uint8_t* ip = (uint8_t*)&addr->sin_addr.s_addr;
+    err("%s(%d), invalid bind ip %u.%u.%u.%u\n", __func__, idx, ip[0], ip[1], ip[2],
+        ip[3]);
+    return -EINVAL;
   }
 
   return 0;
@@ -1066,7 +1088,7 @@ int mudp_bind(mudp_handle ut, const struct sockaddr* addr, socklen_t addrlen) {
     return -EIO;
   }
 
-  ret = udp_verfiy_addr(addr_in, addrlen);
+  ret = udp_verfiy_bind_addr(s, addr_in, addrlen);
   if (ret < 0) return ret;
 
   /* uinit rx if any */
@@ -1480,6 +1502,42 @@ int mudp_set_rx_poll_sleep(mudp_handle ut, unsigned int us) {
   /* add value check? */
   s->rx_poll_sleep_us = us;
   return 0;
+}
+
+int mudp_get_sip(mudp_handle ut, uint8_t ip[MTL_IP_ADDR_LEN]) {
+  struct mudp_impl* s = ut;
+  int idx = s->idx;
+
+  if (s->type != MT_HANDLE_UDP) {
+    err("%s(%d), invalid type %d\n", __func__, idx, s->type);
+    return -EIO;
+  }
+
+  mtl_memcpy(ip, mt_sip_addr(s->parnet, s->port), MTL_IP_ADDR_LEN);
+  return 0;
+}
+
+int mudp_tx_valid_ip(mudp_handle ut, uint8_t dip[MTL_IP_ADDR_LEN]) {
+  struct mudp_impl* s = ut;
+  int idx = s->idx;
+
+  if (s->type != MT_HANDLE_UDP) {
+    err("%s(%d), invalid type %d\n", __func__, idx, s->type);
+    return -EIO;
+  }
+
+  struct mtl_main_impl* impl = s->parnet;
+  enum mtl_port port = s->port;
+
+  if (mt_is_multicast_ip(dip)) {
+    return 0;
+  } else if (mt_is_lan_ip(dip, mt_sip_addr(impl, port), mt_sip_netmask(impl, port))) {
+    return 0;
+  } else if (mt_ip_to_u32(mt_sip_gatway(impl, port))) {
+    return 0;
+  }
+
+  return -EINVAL;
 }
 
 bool mudp_is_multicast(const struct sockaddr_in* saddr) {

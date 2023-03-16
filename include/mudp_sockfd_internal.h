@@ -105,6 +105,72 @@ int mufd_init_context(void);
  */
 int mufd_base_fd(void);
 
+/**
+ * Set private opaque data on the udp transport socket.
+ *
+ * @param sockfd
+ *   the sockfd by mufd_socket.
+ * @param pri
+ *   The opaque data pointer.
+ *
+ * @return
+ *   - >=0: Success.
+ *   - <0: Error code.
+ */
+int mufd_set_opaque(int sockfd, void* pri);
+
+/**
+ * Get private opaque data on the udp transport socket.
+ *
+ * @param sockfd
+ *   the sockfd by mufd_socket.
+ *
+ * @return
+ *   - The opaque data pointer.
+ */
+void* mufd_get_opaque(int sockfd);
+
+/**
+ * Get IP address of the udp transport socket.
+ *
+ * @param sockfd
+ *   the sockfd by mufd_socket.
+ * @param ip
+ *   The pointer to the IP address buffer.
+ * @return
+ *   - 0: Success.
+ *   - <0: Error code.
+ */
+int mufd_get_sip(int sockfd, uint8_t ip[MTL_IP_ADDR_LEN]);
+
+/**
+ * Check if the dst ip is reach by the udp transport socket.
+ *
+ * @param sockfd
+ *   the sockfd by mufd_socket.
+ * @param dip
+ *   The pointer to the dst IP address buffer.
+ * @return
+ *   - 0: Success.
+ *   - <0: Error code.
+ */
+int mufd_tx_valid_ip(int sockfd, uint8_t dip[MTL_IP_ADDR_LEN]);
+
+/**
+ * Check if the socket type is support or not by mufd.
+ *
+ * @param domain
+ *   A communication domain, only AF_INET(IPv4) now.
+ * @param type
+ *   Which specifies the communication semantics, only SOCK_DGRAM now.
+ * @param protocol
+ *   Specifies a particular protocol to be used with the socket, only zero now.
+ * @return
+ *   - true: Yes, support.
+ *   - false: Not support.
+ */
+int mufd_socket_check(int domain, int type, int protocol);
+
 #if defined(__cplusplus)
 }
 #endif
