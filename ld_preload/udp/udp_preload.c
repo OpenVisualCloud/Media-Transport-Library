@@ -168,7 +168,7 @@ int socket(int domain, int type, int protocol) {
 int close(int sockfd) {
   struct upl_ctx* ctx = upl_get_ctx();
   if (!ctx->init_succ) {
-    err("%s, ctx init fail, pls check setup\n", __func__);
+    err("%s(%d), ctx init fail, pls check setup\n", __func__, sockfd);
     return -EIO;
   }
 
@@ -187,29 +187,46 @@ int close(int sockfd) {
 int bind(int sockfd, const struct sockaddr* addr, socklen_t addrlen) {
   struct upl_ctx* ctx = upl_get_ctx();
   if (!ctx->init_succ) {
-    err("%s, ctx init fail, pls check setup\n", __func__);
+    err("%s(%d), ctx init fail, pls check setup\n", __func__, sockfd);
     return -EIO;
   }
 
-  if (upl_is_mtl_scoket(ctx, sockfd))
-    return mufd_bind(sockfd, addr, addrlen);
-  else
-    return ctx->libc_fn.bind(sockfd, addr, addrlen);
+  if (!upl_is_mtl_scoket(ctx, sockfd)) return ctx->libc_fn.bind(sockfd, addr, addrlen);
+
+  int ret = mufd_bind(sockfd, addr, addrlen);
+  if (ret >= 0) return ret; /* mufd bind succ */
+
+  struct upl_ufd_entry* opaque = mufd_get_opaque(sockfd);
+  /* try kernel fallback path */
+  ret = ctx->libc_fn.bind(opaque->kfd, addr, addrlen);
+  if (ret < 0) return ret;
+
+  opaque->bind_kfd = true;
+  info("%s(%d), mufd bind fail, fall back to libc\n", __func__, sockfd);
+  return 0;
 }
 
 ssize_t sendto(int sockfd, const void* buf, size_t len, int flags,
                const struct sockaddr* dest_addr, socklen_t addrlen) {
   struct upl_ctx* ctx = upl_get_ctx();
   if (!ctx->init_succ) {
-    err("%s, ctx init fail, pls check setup\n", __func__);
+    err("%s(%d), ctx init fail, pls check setup\n", __func__, sockfd);
     return -EIO;
   }
 
   dbg("%s(%d), len %d\n", __func__, sockfd, (int)len);
-  if (upl_is_mtl_scoket(ctx, sockfd))
-    return mufd_sendto(sockfd, buf, len, flags, dest_addr, addrlen);
-  else
+  if (!upl_is_mtl_scoket(ctx, sockfd))
     return ctx->libc_fn.sendto(sockfd, buf, len, flags, dest_addr, addrlen);
+
+  const struct sockaddr_in* addr_in = (struct sockaddr_in*)dest_addr;
+  in_addr_t s_addr = addr_in->sin_addr.s_addr;
+  if (mufd_tx_valid_ip(sockfd, (uint8_t*)&s_addr) < 0) {
+    /* fallback to kfd if it's not in ufd address scope */
+    struct upl_ufd_entry* opaque = mufd_get_opaque(sockfd);
+    return ctx->libc_fn.sendto(opaque->kfd, buf, len, flags, dest_addr, addrlen);
+  } else {
+    return mufd_sendto(sockfd, buf, len, flags, dest_addr, addrlen);
+  }
 }
 
 int poll(struct pollfd* fds, nfds_t nfds, int timeout) {
@@ -223,8 +240,23 @@ int poll(struct pollfd* fds, nfds_t nfds, int timeout) {
     err("%s, invalid nfds %d\n", __func__, (int)nfds);
     return -EIO;
   }
+
+  /* replace fd with kfd if the ufd is bind to kernel */
+  for (nfds_t i = 0; i < nfds; i++) {
+    int sockfd = fds[i].fd;
+    if (upl_is_mtl_scoket(ctx, sockfd)) {
+      struct upl_ufd_entry* opaque = mufd_get_opaque(sockfd);
+      if (opaque->bind_kfd) { /* replace with kfd */
+        fds[i].fd = opaque->kfd;
+      }
+    }
+  }
+
   bool is_mtl = upl_is_mtl_scoket(ctx, fds[0].fd);
-  /* check if all fds are the same type */
+  /*
+   * Check if all fds are the same type.
+   * Todo: hanlde if fds is mixed with kfd and ufd.
+   */
   for (nfds_t i = 1; i < nfds; i++) {
     if (upl_is_mtl_scoket(ctx, fds[i].fd) != is_mtl) {
       err("%s, not same type on %d, fd %d\n", __func__, (int)i, fds[i].fd);
@@ -242,66 +274,82 @@ ssize_t recvfrom(int sockfd, void* buf, size_t len, int flags, struct sockaddr* 
                  socklen_t* addrlen) {
   struct upl_ctx* ctx = upl_get_ctx();
   if (!ctx->init_succ) {
-    err("%s, ctx init fail, pls check setup\n", __func__);
+    err("%s(%d), ctx init fail, pls check setup\n", __func__, sockfd);
     return -EIO;
   }
 
-  if (upl_is_mtl_scoket(ctx, sockfd))
-    return mufd_recvfrom(sockfd, buf, len, flags, src_addr, addrlen);
-  else
+  if (!upl_is_mtl_scoket(ctx, sockfd))
     return ctx->libc_fn.recvfrom(sockfd, buf, len, flags, src_addr, addrlen);
+
+  struct upl_ufd_entry* opaque = mufd_get_opaque(sockfd);
+  if (opaque->bind_kfd)
+    return ctx->libc_fn.recvfrom(opaque->kfd, buf, len, flags, src_addr, addrlen);
+  else
+    return mufd_recvfrom(sockfd, buf, len, flags, src_addr, addrlen);
 }
 
 int getsockopt(int sockfd, int level, int optname, void* optval, socklen_t* optlen) {
   struct upl_ctx* ctx = upl_get_ctx();
   if (!ctx->init_succ) {
-    err("%s, ctx init fail, pls check setup\n", __func__);
+    err("%s(%d), ctx init fail, pls check setup\n", __func__, sockfd);
     return -EIO;
   }
 
-  if (upl_is_mtl_scoket(ctx, sockfd))
-    return mufd_getsockopt(sockfd, level, optname, optval, optlen);
-  else
+  if (!upl_is_mtl_scoket(ctx, sockfd))
     return ctx->libc_fn.getsockopt(sockfd, level, optname, optval, optlen);
+
+  struct upl_ufd_entry* opaque = mufd_get_opaque(sockfd);
+  if (opaque->bind_kfd)
+    return ctx->libc_fn.getsockopt(opaque->kfd, level, optname, optval, optlen);
+  else
+    return mufd_getsockopt(sockfd, level, optname, optval, optlen);
 }
 
 int setsockopt(int sockfd, int level, int optname, const void* optval, socklen_t optlen) {
   struct upl_ctx* ctx = upl_get_ctx();
   if (!ctx->init_succ) {
-    err("%s, ctx init fail, pls check setup\n", __func__);
+    err("%s(%d), ctx init fail, pls check setup\n", __func__, sockfd);
     return -EIO;
   }
 
-  if (upl_is_mtl_scoket(ctx, sockfd))
-    return mufd_setsockopt(sockfd, level, optname, optval, optlen);
-  else
+  if (!upl_is_mtl_scoket(ctx, sockfd))
     return ctx->libc_fn.setsockopt(sockfd, level, optname, optval, optlen);
+
+  struct upl_ufd_entry* opaque = mufd_get_opaque(sockfd);
+  if (opaque->bind_kfd)
+    return ctx->libc_fn.setsockopt(opaque->kfd, level, optname, optval, optlen);
+  else
+    return mufd_setsockopt(sockfd, level, optname, optval, optlen);
 }
 
 int fcntl(int sockfd, int cmd, va_list args) {
   struct upl_ctx* ctx = upl_get_ctx();
   if (!ctx->init_succ) {
-    err("%s, ctx init fail, pls check setup\n", __func__);
+    err("%s(%d), ctx init fail, pls check setup\n", __func__, sockfd);
     return -EIO;
   }
-  info("%s, sockfd %d cmd %d\n", __func__, sockfd, cmd);
 
-  if (upl_is_mtl_scoket(ctx, sockfd))
-    return mufd_fcntl(sockfd, cmd, args);
+  if (!upl_is_mtl_scoket(ctx, sockfd)) return ctx->libc_fn.fcntl(sockfd, cmd, args);
+
+  struct upl_ufd_entry* opaque = mufd_get_opaque(sockfd);
+  if (opaque->bind_kfd)
+    return ctx->libc_fn.fcntl(opaque->kfd, cmd, args);
   else
-    return ctx->libc_fn.fcntl(sockfd, cmd, args);
+    return mufd_fcntl(sockfd, cmd, args);
 }
 
 int fcntl64(int sockfd, int cmd, va_list args) {
   struct upl_ctx* ctx = upl_get_ctx();
   if (!ctx->init_succ) {
-    err("%s, ctx init fail, pls check setup\n", __func__);
+    err("%s(%d), ctx init fail, pls check setup\n", __func__, sockfd);
     return -EIO;
   }
-  info("%s, sockfd %d cmd %d\n", __func__, sockfd, cmd);
 
-  if (upl_is_mtl_scoket(ctx, sockfd))
-    return mufd_fcntl(sockfd, cmd, args);
+  if (!upl_is_mtl_scoket(ctx, sockfd)) return ctx->libc_fn.fcntl64(sockfd, cmd, args);
+
+  struct upl_ufd_entry* opaque = mufd_get_opaque(sockfd);
+  if (opaque->bind_kfd)
+    return ctx->libc_fn.fcntl64(opaque->kfd, cmd, args);
   else
-    return ctx->libc_fn.fcntl64(sockfd, cmd, args);
+    return mufd_fcntl(sockfd, cmd, args);
 }

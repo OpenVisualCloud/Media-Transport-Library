@@ -144,6 +144,19 @@ void* mufd_get_opaque(int sockfd);
 int mufd_get_sip(int sockfd, uint8_t ip[MTL_IP_ADDR_LEN]);
 
 /**
+ * Check if the dst ip is reach by the udp transport socket.
+ *
+ * @param sockfd
+ *   the sockfd by mufd_socket.
+ * @param dip
+ *   The pointer to the dst IP address buffer.
+ * @return
+ *   - 0: Success.
+ *   - <0: Error code.
+ */
+int mufd_tx_valid_ip(int sockfd, uint8_t dip[MTL_IP_ADDR_LEN]);
+
+/**
  * Check if the socket type is support or not by mufd.
  *
  * @param domain

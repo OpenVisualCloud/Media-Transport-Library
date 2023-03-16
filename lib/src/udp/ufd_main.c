@@ -713,6 +713,11 @@ int mufd_get_sip(int sockfd, uint8_t ip[MTL_IP_ADDR_LEN]) {
   return mudp_get_sip(slot->handle, ip);
 }
 
+int mufd_tx_valid_ip(int sockfd, uint8_t dip[MTL_IP_ADDR_LEN]) {
+  struct ufd_slot* slot = ufd_fd2slot(sockfd);
+  return mudp_tx_valid_ip(slot->handle, dip);
+}
+
 int mufd_socket_check(int domain, int type, int protocol) {
   return mudp_verfiy_socket_args(domain, type, protocol);
 }
