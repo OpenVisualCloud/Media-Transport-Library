@@ -131,6 +131,19 @@ int mufd_set_opaque(int sockfd, void* pri);
 void* mufd_get_opaque(int sockfd);
 
 /**
+ * Get IP address of the udp transport socket.
+ *
+ * @param sockfd
+ *   the sockfd by mufd_socket.
+ * @param ip
+ *   The pointer to the IP address buffer.
+ * @return
+ *   - 0: Success.
+ *   - <0: Error code.
+ */
+int mufd_get_sip(int sockfd, uint8_t ip[MTL_IP_ADDR_LEN]);
+
+/**
  * Check if the socket type is support or not by mufd.
  *
  * @param domain

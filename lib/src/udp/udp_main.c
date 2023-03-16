@@ -1503,6 +1503,19 @@ int mudp_set_rx_poll_sleep(mudp_handle ut, unsigned int us) {
   return 0;
 }
 
+int mudp_get_sip(mudp_handle ut, uint8_t ip[MTL_IP_ADDR_LEN]) {
+  struct mudp_impl* s = ut;
+  int idx = s->idx;
+
+  if (s->type != MT_HANDLE_UDP) {
+    err("%s(%d), invalid type %d\n", __func__, idx, s->type);
+    return -EIO;
+  }
+
+  mtl_memcpy(ip, mt_sip_addr(s->parnet, s->port), MTL_IP_ADDR_LEN);
+  return 0;
+}
+
 bool mudp_is_multicast(const struct sockaddr_in* saddr) {
   uint8_t* ip = (uint8_t*)&saddr->sin_addr;
   bool mcast = mt_is_multicast_ip(ip);

@@ -708,6 +708,11 @@ void* mufd_get_opaque(int sockfd) {
   return slot->opaque;
 }
 
+int mufd_get_sip(int sockfd, uint8_t ip[MTL_IP_ADDR_LEN]) {
+  struct ufd_slot* slot = ufd_fd2slot(sockfd);
+  return mudp_get_sip(slot->handle, ip);
+}
+
 int mufd_socket_check(int domain, int type, int protocol) {
   return mudp_verfiy_socket_args(domain, type, protocol);
 }
