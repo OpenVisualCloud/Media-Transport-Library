@@ -232,9 +232,9 @@ static int ufd_parse_json(struct mufd_init_params* init, const char* filename) {
   obj = mt_json_object_get(root, "fd_base");
   if (obj) {
     int fd_base = json_object_get_int(obj);
-    if (fd_base < UFD_FD_BASE_DEFAULT) {
-      err("%s, invalid fd_base %d, must bigger than %d\n", __func__, fd_base,
-          UFD_FD_BASE_DEFAULT);
+    int limit = INT_MAX / 2;
+    if (fd_base < limit) {
+      err("%s, invalid fd_base %d, must bigger than %d\n", __func__, fd_base, limit);
       ret = -EINVAL;
       goto out;
     }
@@ -367,7 +367,9 @@ static struct ufd_mt_ctx* ufd_create_mt_ctx(void) {
 
   /* assign a default if not set by user */
   if (!ctx->init_params.slots_nb_max) ctx->init_params.slots_nb_max = 1024;
-  if (!ctx->init_params.fd_base) ctx->init_params.fd_base = UFD_FD_BASE_DEFAULT;
+  /* ufd is assigned to top of INT, the bottom fd is used by OS */
+  if (!ctx->init_params.fd_base)
+    ctx->init_params.fd_base = INT_MAX - ctx->init_params.slots_nb_max * 2;
   if (!ctx->init_params.txq_bps) ctx->init_params.txq_bps = MUDP_DEFAULT_RL_BPS;
 
   /* udp lcore and shared queue, set taskelts_nb_per_sch to allow max slots */
@@ -686,4 +688,36 @@ int mufd_base_fd(void) {
   struct ufd_mt_ctx* ctx = ufd_get_mt_ctx(true);
   if (!ctx) return -EIO;
   return ctx->init_params.fd_base;
+}
+
+int mufd_set_opaque(int sockfd, void* pri) {
+  struct ufd_slot* slot = ufd_fd2slot(sockfd);
+  int idx = slot->idx;
+
+  if (slot->opaque) {
+    err("%s(%d), opaque set already\n", __func__, idx);
+    return -EIO;
+  }
+
+  slot->opaque = pri;
+  return 0;
+}
+
+void* mufd_get_opaque(int sockfd) {
+  struct ufd_slot* slot = ufd_fd2slot(sockfd);
+  return slot->opaque;
+}
+
+int mufd_get_sip(int sockfd, uint8_t ip[MTL_IP_ADDR_LEN]) {
+  struct ufd_slot* slot = ufd_fd2slot(sockfd);
+  return mudp_get_sip(slot->handle, ip);
+}
+
+int mufd_tx_valid_ip(int sockfd, uint8_t dip[MTL_IP_ADDR_LEN]) {
+  struct ufd_slot* slot = ufd_fd2slot(sockfd);
+  return mudp_tx_valid_ip(slot->handle, dip);
+}
+
+int mufd_socket_check(int domain, int type, int protocol) {
+  return mudp_verfiy_socket_args(domain, type, protocol);
 }

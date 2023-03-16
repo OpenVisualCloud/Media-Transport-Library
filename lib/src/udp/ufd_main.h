@@ -13,11 +13,10 @@
 #include <mudp_sockfd_internal.h>
 // clang-format on
 
-#define UFD_FD_BASE_DEFAULT (10000)
-
 struct ufd_slot {
   mudp_handle handle;
   int idx;
+  void* opaque;
 };
 
 struct ufd_mt_ctx {

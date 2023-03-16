@@ -350,6 +350,32 @@ int mudp_set_wake_timeout(mudp_handle ut, unsigned int us);
 int mudp_set_rx_poll_sleep(mudp_handle ut, unsigned int us);
 
 /**
+ * Get IP address of the udp transport socket.
+ *
+ * @param ut
+ *   The handle to udp transport socket.
+ * @param ip
+ *   The pointer to the IP address buffer.
+ * @return
+ *   - 0: Success.
+ *   - <0: Error code.
+ */
+int mudp_get_sip(mudp_handle ut, uint8_t ip[MTL_IP_ADDR_LEN]);
+
+/**
+ * Check if the dst ip is reach by the udp transport socket.
+ *
+ * @param ut
+ *   The handle to udp transport socket.
+ * @param dip
+ *   The pointer to the dst IP address buffer.
+ * @return
+ *   - 0: Success.
+ *   - <0: Error code.
+ */
+int mudp_tx_valid_ip(mudp_handle ut, uint8_t dip[MTL_IP_ADDR_LEN]);
+
+/**
  * Create a udp transport socket on a PCIE port.
  *
  * @param mt

@@ -26,5 +26,5 @@ MUFD_CFG=test/rist/ufd_send.json ./build/test/rist/test_send --sleep_us 1 --slee
 
 On RX node, run below sample command.
 ```bash
-MUFD_CFG=test/rist/ufd_receive.json ./build/test/rist/test_receive --sessions_cnt 1
+MUFD_CFG=test/rist/ufd_receive.json ./build/test/rist/test_receive --bind_ip 192.168.85.80 --sessions_cnt 1
 ```
