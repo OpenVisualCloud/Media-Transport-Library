@@ -68,11 +68,11 @@ static int udp_verfiy_bind_addr(struct mudp_impl* s, const struct sockaddr_in* a
   if (ret < 0) return ret;
 
   /* check if our IP or any IP */
-  typeof(addr->sin_addr.s_addr) s_addr = addr->sin_addr.s_addr;
-  if (s_addr == INADDR_ANY) return 0; /* kernel mcast bind use INADDR_ANY */
+  if (addr->sin_addr.s_addr == INADDR_ANY)
+    return 0; /* kernel mcast bind use INADDR_ANY */
   /* should we support INADDR_LOOPBACK? */
-  if (memcmp(&s_addr, mt_sip_addr(s->parnet, s->port), MTL_IP_ADDR_LEN)) {
-    uint8_t* ip = (uint8_t*)&s_addr;
+  if (memcmp(&addr->sin_addr.s_addr, mt_sip_addr(s->parnet, s->port), MTL_IP_ADDR_LEN)) {
+    uint8_t* ip = (uint8_t*)&addr->sin_addr.s_addr;
     err("%s(%d), invalid bind ip %u.%u.%u.%u\n", __func__, idx, ip[0], ip[1], ip[2],
         ip[3]);
     return -EINVAL;
