@@ -219,7 +219,7 @@ ssize_t sendto(int sockfd, const void* buf, size_t len, int flags,
     return ctx->libc_fn.sendto(sockfd, buf, len, flags, dest_addr, addrlen);
 
   const struct sockaddr_in* addr_in = (struct sockaddr_in*)dest_addr;
-  in_addr_t s_addr = addr_in->sin_addr.s_addr;
+  typeof(addr_in->sin_addr.s_addr) s_addr = addr_in->sin_addr.s_addr;
   if (mufd_tx_valid_ip(sockfd, (uint8_t*)&s_addr) < 0) {
     /* fallback to kfd if it's not in ufd address scope */
     struct upl_ufd_entry* opaque = mufd_get_opaque(sockfd);
