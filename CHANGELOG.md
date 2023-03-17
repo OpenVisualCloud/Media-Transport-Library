@@ -1,6 +1,6 @@
 # Changelog
 
-## Changelog for 23.03
+## Changelog for 23.04
 
 * dpdk: upgrade dpdk version to latest 22.11 for both windows and linux.
 * ptp: add pi controller and software frequency adjust to improve the accuracy to ~100ns.
@@ -12,6 +12,15 @@
 * mtl_init_params: add multi port support, user can initial MTL instance with up to 8 ports. See tests/script/multi_port_json/ for how to use from RxTxApp.
 * sch/tasklet: add runtime unregister support.
 * udp: add lcore daemon mode support for rx, see MTL_FLAG_UDP_LCORE.
+* dev: add rss mode support for rx queue in case no rte_flow available.
+* st2110/rx: add rss queue mode support
+* st2110/tx/video: add tx no chain mode support
+* st2110/tx/video: enable IOVA PA mode in 2M huge page environment
+* sample/pipeline: add SQD split and merge sample
+* sample/pipeline: add downscale sample
+* sample/pipeline: add 2si-down sample
+* CSC: add rfc4175 422be12 to le/planar avx512 version
+* AWS: add ENA running guide, see aws.md for detail
 
 ## Changelog for 22.12
 
