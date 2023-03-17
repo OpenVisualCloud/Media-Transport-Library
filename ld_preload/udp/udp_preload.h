@@ -2,9 +2,7 @@
  * Copyright(c) 2023 Intel Corporation
  */
 
-#ifndef _MT_UDP_PRELOAD_H_
-#define _MT_UDP_PRELOAD_H_
-
+#define _GNU_SOURCE
 #include <errno.h>
 #include <mtl/mudp_sockfd_internal.h>
 #include <stdio.h>
@@ -16,6 +14,9 @@
 // clang-format off
 #include <mtl/mudp_sockfd_api.h>
 // clang-format on
+
+#ifndef _MT_UDP_PRELOAD_H_
+#define _MT_UDP_PRELOAD_H_
 
 /* log define */
 #ifdef DEBUG
@@ -79,7 +80,6 @@ struct upl_ctx {
   bool has_mtl_udp;
   int mtl_fd_base;
 
-  void* libc_dl_handle;
   struct upl_functions libc_fn;
 };
 
