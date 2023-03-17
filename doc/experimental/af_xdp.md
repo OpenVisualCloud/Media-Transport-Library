@@ -1,6 +1,6 @@
 # AF_XDP Guide
 
-## 1. Backgroud
+## 1. Background
 
 AF_XDP is an address family that is optimized for high performance packet processing inside kernel stack based on BPF and XDP. AF_XDP sockets enable the possibility for XDP program to redirect packets to a memory buffer in userspace. DPDK has built-in AF_XDP poll mode driver support. For the details pls refer to <https://www.kernel.org/doc/HTML/latest/networking/af_xdp.html> and <https://doc.dpdk.org/guides/nics/af_xdp.html>.
 With AF_XDP, Kahawai get the benefits with all linux network stack support, downsides is little performance gap compared to full DPDK user PMD.
@@ -9,7 +9,7 @@ With AF_XDP, Kahawai get the benefits with all linux network stack support, down
 
 ### 2.1 Install libxdp and libbpf
 
-Get lastest source code release from <https://github.com/libbpf/libbpf/releases> and <https://github.com/xdp-project/xdp-tools/releases>, and follow the guide to build and install from source. Use “pkg-config --libs libxdp” and “pkg-config --libs libbpf” to check if the package are correctly installed.
+Get latest source code release from <https://github.com/libbpf/libbpf/releases> and <https://github.com/xdp-project/xdp-tools/releases>, and follow the guide to build and install from source. Use “pkg-config --libs libxdp” and “pkg-config --libs libbpf” to check if the package are correctly installed.
 
 #### 2.2 Rebuild DPDK and and make sure af_xdp pmd driver is built
 
@@ -70,7 +70,7 @@ echo 2 | sudo tee /sys/class/net/ens801f1/napi_defer_hard_irqs
 echo 200000 | sudo tee /sys/class/net/ens801f1/gro_flush_timeout
 ```
 
-You may need disbale rp_filter for multicast report message.
+You may need disable rp_filter for multicast report message.
 
 ```bash
 sudo sysctl -w net.ipv4.conf.all.rp_filter=0

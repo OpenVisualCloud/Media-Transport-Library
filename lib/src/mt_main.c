@@ -467,7 +467,7 @@ mtl_handle mtl_init(struct mtl_init_params* p) {
   rte_atomic32_set(&impl->instance_in_reset, 0);
   impl->lcore_lock_fd = -1;
 
-  impl->taskelts_nb_per_sch = p->taskelts_nb_per_sch;
+  impl->tasklets_nb_per_sch = p->tasklets_nb_per_sch;
   if (p->transport == MTL_TRANSPORT_ST2110) {
     if (p->tx_sessions_cnt_max)
       impl->user_tx_queues_cnt = RTE_MIN(180, p->tx_sessions_cnt_max);
@@ -482,9 +482,9 @@ mtl_handle mtl_init(struct mtl_init_params* p) {
       impl->user_rx_queues_cnt = p->rx_queues_cnt_max;
     else
       impl->user_rx_queues_cnt = 64;
-    if (!impl->taskelts_nb_per_sch) {
+    if (!impl->tasklets_nb_per_sch) {
       if (p->flags & MTL_FLAG_UDP_LCORE)
-        impl->taskelts_nb_per_sch = impl->user_rx_queues_cnt + 8;
+        impl->tasklets_nb_per_sch = impl->user_rx_queues_cnt + 8;
     }
   } else {
     err("%s, invalid transport %d\n", __func__, p->transport);
@@ -516,7 +516,7 @@ mtl_handle mtl_init(struct mtl_init_params* p) {
     }
   }
   impl->sch_schedule_ns = 200 * NS_PER_US; /* max schedule ns for mt_sleep_ms(0) */
-  if (!impl->taskelts_nb_per_sch) impl->taskelts_nb_per_sch = 16;
+  if (!impl->tasklets_nb_per_sch) impl->tasklets_nb_per_sch = 16;
 
   /* init mgr lock for audio and anc */
   mt_pthread_mutex_init(&impl->tx_a_mgr_mutex, NULL);

@@ -2,7 +2,7 @@
 
 ## 1. Introduction
 
-The dir incldue the simple sample code for how to develop application quickly based on UDP API of media transport library.
+The dir include the simple sample code for how to develop application quickly based on UDP API of media transport library.
 
 ## 2. Samples with POSIX socket compatible(file descriptor) API
 

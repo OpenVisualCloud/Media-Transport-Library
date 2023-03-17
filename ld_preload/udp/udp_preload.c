@@ -80,7 +80,7 @@ static void __attribute__((destructor)) upl_uinit() {
   ctx->has_mtl_udp = false;
 }
 
-static bool upl_is_mtl_scoket(struct upl_ctx* ctx, int fd) {
+static bool upl_is_mtl_socket(struct upl_ctx* ctx, int fd) {
   if (!ctx->has_mtl_udp) return false;
   if (fd < ctx->mtl_fd_base) return false;
   /* todo: add bitmap check */
@@ -144,7 +144,7 @@ int close(int sockfd) {
     return -EIO;
   }
 
-  if (!upl_is_mtl_scoket(ctx, sockfd)) return ctx->libc_fn.close(sockfd);
+  if (!upl_is_mtl_socket(ctx, sockfd)) return ctx->libc_fn.close(sockfd);
 
   struct upl_ufd_entry* opaque = mufd_get_opaque(sockfd);
   int kfd = opaque->kfd;
@@ -163,7 +163,7 @@ int bind(int sockfd, const struct sockaddr* addr, socklen_t addrlen) {
     return -EIO;
   }
 
-  if (!upl_is_mtl_scoket(ctx, sockfd)) return ctx->libc_fn.bind(sockfd, addr, addrlen);
+  if (!upl_is_mtl_socket(ctx, sockfd)) return ctx->libc_fn.bind(sockfd, addr, addrlen);
 
   int ret = mufd_bind(sockfd, addr, addrlen);
   if (ret >= 0) return ret; /* mufd bind succ */
@@ -187,7 +187,7 @@ ssize_t sendto(int sockfd, const void* buf, size_t len, int flags,
   }
 
   dbg("%s(%d), len %d\n", __func__, sockfd, (int)len);
-  if (!upl_is_mtl_scoket(ctx, sockfd))
+  if (!upl_is_mtl_socket(ctx, sockfd))
     return ctx->libc_fn.sendto(sockfd, buf, len, flags, dest_addr, addrlen);
 
   const struct sockaddr_in* addr_in = (struct sockaddr_in*)dest_addr;
@@ -215,7 +215,7 @@ int poll(struct pollfd* fds, nfds_t nfds, int timeout) {
   /* replace fd with kfd if the ufd is bind to kernel */
   for (nfds_t i = 0; i < nfds; i++) {
     int sockfd = fds[i].fd;
-    if (upl_is_mtl_scoket(ctx, sockfd)) {
+    if (upl_is_mtl_socket(ctx, sockfd)) {
       struct upl_ufd_entry* opaque = mufd_get_opaque(sockfd);
       if (opaque->bind_kfd) { /* replace with kfd */
         fds[i].fd = opaque->kfd;
@@ -223,13 +223,13 @@ int poll(struct pollfd* fds, nfds_t nfds, int timeout) {
     }
   }
 
-  bool is_mtl = upl_is_mtl_scoket(ctx, fds[0].fd);
+  bool is_mtl = upl_is_mtl_socket(ctx, fds[0].fd);
   /*
    * Check if all fds are the same type.
-   * Todo: hanlde if fds is mixed with kfd and ufd.
+   * Todo: handle if fds is mixed with kfd and ufd.
    */
   for (nfds_t i = 1; i < nfds; i++) {
-    if (upl_is_mtl_scoket(ctx, fds[i].fd) != is_mtl) {
+    if (upl_is_mtl_socket(ctx, fds[i].fd) != is_mtl) {
       err("%s, not same type on %d, fd %d\n", __func__, (int)i, fds[i].fd);
       return -EIO;
     }
@@ -249,7 +249,7 @@ ssize_t recvfrom(int sockfd, void* buf, size_t len, int flags, struct sockaddr* 
     return -EIO;
   }
 
-  if (!upl_is_mtl_scoket(ctx, sockfd))
+  if (!upl_is_mtl_socket(ctx, sockfd))
     return ctx->libc_fn.recvfrom(sockfd, buf, len, flags, src_addr, addrlen);
 
   struct upl_ufd_entry* opaque = mufd_get_opaque(sockfd);
@@ -266,7 +266,7 @@ int getsockopt(int sockfd, int level, int optname, void* optval, socklen_t* optl
     return -EIO;
   }
 
-  if (!upl_is_mtl_scoket(ctx, sockfd))
+  if (!upl_is_mtl_socket(ctx, sockfd))
     return ctx->libc_fn.getsockopt(sockfd, level, optname, optval, optlen);
 
   struct upl_ufd_entry* opaque = mufd_get_opaque(sockfd);
@@ -283,7 +283,7 @@ int setsockopt(int sockfd, int level, int optname, const void* optval, socklen_t
     return -EIO;
   }
 
-  if (!upl_is_mtl_scoket(ctx, sockfd))
+  if (!upl_is_mtl_socket(ctx, sockfd))
     return ctx->libc_fn.setsockopt(sockfd, level, optname, optval, optlen);
 
   struct upl_ufd_entry* opaque = mufd_get_opaque(sockfd);
@@ -300,7 +300,7 @@ int fcntl(int sockfd, int cmd, va_list args) {
     return -EIO;
   }
 
-  if (!upl_is_mtl_scoket(ctx, sockfd)) return ctx->libc_fn.fcntl(sockfd, cmd, args);
+  if (!upl_is_mtl_socket(ctx, sockfd)) return ctx->libc_fn.fcntl(sockfd, cmd, args);
 
   struct upl_ufd_entry* opaque = mufd_get_opaque(sockfd);
   if (opaque->bind_kfd)
@@ -316,7 +316,7 @@ int fcntl64(int sockfd, int cmd, va_list args) {
     return -EIO;
   }
 
-  if (!upl_is_mtl_scoket(ctx, sockfd)) return ctx->libc_fn.fcntl64(sockfd, cmd, args);
+  if (!upl_is_mtl_socket(ctx, sockfd)) return ctx->libc_fn.fcntl64(sockfd, cmd, args);
 
   struct upl_ufd_entry* opaque = mufd_get_opaque(sockfd);
   if (opaque->bind_kfd)

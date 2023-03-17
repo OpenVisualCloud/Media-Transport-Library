@@ -113,7 +113,7 @@ loop_entry:
             warn("%s, clear outdated frame %" PRIu64 "\n", __func__, tmstamp);
             st20p_rx_put_frame(rx_handle, rx_frame);
             rx_frame = NULL;
-            continue; /* continue while: get new rx farme */
+            continue; /* continue while: get new rx frame */
           }
         }
 
@@ -171,7 +171,7 @@ int main(int argc, char** argv) {
   ctx.param.tx_sessions_cnt_max = 1;
   ctx.param.rx_sessions_cnt_max = session_num;
   ctx.param.flags |=
-      MTL_FLAG_RX_SEPARATE_VIDEO_LCORE; /* use seperate lcores for tx and rx */
+      MTL_FLAG_RX_SEPARATE_VIDEO_LCORE; /* use separate lcores for tx and rx */
 
   ctx.st = mtl_init(&ctx.param);
   if (!ctx.st) {

@@ -1,4 +1,4 @@
-1. Usage: analyse the interval(ns) between two packets in one frame.
+1. Usage: analyze the interval(ns) between two packets in one frame.
 2. Dependency:
   ubuntu: apt-get install libpcap-dev
   centos: yum install libpcap-devel

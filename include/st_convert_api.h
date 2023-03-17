@@ -20,7 +20,7 @@ extern "C" {
 #endif
 
 /**
- * Convert rfc4175_422be10 to yuv422p10le with the max optimised SIMD level.
+ * Convert rfc4175_422be10 to yuv422p10le with the max optimized SIMD level.
  *
  * @param pg
  *   Point to pg(rfc4175_422be10) data.
@@ -45,7 +45,7 @@ static inline int st20_rfc4175_422be10_to_yuv422p10le(
 }
 
 /**
- * Convert rfc4175_422be10 to yuv422p10le with the max optimised SIMD level and DMA
+ * Convert rfc4175_422be10 to yuv422p10le with the max optimized SIMD level and DMA
  * helper. Profiling shows gain with 4k/8k solution due to LLC cache miss migration, thus
  * pls only applied with 4k/8k.
  *
@@ -77,7 +77,7 @@ static inline int st20_rfc4175_422be10_to_yuv422p10le_dma(
 }
 
 /**
- * Convert rfc4175_422be10 to rfc4175_422le10 with the max optimised SIMD level.
+ * Convert rfc4175_422be10 to rfc4175_422le10 with the max optimized SIMD level.
  *
  * @param pg_be
  *   Point to pg(rfc4175_422be10) data.
@@ -175,7 +175,7 @@ static inline int st20_rfc4175_422be10_to_v210_dma(
 }
 
 /**
- * Convert rfc4175_422be10 to rfc4175_422le8 with the max optimised SIMD level.
+ * Convert rfc4175_422be10 to rfc4175_422le8 with the max optimized SIMD level.
  *
  * @param pg_10
  *   Point to pg(rfc4175_422be10) data.
@@ -224,7 +224,7 @@ static inline int st20_rfc4175_422be10_to_422le8_dma(
 }
 
 /**
- * Convert rfc4175_422be12 to yuv422p12le with the max optimised SIMD level.
+ * Convert rfc4175_422be12 to yuv422p12le with the max optimized SIMD level.
  *
  * @param pg
  *   Point to pg(rfc4175_422be12) data.
@@ -249,7 +249,7 @@ static inline int st20_rfc4175_422be12_to_yuv422p12le(
 }
 
 /**
- * Convert rfc4175_422be12 to yuv422p12le with the max optimised SIMD level and DMA
+ * Convert rfc4175_422be12 to yuv422p12le with the max optimized SIMD level and DMA
  * helper. Profiling shows gain with 4k/8k solution due to LLC cache miss migration, thus
  * pls only applied with 4k/8k.
  *
@@ -281,7 +281,7 @@ static inline int st20_rfc4175_422be12_to_yuv422p12le_dma(
 }
 
 /**
- * Convert rfc4175_422be12 to rfc4175_422le12 with the max optimised SIMD level.
+ * Convert rfc4175_422be12 to rfc4175_422le12 with the max optimized SIMD level.
  *
  * @param pg_be
  *   Point to pg(rfc4175_422be12) data.
@@ -330,7 +330,7 @@ static inline int st20_rfc4175_422be12_to_422le12_dma(
 }
 
 /**
- * Convert rfc4175_444be10 to yuv444p10le with the max optimised SIMD level.
+ * Convert rfc4175_444be10 to yuv444p10le with the max optimized SIMD level.
  *
  * @param pg
  *   Point to pg(rfc4175_444be10) data.
@@ -355,7 +355,7 @@ static inline int st20_rfc4175_444be10_to_yuv444p10le(
 }
 
 /**
- * Convert rfc4175_444be10 to gbrp10le with the max optimised SIMD level.
+ * Convert rfc4175_444be10 to gbrp10le with the max optimized SIMD level.
  *
  * @param pg
  *   Point to pg(rfc4175_444be10) data.
@@ -380,7 +380,7 @@ static inline int st20_rfc4175_444be10_to_gbrp10le(struct st20_rfc4175_444_10_pg
 }
 
 /**
- * Convert rfc4175_444be10 to rfc4175_444le10 with the max optimised SIMD level.
+ * Convert rfc4175_444be10 to rfc4175_444le10 with the max optimized SIMD level.
  *
  * @param pg_be
  *   Point to pg(rfc4175_444be10) data.
@@ -401,7 +401,7 @@ static inline int st20_rfc4175_444be10_to_444le10(
 }
 
 /**
- * Convert rfc4175_444be12 to yuv444p12le with the max optimised SIMD level.
+ * Convert rfc4175_444be12 to yuv444p12le with the max optimized SIMD level.
  *
  * @param pg
  *   Point to pg(rfc4175_444be12) data.
@@ -426,7 +426,7 @@ static inline int st20_rfc4175_444be12_to_yuv444p12le(
 }
 
 /**
- * Convert rfc4175_444be12 to gbrp12le with the max optimised SIMD level.
+ * Convert rfc4175_444be12 to gbrp12le with the max optimized SIMD level.
  *
  * @param pg
  *   Point to pg(rfc4175_444be12) data.
@@ -451,7 +451,7 @@ static inline int st20_rfc4175_444be12_to_gbrp12le(struct st20_rfc4175_444_12_pg
 }
 
 /**
- * Convert rfc4175_444be12 to rfc4175_444le12 with the max optimised SIMD level.
+ * Convert rfc4175_444be12 to rfc4175_444le12 with the max optimized SIMD level.
  *
  * @param pg_be
  *   Point to pg(rfc4175_444be12) data.

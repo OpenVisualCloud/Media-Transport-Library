@@ -46,7 +46,7 @@
 #define NS_PER_S (1000000000)
 #endif
 
-#define UTC_OFFSSET (37) /* 2022/07 */
+#define UTC_OFFSET (37) /* 2022/07 */
 
 struct st_display {
   char name[36];
@@ -131,7 +131,7 @@ struct st_app_tx_video_session {
   uint8_t payload_type;
 
   double expect_fps;
-  uint64_t stat_frame_frist_tx_time;
+  uint64_t stat_frame_first_tx_time;
   uint32_t st20_frame_done_cnt;
   uint32_t st20_packet_done_cnt;
 
@@ -213,7 +213,7 @@ struct st_app_rx_video_session {
   bool slice;
 
   char st20_dst_url[ST_APP_URL_MAX_LEN];
-  int st20_dst_fb_cnt; /* the count of recevied fbs will be saved to file */
+  int st20_dst_fb_cnt; /* the count of received fbs will be saved to file */
   int st20_dst_fd;
   uint8_t* st20_dst_begin;
   uint8_t* st20_dst_end;
@@ -235,7 +235,7 @@ struct st_app_rx_video_session {
   int stat_frame_received;
   uint64_t stat_last_time;
   int stat_frame_total_received;
-  uint64_t stat_frame_frist_rx_time;
+  uint64_t stat_frame_first_rx_time;
   double expect_fps;
 
   pthread_t st20_app_thread;
@@ -270,7 +270,7 @@ struct st_app_rx_audio_session {
 
   /* stat */
   int stat_frame_total_received;
-  uint64_t stat_frame_frist_rx_time;
+  uint64_t stat_frame_first_rx_time;
   double expect_fps;
 };
 
@@ -284,7 +284,7 @@ struct st_app_rx_anc_session {
 
   /* stat */
   int stat_frame_total_received;
-  uint64_t stat_frame_frist_rx_time;
+  uint64_t stat_frame_first_rx_time;
 };
 
 struct st22_app_tx_session {
@@ -342,7 +342,7 @@ struct st22_app_rx_session {
   int fb_decoded;
 
   char st22_dst_url[ST_APP_URL_MAX_LEN];
-  int st22_dst_fb_cnt; /* the count of recevied fbs will be saved to file */
+  int st22_dst_fb_cnt; /* the count of received fbs will be saved to file */
   int st22_dst_fd;
   uint8_t* st22_dst_begin;
   uint8_t* st22_dst_end;
@@ -387,7 +387,7 @@ struct st_app_rx_st22p_session {
   int stat_frame_received;
   uint64_t stat_last_time;
   int stat_frame_total_received;
-  uint64_t stat_frame_frist_rx_time;
+  uint64_t stat_frame_first_rx_time;
   double expect_fps;
 
   pthread_t st22p_app_thread;
@@ -439,7 +439,7 @@ struct st_app_rx_st20p_session {
   int stat_frame_received;
   uint64_t stat_last_time;
   int stat_frame_total_received;
-  uint64_t stat_frame_frist_rx_time;
+  uint64_t stat_frame_first_rx_time;
   double expect_fps;
 
   pthread_t st20p_app_thread;
@@ -505,7 +505,7 @@ struct st_app_context {
 
   struct st_app_rx_video_session* rx_video_sessions;
   int rx_video_session_cnt;
-  int rx_video_file_frames; /* the frames recevied saved to file */
+  int rx_video_file_frames; /* the frames received saved to file */
   int rx_video_fb_cnt;
   int rx_video_rtp_ring_size; /* the ring size for rx video rtp type */
   bool has_sdl;               /* has SDL device or not*/

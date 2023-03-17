@@ -3,7 +3,7 @@
  */
 
 /**
- * @file mudi_api.h
+ * @file mudp_api.h
  *
  * Interfaces to udp transport context.
  *
@@ -193,7 +193,7 @@ int mudp_setsockopt(mudp_handle ut, int level, int optname, const void* optval,
 
 /**
  * Set the tx dst mac for the udp transport socket. MTL focus on data plane and only has
- * ARP support. For the WAN transport, user can use this API to mannual set the dst mac.
+ * ARP support. For the WAN transport, user can use this API to manual set the dst mac.
  *
  * @param ut
  *   The handle to udp transport socket.

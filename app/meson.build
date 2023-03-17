@@ -205,7 +205,7 @@ executable('RxSt22PipelineSample', pipeline_rx_st22_sample_sources,
   dependencies: [asan_dep, mtl, libpthread]
 )
 
-# Video foward samples app
+# Video forward samples app
 executable('RxSt20pTxSt22pFwd', rx_st20p_tx_st22p_fwd_sources,
   c_args : app_c_args,
   link_args: app_ld_args,

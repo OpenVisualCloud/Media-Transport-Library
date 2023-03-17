@@ -366,7 +366,7 @@ static void st40_tx_fps_test(enum st40_type type[], enum st_fps fps[],
   std::vector<double> framerate;
   std::vector<std::thread> rtp_thread;
 
-  /* return if level small than gloabl */
+  /* return if level small than global */
   if (level < ctx->level) return;
 
   test_ctx.resize(sessions);
@@ -443,7 +443,7 @@ static void st40_rx_fps_test(enum st40_type type[], enum st_fps fps[],
   struct st40_tx_ops ops_tx;
   struct st40_rx_ops ops_rx;
 
-  /* return if level small than gloabl */
+  /* return if level small than global */
   if (level < ctx->level) return;
 
   if (ctx->para.num_ports != 2) {

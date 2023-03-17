@@ -468,14 +468,14 @@ struct mtl_init_params {
    * if NULL, ST instance will get from built-in ptp source(NIC) or system time instead.
    */
   uint64_t (*ptp_get_time_fn)(void* priv);
-  /** stats dump peroid in seconds, 0 means determined by lib */
+  /** stats dump period in seconds, 0 means determined by lib */
   uint16_t dump_period_s;
-  /** stats dump callabck in every dump_period_s */
+  /** stats dump callback in every dump_period_s */
   void (*stat_dump_cb_fn)(void* priv);
   /** data quota for each lcore, 0 means determined by lib */
   uint32_t data_quota_mbs_per_sch;
   /** the number of tasklets for each lcore, 0 means determined by lib */
-  uint32_t taskelts_nb_per_sch;
+  uint32_t tasklets_nb_per_sch;
   /**
    * number of transmit descriptors for each NIC TX queue, 0 means determined by lib.
    * It will affect the memory usage and the performance.
@@ -733,7 +733,7 @@ int mtl_sch_set_sleep_us(mtl_handle mt, uint64_t us);
  * @param mt
  *   The handle to the media transport device context.
  * @param lcore
- *   A pointer to the retured lcore number.
+ *   A pointer to the returned lcore number.
  * @return
  *   - 0 if successful.
  *   - <0: Error code if fail.
@@ -746,7 +746,7 @@ int mtl_get_lcore(mtl_handle mt, unsigned int* lcore);
  * @param mt
  *   The handle to the media transport device context.
  * @param thread
- *   the thread wchich request the bind action.
+ *   the thread which request the bind action.
  * @param lcore
  *   the DPDK lcore which requested by mtl_get_lcore.
  * @return
@@ -795,7 +795,7 @@ uint64_t mtl_ptp_read_time(mtl_handle mt);
 /**
  * Allocate memory from the huge-page area of memory. The memory is not cleared.
  * In NUMA systems, the memory allocated from the same NUMA socket of the port.
- * Note the mmeory is mmap to IOVA already, use mtl_hp_virt2iova to get the iova.
+ * Note the memory is mmap to IOVA already, use mtl_hp_virt2iova to get the iova.
  *
  * @param mt
  *   The handle to the media transport device context.
@@ -813,7 +813,7 @@ void* mtl_hp_malloc(mtl_handle mt, size_t size, enum mtl_port port);
  * Allocate zero'ed memory from the huge-page area of memory.
  * Equivalent to mtl_hp_malloc() except that the memory zone is cleared with zero.
  * In NUMA systems, the memory allocated from the same NUMA socket of the port.
- * Note the mmeory is mmap to IOVA already, use mtl_hp_virt2iova to get the iova.
+ * Note the memory is mmap to IOVA already, use mtl_hp_virt2iova to get the iova.
  *
  * @param mt
  *   The handle to the media transport device context.

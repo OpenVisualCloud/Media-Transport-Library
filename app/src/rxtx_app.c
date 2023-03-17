@@ -54,7 +54,7 @@ static void user_param_init(struct st_app_context* ctx, struct mtl_init_params* 
 
   p->pmd[MTL_PORT_P] = MTL_PMD_DPDK_USER;
   p->pmd[MTL_PORT_R] = MTL_PMD_DPDK_USER;
-  /* defalut start queue set to 1 */
+  /* default start queue set to 1 */
   p->xdp_info[MTL_PORT_P].start_queue = 1;
   p->xdp_info[MTL_PORT_R].start_queue = 1;
   p->flags |= MTL_FLAG_BIND_NUMA; /* default bind to numa */
@@ -102,7 +102,7 @@ static void st_app_ctx_init(struct st_app_context* ctx) {
   /* st22 */
   ctx->st22_bpp = 3; /* 3bit per pixel */
 
-  ctx->utc_offset = UTC_OFFSSET;
+  ctx->utc_offset = UTC_OFFSET;
 
   /* init lcores and sch */
   for (int i = 0; i < ST_APP_MAX_LCORES; i++) {

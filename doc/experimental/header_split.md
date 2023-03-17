@@ -1,6 +1,6 @@
 # Header split guide
 
-## 1. Backgroud
+## 1. Background
 
 Header split is a hardware based feature for rx memory copy offload, it can leverage this feature to reduce the memory copy in rx packet processing, then to improve the performance for high resolution streaming.
 

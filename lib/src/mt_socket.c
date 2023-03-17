@@ -158,7 +158,7 @@ static int socket_arp_get(int sfd, in_addr_t ip, struct rte_ether_addr* ea,
     return -EIO;
   }
 
-  dbg("%s, entry has been successfully retreived\n", __func__);
+  dbg("%s, entry has been successfully retrieved\n", __func__);
   hw_addr = (unsigned char*)arp.arp_ha.sa_data;
   memcpy(ea->addr_bytes, hw_addr, RTE_ETHER_ADDR_LEN);
   dbg("%s, mac addr found : %02x:%02x:%02x:%02x:%02x:%02x\n", __func__, hw_addr[0],

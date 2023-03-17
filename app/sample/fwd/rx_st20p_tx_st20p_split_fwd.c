@@ -133,7 +133,7 @@ int main(int argc, char** argv) {
   ctx.param.tx_sessions_cnt_max = session_num;
   ctx.param.rx_sessions_cnt_max = 1;
   ctx.param.flags |=
-      MTL_FLAG_RX_SEPARATE_VIDEO_LCORE; /* use seperate lcores for tx and rx */
+      MTL_FLAG_RX_SEPARATE_VIDEO_LCORE; /* use separate lcores for tx and rx */
 
   ctx.st = mtl_init(&ctx.param);
   if (!ctx.st) {

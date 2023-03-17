@@ -28,7 +28,7 @@
 #define MUDP_DEFAULT_RL_BPS (1ul * 1024 * 1024 * 1024)
 
 struct mudp_impl {
-  struct mtl_main_impl* parnet;
+  struct mtl_main_impl* parent;
   enum mt_handle_type type;
   int idx;
   char name[64];
@@ -93,6 +93,6 @@ struct mudp_impl {
   uint32_t stat_timedwait_timeout;
 };
 
-int mudp_verfiy_socket_args(int domain, int type, int protocol);
+int mudp_verify_socket_args(int domain, int type, int protocol);
 
 #endif

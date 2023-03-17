@@ -24,7 +24,7 @@ Search for edit the system environment variables and run the program.
 Click on Environment Variables... button and then in the upper section click on Path variable and click edit.
 Then add it to your environment variable by clicking new and writing the path down to them just like in the example below.
 
-meson version 0.57.0 is recommanded version
+meson version 0.57.0 is recommended version
 
 for example:
 

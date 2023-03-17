@@ -96,7 +96,7 @@ static int sch_tasklet_sleep(struct mtl_main_impl* impl, struct mt_sch_impl* sch
 
 static int sch_tasklet_func(void* args) {
   struct mt_sch_impl* sch = args;
-  struct mtl_main_impl* impl = sch->parnet;
+  struct mtl_main_impl* impl = sch->parent;
   int idx = sch->idx;
   int num_tasklet, i;
   struct mt_sch_tasklet_ops* ops;
@@ -187,7 +187,7 @@ static int sch_start(struct mt_sch_impl* sch) {
   rte_atomic32_set(&sch->stopped, 0);
 
   if (!sch->run_in_thread) {
-    ret = mt_dev_get_lcore(sch->parnet, &sch->lcore);
+    ret = mt_dev_get_lcore(sch->parent, &sch->lcore);
     if (ret < 0) {
       err("%s(%d), get lcore fail %d\n", __func__, idx, ret);
       sch_unlock(sch);
@@ -229,7 +229,7 @@ static int sch_stop(struct mt_sch_impl* sch) {
   }
   if (!sch->run_in_thread) {
     rte_eal_wait_lcore(sch->lcore);
-    mt_dev_put_lcore(sch->parnet, sch->lcore);
+    mt_dev_put_lcore(sch->parent, sch->lcore);
   } else {
     pthread_join(sch->tid, NULL);
   }
@@ -282,7 +282,7 @@ static int sch_free(struct mt_sch_impl* sch) {
       mt_sch_unregister_tasklet(sch->tasklet[i]);
     }
   }
-  rte_atomic32_dec(&mt_sch_get_mgr(sch->parnet)->sch_cnt);
+  rte_atomic32_dec(&mt_sch_get_mgr(sch->parent)->sch_cnt);
   rte_atomic32_dec(&sch->active);
   sch_unlock(sch);
   return 0;
@@ -342,7 +342,7 @@ static void sch_stat(struct mt_sch_impl* sch) {
   int idx = sch->idx;
   uint32_t avg_us;
 
-  if (mt_has_tasklet_time_measure(sch->parnet)) {
+  if (mt_has_tasklet_time_measure(sch->parent)) {
     for (int i = 0; i < num_tasklet; i++) {
       tasklet = sch->tasklet[i];
       if (!tasklet) continue;
@@ -425,7 +425,7 @@ int mt_sch_unregister_tasklet(struct mt_sch_tasklet_impl* tasklet) {
 struct mt_sch_tasklet_impl* mt_sch_register_tasklet(
     struct mt_sch_impl* sch, struct mt_sch_tasklet_ops* tasklet_ops) {
   int idx = sch->idx;
-  struct mtl_main_impl* impl = sch->parnet;
+  struct mtl_main_impl* impl = sch->parent;
   struct mt_sch_tasklet_impl* tasklet;
 
   sch_lock(sch);
@@ -471,14 +471,14 @@ int mt_sch_mrg_init(struct mtl_main_impl* impl, int data_quota_mbs_limit) {
   struct mt_sch_impl* sch;
   struct mt_sch_mgr* mgr = mt_sch_get_mgr(impl);
   int socket = mt_socket_id(impl, MTL_PORT_P);
-  int nb_tasklets = impl->taskelts_nb_per_sch;
+  int nb_tasklets = impl->tasklets_nb_per_sch;
 
   mt_pthread_mutex_init(&mgr->mgr_mutex, NULL);
 
   for (int sch_idx = 0; sch_idx < MT_MAX_SCH_NUM; sch_idx++) {
     sch = mt_sch_instance(impl, sch_idx);
     mt_pthread_mutex_init(&sch->mutex, NULL);
-    sch->parnet = impl;
+    sch->parent = impl;
     sch->idx = sch_idx;
     rte_atomic32_set(&sch->started, 0);
     rte_atomic32_set(&sch->ref_cnt, 0);
@@ -571,7 +571,7 @@ int mt_sch_add_quota(struct mt_sch_impl* sch, int quota_mbs) {
 
 int mt_sch_put(struct mt_sch_impl* sch, int quota_mbs) {
   int sidx = sch->idx, ret;
-  struct mtl_main_impl* impl = sch->parnet;
+  struct mtl_main_impl* impl = sch->parent;
 
   sch_free_quota(sch, quota_mbs);
 

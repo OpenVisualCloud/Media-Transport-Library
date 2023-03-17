@@ -2,7 +2,7 @@
 
 ## 1. Introduction
 
-The dir incldue the simple sample code for how to develop application quickly based on Kahawai library.
+The dir include the simple sample code for how to develop application quickly based on Kahawai library.
 
 ## 2. Pipeline samples which based on get/put APIs
 
@@ -114,7 +114,7 @@ The dir incldue the simple sample code for how to develop application quickly ba
 ./build/app/RxSt22VideoSample --p_port 0000:af:01.1 --p_sip 192.168.75.22 --p_rx_ip 239.168.75.20
 ```
 
-[rx_st20_tx_st20_fwd.c](legacy/rx_st20_tx_st20_fwd.c): A foward demo application which receive a st20 stream and output as st20 stream with logo rendering.
+[rx_st20_tx_st20_fwd.c](legacy/rx_st20_tx_st20_fwd.c): A forward demo application which receive a st20 stream and output as st20 stream with logo rendering.
 
 ```bash
 ./build/app/RxSt20TxSt20Fwd --p_port 0000:af:01.1 --p_sip 192.168.75.22 --p_rx_ip 239.168.75.20 --p_fwd_ip 239.168.75.21

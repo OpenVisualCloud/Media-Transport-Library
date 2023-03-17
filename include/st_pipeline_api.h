@@ -7,7 +7,7 @@
  *
  * Interfaces to Media Transport Library for st2110-20/22 pipeline transport.
  * It include a plugin layer to hide the covert/encode detail that application can
- * foucs on the raw pixel handling.
+ * focus on the raw pixel handling.
  *
  */
 
@@ -81,15 +81,15 @@ struct st_plugin_meta {
   uint32_t magic;
 };
 
-/** Get meta function porotype of plugin */
+/** Get meta function prototype of plugin */
 typedef int (*st_plugin_get_meta_fn)(struct st_plugin_meta* meta);
 /** Get meta function name of plugin */
 #define ST_PLUGIN_GET_META_API "st_plugin_get_meta"
-/** Create function porotype of plugin */
+/** Create function prototype of plugin */
 typedef st_plugin_priv (*st_plugin_create_fn)(mtl_handle mt);
 /** Create function name of plugin */
 #define ST_PLUGIN_CREATE_API "st_plugin_create"
-/** Free function porotype of plugin */
+/** Free function prototype of plugin */
 typedef int (*st_plugin_free_fn)(st_plugin_priv handle);
 /** Free function name of plugin */
 #define ST_PLUGIN_FREE_API "st_plugin_free"
@@ -300,7 +300,7 @@ enum st22_codec {
   ST22_CODEC_MAX,
 };
 
-/** Qulity mode type of st22, speed or quality */
+/** Quality mode type of st22, speed or quality */
 enum st22_quality_mode {
   /** speed mode */
   ST22_QUALITY_MODE_SPEED = 0,
@@ -398,7 +398,7 @@ enum st22_quality_mode {
 
 /**
  * Flag bit in flags of struct st20p_rx_ops, for non MTL_PMD_DPDK_USER.
- * If set, it's application duty to set the rx flow(queue) and muticast join/drop.
+ * If set, it's application duty to set the rx flow(queue) and multicast join/drop.
  * Use st20p_rx_get_queue_meta to get the queue meta(queue number etc) info.
  */
 #define ST20P_RX_FLAG_DATA_PATH_ONLY (MTL_BIT32(0))
@@ -479,12 +479,12 @@ struct st22_encoder_dev {
   uint64_t input_fmt_caps;
   /** supported output format for encode, ST_FMT_CAP_* */
   uint64_t output_fmt_caps;
-  /** create session funtion */
+  /** create session function */
   st22_encode_priv (*create_session)(void* priv, st22p_encode_session session_p,
                                      struct st22_encoder_create_req* req);
   /** Callback when frame available in the lib. */
   int (*notify_frame_available)(st22_encode_priv encode_priv);
-  /** free session funtion */
+  /** free session function */
   int (*free_session)(void* priv, st22_encode_priv encode_priv);
 };
 
@@ -529,12 +529,12 @@ struct st22_decoder_dev {
   uint64_t input_fmt_caps;
   /** supported output format for decode, ST_FMT_CAP_* */
   uint64_t output_fmt_caps;
-  /** create session funtion */
+  /** create session function */
   st22_decode_priv (*create_session)(void* priv, st22p_decode_session session_p,
                                      struct st22_decoder_create_req* req);
   /** Callback when frame available in the lib. */
   int (*notify_frame_available)(st22_decode_priv decode_priv);
-  /** free session funtion */
+  /** free session function */
   int (*free_session)(void* priv, st22_decode_priv decode_priv);
 };
 
@@ -577,12 +577,12 @@ struct st20_converter_dev {
   uint64_t input_fmt_caps;
   /** supported output format for convert, ST_FMT_CAP_* */
   uint64_t output_fmt_caps;
-  /** create session funtion */
+  /** create session function */
   st20_convert_priv (*create_session)(void* priv, st20p_convert_session session_p,
                                       struct st20_converter_create_req* req);
   /** Callback when frame available in the lib. */
   int (*notify_frame_available)(st20_convert_priv convert_priv);
-  /** free session funtion */
+  /** free session function */
   int (*free_session)(void* priv, st20_convert_priv convert_priv);
 };
 
@@ -877,7 +877,7 @@ int st22_encoder_unregister(st22_encoder_dev_handle handle);
  * @param session
  *   The handle to the tx st2110-22 pipeline session.
  * @return
- *   - NULL if no avaiable frame in the session.
+ *   - NULL if no available frame in the session.
  *   - Otherwise, the frame pointer.
  */
 struct st22_encode_frame_meta* st22_encoder_get_frame(st22p_encode_session session);
@@ -931,7 +931,7 @@ int st22_decoder_unregister(st22_decoder_dev_handle handle);
  * @param session
  *   The handle to the rx st2110-22 pipeline session.
  * @return
- *   - NULL if no avaiable frame in the session.
+ *   - NULL if no available frame in the session.
  *   - Otherwise, the frame pointer.
  */
 struct st22_decode_frame_meta* st22_decoder_get_frame(st22p_decode_session session);
@@ -985,7 +985,7 @@ int st20_converter_unregister(st20_converter_dev_handle handle);
  * @param session
  *   The handle to the rx st2110-20 pipeline session.
  * @return
- *   - NULL if no avaiable frame in the session.
+ *   - NULL if no available frame in the session.
  *   - Otherwise, the frame pointer.
  */
 struct st20_convert_frame_meta* st20_converter_get_frame(st20p_convert_session session);
@@ -1077,7 +1077,7 @@ int st22p_tx_free(st22p_tx_handle handle);
  * @param handle
  *   The handle to the tx st2110-22 pipeline session.
  * @return
- *   - NULL if no avaiable frame in the session.
+ *   - NULL if no available frame in the session.
  *   - Otherwise, the frame meta pointer.
  */
 struct st_frame* st22p_tx_get_frame(st22p_tx_handle handle);
@@ -1151,7 +1151,7 @@ int st22p_rx_free(st22p_rx_handle handle);
  * @param handle
  *   The handle to the rx st2110-22 pipeline session.
  * @return
- *   - NULL if no avaiable frame in the session.
+ *   - NULL if no available frame in the session.
  *   - Otherwise, the frame pointer.
  */
 struct st_frame* st22p_rx_get_frame(st22p_rx_handle handle);
@@ -1199,7 +1199,7 @@ size_t st22p_rx_frame_size(st22p_rx_handle handle);
  * @param handle
  *   The handle to the rx st2110-22 pipeline session.
  * @param max_dump_packets
- *   The max number of packets to be dumpped.
+ *   The max number of packets to be dumped.
  * @param sync
  *   synchronous or asynchronous, true means this func will return after dump
  * progress is finished.
@@ -1257,7 +1257,7 @@ int st20p_tx_free(st20p_tx_handle handle);
  * @param handle
  *   The handle to the tx st2110-20 pipeline session.
  * @return
- *   - NULL if no avaiable frame in the session.
+ *   - NULL if no available frame in the session.
  *   - Otherwise, the frame meta pointer.
  */
 struct st_frame* st20p_tx_get_frame(st20p_tx_handle handle);
@@ -1362,7 +1362,7 @@ int st20p_rx_free(st20p_rx_handle handle);
  * @param ext_frame
  *   The pointer to the structure describing external framebuffer.
  * @return
- *   - NULL if no avaiable frame in the session.
+ *   - NULL if no available frame in the session.
  *   - Otherwise, the frame pointer.
  */
 struct st_frame* st20p_rx_get_ext_frame(st20p_rx_handle handle,
@@ -1375,7 +1375,7 @@ struct st_frame* st20p_rx_get_ext_frame(st20p_rx_handle handle,
  * @param handle
  *   The handle to the rx st2110-20 pipeline session.
  * @return
- *   - NULL if no avaiable frame in the session.
+ *   - NULL if no available frame in the session.
  *   - Otherwise, the frame pointer.
  */
 struct st_frame* st20p_rx_get_frame(st20p_rx_handle handle);
@@ -1423,7 +1423,7 @@ size_t st20p_rx_frame_size(st20p_rx_handle handle);
  * @param handle
  *   The handle to the rx st2110-20 pipeline session.
  * @param max_dump_packets
- *   The max number of packets to be dumpped.
+ *   The max number of packets to be dumped.
  * @param sync
  *   synchronous or asynchronous, true means this func will return after dump
  * progress is finished.
@@ -1546,7 +1546,7 @@ const char* st_frame_fmt_name(enum st_frame_fmt fmt);
  * @param name
  *   name.
  * @return
- *   The frmae fmt.
+ *   The frame fmt.
  *   ST_FRAME_FMT_MAX: Fail.
  */
 enum st_frame_fmt st_frame_name_to_fmt(const char* name);
@@ -1568,7 +1568,7 @@ uint8_t st_frame_fmt_planes(enum st_frame_fmt fmt);
  * @param fmt
  *   st_frame_fmt format.
  * @return
- *   The compatible st20 tranport fmt.
+ *   The compatible st20 transport fmt.
  *   ST20_FMT_MAX: Fail.
  */
 enum st20_fmt st_frame_fmt_to_transport(enum st_frame_fmt fmt);
@@ -1593,7 +1593,7 @@ enum st_frame_fmt st_frame_fmt_from_transport(enum st20_fmt tfmt);
  *   st20_fmt format.
  * @return
  *   - true if the same.
- *   - flase if not the same.
+ *   - false if not the same.
  */
 bool st_frame_fmt_equal_transport(enum st_frame_fmt fmt, enum st20_fmt tfmt);
 

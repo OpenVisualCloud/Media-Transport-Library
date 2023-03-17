@@ -806,7 +806,7 @@ static int tx_audio_session_tasklet_rtp(struct mtl_main_impl* impl,
 
 static int tx_audio_sessions_tasklet_handler(void* priv) {
   struct st_tx_audio_sessions_mgr* mgr = priv;
-  struct mtl_main_impl* impl = mgr->parnet;
+  struct mtl_main_impl* impl = mgr->parent;
   struct st_tx_audio_session_impl* s;
   int pending = MT_TASKLET_ALL_DONE;
 
@@ -877,7 +877,7 @@ static int tx_audio_sessions_mgr_init_hw(struct mtl_main_impl* impl,
 
 static int tx_audio_session_flush_port(struct st_tx_audio_sessions_mgr* mgr,
                                        enum mtl_port port) {
-  struct mtl_main_impl* impl = mgr->parnet;
+  struct mtl_main_impl* impl = mgr->parent;
   int ret;
   int burst_pkts = mt_if_nb_tx_desc(impl, port);
   struct rte_mbuf* pad = mt_get_pad(impl, port);
@@ -1218,7 +1218,7 @@ static int tx_audio_sessions_mgr_init(struct mtl_main_impl* impl, struct mt_sch_
 
   RTE_BUILD_BUG_ON(sizeof(struct st_rfc3550_audio_hdr) != 54);
 
-  mgr->parnet = impl;
+  mgr->parent = impl;
   mgr->idx = idx;
 
   for (i = 0; i < ST_MAX_TX_AUDIO_SESSIONS; i++) {
@@ -1252,7 +1252,7 @@ static int tx_audio_sessions_mgr_init(struct mtl_main_impl* impl, struct mt_sch_
 static struct st_tx_audio_session_impl* tx_audio_sessions_mgr_attach(
     struct st_tx_audio_sessions_mgr* mgr, struct st30_tx_ops* ops) {
   int midx = mgr->idx;
-  struct mtl_main_impl* impl = mgr->parnet;
+  struct mtl_main_impl* impl = mgr->parent;
   int ret;
   struct st_tx_audio_session_impl* s;
 
@@ -1273,7 +1273,7 @@ static struct st_tx_audio_session_impl* tx_audio_sessions_mgr_attach(
       mt_rte_free(s);
       return NULL;
     }
-    ret = tx_audio_session_attach(mgr->parnet, mgr, s, ops);
+    ret = tx_audio_session_attach(mgr->parent, mgr, s, ops);
     if (ret < 0) {
       err("%s(%d), attach fail on %d\n", __func__, midx, i);
       tx_audio_session_put(mgr, i);
@@ -1324,7 +1324,7 @@ static int tx_audio_sessions_mgr_update(struct st_tx_audio_sessions_mgr* mgr) {
 
 int st_tx_audio_sessions_mgr_uinit(struct st_tx_audio_sessions_mgr* mgr) {
   int m_idx = mgr->idx;
-  struct mtl_main_impl* impl = mgr->parnet;
+  struct mtl_main_impl* impl = mgr->parent;
   struct st_tx_audio_session_impl* s;
 
   if (mgr->tasklet) {
@@ -1488,7 +1488,7 @@ st30_tx_handle st30_tx_create(mtl_handle mt, struct st30_tx_ops* ops) {
     return NULL;
   }
 
-  s_impl->parnet = impl;
+  s_impl->parent = impl;
   s_impl->type = MT_HANDLE_TX_AUDIO;
   s_impl->impl = s;
 
@@ -1508,13 +1508,13 @@ int st30_tx_free(st30_tx_handle handle) {
     return -EIO;
   }
 
-  impl = s_impl->parnet;
+  impl = s_impl->parent;
   s = s_impl->impl;
   idx = s->idx;
 
   /* no need to lock as session is located already */
   ret = tx_audio_sessions_mgr_detach(&impl->tx_a_mgr, s);
-  if (ret < 0) err("%s(%d), st_tx_audio_sessions_mgr_deattach fail\n", __func__, idx);
+  if (ret < 0) err("%s(%d), st_tx_audio_sessions_mgr_detach fail\n", __func__, idx);
 
   mt_rte_free(s_impl);
 

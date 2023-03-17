@@ -21,7 +21,7 @@ static int st_ancillary_trs_tasklet_start(void* priv) {
 
 static int st_ancillary_trs_tasklet_stop(void* priv) {
   struct st_ancillary_transmitter_impl* trs = priv;
-  struct mtl_main_impl* impl = trs->parnet;
+  struct mtl_main_impl* impl = trs->parent;
   struct st_tx_ancillary_sessions_mgr* mgr = trs->mgr;
   int idx = trs->idx, port;
 
@@ -61,7 +61,7 @@ static int st_ancillary_trs_session_tasklet(struct mtl_main_impl* impl,
     if (n >= 1) {
       trs->inflight[port] = NULL;
     } else {
-      mgr->stat_trs_ret_code[port] = -STI_TSCTRS_BURST_INFILGHT_FAIL;
+      mgr->stat_trs_ret_code[port] = -STI_TSCTRS_BURST_INFLIGHT_FAIL;
       return MT_TASKLET_HAS_PENDING;
     }
     mgr->st40_stat_pkts_burst += n;
@@ -81,7 +81,7 @@ static int st_ancillary_trs_session_tasklet(struct mtl_main_impl* impl,
     if (n < 1) {
       trs->inflight[port] = pkt;
       trs->inflight_cnt[port]++;
-      mgr->stat_trs_ret_code[port] = -STI_TSCTRS_BURST_INFILGHT_FAIL;
+      mgr->stat_trs_ret_code[port] = -STI_TSCTRS_BURST_INFLIGHT_FAIL;
       return MT_TASKLET_HAS_PENDING;
     }
   }
@@ -92,7 +92,7 @@ static int st_ancillary_trs_session_tasklet(struct mtl_main_impl* impl,
 
 static int st_ancillary_trs_tasklet_handler(void* priv) {
   struct st_ancillary_transmitter_impl* trs = priv;
-  struct mtl_main_impl* impl = trs->parnet;
+  struct mtl_main_impl* impl = trs->parent;
   struct st_tx_ancillary_sessions_mgr* mgr = trs->mgr;
   int port;
   int pending = MT_TASKLET_ALL_DONE;
@@ -110,7 +110,7 @@ int st_ancillary_transmitter_init(struct mtl_main_impl* impl, struct mt_sch_impl
   int idx = sch->idx;
   struct mt_sch_tasklet_ops ops;
 
-  trs->parnet = impl;
+  trs->parent = impl;
   trs->idx = idx;
   trs->mgr = mgr;
 
@@ -141,7 +141,7 @@ int st_ancillary_transmitter_uinit(struct st_ancillary_transmitter_impl* trs) {
     trs->tasklet = NULL;
   }
 
-  for (int i = 0; i < mt_num_ports(trs->parnet); i++) {
+  for (int i = 0; i < mt_num_ports(trs->parent); i++) {
     info("%s(%d), succ, inflight %d:%d\n", __func__, idx, i, trs->inflight_cnt[i]);
   }
   return 0;

@@ -17,7 +17,7 @@
 
 #define ST_MAX_NAME_LEN (32)
 
-#define ST_PLUNGIN_MAX_PATH_LEN (128)
+#define ST_PLUGIN_MAX_PATH_LEN (128)
 
 /* max 12 1080p tx session per sch lcore */
 #define ST_QUOTA_TX1080P_PER_SCH (12)
@@ -62,11 +62,11 @@
 /* max converter devices number */
 #define ST_MAX_CONVERTER_DEV (8)
 /* max sessions number per encoder */
-#define ST_MAX_SESSIIONS_PER_ENCODER (16)
+#define ST_MAX_SESSIONS_PER_ENCODER (16)
 /* max sessions number per decoder */
-#define ST_MAX_SESSIIONS_PER_DECODER (16)
+#define ST_MAX_SESSIONS_PER_DECODER (16)
 /* max sessions number per converter */
-#define ST_MAX_SESSIIONS_PER_CONVERTER (16)
+#define ST_MAX_SESSIONS_PER_CONVERTER (16)
 
 #define ST_TX_DUMMY_PKT_IDX (0xFFFFFFFF)
 
@@ -357,7 +357,7 @@ struct st_tx_video_session_impl {
 };
 
 struct st_tx_video_sessions_mgr {
-  struct mtl_main_impl* parnet;
+  struct mtl_main_impl* parent;
   int idx;     /* index for current session mgr */
   int max_idx; /* max session index */
   struct mt_sch_tasklet_impl* tasklet;
@@ -368,7 +368,7 @@ struct st_tx_video_sessions_mgr {
 };
 
 struct st_video_transmitter_impl {
-  struct mtl_main_impl* parnet;
+  struct mtl_main_impl* parent;
   struct st_tx_video_sessions_mgr* mgr;
   struct mt_sch_tasklet_impl* tasklet;
   int idx; /* index for current transmitter */
@@ -388,15 +388,15 @@ struct st_rx_video_slot_slice_info {
 struct st_rx_video_slot_impl {
   int idx;
   uint32_t tmstamp;
-  uint16_t seq_id_base;     /* seq id for the first packt */
-  uint32_t seq_id_base_u32; /* seq id for the first packt with u32 */
+  uint16_t seq_id_base;     /* seq id for the first packet */
+  uint32_t seq_id_base_u32; /* seq id for the first packet with u32 */
   bool seq_id_got;
   struct st_frame_trans* frame; /* only for frame type */
   uint8_t* frame_bitmap;
   size_t frame_recv_size;           /* for frame type */
   size_t pkt_lcore_frame_recv_size; /* frame_recv_size for pkt lcore */
   uint32_t pkts_received;
-  uint32_t pkts_redunant_received;
+  uint32_t pkts_redundant_received;
   struct st20_rx_frame_meta meta;      /* only for frame type */
   struct st22_rx_frame_meta st22_meta; /* only for st22 frame type */
   /* Second field type indicate */
@@ -558,7 +558,7 @@ struct st_rx_session_priv {
 
 struct st_rx_video_session_impl {
   int idx; /* index for current session */
-  struct st_rx_video_sessions_mgr* parnet;
+  struct st_rx_video_sessions_mgr* parent;
   struct st_rx_session_priv priv[MTL_SESSION_PORT_MAX];
 
   struct st20_rx_ops ops;
@@ -649,7 +649,7 @@ struct st_rx_video_session_impl {
   int stat_pkts_idx_oo_bitmap;
   int stat_pkts_enqueue_fallback; /* for pkt lcore */
   int stat_pkts_offset_dropped;
-  int stat_pkts_redunant_dropped;
+  int stat_pkts_redundant_dropped;
   int stat_pkts_wrong_hdr_dropped;
   int stat_pkts_received;
   int stat_pkts_multi_segments_received;
@@ -679,7 +679,7 @@ struct st_rx_video_session_impl {
 };
 
 struct st_rx_video_sessions_mgr {
-  struct mtl_main_impl* parnet;
+  struct mtl_main_impl* parent;
   int idx;     /* index for current session mgr */
   int max_idx; /* max session index */
   struct mt_sch_tasklet_impl* tasklet;
@@ -751,7 +751,7 @@ struct st_tx_audio_session_impl {
 };
 
 struct st_tx_audio_sessions_mgr {
-  struct mtl_main_impl* parnet;
+  struct mtl_main_impl* parent;
   int idx;     /* index for current sessions mgr */
   int max_idx; /* max session index */
   struct mt_sch_tasklet_impl* tasklet;
@@ -774,7 +774,7 @@ struct st_tx_audio_sessions_mgr {
 };
 
 struct st_audio_transmitter_impl {
-  struct mtl_main_impl* parnet;
+  struct mtl_main_impl* parent;
   struct st_tx_audio_sessions_mgr* mgr;
   struct mt_sch_tasklet_impl* tasklet;
   int idx; /* index for current transmitter */
@@ -868,7 +868,7 @@ struct st_rx_audio_session_impl {
 };
 
 struct st_rx_audio_sessions_mgr {
-  struct mtl_main_impl* parnet;
+  struct mtl_main_impl* parent;
   int idx;     /* index for current session mgr */
   int max_idx; /* max session index */
   struct mt_sch_tasklet_impl* tasklet;
@@ -939,7 +939,7 @@ struct st_tx_ancillary_session_impl {
 };
 
 struct st_tx_ancillary_sessions_mgr {
-  struct mtl_main_impl* parnet;
+  struct mtl_main_impl* parent;
   int idx;     /* index for current sessions mgr */
   int max_idx; /* max session index */
   struct mt_sch_tasklet_impl* tasklet;
@@ -988,7 +988,7 @@ struct st_rx_ancillary_session_impl {
 };
 
 struct st_rx_ancillary_sessions_mgr {
-  struct mtl_main_impl* parnet;
+  struct mtl_main_impl* parent;
   int idx;     /* index for current session mgr */
   int max_idx; /* max session index */
   struct mt_sch_tasklet_impl* tasklet;
@@ -999,7 +999,7 @@ struct st_rx_ancillary_sessions_mgr {
 };
 
 struct st_ancillary_transmitter_impl {
-  struct mtl_main_impl* parnet;
+  struct mtl_main_impl* parent;
   struct st_tx_ancillary_sessions_mgr* mgr;
   struct mt_sch_tasklet_impl* tasklet;
   int idx; /* index for current transmitter */
@@ -1040,7 +1040,7 @@ struct st20_get_converter_request {
 
 struct st22_encode_session_impl {
   int idx;
-  void* parnet; /* point to struct st22_encode_dev_impl */
+  void* parent; /* point to struct st22_encode_dev_impl */
   st22_encode_priv session;
   enum mt_handle_type type; /* for sanity check */
 
@@ -1051,17 +1051,17 @@ struct st22_encode_session_impl {
 
 struct st22_encode_dev_impl {
   enum mt_handle_type type; /* for sanity check */
-  struct mtl_main_impl* parnet;
+  struct mtl_main_impl* parent;
   int idx;
   char name[ST_MAX_NAME_LEN];
   struct st22_encoder_dev dev;
   rte_atomic32_t ref_cnt;
-  struct st22_encode_session_impl sessions[ST_MAX_SESSIIONS_PER_ENCODER];
+  struct st22_encode_session_impl sessions[ST_MAX_SESSIONS_PER_ENCODER];
 };
 
 struct st22_decode_session_impl {
   int idx;
-  void* parnet; /* point to struct st22_decode_dev_impl */
+  void* parent; /* point to struct st22_decode_dev_impl */
   st22_decode_priv session;
   enum mt_handle_type type; /* for sanity check */
 
@@ -1070,17 +1070,17 @@ struct st22_decode_session_impl {
 
 struct st22_decode_dev_impl {
   enum mt_handle_type type; /* for sanity check */
-  struct mtl_main_impl* parnet;
+  struct mtl_main_impl* parent;
   int idx;
   char name[ST_MAX_NAME_LEN];
   struct st22_decoder_dev dev;
   rte_atomic32_t ref_cnt;
-  struct st22_decode_session_impl sessions[ST_MAX_SESSIIONS_PER_DECODER];
+  struct st22_decode_session_impl sessions[ST_MAX_SESSIONS_PER_DECODER];
 };
 
 struct st20_convert_session_impl {
   int idx;
-  void* parnet; /* point to struct st20_convert_dev_impl */
+  void* parent; /* point to struct st20_convert_dev_impl */
   st20_convert_priv session;
   enum mt_handle_type type; /* for sanity check */
 
@@ -1089,17 +1089,17 @@ struct st20_convert_session_impl {
 
 struct st20_convert_dev_impl {
   enum mt_handle_type type; /* for sanity check */
-  struct mtl_main_impl* parnet;
+  struct mtl_main_impl* parent;
   int idx;
   char name[ST_MAX_NAME_LEN];
   struct st20_converter_dev dev;
   rte_atomic32_t ref_cnt;
-  struct st20_convert_session_impl sessions[ST_MAX_SESSIIONS_PER_CONVERTER];
+  struct st20_convert_session_impl sessions[ST_MAX_SESSIONS_PER_CONVERTER];
 };
 
 struct st_dl_plugin_impl {
   int idx;
-  char path[ST_PLUNGIN_MAX_PATH_LEN];
+  char path[ST_PLUGIN_MAX_PATH_LEN];
   void* dl_handle;
   st_plugin_create_fn create;
   st_plugin_priv handle;
@@ -1118,7 +1118,7 @@ struct st_plugin_mgr {
 };
 
 struct st_tx_video_session_handle_impl {
-  struct mtl_main_impl* parnet;
+  struct mtl_main_impl* parent;
   enum mt_handle_type type;
   struct mt_sch_impl* sch; /* the sch this session attached */
   int quota_mbs;           /* data quota for this session */
@@ -1126,7 +1126,7 @@ struct st_tx_video_session_handle_impl {
 };
 
 struct st22_tx_video_session_handle_impl {
-  struct mtl_main_impl* parnet;
+  struct mtl_main_impl* parent;
   enum mt_handle_type type;
   struct mt_sch_impl* sch; /* the sch this session attached */
   int quota_mbs;           /* data quota for this session */
@@ -1134,19 +1134,19 @@ struct st22_tx_video_session_handle_impl {
 };
 
 struct st_tx_audio_session_handle_impl {
-  struct mtl_main_impl* parnet;
+  struct mtl_main_impl* parent;
   enum mt_handle_type type;
   struct st_tx_audio_session_impl* impl;
 };
 
 struct st_tx_ancillary_session_handle_impl {
-  struct mtl_main_impl* parnet;
+  struct mtl_main_impl* parent;
   enum mt_handle_type type;
   struct st_tx_ancillary_session_impl* impl;
 };
 
 struct st_rx_video_session_handle_impl {
-  struct mtl_main_impl* parnet;
+  struct mtl_main_impl* parent;
   enum mt_handle_type type;
   struct mt_sch_impl* sch; /* the sch this session attached */
   int quota_mbs;           /* data quota for this session */
@@ -1154,7 +1154,7 @@ struct st_rx_video_session_handle_impl {
 };
 
 struct st22_rx_video_session_handle_impl {
-  struct mtl_main_impl* parnet;
+  struct mtl_main_impl* parent;
   enum mt_handle_type type;
   struct mt_sch_impl* sch; /* the sch this session attached */
   int quota_mbs;           /* data quota for this session */
@@ -1162,13 +1162,13 @@ struct st22_rx_video_session_handle_impl {
 };
 
 struct st_rx_audio_session_handle_impl {
-  struct mtl_main_impl* parnet;
+  struct mtl_main_impl* parent;
   enum mt_handle_type type;
   struct st_rx_audio_session_impl* impl;
 };
 
 struct st_rx_ancillary_session_handle_impl {
-  struct mtl_main_impl* parnet;
+  struct mtl_main_impl* parent;
   enum mt_handle_type type;
   struct st_rx_ancillary_session_impl* impl;
 };

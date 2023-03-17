@@ -11,7 +11,7 @@
  */
 
 #ifndef _MUDP_SOCKFD_INTERNAL_HEAD_H_
-/** Marco for re-inculde protect */
+/** Marco for re-include protect */
 #define _MUDP_SOCKFD_INTERNAL_HEAD_H_
 
 #include "mtl_api.h"

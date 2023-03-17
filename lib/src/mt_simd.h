@@ -18,7 +18,7 @@
   _Pragma("GCC push_options") _Pragma(STRINGIFY(GCC target(Target)))
 #define MT_TARGET_CODE_STOP _Pragma("GCC pop_options")
 #else
-// MSVS can use intrinsic without appending the SIMD flag
+// MSVC can use intrinsic without appending the SIMD flag
 #define MT_TARGET_CODE_START(Target)
 #define MT_TARGET_CODE_STOP
 #endif

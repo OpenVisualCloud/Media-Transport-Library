@@ -773,9 +773,9 @@ int st20_get_bandwidth_bps(int width, int height, enum st20_fmt fmt, enum st_fps
   ret = st_get_fps_timing(fps, &fps_tm);
   if (ret < 0) return ret;
 
-  double ractive = 1080.0 / 1125.0;
+  double reactive = 1080.0 / 1125.0;
   *bps = (uint64_t)width * height * 8 * pg.size / pg.coverage * fps_tm.mul / fps_tm.den;
-  *bps = (double)*bps / ractive;
+  *bps = (double)*bps / reactive;
   return 0;
 }
 
@@ -789,9 +789,9 @@ int st22_rtp_bandwidth_bps(uint32_t total_pkts, uint16_t pkt_size, enum st_fps f
   ret = st_get_fps_timing(fps, &fps_tm);
   if (ret < 0) return ret;
 
-  double ractive = 1080.0 / 1125.0;
+  double reactive = 1080.0 / 1125.0;
   *bps = (uint64_t)total_pkts * pkt_size * fps_tm.mul / fps_tm.den;
-  *bps = (double)*bps / ractive;
+  *bps = (double)*bps / reactive;
   return 0;
 }
 
@@ -804,9 +804,9 @@ int st22_frame_bandwidth_bps(size_t frame_size, enum st_fps fps, uint64_t* bps) 
   ret = st_get_fps_timing(fps, &fps_tm);
   if (ret < 0) return ret;
 
-  double ractive = 1080.0 / 1125.0;
+  double reactive = 1080.0 / 1125.0;
   *bps = frame_size * fps_tm.mul / fps_tm.den;
-  *bps = (double)*bps / ractive;
+  *bps = (double)*bps / reactive;
   return 0;
 }
 

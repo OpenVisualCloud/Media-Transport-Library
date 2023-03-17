@@ -37,7 +37,7 @@ enum st_args_cmd {
   ST22_ARG_TX_SESSIONS_CNT,
   ST22_ARG_TX_URL,
   ST_ARG_RX_VIDEO_SESSIONS_CNT,
-  ST_ARG_RX_VIDEO_FLIE_FRAMES,
+  ST_ARG_RX_VIDEO_FILE_FRAMES,
   ST_ARG_RX_VIDEO_FB_CNT,
   ST_ARG_RX_VIDEO_RTP_RING_SIZE,
   ST_ARG_RX_AUDIO_SESSIONS_CNT,
@@ -131,7 +131,7 @@ static struct option st_app_args_options[] = {
     {"tx_st22_url", required_argument, 0, ST22_ARG_TX_URL},
 
     {"rx_video_sessions_count", required_argument, 0, ST_ARG_RX_VIDEO_SESSIONS_CNT},
-    {"rx_video_file_frames", required_argument, 0, ST_ARG_RX_VIDEO_FLIE_FRAMES},
+    {"rx_video_file_frames", required_argument, 0, ST_ARG_RX_VIDEO_FILE_FRAMES},
     {"rx_video_fb_cnt", required_argument, 0, ST_ARG_RX_VIDEO_FB_CNT},
     {"rx_video_rtp_ring_size", required_argument, 0, ST_ARG_RX_VIDEO_RTP_RING_SIZE},
     {"rx_audio_sessions_count", required_argument, 0, ST_ARG_RX_AUDIO_SESSIONS_CNT},
@@ -350,7 +350,7 @@ int st_app_parse_args(struct st_app_context* ctx, struct mtl_init_params* p, int
       case ST_ARG_RX_VIDEO_SESSIONS_CNT:
         ctx->rx_video_session_cnt = atoi(optarg);
         break;
-      case ST_ARG_RX_VIDEO_FLIE_FRAMES:
+      case ST_ARG_RX_VIDEO_FILE_FRAMES:
         ctx->rx_video_file_frames = atoi(optarg);
         break;
       case ST_ARG_RX_VIDEO_FB_CNT:

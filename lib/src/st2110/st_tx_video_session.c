@@ -32,19 +32,19 @@ static inline void pacing_set_mbuf_time_stamp(struct rte_mbuf* mbuf,
   st_tx_mbuf_set_ptp(mbuf, pacing->ptp_time_cursor);
 }
 
-static inline void pacing_foward_cursor(struct st_tx_video_pacing* pacing) {
-  /* pkt foward */
+static inline void pacing_forward_cursor(struct st_tx_video_pacing* pacing) {
+  /* pkt forward */
   pacing->tsc_time_cursor += pacing->trs;
   pacing->ptp_time_cursor += pacing->trs;
 }
 
 static inline uint64_t tv_rl_bps(struct st_tx_video_session_impl* s) {
-  double ractive = 1.0;
+  double reactive = 1.0;
   if (s->ops.interlaced && s->ops.height <= 576) {
-    ractive = (s->ops.height == 480) ? 487.0 / 525.0 : 576.0 / 625.0;
+    reactive = (s->ops.height == 480) ? 487.0 / 525.0 : 576.0 / 625.0;
   }
   return (uint64_t)(s->st20_pkt_size * s->st20_total_pkts * 1.0 * s->fps_tm.mul /
-                    s->fps_tm.den / ractive);
+                    s->fps_tm.den / reactive);
 }
 
 static void tv_notify_frame_done(struct st_tx_video_session_impl* s, uint16_t frame_idx) {
@@ -318,11 +318,11 @@ static int tv_train_pacing(struct mtl_main_impl* impl, struct st_tx_video_sessio
   /* parse the pad interval */
   double pkts_per_frame = pkts_per_sec * s->fps_tm.den / s->fps_tm.mul;
   /* adjust as tr offset */
-  double ractive = (1080.0 / 1125.0);
+  double reactive = (1080.0 / 1125.0);
   if (s->ops.interlaced && s->ops.height <= 576) {
-    ractive = (s->ops.height == 480) ? 487.0 / 525.0 : 576.0 / 625.0;
+    reactive = (s->ops.height == 480) ? 487.0 / 525.0 : 576.0 / 625.0;
   }
-  pkts_per_frame = pkts_per_frame * ractive;
+  pkts_per_frame = pkts_per_frame * reactive;
   if (pkts_per_frame < s->st20_total_pkts) {
     err("%s(%d), error pkts_per_frame %f, st20_total_pkts %d\n", __func__, idx,
         pkts_per_frame, s->st20_total_pkts);
@@ -354,14 +354,14 @@ static int tv_init_pacing(struct mtl_main_impl* impl,
   pacing->frame_time = frame_time;
   pacing->frame_time_sampling =
       (double)(s->fps_tm.sampling_clock_rate) * s->fps_tm.den / s->fps_tm.mul;
-  double ractive = 1080.0 / 1125.0;
+  double reactive = 1080.0 / 1125.0;
   pacing->tr_offset =
       s->ops.height >= 1080 ? frame_time * (43.0 / 1125.0) : frame_time * (28.0 / 750.0);
   pacing->tr_offset_vrx = s->st21_vrx_narrow;
 
   if (s->ops.interlaced) {
     if (s->ops.height <= 576)
-      ractive = (s->ops.height == 480) ? 487.0 / 525.0 : 576.0 / 625.0;
+      reactive = (s->ops.height == 480) ? 487.0 / 525.0 : 576.0 / 625.0;
     if (s->ops.height == 480) {
       pacing->tr_offset = frame_time * (20.0 / 525.0) * 2;
     } else if (s->ops.height == 576) {
@@ -370,7 +370,7 @@ static int tv_init_pacing(struct mtl_main_impl* impl,
       pacing->tr_offset = frame_time * (22.0 / 1125.0) * 2;
     }
   }
-  pacing->trs = frame_time * ractive / s->st20_total_pkts;
+  pacing->trs = frame_time * reactive / s->st20_total_pkts;
   /* always use MTL_PORT_P for ptp now */
   pacing->cur_epochs = mt_get_ptp_time(impl, MTL_PORT_P) / frame_time;
   pacing->tsc_time_cursor = mt_get_tsc(impl);
@@ -424,9 +424,9 @@ static int tv_init_pacing(struct mtl_main_impl* impl,
     }
   }
 
-  /* reslove pacing tasklet */
+  /* resolve pacing tasklet */
   for (int i = 0; i < num_port; i++) {
-    ret = st_video_reslove_pacing_tasklet(s, i);
+    ret = st_video_resolve_pacing_tasklet(s, i);
     if (ret < 0) return ret;
   }
 
@@ -465,7 +465,7 @@ static int tv_sync_pacing(struct mtl_main_impl* impl, struct st_tx_video_session
     epochs = next_epochs;
   }
 
-  /* epoch resloved */
+  /* epoch resolved */
   double ptp_tr_offset_time = pacing_tr_offset_time(pacing, epochs);
   to_epoch_tr_offset = ptp_tr_offset_time - ptp_time;
   if (to_epoch_tr_offset < 0) {
@@ -1269,7 +1269,7 @@ static int tv_tasklet_pre_start(void* priv) { return 0; }
 
 static int tv_tasklet_start(void* priv) {
   struct st_tx_video_sessions_mgr* mgr = priv;
-  struct mtl_main_impl* impl = mgr->parnet;
+  struct mtl_main_impl* impl = mgr->parent;
   struct st_tx_video_session_impl* s;
 
   for (int sidx = 0; sidx < mgr->max_idx; sidx++) {
@@ -1478,7 +1478,7 @@ static int tv_tasklet_frame(struct mtl_main_impl* impl,
       pacing_set_mbuf_time_stamp(pkts_r[i], pacing);
     }
 
-    pacing_foward_cursor(pacing); /* pkt foward */
+    pacing_forward_cursor(pacing); /* pkt forward */
     s->st20_pkt_idx++;
     s->stat_pkts_build++;
   }
@@ -1630,7 +1630,7 @@ static int tv_tasklet_rtp(struct mtl_main_impl* impl,
       pacing_set_mbuf_time_stamp(pkts_r[i], pacing);
     }
 
-    pacing_foward_cursor(pacing); /* pkt foward */
+    pacing_forward_cursor(pacing); /* pkt forward */
     s->st20_pkt_idx++;
     s->stat_pkts_build++;
   }
@@ -1812,7 +1812,7 @@ static int tv_tasklet_st22(struct mtl_main_impl* impl,
         st_tx_mbuf_set_idx(pkts_r[i], s->st20_pkt_idx);
       }
 
-      pacing_foward_cursor(pacing); /* pkt foward */
+      pacing_forward_cursor(pacing); /* pkt forward */
       s->st20_pkt_idx++;
       s->stat_pkts_build++;
       s->stat_pkts_dummy++;
@@ -1884,7 +1884,7 @@ static int tv_tasklet_st22(struct mtl_main_impl* impl,
         pacing_set_mbuf_time_stamp(pkts_r[i], pacing);
       }
 
-      pacing_foward_cursor(pacing); /* pkt foward */
+      pacing_forward_cursor(pacing); /* pkt forward */
       s->st20_pkt_idx++;
       s->stat_pkts_build++;
     }
@@ -1933,7 +1933,7 @@ static int tv_tasklet_st22(struct mtl_main_impl* impl,
 
 static int tvs_tasklet_handler(void* priv) {
   struct st_tx_video_sessions_mgr* mgr = priv;
-  struct mtl_main_impl* impl = mgr->parnet;
+  struct mtl_main_impl* impl = mgr->parent;
   struct st_tx_video_session_impl* s;
   int pending = MT_TASKLET_ALL_DONE;
 
@@ -2040,7 +2040,7 @@ static int tv_init_hw(struct mtl_main_impl* impl, struct st_tx_video_sessions_mg
     }
 
     if (false & mt_pmd_is_kernel(impl, port)) {
-      /* disable now, alwasy use no zc mempool for the flush pad */
+      /* disable now, always use no zc mempool for the flush pad */
       pad_mempool = s->mbuf_mempool_hdr[i];
     } else {
       pad_mempool = mt_get_tx_mempool(impl, port);
@@ -2746,7 +2746,7 @@ static struct st_tx_video_session_impl* tv_mgr_attach(
     struct st_tx_video_sessions_mgr* mgr, struct st20_tx_ops* ops,
     enum mt_handle_type s_type, struct st22_tx_ops* st22_frame_ops) {
   int midx = mgr->idx;
-  struct mtl_main_impl* impl = mgr->parnet;
+  struct mtl_main_impl* impl = mgr->parent;
   int ret;
   struct st_tx_video_session_impl* s;
 
@@ -2795,7 +2795,7 @@ static int tv_mgr_detach(struct st_tx_video_sessions_mgr* mgr,
     return -EIO;
   }
 
-  tv_detach(mgr->parnet, mgr, s);
+  tv_detach(mgr->parent, mgr, s);
   mgr->sessions[idx] = NULL;
   mt_rte_free(s);
 
@@ -2815,7 +2815,7 @@ static int tv_mgr_init(struct mtl_main_impl* impl, struct mt_sch_impl* sch,
   RTE_BUILD_BUG_ON(sizeof(struct st22_rfc9134_video_hdr) != 58);
   RTE_BUILD_BUG_ON(sizeof(struct st22_boxes) != 60);
 
-  mgr->parnet = impl;
+  mgr->parent = impl;
   mgr->idx = idx;
 
   for (i = 0; i < ST_SCH_MAX_TX_VIDEO_SESSIONS; i++) {
@@ -2864,7 +2864,7 @@ static int tv_mgr_uinit(struct st_tx_video_sessions_mgr* mgr) {
 
 static int tv_mgr_update(struct st_tx_video_sessions_mgr* mgr) {
   int max_idx = 0;
-  struct mtl_main_impl* impl = mgr->parnet;
+  struct mtl_main_impl* impl = mgr->parent;
   uint64_t sleep_us = mt_sch_default_sleep_us(impl);
   struct st_tx_video_session_impl* s;
 
@@ -3146,7 +3146,7 @@ st20_tx_handle st20_tx_create(mtl_handle mt, struct st20_tx_ops* ops) {
   tv_mgr_update(&sch->tx_video_mgr);
   mt_pthread_mutex_unlock(&sch->tx_video_mgr_mutex);
 
-  s_impl->parnet = impl;
+  s_impl->parent = impl;
   s_impl->type = MT_HANDLE_TX_VIDEO;
   s_impl->sch = sch;
   s_impl->impl = s;
@@ -3379,7 +3379,7 @@ int st20_tx_free(st20_tx_handle handle) {
     return -EIO;
   }
 
-  impl = s_impl->parnet;
+  impl = s_impl->parent;
   sch = s_impl->sch;
   s = s_impl->impl;
   idx = s->idx;
@@ -3388,8 +3388,7 @@ int st20_tx_free(st20_tx_handle handle) {
   mt_pthread_mutex_lock(&sch->tx_video_mgr_mutex);
   ret = tv_mgr_detach(&sch->tx_video_mgr, s);
   mt_pthread_mutex_unlock(&sch->tx_video_mgr_mutex);
-  if (ret < 0)
-    err("%s(%d,%d), st_tx_sessions_mgr_deattach fail\n", __func__, sch_idx, idx);
+  if (ret < 0) err("%s(%d,%d), st_tx_sessions_mgr_detach fail\n", __func__, sch_idx, idx);
 
   ret = mt_sch_put(sch, s_impl->quota_mbs);
   if (ret < 0) err("%s(%d, %d), mt_sch_put fail\n", __func__, sch_idx, idx);
@@ -3527,7 +3526,7 @@ st22_tx_handle st22_tx_create(mtl_handle mt, struct st22_tx_ops* ops) {
     return NULL;
   }
 
-  s_impl->parnet = impl;
+  s_impl->parent = impl;
   s_impl->type = MT_ST22_HANDLE_TX_VIDEO;
   s_impl->sch = sch;
   s_impl->impl = s;
@@ -3552,7 +3551,7 @@ int st22_tx_free(st22_tx_handle handle) {
     return -EIO;
   }
 
-  impl = s_impl->parnet;
+  impl = s_impl->parent;
   sch = s_impl->sch;
   s = s_impl->impl;
   idx = s->idx;
@@ -3561,8 +3560,7 @@ int st22_tx_free(st22_tx_handle handle) {
   mt_pthread_mutex_lock(&sch->tx_video_mgr_mutex);
   ret = tv_mgr_detach(&sch->tx_video_mgr, s);
   mt_pthread_mutex_unlock(&sch->tx_video_mgr_mutex);
-  if (ret < 0)
-    err("%s(%d,%d), st_tx_sessions_mgr_deattach fail\n", __func__, sch_idx, idx);
+  if (ret < 0) err("%s(%d,%d), st_tx_sessions_mgr_detach fail\n", __func__, sch_idx, idx);
 
   ret = mt_sch_put(sch, s_impl->quota_mbs);
   if (ret < 0) err("%s(%d, %d), mt_sch_put fail\n", __func__, sch_idx, idx);

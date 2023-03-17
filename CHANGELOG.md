@@ -27,7 +27,7 @@
 * tasklet: add thread and sleep option for core usage, see ST_FLAG_TASKLET_THREAD and ST_FLAG_TASKLET_SLEEP.
 * tx: add user timestamp control, see ST20_TX_FLAG_USER_TIMESTAMP/ST30_TX_FLAG_USER_TIMESTAMP/ST40_TX_FLAG_USER_TIMESTAMP.
 * rx/video: add dual core redundant mode support. See st20_redundant_api.h for detail. Header split only support this dual core redundant mode.
-* lib/log: add noice level log, see ST_LOG_LEVEL_NOTICE.
+* lib/log: add notice level log, see ST_LOG_LEVEL_NOTICE.
 * build: add clang support. See "Build with clang" section in build.md.
 * tx: add user pacing control, see ST20_TX_FLAG_USER_PACING, ST30_TX_FLAG_USER_PACING, ST40_TX_FLAG_USER_PACING.
 * video: add notify_vsync callback which happened when epoch time change to a new frame, vsync period is same to fps. See notify_vsync parameter in the session create ops for detail.
@@ -52,7 +52,7 @@
 * dpdk: update DPDK to v22.07
 * ice: update driver to 1.9.11
 * vf: add SRIOV based virtual NIC support, see vf.md.
-* vm: add SRIOV+KVM based virtulization support, see vm.md.
+* vm: add SRIOV+KVM based virtualization support, see vm.md.
 * CSC: Color format SIMD convert API from CPU little endian format to RFC4175 YUV422 10bit BE, see st_convert_api.h.
 * AF_XDP: introduce AF_XDP PMD experimental support, see af_xdp.md.
 * pipeline: introduce pipeline friendly API for both st20 tx and rx, see st_pipeline_api.h for detail.
