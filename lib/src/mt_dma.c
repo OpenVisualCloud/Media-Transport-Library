@@ -125,7 +125,7 @@ int mt_map_uinit(struct mtl_main_impl* impl) {
   return 0;
 }
 
-/* dmadev only available from DPDK 21.11 */
+/* dma dev only available from DPDK 21.11 */
 #if RTE_VERSION >= RTE_VERSION_NUM(21, 11, 0, 0)
 #include <rte_dmadev.h>
 

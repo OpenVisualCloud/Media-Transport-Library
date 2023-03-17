@@ -64,7 +64,7 @@ static int tx_next_ext_video_frame(void* priv, uint16_t* next_frame_idx,
   if (!ctx->handle) return -EIO; /* not ready */
 
   if (ctx->ext_fb_in_use[ctx->fb_idx]) {
-    err("%s, ext frame %d not avaliable\n", __func__, ctx->fb_idx);
+    err("%s, ext frame %d not available\n", __func__, ctx->fb_idx);
     return -EIO;
   }
 
@@ -92,7 +92,7 @@ static int tx_next_ext_video_field(void* priv, uint16_t* next_frame_idx,
   if (!ctx->handle) return -EIO; /* not ready */
 
   if (ctx->ext_fb_in_use[ctx->fb_idx]) {
-    err("%s, ext frame %d not avaliable\n", __func__, ctx->fb_idx);
+    err("%s, ext frame %d not available\n", __func__, ctx->fb_idx);
     return -EIO;
   }
 
@@ -716,7 +716,7 @@ static void st20_tx_fps_test(enum st20_type type[], enum st_fps fps[], int width
   std::vector<double> framerate;
   std::vector<std::thread> rtp_thread;
 
-  /* return if level small than gloabl */
+  /* return if level small than global */
   if (level < ctx->level) return;
 
   test_ctx.resize(sessions);

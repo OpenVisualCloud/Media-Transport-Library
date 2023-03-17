@@ -136,7 +136,7 @@ static void mtl_output_init(struct mtl_tx_session* s) {
   param.flags = MTL_FLAG_BIND_NUMA;  // default bind to numa
   param.log_level = s->log_level;    // mtl lib log level
   param.priv = s;                    // usr ctx pointer
-  // user regist ptp func, if not regist, the internal ptp will be used
+  // user register ptp func, if not register, the internal ptp will be used
   param.ptp_get_time_fn = NULL;
   param.tx_sessions_cnt_max = 0;
   param.rx_sessions_cnt_max = 1;
@@ -217,7 +217,7 @@ static void mtl_output_video_frame(void* vptr, struct video_data* obs_frame) {
   if (!frame) return;
 
   uint8_t planes = st_frame_fmt_planes(frame->fmt);
-  for (uint8_t plane = 0; plane < planes; plane++) { /* assume planes continous */
+  for (uint8_t plane = 0; plane < planes; plane++) { /* assume planes continuous */
     size_t plane_size =
         st_frame_least_linesize(frame->fmt, frame->width, plane) * frame->height;
     mtl_memcpy(frame->addr[plane], obs_frame->data[plane], plane_size);

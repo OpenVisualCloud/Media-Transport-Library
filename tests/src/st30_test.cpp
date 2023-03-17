@@ -312,7 +312,7 @@ static void st30_tx_fps_test(enum st30_type type[], enum st30_sampling sample[],
   std::vector<double> framerate;
   std::vector<std::thread> rtp_thread;
 
-  /* return if level small than gloabl */
+  /* return if level small than global */
   if (level < ctx->level) return;
 
   test_ctx.resize(sessions);
@@ -402,7 +402,7 @@ static void st30_rx_fps_test(enum st30_type type[], enum st30_sampling sample[],
     return;
   }
 
-  /* return if level small than gloabl */
+  /* return if level small than global */
   if (level < ctx->level) return;
 
   std::vector<tests_context*> test_ctx_tx;

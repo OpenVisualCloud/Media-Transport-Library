@@ -348,7 +348,7 @@ static void test_ctx_init(struct st_tests_context* ctx) {
   p->ptp_get_time_fn = test_ptp_from_real_time;
   p->tx_sessions_cnt_max = 16;
   p->rx_sessions_cnt_max = 16;
-  /* defalut start queue set to 1 */
+  /* default start queue set to 1 */
   p->xdp_info[MTL_PORT_P].start_queue = 1;
   p->xdp_info[MTL_PORT_R].start_queue = 1;
 

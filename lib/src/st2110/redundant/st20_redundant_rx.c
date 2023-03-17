@@ -52,7 +52,7 @@ static int rx_st20r_frame_push(struct st20r_rx_ctx* ctx, void* frame,
 static int rx_st20r_frame_ready(void* priv, void* frame,
                                 struct st20_rx_frame_meta* meta) {
   struct st20r_rx_transport* transport = priv;
-  struct st20r_rx_ctx* ctx = transport->parnet;
+  struct st20r_rx_ctx* ctx = transport->parent;
   int idx = ctx->idx;
   enum mtl_session_port port = transport->port;
   int ret = -EIO;
@@ -75,7 +75,7 @@ static int rx_st20r_frame_ready(void* priv, void* frame,
         dbg("%s(%d), push frame %p at port %d\n", __func__, idx, frame, port);
       }
     } else {
-      ret = -EIO; /* smiply drop now, todo later to recover the full frame */
+      ret = -EIO; /* simply drop now, todo later to recover the full frame */
     }
   } else {
     if (st_is_frame_complete(meta->status)) {
@@ -87,15 +87,15 @@ static int rx_st20r_frame_ready(void* priv, void* frame,
           info("%s(%d), push frame %p at r_port %d\n", __func__, idx, frame, port);
         }
       } else {
-        ret = -EIO; /* smiply drop as frame get already */
+        ret = -EIO; /* simply drop as frame get already */
       }
     } else {
-      ret = -EIO; /* smiply drop now, todo later to recover the full frame */
+      ret = -EIO; /* simply drop now, todo later to recover the full frame */
     }
   }
   mt_pthread_mutex_unlock(&ctx->lock);
 
-  /* always return 0 to supress the error log */
+  /* always return 0 to suppress the error log */
   if (ret < 0) st20_rx_put_framebuff(ctx->transport[port]->handle, frame);
   return 0;
 }
@@ -139,7 +139,7 @@ static int rx_st20r_create_transport(struct st20r_rx_ctx* ctx, struct st20r_rx_o
   }
 
   transport->port = port;
-  transport->parnet = ctx;
+  transport->parent = ctx;
 
   memset(&ops_rx, 0, sizeof(ops_rx));
   ops_rx.name = ops->name;
@@ -151,7 +151,7 @@ static int rx_st20r_create_transport(struct st20r_rx_ctx* ctx, struct st20r_rx_o
 
   if (ops->flags & ST20R_RX_FLAG_DATA_PATH_ONLY)
     ops_rx.flags |= ST20_RX_FLAG_DATA_PATH_ONLY;
-  /* always enable incomplelte frame */
+  /* always enable incomplete frame */
   ops_rx.flags |= ST20_RX_FLAG_RECEIVE_INCOMPLETE_FRAME;
   /* disable migrate since it may migrate the two sessions into one sch */
   ops_rx.flags |= ST20_RX_FLAG_DISABLE_MIGRATE;

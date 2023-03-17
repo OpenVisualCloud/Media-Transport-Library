@@ -7,7 +7,7 @@
 
 #include "st_main.h"
 
-#define ST_RX_VIDEO_BURTS_SIZE (128)
+#define ST_RX_VIDEO_BURST_SIZE (128)
 
 #define ST_RX_VIDEO_DMA_MIN_SIZE (1024)
 

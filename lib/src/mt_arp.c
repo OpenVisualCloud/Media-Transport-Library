@@ -181,7 +181,7 @@ static int arp_get_result(struct mt_arp_impl* arp_impl, struct mt_arp_entry* ent
 
   /* wait the arp result */
   while (!rte_atomic32_read(&entry->mac_ready)) {
-    if (mt_aborted(arp_impl->parnet)) {
+    if (mt_aborted(arp_impl->parent)) {
       err("%s(%d), cache fail as user aborted\n", __func__, port);
       return -EIO;
     }
@@ -208,7 +208,7 @@ static void arp_timer_cb(void* param) {
   struct mt_arp_impl* arp_impl = param;
   struct mt_arp_entry* entry = NULL;
   enum mtl_port port = arp_impl->port;
-  struct mtl_main_impl* impl = arp_impl->parnet;
+  struct mtl_main_impl* impl = arp_impl->parent;
   int pending = 0;
 
   dbg("%s(%d), start\n", __func__, port);
@@ -259,7 +259,7 @@ int mt_arp_parse(struct mtl_main_impl* impl, struct rte_arp_hdr* hdr,
       arp_receive_reply(impl, hdr, port);
       break;
     default:
-      err("%s, mt_arp_parse %04x uninplemented\n", __func__, ntohs(hdr->arp_opcode));
+      err("%s, mt_arp_parse %04x unimplemented\n", __func__, ntohs(hdr->arp_opcode));
       return -EINVAL;
   }
 
@@ -334,7 +334,7 @@ int mt_arp_init(struct mtl_main_impl* impl) {
 
     mt_pthread_mutex_init(&arp->mutex, NULL);
     arp->port = i;
-    arp->parnet = impl;
+    arp->parent = impl;
 
     /* assign arp instance */
     impl->arp[i] = arp;

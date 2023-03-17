@@ -14,7 +14,7 @@ struct tv_split_sample_ctx {
 
   size_t frame_size; /* 1080p */
   size_t fb_size;    /* whole 4k */
-  int fb_idx;        /* currrent frame buffer index */
+  int fb_idx;        /* current frame buffer index */
   int fb_total;      /* total frame buffers read from yuv file */
   size_t fb_offset;
 
@@ -121,7 +121,7 @@ int main(int argc, char** argv) {
     ops_tx.fmt = ctx.fmt;
     ops_tx.payload_type = ctx.payload_type;
     ops_tx.framebuff_cnt = app[i]->fb_cnt;
-    // app regist non-block func, app could get a frame to send to lib
+    // app register non-block func, app could get a frame to send to lib
     ops_tx.get_next_frame = tx_video_next_frame;
     ops_tx.notify_frame_done = tx_video_frame_done;
     tx_handle[i] = st20_tx_create(ctx.st, &ops_tx);

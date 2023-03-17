@@ -111,7 +111,7 @@ static inline void ptp_set_master_addr(struct mt_ptp_impl* ptp,
   }
 }
 
-static void ptp_coeffcient_result_reset(struct mt_ptp_impl* ptp) {
+static void ptp_coefficient_result_reset(struct mt_ptp_impl* ptp) {
   ptp->coefficient_result_sum = 0.0;
   ptp->coefficient_result_min = 2.0;
   ptp->coefficient_result_max = 0.0;
@@ -143,7 +143,7 @@ static void ptp_calculate_coefficient(struct mt_ptp_impl* ptp, int64_t delta) {
     ptp->coefficient_result_sum -= ptp->coefficient_result_min;
     ptp->coefficient_result_sum -= ptp->coefficient_result_max;
     ptp->coefficient = ptp->coefficient_result_sum / 8;
-    ptp_coeffcient_result_reset(ptp);
+    ptp_coefficient_result_reset(ptp);
   }
   ptp->last_sync_ts = ts_m;
   dbg("%s(%d), delta %" PRId64 ", co %.15lf, ptp %" PRIu64 "\n", __func__, ptp->port,
@@ -518,8 +518,8 @@ static int ptp_parse_follow_up(struct mt_ptp_impl* ptp,
   return 0;
 }
 
-static int ptp_parse_annouce(struct mt_ptp_impl* ptp, struct mt_ptp_announce_msg* msg,
-                             enum mt_ptp_l_mode mode, struct mt_ptp_ipv4_udp* ipv4_hdr) {
+static int ptp_parse_announce(struct mt_ptp_impl* ptp, struct mt_ptp_announce_msg* msg,
+                              enum mt_ptp_l_mode mode, struct mt_ptp_ipv4_udp* ipv4_hdr) {
   enum mtl_port port = ptp->port;
 
   if (!ptp->master_initialized) {
@@ -692,7 +692,7 @@ static int ptp_init(struct mtl_main_impl* impl, struct mt_ptp_impl* ptp,
   }
 
   ptp_stat_clear(ptp);
-  ptp_coeffcient_result_reset(ptp);
+  ptp_coefficient_result_reset(ptp);
 
   if (!mt_if_has_ptp(impl, port)) {
     if (mt_has_ebu(impl)) {
@@ -796,7 +796,7 @@ int mt_ptp_parse(struct mt_ptp_impl* ptp, struct mt_ptp_header* hdr, bool vlan,
       ptp_parse_delay_resp(ptp, (struct mt_ptp_delay_resp_msg*)hdr);
       break;
     case PTP_ANNOUNCE:
-      ptp_parse_annouce(ptp, (struct mt_ptp_announce_msg*)hdr, mode, ipv4_hdr);
+      ptp_parse_announce(ptp, (struct mt_ptp_announce_msg*)hdr, mode, ipv4_hdr);
       break;
     case PTP_DELAY_REQ:
       break;

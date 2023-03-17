@@ -11,15 +11,15 @@ Kahawai will try to load plugin libs during the st_init routine, it will search 
 A plugin should implement 3 functions, st_plugin_get_meta, st_plugin_create and st_plugin_free, see below for the detail.
 
 ```bash
-/** Get meta function porotype of plugin */
+/** Get meta function prototype of plugin */
 typedef int (*st_plugin_get_meta_fn)(struct st_plugin_meta* meta);
 /** Get meta function name of plugin */
 #define ST_PLUGIN_GET_META_API "st_plugin_get_meta"
-/** Create function porotype of plugin */
+/** Create function prototype of plugin */
 typedef st_plugin_priv (*st_plugin_create_fn)(st_handle st);
 /** Create function name of plugin */
 #define ST_PLUGIN_CREATE_API "st_plugin_create"
-/** Free function porotype of plugin */
+/** Free function prototype of plugin */
 typedef int (*st_plugin_free_fn)(st_plugin_priv handle);
 /** Free function name of plugin */
 #define ST_PLUGIN_FREE_API "st_plugin_free"

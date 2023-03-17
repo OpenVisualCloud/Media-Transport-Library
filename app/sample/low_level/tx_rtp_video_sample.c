@@ -149,7 +149,7 @@ int main(int argc, char** argv) {
     ops_tx.rtp_ring_size = 1024;  // the rtp ring size between app and lib. app is the
                                   // producer, lib is the consumer, should be 2^n
 
-    // app regist non-block func, app could get the rtp tx done
+    // app register non-block func, app could get the rtp tx done
     ops_tx.notify_rtp_done = notify_rtp_done;
     // 4320 for ex. it is for 1080p, each line, we have 4 packet.
     ops_tx.rtp_frame_total_pkts = 4320;

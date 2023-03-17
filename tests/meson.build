@@ -6,7 +6,7 @@ project('mtl_test', 'cpp', default_options: ['buildtype=release'],
 
 exec_env = host_machine.system()
 set_variable('is_windows', exec_env == 'windows')
-message('BUILD Enviroment: ' + exec_env)
+message('BUILD Environment: ' + exec_env)
 
 cpp_c = meson.get_compiler('cpp')
 

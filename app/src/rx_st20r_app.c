@@ -181,8 +181,8 @@ static int app_rx_st20r_frame_ready(void* priv, void* frame,
     s->stat_latency_us_sum += latency_ns / 1000;
   }
   s->stat_frame_total_received++;
-  if (!s->stat_frame_frist_rx_time)
-    s->stat_frame_frist_rx_time = st_app_get_monotonic_time();
+  if (!s->stat_frame_first_rx_time)
+    s->stat_frame_first_rx_time = st_app_get_monotonic_time();
 
   if (s->st20_dst_fd < 0 && s->display == NULL) {
     /* free the queue directly as no read thread is running */
@@ -373,7 +373,7 @@ static int app_rx_st20r_stat(struct st_app_rx_video_session* s) {
 static int app_rx_st20r_result(struct st_app_rx_video_session* s) {
   int idx = s->idx;
   uint64_t cur_time_ns = st_app_get_monotonic_time();
-  double time_sec = (double)(cur_time_ns - s->stat_frame_frist_rx_time) / NS_PER_S;
+  double time_sec = (double)(cur_time_ns - s->stat_frame_first_rx_time) / NS_PER_S;
   double framerate = s->stat_frame_total_received / time_sec;
 
   if (!s->stat_frame_total_received) return -EINVAL;

@@ -23,13 +23,13 @@ static inline bool udp_get_flag(struct mudp_impl* s, uint32_t flag) {
 }
 
 static inline bool udp_alive(struct mudp_impl* s) {
-  if (!mt_aborted(s->parnet) && s->alive)
+  if (!mt_aborted(s->parent) && s->alive)
     return true;
   else
     return false;
 }
 
-int mudp_verfiy_socket_args(int domain, int type, int protocol) {
+int mudp_verify_socket_args(int domain, int type, int protocol) {
   if (domain != AF_INET) {
     dbg("%s, invalid domain %d\n", __func__, domain);
     return -EINVAL;
@@ -46,7 +46,7 @@ int mudp_verfiy_socket_args(int domain, int type, int protocol) {
   return 0;
 }
 
-static int udp_verfiy_addr(const struct sockaddr_in* addr, socklen_t addrlen) {
+static int udp_verify_addr(const struct sockaddr_in* addr, socklen_t addrlen) {
   if (addr->sin_family != AF_INET) {
     err("%s, invalid sa_family %d\n", __func__, addr->sin_family);
     return -EINVAL;
@@ -59,19 +59,19 @@ static int udp_verfiy_addr(const struct sockaddr_in* addr, socklen_t addrlen) {
   return 0;
 }
 
-static int udp_verfiy_bind_addr(struct mudp_impl* s, const struct sockaddr_in* addr,
+static int udp_verify_bind_addr(struct mudp_impl* s, const struct sockaddr_in* addr,
                                 socklen_t addrlen) {
   int idx = s->idx;
   int ret;
 
-  ret = udp_verfiy_addr(addr, addrlen);
+  ret = udp_verify_addr(addr, addrlen);
   if (ret < 0) return ret;
 
   /* check if our IP or any IP */
   if (addr->sin_addr.s_addr == INADDR_ANY)
     return 0; /* kernel mcast bind use INADDR_ANY */
   /* should we support INADDR_LOOPBACK? */
-  if (memcmp(&addr->sin_addr.s_addr, mt_sip_addr(s->parnet, s->port), MTL_IP_ADDR_LEN)) {
+  if (memcmp(&addr->sin_addr.s_addr, mt_sip_addr(s->parent, s->port), MTL_IP_ADDR_LEN)) {
     uint8_t* ip = (uint8_t*)&addr->sin_addr.s_addr;
     err("%s(%d), invalid bind ip %u.%u.%u.%u\n", __func__, idx, ip[0], ip[1], ip[2],
         ip[3]);
@@ -81,9 +81,9 @@ static int udp_verfiy_bind_addr(struct mudp_impl* s, const struct sockaddr_in* a
   return 0;
 }
 
-static int udp_verfiy_sendto_args(size_t len, int flags, const struct sockaddr_in* addr,
+static int udp_verify_sendto_args(size_t len, int flags, const struct sockaddr_in* addr,
                                   socklen_t addrlen) {
-  int ret = udp_verfiy_addr(addr, addrlen);
+  int ret = udp_verify_addr(addr, addrlen);
   if (ret < 0) return ret;
 
   if (len > MUDP_MAX_BYTES) {
@@ -98,7 +98,7 @@ static int udp_verfiy_sendto_args(size_t len, int flags, const struct sockaddr_i
   return 0;
 }
 
-static int udp_verfiy_poll(struct mudp_pollfd* fds, mudp_nfds_t nfds, int timeout) {
+static int udp_verify_poll(struct mudp_pollfd* fds, mudp_nfds_t nfds, int timeout) {
   if (!fds) {
     err("%s, NULL fds\n", __func__);
     return -EINVAL;
@@ -397,9 +397,9 @@ static uint16_t udp_rx(struct mtl_main_impl* impl, struct mudp_impl* s) {
   return n;
 }
 
-static int udp_tasklet_handlder(void* priv) {
+static int udp_tasklet_handler(void* priv) {
   struct mudp_impl* s = priv;
-  struct mtl_main_impl* impl = s->parnet;
+  struct mtl_main_impl* impl = s->parent;
 
   udp_rx(impl, s);
 
@@ -423,7 +423,7 @@ static int udp_init_tasklet(struct mtl_main_impl* impl, struct mudp_impl* s) {
   memset(&ops, 0x0, sizeof(ops));
   ops.priv = s;
   ops.name = s->name;
-  ops.handler = udp_tasklet_handlder;
+  ops.handler = udp_tasklet_handler;
 
   s->lcore_tasklet = mt_sch_register_tasklet(impl->main_sch, &ops);
   if (!s->lcore_tasklet) {
@@ -681,7 +681,7 @@ static int udp_uinit_mcast(struct mtl_main_impl* impl, struct mudp_impl* s) {
 
 static int udp_add_membership(struct mudp_impl* s, const void* optval, socklen_t optlen) {
   int idx = s->idx;
-  struct mtl_main_impl* impl = s->parnet;
+  struct mtl_main_impl* impl = s->parent;
   enum mtl_port port = s->port;
   const struct ip_mreq* mreq;
   size_t sz = sizeof(*mreq);
@@ -705,7 +705,7 @@ static int udp_add_membership(struct mudp_impl* s, const void* optval, socklen_t
   mreq = (const struct ip_mreq*)optval;
   ip = (uint8_t*)&mreq->imr_multiaddr.s_addr;
   uint32_t group_addr = mt_ip_to_u32(ip);
-  ret = mt_mcast_join(s->parnet, group_addr, port);
+  ret = mt_mcast_join(s->parent, group_addr, port);
   if (ret < 0) {
     err("%s(%d), join mcast fail\n", __func__, idx);
     return ret;
@@ -725,7 +725,7 @@ static int udp_add_membership(struct mudp_impl* s, const void* optval, socklen_t
   mt_pthread_mutex_unlock(&s->mcast_addrs_mutex);
   if (!added) {
     err("%s(%d), record mcast fail\n", __func__, idx);
-    mt_mcast_leave(s->parnet, group_addr, port);
+    mt_mcast_leave(s->parent, group_addr, port);
     return -EIO;
   }
 
@@ -770,7 +770,7 @@ static int udp_drop_membership(struct mudp_impl* s, const void* optval,
     return -EIO;
   }
 
-  mt_mcast_leave(s->parnet, group_addr, port);
+  mt_mcast_leave(s->parent, group_addr, port);
   return 0;
 }
 
@@ -818,7 +818,7 @@ static ssize_t udp_rx_dequeue(struct mudp_impl* s, void* buf, size_t len, int fl
 
 static ssize_t udp_recvfrom(struct mudp_impl* s, void* buf, size_t len, int flags,
                             struct sockaddr* src_addr, socklen_t* addrlen) {
-  struct mtl_main_impl* impl = s->parnet;
+  struct mtl_main_impl* impl = s->parent;
   ssize_t copied = 0;
   uint16_t rx;
   uint64_t start_ts = mt_get_tsc(impl);
@@ -852,7 +852,7 @@ rx_pool:
 
 static int udp_poll(struct mudp_pollfd* fds, mudp_nfds_t nfds, int timeout) {
   struct mudp_impl* s = fds[0].fd;
-  struct mtl_main_impl* impl = s->parnet;
+  struct mtl_main_impl* impl = s->parent;
   uint64_t start_ts = mt_get_tsc(impl);
   int rc;
 
@@ -908,7 +908,7 @@ static void udp_timedwait_lcore(struct mudp_impl* s, unsigned int us) {
 
 static ssize_t udp_recvfrom_lcore(struct mudp_impl* s, void* buf, size_t len, int flags,
                                   struct sockaddr* src_addr, socklen_t* addrlen) {
-  struct mtl_main_impl* impl = s->parnet;
+  struct mtl_main_impl* impl = s->parent;
   ssize_t copied = 0;
   uint64_t start_ts = mt_get_tsc(impl);
 
@@ -936,7 +936,7 @@ dequeue:
 
 static int udp_poll_lcore(struct mudp_pollfd* fds, mudp_nfds_t nfds, int timeout) {
   struct mudp_impl* s = fds[0].fd;
-  struct mtl_main_impl* impl = s->parnet;
+  struct mtl_main_impl* impl = s->parent;
   uint64_t start_ts = mt_get_tsc(impl);
   int rc;
 
@@ -976,7 +976,7 @@ mudp_handle mudp_socket_port(mtl_handle mt, int domain, int type, int protocol,
   int idx = mudp_idx;
   mudp_idx++;
 
-  ret = mudp_verfiy_socket_args(domain, type, protocol);
+  ret = mudp_verify_socket_args(domain, type, protocol);
   if (ret < 0) return NULL;
 
   /* make sure tsc is ready, mudp_recvfrom will use tsc */
@@ -987,14 +987,14 @@ mudp_handle mudp_socket_port(mtl_handle mt, int domain, int type, int protocol,
     err("%s(%d), s malloc fail\n", __func__, idx);
     return NULL;
   }
-  s->parnet = impl;
+  s->parent = impl;
   s->type = MT_HANDLE_UDP;
   s->idx = idx;
   snprintf(s->name, sizeof(s->name), "mudp_%d", idx);
   s->port = port;
   s->element_nb = mt_if_nb_tx_desc(impl, port) + 512;
   s->element_size = MUDP_MAX_BYTES;
-  /* No dependcy to arp for kernel based udp stack */
+  /* No dependency to arp for kernel based udp stack */
   s->arp_timeout_us = MT_DEV_TIMEOUT_ZERO;
   s->tx_timeout_us = 10 * US_PER_MS;
   s->rx_timeout_us = US_PER_S;
@@ -1049,7 +1049,7 @@ mudp_handle mudp_socket(mtl_handle mt, int domain, int type, int protocol) {
 
 int mudp_close(mudp_handle ut) {
   struct mudp_impl* s = ut;
-  struct mtl_main_impl* impl = s->parnet;
+  struct mtl_main_impl* impl = s->parent;
   int idx = s->idx;
 
   if (s->type != MT_HANDLE_UDP) {
@@ -1078,7 +1078,7 @@ int mudp_close(mudp_handle ut) {
 
 int mudp_bind(mudp_handle ut, const struct sockaddr* addr, socklen_t addrlen) {
   struct mudp_impl* s = ut;
-  struct mtl_main_impl* impl = s->parnet;
+  struct mtl_main_impl* impl = s->parent;
   int idx = s->idx;
   const struct sockaddr_in* addr_in = (struct sockaddr_in*)addr;
   int ret;
@@ -1088,7 +1088,7 @@ int mudp_bind(mudp_handle ut, const struct sockaddr* addr, socklen_t addrlen) {
     return -EIO;
   }
 
-  ret = udp_verfiy_bind_addr(s, addr_in, addrlen);
+  ret = udp_verify_bind_addr(s, addr_in, addrlen);
   if (ret < 0) return ret;
 
   /* uinit rx if any */
@@ -1110,7 +1110,7 @@ int mudp_bind(mudp_handle ut, const struct sockaddr* addr, socklen_t addrlen) {
 ssize_t mudp_sendto(mudp_handle ut, const void* buf, size_t len, int flags,
                     const struct sockaddr* dest_addr, socklen_t addrlen) {
   struct mudp_impl* s = ut;
-  struct mtl_main_impl* impl = s->parnet;
+  struct mtl_main_impl* impl = s->parent;
   int idx = s->idx;
   int arp_timeout_ms = s->arp_timeout_us / 1000;
   int ret;
@@ -1122,7 +1122,7 @@ ssize_t mudp_sendto(mudp_handle ut, const void* buf, size_t len, int flags,
   }
 
   const struct sockaddr_in* addr_in = (struct sockaddr_in*)dest_addr;
-  ret = udp_verfiy_sendto_args(len, flags, addr_in, addrlen);
+  ret = udp_verify_sendto_args(len, flags, addr_in, addrlen);
   if (ret < 0) {
     err("%s(%d), invalid args\n", __func__, idx);
     return ret;
@@ -1151,7 +1151,7 @@ ssize_t mudp_sendto(mudp_handle ut, const void* buf, size_t len, int flags,
       return ret;
     } else {
       mt_sleep_us(1);
-      /* align to kernel behavior which sendto succ even if arp not resloved */
+      /* align to kernel behavior which sendto succ even if arp not resolved */
       return len;
     }
   }
@@ -1184,11 +1184,11 @@ ssize_t mudp_sendto(mudp_handle ut, const void* buf, size_t len, int flags,
 }
 
 int mudp_poll(struct mudp_pollfd* fds, mudp_nfds_t nfds, int timeout) {
-  int ret = udp_verfiy_poll(fds, nfds, timeout);
+  int ret = udp_verify_poll(fds, nfds, timeout);
   if (ret < 0) return ret;
 
   struct mudp_impl* s = fds[0].fd;
-  struct mtl_main_impl* impl = s->parnet;
+  struct mtl_main_impl* impl = s->parent;
 
   /* init rxq if not */
   for (mudp_nfds_t i = 0; i < nfds; i++) {
@@ -1211,7 +1211,7 @@ int mudp_poll(struct mudp_pollfd* fds, mudp_nfds_t nfds, int timeout) {
 ssize_t mudp_recvfrom(mudp_handle ut, void* buf, size_t len, int flags,
                       struct sockaddr* src_addr, socklen_t* addrlen) {
   struct mudp_impl* s = ut;
-  struct mtl_main_impl* impl = s->parnet;
+  struct mtl_main_impl* impl = s->parent;
   int idx = s->idx;
   int ret;
 
@@ -1513,7 +1513,7 @@ int mudp_get_sip(mudp_handle ut, uint8_t ip[MTL_IP_ADDR_LEN]) {
     return -EIO;
   }
 
-  mtl_memcpy(ip, mt_sip_addr(s->parnet, s->port), MTL_IP_ADDR_LEN);
+  mtl_memcpy(ip, mt_sip_addr(s->parent, s->port), MTL_IP_ADDR_LEN);
   return 0;
 }
 
@@ -1526,14 +1526,14 @@ int mudp_tx_valid_ip(mudp_handle ut, uint8_t dip[MTL_IP_ADDR_LEN]) {
     return -EIO;
   }
 
-  struct mtl_main_impl* impl = s->parnet;
+  struct mtl_main_impl* impl = s->parent;
   enum mtl_port port = s->port;
 
   if (mt_is_multicast_ip(dip)) {
     return 0;
   } else if (mt_is_lan_ip(dip, mt_sip_addr(impl, port), mt_sip_netmask(impl, port))) {
     return 0;
-  } else if (mt_ip_to_u32(mt_sip_gatway(impl, port))) {
+  } else if (mt_ip_to_u32(mt_sip_gateway(impl, port))) {
     return 0;
   }
 
