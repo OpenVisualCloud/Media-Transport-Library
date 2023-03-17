@@ -188,7 +188,7 @@ int main(int argc, char** argv) {
     ops_rx.payload_type = ctx.payload_type;
     ops_rx.flags = ST20_RX_FLAG_RECEIVE_INCOMPLETE_FRAME;
     ops_rx.notify_slice_ready = rx_video_slice_ready;
-    // app regist non-block func, app get a frame ready notification info by this cb
+    // app register non-block func, app get a frame ready notification info by this cb
     ops_rx.notify_frame_ready = rx_video_frame_ready;
     rx_handle[i] = st20_rx_create(ctx.st, &ops_rx);
     if (!rx_handle[i]) {

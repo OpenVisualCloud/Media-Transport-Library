@@ -113,7 +113,7 @@ static int cni_traffic(struct mtl_main_impl* impl) {
   return done ? MT_TASKLET_ALL_DONE : MT_TASKLET_HAS_PENDING;
 }
 
-static void* cni_trafic_thread(void* arg) {
+static void* cni_traffic_thread(void* arg) {
   struct mtl_main_impl* impl = arg;
   struct mt_cni_impl* cni = mt_get_cni(impl);
 
@@ -127,25 +127,25 @@ static void* cni_trafic_thread(void* arg) {
   return NULL;
 }
 
-static int cni_trafic_thread_start(struct mtl_main_impl* impl, struct mt_cni_impl* cni) {
+static int cni_traffic_thread_start(struct mtl_main_impl* impl, struct mt_cni_impl* cni) {
   int ret;
 
   if (cni->tid) {
-    err("%s, cni_trafic thread already start\n", __func__);
+    err("%s, cni_traffic thread already start\n", __func__);
     return 0;
   }
 
   rte_atomic32_set(&cni->stop_thread, 0);
-  ret = pthread_create(&cni->tid, NULL, cni_trafic_thread, impl);
+  ret = pthread_create(&cni->tid, NULL, cni_traffic_thread, impl);
   if (ret < 0) {
-    err("%s, cni_trafic thread create fail %d\n", __func__, ret);
+    err("%s, cni_traffic thread create fail %d\n", __func__, ret);
     return ret;
   }
 
   return 0;
 }
 
-static int cni_trafic_thread_stop(struct mt_cni_impl* cni) {
+static int cni_traffic_thread_stop(struct mt_cni_impl* cni) {
   rte_atomic32_set(&cni->stop_thread, 1);
   if (cni->tid) {
     pthread_join(cni->tid, NULL);
@@ -160,7 +160,7 @@ static int cni_tasklet_start(void* priv) {
   struct mt_cni_impl* cni = mt_get_cni(impl);
 
   /* tasklet will take over the cni thread */
-  if (cni->lcore_tasklet) cni_trafic_thread_stop(cni);
+  if (cni->lcore_tasklet) cni_traffic_thread_stop(cni);
 
   return 0;
 }
@@ -169,12 +169,12 @@ static int cni_tasklet_stop(void* priv) {
   struct mtl_main_impl* impl = priv;
   struct mt_cni_impl* cni = mt_get_cni(impl);
 
-  if (cni->lcore_tasklet) cni_trafic_thread_start(impl, cni);
+  if (cni->lcore_tasklet) cni_traffic_thread_start(impl, cni);
 
   return 0;
 }
 
-static int cni_tasklet_handlder(void* priv) {
+static int cni_tasklet_handler(void* priv) {
   struct mtl_main_impl* impl = priv;
 
   return cni_traffic(impl);
@@ -320,7 +320,7 @@ int mt_cni_init(struct mtl_main_impl* impl) {
     ops.name = "cni";
     ops.start = cni_tasklet_start;
     ops.stop = cni_tasklet_stop;
-    ops.handler = cni_tasklet_handlder;
+    ops.handler = cni_tasklet_handler;
 
     cni->tasklet = mt_sch_register_tasklet(impl->main_sch, &ops);
     if (!cni->tasklet) {
@@ -366,7 +366,7 @@ int mt_cni_start(struct mtl_main_impl* impl) {
 
   if (!cni->used) return 0;
 
-  ret = cni_trafic_thread_start(impl, cni);
+  ret = cni_traffic_thread_start(impl, cni);
   if (ret < 0) return ret;
 
   return 0;
@@ -377,7 +377,7 @@ int mt_cni_stop(struct mtl_main_impl* impl) {
 
   if (!cni->used) return 0;
 
-  cni_trafic_thread_stop(cni);
+  cni_traffic_thread_stop(cni);
 
   return 0;
 }

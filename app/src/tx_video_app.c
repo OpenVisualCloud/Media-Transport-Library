@@ -83,8 +83,8 @@ static int app_tx_video_frame_done(void* priv, uint16_t frame_idx,
   st_pthread_mutex_unlock(&s->st20_wake_mutex);
 
   s->st20_frame_done_cnt++;
-  if (!s->stat_frame_frist_tx_time)
-    s->stat_frame_frist_tx_time = st_app_get_monotonic_time();
+  if (!s->stat_frame_first_tx_time)
+    s->stat_frame_first_tx_time = st_app_get_monotonic_time();
 
   return ret;
 }
@@ -456,8 +456,8 @@ static int app_tx_video_build_rtp_packet(struct st_app_tx_video_session* s,
     s->st20_pkt_idx = 0;
     s->st20_rtp_tmstamp++;
     s->st20_frame_done_cnt++;
-    if (!s->stat_frame_frist_tx_time)
-      s->stat_frame_frist_tx_time = st_app_get_monotonic_time();
+    if (!s->stat_frame_first_tx_time)
+      s->stat_frame_first_tx_time = st_app_get_monotonic_time();
     int frame_size = s->interlaced ? s->st20_frame_size * 2 : s->st20_frame_size;
     if (!s->interlaced) {
       s->st20_frame_cursor += frame_size;
@@ -649,7 +649,7 @@ static int app_tx_video_uinit(struct st_app_tx_video_session* s) {
 static int app_tx_video_result(struct st_app_tx_video_session* s) {
   int idx = s->idx;
   uint64_t cur_time_ns = st_app_get_monotonic_time();
-  double time_sec = (double)(cur_time_ns - s->stat_frame_frist_tx_time) / NS_PER_S;
+  double time_sec = (double)(cur_time_ns - s->stat_frame_first_tx_time) / NS_PER_S;
   double framerate = s->st20_frame_done_cnt / time_sec;
 
   if (!s->st20_frame_done_cnt) return -EINVAL;

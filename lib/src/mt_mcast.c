@@ -259,7 +259,7 @@ static int mcast_addr_pool_append(struct mt_interface* inf,
 static void mcast_addr_pool_remove(struct mt_interface* inf, uint32_t addr_idx) {
   inf->mcast_nb--;
   if (addr_idx == inf->mcast_nb) {
-    /* No need to recompact the set of multicast addressses. */
+    /* No need to recompose the set of multicast address. */
     if (inf->mcast_nb == 0) {
       /* free the pool of multicast addresses. */
       free(inf->mcast_mac_lists);

@@ -45,7 +45,9 @@ git am $dpdk_st_kahawai/patches/dpdk/22.11/0006-Change-to-enable-PTP.patch
 git am $dpdk_st_kahawai/patches/dpdk/22.11/0007-net-iavf-not-include-ipv4_port-for-RTE_ETH_RSS_NONFR.patch
 git am $dpdk_st_kahawai/patches/dpdk/22.11/0008-net-ice-add-dst-src-only-support-for-rss-l3-and-l4.patch
 ```
+
 or just am all patches by one command.
+
 ```bash
 git am $dpdk_st_kahawai/patches/dpdk/22.11/*.patch
 ```

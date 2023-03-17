@@ -99,7 +99,7 @@ sudo sysctl -w vm.nr_hugepages=2048
 
 ### 3.3 Prepare source files
 
-Pls note the input yuv source file for sample app is the rfc4175 yuv422be10(big edian 10bit) pixel group format which define in ST2110 spec. Kahawai include a simple tools to convert the format from yuv422 planar 10bit little endian format.
+Pls note the input yuv source file for sample app is the rfc4175 yuv422be10(big endian 10bit) pixel group format which define in ST2110 spec. Kahawai include a simple tools to convert the format from yuv422 planar 10bit little endian format.
 
 #### 3.3.1 Prepare a yuv422p10le file
 
@@ -168,7 +168,7 @@ ffmpeg -s 1920x1080 -pix_fmt yuv420p10le -i yuv420p10le_1080p.yuv -pix_fmt yuv44
 ### 3.4 PTP setup(optional)
 
 Precision Time Protocol (PTP) provides global microsecond accuracy timing of all essences. Typical deployment include a PTP grandmaster within the network, and clients use tools(ex. ptp4l) to sync with the grandmaster. Kahawai library also include a built-in PTP implementation, sample app provide a option to enable it, see 3.6 for how to enable.
-The built-in PTP is disabled as default, Kahawai will use the system time source(clock_gettime) prvoide by user application as PTP clock. If built-in PTP is enabled, Kahawai will select the internal NIC time as PTP source.
+The built-in PTP is disabled as default, Kahawai will use the system time source(clock_gettime) provide by user application as PTP clock. If built-in PTP is enabled, Kahawai will select the internal NIC time as PTP source.
 
 #### 3.4.1 ptp4l setup sample
 
@@ -178,7 +178,7 @@ Firstly run ptp4l to sync the PHC time with grandmaster, customize the interface
 sudo ptp4l -i ens801f2 -m -s -H
 ```
 
-Then run phc2sys to sync the PHC time to system time, please make sure NTP service is diabled as it has conflict with phc2sys.
+Then run phc2sys to sync the PHC time to system time, please make sure NTP service is disabled as it has conflict with phc2sys.
 
 ```shell
 sudo phc2sys -s ens801f2 -m -w
@@ -238,7 +238,7 @@ For the supported parameters in the json, please refer to [JSON configuration gu
 --test_time <seconds>                : the run duration, unit: seconds
 --rx_separate_lcore                  : If enabled, RX video session will run on dedicated lcores, it means TX video and RX video is not running on the same core.
 --dma_dev <DMA1,DMA2,DMA3...>        : DMA dev list to offload the packet memory copy for RX video frame session.
---runtime_session                    : start instance before creat video/audio/anc sessions, similar to runtime tx/rx create.
+--runtime_session                    : start instance before create video/audio/anc sessions, similar to runtime tx/rx create.
 
 --ebu                                : debug option, enable timing check for video rx streams.
 --pcapng_dump <n>                    : debug option, dump n packets from rx video streams to pcapng files.

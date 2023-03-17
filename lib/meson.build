@@ -6,7 +6,7 @@ cc = meson.get_compiler('c')
 # allow experimental api
 add_global_arguments('-DALLOW_EXPERIMENTAL_API', language : 'c')
 
-# add dependences
+# add dependencies
 dpdk_dep = dependency('libdpdk', required : true)
 libm_dep = cc.find_library('m', required : true)
 libpthread_dep = cc.find_library('pthread', required : true)

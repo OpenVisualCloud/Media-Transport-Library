@@ -135,7 +135,7 @@ static int _video_trs_rl_tasklet(struct mtl_main_impl* impl,
     if (tx > 0) {
       return MT_TASKLET_HAS_PENDING;
     } else {
-      *ret_status = -STI_RLTRS_BURST_INFILGHT2_FAIL;
+      *ret_status = -STI_RLTRS_BURST_INFLIGHT2_FAIL;
       return MT_TASKLET_ALL_DONE;
     }
   }
@@ -168,7 +168,7 @@ static int _video_trs_rl_tasklet(struct mtl_main_impl* impl,
     if (tx > 0) {
       return MT_TASKLET_HAS_PENDING;
     } else {
-      *ret_status = -STI_RLTRS_BURST_PAD_INFILGHT_FAIL;
+      *ret_status = -STI_RLTRS_BURST_PAD_INFLIGHT_FAIL;
       return MT_TASKLET_ALL_DONE;
     }
   }
@@ -184,7 +184,7 @@ static int _video_trs_rl_tasklet(struct mtl_main_impl* impl,
     if (tx > 0) {
       return MT_TASKLET_HAS_PENDING;
     } else {
-      *ret_status = -STI_RLTRS_BURST_INFILGHT_FAIL;
+      *ret_status = -STI_RLTRS_BURST_INFLIGHT_FAIL;
       return MT_TASKLET_ALL_DONE;
     }
   }
@@ -316,7 +316,7 @@ static int video_trs_tsc_tasklet(struct mtl_main_impl* impl,
     if (tx > 0) {
       return MT_TASKLET_HAS_PENDING;
     } else {
-      s->stat_trs_ret_code[s_port] = -STI_TSCTRS_BURST_INFILGHT_FAIL;
+      s->stat_trs_ret_code[s_port] = -STI_TSCTRS_BURST_INFLIGHT_FAIL;
       return MT_TASKLET_ALL_DONE;
     }
   }
@@ -434,7 +434,7 @@ static int video_trs_ptp_tasklet(struct mtl_main_impl* impl,
     if (tx > 0) {
       return MT_TASKLET_HAS_PENDING;
     } else {
-      s->stat_trs_ret_code[s_port] = -STI_TSCTRS_BURST_INFILGHT_FAIL;
+      s->stat_trs_ret_code[s_port] = -STI_TSCTRS_BURST_INFLIGHT_FAIL;
       return MT_TASKLET_ALL_DONE;
     }
   }
@@ -516,7 +516,7 @@ static int video_trs_ptp_tasklet(struct mtl_main_impl* impl,
 
 static int video_trs_tasklet_handler(void* priv) {
   struct st_video_transmitter_impl* trs = priv;
-  struct mtl_main_impl* impl = trs->parnet;
+  struct mtl_main_impl* impl = trs->parent;
   struct st_tx_video_sessions_mgr* mgr = trs->mgr;
   struct st_tx_video_session_impl* s;
   int sidx, s_port;
@@ -535,7 +535,7 @@ static int video_trs_tasklet_handler(void* priv) {
   return pending;
 }
 
-int st_video_reslove_pacing_tasklet(struct st_tx_video_session_impl* s,
+int st_video_resolve_pacing_tasklet(struct st_tx_video_session_impl* s,
                                     enum mtl_session_port port) {
   int idx = s->idx;
 
@@ -562,7 +562,7 @@ int st_video_transmitter_init(struct mtl_main_impl* impl, struct mt_sch_impl* sc
   int idx = sch->idx;
   struct mt_sch_tasklet_ops ops;
 
-  trs->parnet = impl;
+  trs->parent = impl;
   trs->idx = idx;
   trs->mgr = mgr;
 

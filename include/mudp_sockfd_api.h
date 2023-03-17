@@ -16,7 +16,7 @@
 #include "mudp_api.h"
 
 #ifndef _MUDP_SOCKFD_API_HEAD_H_
-/** Marco for re-inculde protect */
+/** Marco for re-include protect */
 #define _MUDP_SOCKFD_API_HEAD_H_
 
 #if defined(__cplusplus)
@@ -207,7 +207,7 @@ int mufd_abort(void);
 
 /**
  * Set the tx dst mac for the udp transport socket. MTL focus on data plane and only has
- * ARP support. For the WAN transport, user can use this API to mannual set the dst mac.
+ * ARP support. For the WAN transport, user can use this API to manual set the dst mac.
  *
  * @param sockfd
  *   The handle to udp transport socket.

@@ -7,7 +7,7 @@
 
 #include "st_main.h"
 
-#define ST_RX_ANCILLARY_BURTS_SIZE (128)
+#define ST_RX_ANCILLARY_BURST_SIZE (128)
 
 int st_rx_ancillary_sessions_mgr_uinit(struct st_rx_ancillary_sessions_mgr* mgr);
 

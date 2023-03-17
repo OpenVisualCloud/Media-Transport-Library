@@ -218,9 +218,9 @@ int main(int argc, char** argv) {
     ops_tx.fmt = ctx.fmt;
     ops_tx.payload_type = ctx.payload_type;
     ops_tx.framebuff_cnt = app[i]->framebuff_cnt;
-    // app regist non-block func, app could get a frame to send to lib
+    // app register non-block func, app could get a frame to send to lib
     ops_tx.get_next_frame = tx_video_next_frame;
-    // app regist non-block func, app could get the frame tx done
+    // app register non-block func, app could get the frame tx done
     ops_tx.notify_frame_done = tx_video_frame_done;
     ops_tx.query_frame_lines_ready = tx_video_frame_lines_ready;
     tx_handle[i] = st20_tx_create(ctx.st, &ops_tx);

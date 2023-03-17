@@ -85,7 +85,7 @@ static uint16_t get_10bit_udw(int idx, uint8_t* data) {
   byte_offset = total_bits_offset / 8;
   bit_offset = total_bits_offset % 8;
   data += byte_offset;
-  //  host to network conversion without load from misalligned address
+  //  host to network conversion without load from misaligned address
   uint16_t val = st_ntohs(data);
   uint16_t udw = 0;
 
@@ -124,7 +124,7 @@ static void set_10bit_udw(int idx, uint16_t udw, uint8_t* data) {
   byte_offset = total_bits_offset / 8;
   bit_offset = total_bits_offset % 8;
   data += byte_offset;
-  //  host to network conversion without load from misalligned address
+  //  host to network conversion without load from misaligned address
   uint16_t val = st_ntohs(data);
   switch (bit_offset) {
     case 0: {
@@ -156,7 +156,7 @@ static void set_10bit_udw(int idx, uint16_t udw, uint8_t* data) {
       break;
     }
   }
-  //  host to network conversion without store to misalligned address
+  //  host to network conversion without store to misaligned address
   data[0] = (uint8_t)((val & 0xFF00) >> 8);
   data[1] = (uint8_t)(val & 0xFF);
 }

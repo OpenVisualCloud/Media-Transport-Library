@@ -904,7 +904,7 @@ static int tx_ancillary_session_tasklet_rtp(struct mtl_main_impl* impl,
 
 static int tx_ancillary_sessions_tasklet_handler(void* priv) {
   struct st_tx_ancillary_sessions_mgr* mgr = priv;
-  struct mtl_main_impl* impl = mgr->parnet;
+  struct mtl_main_impl* impl = mgr->parent;
   struct st_tx_ancillary_session_impl* s;
   int pending = MT_TASKLET_ALL_DONE;
 
@@ -976,7 +976,7 @@ static int tx_ancillary_sessions_mgr_init_hw(struct mtl_main_impl* impl,
 
 static int tx_ancillary_session_flush_port(struct st_tx_ancillary_sessions_mgr* mgr,
                                            enum mtl_port port) {
-  struct mtl_main_impl* impl = mgr->parnet;
+  struct mtl_main_impl* impl = mgr->parent;
   int ret;
   int burst_pkts = mt_if_nb_tx_desc(impl, port);
   struct rte_mbuf* pad = mt_get_pad(impl, port);
@@ -1299,7 +1299,7 @@ static int tx_ancillary_sessions_mgr_init(struct mtl_main_impl* impl,
 
   RTE_BUILD_BUG_ON(sizeof(struct st_rfc8331_anc_hdr) != 62);
 
-  mgr->parnet = impl;
+  mgr->parent = impl;
   mgr->idx = idx;
 
   for (i = 0; i < ST_MAX_TX_ANC_SESSIONS; i++) {
@@ -1333,7 +1333,7 @@ static int tx_ancillary_sessions_mgr_init(struct mtl_main_impl* impl,
 static struct st_tx_ancillary_session_impl* tx_ancillary_sessions_mgr_attach(
     struct st_tx_ancillary_sessions_mgr* mgr, struct st40_tx_ops* ops) {
   int midx = mgr->idx;
-  struct mtl_main_impl* impl = mgr->parnet;
+  struct mtl_main_impl* impl = mgr->parent;
   int ret;
   struct st_tx_ancillary_session_impl* s;
 
@@ -1354,7 +1354,7 @@ static struct st_tx_ancillary_session_impl* tx_ancillary_sessions_mgr_attach(
       mt_rte_free(s);
       return NULL;
     }
-    ret = tx_ancillary_session_attach(mgr->parnet, mgr, s, ops);
+    ret = tx_ancillary_session_attach(mgr->parent, mgr, s, ops);
     if (ret < 0) {
       err("%s(%d), attach fail on %d\n", __func__, midx, i);
       tx_ancillary_session_put(mgr, i);
@@ -1427,7 +1427,7 @@ void st_tx_ancillary_sessions_stat(struct mtl_main_impl* impl) {
 
 int st_tx_ancillary_sessions_mgr_uinit(struct st_tx_ancillary_sessions_mgr* mgr) {
   int m_idx = mgr->idx;
-  struct mtl_main_impl* impl = mgr->parnet;
+  struct mtl_main_impl* impl = mgr->parent;
   struct st_tx_ancillary_session_impl* s;
 
   if (mgr->tasklet) {
@@ -1566,7 +1566,7 @@ st40_tx_handle st40_tx_create(mtl_handle mt, struct st40_tx_ops* ops) {
     return NULL;
   }
 
-  s_impl->parnet = impl;
+  s_impl->parent = impl;
   s_impl->type = MT_HANDLE_TX_ANC;
   s_impl->impl = s;
 
@@ -1659,7 +1659,7 @@ int st40_tx_free(st40_tx_handle handle) {
     return -EIO;
   }
 
-  impl = s_impl->parnet;
+  impl = s_impl->parent;
   s = s_impl->impl;
   idx = s->idx;
 

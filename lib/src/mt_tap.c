@@ -725,7 +725,7 @@ static PSP_DEVICE_INTERFACE_DETAIL_DATA get_tap_device_interface_detail(HDEVINFO
       }
     }
   } else {
-    err("No ndis interface devcie enumerate");
+    err("No ndis interface device enumerate");
   }
   return NULL;
 }

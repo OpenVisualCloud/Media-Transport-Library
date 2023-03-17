@@ -71,7 +71,7 @@
 #define NS_PER_US (1000)
 #define US_PER_MS (1000)
 
-struct mtl_main_impl; /* foward declare */
+struct mtl_main_impl; /* forward declare */
 
 /* dynamic fields are implemented after rte_mbuf */
 struct mt_muf_priv_data {
@@ -255,7 +255,7 @@ struct mt_arp_impl {
   struct mt_arp_entry entries[MT_ARP_ENTRY_MAX];
   bool timer_active;
   enum mtl_port port;
-  struct mtl_main_impl* parnet;
+  struct mtl_main_impl* parent;
 };
 
 struct mt_mcast_impl {
@@ -331,7 +331,7 @@ struct mt_sch_impl {
   int data_quota_mbs_limit; /* limit data quota(mb/s) for current sch */
   bool cpu_busy;
 
-  struct mtl_main_impl* parnet;
+  struct mtl_main_impl* parent;
   int idx; /* index for current sch */
   rte_atomic32_t started;
   rte_atomic32_t request_stop;
@@ -609,7 +609,7 @@ struct mt_stat_mgr {
   struct mt_stat_items_list head;
 };
 
-struct mt_rss_impl; /* foward delcare */
+struct mt_rss_impl; /* forward delcare */
 
 struct mt_rss_entry {
   uint16_t queue_id;
@@ -636,14 +636,14 @@ struct mt_rss_impl {
   struct mt_rss_queue* rss_queues;
 };
 
-struct mt_rsq_impl; /* foward delcare */
+struct mt_rsq_impl; /* forward delcare */
 
 struct mt_rsq_entry {
   uint16_t queue_id;
   struct mt_rx_flow flow;
   uint16_t dst_port_net;
   struct mt_rx_flow_rsp* flow_rsp;
-  struct mt_rsq_impl* parnet;
+  struct mt_rsq_impl* parent;
   /* linked list */
   MT_TAILQ_ENTRY(mt_rsq_entry) next;
 };
@@ -662,7 +662,7 @@ struct mt_rsq_queue {
 };
 
 struct mt_rsq_impl {
-  struct mtl_main_impl* parnet;
+  struct mtl_main_impl* parent;
   enum mtl_port port;
   /* sq rx queue resources */
   int max_rsq_queues;
@@ -677,12 +677,12 @@ struct mt_tsq_flow {
   uint16_t dst_port;                 /* udp destination port */
 };
 
-struct mt_tsq_impl; /* foward delcare */
+struct mt_tsq_impl; /* forward delcare */
 
 struct mt_tsq_entry {
   uint16_t queue_id;
   struct mt_tsq_flow flow;
-  struct mt_tsq_impl* parnet;
+  struct mt_tsq_impl* parent;
   struct rte_mempool* tx_pool;
   /* linked list */
   MT_TAILQ_ENTRY(mt_tsq_entry) next;
@@ -704,7 +704,7 @@ struct mt_tsq_queue {
 };
 
 struct mt_tsq_impl {
-  struct mtl_main_impl* parnet;
+  struct mtl_main_impl* parent;
   enum mtl_port port;
   /* sq tx queue resources */
   int max_tsq_queues;
@@ -759,7 +759,7 @@ struct mtl_main_impl {
 
   /* sch context */
   struct mt_sch_mgr sch_mgr;
-  uint32_t taskelts_nb_per_sch;
+  uint32_t tasklets_nb_per_sch;
 
   /* st plugin dev mgr */
   struct st_plugin_mgr plugin_mgr;
@@ -847,7 +847,7 @@ static inline uint8_t* mt_sip_netmask(struct mtl_main_impl* impl, enum mtl_port 
   return mt_get_user_params(impl)->netmask[port];
 }
 
-static inline uint8_t* mt_sip_gatway(struct mtl_main_impl* impl, enum mtl_port port) {
+static inline uint8_t* mt_sip_gateway(struct mtl_main_impl* impl, enum mtl_port port) {
   return mt_get_user_params(impl)->gateway[port];
 }
 

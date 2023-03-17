@@ -353,9 +353,9 @@ static struct ufd_mt_ctx* ufd_create_mt_ctx(void) {
       return NULL;
     }
 
-    /* overide config if it runtime config */
+    /* override config if it runtime config */
     if (rt_para) {
-      info("%s, applied overide config\n", __func__);
+      info("%s, applied override config\n", __func__);
       p->log_level = rt_para->log_level;
       if (rt_para->shared_queue) p->flags |= MTL_FLAG_SHARED_QUEUE;
       if (rt_para->lcore_mode) p->flags |= MTL_FLAG_UDP_LCORE;
@@ -372,9 +372,9 @@ static struct ufd_mt_ctx* ufd_create_mt_ctx(void) {
     ctx->init_params.fd_base = INT_MAX - ctx->init_params.slots_nb_max * 2;
   if (!ctx->init_params.txq_bps) ctx->init_params.txq_bps = MUDP_DEFAULT_RL_BPS;
 
-  /* udp lcore and shared queue, set taskelts_nb_per_sch to allow max slots */
+  /* udp lcore and shared queue, set tasklets_nb_per_sch to allow max slots */
   if ((p->flags & MTL_FLAG_SHARED_QUEUE) && (p->flags & MTL_FLAG_UDP_LCORE))
-    p->taskelts_nb_per_sch = ctx->init_params.slots_nb_max + 8;
+    p->tasklets_nb_per_sch = ctx->init_params.slots_nb_max + 8;
 
   ctx->mt = mtl_init(p);
   if (!ctx->mt) {
@@ -436,7 +436,7 @@ int mufd_socket_port(int domain, int type, int protocol, enum mtl_port port) {
   struct ufd_mt_ctx* ctx;
   struct ufd_slot* slot = NULL;
 
-  ret = mudp_verfiy_socket_args(domain, type, protocol);
+  ret = mudp_verify_socket_args(domain, type, protocol);
   if (ret < 0) return ret;
   ctx = ufd_get_mt_ctx(true);
   if (!ctx) {
@@ -719,5 +719,5 @@ int mufd_tx_valid_ip(int sockfd, uint8_t dip[MTL_IP_ADDR_LEN]) {
 }
 
 int mufd_socket_check(int domain, int type, int protocol) {
-  return mudp_verfiy_socket_args(domain, type, protocol);
+  return mudp_verify_socket_args(domain, type, protocol);
 }

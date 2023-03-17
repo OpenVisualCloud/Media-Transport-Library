@@ -327,7 +327,7 @@ static void mtl_input_init(struct mtl_rx_session* s) {
   param.flags = MTL_FLAG_BIND_NUMA;  // default bind to numa
   param.log_level = s->log_level;    // mtl lib log level
   param.priv = s;                    // usr ctx pointer
-  // user regist ptp func, if not regist, the internal ptp will be used
+  // user register ptp func, if not register, the internal ptp will be used
   param.ptp_get_time_fn = NULL;
   param.tx_sessions_cnt_max = 0;
   param.rx_sessions_cnt_max = 1;
@@ -356,7 +356,7 @@ static void mtl_input_init(struct mtl_rx_session* s) {
   ops_rx.transport_fmt = s->t_fmt;
   ops_rx.framebuff_cnt = s->framebuffer_cnt;
   ops_rx.port.payload_type = s->payload_type;
-  // app regist non-block func, app get a frame ready notification info by this cb
+  // app register non-block func, app get a frame ready notification info by this cb
   ops_rx.notify_frame_available = notify_frame_available;
 
   s->handle = st20p_rx_create(dev_handle, &ops_rx);

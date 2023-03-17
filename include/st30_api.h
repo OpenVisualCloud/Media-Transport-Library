@@ -53,7 +53,7 @@ typedef struct st_rx_audio_session_handle_impl* st30_rx_handle;
 
 /**
  * Flag bit in flags of struct st30_rx_ops, for non MTL_PMD_DPDK_USER.
- * If set, it's application duty to set the rx flow(queue) and muticast join/drop.
+ * If set, it's application duty to set the rx flow(queue) and multicast join/drop.
  * Use st30_rx_get_queue_meta to get the queue meta(queue number etc) info.
  */
 #define ST30_RX_FLAG_DATA_PATH_ONLY (MTL_BIT32(0))
@@ -284,7 +284,7 @@ struct st30_tx_ops {
   uint32_t framebuff_size;
   /**
    * ST30_TYPE_FRAME_LEVEL callback when lib require a new frame.
-   * User should provide the next avaiable frame index to next_frame_idx.
+   * User should provide the next available frame index to next_frame_idx.
    * It implicit means the frame ownership will be transferred to lib,
    * only for ST30_TYPE_FRAME_LEVEL.
    * And only non-block method can be used in this callback as it run from lcore tasklet
@@ -377,7 +377,7 @@ struct st30_rx_ops {
    * return:
    *   - 0: if app consume the frame successful. App should call st30_rx_put_framebuff
    * to return the frame when it finish the handling
-   *   < 0: the error code if app cann't handle, lib will free the frame then
+   *   < 0: the error code if app can't handle, lib will free the frame then
    * the consume of frame.
    * only for ST30_TX_TYPE_FRAME_LEVEL.
    * And only non-block method can be used in this callback as it run from lcore tasklet
@@ -446,7 +446,7 @@ void* st30_tx_get_framebuffer(st30_tx_handle handle, uint16_t idx);
  * @param usrptr
  *   *usrptr will be point to the user data(rtp) area inside the mbuf.
  * @return
- *   - NULL if no avaiable mbuf in the ring.
+ *   - NULL if no available mbuf in the ring.
  *   - Otherwise, the dpdk mbuf pointer.
  */
 void* st30_tx_get_mbuf(st30_tx_handle handle, void** usrptr);
@@ -577,7 +577,7 @@ int st30_rx_put_framebuff(st30_rx_handle handle, void* frame);
  * @param len
  *   The length of the rtp packet, include both the header and payload.
  * @return
- *   - NULL if no avaiable mbuf in the ring.
+ *   - NULL if no available mbuf in the ring.
  *   - Otherwise, the dpdk mbuf pointer.
  */
 void* st30_rx_get_mbuf(st30_rx_handle handle, void** usrptr, uint16_t* len);

@@ -223,7 +223,7 @@ static int dev_eal_init(struct mtl_init_params* p, struct mt_kport_info* kport_i
   char* argv[MT_EAL_MAX_ARGS];
   int argc, ret;
   int num_ports = RTE_MIN(p->num_ports, MTL_PORT_MAX);
-  static bool eal_inited = false; /* eal cann't re-enter in one process */
+  static bool eal_initted = false; /* eal cann't re-enter in one process */
   bool has_afxdp = false;
   char port_params[MTL_PORT_MAX][2 * MTL_PORT_MAX_LEN];
   char* port_param;
@@ -331,13 +331,13 @@ static int dev_eal_init(struct mtl_init_params* p, struct mt_kport_info* kport_i
   argv[argc] = "--";
   argc++;
 
-  if (eal_inited) {
+  if (eal_initted) {
     info("%s, eal not support re-init\n", __func__);
     return -EIO;
   }
   ret = rte_eal_init(argc, argv);
   if (ret < 0) return ret;
-  eal_inited = true;
+  eal_initted = true;
 
   return 0;
 }
@@ -1526,7 +1526,7 @@ static int dev_if_uinit_tx_queues(struct mt_interface* inf) {
   for (uint16_t q = 0; q < inf->max_tx_queues; q++) {
     tx_queue = &inf->tx_queues[q];
     if (tx_queue->active) {
-      warn("%s(%d), tx_queuequeue %d still active\n", __func__, port, q);
+      warn("%s(%d), tx_queue %d still active\n", __func__, port, q);
     }
   }
 
@@ -1621,7 +1621,7 @@ static struct mt_rx_flow_rsp* dev_if_create_rx_flow(struct mtl_main_impl* impl,
     }
 
     rsp->flow = r_flow;
-    /* WA to aviod iavf_flow_create fail in 1000+ mudp close at same time */
+    /* WA to avoid iavf_flow_create fail in 1000+ mudp close at same time */
     if (inf->port_type == MT_PORT_VF) mt_sleep_ms(1);
   }
 
@@ -1657,7 +1657,7 @@ retry:
     rsp->flow = NULL;
   }
   mt_rte_free(rsp);
-  /* WA to aviod iavf_flow_destroy fail in 1000+ mudp close at same time */
+  /* WA to avoid iavf_flow_destroy fail in 1000+ mudp close at same time */
   if (inf->port_type == MT_PORT_VF) mt_sleep_ms(1);
   return 0;
 }
@@ -1790,7 +1790,7 @@ struct mt_rx_queue* mt_dev_get_rx_queue(struct mtl_main_impl* impl, enum mtl_por
       if (mt_if_hdr_split_pool(inf, q)) continue;
     }
 
-    /* free the dummmy flow if any */
+    /* free the dummy flow if any */
     if (rx_queue->flow_rsp) {
       dev_if_free_rx_flow(impl, port, rx_queue->flow_rsp);
       rx_queue->flow_rsp = NULL;
@@ -2036,7 +2036,7 @@ int mt_dev_create(struct mtl_main_impl* impl) {
     goto err_exit;
   }
 
-  /* rte_eth_stats_get fail in alram context for VF, move it to thread */
+  /* rte_eth_stats_get fail in alarm context for VF, move it to thread */
   mt_pthread_mutex_init(&impl->stat_wake_mutex, NULL);
   mt_pthread_cond_init(&impl->stat_wake_cond, NULL);
   rte_atomic32_set(&impl->stat_stop, 0);
@@ -2175,9 +2175,9 @@ int mt_dev_dst_ip_mac(struct mtl_main_impl* impl, uint8_t dip[MTL_IP_ADDR_LEN],
   } else if (mt_is_lan_ip(dip, mt_sip_addr(impl, port), mt_sip_netmask(impl, port))) {
     ret = dev_arp_mac(impl, dip, ea, port, timeout_ms);
   } else {
-    uint8_t* gatway = mt_sip_gatway(impl, port);
-    if (mt_ip_to_u32(gatway)) {
-      ret = dev_arp_mac(impl, gatway, ea, port, timeout_ms);
+    uint8_t* gateway = mt_sip_gateway(impl, port);
+    if (mt_ip_to_u32(gateway)) {
+      ret = dev_arp_mac(impl, gateway, ea, port, timeout_ms);
     } else {
       err("%s(%d), ip %d.%d.%d.%d is wan but no gateway support\n", __func__, port,
           dip[0], dip[1], dip[2], dip[3]);

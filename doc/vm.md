@@ -4,7 +4,7 @@ We use kvm as hypervisor, as the newer qemu-kvm and kernel support ptp_kvm featu
 
 ## Host machine setup
 
-(CentOS 8 recommened)
+(CentOS 8 recommended)
 
 ### Enable VT-d, VT-x in BIOS
 
@@ -37,8 +37,8 @@ echo <num> > /sys/class/net/<interface>/device/sriov_numvfs
 1. open virt-manager with GUI
 2. add a vm, choose ubuntu 20.04 minimal iso
 3. use bridged network or NAT for default NIC
-4. specify cpu core, memory, recommed 8 cpus and 8G memory (experimental)
-5. configure before install, add a pci paththrough device, choose the created vf
+4. specify cpu core, memory, recommend 8 cpus and 8G memory (experimental)
+5. configure before install, add a pci passthrough device, choose the created vf
 6. start to install vm as normal ubuntu  
 
 ### PTP setup
@@ -53,8 +53,8 @@ c. (optional) manully run ptp4l
     sudo ptp4l -i ens801f2 -m -s -H
     ```
 
-2. configure phc2sys daemon  
-a. (optional) mannully run phc2sys  
+3. configure phc2sys daemon  
+a. (optional) manually run phc2sys  
 
     ```shell
     sudo phc2sys -s ens801f2 -m -w
@@ -111,7 +111,7 @@ add a line "refclock PHC /dev/ptp0 poll 2"
     systemctl restart chronyd
     ```
 
-4. check the time sync status, error should be tens of nanosenonds when ready
+4. check the time sync status, error should be tens of nanoseconds when ready
 
     ```shell
     $ chronyc sources
