@@ -11,37 +11,14 @@ static struct upl_ctx g_upl_ctx;
 static inline struct upl_ctx* upl_get_ctx(void) { return &g_upl_ctx; }
 
 static int upl_uinit_ctx(struct upl_ctx* ctx) {
-  if (ctx->libc_dl_handle) {
-    dlclose(ctx->libc_dl_handle);
-    ctx->libc_dl_handle = NULL;
-  }
-  info("%s, succ ctx %p\n", __func__, ctx);
+  dbg("%s, succ ctx %p\n", __func__, ctx);
   return 0;
 }
 
-static const char* upl_libc_so_paths[] = {
-    "/lib/x86_64-linux-gnu/libc.so.6",
-};
-
-static void* upl_open_libc(void) {
-  void* handle = NULL;
-
-  for (int i = 0; i < MTL_ARRAY_SIZE(upl_libc_so_paths); i++) {
-    handle = dlopen(upl_libc_so_paths[i], RTLD_LAZY);
-    if (handle) {
-      info("%s, dlopen %s succ\n", __func__, upl_libc_so_paths[i]);
-      return handle;
-    }
-  }
-
-  err("%s, all libc path fail, pls add your libc to upl_libc_so_paths\n", __func__);
-  return NULL;
-}
-
-static int upl_get_libc_fn(struct upl_functions* fns, void* dl_handle) {
+static int upl_get_libc_fn(struct upl_functions* fns) {
 #define UPL_LIBC_FN(__name)                          \
   do {                                               \
-    fns->__name = dlsym(dl_handle, #__name);         \
+    fns->__name = dlsym(RTLD_NEXT, #__name);         \
     if (!fns->__name) {                              \
       err("%s, dlsym %s fail\n", __func__, #__name); \
       return -EIO;                                   \
@@ -66,12 +43,7 @@ static int upl_get_libc_fn(struct upl_functions* fns, void* dl_handle) {
 static int upl_init_ctx(struct upl_ctx* ctx) {
   int ret;
 
-  ctx->libc_dl_handle = upl_open_libc();
-  if (!ctx->libc_dl_handle) {
-    upl_uinit_ctx(ctx);
-    return -EIO;
-  }
-  ret = upl_get_libc_fn(&ctx->libc_fn, ctx->libc_dl_handle);
+  ret = upl_get_libc_fn(&ctx->libc_fn);
   if (ret < 0) {
     upl_uinit_ctx(ctx);
     return -EIO;
