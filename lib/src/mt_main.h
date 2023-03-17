@@ -265,6 +265,31 @@ struct mt_mcast_impl {
   uint16_t group_num;
 };
 
+enum mt_dhcp_status {
+  MT_DHCP_STATUS_INIT = 0,
+  MT_DHCP_STATUS_DISCOVERING, /* no selecting as we always choose the first offer */
+  MT_DHCP_STATUS_REQUESTING,
+  MT_DHCP_STATUS_BOUND,
+  MT_DHCP_STATUS_RENEWING,
+  MT_DHCP_STATUS_REBINDING,
+  MT_DHCP_STATUS_MAX,
+};
+
+struct mt_dhcp_impl {
+  pthread_mutex_t mutex; /* dhcp impl protect */
+  enum mt_dhcp_status status;
+  uint32_t xid;
+  uint8_t server_ip[MTL_IP_ADDR_LEN];
+  enum mtl_port port;
+  struct mtl_main_impl* parent;
+
+  /* cached configuration */
+  uint8_t ip[MTL_IP_ADDR_LEN];
+  uint8_t netmask[MTL_IP_ADDR_LEN];
+  uint8_t gateway[MTL_IP_ADDR_LEN];
+  uint8_t dns[MTL_IP_ADDR_LEN];
+};
+
 #define MT_TASKLET_HAS_PENDING (1)
 #define MT_TASKLET_ALL_DONE (0)
 
@@ -439,6 +464,12 @@ struct mt_tx_queue {
   uint64_t bps;           /* bytes per sec for rate limit */
 };
 
+enum mt_net_proto {
+  MT_PROTO_STATIC = 0,
+  MT_PROTO_DHCP,
+  MT_PROTO_MAX,
+};
+
 struct mt_interface {
   enum mtl_port port;
   uint16_t port_id;
@@ -447,6 +478,7 @@ struct mt_interface {
   enum mt_driver_type drv_type;
   enum mt_flow_type flow_type;
   enum mt_rss_mode rss_mode;
+  enum mt_net_proto net_proto;
   int socket_id;                          /* socket id for the port */
   uint32_t feature;                       /* MT_IF_FEATURE_* */
   uint32_t link_speed;                    /* ETH_SPEED_NUM_ */
@@ -757,6 +789,8 @@ struct mtl_main_impl {
   struct mt_arp_impl* arp[MTL_PORT_MAX];
   /* mcast context */
   struct mt_mcast_impl* mcast[MTL_PORT_MAX];
+  /* dhcp context */
+  struct mt_dhcp_impl* dhcp[MTL_PORT_MAX];
 
   /* sch context */
   struct mt_sch_mgr sch_mgr;
@@ -840,17 +874,11 @@ static inline enum mt_port_type mt_port_type(struct mtl_main_impl* impl,
 
 enum mtl_port mt_port_by_id(struct mtl_main_impl* impl, uint16_t port_id);
 
-static inline uint8_t* mt_sip_addr(struct mtl_main_impl* impl, enum mtl_port port) {
-  return mt_get_user_params(impl)->sip_addr[port];
-}
+uint8_t* mt_sip_addr(struct mtl_main_impl* impl, enum mtl_port port);
 
-static inline uint8_t* mt_sip_netmask(struct mtl_main_impl* impl, enum mtl_port port) {
-  return mt_get_user_params(impl)->netmask[port];
-}
+uint8_t* mt_sip_netmask(struct mtl_main_impl* impl, enum mtl_port port);
 
-static inline uint8_t* mt_sip_gateway(struct mtl_main_impl* impl, enum mtl_port port) {
-  return mt_get_user_params(impl)->gateway[port];
-}
+uint8_t* mt_sip_gateway(struct mtl_main_impl* impl, enum mtl_port port);
 
 static inline enum mtl_pmd_type mt_pmd_type(struct mtl_main_impl* impl,
                                             enum mtl_port port) {

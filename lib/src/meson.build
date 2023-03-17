@@ -8,6 +8,7 @@ sources = files(
   'mt_cni.c',
   'mt_ptp.c',
   'mt_arp.c',
+  'mt_dhcp.c',
   'mt_mcast.c',
   'mt_util.c',
   'mt_dma.c',

@@ -251,7 +251,7 @@ static int arp_start_arp_timer(struct mt_arp_impl* arp_impl) {
 
 int mt_arp_parse(struct mtl_main_impl* impl, struct rte_arp_hdr* hdr,
                  enum mtl_port port) {
-  switch (htons(hdr->arp_opcode)) {
+  switch (ntohs(hdr->arp_opcode)) {
     case RTE_ARP_OP_REQUEST:
       arp_receive_request(impl, hdr, port);
       break;

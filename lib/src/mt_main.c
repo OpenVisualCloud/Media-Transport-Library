@@ -9,6 +9,7 @@
 #include "mt_cni.h"
 #include "mt_config.h"
 #include "mt_dev.h"
+#include "mt_dhcp.h"
 #include "mt_dma.h"
 #include "mt_log.h"
 #include "mt_mcast.h"
@@ -192,12 +193,6 @@ static int mt_main_create(struct mtl_main_impl* impl) {
     return ret;
   }
 
-  ret = mt_ptp_init(impl);
-  if (ret < 0) {
-    err("%s, mt_ptp_init fail %d\n", __func__, ret);
-    return ret;
-  }
-
   ret = mt_cni_init(impl);
   if (ret < 0) {
     err("%s, mt_cni_init fail %d\n", __func__, ret);
@@ -222,6 +217,18 @@ static int mt_main_create(struct mtl_main_impl* impl) {
     return ret;
   }
 
+  ret = mt_dhcp_init(impl);
+  if (ret < 0) {
+    err("%s, mt_dhcp_init fail %d\n", __func__, ret);
+    return ret;
+  }
+
+  ret = mt_ptp_init(impl);
+  if (ret < 0) {
+    err("%s, mt_ptp_init fail %d\n", __func__, ret);
+    return ret;
+  }
+
   pthread_create(&impl->tsc_cal_tid, NULL, mt_calibrate_tsc, impl);
 
   info("%s, succ\n", __func__);
@@ -234,11 +241,12 @@ static int mt_main_free(struct mtl_main_impl* impl) {
     impl->tsc_cal_tid = 0;
   }
 
+  mt_ptp_uinit(impl);
+  mt_dhcp_uinit(impl);
   mt_config_uinit(impl);
   st_plugins_uinit(impl);
   mt_admin_uinit(impl);
   mt_cni_uinit(impl);
-  mt_ptp_uinit(impl);
   mt_arp_uinit(impl);
   mt_mcast_uinit(impl);
 

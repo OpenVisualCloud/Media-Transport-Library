@@ -521,6 +521,7 @@ struct mtl_init_params {
    * Select default or force IOVA mode.
    */
   enum mt_iova_mode iova_mode;
+  bool dhcp;
 };
 
 /**

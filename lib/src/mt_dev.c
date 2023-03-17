@@ -6,6 +6,7 @@
 
 #include "mt_arp.h"
 #include "mt_cni.h"
+#include "mt_dhcp.h"
 #include "mt_dma.h"
 #include "mt_log.h"
 #include "mt_mcast.h"
@@ -1097,6 +1098,8 @@ static int dev_start_port(struct mtl_main_impl* impl, enum mtl_port port) {
       return ret;
     }
   }
+
+  if (mt_get_user_params(impl)->dhcp) inf->net_proto = MT_PROTO_DHCP;
 
   if (mt_get_user_params(impl)->flags & MTL_FLAG_NIC_RX_PROMISCUOUS) {
     /* Enable RX in promiscuous mode if it's required. */
@@ -2573,4 +2576,21 @@ int mt_dev_tsc_done_action(struct mtl_main_impl* impl) {
   }
 
   return 0;
+}
+
+uint8_t* mt_sip_addr(struct mtl_main_impl* impl, enum mtl_port port) {
+  if (mt_if(impl, port)->net_proto == MT_PROTO_DHCP) return mt_dhcp_get_ip(impl, port);
+  return mt_get_user_params(impl)->sip_addr[port];
+}
+
+uint8_t* mt_sip_netmask(struct mtl_main_impl* impl, enum mtl_port port) {
+  if (mt_if(impl, port)->net_proto == MT_PROTO_DHCP)
+    return mt_dhcp_get_netmask(impl, port);
+  return mt_get_user_params(impl)->netmask[port];
+}
+
+uint8_t* mt_sip_gateway(struct mtl_main_impl* impl, enum mtl_port port) {
+  if (mt_if(impl, port)->net_proto == MT_PROTO_DHCP)
+    return mt_dhcp_get_gateway(impl, port);
+  return mt_get_user_params(impl)->gateway[port];
 }
