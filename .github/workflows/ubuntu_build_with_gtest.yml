@@ -118,7 +118,7 @@ jobs:
 
       - name: Run udp ld preload test case
         run: |
-          sudo ./github/workflows/upl_test.sh
+          sudo ./.github/workflows/upl_test.sh
 
       - name: Run st2110 test case
         run: |
