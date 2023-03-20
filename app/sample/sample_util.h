@@ -85,7 +85,6 @@ struct st_sample_context {
   enum st_frame_fmt output_fmt;
   uint16_t framebuff_cnt;
   uint16_t udp_port;
-  uint16_t udp_src_port;
   uint8_t payload_type;
   uint32_t sessions; /* number of sessions */
   bool ext_frame;
