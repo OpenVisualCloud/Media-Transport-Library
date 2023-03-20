@@ -1,0 +1,19 @@
+{
+    "nb_udp_sockets" : "8",
+    "nb_nic_queues" : "8",
+    "nic_shared_queues": false,
+    "udp_lcore": false,
+    "nic_queue_rate_limit_g": "2",
+    "log_level" : "error",
+    "rx_ring_count" : "1024",
+    "rx_poll_sleep_us" : "10",
+    "wake_thresh_count" : "32",
+    "wake_timeout_us" : "1000",
+    "interfaces": [
+        {
+            "port": "0000:31:00.1",
+            "ip": "192.168.89.81",
+            "netmask": "255.255.254.0",
+        }
+    ],
+}

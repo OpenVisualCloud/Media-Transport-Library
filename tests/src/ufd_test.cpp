@@ -7,7 +7,6 @@
 #include <getopt.h>
 
 #include "log.h"
-#include "tests.h"
 
 enum utest_args_cmd {
   UTEST_ARG_UNKNOWN = 0,
