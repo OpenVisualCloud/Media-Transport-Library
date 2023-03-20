@@ -122,7 +122,6 @@ static uint32_t rss_flow_hash(struct mt_rx_flow* flow, enum mt_rss_mode rss) {
   } else if (rss == MT_RSS_MODE_L3_L4) {
     tuple[0] = src_addr;
     tuple[1] = dst_addr;
-    /* temp use dst_port now */
     tuple[2] = (dst_port << 16) | src_port;
     len = 3;
   } else if (rss == MT_RSS_MODE_L3_L4_DP_ONLY) {
