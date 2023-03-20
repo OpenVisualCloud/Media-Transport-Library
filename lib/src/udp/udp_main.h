@@ -33,6 +33,8 @@ struct mudp_impl {
   int idx;
   char name[64];
   bool alive;
+  int (*user_dump)(void* priv);
+  void* user_dump_priv;
 
   enum mtl_port port;
   struct mt_udp_hdr hdr;

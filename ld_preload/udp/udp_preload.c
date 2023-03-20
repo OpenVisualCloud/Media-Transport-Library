@@ -87,6 +87,23 @@ static bool upl_is_mtl_socket(struct upl_ctx* ctx, int fd) {
   return true;
 }
 
+static int upl_stat_dump(void* priv) {
+  struct upl_ufd_entry* opaque = priv;
+  if (opaque->stat_tx_ufd_cnt || opaque->stat_rx_ufd_cnt) {
+    info("%s(%d), ufd pkt tx %d rx %d\n", __func__, opaque->ufd, opaque->stat_tx_ufd_cnt,
+         opaque->stat_rx_ufd_cnt);
+    opaque->stat_tx_ufd_cnt = 0;
+    opaque->stat_rx_ufd_cnt = 0;
+  }
+  if (opaque->stat_tx_kfd_cnt || opaque->stat_rx_kfd_cnt) {
+    info("%s(%d), kfd pkt tx %d rx %d\n", __func__, opaque->ufd, opaque->stat_tx_kfd_cnt,
+         opaque->stat_rx_kfd_cnt);
+    opaque->stat_tx_kfd_cnt = 0;
+    opaque->stat_rx_kfd_cnt = 0;
+  }
+  return 0;
+}
+
 int socket(int domain, int type, int protocol) {
   struct upl_ctx* ctx = upl_get_ctx();
   int kfd;
@@ -127,6 +144,14 @@ int socket(int domain, int type, int protocol) {
   ret = mufd_set_opaque(ufd, opaque);
   if (ret < 0) {
     err("%s, opaque set fail for ufd %d\n", __func__, ufd);
+    upl_free(opaque);
+    mufd_close(ufd);
+    return kfd; /* return kfd for fallback path */
+  }
+
+  ret = mufd_register_stat_dump_cb(ufd, upl_stat_dump, opaque);
+  if (ret < 0) {
+    err("%s, register stat dump for ufd %d\n", __func__, ufd);
     upl_free(opaque);
     mufd_close(ufd);
     return kfd; /* return kfd for fallback path */
@@ -192,13 +217,16 @@ ssize_t sendto(int sockfd, const void* buf, size_t len, int flags,
 
   const struct sockaddr_in* addr_in = (struct sockaddr_in*)dest_addr;
   uint8_t* ip = (uint8_t*)&addr_in->sin_addr.s_addr;
+  struct upl_ufd_entry* opaque = mufd_get_opaque(sockfd);
+
   if (mufd_tx_valid_ip(sockfd, ip) < 0) {
     /* fallback to kfd if it's not in ufd address scope */
-    struct upl_ufd_entry* opaque = mufd_get_opaque(sockfd);
     dbg("%s(%d), fallback to kernel for ip %u.%u.%u.%u\n", __func__, sockfd, ip[0], ip[1],
         ip[2], ip[3]);
+    opaque->stat_tx_kfd_cnt++;
     return ctx->libc_fn.sendto(opaque->kfd, buf, len, flags, dest_addr, addrlen);
   } else {
+    opaque->stat_tx_ufd_cnt++;
     return mufd_sendto(sockfd, buf, len, flags, dest_addr, addrlen);
   }
 }
@@ -256,10 +284,13 @@ ssize_t recvfrom(int sockfd, void* buf, size_t len, int flags, struct sockaddr* 
     return ctx->libc_fn.recvfrom(sockfd, buf, len, flags, src_addr, addrlen);
 
   struct upl_ufd_entry* opaque = mufd_get_opaque(sockfd);
-  if (opaque->bind_kfd)
+  if (opaque->bind_kfd) {
+    opaque->stat_rx_kfd_cnt++;
     return ctx->libc_fn.recvfrom(opaque->kfd, buf, len, flags, src_addr, addrlen);
-  else
+  } else {
+    opaque->stat_rx_ufd_cnt++;
     return mufd_recvfrom(sockfd, buf, len, flags, src_addr, addrlen);
+  }
 }
 
 int getsockopt(int sockfd, int level, int optname, void* optval, socklen_t* optlen) {

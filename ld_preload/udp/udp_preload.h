@@ -72,6 +72,11 @@ struct upl_ufd_entry {
   int ufd;
   int kfd;
   bool bind_kfd; /* fallback to kernel fd in the bind */
+
+  int stat_tx_ufd_cnt;
+  int stat_rx_ufd_cnt;
+  int stat_tx_kfd_cnt;
+  int stat_rx_kfd_cnt;
 };
 
 struct upl_ctx {
