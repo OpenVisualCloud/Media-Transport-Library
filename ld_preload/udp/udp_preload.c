@@ -191,9 +191,12 @@ ssize_t sendto(int sockfd, const void* buf, size_t len, int flags,
     return ctx->libc_fn.sendto(sockfd, buf, len, flags, dest_addr, addrlen);
 
   const struct sockaddr_in* addr_in = (struct sockaddr_in*)dest_addr;
-  if (mufd_tx_valid_ip(sockfd, (uint8_t*)&addr_in->sin_addr.s_addr) < 0) {
+  uint8_t* ip = (uint8_t*)&addr_in->sin_addr.s_addr;
+  if (mufd_tx_valid_ip(sockfd, ip) < 0) {
     /* fallback to kfd if it's not in ufd address scope */
     struct upl_ufd_entry* opaque = mufd_get_opaque(sockfd);
+    dbg("%s(%d), fallback to kernel for ip %u.%u.%u.%u\n", __func__, sockfd, ip[0], ip[1],
+        ip[2], ip[3]);
     return ctx->libc_fn.sendto(opaque->kfd, buf, len, flags, dest_addr, addrlen);
   } else {
     return mufd_sendto(sockfd, buf, len, flags, dest_addr, addrlen);

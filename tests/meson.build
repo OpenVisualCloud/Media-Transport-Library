@@ -67,5 +67,5 @@ executable('KahawaiUfdTest', ufd_sources,
   cpp_args : test_cpp_args,
   link_args: test_ld_args,
   # asan should be always the first dep
-  dependencies: [asan_dep, mtl, gtest, libnuma, libopenssl, libpthread]
+  dependencies: [asan_dep, mtl, gtest, libopenssl]
 )
