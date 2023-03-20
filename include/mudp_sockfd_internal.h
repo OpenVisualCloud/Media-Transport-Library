@@ -157,6 +157,21 @@ int mufd_get_sip(int sockfd, uint8_t ip[MTL_IP_ADDR_LEN]);
 int mufd_tx_valid_ip(int sockfd, uint8_t dip[MTL_IP_ADDR_LEN]);
 
 /**
+ * Register stat dump callback fuction.
+ *
+ * @param sockfd
+ *   the sockfd by mufd_socket.
+ * @param dump
+ *   The dump callback fuction.
+ * @param priv
+ *   The priv data to the callback fuction.
+ * @return
+ *   - 0: Success.
+ *   - <0: Error code.
+ */
+int mufd_register_stat_dump_cb(int sockfd, int (*dump)(void* priv), void* priv);
+
+/**
  * Check if the socket type is support or not by mufd.
  *
  * @param domain

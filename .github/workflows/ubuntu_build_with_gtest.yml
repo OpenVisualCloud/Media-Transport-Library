@@ -13,6 +13,7 @@ on:
       - meson_options.txt
       - VERSION
       - .github/workflows/ubuntu_build_with_gtest.yml
+      - '.github/workflows/upl*'
   pull_request:
     paths:
       - 'include/**'
@@ -25,6 +26,7 @@ on:
       - meson_options.txt
       - VERSION
       - .github/workflows/ubuntu_build_with_gtest.yml
+      - '.github/workflows/upl*'
 
 concurrency: 
   group: ${{ github.head_ref || github.run_id }}
@@ -90,6 +92,8 @@ jobs:
         run: |
           sudo killall -SIGINT KahawaiTest || true
           sudo killall -SIGINT KahawaiUfdTest || true
+          sudo killall -SIGINT UsocketServerSample || true
+          sudo killall -SIGINT UsocketClientSample || true
 
       - name: Binding network adapter
         run: |
@@ -113,6 +117,10 @@ jobs:
       - name: Run ufd test case with rss
         run: |
           sudo ./build/tests/KahawaiUfdTest --p_port ${{  env.TEST_PORT_P  }} --r_port ${{  env.TEST_PORT_R  }} --queue_mode shared --udp_lcore --rss_mode l4_dst_port_only
+
+      - name: Run udp ld preload test case
+        run: |
+          sudo ./.github/workflows/upl_test.sh
 
       - name: Run st2110 test case
         run: |

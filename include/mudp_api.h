@@ -376,6 +376,21 @@ int mudp_get_sip(mudp_handle ut, uint8_t ip[MTL_IP_ADDR_LEN]);
 int mudp_tx_valid_ip(mudp_handle ut, uint8_t dip[MTL_IP_ADDR_LEN]);
 
 /**
+ * Register stat dump callback fuction.
+ *
+ * @param ut
+ *   The handle to udp transport socket.
+ * @param dump
+ *   The dump callback fuction.
+ * @param priv
+ *   The priv data to the callback fuction.
+ * @return
+ *   - 0: Success.
+ *   - <0: Error code.
+ */
+int mudp_register_stat_dump_cb(mudp_handle ut, int (*dump)(void* priv), void* priv);
+
+/**
  * Create a udp transport socket on a PCIE port.
  *
  * @param mt

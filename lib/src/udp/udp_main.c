@@ -543,6 +543,9 @@ static int udp_stat_dump(void* priv) {
     s->stat_timedwait = 0;
     s->stat_timedwait_timeout = 0;
   }
+  if (s->user_dump) {
+    s->user_dump(s->user_dump_priv);
+  }
   return 0;
 }
 
@@ -1538,6 +1541,25 @@ int mudp_tx_valid_ip(mudp_handle ut, uint8_t dip[MTL_IP_ADDR_LEN]) {
   }
 
   return -EINVAL;
+}
+
+int mudp_register_stat_dump_cb(mudp_handle ut, int (*dump)(void* priv), void* priv) {
+  struct mudp_impl* s = ut;
+  int idx = s->idx;
+
+  if (s->type != MT_HANDLE_UDP) {
+    err("%s(%d), invalid type %d\n", __func__, idx, s->type);
+    return -EIO;
+  }
+
+  if (s->user_dump) {
+    err("%s(%d), %p already registered\n", __func__, idx, s->user_dump);
+    return -EIO;
+  }
+
+  s->user_dump = dump;
+  s->user_dump_priv = priv;
+  return 0;
 }
 
 bool mudp_is_multicast(const struct sockaddr_in* saddr) {
