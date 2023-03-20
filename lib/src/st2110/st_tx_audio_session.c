@@ -1107,7 +1107,7 @@ static int tx_audio_session_attach(struct mtl_main_impl* impl,
   strncpy(s->ops_name, ops->name, ST_MAX_NAME_LEN - 1);
   s->ops = *ops;
   for (int i = 0; i < num_port; i++) {
-    s->st30_dst_port[i] = (ops->udp_dst_port[i]) ? (ops->udp_dst_port[i]) : (10100 + idx);
+    s->st30_dst_port[i] = (ops->udp_port[i]) ? (ops->udp_port[i]) : (10100 + idx);
     if (mt_random_src_port(impl))
       s->st30_src_port[i] = mt_random_port(s->st30_dst_port[i]);
     else

@@ -160,7 +160,7 @@ static void mtl_output_init(struct mtl_tx_session* s) {
   ops_tx.port.num_port = 1;
   inet_pton(AF_INET, s->ip, ops_tx.port.dip_addr[MTL_PORT_P]);
   strncpy(ops_tx.port.port[MTL_PORT_P], s->port, MTL_PORT_MAX_LEN);
-  ops_tx.port.udp_dst_port[MTL_PORT_P] = s->udp_port;  // user config the udp port.
+  ops_tx.port.udp_port[MTL_PORT_P] = s->udp_port;  // user config the udp port.
   ops_tx.width = vo_info->width;
   ops_tx.height = vo_info->height;
   ops_tx.fps = obs_to_mtl_fps(vo_info->fps_num, vo_info->fps_den);

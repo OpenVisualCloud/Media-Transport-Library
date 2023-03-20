@@ -2813,7 +2813,7 @@ static int rv_attach(struct mtl_main_impl* impl, struct st_rx_video_sessions_mgr
   strncpy(s->ops_name, ops->name, ST_MAX_NAME_LEN - 1);
   s->ops = *ops;
   for (int i = 0; i < num_port; i++) {
-    s->st20_dst_port[i] = (ops->udp_dst_port[i]) ? (ops->udp_dst_port[i]) : (10000 + idx);
+    s->st20_dst_port[i] = (ops->udp_port[i]) ? (ops->udp_port[i]) : (10000 + idx);
     s->st20_src_port[i] =
         (ops->udp_src_port[i]) ? (ops->udp_src_port[i]) : s->st20_dst_port[i];
   }
@@ -3139,8 +3139,8 @@ static int rv_update_src(struct mtl_main_impl* impl, struct st_rx_video_session_
   /* update ip and port */
   for (int i = 0; i < num_port; i++) {
     memcpy(ops->sip_addr[i], src->sip_addr[i], MTL_IP_ADDR_LEN);
-    ops->udp_dst_port[i] = src->udp_port[i];
-    s->st20_dst_port[i] = (ops->udp_dst_port[i]) ? (ops->udp_dst_port[i]) : (10000 + idx);
+    ops->udp_port[i] = src->udp_port[i];
+    s->st20_dst_port[i] = (ops->udp_port[i]) ? (ops->udp_port[i]) : (10000 + idx);
     s->st20_src_port[i] =
         (ops->udp_src_port[i]) ? (ops->udp_src_port[i]) : s->st20_dst_port[i];
   }
@@ -3933,7 +3933,7 @@ st22_rx_handle st22_rx_create(mtl_handle mt, struct st22_rx_ops* ops) {
     memcpy(st20_ops.sip_addr[i], ops->sip_addr[i], MTL_IP_ADDR_LEN);
     strncpy(st20_ops.port[i], ops->port[i], MTL_PORT_MAX_LEN);
     st20_ops.udp_src_port[i] = ops->udp_src_port[i];
-    st20_ops.udp_dst_port[i] = ops->udp_dst_port[i];
+    st20_ops.udp_port[i] = ops->udp_port[i];
   }
   if (ops->flags & ST22_RX_FLAG_DATA_PATH_ONLY)
     st20_ops.flags |= ST20_RX_FLAG_DATA_PATH_ONLY;

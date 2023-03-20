@@ -148,7 +148,7 @@ static int kahawai_read_header(AVFormatContext* ctx) {
     av_log(ctx, AV_LOG_ERROR, "Invalid UDP port: %d\n", s->udp_port);
     return AVERROR(EINVAL);
   }
-  ops_rx.port.udp_dst_port[MTL_PORT_P] = s->udp_port;
+  ops_rx.port.udp_port[MTL_PORT_P] = s->udp_port;
 
   if (s->width <= 0) {
     av_log(ctx, AV_LOG_ERROR, "Invalid transport width: %d\n", s->width);

@@ -287,7 +287,7 @@ index b0cac12a..8ebe09ec 100644
 +        ops_rx.port.num_port = 1;
 +        memcpy(ops_rx.port.sip_addr[MTL_PORT_P], pParams->IpAddr, MTL_IP_ADDR_LEN);
 +        strcpy(ops_rx.port.port[MTL_PORT_P], pParams->PortName);
-+        ops_rx.port.udp_dst_port[MTL_PORT_P] = pParams->UdpPort;
++        ops_rx.port.udp_port[MTL_PORT_P] = pParams->UdpPort;
 +        ops_rx.port.payload_type = pParams->PayloadType;
 +        ops_rx.width = pParams->nWidth;
 +        ops_rx.height = pParams->nHeight;

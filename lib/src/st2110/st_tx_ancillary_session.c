@@ -1202,7 +1202,7 @@ static int tx_ancillary_session_attach(struct mtl_main_impl* impl,
   strncpy(s->ops_name, ops->name, ST_MAX_NAME_LEN - 1);
   s->ops = *ops;
   for (int i = 0; i < num_port; i++) {
-    s->st40_dst_port[i] = (ops->udp_dst_port[i]) ? (ops->udp_dst_port[i]) : (10200 + idx);
+    s->st40_dst_port[i] = (ops->udp_port[i]) ? (ops->udp_port[i]) : (10200 + idx);
     if (mt_random_src_port(impl))
       s->st40_src_port[i] = mt_random_port(s->st40_dst_port[i]);
     else

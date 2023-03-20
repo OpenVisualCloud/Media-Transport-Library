@@ -152,7 +152,7 @@ int main(int argc, char** argv) {
            MTL_IP_ADDR_LEN);
     strncpy(ops_rx.port.port[MTL_SESSION_PORT_P], ctx.param.port[MTL_PORT_P],
             MTL_PORT_MAX_LEN);
-    ops_rx.port.udp_dst_port[MTL_SESSION_PORT_P] = ctx.udp_dst_port + i;
+    ops_rx.port.udp_port[MTL_SESSION_PORT_P] = ctx.udp_port + i;
     ops_rx.port.payload_type = ctx.payload_type;
     ops_rx.width = ctx.width;
     ops_rx.height = ctx.height;

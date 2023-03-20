@@ -324,7 +324,7 @@ static int rx_ancillary_session_attach(struct mtl_main_impl* impl,
   strncpy(s->ops_name, ops->name, ST_MAX_NAME_LEN - 1);
   s->ops = *ops;
   for (int i = 0; i < num_port; i++) {
-    s->st40_dst_port[i] = (ops->udp_dst_port[i]) ? (ops->udp_dst_port[i]) : (30000 + idx);
+    s->st40_dst_port[i] = (ops->udp_port[i]) ? (ops->udp_port[i]) : (30000 + idx);
     s->st40_src_port[i] =
         (ops->udp_src_port[i]) ? (ops->udp_src_port[i]) : s->st40_dst_port[i];
   }
@@ -408,8 +408,8 @@ static int rx_ancillary_session_update_src(struct mtl_main_impl* impl,
   /* update ip and port */
   for (int i = 0; i < num_port; i++) {
     memcpy(ops->sip_addr[i], src->sip_addr[i], MTL_IP_ADDR_LEN);
-    ops->udp_dst_port[i] = src->udp_port[i];
-    s->st40_dst_port[i] = (ops->udp_dst_port[i]) ? (ops->udp_dst_port[i]) : (30000 + idx);
+    ops->udp_port[i] = src->udp_port[i];
+    s->st40_dst_port[i] = (ops->udp_port[i]) ? (ops->udp_port[i]) : (30000 + idx);
     s->st40_src_port[i] =
         (ops->udp_src_port[i]) ? (ops->udp_src_port[i]) : s->st40_dst_port[i];
   }

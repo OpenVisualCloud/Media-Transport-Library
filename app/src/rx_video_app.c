@@ -442,7 +442,7 @@ static int app_rx_video_init(struct st_app_context* ctx, st_json_video_session_t
   strncpy(ops.port[MTL_SESSION_PORT_P],
           video ? video->base.inf[MTL_SESSION_PORT_P]->name : ctx->para.port[MTL_PORT_P],
           MTL_PORT_MAX_LEN);
-  ops.udp_dst_port[MTL_SESSION_PORT_P] = video ? video->base.udp_port : (10000 + s->idx);
+  ops.udp_port[MTL_SESSION_PORT_P] = video ? video->base.udp_port : (10000 + s->idx);
   if (ops.num_port > 1) {
     memcpy(ops.sip_addr[MTL_SESSION_PORT_R],
            video ? video->base.ip[MTL_SESSION_PORT_R] : ctx->rx_sip_addr[MTL_PORT_R],
@@ -451,8 +451,7 @@ static int app_rx_video_init(struct st_app_context* ctx, st_json_video_session_t
         ops.port[MTL_SESSION_PORT_R],
         video ? video->base.inf[MTL_SESSION_PORT_R]->name : ctx->para.port[MTL_PORT_R],
         MTL_PORT_MAX_LEN);
-    ops.udp_dst_port[MTL_SESSION_PORT_R] =
-        video ? video->base.udp_port : (10000 + s->idx);
+    ops.udp_port[MTL_SESSION_PORT_R] = video ? video->base.udp_port : (10000 + s->idx);
   }
   ops.pacing = ST21_PACING_NARROW;
   if (ctx->rx_video_rtp_ring_size > 0)

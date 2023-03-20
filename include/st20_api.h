@@ -853,10 +853,10 @@ struct st20_tx_ops {
   char port[MTL_SESSION_PORT_MAX][MTL_PORT_MAX_LEN];
   /** 1 or 2, num of ports this session attached to */
   uint8_t num_port;
-  /** UDP source port number */
+  /** UDP source port number, leave as 0 to use same port as dst */
   uint16_t udp_src_port[MTL_SESSION_PORT_MAX];
   /** UDP destination port number */
-  uint16_t udp_dst_port[MTL_SESSION_PORT_MAX];
+  uint16_t udp_port[MTL_SESSION_PORT_MAX];
 
   /** Sender pacing type */
   enum st21_pacing pacing;
@@ -970,10 +970,10 @@ struct st22_tx_ops {
   char port[MTL_SESSION_PORT_MAX][MTL_PORT_MAX_LEN];
   /** 1 or 2, num of ports this session attached to */
   uint8_t num_port;
-  /** UDP source port number */
+  /** UDP source port number, leave as 0 to use same port as dst */
   uint16_t udp_src_port[MTL_SESSION_PORT_MAX];
   /** UDP destination port number */
-  uint16_t udp_dst_port[MTL_SESSION_PORT_MAX];
+  uint16_t udp_port[MTL_SESSION_PORT_MAX];
 
   /** Session streaming type, frame or RTP */
   enum st22_type type;
@@ -1109,10 +1109,10 @@ struct st20_rx_ops {
   uint8_t num_port;
   /** Pcie BDF path like 0000:af:00.0, should align to BDF of mtl_init */
   char port[MTL_SESSION_PORT_MAX][MTL_PORT_MAX_LEN];
-  /** UDP source port number */
+  /** UDP source port number, leave as 0 to use same port as dst */
   uint16_t udp_src_port[MTL_SESSION_PORT_MAX];
   /** UDP destination port number */
-  uint16_t udp_dst_port[MTL_SESSION_PORT_MAX];
+  uint16_t udp_port[MTL_SESSION_PORT_MAX];
 
   /** Sender pacing type */
   enum st21_pacing pacing;
@@ -1251,10 +1251,10 @@ struct st22_rx_ops {
   uint8_t num_port;
   /** Pcie BDF path like 0000:af:00.0, should align to BDF of mtl_init */
   char port[MTL_SESSION_PORT_MAX][MTL_PORT_MAX_LEN];
-  /** UDP source port number */
+  /** UDP source port number, leave as 0 to use same port as dst */
   uint16_t udp_src_port[MTL_SESSION_PORT_MAX];
   /** UDP destination port number */
-  uint16_t udp_dst_port[MTL_SESSION_PORT_MAX];
+  uint16_t udp_port[MTL_SESSION_PORT_MAX];
   /** flags, value in ST22_RX_FLAG_* */
   uint32_t flags;
 

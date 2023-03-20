@@ -451,7 +451,7 @@ static void st22p_tx_ops_init(tests_context* st22, struct st22p_tx_ops* ops_tx) 
          MTL_IP_ADDR_LEN);
   strncpy(ops_tx->port.port[MTL_SESSION_PORT_P], ctx->para.port[MTL_PORT_P],
           MTL_PORT_MAX_LEN);
-  ops_tx->port.udp_dst_port[MTL_SESSION_PORT_P] = ST22P_TEST_UDP_PORT + st22->idx;
+  ops_tx->port.udp_port[MTL_SESSION_PORT_P] = ST22P_TEST_UDP_PORT + st22->idx;
   ops_tx->port.payload_type = ST22P_TEST_PAYLOAD_TYPE;
   ops_tx->width = 1920;
   ops_tx->height = 1080;
@@ -479,7 +479,7 @@ static void st22p_rx_ops_init(tests_context* st22, struct st22p_rx_ops* ops_rx) 
          MTL_IP_ADDR_LEN);
   strncpy(ops_rx->port.port[MTL_SESSION_PORT_P], ctx->para.port[MTL_PORT_R],
           MTL_PORT_MAX_LEN);
-  ops_rx->port.udp_dst_port[MTL_SESSION_PORT_P] = ST22P_TEST_UDP_PORT + st22->idx;
+  ops_rx->port.udp_port[MTL_SESSION_PORT_P] = ST22P_TEST_UDP_PORT + st22->idx;
   ops_rx->port.payload_type = ST22P_TEST_PAYLOAD_TYPE;
   ops_rx->width = 1920;
   ops_rx->height = 1080;
@@ -737,7 +737,7 @@ static void st22p_rx_digest_test(enum st_fps fps[], int width[], int height[],
            MTL_IP_ADDR_LEN);
     strncpy(ops_tx.port.port[MTL_SESSION_PORT_P], ctx->para.port[MTL_PORT_P],
             MTL_PORT_MAX_LEN);
-    ops_tx.port.udp_dst_port[MTL_SESSION_PORT_P] = ST22P_TEST_UDP_PORT + i;
+    ops_tx.port.udp_port[MTL_SESSION_PORT_P] = ST22P_TEST_UDP_PORT + i;
     ops_tx.port.payload_type = ST22P_TEST_PAYLOAD_TYPE;
     ops_tx.width = width[i];
     ops_tx.height = height[i];
@@ -810,7 +810,7 @@ static void st22p_rx_digest_test(enum st_fps fps[], int width[], int height[],
            MTL_IP_ADDR_LEN);
     strncpy(ops_rx.port.port[MTL_SESSION_PORT_P], ctx->para.port[MTL_PORT_R],
             MTL_PORT_MAX_LEN);
-    ops_rx.port.udp_dst_port[MTL_SESSION_PORT_P] = ST22P_TEST_UDP_PORT + i;
+    ops_rx.port.udp_port[MTL_SESSION_PORT_P] = ST22P_TEST_UDP_PORT + i;
     ops_rx.port.payload_type = ST22P_TEST_PAYLOAD_TYPE;
     ops_rx.width = width[i];
     ops_rx.height = height[i];

@@ -2512,7 +2512,7 @@ static int tv_attach(struct mtl_main_impl* impl, struct st_tx_video_sessions_mgr
   s->ops = *ops;
   s->s_type = s_type;
   for (int i = 0; i < num_port; i++) {
-    s->st20_dst_port[i] = (ops->udp_dst_port[i]) ? (ops->udp_dst_port[i]) : (10000 + idx);
+    s->st20_dst_port[i] = (ops->udp_port[i]) ? (ops->udp_port[i]) : (10000 + idx);
     if (mt_random_src_port(impl))
       s->st20_src_port[i] = mt_random_port(s->st20_dst_port[i]);
     else
@@ -3480,7 +3480,7 @@ st22_tx_handle st22_tx_create(mtl_handle mt, struct st22_tx_ops* ops) {
     memcpy(st20_ops.dip_addr[i], ops->dip_addr[i], MTL_IP_ADDR_LEN);
     strncpy(st20_ops.port[i], ops->port[i], MTL_PORT_MAX_LEN);
     st20_ops.udp_src_port[i] = ops->udp_src_port[i];
-    st20_ops.udp_dst_port[i] = ops->udp_dst_port[i];
+    st20_ops.udp_port[i] = ops->udp_port[i];
   }
   if (ops->flags & ST22_TX_FLAG_USER_P_MAC) {
     memcpy(&st20_ops.tx_dst_mac[MTL_SESSION_PORT_P][0],

@@ -350,7 +350,7 @@ int sample_parse_args(struct st_sample_context* ctx, int argc, char** argv, bool
   ctx->fmt = ST20_FMT_YUV_422_10BIT;
   ctx->input_fmt = ST_FRAME_FMT_YUV422RFC4175PG2BE10;
   ctx->output_fmt = ST_FRAME_FMT_YUV422RFC4175PG2BE10;
-  ctx->udp_dst_port = 20000;
+  ctx->udp_port = 20000;
   ctx->payload_type = 112;
   strncpy(ctx->tx_url, "test.yuv", sizeof(ctx->tx_url));
   strncpy(ctx->rx_url, "rx.yuv", sizeof(ctx->rx_url));

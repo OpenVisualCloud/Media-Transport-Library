@@ -193,12 +193,12 @@ static int app_rx_st22_init(struct st_app_context* ctx, struct st22_app_rx_sessi
   ops.num_port = ctx->para.num_ports;
   memcpy(ops.sip_addr[MTL_SESSION_PORT_P], ctx->rx_sip_addr[MTL_PORT_P], MTL_IP_ADDR_LEN);
   strncpy(ops.port[MTL_SESSION_PORT_P], ctx->para.port[MTL_PORT_P], MTL_PORT_MAX_LEN);
-  ops.udp_dst_port[MTL_SESSION_PORT_P] = 15000 + s->idx;
+  ops.udp_port[MTL_SESSION_PORT_P] = 15000 + s->idx;
   if (ops.num_port > 1) {
     memcpy(ops.sip_addr[MTL_SESSION_PORT_R], ctx->rx_sip_addr[MTL_PORT_R],
            MTL_IP_ADDR_LEN);
     strncpy(ops.port[MTL_SESSION_PORT_R], ctx->para.port[MTL_PORT_R], MTL_PORT_MAX_LEN);
-    ops.udp_dst_port[MTL_SESSION_PORT_R] = 15000 + s->idx;
+    ops.udp_port[MTL_SESSION_PORT_R] = 15000 + s->idx;
   }
   ops.pacing = ST21_PACING_NARROW;
   ops.width = s->width;

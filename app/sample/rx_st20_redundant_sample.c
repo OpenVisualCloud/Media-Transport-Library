@@ -170,8 +170,8 @@ int main(int argc, char** argv) {
             MTL_PORT_MAX_LEN);
     strncpy(ops_rx.port[MTL_SESSION_PORT_R], ctx.param.port[MTL_PORT_R],
             MTL_PORT_MAX_LEN);
-    ops_rx.udp_dst_port[MTL_SESSION_PORT_P] = ctx.udp_dst_port + i;
-    ops_rx.udp_dst_port[MTL_SESSION_PORT_R] = ctx.udp_dst_port + i;
+    ops_rx.udp_port[MTL_SESSION_PORT_P] = ctx.udp_port + i;
+    ops_rx.udp_port[MTL_SESSION_PORT_R] = ctx.udp_port + i;
     ops_rx.width = ctx.width;
     ops_rx.height = ctx.height;
     ops_rx.fps = ctx.fps;

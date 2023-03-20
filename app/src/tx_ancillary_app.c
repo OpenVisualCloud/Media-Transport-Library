@@ -414,7 +414,7 @@ static int app_tx_anc_init(struct st_app_context* ctx, st_json_ancillary_session
   strncpy(ops.port[MTL_SESSION_PORT_P],
           anc ? anc->base.inf[MTL_SESSION_PORT_P]->name : ctx->para.port[MTL_PORT_P],
           MTL_PORT_MAX_LEN);
-  ops.udp_dst_port[MTL_SESSION_PORT_P] = anc ? anc->base.udp_port : (10200 + s->idx);
+  ops.udp_port[MTL_SESSION_PORT_P] = anc ? anc->base.udp_port : (10200 + s->idx);
   if (ctx->has_tx_dst_mac[MTL_PORT_P]) {
     memcpy(&ops.tx_dst_mac[MTL_SESSION_PORT_P][0], ctx->tx_dst_mac[MTL_PORT_P],
            MTL_MAC_ADDR_LEN);
@@ -427,7 +427,7 @@ static int app_tx_anc_init(struct st_app_context* ctx, st_json_ancillary_session
     strncpy(ops.port[MTL_SESSION_PORT_R],
             anc ? anc->base.inf[MTL_SESSION_PORT_R]->name : ctx->para.port[MTL_PORT_R],
             MTL_PORT_MAX_LEN);
-    ops.udp_dst_port[MTL_SESSION_PORT_R] = anc ? anc->base.udp_port : (10200 + s->idx);
+    ops.udp_port[MTL_SESSION_PORT_R] = anc ? anc->base.udp_port : (10200 + s->idx);
     if (ctx->has_tx_dst_mac[MTL_PORT_R]) {
       memcpy(&ops.tx_dst_mac[MTL_SESSION_PORT_R][0], ctx->tx_dst_mac[MTL_PORT_R],
              MTL_MAC_ADDR_LEN);

@@ -174,8 +174,7 @@ int main(int argc, char** argv) {
     st_pthread_mutex_init(&app[i]->wake_mutex, NULL);
     st_pthread_cond_init(&app[i]->wake_cond, NULL);
 
-    mufd_init_sockaddr(&app[i]->serv_addr, ctx.tx_dip_addr[MTL_PORT_P],
-                       ctx.udp_dst_port + i);
+    mufd_init_sockaddr(&app[i]->serv_addr, ctx.tx_dip_addr[MTL_PORT_P], ctx.udp_port + i);
 
     app[i]->socket = mufd_socket(AF_INET, SOCK_DGRAM, 0);
     if (app[i]->socket < 0) {
