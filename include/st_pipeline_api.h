@@ -604,7 +604,9 @@ struct st_tx_port {
   char port[MTL_SESSION_PORT_MAX][MTL_PORT_MAX_LEN];
   /** 1 or 2, num of ports this session attached to */
   uint8_t num_port;
-  /** UDP port number */
+  /** UDP source port number, leave as 0 to use same port as dst */
+  uint16_t udp_src_port[MTL_SESSION_PORT_MAX];
+  /** UDP destination port number */
   uint16_t udp_port[MTL_SESSION_PORT_MAX];
   /** 7 bits payload type define in RFC3550 */
   uint8_t payload_type;
@@ -618,7 +620,9 @@ struct st_rx_port {
   uint8_t num_port;
   /** Pcie BDF path like 0000:af:00.0, should align to BDF of mtl_init */
   char port[MTL_SESSION_PORT_MAX][MTL_PORT_MAX_LEN];
-  /** UDP port number */
+  /** UDP source port number, leave as 0 to use same port as dst */
+  uint16_t udp_src_port[MTL_SESSION_PORT_MAX];
+  /** UDP destination port number */
   uint16_t udp_port[MTL_SESSION_PORT_MAX];
   /** 7 bits payload type define in RFC3550 */
   uint8_t payload_type;

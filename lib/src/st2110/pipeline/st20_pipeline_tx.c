@@ -230,6 +230,7 @@ static int tx_st20p_create_transport(struct mtl_main_impl* impl, struct st20p_tx
   for (int i = 0; i < ops_tx.num_port; i++) {
     memcpy(ops_tx.dip_addr[i], ops->port.dip_addr[i], MTL_IP_ADDR_LEN);
     strncpy(ops_tx.port[i], ops->port.port[i], MTL_PORT_MAX_LEN);
+    ops_tx.udp_src_port[i] = ops->port.udp_src_port[i];
     ops_tx.udp_port[i] = ops->port.udp_port[i];
   }
   if (ops->flags & ST20P_TX_FLAG_USER_P_MAC) {

@@ -1111,7 +1111,8 @@ static int tx_audio_session_attach(struct mtl_main_impl* impl,
     if (mt_random_src_port(impl))
       s->st30_src_port[i] = mt_random_port(s->st30_dst_port[i]);
     else
-      s->st30_src_port[i] = s->st30_dst_port[i];
+      s->st30_src_port[i] =
+          (ops->udp_src_port[i]) ? (ops->udp_src_port[i]) : s->st30_dst_port[i];
     enum mtl_port port = mt_port_logic2phy(s->port_maps, i);
     s->eth_ipv4_cksum_offload[i] = mt_if_has_offload_ipv4_cksum(impl, port);
     s->eth_has_chain[i] = mt_if_has_multi_seg(impl, port);
