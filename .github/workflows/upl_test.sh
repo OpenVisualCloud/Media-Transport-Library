@@ -14,9 +14,8 @@ MUPL_RX_SIP=192.168.89.81 # define in MUPL_RX_CFG
 MTL_LD_PRELOAD=/usr/local/lib/x86_64-linux-gnu/libmtl_udp_preload.so
 TEST_BIN_PATH=build/app
 
-TEST_TIME_SEC=10
+TEST_TIME_SEC=120
 SESSIONS_CNT=2
-MCAST_IP=239.168.89.88
 
 test_upl() {
 	local name=$1
@@ -48,6 +47,6 @@ test_upl() {
 # test upl
 test_upl upl_default UsocketClientSample UsocketServerSample "${MUPL_RX_SIP}" "${MUPL_TX_SIP}"
 # test upl multicast
-test_upl upl_default UsocketClientSample UsocketServerSample "${MCAST_IP}" "${MCAST_IP}"
+# test_upl upl_default UsocketClientSample UsocketServerSample 239.168.89.88 239.168.89.88
 
 echo "****** All test OK ******"

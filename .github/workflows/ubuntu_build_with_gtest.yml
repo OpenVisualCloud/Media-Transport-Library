@@ -92,6 +92,8 @@ jobs:
         run: |
           sudo killall -SIGINT KahawaiTest || true
           sudo killall -SIGINT KahawaiUfdTest || true
+          sudo killall -SIGINT UsocketServerSample || true
+          sudo killall -SIGINT UsocketClientSample || true
 
       - name: Binding network adapter
         run: |
