@@ -69,8 +69,10 @@ struct st20r_rx_ops {
   uint8_t num_port;
   /** Pcie BDF path like 0000:af:00.0, should align to BDF of mtl_init */
   char port[MTL_SESSION_PORT_MAX][MTL_PORT_MAX_LEN];
-  /** UDP port number */
-  uint16_t udp_port[MTL_SESSION_PORT_MAX];
+  /** UDP source port number */
+  uint16_t udp_src_port[MTL_SESSION_PORT_MAX];
+  /** UDP destination port number */
+  uint16_t udp_dst_port[MTL_SESSION_PORT_MAX];
 
   /** Sender pacing type */
   enum st21_pacing pacing;

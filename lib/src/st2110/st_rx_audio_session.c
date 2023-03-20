@@ -603,6 +603,7 @@ static int rx_audio_session_init_hw(struct mtl_main_impl* impl,
     rte_memcpy(flow.dip_addr, s->ops.sip_addr[i], MTL_IP_ADDR_LEN);
     rte_memcpy(flow.sip_addr, mt_sip_addr(impl, port), MTL_IP_ADDR_LEN);
     flow.dst_port = s->st30_dst_port[i];
+    flow.src_port = s->st30_src_port[i];
 
     /* no flow for data path only */
     if (mt_pmd_is_kernel(impl, port) && (s->ops.flags & ST30_RX_FLAG_DATA_PATH_ONLY))
@@ -704,8 +705,9 @@ static int rx_audio_session_attach(struct mtl_main_impl* impl,
   strncpy(s->ops_name, ops->name, ST_MAX_NAME_LEN - 1);
   s->ops = *ops;
   for (int i = 0; i < num_port; i++) {
-    s->st30_src_port[i] = (ops->udp_port[i]) ? (ops->udp_port[i]) : (20000 + idx);
-    s->st30_dst_port[i] = s->st30_src_port[i];
+    s->st30_dst_port[i] = (ops->udp_dst_port[i]) ? (ops->udp_dst_port[i]) : (20000 + idx);
+    s->st30_src_port[i] =
+        (ops->udp_src_port[i]) ? (ops->udp_src_port[i]) : s->st30_dst_port[i];
   }
 
   size_t bytes_in_pkt = ST_PKT_MAX_ETHER_BYTES - sizeof(struct st_rfc3550_audio_hdr);
@@ -818,9 +820,10 @@ static int rx_audio_session_update_src(struct mtl_main_impl* impl,
   /* update ip and port */
   for (int i = 0; i < num_port; i++) {
     memcpy(ops->sip_addr[i], src->sip_addr[i], MTL_IP_ADDR_LEN);
-    ops->udp_port[i] = src->udp_port[i];
-    s->st30_src_port[i] = (ops->udp_port[i]) ? (ops->udp_port[i]) : (20000 + idx);
-    s->st30_dst_port[i] = s->st30_src_port[i];
+    ops->udp_dst_port[i] = src->udp_port[i];
+    s->st30_dst_port[i] = (ops->udp_dst_port[i]) ? (ops->udp_dst_port[i]) : (20000 + idx);
+    s->st30_src_port[i] =
+        (ops->udp_src_port[i]) ? (ops->udp_src_port[i]) : s->st30_dst_port[i];
   }
   /* reset seq id */
   s->st30_seq_id = -1;

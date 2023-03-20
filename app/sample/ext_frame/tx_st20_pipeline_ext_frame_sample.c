@@ -204,13 +204,13 @@ int main(int argc, char** argv) {
            MTL_IP_ADDR_LEN);
     strncpy(ops_tx.port.port[MTL_SESSION_PORT_P], ctx.param.port[MTL_PORT_P],
             MTL_PORT_MAX_LEN);
-    ops_tx.port.udp_port[MTL_SESSION_PORT_P] = ctx.udp_port + i;
+    ops_tx.port.udp_dst_port[MTL_SESSION_PORT_P] = ctx.udp_dst_port + i;
     if (ops_tx.port.num_port > 1) {
       memcpy(ops_tx.port.dip_addr[MTL_SESSION_PORT_R], ctx.tx_dip_addr[MTL_PORT_R],
              MTL_IP_ADDR_LEN);
       strncpy(ops_tx.port.port[MTL_SESSION_PORT_R], ctx.param.port[MTL_PORT_R],
               MTL_PORT_MAX_LEN);
-      ops_tx.port.udp_port[MTL_SESSION_PORT_R] = ctx.udp_port + i;
+      ops_tx.port.udp_dst_port[MTL_SESSION_PORT_R] = ctx.udp_dst_port + i;
     }
     ops_tx.port.payload_type = ctx.payload_type;
     ops_tx.width = ctx.width;

@@ -520,12 +520,12 @@ static void st20_tx_ops_init(tests_context* st20, struct st20_tx_ops* ops) {
   memcpy(ops->dip_addr[MTL_SESSION_PORT_P], ctx->mcast_ip_addr[MTL_PORT_P],
          MTL_IP_ADDR_LEN);
   strncpy(ops->port[MTL_SESSION_PORT_P], ctx->para.port[MTL_PORT_P], MTL_PORT_MAX_LEN);
-  ops->udp_port[MTL_SESSION_PORT_P] = 10000 + st20->idx;
+  ops->udp_dst_port[MTL_SESSION_PORT_P] = 10000 + st20->idx;
   if (ops->num_port == 2) {
     memcpy(ops->dip_addr[MTL_SESSION_PORT_R], ctx->mcast_ip_addr[MTL_PORT_R],
            MTL_IP_ADDR_LEN);
     strncpy(ops->port[MTL_SESSION_PORT_R], ctx->para.port[MTL_PORT_R], MTL_PORT_MAX_LEN);
-    ops->udp_port[MTL_SESSION_PORT_R] = 10000 + st20->idx;
+    ops->udp_dst_port[MTL_SESSION_PORT_R] = 10000 + st20->idx;
   }
   ops->pacing = ST21_PACING_NARROW;
   ops->type = ST20_TYPE_FRAME_LEVEL;
@@ -551,12 +551,12 @@ static void st20_rx_ops_init(tests_context* st20, struct st20_rx_ops* ops) {
   memcpy(ops->sip_addr[MTL_SESSION_PORT_P], ctx->mcast_ip_addr[MTL_PORT_P],
          MTL_IP_ADDR_LEN);
   strncpy(ops->port[MTL_SESSION_PORT_P], ctx->para.port[MTL_PORT_P], MTL_PORT_MAX_LEN);
-  ops->udp_port[MTL_SESSION_PORT_P] = 10000 + st20->idx;
+  ops->udp_dst_port[MTL_SESSION_PORT_P] = 10000 + st20->idx;
   if (ops->num_port == 2) {
     memcpy(ops->sip_addr[MTL_SESSION_PORT_R], ctx->mcast_ip_addr[MTL_PORT_R],
            MTL_IP_ADDR_LEN);
     strncpy(ops->port[MTL_SESSION_PORT_R], ctx->para.port[MTL_PORT_R], MTL_PORT_MAX_LEN);
-    ops->udp_port[MTL_SESSION_PORT_R] = 10000 + st20->idx;
+    ops->udp_dst_port[MTL_SESSION_PORT_R] = 10000 + st20->idx;
   }
   ops->pacing = ST21_PACING_NARROW;
   ops->type = ST20_TYPE_FRAME_LEVEL;
@@ -879,7 +879,7 @@ static void st20_rx_fps_test(enum st20_type type[], enum st_fps fps[], int width
            MTL_IP_ADDR_LEN);
     strncpy(ops_tx.port[MTL_SESSION_PORT_P], ctx->para.port[MTL_PORT_P],
             MTL_PORT_MAX_LEN);
-    ops_tx.udp_port[MTL_SESSION_PORT_P] = 10000 + i;
+    ops_tx.udp_dst_port[MTL_SESSION_PORT_P] = 10000 + i;
     ops_tx.pacing = ST21_PACING_NARROW;
     ops_tx.type = type[i];
     ops_tx.width = width[i];
@@ -945,7 +945,7 @@ static void st20_rx_fps_test(enum st20_type type[], enum st_fps fps[], int width
            MTL_IP_ADDR_LEN);
     strncpy(ops_rx.port[MTL_SESSION_PORT_P], ctx->para.port[MTL_PORT_R],
             MTL_PORT_MAX_LEN);
-    ops_rx.udp_port[MTL_SESSION_PORT_P] = 10000 + i;
+    ops_rx.udp_dst_port[MTL_SESSION_PORT_P] = 10000 + i;
     ops_rx.pacing = ST21_PACING_NARROW;
     ops_rx.type = type[i];
     ops_rx.width = width[i];
@@ -1307,7 +1307,7 @@ static void st20_rx_update_src_test(enum st20_type type, int tx_sessions) {
              MTL_IP_ADDR_LEN);
     strncpy(ops_tx.port[MTL_SESSION_PORT_P], ctx->para.port[MTL_PORT_P],
             MTL_PORT_MAX_LEN);
-    ops_tx.udp_port[MTL_SESSION_PORT_P] = 10000 + i;
+    ops_tx.udp_dst_port[MTL_SESSION_PORT_P] = 10000 + i;
     ops_tx.pacing = ST21_PACING_NARROW;
     ops_tx.type = type;
     ops_tx.width = 1920;
@@ -1346,7 +1346,7 @@ static void st20_rx_update_src_test(enum st20_type type, int tx_sessions) {
            MTL_IP_ADDR_LEN);
     strncpy(ops_rx.port[MTL_SESSION_PORT_P], ctx->para.port[MTL_PORT_R],
             MTL_PORT_MAX_LEN);
-    ops_rx.udp_port[MTL_SESSION_PORT_P] = 10000 + i;
+    ops_rx.udp_dst_port[MTL_SESSION_PORT_P] = 10000 + i;
     ops_rx.pacing = ST21_PACING_NARROW;
     ops_rx.type = type;
     ops_rx.width = 1920;
@@ -1801,9 +1801,9 @@ static void st20_rx_digest_test(enum st20_type tx_type[], enum st20_type rx_type
     strncpy(ops_tx.port[MTL_SESSION_PORT_P], ctx->para.port[MTL_PORT_P],
             MTL_PORT_MAX_LEN);
     if (hdr_split)
-      ops_tx.udp_port[MTL_SESSION_PORT_P] = 6970 + i;
+      ops_tx.udp_dst_port[MTL_SESSION_PORT_P] = 6970 + i;
     else
-      ops_tx.udp_port[MTL_SESSION_PORT_P] = 10000 + i;
+      ops_tx.udp_dst_port[MTL_SESSION_PORT_P] = 10000 + i;
     ops_tx.pacing = ST21_PACING_NARROW;
     ops_tx.packing = packing[i];
     ops_tx.type = tx_type[i];
@@ -1885,9 +1885,9 @@ static void st20_rx_digest_test(enum st20_type tx_type[], enum st20_type rx_type
     strncpy(ops_rx.port[MTL_SESSION_PORT_P], ctx->para.port[MTL_PORT_R],
             MTL_PORT_MAX_LEN);
     if (hdr_split)
-      ops_rx.udp_port[MTL_SESSION_PORT_P] = 6970 + i;
+      ops_rx.udp_dst_port[MTL_SESSION_PORT_P] = 6970 + i;
     else
-      ops_rx.udp_port[MTL_SESSION_PORT_P] = 10000 + i;
+      ops_rx.udp_dst_port[MTL_SESSION_PORT_P] = 10000 + i;
     ops_rx.pacing = ST21_PACING_NARROW;
     ops_rx.type = rx_type[i];
     ops_rx.width = width[i];
@@ -2654,7 +2654,7 @@ static void st20_rx_meta_test(enum st_fps fps[], int width[], int height[],
            MTL_IP_ADDR_LEN);
     strncpy(ops_tx.port[MTL_SESSION_PORT_P], ctx->para.port[MTL_PORT_P],
             MTL_PORT_MAX_LEN);
-    ops_tx.udp_port[MTL_SESSION_PORT_P] = 10000 + i;
+    ops_tx.udp_dst_port[MTL_SESSION_PORT_P] = 10000 + i;
     ops_tx.pacing = ST21_PACING_NARROW;
     ops_tx.packing = ST20_PACKING_BPM;
     ops_tx.type = ST20_TYPE_RTP_LEVEL;
@@ -2689,7 +2689,7 @@ static void st20_rx_meta_test(enum st_fps fps[], int width[], int height[],
            MTL_IP_ADDR_LEN);
     strncpy(ops_rx.port[MTL_SESSION_PORT_P], ctx->para.port[MTL_PORT_R],
             MTL_PORT_MAX_LEN);
-    ops_rx.udp_port[MTL_SESSION_PORT_P] = 10000 + i;
+    ops_rx.udp_dst_port[MTL_SESSION_PORT_P] = 10000 + i;
     ops_rx.pacing = ST21_PACING_NARROW;
     ops_rx.type = ST20_TYPE_FRAME_LEVEL;
     ops_rx.width = width[i];
@@ -2827,7 +2827,7 @@ static void st20_rx_after_start_test(enum st20_type type[], enum st_fps fps[],
              MTL_IP_ADDR_LEN);
       strncpy(ops_tx.port[MTL_SESSION_PORT_P], ctx->para.port[MTL_PORT_P],
               MTL_PORT_MAX_LEN);
-      ops_tx.udp_port[MTL_SESSION_PORT_P] = 10000 + i;
+      ops_tx.udp_dst_port[MTL_SESSION_PORT_P] = 10000 + i;
       ops_tx.pacing = ST21_PACING_NARROW;
       ops_tx.type = type[i];
       ops_tx.width = width[i];
@@ -2865,7 +2865,7 @@ static void st20_rx_after_start_test(enum st20_type type[], enum st_fps fps[],
              MTL_IP_ADDR_LEN);
       strncpy(ops_rx.port[MTL_SESSION_PORT_P], ctx->para.port[MTL_PORT_R],
               MTL_PORT_MAX_LEN);
-      ops_rx.udp_port[MTL_SESSION_PORT_P] = 10000 + i;
+      ops_rx.udp_dst_port[MTL_SESSION_PORT_P] = 10000 + i;
       ops_rx.pacing = ST21_PACING_NARROW;
       ops_rx.type = type[i];
       ops_rx.width = width[i];
@@ -3039,7 +3039,7 @@ static void st20_rx_uframe_test(enum st20_type rx_type[], enum st20_packing pack
            MTL_IP_ADDR_LEN);
     strncpy(ops_tx.port[MTL_SESSION_PORT_P], ctx->para.port[MTL_PORT_P],
             MTL_PORT_MAX_LEN);
-    ops_tx.udp_port[MTL_SESSION_PORT_P] = 10000 + i;
+    ops_tx.udp_dst_port[MTL_SESSION_PORT_P] = 10000 + i;
     ops_tx.pacing = ST21_PACING_NARROW;
     ops_tx.packing = packing[i];
     ops_tx.type = ST20_TYPE_FRAME_LEVEL;
@@ -3110,7 +3110,7 @@ static void st20_rx_uframe_test(enum st20_type rx_type[], enum st20_packing pack
            MTL_IP_ADDR_LEN);
     strncpy(ops_rx.port[MTL_SESSION_PORT_P], ctx->para.port[MTL_PORT_R],
             MTL_PORT_MAX_LEN);
-    ops_rx.udp_port[MTL_SESSION_PORT_P] = 10000 + i;
+    ops_rx.udp_dst_port[MTL_SESSION_PORT_P] = 10000 + i;
     ops_rx.pacing = ST21_PACING_NARROW;
     ops_rx.type = rx_type[i];
     ops_rx.width = width[i];
@@ -3316,7 +3316,7 @@ static void st20_rx_detect_test(enum st20_type tx_type[], enum st20_type rx_type
            MTL_IP_ADDR_LEN);
     strncpy(ops_tx.port[MTL_SESSION_PORT_P], ctx->para.port[MTL_PORT_P],
             MTL_PORT_MAX_LEN);
-    ops_tx.udp_port[MTL_SESSION_PORT_P] = 10000 + i;
+    ops_tx.udp_dst_port[MTL_SESSION_PORT_P] = 10000 + i;
     ops_tx.pacing = ST21_PACING_NARROW;
     ops_tx.packing = packing[i];
     ops_tx.type = tx_type[i];
@@ -3401,7 +3401,7 @@ static void st20_rx_detect_test(enum st20_type tx_type[], enum st20_type rx_type
            MTL_IP_ADDR_LEN);
     strncpy(ops_rx.port[MTL_SESSION_PORT_P], ctx->para.port[MTL_PORT_R],
             MTL_PORT_MAX_LEN);
-    ops_rx.udp_port[MTL_SESSION_PORT_P] = 10000 + i;
+    ops_rx.udp_dst_port[MTL_SESSION_PORT_P] = 10000 + i;
     ops_rx.pacing = ST21_PACING_NARROW;
     ops_rx.type = rx_type[i];
     ops_rx.width = 1920;
@@ -3615,7 +3615,7 @@ static void st20_rx_dump_test(enum st20_type type[], enum st_fps fps[], int widt
            MTL_IP_ADDR_LEN);
     strncpy(ops_tx.port[MTL_SESSION_PORT_P], ctx->para.port[MTL_PORT_P],
             MTL_PORT_MAX_LEN);
-    ops_tx.udp_port[MTL_SESSION_PORT_P] = 10000 + i;
+    ops_tx.udp_dst_port[MTL_SESSION_PORT_P] = 10000 + i;
     ops_tx.pacing = ST21_PACING_NARROW;
     ops_tx.type = type[i];
     ops_tx.width = width[i];
@@ -3654,7 +3654,7 @@ static void st20_rx_dump_test(enum st20_type type[], enum st_fps fps[], int widt
            MTL_IP_ADDR_LEN);
     strncpy(ops_rx.port[MTL_SESSION_PORT_P], ctx->para.port[MTL_PORT_R],
             MTL_PORT_MAX_LEN);
-    ops_rx.udp_port[MTL_SESSION_PORT_P] = 10000 + i;
+    ops_rx.udp_dst_port[MTL_SESSION_PORT_P] = 10000 + i;
     ops_rx.pacing = ST21_PACING_NARROW;
     ops_rx.type = type[i];
     ops_rx.width = width[i];
@@ -3822,7 +3822,7 @@ static void st20_tx_ext_frame_rx_digest_test(enum st20_packing packing[],
            MTL_IP_ADDR_LEN);
     strncpy(ops_tx.port[MTL_SESSION_PORT_P], ctx->para.port[MTL_PORT_P],
             MTL_PORT_MAX_LEN);
-    ops_tx.udp_port[MTL_SESSION_PORT_P] = 10000 + i;
+    ops_tx.udp_dst_port[MTL_SESSION_PORT_P] = 10000 + i;
     ops_tx.pacing = ST21_PACING_NARROW;
     ops_tx.packing = packing[i];
     ops_tx.type = ST20_TYPE_FRAME_LEVEL;
@@ -3930,7 +3930,7 @@ static void st20_tx_ext_frame_rx_digest_test(enum st20_packing packing[],
            MTL_IP_ADDR_LEN);
     strncpy(ops_rx.port[MTL_SESSION_PORT_P], ctx->para.port[MTL_PORT_R],
             MTL_PORT_MAX_LEN);
-    ops_rx.udp_port[MTL_SESSION_PORT_P] = 10000 + i;
+    ops_rx.udp_dst_port[MTL_SESSION_PORT_P] = 10000 + i;
     ops_rx.pacing = ST21_PACING_NARROW;
     ops_rx.type = ST20_TYPE_FRAME_LEVEL;
     ops_rx.width = width[i];
@@ -4158,7 +4158,7 @@ static void st20_tx_user_pacing_test(int width[], int height[], enum st20_fmt fm
            MTL_IP_ADDR_LEN);
     strncpy(ops_tx.port[MTL_SESSION_PORT_P], ctx->para.port[MTL_PORT_P],
             MTL_PORT_MAX_LEN);
-    ops_tx.udp_port[MTL_SESSION_PORT_P] = 10000 + i;
+    ops_tx.udp_dst_port[MTL_SESSION_PORT_P] = 10000 + i;
     ops_tx.pacing = ST21_PACING_NARROW;
     ops_tx.packing = ST20_PACKING_BPM;
     ops_tx.type = ST20_TYPE_FRAME_LEVEL;
@@ -4216,7 +4216,7 @@ static void st20_tx_user_pacing_test(int width[], int height[], enum st20_fmt fm
            MTL_IP_ADDR_LEN);
     strncpy(ops_rx.port[MTL_SESSION_PORT_P], ctx->para.port[MTL_PORT_R],
             MTL_PORT_MAX_LEN);
-    ops_rx.udp_port[MTL_SESSION_PORT_P] = 10000 + i;
+    ops_rx.udp_dst_port[MTL_SESSION_PORT_P] = 10000 + i;
     ops_rx.pacing = ST21_PACING_NARROW;
     ops_rx.type = ST20_TYPE_FRAME_LEVEL;
     ops_rx.width = width[i];
@@ -4354,7 +4354,7 @@ static void st20_linesize_digest_test(enum st20_packing packing[], enum st_fps f
            MTL_IP_ADDR_LEN);
     strncpy(ops_tx.port[MTL_SESSION_PORT_P], ctx->para.port[MTL_PORT_P],
             MTL_PORT_MAX_LEN);
-    ops_tx.udp_port[MTL_SESSION_PORT_P] = 10000 + i;
+    ops_tx.udp_dst_port[MTL_SESSION_PORT_P] = 10000 + i;
     ops_tx.pacing = ST21_PACING_NARROW;
     ops_tx.packing = packing[i];
     ops_tx.type = ST20_TYPE_FRAME_LEVEL;
@@ -4476,7 +4476,7 @@ static void st20_linesize_digest_test(enum st20_packing packing[], enum st_fps f
            MTL_IP_ADDR_LEN);
     strncpy(ops_rx.port[MTL_SESSION_PORT_P], ctx->para.port[MTL_PORT_R],
             MTL_PORT_MAX_LEN);
-    ops_rx.udp_port[MTL_SESSION_PORT_P] = 10000 + i;
+    ops_rx.udp_dst_port[MTL_SESSION_PORT_P] = 10000 + i;
     ops_rx.pacing = ST21_PACING_NARROW;
     ops_rx.type = ST20_TYPE_FRAME_LEVEL;
     ops_rx.width = width[i];

@@ -112,7 +112,8 @@ static uint32_t rss_flow_hash(struct mt_rx_flow* flow, enum mt_rss_mode rss) {
                                flow->dip_addr[3]);
   uint32_t dst_addr = RTE_IPV4(flow->sip_addr[0], flow->sip_addr[1], flow->sip_addr[2],
                                flow->sip_addr[3]);
-  uint32_t port = flow->dst_port;
+  uint32_t src_port = flow->src_port;
+  uint32_t dst_port = flow->dst_port;
 
   if (rss == MT_RSS_MODE_L3) {
     tuple[0] = src_addr;
@@ -122,22 +123,22 @@ static uint32_t rss_flow_hash(struct mt_rx_flow* flow, enum mt_rss_mode rss) {
     tuple[0] = src_addr;
     tuple[1] = dst_addr;
     /* temp use dst_port now */
-    tuple[2] = (port << 16) | port;
+    tuple[2] = (dst_port << 16) | src_port;
     len = 3;
   } else if (rss == MT_RSS_MODE_L3_L4_DP_ONLY) {
     tuple[0] = src_addr;
     tuple[1] = dst_addr;
-    tuple[2] = (port << 16) | 0;
+    tuple[2] = (dst_port << 16) | 0;
     len = 3;
   } else if (rss == MT_RSS_MODE_L3_DA_L4_DP_ONLY) {
     tuple[0] = src_addr;
-    tuple[1] = (port << 16) | 0;
+    tuple[1] = (dst_port << 16) | 0;
     len = 2;
   } else if (rss == MT_RSS_MODE_L4_DP_ONLY) {
-    tuple[0] = (port << 16) | 0;
+    tuple[0] = (dst_port << 16) | 0;
     len = 1;
   } else {
-    err("%s(%d), not support rss mode %d\n", __func__, port, rss);
+    err("%s(%d), not support rss mode %d\n", __func__, dst_port, rss);
     return 0;
   }
 

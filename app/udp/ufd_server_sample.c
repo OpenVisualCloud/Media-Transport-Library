@@ -242,14 +242,14 @@ int main(int argc, char** argv) {
     if (ctx.has_tx_dst_mac[MTL_PORT_P])
       mufd_set_tx_mac(app[i]->socket, ctx.tx_dst_mac[MTL_PORT_P]);
     mufd_init_sockaddr(&app[i]->client_addr, ctx.rx_sip_addr[MTL_PORT_P],
-                       ctx.udp_port + i);
+                       ctx.udp_dst_port + i);
     bool mcast = mudp_is_multicast(&app[i]->client_addr);
 
     if (mcast) /* bind to any addr for mcast */
-      mudp_init_sockaddr_any(&app[i]->bind_addr, ctx.udp_port + i);
+      mudp_init_sockaddr_any(&app[i]->bind_addr, ctx.udp_dst_port + i);
     else
       mudp_init_sockaddr(&app[i]->bind_addr, ctx.param.sip_addr[MTL_PORT_P],
-                         ctx.udp_port + i);
+                         ctx.udp_dst_port + i);
     ret = mufd_bind(app[i]->socket, (const struct sockaddr*)&app[i]->bind_addr,
                     sizeof(app[i]->bind_addr));
     if (ret < 0) {

@@ -182,7 +182,7 @@ int main(int argc, char** argv) {
     strncpy(ops_tx.port[MTL_SESSION_PORT_P], ctx.param.port[MTL_PORT_P],
             MTL_PORT_MAX_LEN);
     if (ctx.ext_frame) ops_tx.flags |= ST20_TX_FLAG_EXT_FRAME;
-    ops_tx.udp_port[MTL_SESSION_PORT_P] = ctx.udp_port + i;  // udp port
+    ops_tx.udp_dst_port[MTL_SESSION_PORT_P] = ctx.udp_dst_port + i;  // udp port
     ops_tx.pacing = ST21_PACING_NARROW;
     ops_tx.type = ST20_TYPE_FRAME_LEVEL;
     ops_tx.width = ctx.width;

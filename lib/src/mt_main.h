@@ -397,6 +397,7 @@ struct mt_rx_flow {
   uint8_t sip_addr[MTL_IP_ADDR_LEN]; /* source IP */
   bool no_port_flow;                 /* if apply port flow or not */
   uint16_t dst_port;                 /* udp destination port */
+  uint16_t src_port;                 /* udp source port */
 
   /* optional */
   bool hdr_split; /* if request hdr split */

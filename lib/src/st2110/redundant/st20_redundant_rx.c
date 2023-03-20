@@ -147,7 +147,8 @@ static int rx_st20r_create_transport(struct st20r_rx_ctx* ctx, struct st20r_rx_o
   ops_rx.num_port = 1;
   memcpy(ops_rx.sip_addr[MTL_SESSION_PORT_P], ops->sip_addr[port], MTL_IP_ADDR_LEN);
   strncpy(ops_rx.port[MTL_SESSION_PORT_P], ops->port[port], MTL_PORT_MAX_LEN - 1);
-  ops_rx.udp_port[MTL_SESSION_PORT_P] = ops->udp_port[port];
+  ops_rx.udp_src_port[MTL_SESSION_PORT_P] = ops->udp_src_port[port];
+  ops_rx.udp_dst_port[MTL_SESSION_PORT_P] = ops->udp_dst_port[port];
 
   if (ops->flags & ST20R_RX_FLAG_DATA_PATH_ONLY)
     ops_rx.flags |= ST20_RX_FLAG_DATA_PATH_ONLY;

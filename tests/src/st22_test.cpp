@@ -98,12 +98,12 @@ static void st22_tx_ops_init(tests_context* st22, struct st22_tx_ops* ops) {
   memcpy(ops->dip_addr[MTL_SESSION_PORT_P], ctx->mcast_ip_addr[MTL_PORT_P],
          MTL_IP_ADDR_LEN);
   strncpy(ops->port[MTL_SESSION_PORT_P], ctx->para.port[MTL_PORT_P], MTL_PORT_MAX_LEN);
-  ops->udp_port[MTL_SESSION_PORT_P] = 10000 + st22->idx;
+  ops->udp_dst_port[MTL_SESSION_PORT_P] = 10000 + st22->idx;
   if (ops->num_port > 1) {
     memcpy(ops->dip_addr[MTL_SESSION_PORT_R], ctx->mcast_ip_addr[MTL_PORT_R],
            MTL_IP_ADDR_LEN);
     strncpy(ops->port[MTL_SESSION_PORT_R], ctx->para.port[MTL_PORT_R], MTL_PORT_MAX_LEN);
-    ops->udp_port[MTL_SESSION_PORT_R] = 10000 + st22->idx;
+    ops->udp_dst_port[MTL_SESSION_PORT_R] = 10000 + st22->idx;
   }
   ops->pacing = ST21_PACING_NARROW;
   ops->width = 1920;
@@ -130,12 +130,12 @@ static void st22_rx_ops_init(tests_context* st22, struct st22_rx_ops* ops) {
   memcpy(ops->sip_addr[MTL_SESSION_PORT_P], ctx->mcast_ip_addr[MTL_PORT_P],
          MTL_IP_ADDR_LEN);
   strncpy(ops->port[MTL_SESSION_PORT_P], ctx->para.port[MTL_PORT_P], MTL_PORT_MAX_LEN);
-  ops->udp_port[MTL_SESSION_PORT_P] = 10000 + st22->idx;
+  ops->udp_dst_port[MTL_SESSION_PORT_P] = 10000 + st22->idx;
   if (ops->num_port == 2) {
     memcpy(ops->sip_addr[MTL_SESSION_PORT_R], ctx->mcast_ip_addr[MTL_PORT_R],
            MTL_IP_ADDR_LEN);
     strncpy(ops->port[MTL_SESSION_PORT_R], ctx->para.port[MTL_PORT_R], MTL_PORT_MAX_LEN);
-    ops->udp_port[MTL_PORT_R] = 10000 + st22->idx;
+    ops->udp_dst_port[MTL_PORT_R] = 10000 + st22->idx;
   }
   ops->pacing = ST21_PACING_NARROW;
   ops->width = 1920;
@@ -395,7 +395,7 @@ static void st22_rx_fps_test(enum st22_type type[], enum st_fps fps[], int width
            MTL_IP_ADDR_LEN);
     strncpy(ops_tx.port[MTL_SESSION_PORT_P], ctx->para.port[MTL_PORT_P],
             MTL_PORT_MAX_LEN);
-    ops_tx.udp_port[MTL_SESSION_PORT_P] = 15000 + i;
+    ops_tx.udp_dst_port[MTL_SESSION_PORT_P] = 15000 + i;
     ops_tx.pacing = ST21_PACING_NARROW;
     ops_tx.width = width[i];
     ops_tx.height = height[i];
@@ -449,7 +449,7 @@ static void st22_rx_fps_test(enum st22_type type[], enum st_fps fps[], int width
            MTL_IP_ADDR_LEN);
     strncpy(ops_rx.port[MTL_SESSION_PORT_P], ctx->para.port[MTL_PORT_R],
             MTL_PORT_MAX_LEN);
-    ops_rx.udp_port[MTL_SESSION_PORT_P] = 15000 + i;
+    ops_rx.udp_dst_port[MTL_SESSION_PORT_P] = 15000 + i;
     ops_rx.pacing = ST21_PACING_NARROW;
     ops_rx.width = width[i];
     ops_rx.height = height[i];
@@ -598,7 +598,7 @@ static void st22_rx_update_src_test(int tx_sessions) {
              MTL_IP_ADDR_LEN);
     strncpy(ops_tx.port[MTL_SESSION_PORT_P], ctx->para.port[MTL_PORT_P],
             MTL_PORT_MAX_LEN);
-    ops_tx.udp_port[MTL_SESSION_PORT_P] = 10000 + i;
+    ops_tx.udp_dst_port[MTL_SESSION_PORT_P] = 10000 + i;
     ops_tx.pacing = ST21_PACING_NARROW;
     ops_tx.width = 1920;
     ops_tx.height = 1080;
@@ -646,7 +646,7 @@ static void st22_rx_update_src_test(int tx_sessions) {
            MTL_IP_ADDR_LEN);
     strncpy(ops_rx.port[MTL_SESSION_PORT_P], ctx->para.port[MTL_PORT_R],
             MTL_PORT_MAX_LEN);
-    ops_rx.udp_port[MTL_SESSION_PORT_P] = 10000 + i;
+    ops_rx.udp_dst_port[MTL_SESSION_PORT_P] = 10000 + i;
     ops_rx.pacing = ST21_PACING_NARROW;
     ops_rx.width = 1920;
     ops_rx.height = 1080;
@@ -822,7 +822,7 @@ static void st22_rx_after_start_test(enum st_fps fps[], int width[], int height[
              MTL_IP_ADDR_LEN);
       strncpy(ops_tx.port[MTL_SESSION_PORT_P], ctx->para.port[MTL_PORT_P],
               MTL_PORT_MAX_LEN);
-      ops_tx.udp_port[MTL_SESSION_PORT_P] = 15000 + i;
+      ops_tx.udp_dst_port[MTL_SESSION_PORT_P] = 15000 + i;
       ops_tx.pacing = ST21_PACING_NARROW;
       ops_tx.width = width[i];
       ops_tx.height = height[i];
@@ -871,7 +871,7 @@ static void st22_rx_after_start_test(enum st_fps fps[], int width[], int height[
              MTL_IP_ADDR_LEN);
       strncpy(ops_rx.port[MTL_SESSION_PORT_P], ctx->para.port[MTL_PORT_R],
               MTL_PORT_MAX_LEN);
-      ops_rx.udp_port[MTL_SESSION_PORT_P] = 15000 + i;
+      ops_rx.udp_dst_port[MTL_SESSION_PORT_P] = 15000 + i;
       ops_rx.pacing = ST21_PACING_NARROW;
       ops_rx.width = width[i];
       ops_rx.height = height[i];
@@ -984,7 +984,7 @@ static void st22_rx_dump_test(enum st_fps fps[], int width[], int height[],
            MTL_IP_ADDR_LEN);
     strncpy(ops_tx.port[MTL_SESSION_PORT_P], ctx->para.port[MTL_PORT_P],
             MTL_PORT_MAX_LEN);
-    ops_tx.udp_port[MTL_SESSION_PORT_P] = 15000 + i;
+    ops_tx.udp_dst_port[MTL_SESSION_PORT_P] = 15000 + i;
     ops_tx.pacing = ST21_PACING_NARROW;
     ops_tx.width = width[i];
     ops_tx.height = height[i];
@@ -1033,7 +1033,7 @@ static void st22_rx_dump_test(enum st_fps fps[], int width[], int height[],
            MTL_IP_ADDR_LEN);
     strncpy(ops_rx.port[MTL_SESSION_PORT_P], ctx->para.port[MTL_PORT_R],
             MTL_PORT_MAX_LEN);
-    ops_rx.udp_port[MTL_SESSION_PORT_P] = 15000 + i;
+    ops_rx.udp_dst_port[MTL_SESSION_PORT_P] = 15000 + i;
     ops_rx.pacing = ST21_PACING_NARROW;
     ops_rx.width = width[i];
     ops_rx.height = height[i];
@@ -1205,7 +1205,7 @@ static void st22_rx_digest_test(enum st_fps fps[], int width[], int height[],
            MTL_IP_ADDR_LEN);
     strncpy(ops_tx.port[MTL_SESSION_PORT_P], ctx->para.port[MTL_PORT_P],
             MTL_PORT_MAX_LEN);
-    ops_tx.udp_port[MTL_SESSION_PORT_P] = 15000 + i;
+    ops_tx.udp_dst_port[MTL_SESSION_PORT_P] = 15000 + i;
     ops_tx.pacing = ST21_PACING_NARROW;
     ops_tx.width = width[i];
     ops_tx.height = height[i];
@@ -1266,7 +1266,7 @@ static void st22_rx_digest_test(enum st_fps fps[], int width[], int height[],
            MTL_IP_ADDR_LEN);
     strncpy(ops_rx.port[MTL_SESSION_PORT_P], ctx->para.port[MTL_PORT_R],
             MTL_PORT_MAX_LEN);
-    ops_rx.udp_port[MTL_SESSION_PORT_P] = 15000 + i;
+    ops_rx.udp_dst_port[MTL_SESSION_PORT_P] = 15000 + i;
     ops_rx.pacing = ST21_PACING_NARROW;
     ops_rx.width = width[i];
     ops_rx.height = height[i];
@@ -1400,7 +1400,7 @@ static void st22_tx_user_pacing_test(int width[], int height[], int pkt_data_len
            MTL_IP_ADDR_LEN);
     strncpy(ops_tx.port[MTL_SESSION_PORT_P], ctx->para.port[MTL_PORT_P],
             MTL_PORT_MAX_LEN);
-    ops_tx.udp_port[MTL_SESSION_PORT_P] = 15000 + i;
+    ops_tx.udp_dst_port[MTL_SESSION_PORT_P] = 15000 + i;
     ops_tx.pacing = ST21_PACING_NARROW;
     ops_tx.width = width[i];
     ops_tx.height = height[i];
@@ -1445,7 +1445,7 @@ static void st22_tx_user_pacing_test(int width[], int height[], int pkt_data_len
            MTL_IP_ADDR_LEN);
     strncpy(ops_rx.port[MTL_SESSION_PORT_P], ctx->para.port[MTL_PORT_R],
             MTL_PORT_MAX_LEN);
-    ops_rx.udp_port[MTL_SESSION_PORT_P] = 15000 + i;
+    ops_rx.udp_dst_port[MTL_SESSION_PORT_P] = 15000 + i;
     ops_rx.pacing = ST21_PACING_NARROW;
     ops_rx.width = width[i];
     ops_rx.height = height[i];

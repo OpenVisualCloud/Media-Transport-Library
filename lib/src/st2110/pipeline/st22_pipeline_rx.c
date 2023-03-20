@@ -196,7 +196,8 @@ static int rx_st22p_create_transport(struct mtl_main_impl* impl, struct st22p_rx
   for (int i = 0; i < ops_rx.num_port; i++) {
     memcpy(ops_rx.sip_addr[i], ops->port.sip_addr[i], MTL_IP_ADDR_LEN);
     strncpy(ops_rx.port[i], ops->port.port[i], MTL_PORT_MAX_LEN);
-    ops_rx.udp_port[i] = ops->port.udp_port[i];
+    ops_rx.udp_src_port[i] = ops->port.udp_src_port[i];
+    ops_rx.udp_dst_port[i] = ops->port.udp_dst_port[i];
   }
   if (ops->flags & ST22P_RX_FLAG_DATA_PATH_ONLY)
     ops_rx.flags |= ST22_RX_FLAG_DATA_PATH_ONLY;
