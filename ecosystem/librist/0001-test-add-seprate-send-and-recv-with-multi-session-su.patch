@@ -1,20 +1,20 @@
-From 2e2115db5d36184c6297c222f293bd9863e52f67 Mon Sep 17 00:00:00 2001
+From 1c5622477b07c14a18acb04fcda10b6132121dd2 Mon Sep 17 00:00:00 2001
 From: Frank Du <frank.du@intel.com>
 Date: Wed, 22 Feb 2023 10:06:28 +0800
-Subject: [PATCH 2/2] test: add seprate send and recv with multi session
- support
+Subject: [PATCH] test: add seprate send and recv with multi session support
 
 usage:
-./build/test/rist/test_send --sleep_us 1 --sleep_step 3 --dip
-192.168.18.102 --sessions_cnt 1
-./build/test/rist/test_receive --bind_ip 192.168.18.102 --sessions_cnt 1
-
-MUFD_CFG=test/rist/ufd_receive.json ./build/test/rist/test_receive --sessions_cnt 1
- MUFD_CFG=test/rist/ufd_send.json ./build/test/rist/test_send --sleep_us
+LD_PRELOAD=/usr/local/lib/x86_64-linux-gnu/libmtl_udp_preload.so
+MUFD_CFG=test/rist/ufd_send.json ./build/test/rist/test_send --sleep_us
 1 --sleep_step 3 --dip 192.168.85.80 --sessions_cnt 1
+
+LD_PRELOAD=/usr/local/lib/x86_64-linux-gnu/libmtl_udp_preload.so
+MUFD_CFG=test/rist/ufd_receive.json ./build/test/rist/test_receive
+--bind_ip 192.168.85.80 --sessions_cnt 1
 
 Signed-off-by: Frank Du <frank.du@intel.com>
 ---
+ build.sh                   |   8 ++
  test/rist/meson.build      |  19 +++
  test/rist/test_receive.c   | 245 +++++++++++++++++++++++++++++++++++++
  test/rist/test_send.c      | 236 +++++++++++++++++++++++++++++++++++
@@ -22,7 +22,8 @@ Signed-off-by: Frank Du <frank.du@intel.com>
  test/rist/test_util.h      |  65 ++++++++++
  test/rist/ufd_receive.json |  16 +++
  test/rist/ufd_send.json    |  16 +++
- 7 files changed, 705 insertions(+)
+ 8 files changed, 713 insertions(+)
+ create mode 100755 build.sh
  create mode 100644 test/rist/test_receive.c
  create mode 100644 test/rist/test_send.c
  create mode 100644 test/rist/test_util.c
@@ -30,6 +31,20 @@ Signed-off-by: Frank Du <frank.du@intel.com>
  create mode 100644 test/rist/ufd_receive.json
  create mode 100644 test/rist/ufd_send.json
 
+diff --git a/build.sh b/build.sh
+new file mode 100755
+index 0000000..c4eb95d
+--- /dev/null
++++ b/build.sh
+@@ -0,0 +1,8 @@
++#!/bin/bash
++
++set -e
++
++#meson build -Dbuildtype=debug
++meson build
++ninja -C build
++#sudo ninja install
 diff --git a/test/rist/meson.build b/test/rist/meson.build
 index 101bd1a..a9bb907 100644
 --- a/test/rist/meson.build
