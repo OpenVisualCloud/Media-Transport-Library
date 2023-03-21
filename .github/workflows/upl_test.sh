@@ -14,7 +14,7 @@ MUPL_RX_SIP=192.168.89.81 # define in MUPL_RX_CFG
 MTL_LD_PRELOAD=/usr/local/lib/x86_64-linux-gnu/libmtl_udp_preload.so
 TEST_BIN_PATH=build/app
 
-TEST_TIME_SEC=120
+TEST_TIME_SEC=10
 SESSIONS_CNT=2
 
 test_upl() {
