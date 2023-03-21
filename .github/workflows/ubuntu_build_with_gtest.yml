@@ -36,8 +36,10 @@ env:
   # Customize the env if
   BUILD_TYPE: Release
   DPDK_VERSION: 22.11
-  TEST_PORT_P: 0000:31:00.0
-  TEST_PORT_R: 0000:31:00.1
+  TEST_PF_PORT_P: 0000:31:00.0
+  TEST_PF_PORT_R: 0000:31:00.0
+  TEST_PORT_P: 0000:31:01.0
+  TEST_PORT_R: 0000:31:01.1
   TEST_DMA_PORT_P: 0000:00:01.0
   TEST_DMA_PORT_R: 0000:00:01.1
 
@@ -97,8 +99,7 @@ jobs:
 
       - name: Binding network adapter
         run: |
-          sudo ./script/nicctl.sh bind_pmd ${{  env.TEST_PORT_P  }} || true
-          sudo ./script/nicctl.sh bind_pmd ${{  env.TEST_PORT_R  }} || true
+          sudo ./script/nicctl.sh create_vf ${{  env.TEST_PF_PORT_P  }} || true
           sudo ./dpdk/usertools/dpdk-devbind.py -b vfio-pci ${{  env.TEST_DMA_PORT_P  }} || true
           sudo ./dpdk/usertools/dpdk-devbind.py -b vfio-pci ${{  env.TEST_DMA_PORT_R  }} || true
 
