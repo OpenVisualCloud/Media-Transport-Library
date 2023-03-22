@@ -93,7 +93,6 @@ enum st_args_cmd {
   ST_ARG_RSS_MODE,
   ST_ARG_RANDOM_SRC_PORT,
   ST_ARG_TX_NO_CHAIN,
-  ST_ARG_DHCP,
   ST_ARG_MAX,
 };
 
@@ -188,7 +187,6 @@ static struct option st_app_args_options[] = {
     {"rss_mode", required_argument, 0, ST_ARG_RSS_MODE},
     {"random_src_port", no_argument, 0, ST_ARG_RANDOM_SRC_PORT},
     {"tx_no_chain", no_argument, 0, ST_ARG_TX_NO_CHAIN},
-    {"dhcp", no_argument, 0, ST_ARG_DHCP},
 
     {0, 0, 0, 0}};
 
@@ -263,6 +261,7 @@ static int app_args_json(struct st_app_context* ctx, struct mtl_init_params* p,
     memcpy(p->sip_addr[i], ctx->json_ctx->interfaces[i].ip_addr, sizeof(p->sip_addr[i]));
     memcpy(p->netmask[i], ctx->json_ctx->interfaces[i].netmask, sizeof(p->netmask[i]));
     memcpy(p->gateway[i], ctx->json_ctx->interfaces[i].gateway, sizeof(p->gateway[i]));
+    p->net_proto[i] = ctx->json_ctx->interfaces[i].net_proto;
     p->num_ports++;
   }
   if (ctx->json_ctx->sch_quota) {
@@ -548,25 +547,23 @@ int st_app_parse_args(struct st_app_context* ctx, struct mtl_init_params* p, int
         break;
       case ST_ARG_RSS_MODE:
         if (!strcmp(optarg, "l3"))
-          p->rss_mode = MT_RSS_MODE_L3;
+          p->rss_mode = MTL_RSS_MODE_L3;
         else if (!strcmp(optarg, "l3_l4"))
-          p->rss_mode = MT_RSS_MODE_L3_L4;
+          p->rss_mode = MTL_RSS_MODE_L3_L4;
         else if (!strcmp(optarg, "l3_l4_dst_port_only"))
-          p->rss_mode = MT_RSS_MODE_L3_L4_DP_ONLY;
+          p->rss_mode = MTL_RSS_MODE_L3_L4_DP_ONLY;
         else if (!strcmp(optarg, "l3_da_l4_dst_port_only"))
-          p->rss_mode = MT_RSS_MODE_L3_DA_L4_DP_ONLY;
+          p->rss_mode = MTL_RSS_MODE_L3_DA_L4_DP_ONLY;
         else if (!strcmp(optarg, "l4_dst_port_only"))
-          p->rss_mode = MT_RSS_MODE_L4_DP_ONLY;
+          p->rss_mode = MTL_RSS_MODE_L4_DP_ONLY;
         else if (!strcmp(optarg, "none"))
-          p->rss_mode = MT_RSS_MODE_NONE;
+          p->rss_mode = MTL_RSS_MODE_NONE;
         else
           err("%s, unknow rss mode %s\n", __func__, optarg);
         break;
       case ST_ARG_TX_NO_CHAIN:
         p->flags |= MTL_FLAG_TX_NO_CHAIN;
         break;
-      case ST_ARG_DHCP:
-        p->dhcp = true;
       case '?':
         break;
       default:

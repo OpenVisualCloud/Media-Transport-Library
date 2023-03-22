@@ -9,6 +9,29 @@
 #include "mt_socket.h"
 #include "mt_util.h"
 
+#define DHCP_OP_BOOTREQUEST 1
+#define DHCP_OP_BOOTREPLY 2
+#define DHCP_HTYPE_ETHERNET 1
+#define DHCP_HLEN_ETHERNET 6
+#define DHCP_MAGIC_COOKIE 0x63825363
+
+#define DHCP_OPTION_END 255
+#define DHCP_OPTION_SUBNET_MASK 1
+#define DHCP_OPTION_ROUTER 3
+#define DHCP_OPTION_DNS_SERVER 6
+#define DHCP_OPTION_REQUESTED_IP_ADDRESS 50
+#define DHCP_OPTION_LEASE_TIME 51
+#define DHCP_OPTION_MESSAGE_TYPE 53
+#define DHCP_OPTION_SERVER_IDENTIFIER 54
+#define DHCP_OPTION_PARAMETER_REQUEST_LIST 55
+
+#define DHCP_MESSAGE_TYPE_DISCOVER 1
+#define DHCP_MESSAGE_TYPE_OFFER 2
+#define DHCP_MESSAGE_TYPE_REQUEST 3
+#define DHCP_MESSAGE_TYPE_ACK 5
+#define DHCP_MESSAGE_TYPE_NAK 6
+#define DHCP_MESSAGE_TYPE_RELEASE 7
+
 static inline struct mt_dhcp_impl* get_dhcp(struct mtl_main_impl* impl,
                                             enum mtl_port port) {
   return impl->dhcp[port];
@@ -49,8 +72,8 @@ static int dhcp_send_discover(struct mtl_main_impl* impl, enum mtl_port port) {
   hdr_offset += sizeof(*ip);
 
   udp = rte_pktmbuf_mtod_offset(pkt, struct rte_udp_hdr*, hdr_offset);
-  udp->src_port = htons(DHCP_CLIENT_PORT);
-  udp->dst_port = htons(DHCP_SERVER_PORT);
+  udp->src_port = htons(MT_DHCP_UDP_CLIENT_PORT);
+  udp->dst_port = htons(MT_DHCP_UDP_SERVER_PORT);
   hdr_offset += sizeof(*udp);
 
   dhcp = rte_pktmbuf_mtod_offset(pkt, struct mt_dhcp_hdr*, hdr_offset);
@@ -137,8 +160,8 @@ static int dhcp_send_request(struct mtl_main_impl* impl, enum mtl_port port) {
   hdr_offset += sizeof(*ip);
 
   udp = rte_pktmbuf_mtod_offset(pkt, struct rte_udp_hdr*, hdr_offset);
-  udp->src_port = htons(DHCP_CLIENT_PORT);
-  udp->dst_port = htons(DHCP_SERVER_PORT);
+  udp->src_port = htons(MT_DHCP_UDP_CLIENT_PORT);
+  udp->dst_port = htons(MT_DHCP_UDP_SERVER_PORT);
   hdr_offset += sizeof(*udp);
 
   dhcp = rte_pktmbuf_mtod_offset(pkt, struct mt_dhcp_hdr*, hdr_offset);
@@ -372,8 +395,8 @@ static int dhcp_send_release(struct mtl_main_impl* impl, enum mtl_port port) {
   hdr_offset += sizeof(*ip);
 
   udp = rte_pktmbuf_mtod_offset(pkt, struct rte_udp_hdr*, hdr_offset);
-  udp->src_port = htons(DHCP_CLIENT_PORT);
-  udp->dst_port = htons(DHCP_SERVER_PORT);
+  udp->src_port = htons(MT_DHCP_UDP_CLIENT_PORT);
+  udp->dst_port = htons(MT_DHCP_UDP_SERVER_PORT);
   hdr_offset += sizeof(*udp);
 
   dhcp = rte_pktmbuf_mtod_offset(pkt, struct mt_dhcp_hdr*, hdr_offset);
@@ -511,7 +534,7 @@ int mt_dhcp_init(struct mtl_main_impl* impl) {
   int socket = mt_socket_id(impl, MTL_PORT_P);
 
   for (int i = 0; i < num_ports; i++) {
-    if (mt_if(impl, i)->net_proto != MT_PROTO_DHCP) continue;
+    if (mt_if(impl, i)->net_proto != MTL_PROTO_DHCP) continue;
     struct mt_dhcp_impl* dhcp = mt_rte_zmalloc_socket(sizeof(*dhcp), socket);
     if (!dhcp) {
       err("%s(%d), dhcp malloc fail\n", __func__, i);

@@ -464,12 +464,6 @@ struct mt_tx_queue {
   uint64_t bps;           /* bytes per sec for rate limit */
 };
 
-enum mt_net_proto {
-  MT_PROTO_STATIC = 0,
-  MT_PROTO_DHCP,
-  MT_PROTO_MAX,
-};
-
 struct mt_interface {
   enum mtl_port port;
   uint16_t port_id;
@@ -477,8 +471,8 @@ struct mt_interface {
   enum mt_port_type port_type;
   enum mt_driver_type drv_type;
   enum mt_flow_type flow_type;
-  enum mt_rss_mode rss_mode;
-  enum mt_net_proto net_proto;
+  enum mtl_rss_mode rss_mode;
+  enum mtl_net_proto net_proto;
   int socket_id;                          /* socket id for the port */
   uint32_t feature;                       /* MT_IF_FEATURE_* */
   uint32_t link_speed;                    /* ETH_SPEED_NUM_ */
@@ -1000,13 +994,13 @@ static inline bool mt_has_tx_no_chain(struct mtl_main_impl* impl) {
     return false;
 }
 
-static inline enum mt_rss_mode mt_get_rss_mode(struct mtl_main_impl* impl,
+static inline enum mtl_rss_mode mt_get_rss_mode(struct mtl_main_impl* impl,
                                                enum mtl_port port) {
   return mt_if(impl, port)->rss_mode;
 }
 
 static inline bool mt_has_rss(struct mtl_main_impl* impl, enum mtl_port port) {
-  return mt_get_rss_mode(impl, port) != MT_RSS_MODE_NONE;
+  return mt_get_rss_mode(impl, port) != MTL_RSS_MODE_NONE;
 }
 
 static inline bool mt_udp_transport(struct mtl_main_impl* impl, enum mtl_port port) {

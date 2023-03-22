@@ -174,35 +174,47 @@ enum mtl_pmd_type {
 /**
  * RSS mode
  */
-enum mt_rss_mode {
+enum mtl_rss_mode {
   /** not using rss */
-  MT_RSS_MODE_NONE = 0,
+  MTL_RSS_MODE_NONE = 0,
   /** hash with both l3 src and dst, not use now */
-  MT_RSS_MODE_L3,
+  MTL_RSS_MODE_L3,
   /** hash with l3 src and dst address, l4 src port and dst port, not use now */
-  MT_RSS_MODE_L3_L4,
+  MTL_RSS_MODE_L3_L4,
   /** hash with l3 src and dst address, l4 dst port only, for st2110 unicast */
-  MT_RSS_MODE_L3_L4_DP_ONLY,
+  MTL_RSS_MODE_L3_L4_DP_ONLY,
   /** hash with l3 dst address only, l4 dst port only, for st2110 multicast */
-  MT_RSS_MODE_L3_DA_L4_DP_ONLY,
+  MTL_RSS_MODE_L3_DA_L4_DP_ONLY,
   /** hash with l4 dst port only, for udp transport */
-  MT_RSS_MODE_L4_DP_ONLY,
+  MTL_RSS_MODE_L4_DP_ONLY,
   /** max value of this enum */
-  MT_RSS_MODE_MAX,
+  MTL_RSS_MODE_MAX,
 };
 
 /**
  * IOVA mode
  */
-enum mt_iova_mode {
+enum mtl_iova_mode {
   /** let DPDK to choose IOVA mode */
-  MT_IOVA_MODE_AUTO = 0,
+  MTL_IOVA_MODE_AUTO = 0,
   /** using IOVA VA mode */
-  MT_IOVA_MODE_VA,
+  MTL_IOVA_MODE_VA,
   /** using IOVA PA mode */
-  MT_IOVA_MODE_PA,
+  MTL_IOVA_MODE_PA,
   /** max value of this enum */
-  MT_IOVA_MODE_MAX,
+  MTL_IOVA_MODE_MAX,
+};
+
+/**
+ * Interface network protocol
+ */
+enum mtl_net_proto {
+  /** using static IP configuration */
+  MTL_PROTO_STATIC = 0,
+  /** using DHCP(auto) IP configuration */
+  MTL_PROTO_DHCP,
+  /** max value of this enum */
+  MTL_PROTO_MAX,
 };
 
 /**
@@ -516,12 +528,16 @@ struct mtl_init_params {
   /**
    * Suggest using rss (L3 or L4) for rx packets direction.
    */
-  enum mt_rss_mode rss_mode;
+  enum mtl_rss_mode rss_mode;
   /**
    * Select default or force IOVA mode.
    */
-  enum mt_iova_mode iova_mode;
-  bool dhcp;
+  enum mtl_iova_mode iova_mode;
+  /**
+   * Interface network protocol
+   * static or DHCP
+   */
+  enum mtl_net_proto net_proto[MTL_PORT_MAX];
 };
 
 /**
@@ -1083,9 +1099,9 @@ uint16_t mtl_udma_completed(mtl_udma_handle handle, const uint16_t nb_cpls);
  * @param mt
  *   The handle to the media transport device context.
  * @return
- *   - enum mt_rss_mode.
+ *   - enum mtl_rss_mode.
  */
-enum mt_rss_mode mtl_rss_mode_get(mtl_handle mt);
+enum mtl_rss_mode mtl_rss_mode_get(mtl_handle mt);
 
 /**
  * Get SIMD level current cpu supported.

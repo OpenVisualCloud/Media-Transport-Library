@@ -307,7 +307,7 @@ static int mt_user_params_check(struct mtl_init_params* p) {
         return ret;
       }
     }
-    if (p->pmd[i] == MTL_PMD_DPDK_USER) {
+    if (p->net_proto == MTL_PROTO_STATIC && p->pmd[i] == MTL_PMD_DPDK_USER) {
       ip = p->sip_addr[i];
       ret = mt_ip_addr_check(ip);
       if (ret < 0) {
@@ -324,7 +324,8 @@ static int mt_user_params_check(struct mtl_init_params* p) {
           return -EINVAL;
         }
         /* check if duplicate ip */
-        if ((p->pmd[i] == MTL_PMD_DPDK_USER) && (p->pmd[j] == MTL_PMD_DPDK_USER)) {
+        if ((p->net_proto == MTL_PROTO_STATIC) && (p->pmd[i] == MTL_PMD_DPDK_USER) &&
+            (p->pmd[j] == MTL_PMD_DPDK_USER)) {
           if (0 == memcmp(p->sip_addr[i], p->sip_addr[j], MTL_IP_ADDR_LEN)) {
             ip = p->sip_addr[j];
             err("%s, same ip %d.%d.%d.%d for port %d and %d\n", __func__, ip[0], ip[1],
@@ -1084,12 +1085,12 @@ uint16_t mtl_udma_completed(mtl_udma_handle handle, const uint16_t nb_cpls) {
   return mt_dma_completed(dev, nb_cpls, NULL, NULL);
 }
 
-enum mt_rss_mode mtl_rss_mode_get(mtl_handle mt) {
+enum mtl_rss_mode mtl_rss_mode_get(mtl_handle mt) {
   struct mtl_main_impl* impl = mt;
 
   if (impl->type != MT_HANDLE_MAIN) {
     err("%s, invalid type %d\n", __func__, impl->type);
-    return MT_RSS_MODE_MAX;
+    return MTL_RSS_MODE_MAX;
   }
 
   return mt_get_rss_mode(impl, MTL_PORT_P);

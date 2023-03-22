@@ -294,12 +294,12 @@ static int dev_eal_init(struct mtl_init_params* p, struct mt_kport_info* kport_i
     argc++;
   }
 
-  if (p->iova_mode > MT_IOVA_MODE_AUTO && p->iova_mode < MT_IOVA_MODE_MAX) {
+  if (p->iova_mode > MTL_IOVA_MODE_AUTO && p->iova_mode < MTL_IOVA_MODE_MAX) {
     argv[argc] = "--iova-mode";
     argc++;
-    if (p->iova_mode == MT_IOVA_MODE_VA)
+    if (p->iova_mode == MTL_IOVA_MODE_VA)
       argv[argc] = "va";
-    else if (p->iova_mode == MT_IOVA_MODE_PA)
+    else if (p->iova_mode == MTL_IOVA_MODE_PA)
       argv[argc] = "pa";
     argc++;
   }
@@ -926,16 +926,16 @@ static int dev_config_port(struct mtl_main_impl* impl, enum mtl_port port) {
 
     rss_conf->rss_key = mt_rss_hash_key;
     rss_conf->rss_key_len = MT_HASH_KEY_LENGTH;
-    if (inf->rss_mode == MT_RSS_MODE_L3) {
+    if (inf->rss_mode == MTL_RSS_MODE_L3) {
       rss_conf->rss_hf = RTE_ETH_RSS_IPV4;
-    } else if (inf->rss_mode == MT_RSS_MODE_L3_L4) {
+    } else if (inf->rss_mode == MTL_RSS_MODE_L3_L4) {
       rss_conf->rss_hf = RTE_ETH_RSS_NONFRAG_IPV4_UDP;
-    } else if (inf->rss_mode == MT_RSS_MODE_L3_L4_DP_ONLY) {
+    } else if (inf->rss_mode == MTL_RSS_MODE_L3_L4_DP_ONLY) {
       rss_conf->rss_hf = RTE_ETH_RSS_NONFRAG_IPV4_UDP | RTE_ETH_RSS_L4_DST_ONLY;
-    } else if (inf->rss_mode == MT_RSS_MODE_L3_DA_L4_DP_ONLY) {
+    } else if (inf->rss_mode == MTL_RSS_MODE_L3_DA_L4_DP_ONLY) {
       rss_conf->rss_hf = RTE_ETH_RSS_NONFRAG_IPV4_UDP | RTE_ETH_RSS_L4_DST_ONLY |
                          RTE_ETH_RSS_L3_DST_ONLY;
-    } else if (inf->rss_mode == MT_RSS_MODE_L4_DP_ONLY) {
+    } else if (inf->rss_mode == MTL_RSS_MODE_L4_DP_ONLY) {
       rss_conf->rss_hf = RTE_ETH_RSS_PORT | RTE_ETH_RSS_L4_DST_ONLY;
     } else {
       err("%s(%d), not support rss_mode %d\n", __func__, port, inf->rss_mode);
@@ -991,6 +991,7 @@ static int dev_config_port(struct mtl_main_impl* impl, enum mtl_port port) {
            num_ptypes);
     }
   }
+  inf->net_proto = p->net_proto[port];
 
   inf->status |= MT_IF_STAT_PORT_CONFIGED;
 
@@ -1098,8 +1099,6 @@ static int dev_start_port(struct mtl_main_impl* impl, enum mtl_port port) {
       return ret;
     }
   }
-
-  if (mt_get_user_params(impl)->dhcp) inf->net_proto = MT_PROTO_DHCP;
 
   if (mt_get_user_params(impl)->flags & MTL_FLAG_NIC_RX_PROMISCUOUS) {
     /* Enable RX in promiscuous mode if it's required. */
@@ -2295,11 +2294,11 @@ int mt_dev_if_init(struct mtl_main_impl* impl) {
 
     inf->rss_mode = p->rss_mode;
     /* enable rss if no flow support */
-    if (inf->flow_type == MT_FLOW_NONE && inf->rss_mode == MT_RSS_MODE_NONE) {
+    if (inf->flow_type == MT_FLOW_NONE && inf->rss_mode == MTL_RSS_MODE_NONE) {
       if (inf->drv_type == MT_DRV_ENA)
-        inf->rss_mode = MT_RSS_MODE_L3_L4; /* only rss l3 and l4 support */
+        inf->rss_mode = MTL_RSS_MODE_L3_L4; /* only rss l3 and l4 support */
       else
-        inf->rss_mode = MT_RSS_MODE_L3_L4_DP_ONLY;
+        inf->rss_mode = MTL_RSS_MODE_L3_L4_DP_ONLY;
     }
 
     /* set max tx/rx queues */
@@ -2579,18 +2578,18 @@ int mt_dev_tsc_done_action(struct mtl_main_impl* impl) {
 }
 
 uint8_t* mt_sip_addr(struct mtl_main_impl* impl, enum mtl_port port) {
-  if (mt_if(impl, port)->net_proto == MT_PROTO_DHCP) return mt_dhcp_get_ip(impl, port);
+  if (mt_if(impl, port)->net_proto == MTL_PROTO_DHCP) return mt_dhcp_get_ip(impl, port);
   return mt_get_user_params(impl)->sip_addr[port];
 }
 
 uint8_t* mt_sip_netmask(struct mtl_main_impl* impl, enum mtl_port port) {
-  if (mt_if(impl, port)->net_proto == MT_PROTO_DHCP)
+  if (mt_if(impl, port)->net_proto == MTL_PROTO_DHCP)
     return mt_dhcp_get_netmask(impl, port);
   return mt_get_user_params(impl)->netmask[port];
 }
 
 uint8_t* mt_sip_gateway(struct mtl_main_impl* impl, enum mtl_port port) {
-  if (mt_if(impl, port)->net_proto == MT_PROTO_DHCP)
+  if (mt_if(impl, port)->net_proto == MTL_PROTO_DHCP)
     return mt_dhcp_get_gateway(impl, port);
   return mt_get_user_params(impl)->gateway[port];
 }

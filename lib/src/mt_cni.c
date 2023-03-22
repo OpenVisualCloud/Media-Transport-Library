@@ -60,7 +60,7 @@ static int cni_rx_handle(struct mtl_main_impl* impl, struct rte_mbuf* m,
                   src_port == MT_PTP_UDP_GEN_PORT)) { /* ptp pkt*/
         ptp_hdr = rte_pktmbuf_mtod_offset(m, struct mt_ptp_header*, hdr_offset);
         mt_ptp_parse(ptp, ptp_hdr, vlan, MT_PTP_L4, m->timesync, ipv4_hdr);
-      } else if (src_port == DHCP_SERVER_PORT) { /* dhcp pkt */
+      } else if (src_port == MT_DHCP_UDP_SERVER_PORT) { /* dhcp pkt */
         dhcp_hdr = rte_pktmbuf_mtod_offset(m, struct mt_dhcp_hdr*, hdr_offset);
         mt_dhcp_parse(impl, dhcp_hdr, port);
       }
