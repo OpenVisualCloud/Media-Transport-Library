@@ -70,6 +70,8 @@ List all interfaces that can be used by app
 
 ​ **name (string):** PF/VF pci name, for example: 0000:86:00.0
 
+​ **proto (string):** `"static", "dhcp"` interface network protocol, if DHCP is used, below IPs will be ignored
+
 ​ **ip (string):** interface assigned IP
 
 ​ **netmask (string):** interface netmask(optional), for example: 255.255.254.0

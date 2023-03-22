@@ -995,7 +995,7 @@ static inline bool mt_has_tx_no_chain(struct mtl_main_impl* impl) {
 }
 
 static inline enum mtl_rss_mode mt_get_rss_mode(struct mtl_main_impl* impl,
-                                               enum mtl_port port) {
+                                                enum mtl_port port) {
   return mt_if(impl, port)->rss_mode;
 }
 
