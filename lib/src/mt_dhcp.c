@@ -242,8 +242,8 @@ static int dhcp_recv_offer(struct mtl_main_impl* impl, struct mt_dhcp_hdr* offer
   rte_memcpy(dhcp_impl->ip, &offer->yiaddr, MTL_IP_ADDR_LEN);
   mt_pthread_mutex_unlock(&dhcp_impl->mutex);
   info("%s(%d), received dhcp offer\n", __func__, port);
-  info("%s(%d), ip address: %s\n", __func__, port,
-       inet_ntoa(*(struct in_addr*)(char*)&offer->yiaddr));
+  info("%s(%d), ip address: %s\n", __func__, dhcp_impl->port,
+       inet_ntoa(*(struct in_addr*)dhcp_impl->ip));
   uint8_t* options = offer->options;
   while (*options != DHCP_OPTION_END) {
     if (*options == DHCP_OPTION_SUBNET_MASK)
@@ -448,7 +448,7 @@ int mt_dhcp_parse(struct mtl_main_impl* impl, struct mt_dhcp_hdr* hdr,
                   enum mtl_port port) {
   struct mt_dhcp_impl* dhcp_impl = get_dhcp(impl, port);
   if (ntohl(hdr->magic_cookie) != DHCP_MAGIC_COOKIE) {
-    err("%s(%d), invalid magic cookie 0x%08X\n", __func__, port,
+    err("%s(%d), invalid magic cookie 0x%" PRIx32 "\n", __func__, port,
         ntohl(hdr->magic_cookie));
     return -EINVAL;
   }
@@ -459,8 +459,8 @@ int mt_dhcp_parse(struct mtl_main_impl* impl, struct mt_dhcp_hdr* hdr,
   }
 
   if (ntohl(hdr->xid) != dhcp_impl->xid) {
-    err("%s(%d), xid mismatch 0x%08X : 0x%08X\n", __func__, port, ntohl(hdr->xid),
-        dhcp_impl->xid);
+    err("%s(%d), xid mismatch 0x%" PRIx32 " : 0x%" PRIx32 "\n", __func__, port,
+        ntohl(hdr->xid), dhcp_impl->xid);
     return -EINVAL;
   }
 
