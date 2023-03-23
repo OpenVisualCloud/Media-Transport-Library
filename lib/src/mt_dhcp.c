@@ -6,8 +6,6 @@
 
 #include "mt_dev.h"
 #include "mt_log.h"
-#include "mt_socket.h"
-#include "mt_util.h"
 
 #define DHCP_OP_BOOTREQUEST (1)
 #define DHCP_OP_BOOTREPLY (2)
@@ -562,6 +560,7 @@ int mt_dhcp_init(struct mtl_main_impl* impl) {
   }
   if (done != num_ports) {
     err("%s, dhcp init fail\n", __func__);
+    mt_dhcp_uinit(impl);
     return -ETIME;
   }
 
