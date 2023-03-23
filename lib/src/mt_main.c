@@ -307,7 +307,7 @@ static int mt_user_params_check(struct mtl_init_params* p) {
         return ret;
       }
     }
-    if (p->net_proto == MTL_PROTO_STATIC && p->pmd[i] == MTL_PMD_DPDK_USER) {
+    if (p->net_proto[i] == MTL_PROTO_STATIC && p->pmd[i] == MTL_PMD_DPDK_USER) {
       ip = p->sip_addr[i];
       ret = mt_ip_addr_check(ip);
       if (ret < 0) {
@@ -324,7 +324,7 @@ static int mt_user_params_check(struct mtl_init_params* p) {
           return -EINVAL;
         }
         /* check if duplicate ip */
-        if ((p->net_proto == MTL_PROTO_STATIC) && (p->pmd[i] == MTL_PMD_DPDK_USER) &&
+        if ((p->net_proto[i] == MTL_PROTO_STATIC) && (p->pmd[i] == MTL_PMD_DPDK_USER) &&
             (p->pmd[j] == MTL_PMD_DPDK_USER)) {
           if (0 == memcmp(p->sip_addr[i], p->sip_addr[j], MTL_IP_ADDR_LEN)) {
             ip = p->sip_addr[j];

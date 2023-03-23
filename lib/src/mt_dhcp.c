@@ -446,9 +446,9 @@ static int dhcp_send_release(struct mtl_main_impl* impl, enum mtl_port port) {
 int mt_dhcp_parse(struct mtl_main_impl* impl, struct mt_dhcp_hdr* hdr,
                   enum mtl_port port) {
   struct mt_dhcp_impl* dhcp_impl = get_dhcp(impl, port);
-  if (ntohl(hdr->magic_cookie) != DHCP_MAGIC_COOKIE) {
+  if (rte_be_to_cpu_32(hdr->magic_cookie) != DHCP_MAGIC_COOKIE) {
     err("%s(%d), invalid magic cookie 0x%" PRIx32 "\n", __func__, port,
-        ntohl(hdr->magic_cookie));
+        rte_be_to_cpu_32(hdr->magic_cookie));
     return -EINVAL;
   }
 
@@ -457,9 +457,9 @@ int mt_dhcp_parse(struct mtl_main_impl* impl, struct mt_dhcp_hdr* hdr,
     return -EINVAL;
   }
 
-  if (ntohl(hdr->xid) != dhcp_impl->xid) {
+  if (rte_be_to_cpu_32(hdr->xid) != dhcp_impl->xid) {
     err("%s(%d), xid mismatch 0x%" PRIx32 " : 0x%" PRIx32 "\n", __func__, port,
-        ntohl(hdr->xid), dhcp_impl->xid);
+        rte_be_to_cpu_32(hdr->xid), dhcp_impl->xid);
     return -EINVAL;
   }
 
@@ -494,7 +494,7 @@ uint8_t* mt_dhcp_get_ip(struct mtl_main_impl* impl, enum mtl_port port) {
   if (dhcp_impl->status != MT_DHCP_STATUS_BOUND &&
       dhcp_impl->status != MT_DHCP_STATUS_RENEWING &&
       dhcp_impl->status != MT_DHCP_STATUS_REBINDING) {
-    dbg("%s(%d), ip may not be usable\n", __func__, port);
+    warn("%s(%d), ip may not be usable\n", __func__, port);
   }
 
   return dhcp_impl->ip;
@@ -506,7 +506,7 @@ uint8_t* mt_dhcp_get_netmask(struct mtl_main_impl* impl, enum mtl_port port) {
   if (dhcp_impl->status != MT_DHCP_STATUS_BOUND &&
       dhcp_impl->status != MT_DHCP_STATUS_RENEWING &&
       dhcp_impl->status != MT_DHCP_STATUS_REBINDING) {
-    dbg("%s(%d), netmask may not be usable\n", __func__, port);
+    warn("%s(%d), netmask may not be usable\n", __func__, port);
   }
 
   return dhcp_impl->netmask;
@@ -518,7 +518,7 @@ uint8_t* mt_dhcp_get_gateway(struct mtl_main_impl* impl, enum mtl_port port) {
   if (dhcp_impl->status != MT_DHCP_STATUS_BOUND &&
       dhcp_impl->status != MT_DHCP_STATUS_RENEWING &&
       dhcp_impl->status != MT_DHCP_STATUS_REBINDING) {
-    dbg("%s(%d), gateway may not be usable\n", __func__, port);
+    warn("%s(%d), gateway may not be usable\n", __func__, port);
   }
 
   return dhcp_impl->gateway;
@@ -560,6 +560,8 @@ int mt_dhcp_init(struct mtl_main_impl* impl) {
   }
   if (done != num_ports) {
     err("%s, dhcp init fail\n", __func__);
+    for (int i = 0; i < num_ports; i++)
+      err("%s(%d), dhcp status %d\n", __func__, i, impl->dhcp[i]->status);
     mt_dhcp_uinit(impl);
     return -ETIME;
   }
