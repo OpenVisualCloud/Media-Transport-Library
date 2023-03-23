@@ -409,8 +409,7 @@ struct mtl_init_params {
   /** number of pcie ports, 1 or 2, mandatory */
   uint8_t num_ports;
   /** bound IP of ports, for MTL_PMD_DPDK_USER
-   * This is not used when DHCP enabled.
-   * The value should be none zero when use static proto.
+   * This is not used when DHCP enabled, otherwise set the valid value.
    */
   uint8_t sip_addr[MTL_PORT_MAX][MTL_IP_ADDR_LEN];
   /** log level */
@@ -421,15 +420,13 @@ struct mtl_init_params {
   enum mtl_transport_type transport;
   /**
    * net mask of ports, for MTL_PMD_DPDK_USER.
-   * This is not used when DHCP enabled.
-   * The value should be none zero when use static proto.
+   * This is not used when DHCP enabled, otherwise set the valid value.
    * Lib will use 255.255.255.0 if this value is blank
    */
   uint8_t netmask[MTL_PORT_MAX][MTL_IP_ADDR_LEN];
   /**
    * default gateway of ports, for MTL_PMD_DPDK_USER.
-   * This is not used when DHCP enabled.
-   * The value should be none zero when use static proto.
+   * This is not used when DHCP enabled, otherwise set the valid value.
    * User can use "route -n" to get gateway before bind the port to DPDK PMD.
    * For MTL_PMD_DPDK_AF_XDP, lib will try to fetch gateway by route command
    * if this value is not assigned.
