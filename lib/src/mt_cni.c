@@ -6,8 +6,10 @@
 
 #include "mt_arp.h"
 #include "mt_dev.h"
+#include "mt_dhcp.h"
 #include "mt_kni.h"
 // #define DEBUG
+#include "mt_dhcp.h"
 #include "mt_log.h"
 #include "mt_ptp.h"
 #include "mt_rss.h"
@@ -19,12 +21,14 @@
 static int cni_rx_handle(struct mtl_main_impl* impl, struct rte_mbuf* m,
                          enum mtl_port port) {
   struct mt_ptp_impl* ptp = mt_get_ptp(impl, port);
+  struct mt_dhcp_impl* dhcp = mt_get_dhcp(impl, port);
   struct rte_ether_hdr* eth_hdr = rte_pktmbuf_mtod(m, struct rte_ether_hdr*);
   uint16_t ether_type, src_port;
   struct rte_vlan_hdr* vlan_header;
   bool vlan = false;
   struct mt_ptp_header* ptp_hdr;
   struct rte_arp_hdr* arp_hdr;
+  struct mt_dhcp_hdr* dhcp_hdr;
   struct mt_ptp_ipv4_udp* ipv4_hdr;
   size_t hdr_offset = sizeof(struct rte_ether_hdr);
 
@@ -54,9 +58,13 @@ static int cni_rx_handle(struct mtl_main_impl* impl, struct rte_mbuf* m,
       ipv4_hdr = rte_pktmbuf_mtod_offset(m, struct mt_ptp_ipv4_udp*, hdr_offset);
       src_port = ntohs(ipv4_hdr->udp.src_port);
       hdr_offset += sizeof(struct mt_ptp_ipv4_udp);
-      if ((src_port == MT_PTP_UDP_EVENT_PORT) || (src_port == MT_PTP_UDP_GEN_PORT)) {
+      if (ptp && (src_port == MT_PTP_UDP_EVENT_PORT ||
+                  src_port == MT_PTP_UDP_GEN_PORT)) { /* ptp pkt*/
         ptp_hdr = rte_pktmbuf_mtod_offset(m, struct mt_ptp_header*, hdr_offset);
         mt_ptp_parse(ptp, ptp_hdr, vlan, MT_PTP_L4, m->timesync, ipv4_hdr);
+      } else if (dhcp && src_port == MT_DHCP_UDP_SERVER_PORT) { /* dhcp pkt */
+        dhcp_hdr = rte_pktmbuf_mtod_offset(m, struct mt_dhcp_hdr*, hdr_offset);
+        mt_dhcp_parse(impl, dhcp_hdr, port);
       }
       break;
     default:
@@ -79,7 +87,7 @@ static int cni_traffic(struct mtl_main_impl* impl) {
     ptp = mt_get_ptp(impl, i);
 
     /* rx from ptp rx queue */
-    if (ptp->rx_queue) {
+    if (ptp && ptp->rx_queue) {
       rx = mt_dev_rx_burst(ptp->rx_queue, pkts_rx, ST_CNI_RX_BURST_SIZE);
       if (rx > 0) {
         cni->eth_rx_cnt[i] += rx;

@@ -2,6 +2,8 @@
 
 ## Changelog for 23.07
 
+* lib: add DHCP client implementation.
+
 ## Changelog for 23.04
 
 * dpdk: upgrade dpdk version to latest 22.11 for both windows and linux.

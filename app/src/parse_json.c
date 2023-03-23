@@ -479,6 +479,18 @@ static int st_json_parse_interfaces(json_object* interface_obj,
   if (obj) {
     inet_pton(AF_INET, json_object_get_string(obj), interface->gateway);
   }
+  obj = st_json_object_object_get(interface_obj, "proto");
+  if (obj) {
+    const char* proto = json_object_get_string(obj);
+    if (strcmp(proto, "dhcp") == 0) {
+      interface->net_proto = MTL_PROTO_DHCP;
+    } else if (strcmp(proto, "static") == 0) {
+      interface->net_proto = MTL_PROTO_STATIC;
+    } else {
+      err("%s, invalid network proto %s\n", __func__, proto);
+      return -ST_JSON_NOT_VALID;
+    }
+  }
 
   return ST_JSON_SUCCESS;
 }

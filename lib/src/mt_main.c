@@ -9,6 +9,7 @@
 #include "mt_cni.h"
 #include "mt_config.h"
 #include "mt_dev.h"
+#include "mt_dhcp.h"
 #include "mt_dma.h"
 #include "mt_log.h"
 #include "mt_mcast.h"
@@ -192,12 +193,6 @@ static int mt_main_create(struct mtl_main_impl* impl) {
     return ret;
   }
 
-  ret = mt_ptp_init(impl);
-  if (ret < 0) {
-    err("%s, mt_ptp_init fail %d\n", __func__, ret);
-    return ret;
-  }
-
   ret = mt_cni_init(impl);
   if (ret < 0) {
     err("%s, mt_cni_init fail %d\n", __func__, ret);
@@ -222,6 +217,18 @@ static int mt_main_create(struct mtl_main_impl* impl) {
     return ret;
   }
 
+  ret = mt_dhcp_init(impl);
+  if (ret < 0) {
+    err("%s, mt_dhcp_init fail %d\n", __func__, ret);
+    return ret;
+  }
+
+  ret = mt_ptp_init(impl);
+  if (ret < 0) {
+    err("%s, mt_ptp_init fail %d\n", __func__, ret);
+    return ret;
+  }
+
   pthread_create(&impl->tsc_cal_tid, NULL, mt_calibrate_tsc, impl);
 
   info("%s, succ\n", __func__);
@@ -234,11 +241,12 @@ static int mt_main_free(struct mtl_main_impl* impl) {
     impl->tsc_cal_tid = 0;
   }
 
+  mt_ptp_uinit(impl);
+  mt_dhcp_uinit(impl);
   mt_config_uinit(impl);
   st_plugins_uinit(impl);
   mt_admin_uinit(impl);
   mt_cni_uinit(impl);
-  mt_ptp_uinit(impl);
   mt_arp_uinit(impl);
   mt_mcast_uinit(impl);
 
@@ -299,7 +307,7 @@ static int mt_user_params_check(struct mtl_init_params* p) {
         return ret;
       }
     }
-    if (p->pmd[i] == MTL_PMD_DPDK_USER) {
+    if (p->net_proto[i] == MTL_PROTO_STATIC && p->pmd[i] == MTL_PMD_DPDK_USER) {
       ip = p->sip_addr[i];
       ret = mt_ip_addr_check(ip);
       if (ret < 0) {
@@ -316,7 +324,8 @@ static int mt_user_params_check(struct mtl_init_params* p) {
           return -EINVAL;
         }
         /* check if duplicate ip */
-        if ((p->pmd[i] == MTL_PMD_DPDK_USER) && (p->pmd[j] == MTL_PMD_DPDK_USER)) {
+        if ((p->net_proto[i] == MTL_PROTO_STATIC) && (p->pmd[i] == MTL_PMD_DPDK_USER) &&
+            (p->pmd[j] == MTL_PMD_DPDK_USER)) {
           if (0 == memcmp(p->sip_addr[i], p->sip_addr[j], MTL_IP_ADDR_LEN)) {
             ip = p->sip_addr[j];
             err("%s, same ip %d.%d.%d.%d for port %d and %d\n", __func__, ip[0], ip[1],
@@ -1076,12 +1085,12 @@ uint16_t mtl_udma_completed(mtl_udma_handle handle, const uint16_t nb_cpls) {
   return mt_dma_completed(dev, nb_cpls, NULL, NULL);
 }
 
-enum mt_rss_mode mtl_rss_mode_get(mtl_handle mt) {
+enum mtl_rss_mode mtl_rss_mode_get(mtl_handle mt) {
   struct mtl_main_impl* impl = mt;
 
   if (impl->type != MT_HANDLE_MAIN) {
     err("%s, invalid type %d\n", __func__, impl->type);
-    return MT_RSS_MODE_MAX;
+    return MTL_RSS_MODE_MAX;
   }
 
   return mt_get_rss_mode(impl, MTL_PORT_P);

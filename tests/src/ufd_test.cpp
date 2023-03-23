@@ -78,17 +78,17 @@ static int utest_parse_args(struct utest_ctx* ctx, int argc, char** argv) {
         break;
       case UTEST_ARG_RSS_MODE:
         if (!strcmp(optarg, "l3"))
-          p->rss_mode = MT_RSS_MODE_L3;
+          p->rss_mode = MTL_RSS_MODE_L3;
         else if (!strcmp(optarg, "l3_l4"))
-          p->rss_mode = MT_RSS_MODE_L3_L4;
+          p->rss_mode = MTL_RSS_MODE_L3_L4;
         else if (!strcmp(optarg, "l3_l4_dst_port_only"))
-          p->rss_mode = MT_RSS_MODE_L3_L4_DP_ONLY;
+          p->rss_mode = MTL_RSS_MODE_L3_L4_DP_ONLY;
         else if (!strcmp(optarg, "l3_da_l4_dst_port_only"))
-          p->rss_mode = MT_RSS_MODE_L3_DA_L4_DP_ONLY;
+          p->rss_mode = MTL_RSS_MODE_L3_DA_L4_DP_ONLY;
         else if (!strcmp(optarg, "l4_dst_port_only"))
-          p->rss_mode = MT_RSS_MODE_L4_DP_ONLY;
+          p->rss_mode = MTL_RSS_MODE_L4_DP_ONLY;
         else if (!strcmp(optarg, "none"))
-          p->rss_mode = MT_RSS_MODE_NONE;
+          p->rss_mode = MTL_RSS_MODE_NONE;
         else
           err("%s, unknow rss mode %s\n", __func__, optarg);
         break;

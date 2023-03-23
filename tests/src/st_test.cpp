@@ -467,7 +467,7 @@ TEST(Main, size_page_align) { size_page_align_test(); }
 
 static void rss_mode_test(struct st_tests_context* ctx) {
   mtl_handle handle = ctx->handle;
-  enum mt_rss_mode expect = ctx->para.rss_mode;
+  enum mtl_rss_mode expect = ctx->para.rss_mode;
 
   EXPECT_EQ(expect, mtl_rss_mode_get(handle));
 }

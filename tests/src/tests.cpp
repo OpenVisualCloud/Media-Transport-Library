@@ -232,17 +232,17 @@ static int test_parse_args(struct st_tests_context* ctx, struct mtl_init_params*
         break;
       case TEST_ARG_RSS_MODE:
         if (!strcmp(optarg, "l3"))
-          p->rss_mode = MT_RSS_MODE_L3;
+          p->rss_mode = MTL_RSS_MODE_L3;
         else if (!strcmp(optarg, "l3_l4"))
-          p->rss_mode = MT_RSS_MODE_L3_L4;
+          p->rss_mode = MTL_RSS_MODE_L3_L4;
         else if (!strcmp(optarg, "l3_l4_dst_port_only"))
-          p->rss_mode = MT_RSS_MODE_L3_L4_DP_ONLY;
+          p->rss_mode = MTL_RSS_MODE_L3_L4_DP_ONLY;
         else if (!strcmp(optarg, "l3_da_l4_dst_port_only"))
-          p->rss_mode = MT_RSS_MODE_L3_DA_L4_DP_ONLY;
+          p->rss_mode = MTL_RSS_MODE_L3_DA_L4_DP_ONLY;
         else if (!strcmp(optarg, "l4_dst_port_only"))
-          p->rss_mode = MT_RSS_MODE_L4_DP_ONLY;
+          p->rss_mode = MTL_RSS_MODE_L4_DP_ONLY;
         else if (!strcmp(optarg, "none"))
-          p->rss_mode = MT_RSS_MODE_NONE;
+          p->rss_mode = MTL_RSS_MODE_NONE;
         else
           err("%s, unknow rss mode %s\n", __func__, optarg);
         break;
@@ -251,9 +251,9 @@ static int test_parse_args(struct st_tests_context* ctx, struct mtl_init_params*
         break;
       case TEST_ARG_IOVA_MODE:
         if (!strcmp(optarg, "va"))
-          p->iova_mode = MT_IOVA_MODE_VA;
+          p->iova_mode = MTL_IOVA_MODE_VA;
         else if (!strcmp(optarg, "pa"))
-          p->iova_mode = MT_IOVA_MODE_PA;
+          p->iova_mode = MTL_IOVA_MODE_PA;
         else
           err("%s, unknow iova mode %s\n", __func__, optarg);
         break;
@@ -281,8 +281,8 @@ static void test_random_ip(struct st_tests_context* ctx) {
   r_ip[2] = p_ip[2];
   r_ip[3] = p_ip[3] + 1;
 
-  /* MT_RSS_MODE_L3_L4_DP_ONLY not support mcast */
-  if (p->rss_mode == MT_RSS_MODE_L3_L4_DP_ONLY) {
+  /* MTL_RSS_MODE_L3_L4_DP_ONLY not support mcast */
+  if (p->rss_mode == MTL_RSS_MODE_L3_L4_DP_ONLY) {
     memcpy(ctx->mcast_ip_addr[MTL_PORT_P], mtl_r_sip_addr(p),
            sizeof(ctx->mcast_ip_addr[MTL_PORT_P]));
     memcpy(ctx->mcast_ip_addr[MTL_PORT_R], mtl_p_sip_addr(p),

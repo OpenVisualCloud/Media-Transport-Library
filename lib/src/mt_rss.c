@@ -8,7 +8,7 @@
 #include "mt_log.h"
 #include "mt_util.h"
 
-static const char* rss_mode_names[MT_RSS_MODE_MAX] = {
+static const char* rss_mode_names[MTL_RSS_MODE_MAX] = {
     "none",
     "l3",
     "l3_l4",
@@ -17,7 +17,7 @@ static const char* rss_mode_names[MT_RSS_MODE_MAX] = {
     "l4_dst_port_only",
 };
 
-static const char* rss_mode_name(enum mt_rss_mode rss_mode) {
+static const char* rss_mode_name(enum mtl_rss_mode rss_mode) {
   return rss_mode_names[rss_mode];
 }
 
@@ -72,27 +72,27 @@ static int rss_uinit(struct mt_rss_impl* rss) {
   return 0;
 }
 
-static enum mt_rss_mode rss_flow_mode(struct mt_rx_flow* flow) {
+static enum mtl_rss_mode rss_flow_mode(struct mt_rx_flow* flow) {
   if (flow->no_port_flow)
-    return MT_RSS_MODE_L3;
+    return MTL_RSS_MODE_L3;
   else if (flow->no_ip_flow)
-    return MT_RSS_MODE_L4_DP_ONLY;
+    return MTL_RSS_MODE_L4_DP_ONLY;
   else if (mt_is_multicast_ip(flow->dip_addr))
-    return MT_RSS_MODE_L3_DA_L4_DP_ONLY;
+    return MTL_RSS_MODE_L3_DA_L4_DP_ONLY;
   else
-    return MT_RSS_MODE_L3_L4_DP_ONLY;
+    return MTL_RSS_MODE_L3_L4_DP_ONLY;
 }
 
 static int rss_flow_check(struct mtl_main_impl* impl, enum mtl_port port,
                           struct mt_rx_flow* flow) {
-  enum mt_rss_mode sys_rss_mode = mt_get_rss_mode(impl, port);
-  enum mt_rss_mode flow_rss_mode = rss_flow_mode(flow);
+  enum mtl_rss_mode sys_rss_mode = mt_get_rss_mode(impl, port);
+  enum mtl_rss_mode flow_rss_mode = rss_flow_mode(flow);
 
   if (flow->sys_queue) return 0;
 
   if (sys_rss_mode == flow_rss_mode) return 0;
 
-  if (sys_rss_mode == MT_RSS_MODE_L3_L4 && flow_rss_mode == MT_RSS_MODE_L3_L4_DP_ONLY) {
+  if (sys_rss_mode == MTL_RSS_MODE_L3_L4 && flow_rss_mode == MTL_RSS_MODE_L3_L4_DP_ONLY) {
     warn("%s(%d), require l3_l4_dst_port_only but only l3_l4 allowed\n", __func__, port);
     return 0;
   }
@@ -102,7 +102,7 @@ static int rss_flow_check(struct mtl_main_impl* impl, enum mtl_port port,
   return -EIO;
 }
 
-static uint32_t rss_flow_hash(struct mt_rx_flow* flow, enum mt_rss_mode rss) {
+static uint32_t rss_flow_hash(struct mt_rx_flow* flow, enum mtl_rss_mode rss) {
   uint32_t tuple[4];
   uint32_t len = 0;
 
@@ -115,25 +115,25 @@ static uint32_t rss_flow_hash(struct mt_rx_flow* flow, enum mt_rss_mode rss) {
   uint32_t src_port = flow->src_port;
   uint32_t dst_port = flow->dst_port;
 
-  if (rss == MT_RSS_MODE_L3) {
+  if (rss == MTL_RSS_MODE_L3) {
     tuple[0] = src_addr;
     tuple[1] = dst_addr;
     len = 2;
-  } else if (rss == MT_RSS_MODE_L3_L4) {
+  } else if (rss == MTL_RSS_MODE_L3_L4) {
     tuple[0] = src_addr;
     tuple[1] = dst_addr;
     tuple[2] = (dst_port << 16) | src_port;
     len = 3;
-  } else if (rss == MT_RSS_MODE_L3_L4_DP_ONLY) {
+  } else if (rss == MTL_RSS_MODE_L3_L4_DP_ONLY) {
     tuple[0] = src_addr;
     tuple[1] = dst_addr;
     tuple[2] = (dst_port << 16) | 0;
     len = 3;
-  } else if (rss == MT_RSS_MODE_L3_DA_L4_DP_ONLY) {
+  } else if (rss == MTL_RSS_MODE_L3_DA_L4_DP_ONLY) {
     tuple[0] = src_addr;
     tuple[1] = (dst_port << 16) | 0;
     len = 2;
-  } else if (rss == MT_RSS_MODE_L4_DP_ONLY) {
+  } else if (rss == MTL_RSS_MODE_L4_DP_ONLY) {
     tuple[0] = (dst_port << 16) | 0;
     len = 1;
   } else {
