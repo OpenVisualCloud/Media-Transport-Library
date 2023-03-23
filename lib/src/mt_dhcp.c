@@ -527,6 +527,7 @@ uint8_t* mt_dhcp_get_gateway(struct mtl_main_impl* impl, enum mtl_port port) {
 int mt_dhcp_init(struct mtl_main_impl* impl) {
   int num_ports = mt_num_ports(impl);
   int socket = mt_socket_id(impl, MTL_PORT_P);
+  int num_dhcp = 0;
 
   for (int i = 0; i < num_ports; i++) {
     if (mt_if(impl, i)->net_proto != MTL_PROTO_DHCP) continue;
@@ -548,20 +549,23 @@ int mt_dhcp_init(struct mtl_main_impl* impl) {
 
     /* trigger discover at init */
     dhcp_send_discover(impl, i);
+
+    num_dhcp++;
   }
 
   int done, max_retry = 50;
   while (--max_retry) {
     done = 0;
     for (int i = 0; i < num_ports; i++)
-      if (impl->dhcp[i]->status == MT_DHCP_STATUS_BOUND) done++;
-    if (done == num_ports) break;
+      if (impl->dhcp[i] && impl->dhcp[i]->status == MT_DHCP_STATUS_BOUND) done++;
+    if (done == num_dhcp) break;
     mt_sleep_ms(100);
   }
-  if (done != num_ports) {
+  if (done != num_dhcp) {
     err("%s, dhcp init fail\n", __func__);
     for (int i = 0; i < num_ports; i++)
-      err("%s(%d), dhcp status %d\n", __func__, i, impl->dhcp[i]->status);
+      if (impl->dhcp[i])
+        err("%s(%d), dhcp status %d\n", __func__, i, impl->dhcp[i]->status);
     mt_dhcp_uinit(impl);
     return -ETIME;
   }
