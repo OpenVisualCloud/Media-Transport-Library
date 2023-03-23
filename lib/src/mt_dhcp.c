@@ -553,21 +553,23 @@ int mt_dhcp_init(struct mtl_main_impl* impl) {
     num_dhcp++;
   }
 
-  int done, max_retry = 50;
-  while (--max_retry) {
-    done = 0;
-    for (int i = 0; i < num_ports; i++)
-      if (impl->dhcp[i] && impl->dhcp[i]->status == MT_DHCP_STATUS_BOUND) done++;
-    if (done == num_dhcp) break;
-    mt_sleep_ms(100);
-  }
-  if (done != num_dhcp) {
-    err("%s, dhcp init fail\n", __func__);
-    for (int i = 0; i < num_ports; i++)
-      if (impl->dhcp[i])
-        err("%s(%d), dhcp status %d\n", __func__, i, impl->dhcp[i]->status);
-    mt_dhcp_uinit(impl);
-    return -ETIME;
+  if (num_dhcp != 0) {
+    int done, max_retry = 50;
+    while (--max_retry) {
+      done = 0;
+      for (int i = 0; i < num_ports; i++)
+        if (impl->dhcp[i] && impl->dhcp[i]->status == MT_DHCP_STATUS_BOUND) done++;
+      if (done == num_dhcp) break;
+      mt_sleep_ms(100);
+    }
+    if (done != num_dhcp) {
+      err("%s, dhcp init fail\n", __func__);
+      for (int i = 0; i < num_ports; i++)
+        if (impl->dhcp[i])
+          err("%s(%d), dhcp status %d\n", __func__, i, impl->dhcp[i]->status);
+      mt_dhcp_uinit(impl);
+      return -ETIME;
+    }
   }
 
   return 0;
