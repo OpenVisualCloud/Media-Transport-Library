@@ -9,32 +9,39 @@
 #include "mt_socket.h"
 #include "mt_util.h"
 
-#define DHCP_OP_BOOTREQUEST 1
-#define DHCP_OP_BOOTREPLY 2
-#define DHCP_HTYPE_ETHERNET 1
-#define DHCP_HLEN_ETHERNET 6
-#define DHCP_MAGIC_COOKIE 0x63825363
+#define DHCP_OP_BOOTREQUEST (1)
+#define DHCP_OP_BOOTREPLY (2)
+#define DHCP_HTYPE_ETHERNET (1)
+#define DHCP_HLEN_ETHERNET (6)
+#define DHCP_MAGIC_COOKIE (0x63825363)
 
-#define DHCP_OPTION_END 255
-#define DHCP_OPTION_SUBNET_MASK 1
-#define DHCP_OPTION_ROUTER 3
-#define DHCP_OPTION_DNS_SERVER 6
-#define DHCP_OPTION_REQUESTED_IP_ADDRESS 50
-#define DHCP_OPTION_LEASE_TIME 51
-#define DHCP_OPTION_MESSAGE_TYPE 53
-#define DHCP_OPTION_SERVER_IDENTIFIER 54
-#define DHCP_OPTION_PARAMETER_REQUEST_LIST 55
+#define DHCP_OPTION_END (255)
+#define DHCP_OPTION_SUBNET_MASK (1)
+#define DHCP_OPTION_ROUTER (3)
+#define DHCP_OPTION_DNS_SERVER (6)
+#define DHCP_OPTION_REQUESTED_IP_ADDRESS (50)
+#define DHCP_OPTION_LEASE_TIME (51)
+#define DHCP_OPTION_MESSAGE_TYPE (53)
+#define DHCP_OPTION_SERVER_IDENTIFIER (54)
+#define DHCP_OPTION_PARAMETER_REQUEST_LIST (55)
 
-#define DHCP_MESSAGE_TYPE_DISCOVER 1
-#define DHCP_MESSAGE_TYPE_OFFER 2
-#define DHCP_MESSAGE_TYPE_REQUEST 3
-#define DHCP_MESSAGE_TYPE_ACK 5
-#define DHCP_MESSAGE_TYPE_NAK 6
-#define DHCP_MESSAGE_TYPE_RELEASE 7
+#define DHCP_MESSAGE_TYPE_DISCOVER (1)
+#define DHCP_MESSAGE_TYPE_OFFER (2)
+#define DHCP_MESSAGE_TYPE_REQUEST (3)
+#define DHCP_MESSAGE_TYPE_ACK (5)
+#define DHCP_MESSAGE_TYPE_NAK (6)
+#define DHCP_MESSAGE_TYPE_RELEASE (7)
 
 static inline struct mt_dhcp_impl* get_dhcp(struct mtl_main_impl* impl,
                                             enum mtl_port port) {
   return impl->dhcp[port];
+}
+
+static inline void dhcp_set_status(struct mt_dhcp_impl* dhcp,
+                                   enum mt_dhcp_status status) {
+  mt_pthread_mutex_lock(&dhcp->mutex);
+  dhcp->status = status;
+  mt_pthread_mutex_unlock(&dhcp->mutex);
 }
 
 static int dhcp_send_discover(struct mtl_main_impl* impl, enum mtl_port port) {
@@ -111,9 +118,7 @@ static int dhcp_send_discover(struct mtl_main_impl* impl, enum mtl_port port) {
     return -EIO;
   }
 
-  mt_pthread_mutex_lock(&dhcp_impl->mutex);
-  dhcp_impl->status = MT_DHCP_STATUS_DISCOVERING;
-  mt_pthread_mutex_unlock(&dhcp_impl->mutex);
+  dhcp_set_status(dhcp_impl, MT_DHCP_STATUS_DISCOVERING);
 
   info("%s(%d), dhcp discover sent\n", __func__, port);
 
@@ -221,10 +226,6 @@ static int dhcp_send_request(struct mtl_main_impl* impl, enum mtl_port port) {
     return -EIO;
   }
 
-  mt_pthread_mutex_lock(&dhcp_impl->mutex);
-  dhcp_impl->status = MT_DHCP_STATUS_REQUESTING;
-  mt_pthread_mutex_unlock(&dhcp_impl->mutex);
-
   info("%s(%d), dhcp request sent\n", __func__, port);
 
   return 0;
@@ -262,6 +263,7 @@ static int dhcp_recv_offer(struct mtl_main_impl* impl, struct mt_dhcp_hdr* offer
     options += options[1] + 2;
   }
 
+  dhcp_set_status(dhcp_impl, MT_DHCP_STATUS_REQUESTING);
   dhcp_send_request(impl, port);
 
   return 0;
@@ -270,9 +272,7 @@ static int dhcp_recv_offer(struct mtl_main_impl* impl, struct mt_dhcp_hdr* offer
 /* renew at t1 after ack */
 static void dhcp_renew_handler(void* param) {
   struct mt_dhcp_impl* dhcp_impl = param;
-  mt_pthread_mutex_lock(&dhcp_impl->mutex);
-  dhcp_impl->status = MT_DHCP_STATUS_RENEWING;
-  mt_pthread_mutex_unlock(&dhcp_impl->mutex);
+  dhcp_set_status(dhcp_impl, MT_DHCP_STATUS_RENEWING);
   dhcp_send_request(dhcp_impl->parent, dhcp_impl->port);
 }
 
@@ -296,8 +296,8 @@ static void dhcp_lease_handler(void* param) {
     dhcp_impl->status = MT_DHCP_STATUS_INIT;
     mt_pthread_mutex_unlock(&dhcp_impl->mutex);
     dhcp_send_discover(dhcp_impl->parent, dhcp_impl->port);
-  }
-  mt_pthread_mutex_unlock(&dhcp_impl->mutex);
+  } else
+    mt_pthread_mutex_unlock(&dhcp_impl->mutex);
 }
 
 static int dhcp_recv_ack(struct mtl_main_impl* impl, struct mt_dhcp_hdr* ack,
@@ -344,9 +344,7 @@ static int dhcp_recv_ack(struct mtl_main_impl* impl, struct mt_dhcp_hdr* ack,
     return ret;
   }
 
-  mt_pthread_mutex_lock(&dhcp_impl->mutex);
-  dhcp_impl->status = MT_DHCP_STATUS_BOUND;
-  mt_pthread_mutex_unlock(&dhcp_impl->mutex);
+  dhcp_set_status(dhcp_impl, MT_DHCP_STATUS_BOUND);
 
   info("%s(%d), dhcp configuration done\n", __func__, dhcp_impl->port);
   info("%s(%d), ip address: %s\n", __func__, dhcp_impl->port,
@@ -439,7 +437,10 @@ static int dhcp_send_release(struct mtl_main_impl* impl, enum mtl_port port) {
   if (send < 1) {
     err_once("%s(%d), tx fail\n", __func__, port);
     rte_pktmbuf_free(pkt);
+    return -EIO;
   }
+
+  dhcp_set_status(dhcp_impl, MT_DHCP_STATUS_INIT);
 
   return 0;
 }
@@ -492,40 +493,36 @@ int mt_dhcp_parse(struct mtl_main_impl* impl, struct mt_dhcp_hdr* hdr,
 uint8_t* mt_dhcp_get_ip(struct mtl_main_impl* impl, enum mtl_port port) {
   struct mt_dhcp_impl* dhcp_impl = get_dhcp(impl, port);
 
-  if (!dhcp_impl) dbg("%s(%d), dhcp uninitialized\n", __func__, port);
-
-  while (dhcp_impl->status != MT_DHCP_STATUS_BOUND &&
-         dhcp_impl->status != MT_DHCP_STATUS_RENEWING &&
-         dhcp_impl->status != MT_DHCP_STATUS_REBINDING) {
-    // dhcp_send_discover(impl, port);
-    mt_sleep_ms(5000);
+  if (dhcp_impl->status != MT_DHCP_STATUS_BOUND &&
+      dhcp_impl->status != MT_DHCP_STATUS_RENEWING &&
+      dhcp_impl->status != MT_DHCP_STATUS_REBINDING) {
+    dbg("%s(%d), ip may not be usable\n", __func__, port);
   }
+
   return dhcp_impl->ip;
 }
 
 uint8_t* mt_dhcp_get_netmask(struct mtl_main_impl* impl, enum mtl_port port) {
   struct mt_dhcp_impl* dhcp_impl = get_dhcp(impl, port);
-  if (!dhcp_impl) dbg("%s(%d), dhcp uninitialized\n", __func__, port);
 
-  while (dhcp_impl->status != MT_DHCP_STATUS_BOUND &&
-         dhcp_impl->status != MT_DHCP_STATUS_RENEWING &&
-         dhcp_impl->status != MT_DHCP_STATUS_REBINDING) {
-    // dhcp_send_discover(impl, port);
-    mt_sleep_ms(5000);
+  if (dhcp_impl->status != MT_DHCP_STATUS_BOUND &&
+      dhcp_impl->status != MT_DHCP_STATUS_RENEWING &&
+      dhcp_impl->status != MT_DHCP_STATUS_REBINDING) {
+    dbg("%s(%d), netmask may not be usable\n", __func__, port);
   }
+
   return dhcp_impl->netmask;
 }
 
 uint8_t* mt_dhcp_get_gateway(struct mtl_main_impl* impl, enum mtl_port port) {
   struct mt_dhcp_impl* dhcp_impl = get_dhcp(impl, port);
-  if (!dhcp_impl) dbg("%s(%d), dhcp uninitialized\n", __func__, port);
 
-  while (dhcp_impl->status != MT_DHCP_STATUS_BOUND &&
-         dhcp_impl->status != MT_DHCP_STATUS_RENEWING &&
-         dhcp_impl->status != MT_DHCP_STATUS_REBINDING) {
-    // dhcp_send_discover(impl, port);
-    mt_sleep_ms(5000);
+  if (dhcp_impl->status != MT_DHCP_STATUS_BOUND &&
+      dhcp_impl->status != MT_DHCP_STATUS_RENEWING &&
+      dhcp_impl->status != MT_DHCP_STATUS_REBINDING) {
+    dbg("%s(%d), gateway may not be usable\n", __func__, port);
   }
+
   return dhcp_impl->gateway;
 }
 
@@ -553,6 +550,19 @@ int mt_dhcp_init(struct mtl_main_impl* impl) {
 
     /* trigger discover at init */
     dhcp_send_discover(impl, i);
+  }
+
+  int done, max_retry = 50;
+  while (--max_retry) {
+    done = 0;
+    for (int i = 0; i < num_ports; i++)
+      if (impl->dhcp[i]->status == MT_DHCP_STATUS_BOUND) done++;
+    if (done == num_ports) break;
+    mt_sleep_ms(100);
+  }
+  if (done != num_ports) {
+    err("%s, dhcp init fail\n", __func__);
+    return -ETIME;
   }
 
   return 0;

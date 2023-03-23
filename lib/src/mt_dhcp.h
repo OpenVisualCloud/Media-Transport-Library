@@ -12,6 +12,7 @@ enum mt_dhcp_udp_ports {
   MT_DHCP_UDP_CLIENT_PORT,
 };
 
+/* DHCP header defined in RFC2131 */
 struct mt_dhcp_hdr {
   uint8_t op;
   uint8_t htype;
