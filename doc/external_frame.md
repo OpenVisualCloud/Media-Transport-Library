@@ -167,7 +167,7 @@ struct st20_ext_frame {
 in ops, set the flag
 
 ```c
-ops_rx.flags |=ST20_TX_FLAG_EXT_FRAME;
+ops_rx.flags |= ST20_TX_FLAG_EXT_FRAME;
 ```
 
 explicitly set the ext frame, and in query_next_frame callback, provide the index
@@ -185,14 +185,14 @@ st20_tx_set_ext_frame(s->handle, idx, &ext_frame);
 set the ext_frames array in ops
 
 ```c
-struct st20_ext_frameext_frames[fb_cnt];
+struct st20_ext_frame ext_frames[fb_cnt];
 for (int i = 0; i < fb_cnt;++i) {
     ext_frames[i].buf_addr = your_addr;
     ext_frames[i].buf_iova = your_iova;
     ext_frames[i].buf_len = your_frame_size;
     ext_frames[i].opaque = your_frame_handle;
 }
-ops_rx.ext_frames =ext_frames;
+ops_rx.ext_frames = ext_frames;
 rx_handle = st20_rx_create(st, &ops_rx);
 ```
 
@@ -205,8 +205,8 @@ implement and set query_ext_frame callback and set incomplete frame flag
 ```c
 // set the callback in ops
 // set the incomplete frame flag
-ops_rx.query_ext_frame =rx_query_ext_frame;
-ops_rx.flags |=ST20_RX_FLAG_RECEIVE_INCOMPLETE_FRAME;
+ops_rx.query_ext_frame = rx_query_ext_frame;
+ops_rx.flags |= ST20_RX_FLAG_RECEIVE_INCOMPLETE_FRAME;
 //...
 //implement the callback
 static int rx_query_ext_frame(void* priv, st20_ext_frame*ext_frame, struct st20_rx_frame_meta* meta) {

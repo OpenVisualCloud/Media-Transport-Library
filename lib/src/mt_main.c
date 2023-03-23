@@ -1096,6 +1096,25 @@ enum mtl_rss_mode mtl_rss_mode_get(mtl_handle mt) {
   return mt_get_rss_mode(impl, MTL_PORT_P);
 }
 
+enum mtl_iova_mode mtl_iova_mode_get(mtl_handle mt) {
+  struct mtl_main_impl* impl = mt;
+
+  if (impl->type != MT_HANDLE_MAIN) {
+    err("%s, invalid type %d\n", __func__, impl->type);
+    return MTL_RSS_MODE_MAX;
+  }
+
+  switch (impl->iova_mode) {
+    case RTE_IOVA_PA:
+      return MTL_IOVA_MODE_PA;
+    case RTE_IOVA_VA:
+      return MTL_IOVA_MODE_VA;
+    default:
+      err("%s, invalid iova_mode %d\n", __func__, impl->iova_mode);
+      return MTL_IOVA_MODE_MAX;
+  }
+}
+
 enum mtl_simd_level mtl_get_simd_level(void) {
   if (rte_cpu_get_flag_enabled(RTE_CPUFLAG_AVX512VBMI2))
     return MTL_SIMD_LEVEL_AVX512_VBMI2;

@@ -23,6 +23,8 @@ enum sample_args_cmd {
   SAMPLE_ARG_R_RX_IP,
   SAMPLE_ARG_P_SIP,
   SAMPLE_ARG_R_SIP,
+  SAMPLE_ARG_UDP_PORT,
+  SAMPLE_ARG_FPS,
   SAMPLE_ARG_P_FWD_IP,
   SAMPLE_ARG_LOG_LEVEL,
   SAMPLE_ARG_DEV_AUTO_START,
@@ -48,6 +50,8 @@ enum sample_args_cmd {
   SAMPLE_ARG_EXT_FRAME,
   SAMPLE_ARG_ST22_CODEC,
   SAMPLE_ARG_ST22_FRAME_FMT,
+  SAMPLE_ARG_GDDR_PA,
+  SAMPLE_ARG_RX_DUMP,
 
   SAMPLE_ARG_UDP_MODE = 0x300,
   SAMPLE_ARG_UDP_LEN,
@@ -65,6 +69,8 @@ static struct option sample_args_options[] = {
     {"r_rx_ip", required_argument, 0, SAMPLE_ARG_R_RX_IP},
     {"p_sip", required_argument, 0, SAMPLE_ARG_P_SIP},
     {"r_sip", required_argument, 0, SAMPLE_ARG_R_SIP},
+    {"udp_port", required_argument, 0, SAMPLE_ARG_UDP_PORT},
+    {"fps", required_argument, 0, SAMPLE_ARG_FPS},
     {"p_fwd_ip", required_argument, 0, SAMPLE_ARG_P_FWD_IP},
     {"sessions_cnt", required_argument, 0, SAMPLE_ARG_SESSIONS_CNT},
     {"log_level", required_argument, 0, SAMPLE_ARG_LOG_LEVEL},
@@ -94,6 +100,8 @@ static struct option sample_args_options[] = {
     {"udp_mode", required_argument, 0, SAMPLE_ARG_UDP_MODE},
     {"udp_len", required_argument, 0, SAMPLE_ARG_UDP_LEN},
     {"udp_tx_bps_g", required_argument, 0, SAMPLE_ARG_UDP_TX_BPS_G},
+    {"gddr_pa", required_argument, 0, SAMPLE_ARG_GDDR_PA},
+    {"rx_dump", no_argument, 0, SAMPLE_ARG_RX_DUMP},
 
     {0, 0, 0, 0}};
 
@@ -141,6 +149,27 @@ static int _sample_parse_args(struct st_sample_context* ctx, int argc, char** ar
         break;
       case SAMPLE_ARG_R_SIP:
         inet_pton(AF_INET, optarg, mtl_r_sip_addr(p));
+        break;
+      case SAMPLE_ARG_UDP_PORT:
+        ctx->udp_port = atoi(optarg);
+        break;
+      case SAMPLE_ARG_FPS:
+        if (!strcmp(optarg, "59.94"))
+          ctx->fps = ST_FPS_P59_94;
+        else if (!strcmp(optarg, "50"))
+          ctx->fps = ST_FPS_P50;
+        else if (!strcmp(optarg, "60"))
+          ctx->fps = ST_FPS_P60;
+        else if (!strcmp(optarg, "30"))
+          ctx->fps = ST_FPS_P30;
+        else if (!strcmp(optarg, "29.97"))
+          ctx->fps = ST_FPS_P29_97;
+        else if (!strcmp(optarg, "25"))
+          ctx->fps = ST_FPS_P25;
+        else if (!strcmp(optarg, "24"))
+          ctx->fps = ST_FPS_P24;
+        else
+          err("%s, unknow fps %s\n", __func__, optarg);
         break;
       case SAMPLE_ARG_P_TX_IP:
         inet_pton(AF_INET, optarg, ctx->tx_dip_addr[MTL_PORT_P]);
@@ -277,6 +306,12 @@ static int _sample_parse_args(struct st_sample_context* ctx, int argc, char** ar
         break;
       case SAMPLE_ARG_UDP_LEN:
         ctx->udp_len = atoi(optarg);
+        break;
+      case SAMPLE_ARG_GDDR_PA:
+        ctx->gddr_pa = strtol(optarg, NULL, 0);
+        break;
+      case SAMPLE_ARG_RX_DUMP:
+        ctx->rx_dump = true;
         break;
       case '?':
         break;

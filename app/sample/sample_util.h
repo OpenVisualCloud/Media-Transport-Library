@@ -89,6 +89,7 @@ struct st_sample_context {
   uint32_t sessions; /* number of sessions */
   bool ext_frame;
   bool hdr_split;
+  bool rx_dump;
 
   char logo_url[ST_SAMPLE_URL_MAX_LEN];
   uint32_t logo_width;
@@ -104,6 +105,10 @@ struct st_sample_context {
 
   bool exit;
   void (*sig_handler)(int signo);
+
+  /* the PA of gpu PCIE bar which connected with GDDR */
+  off_t gddr_pa;
+  off_t gddr_offset;
 };
 
 int sample_parse_args(struct st_sample_context* ctx, int argc, char** argv, bool tx,

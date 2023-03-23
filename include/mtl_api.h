@@ -1110,6 +1110,16 @@ uint16_t mtl_udma_completed(mtl_udma_handle handle, const uint16_t nb_cpls);
 enum mtl_rss_mode mtl_rss_mode_get(mtl_handle mt);
 
 /**
+ * Get the iova mode.
+ *
+ * @param mt
+ *   The handle to the media transport device context.
+ * @return
+ *   - enum mtl_iova_mode.
+ */
+enum mtl_iova_mode mtl_iova_mode_get(mtl_handle mt);
+
+/**
  * Get SIMD level current cpu supported.
  *
  * @return

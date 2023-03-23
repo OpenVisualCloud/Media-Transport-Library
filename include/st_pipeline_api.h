@@ -411,7 +411,7 @@ enum st22_quality_mode {
  * Flag bit in flags of struct st20p_rx_ops.
  * Only used for internal convert mode.
  * The external frames are provided by calling
- * st20_rx_get_ext_frame.
+ * st20p_rx_get_ext_frame.
  */
 #define ST20P_RX_FLAG_EXT_FRAME (MTL_BIT32(2))
 /**
@@ -434,6 +434,12 @@ enum st22_quality_mode {
  * Pls note it could fallback to CPU if no DMA device is available.
  */
 #define ST20P_RX_FLAG_DMA_OFFLOAD (MTL_BIT32(17))
+/**
+ * Flag bit in flags of struct st20p_rx_ops.
+ * Only ST20_PACKING_BPM stream can enable this offload as software limit
+ * Try to enable header split offload feature.
+ */
+#define ST20P_RX_FLAG_HDR_SPLIT (MTL_BIT32(19))
 /**
  * Flag bit in flags of struct st20p_rx_ops.
  * Only for MTL_FLAG_RX_VIDEO_MIGRATE is enabled.

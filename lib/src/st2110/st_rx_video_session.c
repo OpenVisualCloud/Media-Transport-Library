@@ -599,6 +599,92 @@ static int rv_put_frame(struct st_rx_video_session_impl* s,
   return 0;
 }
 
+static int rv_uinit_hdr_split_frame(struct st_rx_video_session_impl* s) {
+  for (int i = 0; i < MTL_SESSION_PORT_MAX; i++) {
+    if (s->hdr_split_info[i].frames) {
+      if (!s->ops.ext_frames) mt_rte_free(s->hdr_split_info[i].frames);
+      s->hdr_split_info[i].frames = NULL;
+    }
+  }
+
+  return 0;
+}
+
+static int rv_init_hdr_split_frame(struct mtl_main_impl* impl,
+                                   struct st_rx_video_session_impl* s) {
+  int num_port = s->ops.num_port;
+  int idx = s->idx;
+  size_t frame_size = s->st20_frame_size;
+
+  enum mtl_port port;
+  int soc_id;
+  uint32_t mbufs_per_frame;
+  uint32_t mbufs_total;
+
+  mbufs_per_frame = frame_size / ST_VIDEO_BPM_SIZE;
+  if (frame_size % ST_VIDEO_BPM_SIZE) mbufs_per_frame++;
+  mbufs_total = mbufs_per_frame * s->st20_frames_cnt;
+  /* extra mbufs since frame may not start from zero pos */
+  mbufs_total += (mbufs_per_frame - 1);
+
+  for (int i = 0; i < num_port; i++) {
+    port = mt_port_logic2phy(s->port_maps, i);
+    soc_id = mt_socket_id(impl, port);
+    size_t frames_size = mbufs_total * ST_VIDEO_BPM_SIZE;
+
+    if (s->hdr_split_info[i].frames) {
+      err("%s(%d, %d), frames malloc already\n", __func__, idx, i);
+      return -EIO;
+    }
+
+    /* more extra space since rte_mbuf_data_iova_default has offset */
+    size_t malloc_size = frames_size + 4096;
+    void* frames;
+    rte_iova_t frames_iova;
+
+    if (s->ops.ext_frames) {
+      struct st20_ext_frame* ext_frame = &s->ops.ext_frames[i];
+      frames = ext_frame->buf_addr;
+      if (!frames) {
+        err("%s(%d, %d), NULL frame for ext frames\n", __func__, idx, i);
+        rv_uinit_hdr_split_frame(s);
+        return -EIO;
+      }
+      frames_iova = ext_frame->buf_iova;
+      if (!frames_iova) {
+        err("%s(%d, %d), no iova for ext frames\n", __func__, idx, i);
+        rv_uinit_hdr_split_frame(s);
+        return -EIO;
+      }
+      if (ext_frame->buf_len < malloc_size) {
+        err("%s(%d, %d), ext frames size too small, need %" PRIu64 " but only %" PRIu64
+            "\n",
+            __func__, idx, i, malloc_size, ext_frame->buf_len);
+        rv_uinit_hdr_split_frame(s);
+        return -EIO;
+      }
+    } else {
+      frames = mt_rte_zmalloc_socket(malloc_size, soc_id);
+      if (!frames) {
+        err("%s(%d), frames malloc fail for %d, mbufs_total %u\n", __func__, idx, i,
+            mbufs_total);
+        rv_uinit_hdr_split_frame(s);
+        return -ENOMEM;
+      }
+      frames_iova = rte_malloc_virt2iova(frames);
+    }
+    s->hdr_split_info[i].frames = frames;
+    s->hdr_split_info[i].frames_iova = frames_iova;
+    s->hdr_split_info[i].frames_size = frames_size;
+    s->hdr_split_info[i].mbufs_per_frame = mbufs_per_frame;
+    s->hdr_split_info[i].mbufs_total = mbufs_total;
+    info("%s(%d,%d), frames (%p-%p), mbufs_total %u, iova %" PRIx64 "\n", __func__, idx,
+         i, frames, frames + frames_size, mbufs_total, s->hdr_split_info[i].frames_iova);
+  }
+
+  return 0;
+}
+
 static int rv_free_frames(struct st_rx_video_session_impl* s) {
   if (s->st20_frames) {
     struct st_frame_trans* frame;
@@ -609,6 +695,8 @@ static int rv_free_frames(struct st_rx_video_session_impl* s) {
     mt_rte_free(s->st20_frames);
     s->st20_frames = NULL;
   }
+
+  rv_uinit_hdr_split_frame(s);
 
   dbg("%s(%d), succ\n", __func__, s->idx);
   return 0;
@@ -703,10 +791,22 @@ static int rv_alloc_frames(struct mtl_main_impl* impl,
     st20_frame->idx = i;
   }
 
+  if (rv_is_hdr_split(s)) {
+    int ret = rv_init_hdr_split_frame(impl, s);
+    if (ret < 0) {
+      rv_free_frames(s);
+      return ret;
+    }
+  }
+
   for (int i = 0; i < s->st20_frames_cnt; i++) {
     st20_frame = &s->st20_frames[i];
 
-    if (s->ops.ext_frames) {
+    if (rv_is_hdr_split(s)) { /* leave to zero for hdr split */
+      st20_frame->iova = 0;
+      st20_frame->addr = NULL;
+      st20_frame->flags = 0;
+    } else if (s->ops.ext_frames) {
       frame = s->ops.ext_frames[i].buf_addr;
       if (!frame) {
         err("%s(%d), no external framebuffer\n", __func__, idx);
@@ -724,7 +824,7 @@ static int rv_alloc_frames(struct mtl_main_impl* impl,
       st20_frame->flags = ST_FT_FLAG_EXT;
       info("%s(%d), attach external frame %d, addr %p, iova %" PRIu64 "\n", __func__, idx,
            i, frame, frame_iova);
-    } else if (rv_is_hdr_split(s) || rv_is_dynamic_ext_frame(s)) {
+    } else if (rv_is_dynamic_ext_frame(s)) {
       st20_frame->iova = 0; /* detect later */
       st20_frame->addr = NULL;
       st20_frame->flags = 0;
@@ -779,59 +879,6 @@ static int rv_alloc_rtps(struct mtl_main_impl* impl, struct st_rx_video_sessions
   }
   s->rtps_ring = ring;
   info("%s(%d,%d), rtp_ring_size %d\n", __func__, mgr_idx, idx, count);
-  return 0;
-}
-
-static int rv_uinit_hdr_split(struct st_rx_video_session_impl* s) {
-  for (int i = 0; i < MTL_SESSION_PORT_MAX; i++) {
-    if (s->hdr_split_info[i].frames) {
-      mt_rte_free(s->hdr_split_info[i].frames);
-      s->hdr_split_info[i].frames = NULL;
-    }
-  }
-
-  return 0;
-}
-
-static int rv_init_hdr_split(struct mtl_main_impl* impl,
-                             struct st_rx_video_session_impl* s) {
-  int num_port = s->ops.num_port;
-  int idx = s->idx;
-  size_t frame_size = s->st20_frame_size;
-
-  enum mtl_port port;
-  int soc_id;
-  void* frames;
-  uint32_t mbufs_per_frame;
-  uint32_t mbufs_total;
-
-  mbufs_per_frame = frame_size / ST_VIDEO_BPM_SIZE;
-  if (frame_size % ST_VIDEO_BPM_SIZE) mbufs_per_frame++;
-  mbufs_total = mbufs_per_frame * s->st20_frames_cnt;
-  /* extra mbufs since frame may not start from zero pos */
-  mbufs_total += (mbufs_per_frame - 1);
-
-  for (int i = 0; i < num_port; i++) {
-    port = mt_port_logic2phy(s->port_maps, i);
-    soc_id = mt_socket_id(impl, port);
-    size_t frames_size = mbufs_total * ST_VIDEO_BPM_SIZE;
-    /* more extra space since rte_mbuf_data_iova_default has offset */
-    frames = mt_rte_zmalloc_socket(frames_size + 4096, soc_id);
-    if (!frames) {
-      err("%s(%d), frames malloc fail for %d, mbufs_total %u\n", __func__, idx, i,
-          mbufs_total);
-      rv_uinit_hdr_split(s);
-      return -ENOMEM;
-    }
-    s->hdr_split_info[i].frames = frames;
-    s->hdr_split_info[i].frames_size = frames_size;
-    s->hdr_split_info[i].frames_iova = rte_malloc_virt2iova(frames);
-    s->hdr_split_info[i].mbufs_per_frame = mbufs_per_frame;
-    s->hdr_split_info[i].mbufs_total = mbufs_total;
-    info("%s(%d,%d), frames (%p-%p), mbufs_total %u\n", __func__, idx, i, frames,
-         frames + frames_size, mbufs_total);
-  }
-
   return 0;
 }
 
@@ -2272,7 +2319,6 @@ static int rv_uinit_sw(struct mtl_main_impl* impl, struct st_rx_video_session_im
   rv_free_frames(s);
   rv_free_rtps(s);
   rv_uinit_st22(s);
-  rv_uinit_hdr_split(s);
   return 0;
 }
 
@@ -2282,14 +2328,6 @@ static int rv_init_sw(struct mtl_main_impl* impl, struct st_rx_video_sessions_mg
   enum st20_type type = ops->type;
   int idx = s->idx;
   int ret;
-
-  if (rv_is_hdr_split(s)) {
-    ret = rv_init_hdr_split(impl, s);
-    if (ret < 0) {
-      rv_uinit_sw(impl, s);
-      return ret;
-    }
-  }
 
   /* try to request dma dev */
   if (st20_is_frame_type(type) && (ops->flags & ST20_RX_FLAG_DMA_OFFLOAD) &&
