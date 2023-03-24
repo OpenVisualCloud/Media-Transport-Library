@@ -1478,8 +1478,7 @@ static int tv_tasklet_frame(struct mtl_main_impl* impl,
       pacing_set_mbuf_time_stamp(pkts_r[i], pacing);
     }
 
-    if (s->pacing_way[MTL_SESSION_PORT_P] != ST21_TX_PACING_WAY_BE)
-      pacing_forward_cursor(pacing); /* pkt foward */
+    pacing_forward_cursor(pacing); /* pkt foward */
     s->st20_pkt_idx++;
     s->stat_pkts_build++;
   }
@@ -1520,8 +1519,6 @@ static int tv_tasklet_frame(struct mtl_main_impl* impl,
 
     uint64_t frame_build_end_time = mt_get_tsc(impl);
     uint64_t frame_est_end_time = pacing->tsc_time_cursor;
-    if (s->pacing_way[MTL_SESSION_PORT_P] == ST21_TX_PACING_WAY_BE)
-      frame_est_end_time += (s->st20_total_pkts - 1) * pacing->trs;
     if (frame_build_end_time > frame_est_end_time) {
       s->stat_exceed_frame_time++;
       dbg("%s(%d), frame %d build time out %fus\n", __func__, idx, s->st20_frame_idx,
@@ -1634,8 +1631,7 @@ static int tv_tasklet_rtp(struct mtl_main_impl* impl,
       pacing_set_mbuf_time_stamp(pkts_r[i], pacing);
     }
 
-    if (s->pacing_way[MTL_SESSION_PORT_P] != ST21_TX_PACING_WAY_BE)
-      pacing_forward_cursor(pacing); /* pkt foward */
+    pacing_forward_cursor(pacing); /* pkt foward */
     s->st20_pkt_idx++;
     s->stat_pkts_build++;
   }
@@ -1817,8 +1813,7 @@ static int tv_tasklet_st22(struct mtl_main_impl* impl,
         st_tx_mbuf_set_idx(pkts_r[i], s->st20_pkt_idx);
       }
 
-      if (s->pacing_way[MTL_SESSION_PORT_P] != ST21_TX_PACING_WAY_BE)
-        pacing_forward_cursor(pacing); /* pkt foward */
+      pacing_forward_cursor(pacing); /* pkt foward */
       s->st20_pkt_idx++;
       s->stat_pkts_build++;
       s->stat_pkts_dummy++;
@@ -1890,8 +1885,7 @@ static int tv_tasklet_st22(struct mtl_main_impl* impl,
         pacing_set_mbuf_time_stamp(pkts_r[i], pacing);
       }
 
-      if (s->pacing_way[MTL_SESSION_PORT_P] != ST21_TX_PACING_WAY_BE)
-        pacing_forward_cursor(pacing); /* pkt foward */
+      pacing_forward_cursor(pacing); /* pkt foward */
       s->st20_pkt_idx++;
       s->stat_pkts_build++;
     }
