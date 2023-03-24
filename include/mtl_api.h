@@ -254,6 +254,8 @@ enum st21_tx_pacing_way {
   ST21_TX_PACING_WAY_TSN,
   /** ptp based pacing */
   ST21_TX_PACING_WAY_PTP,
+  /** best effort sending */
+  ST21_TX_PACING_WAY_BE,
   /** Max value of this enum */
   ST21_TX_PACING_WAY_MAX,
 };

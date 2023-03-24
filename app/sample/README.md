@@ -65,7 +65,7 @@ The dir include the simple sample code for how to develop application quickly ba
 [rx_st20p_tx_st20p_downsample_merge_fwd.c](fwd/rx_st20p_tx_st20p_merge_fwd.c): Receive 4 1080p sessions from rx, downsample and merge to single 1080p st20 stream and send out.
 
 ```bash
-./build/app/RxSt20pTxSt20pMergeFwd --p_port 0000:af:01.1 --p_sip 192.168.75.22 --p_rx_ip 239.168.75.20 --p_fwd_ip 239.168.75.21
+./build/app/RxSt20pTxSt20pDownsampleMergeFwd --p_port 0000:af:01.1 --p_sip 192.168.75.22 --p_rx_ip 239.168.75.20 --p_fwd_ip 239.168.75.21
 ```
 
 [rx_st20_tx_st20_split_fwd.c](fwd/rx_st20_tx_st20_split_fwd.c): Receive 4k frames from rx, do square quad division and send with 4 1080p sessions.

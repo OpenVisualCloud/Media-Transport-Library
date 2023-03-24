@@ -281,7 +281,8 @@ static int video_trs_rl_tasklet(struct mtl_main_impl* impl,
 static int video_trs_tsc_tasklet(struct mtl_main_impl* impl,
                                  struct st_tx_video_session_impl* s,
                                  enum mtl_session_port s_port) {
-  unsigned int bulk = 1; /* only one packet now for tsc */
+  unsigned int bulk = s->bulk;
+  if (s->pacing_way[s_port] == ST21_TX_PACING_WAY_BE) bulk = 1;
   struct rte_ring* ring = s->ring[s_port];
   int idx = s->idx, tx;
   unsigned int n;
@@ -344,7 +345,6 @@ static int video_trs_tsc_tasklet(struct mtl_main_impl* impl,
     rte_pktmbuf_free_bulk(&pkts[valid_bulk], bulk - valid_bulk);
     s->stat_pkts_burst_dummy += bulk - valid_bulk;
     s->stat_trs_ret_code[s_port] = -STI_TSCTRS_BURST_HAS_DUMMY;
-    return MT_TASKLET_ALL_DONE;
   }
 
   s->pri_nic_burst_cnt++;
@@ -357,26 +357,28 @@ static int video_trs_tsc_tasklet(struct mtl_main_impl* impl,
     s->pri_nic_inflight_cnt = 0;
   }
 
-  cur_tsc = mt_get_tsc(impl);
-  target_tsc = st_tx_mbuf_get_tsc(pkts[0]);
-  if (cur_tsc < target_tsc) {
-    unsigned int i;
-    uint64_t delta = target_tsc - cur_tsc;
+  if (s->pacing_way[s_port] != ST21_TX_PACING_WAY_BE || pkt_idx == 0) {
+    cur_tsc = mt_get_tsc(impl);
+    target_tsc = st_tx_mbuf_get_tsc(pkts[0]);
+    if (cur_tsc < target_tsc) {
+      unsigned int i;
+      uint64_t delta = target_tsc - cur_tsc;
 
-    if (likely(delta < NS_PER_S)) {
-      s->trs_target_tsc[s_port] = target_tsc;
-      /* save it on inflight */
-      s->trs_inflight_num[s_port] = valid_bulk;
-      s->trs_inflight_idx[s_port] = 0;
-      s->trs_inflight_cnt[s_port]++;
-      for (i = 0; i < valid_bulk; i++) s->trs_inflight[s_port][i] = pkts[i];
-      s->pri_nic_inflight_cnt++;
-      s->stat_trs_ret_code[s_port] = -STI_TSCTRS_TARGET_TSC_NOT_REACH;
-      return delta < mt_sch_schedule_ns(impl) ? MT_TASKLET_HAS_PENDING
-                                              : MT_TASKLET_ALL_DONE;
-    } else {
-      err("%s(%d), invalid tsc cur %" PRIu64 " target %" PRIu64 "\n", __func__, idx,
-          cur_tsc, target_tsc);
+      if (likely(delta < NS_PER_S)) {
+        s->trs_target_tsc[s_port] = target_tsc;
+        /* save it on inflight */
+        s->trs_inflight_num[s_port] = valid_bulk;
+        s->trs_inflight_idx[s_port] = 0;
+        s->trs_inflight_cnt[s_port]++;
+        for (i = 0; i < valid_bulk; i++) s->trs_inflight[s_port][i] = pkts[i];
+        s->pri_nic_inflight_cnt++;
+        s->stat_trs_ret_code[s_port] = -STI_TSCTRS_TARGET_TSC_NOT_REACH;
+        return delta < mt_sch_schedule_ns(impl) ? MT_TASKLET_HAS_PENDING
+                                                : MT_TASKLET_ALL_DONE;
+      } else {
+        err("%s(%d), invalid tsc cur %" PRIu64 " target %" PRIu64 "\n", __func__, idx,
+            cur_tsc, target_tsc);
+      }
     }
   }
 
@@ -399,7 +401,7 @@ static int video_trs_tsc_tasklet(struct mtl_main_impl* impl,
 static int video_trs_ptp_tasklet(struct mtl_main_impl* impl,
                                  struct st_tx_video_session_impl* s,
                                  enum mtl_session_port s_port) {
-  unsigned int bulk = 1; /* only one packet now for tsc */
+  unsigned int bulk = s->bulk;
   struct rte_ring* ring = s->ring[s_port];
   int idx = s->idx, tx;
   unsigned int n;
@@ -462,7 +464,6 @@ static int video_trs_ptp_tasklet(struct mtl_main_impl* impl,
     rte_pktmbuf_free_bulk(&pkts[valid_bulk], bulk - valid_bulk);
     s->stat_pkts_burst_dummy += bulk - valid_bulk;
     s->stat_trs_ret_code[s_port] = -STI_TSCTRS_BURST_HAS_DUMMY;
-    return MT_TASKLET_ALL_DONE;
   }
 
   s->pri_nic_burst_cnt++;
@@ -544,6 +545,7 @@ int st_video_resolve_pacing_tasklet(struct st_tx_video_session_impl* s,
       s->pacing_tasklet_func[port] = video_trs_rl_tasklet;
       break;
     case ST21_TX_PACING_WAY_TSC:
+    case ST21_TX_PACING_WAY_BE:
       s->pacing_tasklet_func[port] = video_trs_tsc_tasklet;
       break;
     case ST21_TX_PACING_WAY_PTP:

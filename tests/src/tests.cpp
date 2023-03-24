@@ -227,6 +227,8 @@ static int test_parse_args(struct st_tests_context* ctx, struct mtl_init_params*
           p->pacing = ST21_TX_PACING_WAY_TSC;
         else if (!strcmp(optarg, "ptp"))
           p->pacing = ST21_TX_PACING_WAY_PTP;
+        else if (!strcmp(optarg, "be"))
+          p->pacing = ST21_TX_PACING_WAY_BE;
         else
           err("%s, unknow pacing way %s\n", __func__, optarg);
         break;
