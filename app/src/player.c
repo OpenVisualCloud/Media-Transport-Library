@@ -4,6 +4,8 @@
 
 #include "player.h"
 
+#include <SDL2/SDL_thread.h>
+
 #define FPS_CALCULATE_INTERVAL (30)
 #define SCREEN_WIDTH (640)
 #define SCREEN_HEIGHT (360)
