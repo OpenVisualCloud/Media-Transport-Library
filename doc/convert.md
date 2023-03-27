@@ -41,7 +41,7 @@ For full API usage please refer to [st_convert_api.h](../include/st_convert_api.
 
 | src_format| dest_format | scalar | avx2 | avx512 | avx512_vbmi |
 | :---      |     :---    | :----: |:----:| :----: |    :----:   |
-| rfc4175_422be12   | yuv422p12le       | &#x2705; |          | &#x2705; |          |
+| rfc4175_422be12   | yuv422p12le       | &#x2705; |          | &#x2705; | &#x2705; |
 | rfc4175_422be12   | rfc4175_422le12   | &#x2705; |          | &#x2705; |          |
 | rfc4175_422le12   | yuv422p12le       | &#x2705; |          |          |          |
 | rfc4175_422le12   | rfc4175_422be12   | &#x2705; |          |          |          |

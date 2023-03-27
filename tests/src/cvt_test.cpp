@@ -2167,6 +2167,22 @@ TEST(Cvt, rfc4175_422be12_to_yuv422p12le_avx512) {
   }
 }
 
+TEST(Cvt, rfc4175_422be12_to_yuv422p12le_avx512_vbmi) {
+  test_cvt_rfc4175_422be12_to_yuv422p12le(1920, 1080, MTL_SIMD_LEVEL_AVX512_VBMI2,
+                                          MTL_SIMD_LEVEL_AVX512_VBMI2);
+  test_cvt_rfc4175_422be12_to_yuv422p12le(722, 111, MTL_SIMD_LEVEL_AVX512_VBMI2,
+                                          MTL_SIMD_LEVEL_AVX512_VBMI2);
+  test_cvt_rfc4175_422be12_to_yuv422p12le(722, 111, MTL_SIMD_LEVEL_NONE,
+                                          MTL_SIMD_LEVEL_AVX512_VBMI2);
+  test_cvt_rfc4175_422be12_to_yuv422p12le(722, 111, MTL_SIMD_LEVEL_AVX512_VBMI2,
+                                          MTL_SIMD_LEVEL_NONE);
+  int w = 2; /* each pg has two pixels */
+  for (int h = 640; h < (640 + 64); h++) {
+    test_cvt_rfc4175_422be12_to_yuv422p12le(w, h, MTL_SIMD_LEVEL_AVX512_VBMI2,
+                                            MTL_SIMD_LEVEL_AVX512_VBMI2);
+  }
+}
+
 static void test_cvt_rfc4175_422be12_to_yuv422p12le_dma(mtl_udma_handle dma, int w, int h,
                                                         enum mtl_simd_level cvt_level,
                                                         enum mtl_simd_level back_level) {
