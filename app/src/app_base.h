@@ -2,7 +2,9 @@
  * Copyright(c) 2022 Intel Corporation
  */
 
+#ifdef APP_HAS_SDL2
 #include <SDL2/SDL.h>
+#endif
 #ifdef APP_HAS_SDL2_TTF
 #include <SDL2/SDL_ttf.h>
 #endif
@@ -50,14 +52,16 @@
 
 struct st_display {
   char name[36];
+#ifdef APP_HAS_SDL2
   SDL_Window* window;
   SDL_Renderer* renderer;
   SDL_Texture* texture;
   SDL_PixelFormatEnum fmt;
+  SDL_Rect msg_rect;
+#endif
 #ifdef APP_HAS_SDL2_TTF
   TTF_Font* font;
 #endif
-  SDL_Rect msg_rect;
   int window_w;
   int window_h;
   int pixel_w;

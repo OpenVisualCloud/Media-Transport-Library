@@ -20,7 +20,14 @@ libjson_c = dependency('json-c', required : true)
 if not is_windows
   libpcap = dependency('pcap', required: true)
 endif
-libsdl2 = dependency('sdl2', required: true)
+libsdl2 = dependency('sdl2', required: false)
+if libsdl2.found()
+  add_global_arguments('-DAPP_HAS_SDL2', language : 'c')
+  set_variable('app_has_sdl2', true)
+else
+  message('SDL2 not found')
+  set_variable('app_has_sdl2', false)
+endif
 libsdl2_ttf = dependency('SDL2_ttf', required: false)
 if libsdl2_ttf.found()
   add_global_arguments('-DAPP_HAS_SDL2_TTF', language : 'c')
