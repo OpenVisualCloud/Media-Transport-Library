@@ -1101,7 +1101,7 @@ enum mtl_iova_mode mtl_iova_mode_get(mtl_handle mt) {
 
   if (impl->type != MT_HANDLE_MAIN) {
     err("%s, invalid type %d\n", __func__, impl->type);
-    return MTL_RSS_MODE_MAX;
+    return MTL_IOVA_MODE_MAX;
   }
 
   switch (impl->iova_mode) {
