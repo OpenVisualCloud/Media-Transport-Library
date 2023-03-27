@@ -11,152 +11,28 @@
 MT_TARGET_CODE_START_AVX512_VBMI2
 /* begin st20_rfc4175_422be10_to_yuv422p10le_avx512_vbmi */
 static uint8_t be10_to_ple_permute_tbl_512[16 * 4] = {
-    /* b0 - b7 */
-    1,
-    0,
-    6,
-    5,
-    1 + 10,
-    0 + 10,
-    6 + 10,
-    5 + 10,
-    1 + 20,
-    0 + 20,
-    6 + 20,
-    5 + 20,
-    1 + 30,
-    0 + 30,
-    6 + 30,
-    5 + 30,
-    /* r0 - r7 */
-    3,
-    2,
-    8,
-    7,
-    3 + 10,
-    2 + 10,
-    8 + 10,
-    7 + 10,
-    3 + 20,
-    2 + 20,
-    8 + 20,
-    7 + 20,
-    3 + 30,
-    2 + 30,
-    8 + 30,
-    7 + 30,
-    /* y0 - y7 */
-    2,
-    1,
-    4,
-    3,
-    7,
-    6,
-    9,
-    8,
-    2 + 10,
-    1 + 10,
-    4 + 10,
-    3 + 10,
-    7 + 10,
-    6 + 10,
-    9 + 10,
-    8 + 10,
-    /* y8 - y15 */
-    2 + 20,
-    1 + 20,
-    4 + 20,
-    3 + 20,
-    7 + 20,
-    6 + 20,
-    9 + 20,
-    8 + 20,
-    2 + 30,
-    1 + 30,
-    4 + 30,
-    3 + 30,
-    7 + 30,
-    6 + 30,
-    9 + 30,
-    8 + 30,
+    1,      0,      6,      5,      1 + 10, 0 + 10, 6 + 10, 5 + 10, /* b0, b1, b2, b3 */
+    1 + 20, 0 + 20, 6 + 20, 5 + 20, 1 + 30, 0 + 30, 6 + 30, 5 + 30, /* b4, b5, b6, b7 */
+    3,      2,      8,      7,      3 + 10, 2 + 10, 8 + 10, 7 + 10, /* r0, r1, r2, r3 */
+    3 + 20, 2 + 20, 8 + 20, 7 + 20, 3 + 30, 2 + 30, 8 + 30, 7 + 30, /* r4, r5, r6, r7 */
+    2,      1,      4,      3,      7,      6,      9,      8,      /* y0 - y3 */
+    2 + 10, 1 + 10, 4 + 10, 3 + 10, 7 + 10, 6 + 10, 9 + 10, 8 + 10, /* y4 - y7 */
+    2 + 20, 1 + 20, 4 + 20, 3 + 20, 7 + 20, 6 + 20, 9 + 20, 8 + 20, /* y8 - y11 */
+    2 + 30, 1 + 30, 4 + 30, 3 + 30, 7 + 30, 6 + 30, 9 + 30, 8 + 30, /* y12 - y15 */
 };
 
 static uint16_t be10_to_ple_srlv_tbl_512[8 * 4] = {
-    /* b0 - b7 */
-    0x0006,
-    0x0006,
-    0x0006,
-    0x0006,
-    0x0006,
-    0x0006,
-    0x0006,
-    0x0006,
-    /* r0 - r7 */
-    0x0002,
-    0x0002,
-    0x0002,
-    0x0002,
-    0x0002,
-    0x0002,
-    0x0002,
-    0x0002,
-    /* y0 - y7 */
-    0x0004,
-    0x0000,
-    0x0004,
-    0x0000,
-    0x0004,
-    0x0000,
-    0x0004,
-    0x0000,
-    /* y8 - y15 */
-    0x0004,
-    0x0000,
-    0x0004,
-    0x0000,
-    0x0004,
-    0x0000,
-    0x0004,
-    0x0000,
+    6, 6, 6, 6, 6, 6, 6, 6, /* b0 - b7 */
+    2, 2, 2, 2, 2, 2, 2, 2, /* r0 - r7 */
+    4, 0, 4, 0, 4, 0, 4, 0, /* y0 - y7 */
+    4, 0, 4, 0, 4, 0, 4, 0, /* y8 - y15 */
 };
 
 static uint16_t be10_to_ple_and_tbl_512[8 * 4] = {
-    /* b0 - b7 */
-    0x03ff,
-    0x03ff,
-    0x03ff,
-    0x03ff,
-    0x03ff,
-    0x03ff,
-    0x03ff,
-    0x03ff,
-    /* r0 - r7 */
-    0x03ff,
-    0x03ff,
-    0x03ff,
-    0x03ff,
-    0x03ff,
-    0x03ff,
-    0x03ff,
-    0x03ff,
-    /* y0 - y7 */
-    0x03ff,
-    0x03ff,
-    0x03ff,
-    0x03ff,
-    0x03ff,
-    0x03ff,
-    0x03ff,
-    0x03ff,
-    /* y8 - y15 */
-    0x03ff,
-    0x03ff,
-    0x03ff,
-    0x03ff,
-    0x03ff,
-    0x03ff,
-    0x03ff,
-    0x03ff,
+    0x03ff, 0x03ff, 0x03ff, 0x03ff, 0x03ff, 0x03ff, 0x03ff, 0x03ff, /* b0 - b7 */
+    0x03ff, 0x03ff, 0x03ff, 0x03ff, 0x03ff, 0x03ff, 0x03ff, 0x03ff, /* r0 - r7 */
+    0x03ff, 0x03ff, 0x03ff, 0x03ff, 0x03ff, 0x03ff, 0x03ff, 0x03ff, /* y0 - y7 */
+    0x03ff, 0x03ff, 0x03ff, 0x03ff, 0x03ff, 0x03ff, 0x03ff, 0x03ff, /* y8 - y15 */
 };
 
 int st20_rfc4175_422be10_to_yuv422p10le_avx512_vbmi(struct st20_rfc4175_422_10_pg2_be* pg,
@@ -1113,41 +989,41 @@ int st20_rfc4175_422be10_to_v210_avx512_vbmi_dma(struct mtl_dma_lender_dev* dma,
 /* begin st20_yuv422p10le_to_rfc4175_422be10_vbmi */
 static uint16_t ple_to_be10_sllv_tbl_512[8 * 4] = {
     /* 0-15, b0 - b7 */
-    0x0006,
-    0x0006,
-    0x0006,
-    0x0006,
-    0x0006,
-    0x0006,
-    0x0006,
-    0x0006,
+    6,
+    6,
+    6,
+    6,
+    6,
+    6,
+    6,
+    6,
     /* 16-31, y0 - y7 */
-    0x0004,
-    0x0000,
-    0x0004,
-    0x0000,
-    0x0004,
-    0x0000,
-    0x0004,
-    0x0000,
+    4,
+    0,
+    4,
+    0,
+    4,
+    0,
+    4,
+    0,
     /* 32-47, r0 - r7 */
-    0x0002,
-    0x0002,
-    0x0002,
-    0x0002,
-    0x0002,
-    0x0002,
-    0x0002,
-    0x0002,
+    2,
+    2,
+    2,
+    2,
+    2,
+    2,
+    2,
+    2,
     /* 48-63, y8 - y15 */
-    0x0004,
-    0x0000,
-    0x0004,
-    0x0000,
-    0x0004,
-    0x0000,
-    0x0004,
-    0x0000,
+    4,
+    0,
+    4,
+    0,
+    4,
+    0,
+    4,
+    0,
 };
 
 static uint8_t ple_to_be10_permute_hi_tbl_512[16 * 4] = {
@@ -1851,5 +1727,211 @@ int st20_downsample_rfc4175_422be10_wh_half_avx512_vbmi(uint8_t* pg_old, uint8_t
   }
   return 0;
 }
+
+/* begin st20_rfc4175_422be12_to_yuv422p12le_avx512_vbmi */
+static uint8_t be12_to_ple_permute_tbl_512[16 * 4] = {
+    1,      0,      1 + 6,  0 + 6,  1 + 12, 0 + 12, 1 + 18, 0 + 18, /* b0, b1, b2, b3 */
+    1 + 24, 0 + 24, 1 + 30, 0 + 30, 1 + 36, 0 + 36, 1 + 42, 0 + 42, /* b4, b5, b6, b7 */
+    4,      3,      4 + 6,  3 + 6,  4 + 12, 3 + 12, 4 + 18, 3 + 18, /* r0, r1, r2, r3 */
+    4 + 24, 3 + 24, 4 + 30, 3 + 30, 4 + 36, 3 + 36, 4 + 42, 3 + 42, /* r4, r5, r6, r7 */
+    2,      1,      5,      4,      2 + 6,  1 + 6,  5 + 6,  4 + 6,  /* y0 - y3 */
+    2 + 12, 1 + 12, 5 + 12, 4 + 12, 2 + 18, 1 + 18, 5 + 18, 4 + 18, /* y4 - y7 */
+    2 + 24, 1 + 24, 5 + 24, 4 + 24, 2 + 30, 1 + 30, 5 + 30, 4 + 30, /* y8 - y11 */
+    2 + 36, 1 + 36, 5 + 36, 4 + 36, 2 + 42, 1 + 42, 5 + 42, 4 + 42, /* y12 - y15 */
+};
+
+static uint16_t be12_to_ple_srlv_tbl_512[8 * 4] = {
+    4, 4, 4, 4, 4, 4, 4, 4, /* b0 - b7 */
+    4, 4, 4, 4, 4, 4, 4, 4, /* r0 - r7 */
+    0, 0, 0, 0, 0, 0, 0, 0, /* y0 - y7 */
+    0, 0, 0, 0, 0, 0, 0, 0, /* y8 - y15 */
+};
+
+static uint16_t be12_to_ple_and_tbl_512[8 * 4] = {
+    0x0fff, 0x0fff, 0x0fff, 0x0fff, 0x0fff, 0x0fff, 0x0fff, 0x0fff, /* b0 - b7 */
+    0x0fff, 0x0fff, 0x0fff, 0x0fff, 0x0fff, 0x0fff, 0x0fff, 0x0fff, /* r0 - r7 */
+    0x0fff, 0x0fff, 0x0fff, 0x0fff, 0x0fff, 0x0fff, 0x0fff, 0x0fff, /* y0 - y7 */
+    0x0fff, 0x0fff, 0x0fff, 0x0fff, 0x0fff, 0x0fff, 0x0fff, 0x0fff, /* y8 - y15 */
+};
+
+int st20_rfc4175_422be12_to_yuv422p12le_avx512_vbmi(struct st20_rfc4175_422_12_pg2_be* pg,
+                                                    uint16_t* y, uint16_t* b, uint16_t* r,
+                                                    uint32_t w, uint32_t h) {
+  __m512i permute_le_mask = _mm512_loadu_si512(be12_to_ple_permute_tbl_512);
+  __m512i srlv_le_mask = _mm512_loadu_si512(be12_to_ple_srlv_tbl_512);
+  __m512i srlv_and_mask = _mm512_loadu_si512(be12_to_ple_and_tbl_512);
+  __mmask64 k = 0xFFFFFFFFFFFF; /* each __m512i with 2*4 pg group, 48 bytes */
+
+  int pg_cnt = w * h / 2;
+  dbg("%s, pg_cnt %d\n", __func__, pg_cnt);
+
+  /* each __m512i batch handle 8 pg groups */
+  while (pg_cnt >= 8) {
+    __m512i input = _mm512_maskz_loadu_epi8(k, pg);
+    __m512i permute_le_result = _mm512_permutexvar_epi8(permute_le_mask, input);
+    __m512i srlv_le_result = _mm512_srlv_epi16(permute_le_result, srlv_le_mask);
+    __m512i stage_m512i = _mm512_and_si512(srlv_le_result, srlv_and_mask);
+
+    pg += 8;
+
+    __m128i result_B = _mm512_extracti32x4_epi32(stage_m512i, 0);
+    __m128i result_R = _mm512_extracti32x4_epi32(stage_m512i, 1);
+    __m128i result_Y0 = _mm512_extracti32x4_epi32(stage_m512i, 2);
+    __m128i result_Y1 = _mm512_extracti32x4_epi32(stage_m512i, 3);
+
+    _mm_storeu_si128((__m128i*)b, result_B);
+    b += 2 * 4;
+    _mm_storeu_si128((__m128i*)r, result_R);
+    r += 2 * 4;
+    _mm_storeu_si128((__m128i*)y, result_Y0);
+    y += 2 * 4;
+    _mm_storeu_si128((__m128i*)y, result_Y1);
+    y += 2 * 4;
+
+    pg_cnt -= 8;
+  }
+
+  while (pg_cnt > 0) {
+    st20_unpack_pg2be_422le12(pg, b, y, r, y + 1);
+    b++;
+    r++;
+    y += 2;
+    pg++;
+
+    pg_cnt--;
+  }
+
+  return 0;
+}
+
+int st20_rfc4175_422be12_to_yuv422p12le_avx512_vbmi_dma(
+    struct mtl_dma_lender_dev* dma, struct st20_rfc4175_422_12_pg2_be* pg_be,
+    mtl_iova_t pg_be_iova, uint16_t* y, uint16_t* b, uint16_t* r, uint32_t w,
+    uint32_t h) {
+  __m512i permute_le_mask = _mm512_loadu_si512(be12_to_ple_permute_tbl_512);
+  __m512i srlv_le_mask = _mm512_loadu_si512(be12_to_ple_srlv_tbl_512);
+  __m512i srlv_and_mask = _mm512_loadu_si512(be12_to_ple_and_tbl_512);
+  __mmask64 k = 0xFFFFFFFFFFFF; /* each __m512i with 2*4 pg group, 48 bytes */
+  int pg_cnt = w * h / 2;
+
+  int caches_num = 4;
+  int cache_pg_cnt = (256 * 1024) / sizeof(*pg_be); /* pg cnt for each cache */
+  int align = caches_num * 8; /* align to simd pg groups and caches_num */
+  cache_pg_cnt = cache_pg_cnt / align * align;
+  size_t cache_size = cache_pg_cnt * sizeof(*pg_be);
+  int soc_id = dma->parent->soc_id;
+
+  struct st20_rfc4175_422_10_pg2_be* be_caches =
+      mt_rte_zmalloc_socket(cache_size * caches_num, soc_id);
+  struct mt_cvt_dma_ctx* ctx = mt_cvt_dma_ctx_init(2 * caches_num, soc_id, 2);
+  if (!be_caches || !ctx) {
+    err("%s, alloc cache(%d,%" PRIu64 ") fail, %p\n", __func__, cache_pg_cnt, cache_size,
+        be_caches);
+    if (be_caches) mt_rte_free(be_caches);
+    if (ctx) mt_cvt_dma_ctx_uinit(ctx);
+    return st20_rfc4175_422be12_to_yuv422p12le_avx512_vbmi(pg_be, y, b, r, w, h);
+  }
+  rte_iova_t be_caches_iova = rte_malloc_virt2iova(be_caches);
+
+  /* first with caches batch step */
+  int cache_batch = pg_cnt / cache_pg_cnt;
+  dbg("%s, pg_cnt %d cache_pg_cnt %d caches_num %d cache_batch %d\n", __func__, pg_cnt,
+      cache_pg_cnt, caches_num, cache_batch);
+  for (int i = 0; i < cache_batch; i++) {
+    struct st20_rfc4175_422_10_pg2_be* be_cache =
+        be_caches + (i % caches_num) * cache_pg_cnt;
+    dbg("%s, cache batch idx %d\n", __func__, i);
+
+    int max_tran = i + caches_num;
+    max_tran = RTE_MIN(max_tran, cache_batch);
+    int cur_tran = mt_cvt_dma_ctx_get_tran(ctx, 0);
+    /* push max be dma */
+    while (cur_tran < max_tran) {
+      rte_iova_t be_cache_iova = be_caches_iova + (cur_tran % caches_num) * cache_size;
+      mt_dma_copy_busy(dma, be_cache_iova, pg_be_iova, cache_size);
+      pg_be += cache_pg_cnt;
+      pg_be_iova += cache_size;
+      mt_cvt_dma_ctx_push(ctx, 0);
+      cur_tran = mt_cvt_dma_ctx_get_tran(ctx, 0);
+    }
+    mt_dma_submit_busy(dma);
+
+    /* wait until current be dma copy done */
+    while (mt_cvt_dma_ctx_get_done(ctx, 0) < (i + 1)) {
+      uint16_t nb_dq = mt_dma_completed(dma, 1, NULL, NULL);
+      if (nb_dq) mt_cvt_dma_ctx_pop(ctx);
+    }
+
+    struct st20_rfc4175_422_10_pg2_be* pg = be_cache;
+    int batch = cache_pg_cnt / 8;
+    for (int j = 0; j < batch; j++) {
+      __m512i input = _mm512_maskz_loadu_epi8(k, pg);
+      __m512i permute_le_result = _mm512_permutexvar_epi8(permute_le_mask, input);
+      __m512i srlv_le_result = _mm512_srlv_epi16(permute_le_result, srlv_le_mask);
+      __m512i stage_m512i = _mm512_and_si512(srlv_le_result, srlv_and_mask);
+
+      pg += 8;
+
+      __m128i result_B = _mm512_extracti32x4_epi32(stage_m512i, 0);
+      __m128i result_R = _mm512_extracti32x4_epi32(stage_m512i, 1);
+      __m128i result_Y0 = _mm512_extracti32x4_epi32(stage_m512i, 2);
+      __m128i result_Y1 = _mm512_extracti32x4_epi32(stage_m512i, 3);
+
+      _mm_storeu_si128((__m128i*)b, result_B);
+      b += 2 * 4;
+      _mm_storeu_si128((__m128i*)r, result_R);
+      r += 2 * 4;
+      _mm_storeu_si128((__m128i*)y, result_Y0);
+      y += 2 * 4;
+      _mm_storeu_si128((__m128i*)y, result_Y1);
+      y += 2 * 4;
+    }
+  }
+
+  pg_cnt = pg_cnt % cache_pg_cnt;
+  mt_cvt_dma_ctx_uinit(ctx);
+  mt_rte_free(be_caches);
+
+  /* remaining simd batch */
+  int batch = pg_cnt / 8;
+  /* each m512i batch handle 4 __m512i(16 __m128i), each __m128i with 2 pg group */
+  for (int i = 0; i < batch; i++) {
+    __m512i input = _mm512_maskz_loadu_epi8(k, pg_be);
+    __m512i permute_le_result = _mm512_permutexvar_epi8(permute_le_mask, input);
+    __m512i srlv_le_result = _mm512_srlv_epi16(permute_le_result, srlv_le_mask);
+    __m512i stage_m512i = _mm512_and_si512(srlv_le_result, srlv_and_mask);
+
+    pg_be += 8;
+
+    __m128i result_B = _mm512_extracti32x4_epi32(stage_m512i, 0);
+    __m128i result_R = _mm512_extracti32x4_epi32(stage_m512i, 1);
+    __m128i result_Y0 = _mm512_extracti32x4_epi32(stage_m512i, 2);
+    __m128i result_Y1 = _mm512_extracti32x4_epi32(stage_m512i, 3);
+
+    _mm_storeu_si128((__m128i*)b, result_B);
+    b += 2 * 4;
+    _mm_storeu_si128((__m128i*)r, result_R);
+    r += 2 * 4;
+    _mm_storeu_si128((__m128i*)y, result_Y0);
+    y += 2 * 4;
+    _mm_storeu_si128((__m128i*)y, result_Y1);
+    y += 2 * 4;
+  }
+  pg_cnt = pg_cnt % 8;
+
+  /* remaining scalar batch */
+  while (pg_cnt > 0) {
+    st20_unpack_pg2be_422le12(pg_be, b, y, r, y + 1);
+    b++;
+    r++;
+    y += 2;
+    pg_be++;
+
+    pg_cnt--;
+  }
+
+  return 0;
+}
+/* end st20_rfc4175_422be12_to_yuv422p12le_avx512_vbmi */
 MT_TARGET_CODE_STOP
 #endif
