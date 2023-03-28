@@ -330,6 +330,13 @@ executable('RxSt20pDynExtFrameSample', pipeline_rx_st20_dyn_ext_frame_sample_sou
   dependencies: [asan_dep, mtl, libpthread]
 )
 
+executable('RxSt20pHdrSplitGpuDirect', pipeline_rx_st20_dyn_hdr_split_gpu_direct_sources,
+  c_args : app_c_args,
+  link_args: app_ld_args,
+  # asan should be always the first dep
+  dependencies: [asan_dep, mtl, libpthread]
+)
+
 # Low level video samples app
 executable('TxRtpVideoSample', video_tx_rtp_sample_sources,
   c_args : app_c_args,

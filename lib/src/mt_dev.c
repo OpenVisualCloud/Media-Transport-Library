@@ -1500,8 +1500,12 @@ static int dev_if_init_rx_queues(struct mtl_main_impl* impl, struct mt_interface
       rx_queues[q].mbuf_elements = mbuf_elements;
 
       /* hdr split payload mbuf */
-      if (mt_if_has_hdr_split(impl, inf->port) && (q >= inf->system_rx_queues_end) &&
-          (q < inf->hdr_split_rx_queues_end)) {
+      if ((q >= inf->system_rx_queues_end) && (q < inf->hdr_split_rx_queues_end)) {
+        if (!mt_if_has_hdr_split(impl, inf->port)) {
+          err("%s(%d), no hdr split feature\n", __func__, inf->port);
+          dev_if_uinit_rx_queues(impl, inf);
+          return -EIO;
+        }
         snprintf(pool_name, ST_MAX_NAME_LEN, "ST%d_RX%d_PAYLOAD_POOL", inf->port, q);
         mbuf_pool = mt_mempool_create(impl, inf->port, pool_name, mbuf_elements,
                                       MT_MBUF_CACHE_SIZE, sizeof(struct mt_muf_priv_data),

@@ -23,6 +23,7 @@ redundant_rx_st20_sample_sources = files('rx_st20_redundant_sample.c', 'sample_u
 # ext frame
 pipeline_tx_st20_ext_frame_sample_sources = files('ext_frame/tx_st20_pipeline_ext_frame_sample.c', 'sample_util.c')
 pipeline_rx_st20_dyn_ext_frame_sample_sources = files('ext_frame/rx_st20_pipeline_dyn_ext_frame_sample.c', 'sample_util.c')
+pipeline_rx_st20_dyn_hdr_split_gpu_direct_sources = files('ext_frame/rx_st20p_hdr_split_gpu_direct.c', 'sample_util.c')
 
 # legacy
 video_tx_sample_sources = files('legacy/tx_video_sample.c', 'sample_util.c')
