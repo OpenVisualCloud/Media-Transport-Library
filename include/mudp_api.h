@@ -50,7 +50,7 @@ mudp_handle mudp_socket(mtl_handle mt, int domain, int type, int protocol);
  *   The handle to udp transport socket.
  * @return
  *   - 0: Success.
- *   - <0: Error code.
+ *   - <0: Error code. -1 is returned, and errno is set appropriately.
  */
 int mudp_close(mudp_handle ut);
 
@@ -65,7 +65,7 @@ int mudp_close(mudp_handle ut);
  *   Specifies the size, in bytes, of the address structure pointed to by addr.
  * @return
  *   - 0: Success.
- *   - <0: Error code.
+ *   - <0: Error code. -1 is returned, and errno is set appropriately.
  */
 int mudp_bind(mudp_handle ut, const struct sockaddr* addr, socklen_t addrlen);
 
@@ -87,7 +87,7 @@ int mudp_bind(mudp_handle ut, const struct sockaddr* addr, socklen_t addrlen);
  *   Specifies the size, in bytes, of the address structure pointed to by dest_addr.
  * @return
  *   - >0: the number of bytes sent.
- *   - <0: Error code.
+ *   - <0: Error code. -1 is returned, and errno is set appropriately.
  */
 ssize_t mudp_sendto(mudp_handle ut, const void* buf, size_t len, int flags,
                     const struct sockaddr* dest_addr, socklen_t addrlen);
@@ -123,7 +123,7 @@ typedef unsigned long int mudp_nfds_t;
  *   - > 0: Success, returns a nonnegative value which is the number of elements
  *          in the fds whose revents fields have been set to a nonzero value.
  *   - =0: Timeout.
- *   - <0: Error code.
+ *   - <0: Error code. -1 is returned, and errno is set appropriately.
  */
 int mudp_poll(struct mudp_pollfd* fds, mudp_nfds_t nfds, int timeout);
 
@@ -144,7 +144,7 @@ int mudp_poll(struct mudp_pollfd* fds, mudp_nfds_t nfds, int timeout);
  *   Specifies the size, in bytes, of the address structure pointed to by src_addr.
  * @return
  *   - >0: the number of bytes received.
- *   - <0: Error code.
+ *   - <0: Error code. -1 is returned, and errno is set appropriately.
  */
 ssize_t mudp_recvfrom(mudp_handle ut, void* buf, size_t len, int flags,
                       struct sockaddr* src_addr, socklen_t* addrlen);
@@ -165,7 +165,7 @@ ssize_t mudp_recvfrom(mudp_handle ut, void* buf, size_t len, int flags,
       identify a buffer len for the requested option.
  * @return
  *   - 0: Success.
- *   - <0: Error code.
+ *   - <0: Error code. -1 is returned, and errno is set appropriately.
  */
 int mudp_getsockopt(mudp_handle ut, int level, int optname, void* optval,
                     socklen_t* optlen);
@@ -186,10 +186,23 @@ int mudp_getsockopt(mudp_handle ut, int level, int optname, void* optval,
       identify a buffer len for the requested option.
  * @return
  *   - 0: Success.
- *   - <0: Error code.
+ *   - <0: Error code. -1 is returned, and errno is set appropriately.
  */
 int mudp_setsockopt(mudp_handle ut, int level, int optname, const void* optval,
                     socklen_t optlen);
+
+/**
+ * ioctl on the udp transport socket.
+ *
+ * @param ut
+ *   The handle to udp transport socket.
+ * @param cmd
+ *   cmd.
+ * @return
+ *   - 0: Success.
+ *   - <0: Error code. -1 is returned, and errno is set appropriately.
+ */
+int mudp_ioctl(mudp_handle ut, unsigned long cmd, va_list args);
 
 /**
  * Set the tx dst mac for the udp transport socket. MTL focus on data plane and only has
@@ -201,7 +214,7 @@ int mudp_setsockopt(mudp_handle ut, int level, int optname, const void* optval,
  *   The mac address.
  * @return
  *   - 0: Success.
- *   - <0: Error code.
+ *   - <0: Error code. -1 is returned, and errno is set appropriately.
  */
 int mudp_set_tx_mac(mudp_handle ut, uint8_t mac[MTL_MAC_ADDR_LEN]);
 
@@ -214,7 +227,7 @@ int mudp_set_tx_mac(mudp_handle ut, uint8_t mac[MTL_MAC_ADDR_LEN]);
  *   Bit per second.
  * @return
  *   - 0: Success.
- *   - <0: Error code.
+ *   - <0: Error code. -1 is returned, and errno is set appropriately.
  */
 int mudp_set_tx_rate(mudp_handle ut, uint64_t bps);
 
@@ -237,7 +250,7 @@ uint64_t mudp_get_tx_rate(mudp_handle ut);
  *   Tx timeout ms.
  * @return
  *   - 0: Success.
- *   - <0: Error code.
+ *   - <0: Error code. -1 is returned, and errno is set appropriately.
  */
 int mudp_set_tx_timeout(mudp_handle ut, unsigned int us);
 
@@ -260,7 +273,7 @@ unsigned int mudp_get_tx_timeout(mudp_handle ut);
  *   Rx timeout us.
  * @return
  *   - 0: Success.
- *   - <0: Error code.
+ *   - <0: Error code. -1 is returned, and errno is set appropriately.
  */
 int mudp_set_rx_timeout(mudp_handle ut, unsigned int us);
 
@@ -283,7 +296,7 @@ unsigned int mudp_get_rx_timeout(mudp_handle ut);
  *   Arp timeout us.
  * @return
  *   - 0: Success.
- *   - <0: Error code.
+ *   - <0: Error code. -1 is returned, and errno is set appropriately.
  */
 int mudp_set_arp_timeout(mudp_handle ut, unsigned int us);
 
@@ -306,7 +319,7 @@ unsigned int mudp_get_arp_timeout(mudp_handle ut);
  *   RX ring count.
  * @return
  *   - 0: Success.
- *   - <0: Error code.
+ *   - <0: Error code. -1 is returned, and errno is set appropriately.
  */
 int mudp_set_rx_ring_count(mudp_handle ut, unsigned int count);
 
@@ -319,7 +332,7 @@ int mudp_set_rx_ring_count(mudp_handle ut, unsigned int count);
  *   Wake threshold count.
  * @return
  *   - 0: Success.
- *   - <0: Error code.
+ *   - <0: Error code. -1 is returned, and errno is set appropriately.
  */
 int mudp_set_wake_thresh_count(mudp_handle ut, unsigned int count);
 
@@ -332,7 +345,7 @@ int mudp_set_wake_thresh_count(mudp_handle ut, unsigned int count);
  *   Timeout value in us.
  * @return
  *   - 0: Success.
- *   - <0: Error code.
+ *   - <0: Error code. -1 is returned, and errno is set appropriately.
  */
 int mudp_set_wake_timeout(mudp_handle ut, unsigned int us);
 
@@ -345,7 +358,7 @@ int mudp_set_wake_timeout(mudp_handle ut, unsigned int us);
  *   Time to sleep inside poll, value in us.
  * @return
  *   - 0: Success.
- *   - <0: Error code.
+ *   - <0: Error code. -1 is returned, and errno is set appropriately.
  */
 int mudp_set_rx_poll_sleep(mudp_handle ut, unsigned int us);
 
@@ -358,7 +371,7 @@ int mudp_set_rx_poll_sleep(mudp_handle ut, unsigned int us);
  *   The pointer to the IP address buffer.
  * @return
  *   - 0: Success.
- *   - <0: Error code.
+ *   - <0: Error code. -1 is returned, and errno is set appropriately.
  */
 int mudp_get_sip(mudp_handle ut, uint8_t ip[MTL_IP_ADDR_LEN]);
 
@@ -371,7 +384,7 @@ int mudp_get_sip(mudp_handle ut, uint8_t ip[MTL_IP_ADDR_LEN]);
  *   The pointer to the dst IP address buffer.
  * @return
  *   - 0: Success.
- *   - <0: Error code.
+ *   - <0: Error code. -1 is returned, and errno is set appropriately.
  */
 int mudp_tx_valid_ip(mudp_handle ut, uint8_t dip[MTL_IP_ADDR_LEN]);
 
@@ -386,7 +399,7 @@ int mudp_tx_valid_ip(mudp_handle ut, uint8_t dip[MTL_IP_ADDR_LEN]);
  *   The priv data to the callback fuction.
  * @return
  *   - 0: Success.
- *   - <0: Error code.
+ *   - <0: Error code. -1 is returned, and errno is set appropriately.
  */
 int mudp_register_stat_dump_cb(mudp_handle ut, int (*dump)(void* priv), void* priv);
 

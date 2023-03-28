@@ -42,6 +42,13 @@
     printf("UPL: Error: "__VA_ARGS__); \
   } while (0)
 
+/* On error, -1 is returned, and errno is set appropriately. */
+#define UPL_ERR_RET(code) \
+  do {                    \
+    errno = code;         \
+    return -1;            \
+  } while (0)
+
 static inline void* upl_malloc(size_t sz) { return malloc(sz); }
 
 static inline void* upl_zmalloc(size_t sz) {
@@ -64,13 +71,13 @@ struct upl_functions {
   int (*getsockopt)(int sockfd, int level, int optname, void* optval, socklen_t* optlen);
   int (*setsockopt)(int sockfd, int level, int optname, const void* optval,
                     socklen_t optlen);
-  int (*fcntl)(int sockfd, int cmd, ...);
-  int (*fcntl64)(int sockfd, int cmd, ...);
+  int (*fcntl)(int sockfd, int cmd, va_list args);
+  int (*fcntl64)(int sockfd, int cmd, va_list args);
+  int (*ioctl)(int sockfd, unsigned long cmd, va_list args);
 };
 
 struct upl_ufd_entry {
   int ufd;
-  int kfd;
   bool bind_kfd; /* fallback to kernel fd in the bind */
 
   int stat_tx_ufd_cnt;
@@ -86,6 +93,9 @@ struct upl_ctx {
   int mtl_fd_base;
 
   struct upl_functions libc_fn;
+
+  int ufd_entires_nb;                 /* the number of ufd_entires */
+  struct upl_ufd_entry** ufd_entires; /* ufd entries */
 };
 
 #endif

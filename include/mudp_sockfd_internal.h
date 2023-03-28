@@ -40,7 +40,7 @@ struct mufd_override_params {
  *   The pointer to the rt parameters.
  * @return
  *   - >=0: Success.
- *   - <0: Error code.
+ *   - <0: Error code. -1 is returned, and errno is set appropriately.
  */
 int mufd_commit_override_params(struct mufd_override_params* p);
 
@@ -74,7 +74,7 @@ struct mufd_init_params {
  *   The pointer to the mufd init parameters.
  * @return
  *   - >=0: Success.
- *   - <0: Error code.
+ *   - <0: Error code. -1 is returned, and errno is set appropriately.
  */
 int mufd_commit_init_params(struct mufd_init_params* p);
 
@@ -83,7 +83,7 @@ int mufd_commit_init_params(struct mufd_init_params* p);
  *
  * @return
  *   - >=0: Success, the number.
- *   - <0: Error code.
+ *   - <0: Error code. -1 is returned, and errno is set appropriately.
  */
 int mufd_get_sessions_max_nb(void);
 
@@ -92,7 +92,7 @@ int mufd_get_sessions_max_nb(void);
  *
  * @return
  *   - >=0: Success.
- *   - <0: Error code.
+ *   - <0: Error code. -1 is returned, and errno is set appropriately.
  */
 int mufd_init_context(void);
 
@@ -101,7 +101,7 @@ int mufd_init_context(void);
  *
  * @return
  *   - >=0: Success, the base fd.
- *   - <0: Error code.
+ *   - <0: Error code. -1 is returned, and errno is set appropriately.
  */
 int mufd_base_fd(void);
 
@@ -115,7 +115,7 @@ int mufd_base_fd(void);
  *
  * @return
  *   - >=0: Success.
- *   - <0: Error code.
+ *   - <0: Error code. -1 is returned, and errno is set appropriately.
  */
 int mufd_set_opaque(int sockfd, void* pri);
 
@@ -139,7 +139,7 @@ void* mufd_get_opaque(int sockfd);
  *   The pointer to the IP address buffer.
  * @return
  *   - 0: Success.
- *   - <0: Error code.
+ *   - <0: Error code. -1 is returned, and errno is set appropriately.
  */
 int mufd_get_sip(int sockfd, uint8_t ip[MTL_IP_ADDR_LEN]);
 
@@ -152,7 +152,7 @@ int mufd_get_sip(int sockfd, uint8_t ip[MTL_IP_ADDR_LEN]);
  *   The pointer to the dst IP address buffer.
  * @return
  *   - 0: Success.
- *   - <0: Error code.
+ *   - <0: Error code. -1 is returned, and errno is set appropriately.
  */
 int mufd_tx_valid_ip(int sockfd, uint8_t dip[MTL_IP_ADDR_LEN]);
 
@@ -167,7 +167,7 @@ int mufd_tx_valid_ip(int sockfd, uint8_t dip[MTL_IP_ADDR_LEN]);
  *   The priv data to the callback fuction.
  * @return
  *   - 0: Success.
- *   - <0: Error code.
+ *   - <0: Error code. -1 is returned, and errno is set appropriately.
  */
 int mufd_register_stat_dump_cb(int sockfd, int (*dump)(void* priv), void* priv);
 
@@ -181,8 +181,8 @@ int mufd_register_stat_dump_cb(int sockfd, int (*dump)(void* priv), void* priv);
  * @param protocol
  *   Specifies a particular protocol to be used with the socket, only zero now.
  * @return
- *   - true: Yes, support.
- *   - false: Not support.
+ *   - 0: Yes, support.
+ *   - <0: Fail, not support. -1 is returned, and errno is set appropriately.
  */
 int mufd_socket_check(int domain, int type, int protocol);
 
