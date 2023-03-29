@@ -91,6 +91,21 @@ ssize_t mufd_sendto(int sockfd, const void* buf, size_t len, int flags,
                     const struct sockaddr* dest_addr, socklen_t addrlen);
 
 /**
+ * Send data on the udp transport socket.
+ *
+ * @param sockfd
+ *   the sockfd by mufd_socket.
+ * @param msg
+ *   The struct msghdr.
+ * @param flags
+ *   Not support any flags now.
+ * @return
+ *   - >0: the number of bytes sent.
+ *   - <0: Error code. -1 is returned, and errno is set appropriately.
+ */
+ssize_t mufd_sendmsg(int sockfd, const struct msghdr* msg, int flags);
+
+/**
  * Poll the udp transport socket, blocks until one of the events occurs.
  * Only support POLLIN now.
  *

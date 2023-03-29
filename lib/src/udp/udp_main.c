@@ -51,8 +51,8 @@ static int udp_verify_addr(const struct sockaddr_in* addr, socklen_t addrlen) {
     err("%s, invalid sa_family %d\n", __func__, addr->sin_family);
     MUDP_ERR_RET(EINVAL);
   }
-  if (addrlen != sizeof(*addr)) {
-    err("%s, invalid addrlen %d\n", __func__, (int)addrlen);
+  if (addrlen < sizeof(*addr)) {
+    err("%s, invalid addrlen %d\n", __func__, addrlen);
     MUDP_ERR_RET(EINVAL);
   }
 
@@ -87,7 +87,7 @@ static int udp_verify_sendto_args(size_t len, int flags, const struct sockaddr_i
   if (ret < 0) return ret;
 
   if (len > MUDP_MAX_BYTES) {
-    err("%s, invalid len %d\n", __func__, (int)len);
+    err("%s, invalid len %" PRIu64 "\n", __func__, len);
     MUDP_ERR_RET(EINVAL);
   }
   if (flags) {
@@ -104,12 +104,12 @@ static int udp_verify_poll(struct mudp_pollfd* fds, mudp_nfds_t nfds, int timeou
     MUDP_ERR_RET(EINVAL);
   }
   if (nfds <= 0) {
-    err("%s, invalid nfds %d\n", __func__, (int)nfds);
+    err("%s, invalid nfds %" PRIu64 "\n", __func__, nfds);
     MUDP_ERR_RET(EINVAL);
   }
   for (mudp_nfds_t i = 0; i < nfds; i++) {
     if (!(fds[i].events & POLLIN)) {
-      err("%s(%d), invalid events 0x%x\n", __func__, (int)i, fds[i].events);
+      err("%s(%" PRIu64 "), invalid events 0x%x\n", __func__, i, fds[i].events);
       MUDP_ERR_RET(EINVAL);
     }
     fds[i].revents = 0;
@@ -144,7 +144,7 @@ static int udp_build_tx_pkt(struct mtl_main_impl* impl, struct mudp_impl* s,
         err("%s(%d), mt_dev_dst_ip_mac fail %d for %u.%u.%u.%u\n", __func__, idx, ret,
             dip[0], dip[1], dip[2], dip[3]);
       s->stat_pkt_arp_fail++;
-      return ret;
+      MUDP_ERR_RET(EIO);
     }
   }
 
@@ -174,6 +174,111 @@ static int udp_build_tx_pkt(struct mtl_main_impl* impl, struct mudp_impl* s,
   }
 
   s->stat_pkt_build++;
+  return 0;
+}
+
+static ssize_t udp_build_tx_msg_pkt(struct mtl_main_impl* impl, struct mudp_impl* s,
+                                    struct rte_mbuf* pkt, const struct msghdr* msg,
+                                    const struct sockaddr_in* addr_in,
+                                    int arp_timeout_ms) {
+  struct mt_udp_hdr* hdr = rte_pktmbuf_mtod(pkt, struct mt_udp_hdr*);
+  struct rte_ether_hdr* eth = &hdr->eth;
+  struct rte_ipv4_hdr* ipv4 = &hdr->ipv4;
+  struct rte_udp_hdr* udp = &hdr->udp;
+  enum mtl_port port = s->port;
+  int idx = s->idx;
+  int ret;
+
+  /* copy eth, ip, udp */
+  rte_memcpy(hdr, &s->hdr, sizeof(*hdr));
+
+  /* eth */
+  struct rte_ether_addr* d_addr = mt_eth_d_addr(eth);
+  uint8_t* dip = (uint8_t*)&addr_in->sin_addr;
+  if (udp_get_flag(s, MUDP_TX_USER_MAC)) {
+    rte_memcpy(d_addr->addr_bytes, s->user_mac, RTE_ETHER_ADDR_LEN);
+  } else {
+    ret = mt_dev_dst_ip_mac(impl, dip, d_addr, port, arp_timeout_ms);
+    if (ret < 0) {
+      if (arp_timeout_ms) /* log only if not zero timeout */
+        err("%s(%d), mt_dev_dst_ip_mac fail %d for %u.%u.%u.%u\n", __func__, idx, ret,
+            dip[0], dip[1], dip[2], dip[3]);
+      s->stat_pkt_arp_fail++;
+      MUDP_ERR_RET(EIO);
+    }
+  }
+
+  /* ip */
+  ipv4->packet_id = htons(s->ipv4_packet_id);
+  s->ipv4_packet_id++;
+  mtl_memcpy(&ipv4->dst_addr, dip, MTL_IP_ADDR_LEN);
+
+  /* udp */
+  udp->dst_port = addr_in->sin_port;
+
+  /* pkt mbuf */
+  mt_mbuf_init_ipv4(pkt);
+  pkt->packet_type = RTE_PTYPE_L2_ETHER | RTE_PTYPE_L3_IPV4 | RTE_PTYPE_L4_UDP;
+
+  /* copy payload */
+  void* payload = &udp[1];
+  size_t payload_len = MUDP_MAX_BYTES;
+  size_t copied = 0;
+
+  for (int i = 0; i < msg->msg_iovlen; i++) {
+    if (payload_len <= 0) {
+      err("%s(%d), too many data in the msg\n", __func__, idx);
+      MUDP_ERR_RET(EINVAL);
+    }
+    size_t clen = RTE_MIN(msg->msg_iov[i].iov_len, payload_len);
+    rte_memcpy(payload, msg->msg_iov[i].iov_base, clen);
+    payload_len -= clen;
+    payload += clen;
+    copied += clen;
+  }
+  s->stat_pkt_deliver++;
+
+  pkt->data_len = copied + sizeof(*hdr);
+  pkt->pkt_len = pkt->data_len;
+
+  udp->dgram_len = htons(pkt->pkt_len - pkt->l2_len - pkt->l3_len);
+  ipv4->total_length = htons(pkt->pkt_len - pkt->l2_len);
+  if (!mt_if_has_offload_ipv4_cksum(impl, port)) {
+    /* generate cksum if no offload */
+    ipv4->hdr_checksum = rte_ipv4_cksum(ipv4);
+  }
+
+  s->stat_pkt_build++;
+  return copied;
+}
+
+static int udp_tx_pkt(struct mtl_main_impl* impl, struct mudp_impl* s,
+                      struct rte_mbuf* pkt) {
+  int idx = s->idx;
+  uint64_t start_ts = mt_get_tsc(impl);
+
+  while (1) {
+    uint16_t sent;
+
+    if (s->tsq)
+      sent = mt_tsq_burst(s->tsq, &pkt, 1);
+    else
+      sent = mt_dev_tx_burst(s->txq, &pkt, 1);
+    if (sent >= 1) { /* burst succ */
+      s->stat_pkt_tx++;
+      break;
+    }
+
+    /* check timeout */
+    unsigned int us = (mt_get_tsc(impl) - start_ts) / NS_PER_US;
+    if (us > s->tx_timeout_us) {
+      warn("%s(%d), fail as timeout %u us\n", __func__, idx, s->tx_timeout_us);
+      MUDP_ERR_RET(ETIMEDOUT);
+    }
+    s->stat_tx_retry++;
+    mt_sleep_us(1);
+  }
+
   return 0;
 }
 
@@ -554,7 +659,7 @@ static int udp_get_sndbuf(struct mudp_impl* s, void* optval, socklen_t* optlen) 
   size_t sz = sizeof(uint32_t);
 
   if (*optlen != sz) {
-    err("%s(%d), invalid *optlen %d\n", __func__, idx, (int)(*optlen));
+    err("%s(%d), invalid *optlen %d\n", __func__, idx, (*optlen));
     MUDP_ERR_RET(EINVAL);
   }
 
@@ -567,7 +672,7 @@ static int udp_get_rcvbuf(struct mudp_impl* s, void* optval, socklen_t* optlen) 
   size_t sz = sizeof(uint32_t);
 
   if (*optlen != sz) {
-    err("%s(%d), invalid *optlen %d\n", __func__, idx, (int)(*optlen));
+    err("%s(%d), invalid *optlen %d\n", __func__, idx, (*optlen));
     MUDP_ERR_RET(EINVAL);
   }
 
@@ -581,7 +686,7 @@ static int udp_set_sndbuf(struct mudp_impl* s, const void* optval, socklen_t opt
   uint32_t sndbuf_sz;
 
   if (optlen != sz) {
-    err("%s(%d), invalid optlen %d\n", __func__, idx, (int)optlen);
+    err("%s(%d), invalid optlen %d\n", __func__, idx, optlen);
     MUDP_ERR_RET(EINVAL);
   }
 
@@ -597,7 +702,7 @@ static int udp_set_rcvbuf(struct mudp_impl* s, const void* optval, socklen_t opt
   uint32_t rcvbuf_sz;
 
   if (optlen != sz) {
-    err("%s(%d), invalid optlen %d\n", __func__, idx, (int)optlen);
+    err("%s(%d), invalid optlen %d\n", __func__, idx, optlen);
     MUDP_ERR_RET(EINVAL);
   }
 
@@ -614,7 +719,7 @@ static int udp_get_rcvtimeo(struct mudp_impl* s, void* optval, socklen_t* optlen
   unsigned int us;
 
   if (*optlen != sz) {
-    err("%s(%d), invalid *optlen %d\n", __func__, idx, (int)(*optlen));
+    err("%s(%d), invalid *optlen %d\n", __func__, idx, (*optlen));
     MUDP_ERR_RET(EINVAL);
   }
 
@@ -632,7 +737,7 @@ static int udp_set_rcvtimeo(struct mudp_impl* s, const void* optval, socklen_t o
   unsigned int us;
 
   if (optlen != sz) {
-    err("%s(%d), invalid optlen %d\n", __func__, idx, (int)optlen);
+    err("%s(%d), invalid optlen %d\n", __func__, idx, optlen);
     MUDP_ERR_RET(EINVAL);
   }
 
@@ -692,7 +797,7 @@ static int udp_add_membership(struct mudp_impl* s, const void* optval, socklen_t
   int ret;
 
   if (optlen != sz) {
-    err("%s(%d), invalid optlen %d\n", __func__, idx, (int)optlen);
+    err("%s(%d), invalid optlen %d\n", __func__, idx, optlen);
     MUDP_ERR_RET(EINVAL);
   }
 
@@ -744,7 +849,7 @@ static int udp_drop_membership(struct mudp_impl* s, const void* optval,
   uint8_t* ip;
 
   if (optlen != sz) {
-    err("%s(%d), invalid optlen %d\n", __func__, idx, (int)optlen);
+    err("%s(%d), invalid optlen %d\n", __func__, idx, optlen);
     MUDP_ERR_RET(EINVAL);
   }
   if (!s->mcast_addrs) {
@@ -792,7 +897,7 @@ static ssize_t udp_rx_dequeue(struct mudp_impl* s, void* buf, size_t len, int fl
   struct rte_udp_hdr* udp = &hdr->udp;
   void* payload = &udp[1];
   ssize_t payload_len = ntohs(udp->dgram_len) - sizeof(*udp);
-  dbg("%s(%d), payload_len %d bytes\n", __func__, idx, (int)payload_len);
+  dbg("%s(%d), payload_len %d bytes\n", __func__, idx, payload_len);
 
   if (payload_len <= len) {
     rte_memcpy(buf, payload, payload_len);
@@ -812,10 +917,11 @@ static ssize_t udp_rx_dequeue(struct mudp_impl* s, void* buf, size_t len, int fl
       rte_memcpy((void*)src_addr, &addr_in, RTE_MIN(*addrlen, sizeof(addr_in)));
     }
   } else {
-    err("%s(%d), payload len %d buf len %d\n", __func__, idx, (int)payload_len, (int)len);
+    err("%s(%d), payload len %" PRIu64 " buf len %" PRIu64 "\n", __func__, idx,
+        payload_len, len);
   }
   rte_pktmbuf_free(pkt);
-  dbg("%s(%d), copied %d bytes, flags %d\n", __func__, idx, (int)copied, flags);
+  dbg("%s(%d), copied %d bytes, flags %d\n", __func__, idx, copied, flags);
   return copied;
 }
 
@@ -867,7 +973,7 @@ static ssize_t udp_rx_msg_dequeue(struct mudp_impl* s, struct msghdr* msg, int f
   void* payload = &udp[1];
   struct rte_ipv4_hdr* ipv4 = &hdr->ipv4;
   ssize_t payload_len = ntohs(udp->dgram_len) - sizeof(*udp);
-  dbg("%s(%d), payload_len %d bytes\n", __func__, idx, (int)payload_len);
+  dbg("%s(%d), payload_len %d bytes\n", __func__, idx, payload_len);
 
   msg->msg_flags = 0;
 
@@ -903,7 +1009,7 @@ static ssize_t udp_rx_msg_dequeue(struct mudp_impl* s, struct msghdr* msg, int f
   }
 
   if (payload_len)
-    warn("%s(%d), %d bytes not copied \n", __func__, idx, (int)payload_len);
+    warn("%s(%d), %" PRIu64 " bytes not copied \n", __func__, idx, payload_len);
 
   rte_pktmbuf_free(pkt);
   dbg("%s(%d), copied %" PRId64 " bytes, flags %d\n", __func__, idx, copied, flags);
@@ -948,7 +1054,7 @@ static int udp_poll(struct mudp_pollfd* fds, mudp_nfds_t nfds, int timeout) {
   uint64_t start_ts = mt_get_tsc(impl);
   int rc;
 
-  dbg("%s(%d), nfds %d\n", __func__, s->idx, (int)nfds);
+  dbg("%s(%d), nfds %d\n", __func__, s->idx, nfds);
 
   /* rx from nic firstly if no pending pkt for each fd */
 rx_poll:
@@ -1233,11 +1339,6 @@ ssize_t mudp_sendto(mudp_handle ut, const void* buf, size_t len, int flags,
   int ret;
   struct rte_mbuf* m;
 
-  if (s->type != MT_HANDLE_UDP) {
-    err("%s(%d), invalid type %d\n", __func__, idx, s->type);
-    MUDP_ERR_RET(EIO);
-  }
-
   const struct sockaddr_in* addr_in = (struct sockaddr_in*)dest_addr;
   ret = udp_verify_sendto_args(len, flags, addr_in, addrlen);
   if (ret < 0) {
@@ -1273,31 +1374,65 @@ ssize_t mudp_sendto(mudp_handle ut, const void* buf, size_t len, int flags,
     }
   }
 
-  uint64_t start_ts = mt_get_tsc(impl);
-  while (1) {
-    uint16_t sent;
-
-    if (s->tsq)
-      sent = mt_tsq_burst(s->tsq, &m, 1);
-    else
-      sent = mt_dev_tx_burst(s->txq, &m, 1);
-    if (sent >= 1) { /* burst succ */
-      s->stat_pkt_tx++;
-      break;
-    }
-
-    /* check timeout */
-    unsigned int us = (mt_get_tsc(impl) - start_ts) / NS_PER_US;
-    if (us > s->tx_timeout_us) {
-      warn("%s(%d), fail as timeout %u us\n", __func__, idx, s->tx_timeout_us);
-      rte_pktmbuf_free(m);
-      MUDP_ERR_RET(ETIMEDOUT);
-    }
-    s->stat_tx_retry++;
-    mt_sleep_us(1);
+  ret = udp_tx_pkt(impl, s, m);
+  if (ret < 0) {
+    rte_pktmbuf_free(m);
+    return ret;
   }
 
   return len;
+}
+
+ssize_t mudp_sendmsg(mudp_handle ut, const struct msghdr* msg, int flags) {
+  struct mudp_impl* s = ut;
+  struct mtl_main_impl* impl = s->parent;
+  int idx = s->idx;
+  int arp_timeout_ms = s->arp_timeout_us / 1000;
+  int ret;
+  struct rte_mbuf* m;
+  ssize_t copied;
+
+  const struct sockaddr_in* addr_in = (struct sockaddr_in*)msg->msg_name;
+  ret = udp_verify_sendto_args(0, flags, addr_in, msg->msg_namelen);
+  if (ret < 0) {
+    err("%s(%d), invalid args\n", __func__, idx);
+    return ret;
+  }
+
+  /* init txq if not */
+  if (!udp_get_flag(s, MUDP_TXQ_ALLOC)) {
+    ret = udp_init_txq(impl, s, addr_in);
+    if (ret < 0) {
+      err("%s(%d), init txq fail\n", __func__, idx);
+      return ret;
+    }
+  }
+
+  m = rte_pktmbuf_alloc(s->tx_pool);
+  if (!m) {
+    err("%s(%d), pktmbuf alloc fail\n", __func__, idx);
+    MUDP_ERR_RET(ENOMEM);
+  }
+
+  copied = udp_build_tx_msg_pkt(impl, s, m, msg, addr_in, arp_timeout_ms);
+  if (copied < 0) {
+    rte_pktmbuf_free(m);
+    if (arp_timeout_ms) {
+      err("%s(%d), build pkt fail %d\n", __func__, idx, ret);
+      return copied;
+    } else {
+      mt_sleep_us(1);
+      return copied;
+    }
+  }
+
+  ret = udp_tx_pkt(impl, s, m);
+  if (ret < 0) {
+    rte_pktmbuf_free(m);
+    return ret;
+  }
+
+  return copied;
 }
 
 int mudp_poll(struct mudp_pollfd* fds, mudp_nfds_t nfds, int timeout) {

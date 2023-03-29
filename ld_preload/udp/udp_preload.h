@@ -4,6 +4,7 @@
 
 #define _GNU_SOURCE
 #include <errno.h>
+#include <inttypes.h>
 #include <mtl/mudp_sockfd_internal.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -65,6 +66,7 @@ struct upl_functions {
   int (*bind)(int sockfd, const struct sockaddr* addr, socklen_t addrlen);
   ssize_t (*sendto)(int sockfd, const void* buf, size_t len, int flags,
                     const struct sockaddr* dest_addr, socklen_t addrlen);
+  ssize_t (*sendmsg)(int sockfd, const struct msghdr* msg, int flags);
   int (*poll)(struct pollfd* fds, nfds_t nfds, int timeout);
   int (*select)(int nfds, fd_set* readfds, fd_set* writefds, fd_set* exceptfds,
                 struct timeval* timeout);

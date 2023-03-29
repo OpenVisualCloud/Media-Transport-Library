@@ -93,6 +93,21 @@ ssize_t mudp_sendto(mudp_handle ut, const void* buf, size_t len, int flags,
                     const struct sockaddr* dest_addr, socklen_t addrlen);
 
 /**
+ * Send data on the udp transport socket.
+ *
+ * @param ut
+ *   The handle to udp transport socket.
+ * @param msg
+ *   The struct msghdr.
+ * @param flags
+ *   Not support any flags now.
+ * @return
+ *   - >0: the number of bytes sent.
+ *   - <0: Error code. -1 is returned, and errno is set appropriately.
+ */
+ssize_t mudp_sendmsg(mudp_handle ut, const struct msghdr* msg, int flags);
+
+/**
  * The structure describing a polling request on mudp.
  */
 struct mudp_pollfd {

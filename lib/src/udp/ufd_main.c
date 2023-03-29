@@ -530,6 +530,11 @@ ssize_t mufd_sendto(int sockfd, const void* buf, size_t len, int flags,
   return mudp_sendto(slot->handle, buf, len, flags, dest_addr, addrlen);
 }
 
+ssize_t mufd_sendmsg(int sockfd, const struct msghdr* msg, int flags) {
+  struct ufd_slot* slot = ufd_fd2slot(sockfd);
+  return mudp_sendmsg(slot->handle, msg, flags);
+}
+
 int mufd_poll(struct pollfd* fds, nfds_t nfds, int timeout) {
   struct mudp_pollfd mfds[nfds];
   struct ufd_slot* slot;

@@ -38,6 +38,7 @@ static int upl_get_libc_fn(struct upl_functions* fns) {
   UPL_LIBC_FN(close);
   UPL_LIBC_FN(bind);
   UPL_LIBC_FN(sendto);
+  UPL_LIBC_FN(sendmsg);
   UPL_LIBC_FN(poll);
   UPL_LIBC_FN(select);
   UPL_LIBC_FN(recv);
@@ -258,10 +259,11 @@ ssize_t sendto(int sockfd, const void* buf, size_t len, int flags,
     UPL_ERR_RET(EIO);
   }
 
-  dbg("%s(%d), len %d\n", __func__, sockfd, (int)len);
+  dbg("%s(%d), len %" PRIu64 "\n", __func__, sockfd, len);
   struct upl_ufd_entry* entry = upl_get_ufd_entry(ctx, sockfd);
   if (!entry) return ctx->libc_fn.sendto(sockfd, buf, len, flags, dest_addr, addrlen);
 
+  /* ufd only support ipv4 now */
   const struct sockaddr_in* addr_in = (struct sockaddr_in*)dest_addr;
   uint8_t* ip = (uint8_t*)&addr_in->sin_addr.s_addr;
   int ufd = entry->ufd;
@@ -278,12 +280,40 @@ ssize_t sendto(int sockfd, const void* buf, size_t len, int flags,
   }
 }
 
-ssize_t send(int sockfd, const void* buf, size_t len, int flags) {
-  err("%s(%d), not support now\n", __func__, sockfd);
-  UPL_ERR_RET(ENOTSUP);
+ssize_t sendmsg(int sockfd, const struct msghdr* msg, int flags) {
+  struct upl_ctx* ctx = upl_get_ctx();
+  if (!ctx->init_succ) {
+    err("%s(%d), ctx init fail, pls check setup\n", __func__, sockfd);
+    UPL_ERR_RET(EIO);
+  }
+
+  dbg("%s(%d), len %" PRIu64 "\n", __func__, sockfd, len);
+  struct upl_ufd_entry* entry = upl_get_ufd_entry(ctx, sockfd);
+  if (!entry || !msg->msg_name) return ctx->libc_fn.sendmsg(sockfd, msg, flags);
+
+  if (!msg->msg_name || msg->msg_namelen < sizeof(struct sockaddr_in)) {
+    warn("%s(%d), no msg_name or msg_namelen not valid\n", __func__, sockfd);
+    return ctx->libc_fn.sendmsg(sockfd, msg, flags);
+  }
+
+  /* ufd only support ipv4 now */
+  const struct sockaddr_in* addr_in = (struct sockaddr_in*)msg->msg_name;
+  uint8_t* ip = (uint8_t*)&addr_in->sin_addr.s_addr;
+  int ufd = entry->ufd;
+
+  if (mufd_tx_valid_ip(ufd, ip) < 0) {
+    /* fallback to kfd if it's not in ufd address scope */
+    dbg("%s(%d), fallback to kernel for ip %u.%u.%u.%u\n", __func__, sockfd, ip[0], ip[1],
+        ip[2], ip[3]);
+    entry->stat_tx_kfd_cnt++;
+    return ctx->libc_fn.sendmsg(sockfd, msg, flags);
+  } else {
+    entry->stat_tx_ufd_cnt++;
+    return mufd_sendmsg(ufd, msg, flags);
+  }
 }
 
-ssize_t sendmsg(int sockfd, const struct msghdr* msg, int flags) {
+ssize_t send(int sockfd, const void* buf, size_t len, int flags) {
   err("%s(%d), not support now\n", __func__, sockfd);
   UPL_ERR_RET(ENOTSUP);
 }
@@ -296,7 +326,7 @@ int poll(struct pollfd* fds, nfds_t nfds, int timeout) {
   }
 
   if (nfds <= 0) {
-    err("%s, invalid nfds %d\n", __func__, (int)nfds);
+    err("%s, invalid nfds %" PRIu64 "\n", __func__, nfds);
     UPL_ERR_RET(EIO);
   }
 
@@ -307,7 +337,7 @@ int poll(struct pollfd* fds, nfds_t nfds, int timeout) {
    */
   for (nfds_t i = 1; i < nfds; i++) {
     if (upl_is_ufd_entry(ctx, fds[i].fd) != is_ufd) {
-      err("%s, not same type on %d, fd %d\n", __func__, (int)i, fds[i].fd);
+      err("%s, not same type on %" PRIu64 ", fd %d\n", __func__, i, fds[i].fd);
       UPL_ERR_RET(EIO);
     }
   }
@@ -386,7 +416,8 @@ int select(int nfds, fd_set* readfds, fd_set* writefds, fd_set* exceptfds,
     kfds[p_fds_cnt] = i;
     p_fds_cnt++;
     if (p_fds_cnt > r_nfds) {
-      err("%s, invalid p_fds_cnt %d r_nfds %d\n", __func__, (int)p_fds_cnt, (int)r_nfds);
+      err("%s, invalid p_fds_cnt %" PRIu64 " r_nfds %" PRIu64 "\n", __func__, p_fds_cnt,
+          r_nfds);
       UPL_ERR_RET(EIO);
     }
   }
@@ -397,7 +428,7 @@ int select(int nfds, fd_set* readfds, fd_set* writefds, fd_set* exceptfds,
   FD_ZERO(readfds);
   for (nfds_t i = 0; i < p_fds_cnt; i++) {
     if (!p_fds[i].revents) continue;
-    info("%s, revents on ufd %d kfd %d\n", __func__, p_fds[i].fd, kfds[i]);
+    dbg("%s, revents on ufd %d kfd %d\n", __func__, p_fds[i].fd, kfds[i]);
     FD_SET(kfds[i], readfds);
   }
   return ret;
