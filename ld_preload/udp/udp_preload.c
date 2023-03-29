@@ -39,7 +39,10 @@ static int upl_get_libc_fn(struct upl_functions* fns) {
   UPL_LIBC_FN(bind);
   UPL_LIBC_FN(sendto);
   UPL_LIBC_FN(poll);
+  UPL_LIBC_FN(select);
+  UPL_LIBC_FN(recv);
   UPL_LIBC_FN(recvfrom);
+  UPL_LIBC_FN(recvmsg);
   UPL_LIBC_FN(getsockopt);
   UPL_LIBC_FN(setsockopt);
   UPL_LIBC_FN(fcntl);
@@ -148,13 +151,14 @@ int socket(int domain, int type, int protocol) {
   int kfd;
   int ret;
 
-  info("%s, domain %d type %d protocol %d\n", __func__, domain, type, protocol);
   if (!ctx->init_succ) {
     err("%s, ctx init fail, pls check setup\n", __func__);
     UPL_ERR_RET(EIO);
   }
 
   kfd = ctx->libc_fn.socket(domain, type, protocol);
+  info("%s, kfd %d for domain %d type %d protocol %d\n", __func__, kfd, domain, type,
+       protocol);
   if (kfd < 0) {
     err("%s, create kfd fail %d for domain %d type %d protocol %d\n", __func__, kfd,
         domain, type, protocol);
@@ -221,7 +225,10 @@ int close(int sockfd) {
 }
 
 int bind(int sockfd, const struct sockaddr* addr, socklen_t addrlen) {
-  dbg("%s(%d), start\n", __func__, sockfd);
+#if 0
+  const struct sockaddr_in* addr_in = (struct sockaddr_in*)addr;
+  info("%s(%d), port %u\n", __func__, sockfd, htons(addr_in->sin_port));
+#endif
   struct upl_ctx* ctx = upl_get_ctx();
   if (!ctx->init_succ) {
     err("%s(%d), ctx init fail, pls check setup\n", __func__, sockfd);
@@ -322,6 +329,80 @@ int poll(struct pollfd* fds, nfds_t nfds, int timeout) {
   return ret;
 }
 
+int select(int nfds, fd_set* readfds, fd_set* writefds, fd_set* exceptfds,
+           struct timeval* timeout) {
+  struct upl_ctx* ctx = upl_get_ctx();
+  if (!ctx->init_succ) {
+    err("%s, ctx init fail, pls check setup\n", __func__);
+    UPL_ERR_RET(EIO);
+  }
+
+  if (nfds <= 0) {
+    err("%s, invalid nfds %d\n", __func__, nfds);
+    UPL_ERR_RET(EIO);
+  }
+
+  nfds_t r_nfds = 0;
+  /* Check if all fds are the same type. */
+  bool first = true;
+  bool is_ufd = false;
+  for (int i = 0; i < nfds; i++) {
+    bool is_set = false;
+    if (readfds && FD_ISSET(i, readfds)) {
+      is_set = true;
+      r_nfds++;
+    }
+    if (writefds && FD_ISSET(i, writefds)) is_set = true;
+    if (exceptfds && FD_ISSET(i, exceptfds)) is_set = true;
+    if (!is_set) continue;
+    if (first) {
+      is_ufd = upl_is_ufd_entry(ctx, i);
+    } else {
+      if (upl_is_ufd_entry(ctx, i) != is_ufd) {
+        err("%s, not same type on %d, type %s\n", __func__, i, is_ufd ? "ufd" : "kfd");
+        UPL_ERR_RET(EIO);
+      }
+    }
+  }
+
+  if (!is_ufd) return ctx->libc_fn.select(nfds, readfds, writefds, exceptfds, timeout);
+
+  /* skip writefds and exceptfds */
+
+  if (!readfds) return 0;
+
+  /* reuse mufd_poll */
+  struct pollfd p_fds[r_nfds];
+  int kfds[r_nfds];
+  memset(p_fds, 0, sizeof(p_fds));
+  int timeout_ms = 1000 * 2;
+  if (timeout) timeout_ms = timeout->tv_sec * 1000 + timeout->tv_usec / 1000;
+  nfds_t p_fds_cnt = 0;
+  for (int i = 0; i < nfds; i++) {
+    if (!FD_ISSET(i, readfds)) continue;
+    struct upl_ufd_entry* entry = upl_get_ufd_entry(ctx, i);
+    p_fds[p_fds_cnt].fd = entry->ufd;
+    p_fds[p_fds_cnt].events = POLLIN;
+    kfds[p_fds_cnt] = i;
+    p_fds_cnt++;
+    if (p_fds_cnt > r_nfds) {
+      err("%s, invalid p_fds_cnt %d r_nfds %d\n", __func__, (int)p_fds_cnt, (int)r_nfds);
+      UPL_ERR_RET(EIO);
+    }
+  }
+
+  int ret = mufd_poll(p_fds, p_fds_cnt, timeout_ms);
+  if (ret < 0) return ret;
+
+  FD_ZERO(readfds);
+  for (nfds_t i = 0; i < p_fds_cnt; i++) {
+    if (!p_fds[i].revents) continue;
+    info("%s, revents on ufd %d kfd %d\n", __func__, p_fds[i].fd, kfds[i]);
+    FD_SET(kfds[i], readfds);
+  }
+  return ret;
+}
+
 ssize_t recvfrom(int sockfd, void* buf, size_t len, int flags, struct sockaddr* src_addr,
                  socklen_t* addrlen) {
   dbg("%s(%d), start\n", __func__, sockfd);
@@ -342,13 +423,37 @@ ssize_t recvfrom(int sockfd, void* buf, size_t len, int flags, struct sockaddr* 
 }
 
 ssize_t recv(int sockfd, void* buf, size_t len, int flags) {
-  err("%s(%d), not support now\n", __func__, sockfd);
-  UPL_ERR_RET(ENOTSUP);
+  struct upl_ctx* ctx = upl_get_ctx();
+  if (!ctx->init_succ) {
+    err("%s(%d), ctx init fail, pls check setup\n", __func__, sockfd);
+    UPL_ERR_RET(EIO);
+  }
+
+  struct upl_ufd_entry* entry = upl_get_ufd_entry(ctx, sockfd);
+  if (!entry || entry->bind_kfd) {
+    entry->stat_rx_kfd_cnt++;
+    return ctx->libc_fn.recv(sockfd, buf, len, flags);
+  } else {
+    entry->stat_rx_ufd_cnt++;
+    return mufd_recv(entry->ufd, buf, len, flags);
+  }
 }
 
 ssize_t recvmsg(int sockfd, struct msghdr* msg, int flags) {
-  err("%s(%d), not support now\n", __func__, sockfd);
-  UPL_ERR_RET(ENOTSUP);
+  struct upl_ctx* ctx = upl_get_ctx();
+  if (!ctx->init_succ) {
+    err("%s(%d), ctx init fail, pls check setup\n", __func__, sockfd);
+    UPL_ERR_RET(EIO);
+  }
+
+  struct upl_ufd_entry* entry = upl_get_ufd_entry(ctx, sockfd);
+  if (!entry || entry->bind_kfd) {
+    entry->stat_rx_kfd_cnt++;
+    return ctx->libc_fn.recvmsg(sockfd, msg, flags);
+  } else {
+    entry->stat_rx_ufd_cnt++;
+    return mufd_recvmsg(entry->ufd, msg, flags);
+  }
 }
 
 int getsockopt(int sockfd, int level, int optname, void* optval, socklen_t* optlen) {

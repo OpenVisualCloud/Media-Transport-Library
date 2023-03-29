@@ -150,6 +150,40 @@ ssize_t mudp_recvfrom(mudp_handle ut, void* buf, size_t len, int flags,
                       struct sockaddr* src_addr, socklen_t* addrlen);
 
 /**
+ * Receive data on the udp transport socket.
+ *
+ * @param ut
+ *   The handle to udp transport socket.
+ * @param buf
+ *   The data buffer.
+ * @param len
+ *   Specifies the size, in bytes, of the data pointed to by buf.
+ * @param flags
+ *   Only support MSG_DONTWAIT now.
+ * @return
+ *   - >0: the number of bytes received.
+ *   - <0: Error code. -1 is returned, and errno is set appropriately.
+ */
+static inline ssize_t mudp_recv(mudp_handle ut, void* buf, size_t len, int flags) {
+  return mudp_recvfrom(ut, buf, len, flags, NULL, NULL);
+}
+
+/**
+ * Receive data on the udp transport socket.
+ *
+ * @param ut
+ *   The handle to udp transport socket.
+ * @param msg
+ *   The msghdr structure.
+ * @param flags
+ *   Only support MSG_DONTWAIT now.
+ * @return
+ *   - >0: the number of bytes received.
+ *   - <0: Error code. -1 is returned, and errno is set appropriately.
+ */
+ssize_t mudp_recvmsg(mudp_handle ut, struct msghdr* msg, int flags);
+
+/**
  * getsockopt on the udp transport socket.
  *
  * @param ut

@@ -554,6 +554,11 @@ ssize_t mufd_recvfrom(int sockfd, void* buf, size_t len, int flags,
   return mudp_recvfrom(slot->handle, buf, len, flags, src_addr, addrlen);
 }
 
+ssize_t mufd_recvmsg(int sockfd, struct msghdr* msg, int flags) {
+  struct ufd_slot* slot = ufd_fd2slot(sockfd);
+  return mudp_recvmsg(slot->handle, msg, flags);
+}
+
 int mufd_getsockopt(int sockfd, int level, int optname, void* optval, socklen_t* optlen) {
   struct ufd_slot* slot = ufd_fd2slot(sockfd);
   return mudp_getsockopt(slot->handle, level, optname, optval, optlen);
