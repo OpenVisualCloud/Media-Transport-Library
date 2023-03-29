@@ -15,7 +15,6 @@
 #include <stdbool.h>
 #include <stddef.h>
 #include <stdint.h>
-#include <sys/socket.h>
 
 #if defined(__cplusplus)
 extern "C" {
