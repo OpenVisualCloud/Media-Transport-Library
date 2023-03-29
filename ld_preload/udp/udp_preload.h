@@ -13,6 +13,9 @@
 
 /* include "struct sockaddr_in" define before include mudp_sockfd_api */
 // clang-format off
+#ifdef WINDOWSENV
+#include <mudp_win.h>
+#endif
 #include <mtl/mudp_sockfd_api.h>
 // clang-format on
 
