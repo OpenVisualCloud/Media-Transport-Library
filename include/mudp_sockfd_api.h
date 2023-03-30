@@ -37,7 +37,7 @@ extern "C" {
  *   Specifies a particular protocol to be used with the socket, only zero now.
  * @return
  *   - >=0: Success, the sockfd.
- *   - <0: Error code.
+ *   - <0: Error code. -1 is returned, and errno is set appropriately.
  */
 int mufd_socket(int domain, int type, int protocol);
 
@@ -48,7 +48,7 @@ int mufd_socket(int domain, int type, int protocol);
  *   the sockfd by mufd_socket.
  * @return
  *   - 0: Success.
- *   - <0: Error code.
+ *   - <0: Error code. -1 is returned, and errno is set appropriately.
  */
 int mufd_close(int sockfd);
 
@@ -63,7 +63,7 @@ int mufd_close(int sockfd);
  *   Specifies the size, in bytes, of the address structure pointed to by addr.
  * @return
  *   - 0: Success.
- *   - <0: Error code.
+ *   - <0: Error code. -1 is returned, and errno is set appropriately.
  */
 int mufd_bind(int sockfd, const struct sockaddr* addr, socklen_t addrlen);
 
@@ -85,10 +85,25 @@ int mufd_bind(int sockfd, const struct sockaddr* addr, socklen_t addrlen);
  *   Specifies the size, in bytes, of the address structure pointed to by dest_addr.
  * @return
  *   - >0: the number of bytes sent.
- *   - <0: Error code.
+ *   - <0: Error code. -1 is returned, and errno is set appropriately.
  */
 ssize_t mufd_sendto(int sockfd, const void* buf, size_t len, int flags,
                     const struct sockaddr* dest_addr, socklen_t addrlen);
+
+/**
+ * Send data on the udp transport socket.
+ *
+ * @param sockfd
+ *   the sockfd by mufd_socket.
+ * @param msg
+ *   The struct msghdr.
+ * @param flags
+ *   Not support any flags now.
+ * @return
+ *   - >0: the number of bytes sent.
+ *   - <0: Error code. -1 is returned, and errno is set appropriately.
+ */
+ssize_t mufd_sendmsg(int sockfd, const struct msghdr* msg, int flags);
 
 /**
  * Poll the udp transport socket, blocks until one of the events occurs.
@@ -104,7 +119,7 @@ ssize_t mufd_sendto(int sockfd, const void* buf, size_t len, int flags,
  *   - > 0: Success, returns a nonnegative value which is the number of elements
  *          in the fds whose revents fields have been set to a nonzero value.
  *   - =0: Timeosockfd.
- *   - <0: Error code.
+ *   - <0: Error code. -1 is returned, and errno is set appropriately.
  */
 int mufd_poll(struct pollfd* fds, nfds_t nfds, int timeout);
 
@@ -125,10 +140,44 @@ int mufd_poll(struct pollfd* fds, nfds_t nfds, int timeout);
  *   Specifies the size, in bytes, of the address structure pointed to by src_addr.
  * @return
  *   - >0: the number of bytes received.
- *   - <0: Error code.
+ *   - <0: Error code. -1 is returned, and errno is set appropriately.
  */
 ssize_t mufd_recvfrom(int sockfd, void* buf, size_t len, int flags,
                       struct sockaddr* src_addr, socklen_t* addrlen);
+
+/**
+ * Receive data on the udp transport socket.
+ *
+ * @param sockfd
+ *   the sockfd by mufd_socket.
+ * @param buf
+ *   The data buffer.
+ * @param len
+ *   Specifies the size, in bytes, of the data pointed to by buf.
+ * @param flags
+ *   Only support MSG_DONTWAIT now.
+ * @return
+ *   - >0: the number of bytes received.
+ *   - <0: Error code. -1 is returned, and errno is set appropriately.
+ */
+static inline ssize_t mufd_recv(int sockfd, void* buf, size_t len, int flags) {
+  return mufd_recvfrom(sockfd, buf, len, flags, NULL, NULL);
+}
+
+/**
+ * Receive data on the udp transport socket.
+ *
+ * @param sockfd
+ *   the sockfd by mufd_socket.
+ * @param msg
+ *   The msghdr structure.
+ * @param flags
+ *   Only support MSG_DONTWAIT now.
+ * @return
+ *   - >0: the number of bytes received.
+ *   - <0: Error code. -1 is returned, and errno is set appropriately.
+ */
+ssize_t mufd_recvmsg(int sockfd, struct msghdr* msg, int flags);
 
 /**
  * getsockopt on the udp transport socket.
@@ -146,7 +195,7 @@ ssize_t mufd_recvfrom(int sockfd, void* buf, size_t len, int flags,
       identify a buffer len for the requested option.
  * @return
  *   - 0: Success.
- *   - <0: Error code.
+ *   - <0: Error code. -1 is returned, and errno is set appropriately.
  */
 int mufd_getsockopt(int sockfd, int level, int optname, void* optval, socklen_t* optlen);
 
@@ -166,7 +215,7 @@ int mufd_getsockopt(int sockfd, int level, int optname, void* optval, socklen_t*
       identify a buffer len for the requested option.
  * @return
  *   - 0: Success.
- *   - <0: Error code.
+ *   - <0: Error code. -1 is returned, and errno is set appropriately.
  */
 int mufd_setsockopt(int sockfd, int level, int optname, const void* optval,
                     socklen_t optlen);
@@ -180,9 +229,22 @@ int mufd_setsockopt(int sockfd, int level, int optname, const void* optval,
  *   cmd.
  * @return
  *   - 0: Success.
- *   - <0: Error code.
+ *   - <0: Error code. -1 is returned, and errno is set appropriately.
  */
-int mufd_fcntl(int sockfd, int cmd, ...);
+int mufd_fcntl(int sockfd, int cmd, va_list args);
+
+/**
+ * ioctl on the udp transport socket.
+ *
+ * @param sockfd
+ *   the sockfd by mufd_socket.
+ * @param cmd
+ *   cmd.
+ * @return
+ *   - 0: Success.
+ *   - <0: Error code. -1 is returned, and errno is set appropriately.
+ */
+int mufd_ioctl(int sockfd, unsigned long cmd, va_list args);
 
 /* below are the extra APIs */
 
@@ -191,7 +253,7 @@ int mufd_fcntl(int sockfd, int cmd, ...);
  *
  * @return
  *   - 0: Success.
- *   - <0: Error code.
+ *   - <0: Error code. -1 is returned, and errno is set appropriately.
  */
 int mufd_cleanup(void);
 
@@ -201,7 +263,7 @@ int mufd_cleanup(void);
  *
  * @return
  *   - 0: Success, device aborted.
- *   - <0: Error code of the device abort.
+ *   - <0: Error code. -1 is returned, and errno is set appropriately.
  */
 int mufd_abort(void);
 
@@ -215,7 +277,7 @@ int mufd_abort(void);
  *   The mac address.
  * @return
  *   - 0: Success.
- *   - <0: Error code.
+ *   - <0: Error code. -1 is returned, and errno is set appropriately.
  */
 int mufd_set_tx_mac(int sockfd, uint8_t mac[MTL_MAC_ADDR_LEN]);
 
@@ -228,7 +290,7 @@ int mufd_set_tx_mac(int sockfd, uint8_t mac[MTL_MAC_ADDR_LEN]);
  *   Bit per second.
  * @return
  *   - 0: Success.
- *   - <0: Error code.
+ *   - <0: Error code. -1 is returned, and errno is set appropriately.
  */
 int mufd_set_tx_rate(int sockfd, uint64_t bps);
 
@@ -255,7 +317,7 @@ uint64_t mufd_get_tx_rate(int sockfd);
  *   Specifies the PCIE port, MTL_PORT_P or MTL_PORT_R.
  * @return
  *   - >=0: Success, the sockfd.
- *   - <0: Error code.
+ *   - <0: Error code. -1 is returned, and errno is set appropriately.
  */
 int mufd_socket_port(int domain, int type, int protocol, enum mtl_port port);
 

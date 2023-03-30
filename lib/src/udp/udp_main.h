@@ -13,6 +13,20 @@
 #include "../mt_shared_queue.h"
 #include "../mt_util.h"
 
+// clang-format off
+#ifdef WINDOWSENV
+#include "mudp_win.h"
+#endif
+#include "mudp_api.h"
+// clang-format on
+
+/* On error, -1 is returned, and errno is set appropriately. */
+#define MUDP_ERR_RET(code) \
+  do {                     \
+    errno = code;          \
+    return -1;             \
+  } while (0)
+
 /* if bind or not */
 #define MUDP_BIND (MTL_BIT32(0))
 /* if txq alloc or not */

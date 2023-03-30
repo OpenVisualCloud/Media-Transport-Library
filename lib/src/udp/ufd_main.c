@@ -85,19 +85,19 @@ static int ufd_parse_interfaces(struct mufd_init_params* init, json_object* obj,
   const char* name = json_object_get_string(mt_json_object_get(obj, "port"));
   if (!name) {
     err("%s, no port in the json interface\n", __func__);
-    return -EINVAL;
+    MUDP_ERR_RET(EINVAL);
   }
   snprintf(p->port[port], MTL_PORT_MAX_LEN, "%s", name);
 
   const char* sip = json_object_get_string(mt_json_object_get(obj, "ip"));
   if (!sip) {
     err("%s, no ip in the json interface\n", __func__);
-    return -EINVAL;
+    MUDP_ERR_RET(EINVAL);
   }
   int ret = inet_pton(AF_INET, sip, p->sip_addr[port]);
   if (ret != 1) {
     err("%s, inet pton fail ip %s\n", __func__, sip);
-    return -EINVAL;
+    MUDP_ERR_RET(EINVAL);
   }
 
   json_object* obj_item = mt_json_object_get(obj, "netmask");
@@ -118,7 +118,7 @@ static int ufd_parse_json(struct mufd_init_params* init, const char* filename) {
   json_object* root = json_object_from_file(filename);
   if (root == NULL) {
     err("%s, open json file %s fail\n", __func__, filename);
-    return -EIO;
+    MUDP_ERR_RET(EIO);
   }
   info("%s, parse %s with json-c version: %s\n", __func__, filename, json_c_version());
   int ret = -EIO;
@@ -424,6 +424,11 @@ static void ufd_clear_mt_ctx(void) {
 
 static inline struct ufd_slot* ufd_fd2slot(int sockfd) {
   struct ufd_mt_ctx* ctx = ufd_get_mt_ctx(false);
+  if (sockfd < ctx->init_params.fd_base) {
+    err("%s, invalid sockfd %d, base is %d\n", __func__, sockfd,
+        ctx->init_params.fd_base);
+    return NULL;
+  }
   int idx = ufd_fd2idx(ctx, sockfd);
   struct ufd_slot* slot = ctx->slots[idx];
 
@@ -441,11 +446,11 @@ int mufd_socket_port(int domain, int type, int protocol, enum mtl_port port) {
   ctx = ufd_get_mt_ctx(true);
   if (!ctx) {
     err("%s, fail to get ufd mt ctx\n", __func__);
-    return -EIO;
+    MUDP_ERR_RET(EIO);
   }
   if ((port < 0) || (port >= ctx->init_params.mt_params.num_ports)) {
     err("%s, invalid port %d\n", __func__, port);
-    return -EINVAL;
+    MUDP_ERR_RET(EINVAL);
   }
 
   /* find one empty slot */
@@ -457,7 +462,7 @@ int mufd_socket_port(int domain, int type, int protocol, enum mtl_port port) {
     if (!slot) {
       err("%s, slot malloc fail\n", __func__);
       mt_pthread_mutex_unlock(&ctx->slots_lock);
-      return -ENOMEM;
+      MUDP_ERR_RET(ENOMEM);
     }
     slot->idx = i;
     ctx->slots[i] = slot;
@@ -467,7 +472,7 @@ int mufd_socket_port(int domain, int type, int protocol, enum mtl_port port) {
 
   if (!slot) {
     err("%s, all slot used, max allowed %d\n", __func__, ufd_max_slot(ctx));
-    return -ENOMEM;
+    MUDP_ERR_RET(ENOMEM);
   }
 
   int idx = slot->idx;
@@ -479,7 +484,7 @@ int mufd_socket_port(int domain, int type, int protocol, enum mtl_port port) {
   if (!slot->handle) {
     err("%s, socket create fail\n", __func__);
     ufd_free_slot(ctx, slot);
-    return -ENOMEM;
+    MUDP_ERR_RET(ENOMEM);
   }
 
   mudp_set_tx_rate(slot->handle, ctx->init_params.txq_bps);
@@ -507,7 +512,7 @@ int mufd_close(int sockfd) {
 
   if (!slot) {
     err("%s(%d), null slot for fd %d\n", __func__, idx, sockfd);
-    return -EIO;
+    MUDP_ERR_RET(EIO);
   }
 
   ufd_free_slot(ctx, slot);
@@ -523,6 +528,11 @@ ssize_t mufd_sendto(int sockfd, const void* buf, size_t len, int flags,
                     const struct sockaddr* dest_addr, socklen_t addrlen) {
   struct ufd_slot* slot = ufd_fd2slot(sockfd);
   return mudp_sendto(slot->handle, buf, len, flags, dest_addr, addrlen);
+}
+
+ssize_t mufd_sendmsg(int sockfd, const struct msghdr* msg, int flags) {
+  struct ufd_slot* slot = ufd_fd2slot(sockfd);
+  return mudp_sendmsg(slot->handle, msg, flags);
 }
 
 int mufd_poll(struct pollfd* fds, nfds_t nfds, int timeout) {
@@ -549,6 +559,11 @@ ssize_t mufd_recvfrom(int sockfd, void* buf, size_t len, int flags,
   return mudp_recvfrom(slot->handle, buf, len, flags, src_addr, addrlen);
 }
 
+ssize_t mufd_recvmsg(int sockfd, struct msghdr* msg, int flags) {
+  struct ufd_slot* slot = ufd_fd2slot(sockfd);
+  return mudp_recvmsg(slot->handle, msg, flags);
+}
+
 int mufd_getsockopt(int sockfd, int level, int optname, void* optval, socklen_t* optlen) {
   struct ufd_slot* slot = ufd_fd2slot(sockfd);
   return mudp_getsockopt(slot->handle, level, optname, optval, optlen);
@@ -560,22 +575,27 @@ int mufd_setsockopt(int sockfd, int level, int optname, const void* optval,
   return mudp_setsockopt(slot->handle, level, optname, optval, optlen);
 }
 
-int mufd_fcntl(int sockfd, int cmd, ...) {
+int mufd_fcntl(int sockfd, int cmd, va_list args) {
   struct ufd_slot* slot = ufd_fd2slot(sockfd);
   int idx = slot->idx;
 
 #ifdef WINDOWSENV
   err("%s(%d), invalid cmd %d, not support on windows\n", __func__, idx, cmd);
-  return -1;
+  MUDP_ERR_RET(EINVAL);
 #else
   if (cmd != F_SETFD) {
     err("%s(%d), invalid cmd %d\n", __func__, idx, cmd);
-    return -1;
+    MUDP_ERR_RET(EINVAL);
   }
 
   dbg("%s(%d), cmd %d\n", __func__, idx, cmd);
   return 0;
 #endif
+}
+
+int mufd_ioctl(int sockfd, unsigned long cmd, va_list args) {
+  struct ufd_slot* slot = ufd_fd2slot(sockfd);
+  return mudp_ioctl(slot->handle, cmd, args);
 }
 
 int mufd_cleanup(void) {
@@ -637,13 +657,13 @@ uint64_t mufd_get_tx_rate(int sockfd) {
 int mufd_commit_override_params(struct mufd_override_params* p) {
   if (g_rt_para) {
     err("%s, already committed\n", __func__);
-    return -EIO;
+    MUDP_ERR_RET(EIO);
   }
 
   struct mufd_override_params* out = mt_zmalloc(sizeof(*out));
   if (!out) {
     err("%s, malloc out fail\n", __func__);
-    return -ENOMEM;
+    MUDP_ERR_RET(ENOMEM);
   }
   rte_memcpy(out, p, sizeof(*p));
   g_rt_para = out;
@@ -654,13 +674,13 @@ int mufd_commit_override_params(struct mufd_override_params* p) {
 int mufd_commit_init_params(struct mufd_init_params* p) {
   if (g_init_para) {
     err("%s, already committed\n", __func__);
-    return -EIO;
+    MUDP_ERR_RET(EIO);
   }
 
   struct mufd_init_params* out = mt_zmalloc(sizeof(*out));
   if (!out) {
     err("%s, malloc out fail\n", __func__);
-    return -ENOMEM;
+    MUDP_ERR_RET(ENOMEM);
   }
   rte_memcpy(out, p, sizeof(*p));
   g_init_para = out;
@@ -672,7 +692,7 @@ int mufd_get_sessions_max_nb(void) {
   struct ufd_mt_ctx* ctx = ufd_get_mt_ctx(true);
   if (!ctx) {
     err("%s, fail to get ufd mt ctx\n", __func__);
-    return -EIO;
+    MUDP_ERR_RET(EIO);
   }
 
   return ufd_max_slot(ctx);
@@ -680,13 +700,13 @@ int mufd_get_sessions_max_nb(void) {
 
 int mufd_init_context(void) {
   struct ufd_mt_ctx* ctx = ufd_get_mt_ctx(true);
-  if (!ctx) return -EIO;
+  if (!ctx) MUDP_ERR_RET(EIO);
   return 0;
 }
 
 int mufd_base_fd(void) {
   struct ufd_mt_ctx* ctx = ufd_get_mt_ctx(true);
-  if (!ctx) return -EIO;
+  if (!ctx) MUDP_ERR_RET(EIO);
   return ctx->init_params.fd_base;
 }
 
@@ -696,7 +716,7 @@ int mufd_set_opaque(int sockfd, void* pri) {
 
   if (slot->opaque) {
     err("%s(%d), opaque set already\n", __func__, idx);
-    return -EIO;
+    MUDP_ERR_RET(EIO);
   }
 
   slot->opaque = pri;
