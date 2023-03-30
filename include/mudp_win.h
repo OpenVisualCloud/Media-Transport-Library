@@ -80,10 +80,6 @@ struct cmsghdr {
 #define IP_MTU_DISCOVER 10
 #endif
 
-#ifndef IP_RECVTOS
-#define IP_RECVTOS 13
-#endif
-
 #if defined(__cplusplus)
 }
 #endif

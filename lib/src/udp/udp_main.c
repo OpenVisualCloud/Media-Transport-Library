@@ -1601,9 +1601,11 @@ int mudp_setsockopt(mudp_handle ut, int level, int optname, const void* optval,
         case IP_PKTINFO:
           info("%s(%d), skip IP_PKTINFO\n", __func__, idx);
           return 0;
+#ifdef IP_RECVTOS
         case IP_RECVTOS:
           info("%s(%d), skip IP_RECVTOS\n", __func__, idx);
           return 0;
+#endif
         case IP_MTU_DISCOVER:
           info("%s(%d), skip IP_MTU_DISCOVER\n", __func__, idx);
           return 0;
