@@ -1060,6 +1060,13 @@ static inline bool mt_random_src_port(struct mtl_main_impl* impl) {
     return false;
 }
 
+static inline bool mt_multi_src_port(struct mtl_main_impl* impl) {
+  if (mt_get_user_params(impl)->flags & MTL_FLAG_MULTI_SRC_PORT)
+    return true;
+  else
+    return false;
+}
+
 static inline bool mt_st2110_transport(struct mtl_main_impl* impl, enum mtl_port port) {
   if (mt_get_user_params(impl)->transport == MTL_TRANSPORT_ST2110)
     return true;

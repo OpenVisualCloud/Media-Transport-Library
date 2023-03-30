@@ -245,8 +245,9 @@ struct st_tx_video_session_impl {
   bool mbuf_mempool_reuse_rx[MTL_SESSION_PORT_MAX]; /* af_xdp zero copy */
   struct rte_mempool* mbuf_mempool_chain;
   struct rte_mempool* mbuf_mempool_copy_chain;
-  bool tx_mono_pool; /* if reuse tx mono pool */
-  bool tx_no_chain;  /* if tx not use chain mbuf */
+  bool tx_mono_pool;   /* if reuse tx mono pool */
+  bool tx_no_chain;    /* if tx not use chain mbuf */
+  bool multi_src_port; /* if tx use multiple src port */
   /* if the eth dev support chain buff */
   bool eth_has_chain[MTL_SESSION_PORT_MAX];
   /* if the eth dev support ipv4 checksum offload */
