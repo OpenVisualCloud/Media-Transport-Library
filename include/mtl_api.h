@@ -74,12 +74,15 @@ extern "C" {
  */
 #define MTL_LITTLE_ENDIAN /* x86 use little endian */
 
+/** Standard UDP is 1460 bytes, mtu is 1500 */
+#define MTL_UDP_MAX_BYTES (1460)
+
 /**
  * Max bytes in one RTP packet, include payload and header
  * standard UDP is 1460 bytes, and UDP headers are 8 bytes
  * leave 100 for network extra space
  */
-#define MTL_PKT_MAX_RTP_BYTES (1460 - 8 - 100)
+#define MTL_PKT_MAX_RTP_BYTES (MTL_UDP_MAX_BYTES - 8 - 100)
 
 /**
  * Max allowed number of dma devs

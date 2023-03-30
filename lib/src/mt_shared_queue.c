@@ -8,7 +8,6 @@
 #include "mt_log.h"
 #include "mt_stat.h"
 #include "mt_util.h"
-#include "mudp_api.h"
 
 static inline struct mt_rsq_impl* rsq_ctx_get(struct mtl_main_impl* impl,
                                               enum mtl_port port) {
@@ -378,7 +377,7 @@ struct mt_tsq_entry* mt_tsq_get(struct mtl_main_impl* impl, enum mtl_port port,
     snprintf(pool_name, 32, "TSQ-P%d-Q%u", port, q);
     struct rte_mempool* pool =
         mt_mempool_create(impl, port, pool_name, mt_if_nb_tx_desc(impl, port) + 512,
-                          MT_MBUF_CACHE_SIZE, 0, MUDP_MAX_BYTES);
+                          MT_MBUF_CACHE_SIZE, 0, MTL_UDP_MAX_BYTES);
     if (!pool) {
       err("%s(%d:%u), mempool create fail\n", __func__, port, q);
       mt_pthread_mutex_unlock(&tsq_queue->mutex);

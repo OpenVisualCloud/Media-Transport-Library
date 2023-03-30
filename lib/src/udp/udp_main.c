@@ -4,8 +4,6 @@
 
 #include "udp_main.h"
 
-#include <mudp_api.h>
-
 #include "../mt_log.h"
 #include "../mt_stat.h"
 
@@ -104,12 +102,12 @@ static int udp_verify_poll(struct mudp_pollfd* fds, mudp_nfds_t nfds, int timeou
     MUDP_ERR_RET(EINVAL);
   }
   if (nfds <= 0) {
-    err("%s, invalid nfds %" PRIu64 "\n", __func__, nfds);
+    err("%s, invalid nfds %d\n", __func__, (int)nfds);
     MUDP_ERR_RET(EINVAL);
   }
   for (mudp_nfds_t i = 0; i < nfds; i++) {
     if (!(fds[i].events & POLLIN)) {
-      err("%s(%" PRIu64 "), invalid events 0x%x\n", __func__, i, fds[i].events);
+      err("%s(%d), invalid events 0x%x\n", __func__, (int)i, fds[i].events);
       MUDP_ERR_RET(EINVAL);
     }
     fds[i].revents = 0;
@@ -1559,9 +1557,11 @@ int mudp_setsockopt(mudp_handle ut, int level, int optname, const void* optval,
         case SO_REUSEADDR: /* skip now */
           info("%s(%d), skip SO_REUSEADDR\n", __func__, idx);
           return 0;
+#ifdef SO_REUSEPORT
         case SO_REUSEPORT:
           info("%s(%d), not support SO_REUSEPORT\n", __func__, idx);
           MUDP_ERR_RET(ENOTSUP);
+#endif
         default:
           err("%s(%d), unknown optname %d for SOL_SOCKET\n", __func__, idx, optname);
           MUDP_ERR_RET(EINVAL);
@@ -1598,7 +1598,7 @@ int mudp_ioctl(mudp_handle ut, unsigned long cmd, va_list args) {
       info("%s(%d), skip FIONBIO now\n", __func__, idx);
       break;
     default:
-      err("%s(%d), unknown cmd %" PRIx64 "\n", __func__, idx, cmd);
+      err("%s(%d), unknown cmd %d\n", __func__, idx, (int)cmd);
       MUDP_ERR_RET(EINVAL);
   }
 
