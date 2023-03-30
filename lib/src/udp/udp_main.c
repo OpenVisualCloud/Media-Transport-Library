@@ -1541,14 +1541,10 @@ int mudp_getsockopt(mudp_handle ut, int level, int optname, void* optval,
     case SOL_SOCKET: {
       switch (optname) {
         case SO_SNDBUF:
-#ifdef SO_SNDBUFFORCE
         case SO_SNDBUFFORCE:
-#endif
           return udp_get_sndbuf(s, optval, optlen);
         case SO_RCVBUF:
-#ifdef SO_RCVBUFFORCE
         case SO_RCVBUFFORCE:
-#endif
           return udp_get_rcvbuf(s, optval, optlen);
         case SO_RCVTIMEO:
           return udp_get_rcvtimeo(s, optval, optlen);
@@ -1576,14 +1572,10 @@ int mudp_setsockopt(mudp_handle ut, int level, int optname, const void* optval,
     case SOL_SOCKET: {
       switch (optname) {
         case SO_SNDBUF:
-#ifdef SO_SNDBUFFORCE
         case SO_SNDBUFFORCE:
-#endif
           return udp_set_sndbuf(s, optval, optlen);
         case SO_RCVBUF:
-#ifdef SO_RCVBUFFORCE
         case SO_RCVBUFFORCE:
-#endif
           return udp_set_rcvbuf(s, optval, optlen);
         case SO_RCVTIMEO:
           return udp_set_rcvtimeo(s, optval, optlen);
@@ -1592,11 +1584,9 @@ int mudp_setsockopt(mudp_handle ut, int level, int optname, const void* optval,
         case SO_REUSEADDR: /* skip now */
           info("%s(%d), skip SO_REUSEADDR\n", __func__, idx);
           return 0;
-#ifdef SO_REUSEPORT
         case SO_REUSEPORT:
           info("%s(%d), not support SO_REUSEPORT\n", __func__, idx);
           MUDP_ERR_RET(ENOTSUP);
-#endif
         default:
           err("%s(%d), unknown optname %d for SOL_SOCKET\n", __func__, idx, optname);
           MUDP_ERR_RET(EINVAL);

@@ -56,6 +56,34 @@ struct cmsghdr {
   int cmsg_type;
 };
 
+#ifndef SOCK_NONBLOCK
+#define SOCK_NONBLOCK (0x800)
+#endif
+
+#ifndef SO_REUSEPORT
+#define SO_REUSEPORT 15
+#endif
+
+#ifndef SO_SNDBUFFORCE
+#define SO_SNDBUFFORCE 32
+#endif
+
+#ifndef SO_RCVBUFFORCE
+#define SO_RCVBUFFORCE 33
+#endif
+
+#ifndef SO_COOKIE
+#define SO_COOKIE 57
+#endif
+
+#ifndef IP_MTU_DISCOVER
+#define IP_MTU_DISCOVER 10
+#endif
+
+#ifndef IP_RECVTOS
+#define IP_RECVTOS 13
+#endif
+
 #if defined(__cplusplus)
 }
 #endif
