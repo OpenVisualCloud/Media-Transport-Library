@@ -30,20 +30,30 @@ struct iovec {
 
 /** Structure describing messages sent by `sendmsg' and received by `recvmsg'. */
 struct msghdr {
-  /* Address to send to/receive from.  */
+  /** Address to send to/receive from.  */
   void* msg_name;
-  /* Length of address data.  */
+  /** Length of address data.  */
   socklen_t msg_namelen;
-  /* Vector of data to send/receive into.  */
+  /** Vector of data to send/receive into.  */
   struct iovec* msg_iov;
-  /* Number of elements in the vector.  */
+  /** Number of elements in the vector.  */
   size_t msg_iovlen;
-  /* Ancillary data (eg BSD filedesc passing). */
+  /** Ancillary data (eg BSD filedesc passing). */
   void* msg_control;
-  /* Ancillary data buffer length. */
+  /** Ancillary data buffer length. */
   size_t msg_controllen;
-  /* Flags on received message.  */
+  /** Flags on received message.  */
   int msg_flags;
+};
+
+/** Structure used for storage of ancillary data object information.  */
+struct cmsghdr {
+  /** Length of data in cmsg_data plus length of cmsghdr structure. */
+  size_t cmsg_len;
+  /** Originating protocol.  */
+  int cmsg_level;
+  /** Protocol specific type.  */
+  int cmsg_type;
 };
 
 #if defined(__cplusplus)
