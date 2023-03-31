@@ -73,7 +73,7 @@ static int udp_verify_bind_addr(struct mudp_impl* s, const struct sockaddr_in* a
     uint8_t* ip = (uint8_t*)&addr->sin_addr.s_addr;
     err("%s(%d), invalid bind ip %u.%u.%u.%u\n", __func__, idx, ip[0], ip[1], ip[2],
         ip[3]);
-    MUDP_ERR_RET(EINVAL);
+    // MUDP_ERR_RET(EINVAL);
   }
 
   return 0;
@@ -1608,6 +1608,9 @@ int mudp_setsockopt(mudp_handle ut, int level, int optname, const void* optval,
 #endif
         case IP_MTU_DISCOVER:
           info("%s(%d), skip IP_MTU_DISCOVER\n", __func__, idx);
+          return 0;
+        case IP_TOS:
+          info("%s(%d), skip IP_TOS\n", __func__, idx);
           return 0;
         default:
           err("%s(%d), unknown optname %d for IPPROTO_IP\n", __func__, idx, optname);

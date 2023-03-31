@@ -5,9 +5,11 @@
 #define _GNU_SOURCE
 #include <errno.h>
 #include <inttypes.h>
+#include <stdatomic.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <sys/epoll.h>
+#include <sys/queue.h>
 
 #include "../preload_platform.h"
 
@@ -101,16 +103,45 @@ enum upl_entry_type {
   UPL_ENTRY_MAX,
 };
 
+struct upl_base_entry {
+  enum upl_entry_type upl_type;
+};
+
+/* ufd entry for socket */
 struct upl_ufd_entry {
-  enum upl_entry_type upl_type; /* always the first element */
+  /* base, always the first element */
+  struct upl_base_entry base;
 
   int ufd;
+  int kfd;
   bool bind_kfd; /* fallback to kernel fd in the bind */
+
+  int efd; /* the efd by epoll_ctl add */
 
   int stat_tx_ufd_cnt;
   int stat_rx_ufd_cnt;
   int stat_tx_kfd_cnt;
   int stat_rx_kfd_cnt;
+};
+
+struct upl_efd_fd_item {
+  struct epoll_event event;
+  struct upl_ufd_entry* ufd;
+  /* linked list */
+  TAILQ_ENTRY(upl_efd_fd_item) next;
+};
+/* List of efd fd items */
+TAILQ_HEAD(upl_efd_fd_list, upl_efd_fd_item);
+
+/* efd entry for epoll */
+struct upl_efd_entry {
+  /* base, always the first element */
+  struct upl_base_entry base;
+  int efd;
+  pthread_mutex_t mutex; /* protect fds */
+  struct upl_efd_fd_list fds;
+  int fds_cnt;
+  atomic_int kfd_cnt;
 };
 
 struct upl_ctx {

@@ -83,9 +83,16 @@ static int upl_init_ctx(struct upl_ctx* ctx) {
 }
 
 static inline int upl_set_upl_entry(struct upl_ctx* ctx, int kfd, void* upl) {
+  if (ctx->upl_entires[kfd]) {
+    warn("%s(%d), already has upl %p\n", __func__, kfd, ctx->upl_entires[kfd]);
+  }
   ctx->upl_entires[kfd] = upl;
-  info("%s(%d), upl entry %p\n", __func__, kfd, upl);
+  dbg("%s(%d), upl entry %p\n", __func__, kfd, upl);
   return 0;
+}
+
+static inline void* upl_get_upl_entry(struct upl_ctx* ctx, int kfd) {
+  return ctx->upl_entires[kfd];
 }
 
 static inline int upl_clear_upl_entry(struct upl_ctx* ctx, int kfd) {
@@ -94,13 +101,22 @@ static inline int upl_clear_upl_entry(struct upl_ctx* ctx, int kfd) {
 }
 
 static inline struct upl_ufd_entry* upl_get_ufd_entry(struct upl_ctx* ctx, int kfd) {
-  if (!ctx->has_mtl_udp) return NULL;
-  struct upl_ufd_entry* entry = ctx->upl_entires[kfd];
-  if (entry && entry->upl_type != UPL_ENTRY_UFD) {
-    err("%s(%d), entry %p error type %d\n", __func__, kfd, entry, entry->upl_type);
+  struct upl_ufd_entry* entry = upl_get_upl_entry(ctx, kfd);
+  if (entry && entry->base.upl_type != UPL_ENTRY_UFD) {
+    err("%s(%d), entry %p error type %d\n", __func__, kfd, entry, entry->base.upl_type);
     return NULL;
   }
   dbg("%s(%d), ufd entry %p\n", __func__, kfd, entry);
+  return entry;
+}
+
+static inline struct upl_efd_entry* upl_get_efd_entry(struct upl_ctx* ctx, int kfd) {
+  struct upl_efd_entry* entry = upl_get_upl_entry(ctx, kfd);
+  if (entry && entry->base.upl_type != UPL_ENTRY_EPOLL) {
+    err("%s(%d), entry %p error type %d\n", __func__, kfd, entry, entry->base.upl_type);
+    return NULL;
+  }
+  dbg("%s(%d), efd entry %p\n", __func__, kfd, entry);
   return entry;
 }
 
@@ -156,6 +172,162 @@ static int upl_stat_dump(void* priv) {
   return 0;
 }
 
+static int upl_epoll_create(int efd) {
+  struct upl_ctx* ctx = upl_get_ctx();
+  struct upl_efd_entry* entry = upl_zmalloc(sizeof(*entry));
+  if (!entry) {
+    err("%s, entry malloc fail for efd %d\n", __func__, efd);
+    UPL_ERR_RET(ENOMEM);
+  }
+  entry->base.upl_type = UPL_ENTRY_EPOLL;
+  entry->efd = efd;
+  pthread_mutex_init(&entry->mutex, NULL);
+  TAILQ_INIT(&entry->fds);
+
+  upl_set_upl_entry(ctx, efd, entry);
+  return 0;
+}
+
+static int upl_epoll_close(struct upl_efd_entry* entry) {
+  struct upl_efd_fd_item* item;
+
+  pthread_mutex_lock(&entry->mutex);
+  TAILQ_FOREACH(item, &entry->fds, next) {
+    dbg("%s(%d), kfd %d not close\n", __func__, entry->efd, item->ufd->kfd);
+    item->ufd->efd = -1;
+    upl_free(item);
+  }
+  pthread_mutex_unlock(&entry->mutex);
+
+  pthread_mutex_destroy(&entry->mutex);
+  dbg("%s(%d), close epoll efd\n", __func__, efd_entry->efd);
+  return 0;
+}
+
+static inline bool upl_epoll_has_ufd(struct upl_efd_entry* efd_entry) {
+  return TAILQ_EMPTY(&efd_entry->fds) ? false : true;
+}
+
+static int upl_efd_ctl_add(struct upl_efd_entry* efd, struct upl_ufd_entry* ufd,
+                           struct epoll_event* event) {
+  struct upl_efd_fd_item* item = upl_zmalloc(sizeof(*item));
+  if (!item) {
+    err("%s, malloc fail\n", __func__);
+    UPL_ERR_RET(ENOMEM);
+  }
+  if (event) item->event = *event;
+  item->ufd = ufd;
+
+  dbg("%s, efd %p ufd %p\n", __func__, efd, ufd);
+  pthread_mutex_lock(&efd->mutex);
+  ufd->efd = efd->efd;
+  TAILQ_INSERT_TAIL(&efd->fds, item, next);
+  efd->fds_cnt++;
+  pthread_mutex_unlock(&efd->mutex);
+
+  dbg("%s(%d), add ufd %d succ\n", __func__, efd->efd, ufd->kfd);
+  return 0;
+}
+
+static int upl_efd_ctl_del(struct upl_efd_entry* efd, struct upl_ufd_entry* ufd) {
+  struct upl_efd_fd_item *item, *tmp_item;
+
+  pthread_mutex_lock(&efd->mutex);
+  for (item = TAILQ_FIRST(&efd->fds); item != NULL; item = tmp_item) {
+    tmp_item = TAILQ_NEXT(item, next);
+    if (item->ufd == ufd) {
+      /* found the matched item, remove it */
+      TAILQ_REMOVE(&efd->fds, item, next);
+      ufd->efd = -1;
+      efd->fds_cnt--;
+      pthread_mutex_unlock(&efd->mutex);
+      upl_free(item);
+      dbg("%s(%d), del ufd %d succ\n", __func__, efd->efd, ufd->kfd);
+      return 0;
+    }
+  }
+  pthread_mutex_unlock(&efd->mutex);
+
+  err("%s(%d), del ufd %d fail\n", __func__, efd->efd, ufd->kfd);
+  UPL_ERR_RET(EINVAL);
+}
+
+static int upl_efd_ctl_mod(struct upl_efd_entry* efd, struct upl_ufd_entry* ufd,
+                           struct epoll_event* event) {
+  struct upl_efd_fd_item *item, *tmp_item;
+
+  pthread_mutex_lock(&efd->mutex);
+  for (item = TAILQ_FIRST(&efd->fds); item != NULL; item = tmp_item) {
+    tmp_item = TAILQ_NEXT(item, next);
+    if (item->ufd == ufd) {
+      /* found the matched item, remove it */
+      item->event = *event;
+      pthread_mutex_unlock(&efd->mutex);
+      info("%s(%d), mod ufd %d succ\n", __func__, efd->efd, ufd->kfd);
+      return 0;
+    }
+  }
+  pthread_mutex_unlock(&efd->mutex);
+
+  err("%s(%d), del ufd %d fail\n", __func__, efd->efd, ufd->kfd);
+  UPL_ERR_RET(EINVAL);
+}
+
+/* reuse mufd_poll now */
+static int upl_efd_epoll_wait(struct upl_efd_entry* entry, struct epoll_event* events,
+                              int maxevents, int timeout_ms) {
+  int efd = entry->efd;
+  const int fds_cnt = entry->fds_cnt;
+  struct upl_efd_fd_item* item;
+  struct pollfd p_fds[fds_cnt];
+  struct upl_efd_fd_item* efd_items[fds_cnt];
+  int p_fds_cnt = 0;
+
+  pthread_mutex_lock(&entry->mutex);
+  TAILQ_FOREACH(item, &entry->fds, next) {
+    if (p_fds_cnt >= fds_cnt) {
+      err("%s(%d), wrong p_fds_cnt %d fds_cnt %d\n", __func__, efd, p_fds_cnt, fds_cnt);
+      pthread_mutex_unlock(&entry->mutex);
+      UPL_ERR_RET(EIO);
+    }
+    p_fds[p_fds_cnt].fd = item->ufd->ufd;
+    p_fds[p_fds_cnt].events = POLLIN;
+    efd_items[p_fds_cnt] = item;
+    p_fds_cnt++;
+  }
+  pthread_mutex_unlock(&entry->mutex);
+
+  int ret = mufd_poll(p_fds, p_fds_cnt, timeout_ms);
+  if (ret <= 0) return ret;
+
+  int ready = 0;
+  for (int i = 0; i < p_fds_cnt; i++) {
+    if (!p_fds[i].revents) continue;
+    info("%s, revents on ufd %d kfd %d\n", __func__, p_fds[i].fd, efd_items[i]->ufd->kfd);
+    events[ready] = efd_items[i]->event;
+    ready++;
+  }
+
+  return ready;
+}
+
+static int upl_ufd_close(struct upl_ufd_entry* ufd_entry) {
+  int ufd = ufd_entry->ufd;
+  int kfd = ufd_entry->kfd;
+  int efd = ufd_entry->efd;
+
+  if (efd > 0) {
+    struct upl_ctx* ctx = upl_get_ctx();
+    struct upl_efd_entry* efd_entry = upl_get_efd_entry(ctx, efd);
+    info("%s(%d), remove epoll ctl on efd %d\n", __func__, kfd, efd);
+    upl_efd_ctl_del(efd_entry, ufd_entry);
+  }
+
+  mufd_close(ufd);
+  info("%s(%d), close ufd %d\n", __func__, kfd, ufd);
+  return 0;
+}
+
 int socket(int domain, int type, int protocol) {
   struct upl_ctx* ctx = upl_get_ctx();
   int kfd;
@@ -198,8 +370,10 @@ int socket(int domain, int type, int protocol) {
     mufd_close(ufd);
     return kfd; /* return kfd for fallback path */
   }
-  entry->upl_type = UPL_ENTRY_UFD;
+  entry->base.upl_type = UPL_ENTRY_UFD;
   entry->ufd = ufd;
+  entry->kfd = kfd;
+  entry->efd = -1;
 
   ret = mufd_register_stat_dump_cb(ufd, upl_stat_dump, entry);
   if (ret < 0) {
@@ -215,24 +389,31 @@ int socket(int domain, int type, int protocol) {
   return kfd;
 }
 
-int close(int sockfd) {
+int close(int fd) {
   struct upl_ctx* ctx = upl_get_ctx();
   if (!ctx->init_succ) {
-    err("%s(%d), ctx init fail, pls check setup\n", __func__, sockfd);
+    err("%s(%d), ctx init fail, pls check setup\n", __func__, fd);
     UPL_ERR_RET(EIO);
   }
 
-  dbg("%s, sockfd %d\n", __func__, sockfd);
-  struct upl_ufd_entry* entry = upl_get_ufd_entry(ctx, sockfd);
-  if (!entry) return ctx->libc_fn.close(sockfd);
+  dbg("%s(%d), start\n", __func__, fd);
+  struct upl_base_entry* entry = upl_get_upl_entry(ctx, fd);
+  if (!entry) return ctx->libc_fn.close(fd);
 
-  int ufd = entry->ufd;
-  mufd_close(ufd);
+  if (entry->upl_type == UPL_ENTRY_UFD) {
+    struct upl_ufd_entry* ufd_entry = (struct upl_ufd_entry*)entry;
+    upl_ufd_close(ufd_entry);
+  } else if (entry->upl_type == UPL_ENTRY_EPOLL) {
+    struct upl_efd_entry* efd_entry = (struct upl_efd_entry*)entry;
+    upl_epoll_close(efd_entry);
+  } else {
+    warn("%s(%d), unknow upl type %d\n", __func__, fd, entry->upl_type);
+  }
+
   upl_free(entry);
-  upl_clear_upl_entry(ctx, sockfd);
-  info("%s, ufd %d kfd %d\n", __func__, ufd, sockfd);
+  upl_clear_upl_entry(ctx, fd);
   /* close the kfd */
-  return ctx->libc_fn.close(sockfd);
+  return ctx->libc_fn.close(fd);
 }
 
 int bind(int sockfd, const struct sockaddr* addr, socklen_t addrlen) {
@@ -581,16 +762,18 @@ int ioctl(int sockfd, unsigned long cmd, va_list args) {
     return mufd_ioctl(entry->ufd, cmd, args);
 }
 
-#if 0
 int epoll_create(int size) {
   struct upl_ctx* ctx = upl_get_ctx();
   if (!ctx->init_succ) {
     err("%s, ctx init fail, pls check setup\n", __func__);
     UPL_ERR_RET(EIO);
   }
+  int efd = ctx->libc_fn.epoll_create(size);
+  if (efd < 0) return efd;
 
-  info("%s, size %d\n", __func__, size);
-  return ctx->libc_fn.epoll_create(size);
+  info("%s(%d), size %d\n", __func__, efd, size);
+  upl_epoll_create(efd);
+  return efd;
 }
 
 int epoll_create1(int flags) {
@@ -600,8 +783,12 @@ int epoll_create1(int flags) {
     UPL_ERR_RET(EIO);
   }
 
-  info("%s, flags %d\n", __func__, flags);
-  return ctx->libc_fn.epoll_create1(flags);
+  int efd = ctx->libc_fn.epoll_create1(flags);
+  if (efd < 0) return efd;
+
+  dbg("%s(%d), flags 0x%x\n", __func__, efd, flags);
+  upl_epoll_create(efd);
+  return efd;
 }
 
 int epoll_ctl(int epfd, int op, int fd, struct epoll_event* event) {
@@ -611,8 +798,38 @@ int epoll_ctl(int epfd, int op, int fd, struct epoll_event* event) {
     UPL_ERR_RET(EIO);
   }
 
-  info("%s, epfd %d op %d fd %d\n", __func__, epfd, op, fd);
-  return ctx->libc_fn.epoll_ctl(epfd, op, fd, event);
+  dbg("%s(%d), op %d fd %d\n", __func__, epfd, op, fd);
+  struct upl_efd_entry* efd = upl_get_efd_entry(ctx, epfd);
+  if (!efd) {
+    err("%s(%d), efd null\n", __func__, epfd);
+    UPL_ERR_RET(EIO);
+  }
+
+  /* if it's a ufd entry */
+  struct upl_ufd_entry* ufd = upl_get_ufd_entry(ctx, fd);
+  if (!ufd || ufd->bind_kfd) {
+    int ret = ctx->libc_fn.epoll_ctl(epfd, op, fd, event);
+    if (ret < 0) return ret;
+    dbg("%s(%d), op %d for fd %d succ with libc\n", __func__, epfd, op, fd);
+    if (op == EPOLL_CTL_ADD) {
+      atomic_fetch_add(&efd->kfd_cnt, 1);
+    } else if (op == EPOLL_CTL_DEL) {
+      atomic_fetch_sub(&efd->kfd_cnt, 1);
+    }
+    return ret;
+  }
+
+  dbg("%s(%d), efd %p ufd %p\n", __func__, epfd, efd, ufd);
+  if (op == EPOLL_CTL_ADD) {
+    return upl_efd_ctl_add(efd, ufd, event);
+  } else if (op == EPOLL_CTL_DEL) {
+    return upl_efd_ctl_del(efd, ufd);
+  } else if (op == EPOLL_CTL_MOD) {
+    return upl_efd_ctl_mod(efd, ufd, event);
+  } else {
+    err("%s(%d:%d), unknown op %d\n", __func__, epfd, fd, op);
+    UPL_ERR_RET(EINVAL);
+  }
 }
 
 int epoll_wait(int epfd, struct epoll_event* events, int maxevents, int timeout) {
@@ -622,13 +839,15 @@ int epoll_wait(int epfd, struct epoll_event* events, int maxevents, int timeout)
     UPL_ERR_RET(EIO);
   }
 
-  info("%s, epfd %d\n", __func__, epfd);
-  for (int i = 0; i < maxevents; i++) {
-    info("%s, epfd %d i %d events %u fd %d\n", __func__, epfd, i, events[i].events,
-         events[i].data.fd);
-  }
+  /* wa to fix end loop in userspace issue */
+  if (timeout == 0) timeout = 1000 * 1;
 
-  return ctx->libc_fn.epoll_wait(epfd, events, maxevents, timeout);
+  struct upl_efd_entry* efd = upl_get_efd_entry(ctx, epfd);
+  if (!efd || !upl_epoll_has_ufd(efd))
+    return ctx->libc_fn.epoll_wait(epfd, events, maxevents, timeout);
+
+  dbg("%s(%d), timeout %d maxevents %d\n", __func__, epfd, timeout, maxevents);
+  return upl_efd_epoll_wait(efd, events, maxevents, timeout);
 }
 
 int epoll_pwait(int epfd, struct epoll_event* events, int maxevents, int timeout,
@@ -639,7 +858,10 @@ int epoll_pwait(int epfd, struct epoll_event* events, int maxevents, int timeout
     UPL_ERR_RET(EIO);
   }
 
-  info("%s, epfd %d\n", __func__, epfd);
-  return ctx->libc_fn.epoll_pwait(epfd, events, maxevents, timeout, sigmask);
+  struct upl_efd_entry* efd = upl_get_efd_entry(ctx, epfd);
+  if (!efd || !upl_epoll_has_ufd(efd))
+    return ctx->libc_fn.epoll_pwait(epfd, events, maxevents, timeout, sigmask);
+
+  info("%s(%d), timeout %d\n", __func__, epfd, timeout);
+  UPL_ERR_RET(EIO);
 }
-#endif
