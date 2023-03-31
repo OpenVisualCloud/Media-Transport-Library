@@ -7,6 +7,7 @@
 #include <inttypes.h>
 #include <stdio.h>
 #include <stdlib.h>
+#include <sys/epoll.h>
 
 #include "../preload_platform.h"
 
@@ -84,9 +85,25 @@ struct upl_functions {
   int (*fcntl)(int sockfd, int cmd, va_list args);
   int (*fcntl64)(int sockfd, int cmd, va_list args);
   int (*ioctl)(int sockfd, unsigned long cmd, va_list args);
+  /* epoll */
+  int (*epoll_create)(int size);
+  int (*epoll_create1)(int flags);
+  int (*epoll_ctl)(int epfd, int op, int fd, struct epoll_event* event);
+  int (*epoll_wait)(int epfd, struct epoll_event* events, int maxevents, int timeout);
+  int (*epoll_pwait)(int epfd, struct epoll_event* events, int maxevents, int timeout,
+                     const sigset_t* sigmask);
+};
+
+enum upl_entry_type {
+  UPL_ENTRY_UNKNOWN = 0,
+  UPL_ENTRY_UFD,
+  UPL_ENTRY_EPOLL,
+  UPL_ENTRY_MAX,
 };
 
 struct upl_ufd_entry {
+  enum upl_entry_type upl_type; /* always the first element */
+
   int ufd;
   bool bind_kfd; /* fallback to kernel fd in the bind */
 
@@ -104,8 +121,8 @@ struct upl_ctx {
 
   struct upl_functions libc_fn;
 
-  int ufd_entires_nb;                 /* the number of ufd_entires */
-  struct upl_ufd_entry** ufd_entires; /* ufd entries */
+  int upl_entires_nb; /* the number of upl_entires */
+  void** upl_entires; /* upl entries */
 };
 
 #endif

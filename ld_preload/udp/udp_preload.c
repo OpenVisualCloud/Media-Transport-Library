@@ -11,14 +11,14 @@ static struct upl_ctx g_upl_ctx;
 static inline struct upl_ctx* upl_get_ctx(void) { return &g_upl_ctx; }
 
 static int upl_uinit_ctx(struct upl_ctx* ctx) {
-  if (ctx->ufd_entires) {
-    for (int i = 0; i < ctx->ufd_entires_nb; i++) {
-      if (ctx->ufd_entires[i]) {
+  if (ctx->upl_entires) {
+    for (int i = 0; i < ctx->upl_entires_nb; i++) {
+      if (ctx->upl_entires[i]) {
         warn("%s, ufd still active on %d\n", __func__, i);
       }
     }
-    upl_free(ctx->ufd_entires);
-    ctx->ufd_entires = NULL;
+    upl_free(ctx->upl_entires);
+    ctx->upl_entires = NULL;
   }
 
   return 0;
@@ -50,6 +50,11 @@ static int upl_get_libc_fn(struct upl_functions* fns) {
   UPL_LIBC_FN(fcntl);
   UPL_LIBC_FN(fcntl64);
   UPL_LIBC_FN(ioctl);
+  UPL_LIBC_FN(epoll_create);
+  UPL_LIBC_FN(epoll_create1);
+  UPL_LIBC_FN(epoll_ctl);
+  UPL_LIBC_FN(epoll_wait);
+  UPL_LIBC_FN(epoll_pwait);
 
   info("%s, succ\n", __func__);
   return 0;
@@ -58,10 +63,10 @@ static int upl_get_libc_fn(struct upl_functions* fns) {
 static int upl_init_ctx(struct upl_ctx* ctx) {
   int ret;
 
-  ctx->ufd_entires_nb = 1024 * 10; /* max fd we support */
-  ctx->ufd_entires = upl_zmalloc(sizeof(*ctx->ufd_entires) * ctx->ufd_entires_nb);
-  if (!ctx->ufd_entires) {
-    err("%s, ufd_entires malloc fail, nb %d\n", __func__, ctx->ufd_entires_nb);
+  ctx->upl_entires_nb = 1024 * 10; /* max fd we support */
+  ctx->upl_entires = upl_zmalloc(sizeof(*ctx->upl_entires) * ctx->upl_entires_nb);
+  if (!ctx->upl_entires) {
+    err("%s, upl_entires malloc fail, nb %d\n", __func__, ctx->upl_entires_nb);
     upl_uinit_ctx(ctx);
     UPL_ERR_RET(ENOMEM);
   }
@@ -77,21 +82,24 @@ static int upl_init_ctx(struct upl_ctx* ctx) {
   return 0;
 }
 
-static inline int upl_set_ufd_entry(struct upl_ctx* ctx, int kfd,
-                                    struct upl_ufd_entry* ufd) {
-  ctx->ufd_entires[kfd] = ufd;
-  info("%s(%d), ufd entry %p\n", __func__, kfd, ufd);
+static inline int upl_set_upl_entry(struct upl_ctx* ctx, int kfd, void* upl) {
+  ctx->upl_entires[kfd] = upl;
+  info("%s(%d), upl entry %p\n", __func__, kfd, upl);
   return 0;
 }
 
-static inline int upl_clear_ufd_entry(struct upl_ctx* ctx, int kfd) {
-  ctx->ufd_entires[kfd] = NULL;
+static inline int upl_clear_upl_entry(struct upl_ctx* ctx, int kfd) {
+  ctx->upl_entires[kfd] = NULL;
   return 0;
 }
 
 static inline struct upl_ufd_entry* upl_get_ufd_entry(struct upl_ctx* ctx, int kfd) {
   if (!ctx->has_mtl_udp) return NULL;
-  struct upl_ufd_entry* entry = ctx->ufd_entires[kfd];
+  struct upl_ufd_entry* entry = ctx->upl_entires[kfd];
+  if (entry && entry->upl_type != UPL_ENTRY_UFD) {
+    err("%s(%d), entry %p error type %d\n", __func__, kfd, entry, entry->upl_type);
+    return NULL;
+  }
   dbg("%s(%d), ufd entry %p\n", __func__, kfd, entry);
   return entry;
 }
@@ -167,9 +175,9 @@ int socket(int domain, int type, int protocol) {
     return kfd;
   }
 
-  if (kfd > ctx->ufd_entires_nb) {
+  if (kfd > ctx->upl_entires_nb) {
     err("%s, kfd %d too big, consider enlarge entires space %d\n", __func__, kfd,
-        ctx->ufd_entires_nb);
+        ctx->upl_entires_nb);
     return kfd;
   }
 
@@ -190,6 +198,7 @@ int socket(int domain, int type, int protocol) {
     mufd_close(ufd);
     return kfd; /* return kfd for fallback path */
   }
+  entry->upl_type = UPL_ENTRY_UFD;
   entry->ufd = ufd;
 
   ret = mufd_register_stat_dump_cb(ufd, upl_stat_dump, entry);
@@ -200,7 +209,7 @@ int socket(int domain, int type, int protocol) {
     return kfd; /* return kfd for fallback path */
   }
 
-  upl_set_ufd_entry(ctx, kfd, entry);
+  upl_set_upl_entry(ctx, kfd, entry);
   info("%s, ufd %d kfd %d for domain %d type %d protocol %d\n", __func__, ufd, kfd,
        domain, type, protocol);
   return kfd;
@@ -220,7 +229,7 @@ int close(int sockfd) {
   int ufd = entry->ufd;
   mufd_close(ufd);
   upl_free(entry);
-  upl_clear_ufd_entry(ctx, sockfd);
+  upl_clear_upl_entry(ctx, sockfd);
   info("%s, ufd %d kfd %d\n", __func__, ufd, sockfd);
   /* close the kfd */
   return ctx->libc_fn.close(sockfd);
@@ -571,3 +580,66 @@ int ioctl(int sockfd, unsigned long cmd, va_list args) {
   else
     return mufd_ioctl(entry->ufd, cmd, args);
 }
+
+#if 0
+int epoll_create(int size) {
+  struct upl_ctx* ctx = upl_get_ctx();
+  if (!ctx->init_succ) {
+    err("%s, ctx init fail, pls check setup\n", __func__);
+    UPL_ERR_RET(EIO);
+  }
+
+  info("%s, size %d\n", __func__, size);
+  return ctx->libc_fn.epoll_create(size);
+}
+
+int epoll_create1(int flags) {
+  struct upl_ctx* ctx = upl_get_ctx();
+  if (!ctx->init_succ) {
+    err("%s, ctx init fail, pls check setup\n", __func__);
+    UPL_ERR_RET(EIO);
+  }
+
+  info("%s, flags %d\n", __func__, flags);
+  return ctx->libc_fn.epoll_create1(flags);
+}
+
+int epoll_ctl(int epfd, int op, int fd, struct epoll_event* event) {
+  struct upl_ctx* ctx = upl_get_ctx();
+  if (!ctx->init_succ) {
+    err("%s, ctx init fail, pls check setup\n", __func__);
+    UPL_ERR_RET(EIO);
+  }
+
+  info("%s, epfd %d op %d fd %d\n", __func__, epfd, op, fd);
+  return ctx->libc_fn.epoll_ctl(epfd, op, fd, event);
+}
+
+int epoll_wait(int epfd, struct epoll_event* events, int maxevents, int timeout) {
+  struct upl_ctx* ctx = upl_get_ctx();
+  if (!ctx->init_succ) {
+    err("%s, ctx init fail, pls check setup\n", __func__);
+    UPL_ERR_RET(EIO);
+  }
+
+  info("%s, epfd %d\n", __func__, epfd);
+  for (int i = 0; i < maxevents; i++) {
+    info("%s, epfd %d i %d events %u fd %d\n", __func__, epfd, i, events[i].events,
+         events[i].data.fd);
+  }
+
+  return ctx->libc_fn.epoll_wait(epfd, events, maxevents, timeout);
+}
+
+int epoll_pwait(int epfd, struct epoll_event* events, int maxevents, int timeout,
+                const sigset_t* sigmask) {
+  struct upl_ctx* ctx = upl_get_ctx();
+  if (!ctx->init_succ) {
+    err("%s, ctx init fail, pls check setup\n", __func__);
+    UPL_ERR_RET(EIO);
+  }
+
+  info("%s, epfd %d\n", __func__, epfd);
+  return ctx->libc_fn.epoll_pwait(epfd, events, maxevents, timeout, sigmask);
+}
+#endif
