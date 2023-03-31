@@ -32,11 +32,11 @@ int mudp_verify_socket_args(int domain, int type, int protocol) {
     dbg("%s, invalid domain %d\n", __func__, domain);
     MUDP_ERR_RET(EINVAL);
   }
-  if (type != SOCK_DGRAM) {
+  if ((type != SOCK_DGRAM) && (type != (SOCK_DGRAM | SOCK_NONBLOCK))) {
     dbg("%s, invalid type %d\n", __func__, type);
     MUDP_ERR_RET(EINVAL);
   }
-  if (protocol != 0) {
+  if ((protocol != 0) && (protocol != IPPROTO_UDP)) {
     dbg("%s, invalid protocol %d\n", __func__, protocol);
     MUDP_ERR_RET(EINVAL);
   }
@@ -728,6 +728,35 @@ static int udp_get_rcvtimeo(struct mudp_impl* s, void* optval, socklen_t* optlen
   return 0;
 }
 
+static int udp_set_cookie(struct mudp_impl* s, const void* optval, socklen_t optlen) {
+  int idx = s->idx;
+  size_t sz = sizeof(uint64_t);
+  uint64_t cookie;
+
+  if (optlen != sz) {
+    err("%s(%d), invalid optlen %d\n", __func__, idx, optlen);
+    MUDP_ERR_RET(EINVAL);
+  }
+
+  cookie = *((uint64_t*)optval);
+  info("%s(%d), cookie %" PRIu64 "\n", __func__, idx, cookie);
+  s->cookie = cookie;
+  return 0;
+}
+
+static int udp_get_cookie(struct mudp_impl* s, void* optval, socklen_t* optlen) {
+  int idx = s->idx;
+  size_t sz = sizeof(uint64_t);
+
+  if (*optlen != sz) {
+    err("%s(%d), invalid *optlen %d\n", __func__, idx, (*optlen));
+    MUDP_ERR_RET(EINVAL);
+  }
+
+  mtl_memcpy(optval, &s->cookie, sz);
+  return 0;
+}
+
 static int udp_set_rcvtimeo(struct mudp_impl* s, const void* optval, socklen_t optlen) {
   int idx = s->idx;
   const struct timeval* tv;
@@ -1217,6 +1246,7 @@ mudp_handle mudp_socket_port(mtl_handle mt, int domain, int type, int protocol,
   s->element_size = MUDP_MAX_BYTES;
   /* No dependency to arp for kernel based udp stack */
   s->arp_timeout_us = MT_DEV_TIMEOUT_ZERO;
+  s->msg_arp_timeout_us = 10 * US_PER_MS;
   s->tx_timeout_us = 10 * US_PER_MS;
   s->rx_timeout_us = US_PER_S;
   s->txq_bps = MUDP_DEFAULT_RL_BPS;
@@ -1225,6 +1255,7 @@ mudp_handle mudp_socket_port(mtl_handle mt, int domain, int type, int protocol,
   s->rx_poll_sleep_us = 10;
   s->sndbuf_sz = 10 * 1024;
   s->rcvbuf_sz = 10 * 1024;
+  s->cookie = idx;
   s->mcast_addrs_nb = 16; /* max 16 mcast address */
   mt_pthread_mutex_init(&s->mcast_addrs_mutex, NULL);
 
@@ -1385,7 +1416,7 @@ ssize_t mudp_sendmsg(mudp_handle ut, const struct msghdr* msg, int flags) {
   struct mudp_impl* s = ut;
   struct mtl_main_impl* impl = s->parent;
   int idx = s->idx;
-  int arp_timeout_ms = s->arp_timeout_us / 1000;
+  int arp_timeout_ms = s->msg_arp_timeout_us / 1000;
   int ret;
   struct rte_mbuf* m;
   ssize_t copied;
@@ -1510,17 +1541,15 @@ int mudp_getsockopt(mudp_handle ut, int level, int optname, void* optval,
     case SOL_SOCKET: {
       switch (optname) {
         case SO_SNDBUF:
-#ifdef SO_SNDBUFFORCE
         case SO_SNDBUFFORCE:
-#endif
           return udp_get_sndbuf(s, optval, optlen);
         case SO_RCVBUF:
-#ifdef SO_RCVBUFFORCE
         case SO_RCVBUFFORCE:
-#endif
           return udp_get_rcvbuf(s, optval, optlen);
         case SO_RCVTIMEO:
           return udp_get_rcvtimeo(s, optval, optlen);
+        case SO_COOKIE:
+          return udp_get_cookie(s, optval, optlen);
         default:
           err("%s(%d), unknown optname %d for SOL_SOCKET\n", __func__, idx, optname);
           MUDP_ERR_RET(EINVAL);
@@ -1543,25 +1572,21 @@ int mudp_setsockopt(mudp_handle ut, int level, int optname, const void* optval,
     case SOL_SOCKET: {
       switch (optname) {
         case SO_SNDBUF:
-#ifdef SO_SNDBUFFORCE
         case SO_SNDBUFFORCE:
-#endif
           return udp_set_sndbuf(s, optval, optlen);
         case SO_RCVBUF:
-#ifdef SO_RCVBUFFORCE
         case SO_RCVBUFFORCE:
-#endif
           return udp_set_rcvbuf(s, optval, optlen);
         case SO_RCVTIMEO:
           return udp_set_rcvtimeo(s, optval, optlen);
+        case SO_COOKIE:
+          return udp_set_cookie(s, optval, optlen);
         case SO_REUSEADDR: /* skip now */
           info("%s(%d), skip SO_REUSEADDR\n", __func__, idx);
           return 0;
-#ifdef SO_REUSEPORT
         case SO_REUSEPORT:
           info("%s(%d), not support SO_REUSEPORT\n", __func__, idx);
           MUDP_ERR_RET(ENOTSUP);
-#endif
         default:
           err("%s(%d), unknown optname %d for SOL_SOCKET\n", __func__, idx, optname);
           MUDP_ERR_RET(EINVAL);
@@ -1575,6 +1600,14 @@ int mudp_setsockopt(mudp_handle ut, int level, int optname, const void* optval,
           return udp_drop_membership(s, optval, optlen);
         case IP_PKTINFO:
           info("%s(%d), skip IP_PKTINFO\n", __func__, idx);
+          return 0;
+#ifdef IP_RECVTOS
+        case IP_RECVTOS:
+          info("%s(%d), skip IP_RECVTOS\n", __func__, idx);
+          return 0;
+#endif
+        case IP_MTU_DISCOVER:
+          info("%s(%d), skip IP_MTU_DISCOVER\n", __func__, idx);
           return 0;
         default:
           err("%s(%d), unknown optname %d for IPPROTO_IP\n", __func__, idx, optname);

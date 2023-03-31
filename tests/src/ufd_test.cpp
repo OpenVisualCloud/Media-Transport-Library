@@ -251,6 +251,7 @@ static void socketopt_test(int level, int optname) {
 
 TEST(Api, socket_snd_buf) { socketopt_test<uint32_t>(SOL_SOCKET, SO_SNDBUF); }
 TEST(Api, socket_rcv_buf) { socketopt_test<uint32_t>(SOL_SOCKET, SO_RCVBUF); }
+TEST(Api, socket_cookie) { socketopt_test<uint64_t>(SOL_SOCKET, SO_COOKIE); }
 
 template <>
 void socketopt_double(struct timeval* i) {

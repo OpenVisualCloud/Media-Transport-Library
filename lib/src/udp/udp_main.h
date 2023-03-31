@@ -81,6 +81,7 @@ struct mudp_impl {
   uint64_t wake_tsc_last;
 
   unsigned int arp_timeout_us;
+  unsigned int msg_arp_timeout_us;
   unsigned int tx_timeout_us;
   unsigned int rx_timeout_us;
   uint8_t user_mac[MTL_MAC_ADDR_LEN];
@@ -95,6 +96,8 @@ struct mudp_impl {
   uint32_t sndbuf_sz;
   /* receive buffer size */
   uint32_t rcvbuf_sz;
+  /* cookie for SO_COOKIE */
+  uint64_t cookie;
 
   /* stat */
   /* do we need atomic here? atomic may impact the performance */
