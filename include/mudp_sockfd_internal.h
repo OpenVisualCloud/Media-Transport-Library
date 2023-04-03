@@ -33,6 +33,8 @@ struct mufd_override_params {
   bool lcore_mode;
 };
 
+#define MUFD_FLAG_BIND_ADDRESS_CHECK (MTL_BIT64(0))
+
 /**
  * Commit the runtime parameters of mufd instance.
  *
@@ -65,6 +67,8 @@ struct mufd_init_params {
   unsigned int wake_timeout_us;
   /** rx poll sleep time */
   unsigned int rx_poll_sleep_us;
+  /** flags, value with MUFD_FLAG_* */
+  uint64_t flags;
 };
 
 /**

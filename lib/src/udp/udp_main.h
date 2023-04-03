@@ -37,6 +37,8 @@
 #define MUDP_MCAST_INIT (MTL_BIT32(3))
 /* if tx mac is defined by user */
 #define MUDP_TX_USER_MAC (MTL_BIT32(4))
+/* if check bind address for RX */
+#define MUDP_BIND_ADDRESS_CHECK (MTL_BIT32(5))
 
 /* 1g */
 #define MUDP_DEFAULT_RL_BPS (1ul * 1024 * 1024 * 1024)
