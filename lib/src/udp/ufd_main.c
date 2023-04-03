@@ -302,6 +302,14 @@ static int ufd_parse_json(struct mufd_init_params* init, const char* filename) {
     info("%s, rx_poll_sleep_us %d\n", __func__, rx_poll_sleep_us);
   }
 
+  obj = mt_json_object_get(root, "bind_address_check");
+  if (obj) {
+    if (json_object_get_boolean(obj)) {
+      info("%s, bind address check enabled\n", __func__);
+      init->flags |= MUFD_FLAG_BIND_ADDRESS_CHECK;
+    }
+  }
+
   ret = 0;
 
 out:
@@ -496,6 +504,8 @@ int mufd_socket_port(int domain, int type, int protocol, enum mtl_port port) {
     mudp_set_wake_timeout(slot->handle, ctx->init_params.wake_timeout_us);
   if (ctx->init_params.rx_poll_sleep_us)
     mudp_set_rx_poll_sleep(slot->handle, ctx->init_params.rx_poll_sleep_us);
+  if (ctx->init_params.flags & MUFD_FLAG_BIND_ADDRESS_CHECK)
+    mudp_bind_address_check(slot->handle, true);
 
   info("%s(%d), succ, fd %d\n", __func__, idx, fd);
   return fd;

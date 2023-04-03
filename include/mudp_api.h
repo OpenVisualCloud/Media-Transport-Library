@@ -412,6 +412,19 @@ int mudp_set_wake_timeout(mudp_handle ut, unsigned int us);
 int mudp_set_rx_poll_sleep(mudp_handle ut, unsigned int us);
 
 /**
+ * Enable/Disable the bind address check.
+ *
+ * @param ut
+ *   The handle to udp transport socket.
+ * @param enable
+ *   Enable or not.
+ * @return
+ *   - 0: Success.
+ *   - <0: Error code. -1 is returned, and errno is set appropriately.
+ */
+int mudp_bind_address_check(mudp_handle ut, bool enable);
+
+/**
  * Get IP address of the udp transport socket.
  *
  * @param ut

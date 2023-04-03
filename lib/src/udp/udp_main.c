@@ -65,6 +65,8 @@ static int udp_verify_bind_addr(struct mudp_impl* s, const struct sockaddr_in* a
   ret = udp_verify_addr(addr, addrlen);
   if (ret < 0) return ret;
 
+  if (!udp_get_flag(s, MUDP_BIND_ADDRESS_CHECK)) return 0;
+
   /* check if our IP or any IP */
   if (addr->sin_addr.s_addr == INADDR_ANY)
     return 0; /* kernel mcast bind use INADDR_ANY */
@@ -1609,6 +1611,9 @@ int mudp_setsockopt(mudp_handle ut, int level, int optname, const void* optval,
         case IP_MTU_DISCOVER:
           info("%s(%d), skip IP_MTU_DISCOVER\n", __func__, idx);
           return 0;
+        case IP_TOS:
+          info("%s(%d), skip IP_TOS\n", __func__, idx);
+          return 0;
         default:
           err("%s(%d), unknown optname %d for IPPROTO_IP\n", __func__, idx, optname);
           MUDP_ERR_RET(EINVAL);
@@ -1651,6 +1656,22 @@ int mudp_set_tx_mac(mudp_handle ut, uint8_t mac[MTL_MAC_ADDR_LEN]) {
   udp_set_flag(s, MUDP_TX_USER_MAC);
   info("%s(%d), mac: %02hhx:%02hhx:%02hhx:%02hhx:%02hhx:%02hhx\n", __func__, idx, mac[0],
        mac[1], mac[2], mac[3], mac[4], mac[5]);
+  return 0;
+}
+
+int mudp_bind_address_check(mudp_handle ut, bool enable) {
+  struct mudp_impl* s = ut;
+  int idx = s->idx;
+
+  if (s->type != MT_HANDLE_UDP) {
+    err("%s(%d), invalid type %d\n", __func__, idx, s->type);
+    MUDP_ERR_RET(EIO);
+  }
+
+  if (enable)
+    udp_set_flag(s, MUDP_BIND_ADDRESS_CHECK);
+  else
+    udp_clear_flag(s, MUDP_BIND_ADDRESS_CHECK);
   return 0;
 }
 
