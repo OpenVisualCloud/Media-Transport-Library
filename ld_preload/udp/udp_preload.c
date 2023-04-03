@@ -10,6 +10,62 @@ static struct upl_ctx g_upl_ctx;
 
 static inline struct upl_ctx* upl_get_ctx(void) { return &g_upl_ctx; }
 
+static inline bool upl_stopped(struct upl_ctx* ctx) {
+  return ctx->upl_entires ? false : true;
+}
+
+static inline int upl_set_upl_entry(struct upl_ctx* ctx, int kfd, void* upl) {
+  if (upl_stopped(ctx)) {
+    err("%s(%d), upl stopped\n", __func__, kfd);
+    return -EIO;
+  }
+  if (ctx->upl_entires[kfd]) {
+    warn("%s(%d), already has upl %p\n", __func__, kfd, ctx->upl_entires[kfd]);
+  }
+  ctx->upl_entires[kfd] = upl;
+  dbg("%s(%d), upl entry %p\n", __func__, kfd, upl);
+  return 0;
+}
+
+static inline void* upl_get_upl_entry(struct upl_ctx* ctx, int kfd) {
+  if (upl_stopped(ctx)) return NULL;
+  return ctx->upl_entires[kfd];
+}
+
+static inline int upl_clear_upl_entry(struct upl_ctx* ctx, int kfd) {
+  ctx->upl_entires[kfd] = NULL;
+  return 0;
+}
+
+static inline struct upl_ufd_entry* upl_get_ufd_entry(struct upl_ctx* ctx, int kfd) {
+  struct upl_ufd_entry* entry = upl_get_upl_entry(ctx, kfd);
+  if (entry && entry->base.upl_type != UPL_ENTRY_UFD) {
+    err("%s(%d), entry %p error type %d\n", __func__, kfd, entry, entry->base.upl_type);
+    return NULL;
+  }
+  dbg("%s(%d), ufd entry %p\n", __func__, kfd, entry);
+  return entry;
+}
+
+static inline struct upl_efd_entry* upl_get_efd_entry(struct upl_ctx* ctx, int kfd) {
+  struct upl_efd_entry* entry = upl_get_upl_entry(ctx, kfd);
+  if (entry && entry->base.upl_type != UPL_ENTRY_EPOLL) {
+    err("%s(%d), entry %p error type %d\n", __func__, kfd, entry, entry->base.upl_type);
+    return NULL;
+  }
+  dbg("%s(%d), efd entry %p\n", __func__, kfd, entry);
+  return entry;
+}
+
+static inline bool upl_is_ufd_entry(struct upl_ctx* ctx, int kfd) {
+  struct upl_ufd_entry* entry = upl_get_ufd_entry(ctx, kfd);
+  dbg("%s(%d), ufd entry %p\n", __func__, kfd, entry);
+  if (!entry || entry->bind_kfd)
+    return false;
+  else
+    return true;
+}
+
 static int upl_uinit_ctx(struct upl_ctx* ctx) {
   if (ctx->upl_entires) {
     for (int i = 0; i < ctx->upl_entires_nb; i++) {
@@ -80,53 +136,6 @@ static int upl_init_ctx(struct upl_ctx* ctx) {
   ctx->init_succ = true;
   info("%s, succ ctx %p\n", __func__, ctx);
   return 0;
-}
-
-static inline int upl_set_upl_entry(struct upl_ctx* ctx, int kfd, void* upl) {
-  if (ctx->upl_entires[kfd]) {
-    warn("%s(%d), already has upl %p\n", __func__, kfd, ctx->upl_entires[kfd]);
-  }
-  ctx->upl_entires[kfd] = upl;
-  dbg("%s(%d), upl entry %p\n", __func__, kfd, upl);
-  return 0;
-}
-
-static inline void* upl_get_upl_entry(struct upl_ctx* ctx, int kfd) {
-  return ctx->upl_entires[kfd];
-}
-
-static inline int upl_clear_upl_entry(struct upl_ctx* ctx, int kfd) {
-  ctx->upl_entires[kfd] = NULL;
-  return 0;
-}
-
-static inline struct upl_ufd_entry* upl_get_ufd_entry(struct upl_ctx* ctx, int kfd) {
-  struct upl_ufd_entry* entry = upl_get_upl_entry(ctx, kfd);
-  if (entry && entry->base.upl_type != UPL_ENTRY_UFD) {
-    err("%s(%d), entry %p error type %d\n", __func__, kfd, entry, entry->base.upl_type);
-    return NULL;
-  }
-  dbg("%s(%d), ufd entry %p\n", __func__, kfd, entry);
-  return entry;
-}
-
-static inline struct upl_efd_entry* upl_get_efd_entry(struct upl_ctx* ctx, int kfd) {
-  struct upl_efd_entry* entry = upl_get_upl_entry(ctx, kfd);
-  if (entry && entry->base.upl_type != UPL_ENTRY_EPOLL) {
-    err("%s(%d), entry %p error type %d\n", __func__, kfd, entry, entry->base.upl_type);
-    return NULL;
-  }
-  dbg("%s(%d), efd entry %p\n", __func__, kfd, entry);
-  return entry;
-}
-
-static bool upl_is_ufd_entry(struct upl_ctx* ctx, int kfd) {
-  struct upl_ufd_entry* entry = upl_get_ufd_entry(ctx, kfd);
-  dbg("%s(%d), ufd entry %p\n", __func__, kfd, entry);
-  if (!entry || entry->bind_kfd)
-    return false;
-  else
-    return true;
 }
 
 static void __attribute__((constructor)) upl_init() {
@@ -339,19 +348,19 @@ int socket(int domain, int type, int protocol) {
   }
 
   kfd = ctx->libc_fn.socket(domain, type, protocol);
-  info("%s, kfd %d for domain %d type %d protocol %d\n", __func__, kfd, domain, type,
-       protocol);
+  dbg("%s, kfd %d for domain %d type %d protocol %d\n", __func__, kfd, domain, type,
+      protocol);
   if (kfd < 0) {
     err("%s, create kfd fail %d for domain %d type %d protocol %d\n", __func__, kfd,
         domain, type, protocol);
     return kfd;
   }
-
   if (kfd > ctx->upl_entires_nb) {
     err("%s, kfd %d too big, consider enlarge entires space %d\n", __func__, kfd,
         ctx->upl_entires_nb);
     return kfd;
   }
+  if (upl_stopped(ctx)) return kfd;
 
   if (!ctx->has_mtl_udp) return kfd;
   ret = mufd_socket_check(domain, type, protocol);
@@ -770,6 +779,7 @@ int epoll_create(int size) {
   }
   int efd = ctx->libc_fn.epoll_create(size);
   if (efd < 0) return efd;
+  if (upl_stopped(ctx)) return efd;
 
   info("%s(%d), size %d\n", __func__, efd, size);
   upl_epoll_create(efd);
@@ -785,6 +795,7 @@ int epoll_create1(int flags) {
 
   int efd = ctx->libc_fn.epoll_create1(flags);
   if (efd < 0) return efd;
+  if (upl_stopped(ctx)) return efd;
 
   dbg("%s(%d), flags 0x%x\n", __func__, efd, flags);
   upl_epoll_create(efd);
@@ -800,10 +811,7 @@ int epoll_ctl(int epfd, int op, int fd, struct epoll_event* event) {
 
   dbg("%s(%d), op %d fd %d\n", __func__, epfd, op, fd);
   struct upl_efd_entry* efd = upl_get_efd_entry(ctx, epfd);
-  if (!efd) {
-    err("%s(%d), efd null\n", __func__, epfd);
-    UPL_ERR_RET(EIO);
-  }
+  if (!efd) return ctx->libc_fn.epoll_ctl(epfd, op, fd, event);
 
   /* if it's a ufd entry */
   struct upl_ufd_entry* ufd = upl_get_ufd_entry(ctx, fd);
@@ -839,14 +847,13 @@ int epoll_wait(int epfd, struct epoll_event* events, int maxevents, int timeout)
     UPL_ERR_RET(EIO);
   }
 
-  /* wa to fix end loop in userspace issue */
-  if (timeout == 0) timeout = 1000 * 1;
-
   struct upl_efd_entry* efd = upl_get_efd_entry(ctx, epfd);
   if (!efd || !upl_epoll_has_ufd(efd))
     return ctx->libc_fn.epoll_wait(epfd, events, maxevents, timeout);
 
   dbg("%s(%d), timeout %d maxevents %d\n", __func__, epfd, timeout, maxevents);
+  /* wa to fix end loop in userspace issue */
+  if (timeout == 0) timeout = 1000 * 1;
   return upl_efd_epoll_wait(efd, events, maxevents, timeout);
 }
 
@@ -862,6 +869,8 @@ int epoll_pwait(int epfd, struct epoll_event* events, int maxevents, int timeout
   if (!efd || !upl_epoll_has_ufd(efd))
     return ctx->libc_fn.epoll_pwait(epfd, events, maxevents, timeout, sigmask);
 
-  info("%s(%d), timeout %d\n", __func__, epfd, timeout);
-  UPL_ERR_RET(EIO);
+  /* wa to fix end loop in userspace issue */
+  if (timeout == 0) timeout = 1000 * 1;
+  dbg("%s(%d), timeout %d\n", __func__, epfd, timeout);
+  return upl_efd_epoll_wait(efd, events, maxevents, timeout);
 }
