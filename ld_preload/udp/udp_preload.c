@@ -66,11 +66,23 @@ static inline bool upl_is_ufd_entry(struct upl_ctx* ctx, int kfd) {
     return true;
 }
 
+static const char* upl_type_names[UPL_ENTRY_MAX] = {
+    "unknown",
+    "ufd",
+    "efd",
+};
+
+static const char* upl_type_name(enum upl_entry_type type) {
+  return upl_type_names[type];
+}
+
 static int upl_uinit_ctx(struct upl_ctx* ctx) {
   if (ctx->upl_entires) {
     for (int i = 0; i < ctx->upl_entires_nb; i++) {
-      if (ctx->upl_entires[i]) {
-        warn("%s, ufd still active on %d\n", __func__, i);
+      struct upl_base_entry* entry = upl_get_upl_entry(ctx, i);
+      if (entry) {
+        warn("%s, upl still active on %d, upl type %s\n", __func__, i,
+             upl_type_name(entry->upl_type));
       }
     }
     upl_free(ctx->upl_entires);
@@ -619,8 +631,10 @@ int select(int nfds, fd_set* readfds, fd_set* writefds, fd_set* exceptfds,
   struct pollfd p_fds[r_nfds];
   int kfds[r_nfds];
   memset(p_fds, 0, sizeof(p_fds));
-  int timeout_ms = 1000 * 2;
+  int timeout_ms = 0;
   if (timeout) timeout_ms = timeout->tv_sec * 1000 + timeout->tv_usec / 1000;
+  /* wa to fix end loop in userspace issue */
+  if (timeout_ms <= 0) timeout_ms = 1000 * 2;
   nfds_t p_fds_cnt = 0;
   for (int i = 0; i < nfds; i++) {
     if (!FD_ISSET(i, readfds)) continue;
@@ -851,9 +865,11 @@ int epoll_wait(int epfd, struct epoll_event* events, int maxevents, int timeout)
   if (!efd || !upl_epoll_has_ufd(efd))
     return ctx->libc_fn.epoll_wait(epfd, events, maxevents, timeout);
 
-  dbg("%s(%d), timeout %d maxevents %d\n", __func__, epfd, timeout, maxevents);
+  int kfd_cnt = atomic_load(&efd->kfd_cnt);
+  info("%s(%d), timeout %d maxevents %d, kfd_cnt %d\n", __func__, epfd, timeout,
+       maxevents, kfd_cnt);
   /* wa to fix end loop in userspace issue */
-  if (timeout == 0) timeout = 1000 * 1;
+  if (timeout <= 0) timeout = 1000 * 2;
   return upl_efd_epoll_wait(efd, events, maxevents, timeout);
 }
 
@@ -869,8 +885,9 @@ int epoll_pwait(int epfd, struct epoll_event* events, int maxevents, int timeout
   if (!efd || !upl_epoll_has_ufd(efd))
     return ctx->libc_fn.epoll_pwait(epfd, events, maxevents, timeout, sigmask);
 
+  int kfd_cnt = atomic_load(&efd->kfd_cnt);
+  info("%s(%d), timeout %d, kfd_cnt %d\n", __func__, epfd, timeout, kfd_cnt);
   /* wa to fix end loop in userspace issue */
-  if (timeout == 0) timeout = 1000 * 1;
-  dbg("%s(%d), timeout %d\n", __func__, epfd, timeout);
+  if (timeout <= 0) timeout = 1000 * 2;
   return upl_efd_epoll_wait(efd, events, maxevents, timeout);
 }

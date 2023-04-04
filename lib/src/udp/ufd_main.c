@@ -502,8 +502,8 @@ int mufd_socket_port(int domain, int type, int protocol, enum mtl_port port) {
     mudp_set_wake_thresh_count(slot->handle, ctx->init_params.wake_thresh_count);
   if (ctx->init_params.wake_timeout_us)
     mudp_set_wake_timeout(slot->handle, ctx->init_params.wake_timeout_us);
-  if (ctx->init_params.rx_poll_sleep_us)
-    mudp_set_rx_poll_sleep(slot->handle, ctx->init_params.rx_poll_sleep_us);
+  /* allow to set zero to disable sleep */
+  mudp_set_rx_poll_sleep(slot->handle, ctx->init_params.rx_poll_sleep_us);
   if (ctx->init_params.flags & MUFD_FLAG_BIND_ADDRESS_CHECK)
     mudp_bind_address_check(slot->handle, true);
 
