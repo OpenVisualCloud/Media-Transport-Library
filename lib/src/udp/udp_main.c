@@ -177,6 +177,14 @@ static int udp_build_tx_pkt(struct mtl_main_impl* impl, struct mudp_impl* s,
   return 0;
 }
 
+static ssize_t udp_msg_len(const struct msghdr* msg) {
+  size_t len = 0;
+  for (int i = 0; i < msg->msg_iovlen; i++) {
+    len += msg->msg_iov[i].iov_len;
+  }
+  return len;
+}
+
 static ssize_t udp_build_tx_msg_pkt(struct mtl_main_impl* impl, struct mudp_impl* s,
                                     struct rte_mbuf* pkt, const struct msghdr* msg,
                                     const struct sockaddr_in* addr_in,
@@ -285,11 +293,15 @@ static int udp_tx_pkt(struct mtl_main_impl* impl, struct mudp_impl* s,
 static int udp_bind_port(struct mudp_impl* s, uint16_t bind_port) {
   int idx = s->idx;
 
+  if (!bind_port) {
+    bind_port = mt_random_port(s->bind_port);
+    info("%s(%d), random bind port number %u\n", __func__, idx, bind_port);
+  }
   /* save bind port number */
   s->bind_port = bind_port;
   /* update src port for tx also */
   s->hdr.udp.src_port = htons(bind_port);
-  info("%s(%d), bind port %u\n", __func__, idx, bind_port);
+  info("%s(%d), bind port number %u\n", __func__, idx, bind_port);
   return 0;
 }
 
@@ -954,6 +966,16 @@ static ssize_t udp_rx_dequeue(struct mudp_impl* s, void* buf, size_t len, int fl
   return copied;
 }
 
+static ssize_t udp_rx_ret_timeout(struct mudp_impl* s) {
+  if (s->rx_timeout_us) {
+    dbg("%s(%d), timeout to %d ms, flags %d\n", __func__, s->idx, s->rx_timeout_us,
+        flags);
+    MUDP_ERR_RET(ETIMEDOUT);
+  } else {
+    MUDP_ERR_RET(EBUSY);
+  }
+}
+
 static ssize_t udp_recvfrom(struct mudp_impl* s, void* buf, size_t len, int flags,
                             struct sockaddr* src_addr, socklen_t* addrlen) {
   struct mtl_main_impl* impl = s->parent;
@@ -983,8 +1005,7 @@ rx_pool:
     goto rx_pool;
   }
 
-  dbg("%s(%d), timeout to %d ms, flags %d\n", __func__, s->idx, s->rx_timeout_us, flags);
-  MUDP_ERR_RET(ETIMEDOUT);
+  return udp_rx_ret_timeout(s);
 }
 
 static ssize_t udp_rx_msg_dequeue(struct mudp_impl* s, struct msghdr* msg, int flags) {
@@ -1002,7 +1023,7 @@ static ssize_t udp_rx_msg_dequeue(struct mudp_impl* s, struct msghdr* msg, int f
   void* payload = &udp[1];
   struct rte_ipv4_hdr* ipv4 = &hdr->ipv4;
   ssize_t payload_len = ntohs(udp->dgram_len) - sizeof(*udp);
-  dbg("%s(%d), payload_len %d bytes\n", __func__, idx, payload_len);
+  dbg("%s(%d), payload_len %" PRId64 " bytes\n", __func__, idx, payload_len);
 
   msg->msg_flags = 0;
 
@@ -1073,8 +1094,7 @@ rx_pool:
     goto rx_pool;
   }
 
-  dbg("%s(%d), timeout to %d ms, flags %d\n", __func__, s->idx, s->rx_timeout_us, flags);
-  MUDP_ERR_RET(ETIMEDOUT);
+  return udp_rx_ret_timeout(s);
 }
 
 static int udp_poll(struct mudp_pollfd* fds, mudp_nfds_t nfds, int timeout) {
@@ -1109,11 +1129,14 @@ rx_poll:
   /* check if timeout */
   int ms = (mt_get_tsc(impl) - start_ts) / NS_PER_MS;
   if (((ms < timeout) || (timeout < 0)) && udp_alive(s)) {
-    if (s->rx_poll_sleep_us) mt_sleep_us(s->rx_poll_sleep_us);
+    if (s->rx_poll_sleep_us) {
+      dbg("%s(%d), sleep %u us\n", __func__, s->idx, s->rx_poll_sleep_us);
+      mt_sleep_us(s->rx_poll_sleep_us);
+    }
     goto rx_poll;
   }
 
-  dbg("%s, timeout to %d ms\n", __func__, timeout);
+  dbg("%s(%d), timeout to %d ms\n", __func__, s->idx, timeout);
   return 0;
 }
 
@@ -1156,8 +1179,7 @@ dequeue:
     goto dequeue;
   }
 
-  dbg("%s(%d), timeout to %d ms, flags %d\n", __func__, s->idx, s->rx_timeout_ms, flags);
-  MUDP_ERR_RET(ETIMEDOUT);
+  return udp_rx_ret_timeout(s);
 }
 
 static ssize_t udp_recvmsg_lcore(struct mudp_impl* s, struct msghdr* msg, int flags) {
@@ -1182,8 +1204,7 @@ dequeue:
     goto dequeue;
   }
 
-  dbg("%s(%d), timeout to %d ms, flags %d\n", __func__, s->idx, s->rx_timeout_ms, flags);
-  MUDP_ERR_RET(ETIMEDOUT);
+  return udp_rx_ret_timeout(s);
 }
 
 static int udp_poll_lcore(struct mudp_pollfd* fds, mudp_nfds_t nfds, int timeout) {
@@ -1248,9 +1269,9 @@ mudp_handle mudp_socket_port(mtl_handle mt, int domain, int type, int protocol,
   s->element_size = MUDP_MAX_BYTES;
   /* No dependency to arp for kernel based udp stack */
   s->arp_timeout_us = MT_DEV_TIMEOUT_ZERO;
-  s->msg_arp_timeout_us = 10 * US_PER_MS;
+  s->msg_arp_timeout_us = MT_DEV_TIMEOUT_ZERO;
   s->tx_timeout_us = 10 * US_PER_MS;
-  s->rx_timeout_us = US_PER_S;
+  s->rx_timeout_us = 0;
   s->txq_bps = MUDP_DEFAULT_RL_BPS;
   s->rx_burst_pkts = 128;
   s->rx_ring_count = 1024;
@@ -1453,7 +1474,8 @@ ssize_t mudp_sendmsg(mudp_handle ut, const struct msghdr* msg, int flags) {
       return copied;
     } else {
       mt_sleep_us(1);
-      return copied;
+      /* align to kernel behavior which sendmsg succ even if arp not resolved */
+      return udp_msg_len(msg);
     }
   }
 
@@ -1463,6 +1485,7 @@ ssize_t mudp_sendmsg(mudp_handle ut, const struct msghdr* msg, int flags) {
     return ret;
   }
 
+  dbg("%s(%d), %" PRId64 " pkts send succ\n", __func__, idx, copied);
   return copied;
 }
 
