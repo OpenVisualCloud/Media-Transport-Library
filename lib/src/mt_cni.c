@@ -320,7 +320,8 @@ int mt_cni_init(struct mtl_main_impl* impl) {
   ret = mt_tap_init(impl);
   if (ret < 0) return ret;
 
-  if (cni->lcore_tasklet && !impl->use_srss) {
+  if (impl->use_srss) return 0;
+  if (cni->lcore_tasklet) {
     struct mt_sch_tasklet_ops ops;
 
     memset(&ops, 0x0, sizeof(ops));

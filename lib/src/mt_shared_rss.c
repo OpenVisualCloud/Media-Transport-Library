@@ -7,6 +7,7 @@
 #include <rte_config.h>
 #include <rte_ether.h>
 
+#include "mt_cni.h"
 #include "mt_log.h"
 #include "mt_sch.h"
 #include "src/mt_rss.h"
