@@ -99,7 +99,7 @@ static int rss_flow_check(struct mtl_main_impl* impl, enum mtl_port port,
 
   err("%s(%d), flow require rss %s but sys is set to %s\n", __func__, port,
       rss_mode_name(flow_rss_mode), rss_mode_name(sys_rss_mode));
-  return -EIO;
+  return 0;
 }
 
 static uint32_t rss_flow_hash(struct mt_rx_flow* flow, enum mtl_rss_mode rss) {

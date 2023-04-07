@@ -738,6 +738,23 @@ struct mt_tsq_impl {
   struct mt_tsq_queue* tsq_queues;
 };
 
+struct mt_srss_entry {
+  struct mt_rx_flow flow;
+  struct mt_srss_impl* srss;
+  /* linked list */
+  MT_TAILQ_ENTRY(mt_srss_entry) next;
+};
+MT_TAILQ_HEAD(mt_srss_entrys_list, mt_srss_entry);
+
+struct mt_srss_impl {
+  struct mtl_main_impl* parent;
+  pthread_mutex_t mutex;
+  enum mtl_port port;
+  struct mt_srss_entrys_list head;
+  struct mt_sch_tasklet_impl* tasklet;
+  struct mt_sch_impl* sch;
+};
+
 struct mtl_main_impl {
   struct mt_interface inf[MTL_PORT_MAX];
 
@@ -752,7 +769,9 @@ struct mtl_main_impl {
   size_t page_size;
 
   /* rss */
+  bool use_srss;
   struct mt_rss_impl* rss[MTL_PORT_MAX];
+  struct mt_srss_impl* srss[MTL_PORT_MAX];
   /* shared rx queue mgr */
   struct mt_rsq_impl* rsq[MTL_PORT_MAX];
   struct mt_tsq_impl* tsq[MTL_PORT_MAX];

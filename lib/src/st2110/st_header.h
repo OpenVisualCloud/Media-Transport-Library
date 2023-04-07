@@ -572,6 +572,7 @@ struct st_rx_video_session_impl {
   enum mtl_port port_maps[MTL_SESSION_PORT_MAX];
   struct mt_rx_queue* queue[MTL_SESSION_PORT_MAX];
   struct mt_rss_entry* rss[MTL_SESSION_PORT_MAX];
+  struct mt_srss_entry* srss[MTL_SESSION_PORT_MAX];
   uint16_t port_id[MTL_SESSION_PORT_MAX];
   uint16_t st20_src_port[MTL_SESSION_PORT_MAX]; /* udp port */
   uint16_t st20_dst_port[MTL_SESSION_PORT_MAX]; /* udp port */
