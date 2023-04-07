@@ -371,6 +371,12 @@ static int tv_init_pacing(struct mtl_main_impl* impl,
     }
   }
   pacing->trs = frame_time * reactive / s->st20_total_pkts;
+  pacing->frame_idle_time = frame_time - pacing->tr_offset - frame_time * reactive;
+  dbg("%s[%02d], frame_idle_time %f\n", __func__, idx, pacing->frame_idle_time);
+  if (pacing->frame_idle_time < 0) {
+    warn("%s[%02d], error frame_idle_time %f\n", __func__, idx, pacing->frame_idle_time);
+    pacing->frame_idle_time = 0;
+  }
   /* always use MTL_PORT_P for ptp now */
   pacing->cur_epochs = mt_get_ptp_time(impl, MTL_PORT_P) / frame_time;
   pacing->tsc_time_cursor = mt_get_tsc(impl);
@@ -1299,13 +1305,14 @@ static int tv_tasklet_frame(struct mtl_main_impl* impl,
   struct rte_mempool* chain_pool = s->mbuf_mempool_chain;
   struct rte_ring* ring_p = s->ring[MTL_SESSION_PORT_P];
   struct rte_ring* ring_r = NULL;
+  int num_port = ops->num_port;
 
   if (rte_ring_full(ring_p)) {
     s->stat_build_ret_code = -STI_FRAME_RING_FULL;
     return MT_TASKLET_ALL_DONE;
   }
 
-  if (s->ops.num_port > 1) {
+  if (num_port > 1) {
     send_r = true;
     hdr_pool_r = s->mbuf_mempool_hdr[MTL_SESSION_PORT_R];
     ring_r = s->ring[MTL_SESSION_PORT_R];
@@ -1351,6 +1358,25 @@ static int tv_tasklet_frame(struct mtl_main_impl* impl,
           s->stat_user_busy_first = false;
           dbg("%s(%d), get_next_frame fail %d\n", __func__, idx, ret);
         }
+        if (s->tx_done_cleanup[MTL_SESSION_PORT_P] &&
+            (mt_get_tsc(impl) > pacing->tsc_time_cursor)) {
+          /* flush tx queue to cleanup all mbufs, for tv_frame_free_cb */
+          dbg("%s(%d), tx done cleanup %u\n", __func__, s->idx,
+              s->tx_done_cleanup[MTL_SESSION_PORT_P]);
+          for (int i = 0; i < num_port; i++) {
+            struct rte_mbuf* pad = s->pad[i][ST20_PKT_TYPE_NORMAL];
+            if (!pad) continue;
+
+            rte_mbuf_refcnt_update(pad, 1);
+            uint16_t tx = mt_dev_tx_burst(s->queue[i], &pad, 1);
+            if (tx < 1) {
+              rte_mbuf_refcnt_update(pad, -1);
+            } else {
+              s->tx_done_cleanup[i]--;
+              s->stat_tx_done_cleanup++;
+            }
+          }
+        }
         s->stat_build_ret_code = -STI_FRAME_APP_GET_FRAME_BUSY;
         return MT_TASKLET_ALL_DONE;
       }
@@ -1370,6 +1396,9 @@ static int tv_tasklet_frame(struct mtl_main_impl* impl,
       rte_atomic32_inc(&frame->refcnt);
       s->st20_frame_idx = next_frame_idx;
       s->st20_frame_lines_ready = 0;
+      for (int i = 0; i < num_port; i++) {
+        s->tx_done_cleanup[i] = s->queue_burst_pkts[i];
+      }
       dbg("%s(%d), next_frame_idx %d start\n", __func__, idx, next_frame_idx);
       s->st20_frame_stat = ST21_TX_STAT_SENDING_PKTS;
 
@@ -1523,6 +1552,8 @@ static int tv_tasklet_frame(struct mtl_main_impl* impl,
       dbg("%s(%d), frame %d build time out %fus\n", __func__, idx, s->st20_frame_idx,
           (frame_end_time - pacing->tsc_time_cursor) / NS_PER_US);
     }
+    /* point to tsc time of next epoch */
+    pacing->tsc_time_cursor += pacing->frame_idle_time + pacing->tr_offset;
   }
 
   return done ? MT_TASKLET_ALL_DONE : MT_TASKLET_HAS_PENDING;
@@ -2055,6 +2086,8 @@ static int tv_init_hw(struct mtl_main_impl* impl, struct st_tx_video_sessions_mg
       }
       s->pad[i][j] = pad;
     }
+
+    s->queue_burst_pkts[i] = mt_if_nb_tx_burst(impl, port);
   }
 
   return 0;
@@ -2689,6 +2722,11 @@ static void tv_stat(struct st_tx_video_sessions_mgr* mgr,
     notice("TX_VIDEO_SESSION(%d,%d): busy as no ready frame from user %u\n", m_idx, idx,
            s->stat_user_busy);
     s->stat_user_busy = 0;
+  }
+  if (s->stat_tx_done_cleanup) {
+    notice("TX_VIDEO_SESSION(%d,%d): tx done for cleanup %u\n", m_idx, idx,
+           s->stat_tx_done_cleanup);
+    s->stat_tx_done_cleanup = 0;
   }
   if (s->stat_lines_not_ready) {
     notice("TX_VIDEO_SESSION(%d,%d): query new lines but app not ready %u\n", m_idx, idx,

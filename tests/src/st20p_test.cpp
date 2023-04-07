@@ -218,6 +218,8 @@ static int test_st20p_tx_frame_done(void* priv, struct st_frame* frame) {
 
   if (!s->handle) return -EIO; /* not ready */
 
+  s->fb_send_done++;
+
   if (!(frame->flags & ST_FRAME_FLAG_EXT_BUF)) return 0;
 
   for (int i = 0; i < s->fb_cnt; ++i) {
@@ -578,6 +580,7 @@ struct st20p_rx_digest_test_para {
   bool vsync;
   bool pkt_convert;
   size_t line_padding_size;
+  bool send_done_check;
 };
 
 static void test_st20p_init_rx_digest_para(struct st20p_rx_digest_test_para* para) {
@@ -596,6 +599,7 @@ static void test_st20p_init_rx_digest_para(struct st20p_rx_digest_test_para* par
   para->vsync = true;
   para->pkt_convert = false;
   para->line_padding_size = 0;
+  para->send_done_check = false;
 }
 
 static void st20p_rx_digest_test(enum st_fps fps[], int width[], int height[],
@@ -686,8 +690,8 @@ static void st20p_rx_digest_test(enum st_fps fps[], int width[], int height[],
     ops_tx.framebuff_cnt = test_ctx_tx[i]->fb_cnt;
     ops_tx.notify_frame_available = test_st20p_tx_frame_available;
     ops_tx.notify_event = test_ctx_notify_event;
+    ops_tx.notify_frame_done = test_st20p_tx_frame_done;
     if (para->tx_ext) {
-      ops_tx.notify_frame_done = test_st20p_tx_frame_done;
       ops_tx.flags |= ST20P_TX_FLAG_EXT_FRAME;
     }
     if (para->user_timestamp) ops_tx.flags |= ST20P_TX_FLAG_USER_TIMESTAMP;
@@ -705,7 +709,7 @@ static void st20p_rx_digest_test(enum st_fps fps[], int width[], int height[],
     ret = mtl_sch_enable_sleep(st, sch, false);
     EXPECT_GE(ret, 0);
 
-    /* sha caculate */
+    /* sha calculate */
     size_t frame_size = test_ctx_tx[i]->frame_size;
     uint8_t* fb;
 
@@ -924,8 +928,10 @@ static void st20p_rx_digest_test(enum st_fps fps[], int width[], int height[],
   ret = mtl_start(st);
   EXPECT_GE(ret, 0);
   sleep(10);
-  ret = mtl_stop(st);
-  EXPECT_GE(ret, 0);
+  if (!para->send_done_check) {
+    ret = mtl_stop(st);
+    EXPECT_GE(ret, 0);
+  }
 
   for (int i = 0; i < sessions; i++) {
     uint64_t cur_time_ns = st_test_get_monotonic_time();
@@ -943,6 +949,14 @@ static void st20p_rx_digest_test(enum st_fps fps[], int width[], int height[],
     test_ctx_tx[i]->stop = true;
     test_ctx_tx[i]->cv.notify_all();
     tx_thread[i].join();
+    if (para->send_done_check) {
+      st_usleep(1000 * 100); /* wait all fb done */
+      EXPECT_EQ(test_ctx_tx[i]->fb_send, test_ctx_tx[i]->fb_send_done);
+    }
+  }
+  if (para->send_done_check) {
+    ret = mtl_stop(st);
+    EXPECT_GE(ret, 0);
   }
   for (int i = 0; i < sessions; i++) {
     uint64_t cur_time_ns = st_test_get_monotonic_time();
@@ -1138,6 +1152,7 @@ TEST(St20p, digest_1080p_packet_convert_s2) {
   para.device = ST_PLUGIN_DEVICE_TEST_INTERNAL;
   para.check_fps = false;
   para.pkt_convert = true;
+  para.send_done_check = true;
 
   st20p_rx_digest_test(fps, width, height, tx_fmt, t_fmt, rx_fmt, &para);
 }

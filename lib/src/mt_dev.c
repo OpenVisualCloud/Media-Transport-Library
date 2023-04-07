@@ -1885,6 +1885,13 @@ int mt_dev_flush_tx_queue(struct mtl_main_impl* impl, struct mt_tx_queue* queue,
   return 0;
 }
 
+int mt_dev_tx_done_cleanup(struct mtl_main_impl* impl, struct mt_tx_queue* queue) {
+  uint16_t port_id = queue->port_id;
+  uint16_t queue_id = queue->queue_id;
+
+  return rte_eth_tx_done_cleanup(port_id, queue_id, 0);
+}
+
 int mt_dev_put_tx_queue(struct mtl_main_impl* impl, struct mt_tx_queue* queue) {
   enum mtl_port port = queue->port;
   struct mt_interface* inf = mt_if(impl, port);

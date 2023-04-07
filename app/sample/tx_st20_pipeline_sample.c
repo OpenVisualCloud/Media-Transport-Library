@@ -13,6 +13,7 @@ struct tx_st20p_sample_ctx {
   pthread_t frame_thread;
 
   int fb_send;
+  int fb_send_done;
   pthread_cond_t wake_cond;
   pthread_mutex_t wake_mutex;
 
@@ -91,6 +92,13 @@ static int tx_st20p_frame_available(void* priv) {
   st_pthread_cond_signal(&s->wake_cond);
   st_pthread_mutex_unlock(&s->wake_mutex);
 
+  return 0;
+}
+
+static int tx_st20p_frame_done(void* priv, struct st_frame* frame) {
+  struct tx_st20p_sample_ctx* s = priv;
+  s->fb_send_done++;
+  dbg("%s(%d), done %d\n", __func__, s->idx, s->fb_send_done);
   return 0;
 }
 
@@ -190,6 +198,7 @@ int main(int argc, char** argv) {
     ops_tx.device = ST_PLUGIN_DEVICE_AUTO;
     ops_tx.framebuff_cnt = ctx.framebuff_cnt;
     ops_tx.notify_frame_available = tx_st20p_frame_available;
+    ops_tx.notify_frame_done = tx_st20p_frame_done;
 
     st20p_tx_handle tx_handle = st20p_tx_create(ctx.st, &ops_tx);
     if (!tx_handle) {
@@ -228,7 +237,8 @@ int main(int argc, char** argv) {
     st_pthread_cond_signal(&app[i]->wake_cond);
     st_pthread_mutex_unlock(&app[i]->wake_mutex);
     pthread_join(app[i]->frame_thread, NULL);
-    info("%s(%d), sent frames %d\n", __func__, i, app[i]->fb_send);
+    info("%s(%d), sent frames %d(done %d)\n", __func__, i, app[i]->fb_send,
+         app[i]->fb_send_done);
 
     tx_st20p_close_source(app[i]);
   }
