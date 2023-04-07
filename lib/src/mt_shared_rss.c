@@ -54,7 +54,7 @@ static int srss_tasklet_handler(void* priv) {
     }
     pthread_mutex_unlock(&srss->mutex);
   }
-  
+
   return 0;
 }
 

@@ -158,7 +158,7 @@ static int mt_main_create(struct mtl_main_impl* impl) {
     err("%s, mt_srss_init fail %d\n", __func__, ret);
     return ret;
   }
-  
+
   ret = mt_rss_init(impl);
   if (ret < 0) {
     err("%s, mt_rss_init fail %d\n", __func__, ret);
