@@ -146,8 +146,10 @@ struct st_tx_video_pacing {
   uint32_t tr_offset_vrx; /* packets unit, VRX start value of each frame */
   double frame_time;      /* time of the frame in nanoseconds */
   double frame_time_sampling; /* time of the frame in sampling(90k) */
-  uint32_t warm_pkts;         /* pkts for RL pacing warm boot */
-  float pad_interval;         /* padding pkt interval(pkts level) for RL pacing */
+  /* in ns, idle time at the end of frame, frame_time - tr_offset - (trs * pkts) */
+  double frame_idle_time;
+  uint32_t warm_pkts; /* pkts for RL pacing warm boot */
+  float pad_interval; /* padding pkt interval(pkts level) for RL pacing */
 
   uint64_t cur_epochs; /* epoch of current frame */
   /* timestamp for rtp header */
@@ -256,6 +258,8 @@ struct st_tx_video_session_impl {
   struct mt_tx_queue* queue[MTL_SESSION_PORT_MAX];
   int idx; /* index for current tx_session */
   uint64_t advice_sleep_us;
+  uint16_t queue_burst_pkts[MTL_SESSION_PORT_MAX];
+  uint16_t tx_done_cleanup[MTL_SESSION_PORT_MAX];
 
   struct st_tx_video_session_handle_impl* st20_handle;
   struct st22_tx_video_session_handle_impl* st22_handle;
@@ -353,6 +357,7 @@ struct st_tx_video_session_impl {
   uint32_t stat_user_busy;       /* get_next_frame or dequeue_bulk from rtp ring fail */
   uint32_t stat_lines_not_ready; /* query app lines not ready */
   uint32_t stat_vsync_mismatch;
+  uint32_t stat_tx_done_cleanup;
 };
 
 struct st_tx_video_sessions_mgr {

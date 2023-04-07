@@ -143,6 +143,7 @@ class tests_context {
   int fb_cnt = 0;
   uint16_t fb_idx = 0;
   int fb_send = 0;
+  int fb_send_done = 0;
   int fb_rec = 0;
   int vsync_cnt = 0;
   uint64_t first_vsync_time = 0;
