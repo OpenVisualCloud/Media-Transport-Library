@@ -1365,15 +1365,15 @@ static int tv_tasklet_frame(struct mtl_main_impl* impl,
               s->tx_done_cleanup[MTL_SESSION_PORT_P]);
           for (int i = 0; i < num_port; i++) {
             struct rte_mbuf* pad = s->pad[i][ST20_PKT_TYPE_NORMAL];
-            if (pad) {
-              rte_mbuf_refcnt_update(pad, 1);
-              uint16_t tx = mt_dev_tx_burst(s->queue[i], &pad, 1);
-              if (tx < 1) {
-                rte_mbuf_refcnt_update(pad, -1);
-              } else {
-                s->tx_done_cleanup[i]--;
-                s->stat_tx_done_cleanup++;
-              }
+            if (!pad) continue;
+
+            rte_mbuf_refcnt_update(pad, 1);
+            uint16_t tx = mt_dev_tx_burst(s->queue[i], &pad, 1);
+            if (tx < 1) {
+              rte_mbuf_refcnt_update(pad, -1);
+            } else {
+              s->tx_done_cleanup[i]--;
+              s->stat_tx_done_cleanup++;
             }
           }
         }

@@ -709,7 +709,7 @@ static void st20p_rx_digest_test(enum st_fps fps[], int width[], int height[],
     ret = mtl_sch_enable_sleep(st, sch, false);
     EXPECT_GE(ret, 0);
 
-    /* sha caculate */
+    /* sha calculate */
     size_t frame_size = test_ctx_tx[i]->frame_size;
     uint8_t* fb;
 
@@ -928,8 +928,10 @@ static void st20p_rx_digest_test(enum st_fps fps[], int width[], int height[],
   ret = mtl_start(st);
   EXPECT_GE(ret, 0);
   sleep(10);
-  ret = mtl_stop(st);
-  EXPECT_GE(ret, 0);
+  if (!para->send_done_check) {
+    ret = mtl_stop(st);
+    EXPECT_GE(ret, 0);
+  }
 
   for (int i = 0; i < sessions; i++) {
     uint64_t cur_time_ns = st_test_get_monotonic_time();
@@ -951,6 +953,10 @@ static void st20p_rx_digest_test(enum st_fps fps[], int width[], int height[],
       st_usleep(1000 * 100); /* wait all fb done */
       EXPECT_EQ(test_ctx_tx[i]->fb_send, test_ctx_tx[i]->fb_send_done);
     }
+  }
+  if (para->send_done_check) {
+    ret = mtl_stop(st);
+    EXPECT_GE(ret, 0);
   }
   for (int i = 0; i < sessions; i++) {
     uint64_t cur_time_ns = st_test_get_monotonic_time();
