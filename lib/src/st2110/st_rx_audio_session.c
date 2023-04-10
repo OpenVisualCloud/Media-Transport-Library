@@ -16,7 +16,9 @@ static inline double ra_ebu_pass_rate(struct st_rx_audio_ebu_result* ebu_result,
 
 static inline uint16_t rx_audio_queue_id(struct st_rx_audio_session_impl* s,
                                          enum mtl_session_port s_port) {
-  if (s->rss[s_port])
+  if (s->srss[s_port])
+    return 0;
+  else if (s->rss[s_port])
     return mt_rss_queue_id(s->rss[s_port]);
   else
     return mt_dev_rx_queue_id(s->queue[s_port]);
@@ -609,18 +611,19 @@ static int rx_audio_session_init_hw(struct mtl_main_impl* impl,
     rte_memcpy(flow.sip_addr, mt_sip_addr(impl, port), MTL_IP_ADDR_LEN);
     flow.dst_port = s->st30_dst_port[i];
     flow.src_port = s->st30_src_port[i];
+    flow.priv = &s->priv[i];
+    flow.cb = rx_audio_session_handle_mbuf;
 
     /* no flow for data path only */
     if (mt_pmd_is_kernel(impl, port) && (s->ops.flags & ST30_RX_FLAG_DATA_PATH_ONLY))
       s->queue[i] = mt_dev_get_rx_queue(impl, port, NULL);
-    else if (mt_has_rss(impl, port)) {
-      flow.priv = &s->priv[i];
-      flow.cb = rx_audio_session_handle_mbuf;
-      if (impl->use_srss) s->srss[i] = mt_srss_get(impl, port, &flow);
+    else if (mt_has_srss(impl, port))
+      s->srss[i] = mt_srss_get(impl, port, &flow);
+    else if (mt_has_rss(impl, port))
       s->rss[i] = mt_rss_get(impl, port, &flow);
-    } else
+    else
       s->queue[i] = mt_dev_get_rx_queue(impl, port, &flow);
-    if (!s->queue[i] && !s->rss[i]) {
+    if (!s->queue[i] && !s->rss[i] && !s->srss[i]) {
       rx_audio_session_uinit_hw(impl, s);
       return -EIO;
     }
@@ -882,7 +885,7 @@ static int rx_audio_sessions_mgr_init(struct mtl_main_impl* impl, struct mt_sch_
     rte_spinlock_init(&mgr->mutex[i]);
   }
 
-  if (!impl->use_srss) {
+  if (!mt_has_srss(impl, MTL_PORT_P)) {
     memset(&ops, 0x0, sizeof(ops));
     ops.priv = mgr;
     ops.name = "rx_audio_sessions_mgr";

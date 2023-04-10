@@ -2311,7 +2311,6 @@ int mt_dev_if_init(struct mtl_main_impl* impl) {
       else
         inf->rss_mode = MTL_RSS_MODE_L3_L4_DP_ONLY;
     }
-    if (inf->rss_mode == MTL_RSS_MODE_L3_L4) impl->use_srss = true;
 
     /* set max tx/rx queues */
     if (p->pmd[i] == MTL_PMD_DPDK_AF_XDP) {

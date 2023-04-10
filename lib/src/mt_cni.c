@@ -219,6 +219,10 @@ static int cni_queues_uinit(struct mtl_main_impl* impl) {
       mt_rss_put(cni->rss[i]);
       cni->rss[i] = NULL;
     }
+    if (cni->srss[i]) {
+      mt_srss_put(cni->srss[i]);
+      cni->srss[i] = NULL;
+    }
   }
 
   return 0;
@@ -245,32 +249,23 @@ static int cni_queues_init(struct mtl_main_impl* impl, struct mt_cni_impl* cni) 
     flow.priv = &cni->cni_priv[i];
     flow.cb = cni_rsq_mbuf_cb;
 
-    /* sys queue, no flow */
-    if (mt_has_rss(impl, i)) {
-      if (impl->use_srss) cni->srss[i] = mt_srss_get(impl, i, &flow);
+    if (mt_has_srss(impl, i)) {
+      cni->srss[i] = mt_srss_get(impl, i, &flow);
+      info("%s(%d), using shared rss for all queues\n", __func__, i);
+    } else if (mt_has_rss(impl, i)) {
       cni->rss[i] = mt_rss_get(impl, i, &flow);
-      if (!cni->rss[i]) {
-        err("%s(%d), rss get fail\n", __func__, i);
-        cni_queues_uinit(impl);
-        return -EIO;
-      }
       info("%s(%d), rss q %d\n", __func__, i, mt_rss_queue_id(cni->rss[i]));
     } else if (mt_shared_queue(impl, i)) {
       cni->rsq[i] = mt_rsq_get(impl, i, &flow);
-      if (!cni->rsq[i]) {
-        err("%s(%d), rsq get fail\n", __func__, i);
-        cni_queues_uinit(impl);
-        return -EIO;
-      }
       info("%s(%d), rsq q %d\n", __func__, i, mt_rsq_queue_id(cni->rsq[i]));
-    } else {
+    } else { /* sys queue, no flow */
       cni->rx_q[i] = mt_dev_get_rx_queue(impl, i, NULL);
-      if (!cni->rx_q[i]) {
-        err("%s(%d), rx q get fail\n", __func__, i);
-        cni_queues_uinit(impl);
-        return -EIO;
-      }
       info("%s(%d), rx q %d\n", __func__, i, mt_dev_rx_queue_id(cni->rx_q[i]));
+    }
+    if (!cni->srss[i] && !cni->rss[i] && !cni->rsq[i] && !cni->rx_q[i]) {
+      err("%s(%d), rx queue get fail\n", __func__, i);
+      cni_queues_uinit(impl);
+      return -EIO;
     }
   }
 
@@ -322,7 +317,8 @@ int mt_cni_init(struct mtl_main_impl* impl) {
   ret = mt_tap_init(impl);
   if (ret < 0) return ret;
 
-  if (impl->use_srss) return 0;
+  if (mt_has_srss(impl, MTL_PORT_P)) return 0;
+
   if (cni->lcore_tasklet) {
     struct mt_sch_tasklet_ops ops;
 

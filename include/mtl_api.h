@@ -182,7 +182,7 @@ enum mtl_rss_mode {
   MTL_RSS_MODE_NONE = 0,
   /** hash with both l3 src and dst, not use now */
   MTL_RSS_MODE_L3,
-  /** hash with l3 src and dst address, l4 src port and dst port, not use now */
+  /** hash with l3 src and dst address, l4 src port and dst port, used with shared rss */
   MTL_RSS_MODE_L3_L4,
   /** hash with l3 src and dst address, l4 dst port only, for st2110 unicast */
   MTL_RSS_MODE_L3_L4_DP_ONLY,

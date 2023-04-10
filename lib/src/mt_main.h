@@ -742,6 +742,7 @@ struct mt_tsq_impl {
 struct mt_srss_entry {
   struct mt_rx_flow flow;
   struct mt_srss_impl* srss;
+  rte_atomic32_t refcnt;
   /* linked list */
   MT_TAILQ_ENTRY(mt_srss_entry) next;
 };
@@ -1022,6 +1023,10 @@ static inline enum mtl_rss_mode mt_get_rss_mode(struct mtl_main_impl* impl,
 
 static inline bool mt_has_rss(struct mtl_main_impl* impl, enum mtl_port port) {
   return mt_get_rss_mode(impl, port) != MTL_RSS_MODE_NONE;
+}
+
+static inline bool mt_has_srss(struct mtl_main_impl* impl, enum mtl_port port) {
+  return mt_get_rss_mode(impl, port) == MTL_RSS_MODE_L3_L4;
 }
 
 static inline bool mt_udp_transport(struct mtl_main_impl* impl, enum mtl_port port) {

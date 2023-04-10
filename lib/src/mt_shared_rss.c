@@ -84,9 +84,9 @@ struct mt_srss_entry* mt_srss_get(struct mtl_main_impl* impl, enum mtl_port port
   struct mt_srss_impl* srss = impl->srss[port];
   struct mt_srss_entry* entry;
   MT_TAILQ_FOREACH(entry, &srss->head, next) {
-    if ((flow->sys_queue && entry->flow.sys_queue) ||
-        (entry->flow.dst_port == flow->dst_port &&
-         *(uint32_t*)entry->flow.dip_addr == *(uint32_t*)flow->dip_addr)) {
+    if (entry->flow.dst_port == flow->dst_port && /* act like l3 l4 dst only */
+        *(uint32_t*)entry->flow.dip_addr == *(uint32_t*)flow->dip_addr) {
+      rte_atomic32_inc(&entry->refcnt);
       return entry;
     }
   }
@@ -97,6 +97,7 @@ struct mt_srss_entry* mt_srss_get(struct mtl_main_impl* impl, enum mtl_port port
   }
   entry->flow = *flow;
   entry->srss = srss;
+  rte_atomic32_set(&entry->refcnt, 1);
   pthread_mutex_lock(&srss->mutex);
   MT_TAILQ_INSERT_TAIL(&srss->head, entry, next);
   pthread_mutex_unlock(&srss->mutex);
@@ -107,11 +108,14 @@ struct mt_srss_entry* mt_srss_get(struct mtl_main_impl* impl, enum mtl_port port
 int mt_srss_put(struct mt_srss_entry* entry) {
   struct mt_srss_impl* srss = entry->srss;
 
-  pthread_mutex_lock(&srss->mutex);
-  MT_TAILQ_REMOVE(&srss->head, entry, next);
-  pthread_mutex_unlock(&srss->mutex);
+  if (rte_atomic32_dec_and_test(&entry->refcnt)) {
+    pthread_mutex_lock(&srss->mutex);
+    MT_TAILQ_REMOVE(&srss->head, entry, next);
+    pthread_mutex_unlock(&srss->mutex);
 
-  mt_rte_free(entry);
+    mt_rte_free(entry);
+  }
+
   return 0;
 }
 
@@ -119,7 +123,7 @@ int mt_srss_init(struct mtl_main_impl* impl) {
   int num_ports = mt_num_ports(impl);
 
   for (int i = 0; i < num_ports; i++) {
-    if (!mt_has_rss(impl, i)) continue;
+    if (!mt_has_srss(impl, i)) continue;
     impl->srss[i] = mt_rte_zmalloc_socket(sizeof(*impl->srss[i]), mt_socket_id(impl, i));
     if (!impl->srss[i]) {
       err("%s(%d), srss malloc fail\n", __func__, i);
@@ -150,16 +154,18 @@ int mt_srss_init(struct mtl_main_impl* impl) {
     ops.stop = srss_tasklet_stop;
     ops.handler = srss_tasklet_handler;
 
+    srss->sch = sch;
+    srss->port = i;
+    srss->parent = impl;
+    MT_TAILQ_INIT(&srss->head);
+
     srss->tasklet = mt_sch_register_tasklet(sch, &ops);
     if (!srss->tasklet) {
       err("%s, mt_sch_register_tasklet fail\n", __func__);
       mt_srss_uinit(impl);
       return -EIO;
     }
-    srss->sch = sch;
-    srss->port = i;
-    srss->parent = impl;
-    MT_TAILQ_INIT(&srss->head);
+
     info("%s(%d), succ with shared rss mode\n", __func__, i);
   }
 
@@ -182,6 +188,7 @@ int mt_srss_uinit(struct mtl_main_impl* impl) {
       }
       struct mt_srss_entry* entry;
       while ((entry = MT_TAILQ_FIRST(&srss->head))) {
+        warn("%s, still has entry %p\n", __func__, entry);
         MT_TAILQ_REMOVE(&srss->head, entry, next);
         mt_rte_free(entry);
       }
