@@ -7,6 +7,7 @@
 #include <math.h>
 
 #include "../mt_log.h"
+#include "../mt_shared_rss.h"
 
 static inline double ra_ebu_pass_rate(struct st_rx_audio_ebu_result* ebu_result,
                                       int pass) {
@@ -580,6 +581,10 @@ static int rx_audio_session_uinit_hw(struct mtl_main_impl* impl,
       mt_rss_put(s->rss[i]);
       s->rss[i] = NULL;
     }
+    if (s->srss[i]) {
+      mt_srss_put(s->srss[i]);
+      s->srss[i] = NULL;
+    }
   }
 
   return 0;
@@ -611,6 +616,7 @@ static int rx_audio_session_init_hw(struct mtl_main_impl* impl,
     else if (mt_has_rss(impl, port)) {
       flow.priv = &s->priv[i];
       flow.cb = rx_audio_session_handle_mbuf;
+      if (impl->use_srss) s->srss[i] = mt_srss_get(impl, port, &flow);
       s->rss[i] = mt_rss_get(impl, port, &flow);
     } else
       s->queue[i] = mt_dev_get_rx_queue(impl, port, &flow);
@@ -876,17 +882,19 @@ static int rx_audio_sessions_mgr_init(struct mtl_main_impl* impl, struct mt_sch_
     rte_spinlock_init(&mgr->mutex[i]);
   }
 
-  memset(&ops, 0x0, sizeof(ops));
-  ops.priv = mgr;
-  ops.name = "rx_audio_sessions_mgr";
-  ops.start = rx_audio_sessions_tasklet_start;
-  ops.stop = rx_audio_sessions_tasklet_stop;
-  ops.handler = rx_audio_sessions_tasklet_handler;
+  if (!impl->use_srss) {
+    memset(&ops, 0x0, sizeof(ops));
+    ops.priv = mgr;
+    ops.name = "rx_audio_sessions_mgr";
+    ops.start = rx_audio_sessions_tasklet_start;
+    ops.stop = rx_audio_sessions_tasklet_stop;
+    ops.handler = rx_audio_sessions_tasklet_handler;
 
-  mgr->tasklet = mt_sch_register_tasklet(sch, &ops);
-  if (!mgr->tasklet) {
-    err("%s(%d), mt_sch_register_tasklet fail\n", __func__, idx);
-    return -EIO;
+    mgr->tasklet = mt_sch_register_tasklet(sch, &ops);
+    if (!mgr->tasklet) {
+      err("%s(%d), mt_sch_register_tasklet fail\n", __func__, idx);
+      return -EIO;
+    }
   }
 
   info("%s(%d), succ\n", __func__, idx);
