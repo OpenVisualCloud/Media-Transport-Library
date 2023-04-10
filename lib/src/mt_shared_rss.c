@@ -4,9 +4,6 @@
 
 #include "mt_shared_rss.h"
 
-#include <rte_config.h>
-#include <rte_ether.h>
-
 #include "mt_cni.h"
 #include "mt_log.h"
 #include "mt_sch.h"
@@ -14,43 +11,63 @@
 
 #define MT_SRSS_BURST_SIZE (128)
 
+#define UPDATE_ENTRY()                                                                   \
+  do {                                                                                   \
+    if (srss_pkts_nb)                                                                    \
+      last_srss_entry->flow.cb(last_srss_entry->flow.priv, &srss_pkts[0], srss_pkts_nb); \
+    last_srss_entry = srss_entry;                                                        \
+    srss_pkts_nb = 0;                                                                    \
+  } while (0)
+
 static int srss_tasklet_handler(void* priv) {
   struct mt_srss_impl* srss = priv;
   struct mtl_main_impl* impl = srss->parent;
   struct mt_interface* inf = mt_if(impl, srss->port);
+  struct rte_mbuf *pkts[MT_SRSS_BURST_SIZE], *srss_pkts[MT_SRSS_BURST_SIZE];
+  struct mt_srss_entry *srss_entry, *last_srss_entry;
+  struct mt_udp_hdr* hdr;
+  struct rte_ipv4_hdr* ipv4;
+  struct rte_udp_hdr* udp;
 
   for (int queue = 0; queue < inf->max_rx_queues; queue++) {
-    struct rte_mbuf *pkts[MT_SRSS_BURST_SIZE], *rss_pkts[MT_SRSS_BURST_SIZE];
-    struct mt_srss_entry *srss_entry, *last_srss_entry = NULL;
-    int rss_pkts_nb = 0;
+    int srss_pkts_nb = 0;
     pthread_mutex_lock(&srss->mutex);
     uint16_t rx =
         rte_eth_rx_burst(mt_port_id(impl, srss->port), queue, pkts, MT_SRSS_BURST_SIZE);
     if (rx) {
       dbg("%s(%d), rx pkts %u\n", __func__, queue, rx);
+      last_srss_entry = NULL;
       for (uint16_t i = 0; i < rx; i++) {
-        struct mt_udp_hdr* hdr = rte_pktmbuf_mtod(pkts[i], struct mt_udp_hdr*);
-        if (hdr->eth.ether_type != htons(RTE_ETHER_TYPE_IPV4)) continue;
-        struct rte_ipv4_hdr* ipv4 = &hdr->ipv4;
-        if (ipv4->next_proto_id != IPPROTO_UDP) continue;
-        struct rte_udp_hdr* udp = &hdr->udp;
+        srss_entry = NULL;
+        hdr = rte_pktmbuf_mtod(pkts[i], struct mt_udp_hdr*);
+        if (hdr->eth.ether_type !=
+            htons(RTE_ETHER_TYPE_IPV4)) { /* non ip, redirect to cni */
+          UPDATE_ENTRY();
+          srss->cni_entry->flow.cb(srss->cni_entry->flow.priv, &pkts[i], 1);
+          continue;
+        }
+        ipv4 = &hdr->ipv4;
+        if (ipv4->next_proto_id != IPPROTO_UDP) { /* non udp, redirect to cni */
+          UPDATE_ENTRY();
+          srss->cni_entry->flow.cb(srss->cni_entry->flow.priv, &pkts[i], 1);
+          continue;
+        }
+        udp = &hdr->udp;
         MT_TAILQ_FOREACH(srss_entry, &srss->head, next) {
           if (ipv4->dst_addr == *(uint32_t*)srss_entry->flow.dip_addr &&
-              ntohs(udp->dst_port) == srss_entry->flow.dst_port) {
-            if (srss_entry != last_srss_entry) {
-              if (rss_pkts_nb)
-                last_srss_entry->flow.cb(last_srss_entry->flow.priv, &rss_pkts[0],
-                                         rss_pkts_nb);
-              last_srss_entry = srss_entry;
-              rss_pkts_nb = 0;
-            }
-            rss_pkts[rss_pkts_nb++] = pkts[i];
+              ntohs(udp->dst_port) == srss_entry->flow.dst_port) { /* match dst ip:port */
+            if (srss_entry != last_srss_entry) UPDATE_ENTRY();
+            srss_pkts[srss_pkts_nb++] = pkts[i];
             break;
           }
         }
+        if (!srss_entry) { /* no match, redirect to cni */
+          UPDATE_ENTRY();
+          srss->cni_entry->flow.cb(srss->cni_entry->flow.priv, &pkts[i], 1);
+        }
       }
-      if (rss_pkts_nb)
-        last_srss_entry->flow.cb(last_srss_entry->flow.priv, &rss_pkts[0], rss_pkts_nb);
+      if (srss_pkts_nb)
+        last_srss_entry->flow.cb(last_srss_entry->flow.priv, &srss_pkts[0], srss_pkts_nb);
       rte_pktmbuf_free_bulk(&pkts[0], rx);
     }
     pthread_mutex_unlock(&srss->mutex);
@@ -67,8 +84,9 @@ struct mt_srss_entry* mt_srss_get(struct mtl_main_impl* impl, enum mtl_port port
   struct mt_srss_impl* srss = impl->srss[port];
   struct mt_srss_entry* entry;
   MT_TAILQ_FOREACH(entry, &srss->head, next) {
-    if (entry->flow.dst_port == flow->dst_port &&
-        *(uint32_t*)entry->flow.dip_addr == *(uint32_t*)flow->dip_addr) {
+    if ((flow->sys_queue && entry->flow.sys_queue) ||
+        (entry->flow.dst_port == flow->dst_port &&
+         *(uint32_t*)entry->flow.dip_addr == *(uint32_t*)flow->dip_addr)) {
       return entry;
     }
   }
@@ -82,6 +100,7 @@ struct mt_srss_entry* mt_srss_get(struct mtl_main_impl* impl, enum mtl_port port
   pthread_mutex_lock(&srss->mutex);
   MT_TAILQ_INSERT_TAIL(&srss->head, entry, next);
   pthread_mutex_unlock(&srss->mutex);
+  if (flow->sys_queue) srss->cni_entry = entry;
   return entry;
 }
 

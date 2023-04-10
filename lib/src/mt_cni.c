@@ -15,6 +15,7 @@
 #include "mt_rss.h"
 #include "mt_sch.h"
 #include "mt_shared_queue.h"
+#include "mt_shared_rss.h"
 #include "mt_tap.h"
 #include "mt_util.h"
 
@@ -246,6 +247,7 @@ static int cni_queues_init(struct mtl_main_impl* impl, struct mt_cni_impl* cni) 
 
     /* sys queue, no flow */
     if (mt_has_rss(impl, i)) {
+      if (impl->use_srss) cni->srss[i] = mt_srss_get(impl, i, &flow);
       cni->rss[i] = mt_rss_get(impl, i, &flow);
       if (!cni->rss[i]) {
         err("%s(%d), rss get fail\n", __func__, i);

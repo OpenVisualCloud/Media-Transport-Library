@@ -212,9 +212,10 @@ struct mt_cni_priv {
 struct mt_cni_impl {
   bool used; /* if enable cni */
 
-  struct mt_rx_queue* rx_q[MTL_PORT_MAX]; /* cni rx queue */
-  struct mt_rsq_entry* rsq[MTL_PORT_MAX]; /* cni rsq queue */
-  struct mt_rss_entry* rss[MTL_PORT_MAX]; /* cni rss queue */
+  struct mt_rx_queue* rx_q[MTL_PORT_MAX];   /* cni rx queue */
+  struct mt_rsq_entry* rsq[MTL_PORT_MAX];   /* cni rsq queue */
+  struct mt_rss_entry* rss[MTL_PORT_MAX];   /* cni rss queue */
+  struct mt_srss_entry* srss[MTL_PORT_MAX]; /* cni srss queue */
   struct mt_cni_priv cni_priv[MTL_PORT_MAX];
   pthread_t tid; /* thread id for rx */
   rte_atomic32_t stop_thread;
@@ -753,6 +754,7 @@ struct mt_srss_impl {
   struct mt_srss_entrys_list head;
   struct mt_sch_tasklet_impl* tasklet;
   struct mt_sch_impl* sch;
+  struct mt_srss_entry* cni_entry;
 };
 
 struct mtl_main_impl {
