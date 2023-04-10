@@ -3622,7 +3622,10 @@ st20_rx_handle st20_rx_create_with_mask(struct mtl_main_impl* impl,
 
   enum mt_sch_type type =
       mt_has_rxv_separate_sch(impl) ? MT_SCH_TYPE_RX_VIDEO_ONLY : MT_SCH_TYPE_DEFAULT;
-  sch = mt_sch_get(impl, quota_mbs, type, sch_mask);
+  if (impl->use_srss)
+    sch = impl->srss[0]->sch;
+  else
+    sch = mt_sch_get(impl, quota_mbs, type, sch_mask);
   if (!sch) {
     mt_rte_free(s_impl);
     err("%s, get sch fail\n", __func__);
@@ -3634,7 +3637,7 @@ st20_rx_handle st20_rx_create_with_mask(struct mtl_main_impl* impl,
   mt_pthread_mutex_unlock(&sch->rx_video_mgr_mutex);
   if (ret < 0) {
     err("%s, st_rx_video_init fail %d\n", __func__, ret);
-    mt_sch_put(sch, quota_mbs);
+    if (!impl->use_srss) mt_sch_put(sch, quota_mbs);
     mt_rte_free(s_impl);
     return NULL;
   }
@@ -3644,7 +3647,7 @@ st20_rx_handle st20_rx_create_with_mask(struct mtl_main_impl* impl,
   mt_pthread_mutex_unlock(&sch->rx_video_mgr_mutex);
   if (!s) {
     err("%s(%d), rv_mgr_attach fail\n", __func__, sch->idx);
-    mt_sch_put(sch, quota_mbs);
+    if (!impl->use_srss) mt_sch_put(sch, quota_mbs);
     mt_rte_free(s_impl);
     return NULL;
   }
@@ -3753,8 +3756,10 @@ int st20_rx_free(st20_rx_handle handle) {
   if (ret < 0)
     err("%s(%d,%d), st_rx_video_sessions_mgr_detach fail\n", __func__, sch_idx, idx);
 
-  ret = mt_sch_put(sch, s_impl->quota_mbs);
-  if (ret < 0) err("%s(%d,%d), mt_sch_put fail\n", __func__, sch_idx, idx);
+  if (!impl->use_srss) {
+    ret = mt_sch_put(sch, s_impl->quota_mbs);
+    if (ret < 0) err("%s(%d,%d), mt_sch_put fail\n", __func__, sch_idx, idx);
+  }
 
   mt_rte_free(s_impl);
 
@@ -3965,7 +3970,7 @@ st22_rx_handle st22_rx_create(mtl_handle mt, struct st22_rx_ops* ops) {
   mt_pthread_mutex_unlock(&sch->rx_video_mgr_mutex);
   if (ret < 0) {
     err("%s, st_rx_video_init fail %d\n", __func__, ret);
-    mt_sch_put(sch, quota_mbs);
+    if (!impl->use_srss) mt_sch_put(sch, quota_mbs);
     mt_rte_free(s_impl);
     return NULL;
   }
@@ -4005,7 +4010,7 @@ st22_rx_handle st22_rx_create(mtl_handle mt, struct st22_rx_ops* ops) {
   mt_pthread_mutex_unlock(&sch->rx_video_mgr_mutex);
   if (!s) {
     err("%s(%d), rv_mgr_attach fail\n", __func__, sch->idx);
-    mt_sch_put(sch, quota_mbs);
+    if (!impl->use_srss) mt_sch_put(sch, quota_mbs);
     mt_rte_free(s_impl);
     return NULL;
   }
@@ -4099,8 +4104,10 @@ int st22_rx_free(st22_rx_handle handle) {
   if (ret < 0)
     err("%s(%d,%d), st_rx_video_sessions_mgr_detach fail\n", __func__, sch_idx, idx);
 
-  ret = mt_sch_put(sch, s_impl->quota_mbs);
-  if (ret < 0) err("%s(%d,%d), mt_sch_put fail\n", __func__, sch_idx, idx);
+  if (!impl->use_srss) {
+    ret = mt_sch_put(sch, s_impl->quota_mbs);
+    if (ret < 0) err("%s(%d,%d), mt_sch_put fail\n", __func__, sch_idx, idx);
+  }
 
   mt_rte_free(s_impl);
 

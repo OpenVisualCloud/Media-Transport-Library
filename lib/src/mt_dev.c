@@ -2306,9 +2306,9 @@ int mt_dev_if_init(struct mtl_main_impl* impl) {
     inf->rss_mode = p->rss_mode;
     /* enable rss if no flow support */
     if (inf->flow_type == MT_FLOW_NONE && inf->rss_mode == MTL_RSS_MODE_NONE) {
-      if (inf->drv_type == MT_DRV_ENA) {
+      if (inf->drv_type == MT_DRV_ENA)
         inf->rss_mode = MTL_RSS_MODE_L3_L4; /* only rss l3 and l4 support */
-      } else
+      else
         inf->rss_mode = MTL_RSS_MODE_L3_L4_DP_ONLY;
     }
     if (inf->rss_mode == MTL_RSS_MODE_L3_L4) impl->use_srss = true;

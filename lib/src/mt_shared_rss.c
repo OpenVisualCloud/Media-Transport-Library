@@ -134,8 +134,8 @@ int mt_srss_init(struct mtl_main_impl* impl) {
       return -EIO;
     }
 
-    struct mt_sch_impl* sch =
-        mt_sch_get(impl, 100000 /*nic cap*/, MT_SCH_TYPE_DEFAULT, MT_SCH_MASK_ALL);
+    struct mt_sch_impl* sch = mt_sch_get(impl, mt_if(impl, i)->link_speed,
+                                         MT_SCH_TYPE_DEFAULT, MT_SCH_MASK_ALL);
     if (!sch) {
       err("%s, get sch fail\n", __func__);
       mt_srss_uinit(impl);
@@ -176,8 +176,10 @@ int mt_srss_uinit(struct mtl_main_impl* impl) {
         mt_sch_unregister_tasklet(srss->tasklet);
         srss->tasklet = NULL;
       }
-      if (mt_sch_put(srss->sch, 1000000) < 0)
-        err("%s(%d), mt_sch_put fail\n", __func__, i);
+      if (srss->sch) {
+        mt_sch_put(srss->sch, mt_if(impl, i)->link_speed);
+        srss->sch = NULL;
+      }
       struct mt_srss_entry* entry;
       while ((entry = MT_TAILQ_FIRST(&srss->head))) {
         MT_TAILQ_REMOVE(&srss->head, entry, next);
