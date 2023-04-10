@@ -86,8 +86,9 @@ struct mt_srss_entry* mt_srss_get(struct mtl_main_impl* impl, enum mtl_port port
   MT_TAILQ_FOREACH(entry, &srss->head, next) {
     if (entry->flow.dst_port == flow->dst_port && /* act like l3 l4 dst only */
         *(uint32_t*)entry->flow.dip_addr == *(uint32_t*)flow->dip_addr) {
-      rte_atomic32_inc(&entry->refcnt);
-      return entry;
+      err("%s(%d), already has entry %u.%u.%u.%u:%u\n", __func__, port, flow->dip_addr[0],
+          flow->dip_addr[1], flow->dip_addr[2], flow->dip_addr[3], flow->dst_port);
+      return NULL;
     }
   }
   entry = mt_rte_zmalloc_socket(sizeof(*entry), mt_socket_id(impl, port));
@@ -97,7 +98,6 @@ struct mt_srss_entry* mt_srss_get(struct mtl_main_impl* impl, enum mtl_port port
   }
   entry->flow = *flow;
   entry->srss = srss;
-  rte_atomic32_set(&entry->refcnt, 1);
   pthread_mutex_lock(&srss->mutex);
   MT_TAILQ_INSERT_TAIL(&srss->head, entry, next);
   pthread_mutex_unlock(&srss->mutex);
@@ -108,14 +108,11 @@ struct mt_srss_entry* mt_srss_get(struct mtl_main_impl* impl, enum mtl_port port
 int mt_srss_put(struct mt_srss_entry* entry) {
   struct mt_srss_impl* srss = entry->srss;
 
-  if (rte_atomic32_dec_and_test(&entry->refcnt)) {
-    pthread_mutex_lock(&srss->mutex);
-    MT_TAILQ_REMOVE(&srss->head, entry, next);
-    pthread_mutex_unlock(&srss->mutex);
+  pthread_mutex_lock(&srss->mutex);
+  MT_TAILQ_REMOVE(&srss->head, entry, next);
+  pthread_mutex_unlock(&srss->mutex);
 
-    mt_rte_free(entry);
-  }
-
+  mt_rte_free(entry);
   return 0;
 }
 
