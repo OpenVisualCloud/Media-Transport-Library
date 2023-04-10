@@ -30,10 +30,12 @@ test_c_args = []
 test_cpp_args = []
 test_ld_args = []
 
-# enable warning as error
-test_c_args += ['-Werror']
+# enable warning as error for non debug build
+if get_option('buildtype') != 'debug'
+  test_c_args += ['-Werror']
+  test_cpp_args += ['-Werror']
+endif
 test_c_args += ['-Wall']
-test_cpp_args += ['-Werror']
 test_cpp_args += ['-Wall']
 
 if is_windows

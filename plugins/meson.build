@@ -22,8 +22,10 @@ subdir('sample')
 plugins_c_args = []
 plugins_ld_args = []
 
-#enable warning as error
-plugins_c_args += ['-Werror']
+# enable warning as error for non debug build
+if get_option('buildtype') != 'debug'
+  plugins_c_args += ['-Werror']
+endif
 plugins_c_args += ['-Wall']
 #simd build option, enable sse4.2 default, todo: do we need AVX2/AVX512 for app ?
 plugins_c_args += ['-msse4.2']

@@ -47,8 +47,10 @@ subdir('udp')
 app_c_args = []
 app_ld_args = []
 
-#enable warning as error
-app_c_args += ['-Werror']
+# enable warning as error for non debug build
+if get_option('buildtype') != 'debug'
+  app_c_args += ['-Werror']
+endif
 app_c_args += ['-Wall']
 
 if is_windows

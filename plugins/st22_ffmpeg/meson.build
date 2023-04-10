@@ -15,8 +15,10 @@ ffmpeg_avcodec_dep = dependency('libavcodec', required : true)
 ffmpeg_avutil_dep = dependency('libavutil', required : true)
 
 st22_ffmpeg_plugin_c_args = []
-#enable warning as error
-st22_ffmpeg_plugin_c_args += ['-Werror']
+# enable warning as error for non debug build
+if get_option('buildtype') != 'debug'
+  st22_ffmpeg_plugin_c_args += ['-Werror']
+endif
 st22_ffmpeg_plugin_c_args += ['-Wall']
 #simd build option, enable sse4.2 default, todo: do we need AVX2/AVX512 for app ?
 st22_ffmpeg_plugin_c_args += ['-msse4.2']
