@@ -22,8 +22,10 @@ subdir('src')
 mtl_c_args = []
 mtl_link_c_args = []
 
-# enable warning as error
-mtl_c_args += ['-Werror']
+# enable warning as error for non debug build
+if get_option('buildtype') != 'debug'
+  mtl_c_args += ['-Werror']
+endif
 mtl_c_args += ['-Wall']
 
 #simd build option, enable sse4.2 default
