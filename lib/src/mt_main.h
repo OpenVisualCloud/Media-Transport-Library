@@ -772,7 +772,6 @@ struct mtl_main_impl {
   size_t page_size;
 
   /* rss */
-  bool use_srss;
   struct mt_rss_impl* rss[MTL_PORT_MAX];
   struct mt_srss_impl* srss[MTL_PORT_MAX];
   /* shared rx queue mgr */
