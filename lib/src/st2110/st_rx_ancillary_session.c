@@ -5,6 +5,7 @@
 #include "st_rx_ancillary_session.h"
 
 #include "../mt_log.h"
+#include "../mt_shared_rss.h"
 #include "st_ancillary_transmitter.h"
 
 /* call rx_ancillary_session_put always if get successfully */
@@ -45,7 +46,9 @@ static inline void rx_ancillary_session_put(struct st_rx_ancillary_sessions_mgr*
 
 static inline uint16_t rx_ancillary_queue_id(struct st_rx_ancillary_session_impl* s,
                                              enum mtl_session_port s_port) {
-  if (s->rss[s_port])
+  if (s->srss[s_port])
+    return 0;
+  else if (s->rss[s_port])
     return mt_rss_queue_id(s->rss[s_port]);
   else
     return mt_dev_rx_queue_id(s->queue[s_port]);
@@ -130,6 +133,11 @@ static int rx_ancillary_session_handle_mbuf(void* priv, struct rte_mbuf** mbuf,
   struct mtl_main_impl* impl = s_priv->impl;
   enum mtl_session_port s_port = s_priv->s_port;
 
+  if (!s->st40_handle) {
+    dbg("%s(%d,%d), session not ready\n", __func__, s->idx, s_port);
+    return -EIO;
+  }
+
   for (uint16_t i = 0; i < nb; i++)
     rx_ancillary_session_handle_pkt(impl, s, mbuf[i], s_port);
 
@@ -192,6 +200,10 @@ static int rx_ancillary_session_uinit_hw(struct mtl_main_impl* impl,
       mt_rss_put(s->rss[i]);
       s->rss[i] = NULL;
     }
+    if (s->srss[i]) {
+      mt_srss_put(s->srss[i]);
+      s->srss[i] = NULL;
+    }
   }
 
   return 0;
@@ -216,17 +228,19 @@ static int rx_ancillary_session_init_hw(struct mtl_main_impl* impl,
     rte_memcpy(flow.sip_addr, mt_sip_addr(impl, port), MTL_IP_ADDR_LEN);
     flow.dst_port = s->st40_dst_port[i];
     flow.src_port = s->st40_src_port[i];
+    flow.priv = &s->priv[i];
+    flow.cb = rx_ancillary_session_handle_mbuf;
 
     /* no flow for data path only */
     if (mt_pmd_is_kernel(impl, port) && (s->ops.flags & ST40_RX_FLAG_DATA_PATH_ONLY))
       s->queue[i] = mt_dev_get_rx_queue(impl, port, NULL);
-    else if (mt_has_rss(impl, port)) {
-      flow.priv = &s->priv[i];
-      flow.cb = rx_ancillary_session_handle_mbuf;
+    else if (mt_has_srss(impl, port))
+      s->srss[i] = mt_srss_get(impl, port, &flow);
+    else if (mt_has_rss(impl, port))
       s->rss[i] = mt_rss_get(impl, port, &flow);
-    } else
+    else
       s->queue[i] = mt_dev_get_rx_queue(impl, port, &flow);
-    if (!s->queue[i] && !s->rss[i]) {
+    if (!s->queue[i] && !s->rss[i] && !s->srss[i]) {
       rx_ancillary_session_uinit_hw(impl, s);
       return -EIO;
     }
@@ -465,17 +479,19 @@ static int rx_ancillary_sessions_mgr_init(struct mtl_main_impl* impl,
     rte_spinlock_init(&mgr->mutex[i]);
   }
 
-  memset(&ops, 0x0, sizeof(ops));
-  ops.priv = mgr;
-  ops.name = "rx_anc_sessions_mgr";
-  ops.start = rx_ancillary_sessions_tasklet_start;
-  ops.stop = rx_ancillary_sessions_tasklet_stop;
-  ops.handler = rx_ancillary_sessions_tasklet_handler;
+  if (!mt_has_srss(impl, MTL_PORT_P)) {
+    memset(&ops, 0x0, sizeof(ops));
+    ops.priv = mgr;
+    ops.name = "rx_anc_sessions_mgr";
+    ops.start = rx_ancillary_sessions_tasklet_start;
+    ops.stop = rx_ancillary_sessions_tasklet_stop;
+    ops.handler = rx_ancillary_sessions_tasklet_handler;
 
-  mgr->tasklet = mt_sch_register_tasklet(sch, &ops);
-  if (!mgr->tasklet) {
-    err("%s(%d), mt_sch_register_tasklet fail\n", __func__, idx);
-    return -EIO;
+    mgr->tasklet = mt_sch_register_tasklet(sch, &ops);
+    if (!mgr->tasklet) {
+      err("%s(%d), mt_sch_register_tasklet fail\n", __func__, idx);
+      return -EIO;
+    }
   }
 
   info("%s(%d), succ\n", __func__, idx);
@@ -691,6 +707,7 @@ st40_rx_handle st40_rx_create(mtl_handle mt, struct st40_rx_ops* ops) {
   s_impl->parent = impl;
   s_impl->type = MT_HANDLE_RX_ANC;
   s_impl->impl = s;
+  s->st40_handle = s_impl;
 
   rte_atomic32_inc(&impl->st40_rx_sessions_cnt);
   info("%s, succ on session %d\n", __func__, s->idx);

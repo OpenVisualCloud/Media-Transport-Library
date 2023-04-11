@@ -127,6 +127,6 @@ jobs:
         run: |
           sudo ./build/tests/KahawaiTest --auto_start_stop --p_port ${{  env.TEST_PORT_P  }} --r_port ${{  env.TEST_PORT_R  }} --dma_dev ${{  env.TEST_DMA_PORT_P  }},${{  env.TEST_DMA_PORT_R  }} --gtest_filter=-St22_?x.*
 
-      - name: Run st2110 st20p test case with rss in IOVA PA mode with tsc pacing way
+      - name: Run st2110 st20p test case with shared rss in IOVA PA mode with tsc pacing way
         run: |
-          sudo ./build/tests/KahawaiTest --p_port ${{  env.TEST_PORT_P  }} --r_port ${{  env.TEST_PORT_R  }} --dma_dev ${{  env.TEST_DMA_PORT_P  }},${{  env.TEST_DMA_PORT_R  }} --rss_mode l3_l4_dst_port_only --pacing_way tsc --iova_mode pa --gtest_filter=Main.*:St20p*:-*ext*
+          sudo ./build/tests/KahawaiTest --auto_start_stop --p_port ${{  env.TEST_PORT_P  }} --r_port ${{  env.TEST_PORT_R  }} --rss_mode l3_l4 --pacing_way tsc --iova_mode pa --gtest_filter=Main.*:St20p*:-*ext*

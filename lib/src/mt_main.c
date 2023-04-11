@@ -17,6 +17,7 @@
 #include "mt_rss.h"
 #include "mt_sch.h"
 #include "mt_shared_queue.h"
+#include "mt_shared_rss.h"
 #include "mt_socket.h"
 #include "mt_stat.h"
 #include "mt_util.h"
@@ -152,6 +153,12 @@ static int mt_main_create(struct mtl_main_impl* impl) {
 
   mt_dma_init(impl);
 
+  ret = mt_srss_init(impl);
+  if (ret < 0) {
+    err("%s, mt_srss_init fail %d\n", __func__, ret);
+    return ret;
+  }
+
   ret = mt_rss_init(impl);
   if (ret < 0) {
     err("%s, mt_rss_init fail %d\n", __func__, ret);
@@ -256,6 +263,7 @@ static int mt_main_free(struct mtl_main_impl* impl) {
   mt_rss_uinit(impl);
   mt_rsq_uinit(impl);
   mt_tsq_uinit(impl);
+  mt_srss_uinit(impl);
 
   mt_dev_free(impl);
   mt_stat_uinit(impl);

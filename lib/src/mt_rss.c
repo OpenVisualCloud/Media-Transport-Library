@@ -92,14 +92,9 @@ static int rss_flow_check(struct mtl_main_impl* impl, enum mtl_port port,
 
   if (sys_rss_mode == flow_rss_mode) return 0;
 
-  if (sys_rss_mode == MTL_RSS_MODE_L3_L4 && flow_rss_mode == MTL_RSS_MODE_L3_L4_DP_ONLY) {
-    warn("%s(%d), require l3_l4_dst_port_only but only l3_l4 allowed\n", __func__, port);
-    return 0;
-  }
-
-  err("%s(%d), flow require rss %s but sys is set to %s\n", __func__, port,
-      rss_mode_name(flow_rss_mode), rss_mode_name(sys_rss_mode));
-  return -EIO;
+  warn("%s(%d), flow require rss %s but sys is set to %s\n", __func__, port,
+       rss_mode_name(flow_rss_mode), rss_mode_name(sys_rss_mode));
+  return 0;
 }
 
 static uint32_t rss_flow_hash(struct mt_rx_flow* flow, enum mtl_rss_mode rss) {

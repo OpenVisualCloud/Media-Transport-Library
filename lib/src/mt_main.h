@@ -212,9 +212,10 @@ struct mt_cni_priv {
 struct mt_cni_impl {
   bool used; /* if enable cni */
 
-  struct mt_rx_queue* rx_q[MTL_PORT_MAX]; /* cni rx queue */
-  struct mt_rsq_entry* rsq[MTL_PORT_MAX]; /* cni rsq queue */
-  struct mt_rss_entry* rss[MTL_PORT_MAX]; /* cni rss queue */
+  struct mt_rx_queue* rx_q[MTL_PORT_MAX];   /* cni rx queue */
+  struct mt_rsq_entry* rsq[MTL_PORT_MAX];   /* cni rsq queue */
+  struct mt_rss_entry* rss[MTL_PORT_MAX];   /* cni rss queue */
+  struct mt_srss_entry* srss[MTL_PORT_MAX]; /* cni srss queue */
   struct mt_cni_priv cni_priv[MTL_PORT_MAX];
   pthread_t tid; /* thread id for rx */
   rte_atomic32_t stop_thread;
@@ -738,6 +739,24 @@ struct mt_tsq_impl {
   struct mt_tsq_queue* tsq_queues;
 };
 
+struct mt_srss_entry {
+  struct mt_rx_flow flow;
+  struct mt_srss_impl* srss;
+  /* linked list */
+  MT_TAILQ_ENTRY(mt_srss_entry) next;
+};
+MT_TAILQ_HEAD(mt_srss_entrys_list, mt_srss_entry);
+
+struct mt_srss_impl {
+  struct mtl_main_impl* parent;
+  pthread_mutex_t mutex;
+  enum mtl_port port;
+  struct mt_srss_entrys_list head;
+  struct mt_sch_tasklet_impl* tasklet;
+  struct mt_sch_impl* sch;
+  struct mt_srss_entry* cni_entry;
+};
+
 struct mtl_main_impl {
   struct mt_interface inf[MTL_PORT_MAX];
 
@@ -753,6 +772,7 @@ struct mtl_main_impl {
 
   /* rss */
   struct mt_rss_impl* rss[MTL_PORT_MAX];
+  struct mt_srss_impl* srss[MTL_PORT_MAX];
   /* shared rx queue mgr */
   struct mt_rsq_impl* rsq[MTL_PORT_MAX];
   struct mt_tsq_impl* tsq[MTL_PORT_MAX];
@@ -1001,6 +1021,10 @@ static inline enum mtl_rss_mode mt_get_rss_mode(struct mtl_main_impl* impl,
 
 static inline bool mt_has_rss(struct mtl_main_impl* impl, enum mtl_port port) {
   return mt_get_rss_mode(impl, port) != MTL_RSS_MODE_NONE;
+}
+
+static inline bool mt_has_srss(struct mtl_main_impl* impl, enum mtl_port port) {
+  return mt_get_rss_mode(impl, port) == MTL_RSS_MODE_L3_L4;
 }
 
 static inline bool mt_udp_transport(struct mtl_main_impl* impl, enum mtl_port port) {
