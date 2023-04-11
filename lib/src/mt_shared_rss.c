@@ -4,11 +4,9 @@
 
 #include "mt_shared_rss.h"
 
-#include "mt_cni.h"
 #include "mt_log.h"
 #include "mt_sch.h"
-#include "src/mt_rss.h"
-#include "src/mt_util.h"
+#include "mt_util.h"
 
 #define MT_SRSS_BURST_SIZE (128)
 
