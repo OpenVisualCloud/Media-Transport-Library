@@ -150,29 +150,6 @@ To workaround this limit, the library uses shared rss mode on ENA by default, ar
 
 The bandwidth for single TX flow is limited to 5-10 Gbps.
 
-### 7.4 The stats (bandwidth/packets) printed is accumulated
-
-```shell
-MT: * *    M T    D E V   S T A T E   * *
-MT: DEV(0): Avr rate, tx: 0 Mb/s, rx: 9949 Mb/s, pkts, tx: 1, rx: 9398772
-MT: PTP(0): time 1678865906652331011, 2023-03-15 07:38:26
-MT: CNI(0): eth_rx_cnt 0
-MT: RX_VIDEO_SESSION(0,0:app_rx_video_0): fps 59.899867 frames 599 pkts 2466553, cpu busy 3.162677
-MT: RX_VIDEO_SESSION(0,1:app_rx_video_1): fps 59.899889 frames 599 pkts 2466549, cpu busy 3.167438
-MT: * *    E N D    S T A T E   * *
-
-MT: * *    M T    D E V   S T A T E   * *
-MT: DEV(0): Avr rate, tx: 0 Mb/s, rx: 15171 Mb/s, pkts, tx: 1, rx: 14331553
-MT: PTP(0): time 1678865916652358408, 2023-03-15 07:38:36
-MT: CNI(0): eth_rx_cnt 0
-MT: RX_VIDEO_SESSION(0,0:app_rx_video_0): fps 59.999859 frames 600 pkts 2466386, cpu busy 3.168126
-MT: RX_VIDEO_SESSION(0,1:app_rx_video_1): fps 59.999859 frames 600 pkts 2466384, cpu busy 3.171664
-MT: * *    E N D    S T A T E   * *
-
-```
-
-ENA PMD does not implement stats_reset.
-
 ## Reference link
 
 [ENA driver repository](https://github.com/amzn/amzn-drivers/tree/master/userspace/dpdk)
