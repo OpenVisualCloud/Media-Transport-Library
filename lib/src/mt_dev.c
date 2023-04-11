@@ -129,6 +129,12 @@ static void dev_eth_xstat(uint16_t port_id) {
   }
 }
 
+static inline void diff_and_update(uint64_t* new, uint64_t* old) {
+  uint64_t temp = *new;
+  *new -= *old;
+  *old = temp;
+}
+
 static void dev_eth_stat(struct mtl_main_impl* impl) {
   int num_ports = mt_num_ports(impl);
   uint16_t port_id;
@@ -137,7 +143,19 @@ static void dev_eth_stat(struct mtl_main_impl* impl) {
   for (int i = 0; i < num_ports; i++) {
     port_id = mt_port_id(impl, i);
 
-    if (!rte_eth_stats_get(port_id, &stats)) {
+    if (rte_eth_stats_get(port_id, &stats) == 0) {
+      struct mt_dev_stats* dev_stats = impl->dev_stats[i];
+      if (dev_stats) {
+        diff_and_update(&stats.ipackets, &dev_stats->rx_pkts);
+        diff_and_update(&stats.opackets, &dev_stats->tx_pkts);
+        diff_and_update(&stats.ibytes, &dev_stats->rx_bytes);
+        diff_and_update(&stats.obytes, &dev_stats->tx_bytes);
+        diff_and_update(&stats.ierrors, &dev_stats->rx_errors);
+        diff_and_update(&stats.oerrors, &dev_stats->tx_errors);
+        diff_and_update(&stats.imissed, &dev_stats->rx_missed);
+        diff_and_update(&stats.rx_nombuf, &dev_stats->rx_nombuf);
+      }
+
       uint64_t orate_m = stats.obytes * 8 / MT_DEV_STAT_INTERVAL_S / MT_DEV_STAT_M_UNIT;
       uint64_t irate_m = stats.ibytes * 8 / MT_DEV_STAT_INTERVAL_S / MT_DEV_STAT_M_UNIT;
 
@@ -152,8 +170,10 @@ static void dev_eth_stat(struct mtl_main_impl* impl) {
         dev_eth_xstat(port_id);
       }
 
-      rte_eth_stats_reset(port_id);
-      rte_eth_xstats_reset(port_id);
+      if (!dev_stats) {
+        rte_eth_stats_reset(port_id);
+        rte_eth_xstats_reset(port_id);
+      }
     }
   }
 }
@@ -2023,6 +2043,16 @@ int mt_dev_create(struct mtl_main_impl* impl) {
       goto err_exit;
     }
 
+    if (inf->drv_type == MT_DRV_ENA) {
+      impl->dev_stats[i] =
+          mt_rte_zmalloc_socket(sizeof(struct mt_dev_stats), inf->socket_id);
+      if (!impl->dev_stats[i]) {
+        err("%s(%d), malloc dev_stats fail\n", __func__, i);
+        ret = -ENOMEM;
+        goto err_exit;
+      }
+    }
+
     info("%s(%d), feature 0x%x, tx pacing %s\n", __func__, i, inf->feature,
          st_tx_pacing_way_name(inf->tx_pacing_way));
   }
@@ -2093,6 +2123,10 @@ int mt_dev_free(struct mtl_main_impl* impl) {
   dev_uinit_lcores(impl);
 
   for (i = 0; i < num_ports; i++) {
+    if (impl->dev_stats[i]) {
+      mt_rte_free(impl->dev_stats[i]);
+      impl->dev_stats[i] = NULL;
+    }
     dev_stop_port(impl, i);
   }
 
