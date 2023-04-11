@@ -56,7 +56,6 @@ static int srss_tasklet_handler(void* priv) {
           continue;
         }
         udp = &hdr->udp;
-
         MT_TAILQ_FOREACH(srss_entry, &srss->head, next) {
           bool ip_matched =
               mt_is_multicast_ip(srss_entry->flow.dip_addr)

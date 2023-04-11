@@ -2594,7 +2594,7 @@ static int rv_handle_mbuf(void* priv, struct rte_mbuf** mbuf, uint16_t nb) {
   struct st_rx_video_session_impl* s = s_priv->session;
   enum mtl_session_port s_port = s_priv->s_port;
 
-  if (!s->st20_handle) {
+  if (!s->st20_handle && !s->st22_handle) {
     dbg("%s(%d,%d), session not ready\n", __func__, s->idx, s_port);
     return -EIO;
   }
