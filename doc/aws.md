@@ -95,6 +95,17 @@ For example, the Private IPv4 address is 172.31.42.123, the subnet IPv4 CIDR is 
     ],
 ```
 
+Or you can use DHCP to automatically configure the IPs:
+
+```json
+    "interfaces": [
+        {
+            "name": "0000:00:06.0",
+            "proto": "dhcp"
+        }
+    ],
+```
+
 ### 5.2 Features not supported on ENA
 
 * **PTP** (use CLOCK_REAL_TIME which may be synced to NTP)
@@ -132,6 +143,8 @@ ena_rss_hash_set(): Setting RSS hash fields is not supported. Using default valu
 ```
 
 The ENA HW does not support RSS hash fields modification, the app will require same src port and dst port for the stream.
+
+To workaround this limit, the library uses shared rss mode on ENA by default, arg `--runtime_session` is needed for Tx app.
 
 ### 7.3 The max video stream supported is 4k 30fps / 1080p 120fps
 
