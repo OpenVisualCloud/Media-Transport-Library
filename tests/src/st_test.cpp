@@ -174,7 +174,9 @@ TEST(Main, get_stats) {
   EXPECT_EQ(stats.st20_rx_sessions_cnt, 0);
   EXPECT_EQ(stats.st30_rx_sessions_cnt, 0);
   EXPECT_EQ(stats.st40_rx_sessions_cnt, 0);
-  EXPECT_EQ(stats.sch_cnt, 1);
+  if (ctx->para.rss_mode != MTL_RSS_MODE_L3_L4) {
+    EXPECT_EQ(stats.sch_cnt, 1);
+  }
 }
 
 static int test_lcore_cnt(struct st_tests_context* ctx) {

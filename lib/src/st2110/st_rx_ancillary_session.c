@@ -133,6 +133,11 @@ static int rx_ancillary_session_handle_mbuf(void* priv, struct rte_mbuf** mbuf,
   struct mtl_main_impl* impl = s_priv->impl;
   enum mtl_session_port s_port = s_priv->s_port;
 
+  if (!s->st40_handle) {
+    dbg("%s(%d,%d), session not ready\n", __func__, s->idx, s_port);
+    return -EIO;
+  }
+
   for (uint16_t i = 0; i < nb; i++)
     rx_ancillary_session_handle_pkt(impl, s, mbuf[i], s_port);
 
@@ -702,6 +707,7 @@ st40_rx_handle st40_rx_create(mtl_handle mt, struct st40_rx_ops* ops) {
   s_impl->parent = impl;
   s_impl->type = MT_HANDLE_RX_ANC;
   s_impl->impl = s;
+  s->st40_handle = s_impl;
 
   rte_atomic32_inc(&impl->st40_rx_sessions_cnt);
   info("%s, succ on session %d\n", __func__, s->idx);

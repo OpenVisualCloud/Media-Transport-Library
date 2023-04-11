@@ -514,6 +514,11 @@ static int rx_audio_session_handle_mbuf(void* priv, struct rte_mbuf** mbuf, uint
   enum mtl_session_port s_port = s_priv->s_port;
   enum st30_type st30_type = s->ops.type;
 
+  if (!s->st30_handle) {
+    dbg("%s(%d,%d), session not ready\n", __func__, s->idx, s_port);
+    return -EIO;
+  }
+
   if (ST30_TYPE_FRAME_LEVEL == st30_type) {
     for (uint16_t i = 0; i < nb; i++)
       rx_audio_session_handle_frame_pkt(impl, s, mbuf[i], s_port);
@@ -1135,6 +1140,7 @@ st30_rx_handle st30_rx_create(mtl_handle mt, struct st30_rx_ops* ops) {
   s_impl->parent = impl;
   s_impl->type = MT_HANDLE_RX_AUDIO;
   s_impl->impl = s;
+  s->st30_handle = s_impl;
 
   rte_atomic32_inc(&impl->st30_rx_sessions_cnt);
   info("%s, succ on sch %d session %d\n", __func__, sch->idx, s->idx);
