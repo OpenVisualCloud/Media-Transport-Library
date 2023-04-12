@@ -2,7 +2,9 @@
 
 ## 1. Create AWS instances
 
-Instance type tested: **m6i.4xlarge** (6Gb bandwidth limit)
+Instance type tested: **m6i.nxlarge**, **m6i.metal**
+
+(check the bandwidth limitation here: [network-performance](https://docs.aws.amazon.com/AWSEC2/latest/UserGuide/general-purpose-instances.html#general-purpose-network-performance))
 
 Image tested: **Amazon Linux 2 AMI**
 
@@ -79,7 +81,7 @@ dpdk-devbind.py -s
 
 Refer to [run.md](./run.md) after section 3.2.
 
-The Tx (transmitter) RxTxAPP should add args `--runtime_session` and `--multi_src_port`, see 7.2 and 7.3.
+For single video stream whose bandwidth > 5 Gbps (4k 30fps), arg `--multi_src_port` is needed in Tx app, see 7.3.
 
 ### 5.1 IP configuration
 
@@ -138,7 +140,7 @@ MT: Warn: dev_config_port(0), failed to setup all ptype, only 0 supported
 
 This is ENA PMD limitation, can be ignored for now.
 
-### 7.2 Setting RSS hash fields is not supported
+### 7.2 Setting RSS hash fields is not supported (WA fixed)
 
 ```shell
 ena_rss_hash_set(): Setting RSS hash fields is not supported. Using default values: 0xc30
@@ -146,9 +148,9 @@ ena_rss_hash_set(): Setting RSS hash fields is not supported. Using default valu
 
 The ENA HW does not support RSS hash fields modification, the app will require same src port and dst port for the stream.
 
-To workaround this limitation, the library uses shared rss mode on ENA by default, arg `--runtime_session` is needed for Tx app.
+To workaround this limitation, the library uses shared rss mode on ENA by default which will receive and handle packets in one thread.
 
-### 7.3 The max video stream supported is 4k 30fps / 1080p 120fps
+### 7.3 The max single video stream supported is 4k 30fps / 1080p 120fps (WA fixed)
 
 The bandwidth for single TX flow (udp/tcp ip:port->ip:port 5 tuple) is limited to 5 / 10 (same placement group) Gbps.
 
