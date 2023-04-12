@@ -116,4 +116,7 @@ struct mudp_impl {
 
 int mudp_verify_socket_args(int domain, int type, int protocol);
 
+int mudp_poll_query(struct mudp_pollfd* fds, mudp_nfds_t nfds, int timeout,
+                    int (*query)(void* priv), void* priv);
+
 #endif

@@ -1097,7 +1097,8 @@ rx_pool:
   return udp_rx_ret_timeout(s);
 }
 
-static int udp_poll(struct mudp_pollfd* fds, mudp_nfds_t nfds, int timeout) {
+static int udp_poll(struct mudp_pollfd* fds, mudp_nfds_t nfds, int timeout,
+                    int (*query)(void* priv), void* priv) {
   struct mudp_impl* s = fds[0].fd;
   struct mtl_main_impl* impl = s->parent;
   uint64_t start_ts = mt_get_tsc(impl);
@@ -1125,6 +1126,11 @@ rx_poll:
     }
   }
   if (rc > 0) return rc;
+
+  if (query) { /* check if any pending event on the user query callback */
+    rc = query(priv);
+    if (rc != 0) return rc;
+  }
 
   /* check if timeout */
   int ms = (mt_get_tsc(impl) - start_ts) / NS_PER_MS;
@@ -1207,7 +1213,8 @@ dequeue:
   return udp_rx_ret_timeout(s);
 }
 
-static int udp_poll_lcore(struct mudp_pollfd* fds, mudp_nfds_t nfds, int timeout) {
+static int udp_poll_lcore(struct mudp_pollfd* fds, mudp_nfds_t nfds, int timeout,
+                          int (*query)(void* priv), void* priv) {
   struct mudp_impl* s = fds[0].fd;
   struct mtl_main_impl* impl = s->parent;
   uint64_t start_ts = mt_get_tsc(impl);
@@ -1227,6 +1234,11 @@ poll:
     }
   }
   if (rc > 0) return rc;
+
+  if (query) { /* check if any pending event on the user query callback */
+    rc = query(priv);
+    if (rc != 0) return rc;
+  }
 
   /* check if timeout */
   int ms = (mt_get_tsc(impl) - start_ts) / NS_PER_MS;
@@ -1489,7 +1501,8 @@ ssize_t mudp_sendmsg(mudp_handle ut, const struct msghdr* msg, int flags) {
   return copied;
 }
 
-int mudp_poll(struct mudp_pollfd* fds, mudp_nfds_t nfds, int timeout) {
+int mudp_poll_query(struct mudp_pollfd* fds, mudp_nfds_t nfds, int timeout,
+                    int (*query)(void* priv), void* priv) {
   int ret = udp_verify_poll(fds, nfds, timeout);
   if (ret < 0) return ret;
 
@@ -1509,9 +1522,13 @@ int mudp_poll(struct mudp_pollfd* fds, mudp_nfds_t nfds, int timeout) {
   }
 
   if (s->lcore_tasklet)
-    return udp_poll_lcore(fds, nfds, timeout);
+    return udp_poll_lcore(fds, nfds, timeout, query, priv);
   else
-    return udp_poll(fds, nfds, timeout);
+    return udp_poll(fds, nfds, timeout, query, priv);
+}
+
+int mudp_poll(struct mudp_pollfd* fds, mudp_nfds_t nfds, int timeout) {
+  return mudp_poll_query(fds, nfds, timeout, NULL, NULL);
 }
 
 ssize_t mudp_recvfrom(mudp_handle ut, void* buf, size_t len, int flags,

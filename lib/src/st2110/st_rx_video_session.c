@@ -3126,6 +3126,11 @@ static void rv_stat(struct st_rx_video_sessions_mgr* mgr,
            s->stat_mismatch_hdr_split_frame);
     s->stat_mismatch_hdr_split_frame = 0;
   }
+  if (s->stat_pkts_copy_hdr_split) {
+    notice("RX_VIDEO_SESSION(%d,%d): hdr split copied pkts %d\n", m_idx, idx,
+           s->stat_pkts_copy_hdr_split);
+    s->stat_pkts_copy_hdr_split = 0;
+  }
   if (s->stat_vsync_mismatch) {
     notice("RX_VIDEO_SESSION(%d,%d): vsync mismatch cnt %u\n", m_idx, idx,
            s->stat_vsync_mismatch);
