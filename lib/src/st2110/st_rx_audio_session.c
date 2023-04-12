@@ -588,10 +588,6 @@ static int rx_audio_session_uinit_hw(struct mtl_main_impl* impl,
       mt_rss_put(s->rss[i]);
       s->rss[i] = NULL;
     }
-    if (s->srss[i]) {
-      mt_srss_put(s->srss[i]);
-      s->srss[i] = NULL;
-    }
   }
 
   return 0;
@@ -622,13 +618,11 @@ static int rx_audio_session_init_hw(struct mtl_main_impl* impl,
     /* no flow for data path only */
     if (mt_pmd_is_kernel(impl, port) && (s->ops.flags & ST30_RX_FLAG_DATA_PATH_ONLY))
       s->queue[i] = mt_dev_get_rx_queue(impl, port, NULL);
-    else if (mt_has_srss(impl, port))
-      s->srss[i] = mt_srss_get(impl, port, &flow);
     else if (mt_has_rss(impl, port))
       s->rss[i] = mt_rss_get(impl, port, &flow);
     else
       s->queue[i] = mt_dev_get_rx_queue(impl, port, &flow);
-    if (!s->queue[i] && !s->rss[i] && !s->srss[i]) {
+    if (!s->queue[i] && !s->rss[i]) {
       rx_audio_session_uinit_hw(impl, s);
       return -EIO;
     }
@@ -780,6 +774,19 @@ static int rx_audio_session_attach(struct mtl_main_impl* impl,
     return -EIO;
   }
 
+  for (int i = 0; i < num_port; i++) {
+    enum mtl_port port = mt_port_logic2phy(s->port_maps, i);
+    if (mt_has_srss(impl, port)) {
+      s->srss[i] = mt_srss_get(impl, port, &s->rss[i]->flow);
+      if (!s->srss[i]) {
+        err("%s(%d), mt_srss_get fail\n", __func__, idx);
+        rx_audio_session_uinit_sw(impl, s);
+        rx_audio_session_uinit_hw(impl, s);
+        return -EIO;
+      }
+    }
+  }
+
   info("%s(%d), succ\n", __func__, idx);
   return 0;
 }
@@ -815,6 +822,12 @@ static int rx_audio_session_detach(struct mtl_main_impl* impl,
                                    struct st_rx_audio_session_impl* s) {
   if (mt_has_ebu(impl)) rx_audio_session_ebu_result(s);
   rx_audio_session_stat(s);
+  for (int i = 0; i < s->ops.num_port; i++) {
+    if (s->srss[i]) {
+      mt_srss_put(s->srss[i]);
+      s->srss[i] = NULL;
+    }
+  }
   rx_audio_session_uinit_mcast(impl, s);
   rx_audio_session_uinit_sw(impl, s);
   rx_audio_session_uinit_hw(impl, s);

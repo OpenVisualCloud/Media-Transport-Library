@@ -2693,10 +2693,6 @@ static int rv_uinit_hw(struct mtl_main_impl* impl, struct st_rx_video_session_im
       mt_rss_put(s->rss[i]);
       s->rss[i] = NULL;
     }
-    if (s->srss[i]) {
-      mt_srss_put(s->srss[i]);
-      s->srss[i] = NULL;
-    }
   }
 
   return 0;
@@ -2739,13 +2735,11 @@ static int rv_init_hw(struct mtl_main_impl* impl, struct st_rx_video_session_imp
     /* no flow for data path only */
     if (mt_pmd_is_kernel(impl, port) && (ops->flags & ST20_RX_FLAG_DATA_PATH_ONLY))
       s->queue[i] = mt_dev_get_rx_queue(impl, port, NULL);
-    else if (mt_has_srss(impl, port))
-      s->srss[i] = mt_srss_get(impl, port, &flow);
     else if (mt_has_rss(impl, port))
       s->rss[i] = mt_rss_get(impl, port, &flow);
     else
       s->queue[i] = mt_dev_get_rx_queue(impl, port, &flow);
-    if (!s->queue[i] && !s->rss[i] && !s->srss[i]) {
+    if (!s->queue[i] && !s->rss[i]) {
       rv_uinit_hw(impl, s);
       return -EIO;
     }
@@ -2926,6 +2920,20 @@ static int rv_attach(struct mtl_main_impl* impl, struct st_rx_video_sessions_mgr
     rv_uinit_sw(impl, s);
     rv_uinit_hw(impl, s);
     return -EIO;
+  }
+
+  for (int i = 0; i < num_port; i++) {
+    enum mtl_port port = mt_port_logic2phy(s->port_maps, i);
+    if (mt_has_srss(impl, port)) {
+      s->srss[i] = mt_srss_get(impl, port, &s->rss[i]->flow);
+      if (!s->srss[i]) {
+        err("%s(%d), mt_srss_get fail\n", __func__, idx);
+        rv_uinit_mcast(impl, s);
+        rv_uinit_sw(impl, s);
+        rv_uinit_hw(impl, s);
+        return -EIO;
+      }
+    }
   }
 
   ret = rv_init_pkt_handler(s);
@@ -3178,6 +3186,12 @@ static int rv_detach(struct mtl_main_impl* impl, struct st_rx_video_sessions_mgr
                      struct st_rx_video_session_impl* s) {
   if (mt_has_ebu(mgr->parent)) rv_ebu_final_result(s);
   rv_stat(mgr, s);
+  for (int i = 0; i < s->ops.num_port; i++) {
+    if (s->srss[i]) {
+      mt_srss_put(s->srss[i]);
+      s->srss[i] = NULL;
+    }
+  }
   rv_uinit_mcast(impl, s);
   rv_uinit_sw(impl, s);
   rv_uinit_hw(impl, s);
