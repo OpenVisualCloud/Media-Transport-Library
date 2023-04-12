@@ -707,7 +707,7 @@ static int tv_build_st20(struct st_tx_video_session_impl* s, struct rte_mbuf* pk
   ipv4->packet_id = htons(s->st20_ipv4_packet_id);
   s->st20_ipv4_packet_id++;
 
-  if (s->multi_src_port) udp->src_port += (s->st20_pkt_idx / 128) % 2;
+  if (s->multi_src_port) udp->src_port += (s->st20_pkt_idx / 128) % 8;
 
   /* calculate payload header */
   if (single_line) {
@@ -813,7 +813,7 @@ static int tv_build_st20_chain(struct st_tx_video_session_impl* s, struct rte_mb
   ipv4->packet_id = htons(s->st20_ipv4_packet_id);
   s->st20_ipv4_packet_id++;
 
-  if (s->multi_src_port) udp->src_port += (s->st20_pkt_idx / 128) % 2;
+  if (s->multi_src_port) udp->src_port += (s->st20_pkt_idx / 128) % 8;
 
   if (single_line) {
     line1_number = s->st20_pkt_idx / s->st20_pkts_in_line;
@@ -985,7 +985,7 @@ static int tv_build_rtp_chain(struct mtl_main_impl* impl,
   ipv4->packet_id = htons(s->st20_ipv4_packet_id);
   s->st20_ipv4_packet_id++;
 
-  if (s->multi_src_port) udp->src_port += (s->st20_pkt_idx / 128) % 2;
+  if (s->multi_src_port) udp->src_port += (s->st20_pkt_idx / 128) % 8;
 
   if (rtp->tmstamp != s->st20_rtp_time) {
     /* start of a new frame */
