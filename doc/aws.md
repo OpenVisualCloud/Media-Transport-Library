@@ -79,6 +79,8 @@ dpdk-devbind.py -s
 
 Refer to [run.md](./run.md) after section 3.2.
 
+The Tx (transmitter) RxTxAPP should add args `--runtime_session` and `--multi_src_port`, see 7.2 and 7.3.
+
 ### 5.1 IP configuration
 
 Configure the AWS reserved private IP in json.
@@ -110,7 +112,7 @@ Or you can use DHCP to automatically configure the IPs:
 
 * **PTP** (use CLOCK_REAL_TIME which may be synced to NTP)
 * **Rate Limiting** (use TSC for pacing)
-* **rte_flow** (use RSS queues, but no src/dst only support)
+* **rte_flow** (use RSS queues)
 
 ## 6. General FAQ
 
@@ -144,11 +146,13 @@ ena_rss_hash_set(): Setting RSS hash fields is not supported. Using default valu
 
 The ENA HW does not support RSS hash fields modification, the app will require same src port and dst port for the stream.
 
-To workaround this limit, the library uses shared rss mode on ENA by default, arg `--runtime_session` is needed for Tx app.
+To workaround this limitation, the library uses shared rss mode on ENA by default, arg `--runtime_session` is needed for Tx app.
 
 ### 7.3 The max video stream supported is 4k 30fps / 1080p 120fps
 
-The bandwidth for single TX flow is limited to 5-10 Gbps.
+The bandwidth for single TX flow (udp/tcp ip:port->ip:port 5 tuple) is limited to 5 / 10 (same placement group) Gbps.
+
+To workaround this limitation, the library uses multiple flows for single stream, arg `--multi_src_port` is needed for Tx app.
 
 ## Reference link
 
