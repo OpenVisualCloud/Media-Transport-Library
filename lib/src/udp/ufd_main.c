@@ -545,7 +545,8 @@ ssize_t mufd_sendmsg(int sockfd, const struct msghdr* msg, int flags) {
   return mudp_sendmsg(slot->handle, msg, flags);
 }
 
-int mufd_poll(struct pollfd* fds, nfds_t nfds, int timeout) {
+int mufd_poll_query(struct pollfd* fds, nfds_t nfds, int timeout,
+                    int (*query)(void* priv), void* priv) {
   struct mudp_pollfd mfds[nfds];
   struct ufd_slot* slot;
 
@@ -556,11 +557,15 @@ int mufd_poll(struct pollfd* fds, nfds_t nfds, int timeout) {
     mfds[i].events = fds[i].events;
   }
 
-  int ret = mudp_poll(mfds, nfds, timeout);
+  int ret = mudp_poll_query(mfds, nfds, timeout, query, priv);
   for (nfds_t i = 0; i < nfds; i++) {
     fds[i].revents = mfds[i].revents;
   }
   return ret;
+}
+
+int mufd_poll(struct pollfd* fds, nfds_t nfds, int timeout) {
+  return mufd_poll_query(fds, nfds, timeout, NULL, NULL);
 }
 
 ssize_t mufd_recvfrom(int sockfd, void* buf, size_t len, int flags,

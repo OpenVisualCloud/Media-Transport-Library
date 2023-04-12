@@ -33,8 +33,10 @@ ln -s ice_wireless_edge-1.3.9.99_1.pkg ice.pkg
 ./build/app/RxTxApp --config_file tests/script/hdr_split/1080p59_1v.json --hdr_split
 ```
 
-Check status log to check how many pkts are with header split and still copied by CPU.
+Check log to see if header split is enabled.
 
 ```bash
-ST: RX_VIDEO_SESSION(1,0): hdr split pkts 2465924, copy 252341
+MT: rv_attach(0), hdr_split enabled in ops
+ice_hdrs_mbuf_set_cb(): RX queue 1 register hdrs mbuf cb at 0x7f59f0b2a310
+MT: dev_rx_queue_create_flow_raw(1), queue 1 succ
 ```

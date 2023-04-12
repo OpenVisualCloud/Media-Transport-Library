@@ -103,7 +103,10 @@ enum upl_entry_type {
   UPL_ENTRY_MAX,
 };
 
+struct upl_ctx; /* forward declare */
+
 struct upl_base_entry {
+  struct upl_ctx* parent;
   enum upl_entry_type upl_type;
 };
 
@@ -142,6 +145,11 @@ struct upl_efd_entry {
   struct upl_efd_fd_list fds;
   int fds_cnt;
   atomic_int kfd_cnt;
+  /* for kfd query */
+  struct epoll_event* events;
+  int maxevents;
+  const sigset_t* sigmask;
+  int kfd_ret;
 };
 
 struct upl_ctx {

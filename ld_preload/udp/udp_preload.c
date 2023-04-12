@@ -193,13 +193,13 @@ static int upl_stat_dump(void* priv) {
   return 0;
 }
 
-static int upl_epoll_create(int efd) {
-  struct upl_ctx* ctx = upl_get_ctx();
+static int upl_epoll_create(struct upl_ctx* ctx, int efd) {
   struct upl_efd_entry* entry = upl_zmalloc(sizeof(*entry));
   if (!entry) {
     err("%s, entry malloc fail for efd %d\n", __func__, efd);
     UPL_ERR_RET(ENOMEM);
   }
+  entry->base.parent = ctx;
   entry->base.upl_type = UPL_ENTRY_EPOLL;
   entry->efd = efd;
   pthread_mutex_init(&entry->mutex, NULL);
@@ -294,15 +294,41 @@ static int upl_efd_ctl_mod(struct upl_efd_entry* efd, struct upl_ufd_entry* ufd,
   UPL_ERR_RET(EINVAL);
 }
 
+static int upl_efd_epoll_query(void* priv) {
+  struct upl_efd_entry* entry = priv;
+  struct upl_ctx* ctx = entry->base.parent;
+  int efd = entry->efd;
+  int ret;
+  dbg("%s(%d), start\n", __func__, efd);
+
+  /* timeout to zero for query */
+  if (entry->sigmask)
+    ret =
+        ctx->libc_fn.epoll_pwait(efd, entry->events, entry->maxevents, 0, entry->sigmask);
+  else
+    ret = ctx->libc_fn.epoll_wait(efd, entry->events, entry->maxevents, 0);
+  if (ret != 0) { /* event on kfd */
+    entry->kfd_ret = ret;
+    info("%s(%d), ret %d\n", __func__, efd, ret);
+  }
+
+  return ret;
+}
+
 /* reuse mufd_poll now */
-static int upl_efd_epoll_wait(struct upl_efd_entry* entry, struct epoll_event* events,
-                              int maxevents, int timeout_ms) {
+static int upl_efd_epoll_pwait(struct upl_efd_entry* entry, struct epoll_event* events,
+                               int maxevents, int timeout_ms, const sigset_t* sigmask) {
   int efd = entry->efd;
   const int fds_cnt = entry->fds_cnt;
   struct upl_efd_fd_item* item;
   struct pollfd p_fds[fds_cnt];
   struct upl_efd_fd_item* efd_items[fds_cnt];
   int p_fds_cnt = 0;
+  int kfd_cnt = atomic_load(&entry->kfd_cnt);
+  int ret;
+
+  info("%s(%d), timeout_ms %d maxevents %d kfd_cnt %d\n", __func__, efd, timeout_ms,
+       maxevents, kfd_cnt);
 
   pthread_mutex_lock(&entry->mutex);
   TAILQ_FOREACH(item, &entry->fds, next) {
@@ -318,8 +344,19 @@ static int upl_efd_epoll_wait(struct upl_efd_entry* entry, struct epoll_event* e
   }
   pthread_mutex_unlock(&entry->mutex);
 
-  int ret = mufd_poll(p_fds, p_fds_cnt, timeout_ms);
+  entry->kfd_ret = 0;
+  if (kfd_cnt > 0) {
+    entry->events = events;
+    entry->maxevents = maxevents;
+    entry->sigmask = sigmask;
+    ret = mufd_poll_query(p_fds, p_fds_cnt, timeout_ms, upl_efd_epoll_query, entry);
+  } else {
+    ret = mufd_poll(p_fds, p_fds_cnt, timeout_ms);
+  }
   if (ret <= 0) return ret;
+
+  /* event on the kfd */
+  if (entry->kfd_ret > 0) return entry->kfd_ret;
 
   int ready = 0;
   for (int i = 0; i < p_fds_cnt; i++) {
@@ -338,7 +375,7 @@ static int upl_ufd_close(struct upl_ufd_entry* ufd_entry) {
   int efd = ufd_entry->efd;
 
   if (efd > 0) {
-    struct upl_ctx* ctx = upl_get_ctx();
+    struct upl_ctx* ctx = ufd_entry->base.parent;
     struct upl_efd_entry* efd_entry = upl_get_efd_entry(ctx, efd);
     info("%s(%d), remove epoll ctl on efd %d\n", __func__, kfd, efd);
     upl_efd_ctl_del(efd_entry, ufd_entry);
@@ -392,6 +429,7 @@ int socket(int domain, int type, int protocol) {
     return kfd; /* return kfd for fallback path */
   }
   entry->base.upl_type = UPL_ENTRY_UFD;
+  entry->base.parent = ctx;
   entry->ufd = ufd;
   entry->kfd = kfd;
   entry->efd = -1;
@@ -795,8 +833,8 @@ int epoll_create(int size) {
   if (efd < 0) return efd;
   if (upl_stopped(ctx)) return efd;
 
-  info("%s(%d), size %d\n", __func__, efd, size);
-  upl_epoll_create(efd);
+  dbg("%s(%d), size %d\n", __func__, efd, size);
+  upl_epoll_create(ctx, efd);
   return efd;
 }
 
@@ -812,7 +850,7 @@ int epoll_create1(int flags) {
   if (upl_stopped(ctx)) return efd;
 
   dbg("%s(%d), flags 0x%x\n", __func__, efd, flags);
-  upl_epoll_create(efd);
+  upl_epoll_create(ctx, efd);
   return efd;
 }
 
@@ -865,12 +903,10 @@ int epoll_wait(int epfd, struct epoll_event* events, int maxevents, int timeout)
   if (!efd || !upl_epoll_has_ufd(efd))
     return ctx->libc_fn.epoll_wait(epfd, events, maxevents, timeout);
 
-  int kfd_cnt = atomic_load(&efd->kfd_cnt);
-  info("%s(%d), timeout %d maxevents %d, kfd_cnt %d\n", __func__, epfd, timeout,
-       maxevents, kfd_cnt);
+  dbg("%s(%d), timeout %d maxevents %d\n", __func__, epfd, timeout, maxevents);
   /* wa to fix end loop in userspace issue */
   if (timeout <= 0) timeout = 1000 * 2;
-  return upl_efd_epoll_wait(efd, events, maxevents, timeout);
+  return upl_efd_epoll_pwait(efd, events, maxevents, timeout, NULL);
 }
 
 int epoll_pwait(int epfd, struct epoll_event* events, int maxevents, int timeout,
@@ -889,5 +925,5 @@ int epoll_pwait(int epfd, struct epoll_event* events, int maxevents, int timeout
   info("%s(%d), timeout %d, kfd_cnt %d\n", __func__, epfd, timeout, kfd_cnt);
   /* wa to fix end loop in userspace issue */
   if (timeout <= 0) timeout = 1000 * 2;
-  return upl_efd_epoll_wait(efd, events, maxevents, timeout);
+  return upl_efd_epoll_pwait(efd, events, maxevents, timeout, sigmask);
 }

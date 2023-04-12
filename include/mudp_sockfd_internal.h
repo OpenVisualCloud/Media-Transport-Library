@@ -190,6 +190,29 @@ int mufd_register_stat_dump_cb(int sockfd, int (*dump)(void* priv), void* priv);
  */
 int mufd_socket_check(int domain, int type, int protocol);
 
+/**
+ * Poll the udp transport socket, blocks until one of the events occurs.
+ * Only support POLLIN now.
+ *
+ * @param fds
+ *   Point to pollfd request, fd is by mufd_socket.
+ * @param nfds
+ *   The number of request in fds.
+ * @param timeout
+ *   timeout value in ms.
+ * @param query
+ *   query callback, return > 0 means it has ready data on the query.
+ * @param priv
+ *   priv data to the query callback.
+ * @return
+ *   - > 0: Success, returns a nonnegative value which is the number of elements
+ *          in the fds whose revents fields have been set to a nonzero value.
+ *   - =0: Timeosockfd.
+ *   - <0: Error code. -1 is returned, and errno is set appropriately.
+ */
+int mufd_poll_query(struct pollfd* fds, nfds_t nfds, int timeout,
+                    int (*query)(void* priv), void* priv);
+
 #if defined(__cplusplus)
 }
 #endif
