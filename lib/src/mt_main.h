@@ -637,6 +637,17 @@ struct mt_stat_mgr {
   struct mt_stat_items_list head;
 };
 
+struct mt_dev_stats {
+  uint64_t rx_pkts;
+  uint64_t rx_bytes;
+  uint64_t rx_missed;
+  uint64_t rx_errors;
+  uint64_t rx_nombuf;
+  uint64_t tx_pkts;
+  uint64_t tx_bytes;
+  uint64_t tx_errors;
+};
+
 struct mt_rss_impl; /* forward delcare */
 
 struct mt_rss_entry {
@@ -783,6 +794,7 @@ struct mtl_main_impl {
   pthread_mutex_t stat_wake_mutex;
   rte_atomic32_t stat_stop;
   struct mt_stat_mgr stat_mgr;
+  struct mt_dev_stats* dev_stats[MTL_PORT_MAX]; /* for nic without reset func */
 
   /* dev context */
   rte_atomic32_t instance_started;  /* if mt instance is started */
