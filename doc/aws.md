@@ -38,6 +38,7 @@ If you use VM, set NO-IOMMU mode for vfio after each boot.
 
 ```shell
 # under root user
+modprobe vfio-pci
 echo 1 > /sys/module/vfio/parameters/enable_unsafe_noiommu_mode
 ```
 
@@ -59,14 +60,6 @@ After attaching the interface, remember the Private IPv4 address allocated by AW
 
 ### 4.3 Bind interface to DPDK PMD
 
-Load vfio-pci module, enable no-iommu mode if IOMMU is not supported.
-
-```shell
-# under root user
-modprobe vfio-pci
-# echo 1 > /sys/module/vfio/parameters/enable_unsafe_noiommu_mode
-```
-
 Unbind the interface from kernel driver and bind to PMD.
 
 ```shell
@@ -80,6 +73,8 @@ dpdk-devbind.py -s
 ## 5. Run the application
 
 Refer to [run.md](./run.md) after section 3.2.
+
+If no IOMMU support, root user or sudo is needed.
 
 For single video stream whose bandwidth > 5 Gbps (4k 30fps), arg `--multi_src_port` is needed in Tx app, see 7.3.
 
@@ -146,13 +141,13 @@ This is ENA PMD limitation, can be ignored for now.
 ena_rss_hash_set(): Setting RSS hash fields is not supported. Using default values: 0xc30
 ```
 
-The ENA HW does not support RSS hash fields modification, the app will require same src port and dst port for the stream.
+The ENA HW does not support RSS hash fields modification, the app will require known src port and dst port for the stream.
 
 To workaround this limitation, the library uses shared rss mode on ENA by default which will receive and handle packets in one thread.
 
 ### 7.3 The max single video stream supported is 4k 30fps / 1080p 120fps (WA fixed)
 
-The bandwidth for single TX flow (udp/tcp ip:port->ip:port 5 tuple) is limited to 5 / 10 (same placement group) Gbps.
+The bandwidth for single flow (udp ip:port->ip:port 5 tuple) is limited to 5 / 10(same placement group) Gbps.
 
 To workaround this limitation, the library uses multiple flows for single stream, arg `--multi_src_port` is needed for Tx app.
 
