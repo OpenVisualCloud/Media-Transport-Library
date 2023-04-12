@@ -763,6 +763,8 @@ struct mt_srss_impl {
   pthread_mutex_t mutex;
   enum mtl_port port;
   struct mt_srss_entrys_list head;
+  pthread_t tid;
+  rte_atomic32_t stop_thread;
   struct mt_sch_tasklet_impl* tasklet;
   struct mt_sch_impl* sch;
   struct mt_srss_entry* cni_entry;
