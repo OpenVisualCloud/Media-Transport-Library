@@ -763,6 +763,8 @@ struct mt_srss_impl {
   pthread_mutex_t mutex;
   enum mtl_port port;
   struct mt_srss_entrys_list head;
+  pthread_t tid;
+  rte_atomic32_t stop_thread;
   struct mt_sch_tasklet_impl* tasklet;
   struct mt_sch_impl* sch;
   struct mt_srss_entry* cni_entry;
@@ -1055,6 +1057,13 @@ static inline bool mt_udp_lcore(struct mtl_main_impl* impl, enum mtl_port port) 
 
 static inline bool mt_random_src_port(struct mtl_main_impl* impl) {
   if (mt_get_user_params(impl)->flags & MTL_FLAG_RANDOM_SRC_PORT)
+    return true;
+  else
+    return false;
+}
+
+static inline bool mt_multi_src_port(struct mtl_main_impl* impl) {
+  if (mt_get_user_params(impl)->flags & MTL_FLAG_MULTI_SRC_PORT)
     return true;
   else
     return false;

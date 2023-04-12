@@ -83,8 +83,62 @@ static int srss_tasklet_handler(void* priv) {
   return 0;
 }
 
-static int srss_tasklet_start(void* priv) { return 0; }
-static int srss_tasklet_stop(void* priv) { return 0; }
+static void* srss_traffic_thread(void* arg) {
+  struct mt_srss_impl* srss = arg;
+
+  info("%s, start\n", __func__);
+  while (rte_atomic32_read(&srss->stop_thread) == 0) {
+    srss_tasklet_handler(srss);
+    mt_sleep_ms(1);
+  }
+  info("%s, stop\n", __func__);
+
+  return NULL;
+}
+
+static int srss_traffic_thread_start(struct mt_srss_impl* srss) {
+  int ret;
+
+  if (srss->tid) {
+    err("%s, srss_traffic thread already start\n", __func__);
+    return 0;
+  }
+
+  rte_atomic32_set(&srss->stop_thread, 0);
+  ret = pthread_create(&srss->tid, NULL, srss_traffic_thread, srss);
+  if (ret < 0) {
+    err("%s, srss_traffic thread create fail %d\n", __func__, ret);
+    return ret;
+  }
+
+  return 0;
+}
+
+static int srss_traffic_thread_stop(struct mt_srss_impl* srss) {
+  rte_atomic32_set(&srss->stop_thread, 1);
+  if (srss->tid) {
+    pthread_join(srss->tid, NULL);
+    srss->tid = 0;
+  }
+
+  return 0;
+}
+
+static int srss_tasklet_start(void* priv) {
+  struct mt_srss_impl* srss = priv;
+
+  /* tasklet will take over the srss thread */
+  srss_traffic_thread_stop(srss);
+
+  return 0;
+}
+static int srss_tasklet_stop(void* priv) {
+  struct mt_srss_impl* srss = priv;
+
+  srss_traffic_thread_start(srss);
+
+  return 0;
+}
 
 struct mt_srss_entry* mt_srss_get(struct mtl_main_impl* impl, enum mtl_port port,
                                   struct mt_rx_flow* flow) {
@@ -128,6 +182,7 @@ int mt_srss_put(struct mt_srss_entry* entry) {
 
 int mt_srss_init(struct mtl_main_impl* impl) {
   int num_ports = mt_num_ports(impl);
+  int ret;
 
   for (int i = 0; i < num_ports; i++) {
     if (!mt_has_srss(impl, i)) continue;
@@ -139,10 +194,11 @@ int mt_srss_init(struct mtl_main_impl* impl) {
     }
     struct mt_srss_impl* srss = impl->srss[i];
 
-    if (pthread_mutex_init(&srss->mutex, NULL) != 0) {
+    ret = pthread_mutex_init(&srss->mutex, NULL);
+    if (ret < 0) {
       err("%s(%d), mutex init fail\n", __func__, i);
       mt_srss_uinit(impl);
-      return -EIO;
+      return ret;
     }
 
     struct mt_sch_impl* sch = mt_sch_get(impl, mt_if(impl, i)->link_speed,
@@ -173,6 +229,14 @@ int mt_srss_init(struct mtl_main_impl* impl) {
       return -EIO;
     }
 
+    rte_atomic32_set(&srss->stop_thread, 0);
+    ret = srss_traffic_thread_start(srss);
+    if (ret < 0) {
+      err("%s(%d), srss_traffic_thread_start fail\n", __func__, i);
+      mt_srss_uinit(impl);
+      return ret;
+    }
+
     info("%s(%d), succ with shared rss mode\n", __func__, i);
   }
 
@@ -185,6 +249,7 @@ int mt_srss_uinit(struct mtl_main_impl* impl) {
   for (int i = 0; i < num_ports; i++) {
     struct mt_srss_impl* srss = impl->srss[i];
     if (srss) {
+      srss_traffic_thread_stop(srss);
       if (srss->tasklet) {
         mt_sch_unregister_tasklet(srss->tasklet);
         srss->tasklet = NULL;

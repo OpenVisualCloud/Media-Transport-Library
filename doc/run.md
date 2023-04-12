@@ -263,6 +263,7 @@ For the supported parameters in the json, please refer to [JSON configuration gu
 --rxtx_simd_512                      : debug option, enable dpdk simd 512 path for rx/tx burst function, see --force-max-simd-bitwidth=512 in dpdk for detail.
 --rss_mode <mode>                    : debug option, available modes: "l3_l4_dst_port_only", "l3_da_l4_dst_port_only", "l4_dst_port_only", "none".
 --tx_no_chain                        : debug option, use memcopy rather than mbuf chain for tx payload.
+--multi_src_port                     : debug option, use multiple src port for st20 tx stream.
 ```
 
 ## 4. Tests

@@ -328,6 +328,11 @@ enum st21_tx_pacing_way {
  * Enable random source port for MTL_TRANSPORT_ST2110 tx.
  */
 #define MTL_FLAG_RANDOM_SRC_PORT (MTL_BIT64(11))
+/**
+ * Flag bit in flags of struct mtl_init_params.
+ * Enable multiple source port for MTL_TRANSPORT_ST2110 20 tx.
+ */
+#define MTL_FLAG_MULTI_SRC_PORT (MTL_BIT64(12))
 
 /**
  * Flag bit in flags of struct mtl_init_params, debug usage only.
