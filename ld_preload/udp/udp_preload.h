@@ -125,6 +125,8 @@ struct upl_ufd_entry {
   int stat_rx_ufd_cnt;
   int stat_tx_kfd_cnt;
   int stat_rx_kfd_cnt;
+  int stat_epoll_cnt;
+  int stat_epoll_revents_cnt;
 };
 
 struct upl_efd_fd_item {

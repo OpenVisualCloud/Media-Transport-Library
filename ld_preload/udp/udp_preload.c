@@ -178,17 +178,25 @@ static void __attribute__((destructor)) upl_uinit() {
 
 static int upl_stat_dump(void* priv) {
   struct upl_ufd_entry* entry = priv;
+  int kfd = entry->kfd;
+
   if (entry->stat_tx_ufd_cnt || entry->stat_rx_ufd_cnt) {
-    info("%s(%d), ufd pkt tx %d rx %d\n", __func__, entry->ufd, entry->stat_tx_ufd_cnt,
+    info("%s(%d), ufd pkt tx %d rx %d\n", __func__, kfd, entry->stat_tx_ufd_cnt,
          entry->stat_rx_ufd_cnt);
     entry->stat_tx_ufd_cnt = 0;
     entry->stat_rx_ufd_cnt = 0;
   }
   if (entry->stat_tx_kfd_cnt || entry->stat_rx_kfd_cnt) {
-    info("%s(%d), kfd pkt tx %d rx %d\n", __func__, entry->ufd, entry->stat_tx_kfd_cnt,
+    info("%s(%d), kfd pkt tx %d rx %d\n", __func__, kfd, entry->stat_tx_kfd_cnt,
          entry->stat_rx_kfd_cnt);
     entry->stat_tx_kfd_cnt = 0;
     entry->stat_rx_kfd_cnt = 0;
+  }
+  if (entry->stat_epoll_cnt || entry->stat_epoll_revents_cnt) {
+    info("%s(%d), epoll %d revents %d\n", __func__, kfd, entry->stat_epoll_cnt,
+         entry->stat_epoll_revents_cnt);
+    entry->stat_epoll_cnt = 0;
+    entry->stat_epoll_revents_cnt = 0;
   }
   return 0;
 }
@@ -327,9 +335,8 @@ static int upl_efd_epoll_pwait(struct upl_efd_entry* entry, struct epoll_event* 
   int kfd_cnt = atomic_load(&entry->kfd_cnt);
   int ret;
 
-  info("%s(%d), timeout_ms %d maxevents %d kfd_cnt %d\n", __func__, efd, timeout_ms,
-       maxevents, kfd_cnt);
-
+  dbg("%s(%d), timeout_ms %d maxevents %d kfd_cnt %d\n", __func__, efd, timeout_ms,
+      maxevents, kfd_cnt);
   pthread_mutex_lock(&entry->mutex);
   TAILQ_FOREACH(item, &entry->fds, next) {
     if (p_fds_cnt >= fds_cnt) {
@@ -337,6 +344,7 @@ static int upl_efd_epoll_pwait(struct upl_efd_entry* entry, struct epoll_event* 
       pthread_mutex_unlock(&entry->mutex);
       UPL_ERR_RET(EIO);
     }
+    item->ufd->stat_epoll_cnt++;
     p_fds[p_fds_cnt].fd = item->ufd->ufd;
     p_fds[p_fds_cnt].events = POLLIN;
     efd_items[p_fds_cnt] = item;
@@ -361,9 +369,11 @@ static int upl_efd_epoll_pwait(struct upl_efd_entry* entry, struct epoll_event* 
   int ready = 0;
   for (int i = 0; i < p_fds_cnt; i++) {
     if (!p_fds[i].revents) continue;
-    info("%s, revents on ufd %d kfd %d\n", __func__, p_fds[i].fd, efd_items[i]->ufd->kfd);
+    item = efd_items[i];
+    dbg("%s, revents on ufd %d kfd %d\n", __func__, p_fds[i].fd, item->ufd->kfd);
     events[ready] = efd_items[i]->event;
     ready++;
+    item->ufd->stat_epoll_revents_cnt++;
   }
 
   return ready;
