@@ -33,7 +33,7 @@ git switch -c v22.11
 
 ### 2.2 Apply the DPDK patches required to run Intel® Media Transport Library
 
-Note: $imtl_source_cod point to source code of Intel® Media Transport Library repo.
+Note: $imtl_source_cod point to source code of Intel® Media Transport Library.
 
 ```bash
 git am $imtl_source_cod/patches/dpdk/22.11/0001-pcapng-add-ns-timestamp-for-copy-api.patch
