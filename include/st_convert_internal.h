@@ -5,7 +5,7 @@
 /**
  * @file st_convert_internal.h
  *
- * This header define the internal interfaces of Media Transport Library Format
+ * This header define the internal interfaces of streaming(st2110) format conversion
  * Conversion Toolkit
  *
  */

@@ -1,10 +1,10 @@
 # JSON Configuration Guide
 
-Kahawai sample app can use json file to configure sessions. this documentation explains how to write the json files.
+Intel® Media Transport Library sample app can use json file to configure sessions. this documentation explains how to write the json files.
 
 ## Examples
 
-Example `tx_multicast.json` file, find more example config file in `<kahawai>/config`:
+Example `tx_multicast.json` file, find more example config file in [example config](../config):
 
 ```json
 {

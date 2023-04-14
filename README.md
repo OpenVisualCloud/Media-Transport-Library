@@ -1,4 +1,4 @@
-# Media Transport Library
+# Intel® Media Transport Library
 
 [![Ubuntu](https://github.com/OpenVisualCloud/Media-Transport-Library/actions/workflows/ubuntu_build.yml/badge.svg)](https://github.com/OpenVisualCloud/Media-Transport-Library/actions/workflows/ubuntu_build.yml)
 [![Centos](https://github.com/OpenVisualCloud/Media-Transport-Library/actions/workflows/centos_build.yaml/badge.svg)](https://github.com/OpenVisualCloud/Media-Transport-Library/actions/workflows/centos_build.yaml)
@@ -8,7 +8,7 @@
 
 ## 1. Overview
 
-The Media Transport Library(Kahawai) is a solution based on DPDK prepared for transmitting and receiving media data with high throughput and low latency. It include a efficient user space udp stack support, beside UDP, it also has a built-in compliant implementation to the SMPTE ST 2110 Professional Media Over Managed IP Networks suite of standards.
+The Intel® Media Transport Library is a solution based on DPDK prepared for transmitting and receiving media data with high throughput and low latency. It include a efficient user space udp stack support, beside UDP, it also has a built-in compliant implementation to the SMPTE ST 2110 Professional Media Over Managed IP Networks suite of standards.
 
 ### 1.1 Features
 
@@ -24,10 +24,10 @@ The Media Transport Library(Kahawai) is a solution based on DPDK prepared for tr
 
 ### 1.2 Architecture
 
-Media transport library takes advantage DPDK features to implement a highly efficient, real-time & low-latency media transport stack, software based media transport makes it feasible for edge and cloud deployment based on COTS hardware.<br>
-Kahawai introduce a tasklet async based scheduler to fully utilize CPU resources, easy integration with different packet processing unit and accelerators.<br>
+Intel® Media Transport Library takes advantage DPDK features to implement a highly efficient, real-time & low-latency media transport stack, software based media transport makes it feasible for edge and cloud deployment based on COTS hardware.<br>
+The library introduce a tasklet async based scheduler to fully utilize CPU resources, easy integration with different packet processing unit and accelerators.<br>
 The packet pacing module support different ways(algorithm) to achieve narrow pacing, RL(rate limit) is partially hardware offload while TSC is fully software based.<br>
-Kahawai also develope SIMD CSC(color space format covert), DMA, plugin interface to build a full video production ecosystem.
+The library also develope SIMD CSC(color space format covert), DMA, plugin interface to build a full video production ecosystem.
 <div align="center">
 <img src="doc/png/arch.png" align="center" alt="overall architecture">
 </div>
@@ -46,18 +46,18 @@ For AWS (cloud environment), please refer to [AWS run guide](doc/aws.md) for how
 
 ## 4. ST2110 Programmers guide
 
-For how to develop application quickly based on Kahawai library, pls refer to [sample code](app/sample).
+For how to develop application quickly based on Intel® Media Transport Library, pls refer to [sample code](app/sample).
 
 ## 5. User space UDP stack guide
 
-From 23.03.0 version, Media transport library extend the support to user-space UDP stack which run directly under current process context for performance consideration. Other user-space UDP stack usually run with client-service architect, it introduce a cross-core message cost which hurt the performance.
+From 23.03.0 version, this lib extend the support to user-space UDP stack which run directly under current process context for performance consideration. Other user-space UDP stack usually run with client-service architect, it introduce a cross-core message cost which hurt the performance.
 Our stack are running NIC tx/rx function from the sendto/recvfrom API directly which save the cross-core call and keep the data affinity(LLC) to the UDP consumer.
 
 For how to use the UDP API, pls refer to [udp sample code](app/udp).
 
 ## 6. How to Contribute
 
-We welcome community contributions to the Media Transport Library project. If you have any ideas/issues, please share it with us by the GitHub issues or opening a pull request.
+We welcome community contributions to the Intel® Media Transport Library project. If you have any ideas/issues, please share it with us by the GitHub issues or opening a pull request.
 
 ### 6.1 Coding style
 

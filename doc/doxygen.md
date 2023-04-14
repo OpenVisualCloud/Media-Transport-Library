@@ -16,7 +16,7 @@ sudo yum install doxygen
 
 ## 2. Build
 
-Just run below command in the top tree of the Kahawai project, then check doxygen/HTML/index.html for the doxygen documents.
+Just run below command in the top tree of this project, then check doxygen/HTML/index.html for the doxygen documents.
 
 ```bash
 cd doc/doxygen

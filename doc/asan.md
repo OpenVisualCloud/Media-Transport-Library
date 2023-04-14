@@ -1,8 +1,8 @@
 # ASan guide
 
-AddressSanitizer(aka ASan, <https://github.com/google/sanitizers/wiki/AddressSanitizer>) is a fast memory error detector for C/C++ developed by Google. Media transport library use ASAN for memory related check. AddressSanitizer is a part of LLVM (3.1+) and GCC (4.8+). Enabling ASan is done by passing the -fsanitize=address option to the compiler flags.
+AddressSanitizer(aka ASan, <https://github.com/google/sanitizers/wiki/AddressSanitizer>) is a fast memory error detector for C/C++ developed by Google. Intel® Media Transport Library use ASAN for memory related check. AddressSanitizer is a part of LLVM (3.1+) and GCC (4.8+). Enabling ASan is done by passing the -fsanitize=address option to the compiler flags.
 
-Media transport library use DPDK API to do the memory malloc/free, thus the error can be monitored is up to the DPDK ASan support.
+The library use DPDK API to do the memory malloc/free, thus the error can be monitored is up to the DPDK ASan support.
 
 ## 1. Build DPDK with ASan detector
 
@@ -19,7 +19,7 @@ pkg-config --libs libdpdk
 pkg-config --modversion libdpdk
 ```
 
-## 2. Build Media transport library with ASan detector
+## 2. Build Intel® Media Transport Library with ASan detector
 
 ```bash
 rm build/ -rf

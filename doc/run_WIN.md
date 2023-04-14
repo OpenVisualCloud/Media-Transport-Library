@@ -1,6 +1,6 @@
 # Run Guide on Windows
 
-The Kahawai library required Windows netuio driver Windows virt2phys driver and huge page(windows server 2022) to run
+Intel® Media Transport Library required Windows netuio driver Windows virt2phys driver and huge page(windows server 2022) to run
 
 ## 1. System setup
 

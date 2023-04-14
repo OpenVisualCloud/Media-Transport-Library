@@ -5,7 +5,7 @@
 /**
  * @file st_pipeline_api.h
  *
- * Interfaces to Media Transport Library for st2110-20/22 pipeline transport.
+ * Interfaces for st2110-20/22 pipeline transport.
  * It include a plugin layer to hide the covert/encode detail that application can
  * focus on the raw pixel handling.
  *

@@ -5,7 +5,7 @@
 /**
  * @file st40_api.h
  *
- * Interfaces to Media Transport Library for st2110-20 transport.
+ * Interfaces for st2110-40 transport.
  *
  */
 
