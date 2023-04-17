@@ -90,7 +90,7 @@ Refer to <https://www.intel.com/content/www/us/en/download/15084/intel-ethernet-
 ### 4.2 Update the ICE DDP package file: ice.pkg
 
 Get the latest ddp file(ice-1.3.30.0.pkg) from <https://www.intel.com/content/www/us/en/download/19630/intel-network-adapter-driver-for-e810-series-devices-under-linux.html>, unzip the driver and goto ddp directory.  
-Windows ICE driver will try to search DDP with path "c:\dpdk\lib\ice.pkg" or ".\ice.pkg", please put the latest ddp file there and rename to ice.pkg, otherwise it will see below error if you run the MTL app.
+Windows ICE driver will try to search DDP with path "c:\dpdk\lib\ice.pkg" or ".\ice.pkg", please put the latest ddp file there and rename to ice.pkg, otherwise it will see below error if you run the RxTxApp.
 
 ```bash
 ice_load_pkg(): failed to search file path

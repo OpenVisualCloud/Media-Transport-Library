@@ -122,7 +122,7 @@ add a line "refclock PHC /dev/ptp0 poll 2"
     #* PHC0                          0   2   377     5     -1ns[   -2ns] +/-   27ns
     ```
 
-### Run Intel® Media Transport Library with `--utc_offset -37`, refer to run.md
+### Run RxTxApp with `--utc_offset -37`, refer to run.md
 
 ## Reference link
 

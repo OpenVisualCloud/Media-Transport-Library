@@ -14,9 +14,9 @@ Instance example:
 
 ![instance](png/instance.png)
 
-## 2. Install MTL and other software
+## 2. Install Intel® Media Transport Library and other software
 
-### 2.1 Build and install DPDK & MTL
+### 2.1 Build and install DPDK & Intel® Media Transport Library
 
 Refer to CentOS part of [build.md](./build.md).
 

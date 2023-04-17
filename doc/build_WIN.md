@@ -253,7 +253,7 @@ first set PKGCONFIG path:
 set PKG_CONFIG_PATH=c:\dpdk\lib\pkgconfig;c:\json-c\lib\pkgconfig
 ```
 
-### 4.1 Build libmtl
+### 4.1 Build Intel® Media Transport Library
 
 ```bash
 meson build --prefix=c:\libmtl -Ddpdk_root_dir=c:\code\dpdk <--- your dpdk source code directory
