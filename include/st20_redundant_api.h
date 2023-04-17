@@ -5,7 +5,7 @@
 /**
  * @file st20_redundant_api.h
  *
- * Interfaces to Media Transport Library for st2110-20 redundant transport.
+ * Interfaces for st2110-20 redundant transport.
  *
  */
 

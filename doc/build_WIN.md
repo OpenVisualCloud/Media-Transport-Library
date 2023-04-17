@@ -1,8 +1,8 @@
-# Media Transport Library compilation and build on Windows OS
+# Intel® Media Transport Library compilation and build on Windows OS
 
 ## 1. Introduction
 
-This document contains instructions for installing and configuring the Media Transport Library for Windows Operation System.
+This document contains instructions for installing and configuring the Intel® Media Transport Library for Windows Operation System.
 
 All the steps below related to the DPDK configuration instructions on Windows are from the website:
 <https://doc.dpdk.org/guides/windows_gsg/intro.html>
@@ -253,7 +253,7 @@ first set PKGCONFIG path:
 set PKG_CONFIG_PATH=c:\dpdk\lib\pkgconfig;c:\json-c\lib\pkgconfig
 ```
 
-### 4.1 Build libmtl
+### 4.1 Build Intel® Media Transport Library
 
 ```bash
 meson build --prefix=c:\libmtl -Ddpdk_root_dir=c:\code\dpdk <--- your dpdk source code directory

@@ -14,9 +14,9 @@ Instance example:
 
 ![instance](png/instance.png)
 
-## 2. Install MTL and other software
+## 2. Install Intel® Media Transport Library and other software
 
-### 2.1 Build and install DPDK & MTL
+### 2.1 Build and install DPDK & Intel® Media Transport Library
 
 Refer to CentOS part of [build.md](./build.md).
 
@@ -56,7 +56,7 @@ Choose same subnet for all new interfaces, set the right security groups for you
 
 Right-click on your running instance, go to Networking > Attach network interface, choose an idle interface.
 
-After attaching the interface, remember the Private IPv4 address allocated by AWS, this will be used by kahawai as interface IP.
+After attaching the interface, remember the Private IPv4 address allocated by AWS, this will be used by Intel® Media transport library as interface IP.
 
 ### 4.3 Bind interface to DPDK PMD
 

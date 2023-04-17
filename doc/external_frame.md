@@ -2,7 +2,7 @@
 
 ## 1. Overview
 
-In the general API, the video frames used in MTL are allocated by library with rte_malloc(usually with hugepages).
+In the general API, the video frames used are allocated by library with rte_malloc(usually with hugepages).
 In some use cases, each frame data needs to be copied from/to user. When it's UHD or high framerate video, the copying can cause CPU/memory stall and become bottleneck of the whole pipeline.
 The external frame API is introduced so the library can use user provided memory to receive/send st2110-20 frames, or as the color format conversion destination/source in the pipeline API.
 

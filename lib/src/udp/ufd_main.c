@@ -250,7 +250,7 @@ static int ufd_parse_json(struct mufd_init_params* init, const char* filename) {
       ret = -EINVAL;
       goto out;
     }
-    init->txq_bps = rl_bps_g * 1000 * 1000 * 1000;
+    init->txq_bps = (uint64_t)rl_bps_g * 1000 * 1000 * 1000;
     info("%s, nic_queue_rate_limit_g %d\n", __func__, rl_bps_g);
   }
 

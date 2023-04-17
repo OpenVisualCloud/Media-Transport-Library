@@ -68,7 +68,7 @@
 * Windows: add TAP driver support.
 * API: change st20_frame_meta to st20_rx_frame_meta, also add st20_tx_frame_meta for get_next_frame of st20 tx.
 * API: change st_frame_meta to st_frame, also change the callback arg of st20p.notify_frame_done from (void*) to struct (st_frame*).
-* plugin: add kahawai as a plugin to OBS, only rx path now.
+* plugin: add Intel® Media Transport Library as a plugin to OBS, only rx path now.
 * fps: add 120(119.88) fps support, see ST_FPS_P119_88.
 
 ## Changelog for 22.06

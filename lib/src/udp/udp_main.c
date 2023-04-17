@@ -972,7 +972,7 @@ static ssize_t udp_rx_ret_timeout(struct mudp_impl* s) {
         flags);
     MUDP_ERR_RET(ETIMEDOUT);
   } else {
-    MUDP_ERR_RET(EBUSY);
+    MUDP_ERR_RET(EAGAIN);
   }
 }
 
@@ -1652,7 +1652,7 @@ int mudp_setsockopt(mudp_handle ut, int level, int optname, const void* optval,
           info("%s(%d), skip IP_MTU_DISCOVER\n", __func__, idx);
           return 0;
         case IP_TOS:
-          info("%s(%d), skip IP_TOS\n", __func__, idx);
+          dbg("%s(%d), skip IP_TOS\n", __func__, idx);
           return 0;
         default:
           err("%s(%d), unknown optname %d for IPPROTO_IP\n", __func__, idx, optname);

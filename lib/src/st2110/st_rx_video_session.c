@@ -1431,7 +1431,7 @@ static int rv_start_pcapng(struct mtl_main_impl* impl, struct st_rx_video_sessio
     return -EIO;
   }
 
-  struct rte_pcapng* pcapng = rte_pcapng_fdopen(fd, NULL, NULL, "kahawai-rx-video", NULL);
+  struct rte_pcapng* pcapng = rte_pcapng_fdopen(fd, NULL, NULL, "imtl-rx-video", NULL);
   if (pcapng == NULL) {
     err("%s(%d), failed to create pcapng\n", __func__, idx);
     close(fd);

@@ -1,4 +1,4 @@
-# The kahawai ffmpeg plugin
+# The ffmpeg plugin
 
 ## How To build
 
@@ -29,8 +29,8 @@ Parameters description:
 
 1. "framerate" supports 25, 30, 59, 60 and 120.
 2. "pixel_format" supports yuv422p10le only for now.
-3. "f kahawai" is required to set to select kahawai as the input device.
-4. "i" can be set with anything for kahawai being a virtual device, no dev node.
+3. "f kahawai" is required to set to select Intel® Media Transport Library as the input device.
+4. "i" can be set with anything for being a virtual device, no dev node.
 5. "vframes" shall be set with the frame number to be read.
 6. "udp_port port local_addr src_addr fb_cnt" definitions are the same as in sample.
 7. "total_sessions" shall be set with the total number of sessions.

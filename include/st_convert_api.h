@@ -5,7 +5,7 @@
 /**
  * @file st_convert_api.h
  *
- * This header define the public interfaces of Media Transport Library Format
+ * This header define the public interfaces of streaming(st2110) format conversion
  * Conversion Toolkit
  *
  */

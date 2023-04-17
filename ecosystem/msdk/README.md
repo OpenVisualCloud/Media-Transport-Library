@@ -1,4 +1,4 @@
-# The MSDK sample encode with MTL
+# The MSDK sample encode
 
 ## Build
 

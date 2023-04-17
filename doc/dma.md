@@ -2,7 +2,7 @@
 
 ## 1. Overview
 
-Kahawai support DMA feature to offload the cpu memory copy for better rx video session density. DMA dev API is supported from DPDK 21.11, Kahawai introduce DMA feature from v0.7.2
+Intel® Media Transport Library support DMA feature to offload the cpu memory copy for better rx video session density. DMA dev API is supported from DPDK 21.11, DMA feature was introduced from v0.7.2
 
 ## 2. DMA driver bind to PMD(vfio-pci) mode
 

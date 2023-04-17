@@ -1,6 +1,6 @@
 # Run Guide
 
-The Kahawai library required VFIO(IOMMU) and huge page to run, it also support non-root run thus it can be easily deployed within docker/k8s env.
+Intel® Media Transport Library required VFIO(IOMMU) and huge page to run, it also support non-root run thus it can be easily deployed within docker/k8s env.
 
 ## 1. System setup
 
@@ -99,7 +99,7 @@ sudo sysctl -w vm.nr_hugepages=2048
 
 ### 3.3 Prepare source files
 
-Pls note the input yuv source file for sample app is the rfc4175 yuv422be10(big endian 10bit) pixel group format which define in ST2110 spec. Kahawai include a simple tools to convert the format from yuv422 planar 10bit little endian format.
+Pls note the input yuv source file for sample app is the rfc4175 yuv422be10(big endian 10bit) pixel group format which define in ST2110 spec. This project include a simple tools to convert the format from yuv422 planar 10bit little endian format.
 
 #### 3.3.1 Prepare a yuv422p10le file
 
@@ -167,8 +167,8 @@ ffmpeg -s 1920x1080 -pix_fmt yuv420p10le -i yuv420p10le_1080p.yuv -pix_fmt yuv44
 
 ### 3.4 PTP setup(optional)
 
-Precision Time Protocol (PTP) provides global microsecond accuracy timing of all essences. Typical deployment include a PTP grandmaster within the network, and clients use tools(ex. ptp4l) to sync with the grandmaster. Kahawai library also include a built-in PTP implementation, sample app provide a option to enable it, see 3.6 for how to enable.
-The built-in PTP is disabled as default, Kahawai will use the system time source(clock_gettime) provide by user application as PTP clock. If built-in PTP is enabled, Kahawai will select the internal NIC time as PTP source.
+Precision Time Protocol (PTP) provides global microsecond accuracy timing of all essences. Typical deployment include a PTP grandmaster within the network, and clients use tools(ex. ptp4l) to sync with the grandmaster. This library also include a built-in PTP implementation, sample app provide a option to enable it, see 3.6 for how to enable.
+The built-in PTP is disabled as default, it will use the system time source(clock_gettime) provide by user application as PTP clock. If built-in PTP is enabled, it will select the internal NIC time as PTP source.
 
 #### 3.4.1 ptp4l setup sample
 
@@ -225,7 +225,7 @@ app_rx_video_stat(0), fps 59.899932, 599 frame received
 ST: * *    E N D    S T A T E   * *
 ```
 
-Kahawai also provide many loop test(1 port as tx, 1 port as rx) config file , pls refer to [loop config](../tests/script/).
+This project also provide many loop test(1 port as tx, 1 port as rx) config file , pls refer to [loop config](../tests/script/).
 
 For the supported parameters in the json, please refer to [JSON configuration guide](configuration_guide.md) for detail.
 
@@ -233,7 +233,7 @@ For the supported parameters in the json, please refer to [JSON configuration gu
 
 ```bash
 --config_file <URL>                  : the json config file path
---ptp                                : Enable the built-in Kahawai PTP, default is disabled and system time is selected as PTP time source
+--ptp                                : Enable the built-in PTP, default is disabled and system time is selected as PTP time source
 --lcores <lcore list>                : the DPDK lcore list for this run, e.g. --lcores 28,29,30,31. If not assigned, lib will allocate lcore from system socket cores.
 --test_time <seconds>                : the run duration, unit: seconds
 --rx_separate_lcore                  : If enabled, RX video session will run on dedicated lcores, it means TX video and RX video is not running on the same core.
@@ -268,7 +268,7 @@ For the supported parameters in the json, please refer to [JSON configuration gu
 
 ## 4. Tests
 
-Kahawai include many automate test cases based on gtest, below is the example command to run, customize the argument as your setup.
+This project include many automate test cases based on gtest, below is the example command to run, customize the argument as your setup.
 
 ```bash
 ./build/tests/KahawaiTest --p_port 0000:af:00.0 --r_port 0000:af:00.1
@@ -292,7 +292,7 @@ When running as non-root user, there may be some additional resource limits that
 
 ### 5.2.1 RLIMIT_MEMLOCK
 
-RLIMIT_MEMLOCK (amount of pinned pages the process is allowed to have), if you see below error at Kahawai start up, it's likely caused by too small RLIMIT_MEMLOCK settings.
+RLIMIT_MEMLOCK (amount of pinned pages the process is allowed to have), if you see below error at start up, it's likely caused by too small RLIMIT_MEMLOCK settings.
 
 ```bash
 EAL: Cannot set up DMA remapping, error 12 (Cannot allocate memory)

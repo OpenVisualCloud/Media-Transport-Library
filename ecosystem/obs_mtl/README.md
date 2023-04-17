@@ -1,10 +1,10 @@
 # obs-mtl
 
-obs source plguin for MTL
+obs source plugin for Intel® Media Transport Library
 
 ## Build and Use
 
-### build MTL library
+### build Intel® Media Transport Library library
 
 refer to: [build guide](../../doc/build.md)
 
@@ -27,7 +27,7 @@ sudo meson install -C build
 obs
 ```
 
-### add MTL input source
+### add input source
 
 ## TODO
 

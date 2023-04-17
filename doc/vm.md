@@ -1,4 +1,4 @@
-# Kahawai VM Setup
+# VM Setup
 
 We use kvm as hypervisor, as the newer qemu-kvm and kernel support ptp_kvm feature. System real time of VM is synced to host real time with chronyd, the time error between VM and host is about 20ns after synchronization. On host, system real time is adjusted to NIC PF's PHC time by phy2sys/chronyd, and the PHC time is set by ptp4l to get a correct time from PTP grandmaster.
 
@@ -91,7 +91,7 @@ edit vm0
 
 (Ubuntu 20.04 )
 
-### Setup Kahawai build env, refer to build.md
+### Setup build env, refer to build.md
 
 ### PTP setup for VM
 
@@ -122,7 +122,7 @@ add a line "refclock PHC /dev/ptp0 poll 2"
     #* PHC0                          0   2   377     5     -1ns[   -2ns] +/-   27ns
     ```
 
-### Run Kahawai with `--utc_offset -37`, refer to run.md
+### Run RxTxApp with `--utc_offset -37`, refer to run.md
 
 ## Reference link
 

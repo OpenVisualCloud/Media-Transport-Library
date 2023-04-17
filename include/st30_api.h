@@ -5,7 +5,7 @@
 /**
  * @file st30_api.h
  *
- * Interfaces to Media Transport Library for st2110-30 transport.
+ * Interfaces for st2110-30 transport.
  *
  */
 

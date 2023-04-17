@@ -1,6 +1,6 @@
 # Docker guide
 
-Docker guide for MTL
+Docker guide for Intel® Media Transport Library
 
 ## 1. Build Docker image
 
