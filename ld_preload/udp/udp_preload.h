@@ -75,6 +75,8 @@ struct upl_functions {
                     const struct sockaddr* dest_addr, socklen_t addrlen);
   ssize_t (*sendmsg)(int sockfd, const struct msghdr* msg, int flags);
   int (*poll)(struct pollfd* fds, nfds_t nfds, int timeout);
+  int (*ppoll)(struct pollfd* fds, nfds_t nfds, const struct timespec* tmo_p,
+               const sigset_t* sigmask);
   int (*select)(int nfds, fd_set* readfds, fd_set* writefds, fd_set* exceptfds,
                 struct timeval* timeout);
   int (*pselect)(int nfds, fd_set* readfds, fd_set* writefds, fd_set* exceptfds,
@@ -131,6 +133,8 @@ struct upl_ufd_entry {
   int stat_epoll_revents_cnt;
   int stat_select_cnt;
   int stat_select_revents_cnt;
+  int stat_poll_cnt;
+  int stat_poll_revents_cnt;
 };
 
 struct upl_efd_fd_item {
@@ -177,7 +181,18 @@ struct upl_select_ctx {
   fd_set* writefds;
   fd_set* exceptfds;
   struct timeval* timeout;
+  /* for select */
   const struct timespec* timeout_spec;
+  const sigset_t* sigmask;
+};
+
+struct upl_poll_ctx {
+  struct upl_ctx* parent;
+  struct pollfd* fds;
+  nfds_t nfds;
+  int timeout;
+  /* for ppoll */
+  const struct timespec* tmo_p;
   const sigset_t* sigmask;
 };
 

@@ -109,6 +109,7 @@ static int upl_get_libc_fn(struct upl_functions* fns) {
   UPL_LIBC_FN(send);
   UPL_LIBC_FN(sendmsg);
   UPL_LIBC_FN(poll);
+  UPL_LIBC_FN(ppoll);
   UPL_LIBC_FN(select);
   UPL_LIBC_FN(pselect);
   UPL_LIBC_FN(recv);
@@ -204,6 +205,12 @@ static int upl_stat_dump(void* priv) {
          entry->stat_select_revents_cnt);
     entry->stat_select_cnt = 0;
     entry->stat_select_revents_cnt = 0;
+  }
+  if (entry->stat_poll_cnt || entry->stat_poll_revents_cnt) {
+    info("%s(%d), poll %d revents %d\n", __func__, kfd, entry->stat_poll_cnt,
+         entry->stat_poll_revents_cnt);
+    entry->stat_poll_cnt = 0;
+    entry->stat_poll_revents_cnt = 0;
   }
   return 0;
 }
@@ -354,6 +361,24 @@ static int upl_select_query(void* priv) {
   return ret;
 }
 
+static int upl_poll_query(void* priv) {
+  struct upl_poll_ctx* poll_ctx = priv;
+  struct upl_ctx* ctx = poll_ctx->parent;
+  int ret;
+
+  /* use zero timeout as query */
+  if (poll_ctx->tmo_p || poll_ctx->sigmask) {
+    struct timespec zero;
+    zero.tv_sec = 0;
+    zero.tv_nsec = 0;
+    ret = ctx->libc_fn.ppoll(poll_ctx->fds, poll_ctx->nfds, &zero, poll_ctx->sigmask);
+  } else {
+    ret = ctx->libc_fn.poll(poll_ctx->fds, poll_ctx->nfds, 0);
+  }
+  dbg("%s, ret %d\n", __func__, ret);
+  return ret;
+}
+
 /* reuse mufd_poll now */
 static int upl_efd_epoll_pwait(struct upl_efd_entry* entry, struct epoll_event* events,
                                int maxevents, int timeout_ms, const sigset_t* sigmask) {
@@ -484,6 +509,103 @@ static int upl_pselect(int nfds, fd_set* readfds, fd_set* writefds, fd_set* exce
     entry->stat_select_revents_cnt++;
     FD_SET(kfd, readfds);
   }
+  return ret;
+}
+
+static int upl_ppoll(struct pollfd* fds, nfds_t nfds, int timeout,
+                     const struct timespec* tmo_p, const sigset_t* sigmask) {
+  struct upl_ctx* ctx = upl_get_ctx();
+  if (!ctx->init_succ) {
+    err("%s, ctx init fail, pls check setup\n", __func__);
+    UPL_ERR_RET(EIO);
+  }
+
+  if (nfds <= 0) {
+    err("%s, invalid nfds %" PRIu64 "\n", __func__, nfds);
+    UPL_ERR_RET(EIO);
+  }
+
+  struct pollfd ufds[nfds];
+  nfds_t ufds_pos[nfds];
+  nfds_t ufds_cnt = 0;
+  struct pollfd kfds[nfds];
+  nfds_t kfds_pos[nfds];
+  nfds_t kfds_cnt = 0;
+
+  /* loop tp check if ufd */
+  for (nfds_t i = 0; i < nfds; i++) {
+    int kfd = fds[i].fd;
+    fds[i].revents = 0; /* clear all revents */
+    if (upl_is_ufd_entry(ctx, kfd)) {
+      struct upl_ufd_entry* entry = upl_get_ufd_entry(ctx, kfd);
+      entry->stat_poll_cnt++;
+      ufds[ufds_cnt].fd = entry->ufd;
+      ufds[ufds_cnt].events = fds[i].events;
+      ufds[ufds_cnt].revents = 0;
+      ufds_pos[ufds_cnt] = i;
+      ufds_cnt++;
+    } else {
+      kfds[kfds_cnt].fd = kfd;
+      kfds[kfds_cnt].events = fds[i].events;
+      kfds[kfds_cnt].revents = 0;
+      kfds_pos[kfds_cnt] = i;
+      kfds_cnt++;
+    }
+  }
+
+  if (!ufds_cnt) {
+    if (tmo_p || sigmask)
+      return ctx->libc_fn.ppoll(fds, nfds, tmo_p, sigmask);
+    else
+      return ctx->libc_fn.poll(fds, nfds, timeout);
+  }
+
+  struct upl_poll_ctx priv;
+  priv.parent = ctx;
+  priv.fds = kfds;
+  priv.nfds = kfds_cnt;
+  priv.timeout = timeout;
+  priv.tmo_p = tmo_p;
+  priv.sigmask = sigmask;
+
+  int ret;
+  if (kfds_cnt)
+    ret = mufd_poll_query(ufds, ufds_cnt, timeout, upl_poll_query, &priv);
+  else
+    ret = mufd_poll(ufds, ufds_cnt, timeout);
+  dbg("%s, mufd_poll ret %d timeout %d\n", __func__, ret, timeout);
+  if (ret <= 0) return ret;
+
+  /* check if any ufd ready */
+  for (nfds_t i = 0; i < ufds_cnt; i++) {
+    if (ufds[i].revents) { /* set revents on fds */
+      nfds_t pos = ufds_pos[i];
+      int kfd = fds[pos].fd;
+      struct upl_ufd_entry* entry = upl_get_ufd_entry(ctx, kfd);
+      entry->stat_poll_revents_cnt++;
+      fds[pos].revents = ufds[i].revents;
+      dbg("%s(%d), revents %d on ufd %d\n", __func__, kfd, fds[pos].revents, entry->ufd);
+      if (entry->kfd != fds[pos].fd) {
+        err("%s(%d), not match with entry ufd %d kfd %d\n", __func__, kfd, entry->ufd,
+            entry->kfd);
+      }
+    }
+  }
+  if (!kfds_cnt) return ret;
+
+  /* check if any kfd ready */
+  for (nfds_t i = 0; i < kfds_cnt; i++) {
+    if (kfds[i].revents) { /* set revents on fds */
+      nfds_t pos = kfds_pos[i];
+      int kfd = fds[pos].fd;
+      fds[pos].revents = kfds[i].revents;
+      dbg("%s(%d), revents %d on kfd\n", __func__, kfd, fds[pos].revents);
+      if (kfds[i].fd != kfd) {
+        err("%s(%d), not match with kfd %d\n", __func__, kfd, kfds[i].fd);
+      }
+    }
+  }
+
   return ret;
 }
 
@@ -698,44 +820,12 @@ ssize_t send(int sockfd, const void* buf, size_t len, int flags) {
 }
 
 int poll(struct pollfd* fds, nfds_t nfds, int timeout) {
-  struct upl_ctx* ctx = upl_get_ctx();
-  if (!ctx->init_succ) {
-    err("%s, ctx init fail, pls check setup\n", __func__);
-    UPL_ERR_RET(EIO);
-  }
+  return upl_ppoll(fds, nfds, timeout, NULL, NULL);
+}
 
-  if (nfds <= 0) {
-    err("%s, invalid nfds %" PRIu64 "\n", __func__, nfds);
-    UPL_ERR_RET(EIO);
-  }
-
-  bool is_ufd = upl_is_ufd_entry(ctx, fds[0].fd);
-  /*
-   * Check if all fds are the same type.
-   * Todo: handle if fds is mixed with kfd and ufd.
-   */
-  for (nfds_t i = 1; i < nfds; i++) {
-    if (upl_is_ufd_entry(ctx, fds[i].fd) != is_ufd) {
-      err("%s, not same type on %" PRIu64 ", fd %d\n", __func__, i, fds[i].fd);
-      UPL_ERR_RET(EIO);
-    }
-  }
-
-  if (!is_ufd) return ctx->libc_fn.poll(fds, nfds, timeout);
-
-  int kfds[nfds];
-  for (nfds_t i = 0; i < nfds; i++) {
-    int sockfd = fds[i].fd;
-    struct upl_ufd_entry* entry = upl_get_ufd_entry(ctx, sockfd);
-    /* save and replace with ufd */
-    fds[i].fd = entry->ufd;
-    kfds[i] = sockfd;
-  }
-  int ret = mufd_poll(fds, nfds, timeout);
-  for (nfds_t i = 0; i < nfds; i++) {
-    fds[i].fd = kfds[i]; /* restore */
-  }
-  return ret;
+int ppoll(struct pollfd* fds, nfds_t nfds, const struct timespec* tmo_p,
+          const sigset_t* sigmask) {
+  return upl_ppoll(fds, nfds, 0, tmo_p, sigmask);
 }
 
 int select(int nfds, fd_set* readfds, fd_set* writefds, fd_set* exceptfds,
