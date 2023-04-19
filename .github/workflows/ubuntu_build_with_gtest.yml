@@ -46,7 +46,7 @@ env:
 jobs:
   Build:
     if: github.repository == 'OpenVisualCloud/Media-Transport-Library'
-    runs-on: [self-hosted]
+    runs-on: [Linux, self-hosted]
     timeout-minutes: 60
 
     steps:
