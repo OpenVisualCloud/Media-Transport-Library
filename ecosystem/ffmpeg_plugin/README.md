@@ -33,7 +33,7 @@ ffmpeg -video_size 512x512 -f rawvideo -pix_fmt rgb24 -i input.rgb -filter:v fps
 
 Input parameters description:
 
-1. "framerate" supports 25, 30, 59, 60 and 120.
+1. "framerate" supports 24, 25, 30, 60 and 120.
 2. "pixel_format" supports yuv422p10le only for input now.
 3. "f kahawai" is required to set to select Intel® Media Transport Library as the input device.
 4. "i" can be set with anything for being a virtual device, no dev node.

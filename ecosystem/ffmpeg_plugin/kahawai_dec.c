@@ -20,29 +20,29 @@
 #include <mtl/st_convert_api.h>
 #include <mtl/st_pipeline_api.h>
 
+#include "kahawai_common.h"
 #include "libavformat/avformat.h"
 #include "libavformat/internal.h"
 #include "libavutil/imgutils.h"
 #include "libavutil/opt.h"
 #include "libavutil/parseutils.h"
 #include "libavutil/pixdesc.h"
-#include "kahawai_common.h"
 
 typedef struct KahawaiDemuxerContext {
-  const AVClass* class; /**< Class for private options. */
+  const AVClass *class; /**< Class for private options. */
 
-  char* port;
-  char* local_addr;
-  char* src_addr;
+  char *port;
+  char *local_addr;
+  char *src_addr;
   int udp_port;
   int width;
   int height;
-  char* pixel_format;
+  char *pixel_format;
   AVRational framerate;
   int fb_cnt;
   int session_cnt;
   bool ext_frames_mode;
-  char* dma_dev;
+  char *dma_dev;
 
   mtl_handle dev_handle;
   st20p_rx_handle rx_handle;
@@ -51,23 +51,21 @@ typedef struct KahawaiDemuxerContext {
   pthread_mutex_t get_frame_mutex;
 
   int64_t frame_counter;
-  struct st_frame* frame;
+  struct st_frame *frame;
   size_t output_frame_size;
 
   /* The below session is for ext frames only */
-  struct st_ext_frame* ext_frames;
-  AVBufferRef** av_buffers;
-  AVBufferRef** av_buffers_keepers;
+  struct st_ext_frame *ext_frames;
+  AVBufferRef **av_buffers;
+  AVBufferRef **av_buffers_keepers;
   int last_frame_num;
-  struct st_frame* last_frame;
+  struct st_frame *last_frame;
 } KahawaiDemuxerContext;
 
-extern struct mtl_init_params param;
-extern mtl_handle shared_st_handle;
 extern unsigned int active_session_cnt;
 
-static int rx_st20p_frame_available(void* priv) {
-  KahawaiDemuxerContext* s = priv;
+static int rx_st20p_frame_available(void *priv) {
+  KahawaiDemuxerContext *s = priv;
 
   pthread_mutex_lock(&(s->get_frame_mutex));
   pthread_cond_signal(&(s->get_frame_cond));
@@ -76,10 +74,10 @@ static int rx_st20p_frame_available(void* priv) {
   return 0;
 }
 
-static int kahawai_read_header(AVFormatContext* ctx) {
-  KahawaiDemuxerContext* s = ctx->priv_data;
+static int kahawai_read_header(AVFormatContext *ctx) {
+  KahawaiDemuxerContext *s = ctx->priv_data;
 
-  AVStream* st = NULL;
+  AVStream *st = NULL;
 
   enum AVPixelFormat pix_fmt = AV_PIX_FMT_NONE;
   unsigned int fps = 0;
@@ -88,6 +86,7 @@ static int kahawai_read_header(AVFormatContext* ctx) {
 
   int ret = 0;
 
+  // struct mtl_init_params param;
   struct st20p_rx_ops ops_rx;
 
   av_log(ctx, AV_LOG_VERBOSE, "kahawai_read_header triggered\n");
@@ -98,27 +97,8 @@ static int kahawai_read_header(AVFormatContext* ctx) {
     av_log(ctx, AV_LOG_ERROR, "Invalid port info\n");
     return AVERROR(EINVAL);
   }
-  param.num_ports = 1;
-  strncpy(param.port[MTL_PORT_P], s->port, MTL_PORT_MAX_LEN);
   ops_rx.port.num_port = 1;
   strncpy(ops_rx.port.port[MTL_PORT_P], s->port, MTL_PORT_MAX_LEN);
-
-  if (NULL == s->local_addr) {
-    av_log(ctx, AV_LOG_ERROR, "Invalid local IP address\n");
-    return AVERROR(EINVAL);
-  } else if (sscanf(s->local_addr, "%hhu.%hhu.%hhu.%hhu", &param.sip_addr[MTL_PORT_P][0],
-                    &param.sip_addr[MTL_PORT_P][1], &param.sip_addr[MTL_PORT_P][2],
-                    &param.sip_addr[MTL_PORT_P][3]) != MTL_IP_ADDR_LEN) {
-    av_log(ctx, AV_LOG_ERROR, "Failed to parse local IP address: %s\n", s->local_addr);
-    return AVERROR(EINVAL);
-  }
-
-  param.rx_sessions_cnt_max = s->session_cnt;
-  param.flags |= MTL_FLAG_BIND_NUMA | MTL_FLAG_DEV_AUTO_START_STOP;
-  param.log_level = MTL_LOG_LEVEL_DEBUG;  // log level. ERROR, INFO, WARNING
-  param.priv = NULL;                      // usr crx pointer
-  param.ptp_get_time_fn = NULL;
-  param.lcores = NULL;
 
   if (NULL == s->src_addr) {
     av_log(ctx, AV_LOG_ERROR, "Invalid source IP address\n");
@@ -128,7 +108,8 @@ static int kahawai_read_header(AVFormatContext* ctx) {
                     &ops_rx.port.sip_addr[MTL_PORT_P][1],
                     &ops_rx.port.sip_addr[MTL_PORT_P][2],
                     &ops_rx.port.sip_addr[MTL_PORT_P][3]) != MTL_IP_ADDR_LEN) {
-    av_log(ctx, AV_LOG_ERROR, "Failed to parse source IP address: %s\n", s->src_addr);
+    av_log(ctx, AV_LOG_ERROR, "Failed to parse source IP address: %s\n",
+           s->src_addr);
     return AVERROR(EINVAL);
   }
 
@@ -168,13 +149,15 @@ static int kahawai_read_header(AVFormatContext* ctx) {
 
   packet_size = av_image_get_buffer_size(pix_fmt, s->width, s->height, 1);
   if (packet_size < 0) {
-    av_log(ctx, AV_LOG_ERROR, "av_image_get_buffer_size failed with %d\n", packet_size);
+    av_log(ctx, AV_LOG_ERROR, "av_image_get_buffer_size failed with %d\n",
+           packet_size);
     return packet_size;
   }
   av_log(ctx, AV_LOG_VERBOSE, "packet size: %d\n", packet_size);
 
-  if(ops_rx.fps = get_fps_table(s->framerate) == ST_FPS_MAX) {
-    av_log(ctx, AV_LOG_ERROR, "Frame rate %0.2f is not supported\n", ((float)fps / 100));
+  if (ops_rx.fps = get_fps_table(s->framerate) == ST_FPS_MAX) {
+    av_log(ctx, AV_LOG_ERROR, "Frame rate %0.2f is not supported\n",
+           ((float)fps / 100));
     return AVERROR(EINVAL);
   }
 
@@ -182,11 +165,9 @@ static int kahawai_read_header(AVFormatContext* ctx) {
     av_log(ctx, AV_LOG_VERBOSE, "DMA disabled\n");
   } else {
     if (!s->ext_frames_mode) {
-      av_log(ctx, AV_LOG_WARNING, "Turned off DMA for ext_frames_mode disabled\n");
+      av_log(ctx, AV_LOG_WARNING,
+             "Turned off DMA for ext_frames_mode disabled\n");
     } else {
-      av_log(ctx, AV_LOG_VERBOSE, "DMA enabled on %s\n", s->dma_dev);
-      param.num_dma_dev_port = 1;
-      strncpy(param.dma_dev_port[0], s->dma_dev, MTL_PORT_MAX_LEN);
       ops_rx.flags = ST20_RX_FLAG_DMA_OFFLOAD;
     }
   }
@@ -207,25 +188,26 @@ static int kahawai_read_header(AVFormatContext* ctx) {
       av_rescale_q(ctx->packet_size, (AVRational){8, 1}, st->time_base);
 
   // Create device
-  if (!shared_st_handle) {
-    s->dev_handle = mtl_init(&param);
+  if (!kahawai_get_handle()) {
+    s->dev_handle = kahawai_init(s->port, s->local_addr, s->udp_port, 0,
+                                 s->session_cnt, s->dma_dev);
     if (!s->dev_handle) {
       av_log(ctx, AV_LOG_ERROR, "mtl_init failed\n");
       return AVERROR(EIO);
     }
-    shared_st_handle = s->dev_handle;
+    kahawai_set_handle(s->dev_handle);
     av_log(ctx, AV_LOG_VERBOSE, "mtl_init finished: st_handle 0x%" PRIx64 "\n",
-           (unsigned long)shared_st_handle);
+           (unsigned long)kahawai_get_handle());
   } else {
-    s->dev_handle = shared_st_handle;
+    kahawai_set_handle(s->dev_handle);
     av_log(ctx, AV_LOG_VERBOSE, "use shared st_handle 0x%" PRIx64 "\n",
-           (unsigned long)shared_st_handle);
+           (unsigned long)kahawai_get_handle());
   }
   ++active_session_cnt;
 
   ops_rx.name = "st20p_rx";
-  ops_rx.priv = s;                 // Handle of priv_data registered to lib
-  ops_rx.port.payload_type = 112;  // RX_ST20_PAYLOAD_TYPE
+  ops_rx.priv = s;                // Handle of priv_data registered to lib
+  ops_rx.port.payload_type = 112; // RX_ST20_PAYLOAD_TYPE
   ops_rx.device = ST_PLUGIN_DEVICE_AUTO;
   ops_rx.notify_frame_available = rx_st20p_frame_available;
   ops_rx.framebuff_cnt = s->fb_cnt;
@@ -238,7 +220,7 @@ static int kahawai_read_header(AVFormatContext* ctx) {
     }
     memset(s->ext_frames, 0, sizeof(struct st_ext_frame) * s->fb_cnt);
 
-    s->av_buffers = malloc(sizeof(AVBufferRef*) * s->fb_cnt);
+    s->av_buffers = malloc(sizeof(AVBufferRef *) * s->fb_cnt);
     if (!s->av_buffers) {
       av_log(ctx, AV_LOG_ERROR, "Allocation of av_buffers failed\n");
       return AVERROR(ENOMEM);
@@ -247,7 +229,7 @@ static int kahawai_read_header(AVFormatContext* ctx) {
       s->av_buffers[i] = NULL;
     }
 
-    s->av_buffers_keepers = malloc(sizeof(AVBufferRef*) * s->fb_cnt);
+    s->av_buffers_keepers = malloc(sizeof(AVBufferRef *) * s->fb_cnt);
     if (!s->av_buffers_keepers) {
       av_log(ctx, AV_LOG_ERROR, "Allocation of av_buffers_keepers failed\n");
       return AVERROR(ENOMEM);
@@ -277,10 +259,12 @@ static int kahawai_read_header(AVFormatContext* ctx) {
       s->ext_frames[i].addr[0] = s->av_buffers[i]->data;
       s->ext_frames[i].linesize[0] = s->width * 2;
       s->ext_frames[i].addr[1] =
-          (void*)((unsigned long)s->ext_frames[i].addr[0] + (s->width * s->height * 2));
+          (void *)((unsigned long)s->ext_frames[i].addr[0] +
+                   (s->width * s->height * 2));
       s->ext_frames[i].linesize[1] = s->width;
       s->ext_frames[i].addr[2] =
-          (void*)((unsigned long)s->ext_frames[i].addr[1] + (s->width * s->height));
+          (void *)((unsigned long)s->ext_frames[i].addr[1] +
+                   (s->width * s->height));
       s->ext_frames[i].linesize[2] = s->width;
       s->ext_frames[i].size = ctx->packet_size;
 
@@ -322,8 +306,8 @@ static int kahawai_read_header(AVFormatContext* ctx) {
   return 0;
 }
 
-static int kahawai_read_packet(AVFormatContext* ctx, AVPacket* pkt) {
-  KahawaiDemuxerContext* s = ctx->priv_data;
+static int kahawai_read_packet(AVFormatContext *ctx, AVPacket *pkt) {
+  KahawaiDemuxerContext *s = ctx->priv_data;
   int frame_num = 0;
   int ret = 0;
 
@@ -368,7 +352,8 @@ static int kahawai_read_packet(AVFormatContext* ctx, AVPacket* pkt) {
 
   if (s->frame->data_size != s->output_frame_size) {
     av_log(ctx, AV_LOG_ERROR,
-           "Unexpected frame size received: %" PRIu64 " (%" PRIu64 " expected)\n",
+           "Unexpected frame size received: %" PRIu64 " (%" PRIu64
+           " expected)\n",
            s->frame->data_size, s->output_frame_size);
     // s->stopped = true;
     // pthread_mutex_unlock(&(s->read_packet_mutex));
@@ -377,8 +362,8 @@ static int kahawai_read_packet(AVFormatContext* ctx, AVPacket* pkt) {
 
   if (s->ext_frames_mode) {
     while (frame_num < s->fb_cnt) {
-      av_log(ctx, AV_LOG_VERBOSE, "Checked Framebuf[%d]: 0x%" PRIx64 "\n", frame_num,
-             (unsigned long)s->av_buffers[frame_num]->data);
+      av_log(ctx, AV_LOG_VERBOSE, "Checked Framebuf[%d]: 0x%" PRIx64 "\n",
+             frame_num, (unsigned long)s->av_buffers[frame_num]->data);
       if (s->av_buffers[frame_num]->data == s->frame->addr[0]) {
         break;
       }
@@ -406,12 +391,14 @@ static int kahawai_read_packet(AVFormatContext* ctx, AVPacket* pkt) {
     }
 
     ret = st20_rfc4175_422be10_to_yuv422p10le(
-        (struct st20_rfc4175_422_10_pg2_be*)(s->frame->addr[0]), (uint16_t*)pkt->data,
-        (uint16_t*)(pkt->data + (s->width * s->height * 2)),
-        (uint16_t*)(pkt->data + (s->width * s->height * 3)), s->width, s->height);
+        (struct st20_rfc4175_422_10_pg2_be *)(s->frame->addr[0]),
+        (uint16_t *)pkt->data,
+        (uint16_t *)(pkt->data + (s->width * s->height * 2)),
+        (uint16_t *)(pkt->data + (s->width * s->height * 3)), s->width,
+        s->height);
     if (ret != 0) {
-      av_log(ctx, AV_LOG_ERROR, "st20_rfc4175_422be10_to_yuv422p10le failed with %d\n",
-             ret);
+      av_log(ctx, AV_LOG_ERROR,
+             "st20_rfc4175_422be10_to_yuv422p10le failed with %d\n", ret);
       // s->stopped = true;
       // pthread_mutex_unlock(&(s->read_packet_mutex));
       return ret;
@@ -428,8 +415,8 @@ static int kahawai_read_packet(AVFormatContext* ctx, AVPacket* pkt) {
   return 0;
 }
 
-static int kahawai_read_close(AVFormatContext* ctx) {
-  KahawaiDemuxerContext* s = ctx->priv_data;
+static int kahawai_read_close(AVFormatContext *ctx) {
+  KahawaiDemuxerContext *s = ctx->priv_data;
 
   av_log(ctx, AV_LOG_VERBOSE, "kahawai_read_close triggered\n");
 
@@ -459,9 +446,9 @@ static int kahawai_read_close(AVFormatContext* ctx) {
 
   // Destroy device
   if (--active_session_cnt == 0) {
-    if (shared_st_handle) {
-      mtl_uninit(shared_st_handle);
-      shared_st_handle = NULL;
+    if (kahawai_get_handle()) {
+      mtl_uninit(kahawai_get_handle());
+      kahawai_set_handle(NULL);
       av_log(ctx, AV_LOG_VERBOSE, "mtl_uninit finished\n");
     } else {
       av_log(ctx, AV_LOG_ERROR, "missing st_handle\n");
@@ -478,7 +465,8 @@ static int kahawai_read_close(AVFormatContext* ctx) {
     }
 
     for (int i = 0; i < s->fb_cnt; ++i) {
-      if (i != s->last_frame_num) av_buffer_unref(&(s->av_buffers[i]));
+      if (i != s->last_frame_num)
+        av_buffer_unref(&(s->av_buffers[i]));
       av_buffer_unref(&(s->av_buffers_keepers[i]));
     }
 
@@ -499,7 +487,12 @@ static int kahawai_read_close(AVFormatContext* ctx) {
 #define OFFSET(x) offsetof(KahawaiDemuxerContext, x)
 #define DEC AV_OPT_FLAG_DECODING_PARAM
 static const AVOption kahawai_options[] = {
-    {"port", "ST port", OFFSET(port), AV_OPT_TYPE_STRING, {.str = NULL}, .flags = DEC},
+    {"port",
+     "ST port",
+     OFFSET(port),
+     AV_OPT_TYPE_STRING,
+     {.str = NULL},
+     .flags = DEC},
     {"local_addr",
      "Local IP address",
      OFFSET(local_addr),

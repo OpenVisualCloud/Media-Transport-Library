@@ -20,6 +20,7 @@
 #include <mtl/st_convert_api.h>
 #include <mtl/st_pipeline_api.h>
 
+#include "kahawai_common.h"
 #include "libavformat/avformat.h"
 #include "libavformat/internal.h"
 #include "libavutil/imgutils.h"
@@ -27,7 +28,6 @@
 #include "libavutil/parseutils.h"
 #include "libavutil/pixdesc.h"
 #include <unistd.h>
-#include "kahawai_common.h"
 
 typedef struct KahawaiMuxerContext {
   const AVClass *class; /**< Class for private options. */
@@ -48,18 +48,14 @@ typedef struct KahawaiMuxerContext {
 
   pthread_cond_t get_frame_cond;
   pthread_mutex_t get_frame_mutex;
+  int64_t frame_tx_completed;
+  bool tx_completed;
 
   int64_t frame_counter;
   struct st_frame *frame;
   size_t output_frame_size;
 } KahawaiMuxerContext;
 
-static mtl_handle shared_st_handle = NULL;
-static unsigned int active_session_cnt = 0;
-static int64_t frame_tx_completed = 0;
-static bool tx_completed = false;
-
-extern mtl_handle shared_st_handle;
 extern unsigned int active_session_cnt;
 
 static int tx_st20p_frame_available(void *priv) {
@@ -72,25 +68,22 @@ static int tx_st20p_frame_available(void *priv) {
   return 0;
 }
 
-static int tx_st20p_frame_done(void* priv, struct st_frame *frame)
-{
-    KahawaiMuxerContext* s = priv;
+static int tx_st20p_frame_done(void *priv, struct st_frame *frame) {
+  KahawaiMuxerContext *s = priv;
 
-    if (ST_FRAME_STATUS_COMPLETE == frame->status )
-    {
-        frame_tx_completed++;
-        /* s->frame_counter is the number of frames sent to MTL, 
-          -1 here because some times we cannot get all notifications from MTL
-        */
-        if (frame_tx_completed == (s->frame_counter - 1))
-        {
-            frame_tx_completed = 0;
-            s->frame_counter = 0;
-            tx_completed = true;
-        }
+  if (ST_FRAME_STATUS_COMPLETE == frame->status) {
+    s->frame_tx_completed++;
+    /* s->frame_counter is the number of frames sent to MTL,
+      -1 here because some times we cannot get all notifications from MTL
+    */
+    if (s->frame_tx_completed == (s->frame_counter - 1)) {
+      s->frame_tx_completed = 0;
+      s->frame_counter = 0;
+      s->tx_completed = true;
     }
+  }
 
-    return 0;
+  return 0;
 }
 
 static int kahawai_write_header(AVFormatContext *ctx) {
@@ -101,43 +94,19 @@ static int kahawai_write_header(AVFormatContext *ctx) {
 
   int ret = 0;
 
-  struct mtl_init_params param;
+  // struct mtl_init_params param;
   struct st20p_tx_ops ops_tx;
 
   av_log(ctx, AV_LOG_VERBOSE, "kahawai_write_header triggered\n");
 
-  memset(&param, 0, sizeof(param));
   memset(&ops_tx, 0, sizeof(ops_tx));
 
   if ((NULL == s->port) || (strlen(s->port) > MTL_PORT_MAX_LEN)) {
     av_log(ctx, AV_LOG_ERROR, "Invalid port info\n");
     return AVERROR(EINVAL);
   }
-  param.num_ports = 1;
-  strncpy(param.port[MTL_PORT_P], s->port, MTL_PORT_MAX_LEN);
   ops_tx.port.num_port = 1;
   strncpy(ops_tx.port.port[MTL_PORT_P], s->port, MTL_PORT_MAX_LEN);
-
-  if (NULL == s->local_addr) {
-    av_log(ctx, AV_LOG_ERROR, "Invalid local IP address\n");
-    return AVERROR(EINVAL);
-  } else if (sscanf(s->local_addr, "%hhu.%hhu.%hhu.%hhu",
-                    &param.sip_addr[MTL_PORT_P][0],
-                    &param.sip_addr[MTL_PORT_P][1],
-                    &param.sip_addr[MTL_PORT_P][2],
-                    &param.sip_addr[MTL_PORT_P][3]) != MTL_IP_ADDR_LEN) {
-    av_log(ctx, AV_LOG_ERROR, "Failed to parse local IP address: %s\n",
-           s->local_addr);
-    return AVERROR(EINVAL);
-  }
-
-  param.tx_sessions_cnt_max = s->session_cnt;
-  param.rx_sessions_cnt_max = 0;
-  param.flags = MTL_FLAG_BIND_NUMA | MTL_FLAG_DEV_AUTO_START_STOP; // FIXME
-  param.log_level = MTL_LOG_LEVEL_DEBUG; // log level. ERROR, INFO, WARNING
-  param.priv = NULL;                     // usr crx pointer
-  param.ptp_get_time_fn = NULL;
-  param.lcores = NULL;
 
   if (NULL == s->dst_addr) {
     av_log(ctx, AV_LOG_ERROR, "Invalid destination IP address\n");
@@ -175,25 +144,27 @@ static int kahawai_write_header(AVFormatContext *ctx) {
   ops_tx.input_fmt = ST_FRAME_FMT_RGB8;
 
   s->framerate = ctx->streams[0]->avg_frame_rate;
-  if(ops_tx.fps  = get_fps_table(s->framerate) == ST_FPS_MAX) {
-    av_log(ctx, AV_LOG_ERROR, "Frame rate %f is not supported\n", av_q2d(s->framerate));
+  if (ops_tx.fps = get_fps_table(s->framerate) == ST_FPS_MAX) {
+    av_log(ctx, AV_LOG_ERROR, "Frame rate %f is not supported\n",
+           av_q2d(s->framerate));
     return AVERROR(EINVAL);
   }
 
   // Create device
-  if (!shared_st_handle) {
-    s->dev_handle = mtl_init(&param);
+  if (!kahawai_get_handle()) {
+    s->dev_handle = kahawai_init(s->port, s->local_addr, s->udp_port,
+                                 s->session_cnt, 0, NULL);
     if (!s->dev_handle) {
       av_log(ctx, AV_LOG_ERROR, "mtl_init failed\n");
       return AVERROR(EIO);
     }
-    shared_st_handle = s->dev_handle;
+    kahawai_set_handle(s->dev_handle);
     av_log(ctx, AV_LOG_VERBOSE, "mtl_init finished: st_handle 0x%" PRIx64 "\n",
-           (unsigned long)shared_st_handle);
+           (unsigned long)kahawai_get_handle());
   } else {
-    s->dev_handle = shared_st_handle;
+    s->dev_handle = kahawai_get_handle();
     av_log(ctx, AV_LOG_VERBOSE, "use shared st_handle 0x%" PRIx64 "\n",
-           (unsigned long)shared_st_handle);
+           (unsigned long)kahawai_get_handle());
   }
   ++active_session_cnt;
 
@@ -202,9 +173,8 @@ static int kahawai_write_header(AVFormatContext *ctx) {
   ops_tx.port.payload_type = 112; // TX_ST20_PAYLOAD_TYPE
   ops_tx.device = ST_PLUGIN_DEVICE_AUTO;
   ops_tx.notify_frame_available = tx_st20p_frame_available;
-  ops_tx.framebuff_cnt = s->fb_cnt;
   ops_tx.notify_frame_done = tx_st20p_frame_done;
-  //   ops_tx.flags |= ST20_TX_FLAG_USER_TIMESTAMP;
+  ops_tx.framebuff_cnt = s->fb_cnt;
 
   pthread_mutex_init(&(s->get_frame_mutex), NULL);
   pthread_cond_init(&(s->get_frame_cond), NULL);
@@ -231,8 +201,8 @@ static int kahawai_write_header(AVFormatContext *ctx) {
   s->frame_counter = 0;
   s->frame = NULL;
 
-  frame_tx_completed = 0;
-  tx_completed = false;
+  s->frame_tx_completed = 0;
+  s->tx_completed = false;
   return 0;
 }
 
@@ -281,18 +251,17 @@ static int kahawai_write_packet(AVFormatContext *ctx, AVPacket *pkt) {
 
 static int kahawai_write_trailer(AVFormatContext *ctx) {
   KahawaiMuxerContext *s = ctx->priv_data;
+  int i;
 
   av_log(ctx, AV_LOG_VERBOSE, "kahawai_write_trailer triggered\n");
 
-  do {
-    if (tx_completed == true) { 
-      s->frame_counter = 0;
-      frame_tx_completed = 0;
-      tx_completed = false;
-      break;
-    } 
-    usleep(10000); 
-  } while(tx_completed != true);
+  for (i = 0; s->tx_completed != true && i < 100; i++) {
+    usleep(10000);
+  }
+
+  s->frame_counter = 0;
+  s->frame_tx_completed = 0;
+  s->tx_completed = false;
 
   if (s->frame) {
     av_log(ctx, AV_LOG_VERBOSE, "Put a frame: 0x%" PRIx64 "\n",
@@ -312,9 +281,9 @@ static int kahawai_write_trailer(AVFormatContext *ctx) {
 
   // Destroy device
   if (--active_session_cnt == 0) {
-    if (shared_st_handle) {
-      mtl_uninit(shared_st_handle);
-      shared_st_handle = NULL;
+    if (kahawai_get_handle()) {
+      mtl_uninit(kahawai_get_handle());
+      kahawai_set_handle(NULL);
       av_log(ctx, AV_LOG_VERBOSE, "mtl_uninit finished\n");
     } else {
       av_log(ctx, AV_LOG_ERROR, "missing st_handle\n");
@@ -323,7 +292,7 @@ static int kahawai_write_trailer(AVFormatContext *ctx) {
     av_log(ctx, AV_LOG_VERBOSE, "no need to do st_uninit yet\n");
   }
   s->dev_handle = NULL;
-  
+
   return 0;
 }
 
@@ -389,6 +358,7 @@ AVOutputFormat ff_kahawai_muxer = {
     .priv_data_size = sizeof(KahawaiMuxerContext),
     .write_header = kahawai_write_header,
     .write_packet = kahawai_write_packet,
+    .write_trailer = kahawai_write_trailer,
     .video_codec = AV_CODEC_ID_RAWVIDEO,
     .flags = AVFMT_NOFILE,
     .control_message = NULL,
