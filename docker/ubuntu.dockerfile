@@ -8,6 +8,7 @@ LABEL maintainer="frank.du@intel.com"
 ENV MTL_REPO=Media-Transport-Library
 ENV DPDK_REPO=dpdk
 ENV DPDK_VER=22.11
+ENV IMTL_USER=imtl
 
 RUN apt-get update -y
 
@@ -16,9 +17,17 @@ RUN apt-get install -y git gcc meson python3 python3-pip pkg-config libnuma-dev 
 
 RUN pip install pyelftools ninja
 
+RUN apt-get install -y sudo
+
 RUN apt clean all
 
-WORKDIR /opt/
+# user: imtl
+RUN adduser $IMTL_USER
+RUN usermod -G sudo $IMTL_USER
+RUN echo '%sudo ALL=(ALL) NOPASSWD:ALL' >> /etc/sudoers
+USER $IMTL_USER
+
+WORKDIR /home/$IMTL_USER/
 
 RUN git config --global user.email "you@example.com" && \
     git config --global user.name "Your Name"
@@ -35,11 +44,10 @@ RUN cd $DPDK_REPO && \
     git am ../Media-Transport-Library/patches/dpdk/$DPDK_VER/*.patch && \
     meson build && \
     ninja -C build && \
-    ninja -C build install && \
+    sudo ninja -C build install && \
     cd ..
 
 # build mtl
-RUN apt-get install -y sudo
 RUN cd $MTL_REPO && \
     ./build.sh && \
     cd ..
