@@ -1458,22 +1458,22 @@ static int tv_tasklet_frame(struct mtl_main_impl* impl,
   }
 
   if (!s->tx_no_chain) {
+    ret = rte_pktmbuf_alloc_bulk(chain_pool, pkts_chain, bulk);
+    if (ret < 0) {
+      dbg("%s(%d), pkts chain alloc fail %d\n", __func__, idx, ret);
+      rte_pktmbuf_free_bulk(pkts, bulk);
+      s->stat_build_ret_code = -STI_FRAME_PKT_ALLOC_FAIL;
+      return MT_TASKLET_ALL_DONE;
+    }
     if (send_r) {
       ret = rte_pktmbuf_alloc_bulk(hdr_pool_r, pkts_r, bulk);
       if (ret < 0) {
         dbg("%s(%d), pkts_r alloc fail %d\n", __func__, idx, ret);
         rte_pktmbuf_free_bulk(pkts, bulk);
+        rte_pktmbuf_free_bulk(pkts_chain, bulk);
         s->stat_build_ret_code = -STI_FRAME_PKT_ALLOC_FAIL;
         return MT_TASKLET_ALL_DONE;
       }
-    }
-    ret = rte_pktmbuf_alloc_bulk(chain_pool, pkts_chain, bulk);
-    if (ret < 0) {
-      dbg("%s(%d), pkts chain alloc fail %d\n", __func__, idx, ret);
-      rte_pktmbuf_free_bulk(pkts, bulk);
-      rte_pktmbuf_free_bulk(pkts_r, bulk);
-      s->stat_build_ret_code = -STI_FRAME_PKT_ALLOC_FAIL;
-      return MT_TASKLET_ALL_DONE;
     }
   }
 
@@ -1865,22 +1865,22 @@ static int tv_tasklet_st22(struct mtl_main_impl* impl,
     }
 
     if (!s->tx_no_chain) {
+      ret = rte_pktmbuf_alloc_bulk(chain_pool, pkts_chain, bulk);
+      if (ret < 0) {
+        dbg("%s(%d), pkts chain alloc fail %d\n", __func__, idx, ret);
+        rte_pktmbuf_free_bulk(pkts, bulk);
+        s->stat_build_ret_code = -STI_FRAME_PKT_ALLOC_FAIL;
+        return MT_TASKLET_ALL_DONE;
+      }
       if (send_r) {
         ret = rte_pktmbuf_alloc_bulk(hdr_pool_r, pkts_r, bulk);
         if (ret < 0) {
           dbg("%s(%d), pkts_r alloc fail %d\n", __func__, idx, ret);
           rte_pktmbuf_free_bulk(pkts, bulk);
+          rte_pktmbuf_free_bulk(pkts_chain, bulk);
           s->stat_build_ret_code = -STI_FRAME_PKT_ALLOC_FAIL;
           return MT_TASKLET_ALL_DONE;
         }
-      }
-      ret = rte_pktmbuf_alloc_bulk(chain_pool, pkts_chain, bulk);
-      if (ret < 0) {
-        dbg("%s(%d), pkts chain alloc fail %d\n", __func__, idx, ret);
-        rte_pktmbuf_free_bulk(pkts, bulk);
-        rte_pktmbuf_free_bulk(pkts_r, bulk);
-        s->stat_build_ret_code = -STI_FRAME_PKT_ALLOC_FAIL;
-        return MT_TASKLET_ALL_DONE;
       }
     }
 
