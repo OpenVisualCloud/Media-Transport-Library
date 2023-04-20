@@ -17,8 +17,9 @@
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
-#include "libavutil/rational.h"
 #include <mtl/st_pipeline_api.h>
+
+#include "libavutil/rational.h"
 
 typedef struct KahawaiFpsDecs {
   enum st_fps st_fps;
@@ -27,8 +28,7 @@ typedef struct KahawaiFpsDecs {
 } KahawaiFpsDecs;
 
 enum st_fps get_fps_table(AVRational framerate);
-mtl_handle kahawai_init(char *port, char *local_addr, int udp_port,
-                        int enc_session_cnt, int dec_session_cnt,
-                        char *dma_dev);
+mtl_handle kahawai_init(char* port, char* local_addr, int enc_session_cnt,
+                        int dec_session_cnt, char* dma_dev);
 mtl_handle kahawai_get_handle();
 void kahawai_set_handle(mtl_handle handle);

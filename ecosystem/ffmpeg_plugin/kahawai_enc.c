@@ -19,6 +19,7 @@
 
 #include <mtl/st_convert_api.h>
 #include <mtl/st_pipeline_api.h>
+#include <unistd.h>
 
 #include "kahawai_common.h"
 #include "libavformat/avformat.h"
@@ -27,14 +28,13 @@
 #include "libavutil/opt.h"
 #include "libavutil/parseutils.h"
 #include "libavutil/pixdesc.h"
-#include <unistd.h>
 
 typedef struct KahawaiMuxerContext {
-  const AVClass *class; /**< Class for private options. */
+  const AVClass* class; /**< Class for private options. */
 
-  char *port;
-  char *local_addr;
-  char *dst_addr;
+  char* port;
+  char* local_addr;
+  char* dst_addr;
   int udp_port;
   int fb_cnt;
   int session_cnt;
@@ -52,14 +52,14 @@ typedef struct KahawaiMuxerContext {
   bool tx_completed;
 
   int64_t frame_counter;
-  struct st_frame *frame;
+  struct st_frame* frame;
   size_t output_frame_size;
 } KahawaiMuxerContext;
 
 extern unsigned int active_session_cnt;
 
-static int tx_st20p_frame_available(void *priv) {
-  KahawaiMuxerContext *s = priv;
+static int tx_st20p_frame_available(void* priv) {
+  KahawaiMuxerContext* s = priv;
 
   pthread_mutex_lock(&(s->get_frame_mutex));
   pthread_cond_signal(&(s->get_frame_cond));
@@ -68,8 +68,8 @@ static int tx_st20p_frame_available(void *priv) {
   return 0;
 }
 
-static int tx_st20p_frame_done(void *priv, struct st_frame *frame) {
-  KahawaiMuxerContext *s = priv;
+static int tx_st20p_frame_done(void* priv, struct st_frame* frame) {
+  KahawaiMuxerContext* s = priv;
 
   if (ST_FRAME_STATUS_COMPLETE == frame->status) {
     s->frame_tx_completed++;
@@ -86,9 +86,9 @@ static int tx_st20p_frame_done(void *priv, struct st_frame *frame) {
   return 0;
 }
 
-static int kahawai_write_header(AVFormatContext *ctx) {
-  KahawaiMuxerContext *s = ctx->priv_data;
-  AVStream *st = NULL;
+static int kahawai_write_header(AVFormatContext* ctx) {
+  KahawaiMuxerContext* s = ctx->priv_data;
+  AVStream* st = NULL;
 
   int packet_size = 0;
 
@@ -145,15 +145,14 @@ static int kahawai_write_header(AVFormatContext *ctx) {
 
   s->framerate = ctx->streams[0]->avg_frame_rate;
   if (ops_tx.fps = get_fps_table(s->framerate) == ST_FPS_MAX) {
-    av_log(ctx, AV_LOG_ERROR, "Frame rate %f is not supported\n",
+    av_log(ctx, AV_LOG_ERROR, "Frame rate %0.2f is not supported\n",
            av_q2d(s->framerate));
     return AVERROR(EINVAL);
   }
 
   // Create device
   if (!kahawai_get_handle()) {
-    s->dev_handle = kahawai_init(s->port, s->local_addr, s->udp_port,
-                                 s->session_cnt, 0, NULL);
+    s->dev_handle = kahawai_init(s->port, s->local_addr, s->session_cnt, 0, NULL);
     if (!s->dev_handle) {
       av_log(ctx, AV_LOG_ERROR, "mtl_init failed\n");
       return AVERROR(EIO);
@@ -169,8 +168,8 @@ static int kahawai_write_header(AVFormatContext *ctx) {
   ++active_session_cnt;
 
   ops_tx.name = "st20p";
-  ops_tx.priv = s;                // Handle of priv_data registered to lib
-  ops_tx.port.payload_type = 112; // TX_ST20_PAYLOAD_TYPE
+  ops_tx.priv = s;                 // Handle of priv_data registered to lib
+  ops_tx.port.payload_type = 112;  // TX_ST20_PAYLOAD_TYPE
   ops_tx.device = ST_PLUGIN_DEVICE_AUTO;
   ops_tx.notify_frame_available = tx_st20p_frame_available;
   ops_tx.notify_frame_done = tx_st20p_frame_done;
@@ -206,8 +205,8 @@ static int kahawai_write_header(AVFormatContext *ctx) {
   return 0;
 }
 
-static int kahawai_write_packet(AVFormatContext *ctx, AVPacket *pkt) {
-  KahawaiMuxerContext *s = ctx->priv_data;
+static int kahawai_write_packet(AVFormatContext* ctx, AVPacket* pkt) {
+  KahawaiMuxerContext* s = ctx->priv_data;
   int ret = 0;
 
   int i = 0, j = 0, h = 0;
@@ -229,18 +228,17 @@ static int kahawai_write_packet(AVFormatContext *ctx, AVPacket *pkt) {
 
   if (s->frame->data_size != s->output_frame_size) {
     av_log(ctx, AV_LOG_ERROR,
-           "Unexpected frame size received: %" PRIu64 " (%" PRIu64
-           " expected)\n",
+           "Unexpected frame size received: %" PRIu64 " (%" PRIu64 " expected)\n",
            s->frame->data_size, s->output_frame_size);
     return AVERROR(EIO);
   }
 
-  uint8_t *data[4];
+  uint8_t* data[4];
   int linesize[4];
-  av_image_fill_arrays(data, linesize, pkt->data, s->pixel_format, s->width,
-                       s->height, 1);
-  av_image_copy(s->frame->addr, s->frame->linesize, data, linesize,
-                s->pixel_format, s->width, s->height);
+  av_image_fill_arrays(data, linesize, pkt->data, s->pixel_format, s->width, s->height,
+                       1);
+  av_image_copy(s->frame->addr, s->frame->linesize, data, linesize, s->pixel_format,
+                s->width, s->height);
 
   st20p_tx_put_frame(s->tx_handle, s->frame);
   av_log(ctx, AV_LOG_VERBOSE, "st20p_tx_put_frame: 0x%" PRIx64 "\n",
@@ -249,8 +247,8 @@ static int kahawai_write_packet(AVFormatContext *ctx, AVPacket *pkt) {
   return 0;
 }
 
-static int kahawai_write_trailer(AVFormatContext *ctx) {
-  KahawaiMuxerContext *s = ctx->priv_data;
+static int kahawai_write_trailer(AVFormatContext* ctx) {
+  KahawaiMuxerContext* s = ctx->priv_data;
   int i;
 
   av_log(ctx, AV_LOG_VERBOSE, "kahawai_write_trailer triggered\n");
@@ -299,12 +297,7 @@ static int kahawai_write_trailer(AVFormatContext *ctx) {
 #define OFFSET(x) offsetof(KahawaiMuxerContext, x)
 #define ENC AV_OPT_FLAG_ENCODING_PARAM
 static const AVOption kahawai_options[] = {
-    {"port",
-     "ST port",
-     OFFSET(port),
-     AV_OPT_TYPE_STRING,
-     {.str = NULL},
-     .flags = ENC},
+    {"port", "ST port", OFFSET(port), AV_OPT_TYPE_STRING, {.str = NULL}, .flags = ENC},
     {"local_addr",
      "Local IP address",
      OFFSET(local_addr),

@@ -17,20 +17,18 @@
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
+#include "kahawai_common.h"
+
 #include <mtl/st_convert_api.h>
 #include <mtl/st_pipeline_api.h>
 
-#include "kahawai_common.h"
 #include "libavutil/common.h"
 
-const KahawaiFpsDecs fps_table[] = {{ST_FPS_P50, 5000 - 100, 5000 + 100},
-                                    {ST_FPS_P29_97, 2997 - 100, 2997 + 100},
-                                    {ST_FPS_P25, 2500 - 100, 2500 + 100},
-                                    {ST_FPS_P60, 6000 - 100, 6000 + 100},
-                                    {ST_FPS_P30, 3000 - 100, 3000 + 100},
-                                    {ST_FPS_P24, 2400 - 100, 2400 + 100},
-                                    {ST_FPS_P23_98, 2398 - 100, 2398 + 100},
-                                    {ST_FPS_P119_88, 11988 - 100, 11988 + 100}};
+const KahawaiFpsDecs fps_table[] = {
+    {ST_FPS_P50, 5000 - 100, 5000 + 100},    {ST_FPS_P29_97, 2997 - 100, 2997 + 100},
+    {ST_FPS_P25, 2500 - 100, 2500 + 100},    {ST_FPS_P60, 6000 - 100, 6000 + 100},
+    {ST_FPS_P30, 3000 - 100, 3000 + 100},    {ST_FPS_P24, 2400 - 100, 2400 + 100},
+    {ST_FPS_P23_98, 2398 - 100, 2398 + 100}, {ST_FPS_P119_88, 11988 - 100, 11988 + 100}};
 
 static mtl_handle shared_st_handle = NULL;
 unsigned int active_session_cnt = 0;
@@ -48,9 +46,8 @@ enum st_fps get_fps_table(AVRational framerate) {
   return ST_FPS_MAX;
 }
 
-mtl_handle kahawai_init(char *port, char *local_addr, int udp_port,
-                        int enc_session_cnt, int dec_session_cnt,
-                        char *dma_dev) {
+mtl_handle kahawai_init(char* port, char* local_addr, int enc_session_cnt,
+                        int dec_session_cnt, char* dma_dev) {
   param.num_ports = 1;
 
   strncpy(param.port[MTL_PORT_P], port, MTL_PORT_MAX_LEN);
@@ -58,23 +55,18 @@ mtl_handle kahawai_init(char *port, char *local_addr, int udp_port,
   if (NULL == local_addr) {
     av_log(NULL, AV_LOG_ERROR, "Invalid local IP address\n");
     return NULL;
-  } else if (sscanf(local_addr, "%hhu.%hhu.%hhu.%hhu",
-                    &param.sip_addr[MTL_PORT_P][0],
-                    &param.sip_addr[MTL_PORT_P][1],
-                    &param.sip_addr[MTL_PORT_P][2],
+  } else if (sscanf(local_addr, "%hhu.%hhu.%hhu.%hhu", &param.sip_addr[MTL_PORT_P][0],
+                    &param.sip_addr[MTL_PORT_P][1], &param.sip_addr[MTL_PORT_P][2],
                     &param.sip_addr[MTL_PORT_P][3]) != MTL_IP_ADDR_LEN) {
-    av_log(NULL, AV_LOG_ERROR, "Failed to parse local IP address: %s\n",
-           local_addr);
+    av_log(NULL, AV_LOG_ERROR, "Failed to parse local IP address: %s\n", local_addr);
     return NULL;
   }
 
-  if (enc_session_cnt > 0)
-    param.tx_sessions_cnt_max = enc_session_cnt;
-  if (dec_session_cnt > 0)
-    param.rx_sessions_cnt_max = dec_session_cnt;
+  if (enc_session_cnt > 0) param.tx_sessions_cnt_max = enc_session_cnt;
+  if (dec_session_cnt > 0) param.rx_sessions_cnt_max = dec_session_cnt;
   param.flags = MTL_FLAG_BIND_NUMA | MTL_FLAG_DEV_AUTO_START_STOP;
-  param.log_level = MTL_LOG_LEVEL_DEBUG; // log level. ERROR, INFO, WARNING
-  param.priv = NULL;                     // usr crx pointer
+  param.log_level = MTL_LOG_LEVEL_DEBUG;  // log level. ERROR, INFO, WARNING
+  param.priv = NULL;                      // usr crx pointer
   param.ptp_get_time_fn = NULL;
   param.lcores = NULL;
 
