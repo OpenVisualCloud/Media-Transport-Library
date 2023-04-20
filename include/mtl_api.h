@@ -74,6 +74,9 @@ extern "C" {
  */
 #define MTL_LITTLE_ENDIAN /* x86 use little endian */
 
+/** Standard mtu size is 1500 */
+#define MTL_MTU_MAX_BYTES (1500)
+
 /** Standard UDP is 1460 bytes, mtu is 1500 */
 #define MTL_UDP_MAX_BYTES (1460)
 

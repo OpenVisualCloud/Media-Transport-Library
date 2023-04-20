@@ -100,12 +100,15 @@ struct mudp_impl {
   uint32_t rcvbuf_sz;
   /* cookie for SO_COOKIE */
   uint64_t cookie;
+  /* gso segment */
+  size_t gso_segment_sz;
 
   /* stat */
   /* do we need atomic here? atomic may impact the performance */
   uint32_t stat_pkt_build;
   uint32_t stat_pkt_arp_fail;
   uint32_t stat_pkt_tx;
+  uint32_t stat_tx_gso_count;
   uint32_t stat_tx_retry;
   uint32_t stat_pkt_rx;
   uint32_t stat_pkt_rx_enq_fail;
