@@ -512,7 +512,14 @@ int mufd_socket_port(int domain, int type, int protocol, enum mtl_port port) {
 }
 
 int mufd_socket(int domain, int type, int protocol) {
-  return mufd_socket_port(domain, type, protocol, MTL_PORT_P);
+  enum mtl_port port = MTL_PORT_P;
+  /* port select from env */
+  const char* port_u = getenv(MUFD_PORT_ENV_NAME);
+  if (port_u) {
+    port = atoi(port_u);
+    dbg("%s, port_u %s port %d\n", __func__, port_u, port);
+  }
+  return mufd_socket_port(domain, type, protocol, port);
 }
 
 int mufd_close(int sockfd) {
@@ -723,6 +730,12 @@ int mufd_base_fd(void) {
   struct ufd_mt_ctx* ctx = ufd_get_mt_ctx(true);
   if (!ctx) MUDP_ERR_RET(EIO);
   return ctx->init_params.fd_base;
+}
+
+enum mtl_log_level mufd_log_level(void) {
+  struct ufd_mt_ctx* ctx = ufd_get_mt_ctx(true);
+  if (!ctx) return MTL_LOG_LEVEL_INFO;
+  return ctx->init_params.mt_params.log_level;
 }
 
 int mufd_set_opaque(int sockfd, void* pri) {

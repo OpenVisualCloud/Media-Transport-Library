@@ -133,6 +133,7 @@ static int upl_get_libc_fn(struct upl_functions* fns) {
 static int upl_init_ctx(struct upl_ctx* ctx) {
   int ret;
 
+  ctx->log_level = MTL_LOG_LEVEL_INFO;
   ctx->upl_entires_nb = 1024 * 10; /* max fd we support */
   ctx->upl_entires = upl_zmalloc(sizeof(*ctx->upl_entires) * ctx->upl_entires_nb);
   if (!ctx->upl_entires) {
@@ -168,6 +169,7 @@ static void __attribute__((constructor)) upl_init() {
   } else {
     ctx->mtl_fd_base = mufd_base_fd();
     ctx->has_mtl_udp = true;
+    ctx->log_level = mufd_log_level();
     info("%s, mufd init succ, base fd %d\n", __func__, ctx->mtl_fd_base);
   }
 }
@@ -183,32 +185,32 @@ static int upl_stat_dump(void* priv) {
   int kfd = entry->kfd;
 
   if (entry->stat_tx_ufd_cnt || entry->stat_rx_ufd_cnt) {
-    info("%s(%d), ufd pkt tx %d rx %d\n", __func__, kfd, entry->stat_tx_ufd_cnt,
-         entry->stat_rx_ufd_cnt);
+    notice("%s(%d), ufd pkt tx %d rx %d\n", __func__, kfd, entry->stat_tx_ufd_cnt,
+           entry->stat_rx_ufd_cnt);
     entry->stat_tx_ufd_cnt = 0;
     entry->stat_rx_ufd_cnt = 0;
   }
   if (entry->stat_tx_kfd_cnt || entry->stat_rx_kfd_cnt) {
-    info("%s(%d), kfd pkt tx %d rx %d\n", __func__, kfd, entry->stat_tx_kfd_cnt,
-         entry->stat_rx_kfd_cnt);
+    notice("%s(%d), kfd pkt tx %d rx %d\n", __func__, kfd, entry->stat_tx_kfd_cnt,
+           entry->stat_rx_kfd_cnt);
     entry->stat_tx_kfd_cnt = 0;
     entry->stat_rx_kfd_cnt = 0;
   }
   if (entry->stat_epoll_cnt || entry->stat_epoll_revents_cnt) {
-    info("%s(%d), epoll %d revents %d\n", __func__, kfd, entry->stat_epoll_cnt,
-         entry->stat_epoll_revents_cnt);
+    notice("%s(%d), epoll %d revents %d\n", __func__, kfd, entry->stat_epoll_cnt,
+           entry->stat_epoll_revents_cnt);
     entry->stat_epoll_cnt = 0;
     entry->stat_epoll_revents_cnt = 0;
   }
   if (entry->stat_select_cnt || entry->stat_select_revents_cnt) {
-    info("%s(%d), select %d revents %d\n", __func__, kfd, entry->stat_select_cnt,
-         entry->stat_select_revents_cnt);
+    notice("%s(%d), select %d revents %d\n", __func__, kfd, entry->stat_select_cnt,
+           entry->stat_select_revents_cnt);
     entry->stat_select_cnt = 0;
     entry->stat_select_revents_cnt = 0;
   }
   if (entry->stat_poll_cnt || entry->stat_poll_revents_cnt) {
-    info("%s(%d), poll %d revents %d\n", __func__, kfd, entry->stat_poll_cnt,
-         entry->stat_poll_revents_cnt);
+    notice("%s(%d), poll %d revents %d\n", __func__, kfd, entry->stat_poll_cnt,
+           entry->stat_poll_revents_cnt);
     entry->stat_poll_cnt = 0;
     entry->stat_poll_revents_cnt = 0;
   }
@@ -1064,4 +1066,9 @@ int epoll_pwait(int epfd, struct epoll_event* events, int maxevents, int timeout
   /* wa to fix end loop in userspace issue */
   if (timeout <= 0) timeout = 1000 * 2;
   return upl_efd_epoll_pwait(efd, events, maxevents, timeout, sigmask);
+}
+
+enum mtl_log_level upl_get_log_level(void) {
+  struct upl_ctx* ctx = upl_get_ctx();
+  return ctx->log_level;
 }

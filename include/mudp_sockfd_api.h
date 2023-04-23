@@ -25,6 +25,12 @@ extern "C" {
 
 /** The MUFD_CFG file env name */
 #define MUFD_CFG_ENV_NAME "MUFD_CFG"
+/**
+ * The MUFD_PORT select env name for mufd_socket, ex:
+ * MUFD_PORT=0 to select MTL_PORT_P
+ * MUFD_PORT=1 to select MTL_PORT_R
+ */
+#define MUFD_PORT_ENV_NAME "MUFD_PORT"
 
 /**
  * Create a sockfd udp transport socket.

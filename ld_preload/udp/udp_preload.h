@@ -25,28 +25,34 @@
 #ifndef _MT_UDP_PRELOAD_H_
 #define _MT_UDP_PRELOAD_H_
 
+enum mtl_log_level upl_get_log_level(void);
+
 /* log define */
 #ifdef DEBUG
-#define dbg(...)                 \
-  do {                           \
-    printf("UPL: " __VA_ARGS__); \
+#define dbg(...)                                                                 \
+  do {                                                                           \
+    if (upl_get_log_level() <= MTL_LOG_LEVEL_DEBUG) printf("UPL: " __VA_ARGS__); \
   } while (0)
 #else
 #define dbg(...) \
   do {           \
   } while (0)
 #endif
-#define info(...)                \
-  do {                           \
-    printf("UPL: " __VA_ARGS__); \
+#define info(...)                                                               \
+  do {                                                                          \
+    if (upl_get_log_level() <= MTL_LOG_LEVEL_INFO) printf("UPL: " __VA_ARGS__); \
   } while (0)
-#define warn(...)                     \
-  do {                                \
-    printf("UPL: Warn: "__VA_ARGS__); \
+#define notice(...)                                                              \
+  do {                                                                           \
+    if (upl_get_log_level() <= MTL_LOG_LEVEL_NOTICE) printf("UPL: "__VA_ARGS__); \
   } while (0)
-#define err(...)                       \
-  do {                                 \
-    printf("UPL: Error: "__VA_ARGS__); \
+#define warn(...)                                                                       \
+  do {                                                                                  \
+    if (upl_get_log_level() <= MTL_LOG_LEVEL_WARNING) printf("UPL: Warn: "__VA_ARGS__); \
+  } while (0)
+#define err(...)                                                                       \
+  do {                                                                                 \
+    if (upl_get_log_level() <= MTL_LOG_LEVEL_ERROR) printf("UPL: Error: "__VA_ARGS__); \
   } while (0)
 
 /* On error, -1 is returned, and errno is set appropriately. */
@@ -164,6 +170,7 @@ struct upl_efd_entry {
 
 struct upl_ctx {
   bool init_succ;
+  enum mtl_log_level log_level;
 
   bool has_mtl_udp;
   int mtl_fd_base;

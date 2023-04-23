@@ -1502,7 +1502,7 @@ ssize_t mudp_sendto(mudp_handle ut, const void* buf, size_t len, int flags,
   unsigned int pkts_nb = len / sz_per_pkt;
   if (len % sz_per_pkt) pkts_nb++;
   struct rte_mbuf* pkts[pkts_nb];
-  info("%s(%d), pkts_nb %u\n", __func__, idx, pkts_nb);
+  dbg("%s(%d), pkts_nb %u\n", __func__, idx, pkts_nb);
   if (pkts_nb > 1) s->stat_tx_gso_count++;
 
   ret = rte_pktmbuf_alloc_bulk(s->tx_pool, pkts, pkts_nb);
