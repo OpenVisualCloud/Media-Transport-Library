@@ -110,6 +110,14 @@ int mufd_init_context(void);
 int mufd_base_fd(void);
 
 /**
+ * Get the log level of mufd context.
+ *
+ * @return
+ *   - log level
+ */
+enum mtl_log_level mufd_log_level(void);
+
+/**
  * Set private opaque data on the udp transport socket.
  *
  * @param sockfd

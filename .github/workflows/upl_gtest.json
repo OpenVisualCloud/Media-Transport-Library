@@ -1,6 +1,6 @@
 {
-    "nb_udp_sockets" : "8",
-    "nb_nic_queues" : "8",
+    "nb_udp_sockets" : "32",
+    "nb_nic_queues" : "32",
     "nic_shared_queues": false,
     "udp_lcore": false,
     "nic_queue_rate_limit_g": "2",
@@ -13,6 +13,11 @@
         {
             "port": "0000:af:01.0",
             "ip": "192.168.89.80",
+            "netmask": "255.255.254.0",
+        },
+        {
+            "port": "0000:af:01.1",
+            "ip": "192.168.89.81",
             "netmask": "255.255.254.0",
         }
     ],

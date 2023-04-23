@@ -94,8 +94,7 @@ jobs:
         run: |
           sudo killall -SIGINT KahawaiTest || true
           sudo killall -SIGINT KahawaiUfdTest || true
-          sudo killall -SIGINT UsocketServerSample || true
-          sudo killall -SIGINT UsocketClientSample || true
+          sudo killall -SIGINT KahawaiUplTest || true
 
       - name: Binding network adapter
         run: |
@@ -121,7 +120,7 @@ jobs:
 
       - name: Run udp ld preload test case
         run: |
-          sudo ./.github/workflows/upl_test.sh
+          sudo MUFD_CFG=.github/workflows/upl_gtest.json LD_PRELOAD=/usr/local/lib/x86_64-linux-gnu/libmtl_udp_preload.so ./build/tests/KahawaiUplTest --p_sip 192.168.89.80 --r_sip 192.168.89.81
 
       - name: Run st2110 test case
         run: |
