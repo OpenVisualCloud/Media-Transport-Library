@@ -22,8 +22,8 @@ build_ffmpeg(){
     git checkout -b 4.4 origin/release/4.4
     git checkout 4.4
     git reset --hard aa28df74ab197c49a05fecc40c81e0f8ec4ad0c3
-    cp -f ../kahawai.c ./libavdevice/
-    git am --whitespace=fix ../0001-avdevice-kahawai-Add-the-kahawai-input-device-plugin.patch
+    cp -f ../kahawai_common.c ../kahawai_common.h ../kahawai_dec.c ../kahawai_enc.c ./libavdevice/
+    git am --whitespace=fix ../0001-avdevice-kahawai-Add-kahawai-input-output-devices.patch
     ./configure --enable-shared --disable-static --enable-nonfree --enable-pic --enable-gpl --enable-mtl --enable-libopenh264 --enable-encoder=libopenh264
     make clean
     make -j32

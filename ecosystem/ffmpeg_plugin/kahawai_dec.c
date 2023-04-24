@@ -1,6 +1,6 @@
 /*
  * Kahawai raw video demuxer
- * Copyright (c) 2022 Intel
+ * Copyright (c) 2023 Intel
  *
  * FFmpeg is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
@@ -20,6 +20,7 @@
 #include <mtl/st_convert_api.h>
 #include <mtl/st_pipeline_api.h>
 
+#include "kahawai_common.h"
 #include "libavformat/avformat.h"
 #include "libavformat/internal.h"
 #include "libavutil/imgutils.h"
@@ -27,17 +28,6 @@
 #include "libavutil/parseutils.h"
 #include "libavutil/pixdesc.h"
 
-typedef struct KahawaiFpsDecs {
-  enum st_fps st_fps;
-  unsigned int min;
-  unsigned int max;
-} KahawaiFpsDecs;
-
-const static KahawaiFpsDecs fps_table[] = {
-    {ST_FPS_P59_94, 5994 - 100, 5994 + 100},    {ST_FPS_P50, 5000 - 100, 5000 + 100},
-    {ST_FPS_P29_97, 2997 - 100, 2997 + 100},    {ST_FPS_P25, 2500 - 100, 2500 + 100},
-    {ST_FPS_P119_88, 11988 - 100, 11988 + 100},
-};
 typedef struct KahawaiDemuxerContext {
   const AVClass* class; /**< Class for private options. */
 
@@ -72,8 +62,7 @@ typedef struct KahawaiDemuxerContext {
   struct st_frame* last_frame;
 } KahawaiDemuxerContext;
 
-static mtl_handle shared_st_handle = NULL;
-static unsigned int active_session_cnt = 0;
+extern unsigned int active_session_cnt;
 
 static int rx_st20p_frame_available(void* priv) {
   KahawaiDemuxerContext* s = priv;
@@ -89,48 +78,23 @@ static int kahawai_read_header(AVFormatContext* ctx) {
   KahawaiDemuxerContext* s = ctx->priv_data;
 
   AVStream* st = NULL;
-
   enum AVPixelFormat pix_fmt = AV_PIX_FMT_NONE;
-  unsigned int fps = 0;
-
   int packet_size = 0;
-
   int ret = 0;
 
-  struct mtl_init_params param;
+  // struct mtl_init_params param;
   struct st20p_rx_ops ops_rx;
 
   av_log(ctx, AV_LOG_VERBOSE, "kahawai_read_header triggered\n");
 
-  memset(&param, 0, sizeof(param));
   memset(&ops_rx, 0, sizeof(ops_rx));
 
   if ((NULL == s->port) || (strlen(s->port) > MTL_PORT_MAX_LEN)) {
     av_log(ctx, AV_LOG_ERROR, "Invalid port info\n");
     return AVERROR(EINVAL);
   }
-  param.num_ports = 1;
-  strncpy(param.port[MTL_PORT_P], s->port, MTL_PORT_MAX_LEN);
   ops_rx.port.num_port = 1;
   strncpy(ops_rx.port.port[MTL_PORT_P], s->port, MTL_PORT_MAX_LEN);
-
-  if (NULL == s->local_addr) {
-    av_log(ctx, AV_LOG_ERROR, "Invalid local IP address\n");
-    return AVERROR(EINVAL);
-  } else if (sscanf(s->local_addr, "%hhu.%hhu.%hhu.%hhu", &param.sip_addr[MTL_PORT_P][0],
-                    &param.sip_addr[MTL_PORT_P][1], &param.sip_addr[MTL_PORT_P][2],
-                    &param.sip_addr[MTL_PORT_P][3]) != MTL_IP_ADDR_LEN) {
-    av_log(ctx, AV_LOG_ERROR, "Failed to parse local IP address: %s\n", s->local_addr);
-    return AVERROR(EINVAL);
-  }
-
-  param.rx_sessions_cnt_max = s->session_cnt;
-  param.tx_sessions_cnt_max = 0;
-  param.flags = MTL_FLAG_BIND_NUMA | MTL_FLAG_DEV_AUTO_START_STOP;
-  param.log_level = MTL_LOG_LEVEL_DEBUG;  // log level. ERROR, INFO, WARNING
-  param.priv = NULL;                      // usr crx pointer
-  param.ptp_get_time_fn = NULL;
-  param.lcores = NULL;
 
   if (NULL == s->src_addr) {
     av_log(ctx, AV_LOG_ERROR, "Invalid source IP address\n");
@@ -185,15 +149,9 @@ static int kahawai_read_header(AVFormatContext* ctx) {
   }
   av_log(ctx, AV_LOG_VERBOSE, "packet size: %d\n", packet_size);
 
-  fps = s->framerate.num * 100 / s->framerate.den;
-  for (ret = 0; ret < sizeof(fps_table); ++ret) {
-    if ((fps >= fps_table[ret].min) && (fps <= fps_table[ret].max)) {
-      ops_rx.fps = fps_table[ret].st_fps;
-      break;
-    }
-  }
-  if (ret >= sizeof(fps_table)) {
-    av_log(ctx, AV_LOG_ERROR, "Frame rate %0.2f is not supported\n", ((float)fps / 100));
+  if (ops_rx.fps = get_fps_table(s->framerate) == ST_FPS_MAX) {
+    av_log(ctx, AV_LOG_ERROR, "Frame rate %0.2f is not supported\n",
+           av_q2d(s->framerate));
     return AVERROR(EINVAL);
   }
 
@@ -203,9 +161,6 @@ static int kahawai_read_header(AVFormatContext* ctx) {
     if (!s->ext_frames_mode) {
       av_log(ctx, AV_LOG_WARNING, "Turned off DMA for ext_frames_mode disabled\n");
     } else {
-      av_log(ctx, AV_LOG_VERBOSE, "DMA enabled on %s\n", s->dma_dev);
-      param.num_dma_dev_port = 1;
-      strncpy(param.dma_dev_port[0], s->dma_dev, MTL_PORT_MAX_LEN);
       ops_rx.flags = ST20_RX_FLAG_DMA_OFFLOAD;
     }
   }
@@ -226,23 +181,22 @@ static int kahawai_read_header(AVFormatContext* ctx) {
       av_rescale_q(ctx->packet_size, (AVRational){8, 1}, st->time_base);
 
   // Create device
-  if (!shared_st_handle) {
-    s->dev_handle = mtl_init(&param);
+  if (!kahawai_get_handle()) {
+    s->dev_handle = kahawai_init(s->port, s->local_addr, 0, s->session_cnt, s->dma_dev);
     if (!s->dev_handle) {
       av_log(ctx, AV_LOG_ERROR, "mtl_init failed\n");
       return AVERROR(EIO);
     }
-    shared_st_handle = s->dev_handle;
-    av_log(ctx, AV_LOG_VERBOSE, "mtl_init finished: st_handle 0x%" PRIx64 "\n",
-           (unsigned long)shared_st_handle);
+    kahawai_set_handle(s->dev_handle);
+    av_log(ctx, AV_LOG_VERBOSE, "mtl_init finished: st_handle %p\n ",
+           kahawai_get_handle());
   } else {
-    s->dev_handle = shared_st_handle;
-    av_log(ctx, AV_LOG_VERBOSE, "use shared st_handle 0x%" PRIx64 "\n",
-           (unsigned long)shared_st_handle);
+    kahawai_set_handle(s->dev_handle);
+    av_log(ctx, AV_LOG_VERBOSE, "use shared st_handle %p\n ", kahawai_get_handle());
   }
   ++active_session_cnt;
 
-  ops_rx.name = "st20p";
+  ops_rx.name = "st20p_rx";
   ops_rx.priv = s;                 // Handle of priv_data registered to lib
   ops_rx.port.payload_type = 112;  // RX_ST20_PAYLOAD_TYPE
   ops_rx.device = ST_PLUGIN_DEVICE_AUTO;
@@ -478,9 +432,9 @@ static int kahawai_read_close(AVFormatContext* ctx) {
 
   // Destroy device
   if (--active_session_cnt == 0) {
-    if (shared_st_handle) {
-      mtl_uninit(shared_st_handle);
-      shared_st_handle = NULL;
+    if (kahawai_get_handle()) {
+      mtl_uninit(kahawai_get_handle());
+      kahawai_set_handle(NULL);
       av_log(ctx, AV_LOG_VERBOSE, "mtl_uninit finished\n");
     } else {
       av_log(ctx, AV_LOG_ERROR, "missing st_handle\n");
