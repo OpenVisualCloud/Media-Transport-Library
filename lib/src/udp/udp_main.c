@@ -7,6 +7,11 @@
 #include "../mt_log.h"
 #include "../mt_stat.h"
 
+#ifndef UDP_SEGMENT
+/* fix for centos build */
+#define UDP_SEGMENT 103 /* Set GSO segmentation size */
+#endif
+
 static inline void udp_set_flag(struct mudp_impl* s, uint32_t flag) { s->flags |= flag; }
 
 static inline void udp_clear_flag(struct mudp_impl* s, uint32_t flag) {
@@ -86,7 +91,7 @@ static int udp_verify_sendto_args(size_t len, int flags, const struct sockaddr_i
   int ret = udp_verify_addr(addr, addrlen);
   if (ret < 0) return ret;
 
-  if (len > MUDP_MAX_BYTES) {
+  if ((len <= 0) || (len > MUDP_MAX_GSO_BYTES)) {
     err("%s, invalid len %" PRIu64 "\n", __func__, len);
     MUDP_ERR_RET(EINVAL);
   }
@@ -128,6 +133,11 @@ static int udp_build_tx_pkt(struct mtl_main_impl* impl, struct mudp_impl* s,
   enum mtl_port port = s->port;
   int idx = s->idx;
   int ret;
+
+  if (len > MUDP_MAX_BYTES) {
+    err("%s(%d), invalid len %" PRId64 "\n", __func__, idx, len);
+    MUDP_ERR_RET(EIO);
+  }
 
   /* copy eth, ip, udp */
   rte_memcpy(hdr, &s->hdr, sizeof(*hdr));
@@ -185,28 +195,49 @@ static ssize_t udp_msg_len(const struct msghdr* msg) {
   return len;
 }
 
-static ssize_t udp_build_tx_msg_pkt(struct mtl_main_impl* impl, struct mudp_impl* s,
-                                    struct rte_mbuf* pkt, const struct msghdr* msg,
-                                    const struct sockaddr_in* addr_in,
-                                    int arp_timeout_ms) {
-  struct mt_udp_hdr* hdr = rte_pktmbuf_mtod(pkt, struct mt_udp_hdr*);
-  struct rte_ether_hdr* eth = &hdr->eth;
-  struct rte_ipv4_hdr* ipv4 = &hdr->ipv4;
-  struct rte_udp_hdr* udp = &hdr->udp;
+static int udp_cmsg_handle(struct mudp_impl* s, const struct msghdr* msg) {
+  struct cmsghdr* cmsg = CMSG_FIRSTHDR(msg);
+  if (!cmsg) return 0;
+  int idx = s->idx;
+
+  switch (cmsg->cmsg_level) {
+    case SOL_UDP:
+      if (cmsg->cmsg_type == UDP_SEGMENT) {
+        if (cmsg->cmsg_len == CMSG_LEN(sizeof(uint16_t))) {
+          uint16_t* p_val = (uint16_t*)CMSG_DATA(cmsg);
+          uint16_t val = *p_val;
+          dbg("%s(%d), UDP_SEGMENT val %u\n", __func__, idx, val);
+          s->gso_segment_sz = val;
+        } else {
+          err("%s(%d), unknow cmsg_len %" PRId64 " for UDP_SEGMENT\n", __func__, idx,
+              cmsg->cmsg_len);
+          MUDP_ERR_RET(EINVAL);
+        }
+      }
+      break;
+    default:
+      break;
+  }
+
+  return 0;
+}
+
+static int udp_build_tx_msg_pkt(struct mtl_main_impl* impl, struct mudp_impl* s,
+                                struct rte_mbuf** pkts, unsigned int pkts_nb,
+                                const struct msghdr* msg,
+                                const struct sockaddr_in* addr_in, int arp_timeout_ms,
+                                size_t sz_per_pkt) {
   enum mtl_port port = s->port;
   int idx = s->idx;
   int ret;
 
-  /* copy eth, ip, udp */
-  rte_memcpy(hdr, &s->hdr, sizeof(*hdr));
-
-  /* eth */
-  struct rte_ether_addr* d_addr = mt_eth_d_addr(eth);
+  /* get the dst mac address */
+  struct rte_ether_addr d_addr;
   uint8_t* dip = (uint8_t*)&addr_in->sin_addr;
   if (udp_get_flag(s, MUDP_TX_USER_MAC)) {
-    rte_memcpy(d_addr->addr_bytes, s->user_mac, RTE_ETHER_ADDR_LEN);
+    rte_memcpy(&d_addr.addr_bytes, s->user_mac, RTE_ETHER_ADDR_LEN);
   } else {
-    ret = mt_dev_dst_ip_mac(impl, dip, d_addr, port, arp_timeout_ms);
+    ret = mt_dev_dst_ip_mac(impl, dip, &d_addr, port, arp_timeout_ms);
     if (ret < 0) {
       if (arp_timeout_ms) /* log only if not zero timeout */
         err("%s(%d), mt_dev_dst_ip_mac fail %d for %u.%u.%u.%u\n", __func__, idx, ret,
@@ -216,78 +247,122 @@ static ssize_t udp_build_tx_msg_pkt(struct mtl_main_impl* impl, struct mudp_impl
     }
   }
 
-  /* ip */
-  ipv4->packet_id = htons(s->ipv4_packet_id);
-  s->ipv4_packet_id++;
-  mtl_memcpy(&ipv4->dst_addr, dip, MTL_IP_ADDR_LEN);
+  void* payloads[pkts_nb];
+  /* fill hdr info for all pkts */
+  for (unsigned int i = 0; i < pkts_nb; i++) {
+    struct rte_mbuf* pkt = pkts[i];
+    struct mt_udp_hdr* hdr = rte_pktmbuf_mtod(pkt, struct mt_udp_hdr*);
+    struct rte_ether_hdr* eth = &hdr->eth;
+    struct rte_ipv4_hdr* ipv4 = &hdr->ipv4;
+    struct rte_udp_hdr* udp = &hdr->udp;
 
-  /* udp */
-  udp->dst_port = addr_in->sin_port;
+    /* copy eth, ip, udp */
+    rte_memcpy(hdr, &s->hdr, sizeof(*hdr));
+    /* update dst mac */
+    rte_memcpy(mt_eth_d_addr(eth), &d_addr, sizeof(d_addr));
+    /* ip */
+    ipv4->packet_id = htons(s->ipv4_packet_id);
+    s->ipv4_packet_id++;
+    mtl_memcpy(&ipv4->dst_addr, dip, MTL_IP_ADDR_LEN);
+    /* udp */
+    udp->dst_port = addr_in->sin_port;
+    /* pkt mbuf */
+    mt_mbuf_init_ipv4(pkt);
+    pkt->packet_type = RTE_PTYPE_L2_ETHER | RTE_PTYPE_L3_IPV4 | RTE_PTYPE_L4_UDP;
 
-  /* pkt mbuf */
-  mt_mbuf_init_ipv4(pkt);
-  pkt->packet_type = RTE_PTYPE_L2_ETHER | RTE_PTYPE_L3_IPV4 | RTE_PTYPE_L4_UDP;
+    payloads[i] = &udp[1];
+    s->stat_pkt_build++;
+  }
 
-  /* copy payload */
-  void* payload = &udp[1];
-  size_t payload_len = MUDP_MAX_BYTES;
-  size_t copied = 0;
-
+  unsigned int pkt_idx = 0;
+  void* pd = payloads[pkt_idx];
+  size_t pd_len = sz_per_pkt;
+  /* copy msg buffer to payload */
   for (int i = 0; i < msg->msg_iovlen; i++) {
-    if (payload_len <= 0) {
-      err("%s(%d), too many data in the msg\n", __func__, idx);
-      MUDP_ERR_RET(EINVAL);
+    size_t iov_len = msg->msg_iov[i].iov_len;
+    void* iov = msg->msg_iov[i].iov_base;
+    while (iov_len > 0) {
+      if (pd_len <= 0) {
+        err("%s(%d), no available payload, pkts_nb %u\n", __func__, idx, pkts_nb);
+        MUDP_ERR_RET(EIO);
+      }
+      size_t clen = RTE_MIN(pd_len, iov_len);
+      rte_memcpy(pd, iov, clen);
+      pd += clen;
+      iov += clen;
+      iov_len -= clen;
+      pd_len -= clen;
+      if (pd_len <= 0) {
+        pkts[pkt_idx]->data_len = sz_per_pkt + sizeof(struct mt_udp_hdr);
+        pkts[pkt_idx]->pkt_len = pkts[pkt_idx]->data_len;
+        pkt_idx++;
+        dbg("%s(%d), pd to idx %u\n", __func__, idx, pkt_idx);
+        if (pkt_idx >= pkts_nb) {
+          dbg("%s(%d), pd reach max %u\n", __func__, idx, pkts_nb);
+          pd = NULL;
+          pd_len = 0;
+        } else {
+          pd = payloads[pkt_idx];
+          pd_len = sz_per_pkt;
+        }
+      }
     }
-    size_t clen = RTE_MIN(msg->msg_iov[i].iov_len, payload_len);
-    rte_memcpy(payload, msg->msg_iov[i].iov_base, clen);
-    payload_len -= clen;
-    payload += clen;
-    copied += clen;
-  }
-  s->stat_pkt_deliver++;
-
-  pkt->data_len = copied + sizeof(*hdr);
-  pkt->pkt_len = pkt->data_len;
-
-  udp->dgram_len = htons(pkt->pkt_len - pkt->l2_len - pkt->l3_len);
-  ipv4->total_length = htons(pkt->pkt_len - pkt->l2_len);
-  if (!mt_if_has_offload_ipv4_cksum(impl, port)) {
-    /* generate cksum if no offload */
-    ipv4->hdr_checksum = rte_ipv4_cksum(ipv4);
   }
 
-  s->stat_pkt_build++;
-  return copied;
+  /* update data len for last pkt */
+  if ((pd_len > 0) && (pd_len < sz_per_pkt)) {
+    pkts[pkt_idx]->data_len = sz_per_pkt - pd_len + sizeof(struct mt_udp_hdr);
+    pkts[pkt_idx]->pkt_len = pkts[pkt_idx]->data_len;
+  }
+
+  /* fill the info according to the payload */
+  for (unsigned int i = 0; i < pkts_nb; i++) {
+    struct rte_mbuf* pkt = pkts[i];
+    struct mt_udp_hdr* hdr = rte_pktmbuf_mtod(pkt, struct mt_udp_hdr*);
+    struct rte_ipv4_hdr* ipv4 = &hdr->ipv4;
+    struct rte_udp_hdr* udp = &hdr->udp;
+
+    udp->dgram_len = htons(pkt->pkt_len - pkt->l2_len - pkt->l3_len);
+    ipv4->total_length = htons(pkt->pkt_len - pkt->l2_len);
+    if (!mt_if_has_offload_ipv4_cksum(impl, port)) {
+      /* generate cksum if no offload */
+      ipv4->hdr_checksum = rte_ipv4_cksum(ipv4);
+    }
+  }
+
+  return 0;
 }
 
-static int udp_tx_pkt(struct mtl_main_impl* impl, struct mudp_impl* s,
-                      struct rte_mbuf* pkt) {
+static unsigned int udp_tx_pkts(struct mtl_main_impl* impl, struct mudp_impl* s,
+                                struct rte_mbuf** pkts, unsigned int count) {
   int idx = s->idx;
+  unsigned int sent = 0;
   uint64_t start_ts = mt_get_tsc(impl);
 
   while (1) {
-    uint16_t sent;
-
+    unsigned int remaining = count - sent;
     if (s->tsq)
-      sent = mt_tsq_burst(s->tsq, &pkt, 1);
+      sent += mt_tsq_burst(s->tsq, pkts, remaining);
     else
-      sent = mt_dev_tx_burst(s->txq, &pkt, 1);
-    if (sent >= 1) { /* burst succ */
-      s->stat_pkt_tx++;
-      break;
+      sent = mt_dev_tx_burst(s->txq, pkts, remaining);
+    s->stat_pkt_tx += sent;
+    if (sent >= count) { /* all tx succ */
+      return sent;
     }
 
     /* check timeout */
     unsigned int us = (mt_get_tsc(impl) - start_ts) / NS_PER_US;
     if (us > s->tx_timeout_us) {
       warn("%s(%d), fail as timeout %u us\n", __func__, idx, s->tx_timeout_us);
-      MUDP_ERR_RET(ETIMEDOUT);
+      return sent;
     }
     s->stat_tx_retry++;
     mt_sleep_us(1);
   }
 
-  return 0;
+  /* never reach here */
+  err("%s(%d), never reach here\n", __func__, idx);
+  return sent;
 }
 
 static int udp_bind_port(struct mudp_impl* s, uint16_t bind_port) {
@@ -634,6 +709,10 @@ static int udp_stat_dump(void* priv) {
            s->stat_pkt_tx);
     s->stat_pkt_build = 0;
     s->stat_pkt_tx = 0;
+  }
+  if (s->stat_tx_gso_count) {
+    notice("%s(%d,%d), tx gso count %u\n", __func__, port, idx, s->stat_tx_gso_count);
+    s->stat_tx_gso_count = 0;
   }
   if (s->stat_pkt_rx) {
     notice("%s(%d,%d), pkt rx %u deliver %u, %s rxq %u\n", __func__, port, idx,
@@ -1292,6 +1371,7 @@ mudp_handle mudp_socket_port(mtl_handle mt, int domain, int type, int protocol,
   s->rcvbuf_sz = 10 * 1024;
   s->cookie = idx;
   s->mcast_addrs_nb = 16; /* max 16 mcast address */
+  s->gso_segment_sz = MUDP_MAX_BYTES;
   mt_pthread_mutex_init(&s->mcast_addrs_mutex, NULL);
 
   /* lcore related */
@@ -1401,7 +1481,6 @@ ssize_t mudp_sendto(mudp_handle ut, const void* buf, size_t len, int flags,
   int idx = s->idx;
   int arp_timeout_ms = s->arp_timeout_us / 1000;
   int ret;
-  struct rte_mbuf* m;
 
   const struct sockaddr_in* addr_in = (struct sockaddr_in*)dest_addr;
   ret = udp_verify_sendto_args(len, flags, addr_in, addrlen);
@@ -1419,29 +1498,45 @@ ssize_t mudp_sendto(mudp_handle ut, const void* buf, size_t len, int flags,
     }
   }
 
-  m = rte_pktmbuf_alloc(s->tx_pool);
-  if (!m) {
-    err("%s(%d), pktmbuf alloc fail\n", __func__, idx);
+  size_t sz_per_pkt = s->gso_segment_sz;
+  unsigned int pkts_nb = len / sz_per_pkt;
+  if (len % sz_per_pkt) pkts_nb++;
+  struct rte_mbuf* pkts[pkts_nb];
+  dbg("%s(%d), pkts_nb %u\n", __func__, idx, pkts_nb);
+  if (pkts_nb > 1) s->stat_tx_gso_count++;
+
+  ret = rte_pktmbuf_alloc_bulk(s->tx_pool, pkts, pkts_nb);
+  if (ret < 0) {
+    err("%s(%d), pktmbuf alloc fail, pkts_nb %u\n", __func__, idx, pkts_nb);
     MUDP_ERR_RET(ENOMEM);
   }
 
-  ret = udp_build_tx_pkt(impl, s, m, buf, len, addr_in, arp_timeout_ms);
-  if (ret < 0) {
-    rte_pktmbuf_free(m);
-    if (arp_timeout_ms) {
-      err("%s(%d), build pkt fail %d\n", __func__, idx, ret);
-      return ret;
-    } else {
-      mt_sleep_us(1);
-      /* align to kernel behavior which sendto succ even if arp not resolved */
-      return len;
+  size_t offset = 0;
+  for (unsigned int i = 0; i < pkts_nb; i++) {
+    size_t cur_len = RTE_MIN(sz_per_pkt, len - offset);
+    ret = udp_build_tx_pkt(impl, s, pkts[i], buf + offset, cur_len, addr_in,
+                           arp_timeout_ms);
+    if (ret < 0) {
+      rte_pktmbuf_free_bulk(pkts, pkts_nb);
+      if (arp_timeout_ms) {
+        err("%s(%d), build pkt fail %d\n", __func__, idx, ret);
+        return ret;
+      } else {
+        mt_sleep_us(1);
+        /* align to kernel behavior which sendto succ even if arp not resolved */
+        return len;
+      }
     }
   }
 
-  ret = udp_tx_pkt(impl, s, m);
-  if (ret < 0) {
-    rte_pktmbuf_free(m);
-    return ret;
+  unsigned int sent = udp_tx_pkts(impl, s, pkts, pkts_nb);
+  if (sent < pkts_nb) {
+    rte_pktmbuf_free_bulk(pkts + sent, pkts_nb - sent);
+    if (sent) {                 /* partially send */
+      return sent * sz_per_pkt; /* the size is fixed for the sent packets */
+    } else {
+      MUDP_ERR_RET(ETIMEDOUT);
+    }
   }
 
   return len;
@@ -1453,11 +1548,10 @@ ssize_t mudp_sendmsg(mudp_handle ut, const struct msghdr* msg, int flags) {
   int idx = s->idx;
   int arp_timeout_ms = s->msg_arp_timeout_us / 1000;
   int ret;
-  struct rte_mbuf* m;
-  ssize_t copied;
 
   const struct sockaddr_in* addr_in = (struct sockaddr_in*)msg->msg_name;
-  ret = udp_verify_sendto_args(0, flags, addr_in, msg->msg_namelen);
+  /* len to 1 to let the verify happy */
+  ret = udp_verify_sendto_args(1, flags, addr_in, msg->msg_namelen);
   if (ret < 0) {
     err("%s(%d), invalid args\n", __func__, idx);
     return ret;
@@ -1472,33 +1566,48 @@ ssize_t mudp_sendmsg(mudp_handle ut, const struct msghdr* msg, int flags) {
     }
   }
 
-  m = rte_pktmbuf_alloc(s->tx_pool);
-  if (!m) {
-    err("%s(%d), pktmbuf alloc fail\n", __func__, idx);
+  udp_cmsg_handle(s, msg);
+
+  /* UDP_SEGMENT check */
+  size_t sz_per_pkt = s->gso_segment_sz;
+  size_t total_len = udp_msg_len(msg);
+  unsigned int pkts_nb = total_len / sz_per_pkt;
+  if (total_len % sz_per_pkt) pkts_nb++;
+  struct rte_mbuf* pkts[pkts_nb];
+  dbg("%s(%d), pkts_nb %u total_len %" PRId64 "\n", __func__, idx, pkts_nb, total_len);
+  if (pkts_nb > 1) s->stat_tx_gso_count++;
+
+  ret = rte_pktmbuf_alloc_bulk(s->tx_pool, pkts, pkts_nb);
+  if (ret < 0) {
+    err("%s(%d), pktmbuf alloc fail, pkts_nb %u\n", __func__, idx, pkts_nb);
     MUDP_ERR_RET(ENOMEM);
   }
 
-  copied = udp_build_tx_msg_pkt(impl, s, m, msg, addr_in, arp_timeout_ms);
-  if (copied < 0) {
-    rte_pktmbuf_free(m);
+  ret = udp_build_tx_msg_pkt(impl, s, pkts, pkts_nb, msg, addr_in, arp_timeout_ms,
+                             sz_per_pkt);
+  if (ret < 0) {
+    rte_pktmbuf_free_bulk(pkts, pkts_nb);
     if (arp_timeout_ms) {
       err("%s(%d), build pkt fail %d\n", __func__, idx, ret);
-      return copied;
+      return ret;
     } else {
       mt_sleep_us(1);
       /* align to kernel behavior which sendmsg succ even if arp not resolved */
-      return udp_msg_len(msg);
+      return total_len;
     }
   }
 
-  ret = udp_tx_pkt(impl, s, m);
-  if (ret < 0) {
-    rte_pktmbuf_free(m);
-    return ret;
+  unsigned int sent = udp_tx_pkts(impl, s, pkts, pkts_nb);
+  if (sent < pkts_nb) {
+    rte_pktmbuf_free_bulk(pkts + sent, pkts_nb - sent);
+    if (sent) {                 /* partially send */
+      return sent * sz_per_pkt; /* the size is fixed for the sent packets */
+    } else {
+      MUDP_ERR_RET(ETIMEDOUT);
+    }
   }
 
-  dbg("%s(%d), %" PRId64 " pkts send succ\n", __func__, idx, copied);
-  return copied;
+  return total_len;
 }
 
 int mudp_poll_query(struct mudp_pollfd* fds, mudp_nfds_t nfds, int timeout,

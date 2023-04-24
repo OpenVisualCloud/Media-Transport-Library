@@ -11,6 +11,7 @@
 #include <arpa/inet.h>
 #include <net/if.h>
 #include <net/if_arp.h>
+#include <netinet/udp.h>
 #include <numa.h>
 #include <poll.h>
 #include <sys/ioctl.h>

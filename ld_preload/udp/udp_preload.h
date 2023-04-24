@@ -25,28 +25,34 @@
 #ifndef _MT_UDP_PRELOAD_H_
 #define _MT_UDP_PRELOAD_H_
 
+enum mtl_log_level upl_get_log_level(void);
+
 /* log define */
 #ifdef DEBUG
-#define dbg(...)                 \
-  do {                           \
-    printf("UPL: " __VA_ARGS__); \
+#define dbg(...)                                                                 \
+  do {                                                                           \
+    if (upl_get_log_level() <= MTL_LOG_LEVEL_DEBUG) printf("UPL: " __VA_ARGS__); \
   } while (0)
 #else
 #define dbg(...) \
   do {           \
   } while (0)
 #endif
-#define info(...)                \
-  do {                           \
-    printf("UPL: " __VA_ARGS__); \
+#define info(...)                                                               \
+  do {                                                                          \
+    if (upl_get_log_level() <= MTL_LOG_LEVEL_INFO) printf("UPL: " __VA_ARGS__); \
   } while (0)
-#define warn(...)                     \
-  do {                                \
-    printf("UPL: Warn: "__VA_ARGS__); \
+#define notice(...)                                                              \
+  do {                                                                           \
+    if (upl_get_log_level() <= MTL_LOG_LEVEL_NOTICE) printf("UPL: "__VA_ARGS__); \
   } while (0)
-#define err(...)                       \
-  do {                                 \
-    printf("UPL: Error: "__VA_ARGS__); \
+#define warn(...)                                                                       \
+  do {                                                                                  \
+    if (upl_get_log_level() <= MTL_LOG_LEVEL_WARNING) printf("UPL: Warn: "__VA_ARGS__); \
+  } while (0)
+#define err(...)                                                                       \
+  do {                                                                                 \
+    if (upl_get_log_level() <= MTL_LOG_LEVEL_ERROR) printf("UPL: Error: "__VA_ARGS__); \
   } while (0)
 
 /* On error, -1 is returned, and errno is set appropriately. */
@@ -75,8 +81,12 @@ struct upl_functions {
                     const struct sockaddr* dest_addr, socklen_t addrlen);
   ssize_t (*sendmsg)(int sockfd, const struct msghdr* msg, int flags);
   int (*poll)(struct pollfd* fds, nfds_t nfds, int timeout);
+  int (*ppoll)(struct pollfd* fds, nfds_t nfds, const struct timespec* tmo_p,
+               const sigset_t* sigmask);
   int (*select)(int nfds, fd_set* readfds, fd_set* writefds, fd_set* exceptfds,
                 struct timeval* timeout);
+  int (*pselect)(int nfds, fd_set* readfds, fd_set* writefds, fd_set* exceptfds,
+                 const struct timespec* timeout, const sigset_t* sigmask);
   ssize_t (*recvfrom)(int sockfd, void* buf, size_t len, int flags,
                       struct sockaddr* src_addr, socklen_t* addrlen);
   ssize_t (*recv)(int sockfd, void* buf, size_t len, int flags);
@@ -127,6 +137,10 @@ struct upl_ufd_entry {
   int stat_rx_kfd_cnt;
   int stat_epoll_cnt;
   int stat_epoll_revents_cnt;
+  int stat_select_cnt;
+  int stat_select_revents_cnt;
+  int stat_poll_cnt;
+  int stat_poll_revents_cnt;
 };
 
 struct upl_efd_fd_item {
@@ -156,6 +170,7 @@ struct upl_efd_entry {
 
 struct upl_ctx {
   bool init_succ;
+  enum mtl_log_level log_level;
 
   bool has_mtl_udp;
   int mtl_fd_base;
@@ -164,6 +179,28 @@ struct upl_ctx {
 
   int upl_entires_nb; /* the number of upl_entires */
   void** upl_entires; /* upl entries */
+};
+
+struct upl_select_ctx {
+  struct upl_ctx* parent;
+  int nfds;
+  fd_set* readfds;
+  fd_set* writefds;
+  fd_set* exceptfds;
+  struct timeval* timeout;
+  /* for select */
+  const struct timespec* timeout_spec;
+  const sigset_t* sigmask;
+};
+
+struct upl_poll_ctx {
+  struct upl_ctx* parent;
+  struct pollfd* fds;
+  nfds_t nfds;
+  int timeout;
+  /* for ppoll */
+  const struct timespec* tmo_p;
+  const sigset_t* sigmask;
 };
 
 #endif

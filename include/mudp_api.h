@@ -21,6 +21,9 @@ extern "C" {
 /** Standard UDP is 1460 bytes, mtu is 1500 */
 #define MUDP_MAX_BYTES (MTL_UDP_MAX_BYTES)
 
+/** Max GSO bytes, 64k */
+#define MUDP_MAX_GSO_BYTES (64 * 1024)
+
 /**
  * Handle to udp transport context
  */

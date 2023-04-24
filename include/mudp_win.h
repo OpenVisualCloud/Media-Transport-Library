@@ -80,6 +80,14 @@ struct cmsghdr {
 #define IP_MTU_DISCOVER 10
 #endif
 
+#ifndef SOL_UDP
+#define SOL_UDP 17 /* sockopt level for UDP */
+#endif
+
+#ifndef UDP_SEGMENT
+#define UDP_SEGMENT 103 /* Set GSO segmentation size */
+#endif
+
 #if defined(__cplusplus)
 }
 #endif
