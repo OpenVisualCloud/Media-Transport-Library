@@ -237,9 +237,11 @@ static int upl_epoll_close(struct upl_efd_entry* entry) {
   struct upl_efd_fd_item* item;
 
   pthread_mutex_lock(&entry->mutex);
-  TAILQ_FOREACH(item, &entry->fds, next) {
+  /* check if any not removed */
+  while ((item = TAILQ_FIRST(&entry->fds))) {
     dbg("%s(%d), kfd %d not close\n", __func__, entry->efd, item->ufd->kfd);
     item->ufd->efd = -1;
+    TAILQ_REMOVE(&entry->fds, item, next);
     upl_free(item);
   }
   pthread_mutex_unlock(&entry->mutex);
