@@ -2,15 +2,18 @@
 
 Intel® Media Transport Library provides a efficient user space udp stack support from v23.04 version, this UDP LibOS stack is designed to POSIX compatible which allow user can adopt without any code logical change. It has a LD preload layer to intercept UDP socket API calls and replace with our implementation to allow non code change deployment and even no need rebuild. <br>
 
-The data plane traffic is handled within socket API directly under current thread context for extremely performance and lowest latency. Other user-space UDP stack usually run with client-service architect, it introduce a cross-core message cost which hurt the performance and add extra latency. Another major benefit is the data affinity, LLC is kept between the call and UDP stack as it shared both the CPU and data context.
+The data plane traffic is handled within socket API directly under current thread context for extremely performance and lowest latency. Other user-space UDP stack usually run with client-service architect, it introduce a cross-core message cost which hurt the performance and add extra latency.
+Another major benefit is the data affinity, LLC is kept between the call and UDP stack as it shared both the CPU and data context.
 
 ## 1. LibOS design
 
-LibOS is commonly used in cloud computing environments, where it can provide a lightweight and efficient platform for running containers and microservices. Intel® Media Transport Library provide a UDP protocols support to replace the kernel network stack for a lightweight and modular approach to building and running UDP based applications. This allows for greater flexibility and efficiency, as applications can be customized to include the required functionality, and can be run on a variety of platforms without the need for significant modifications.
+LibOS is commonly used in cloud computing environments, where it can provide a lightweight and efficient platform for running containers and microservices. Intel® Media Transport Library provide a UDP protocols support to replace the kernel network stack for a lightweight and modular approach to building and running UDP based applications.
+This allows for greater flexibility and efficiency, as applications can be customized to include the required functionality, and can be run on a variety of platforms without the need for significant modifications.
 
 ## 2. LD preload
 
-LD_PRELOAD is an environment variable used in Linux and other Unix-like operating systems to specify additional shared libraries to be loaded before the standard system libraries. This allows users to override or extend the functionality of existing libraries without modifying the original source code. Intel® Media Transport Library has a LD preload layer to intercept many network APIs. The implementation can be found at [udp libos code](../lib/src/udp/).
+LD_PRELOAD is an environment variable used in Linux and other Unix-like operating systems to specify additional shared libraries to be loaded before the standard system libraries. This allows users to override or extend the functionality of existing libraries without modifying the original source code.
+Intel® Media Transport Library has a LD preload layer to intercept many network APIs. The implementation can be found at [udp libos code](../lib/src/udp/).
 
 ### 2.1. The UDP APIs intercepted
 
@@ -102,7 +105,7 @@ Refer to [guide](../ecosystem/librist/) for detail.
 
 ### 3.2 nginx-quic
 
-Get from https://github.com/nginx-quic/nginx-quic
+Get from "https://github.com/nginx-quic/nginx-quic"
 
 Example command:
 
@@ -121,7 +124,7 @@ use epoll; # epoll or select, both are supported
 
 ### 3.3 ngtcp2
 
-Get from https://github.com/ngtcp2/ngtcp2
+Get from "https://github.com/ngtcp2/ngtcp2"
 
 Example command:
 
