@@ -223,15 +223,6 @@ int main(int argc, char** argv) {
     }
   }
 
-  // stop app thread
-  for (int i = 0; i < session_num; i++) {
-    app[i]->stop = true;
-    st_pthread_mutex_lock(&app[i]->wake_mutex);
-    st_pthread_cond_signal(&app[i]->wake_cond);
-    st_pthread_mutex_unlock(&app[i]->wake_mutex);
-    pthread_join(app[i]->thread, NULL);
-  }
-
   // check result
   ret = 0;
   for (int i = 0; i < session_num; i++) {
@@ -249,12 +240,18 @@ int main(int argc, char** argv) {
 
 error:
   for (int i = 0; i < session_num; i++) {
-    if (app[i]) {
-      if (app[i]->socket >= 0) mufd_close(app[i]->socket);
-      st_pthread_mutex_destroy(&app[i]->wake_mutex);
-      st_pthread_cond_destroy(&app[i]->wake_cond);
-      free(app[i]);
-    }
+    if (!app[i]) continue;
+    // stop app thread
+    app[i]->stop = true;
+    st_pthread_mutex_lock(&app[i]->wake_mutex);
+    st_pthread_cond_signal(&app[i]->wake_cond);
+    st_pthread_mutex_unlock(&app[i]->wake_mutex);
+    if (app[i]->thread) pthread_join(app[i]->thread, NULL);
+
+    if (app[i]->socket >= 0) mufd_close(app[i]->socket);
+    st_pthread_mutex_destroy(&app[i]->wake_mutex);
+    st_pthread_cond_destroy(&app[i]->wake_cond);
+    free(app[i]);
   }
 
   return ret;
