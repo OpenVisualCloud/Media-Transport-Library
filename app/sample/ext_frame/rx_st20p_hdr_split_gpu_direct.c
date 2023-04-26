@@ -123,11 +123,11 @@ static void rx_st20p_consume_frame(struct rx_st20p_hg_ctx* s, struct st_frame* f
   } else {
     uint32_t* d;
     if (s->use_cpu_copy) {
+      if (s->cpu_copy_offset + s->frame_size > s->gddr_frame.size) s->cpu_copy_offset = 0;
       void* gddr = s->gddr_frame.addr[0] + s->cpu_copy_offset;
       mtl_memcpy(gddr, frame->addr[0], s->frame_size);
       d = (uint32_t*)gddr;
       s->cpu_copy_offset += s->frame_size;
-      if (s->cpu_copy_offset > s->gddr_frame.size) s->cpu_copy_offset = 0;
     } else {
       d = (uint32_t*)frame->addr[0];
     }
