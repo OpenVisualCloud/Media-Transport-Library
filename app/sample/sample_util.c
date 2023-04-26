@@ -52,6 +52,7 @@ enum sample_args_cmd {
   SAMPLE_ARG_ST22_FRAME_FMT,
   SAMPLE_ARG_GDDR_PA,
   SAMPLE_ARG_RX_DUMP,
+  SAMPLE_ARG_USE_CPU_COPY,
 
   SAMPLE_ARG_UDP_MODE = 0x300,
   SAMPLE_ARG_UDP_LEN,
@@ -101,6 +102,7 @@ static struct option sample_args_options[] = {
     {"udp_len", required_argument, 0, SAMPLE_ARG_UDP_LEN},
     {"udp_tx_bps_g", required_argument, 0, SAMPLE_ARG_UDP_TX_BPS_G},
     {"gddr_pa", required_argument, 0, SAMPLE_ARG_GDDR_PA},
+    {"use_cpu_copy", no_argument, 0, SAMPLE_ARG_USE_CPU_COPY},
     {"rx_dump", no_argument, 0, SAMPLE_ARG_RX_DUMP},
 
     {0, 0, 0, 0}};
@@ -312,6 +314,9 @@ static int _sample_parse_args(struct st_sample_context* ctx, int argc, char** ar
         break;
       case SAMPLE_ARG_RX_DUMP:
         ctx->rx_dump = true;
+        break;
+      case SAMPLE_ARG_USE_CPU_COPY:
+        ctx->use_cpu_copy = true;
         break;
       case '?':
         break;
