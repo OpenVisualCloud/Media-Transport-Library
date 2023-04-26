@@ -25,6 +25,8 @@ struct rx_st20p_hg_ctx {
   size_t pg_sz;
 
   struct st_ext_frame gddr_frame;
+  bool use_cpu_copy;
+  off_t cpu_copy_offset;
 };
 
 static int gddr_map(struct st_sample_context* ctx, struct st_ext_frame* frame, size_t sz,
@@ -118,9 +120,20 @@ static void rx_st20p_consume_frame(struct rx_st20p_hg_ctx* s, struct st_frame* f
     if (s->dst_cursor + s->frame_size > s->dst_end) s->dst_cursor = s->dst_begin;
     mtl_memcpy(s->dst_cursor, frame->addr[0], s->frame_size);
     s->dst_cursor += s->frame_size;
-  } else if (0 == (s->fb_recv % 60)) {
-    uint32_t* d = (uint32_t*)frame->addr[0];
-    info("%s(%d), frame %p, value 0x%x 0x%x\n", __func__, s->idx, d, d[0], d[1]);
+  } else {
+    uint32_t* d;
+    if (s->use_cpu_copy) {
+      if (s->cpu_copy_offset + s->frame_size > s->gddr_frame.size) s->cpu_copy_offset = 0;
+      void* gddr = s->gddr_frame.addr[0] + s->cpu_copy_offset;
+      mtl_memcpy(gddr, frame->addr[0], s->frame_size);
+      d = (uint32_t*)gddr;
+      s->cpu_copy_offset += s->frame_size;
+    } else {
+      d = (uint32_t*)frame->addr[0];
+    }
+    if (0 == (s->fb_recv % 60)) {
+      info("%s(%d), frame %p, value 0x%x 0x%x\n", __func__, s->idx, d, d[0], d[1]);
+    }
   }
   s->fb_recv++;
 }
@@ -157,8 +170,10 @@ int main(int argc, char** argv) {
   ret = rx_sample_parse_args(&ctx, argc, argv);
   if (ret < 0) return ret;
 
-  /* enable hdr split */
-  ctx.param.nb_rx_hdr_split_queues = ctx.sessions;
+  if (!ctx.use_cpu_copy) {
+    /* enable hdr split */
+    ctx.param.nb_rx_hdr_split_queues = ctx.sessions;
+  }
 
   ctx.st = mtl_init(&ctx.param);
   if (!ctx.st) {
@@ -195,6 +210,7 @@ int main(int argc, char** argv) {
     app[i]->dst_fd = -1;
     app[i]->fb_cnt = ctx.framebuff_cnt;
     app[i]->pg_sz = mtl_page_size(ctx.st);
+    app[i]->use_cpu_copy = ctx.use_cpu_copy;
 
     struct st20p_rx_ops ops_rx;
     memset(&ops_rx, 0, sizeof(ops_rx));
@@ -215,14 +231,18 @@ int main(int argc, char** argv) {
     ops_rx.device = ST_PLUGIN_DEVICE_AUTO;
     ops_rx.framebuff_cnt = app[i]->fb_cnt;
     ops_rx.notify_frame_available = rx_st20p_frame_available;
-    ops_rx.flags |= ST20P_RX_FLAG_HDR_SPLIT;
 
+    /* map gddr */
     app[i]->frame_size = st_frame_size(ops_rx.output_fmt, ops_rx.width, ops_rx.height);
     size_t fb_sz = app[i]->frame_size * (app[i]->fb_cnt + 1) + app[i]->pg_sz * 2;
     fb_sz = mtl_size_page_align(fb_sz, app[i]->pg_sz);
     ret = gddr_map(&ctx, &app[i]->gddr_frame, fb_sz, dev_mem_fd);
     if (ret < 0) goto error;
-    ops_rx.ext_frames = &app[i]->gddr_frame;
+
+    if (!ctx.use_cpu_copy) {
+      ops_rx.flags |= ST20P_RX_FLAG_HDR_SPLIT;
+      ops_rx.ext_frames = &app[i]->gddr_frame;
+    }
 
     st20p_rx_handle rx_handle = st20p_rx_create(ctx.st, &ops_rx);
     if (!rx_handle) {
