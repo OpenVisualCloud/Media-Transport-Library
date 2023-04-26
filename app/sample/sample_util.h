@@ -109,6 +109,7 @@ struct st_sample_context {
   /* the PA of gpu PCIE bar which connected with GDDR */
   off_t gddr_pa;
   off_t gddr_offset;
+  bool use_cpu_copy;
 };
 
 int sample_parse_args(struct st_sample_context* ctx, int argc, char** argv, bool tx,
