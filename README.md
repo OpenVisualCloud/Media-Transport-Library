@@ -88,6 +88,7 @@ actionlint
 find ./ -name "*.md" -exec markdownlint {} -c .markdown-lint.yml \;
 # find ./ -name "*.md" -exec markdownlint {} --fix -c .markdown-lint.yml \;
 
+# test
 # textlint
 find ./ -name "*.md" -exec textlint {} \;
 # find ./ -name "*.md" -exec textlint {} --fix \;
