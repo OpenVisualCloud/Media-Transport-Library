@@ -380,6 +380,8 @@ static int tv_init_pacing(struct mtl_main_impl* impl,
   /* always use MTL_PORT_P for ptp now */
   pacing->cur_epochs = mt_get_ptp_time(impl, MTL_PORT_P) / frame_time;
   pacing->tsc_time_cursor = mt_get_tsc(impl);
+  pacing->max_onward_epochs = (double)NS_PER_S / frame_time; /* 1s */
+  dbg("%s[%02d], max_onward_epochs %u\n", __func__, idx, pacing->max_onward_epochs);
 
   /* 80 percent tr offset time as warmup pkts */
   uint32_t troffset_warm_pkts = pacing->tr_offset / pacing->trs;
@@ -462,26 +464,25 @@ static int tv_sync_pacing(struct mtl_main_impl* impl, struct st_tx_video_session
 
   dbg("%s(%d), ptp epochs %" PRIu64 " cur_epochs %" PRIu64 ", ptp_time %" PRIu64 "ms\n",
       __func__, idx, epochs, pacing->cur_epochs, ptp_time / 1000 / 1000);
-  if (epochs == pacing->cur_epochs) {
-    /* likely most previous frame can enqueue within previous timing, use next epoch */
-    epochs = next_epochs;
-  }
-  if ((epochs + 1) == pacing->cur_epochs) {
-    /* sometimes it's still in previous epoch time since deep ring queue */
-    epochs = next_epochs;
+  if (epochs <= pacing->cur_epochs) {
+    uint64_t diff = pacing->cur_epochs - epochs;
+    if (diff < pacing->max_onward_epochs) {
+      /* point to next epoch since if it in the range of onward */
+      epochs = next_epochs;
+    }
   }
 
   /* epoch resolved */
   double ptp_tr_offset_time = pacing_tr_offset_time(pacing, epochs);
   to_epoch_tr_offset = ptp_tr_offset_time - ptp_time;
   if (to_epoch_tr_offset < 0) {
-    /* current time run out of tr offset already, sync to next epochs */
+    /* time bigger than the assigned epoch troffset time */
     dbg("%s(%d), to_epoch_tr_offset %f, ptp epochs %" PRIu64 " cur_epochs %" PRIu64
         ", ptp_time %" PRIu64 "ms\n",
         __func__, idx, to_epoch_tr_offset, epochs, pacing->cur_epochs,
         ptp_time / 1000 / 1000);
     s->stat_epoch_troffset_mismatch++;
-    epochs++;
+    epochs++; /* assign to next */
     ptp_tr_offset_time = pacing_tr_offset_time(pacing, epochs);
     to_epoch_tr_offset = ptp_tr_offset_time - ptp_time;
   }
@@ -495,6 +496,7 @@ static int tv_sync_pacing(struct mtl_main_impl* impl, struct st_tx_video_session
   }
 
   if (epochs > next_epochs) s->stat_epoch_drop += (epochs - next_epochs);
+  if (epochs < next_epochs) s->stat_epoch_onward += (next_epochs - epochs);
   pacing->cur_epochs = epochs;
   pacing->pacing_time_stamp = pacing_time_stamp(pacing, epochs);
   pacing->rtp_time_stamp = pacing->pacing_time_stamp;
@@ -2714,6 +2716,11 @@ static void tv_stat(struct st_tx_video_sessions_mgr* mgr,
   if (s->stat_epoch_drop) {
     notice("TX_VIDEO_SESSION(%d,%d): epoch drop %u\n", m_idx, idx, s->stat_epoch_drop);
     s->stat_epoch_drop = 0;
+  }
+  if (s->stat_epoch_onward) {
+    notice("TX_VIDEO_SESSION(%d,%d): epoch onward %u\n", m_idx, idx,
+           s->stat_epoch_onward);
+    s->stat_epoch_onward = 0;
   }
   if (s->stat_exceed_frame_time) {
     notice("TX_VIDEO_SESSION(%d,%d): build timeout frames %u\n", m_idx, idx,
