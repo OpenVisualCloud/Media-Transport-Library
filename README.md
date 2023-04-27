@@ -8,11 +8,11 @@
 
 ## 1. Overview
 
-The Intel® Media Transport Library is a solution based on DPDK prepared for transmitting and receiving media data with high throughput and low latency. It include a efficient user space udp stack support, beside UDP, it also has a built-in compliant implementation to the SMPTE ST 2110 Professional Media Over Managed IP Networks suite of standards.
+The Intel® Media Transport Library is a solution based on DPDK prepared for transmitting and receiving media data with high throughput and low latency. It include a efficient user space LibOS UDP stack features designed for media transport, it also has a built-in compliant implementation to the SMPTE ST 2110 Professional Media Over Managed IP Networks suite of standards.
 
 ### 1.1 Features
 
-* User-space UDP stack with POSIX socket compatible API.
+* User-space LibOS UDP stack with POSIX socket compatible API.
 
 #### 1.1.1 ST2110 features
 
@@ -53,7 +53,7 @@ For how to develop application quickly based on Intel® Media Transport Library,
 From 23.03.0 version, this lib extend the support to user-space UDP stack which run directly under current process context for performance consideration. Other user-space UDP stack usually run with client-service architect, it introduce a cross-core message cost which hurt the performance.
 Our stack are running NIC tx/rx function from the sendto/recvfrom API directly which save the cross-core call and keep the data affinity(LLC) to the UDP consumer.
 
-For how to use the UDP API, pls refer to [udp sample code](app/udp).
+For how to use the LibOS UDP stack, pls refer to [udp doc](doc/udp.md).
 
 ## 6. How to Contribute
 
@@ -64,11 +64,13 @@ We welcome community contributions to the Intel® Media Transport Library projec
 We use super-linter action for the style check.
 
 For C/C++ coding, run below command to quickly fix the style.
+
 ```bash
 ./format-coding.sh
 ```
 
 For others, please check with below example command inside the docker.
+
 ```bash
 # super-linter
 docker run -it --rm  -v "$PWD":/opt/ --entrypoint /bin/bash github/super-linter
