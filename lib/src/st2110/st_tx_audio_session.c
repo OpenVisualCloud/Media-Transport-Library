@@ -198,6 +198,8 @@ static int tx_audio_session_init_pacing(struct mtl_main_impl* impl,
   /* always use MTL_PORT_P for ptp now */
   pacing->cur_epochs = mt_get_ptp_time(impl, MTL_PORT_P) / frame_time;
   pacing->tsc_time_cursor = 0;
+  pacing->max_onward_epochs = (double)(NS_PER_S * 1) / frame_time; /* 1s */
+  dbg("%s[%02d], max_onward_epochs %u\n", __func__, idx, pacing->max_onward_epochs);
 
   info("%s[%02d], frame_time %f frame_time_sampling %f\n", __func__, idx,
        pacing->frame_time, pacing->frame_time_sampling);
@@ -241,58 +243,51 @@ static uint64_t tx_audio_pacing_required_tai(struct st_tx_audio_session_impl* s,
 static int tx_audio_session_sync_pacing(struct mtl_main_impl* impl,
                                         struct st_tx_audio_session_impl* s, bool sync,
                                         uint64_t required_tai) {
-  int idx = s->idx;
   struct st_tx_audio_session_pacing* pacing = &s->pacing;
   double frame_time = pacing->frame_time;
   /* always use MTL_PORT_P for ptp now */
   uint64_t ptp_time = mt_get_ptp_time(impl, MTL_PORT_P);
+  uint64_t next_epochs = pacing->cur_epochs + 1;
   uint64_t epochs;
-  double to_epoch_tr_offset;
+  double to_epoch;
 
   if (required_tai) {
     uint64_t ptp_epochs = ptp_time / frame_time;
     epochs = required_tai / frame_time;
     dbg("%s(%d), required tai %" PRIu64 " ptp_epochs %" PRIu64 " epochs %" PRIu64 "\n",
-        __func__, idx, required_tai, ptp_epochs, epochs);
+        __func__, s->idx, required_tai, ptp_epochs, epochs);
     if (epochs < ptp_epochs) s->stat_error_user_timestamp++;
   } else {
     epochs = ptp_time / frame_time;
   }
 
-  dbg("%s(%d), epochs %" PRIu64 " %" PRIu64 "\n", __func__, idx, epochs,
+  dbg("%s(%d), epochs %" PRIu64 " %" PRIu64 "\n", __func__, s->idx, epochs,
       pacing->cur_epochs);
-  if (epochs == pacing->cur_epochs) {
-    /* likely most previous frame can enqueue within previous timing */
-    epochs++;
-  }
-  if ((epochs + 1) == pacing->cur_epochs) {
-    /* sometimes it's still in previous epoch time since deep ring queue */
-    epochs = pacing->cur_epochs + 1;
-  }
-
-  to_epoch_tr_offset = tx_audio_pacing_time(pacing, epochs) - ptp_time;
-  if (to_epoch_tr_offset < 0) {
-    /* current time run out of tr offset already, sync to next epochs */
-    s->st30_epoch_mismatch++;
-    epochs++;
-    to_epoch_tr_offset = tx_audio_pacing_time(pacing, epochs) - ptp_time;
+  if (epochs <= pacing->cur_epochs) {
+    uint64_t diff = pacing->cur_epochs - epochs;
+    if (diff < pacing->max_onward_epochs) {
+      /* point to next epoch since if it in the range of onward */
+      epochs = next_epochs;
+    }
   }
 
-  if (to_epoch_tr_offset < 0) {
-    /* should never happen */
-    err("%s(%d), error to_epoch_tr_offset %f, ptp_time %" PRIu64 ", epochs %" PRIu64
-        " %" PRIu64 "\n",
-        __func__, idx, to_epoch_tr_offset, ptp_time, epochs, pacing->cur_epochs);
-    to_epoch_tr_offset = 0;
+  to_epoch = tx_audio_pacing_time(pacing, epochs) - ptp_time;
+  if (to_epoch < 0) {
+    /* time bigger than the assigned epoch time */
+    s->stat_epoch_mismatch++;
+    to_epoch = 0; /* send asap */
   }
+
+  if (epochs > next_epochs) s->stat_epoch_drop += (epochs - next_epochs);
+  if (epochs < next_epochs) s->stat_epoch_onward += (next_epochs - epochs);
 
   pacing->cur_epochs = epochs;
   pacing->pacing_time_stamp = tx_audio_pacing_time_stamp(pacing, epochs);
   pacing->rtp_time_stamp = pacing->pacing_time_stamp;
-  pacing->tsc_time_cursor = (double)mt_get_tsc(impl) + to_epoch_tr_offset;
+  pacing->tsc_time_cursor = (double)mt_get_tsc(impl) + to_epoch;
 
   if (sync) {
-    dbg("%s(%d), delay to epoch_time %f, cur %" PRIu64 "\n", __func__, idx,
+    dbg("%s(%d), delay to epoch_time %f, cur %" PRIu64 "\n", __func__, s->idx,
         pacing->tsc_time_cursor, mt_get_tsc(impl));
     mt_tsc_delay_to(impl, pacing->tsc_time_cursor);
   }
@@ -538,6 +533,16 @@ static int tx_audio_session_tasklet_frame(struct mtl_main_impl* impl,
       meta.ptime = ops->ptime;
       meta.sampling = ops->sampling;
 
+      if (s->check_frame_done_time) {
+        uint64_t frame_end_time = mt_get_tsc(impl);
+        if (frame_end_time > pacing->tsc_time_cursor) {
+          s->stat_exceed_frame_time++;
+          dbg("%s(%d), frame %d build time out %" PRIu64 " us\n", __func__, idx,
+              s->st30_frame_idx, (frame_end_time - pacing->tsc_time_cursor) / NS_PER_US);
+        }
+        s->check_frame_done_time = false;
+      }
+
       /* Query next frame buffer idx */
       ret = ops->get_next_frame(ops->priv, &next_frame_idx, &meta);
       if (ret < 0) { /* no frame ready from app */
@@ -562,8 +567,7 @@ static int tx_audio_session_tasklet_frame(struct mtl_main_impl* impl,
     }
   }
 
-  /* sync pacing */
-  if (!pacing->tsc_time_cursor) {
+  if (s->calculate_time_cursor) {
     struct st_frame_trans* frame = &s->st30_frames[s->st30_frame_idx];
     /* user timestamp control if any */
     uint64_t required_tai =
@@ -575,6 +579,7 @@ static int tx_audio_session_tasklet_frame(struct mtl_main_impl* impl,
     }
     frame->ta_meta.tfmt = ST10_TIMESTAMP_FMT_MEDIA_CLK;
     frame->ta_meta.timestamp = pacing->rtp_time_stamp;
+    s->calculate_time_cursor = false; /* clear */
   }
 
   uint64_t cur_tsc = mt_get_tsc(impl);
@@ -647,7 +652,9 @@ static int tx_audio_session_tasklet_frame(struct mtl_main_impl* impl,
 
   s->st30_pkt_idx++;
   s->st30_stat_pkt_cnt++;
-  pacing->tsc_time_cursor = 0;
+  pacing->tsc_time_cursor += pacing->frame_time;
+  /* sync pacing for pkt, even in one frame */
+  s->calculate_time_cursor = true;
 
   bool done = false;
   if (rte_ring_mp_enqueue(ring_p, (void*)pkt) != 0) {
@@ -673,6 +680,7 @@ static int tx_audio_session_tasklet_frame(struct mtl_main_impl* impl,
       ops->notify_frame_done(ops->priv, s->st30_frame_idx, &frame->ta_meta);
     rte_atomic32_dec(&frame->refcnt);
     s->st30_frame_stat = ST30_TX_STAT_WAIT_FRAME;
+    s->check_frame_done_time = true;
     s->st30_pkt_idx = 0;
     rte_atomic32_inc(&s->st30_stat_frame_cnt);
   }
@@ -1154,6 +1162,7 @@ static int tx_audio_session_attach(struct mtl_main_impl* impl,
     s->inflight_cnt[i] = 0;
   }
 
+  s->calculate_time_cursor = true;
   ret = tx_audio_session_init_pacing(impl, s);
   if (ret < 0) {
     err("%s(%d), tx_audio_session_init_pacing fail %d\n", __func__, idx, ret);
@@ -1189,9 +1198,22 @@ static void tx_audio_session_stat(struct st_tx_audio_session_impl* s) {
          s->inflight_cnt[MTL_SESSION_PORT_P], s->inflight_cnt[MTL_SESSION_PORT_R]);
   s->st30_stat_pkt_cnt = 0;
 
-  if (s->st30_epoch_mismatch) {
-    notice("TX_AUDIO_SESSION(%d): st30 epoch mismatch %d\n", idx, s->st30_epoch_mismatch);
-    s->st30_epoch_mismatch = 0;
+  if (s->stat_epoch_mismatch) {
+    notice("TX_AUDIO_SESSION(%d): epoch mismatch %u\n", idx, s->stat_epoch_mismatch);
+    s->stat_epoch_mismatch = 0;
+  }
+  if (s->stat_epoch_drop) {
+    notice("TX_AUDIO_SESSION(%d): epoch drop %u\n", idx, s->stat_epoch_drop);
+    s->stat_epoch_drop = 0;
+  }
+  if (s->stat_epoch_onward) {
+    notice("TX_AUDIO_SESSION(%d): epoch onward %d\n", idx, s->stat_epoch_onward);
+    s->stat_epoch_onward = 0;
+  }
+  if (s->stat_exceed_frame_time) {
+    notice("TX_AUDIO_SESSION(%d): build timeout frames %u\n", idx,
+           s->stat_exceed_frame_time);
+    s->stat_exceed_frame_time = 0;
   }
   if (frame_cnt <= 0) {
     warn("TX_AUDIO_SESSION(%d): build ret %d\n", idx, s->stat_build_ret_code);
