@@ -491,6 +491,8 @@ struct st_app_context {
   char tx_audio_url[ST_APP_URL_MAX_LEN];
   int tx_audio_session_cnt;
   int tx_audio_rtp_ring_size; /* the ring size for tx audio rtp type */
+  bool tx_audio_build_pacing;
+  int tx_audio_fifo_size;
 
   struct st_app_tx_anc_session* tx_anc_sessions;
   char tx_anc_url[ST_APP_URL_MAX_LEN];

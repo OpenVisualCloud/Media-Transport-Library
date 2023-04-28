@@ -20,8 +20,12 @@ static int tx_audio_next_frame_timestamp(void* priv, uint16_t* next_frame_idx,
 
   if (!ctx->handle) return -EIO; /* not ready */
 
+  if (!ctx->ptp_time_first_frame) {
+    ctx->ptp_time_first_frame = mtl_ptp_read_time(ctx->ctx->handle);
+  }
+
   meta->tfmt = ST10_TIMESTAMP_FMT_TAI;
-  meta->timestamp = mtl_ptp_read_time(ctx->ctx->handle) + 2 * 1000 * 1000 + 500 * 1000;
+  meta->timestamp = ctx->ptp_time_first_frame + ctx->fb_send * ctx->frame_time * 2;
   *next_frame_idx = ctx->fb_idx;
   dbg("%s, next_frame_idx %d\n", __func__, *next_frame_idx);
   ctx->fb_idx++;
@@ -1123,6 +1127,7 @@ static void st30_rx_meta_test(enum st30_fmt fmt[], enum st30_sampling sampling[]
     ops_tx.rtp_ring_size = 1024;
     test_ctx_tx[i]->pkt_data_len =
         ops_tx.sample_size * ops_tx.sample_num * ops_tx.channel;
+    test_ctx_tx[i]->frame_time = st30_get_packet_time(ops_tx.ptime);
     tx_handle[i] = st30_tx_create(m_handle, &ops_tx);
     ASSERT_TRUE(tx_handle[i] != NULL);
 
