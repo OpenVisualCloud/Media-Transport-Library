@@ -56,6 +56,19 @@ struct cmsghdr {
   int cmsg_type;
 };
 
+#define CMSGDATA_ALIGN(length) \
+  (((length) + MAX_NATURAL_ALIGNMENT - 1) & (~(MAX_NATURAL_ALIGNMENT - 1)))
+
+#define CMSG_FIRSTHDR(msg) \
+  (((msg)->msg_controllen >= sizeof(struct cmsghdr)) ? (msg)->msg_control : NULL)
+
+#define CMSG_LEN(length) (CMSGDATA_ALIGN(sizeof(struct cmsghdr)) + length)
+
+#ifdef CMSG_DATA
+#undef CMSG_DATA
+#endif
+#define CMSG_DATA(cmsg) ((PUCHAR)(cmsg) + CMSGDATA_ALIGN(sizeof(struct cmsghdr)))
+
 #ifndef SOCK_NONBLOCK
 #define SOCK_NONBLOCK (0x800)
 #endif

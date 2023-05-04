@@ -13,7 +13,9 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        sys: [ MINGW64, UCRT64 ]
+        sys:
+          - mingw64
+          - ucrt64
     defaults:
       run:
         shell: msys2 {0}
