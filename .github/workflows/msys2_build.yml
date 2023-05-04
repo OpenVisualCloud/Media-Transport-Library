@@ -11,6 +11,7 @@ jobs:
   build:
     runs-on: windows-latest
     strategy:
+      fail-fast: false
       matrix:
         sys: [ MINGW64, UCRT64 ]
     defaults:
