@@ -46,6 +46,7 @@
 /* max tx/rx audio(st_30) sessions */
 #define ST_MAX_TX_AUDIO_SESSIONS (180)
 #define ST_TX_AUDIO_SESSIONS_RING_SIZE (512)
+#define ST_TX_AUDIO_FIFO_TIME_MS (50)
 #define ST_MAX_RX_AUDIO_SESSIONS (180)
 /* max tx/rx anc(st_40) sessions */
 #define ST_MAX_TX_ANC_SESSIONS (180)
@@ -711,6 +712,8 @@ struct st_tx_audio_session_pacing {
   uint64_t tsc_time_cursor;
   /* ptp time may onward */
   uint32_t max_onward_epochs;
+  /* sometimes it may reach tx_audio_session_sync_pacing in a late time */
+  uint32_t max_late_epochs;
 };
 
 struct st_tx_audio_session_impl {
@@ -730,7 +733,11 @@ struct st_tx_audio_session_impl {
   struct rte_mbuf* inflight[MTL_SESSION_PORT_MAX];
   bool has_inflight[MTL_SESSION_PORT_MAX];
   int inflight_cnt[MTL_SESSION_PORT_MAX]; /* for stats */
+  struct rte_ring* trans_ring[MTL_SESSION_PORT_MAX];
+  uint16_t trans_ring_thresh;
+  struct rte_mbuf* trans_ring_inflight[MTL_SESSION_PORT_MAX];
   struct rte_ring* packet_ring;
+  bool pacing_in_build; /* if control pacing in the build stage */
 
   uint16_t st30_frames_cnt; /* numbers of frames requested */
   struct st_frame_trans* st30_frames;
@@ -756,6 +763,7 @@ struct st_tx_audio_session_impl {
   uint32_t st30_rtp_time;     /* record rtp time */
 
   int stat_build_ret_code;
+  int stat_transmit_ret_code;
 
   /* stat */
   rte_atomic32_t st30_stat_frame_cnt;
@@ -764,8 +772,10 @@ struct st_tx_audio_session_impl {
   uint32_t stat_epoch_mismatch;
   uint32_t stat_epoch_drop;
   uint32_t stat_epoch_onward;
+  uint32_t stat_epoch_late;
   uint32_t stat_error_user_timestamp;
   uint32_t stat_exceed_frame_time;
+  uint64_t stat_last_time;
 };
 
 struct st_tx_audio_sessions_mgr {
@@ -964,6 +974,7 @@ struct st_tx_ancillary_session_impl {
   uint32_t stat_epoch_onward;
   uint32_t stat_error_user_timestamp;
   uint32_t stat_exceed_frame_time;
+  uint64_t stat_last_time;
 };
 
 struct st_tx_ancillary_sessions_mgr {

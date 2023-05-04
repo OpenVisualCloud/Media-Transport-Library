@@ -1231,6 +1231,7 @@ static int tx_ancillary_session_attach(struct mtl_main_impl* impl,
   s->st40_frame_stat = ST40_TX_STAT_WAIT_FRAME;
   s->st40_frame_idx = 0;
   rte_atomic32_set(&s->st40_stat_frame_cnt, 0);
+  s->stat_last_time = mt_get_monotonic_time();
 
   for (int i = 0; i < num_port; i++) {
     s->has_inflight[i] = false;
@@ -1270,11 +1271,15 @@ static int tx_ancillary_session_attach(struct mtl_main_impl* impl,
 static void tx_ancillary_session_stat(struct st_tx_ancillary_session_impl* s) {
   int idx = s->idx;
   int frame_cnt = rte_atomic32_read(&s->st40_stat_frame_cnt);
+  uint64_t cur_time_ns = mt_get_monotonic_time();
+  double time_sec = (double)(cur_time_ns - s->stat_last_time) / NS_PER_S;
+  double framerate = frame_cnt / time_sec;
 
   rte_atomic32_set(&s->st40_stat_frame_cnt, 0);
+  s->stat_last_time = cur_time_ns;
 
-  notice("TX_ANC_SESSION(%d:%s): frame cnt %d, pkt cnt %d\n", idx, s->ops_name, frame_cnt,
-         s->st40_stat_pkt_cnt);
+  notice("TX_ANC_SESSION(%d:%s): fps %f frame cnt %d, pkt cnt %d\n", idx, s->ops_name,
+         framerate, frame_cnt, s->st40_stat_pkt_cnt);
   s->st40_stat_pkt_cnt = 0;
 
   if (s->stat_epoch_mismatch) {
@@ -1436,12 +1441,12 @@ void st_tx_ancillary_sessions_stat(struct mtl_main_impl* impl) {
     tx_ancillary_session_put(mgr, j);
   }
   if (mgr->st40_stat_pkts_burst > 0) {
-    notice("TX_ANC_SESSION, pkts burst %d\n", mgr->st40_stat_pkts_burst);
+    notice("TX_ANC_MGR, pkts burst %d\n", mgr->st40_stat_pkts_burst);
     mgr->st40_stat_pkts_burst = 0;
   } else {
     if (mgr->max_idx > 0) {
       for (int i = 0; i < mt_num_ports(impl); i++) {
-        warn("TX_ANC_SESSION: trs ret %d:%d\n", i, mgr->stat_trs_ret_code[i]);
+        warn("TX_ANC_MGR: trs ret %d:%d\n", i, mgr->stat_trs_ret_code[i]);
       }
     }
   }

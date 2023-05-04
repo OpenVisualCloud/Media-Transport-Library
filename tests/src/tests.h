@@ -206,6 +206,8 @@ class tests_context {
   /* user timestamp which advanced by 1 for erery frame */
   bool user_timestamp = false;
   uint32_t pre_timestamp = 0;
+  double frame_time = 0;
+  uint64_t ptp_time_first_frame = 0;
 };
 
 int tests_context_unit(tests_context* ctx);

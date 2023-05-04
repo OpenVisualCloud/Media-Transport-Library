@@ -264,6 +264,7 @@ For the supported parameters in the json, please refer to [JSON configuration gu
 --rss_mode <mode>                    : debug option, available modes: "l3_l4_dst_port_only", "l3_da_l4_dst_port_only", "l4_dst_port_only", "none".
 --tx_no_chain                        : debug option, use memcopy rather than mbuf chain for tx payload.
 --multi_src_port                     : debug option, use multiple src port for st20 tx stream.
+--audio_fifo_size <count>            : debug option, the audio fifo size between packet builder and pacing.
 ```
 
 ## 4. Tests

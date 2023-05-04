@@ -94,6 +94,8 @@ enum st_args_cmd {
   ST_ARG_RANDOM_SRC_PORT,
   ST_ARG_TX_NO_CHAIN,
   ST_ARG_MULTI_SRC_PORT,
+  ST_ARG_AUDIO_BUILD_PACING,
+  ST_ARG_AUDIO_FIFO_SIZE,
   ST_ARG_MAX,
 };
 
@@ -189,6 +191,8 @@ static struct option st_app_args_options[] = {
     {"random_src_port", no_argument, 0, ST_ARG_RANDOM_SRC_PORT},
     {"tx_no_chain", no_argument, 0, ST_ARG_TX_NO_CHAIN},
     {"multi_src_port", no_argument, 0, ST_ARG_MULTI_SRC_PORT},
+    {"audio_build_pacing", no_argument, 0, ST_ARG_AUDIO_BUILD_PACING},
+    {"audio_fifo_size", required_argument, 0, ST_ARG_AUDIO_FIFO_SIZE},
 
     {0, 0, 0, 0}};
 
@@ -570,6 +574,12 @@ int st_app_parse_args(struct st_app_context* ctx, struct mtl_init_params* p, int
         break;
       case ST_ARG_MULTI_SRC_PORT:
         p->flags |= MTL_FLAG_MULTI_SRC_PORT;
+        break;
+      case ST_ARG_AUDIO_BUILD_PACING:
+        ctx->tx_audio_build_pacing = true;
+        break;
+      case ST_ARG_AUDIO_FIFO_SIZE:
+        ctx->tx_audio_fifo_size = atoi(optarg);
         break;
       case '?':
         break;
