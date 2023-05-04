@@ -492,12 +492,24 @@ TEST(Misc, hp_zmalloc_expect_fail) {
 TEST(Misc, ptp) {
   auto ctx = (struct st_tests_context*)st_test_ctx();
   auto handle = ctx->handle;
+  uint64_t real_time;
+  uint64_t diff;
+
+  /* the first read */
   uint64_t ptp = mtl_ptp_read_time(handle);
   EXPECT_EQ(ptp, ctx->ptp_time);
-  /* try again */
-  st_usleep(1);
-  ptp = mtl_ptp_read_time(handle);
-  EXPECT_EQ(ptp, ctx->ptp_time);
+
+  for (int i = 0; i < 5; i++) {
+    /* try again */
+    st_usleep(1000 * 2);
+    ptp = mtl_ptp_read_time(handle);
+    real_time = test_ptp_from_real_time(ctx);
+    if (ptp > real_time)
+      diff = ptp - real_time;
+    else
+      diff = real_time - ptp;
+    EXPECT_LT(diff, NS_PER_US * 5);
+  }
 }
 
 static void st10_timestamp_test(uint32_t sampling_rate) {
