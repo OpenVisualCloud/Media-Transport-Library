@@ -6,7 +6,6 @@ env:
   # Disable since mtl patched dpdk pcapng and this job use prebuilt pkg
   MTL_BUILD_DISABLE_PCAPNG: true
   DPDK_VERSION: 22.11
-  APPLY_PATCHES_FOR_DPDK: false
 
 jobs:
   build:
@@ -60,12 +59,16 @@ jobs:
         path: dpdk
 
     - name: Apply dpdk patches
-      if: ${{ env.APPLY_PATCHES_FOR_DPDK == true }}
       run: |
         cd dpdk
-        git config --global core.symlinks true
         git config --global user.email "you@example.com"
         git config --global user.name "Your Name"
+        pushd ../patches/dpdk/${{  env.DPDK_VERSION  }}/*.patch
+        ls *.patch | xargs -I{} bash -c 'if [[ $(sed -n '1p' "{}") =~ ^../.*\.patch$ ]]; then cp "$(cat {})" "{}"; fi'
+        popd
+        pushd ../patches/dpdk/${{  env.DPDK_VERSION  }}/windows
+        ls *.patch | xargs -I{} bash -c 'if [[ $(sed -n '1p' "{}") =~ ^../.*\.patch$ ]]; then cp "$(cat {})" "{}"; fi'
+        popd
         git am ../patches/dpdk/${{  env.DPDK_VERSION  }}/*.patch
         git am ../patches/dpdk/${{  env.DPDK_VERSION  }}/windows/*.patch
 
