@@ -11,7 +11,6 @@ jobs:
   build:
     runs-on: windows-latest
     strategy:
-      fail-fast: false
       matrix:
         sys: [ MINGW64, UCRT64 ]
     defaults:
@@ -58,18 +57,19 @@ jobs:
         ref: v${{  env.DPDK_VERSION  }}
         path: dpdk
 
+    - name: Convert symlink patch files to real file
+      run: |
+        cd patches/dpdk/${{  env.DPDK_VERSION  }}
+        ls *.patch | xargs -I{} bash -c 'if [[ $(sed -n '1p' "{}") =~ ^../.*\.patch$ ]]; then cp "$(cat "{}")" "{}"; fi'
+        cd windows
+        ls *.patch | xargs -I{} bash -c 'if [[ $(sed -n '1p' "{}") =~ ^../.*\.patch$ ]]; then cp "$(cat "{}")" "{}"; fi'
+    
     - name: Apply patches for DPDK
+      shell: bash
       run: |
         cd dpdk
         git config user.name github-actions
         git config user.email github-actions@github.com
-        pushd ../patches/dpdk/${{  env.DPDK_VERSION  }}
-        ls *.patch | xargs -I{} bash -c 'if [[ $(sed -n '1p' "{}") =~ ^../.*\.patch$ ]]; then cp "$(cat {})" "{}"; fi'
-        popd
-        pushd ../patches/dpdk/${{  env.DPDK_VERSION  }}/windows
-        ls *.patch | xargs -I{} bash -c 'if [[ $(sed -n '1p' "{}") =~ ^../.*\.patch$ ]]; then cp "$(cat {})" "{}"; fi'
-        popd
-        git update-index --refresh
         git am ../patches/dpdk/${{  env.DPDK_VERSION  }}/*.patch
         git am ../patches/dpdk/${{  env.DPDK_VERSION  }}/windows/*.patch
 
