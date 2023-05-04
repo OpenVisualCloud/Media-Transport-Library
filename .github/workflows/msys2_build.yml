@@ -44,8 +44,6 @@ jobs:
 
     - name: Install tools
       run: |
-        curl -s https://raw.githubusercontent.com/imachug/win-sudo/master/install.sh | sh
-        source ~/.bashrc
         wget https://nmap.org/npcap/dist/npcap-sdk-1.12.zip
         unzip -d npcap-sdk npcap-sdk-1.12.zip
         cp npcap-sdk/Lib/x64/Packet.lib $MSYSTEM_PREFIX/lib/
@@ -53,7 +51,7 @@ jobs:
         git clone  https://github.com/alitrack/mman-win32
         cd mman-win32
         ./configure --prefix=$MSYSTEM_PREFIX
-        make && sudo make install
+        make && make install
 
     - name: Checkout IMTL repo
       uses: actions/checkout@v3
@@ -87,11 +85,19 @@ jobs:
         meson setup build
         ninja -C build install
 
-    - name: Build
+    - name: Build IMTL lib
       run: |
-        ./build.sh
+        meson setup build
+        ninja -C build install
 
-    - name: Build with debug
+    - name: Build IMTL app
       run: |
-        rm -rf build
-        ./build.sh debug
+        cd app
+        meson setup build
+        ninja -C build
+
+    - name: Build IMTL test
+      run: |
+        cd tests
+        meson setup build
+        ninja -C build
