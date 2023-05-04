@@ -15,6 +15,8 @@ jobs:
       matrix:
         sys:
           - mingw64
+          - ucrt64
+          - clang64
     defaults:
       run:
         shell: msys2 {0}
@@ -43,11 +45,15 @@ jobs:
     - name: Install tools
       run: |
         curl -s https://raw.githubusercontent.com/imachug/win-sudo/master/install.sh | sh
-        wget https://nmap.org/npcap/dist/npcap-sdk-1.12.zip && unzip -d npcap-sdk npcap-sdk-1.12.zip
-        cp npcap-sdk/Lib/x64/Packet.lib $MSYSTEM_PREFIX/lib/ && cp npcap-sdk/Lib/x64/wpcap.lib $MSYSTEM_PREFIX/lib/
-        git clone  https://github.com/alitrack/mman-win32 && cd mman-win32
-        ./configure && make
-        cp libmman.a $MSYSTEM_PREFIX/lib/ && cp mman.h $MSYSTEM_PREFIX/include/sys/
+        source ~/.bashrc
+        wget https://nmap.org/npcap/dist/npcap-sdk-1.12.zip
+        unzip -d npcap-sdk npcap-sdk-1.12.zip
+        cp npcap-sdk/Lib/x64/Packet.lib $MSYSTEM_PREFIX/lib/
+        cp npcap-sdk/Lib/x64/wpcap.lib $MSYSTEM_PREFIX/lib/
+        git clone  https://github.com/alitrack/mman-win32
+        cd mman-win32
+        ./configure --prefix=$MSYSTEM_PREFIX
+        make && sudo make install
 
     - name: Checkout IMTL repo
       uses: actions/checkout@v3
