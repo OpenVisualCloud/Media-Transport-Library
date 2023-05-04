@@ -377,9 +377,6 @@ static int tv_init_pacing(struct mtl_main_impl* impl,
     warn("%s[%02d], error frame_idle_time %f\n", __func__, idx, pacing->frame_idle_time);
     pacing->frame_idle_time = 0;
   }
-  /* always use MTL_PORT_P for ptp now */
-  pacing->cur_epochs = mt_get_ptp_time(impl, MTL_PORT_P) / frame_time;
-  pacing->tsc_time_cursor = mt_get_tsc(impl);
   pacing->max_onward_epochs = (double)NS_PER_S / frame_time; /* 1s */
   dbg("%s[%02d], max_onward_epochs %u\n", __func__, idx, pacing->max_onward_epochs);
 
@@ -441,6 +438,13 @@ static int tv_init_pacing(struct mtl_main_impl* impl,
   return 0;
 }
 
+static int tv_init_pacing_epoch(struct mtl_main_impl* impl, struct st_tx_video_session_impl* s) {
+  uint64_t ptp_time = mt_get_ptp_time(impl, MTL_PORT_P);
+  struct st_tx_video_pacing* pacing = &s->pacing;
+  pacing->cur_epochs = ptp_time / pacing->frame_time;
+  return 0;
+}
+
 static int tv_sync_pacing(struct mtl_main_impl* impl, struct st_tx_video_session_impl* s,
                           bool sync, uint64_t required_tai) {
   int idx = s->idx;
@@ -467,7 +471,7 @@ static int tv_sync_pacing(struct mtl_main_impl* impl, struct st_tx_video_session
   if (epochs <= pacing->cur_epochs) {
     uint64_t diff = pacing->cur_epochs - epochs;
     if (diff < pacing->max_onward_epochs) {
-      /* point to next epoch since if it in the range of onward */
+      /* point to next epoch since it is in the range of onward */
       epochs = next_epochs;
     }
   }
@@ -515,6 +519,40 @@ static int tv_sync_pacing(struct mtl_main_impl* impl, struct st_tx_video_session
     mt_tsc_delay_to(impl, pacing->tsc_time_cursor);
   }
 
+  return 0;
+}
+
+static int tv_init_next_meta(struct st_tx_video_session_impl* s,
+                             struct st20_tx_frame_meta* meta) {
+  struct st_tx_video_pacing* pacing = &s->pacing;
+  struct st20_tx_ops* ops = &s->ops;
+
+  memset(meta, 0, sizeof(*meta));
+  meta->width = ops->width;
+  meta->height = ops->height;
+  meta->fps = ops->fps;
+  meta->fmt = ops->fmt;
+  /* point to next epoch */
+  meta->epoch = pacing->cur_epochs + 1;
+  meta->tfmt = ST10_TIMESTAMP_FMT_MEDIA_CLK;
+  meta->timestamp = pacing_time_stamp(pacing, meta->epoch);
+  return 0;
+}
+
+static int tv_init_st22_next_meta(struct st_tx_video_session_impl* s,
+                                  struct st22_tx_frame_meta* meta) {
+  struct st_tx_video_pacing* pacing = &s->pacing;
+  struct st20_tx_ops* ops = &s->ops;
+
+  memset(meta, 0, sizeof(*meta));
+  meta->width = ops->width;
+  meta->height = ops->height;
+  meta->fps = ops->fps;
+  meta->codestream_size = s->st22_codestream_size;
+  /* point to next epoch */
+  meta->epoch = pacing->cur_epochs + 1;
+  meta->tfmt = ST10_TIMESTAMP_FMT_MEDIA_CLK;
+  meta->timestamp = pacing_time_stamp(pacing, meta->epoch);
   return 0;
 }
 
@@ -1290,7 +1328,9 @@ static int tv_tasklet_start(void* priv) {
     s = tx_video_session_try_get(mgr, sidx);
     if (!s) continue;
     /* re-calculate the vsync */
-    st_vsync_calculate(impl, &s->vsync);
+    if (s->ops.flags & ST20_TX_FLAG_ENABLE_VSYNC) st_vsync_calculate(impl, &s->vsync);
+    /* calculate the pacing epoch */
+    tv_init_pacing_epoch(impl, s);
     tx_video_session_put(mgr, sidx);
   }
 
@@ -1352,12 +1392,8 @@ static int tv_tasklet_frame(struct mtl_main_impl* impl,
     if (ST21_TX_STAT_WAIT_FRAME == s->st20_frame_stat) {
       uint16_t next_frame_idx = 0;
       struct st20_tx_frame_meta meta;
-      memset(&meta, 0, sizeof(meta));
-      meta.width = ops->width;
-      meta.height = ops->height;
-      meta.fps = ops->fps;
-      meta.fmt = ops->fmt;
 
+      tv_init_next_meta(s, &meta);
       /* Query next frame buffer idx */
       ret = ops->get_next_frame(ops->priv, &next_frame_idx, &meta);
       if (ret < 0) { /* no frame ready from app */
@@ -1419,6 +1455,7 @@ static int tv_tasklet_frame(struct mtl_main_impl* impl,
       dbg("%s(%d), rtp time stamp %u\n", __func__, idx, pacing->rtp_time_stamp);
       frame->tv_meta.tfmt = ST10_TIMESTAMP_FMT_MEDIA_CLK;
       frame->tv_meta.timestamp = pacing->rtp_time_stamp;
+      frame->tv_meta.epoch = pacing->cur_epochs;
     }
   }
 
@@ -1764,12 +1801,8 @@ static int tv_tasklet_st22(struct mtl_main_impl* impl,
     if (ST21_TX_STAT_WAIT_FRAME == s->st20_frame_stat) {
       uint16_t next_frame_idx;
       struct st22_tx_frame_meta meta;
-      memset(&meta, 0, sizeof(meta));
-      meta.width = ops->width;
-      meta.height = ops->height;
-      meta.fps = ops->fps;
-      meta.codestream_size = s->st22_codestream_size;
 
+      tv_init_st22_next_meta(s, &meta);
       /* Query next frame buffer idx */
       ret = st22_info->get_next_frame(ops->priv, &next_frame_idx, &meta);
       if (ret < 0) { /* no frame ready from app */
@@ -1824,6 +1857,7 @@ static int tv_tasklet_st22(struct mtl_main_impl* impl,
       dbg("%s(%d), rtp time stamp %u\n", __func__, idx, pacing->rtp_time_stamp);
       frame->tx_st22_meta.tfmt = ST10_TIMESTAMP_FMT_MEDIA_CLK;
       frame->tx_st22_meta.timestamp = pacing->rtp_time_stamp;
+      frame->tx_st22_meta.epoch = pacing->cur_epochs;
       dbg("%s(%d), next_frame_idx %d(%d pkts) start\n", __func__, idx, next_frame_idx,
           s->st20_total_pkts);
       dbg("%s(%d), codestream_size %" PRId64 "(%d st22 pkts) time_stamp %u\n", __func__,

@@ -43,7 +43,8 @@ static int app_tx_video_next_frame(void* priv, uint16_t* next_frame_idx,
 
   st_pthread_mutex_lock(&s->st20_wake_mutex);
   if (ST_TX_FRAME_READY == framebuff->stat) {
-    dbg("%s(%d), next frame idx %u\n", __func__, s->idx, consumer_idx);
+    dbg("%s(%d), next frame idx %u, epoch %" PRIu64 "\n", __func__, s->idx, consumer_idx,
+         meta->epoch);
     ret = 0;
     framebuff->stat = ST_TX_FRAME_IN_TRANSMITTING;
     *next_frame_idx = consumer_idx;
@@ -73,7 +74,8 @@ static int app_tx_video_frame_done(void* priv, uint16_t frame_idx,
   if (ST_TX_FRAME_IN_TRANSMITTING == framebuff->stat) {
     ret = 0;
     framebuff->stat = ST_TX_FRAME_FREE;
-    dbg("%s(%d), done_idx %u\n", __func__, s->idx, frame_idx);
+    dbg("%s(%d), done_idx %u, epoch %" PRIu64 "\n", __func__, s->idx, frame_idx,
+         meta->epoch);
   } else {
     ret = -EIO;
     err("%s(%d), err status %d for frame %u\n", __func__, s->idx, framebuff->stat,
