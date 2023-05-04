@@ -15,7 +15,6 @@ jobs:
       matrix:
         sys:
           - mingw64
-          - ucrt64
     defaults:
       run:
         shell: msys2 {0}

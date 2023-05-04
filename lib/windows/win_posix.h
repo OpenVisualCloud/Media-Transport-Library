@@ -48,7 +48,7 @@ struct ether_header {
   uint8_t ether_dhost[ETH_ALEN];
   uint8_t ether_shost[ETH_ALEN];
   uint16_t ether_type;
-} __packed;
+} __attribute__((__packed__));
 
 struct udphdr {
   u_short uh_sport; /* source port */
