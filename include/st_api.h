@@ -18,6 +18,15 @@
 extern "C" {
 #endif
 
+/** 90k video sampling rate */
+#define ST10_VIDEO_SAMPLING_RATE_90K (90 * 1000)
+/** 48k audio sampling rate */
+#define ST10_AUDIO_SAMPLING_RATE_48K (48 * 1000)
+/** 44.1k audio sampling rate */
+#define ST10_AUDIO_SAMPLING_RATE_44K (441 * 100)
+/** 96k audio sampling rate */
+#define ST10_AUDIO_SAMPLING_RATE_96K (96 * 1000)
+
 /**
  * Timestamp type of st2110-10
  */

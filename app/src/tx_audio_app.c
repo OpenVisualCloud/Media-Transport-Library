@@ -13,8 +13,9 @@ static int app_tx_audio_next_frame(void* priv, uint16_t* next_frame_idx,
 
   st_pthread_mutex_lock(&s->st30_wake_mutex);
   if (ST_TX_FRAME_READY == framebuff->stat) {
-    dbg("%s(%d), next frame idx %u, epoch %" PRIu64 "\n", __func__, s->idx, consumer_idx,
-         meta->epoch);
+    dbg("%s(%d), next frame idx %u, epoch %" PRIu64 ", tai %" PRIu64 "\n", __func__,
+        s->idx, consumer_idx, meta->epoch,
+        st10_get_tai(meta->tfmt, meta->timestamp, st30_get_sample_rate(s->sampling)));
     ret = 0;
     framebuff->stat = ST_TX_FRAME_IN_TRANSMITTING;
     *next_frame_idx = consumer_idx;
@@ -42,8 +43,9 @@ static int app_tx_audio_frame_done(void* priv, uint16_t frame_idx,
   if (ST_TX_FRAME_IN_TRANSMITTING == framebuff->stat) {
     ret = 0;
     framebuff->stat = ST_TX_FRAME_FREE;
-    dbg("%s(%d), done_idx %u, epoch %" PRIu64 "\n", __func__, s->idx, frame_idx,
-         meta->epoch);
+    dbg("%s(%d), done frame idx %u, epoch %" PRIu64 ", tai %" PRIu64 "\n", __func__,
+        s->idx, frame_idx, meta->epoch,
+        st10_get_tai(meta->tfmt, meta->timestamp, st30_get_sample_rate(s->sampling)));
   } else {
     ret = -EIO;
     err("%s(%d), err status %d for frame %u\n", __func__, s->idx, framebuff->stat,
@@ -418,6 +420,7 @@ static int app_tx_audio_init(struct st_app_context* ctx, st_json_audio_session_t
   ops.ptime = audio ? audio->info.audio_ptime : ST30_PTIME_1MS;
   ops.sample_size = st30_get_sample_size(ops.fmt);
   ops.sample_num = st30_get_sample_num(ops.ptime, ops.sampling);
+  s->sampling = ops.sampling;
   s->pkt_len = ops.sample_size * ops.sample_num * ops.channel;
   if (ops.ptime == ST30_PTIME_4MS) {
     s->st30_frame_size =

@@ -194,14 +194,19 @@ static int tx_ancillary_session_init_pacing(struct mtl_main_impl* impl,
   pacing->frame_time = frame_time;
   pacing->frame_time_sampling =
       (double)(s->fps_tm.sampling_clock_rate) * s->fps_tm.den / s->fps_tm.mul;
-  /* always use MTL_PORT_P for ptp now */
-  pacing->cur_epochs = mt_get_ptp_time(impl, MTL_PORT_P) / frame_time;
-  pacing->tsc_time_cursor = 0;
   pacing->max_onward_epochs = (double)(NS_PER_S * 1) / frame_time; /* 1s */
   dbg("%s[%02d], max_onward_epochs %u\n", __func__, idx, pacing->max_onward_epochs);
 
   info("%s[%02d], frame_time %f frame_time_sampling %f\n", __func__, idx,
        pacing->frame_time, pacing->frame_time_sampling);
+  return 0;
+}
+
+static int tx_ancillary_session_init_pacing_epoch(
+    struct mtl_main_impl* impl, struct st_tx_ancillary_session_impl* s) {
+  uint64_t ptp_time = mt_get_ptp_time(impl, MTL_PORT_P);
+  struct st_tx_ancillary_session_pacing* pacing = &s->pacing;
+  pacing->cur_epochs = ptp_time / pacing->frame_time;
   return 0;
 }
 
@@ -280,6 +285,7 @@ static int tx_ancillary_session_sync_pacing(struct mtl_main_impl* impl,
   if (epochs < next_epochs) s->stat_epoch_onward += (next_epochs - epochs);
 
   pacing->cur_epochs = epochs;
+  pacing->cur_epoch_time = tx_ancillary_pacing_time(pacing, epochs);
   pacing->pacing_time_stamp = tx_ancillary_pacing_time_stamp(pacing, epochs);
   pacing->rtp_time_stamp = pacing->pacing_time_stamp;
   pacing->tsc_time_cursor = (double)mt_get_tsc(impl) + to_epoch;
@@ -296,6 +302,20 @@ static int tx_ancillary_session_sync_pacing(struct mtl_main_impl* impl,
   return 0;
 }
 
+static int tx_ancillary_session_init_next_meta(struct st_tx_ancillary_session_impl* s,
+                                               struct st40_tx_frame_meta* meta) {
+  struct st_tx_ancillary_session_pacing* pacing = &s->pacing;
+  struct st40_tx_ops* ops = &s->ops;
+
+  memset(meta, 0, sizeof(*meta));
+  meta->fps = ops->fps;
+  /* point to next epoch */
+  meta->epoch = pacing->cur_epochs + 1;
+  meta->tfmt = ST10_TIMESTAMP_FMT_TAI;
+  meta->timestamp = tx_ancillary_pacing_time(pacing, meta->epoch);
+  return 0;
+}
+
 static int tx_ancillary_session_init(struct mtl_main_impl* impl,
                                      struct st_tx_ancillary_sessions_mgr* mgr,
                                      struct st_tx_ancillary_session_impl* s, int idx) {
@@ -303,7 +323,21 @@ static int tx_ancillary_session_init(struct mtl_main_impl* impl,
   return 0;
 }
 
-static int tx_ancillary_sessions_tasklet_start(void* priv) { return 0; }
+static int tx_ancillary_sessions_tasklet_start(void* priv) {
+  struct st_tx_ancillary_sessions_mgr* mgr = priv;
+  struct mtl_main_impl* impl = mgr->parent;
+  struct st_tx_ancillary_session_impl* s;
+
+  for (int sidx = 0; sidx < mgr->max_idx; sidx++) {
+    s = tx_ancillary_session_get(mgr, sidx);
+    if (!s) continue;
+
+    tx_ancillary_session_init_pacing_epoch(impl, s);
+    tx_ancillary_session_put(mgr, sidx);
+  }
+
+  return 0;
+}
 
 static int tx_ancillary_sessions_tasklet_stop(void* priv) { return 0; }
 
@@ -583,7 +617,7 @@ static int tx_ancillary_session_tasklet_frame(struct mtl_main_impl* impl,
     return MT_TASKLET_ALL_DONE;
   }
 
-  if (s->ops.num_port > 1) {
+  if (ops->num_port > 1) {
     send_r = true;
     port_r = mt_port_logic2phy(s->port_maps, MTL_SESSION_PORT_R);
     hdr_pool_r = s->mbuf_mempool_hdr[MTL_SESSION_PORT_R];
@@ -615,8 +649,6 @@ static int tx_ancillary_session_tasklet_frame(struct mtl_main_impl* impl,
     uint16_t next_frame_idx;
     int total_udw = 0;
     struct st40_tx_frame_meta meta;
-    memset(&meta, 0, sizeof(meta));
-    meta.fps = ops->fps;
 
     if (s->check_frame_done_time) {
       uint64_t frame_end_time = mt_get_tsc(impl);
@@ -628,6 +660,7 @@ static int tx_ancillary_session_tasklet_frame(struct mtl_main_impl* impl,
       s->check_frame_done_time = false;
     }
 
+    tx_ancillary_session_init_next_meta(s, &meta);
     /* Query next frame buffer idx */
     ret = ops->get_next_frame(ops->priv, &next_frame_idx, &meta);
     if (ret < 0) { /* no frame ready from app */
@@ -674,8 +707,8 @@ static int tx_ancillary_session_tasklet_frame(struct mtl_main_impl* impl,
         (frame->ta_meta.tfmt == ST10_TIMESTAMP_FMT_MEDIA_CLK)) {
       pacing->rtp_time_stamp = (uint32_t)frame->tc_meta.timestamp;
     }
-    frame->tc_meta.tfmt = ST10_TIMESTAMP_FMT_MEDIA_CLK;
-    frame->tc_meta.timestamp = pacing->rtp_time_stamp;
+    frame->tc_meta.tfmt = ST10_TIMESTAMP_FMT_TAI;
+    frame->tc_meta.timestamp = pacing->cur_epoch_time;
     s->calculate_time_cursor = false; /* clear */
   }
 

@@ -176,6 +176,7 @@ struct st_app_tx_audio_session {
   pthread_mutex_t st30_wake_mutex;
   uint32_t st30_rtp_tmstamp;
   uint16_t st30_seq_id;
+  enum st30_sampling sampling;
 };
 
 struct st_app_tx_anc_session {
