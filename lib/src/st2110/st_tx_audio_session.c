@@ -1163,7 +1163,8 @@ static int tx_audio_session_init_trans_ring(struct mtl_main_impl* impl,
   }
 
   if (!trans_ring_thresh) {
-    trans_ring_thresh = (double)(10 * NS_PER_MS) / s->pacing.frame_time;
+    trans_ring_thresh =
+        (double)(ST_TX_AUDIO_FIFO_TIME_MS * NS_PER_MS) / s->pacing.frame_time;
     trans_ring_thresh = RTE_MAX(trans_ring_thresh, 2); /* min: 2 frame */
   }
   s->trans_ring_thresh = trans_ring_thresh;

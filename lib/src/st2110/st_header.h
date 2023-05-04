@@ -46,6 +46,7 @@
 /* max tx/rx audio(st_30) sessions */
 #define ST_MAX_TX_AUDIO_SESSIONS (180)
 #define ST_TX_AUDIO_SESSIONS_RING_SIZE (512)
+#define ST_TX_AUDIO_FIFO_TIME_MS (50)
 #define ST_MAX_RX_AUDIO_SESSIONS (180)
 /* max tx/rx anc(st_40) sessions */
 #define ST_MAX_TX_ANC_SESSIONS (180)
