@@ -6,6 +6,7 @@ env:
   # Disable since mtl patched dpdk pcapng and this job use prebuilt pkg
   MTL_BUILD_DISABLE_PCAPNG: true
   DPDK_VERSION: 22.11
+  APPLY_PATCHES_FOR_DPDK: false
 
 jobs:
   build:
@@ -52,14 +53,12 @@ jobs:
         ref: v${{  env.DPDK_VERSION  }}
         path: dpdk
 
-    - name: Git config
-      run: |
-        git config --global user.email "you@example.com"
-        git config --global user.name "Your Name"
-
     - name: Apply dpdk patches
+      if: ${{ env.APPLY_PATCHES_FOR_DPDK == true }}
       run: |
         cd dpdk
+        git config --global user.email "you@example.com"
+        git config --global user.name "Your Name"
         git am ../patches/dpdk/${{  env.DPDK_VERSION  }}/*.patch
         git am ../patches/dpdk/${{  env.DPDK_VERSION  }}/windows/*.patch
 
