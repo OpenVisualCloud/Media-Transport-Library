@@ -58,12 +58,12 @@ jobs:
         ref: v${{  env.DPDK_VERSION  }}
         path: dpdk
 
-    - name: Apply dpdk patches
+    - name: Apply patches for DPDK
       run: |
         cd dpdk
         git config --global user.email "you@example.com"
         git config --global user.name "Your Name"
-        pushd ../patches/dpdk/${{  env.DPDK_VERSION  }}/*.patch
+        pushd ../patches/dpdk/${{  env.DPDK_VERSION  }}
         ls *.patch | xargs -I{} bash -c 'if [[ $(sed -n '1p' "{}") =~ ^../.*\.patch$ ]]; then cp "$(cat {})" "{}"; fi'
         popd
         pushd ../patches/dpdk/${{  env.DPDK_VERSION  }}/windows
