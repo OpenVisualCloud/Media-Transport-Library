@@ -1,0 +1,77 @@
+name: Windows MSYS2 build
+on: [push, pull_request]
+
+env:
+  # Customize the env if
+  # Disable since mtl patched dpdk pcapng and this job use prebuilt pkg
+  MTL_BUILD_DISABLE_PCAPNG: true
+  DPDK_VERSION: 22.11
+
+jobs:
+  build:
+    runs-on: windows-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        sys: [ MINGW64, UCRT64 ]
+    defaults:
+      run:
+        shell: msys2 {0}
+    steps:
+      - name: Install dependencies
+      - uses: msys2/setup-msys2@v2
+        with:
+          msystem: ${{matrix.sys}}
+          update: true
+          install: >-
+            git
+            base-devel
+          pacboy: >-
+            openssl:p
+            gcc:p
+            meson:p
+            pkg-config:p
+            json-c:p
+            libpcap:p
+            gtest:p
+            SDL2:p
+            SDL2_ttf:p
+            dlfcn:p
+        run: |
+          curl -s https://raw.githubusercontent.com/imachug/win-sudo/master/install.sh | sh
+
+      - name: Checkout IMTL repo
+        uses: actions/checkout@v3
+
+      - name: Checkout DPDK repo
+        uses: actions/checkout@v3
+        with:
+          repository: 'DPDK/dpdk'
+          ref: v${{  env.DPDK_VERSION  }}
+          path: dpdk
+
+      - name: Git config
+        run: |
+          git config --global user.email "you@example.com"
+          git config --global user.name "Your Name"
+
+      - name: Apply dpdk patches
+        run: |
+          cd dpdk
+          git am ../patches/dpdk/${{  env.DPDK_VERSION  }}/*.patch
+          git am ../patches/dpdk/${{  env.DPDK_VERSION  }}/windows/*.patch
+
+      - name: Build dpdk
+        run: |
+          cd dpdk
+          meson setup build
+          ninja -C build install
+
+      - name: Build
+        run: |
+          ./build.sh
+
+      - name: Build with debug
+        run: |
+          rm -rf build
+          ./build.sh debug
