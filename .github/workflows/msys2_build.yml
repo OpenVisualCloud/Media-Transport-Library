@@ -37,6 +37,8 @@ jobs:
             SDL2:p
             SDL2_ttf:p
             dlfcn:p
+
+      - name: Install tools
         run: |
           curl -s https://raw.githubusercontent.com/imachug/win-sudo/master/install.sh | sh
 
