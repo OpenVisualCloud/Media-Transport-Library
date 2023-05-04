@@ -438,7 +438,8 @@ static int tv_init_pacing(struct mtl_main_impl* impl,
   return 0;
 }
 
-static int tv_init_pacing_epoch(struct mtl_main_impl* impl, struct st_tx_video_session_impl* s) {
+static int tv_init_pacing_epoch(struct mtl_main_impl* impl,
+                                struct st_tx_video_session_impl* s) {
   uint64_t ptp_time = mt_get_ptp_time(impl, MTL_PORT_P);
   struct st_tx_video_pacing* pacing = &s->pacing;
   pacing->cur_epochs = ptp_time / pacing->frame_time;
