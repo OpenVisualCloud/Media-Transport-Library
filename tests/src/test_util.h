@@ -22,6 +22,14 @@
 #define NS_PER_S (1000000000)
 #endif
 
+#ifndef NS_PER_US
+#define NS_PER_US (1000)
+#endif
+
+#ifndef NS_PER_US
+#define NS_PER_US (1000 * 1000)
+#endif
+
 enum st_test_level {
   ST_TEST_LEVEL_ALL = 0,
   ST_TEST_LEVEL_MANDATORY,

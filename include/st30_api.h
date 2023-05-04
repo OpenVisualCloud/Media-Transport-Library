@@ -273,7 +273,7 @@ struct st30_tx_ops {
   uint16_t sample_num;
   /*
    * The size of fifo ring which used between the packet builder and pacing.
-   * Leave to zero to use default value: the packet number within 20ms.
+   * Leave to zero to use default value: the packet number within 50 ms.
    */
   uint16_t fifo_size;
   /** flags, value in ST30_TX_FLAG_* */

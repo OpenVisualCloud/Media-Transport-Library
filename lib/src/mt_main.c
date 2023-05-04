@@ -1006,13 +1006,27 @@ int mtl_sch_set_sleep_us(mtl_handle mt, uint64_t us) {
 
 uint64_t mtl_ptp_read_time(mtl_handle mt) {
   struct mtl_main_impl* impl = mt;
+  enum mtl_port port = MTL_PORT_P;
 
   if (impl->type != MT_HANDLE_MAIN) {
     err("%s, invalid type %d\n", __func__, impl->type);
     return 0;
   }
 
-  return mt_get_ptp_time(impl, MTL_PORT_P);
+  mt_wait_tsc_stable(impl);
+
+  uint64_t tsc = mt_get_tsc(impl);
+  uint64_t diff = tsc - impl->ptp_usync_tsc;
+  if (diff < (10 * NS_PER_MS)) {
+    /* use cache read since ptp read is an expensive mmio operation */
+    return impl->ptp_usync + diff;
+  }
+
+  uint64_t ptp = mt_get_ptp_time(impl, port);
+  /* update sync point */
+  impl->ptp_usync_tsc = mt_get_tsc(impl);
+  impl->ptp_usync = ptp;
+  return ptp;
 }
 
 mtl_udma_handle mtl_udma_create(mtl_handle mt, uint16_t nb_desc, enum mtl_port port) {

@@ -813,6 +813,8 @@ struct mtl_main_impl {
 
   /* ptp context */
   struct mt_ptp_impl* ptp[MTL_PORT_MAX];
+  uint64_t ptp_usync;
+  uint64_t ptp_usync_tsc;
   /* arp context */
   struct mt_arp_impl* arp[MTL_PORT_MAX];
   /* mcast context */
