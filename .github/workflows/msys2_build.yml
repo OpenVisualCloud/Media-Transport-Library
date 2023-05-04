@@ -27,6 +27,7 @@ jobs:
         install: >-
           git
           base-devel
+          unzip
         pacboy: >-
           openssl:p
           gcc:p
@@ -42,6 +43,11 @@ jobs:
     - name: Install tools
       run: |
         curl -s https://raw.githubusercontent.com/imachug/win-sudo/master/install.sh | sh
+        wget https://nmap.org/npcap/dist/npcap-sdk-1.12.zip && unzip -d npcap-sdk npcap-sdk-1.12.zip
+        cp npcap-sdk/Lib/x64/Packet.lib $MSYSTEM_PREFIX/lib/ && cp npcap-sdk/Lib/x64/wpcap.lib $MSYSTEM_PREFIX/lib/
+        git clone  https://github.com/alitrack/mman-win32 && cd mman-win32
+        ./configure && make
+        cp libmman.a $MSYSTEM_PREFIX/lib/ && cp mman.h $MSYSTEM_PREFIX/include/sys/
 
     - name: Checkout IMTL repo
       uses: actions/checkout@v3
@@ -57,6 +63,7 @@ jobs:
       if: ${{ env.APPLY_PATCHES_FOR_DPDK == true }}
       run: |
         cd dpdk
+        git config --global core.symlinks true
         git config --global user.email "you@example.com"
         git config --global user.name "Your Name"
         git am ../patches/dpdk/${{  env.DPDK_VERSION  }}/*.patch
