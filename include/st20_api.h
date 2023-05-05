@@ -302,6 +302,8 @@ struct st20_tx_frame_meta {
   enum st10_timestamp_fmt tfmt;
   /** Timestamp value */
   uint64_t timestamp;
+  /** epoch */
+  uint64_t epoch;
 };
 
 /**
@@ -419,6 +421,8 @@ struct st22_tx_frame_meta {
   enum st10_timestamp_fmt tfmt;
   /** Timestamp value, user can customize it if ST22_TX_FLAG_USER_PACING */
   uint64_t timestamp;
+  /** epoch */
+  uint64_t epoch;
 };
 
 /**

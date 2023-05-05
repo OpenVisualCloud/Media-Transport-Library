@@ -46,7 +46,6 @@
 /* max tx/rx audio(st_30) sessions */
 #define ST_MAX_TX_AUDIO_SESSIONS (180)
 #define ST_TX_AUDIO_SESSIONS_RING_SIZE (512)
-#define ST_TX_AUDIO_FIFO_TIME_MS (50)
 #define ST_MAX_RX_AUDIO_SESSIONS (180)
 /* max tx/rx anc(st_40) sessions */
 #define ST_MAX_TX_ANC_SESSIONS (180)
@@ -157,6 +156,7 @@ struct st_tx_video_pacing {
   uint32_t rtp_time_stamp;
   /* timestamp for pacing */
   uint32_t pacing_time_stamp;
+  uint64_t cur_epoch_time;
   double tsc_time_cursor; /* in ns, tsc time cursor for packet pacing */
   double ptp_time_cursor; /* in ns, ptp time cursor for packet pacing */
   /* ptp time may onward */
@@ -708,6 +708,7 @@ struct st_tx_audio_session_pacing {
   uint32_t rtp_time_stamp;
   /* timestamp for pacing */
   uint32_t pacing_time_stamp;
+  uint64_t cur_epoch_time;
   /* in ns, tsc time cursor for packet pacing */
   uint64_t tsc_time_cursor;
   /* ptp time may onward */
@@ -916,6 +917,7 @@ struct st_tx_ancillary_session_pacing {
   uint32_t rtp_time_stamp;
   /* timestamp for pacing */
   uint32_t pacing_time_stamp;
+  uint64_t cur_epoch_time;
   double tsc_time_cursor; /* in ns, tsc time cursor for packet pacing */
   /* ptp time may onward */
   uint32_t max_onward_epochs;
