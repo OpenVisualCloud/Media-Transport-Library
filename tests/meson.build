@@ -63,6 +63,7 @@ executable('KahawaiTest', sources,
   dependencies: [asan_dep, mtl, gtest, libnuma, libopenssl, libpthread]
 )
 
+if not is_windows
 # build ufd test executable
 executable('KahawaiUfdTest', ufd_sources,
   c_args : test_c_args,
@@ -80,3 +81,4 @@ executable('KahawaiUplTest', upl_sources,
   # asan should be always the first dep
   dependencies: [asan_dep, gtest, libopenssl]
 )
+endif
