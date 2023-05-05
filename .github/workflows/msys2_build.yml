@@ -78,34 +78,37 @@ jobs:
     - name: Build dpdk
       run: |
         cd dpdk
-        meson setup build
-        ninja -v -C build install
+        meson configure build
+        meson compile -C build
+        meson install -C build
 
     - name: Build IMTL lib
       run: |
-        meson setup build
-        ninja -C build install
+        meson configure build
+        meson compile -C build
+        meson install -C build
 
     - name: Build IMTL app
       run: |
         cd app
-        meson setup build
-        ninja -C build
+        meson configure build
+        meson compile -C build
 
     - name: Build IMTL test
       run: |
         cd tests
-        meson setup build
-        ninja -C build
+        meson configure build
+        meson compile -C build
 
     - name: Build IMTL plugins
       run: |
         cd plugins
-        meson setup build
-        ninja -C build install
+        meson configure build
+        meson compile -C build
+        meson install -C build
 
     - name: Build IMTL lib with TAP
       run: |
-        rm -rf build
-        meson tap_build -Denable_tap=true
-        ninja -C tap_build install
+        meson configure tap_build -Denable_tap=true
+        meson compile -C tap_build
+        meson install -C tap_build
