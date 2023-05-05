@@ -102,3 +102,9 @@ jobs:
         cd plugins
         meson setup build
         ninja -C build install
+
+    - name: Build IMTL lib with TAP
+      run: |
+        rm -rf build
+        meson tap_build -Denable_tap=true
+        ninja -C tap_build install
