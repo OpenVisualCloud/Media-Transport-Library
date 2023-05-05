@@ -1,20 +1,19 @@
 # VF Guide for CVL
 
-## 1. Update driver version to 1.9.11 with patches
+## 1. Update driver with patches
 
-### 1.1 Get driver version with 1.9.11
+### 1.1 Get driver version with 1.11.14
 
-Download CVL 1.9.11 driver from Intel website: <https://www.intel.com/content/www/us/en/download/19630/intel-network-adapter-driver-for-e810-series-devices-under-linux.html>.
+Download CVL 1.11.14 driver from Intel website: <https://www.intel.com/content/www/us/en/download/19630/intel-network-adapter-driver-for-e810-series-devices-under-linux.html>.
 
 ### 1.2 Patch with RL patches
 
-Apply the all patches under [ice_driver](../patches/ice_drv/1.9.11/)
+Apply the all patches under [ice_driver](../patches/ice_drv/1.11.14/)
 
 ```bash
-git am $imtl_source_cod/patches/ice_drv/1.9.11/0001-ice-linux-fix-incorrect-memcpy-size.patch
-git am $imtl_source_cod/patches/ice_drv/1.9.11/0002-vf-support-kahawai-runtime-rl-queue.patch
-git am $imtl_source_cod/patches/ice_drv/1.9.11/0003-ice-set-ICE_SCHED_DFLT_BURST_SIZE-to-2048.patch
-git am $imtl_source_cod/patches/ice_drv/1.9.11/0004-version-update-to-kahawai.patch
+git am $imtl_source_cod/patches/ice_drv/1.11.14/0001-vf-support-kahawai-runtime-rl-queue.patch
+git am $imtl_source_cod/patches/ice_drv/1.11.14/0002-ice-set-ICE_SCHED_DFLT_BURST_SIZE-to-2048.patch
+git am $imtl_source_cod/patches/ice_drv/1.11.14/0003-version-update-to-kahawai-1.11.14.patch
 ```
 
 ### 1.3 Build and install the driver
@@ -32,7 +31,7 @@ sudo modprobe ice
 Double check the driver version is right from dmesg.
 
 ```bash
-[  241.238174] ice: Intel(R) Ethernet Connection E800 Series Linux Driver - version Kahawai_1.9.11_20220803
+[1632263.337924] ice: Intel(R) Ethernet Connection E800 Series Linux Driver - version Kahawai_1.11.14_20230505
 ```
 
 #### 1.4 Update DDP package version to latest(>=1.3.30)

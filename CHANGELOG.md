@@ -3,6 +3,18 @@
 ## Changelog for 23.07
 
 * lib: add DHCP client implementation.
+* ice: update driver to 1.11.14
+* udp: add LD_PRELOAD to support no-code change deployment, see doc/udp.md
+* udp: add select/epoll/send_msg/recvmsg support.
+* ecosystem/ffmpeg: add output support.
+* rss: add shared mode support, see mt_shared_rss.h
+* st/video: add multi_src_port support.
+* sample: add hdr split with gpu direct, see app/sample/ext_frame/rx_st20p_hdr_split_gpu_direct.c
+* api/ops: add udp_src_port configuration
+* build: disable Werror for debug build.
+* tx/st30: separate build and pacing stage.
+* tx/pacing: add epoch drop/onward stat.
+* tx/st2110: add epoch information in stxx_tx_frame_meta for get_next_frame callback.
 
 ## Changelog for 23.04
 
