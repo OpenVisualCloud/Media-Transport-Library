@@ -13,7 +13,6 @@ jobs:
       matrix:
         sys:
           - mingw64
-          - ucrt64
     defaults:
       run:
         shell: msys2 {0}
@@ -44,7 +43,7 @@ jobs:
         wget https://nmap.org/npcap/dist/npcap-sdk-1.12.zip
         unzip -d npcap-sdk npcap-sdk-1.12.zip
         cp npcap-sdk/Lib/x64/* $MSYSTEM_PREFIX/lib/
-        git clone  https://github.com/alitrack/mman-win32
+        git clone https://github.com/alitrack/mman-win32
         cd mman-win32
         ./configure --prefix=$MSYSTEM_PREFIX
         make && make install
