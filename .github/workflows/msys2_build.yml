@@ -78,37 +78,37 @@ jobs:
     - name: Build dpdk
       run: |
         cd dpdk
-        meson configure build
+        meson setup build
         meson compile -C build
         meson install -C build
 
     - name: Build IMTL lib
       run: |
-        meson configure build
+        meson setup build
         meson compile -C build
         meson install -C build
 
     - name: Build IMTL app
       run: |
         cd app
-        meson configure build
+        meson setup build
         meson compile -C build
 
     - name: Build IMTL test
       run: |
         cd tests
-        meson configure build
+        meson setup build
         meson compile -C build
 
     - name: Build IMTL plugins
       run: |
         cd plugins
-        meson configure build
+        meson setup build
         meson compile -C build
         meson install -C build
 
     - name: Build IMTL lib with TAP
       run: |
-        meson configure tap_build -Denable_tap=true
+        meson setup tap_build -Denable_tap=true
         meson compile -C tap_build
         meson install -C tap_build
