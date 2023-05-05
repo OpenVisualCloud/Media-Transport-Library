@@ -2,6 +2,8 @@
 
 ## 1. Introduction
 
+> Update: for quick installation with package management tools in MSYS2 environment, please see [build_WIN_MSYS2.md](build_WIN_MSYS2.md)
+
 This document contains instructions for installing and configuring the Intel® Media Transport Library for Windows Operation System.
 
 All the steps below related to the DPDK configuration instructions on Windows are from the website:
