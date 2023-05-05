@@ -13,6 +13,7 @@ jobs:
       matrix:
         sys:
           - mingw64
+          - ucrt64
     defaults:
       run:
         shell: msys2 {0}
@@ -78,7 +79,7 @@ jobs:
       run: |
         cd dpdk
         meson setup build
-        ninja -C build install
+        ninja -v -C build install
 
     - name: Build IMTL lib
       run: |
