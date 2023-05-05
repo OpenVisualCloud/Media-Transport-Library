@@ -195,9 +195,6 @@ static int tx_audio_session_init_pacing(struct mtl_main_impl* impl,
   pacing->frame_time_sampling = (double)(ops->sample_num * 1000) * 1 / 1000;
   pacing->trs = frame_time;
 
-  /* always use MTL_PORT_P for ptp now */
-  pacing->cur_epochs = mt_get_ptp_time(impl, MTL_PORT_P) / frame_time;
-  pacing->tsc_time_cursor = 0;
   pacing->max_onward_epochs = (double)(NS_PER_S * 1) / frame_time;     /* 1s */
   pacing->max_late_epochs = (double)(NS_PER_S * 1) / frame_time / 100; /* 10ms */
   dbg("%s[%02d], max_onward_epochs %u max_late_epochs %u\n", __func__, idx,
@@ -205,6 +202,14 @@ static int tx_audio_session_init_pacing(struct mtl_main_impl* impl,
 
   info("%s[%02d], frame_time %f frame_time_sampling %f\n", __func__, idx,
        pacing->frame_time, pacing->frame_time_sampling);
+  return 0;
+}
+
+static int tx_audio_session_init_pacing_epoch(struct mtl_main_impl* impl,
+                                              struct st_tx_audio_session_impl* s) {
+  uint64_t ptp_time = mt_get_ptp_time(impl, MTL_PORT_P);
+  struct st_tx_audio_session_pacing* pacing = &s->pacing;
+  pacing->cur_epochs = ptp_time / pacing->frame_time;
   return 0;
 }
 
@@ -291,6 +296,7 @@ static int tx_audio_session_sync_pacing(struct mtl_main_impl* impl,
   if (epochs < next_epochs) s->stat_epoch_onward += (next_epochs - epochs);
 
   pacing->cur_epochs = epochs;
+  pacing->cur_epoch_time = tx_audio_pacing_time(pacing, epochs);
   pacing->pacing_time_stamp = tx_audio_pacing_time_stamp(pacing, epochs);
   pacing->rtp_time_stamp = pacing->pacing_time_stamp;
   pacing->tsc_time_cursor = (double)mt_get_tsc(impl) + to_epoch;
@@ -304,6 +310,23 @@ static int tx_audio_session_sync_pacing(struct mtl_main_impl* impl,
   return 0;
 }
 
+static int tx_audio_session_init_next_meta(struct st_tx_audio_session_impl* s,
+                                           struct st30_tx_frame_meta* meta) {
+  struct st_tx_audio_session_pacing* pacing = &s->pacing;
+  struct st30_tx_ops* ops = &s->ops;
+
+  memset(meta, 0, sizeof(*meta));
+  meta->fmt = ops->fmt;
+  meta->channel = ops->channel;
+  meta->ptime = ops->ptime;
+  meta->sampling = ops->sampling;
+  /* point to next epoch */
+  meta->epoch = pacing->cur_epochs + 1;
+  meta->tfmt = ST10_TIMESTAMP_FMT_TAI;
+  meta->timestamp = tx_audio_pacing_time(pacing, meta->epoch);
+  return 0;
+}
+
 static int tx_audio_session_init(struct mtl_main_impl* impl,
                                  struct st_tx_audio_sessions_mgr* mgr,
                                  struct st_tx_audio_session_impl* s, int idx) {
@@ -311,7 +334,21 @@ static int tx_audio_session_init(struct mtl_main_impl* impl,
   return 0;
 }
 
-static int tx_audio_sessions_tasklet_start(void* priv) { return 0; }
+static int tx_audio_sessions_tasklet_start(void* priv) {
+  struct st_tx_audio_sessions_mgr* mgr = priv;
+  struct mtl_main_impl* impl = mgr->parent;
+  struct st_tx_audio_session_impl* s;
+
+  for (int sidx = 0; sidx < mgr->max_idx; sidx++) {
+    s = tx_audio_session_get(mgr, sidx);
+    if (!s) continue;
+
+    tx_audio_session_init_pacing_epoch(impl, s);
+    tx_audio_session_put(mgr, sidx);
+  }
+
+  return 0;
+}
 
 static int tx_audio_sessions_tasklet_stop(void* priv) { return 0; }
 
@@ -505,7 +542,7 @@ static int tx_audio_session_tasklet_frame(struct mtl_main_impl* impl,
     return MT_TASKLET_ALL_DONE;
   }
 
-  if (s->ops.num_port > 1) {
+  if (ops->num_port > 1) {
     send_r = true;
     hdr_pool_r = s->mbuf_mempool_hdr[MTL_SESSION_PORT_R];
     ring_r = s->trans_ring[MTL_SESSION_PORT_R];
@@ -536,11 +573,6 @@ static int tx_audio_session_tasklet_frame(struct mtl_main_impl* impl,
     if (ST30_TX_STAT_WAIT_FRAME == s->st30_frame_stat) {
       uint16_t next_frame_idx;
       struct st30_tx_frame_meta meta;
-      memset(&meta, 0, sizeof(meta));
-      meta.fmt = ops->fmt;
-      meta.channel = ops->channel;
-      meta.ptime = ops->ptime;
-      meta.sampling = ops->sampling;
 
       if (s->check_frame_done_time) {
         uint64_t frame_end_time = mt_get_tsc(impl);
@@ -552,6 +584,7 @@ static int tx_audio_session_tasklet_frame(struct mtl_main_impl* impl,
         s->check_frame_done_time = false;
       }
 
+      tx_audio_session_init_next_meta(s, &meta);
       /* Query next frame buffer idx */
       ret = ops->get_next_frame(ops->priv, &next_frame_idx, &meta);
       if (ret < 0) { /* no frame ready from app */
@@ -586,8 +619,8 @@ static int tx_audio_session_tasklet_frame(struct mtl_main_impl* impl,
         (frame->ta_meta.tfmt == ST10_TIMESTAMP_FMT_MEDIA_CLK)) {
       pacing->rtp_time_stamp = (uint32_t)frame->ta_meta.timestamp;
     }
-    frame->ta_meta.tfmt = ST10_TIMESTAMP_FMT_MEDIA_CLK;
-    frame->ta_meta.timestamp = pacing->rtp_time_stamp;
+    frame->ta_meta.tfmt = ST10_TIMESTAMP_FMT_TAI;
+    frame->ta_meta.timestamp = pacing->cur_epoch_time;
     s->calculate_time_cursor = false; /* clear */
   }
 
@@ -1164,7 +1197,7 @@ static int tx_audio_session_init_trans_ring(struct mtl_main_impl* impl,
 
   if (!trans_ring_thresh) {
     trans_ring_thresh =
-        (double)(ST_TX_AUDIO_FIFO_TIME_MS * NS_PER_MS) / s->pacing.frame_time;
+        (double)(ST30_TX_FIFO_DEFAULT_TIME_MS * NS_PER_MS) / s->pacing.frame_time;
     trans_ring_thresh = RTE_MAX(trans_ring_thresh, 2); /* min: 2 frame */
   }
   s->trans_ring_thresh = trans_ring_thresh;

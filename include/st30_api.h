@@ -63,6 +63,9 @@ typedef struct st_rx_audio_session_handle_impl* st30_rx_handle;
  */
 #define ST30_RX_FLAG_DATA_PATH_ONLY (MTL_BIT32(0))
 
+/** default time in the fifo between packet builder and pacing */
+#define ST30_TX_FIFO_DEFAULT_TIME_MS (10)
+
 /**
  * Payload format of st2110-30/31(audio) streaming
  */
@@ -211,6 +214,8 @@ struct st30_tx_frame_meta {
   enum st10_timestamp_fmt tfmt;
   /** Frame timestamp value */
   uint64_t timestamp;
+  /** epoch */
+  uint64_t epoch;
 };
 
 /**
@@ -273,7 +278,8 @@ struct st30_tx_ops {
   uint16_t sample_num;
   /*
    * The size of fifo ring which used between the packet builder and pacing.
-   * Leave to zero to use default value: the packet number within 50 ms.
+   * Leave to zero to use default value: the packet number within
+   * ST30_TX_FIFO_DEFAULT_TIME_MS.
    */
   uint16_t fifo_size;
   /** flags, value in ST30_TX_FLAG_* */

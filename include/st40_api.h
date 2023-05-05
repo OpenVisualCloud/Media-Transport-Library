@@ -207,6 +207,8 @@ struct st40_tx_frame_meta {
   enum st10_timestamp_fmt tfmt;
   /** Frame timestamp value */
   uint64_t timestamp;
+  /** epoch */
+  uint64_t epoch;
 };
 
 /**
