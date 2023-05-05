@@ -1,0 +1,113 @@
+name: Windows MSYS2 build
+on: [push, pull_request]
+
+env:
+  # Customize the env if
+  DPDK_VERSION: 22.11
+
+jobs:
+  build:
+    runs-on: windows-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        sys:
+          - mingw64
+    defaults:
+      run:
+        shell: msys2 {0}
+    steps:
+    - name: Install dependencies
+      uses: msys2/setup-msys2@v2
+      with:
+        msystem: ${{matrix.sys}}
+        update: true
+        install: >-
+          git
+          base-devel
+          unzip
+        pacboy: >-
+          openssl:p
+          gcc:p
+          meson:p
+          pkg-config:p
+          json-c:p
+          libpcap:p
+          gtest:p
+          SDL2:p
+          SDL2_ttf:p
+          dlfcn:p
+
+    - name: Install tools
+      run: |
+        wget https://nmap.org/npcap/dist/npcap-sdk-1.12.zip
+        unzip -d npcap-sdk npcap-sdk-1.12.zip
+        cp npcap-sdk/Lib/x64/* $MSYSTEM_PREFIX/lib/
+        git clone https://github.com/alitrack/mman-win32
+        cd mman-win32
+        ./configure --prefix=$MSYSTEM_PREFIX
+        make && make install
+
+    - name: Checkout IMTL repo
+      uses: actions/checkout@v3
+
+    - name: Checkout DPDK repo
+      uses: actions/checkout@v3
+      with:
+        repository: 'DPDK/dpdk'
+        ref: v${{  env.DPDK_VERSION  }}
+        path: dpdk
+
+    - name: Convert symlink patch files to real file
+      run: |
+        cd patches/dpdk/${{  env.DPDK_VERSION  }}
+        ls *.patch | xargs -I{} bash -c 'if [[ $(sed -n '1p' "{}") =~ ^../.*\.patch$ ]]; then cp "$(cat "{}")" "{}"; fi'
+        cd windows
+        ls *.patch | xargs -I{} bash -c 'if [[ $(sed -n '1p' "{}") =~ ^../.*\.patch$ ]]; then cp "$(cat "{}")" "{}"; fi'
+    
+    - name: Apply patches for DPDK
+      shell: bash
+      run: |
+        cd dpdk
+        git config user.name github-actions
+        git config user.email github-actions@github.com
+        git am ../patches/dpdk/${{  env.DPDK_VERSION  }}/*.patch
+        git am ../patches/dpdk/${{  env.DPDK_VERSION  }}/windows/*.patch
+
+    - name: Build dpdk
+      run: |
+        cd dpdk
+        meson setup build
+        meson compile -C build
+        meson install -C build
+
+    - name: Build IMTL lib
+      run: |
+        meson setup build
+        meson compile -C build
+        meson install -C build
+
+    - name: Build IMTL app
+      run: |
+        cd app
+        meson setup build
+        meson compile -C build
+
+    - name: Build IMTL test
+      run: |
+        cd tests
+        meson setup build
+        meson compile -C build
+
+    - name: Build IMTL plugins
+      run: |
+        cd plugins
+        meson setup build
+        meson compile -C build
+        meson install -C build
+
+    - name: Build IMTL lib with TAP
+      run: |
+        meson setup tap_build -Denable_tap=true
+        meson compile -C tap_build
+        meson install -C tap_build

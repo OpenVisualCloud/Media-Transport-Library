@@ -1,0 +1,33 @@
+From f2549aaea180da4deefb88558afb35c3d2acb8fd Mon Sep 17 00:00:00 2001
+From: Ric <ming3.li@intel.com>
+Date: Thu, 4 May 2023 15:48:32 +0800
+Subject: [PATCH] Fix list dir glob expassion in msys2
+
+---
+ buildtools/list-dir-globs.py | 4 ++--
+ 1 file changed, 2 insertions(+), 2 deletions(-)
+
+diff --git a/buildtools/list-dir-globs.py b/buildtools/list-dir-globs.py
+index d824360d39..d89fbf5a9e 100755
+--- a/buildtools/list-dir-globs.py
++++ b/buildtools/list-dir-globs.py
+@@ -6,14 +6,14 @@
+ import os
+ from glob import iglob
+ 
+-if len(sys.argv) != 2:
++if len(sys.argv) < 2:
+     print("Usage: {0} <path-glob>[,<path-glob>[,...]]".format(sys.argv[0]))
+     sys.exit(1)
+ 
+ root = os.path.join(os.getenv('MESON_SOURCE_ROOT', '.'),
+                     os.getenv('MESON_SUBDIR', '.'))
+ 
+-for path in sys.argv[1].split(','):
++for path in sys.argv[1].split(' '):
+     if path:
+         for p in iglob(os.path.join(root, path)):
+             if os.path.isdir(p):
+-- 
+2.39.1.windows.1
+

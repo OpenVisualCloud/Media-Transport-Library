@@ -48,7 +48,7 @@ struct ether_header {
   uint8_t ether_dhost[ETH_ALEN];
   uint8_t ether_shost[ETH_ALEN];
   uint16_t ether_type;
-} __packed;
+} __attribute__((__packed__));
 
 struct udphdr {
   u_short uh_sport; /* source port */
@@ -115,7 +115,7 @@ int shmctl(int shmid, int cmd, struct shmid_ds* buf);
 int shmdt(const void* shmaddr);
 int shmget(key_t key, size_t size, int shmflg);
 
-typedef void* pthread_cond_t;
+typedef intptr_t pthread_cond_t;
 typedef int pthread_condattr_t;
 #ifdef __MTL_LIB_BUILD__  // only lib need this typedef
 typedef rte_cpuset_t cpu_set_t;
