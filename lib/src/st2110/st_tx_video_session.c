@@ -1979,7 +1979,7 @@ static int tv_tasklet_st22(struct mtl_main_impl* impl,
     if (n == 0) {
       for (unsigned int i = 0; i < bulk; i++)
         s->inflight[MTL_SESSION_PORT_R][i] = pkts_r[i];
-       s->inflight_cnt[MTL_SESSION_PORT_R]++;
+      s->inflight_cnt[MTL_SESSION_PORT_R]++;
       s->stat_build_ret_code = -STI_ST22_PKT_R_ENQUEUE_FAIL;
       done = true;
     }

@@ -936,7 +936,6 @@ struct st_tx_ancillary_session_impl {
   /* if the eth dev support ipv4 checksum offload */
   bool eth_ipv4_cksum_offload[MTL_SESSION_PORT_MAX];
   struct rte_mbuf* inflight[MTL_SESSION_PORT_MAX];
-  bool has_inflight[MTL_SESSION_PORT_MAX];
   int inflight_cnt[MTL_SESSION_PORT_MAX]; /* for stats */
   struct rte_ring* packet_ring;
 
