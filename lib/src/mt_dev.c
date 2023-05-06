@@ -1648,7 +1648,7 @@ static struct mt_rx_flow_rsp* dev_if_create_rx_flow(struct mtl_main_impl* impl,
 
     rsp->flow = r_flow;
     /* WA to avoid iavf_flow_create fail in 1000+ mudp close at same time */
-    if (inf->port_type == MT_PORT_VF) mt_sleep_ms(1);
+    if (inf->port_type == MT_PORT_VF) mt_sleep_ms(5);
   }
 
   return rsp;
