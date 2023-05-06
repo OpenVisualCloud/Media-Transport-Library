@@ -287,7 +287,6 @@ struct st_tx_video_session_impl {
 
   unsigned int bulk; /* Enqueue bulk objects on the ring */
   struct rte_mbuf* inflight[MTL_SESSION_PORT_MAX][ST_SESSION_MAX_BULK];
-  bool has_inflight[MTL_SESSION_PORT_MAX];
   int inflight_cnt[MTL_SESSION_PORT_MAX]; /* for stats */
 
   /* info for transmitter */
@@ -732,7 +731,6 @@ struct st_tx_audio_session_impl {
   /* if the eth dev support ipv4 checksum offload */
   bool eth_ipv4_cksum_offload[MTL_SESSION_PORT_MAX];
   struct rte_mbuf* inflight[MTL_SESSION_PORT_MAX];
-  bool has_inflight[MTL_SESSION_PORT_MAX];
   int inflight_cnt[MTL_SESSION_PORT_MAX]; /* for stats */
   struct rte_ring* trans_ring[MTL_SESSION_PORT_MAX];
   uint16_t trans_ring_thresh;
@@ -938,7 +936,6 @@ struct st_tx_ancillary_session_impl {
   /* if the eth dev support ipv4 checksum offload */
   bool eth_ipv4_cksum_offload[MTL_SESSION_PORT_MAX];
   struct rte_mbuf* inflight[MTL_SESSION_PORT_MAX];
-  bool has_inflight[MTL_SESSION_PORT_MAX];
   int inflight_cnt[MTL_SESSION_PORT_MAX]; /* for stats */
   struct rte_ring* packet_ring;
 

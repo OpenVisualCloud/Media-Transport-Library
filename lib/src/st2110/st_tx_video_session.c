@@ -1373,21 +1373,21 @@ static int tv_tasklet_frame(struct mtl_main_impl* impl,
   }
 
   /* check if any inflight pkts */
-  if (s->has_inflight[MTL_SESSION_PORT_P]) {
+  if (s->inflight[MTL_SESSION_PORT_P][0]) {
     n = rte_ring_sp_enqueue_bulk(ring_p, (void**)&s->inflight[MTL_SESSION_PORT_P][0],
                                  bulk, NULL);
     if (n > 0) {
-      s->has_inflight[MTL_SESSION_PORT_P] = false;
+      s->inflight[MTL_SESSION_PORT_P][0] = NULL;
     } else {
       s->stat_build_ret_code = -STI_FRAME_INFLIGHT_ENQUEUE_FAIL;
       return MT_TASKLET_ALL_DONE;
     }
   }
-  if (send_r && s->has_inflight[MTL_SESSION_PORT_R]) {
+  if (send_r && s->inflight[MTL_SESSION_PORT_R][0]) {
     n = rte_ring_sp_enqueue_bulk(ring_r, (void**)&s->inflight[MTL_SESSION_PORT_R][0],
                                  bulk, NULL);
     if (n > 0) {
-      s->has_inflight[MTL_SESSION_PORT_R] = false;
+      s->inflight[MTL_SESSION_PORT_R][0] = NULL;
     } else {
       s->stat_build_ret_code = -STI_FRAME_INFLIGHT_R_ENQUEUE_FAIL;
       return MT_TASKLET_ALL_DONE;
@@ -1568,7 +1568,6 @@ static int tv_tasklet_frame(struct mtl_main_impl* impl,
   n = rte_ring_sp_enqueue_bulk(ring_p, (void**)&pkts[0], bulk, NULL);
   if (n == 0) {
     for (unsigned int i = 0; i < bulk; i++) s->inflight[MTL_SESSION_PORT_P][i] = pkts[i];
-    s->has_inflight[MTL_SESSION_PORT_P] = true;
     s->inflight_cnt[MTL_SESSION_PORT_P]++;
     s->stat_build_ret_code = -STI_FRAME_PKT_ENQUEUE_FAIL;
     done = true;
@@ -1578,7 +1577,6 @@ static int tv_tasklet_frame(struct mtl_main_impl* impl,
     if (n == 0) {
       for (unsigned int i = 0; i < bulk; i++)
         s->inflight[MTL_SESSION_PORT_R][i] = pkts_r[i];
-      s->has_inflight[MTL_SESSION_PORT_R] = true;
       s->inflight_cnt[MTL_SESSION_PORT_R]++;
       s->stat_build_ret_code = -STI_FRAME_PKT_R_ENQUEUE_FAIL;
       done = true;
@@ -1638,21 +1636,21 @@ static int tv_tasklet_rtp(struct mtl_main_impl* impl,
   }
 
   /* check if any inflight pkts */
-  if (s->has_inflight[MTL_SESSION_PORT_P]) {
+  if (s->inflight[MTL_SESSION_PORT_P][0]) {
     n = rte_ring_sp_enqueue_bulk(ring_p, (void**)&s->inflight[MTL_SESSION_PORT_P][0],
                                  bulk, NULL);
     if (n > 0) {
-      s->has_inflight[MTL_SESSION_PORT_P] = false;
+      s->inflight[MTL_SESSION_PORT_P][0] = NULL;
     } else {
       s->stat_build_ret_code = -STI_RTP_INFLIGHT_ENQUEUE_FAIL;
       return MT_TASKLET_ALL_DONE;
     }
   }
-  if (send_r && s->has_inflight[MTL_SESSION_PORT_R]) {
+  if (send_r && s->inflight[MTL_SESSION_PORT_R][0]) {
     n = rte_ring_sp_enqueue_bulk(ring_r, (void**)&s->inflight[MTL_SESSION_PORT_R][0],
                                  bulk, NULL);
     if (n > 0) {
-      s->has_inflight[MTL_SESSION_PORT_R] = false;
+      s->inflight[MTL_SESSION_PORT_R][0] = false;
     } else {
       s->stat_build_ret_code = -STI_RTP_INFLIGHT_R_ENQUEUE_FAIL;
       return MT_TASKLET_ALL_DONE;
@@ -1735,7 +1733,6 @@ static int tv_tasklet_rtp(struct mtl_main_impl* impl,
   n = rte_ring_sp_enqueue_bulk(ring_p, (void**)&pkts[0], bulk, NULL);
   if (n == 0) {
     for (unsigned int i = 0; i < bulk; i++) s->inflight[MTL_SESSION_PORT_P][i] = pkts[i];
-    s->has_inflight[MTL_SESSION_PORT_P] = true;
     s->inflight_cnt[MTL_SESSION_PORT_P]++;
     s->stat_build_ret_code = -STI_RTP_PKT_ENQUEUE_FAIL;
     done = true;
@@ -1745,7 +1742,6 @@ static int tv_tasklet_rtp(struct mtl_main_impl* impl,
     if (n == 0) {
       for (unsigned int i = 0; i < bulk; i++)
         s->inflight[MTL_SESSION_PORT_R][i] = pkts_r[i];
-      s->has_inflight[MTL_SESSION_PORT_R] = true;
       s->inflight_cnt[MTL_SESSION_PORT_R]++;
       s->stat_build_ret_code = -STI_RTP_PKT_R_ENQUEUE_FAIL;
       done = true;
@@ -1783,21 +1779,21 @@ static int tv_tasklet_st22(struct mtl_main_impl* impl,
   }
 
   /* check if any inflight pkts */
-  if (s->has_inflight[MTL_SESSION_PORT_P]) {
+  if (s->inflight[MTL_SESSION_PORT_P][0]) {
     n = rte_ring_sp_enqueue_bulk(ring_p, (void**)&s->inflight[MTL_SESSION_PORT_P][0],
                                  bulk, NULL);
     if (n > 0) {
-      s->has_inflight[MTL_SESSION_PORT_P] = false;
+      s->inflight[MTL_SESSION_PORT_P][0] = NULL;
     } else {
       s->stat_build_ret_code = -STI_ST22_INFLIGHT_ENQUEUE_FAIL;
       return MT_TASKLET_ALL_DONE;
     }
   }
-  if (send_r && s->has_inflight[MTL_SESSION_PORT_R]) {
+  if (send_r && s->inflight[MTL_SESSION_PORT_R][0]) {
     n = rte_ring_sp_enqueue_bulk(ring_r, (void**)&s->inflight[MTL_SESSION_PORT_R][0],
                                  bulk, NULL);
     if (n > 0) {
-      s->has_inflight[MTL_SESSION_PORT_R] = false;
+      s->inflight[MTL_SESSION_PORT_R][0] = NULL;
     } else {
       s->stat_build_ret_code = -STI_ST22_INFLIGHT_R_ENQUEUE_FAIL;
       return MT_TASKLET_ALL_DONE;
@@ -1974,7 +1970,6 @@ static int tv_tasklet_st22(struct mtl_main_impl* impl,
   n = rte_ring_sp_enqueue_bulk(ring_p, (void**)&pkts[0], bulk, NULL);
   if (n == 0) {
     for (unsigned int i = 0; i < bulk; i++) s->inflight[MTL_SESSION_PORT_P][i] = pkts[i];
-    s->has_inflight[MTL_SESSION_PORT_P] = true;
     s->inflight_cnt[MTL_SESSION_PORT_P]++;
     s->stat_build_ret_code = -STI_ST22_PKT_ENQUEUE_FAIL;
     done = true;
@@ -1984,7 +1979,6 @@ static int tv_tasklet_st22(struct mtl_main_impl* impl,
     if (n == 0) {
       for (unsigned int i = 0; i < bulk; i++)
         s->inflight[MTL_SESSION_PORT_R][i] = pkts_r[i];
-      s->has_inflight[MTL_SESSION_PORT_R] = true;
       s->inflight_cnt[MTL_SESSION_PORT_R]++;
       s->stat_build_ret_code = -STI_ST22_PKT_R_ENQUEUE_FAIL;
       done = true;
@@ -2305,9 +2299,9 @@ static int tv_uinit_sw(struct st_tx_video_session_impl* s) {
 
   for (int i = 0; i < num_port; i++) {
     /* free all inflight */
-    if (s->has_inflight[i]) {
+    if (s->inflight[i][0]) {
       rte_pktmbuf_free_bulk(&s->inflight[i][0], s->bulk);
-      s->has_inflight[i] = false;
+      s->inflight[i][0] = NULL;
     }
     if (s->trs_inflight_num[i]) {
       rte_pktmbuf_free_bulk(&s->trs_inflight[i][s->trs_inflight_idx[i]],
@@ -2679,7 +2673,7 @@ static int tv_attach(struct mtl_main_impl* impl, struct st_tx_video_sessions_mgr
   s->cpu_busy_score = 0;
 
   for (int i = 0; i < num_port; i++) {
-    s->has_inflight[i] = false;
+    s->inflight[i][0] = NULL;
     s->inflight_cnt[i] = 0;
     s->trs_inflight_num[i] = 0;
     s->trs_inflight_num2[i] = 0;

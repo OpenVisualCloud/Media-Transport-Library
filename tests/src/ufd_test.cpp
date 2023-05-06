@@ -130,6 +130,8 @@ static void utest_ctx_init(struct utest_ctx* ctx) {
 
   p->flags |= MTL_FLAG_BIND_NUMA; /* default bind to numa */
   p->log_level = MTL_LOG_LEVEL_ERROR;
+
+  ctx->init_params.slots_nb_max = 256;
 }
 
 static void utest_ctx_uinit(struct utest_ctx* ctx) { st_test_free(ctx); }

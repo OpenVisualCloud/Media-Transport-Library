@@ -351,7 +351,7 @@ static struct ufd_mt_ctx* ufd_create_mt_ctx(void) {
 
   if (init_para) { /* init case selected */
     info("%s, runtime config path\n", __func__);
-    rte_memcpy(p, init_para, sizeof(*p));
+    rte_memcpy(&ctx->init_params, init_para, sizeof(ctx->init_params));
   } else {
     /* get user config from json */
     int ret = ufd_config_init(ctx);

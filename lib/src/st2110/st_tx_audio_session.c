@@ -549,20 +549,20 @@ static int tx_audio_session_tasklet_frame(struct mtl_main_impl* impl,
   }
 
   /* check if any inflight pkts */
-  if (s->has_inflight[MTL_SESSION_PORT_P]) {
+  if (s->inflight[MTL_SESSION_PORT_P]) {
     ret = rte_ring_mp_enqueue(ring_p, (void*)s->inflight[MTL_SESSION_PORT_P]);
     if (ret == 0) {
-      s->has_inflight[MTL_SESSION_PORT_P] = false;
+      s->inflight[MTL_SESSION_PORT_P] = NULL;
     } else {
       s->stat_build_ret_code = -STI_FRAME_INFLIGHT_ENQUEUE_FAIL;
       return MT_TASKLET_ALL_DONE;
     }
   }
 
-  if (send_r && s->has_inflight[MTL_SESSION_PORT_R]) {
+  if (send_r && s->inflight[MTL_SESSION_PORT_R]) {
     ret = rte_ring_mp_enqueue(ring_r, (void*)s->inflight[MTL_SESSION_PORT_R]);
     if (ret == 0) {
-      s->has_inflight[MTL_SESSION_PORT_R] = false;
+      s->inflight[MTL_SESSION_PORT_R] = NULL;
     } else {
       s->stat_build_ret_code = -STI_FRAME_INFLIGHT_R_ENQUEUE_FAIL;
       return MT_TASKLET_ALL_DONE;
@@ -703,14 +703,12 @@ static int tx_audio_session_tasklet_frame(struct mtl_main_impl* impl,
   bool done = false;
   if (rte_ring_mp_enqueue(ring_p, (void*)pkt) != 0) {
     s->inflight[MTL_SESSION_PORT_P] = pkt;
-    s->has_inflight[MTL_SESSION_PORT_P] = true;
     s->inflight_cnt[MTL_SESSION_PORT_P]++;
     done = true;
     s->stat_build_ret_code = -STI_FRAME_PKT_ENQUEUE_FAIL;
   }
   if (send_r && rte_ring_mp_enqueue(ring_r, (void*)pkt_r) != 0) {
     s->inflight[MTL_SESSION_PORT_R] = pkt_r;
-    s->has_inflight[MTL_SESSION_PORT_R] = true;
     s->inflight_cnt[MTL_SESSION_PORT_R]++;
     done = true;
     s->stat_build_ret_code = -STI_FRAME_PKT_R_ENQUEUE_FAIL;
@@ -759,20 +757,20 @@ static int tx_audio_session_tasklet_rtp(struct mtl_main_impl* impl,
   }
 
   /* check if any inflight pkts */
-  if (s->has_inflight[MTL_SESSION_PORT_P]) {
+  if (s->inflight[MTL_SESSION_PORT_P]) {
     ret = rte_ring_mp_enqueue(ring_p, (void*)s->inflight[MTL_SESSION_PORT_P]);
     if (ret == 0) {
-      s->has_inflight[MTL_SESSION_PORT_P] = false;
+      s->inflight[MTL_SESSION_PORT_P] = NULL;
     } else {
       s->stat_build_ret_code = -STI_RTP_INFLIGHT_ENQUEUE_FAIL;
       return MT_TASKLET_ALL_DONE;
     }
   }
 
-  if (send_r && s->has_inflight[MTL_SESSION_PORT_R]) {
+  if (send_r && s->inflight[MTL_SESSION_PORT_R]) {
     ret = rte_ring_mp_enqueue(ring_r, (void*)s->inflight[MTL_SESSION_PORT_R]);
     if (ret == 0) {
-      s->has_inflight[MTL_SESSION_PORT_R] = false;
+      s->inflight[MTL_SESSION_PORT_R] = NULL;
     } else {
       s->stat_build_ret_code = -STI_RTP_INFLIGHT_R_ENQUEUE_FAIL;
       return MT_TASKLET_ALL_DONE;
@@ -843,14 +841,12 @@ static int tx_audio_session_tasklet_rtp(struct mtl_main_impl* impl,
   bool done = true;
   if (rte_ring_mp_enqueue(ring_p, (void*)pkt) != 0) {
     s->inflight[MTL_SESSION_PORT_P] = pkt;
-    s->has_inflight[MTL_SESSION_PORT_P] = true;
     s->inflight_cnt[MTL_SESSION_PORT_P]++;
     done = false;
     s->stat_build_ret_code = -STI_RTP_PKT_ENQUEUE_FAIL;
   }
   if (send_r && rte_ring_mp_enqueue(ring_r, (void*)pkt_r) != 0) {
     s->inflight[MTL_SESSION_PORT_R] = pkt_r;
-    s->has_inflight[MTL_SESSION_PORT_R] = true;
     s->inflight_cnt[MTL_SESSION_PORT_R]++;
     done = false;
     s->stat_build_ret_code = -STI_RTP_PKT_R_ENQUEUE_FAIL;
@@ -1211,10 +1207,10 @@ static int tx_audio_session_uinit_sw(struct st_tx_audio_sessions_mgr* mgr,
   int idx = s->idx, num_port = s->ops.num_port;
 
   for (int port = 0; port < num_port; port++) {
-    if (s->has_inflight[port]) {
+    if (s->inflight[port]) {
       info("%s(%d), free inflight buf for port %d\n", __func__, idx, port);
       rte_pktmbuf_free(s->inflight[port]);
-      s->has_inflight[port] = false;
+      s->inflight[port] = NULL;
     }
     if (s->trans_ring_inflight[port]) {
       info("%s(%d), free inflight buf for port %d\n", __func__, idx, port);
@@ -1334,7 +1330,7 @@ static int tx_audio_session_attach(struct mtl_main_impl* impl,
   s->st30_rtp_time = 0xFFFFFFFF;
 
   for (int i = 0; i < num_port; i++) {
-    s->has_inflight[i] = false;
+    s->inflight[i] = NULL;
     s->inflight_cnt[i] = 0;
   }
   if (ops->flags & ST30_TX_FLAG_BUILD_PACING) s->pacing_in_build = true;

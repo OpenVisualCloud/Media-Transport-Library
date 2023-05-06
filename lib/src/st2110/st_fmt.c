@@ -541,6 +541,8 @@ int st20_get_pgroup(enum st20_fmt fmt, struct st20_pgroup* pg) {
 
 size_t st20_frame_size(enum st20_fmt fmt, uint32_t width, uint32_t height) {
   struct st20_pgroup pg;
+  memset(&pg, 0, sizeof(pg));
+
   int ret = st20_get_pgroup(fmt, &pg);
   if (ret < 0) {
     err("%s, st20_get_pgroup fail %d, fmt %d\n", __func__, ret, fmt);
@@ -559,6 +561,8 @@ size_t st20_frame_size(enum st20_fmt fmt, uint32_t width, uint32_t height) {
 
 const char* st20_frame_fmt_name(enum st20_fmt fmt) {
   struct st20_pgroup pg;
+  memset(&pg, 0, sizeof(pg));
+
   int ret = st20_get_pgroup(fmt, &pg);
   if (ret < 0) {
     err("%s, st20_get_pgroup fail %d, fmt %d\n", __func__, ret, fmt);
