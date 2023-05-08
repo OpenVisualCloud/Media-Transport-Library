@@ -10,7 +10,6 @@
 #include "mt_dma.h"
 #include "mt_log.h"
 #include "mt_mcast.h"
-#include "mt_ptp.h"
 #include "mt_sch.h"
 #include "mt_shared_queue.h"
 #include "mt_socket.h"
@@ -185,7 +184,6 @@ static void dev_stat(struct mtl_main_impl* impl) {
   }
 
   notice("* *    M T    D E V   S T A T E   * * \n");
-  mt_ptp_stat(impl);
   mt_cni_stat(impl);
   mt_sch_stat(impl);
   st_tx_video_sessions_stat(impl);
