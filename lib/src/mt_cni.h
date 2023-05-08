@@ -18,6 +18,4 @@ static inline struct mt_cni_impl* mt_get_cni(struct mtl_main_impl* impl) {
   return &impl->cni;
 }
 
-void mt_cni_stat(struct mtl_main_impl* impl);
-
 #endif

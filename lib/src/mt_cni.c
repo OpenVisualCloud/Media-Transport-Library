@@ -16,6 +16,7 @@
 #include "mt_sch.h"
 #include "mt_shared_queue.h"
 #include "mt_shared_rss.h"
+#include "mt_stat.h"
 #include "mt_tap.h"
 #include "mt_util.h"
 
@@ -282,16 +283,18 @@ static bool cni_if_need(struct mtl_main_impl* impl) {
   return false;
 }
 
-void mt_cni_stat(struct mtl_main_impl* impl) {
-  int num_ports = mt_num_ports(impl);
-  struct mt_cni_impl* cni = mt_get_cni(impl);
+static int cni_stat(void* priv) {
+  struct mt_cni_impl* cni = priv;
+  int num_ports = cni->num_ports;
 
-  if (!cni->used) return;
+  if (!cni->used) return 0;
 
   for (int i = 0; i < num_ports; i++) {
     notice("CNI(%d): eth_rx_cnt %d \n", i, cni->eth_rx_cnt[i]);
     cni->eth_rx_cnt[i] = 0;
   }
+
+  return 0;
 }
 
 int mt_cni_init(struct mtl_main_impl* impl) {
@@ -299,6 +302,7 @@ int mt_cni_init(struct mtl_main_impl* impl) {
   struct mt_cni_impl* cni = mt_get_cni(impl);
   struct mtl_init_params* p = mt_get_user_params(impl);
 
+  cni->num_ports = mt_num_ports(impl);
   cni->used = cni_if_need(impl);
   if (!cni->used) return 0;
 
@@ -344,6 +348,8 @@ int mt_cni_init(struct mtl_main_impl* impl) {
     return ret;
   }
 
+  mt_stat_register(impl, cni_stat, cni);
+
   return 0;
 }
 
@@ -354,6 +360,8 @@ int mt_cni_uinit(struct mtl_main_impl* impl) {
     mt_sch_unregister_tasklet(cni->tasklet);
     cni->tasklet = NULL;
   }
+
+  mt_stat_unregister(impl, cni_stat, cni);
 
   mt_cni_stop(impl);
 

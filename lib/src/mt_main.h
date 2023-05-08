@@ -211,6 +211,7 @@ struct mt_cni_priv {
 
 struct mt_cni_impl {
   bool used; /* if enable cni */
+  int num_ports;
 
   struct mt_rx_queue* rx_q[MTL_PORT_MAX];   /* cni rx queue */
   struct mt_rsq_entry* rsq[MTL_PORT_MAX];   /* cni rsq queue */

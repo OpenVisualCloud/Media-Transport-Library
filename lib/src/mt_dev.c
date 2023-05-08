@@ -184,7 +184,6 @@ static void dev_stat(struct mtl_main_impl* impl) {
   }
 
   notice("* *    M T    D E V   S T A T E   * * \n");
-  mt_cni_stat(impl);
   mt_sch_stat(impl);
   st_tx_video_sessions_stat(impl);
   if (impl->tx_a_init) st_tx_audio_sessions_stat(impl);
