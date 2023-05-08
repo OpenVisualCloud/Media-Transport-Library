@@ -15,13 +15,6 @@
 #include "mt_stat.h"
 #include "mt_util.h"
 
-#include "st2110/st_rx_ancillary_session.h"
-#include "st2110/st_rx_audio_session.h"
-#include "st2110/st_rx_video_session.h"
-#include "st2110/st_tx_ancillary_session.h"
-#include "st2110/st_tx_audio_session.h"
-#include "st2110/st_tx_video_session.h"
-
 static struct mt_rx_flow_rsp* dev_if_create_rx_flow(struct mt_interface* inf, uint16_t q,
                                                     struct mt_rx_flow* flow);
 static int dev_if_free_rx_flow(struct mt_interface* inf, struct mt_rx_flow_rsp* rsp);
@@ -183,14 +176,7 @@ static void dev_stat(struct mtl_main_impl* impl) {
   }
 
   notice("* *    M T    D E V   S T A T E   * * \n");
-  st_tx_video_sessions_stat(impl);
-  if (impl->tx_a_init) st_tx_audio_sessions_stat(impl);
-  if (impl->tx_anc_init) st_tx_ancillary_sessions_stat(impl);
-  st_rx_video_sessions_stat(impl);
-  if (impl->rx_a_init) st_rx_audio_sessions_stat(impl);
-  if (impl->rx_anc_init) st_rx_ancillary_sessions_stat(impl);
   if (p->stat_dump_cb_fn) p->stat_dump_cb_fn(p->priv);
-  /* todo: move all above to stat framework */
   mt_stat_dump(impl);
   notice("* *    E N D    S T A T E   * * \n\n");
 }

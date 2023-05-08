@@ -8,6 +8,7 @@
 
 #include "../mt_log.h"
 #include "../mt_shared_rss.h"
+#include "../mt_stat.h"
 #include "st_fmt.h"
 
 static int rv_init_pkt_handler(struct st_rx_video_session_impl* s);
@@ -3393,22 +3394,18 @@ static int rvs_mgr_update(struct st_rx_video_sessions_mgr* mgr) {
   return 0;
 }
 
-void st_rx_video_sessions_stat(struct mtl_main_impl* impl) {
-  struct mt_sch_impl* sch;
-  struct st_rx_video_sessions_mgr* mgr;
+static int rv_sessions_stat(void* priv) {
+  struct st_rx_video_sessions_mgr* mgr = priv;
   struct st_rx_video_session_impl* s;
 
-  for (int sch_idx = 0; sch_idx < MT_MAX_SCH_NUM; sch_idx++) {
-    sch = mt_sch_instance(impl, sch_idx);
-    if (!mt_sch_is_active(sch)) continue;
-    mgr = &sch->rx_video_mgr;
-    for (int j = 0; j < mgr->max_idx; j++) {
-      s = rx_video_session_get(mgr, j);
-      if (!s) continue;
-      rv_stat(mgr, s);
-      rx_video_session_put(mgr, j);
-    }
+  for (int j = 0; j < mgr->max_idx; j++) {
+    s = rx_video_session_get(mgr, j);
+    if (!s) continue;
+    rv_stat(mgr, s);
+    rx_video_session_put(mgr, j);
   }
+
+  return 0;
 }
 
 int st_rx_video_sessions_sch_init(struct mtl_main_impl* impl, struct mt_sch_impl* sch) {
@@ -3416,13 +3413,16 @@ int st_rx_video_sessions_sch_init(struct mtl_main_impl* impl, struct mt_sch_impl
 
   if (sch->rx_video_init) return 0;
 
+  struct st_rx_video_sessions_mgr* rx_video_mgr = &sch->rx_video_mgr;
+
   /* create video context */
-  ret = rvs_mgr_init(impl, sch, &sch->rx_video_mgr);
+  ret = rvs_mgr_init(impl, sch, rx_video_mgr);
   if (ret < 0) {
     err("%s(%d), st_rvs_mgr_init fail %d\n", __func__, idx, ret);
     return ret;
   }
 
+  mt_stat_register(impl, rv_sessions_stat, rx_video_mgr);
   sch->rx_video_init = true;
   return 0;
 }
@@ -3430,7 +3430,10 @@ int st_rx_video_sessions_sch_init(struct mtl_main_impl* impl, struct mt_sch_impl
 int st_rx_video_sessions_sch_uinit(struct mtl_main_impl* impl, struct mt_sch_impl* sch) {
   if (!sch->rx_video_init) return 0;
 
-  rvs_mgr_uinit(&sch->rx_video_mgr);
+  struct st_rx_video_sessions_mgr* rx_video_mgr = &sch->rx_video_mgr;
+
+  mt_stat_unregister(impl, rv_sessions_stat, rx_video_mgr);
+  rvs_mgr_uinit(rx_video_mgr);
   sch->rx_video_init = false;
 
   return 0;

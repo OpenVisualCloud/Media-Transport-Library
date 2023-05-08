@@ -5,6 +5,7 @@
 #include "st_tx_audio_session.h"
 
 #include "../mt_log.h"
+#include "../mt_stat.h"
 #include "st_audio_transmitter.h"
 #include "st_err.h"
 
@@ -1415,6 +1416,30 @@ static int tx_audio_session_detach(struct st_tx_audio_sessions_mgr* mgr,
   return 0;
 }
 
+static int st_tx_audio_sessions_stat(void* priv) {
+  struct st_tx_audio_sessions_mgr* mgr = priv;
+  struct st_tx_audio_session_impl* s;
+
+  for (int j = 0; j < mgr->max_idx; j++) {
+    s = tx_audio_session_get(mgr, j);
+    if (!s) continue;
+    tx_audio_session_stat(s);
+    tx_audio_session_put(mgr, j);
+  }
+  if (mgr->st30_stat_pkts_burst > 0) {
+    notice("TX_AUDIO_MGR, pkts burst %d\n", mgr->st30_stat_pkts_burst);
+    mgr->st30_stat_pkts_burst = 0;
+  } else {
+    if (mgr->max_idx > 0) {
+      for (int i = 0; i < mt_num_ports(mgr->parent); i++) {
+        warn("TX_AUDIO_MGR: trs ret %d:%d\n", i, mgr->stat_trs_ret_code[i]);
+      }
+    }
+  }
+
+  return 0;
+}
+
 static int tx_audio_sessions_mgr_init(struct mtl_main_impl* impl, struct mt_sch_impl* sch,
                                       struct st_tx_audio_sessions_mgr* mgr) {
   int idx = sch->idx;
@@ -1450,6 +1475,7 @@ static int tx_audio_sessions_mgr_init(struct mtl_main_impl* impl, struct mt_sch_
     return -EIO;
   }
 
+  mt_stat_register(mgr->parent, st_tx_audio_sessions_stat, mgr);
   info("%s(%d), succ\n", __func__, idx);
   return 0;
 }
@@ -1532,6 +1558,8 @@ int st_tx_audio_sessions_mgr_uinit(struct st_tx_audio_sessions_mgr* mgr) {
   struct mtl_main_impl* impl = mgr->parent;
   struct st_tx_audio_session_impl* s;
 
+  mt_stat_unregister(mgr->parent, st_tx_audio_sessions_stat, mgr);
+
   if (mgr->tasklet) {
     mt_sch_unregister_tasklet(mgr->tasklet);
     mgr->tasklet = NULL;
@@ -1550,28 +1578,6 @@ int st_tx_audio_sessions_mgr_uinit(struct st_tx_audio_sessions_mgr* mgr) {
 
   info("%s(%d), succ\n", __func__, m_idx);
   return 0;
-}
-
-void st_tx_audio_sessions_stat(struct mtl_main_impl* impl) {
-  struct st_tx_audio_sessions_mgr* mgr = &impl->tx_a_mgr;
-  struct st_tx_audio_session_impl* s;
-
-  for (int j = 0; j < mgr->max_idx; j++) {
-    s = tx_audio_session_get(mgr, j);
-    if (!s) continue;
-    tx_audio_session_stat(s);
-    tx_audio_session_put(mgr, j);
-  }
-  if (mgr->st30_stat_pkts_burst > 0) {
-    notice("TX_AUDIO_MGR, pkts burst %d\n", mgr->st30_stat_pkts_burst);
-    mgr->st30_stat_pkts_burst = 0;
-  } else {
-    if (mgr->max_idx > 0) {
-      for (int i = 0; i < mt_num_ports(impl); i++) {
-        warn("TX_AUDIO_MGR: trs ret %d:%d\n", i, mgr->stat_trs_ret_code[i]);
-      }
-    }
-  }
 }
 
 static int tx_audio_ops_check(struct st30_tx_ops* ops) {

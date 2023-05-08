@@ -5,6 +5,7 @@
 #include "st_tx_ancillary_session.h"
 
 #include "../mt_log.h"
+#include "../mt_stat.h"
 #include "st_ancillary_transmitter.h"
 #include "st_err.h"
 
@@ -1346,6 +1347,30 @@ int tx_ancillary_session_detach(struct st_tx_ancillary_sessions_mgr* mgr,
   return 0;
 }
 
+static int st_tx_ancillary_sessions_stat(void* priv) {
+  struct st_tx_ancillary_sessions_mgr* mgr = priv;
+  struct st_tx_ancillary_session_impl* s;
+
+  for (int j = 0; j < mgr->max_idx; j++) {
+    s = tx_ancillary_session_get(mgr, j);
+    if (!s) continue;
+    tx_ancillary_session_stat(s);
+    tx_ancillary_session_put(mgr, j);
+  }
+  if (mgr->st40_stat_pkts_burst > 0) {
+    notice("TX_ANC_MGR, pkts burst %d\n", mgr->st40_stat_pkts_burst);
+    mgr->st40_stat_pkts_burst = 0;
+  } else {
+    if (mgr->max_idx > 0) {
+      for (int i = 0; i < mt_num_ports(mgr->parent); i++) {
+        warn("TX_ANC_MGR: trs ret %d:%d\n", i, mgr->stat_trs_ret_code[i]);
+      }
+    }
+  }
+
+  return 0;
+}
+
 static int tx_ancillary_sessions_mgr_init(struct mtl_main_impl* impl,
                                           struct mt_sch_impl* sch,
                                           struct st_tx_ancillary_sessions_mgr* mgr) {
@@ -1382,6 +1407,7 @@ static int tx_ancillary_sessions_mgr_init(struct mtl_main_impl* impl,
     return -EIO;
   }
 
+  mt_stat_register(mgr->parent, st_tx_ancillary_sessions_stat, mgr);
   info("%s(%d), succ\n", __func__, idx);
   return 0;
 }
@@ -1459,32 +1485,12 @@ static int tx_ancillary_sessions_mgr_update(struct st_tx_ancillary_sessions_mgr*
   return 0;
 }
 
-void st_tx_ancillary_sessions_stat(struct mtl_main_impl* impl) {
-  struct st_tx_ancillary_sessions_mgr* mgr = &impl->tx_anc_mgr;
-  struct st_tx_ancillary_session_impl* s;
-
-  for (int j = 0; j < mgr->max_idx; j++) {
-    s = tx_ancillary_session_get(mgr, j);
-    if (!s) continue;
-    tx_ancillary_session_stat(s);
-    tx_ancillary_session_put(mgr, j);
-  }
-  if (mgr->st40_stat_pkts_burst > 0) {
-    notice("TX_ANC_MGR, pkts burst %d\n", mgr->st40_stat_pkts_burst);
-    mgr->st40_stat_pkts_burst = 0;
-  } else {
-    if (mgr->max_idx > 0) {
-      for (int i = 0; i < mt_num_ports(impl); i++) {
-        warn("TX_ANC_MGR: trs ret %d:%d\n", i, mgr->stat_trs_ret_code[i]);
-      }
-    }
-  }
-}
-
 int st_tx_ancillary_sessions_mgr_uinit(struct st_tx_ancillary_sessions_mgr* mgr) {
   int m_idx = mgr->idx;
   struct mtl_main_impl* impl = mgr->parent;
   struct st_tx_ancillary_session_impl* s;
+
+  mt_stat_unregister(mgr->parent, st_tx_ancillary_sessions_stat, mgr);
 
   if (mgr->tasklet) {
     mt_sch_unregister_tasklet(mgr->tasklet);

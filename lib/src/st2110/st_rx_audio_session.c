@@ -8,6 +8,7 @@
 
 #include "../mt_log.h"
 #include "../mt_shared_rss.h"
+#include "../mt_stat.h"
 
 static inline double ra_ebu_pass_rate(struct st_rx_audio_ebu_result* ebu_result,
                                       int pass) {
@@ -891,6 +892,20 @@ static int rx_audio_sessions_mgr_update_src(struct st_rx_audio_sessions_mgr* mgr
   return 0;
 }
 
+static int st_rx_audio_sessions_stat(void* priv) {
+  struct st_rx_audio_sessions_mgr* mgr = priv;
+  struct st_rx_audio_session_impl* s;
+
+  for (int j = 0; j < mgr->max_idx; j++) {
+    s = rx_audio_session_get(mgr, j);
+    if (!s) continue;
+    rx_audio_session_stat(s);
+    rx_audio_session_put(mgr, j);
+  }
+
+  return 0;
+}
+
 static int rx_audio_sessions_mgr_init(struct mtl_main_impl* impl, struct mt_sch_impl* sch,
                                       struct st_rx_audio_sessions_mgr* mgr) {
   int idx = sch->idx;
@@ -918,6 +933,7 @@ static int rx_audio_sessions_mgr_init(struct mtl_main_impl* impl, struct mt_sch_
     }
   }
 
+  mt_stat_register(mgr->parent, st_rx_audio_sessions_stat, mgr);
   info("%s(%d), succ\n", __func__, idx);
   return 0;
 }
@@ -1006,6 +1022,8 @@ int st_rx_audio_sessions_mgr_uinit(struct st_rx_audio_sessions_mgr* mgr) {
   int m_idx = mgr->idx;
   struct st_rx_audio_session_impl* s;
 
+  mt_stat_unregister(mgr->parent, st_rx_audio_sessions_stat, mgr);
+
   if (mgr->tasklet) {
     mt_sch_unregister_tasklet(mgr->tasklet);
     mgr->tasklet = NULL;
@@ -1022,18 +1040,6 @@ int st_rx_audio_sessions_mgr_uinit(struct st_rx_audio_sessions_mgr* mgr) {
 
   info("%s(%d), succ\n", __func__, m_idx);
   return 0;
-}
-
-void st_rx_audio_sessions_stat(struct mtl_main_impl* impl) {
-  struct st_rx_audio_sessions_mgr* mgr = &impl->rx_a_mgr;
-  struct st_rx_audio_session_impl* s;
-
-  for (int j = 0; j < mgr->max_idx; j++) {
-    s = rx_audio_session_get(mgr, j);
-    if (!s) continue;
-    rx_audio_session_stat(s);
-    rx_audio_session_put(mgr, j);
-  }
 }
 
 static int rx_audio_ops_check(struct st30_rx_ops* ops) {

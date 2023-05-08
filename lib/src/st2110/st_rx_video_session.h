@@ -18,8 +18,6 @@ int st_rx_video_sessions_sch_init(struct mtl_main_impl* impl, struct mt_sch_impl
 
 int st_rx_video_sessions_sch_uinit(struct mtl_main_impl* impl, struct mt_sch_impl* sch);
 
-void st_rx_video_sessions_stat(struct mtl_main_impl* impl);
-
 /* call rx_video_session_put always if get successfully */
 static inline struct st_rx_video_session_impl* rx_video_session_get(
     struct st_rx_video_sessions_mgr* mgr, int idx) {
