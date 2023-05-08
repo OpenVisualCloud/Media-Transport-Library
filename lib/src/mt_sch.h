@@ -61,8 +61,6 @@ int mt_sch_put(struct mt_sch_impl* sch, int quota_mbs);
 int mt_sch_start_all(struct mtl_main_impl* impl);
 int mt_sch_stop_all(struct mtl_main_impl* impl);
 
-void mt_sch_stat(struct mtl_main_impl* impl);
-
 static inline void mt_sch_set_cpu_busy(struct mt_sch_impl* sch, bool busy) {
   sch->cpu_busy = busy;
 }
