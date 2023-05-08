@@ -7,7 +7,6 @@
 #include "mt_arp.h"
 #include "mt_cni.h"
 #include "mt_dhcp.h"
-#include "mt_dma.h"
 #include "mt_log.h"
 #include "mt_mcast.h"
 #include "mt_sch.h"
@@ -188,7 +187,6 @@ static void dev_stat(struct mtl_main_impl* impl) {
   if (impl->tx_a_init) st_tx_audio_sessions_stat(impl);
   if (impl->tx_anc_init) st_tx_ancillary_sessions_stat(impl);
   st_rx_video_sessions_stat(impl);
-  mt_dma_stat(impl);
   if (impl->rx_a_init) st_rx_audio_sessions_stat(impl);
   if (impl->rx_anc_init) st_rx_ancillary_sessions_stat(impl);
   st_plugins_dump(impl);
