@@ -135,47 +135,47 @@ static inline void diff_and_update(uint64_t* new, uint64_t* old) {
   *old = temp;
 }
 
-static void dev_eth_stat(struct mtl_main_impl* impl) {
-  int num_ports = mt_num_ports(impl);
-  uint16_t port_id;
+static int dev_inf_stat(void* pri) {
+  struct mt_interface* inf = pri;
+  enum mtl_port port = inf->port;
+  uint16_t port_id = inf->port_id;
+  enum mt_port_type port_type = inf->port_type;
   struct rte_eth_stats stats;
 
-  for (int i = 0; i < num_ports; i++) {
-    port_id = mt_port_id(impl, i);
+  if (rte_eth_stats_get(port_id, &stats) == 0) {
+    struct mt_dev_stats* dev_stats = inf->dev_stats;
+    if (dev_stats) {
+      diff_and_update(&stats.ipackets, &dev_stats->rx_pkts);
+      diff_and_update(&stats.opackets, &dev_stats->tx_pkts);
+      diff_and_update(&stats.ibytes, &dev_stats->rx_bytes);
+      diff_and_update(&stats.obytes, &dev_stats->tx_bytes);
+      diff_and_update(&stats.ierrors, &dev_stats->rx_errors);
+      diff_and_update(&stats.oerrors, &dev_stats->tx_errors);
+      diff_and_update(&stats.imissed, &dev_stats->rx_missed);
+      diff_and_update(&stats.rx_nombuf, &dev_stats->rx_nombuf);
+    }
 
-    if (rte_eth_stats_get(port_id, &stats) == 0) {
-      struct mt_dev_stats* dev_stats = impl->dev_stats[i];
-      if (dev_stats) {
-        diff_and_update(&stats.ipackets, &dev_stats->rx_pkts);
-        diff_and_update(&stats.opackets, &dev_stats->tx_pkts);
-        diff_and_update(&stats.ibytes, &dev_stats->rx_bytes);
-        diff_and_update(&stats.obytes, &dev_stats->tx_bytes);
-        diff_and_update(&stats.ierrors, &dev_stats->rx_errors);
-        diff_and_update(&stats.oerrors, &dev_stats->tx_errors);
-        diff_and_update(&stats.imissed, &dev_stats->rx_missed);
-        diff_and_update(&stats.rx_nombuf, &dev_stats->rx_nombuf);
-      }
+    uint64_t orate_m = stats.obytes * 8 / MT_DEV_STAT_INTERVAL_S / MT_DEV_STAT_M_UNIT;
+    uint64_t irate_m = stats.ibytes * 8 / MT_DEV_STAT_INTERVAL_S / MT_DEV_STAT_M_UNIT;
 
-      uint64_t orate_m = stats.obytes * 8 / MT_DEV_STAT_INTERVAL_S / MT_DEV_STAT_M_UNIT;
-      uint64_t irate_m = stats.ibytes * 8 / MT_DEV_STAT_INTERVAL_S / MT_DEV_STAT_M_UNIT;
+    notice("DEV(%d): Avr rate, tx: %" PRIu64 " Mb/s, rx: %" PRIu64
+           " Mb/s, pkts, tx: %" PRIu64 ", rx: %" PRIu64 "\n",
+           port, orate_m, irate_m, stats.opackets, stats.ipackets);
+    if (stats.imissed || stats.ierrors || stats.rx_nombuf ||
+        (stats.oerrors && (MT_PORT_VF != port_type))) {
+      err("DEV(%d): Status: imissed %" PRIu64 " ierrors %" PRIu64 " oerrors %" PRIu64
+          " rx_nombuf %" PRIu64 "\n",
+          port, stats.imissed, stats.ierrors, stats.oerrors, stats.rx_nombuf);
+      dev_eth_xstat(port_id);
+    }
 
-      notice("DEV(%d): Avr rate, tx: %" PRIu64 " Mb/s, rx: %" PRIu64
-             " Mb/s, pkts, tx: %" PRIu64 ", rx: %" PRIu64 "\n",
-             i, orate_m, irate_m, stats.opackets, stats.ipackets);
-      if (stats.imissed || stats.ierrors || stats.rx_nombuf ||
-          (stats.oerrors && (MT_PORT_VF != mt_port_type(impl, i)))) {
-        err("DEV(%d): Status: imissed %" PRIu64 " ierrors %" PRIu64 " oerrors %" PRIu64
-            " rx_nombuf %" PRIu64 "\n",
-            i, stats.imissed, stats.ierrors, stats.oerrors, stats.rx_nombuf);
-        dev_eth_xstat(port_id);
-      }
-
-      if (!dev_stats) {
-        rte_eth_stats_reset(port_id);
-        rte_eth_xstats_reset(port_id);
-      }
+    if (!dev_stats) {
+      rte_eth_stats_reset(port_id);
+      rte_eth_xstats_reset(port_id);
     }
   }
+
+  return 0;
 }
 
 static void dev_stat(struct mtl_main_impl* impl) {
@@ -187,7 +187,6 @@ static void dev_stat(struct mtl_main_impl* impl) {
   }
 
   notice("* *    M T    D E V   S T A T E   * * \n");
-  dev_eth_stat(impl);
   mt_ptp_stat(impl);
   mt_cni_stat(impl);
   mt_sch_stat(impl);
@@ -766,10 +765,10 @@ static struct rte_flow* dev_rx_queue_create_flow(struct mt_interface* inf, uint1
   return r_flow;
 }
 
-static int dev_stop_port(struct mtl_main_impl* impl, enum mtl_port port) {
+static int dev_stop_port(struct mt_interface* inf) {
   int ret;
-  uint16_t port_id = mt_port_id(impl, port);
-  struct mt_interface* inf = mt_if(impl, port);
+  uint16_t port_id = inf->port_id;
+  enum mtl_port port = inf->port;
 
   if (!(inf->status & MT_IF_STAT_PORT_STARTED)) {
     info("%s(%d), port not started\n", __func__, port);
@@ -2044,14 +2043,15 @@ int mt_dev_create(struct mtl_main_impl* impl) {
     }
 
     if (inf->drv_type == MT_DRV_ENA) {
-      impl->dev_stats[i] =
-          mt_rte_zmalloc_socket(sizeof(struct mt_dev_stats), inf->socket_id);
-      if (!impl->dev_stats[i]) {
+      inf->dev_stats = mt_rte_zmalloc_socket(sizeof(struct mt_dev_stats), inf->socket_id);
+      if (!inf->dev_stats) {
         err("%s(%d), malloc dev_stats fail\n", __func__, i);
         ret = -ENOMEM;
         goto err_exit;
       }
     }
+
+    mt_stat_register(impl, dev_inf_stat, inf);
 
     info("%s(%d), feature 0x%x, tx pacing %s\n", __func__, i, inf->feature,
          st_tx_pacing_way_name(inf->tx_pacing_way));
@@ -2094,14 +2094,17 @@ int mt_dev_create(struct mtl_main_impl* impl) {
 err_exit:
   if (impl->main_sch) mt_sch_put(impl->main_sch, 0);
   for (int i = num_ports - 1; i >= 0; i--) {
-    dev_stop_port(impl, i);
+    inf = mt_if(impl, i);
+
+    dev_stop_port(inf);
   }
   return ret;
 }
 
 int mt_dev_free(struct mtl_main_impl* impl) {
   int num_ports = mt_num_ports(impl);
-  int ret, i;
+  int ret;
+  struct mt_interface* inf;
 
   ret = rte_eal_alarm_cancel(dev_stat_alarm_handler, impl);
   if (ret < 0) err("%s, dev_stat_alarm_handler cancel fail %d\n", __func__, ret);
@@ -2122,12 +2125,15 @@ int mt_dev_free(struct mtl_main_impl* impl) {
   mt_sch_mrg_uinit(impl);
   dev_uinit_lcores(impl);
 
-  for (i = 0; i < num_ports; i++) {
-    if (impl->dev_stats[i]) {
-      mt_rte_free(impl->dev_stats[i]);
-      impl->dev_stats[i] = NULL;
+  for (int i = 0; i < num_ports; i++) {
+    inf = mt_if(impl, i);
+
+    mt_stat_unregister(impl, dev_inf_stat, inf);
+    if (inf->dev_stats) {
+      mt_rte_free(inf->dev_stats);
+      inf->dev_stats = NULL;
     }
-    dev_stop_port(impl, i);
+    dev_stop_port(inf);
   }
 
   info("%s, succ\n", __func__);

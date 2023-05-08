@@ -526,6 +526,8 @@ struct mt_interface {
   /* time base for MTL_FLAG_PTP_SOURCE_TSC*/
   uint64_t tsc_time_base;
   uint64_t real_time_base;
+
+  struct mt_dev_stats* dev_stats; /* for nic without reset func */
 };
 
 struct mt_lcore_shm {
@@ -796,7 +798,6 @@ struct mtl_main_impl {
   pthread_mutex_t stat_wake_mutex;
   rte_atomic32_t stat_stop;
   struct mt_stat_mgr stat_mgr;
-  struct mt_dev_stats* dev_stats[MTL_PORT_MAX]; /* for nic without reset func */
 
   /* dev context */
   rte_atomic32_t instance_started;  /* if mt instance is started */
