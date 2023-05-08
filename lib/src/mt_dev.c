@@ -14,7 +14,7 @@
 #include "mt_socket.h"
 #include "mt_stat.h"
 #include "mt_util.h"
-#include "st2110/pipeline/st_plugin.h"
+
 #include "st2110/st_rx_ancillary_session.h"
 #include "st2110/st_rx_audio_session.h"
 #include "st2110/st_rx_video_session.h"
@@ -189,7 +189,6 @@ static void dev_stat(struct mtl_main_impl* impl) {
   st_rx_video_sessions_stat(impl);
   if (impl->rx_a_init) st_rx_audio_sessions_stat(impl);
   if (impl->rx_anc_init) st_rx_ancillary_sessions_stat(impl);
-  st_plugins_dump(impl);
   if (p->stat_dump_cb_fn) p->stat_dump_cb_fn(p->priv);
   /* todo: move all above to stat framework */
   mt_stat_dump(impl);
