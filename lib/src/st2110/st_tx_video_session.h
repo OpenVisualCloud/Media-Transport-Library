@@ -7,8 +7,6 @@
 
 #include "st_main.h"
 
-void st_tx_video_sessions_stat(struct mtl_main_impl* impl);
-
 int st_tx_video_sessions_sch_init(struct mtl_main_impl* impl, struct mt_sch_impl* sch);
 
 int st_tx_video_sessions_sch_uinit(struct mtl_main_impl* impl, struct mt_sch_impl* sch);

@@ -9,6 +9,4 @@
 
 int st_tx_ancillary_sessions_mgr_uinit(struct st_tx_ancillary_sessions_mgr* mgr);
 
-void st_tx_ancillary_sessions_stat(struct mtl_main_impl* impl);
-
 #endif

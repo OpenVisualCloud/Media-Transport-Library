@@ -388,6 +388,7 @@ mtl_handle mtl_init(struct mtl_init_params* p) {
   int socket[MTL_PORT_MAX], ret;
   int num_ports = p->num_ports;
   struct mt_kport_info kport_info;
+  struct mt_interface* inf;
 
   RTE_BUILD_BUG_ON(MTL_SESSION_PORT_MAX > (int)MTL_PORT_MAX);
   RTE_BUILD_BUG_ON(sizeof(struct mt_udp_hdr) != 42);
@@ -446,6 +447,9 @@ mtl_handle mtl_init(struct mtl_init_params* p) {
   rte_memcpy(&impl->kport_info, &kport_info, sizeof(kport_info));
   impl->type = MT_HANDLE_MAIN;
   for (int i = 0; i < num_ports; i++) {
+    inf = mt_if(impl, i);
+    inf->parent = impl;
+
     if (p->pmd[i] != MTL_PMD_DPDK_USER) {
       uint8_t if_ip[MTL_IP_ADDR_LEN];
       uint8_t if_netmask[MTL_IP_ADDR_LEN];

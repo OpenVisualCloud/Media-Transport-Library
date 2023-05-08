@@ -6,6 +6,7 @@
 
 #include "mt_dev.h"
 #include "mt_log.h"
+#include "mt_stat.h"
 #include "st2110/st_rx_video_session.h"
 #include "st2110/st_tx_video_session.h"
 
@@ -336,7 +337,8 @@ static void sch_tasklet_stat_clear(struct mt_sch_tasklet_impl* tasklet) {
   tasklet->stat_time_cnt = 0;
 }
 
-static void sch_stat(struct mt_sch_impl* sch) {
+static int sch_stat(void* priv) {
+  struct mt_sch_impl* sch = priv;
   int num_tasklet = sch->max_tasklet_idx;
   struct mt_sch_tasklet_impl* tasklet;
   int idx = sch->idx;
@@ -367,9 +369,11 @@ static void sch_stat(struct mt_sch_impl* sch) {
     sch->stat_sleep_ns_min = -1;
     sch->stat_sleep_ns_max = 0;
   }
-  if (!mt_sch_started(sch)) {
-    notice("SCH(%d): still not started\n", idx);
+  if (mt_sch_is_active(sch) && !mt_sch_started(sch)) {
+    notice("SCH(%d): active but still not started\n", idx);
   }
+
+  return 0;
 }
 
 int mt_sch_unregister_tasklet(struct mt_sch_tasklet_impl* tasklet) {
@@ -506,6 +510,8 @@ int mt_sch_mrg_init(struct mtl_main_impl* impl, int data_quota_mbs_limit) {
     mt_pthread_mutex_init(&sch->tx_video_mgr_mutex, NULL);
     mt_pthread_mutex_init(&sch->rx_video_mgr_mutex, NULL);
 
+    mt_stat_register(impl, sch_stat, sch);
+
     sch->tasklet =
         mt_rte_zmalloc_socket(sizeof(*sch->tasklet) * sch->nb_tasklets, socket);
     if (!sch->tasklet) {
@@ -531,6 +537,8 @@ int mt_sch_mrg_uinit(struct mtl_main_impl* impl) {
       mt_rte_free(sch->tasklet);
       sch->tasklet = NULL;
     }
+
+    mt_stat_unregister(impl, sch_stat, sch);
 
     mt_pthread_mutex_destroy(&sch->tx_video_mgr_mutex);
     mt_pthread_mutex_destroy(&sch->rx_video_mgr_mutex);
@@ -694,15 +702,4 @@ int mt_sch_stop_all(struct mtl_main_impl* impl) {
 
   info("%s, succ\n", __func__);
   return 0;
-}
-
-void mt_sch_stat(struct mtl_main_impl* impl) {
-  struct mt_sch_impl* sch;
-
-  for (int sch_idx = 0; sch_idx < MT_MAX_SCH_NUM; sch_idx++) {
-    sch = mt_sch_instance(impl, sch_idx);
-    if (mt_sch_started(sch)) {
-      sch_stat(sch);
-    }
-  }
 }

@@ -58,7 +58,7 @@ int mt_stat_unregister(struct mtl_main_impl* impl, mt_stat_cb_t cb, void* priv) 
   }
   mt_pthread_mutex_unlock(&mgr->mutex);
 
-  err("%s, priv %p not found\n", __func__, priv);
+  warn("%s, cb %p priv %p not found\n", __func__, cb, priv);
   return -EIO;
 }
 

@@ -64,7 +64,7 @@
 /* Rx queue support hdr split */
 #define MT_IF_FEATURE_RXQ_OFFLOAD_BUFFER_SPLIT (MTL_BIT32(6))
 
-#define MT_IF_STAT_PORT_CONFIGED (MTL_BIT32(0))
+#define MT_IF_STAT_PORT_CONFIGURED (MTL_BIT32(0))
 #define MT_IF_STAT_PORT_STARTED (MTL_BIT32(1))
 
 #define NS_PER_MS (1000 * 1000)
@@ -211,6 +211,7 @@ struct mt_cni_priv {
 
 struct mt_cni_impl {
   bool used; /* if enable cni */
+  int num_ports;
 
   struct mt_rx_queue* rx_q[MTL_PORT_MAX];   /* cni rx queue */
   struct mt_rsq_entry* rsq[MTL_PORT_MAX];   /* cni rsq queue */
@@ -466,6 +467,7 @@ struct mt_tx_queue {
 };
 
 struct mt_interface {
+  struct mtl_main_impl* parent;
   enum mtl_port port;
   uint16_t port_id;
   struct rte_eth_dev_info dev_info;
@@ -526,6 +528,8 @@ struct mt_interface {
   /* time base for MTL_FLAG_PTP_SOURCE_TSC*/
   uint64_t tsc_time_base;
   uint64_t real_time_base;
+
+  struct mt_dev_stats* dev_stats; /* for nic without reset func */
 };
 
 struct mt_lcore_shm {
@@ -796,7 +800,6 @@ struct mtl_main_impl {
   pthread_mutex_t stat_wake_mutex;
   rte_atomic32_t stat_stop;
   struct mt_stat_mgr stat_mgr;
-  struct mt_dev_stats* dev_stats[MTL_PORT_MAX]; /* for nic without reset func */
 
   /* dev context */
   rte_atomic32_t instance_started;  /* if mt instance is started */

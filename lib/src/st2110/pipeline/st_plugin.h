@@ -28,6 +28,4 @@ int st20_put_converter(struct mtl_main_impl* impl,
 int st_plugins_init(struct mtl_main_impl* impl);
 int st_plugins_uinit(struct mtl_main_impl* impl);
 
-int st_plugins_dump(struct mtl_main_impl* impl);
-
 #endif

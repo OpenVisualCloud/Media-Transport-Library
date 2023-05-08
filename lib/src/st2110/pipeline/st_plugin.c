@@ -7,6 +7,9 @@
 #include <dlfcn.h>
 
 #include "../../mt_log.h"
+#include "../../mt_stat.h"
+
+static int st_plugins_dump(void* priv);
 
 static inline struct st_plugin_mgr* st_get_plugins_mgr(struct mtl_main_impl* impl) {
   return &impl->plugin_mgr;
@@ -28,6 +31,7 @@ int st_plugins_init(struct mtl_main_impl* impl) {
 
   mt_pthread_mutex_init(&mgr->lock, NULL);
   mt_pthread_mutex_init(&mgr->plugins_lock, NULL);
+  mt_stat_register(impl, st_plugins_dump, impl);
 
   info("%s, succ\n", __func__);
   return 0;
@@ -36,6 +40,7 @@ int st_plugins_init(struct mtl_main_impl* impl) {
 int st_plugins_uinit(struct mtl_main_impl* impl) {
   struct st_plugin_mgr* mgr = st_get_plugins_mgr(impl);
 
+  mt_stat_unregister(impl, st_plugins_dump, impl);
   for (int i = 0; i < ST_MAX_DL_PLUGINS; i++) {
     if (mgr->plugins[i]) {
       dbg("%s, active plugin in %d\n", __func__, i);
@@ -420,7 +425,8 @@ static int st20_convert_dev_dump(struct st20_convert_dev_impl* convert) {
   return 0;
 }
 
-int st_plugins_dump(struct mtl_main_impl* impl) {
+static int st_plugins_dump(void* priv) {
+  struct mtl_main_impl* impl = priv;
   struct st_plugin_mgr* mgr = st_get_plugins_mgr(impl);
   struct st22_encode_dev_impl* encode;
   struct st22_decode_dev_impl* decode;

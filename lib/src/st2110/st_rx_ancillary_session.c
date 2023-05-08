@@ -6,6 +6,7 @@
 
 #include "../mt_log.h"
 #include "../mt_shared_rss.h"
+#include "../mt_stat.h"
 #include "st_ancillary_transmitter.h"
 
 /* call rx_ancillary_session_put always if get successfully */
@@ -479,6 +480,20 @@ static int rx_ancillary_sessions_mgr_update_src(struct st_rx_ancillary_sessions_
   return 0;
 }
 
+static int st_rx_ancillary_sessions_stat(void* priv) {
+  struct st_rx_ancillary_sessions_mgr* mgr = priv;
+  struct st_rx_ancillary_session_impl* s;
+
+  for (int j = 0; j < mgr->max_idx; j++) {
+    s = rx_ancillary_session_get(mgr, j);
+    if (!s) continue;
+    rx_ancillary_session_stat(s);
+    rx_ancillary_session_put(mgr, j);
+  }
+
+  return 0;
+}
+
 static int rx_ancillary_sessions_mgr_init(struct mtl_main_impl* impl,
                                           struct mt_sch_impl* sch,
                                           struct st_rx_ancillary_sessions_mgr* mgr) {
@@ -507,6 +522,7 @@ static int rx_ancillary_sessions_mgr_init(struct mtl_main_impl* impl,
     }
   }
 
+  mt_stat_register(mgr->parent, st_rx_ancillary_sessions_stat, mgr);
   info("%s(%d), succ\n", __func__, idx);
   return 0;
 }
@@ -584,21 +600,11 @@ static int rx_ancillary_sessions_mgr_update(struct st_rx_ancillary_sessions_mgr*
   return 0;
 }
 
-void st_rx_ancillary_sessions_stat(struct mtl_main_impl* impl) {
-  struct st_rx_ancillary_sessions_mgr* mgr = &impl->rx_anc_mgr;
-  struct st_rx_ancillary_session_impl* s;
-
-  for (int j = 0; j < mgr->max_idx; j++) {
-    s = rx_ancillary_session_get(mgr, j);
-    if (!s) continue;
-    rx_ancillary_session_stat(s);
-    rx_ancillary_session_put(mgr, j);
-  }
-}
-
 int st_rx_ancillary_sessions_mgr_uinit(struct st_rx_ancillary_sessions_mgr* mgr) {
   int m_idx = mgr->idx;
   struct st_rx_ancillary_session_impl* s;
+
+  mt_stat_unregister(mgr->parent, st_rx_ancillary_sessions_stat, mgr);
 
   if (mgr->tasklet) {
     mt_sch_unregister_tasklet(mgr->tasklet);
