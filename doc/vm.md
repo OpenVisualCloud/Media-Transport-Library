@@ -128,7 +128,7 @@ edit vm0
 
 ### 2.3 Run RxTxApp with `--utc_offset -37`, refer to run.md
 
-## 3. Reference link
+## Reference link
 
 [Red Hat - ptp_kvm](https://access.redhat.com/documentation/en-us/red_hat_enterprise_linux/7/html/virtualization_deployment_and_administration_guide/chap-kvm_guest_timing_management)  
 [Linuxptp](https://github.com/richardcochran/linuxptp)  

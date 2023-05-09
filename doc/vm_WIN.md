@@ -36,11 +36,13 @@ After running `virt-install` command, the viewer will pop up and you can normall
 
 ### 1.2 Setup remote desktop access
 
+In virt-viewer window, logon to Windows, go to Start->Settings->System->Remote Desktop, set `Enable Remote Desktop` to `On`.
+
 If you set `--network default` above, the VM should use NAT IP address for the network. You can map the VM RDP port to host.
 
 ```bash
 # get the assigned IP
-virsh net-dhcp-leases default
+sudo virsh net-dhcp-leases default
 # enable public access
 sudo iptables -I FORWARD -m state -d 192.168.122.0/24 --state NEW,RELATED,ESTABLISHED -j ACCEPT
 # RDP(3389) port forward
@@ -56,7 +58,7 @@ On you local Windows PC, use `Remote Desktop Connection` or `Remote Desktop (Sto
 Attach the iso drive to VM:
 
 ```bash
-virt-xml win_vm0 --add-device --disk /usr/share/virtio-win/virtio-win.iso,device=cdrom
+sudo virt-xml win_vm0 --add-device --disk /usr/share/virtio-win/virtio-win.iso,device=cdrom
 ```
 
 In Windows VM, go to File Explorer->This PC->virtio-win, Click virtio-win-gt-x64.msi to install.
