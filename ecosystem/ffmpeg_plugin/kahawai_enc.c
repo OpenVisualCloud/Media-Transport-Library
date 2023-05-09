@@ -131,17 +131,20 @@ static int kahawai_write_header(AVFormatContext* ctx) {
   ops_tx.height = s->height = ctx->streams[0]->codecpar->height;
 
   s->pixel_format = ctx->streams[0]->codecpar->format;
-  if (s->pixel_format == AV_PIX_FMT_NONE) {
-    av_log(ctx, AV_LOG_ERROR, "No such pixel format: %s.\n",
-           av_pix_fmt_desc_get(s->pixel_format));
-    return AVERROR(EINVAL);
-  } else if (s->pixel_format != AV_PIX_FMT_RGB24) {
-    av_log(ctx, AV_LOG_ERROR, "Only rgb24 are supported\n");
-    return AVERROR(EINVAL);
+  switch(s->pixel_format) {
+    case AV_PIX_FMT_YUV422P10LE:
+      ops_tx.transport_fmt = ST20_FMT_YUV_422_10BIT;
+      ops_tx.input_fmt = ST_FRAME_FMT_YUV422RFC4175PG2BE10;
+      break;
+    case AV_PIX_FMT_RGB24:
+      ops_tx.transport_fmt = ST20_FMT_RGB_8BIT;
+      ops_tx.input_fmt = ST_FRAME_FMT_RGB8;
+      break;
+    default:
+      av_log(ctx, AV_LOG_ERROR, "Unsupported pixel format: %s.\n",
+            av_pix_fmt_desc_get(s->pixel_format));
+      return AVERROR(EINVAL);
   }
-
-  ops_tx.transport_fmt = ST20_FMT_RGB_8BIT;
-  ops_tx.input_fmt = ST_FRAME_FMT_RGB8;
 
   s->framerate = ctx->streams[0]->avg_frame_rate;
   if (ops_tx.fps = get_fps_table(s->framerate) == ST_FPS_MAX) {
@@ -235,10 +238,26 @@ static int kahawai_write_packet(AVFormatContext* ctx, AVPacket* pkt) {
 
   uint8_t* data[4];
   int linesize[4];
-  av_image_fill_arrays(data, linesize, pkt->data, s->pixel_format, s->width, s->height,
-                       1);
-  av_image_copy(s->frame->addr, s->frame->linesize, data, linesize, s->pixel_format,
-                s->width, s->height);
+
+  switch(s->pixel_format) {
+    case AV_PIX_FMT_YUV422P10LE:
+      st20_yuv422p10le_to_rfc4175_422be10((uint16_t*)pkt->data,
+        (uint16_t*)(pkt->data + (s->width * s->height * 2)),
+        (uint16_t*)(pkt->data + (s->width * s->height * 3)),
+        (struct st20_rfc4175_422_10_pg2_be*)(s->frame->addr[0]),
+        s->width, s->height);
+      break;
+    case AV_PIX_FMT_RGB24:
+      av_image_fill_arrays(data, linesize, pkt->data, s->pixel_format, s->width,
+                          s->height, 1);
+      av_image_copy(s->frame->addr, s->frame->linesize, data, linesize,
+                    s->pixel_format, s->width, s->height);
+      break;
+    default:
+      av_log(ctx, AV_LOG_ERROR, "Unsupported pixel format: %s.\n",
+            av_pix_fmt_desc_get(s->pixel_format));
+      return AVERROR(EINVAL);
+  }
 
   st20p_tx_put_frame(s->tx_handle, s->frame);
   av_log(ctx, AV_LOG_VERBOSE, "st20p_tx_put_frame: 0x%" PRIx64 "\n",
