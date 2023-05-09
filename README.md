@@ -35,13 +35,13 @@ The library also develope SIMD CSC(color space format covert), DMA, plugin inter
 ## 2. Build
 
 Please refer to [build guide](doc/build.md) for how to build DPDK, the library and the sample application.<br>
-For Windows, please refer to [Win build guide](doc/build_WIN.md) for how to build.
+For Windows, please refer to [Win build guide](doc/build_WIN_MSYS2.md) for how to build.
 
 ## 3. Run ST2110
 
 Please refer to [run guide](doc/run.md) for how to setup and run the demo pipeline application.<br>
 For Windows, please refer to [Win run guide](doc/run_WIN.md) for how to setup and run the demo.<br>
-For VF and VM support under Linux, please refer to [vf guide](doc/vf.md) for how to setup VF based on SRIOV, [vm guide](doc/vm.md) for how to setup VM based on VF passthrough.<br>
+For VF and VM support under Linux host, please refer to [vf guide](doc/vf.md) for how to setup VF based on SRIOV, [vm guide](doc/vm.md) and [Win vm guide](doc/vm_WIN.md) for how to setup Linux and Windows VM based on VF passthrough.<br>
 For AWS (cloud environment), please refer to [AWS run guide](doc/aws.md) for how to setup and run the demo.
 
 ## 4. ST2110 Programmers guide

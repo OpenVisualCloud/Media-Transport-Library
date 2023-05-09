@@ -122,3 +122,13 @@ cd plugins
 meson setup build
 meson install -C build
 ```
+
+## 7. Add MSYS2 binary PATH to system envorenment variables (Optional)
+
+The MSYS2 path is not in Windows system envorenment variables by default, if you want to run IMTL apps in PowerShell/CMD, you need to add the paths first. For example, MSYS2 is intalled in `C:\msys64`.
+
+* (optional)Add MSYS2 common toolchain path: `C:\msys64\usr\bin`
+
+* If the environment is MinGW64, add: `C:\msys64\mingw64\bin`
+
+* If the environment is UCRT64, add: `C:\msys64\ucrt64\bin`
