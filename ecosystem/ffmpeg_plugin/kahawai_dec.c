@@ -191,7 +191,7 @@ static int kahawai_read_header(AVFormatContext* ctx) {
     av_log(ctx, AV_LOG_VERBOSE, "mtl_init finished: st_handle %p\n ",
            kahawai_get_handle());
   } else {
-    kahawai_set_handle(s->dev_handle);
+    s->dev_handle = kahawai_get_handle();
     av_log(ctx, AV_LOG_VERBOSE, "use shared st_handle %p\n ", kahawai_get_handle());
   }
   ++active_session_cnt;
