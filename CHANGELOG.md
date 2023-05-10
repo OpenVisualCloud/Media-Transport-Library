@@ -16,6 +16,8 @@
 * tx/pacing: add epoch drop/onward stat.
 * tx/st2110: add epoch information in stxx_tx_frame_meta for get_next_frame callback.
 * dpdk: upgrade dpdk version to latest 23.03
+* Windows: add MSYS2 build guide and CI
+* vm: add Windows guest OS support, see vm_WIN.md.
 
 ## Changelog for 23.04
 

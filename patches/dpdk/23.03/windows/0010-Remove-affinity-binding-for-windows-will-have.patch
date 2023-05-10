@@ -1,0 +1,42 @@
+From 027b582a7cd8c543ca6acd5cf77a54fa4e0794f0 Mon Sep 17 00:00:00 2001
+From: Ric Li <ming3.li@intel.com>
+Date: Wed, 10 May 2023 15:59:55 +0800
+Subject: [PATCH] Remove affinity binding for windows will have  performance
+ drop with 2 neighbour CPUs to 100% load
+
+---
+ lib/eal/windows/eal.c | 11 -----------
+ 1 file changed, 11 deletions(-)
+
+diff --git a/lib/eal/windows/eal.c b/lib/eal/windows/eal.c
+index e7d405b91c..d50d400373 100644
+--- a/lib/eal/windows/eal.c
++++ b/lib/eal/windows/eal.c
+@@ -405,12 +405,6 @@ rte_eal_init(int argc, char **argv)
+ 		return -1;
+ 	}
+ 
+-	if (rte_thread_set_affinity_by_id(rte_thread_self(),
+-			&lcore_config[config->main_lcore].cpuset) != 0) {
+-		rte_eal_init_alert("Cannot set affinity");
+-		rte_errno = EINVAL;
+-		return -1;
+-	}
+ 	__rte_thread_init(config->main_lcore,
+ 		&lcore_config[config->main_lcore].cpuset);
+ 
+@@ -443,11 +437,6 @@ rte_eal_init(int argc, char **argv)
+ 		snprintf(thread_name, sizeof(thread_name),
+ 			"rte-worker-%d", i);
+ 		rte_thread_set_name(lcore_config[i].thread_id, thread_name);
+-
+-		ret = rte_thread_set_affinity_by_id(lcore_config[i].thread_id,
+-			&lcore_config[i].cpuset);
+-		if (ret != 0)
+-			RTE_LOG(DEBUG, EAL, "Cannot set affinity\n");
+ 	}
+ 
+ 	/* Initialize services so drivers can register services during probe. */
+-- 
+2.39.1.windows.1
+
