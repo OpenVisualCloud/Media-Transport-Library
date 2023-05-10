@@ -2,14 +2,25 @@ name: Lint Code Base
 
 on: [push, pull_request]
 
+permissions:
+  contents: read
+
 jobs:
   build:
+    permissions:
+      contents: read  # for actions/checkout to fetch code
+      statuses: write  # for github/super-linter/slim to mark status of each linter run
     name: Lint Code Base
     runs-on: ubuntu-latest
 
     steps:
+      - name: Harden Runner
+        uses: step-security/harden-runner@128a63446a954579617e875aaab7d2978154e969 # v2.4.0
+        with:
+          egress-policy: audit
+
       - name: Checkout Code
-        uses: actions/checkout@v3
+        uses: actions/checkout@8e5e7e5ab8b370d6c329ec480221332ada57f0ab # v3.5.2
         with:
           # Full git history is needed to get a proper
           # list of changed files within `super-linter`
@@ -19,7 +30,7 @@ jobs:
       # Run Linter against code base #
       ################################
       - name: Lint Code Base
-        uses: github/super-linter/slim@v4
+        uses: github/super-linter/slim@985ef206aaca4d560cb9ee2af2b42ba44adc1d55 # v4.10.0
         env:
           DEFAULT_BRANCH: main
           VALIDATE_CPP: false
