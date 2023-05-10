@@ -7,6 +7,9 @@ env:
   # Disable since mtl patched dpdk pcapng and this job use prebuilt pkg
   MTL_BUILD_DISABLE_PCAPNG: true
 
+permissions:
+  contents: read
+
 jobs:
   build:
     if: github.repository == 'OpenVisualCloud/Media-Transport-Library'
@@ -19,8 +22,13 @@ jobs:
         os: [ubuntu-latest]
 
     steps:
-    - uses: actions/checkout@v3
-    - uses: DoozyX/clang-format-lint-action@v0.14
+    - name: Harden Runner
+      uses: step-security/harden-runner@128a63446a954579617e875aaab7d2978154e969 # v2.4.0
+      with:
+        egress-policy: audit
+
+    - uses: actions/checkout@8e5e7e5ab8b370d6c329ec480221332ada57f0ab # v3.5.2
+    - uses: DoozyX/clang-format-lint-action@2ec1a72dfb593e52255693c9039e6d94984187dc # v0.14
       with:
         source: '.'
         extensions: 'hpp,h,cpp,c,cc'

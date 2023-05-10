@@ -29,6 +29,9 @@ on:
       - VERSION
       - .github/workflows/ubuntu_build_with_gtest.yml
 
+permissions:
+  contents: read
+
 jobs:
   Build:
     if: github.repository == 'OpenVisualCloud/Media-Transport-Library'
@@ -36,6 +39,11 @@ jobs:
     timeout-minutes: 60
 
     steps:
+      - name: Harden Runner
+        uses: step-security/harden-runner@128a63446a954579617e875aaab7d2978154e969 # v2.4.0
+        with:
+          egress-policy: audit
+
       - run: 'echo "No gtest build required"'
   
   Test:
@@ -43,4 +51,9 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
+      - name: Harden Runner
+        uses: step-security/harden-runner@128a63446a954579617e875aaab7d2978154e969 # v2.4.0
+        with:
+          egress-policy: audit
+
       - run: 'echo "No gtest test required"'

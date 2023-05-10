@@ -9,6 +9,9 @@ env:
   # https://gitlab.gnome.org/GNOME/glib/-/merge_requests/3280#note_1678973
   MSYS: winjitdebug
 
+permissions:
+  contents: read
+
 jobs:
   build:
     runs-on: windows-latest
@@ -21,8 +24,13 @@ jobs:
       run:
         shell: msys2 {0}
     steps:
+    - name: Harden Runner
+      uses: step-security/harden-runner@128a63446a954579617e875aaab7d2978154e969 # v2.4.0
+      with:
+        egress-policy: audit
+
     - name: Install dependencies
-      uses: msys2/setup-msys2@v2
+      uses: msys2/setup-msys2@7efe20baefed56359985e327d329042cde2434ff # v2
       with:
         msystem: ${{matrix.sys}}
         update: true
@@ -53,10 +61,10 @@ jobs:
         make && make install
 
     - name: Checkout IMTL repo
-      uses: actions/checkout@v3
+      uses: actions/checkout@8e5e7e5ab8b370d6c329ec480221332ada57f0ab # v3.5.2
 
     - name: Checkout DPDK repo
-      uses: actions/checkout@v3
+      uses: actions/checkout@8e5e7e5ab8b370d6c329ec480221332ada57f0ab # v3.5.2
       with:
         repository: 'DPDK/dpdk'
         ref: v${{  env.DPDK_VERSION  }}
