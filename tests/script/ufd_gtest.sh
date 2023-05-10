@@ -8,13 +8,11 @@ set -e
 if [ -n "$1" ];  then
   P_PORT=$1
 else
-  # default to latest 22.11
   P_PORT=0000:af:01.0
 fi
 if [ -n "$2" ];  then
   R_PORT=$2
 else
-  # default to latest 22.11
   R_PORT=0000:af:01.1
 fi
 

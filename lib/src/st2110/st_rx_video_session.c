@@ -1439,8 +1439,14 @@ static int rv_start_pcapng(struct mtl_main_impl* impl, struct st_rx_video_sessio
     return -EIO;
   }
 
+#if RTE_VERSION >= RTE_VERSION_NUM(23, 3, 0, 0)
+  rte_pcapng_add_interface(pcapng, mt_port_id(impl, port), NULL, NULL, NULL);
+#endif
+
+  char pool_name[ST_MAX_NAME_LEN];
+  snprintf(pool_name, ST_MAX_NAME_LEN, "pcapng_pool_%d", port);
   struct rte_mempool* mp =
-      mt_mempool_create_by_ops(impl, port, "pcapng_test_pool", 256, MT_MBUF_CACHE_SIZE, 0,
+      mt_mempool_create_by_ops(impl, port, pool_name, 256, MT_MBUF_CACHE_SIZE, 0,
                                rte_pcapng_mbuf_size(pkt_len), "ring_mp_sc");
   if (mp == NULL) {
     err("%s(%d), failed to create pcapng mempool\n", __func__, idx);
@@ -1464,8 +1470,10 @@ static int rv_start_pcapng(struct mtl_main_impl* impl, struct st_rx_video_sessio
       mt_sleep_ms(100);
     }
     if (i >= time_out) {
-      err("%s(%d), pcapng(%s,%u) dump timeout\n", __func__, idx, file_name,
-          max_dump_packets);
+      err("%s(%d), pcapng(%s) timeout, dumped %u dropped %u\n", __func__, idx, file_name,
+          s->pcapng_dumped_pkts, s->pcapng_dropped_pkts);
+      mt_mempool_free(mp);
+      rte_pcapng_close(pcapng);
       return -EIO;
     }
     if (meta) {
@@ -1515,11 +1523,17 @@ static int rv_dump_pcapng(struct mtl_main_impl* impl, struct st_rx_video_session
       timestamp_cycle = rte_get_tsc_cycles();
       timestamp_ns = 0;
     }
+#if RTE_VERSION >= RTE_VERSION_NUM(23, 3, 0, 0)
+    mc = rte_pcapng_copy(s->port_id[s_port], queue_id, mbuf[i], s->pcapng_pool,
+                         ST_PKT_MAX_ETHER_BYTES, timestamp_cycle, timestamp_ns,
+                         RTE_PCAPNG_DIRECTION_IN, NULL);
+#else
     mc = rte_pcapng_copy(s->port_id[s_port], queue_id, mbuf[i], s->pcapng_pool,
                          ST_PKT_MAX_ETHER_BYTES, timestamp_cycle, timestamp_ns,
                          RTE_PCAPNG_DIRECTION_IN);
+#endif
     if (mc == NULL) {
-      dbg("%s(%d,%d), can not copy packet\n", __func__, s->idx, s_port);
+      warn("%s(%d,%d), can not copy packet\n", __func__, s->idx, s_port);
       s->pcapng_dropped_pkts++;
       continue;
     }
@@ -1528,7 +1542,7 @@ static int rv_dump_pcapng(struct mtl_main_impl* impl, struct st_rx_video_session
   len = rte_pcapng_write_packets(s->pcapng, pcapng_mbuf, pcapng_mbuf_cnt);
   rte_pktmbuf_free_bulk(&pcapng_mbuf[0], pcapng_mbuf_cnt);
   if (len <= 0) {
-    dbg("%s(%d,%d), can not write packet\n", __func__, s->idx, s_port);
+    warn("%s(%d,%d), can not write packet %" PRId64 "\n", __func__, s->idx, s_port, len);
     s->pcapng_dropped_pkts++;
     return -EIO;
   }

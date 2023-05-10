@@ -15,6 +15,7 @@
 * tx/st30: separate build and pacing stage.
 * tx/pacing: add epoch drop/onward stat.
 * tx/st2110: add epoch information in stxx_tx_frame_meta for get_next_frame callback.
+* dpdk: upgrade dpdk version to latest 23.03
 
 ## Changelog for 23.04
 
