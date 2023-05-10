@@ -1,0 +1,109 @@
+From 3f163a7e1e42ff98f0719a7b4498eb50e7af9c7d Mon Sep 17 00:00:00 2001
+From: Ric Li <ming3.li@intel.com>
+Date: Mon, 14 Feb 2022 16:28:01 +0800
+Subject: [PATCH 1/7] pcapng: add ns timestamp for copy api
+
+The original API only receives cycles and converts it to ns.
+Add ns timestamp to directly write it to pcapng file.
+
+Signed-off-by: Ric Li <ming3.li@intel.com>
+
+Fix build on v22.10
+Fix build on v23.03
+
+Signed-off-by: Du, Frank <frank.du@intel.com>
+---
+ app/test/test_pcapng.c  | 4 ++--
+ lib/graph/graph_pcap.c  | 2 +-
+ lib/pcapng/rte_pcapng.c | 5 +++--
+ lib/pcapng/rte_pcapng.h | 2 +-
+ lib/pdump/rte_pdump.c   | 2 +-
+ 5 files changed, 8 insertions(+), 7 deletions(-)
+
+diff --git a/app/test/test_pcapng.c b/app/test/test_pcapng.c
+index b8429a02f1..14c58c5f20 100644
+--- a/app/test/test_pcapng.c
++++ b/app/test/test_pcapng.c
+@@ -146,7 +146,7 @@ test_write_packets(void)
+ 		struct rte_mbuf *mc;
+ 
+ 		mc = rte_pcapng_copy(port_id, 0, orig, mp, pkt_len,
+-				rte_get_tsc_cycles(), 0, NULL);
++				rte_get_tsc_cycles(), 0, 0, NULL);
+ 		if (mc == NULL) {
+ 			fprintf(stderr, "Cannot copy packet\n");
+ 			return -1;
+@@ -262,7 +262,7 @@ test_write_over_limit_iov_max(void)
+ 		struct rte_mbuf *mc;
+ 
+ 		mc = rte_pcapng_copy(port_id, 0, orig, mp, pkt_len,
+-				rte_get_tsc_cycles(), 0, NULL);
++				rte_get_tsc_cycles(), 0, 0, NULL);
+ 		if (mc == NULL) {
+ 			fprintf(stderr, "Cannot copy packet\n");
+ 			return -1;
+diff --git a/lib/graph/graph_pcap.c b/lib/graph/graph_pcap.c
+index 6c43330029..7faf51503a 100644
+--- a/lib/graph/graph_pcap.c
++++ b/lib/graph/graph_pcap.c
+@@ -195,7 +195,7 @@ graph_pcap_dispatch(struct rte_graph *graph,
+ 		mbuf = (struct rte_mbuf *)objs[i];
+ 
+ 		mc = rte_pcapng_copy(mbuf->port, 0, mbuf, pkt_mp, mbuf->pkt_len,
+-				     rte_get_tsc_cycles(), 0, buffer);
++				     rte_get_tsc_cycles(), 0, 0, buffer);
+ 		if (mc == NULL)
+ 			break;
+ 
+diff --git a/lib/pcapng/rte_pcapng.c b/lib/pcapng/rte_pcapng.c
+index 3c91fc7764..cf005dd3cf 100644
+--- a/lib/pcapng/rte_pcapng.c
++++ b/lib/pcapng/rte_pcapng.c
+@@ -520,7 +520,7 @@ struct rte_mbuf *
+ rte_pcapng_copy(uint16_t port_id, uint32_t queue,
+ 		const struct rte_mbuf *md,
+ 		struct rte_mempool *mp,
+-		uint32_t length, uint64_t cycles,
++		uint32_t length, uint64_t cycles, uint64_t tm_ns,
+ 		enum rte_pcapng_direction direction,
+ 		const char *comment)
+ {
+@@ -535,7 +535,8 @@ rte_pcapng_copy(uint16_t port_id, uint32_t queue,
+ #ifdef RTE_LIBRTE_ETHDEV_DEBUG
+ 	RTE_ETH_VALID_PORTID_OR_ERR_RET(port_id, NULL);
+ #endif
+-	ns = pcapng_tsc_to_ns(cycles);
++	ns = tm_ns;
++	if(ns == 0)	ns = pcapng_tsc_to_ns(cycles);
+ 
+ 	orig_len = rte_pktmbuf_pkt_len(md);
+ 
+diff --git a/lib/pcapng/rte_pcapng.h b/lib/pcapng/rte_pcapng.h
+index 4afdec22ef..befe08e6f7 100644
+--- a/lib/pcapng/rte_pcapng.h
++++ b/lib/pcapng/rte_pcapng.h
+@@ -137,7 +137,7 @@ __rte_experimental
+ struct rte_mbuf *
+ rte_pcapng_copy(uint16_t port_id, uint32_t queue,
+ 		const struct rte_mbuf *m, struct rte_mempool *mp,
+-		uint32_t length, uint64_t timestamp,
++		uint32_t length, uint64_t timestamp, uint64_t tm_ns,
+ 		enum rte_pcapng_direction direction, const char *comment);
+ 
+ 
+diff --git a/lib/pdump/rte_pdump.c b/lib/pdump/rte_pdump.c
+index 53cca1034d..75ba422b2f 100644
+--- a/lib/pdump/rte_pdump.c
++++ b/lib/pdump/rte_pdump.c
+@@ -122,7 +122,7 @@ pdump_copy(uint16_t port_id, uint16_t queue,
+ 		if (cbs->ver == V2)
+ 			p = rte_pcapng_copy(port_id, queue,
+ 					    pkts[i], mp, cbs->snaplen,
+-					    ts, direction, NULL);
++					    ts, 0, direction, NULL);
+ 		else
+ 			p = rte_pktmbuf_copy(pkts[i], mp, 0, cbs->snaplen);
+ 
+-- 
+2.34.1
+
