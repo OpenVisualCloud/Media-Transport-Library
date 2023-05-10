@@ -1,10 +1,10 @@
 # Intel® Media Transport Library
 
 [![Ubuntu](https://github.com/OpenVisualCloud/Media-Transport-Library/actions/workflows/ubuntu_build.yml/badge.svg)](https://github.com/OpenVisualCloud/Media-Transport-Library/actions/workflows/ubuntu_build.yml)
-[![Centos](https://github.com/OpenVisualCloud/Media-Transport-Library/actions/workflows/centos_build.yaml/badge.svg)](https://github.com/OpenVisualCloud/Media-Transport-Library/actions/workflows/centos_build.yaml)
 [![Windows](https://github.com/OpenVisualCloud/Media-Transport-Library/actions/workflows/msys2_build.yml/badge.svg)](https://github.com/OpenVisualCloud/Media-Transport-Library/actions/workflows/msys2_build.yml)
-[![Clang](https://github.com/OpenVisualCloud/Media-Transport-Library/actions/workflows/clang_build.yml/badge.svg)](https://github.com/OpenVisualCloud/Media-Transport-Library/actions/workflows/clang_build.yml)
 [![Test](https://github.com/OpenVisualCloud/Media-Transport-Library/actions/workflows/ubuntu_build_with_gtest.yml/badge.svg)](https://github.com/OpenVisualCloud/Media-Transport-Library/actions/workflows/ubuntu_build_with_gtest.yml)
+[![OpenSSF
+Scorecard](https://api.securityscorecards.dev/projects/github.com/OpenVisualCloud/Media-Transport-Library/badge)](https://api.securityscorecards.dev/projects/github.com/OpenVisualCloud/Media-Transport-Library)
 
 ## 1. Overview
 
