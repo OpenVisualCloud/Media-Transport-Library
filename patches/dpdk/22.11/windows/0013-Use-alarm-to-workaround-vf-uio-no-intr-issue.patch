@@ -1,0 +1,60 @@
+From 918d2a6ce8a3ed9064277de71370fcadfdadce4f Mon Sep 17 00:00:00 2001
+From: Ric Li <ming3.li@intel.com>
+Date: Thu, 27 Apr 2023 10:39:58 -0700
+Subject: [PATCH] Use alarm to workaround vf uio no intr issue
+
+---
+ drivers/net/iavf/iavf_ethdev.c | 8 +++++---
+ drivers/net/iavf/iavf_vchnl.c  | 3 ++-
+ 2 files changed, 7 insertions(+), 4 deletions(-)
+
+diff --git a/drivers/net/iavf/iavf_ethdev.c b/drivers/net/iavf/iavf_ethdev.c
+index 3196210f2c..9c2b93547a 100644
+--- a/drivers/net/iavf/iavf_ethdev.c
++++ b/drivers/net/iavf/iavf_ethdev.c
+@@ -2569,7 +2569,7 @@ iavf_dev_init(struct rte_eth_dev *eth_dev)
+ 	struct iavf_adapter *adapter =
+ 		IAVF_DEV_PRIVATE_TO_ADAPTER(eth_dev->data->dev_private);
+ 	struct iavf_hw *hw = IAVF_DEV_PRIVATE_TO_HW(adapter);
+-	struct iavf_info *vf = IAVF_DEV_PRIVATE_TO_VF(adapter);
++	/* struct iavf_info *vf = IAVF_DEV_PRIVATE_TO_VF(adapter); */
+ 	struct rte_pci_device *pci_dev = RTE_ETH_DEV_TO_PCI(eth_dev);
+ 	int ret = 0;
+ 
+@@ -2637,7 +2637,8 @@ iavf_dev_init(struct rte_eth_dev *eth_dev)
+ 	if (iavf_dev_event_handler_init())
+ 		goto init_vf_err;
+ 
+-	if (vf->vf_res->vf_cap_flags & VIRTCHNL_VF_OFFLOAD_WB_ON_ITR) {
++	/* Workaround: use alarm since intr not working for uio */
++	if (/*vf->vf_res->vf_cap_flags & VIRTCHNL_VF_OFFLOAD_WB_ON_ITR*/false) {
+ 		/* register callback func to eal lib */
+ 		rte_intr_callback_register(pci_dev->intr_handle,
+ 					   iavf_dev_interrupt_handler,
+@@ -2733,7 +2734,8 @@ iavf_dev_close(struct rte_eth_dev *dev)
+ 		iavf_config_promisc(adapter, false, false);
+ 
+ 	iavf_shutdown_adminq(hw);
+-	if (vf->vf_res->vf_cap_flags & VIRTCHNL_VF_OFFLOAD_WB_ON_ITR) {
++	/* Workaround: use alarm since intr not working for uio */
++	if (/*vf->vf_res->vf_cap_flags & VIRTCHNL_VF_OFFLOAD_WB_ON_ITR*/false) {
+ 		/* disable uio intr before callback unregister */
+ 		rte_intr_disable(intr_handle);
+ 
+diff --git a/drivers/net/iavf/iavf_vchnl.c b/drivers/net/iavf/iavf_vchnl.c
+index 9adaadb173..25380405a6 100644
+--- a/drivers/net/iavf/iavf_vchnl.c
++++ b/drivers/net/iavf/iavf_vchnl.c
+@@ -2064,7 +2064,8 @@ iavf_request_queues(struct rte_eth_dev *dev, uint16_t num)
+ 	args.out_buffer = vf->aq_resp;
+ 	args.out_size = IAVF_AQ_BUF_SZ;
+ 
+-	if (vf->vf_res->vf_cap_flags & VIRTCHNL_VF_OFFLOAD_WB_ON_ITR) {
++	/* Workaround: use alarm since intr not working for uio */
++	if (/*vf->vf_res->vf_cap_flags & VIRTCHNL_VF_OFFLOAD_WB_ON_ITR*/false) {
+ 		/* disable interrupt to avoid the admin queue message to be read
+ 		 * before iavf_read_msg_from_pf.
+ 		 *
+-- 
+2.39.1.windows.1
+
