@@ -3,7 +3,7 @@ on: [push, pull_request]
 
 env:
   # Customize the env if
-  DPDK_VERSION: 22.11
+  DPDK_VERSION: 23.03
   # FIXME: For some reason enabling jit debugging "fixes" random python crashes
   # see https://github.com/msys2/MINGW-packages/issues/11864 and
   # https://gitlab.gnome.org/GNOME/glib/-/merge_requests/3280#note_1678973

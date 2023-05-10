@@ -62,7 +62,7 @@ For all steps below, the default work dir is IMTL repository.
 * Convert symlink patch files to real file:
 
 ```bash
-cd patches/dpdk/22.11
+cd patches/dpdk/23.03
 ls *.patch | xargs -I{} bash -c 'if [[ $(sed -n '1p' "{}") =~ ^../.*\.patch$ ]]; then cp "$(cat "{}")" "{}"; fi'
 cd windows
 ls *.patch | xargs -I{} bash -c 'if [[ $(sed -n '1p' "{}") =~ ^../.*\.patch$ ]]; then cp "$(cat "{}")" "{}"; fi'
@@ -73,13 +73,13 @@ ls *.patch | xargs -I{} bash -c 'if [[ $(sed -n '1p' "{}") =~ ^../.*\.patch$ ]];
 ```bash
 git clone https://github.com/DPDK/dpdk.git
 cd dpdk
-git checkout v22.11
-git switch -c v22.11
+git checkout v23.03
+git switch -c v23.03
 
 git config user.name "Your Name"        # config if not
 git config user.email "you@example.com" # config if not
-git am ../patches/dpdk/22.11/*.patch
-git am ../patches/dpdk/22.11/windows/*.patch
+git am ../patches/dpdk/23.03/*.patch
+git am ../patches/dpdk/23.03/windows/*.patch
 ```
 
 * Build and install DPDK:

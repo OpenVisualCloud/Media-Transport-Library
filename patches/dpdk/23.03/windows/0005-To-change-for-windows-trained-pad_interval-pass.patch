@@ -1,0 +1,31 @@
+From f2f4f0b07aae9f2b3d1922692c0f9dbd3f5ab2eb Mon Sep 17 00:00:00 2001
+From: Ric Li <ming3.li@intel.com>
+Date: Wed, 10 May 2023 14:59:03 +0800
+Subject: [PATCH] To change for windows trained pad_interval pass
+
+---
+ lib/eal/common/eal_common_thread.c | 2 ++
+ 1 file changed, 2 insertions(+)
+
+diff --git a/lib/eal/common/eal_common_thread.c b/lib/eal/common/eal_common_thread.c
+index 079a385630..68f97ab781 100644
+--- a/lib/eal/common/eal_common_thread.c
++++ b/lib/eal/common/eal_common_thread.c
+@@ -252,12 +252,14 @@ static int ctrl_thread_init(void *arg)
+ 	struct rte_thread_ctrl_params *params = arg;
+ 
+ 	__rte_thread_init(rte_lcore_id(), cpuset);
++#ifndef RTE_EXEC_ENV_WINDOWS
+ 	params->ret = rte_thread_set_affinity_by_id(rte_thread_self(), cpuset);
+ 	if (params->ret != 0) {
+ 		__atomic_store_n(&params->ctrl_thread_status,
+ 			CTRL_THREAD_ERROR, __ATOMIC_RELEASE);
+ 		return 1;
+ 	}
++#endif
+ 
+ 	__atomic_store_n(&params->ctrl_thread_status,
+ 		CTRL_THREAD_RUNNING, __ATOMIC_RELEASE);
+-- 
+2.39.1.windows.1
+
