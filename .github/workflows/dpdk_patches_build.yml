@@ -12,7 +12,7 @@ on:
 
 env:
   # Customize the env if
-  DPDK_VERSION: 22.11
+  DPDK_VERSION: 23.03
 
 jobs:
   build:
