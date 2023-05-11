@@ -218,7 +218,8 @@ static int tx_frame_lines_ready(void* priv, uint16_t frame_idx,
   if (ctx->lines_ready[frame_idx] + lines > ctx->height)
     lines = ctx->height - ctx->lines_ready[frame_idx];
   if (lines)
-    mtl_memcpy(fb + offset, ctx->frame_buf[frame_idx] + offset, lines * ctx->stride);
+    mtl_memcpy(fb + offset, ctx->frame_buf[frame_idx] + offset,
+               (size_t)lines * ctx->stride);
 
   ctx->lines_ready[frame_idx] += lines;
   meta->lines_ready = ctx->lines_ready[frame_idx];
@@ -3062,7 +3063,7 @@ static void st20_rx_uframe_test(enum st20_type rx_type[], enum st20_packing pack
     if (interlaced[i]) frame_size = frame_size >> 1;
     test_ctx_tx[i]->frame_size = frame_size;
     /* uframe fmt: yuv422 10bit planar */
-    size_t uframe_size = ops_tx.width * ops_tx.height * 2 * sizeof(uint16_t);
+    size_t uframe_size = (size_t)ops_tx.width * ops_tx.height * 2 * sizeof(uint16_t);
     if (interlaced[i]) uframe_size = uframe_size >> 1;
     test_ctx_tx[i]->uframe_size = uframe_size;
     test_ctx_tx[i]->slice = false;
@@ -3127,7 +3128,7 @@ static void st20_rx_uframe_test(enum st20_type rx_type[], enum st20_packing pack
     ops_rx.notify_rtp_ready = rx_rtp_ready;
     ops_rx.rtp_ring_size = 1024 * 2;
     /* uframe fmt: yuv422 10bit planar */
-    ops_rx.uframe_size = ops_rx.width * ops_rx.height * 2 * sizeof(uint16_t);
+    ops_rx.uframe_size = (size_t)ops_rx.width * ops_rx.height * 2 * sizeof(uint16_t);
     ops_rx.uframe_pg_callback = st20_rx_uframe_pg_callback;
     ops_rx.flags = ST20_RX_FLAG_DMA_OFFLOAD;
 
@@ -3249,7 +3250,7 @@ static int st20_rx_detected(void* priv, const struct st20_detect_meta* meta,
   if (s_meta) reply->slice_lines = ctx->lines_per_slice;
   if (ctx->uframe_size != 0) {
     /* uframe fmt: yuv422 10bit planar */
-    ctx->uframe_size = meta->width * meta->height * 2 * sizeof(uint16_t);
+    ctx->uframe_size = (size_t)meta->width * meta->height * 2 * sizeof(uint16_t);
     reply->uframe_size = ctx->uframe_size;
     if (s_meta) s_meta->uframe_total_size = ctx->uframe_size;
   }
@@ -3344,7 +3345,7 @@ static void st20_rx_detect_test(enum st20_type tx_type[], enum st20_type rx_type
     uint8_t* fb;
     if (user_frame) {
       /* uframe fmt: yuv422 10bit planar */
-      size_t uframe_size = ops_tx.width * ops_tx.height * 2 * sizeof(uint16_t);
+      size_t uframe_size = (size_t)ops_tx.width * ops_tx.height * 2 * sizeof(uint16_t);
       if (interlaced[i]) uframe_size = uframe_size >> 1;
       test_ctx_tx[i]->uframe_size = uframe_size;
       test_ctx_tx[i]->slice = false;
@@ -4391,7 +4392,7 @@ static void st20_linesize_digest_test(enum st20_packing packing[], enum st_fps f
     size_t fb_size = frame_size;
     if (linesize[i] > test_ctx_tx[i]->stride) {
       test_ctx_tx[i]->stride = linesize[i];
-      fb_size = linesize[i] * height[i];
+      fb_size = (size_t)linesize[i] * height[i];
       if (interlaced[i]) fb_size = fb_size >> 1;
     }
     test_ctx_tx[i]->fb_size = fb_size;
@@ -4416,7 +4417,7 @@ static void st20_linesize_digest_test(enum st20_packing packing[], enum st_fps f
 
     uint8_t* fb;
     int total_lines = height[i];
-    size_t bytes_per_line = ops_tx.width / st20_pg.coverage * st20_pg.size;
+    size_t bytes_per_line = (size_t)ops_tx.width / st20_pg.coverage * st20_pg.size;
     if (interlaced[i]) total_lines /= 2;
     for (int frame = 0; frame < TEST_SHA_HIST_NUM; frame++) {
       if (ext) {

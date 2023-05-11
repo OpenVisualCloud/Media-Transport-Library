@@ -1675,7 +1675,7 @@ static int rv_handle_frame_pkt(struct st_rx_video_session_impl* s, struct rte_mb
 
   /* caculate offset */
   uint32_t offset;
-  offset = line1_number * s->st20_linesize +
+  offset = line1_number * (uint32_t)s->st20_linesize +
            line1_offset / s->st20_pg.coverage * s->st20_pg.size;
   size_t payload_length = line1_length;
   if (extra_rtp) payload_length += ntohs(extra_rtp->row_length);
@@ -2636,7 +2636,7 @@ static int rv_handle_mbuf(void* priv, struct rte_mbuf** mbuf, uint16_t nb) {
     /* first pass to the pkt ring if it has pkt handling lcore */
     unsigned int n =
         rte_ring_sp_enqueue_bulk(s->pkt_lcore_ring, (void**)&mbuf[0], nb, NULL);
-    for (uint16_t i = 0; i < n; i++) rte_mbuf_refcnt_update(mbuf[i], 1);
+    for (uint16_t i = 0; i < (uint16_t)n; i++) rte_mbuf_refcnt_update(mbuf[i], 1);
     nb -= n; /* n is zero or nb */
     s->stat_pkts_enqueue_fallback += nb;
   }

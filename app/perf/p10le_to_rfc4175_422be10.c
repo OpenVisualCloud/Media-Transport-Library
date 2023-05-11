@@ -25,11 +25,11 @@ static void fill_422_planar_le(uint16_t* y, uint16_t* b, uint16_t* r, int w, int
 
 static int perf_cvt_planar_le_to_422_10_pg2(mtl_handle st, int w, int h, int frames,
                                             int fb_cnt) {
-  size_t fb_pg2_size = w * h * 5 / 2;
+  size_t fb_pg2_size = (size_t)w * h * 5 / 2;
   mtl_udma_handle dma = mtl_udma_create(st, 128, MTL_PORT_P);
   struct st20_rfc4175_422_10_pg2_be* pg_be =
       (struct st20_rfc4175_422_10_pg2_be*)malloc(fb_pg2_size * fb_cnt);
-  size_t planar_size = w * h * 2 * sizeof(uint16_t);
+  size_t planar_size = (size_t)w * h * 2 * sizeof(uint16_t);
   float planar_size_m = (float)planar_size / 1024 / 1024;
   uint16_t* p10_u16 = (uint16_t*)mtl_hp_malloc(st, planar_size * fb_cnt, MTL_PORT_P);
   uint16_t* p10_u16_b = p10_u16 + w * h;

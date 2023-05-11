@@ -19,8 +19,8 @@ static void fill_rand_y210(uint16_t* p, size_t sz) {
 }
 
 static int perf_cvt_y210_to_be(mtl_handle st, int w, int h, int frames, int fb_cnt) {
-  size_t fb_pg2_size = w * h * 5 / 2;
-  size_t fb_size_y210 = w * h * 4;
+  size_t fb_pg2_size = (size_t)w * h * 5 / 2;
+  size_t fb_size_y210 = (size_t)w * h * 4;
   mtl_udma_handle dma = mtl_udma_create(st, 128, MTL_PORT_P);
   struct st20_rfc4175_422_10_pg2_be* pg_be =
       (struct st20_rfc4175_422_10_pg2_be*)malloc(fb_pg2_size * fb_cnt);

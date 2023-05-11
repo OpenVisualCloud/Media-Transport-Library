@@ -6,7 +6,7 @@
 
 static int perf_cvt_422_12_pg2_be_to_le(mtl_handle st, int w, int h, int frames,
                                         int fb_cnt) {
-  size_t fb_pg2_size = w * h * 3;
+  size_t fb_pg2_size = (size_t)w * h * 3;
   mtl_udma_handle dma = mtl_udma_create(st, 128, MTL_PORT_P);
   struct st20_rfc4175_422_12_pg2_be* pg_be =
       (struct st20_rfc4175_422_12_pg2_be*)mtl_hp_malloc(st, fb_pg2_size * fb_cnt,

@@ -428,7 +428,7 @@ size_t st_frame_least_linesize(enum st_frame_fmt fmt, uint32_t width, uint8_t pl
 
 size_t st_frame_size(enum st_frame_fmt fmt, uint32_t width, uint32_t height) {
   size_t size = 0;
-  size_t pixels = width * height;
+  size_t pixels = (size_t)width * height;
 
   switch (fmt) {
     case ST_FRAME_FMT_YUV422PLANAR10LE:
@@ -549,7 +549,7 @@ size_t st20_frame_size(enum st20_fmt fmt, uint32_t width, uint32_t height) {
     return 0;
   }
 
-  size_t size = width * height;
+  size_t size = (size_t)width * height;
   if (size % pg.coverage) {
     err("%s, fmt %d, invalid w %u h %u, not multiple of %u\n", __func__, fmt, width,
         height, pg.coverage);

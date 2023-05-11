@@ -10,7 +10,7 @@
 static int rx_st20r_frame_pop(struct st20r_rx_ctx* ctx, void* frame) {
   struct st20r_rx_frame* rx_frame;
 
-  for (uint16_t i = 0; i < ctx->frames_cnt; i++) {
+  for (int i = 0; i < ctx->frames_cnt; i++) {
     rx_frame = &ctx->frames[i];
     if (rx_frame->frame != frame) continue;
     /* find the slot */
@@ -28,7 +28,7 @@ static int rx_st20r_frame_push(struct st20r_rx_ctx* ctx, void* frame,
   struct st20r_rx_frame* rx_frame;
   int ret;
 
-  for (uint16_t i = 0; i < ctx->frames_cnt; i++) {
+  for (int i = 0; i < ctx->frames_cnt; i++) {
     rx_frame = &ctx->frames[i];
     if (rx_frame->frame) continue;
     /* find a empty slot, notify user */

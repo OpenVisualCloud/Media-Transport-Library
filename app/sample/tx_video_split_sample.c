@@ -131,8 +131,8 @@ int main(int argc, char** argv) {
       goto error;
     }
     app[i]->ops = ops_tx;
-    app[i]->frame_size = ops_tx.linesize * ops_tx.height / 2;
-    app[i]->fb_size = ops_tx.linesize * ops_tx.height * 2;
+    app[i]->frame_size = (size_t)ops_tx.linesize * ops_tx.height / 2;
+    app[i]->fb_size = (size_t)ops_tx.linesize * ops_tx.height * 2;
 
     if (!dma_mem) {
       /* open yuv file and map to memory */
