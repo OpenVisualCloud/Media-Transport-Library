@@ -38,7 +38,7 @@ static int rss_init(struct mtl_main_impl* impl, struct mt_rss_impl* rss) {
     return -ENOMEM;
   }
 
-  for (uint16_t q = 0; q < (uint16_t)rss->max_rss_queues; q++) {
+  for (uint16_t q = 0; q < rss->max_rss_queues; q++) {
     rss_queue = &rss->rss_queues[q];
     rss_queue->queue_id = q;
     rss_queue->port_id = mt_port_id(impl, port);
@@ -54,7 +54,7 @@ static int rss_uinit(struct mt_rss_impl* rss) {
   struct mt_rss_entry* entry;
 
   if (rss->rss_queues) {
-    for (uint16_t q = 0; q < (uint16_t)rss->max_rss_queues; q++) {
+    for (uint16_t q = 0; q < rss->max_rss_queues; q++) {
       rss_queue = &rss->rss_queues[q];
 
       /* check if any not free */

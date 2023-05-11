@@ -29,7 +29,7 @@ static int srss_tasklet_handler(void* priv) {
   struct rte_ipv4_hdr* ipv4;
   struct rte_udp_hdr* udp;
 
-  for (uint16_t queue = 0; queue < (uint16_t)inf->max_rx_queues; queue++) {
+  for (uint16_t queue = 0; queue < inf->max_rx_queues; queue++) {
     uint16_t matched_pkts_nb = 0;
     pthread_mutex_lock(&srss->mutex);
     uint16_t rx =

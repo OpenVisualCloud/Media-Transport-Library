@@ -279,7 +279,7 @@ static int tsq_uinit(struct mt_tsq_impl* tsq) {
   struct mt_tsq_entry* entry;
 
   if (tsq->tsq_queues) {
-    for (int q = 0; q < tsq->max_tsq_queues; q++) {
+    for (uint16_t q = 0; q < tsq->max_tsq_queues; q++) {
       tsq_queue = &tsq->tsq_queues[q];
 
       /* check if any not free */
@@ -316,7 +316,7 @@ static int tsq_init(struct mtl_main_impl* impl, struct mt_tsq_impl* tsq) {
     return -ENOMEM;
   }
 
-  for (uint16_t q = 0; q < (uint16_t)tsq->max_tsq_queues; q++) {
+  for (uint16_t q = 0; q < tsq->max_tsq_queues; q++) {
     tsq_queue = &tsq->tsq_queues[q];
     tsq_queue->queue_id = q;
     tsq_queue->port_id = mt_port_id(impl, port);

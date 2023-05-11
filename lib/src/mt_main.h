@@ -498,7 +498,7 @@ struct mt_interface {
   pthread_mutex_t vf_cmd_mutex;
 
   /* tx queue resources */
-  int max_tx_queues;
+  uint16_t max_tx_queues;
   struct mt_tx_queue* tx_queues;
   pthread_mutex_t tx_queues_mutex; /* protect tx_queues */
 
@@ -508,9 +508,9 @@ struct mt_interface {
   pthread_mutex_t tx_sys_queue_mutex; /* protect tx_sys_queue */
 
   /* rx queue resources */
-  int max_rx_queues;
-  int system_rx_queues_end;
-  int hdr_split_rx_queues_end;
+  uint16_t max_rx_queues;
+  uint16_t system_rx_queues_end;
+  uint16_t hdr_split_rx_queues_end;
   struct mt_rx_queue* rx_queues;
   pthread_mutex_t rx_queues_mutex; /* protect rx_queues */
 
@@ -675,7 +675,7 @@ struct mt_rss_queue {
 struct mt_rss_impl {
   enum mtl_port port;
   /* rss queue resources */
-  int max_rss_queues;
+  uint16_t max_rss_queues;
   struct mt_rss_queue* rss_queues;
 };
 
@@ -750,7 +750,7 @@ struct mt_tsq_impl {
   struct mtl_main_impl* parent;
   enum mtl_port port;
   /* sq tx queue resources */
-  int max_tsq_queues;
+  uint16_t max_tsq_queues;
   struct mt_tsq_queue* tsq_queues;
 };
 
