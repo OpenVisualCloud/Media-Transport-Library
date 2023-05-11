@@ -67,7 +67,7 @@ jobs:
           sudo apt-get install -y dpdk-dev
 
       - name: Install the python package
-        run: sudo pip install pyelftools ninja
+        run: sudo pip install pyelftools==0.29 ninja==1.11.1
 
       - name: Git config
         run: |

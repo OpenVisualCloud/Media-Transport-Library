@@ -1,7 +1,7 @@
 # SPDX-License-Identifier: BSD-3-Clause
 # Copyright 2023 Intel Corporation
 
-FROM ubuntu
+FROM ubuntu@sha256:dfd64a3b4296d8c9b62aa3309984f8620b98d87e47492599ee20739e8eb54fbf
 
 LABEL maintainer="frank.du@intel.com"
 
@@ -15,7 +15,7 @@ RUN apt-get update -y
 # Install dependencies
 RUN apt-get install -y git gcc meson python3 python3-pip pkg-config libnuma-dev libjson-c-dev libpcap-dev libgtest-dev libsdl2-dev libsdl2-ttf-dev libssl-dev
 
-RUN pip install pyelftools ninja
+RUN pip install pyelftools==0.29 ninja==1.11.1
 
 RUN apt-get install -y sudo
 

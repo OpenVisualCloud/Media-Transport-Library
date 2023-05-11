@@ -38,7 +38,7 @@ jobs:
         apt-get install -y libavcodec-dev
 
     - name: Install the python package
-      run: pip install pyelftools ninja
+      run: pip install pyelftools==0.29 ninja==1.11.1
 
     - name: Git config
       run: |
