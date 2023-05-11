@@ -41,7 +41,7 @@ jobs:
         yum install -y dpdk-devel
 
     - name: Install the python package
-      run: pip3 install pyelftools
+      run: pip3 install pyelftools==0.29
 
     - name: Git config
       run: |
