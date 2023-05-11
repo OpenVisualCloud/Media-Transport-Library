@@ -79,7 +79,7 @@ static int rsq_init(struct mtl_main_impl* impl, struct mt_rsq_impl* rsq) {
     return -ENOMEM;
   }
 
-  for (uint16_t q = 0; q < (uint16_t)rsq->max_rsq_queues; q++) {
+  for (uint16_t q = 0; q < rsq->max_rsq_queues; q++) {
     rsq_queue = &rsq->rsq_queues[q];
     rsq_queue->queue_id = q;
     rsq_queue->port_id = mt_port_id(impl, port);
