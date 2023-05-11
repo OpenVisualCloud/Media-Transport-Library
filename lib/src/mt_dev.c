@@ -344,7 +344,7 @@ int dev_rx_runtime_queue_start(struct mtl_main_impl* impl, enum mtl_port port) {
   int ret;
   struct mt_rx_queue* rx_queue;
 
-  for (uint16_t q = 0; q < inf->max_rx_queues; q++) {
+  for (int q = 0; q < inf->max_rx_queues; q++) {
     rx_queue = &inf->rx_queues[q];
     if (rx_queue->active) {
       ret = rte_eth_dev_rx_queue_start(inf->port_id, q);
@@ -1150,7 +1150,7 @@ int dev_reset_port(struct mtl_main_impl* impl, enum mtl_port port) {
 
   /* restore rte flow */
   struct mt_rx_queue* rx_queue;
-  for (uint16_t rx_q = 0; rx_q < inf->max_rx_queues; rx_q++) {
+  for (uint16_t rx_q = 0; rx_q < (uint16_t)inf->max_rx_queues; rx_q++) {
     rx_queue = &inf->rx_queues[rx_q];
     if (rx_queue->flow_rsp) {
       mt_rte_free(rx_queue->flow_rsp);
@@ -1425,7 +1425,7 @@ static int dev_if_uinit_rx_queues(struct mt_interface* inf) {
 
   if (!inf->rx_queues) return 0;
 
-  for (uint16_t q = 0; q < inf->max_rx_queues; q++) {
+  for (int q = 0; q < inf->max_rx_queues; q++) {
     rx_queue = &inf->rx_queues[q];
     if (rx_queue->active) {
       warn("%s(%d), rx queue %d still active\n", __func__, port, q);
@@ -1460,7 +1460,7 @@ static int dev_if_init_rx_queues(struct mtl_main_impl* impl, struct mt_interface
   }
 
   if (!mt_has_rx_mono_pool(impl)) {
-    for (uint16_t q = 0; q < inf->max_rx_queues; q++) {
+    for (uint16_t q = 0; q < (uint16_t)inf->max_rx_queues; q++) {
       rx_queues[q].queue_id = q;
       rx_queues[q].port = inf->port;
       rx_queues[q].port_id = inf->port_id;
@@ -1526,7 +1526,7 @@ static int dev_if_uinit_tx_queues(struct mt_interface* inf) {
 
   if (!inf->tx_queues) return 0;
 
-  for (uint16_t q = 0; q < inf->max_tx_queues; q++) {
+  for (int q = 0; q < inf->max_tx_queues; q++) {
     tx_queue = &inf->tx_queues[q];
     if (tx_queue->active) {
       warn("%s(%d), tx_queue %d still active\n", __func__, port, q);
@@ -1547,7 +1547,7 @@ static int dev_if_init_tx_queues(struct mtl_main_impl* impl, struct mt_interface
     return -ENOMEM;
   }
 
-  for (uint16_t q = 0; q < inf->max_tx_queues; q++) {
+  for (uint16_t q = 0; q < (uint16_t)inf->max_tx_queues; q++) {
     tx_queues[q].port = inf->port;
     tx_queues[q].port_id = inf->port_id;
     tx_queues[q].queue_id = q;
@@ -1718,7 +1718,6 @@ int mt_dev_set_tx_bps(struct mtl_main_impl* impl, enum mtl_port port, uint16_t q
 struct mt_tx_queue* mt_dev_get_tx_queue(struct mtl_main_impl* impl, enum mtl_port port,
                                         uint64_t bytes_per_sec) {
   struct mt_interface* inf = mt_if(impl, port);
-  uint16_t q;
   struct mt_tx_queue* tx_queue;
   int ret;
 
@@ -1728,7 +1727,7 @@ struct mt_tx_queue* mt_dev_get_tx_queue(struct mtl_main_impl* impl, enum mtl_por
   }
 
   mt_pthread_mutex_lock(&inf->tx_queues_mutex);
-  for (q = 0; q < inf->max_tx_queues; q++) {
+  for (int q = 0; q < inf->max_tx_queues; q++) {
     tx_queue = &inf->tx_queues[q];
     if (!tx_queue->active) {
       if (inf->tx_pacing_way == ST21_TX_PACING_WAY_RL) {
@@ -1757,7 +1756,6 @@ struct mt_tx_queue* mt_dev_get_tx_queue(struct mtl_main_impl* impl, enum mtl_por
 struct mt_rx_queue* mt_dev_get_rx_queue(struct mtl_main_impl* impl, enum mtl_port port,
                                         struct mt_rx_flow* flow) {
   struct mt_interface* inf = mt_if(impl, port);
-  uint16_t q;
   int ret;
   struct mt_rx_queue* rx_queue;
 
@@ -1772,7 +1770,7 @@ struct mt_rx_queue* mt_dev_get_rx_queue(struct mtl_main_impl* impl, enum mtl_por
   }
 
   mt_pthread_mutex_lock(&inf->rx_queues_mutex);
-  for (q = 0; q < inf->max_rx_queues; q++) {
+  for (int q = 0; q < inf->max_rx_queues; q++) {
     rx_queue = &inf->rx_queues[q];
     if (rx_queue->active) continue;
     if (flow && flow->hdr_split) { /* continue if not hdr split queue */

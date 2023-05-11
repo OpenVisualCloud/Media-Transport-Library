@@ -18,7 +18,7 @@ static int rsq_stat_dump(void* priv) {
   struct mt_rsq_impl* rsq = priv;
   struct mt_rsq_queue* s;
 
-  for (uint16_t q = 0; q < rsq->max_rsq_queues; q++) {
+  for (int q = 0; q < rsq->max_rsq_queues; q++) {
     s = &rsq->rsq_queues[q];
     if (s->stat_pkts_recv) {
       notice("%s(%d,%u), entries %d, pkt recv %d deliver %d\n", __func__, rsq->port, q,
@@ -47,7 +47,7 @@ static int rsq_uinit(struct mt_rsq_impl* rsq) {
   struct mt_rsq_entry* entry;
 
   if (rsq->rsq_queues) {
-    for (uint16_t q = 0; q < rsq->max_rsq_queues; q++) {
+    for (int q = 0; q < rsq->max_rsq_queues; q++) {
       rsq_queue = &rsq->rsq_queues[q];
 
       /* check if any not free */
@@ -79,7 +79,7 @@ static int rsq_init(struct mtl_main_impl* impl, struct mt_rsq_impl* rsq) {
     return -ENOMEM;
   }
 
-  for (uint16_t q = 0; q < rsq->max_rsq_queues; q++) {
+  for (uint16_t q = 0; q < (uint16_t)rsq->max_rsq_queues; q++) {
     rsq_queue = &rsq->rsq_queues[q];
     rsq_queue->queue_id = q;
     rsq_queue->port_id = mt_port_id(impl, port);
@@ -257,7 +257,7 @@ static int tsq_stat_dump(void* priv) {
   struct mt_tsq_impl* tsq = priv;
   struct mt_tsq_queue* s;
 
-  for (uint16_t q = 0; q < tsq->max_tsq_queues; q++) {
+  for (int q = 0; q < tsq->max_tsq_queues; q++) {
     s = &tsq->tsq_queues[q];
     if (s->stat_pkts_send) {
       notice("%s(%d,%u), entries %d, pkt send %d\n", __func__, tsq->port, q,
@@ -279,7 +279,7 @@ static int tsq_uinit(struct mt_tsq_impl* tsq) {
   struct mt_tsq_entry* entry;
 
   if (tsq->tsq_queues) {
-    for (uint16_t q = 0; q < tsq->max_tsq_queues; q++) {
+    for (int q = 0; q < tsq->max_tsq_queues; q++) {
       tsq_queue = &tsq->tsq_queues[q];
 
       /* check if any not free */
@@ -316,7 +316,7 @@ static int tsq_init(struct mtl_main_impl* impl, struct mt_tsq_impl* tsq) {
     return -ENOMEM;
   }
 
-  for (uint16_t q = 0; q < tsq->max_tsq_queues; q++) {
+  for (uint16_t q = 0; q < (uint16_t)tsq->max_tsq_queues; q++) {
     tsq_queue = &tsq->tsq_queues[q];
     tsq_queue->queue_id = q;
     tsq_queue->port_id = mt_port_id(impl, port);

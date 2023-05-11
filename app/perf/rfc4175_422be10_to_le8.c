@@ -6,14 +6,14 @@
 
 static int perf_cvt_422_10_pg2_be_to_le8(mtl_handle st, int w, int h, int frames,
                                          int fb_cnt) {
-  size_t fb_pg10_size = w * h * 5 / 2;
+  size_t fb_pg10_size = (size_t)w * h * 5 / 2;
   mtl_udma_handle dma = mtl_udma_create(st, 128, MTL_PORT_P);
   struct st20_rfc4175_422_10_pg2_be* pg_10 =
       (struct st20_rfc4175_422_10_pg2_be*)mtl_hp_malloc(st, fb_pg10_size * fb_cnt,
                                                         MTL_PORT_P);
   mtl_iova_t pg_10_iova = mtl_hp_virt2iova(st, pg_10);
   mtl_iova_t pg_10_in_iova;
-  size_t fb_pg8_size = w * h * 2;
+  size_t fb_pg8_size = (size_t)w * h * 2;
   float fb_pg8_size_m = (float)fb_pg8_size / 1024 / 1024;
   struct st20_rfc4175_422_8_pg2_le* pg_8 =
       (struct st20_rfc4175_422_8_pg2_le*)malloc(fb_pg8_size * fb_cnt);

@@ -368,7 +368,9 @@ static void test_ctx_init(struct st_tests_context* ctx) {
     int cpus_add = 0;
     for (int cpu = 0; cpu < max_cpus; cpu++) {
       if (numa_node_of_cpu(cpu) == numa) {
-        pos += snprintf(lcores_list + pos, TEST_LCORE_LIST_MAX_LEN - pos, ",%d", cpu);
+        int n = snprintf(lcores_list + pos, TEST_LCORE_LIST_MAX_LEN - pos, ",%d", cpu);
+        if (n < 0 || n >= (TEST_LCORE_LIST_MAX_LEN - pos)) break;
+        pos += n;
         cpus_add++;
         if (cpus_add >= cpus_per_soc) break;
       }

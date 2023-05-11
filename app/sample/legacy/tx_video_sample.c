@@ -106,7 +106,7 @@ static void* tx_video_frame_thread(void* arg) {
       ext_frame.buf_addr =
           mtl_dma_mem_addr(s->dma_mem) + producer_idx * s->framebuff_size;
       ext_frame.buf_iova =
-          mtl_dma_mem_iova(s->dma_mem) + producer_idx * s->framebuff_size;
+          mtl_dma_mem_iova(s->dma_mem) + (mtl_iova_t)producer_idx * s->framebuff_size;
       ext_frame.buf_len = s->framebuff_size;
       st20_tx_set_ext_frame(s->handle, producer_idx, &ext_frame);
     } else {
@@ -212,7 +212,7 @@ int main(int argc, char** argv) {
       |<---------------------- alloc_size (pgsz multiple)----------------->|
       *alloc_addr          *addr(pg aligned)
       */
-      size_t fb_size = app[i]->framebuff_size * app[i]->framebuff_cnt;
+      size_t fb_size = (size_t)app[i]->framebuff_size * app[i]->framebuff_cnt;
       /* alloc enough memory to hold framebuffers and map to iova */
       mtl_dma_mem_handle dma_mem = mtl_dma_mem_alloc(ctx.st, fb_size);
       if (!dma_mem) {

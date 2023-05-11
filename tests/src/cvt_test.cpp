@@ -15,12 +15,12 @@ static void test_cvt_rfc4175_422be10_to_yuv422p10le(int w, int h,
                                                     enum mtl_simd_level cvt_level,
                                                     enum mtl_simd_level back_level) {
   int ret;
-  size_t fb_pg2_size = w * h * 5 / 2;
+  size_t fb_pg2_size = (size_t)w * h * 5 / 2;
   struct st20_rfc4175_422_10_pg2_be* pg =
       (struct st20_rfc4175_422_10_pg2_be*)st_test_zmalloc(fb_pg2_size);
   struct st20_rfc4175_422_10_pg2_be* pg_2 =
       (struct st20_rfc4175_422_10_pg2_be*)st_test_zmalloc(fb_pg2_size);
-  size_t planar_size = w * h * 2 * sizeof(uint16_t);
+  size_t planar_size = (size_t)w * h * 2 * sizeof(uint16_t);
   uint16_t* p10_u16 = (uint16_t*)st_test_zmalloc(planar_size);
 
   if (!pg || !pg_2 || !p10_u16) {
@@ -94,14 +94,14 @@ static void test_cvt_rfc4175_422be10_to_yuv422p10le_dma(mtl_udma_handle dma, int
                                                         enum mtl_simd_level cvt_level,
                                                         enum mtl_simd_level back_level) {
   int ret;
-  size_t fb_pg2_size = w * h * 5 / 2;
+  size_t fb_pg2_size = (size_t)w * h * 5 / 2;
   struct st_tests_context* ctx = st_test_ctx();
   mtl_handle st = ctx->handle;
   struct st20_rfc4175_422_10_pg2_be* pg =
       (struct st20_rfc4175_422_10_pg2_be*)mtl_hp_zmalloc(st, fb_pg2_size, MTL_PORT_P);
   struct st20_rfc4175_422_10_pg2_be* pg_2 =
       (struct st20_rfc4175_422_10_pg2_be*)st_test_zmalloc(fb_pg2_size);
-  size_t planar_size = w * h * 2 * sizeof(uint16_t);
+  size_t planar_size = (size_t)w * h * 2 * sizeof(uint16_t);
   uint16_t* p10_u16 = (uint16_t*)st_test_zmalloc(planar_size);
 
   if (!pg || !pg_2 || !p10_u16) {
@@ -204,10 +204,10 @@ static void test_cvt_yuv422p10le_to_rfc4175_422be10(int w, int h,
                                                     enum mtl_simd_level cvt_level,
                                                     enum mtl_simd_level back_level) {
   int ret;
-  size_t fb_pg2_size = w * h * 5 / 2;
+  size_t fb_pg2_size = (size_t)w * h * 5 / 2;
   struct st20_rfc4175_422_10_pg2_be* pg =
       (struct st20_rfc4175_422_10_pg2_be*)st_test_zmalloc(fb_pg2_size);
-  size_t planar_size = w * h * 2 * sizeof(uint16_t);
+  size_t planar_size = (size_t)w * h * 2 * sizeof(uint16_t);
   uint16_t* p10_u16 = (uint16_t*)st_test_zmalloc(planar_size);
   uint16_t* p10_u16_2 = (uint16_t*)st_test_zmalloc(planar_size);
 
@@ -289,7 +289,7 @@ static void test_cvt_yuv422p10le_to_rfc4175_422be10_dma(mtl_udma_handle dma, int
   mtl_handle st = ctx->handle;
   struct st20_rfc4175_422_10_pg2_be* pg =
       (struct st20_rfc4175_422_10_pg2_be*)st_test_zmalloc(fb_pg2_size);
-  size_t planar_size = w * h * 2 * sizeof(uint16_t);
+  size_t planar_size = (size_t)w * h * 2 * sizeof(uint16_t);
   uint16_t* p10_u16 = (uint16_t*)mtl_hp_zmalloc(st, planar_size, MTL_PORT_P);
   mtl_iova_t p10_u16_iova = mtl_hp_virt2iova(st, p10_u16);
   uint16_t* p10_u16_2 = (uint16_t*)st_test_zmalloc(planar_size);
@@ -307,8 +307,9 @@ static void test_cvt_yuv422p10le_to_rfc4175_422be10_dma(mtl_udma_handle dma, int
   }
 
   ret = st20_yuv422p10le_to_rfc4175_422be10_simd_dma(
-      dma, p10_u16, p10_u16_iova, (p10_u16 + w * h), (p10_u16_iova + w * h * 2),
-      (p10_u16 + w * h * 3 / 2), (p10_u16_iova + w * h * 3), pg, w, h, cvt_level);
+      dma, p10_u16, p10_u16_iova, (p10_u16 + w * h),
+      (p10_u16_iova + (mtl_iova_t)w * h * 2), (p10_u16 + w * h * 3 / 2),
+      (p10_u16_iova + (mtl_iova_t)w * h * 3), pg, w, h, cvt_level);
   EXPECT_EQ(0, ret);
 
   ret = st20_rfc4175_422be10_to_yuv422p10le_simd(
@@ -396,12 +397,12 @@ static void test_cvt_rfc4175_422le10_to_yuv422p10le(int w, int h,
                                                     enum mtl_simd_level cvt_level,
                                                     enum mtl_simd_level back_level) {
   int ret;
-  size_t fb_pg2_size = w * h * 5 / 2;
+  size_t fb_pg2_size = (size_t)w * h * 5 / 2;
   struct st20_rfc4175_422_10_pg2_le* pg =
       (struct st20_rfc4175_422_10_pg2_le*)st_test_zmalloc(fb_pg2_size);
   struct st20_rfc4175_422_10_pg2_le* pg_2 =
       (struct st20_rfc4175_422_10_pg2_le*)st_test_zmalloc(fb_pg2_size);
-  size_t planar_size = w * h * 2 * sizeof(uint16_t);
+  size_t planar_size = (size_t)w * h * 2 * sizeof(uint16_t);
   uint16_t* p10_u16 = (uint16_t*)st_test_zmalloc(planar_size);
 
   if (!pg || !pg_2 || !p10_u16) {
@@ -443,10 +444,10 @@ static void test_cvt_yuv422p10le_to_rfc4175_422le10(int w, int h,
                                                     enum mtl_simd_level cvt_level,
                                                     enum mtl_simd_level back_level) {
   int ret;
-  size_t fb_pg2_size = w * h * 5 / 2;
+  size_t fb_pg2_size = (size_t)w * h * 5 / 2;
   struct st20_rfc4175_422_10_pg2_le* pg =
       (struct st20_rfc4175_422_10_pg2_le*)st_test_zmalloc(fb_pg2_size);
-  size_t planar_size = w * h * 2 * sizeof(uint16_t);
+  size_t planar_size = (size_t)w * h * 2 * sizeof(uint16_t);
   uint16_t* p10_u16 = (uint16_t*)st_test_zmalloc(planar_size);
   uint16_t* p10_u16_2 = (uint16_t*)st_test_zmalloc(planar_size);
 
@@ -940,8 +941,8 @@ static void test_cvt_rfc4175_422be10_to_422le8(int w, int h,
                                                enum mtl_simd_level cvt_level,
                                                enum mtl_simd_level back_level) {
   int ret;
-  size_t fb_pg2_size_10 = w * h * 5 / 2;
-  size_t fb_pg2_size_8 = w * h * 2;
+  size_t fb_pg2_size_10 = (size_t)w * h * 5 / 2;
+  size_t fb_pg2_size_8 = (size_t)w * h * 2;
   struct st20_rfc4175_422_10_pg2_be* pg_10 =
       (struct st20_rfc4175_422_10_pg2_be*)st_test_zmalloc(fb_pg2_size_10);
   struct st20_rfc4175_422_8_pg2_le* pg_8 =
@@ -1014,8 +1015,8 @@ static void test_cvt_rfc4175_422be10_to_422le8_dma(mtl_udma_handle dma, int w, i
                                                    enum mtl_simd_level cvt_level,
                                                    enum mtl_simd_level back_level) {
   int ret;
-  size_t fb_pg2_size_10 = w * h * 5 / 2;
-  size_t fb_pg2_size_8 = w * h * 2;
+  size_t fb_pg2_size_10 = (size_t)w * h * 5 / 2;
+  size_t fb_pg2_size_8 = (size_t)w * h * 2;
   struct st_tests_context* ctx = st_test_ctx();
   mtl_handle st = ctx->handle;
   struct st20_rfc4175_422_10_pg2_be* pg_10 =
@@ -1689,12 +1690,12 @@ TEST(Cvt, v210_to_rfc4175_422be10_vbmi_dma) {
 static void test_cvt_rfc4175_422be10_to_y210(int w, int h, enum mtl_simd_level cvt_level,
                                              enum mtl_simd_level back_level) {
   int ret;
-  size_t fb_pg2_size = w * h * 5 / 2;
+  size_t fb_pg2_size = (size_t)w * h * 5 / 2;
   struct st20_rfc4175_422_10_pg2_be* pg =
       (struct st20_rfc4175_422_10_pg2_be*)st_test_zmalloc(fb_pg2_size);
   struct st20_rfc4175_422_10_pg2_be* pg_2 =
       (struct st20_rfc4175_422_10_pg2_be*)st_test_zmalloc(fb_pg2_size);
-  size_t fb_pg_y210_size = w * h * 2 * sizeof(uint16_t);
+  size_t fb_pg_y210_size = (size_t)w * h * 2 * sizeof(uint16_t);
   uint16_t* pg_y210 = (uint16_t*)st_test_zmalloc(fb_pg_y210_size);
 
   if (!pg || !pg_2 || !pg_y210) {
@@ -1745,8 +1746,8 @@ static void test_cvt_rfc4175_422be10_to_y210_dma(mtl_udma_handle dma, int w, int
                                                  enum mtl_simd_level cvt_level,
                                                  enum mtl_simd_level back_level) {
   int ret;
-  size_t fb_pg2_size = w * h * 5 / 2;
-  size_t fb_pg2_size_y210 = w * h * 4;
+  size_t fb_pg2_size = (size_t)w * h * 5 / 2;
+  size_t fb_pg2_size_y210 = (size_t)w * h * 4;
   struct st_tests_context* ctx = st_test_ctx();
   mtl_handle st = ctx->handle;
   struct st20_rfc4175_422_10_pg2_be* pg_be =
@@ -1828,10 +1829,10 @@ TEST(Cvt, rfc4175_422be10_to_y210_avx512_dma) {
 static void test_cvt_y210_to_rfc4175_422be10(int w, int h, enum mtl_simd_level cvt_level,
                                              enum mtl_simd_level back_level) {
   int ret;
-  size_t fb_pg2_size = w * h * 5 / 2;
+  size_t fb_pg2_size = (size_t)w * h * 5 / 2;
   struct st20_rfc4175_422_10_pg2_be* pg =
       (struct st20_rfc4175_422_10_pg2_be*)st_test_zmalloc(fb_pg2_size);
-  size_t fb_pg_y210_size = w * h * 2 * sizeof(uint16_t);
+  size_t fb_pg_y210_size = (size_t)w * h * 2 * sizeof(uint16_t);
   uint16_t* pg_y210 = (uint16_t*)st_test_zmalloc(fb_pg_y210_size);
   uint16_t* pg_y210_2 = (uint16_t*)st_test_zmalloc(fb_pg_y210_size);
 
@@ -1890,7 +1891,7 @@ static void test_cvt_y210_to_rfc4175_422be10_dma(mtl_udma_handle dma, int w, int
   mtl_handle st = ctx->handle;
   struct st20_rfc4175_422_10_pg2_be* pg =
       (struct st20_rfc4175_422_10_pg2_be*)st_test_zmalloc(fb_pg2_size);
-  size_t fb_pg_y210_size = w * h * 2 * sizeof(uint16_t);
+  size_t fb_pg_y210_size = (size_t)w * h * 2 * sizeof(uint16_t);
   uint16_t* pg_y210 = (uint16_t*)mtl_hp_zmalloc(st, fb_pg_y210_size, MTL_PORT_P);
   mtl_iova_t pg_y210_iova = mtl_hp_virt2iova(st, pg_y210);
   uint16_t* pg_y210_2 = (uint16_t*)st_test_zmalloc(fb_pg_y210_size);
@@ -1972,12 +1973,12 @@ static void test_rotate_rfc4175_422be10_422le10_yuv422p10le(
     int w, int h, enum mtl_simd_level cvt1_level, enum mtl_simd_level cvt2_level,
     enum mtl_simd_level cvt3_level) {
   int ret;
-  size_t fb_pg2_size = w * h * 5 / 2;
+  size_t fb_pg2_size = (size_t)w * h * 5 / 2;
   struct st20_rfc4175_422_10_pg2_be* pg_be =
       (struct st20_rfc4175_422_10_pg2_be*)st_test_zmalloc(fb_pg2_size);
   struct st20_rfc4175_422_10_pg2_le* pg_le =
       (struct st20_rfc4175_422_10_pg2_le*)st_test_zmalloc(fb_pg2_size);
-  size_t planar_size = w * h * 2 * sizeof(uint16_t);
+  size_t planar_size = (size_t)w * h * 2 * sizeof(uint16_t);
   uint16_t* p10_u16 = (uint16_t*)st_test_zmalloc(planar_size);
   struct st20_rfc4175_422_10_pg2_be* pg_be_2 =
       (struct st20_rfc4175_422_10_pg2_be*)st_test_zmalloc(fb_pg2_size);
@@ -2040,12 +2041,12 @@ static void test_rotate_rfc4175_422be10_yuv422p10le_422le10(
     int w, int h, enum mtl_simd_level cvt1_level, enum mtl_simd_level cvt2_level,
     enum mtl_simd_level cvt3_level) {
   int ret;
-  size_t fb_pg2_size = w * h * 5 / 2;
+  size_t fb_pg2_size = (size_t)w * h * 5 / 2;
   struct st20_rfc4175_422_10_pg2_be* pg_be =
       (struct st20_rfc4175_422_10_pg2_be*)st_test_zmalloc(fb_pg2_size);
   struct st20_rfc4175_422_10_pg2_le* pg_le =
       (struct st20_rfc4175_422_10_pg2_le*)st_test_zmalloc(fb_pg2_size);
-  size_t planar_size = w * h * 2 * sizeof(uint16_t);
+  size_t planar_size = (size_t)w * h * 2 * sizeof(uint16_t);
   uint16_t* p10_u16 = (uint16_t*)st_test_zmalloc(planar_size);
   struct st20_rfc4175_422_10_pg2_be* pg_be_2 =
       (struct st20_rfc4175_422_10_pg2_be*)st_test_zmalloc(fb_pg2_size);
@@ -2113,7 +2114,7 @@ static void test_cvt_rfc4175_422be12_to_yuv422p12le(int w, int h,
       (struct st20_rfc4175_422_12_pg2_be*)st_test_zmalloc(fb_pg2_size);
   struct st20_rfc4175_422_12_pg2_be* pg_2 =
       (struct st20_rfc4175_422_12_pg2_be*)st_test_zmalloc(fb_pg2_size);
-  size_t planar_size = w * h * 2 * sizeof(uint16_t);
+  size_t planar_size = (size_t)w * h * 2 * sizeof(uint16_t);
   uint16_t* p12_u16 = (uint16_t*)st_test_zmalloc(planar_size);
 
   if (!pg || !pg_2 || !p12_u16) {
@@ -2187,14 +2188,14 @@ static void test_cvt_rfc4175_422be12_to_yuv422p12le_dma(mtl_udma_handle dma, int
                                                         enum mtl_simd_level cvt_level,
                                                         enum mtl_simd_level back_level) {
   int ret;
-  size_t fb_pg2_size = w * h * 6 / 2;
+  size_t fb_pg2_size = (size_t)w * h * 6 / 2;
   struct st_tests_context* ctx = st_test_ctx();
   mtl_handle st = ctx->handle;
   struct st20_rfc4175_422_12_pg2_be* pg =
       (struct st20_rfc4175_422_12_pg2_be*)mtl_hp_zmalloc(st, fb_pg2_size, MTL_PORT_P);
   struct st20_rfc4175_422_12_pg2_be* pg_2 =
       (struct st20_rfc4175_422_12_pg2_be*)st_test_zmalloc(fb_pg2_size);
-  size_t planar_size = w * h * 2 * sizeof(uint16_t);
+  size_t planar_size = (size_t)w * h * 2 * sizeof(uint16_t);
   uint16_t* p12_u16 = (uint16_t*)st_test_zmalloc(planar_size);
 
   if (!pg || !pg_2 || !p12_u16) {
@@ -2274,10 +2275,10 @@ static void test_cvt_yuv422p12le_to_rfc4175_422be12(int w, int h,
                                                     enum mtl_simd_level cvt_level,
                                                     enum mtl_simd_level back_level) {
   int ret;
-  size_t fb_pg2_size = w * h * 6 / 2;
+  size_t fb_pg2_size = (size_t)w * h * 6 / 2;
   struct st20_rfc4175_422_12_pg2_be* pg =
       (struct st20_rfc4175_422_12_pg2_be*)st_test_zmalloc(fb_pg2_size);
-  size_t planar_size = w * h * 2 * sizeof(uint16_t);
+  size_t planar_size = (size_t)w * h * 2 * sizeof(uint16_t);
   uint16_t* p12_u16 = (uint16_t*)st_test_zmalloc(planar_size);
   uint16_t* p12_u16_2 = (uint16_t*)st_test_zmalloc(planar_size);
 
@@ -2322,12 +2323,12 @@ static void test_cvt_rfc4175_422le12_to_yuv422p12le(int w, int h,
                                                     enum mtl_simd_level cvt_level,
                                                     enum mtl_simd_level back_level) {
   int ret;
-  size_t fb_pg2_size = w * h * 6 / 2;
+  size_t fb_pg2_size = (size_t)w * h * 6 / 2;
   struct st20_rfc4175_422_12_pg2_le* pg =
       (struct st20_rfc4175_422_12_pg2_le*)st_test_zmalloc(fb_pg2_size);
   struct st20_rfc4175_422_12_pg2_le* pg_2 =
       (struct st20_rfc4175_422_12_pg2_le*)st_test_zmalloc(fb_pg2_size);
-  size_t planar_size = w * h * 2 * sizeof(uint16_t);
+  size_t planar_size = (size_t)w * h * 2 * sizeof(uint16_t);
   uint16_t* p12_u16 = (uint16_t*)st_test_zmalloc(planar_size);
 
   if (!pg || !pg_2 || !p12_u16) {
@@ -2369,10 +2370,10 @@ static void test_cvt_yuv422p12le_to_rfc4175_422le12(int w, int h,
                                                     enum mtl_simd_level cvt_level,
                                                     enum mtl_simd_level back_level) {
   int ret;
-  size_t fb_pg2_size = w * h * 6 / 2;
+  size_t fb_pg2_size = (size_t)w * h * 6 / 2;
   struct st20_rfc4175_422_12_pg2_le* pg =
       (struct st20_rfc4175_422_12_pg2_le*)st_test_zmalloc(fb_pg2_size);
-  size_t planar_size = w * h * 2 * sizeof(uint16_t);
+  size_t planar_size = (size_t)w * h * 2 * sizeof(uint16_t);
   uint16_t* p12_u16 = (uint16_t*)st_test_zmalloc(planar_size);
   uint16_t* p12_u16_2 = (uint16_t*)st_test_zmalloc(planar_size);
 
@@ -2644,12 +2645,12 @@ static void test_rotate_rfc4175_422be12_422le12_yuv422p12le(
     int w, int h, enum mtl_simd_level cvt1_level, enum mtl_simd_level cvt2_level,
     enum mtl_simd_level cvt3_level) {
   int ret;
-  size_t fb_pg2_size = w * h * 6 / 2;
+  size_t fb_pg2_size = (size_t)w * h * 6 / 2;
   struct st20_rfc4175_422_12_pg2_be* pg_be =
       (struct st20_rfc4175_422_12_pg2_be*)st_test_zmalloc(fb_pg2_size);
   struct st20_rfc4175_422_12_pg2_le* pg_le =
       (struct st20_rfc4175_422_12_pg2_le*)st_test_zmalloc(fb_pg2_size);
-  size_t planar_size = w * h * 2 * sizeof(uint16_t);
+  size_t planar_size = (size_t)w * h * 2 * sizeof(uint16_t);
   uint16_t* p12_u16 = (uint16_t*)st_test_zmalloc(planar_size);
   struct st20_rfc4175_422_12_pg2_be* pg_be_2 =
       (struct st20_rfc4175_422_12_pg2_be*)st_test_zmalloc(fb_pg2_size);
@@ -2693,12 +2694,12 @@ static void test_rotate_rfc4175_422be12_yuv422p12le_422le12(
     int w, int h, enum mtl_simd_level cvt1_level, enum mtl_simd_level cvt2_level,
     enum mtl_simd_level cvt3_level) {
   int ret;
-  size_t fb_pg2_size = w * h * 6 / 2;
+  size_t fb_pg2_size = (size_t)w * h * 6 / 2;
   struct st20_rfc4175_422_12_pg2_be* pg_be =
       (struct st20_rfc4175_422_12_pg2_be*)st_test_zmalloc(fb_pg2_size);
   struct st20_rfc4175_422_12_pg2_le* pg_le =
       (struct st20_rfc4175_422_12_pg2_le*)st_test_zmalloc(fb_pg2_size);
-  size_t planar_size = w * h * 2 * sizeof(uint16_t);
+  size_t planar_size = (size_t)w * h * 2 * sizeof(uint16_t);
   uint16_t* p12_u16 = (uint16_t*)st_test_zmalloc(planar_size);
   struct st20_rfc4175_422_12_pg2_be* pg_be_2 =
       (struct st20_rfc4175_422_12_pg2_be*)st_test_zmalloc(fb_pg2_size);
@@ -2742,12 +2743,12 @@ static void test_cvt_rfc4175_444be10_to_444p10le(int w, int h,
                                                  enum mtl_simd_level cvt_level,
                                                  enum mtl_simd_level back_level) {
   int ret;
-  size_t fb_pg4_size = w * h * 15 / 4;
+  size_t fb_pg4_size = (size_t)w * h * 15 / 4;
   struct st20_rfc4175_444_10_pg4_be* pg =
       (struct st20_rfc4175_444_10_pg4_be*)st_test_zmalloc(fb_pg4_size);
   struct st20_rfc4175_444_10_pg4_be* pg_2 =
       (struct st20_rfc4175_444_10_pg4_be*)st_test_zmalloc(fb_pg4_size);
-  size_t planar_size = w * h * 3 * sizeof(uint16_t);
+  size_t planar_size = (size_t)w * h * 3 * sizeof(uint16_t);
   uint16_t* p10_u16 = (uint16_t*)st_test_zmalloc(planar_size);
 
   if (!pg || !pg_2 || !p10_u16) {
@@ -2789,10 +2790,10 @@ static void test_cvt_444p10le_to_rfc4175_444be10(int w, int h,
                                                  enum mtl_simd_level cvt_level,
                                                  enum mtl_simd_level back_level) {
   int ret;
-  size_t fb_pg4_size = w * h * 15 / 4;
+  size_t fb_pg4_size = (size_t)w * h * 15 / 4;
   struct st20_rfc4175_444_10_pg4_be* pg =
       (struct st20_rfc4175_444_10_pg4_be*)st_test_zmalloc(fb_pg4_size);
-  size_t planar_size = w * h * 3 * sizeof(uint16_t);
+  size_t planar_size = (size_t)w * h * 3 * sizeof(uint16_t);
   uint16_t* p10_u16 = (uint16_t*)st_test_zmalloc(planar_size);
   uint16_t* p10_u16_2 = (uint16_t*)st_test_zmalloc(planar_size);
 
@@ -2837,12 +2838,12 @@ static void test_cvt_rfc4175_444le10_to_yuv444p10le(int w, int h,
                                                     enum mtl_simd_level cvt_level,
                                                     enum mtl_simd_level back_level) {
   int ret;
-  size_t fb_pg4_size = w * h * 15 / 4;
+  size_t fb_pg4_size = (size_t)w * h * 15 / 4;
   struct st20_rfc4175_444_10_pg4_le* pg =
       (struct st20_rfc4175_444_10_pg4_le*)st_test_zmalloc(fb_pg4_size);
   struct st20_rfc4175_444_10_pg4_le* pg_2 =
       (struct st20_rfc4175_444_10_pg4_le*)st_test_zmalloc(fb_pg4_size);
-  size_t planar_size = w * h * 3 * sizeof(uint16_t);
+  size_t planar_size = (size_t)w * h * 3 * sizeof(uint16_t);
   uint16_t* p10_u16 = (uint16_t*)st_test_zmalloc(planar_size);
 
   if (!pg || !pg_2 || !p10_u16) {
@@ -2884,12 +2885,12 @@ static void test_cvt_rfc4175_444le10_to_gbrp10le(int w, int h,
                                                  enum mtl_simd_level cvt_level,
                                                  enum mtl_simd_level back_level) {
   int ret;
-  size_t fb_pg4_size = w * h * 15 / 4;
+  size_t fb_pg4_size = (size_t)w * h * 15 / 4;
   struct st20_rfc4175_444_10_pg4_le* pg =
       (struct st20_rfc4175_444_10_pg4_le*)st_test_zmalloc(fb_pg4_size);
   struct st20_rfc4175_444_10_pg4_le* pg_2 =
       (struct st20_rfc4175_444_10_pg4_le*)st_test_zmalloc(fb_pg4_size);
-  size_t planar_size = w * h * 3 * sizeof(uint16_t);
+  size_t planar_size = (size_t)w * h * 3 * sizeof(uint16_t);
   uint16_t* p10_u16 = (uint16_t*)st_test_zmalloc(planar_size);
 
   if (!pg || !pg_2 || !p10_u16) {
@@ -2931,10 +2932,10 @@ static void test_cvt_yuv444p10le_to_rfc4175_444le10(int w, int h,
                                                     enum mtl_simd_level cvt_level,
                                                     enum mtl_simd_level back_level) {
   int ret;
-  size_t fb_pg4_size = w * h * 15 / 4;
+  size_t fb_pg4_size = (size_t)w * h * 15 / 4;
   struct st20_rfc4175_444_10_pg4_le* pg =
       (struct st20_rfc4175_444_10_pg4_le*)st_test_zmalloc(fb_pg4_size);
-  size_t planar_size = w * h * 3 * sizeof(uint16_t);
+  size_t planar_size = (size_t)w * h * 3 * sizeof(uint16_t);
   uint16_t* p10_u16 = (uint16_t*)st_test_zmalloc(planar_size);
   uint16_t* p10_u16_2 = (uint16_t*)st_test_zmalloc(planar_size);
 
@@ -2979,10 +2980,10 @@ static void test_cvt_gbrp10le_to_rfc4175_444le10(int w, int h,
                                                  enum mtl_simd_level cvt_level,
                                                  enum mtl_simd_level back_level) {
   int ret;
-  size_t fb_pg4_size = w * h * 15 / 4;
+  size_t fb_pg4_size = (size_t)w * h * 15 / 4;
   struct st20_rfc4175_444_10_pg4_le* pg =
       (struct st20_rfc4175_444_10_pg4_le*)st_test_zmalloc(fb_pg4_size);
-  size_t planar_size = w * h * 3 * sizeof(uint16_t);
+  size_t planar_size = (size_t)w * h * 3 * sizeof(uint16_t);
   uint16_t* p10_u16 = (uint16_t*)st_test_zmalloc(planar_size);
   uint16_t* p10_u16_2 = (uint16_t*)st_test_zmalloc(planar_size);
 
@@ -3152,12 +3153,12 @@ static void test_rotate_rfc4175_444be10_444le10_444p10le(int w, int h,
                                                          enum mtl_simd_level cvt2_level,
                                                          enum mtl_simd_level cvt3_level) {
   int ret;
-  size_t fb_pg4_size = w * h * 15 / 4;
+  size_t fb_pg4_size = (size_t)w * h * 15 / 4;
   struct st20_rfc4175_444_10_pg4_be* pg_be =
       (struct st20_rfc4175_444_10_pg4_be*)st_test_zmalloc(fb_pg4_size);
   struct st20_rfc4175_444_10_pg4_le* pg_le =
       (struct st20_rfc4175_444_10_pg4_le*)st_test_zmalloc(fb_pg4_size);
-  size_t planar_size = w * h * 3 * sizeof(uint16_t);
+  size_t planar_size = (size_t)w * h * 3 * sizeof(uint16_t);
   uint16_t* p10_u16 = (uint16_t*)st_test_zmalloc(planar_size);
   struct st20_rfc4175_444_10_pg4_be* pg_be_2 =
       (struct st20_rfc4175_444_10_pg4_be*)st_test_zmalloc(fb_pg4_size);
@@ -3202,12 +3203,12 @@ static void test_rotate_rfc4175_444be10_444p10le_444le10(int w, int h,
                                                          enum mtl_simd_level cvt2_level,
                                                          enum mtl_simd_level cvt3_level) {
   int ret;
-  size_t fb_pg4_size = w * h * 15 / 4;
+  size_t fb_pg4_size = (size_t)w * h * 15 / 4;
   struct st20_rfc4175_444_10_pg4_be* pg_be =
       (struct st20_rfc4175_444_10_pg4_be*)st_test_zmalloc(fb_pg4_size);
   struct st20_rfc4175_444_10_pg4_le* pg_le =
       (struct st20_rfc4175_444_10_pg4_le*)st_test_zmalloc(fb_pg4_size);
-  size_t planar_size = w * h * 3 * sizeof(uint16_t);
+  size_t planar_size = (size_t)w * h * 3 * sizeof(uint16_t);
   uint16_t* p10_u16 = (uint16_t*)st_test_zmalloc(planar_size);
   struct st20_rfc4175_444_10_pg4_be* pg_be_2 =
       (struct st20_rfc4175_444_10_pg4_be*)st_test_zmalloc(fb_pg4_size);
@@ -3251,12 +3252,12 @@ static void test_cvt_rfc4175_444be12_to_444p12le(int w, int h,
                                                  enum mtl_simd_level cvt_level,
                                                  enum mtl_simd_level back_level) {
   int ret;
-  size_t fb_pg2_size = w * h * 9 / 2;
+  size_t fb_pg2_size = (size_t)w * h * 9 / 2;
   struct st20_rfc4175_444_12_pg2_be* pg =
       (struct st20_rfc4175_444_12_pg2_be*)st_test_zmalloc(fb_pg2_size);
   struct st20_rfc4175_444_12_pg2_be* pg_2 =
       (struct st20_rfc4175_444_12_pg2_be*)st_test_zmalloc(fb_pg2_size);
-  size_t planar_size = w * h * 3 * sizeof(uint16_t);
+  size_t planar_size = (size_t)w * h * 3 * sizeof(uint16_t);
   uint16_t* p12_u16 = (uint16_t*)st_test_zmalloc(planar_size);
 
   if (!pg || !pg_2 || !p12_u16) {
@@ -3298,10 +3299,10 @@ static void test_cvt_444p12le_to_rfc4175_444be12(int w, int h,
                                                  enum mtl_simd_level cvt_level,
                                                  enum mtl_simd_level back_level) {
   int ret;
-  size_t fb_pg2_size = w * h * 9 / 2;
+  size_t fb_pg2_size = (size_t)w * h * 9 / 2;
   struct st20_rfc4175_444_12_pg2_be* pg =
       (struct st20_rfc4175_444_12_pg2_be*)st_test_zmalloc(fb_pg2_size);
-  size_t planar_size = w * h * 3 * sizeof(uint16_t);
+  size_t planar_size = (size_t)w * h * 3 * sizeof(uint16_t);
   uint16_t* p12_u16 = (uint16_t*)st_test_zmalloc(planar_size);
   uint16_t* p12_u16_2 = (uint16_t*)st_test_zmalloc(planar_size);
 
@@ -3346,12 +3347,12 @@ static void test_cvt_rfc4175_444le12_to_yuv444p12le(int w, int h,
                                                     enum mtl_simd_level cvt_level,
                                                     enum mtl_simd_level back_level) {
   int ret;
-  size_t fb_pg2_size = w * h * 9 / 2;
+  size_t fb_pg2_size = (size_t)w * h * 9 / 2;
   struct st20_rfc4175_444_12_pg2_le* pg =
       (struct st20_rfc4175_444_12_pg2_le*)st_test_zmalloc(fb_pg2_size);
   struct st20_rfc4175_444_12_pg2_le* pg_2 =
       (struct st20_rfc4175_444_12_pg2_le*)st_test_zmalloc(fb_pg2_size);
-  size_t planar_size = w * h * 3 * sizeof(uint16_t);
+  size_t planar_size = (size_t)w * h * 3 * sizeof(uint16_t);
   uint16_t* p12_u16 = (uint16_t*)st_test_zmalloc(planar_size);
 
   if (!pg || !pg_2 || !p12_u16) {
@@ -3393,12 +3394,12 @@ static void test_cvt_rfc4175_444le12_to_gbrp12le(int w, int h,
                                                  enum mtl_simd_level cvt_level,
                                                  enum mtl_simd_level back_level) {
   int ret;
-  size_t fb_pg2_size = w * h * 9 / 2;
+  size_t fb_pg2_size = (size_t)w * h * 9 / 2;
   struct st20_rfc4175_444_12_pg2_le* pg =
       (struct st20_rfc4175_444_12_pg2_le*)st_test_zmalloc(fb_pg2_size);
   struct st20_rfc4175_444_12_pg2_le* pg_2 =
       (struct st20_rfc4175_444_12_pg2_le*)st_test_zmalloc(fb_pg2_size);
-  size_t planar_size = w * h * 3 * sizeof(uint16_t);
+  size_t planar_size = (size_t)w * h * 3 * sizeof(uint16_t);
   uint16_t* p12_u16 = (uint16_t*)st_test_zmalloc(planar_size);
 
   if (!pg || !pg_2 || !p12_u16) {
@@ -3440,10 +3441,10 @@ static void test_cvt_yuv444p12le_to_rfc4175_444le12(int w, int h,
                                                     enum mtl_simd_level cvt_level,
                                                     enum mtl_simd_level back_level) {
   int ret;
-  size_t fb_pg2_size = w * h * 9 / 2;
+  size_t fb_pg2_size = (size_t)w * h * 9 / 2;
   struct st20_rfc4175_444_12_pg2_le* pg =
       (struct st20_rfc4175_444_12_pg2_le*)st_test_zmalloc(fb_pg2_size);
-  size_t planar_size = w * h * 3 * sizeof(uint16_t);
+  size_t planar_size = (size_t)w * h * 3 * sizeof(uint16_t);
   uint16_t* p12_u16 = (uint16_t*)st_test_zmalloc(planar_size);
   uint16_t* p12_u16_2 = (uint16_t*)st_test_zmalloc(planar_size);
 
@@ -3488,10 +3489,10 @@ static void test_cvt_gbrp12le_to_rfc4175_444le12(int w, int h,
                                                  enum mtl_simd_level cvt_level,
                                                  enum mtl_simd_level back_level) {
   int ret;
-  size_t fb_pg2_size = w * h * 9 / 2;
+  size_t fb_pg2_size = (size_t)w * h * 9 / 2;
   struct st20_rfc4175_444_12_pg2_le* pg =
       (struct st20_rfc4175_444_12_pg2_le*)st_test_zmalloc(fb_pg2_size);
-  size_t planar_size = w * h * 3 * sizeof(uint16_t);
+  size_t planar_size = (size_t)w * h * 3 * sizeof(uint16_t);
   uint16_t* p12_u16 = (uint16_t*)st_test_zmalloc(planar_size);
   uint16_t* p12_u16_2 = (uint16_t*)st_test_zmalloc(planar_size);
 
@@ -3536,7 +3537,7 @@ static void test_cvt_rfc4175_444be12_to_444le12(int w, int h,
                                                 enum mtl_simd_level cvt_level,
                                                 enum mtl_simd_level back_level) {
   int ret;
-  size_t fb_pg2_size = w * h * 9 / 2;
+  size_t fb_pg2_size = (size_t)w * h * 9 / 2;
   struct st20_rfc4175_444_12_pg2_be* pg_be =
       (struct st20_rfc4175_444_12_pg2_be*)st_test_zmalloc(fb_pg2_size);
   struct st20_rfc4175_444_12_pg2_le* pg_le =
@@ -3580,7 +3581,7 @@ static void test_cvt_rfc4175_444le12_to_444be12(int w, int h,
                                                 enum mtl_simd_level cvt_level,
                                                 enum mtl_simd_level back_level) {
   int ret;
-  size_t fb_pg2_size = w * h * 9 / 2;
+  size_t fb_pg2_size = (size_t)w * h * 9 / 2;
   struct st20_rfc4175_444_12_pg2_le* pg_le =
       (struct st20_rfc4175_444_12_pg2_le*)st_test_zmalloc(fb_pg2_size);
   struct st20_rfc4175_444_12_pg2_be* pg_be =
@@ -3615,7 +3616,7 @@ static void test_cvt_rfc4175_444le12_to_444be12_2(int w, int h,
                                                   enum mtl_simd_level cvt_level,
                                                   enum mtl_simd_level back_level) {
   int ret;
-  size_t fb_pg2_size = w * h * 9 / 2;
+  size_t fb_pg2_size = (size_t)w * h * 9 / 2;
   struct st20_rfc4175_444_12_pg2_le* pg_le =
       (struct st20_rfc4175_444_12_pg2_le*)st_test_zmalloc(fb_pg2_size);
   struct st20_rfc4175_444_12_pg2_be* pg_be =
@@ -3661,12 +3662,12 @@ static void test_rotate_rfc4175_444be12_444le12_444p12le(int w, int h,
                                                          enum mtl_simd_level cvt2_level,
                                                          enum mtl_simd_level cvt3_level) {
   int ret;
-  size_t fb_pg2_size = w * h * 9 / 2;
+  size_t fb_pg2_size = (size_t)w * h * 9 / 2;
   struct st20_rfc4175_444_12_pg2_be* pg_be =
       (struct st20_rfc4175_444_12_pg2_be*)st_test_zmalloc(fb_pg2_size);
   struct st20_rfc4175_444_12_pg2_le* pg_le =
       (struct st20_rfc4175_444_12_pg2_le*)st_test_zmalloc(fb_pg2_size);
-  size_t planar_size = w * h * 3 * sizeof(uint16_t);
+  size_t planar_size = (size_t)w * h * 3 * sizeof(uint16_t);
   uint16_t* p12_u16 = (uint16_t*)st_test_zmalloc(planar_size);
   struct st20_rfc4175_444_12_pg2_be* pg_be_2 =
       (struct st20_rfc4175_444_12_pg2_be*)st_test_zmalloc(fb_pg2_size);
@@ -3711,12 +3712,12 @@ static void test_rotate_rfc4175_444be12_444p12le_444le12(int w, int h,
                                                          enum mtl_simd_level cvt2_level,
                                                          enum mtl_simd_level cvt3_level) {
   int ret;
-  size_t fb_pg2_size = w * h * 9 / 2;
+  size_t fb_pg2_size = (size_t)w * h * 9 / 2;
   struct st20_rfc4175_444_12_pg2_be* pg_be =
       (struct st20_rfc4175_444_12_pg2_be*)st_test_zmalloc(fb_pg2_size);
   struct st20_rfc4175_444_12_pg2_le* pg_le =
       (struct st20_rfc4175_444_12_pg2_le*)st_test_zmalloc(fb_pg2_size);
-  size_t planar_size = w * h * 3 * sizeof(uint16_t);
+  size_t planar_size = (size_t)w * h * 3 * sizeof(uint16_t);
   uint16_t* p12_u16 = (uint16_t*)st_test_zmalloc(planar_size);
   struct st20_rfc4175_444_12_pg2_be* pg_be_2 =
       (struct st20_rfc4175_444_12_pg2_be*)st_test_zmalloc(fb_pg2_size);

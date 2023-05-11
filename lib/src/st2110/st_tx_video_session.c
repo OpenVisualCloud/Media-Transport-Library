@@ -761,7 +761,7 @@ static int tv_build_st20(struct st_tx_video_session_impl* s, struct rte_mbuf* pk
     line1_number = s->st20_pkt_idx / s->st20_pkts_in_line;
     int pixel_in_pkt = s->st20_pkt_len / s->st20_pg.size * s->st20_pg.coverage;
     line1_offset = pixel_in_pkt * (s->st20_pkt_idx % s->st20_pkts_in_line);
-    offset = line1_number * s->st20_linesize +
+    offset = line1_number * (uint32_t)s->st20_linesize +
              line1_offset / s->st20_pg.coverage * s->st20_pg.size;
   } else {
     offset = s->st20_pkt_len * s->st20_pkt_idx;
@@ -866,7 +866,7 @@ static int tv_build_st20_chain(struct st_tx_video_session_impl* s, struct rte_mb
     line1_number = s->st20_pkt_idx / s->st20_pkts_in_line;
     int pixel_in_pkt = s->st20_pkt_len / s->st20_pg.size * s->st20_pg.coverage;
     line1_offset = pixel_in_pkt * (s->st20_pkt_idx % s->st20_pkts_in_line);
-    offset = line1_number * s->st20_linesize +
+    offset = line1_number * (uint32_t)s->st20_linesize +
              line1_offset / s->st20_pg.coverage * s->st20_pg.size;
   } else {
     offset = s->st20_pkt_len * s->st20_pkt_idx;

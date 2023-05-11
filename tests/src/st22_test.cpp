@@ -408,7 +408,7 @@ static void st22_rx_fps_test(enum st22_type type[], enum st_fps fps[], int width
     test_ctx_tx[i]->pkt_data_len = pkt_data_len[i];
     test_ctx_tx[i]->total_pkts_in_frame = total_pkts[i]; /* compress ratio 1/8, 4320/8 */
     test_ctx_tx[i]->frame_size =
-        test_ctx_tx[i]->pkt_data_len * test_ctx_tx[i]->total_pkts_in_frame;
+        (size_t)test_ctx_tx[i]->pkt_data_len * test_ctx_tx[i]->total_pkts_in_frame;
 
     /* set max to 100 extra */
     ops_tx.framebuff_max_size =
@@ -464,7 +464,7 @@ static void st22_rx_fps_test(enum st22_type type[], enum st_fps fps[], int width
     test_ctx_rx[i]->pkt_data_len = pkt_data_len[i];
     test_ctx_rx[i]->total_pkts_in_frame = total_pkts[i]; /* compress ratio 1/8, 4320/8 */
     test_ctx_rx[i]->frame_size =
-        test_ctx_rx[i]->pkt_data_len * test_ctx_rx[i]->total_pkts_in_frame;
+        (size_t)test_ctx_rx[i]->pkt_data_len * test_ctx_rx[i]->total_pkts_in_frame;
 
     /* set max to 100 extra */
     ops_rx.framebuff_max_size =
@@ -611,7 +611,7 @@ static void st22_rx_update_src_test(int tx_sessions) {
     test_ctx_tx[i]->pkt_data_len = 1280;
     test_ctx_tx[i]->total_pkts_in_frame = 520; /* compress ratio 1/8, 4320/8 */
     test_ctx_tx[i]->frame_size =
-        test_ctx_tx[i]->pkt_data_len * test_ctx_tx[i]->total_pkts_in_frame;
+        (size_t)test_ctx_tx[i]->pkt_data_len * test_ctx_tx[i]->total_pkts_in_frame;
 
     /* set max to 100 extra */
     ops_tx.framebuff_max_size =
@@ -661,7 +661,7 @@ static void st22_rx_update_src_test(int tx_sessions) {
     test_ctx_rx[i]->pkt_data_len = 1280;
     test_ctx_rx[i]->total_pkts_in_frame = 520; /* compress ratio 1/8, 4320/8 */
     test_ctx_rx[i]->frame_size =
-        test_ctx_rx[i]->pkt_data_len * test_ctx_rx[i]->total_pkts_in_frame;
+        (size_t)test_ctx_rx[i]->pkt_data_len * test_ctx_rx[i]->total_pkts_in_frame;
 
     /* set max to 100 extra */
     ops_rx.framebuff_max_size =
@@ -835,7 +835,7 @@ static void st22_rx_after_start_test(enum st_fps fps[], int width[], int height[
       test_ctx_tx[i]->pkt_data_len = pkt_data_len[i];
       test_ctx_tx[i]->total_pkts_in_frame = total_pkts[i];
       test_ctx_tx[i]->frame_size =
-          test_ctx_tx[i]->pkt_data_len * test_ctx_tx[i]->total_pkts_in_frame;
+          (size_t)test_ctx_tx[i]->pkt_data_len * test_ctx_tx[i]->total_pkts_in_frame;
 
       /* set max to 100 extra */
       ops_tx.framebuff_max_size =
@@ -888,7 +888,7 @@ static void st22_rx_after_start_test(enum st_fps fps[], int width[], int height[
       test_ctx_rx[i]->total_pkts_in_frame =
           total_pkts[i]; /* compress ratio 1/8, 4320/8 */
       test_ctx_rx[i]->frame_size =
-          test_ctx_rx[i]->pkt_data_len * test_ctx_rx[i]->total_pkts_in_frame;
+          (size_t)test_ctx_rx[i]->pkt_data_len * test_ctx_rx[i]->total_pkts_in_frame;
 
       /* set max to 100 extra */
       ops_rx.framebuff_max_size =
@@ -997,7 +997,7 @@ static void st22_rx_dump_test(enum st_fps fps[], int width[], int height[],
     test_ctx_tx[i]->pkt_data_len = pkt_data_len[i];
     test_ctx_tx[i]->total_pkts_in_frame = total_pkts[i]; /* compress ratio 1/8, 4320/8 */
     test_ctx_tx[i]->frame_size =
-        test_ctx_tx[i]->pkt_data_len * test_ctx_tx[i]->total_pkts_in_frame;
+        (size_t)test_ctx_tx[i]->pkt_data_len * test_ctx_tx[i]->total_pkts_in_frame;
 
     /* set max to 100 extra */
     ops_tx.framebuff_max_size =
@@ -1046,7 +1046,7 @@ static void st22_rx_dump_test(enum st_fps fps[], int width[], int height[],
     test_ctx_rx[i]->pkt_data_len = pkt_data_len[i];
     test_ctx_rx[i]->total_pkts_in_frame = total_pkts[i]; /* compress ratio 1/8, 4320/8 */
     test_ctx_rx[i]->frame_size =
-        test_ctx_rx[i]->pkt_data_len * test_ctx_rx[i]->total_pkts_in_frame;
+        (size_t)test_ctx_rx[i]->pkt_data_len * test_ctx_rx[i]->total_pkts_in_frame;
 
     /* set max to 100 extra */
     ops_rx.framebuff_max_size =
@@ -1218,7 +1218,7 @@ static void st22_rx_digest_test(enum st_fps fps[], int width[], int height[],
     test_ctx_tx[i]->pkt_data_len = pkt_data_len[i];
     test_ctx_tx[i]->total_pkts_in_frame = total_pkts[i]; /* compress ratio 1/8, 4320/8 */
     test_ctx_tx[i]->frame_size =
-        test_ctx_tx[i]->pkt_data_len * test_ctx_tx[i]->total_pkts_in_frame;
+        (size_t)test_ctx_tx[i]->pkt_data_len * test_ctx_tx[i]->total_pkts_in_frame;
 
     /* set max to 100 extra */
     ops_tx.framebuff_max_size =
@@ -1281,7 +1281,7 @@ static void st22_rx_digest_test(enum st_fps fps[], int width[], int height[],
     test_ctx_rx[i]->pkt_data_len = pkt_data_len[i];
     test_ctx_rx[i]->total_pkts_in_frame = total_pkts[i]; /* compress ratio 1/8, 4320/8 */
     test_ctx_rx[i]->frame_size =
-        test_ctx_rx[i]->pkt_data_len * test_ctx_rx[i]->total_pkts_in_frame;
+        (size_t)test_ctx_rx[i]->pkt_data_len * test_ctx_rx[i]->total_pkts_in_frame;
 
     /* set max to 100 extra */
     ops_rx.framebuff_max_size =
@@ -1414,7 +1414,7 @@ static void st22_tx_user_pacing_test(int width[], int height[], int pkt_data_len
     test_ctx_tx[i]->pkt_data_len = pkt_data_len[i];
     test_ctx_tx[i]->total_pkts_in_frame = total_pkts[i]; /* compress ratio 1/8, 4320/8 */
     test_ctx_tx[i]->frame_size =
-        test_ctx_tx[i]->pkt_data_len * test_ctx_tx[i]->total_pkts_in_frame;
+        (size_t)test_ctx_tx[i]->pkt_data_len * test_ctx_tx[i]->total_pkts_in_frame;
 
     /* set max to 100 extra */
     ops_tx.framebuff_max_size =
@@ -1457,7 +1457,7 @@ static void st22_tx_user_pacing_test(int width[], int height[], int pkt_data_len
     test_ctx_rx[i]->pkt_data_len = pkt_data_len[i];
     test_ctx_rx[i]->total_pkts_in_frame = total_pkts[i]; /* compress ratio 1/8, 4320/8 */
     test_ctx_rx[i]->frame_size =
-        test_ctx_rx[i]->pkt_data_len * test_ctx_rx[i]->total_pkts_in_frame;
+        (size_t)test_ctx_rx[i]->pkt_data_len * test_ctx_rx[i]->total_pkts_in_frame;
 
     /* set max to 100 extra */
     ops_rx.framebuff_max_size =

@@ -238,7 +238,7 @@ static int app_rx_video_open_source(struct st_app_rx_video_session* s) {
     return -EIO;
   }
 
-  f_size = s->st20_dst_fb_cnt * s->st20_frame_size;
+  f_size = (off_t)s->st20_dst_fb_cnt * s->st20_frame_size;
   ret = ftruncate(fd, f_size);
   if (ret < 0) {
     err("%s(%d), ftruncate %s fail\n", __func__, idx, s->st20_dst_url);
@@ -524,7 +524,7 @@ static int app_rx_video_init(struct st_app_context* ctx, st_json_video_session_t
   s->framebuffs =
       (struct st_rx_frame*)st_app_zmalloc(sizeof(*s->framebuffs) * s->framebuff_cnt);
   if (!s->framebuffs) return -ENOMEM;
-  for (uint16_t j = 0; j < s->framebuff_cnt; j++) {
+  for (int j = 0; j < s->framebuff_cnt; j++) {
     s->framebuffs[j].frame = NULL;
   }
 
