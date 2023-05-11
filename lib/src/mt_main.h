@@ -708,7 +708,7 @@ struct mt_rsq_impl {
   struct mtl_main_impl* parent;
   enum mtl_port port;
   /* sq rx queue resources */
-  int max_rsq_queues;
+  uint16_t max_rsq_queues;
   struct mt_rsq_queue* rsq_queues;
 };
 

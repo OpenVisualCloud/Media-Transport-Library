@@ -478,7 +478,7 @@ static int dev_init_ratelimit_vf(struct mt_interface* inf) {
   memset(&error, 0, sizeof(error));
 
   struct mt_tx_queue* tx_queue;
-  for (int q = 0; q < inf->max_tx_queues; q++) {
+  for (uint16_t q = 0; q < inf->max_tx_queues; q++) {
     tx_queue = &inf->tx_queues[q];
 
     shaper = dev_rl_shaper_get(inf, bps);
@@ -1141,7 +1141,7 @@ int dev_reset_port(struct mtl_main_impl* impl, enum mtl_port port) {
   mt_cni_start(impl);
 
   /* clear rl status */
-  for (int q = 0; q < inf->max_tx_queues; q++) {
+  for (uint16_t q = 0; q < inf->max_tx_queues; q++) {
     inf->tx_queues[q].rl_shapers_mapping = -1; /* init to invalid */
   }
   inf->tx_rl_root_active = false;
@@ -1526,7 +1526,7 @@ static int dev_if_uinit_tx_queues(struct mt_interface* inf) {
 
   if (!inf->tx_queues) return 0;
 
-  for (int q = 0; q < inf->max_tx_queues; q++) {
+  for (uint16_t q = 0; q < inf->max_tx_queues; q++) {
     tx_queue = &inf->tx_queues[q];
     if (tx_queue->active) {
       warn("%s(%d), tx_queue %d still active\n", __func__, port, q);
@@ -1727,7 +1727,7 @@ struct mt_tx_queue* mt_dev_get_tx_queue(struct mtl_main_impl* impl, enum mtl_por
   }
 
   mt_pthread_mutex_lock(&inf->tx_queues_mutex);
-  for (int q = 0; q < inf->max_tx_queues; q++) {
+  for (uint16_t q = 0; q < inf->max_tx_queues; q++) {
     tx_queue = &inf->tx_queues[q];
     if (!tx_queue->active) {
       if (inf->tx_pacing_way == ST21_TX_PACING_WAY_RL) {
