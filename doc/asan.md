@@ -26,7 +26,7 @@ rm build/ -rf
 ST_BUILD_ENABLE_ASAN=true ./build.sh
 ```
 
-## 3. Run the application to check for any memory issues.
+## 3. Run the application to check for any memory issues
 
 ```bash
 ./build/app/RxTxApp --config_file tests/script/loop_json/1080p59_1v.json
