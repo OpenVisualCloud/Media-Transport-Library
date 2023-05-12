@@ -7,6 +7,14 @@
 
 #ifdef WINDOWSENV /* Windows */
 #include "win_posix.h"
+#ifndef MTL_DISABLE_PCAPNG
+/* pcapng only available from DPDK 23.03 for Windows */
+#if RTE_VERSION >= RTE_VERSION_NUM(23, 03, 0, 0)
+#include <rte_os_shim.h>
+#include <rte_pcapng.h>
+#define ST_PCAPNG_ENABLED
+#endif /* RTE_VERSION */
+#endif /* MTL_DISABLE_PCAPNG */
 #else /* Linux */
 #include <arpa/inet.h>
 #include <net/if.h>
@@ -27,8 +35,8 @@
 #if RTE_VERSION >= RTE_VERSION_NUM(21, 11, 0, 0)
 #include <rte_pcapng.h>
 #define ST_PCAPNG_ENABLED
-#endif
-#endif
+#endif /* RTE_VERSION */
+#endif /* MTL_DISABLE_PCAPNG */
 
 #endif /* end of WINDOWSENV */
 
