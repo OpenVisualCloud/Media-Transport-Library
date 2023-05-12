@@ -2,21 +2,23 @@
 
 ## Introduction
 
-Intel® Media Transport Library introduces color format SIMD convert API from v22.06, which can be used to conversion between RFC4175 YUV422 10bit BE and common LE formats.  
+Starting from version 22.06, the Intel® Media Transport Library introduces a color format SIMD convert API, which can be used to convert between RFC4175 YUV422 10-bit BE and common LE formats.
 
 ### The SIMD API
 
-The library supports SIMD flags detection both in compile stage and runtime.<br>
-The default function `st20_<src_format>_to_<dest_format>` will try to use the maximum SIMD level supported on the platform, and user can also specify the maximum SIMD level by calling `st20_<src_format>_to_<dest_format>_simd`.
-For full API usage please refer to [st_convert_api.h](../include/st_convert_api.h) and [st_convert_internal.h](../include/st_convert_internal.h).
+The library supports SIMD flags detection at runtime.
+
+The default function `st20_<src_format>_to_<dest_format>` will attempt to use the maximum SIMD level supported on the platform. Users can also specify the maximum SIMD level by calling `st20_<src_format>_to_<dest_format>_simd`. 
+
+For detailed API usage, please refer to [st_convert_api.h](../include/st_convert_api.h) and [st_convert_internal.h](../include/st_convert_internal.h).
 
 ### The DMA Helper API
 
-While converting ultra high definition video frames, the LLC load miss rate will be high due to wide rage memory access. To reduce the LLC load miss, we introduces DMA helper for the convert API.
-The source date is preloaded to the software cache blocks with DMA engine before the SIMD batch processing, so the SIMD load functions can always hit the cache. This API is implemented with synchronous dma_copy, so the conversion speed is not always optimized.
-It is helpful for 4K or 8K senario.<br>
-To use the functions `st20_<src_format>_to_<dest_format>_dma`, the DMA device needs to be aquired first and st_udma_handle is passed here. For DMA device creation please refer to [dma_sample.c](../app/sample/dma_sample.c).
-For full API usage please refer to [st_convert_api.h](../include/st_convert_api.h).
+During the conversion of ultra-high-definition video frames, the LLC load miss rate can be high due to wide-ranging memory access. To reduce the LLC load miss, we have introduced a DMA helper for the convert API. The source data is preloaded into the software cache blocks with the DMA engine before the SIMD batch processing, so the SIMD load functions can always hit the cache. This API is implemented with synchronous dma_copy, so the conversion speed is not always optimized. It is particularly helpful for 4K or 8K scenarios.
+
+To use the functions `st20_<src_format>_to_<dest_format>_dma`, you need to first acquire the DMA device and pass the st_udma_handle to the function. For information on DMA device creation, please refer to [dma_sample.c](../app/sample/dma_sample.c).
+
+For detailed API usage, please refer to [st_convert_api.h](../include/st_convert_api.h).
 
 ## Supported Conversion
 

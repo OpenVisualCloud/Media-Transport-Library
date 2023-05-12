@@ -2,7 +2,7 @@
 
 ## 1. Background
 
-Header split is a hardware based feature for rx memory copy offload, it can leverage this feature to reduce the memory copy in rx packet processing, then to improve the performance for high resolution streaming.
+Header split is a hardware-based feature for RX memory copy offload. It can leverage this feature to reduce the memory copy in RX packet processing, thereby improving the performance of high-resolution streaming.
 
 ## 2. Build DPDK with header split patch
 

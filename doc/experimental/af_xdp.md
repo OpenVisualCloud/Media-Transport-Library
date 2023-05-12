@@ -2,14 +2,15 @@
 
 ## 1. Background
 
-AF_XDP is an address family that is optimized for high performance packet processing inside kernel stack based on BPF and XDP. AF_XDP sockets enable the possibility for XDP program to redirect packets to a memory buffer in userspace. DPDK has built-in AF_XDP poll mode driver support. For the details pls refer to <https://www.kernel.org/doc/HTML/latest/networking/af_xdp.html> and <https://doc.dpdk.org/guides/nics/af_xdp.html>.
-With AF_XDP, Intel® Media Transport Library get the benefits with all linux network stack support, downsides is little performance gap compared to full DPDK user PMD.
+AF_XDP is an address family that is optimized for high-performance packet processing inside the kernel stack based on BPF and XDP. AF_XDP sockets enable XDP programs to redirect packets to a memory buffer in userspace. DPDK has built-in AF_XDP poll mode driver support. For details, please refer to <https://www.kernel.org/doc/HTML/latest/networking/af_xdp.html> and <https://doc.dpdk.org/guides/nics/af_xdp.html>.
+
+With AF_XDP, the Intel® Media Transport Library benefits from all Linux network stack support, but there is a small performance gap compared to full DPDK user PMD.
 
 ## 2. DPDK build with AF_XDP PMD
 
 ### 2.1 Install libxdp and libbpf
 
-Get latest source code release from <https://github.com/libbpf/libbpf/releases> and <https://github.com/xdp-project/xdp-tools/releases>, and follow the guide to build and install from source. Use “pkg-config --libs libxdp” and “pkg-config --libs libbpf” to check if the package are correctly installed.
+Get latest source code release from <https://github.com/libbpf/libbpf/releases> and <https://github.com/xdp-project/xdp-tools/releases>, and follow the instructions to build and install from source. Use “pkg-config --libs libxdp” and “pkg-config --libs libbpf” to check if the packages are correctly installed.
 
 #### 2.2 Rebuild DPDK and and make sure af_xdp pmd driver is built
 
