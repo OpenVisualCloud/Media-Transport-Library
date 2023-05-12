@@ -89,8 +89,9 @@ Refer to <https://www.intel.com/content/www/us/en/download/15084/intel-ethernet-
 
 ### 4.2 Update the ICE DDP package file: ice.pkg
 
-Get the latest ddp file(ice-1.3.30.0.pkg) from <https://www.intel.com/content/www/us/en/download/19630/intel-network-adapter-driver-for-e810-series-devices-under-linux.html>, unzip the driver and goto ddp directory.  
-Windows ICE driver will try to search DDP with path "c:\dpdk\lib\ice.pkg" or ".\ice.pkg", please put the latest ddp file there and rename to ice.pkg, otherwise it will see below error if you run the RxTxApp.
+To get the latest DDP file (ice-1.3.30.0.pkg), visit <https://www.intel.com/content/www/us/en/download/19630/intel-network-adapter-driver-for-e810-series-devices-under-linux.html>, unzip the driver and go to the DDP directory.
+
+The Windows ICE driver will try to search for the DDP file with the path "c:\dpdk\lib\ice.pkg" or ".\ice.pkg". Please place the latest DDP file in one of these locations and rename it to ice.pkg. Otherwise, you will see the following error when running the RxTxApp.
 
 ```bash
 ice_load_pkg(): failed to search file path
@@ -99,26 +100,7 @@ ice_dev_init(): Failed to load the DDP package, Use safe-mode-support=1 to enter
 
 ### 4.3 Create the temp folder in root directory c:\temp
 
-## 5. Windows TAP support enable
-
-### 5.1 Download openVPN driver by searching "OpenVPN-2.5.6-I601-amd64.msi" and download the installation file
-
-### 5.2 Install windows TAP driver
-
-In the Control Panel->Network and internet->Network Connections, find the "OpenVPN TAP-Windows6" device, set the adaptor IP address, such as 192.168.2.2
-
-### 5.3 Rebuild and install MTL lib with "-Denable_tap=true"
-
-```bash
-meson tap_build --prefix=c:\libmtl -Ddpdk_root_dir=${DPDK_SRC_DIR} -Denable_tap=true
-ninja -C tap_build install
-```
-
-### 5.4 Run rxtxapp.exe
-
-Ping 192.168.2.2 from other machine in the same network such as 192.168.2.3, if have reply, the TAP works.
-
-## 6. Run and test
+## 5. Run and test
 
 You can bind the app to the cpu socket 0 ( if your NIC is inserted into the pcie slot belongs to cpu socket 0 )as following:
 To identify the socket if you do not know it, in the NIC card driver property page, check the bus number, if the number is great than
@@ -128,4 +110,23 @@ To identify the socket if you do not know it, in the NIC card driver property pa
 start /Node 0 /B .\build\app\RxTxApp --config_file config\test_tx_1port_1v.json
 ```
 
-Pls refer to section 3, 4, 5 in [linux run guide](run.md) for how to run the sample application, windows share same codebase with linux, the app/lib behavior is same.
+Please refer to sections 3, 4, and 5 in the [linux run guide](run.md) for instructions on how to run the sample application. The Windows version shares the same codebase as the Linux version, and the application/library behavior is the same.
+
+## 6. Windows TAP support (Optional)
+
+### 6.1 Download openVPN driver by searching "OpenVPN-2.5.6-I601-amd64.msi" and download the installation file
+
+### 6.2 Install windows TAP driver
+
+In the Control Panel->Network and internet->Network Connections, find the "OpenVPN TAP-Windows6" device, set the adaptor IP address, such as 192.168.2.2
+
+### 6.3 Rebuild and install MTL lib with "-Denable_tap=true"
+
+```bash
+meson tap_build --prefix=c:\libmtl -Ddpdk_root_dir=${DPDK_SRC_DIR} -Denable_tap=true
+ninja -C tap_build install
+```
+
+### 6.4 Check if Ping is working
+
+Ping 192.168.2.2 from other machine in the same network such as 192.168.2.3, if have reply, the TAP works.

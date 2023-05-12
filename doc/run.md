@@ -1,6 +1,6 @@
 # Run Guide
 
-Intel® Media Transport Library required VFIO(IOMMU) and huge page to run, it also support non-root run thus it can be easily deployed within docker/k8s env.
+The Intel® Media Transport Library requires VFIO (IOMMU) and huge pages to run, but it also supports non-root run, making it easy to deploy within Docker/Kubernetes environments.
 
 ## 1. System setup
 
@@ -42,13 +42,13 @@ ls -l /sys/kernel/iommu_groups/
 
 Refer to <https://www.intel.com/content/www/us/en/download/15084/intel-ethernet-adapter-complete-driver-pack.html>
 
-After upgraded, please double check the DDP version is right(>1.3.30.0) from dmesg.
+After upgrading, please double-check that the DDP version is correct (i.e., greater than 1.3.30.0) by running the dmesg command.
 
 ```bash
 The DDP package was successfully loaded: ICE OS Default Package (mc) version 1.3.30.0
 ```
 
-Use below command to update if it's not latest, the DDP package can be found at the latest Intel ice driver.
+If the DDP version is not the latest, please use the following command to update it. The DDP package can be found in the latest Intel ice driver.
 
 ```bash
 cd /usr/lib/firmware/updates/intel/ice/ddp
@@ -61,13 +61,13 @@ modprobe ice
 
 ### 2.2 Bind NIC to DPDK PMD mode
 
-Below is the command to bind BDF 0000:af:00.0 to PF PMD mode, customize the BDF port as your setup.
+Below is the command to bind the BDF port 0000:af:00.0 to PF PMD mode. Please customize the BDF port based on your setup.
 
 ```bash
 sudo ./script/nicctl.sh bind_pmd 0000:af:00.0
 ```
 
-Doubel check if iommu is enabled if you see below error.
+If you see the following error, please double-check if IOMMU is enabled:
 
 ```bash
 Error: bind failed for 0000:af:00.0 - Cannot bind to driver vfio-pci: [Errno 19] No such device
@@ -82,7 +82,7 @@ ls -l /sys/kernel/iommu_groups/
 
 ### 3.1 VFIO access for non-root run
 
-Add VFIO dev permissions to current user:
+To add VFIO device permissions to the current user:
 
 ```bash
 # change <USER> to the user name currently login.
@@ -99,11 +99,11 @@ sudo sysctl -w vm.nr_hugepages=2048
 
 ### 3.3 Prepare source files
 
-Pls note the input yuv source file for sample app is the rfc4175 yuv422be10(big endian 10bit) pixel group format which define in ST2110 spec. This project include a simple tools to convert the format from yuv422 planar 10bit little endian format.
+Please note that the input YUV source file for the sample application is in the RFC4175 YUV422BE10 (big-endian 10-bit) pixel group format, which is defined in the ST2110 specification. This project includes a simple tool to convert the format from YUV422 planar 10-bit little-endian format.
 
 #### 3.3.1 Prepare a yuv422p10le file
 
-Below command shows how to decode 2 frames from the encoder file, and convert from 420 to 422 planar file. Change 'vframes' value if you want to generate more frames.
+The following command shows how to decode two frames from the encoder file and convert it from 420 to 422 planar file. Change the 'vframes' value if you want to generate more frames.
 
 ```bash
 wget https://www.larmoire.info/jellyfish/media/jellyfish-3-mbps-hd-hevc-10bit.mkv
@@ -167,8 +167,9 @@ ffmpeg -s 1920x1080 -pix_fmt yuv420p10le -i yuv420p10le_1080p.yuv -pix_fmt yuv44
 
 ### 3.4 PTP setup(optional)
 
-Precision Time Protocol (PTP) provides global microsecond accuracy timing of all essences. Typical deployment include a PTP grandmaster within the network, and clients use tools(ex. ptp4l) to sync with the grandmaster. This library also include a built-in PTP implementation, sample app provide a option to enable it, see 3.6 for how to enable.
-The built-in PTP is disabled as default, it will use the system time source(clock_gettime) provide by user application as PTP clock. If built-in PTP is enabled, it will select the internal NIC time as PTP source.
+The Precision Time Protocol (PTP) enables global microsecond accuracy timing of all essences and is typically deployed with a PTP grandmaster within the network, while clients use tools such as ptp4l to synchronize with it. This library also includes a built-in PTP implementation, and a sample application provides an option to enable it. See section 3.6 for instructions on how to enable it.
+
+By default, the built-in PTP is disabled, and the user application's system time source (clock_gettime) is used as the PTP clock. However, if the built-in PTP is enabled, the internal NIC time will be selected as the PTP source.
 
 #### 3.4.1 ptp4l setup sample
 
@@ -285,7 +286,7 @@ sudo sysctl -w vm.nr_hugepages=4096
 
 ### 5.1 Notes after reboot
 
-Sometimes after reboot, OS will update to a new kernel version, remember to rebuild the fw/DDP version.
+After a reboot, the operating system may update to a new kernel version. In such cases, remember to rebuild the firmware/DDP version.
 
 ### 5.2 Notes for non-root run
 
@@ -319,7 +320,7 @@ max locked memory       (kbytes, -l) unlimited
 
 ### 5.3 BDF port not bind to DPDK PMD mode
 
-Below error indicate the port driver is not settings to DPDK PMD mode, run nicctl.sh to config it.
+The following error indicates that the port driver is not configured to DPDK PMD mode. Please run nicctl.sh to configure it:
 
 ```bash
 ST: st_dev_get_socket, failed to locate 0000:86:20.0. Please run nicctl.sh
@@ -327,14 +328,14 @@ ST: st_dev_get_socket, failed to locate 0000:86:20.0. Please run nicctl.sh
 
 ### 5.4 Hugepage not available
 
-If you see below hugepage error when running, it's caused by neither 1G nor 2M huge page exist in current setup.
+If you encounter the following hugepage error while running, it is likely caused by the absence of 1G or 2M huge pages in the current setup.
 
 ```bash
 EAL: FATAL: Cannot get hugepage information.
 EAL: Cannot get hugepage information.
 ```
 
-Below error generally means mbuf pool create fail as no enough huge pages available, try to allocate more.
+This error message usually indicates that the mbuf pool creation has failed due to insufficient huge pages. Please try to allocate more huge pages.
 
 ```bash
 ST: st_init, mbuf_pool create fail
@@ -342,7 +343,7 @@ ST: st_init, mbuf_pool create fail
 
 ### 5.5 No access to vfio device
 
-Please add current user the access to the dev if below error message.
+If you encounter the following error message, please grant the current user access to the dev:
 
 ```bash
 EAL: Cannot open /dev/vfio/147: Permission denied
@@ -351,7 +352,7 @@ EAL: Failed to open VFIO group 147
 
 ### 5.6 Link not connected
 
-Below error indicate the link of physical port is not connected to a network, pls confirm the cable link is working.
+The following error indicates that the physical port link is not connected to a network. Please confirm that the cable link is working properly.
 
 ```bash
 ST: dev_create_port(0), link not connected
@@ -371,7 +372,7 @@ lspci | grep Eth
 
 ### 5.9 Lower fps if ptp4l&phc2sys is enabled
 
-You could see below similar epoch drop log, it's likely caused by NTP and phc2sys are both adjusting the sysytem, please disable NTP service.
+You may have noticed a similar epoch drop log, which is likely caused by both NTP and phc2sys adjusting the system. To address this issue, please disable the NTP service.
 
 ```bash
 MT: DEV(0): Avr rate, tx: 4789 Mb/s, rx: 0 Mb/s, pkts, tx: 4525950, rx: 9

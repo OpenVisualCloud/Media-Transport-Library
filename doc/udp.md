@@ -1,23 +1,26 @@
 # Introduction
 
-Intel® Media Transport Library provides a efficient user space udp stack support from v23.04 version, this UDP LibOS stack is designed to POSIX compatible which allow user can adopt without any code logical change. It has a LD preload layer to intercept UDP socket API calls and replace with our implementation to allow non code change deployment and even no need rebuild. <br>
+Starting from version 23.04, the Intel® Media Transport Library provides an efficient user-space UDP stack that is POSIX-compatible, enabling users to adopt it without any changes to their code logic. The stack features an LD preload layer that intercepts UDP socket API calls and replaces them with our implementation, allowing for deployment without code changes or the need for rebuilding.
 
-The data plane traffic is handled within socket API directly under current thread context for extremely performance and lowest latency. Other user-space UDP stack usually run with client-service architect, it introduce a cross-core message cost which hurt the performance and add extra latency.
-Another major benefit is the data affinity, LLC is kept between the call and UDP stack as it shared both the CPU and data context.
+In the Intel® Media Transport Library, data plane traffic is handled directly within the socket API under the current thread context, resulting in extremely high performance and low latency. Other user-space UDP stacks typically use a client-service architecture, which introduces cross-core message costs that can negatively impact performance and add extra latency.
+
+Another major benefit of the Intel® Media Transport Library is data affinity, where the LLC is kept between the call and UDP stack as they share both the CPU and data context.
 
 ## 1. LibOS design
 
-LibOS is commonly used in cloud computing environments, where it can provide a lightweight and efficient platform for running containers and microservices. Intel® Media Transport Library provide a UDP protocols support to replace the kernel network stack for a lightweight and modular approach to building and running UDP based applications.
-This allows for greater flexibility and efficiency, as applications can be customized to include the required functionality, and can be run on a variety of platforms without the need for significant modifications.
+LibOS is commonly used in cloud computing environments, where it provides a lightweight and efficient platform for running containers and microservices. The Intel® Media Transport Library provides UDP protocol support to replace the kernel network stack, offering a lightweight and modular approach to building and running UDP-based applications.
+
+This approach offers greater flexibility and efficiency, as applications can be customized to include the required functionality and can be run on a variety of platforms without the need for significant modifications.
 
 ## 2. LD preload
 
 LD_PRELOAD is an environment variable used in Linux and other Unix-like operating systems to specify additional shared libraries to be loaded before the standard system libraries. This allows users to override or extend the functionality of existing libraries without modifying the original source code.
-Intel® Media Transport Library has a LD preload layer to intercept many network APIs. The implementation can be found at [udp libos code](../lib/src/udp/).
 
-### 2.1. The UDP APIs intercepted
+The Intel® Media Transport Library has an LD preload layer to intercept many network APIs, and the implementation can be found in the [UDP libos code](../lib/src/udp/).
 
-Note: only SOCK_DGRAM stream will be intercepted and direct to LibOS UDP stack, other streams like TCP will fallback to OS path. The detail code can be found at [ld preload code](../ld_preload/udp/).
+### 2.1. Interception of UDP APIs
+
+Note that only SOCK_DGRAM streams will be intercepted and directed to the LibOS UDP stack, while other streams like TCP will fallback to the OS path. The detailed code can be found at [ld preload code](../ld_preload/udp/).
 
 | API            | status   | comment |
 | :---           | :---     | :---    |
@@ -45,7 +48,7 @@ Note: only SOCK_DGRAM stream will be intercepted and direct to LibOS UDP stack, 
 
 ### 2.2. Usage
 
-Customize the so path as your setup as the install path could vary in different OS. MUFD_CFG env point to the configuration file which include the PCIE dpdk BDF port, ip address, queue numbers and other option, see 2.3. MUFD_CFG for detail.
+Customize the so path based on your setup, as the installation path may vary across different operating systems. The MUFD_CFG environment variable points to the configuration file, which includes the PCIE DPDK BDF port, IP address, queue numbers, and other options. See 2.3. MUFD_CFG for detail.
 
 ```bash
 MUFD_CFG=app/udp/ufd_server.json LD_PRELOAD=/usr/local/lib/x86_64-linux-gnu/libmtl_udp_preload.so program-to-run

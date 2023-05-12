@@ -1,6 +1,6 @@
 # Build Guide
 
-The build required 3 parts, build the DPDK library, the Intel® Media Transport Library on top of DPDK, and the sample application.
+Building the Intel® Media Transport Library requires three parts: building the DPDK library, building the Intel® Media Transport Library on top of DPDK, and building the sample application.
 
 ## 1. Install the build dependency
 

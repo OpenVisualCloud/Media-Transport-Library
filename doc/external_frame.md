@@ -2,9 +2,9 @@
 
 ## 1. Overview
 
-In the general API, the video frames used are allocated by library with rte_malloc(usually with hugepages).
-In some use cases, each frame data needs to be copied from/to user. When it's UHD or high framerate video, the copying can cause CPU/memory stall and become bottleneck of the whole pipeline.
-The external frame API is introduced so the library can use user provided memory to receive/send st2110-20 frames, or as the color format conversion destination/source in the pipeline API.
+In the general API, the video frames used are allocated by the library with rte_malloc (usually using hugepages). In some use cases, each frame data needs to be copied to/from the user. When working with UHD or high frame rate videos, copying can cause CPU/memory stalls and become a bottleneck in the pipeline.
+
+The external frame API is introduced so that the library can use user-provided memory to receive/send ST2110-20 frames or as the color format conversion destination/source in the pipeline API.
 
 ## 2. ST20 Pipeline ext_frame API
 
