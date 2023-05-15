@@ -1,5 +1,5 @@
 From ba8e0b4276c1384715f0d7a81ae056ec693a849f Mon Sep 17 00:00:00 2001
-From: Your Name <you@example.com>
+From: Ric Li <ming3.li@intel.com>
 Date: Mon, 15 May 2023 12:19:48 +0800
 Subject: [PATCH] Fix missing mkstemps for windows pcapng test build
 
