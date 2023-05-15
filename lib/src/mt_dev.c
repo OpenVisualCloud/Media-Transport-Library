@@ -996,6 +996,39 @@ static int dev_config_port(struct mt_interface* inf) {
   return 0;
 }
 
+static bool dev_pkt_valid(struct mt_interface* inf, uint16_t queue,
+                          struct rte_mbuf* pkt) {
+  uint32_t pkt_len = pkt->pkt_len;
+  enum mtl_port port = inf->port;
+
+  if ((pkt_len <= 16) || (pkt_len > MTL_MTU_MAX_BYTES)) {
+    err("%s(%d:%u), invalid pkt_len %u at %p\n", __func__, port, queue, pkt_len, pkt);
+    return false;
+  }
+  if (pkt->nb_segs > 2) {
+    err("%s(%d:%u), invalid nb_segs %u at %p\n", __func__, port, queue, pkt->nb_segs,
+        pkt);
+    return false;
+  }
+
+  return true;
+}
+
+static uint16_t dev_tx_pkt_check(uint16_t port, uint16_t queue, struct rte_mbuf** pkts,
+                                 uint16_t nb_pkts, void* priv) {
+  struct mt_interface* inf = priv;
+
+  for (uint16_t i = 0; i < nb_pkts; i++) {
+    if (!dev_pkt_valid(inf, queue, pkts[i])) {
+      /* should never happen, replace with dummy pkt */
+      rte_pktmbuf_free(pkts[i]);
+      pkts[i] = inf->pad;
+    }
+  }
+
+  return nb_pkts;
+}
+
 static int dev_start_port(struct mt_interface* inf) {
   int ret;
   struct mtl_main_impl* impl = inf->parent;
@@ -1081,6 +1114,12 @@ static int dev_start_port(struct mt_interface* inf) {
       return ret;
     }
   }
+  if (mt_get_user_params(impl)->flags & MTL_FLAG_TX_NO_BURST_CHK) {
+    info("%s(%d), no tx burst check\n", __func__, port);
+  } else {
+    for (uint16_t q = 0; q < nb_tx_q; q++)
+      rte_eth_add_tx_callback(port_id, q, dev_tx_pkt_check, inf);
+  }
 
   ret = rte_eth_dev_start(port_id);
   if (ret < 0) {
@@ -1099,7 +1138,7 @@ static int dev_start_port(struct mt_interface* inf) {
 
   if (mt_get_user_params(impl)->flags & MTL_FLAG_NIC_RX_PROMISCUOUS) {
     /* Enable RX in promiscuous mode if it's required. */
-    err("%s(%d), enable promiscuous\n", __func__, port);
+    warn("%s(%d), enable promiscuous\n", __func__, port);
     rte_eth_promiscuous_enable(port_id);
   }
   rte_eth_stats_reset(port_id); /* reset stats */

@@ -399,6 +399,11 @@ enum st21_tx_pacing_way {
  * Will do memcpy from framebuffer to packet payload.
  */
 #define MTL_FLAG_TX_NO_CHAIN (MTL_BIT64(30))
+/**
+ * Flag bit in flags of struct mtl_init_params, debug usage only.
+ * Disable the pkt check for TX burst API.
+ */
+#define MTL_FLAG_TX_NO_BURST_CHK (MTL_BIT64(31))
 
 /**
  * The structure describing how to init af_xdp interface.
