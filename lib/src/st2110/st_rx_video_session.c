@@ -1416,17 +1416,20 @@ static int rv_start_pcapng(struct mtl_main_impl* impl, struct st_rx_video_sessio
   int idx = s->idx;
   int pkt_len = ST_PKT_MAX_ETHER_BYTES;
 
-  char file_name[MTL_PCAP_FILE_MAX_LEN];
   if (s->st22_info) {
-    snprintf(file_name, MTL_PCAP_FILE_MAX_LEN, "st22_rx_%d_%u_XXXXXX.pcapng", idx,
-             max_dump_packets);
+    snprintf(s->pcapng_file_name, MTL_PCAP_FILE_MAX_LEN, "st22_rx_%d_%u_XXXXXX.pcapng",
+             idx, max_dump_packets);
   } else {
-    snprintf(file_name, MTL_PCAP_FILE_MAX_LEN, "st20_rx_%d_%u_XXXXXX.pcapng", idx,
-             max_dump_packets);
+    snprintf(s->pcapng_file_name, MTL_PCAP_FILE_MAX_LEN, "st20_rx_%d_%u_XXXXXX.pcapng",
+             idx, max_dump_packets);
   }
 
-  /* mkstemps needs windows wrapping */
-  int fd = mkstemps(file_name, strlen(".pcapng"));
+#ifndef WINDOWSENV
+  int fd = mkstemps(s->pcapng_file_name, strlen(".pcapng"));
+#else
+  s->pcapng_file_name[strlen(s->pcapng_file_name) - strlen(".pcapng")] = '\0';
+  int fd = mkstemp(s->pcapng_file_name);
+#endif
   if (fd == -1) {
     err("%s(%d), failed to open pcapng file\n", __func__, idx);
     return -EIO;
@@ -1444,7 +1447,7 @@ static int rv_start_pcapng(struct mtl_main_impl* impl, struct st_rx_video_sessio
 #endif
 
   char pool_name[ST_MAX_NAME_LEN];
-  snprintf(pool_name, ST_MAX_NAME_LEN, "pcapng_pool_%d", port);
+  snprintf(pool_name, ST_MAX_NAME_LEN, "pcapng_pool_p%d_s%d", port, idx);
   struct rte_mempool* mp =
       mt_mempool_create_by_ops(impl, port, pool_name, 256, MT_MBUF_CACHE_SIZE, 0,
                                rte_pcapng_mbuf_size(pkt_len), "ring_mp_sc");
@@ -1459,8 +1462,8 @@ static int rv_start_pcapng(struct mtl_main_impl* impl, struct st_rx_video_sessio
   s->pcapng_dropped_pkts = 0;
   s->pcapng_max_pkts = max_dump_packets;
   s->pcapng = pcapng;
-  info("%s(%d), pcapng (%s,%u) started, pcapng pool at %p\n", __func__, idx, file_name,
-       max_dump_packets, mp);
+  info("%s(%d), pcapng (%s,%u) started, pcapng pool at %p\n", __func__, idx,
+       s->pcapng_file_name, max_dump_packets, mp);
 
   if (sync) {
     int time_out = 100; /* 100*100ms, 10s */
@@ -1470,17 +1473,17 @@ static int rv_start_pcapng(struct mtl_main_impl* impl, struct st_rx_video_sessio
       mt_sleep_ms(100);
     }
     if (i >= time_out) {
-      err("%s(%d), pcapng(%s) timeout, dumped %u dropped %u\n", __func__, idx, file_name,
-          s->pcapng_dumped_pkts, s->pcapng_dropped_pkts);
+      err("%s(%d), pcapng(%s) timeout, dumped %u dropped %u\n", __func__, idx,
+          s->pcapng_file_name, s->pcapng_dumped_pkts, s->pcapng_dropped_pkts);
       mt_mempool_free(mp);
       rte_pcapng_close(pcapng);
       return -EIO;
     }
     if (meta) {
       meta->dumped_packets = s->pcapng_dumped_pkts;
-      snprintf(meta->file_name, MTL_PCAP_FILE_MAX_LEN, "%s", file_name);
+      snprintf(meta->file_name, MTL_PCAP_FILE_MAX_LEN, "%s", s->pcapng_file_name);
     }
-    info("%s(%d), pcapng(%s,%u) dump finish\n", __func__, idx, file_name,
+    info("%s(%d), pcapng(%s,%u) dump finish\n", __func__, idx, s->pcapng_file_name,
          max_dump_packets);
   }
 
@@ -1494,6 +1497,15 @@ static int rv_stop_pcapng(struct st_rx_video_session_impl* s) {
   if (s->pcapng) {
     rte_pcapng_close(s->pcapng);
     s->pcapng = NULL;
+#ifdef WINDOWSENV
+    /* add suffix to saved file name */
+    int temp_len = strlen(s->pcapng_file_name);
+    s->pcapng_file_name[temp_len] = '.';
+    char old_name[temp_len + 1];
+    memset(old_name, 0, temp_len + 1);
+    memcpy(old_name, s->pcapng_file_name, temp_len);
+    rename(old_name, s->pcapng_file_name);
+#endif
   }
 
   if (s->pcapng_pool) {
@@ -2625,9 +2637,10 @@ static int rv_handle_mbuf(void* priv, struct rte_mbuf** mbuf, uint16_t nb) {
       rv_dump_pcapng(impl, s, mbuf,
                      RTE_MIN(nb, s->pcapng_max_pkts - s->pcapng_dumped_pkts), s_port);
     } else { /* got enough packets, stop dumping */
-      info("%s(%d,%d), pcapng dump finished, dumped %u packets, dropped %u pcakets\n",
-           __func__, s->idx, s_port, s->pcapng_dumped_pkts, s->pcapng_dropped_pkts);
       rv_stop_pcapng(s);
+      info("%s(%d,%d), pcapng dump saved to %s, dumped %u packets, dropped %u pcakets\n",
+           __func__, s->idx, s_port, s->pcapng_file_name, s->pcapng_dumped_pkts,
+           s->pcapng_dropped_pkts);
     }
   }
 #endif
