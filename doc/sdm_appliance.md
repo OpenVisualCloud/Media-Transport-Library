@@ -4,13 +4,25 @@ This document  contains instructions for streaming a desktop session to a Intel(
 
 ### 1. Use-case Scenario
 
-![Image](./png/desktop-streaming-mtl.png)
+Depicted below are 2 use-case scenario:
+
+1. Synchronous playback scenario where output of a PC/Laptop is streamed via a sending device to the receiver.
+   ![Image](./png/mtl-appliance-use-case.png)
+   
+   
+
+2. Asynchronous playback - where the sending device is streaming a digital media generated (e.g framebuffer) / stored locally on the device to the receiver.
+    ![Image](./png/desktop-streaming-mtl.png)
 
 ### 2. Required Hardware
 
 1. Intel NUC11TNki5 (Codenamed Tiger Canyon) - Sending Device
 
 2. Intel(r) Smart Display Module (SDM) devkit (Codenamed Alder Valley) - Receiving Device
+
+3. Synchronous scenario - 1x HDMI-to-USB video capture device (e.g [Mukose SDI2USB3.0](https://www.google.com/url?sa=i&url=https%3A%2F%2Fwww.amazon.com%2FMOKOSE-USB3-0-Capture-Windows-Grabber%2Fdp%2FB071KPW3PH&psig=AOvVaw0JInBE6gygffG2clmni8sH&ust=1684225637669000&source=images&cd=vfe&ved=0CBIQjhxqFwoTCMjo9cnz9v4CFQAAAAAdAAAAABAE))
+
+4. 10GbE Switch and few Cat6/7 cables
 
 ### 3. Required Software
 
@@ -38,7 +50,15 @@ The steps below apply for both Linux and Windows. Please refer to the specific s
 
 #### Sample command line to streeam desktop session using ffmpeg
 
-At the sender (Intel&reg; NUC), run:
+- For **synchronous **playabck, run:
+
+```
+ffmpeg TBD
+```
+
+
+
+- For **asynchronous ** playback, streaming the framebuffer of the sending device (e.g Intel&reg; NUC), run:
 
 ```
 ffmpeg -f dshow -f gdigrab -framerate 15 -i desktop -vf scale=1920:1080,format=rgb24 -udp_port 20000 -port 0000:58:00.0 -local_addr 192.168.100.32 -dst_addr 239.168.85.20 -f kahawai_mux -
