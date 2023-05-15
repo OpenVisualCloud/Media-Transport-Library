@@ -634,6 +634,7 @@ struct st_rx_video_session_impl {
   uint32_t pcapng_max_pkts;
   struct rte_pcapng* pcapng;
   struct rte_mempool* pcapng_pool;
+  char pcapng_file_name[MTL_PCAP_FILE_MAX_LEN];
 #endif
   /* additional lcore for pkt handling */
   unsigned int pkt_lcore;
