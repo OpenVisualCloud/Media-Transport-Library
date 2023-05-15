@@ -1113,7 +1113,12 @@ static int dev_start_port(struct mt_interface* inf) {
           q);
       return ret;
     }
-    rte_eth_add_tx_callback(port_id, q, dev_tx_pkt_check, inf);
+  }
+  if (mt_get_user_params(impl)->flags & MTL_FLAG_TX_NO_BURST_CHK) {
+    info("%s(%d), no tx burst check\n", __func__, port);
+  } else {
+    for (uint16_t q = 0; q < nb_tx_q; q++)
+      rte_eth_add_tx_callback(port_id, q, dev_tx_pkt_check, inf);
   }
 
   ret = rte_eth_dev_start(port_id);
@@ -1133,7 +1138,7 @@ static int dev_start_port(struct mt_interface* inf) {
 
   if (mt_get_user_params(impl)->flags & MTL_FLAG_NIC_RX_PROMISCUOUS) {
     /* Enable RX in promiscuous mode if it's required. */
-    err("%s(%d), enable promiscuous\n", __func__, port);
+    warn("%s(%d), enable promiscuous\n", __func__, port);
     rte_eth_promiscuous_enable(port_id);
   }
   rte_eth_stats_reset(port_id); /* reset stats */

@@ -202,7 +202,7 @@ static int _video_trs_rl_tasklet(struct mtl_main_impl* impl,
     pkt_idx = st_tx_mbuf_get_idx(pkts[i]);
     if ((pkt_idx == 0) || (pkt_idx == ST_TX_DUMMY_PKT_IDX)) {
       valid_bulk = i;
-      break;
+      break; /* break if it's the first pkt of frame or it's the start of dummy */
     }
   }
   dbg("%s(%d), pkt_idx %u valid_bulk %d ts %" PRIu64 "\n", __func__, idx, pkt_idx,
