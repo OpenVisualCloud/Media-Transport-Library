@@ -1424,7 +1424,7 @@ static int rv_start_pcapng(struct mtl_main_impl* impl, struct st_rx_video_sessio
              idx, max_dump_packets);
   }
 
-#ifndef RTE_EXEC_ENV_IS_WINDOWS
+#ifndef WINDOWSENV
   int fd = mkstemps(s->pcapng_file_name, strlen(".pcapng"));
 #else
   s->pcapng_file_name[strlen(s->pcapng_file_name) - strlen(".pcapng")] = '\0';
@@ -1447,7 +1447,7 @@ static int rv_start_pcapng(struct mtl_main_impl* impl, struct st_rx_video_sessio
 #endif
 
   char pool_name[ST_MAX_NAME_LEN];
-  snprintf(pool_name, ST_MAX_NAME_LEN, "pcapng_pool_%d", port);
+  snprintf(pool_name, ST_MAX_NAME_LEN, "pcapng_pool_p%d_s%d", port, idx);
   struct rte_mempool* mp =
       mt_mempool_create_by_ops(impl, port, pool_name, 256, MT_MBUF_CACHE_SIZE, 0,
                                rte_pcapng_mbuf_size(pkt_len), "ring_mp_sc");
@@ -1497,7 +1497,7 @@ static int rv_stop_pcapng(struct st_rx_video_session_impl* s) {
   if (s->pcapng) {
     rte_pcapng_close(s->pcapng);
     s->pcapng = NULL;
-#ifdef RTE_EXEC_ENV_IS_WINDOWS
+#ifdef WINDOWSENV
     /* add suffix to saved file name */
     int temp_len = strlen(s->pcapng_file_name);
     s->pcapng_file_name[temp_len] = '.';
