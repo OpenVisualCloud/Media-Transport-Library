@@ -867,6 +867,64 @@ static int udp_set_rcvtimeo(struct mudp_impl* s, const void* optval, socklen_t o
   return 0;
 }
 
+static int udp_set_reuse_port(struct mudp_impl* s, const void* optval, socklen_t optlen) {
+  int idx = s->idx;
+  size_t sz = sizeof(int);
+  int reuse_port;
+
+  if (optlen != sz) {
+    err("%s(%d), invalid optlen %d\n", __func__, idx, optlen);
+    MUDP_ERR_RET(EINVAL);
+  }
+
+  reuse_port = *((int*)optval);
+  info("%s(%d), reuse_port %d\n", __func__, idx, reuse_port);
+  s->reuse_port = reuse_port;
+  return 0;
+}
+
+static int udp_get_reuse_port(struct mudp_impl* s, void* optval, socklen_t* optlen) {
+  int idx = s->idx;
+  size_t sz = sizeof(int);
+
+  if (*optlen != sz) {
+    err("%s(%d), invalid *optlen %d\n", __func__, idx, (*optlen));
+    MUDP_ERR_RET(EINVAL);
+  }
+
+  mtl_memcpy(optval, &s->reuse_port, sz);
+  return 0;
+}
+
+static int udp_set_reuse_addr(struct mudp_impl* s, const void* optval, socklen_t optlen) {
+  int idx = s->idx;
+  size_t sz = sizeof(int);
+  int reuse_addr;
+
+  if (optlen != sz) {
+    err("%s(%d), invalid optlen %d\n", __func__, idx, optlen);
+    MUDP_ERR_RET(EINVAL);
+  }
+
+  reuse_addr = *((int*)optval);
+  info("%s(%d), reuse_addr %d\n", __func__, idx, reuse_addr);
+  s->reuse_addr = reuse_addr;
+  return 0;
+}
+
+static int udp_get_reuse_addr(struct mudp_impl* s, void* optval, socklen_t* optlen) {
+  int idx = s->idx;
+  size_t sz = sizeof(int);
+
+  if (*optlen != sz) {
+    err("%s(%d), invalid *optlen %d\n", __func__, idx, (*optlen));
+    MUDP_ERR_RET(EINVAL);
+  }
+
+  mtl_memcpy(optval, &s->reuse_addr, sz);
+  return 0;
+}
+
 static int udp_init_mcast(struct mtl_main_impl* impl, struct mudp_impl* s) {
   int idx = s->idx;
   enum mtl_port port = s->port;
@@ -1701,6 +1759,10 @@ int mudp_getsockopt(mudp_handle ut, int level, int optname, void* optval,
           return udp_get_rcvtimeo(s, optval, optlen);
         case SO_COOKIE:
           return udp_get_cookie(s, optval, optlen);
+        case SO_REUSEPORT:
+          return udp_get_reuse_port(s, optval, optlen);
+        case SO_REUSEADDR:
+          return udp_get_reuse_addr(s, optval, optlen);
         default:
           err("%s(%d), unknown optname %d for SOL_SOCKET\n", __func__, idx, optname);
           MUDP_ERR_RET(EINVAL);
@@ -1733,11 +1795,9 @@ int mudp_setsockopt(mudp_handle ut, int level, int optname, const void* optval,
         case SO_COOKIE:
           return udp_set_cookie(s, optval, optlen);
         case SO_REUSEADDR: /* skip now */
-          info("%s(%d), skip SO_REUSEADDR\n", __func__, idx);
-          return 0;
+          return udp_set_reuse_addr(s, optval, optlen);
         case SO_REUSEPORT:
-          info("%s(%d), not support SO_REUSEPORT\n", __func__, idx);
-          MUDP_ERR_RET(ENOTSUP);
+          return udp_set_reuse_port(s, optval, optlen);
         default:
           err("%s(%d), unknown optname %d for SOL_SOCKET\n", __func__, idx, optname);
           MUDP_ERR_RET(EINVAL);

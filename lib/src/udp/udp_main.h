@@ -102,6 +102,10 @@ struct mudp_impl {
   uint64_t cookie;
   /* gso segment */
   size_t gso_segment_sz;
+  /* if port is reused */
+  int reuse_port;
+  /* if address is reused */
+  int reuse_addr;
 
   /* stat */
   /* do we need atomic here? atomic may impact the performance */
