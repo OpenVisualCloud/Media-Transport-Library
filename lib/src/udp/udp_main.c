@@ -6,6 +6,7 @@
 
 #include "../mt_log.h"
 #include "../mt_stat.h"
+#include "udp_rxq.h"
 
 #ifndef UDP_SEGMENT
 /* fix for centos build */
@@ -488,221 +489,50 @@ static int udp_init_txq(struct mtl_main_impl* impl, struct mudp_impl* s,
   return 0;
 }
 
-static int udp_uinit_tasklet(struct mudp_impl* s) {
-  if (s->lcore_tasklet) {
-    mt_sch_unregister_tasklet(s->lcore_tasklet);
-    s->lcore_tasklet = NULL;
-  }
-
-  return 0;
-}
-
 static int udp_uinit_rxq(struct mtl_main_impl* impl, struct mudp_impl* s) {
-  udp_uinit_tasklet(s);
-
   if (s->rxq) {
-    mt_dev_put_rx_queue(impl, s->rxq);
+    mudp_put_rxq(s->rxq);
     s->rxq = NULL;
   }
-  if (s->rsq) {
-    mt_rsq_put(s->rsq);
-    s->rsq = NULL;
-  }
-  if (s->rss) {
-    mt_rss_put(s->rss);
-    s->rss = NULL;
-  }
-
-  if (s->rx_ring) {
-    mt_ring_dequeue_clean(s->rx_ring);
-    rte_ring_free(s->rx_ring);
-    s->rx_ring = NULL;
-  }
-
-  udp_clear_flag(s, MUDP_RXQ_ALLOC);
-  return 0;
-}
-
-static void udp_wakeup(struct mudp_impl* s) {
-  mt_pthread_mutex_lock(&s->lcore_wake_mutex);
-  mt_pthread_cond_signal(&s->lcore_wake_cond);
-  mt_pthread_mutex_unlock(&s->lcore_wake_mutex);
-}
-
-static uint16_t udp_rx_handle(struct mudp_impl* s, struct rte_mbuf** pkts,
-                              uint16_t nb_pkts) {
-  int idx = s->idx;
-  struct rte_mbuf* valid_mbuf[nb_pkts];
-  uint16_t valid_mbuf_cnt = 0;
-  uint16_t n = 0;
-
-  s->stat_pkt_rx += nb_pkts;
-
-  /* check if valid udp pkt */
-  for (uint16_t i = 0; i < nb_pkts; i++) {
-    struct mt_udp_hdr* hdr = rte_pktmbuf_mtod(pkts[i], struct mt_udp_hdr*);
-    struct rte_ipv4_hdr* ipv4 = &hdr->ipv4;
-
-    if (ipv4->next_proto_id == IPPROTO_UDP) {
-      valid_mbuf[valid_mbuf_cnt] = pkts[i];
-      valid_mbuf_cnt++;
-      rte_mbuf_refcnt_update(pkts[i], 1);
-    } else { /* invalid pkt */
-      warn("%s(%d), not udp pkt %u\n", __func__, idx, ipv4->next_proto_id);
-    }
-  }
-
-  /* enqueue the valid mbuf */
-  if (valid_mbuf_cnt) {
-    if (s->rx_ring) {
-      n = rte_ring_sp_enqueue_bulk(s->rx_ring, (void**)&valid_mbuf[0], valid_mbuf_cnt,
-                                   NULL);
-    }
-    if (!n) {
-      dbg("%s(%d), %u pkts enqueue fail\n", __func__, idx, valid_mbuf_cnt);
-      rte_pktmbuf_free_bulk(&valid_mbuf[0], valid_mbuf_cnt);
-      s->stat_pkt_rx_enq_fail += valid_mbuf_cnt;
-    }
-  }
-
-  return n;
-}
-
-static int udp_rsq_mbuf_cb(void* priv, struct rte_mbuf** mbuf, uint16_t nb) {
-  struct mudp_impl* s = priv;
-  udp_rx_handle(s, mbuf, nb);
-  return 0;
-}
-
-static uint16_t udp_rx(struct mtl_main_impl* impl, struct mudp_impl* s) {
-  uint16_t rx_burst = s->rx_burst_pkts;
-  struct rte_mbuf* pkts[rx_burst];
-
-  if (s->rsq) return mt_rsq_burst(s->rsq, rx_burst);
-  if (s->rss) return mt_rss_burst(s->rss, rx_burst);
-
-  if (!s->rxq) return 0;
-  uint16_t rx = mt_dev_rx_burst(s->rxq, pkts, rx_burst);
-  if (!rx) return 0; /* no pkt */
-  uint16_t n = udp_rx_handle(s, pkts, rx);
-  rte_pktmbuf_free_bulk(&pkts[0], rx);
-  return n;
-}
-
-static int udp_tasklet_handler(void* priv) {
-  struct mudp_impl* s = priv;
-  struct mtl_main_impl* impl = s->parent;
-
-  udp_rx(impl, s);
-
-  unsigned int count = rte_ring_count(s->rx_ring);
-  if (count > 0) {
-    uint64_t tsc = mt_get_tsc(impl);
-    int us = (tsc - s->wake_tsc_last) / NS_PER_US;
-    if ((count > s->wake_thresh_count) || (us > s->wake_timeout_us)) {
-      udp_wakeup(s);
-      s->wake_tsc_last = tsc;
-    }
-  }
-  return 0;
-}
-
-static int udp_init_tasklet(struct mtl_main_impl* impl, struct mudp_impl* s) {
-  if (!mt_udp_lcore(impl, s->port)) return 0;
-
-  struct mt_sch_tasklet_ops ops;
-
-  memset(&ops, 0x0, sizeof(ops));
-  ops.priv = s;
-  ops.name = s->name;
-  ops.handler = udp_tasklet_handler;
-
-  s->lcore_tasklet = mt_sch_register_tasklet(impl->main_sch, &ops);
-  if (!s->lcore_tasklet) {
-    err("%s, register lcore tasklet fail\n", __func__);
-    mudp_close(s);
-    MUDP_ERR_RET(EIO);
-  }
-  /* start mtl to start the sch */
-  mtl_start(impl);
   return 0;
 }
 
 static int udp_init_rxq(struct mtl_main_impl* impl, struct mudp_impl* s) {
-  enum mtl_port port = s->port;
   int idx = s->idx;
-  uint16_t queue_id;
 
-  struct mt_rx_flow flow;
-  memset(&flow, 0, sizeof(flow));
-  flow.no_ip_flow = true;
-  flow.dst_port = s->bind_port;
-  flow.priv = s;
-  flow.cb = udp_rsq_mbuf_cb;
-
-  if (mt_has_rss(impl, port)) {
-    s->rss = mt_rss_get(impl, port, &flow);
-    if (!s->rss) {
-      err("%s(%d), get rss fail\n", __func__, idx);
-      udp_uinit_rxq(impl, s);
-      MUDP_ERR_RET(EIO);
-    }
-    queue_id = mt_rss_queue_id(s->rss);
-  } else if (mt_shared_queue(impl, port)) {
-    s->rsq = mt_rsq_get(impl, port, &flow);
-    if (!s->rsq) {
-      err("%s(%d), get rsq fail\n", __func__, idx);
-      udp_uinit_rxq(impl, s);
-      MUDP_ERR_RET(EIO);
-    }
-    queue_id = mt_rsq_queue_id(s->rsq);
-  } else {
-    s->rxq = mt_dev_get_rx_queue(impl, port, &flow);
-    if (!s->rxq) {
-      err("%s(%d), get rx queue fail\n", __func__, idx);
-      udp_uinit_rxq(impl, s);
-      MUDP_ERR_RET(EIO);
-    }
-    queue_id = mt_dev_rx_queue_id(s->rxq);
-  }
-  s->rxq_id = queue_id;
-
-  char ring_name[32];
-  struct rte_ring* ring;
-  unsigned int flags, count;
-  snprintf(ring_name, 32, "MUDP-RX-P%d-Q%u-%d", port, queue_id, idx);
-  flags = RING_F_SP_ENQ | RING_F_SC_DEQ; /* single-producer and single-consumer */
-  count = s->rx_ring_count;
-  ring = rte_ring_create(ring_name, count, mt_socket_id(impl, port), flags);
-  if (!ring) {
-    err("%s(%d), rx ring create fail\n", __func__, idx);
-    udp_uinit_rxq(impl, s);
-    MUDP_ERR_RET(ENOMEM);
-  }
-  s->rx_ring = ring;
-
-  int ret = udp_init_tasklet(impl, s);
-  if (ret < 0) {
-    err("%s(%d), init tasklet fail %d\n", __func__, idx, ret);
-    udp_uinit_rxq(impl, s);
-    MUDP_ERR_RET(ENOMEM);
+  if (s->rxq) {
+    err("%s(%d), rxq already get\n", __func__, idx);
+    MUDP_ERR_RET(EIO);
   }
 
-  info("%s(%d), succ, port %u\n", __func__, idx, s->bind_port);
-  udp_set_flag(s, MUDP_RXQ_ALLOC);
+  struct mudp_rxq_create create;
+  create.impl = impl;
+  create.dst_port = s->bind_port;
+  create.port = s->port;
+  create.ring_count = s->rx_ring_count;
+  create.wake_thresh_count = s->wake_thresh_count;
+  create.wake_timeout_us = s->wake_timeout_us;
+  s->rxq = mudp_get_rxq(&create);
+  if (!s->rxq) {
+    err("%s(%d), rxq get fail\n", __func__, idx);
+    MUDP_ERR_RET(EIO);
+  }
+
   return 0;
-}
-
-static char* udp_rxq_mode(struct mudp_impl* s) {
-  if (s->rsq) return "shared";
-  if (s->rss) return "rss";
-  return "dedicated";
 }
 
 static int udp_stat_dump(void* priv) {
   struct mudp_impl* s = priv;
   int idx = s->idx;
   enum mtl_port port = s->port;
+
+  if (s->stat_pkt_rx) {
+    notice("%s(%d,%d), pkt rx %u deliver %u\n", __func__, port, idx, s->stat_pkt_rx,
+           s->stat_pkt_deliver);
+    s->stat_pkt_rx = 0;
+    s->stat_pkt_deliver = 0;
+  }
+  if (s->rxq) mudp_rxq_dump(s->rxq);
 
   if (s->stat_pkt_build) {
     notice("%s(%d,%d), pkt build %u tx %u\n", __func__, port, idx, s->stat_pkt_build,
@@ -713,17 +543,6 @@ static int udp_stat_dump(void* priv) {
   if (s->stat_tx_gso_count) {
     notice("%s(%d,%d), tx gso count %u\n", __func__, port, idx, s->stat_tx_gso_count);
     s->stat_tx_gso_count = 0;
-  }
-  if (s->stat_pkt_rx) {
-    notice("%s(%d,%d), pkt rx %u deliver %u, %s rxq %u\n", __func__, port, idx,
-           s->stat_pkt_rx, s->stat_pkt_deliver, udp_rxq_mode(s), s->rxq_id);
-    s->stat_pkt_rx = 0;
-    s->stat_pkt_deliver = 0;
-  }
-  if (s->stat_pkt_rx_enq_fail) {
-    warn("%s(%d,%d), pkt rx %u enqueue fail\n", __func__, port, idx,
-         s->stat_pkt_rx_enq_fail);
-    s->stat_pkt_rx_enq_fail = 0;
   }
   if (s->stat_pkt_arp_fail) {
     warn("%s(%d,%d), pkt %u arp fail\n", __func__, port, idx, s->stat_pkt_arp_fail);
@@ -864,6 +683,64 @@ static int udp_set_rcvtimeo(struct mudp_impl* s, const void* optval, socklen_t o
   tv = (const struct timeval*)optval;
   us = tv->tv_sec * 1000 * 1000 + tv->tv_usec;
   mudp_set_rx_timeout(s, us);
+  return 0;
+}
+
+static int udp_set_reuse_port(struct mudp_impl* s, const void* optval, socklen_t optlen) {
+  int idx = s->idx;
+  size_t sz = sizeof(int);
+  int reuse_port;
+
+  if (optlen != sz) {
+    err("%s(%d), invalid optlen %d\n", __func__, idx, optlen);
+    MUDP_ERR_RET(EINVAL);
+  }
+
+  reuse_port = *((int*)optval);
+  info("%s(%d), reuse_port %d\n", __func__, idx, reuse_port);
+  s->reuse_port = reuse_port;
+  return 0;
+}
+
+static int udp_get_reuse_port(struct mudp_impl* s, void* optval, socklen_t* optlen) {
+  int idx = s->idx;
+  size_t sz = sizeof(int);
+
+  if (*optlen != sz) {
+    err("%s(%d), invalid *optlen %d\n", __func__, idx, (*optlen));
+    MUDP_ERR_RET(EINVAL);
+  }
+
+  mtl_memcpy(optval, &s->reuse_port, sz);
+  return 0;
+}
+
+static int udp_set_reuse_addr(struct mudp_impl* s, const void* optval, socklen_t optlen) {
+  int idx = s->idx;
+  size_t sz = sizeof(int);
+  int reuse_addr;
+
+  if (optlen != sz) {
+    err("%s(%d), invalid optlen %d\n", __func__, idx, optlen);
+    MUDP_ERR_RET(EINVAL);
+  }
+
+  reuse_addr = *((int*)optval);
+  info("%s(%d), reuse_addr %d\n", __func__, idx, reuse_addr);
+  s->reuse_addr = reuse_addr;
+  return 0;
+}
+
+static int udp_get_reuse_addr(struct mudp_impl* s, void* optval, socklen_t* optlen) {
+  int idx = s->idx;
+  size_t sz = sizeof(int);
+
+  if (*optlen != sz) {
+    err("%s(%d), invalid *optlen %d\n", __func__, idx, (*optlen));
+    MUDP_ERR_RET(EINVAL);
+  }
+
+  mtl_memcpy(optval, &s->reuse_addr, sz);
   return 0;
 }
 
@@ -1010,8 +887,9 @@ static ssize_t udp_rx_dequeue(struct mudp_impl* s, void* buf, size_t len, int fl
   struct rte_mbuf* pkt = NULL;
 
   /* dequeue pkt from rx ring */
-  ret = rte_ring_sc_dequeue(s->rx_ring, (void**)&pkt);
+  ret = rte_ring_sc_dequeue(mudp_rxq_ring(s->rxq), (void**)&pkt);
   if (ret < 0) return ret;
+  s->stat_pkt_rx++;
 
   struct mt_udp_hdr* hdr = rte_pktmbuf_mtod(pkt, struct mt_udp_hdr*);
   struct rte_udp_hdr* udp = &hdr->udp;
@@ -1068,7 +946,7 @@ dequeue:
   if (copied > 0) return copied;
 
 rx_pool:
-  rx = udp_rx(impl, s);
+  rx = mudp_rxq_rx(s->rxq);
   if (rx) { /* dequeue again as rx succ */
     goto dequeue;
   }
@@ -1094,7 +972,7 @@ static ssize_t udp_rx_msg_dequeue(struct mudp_impl* s, struct msghdr* msg, int f
   struct rte_mbuf* pkt = NULL;
 
   /* dequeue pkt from rx ring */
-  ret = rte_ring_sc_dequeue(s->rx_ring, (void**)&pkt);
+  ret = rte_ring_sc_dequeue(mudp_rxq_ring(s->rxq), (void**)&pkt);
   if (ret < 0) return ret;
 
   struct mt_udp_hdr* hdr = rte_pktmbuf_mtod(pkt, struct mt_udp_hdr*);
@@ -1157,7 +1035,7 @@ dequeue:
   if (copied > 0) return copied;
 
 rx_pool:
-  rx = udp_rx(impl, s);
+  rx = mudp_rxq_rx(s->rxq);
   if (rx) { /* dequeue again as rx succ */
     goto dequeue;
   }
@@ -1189,15 +1067,15 @@ static int udp_poll(struct mudp_pollfd* fds, mudp_nfds_t nfds, int timeout,
 rx_poll:
   for (mudp_nfds_t i = 0; i < nfds; i++) {
     s = fds[i].fd;
-    unsigned int count = rte_ring_count(s->rx_ring);
-    if (!count) udp_rx(impl, s);
+    unsigned int count = rte_ring_count(mudp_rxq_ring(s->rxq));
+    if (!count) mudp_rxq_rx(s->rxq);
   }
 
   /* check the ready fds */
   rc = 0;
   for (mudp_nfds_t i = 0; i < nfds; i++) {
     s = fds[i].fd;
-    unsigned int count = rte_ring_count(s->rx_ring);
+    unsigned int count = rte_ring_count(mudp_rxq_ring(s->rxq));
     if (count > 0) {
       rc++;
       fds[i].revents = POLLIN;
@@ -1226,19 +1104,10 @@ rx_poll:
 }
 
 static void udp_timedwait_lcore(struct mudp_impl* s, unsigned int us) {
-  mt_pthread_mutex_lock(&s->lcore_wake_mutex);
-  if (udp_alive(s)) {
-    struct timespec time;
-    clock_gettime(MT_THREAD_TIMEDWAIT_CLOCK_ID, &time);
-    uint64_t ns = mt_timespec_to_ns(&time);
-    ns += us * NS_PER_US;
-    mt_ns_to_timespec(ns, &time);
-    s->stat_timedwait++;
-    int ret = mt_pthread_cond_timedwait(&s->lcore_wake_cond, &s->lcore_wake_mutex, &time);
-    dbg("%s(%d), timedwait ret %d\n", __func__, s->idx, ret);
-    if (ret == ETIMEDOUT) s->stat_timedwait_timeout++;
-  }
-  mt_pthread_mutex_unlock(&s->lcore_wake_mutex);
+  s->stat_timedwait++;
+  int ret = mudp_rxq_timedwait_lcore(s->rxq, us);
+  dbg("%s(%d), timedwait ret %d\n", __func__, s->idx, ret);
+  if (ret == ETIMEDOUT) s->stat_timedwait_timeout++;
 }
 
 static ssize_t udp_recvfrom_lcore(struct mudp_impl* s, void* buf, size_t len, int flags,
@@ -1305,7 +1174,7 @@ poll:
   rc = 0;
   for (mudp_nfds_t i = 0; i < nfds; i++) {
     s = fds[i].fd;
-    unsigned int count = rte_ring_count(s->rx_ring);
+    unsigned int count = rte_ring_count(mudp_rxq_ring(s->rxq));
     if (count > 0) {
       rc++;
       fds[i].revents = POLLIN;
@@ -1354,7 +1223,6 @@ mudp_handle mudp_socket_port(mtl_handle mt, int domain, int type, int protocol,
   s->parent = impl;
   s->type = MT_HANDLE_UDP;
   s->idx = idx;
-  snprintf(s->name, sizeof(s->name), "mudp_%d", idx);
   s->port = port;
   s->element_nb = mt_if_nb_tx_desc(impl, port) + 512;
   s->element_size = MUDP_MAX_BYTES;
@@ -1364,29 +1232,16 @@ mudp_handle mudp_socket_port(mtl_handle mt, int domain, int type, int protocol,
   s->tx_timeout_us = 10 * US_PER_MS;
   s->rx_timeout_us = 0;
   s->txq_bps = MUDP_DEFAULT_RL_BPS;
-  s->rx_burst_pkts = 128;
   s->rx_ring_count = 1024;
   s->rx_poll_sleep_us = 10;
   s->sndbuf_sz = 10 * 1024;
   s->rcvbuf_sz = 10 * 1024;
+  s->wake_thresh_count = 32;
+  s->wake_timeout_us = 1000;
   s->cookie = idx;
   s->mcast_addrs_nb = 16; /* max 16 mcast address */
   s->gso_segment_sz = MUDP_MAX_BYTES;
   mt_pthread_mutex_init(&s->mcast_addrs_mutex, NULL);
-
-  /* lcore related */
-  mt_pthread_mutex_init(&s->lcore_wake_mutex, NULL);
-#if MT_THREAD_TIMEDWAIT_CLOCK_ID != CLOCK_REALTIME
-  pthread_condattr_t attr;
-  pthread_condattr_init(&attr);
-  pthread_condattr_setclock(&attr, MT_THREAD_TIMEDWAIT_CLOCK_ID);
-  mt_pthread_cond_init(&s->lcore_wake_cond, &attr);
-#else
-  mt_pthread_cond_init(&s->lcore_wake_cond, NULL);
-#endif
-  s->wake_thresh_count = 32;
-  s->wake_timeout_us = 1000;
-  s->wake_tsc_last = mt_get_tsc(impl);
 
   ret = udp_init_hdr(impl, s);
   if (ret < 0) {
@@ -1425,7 +1280,6 @@ int mudp_close(mudp_handle ut) {
   }
 
   s->alive = false;
-  udp_wakeup(s); /* wake up any pending wait */
 
   mt_stat_unregister(impl, udp_stat_dump, s);
   udp_stat_dump(s);
@@ -1435,9 +1289,6 @@ int mudp_close(mudp_handle ut) {
   udp_uinit_mcast(impl, s);
 
   mt_pthread_mutex_destroy(&s->mcast_addrs_mutex);
-  mt_pthread_mutex_destroy(&s->lcore_wake_mutex);
-  mt_pthread_cond_destroy(&s->lcore_wake_cond);
-
   mt_rte_free(s);
   info("%s(%d), succ\n", __func__, idx);
   return 0;
@@ -1621,7 +1472,7 @@ int mudp_poll_query(struct mudp_pollfd* fds, mudp_nfds_t nfds, int timeout,
   /* init rxq if not */
   for (mudp_nfds_t i = 0; i < nfds; i++) {
     s = fds[i].fd;
-    if (!udp_get_flag(s, MUDP_RXQ_ALLOC)) {
+    if (!s->rxq) {
       ret = udp_init_rxq(impl, s);
       if (ret < 0) {
         err("%s(%d), init rxq fail\n", __func__, s->idx);
@@ -1630,7 +1481,7 @@ int mudp_poll_query(struct mudp_pollfd* fds, mudp_nfds_t nfds, int timeout,
     }
   }
 
-  if (s->lcore_tasklet)
+  if (mudp_rxq_lcore_mode(s->rxq))
     return udp_poll_lcore(fds, nfds, timeout, query, priv);
   else
     return udp_poll(fds, nfds, timeout, query, priv);
@@ -1648,7 +1499,7 @@ ssize_t mudp_recvfrom(mudp_handle ut, void* buf, size_t len, int flags,
   int ret;
 
   /* init rxq if not */
-  if (!udp_get_flag(s, MUDP_RXQ_ALLOC)) {
+  if (!s->rxq) {
     ret = udp_init_rxq(impl, s);
     if (ret < 0) {
       err("%s(%d), init rxq fail\n", __func__, idx);
@@ -1656,7 +1507,7 @@ ssize_t mudp_recvfrom(mudp_handle ut, void* buf, size_t len, int flags,
     }
   }
 
-  if (s->lcore_tasklet)
+  if (mudp_rxq_lcore_mode(s->rxq))
     return udp_recvfrom_lcore(s, buf, len, flags, src_addr, addrlen);
   else
     return udp_recvfrom(s, buf, len, flags, src_addr, addrlen);
@@ -1669,7 +1520,7 @@ ssize_t mudp_recvmsg(mudp_handle ut, struct msghdr* msg, int flags) {
   int ret;
 
   /* init rxq if not */
-  if (!udp_get_flag(s, MUDP_RXQ_ALLOC)) {
+  if (!s->rxq) {
     ret = udp_init_rxq(impl, s);
     if (ret < 0) {
       err("%s(%d), init rxq fail\n", __func__, idx);
@@ -1677,7 +1528,7 @@ ssize_t mudp_recvmsg(mudp_handle ut, struct msghdr* msg, int flags) {
     }
   }
 
-  if (s->lcore_tasklet)
+  if (mudp_rxq_lcore_mode(s->rxq))
     return udp_recvmsg_lcore(s, msg, flags);
   else
     return udp_recvmsg(s, msg, flags);
@@ -1701,6 +1552,10 @@ int mudp_getsockopt(mudp_handle ut, int level, int optname, void* optval,
           return udp_get_rcvtimeo(s, optval, optlen);
         case SO_COOKIE:
           return udp_get_cookie(s, optval, optlen);
+        case SO_REUSEPORT:
+          return udp_get_reuse_port(s, optval, optlen);
+        case SO_REUSEADDR:
+          return udp_get_reuse_addr(s, optval, optlen);
         default:
           err("%s(%d), unknown optname %d for SOL_SOCKET\n", __func__, idx, optname);
           MUDP_ERR_RET(EINVAL);
@@ -1733,11 +1588,9 @@ int mudp_setsockopt(mudp_handle ut, int level, int optname, const void* optval,
         case SO_COOKIE:
           return udp_set_cookie(s, optval, optlen);
         case SO_REUSEADDR: /* skip now */
-          info("%s(%d), skip SO_REUSEADDR\n", __func__, idx);
-          return 0;
+          return udp_set_reuse_addr(s, optval, optlen);
         case SO_REUSEPORT:
-          info("%s(%d), not support SO_REUSEPORT\n", __func__, idx);
-          MUDP_ERR_RET(ENOTSUP);
+          return udp_set_reuse_port(s, optval, optlen);
         default:
           err("%s(%d), unknown optname %d for SOL_SOCKET\n", __func__, idx, optname);
           MUDP_ERR_RET(EINVAL);
@@ -1950,7 +1803,7 @@ int mudp_set_rx_ring_count(mudp_handle ut, unsigned int count) {
     MUDP_ERR_RET(EIO);
   }
 
-  if (udp_get_flag(s, MUDP_RXQ_ALLOC)) {
+  if (s->rxq) {
     err("%s(%d), rxq already alloced\n", __func__, idx);
     MUDP_ERR_RET(EINVAL);
   }
@@ -1969,8 +1822,8 @@ int mudp_set_wake_thresh_count(mudp_handle ut, unsigned int count) {
     MUDP_ERR_RET(EIO);
   }
 
-  /* add value check? */
   s->wake_thresh_count = count;
+  if (s->rxq) mudp_rxq_set_wake_thresh(s->rxq, count);
   return 0;
 }
 
@@ -1983,8 +1836,8 @@ int mudp_set_wake_timeout(mudp_handle ut, unsigned int us) {
     MUDP_ERR_RET(EIO);
   }
 
-  /* add value check? */
   s->wake_timeout_us = us;
+  if (s->rxq) mudp_rxq_set_wake_timeout(s->rxq, us);
   return 0;
 }
 

@@ -5,13 +5,8 @@
 #ifndef _MT_LIB_UDP_MAIN_H_
 #define _MT_LIB_UDP_MAIN_H_
 
-#include "../mt_dev.h"
-#include "../mt_main.h"
 #include "../mt_mcast.h"
-#include "../mt_rss.h"
-#include "../mt_sch.h"
-#include "../mt_shared_queue.h"
-#include "../mt_util.h"
+#include "udp_rxq.h"
 
 // clang-format off
 #ifdef WINDOWSENV
@@ -31,14 +26,12 @@
 #define MUDP_BIND (MTL_BIT32(0))
 /* if txq alloc or not */
 #define MUDP_TXQ_ALLOC (MTL_BIT32(1))
-/* if rxq alloc or not */
-#define MUDP_RXQ_ALLOC (MTL_BIT32(2))
 /* if mcast init or not */
-#define MUDP_MCAST_INIT (MTL_BIT32(3))
+#define MUDP_MCAST_INIT (MTL_BIT32(2))
 /* if tx mac is defined by user */
-#define MUDP_TX_USER_MAC (MTL_BIT32(4))
+#define MUDP_TX_USER_MAC (MTL_BIT32(3))
 /* if check bind address for RX */
-#define MUDP_BIND_ADDRESS_CHECK (MTL_BIT32(5))
+#define MUDP_BIND_ADDRESS_CHECK (MTL_BIT32(4))
 
 /* 1g */
 #define MUDP_DEFAULT_RL_BPS (1ul * 1024 * 1024 * 1024)
@@ -47,7 +40,6 @@ struct mudp_impl {
   struct mtl_main_impl* parent;
   enum mt_handle_type type;
   int idx;
-  char name[64];
   bool alive;
   int (*user_dump)(void* priv);
   void* user_dump_priv;
@@ -60,27 +52,18 @@ struct mudp_impl {
   uint64_t txq_bps; /* bit per sec for q */
   struct mt_tx_queue* txq;
   struct mt_tsq_entry* tsq;
-  struct mt_rx_queue* rxq;
-  struct mt_rsq_entry* rsq;
-  struct mt_rss_entry* rss;
-  uint16_t rxq_id;
-  struct rte_ring* rx_ring;
+  struct mudp_rxq* rxq;
   unsigned int rx_ring_count;
-  uint16_t rx_burst_pkts;
   unsigned int rx_poll_sleep_us;
   struct rte_mempool* tx_pool;
   uint16_t element_size;
   unsigned int element_nb;
 
-  pthread_cond_t lcore_wake_cond;
-  pthread_mutex_t lcore_wake_mutex;
-  struct mt_sch_tasklet_impl* lcore_tasklet;
-  /* bulk wakeup mode */
+  /* lcore mode info */
   /* wakeup when rte_ring_count(s->rx_ring) reach this threshold */
   unsigned int wake_thresh_count;
   /* wakeup when timeout with last wakeup */
   unsigned int wake_timeout_us;
-  uint64_t wake_tsc_last;
 
   unsigned int arp_timeout_us;
   unsigned int msg_arp_timeout_us;
@@ -102,6 +85,10 @@ struct mudp_impl {
   uint64_t cookie;
   /* gso segment */
   size_t gso_segment_sz;
+  /* if port is reused */
+  int reuse_port;
+  /* if address is reused */
+  int reuse_addr;
 
   /* stat */
   /* do we need atomic here? atomic may impact the performance */
@@ -110,11 +97,11 @@ struct mudp_impl {
   uint32_t stat_pkt_tx;
   uint32_t stat_tx_gso_count;
   uint32_t stat_tx_retry;
-  uint32_t stat_pkt_rx;
-  uint32_t stat_pkt_rx_enq_fail;
-  uint32_t stat_pkt_deliver;
   uint32_t stat_timedwait;
   uint32_t stat_timedwait_timeout;
+
+  uint32_t stat_pkt_rx;
+  uint32_t stat_pkt_deliver;
 };
 
 int mudp_verify_socket_args(int domain, int type, int protocol);
