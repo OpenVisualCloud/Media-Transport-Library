@@ -552,12 +552,6 @@ static int udp_stat_dump(void* priv) {
     warn("%s(%d,%d), pkt tx retry %u\n", __func__, port, idx, s->stat_tx_retry);
     s->stat_tx_retry = 0;
   }
-  if (s->stat_timedwait) {
-    notice("%s(%d,%d), timedwait %u timeout %u\n", __func__, port, idx, s->stat_timedwait,
-           s->stat_timedwait_timeout);
-    s->stat_timedwait = 0;
-    s->stat_timedwait_timeout = 0;
-  }
   if (s->user_dump) {
     s->user_dump(s->user_dump_priv);
   }
@@ -945,7 +939,6 @@ dequeue:
   copied = udp_rx_dequeue(s, buf, len, flags, src_addr, addrlen);
   if (copied > 0) return copied;
 
-rx_pool:
   rx = mudp_rxq_rx(s->rxq);
   if (rx) { /* dequeue again as rx succ */
     goto dequeue;
@@ -957,9 +950,11 @@ rx_pool:
   }
 
   unsigned int us = (mt_get_tsc(impl) - start_ts) / NS_PER_US;
-  if ((us < s->rx_timeout_us) && udp_alive(s)) {
+  unsigned int timeout = s->rx_timeout_us;
+  if ((us < timeout) && udp_alive(s)) {
+    mudp_rxq_timedwait_lcore(s->rxq, timeout - us);
     if (s->rx_poll_sleep_us) mt_sleep_us(s->rx_poll_sleep_us);
-    goto rx_pool;
+    goto dequeue;
   }
 
   return udp_rx_ret_timeout(s);
@@ -1034,7 +1029,6 @@ dequeue:
   copied = udp_rx_msg_dequeue(s, msg, flags);
   if (copied > 0) return copied;
 
-rx_pool:
   rx = mudp_rxq_rx(s->rxq);
   if (rx) { /* dequeue again as rx succ */
     goto dequeue;
@@ -1046,9 +1040,11 @@ rx_pool:
   }
 
   unsigned int us = (mt_get_tsc(impl) - start_ts) / NS_PER_US;
-  if ((us < s->rx_timeout_us) && udp_alive(s)) {
+  unsigned int timeout = s->rx_timeout_us;
+  if ((us < timeout) && udp_alive(s)) {
+    mudp_rxq_timedwait_lcore(s->rxq, timeout - us);
     if (s->rx_poll_sleep_us) mt_sleep_us(s->rx_poll_sleep_us);
-    goto rx_pool;
+    goto dequeue;
   }
 
   return udp_rx_ret_timeout(s);
@@ -1092,6 +1088,7 @@ rx_poll:
   /* check if timeout */
   int ms = (mt_get_tsc(impl) - start_ts) / NS_PER_MS;
   if (((ms < timeout) || (timeout < 0)) && udp_alive(s)) {
+    mudp_rxq_timedwait_lcore(s->rxq, timeout - ms);
     if (s->rx_poll_sleep_us) {
       dbg("%s(%d), sleep %u us\n", __func__, s->idx, s->rx_poll_sleep_us);
       mt_sleep_us(s->rx_poll_sleep_us);
@@ -1100,102 +1097,6 @@ rx_poll:
   }
 
   dbg("%s(%d), timeout to %d ms\n", __func__, s->idx, timeout);
-  return 0;
-}
-
-static void udp_timedwait_lcore(struct mudp_impl* s, unsigned int us) {
-  s->stat_timedwait++;
-  int ret = mudp_rxq_timedwait_lcore(s->rxq, us);
-  dbg("%s(%d), timedwait ret %d\n", __func__, s->idx, ret);
-  if (ret == ETIMEDOUT) s->stat_timedwait_timeout++;
-}
-
-static ssize_t udp_recvfrom_lcore(struct mudp_impl* s, void* buf, size_t len, int flags,
-                                  struct sockaddr* src_addr, socklen_t* addrlen) {
-  struct mtl_main_impl* impl = s->parent;
-  ssize_t copied = 0;
-  uint64_t start_ts = mt_get_tsc(impl);
-
-dequeue:
-  /* dequeue pkt from rx ring */
-  copied = udp_rx_dequeue(s, buf, len, flags, src_addr, addrlen);
-  if (copied > 0) return copied;
-
-  /* return EAGAIN if MSG_DONTWAIT is set */
-  if (flags & MSG_DONTWAIT) {
-    MUDP_ERR_RET(EAGAIN);
-  }
-
-  unsigned int us = (mt_get_tsc(impl) - start_ts) / NS_PER_US;
-  unsigned int timeout = s->rx_timeout_us;
-  if (us < timeout) {
-    udp_timedwait_lcore(s, timeout - us);
-    goto dequeue;
-  }
-
-  return udp_rx_ret_timeout(s);
-}
-
-static ssize_t udp_recvmsg_lcore(struct mudp_impl* s, struct msghdr* msg, int flags) {
-  struct mtl_main_impl* impl = s->parent;
-  ssize_t copied = 0;
-  uint64_t start_ts = mt_get_tsc(impl);
-
-dequeue:
-  /* dequeue pkt from rx ring */
-  copied = udp_rx_msg_dequeue(s, msg, flags);
-  if (copied > 0) return copied;
-
-  /* return EAGAIN if MSG_DONTWAIT is set */
-  if (flags & MSG_DONTWAIT) {
-    MUDP_ERR_RET(EAGAIN);
-  }
-
-  unsigned int us = (mt_get_tsc(impl) - start_ts) / NS_PER_US;
-  unsigned int timeout = s->rx_timeout_us;
-  if (us < timeout) {
-    udp_timedwait_lcore(s, timeout - us);
-    goto dequeue;
-  }
-
-  return udp_rx_ret_timeout(s);
-}
-
-static int udp_poll_lcore(struct mudp_pollfd* fds, mudp_nfds_t nfds, int timeout,
-                          int (*query)(void* priv), void* priv) {
-  struct mudp_impl* s = fds[0].fd;
-  struct mtl_main_impl* impl = s->parent;
-  uint64_t start_ts = mt_get_tsc(impl);
-  int rc;
-
-  /* check if no pending pkt for each fd */
-poll:
-  /* check the ready fds */
-  rc = 0;
-  for (mudp_nfds_t i = 0; i < nfds; i++) {
-    s = fds[i].fd;
-    unsigned int count = rte_ring_count(mudp_rxq_ring(s->rxq));
-    if (count > 0) {
-      rc++;
-      fds[i].revents = POLLIN;
-      dbg("%s(%d), ring count %u\n", __func__, s->idx, count);
-    }
-  }
-  if (rc > 0) return rc;
-
-  if (query) { /* check if any pending event on the user query callback */
-    rc = query(priv);
-    if (rc != 0) return rc;
-  }
-
-  /* check if timeout */
-  int ms = (mt_get_tsc(impl) - start_ts) / NS_PER_MS;
-  if (ms < timeout) {
-    udp_timedwait_lcore(s, timeout - ms);
-    goto poll; /* check poll again */
-  }
-
-  dbg("%s, timeout to %d ms\n", __func__, timeout);
   return 0;
 }
 
@@ -1481,10 +1382,7 @@ int mudp_poll_query(struct mudp_pollfd* fds, mudp_nfds_t nfds, int timeout,
     }
   }
 
-  if (mudp_rxq_lcore_mode(s->rxq))
-    return udp_poll_lcore(fds, nfds, timeout, query, priv);
-  else
-    return udp_poll(fds, nfds, timeout, query, priv);
+  return udp_poll(fds, nfds, timeout, query, priv);
 }
 
 int mudp_poll(struct mudp_pollfd* fds, mudp_nfds_t nfds, int timeout) {
@@ -1507,10 +1405,7 @@ ssize_t mudp_recvfrom(mudp_handle ut, void* buf, size_t len, int flags,
     }
   }
 
-  if (mudp_rxq_lcore_mode(s->rxq))
-    return udp_recvfrom_lcore(s, buf, len, flags, src_addr, addrlen);
-  else
-    return udp_recvfrom(s, buf, len, flags, src_addr, addrlen);
+  return udp_recvfrom(s, buf, len, flags, src_addr, addrlen);
 }
 
 ssize_t mudp_recvmsg(mudp_handle ut, struct msghdr* msg, int flags) {
@@ -1528,10 +1423,7 @@ ssize_t mudp_recvmsg(mudp_handle ut, struct msghdr* msg, int flags) {
     }
   }
 
-  if (mudp_rxq_lcore_mode(s->rxq))
-    return udp_recvmsg_lcore(s, msg, flags);
-  else
-    return udp_recvmsg(s, msg, flags);
+  return udp_recvmsg(s, msg, flags);
 }
 
 int mudp_getsockopt(mudp_handle ut, int level, int optname, void* optval,
