@@ -875,7 +875,7 @@ static int tx_audio_session_tasklet_transmit(struct mtl_main_impl* impl,
       s->stat_transmit_ret_code = -STI_TSCTRS_INFLIGHT_TSC_NOT_REACH;
       return MT_TASKLET_ALL_DONE;
     }
-    ret = rte_ring_sp_enqueue(trs_ring, pkt);
+    ret = rte_ring_mp_enqueue(trs_ring, pkt);
     if (ret < 0) {
       s->stat_transmit_ret_code = -STI_TSCTRS_INFLIGHT_ENQUEUE_FAIL;
       return MT_TASKLET_ALL_DONE;
@@ -907,7 +907,7 @@ static int tx_audio_session_tasklet_transmit(struct mtl_main_impl* impl,
     }
   }
 
-  ret = rte_ring_sp_enqueue(trs_ring, pkt);
+  ret = rte_ring_mp_enqueue(trs_ring, pkt);
   if (ret < 0) { /* save to inflight */
     s->stat_transmit_ret_code = -STI_TSCTRS_PKT_ENQUEUE_FAIL;
     s->trans_ring_inflight[s_port] = pkt;
@@ -1000,8 +1000,18 @@ static int tx_audio_session_flush_port(struct st_tx_audio_sessions_mgr* mgr,
 
   for (int i = 0; i < burst_pkts; i++) {
     rte_mbuf_refcnt_update(pad, 1);
+    int retry = 0;
     do {
       ret = rte_ring_mp_enqueue(mgr->ring[port], (void*)pad);
+      if (ret != 0) {
+        dbg("%s(%d), timeout at %d, ret %d\n", __func__, mgr->idx, i, ret);
+        retry++;
+        if (retry > 100) {
+          err("%s(%d), timeout at %d\n", __func__, mgr->idx, i);
+          return -EIO;
+        }
+        mt_sleep_ms(1);
+      }
     } while (ret != 0);
   }
 
