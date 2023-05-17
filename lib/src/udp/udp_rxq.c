@@ -8,6 +8,10 @@
 #include "../mt_stat.h"
 #include "udp_main.h"
 
+static inline bool udp_rxq_lcore_mode(struct mudp_rxq* q) {
+  return q->lcore_tasklet ? true : false;
+}
+
 static void udp_queue_wakeup(struct mudp_rxq* q) {
   mt_pthread_mutex_lock(&q->lcore_wake_mutex);
   mt_pthread_cond_signal(&q->lcore_wake_cond);
@@ -57,11 +61,26 @@ static int udp_rsq_mbuf_cb(void* priv, struct rte_mbuf** mbuf, uint16_t nb) {
   return 0;
 }
 
+static uint16_t udp_rxq_rx(struct mudp_rxq* q) {
+  uint16_t rx_burst = q->rx_burst_pkts;
+  struct rte_mbuf* pkts[rx_burst];
+
+  if (q->rsq) return mt_rsq_burst(q->rsq, rx_burst);
+  if (q->rss) return mt_rss_burst(q->rss, rx_burst);
+
+  if (!q->rxq) return 0;
+  uint16_t rx = mt_dev_rx_burst(q->rxq, pkts, rx_burst);
+  if (!rx) return 0; /* no pkt */
+  uint16_t n = udp_rx_handle(q, pkts, rx);
+  rte_pktmbuf_free_bulk(&pkts[0], rx);
+  return n;
+}
+
 static int udp_tasklet_handler(void* priv) {
   struct mudp_rxq* q = priv;
   struct mtl_main_impl* impl = q->parent;
 
-  mudp_rxq_rx(q);
+  udp_rxq_rx(q);
 
   unsigned int count = rte_ring_count(q->rx_ring);
   if (count > 0) {
@@ -230,28 +249,29 @@ int mudp_rxq_dump(struct mudp_rxq* q) {
          q->stat_pkt_rx_enq_fail);
     q->stat_pkt_rx_enq_fail = 0;
   }
+  if (q->stat_timedwait) {
+    notice("%s(%d,%u), timedwait %u timeout %u\n", __func__, port, dst_port,
+           q->stat_timedwait, q->stat_timedwait_timeout);
+    q->stat_timedwait = 0;
+    q->stat_timedwait_timeout = 0;
+  }
 
   return 0;
 }
 
 uint16_t mudp_rxq_rx(struct mudp_rxq* q) {
-  uint16_t rx_burst = q->rx_burst_pkts;
-  struct rte_mbuf* pkts[rx_burst];
-
-  if (q->rsq) return mt_rsq_burst(q->rsq, rx_burst);
-  if (q->rss) return mt_rss_burst(q->rss, rx_burst);
-
-  if (!q->rxq) return 0;
-  uint16_t rx = mt_dev_rx_burst(q->rxq, pkts, rx_burst);
-  if (!rx) return 0; /* no pkt */
-  uint16_t n = udp_rx_handle(q, pkts, rx);
-  rte_pktmbuf_free_bulk(&pkts[0], rx);
-  return n;
+  if (udp_rxq_lcore_mode(q))
+    return 0;
+  else
+    return udp_rxq_rx(q);
 }
 
 int mudp_rxq_timedwait_lcore(struct mudp_rxq* q, unsigned int us) {
+  if (!udp_rxq_lcore_mode(q)) return 0; /* return directly if not lcore mode */
+
   int ret;
 
+  q->stat_timedwait++;
   mt_pthread_mutex_lock(&q->lcore_wake_mutex);
 
   struct timespec time;
@@ -263,6 +283,7 @@ int mudp_rxq_timedwait_lcore(struct mudp_rxq* q, unsigned int us) {
   dbg("%s(%u), timedwait ret %d\n", __func__, q->dst_port, ret);
   mt_pthread_mutex_unlock(&q->lcore_wake_mutex);
 
+  if (ret == ETIMEDOUT) q->stat_timedwait_timeout++;
   return ret;
 }
 

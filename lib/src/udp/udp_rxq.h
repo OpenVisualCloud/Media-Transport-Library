@@ -39,6 +39,8 @@ struct mudp_rxq {
   uint64_t wake_tsc_last;
 
   uint32_t stat_pkt_rx_enq_fail;
+  uint32_t stat_timedwait;
+  uint32_t stat_timedwait_timeout;
 };
 
 struct mudp_rxq_create {
@@ -59,10 +61,6 @@ int mudp_rxq_timedwait_lcore(struct mudp_rxq* q, unsigned int us);
 char* mudp_rxq_mode(struct mudp_rxq* q);
 
 static inline struct rte_ring* mudp_rxq_ring(struct mudp_rxq* q) { return q->rx_ring; }
-
-static inline bool mudp_rxq_lcore_mode(struct mudp_rxq* q) {
-  return q->lcore_tasklet ? true : false;
-}
 
 static inline int mudp_rxq_set_wake_thresh(struct mudp_rxq* q, unsigned int count) {
   q->wake_thresh_count = count;

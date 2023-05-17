@@ -97,8 +97,6 @@ struct mudp_impl {
   uint32_t stat_pkt_tx;
   uint32_t stat_tx_gso_count;
   uint32_t stat_tx_retry;
-  uint32_t stat_timedwait;
-  uint32_t stat_timedwait_timeout;
 
   uint32_t stat_pkt_rx;
   uint32_t stat_pkt_deliver;
