@@ -12,20 +12,16 @@
 #include "../mt_shared_queue.h"
 #include "../mt_util.h"
 
-/* support reuse port with load balancer */
-struct mudp_rxq {
+struct mur_queue;
+
+struct mur_client {
   struct mtl_main_impl* parent;
   enum mtl_port port;
-  char name[64];
-
-  struct mt_rx_queue* rxq;
-  struct mt_rsq_entry* rsq;
-  struct mt_rss_entry* rss;
-  uint16_t rxq_id;
   uint16_t dst_port;
+  int idx;
 
-  uint16_t rx_burst_pkts;
-  struct rte_ring* rx_ring;
+  struct rte_ring* ring;
+  struct mur_queue* q; /* the backend queue it attached */
 
   /* lcore mode */
   pthread_cond_t lcore_wake_cond;
@@ -38,38 +34,84 @@ struct mudp_rxq {
   unsigned int wake_timeout_us;
   uint64_t wake_tsc_last;
 
-  uint32_t stat_pkt_rx_enq_fail;
   uint32_t stat_timedwait;
   uint32_t stat_timedwait_timeout;
+  uint32_t stat_pkt_rx_enq_fail;
+
+  /* linked list for reuse port */
+  MT_TAILQ_ENTRY(mur_client) next;
 };
 
-struct mudp_rxq_create {
+MT_TAILQ_HEAD(mur_client_list, mur_client);
+
+/* support reuse port with load balancer */
+struct mur_queue {
+  struct mtl_main_impl* parent;
+  enum mtl_port port;
+  rte_atomic32_t refcnt;
+  int client_idx;        /* incremental idx fort client */
+  pthread_mutex_t mutex; /* clients lock */
+
+  struct mt_rx_queue* rxq;
+  struct mt_rsq_entry* rsq;
+  struct mt_rss_entry* rss;
+  uint16_t rxq_id;
+  uint16_t dst_port;
+  uint16_t rx_burst_pkts;
+
+  int reuse_port;
+  struct mur_client_list client_head; /* client attached */
+  int clients;                        /* how many clients connected */
+
+  /* linked list */
+  MT_TAILQ_ENTRY(mur_queue) next;
+};
+
+MT_TAILQ_HEAD(mur_queue_list, mur_queue);
+
+struct mudp_rxq_mgr {
+  struct mtl_main_impl* parent;
+  enum mtl_port port;
+
+  pthread_mutex_t mutex;
+  struct mur_queue_list head;
+};
+
+struct mur_client_create {
   struct mtl_main_impl* impl;
   enum mtl_port port;
   uint16_t dst_port;
   unsigned int ring_count;
   unsigned int wake_thresh_count;
   unsigned int wake_timeout_us;
+  int reuse_port;
 };
 
-int mudp_put_rxq(struct mudp_rxq* q);
-struct mudp_rxq* mudp_get_rxq(struct mudp_rxq_create* create);
-uint16_t mudp_rxq_rx(struct mudp_rxq* q);
-int mudp_rxq_dump(struct mudp_rxq* q);
+int mur_client_put(struct mur_client* q);
+struct mur_client* mur_client_get(struct mur_client_create* create);
+uint16_t mur_client_rx(struct mur_client* q);
+int mur_client_dump(struct mur_client* q);
 
-int mudp_rxq_timedwait_lcore(struct mudp_rxq* q, unsigned int us);
-char* mudp_rxq_mode(struct mudp_rxq* q);
+int mur_client_timedwait(struct mur_client* q, unsigned int us);
 
-static inline struct rte_ring* mudp_rxq_ring(struct mudp_rxq* q) { return q->rx_ring; }
+static inline struct rte_ring* mur_client_ring(struct mur_client* q) { return q->ring; }
 
-static inline int mudp_rxq_set_wake_thresh(struct mudp_rxq* q, unsigned int count) {
+static inline int mur_client_set_wake_thresh(struct mur_client* q, unsigned int count) {
   q->wake_thresh_count = count;
   return 0;
 }
 
-static inline int mudp_rxq_set_wake_timeout(struct mudp_rxq* q, unsigned int us) {
+static inline int mur_client_set_wake_timeout(struct mur_client* q, unsigned int us) {
   q->wake_timeout_us = us;
   return 0;
 }
+
+static inline int mur_client_set_reuse(struct mur_client* q, int reuse) {
+  // q->reuse_port = reuse;
+  return 0;
+}
+
+int mudp_rxq_init(struct mtl_main_impl* impl);
+int mudp_rxq_uinit(struct mtl_main_impl* impl);
 
 #endif
