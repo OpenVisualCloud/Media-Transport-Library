@@ -3,15 +3,15 @@
  */
 
 #include <Windows.h>
+#include <mtl/mtl_api.h>
+#include <mtl/st20_api.h>
+#include <mtl/st_pipeline_api.h>
+
 #include <condition_variable>
 #include <csignal>
 #include <iostream>
 #include <mutex>
 #include <thread>
-
-#include <mtl/mtl_api.h>
-#include <mtl/st20_api.h>
-#include <mtl/st_pipeline_api.h>
 
 static std::mutex mtx;
 static std::condition_variable cv;
