@@ -1,76 +1,91 @@
 # Run Guide on Windows
 
-Intel® Media Transport Library required Windows netuio driver Windows virt2phys driver and huge page(windows server 2022) to run
+Intel® Media Transport Library requires Windows netuio driver Windows virt2phys driver and huge page to run.
 
 ## 1. System setup
 
-### 1.1 Enable test sign in Windows
+### 1.1 Enable test sign in Windows if you choose to build non-signed drivers
 
+```powersehll
 bcdedit /set loadoptions DISABLE_INTEGRITY_CHECKS
 bcdedit /set TESTSIGNING ON
+```
 
 ### 1.2 Add huge page rights in Windows
 
-Open Local Security Policy snap-in, either:
-Control Panel / Computer Management / Local Security Policy;
-or Win+R, type secpol, press Enter.
-Open Local Policies / User Rights Assignment / Lock pages in memory.
-Add desired users or groups to the list of grantees.
+#### 1.2.1  Option 1: Local Security Policy
+
+* Control Panel / Computer Management / Local Security Policy (
+or Win+R, type `secpol`, press Enter).
+
+* Open Local Policies / User Rights Assignment / Lock pages in memory.
+
+* Add desired users or groups to the list of grantees.
 Privilege is applied upon next logon. In particular, if privilege has been granted to current user, a logoff is required before it is available.
+
+#### 1.2.2  Option 2: ntright.exe (if Local Security Policy is not available)
+
+* Download and install rktools from <https://technlg.net/downloads/rktools.exe>
+
+* Open PowerShell, run:
+
+    ```powersehll
+    ntrights.exe +r SeLockMemoryPrivilege -u Administrator
+    ```
+
+* Reboot to enable it.
 
 ## 2 Install virt2phys Driver
 
-### 2.1.1 Download dpdk-kmods pack from
+### 2.1 Download dpdk-kmods pack from
 
 git://dpdk.org/dpdk-kmods
 Compile the virt2phys and netuio project using visual studio 2019
 
-### 2.1.2 Then, execute command in cmd
+### 2.2 Then, execute command in cmd
 
-```bash
+Get devcon.exe from Windows WDK package (if you don't want WDK, you can refer to <https://networchestration.wordpress.com/2016/07/11/how-to-obtain-device-console-utility-devcon-exe-without-downloading-and-installing-the-entire-windows-driver-kit-100-working-method/> for how to get devcon.exe), copy the devcon.exe to your netuio driver folder.
+
+execute command:
+
+```powershell
 devcon.exe install virt2phys.inf root\virt2phys
 ```
 
-### 2.1.3 Make sure that the driver was installed
+### 2.3 Make sure that the driver was installed
 
-### 2.1.4 When there is a problem with driver installation are needed more steps
+### 2.4 When there is a problem with driver installation are needed more steps
 
-Test sign the driver using a test certificate and then boot the Windows in "Test mode", or
+* Test sign the driver using a test certificate and then boot the Windows in "Test mode", or
 
-Use the boot time option to "Disable driver signature enforcement"
+* Use the boot time option to "Disable driver signature enforcement".
 
-### 2.1.5 Manually install virt2phys steps for Windows Server
+### 2.5 Manually install virt2phys steps for Windows Server
 
-From Device Manager, Action menu, select "Add legacy hardware".
+* From Device Manager, Action menu, select "Add legacy hardware".
+* It will launch the "Add Hardware Wizard". Click "Next".
+* Select second option "Install the hardware that I manually select from a list".
+* On the next screen, "Kernel bypass" will be shown as a device class.
+* Select it and click "Next".
+* Click "Have Disk".
+* Find location of your virt2phys.inf driver.
+* Select it and click "Next".
 
-It will launch the "Add Hardware Wizard". Click "Next"
+The previously installed drivers will now be installed for the "Virtual to physical address translator" device.
 
-Select second option "Install the hardware that I manually select from a list"
-
-On the next screen, "Kernel bypass" will be shown as a device class
-
-Select it and click "Next".
-
-Click "Have Disk".
-
-Find location of your virt2phys.inf driver.
-
-Select it and click "Next".
-
-The previously installed drivers will now be installed for the "Virtual to physical address translator" device
-
-### 2.1.6 Here we just go through next and finish buttons
+### 2.6 Here we just go through next and finish buttons
 
 ## 3. Steps for netuio driver
 
 ### 3.1 Use devcon install netuio driver
 
-Get devcon.exe from Windows WDK package, copy the devcon.exe to your netuio driver folder
 execute command:
 
-```bash
+```powershell
 devcon.exe update netuio.inf "PCI\VEN_8086&DEV_1592"
 ```
+
+You can change "1592" per your NIC type.
 
 ### 3.2 Manually install netuio driver
 
@@ -85,7 +100,7 @@ devcon.exe update netuio.inf "PCI\VEN_8086&DEV_1592"
 
 ### 4.1 Update NIC FW and driver to latest version
 
-Refer to <https://www.intel.com/content/www/us/en/download/15084/intel-ethernet-adapter-complete-driver-pack.html>
+Refer to <https://www.intel.com/content/www/us/en/download/15084/intel-ethernet-adapter-complete-driver-pack.html>.
 
 ### 4.2 Update the ICE DDP package file: ice.pkg
 
@@ -106,7 +121,7 @@ You can bind the app to the cpu socket 0 ( if your NIC is inserted into the pcie
 To identify the socket if you do not know it, in the NIC card driver property page, check the bus number, if the number is great than
 0x80, then socket 1, else socket 0, for example
 
-```bash
+```powershell
 start /Node 0 /B .\build\app\RxTxApp --config_file config\test_tx_1port_1v.json
 ```
 
@@ -118,15 +133,15 @@ Please refer to sections 3, 4, and 5 in the [linux run guide](run.md) for instru
 
 ### 6.2 Install windows TAP driver
 
-In the Control Panel->Network and internet->Network Connections, find the "OpenVPN TAP-Windows6" device, set the adaptor IP address, such as 192.168.2.2
+In the Control Panel->Network and internet->Network Connections, find the "OpenVPN TAP-Windows6" device, set the adaptor IP address, such as `192.168.2.2`.
 
 ### 6.3 Rebuild and install MTL lib with "-Denable_tap=true"
 
 ```bash
-meson tap_build --prefix=c:\libmtl -Ddpdk_root_dir=${DPDK_SRC_DIR} -Denable_tap=true
+meson tap_build -Ddpdk_root_dir=${DPDK_SRC_DIR} -Denable_tap=true
 ninja -C tap_build install
 ```
 
 ### 6.4 Check if Ping is working
 
-Ping 192.168.2.2 from other machine in the same network such as 192.168.2.3, if have reply, the TAP works.
+Ping `192.168.2.2` from other machine in the same network such as `192.168.2.3`, if have reply, the TAP works.
