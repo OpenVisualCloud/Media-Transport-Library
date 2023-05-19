@@ -1,6 +1,6 @@
 ### Streaming video via Intel(r) SDM appliance
 
-This document  contains instructions for streaming a desktop session to a Intel(r) SDM based display over a 2.5Gbps link (Intel I225 Ethernet) using Intel(r) Media Transport Library.
+This document  contains instructions for streaming a desktop session to a Intel(r) SDM based display over a 2.5Gbps link (Intel I225 Ethernet) using Intel(r) Media Transport Library .
 
 ### 1. Use-case Scenario
 
@@ -26,7 +26,7 @@ Depicted below are 2 use-case scenario:
 
 ### 3. Required Software
 
-1. Ubuntu 20.04 / Windows 11
+1. Ubuntu 22.03 LTS
 
 2. Intel&reg; Media Transport Library (Intel&reg; MTL codenamed Kahawai)
 
@@ -34,13 +34,11 @@ Depicted below are 2 use-case scenario:
 
 ### 2. Installation and configuration
 
-The steps below apply for both Linux and Windows. Please refer to the specific section for each OS.
+The demo currently works only on Linux. Follow the steps below to install all the software components required for the demo.
 
 #### Build Intel&reg; MTL
 
 - See [build.md](./build.md) to build libmtl on linux.
-
-- See [build_WIN_MSYS2.md](./build_WIN_MSYS2.md) to build libmtl on windows.
 
 #### Build ffmpeg (with kahawai encoder and decoder)
 
@@ -48,20 +46,21 @@ The steps below apply for both Linux and Windows. Please refer to the specific s
 
 * Follow instruction below (TBD)
 
-#### Sample command line to streeam desktop session using ffmpeg
+#### Example command line to send ST2110 stream to the receiver using ffmpeg
 
-- For **synchronous **playabck, run:
-
-```
-ffmpeg TBD
-```
-
-
-
-- For **asynchronous ** playback, streaming the framebuffer of the sending device (e.g Intel&reg; NUC), run:
+- For **synchronous** playaback, i.e streaming HDMI output of a Laptop via the sender, run:
 
 ```
-ffmpeg -f dshow -f gdigrab -framerate 15 -i desktop -vf scale=1920:1080,format=rgb24 -udp_port 20000 -port 0000:58:00.0 -local_addr 192.168.100.32 -dst_addr 239.168.85.20 -f kahawai_mux -
+sudo LD_LIBRARY_PATH=path/to/ffmpeg/lib ./ffmpeg -f video4linux2 -video_size 1280x720 -framerate 30 -i /dev/video0  -vcodec rawvideo -vf scale=1280:720,format=rgb24 -udp_port 20000 -port 0000:02:00.0 -local_addr 192.168.100.55 -dst_addr 239.168.85.20 -f kahawai_mux -
+```
+
+**Note**: The cmdline above assume /dev/video0 is the Mukose's HDMI2USB capture device.
+
+
+- For **asynchronous** playback, streaming the framebuffer of the sender (e.g Intel&reg; NUC), run:
+
+```
+sudo DISPLAY=$DISPLAY LD_LIBRARY_PATH=path/to/ffmpeg/lib ./ffmpeg -f x11grab -i $DISPLAY -framerate 30 -vcodec rawvideo -pix_fmt rgb24 -video_size 1920x1080 -vf scale=1280:720 -udp_port 20000 -port 0000:02:00.0 -local_addr 192.168.100.55 -dst_addr 239.168.85.20 -f kahawai_mux -
 ```
 
 Streaming will begin once command is executed. Press CTRL-C to terminate.
@@ -69,15 +68,25 @@ Streaming will begin once command is executed. Press CTRL-C to terminate.
 At the receiver (Intel&reg; SDM), run:
 
 ```
-ffmpeg -framerate 15 -pixel_format rgb24 -width 1920 -height 1080 -udpP_port 20000 -port 0000:03:00.0 -local_addr "192.168.100.30" -src_addr "239.168.85.20" -ext_frames_mode 0 -f kahawai -i "k" -f sdl -
+sudo LD_LIBRARY_PATH=path/to/ffmpeg/lib ./ffmpeg -framerate 30 -pixel_format rgb24 -width 1280 -height 720 -udp_port 20000 -port 0000:58:00.0 -local_addr 192.168.100.55 -src_addr 239.168.85.20 -ext_frames_mode 0 -f kahawai -i k -f sdl2 -
 ```
 
-An SDL window will pop-up at the receiver screen. Press CTRL-C to terminate.
+An SDL2 window will pop-up at the receiver screen. Press CTRL-C to terminate.
 
-**Note**: See [readme](../ecosystem/ffmpeg_plugin/README.md) for more info on the parameters for the kahawai's avdevice.
+
+
+**Note**:
+
+- See [readme](../ecosystem/ffmpeg_plugin/README.md) for more info on the parameters supported by the kahawai's ffmpeg plugin.
+- The example command line above stream the session at 1280x720@30fps in rgb24 pixel format.
+- Provide the path to ffmpeg's DLLs if the ffmpeg in the step above is installed in a non-default directory (eg. /usr/lib).
+  
+  
 
 ### 3. Limitation
 
-- This demo is only tested to stream desktop session in uncompressed raw RGB24 format. 
+- This demo is only tested to transport desktop session in uncompressed raw RGB24 pixel format. 
 
-- At 2.5Gbps bandwidth, we may only stream the session at 1920x1080@30fps in rgb24 pixel format. 
+- At 2.5Gbps bandwidth, we may only stream the session at 1920x1080@30fps in RGB24 pixel format. 
+
+- No Windows* support for DPDK's IGC driver 
