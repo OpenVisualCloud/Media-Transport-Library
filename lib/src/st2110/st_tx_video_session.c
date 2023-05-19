@@ -462,7 +462,7 @@ static int tv_init_pacing_epoch(struct mtl_main_impl* impl,
 }
 
 static int tv_sync_pacing(struct mtl_main_impl* impl, struct st_tx_video_session_impl* s,
-                          bool sync, uint64_t required_tai) {
+                          bool sync, uint64_t required_tai, bool second_field) {
   int idx = s->idx;
   struct st_tx_video_pacing* pacing = &s->pacing;
   double frame_time = pacing->frame_time;
@@ -471,6 +471,7 @@ static int tv_sync_pacing(struct mtl_main_impl* impl, struct st_tx_video_session
   uint64_t next_epochs = pacing->cur_epochs + 1;
   uint64_t epochs;
   double to_epoch_tr_offset;
+  bool interlaced = s->ops.interlaced;
 
   if (required_tai) {
     uint64_t ptp_epochs = ptp_time / frame_time;
@@ -489,6 +490,14 @@ static int tv_sync_pacing(struct mtl_main_impl* impl, struct st_tx_video_session
     if (diff < pacing->max_onward_epochs) {
       /* point to next epoch since it is in the range of onward */
       epochs = next_epochs;
+    }
+  }
+
+  if (interlaced) {
+    if (second_field) { /* align to odd epoch */
+      if (!(epochs & 0x1)) epochs++;
+    } else { /* align to even epoch */
+      if (epochs & 0x1) epochs++;
     }
   }
 
@@ -1049,7 +1058,7 @@ static int tv_build_rtp_chain(struct mtl_main_impl* impl,
     s->st20_pkt_idx = 0;
     rte_atomic32_inc(&s->stat_frame_cnt);
     s->st20_rtp_time = rtp->tmstamp;
-    tv_sync_pacing(impl, s, false, 0);
+    tv_sync_pacing(impl, s, false, 0, false);
     if (s->ops.flags & ST20_TX_FLAG_USER_TIMESTAMP) {
       s->pacing.rtp_time_stamp = ntohl(rtp->tmstamp);
     }
@@ -1465,7 +1474,8 @@ static int tv_tasklet_frame(struct mtl_main_impl* impl,
 
       /* user timestamp control if any */
       uint64_t required_tai = tv_pacing_required_tai(s, meta.tfmt, meta.timestamp);
-      tv_sync_pacing(impl, s, false, required_tai);
+      bool second_field = frame->tv_meta.second_field;
+      tv_sync_pacing(impl, s, false, required_tai, second_field);
       if (ops->flags & ST20_TX_FLAG_USER_TIMESTAMP &&
           (frame->tv_meta.tfmt == ST10_TIMESTAMP_FMT_MEDIA_CLK)) {
         pacing->rtp_time_stamp = st10_get_media_clk(meta.tfmt, meta.timestamp, 90 * 1000);
@@ -1864,7 +1874,7 @@ static int tv_tasklet_st22(struct mtl_main_impl* impl,
 
       /* user timestamp control if any */
       uint64_t required_tai = tv_pacing_required_tai(s, meta.tfmt, meta.timestamp);
-      tv_sync_pacing(impl, s, false, required_tai);
+      tv_sync_pacing(impl, s, false, required_tai, false);
       if (ops->flags & ST20_TX_FLAG_USER_TIMESTAMP) {
         pacing->rtp_time_stamp = st10_get_media_clk(meta.tfmt, meta.timestamp, 90 * 1000);
       }
