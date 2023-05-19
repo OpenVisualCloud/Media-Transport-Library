@@ -546,6 +546,7 @@ int st_video_resolve_pacing_tasklet(struct st_tx_video_session_impl* s,
       break;
     case ST21_TX_PACING_WAY_TSC:
     case ST21_TX_PACING_WAY_BE:
+    case ST21_TX_PACING_WAY_TSC_NARROW:
       s->pacing_tasklet_func[port] = video_trs_tsc_tasklet;
       break;
     case ST21_TX_PACING_WAY_PTP:

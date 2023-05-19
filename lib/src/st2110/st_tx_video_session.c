@@ -384,29 +384,8 @@ static int tv_init_pacing(struct mtl_main_impl* impl,
   }
   pacing->max_onward_epochs = (double)NS_PER_S / frame_time; /* 1s */
   dbg("%s[%02d], max_onward_epochs %u\n", __func__, idx, pacing->max_onward_epochs);
-
-  /* 80 percent tr offset time as warmup pkts */
-  uint32_t troffset_warm_pkts = pacing->tr_offset / pacing->trs;
-  troffset_warm_pkts = troffset_warm_pkts * 8 / 10;
-  troffset_warm_pkts = RTE_MIN(troffset_warm_pkts, 128); /* limit to 128 pkts */
-  pacing->warm_pkts = troffset_warm_pkts;
-  pacing->tr_offset_vrx += troffset_warm_pkts; /* time for warm pkts */
-  pacing->tr_offset_vrx -= 2; /* VRX compensate to rl burst(max_burst_size=2048) */
-  pacing->tr_offset_vrx -= 2; /* leave VRX space for deviation */
-  pacing->pad_interval = s->st20_total_pkts; /* VRX compensate as rl accuracy */
-  if (s->ops.height <= 576) {
-    pacing->warm_pkts = 8; /* fix me */
-    pacing->tr_offset_vrx = s->st21_vrx_narrow;
-  }
-
-  if (s->s_type == MT_ST22_HANDLE_TX_VIDEO) {
-    /* no vrx/warm_pkts for st22? */
-    pacing->tr_offset_vrx = 0;
-    pacing->warm_pkts = 0;
-  }
-
-  info("%s[%02d], trs %f trOffset %f warm pkts %u\n", __func__, idx, pacing->trs,
-       pacing->tr_offset, troffset_warm_pkts);
+  /* default VRX compensate as rl accuracy, update later in tv_train_pacing */
+  pacing->pad_interval = s->st20_total_pkts;
 
   int num_port = s->ops.num_port;
   enum mtl_port port;
@@ -433,6 +412,37 @@ static int tv_init_pacing(struct mtl_main_impl* impl,
       s->pacing_way[MTL_SESSION_PORT_R] = ST21_TX_PACING_WAY_TSC;
     }
   }
+
+  uint32_t troffset_warm_pkts = 0;
+  if (s->pacing_way[MTL_SESSION_PORT_P] == ST21_TX_PACING_WAY_RL) {
+    /* 80 percent tr offset time as warmup pkts for rl */
+    troffset_warm_pkts = pacing->tr_offset / pacing->trs;
+    troffset_warm_pkts = troffset_warm_pkts * 8 / 10;
+    troffset_warm_pkts = RTE_MIN(troffset_warm_pkts, 128); /* limit to 128 pkts */
+  }
+  pacing->warm_pkts = troffset_warm_pkts;
+  pacing->tr_offset_vrx += troffset_warm_pkts; /* time for warm pkts */
+  if (s->pacing_way[MTL_SESSION_PORT_P] == ST21_TX_PACING_WAY_RL) {
+    pacing->tr_offset_vrx -= 2; /* VRX compensate to rl burst(max_burst_size=2048) */
+    pacing->tr_offset_vrx -= 2; /* leave VRX space for deviation */
+    if (s->ops.height <= 576) {
+      pacing->warm_pkts = 8; /* fix me */
+      pacing->tr_offset_vrx = s->st21_vrx_narrow;
+    }
+  } else if (s->pacing_way[MTL_SESSION_PORT_P] == ST21_TX_PACING_WAY_TSC_NARROW) {
+    /* tsc narrow use single bulk for better accuracy */
+    s->bulk = 1;
+  } else {
+    pacing->tr_offset_vrx -= (s->bulk - 1); /* compensate for bulk */
+  }
+
+  if (s->s_type == MT_ST22_HANDLE_TX_VIDEO) {
+    /* not sure the pacing for st22, none now */
+    pacing->tr_offset_vrx = 0;
+    pacing->warm_pkts = 0;
+  }
+  info("%s[%02d], trs %f trOffset %f warm pkts %u\n", __func__, idx, pacing->trs,
+       pacing->tr_offset, troffset_warm_pkts);
 
   /* resolve pacing tasklet */
   for (int i = 0; i < num_port; i++) {

@@ -255,7 +255,7 @@ For the supported parameters in the json, please refer to [JSON configuration gu
 --nb_rx_desc <count>                 : debug option, number of receive descriptors for each NIC RX queue, affect the memory usage and the performance.
 --tasklet_time                       : debug option, enable stat info for tasklet running time.
 --tsc                                : debug option, force to use tsc pacing.
---pacing_way                         : debug option, set pacing way, ex, auto, rl, tsc, ptp, tsn.
+--pacing_way                         : debug option, set pacing way, ex, auto, rl, tsc, tsc_narrow, ptp, tsn.
 --mono_pool                          : debug option, use mono pool for all tx and rx queues(sessions).
 --tasklet_thread                     : debug option, run the tasklet under thread instead of a pinned lcore.
 --tasklet_sleep                      : debug option, enable sleep if all tasklet report done status.
