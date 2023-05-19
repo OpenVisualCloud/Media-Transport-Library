@@ -55,6 +55,8 @@ if is_windows
   mtl_link_c_args += ['-Wl,--whole-archive']
   mtl_link_c_args += [dpdklibs.stdout().strip().split()]
   mtl_link_c_args += ['-Wl,--no-whole-archive']
+  # generate .def file to be converted to .lib for msvc
+  mtl_link_c_args += ['-Wl,--output-def,libmtl.def']
 endif
 
 if cc.has_argument('-mavx2')

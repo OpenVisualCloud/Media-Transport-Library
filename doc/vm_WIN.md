@@ -67,7 +67,7 @@ After the installation, you can detach the virtio iso and windows iso from cdrom
 
 ### 2.2 Build and run IMTL
 
-See [Windows build guide](build_WIN_MSYS2.md) and [Windows run guide](run_WIN.md).
+See [Windows build guide](build_WIN.md) and [Windows run guide](run_WIN.md).
 
 When installing netuio driver, use below command for iavf:
 

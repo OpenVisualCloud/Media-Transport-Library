@@ -42,7 +42,7 @@ The library also includes SIMD CSC (color space format conversion), DMA, and plu
 
 Please refer to [build guide](doc/build.md) for instructions on how to build DPDK, the library, and the sample application.
 
-For Windows, please refer to the [Win build guide](doc/build_WIN_MSYS2.md) or instructions on how to build.
+For Windows, please refer to the [Win build guide](doc/build_WIN.md) for instructions on how to build.
 
 ## 3. Run ST2110
 
