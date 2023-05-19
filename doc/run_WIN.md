@@ -44,7 +44,7 @@ Compile the virt2phys and netuio project using visual studio 2019
 
 ### 2.2 Then, execute command in cmd
 
-Get devcon.exe from Windows WDK package (if you don't want WDK, you can refer to [How to obtain Device Console Utility (DevCon.exe) without downloading and installing the entire Windows Driver Kit (WDK)](https://networchestration.wordpress.com/2016/07/11/how-to-obtain-device-console-utility-devcon-exe-without-downloading-and-installing-the-entire-windows-driver-kit-100-working-method/) for how to get devcon.exe), copy the devcon.exe to your netuio driver folder.
+Get devcon.exe from Windows WDK package (if you don't want WDK, you can refer to <https://networchestration.wordpress.com/2016/07/11/how-to-obtain-device-console-utility-devcon-exe-without-downloading-and-installing-the-entire-windows-driver-kit-100-working-method/> for how to get devcon.exe), copy the devcon.exe to your netuio driver folder.
 
 execute command:
 
