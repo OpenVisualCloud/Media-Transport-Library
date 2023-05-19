@@ -429,8 +429,11 @@ static int tv_init_pacing(struct mtl_main_impl* impl,
       pacing->warm_pkts = 8; /* fix me */
       pacing->tr_offset_vrx = s->st21_vrx_narrow;
     }
+  } else if (s->pacing_way[MTL_SESSION_PORT_P] == ST21_TX_PACING_WAY_TSC_NARROW) {
+    /* tsc narrow use single bulk for better accuracy */
+    s->bulk = 1;
   } else {
-    pacing->tr_offset_vrx -= s->bulk; /* compensate for bulk */
+    pacing->tr_offset_vrx -= (s->bulk - 1); /* compensate for bulk */
   }
 
   if (s->s_type == MT_ST22_HANDLE_TX_VIDEO) {

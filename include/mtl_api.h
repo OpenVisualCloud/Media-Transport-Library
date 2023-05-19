@@ -262,6 +262,8 @@ enum st21_tx_pacing_way {
   ST21_TX_PACING_WAY_PTP,
   /** best effort sending */
   ST21_TX_PACING_WAY_BE,
+  /** tsc based pacing with single bulk transmitter */
+  ST21_TX_PACING_WAY_TSC_NARROW,
   /** Max value of this enum */
   ST21_TX_PACING_WAY_MAX,
 };
