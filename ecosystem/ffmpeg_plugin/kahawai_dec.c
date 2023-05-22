@@ -126,20 +126,22 @@ static int kahawai_read_header(AVFormatContext* ctx) {
   }
   ops_rx.height = s->height;
 
-  if ((pix_fmt = av_get_pix_fmt(s->pixel_format)) == AV_PIX_FMT_NONE) {
-    av_log(ctx, AV_LOG_ERROR, "No such pixel format: %s.\n", s->pixel_format);
-    return AVERROR(EINVAL);
-  } else if (pix_fmt != AV_PIX_FMT_YUV422P10LE) {
-    av_log(ctx, AV_LOG_ERROR, "Only yuv422p10le is supported\n");
-    return AVERROR(EINVAL);
-  }
-
-  ops_rx.transport_fmt = ST20_FMT_YUV_422_10BIT;
-
-  if (s->ext_frames_mode) {
-    ops_rx.output_fmt = ST_FRAME_FMT_YUV422PLANAR10LE;
-  } else {
-    ops_rx.output_fmt = ST_FRAME_FMT_YUV422RFC4175PG2BE10;
+  switch ((pix_fmt = av_get_pix_fmt(s->pixel_format))) {
+    case AV_PIX_FMT_YUV422P10LE:
+      ops_rx.transport_fmt = ST20_FMT_YUV_422_10BIT;
+      if (s->ext_frames_mode) {
+        ops_rx.output_fmt = ST_FRAME_FMT_YUV422PLANAR10LE;
+      } else {
+        ops_rx.output_fmt = ST_FRAME_FMT_YUV422RFC4175PG2BE10;
+      }
+      break;
+    case AV_PIX_FMT_RGB24:
+      ops_rx.transport_fmt = ST20_FMT_RGB_8BIT;
+      ops_rx.output_fmt = ST_FRAME_FMT_RGB8;
+      break;
+    default:
+      av_log(ctx, AV_LOG_ERROR, "Unsupported pixel format: %s.\n", s->pixel_format);
+      return AVERROR(EINVAL);
   }
 
   packet_size = av_image_get_buffer_size(pix_fmt, s->width, s->height, 1);
@@ -378,16 +380,22 @@ static int kahawai_read_packet(AVFormatContext* ctx, AVPacket* pkt) {
       return ret;
     }
 
-    ret = st20_rfc4175_422be10_to_yuv422p10le(
-        (struct st20_rfc4175_422_10_pg2_be*)(s->frame->addr[0]), (uint16_t*)pkt->data,
-        (uint16_t*)(pkt->data + (s->width * s->height * 2)),
-        (uint16_t*)(pkt->data + (s->width * s->height * 3)), s->width, s->height);
-    if (ret != 0) {
-      av_log(ctx, AV_LOG_ERROR, "st20_rfc4175_422be10_to_yuv422p10le failed with %d\n",
-             ret);
-      // s->stopped = true;
-      // pthread_mutex_unlock(&(s->read_packet_mutex));
-      return ret;
+    switch (av_get_pix_fmt(s->pixel_format)) {
+      case AV_PIX_FMT_YUV422P10LE:
+        ret = st20_rfc4175_422be10_to_yuv422p10le(
+            (struct st20_rfc4175_422_10_pg2_be*)(s->frame->addr[0]), (uint16_t*)pkt->data,
+            (uint16_t*)(pkt->data + (s->width * s->height * 2)),
+            (uint16_t*)(pkt->data + (s->width * s->height * 3)), s->width, s->height);
+        if (ret != 0) {
+          av_log(ctx, AV_LOG_ERROR,
+                 "st20_rfc4175_422be10_to_yuv422p10le failed with %d\n", ret);
+          // s->stopped = true;
+          // pthread_mutex_unlock(&(s->read_packet_mutex));
+          return ret;
+        }
+        break;
+      case AV_PIX_FMT_RGB24:
+        memcpy((uint8_t*)pkt->data, s->frame->addr[0], s->width * s->height * 3);
     }
     st20p_rx_put_frame(s->rx_handle, s->frame);
     av_log(ctx, AV_LOG_VERBOSE, "st20p_rx_put_frame: 0x%" PRIx64 "\n",
