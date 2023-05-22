@@ -253,7 +253,8 @@ static void rv_ebu_on_frame(struct st_rx_video_session_impl* s, uint32_t rtp_tms
       rv_ebu_result(s);
       if (ebu_result->ebu_result_num) {
         double pass_narrow = rv_ebu_pass_rate(ebu_result, ebu_result->compliance_narrow);
-        double pass_wide = rv_ebu_pass_rate(ebu_result, ebu_result->compliance - ebu_result->compliance_narrow);
+        double pass_wide = rv_ebu_pass_rate(
+            ebu_result, ebu_result->compliance - ebu_result->compliance_narrow);
         info("%s(%d), Compliance Rate Narrow %.2f%% Wide %.2f%%, total %d narrow %d\n\n",
              __func__, s->idx, pass_narrow, pass_wide, ebu_result->ebu_result_num,
              ebu_result->compliance_narrow);

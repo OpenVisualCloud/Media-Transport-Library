@@ -141,11 +141,11 @@ struct st_frame_trans {
 
 /* timing for pacing */
 struct st_tx_video_pacing {
-  double trs;             /* in ns for of 2 consecutive packets, T-Frame / N-Packets */
-  double tr_offset;       /* in ns, tr offset time of each frame */
-  uint32_t vrx; /* packets unit, VRX start value of each frame */
+  double trs;         /* in ns for of 2 consecutive packets, T-Frame / N-Packets */
+  double tr_offset;   /* in ns, tr offset time of each frame */
+  uint32_t vrx;       /* packets unit, VRX start value of each frame */
   uint32_t warm_pkts; /* packets unit, pkts for RL pacing warm boot */
-  double frame_time;      /* time of the frame in nanoseconds */
+  double frame_time;  /* time of the frame in nanoseconds */
   double frame_time_sampling; /* time of the frame in sampling(90k) */
   /* in ns, idle time at the end of frame, frame_time - tr_offset - (trs * pkts) */
   double frame_idle_time;
