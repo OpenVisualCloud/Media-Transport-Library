@@ -43,6 +43,7 @@ enum test_args_cmd {
   TEST_ARG_TX_NO_CHAIN,
   TEST_ARG_IOVA_MODE,
   TEST_ARG_MULTI_SRC_PORT,
+  TEST_ARG_DHCP,
 };
 
 static struct option test_args_options[] = {
@@ -78,6 +79,7 @@ static struct option test_args_options[] = {
     {"tx_no_chain", no_argument, 0, TEST_ARG_TX_NO_CHAIN},
     {"iova_mode", required_argument, 0, TEST_ARG_IOVA_MODE},
     {"multi_src_port", no_argument, 0, TEST_ARG_MULTI_SRC_PORT},
+    {"dhcp", no_argument, 0, TEST_ARG_DHCP},
 
     {0, 0, 0, 0}};
 
@@ -263,6 +265,10 @@ static int test_parse_args(struct st_tests_context* ctx, struct mtl_init_params*
         break;
       case TEST_ARG_MULTI_SRC_PORT:
         p->flags |= MTL_FLAG_MULTI_SRC_PORT;
+        break;
+      case TEST_ARG_DHCP:
+        p->net_proto[MTL_PORT_P] = MTL_PROTO_DHCP;
+        p->net_proto[MTL_PORT_R] = MTL_PROTO_DHCP;
         break;
       default:
         break;
