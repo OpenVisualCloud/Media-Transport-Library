@@ -892,6 +892,14 @@ struct st20_tx_ops {
    * Valid if ST20_TX_FLAG_USER_P(R)_MAC is enabled
    */
   uint8_t tx_dst_mac[MTL_SESSION_PORT_MAX][MTL_MAC_ADDR_LEN];
+  /**
+   * vrx buffer for tx.
+   * Leave to zero if not know detail, lib will assign vrx(narrow) based on resolution and
+   * timing.
+   * Refer to st21 spec for the possible vrx value, lib will follow this VRX if it's not a
+   * zero value, and also fine tune is required since network setup difference.
+   */
+  uint16_t vrx;
 
   /**
    * the frame buffer count requested for one st20 tx session,

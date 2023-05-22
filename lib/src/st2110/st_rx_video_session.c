@@ -252,9 +252,12 @@ static void rv_ebu_on_frame(struct st_rx_video_session_impl* s, uint32_t rtp_tms
     if (!ebu_info->dropped_results) {
       rv_ebu_result(s);
       if (ebu_result->ebu_result_num) {
-        info("%s(%d), Compliance Rate Narrow %.2f%%, total %d narrow %d\n\n", __func__,
-             s->idx, rv_ebu_pass_rate(ebu_result, ebu_result->compliance_narrow),
-             ebu_result->ebu_result_num, ebu_result->compliance_narrow);
+        double pass_narrow = rv_ebu_pass_rate(ebu_result, ebu_result->compliance_narrow);
+        double pass_wide = rv_ebu_pass_rate(
+            ebu_result, ebu_result->compliance - ebu_result->compliance_narrow);
+        info("%s(%d), Compliance Rate Narrow %.2f%% Wide %.2f%%, total %d narrow %d\n\n",
+             __func__, s->idx, pass_narrow, pass_wide, ebu_result->ebu_result_num,
+             ebu_result->compliance_narrow);
       }
     } else {
       if (ebu_result->ebu_result_num > ebu_info->dropped_results) {
@@ -268,7 +271,7 @@ static void rv_ebu_on_frame(struct st_rx_video_session_impl* s, uint32_t rtp_tms
   ebu->cur_epochs = epochs;
   ebu->vrx_drained_prev = 0;
   ebu->vrx_prev = 0;
-  ebu->cinmtl_initial_time = pkt_tmstamp;
+  ebu->cinst_initial_time = pkt_tmstamp;
   ebu->prev_rtp_ipt_ts = 0;
 
   /* calculate fpt */
@@ -337,7 +340,7 @@ static void rv_ebu_on_packet(struct st_rx_video_session_impl* s, uint32_t rtp_tm
 
   /* Calculate C-inst */
   int exp_cin_pkts =
-      ((pkt_tmstamp - ebu->cinmtl_initial_time) / trs) * ST_EBU_CINST_DRAIN_FACTOR;
+      ((pkt_tmstamp - ebu->cinst_initial_time) / trs) * ST_EBU_CINST_DRAIN_FACTOR;
   int cinst = RTE_MAX(0, pkt_idx - exp_cin_pkts);
 
   ebu->cinst_sum += cinst;

@@ -487,6 +487,8 @@ struct st_app_context {
   struct st_app_tx_video_session* tx_video_sessions;
   int tx_video_session_cnt;
   int tx_video_rtp_ring_size; /* the ring size for tx video rtp type */
+  uint16_t tx_vrx;
+  enum st21_pacing tx_pacing_type;
 
   struct st_app_tx_audio_session* tx_audio_sessions;
   char tx_audio_url[ST_APP_URL_MAX_LEN];
