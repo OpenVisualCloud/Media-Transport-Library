@@ -143,19 +143,17 @@ struct st_frame_trans {
 struct st_tx_video_pacing {
   double trs;             /* in ns for of 2 consecutive packets, T-Frame / N-Packets */
   double tr_offset;       /* in ns, tr offset time of each frame */
-  uint32_t tr_offset_vrx; /* packets unit, VRX start value of each frame */
+  uint32_t vrx; /* packets unit, VRX start value of each frame */
+  uint32_t warm_pkts; /* packets unit, pkts for RL pacing warm boot */
   double frame_time;      /* time of the frame in nanoseconds */
   double frame_time_sampling; /* time of the frame in sampling(90k) */
   /* in ns, idle time at the end of frame, frame_time - tr_offset - (trs * pkts) */
   double frame_idle_time;
-  uint32_t warm_pkts; /* pkts for RL pacing warm boot */
   float pad_interval; /* padding pkt interval(pkts level) for RL pacing */
 
   uint64_t cur_epochs; /* epoch of current frame */
   /* timestamp for rtp header */
   uint32_t rtp_time_stamp;
-  /* timestamp for pacing */
-  uint32_t pacing_time_stamp;
   uint64_t cur_epoch_time;
   double tsc_time_cursor; /* in ns, tsc time cursor for packet pacing */
   double ptp_time_cursor; /* in ns, ptp time cursor for packet pacing */
@@ -439,7 +437,7 @@ struct st_rx_video_ebu_stat {
   bool compliant_narrow;
 
   /* Cinst, packet level check */
-  uint64_t cinmtl_initial_time;
+  uint64_t cinst_initial_time;
   int32_t cinst_max;
   int32_t cinst_min;
   uint32_t cinst_cnt;

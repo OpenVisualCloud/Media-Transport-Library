@@ -17,13 +17,21 @@ static inline double pacing_time(struct st_tx_video_pacing* pacing, uint64_t epo
 
 static inline double pacing_tr_offset_time(struct st_tx_video_pacing* pacing,
                                            uint64_t epochs) {
-  return pacing_time(pacing, epochs) + pacing->tr_offset -
-         (pacing->tr_offset_vrx * pacing->trs);
+  return pacing_time(pacing, epochs) + pacing->tr_offset - (pacing->vrx * pacing->trs);
 }
 
+/* pacing start time(warmup pkt if has warmup stage) of the frame */
+static inline double pacing_start_time(struct st_tx_video_pacing* pacing,
+                                       uint64_t epochs) {
+  return pacing_time(pacing, epochs) + pacing->tr_offset -
+         ((pacing->vrx + pacing->warm_pkts) * pacing->trs);
+}
+
+/* time stamp on the first pkt video pkt(not the warmup) */
 static inline uint32_t pacing_time_stamp(struct st_tx_video_pacing* pacing,
                                          uint64_t epochs) {
   double tr_offset_time = pacing_tr_offset_time(pacing, epochs);
+  if (pacing->warm_pkts) tr_offset_time -= 3 * pacing->trs; /* deviation for VRX */
   uint64_t tmstamp64 =
       (tr_offset_time / pacing->frame_time) * pacing->frame_time_sampling;
   uint32_t tmstamp32 = tmstamp64;
@@ -360,10 +368,10 @@ static int tv_init_pacing(struct mtl_main_impl* impl,
   pacing->frame_time_sampling =
       (double)(s->fps_tm.sampling_clock_rate) * s->fps_tm.den / s->fps_tm.mul;
   double reactive = 1080.0 / 1125.0;
+
+  /* calculate tr offset */
   pacing->tr_offset =
       s->ops.height >= 1080 ? frame_time * (43.0 / 1125.0) : frame_time * (28.0 / 750.0);
-  pacing->tr_offset_vrx = s->st21_vrx_narrow;
-
   if (s->ops.interlaced) {
     if (s->ops.height <= 576)
       reactive = (s->ops.height == 480) ? 487.0 / 525.0 : 576.0 / 625.0;
@@ -413,36 +421,49 @@ static int tv_init_pacing(struct mtl_main_impl* impl,
     }
   }
 
-  uint32_t troffset_warm_pkts = 0;
+  /* calculate warmup pkts for rl */
+  uint32_t warm_pkts = 0;
   if (s->pacing_way[MTL_SESSION_PORT_P] == ST21_TX_PACING_WAY_RL) {
     /* 80 percent tr offset time as warmup pkts for rl */
-    troffset_warm_pkts = pacing->tr_offset / pacing->trs;
-    troffset_warm_pkts = troffset_warm_pkts * 8 / 10;
-    troffset_warm_pkts = RTE_MIN(troffset_warm_pkts, 128); /* limit to 128 pkts */
+    warm_pkts = pacing->tr_offset / pacing->trs;
+    warm_pkts = warm_pkts * 8 / 10;
+    warm_pkts = RTE_MIN(warm_pkts, 128); /* limit to 128 pkts */
   }
-  pacing->warm_pkts = troffset_warm_pkts;
-  pacing->tr_offset_vrx += troffset_warm_pkts; /* time for warm pkts */
+  pacing->warm_pkts = warm_pkts;
+
+  /* calculate vrx pkts */
+  pacing->vrx = s->st21_vrx_narrow;
   if (s->pacing_way[MTL_SESSION_PORT_P] == ST21_TX_PACING_WAY_RL) {
-    pacing->tr_offset_vrx -= 2; /* VRX compensate to rl burst(max_burst_size=2048) */
-    pacing->tr_offset_vrx -= 2; /* leave VRX space for deviation */
+    pacing->vrx -= 2; /* VRX compensate to rl burst(max_burst_size=2048) */
+    pacing->vrx -= 2; /* leave VRX space for deviation */
     if (s->ops.height <= 576) {
       pacing->warm_pkts = 8; /* fix me */
-      pacing->tr_offset_vrx = s->st21_vrx_narrow;
+      pacing->vrx = s->st21_vrx_narrow;
     }
   } else if (s->pacing_way[MTL_SESSION_PORT_P] == ST21_TX_PACING_WAY_TSC_NARROW) {
     /* tsc narrow use single bulk for better accuracy */
     s->bulk = 1;
   } else {
-    pacing->tr_offset_vrx -= (s->bulk - 1); /* compensate for bulk */
+    pacing->vrx -= (s->bulk - 1); /* compensate for bulk */
   }
 
   if (s->s_type == MT_ST22_HANDLE_TX_VIDEO) {
     /* not sure the pacing for st22, none now */
-    pacing->tr_offset_vrx = 0;
+    pacing->vrx = 0;
     pacing->warm_pkts = 0;
   }
-  info("%s[%02d], trs %f trOffset %f warm pkts %u\n", __func__, idx, pacing->trs,
-       pacing->tr_offset, troffset_warm_pkts);
+  if (s->ops.vrx) {
+    uint32_t pkts_in_tr_offset = pacing->tr_offset / pacing->trs;
+    if (s->ops.vrx >= pkts_in_tr_offset) {
+      err("%s[%02d], use vrx %u larger than pkts in tr offset %u\n", __func__, idx,
+          s->ops.vrx, pkts_in_tr_offset);
+    } else {
+      info("%s[%02d], use vrx %u from user\n", __func__, idx, s->ops.vrx);
+      pacing->vrx = s->ops.vrx;
+    }
+  }
+  info("%s[%02d], trs %f trOffset %f vrx %u warm_pkts %u\n", __func__, idx, pacing->trs,
+       pacing->tr_offset, pacing->vrx, pacing->warm_pkts);
 
   /* resolve pacing tasklet */
   for (int i = 0; i < num_port; i++) {
@@ -470,7 +491,6 @@ static int tv_sync_pacing(struct mtl_main_impl* impl, struct st_tx_video_session
   uint64_t ptp_time = mt_get_ptp_time(impl, MTL_PORT_P);
   uint64_t next_epochs = pacing->cur_epochs + 1;
   uint64_t epochs;
-  double to_epoch_tr_offset;
   bool interlaced = s->ops.interlaced;
 
   if (required_tai) {
@@ -502,42 +522,39 @@ static int tv_sync_pacing(struct mtl_main_impl* impl, struct st_tx_video_session
   }
 
   /* epoch resolved */
-  double ptp_tr_offset_time = pacing_tr_offset_time(pacing, epochs);
-  to_epoch_tr_offset = ptp_tr_offset_time - ptp_time;
-  if (to_epoch_tr_offset < 0) {
-    /* time bigger than the assigned epoch troffset time */
-    dbg("%s(%d), to_epoch_tr_offset %f, ptp epochs %" PRIu64 " cur_epochs %" PRIu64
+  double start_time_ptp = pacing_start_time(pacing, epochs);
+  double to_epoch = start_time_ptp - ptp_time;
+  if (to_epoch < 0) {
+    /* time larger than the next assigned epoch time */
+    dbg("%s(%d), to_epoch %f, ptp epochs %" PRIu64 " cur_epochs %" PRIu64
         ", ptp_time %" PRIu64 "ms\n",
-        __func__, idx, to_epoch_tr_offset, epochs, pacing->cur_epochs,
-        ptp_time / 1000 / 1000);
+        __func__, idx, to_epoch, epochs, pacing->cur_epochs, ptp_time / 1000 / 1000);
     s->stat_epoch_troffset_mismatch++;
     epochs++; /* assign to next */
-    ptp_tr_offset_time = pacing_tr_offset_time(pacing, epochs);
-    to_epoch_tr_offset = ptp_tr_offset_time - ptp_time;
+    start_time_ptp = pacing_start_time(pacing, epochs);
+    to_epoch = start_time_ptp - ptp_time;
   }
 
-  if (to_epoch_tr_offset < 0) {
+  if (to_epoch < 0) {
     /* should never happen */
-    err("%s(%d), error to_epoch_tr_offset %f, ptp_time %" PRIu64 ", epochs %" PRIu64
-        " %" PRIu64 "\n",
-        __func__, idx, to_epoch_tr_offset, ptp_time, epochs, pacing->cur_epochs);
-    to_epoch_tr_offset = 0;
+    err("%s(%d), error to_epoch %f, ptp_time %" PRIu64 ", epochs %" PRIu64 " %" PRIu64
+        "\n",
+        __func__, idx, to_epoch, ptp_time, epochs, pacing->cur_epochs);
+    to_epoch = 0;
   }
 
   if (epochs > next_epochs) s->stat_epoch_drop += (epochs - next_epochs);
   if (epochs < next_epochs) s->stat_epoch_onward += (next_epochs - epochs);
   pacing->cur_epochs = epochs;
   pacing->cur_epoch_time = pacing_time(pacing, epochs);
-  pacing->pacing_time_stamp = pacing_time_stamp(pacing, epochs);
-  pacing->rtp_time_stamp = pacing->pacing_time_stamp;
+  pacing->rtp_time_stamp = pacing_time_stamp(pacing, epochs);
   dbg("%s(%d), old time_cursor %fms\n", __func__, idx,
       pacing->tsc_time_cursor / 1000 / 1000);
-  pacing->tsc_time_cursor = (double)mt_get_tsc(impl) + to_epoch_tr_offset;
-  dbg("%s(%d), epochs %" PRIu64
-      " time_stamp %u time_cursor %fms to_epoch_tr_offset %fms\n",
-      __func__, idx, pacing->cur_epochs, pacing->pacing_time_stamp,
-      pacing->tsc_time_cursor / 1000 / 1000, to_epoch_tr_offset / 1000 / 1000);
-  pacing->ptp_time_cursor = ptp_tr_offset_time;
+  pacing->tsc_time_cursor = (double)mt_get_tsc(impl) + to_epoch;
+  dbg("%s(%d), epochs %" PRIu64 " time_stamp %u time_cursor %fms to_epoch %fms\n",
+      __func__, idx, pacing->cur_epochs, pacing->rtp_time_stamp,
+      pacing->tsc_time_cursor / 1000 / 1000, to_epoch / 1000 / 1000);
+  pacing->ptp_time_cursor = start_time_ptp;
 
   if (sync) {
     dbg("%s(%d), delay to epoch_time %f, cur %" PRIu64 "\n", __func__, idx,
