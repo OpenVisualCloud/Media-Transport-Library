@@ -46,6 +46,8 @@ enum st_args_cmd {
   ST22_ARG_RX_SESSIONS_CNT,
   ST_ARG_HDR_SPLIT,
   ST_ARG_PACING_WAY,
+  ST_ARG_VRX,
+  ST_ARG_SHAPING,
 
   ST_ARG_CONFIG_FILE = 0x300,
   ST_ARG_TEST_TIME,
@@ -97,7 +99,6 @@ enum st_args_cmd {
   ST_ARG_AUDIO_BUILD_PACING,
   ST_ARG_AUDIO_FIFO_SIZE,
   ST_ARG_TX_NO_BURST_CHECK,
-  ST_ARG_VRX,
   ST_ARG_MAX,
 };
 
@@ -145,6 +146,8 @@ static struct option st_app_args_options[] = {
     {"rx_st22_sessions_count", required_argument, 0, ST22_ARG_RX_SESSIONS_CNT},
     {"hdr_split", no_argument, 0, ST_ARG_HDR_SPLIT},
     {"pacing_way", required_argument, 0, ST_ARG_PACING_WAY},
+    {"vrx", required_argument, 0, ST_ARG_VRX},
+    {"shaping", required_argument, 0, ST_ARG_SHAPING},
 
     {"config_file", required_argument, 0, ST_ARG_CONFIG_FILE},
     {"test_time", required_argument, 0, ST_ARG_TEST_TIME},
@@ -196,7 +199,6 @@ static struct option st_app_args_options[] = {
     {"audio_build_pacing", no_argument, 0, ST_ARG_AUDIO_BUILD_PACING},
     {"audio_fifo_size", required_argument, 0, ST_ARG_AUDIO_FIFO_SIZE},
     {"tx_no_burst_check", no_argument, 0, ST_ARG_TX_NO_BURST_CHECK},
-    {"vrx", required_argument, 0, ST_ARG_VRX},
 
     {0, 0, 0, 0}};
 
@@ -409,6 +411,19 @@ int st_app_parse_args(struct st_app_context* ctx, struct mtl_init_params* p, int
         else
           err("%s, unknow pacing way %s\n", __func__, optarg);
         break;
+      case ST_ARG_VRX:
+        ctx->tx_vrx = atoi(optarg);
+        break;
+      case ST_ARG_SHAPING:
+        if (!strcmp(optarg, "narrow"))
+          ctx->tx_pacing_type = ST21_PACING_NARROW;
+        else if (!strcmp(optarg, "wide"))
+          ctx->tx_pacing_type = ST21_PACING_WIDE;
+        else if (!strcmp(optarg, "linear"))
+          ctx->tx_pacing_type = ST21_PACING_LINEAR;
+        else
+          err("%s, unknow shaping way %s\n", __func__, optarg);
+        break;
       case ST_ARG_CONFIG_FILE:
         app_args_json(ctx, p, optarg);
         break;
@@ -589,9 +604,6 @@ int st_app_parse_args(struct st_app_context* ctx, struct mtl_init_params* p, int
         break;
       case ST_ARG_AUDIO_FIFO_SIZE:
         ctx->tx_audio_fifo_size = atoi(optarg);
-        break;
-      case ST_ARG_VRX:
-        ctx->tx_vrx = atoi(optarg);
         break;
       case '?':
         break;

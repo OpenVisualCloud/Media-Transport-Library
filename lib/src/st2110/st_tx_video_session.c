@@ -421,11 +421,12 @@ static int tv_init_pacing(struct mtl_main_impl* impl,
     }
   }
 
+  uint32_t pkts_in_tr_offset = pacing->tr_offset / pacing->trs;
   /* calculate warmup pkts for rl */
   uint32_t warm_pkts = 0;
   if (s->pacing_way[MTL_SESSION_PORT_P] == ST21_TX_PACING_WAY_RL) {
     /* 80 percent tr offset time as warmup pkts for rl */
-    warm_pkts = pacing->tr_offset / pacing->trs;
+    warm_pkts = pkts_in_tr_offset;
     warm_pkts = warm_pkts * 8 / 10;
     warm_pkts = RTE_MIN(warm_pkts, 128); /* limit to 128 pkts */
   }
@@ -453,7 +454,6 @@ static int tv_init_pacing(struct mtl_main_impl* impl,
     pacing->warm_pkts = 0;
   }
   if (s->ops.vrx) {
-    uint32_t pkts_in_tr_offset = pacing->tr_offset / pacing->trs;
     if (s->ops.vrx >= pkts_in_tr_offset) {
       err("%s[%02d], use vrx %u larger than pkts in tr offset %u\n", __func__, idx,
           s->ops.vrx, pkts_in_tr_offset);
@@ -461,6 +461,12 @@ static int tv_init_pacing(struct mtl_main_impl* impl,
       info("%s[%02d], use vrx %u from user\n", __func__, idx, s->ops.vrx);
       pacing->vrx = s->ops.vrx;
     }
+  } else if (s->ops.pacing == ST21_PACING_WIDE) {
+    uint32_t wide_vrx = pkts_in_tr_offset * 8 / 10;
+    uint32_t max_vrx = s->st21_vrx_wide * 8 / 10;
+    pacing->vrx = RTE_MIN(max_vrx, wide_vrx);
+    pacing->warm_pkts = 0; /* no need warmup for wide */
+    info("%s[%02d], wide pacing\n", __func__, idx);
   }
   info("%s[%02d], trs %f trOffset %f vrx %u warm_pkts %u\n", __func__, idx, pacing->trs,
        pacing->tr_offset, pacing->vrx, pacing->warm_pkts);
