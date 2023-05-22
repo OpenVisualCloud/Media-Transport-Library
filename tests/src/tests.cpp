@@ -267,8 +267,8 @@ static int test_parse_args(struct st_tests_context* ctx, struct mtl_init_params*
         p->flags |= MTL_FLAG_MULTI_SRC_PORT;
         break;
       case TEST_ARG_DHCP:
-        p->net_proto[MTL_PORT_P] = MTL_PROTO_DHCP;
-        p->net_proto[MTL_PORT_R] = MTL_PROTO_DHCP;
+        for (int port = 0; port < MTL_PORT_MAX; ++port)
+          p->net_proto[port] = MTL_PROTO_DHCP;
         break;
       default:
         break;
