@@ -46,7 +46,7 @@ The demo currently works only on Linux. Follow the steps below to install all th
 
 * Follow instruction below (TBD)
 
-#### Example command line to send ST2110 stream to the receiver using ffmpeg
+#### Example command-line to send ST2110 stream to the receiver using ffmpeg
 
 - For **synchronous** playaback, i.e streaming HDMI output of a Laptop via the sender, run:
 
@@ -54,7 +54,7 @@ The demo currently works only on Linux. Follow the steps below to install all th
 sudo LD_LIBRARY_PATH=path/to/ffmpeg/lib ./ffmpeg -f video4linux2 -video_size 1280x720 -framerate 30 -i /dev/video0  -vcodec rawvideo -vf scale=1280:720,format=rgb24 -udp_port 20000 -port 0000:02:00.0 -local_addr 192.168.100.55 -dst_addr 239.168.85.20 -f kahawai_mux -
 ```
 
-**Note**: The cmdline above assume /dev/video0 is the Mukose's HDMI2USB capture device.
+**Note**: The command-line above assume /dev/video0 is the Mukose's HDMI2USB capture device.
 
 - For **asynchronous** playback, streaming the framebuffer of the sender (e.g Intel&reg; NUC), run:
 
@@ -77,7 +77,7 @@ An SDL2 window will pop-up at the receiver screen. Press CTRL-C to terminate.
 **Note**:
 
 - See [readme](../ecosystem/ffmpeg_plugin/README.md) for more info on the parameters supported by the kahawai's ffmpeg plugin.
-- The example command line above stream the session at 1280x720@30fps in rgb24 pixel format.
+- The example command-line above stream the session at 1280x720@30fps in rgb24 pixel format.
 - Provide the path to ffmpeg's DLLs if the ffmpeg in the step above is installed in a non-default directory (eg. /usr/lib).
   
   
@@ -90,4 +90,3 @@ An SDL2 window will pop-up at the receiver screen. Press CTRL-C to terminate.
 
 - Requires to execute application with elevated privilege using sudo command.
 
-- 
