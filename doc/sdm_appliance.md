@@ -2,7 +2,7 @@
 
 This document  contains instructions for streaming a desktop session to a Intel(r) SDM based display over a 2.5Gbps link (Intel I225 Ethernet) using Intel(r) Media Transport Library .
 
-# 1. Use-case Scenario
+## 1. Use-case Scenario
 
 Depicted below are 2 use-case scenario:
 
@@ -10,7 +10,7 @@ Depicted below are 2 use-case scenario:
   ![Image](./png/mtl-appliance-use-case.png)
    
 2. Asynchronous playback - where the sending device is streaming a digital media generated (e.g framebuffer) / stored locally on the device to the receiver.
-   ![Image](./png/desktop-streaming-mtl.png)
+  ![Image](./png/desktop-streaming-mtl.png)
 
 ## 2. Required Hardware
 
@@ -78,6 +78,6 @@ An SDL2 window will pop-up at the receiver screen. Press CTRL-C to terminate.
   
 ## 3. Limitation
 
-- This demo is only tested to transport desktop session in uncompressed raw RGB24 pixel format. 
-- At 2.5Gbps bandwidth, we may only stream the session at 1920x1080@30fps in RGB24 pixel format. 
+- This demo is only tested to transport desktop session in uncompressed raw RGB24 pixel format.
+- At 2.5Gbps bandwidth, we may only stream the session at 1920x1080@30fps in RGB24 pixel format.
 - Requires to execute application with elevated privilege using sudo command.
