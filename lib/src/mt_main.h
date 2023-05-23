@@ -223,7 +223,8 @@ struct mt_cni_impl {
   bool lcore_tasklet;
   struct mt_sch_tasklet_impl* tasklet;
   /* stat */
-  int eth_rx_cnt[MTL_PORT_MAX];
+  uint32_t eth_rx_cnt[MTL_PORT_MAX];
+  uint64_t eth_rx_bytes[MTL_PORT_MAX];
 
 #ifdef MTL_HAS_KNI
   bool has_kni_kmod;

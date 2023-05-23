@@ -22,6 +22,7 @@
 
 static int cni_rx_handle(struct mtl_main_impl* impl, struct rte_mbuf* m,
                          enum mtl_port port) {
+  struct mt_cni_impl* cni = mt_get_cni(impl);
   struct mt_ptp_impl* ptp = mt_get_ptp(impl, port);
   struct mt_dhcp_impl* dhcp = mt_get_dhcp(impl, port);
   struct rte_ether_hdr* eth_hdr = rte_pktmbuf_mtod(m, struct rte_ether_hdr*);
@@ -73,6 +74,7 @@ static int cni_rx_handle(struct mtl_main_impl* impl, struct rte_mbuf* m,
       // dbg("%s(%d), unknown ether_type %d\n", __func__, port, ether_type);
       break;
   }
+  cni->eth_rx_bytes[port] += m->data_len;
 
   return 0;
 }
@@ -290,8 +292,11 @@ static int cni_stat(void* priv) {
   if (!cni->used) return 0;
 
   for (int i = 0; i < num_ports; i++) {
-    notice("CNI(%d): eth_rx_cnt %d \n", i, cni->eth_rx_cnt[i]);
+    notice("CNI(%d): eth_rx_rate %" PRIu64 " Mb/s, eth_rx_cnt %u\n", i,
+           cni->eth_rx_bytes[i] * 8 / MT_DEV_STAT_INTERVAL_S / MT_DEV_STAT_M_UNIT,
+           cni->eth_rx_cnt[i]);
     cni->eth_rx_cnt[i] = 0;
+    cni->eth_rx_bytes[i] = 0;
   }
 
   return 0;
