@@ -1,0 +1,50 @@
+From 5b79de80baca1e4f6b16742470f3a054b1774091 Mon Sep 17 00:00:00 2001
+From: intel <wallace-lee>
+Date: Sat, 20 May 2023 00:56:45 +0800
+Subject: [PATCH] add devid for i225-LMvP
+
+---
+ drivers/net/igc/base/igc_api.c | 1 +
+ drivers/net/igc/base/igc_hw.h  | 1 +
+ drivers/net/igc/igc_ethdev.c   | 1 +
+ 3 files changed, 3 insertions(+)
+
+diff --git a/drivers/net/igc/base/igc_api.c b/drivers/net/igc/base/igc_api.c
+index c9fc9ed4b0..228b8c8f0e 100644
+--- a/drivers/net/igc/base/igc_api.c
++++ b/drivers/net/igc/base/igc_api.c
+@@ -883,6 +883,7 @@ s32 igc_set_mac_type(struct igc_hw *hw)
+ 		mac->type = igc_i211;
+ 		break;
+ 	case IGC_DEV_ID_I225_LM:
++	case IGC_DEV_ID_I225_LMVP:
+ 	case IGC_DEV_ID_I225_V:
+ 	case IGC_DEV_ID_I225_K:
+ 	case IGC_DEV_ID_I225_I:
+diff --git a/drivers/net/igc/base/igc_hw.h b/drivers/net/igc/base/igc_hw.h
+index e919a11c02..fa21d74ff3 100644
+--- a/drivers/net/igc/base/igc_hw.h
++++ b/drivers/net/igc/base/igc_hw.h
+@@ -161,6 +161,7 @@ struct igc_hw;
+ #define IGC_DEV_ID_I210_SGMII_FLASHLESS	0x15F6
+ #define IGC_DEV_ID_I211_COPPER		0x1539
+ #define IGC_DEV_ID_I225_LM			0x15F2
++#define IGC_DEV_ID_I225_LMVP		0x5502
+ #define IGC_DEV_ID_I225_V			0x15F3
+ #define IGC_DEV_ID_I225_K			0x3100
+ #define IGC_DEV_ID_I225_I			0x15F8
+diff --git a/drivers/net/igc/igc_ethdev.c b/drivers/net/igc/igc_ethdev.c
+index fab2ab6d1c..58c4f80927 100644
+--- a/drivers/net/igc/igc_ethdev.c
++++ b/drivers/net/igc/igc_ethdev.c
+@@ -107,6 +107,7 @@ static const struct rte_eth_desc_lim tx_desc_lim = {
+ 
+ static const struct rte_pci_id pci_id_igc_map[] = {
+ 	{ RTE_PCI_DEVICE(IGC_INTEL_VENDOR_ID, IGC_DEV_ID_I225_LM) },
++	{ RTE_PCI_DEVICE(IGC_INTEL_VENDOR_ID, IGC_DEV_ID_I225_LMVP) },
+ 	{ RTE_PCI_DEVICE(IGC_INTEL_VENDOR_ID, IGC_DEV_ID_I225_V)  },
+ 	{ RTE_PCI_DEVICE(IGC_INTEL_VENDOR_ID, IGC_DEV_ID_I225_I)  },
+ 	{ RTE_PCI_DEVICE(IGC_INTEL_VENDOR_ID, IGC_DEV_ID_I225_IT)  },
+-- 
+2.34.1
+
