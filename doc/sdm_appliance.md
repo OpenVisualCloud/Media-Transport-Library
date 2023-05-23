@@ -40,9 +40,9 @@ The demo currently works only on Linux. Follow the steps below to install all th
 
 ### Build ffmpeg (with kahawai encoder and decoder)
 
-* See [../ecosystem/ffmpeg_plugin/README.md](./build.md) to build ffmpeg with Kahawai's encoder/decoder on Ubuntu.
+- See [readme](../ecosystem/ffmpeg_plugin/README.md) to build ffmpeg with Kahawai's encoder/decoder on Ubuntu.
 
-* Follow instruction below (TBD)
+- Follow instruction below (TBD)
 
 ### Example command-line to send ST2110 stream to the receiver using ffmpeg
 
