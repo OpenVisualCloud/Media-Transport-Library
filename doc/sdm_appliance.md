@@ -8,7 +8,7 @@ Depicted below are 2 use-case scenario:
 
 1. Synchronous playback scenario where output of a PC/Laptop is streamed via a sending device to the receiver.
  ![Image](./png/mtl-appliance-use-case.png)
-   
+
 2. Asynchronous playback - where the sending device is streaming a digital media generated (e.g framebuffer) / stored locally on the device to the receiver.
  ![Image](./png/desktop-streaming-mtl.png)
 
@@ -73,11 +73,15 @@ An SDL2 window will pop-up at the receiver screen. Press CTRL-C to terminate.
 **Note**:
 
 - See [readme](../ecosystem/ffmpeg_plugin/README.md) for more info on the parameters supported by the kahawai's ffmpeg plugin.
+
 - The example command-line above stream the session at 1280x720@30fps in rgb24 pixel format.
+
 - Provide the path to ffmpeg's DLLs if the ffmpeg in the step above is installed in a non-default directory (eg. /usr/lib).
   
 ## 3. Limitation
 
 - This demo is only tested to transport desktop session in uncompressed raw RGB24 pixel format.
+
 - At 2.5Gbps bandwidth, we may only stream the session at 1920x1080@30fps in RGB24 pixel format.
+
 - Requires to execute application with elevated privilege using sudo command.
