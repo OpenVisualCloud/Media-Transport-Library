@@ -1,18 +1,18 @@
-## Streaming video via Intel(r) SDM appliance
+# Streaming video via Intel(r) SDM appliance
 
 This document  contains instructions for streaming a desktop session to a Intel(r) SDM based display over a 2.5Gbps link (Intel I225 Ethernet) using Intel(r) Media Transport Library .
 
-### 1. Use-case Scenario
+# 1. Use-case Scenario
 
 Depicted below are 2 use-case scenario:
 
 1. Synchronous playback scenario where output of a PC/Laptop is streamed via a sending device to the receiver.
-   ![Image](./png/mtl-appliance-use-case.png)
+  ![Image](./png/mtl-appliance-use-case.png)
    
 2. Asynchronous playback - where the sending device is streaming a digital media generated (e.g framebuffer) / stored locally on the device to the receiver.
-    ![Image](./png/desktop-streaming-mtl.png)
+   ![Image](./png/desktop-streaming-mtl.png)
 
-### 2. Required Hardware
+## 2. Required Hardware
 
 1. Intel NUC11TNki5 (Codenamed Tiger Canyon) - Sending Device (NIC=i225-LM)
 
@@ -22,7 +22,7 @@ Depicted below are 2 use-case scenario:
 
 4. 10GbE Switch and few Cat6/7 cables
 
-### 3. Required Software
+## 3. Required Software
 
 1. Ubuntu 22.03 LTS
 
@@ -30,21 +30,21 @@ Depicted below are 2 use-case scenario:
 
 3. FFmpeg with kahawai encoder and decoder [patches](https://google.com)
 
-### 2. Installation and configuration
+## 2. Installation and configuration
 
 The demo currently works only on Linux. Follow the steps below to install all the software components required for the demo.
 
-#### Build Intel&reg; MTL
+### Build Intel&reg; MTL
 
 - See [build.md](./build.md) to build libmtl on linux.
 
-#### Build ffmpeg (with kahawai encoder and decoder)
+### Build ffmpeg (with kahawai encoder and decoder)
 
 * See [../ecosystem/ffmpeg_plugin/README.md](./build.md) to build ffmpeg with Kahawai's encoder/decoder on Ubuntu.
 
 * Follow instruction below (TBD)
 
-#### Example command-line to send ST2110 stream to the receiver using ffmpeg
+### Example command-line to send ST2110 stream to the receiver using ffmpeg
 
 - For **synchronous** playaback, i.e streaming HDMI output of a Laptop via the sender, run:
 
@@ -76,10 +76,8 @@ An SDL2 window will pop-up at the receiver screen. Press CTRL-C to terminate.
 - The example command-line above stream the session at 1280x720@30fps in rgb24 pixel format.
 - Provide the path to ffmpeg's DLLs if the ffmpeg in the step above is installed in a non-default directory (eg. /usr/lib).
   
-### 3. Limitation
+## 3. Limitation
 
 - This demo is only tested to transport desktop session in uncompressed raw RGB24 pixel format. 
-
 - At 2.5Gbps bandwidth, we may only stream the session at 1920x1080@30fps in RGB24 pixel format. 
-
 - Requires to execute application with elevated privilege using sudo command.
