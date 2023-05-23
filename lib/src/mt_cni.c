@@ -74,7 +74,7 @@ static int cni_rx_handle(struct mtl_main_impl* impl, struct rte_mbuf* m,
       // dbg("%s(%d), unknown ether_type %d\n", __func__, port, ether_type);
       break;
   }
-  cni->eth_rx_bytes[port] += m->data_len;
+  cni->eth_rx_bytes[port] += m->pkt_len;
 
   return 0;
 }
