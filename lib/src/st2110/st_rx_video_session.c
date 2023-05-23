@@ -1775,6 +1775,7 @@ static int rv_handle_frame_pkt(struct st_rx_video_session_impl* s, struct rte_mb
     rv_slot_add_frame_size(s, slot, payload_length);
   }
   s->stat_pkts_received++;
+  s->stat_bytes_received += mbuf->pkt_len;
   slot->pkts_received++;
 
   /* slice */
@@ -1886,6 +1887,7 @@ static int rv_handle_rtp_pkt(struct st_rx_video_session_impl* s, struct rte_mbuf
 
   ops->notify_rtp_ready(ops->priv);
   s->stat_pkts_received++;
+  s->stat_bytes_received += mbuf->pkt_len;
 
   return 0;
 }
@@ -2053,6 +2055,7 @@ static int rv_handle_st22_pkt(struct st_rx_video_session_impl* s, struct rte_mbu
   rte_memcpy(slot->frame->addr + offset, payload, payload_length);
   rv_slot_add_frame_size(s, slot, payload_length);
   s->stat_pkts_received++;
+  s->stat_bytes_received += mbuf->pkt_len;
   slot->pkts_received++;
 
   /* check if frame is full */
@@ -2214,6 +2217,7 @@ static int rv_handle_hdr_split_pkt(struct st_rx_video_session_impl* s,
 
   rv_slot_add_frame_size(s, slot, payload_length);
   s->stat_pkts_received++;
+  s->stat_bytes_received += mbuf->pkt_len;
   slot->pkts_received++;
 
   /* slice */
@@ -2616,6 +2620,7 @@ static int rv_handle_detect_pkt(struct st_rx_video_session_impl* s, struct rte_m
   }
 
   s->stat_pkts_received++;
+  s->stat_bytes_received += mbuf->pkt_len;
   return 0;
 }
 
@@ -2902,6 +2907,7 @@ static int rv_attach(struct mtl_main_impl* impl, struct st_rx_video_sessions_mgr
   s->stat_pkts_redundant_dropped = 0;
   s->stat_pkts_wrong_hdr_dropped = 0;
   s->stat_pkts_received = 0;
+  s->stat_bytes_received = 0;
   s->stat_pkts_dma = 0;
   s->stat_pkts_rtp_ring_full = 0;
   s->stat_frames_dropped = 0;
@@ -3082,16 +3088,19 @@ static void rv_stat(struct st_rx_video_sessions_mgr* mgr,
   rte_atomic32_set(&s->stat_frames_received, 0);
 
   if (s->stat_slices_received) {
-    notice(
-        "RX_VIDEO_SESSION(%d,%d:%s): fps %f frames %d pkts %d slices %d, cpu busy %f\n",
-        m_idx, idx, s->ops_name, framerate, frames_received, s->stat_pkts_received,
-        s->stat_slices_received, s->cpu_busy_score);
+    notice("RX_VIDEO_SESSION(%d,%d:%s): fps %f frames %d pkts %d slices %d\n", m_idx, idx,
+           s->ops_name, framerate, frames_received, s->stat_pkts_received,
+           s->stat_slices_received);
   } else {
-    notice("RX_VIDEO_SESSION(%d,%d:%s): fps %f frames %d pkts %d, cpu busy %f\n", m_idx,
-           idx, s->ops_name, framerate, frames_received, s->stat_pkts_received,
-           s->cpu_busy_score);
+    notice("RX_VIDEO_SESSION(%d,%d:%s): fps %f frames %d pkts %d\n", m_idx, idx,
+           s->ops_name, framerate, frames_received, s->stat_pkts_received);
   }
+  notice("RX_VIDEO_SESSION(%d,%d:%s): throughput %" PRIu64 " Mb/s, cpu busy %f\n", m_idx,
+         idx, s->ops_name,
+         s->stat_bytes_received * 8 / MT_DEV_STAT_INTERVAL_S / MT_DEV_STAT_M_UNIT,
+         s->cpu_busy_score);
   s->stat_pkts_received = 0;
+  s->stat_bytes_received = 0;
   s->stat_slices_received = 0;
   s->stat_last_time = cur_time_ns;
 
