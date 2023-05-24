@@ -1606,6 +1606,7 @@ static int tv_tasklet_frame(struct mtl_main_impl* impl,
     pacing_forward_cursor(pacing); /* pkt forward */
     s->st20_pkt_idx++;
     s->stat_pkts_build++;
+    s->stat_bytes_build += send_r ? pkts[i]->pkt_len * 2 : pkts[i]->pkt_len;
   }
 
   bool done = false;
@@ -1758,6 +1759,7 @@ static int tv_tasklet_rtp(struct mtl_main_impl* impl,
     pacing_forward_cursor(pacing); /* pkt forward */
     s->st20_pkt_idx++;
     s->stat_pkts_build++;
+    s->stat_bytes_build += send_r ? pkts[i]->pkt_len * 2 : pkts[i]->pkt_len;
   }
 
   /* build dummy bulk pkts to satisfy video transmitter which is bulk based */
@@ -1936,6 +1938,7 @@ static int tv_tasklet_st22(struct mtl_main_impl* impl,
       s->st20_pkt_idx++;
       s->stat_pkts_build++;
       s->stat_pkts_dummy++;
+      s->stat_bytes_build += send_r ? pkts[i]->pkt_len * 2 : pkts[i]->pkt_len;
     }
   } else {
     struct rte_mbuf* pkts_chain[bulk];
@@ -2007,6 +2010,7 @@ static int tv_tasklet_st22(struct mtl_main_impl* impl,
       pacing_forward_cursor(pacing); /* pkt forward */
       s->st20_pkt_idx++;
       s->stat_pkts_build++;
+      s->stat_bytes_build += send_r ? pkts[i]->pkt_len * 2 : pkts[i]->pkt_len;
     }
   }
 
@@ -2764,14 +2768,17 @@ static void tv_stat(struct st_tx_video_sessions_mgr* mgr,
 
   rte_atomic32_set(&s->stat_frame_cnt, 0);
 
-  notice(
-      "TX_VIDEO_SESSION(%d,%d:%s): fps %f, frame %d pkts %d:%d inflight %d:%d, cpu busy "
-      "%f\n",
-      m_idx, idx, s->ops_name, framerate, frame_cnt, s->stat_pkts_build,
-      s->stat_pkts_burst, s->trs_inflight_cnt[0], s->inflight_cnt[0], s->cpu_busy_score);
+  notice("TX_VIDEO_SESSION(%d,%d:%s): fps %f, frame %d pkts %d:%d inflight %d:%d\n",
+         m_idx, idx, s->ops_name, framerate, frame_cnt, s->stat_pkts_build,
+         s->stat_pkts_burst, s->trs_inflight_cnt[0], s->inflight_cnt[0]);
+  notice("TX_VIDEO_SESSION(%d,%d:%s): throughput %" PRIu64 " Mb/s, cpu busy %f\n", m_idx,
+         idx, s->ops_name,
+         s->stat_bytes_build * 8 / MT_DEV_STAT_INTERVAL_S / MT_DEV_STAT_M_UNIT,
+         s->cpu_busy_score);
   s->stat_last_time = cur_time_ns;
   s->stat_pkts_build = 0;
   s->stat_pkts_burst = 0;
+  s->stat_bytes_build = 0;
   s->trs_inflight_cnt[0] = 0;
   s->inflight_cnt[0] = 0;
 

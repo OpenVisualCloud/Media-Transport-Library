@@ -2663,6 +2663,7 @@ static int rv_handle_mbuf(void* priv, struct rte_mbuf** mbuf, uint16_t nb) {
   /* now dispatch the pkts to handler */
   for (uint16_t i = 0; i < nb; i++) {
     ret += s->pkt_handler(s, mbuf[i], s_port, ctl_thread);
+    s->stat_bytes_received += mbuf[i]->pkt_len;
   }
   return ret;
 }
@@ -2902,6 +2903,7 @@ static int rv_attach(struct mtl_main_impl* impl, struct st_rx_video_sessions_mgr
   s->stat_pkts_redundant_dropped = 0;
   s->stat_pkts_wrong_hdr_dropped = 0;
   s->stat_pkts_received = 0;
+  s->stat_bytes_received = 0;
   s->stat_pkts_dma = 0;
   s->stat_pkts_rtp_ring_full = 0;
   s->stat_frames_dropped = 0;
@@ -3082,16 +3084,19 @@ static void rv_stat(struct st_rx_video_sessions_mgr* mgr,
   rte_atomic32_set(&s->stat_frames_received, 0);
 
   if (s->stat_slices_received) {
-    notice(
-        "RX_VIDEO_SESSION(%d,%d:%s): fps %f frames %d pkts %d slices %d, cpu busy %f\n",
-        m_idx, idx, s->ops_name, framerate, frames_received, s->stat_pkts_received,
-        s->stat_slices_received, s->cpu_busy_score);
+    notice("RX_VIDEO_SESSION(%d,%d:%s): fps %f frames %d pkts %d slices %d\n", m_idx, idx,
+           s->ops_name, framerate, frames_received, s->stat_pkts_received,
+           s->stat_slices_received);
   } else {
-    notice("RX_VIDEO_SESSION(%d,%d:%s): fps %f frames %d pkts %d, cpu busy %f\n", m_idx,
-           idx, s->ops_name, framerate, frames_received, s->stat_pkts_received,
-           s->cpu_busy_score);
+    notice("RX_VIDEO_SESSION(%d,%d:%s): fps %f frames %d pkts %d\n", m_idx, idx,
+           s->ops_name, framerate, frames_received, s->stat_pkts_received);
   }
+  notice("RX_VIDEO_SESSION(%d,%d:%s): throughput %" PRIu64 " Mb/s, cpu busy %f\n", m_idx,
+         idx, s->ops_name,
+         s->stat_bytes_received * 8 / MT_DEV_STAT_INTERVAL_S / MT_DEV_STAT_M_UNIT,
+         s->cpu_busy_score);
   s->stat_pkts_received = 0;
+  s->stat_bytes_received = 0;
   s->stat_slices_received = 0;
   s->stat_last_time = cur_time_ns;
 

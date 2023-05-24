@@ -360,6 +360,7 @@ struct st_tx_video_session_impl {
   uint32_t stat_lines_not_ready; /* query app lines not ready */
   uint32_t stat_vsync_mismatch;
   uint32_t stat_tx_done_cleanup;
+  uint64_t stat_bytes_build;
 };
 
 struct st_tx_video_sessions_mgr {
@@ -677,6 +678,7 @@ struct st_rx_video_session_impl {
   uint32_t stat_vsync_mismatch;
   uint32_t stat_slot_get_frame_fail;
   uint32_t stat_slot_query_ext_fail;
+  uint64_t stat_bytes_received;
 
   struct st_rx_video_ebu_info ebu_info;
   struct st_rx_video_ebu_stat ebu;
