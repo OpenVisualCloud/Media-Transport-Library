@@ -1606,7 +1606,7 @@ static int tv_tasklet_frame(struct mtl_main_impl* impl,
     pacing_forward_cursor(pacing); /* pkt forward */
     s->st20_pkt_idx++;
     s->stat_pkts_build++;
-    s->stat_bytes_build += pkts[i]->pkt_len;
+    s->stat_bytes_build += send_r ? pkts[i]->pkt_len * 2 : pkts[i]->pkt_len;
   }
 
   bool done = false;
@@ -1759,7 +1759,7 @@ static int tv_tasklet_rtp(struct mtl_main_impl* impl,
     pacing_forward_cursor(pacing); /* pkt forward */
     s->st20_pkt_idx++;
     s->stat_pkts_build++;
-    s->stat_bytes_build += pkts[i]->pkt_len;
+    s->stat_bytes_build += send_r ? pkts[i]->pkt_len * 2 : pkts[i]->pkt_len;
   }
 
   /* build dummy bulk pkts to satisfy video transmitter which is bulk based */
@@ -1938,7 +1938,7 @@ static int tv_tasklet_st22(struct mtl_main_impl* impl,
       s->st20_pkt_idx++;
       s->stat_pkts_build++;
       s->stat_pkts_dummy++;
-      s->stat_bytes_build += pkts[i]->pkt_len;
+      s->stat_bytes_build += send_r ? pkts[i]->pkt_len * 2 : pkts[i]->pkt_len;
     }
   } else {
     struct rte_mbuf* pkts_chain[bulk];
@@ -2010,7 +2010,7 @@ static int tv_tasklet_st22(struct mtl_main_impl* impl,
       pacing_forward_cursor(pacing); /* pkt forward */
       s->st20_pkt_idx++;
       s->stat_pkts_build++;
-      s->stat_bytes_build += pkts[i]->pkt_len;
+      s->stat_bytes_build += send_r ? pkts[i]->pkt_len * 2 : pkts[i]->pkt_len;
     }
   }
 

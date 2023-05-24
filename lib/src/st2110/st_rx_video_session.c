@@ -1775,7 +1775,6 @@ static int rv_handle_frame_pkt(struct st_rx_video_session_impl* s, struct rte_mb
     rv_slot_add_frame_size(s, slot, payload_length);
   }
   s->stat_pkts_received++;
-  s->stat_bytes_received += mbuf->pkt_len;
   slot->pkts_received++;
 
   /* slice */
@@ -1887,7 +1886,6 @@ static int rv_handle_rtp_pkt(struct st_rx_video_session_impl* s, struct rte_mbuf
 
   ops->notify_rtp_ready(ops->priv);
   s->stat_pkts_received++;
-  s->stat_bytes_received += mbuf->pkt_len;
 
   return 0;
 }
@@ -2055,7 +2053,6 @@ static int rv_handle_st22_pkt(struct st_rx_video_session_impl* s, struct rte_mbu
   rte_memcpy(slot->frame->addr + offset, payload, payload_length);
   rv_slot_add_frame_size(s, slot, payload_length);
   s->stat_pkts_received++;
-  s->stat_bytes_received += mbuf->pkt_len;
   slot->pkts_received++;
 
   /* check if frame is full */
@@ -2217,7 +2214,6 @@ static int rv_handle_hdr_split_pkt(struct st_rx_video_session_impl* s,
 
   rv_slot_add_frame_size(s, slot, payload_length);
   s->stat_pkts_received++;
-  s->stat_bytes_received += mbuf->pkt_len;
   slot->pkts_received++;
 
   /* slice */
@@ -2620,7 +2616,6 @@ static int rv_handle_detect_pkt(struct st_rx_video_session_impl* s, struct rte_m
   }
 
   s->stat_pkts_received++;
-  s->stat_bytes_received += mbuf->pkt_len;
   return 0;
 }
 
@@ -2668,6 +2663,7 @@ static int rv_handle_mbuf(void* priv, struct rte_mbuf** mbuf, uint16_t nb) {
   /* now dispatch the pkts to handler */
   for (uint16_t i = 0; i < nb; i++) {
     ret += s->pkt_handler(s, mbuf[i], s_port, ctl_thread);
+    s->stat_bytes_received += mbuf[i]->pkt_len;
   }
   return ret;
 }
