@@ -164,6 +164,8 @@ static int app_rx_st20p_init(struct st_app_context* ctx,
   ops.device = st20p ? st20p->info.device : ST_PLUGIN_DEVICE_AUTO;
   ops.notify_frame_available = app_rx_st20p_frame_available;
   ops.framebuff_cnt = s->framebuff_cnt;
+  /* always try to enable DMA offload */
+  ops.flags = ST20P_RX_FLAG_DMA_OFFLOAD;
 
   st_pthread_mutex_init(&s->st20p_wake_mutex, NULL);
   st_pthread_cond_init(&s->st20p_wake_cond, NULL);
