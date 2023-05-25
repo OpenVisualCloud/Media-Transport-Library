@@ -465,7 +465,7 @@ static int udp_init_txq(struct mtl_main_impl* impl, struct mudp_impl* s,
     mt_tsq_set_bps(impl, s->tsq, s->txq_bps / 8);
     s->tx_pool = mt_tsq_mempool(s->tsq);
   } else {
-    s->txq = mt_dev_get_tx_queue(impl, port, s->txq_bps / 8);
+    s->txq = mt_dev_get_tx_queue(impl, port, s->txq_bps / 8, false);
     if (!s->txq) {
       err("%s(%d), get tx queue fail\n", __func__, idx);
       udp_uinit_txq(impl, s);
