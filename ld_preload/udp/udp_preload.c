@@ -490,6 +490,7 @@ static int upl_pselect(int nfds, fd_set* readfds, fd_set* writefds, fd_set* exce
 
   struct upl_select_ctx priv;
   priv.parent = ctx;
+  priv.nfds = nfds;
   priv.readfds = readfds;
   priv.writefds = writefds;
   priv.exceptfds = exceptfds;

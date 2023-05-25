@@ -89,24 +89,39 @@ static int ufd_parse_interfaces(struct mufd_init_params* init, json_object* obj,
   }
   snprintf(p->port[port], MTL_PORT_MAX_LEN, "%s", name);
 
-  const char* sip = json_object_get_string(mt_json_object_get(obj, "ip"));
-  if (!sip) {
-    err("%s, no ip in the json interface\n", __func__);
-    MUDP_ERR_RET(EINVAL);
-  }
-  int ret = inet_pton(AF_INET, sip, p->sip_addr[port]);
-  if (ret != 1) {
-    err("%s, inet pton fail ip %s\n", __func__, sip);
-    MUDP_ERR_RET(EINVAL);
+  json_object* obj_item = mt_json_object_get(obj, "proto");
+  if (obj_item) {
+    const char* proto = json_object_get_string(obj_item);
+    if (strcmp(proto, "dhcp") == 0) {
+      p->net_proto[port] = MTL_PROTO_DHCP;
+    } else if (strcmp(proto, "static") == 0) {
+      p->net_proto[port] = MTL_PROTO_STATIC;
+    } else {
+      err("%s, invalid network proto %s\n", __func__, proto);
+      MUDP_ERR_RET(EINVAL);
+    }
   }
 
-  json_object* obj_item = mt_json_object_get(obj, "netmask");
-  if (obj_item) {
-    inet_pton(AF_INET, json_object_get_string(obj_item), p->netmask[port]);
-  }
-  obj_item = mt_json_object_get(obj, "gateway");
-  if (obj_item) {
-    inet_pton(AF_INET, json_object_get_string(obj_item), p->gateway[port]);
+  if (p->net_proto[port] == MTL_PROTO_STATIC) {
+    obj_item = mt_json_object_get(obj, "ip");
+    if (!obj_item) {
+      err("%s, no ip in the json interface\n", __func__);
+      MUDP_ERR_RET(EINVAL);
+    }
+    const char* sip = json_object_get_string(obj_item);
+    int ret = inet_pton(AF_INET, sip, p->sip_addr[port]);
+    if (ret != 1) {
+      err("%s, inet pton fail ip %s\n", __func__, sip);
+      MUDP_ERR_RET(EINVAL);
+    }
+    obj_item = mt_json_object_get(obj, "netmask");
+    if (obj_item) {
+      inet_pton(AF_INET, json_object_get_string(obj_item), p->netmask[port]);
+    }
+    obj_item = mt_json_object_get(obj, "gateway");
+    if (obj_item) {
+      inet_pton(AF_INET, json_object_get_string(obj_item), p->gateway[port]);
+    }
   }
 
   p->num_ports++;
