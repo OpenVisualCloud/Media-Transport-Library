@@ -124,6 +124,8 @@ static int sch_tasklet_func(void* args) {
 
   sch->sleep_ratio_start_ns = mt_get_tsc(impl);
 
+  struct timespec now, start_time;
+  clock_gettime(CLOCK_REALTIME, &start_time);
   while (rte_atomic32_read(&sch->request_stop) == 0) {
     int pending = MT_TASKLET_ALL_DONE;
 
@@ -138,6 +140,13 @@ static int sch_tasklet_func(void* args) {
         continue;
       }
       ops = &tasklet->ops;
+      /* To wait for time sync, only start "cni" ops in the first 5 minutes. */
+      if (strcmp(ops->name, "cni")) {
+        clock_gettime(CLOCK_REALTIME, &now);
+        if (now.tv_sec - start_time.tv_sec < 300) {
+          continue;
+        }
+      }
       if (time_measure) tsc_s = mt_get_tsc(impl);
       pending += ops->handler(ops->priv);
       if (time_measure) {
