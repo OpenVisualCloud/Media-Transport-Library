@@ -398,6 +398,89 @@ static int video_trs_tsc_tasklet(struct mtl_main_impl* impl,
   return MT_TASKLET_HAS_PENDING;
 }
 
+static int video_trs_launch_time_tasklet(struct mtl_main_impl* impl,
+                                         struct st_tx_video_session_impl* s,
+                                         enum mtl_session_port s_port) {
+  unsigned int bulk = s->bulk;
+  struct rte_ring* ring = s->ring[s_port];
+  int tx = 0;
+  unsigned int n;
+  uint64_t i;
+  uint64_t target_ptp;
+  uint16_t port_id = s->port_id[s_port];
+  struct mt_interface* inf = mt_if(impl, port_id);
+
+  /* check if any inflight pkts in transmitter */
+  if (s->trs_inflight_num[s_port] > 0) {
+    tx = mt_dev_tx_burst(s->queue[s_port],
+                         &s->trs_inflight[s_port][s->trs_inflight_idx[s_port]],
+                         s->trs_inflight_num[s_port]);
+
+    s->trs_inflight_num[s_port] -= tx;
+    s->trs_inflight_idx[s_port] += tx;
+    s->stat_pkts_burst += tx;
+
+    if (tx > 0) {
+      return MT_TASKLET_HAS_PENDING;
+    } else {
+      s->stat_trs_ret_code[s_port] = -STI_TSCTRS_BURST_INFLIGHT_FAIL;
+      return MT_TASKLET_ALL_DONE;
+    }
+  }
+
+  /* dequeue from ring */
+  struct rte_mbuf* pkts[bulk];
+  n = rte_ring_sc_dequeue_bulk(ring, (void**)&pkts[0], bulk, NULL);
+  if (n == 0) {
+    s->stat_trs_ret_code[s_port] = -STI_TSCTRS_DEQUEUE_FAIL;
+    return MT_TASKLET_ALL_DONE;
+  }
+
+  /* check valid bulk */
+  int valid_bulk = bulk;
+  uint32_t pkt_idx;
+  for (i = 0; i < bulk; i++) {
+    pkt_idx = st_tx_mbuf_get_idx(pkts[i]);
+    if (pkt_idx == ST_TX_DUMMY_PKT_IDX) {
+      valid_bulk = i;
+      break;
+    }
+  }
+
+  if (unlikely(pkt_idx == ST_TX_DUMMY_PKT_IDX)) {
+    rte_pktmbuf_free_bulk(&pkts[valid_bulk], bulk - valid_bulk);
+  }
+
+  if (valid_bulk > 0) {
+    for (i = 0; i < valid_bulk; i++) {
+      target_ptp = st_tx_mbuf_get_ptp(pkts[i]);
+      /* Put tx timestamp into transmit descriptor */
+      pkts[i]->ol_flags |= inf->tx_launch_time_flag;
+      *RTE_MBUF_DYNFIELD(pkts[i], inf->tx_dynfield_offset, uint64_t*) = target_ptp;
+    }
+
+    tx = mt_dev_tx_burst(s->queue[s_port], &pkts[0], valid_bulk);
+    s->stat_pkts_burst += tx;
+
+    if (tx < valid_bulk) {
+      unsigned int remaining = valid_bulk - tx;
+
+      s->trs_inflight_num[s_port] = remaining;
+      s->trs_inflight_idx[s_port] = 0;
+      s->trs_inflight_cnt[s_port]++;
+      for (i = 0; i < remaining; i++) s->trs_inflight[s_port][i] = pkts[tx + i];
+    }
+  }
+
+  if (unlikely(pkt_idx == ST_TX_DUMMY_PKT_IDX)) {
+    s->stat_pkts_burst_dummy += bulk - valid_bulk;
+    s->stat_trs_ret_code[s_port] = -STI_TSCTRS_BURST_HAS_DUMMY;
+    return MT_TASKLET_ALL_DONE;
+  } else {
+    return MT_TASKLET_HAS_PENDING;
+  }
+}
+
 static int video_trs_ptp_tasklet(struct mtl_main_impl* impl,
                                  struct st_tx_video_session_impl* s,
                                  enum mtl_session_port s_port) {
@@ -551,6 +634,9 @@ int st_video_resolve_pacing_tasklet(struct st_tx_video_session_impl* s,
       break;
     case ST21_TX_PACING_WAY_PTP:
       s->pacing_tasklet_func[port] = video_trs_ptp_tasklet;
+      break;
+    case ST21_TX_PACING_WAY_TSN:
+      s->pacing_tasklet_func[port] = video_trs_launch_time_tasklet;
       break;
     default:
       err("%s(%d), unknow pacing %d\n", __func__, idx, s->pacing_way[port]);
