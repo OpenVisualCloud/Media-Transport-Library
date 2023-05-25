@@ -147,7 +147,8 @@ static int kahawai_write_header(AVFormatContext* ctx) {
   }
 
   s->framerate = ctx->streams[0]->avg_frame_rate;
-  if (ops_tx.fps = get_fps_table(s->framerate) == ST_FPS_MAX) {
+  ops_tx.fps = get_fps_table(s->framerate);
+  if (ops_tx.fps == ST_FPS_MAX) {
     av_log(ctx, AV_LOG_ERROR, "Frame rate %0.2f is not supported\n",
            av_q2d(s->framerate));
     return AVERROR(EINVAL);

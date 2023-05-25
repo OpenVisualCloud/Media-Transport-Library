@@ -150,8 +150,8 @@ static int kahawai_read_header(AVFormatContext* ctx) {
     return packet_size;
   }
   av_log(ctx, AV_LOG_VERBOSE, "packet size: %d\n", packet_size);
-
-  if (ops_rx.fps = get_fps_table(s->framerate) == ST_FPS_MAX) {
+  ops_rx.fps = get_fps_table(s->framerate);
+  if (ops_rx.fps == ST_FPS_MAX) {
     av_log(ctx, AV_LOG_ERROR, "Frame rate %0.2f is not supported\n",
            av_q2d(s->framerate));
     return AVERROR(EINVAL);
