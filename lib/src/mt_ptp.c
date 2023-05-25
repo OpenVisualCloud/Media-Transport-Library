@@ -645,6 +645,7 @@ static int ptp_init(struct mtl_main_impl* impl, struct mt_ptp_impl* ptp,
   struct rte_ether_addr mac;
   int ret;
   uint8_t* ip = &ptp->sip_addr[0];
+  struct mt_interface* inf = mt_if(impl, port);
 
   ret = rte_eth_macaddr_get(port_id, &mac);
   if (ret < 0) {
@@ -719,19 +720,22 @@ static int ptp_init(struct mtl_main_impl* impl, struct mt_ptp_impl* ptp,
 
   inet_pton(AF_INET, "224.0.1.129", ptp->mcast_group_addr);
 
-  /* create rx queue */
-  struct mt_rx_flow flow;
-  memset(&flow, 0, sizeof(flow));
-  rte_memcpy(flow.dip_addr, ptp->mcast_group_addr, MTL_IP_ADDR_LEN);
-  rte_memcpy(flow.sip_addr, mt_sip_addr(impl, port), MTL_IP_ADDR_LEN);
-  flow.no_port_flow = true;
-  flow.dst_port = MT_PTP_UDP_GEN_PORT;
-  ptp->rx_queue = mt_dev_get_rx_queue(impl, port, &flow);
-  if (!ptp->rx_queue) {
-    err("%s(%d), ptp rx q create fail\n", __func__, port);
-    return -EIO;
+  if (inf->drv_type == MT_DRV_IGC) {
+    ptp->rx_queue = NULL;
+  } else {
+    /* create rx queue */
+    struct mt_rx_flow flow;
+    memset(&flow, 0, sizeof(flow));
+    rte_memcpy(flow.dip_addr, ptp->mcast_group_addr, MTL_IP_ADDR_LEN);
+    rte_memcpy(flow.sip_addr, mt_sip_addr(impl, port), MTL_IP_ADDR_LEN);
+    flow.no_port_flow = true;
+    flow.dst_port = MT_PTP_UDP_GEN_PORT;
+    ptp->rx_queue = mt_dev_get_rx_queue(impl, port, &flow);
+    if (!ptp->rx_queue) {
+      err("%s(%d), ptp rx q create fail\n", __func__, port);
+      return -EIO;
+    }
   }
-
   /* join mcast */
   ret = mt_mcast_join(impl, mt_ip_to_u32(ptp->mcast_group_addr), port);
   if (ret < 0) {
@@ -740,8 +744,12 @@ static int ptp_init(struct mtl_main_impl* impl, struct mt_ptp_impl* ptp,
   }
   mt_mcast_l2_join(impl, &ptp_l2_multicast_eaddr, port);
 
-  info("%s(%d), rx queue %d, sip: %d.%d.%d.%d\n", __func__, port,
-       mt_dev_rx_queue_id(ptp->rx_queue), ip[0], ip[1], ip[2], ip[3]);
+  if (ptp->rx_queue)
+    info("%s(%d), rx queue %d, sip: %d.%d.%d.%d\n", __func__, port,
+         mt_dev_rx_queue_id(ptp->rx_queue), ip[0], ip[1], ip[2], ip[3]);
+  else
+    info("%s(%d), use sys rx queue for ptp message.\n", __func__, port);
+
   return 0;
 }
 
