@@ -1611,6 +1611,11 @@ static int dev_if_init_pacing(struct mt_interface* inf) {
     if (inf->port_type == MT_PORT_VF) {
       ret = dev_init_ratelimit_vf(inf);
     } else {
+      if (inf->feature & MT_IF_FEATURE_TX_OFFLOAD_SEND_ON_TIMESTAMP) {
+        inf->tx_pacing_way = ST21_TX_PACING_WAY_TSN;
+        return 0;
+      }
+		
       ret = dev_tx_queue_set_rl_rate(inf, 0, ST_DEFAULT_RL_BPS);
       if (ret >= 0) dev_tx_queue_set_rl_rate(inf, 0, 0);
     }
