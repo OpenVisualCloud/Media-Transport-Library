@@ -648,6 +648,7 @@ static struct rte_flow* dev_rx_queue_create_flow(struct mt_interface* inf, uint1
   bool has_port_flow = true;
 
   uint16_t port_id = inf->port_id;
+  enum mt_driver_type drv_type = inf->drv_type;
 
   memset(&error, 0, sizeof(error));
 
@@ -676,13 +677,15 @@ static struct rte_flow* dev_rx_queue_create_flow(struct mt_interface* inf, uint1
   ipv4_spec.hdr.next_proto_id = IPPROTO_UDP;
 
   if (has_ip_flow) {
-    memset(&ipv4_mask.hdr.dst_addr, 0xFF, MTL_IP_ADDR_LEN);
-    if (mt_is_multicast_ip(flow->dip_addr)) {
-      rte_memcpy(&ipv4_spec.hdr.dst_addr, flow->dip_addr, MTL_IP_ADDR_LEN);
-    } else {
-      rte_memcpy(&ipv4_spec.hdr.src_addr, flow->dip_addr, MTL_IP_ADDR_LEN);
-      rte_memcpy(&ipv4_spec.hdr.dst_addr, flow->sip_addr, MTL_IP_ADDR_LEN);
-      memset(&ipv4_mask.hdr.src_addr, 0xFF, MTL_IP_ADDR_LEN);
+    if (drv_type != MT_DRV_IGC) {
+      memset(&ipv4_mask.hdr.dst_addr, 0xFF, MTL_IP_ADDR_LEN);
+      if (mt_is_multicast_ip(flow->dip_addr)) {
+        rte_memcpy(&ipv4_spec.hdr.dst_addr, flow->dip_addr, MTL_IP_ADDR_LEN);
+      } else {
+        rte_memcpy(&ipv4_spec.hdr.src_addr, flow->dip_addr, MTL_IP_ADDR_LEN);
+        rte_memcpy(&ipv4_spec.hdr.dst_addr, flow->sip_addr, MTL_IP_ADDR_LEN);
+        memset(&ipv4_mask.hdr.src_addr, 0xFF, MTL_IP_ADDR_LEN);
+      }
     }
   }
 
@@ -704,8 +707,8 @@ static struct rte_flow* dev_rx_queue_create_flow(struct mt_interface* inf, uint1
 
   memset(pattern, 0, sizeof(pattern));
   pattern[0].type = RTE_FLOW_ITEM_TYPE_ETH;
-  pattern[0].spec = has_ip_flow ? &eth_spec : NULL;
-  pattern[0].mask = has_ip_flow ? &eth_mask : NULL;
+  pattern[0].spec = has_ip_flow && (drv_type != MT_DRV_IGC) ? &eth_spec : NULL;
+  pattern[0].mask = has_ip_flow && (drv_type != MT_DRV_IGC) ? &eth_mask : NULL;
   pattern[1].type = RTE_FLOW_ITEM_TYPE_IPV4;
   pattern[1].spec = &ipv4_spec;
   pattern[1].mask = &ipv4_mask;
