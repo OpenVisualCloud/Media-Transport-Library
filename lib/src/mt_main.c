@@ -28,6 +28,7 @@
 #include "st2110/st_rx_audio_session.h"
 #include "st2110/st_tx_ancillary_session.h"
 #include "st2110/st_tx_audio_session.h"
+#include "udp/udp_rxq.h"
 
 enum mtl_port mt_port_by_id(struct mtl_main_impl* impl, uint16_t port_id) {
   int num_ports = mt_num_ports(impl);
@@ -236,6 +237,12 @@ static int mt_main_create(struct mtl_main_impl* impl) {
     return ret;
   }
 
+  ret = mudp_rxq_init(impl);
+  if (ret < 0) {
+    err("%s, mudp_rxq_init fail %d\n", __func__, ret);
+    return ret;
+  }
+
   pthread_create(&impl->tsc_cal_tid, NULL, mt_calibrate_tsc, impl);
 
   info("%s, succ\n", __func__);
@@ -248,6 +255,7 @@ static int mt_main_free(struct mtl_main_impl* impl) {
     impl->tsc_cal_tid = 0;
   }
 
+  mudp_rxq_uinit(impl);
   mt_ptp_uinit(impl);
   mt_dhcp_uinit(impl);
   mt_config_uinit(impl);

@@ -52,7 +52,7 @@ struct mudp_impl {
   uint64_t txq_bps; /* bit per sec for q */
   struct mt_tx_queue* txq;
   struct mt_tsq_entry* tsq;
-  struct mudp_rxq* rxq;
+  struct mur_client* rxq;
   unsigned int rx_ring_count;
   unsigned int rx_poll_sleep_us;
   struct rte_mempool* tx_pool;

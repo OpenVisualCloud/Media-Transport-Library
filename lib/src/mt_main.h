@@ -833,6 +833,8 @@ struct mtl_main_impl {
   /* st plugin dev mgr */
   struct st_plugin_mgr plugin_mgr;
 
+  void* mudp_rxq_mgr[MTL_PORT_MAX];
+
   /* audio(st_30) context */
   struct st_tx_audio_sessions_mgr tx_a_mgr;
   struct st_audio_transmitter_impl a_trs;
