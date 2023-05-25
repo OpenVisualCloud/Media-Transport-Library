@@ -2,6 +2,8 @@
 # Copyright 2022 Intel Corporation
 
 sources = files(
+  'mave.c',
+  'servo.c',
   'mt_main.c',
   'mt_dev.c',
   'mt_sch.c',

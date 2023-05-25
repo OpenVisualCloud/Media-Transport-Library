@@ -37,6 +37,15 @@ enum mt_ptp_udp_ports {
   MT_PTP_UDP_UNICAST_CLK_GEN_PORT = MT_PTP_UDP_GEN_PORT,
 };
 
+enum mt_ptp_control_field {
+  CTL_SYNC,
+  CTL_DELAY_REQ,
+  CTL_FOLLOW_UP,
+  CTL_DELAY_RESP,
+  CTL_MANAGEMENT,
+  CTL_OTHER,
+};
+
 struct mt_ptp_header {
   struct {
     uint8_t message_type : 4;
