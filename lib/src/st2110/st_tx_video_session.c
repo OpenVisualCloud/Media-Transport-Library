@@ -2126,7 +2126,7 @@ static int tv_init_hw(struct mtl_main_impl* impl, struct st_tx_video_sessions_mg
     port_id = mt_port_id(impl, port);
     s->port_id[i] = port_id;
 
-    s->queue[i] = mt_dev_get_tx_queue(impl, port, tv_rl_bps(s));
+    s->queue[i] = mt_dev_get_tx_queue(impl, port, tv_rl_bps(s), true);
     if (!s->queue[i]) {
       tv_uinit_hw(impl, s);
       return -EIO;

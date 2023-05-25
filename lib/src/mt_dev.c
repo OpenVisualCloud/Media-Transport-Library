@@ -1763,7 +1763,7 @@ int mt_dev_set_tx_bps(struct mtl_main_impl* impl, enum mtl_port port, uint16_t q
 }
 
 struct mt_tx_queue* mt_dev_get_tx_queue(struct mtl_main_impl* impl, enum mtl_port port,
-                                        uint64_t bytes_per_sec) {
+                                        uint64_t bytes_per_sec, bool is_st21_traffic) {
   struct mt_interface* inf = mt_if(impl, port);
   struct mt_tx_queue* tx_queue;
   int ret;
@@ -1775,6 +1775,13 @@ struct mt_tx_queue* mt_dev_get_tx_queue(struct mtl_main_impl* impl, enum mtl_por
 
   mt_pthread_mutex_lock(&inf->tx_queues_mutex);
   for (uint16_t q = 0; q < inf->max_tx_queues; q++) {
+    if (inf->drv_type == MT_DRV_IGC && inf->tx_pacing_way == ST21_TX_PACING_WAY_TSN) {
+	  if (is_st21_traffic) {
+        if (q != 0) break;
+	  } else {
+        if (q == 0) continue;
+      }
+    }
     tx_queue = &inf->tx_queues[q];
     if (!tx_queue->active) {
       if (inf->tx_pacing_way == ST21_TX_PACING_WAY_RL) {
@@ -2614,7 +2621,7 @@ int mt_dev_if_post_init(struct mtl_main_impl* impl) {
         return -ENOMEM;
       }
     } else {
-      inf->tx_sys_queue = mt_dev_get_tx_queue(impl, i, 0);
+      inf->tx_sys_queue = mt_dev_get_tx_queue(impl, i, 0, false);
       if (!inf->tx_sys_queue) {
         err("%s(%d), tx sys queue get fail\n", __func__, i);
         mt_dev_if_pre_uinit(impl);
