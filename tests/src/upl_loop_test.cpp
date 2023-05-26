@@ -29,7 +29,6 @@ struct loop_para {
   bool sendmsg_gso;
   bool reuse_port;
   int reuse_tx_sessions;
-  int reuse_rx_sessions;
 };
 
 static int loop_para_init(struct loop_para* para) {
@@ -57,7 +56,6 @@ static int loop_sanity_test(struct uplt_ctx* ctx, struct loop_para* para) {
   int tx_sessions = para->sessions;
   if (para->reuse_port) tx_sessions = para->reuse_tx_sessions;
   int rx_sessions = para->sessions;
-  if (para->reuse_port) rx_sessions = para->reuse_rx_sessions;
   uint16_t udp_port = para->udp_port;
   int udp_len = para->udp_len;
   bool dual_loop = para->dual_loop;
@@ -604,7 +602,7 @@ TEST(Loop, reuse_port) {
   loop_para_init(&para);
   para.reuse_port = true;
   para.reuse_tx_sessions = 28;
-  para.reuse_rx_sessions = 4;
+  para.sessions = 4;
   para.rx_timeout_us = 0;
   loop_sanity_test(ctx, &para);
 }
