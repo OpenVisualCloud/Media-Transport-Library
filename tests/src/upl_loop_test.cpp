@@ -27,6 +27,9 @@ struct loop_para {
   bool sendmsg;
   bool recvmsg;
   bool sendmsg_gso;
+  bool reuse_port;
+  int reuse_tx_sessions;
+  int reuse_rx_sessions;
 };
 
 static int loop_para_init(struct loop_para* para) {
@@ -46,22 +49,28 @@ static int loop_para_init(struct loop_para* para) {
   para->mix_fd = false;
   para->sendmsg = false;
   para->recvmsg = false;
+  para->reuse_port = false;
   return 0;
 }
 
 static int loop_sanity_test(struct uplt_ctx* ctx, struct loop_para* para) {
-  int sessions = para->sessions;
+  int tx_sessions = para->sessions;
+  if (para->reuse_port) tx_sessions = para->reuse_tx_sessions;
+  int rx_sessions = para->sessions;
+  if (para->reuse_port) rx_sessions = para->reuse_rx_sessions;
   uint16_t udp_port = para->udp_port;
   int udp_len = para->udp_len;
   bool dual_loop = para->dual_loop;
 
-  int tx_fds[sessions];
-  int rx_fds[sessions];
-  int rx_timeout[sessions];
-  struct sockaddr_in tx_addr[sessions];
-  struct sockaddr_in rx_addr[sessions];
-  struct sockaddr_in tx_bind_addr[sessions]; /* for dual loop */
-  struct sockaddr_in rx_bind_addr[sessions];
+  int tx_fds[tx_sessions];
+  int rx_fds[rx_sessions];
+  int rx_timeout[rx_sessions];
+  int rx_pkts[rx_sessions];
+  int total_rx_pkts = 0;
+  struct sockaddr_in tx_addr[tx_sessions];
+  struct sockaddr_in rx_addr[rx_sessions];
+  struct sockaddr_in tx_bind_addr[tx_sessions]; /* for dual loop */
+  struct sockaddr_in rx_bind_addr[rx_sessions];
   int ret;
   int epoll_fd = -1;
   int sfd = -1;
@@ -73,24 +82,35 @@ static int loop_sanity_test(struct uplt_ctx* ctx, struct loop_para* para) {
   ssize_t recv;
   unsigned char sha_result[SHA256_DIGEST_LENGTH];
 
-  for (int i = 0; i < sessions; i++) {
+  for (int i = 0; i < tx_sessions; i++) {
     tx_fds[i] = -1;
+    uint16_t fd_udp_port = udp_port + i;
+    if (para->reuse_port) fd_udp_port = udp_port;
+    if (para->mcast) {
+      uplt_init_sockaddr(&tx_addr[i], ctx->mcast_ip_addr, fd_udp_port);
+      uplt_init_sockaddr_any(&tx_bind_addr[i], fd_udp_port);
+    } else {
+      uplt_init_sockaddr(&tx_addr[i], ctx->sip_addr[UPLT_PORT_P], fd_udp_port);
+      uplt_init_sockaddr(&tx_bind_addr[i], ctx->sip_addr[UPLT_PORT_P], fd_udp_port);
+    }
+  }
+  for (int i = 0; i < rx_sessions; i++) {
     rx_fds[i] = -1;
     rx_timeout[i] = 0;
+    rx_pkts[i] = 0;
+    uint16_t fd_udp_port = udp_port + i;
+    if (para->reuse_port) fd_udp_port = udp_port;
+
     if (para->mcast) {
-      uplt_init_sockaddr(&tx_addr[i], ctx->mcast_ip_addr, udp_port + i);
-      uplt_init_sockaddr(&rx_addr[i], ctx->mcast_ip_addr, udp_port + i);
-      uplt_init_sockaddr_any(&tx_bind_addr[i], udp_port + i);
-      uplt_init_sockaddr_any(&rx_bind_addr[i], udp_port + i);
+      uplt_init_sockaddr(&rx_addr[i], ctx->mcast_ip_addr, fd_udp_port);
+      uplt_init_sockaddr_any(&rx_bind_addr[i], fd_udp_port);
     } else {
-      uplt_init_sockaddr(&tx_addr[i], ctx->sip_addr[UPLT_PORT_P], udp_port + i);
-      uplt_init_sockaddr(&rx_addr[i], ctx->sip_addr[UPLT_PORT_R], udp_port + i);
-      uplt_init_sockaddr(&tx_bind_addr[i], ctx->sip_addr[UPLT_PORT_P], udp_port + i);
-      uplt_init_sockaddr(&rx_bind_addr[i], ctx->sip_addr[UPLT_PORT_R], udp_port + i);
+      uplt_init_sockaddr(&rx_addr[i], ctx->sip_addr[UPLT_PORT_R], fd_udp_port);
+      uplt_init_sockaddr(&rx_bind_addr[i], ctx->sip_addr[UPLT_PORT_R], fd_udp_port);
     }
   }
 
-  for (int i = 0; i < sessions; i++) {
+  for (int i = 0; i < tx_sessions; i++) {
     ret = uplt_socket_port(AF_INET, SOCK_DGRAM, 0, UPLT_PORT_P);
     EXPECT_GE(ret, 0);
     if (ret < 0) goto exit;
@@ -109,11 +129,20 @@ static int loop_sanity_test(struct uplt_ctx* ctx, struct loop_para* para) {
       EXPECT_GE(ret, 0);
       if (ret < 0) goto exit;
     }
+  }
 
+  for (int i = 0; i < rx_sessions; i++) {
     ret = uplt_socket_port(AF_INET, SOCK_DGRAM, 0, UPLT_PORT_R);
     EXPECT_GE(ret, 0);
     if (ret < 0) goto exit;
     rx_fds[i] = ret;
+    if (para->reuse_port) {
+      int reuse = 1;
+      ret = setsockopt(rx_fds[i], SOL_SOCKET, SO_REUSEPORT, (const void*)&reuse,
+                       sizeof(reuse));
+      EXPECT_GE(ret, 0);
+      if (ret < 0) goto exit;
+    }
 
     ret = bind(rx_fds[i], (const struct sockaddr*)&rx_bind_addr[i],
                sizeof(rx_bind_addr[i]));
@@ -151,7 +180,7 @@ static int loop_sanity_test(struct uplt_ctx* ctx, struct loop_para* para) {
   if (para->use_epoll) {
     epoll_fd = epoll_create1(0);
     EXPECT_GE(epoll_fd, 0);
-    for (int i = 0; i < sessions; i++) {
+    for (int i = 0; i < rx_sessions; i++) {
       struct epoll_event ev;
       ev.events = EPOLLIN;
       ev.data.fd = rx_fds[i];
@@ -169,7 +198,7 @@ static int loop_sanity_test(struct uplt_ctx* ctx, struct loop_para* para) {
 
   for (int loop = 0; loop < para->tx_pkts; loop++) {
     /* tx */
-    for (int i = 0; i < sessions; i++) {
+    for (int i = 0; i < tx_sessions; i++) {
       st_test_rand_data((uint8_t*)send_buf, payload_len, 0);
       send_buf[0] = i;
       SHA256((unsigned char*)send_buf, payload_len,
@@ -177,8 +206,13 @@ static int loop_sanity_test(struct uplt_ctx* ctx, struct loop_para* para) {
 
       struct msghdr msg;
       memset(&msg, 0, sizeof(msg));
-      msg.msg_namelen = sizeof(rx_addr[i]);
-      msg.msg_name = &rx_addr[i];
+      if (para->reuse_port) { /* reuse test use same port */
+        msg.msg_namelen = sizeof(rx_addr[0]);
+        msg.msg_name = &rx_addr[0];
+      } else {
+        msg.msg_namelen = sizeof(rx_addr[i]);
+        msg.msg_name = &rx_addr[i];
+      }
       if (para->sendmsg_gso) {
         int gso_nb = 4;
         char gso_buf[udp_len * gso_nb];
@@ -214,8 +248,13 @@ static int loop_sanity_test(struct uplt_ctx* ctx, struct loop_para* para) {
         send = sendmsg(tx_fds[i], &msg, 0);
         EXPECT_EQ((size_t)send, sizeof(send_buf));
       } else {
-        send = sendto(tx_fds[i], send_buf, sizeof(send_buf), 0,
-                      (const struct sockaddr*)&rx_addr[i], sizeof(rx_addr[i]));
+        if (para->reuse_port) { /* reuse test use same port */
+          send = sendto(tx_fds[i], send_buf, sizeof(send_buf), 0,
+                        (const struct sockaddr*)&rx_addr[0], sizeof(rx_addr[0]));
+        } else {
+          send = sendto(tx_fds[i], send_buf, sizeof(send_buf), 0,
+                        (const struct sockaddr*)&rx_addr[i], sizeof(rx_addr[i]));
+        }
         EXPECT_EQ((size_t)send, sizeof(send_buf));
       }
     }
@@ -227,27 +266,27 @@ static int loop_sanity_test(struct uplt_ctx* ctx, struct loop_para* para) {
 
     if (para->use_poll) {
       while (poll_retry < max_retry) {
-        struct pollfd fds[sessions + 1];
+        struct pollfd fds[rx_sessions + 1];
         memset(fds, 0, sizeof(fds));
-        for (int i = 0; i < sessions; i++) {
+        for (int i = 0; i < rx_sessions; i++) {
           fds[i].fd = rx_fds[i];
           fds[i].events = POLLIN;
         }
         if (sfd > 0) {
-          fds[sessions].fd = sfd;
-          fds[sessions].events = POLLIN;
-          ret = poll(fds, sessions + 1, para->rx_timeout_us / 1000);
+          fds[rx_sessions].fd = sfd;
+          fds[rx_sessions].events = POLLIN;
+          ret = poll(fds, rx_sessions + 1, para->rx_timeout_us / 1000);
         } else {
-          ret = poll(fds, sessions, para->rx_timeout_us / 1000);
+          ret = poll(fds, rx_sessions, para->rx_timeout_us / 1000);
         }
         EXPECT_GE(ret, 0);
         poll_succ = 0;
-        for (int i = 0; i < sessions; i++) {
+        for (int i = 0; i < rx_sessions; i++) {
           if (fds[i].revents) poll_succ++;
         }
-        dbg("%s, poll %d succ on sessions %d on %d\n", __func__, poll_succ, sessions,
+        dbg("%s, poll %d succ on sessions %d on %d\n", __func__, poll_succ, rx_sessions,
             poll_retry);
-        if (poll_succ >= sessions) break;
+        if (poll_succ >= rx_sessions) break;
 
         poll_retry++;
         st_usleep(1000);
@@ -260,7 +299,7 @@ static int loop_sanity_test(struct uplt_ctx* ctx, struct loop_para* para) {
         struct timeval timeout;
         timeout.tv_sec = 0;
         timeout.tv_usec = para->rx_timeout_us;
-        for (int i = 0; i < sessions; i++) {
+        for (int i = 0; i < rx_sessions; i++) {
           FD_SET(rx_fds[i], &readfds);
           if (rx_fds[i] > nfds) nfds = rx_fds[i];
           dbg("%s, i %d fd %d\n", __func__, i, rx_fds[i]);
@@ -274,24 +313,24 @@ static int loop_sanity_test(struct uplt_ctx* ctx, struct loop_para* para) {
         EXPECT_GE(ret, 0);
         dbg("%s, ret %d nfds %d\n", __func__, ret, nfds);
         poll_succ = 0;
-        for (int i = 0; i < sessions; i++) {
+        for (int i = 0; i < rx_sessions; i++) {
           if (FD_ISSET(rx_fds[i], &readfds)) poll_succ++;
         }
-        dbg("%s, select %d succ on sessions %d on %d\n", __func__, poll_succ, sessions,
+        dbg("%s, select %d succ on sessions %d on %d\n", __func__, poll_succ, rx_sessions,
             poll_retry);
-        if (poll_succ >= sessions) break;
+        if (poll_succ >= rx_sessions) break;
 
         poll_retry++;
         st_usleep(1000);
       }
     } else if (para->use_epoll) {
       while (poll_retry < max_retry) {
-        struct epoll_event events[sessions];
-        ret = epoll_wait(epoll_fd, events, sessions, para->rx_timeout_us / 1000);
+        struct epoll_event events[rx_sessions];
+        ret = epoll_wait(epoll_fd, events, rx_sessions, para->rx_timeout_us / 1000);
         EXPECT_GE(ret, 0);
         poll_succ = ret;
         dbg("%s, ret %d\n", __func__, ret);
-        if (poll_succ >= sessions) break;
+        if (poll_succ >= rx_sessions) break;
         poll_retry++;
         st_usleep(1000);
       }
@@ -299,11 +338,11 @@ static int loop_sanity_test(struct uplt_ctx* ctx, struct loop_para* para) {
 
     if (para->use_poll || para->use_select || para->use_epoll) {
       /* expect 50% succ at least */
-      EXPECT_GT(poll_succ, sessions / 2);
-      dbg("%s, %d succ on sessions %d\n", __func__, poll_succ, sessions);
+      EXPECT_GT(poll_succ, rx_sessions / 2);
+      dbg("%s, %d succ on sessions %d\n", __func__, poll_succ, rx_sessions);
     }
 
-    for (int i = 0; i < sessions; i++) {
+    for (int i = 0; i < rx_sessions; i++) {
       /* rx */
     session_rx:
       if (para->recvmsg) {
@@ -319,25 +358,28 @@ static int loop_sanity_test(struct uplt_ctx* ctx, struct loop_para* para) {
         recv = recvfrom(rx_fds[i], recv_buf, sizeof(recv_buf), 0, NULL, NULL);
       }
       if (recv < 0) { /* timeout */
-        if (!para->sendmsg_gso) {
+        if (!para->sendmsg_gso && !para->reuse_port) {
           rx_timeout[i]++;
           err("%s, recv fail at session %d pkt %d\n", __func__, i, loop);
         }
         continue;
       }
       EXPECT_EQ((size_t)recv, sizeof(send_buf));
-      /* check idx */
-      EXPECT_EQ((char)i, recv_buf[0]);
+      if (!para->reuse_port) {
+        /* check idx */
+        EXPECT_EQ((char)i, recv_buf[0]);
+      }
       /* check sha */
       SHA256((unsigned char*)recv_buf, payload_len, sha_result);
       ret = memcmp(recv_buf + payload_len, sha_result, SHA256_DIGEST_LENGTH);
       EXPECT_EQ(ret, 0);
+      rx_pkts[i]++;
       // test_sha_dump("upd_loop_sha", sha_result);
-      if (para->sendmsg_gso) goto session_rx;
+      if (para->sendmsg_gso || para->reuse_port) goto session_rx;
     }
 
     if (dual_loop) {
-      for (int i = 0; i < sessions; i++) {
+      for (int i = 0; i < rx_sessions; i++) {
         st_test_rand_data((uint8_t*)send_buf, payload_len, 0);
         send_buf[0] = i;
         SHA256((unsigned char*)send_buf, payload_len,
@@ -348,7 +390,7 @@ static int loop_sanity_test(struct uplt_ctx* ctx, struct loop_para* para) {
       }
       if (para->tx_sleep_us) st_usleep(para->tx_sleep_us);
 
-      for (int i = 0; i < sessions; i++) {
+      for (int i = 0; i < tx_sessions; i++) {
         recv = recvfrom(tx_fds[i], recv_buf, sizeof(recv_buf), 0, NULL, NULL);
         if (recv < 0) { /* timeout */
           rx_timeout[i]++;
@@ -366,9 +408,17 @@ static int loop_sanity_test(struct uplt_ctx* ctx, struct loop_para* para) {
     }
   }
 
-  /* rx timeout max check */
-  for (int i = 0; i < sessions; i++) {
+  /* rx timeout and pkts check */
+  for (int i = 0; i < rx_sessions; i++) {
     EXPECT_LT(rx_timeout[i], para->max_rx_timeout_pkts);
+    dbg("%s, recv at session %d pkts %d\n", __func__, i, rx_pkts[i]);
+    EXPECT_GE(rx_pkts[i], para->tx_pkts);
+    total_rx_pkts += rx_pkts[i];
+  }
+  if (para->reuse_port) {
+    info("%s, total_rx_pkts %d for reuse test\n", __func__, total_rx_pkts);
+    /* leave some space for miss since we disable the rx timeout for reuse test */
+    EXPECT_GT(total_rx_pkts, (para->tx_pkts - 1) * tx_sessions);
   }
 
 exit:
@@ -380,8 +430,10 @@ exit:
     close(sfd);
     sfd = -1;
   }
-  for (int i = 0; i < sessions; i++) {
+  for (int i = 0; i < tx_sessions; i++) {
     if (tx_fds[i] > 0) close(tx_fds[i]);
+  }
+  for (int i = 0; i < rx_sessions; i++) {
     if (rx_fds[i] > 0) {
       if (para->mcast) {
         struct ip_mreq mreq;
@@ -542,5 +594,17 @@ TEST(Loop, recvmsg_multi) {
   para.sessions = 4;
   para.tx_sleep_us = 0;
   para.recvmsg = true;
+  loop_sanity_test(ctx, &para);
+}
+
+TEST(Loop, reuse_port) {
+  struct uplt_ctx* ctx = uplt_get_ctx();
+  struct loop_para para;
+
+  loop_para_init(&para);
+  para.reuse_port = true;
+  para.reuse_tx_sessions = 28;
+  para.reuse_rx_sessions = 4;
+  para.rx_timeout_us = 0;
   loop_sanity_test(ctx, &para);
 }
