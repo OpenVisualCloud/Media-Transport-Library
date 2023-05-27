@@ -8,7 +8,7 @@ Building the Intel® Media Transport Library requires three parts: building the 
 
 ```bash
 sudo apt-get update
-sudo apt-get install git gcc meson python3 python3-pip pkg-config libnuma-dev libjson-c-dev libpcap-dev libgtest-dev libsdl2-dev libsdl2-ttf-dev libssl-dev
+sudo apt-get install git gcc meson python3 python3-pip pkg-config libnuma-dev libjson-c-dev libpcap-dev libgtest-dev libsdl2-dev libsdl2-ttf-dev libssl-dev libgmp-dev
 sudo pip install pyelftools ninja
 ```
 
