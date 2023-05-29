@@ -19,10 +19,12 @@
 #include <sys/file.h>
 #include <unistd.h>
 
+#include "mave.h"
 #include "mt_mem.h"
 #include "mt_platform.h"
 #include "mt_queue.h"
 #include "mt_quirk.h"
+#include "servo.h"
 #include "st2110/st_header.h"
 
 #ifndef _MT_LIB_MAIN_HEAD_H_
@@ -160,6 +162,10 @@ struct mt_ptp_impl {
   uint64_t t3;
   uint16_t t3_sequence_id;
   uint64_t t4;
+
+  struct pi_servo* servo;
+  int64_t path_delay_avg;
+  struct mave* path_delay_acc;
   uint32_t skip_sync_cnt;
   /* result */
   uint64_t delta_result_cnt;
