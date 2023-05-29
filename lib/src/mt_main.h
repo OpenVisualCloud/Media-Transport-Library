@@ -134,8 +134,16 @@ enum mt_ptp_addr_mode {
   MT_PTP_UNICAST_ADDR,
 };
 
+struct mt_phc2sys_impl {
+  struct pi_servo* servo;
+  long realtime_hz;
+  long realtime_nominal_tick;
+  int64_t stat_delta_max;
+};
+
 struct mt_ptp_impl {
   struct mtl_main_impl* impl;
+  struct mt_phc2sys_impl phc2sys;
   enum mtl_port port;
   uint16_t port_id;
 
