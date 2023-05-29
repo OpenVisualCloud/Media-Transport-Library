@@ -457,7 +457,7 @@ static int ptp_parse_sync(struct mt_ptp_impl* ptp, struct mt_ptp_sync_msg* msg, 
   uint64_t ptp_ns = 0, delta;
   ret = rte_eth_timesync_read_time(port_id, &timestamp);
   if (ret >= 0) ptp_ns = mt_timespec_to_ns(&timestamp);
-  delta = ptp_ns - rx_ns;
+  delta = abs(ptp_ns - rx_ns);
   if (unlikely(delta > RX_MAX_DELTA)) {
     err("%s(%d), rx_ns %" PRIu64 ", delta %" PRIu64 "\n", __func__, ptp->port, rx_ns,
         delta);
