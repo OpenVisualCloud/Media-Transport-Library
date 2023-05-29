@@ -14,9 +14,9 @@
 #include "mt_util.h"
 
 #define MT_PTP_USE_TX_TIME_STAMP (1)
-#define MT_PTP_USE_TX_TIMER (1)
-#define MT_PTP_CHECK_TX_TIME_STAMP (0)
-#define MT_PTP_CHECK_RX_TIME_STAMP (0)
+#define MT_PTP_USE_TX_TIMER (0)
+#define MT_PTP_CHECK_TX_TIME_STAMP (1)
+#define MT_PTP_CHECK_RX_TIME_STAMP (1)
 #define MT_PTP_PRINT_ERR_RESULT (0)
 
 #define MT_PTP_EBU_SYNC_MS (10)
@@ -172,6 +172,24 @@ static void ptp_adjust_delta(struct mt_ptp_impl* ptp, int64_t delta) {
   ptp->stat_delta_cnt++;
   ptp->stat_delta_sum += labs(delta);
 }
+#if MT_PTP_USE_TX_TIME_STAMP
+static void ptp_delay_req_read_tx_time_handler(void* param) {
+  struct mt_ptp_impl* ptp = param;
+  struct timespec ts;
+  uint16_t port_id = ptp->port_id;
+  uint64_t tx_ns = 0;
+  int ret;
+  ptp_timesync_lock(ptp);
+  ret = rte_eth_timesync_read_tx_timestamp(port_id, &ts);
+  ptp_timesync_unlock(ptp);
+  if (ret >= 0) {
+    tx_ns = mt_timespec_to_ns(&ts);
+    ptp->t3 = tx_ns;
+  } else {
+    if (!ptp->t4) rte_eal_alarm_set(5, ptp_delay_req_read_tx_time_handler, ptp);
+  }
+}
+#endif
 
 static void ptp_expect_result_clear(struct mt_ptp_impl* ptp) {
   ptp->expect_result_cnt = 0;
@@ -191,6 +209,7 @@ static void ptp_result_reset(struct mt_ptp_impl* ptp) {
   ptp->delta_result_cnt = 0;
   ptp->delta_result_sum = 0;
   ptp->expect_result_avg = 0;
+  ptp->skip_sync_cnt = 0;
 }
 
 static void ptp_monitor_handler(void* param) {
@@ -387,52 +406,15 @@ static void ptp_delay_req_task(struct mt_ptp_impl* ptp) {
   }
 
 #if MT_PTP_USE_TX_TIME_STAMP
-  /* Wait max 50 us to read TX timestamp. */
-  int max_retry = 50;
-  int ret;
-  uint64_t tx_ns = 0;
-  while (max_retry > 0) {
-    ptp_timesync_lock(ptp);
-    ret = rte_eth_timesync_read_tx_timestamp(port_id, &ts);
-    ptp_timesync_unlock(ptp);
-    if (ret >= 0) {
-      tx_ns = mt_timespec_to_ns(&ts);
-      break;
-    }
-    mt_delay_us(1);
-    max_retry--;
-  }
-
-  if (max_retry <= 0) {
-    err("%s(%d), read tx reach max retry\n", __func__, port);
-  }
-
-#if MT_PTP_CHECK_TX_TIME_STAMP
-  ptp_timesync_lock(ptp);
-  rte_eth_timesync_read_time(port_id, &ts);
-  ptp_timesync_unlock(ptp);
-
-  uint64_t ptp_ns = mt_timespec_to_ns(&ts);
-  uint64_t delta = ptp_ns - tx_ns;
-#define TX_MAX_DELTA (1 * 1000 * 1000) /* 1ms */
-  if (unlikely(delta > TX_MAX_DELTA)) {
-    err("%s(%d), tx_ns %" PRIu64 ", delta %" PRIu64 "\n", __func__, ptp->port, tx_ns,
-        delta);
-    ptp->stat_tx_sync_err++;
-  }
-#endif
-
-  ptp->t3 = tx_ns;
+  /*
+   * The DELAY_REQ packet will be blocked by Qbv scheduler. The Tx timestamp
+   * will not be created immediately. So, start an alarm task to poll the Tx
+   * timestamp.
+   */
+  rte_eal_alarm_set(5, ptp_delay_req_read_tx_time_handler, ptp);
 #else
   ptp->t3 = ptp_get_raw_time(ptp);
 #endif
-  dbg("%s(%d), t3 %" PRIu64 ", seq %d, max_retry %d, ptp %" PRIu64 "\n", __func__, port,
-      ptp->t3, ptp->t3_sequence_id, max_retry, ptp_get_raw_time(ptp));
-
-  /* all time get */
-  if (ptp->t4 && ptp->t2 && ptp->t1) {
-    ptp_parse_result(ptp);
-  }
 }
 
 #if MT_PTP_USE_TX_TIMER
@@ -448,23 +430,22 @@ static int ptp_parse_sync(struct mt_ptp_impl* ptp, struct mt_ptp_sync_msg* msg, 
   int ret;
   uint16_t port_id = ptp->port_id;
   uint64_t rx_ns = 0;
+  uint8_t is_valid_ts = 1;
+
+  if (ptp->t2 > 0) {
+    /*
+     * New sync message arrives before current PTP transaction complete.
+     * Maybe the DELAY_REQ is blocked by Qbv scheduler. So, skip
+     * one new sync message to wait for current transaction complete.
+     */
+    ptp->skip_sync_cnt++;
+    dbg("%s(%d), t2 already get\n", __func__, ptp->port);
+    if (ptp->skip_sync_cnt < 2) return -EIO;
+  }
+
 #define RX_MAX_DELTA (1 * 1000 * 1000) /* 1ms */
 
   ptp->stat_sync_cnt++;
-
-  uint64_t monitor_period_us = ptp->expect_result_period_ns / 1000 / 2;
-  if (monitor_period_us) {
-    monitor_period_us = RTE_MAX(monitor_period_us, 100 * 1000 * 1000); /* min 100ms */
-    if (ptp->t2) { /* already has a pending t2 */
-      ptp_expect_result_clear(ptp);
-      ptp_t_result_clear(ptp);
-      ptp->stat_sync_timeout_err++;
-      if (ptp->expect_result_avg) ptp_adjust_delta(ptp, ptp->expect_result_avg);
-    }
-    rte_eal_alarm_cancel(ptp_monitor_handler, ptp);
-    rte_eal_alarm_cancel(ptp_sync_timeout_handler, ptp);
-    rte_eal_alarm_set(monitor_period_us, ptp_sync_timeout_handler, ptp);
-  }
 
   ptp_timesync_lock(ptp);
   ret = rte_eth_timesync_read_rx_timestamp(port_id, &timestamp, timesync);
@@ -480,6 +461,7 @@ static int ptp_parse_sync(struct mt_ptp_impl* ptp, struct mt_ptp_sync_msg* msg, 
     err("%s(%d), rx_ns %" PRIu64 ", delta %" PRIu64 "\n", __func__, ptp->port, rx_ns,
         delta);
     ptp->stat_rx_sync_err++;
+    is_valid_ts = 0;
   }
 #endif
 
@@ -487,12 +469,15 @@ static int ptp_parse_sync(struct mt_ptp_impl* ptp, struct mt_ptp_sync_msg* msg, 
   rte_eal_alarm_cancel(ptp_delay_req_handler, ptp);
 #endif
   ptp_t_result_clear(ptp);
-  ptp->t2 = rx_ns;
-  ptp->t2_sequence_id = msg->hdr.sequence_id;
-  ptp->t2_vlan = vlan;
-  ptp->t2_mode = mode;
-  dbg("%s(%d), t2 %" PRIu64 ", seq %d, ptp %" PRIu64 "\n", __func__, ptp->port, ptp->t2,
-      ptp->t2_sequence_id, ptp_get_raw_time(ptp));
+  if (is_valid_ts) {
+    ptp->t2 = rx_ns;
+    ptp->t2_sequence_id = msg->hdr.sequence_id;
+    ptp->t2_vlan = vlan;
+    ptp->t2_mode = mode;
+    dbg("%s(%d), t2 %" PRIu64 ", seq %d, ptp %" PRIu64 "\n", __func__, ptp->port, ptp->t2,
+        ptp->t2_sequence_id, ptp_get_raw_time(ptp));
+  }
+
   return 0;
 }
 
@@ -561,11 +546,6 @@ static int ptp_parse_announce(struct mt_ptp_impl* ptp, struct mt_ptp_announce_ms
 
 static int ptp_parse_delay_resp(struct mt_ptp_impl* ptp,
                                 struct mt_ptp_delay_resp_msg* msg) {
-  if (ptp->t4) {
-    dbg("%s(%d), t4 already get\n", __func__, ptp->port);
-    return -EIO;
-  }
-
   if (ptp->t3_sequence_id != ntohs(msg->hdr.sequence_id)) {
     dbg("%s(%d), mismatch sequence_id %d %d\n", __func__, ptp->port, msg->hdr.sequence_id,
         ptp->t3_sequence_id);

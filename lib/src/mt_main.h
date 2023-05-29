@@ -160,6 +160,7 @@ struct mt_ptp_impl {
   uint64_t t3;
   uint16_t t3_sequence_id;
   uint64_t t4;
+  uint32_t skip_sync_cnt;
   /* result */
   uint64_t delta_result_cnt;
   uint64_t delta_result_sum;
