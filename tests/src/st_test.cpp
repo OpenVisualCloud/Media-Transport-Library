@@ -479,3 +479,155 @@ TEST(Main, rss) {
 
   rss_mode_test(ctx);
 }
+
+class fps_23_98 : public ::testing::TestWithParam<std::tuple<enum st_fps, double>> {};
+
+TEST_P(fps_23_98, conv_fps_to_st_fps_23_98_test) {
+  enum st_fps expect = st_frame_rate_to_st_fps(std::get<1>(GetParam()));
+  EXPECT_EQ(expect, std::get<0>(GetParam()));
+}
+
+PARAMETERIZED_TEST(Main, fps_23_98,
+                   ::testing::Values(std::make_tuple(ST_FPS_MAX, 22.00),
+                                     std::make_tuple(ST_FPS_MAX, 22.97),
+                                     std::make_tuple(ST_FPS_P23_98, 22.98),
+                                     std::make_tuple(ST_FPS_P23_98, 23.98),
+                                     std::make_tuple(ST_FPS_P23_98, 23.99),
+                                     std::make_tuple(ST_FPS_P24, 24.00)));
+
+class fps_24 : public ::testing::TestWithParam<std::tuple<enum st_fps, double>> {};
+
+TEST_P(fps_24, conv_fps_to_st_fps_24_test) {
+  enum st_fps expect = st_frame_rate_to_st_fps(std::get<1>(GetParam()));
+  EXPECT_EQ(expect, std::get<0>(GetParam()));
+}
+
+PARAMETERIZED_TEST(Main, fps_24,
+                   ::testing::Values(std::make_tuple(ST_FPS_P23_98, 23.00),
+                                     std::make_tuple(ST_FPS_P24, 24.00),
+                                     std::make_tuple(ST_FPS_P24, 24.99),
+                                     std::make_tuple(ST_FPS_P25, 25.00)));
+
+class fps_25 : public ::testing::TestWithParam<std::tuple<enum st_fps, double>> {};
+
+TEST_P(fps_25, conv_fps_to_st_fps_25_test) {
+  enum st_fps expect = st_frame_rate_to_st_fps(std::get<1>(GetParam()));
+  EXPECT_EQ(expect, std::get<0>(GetParam()));
+}
+
+PARAMETERIZED_TEST(Main, fps_25,
+                   ::testing::Values(std::make_tuple(ST_FPS_P25, 25.00),
+                                     std::make_tuple(ST_FPS_P25, 26.00),
+                                     std::make_tuple(ST_FPS_MAX, 27.00)));
+
+class fps_29_97 : public ::testing::TestWithParam<std::tuple<enum st_fps, double>> {};
+
+TEST_P(fps_29_97, conv_fps_to_st_fps_29_97_test) {
+  enum st_fps expect = st_frame_rate_to_st_fps(std::get<1>(GetParam()));
+  EXPECT_EQ(expect, std::get<0>(GetParam()));
+}
+
+PARAMETERIZED_TEST(Main, fps_29_97,
+                   ::testing::Values(std::make_tuple(ST_FPS_MAX, 28.00),
+                                     std::make_tuple(ST_FPS_MAX, 28.50),
+                                     std::make_tuple(ST_FPS_P29_97, 29.97),
+                                     std::make_tuple(ST_FPS_P29_97, 29.99),
+                                     std::make_tuple(ST_FPS_P30, 30.00)));
+
+class fps_30 : public ::testing::TestWithParam<std::tuple<enum st_fps, double>> {};
+
+TEST_P(fps_30, conv_fps_to_st_fps_30_test) {
+  enum st_fps expect = st_frame_rate_to_st_fps(std::get<1>(GetParam()));
+  EXPECT_EQ(expect, std::get<0>(GetParam()));
+}
+
+PARAMETERIZED_TEST(Main, fps_30,
+                   ::testing::Values(std::make_tuple(ST_FPS_P30, 30.00),
+                                     std::make_tuple(ST_FPS_P30, 31.00),
+                                     std::make_tuple(ST_FPS_MAX, 31.01),
+                                     std::make_tuple(ST_FPS_MAX, 32.00)));
+
+class fps_50 : public ::testing::TestWithParam<std::tuple<enum st_fps, double>> {};
+
+TEST_P(fps_50, conv_fps_to_st_fps_50_test) {
+  enum st_fps expect = st_frame_rate_to_st_fps(std::get<1>(GetParam()));
+  EXPECT_EQ(expect, std::get<0>(GetParam()));
+}
+
+PARAMETERIZED_TEST(Main, fps_50,
+                   ::testing::Values(std::make_tuple(ST_FPS_MAX, 48.00),
+                                     std::make_tuple(ST_FPS_P50, 49.00),
+                                     std::make_tuple(ST_FPS_P50, 49.50),
+                                     std::make_tuple(ST_FPS_P50, 50.00),
+                                     std::make_tuple(ST_FPS_P50, 50.50),
+                                     std::make_tuple(ST_FPS_P50, 51.00),
+                                     std::make_tuple(ST_FPS_MAX, 52.00)));
+
+class fps_59_94 : public ::testing::TestWithParam<std::tuple<enum st_fps, double>> {};
+
+PARAMETERIZED_TEST(Main, fps_59_94,
+                   ::testing::Values(std::make_tuple(ST_FPS_MAX, 58.93),
+                                     std::make_tuple(ST_FPS_P59_94, 58.94),
+                                     std::make_tuple(ST_FPS_P59_94, 59.94),
+                                     std::make_tuple(ST_FPS_P59_94, 59.99),
+                                     std::make_tuple(ST_FPS_P60, 60.00)));
+
+TEST_P(fps_59_94, conv_fps_to_st_fps_50_test) {
+  enum st_fps expect = st_frame_rate_to_st_fps(std::get<1>(GetParam()));
+  EXPECT_EQ(expect, std::get<0>(GetParam()));
+}
+
+class fps_60 : public ::testing::TestWithParam<std::tuple<enum st_fps, double>> {};
+
+PARAMETERIZED_TEST(Main, fps_60,
+                   ::testing::Values(std::make_tuple(ST_FPS_P60, 60.00),
+                                     std::make_tuple(ST_FPS_P60, 61.00),
+                                     std::make_tuple(ST_FPS_MAX, 61.01),
+                                     std::make_tuple(ST_FPS_MAX, 62.00)));
+
+TEST_P(fps_60, conv_fps_to_st_fps_60_test) {
+  enum st_fps expect = st_frame_rate_to_st_fps(std::get<1>(GetParam()));
+  EXPECT_EQ(expect, std::get<0>(GetParam()));
+}
+
+class fps_100 : public ::testing::TestWithParam<std::tuple<enum st_fps, double>> {};
+
+PARAMETERIZED_TEST(Main, fps_100,
+                   ::testing::Values(std::make_tuple(ST_FPS_MAX, 98.99),
+                                     std::make_tuple(ST_FPS_P100, 99.00),
+                                     std::make_tuple(ST_FPS_P100, 100.00),
+                                     std::make_tuple(ST_FPS_P100, 101.00),
+                                     std::make_tuple(ST_FPS_MAX, 101.01)));
+
+TEST_P(fps_100, conv_fps_to_st_fps_100_test) {
+  enum st_fps expect = st_frame_rate_to_st_fps(std::get<1>(GetParam()));
+  EXPECT_EQ(expect, std::get<0>(GetParam()));
+}
+
+class fps_119_98 : public ::testing::TestWithParam<std::tuple<enum st_fps, double>> {};
+
+PARAMETERIZED_TEST(Main, fps_119_98,
+                   ::testing::Values(std::make_tuple(ST_FPS_MAX, 118.87),
+                                     std::make_tuple(ST_FPS_P119_88, 118.88),
+                                     std::make_tuple(ST_FPS_P119_88, 119.88),
+                                     std::make_tuple(ST_FPS_P119_88, 119.99),
+                                     std::make_tuple(ST_FPS_P120, 120.00)));
+
+TEST_P(fps_119_98, conv_fps_to_st_fps_119_98_test) {
+  enum st_fps expect = st_frame_rate_to_st_fps(std::get<1>(GetParam()));
+  EXPECT_EQ(expect, std::get<0>(GetParam()));
+}
+
+class fps_120 : public ::testing::TestWithParam<std::tuple<enum st_fps, double>> {};
+
+PARAMETERIZED_TEST(Main, fps_120,
+                   ::testing::Values(std::make_tuple(ST_FPS_P120, 120.00),
+                                     std::make_tuple(ST_FPS_P120, 120.01),
+                                     std::make_tuple(ST_FPS_P120, 121.00),
+                                     std::make_tuple(ST_FPS_MAX, 121.01),
+                                     std::make_tuple(ST_FPS_MAX, 122.00)));
+
+TEST_P(fps_120, conv_fps_to_st_fps_120_test) {
+  enum st_fps expect = st_frame_rate_to_st_fps(std::get<1>(GetParam()));
+  EXPECT_EQ(expect, std::get<0>(GetParam()));
+}

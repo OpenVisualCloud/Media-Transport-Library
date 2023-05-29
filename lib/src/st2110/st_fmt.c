@@ -122,6 +122,9 @@ static const struct st_fps_timing st_fps_timings[] = {
         .sampling_clock_rate = 90 * 1000,
         .mul = 120,
         .den = 1,
+        .framerate = 120.00,
+        .lower_limit = 0.00,
+        .upper_limit = 1.00,
     },
     {
         /* ST_FPS_P119_88 */
@@ -129,6 +132,9 @@ static const struct st_fps_timing st_fps_timings[] = {
         .sampling_clock_rate = 90 * 1000,
         .mul = 60000 * 2,
         .den = 1001,
+        .framerate = 119.88,
+        .lower_limit = 1.00,
+        .upper_limit = 0.11,
     },
     {
         /* ST_FPS_P100 */
@@ -136,6 +142,9 @@ static const struct st_fps_timing st_fps_timings[] = {
         .sampling_clock_rate = 90 * 1000,
         .mul = 100,
         .den = 1,
+        .framerate = 100.00,
+        .lower_limit = 1.00,
+        .upper_limit = 1.00,
     },
     {
         /* ST_FPS_P60 */
@@ -143,6 +152,9 @@ static const struct st_fps_timing st_fps_timings[] = {
         .sampling_clock_rate = 90 * 1000,
         .mul = 60,
         .den = 1,
+        .framerate = 60.00,
+        .lower_limit = 0.00,
+        .upper_limit = 1.00,
     },
     {
         /* ST_FPS_P59_94 */
@@ -150,6 +162,9 @@ static const struct st_fps_timing st_fps_timings[] = {
         .sampling_clock_rate = 90 * 1000,
         .mul = 60000,
         .den = 1001,
+        .framerate = 59.94,
+        .lower_limit = 1.00,
+        .upper_limit = 0.06,
     },
     {
         /* ST_FPS_P50 */
@@ -157,6 +172,9 @@ static const struct st_fps_timing st_fps_timings[] = {
         .sampling_clock_rate = 90 * 1000,
         .mul = 50,
         .den = 1,
+        .framerate = 50.00,
+        .lower_limit = 1.00,
+        .upper_limit = 1.00,
     },
     {
         /* ST_FPS_P30 */
@@ -164,6 +182,9 @@ static const struct st_fps_timing st_fps_timings[] = {
         .sampling_clock_rate = 90 * 1000,
         .mul = 30,
         .den = 1,
+        .framerate = 30.00,
+        .lower_limit = 0.00,
+        .upper_limit = 1.00,
     },
     {
         /* ST_FPS_P29_97 */
@@ -171,6 +192,9 @@ static const struct st_fps_timing st_fps_timings[] = {
         .sampling_clock_rate = 90 * 1000,
         .mul = 30000,
         .den = 1001,
+        .framerate = 29.97,
+        .lower_limit = 1.00,
+        .upper_limit = 0.02,
     },
     {
         /* ST_FPS_P25 */
@@ -178,6 +202,9 @@ static const struct st_fps_timing st_fps_timings[] = {
         .sampling_clock_rate = 90 * 1000,
         .mul = 25,
         .den = 1,
+        .framerate = 25.00,
+        .lower_limit = 0.00,
+        .upper_limit = 1.00,
     },
     {
         /* ST_FPS_P24 */
@@ -185,6 +212,9 @@ static const struct st_fps_timing st_fps_timings[] = {
         .sampling_clock_rate = 90 * 1000,
         .mul = 24,
         .den = 1,
+        .framerate = 24.00,
+        .lower_limit = 0.0,
+        .upper_limit = 0.99,
     },
     {
         /* ST_FPS_P23.98 */
@@ -192,6 +222,9 @@ static const struct st_fps_timing st_fps_timings[] = {
         .sampling_clock_rate = 90 * 1000,
         .mul = 24000,
         .den = 1001,
+        .framerate = 23.98,
+        .lower_limit = 1.00,
+        .upper_limit = 0.01,
     },
 };
 
@@ -596,6 +629,21 @@ double st_frame_rate(enum st_fps fps) {
 
   err("%s, invalid fps %d\n", __func__, fps);
   return 0;
+}
+
+enum st_fps st_frame_rate_to_st_fps(double framerate) {
+  int i;
+
+  for (i = 0; i < MTL_ARRAY_SIZE(st_fps_timings); i++) {
+    if (framerate == st_fps_timings[i].framerate ||
+        ((framerate >= st_fps_timings[i].framerate - st_fps_timings[i].lower_limit) &&
+         (framerate <= st_fps_timings[i].framerate + st_fps_timings[i].upper_limit))) {
+      return st_fps_timings[i].fps;
+    }
+  }
+
+  err("%s, invalid fps %f\n", __func__, framerate);
+  return ST_FPS_MAX;
 }
 
 const char* st_frame_fmt_name(enum st_frame_fmt fmt) {

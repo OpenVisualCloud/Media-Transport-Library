@@ -30,6 +30,13 @@ test_c_args = []
 test_cpp_args = []
 test_ld_args = []
 
+is_gtest_newer_than_1_9_0 = gtest.version().version_compare('>=1.9.0')
+if is_gtest_newer_than_1_9_0
+  message('Gtest version: > 1.9.0; ' +  gtest.version())
+  test_c_args += ['-DMTL_GTEST_AFTER_1_9_0']
+  test_cpp_args += ['-DMTL_GTEST_AFTER_1_9_0']
+endif
+
 # enable warning as error for non debug build
 if get_option('buildtype') != 'debug'
   test_c_args += ['-Werror']

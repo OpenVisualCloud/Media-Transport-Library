@@ -24,26 +24,14 @@
 
 #include "libavutil/common.h"
 
-const KahawaiFpsDecs fps_table[] = {
-    {ST_FPS_P50, 5000 - 100, 5000 + 100},    {ST_FPS_P29_97, 2997 - 100, 2997 + 100},
-    {ST_FPS_P25, 2500 - 100, 2500 + 100},    {ST_FPS_P60, 6000 - 100, 6000 + 100},
-    {ST_FPS_P30, 3000 - 100, 3000 + 100},    {ST_FPS_P24, 2400 - 100, 2400 + 100},
-    {ST_FPS_P23_98, 2398 - 100, 2398 + 100}, {ST_FPS_P119_88, 11988 - 100, 11988 + 100}};
-
 static mtl_handle shared_st_handle = NULL;
 unsigned int active_session_cnt = 0;
 static struct mtl_init_params param = {0};
 
-enum st_fps get_fps_table(AVRational framerate) {
-  int ret;
-  unsigned int fps = framerate.num * 100 / framerate.den;
+enum st_fps kahawai_fps_to_st_fps(AVRational framerate) {
+  double fps = framerate.num / framerate.den;
 
-  for (ret = 0; ret < sizeof(fps_table) / sizeof(KahawaiFpsDecs); ++ret) {
-    if ((fps >= fps_table[ret].min) && (fps <= fps_table[ret].max)) {
-      return fps_table[ret].st_fps;
-    }
-  }
-  return ST_FPS_MAX;
+  return st_frame_rate_to_st_fps(fps);
 }
 
 mtl_handle kahawai_init(char* port, char* local_addr, int enc_session_cnt,

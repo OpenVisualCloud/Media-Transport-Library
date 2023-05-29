@@ -23,6 +23,12 @@
 #define MAX_TEST_DECODER_SESSIONS (8)
 #define MAX_TEST_CONVERTER_SESSIONS (8)
 
+#ifdef MTL_GTEST_AFTER_1_9_0
+#define PARAMETERIZED_TEST INSTANTIATE_TEST_SUITE_P
+#else
+#define PARAMETERIZED_TEST INSTANTIATE_TEST_CASE_P
+#endif
+
 struct test_converter_session {
   int idx;
 

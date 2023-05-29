@@ -126,7 +126,9 @@ static int kahawai_read_header(AVFormatContext* ctx) {
   }
   ops_rx.height = s->height;
 
-  switch ((pix_fmt = av_get_pix_fmt(s->pixel_format))) {
+  pix_fmt = av_get_pix_fmt(s->pixel_format);
+  const AVPixFmtDescriptor* pix_fmt_desc = av_pix_fmt_desc_get(pix_fmt);
+  switch (pix_fmt) {
     case AV_PIX_FMT_YUV422P10LE:
       ops_rx.transport_fmt = ST20_FMT_YUV_422_10BIT;
       if (s->ext_frames_mode) {
@@ -140,7 +142,7 @@ static int kahawai_read_header(AVFormatContext* ctx) {
       ops_rx.output_fmt = ST_FRAME_FMT_RGB8;
       break;
     default:
-      av_log(ctx, AV_LOG_ERROR, "Unsupported pixel format: %s.\n", s->pixel_format);
+      av_log(ctx, AV_LOG_ERROR, "Unsupported pixel format: %s.\n", pix_fmt_desc->name);
       return AVERROR(EINVAL);
   }
 
@@ -150,7 +152,7 @@ static int kahawai_read_header(AVFormatContext* ctx) {
     return packet_size;
   }
   av_log(ctx, AV_LOG_VERBOSE, "packet size: %d\n", packet_size);
-  ops_rx.fps = get_fps_table(s->framerate);
+  ops_rx.fps = kahawai_fps_to_st_fps(s->framerate);
   if (ops_rx.fps == ST_FPS_MAX) {
     av_log(ctx, AV_LOG_ERROR, "Frame rate %0.2f is not supported\n",
            av_q2d(s->framerate));
