@@ -1612,7 +1612,7 @@ static int dev_if_init_pacing(struct mt_interface* inf) {
         inf->tx_pacing_way = ST21_TX_PACING_WAY_TSN;
         return 0;
       }
-		
+
       ret = dev_tx_queue_set_rl_rate(inf, 0, ST_DEFAULT_RL_BPS);
       if (ret >= 0) dev_tx_queue_set_rl_rate(inf, 0, 0);
     }
@@ -1773,9 +1773,9 @@ struct mt_tx_queue* mt_dev_get_tx_queue(struct mtl_main_impl* impl, enum mtl_por
   mt_pthread_mutex_lock(&inf->tx_queues_mutex);
   for (uint16_t q = 0; q < inf->max_tx_queues; q++) {
     if (inf->drv_type == MT_DRV_IGC && inf->tx_pacing_way == ST21_TX_PACING_WAY_TSN) {
-	  if (is_st21_traffic) {
+      if (is_st21_traffic) {
         if (q != 0) break;
-	  } else {
+      } else {
         if (q == 0) continue;
       }
     }
@@ -2022,7 +2022,7 @@ int mt_dev_create(struct mtl_main_impl* impl) {
 
 #if RTE_VERSION >= RTE_VERSION_NUM(21, 11, 0, 0)
     /* DPDK 21.11 support start time sync before rte_eth_dev_start */
-    if (inf->drv_type != MT_DRV_IGC) {	
+    if (inf->drv_type != MT_DRV_IGC) {
       if ((mt_has_ptp_service(impl) || mt_has_ebu(impl)) && (port_type == MT_PORT_PF)) {
         ret = dev_start_timesync(inf);
         if (ret >= 0) inf->feature |= MT_IF_FEATURE_TIMESYNC;
@@ -2448,28 +2448,28 @@ int mt_dev_if_init(struct mtl_main_impl* impl) {
 #endif
 
 #if RTE_VERSION >= RTE_VERSION_NUM(23, 3, 0, 0)
-  /* Detect LaunchTime capability */
-  if (dev_info->tx_offload_capa & RTE_ETH_TX_OFFLOAD_SEND_ON_TIMESTAMP) {
-    inf->feature |= MT_IF_FEATURE_TX_OFFLOAD_SEND_ON_TIMESTAMP;
+    /* Detect LaunchTime capability */
+    if (dev_info->tx_offload_capa & RTE_ETH_TX_OFFLOAD_SEND_ON_TIMESTAMP) {
+      inf->feature |= MT_IF_FEATURE_TX_OFFLOAD_SEND_ON_TIMESTAMP;
 
-    int *igc_tx_timestamp_dynfield_offset_ptr = dev_info->default_txconf.reserved_ptrs[1];
-    uint64_t *igc_tx_timestamp_dynflag_ptr = dev_info->default_txconf.reserved_ptrs[0];
-    ret = rte_mbuf_dyn_tx_timestamp_register(
-			igc_tx_timestamp_dynfield_offset_ptr,
-			igc_tx_timestamp_dynflag_ptr);                       
-	if (ret < 0) {
-	  err("%s, rte_mbuf_dyn_tx_timestamp_register fail\n", __func__);
-	  return ret;
-	}
+      int* igc_tx_timestamp_dynfield_offset_ptr =
+          dev_info->default_txconf.reserved_ptrs[1];
+      uint64_t* igc_tx_timestamp_dynflag_ptr = dev_info->default_txconf.reserved_ptrs[0];
+      ret = rte_mbuf_dyn_tx_timestamp_register(igc_tx_timestamp_dynfield_offset_ptr,
+                                               igc_tx_timestamp_dynflag_ptr);
+      if (ret < 0) {
+        err("%s, rte_mbuf_dyn_tx_timestamp_register fail\n", __func__);
+        return ret;
+      }
 
-    ret = rte_mbuf_dynflag_lookup(RTE_MBUF_DYNFLAG_TX_TIMESTAMP_NAME, NULL);
-    if(ret < 0) return ret;
-    inf->tx_launch_time_flag = 1ULL << ret;   
+      ret = rte_mbuf_dynflag_lookup(RTE_MBUF_DYNFLAG_TX_TIMESTAMP_NAME, NULL);
+      if (ret < 0) return ret;
+      inf->tx_launch_time_flag = 1ULL << ret;
 
-    ret = rte_mbuf_dynfield_lookup(RTE_MBUF_DYNFIELD_TIMESTAMP_NAME, NULL);      
-    if(ret < 0) return ret;
-    inf->tx_dynfield_offset = ret;        
-  }
+      ret = rte_mbuf_dynfield_lookup(RTE_MBUF_DYNFIELD_TIMESTAMP_NAME, NULL);
+      if (ret < 0) return ret;
+      inf->tx_dynfield_offset = ret;
+    }
 #endif
 
     if (mt_has_ebu(impl) &&
