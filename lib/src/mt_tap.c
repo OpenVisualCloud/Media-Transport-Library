@@ -813,7 +813,7 @@ static int tap_queues_init(struct mtl_main_impl* impl, struct mt_cni_impl* cni) 
     return ret;
   }
   for (i = 0; i < num_ports; i++) {
-    cni->tap_tx_q[i] = mt_dev_get_tx_queue(impl, i, 1024 * 1024 * 1024);
+    cni->tap_tx_q[i] = mt_dev_get_tx_queue(impl, i, 1024 * 1024 * 1024, false);
     if (!cni->tap_tx_q[i]) {
       err("%s(%d), tap_tx_q create fail\n", __func__, i);
       tap_queues_uinit(impl);
