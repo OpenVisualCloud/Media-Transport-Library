@@ -19,12 +19,10 @@
 #include <sys/file.h>
 #include <unistd.h>
 
-#include "mave.h"
 #include "mt_mem.h"
 #include "mt_platform.h"
 #include "mt_queue.h"
 #include "mt_quirk.h"
-#include "servo.h"
 #include "st2110/st_header.h"
 
 #ifndef _MT_LIB_MAIN_HEAD_H_
@@ -134,8 +132,15 @@ enum mt_ptp_addr_mode {
   MT_PTP_UNICAST_ADDR,
 };
 
+struct mt_pi_servo {
+	double offset[2];
+	double local[2];
+	double drift;
+	int count;
+};
+
 struct mt_phc2sys_impl {
-  struct pi_servo* servo;
+  struct mt_pi_servo servo;
   long realtime_hz;
   long realtime_nominal_tick;
   int64_t stat_delta_max;
@@ -171,9 +176,8 @@ struct mt_ptp_impl {
   uint16_t t3_sequence_id;
   uint64_t t4;
 
-  struct pi_servo* servo;
-  int64_t path_delay_avg;
-  struct mave* path_delay_acc;
+  struct mt_pi_servo servo;
+  int64_t path_delay;
   uint32_t skip_sync_cnt;
   /* result */
   uint64_t delta_result_cnt;

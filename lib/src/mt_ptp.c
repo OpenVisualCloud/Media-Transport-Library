@@ -24,10 +24,25 @@
 #define MT_PTP_DEFAULT_KP 5e-10 /* to be tuned */
 #define MT_PTP_DEFAULT_KI 1e-10 /* to be tuned */
 
+#define KP 0.7
+#define KI 0.3
+
 static char* ptp_mode_strs[MT_PTP_MAX_MODE] = {
     "l2",
     "l4",
 };
+
+enum servo_state {
+	UNLOCKED,
+	JUMP,
+	LOCKED,
+};
+
+enum controller_mode {
+	NONE,
+	PI,
+	ALL
+} mode;
 
 static inline char* ptp_mode_str(enum mt_ptp_l_mode mode) { return ptp_mode_strs[mode]; }
 
@@ -40,6 +55,44 @@ static inline void ptp_timesync_lock(struct mt_ptp_impl* ptp) { /* todo */
 }
 
 static inline void ptp_timesync_unlock(struct mt_ptp_impl* ptp) { /* todo */
+}
+
+static inline double pi_sample(struct mt_pi_servo *s, double offset, double local_ts,
+	  enum servo_state *state)
+{
+	double ppb = 0.0;
+
+	switch (s->count) {
+	case 0:
+		s->offset[0] = offset;
+		s->local[0] = local_ts;
+		*state = UNLOCKED;
+		s->count = 1;
+		break;
+	case 1:
+		s->offset[1] = offset;
+		s->local[1] = local_ts;
+		*state = UNLOCKED;
+		s->count = 2;
+		break;
+	case 2:
+		s->drift += (s->offset[1] - s->offset[0]) /
+			(s->local[1] - s->local[0]);
+		*state = UNLOCKED;
+		s->count = 3;
+		break;
+	case 3:
+		*state = JUMP;
+		s->count = 4;
+		break;
+	case 4:
+		s->drift += KI * offset;
+		ppb = KP * offset + s->drift;
+		*state = LOCKED;
+		break;
+	}
+
+	return ppb;
 }
 
 static inline uint64_t ptp_correct_ts(struct mt_ptp_impl* ptp, uint64_t ts) {
@@ -112,43 +165,46 @@ static inline void ptp_set_master_addr(struct mt_ptp_impl* ptp,
   }
 }
 
-void clockadj_step(struct mt_ptp_impl* ptp, clockid_t clkid, int64_t step) {
-  struct timex tx;
+void ptp_adj_system_clock_time(struct mt_ptp_impl* ptp, int64_t delta) {
+  struct timex adjtime;
   int sign = 1;
-  if (step < 0) {
+  
+  if (delta < 0) {
     sign = -1;
-    step *= -1;
+    delta *= -1;
   }
-  memset(&tx, 0, sizeof(tx));
-  tx.modes = ADJ_SETOFFSET | ADJ_NANO;
-  tx.time.tv_sec = sign * (step / NS_PER_S);
-  tx.time.tv_usec = sign * (step % NS_PER_S);
-  if (tx.time.tv_usec < 0) {
-    tx.time.tv_sec -= 1;
-    tx.time.tv_usec += 1000000000;
+
+  memset(&adjtime, 0, sizeof(adjtime));
+  adjtime.modes = ADJ_SETOFFSET | ADJ_NANO;
+  adjtime.time.tv_sec = sign * (delta / NS_PER_S);
+  adjtime.time.tv_usec = sign * (delta % NS_PER_S);
+  if (adjtime.time.tv_usec < 0) {
+    adjtime.time.tv_sec -= 1;
+    adjtime.time.tv_usec += 1000000000;
   }
-  clock_adjtime(clkid, &tx);
+  
+  clock_adjtime(CLOCK_REALTIME, &adjtime);
 }
 
-void clockadj_set_freq(struct mt_ptp_impl* ptp, clockid_t clkid, double freq) {
-  struct timex tx;
-  memset(&tx, 0, sizeof(tx));
+void ptp_adj_system_clock_freq(struct mt_ptp_impl* ptp, double freq) {
+  struct timex adjfreq;
+  memset(&adjfreq, 0, sizeof(adjfreq));
 
-  if (clkid == CLOCK_REALTIME && ptp->phc2sys.realtime_nominal_tick) {
-    tx.modes |= ADJ_TICK;
-    tx.tick =
+  if (ptp->phc2sys.realtime_nominal_tick) {
+    adjfreq.modes |= ADJ_TICK;
+    adjfreq.tick =
         round(freq / 1e3 / ptp->phc2sys.realtime_hz) + ptp->phc2sys.realtime_nominal_tick;
     freq -=
-        1e3 * ptp->phc2sys.realtime_hz * (tx.tick - ptp->phc2sys.realtime_nominal_tick);
+        1e3 * ptp->phc2sys.realtime_hz * (adjfreq.tick - ptp->phc2sys.realtime_nominal_tick);
   }
 
-  tx.modes |= ADJ_FREQUENCY;
-  tx.freq = (long)(freq * 65.536);
-  clock_adjtime(clkid, &tx);
+  adjfreq.modes |= ADJ_FREQUENCY;
+  adjfreq.freq = (long)(freq * 65.536);
+  clock_adjtime(CLOCK_REALTIME, &adjfreq);
 }
 
 static void phc2sys_adjust(struct mt_ptp_impl* ptp) {
-  enum servo_state state = SERVO_UNLOCKED;
+  enum servo_state state = UNLOCKED;
   double ppb;
   struct timespec ts1_sys, ts2_sys, ts_phc;
   uint64_t t_phc, t1_sys, t2_sys, t_sys, shortest_delay, delay;
@@ -179,18 +235,18 @@ static void phc2sys_adjust(struct mt_ptp_impl* ptp) {
   }
   ptp_timesync_unlock(ptp);
   if (ret >= 0) {
-    ppb = pi_sample(ptp->phc2sys.servo, offset, t_sys, &state);
+    ppb = pi_sample(&ptp->phc2sys.servo, offset, t_sys, &state);
 
     switch (state) {
-      case SERVO_UNLOCKED:
+      case UNLOCKED:
         break;
-      case SERVO_JUMP:
-        clockadj_step(ptp, CLOCK_REALTIME, -offset);
+      case JUMP:
+        ptp_adj_system_clock_time(ptp, -offset);
         dbg("%s(%d), CLOCK_REALTIME offset %" PRId64 ", delay %" PRIu64 " adjust time.\n",
             __func__, ptp->port_id, offset, shortest_delay);
         break;
-      case SERVO_LOCKED:
-        clockadj_set_freq(ptp, CLOCK_REALTIME, -ppb);
+      case LOCKED:
+        ptp_adj_system_clock_freq(ptp, -ppb);
         dbg("%s(%d), CLOCK_REALTIME offset %" PRId64 ", delay %" PRIu64 " adjust freq.\n",
             __func__, ptp->port_id, offset, shortest_delay);
         break;
@@ -204,30 +260,30 @@ static void phc2sys_adjust(struct mt_ptp_impl* ptp) {
 
 static void ptp_adjust(struct mt_ptp_impl* ptp) {
   double adj_freq;
-  enum servo_state state = SERVO_UNLOCKED;
+  enum servo_state state = UNLOCKED;
 
-  if (!ptp->path_delay_avg || !ptp->t1 || !ptp->t2) return;
+  if (!ptp->path_delay || !ptp->t1 || !ptp->t2) return;
 
-  int64_t delta = ptp->t2 - ptp->t1 - ptp->path_delay_avg;
+  int64_t delta = ptp->t2 - ptp->t1 - ptp->path_delay;
 
-  adj_freq = pi_sample(ptp->servo, delta, ptp->t2, &state);
+  adj_freq = pi_sample(&ptp->servo, delta, ptp->t2, &state);
 
   switch (state) {
-    case SERVO_UNLOCKED:
+    case UNLOCKED:
       break;
-    case SERVO_JUMP:
+    case JUMP:
       ptp_timesync_lock(ptp);
       rte_eth_timesync_adjust_time(ptp->port_id, -1 * delta);
       dbg("%s(%d), master offset: %" PRId64 " path delay: %" PRId64 " adjust time.\n",
-          __func__, ptp->port_id, delta, ptp->path_delay_avg);
+          __func__, ptp->port_id, delta, ptp->path_delay);
 
       ptp_timesync_unlock(ptp);
       break;
-    case SERVO_LOCKED:
+    case LOCKED:
       ptp_timesync_lock(ptp);
       rte_eth_timesync_adjust_freq(ptp->port_id, -1 * (long)(adj_freq * 65.536));
       dbg("%s(%d), master offset: %" PRId64 " path delay: %" PRId64 " adjust freq.\n",
-          __func__, ptp->port_id, delta, ptp->path_delay_avg);
+          __func__, ptp->port_id, delta, ptp->path_delay);
       ptp_timesync_unlock(ptp);
       break;
   }
@@ -564,9 +620,7 @@ static int ptp_parse_delay_resp(struct mt_ptp_impl* ptp,
       ptp->t3_sequence_id, ptp_get_raw_time(ptp));
 
   if (ptp->t4 && ptp->t3 && ptp->t2 && ptp->t1) {
-    int64_t last_path_delay = (ptp->t2 - ptp->t1) + (ptp->t4 - ptp->t3);
-    last_path_delay = last_path_delay / 2;
-    ptp->path_delay_avg = mave_accumulate(ptp->path_delay_acc, last_path_delay);
+    ptp->path_delay = ((ptp->t2 - ptp->t1) + (ptp->t4 - ptp->t3)) / 2;
 
     ptp_adjust(ptp);
     ptp_t_result_clear(ptp);
@@ -671,14 +725,10 @@ static int ptp_init(struct mtl_main_impl* impl, struct mt_ptp_impl* ptp,
   ptp->master_initialized = false;
   ptp->t3_sequence_id = 0x1000 * port;
 
-  int fadj = 0, max_adj = 0.0;
-  max_adj = 999999999; /* should be return by PMD if API is ready*/
+  memset(&ptp->servo, 0, sizeof(struct mt_pi_servo));
+  ptp->path_delay = 0;
 
-  ptp->servo = pi_servo_create(-fadj, max_adj, false);
-  ptp->path_delay_acc = mave_create(10);
-  ptp->path_delay_avg = 0;
-
-  ptp->phc2sys.servo = pi_servo_create(-fadj, max_adj, false);
+  memset(&ptp->phc2sys.servo, 0, sizeof(struct mt_pi_servo));
   ptp->phc2sys.realtime_hz = sysconf(_SC_CLK_TCK);
   ptp->phc2sys.realtime_nominal_tick = 0;
   if (ptp->phc2sys.realtime_hz > 0) {
@@ -755,10 +805,6 @@ static int ptp_init(struct mtl_main_impl* impl, struct mt_ptp_impl* ptp,
 
 static int ptp_uinit(struct mtl_main_impl* impl, struct mt_ptp_impl* ptp) {
   enum mtl_port port = ptp->port;
-
-  pi_destroy(ptp->servo);
-  mave_destroy(ptp->path_delay_acc);
-  pi_destroy(ptp->phc2sys.servo);
 
   rte_eal_alarm_cancel(ptp_sync_from_user_handler, ptp);
 #if MT_PTP_USE_TX_TIMER
