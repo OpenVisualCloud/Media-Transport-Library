@@ -1774,9 +1774,26 @@ struct mt_tx_queue* mt_dev_get_tx_queue(struct mtl_main_impl* impl, enum mtl_por
   mt_pthread_mutex_lock(&inf->tx_queues_mutex);
   for (uint16_t q = 0; q < inf->max_tx_queues; q++) {
     if (inf->drv_type == MT_DRV_IGC && inf->tx_pacing_way == ST21_TX_PACING_WAY_TSN) {
+     /*
+      * igc corresponding network card i225/i226, implements TSN pacing based on
+      * LaunchTime Tx feature. Currently, igc driver enables LaunchTime Tx feature
+      * of queue 0 by hard coding static configuration. So, SMPTE 2110-21 traffic
+      * must be transmitted over queue 0.
+      *
+      * For other traffics NOT requiring TNS pacing, they must be transmitted over queue
+      * 1/2/3 to avoid interfering the pacing accuracy of SMPTE 2110-21 traffic. Currently,
+      * igc driver enable IEEE 802.1Qbv to isolate transmission time slice of queue 0
+      * from the time slice of queue 1/2/3 by hard coding static configuration.
+      *
+      * So, SMPTE 2110-21 traffic over queue 0, others over queue 1/2/3. No interference!
+      *
+      * Fix me when igc driver provides dynamic configuration interface.
+      */
       if (is_st21_traffic) {
+        /* To smpte-2110 traffic, queue 0 is the only choice. */
         if (q != 0) break;
       } else {
+        /* To non-smpte-2110 traffic, queue 0 is invisible. */
         if (q == 0) continue;
       }
     }
