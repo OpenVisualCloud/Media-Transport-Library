@@ -29,7 +29,7 @@ unsigned int active_session_cnt = 0;
 static struct mtl_init_params param = {0};
 
 enum st_fps kahawai_fps_to_st_fps(AVRational framerate) {
-  double fps = framerate.num / framerate.den;
+  double fps = (double)framerate.num / (double)framerate.den;
 
   return st_frame_rate_to_st_fps(fps);
 }
