@@ -71,7 +71,9 @@ typedef unsigned long int nfds_t;
 #define MT_FLOCK_PATH "/tmp/kahawai_lcore.lock"
 #endif
 
+#ifndef WINDOWSENV
 #define MT_ENABLE_P_SHARED /* default enable PTHREAD_PROCESS_SHARED */
+#endif
 
 static inline int mt_pthread_mutex_init(pthread_mutex_t* mutex,
                                         pthread_mutexattr_t* p_attr) {
