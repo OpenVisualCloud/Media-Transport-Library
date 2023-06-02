@@ -109,7 +109,8 @@ static rte_iova_t tv_frame_get_offset_iova(struct st_tx_video_session_impl* s,
   return MTL_BAD_IOVA;
 }
 
-static int tv_frame_create_page_table(struct st_tx_video_session_impl* s,
+static int tv_frame_create_page_table(struct mtl_main_impl* impl,
+                                      struct st_tx_video_session_impl* s,
                                       struct st_frame_trans* frame_info) {
   struct rte_memseg* mseg = rte_mem_virt2memseg(frame_info->addr, NULL);
   if (mseg == NULL) {
@@ -126,7 +127,9 @@ static int tv_frame_create_page_table(struct st_tx_video_session_impl* s,
                    RTE_PTR_ALIGN_FLOOR(frame_info->addr, hugepage_sz)) /
       hugepage_sz;
 
-  struct st_page_info* pages = mt_zmalloc(sizeof(*pages) * num_pages);
+  enum mtl_port port = mt_port_logic2phy(s->port_maps, MTL_SESSION_PORT_P);
+  int soc_id = mt_socket_id(impl, port);
+  struct st_page_info* pages = mt_rte_zmalloc_socket(sizeof(*pages) * num_pages, soc_id);
   if (pages == NULL) {
     err("%s(%d,%d), pages info malloc fail\n", __func__, s->idx, frame_info->idx);
     return -ENOMEM;
@@ -206,7 +209,7 @@ static int tv_alloc_frames(struct mtl_main_impl* impl,
       frame_info->addr = frame;
       frame_info->flags = ST_FT_FLAG_RTE_MALLOC;
       if (impl->iova_mode == RTE_IOVA_PA && !s->tx_no_chain)
-        tv_frame_create_page_table(s, frame_info);
+        tv_frame_create_page_table(impl, s, frame_info);
     }
     frame_info->priv = s;
   }
