@@ -74,7 +74,10 @@ static int ufd_free_mt_ctx(struct ufd_mt_ctx* ctx) {
     ctx->mt = NULL;
   }
   mt_pthread_mutex_destroy(&ctx->slots_lock);
-  mt_free(ctx);
+  if (ctx->alloc_with_rte)
+    mt_rte_free(ctx);
+  else
+    mt_free(ctx);
   return 0;
 }
 
@@ -414,8 +417,20 @@ static struct ufd_mt_ctx* ufd_create_mt_ctx(void) {
     return NULL;
   }
 
-  info("%s, succ, slots_nb_max %d\n", __func__, ufd_max_slot(ctx));
-  return ctx;
+  /* save ctx with dpdk rte memory which can be shared between process */
+  struct ufd_mt_ctx* ctx_rte =
+      mt_rte_zmalloc_socket(sizeof(*ctx_rte), mt_socket_id(ctx->mt, MTL_PORT_P));
+  if (!ctx_rte) {
+    err("%s, ctx_rte malloc fail\n", __func__);
+    ufd_free_mt_ctx(ctx);
+    return NULL;
+  }
+  mtl_memcpy(ctx_rte, ctx, sizeof(*ctx_rte));
+  ctx_rte->alloc_with_rte = true;
+  mt_free(ctx);
+
+  info("%s, succ, slots_nb_max %d\n", __func__, ufd_max_slot(ctx_rte));
+  return ctx_rte;
 }
 
 static struct ufd_mt_ctx* ufd_get_mt_ctx(bool create) {

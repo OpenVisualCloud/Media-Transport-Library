@@ -198,7 +198,7 @@ uint16_t mt_rss_burst(struct mt_rss_entry* entry, uint16_t nb_pkts) {
   struct mt_udp_hdr* hdr;
   struct rte_ipv4_hdr* ipv4;
 
-  mt_pthread_mutex_lock(&rss_queue->mutex);
+  if (0 != mt_pthread_mutex_try_lock(&rss_queue->mutex)) return 0;
   rx = rte_eth_rx_burst(rss_queue->port_id, q, pkts, nb_pkts);
   if (rx) dbg("%s(%u), rx pkts %u\n", __func__, q, rx);
   int rss_pkts_nb = 0;

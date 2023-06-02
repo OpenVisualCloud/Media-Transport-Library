@@ -36,6 +36,7 @@ struct mur_client {
 
   uint32_t stat_timedwait;
   uint32_t stat_timedwait_timeout;
+  uint32_t stat_pkt_rx;
   uint32_t stat_pkt_rx_enq_fail;
 
   /* linked list for reuse port */

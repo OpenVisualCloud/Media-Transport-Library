@@ -178,7 +178,7 @@ uint16_t mt_rsq_burst(struct mt_rsq_entry* entry, uint16_t nb_pkts) {
   struct mt_udp_hdr* hdr;
   struct rte_udp_hdr* udp;
 
-  mt_pthread_mutex_lock(&rsq_queue->mutex);
+  if (0 != mt_pthread_mutex_try_lock(&rsq_queue->mutex)) return 0;
   rx = rte_eth_rx_burst(rsq_queue->port_id, q, pkts, nb_pkts);
   if (rx) dbg("%s(%u), rx pkts %u\n", __func__, q, rx);
   rsq_queue->stat_pkts_recv += rx;

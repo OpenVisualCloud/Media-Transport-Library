@@ -24,7 +24,8 @@ int mt_stat_dump(struct mtl_main_impl* impl) {
 
 int mt_stat_register(struct mtl_main_impl* impl, mt_stat_cb_t cb, void* priv) {
   struct mt_stat_mgr* mgr = get_stat_mgr(impl);
-  struct mt_stat_item* item = mt_zmalloc(sizeof(*item));
+  struct mt_stat_item* item =
+      mt_rte_zmalloc_socket(sizeof(*item), mt_socket_id(impl, MTL_PORT_P));
   if (!item) {
     err("%s, malloc fail\n", __func__);
     return -ENOMEM;
@@ -51,7 +52,7 @@ int mt_stat_unregister(struct mtl_main_impl* impl, mt_stat_cb_t cb, void* priv) 
       /* found the matched item, remove it */
       MT_TAILQ_REMOVE(&mgr->head, item, next);
       mt_pthread_mutex_unlock(&mgr->mutex);
-      mt_free(item);
+      mt_rte_free(item);
       dbg("%s, succ, priv %p\n", __func__, priv);
       return 0;
     }
