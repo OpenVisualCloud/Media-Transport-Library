@@ -61,11 +61,15 @@ create_vf() {
     # Start to bind to VFIO
     for ((i=0;i<numvfs;i++)); do
         vfpath="/sys/bus/pci/devices/$bdf/virtfn$i"
-        vf=$(readlink "$vfpath" | awk -F/ '{print $NF;}')
+        vfport=$(readlink "$vfpath" | awk -F/ '{print $NF;}')
+        vfif=$(dpdk-devbind.py -s | grep "$vfport.*if" | sed -e s/.*if=//g | awk '{print $1;}')
+        if [ -n "$vfif" ]; then
+            ip link set "$vfif" down
+        fi
         #enable trust
         #ip link set $port vf $i trust on
-        if dpdk-devbind.py -b vfio-pci "$vf"; then
-            echo "Bind $vf to vfio-pci success"
+        if dpdk-devbind.py -b vfio-pci "$vfport"; then
+            echo "Bind $vfport($vfif) to vfio-pci success"
         fi
     done
 }
