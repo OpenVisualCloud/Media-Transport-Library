@@ -184,6 +184,49 @@ int mufd_tx_valid_ip(int sockfd, uint8_t dip[MTL_IP_ADDR_LEN]);
 int mufd_register_stat_dump_cb(int sockfd, int (*dump)(void* priv), void* priv);
 
 /**
+ * Allocate memory from the huge-page area of memory. The memory is not cleared.
+ * In NUMA systems, the memory allocated from the same NUMA socket of the port.
+ * Note the memory is mmap to IOVA already, use mtl_hp_virt2iova to get the iova.
+ *
+ * @param size
+ *   Size (in bytes) to be allocated.
+ * @param port
+ *   Port for the memory to be allocated.
+ * @return
+ *   - NULL on error. Not enough memory, or invalid arguments
+ *   - Otherwise, the pointer to the allocated memory.
+ */
+void* mufd_hp_malloc(size_t size, enum mtl_port port);
+
+/**
+ * Allocate zero'ed memory from the huge-page area of memory.
+ * Equivalent to mufd_hp_malloc() except that the memory zone is cleared with zero.
+ * In NUMA systems, the memory allocated from the same NUMA socket of the port.
+ * Note the memory is mmap to IOVA already, use mtl_hp_virt2iova to get the iova.
+ *
+ * @param size
+ *   Size (in bytes) to be allocated.
+ * @param port
+ *   Port for the memory to be allocated.
+ * @return
+ *   - NULL on error. Not enough memory, or invalid arguments
+ *   - Otherwise, the virtual address pointer to the allocated memory.
+ */
+void* mufd_hp_zmalloc(size_t size, enum mtl_port port);
+
+/**
+ * Frees the memory pointed by the pointer.
+ *
+ * This pointer must have been returned by a previous call to
+ * mufd_hp_malloc(), mufd_hp_malloc().
+ * The behaviour is undefined if the pointer does not match this requirement.
+ *
+ * @param ptr
+ *   The virtual address pointer to memory to be freed.
+ */
+void mufd_hp_free(void* ptr);
+
+/**
  * Check if the socket type is support or not by mufd.
  *
  * @param domain

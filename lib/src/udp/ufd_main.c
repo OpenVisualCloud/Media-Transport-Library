@@ -768,6 +768,36 @@ enum mtl_log_level mufd_log_level(void) {
   return ctx->init_params.mt_params.log_level;
 }
 
+void* mufd_hp_malloc(size_t size, enum mtl_port port) {
+  struct ufd_mt_ctx* ctx = ufd_get_mt_ctx(false);
+  if (!ctx) {
+    err("%s, ctx get fail\n", __func__);
+    return NULL;
+  }
+
+  return mtl_hp_malloc(ctx->mt, size, port);
+}
+
+void* mufd_hp_zmalloc(size_t size, enum mtl_port port) {
+  struct ufd_mt_ctx* ctx = ufd_get_mt_ctx(false);
+  if (!ctx) {
+    err("%s, ctx get fail\n", __func__);
+    return NULL;
+  }
+
+  return mtl_hp_zmalloc(ctx->mt, size, port);
+}
+
+void mufd_hp_free(void* ptr) {
+  struct ufd_mt_ctx* ctx = ufd_get_mt_ctx(false);
+  if (!ctx) {
+    err("%s, ctx get fail\n", __func__);
+    return;
+  }
+
+  return mtl_hp_free(ctx->mt, ptr);
+}
+
 int mufd_set_opaque(int sockfd, void* pri) {
   struct ufd_slot* slot = ufd_fd2slot(sockfd);
   int idx = slot->idx;
