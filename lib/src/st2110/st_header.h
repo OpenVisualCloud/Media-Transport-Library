@@ -887,11 +887,13 @@ struct st_rx_audio_session_impl {
   /* status */
   int st30_stat_pkts_dropped;
   int st30_stat_pkts_wrong_hdr_dropped;
+  int st30_stat_pkts_len_mismatch_dropped;
   int st30_stat_pkts_received;
   int st30_stat_frames_dropped;
   rte_atomic32_t st30_stat_frames_received;
   int st30_stat_pkts_rtp_ring_full;
   uint64_t st30_stat_last_time;
+
   struct st_rx_audio_ebu_info ebu_info;
   struct st_rx_audio_ebu_stat ebu;
   struct st_rx_audio_ebu_result ebu_result;
