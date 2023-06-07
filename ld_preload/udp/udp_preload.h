@@ -62,6 +62,17 @@ enum mtl_log_level upl_get_log_level(void);
     return -1;            \
   } while (0)
 
+/* child only can't use rte malloc */
+static inline void* upl_malloc(size_t sz) { return malloc(sz); }
+
+static inline void* upl_zmalloc(size_t sz) {
+  void* p = malloc(sz);
+  if (p) memset(p, 0x0, sz);
+  return p;
+}
+
+static inline void upl_free(void* p) { free(p); }
+
 struct upl_functions {
   int (*socket)(int domain, int type, int protocol);
   int (*close)(int sockfd);

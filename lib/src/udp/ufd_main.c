@@ -427,6 +427,7 @@ static struct ufd_mt_ctx* ufd_create_mt_ctx(void) {
   }
   mtl_memcpy(ctx_rte, ctx, sizeof(*ctx_rte));
   ctx_rte->alloc_with_rte = true;
+  ctx_rte->parent_pid = getpid(); /* save the creator pid */
   mt_free(ctx);
 
   info("%s, succ, slots_nb_max %d\n", __func__, ufd_max_slot(ctx_rte));
@@ -653,7 +654,12 @@ int mufd_ioctl(int sockfd, unsigned long cmd, va_list args) {
 int mufd_cleanup(void) {
   struct ufd_mt_ctx* ctx = ufd_get_mt_ctx(false);
   if (ctx) {
-    ufd_free_mt_ctx(ctx);
+    pid_t pid = getpid();
+    if (pid == ctx->parent_pid) {
+      ufd_free_mt_ctx(ctx);
+    } else {
+      info("%s, skip the mt ctx free as it is child process\n", __func__);
+    }
     ufd_clear_mt_ctx();
   }
 
