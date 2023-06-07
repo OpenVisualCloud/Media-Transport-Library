@@ -106,6 +106,8 @@ struct st_rx_muf_priv_data {
 #define ST_FT_FLAG_RTE_MALLOC (MTL_BIT32(0))
 /* ext frame by application */
 #define ST_FT_FLAG_EXT (MTL_BIT32(1))
+/* the frame is malloc by rte memzone */
+#define ST_FT_FLAG_RTE_MEMZONE (MTL_BIT32(2))
 
 /* IOVA mapping info of each page in frame, used for IOVA:PA mode */
 struct st_page_info {
@@ -118,12 +120,10 @@ struct st_page_info {
 struct st_frame_trans {
   /* todo: use struct st_frame as base */
   int idx;
-  void* addr;                      /* virtual address */
-  rte_iova_t iova;                 /* iova for hw */
-  struct st_page_info* page_table; /* page table for hw, used for IOVA:PA mode */
-  uint16_t page_table_len;         /* page table len for hw, used for IOVA:PA mode */
-  rte_atomic32_t refcnt;           /* 0 means it's free */
-  void* priv;                      /* private data for lib */
+  void* addr;            /* virtual address */
+  rte_iova_t iova;       /* iova for hw */
+  rte_atomic32_t refcnt; /* 0 means it's free */
+  void* priv;            /* private data for lib */
 
   uint32_t flags;                          /* ST_FT_FLAG_* */
   struct rte_mbuf_ext_shared_info sh_info; /* for st20 tx ext shared */
@@ -305,6 +305,7 @@ struct st_tx_video_session_impl {
   size_t st20_linesize;     /* line size including padding bytes */
   uint16_t st20_frames_cnt; /* numbers of frames requested */
   struct st_frame_trans* st20_frames;
+  const struct rte_memzone* st20_frames_mz; /* for pa mode allocation */
 
   uint16_t st20_frame_idx; /* current frame index */
   enum st21_tx_frame_status st20_frame_stat;
@@ -601,6 +602,7 @@ struct st_rx_video_session_impl {
   size_t st20_frame_bitmap_size; /* bitmap size per frame */
   int st20_frames_cnt;           /* numbers of frames requested */
   struct st_frame_trans* st20_frames;
+  const struct rte_memzone* st20_frames_mz; /* for pa mode allocation */
   struct st20_pgroup st20_pg;
 
   size_t st20_uframe_size; /* size per user frame */

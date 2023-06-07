@@ -703,80 +703,15 @@ static int rv_free_frames(struct st_rx_video_session_impl* s) {
     s->st20_frames = NULL;
   }
 
+  if (s->st20_frames_mz) {
+    rte_memzone_free(s->st20_frames_mz);
+    s->st20_frames_mz = NULL;
+  }
+
   rv_uinit_hdr_split_frame(s);
 
   dbg("%s(%d), succ\n", __func__, s->idx);
   return 0;
-}
-
-static rte_iova_t rv_frame_get_offset_iova(struct st_rx_video_session_impl* s,
-                                           struct st_frame_trans* frame_info,
-                                           size_t offset) {
-  if (frame_info->page_table_len == 0) return frame_info->iova + offset;
-  void* addr = RTE_PTR_ADD(frame_info->addr, offset);
-  struct st_page_info* page;
-  for (uint16_t i = 0; i < frame_info->page_table_len; i++) {
-    page = &frame_info->page_table[i];
-    if (addr >= page->addr && addr < RTE_PTR_ADD(page->addr, page->len))
-      return page->iova + RTE_PTR_DIFF(addr, page->addr);
-  }
-
-  err("%s(%d,%d), offset %" PRIu64 " get iova fail\n", __func__, s->idx, frame_info->idx,
-      offset);
-  return MTL_BAD_IOVA;
-}
-
-static int rv_frame_create_page_table(struct mtl_main_impl* impl,
-                                      struct st_rx_video_session_impl* s,
-                                      struct st_frame_trans* frame_info) {
-  struct rte_memseg* mseg = rte_mem_virt2memseg(frame_info->addr, NULL);
-  if (mseg == NULL) {
-    err("%s(%d,%d), get mseg fail\n", __func__, s->idx, frame_info->idx);
-    return -EIO;
-  }
-  size_t hugepage_sz = mseg->hugepage_sz;
-  info("%s(%d,%d), hugepage size %" PRIu64 "\n", __func__, s->idx, frame_info->idx,
-       hugepage_sz);
-
-  /* calculate num hugepages */
-  uint16_t num_pages =
-      RTE_PTR_DIFF(RTE_PTR_ALIGN(frame_info->addr + s->st20_fb_size, hugepage_sz),
-                   RTE_PTR_ALIGN_FLOOR(frame_info->addr, hugepage_sz)) /
-      hugepage_sz;
-
-  enum mtl_port port = mt_port_logic2phy(s->port_maps, MTL_SESSION_PORT_P);
-  int soc_id = mt_socket_id(impl, port);
-  struct st_page_info* pages = mt_rte_zmalloc_socket(sizeof(*pages) * num_pages, soc_id);
-  if (pages == NULL) {
-    err("%s(%d,%d), pages info malloc fail\n", __func__, s->idx, frame_info->idx);
-    return -ENOMEM;
-  }
-
-  /* get IOVA start of each page */
-  void* addr = frame_info->addr;
-  for (uint16_t i = 0; i < num_pages; i++) {
-    /* touch the page before getting its IOVA */
-    *(volatile char*)addr = 0;
-    pages[i].iova = rte_mem_virt2iova(addr);
-    pages[i].addr = addr;
-    void* next_addr = RTE_PTR_ALIGN(RTE_PTR_ADD(addr, 1), hugepage_sz);
-    pages[i].len = RTE_PTR_DIFF(next_addr, addr);
-    addr = next_addr;
-    info("%s(%d,%d), seg %u, va %p, iova 0x%" PRIx64 ", len %" PRIu64 "\n", __func__,
-         s->idx, frame_info->idx, i, pages[i].addr, pages[i].iova, pages[i].len);
-  }
-  frame_info->page_table = pages;
-  frame_info->page_table_len = num_pages;
-
-  return 0;
-}
-
-static inline bool rv_frame_payload_cross_page(struct st_rx_video_session_impl* s,
-                                               struct st_frame_trans* frame_info,
-                                               size_t offset, size_t len) {
-  if (frame_info->page_table_len == 0) return false;
-  return ((rv_frame_get_offset_iova(s, frame_info, offset + len - 1) -
-           rv_frame_get_offset_iova(s, frame_info, offset)) != len - 1);
 }
 
 static int rv_alloc_frames(struct mtl_main_impl* impl,
@@ -810,6 +745,20 @@ static int rv_alloc_frames(struct mtl_main_impl* impl,
     }
   }
 
+  if (impl->iova_mode == RTE_IOVA_PA && s->dma_dev) {
+    /* use memzone to alloc physical continious memory */
+    const struct rte_memzone* mz =
+        rte_memzone_reserve(s->ops.name, s->st20_fb_size * s->st20_frames_cnt, soc_id,
+                            RTE_MEMZONE_2MB | RTE_MEMZONE_SIZE_HINT_ONLY);
+    if (!mz) {
+      err("%s(%d), rte_memzone_reserve %" PRIu64 " fail\n", __func__, idx,
+          s->st20_fb_size * s->st20_frames_cnt);
+      return -ENOMEM;
+    }
+    s->st20_frames_mz = mz;
+    info("%s(%d), use rte_memzone allocation\n", __func__, idx);
+  }
+
   for (int i = 0; i < s->st20_frames_cnt; i++) {
     st20_frame = &s->st20_frames[i];
 
@@ -839,8 +788,12 @@ static int rv_alloc_frames(struct mtl_main_impl* impl,
       st20_frame->iova = 0; /* detect later */
       st20_frame->addr = NULL;
       st20_frame->flags = 0;
+    } else if (s->st20_frames_mz) {
+      st20_frame->iova = s->st20_frames_mz->iova + i * s->st20_fb_size;
+      st20_frame->addr = s->st20_frames_mz->addr + i * s->st20_fb_size;
+      st20_frame->flags = ST_FT_FLAG_RTE_MEMZONE;
     } else {
-      frame = mt_rte_zmalloc_socket(size, soc_id);
+      void* frame = mt_rte_zmalloc_socket(size, soc_id);
       if (!frame) {
         err("%s(%d), frame malloc %" PRIu64 " fail for %d\n", __func__, idx, size, i);
         rv_free_frames(s);
@@ -849,13 +802,6 @@ static int rv_alloc_frames(struct mtl_main_impl* impl,
       st20_frame->flags = ST_FT_FLAG_RTE_MALLOC;
       st20_frame->addr = frame;
       st20_frame->iova = rte_malloc_virt2iova(frame);
-      if (impl->iova_mode == RTE_IOVA_PA && s->dma_dev) {
-        ret = rv_frame_create_page_table(impl, s, st20_frame);
-        if (ret < 0) {
-          rv_free_frames(s);
-          return ret;
-        }
-      }
     }
   }
 
@@ -1753,13 +1699,12 @@ static int rv_handle_frame_pkt(struct st_rx_video_session_impl* s, struct rte_mb
       rte_memcpy(slot->frame->addr + (line1_number + 1) * s->st20_linesize,
                  payload + line1_length, payload_length - line1_length);
     } else if (dma_dev && (payload_length > ST_RX_VIDEO_DMA_MIN_SIZE) &&
-               !mt_dma_full(dma_dev) &&
-               !rv_frame_payload_cross_page(s, slot->frame, offset, payload_length)) {
+               !mt_dma_full(dma_dev)) {
       rte_iova_t payload_iova =
           rte_pktmbuf_iova_offset(mbuf, sizeof(struct st_rfc4175_video_hdr));
       if (extra_rtp) payload_iova += sizeof(*extra_rtp);
-      ret = mt_dma_copy(dma_dev, rv_frame_get_offset_iova(s, slot->frame, offset),
-                        payload_iova, payload_length);
+      ret =
+          mt_dma_copy(dma_dev, slot->frame->iova + offset, payload_iova, payload_length);
       if (ret < 0) {
         /* use cpu copy if dma copy fail */
         rte_memcpy(slot->frame->addr + offset, payload, payload_length);
