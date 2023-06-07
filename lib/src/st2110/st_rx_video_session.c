@@ -747,12 +747,12 @@ static int rv_alloc_frames(struct mtl_main_impl* impl,
 
   if (impl->iova_mode == RTE_IOVA_PA && s->dma_dev) {
     /* use memzone to alloc physical continious memory */
-    const struct rte_memzone* mz =
-        rte_memzone_reserve(s->ops.name, s->st20_fb_size * s->st20_frames_cnt, soc_id,
-                            RTE_MEMZONE_2MB | RTE_MEMZONE_SIZE_HINT_ONLY);
+    const struct rte_memzone* mz = rte_memzone_reserve(
+        s->ops.name, s->st20_fb_size * s->st20_frames_cnt, soc_id,
+        RTE_MEMZONE_2MB | RTE_MEMZONE_SIZE_HINT_ONLY | RTE_MEMZONE_IOVA_CONTIG);
     if (!mz) {
-      err("%s(%d), rte_memzone_reserve %" PRIu64 " fail\n", __func__, idx,
-          s->st20_fb_size * s->st20_frames_cnt);
+      err("%s(%d), rte_memzone_reserve %" PRIu64 " fail, errno %s\n", __func__, idx,
+          s->st20_fb_size * s->st20_frames_cnt, strerror(errno));
       return -ENOMEM;
     }
     s->st20_frames_mz = mz;
