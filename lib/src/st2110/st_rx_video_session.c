@@ -1660,6 +1660,22 @@ static int rv_handle_frame_pkt(struct st_rx_video_session_impl* s, struct rte_mb
   slot->second_field = (line1_number & ST20_SECOND_FIELD) ? true : false;
   line1_number &= ~ST20_SECOND_FIELD;
 
+  /* caculate offset */
+  uint32_t offset;
+  offset = line1_number * (uint32_t)s->st20_linesize +
+           line1_offset / s->st20_pg.coverage * s->st20_pg.size;
+  size_t payload_length = line1_length;
+  if (extra_rtp) payload_length += ntohs(extra_rtp->row_length);
+  if ((offset + payload_length) >
+      s->st20_fb_size + s->st20_bytes_in_line - s->st20_linesize) {
+    dbg("%s(%d,%d): invalid offset %u frame buffer size %" PRIu64 "\n", __func__, s->idx,
+        s_port, offset, s->st20_fb_size);
+    dbg("%s, number %u offset %u len %u\n", __func__, line1_number, line1_offset,
+        line1_length);
+    s->stat_pkts_offset_dropped++;
+    return -EIO;
+  }
+
   /* check if the same pkt got already */
   if (slot->seq_id_got) {
     if (seq_id_u32 >= slot->seq_id_base_u32)
@@ -1682,11 +1698,20 @@ static int rv_handle_frame_pkt(struct st_rx_video_session_impl* s, struct rte_mb
     }
   } else {
     /* the first pkt should always dispatch to control thread */
-    if (!line1_number && !line1_offset && ctrl_thread) { /* first packet */
-      slot->seq_id_base_u32 = seq_id_u32;
+    if (ctrl_thread) {
+      if (offset % payload_length) { /* GPM_SL packing */
+        int bytes_in_pkt = ST_PKT_MAX_ETHER_BYTES - sizeof(struct st_rfc4175_video_hdr);
+        int pkts_in_line = (s->st20_bytes_in_line / bytes_in_pkt) + 1;
+        int pixel_in_pkt = (ops->width + pkts_in_line - 1) / pkts_in_line;
+        pkt_idx = line1_number * pkts_in_line + line1_offset / pixel_in_pkt;
+        dbg("%s(%d,%d), GPM_SL pkts_in_line %d pixel_in_pkt %d pkt_idx %d\n", __func__,
+            s->idx, s_port, pkts_in_line, pixel_in_pkt, pkt_idx);
+      } else {
+        pkt_idx = offset / payload_length;
+      }
+      slot->seq_id_base_u32 = seq_id_u32 - pkt_idx;
       slot->seq_id_got = true;
-      mt_bitmap_test_and_set(bitmap, 0);
-      pkt_idx = 0;
+      mt_bitmap_test_and_set(bitmap, pkt_idx);
       dbg("%s(%d,%d), seq_id_base %d tmstamp %u\n", __func__, s->idx, s_port, seq_id_u32,
           tmstamp);
     } else {
@@ -1695,22 +1720,6 @@ static int rv_handle_frame_pkt(struct st_rx_video_session_impl* s, struct rte_mb
       s->stat_pkts_idx_dropped++;
       return -EIO;
     }
-  }
-
-  /* caculate offset */
-  uint32_t offset;
-  offset = line1_number * (uint32_t)s->st20_linesize +
-           line1_offset / s->st20_pg.coverage * s->st20_pg.size;
-  size_t payload_length = line1_length;
-  if (extra_rtp) payload_length += ntohs(extra_rtp->row_length);
-  if ((offset + payload_length) >
-      s->st20_fb_size + s->st20_bytes_in_line - s->st20_linesize) {
-    dbg("%s(%d,%d): invalid offset %u frame buffer size %" PRIu64 "\n", __func__, s->idx,
-        s_port, offset, s->st20_fb_size);
-    dbg("%s, number %u offset %u len %u\n", __func__, line1_number, line1_offset,
-        line1_length);
-    s->stat_pkts_offset_dropped++;
-    return -EIO;
   }
 
   bool dma_copy = false;
@@ -2020,22 +2029,16 @@ static int rv_handle_st22_pkt(struct st_rx_video_session_impl* s, struct rte_mbu
           return -EIO;
         }
       }
-      slot->seq_id_base = seq_id;
-      slot->st22_payload_length = payload_length;
-      slot->seq_id_got = true;
-      mt_bitmap_test_and_set(bitmap, 0);
-      pkt_idx = 0;
-      dbg("%s(%d,%d), get seq_id %d tmstamp %u, p_counter %u sep_counter %u, "
-          "payload_length %u\n",
-          __func__, s->idx, s_port, seq_id, tmstamp, p_counter, sep_counter,
-          payload_length);
-    } else {
-      dbg("%s(%d,%d), drop seq_id %d tmstamp %u as base seq not got, p_counter %u "
-          "sep_counter %u\n",
-          __func__, s->idx, s_port, seq_id, tmstamp, p_counter, sep_counter);
-      s->stat_pkts_idx_dropped++;
-      return -EIO;
     }
+    pkt_idx = pkt_counter;
+    slot->seq_id_base = seq_id - pkt_idx;
+    slot->st22_payload_length = payload_length;
+    slot->seq_id_got = true;
+    mt_bitmap_test_and_set(bitmap, pkt_idx);
+    dbg("%s(%d,%d), get seq_id %d tmstamp %u, p_counter %u sep_counter %u, "
+        "payload_length %u\n",
+        __func__, s->idx, s_port, seq_id, tmstamp, p_counter, sep_counter,
+        payload_length);
   }
 
   if (!slot->frame) {
