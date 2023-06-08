@@ -76,19 +76,18 @@ static int upl_uinit_ctx(struct upl_ctx* ctx) {
   if (ctx->upl_entires) {
     for (int i = 0; i < ctx->upl_entires_nb; i++) {
       struct upl_base_entry* entry = upl_get_upl_entry(ctx, i);
+      if (!entry) continue;
       if (ctx->child && !entry->child)
         continue; /* child only check the fd created by child */
-      if (entry) {
-        warn("%s, upl still active on %d, upl type %s\n", __func__, i,
-             upl_type_name(entry->upl_type));
-      }
+      warn("%s, upl still active on %d, upl type %s\n", __func__, i,
+           upl_type_name(entry->upl_type));
     }
-    mufd_hp_free(ctx->upl_entires);
+    upl_free(ctx->upl_entires);
     ctx->upl_entires = NULL;
   }
 
   upl_set_ctx(NULL);
-  mufd_hp_free(ctx);
+  upl_free(ctx);
 
   return 0;
 }
@@ -132,7 +131,7 @@ static int upl_resolve_libc_fn(struct upl_functions* fns) {
 }
 
 static struct upl_ctx* upl_create_ctx(bool child) {
-  struct upl_ctx* ctx = mufd_hp_zmalloc(sizeof(*ctx), MTL_PORT_P);
+  struct upl_ctx* ctx = upl_zmalloc(sizeof(*ctx));
   if (!ctx) {
     err("%s, ctx malloc fail\n", __func__);
     return NULL;
@@ -140,8 +139,7 @@ static struct upl_ctx* upl_create_ctx(bool child) {
 
   ctx->log_level = MTL_LOG_LEVEL_INFO;
   ctx->upl_entires_nb = 1024 * 10; /* max fd we support */
-  ctx->upl_entires =
-      mufd_hp_zmalloc(sizeof(*ctx->upl_entires) * ctx->upl_entires_nb, MTL_PORT_P);
+  ctx->upl_entires = upl_zmalloc(sizeof(*ctx->upl_entires) * ctx->upl_entires_nb);
   if (!ctx->upl_entires) {
     err("%s, upl_entires malloc fail, nb %d\n", __func__, ctx->upl_entires_nb);
     upl_uinit_ctx(ctx);
@@ -240,7 +238,7 @@ static int upl_stat_dump(void* priv) {
 }
 
 static int upl_epoll_create(struct upl_ctx* ctx, int efd) {
-  struct upl_efd_entry* entry = mufd_hp_zmalloc(sizeof(*entry), MTL_PORT_P);
+  struct upl_efd_entry* entry = upl_zmalloc(sizeof(*entry));
   if (!entry) {
     err("%s, entry malloc fail for efd %d\n", __func__, efd);
     UPL_ERR_RET(ENOMEM);
@@ -265,7 +263,7 @@ static int upl_epoll_close(struct upl_efd_entry* entry) {
     dbg("%s(%d), kfd %d not close\n", __func__, entry->efd, item->ufd->kfd);
     item->ufd->efd = -1;
     TAILQ_REMOVE(&entry->fds, item, next);
-    mufd_hp_free(item);
+    upl_free(item);
   }
   pthread_mutex_unlock(&entry->mutex);
 
@@ -278,9 +276,9 @@ static inline bool upl_epoll_has_ufd(struct upl_efd_entry* efd_entry) {
   return TAILQ_EMPTY(&efd_entry->fds) ? false : true;
 }
 
-static int upl_efd_ctl_add(struct upl_efd_entry* efd, struct upl_ufd_entry* ufd,
-                           struct epoll_event* event) {
-  struct upl_efd_fd_item* item = mufd_hp_zmalloc(sizeof(*item), MTL_PORT_P);
+static int upl_efd_ctl_add(struct upl_ctx* ctx, struct upl_efd_entry* efd,
+                           struct upl_ufd_entry* ufd, struct epoll_event* event) {
+  struct upl_efd_fd_item* item = upl_zmalloc(sizeof(*item));
   if (!item) {
     err("%s, malloc fail\n", __func__);
     UPL_ERR_RET(ENOMEM);
@@ -290,7 +288,8 @@ static int upl_efd_ctl_add(struct upl_efd_entry* efd, struct upl_ufd_entry* ufd,
 
   dbg("%s, efd %p ufd %p\n", __func__, efd, ufd);
   pthread_mutex_lock(&efd->mutex);
-  ufd->efd = efd->efd;
+  /* todo: how to update ufd for child efd */
+  if (!ctx->child) ufd->efd = efd->efd;
   TAILQ_INSERT_TAIL(&efd->fds, item, next);
   efd->fds_cnt++;
   pthread_mutex_unlock(&efd->mutex);
@@ -299,7 +298,8 @@ static int upl_efd_ctl_add(struct upl_efd_entry* efd, struct upl_ufd_entry* ufd,
   return 0;
 }
 
-static int upl_efd_ctl_del(struct upl_efd_entry* efd, struct upl_ufd_entry* ufd) {
+static int upl_efd_ctl_del(struct upl_ctx* ctx, struct upl_efd_entry* efd,
+                           struct upl_ufd_entry* ufd) {
   struct upl_efd_fd_item *item, *tmp_item;
 
   pthread_mutex_lock(&efd->mutex);
@@ -308,10 +308,11 @@ static int upl_efd_ctl_del(struct upl_efd_entry* efd, struct upl_ufd_entry* ufd)
     if (item->ufd == ufd) {
       /* found the matched item, remove it */
       TAILQ_REMOVE(&efd->fds, item, next);
-      ufd->efd = -1;
+      /* todo: how to update ufd for child efd */
+      if (!ctx->child) ufd->efd = -1;
       efd->fds_cnt--;
       pthread_mutex_unlock(&efd->mutex);
-      mufd_hp_free(item);
+      upl_free(item);
       dbg("%s(%d), del ufd %d succ\n", __func__, efd->efd, ufd->kfd);
       return 0;
     }
@@ -629,7 +630,7 @@ static int upl_ufd_close(struct upl_ufd_entry* ufd_entry) {
     struct upl_ctx* ctx = ufd_entry->base.parent;
     struct upl_efd_entry* efd_entry = upl_get_efd_entry(ctx, efd);
     info("%s(%d), remove epoll ctl on efd %d\n", __func__, kfd, efd);
-    upl_efd_ctl_del(efd_entry, ufd_entry);
+    upl_efd_ctl_del(ctx, efd_entry, ufd_entry);
   }
 
   mufd_close(ufd);
@@ -674,6 +675,7 @@ int socket(int domain, int type, int protocol) {
     return kfd; /* return kfd for fallback path */
   }
 
+  /* use rte malloc as it will be shared by child */
   struct upl_ufd_entry* entry = mufd_hp_zmalloc(sizeof(*entry), MTL_PORT_P);
   if (!entry) {
     err("%s, entry malloc fail for ufd %d\n", __func__, ufd);
@@ -711,15 +713,20 @@ int close(int fd) {
 
   if (entry->upl_type == UPL_ENTRY_UFD) {
     struct upl_ufd_entry* ufd_entry = (struct upl_ufd_entry*)entry;
-    upl_ufd_close(ufd_entry);
+    if (ctx->child) {
+      warn("%s(%d), skip ufd close for child\n", __func__, fd);
+    } else {
+      upl_ufd_close(ufd_entry);
+      mufd_hp_free(entry);
+    }
   } else if (entry->upl_type == UPL_ENTRY_EPOLL) {
     struct upl_efd_entry* efd_entry = (struct upl_efd_entry*)entry;
     upl_epoll_close(efd_entry);
+    upl_free(entry);
   } else {
-    warn("%s(%d), unknow upl type %d\n", __func__, fd, entry->upl_type);
+    err("%s(%d), unknow upl type %d\n", __func__, fd, entry->upl_type);
   }
 
-  mufd_hp_free(entry);
   upl_clear_upl_entry(ctx, fd);
   /* close the kfd */
   return libc_fn.close(fd);
@@ -995,9 +1002,9 @@ int epoll_ctl(int epfd, int op, int fd, struct epoll_event* event) {
 
   dbg("%s(%d), efd %p ufd %p\n", __func__, epfd, efd, ufd);
   if (op == EPOLL_CTL_ADD) {
-    return upl_efd_ctl_add(efd, ufd, event);
+    return upl_efd_ctl_add(ctx, efd, ufd, event);
   } else if (op == EPOLL_CTL_DEL) {
-    return upl_efd_ctl_del(efd, ufd);
+    return upl_efd_ctl_del(ctx, efd, ufd);
   } else if (op == EPOLL_CTL_MOD) {
     return upl_efd_ctl_mod(efd, ufd, event);
   } else {

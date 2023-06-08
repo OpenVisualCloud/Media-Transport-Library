@@ -980,8 +980,9 @@ dequeue:
   unsigned int us = (mt_get_tsc(impl) - start_ts) / NS_PER_US;
   unsigned int timeout = s->rx_timeout_us;
   if ((us < timeout) && udp_alive(s)) {
-    mur_client_timedwait(s->rxq, timeout - us);
-    if (s->rx_poll_sleep_us) mt_sleep_us(s->rx_poll_sleep_us);
+    if (s->rx_poll_sleep_us) {
+      mur_client_timedwait(s->rxq, timeout - us, s->rx_poll_sleep_us);
+    }
     goto dequeue;
   }
 
@@ -1077,8 +1078,9 @@ dequeue:
   unsigned int us = (mt_get_tsc(impl) - start_ts) / NS_PER_US;
   unsigned int timeout = s->rx_timeout_us;
   if ((us < timeout) && udp_alive(s)) {
-    mur_client_timedwait(s->rxq, timeout - us);
-    if (s->rx_poll_sleep_us) mt_sleep_us(s->rx_poll_sleep_us);
+    if (s->rx_poll_sleep_us) {
+      mur_client_timedwait(s->rxq, timeout - us, s->rx_poll_sleep_us);
+    }
     goto dequeue;
   }
 
@@ -1141,10 +1143,8 @@ rx_poll:
   /* check if timeout */
   int ms = (mt_get_tsc(impl) - start_ts) / NS_PER_MS;
   if (((ms < timeout) || (timeout < 0)) && udp_alive(s)) {
-    mur_client_timedwait(s->rxq, timeout - ms);
     if (s->rx_poll_sleep_us) {
-      dbg("%s(%d), sleep %u us\n", __func__, s->idx, s->rx_poll_sleep_us);
-      mt_sleep_us(s->rx_poll_sleep_us);
+      mur_client_timedwait(s->rxq, (timeout - ms) * US_PER_MS, s->rx_poll_sleep_us);
     }
     goto rx_poll;
   }

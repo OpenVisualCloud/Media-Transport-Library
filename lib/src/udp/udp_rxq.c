@@ -518,8 +518,15 @@ uint16_t mur_client_rx(struct mur_client* c) {
     return urq_rx(c->q);
 }
 
-int mur_client_timedwait(struct mur_client* c, unsigned int us) {
-  if (!urc_lcore_mode(c)) return 0; /* return directly if not lcore mode */
+int mur_client_timedwait(struct mur_client* c, unsigned int timedwait_us,
+                         unsigned int poll_sleep_us) {
+  if (!urc_lcore_mode(c)) {
+    if (poll_sleep_us) {
+      dbg("%s(%d), sleep %u us\n", __func__, c->idx, poll_sleep_us);
+      mt_sleep_us(poll_sleep_us);
+    }
+    return 0; /* return directly if not lcore mode */
+  }
 
   int ret;
 
@@ -529,7 +536,7 @@ int mur_client_timedwait(struct mur_client* c, unsigned int us) {
   struct timespec time;
   clock_gettime(MT_THREAD_TIMEDWAIT_CLOCK_ID, &time);
   uint64_t ns = mt_timespec_to_ns(&time);
-  ns += us * NS_PER_US;
+  ns += timedwait_us * NS_PER_US;
   mt_ns_to_timespec(ns, &time);
   ret = mt_pthread_cond_timedwait(&c->lcore_wake_cond, &c->lcore_wake_mutex, &time);
   dbg("%s(%u), timedwait ret %d\n", __func__, q->dst_port, ret);
