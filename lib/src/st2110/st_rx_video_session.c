@@ -1699,7 +1699,14 @@ static int rv_handle_frame_pkt(struct st_rx_video_session_impl* s, struct rte_mb
   } else {
     /* the first pkt should always dispatch to control thread */
     if (ctrl_thread) {
-      pkt_idx = offset / payload_length; /* to fix for GPM_SL */
+      if (offset % payload_length) { /* GPM_SL packing */
+        int bytes_in_pkt = ST_PKT_MAX_ETHER_BYTES - sizeof(struct st_rfc4175_video_hdr);
+        int pkts_in_line = (s->st20_bytes_in_line / bytes_in_pkt) + 1;
+        int pixel_in_pkt = (ops->width + pkts_in_line - 1) / pkts_in_line;
+        pkt_idx = line1_number * pkts_in_line + line1_offset / pixel_in_pkt;
+      } else {
+        pkt_idx = offset / payload_length;
+      }
       slot->seq_id_base_u32 = seq_id_u32 - pkt_idx;
       slot->seq_id_got = true;
       mt_bitmap_test_and_set(bitmap, pkt_idx);
