@@ -106,9 +106,9 @@ struct shmid_ds {
   void* shm_unused3;
 };
 
-int inline flock(int fd, int operation) { return 0; }
+static int inline flock(int fd, int operation) { return 0; }
 
-key_t inline ftok(const char* path, int id) { return 0; }
+static key_t inline ftok(const char* path, int id) { return 0; }
 
 void* shmat(int shmid, const void* shmaddr, int shmflg);
 int shmctl(int shmid, int cmd, struct shmid_ds* buf);
@@ -117,10 +117,13 @@ int shmget(key_t key, size_t size, int shmflg);
 
 typedef intptr_t pthread_cond_t;
 typedef int pthread_condattr_t;
+
 #ifdef __MTL_LIB_BUILD__  // only lib need this typedef
 typedef rte_cpuset_t cpu_set_t;
 #endif
+
 #define localtime_r(T, Tm) (localtime_s(Tm, T) ? NULL : Tm)
+
 int pthread_cond_signal(pthread_cond_t* cv);
 int pthread_cond_init(pthread_cond_t* cv, const pthread_condattr_t* a);
 int pthread_cond_wait(pthread_cond_t* cv, pthread_mutex_t* external_mutex);
@@ -128,4 +131,7 @@ int pthread_cond_timedwait(pthread_cond_t* cond, pthread_mutex_t* mutex,
                            const struct timespec* time);
 int pthread_cond_destroy(pthread_cond_t* cv);
 int pthread_mutex_trylock(pthread_mutex_t* mutex);
+
+static inline pid_t getpid() { return GetCurrentProcessId(); }
+
 #endif
