@@ -1650,6 +1650,16 @@ static int rv_handle_frame_pkt(struct st_rx_video_session_impl* s, struct rte_mb
     return -EIO;
   }
 
+  /* find the target slot by tmstamp */
+  struct st_rx_video_slot_impl* slot = rv_slot_by_tmstamp(s, tmstamp, NULL);
+  if (!slot || !slot->frame) {
+    s->stat_pkts_no_slot++;
+    return -EIO;
+  }
+  uint8_t* bitmap = slot->frame_bitmap;
+  slot->second_field = (line1_number & ST20_SECOND_FIELD) ? true : false;
+  line1_number &= ~ST20_SECOND_FIELD;
+
   /* caculate offset */
   uint32_t offset;
   offset = line1_number * (uint32_t)s->st20_linesize +
@@ -1665,16 +1675,6 @@ static int rv_handle_frame_pkt(struct st_rx_video_session_impl* s, struct rte_mb
     s->stat_pkts_offset_dropped++;
     return -EIO;
   }
-
-  /* find the target slot by tmstamp */
-  struct st_rx_video_slot_impl* slot = rv_slot_by_tmstamp(s, tmstamp, NULL);
-  if (!slot || !slot->frame) {
-    s->stat_pkts_no_slot++;
-    return -EIO;
-  }
-  uint8_t* bitmap = slot->frame_bitmap;
-  slot->second_field = (line1_number & ST20_SECOND_FIELD) ? true : false;
-  line1_number &= ~ST20_SECOND_FIELD;
 
   /* check if the same pkt got already */
   if (slot->seq_id_got) {
@@ -1704,6 +1704,8 @@ static int rv_handle_frame_pkt(struct st_rx_video_session_impl* s, struct rte_mb
         int pkts_in_line = (s->st20_bytes_in_line / bytes_in_pkt) + 1;
         int pixel_in_pkt = (ops->width + pkts_in_line - 1) / pkts_in_line;
         pkt_idx = line1_number * pkts_in_line + line1_offset / pixel_in_pkt;
+        dbg("%s(%d,%d), GPM_SL pkts_in_line %d pixel_in_pkt %d pkt_idx %d\n", __func__,
+            s->idx, s_port, pkts_in_line, pixel_in_pkt, pkt_idx);
       } else {
         pkt_idx = offset / payload_length;
       }
