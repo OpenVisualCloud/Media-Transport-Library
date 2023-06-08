@@ -79,6 +79,9 @@ static int rx_st22p_open_source(struct rx_st22p_sample_ctx* s, const char* file)
 
 static void rx_st22p_consume_frame(struct rx_st22p_sample_ctx* s,
                                    struct st_frame* frame) {
+  s->fb_recv++;
+  if (s->dst_fd < 0) return; /* no dump */
+
   if (s->dst_cursor + s->frame_size > s->dst_end) s->dst_cursor = s->dst_begin;
 
   uint8_t planes = st_frame_fmt_planes(frame->fmt);
@@ -89,8 +92,6 @@ static void rx_st22p_consume_frame(struct rx_st22p_sample_ctx* s,
     dst += plane_sz;
   }
   s->dst_cursor += s->frame_size;
-
-  s->fb_recv++;
 }
 
 static void* rx_st22p_frame_thread(void* arg) {
@@ -180,9 +181,11 @@ int main(int argc, char** argv) {
     app[i]->handle = rx_handle;
 
     app[i]->frame_size = st22p_rx_frame_size(rx_handle);
-    ret = rx_st22p_open_source(app[i], ctx.rx_url);
-    if (ret < 0) {
-      goto error;
+    if (ctx.rx_dump) {
+      ret = rx_st22p_open_source(app[i], ctx.rx_url);
+      if (ret < 0) {
+        goto error;
+      }
     }
 
     ret = pthread_create(&app[i]->frame_thread, NULL, rx_st22p_frame_thread, app[i]);
