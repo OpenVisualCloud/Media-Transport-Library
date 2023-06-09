@@ -1145,6 +1145,7 @@ static void rv_st22_frame_notify(struct st_rx_video_session_impl* s,
       slot->frame = NULL;
     }
   }
+  s->st22_expect_frame_size = 0;
 }
 
 static void rv_slice_notify(struct st_rx_video_session_impl* s,
@@ -1360,6 +1361,7 @@ static void rv_st22_slot_full_frame(struct st_rx_video_session_impl* s,
   slot->frame = NULL; /* frame pass to app */
 }
 
+#if 0
 static void rv_st22_slot_drop_frame(struct st_rx_video_session_impl* s,
                                     struct st_rx_video_slot_impl* slot) {
   rv_put_frame(s, slot->frame);
@@ -1370,6 +1372,7 @@ static void rv_st22_slot_drop_frame(struct st_rx_video_session_impl* s,
   slot->pkts_received = 0;
   slot->pkts_redundant_received = 0;
 }
+#endif
 
 static int rv_free_dma(struct mtl_main_impl* impl, struct st_rx_video_session_impl* s) {
   if (s->dma_dev) {
@@ -2067,17 +2070,21 @@ static int rv_handle_st22_pkt(struct st_rx_video_session_impl* s, struct rte_mbu
   s->stat_pkts_received++;
   slot->pkts_received++;
 
+  /* update the expect frame size */
+  if (rtp->base.marker) s->st22_expect_frame_size = offset + payload_length;
+
   /* check if frame is full */
-  if (rtp->base.marker) {
-    size_t expect_frame_size = offset + payload_length;
+  if (s->st22_expect_frame_size) {
     size_t rece_frame_size = rv_slot_get_frame_size(s, slot);
 
-    dbg("%s(%d,%d): marker get, frame size %" PRIu64 " %" PRIu64 ", tmstamp %u\n",
-        __func__, s->idx, s_port, rece_frame_size, expect_frame_size, tmstamp);
-    if (expect_frame_size == rece_frame_size) {
+    dbg("%s(%d,%d): marker got, frame size %" PRIu64 " %" PRIu64 ", tmstamp %u\n",
+        __func__, s->idx, s_port, rece_frame_size, s->st22_expect_frame_size, tmstamp);
+    if (s->st22_expect_frame_size == rece_frame_size) {
       rv_st22_slot_full_frame(s, slot);
     } else {
-      rv_st22_slot_drop_frame(s, slot);
+      dbg("%s(%d,%d): still has %" PRIu64
+          " bytes unarrived pkt before marker, tmstamp %u\n",
+          __func__, s->idx, s_port, s->st22_expect_frame_size - rece_frame_size, tmstamp);
     }
   }
 
@@ -2934,6 +2941,7 @@ static int rv_attach(struct mtl_main_impl* impl, struct st_rx_video_sessions_mgr
   rte_atomic32_set(&s->dma_previous_busy_cnt, 0);
   s->cpu_busy_score = 0;
   s->dma_busy_score = 0;
+  s->st22_expect_frame_size = 0;
 
   ret = rv_init_hw(impl, s);
   if (ret < 0) {
