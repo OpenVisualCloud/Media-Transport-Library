@@ -606,7 +606,8 @@ struct st_rx_video_session_impl {
   size_t st20_uframe_size; /* size per user frame */
   struct st20_rx_uframe_pg_meta pg_meta;
 
-  uint32_t st22_ops_flags; /* copy of st22_rx_ops->flags */
+  uint32_t st22_ops_flags;       /* copy of st22_rx_ops->flags */
+  size_t st22_expect_frame_size; /* total frame size calculated from marker */
 
   /* rtp info */
   struct rte_ring* rtps_ring;
