@@ -1,6 +1,6 @@
-From a5d487011a4711f5c33af7deffef8e792e4ce007 Mon Sep 17 00:00:00 2001
+From 578e611c80f20b54b57e04a7a4dec4c552cdc502 Mon Sep 17 00:00:00 2001
 From: gongxiao-intel <xiaoyan.gong@intel.com>
-Date: Mon, 29 May 2023 12:06:19 +0000
+Date: Mon, 12 Jun 2023 13:05:39 +0000
 Subject: [PATCH 9/9] igc: optimize LaunchTime Tx, Qbv configuration and PTP 
  for SMPTE 2110-21 n-type transmission of 1080p 50fps video.
 
@@ -15,13 +15,15 @@ other queues is opened at the 784us from the end of cycle.
 3. Optimize time sync precision by adding clock freqency adjustment.
 
 4. Fix remote ptp4l NOT receiving DELAY_REQ message while send PTP message over UDP.
+
+5. Fix enable time sync without checking devices started flag.
 ---
  drivers/net/igc/base/igc_defines.h |  29 +-
  drivers/net/igc/base/igc_hw.h      |   2 +-
  drivers/net/igc/base/igc_i225.c    |  16 +-
  drivers/net/igc/base/igc_phy.c     |   6 +-
  drivers/net/igc/base/igc_regs.h    |  29 +-
- drivers/net/igc/igc_ethdev.c       | 406 ++++++++++++++-----------
+ drivers/net/igc/igc_ethdev.c       | 452 ++++++++++++++++------------
  drivers/net/igc/igc_ethdev.h       |   5 +-
  drivers/net/igc/igc_flow.c         |   8 +-
  drivers/net/igc/igc_txrx.c         | 455 ++++++++++++++++++++++-------
@@ -32,7 +34,7 @@ other queues is opened at the 784us from the end of cycle.
  lib/ethdev/rte_ethdev.c            |  19 ++
  lib/ethdev/rte_ethdev.h            |  19 ++
  lib/ethdev/version.map             |   1 +
- 16 files changed, 702 insertions(+), 394 deletions(-)
+ 16 files changed, 727 insertions(+), 415 deletions(-)
 
 diff --git a/drivers/net/igc/base/igc_defines.h b/drivers/net/igc/base/igc_defines.h
 index 280570b157..30fd7affda 100644
@@ -219,7 +221,7 @@ index e423814291..39d8649983 100644
 +#define IGC_DTXMXPKTSZ_DEFAULT    0x98 /* 9728-byte Jumbo frames */
  #endif
 diff --git a/drivers/net/igc/igc_ethdev.c b/drivers/net/igc/igc_ethdev.c
-index 58c4f80927..dd0b5f0deb 100644
+index 58c4f80927..c8bde1317d 100644
 --- a/drivers/net/igc/igc_ethdev.c
 +++ b/drivers/net/igc/igc_ethdev.c
 @@ -7,7 +7,7 @@
@@ -517,7 +519,7 @@ index 58c4f80927..dd0b5f0deb 100644
  	return 0;
  }
  
-@@ -2671,15 +2713,39 @@ eth_igc_vlan_tpid_set(struct rte_eth_dev *dev,
+@@ -2671,55 +2713,78 @@ eth_igc_vlan_tpid_set(struct rte_eth_dev *dev,
  }
  
  static int
@@ -526,46 +528,33 @@ index 58c4f80927..dd0b5f0deb 100644
  {
  	struct igc_hw *hw = IGC_DEV_PRIVATE_HW(dev);
  	struct timespec system_time;
-+
-+	clock_gettime(CLOCK_REALTIME, &system_time);
+-	struct igc_rx_queue *rxq;
+-	uint32_t val;
+-	uint16_t i;
+-
+-	IGC_WRITE_REG(hw, IGC_TSAUXC, 0x0);
+ 
+ 	clock_gettime(CLOCK_REALTIME, &system_time);
+-	IGC_WRITE_REG(hw, IGC_SYSTIML, system_time.tv_nsec);
+-	IGC_WRITE_REG(hw, IGC_SYSTIMH, system_time.tv_sec);
 +	*clock = system_time.tv_sec * NSEC_PER_SEC + system_time.tv_nsec;
 +	IGC_WRITE_REG(hw, IGC_TIMINCA, 0);
 +	
 +	return 0;
 +}
-+
+ 
+-	/* Enable timestamping of received PTP packets. */
+-	val = IGC_READ_REG(hw, IGC_RXPBS);
+-	val |= IGC_RXPBS_CFG_TS_EN;
+-	IGC_WRITE_REG(hw, IGC_RXPBS, val);
 +static int
 +igc_timesync_enable(struct rte_eth_dev *dev)
 +{
 +	struct igc_hw *hw = IGC_DEV_PRIVATE_HW(dev);
 +	uint32_t tsauxc, val;
 +	struct timespec system_time;
- 	struct igc_rx_queue *rxq;
--	uint32_t val;
- 	uint16_t i;
- 
-+	IGC_WRITE_REG(hw, IGC_TIMINCA, 0x0);
-+	IGC_WRITE_REG(hw, IGC_SYSTIML, 0x0);
-+	IGC_WRITE_REG(hw, IGC_SYSTIMH, 0x0);
-+
-+	tsauxc = IGC_READ_REG(hw, IGC_TSAUXC);
-+	tsauxc &= ~0x80000000;
-+	IGC_WRITE_REG(hw, IGC_TSAUXC, tsauxc);
-+
- 	IGC_WRITE_REG(hw, IGC_TSAUXC, 0x0);
-+	IGC_WRITE_REG(hw, IGC_TSSDP, 0x0);
-+	IGC_WRITE_REG(hw, IGC_TSIM, 0x10);
-+	IGC_WRITE_REG(hw, IGC_IMS, 1 << 19);
- 
- 	clock_gettime(CLOCK_REALTIME, &system_time);
- 	IGC_WRITE_REG(hw, IGC_SYSTIML, system_time.tv_nsec);
-@@ -2687,16 +2753,13 @@ eth_igc_timesync_enable(struct rte_eth_dev *dev)
- 
- 	/* Enable timestamping of received PTP packets. */
- 	val = IGC_READ_REG(hw, IGC_RXPBS);
--	val |= IGC_RXPBS_CFG_TS_EN;
-+	val |= 0x80000000;
- 	IGC_WRITE_REG(hw, IGC_RXPBS, val);
++	struct igc_rx_queue *rxq;
++	uint16_t i;
  
 -	for (i = 0; i < dev->data->nb_rx_queues; i++) {
 -		val = IGC_READ_REG(hw, IGC_SRRCTL(i));
@@ -574,23 +563,67 @@ index 58c4f80927..dd0b5f0deb 100644
 -		       IGC_SRRCTL_TIMESTAMP;
 -		IGC_WRITE_REG(hw, IGC_SRRCTL(i), val);
 -	}
-+	val = IGC_READ_REG(hw, IGC_SRRCTL(0));
-+	val |= IGC_SRRCTL_TIMER1SEL(0) | IGC_SRRCTL_TIMER0SEL(0) |
-+	       IGC_SRRCTL_TIMESTAMP;
-+	IGC_WRITE_REG(hw, IGC_SRRCTL(0), val);
++	if (dev->data->dev_started) {
++		IGC_WRITE_REG(hw, IGC_TIMINCA, 0x0);
++		IGC_WRITE_REG(hw, IGC_SYSTIML, 0x0);
++		IGC_WRITE_REG(hw, IGC_SYSTIMH, 0x0);
  
- 	val = IGC_TSYNCRXCTL_ENABLED | IGC_TSYNCRXCTL_TYPE_ALL |
- 	      IGC_TSYNCRXCTL_RXSYNSIG;
-@@ -2705,8 +2768,6 @@ eth_igc_timesync_enable(struct rte_eth_dev *dev)
- 	/* Enable Timestamping of transmitted PTP packets. */
- 	IGC_WRITE_REG(hw, IGC_TSYNCTXCTL, IGC_TSYNCTXCTL_ENABLED |
- 		      IGC_TSYNCTXCTL_TXSYNSIG);
--
+-	val = IGC_TSYNCRXCTL_ENABLED | IGC_TSYNCRXCTL_TYPE_ALL |
+-	      IGC_TSYNCRXCTL_RXSYNSIG;
+-	IGC_WRITE_REG(hw, IGC_TSYNCRXCTL, val);
++		tsauxc = IGC_READ_REG(hw, IGC_TSAUXC);
++		tsauxc &= ~0x80000000;
++		IGC_WRITE_REG(hw, IGC_TSAUXC, tsauxc);
+ 
+-	/* Enable Timestamping of transmitted PTP packets. */
+-	IGC_WRITE_REG(hw, IGC_TSYNCTXCTL, IGC_TSYNCTXCTL_ENABLED |
+-		      IGC_TSYNCTXCTL_TXSYNSIG);
++		IGC_WRITE_REG(hw, IGC_TSAUXC, 0x0);
++		IGC_WRITE_REG(hw, IGC_TSSDP, 0x0);
++		IGC_WRITE_REG(hw, IGC_TSIM, 0x10);
++		IGC_WRITE_REG(hw, IGC_IMS, 1 << 19);
+ 
 -	/* Read TXSTMP registers to discard any timestamp previously stored. */
- 	IGC_READ_REG(hw, IGC_TXSTMPL);
- 	IGC_READ_REG(hw, IGC_TXSTMPH);
+-	IGC_READ_REG(hw, IGC_TXSTMPL);
+-	IGC_READ_REG(hw, IGC_TXSTMPH);
++		clock_gettime(CLOCK_REALTIME, &system_time);
++		IGC_WRITE_REG(hw, IGC_SYSTIML, system_time.tv_nsec);
++		IGC_WRITE_REG(hw, IGC_SYSTIMH, system_time.tv_sec);
  
-@@ -2719,7 +2780,7 @@ eth_igc_timesync_enable(struct rte_eth_dev *dev)
+-	for (i = 0; i < dev->data->nb_rx_queues; i++) {
+-		rxq = dev->data->rx_queues[i];
+-		rxq->offloads |= RTE_ETH_RX_OFFLOAD_TIMESTAMP;
+-	}
++		/* Enable timestamping of received PTP packets. */
++		val = IGC_READ_REG(hw, IGC_RXPBS);
++		val |= 0x80000000;
++		IGC_WRITE_REG(hw, IGC_RXPBS, val);
+ 
+-	return 0;
++		val = IGC_READ_REG(hw, IGC_SRRCTL(0));
++		val |= IGC_SRRCTL_TIMER1SEL(0) | IGC_SRRCTL_TIMER0SEL(0) |
++			   IGC_SRRCTL_TIMESTAMP;
++		IGC_WRITE_REG(hw, IGC_SRRCTL(0), val);
++
++		val = IGC_TSYNCRXCTL_ENABLED | IGC_TSYNCRXCTL_TYPE_ALL |
++			  IGC_TSYNCRXCTL_RXSYNSIG;
++		IGC_WRITE_REG(hw, IGC_TSYNCRXCTL, val);
++
++		/* Enable Timestamping of transmitted PTP packets. */
++		IGC_WRITE_REG(hw, IGC_TSYNCTXCTL, IGC_TSYNCTXCTL_ENABLED |
++				  IGC_TSYNCTXCTL_TXSYNSIG);
++		IGC_READ_REG(hw, IGC_TXSTMPL);
++		IGC_READ_REG(hw, IGC_TXSTMPH);
++
++		for (i = 0; i < dev->data->nb_rx_queues; i++) {
++			rxq = dev->data->rx_queues[i];
++			rxq->offloads |= RTE_ETH_RX_OFFLOAD_TIMESTAMP;
++		}
++		return 0;
++	}
++	else {
++		return -1;
++	}
  }
  
  static int
@@ -599,7 +632,7 @@ index 58c4f80927..dd0b5f0deb 100644
  {
  	struct igc_hw *hw = IGC_DEV_PRIVATE_HW(dev);
  
-@@ -2730,7 +2791,7 @@ eth_igc_timesync_read_time(struct rte_eth_dev *dev, struct timespec *ts)
+@@ -2730,7 +2795,7 @@ eth_igc_timesync_read_time(struct rte_eth_dev *dev, struct timespec *ts)
  }
  
  static int
@@ -608,7 +641,7 @@ index 58c4f80927..dd0b5f0deb 100644
  {
  	struct igc_hw *hw = IGC_DEV_PRIVATE_HW(dev);
  
-@@ -2741,18 +2802,18 @@ eth_igc_timesync_write_time(struct rte_eth_dev *dev, const struct timespec *ts)
+@@ -2741,18 +2806,18 @@ eth_igc_timesync_write_time(struct rte_eth_dev *dev, const struct timespec *ts)
  }
  
  static int
@@ -632,7 +665,7 @@ index 58c4f80927..dd0b5f0deb 100644
  	ts = rte_ns_to_timespec(ns);
  
  	IGC_WRITE_REG(hw, IGC_SYSTIML, ts.tv_nsec);
-@@ -2762,86 +2823,106 @@ eth_igc_timesync_adjust_time(struct rte_eth_dev *dev, int64_t delta)
+@@ -2762,86 +2827,106 @@ eth_igc_timesync_adjust_time(struct rte_eth_dev *dev, int64_t delta)
  }
  
  static int
@@ -649,14 +682,18 @@ index 58c4f80927..dd0b5f0deb 100644
 +	int neg_adj = 0;
 +	uint64_t rate;
 +	uint32_t inca;
- 
--	/* Get current link speed. */
--	eth_igc_link_update(dev, 1);
--	rte_eth_linkstatus_get(dev, &link);
++
 +	if (ppm < 0) {
 +		neg_adj = 1;
 +		ppm = -ppm;
 +	}
+ 
+-	/* Get current link speed. */
+-	eth_igc_link_update(dev, 1);
+-	rte_eth_linkstatus_get(dev, &link);
++	rate = ppm;
++	rate <<= 14;
++	rate = rate / 78125;
  
 -	switch (link.link_speed) {
 -	case SPEED_10:
@@ -671,10 +708,6 @@ index 58c4f80927..dd0b5f0deb 100644
 -	case SPEED_2500:
 -		adjust = IGC_I225_RX_LATENCY_2500;
 -		break;
-+	rate = ppm;
-+	rate <<= 14;
-+	rate = rate / 78125;
-+
 +	inca = rate & 0x7fffffff;
 +	if (neg_adj)
 +		inca |= 0x80000000;
@@ -791,7 +824,7 @@ index 58c4f80927..dd0b5f0deb 100644
  {
  	struct igc_hw *hw = IGC_DEV_PRIVATE_HW(dev);
  	uint32_t val;
-@@ -2853,23 +2934,14 @@ eth_igc_timesync_disable(struct rte_eth_dev *dev)
+@@ -2853,23 +2938,14 @@ eth_igc_timesync_disable(struct rte_eth_dev *dev)
  	IGC_WRITE_REG(hw, IGC_TSYNCRXCTL, 0);
  
  	val = IGC_READ_REG(hw, IGC_RXPBS);
