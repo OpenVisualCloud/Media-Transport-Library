@@ -21,6 +21,12 @@ static inline void urq_mgr_unlock(struct mudp_rxq_mgr* mgr) {
 
 static inline void urq_lock(struct mur_queue* q) { mt_pthread_mutex_lock(&q->mutex); }
 
+/* return true if try lock succ */
+static inline bool urq_try_lock(struct mur_queue* q) {
+  int ret = mt_pthread_mutex_try_lock(&q->mutex);
+  return ret == 0 ? true : false;
+}
+
 static inline void urq_unlock(struct mur_queue* q) { mt_pthread_mutex_unlock(&q->mutex); }
 
 static uint16_t urq_rx_handle(struct mur_queue* q, struct rte_mbuf** pkts,
@@ -57,6 +63,7 @@ static uint16_t urq_rx_handle(struct mur_queue* q, struct rte_mbuf** pkts,
   /* enqueue the valid mbuf */
   if (clients == 1) {
     struct mur_client* c = MT_TAILQ_FIRST(&q->client_head);
+    c->stat_pkt_rx += valid_mbuf_cnt;
     n = rte_ring_sp_enqueue_bulk(c->ring, (void**)&valid_mbuf[0], valid_mbuf_cnt, NULL);
     if (!n) {
       dbg("%s(%d), %u pkts enqueue fail\n", __func__, idx, valid_mbuf_cnt);
@@ -76,16 +83,17 @@ static uint16_t urq_rx_handle(struct mur_queue* q, struct rte_mbuf** pkts,
 
   for (uint16_t i = 0; i < valid_mbuf_cnt; i++) {
     struct rte_mbuf* mbuf = valid_mbuf[i];
-    struct mt_udp_hdr* hdr = rte_pktmbuf_mtod(pkts[i], struct mt_udp_hdr*);
+    struct mt_udp_hdr* hdr = rte_pktmbuf_mtod(mbuf, struct mt_udp_hdr*);
     /* hash with ip and port of both src and dst */
     uint32_t tuple[3];
     rte_memcpy(tuple, &hdr->ipv4.src_addr, sizeof(tuple));
     uint32_t hash = mt_dev_softrss(tuple, 3);
     struct mur_client* c = cs[hash % clients];
-    if (!rte_ring_sp_enqueue(c->ring, mbuf)) {
+    c->stat_pkt_rx++;
+    if (0 != rte_ring_sp_enqueue(c->ring, mbuf)) {
       /* enqueue fail */
       rte_pktmbuf_free(mbuf);
-      c->stat_pkt_rx_enq_fail += 1;
+      c->stat_pkt_rx_enq_fail++;
     }
   }
 
@@ -111,7 +119,7 @@ static uint16_t urq_rx(struct mur_queue* q) {
 
   if (!q->rxq) return 0;
 
-  urq_lock(q);
+  if (!urq_try_lock(q)) return 0;
   uint16_t rx = mt_dev_rx_burst(q->rxq, pkts, rx_burst);
   urq_unlock(q);
 
@@ -482,14 +490,19 @@ int mur_client_put(struct mur_client* c) {
 int mur_client_dump(struct mur_client* c) {
   enum mtl_port port = c->port;
   uint16_t dst_port = c->dst_port;
+  int idx = c->idx;
 
+  if (c->stat_pkt_rx) {
+    notice("%s(%d,%u,%d), pkt rx %u\n", __func__, port, dst_port, idx, c->stat_pkt_rx);
+    c->stat_pkt_rx = 0;
+  }
   if (c->stat_pkt_rx_enq_fail) {
-    warn("%s(%d,%u), pkt rx %u enqueue fail\n", __func__, port, dst_port,
+    warn("%s(%d,%u,%d), pkt rx %u enqueue fail\n", __func__, port, dst_port, idx,
          c->stat_pkt_rx_enq_fail);
     c->stat_pkt_rx_enq_fail = 0;
   }
   if (c->stat_timedwait) {
-    notice("%s(%d,%u), timedwait %u timeout %u\n", __func__, port, dst_port,
+    notice("%s(%d,%u,%d), timedwait %u timeout %u\n", __func__, port, dst_port, idx,
            c->stat_timedwait, c->stat_timedwait_timeout);
     c->stat_timedwait = 0;
     c->stat_timedwait_timeout = 0;
@@ -505,8 +518,15 @@ uint16_t mur_client_rx(struct mur_client* c) {
     return urq_rx(c->q);
 }
 
-int mur_client_timedwait(struct mur_client* c, unsigned int us) {
-  if (!urc_lcore_mode(c)) return 0; /* return directly if not lcore mode */
+int mur_client_timedwait(struct mur_client* c, unsigned int timedwait_us,
+                         unsigned int poll_sleep_us) {
+  if (!urc_lcore_mode(c)) {
+    if (poll_sleep_us) {
+      dbg("%s(%d), sleep %u us\n", __func__, c->idx, poll_sleep_us);
+      mt_sleep_us(poll_sleep_us);
+    }
+    return 0; /* return directly if not lcore mode */
+  }
 
   int ret;
 
@@ -516,7 +536,7 @@ int mur_client_timedwait(struct mur_client* c, unsigned int us) {
   struct timespec time;
   clock_gettime(MT_THREAD_TIMEDWAIT_CLOCK_ID, &time);
   uint64_t ns = mt_timespec_to_ns(&time);
-  ns += us * NS_PER_US;
+  ns += timedwait_us * NS_PER_US;
   mt_ns_to_timespec(ns, &time);
   ret = mt_pthread_cond_timedwait(&c->lcore_wake_cond, &c->lcore_wake_mutex, &time);
   dbg("%s(%u), timedwait ret %d\n", __func__, q->dst_port, ret);

@@ -62,6 +62,7 @@ enum mtl_log_level upl_get_log_level(void);
     return -1;            \
   } while (0)
 
+/* child only can't use rte malloc */
 static inline void* upl_malloc(size_t sz) { return malloc(sz); }
 
 static inline void* upl_zmalloc(size_t sz) {
@@ -118,6 +119,8 @@ struct upl_ctx; /* forward declare */
 struct upl_base_entry {
   struct upl_ctx* parent;
   enum upl_entry_type upl_type;
+  /* if created by child */
+  bool child;
 };
 
 /* ufd entry for socket */
@@ -169,13 +172,14 @@ struct upl_efd_entry {
 };
 
 struct upl_ctx {
-  bool init_succ;
   enum mtl_log_level log_level;
-
-  bool has_mtl_udp;
-  int mtl_fd_base;
-
-  struct upl_functions libc_fn;
+  /*
+   * All rte_malloc memory is shared by processes as it's mapped with shared during DPDK
+   * memory init, and IMTL always use DPDK memory.
+   * The easiest way for multi-process sharing is parent process to create/free the
+   * resource, child only access the data path */
+  pid_t pid;
+  bool child; /* if it's for child process */
 
   int upl_entires_nb; /* the number of upl_entires */
   void** upl_entires; /* upl entries */

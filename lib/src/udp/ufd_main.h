@@ -25,6 +25,8 @@ struct ufd_slot {
 struct ufd_mt_ctx {
   struct mufd_init_params init_params;
   struct mtl_main_impl* mt;
+  bool alloc_with_rte;
+  pid_t parent_pid;
 
   int slot_last_idx;
   struct ufd_slot** slots;    /* slots with init_params.slots_nb_max */

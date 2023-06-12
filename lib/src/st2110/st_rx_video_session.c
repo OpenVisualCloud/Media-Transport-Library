@@ -726,7 +726,8 @@ static rte_iova_t rv_frame_get_offset_iova(struct st_rx_video_session_impl* s,
   return MTL_BAD_IOVA;
 }
 
-static int rv_frame_create_page_table(struct st_rx_video_session_impl* s,
+static int rv_frame_create_page_table(struct mtl_main_impl* impl,
+                                      struct st_rx_video_session_impl* s,
                                       struct st_frame_trans* frame_info) {
   struct rte_memseg* mseg = rte_mem_virt2memseg(frame_info->addr, NULL);
   if (mseg == NULL) {
@@ -743,7 +744,9 @@ static int rv_frame_create_page_table(struct st_rx_video_session_impl* s,
                    RTE_PTR_ALIGN_FLOOR(frame_info->addr, hugepage_sz)) /
       hugepage_sz;
 
-  struct st_page_info* pages = mt_zmalloc(sizeof(*pages) * num_pages);
+  enum mtl_port port = mt_port_logic2phy(s->port_maps, MTL_SESSION_PORT_P);
+  int soc_id = mt_socket_id(impl, port);
+  struct st_page_info* pages = mt_rte_zmalloc_socket(sizeof(*pages) * num_pages, soc_id);
   if (pages == NULL) {
     err("%s(%d,%d), pages info malloc fail\n", __func__, s->idx, frame_info->idx);
     return -ENOMEM;
@@ -784,6 +787,7 @@ static int rv_alloc_frames(struct mtl_main_impl* impl,
   size_t size = s->st20_uframe_size ? s->st20_uframe_size : s->st20_fb_size;
   struct st_frame_trans* st20_frame;
   void* frame;
+  int ret;
 
   s->st20_frames =
       mt_rte_zmalloc_socket(sizeof(*s->st20_frames) * s->st20_frames_cnt, soc_id);
@@ -799,7 +803,7 @@ static int rv_alloc_frames(struct mtl_main_impl* impl,
   }
 
   if (rv_is_hdr_split(s)) {
-    int ret = rv_init_hdr_split_frame(impl, s);
+    ret = rv_init_hdr_split_frame(impl, s);
     if (ret < 0) {
       rv_free_frames(s);
       return ret;
@@ -845,8 +849,13 @@ static int rv_alloc_frames(struct mtl_main_impl* impl,
       st20_frame->flags = ST_FT_FLAG_RTE_MALLOC;
       st20_frame->addr = frame;
       st20_frame->iova = rte_malloc_virt2iova(frame);
-      if (impl->iova_mode == RTE_IOVA_PA && s->dma_dev)
-        rv_frame_create_page_table(s, st20_frame);
+      if (impl->iova_mode == RTE_IOVA_PA && s->dma_dev) {
+        ret = rv_frame_create_page_table(impl, s, st20_frame);
+        if (ret < 0) {
+          rv_free_frames(s);
+          return ret;
+        }
+      }
     }
   }
 
@@ -1136,6 +1145,7 @@ static void rv_st22_frame_notify(struct st_rx_video_session_impl* s,
       slot->frame = NULL;
     }
   }
+  s->st22_expect_frame_size = 0;
 }
 
 static void rv_slice_notify(struct st_rx_video_session_impl* s,
@@ -1351,6 +1361,7 @@ static void rv_st22_slot_full_frame(struct st_rx_video_session_impl* s,
   slot->frame = NULL; /* frame pass to app */
 }
 
+#if 0
 static void rv_st22_slot_drop_frame(struct st_rx_video_session_impl* s,
                                     struct st_rx_video_slot_impl* slot) {
   rv_put_frame(s, slot->frame);
@@ -1361,6 +1372,7 @@ static void rv_st22_slot_drop_frame(struct st_rx_video_session_impl* s,
   slot->pkts_received = 0;
   slot->pkts_redundant_received = 0;
 }
+#endif
 
 static int rv_free_dma(struct mtl_main_impl* impl, struct st_rx_video_session_impl* s) {
   if (s->dma_dev) {
@@ -1651,6 +1663,22 @@ static int rv_handle_frame_pkt(struct st_rx_video_session_impl* s, struct rte_mb
   slot->second_field = (line1_number & ST20_SECOND_FIELD) ? true : false;
   line1_number &= ~ST20_SECOND_FIELD;
 
+  /* caculate offset */
+  uint32_t offset;
+  offset = line1_number * (uint32_t)s->st20_linesize +
+           line1_offset / s->st20_pg.coverage * s->st20_pg.size;
+  size_t payload_length = line1_length;
+  if (extra_rtp) payload_length += ntohs(extra_rtp->row_length);
+  if ((offset + payload_length) >
+      s->st20_fb_size + s->st20_bytes_in_line - s->st20_linesize) {
+    dbg("%s(%d,%d): invalid offset %u frame buffer size %" PRIu64 "\n", __func__, s->idx,
+        s_port, offset, s->st20_fb_size);
+    dbg("%s, number %u offset %u len %u\n", __func__, line1_number, line1_offset,
+        line1_length);
+    s->stat_pkts_offset_dropped++;
+    return -EIO;
+  }
+
   /* check if the same pkt got already */
   if (slot->seq_id_got) {
     if (seq_id_u32 >= slot->seq_id_base_u32)
@@ -1673,11 +1701,20 @@ static int rv_handle_frame_pkt(struct st_rx_video_session_impl* s, struct rte_mb
     }
   } else {
     /* the first pkt should always dispatch to control thread */
-    if (!line1_number && !line1_offset && ctrl_thread) { /* first packet */
-      slot->seq_id_base_u32 = seq_id_u32;
+    if (ctrl_thread) {
+      if (offset % payload_length) { /* GPM_SL packing */
+        int bytes_in_pkt = ST_PKT_MAX_ETHER_BYTES - sizeof(struct st_rfc4175_video_hdr);
+        int pkts_in_line = (s->st20_bytes_in_line / bytes_in_pkt) + 1;
+        int pixel_in_pkt = (ops->width + pkts_in_line - 1) / pkts_in_line;
+        pkt_idx = line1_number * pkts_in_line + line1_offset / pixel_in_pkt;
+        dbg("%s(%d,%d), GPM_SL pkts_in_line %d pixel_in_pkt %d pkt_idx %d\n", __func__,
+            s->idx, s_port, pkts_in_line, pixel_in_pkt, pkt_idx);
+      } else {
+        pkt_idx = offset / payload_length;
+      }
+      slot->seq_id_base_u32 = seq_id_u32 - pkt_idx;
       slot->seq_id_got = true;
-      mt_bitmap_test_and_set(bitmap, 0);
-      pkt_idx = 0;
+      mt_bitmap_test_and_set(bitmap, pkt_idx);
       dbg("%s(%d,%d), seq_id_base %d tmstamp %u\n", __func__, s->idx, s_port, seq_id_u32,
           tmstamp);
     } else {
@@ -1686,22 +1723,6 @@ static int rv_handle_frame_pkt(struct st_rx_video_session_impl* s, struct rte_mb
       s->stat_pkts_idx_dropped++;
       return -EIO;
     }
-  }
-
-  /* caculate offset */
-  uint32_t offset;
-  offset = line1_number * (uint32_t)s->st20_linesize +
-           line1_offset / s->st20_pg.coverage * s->st20_pg.size;
-  size_t payload_length = line1_length;
-  if (extra_rtp) payload_length += ntohs(extra_rtp->row_length);
-  if ((offset + payload_length) >
-      s->st20_fb_size + s->st20_bytes_in_line - s->st20_linesize) {
-    dbg("%s(%d,%d): invalid offset %u frame buffer size %" PRIu64 "\n", __func__, s->idx,
-        s_port, offset, s->st20_fb_size);
-    dbg("%s, number %u offset %u len %u\n", __func__, line1_number, line1_offset,
-        line1_length);
-    s->stat_pkts_offset_dropped++;
-    return -EIO;
   }
 
   bool dma_copy = false;
@@ -2011,22 +2032,16 @@ static int rv_handle_st22_pkt(struct st_rx_video_session_impl* s, struct rte_mbu
           return -EIO;
         }
       }
-      slot->seq_id_base = seq_id;
-      slot->st22_payload_length = payload_length;
-      slot->seq_id_got = true;
-      mt_bitmap_test_and_set(bitmap, 0);
-      pkt_idx = 0;
-      dbg("%s(%d,%d), get seq_id %d tmstamp %u, p_counter %u sep_counter %u, "
-          "payload_length %u\n",
-          __func__, s->idx, s_port, seq_id, tmstamp, p_counter, sep_counter,
-          payload_length);
-    } else {
-      dbg("%s(%d,%d), drop seq_id %d tmstamp %u as base seq not got, p_counter %u "
-          "sep_counter %u\n",
-          __func__, s->idx, s_port, seq_id, tmstamp, p_counter, sep_counter);
-      s->stat_pkts_idx_dropped++;
-      return -EIO;
     }
+    pkt_idx = pkt_counter;
+    slot->seq_id_base = seq_id - pkt_idx;
+    slot->st22_payload_length = payload_length;
+    slot->seq_id_got = true;
+    mt_bitmap_test_and_set(bitmap, pkt_idx);
+    dbg("%s(%d,%d), get seq_id %d tmstamp %u, p_counter %u sep_counter %u, "
+        "payload_length %u\n",
+        __func__, s->idx, s_port, seq_id, tmstamp, p_counter, sep_counter,
+        payload_length);
   }
 
   if (!slot->frame) {
@@ -2055,17 +2070,21 @@ static int rv_handle_st22_pkt(struct st_rx_video_session_impl* s, struct rte_mbu
   s->stat_pkts_received++;
   slot->pkts_received++;
 
+  /* update the expect frame size */
+  if (rtp->base.marker) s->st22_expect_frame_size = offset + payload_length;
+
   /* check if frame is full */
-  if (rtp->base.marker) {
-    size_t expect_frame_size = offset + payload_length;
+  if (s->st22_expect_frame_size) {
     size_t rece_frame_size = rv_slot_get_frame_size(s, slot);
 
-    dbg("%s(%d,%d): marker get, frame size %" PRIu64 " %" PRIu64 ", tmstamp %u\n",
-        __func__, s->idx, s_port, rece_frame_size, expect_frame_size, tmstamp);
-    if (expect_frame_size == rece_frame_size) {
+    dbg("%s(%d,%d): marker got, frame size %" PRIu64 " %" PRIu64 ", tmstamp %u\n",
+        __func__, s->idx, s_port, rece_frame_size, s->st22_expect_frame_size, tmstamp);
+    if (s->st22_expect_frame_size == rece_frame_size) {
       rv_st22_slot_full_frame(s, slot);
     } else {
-      rv_st22_slot_drop_frame(s, slot);
+      dbg("%s(%d,%d): still has %" PRIu64
+          " bytes unarrived pkt before marker, tmstamp %u\n",
+          __func__, s->idx, s_port, s->st22_expect_frame_size - rece_frame_size, tmstamp);
     }
   }
 
@@ -2922,6 +2941,7 @@ static int rv_attach(struct mtl_main_impl* impl, struct st_rx_video_sessions_mgr
   rte_atomic32_set(&s->dma_previous_busy_cnt, 0);
   s->cpu_busy_score = 0;
   s->dma_busy_score = 0;
+  s->st22_expect_frame_size = 0;
 
   ret = rv_init_hw(impl, s);
   if (ret < 0) {

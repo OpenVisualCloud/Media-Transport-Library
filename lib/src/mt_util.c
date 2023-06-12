@@ -592,7 +592,7 @@ int st_frame_trans_uinit(struct st_frame_trans* frame) {
   frame->iova = 0;
 
   if (frame->page_table) {
-    mt_free(frame->page_table);
+    mt_rte_free(frame->page_table);
     frame->page_table = NULL;
     frame->page_table_len = 0;
   }

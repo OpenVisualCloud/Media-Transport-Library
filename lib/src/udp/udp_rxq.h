@@ -36,6 +36,7 @@ struct mur_client {
 
   uint32_t stat_timedwait;
   uint32_t stat_timedwait_timeout;
+  uint32_t stat_pkt_rx;
   uint32_t stat_pkt_rx_enq_fail;
 
   /* linked list for reuse port */
@@ -92,22 +93,23 @@ struct mur_client* mur_client_get(struct mur_client_create* create);
 uint16_t mur_client_rx(struct mur_client* q);
 int mur_client_dump(struct mur_client* q);
 
-int mur_client_timedwait(struct mur_client* q, unsigned int us);
+int mur_client_timedwait(struct mur_client* cq, unsigned int timedwait_us,
+                         unsigned int poll_sleep_us);
 
-static inline struct rte_ring* mur_client_ring(struct mur_client* q) { return q->ring; }
+static inline struct rte_ring* mur_client_ring(struct mur_client* c) { return c->ring; }
 
-static inline int mur_client_set_wake_thresh(struct mur_client* q, unsigned int count) {
-  q->wake_thresh_count = count;
+static inline int mur_client_set_wake_thresh(struct mur_client* c, unsigned int count) {
+  c->wake_thresh_count = count;
   return 0;
 }
 
-static inline int mur_client_set_wake_timeout(struct mur_client* q, unsigned int us) {
-  q->wake_timeout_us = us;
+static inline int mur_client_set_wake_timeout(struct mur_client* c, unsigned int us) {
+  c->wake_timeout_us = us;
   return 0;
 }
 
-static inline int mur_client_set_reuse(struct mur_client* q, int reuse) {
-  // q->reuse_port = reuse;
+static inline int mur_client_set_reuse(struct mur_client* c, int reuse) {
+  // c->reuse_port = reuse;
   return 0;
 }
 

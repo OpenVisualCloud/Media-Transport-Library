@@ -98,8 +98,16 @@ struct mudp_impl {
   uint32_t stat_tx_gso_count;
   uint32_t stat_tx_retry;
 
-  uint32_t stat_pkt_rx;
+  uint32_t stat_pkt_dequeue;
   uint32_t stat_pkt_deliver;
+  uint32_t stat_poll_cnt;
+  uint32_t stat_poll_succ_cnt;
+  uint32_t stat_poll_timeout_cnt;
+  uint32_t stat_poll_query_ret_cnt;
+  uint32_t stat_rx_msg_cnt;
+  uint32_t stat_rx_msg_succ_cnt;
+  uint32_t stat_rx_msg_timeout_cnt;
+  uint32_t stat_rx_msg_again_cnt;
 };
 
 int mudp_verify_socket_args(int domain, int type, int protocol);

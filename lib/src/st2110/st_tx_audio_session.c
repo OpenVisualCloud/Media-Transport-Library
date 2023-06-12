@@ -1366,7 +1366,8 @@ static int tx_audio_session_attach(struct mtl_main_impl* impl,
     return ret;
   }
 
-  info("%s(%d), succ\n", __func__, idx);
+  info("%s(%d), pkt_len %u frame_size %u\n", __func__, idx, s->pkt_len,
+       s->st30_frame_size);
   return 0;
 }
 

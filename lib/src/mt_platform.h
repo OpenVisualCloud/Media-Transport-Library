@@ -71,13 +71,32 @@ typedef unsigned long int nfds_t;
 #define MT_FLOCK_PATH "/tmp/kahawai_lcore.lock"
 #endif
 
+#ifndef WINDOWSENV
+#define MT_ENABLE_P_SHARED /* default enable PTHREAD_PROCESS_SHARED */
+#endif
+
 static inline int mt_pthread_mutex_init(pthread_mutex_t* mutex,
-                                        pthread_mutexattr_t* attr) {
-  return pthread_mutex_init(mutex, attr);
+                                        pthread_mutexattr_t* p_attr) {
+#ifdef MT_ENABLE_P_SHARED
+  if (p_attr) {
+    pthread_mutexattr_setpshared(p_attr, PTHREAD_PROCESS_SHARED);
+  } else {
+    pthread_mutexattr_t attr;
+    pthread_mutexattr_init(&attr);
+    pthread_mutexattr_setpshared(&attr, PTHREAD_PROCESS_SHARED);
+    p_attr = &attr;
+  }
+#endif
+
+  return pthread_mutex_init(mutex, p_attr);
 }
 
 static inline int mt_pthread_mutex_lock(pthread_mutex_t* mutex) {
   return pthread_mutex_lock(mutex);
+}
+
+static inline int mt_pthread_mutex_try_lock(pthread_mutex_t* mutex) {
+  return pthread_mutex_trylock(mutex);
 }
 
 static inline int mt_pthread_mutex_unlock(pthread_mutex_t* mutex) {

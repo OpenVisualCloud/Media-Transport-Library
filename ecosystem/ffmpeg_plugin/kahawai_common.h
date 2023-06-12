@@ -27,7 +27,7 @@ typedef struct KahawaiFpsDecs {
   unsigned int max;
 } KahawaiFpsDecs;
 
-enum st_fps get_fps_table(AVRational framerate);
+enum st_fps kahawai_fps_to_st_fps(AVRational framerate);
 mtl_handle kahawai_init(char* port, char* local_addr, int enc_session_cnt,
                         int dec_session_cnt, char* dma_dev);
 mtl_handle kahawai_get_handle();

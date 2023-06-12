@@ -74,7 +74,10 @@ static int ufd_free_mt_ctx(struct ufd_mt_ctx* ctx) {
     ctx->mt = NULL;
   }
   mt_pthread_mutex_destroy(&ctx->slots_lock);
-  mt_free(ctx);
+  if (ctx->alloc_with_rte)
+    mt_rte_free(ctx);
+  else
+    mt_free(ctx);
   return 0;
 }
 
@@ -414,8 +417,21 @@ static struct ufd_mt_ctx* ufd_create_mt_ctx(void) {
     return NULL;
   }
 
-  info("%s, succ, slots_nb_max %d\n", __func__, ufd_max_slot(ctx));
-  return ctx;
+  /* save ctx with dpdk rte memory which can be shared between process */
+  struct ufd_mt_ctx* ctx_rte =
+      mt_rte_zmalloc_socket(sizeof(*ctx_rte), mt_socket_id(ctx->mt, MTL_PORT_P));
+  if (!ctx_rte) {
+    err("%s, ctx_rte malloc fail\n", __func__);
+    ufd_free_mt_ctx(ctx);
+    return NULL;
+  }
+  mtl_memcpy(ctx_rte, ctx, sizeof(*ctx_rte));
+  ctx_rte->alloc_with_rte = true;
+  ctx_rte->parent_pid = getpid(); /* save the creator pid */
+  mt_free(ctx);
+
+  info("%s, succ, slots_nb_max %d\n", __func__, ufd_max_slot(ctx_rte));
+  return ctx_rte;
 }
 
 static struct ufd_mt_ctx* ufd_get_mt_ctx(bool create) {
@@ -638,7 +654,12 @@ int mufd_ioctl(int sockfd, unsigned long cmd, va_list args) {
 int mufd_cleanup(void) {
   struct ufd_mt_ctx* ctx = ufd_get_mt_ctx(false);
   if (ctx) {
-    ufd_free_mt_ctx(ctx);
+    pid_t pid = getpid();
+    if (pid == ctx->parent_pid) {
+      ufd_free_mt_ctx(ctx);
+    } else {
+      info("%s, skip the mt ctx free as it is child process\n", __func__);
+    }
     ufd_clear_mt_ctx();
   }
 
@@ -751,6 +772,36 @@ enum mtl_log_level mufd_log_level(void) {
   struct ufd_mt_ctx* ctx = ufd_get_mt_ctx(true);
   if (!ctx) return MTL_LOG_LEVEL_INFO;
   return ctx->init_params.mt_params.log_level;
+}
+
+void* mufd_hp_malloc(size_t size, enum mtl_port port) {
+  struct ufd_mt_ctx* ctx = ufd_get_mt_ctx(false);
+  if (!ctx) {
+    err("%s, ctx get fail\n", __func__);
+    return NULL;
+  }
+
+  return mtl_hp_malloc(ctx->mt, size, port);
+}
+
+void* mufd_hp_zmalloc(size_t size, enum mtl_port port) {
+  struct ufd_mt_ctx* ctx = ufd_get_mt_ctx(false);
+  if (!ctx) {
+    err("%s, ctx get fail\n", __func__);
+    return NULL;
+  }
+
+  return mtl_hp_zmalloc(ctx->mt, size, port);
+}
+
+void mufd_hp_free(void* ptr) {
+  struct ufd_mt_ctx* ctx = ufd_get_mt_ctx(false);
+  if (!ctx) {
+    err("%s, ctx get fail\n", __func__);
+    return;
+  }
+
+  return mtl_hp_free(ctx->mt, ptr);
 }
 
 int mufd_set_opaque(int sockfd, void* pri) {

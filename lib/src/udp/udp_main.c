@@ -450,6 +450,7 @@ static int udp_init_txq(struct mtl_main_impl* impl, struct mudp_impl* s,
   int idx = s->idx;
   uint16_t queue_id;
 
+  dbg("%s(%d), start\n", __func__, idx);
   if (mt_shared_queue(impl, port)) {
     struct mt_tsq_flow flow;
     memset(&flow, 0, sizeof(flow));
@@ -486,6 +487,7 @@ static int udp_init_txq(struct mtl_main_impl* impl, struct mudp_impl* s,
   }
 
   udp_set_flag(s, MUDP_TXQ_ALLOC);
+  dbg("%s(%d), succ\n", __func__, idx);
   return 0;
 }
 
@@ -527,10 +529,32 @@ static int udp_stat_dump(void* priv) {
   int idx = s->idx;
   enum mtl_port port = s->port;
 
-  if (s->stat_pkt_rx) {
-    notice("%s(%d,%d), pkt rx %u deliver %u\n", __func__, port, idx, s->stat_pkt_rx,
-           s->stat_pkt_deliver);
-    s->stat_pkt_rx = 0;
+  if (s->rxq) {
+    notice("%s(%d,%d), rx ring cnt %u\n", __func__, port, idx,
+           rte_ring_count(mur_client_ring(s->rxq)));
+  }
+  if (s->stat_rx_msg_cnt) {
+    notice("%s(%d,%d), rx_msg %u succ %u timeout %u again %u\n", __func__, port, idx,
+           s->stat_rx_msg_cnt, s->stat_rx_msg_succ_cnt, s->stat_rx_msg_timeout_cnt,
+           s->stat_rx_msg_again_cnt);
+    s->stat_rx_msg_cnt = 0;
+    s->stat_rx_msg_succ_cnt = 0;
+    s->stat_rx_msg_timeout_cnt = 0;
+    s->stat_rx_msg_again_cnt = 0;
+  }
+  if (s->stat_poll_cnt) {
+    notice("%s(%d,%d), poll %u succ %u timeout %u query_ret %u\n", __func__, port, idx,
+           s->stat_poll_cnt, s->stat_poll_succ_cnt, s->stat_poll_timeout_cnt,
+           s->stat_poll_query_ret_cnt);
+    s->stat_poll_cnt = 0;
+    s->stat_poll_succ_cnt = 0;
+    s->stat_poll_timeout_cnt = 0;
+    s->stat_poll_query_ret_cnt = 0;
+  }
+  if (s->stat_pkt_dequeue) {
+    notice("%s(%d,%d), pkt dequeue %u deliver %u\n", __func__, port, idx,
+           s->stat_pkt_dequeue, s->stat_pkt_deliver);
+    s->stat_pkt_dequeue = 0;
     s->stat_pkt_deliver = 0;
   }
   if (s->rxq) mur_client_dump(s->rxq);
@@ -887,7 +911,7 @@ static ssize_t udp_rx_dequeue(struct mudp_impl* s, void* buf, size_t len, int fl
   /* dequeue pkt from rx ring */
   ret = rte_ring_sc_dequeue(mur_client_ring(s->rxq), (void**)&pkt);
   if (ret < 0) return ret;
-  s->stat_pkt_rx++;
+  s->stat_pkt_dequeue++;
 
   struct mt_udp_hdr* hdr = rte_pktmbuf_mtod(pkt, struct mt_udp_hdr*);
   struct rte_udp_hdr* udp = &hdr->udp;
@@ -956,8 +980,9 @@ dequeue:
   unsigned int us = (mt_get_tsc(impl) - start_ts) / NS_PER_US;
   unsigned int timeout = s->rx_timeout_us;
   if ((us < timeout) && udp_alive(s)) {
-    mur_client_timedwait(s->rxq, timeout - us);
-    if (s->rx_poll_sleep_us) mt_sleep_us(s->rx_poll_sleep_us);
+    if (s->rx_poll_sleep_us) {
+      mur_client_timedwait(s->rxq, timeout - us, s->rx_poll_sleep_us);
+    }
     goto dequeue;
   }
 
@@ -973,6 +998,7 @@ static ssize_t udp_rx_msg_dequeue(struct mudp_impl* s, struct msghdr* msg, int f
   /* dequeue pkt from rx ring */
   ret = rte_ring_sc_dequeue(mur_client_ring(s->rxq), (void**)&pkt);
   if (ret < 0) return ret;
+  s->stat_pkt_dequeue++;
 
   struct mt_udp_hdr* hdr = rte_pktmbuf_mtod(pkt, struct mt_udp_hdr*);
   struct rte_udp_hdr* udp = &hdr->udp;
@@ -1028,10 +1054,15 @@ static ssize_t udp_recvmsg(struct mudp_impl* s, struct msghdr* msg, int flags) {
   uint16_t rx;
   uint64_t start_ts = mt_get_tsc(impl);
 
+  s->stat_rx_msg_cnt++;
+
 dequeue:
   /* msg dequeue pkt from rx ring */
   copied = udp_rx_msg_dequeue(s, msg, flags);
-  if (copied > 0) return copied;
+  if (copied > 0) {
+    s->stat_rx_msg_succ_cnt++;
+    return copied;
+  }
 
   rx = mur_client_rx(s->rxq);
   if (rx) { /* dequeue again as rx succ */
@@ -1040,17 +1071,20 @@ dequeue:
 
   /* return EAGAIN if MSG_DONTWAIT is set */
   if (flags & MSG_DONTWAIT) {
+    s->stat_rx_msg_again_cnt++;
     MUDP_ERR_RET(EAGAIN);
   }
 
   unsigned int us = (mt_get_tsc(impl) - start_ts) / NS_PER_US;
   unsigned int timeout = s->rx_timeout_us;
   if ((us < timeout) && udp_alive(s)) {
-    mur_client_timedwait(s->rxq, timeout - us);
-    if (s->rx_poll_sleep_us) mt_sleep_us(s->rx_poll_sleep_us);
+    if (s->rx_poll_sleep_us) {
+      mur_client_timedwait(s->rxq, timeout - us, s->rx_poll_sleep_us);
+    }
     goto dequeue;
   }
 
+  s->stat_rx_msg_timeout_cnt++;
   return udp_rx_ret_timeout(s);
 }
 
@@ -1061,14 +1095,20 @@ static int udp_poll(struct mudp_pollfd* fds, mudp_nfds_t nfds, int timeout,
   uint64_t start_ts = mt_get_tsc(impl);
   int rc;
 
-  dbg("%s(%d), nfds %d\n", __func__, s->idx, nfds);
+  dbg("%s(%d), nfds %d timeout %d\n", __func__, s->idx, (int)nfds, timeout);
+  for (mudp_nfds_t i = 0; i < nfds; i++) {
+    s = fds[i].fd;
+    s->stat_poll_cnt++;
+  }
 
   /* rx from nic firstly if no pending pkt for each fd */
 rx_poll:
   for (mudp_nfds_t i = 0; i < nfds; i++) {
     s = fds[i].fd;
     unsigned int count = rte_ring_count(mur_client_ring(s->rxq));
-    if (!count) mur_client_rx(s->rxq);
+    if (!count) {
+      mur_client_rx(s->rxq);
+    }
   }
 
   /* check the ready fds */
@@ -1079,28 +1119,38 @@ rx_poll:
     if (count > 0) {
       rc++;
       fds[i].revents = POLLIN;
+      s->stat_poll_succ_cnt++;
       dbg("%s(%d), ring count %u\n", __func__, s->idx, count);
     }
   }
-  if (rc > 0) return rc;
+  if (rc > 0) {
+    dbg("%s(%d), rc %d\n", __func__, s->idx, rc);
+    return rc;
+  }
 
   if (query) { /* check if any pending event on the user query callback */
     rc = query(priv);
-    if (rc != 0) return rc;
+    if (rc != 0) {
+      dbg("%s(%d), query rc %d\n", __func__, s->idx, rc);
+      for (mudp_nfds_t i = 0; i < nfds; i++) {
+        s = fds[i].fd;
+        s->stat_poll_query_ret_cnt++;
+      }
+      return rc;
+    }
   }
 
   /* check if timeout */
   int ms = (mt_get_tsc(impl) - start_ts) / NS_PER_MS;
   if (((ms < timeout) || (timeout < 0)) && udp_alive(s)) {
-    mur_client_timedwait(s->rxq, timeout - ms);
     if (s->rx_poll_sleep_us) {
-      dbg("%s(%d), sleep %u us\n", __func__, s->idx, s->rx_poll_sleep_us);
-      mt_sleep_us(s->rx_poll_sleep_us);
+      mur_client_timedwait(s->rxq, (timeout - ms) * US_PER_MS, s->rx_poll_sleep_us);
     }
     goto rx_poll;
   }
 
   dbg("%s(%d), timeout to %d ms\n", __func__, s->idx, timeout);
+  s->stat_poll_timeout_cnt++;
   return 0;
 }
 
@@ -1224,6 +1274,15 @@ int mudp_bind(mudp_handle ut, const struct sockaddr* addr, socklen_t addrlen) {
   if (ret < 0) {
     err("%s(%d), init rxq fail\n", __func__, idx);
     return ret;
+  }
+
+  /* init txq if not */
+  if (!udp_get_flag(s, MUDP_TXQ_ALLOC)) {
+    ret = udp_init_txq(impl, s, addr_in);
+    if (ret < 0) {
+      err("%s(%d), init txq fail\n", __func__, idx);
+      return ret;
+    }
   }
 
   udp_set_flag(s, MUDP_BIND);

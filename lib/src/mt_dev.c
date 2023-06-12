@@ -216,6 +216,20 @@ static void* dev_stat_thread(void* arg) {
   return NULL;
 }
 
+struct dev_eal_init_args {
+  int argc;
+  char** argv;
+  int result;
+};
+
+static void* dev_eal_init_thread(void* arg) {
+  struct dev_eal_init_args* init = arg;
+
+  dbg("%s, start\n", __func__);
+  init->result = rte_eal_init(init->argc, init->argv);
+  return NULL;
+}
+
 static int dev_eal_init(struct mtl_init_params* p, struct mt_kport_info* kport_info) {
   char* argv[MT_EAL_MAX_ARGS];
   int argc, ret;
@@ -332,8 +346,24 @@ static int dev_eal_init(struct mtl_init_params* p, struct mt_kport_info* kport_i
     info("%s, eal not support re-init\n", __func__);
     return -EIO;
   }
-  ret = rte_eal_init(argc, argv);
+
+  bool init_use_thread = true;
+  if (init_use_thread) {
+    /* dpdk default pin CPU to main lcore in the call of rte_eal_init */
+    struct dev_eal_init_args i_args;
+    memset(&i_args, 0, sizeof(i_args));
+    i_args.argc = argc;
+    i_args.argv = argv;
+    pthread_t eal_init_thread = 0;
+    pthread_create(&eal_init_thread, NULL, dev_eal_init_thread, &i_args);
+    info("%s, wait eal_init_thread done\n", __func__);
+    pthread_join(eal_init_thread, NULL);
+    ret = i_args.result;
+  } else {
+    ret = rte_eal_init(argc, argv);
+  }
   if (ret < 0) return ret;
+
   eal_initted = true;
 
   return 0;

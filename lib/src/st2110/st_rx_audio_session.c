@@ -389,9 +389,17 @@ static int rx_audio_session_handle_frame_pkt(struct mtl_main_impl* impl,
   uint16_t seq_id = ntohs(rtp->seq_number);
   uint32_t tmstamp = ntohl(rtp->tmstamp);
   uint8_t payload_type = rtp->payload_type;
+  uint32_t pkt_len = mbuf->data_len - sizeof(struct st_rfc3550_audio_hdr);
 
   if (payload_type != ops->payload_type) {
     s->st30_stat_pkts_wrong_hdr_dropped++;
+    return -EINVAL;
+  }
+
+  if (pkt_len != s->pkt_len) {
+    dbg("%s(%d,%d), drop as pkt_len mismatch now %u expect %u\n", __func__, s->idx,
+        s_port, pkt_len, s->pkt_len);
+    s->st30_stat_pkts_len_mismatch_dropped++;
     return -EINVAL;
   }
 
@@ -788,7 +796,8 @@ static int rx_audio_session_attach(struct mtl_main_impl* impl,
     }
   }
 
-  info("%s(%d), succ\n", __func__, idx);
+  info("%s(%d), pkt_len %u frame_size %" PRId64 "\n", __func__, idx, s->pkt_len,
+       s->st30_frame_size);
   return 0;
 }
 
@@ -816,6 +825,11 @@ static void rx_audio_session_stat(struct st_rx_audio_session_impl* s) {
     notice("RX_AUDIO_SESSION(%d): wrong hdr dropped pkts %d\n", idx,
            s->st30_stat_pkts_wrong_hdr_dropped);
     s->st30_stat_pkts_wrong_hdr_dropped = 0;
+  }
+  if (s->st30_stat_pkts_len_mismatch_dropped) {
+    notice("RX_AUDIO_SESSION(%d): pkt len mismatch dropped pkts %d\n", idx,
+           s->st30_stat_pkts_len_mismatch_dropped);
+    s->st30_stat_pkts_len_mismatch_dropped = 0;
   }
 }
 
