@@ -513,7 +513,9 @@ static int upl_pselect(struct upl_ctx* ctx, int nfds, fd_set* readfds, fd_set* w
   int timeout_ms = 0;
   if (timeout)
     timeout_ms = timeout->tv_sec * 1000 + timeout->tv_usec / 1000;
-  else
+  else if (timeout_spec) {
+    timeout_ms = timeout_spec->tv_sec * 1000 + timeout_spec->tv_nsec / 1000000;
+  } else
     timeout_ms = 1000 * 2; /* wa: when timeout is NULL */
   int ret =
       mufd_poll_query(poll_ufds, poll_ufds_cnt, timeout_ms, upl_select_query, &priv);
