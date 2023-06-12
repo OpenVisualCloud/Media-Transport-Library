@@ -264,6 +264,22 @@ int mufd_socket_check(int domain, int type, int protocol);
 int mufd_poll_query(struct pollfd* fds, nfds_t nfds, int timeout,
                     int (*query)(void* priv), void* priv);
 
+/**
+ * Get the ip info(address, netmask, gateway) for mufd port.
+ *
+ * @param ip
+ *   The buffer for IP address.
+ * @param netmask
+ *   The buffer for netmask address.
+ * @param gateway
+ *   The buffer for gateway address.
+ * @return
+ *   - 0: Success.
+ *   - <0: Error code.
+ */
+int mufd_port_ip_info(enum mtl_port port, uint8_t ip[MTL_IP_ADDR_LEN],
+                      uint8_t netmask[MTL_IP_ADDR_LEN], uint8_t gateway[MTL_IP_ADDR_LEN]);
+
 #if defined(__cplusplus)
 }
 #endif

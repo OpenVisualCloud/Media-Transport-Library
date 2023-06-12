@@ -20,6 +20,7 @@
 struct utest_ctx {
   struct mufd_init_params init_params;
   uint8_t mcast_ip_addr[MTL_IP_ADDR_LEN];
+  bool dhcp;
 };
 
 struct utest_ctx* utest_get_ctx(void);

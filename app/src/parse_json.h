@@ -124,12 +124,22 @@ typedef struct st_json_interface {
   uint8_t gateway[MTL_IP_ADDR_LEN];
 } st_json_interface_t;
 
+enum st_json_ip_type {
+  ST_JSON_IP_ADDR = 0,
+  ST_JSON_IP_LOCAL_IF,
+  ST_JSON_IP_MAX,
+};
+
 typedef struct st_json_session_base {
   uint8_t ip[MTL_SESSION_PORT_MAX][MTL_IP_ADDR_LEN];
   st_json_interface_t* inf[MTL_SESSION_PORT_MAX];
   int num_inf;
   uint16_t udp_port;
   uint8_t payload_type;
+  enum st_json_ip_type type[MTL_SESSION_PORT_MAX];
+  enum mtl_port local[MTL_SESSION_PORT_MAX]; /* if use ST_JSON_IP_LOCAL_IF */
+  uint8_t local_ip[MTL_SESSION_PORT_MAX]
+                  [MTL_IP_ADDR_LEN]; /* if use ST_JSON_IP_LOCAL_IF */
 } st_json_session_base_t;
 
 typedef struct st_json_video_info {
@@ -263,4 +273,5 @@ enum st_fps st_app_get_fps(enum video_format fmt);
 uint32_t st_app_get_width(enum video_format fmt);
 uint32_t st_app_get_height(enum video_format fmt);
 bool st_app_get_interlaced(enum video_format fmt);
+
 #endif

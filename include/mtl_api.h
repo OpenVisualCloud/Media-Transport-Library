@@ -1138,6 +1138,24 @@ enum mtl_rss_mode mtl_rss_mode_get(mtl_handle mt);
 enum mtl_iova_mode mtl_iova_mode_get(mtl_handle mt);
 
 /**
+ * Get the ip info(address, netmask, gateway) for one mtl port.
+ *
+ * @param handle
+ *   The handle to the st user dma dev.
+ * @param ip
+ *   The buffer for IP address.
+ * @param netmask
+ *   The buffer for netmask address.
+ * @param gateway
+ *   The buffer for gateway address.
+ * @return
+ *   - 0: Success.
+ *   - <0: Error code.
+ */
+int mtl_port_ip_info(mtl_handle mt, enum mtl_port port, uint8_t ip[MTL_IP_ADDR_LEN],
+                     uint8_t netmask[MTL_IP_ADDR_LEN], uint8_t gateway[MTL_IP_ADDR_LEN]);
+
+/**
  * Get SIMD level current cpu supported.
  *
  * @return

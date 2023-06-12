@@ -92,6 +92,7 @@ struct st_tests_context {
   uint64_t ptp_time;
   enum st_test_level level;
   bool hdr_split;
+  bool dhcp;
 
   st22_encoder_dev_handle encoder_dev_handle;
   st22_decoder_dev_handle decoder_dev_handle;
