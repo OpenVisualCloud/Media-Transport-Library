@@ -1,0 +1,61 @@
+{
+    "interfaces": [
+        {
+            "name": "0000:00:06.0",
+            "proto": "dhcp"
+        },
+        {
+            "name": "0000:00:07.0",
+            "proto": "dhcp"
+        }
+    ],
+    "tx_sessions": [
+        {
+            "dip": [
+                "1"
+            ],
+            "interface": [
+                0
+            ],
+            "st20p": [
+                {
+                    "replicas": 2,
+                    "start_port": 20000,
+                    "payload_type": 112,
+                    "width": 1920,
+                    "height": 1080,
+                    "fps": "p59",
+                    "device": "AUTO",
+                    "input_format": "V210",
+                    "transport_format": "YUV_422_10bit",
+                    "st20p_url": "./test.yuv"
+                }
+            ]
+        }
+    ],
+    "rx_sessions": [
+        {
+            "ip": [
+                "0"
+            ],
+            "interface": [
+                1
+            ],
+            "st20p": [
+                {
+                    "replicas": 2,
+                    "start_port": 20000,
+                    "payload_type": 112,
+                    "width": 1920,
+                    "height": 1080,
+                    "fps": "p59",
+                    "device": "AUTO",
+                    "output_format": "V210",
+                    "transport_format": "YUV_422_10bit",
+                    "display": false,
+                    "measure_latency": true
+                }
+            ]
+        }
+    ]
+}
