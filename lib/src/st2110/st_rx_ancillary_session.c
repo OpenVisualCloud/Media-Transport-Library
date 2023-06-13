@@ -522,7 +522,7 @@ static int rx_ancillary_sessions_mgr_init(struct mtl_main_impl* impl,
     }
   }
 
-  mt_stat_register(mgr->parent, st_rx_ancillary_sessions_stat, mgr);
+  mt_stat_register(mgr->parent, st_rx_ancillary_sessions_stat, mgr, "rx_anc");
   info("%s(%d), succ\n", __func__, idx);
   return 0;
 }

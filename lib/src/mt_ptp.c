@@ -898,7 +898,7 @@ int mt_ptp_init(struct mtl_main_impl* impl) {
       return ret;
     }
 
-    mt_stat_register(impl, ptp_stat, ptp);
+    mt_stat_register(impl, ptp_stat, ptp, "ptp");
 
     /* assign arp instance */
     impl->ptp[i] = ptp;

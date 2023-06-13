@@ -5,6 +5,7 @@ on:
     paths:
       - 'include/**'
       - 'lib/**'
+      - 'ld_preload/**'
       - 'patches/dpdk/**'
       - 'tests/**'
       - build.sh
@@ -18,6 +19,7 @@ on:
     paths:
       - 'include/**'
       - 'lib/**'
+      - 'ld_preload/**'
       - 'patches/dpdk/**'
       - 'tests/**'
       - build.sh

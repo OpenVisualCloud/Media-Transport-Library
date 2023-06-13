@@ -11,7 +11,7 @@ int mt_stat_init(struct mtl_main_impl* impl);
 int mt_stat_uinit(struct mtl_main_impl* impl);
 int mt_stat_dump(struct mtl_main_impl* impl);
 
-int mt_stat_register(struct mtl_main_impl* impl, mt_stat_cb_t cb, void* priv);
+int mt_stat_register(struct mtl_main_impl* impl, mt_stat_cb_t cb, void* priv, char* name);
 int mt_stat_unregister(struct mtl_main_impl* impl, mt_stat_cb_t cb, void* priv);
 
 #endif
