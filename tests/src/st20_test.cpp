@@ -852,6 +852,13 @@ static void st20_rx_fps_test(enum st20_type type[], enum st_fps fps[], int width
   /* return if level small than global */
   if (level < ctx->level) return;
 
+  if (ext_buf) {
+    if (ctx->iova == MTL_IOVA_MODE_PA) {
+      info("%s, skip ext_buf test as it's PA iova mode\n", __func__);
+      return;
+    }
+  }
+
   std::vector<tests_context*> test_ctx_tx;
   std::vector<tests_context*> test_ctx_rx;
   std::vector<st20_tx_handle> tx_handle;
@@ -1254,7 +1261,8 @@ TEST(St20_rx, ext_frame_mix_s3) {
                    ST_TEST_LEVEL_MANDATORY, 3, true);
 }
 
-static void st20_rx_update_src_test(enum st20_type type, int tx_sessions) {
+static void st20_rx_update_src_test(enum st20_type type, int tx_sessions,
+                                    enum st_test_level level = ST_TEST_LEVEL_ALL) {
   auto ctx = (struct st_tests_context*)st_test_ctx();
   auto m_handle = ctx->handle;
   int ret;
@@ -1266,6 +1274,9 @@ static void st20_rx_update_src_test(enum st20_type type, int tx_sessions) {
     return;
   }
   ASSERT_TRUE(tx_sessions >= 1);
+
+  /* return if level small than global */
+  if (level < ctx->level) return;
 
   int rx_sessions = 1;
   // 1501/1502 for one frame, max two frames.
