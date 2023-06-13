@@ -511,9 +511,12 @@ static int upl_pselect(struct upl_ctx* ctx, int nfds, fd_set* readfds, fd_set* w
   priv.timeout_spec = timeout_spec;
   priv.sigmask = sigmask;
   int timeout_ms = 0;
-  if (timeout) timeout_ms = timeout->tv_sec * 1000 + timeout->tv_usec / 1000;
-  /* wa to fix end loop in userspace issue */
-  if (timeout_ms <= 0) timeout_ms = 1000 * 2;
+  if (timeout)
+    timeout_ms = timeout->tv_sec * 1000 + timeout->tv_usec / 1000;
+  else if (timeout_spec) {
+    timeout_ms = timeout_spec->tv_sec * 1000 + timeout_spec->tv_nsec / 1000000;
+  } else
+    timeout_ms = 1000 * 2; /* wa: when timeout is NULL */
   int ret =
       mufd_poll_query(poll_ufds, poll_ufds_cnt, timeout_ms, upl_select_query, &priv);
   if (ret < 0) return ret;
@@ -579,6 +582,8 @@ static int upl_ppoll(struct upl_ctx* ctx, struct pollfd* fds, nfds_t nfds, int t
   priv.timeout = timeout;
   priv.tmo_p = tmo_p;
   priv.sigmask = sigmask;
+  /* wa to fix end loop in userspace issue */
+  if (timeout < 0) timeout = 1000 * 2;
 
   int ret;
   if (kfds_cnt)
@@ -836,7 +841,8 @@ int ppoll(struct pollfd* fds, nfds_t nfds, const struct timespec* tmo_p,
   struct upl_ctx* ctx = upl_get_ctx();
   if (!ctx) return libc_fn.ppoll(fds, nfds, tmo_p, sigmask);
 
-  return upl_ppoll(ctx, fds, nfds, 0, tmo_p, sigmask);
+  int timeout = (tmo_p == NULL) ? -1 : (tmo_p->tv_sec * 1000 + tmo_p->tv_nsec / 1000000);
+  return upl_ppoll(ctx, fds, nfds, timeout, tmo_p, sigmask);
 }
 
 int select(int nfds, fd_set* readfds, fd_set* writefds, fd_set* exceptfds,
@@ -1023,7 +1029,7 @@ int epoll_wait(int epfd, struct epoll_event* events, int maxevents, int timeout)
 
   dbg("%s(%d), timeout %d maxevents %d\n", __func__, epfd, timeout, maxevents);
   /* wa to fix end loop in userspace issue */
-  if (timeout <= 0) timeout = 1000 * 2;
+  if (timeout < 0) timeout = 1000 * 2;
   return upl_efd_epoll_pwait(efd, events, maxevents, timeout, NULL);
 }
 
@@ -1039,7 +1045,7 @@ int epoll_pwait(int epfd, struct epoll_event* events, int maxevents, int timeout
   int kfd_cnt = atomic_load(&efd->kfd_cnt);
   info("%s(%d), timeout %d, kfd_cnt %d\n", __func__, epfd, timeout, kfd_cnt);
   /* wa to fix end loop in userspace issue */
-  if (timeout <= 0) timeout = 1000 * 2;
+  if (timeout < 0) timeout = 1000 * 2;
   return upl_efd_epoll_pwait(efd, events, maxevents, timeout, sigmask);
 }
 
