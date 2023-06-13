@@ -1,11 +1,11 @@
 {
     "interfaces": [
         {
-            "name": "0000:af:01.0",
+            "name": "0000:00:06.0",
             "proto": "dhcp"
         },
         {
-            "name": "0000:af:01.1",
+            "name": "0000:00:06.0",
             "proto": "dhcp"
         }
     ],
