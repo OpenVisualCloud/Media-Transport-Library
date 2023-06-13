@@ -840,3 +840,14 @@ int mufd_register_stat_dump_cb(int sockfd, int (*dump)(void* priv), void* priv) 
 int mufd_socket_check(int domain, int type, int protocol) {
   return mudp_verify_socket_args(domain, type, protocol);
 }
+
+int mufd_port_ip_info(enum mtl_port port, uint8_t ip[MTL_IP_ADDR_LEN],
+                      uint8_t netmask[MTL_IP_ADDR_LEN],
+                      uint8_t gateway[MTL_IP_ADDR_LEN]) {
+  struct ufd_mt_ctx* ctx = ufd_get_mt_ctx(false);
+  if (!ctx) {
+    err("%s, ctx get fail\n", __func__);
+    return -EIO;
+  }
+  return mtl_port_ip_info(ctx->mt, port, ip, netmask, gateway);
+}

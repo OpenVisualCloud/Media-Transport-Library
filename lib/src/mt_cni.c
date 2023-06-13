@@ -348,7 +348,7 @@ int mt_cni_init(struct mtl_main_impl* impl) {
 
   ret = mt_cni_start(impl);
   if (ret < 0) {
-    info("%s, mt_cni_start fail %d\n", __func__, ret);
+    err("%s, mt_cni_start fail %d\n", __func__, ret);
     mt_cni_uinit(impl);
     return ret;
   }

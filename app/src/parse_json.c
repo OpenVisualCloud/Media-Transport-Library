@@ -1623,6 +1623,20 @@ static int parse_session_num(json_object* group, const char* name) {
   return num;
 }
 
+static int parse_session_ip(const char* str_ip, struct st_json_session_base* base,
+                            enum mtl_session_port port) {
+  int ret = inet_pton(AF_INET, str_ip, base->ip[port]);
+  if (ret == 1) return 0;
+
+  /* if it's local interface case for test */
+  ret = strtol(str_ip, NULL, 10);
+  if (ret < 0) return ret;
+  base->type[port] = ST_JSON_IP_LOCAL_IF;
+  base->local[port] = ret;
+  dbg("%s, local if port %d\n", __func__, ret);
+  return 0;
+}
+
 void st_app_free_json(st_json_context_t* ctx) {
   if (ctx->interfaces) {
     st_app_free(ctx->interfaces);
@@ -1878,12 +1892,13 @@ int st_app_parse_json(st_json_context_t* ctx, const char* filename) {
             goto error;
           }
           for (int k = 0; k < replicas; ++k) {
-            inet_pton(AF_INET, json_object_get_string(dip_p),
-                      ctx->tx_video_sessions[num_video].base.ip[0]);
+            parse_session_ip(json_object_get_string(dip_p),
+                             &ctx->tx_video_sessions[num_video].base, MTL_SESSION_PORT_P);
             ctx->tx_video_sessions[num_video].base.inf[0] = &ctx->interfaces[inf_p];
             if (num_inf == 2) {
-              inet_pton(AF_INET, json_object_get_string(dip_r),
-                        ctx->tx_video_sessions[num_video].base.ip[1]);
+              parse_session_ip(json_object_get_string(dip_r),
+                               &ctx->tx_video_sessions[num_video].base,
+                               MTL_SESSION_PORT_R);
               ctx->tx_video_sessions[num_video].base.inf[1] = &ctx->interfaces[inf_r];
             }
             ctx->tx_video_sessions[num_video].base.num_inf = num_inf;
@@ -1909,12 +1924,13 @@ int st_app_parse_json(st_json_context_t* ctx, const char* filename) {
             goto error;
           }
           for (int k = 0; k < replicas; ++k) {
-            inet_pton(AF_INET, json_object_get_string(dip_p),
-                      ctx->tx_audio_sessions[num_audio].base.ip[0]);
+            parse_session_ip(json_object_get_string(dip_p),
+                             &ctx->tx_audio_sessions[num_audio].base, MTL_SESSION_PORT_P);
             ctx->tx_audio_sessions[num_audio].base.inf[0] = &ctx->interfaces[inf_p];
             if (num_inf == 2) {
-              inet_pton(AF_INET, json_object_get_string(dip_r),
-                        ctx->tx_audio_sessions[num_audio].base.ip[1]);
+              parse_session_ip(json_object_get_string(dip_r),
+                               &ctx->tx_audio_sessions[num_audio].base,
+                               MTL_SESSION_PORT_R);
               ctx->tx_audio_sessions[num_audio].base.inf[1] = &ctx->interfaces[inf_r];
             }
             ctx->tx_audio_sessions[num_audio].base.num_inf = num_inf;
@@ -1939,12 +1955,12 @@ int st_app_parse_json(st_json_context_t* ctx, const char* filename) {
             goto error;
           }
           for (int k = 0; k < replicas; ++k) {
-            inet_pton(AF_INET, json_object_get_string(dip_p),
-                      ctx->tx_anc_sessions[num_anc].base.ip[0]);
+            parse_session_ip(json_object_get_string(dip_p),
+                             &ctx->tx_anc_sessions[num_anc].base, MTL_SESSION_PORT_P);
             ctx->tx_anc_sessions[num_anc].base.inf[0] = &ctx->interfaces[inf_p];
             if (num_inf == 2) {
-              inet_pton(AF_INET, json_object_get_string(dip_r),
-                        ctx->tx_anc_sessions[num_anc].base.ip[1]);
+              parse_session_ip(json_object_get_string(dip_r),
+                               &ctx->tx_anc_sessions[num_anc].base, MTL_SESSION_PORT_R);
               ctx->tx_anc_sessions[num_anc].base.inf[1] = &ctx->interfaces[inf_r];
             }
             ctx->tx_anc_sessions[num_anc].base.num_inf = num_inf;
@@ -1968,12 +1984,13 @@ int st_app_parse_json(st_json_context_t* ctx, const char* filename) {
             goto error;
           }
           for (int k = 0; k < replicas; ++k) {
-            inet_pton(AF_INET, json_object_get_string(dip_p),
-                      ctx->tx_st22p_sessions[num_st22p].base.ip[0]);
+            parse_session_ip(json_object_get_string(dip_p),
+                             &ctx->tx_st22p_sessions[num_st22p].base, MTL_SESSION_PORT_P);
             ctx->tx_st22p_sessions[num_st22p].base.inf[0] = &ctx->interfaces[inf_p];
             if (num_inf == 2) {
-              inet_pton(AF_INET, json_object_get_string(dip_r),
-                        ctx->tx_st22p_sessions[num_st22p].base.ip[1]);
+              parse_session_ip(json_object_get_string(dip_r),
+                               &ctx->tx_st22p_sessions[num_st22p].base,
+                               MTL_SESSION_PORT_R);
               ctx->tx_st22p_sessions[num_st22p].base.inf[1] = &ctx->interfaces[inf_r];
             }
             ctx->tx_st22p_sessions[num_st22p].base.num_inf = num_inf;
@@ -1999,12 +2016,13 @@ int st_app_parse_json(st_json_context_t* ctx, const char* filename) {
             goto error;
           }
           for (int k = 0; k < replicas; ++k) {
-            inet_pton(AF_INET, json_object_get_string(dip_p),
-                      ctx->tx_st20p_sessions[num_st20p].base.ip[0]);
+            parse_session_ip(json_object_get_string(dip_p),
+                             &ctx->tx_st20p_sessions[num_st20p].base, MTL_SESSION_PORT_P);
             ctx->tx_st20p_sessions[num_st20p].base.inf[0] = &ctx->interfaces[inf_p];
             if (num_inf == 2) {
-              inet_pton(AF_INET, json_object_get_string(dip_r),
-                        ctx->tx_st20p_sessions[num_st20p].base.ip[1]);
+              parse_session_ip(json_object_get_string(dip_r),
+                               &ctx->tx_st20p_sessions[num_st20p].base,
+                               MTL_SESSION_PORT_R);
               ctx->tx_st20p_sessions[num_st20p].base.inf[1] = &ctx->interfaces[inf_r];
             }
             ctx->tx_st20p_sessions[num_st20p].base.num_inf = num_inf;
@@ -2183,12 +2201,13 @@ int st_app_parse_json(st_json_context_t* ctx, const char* filename) {
             goto error;
           }
           for (int k = 0; k < replicas; ++k) {
-            inet_pton(AF_INET, json_object_get_string(ip_p),
-                      ctx->rx_video_sessions[num_video].base.ip[0]);
+            parse_session_ip(json_object_get_string(ip_p),
+                             &ctx->rx_video_sessions[num_video].base, MTL_SESSION_PORT_P);
             ctx->rx_video_sessions[num_video].base.inf[0] = &ctx->interfaces[inf_p];
             if (num_inf == 2) {
-              inet_pton(AF_INET, json_object_get_string(ip_r),
-                        ctx->rx_video_sessions[num_video].base.ip[1]);
+              parse_session_ip(json_object_get_string(ip_r),
+                               &ctx->rx_video_sessions[num_video].base,
+                               MTL_SESSION_PORT_R);
               ctx->rx_video_sessions[num_video].base.inf[1] = &ctx->interfaces[inf_r];
             }
             ctx->rx_video_sessions[num_video].base.num_inf = num_inf;
@@ -2214,12 +2233,13 @@ int st_app_parse_json(st_json_context_t* ctx, const char* filename) {
             goto error;
           }
           for (int k = 0; k < replicas; ++k) {
-            inet_pton(AF_INET, json_object_get_string(ip_p),
-                      ctx->rx_audio_sessions[num_audio].base.ip[0]);
+            parse_session_ip(json_object_get_string(ip_p),
+                             &ctx->rx_audio_sessions[num_audio].base, MTL_SESSION_PORT_P);
             ctx->rx_audio_sessions[num_audio].base.inf[0] = &ctx->interfaces[inf_p];
             if (num_inf == 2) {
-              inet_pton(AF_INET, json_object_get_string(ip_r),
-                        ctx->rx_audio_sessions[num_audio].base.ip[1]);
+              parse_session_ip(json_object_get_string(ip_r),
+                               &ctx->rx_audio_sessions[num_audio].base,
+                               MTL_SESSION_PORT_R);
               ctx->rx_audio_sessions[num_audio].base.inf[1] = &ctx->interfaces[inf_r];
             }
             ctx->rx_audio_sessions[num_audio].base.num_inf = num_inf;
@@ -2244,12 +2264,12 @@ int st_app_parse_json(st_json_context_t* ctx, const char* filename) {
             goto error;
           }
           for (int k = 0; k < replicas; ++k) {
-            inet_pton(AF_INET, json_object_get_string(ip_p),
-                      ctx->rx_anc_sessions[num_anc].base.ip[0]);
+            parse_session_ip(json_object_get_string(ip_p),
+                             &ctx->rx_anc_sessions[num_anc].base, MTL_SESSION_PORT_P);
             ctx->rx_anc_sessions[num_anc].base.inf[0] = &ctx->interfaces[inf_p];
             if (num_inf == 2) {
-              inet_pton(AF_INET, json_object_get_string(ip_r),
-                        ctx->rx_anc_sessions[num_anc].base.ip[1]);
+              parse_session_ip(json_object_get_string(ip_r),
+                               &ctx->rx_anc_sessions[num_anc].base, MTL_SESSION_PORT_R);
               ctx->rx_anc_sessions[num_anc].base.inf[1] = &ctx->interfaces[inf_r];
             }
             ctx->rx_anc_sessions[num_anc].base.num_inf = num_inf;
@@ -2273,12 +2293,13 @@ int st_app_parse_json(st_json_context_t* ctx, const char* filename) {
             goto error;
           }
           for (int k = 0; k < replicas; ++k) {
-            inet_pton(AF_INET, json_object_get_string(ip_p),
-                      ctx->rx_st22p_sessions[num_st22p].base.ip[0]);
+            parse_session_ip(json_object_get_string(ip_p),
+                             &ctx->rx_st22p_sessions[num_st22p].base, MTL_SESSION_PORT_P);
             ctx->rx_st22p_sessions[num_st22p].base.inf[0] = &ctx->interfaces[inf_p];
             if (num_inf == 2) {
-              inet_pton(AF_INET, json_object_get_string(ip_r),
-                        ctx->rx_st22p_sessions[num_st22p].base.ip[1]);
+              parse_session_ip(json_object_get_string(ip_r),
+                               &ctx->rx_st22p_sessions[num_st22p].base,
+                               MTL_SESSION_PORT_R);
               ctx->rx_st22p_sessions[num_st22p].base.inf[1] = &ctx->interfaces[inf_r];
             }
             ctx->rx_st22p_sessions[num_st22p].base.num_inf = num_inf;
@@ -2304,12 +2325,13 @@ int st_app_parse_json(st_json_context_t* ctx, const char* filename) {
             goto error;
           }
           for (int k = 0; k < replicas; ++k) {
-            inet_pton(AF_INET, json_object_get_string(ip_p),
-                      ctx->rx_st20p_sessions[num_st20p].base.ip[0]);
+            parse_session_ip(json_object_get_string(ip_p),
+                             &ctx->rx_st20p_sessions[num_st20p].base, MTL_SESSION_PORT_P);
             ctx->rx_st20p_sessions[num_st20p].base.inf[0] = &ctx->interfaces[inf_p];
             if (num_inf == 2) {
-              inet_pton(AF_INET, json_object_get_string(ip_r),
-                        ctx->rx_st20p_sessions[num_st20p].base.ip[1]);
+              parse_session_ip(json_object_get_string(ip_r),
+                               &ctx->rx_st20p_sessions[num_st20p].base,
+                               MTL_SESSION_PORT_R);
               ctx->rx_st20p_sessions[num_st20p].base.inf[1] = &ctx->interfaces[inf_r];
             }
             ctx->rx_st20p_sessions[num_st20p].base.num_inf = num_inf;
@@ -2340,12 +2362,13 @@ int st_app_parse_json(st_json_context_t* ctx, const char* filename) {
             goto error;
           }
           for (int k = 0; k < replicas; ++k) {
-            inet_pton(AF_INET, json_object_get_string(ip_p),
-                      ctx->rx_st20r_sessions[num_st20r].base.ip[0]);
+            parse_session_ip(json_object_get_string(ip_p),
+                             &ctx->rx_st20r_sessions[num_st20r].base, MTL_SESSION_PORT_P);
             ctx->rx_st20r_sessions[num_st20r].base.inf[0] = &ctx->interfaces[inf_p];
             if (num_inf == 2) {
-              inet_pton(AF_INET, json_object_get_string(ip_r),
-                        ctx->rx_st20r_sessions[num_st20r].base.ip[1]);
+              parse_session_ip(json_object_get_string(ip_r),
+                               &ctx->rx_st20r_sessions[num_st20r].base,
+                               MTL_SESSION_PORT_R);
               ctx->rx_st20r_sessions[num_st20r].base.inf[1] = &ctx->interfaces[inf_r];
             }
             ctx->rx_st20r_sessions[num_st20r].base.num_inf = num_inf;
@@ -2417,5 +2440,15 @@ bool st_app_get_interlaced(enum video_format fmt) {
       return true;
     default:
       return false;
+  }
+}
+
+uint8_t* st_json_ip(struct st_app_context* ctx, st_json_session_base_t* base,
+                    enum mtl_session_port port) {
+  if (base->type[port] == ST_JSON_IP_LOCAL_IF) {
+    mtl_port_ip_info(ctx->st, base->local[port], base->local_ip[port], NULL, NULL);
+    return base->local_ip[port];
+  } else {
+    return base->ip[port];
   }
 }

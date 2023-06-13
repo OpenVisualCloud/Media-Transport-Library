@@ -568,4 +568,7 @@ static inline uint64_t st_app_get_monotonic_time() {
 int st_app_video_get_lcore(struct st_app_context* ctx, int sch_idx, bool rtp,
                            unsigned int* lcore);
 
+uint8_t* st_json_ip(struct st_app_context* ctx, st_json_session_base_t* base,
+                    enum mtl_session_port port);
+
 #endif
