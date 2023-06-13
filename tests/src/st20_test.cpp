@@ -720,6 +720,13 @@ static void st20_tx_fps_test(enum st20_type type[], enum st_fps fps[], int width
   /* return if level small than global */
   if (level < ctx->level) return;
 
+  if (ext_buf) {
+    if (ctx->iova == MTL_IOVA_MODE_PA) {
+      info("%s, skip ext_buf test as it's PA iova mode\n", __func__);
+      return;
+    }
+  }
+
   test_ctx.resize(sessions);
   handle.resize(sessions);
   expect_framerate.resize(sessions);
