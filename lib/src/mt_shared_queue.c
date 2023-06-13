@@ -88,7 +88,7 @@ static int rsq_init(struct mtl_main_impl* impl, struct mt_rsq_impl* rsq) {
     MT_TAILQ_INIT(&rsq_queue->head);
   }
 
-  int ret = mt_stat_register(impl, rsq_stat_dump, rsq);
+  int ret = mt_stat_register(impl, rsq_stat_dump, rsq, "rsq");
   if (ret < 0) {
     rsq_uinit(rsq);
     return ret;
@@ -326,7 +326,7 @@ static int tsq_init(struct mtl_main_impl* impl, struct mt_tsq_impl* tsq) {
     MT_TAILQ_INIT(&tsq_queue->head);
   }
 
-  int ret = mt_stat_register(impl, tsq_stat_dump, tsq);
+  int ret = mt_stat_register(impl, tsq_stat_dump, tsq, "tsq");
   if (ret < 0) {
     tsq_uinit(tsq);
     return ret;

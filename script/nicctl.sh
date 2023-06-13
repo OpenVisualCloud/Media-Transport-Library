@@ -89,12 +89,12 @@ if [ -z "$cmd" ]; then
 fi
 
 bdf=$2
-ice=$(dpdk-devbind.py -s | { grep "$bdf" || true; } | { grep ice || true; })
-i40e=$(dpdk-devbind.py -s | { grep "$bdf" || true; } | { grep i40e || true; })
-if [ -z "$ice" ] && [ -z "$i40e" ]; then
-    echo "$bdf is not ice(CVL) or i40e(FLV)"
-    exit 1
+bdf_stat=$(dpdk-devbind.py -s | { grep "$bdf" || true; })
+if [ -z "$bdf_stat" ]; then
+   echo "$bdf not found in this platform"
+   exit 1
 fi
+echo "$bdf_stat"
 
 port=$(dpdk-devbind.py -s | grep "$bdf.*if" | sed -e s/.*if=//g | awk '{print $1;}')
 if [ "$cmd" == "bind_kernel" ]; then

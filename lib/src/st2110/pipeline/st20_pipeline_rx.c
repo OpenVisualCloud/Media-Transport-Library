@@ -69,7 +69,7 @@ static int rx_st20p_packet_convert(void* priv, void* frame,
           rx_st20p_next_available(ctx, framebuff->idx, ST20P_RX_FRAME_IN_CONVERTING);
       if (framebuff && framebuff->dst.timestamp != meta->timestamp) {
         /* should never happen */
-        err("%s(%d), wrong frame timestamp\n", __func__, ctx->idx);
+        err_once("%s(%d), wrong frame timestamp\n", __func__, ctx->idx);
         mt_pthread_mutex_unlock(&ctx->lock);
         return -EIO;
       }

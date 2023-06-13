@@ -595,6 +595,8 @@ GTEST_API_ int main(int argc, char** argv) {
     }
   }
 
+  ctx->iova = mtl_iova_mode_get(ctx->handle);
+
   st_test_st22_plugin_register(ctx);
   st_test_convert_plugin_register(ctx);
 

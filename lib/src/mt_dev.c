@@ -2095,7 +2095,7 @@ int mt_dev_create(struct mtl_main_impl* impl) {
       }
     }
 
-    mt_stat_register(impl, dev_inf_stat, inf);
+    mt_stat_register(impl, dev_inf_stat, inf, "dev_inf");
 
     info("%s(%d), feature 0x%x, tx pacing %s\n", __func__, i, inf->feature,
          st_tx_pacing_way_name(inf->tx_pacing_way));

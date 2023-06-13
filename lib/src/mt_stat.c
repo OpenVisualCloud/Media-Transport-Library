@@ -22,7 +22,8 @@ int mt_stat_dump(struct mtl_main_impl* impl) {
   return 0;
 }
 
-int mt_stat_register(struct mtl_main_impl* impl, mt_stat_cb_t cb, void* priv) {
+int mt_stat_register(struct mtl_main_impl* impl, mt_stat_cb_t cb, void* priv,
+                     char* name) {
   struct mt_stat_mgr* mgr = get_stat_mgr(impl);
   struct mt_stat_item* item =
       mt_rte_zmalloc_socket(sizeof(*item), mt_socket_id(impl, MTL_PORT_P));
@@ -32,6 +33,7 @@ int mt_stat_register(struct mtl_main_impl* impl, mt_stat_cb_t cb, void* priv) {
   }
   item->cb_func = cb;
   item->cb_priv = priv;
+  if (name) strncpy(item->name, name, ST_MAX_NAME_LEN - 1);
 
   mt_pthread_mutex_lock(&mgr->mutex);
   MT_TAILQ_INSERT_TAIL(&mgr->head, item, next);
@@ -78,7 +80,7 @@ int mt_stat_uinit(struct mtl_main_impl* impl) {
 
   /* check if any not unregister */
   while ((item = MT_TAILQ_FIRST(&mgr->head))) {
-    warn("%s, %p not unregister\n", __func__, item->cb_priv);
+    warn("%s, %p(%s) not unregister\n", __func__, item->cb_priv, item->name);
     MT_TAILQ_REMOVE(&mgr->head, item, next);
     mt_free(item);
   }

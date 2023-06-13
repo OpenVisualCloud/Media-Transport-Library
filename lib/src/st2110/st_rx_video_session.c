@@ -3477,7 +3477,7 @@ int st_rx_video_sessions_sch_init(struct mtl_main_impl* impl, struct mt_sch_impl
     return ret;
   }
 
-  mt_stat_register(impl, rv_sessions_stat, rx_video_mgr);
+  mt_stat_register(impl, rv_sessions_stat, rx_video_mgr, "rx_video");
   sch->rx_video_init = true;
   return 0;
 }
@@ -4043,7 +4043,10 @@ st22_rx_handle st22_rx_create(mtl_handle mt, struct st22_rx_ops* ops) {
 
   enum mt_sch_type type =
       mt_has_rxv_separate_sch(impl) ? MT_SCH_TYPE_RX_VIDEO_ONLY : MT_SCH_TYPE_DEFAULT;
-  sch = mt_sch_get(impl, quota_mbs, type, MT_SCH_MASK_ALL);
+  if (mt_has_srss(impl, MTL_PORT_P))
+    sch = impl->srss[MTL_PORT_P]->sch;
+  else
+    sch = mt_sch_get(impl, quota_mbs, type, MT_SCH_MASK_ALL);
   if (!sch) {
     mt_rte_free(s_impl);
     err("%s, get sch fail\n", __func__);

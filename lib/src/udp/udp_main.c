@@ -1208,7 +1208,7 @@ mudp_handle mudp_socket_port(mtl_handle mt, int domain, int type, int protocol,
   /* todo: use random port, now hardcode to 0xAAAA plus index */
   udp_bind_port(s, 43690 + idx);
 
-  ret = mt_stat_register(impl, udp_stat_dump, s);
+  ret = mt_stat_register(impl, udp_stat_dump, s, "udp");
   if (ret < 0) {
     err("%s(%d), hdr init fail\n", __func__, idx);
     mudp_close(s);

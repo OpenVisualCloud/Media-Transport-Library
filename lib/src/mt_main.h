@@ -631,6 +631,8 @@ struct mt_stat_item {
   mt_stat_cb_t cb_func;
   /* stat dump callback private data */
   void* cb_priv;
+  /* name */
+  char name[ST_MAX_NAME_LEN];
   /* linked list */
   MT_TAILQ_ENTRY(mt_stat_item) next;
 };

@@ -510,7 +510,7 @@ int mt_sch_mrg_init(struct mtl_main_impl* impl, int data_quota_mbs_limit) {
     mt_pthread_mutex_init(&sch->tx_video_mgr_mutex, NULL);
     mt_pthread_mutex_init(&sch->rx_video_mgr_mutex, NULL);
 
-    mt_stat_register(impl, sch_stat, sch);
+    mt_stat_register(impl, sch_stat, sch, "sch");
 
     sch->tasklet =
         mt_rte_zmalloc_socket(sizeof(*sch->tasklet) * sch->nb_tasklets, socket);

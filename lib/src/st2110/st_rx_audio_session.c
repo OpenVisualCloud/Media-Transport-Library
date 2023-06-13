@@ -947,7 +947,7 @@ static int rx_audio_sessions_mgr_init(struct mtl_main_impl* impl, struct mt_sch_
     }
   }
 
-  mt_stat_register(mgr->parent, st_rx_audio_sessions_stat, mgr);
+  mt_stat_register(mgr->parent, st_rx_audio_sessions_stat, mgr, "rx_audio");
   info("%s(%d), succ\n", __func__, idx);
   return 0;
 }

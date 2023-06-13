@@ -1417,7 +1417,7 @@ static int tx_ancillary_sessions_mgr_init(struct mtl_main_impl* impl,
     return -EIO;
   }
 
-  mt_stat_register(mgr->parent, st_tx_ancillary_sessions_stat, mgr);
+  mt_stat_register(mgr->parent, st_tx_ancillary_sessions_stat, mgr, "tx_anc");
   info("%s(%d), succ\n", __func__, idx);
   return 0;
 }

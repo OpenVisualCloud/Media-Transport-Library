@@ -17,18 +17,18 @@
             "interface": [
                 0
             ],
-            "video": [
+            "st20p": [
                 {
-                    "replicas": 1,
-                    "type": "frame",
-                    "pacing": "gap",
-                    "packing": "BPM",
+                    "replicas": 2,
                     "start_port": 20000,
                     "payload_type": 112,
-                    "tr_offset": "default",
-                    "video_format": "i1080p59",
-                    "pg_format": "YUV_422_10bit",
-                    "video_url": "./test.yuv"
+                    "width": 1920,
+                    "height": 1080,
+                    "fps": "p59",
+                    "device": "AUTO",
+                    "input_format": "YUV422RFC4175PG2BE10",
+                    "transport_format": "YUV_422_10bit",
+                    "st20p_url": "./test.yuv"
                 }
             ]
         }
@@ -41,18 +41,19 @@
             "interface": [
                 1
             ],
-            "video": [
+            "st20p": [
                 {
-                    "replicas": 1,
-                    "type": "frame",
-                    "pacing": "gap",
+                    "replicas": 2,
                     "start_port": 20000,
                     "payload_type": 112,
-                    "tr_offset": "default",
-                    "video_format": "i1080p59",
-                    "pg_format": "YUV_422_10bit",
+                    "width": 1920,
+                    "height": 1080,
+                    "fps": "p59",
+                    "device": "AUTO",
+                    "output_format": "YUV422RFC4175PG2BE10",
+                    "transport_format": "YUV_422_10bit",
                     "display": false,
-                    "measure_latency": true,
+                    "measure_latency": true
                 }
             ]
         }

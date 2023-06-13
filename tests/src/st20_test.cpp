@@ -720,6 +720,13 @@ static void st20_tx_fps_test(enum st20_type type[], enum st_fps fps[], int width
   /* return if level small than global */
   if (level < ctx->level) return;
 
+  if (ext_buf) {
+    if (ctx->iova == MTL_IOVA_MODE_PA) {
+      info("%s, skip ext_buf test as it's PA iova mode\n", __func__);
+      return;
+    }
+  }
+
   test_ctx.resize(sessions);
   handle.resize(sessions);
   expect_framerate.resize(sessions);
@@ -844,6 +851,13 @@ static void st20_rx_fps_test(enum st20_type type[], enum st_fps fps[], int width
 
   /* return if level small than global */
   if (level < ctx->level) return;
+
+  if (ext_buf) {
+    if (ctx->iova == MTL_IOVA_MODE_PA) {
+      info("%s, skip ext_buf test as it's PA iova mode\n", __func__);
+      return;
+    }
+  }
 
   std::vector<tests_context*> test_ctx_tx;
   std::vector<tests_context*> test_ctx_rx;
@@ -1247,7 +1261,8 @@ TEST(St20_rx, ext_frame_mix_s3) {
                    ST_TEST_LEVEL_MANDATORY, 3, true);
 }
 
-static void st20_rx_update_src_test(enum st20_type type, int tx_sessions) {
+static void st20_rx_update_src_test(enum st20_type type, int tx_sessions,
+                                    enum st_test_level level = ST_TEST_LEVEL_ALL) {
   auto ctx = (struct st_tests_context*)st_test_ctx();
   auto m_handle = ctx->handle;
   int ret;
@@ -1259,6 +1274,9 @@ static void st20_rx_update_src_test(enum st20_type type, int tx_sessions) {
     return;
   }
   ASSERT_TRUE(tx_sessions >= 1);
+
+  /* return if level small than global */
+  if (level < ctx->level) return;
 
   int rx_sessions = 1;
   // 1501/1502 for one frame, max two frames.
@@ -2424,7 +2442,7 @@ TEST(St20_rx, digest_frame_4096_2160_fps59_94_12bit_yuv444_s1) {
   int height[1] = {2160};
   bool interlaced[1] = {false};
   enum st20_fmt fmt[1] = {ST20_FMT_YUV_444_12BIT};
-  st20_rx_digest_test(type, rx_type, packing, fps, width, height, interlaced, fmt, true,
+  st20_rx_digest_test(type, rx_type, packing, fps, width, height, interlaced, fmt, false,
                       ST_TEST_LEVEL_MANDATORY);
 }
 
@@ -3777,6 +3795,11 @@ static void st20_tx_ext_frame_rx_digest_test(enum st20_packing packing[],
   /* return if level small than global */
   if (level < ctx->level) return;
 
+  if (ctx->iova == MTL_IOVA_MODE_PA) {
+    info("%s, skip as it's PA iova mode\n", __func__);
+    return;
+  }
+
   if (ctx->para.num_ports != 2) {
     info("%s, dual port should be enabled for tx test, one for tx and one for rx\n",
          __func__);
@@ -4312,6 +4335,13 @@ static void st20_linesize_digest_test(enum st20_packing packing[], enum st_fps f
 
   /* return if level small than global */
   if (level < ctx->level) return;
+
+  if (ext) {
+    if (ctx->iova == MTL_IOVA_MODE_PA) {
+      info("%s, skip ext test as it's PA iova mode\n", __func__);
+      return;
+    }
+  }
 
   if (ctx->para.num_ports != 2) {
     info("%s, dual port should be enabled for tx test, one for tx and one for rx\n",

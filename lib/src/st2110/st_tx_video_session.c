@@ -3057,7 +3057,7 @@ int st_tx_video_sessions_sch_init(struct mtl_main_impl* impl, struct mt_sch_impl
     return ret;
   }
 
-  mt_stat_register(impl, tv_sessions_stat, tx_video_mgr);
+  mt_stat_register(impl, tv_sessions_stat, tx_video_mgr, "tx_video");
   sch->tx_video_init = true;
   return 0;
 }
