@@ -3737,7 +3737,8 @@ st20_rx_handle st20_rx_create_with_mask(struct mtl_main_impl* impl,
     return NULL;
   }
 
-  if (!mt_has_user_quota(impl) && st20_is_frame_type(ops->type) && !s->dma_dev) {
+  if (!mt_has_user_quota(impl) && st20_is_frame_type(ops->type) && !s->dma_dev &&
+      !mt_has_srss(impl, MTL_PORT_P)) {
     int extra_quota_mbs = quota_mbs_wo_dma - quota_mbs;
     ret = mt_sch_add_quota(sch, extra_quota_mbs);
     if (ret >= 0) quota_mbs += extra_quota_mbs;

@@ -625,6 +625,13 @@ static void st20p_rx_digest_test(enum st_fps fps[], int width[], int height[],
   /* return if level lower than global */
   if (para->level < ctx->level) return;
 
+  if (para->tx_ext || para->rx_ext) {
+    if (ctx->iova == MTL_IOVA_MODE_PA) {
+      info("%s, skip ext_buf test as it's PA iova mode\n", __func__);
+      return;
+    }
+  }
+
   std::vector<tests_context*> test_ctx_tx;
   std::vector<tests_context*> test_ctx_rx;
   std::vector<st20p_tx_handle> tx_handle;
@@ -938,7 +945,7 @@ static void st20p_rx_digest_test(enum st_fps fps[], int width[], int height[],
     double time_sec = (double)(cur_time_ns - test_ctx_tx[i]->start_time) / NS_PER_S;
     framerate_tx[i] = test_ctx_tx[i]->fb_send / time_sec;
 
-    if (ctx->para.rss_mode != MTL_RSS_MODE_L3_L4) {
+    if (ctx->rss_mode != MTL_RSS_MODE_L3_L4) {
       /* vsync check */
       time_sec = (double)(cur_time_ns - test_ctx_tx[i]->first_vsync_time) / NS_PER_S;
       vsyncrate_tx[i] = test_ctx_tx[i]->vsync_cnt / time_sec;
@@ -965,7 +972,7 @@ static void st20p_rx_digest_test(enum st_fps fps[], int width[], int height[],
     double time_sec = (double)(cur_time_ns - test_ctx_rx[i]->start_time) / NS_PER_S;
     framerate_rx[i] = test_ctx_rx[i]->fb_rec / time_sec;
 
-    if (ctx->para.rss_mode != MTL_RSS_MODE_L3_L4) {
+    if (ctx->rss_mode != MTL_RSS_MODE_L3_L4) {
       /* vsync check */
       time_sec = (double)(cur_time_ns - test_ctx_rx[i]->first_vsync_time) / NS_PER_S;
       vsyncrate_rx[i] = test_ctx_rx[i]->vsync_cnt / time_sec;
