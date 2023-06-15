@@ -123,6 +123,14 @@ void mt_rte_free(void* p) {
 }
 #endif
 
+bool mt_bitmap_test(uint8_t* bitmap, int idx) {
+  int pos = idx / 8;
+  int off = idx % 8;
+  uint8_t bits = bitmap[pos];
+
+  return (bits & (0x1 << off)) ? true : false;
+}
+
 bool mt_bitmap_test_and_set(uint8_t* bitmap, int idx) {
   int pos = idx / 8;
   int off = idx % 8;

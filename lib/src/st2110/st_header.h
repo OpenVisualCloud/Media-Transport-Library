@@ -608,6 +608,9 @@ struct st_rx_video_session_impl {
 
   uint32_t st22_ops_flags;       /* copy of st22_rx_ops->flags */
   size_t st22_expect_frame_size; /* total frame size calculated from marker */
+  /* expect for each frame, st22_expect_frame_size is clear to zero in the init slot of
+   * each frame, in case we don't get maker, it can use previous frame size */
+  size_t st22_expect_size_per_frame;
 
   /* rtp info */
   struct rte_ring* rtps_ring;
@@ -671,6 +674,7 @@ struct st_rx_video_session_impl {
   int stat_pkts_wrong_payload_hdr_split;
   int stat_mismatch_hdr_split_frame;
   int stat_frames_dropped;
+  int stat_frames_pks_missed;
   rte_atomic32_t stat_frames_received;
   int stat_slices_received;
   int stat_pkts_slice_fail;
