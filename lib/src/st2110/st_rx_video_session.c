@@ -1099,6 +1099,12 @@ static void rv_frame_notify(struct st_rx_video_session_impl* s,
         __func__, s->idx, meta->frame_recv_size, meta->frame_total_size, slot->tmstamp);
     meta->status = ST_FRAME_STATUS_CORRUPTED;
     s->stat_frames_dropped++;
+    /* record the miss pkts */
+    float pd_sz_per_pkt = (float)meta->frame_recv_size / slot->pkts_received;
+    int miss_pkts = (s->st20_frame_size - meta->frame_recv_size) / pd_sz_per_pkt;
+    dbg("%s(%d), miss pkts %d for current frame\n", __func__, s->idx, miss_pkts);
+    s->stat_frames_pks_missed += miss_pkts;
+
     rte_atomic32_inc(&s->cbs_incomplete_frame_cnt);
     /* notify the incomplete frame if user required */
     if (ops->flags & ST20_RX_FLAG_RECEIVE_INCOMPLETE_FRAME) {
@@ -1136,6 +1142,14 @@ static void rv_st22_frame_notify(struct st_rx_video_session_impl* s,
     }
   } else {
     s->stat_frames_dropped++;
+    /* record the miss pkts */
+    float pd_sz_per_pkt = (float)s->st22_expect_size_per_frame / slot->pkts_received;
+    int miss_pkts =
+        (s->st22_expect_size_per_frame - meta->frame_total_size) / pd_sz_per_pkt;
+    if (miss_pkts < 0) miss_pkts = 0;
+    dbg("%s(%d), miss pkts %d for current frame\n", __func__, s->idx, miss_pkts);
+    s->stat_frames_pks_missed += miss_pkts;
+
     rte_atomic32_inc(&s->cbs_incomplete_frame_cnt);
     /* notify the incomplete frame if user required */
     if (ops->flags & ST20_RX_FLAG_RECEIVE_INCOMPLETE_FRAME) {
@@ -2071,7 +2085,10 @@ static int rv_handle_st22_pkt(struct st_rx_video_session_impl* s, struct rte_mbu
   slot->pkts_received++;
 
   /* update the expect frame size */
-  if (rtp->base.marker) s->st22_expect_frame_size = offset + payload_length;
+  if (rtp->base.marker) {
+    s->st22_expect_frame_size = offset + payload_length;
+    s->st22_expect_size_per_frame = s->st22_expect_frame_size;
+  }
 
   /* check if frame is full */
   if (s->st22_expect_frame_size) {
@@ -3123,12 +3140,14 @@ static void rv_stat(struct st_rx_video_sessions_mgr* mgr,
   if (s->stat_frames_dropped || s->stat_pkts_idx_dropped || s->stat_pkts_offset_dropped) {
     notice(
         "RX_VIDEO_SESSION(%d,%d): incomplete frames %d, pkts (idx error: %d, offset "
-        "error: %d, idx out of bitmap: %d)\n",
+        "error: %d, idx out of bitmap: %d, missed: %d)\n",
         m_idx, idx, s->stat_frames_dropped, s->stat_pkts_idx_dropped,
-        s->stat_pkts_offset_dropped, s->stat_pkts_idx_oo_bitmap);
+        s->stat_pkts_offset_dropped, s->stat_pkts_idx_oo_bitmap,
+        s->stat_frames_pks_missed);
     s->stat_frames_dropped = 0;
     s->stat_pkts_idx_dropped = 0;
     s->stat_pkts_idx_oo_bitmap = 0;
+    s->stat_frames_pks_missed = 0;
   }
   if (s->stat_pkts_rtp_ring_full) {
     notice("RX_VIDEO_SESSION(%d,%d): rtp dropped pkts %d as ring full\n", m_idx, idx,
