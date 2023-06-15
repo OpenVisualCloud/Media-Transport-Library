@@ -7,14 +7,14 @@
 #include <dlfcn.h>
 
 /* call original libc function */
-#define LIBC_FN(function, ...)                 \
-  ({                                           \
-    typeof(libc_fn.function(__VA_ARGS__)) ret; \
-    if (!libc_fn.function) {                   \
-      upl_resolve_libc_fn(&libc_fn);           \
-    }                                          \
-    ret = libc_fn.function(__VA_ARGS__);       \
-    ret;                                       \
+#define LIBC_FN(__name, ...)                 \
+  ({                                         \
+    typeof(libc_fn.__name(__VA_ARGS__)) ret; \
+    if (!libc_fn.__name) {                   \
+      upl_resolve_libc_fn(&libc_fn);         \
+    }                                        \
+    ret = libc_fn.__name(__VA_ARGS__);       \
+    ret;                                     \
   })
 
 static struct upl_functions libc_fn;
@@ -182,9 +182,6 @@ static void upl_atfork_child(void) {
 
 static void __attribute__((constructor)) upl_init() {
   int ret;
-
-  ret = upl_resolve_libc_fn(&libc_fn);
-  if (ret < 0) return; /* never fail */
 
   ret = mufd_init_context();
   if (ret < 0) {
