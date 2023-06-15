@@ -6,6 +6,17 @@
 
 #include <dlfcn.h>
 
+/* call original libc function */
+#define LIBC_FN(function, ...)                 \
+  ({                                           \
+    typeof(libc_fn.function(__VA_ARGS__)) ret; \
+    if (!libc_fn.function) {                   \
+      upl_resolve_libc_fn(&libc_fn);           \
+    }                                          \
+    ret = libc_fn.function(__VA_ARGS__);       \
+    ret;                                       \
+  })
+
 static struct upl_functions libc_fn;
 
 static struct upl_ctx* g_upl_ctx;
@@ -352,9 +363,9 @@ static int upl_efd_epoll_query(void* priv) {
 
   /* timeout to zero for query */
   if (entry->sigmask)
-    ret = libc_fn.epoll_pwait(efd, entry->events, entry->maxevents, 0, entry->sigmask);
+    ret = LIBC_FN(epoll_pwait, efd, entry->events, entry->maxevents, 0, entry->sigmask);
   else
-    ret = libc_fn.epoll_wait(efd, entry->events, entry->maxevents, 0);
+    ret = LIBC_FN(epoll_wait, efd, entry->events, entry->maxevents, 0);
   if (ret != 0) { /* event on kfd */
     entry->kfd_ret = ret;
     info("%s(%d), ret %d\n", __func__, efd, ret);
@@ -394,9 +405,9 @@ static int upl_poll_query(void* priv) {
     struct timespec zero;
     zero.tv_sec = 0;
     zero.tv_nsec = 0;
-    ret = libc_fn.ppoll(poll_ctx->fds, poll_ctx->nfds, &zero, poll_ctx->sigmask);
+    ret = LIBC_FN(ppoll, poll_ctx->fds, poll_ctx->nfds, &zero, poll_ctx->sigmask);
   } else {
-    ret = libc_fn.poll(poll_ctx->fds, poll_ctx->nfds, 0);
+    ret = LIBC_FN(poll, poll_ctx->fds, poll_ctx->nfds, 0);
   }
   dbg("%s, ret %d\n", __func__, ret);
   return ret;
@@ -496,9 +507,9 @@ static int upl_pselect(struct upl_ctx* ctx, int nfds, fd_set* readfds, fd_set* w
 
   if (!poll_ufds_cnt) {
     if (sigmask)
-      return libc_fn.pselect(nfds, readfds, writefds, exceptfds, timeout_spec, sigmask);
+      return LIBC_FN(pselect, nfds, readfds, writefds, exceptfds, timeout_spec, sigmask);
     else
-      return libc_fn.select(nfds, readfds, writefds, exceptfds, timeout);
+      return LIBC_FN(select, nfds, readfds, writefds, exceptfds, timeout);
   }
 
   struct upl_select_ctx priv;
@@ -570,9 +581,9 @@ static int upl_ppoll(struct upl_ctx* ctx, struct pollfd* fds, nfds_t nfds, int t
 
   if (!ufds_cnt) {
     if (tmo_p || sigmask)
-      return libc_fn.ppoll(fds, nfds, tmo_p, sigmask);
+      return LIBC_FN(ppoll, fds, nfds, tmo_p, sigmask);
     else
-      return libc_fn.poll(fds, nfds, timeout);
+      return LIBC_FN(poll, fds, nfds, timeout);
   }
 
   struct upl_poll_ctx priv;
@@ -648,9 +659,9 @@ int socket(int domain, int type, int protocol) {
   int kfd;
   int ret;
 
-  if (!ctx) return libc_fn.socket(domain, type, protocol);
+  if (!ctx) return LIBC_FN(socket, domain, type, protocol);
 
-  kfd = libc_fn.socket(domain, type, protocol);
+  kfd = LIBC_FN(socket, domain, type, protocol);
   dbg("%s, kfd %d for domain %d type %d protocol %d\n", __func__, kfd, domain, type,
       protocol);
   if (kfd < 0) {
@@ -710,11 +721,11 @@ int socket(int domain, int type, int protocol) {
 
 int close(int fd) {
   struct upl_ctx* ctx = upl_get_ctx();
-  if (!ctx) return libc_fn.close(fd);
+  if (!ctx) return LIBC_FN(close, fd);
 
   dbg("%s(%d), start\n", __func__, fd);
   struct upl_base_entry* entry = upl_get_upl_entry(ctx, fd);
-  if (!entry) return libc_fn.close(fd);
+  if (!entry) return LIBC_FN(close, fd);
 
   if (entry->upl_type == UPL_ENTRY_UFD) {
     struct upl_ufd_entry* ufd_entry = (struct upl_ufd_entry*)entry;
@@ -734,7 +745,7 @@ int close(int fd) {
 
   upl_clear_upl_entry(ctx, fd);
   /* close the kfd */
-  return libc_fn.close(fd);
+  return LIBC_FN(close, fd);
 }
 
 int bind(int sockfd, const struct sockaddr* addr, socklen_t addrlen) {
@@ -743,17 +754,17 @@ int bind(int sockfd, const struct sockaddr* addr, socklen_t addrlen) {
   info("%s(%d), port %u\n", __func__, sockfd, htons(addr_in->sin_port));
 #endif
   struct upl_ctx* ctx = upl_get_ctx();
-  if (!ctx) return libc_fn.bind(sockfd, addr, addrlen);
+  if (!ctx) return LIBC_FN(bind, sockfd, addr, addrlen);
 
   struct upl_ufd_entry* entry = upl_get_ufd_entry(ctx, sockfd);
-  if (!entry) return libc_fn.bind(sockfd, addr, addrlen);
+  if (!entry) return LIBC_FN(bind, sockfd, addr, addrlen);
 
   int ufd = entry->ufd;
   int ret = mufd_bind(ufd, addr, addrlen);
   if (ret >= 0) return ret; /* mufd bind succ */
 
   /* try kernel fallback path */
-  ret = libc_fn.bind(sockfd, addr, addrlen);
+  ret = LIBC_FN(bind, sockfd, addr, addrlen);
   if (ret < 0) return ret;
   entry->bind_kfd = true;
   info("%s(%d), mufd bind fail, fall back to libc\n", __func__, sockfd);
@@ -763,11 +774,11 @@ int bind(int sockfd, const struct sockaddr* addr, socklen_t addrlen) {
 ssize_t sendto(int sockfd, const void* buf, size_t len, int flags,
                const struct sockaddr* dest_addr, socklen_t addrlen) {
   struct upl_ctx* ctx = upl_get_ctx();
-  if (!ctx) return libc_fn.sendto(sockfd, buf, len, flags, dest_addr, addrlen);
+  if (!ctx) return LIBC_FN(sendto, sockfd, buf, len, flags, dest_addr, addrlen);
 
   dbg("%s(%d), len %" PRIu64 "\n", __func__, sockfd, len);
   struct upl_ufd_entry* entry = upl_get_ufd_entry(ctx, sockfd);
-  if (!entry) return libc_fn.sendto(sockfd, buf, len, flags, dest_addr, addrlen);
+  if (!entry) return LIBC_FN(sendto, sockfd, buf, len, flags, dest_addr, addrlen);
 
   /* ufd only support ipv4 now */
   const struct sockaddr_in* addr_in = (struct sockaddr_in*)dest_addr;
@@ -779,7 +790,7 @@ ssize_t sendto(int sockfd, const void* buf, size_t len, int flags,
     dbg("%s(%d), fallback to kernel for ip %u.%u.%u.%u\n", __func__, sockfd, ip[0], ip[1],
         ip[2], ip[3]);
     entry->stat_tx_kfd_cnt++;
-    return libc_fn.sendto(sockfd, buf, len, flags, dest_addr, addrlen);
+    return LIBC_FN(sendto, sockfd, buf, len, flags, dest_addr, addrlen);
   } else {
     entry->stat_tx_ufd_cnt++;
     return mufd_sendto(ufd, buf, len, flags, dest_addr, addrlen);
@@ -788,15 +799,15 @@ ssize_t sendto(int sockfd, const void* buf, size_t len, int flags,
 
 ssize_t sendmsg(int sockfd, const struct msghdr* msg, int flags) {
   struct upl_ctx* ctx = upl_get_ctx();
-  if (!ctx) return libc_fn.sendmsg(sockfd, msg, flags);
+  if (!ctx) return LIBC_FN(sendmsg, sockfd, msg, flags);
 
   dbg("%s(%d), start\n", __func__, sockfd);
   struct upl_ufd_entry* entry = upl_get_ufd_entry(ctx, sockfd);
-  if (!entry || !msg->msg_name) return libc_fn.sendmsg(sockfd, msg, flags);
+  if (!entry || !msg->msg_name) return LIBC_FN(sendmsg, sockfd, msg, flags);
 
   if (!msg->msg_name || msg->msg_namelen < sizeof(struct sockaddr_in)) {
     warn("%s(%d), no msg_name or msg_namelen not valid\n", __func__, sockfd);
-    return libc_fn.sendmsg(sockfd, msg, flags);
+    return LIBC_FN(sendmsg, sockfd, msg, flags);
   }
 
   /* ufd only support ipv4 now */
@@ -810,7 +821,7 @@ ssize_t sendmsg(int sockfd, const struct msghdr* msg, int flags) {
     dbg("%s(%d), fallback to kernel for ip %u.%u.%u.%u\n", __func__, sockfd, ip[0], ip[1],
         ip[2], ip[3]);
     entry->stat_tx_kfd_cnt++;
-    return libc_fn.sendmsg(sockfd, msg, flags);
+    return LIBC_FN(sendmsg, sockfd, msg, flags);
   } else {
     entry->stat_tx_ufd_cnt++;
     return mufd_sendmsg(ufd, msg, flags);
@@ -819,11 +830,11 @@ ssize_t sendmsg(int sockfd, const struct msghdr* msg, int flags) {
 
 ssize_t send(int sockfd, const void* buf, size_t len, int flags) {
   struct upl_ctx* ctx = upl_get_ctx();
-  if (!ctx) return libc_fn.send(sockfd, buf, len, flags);
+  if (!ctx) return LIBC_FN(send, sockfd, buf, len, flags);
 
   dbg("%s(%d), len %" PRIu64 "\n", __func__, sockfd, len);
   struct upl_ufd_entry* entry = upl_get_ufd_entry(ctx, sockfd);
-  if (!entry) return libc_fn.send(sockfd, buf, len, flags);
+  if (!entry) return LIBC_FN(send, sockfd, buf, len, flags);
 
   err("%s(%d), not support ufd now\n", __func__, sockfd);
   UPL_ERR_RET(ENOTSUP);
@@ -831,7 +842,7 @@ ssize_t send(int sockfd, const void* buf, size_t len, int flags) {
 
 int poll(struct pollfd* fds, nfds_t nfds, int timeout) {
   struct upl_ctx* ctx = upl_get_ctx();
-  if (!ctx) return libc_fn.poll(fds, nfds, timeout);
+  if (!ctx) return LIBC_FN(poll, fds, nfds, timeout);
 
   return upl_ppoll(ctx, fds, nfds, timeout, NULL, NULL);
 }
@@ -839,7 +850,7 @@ int poll(struct pollfd* fds, nfds_t nfds, int timeout) {
 int ppoll(struct pollfd* fds, nfds_t nfds, const struct timespec* tmo_p,
           const sigset_t* sigmask) {
   struct upl_ctx* ctx = upl_get_ctx();
-  if (!ctx) return libc_fn.ppoll(fds, nfds, tmo_p, sigmask);
+  if (!ctx) return LIBC_FN(ppoll, fds, nfds, tmo_p, sigmask);
 
   int timeout = (tmo_p == NULL) ? -1 : (tmo_p->tv_sec * 1000 + tmo_p->tv_nsec / 1000000);
   return upl_ppoll(ctx, fds, nfds, timeout, tmo_p, sigmask);
@@ -848,7 +859,7 @@ int ppoll(struct pollfd* fds, nfds_t nfds, const struct timespec* tmo_p,
 int select(int nfds, fd_set* readfds, fd_set* writefds, fd_set* exceptfds,
            struct timeval* timeout) {
   struct upl_ctx* ctx = upl_get_ctx();
-  if (!ctx) return libc_fn.select(nfds, readfds, writefds, exceptfds, timeout);
+  if (!ctx) return LIBC_FN(select, nfds, readfds, writefds, exceptfds, timeout);
 
   return upl_pselect(ctx, nfds, readfds, writefds, exceptfds, timeout, NULL, NULL);
 }
@@ -856,7 +867,7 @@ int select(int nfds, fd_set* readfds, fd_set* writefds, fd_set* exceptfds,
 int pselect(int nfds, fd_set* readfds, fd_set* writefds, fd_set* exceptfds,
             const struct timespec* timeout, const sigset_t* sigmask) {
   struct upl_ctx* ctx = upl_get_ctx();
-  if (!ctx) return libc_fn.pselect(nfds, readfds, writefds, exceptfds, timeout, sigmask);
+  if (!ctx) return LIBC_FN(pselect, nfds, readfds, writefds, exceptfds, timeout, sigmask);
 
   return upl_pselect(ctx, nfds, readfds, writefds, exceptfds, NULL, timeout, sigmask);
 }
@@ -865,12 +876,12 @@ ssize_t recvfrom(int sockfd, void* buf, size_t len, int flags, struct sockaddr* 
                  socklen_t* addrlen) {
   dbg("%s(%d), start\n", __func__, sockfd);
   struct upl_ctx* ctx = upl_get_ctx();
-  if (!ctx) return libc_fn.recvfrom(sockfd, buf, len, flags, src_addr, addrlen);
+  if (!ctx) return LIBC_FN(recvfrom, sockfd, buf, len, flags, src_addr, addrlen);
 
   struct upl_ufd_entry* entry = upl_get_ufd_entry(ctx, sockfd);
   if (!entry || entry->bind_kfd) {
     if (entry) entry->stat_rx_kfd_cnt++;
-    return libc_fn.recvfrom(sockfd, buf, len, flags, src_addr, addrlen);
+    return LIBC_FN(recvfrom, sockfd, buf, len, flags, src_addr, addrlen);
   } else {
     entry->stat_rx_ufd_cnt++;
     return mufd_recvfrom(entry->ufd, buf, len, flags, src_addr, addrlen);
@@ -879,12 +890,12 @@ ssize_t recvfrom(int sockfd, void* buf, size_t len, int flags, struct sockaddr* 
 
 ssize_t recv(int sockfd, void* buf, size_t len, int flags) {
   struct upl_ctx* ctx = upl_get_ctx();
-  if (!ctx) return libc_fn.recv(sockfd, buf, len, flags);
+  if (!ctx) return LIBC_FN(recv, sockfd, buf, len, flags);
 
   struct upl_ufd_entry* entry = upl_get_ufd_entry(ctx, sockfd);
   if (!entry || entry->bind_kfd) {
     if (entry) entry->stat_rx_kfd_cnt++;
-    return libc_fn.recv(sockfd, buf, len, flags);
+    return LIBC_FN(recv, sockfd, buf, len, flags);
   } else {
     entry->stat_rx_ufd_cnt++;
     return mufd_recv(entry->ufd, buf, len, flags);
@@ -893,12 +904,12 @@ ssize_t recv(int sockfd, void* buf, size_t len, int flags) {
 
 ssize_t recvmsg(int sockfd, struct msghdr* msg, int flags) {
   struct upl_ctx* ctx = upl_get_ctx();
-  if (!ctx) return libc_fn.recvmsg(sockfd, msg, flags);
+  if (!ctx) return LIBC_FN(recvmsg, sockfd, msg, flags);
 
   struct upl_ufd_entry* entry = upl_get_ufd_entry(ctx, sockfd);
   if (!entry || entry->bind_kfd) {
     if (entry) entry->stat_rx_kfd_cnt++;
-    return libc_fn.recvmsg(sockfd, msg, flags);
+    return LIBC_FN(recvmsg, sockfd, msg, flags);
   } else {
     entry->stat_rx_ufd_cnt++;
     return mufd_recvmsg(entry->ufd, msg, flags);
@@ -907,64 +918,64 @@ ssize_t recvmsg(int sockfd, struct msghdr* msg, int flags) {
 
 int getsockopt(int sockfd, int level, int optname, void* optval, socklen_t* optlen) {
   struct upl_ctx* ctx = upl_get_ctx();
-  if (!ctx) return libc_fn.getsockopt(sockfd, level, optname, optval, optlen);
+  if (!ctx) return LIBC_FN(getsockopt, sockfd, level, optname, optval, optlen);
 
   struct upl_ufd_entry* entry = upl_get_ufd_entry(ctx, sockfd);
   if (!entry || entry->bind_kfd)
-    return libc_fn.getsockopt(sockfd, level, optname, optval, optlen);
+    return LIBC_FN(getsockopt, sockfd, level, optname, optval, optlen);
   else
     return mufd_getsockopt(entry->ufd, level, optname, optval, optlen);
 }
 
 int setsockopt(int sockfd, int level, int optname, const void* optval, socklen_t optlen) {
   struct upl_ctx* ctx = upl_get_ctx();
-  if (!ctx) return libc_fn.setsockopt(sockfd, level, optname, optval, optlen);
+  if (!ctx) return LIBC_FN(setsockopt, sockfd, level, optname, optval, optlen);
 
   struct upl_ufd_entry* entry = upl_get_ufd_entry(ctx, sockfd);
   if (!entry || entry->bind_kfd)
-    return libc_fn.setsockopt(sockfd, level, optname, optval, optlen);
+    return LIBC_FN(setsockopt, sockfd, level, optname, optval, optlen);
   else
     return mufd_setsockopt(entry->ufd, level, optname, optval, optlen);
 }
 
 int fcntl(int sockfd, int cmd, va_list args) {
   struct upl_ctx* ctx = upl_get_ctx();
-  if (!ctx) return libc_fn.fcntl(sockfd, cmd, args);
+  if (!ctx) return LIBC_FN(fcntl, sockfd, cmd, args);
 
   struct upl_ufd_entry* entry = upl_get_ufd_entry(ctx, sockfd);
   if (!entry || entry->bind_kfd)
-    return libc_fn.fcntl(sockfd, cmd, args);
+    return LIBC_FN(fcntl, sockfd, cmd, args);
   else
     return mufd_fcntl(entry->ufd, cmd, args);
 }
 
 int fcntl64(int sockfd, int cmd, va_list args) {
   struct upl_ctx* ctx = upl_get_ctx();
-  if (!ctx) return libc_fn.fcntl64(sockfd, cmd, args);
+  if (!ctx) return LIBC_FN(fcntl64, sockfd, cmd, args);
 
   struct upl_ufd_entry* entry = upl_get_ufd_entry(ctx, sockfd);
   if (!entry || entry->bind_kfd)
-    return libc_fn.fcntl64(sockfd, cmd, args);
+    return LIBC_FN(fcntl64, sockfd, cmd, args);
   else
     return mufd_fcntl(entry->ufd, cmd, args);
 }
 
 int ioctl(int sockfd, unsigned long cmd, va_list args) {
   struct upl_ctx* ctx = upl_get_ctx();
-  if (!ctx) return libc_fn.ioctl(sockfd, cmd, args);
+  if (!ctx) return LIBC_FN(ioctl, sockfd, cmd, args);
 
   struct upl_ufd_entry* entry = upl_get_ufd_entry(ctx, sockfd);
   if (!entry || entry->bind_kfd)
-    return libc_fn.ioctl(sockfd, cmd, args);
+    return LIBC_FN(ioctl, sockfd, cmd, args);
   else
     return mufd_ioctl(entry->ufd, cmd, args);
 }
 
 int epoll_create(int size) {
   struct upl_ctx* ctx = upl_get_ctx();
-  if (!ctx) return libc_fn.epoll_create(size);
+  if (!ctx) return LIBC_FN(epoll_create, size);
 
-  int efd = libc_fn.epoll_create(size);
+  int efd = LIBC_FN(epoll_create, size);
   if (efd < 0) return efd;
 
   dbg("%s(%d), size %d\n", __func__, efd, size);
@@ -974,9 +985,9 @@ int epoll_create(int size) {
 
 int epoll_create1(int flags) {
   struct upl_ctx* ctx = upl_get_ctx();
-  if (!ctx) return libc_fn.epoll_create1(flags);
+  if (!ctx) return LIBC_FN(epoll_create1, flags);
 
-  int efd = libc_fn.epoll_create1(flags);
+  int efd = LIBC_FN(epoll_create1, flags);
   if (efd < 0) return efd;
 
   dbg("%s(%d), flags 0x%x\n", __func__, efd, flags);
@@ -986,16 +997,16 @@ int epoll_create1(int flags) {
 
 int epoll_ctl(int epfd, int op, int fd, struct epoll_event* event) {
   struct upl_ctx* ctx = upl_get_ctx();
-  if (!ctx) return libc_fn.epoll_ctl(epfd, op, fd, event);
+  if (!ctx) return LIBC_FN(epoll_ctl, epfd, op, fd, event);
 
   dbg("%s(%d), op %d fd %d\n", __func__, epfd, op, fd);
   struct upl_efd_entry* efd = upl_get_efd_entry(ctx, epfd);
-  if (!efd) return libc_fn.epoll_ctl(epfd, op, fd, event);
+  if (!efd) return LIBC_FN(epoll_ctl, epfd, op, fd, event);
 
   /* if it's a ufd entry */
   struct upl_ufd_entry* ufd = upl_get_ufd_entry(ctx, fd);
   if (!ufd || ufd->bind_kfd) {
-    int ret = libc_fn.epoll_ctl(epfd, op, fd, event);
+    int ret = LIBC_FN(epoll_ctl, epfd, op, fd, event);
     if (ret < 0) return ret;
     dbg("%s(%d), op %d for fd %d succ with libc\n", __func__, epfd, op, fd);
     if (op == EPOLL_CTL_ADD) {
@@ -1021,11 +1032,11 @@ int epoll_ctl(int epfd, int op, int fd, struct epoll_event* event) {
 
 int epoll_wait(int epfd, struct epoll_event* events, int maxevents, int timeout) {
   struct upl_ctx* ctx = upl_get_ctx();
-  if (!ctx) return libc_fn.epoll_wait(epfd, events, maxevents, timeout);
+  if (!ctx) return LIBC_FN(epoll_wait, epfd, events, maxevents, timeout);
 
   struct upl_efd_entry* efd = upl_get_efd_entry(ctx, epfd);
   if (!efd || !upl_epoll_has_ufd(efd))
-    return libc_fn.epoll_wait(epfd, events, maxevents, timeout);
+    return LIBC_FN(epoll_wait, epfd, events, maxevents, timeout);
 
   dbg("%s(%d), timeout %d maxevents %d\n", __func__, epfd, timeout, maxevents);
   /* wa to fix end loop in userspace issue */
@@ -1036,11 +1047,11 @@ int epoll_wait(int epfd, struct epoll_event* events, int maxevents, int timeout)
 int epoll_pwait(int epfd, struct epoll_event* events, int maxevents, int timeout,
                 const sigset_t* sigmask) {
   struct upl_ctx* ctx = upl_get_ctx();
-  if (!ctx) return libc_fn.epoll_pwait(epfd, events, maxevents, timeout, sigmask);
+  if (!ctx) return LIBC_FN(epoll_pwait, epfd, events, maxevents, timeout, sigmask);
 
   struct upl_efd_entry* efd = upl_get_efd_entry(ctx, epfd);
   if (!efd || !upl_epoll_has_ufd(efd))
-    return libc_fn.epoll_pwait(epfd, events, maxevents, timeout, sigmask);
+    return LIBC_FN(epoll_pwait, epfd, events, maxevents, timeout, sigmask);
 
   int kfd_cnt = atomic_load(&efd->kfd_cnt);
   info("%s(%d), timeout %d, kfd_cnt %d\n", __func__, epfd, timeout, kfd_cnt);
