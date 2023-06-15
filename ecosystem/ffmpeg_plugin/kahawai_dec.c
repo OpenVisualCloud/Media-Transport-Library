@@ -305,6 +305,9 @@ static int kahawai_read_packet(AVFormatContext* ctx, AVPacket* pkt) {
   int ret = 0;
 
   av_log(ctx, AV_LOG_VERBOSE, "kahawai_read_packet triggered\n");
+  if (active_session_cnt != s->session_cnt) {
+    return 0;
+  }
 
   if (s->ext_frames_mode) {
     if (s->last_frame) {
