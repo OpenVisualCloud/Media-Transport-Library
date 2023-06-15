@@ -1104,6 +1104,14 @@ static void rv_frame_notify(struct st_rx_video_session_impl* s,
     int miss_pkts = (s->st20_frame_size - meta->frame_recv_size) / pd_sz_per_pkt;
     dbg("%s(%d), miss pkts %d for current frame\n", __func__, s->idx, miss_pkts);
     s->stat_frames_pks_missed += miss_pkts;
+#if 0 /* for miss pkt detail */
+    int total_pkts = s->st20_frame_size / pd_sz_per_pkt;
+    dbg("%s(%d), total_pkts %d\n", __func__, s->idx, total_pkts);
+    for (int i = 0; i < total_pkts; i++) {
+      if (!mt_bitmap_test(slot->frame_bitmap, i))
+        info("%s(%d): pkt %d miss for tmstamp %u\n", __func__, s->idx, i, slot->tmstamp);
+    }
+#endif
 
     rte_atomic32_inc(&s->cbs_incomplete_frame_cnt);
     /* notify the incomplete frame if user required */
@@ -1149,6 +1157,14 @@ static void rv_st22_frame_notify(struct st_rx_video_session_impl* s,
     if (miss_pkts < 0) miss_pkts = 0;
     dbg("%s(%d), miss pkts %d for current frame\n", __func__, s->idx, miss_pkts);
     s->stat_frames_pks_missed += miss_pkts;
+#if 0 /* for miss pkt detail */
+    int total_pkts = s->st22_expect_size_per_frame / pd_sz_per_pkt;
+    dbg("%s(%d), total_pkts %d\n", __func__, s->idx, total_pkts);
+    for (int i = 0; i < total_pkts; i++) {
+      if (!mt_bitmap_test(slot->frame_bitmap, i))
+        info("%s(%d): pkt %d miss for tmstamp %u\n", __func__, s->idx, i, slot->tmstamp);
+    }
+#endif
 
     rte_atomic32_inc(&s->cbs_incomplete_frame_cnt);
     /* notify the incomplete frame if user required */
@@ -1677,7 +1693,7 @@ static int rv_handle_frame_pkt(struct st_rx_video_session_impl* s, struct rte_mb
   slot->second_field = (line1_number & ST20_SECOND_FIELD) ? true : false;
   line1_number &= ~ST20_SECOND_FIELD;
 
-  /* caculate offset */
+  /* calculate offset */
   uint32_t offset;
   offset = line1_number * (uint32_t)s->st20_linesize +
            line1_offset / s->st20_pg.coverage * s->st20_pg.size;
@@ -1705,6 +1721,11 @@ static int rv_handle_frame_pkt(struct st_rx_video_session_impl* s, struct rte_mb
       s->stat_pkts_idx_oo_bitmap++;
       return -EIO;
     }
+#if 0 /* simulate a pkt loss for test */
+    if (s->stat_frames_pks_missed < 20) {
+      if ((pkt_idx % 400) == 1) return -EIO;
+    }
+#endif
     bool is_set = mt_bitmap_test_and_set(bitmap, pkt_idx);
     if (is_set) {
       dbg("%s(%d,%d), drop as pkt %d already received\n", __func__, s->idx, s_port,
@@ -2026,6 +2047,11 @@ static int rv_handle_st22_pkt(struct st_rx_video_session_impl* s, struct rte_mbu
       s->stat_pkts_idx_oo_bitmap++;
       return -EIO;
     }
+#if 0 /* simulate a pkt loss for test */
+    if (s->stat_frames_pks_missed < 20) {
+      if ((pkt_idx % 50) == 1) return -EIO;
+    }
+#endif
     bool is_set = mt_bitmap_test_and_set(bitmap, pkt_idx);
     if (is_set) {
       dbg("%s(%d,%d), drop as pkt %d already received\n", __func__, s->idx, s_port,

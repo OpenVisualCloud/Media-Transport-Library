@@ -48,6 +48,7 @@ static inline void mt_u32_to_ip(uint32_t group, uint8_t ip[MTL_IP_ADDR_LEN]) {
 }
 
 bool mt_bitmap_test_and_set(uint8_t* bitmap, int idx);
+bool mt_bitmap_test(uint8_t* bitmap, int idx);
 
 int mt_ring_dequeue_clean(struct rte_ring* ring);
 
