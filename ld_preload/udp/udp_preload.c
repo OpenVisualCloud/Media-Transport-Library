@@ -384,11 +384,11 @@ static int upl_select_query(void* priv) {
 
   /* timeout to zero for query */
   if (select_ctx->sigmask)
-    ret = libc_fn.pselect(select_ctx->nfds, select_ctx->readfds, select_ctx->writefds,
-                          select_ctx->exceptfds, &zero_spec, select_ctx->sigmask);
+    ret = LIBC_FN(pselect, select_ctx->nfds, select_ctx->readfds, select_ctx->writefds,
+                  select_ctx->exceptfds, &zero_spec, select_ctx->sigmask);
   else
-    ret = libc_fn.select(select_ctx->nfds, select_ctx->readfds, select_ctx->writefds,
-                         select_ctx->exceptfds, &zero);
+    ret = LIBC_FN(select, select_ctx->nfds, select_ctx->readfds, select_ctx->writefds,
+                  select_ctx->exceptfds, &zero);
   dbg("%s, ret %d\n", __func__, ret);
   return ret;
 }
