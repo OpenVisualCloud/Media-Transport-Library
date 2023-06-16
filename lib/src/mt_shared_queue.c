@@ -97,7 +97,7 @@ static int rsq_init(struct mtl_main_impl* impl, struct mt_rsq_impl* rsq) {
   return 0;
 }
 
-static uint32_t rsq_flow_hash(struct mt_rx_flow* flow) {
+static uint32_t rsq_flow_hash(struct mt_rxq_flow* flow) {
   struct rte_ipv4_tuple tuple;
   uint32_t len;
 
@@ -114,7 +114,7 @@ static uint32_t rsq_flow_hash(struct mt_rx_flow* flow) {
 }
 
 struct mt_rsq_entry* mt_rsq_get(struct mtl_main_impl* impl, enum mtl_port port,
-                                struct mt_rx_flow* flow) {
+                                struct mt_rxq_flow* flow) {
   if (!mt_shared_queue(impl, port)) {
     err("%s(%d), shared queue not enabled\n", __func__, port);
     return NULL;
@@ -335,7 +335,7 @@ static int tsq_init(struct mtl_main_impl* impl, struct mt_tsq_impl* tsq) {
   return 0;
 }
 
-static uint32_t tsq_flow_hash(struct mt_tsq_flow* flow) {
+static uint32_t tsq_flow_hash(struct mt_txq_flow* flow) {
   struct rte_ipv4_tuple tuple;
   uint32_t len;
 
@@ -351,7 +351,7 @@ static uint32_t tsq_flow_hash(struct mt_tsq_flow* flow) {
 }
 
 struct mt_tsq_entry* mt_tsq_get(struct mtl_main_impl* impl, enum mtl_port port,
-                                struct mt_tsq_flow* flow) {
+                                struct mt_txq_flow* flow) {
   if (!mt_shared_queue(impl, port)) {
     err("%s(%d), shared queue not enabled\n", __func__, port);
     return NULL;

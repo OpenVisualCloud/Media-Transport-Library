@@ -141,7 +141,7 @@ static int srss_tasklet_stop(void* priv) {
 }
 
 struct mt_srss_entry* mt_srss_get(struct mtl_main_impl* impl, enum mtl_port port,
-                                  struct mt_rx_flow* flow) {
+                                  struct mt_rxq_flow* flow) {
   struct mt_srss_impl* srss = impl->srss[port];
   struct mt_srss_entry* entry;
   MT_TAILQ_FOREACH(entry, &srss->head, next) {

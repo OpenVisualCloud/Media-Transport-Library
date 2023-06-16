@@ -72,7 +72,7 @@ static int rss_uinit(struct mt_rss_impl* rss) {
   return 0;
 }
 
-static enum mtl_rss_mode rss_flow_mode(struct mt_rx_flow* flow) {
+static enum mtl_rss_mode rss_flow_mode(struct mt_rxq_flow* flow) {
   if (flow->no_port_flow)
     return MTL_RSS_MODE_L3;
   else if (flow->no_ip_flow)
@@ -84,7 +84,7 @@ static enum mtl_rss_mode rss_flow_mode(struct mt_rx_flow* flow) {
 }
 
 static int rss_flow_check(struct mtl_main_impl* impl, enum mtl_port port,
-                          struct mt_rx_flow* flow) {
+                          struct mt_rxq_flow* flow) {
   enum mtl_rss_mode sys_rss_mode = mt_get_rss_mode(impl, port);
   enum mtl_rss_mode flow_rss_mode = rss_flow_mode(flow);
 
@@ -97,7 +97,7 @@ static int rss_flow_check(struct mtl_main_impl* impl, enum mtl_port port,
   return 0;
 }
 
-static uint32_t rss_flow_hash(struct mt_rx_flow* flow, enum mtl_rss_mode rss) {
+static uint32_t rss_flow_hash(struct mt_rxq_flow* flow, enum mtl_rss_mode rss) {
   uint32_t tuple[4];
   uint32_t len = 0;
 
@@ -140,7 +140,7 @@ static uint32_t rss_flow_hash(struct mt_rx_flow* flow, enum mtl_rss_mode rss) {
 }
 
 struct mt_rss_entry* mt_rss_get(struct mtl_main_impl* impl, enum mtl_port port,
-                                struct mt_rx_flow* flow) {
+                                struct mt_rxq_flow* flow) {
   if (!mt_has_rss(impl, port)) {
     err("%s(%d), rss not enabled\n", __func__, port);
     return NULL;

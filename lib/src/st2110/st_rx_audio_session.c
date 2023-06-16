@@ -605,7 +605,7 @@ static int rx_audio_session_uinit_hw(struct mtl_main_impl* impl,
 static int rx_audio_session_init_hw(struct mtl_main_impl* impl,
                                     struct st_rx_audio_session_impl* s) {
   int idx = s->idx, num_port = s->ops.num_port;
-  struct mt_rx_flow flow;
+  struct mt_rxq_flow flow;
   enum mtl_port port;
 
   for (int i = 0; i < num_port; i++) {

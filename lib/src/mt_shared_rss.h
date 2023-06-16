@@ -12,7 +12,7 @@ int mt_srss_init(struct mtl_main_impl* impl);
 int mt_srss_uinit(struct mtl_main_impl* impl);
 
 struct mt_srss_entry* mt_srss_get(struct mtl_main_impl* impl, enum mtl_port port,
-                                  struct mt_rx_flow* flow);
+                                  struct mt_rxq_flow* flow);
 
 int mt_srss_put(struct mt_srss_entry* entry);
 

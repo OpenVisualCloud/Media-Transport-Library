@@ -2796,7 +2796,7 @@ static int rv_uinit_hw(struct mtl_main_impl* impl, struct st_rx_video_session_im
 static int rv_init_hw(struct mtl_main_impl* impl, struct st_rx_video_session_impl* s) {
   struct st20_rx_ops* ops = &s->ops;
   int idx = s->idx, num_port = ops->num_port;
-  struct mt_rx_flow flow;
+  struct mt_rxq_flow flow;
   enum mtl_port port;
 
   for (int i = 0; i < num_port; i++) {

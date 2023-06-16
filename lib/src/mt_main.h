@@ -228,10 +228,7 @@ struct mt_cni_impl {
   bool used; /* if enable cni */
   int num_ports;
 
-  struct mt_rx_queue* rx_q[MTL_PORT_MAX];   /* cni rx queue */
-  struct mt_rsq_entry* rsq[MTL_PORT_MAX];   /* cni rsq queue */
-  struct mt_rss_entry* rss[MTL_PORT_MAX];   /* cni rss queue */
-  struct mt_srss_entry* srss[MTL_PORT_MAX]; /* cni srss queue */
+  struct mt_rxq_entry* rxq[MTL_PORT_MAX];
   struct mt_cni_priv cni_priv[MTL_PORT_MAX];
   pthread_t tid; /* thread id for rx */
   rte_atomic32_t stop_thread;
@@ -430,8 +427,8 @@ struct mt_rl_shaper {
 
 typedef int (*mt_rsq_mbuf_cb)(void* priv, struct rte_mbuf** mbuf, uint16_t nb);
 
-/* request of rx flow */
-struct mt_rx_flow {
+/* request of rx queue flow */
+struct mt_rxq_flow {
   /* for cni queue */
   bool sys_queue;
   bool no_ip_flow; /* no ip flow, only use port flow, for udp transport */
@@ -465,7 +462,7 @@ struct mt_rx_queue {
   uint16_t port_id;
   uint16_t queue_id;
   bool active;
-  struct mt_rx_flow flow;
+  struct mt_rxq_flow flow;
   struct mt_rx_flow_rsp* flow_rsp;
   struct rte_mempool* mbuf_pool;
   unsigned int mbuf_elements;
@@ -674,7 +671,7 @@ struct mt_rss_impl; /* forward delcare */
 
 struct mt_rss_entry {
   uint16_t queue_id;
-  struct mt_rx_flow flow;
+  struct mt_rxq_flow flow;
   struct mt_rss_impl* rss;
   uint32_t hash;
   /* linked list */
@@ -701,7 +698,7 @@ struct mt_rsq_impl; /* forward delcare */
 
 struct mt_rsq_entry {
   uint16_t queue_id;
-  struct mt_rx_flow flow;
+  struct mt_rxq_flow flow;
   uint16_t dst_port_net;
   struct mt_rx_flow_rsp* flow_rsp;
   struct mt_rsq_impl* parent;
@@ -730,8 +727,8 @@ struct mt_rsq_impl {
   struct mt_rsq_queue* rsq_queues;
 };
 
-/* request of tx shared queue flow */
-struct mt_tsq_flow {
+/* request of tx queue flow */
+struct mt_txq_flow {
   bool sys_queue;
   /* mandatory if not sys_queue */
   uint8_t dip_addr[MTL_IP_ADDR_LEN]; /* tx destination IP */
@@ -742,7 +739,7 @@ struct mt_tsq_impl; /* forward delcare */
 
 struct mt_tsq_entry {
   uint16_t queue_id;
-  struct mt_tsq_flow flow;
+  struct mt_txq_flow flow;
   struct mt_tsq_impl* parent;
   struct rte_mempool* tx_pool;
   /* linked list */
@@ -773,7 +770,7 @@ struct mt_tsq_impl {
 };
 
 struct mt_srss_entry {
-  struct mt_rx_flow flow;
+  struct mt_rxq_flow flow;
   struct mt_srss_impl* srss;
   /* linked list */
   MT_TAILQ_ENTRY(mt_srss_entry) next;

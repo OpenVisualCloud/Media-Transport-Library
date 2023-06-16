@@ -5,17 +5,14 @@
 #include "mt_cni.h"
 
 #include "mt_arp.h"
-#include "mt_dev.h"
 #include "mt_dhcp.h"
 #include "mt_kni.h"
+#include "mt_queue.h"
 // #define DEBUG
 #include "mt_dhcp.h"
 #include "mt_log.h"
 #include "mt_ptp.h"
-#include "mt_rss.h"
 #include "mt_sch.h"
-#include "mt_shared_queue.h"
-#include "mt_shared_rss.h"
 #include "mt_stat.h"
 #include "mt_tap.h"
 #include "mt_util.h"
@@ -102,8 +99,8 @@ static int cni_traffic(struct mtl_main_impl* impl) {
     }
     mt_tap_handle(impl, i);
     /* rx from cni rx queue */
-    if (cni->rx_q[i]) {
-      rx = mt_dev_rx_burst(cni->rx_q[i], pkts_rx, ST_CNI_RX_BURST_SIZE);
+    if (cni->rxq[i]) {
+      rx = mt_rxq_burst(cni->rxq[i], pkts_rx, ST_CNI_RX_BURST_SIZE);
       if (rx > 0) {
         cni->eth_rx_cnt[i] += rx;
         for (uint16_t ri = 0; ri < rx; ri++) cni_rx_handle(impl, pkts_rx[ri], i);
@@ -111,14 +108,6 @@ static int cni_traffic(struct mtl_main_impl* impl) {
         mt_free_mbufs(&pkts_rx[0], rx);
         done = false;
       }
-    }
-    /* trigger rsq rx */
-    if (cni->rsq[i]) {
-      mt_rsq_burst(cni->rsq[i], ST_CNI_RX_BURST_SIZE);
-    }
-    /* trigger rss rx */
-    if (cni->rss[i]) {
-      mt_rss_burst(cni->rss[i], ST_CNI_RX_BURST_SIZE);
     }
   }
 
@@ -210,21 +199,9 @@ static int cni_queues_uinit(struct mtl_main_impl* impl) {
   struct mt_cni_impl* cni = mt_get_cni(impl);
 
   for (int i = 0; i < num_ports; i++) {
-    if (cni->rx_q[i]) {
-      mt_dev_put_rx_queue(impl, cni->rx_q[i]);
-      cni->rx_q[i] = NULL;
-    }
-    if (cni->rsq[i]) {
-      mt_rsq_put(cni->rsq[i]);
-      cni->rsq[i] = NULL;
-    }
-    if (cni->rss[i]) {
-      mt_rss_put(cni->rss[i]);
-      cni->rss[i] = NULL;
-    }
-    if (cni->srss[i]) {
-      mt_srss_put(cni->srss[i]);
-      cni->srss[i] = NULL;
+    if (cni->rxq[i]) {
+      mt_rxq_put(cni->rxq[i]);
+      cni->rxq[i] = NULL;
     }
   }
 
@@ -246,26 +223,15 @@ static int cni_queues_init(struct mtl_main_impl* impl, struct mt_cni_impl* cni) 
     cni->cni_priv[i].impl = impl;
     cni->cni_priv[i].port = i;
 
-    struct mt_rx_flow flow;
+    struct mt_rxq_flow flow;
     memset(&flow, 0, sizeof(flow));
     flow.sys_queue = true;
     flow.priv = &cni->cni_priv[i];
     flow.cb = cni_rsq_mbuf_cb;
 
-    if (mt_has_srss(impl, i)) {
-      cni->srss[i] = mt_srss_get(impl, i, &flow);
-      info("%s(%d), using shared rss for all queues\n", __func__, i);
-    } else if (mt_has_rss(impl, i)) {
-      cni->rss[i] = mt_rss_get(impl, i, &flow);
-      info("%s(%d), rss q %d\n", __func__, i, mt_rss_queue_id(cni->rss[i]));
-    } else if (mt_shared_queue(impl, i)) {
-      cni->rsq[i] = mt_rsq_get(impl, i, &flow);
-      info("%s(%d), rsq q %d\n", __func__, i, mt_rsq_queue_id(cni->rsq[i]));
-    } else { /* sys queue, no flow */
-      cni->rx_q[i] = mt_dev_get_rx_queue(impl, i, NULL);
-      info("%s(%d), rx q %d\n", __func__, i, mt_dev_rx_queue_id(cni->rx_q[i]));
-    }
-    if (!cni->srss[i] && !cni->rss[i] && !cni->rsq[i] && !cni->rx_q[i]) {
+    cni->rxq[i] = mt_rxq_get(impl, i, &flow);
+    info("%s(%d), rxq %d\n", __func__, i, mt_rxq_queue_id(cni->rxq[i]));
+    if (!cni->rxq[i]) {
       err("%s(%d), rx queue get fail\n", __func__, i);
       cni_queues_uinit(impl);
       return -EIO;

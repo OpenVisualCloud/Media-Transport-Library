@@ -711,7 +711,7 @@ static int ptp_init(struct mtl_main_impl* impl, struct mt_ptp_impl* ptp,
   inet_pton(AF_INET, "224.0.1.129", ptp->mcast_group_addr);
 
   /* create rx queue */
-  struct mt_rx_flow flow;
+  struct mt_rxq_flow flow;
   memset(&flow, 0, sizeof(flow));
   rte_memcpy(flow.dip_addr, ptp->mcast_group_addr, MTL_IP_ADDR_LEN);
   rte_memcpy(flow.sip_addr, mt_sip_addr(impl, port), MTL_IP_ADDR_LEN);
