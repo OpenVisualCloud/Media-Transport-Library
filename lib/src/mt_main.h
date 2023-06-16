@@ -150,7 +150,7 @@ struct mt_ptp_impl {
   enum mtl_port port;
   uint16_t port_id;
 
-  struct mt_rx_queue* rx_queue;
+  struct mt_rxq_entry* rxq;
   struct rte_mempool* mbuf_pool;
 
   uint8_t mcast_group_addr[MTL_IP_ADDR_LEN]; /* 224.0.1.129 */

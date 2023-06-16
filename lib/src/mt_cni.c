@@ -88,8 +88,8 @@ static int cni_traffic(struct mtl_main_impl* impl) {
     ptp = mt_get_ptp(impl, i);
 
     /* rx from ptp rx queue */
-    if (ptp && ptp->rx_queue) {
-      rx = mt_dev_rx_burst(ptp->rx_queue, pkts_rx, ST_CNI_RX_BURST_SIZE);
+    if (ptp && ptp->rxq) {
+      rx = mt_rxq_burst(ptp->rxq, pkts_rx, ST_CNI_RX_BURST_SIZE);
       if (rx > 0) {
         cni->eth_rx_cnt[i] += rx;
         for (uint16_t ri = 0; ri < rx; ri++) cni_rx_handle(impl, pkts_rx[ri], i);
