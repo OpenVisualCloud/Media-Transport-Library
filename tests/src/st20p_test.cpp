@@ -945,15 +945,13 @@ static void st20p_rx_digest_test(enum st_fps fps[], int width[], int height[],
     double time_sec = (double)(cur_time_ns - test_ctx_tx[i]->start_time) / NS_PER_S;
     framerate_tx[i] = test_ctx_tx[i]->fb_send / time_sec;
 
-    if (ctx->rss_mode != MTL_RSS_MODE_L3_L4) {
-      /* vsync check */
-      time_sec = (double)(cur_time_ns - test_ctx_tx[i]->first_vsync_time) / NS_PER_S;
-      vsyncrate_tx[i] = test_ctx_tx[i]->vsync_cnt / time_sec;
-      dbg("%s(%d,%p), vsync_cnt %d vsyncrate %f\n", __func__, i, test_ctx_tx[i],
-          test_ctx_tx[i]->vsync_cnt, vsyncrate_tx[i]);
-      EXPECT_GT(test_ctx_tx[i]->vsync_cnt, 0);
-      EXPECT_NEAR(vsyncrate_tx[i], st_frame_rate(fps[i]), st_frame_rate(fps[i]) * 0.1);
-    }
+    /* vsync check */
+    time_sec = (double)(cur_time_ns - test_ctx_tx[i]->first_vsync_time) / NS_PER_S;
+    vsyncrate_tx[i] = test_ctx_tx[i]->vsync_cnt / time_sec;
+    dbg("%s(%d,%p), vsync_cnt %d vsyncrate %f\n", __func__, i, test_ctx_tx[i],
+        test_ctx_tx[i]->vsync_cnt, vsyncrate_tx[i]);
+    EXPECT_GT(test_ctx_tx[i]->vsync_cnt, 0);
+    EXPECT_NEAR(vsyncrate_tx[i], st_frame_rate(fps[i]), st_frame_rate(fps[i]) * 0.1);
 
     test_ctx_tx[i]->stop = true;
     test_ctx_tx[i]->cv.notify_all();
@@ -972,15 +970,13 @@ static void st20p_rx_digest_test(enum st_fps fps[], int width[], int height[],
     double time_sec = (double)(cur_time_ns - test_ctx_rx[i]->start_time) / NS_PER_S;
     framerate_rx[i] = test_ctx_rx[i]->fb_rec / time_sec;
 
-    if (ctx->rss_mode != MTL_RSS_MODE_L3_L4) {
-      /* vsync check */
-      time_sec = (double)(cur_time_ns - test_ctx_rx[i]->first_vsync_time) / NS_PER_S;
-      vsyncrate_rx[i] = test_ctx_rx[i]->vsync_cnt / time_sec;
-      dbg("%s(%d,%p), vsync_cnt %d vsyncrate %f\n", __func__, i, test_ctx_rx[i],
-          test_ctx_rx[i]->vsync_cnt, vsyncrate_rx[i]);
-      EXPECT_GT(test_ctx_rx[i]->vsync_cnt, 0);
-      EXPECT_NEAR(vsyncrate_rx[i], st_frame_rate(fps[i]), st_frame_rate(fps[i]) * 0.1);
-    }
+    /* vsync check */
+    time_sec = (double)(cur_time_ns - test_ctx_rx[i]->first_vsync_time) / NS_PER_S;
+    vsyncrate_rx[i] = test_ctx_rx[i]->vsync_cnt / time_sec;
+    dbg("%s(%d,%p), vsync_cnt %d vsyncrate %f\n", __func__, i, test_ctx_rx[i],
+        test_ctx_rx[i]->vsync_cnt, vsyncrate_rx[i]);
+    EXPECT_GT(test_ctx_rx[i]->vsync_cnt, 0);
+    EXPECT_NEAR(vsyncrate_rx[i], st_frame_rate(fps[i]), st_frame_rate(fps[i]) * 0.1);
 
     test_ctx_rx[i]->stop = true;
     test_ctx_rx[i]->cv.notify_all();

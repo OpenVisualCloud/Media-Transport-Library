@@ -2730,8 +2730,9 @@ static int rv_handle_mbuf(void* priv, struct rte_mbuf** mbuf, uint16_t nb) {
   return ret;
 }
 
-static int rv_tasklet(struct mtl_main_impl* impl, struct st_rx_video_session_impl* s,
-                      struct st_rx_video_sessions_mgr* mgr) {
+static int rv_pkt_rx_tasklet(struct mtl_main_impl* impl,
+                             struct st_rx_video_session_impl* s,
+                             struct st_rx_video_sessions_mgr* mgr) {
   struct rte_mbuf* mbuf[ST_RX_VIDEO_BURST_SIZE];
   uint16_t rv;
   int num_port = s->ops.num_port;
@@ -3067,7 +3068,7 @@ static int rv_poll_vsync(struct mtl_main_impl* impl, struct st_rx_video_session_
   return 0;
 }
 
-static int rvs_tasklet_handler(void* priv) {
+static int rvs_pkt_rx_tasklet_handler(void* priv) {
   struct st_rx_video_sessions_mgr* mgr = priv;
   struct mtl_main_impl* impl = mgr->parent;
   struct st_rx_video_session_impl* s;
@@ -3078,14 +3079,30 @@ static int rvs_tasklet_handler(void* priv) {
     s = rx_video_session_try_get(mgr, sidx);
     if (!s) continue;
 
-    /* check vsync if it has vsync flag enabled */
-    if (s->ops.flags & ST20_RX_FLAG_ENABLE_VSYNC) rv_poll_vsync(impl, s);
-
-    pending += rv_tasklet(impl, s, mgr);
+    pending += rv_pkt_rx_tasklet(impl, s, mgr);
     rx_video_session_put(mgr, sidx);
   }
 
   return pending;
+}
+
+static int rvs_ctl_tasklet_handler(void* priv) {
+  struct st_rx_video_sessions_mgr* mgr = priv;
+  struct mtl_main_impl* impl = mgr->parent;
+  struct st_rx_video_session_impl* s;
+  int sidx;
+
+  for (sidx = 0; sidx < mgr->max_idx; sidx++) {
+    s = rx_video_session_try_get(mgr, sidx);
+    if (!s) continue;
+
+    /* check vsync if it has vsync flag enabled */
+    if (s->ops.flags & ST20_RX_FLAG_ENABLE_VSYNC) rv_poll_vsync(impl, s);
+
+    rx_video_session_put(mgr, sidx);
+  }
+
+  return 0;
 }
 
 void rx_video_session_clear_cpu_busy(struct st_rx_video_session_impl* s) {
@@ -3257,7 +3274,7 @@ static void rv_stat(struct st_rx_video_sessions_mgr* mgr,
   }
 }
 
-static int rvs_tasklet_start(void* priv) {
+static int rvs_ctl_tasklet_start(void* priv) {
   struct st_rx_video_sessions_mgr* mgr = priv;
   int idx = mgr->idx;
   struct mtl_main_impl* impl = mgr->parent;
@@ -3270,14 +3287,6 @@ static int rvs_tasklet_start(void* priv) {
     st_vsync_calculate(impl, &s->vsync);
     rx_video_session_put(mgr, sidx);
   }
-
-  info("%s(%d), succ\n", __func__, idx);
-  return 0;
-}
-
-static int rvs_tasklet_stop(void* priv) {
-  struct st_rx_video_sessions_mgr* mgr = priv;
-  int idx = mgr->idx;
 
   info("%s(%d), succ\n", __func__, idx);
   return 0;
@@ -3368,16 +3377,26 @@ static int rvs_mgr_init(struct mtl_main_impl* impl, struct mt_sch_impl* sch,
   if (!mt_has_srss(impl, MTL_PORT_P)) {
     memset(&ops, 0x0, sizeof(ops));
     ops.priv = mgr;
-    ops.name = "rx_video_sessions_mgr";
-    ops.start = rvs_tasklet_start;
-    ops.stop = rvs_tasklet_stop;
-    ops.handler = rvs_tasklet_handler;
+    ops.name = "rvs_pkt_rx";
+    ops.handler = rvs_pkt_rx_tasklet_handler;
 
-    mgr->tasklet = mt_sch_register_tasklet(sch, &ops);
-    if (!mgr->tasklet) {
-      err("%s(%d), mt_sch_register_tasklet fail\n", __func__, idx);
+    mgr->pkt_rx_tasklet = mt_sch_register_tasklet(sch, &ops);
+    if (!mgr->pkt_rx_tasklet) {
+      err("%s(%d), pkt_rx_tasklet register fail\n", __func__, idx);
       return -EIO;
     }
+  }
+
+  memset(&ops, 0x0, sizeof(ops));
+  ops.priv = mgr;
+  ops.name = "rvs_ctl";
+  ops.start = rvs_ctl_tasklet_start;
+  ops.handler = rvs_ctl_tasklet_handler;
+
+  mgr->ctl_tasklet = mt_sch_register_tasklet(sch, &ops);
+  if (!mgr->ctl_tasklet) {
+    err("%s(%d), ctl_tasklet register fail\n", __func__, idx);
+    return -EIO;
   }
 
   info("%s(%d), succ\n", __func__, idx);
@@ -3396,9 +3415,14 @@ static int rvs_mgr_uinit(struct st_rx_video_sessions_mgr* mgr) {
   int m_idx = mgr->idx;
   struct st_rx_video_session_impl* s;
 
-  if (mgr->tasklet) {
-    mt_sch_unregister_tasklet(mgr->tasklet);
-    mgr->tasklet = NULL;
+  if (mgr->ctl_tasklet) {
+    mt_sch_unregister_tasklet(mgr->ctl_tasklet);
+    mgr->ctl_tasklet = NULL;
+  }
+
+  if (mgr->pkt_rx_tasklet) {
+    mt_sch_unregister_tasklet(mgr->pkt_rx_tasklet);
+    mgr->pkt_rx_tasklet = NULL;
   }
 
   for (int i = 0; i < ST_SCH_MAX_RX_VIDEO_SESSIONS; i++) {
@@ -3490,7 +3514,7 @@ static int rvs_mgr_update(struct st_rx_video_sessions_mgr* mgr) {
   dbg("%s(%d), sleep us %" PRIu64 ", max_idx %d\n", __func__, mgr->idx, sleep_us,
       max_idx);
   mgr->max_idx = max_idx;
-  if (mgr->tasklet) mt_tasklet_set_sleep(mgr->tasklet, sleep_us);
+  if (mgr->pkt_rx_tasklet) mt_tasklet_set_sleep(mgr->pkt_rx_tasklet, sleep_us);
   return 0;
 }
 

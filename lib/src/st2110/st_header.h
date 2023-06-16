@@ -697,7 +697,10 @@ struct st_rx_video_sessions_mgr {
   struct mtl_main_impl* parent;
   int idx;     /* index for current session mgr */
   int max_idx; /* max session index */
-  struct mt_sch_tasklet_impl* tasklet;
+  /* pkt rx task */
+  struct mt_sch_tasklet_impl* pkt_rx_tasklet;
+  /* control task */
+  struct mt_sch_tasklet_impl* ctl_tasklet;
 
   struct st_rx_video_session_impl* sessions[ST_SCH_MAX_RX_VIDEO_SESSIONS];
   /* protect session, spin(fast) lock as it call from tasklet aslo */
