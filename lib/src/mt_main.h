@@ -17,16 +17,31 @@
 #include <rte_version.h>
 #include <rte_vfio.h>
 #include <sys/file.h>
+#include <sys/queue.h>
 #include <unistd.h>
 
 #include "mt_mem.h"
 #include "mt_platform.h"
-#include "mt_queue.h"
 #include "mt_quirk.h"
 #include "st2110/st_header.h"
 
 #ifndef _MT_LIB_MAIN_HEAD_H_
 #define _MT_LIB_MAIN_HEAD_H_
+
+/* Macros compatible with system's sys/queue.h */
+#define MT_TAILQ_HEAD(name, type) RTE_TAILQ_HEAD(name, type)
+#define MT_TAILQ_ENTRY(type) RTE_TAILQ_ENTRY(type)
+#define MT_TAILQ_FOREACH(var, head, field) RTE_TAILQ_FOREACH(var, head, field)
+#define MT_TAILQ_FIRST(head) RTE_TAILQ_FIRST(head)
+#define MT_TAILQ_NEXT(elem, field) RTE_TAILQ_NEXT(elem, field)
+
+#define MT_TAILQ_INSERT_TAIL(head, elem, filed) TAILQ_INSERT_TAIL(head, elem, filed)
+#define MT_TAILQ_INSERT_HEAD(head, elem, filed) TAILQ_INSERT_HEAD(head, elem, filed)
+#define MT_TAILQ_REMOVE(head, elem, filed) TAILQ_REMOVE(head, elem, filed)
+#define MT_TAILQ_INIT(head) TAILQ_INIT(head)
+
+#define MT_STAILQ_HEAD(name, type) RTE_STAILQ_HEAD(name, type)
+#define MT_STAILQ_ENTRY(type) RTE_STAILQ_ENTRY(type)
 
 #define MT_MAY_UNUSED(x) (void)(x)
 
