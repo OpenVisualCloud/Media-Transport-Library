@@ -119,6 +119,10 @@ struct mt_rsq_entry* mt_rsq_get(struct mtl_main_impl* impl, enum mtl_port port,
     err("%s(%d), shared queue not enabled\n", __func__, port);
     return NULL;
   }
+  if (!flow->cb) {
+    err("%s(%d), no cb in the flow\n", __func__, port);
+    return NULL;
+  }
 
   struct mt_rsq_impl* rsqm = rsq_ctx_get(impl, port);
   uint32_t hash = rsq_flow_hash(flow);

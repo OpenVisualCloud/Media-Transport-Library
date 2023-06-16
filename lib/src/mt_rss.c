@@ -145,6 +145,10 @@ struct mt_rss_entry* mt_rss_get(struct mtl_main_impl* impl, enum mtl_port port,
     err("%s(%d), rss not enabled\n", __func__, port);
     return NULL;
   }
+  if (!flow->cb) {
+    err("%s(%d), no cb in the flow\n", __func__, port);
+    return NULL;
+  }
   if (rss_flow_check(impl, port, flow) < 0) return NULL;
 
   struct mt_rss_impl* rss = rss_ctx_get(impl, port);

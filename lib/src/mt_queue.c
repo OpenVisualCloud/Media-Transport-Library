@@ -19,7 +19,7 @@ struct mt_rxq_entry* mt_rxq_get(struct mtl_main_impl* impl, enum mtl_port port,
   if (mt_has_srss(impl, port)) {
     entry->srss = mt_srss_get(impl, port, flow);
     if (!entry->srss) goto fail;
-    entry->queue_id = 0; /* not known the queue id */
+    entry->queue_id = mt_srss_queue_id(entry->srss);
   } else if (mt_has_rss(impl, port)) {
     entry->rss = mt_rss_get(impl, port, flow);
     if (!entry->rss) goto fail;

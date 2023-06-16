@@ -772,6 +772,7 @@ struct mt_tsq_impl {
 struct mt_srss_entry {
   struct mt_rxq_flow flow;
   struct mt_srss_impl* srss;
+  uint16_t queue_id;
   /* linked list */
   MT_TAILQ_ENTRY(mt_srss_entry) next;
 };

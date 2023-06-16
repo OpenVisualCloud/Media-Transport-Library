@@ -13,7 +13,9 @@ int mt_srss_uinit(struct mtl_main_impl* impl);
 
 struct mt_srss_entry* mt_srss_get(struct mtl_main_impl* impl, enum mtl_port port,
                                   struct mt_rxq_flow* flow);
-
+static inline uint16_t mt_srss_queue_id(struct mt_srss_entry* entry) {
+  return entry->queue_id;
+}
 int mt_srss_put(struct mt_srss_entry* entry);
 
 #endif
