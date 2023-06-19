@@ -544,7 +544,7 @@ TEST(St22_rx, fps_mix_s2) {
   st22_rx_fps_test(type, fps, width, height, pkt_data_len, total_pkts, 2);
 }
 
-static void st22_rx_update_src_test(int tx_sessions) {
+static void st22_rx_update_src_test(int tx_sessions, enum st_test_level level) {
   auto ctx = (struct st_tests_context*)st_test_ctx();
   auto m_handle = ctx->handle;
   int ret;
@@ -555,6 +555,9 @@ static void st22_rx_update_src_test(int tx_sessions) {
          __func__);
     return;
   }
+
+  /* return if level lower than global */
+  if (level < ctx->level) return;
 
   int rx_sessions = 1;
 
@@ -768,7 +771,7 @@ static void st22_rx_update_src_test(int tx_sessions) {
   }
 }
 
-TEST(St22_rx, update_source) { st22_rx_update_src_test(2); }
+TEST(St22_rx, update_source) { st22_rx_update_src_test(2, ST_TEST_LEVEL_ALL); }
 
 static void st22_rx_after_start_test(enum st_fps fps[], int width[], int height[],
                                      int pkt_data_len[], int total_pkts[], int sessions,

@@ -1033,7 +1033,7 @@ static void st30_rx_update_src_test(enum st30_type type, int tx_sessions,
 }
 
 TEST(St30_rx, update_source_frame) {
-  st30_rx_update_src_test(ST30_TYPE_FRAME_LEVEL, 3, ST_TEST_LEVEL_MANDATORY);
+  st30_rx_update_src_test(ST30_TYPE_FRAME_LEVEL, 3, ST_TEST_LEVEL_ALL);
 }
 TEST(St30_rx, update_source_rtp) {
   st30_rx_update_src_test(ST30_TYPE_RTP_LEVEL, 2, ST_TEST_LEVEL_ALL);
