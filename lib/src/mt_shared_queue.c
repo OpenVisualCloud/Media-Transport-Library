@@ -391,6 +391,8 @@ struct mt_tsq_entry* mt_tsq_get(struct mtl_main_impl* impl, enum mtl_port port,
     tsq_queue->tx_pool = pool;
   }
   MT_TAILQ_INSERT_HEAD(&tsq_queue->head, entry, next);
+  /* todo: for different bps of shared queue */
+  mt_dev_set_tx_bps(impl, port, q, flow->bytes_per_sec);
   rte_atomic32_inc(&tsq_queue->entry_cnt);
   mt_pthread_mutex_unlock(&tsq_queue->mutex);
 
@@ -466,20 +468,6 @@ int mt_tsq_flush(struct mtl_main_impl* impl, struct mt_tsq_entry* entry,
     mt_tsq_burst_busy(impl, entry, &pads[0], 1, 10);
   }
   dbg("%s, end\n", __func__);
-  return 0;
-}
-
-int mt_tsq_set_bps(struct mtl_main_impl* impl, struct mt_tsq_entry* entry,
-                   uint64_t bytes_per_sec) {
-  struct mt_tsq_impl* tsqm = entry->parent;
-  enum mtl_port port = tsqm->port;
-  struct mt_tsq_queue* tsq_queue = &tsqm->tsq_queues[entry->queue_id];
-  uint16_t q = entry->queue_id;
-
-  mt_pthread_mutex_lock(&tsq_queue->tx_mutex);
-  mt_dev_set_tx_bps(impl, port, q, bytes_per_sec);
-  mt_pthread_mutex_unlock(&tsq_queue->tx_mutex);
-
   return 0;
 }
 

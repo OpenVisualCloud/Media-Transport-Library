@@ -516,8 +516,7 @@ struct mt_interface {
   pthread_mutex_t tx_queues_mutex; /* protect tx_queues */
 
   /* the shared tx sys queue */
-  struct mt_tx_queue* tx_sys_queue;
-  struct mt_tsq_entry* tsq_sys_entry;
+  struct mt_txq_entry* txq_sys_entry;
   pthread_mutex_t tx_sys_queue_mutex; /* protect tx_sys_queue */
 
   /* rx queue resources */
@@ -730,6 +729,7 @@ struct mt_rsq_impl {
 /* request of tx queue flow */
 struct mt_txq_flow {
   bool sys_queue;
+  uint64_t bytes_per_sec; /* rl rate in byte */
   /* mandatory if not sys_queue */
   uint8_t dip_addr[MTL_IP_ADDR_LEN]; /* tx destination IP */
   uint16_t dst_port;                 /* udp destination port */
