@@ -828,17 +828,15 @@ static int tap_queues_init(struct mtl_main_impl* impl, struct mt_cni_impl* cni) 
     }
     nb_tx_desc = mt_if_nb_tx_desc(impl, i);
     socket_id = rte_eth_dev_socket_id(mt_port_id(impl, i));
-    ret =
-        rte_eth_tx_queue_setup(mt_port_id(impl, i), mt_dev_tx_queue_id(cni->tap_tx_q[i]),
-                               nb_tx_desc, socket_id, &dev_tx_port_conf);
+    ret = rte_eth_tx_queue_setup(mt_port_id(impl, i), mt_txq_queue_id(cni->tap_tx_q[i]),
+                                 nb_tx_desc, socket_id, &dev_tx_port_conf);
     if (ret < 0) {
       err("%s(%d), rte_eth_tx_queue_setup fail %d\n", __func__, i, ret);
       return ret;
     }
     ret = rte_eth_dev_start((mt_port_id(impl, i)));
     if (ret < 0) {
-      err("%s(%d), rte_eth_tx_queue_start fail %d for queue %d\n", __func__, i, ret,
-          mt_dev_tx_queue_id(cni->tap_tx_q[i]));
+      err("%s(%d), rte_eth_tx_queue_start fail %d\n", __func__, i, ret);
       return ret;
     }
     info("%s(%d), tx q %d\n", __func__, i, mt_txq_queue_id(cni->tap_tx_q[i]));
