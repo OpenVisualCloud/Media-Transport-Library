@@ -573,9 +573,7 @@ struct st_rx_video_session_impl {
   uint64_t advice_sleep_us;
 
   enum mtl_port port_maps[MTL_SESSION_PORT_MAX];
-  struct mt_rx_queue* queue[MTL_SESSION_PORT_MAX];
-  struct mt_rss_entry* rss[MTL_SESSION_PORT_MAX];
-  struct mt_srss_entry* srss[MTL_SESSION_PORT_MAX];
+  struct mt_rxq_entry* rxq[MTL_SESSION_PORT_MAX];
   uint16_t port_id[MTL_SESSION_PORT_MAX];
   uint16_t st20_src_port[MTL_SESSION_PORT_MAX]; /* udp port */
   uint16_t st20_dst_port[MTL_SESSION_PORT_MAX]; /* udp port */
@@ -865,9 +863,7 @@ struct st_rx_audio_session_impl {
   struct st_rx_audio_session_handle_impl* st30_handle;
 
   enum mtl_port port_maps[MTL_SESSION_PORT_MAX];
-  struct mt_rx_queue* queue[MTL_SESSION_PORT_MAX];
-  struct mt_rss_entry* rss[MTL_SESSION_PORT_MAX];
-  struct mt_srss_entry* srss[MTL_SESSION_PORT_MAX];
+  struct mt_rxq_entry* rxq[MTL_SESSION_PORT_MAX];
   uint16_t port_id[MTL_SESSION_PORT_MAX];
 
   uint16_t st30_src_port[MTL_SESSION_PORT_MAX]; /* udp port */
@@ -1018,9 +1014,7 @@ struct st_rx_ancillary_session_impl {
   struct st_rx_ancillary_session_handle_impl* st40_handle;
 
   enum mtl_port port_maps[MTL_SESSION_PORT_MAX];
-  struct mt_rx_queue* queue[MTL_SESSION_PORT_MAX];
-  struct mt_rss_entry* rss[MTL_SESSION_PORT_MAX];
-  struct mt_srss_entry* srss[MTL_SESSION_PORT_MAX];
+  struct mt_rxq_entry* rxq[MTL_SESSION_PORT_MAX];
   uint16_t port_id[MTL_SESSION_PORT_MAX];
   struct rte_ring* packet_ring;
 
