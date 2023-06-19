@@ -529,12 +529,13 @@ static int udp_stat_dump(void* priv) {
     s->stat_rx_msg_again_cnt = 0;
   }
   if (s->stat_poll_cnt) {
-    notice("%s(%d,%d), poll %u succ %u timeout %u query_ret %u\n", __func__, port, idx,
-           s->stat_poll_cnt, s->stat_poll_succ_cnt, s->stat_poll_timeout_cnt,
-           s->stat_poll_query_ret_cnt);
+    notice("%s(%d,%d), poll %u succ %u timeout %u 0-timeout %u query_ret %u\n", __func__,
+           port, idx, s->stat_poll_cnt, s->stat_poll_succ_cnt, s->stat_poll_timeout_cnt,
+           s->stat_poll_zero_timeout_cnt, s->stat_poll_query_ret_cnt);
     s->stat_poll_cnt = 0;
     s->stat_poll_succ_cnt = 0;
     s->stat_poll_timeout_cnt = 0;
+    s->stat_poll_zero_timeout_cnt = 0;
     s->stat_poll_query_ret_cnt = 0;
   }
   if (s->stat_pkt_dequeue) {
@@ -1136,7 +1137,10 @@ rx_poll:
   }
 
   dbg("%s(%d), timeout to %d ms\n", __func__, s->idx, timeout);
-  s->stat_poll_timeout_cnt++;
+  if (timeout == 0)
+    s->stat_poll_zero_timeout_cnt++;
+  else
+    s->stat_poll_timeout_cnt++;
   return 0;
 }
 
