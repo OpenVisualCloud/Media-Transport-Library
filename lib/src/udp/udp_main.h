@@ -103,6 +103,7 @@ struct mudp_impl {
   uint32_t stat_poll_cnt;
   uint32_t stat_poll_succ_cnt;
   uint32_t stat_poll_timeout_cnt;
+  uint32_t stat_poll_zero_timeout_cnt;
   uint32_t stat_poll_query_ret_cnt;
   uint32_t stat_rx_msg_cnt;
   uint32_t stat_rx_msg_succ_cnt;
