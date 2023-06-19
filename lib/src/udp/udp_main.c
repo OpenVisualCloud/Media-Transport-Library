@@ -342,10 +342,7 @@ static unsigned int udp_tx_pkts(struct mtl_main_impl* impl, struct mudp_impl* s,
 
   while (1) {
     unsigned int remaining = count - sent;
-    if (s->tsq)
-      sent += mt_tsq_burst(s->tsq, pkts, remaining);
-    else
-      sent = mt_dev_tx_burst(s->txq, pkts, remaining);
+    sent = mt_txq_burst(s->txq, pkts, remaining);
     s->stat_pkt_tx += sent;
     if (sent >= count) { /* all tx succ */
       return sent;
@@ -422,17 +419,11 @@ static int udp_uinit_txq(struct mtl_main_impl* impl, struct mudp_impl* s) {
 
   if (s->txq) {
     /* flush all the pkts in the tx pool */
-    mt_dev_flush_tx_queue(impl, s->txq, mt_get_pad(impl, port));
-    mt_dev_put_tx_queue(impl, s->txq);
+    mt_txq_flush(s->txq, mt_get_pad(impl, port));
+    mt_txq_put(s->txq);
     s->txq = NULL;
   }
-  if (s->tsq) {
-    /* flush all the pkts in the tx pool */
-    mt_tsq_flush(impl, s->tsq, mt_get_pad(impl, port));
-    mt_tsq_put(s->tsq);
-    s->tsq = NULL;
-  }
-  if (!mt_shared_queue(impl, port)) {
+  if (s->tx_pool_by_queue) {
     /* tsq use same mempool for shared queue */
     if (s->tx_pool) {
       mt_mempool_free(s->tx_pool);
@@ -451,29 +442,23 @@ static int udp_init_txq(struct mtl_main_impl* impl, struct mudp_impl* s,
   uint16_t queue_id;
 
   dbg("%s(%d), start\n", __func__, idx);
-  if (mt_shared_queue(impl, port)) {
-    struct mt_txq_flow flow;
-    memset(&flow, 0, sizeof(flow));
-    mtl_memcpy(&flow.dip_addr, &addr_in->sin_addr, MTL_IP_ADDR_LEN);
-    flow.dst_port = ntohs(addr_in->sin_port);
-    s->tsq = mt_tsq_get(impl, port, &flow);
-    if (!s->tsq) {
-      err("%s(%d), get tsq entry get fail\n", __func__, idx);
-      udp_uinit_txq(impl, s);
-      MUDP_ERR_RET(ENOMEM);
-    }
-    queue_id = mt_tsq_queue_id(s->tsq);
-    mt_tsq_set_bps(impl, s->tsq, s->txq_bps / 8);
-    s->tx_pool = mt_tsq_mempool(s->tsq);
-  } else {
-    s->txq = mt_dev_get_tx_queue(impl, port, s->txq_bps / 8);
-    if (!s->txq) {
-      err("%s(%d), get tx queue fail\n", __func__, idx);
-      udp_uinit_txq(impl, s);
-      MUDP_ERR_RET(EIO);
-    }
-    queue_id = mt_dev_tx_queue_id(s->txq);
 
+  struct mt_txq_flow flow;
+  memset(&flow, 0, sizeof(flow));
+  flow.bytes_per_sec = s->txq_bps / 8;
+  mtl_memcpy(&flow.dip_addr, &addr_in->sin_addr, MTL_IP_ADDR_LEN);
+  flow.dst_port = ntohs(addr_in->sin_port);
+
+  s->txq = mt_txq_get(impl, port, &flow);
+  if (!s->txq) {
+    err("%s(%d), txq entry get fail\n", __func__, idx);
+    udp_uinit_txq(impl, s);
+    MUDP_ERR_RET(ENOMEM);
+  }
+  queue_id = mt_txq_queue_id(s->txq);
+  /* shared txq use shared mempool */
+  s->tx_pool = mt_txq_mempool(s->txq);
+  if (!s->tx_pool) {
     char pool_name[32];
     snprintf(pool_name, 32, "MUDP-TX-P%d-Q%u-%d", port, queue_id, idx);
     struct rte_mempool* pool = mt_mempool_create(impl, port, pool_name, s->element_nb,
@@ -484,6 +469,7 @@ static int udp_init_txq(struct mtl_main_impl* impl, struct mudp_impl* s,
       MUDP_ERR_RET(ENOMEM);
     }
     s->tx_pool = pool;
+    s->tx_pool_by_queue = true;
   }
 
   udp_set_flag(s, MUDP_TXQ_ALLOC);

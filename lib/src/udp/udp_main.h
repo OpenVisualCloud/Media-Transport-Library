@@ -50,12 +50,12 @@ struct mudp_impl {
   uint16_t bind_port;
 
   uint64_t txq_bps; /* bit per sec for q */
-  struct mt_tx_queue* txq;
-  struct mt_tsq_entry* tsq;
+  struct mt_txq_entry* txq;
   struct mur_client* rxq;
   unsigned int rx_ring_count;
   unsigned int rx_poll_sleep_us;
   struct rte_mempool* tx_pool;
+  bool tx_pool_by_queue;
   uint16_t element_size;
   unsigned int element_nb;
 

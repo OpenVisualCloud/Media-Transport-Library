@@ -7,6 +7,7 @@
 #include <math.h>
 
 #include "../mt_log.h"
+#include "../mt_queue.h"
 #include "../mt_stat.h"
 #include "st_err.h"
 #include "st_video_transmitter.h"
@@ -267,7 +268,7 @@ static int tv_train_pacing(struct mtl_main_impl* impl, struct st_tx_video_sessio
   enum mtl_port port = mt_port_logic2phy(s->port_maps, s_port);
   struct rte_mbuf* pad = s->pad[s_port][ST20_PKT_TYPE_NORMAL];
   int idx = s->idx;
-  struct mt_tx_queue* queue = s->queue[s_port];
+  struct mt_txq_entry* queue = s->queue[s_port];
   unsigned int bulk = s->bulk;
   int pad_pkts, ret;
   int loop_cnt = 30;
@@ -294,7 +295,7 @@ static int tv_train_pacing(struct mtl_main_impl* impl, struct st_tx_video_sessio
   pad_pkts = s->st20_total_pkts * 100;
   for (int i = 0; i < pad_pkts; i++) {
     rte_mbuf_refcnt_update(pad, 1);
-    mt_dev_tx_burst_busy(impl, queue, &pad, 1, 10);
+    mt_txq_burst_busy(queue, &pad, 1, 10);
   }
 
   /* training stage */
@@ -312,12 +313,12 @@ static int tv_train_pacing(struct mtl_main_impl* impl, struct st_tx_video_sessio
       int bulk_batch = pkts / bulk;
       for (int j = 0; j < bulk_batch; j++) {
         rte_mbuf_refcnt_update(pad, bulk);
-        mt_dev_tx_burst_busy(impl, queue, bulk_pad, bulk, 10);
+        mt_txq_burst_busy(queue, bulk_pad, bulk, 10);
       }
       int remaining = pkts % bulk;
       for (int j = 0; j < remaining; j++) {
         rte_mbuf_refcnt_update(pad, 1);
-        mt_dev_tx_burst_busy(impl, queue, &pad, 1, 10);
+        mt_txq_burst_busy(queue, &pad, 1, 10);
       }
     }
     uint64_t end = mt_get_tsc(impl);
@@ -1464,7 +1465,7 @@ static int tv_tasklet_frame(struct mtl_main_impl* impl,
             if (!pad) continue;
 
             rte_mbuf_refcnt_update(pad, 1);
-            uint16_t tx = mt_dev_tx_burst(s->queue[i], &pad, 1);
+            uint16_t tx = mt_txq_burst(s->queue[i], &pad, 1);
             if (tx < 1) {
               rte_mbuf_refcnt_update(pad, -1);
             } else {
@@ -2096,8 +2097,8 @@ static int tv_uinit_hw(struct mtl_main_impl* impl, struct st_tx_video_session_im
     if (s->queue[i]) {
       struct rte_mbuf* pad = s->pad[i][ST20_PKT_TYPE_NORMAL];
       /* flush all the pkts in the tx ring desc */
-      if (pad) mt_dev_flush_tx_queue(impl, s->queue[i], pad);
-      mt_dev_put_tx_queue(impl, s->queue[i]);
+      if (pad) mt_txq_flush(s->queue[i], pad);
+      mt_txq_put(s->queue[i]);
       s->queue[i] = NULL;
     }
 
@@ -2129,12 +2130,17 @@ static int tv_init_hw(struct mtl_main_impl* impl, struct st_tx_video_sessions_mg
     port_id = mt_port_id(impl, port);
     s->port_id[i] = port_id;
 
-    s->queue[i] = mt_dev_get_tx_queue(impl, port, tv_rl_bps(s));
+    struct mt_txq_flow flow;
+    memset(&flow, 0, sizeof(flow));
+    flow.bytes_per_sec = tv_rl_bps(s);
+    mtl_memcpy(&flow.dip_addr, &s->ops.dip_addr[i], MTL_IP_ADDR_LEN);
+    flow.dst_port = s->ops.udp_port[i];
+    s->queue[i] = mt_txq_get(impl, port, &flow);
     if (!s->queue[i]) {
       tv_uinit_hw(impl, s);
       return -EIO;
     }
-    queue_id = mt_dev_tx_queue_id(s->queue[i]);
+    queue_id = mt_txq_queue_id(s->queue[i]);
 
     snprintf(ring_name, 32, "TX-VIDEO-RING-M%d-R%d-P%d", mgr_idx, idx, i);
     flags = RING_F_SP_ENQ | RING_F_SC_DEQ; /* single-producer and single-consumer */

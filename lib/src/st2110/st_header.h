@@ -257,7 +257,7 @@ struct st_tx_video_session_impl {
   struct rte_ring* ring[MTL_SESSION_PORT_MAX];
   struct rte_ring* packet_ring; /* rtp ring */
   uint16_t port_id[MTL_SESSION_PORT_MAX];
-  struct mt_tx_queue* queue[MTL_SESSION_PORT_MAX];
+  struct mt_txq_entry* queue[MTL_SESSION_PORT_MAX];
   int idx; /* index for current tx_session */
   uint64_t advice_sleep_us;
   uint16_t queue_burst_pkts[MTL_SESSION_PORT_MAX];
@@ -794,7 +794,7 @@ struct st_tx_audio_sessions_mgr {
   /* all audio sessions share same ring/queue */
   struct rte_ring* ring[MTL_PORT_MAX];
   uint16_t port_id[MTL_PORT_MAX];
-  struct mt_tx_queue* queue[MTL_PORT_MAX];
+  struct mt_txq_entry* queue[MTL_PORT_MAX];
 
   struct st_tx_audio_session_impl* sessions[ST_MAX_TX_AUDIO_SESSIONS];
   /* protect session, spin(fast) lock as it call from tasklet aslo */
@@ -994,7 +994,7 @@ struct st_tx_ancillary_sessions_mgr {
   /* all anc sessions share same ring/queue */
   struct rte_ring* ring[MTL_PORT_MAX];
   uint16_t port_id[MTL_PORT_MAX];
-  struct mt_tx_queue* queue[MTL_PORT_MAX];
+  struct mt_txq_entry* queue[MTL_PORT_MAX];
 
   struct st_tx_ancillary_session_impl* sessions[ST_MAX_TX_ANC_SESSIONS];
   /* protect session, spin(fast) lock as it call from tasklet aslo */

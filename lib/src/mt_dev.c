@@ -9,8 +9,8 @@
 #include "mt_dhcp.h"
 #include "mt_log.h"
 #include "mt_mcast.h"
+#include "mt_queue.h"
 #include "mt_sch.h"
-#include "mt_shared_queue.h"
 #include "mt_socket.h"
 #include "mt_stat.h"
 #include "mt_util.h"
@@ -1753,17 +1753,14 @@ uint16_t mt_dev_tx_sys_queue_burst(struct mtl_main_impl* impl, enum mtl_port por
                                    struct rte_mbuf** tx_pkts, uint16_t nb_pkts) {
   struct mt_interface* inf = mt_if(impl, port);
 
-  if (!inf->tx_sys_queue && !inf->tsq_sys_entry) {
-    err("%s(%d), tx/tsq sys queue not active\n", __func__, port);
+  if (!inf->txq_sys_entry) {
+    err("%s(%d), txq sys queue not active\n", __func__, port);
     return 0;
   }
 
   uint16_t tx;
   mt_pthread_mutex_lock(&inf->tx_sys_queue_mutex);
-  if (inf->tx_sys_queue)
-    tx = mt_dev_tx_burst(inf->tx_sys_queue, tx_pkts, nb_pkts);
-  else
-    tx = mt_tsq_burst(inf->tsq_sys_entry, tx_pkts, nb_pkts);
+  tx = mt_txq_burst(inf->txq_sys_entry, tx_pkts, nb_pkts);
   mt_pthread_mutex_unlock(&inf->tx_sys_queue_mutex);
   return tx;
 }
@@ -1785,8 +1782,9 @@ int mt_dev_set_tx_bps(struct mtl_main_impl* impl, enum mtl_port port, uint16_t q
 }
 
 struct mt_tx_queue* mt_dev_get_tx_queue(struct mtl_main_impl* impl, enum mtl_port port,
-                                        uint64_t bytes_per_sec) {
+                                        struct mt_txq_flow* flow) {
   struct mt_interface* inf = mt_if(impl, port);
+  uint64_t bytes_per_sec = flow->bytes_per_sec;
   struct mt_tx_queue* tx_queue;
   int ret;
 
@@ -2578,13 +2576,9 @@ int mt_dev_if_pre_uinit(struct mtl_main_impl* impl) {
   for (int i = 0; i < num_ports; i++) {
     inf = mt_if(impl, i);
 
-    if (inf->tx_sys_queue) {
-      mt_dev_put_tx_queue(impl, inf->tx_sys_queue);
-      inf->tx_sys_queue = NULL;
-    }
-    if (inf->tsq_sys_entry) {
-      mt_tsq_put(inf->tsq_sys_entry);
-      inf->tsq_sys_entry = NULL;
+    if (inf->txq_sys_entry) {
+      mt_txq_put(inf->txq_sys_entry);
+      inf->txq_sys_entry = NULL;
     }
   }
 
@@ -2600,23 +2594,15 @@ int mt_dev_if_post_init(struct mtl_main_impl* impl) {
     if (mt_pmd_is_kernel(impl, i)) continue;
 
     inf = mt_if(impl, i);
-    if (mt_shared_queue(impl, i)) {
-      struct mt_txq_flow flow;
-      memset(&flow, 0, sizeof(flow));
-      flow.sys_queue = true;
-      inf->tsq_sys_entry = mt_tsq_get(impl, i, &flow);
-      if (!inf->tsq_sys_entry) {
-        err("%s(%d), tsq sys entry get fail\n", __func__, i);
-        mt_dev_if_pre_uinit(impl);
-        return -ENOMEM;
-      }
-    } else {
-      inf->tx_sys_queue = mt_dev_get_tx_queue(impl, i, 0);
-      if (!inf->tx_sys_queue) {
-        err("%s(%d), tx sys queue get fail\n", __func__, i);
-        mt_dev_if_pre_uinit(impl);
-        return -ENOMEM;
-      }
+
+    struct mt_txq_flow flow;
+    memset(&flow, 0, sizeof(flow));
+    flow.sys_queue = true;
+    inf->txq_sys_entry = mt_txq_get(impl, i, &flow);
+    if (!inf->txq_sys_entry) {
+      err("%s(%d), txq sys entry get fail\n", __func__, i);
+      mt_dev_if_pre_uinit(impl);
+      return -ENOMEM;
     }
   }
 

@@ -35,7 +35,7 @@ int mt_dev_dst_ip_mac(struct mtl_main_impl* impl, uint8_t dip[MTL_IP_ADDR_LEN],
                       struct rte_ether_addr* ea, enum mtl_port port, int timeout_ms);
 
 struct mt_tx_queue* mt_dev_get_tx_queue(struct mtl_main_impl* impl, enum mtl_port port,
-                                        uint64_t bytes_per_sec);
+                                        struct mt_txq_flow* flow);
 int mt_dev_put_tx_queue(struct mtl_main_impl* impl, struct mt_tx_queue* queue);
 static inline uint16_t mt_dev_tx_queue_id(struct mt_tx_queue* queue) {
   return queue->queue_id;

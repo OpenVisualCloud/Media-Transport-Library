@@ -698,17 +698,21 @@ TEST(St40_rx, frame_user_timestamp) {
   st40_rx_fps_test(type, fps, ST_TEST_LEVEL_MANDATORY, 1, true, true);
 }
 
-static void st40_rx_update_src_test(enum st40_type type, int tx_sessions) {
+static void st40_rx_update_src_test(enum st40_type type, int tx_sessions,
+                                    enum st_test_level level) {
   auto ctx = (struct st_tests_context*)st_test_ctx();
   auto m_handle = ctx->handle;
   int ret;
   struct st40_tx_ops ops_tx;
   struct st40_rx_ops ops_rx;
+
   if (ctx->para.num_ports != 2) {
     info("%s, dual port should be enabled for tx test, one for tx and one for rx\n",
          __func__);
     return;
   }
+  /* return if level lower than global */
+  if (level < ctx->level) return;
 
   int rx_sessions = 1;
 
@@ -913,7 +917,9 @@ static void st40_rx_update_src_test(enum st40_type type, int tx_sessions) {
   }
 }
 
-TEST(St40_rx, update_source_rtp) { st40_rx_update_src_test(ST40_TYPE_RTP_LEVEL, 3); }
+TEST(St40_rx, update_source_rtp) {
+  st40_rx_update_src_test(ST40_TYPE_RTP_LEVEL, 3, ST_TEST_LEVEL_ALL);
+}
 
 static void st40_after_start_test(enum st40_type type[], enum st_fps fps[], int sessions,
                                   int repeat) {
