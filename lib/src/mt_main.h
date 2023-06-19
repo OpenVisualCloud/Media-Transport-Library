@@ -251,8 +251,8 @@ struct mt_cni_impl {
 #ifdef MTL_HAS_TAP
   pthread_t tap_bkg_tid; /* bkg thread id for tap */
   rte_atomic32_t stop_tap;
-  struct mt_tx_queue* tap_tx_q[MTL_PORT_MAX]; /* tap tx queue */
-  struct mt_rx_queue* tap_rx_q[MTL_PORT_MAX]; /* tap rx queue */
+  struct mt_txq_entry* tap_tx_q[MTL_PORT_MAX]; /* tap tx queue */
+  struct mt_rxq_entry* tap_rx_q[MTL_PORT_MAX]; /* tap rx queue */
   int tap_rx_cnt[MTL_PORT_MAX];
   rte_atomic32_t tap_if_up[MTL_PORT_MAX];
   void* tap_context;
