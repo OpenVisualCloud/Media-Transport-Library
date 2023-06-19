@@ -108,7 +108,7 @@ Refer to [guide](../ecosystem/librist/) for detail.
 
 ### 3.2 nginx-quic
 
-Get from "https://github.com/nginx-quic/nginx-quic"
+Get from <https://github.com/nginx-quic/nginx-quic>
 
 Example command:
 
@@ -127,7 +127,7 @@ use epoll; # epoll or select, both are supported
 
 ### 3.3 ngtcp2
 
-Get from "https://github.com/ngtcp2/ngtcp2"
+Get from <https://github.com/ngtcp2/ngtcp2>
 
 Example command:
 
@@ -137,7 +137,7 @@ MUFD_CFG=ufd_client.json LD_PRELOAD=/usr/local/lib/x86_64-linux-gnu/libmtl_udp_p
 
 ### 3.4 picoquic
 
-Get from "https://github.com/private-octopus/picoquic"
+Get from <https://github.com/private-octopus/picoquic>
 
 Example command:
 
