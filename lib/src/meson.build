@@ -4,6 +4,7 @@
 sources = files(
   'mt_main.c',
   'mt_dev.c',
+  'mt_queue.c',
   'mt_sch.c',
   'mt_cni.c',
   'mt_ptp.c',

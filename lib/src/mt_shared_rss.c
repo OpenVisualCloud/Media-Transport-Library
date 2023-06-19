@@ -141,9 +141,20 @@ static int srss_tasklet_stop(void* priv) {
 }
 
 struct mt_srss_entry* mt_srss_get(struct mtl_main_impl* impl, enum mtl_port port,
-                                  struct mt_rx_flow* flow) {
+                                  struct mt_rxq_flow* flow) {
   struct mt_srss_impl* srss = impl->srss[port];
   struct mt_srss_entry* entry;
+  static uint16_t srss_queue_id;
+
+  if (!mt_has_srss(impl, port)) {
+    err("%s(%d), shared rss not enabled\n", __func__, port);
+    return NULL;
+  }
+  if (!flow->cb) {
+    err("%s(%d), no cb in the flow\n", __func__, port);
+    return NULL;
+  }
+
   MT_TAILQ_FOREACH(entry, &srss->head, next) {
     if (entry->flow.dst_port == flow->dst_port &&
         *(uint32_t*)entry->flow.dip_addr == *(uint32_t*)flow->dip_addr) {
@@ -152,6 +163,7 @@ struct mt_srss_entry* mt_srss_get(struct mtl_main_impl* impl, enum mtl_port port
       return NULL;
     }
   }
+
   entry = mt_rte_zmalloc_socket(sizeof(*entry), mt_socket_id(impl, port));
   if (!entry) {
     err("%s(%d), malloc fail\n", __func__, port);
@@ -159,6 +171,8 @@ struct mt_srss_entry* mt_srss_get(struct mtl_main_impl* impl, enum mtl_port port
   }
   entry->flow = *flow;
   entry->srss = srss;
+  entry->queue_id = srss_queue_id; /* use a dummy queue id */
+  srss_queue_id++;
   pthread_mutex_lock(&srss->mutex);
   MT_TAILQ_INSERT_TAIL(&srss->head, entry, next);
   if (flow->sys_queue) srss->cni_entry = entry;

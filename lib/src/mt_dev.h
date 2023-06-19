@@ -57,7 +57,7 @@ uint16_t mt_dev_tx_sys_queue_burst(struct mtl_main_impl* impl, enum mtl_port por
                                    struct rte_mbuf** tx_pkts, uint16_t nb_pkts);
 
 struct mt_rx_queue* mt_dev_get_rx_queue(struct mtl_main_impl* impl, enum mtl_port port,
-                                        struct mt_rx_flow* flow);
+                                        struct mt_rxq_flow* flow);
 int mt_dev_put_rx_queue(struct mtl_main_impl* impl, struct mt_rx_queue* queue);
 static inline uint16_t mt_dev_rx_queue_id(struct mt_rx_queue* queue) {
   return queue->queue_id;
@@ -86,7 +86,7 @@ uint16_t mt_dev_rss_hash_queue(struct mtl_main_impl* impl, enum mtl_port port,
 
 struct mt_rx_flow_rsp* mt_dev_create_rx_flow(struct mtl_main_impl* impl,
                                              enum mtl_port port, uint16_t q,
-                                             struct mt_rx_flow* flow);
+                                             struct mt_rxq_flow* flow);
 int mt_dev_free_rx_flow(struct mtl_main_impl* impl, enum mtl_port port,
                         struct mt_rx_flow_rsp* rsp);
 

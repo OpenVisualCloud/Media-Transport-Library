@@ -5,7 +5,7 @@
 #include "mt_ptp.h"
 
 #include "mt_cni.h"
-#include "mt_dev.h"
+#include "mt_queue.h"
 // #define DEBUG
 #include "mt_log.h"
 #include "mt_mcast.h"
@@ -711,16 +711,17 @@ static int ptp_init(struct mtl_main_impl* impl, struct mt_ptp_impl* ptp,
   inet_pton(AF_INET, "224.0.1.129", ptp->mcast_group_addr);
 
   /* create rx queue */
-  struct mt_rx_flow flow;
+  struct mt_rxq_flow flow;
   memset(&flow, 0, sizeof(flow));
   rte_memcpy(flow.dip_addr, ptp->mcast_group_addr, MTL_IP_ADDR_LEN);
   rte_memcpy(flow.sip_addr, mt_sip_addr(impl, port), MTL_IP_ADDR_LEN);
   flow.no_port_flow = true;
   flow.dst_port = MT_PTP_UDP_GEN_PORT;
-  ptp->rx_queue = mt_dev_get_rx_queue(impl, port, &flow);
-  if (!ptp->rx_queue) {
-    err("%s(%d), ptp rx q create fail\n", __func__, port);
-    return -EIO;
+  ptp->rxq = mt_rxq_get(impl, port, &flow);
+  if (ptp->rxq) {
+    info("%s(%d), rx queue %d\n", __func__, port, mt_rxq_queue_id(ptp->rxq));
+  } else {
+    warn("%s(%d), fall back to cni path\n", __func__, port);
   }
 
   /* join mcast */
@@ -731,8 +732,7 @@ static int ptp_init(struct mtl_main_impl* impl, struct mt_ptp_impl* ptp,
   }
   mt_mcast_l2_join(impl, &ptp_l2_multicast_eaddr, port);
 
-  info("%s(%d), rx queue %d, sip: %d.%d.%d.%d\n", __func__, port,
-       mt_dev_rx_queue_id(ptp->rx_queue), ip[0], ip[1], ip[2], ip[3]);
+  info("%s(%d), sip: %d.%d.%d.%d\n", __func__, port, ip[0], ip[1], ip[2], ip[3]);
   return 0;
 }
 
@@ -751,9 +751,9 @@ static int ptp_uinit(struct mtl_main_impl* impl, struct mt_ptp_impl* ptp) {
   mt_mcast_l2_leave(impl, &ptp_l2_multicast_eaddr, port);
   mt_mcast_leave(impl, mt_ip_to_u32(ptp->mcast_group_addr), port);
 
-  if (ptp->rx_queue) {
-    mt_dev_put_rx_queue(impl, ptp->rx_queue);
-    ptp->rx_queue = NULL;
+  if (ptp->rxq) {
+    mt_rxq_put(ptp->rxq);
+    ptp->rxq = NULL;
   }
 
   info("%s(%d), succ\n", __func__, port);

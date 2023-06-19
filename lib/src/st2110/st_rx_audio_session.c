@@ -7,7 +7,7 @@
 #include <math.h>
 
 #include "../mt_log.h"
-#include "../mt_shared_rss.h"
+#include "../mt_queue.h"
 #include "../mt_stat.h"
 
 static inline double ra_ebu_pass_rate(struct st_rx_audio_ebu_result* ebu_result,
@@ -17,12 +17,7 @@ static inline double ra_ebu_pass_rate(struct st_rx_audio_ebu_result* ebu_result,
 
 static inline uint16_t rx_audio_queue_id(struct st_rx_audio_session_impl* s,
                                          enum mtl_session_port s_port) {
-  if (s->srss[s_port])
-    return 0;
-  else if (s->rss[s_port])
-    return mt_rss_queue_id(s->rss[s_port]);
-  else
-    return mt_dev_rx_queue_id(s->queue[s_port]);
+  return mt_rxq_queue_id(s->rxq[s_port]);
 }
 
 static void rx_audio_session_ebu_result(struct st_rx_audio_session_impl* s) {
@@ -523,7 +518,7 @@ static int rx_audio_session_handle_mbuf(void* priv, struct rte_mbuf** mbuf, uint
   enum mtl_session_port s_port = s_priv->s_port;
   enum st30_type st30_type = s->ops.type;
 
-  if (!s->st30_handle) {
+  if (!s->attached) {
     dbg("%s(%d,%d), session not ready\n", __func__, s->idx, s_port);
     return -EIO;
   }
@@ -549,16 +544,12 @@ static int rx_audio_session_tasklet(struct mtl_main_impl* impl,
   bool done = true;
 
   for (int s_port = 0; s_port < num_port; s_port++) {
-    if (s->rss[s_port]) {
-      rv = mt_rss_burst(s->rss[s_port], ST_RX_AUDIO_BURST_SIZE);
-    } else if (s->queue[s_port]) {
-      rv = mt_dev_rx_burst(s->queue[s_port], &mbuf[0], ST_RX_AUDIO_BURST_SIZE);
-      if (rv) {
-        rx_audio_session_handle_mbuf(&s->priv[s_port], &mbuf[0], rv);
-        rte_pktmbuf_free_bulk(&mbuf[0], rv);
-      }
-    } else {
-      continue;
+    if (!s->rxq[s_port]) continue;
+
+    rv = mt_rxq_burst(s->rxq[s_port], &mbuf[0], ST_RX_AUDIO_BURST_SIZE);
+    if (rv) {
+      rx_audio_session_handle_mbuf(&s->priv[s_port], &mbuf[0], rv);
+      rte_pktmbuf_free_bulk(&mbuf[0], rv);
     }
 
     if (rv) done = false;
@@ -589,13 +580,9 @@ static int rx_audio_session_uinit_hw(struct mtl_main_impl* impl,
   int num_port = s->ops.num_port;
 
   for (int i = 0; i < num_port; i++) {
-    if (s->queue[i]) {
-      mt_dev_put_rx_queue(impl, s->queue[i]);
-      s->queue[i] = NULL;
-    }
-    if (s->rss[i]) {
-      mt_rss_put(s->rss[i]);
-      s->rss[i] = NULL;
+    if (s->rxq[i]) {
+      mt_rxq_put(s->rxq[i]);
+      s->rxq[i] = NULL;
     }
   }
 
@@ -605,7 +592,7 @@ static int rx_audio_session_uinit_hw(struct mtl_main_impl* impl,
 static int rx_audio_session_init_hw(struct mtl_main_impl* impl,
                                     struct st_rx_audio_session_impl* s) {
   int idx = s->idx, num_port = s->ops.num_port;
-  struct mt_rx_flow flow;
+  struct mt_rxq_flow flow;
   enum mtl_port port;
 
   for (int i = 0; i < num_port; i++) {
@@ -626,12 +613,10 @@ static int rx_audio_session_init_hw(struct mtl_main_impl* impl,
 
     /* no flow for data path only */
     if (mt_pmd_is_kernel(impl, port) && (s->ops.flags & ST30_RX_FLAG_DATA_PATH_ONLY))
-      s->queue[i] = mt_dev_get_rx_queue(impl, port, NULL);
-    else if (mt_has_rss(impl, port))
-      s->rss[i] = mt_rss_get(impl, port, &flow);
+      s->rxq[i] = mt_rxq_get(impl, port, NULL);
     else
-      s->queue[i] = mt_dev_get_rx_queue(impl, port, &flow);
-    if (!s->queue[i] && !s->rss[i]) {
+      s->rxq[i] = mt_rxq_get(impl, port, &flow);
+    if (!s->rxq[i]) {
       rx_audio_session_uinit_hw(impl, s);
       return -EIO;
     }
@@ -783,19 +768,7 @@ static int rx_audio_session_attach(struct mtl_main_impl* impl,
     return -EIO;
   }
 
-  for (int i = 0; i < num_port; i++) {
-    enum mtl_port port = mt_port_logic2phy(s->port_maps, i);
-    if (mt_has_srss(impl, port)) {
-      s->srss[i] = mt_srss_get(impl, port, &s->rss[i]->flow);
-      if (!s->srss[i]) {
-        err("%s(%d), mt_srss_get fail\n", __func__, idx);
-        rx_audio_session_uinit_sw(impl, s);
-        rx_audio_session_uinit_hw(impl, s);
-        return -EIO;
-      }
-    }
-  }
-
+  s->attached = true;
   info("%s(%d), pkt_len %u frame_size %" PRId64 "\n", __func__, idx, s->pkt_len,
        s->st30_frame_size);
   return 0;
@@ -835,14 +808,9 @@ static void rx_audio_session_stat(struct st_rx_audio_session_impl* s) {
 
 static int rx_audio_session_detach(struct mtl_main_impl* impl,
                                    struct st_rx_audio_session_impl* s) {
+  s->attached = false;
   if (mt_has_ebu(impl)) rx_audio_session_ebu_result(s);
   rx_audio_session_stat(s);
-  for (int i = 0; i < s->ops.num_port; i++) {
-    if (s->srss[i]) {
-      mt_srss_put(s->srss[i]);
-      s->srss[i] = NULL;
-    }
-  }
   rx_audio_session_uinit_mcast(impl, s);
   rx_audio_session_uinit_sw(impl, s);
   rx_audio_session_uinit_hw(impl, s);

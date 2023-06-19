@@ -113,14 +113,11 @@ static uint16_t urq_rx(struct mur_queue* q) {
   uint16_t rx_burst = q->rx_burst_pkts;
   struct rte_mbuf* pkts[rx_burst];
 
-  /* no lock need as rsq/rss has lock already */
-  if (q->rsq) return mt_rsq_burst(q->rsq, rx_burst);
-  if (q->rss) return mt_rss_burst(q->rss, rx_burst);
-
-  if (!q->rxq) return 0;
+  /* no lock need as rsq/rss/srss has lock already */
+  if (!q->rxq->rxq) return mt_rxq_burst(q->rxq, NULL, rx_burst);
 
   if (!urq_try_lock(q)) return 0;
-  uint16_t rx = mt_dev_rx_burst(q->rxq, pkts, rx_burst);
+  uint16_t rx = mt_rxq_burst(q->rxq, pkts, rx_burst);
   urq_unlock(q);
 
   uint16_t n = urq_rx_handle(q, pkts, rx);
@@ -188,16 +185,8 @@ static int urq_put(struct mur_queue* q) {
 
   urq_mgr_del(mgr, q);
   if (q->rxq) {
-    mt_dev_put_rx_queue(impl, q->rxq);
+    mt_rxq_put(q->rxq);
     q->rxq = NULL;
-  }
-  if (q->rsq) {
-    mt_rsq_put(q->rsq);
-    q->rsq = NULL;
-  }
-  if (q->rss) {
-    mt_rss_put(q->rss);
-    q->rss = NULL;
   }
 
   urq_mgr_unlock(mgr);
@@ -249,40 +238,21 @@ static struct mur_queue* urq_get(struct mudp_rxq_mgr* mgr,
   MT_TAILQ_INIT(&q->client_head);
   mt_pthread_mutex_init(&q->mutex, NULL);
 
-  uint16_t queue_id;
   /* create flow */
-  struct mt_rx_flow flow;
+  struct mt_rxq_flow flow;
   memset(&flow, 0, sizeof(flow));
   flow.no_ip_flow = true;
   flow.dst_port = dst_port;
   flow.priv = q;
   flow.cb = urq_rsq_mbuf_cb; /* for rss and rsq */
-  if (mt_has_rss(impl, port)) {
-    q->rss = mt_rss_get(impl, port, &flow);
-    if (!q->rss) {
-      err("%s(%d,%u), get rss fail\n", __func__, port, dst_port);
-      urq_put(q);
-      goto out_unlock_fail;
-    }
-    queue_id = mt_rss_queue_id(q->rss);
-  } else if (mt_shared_queue(impl, port)) {
-    q->rsq = mt_rsq_get(impl, port, &flow);
-    if (!q->rsq) {
-      err("%s(%d,%u), get rsq fail\n", __func__, port, dst_port);
-      urq_put(q);
-      goto out_unlock_fail;
-    }
-    queue_id = mt_rsq_queue_id(q->rsq);
-  } else {
-    q->rxq = mt_dev_get_rx_queue(impl, port, &flow);
-    if (!q->rxq) {
-      err("%s(%d,%u), get rx queue fail\n", __func__, port, dst_port);
-      urq_put(q);
-      goto out_unlock_fail;
-    }
-    queue_id = mt_dev_rx_queue_id(q->rxq);
+
+  q->rxq = mt_rxq_get(impl, port, &flow);
+  if (!q->rxq) {
+    err("%s(%d,%u), get rxq fail\n", __func__, port, dst_port);
+    urq_put(q);
+    goto out_unlock_fail;
   }
-  q->rxq_id = queue_id;
+  q->rxq_id = mt_rxq_queue_id(q->rxq);
 
   ret = urq_mgr_add(mgr, q);
   if (ret < 0) {

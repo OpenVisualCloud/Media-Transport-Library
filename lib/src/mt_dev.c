@@ -16,7 +16,7 @@
 #include "mt_util.h"
 
 static struct mt_rx_flow_rsp* dev_if_create_rx_flow(struct mt_interface* inf, uint16_t q,
-                                                    struct mt_rx_flow* flow);
+                                                    struct mt_rxq_flow* flow);
 static int dev_if_free_rx_flow(struct mt_interface* inf, struct mt_rx_flow_rsp* rsp);
 
 struct mt_dev_driver_info {
@@ -606,7 +606,7 @@ static int dev_tx_queue_set_rl_rate(struct mt_interface* inf, uint16_t queue,
 }
 
 static struct rte_flow* dev_rx_queue_create_flow_raw(struct mt_interface* inf, uint16_t q,
-                                                     struct mt_rx_flow* flow) {
+                                                     struct mt_rxq_flow* flow) {
   struct rte_flow_error error;
   struct rte_flow* r_flow;
 
@@ -660,7 +660,7 @@ static struct rte_flow* dev_rx_queue_create_flow_raw(struct mt_interface* inf, u
 }
 
 static struct rte_flow* dev_rx_queue_create_flow(struct mt_interface* inf, uint16_t q,
-                                                 struct mt_rx_flow* flow) {
+                                                 struct mt_rxq_flow* flow) {
   struct rte_flow_attr attr;
   struct rte_flow_item pattern[4];
   struct rte_flow_action action[2];
@@ -1658,7 +1658,7 @@ static int dev_if_init_pacing(struct mt_interface* inf) {
 }
 
 static struct mt_rx_flow_rsp* dev_if_create_rx_flow(struct mt_interface* inf, uint16_t q,
-                                                    struct mt_rx_flow* flow) {
+                                                    struct mt_rxq_flow* flow) {
   int ret;
   enum mtl_port port = inf->port;
   struct mtl_main_impl* impl = inf->parent;
@@ -1823,7 +1823,7 @@ struct mt_tx_queue* mt_dev_get_tx_queue(struct mtl_main_impl* impl, enum mtl_por
 }
 
 struct mt_rx_queue* mt_dev_get_rx_queue(struct mtl_main_impl* impl, enum mtl_port port,
-                                        struct mt_rx_flow* flow) {
+                                        struct mt_rxq_flow* flow) {
   struct mt_interface* inf = mt_if(impl, port);
   int ret;
   struct mt_rx_queue* rx_queue;
@@ -1866,7 +1866,7 @@ struct mt_rx_queue* mt_dev_get_rx_queue(struct mtl_main_impl* impl, enum mtl_por
     }
 
     memset(&rx_queue->flow, 0, sizeof(rx_queue->flow));
-    if (flow) {
+    if (flow && !flow->sys_queue) {
       rx_queue->flow_rsp = dev_if_create_rx_flow(inf, q, flow);
       if (!rx_queue->flow_rsp) {
         err("%s(%d), create flow fail for queue %d\n", __func__, port, q);
@@ -2601,7 +2601,7 @@ int mt_dev_if_post_init(struct mtl_main_impl* impl) {
 
     inf = mt_if(impl, i);
     if (mt_shared_queue(impl, i)) {
-      struct mt_tsq_flow flow;
+      struct mt_txq_flow flow;
       memset(&flow, 0, sizeof(flow));
       flow.sys_queue = true;
       inf->tsq_sys_entry = mt_tsq_get(impl, i, &flow);
@@ -2636,7 +2636,7 @@ uint16_t mt_dev_rss_hash_queue(struct mtl_main_impl* impl, enum mtl_port port,
 
 struct mt_rx_flow_rsp* mt_dev_create_rx_flow(struct mtl_main_impl* impl,
                                              enum mtl_port port, uint16_t q,
-                                             struct mt_rx_flow* flow) {
+                                             struct mt_rxq_flow* flow) {
   struct mt_interface* inf = mt_if(impl, port);
   struct mt_rx_flow_rsp* rsp;
 

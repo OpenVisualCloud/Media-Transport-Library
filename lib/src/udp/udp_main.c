@@ -452,7 +452,7 @@ static int udp_init_txq(struct mtl_main_impl* impl, struct mudp_impl* s,
 
   dbg("%s(%d), start\n", __func__, idx);
   if (mt_shared_queue(impl, port)) {
-    struct mt_tsq_flow flow;
+    struct mt_txq_flow flow;
     memset(&flow, 0, sizeof(flow));
     mtl_memcpy(&flow.dip_addr, &addr_in->sin_addr, MTL_IP_ADDR_LEN);
     flow.dst_port = ntohs(addr_in->sin_port);
