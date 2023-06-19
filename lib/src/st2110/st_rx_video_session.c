@@ -1875,7 +1875,7 @@ static int rv_handle_rtp_pkt(struct st_rx_video_session_impl* s, struct rte_mbuf
 
   /* find the target slot by tmstamp */
   struct st_rx_video_slot_impl* slot = rv_rtp_slot_by_tmstamp(s, tmstamp);
-  if (!slot) {
+  if (!slot || !slot->frame_bitmap) {
     s->stat_pkts_no_slot++;
     return -ENOMEM;
   }
@@ -2681,7 +2681,7 @@ static int rv_handle_mbuf(void* priv, struct rte_mbuf** mbuf, uint16_t nb) {
   struct st_rx_video_session_impl* s = s_priv->session;
   enum mtl_session_port s_port = s_priv->s_port;
 
-  if (!s->st20_handle && !s->st22_handle) {
+  if (!s->attached) {
     dbg("%s(%d,%d), session not ready\n", __func__, s->idx, s_port);
     return -EIO;
   }
@@ -3012,6 +3012,7 @@ static int rv_attach(struct mtl_main_impl* impl, struct st_rx_video_sessions_mgr
     return -EIO;
   }
 
+  s->attached = true;
   info("%s(%d), %d frames with size %" PRIu64 "(%" PRIu64 ",%" PRIu64 "), type %d\n",
        __func__, idx, s->st20_frames_cnt, s->st20_frame_size, s->st20_frame_bitmap_size,
        s->st20_uframe_size, ops->type);
@@ -3265,6 +3266,7 @@ static int rvs_ctl_tasklet_start(void* priv) {
 
 static int rv_detach(struct mtl_main_impl* impl, struct st_rx_video_sessions_mgr* mgr,
                      struct st_rx_video_session_impl* s) {
+  s->attached = false;
   if (mt_has_ebu(mgr->parent)) rv_ebu_final_result(s);
   rv_stat(mgr, s);
   rv_uinit_mcast(impl, s);

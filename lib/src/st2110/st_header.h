@@ -565,6 +565,7 @@ struct st_rx_session_priv {
 
 struct st_rx_video_session_impl {
   int idx; /* index for current session */
+  bool attached;
   struct st_rx_video_sessions_mgr* parent;
   struct st_rx_session_priv priv[MTL_SESSION_PORT_MAX];
 
@@ -857,6 +858,7 @@ struct st_rx_audio_ebu_result {
 
 struct st_rx_audio_session_impl {
   int idx; /* index for current session */
+  bool attached;
   struct st30_rx_ops ops;
   char ops_name[ST_MAX_NAME_LEN];
   struct st_rx_session_priv priv[MTL_SESSION_PORT_MAX];
@@ -1008,6 +1010,7 @@ struct st_tx_ancillary_sessions_mgr {
 
 struct st_rx_ancillary_session_impl {
   int idx; /* index for current session */
+  bool attached;
   struct st40_rx_ops ops;
   char ops_name[ST_MAX_NAME_LEN];
   struct st_rx_session_priv priv[MTL_SESSION_PORT_MAX];

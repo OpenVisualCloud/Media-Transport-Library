@@ -518,7 +518,7 @@ static int rx_audio_session_handle_mbuf(void* priv, struct rte_mbuf** mbuf, uint
   enum mtl_session_port s_port = s_priv->s_port;
   enum st30_type st30_type = s->ops.type;
 
-  if (!s->st30_handle) {
+  if (!s->attached) {
     dbg("%s(%d,%d), session not ready\n", __func__, s->idx, s_port);
     return -EIO;
   }
@@ -768,6 +768,7 @@ static int rx_audio_session_attach(struct mtl_main_impl* impl,
     return -EIO;
   }
 
+  s->attached = true;
   info("%s(%d), pkt_len %u frame_size %" PRId64 "\n", __func__, idx, s->pkt_len,
        s->st30_frame_size);
   return 0;
@@ -807,6 +808,7 @@ static void rx_audio_session_stat(struct st_rx_audio_session_impl* s) {
 
 static int rx_audio_session_detach(struct mtl_main_impl* impl,
                                    struct st_rx_audio_session_impl* s) {
+  s->attached = false;
   if (mt_has_ebu(impl)) rx_audio_session_ebu_result(s);
   rx_audio_session_stat(s);
   rx_audio_session_uinit_mcast(impl, s);

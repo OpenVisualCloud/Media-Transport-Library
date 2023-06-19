@@ -129,7 +129,7 @@ static int rx_ancillary_session_handle_mbuf(void* priv, struct rte_mbuf** mbuf,
   struct mtl_main_impl* impl = s_priv->impl;
   enum mtl_session_port s_port = s_priv->s_port;
 
-  if (!s->st40_handle) {
+  if (!s->attached) {
     dbg("%s(%d,%d), session not ready\n", __func__, s->idx, s_port);
     return -EIO;
   }
@@ -351,6 +351,7 @@ static int rx_ancillary_session_attach(struct mtl_main_impl* impl,
     return -EIO;
   }
 
+  s->attached = true;
   info("%s(%d), succ\n", __func__, idx);
   return 0;
 }
@@ -382,6 +383,7 @@ static void rx_ancillary_session_stat(struct st_rx_ancillary_session_impl* s) {
 
 static int rx_ancillary_session_detach(struct mtl_main_impl* impl,
                                        struct st_rx_ancillary_session_impl* s) {
+  s->attached = false;
   rx_ancillary_session_stat(s);
   rx_ancillary_session_uinit_mcast(impl, s);
   rx_ancillary_session_uinit_sw(impl, s);
