@@ -876,7 +876,7 @@ static int rv_alloc_rtps(struct mtl_main_impl* impl, struct st_rx_video_sessions
   int mgr_idx = mgr->idx, idx = s->idx;
   enum mtl_port port = mt_port_logic2phy(s->port_maps, MTL_SESSION_PORT_P);
 
-  snprintf(ring_name, 32, "RX-VIDEO-RTP-RING-M%d-R%d", mgr_idx, idx);
+  snprintf(ring_name, 32, "%sM%dS%d_RTP", ST_RX_VIDEO_PREFIX, mgr_idx, idx);
   flags = RING_F_SP_ENQ | RING_F_SC_DEQ; /* single-producer and single-consumer */
   count = s->ops.rtp_ring_size;
   if (count <= 0) {
@@ -1487,7 +1487,7 @@ static int rv_start_pcapng(struct mtl_main_impl* impl, struct st_rx_video_sessio
 #endif
 
   char pool_name[ST_MAX_NAME_LEN];
-  snprintf(pool_name, ST_MAX_NAME_LEN, "pcapng_pool_p%d_s%d", port, idx);
+  snprintf(pool_name, ST_MAX_NAME_LEN, "%sP%dS%d_PCAPNG", ST_RX_VIDEO_PREFIX, port, idx);
   struct rte_mempool* mp =
       mt_mempool_create_by_ops(impl, port, pool_name, 256, MT_MBUF_CACHE_SIZE, 0,
                                rte_pcapng_mbuf_size(pkt_len), "ring_mp_sc");
@@ -2346,7 +2346,7 @@ static int rv_init_pkt_lcore(struct mtl_main_impl* impl,
   int mgr_idx = mgr->idx, idx = s->idx, ret;
   enum mtl_port port = mt_port_logic2phy(s->port_maps, MTL_SESSION_PORT_P);
 
-  snprintf(ring_name, 32, "RX-VIDEO-PKT-RING-M%d-R%d", mgr_idx, idx);
+  snprintf(ring_name, 32, "%sM%dS%d_PKT", ST_RX_VIDEO_PREFIX, mgr_idx, idx);
   flags = RING_F_SP_ENQ | RING_F_SC_DEQ; /* single-producer and single-consumer */
   count = ST_RX_VIDEO_BURST_SIZE * 4;
   ring = rte_ring_create(ring_name, count, mt_socket_id(impl, port), flags);

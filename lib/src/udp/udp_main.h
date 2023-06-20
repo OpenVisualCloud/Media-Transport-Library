@@ -36,6 +36,8 @@
 /* 1g */
 #define MUDP_DEFAULT_RL_BPS (1ul * 1024 * 1024 * 1024)
 
+#define MUDP_PREFIX "MU_"
+
 struct mudp_impl {
   struct mtl_main_impl* parent;
   enum mt_handle_type type;

@@ -48,7 +48,7 @@ static int kni_init_conf(uint16_t port_id, struct rte_kni_conf* conf) {
     return ret;
   }
 
-  snprintf(conf->name, RTE_KNI_NAMESIZE, "vStKni%u_%s", port_id, dev_info.driver_name);
+  snprintf(conf->name, RTE_KNI_NAMESIZE, "K_P%u_%s", port_id, dev_info.driver_name);
   conf->group_id = port_id;
   conf->mbuf_size = 2048;
   conf->min_mtu = dev_info.min_mtu;

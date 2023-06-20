@@ -7,6 +7,8 @@
 
 #include "st_main.h"
 
+#define ST_TX_VIDEO_PREFIX "TV_"
+
 int st_tx_video_sessions_sch_init(struct mtl_main_impl* impl, struct mt_sch_impl* sch);
 
 int st_tx_video_sessions_sch_uinit(struct mtl_main_impl* impl, struct mt_sch_impl* sch);

@@ -335,7 +335,7 @@ static int rx_audio_session_alloc_rtps(struct mtl_main_impl* impl,
   int mgr_idx = mgr->idx, idx = s->idx;
   enum mtl_port port = mt_port_logic2phy(s->port_maps, MTL_SESSION_PORT_P);
 
-  snprintf(ring_name, 32, "RX-AUDIO-RTP-RING-M%d-R%d", mgr_idx, idx);
+  snprintf(ring_name, 32, "%sM%dS%d_RTP", ST_RX_AUDIO_PREFIX, mgr_idx, idx);
   flags = RING_F_SP_ENQ | RING_F_SC_DEQ; /* single-producer and single-consumer */
   count = s->ops.rtp_ring_size;
   if (count <= 0) {

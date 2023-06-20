@@ -6,7 +6,7 @@ Instance type tested: **m6i.nxlarge**, **m6i.metal**
 
 (check the bandwidth limitation here: [network-performance](https://docs.aws.amazon.com/AWSEC2/latest/UserGuide/general-purpose-instances.html#general-purpose-network-performance))
 
-Image tested: **Amazon Linux 2 AMI**
+Image tested: **Amazon Linux 2, Amazon Linux 2023**
 
 Created 2 instances (TX and RX) with required storage.
 
@@ -37,9 +37,8 @@ If you use bare metal, you can turn on IOMMU refer to [run.md](./run.md).
 If you use VM, set NO-IOMMU mode for vfio after each boot.
 
 ```shell
-# under root user
-modprobe vfio-pci
-echo 1 > /sys/module/vfio/parameters/enable_unsafe_noiommu_mode
+sudo modprobe vfio-pci
+sudo bash -c 'echo 1 > /sys/module/vfio/parameters/enable_unsafe_noiommu_mode'
 ```
 
 ## 4. Attach interfaces for DPDK
@@ -63,9 +62,8 @@ After attaching the interface, remember the Private IPv4 address allocated by AW
 Unbind the interface from kernel driver and bind to PMD.
 
 ```shell
-# under root user
-ifconfig eth1 down
-dpdk-devbind.py -b vfio-pci 0000:00:06.0
+sudo ifconfig eth1 down
+sudo dpdk-devbind.py -b vfio-pci 0000:00:06.0
 # check the interfaces
 dpdk-devbind.py -s
 ```
