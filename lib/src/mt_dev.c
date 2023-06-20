@@ -1537,7 +1537,8 @@ static int dev_if_init_rx_queues(struct mtl_main_impl* impl, struct mt_interface
       /* Create mempool to hold the rx queue mbufs. */
       unsigned int mbuf_elements = inf->nb_rx_desc + 1024;
       char pool_name[ST_MAX_NAME_LEN];
-      snprintf(pool_name, ST_MAX_NAME_LEN, "ST%d_RX%d_MBUF_POOL", inf->port, q);
+      snprintf(pool_name, ST_MAX_NAME_LEN, "%sP%dQ%d_MBUF", MT_RX_MEMPOOL_PREFIX,
+               inf->port, q);
       struct rte_mempool* mbuf_pool = NULL;
 
       if (mt_pmd_is_kernel(impl, inf->port)) {
@@ -1572,7 +1573,8 @@ static int dev_if_init_rx_queues(struct mtl_main_impl* impl, struct mt_interface
           dev_if_uinit_rx_queues(inf);
           return -EIO;
         }
-        snprintf(pool_name, ST_MAX_NAME_LEN, "ST%d_RX%d_PAYLOAD_POOL", inf->port, q);
+        snprintf(pool_name, ST_MAX_NAME_LEN, "%sP%dQ%d_PAYLOAD", MT_RX_MEMPOOL_PREFIX,
+                 inf->port, q);
         mbuf_pool = mt_mempool_create(impl, inf->port, pool_name, mbuf_elements,
                                       MT_MBUF_CACHE_SIZE, sizeof(struct mt_muf_priv_data),
                                       ST_PKT_MAX_ETHER_BYTES);
@@ -2502,7 +2504,7 @@ int mt_dev_if_init(struct mtl_main_impl* impl) {
       mbuf_elements = 1024;
       /* append as rx queues */
       mbuf_elements += inf->max_rx_queues * inf->nb_rx_desc;
-      snprintf(pool_name, ST_MAX_NAME_LEN, "ST%d_RX_SYS_MBUF_POOL", i);
+      snprintf(pool_name, ST_MAX_NAME_LEN, "%sP%d_SYS", MT_RX_MEMPOOL_PREFIX, i);
       mbuf_pool = mt_mempool_create_common(impl, i, pool_name, mbuf_elements);
       if (!mbuf_pool) {
         mt_dev_if_uinit(impl);
@@ -2517,7 +2519,7 @@ int mt_dev_if_init(struct mtl_main_impl* impl) {
       /* append as tx queues, double as tx ring */
       mbuf_elements += inf->max_tx_queues * inf->nb_tx_desc * 2;
     }
-    snprintf(pool_name, ST_MAX_NAME_LEN, "ST%d_TX_SYS_MBUF_POOL", i);
+    snprintf(pool_name, ST_MAX_NAME_LEN, "%sP%d_SYS", MT_TX_MEMPOOL_PREFIX, i);
     mbuf_pool = mt_mempool_create_common(impl, i, pool_name, mbuf_elements);
     if (!mbuf_pool) {
       mt_dev_if_uinit(impl);

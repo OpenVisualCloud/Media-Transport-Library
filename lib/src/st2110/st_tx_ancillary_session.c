@@ -998,7 +998,7 @@ static int tx_ancillary_sessions_mgr_init_hw(struct mtl_main_impl* impl,
       return -EIO;
     }
 
-    snprintf(ring_name, 32, "TX-ANC-RING-M%d-P%d", mgr_idx, i);
+    snprintf(ring_name, 32, "%sM%dP%d", ST_TX_ANCILLARY_PREFIX, mgr_idx, i);
     flags = RING_F_MP_HTS_ENQ | RING_F_SC_DEQ; /* multi-producer and single-consumer */
     count = ST_TX_ANC_SESSIONS_RING_SIZE;
     ring = rte_ring_create(ring_name, count, mt_socket_id(impl, i), flags);
@@ -1124,7 +1124,8 @@ static int tx_ancillary_session_mempool_init(struct mtl_main_impl* impl,
       warn("%s(%d), use previous hdr mempool for port %d\n", __func__, idx, i);
     } else {
       char pool_name[32];
-      snprintf(pool_name, 32, "TXANCHDR-M%d-R%d-P%d", mgr->idx, idx, i);
+      snprintf(pool_name, 32, "%sM%dS%dP%d_HDR", ST_TX_ANCILLARY_PREFIX, mgr->idx, idx,
+               i);
       struct rte_mempool* mbuf_pool =
           mt_mempool_create(impl, port, pool_name, n, MT_MBUF_CACHE_SIZE,
                             sizeof(struct mt_muf_priv_data), hdr_room_size);
@@ -1147,7 +1148,7 @@ static int tx_ancillary_session_mempool_init(struct mtl_main_impl* impl,
     warn("%s(%d), use previous chain mempool\n", __func__, idx);
   } else {
     char pool_name[32];
-    snprintf(pool_name, 32, "TXANCCHAIN-M%d-R%d", mgr->idx, idx);
+    snprintf(pool_name, 32, "%sM%dS%d_CHAIN", ST_TX_ANCILLARY_PREFIX, mgr->idx, idx);
     struct rte_mempool* mbuf_pool =
         mt_mempool_create(impl, port, pool_name, n, MT_MBUF_CACHE_SIZE,
                           sizeof(struct mt_muf_priv_data), chain_room_size);
@@ -1170,7 +1171,7 @@ static int tx_ancillary_session_init_rtp(struct mtl_main_impl* impl,
   int mgr_idx = mgr->idx, idx = s->idx;
   enum mtl_port port = mt_port_logic2phy(s->port_maps, MTL_SESSION_PORT_P);
 
-  snprintf(ring_name, 32, "TX-ANC-PACKET-RING-M%d-R%d", mgr_idx, idx);
+  snprintf(ring_name, 32, "%sM%dS%d_PKT", ST_TX_ANCILLARY_PREFIX, mgr_idx, idx);
   flags = RING_F_SP_ENQ | RING_F_SC_DEQ; /* single-producer and single-consumer */
   ring = rte_ring_create(ring_name, count, mt_socket_id(impl, port), flags);
   if (!ring) {

@@ -460,7 +460,7 @@ static int udp_init_txq(struct mtl_main_impl* impl, struct mudp_impl* s,
   s->tx_pool = mt_txq_mempool(s->txq);
   if (!s->tx_pool) {
     char pool_name[32];
-    snprintf(pool_name, 32, "MUDP-TX-P%d-Q%u-%d", port, queue_id, idx);
+    snprintf(pool_name, 32, "%sP%dQ%uS%d_TX", MUDP_PREFIX, port, queue_id, idx);
     struct rte_mempool* pool = mt_mempool_create(impl, port, pool_name, s->element_nb,
                                                  MT_MBUF_CACHE_SIZE, 0, s->element_size);
     if (!pool) {

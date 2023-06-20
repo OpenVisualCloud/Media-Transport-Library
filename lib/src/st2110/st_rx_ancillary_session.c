@@ -275,7 +275,7 @@ static int rx_ancillary_session_init_sw(struct mtl_main_impl* impl,
   int mgr_idx = mgr->idx, idx = s->idx;
   enum mtl_port port = mt_port_logic2phy(s->port_maps, MTL_SESSION_PORT_P);
 
-  snprintf(ring_name, 32, "RX-ANC-PACKET-RING-M%d-R%d", mgr_idx, idx);
+  snprintf(ring_name, 32, "%sM%dS%d_PKT", ST_RX_ANCILLARY_PREFIX, mgr_idx, idx);
   flags = RING_F_SP_ENQ | RING_F_SC_DEQ; /* single-producer and single-consumer */
   count = s->ops.rtp_ring_size;
   ring = rte_ring_create(ring_name, count, mt_socket_id(impl, port), flags);

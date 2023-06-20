@@ -378,7 +378,7 @@ struct mt_tsq_entry* mt_tsq_get(struct mtl_main_impl* impl, enum mtl_port port,
   mt_pthread_mutex_lock(&tsq_queue->mutex);
   if (!tsq_queue->tx_pool) {
     char pool_name[32];
-    snprintf(pool_name, 32, "TSQ-P%d-Q%u", port, q);
+    snprintf(pool_name, 32, "TSQ_P%dQ%u", port, q);
     struct rte_mempool* pool =
         mt_mempool_create(impl, port, pool_name, mt_if_nb_tx_desc(impl, port) + 512,
                           MT_MBUF_CACHE_SIZE, 0, MTL_MTU_MAX_BYTES);

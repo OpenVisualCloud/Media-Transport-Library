@@ -7,6 +7,8 @@
 
 #include "st_main.h"
 
+#define ST_TX_AUDIO_PREFIX "TA_"
+
 int st_tx_audio_sessions_mgr_uinit(struct st_tx_audio_sessions_mgr* mgr);
 
 #endif

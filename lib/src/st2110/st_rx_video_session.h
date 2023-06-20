@@ -14,6 +14,8 @@
 #define ST_RV_EBU_TSC_SYNC_MS (100) /* sync tsc with ptp period(ms) */
 #define ST_RV_EBU_TSC_SYNC_NS (ST_RV_EBU_TSC_SYNC_MS * 1000 * 1000)
 
+#define ST_RX_VIDEO_PREFIX "RV_"
+
 int st_rx_video_sessions_sch_init(struct mtl_main_impl* impl, struct mt_sch_impl* sch);
 
 int st_rx_video_sessions_sch_uinit(struct mtl_main_impl* impl, struct mt_sch_impl* sch);

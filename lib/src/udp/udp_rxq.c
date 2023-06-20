@@ -338,7 +338,8 @@ static int urc_init_tasklet(struct mtl_main_impl* impl, struct mur_client* c) {
 
   struct mt_sch_tasklet_ops ops;
   char name[32];
-  snprintf(name, 32, "MUDP%d-RX-P%d-Q%u-%d", c->port, c->dst_port, c->q->rxq_id, c->idx);
+  snprintf(name, 32, "%sP%dDP%dQ%uC%d", MT_UDP_RXQ_PREFIX, c->port, c->dst_port,
+           c->q->rxq_id, c->idx);
 
   memset(&ops, 0x0, sizeof(ops));
   ops.priv = c;
@@ -399,8 +400,8 @@ struct mur_client* mur_client_get(struct mur_client_create* create) {
   char ring_name[64];
   struct rte_ring* ring;
   unsigned int flags, count;
-  snprintf(ring_name, sizeof(ring_name), "MUDP%d-RX-P%d-Q%u-%d", port, dst_port,
-           q->rxq_id, idx);
+  snprintf(ring_name, sizeof(ring_name), "%sP%dDP%dQ%uC%d", MT_UDP_RXQ_PREFIX, port,
+           dst_port, q->rxq_id, idx);
   flags = RING_F_SP_ENQ | RING_F_SC_DEQ; /* single-producer and single-consumer */
   count = create->ring_count;
   ring = rte_ring_create(ring_name, count, mt_socket_id(impl, port), flags);
