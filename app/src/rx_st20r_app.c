@@ -252,7 +252,8 @@ static int app_rx_st20r_init(struct st_app_context* ctx, st_json_video_session_t
   ops.priv = s;
   ops.num_port = video ? video->base.num_inf : ctx->para.num_ports;
   memcpy(ops.sip_addr[MTL_SESSION_PORT_P],
-         video ? video->base.ip[MTL_SESSION_PORT_P] : ctx->rx_sip_addr[MTL_PORT_P],
+         video ? st_json_ip(ctx, &video->base, MTL_SESSION_PORT_P)
+               : ctx->rx_sip_addr[MTL_PORT_P],
          MTL_IP_ADDR_LEN);
   strncpy(ops.port[MTL_SESSION_PORT_P],
           video ? video->base.inf[MTL_PORT_P]->name : ctx->para.port[MTL_PORT_P],
@@ -260,7 +261,8 @@ static int app_rx_st20r_init(struct st_app_context* ctx, st_json_video_session_t
   ops.udp_port[MTL_SESSION_PORT_P] = video ? video->base.udp_port : (10000 + s->idx);
   if (ops.num_port > 1) {
     memcpy(ops.sip_addr[MTL_SESSION_PORT_R],
-           video ? video->base.ip[MTL_SESSION_PORT_R] : ctx->rx_sip_addr[MTL_PORT_R],
+           video ? st_json_ip(ctx, &video->base, MTL_SESSION_PORT_R)
+                 : ctx->rx_sip_addr[MTL_PORT_R],
            MTL_IP_ADDR_LEN);
     strncpy(
         ops.port[MTL_SESSION_PORT_R],

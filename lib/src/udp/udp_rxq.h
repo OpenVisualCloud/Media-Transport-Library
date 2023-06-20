@@ -5,11 +5,9 @@
 #ifndef _MT_LIB_UDP_RXQ_H_
 #define _MT_LIB_UDP_RXQ_H_
 
-#include "../mt_dev.h"
 #include "../mt_main.h"
-#include "../mt_rss.h"
+#include "../mt_queue.h"
 #include "../mt_sch.h"
-#include "../mt_shared_queue.h"
 #include "../mt_util.h"
 
 struct mur_queue;
@@ -53,9 +51,7 @@ struct mur_queue {
   int client_idx;        /* incremental idx fort client */
   pthread_mutex_t mutex; /* clients lock */
 
-  struct mt_rx_queue* rxq;
-  struct mt_rsq_entry* rsq;
-  struct mt_rss_entry* rss;
+  struct mt_rxq_entry* rxq;
   uint16_t rxq_id;
   uint16_t dst_port;
   uint16_t rx_burst_pkts;

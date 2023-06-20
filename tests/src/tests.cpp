@@ -269,6 +269,7 @@ static int test_parse_args(struct st_tests_context* ctx, struct mtl_init_params*
       case TEST_ARG_DHCP:
         for (int port = 0; port < MTL_PORT_MAX; ++port)
           p->net_proto[port] = MTL_PROTO_DHCP;
+        ctx->dhcp = true;
         break;
       default:
         break;
@@ -585,6 +586,17 @@ GTEST_API_ int main(int argc, char** argv) {
     err("%s, mtl_init fail\n", __func__);
     return -EIO;
   }
+
+  if (ctx->dhcp) {
+    for (int i = 0; i < ctx->para.num_ports; i++) {
+      /* get the assigned dhcp ip */
+      mtl_port_ip_info(ctx->handle, (enum mtl_port)i, ctx->para.sip_addr[i],
+                       ctx->para.netmask[i], ctx->para.gateway[i]);
+    }
+  }
+
+  ctx->iova = mtl_iova_mode_get(ctx->handle);
+  ctx->rss_mode = mtl_rss_mode_get(ctx->handle);
 
   st_test_st22_plugin_register(ctx);
   st_test_convert_plugin_register(ctx);

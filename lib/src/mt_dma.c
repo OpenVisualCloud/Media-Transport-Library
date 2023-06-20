@@ -315,7 +315,7 @@ static int dma_sw_init(struct mtl_main_impl* impl, struct mt_dma_dev* dev) {
 #endif
   dev->nb_inflight = 0;
 
-  mt_stat_register(impl, dma_stat, dev);
+  mt_stat_register(impl, dma_stat, dev, "dma");
 
   return 0;
 }

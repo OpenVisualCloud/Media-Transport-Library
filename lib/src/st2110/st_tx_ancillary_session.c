@@ -5,6 +5,7 @@
 #include "st_tx_ancillary_session.h"
 
 #include "../mt_log.h"
+#include "../mt_queue.h"
 #include "../mt_stat.h"
 #include "st_ancillary_transmitter.h"
 #include "st_err.h"
@@ -970,7 +971,7 @@ static int tx_ancillary_sessions_mgr_uinit_hw(struct mtl_main_impl* impl,
       mgr->ring[i] = NULL;
     }
     if (mgr->queue[i]) {
-      mt_dev_put_tx_queue(impl, mgr->queue[i]);
+      mt_txq_put(mgr->queue[i]);
       mgr->queue[i] = NULL;
     }
   }
@@ -988,8 +989,10 @@ static int tx_ancillary_sessions_mgr_init_hw(struct mtl_main_impl* impl,
 
   for (int i = 0; i < mt_num_ports(impl); i++) {
     mgr->port_id[i] = mt_port_id(impl, i);
-    /* do we need quota for anc? */
-    mgr->queue[i] = mt_dev_get_tx_queue(impl, i, 0, false);
+
+    struct mt_txq_flow flow;
+    memset(&flow, 0, sizeof(flow));
+    mgr->queue[i] = mt_txq_get(impl, i, &flow, false);
     if (!mgr->queue[i]) {
       tx_ancillary_sessions_mgr_uinit_hw(impl, mgr);
       return -EIO;
@@ -1006,7 +1009,7 @@ static int tx_ancillary_sessions_mgr_init_hw(struct mtl_main_impl* impl,
     }
     mgr->ring[i] = ring;
     info("%s(%d,%d), succ, queue %d\n", __func__, mgr_idx, i,
-         mt_dev_tx_queue_id(mgr->queue[i]));
+         mt_txq_queue_id(mgr->queue[i]));
   }
 
   return 0;
@@ -1417,7 +1420,7 @@ static int tx_ancillary_sessions_mgr_init(struct mtl_main_impl* impl,
     return -EIO;
   }
 
-  mt_stat_register(mgr->parent, st_tx_ancillary_sessions_stat, mgr);
+  mt_stat_register(mgr->parent, st_tx_ancillary_sessions_stat, mgr, "tx_anc");
   info("%s(%d), succ\n", __func__, idx);
   return 0;
 }

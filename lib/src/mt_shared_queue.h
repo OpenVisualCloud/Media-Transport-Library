@@ -11,7 +11,7 @@ int mt_rsq_init(struct mtl_main_impl* impl);
 int mt_rsq_uinit(struct mtl_main_impl* impl);
 
 struct mt_rsq_entry* mt_rsq_get(struct mtl_main_impl* impl, enum mtl_port port,
-                                struct mt_rx_flow* flow);
+                                struct mt_rxq_flow* flow);
 static inline uint16_t mt_rsq_queue_id(struct mt_rsq_entry* entry) {
   return entry->queue_id;
 }
@@ -22,15 +22,13 @@ int mt_tsq_init(struct mtl_main_impl* impl);
 int mt_tsq_uinit(struct mtl_main_impl* impl);
 
 struct mt_tsq_entry* mt_tsq_get(struct mtl_main_impl* impl, enum mtl_port port,
-                                struct mt_tsq_flow* flow);
+                                struct mt_txq_flow* flow);
 static inline uint16_t mt_tsq_queue_id(struct mt_tsq_entry* entry) {
   return entry->queue_id;
 }
 static inline struct rte_mempool* mt_tsq_mempool(struct mt_tsq_entry* entry) {
   return entry->tx_pool;
 }
-int mt_tsq_set_bps(struct mtl_main_impl* impl, struct mt_tsq_entry* entry,
-                   uint64_t bytes_per_sec);
 uint16_t mt_tsq_burst(struct mt_tsq_entry* entry, struct rte_mbuf** tx_pkts,
                       uint16_t nb_pkts);
 uint16_t mt_tsq_burst_busy(struct mtl_main_impl* impl, struct mt_tsq_entry* entry,

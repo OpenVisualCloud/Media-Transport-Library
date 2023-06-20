@@ -362,6 +362,11 @@ TEST(Dma, map) {
   struct st_tests_context* ctx = st_test_ctx();
   auto st = ctx->handle;
 
+  if (ctx->iova == MTL_IOVA_MODE_PA) {
+    info("%s, skip as it's PA iova mode\n", __func__);
+    return;
+  }
+
   temtl_dma_map(ctx, 64 * mtl_page_size(st));
   temtl_dma_map(ctx, 512 * mtl_page_size(st));
 }
@@ -412,6 +417,11 @@ static void test_dma_remap(struct st_tests_context* ctx, size_t size) {
 TEST(Dma, map_remap) {
   struct st_tests_context* ctx = st_test_ctx();
   auto st = ctx->handle;
+
+  if (ctx->iova == MTL_IOVA_MODE_PA) {
+    info("%s, skip as it's PA iova mode\n", __func__);
+    return;
+  }
 
   test_dma_remap(ctx, 64 * mtl_page_size(st));
 }
@@ -486,6 +496,11 @@ static void temtl_dma_mem_alloc_free(struct st_tests_context* ctx, size_t size) 
 
 TEST(Dma, mem_alloc_free) {
   struct st_tests_context* ctx = st_test_ctx();
+
+  if (ctx->iova == MTL_IOVA_MODE_PA) {
+    info("%s, skip as it's PA iova mode\n", __func__);
+    return;
+  }
 
   temtl_dma_mem_alloc_free(ctx, 111);
   temtl_dma_mem_alloc_free(ctx, 2222);

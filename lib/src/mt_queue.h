@@ -1,25 +1,56 @@
 /* SPDX-License-Identifier: BSD-3-Clause
- * Copyright(c) 2022 Intel Corporation
+ * Copyright(c) 2023 Intel Corporation
  */
+
+#include "mt_dev.h"
+#include "mt_rss.h"
+#include "mt_shared_queue.h"
+#include "mt_shared_rss.h"
 
 #ifndef _MT_LIB_QUEUE_HEAD_H_
 #define _MT_LIB_QUEUE_HEAD_H_
 
-#include <sys/queue.h>
+struct mt_rxq_entry {
+  struct mtl_main_impl* parent;
+  uint16_t queue_id;
+  struct mt_rx_queue* rxq;
+  struct mt_rsq_entry* rsq;
+  struct mt_rss_entry* rss;
+  struct mt_srss_entry* srss;
+};
 
-/* Macros compatible with system's sys/queue.h */
-#define MT_TAILQ_HEAD(name, type) RTE_TAILQ_HEAD(name, type)
-#define MT_TAILQ_ENTRY(type) RTE_TAILQ_ENTRY(type)
-#define MT_TAILQ_FOREACH(var, head, field) RTE_TAILQ_FOREACH(var, head, field)
-#define MT_TAILQ_FIRST(head) RTE_TAILQ_FIRST(head)
-#define MT_TAILQ_NEXT(elem, field) RTE_TAILQ_NEXT(elem, field)
+struct mt_rxq_entry* mt_rxq_get(struct mtl_main_impl* impl, enum mtl_port port,
+                                struct mt_rxq_flow* flow);
+static inline uint16_t mt_rxq_queue_id(struct mt_rxq_entry* entry) {
+  return entry->queue_id;
+}
+uint16_t mt_rxq_burst(struct mt_rxq_entry* entry, struct rte_mbuf** rx_pkts,
+                      const uint16_t nb_pkts);
+int mt_rxq_put(struct mt_rxq_entry* entry);
 
-#define MT_TAILQ_INSERT_TAIL(head, elem, filed) TAILQ_INSERT_TAIL(head, elem, filed)
-#define MT_TAILQ_INSERT_HEAD(head, elem, filed) TAILQ_INSERT_HEAD(head, elem, filed)
-#define MT_TAILQ_REMOVE(head, elem, filed) TAILQ_REMOVE(head, elem, filed)
-#define MT_TAILQ_INIT(head) TAILQ_INIT(head)
+struct mt_txq_entry {
+  struct mtl_main_impl* parent;
+  uint16_t queue_id;
+  struct mt_tx_queue* txq;
+  struct mt_tsq_entry* tsq;
+};
 
-#define MT_STAILQ_HEAD(name, type) RTE_STAILQ_HEAD(name, type)
-#define MT_STAILQ_ENTRY(type) RTE_STAILQ_ENTRY(type)
+struct mt_txq_entry* mt_txq_get(struct mtl_main_impl* impl, enum mtl_port port,
+                                struct mt_txq_flow* flow, bool is_st21_traffic);
+static inline uint16_t mt_txq_queue_id(struct mt_txq_entry* entry) {
+  return entry->queue_id;
+}
+static inline struct rte_mempool* mt_txq_mempool(struct mt_txq_entry* entry) {
+  if (entry->tsq)
+    return entry->tsq->tx_pool;
+  else
+    return NULL; /* only for shared queue */
+}
+uint16_t mt_txq_burst(struct mt_txq_entry* entry, struct rte_mbuf** tx_pkts,
+                      uint16_t nb_pkts);
+uint16_t mt_txq_burst_busy(struct mt_txq_entry* entry, struct rte_mbuf** tx_pkts,
+                           uint16_t nb_pkts, int timeout_ms);
+int mt_txq_flush(struct mt_txq_entry* entry, struct rte_mbuf* pad);
+int mt_txq_put(struct mt_txq_entry* entry);
 
 #endif

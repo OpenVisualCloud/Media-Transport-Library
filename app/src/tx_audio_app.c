@@ -382,7 +382,8 @@ static int app_tx_audio_init(struct st_app_context* ctx, st_json_audio_session_t
   ops.priv = s;
   ops.num_port = audio ? audio->base.num_inf : ctx->para.num_ports;
   memcpy(ops.dip_addr[MTL_SESSION_PORT_P],
-         audio ? audio->base.ip[MTL_SESSION_PORT_P] : ctx->tx_dip_addr[MTL_PORT_P],
+         audio ? st_json_ip(ctx, &audio->base, MTL_SESSION_PORT_P)
+               : ctx->tx_dip_addr[MTL_PORT_P],
          MTL_IP_ADDR_LEN);
   strncpy(ops.port[MTL_SESSION_PORT_P],
           audio ? audio->base.inf[MTL_SESSION_PORT_P]->name : ctx->para.port[MTL_PORT_P],
@@ -397,7 +398,8 @@ static int app_tx_audio_init(struct st_app_context* ctx, st_json_audio_session_t
   if (ctx->tx_audio_fifo_size) ops.fifo_size = ctx->tx_audio_fifo_size;
   if (ops.num_port > 1) {
     memcpy(ops.dip_addr[MTL_SESSION_PORT_R],
-           audio ? audio->base.ip[MTL_PORT_R] : ctx->tx_dip_addr[MTL_PORT_R],
+           audio ? st_json_ip(ctx, &audio->base, MTL_SESSION_PORT_R)
+                 : ctx->tx_dip_addr[MTL_PORT_R],
            MTL_IP_ADDR_LEN);
     strncpy(
         ops.port[MTL_SESSION_PORT_R],

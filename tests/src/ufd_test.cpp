@@ -16,6 +16,7 @@ enum utest_args_cmd {
   UTEST_ARG_QUEUE_MODE,
   UTEST_ARG_UDP_LCORE,
   UTEST_ARG_RSS_MODE,
+  UTEST_ARG_DHCP,
 };
 
 static struct option utest_args_options[] = {
@@ -91,6 +92,11 @@ static int utest_parse_args(struct utest_ctx* ctx, int argc, char** argv) {
           p->rss_mode = MTL_RSS_MODE_NONE;
         else
           err("%s, unknow rss mode %s\n", __func__, optarg);
+        break;
+      case UTEST_ARG_DHCP:
+        for (int port = 0; port < MTL_PORT_MAX; ++port)
+          p->net_proto[port] = MTL_PROTO_DHCP;
+        ctx->dhcp = true;
         break;
       default:
         break;
@@ -349,6 +355,23 @@ GTEST_API_ int main(int argc, char** argv) {
   }
 
   mufd_commit_init_params(&ctx->init_params);
+
+  /* init the mufd mtl */
+  ret = mufd_socket_port(AF_INET, SOCK_DGRAM, 0, MTL_PORT_P);
+  if (ret < 0) {
+    err("%s, socket port fail\n", __func__);
+    return ret;
+  }
+  mufd_close(ret);
+
+  if (ctx->dhcp) {
+    for (int i = 0; i < ctx->init_params.mt_params.num_ports; i++) {
+      /* get the assigned dhcp ip */
+      mufd_port_ip_info((enum mtl_port)i, ctx->init_params.mt_params.sip_addr[i],
+                        ctx->init_params.mt_params.netmask[i],
+                        ctx->init_params.mt_params.gateway[i]);
+    }
+  }
 
   uint64_t start_time_ns = st_test_get_monotonic_time();
 

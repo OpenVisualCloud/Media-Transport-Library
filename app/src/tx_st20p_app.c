@@ -199,7 +199,8 @@ static int app_tx_st20p_init(struct st_app_context* ctx, st_json_st20p_session_t
   ops.priv = s;
   ops.port.num_port = st20p ? st20p->base.num_inf : ctx->para.num_ports;
   memcpy(ops.port.dip_addr[MTL_SESSION_PORT_P],
-         st20p ? st20p->base.ip[MTL_SESSION_PORT_P] : ctx->tx_dip_addr[MTL_PORT_P],
+         st20p ? st_json_ip(ctx, &st20p->base, MTL_SESSION_PORT_P)
+               : ctx->tx_dip_addr[MTL_PORT_P],
          MTL_IP_ADDR_LEN);
   strncpy(ops.port.port[MTL_SESSION_PORT_P],
           st20p ? st20p->base.inf[MTL_SESSION_PORT_P]->name : ctx->para.port[MTL_PORT_P],
@@ -212,7 +213,8 @@ static int app_tx_st20p_init(struct st_app_context* ctx, st_json_st20p_session_t
   }
   if (ops.port.num_port > 1) {
     memcpy(ops.port.dip_addr[MTL_SESSION_PORT_R],
-           st20p ? st20p->base.ip[MTL_SESSION_PORT_R] : ctx->tx_dip_addr[MTL_PORT_R],
+           st20p ? st_json_ip(ctx, &st20p->base, MTL_SESSION_PORT_R)
+                 : ctx->tx_dip_addr[MTL_PORT_R],
            MTL_IP_ADDR_LEN);
     strncpy(
         ops.port.port[MTL_SESSION_PORT_R],

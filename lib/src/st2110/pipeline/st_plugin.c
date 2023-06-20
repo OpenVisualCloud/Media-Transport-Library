@@ -31,7 +31,7 @@ int st_plugins_init(struct mtl_main_impl* impl) {
 
   mt_pthread_mutex_init(&mgr->lock, NULL);
   mt_pthread_mutex_init(&mgr->plugins_lock, NULL);
-  mt_stat_register(impl, st_plugins_dump, impl);
+  mt_stat_register(impl, st_plugins_dump, impl, "plugins");
 
   info("%s, succ\n", __func__);
   return 0;

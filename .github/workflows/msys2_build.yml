@@ -1,9 +1,7 @@
 name: Windows MSYS2 build
-on: [push, pull_request]
+on: [push, pull_request, workflow_call]
 
 env:
-  # Customize the env if
-  DPDK_VERSION: 23.03
   # FIXME: For some reason enabling jit debugging "fixes" random python crashes
   # see https://github.com/msys2/MINGW-packages/issues/11864 and
   # https://gitlab.gnome.org/GNOME/glib/-/merge_requests/3280#note_1678973
@@ -16,10 +14,12 @@ jobs:
   build:
     runs-on: windows-latest
     strategy:
+      fail-fast: false
       matrix:
         sys:
           - mingw64
           - ucrt64
+        dpdk: [22.11, 23.03]
     defaults:
       run:
         shell: msys2 {0}
@@ -61,18 +61,19 @@ jobs:
         make && make install
 
     - name: Checkout IMTL repo
-      uses: actions/checkout@8e5e7e5ab8b370d6c329ec480221332ada57f0ab # v3.5.2
+      uses: actions/checkout@c85c95e3d7251135ab7dc9ce3241c5835cc595a9 # v3.5.3
 
     - name: Checkout DPDK repo
-      uses: actions/checkout@8e5e7e5ab8b370d6c329ec480221332ada57f0ab # v3.5.2
+      uses: actions/checkout@c85c95e3d7251135ab7dc9ce3241c5835cc595a9 # v3.5.3
       with:
         repository: 'DPDK/dpdk'
-        ref: v${{  env.DPDK_VERSION  }}
+        ref: v${{matrix.dpdk}}
         path: dpdk
+        clean: true
 
     - name: Convert symlink patch files to real file
       run: |
-        cd patches/dpdk/${{  env.DPDK_VERSION  }}
+        cd patches/dpdk/${{matrix.dpdk}}
         ls *.patch | xargs -I{} bash -c 'if [[ $(sed -n '1p' "{}") =~ ^../.*\.patch$ ]]; then cp "$(cat "{}")" "{}"; fi'
         cd windows
         ls *.patch | xargs -I{} bash -c 'if [[ $(sed -n '1p' "{}") =~ ^../.*\.patch$ ]]; then cp "$(cat "{}")" "{}"; fi'
@@ -83,8 +84,8 @@ jobs:
         cd dpdk
         git config user.name github-actions
         git config user.email github-actions@github.com
-        git am ../patches/dpdk/${{  env.DPDK_VERSION  }}/*.patch
-        git am ../patches/dpdk/${{  env.DPDK_VERSION  }}/windows/*.patch
+        git am ../patches/dpdk/${{matrix.dpdk}}/*.patch
+        git am ../patches/dpdk/${{matrix.dpdk}}/windows/*.patch
 
     - name: Build dpdk
       run: |

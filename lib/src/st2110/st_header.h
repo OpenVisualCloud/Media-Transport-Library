@@ -257,7 +257,7 @@ struct st_tx_video_session_impl {
   struct rte_ring* ring[MTL_SESSION_PORT_MAX];
   struct rte_ring* packet_ring; /* rtp ring */
   uint16_t port_id[MTL_SESSION_PORT_MAX];
-  struct mt_tx_queue* queue[MTL_SESSION_PORT_MAX];
+  struct mt_txq_entry* queue[MTL_SESSION_PORT_MAX];
   int idx; /* index for current tx_session */
   uint64_t advice_sleep_us;
   uint16_t queue_burst_pkts[MTL_SESSION_PORT_MAX];
@@ -565,6 +565,7 @@ struct st_rx_session_priv {
 
 struct st_rx_video_session_impl {
   int idx; /* index for current session */
+  bool attached;
   struct st_rx_video_sessions_mgr* parent;
   struct st_rx_session_priv priv[MTL_SESSION_PORT_MAX];
 
@@ -573,9 +574,7 @@ struct st_rx_video_session_impl {
   uint64_t advice_sleep_us;
 
   enum mtl_port port_maps[MTL_SESSION_PORT_MAX];
-  struct mt_rx_queue* queue[MTL_SESSION_PORT_MAX];
-  struct mt_rss_entry* rss[MTL_SESSION_PORT_MAX];
-  struct mt_srss_entry* srss[MTL_SESSION_PORT_MAX];
+  struct mt_rxq_entry* rxq[MTL_SESSION_PORT_MAX];
   uint16_t port_id[MTL_SESSION_PORT_MAX];
   uint16_t st20_src_port[MTL_SESSION_PORT_MAX]; /* udp port */
   uint16_t st20_dst_port[MTL_SESSION_PORT_MAX]; /* udp port */
@@ -608,6 +607,9 @@ struct st_rx_video_session_impl {
 
   uint32_t st22_ops_flags;       /* copy of st22_rx_ops->flags */
   size_t st22_expect_frame_size; /* total frame size calculated from marker */
+  /* expect for each frame, st22_expect_frame_size is clear to zero in the init slot of
+   * each frame, in case we don't get maker, it can use previous frame size */
+  size_t st22_expect_size_per_frame;
 
   /* rtp info */
   struct rte_ring* rtps_ring;
@@ -671,6 +673,7 @@ struct st_rx_video_session_impl {
   int stat_pkts_wrong_payload_hdr_split;
   int stat_mismatch_hdr_split_frame;
   int stat_frames_dropped;
+  int stat_frames_pks_missed;
   rte_atomic32_t stat_frames_received;
   int stat_slices_received;
   int stat_pkts_slice_fail;
@@ -693,7 +696,10 @@ struct st_rx_video_sessions_mgr {
   struct mtl_main_impl* parent;
   int idx;     /* index for current session mgr */
   int max_idx; /* max session index */
-  struct mt_sch_tasklet_impl* tasklet;
+  /* pkt rx task */
+  struct mt_sch_tasklet_impl* pkt_rx_tasklet;
+  /* control task */
+  struct mt_sch_tasklet_impl* ctl_tasklet;
 
   struct st_rx_video_session_impl* sessions[ST_SCH_MAX_RX_VIDEO_SESSIONS];
   /* protect session, spin(fast) lock as it call from tasklet aslo */
@@ -788,7 +794,7 @@ struct st_tx_audio_sessions_mgr {
   /* all audio sessions share same ring/queue */
   struct rte_ring* ring[MTL_PORT_MAX];
   uint16_t port_id[MTL_PORT_MAX];
-  struct mt_tx_queue* queue[MTL_PORT_MAX];
+  struct mt_txq_entry* queue[MTL_PORT_MAX];
 
   struct st_tx_audio_session_impl* sessions[ST_MAX_TX_AUDIO_SESSIONS];
   /* protect session, spin(fast) lock as it call from tasklet aslo */
@@ -852,15 +858,14 @@ struct st_rx_audio_ebu_result {
 
 struct st_rx_audio_session_impl {
   int idx; /* index for current session */
+  bool attached;
   struct st30_rx_ops ops;
   char ops_name[ST_MAX_NAME_LEN];
   struct st_rx_session_priv priv[MTL_SESSION_PORT_MAX];
   struct st_rx_audio_session_handle_impl* st30_handle;
 
   enum mtl_port port_maps[MTL_SESSION_PORT_MAX];
-  struct mt_rx_queue* queue[MTL_SESSION_PORT_MAX];
-  struct mt_rss_entry* rss[MTL_SESSION_PORT_MAX];
-  struct mt_srss_entry* srss[MTL_SESSION_PORT_MAX];
+  struct mt_rxq_entry* rxq[MTL_SESSION_PORT_MAX];
   uint16_t port_id[MTL_SESSION_PORT_MAX];
 
   uint16_t st30_src_port[MTL_SESSION_PORT_MAX]; /* udp port */
@@ -989,7 +994,7 @@ struct st_tx_ancillary_sessions_mgr {
   /* all anc sessions share same ring/queue */
   struct rte_ring* ring[MTL_PORT_MAX];
   uint16_t port_id[MTL_PORT_MAX];
-  struct mt_tx_queue* queue[MTL_PORT_MAX];
+  struct mt_txq_entry* queue[MTL_PORT_MAX];
 
   struct st_tx_ancillary_session_impl* sessions[ST_MAX_TX_ANC_SESSIONS];
   /* protect session, spin(fast) lock as it call from tasklet aslo */
@@ -1005,15 +1010,14 @@ struct st_tx_ancillary_sessions_mgr {
 
 struct st_rx_ancillary_session_impl {
   int idx; /* index for current session */
+  bool attached;
   struct st40_rx_ops ops;
   char ops_name[ST_MAX_NAME_LEN];
   struct st_rx_session_priv priv[MTL_SESSION_PORT_MAX];
   struct st_rx_ancillary_session_handle_impl* st40_handle;
 
   enum mtl_port port_maps[MTL_SESSION_PORT_MAX];
-  struct mt_rx_queue* queue[MTL_SESSION_PORT_MAX];
-  struct mt_rss_entry* rss[MTL_SESSION_PORT_MAX];
-  struct mt_srss_entry* srss[MTL_SESSION_PORT_MAX];
+  struct mt_rxq_entry* rxq[MTL_SESSION_PORT_MAX];
   uint16_t port_id[MTL_SESSION_PORT_MAX];
   struct rte_ring* packet_ring;
 

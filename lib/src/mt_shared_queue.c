@@ -88,7 +88,7 @@ static int rsq_init(struct mtl_main_impl* impl, struct mt_rsq_impl* rsq) {
     MT_TAILQ_INIT(&rsq_queue->head);
   }
 
-  int ret = mt_stat_register(impl, rsq_stat_dump, rsq);
+  int ret = mt_stat_register(impl, rsq_stat_dump, rsq, "rsq");
   if (ret < 0) {
     rsq_uinit(rsq);
     return ret;
@@ -97,7 +97,7 @@ static int rsq_init(struct mtl_main_impl* impl, struct mt_rsq_impl* rsq) {
   return 0;
 }
 
-static uint32_t rsq_flow_hash(struct mt_rx_flow* flow) {
+static uint32_t rsq_flow_hash(struct mt_rxq_flow* flow) {
   struct rte_ipv4_tuple tuple;
   uint32_t len;
 
@@ -114,9 +114,13 @@ static uint32_t rsq_flow_hash(struct mt_rx_flow* flow) {
 }
 
 struct mt_rsq_entry* mt_rsq_get(struct mtl_main_impl* impl, enum mtl_port port,
-                                struct mt_rx_flow* flow) {
+                                struct mt_rxq_flow* flow) {
   if (!mt_shared_queue(impl, port)) {
     err("%s(%d), shared queue not enabled\n", __func__, port);
+    return NULL;
+  }
+  if (!flow->cb) {
+    err("%s(%d), no cb in the flow\n", __func__, port);
     return NULL;
   }
 
@@ -326,7 +330,7 @@ static int tsq_init(struct mtl_main_impl* impl, struct mt_tsq_impl* tsq) {
     MT_TAILQ_INIT(&tsq_queue->head);
   }
 
-  int ret = mt_stat_register(impl, tsq_stat_dump, tsq);
+  int ret = mt_stat_register(impl, tsq_stat_dump, tsq, "tsq");
   if (ret < 0) {
     tsq_uinit(tsq);
     return ret;
@@ -335,7 +339,7 @@ static int tsq_init(struct mtl_main_impl* impl, struct mt_tsq_impl* tsq) {
   return 0;
 }
 
-static uint32_t tsq_flow_hash(struct mt_tsq_flow* flow) {
+static uint32_t tsq_flow_hash(struct mt_txq_flow* flow) {
   struct rte_ipv4_tuple tuple;
   uint32_t len;
 
@@ -351,7 +355,7 @@ static uint32_t tsq_flow_hash(struct mt_tsq_flow* flow) {
 }
 
 struct mt_tsq_entry* mt_tsq_get(struct mtl_main_impl* impl, enum mtl_port port,
-                                struct mt_tsq_flow* flow) {
+                                struct mt_txq_flow* flow) {
   if (!mt_shared_queue(impl, port)) {
     err("%s(%d), shared queue not enabled\n", __func__, port);
     return NULL;
@@ -387,6 +391,8 @@ struct mt_tsq_entry* mt_tsq_get(struct mtl_main_impl* impl, enum mtl_port port,
     tsq_queue->tx_pool = pool;
   }
   MT_TAILQ_INSERT_HEAD(&tsq_queue->head, entry, next);
+  /* todo: for different bps of shared queue */
+  mt_dev_set_tx_bps(impl, port, q, flow->bytes_per_sec);
   rte_atomic32_inc(&tsq_queue->entry_cnt);
   mt_pthread_mutex_unlock(&tsq_queue->mutex);
 
@@ -462,20 +468,6 @@ int mt_tsq_flush(struct mtl_main_impl* impl, struct mt_tsq_entry* entry,
     mt_tsq_burst_busy(impl, entry, &pads[0], 1, 10);
   }
   dbg("%s, end\n", __func__);
-  return 0;
-}
-
-int mt_tsq_set_bps(struct mtl_main_impl* impl, struct mt_tsq_entry* entry,
-                   uint64_t bytes_per_sec) {
-  struct mt_tsq_impl* tsqm = entry->parent;
-  enum mtl_port port = tsqm->port;
-  struct mt_tsq_queue* tsq_queue = &tsqm->tsq_queues[entry->queue_id];
-  uint16_t q = entry->queue_id;
-
-  mt_pthread_mutex_lock(&tsq_queue->tx_mutex);
-  mt_dev_set_tx_bps(impl, port, q, bytes_per_sec);
-  mt_pthread_mutex_unlock(&tsq_queue->tx_mutex);
-
   return 0;
 }
 

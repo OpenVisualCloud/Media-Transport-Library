@@ -127,7 +127,8 @@ static int app_rx_anc_init(struct st_app_context* ctx, st_json_ancillary_session
   ops.priv = s;
   ops.num_port = anc ? anc->base.num_inf : ctx->para.num_ports;
   memcpy(ops.sip_addr[MTL_SESSION_PORT_P],
-         anc ? anc->base.ip[MTL_SESSION_PORT_P] : ctx->rx_sip_addr[MTL_PORT_P],
+         anc ? st_json_ip(ctx, &anc->base, MTL_SESSION_PORT_P)
+             : ctx->rx_sip_addr[MTL_PORT_P],
          MTL_IP_ADDR_LEN);
   strncpy(ops.port[MTL_SESSION_PORT_P],
           anc ? anc->base.inf[MTL_SESSION_PORT_P]->name : ctx->para.port[MTL_PORT_P],
@@ -135,7 +136,8 @@ static int app_rx_anc_init(struct st_app_context* ctx, st_json_ancillary_session
   ops.udp_port[MTL_SESSION_PORT_P] = anc ? anc->base.udp_port : (10200 + s->idx);
   if (ops.num_port > 1) {
     memcpy(ops.sip_addr[MTL_SESSION_PORT_R],
-           anc ? anc->base.ip[MTL_SESSION_PORT_R] : ctx->rx_sip_addr[MTL_PORT_R],
+           anc ? st_json_ip(ctx, &anc->base, MTL_SESSION_PORT_R)
+               : ctx->rx_sip_addr[MTL_PORT_R],
            MTL_IP_ADDR_LEN);
     strncpy(ops.port[MTL_SESSION_PORT_R],
             anc ? anc->base.inf[MTL_SESSION_PORT_R]->name : ctx->para.port[MTL_PORT_R],

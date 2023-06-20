@@ -174,7 +174,7 @@ TEST(Main, get_stats) {
   EXPECT_EQ(stats.st20_rx_sessions_cnt, 0);
   EXPECT_EQ(stats.st30_rx_sessions_cnt, 0);
   EXPECT_EQ(stats.st40_rx_sessions_cnt, 0);
-  if (ctx->para.rss_mode != MTL_RSS_MODE_L3_L4) {
+  if (ctx->rss_mode != MTL_RSS_MODE_L3_L4) {
     EXPECT_EQ(stats.sch_cnt, 1);
   }
 }
@@ -466,19 +466,6 @@ static void size_page_align_test() {
 }
 
 TEST(Main, size_page_align) { size_page_align_test(); }
-
-static void rss_mode_test(struct st_tests_context* ctx) {
-  mtl_handle handle = ctx->handle;
-  enum mtl_rss_mode expect = ctx->para.rss_mode;
-
-  EXPECT_EQ(expect, mtl_rss_mode_get(handle));
-}
-
-TEST(Main, rss) {
-  struct st_tests_context* ctx = st_test_ctx();
-
-  rss_mode_test(ctx);
-}
 
 class fps_23_98 : public ::testing::TestWithParam<std::tuple<enum st_fps, double>> {};
 

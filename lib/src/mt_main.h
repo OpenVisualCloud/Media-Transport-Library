@@ -17,16 +17,31 @@
 #include <rte_version.h>
 #include <rte_vfio.h>
 #include <sys/file.h>
+#include <sys/queue.h>
 #include <unistd.h>
 
 #include "mt_mem.h"
 #include "mt_platform.h"
-#include "mt_queue.h"
 #include "mt_quirk.h"
 #include "st2110/st_header.h"
 
 #ifndef _MT_LIB_MAIN_HEAD_H_
 #define _MT_LIB_MAIN_HEAD_H_
+
+/* Macros compatible with system's sys/queue.h */
+#define MT_TAILQ_HEAD(name, type) RTE_TAILQ_HEAD(name, type)
+#define MT_TAILQ_ENTRY(type) RTE_TAILQ_ENTRY(type)
+#define MT_TAILQ_FOREACH(var, head, field) RTE_TAILQ_FOREACH(var, head, field)
+#define MT_TAILQ_FIRST(head) RTE_TAILQ_FIRST(head)
+#define MT_TAILQ_NEXT(elem, field) RTE_TAILQ_NEXT(elem, field)
+
+#define MT_TAILQ_INSERT_TAIL(head, elem, filed) TAILQ_INSERT_TAIL(head, elem, filed)
+#define MT_TAILQ_INSERT_HEAD(head, elem, filed) TAILQ_INSERT_HEAD(head, elem, filed)
+#define MT_TAILQ_REMOVE(head, elem, filed) TAILQ_REMOVE(head, elem, filed)
+#define MT_TAILQ_INIT(head) TAILQ_INIT(head)
+
+#define MT_STAILQ_HEAD(name, type) RTE_STAILQ_HEAD(name, type)
+#define MT_STAILQ_ENTRY(type) RTE_STAILQ_ENTRY(type)
 
 #define MT_MAY_UNUSED(x) (void)(x)
 
@@ -152,7 +167,7 @@ struct mt_ptp_impl {
   enum mtl_port port;
   uint16_t port_id;
 
-  struct mt_rx_queue* rx_queue;
+  struct mt_rxq_entry* rxq;
   struct rte_mempool* mbuf_pool;
 
   uint8_t mcast_group_addr[MTL_IP_ADDR_LEN]; /* 224.0.1.129 */
@@ -234,10 +249,7 @@ struct mt_cni_impl {
   bool used; /* if enable cni */
   int num_ports;
 
-  struct mt_rx_queue* rx_q[MTL_PORT_MAX];   /* cni rx queue */
-  struct mt_rsq_entry* rsq[MTL_PORT_MAX];   /* cni rsq queue */
-  struct mt_rss_entry* rss[MTL_PORT_MAX];   /* cni rss queue */
-  struct mt_srss_entry* srss[MTL_PORT_MAX]; /* cni srss queue */
+  struct mt_rxq_entry* rxq[MTL_PORT_MAX];
   struct mt_cni_priv cni_priv[MTL_PORT_MAX];
   pthread_t tid; /* thread id for rx */
   rte_atomic32_t stop_thread;
@@ -260,8 +272,8 @@ struct mt_cni_impl {
 #ifdef MTL_HAS_TAP
   pthread_t tap_bkg_tid; /* bkg thread id for tap */
   rte_atomic32_t stop_tap;
-  struct mt_tx_queue* tap_tx_q[MTL_PORT_MAX]; /* tap tx queue */
-  struct mt_rx_queue* tap_rx_q[MTL_PORT_MAX]; /* tap rx queue */
+  struct mt_txq_entry* tap_tx_q[MTL_PORT_MAX]; /* tap tx queue */
+  struct mt_rxq_entry* tap_rx_q[MTL_PORT_MAX]; /* tap rx queue */
   int tap_rx_cnt[MTL_PORT_MAX];
   rte_atomic32_t tap_if_up[MTL_PORT_MAX];
   void* tap_context;
@@ -436,8 +448,8 @@ struct mt_rl_shaper {
 
 typedef int (*mt_rsq_mbuf_cb)(void* priv, struct rte_mbuf** mbuf, uint16_t nb);
 
-/* request of rx flow */
-struct mt_rx_flow {
+/* request of rx queue flow */
+struct mt_rxq_flow {
   /* for cni queue */
   bool sys_queue;
   bool no_ip_flow; /* no ip flow, only use port flow, for udp transport */
@@ -471,7 +483,7 @@ struct mt_rx_queue {
   uint16_t port_id;
   uint16_t queue_id;
   bool active;
-  struct mt_rx_flow flow;
+  struct mt_rxq_flow flow;
   struct mt_rx_flow_rsp* flow_rsp;
   struct rte_mempool* mbuf_pool;
   unsigned int mbuf_elements;
@@ -525,8 +537,7 @@ struct mt_interface {
   pthread_mutex_t tx_queues_mutex; /* protect tx_queues */
 
   /* the shared tx sys queue */
-  struct mt_tx_queue* tx_sys_queue;
-  struct mt_tsq_entry* tsq_sys_entry;
+  struct mt_txq_entry* txq_sys_entry;
   pthread_mutex_t tx_sys_queue_mutex; /* protect tx_sys_queue */
 
   /* rx queue resources */
@@ -657,6 +668,8 @@ struct mt_stat_item {
   mt_stat_cb_t cb_func;
   /* stat dump callback private data */
   void* cb_priv;
+  /* name */
+  char name[ST_MAX_NAME_LEN];
   /* linked list */
   MT_TAILQ_ENTRY(mt_stat_item) next;
 };
@@ -683,7 +696,7 @@ struct mt_rss_impl; /* forward delcare */
 
 struct mt_rss_entry {
   uint16_t queue_id;
-  struct mt_rx_flow flow;
+  struct mt_rxq_flow flow;
   struct mt_rss_impl* rss;
   uint32_t hash;
   /* linked list */
@@ -710,7 +723,7 @@ struct mt_rsq_impl; /* forward delcare */
 
 struct mt_rsq_entry {
   uint16_t queue_id;
-  struct mt_rx_flow flow;
+  struct mt_rxq_flow flow;
   uint16_t dst_port_net;
   struct mt_rx_flow_rsp* flow_rsp;
   struct mt_rsq_impl* parent;
@@ -739,9 +752,10 @@ struct mt_rsq_impl {
   struct mt_rsq_queue* rsq_queues;
 };
 
-/* request of tx shared queue flow */
-struct mt_tsq_flow {
+/* request of tx queue flow */
+struct mt_txq_flow {
   bool sys_queue;
+  uint64_t bytes_per_sec; /* rl rate in byte */
   /* mandatory if not sys_queue */
   uint8_t dip_addr[MTL_IP_ADDR_LEN]; /* tx destination IP */
   uint16_t dst_port;                 /* udp destination port */
@@ -751,7 +765,7 @@ struct mt_tsq_impl; /* forward delcare */
 
 struct mt_tsq_entry {
   uint16_t queue_id;
-  struct mt_tsq_flow flow;
+  struct mt_txq_flow flow;
   struct mt_tsq_impl* parent;
   struct rte_mempool* tx_pool;
   /* linked list */
@@ -782,8 +796,9 @@ struct mt_tsq_impl {
 };
 
 struct mt_srss_entry {
-  struct mt_rx_flow flow;
+  struct mt_rxq_flow flow;
   struct mt_srss_impl* srss;
+  uint16_t queue_id;
   /* linked list */
   MT_TAILQ_ENTRY(mt_srss_entry) next;
 };

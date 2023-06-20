@@ -1149,6 +1149,25 @@ enum mtl_iova_mode mtl_iova_mode_get(mtl_handle mt) {
   }
 }
 
+int mtl_port_ip_info(mtl_handle mt, enum mtl_port port, uint8_t ip[MTL_IP_ADDR_LEN],
+                     uint8_t netmask[MTL_IP_ADDR_LEN], uint8_t gateway[MTL_IP_ADDR_LEN]) {
+  struct mtl_main_impl* impl = mt;
+
+  if (impl->type != MT_HANDLE_MAIN) {
+    err("%s, invalid type %d\n", __func__, impl->type);
+    return -EINVAL;
+  }
+  if (port < 0 || port >= mt_num_ports(impl)) {
+    err("%s, invalid port %d\n", __func__, port);
+    return -EINVAL;
+  }
+
+  if (ip) rte_memcpy(ip, mt_sip_addr(impl, port), MTL_IP_ADDR_LEN);
+  if (netmask) rte_memcpy(netmask, mt_sip_netmask(impl, port), MTL_IP_ADDR_LEN);
+  if (gateway) rte_memcpy(gateway, mt_sip_gateway(impl, port), MTL_IP_ADDR_LEN);
+  return 0;
+}
+
 enum mtl_simd_level mtl_get_simd_level(void) {
   if (rte_cpu_get_flag_enabled(RTE_CPUFLAG_AVX512VBMI2))
     return MTL_SIMD_LEVEL_AVX512_VBMI2;
