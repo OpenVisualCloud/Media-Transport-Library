@@ -2496,11 +2496,11 @@ int mt_dev_if_init(struct mtl_main_impl* impl) {
     if (dev_info->tx_offload_capa & RTE_ETH_TX_OFFLOAD_SEND_ON_TIMESTAMP) {
       inf->feature |= MT_IF_FEATURE_TX_OFFLOAD_SEND_ON_TIMESTAMP;
 
-      int* igc_tx_timestamp_dynfield_offset_ptr =
+      int* dev_tx_timestamp_dynfield_offset_ptr =
           dev_info->default_txconf.reserved_ptrs[1];
-      uint64_t* igc_tx_timestamp_dynflag_ptr = dev_info->default_txconf.reserved_ptrs[0];
-      ret = rte_mbuf_dyn_tx_timestamp_register(igc_tx_timestamp_dynfield_offset_ptr,
-                                               igc_tx_timestamp_dynflag_ptr);
+      uint64_t* dev_tx_timestamp_dynflag_ptr = dev_info->default_txconf.reserved_ptrs[0];
+      ret = rte_mbuf_dyn_tx_timestamp_register(dev_tx_timestamp_dynfield_offset_ptr,
+                                               dev_tx_timestamp_dynflag_ptr);
       if (ret < 0) {
         err("%s, rte_mbuf_dyn_tx_timestamp_register fail\n", __func__);
         return ret;
