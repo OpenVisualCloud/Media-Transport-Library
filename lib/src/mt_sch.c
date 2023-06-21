@@ -104,9 +104,6 @@ static int sch_tasklet_func(void* args) {
   struct mt_sch_tasklet_impl* tasklet;
   bool time_measure = mt_has_tasklet_time_measure(impl);
   uint64_t tsc_s = 0;
-  int num_ports = mt_num_ports(impl);
-  bool wait_for_time_sync = false;
-  struct mt_interface* inf;
 
   num_tasklet = sch->max_tasklet_idx;
   info("%s(%d), start with %d tasklets\n", __func__, idx, num_tasklet);
@@ -127,16 +124,6 @@ static int sch_tasklet_func(void* args) {
 
   sch->sleep_ratio_start_ns = mt_get_tsc(impl);
 
-  for (int i = 0; i < num_ports; i++) {
-    inf = mt_if(impl, i);
-	if (inf->tx_pacing_way == ST21_TX_PACING_WAY_TSN) {
-      wait_for_time_sync = true;
-	  break;
-	}
-  }
-  
-  struct timespec now, start_time;
-  clock_gettime(CLOCK_REALTIME, &start_time);
   while (rte_atomic32_read(&sch->request_stop) == 0) {
     int pending = MT_TASKLET_ALL_DONE;
 
@@ -151,15 +138,6 @@ static int sch_tasklet_func(void* args) {
         continue;
       }
       ops = &tasklet->ops;
-      if (wait_for_time_sync) {
-        /* To wait for time sync, only start "cni" ops in the first 5 minutes. */
-        if (strcmp(ops->name, "cni")) {
-          clock_gettime(CLOCK_REALTIME, &now);
-          if (now.tv_sec - start_time.tv_sec < 300) {
-            continue;
-          }
-        }
-	  }
       if (time_measure) tsc_s = mt_get_tsc(impl);
       pending += ops->handler(ops->priv);
       if (time_measure) {

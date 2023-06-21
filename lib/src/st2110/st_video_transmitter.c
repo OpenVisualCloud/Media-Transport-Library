@@ -8,6 +8,7 @@
 
 #include "../mt_log.h"
 #include "../mt_queue.h"
+#include "../mt_ptp.h"
 #include "st_err.h"
 #include "st_tx_video_session.h"
 
@@ -410,6 +411,11 @@ static int video_trs_launch_time_tasklet(struct mtl_main_impl* impl,
   uint64_t target_ptp;
   uint16_t port_id = s->port_id[s_port];
   struct mt_interface* inf = mt_if(impl, port_id);
+  struct mt_ptp_impl* ptp = mt_get_ptp(impl, port_id);
+  
+  if (!ptp->phc2sys.stat_sync) {
+    return MT_TASKLET_HAS_PENDING;
+  }
 
   /* check if any inflight pkts in transmitter */
   if (s->trs_inflight_num[s_port] > 0) {

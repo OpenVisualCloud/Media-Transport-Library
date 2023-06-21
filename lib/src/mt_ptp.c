@@ -503,7 +503,7 @@ static int ptp_parse_sync(struct mt_ptp_impl* ptp, struct mt_ptp_sync_msg* msg, 
     if (ptp->skip_sync_cnt < 2) return -EIO;
   }
 
-#define RX_MAX_DELTA (1 * 1000 * 1000) /* 1ms */
+#define RX_MAX_DELTA (100 * 1000 * 1000) /* 100ms */
 
   ptp->stat_sync_cnt++;
 
@@ -734,6 +734,7 @@ static int ptp_init(struct mtl_main_impl* impl, struct mt_ptp_impl* ptp,
     ptp->phc2sys.realtime_nominal_tick =
         (1000000 + ptp->phc2sys.realtime_hz / 2) / ptp->phc2sys.realtime_hz;
   }
+  ptp->phc2sys.stat_sync = false;
 
   ptp->coefficient = 1.0;
   ptp->kp = impl->user_para.kp < 1e-15 ? MT_PTP_DEFAULT_KP : impl->user_para.kp;
@@ -902,13 +903,17 @@ static int ptp_stat(void* priv) {
     return 0;
   }
 
-  if (ptp->stat_delta_cnt)
+  if (ptp->stat_delta_cnt) {
+    if (ptp->phc2sys.stat_delta_max < 300) {
+      ptp->phc2sys.stat_sync = true;
+    }
+    
     notice("PTP(%d): mode %s, delta avr %" PRId64 ", min %" PRId64 ", max %" PRId64
            ", max sys-off %" PRId64 ", cnt %d.\n",
            port, ptp_mode_str(ptp->t2_mode), ptp->stat_delta_sum / ptp->stat_delta_cnt,
            ptp->stat_delta_min, ptp->stat_delta_max, ptp->phc2sys.stat_delta_max,
            ptp->stat_delta_cnt);
-  else
+  } else
     notice("PTP(%d): not connected\n", port);
   if (ptp->stat_correct_delta_cnt)
     notice("PTP(%d): correct_delta avg %" PRId64 ", min %" PRId64 ", max %" PRId64
