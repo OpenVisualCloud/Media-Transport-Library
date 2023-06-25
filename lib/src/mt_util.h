@@ -138,6 +138,12 @@ int mt_u64_fifo_uinit(struct mt_u64_fifo* fifo);
 int mt_u64_fifo_put(struct mt_u64_fifo* fifo, uint64_t item);
 int mt_u64_fifo_get(struct mt_u64_fifo* fifo, uint64_t* item);
 
+static inline int mt_u64_fifo_full(struct mt_u64_fifo* fifo) {
+  return fifo->used == fifo->size;
+}
+
+static inline int mt_u64_fifo_count(struct mt_u64_fifo* fifo) { return fifo->used; }
+
 struct mt_cvt_dma_ctx {
   struct mt_u64_fifo* fifo;
   int* tran;
