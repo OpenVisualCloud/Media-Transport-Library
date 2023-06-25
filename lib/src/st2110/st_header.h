@@ -740,7 +740,7 @@ struct st_tx_audio_session_impl {
   bool eth_ipv4_cksum_offload[MTL_SESSION_PORT_MAX];
   struct rte_mbuf* inflight[MTL_SESSION_PORT_MAX];
   int inflight_cnt[MTL_SESSION_PORT_MAX]; /* for stats */
-  struct rte_ring* trans_ring[MTL_SESSION_PORT_MAX];
+  struct mt_u64_fifo* trans_ring[MTL_SESSION_PORT_MAX];
   uint16_t trans_ring_thresh;
   struct rte_mbuf* trans_ring_inflight[MTL_SESSION_PORT_MAX];
   struct rte_ring* packet_ring;
