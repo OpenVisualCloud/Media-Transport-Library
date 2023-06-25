@@ -25,9 +25,6 @@ static bool loop_dedicated_mode(struct utest_ctx* ctx) {
   if (p->flags & MTL_FLAG_SHARED_QUEUE) {
     return false;
   }
-  if (p->rss_mode != MTL_RSS_MODE_NONE) {
-    return false;
-  }
 
   return true;
 }
