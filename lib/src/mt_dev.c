@@ -1806,13 +1806,14 @@ struct mt_tx_queue* mt_dev_get_tx_queue(struct mtl_main_impl* impl, enum mtl_por
           inf->tx_pacing_way = ST21_TX_PACING_WAY_TSC;
         }
       }
-      tx_queue->bps = bytes_per_sec;
       tx_queue->active = true;
       mt_pthread_mutex_unlock(&inf->tx_queues_mutex);
-      if (inf->tx_pacing_way == ST21_TX_PACING_WAY_RL)
-        info("%s(%d), q %d with speed %" PRIu64 "\n", __func__, port, q, bytes_per_sec);
-      else
+      if (inf->tx_pacing_way == ST21_TX_PACING_WAY_RL) {
+        float bps_g = (float)tx_queue->bps * 8 / (1000 * 1000 * 1000);
+        info("%s(%d), q %d with speed %fg bps\n", __func__, port, q, bps_g);
+      } else {
         info("%s(%d), q %d without rl\n", __func__, port, q);
+      }
       return tx_queue;
     }
   }
