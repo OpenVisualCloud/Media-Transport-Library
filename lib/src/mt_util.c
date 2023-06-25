@@ -457,7 +457,7 @@ int mt_u64_fifo_uinit(struct mt_u64_fifo* fifo) {
 /* todo: add overflow check */
 int mt_u64_fifo_put(struct mt_u64_fifo* fifo, uint64_t item) {
   if (fifo->used >= fifo->size) {
-    err("%s, fail as fifo is full(%d)\n", __func__, fifo->size);
+    dbg("%s, fail as fifo is full(%d)\n", __func__, fifo->size);
     return -EIO;
   }
   fifo->data[fifo->write_idx] = item;
@@ -470,7 +470,7 @@ int mt_u64_fifo_put(struct mt_u64_fifo* fifo, uint64_t item) {
 /* todo: add overflow check */
 int mt_u64_fifo_get(struct mt_u64_fifo* fifo, uint64_t* item) {
   if (fifo->used <= 0) {
-    err("%s, fail as empty\n", __func__);
+    dbg("%s, fail as empty\n", __func__);
     return -EIO;
   }
   *item = fifo->data[fifo->read_idx];

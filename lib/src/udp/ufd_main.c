@@ -228,6 +228,14 @@ static int ufd_parse_json(struct mufd_init_params* init, const char* filename) {
     }
   }
 
+  obj = mt_json_object_get(root, "rss");
+  if (obj) {
+    if (json_object_get_boolean(obj)) {
+      info("%s, rss enabled\n", __func__);
+      p->rss_mode = MTL_RSS_MODE_L3_L4;
+    }
+  }
+
   obj = mt_json_object_get(root, "log_level");
   if (obj) {
     const char* str = json_object_get_string(obj);
@@ -354,6 +362,7 @@ static struct ufd_mt_ctx* ufd_create_mt_ctx(void) {
   struct ufd_mt_ctx* ctx = mt_zmalloc(sizeof(*ctx));
   struct mufd_override_params* rt_para = g_rt_para;
   struct mufd_init_params* init_para = g_init_para;
+  int ret;
 
   if (!ctx) { /* create a new ctx */
     err("%s, malloc ctx mem fail\n", __func__);
@@ -407,6 +416,14 @@ static struct ufd_mt_ctx* ufd_create_mt_ctx(void) {
     err("%s, mtl init fail\n", __func__);
     ufd_free_mt_ctx(ctx);
     return NULL;
+  }
+  if (MTL_RSS_MODE_L3_L4 == mtl_rss_mode_get(ctx->mt)) {
+    ret = mtl_start(ctx->mt);
+    if (ret < 0) {
+      err("%s, mtl start fail\n", __func__);
+      ufd_free_mt_ctx(ctx);
+      return NULL;
+    }
   }
 
   ctx->slots = mt_rte_zmalloc_socket(sizeof(*ctx->slots) * ufd_max_slot(ctx),

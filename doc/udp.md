@@ -84,13 +84,15 @@ List the interface that can be used
 
  **log_level (int):** The log level, possible values: debug, info, notice, warning, error.
 
- **rx_poll_sleep_us (int):** The sleep time(us) in the rx routine to check if there's a available packet in the queue.
+ **rx_poll_sleep_us (int):** The sleep time(us) in the rx routine to check if there's a available packet in the queue, default: 0.
 
  **nic_queue_rate_limit_g (int):** The max rate speed(gigabit per second) for tx queue, only available for ICE(e810) nic.
 
  **rx_ring_count (int):** The ring count for rx socket session, must be power of 2.
 
  **nic_shared_queues (bool):** If enable the shared queue support or not. The queue number is limited for NIC, to support sessions more than queue number, enable this option to share queue resource between sessions.
+
+ **rss (bool):** If enable the rss mode or not.
 
 #### 2.3.3 experimental
 

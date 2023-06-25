@@ -81,6 +81,10 @@ static uint16_t urq_rx_handle(struct mur_queue* q, struct rte_mbuf** pkts,
     cs[i] = MT_TAILQ_NEXT(cs[i - 1], next);
   }
 
+  int last_c_idx = -1;
+  int c_pkts_nb = 0;
+  struct rte_mbuf* c_pkts[valid_mbuf_cnt];
+
   for (uint16_t i = 0; i < valid_mbuf_cnt; i++) {
     struct rte_mbuf* mbuf = valid_mbuf[i];
     struct mt_udp_hdr* hdr = rte_pktmbuf_mtod(mbuf, struct mt_udp_hdr*);
@@ -88,12 +92,32 @@ static uint16_t urq_rx_handle(struct mur_queue* q, struct rte_mbuf** pkts,
     uint32_t tuple[3];
     rte_memcpy(tuple, &hdr->ipv4.src_addr, sizeof(tuple));
     uint32_t hash = mt_dev_softrss(tuple, 3);
-    struct mur_client* c = cs[hash % clients];
-    c->stat_pkt_rx++;
-    if (0 != rte_ring_sp_enqueue(c->ring, mbuf)) {
-      /* enqueue fail */
-      rte_pktmbuf_free(mbuf);
-      c->stat_pkt_rx_enq_fail++;
+    int c_idx = hash % clients;
+
+    if (c_idx != last_c_idx) {
+      if (c_pkts_nb) { /* push last client */
+        struct mur_client* c = cs[last_c_idx];
+        c->stat_pkt_rx += c_pkts_nb;
+        unsigned int e =
+            rte_ring_sp_enqueue_bulk(c->ring, (void**)&c_pkts[0], c_pkts_nb, NULL);
+        if (0 == e) { /* enqueue fail */
+          rte_pktmbuf_free_bulk(c_pkts, c_pkts_nb);
+          c->stat_pkt_rx_enq_fail += c_pkts_nb;
+        }
+      }
+      last_c_idx = c_idx;
+      c_pkts_nb = 0;
+    }
+    c_pkts[c_pkts_nb++] = mbuf;
+  }
+  if (c_pkts_nb) { /* push last client */
+    struct mur_client* c = cs[last_c_idx];
+    c->stat_pkt_rx += c_pkts_nb;
+    unsigned int e =
+        rte_ring_sp_enqueue_bulk(c->ring, (void**)&c_pkts[0], c_pkts_nb, NULL);
+    if (0 == e) { /* enqueue fail */
+      rte_pktmbuf_free_bulk(c_pkts, c_pkts_nb);
+      c->stat_pkt_rx_enq_fail += c_pkts_nb;
     }
   }
 
