@@ -55,11 +55,20 @@ static int srss_tasklet_handler(void* priv) {
         }
         udp = &hdr->udp;
         MT_TAILQ_FOREACH(srss_entry, &srss->head, next) {
-          bool ip_matched =
-              mt_is_multicast_ip(srss_entry->flow.dip_addr)
-                  ? (ipv4->dst_addr == *(uint32_t*)srss_entry->flow.dip_addr)
-                  : (ipv4->src_addr == *(uint32_t*)srss_entry->flow.dip_addr);
-          bool port_matched = ntohs(udp->dst_port) == srss_entry->flow.dst_port;
+          bool ip_matched;
+          if (srss_entry->flow.no_ip_flow) {
+            ip_matched = true;
+          } else {
+            ip_matched = mt_is_multicast_ip(srss_entry->flow.dip_addr)
+                             ? (ipv4->dst_addr == *(uint32_t*)srss_entry->flow.dip_addr)
+                             : (ipv4->src_addr == *(uint32_t*)srss_entry->flow.dip_addr);
+          }
+          bool port_matched;
+          if (srss_entry->flow.no_port_flow) {
+            port_matched = true;
+          } else {
+            port_matched = ntohs(udp->dst_port) == srss_entry->flow.dst_port;
+          }
           if (ip_matched && port_matched) { /* match dst ip:port */
             if (srss_entry != last_srss_entry) UPDATE_ENTRY();
             matched_pkts[matched_pkts_nb++] = pkts[i];
