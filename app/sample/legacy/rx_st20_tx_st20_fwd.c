@@ -43,7 +43,8 @@ static int st20_fwd_open_logo(struct st_sample_context* ctx,
     return -EIO;
   }
 
-  size_t logo_size = st_frame_size(ctx->input_fmt, ctx->logo_width, ctx->logo_height);
+  size_t logo_size =
+      st_frame_size(ctx->input_fmt, ctx->logo_width, ctx->logo_height, false);
   s->logo_buf = mtl_hp_malloc(s->st, logo_size, MTL_PORT_P);
   if (!s->logo_buf) {
     err("%s, logo buf malloc fail\n", __func__);
@@ -341,6 +342,7 @@ int main(int argc, char** argv) {
   ops_rx.width = ctx.width;
   ops_rx.height = ctx.height;
   ops_rx.fps = ctx.fps;
+  ops_rx.interlaced = ctx.interlaced;
   ops_rx.fmt = ctx.fmt;
   ops_rx.framebuff_cnt = app.framebuff_cnt;
   ops_rx.payload_type = ctx.payload_type;
@@ -368,6 +370,7 @@ int main(int argc, char** argv) {
   ops_tx.width = ctx.width;
   ops_tx.height = ctx.height;
   ops_tx.fps = ctx.fps;
+  ops_tx.interlaced = ctx.interlaced;
   ops_tx.fmt = ctx.fmt;
   ops_tx.payload_type = ctx.payload_type;
   if (app.zero_copy) ops_tx.flags |= ST20_TX_FLAG_EXT_FRAME;

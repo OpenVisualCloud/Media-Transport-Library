@@ -194,7 +194,7 @@ typedef struct st_json_st20p_info {
   uint32_t height;
   enum st_fps fps;
   enum st_plugin_device device;
-
+  bool interlaced;
   char st20p_url[ST_APP_URL_MAX_LEN];
 } st_json_st20p_info_t;
 

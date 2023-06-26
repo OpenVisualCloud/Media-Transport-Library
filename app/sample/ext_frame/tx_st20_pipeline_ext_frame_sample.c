@@ -216,6 +216,7 @@ int main(int argc, char** argv) {
     ops_tx.width = ctx.width;
     ops_tx.height = ctx.height;
     ops_tx.fps = ctx.fps;
+    ops_tx.interlaced = ctx.interlaced;
     ops_tx.input_fmt = ctx.input_fmt;
     ops_tx.transport_fmt = ctx.fmt;
     ops_tx.device = ST_PLUGIN_DEVICE_AUTO;

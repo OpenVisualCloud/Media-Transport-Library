@@ -1391,6 +1391,13 @@ static int parse_st20p_fps(json_object* st20p_obj, st_json_st20p_session_t* st20
   return ST_JSON_SUCCESS;
 }
 
+static int parse_st20p_interlace(json_object* st20p_obj, st_json_st20p_session_t* st20p) {
+  json_object* obj = st_json_object_object_get(st20p_obj, "interlaced");
+  if (!obj) return ST_JSON_SUCCESS;
+  st20p->info.interlaced = json_object_get_boolean(obj);
+  return ST_JSON_SUCCESS;
+}
+
 static int parse_st20p_device(json_object* st20p_obj, st_json_st20p_session_t* st20p) {
   const char* device =
       json_object_get_string(st_json_object_object_get(st20p_obj, "device"));
@@ -1529,6 +1536,10 @@ static int st_json_parse_tx_st20p(int idx, json_object* st20p_obj,
   ret = parse_st20p_fps(st20p_obj, st20p);
   if (ret < 0) return ret;
 
+  /* parse interlace */
+  ret = parse_st20p_interlace(st20p_obj, st20p);
+  if (ret < 0) return ret;
+
   /* parse device */
   ret = parse_st20p_device(st20p_obj, st20p);
   if (ret < 0) return ret;
@@ -1581,6 +1592,10 @@ static int st_json_parse_rx_st20p(int idx, json_object* st20p_obj,
 
   /* parse fps */
   ret = parse_st20p_fps(st20p_obj, st20p);
+  if (ret < 0) return ret;
+
+  /* parse interlace */
+  ret = parse_st20p_interlace(st20p_obj, st20p);
   if (ret < 0) return ret;
 
   /* parse device */

@@ -881,7 +881,7 @@ struct st20_tx_ops {
   enum st_fps fps;
   /** Session resolution format */
   enum st20_fmt fmt;
-  /** interlace or not false: non-interlaced: true: interlaced*/
+  /** interlace or not, false: non-interlaced: true: interlaced */
   bool interlaced;
   /** 7 bits payload type define in RFC3550 */
   uint8_t payload_type;
@@ -1149,7 +1149,7 @@ struct st20_rx_ops {
   uint8_t payload_type;
   /** flags, value in ST20_RX_FLAG_* */
   uint32_t flags;
-  /** interlace or not false: non-interlaced: true: interlaced*/
+  /** interlace or not, false: non-interlaced: true: interlaced */
   bool interlaced;
 
   /**

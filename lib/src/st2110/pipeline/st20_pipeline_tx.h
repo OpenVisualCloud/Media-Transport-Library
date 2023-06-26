@@ -49,6 +49,8 @@ struct st20p_tx_ctx {
 
   size_t src_size;
 
+  bool second_field;
+
   rte_atomic32_t stat_convert_fail;
   rte_atomic32_t stat_busy;
 };

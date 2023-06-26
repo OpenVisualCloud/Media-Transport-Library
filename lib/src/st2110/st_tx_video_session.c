@@ -585,6 +585,9 @@ static int tv_init_next_meta(struct st_tx_video_session_impl* s,
   meta->height = ops->height;
   meta->fps = ops->fps;
   meta->fmt = ops->fmt;
+  if (ops->interlaced) { /* init second_field but user still can customize also */
+    meta->second_field = s->second_field;
+  }
   /* point to next epoch */
   meta->epoch = pacing->cur_epochs + 1;
   meta->tfmt = ST10_TIMESTAMP_FMT_TAI;
@@ -1511,6 +1514,10 @@ static int tv_tasklet_frame(struct mtl_main_impl* impl,
       frame->tv_meta.tfmt = ST10_TIMESTAMP_FMT_TAI;
       frame->tv_meta.timestamp = pacing->cur_epoch_time;
       frame->tv_meta.epoch = pacing->cur_epochs;
+      /* init to next field */
+      if (ops->interlaced) {
+        s->second_field = second_field ? false : true;
+      }
     }
   }
 
@@ -2738,9 +2745,9 @@ static int tv_attach(struct mtl_main_impl* impl, struct st_tx_video_sessions_mgr
     s->trs_target_tsc[i] = 0;
   }
 
-  info("%s(%d), len %d(%d) total %d each line %d type %d flags 0x%x\n", __func__, idx,
+  info("%s(%d), len %d(%d) total %d each line %d type %d flags 0x%x, %s\n", __func__, idx,
        s->st20_pkt_len, s->st20_pkt_size, s->st20_total_pkts, s->st20_pkts_in_line,
-       ops->type, ops->flags);
+       ops->type, ops->flags, ops->interlaced ? "interlace" : "progressive");
   info("%s(%d), w %u h %u fmt %s packing %d pt %d, pacing way: %s\n", __func__, idx,
        ops->width, ops->height, st20_frame_fmt_name(ops->fmt), ops->packing,
        ops->payload_type, st_tx_pacing_way_name(s->pacing_way[MTL_SESSION_PORT_P]));

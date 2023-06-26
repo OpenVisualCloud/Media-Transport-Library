@@ -407,17 +407,17 @@ size_t st_frame_least_linesize(enum st_frame_fmt fmt, uint32_t width, uint8_t pl
     if (plane > 0)
       err("%s, invalid plane idx %u for packed fmt\n", __func__, plane);
     else
-      linesize = st_frame_size(fmt, width, 1);
+      linesize = st_frame_size(fmt, width, 1, false);
   } else {
     switch (st_frame_fmt_get_sampling(fmt)) {
       case ST_FRAME_SAMPLING_422:
         switch (plane) {
           case 0:
-            linesize = st_frame_size(fmt, width, 1) / 2;
+            linesize = st_frame_size(fmt, width, 1, false) / 2;
             break;
           case 1:
           case 2:
-            linesize = st_frame_size(fmt, width, 1) / 4;
+            linesize = st_frame_size(fmt, width, 1, false) / 4;
             break;
           default:
             err("%s, invalid plane idx %u for 422 planar fmt\n", __func__, plane);
@@ -429,7 +429,7 @@ size_t st_frame_least_linesize(enum st_frame_fmt fmt, uint32_t width, uint8_t pl
           case 0:
           case 1:
           case 2:
-            linesize = st_frame_size(fmt, width, 1) / 3;
+            linesize = st_frame_size(fmt, width, 1, false) / 3;
             break;
           default:
             err("%s, invalid plane idx %u for 444 planar fmt\n", __func__, plane);
@@ -439,11 +439,11 @@ size_t st_frame_least_linesize(enum st_frame_fmt fmt, uint32_t width, uint8_t pl
       case ST_FRAME_SAMPLING_420:
         switch (plane) {
           case 0:
-            linesize = st_frame_size(fmt, width, 1) * 4 / 6;
+            linesize = st_frame_size(fmt, width, 1, false) * 4 / 6;
             break;
           case 1:
           case 2:
-            linesize = st_frame_size(fmt, width, 1) / 6;
+            linesize = st_frame_size(fmt, width, 1, false) / 6;
             break;
           default:
             err("%s, invalid plane idx %u for 422 planar fmt\n", __func__, plane);
@@ -459,7 +459,8 @@ size_t st_frame_least_linesize(enum st_frame_fmt fmt, uint32_t width, uint8_t pl
   return linesize;
 }
 
-size_t st_frame_size(enum st_frame_fmt fmt, uint32_t width, uint32_t height) {
+size_t st_frame_size(enum st_frame_fmt fmt, uint32_t width, uint32_t height,
+                     bool interlaced) {
   size_t size = 0;
   size_t pixels = (size_t)width * height;
 
@@ -517,6 +518,7 @@ size_t st_frame_size(enum st_frame_fmt fmt, uint32_t width, uint32_t height) {
       break;
   }
 
+  if (interlaced) size /= 2; /* if all fmt support interlace? */
   return size;
 }
 
