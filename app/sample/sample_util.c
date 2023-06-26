@@ -24,6 +24,7 @@ enum sample_args_cmd {
   SAMPLE_ARG_P_SIP,
   SAMPLE_ARG_R_SIP,
   SAMPLE_ARG_UDP_PORT,
+  SAMPLE_ARG_PAYLOAD_TYPE,
   SAMPLE_ARG_FPS,
   SAMPLE_ARG_P_FWD_IP,
   SAMPLE_ARG_LOG_LEVEL,
@@ -71,6 +72,7 @@ static struct option sample_args_options[] = {
     {"p_sip", required_argument, 0, SAMPLE_ARG_P_SIP},
     {"r_sip", required_argument, 0, SAMPLE_ARG_R_SIP},
     {"udp_port", required_argument, 0, SAMPLE_ARG_UDP_PORT},
+    {"payload_type", required_argument, 0, SAMPLE_ARG_PAYLOAD_TYPE},
     {"fps", required_argument, 0, SAMPLE_ARG_FPS},
     {"p_fwd_ip", required_argument, 0, SAMPLE_ARG_P_FWD_IP},
     {"sessions_cnt", required_argument, 0, SAMPLE_ARG_SESSIONS_CNT},
@@ -154,6 +156,9 @@ static int _sample_parse_args(struct st_sample_context* ctx, int argc, char** ar
         break;
       case SAMPLE_ARG_UDP_PORT:
         ctx->udp_port = atoi(optarg);
+        break;
+      case SAMPLE_ARG_PAYLOAD_TYPE:
+        ctx->payload_type = atoi(optarg);
         break;
       case SAMPLE_ARG_FPS:
         if (!strcmp(optarg, "59.94"))
