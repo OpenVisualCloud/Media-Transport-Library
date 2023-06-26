@@ -105,7 +105,7 @@ struct mt_ptp_port_id {
   uint16_t port_number;
 } __attribute__((packed));
 
-struct mt_ptp_ipv4_udp {
+struct mt_ipv4_udp {
   struct rte_ipv4_hdr ip;
   struct rte_udp_hdr udp;
 } __attribute__((__packed__));
@@ -158,7 +158,7 @@ struct mt_ptp_impl {
   struct mt_ptp_port_id master_port_id;
   struct rte_ether_addr master_addr;
   struct mt_ptp_port_id our_port_id;
-  struct mt_ptp_ipv4_udp dst_udp;    /* for l4 */
+  struct mt_ipv4_udp dst_udp;        /* for l4 */
   uint8_t sip_addr[MTL_IP_ADDR_LEN]; /* source IP */
   enum mt_ptp_addr_mode master_addr_mode;
   int16_t master_utc_offset; /* offset to UTC of current master PTP */
@@ -224,6 +224,15 @@ struct mt_cni_priv {
   enum mtl_port port;
 };
 
+struct mt_cni_udp_entry {
+  uint32_t tuple[3]; /* udp tuple identify */
+  int pkt_cnt;
+  /* linked list */
+  MT_TAILQ_ENTRY(mt_cni_udp_entry) next;
+};
+
+MT_TAILQ_HEAD(mt_cni_udp_list, mt_cni_udp_entry);
+
 struct mt_cni_impl {
   bool used; /* if enable cni */
   int num_ports;
@@ -234,6 +243,9 @@ struct mt_cni_impl {
   rte_atomic32_t stop_thread;
   bool lcore_tasklet;
   struct mt_sch_tasklet_impl* tasklet;
+
+  struct mt_cni_udp_list udps[MTL_PORT_MAX]; /* for udp stream debug usage */
+
   /* stat */
   uint32_t eth_rx_cnt[MTL_PORT_MAX];
   uint64_t eth_rx_bytes[MTL_PORT_MAX];
