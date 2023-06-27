@@ -160,10 +160,10 @@ static char* rv_ebu_rtp_offset_result(struct st_rx_video_ebu_stat* ebu,
   return ST_EBU_PASS;
 }
 
-static char* rv_ebu_rtp_ts_delta_result(struct st_rx_video_ebu_stat* ebu,
-                                        struct st_rx_video_ebu_info* ebu_info,
+static char* rv_ebu_rtp_ts_delta_result(struct st_rx_video_session_impl* s,
+                                        struct st_rx_video_ebu_stat* ebu,
                                         struct st_rx_video_ebu_result* ebu_result) {
-  int32_t rtd = ebu_info->frame_time_sampling;
+  int32_t rtd = s->frame_time_sampling;
 
   if ((ebu->rtp_ts_delta_min < rtd) || (ebu->rtp_ts_delta_max > (rtd + 1))) {
     ebu_result->rtp_ts_delta_fail++;
@@ -222,7 +222,7 @@ static void rv_ebu_result(struct st_rx_video_session_impl* s) {
        rv_ebu_rtp_offset_result(ebu, ebu_info, ebu_result));
   info("%s(%d), RTP TS Delta AVG %.2f MIN %d MAX %d test %s!\n", __func__, idx,
        ebu->rtp_ts_delta_avg, ebu->rtp_ts_delta_min, ebu->rtp_ts_delta_max,
-       rv_ebu_rtp_ts_delta_result(ebu, ebu_info, ebu_result));
+       rv_ebu_rtp_ts_delta_result(s, ebu, ebu_result));
   info("%s(%d), Inter-packet time(ns) AVG %.2f MIN %d MAX %d!\n", __func__, idx,
        ebu->rtp_ipt_avg, ebu->rtp_ipt_min, ebu->rtp_ipt_max);
 
@@ -237,8 +237,8 @@ static void rv_ebu_on_frame(struct st_rx_video_session_impl* s, uint32_t rtp_tms
   struct st_rx_video_ebu_stat* ebu = &s->ebu;
   struct st_rx_video_ebu_info* ebu_info = &s->ebu_info;
   struct st_rx_video_ebu_result* ebu_result = &s->ebu_result;
-  uint64_t epochs = (double)pkt_tmstamp / ebu_info->frame_time;
-  uint64_t epoch_tmstamp = (double)epochs * ebu_info->frame_time;
+  uint64_t epochs = (double)pkt_tmstamp / s->frame_time;
+  uint64_t epoch_tmstamp = (double)epochs * s->frame_time;
   double fpt_delta = (double)pkt_tmstamp - epoch_tmstamp;
 
   ebu->frame_idx++;
@@ -275,11 +275,10 @@ static void rv_ebu_on_frame(struct st_rx_video_session_impl* s, uint32_t rtp_tms
   ebu->fpt_max = RTE_MAX(fpt_delta, ebu->fpt_max);
   ebu->fpt_cnt++;
 
-  uint64_t tmstamp64 = epochs * ebu_info->frame_time_sampling;
+  uint64_t tmstamp64 = epochs * s->frame_time_sampling;
   uint32_t tmstamp32 = tmstamp64;
   double diff_rtp_ts = (double)rtp_tmstamp - tmstamp32;
-  double diff_rtp_ts_ns =
-      diff_rtp_ts * ebu_info->frame_time / ebu_info->frame_time_sampling;
+  double diff_rtp_ts_ns = diff_rtp_ts * s->frame_time / s->frame_time_sampling;
   double latency = fpt_delta - diff_rtp_ts_ns;
 
   /* calculate latency */
@@ -294,7 +293,7 @@ static void rv_ebu_on_frame(struct st_rx_video_session_impl* s, uint32_t rtp_tms
   ebu->rtp_offset_max = RTE_MAX(diff_rtp_ts, ebu->rtp_offset_max);
   ebu->rtp_offset_cnt++;
 
-  /* calculate rtp ts dleta */
+  /* calculate rtp ts delta */
   if (ebu->prev_rtp_ts) {
     int rtp_ts_delta = rtp_tmstamp - ebu->prev_rtp_ts;
 
@@ -318,7 +317,7 @@ static void rv_ebu_on_packet(struct st_rx_video_session_impl* s, uint32_t rtp_tm
   if (!pkt_idx) /* start of new frame */
     rv_ebu_on_frame(s, rtp_tmstamp, pkt_tmstamp);
 
-  epoch_tmstamp = (uint64_t)(ebu->cur_epochs * ebu_info->frame_time);
+  epoch_tmstamp = (uint64_t)(ebu->cur_epochs * s->frame_time);
   tvd = epoch_tmstamp + ebu_info->tr_offset;
 
   /* Calculate vrx */
@@ -359,7 +358,8 @@ static int rv_ebu_init(struct mtl_main_impl* impl, struct st_rx_video_session_im
   int idx = s->idx, ret;
   struct st_rx_video_ebu_info* ebu_info = &s->ebu_info;
   struct st20_rx_ops* ops = &s->ops;
-  double frame_time, frame_time_s;
+  double frame_time = s->frame_time;
+  double frame_time_s;
   struct st_fps_timing fps_tm;
 
   rv_ebu_clear_result(&s->ebu);
@@ -371,7 +371,6 @@ static int rv_ebu_init(struct mtl_main_impl* impl, struct st_rx_video_session_im
   }
 
   frame_time_s = (double)fps_tm.den / fps_tm.mul;
-  frame_time = (double)1000000000.0 * fps_tm.den / fps_tm.mul;
 
   int st20_total_pkts = s->detector.pkt_per_frame;
   info("%s(%d), st20_total_pkts %d\n", __func__, idx, st20_total_pkts);
@@ -385,9 +384,6 @@ static int rv_ebu_init(struct mtl_main_impl* impl, struct st_rx_video_session_im
     reactive = (ops->height == 480) ? 487.0 / 525.0 : 576.0 / 625.0;
   }
 
-  ebu_info->frame_time = frame_time;
-  ebu_info->frame_time_sampling =
-      (double)(fps_tm.sampling_clock_rate) * fps_tm.den / fps_tm.mul;
   ebu_info->trs = frame_time * reactive / st20_total_pkts;
   if (!ops->interlaced) {
     ebu_info->tr_offset =
@@ -416,7 +412,7 @@ static int rv_ebu_init(struct mtl_main_impl* impl, struct st_rx_video_session_im
   ebu_info->dropped_results = 4; /* we drop the first 4 results */
 
   info("%s[%02d], trs %f tr offset %f sampling %f\n", __func__, idx, ebu_info->trs,
-       ebu_info->tr_offset, ebu_info->frame_time_sampling);
+       ebu_info->tr_offset, s->frame_time_sampling);
   info(
       "%s[%02d], cmax_narrow %d cmax_wide %d vrx_full_narrow %d vrx_full_wide %d "
       "rtp_offset_max %d\n",
@@ -1065,6 +1061,14 @@ static void rv_frame_notify(struct st_rx_video_session_impl* s,
   meta->fps = ops->fps;
   meta->tfmt = ST10_TIMESTAMP_FMT_MEDIA_CLK;
   meta->timestamp = slot->tmstamp;
+  meta->timestamp_first_pkt = slot->timestamp_first_pkt;
+  /* calculate FPT */
+  uint64_t epochs = (double)meta->timestamp_first_pkt / s->frame_time;
+  uint64_t epoch_tmstamp = (double)epochs * s->frame_time;
+  double fpt_delta = (double)meta->timestamp_first_pkt - epoch_tmstamp;
+  dbg("%s(%d): fpt_delta %f\n", __func__, s->idx, fpt_delta);
+  meta->fpt = fpt_delta;
+  meta->timestamp_last_pkt = mtl_ptp_read_time(s->parent->parent);
   meta->second_field = slot->second_field;
   meta->frame_total_size = s->st20_frame_size;
   meta->uframe_total_size = s->st20_uframe_size;
@@ -1324,6 +1328,7 @@ static struct st_rx_video_slot_impl* rv_slot_by_tmstamp(
     meta->opaque = ext_frame.opaque;
   }
   slot->frame = frame_info;
+  slot->timestamp_first_pkt = mtl_ptp_read_time(s->parent->parent);
 
   s->dma_slot = slot;
 
@@ -2214,7 +2219,7 @@ static int rv_handle_hdr_split_pkt(struct st_rx_video_session_impl* s,
     }
   }
 
-  /* caculate offset */
+  /* calculate offset */
   uint32_t offset =
       (line1_number * ops->width + line1_offset) / s->st20_pg.coverage * s->st20_pg.size;
   size_t payload_length = line1_length;
@@ -2892,6 +2897,7 @@ static int rv_attach(struct mtl_main_impl* impl, struct st_rx_video_sessions_mgr
   int ret;
   int idx = s->idx, num_port = ops->num_port;
   char* ports[MTL_SESSION_PORT_MAX];
+  struct st_fps_timing fps_tm;
 
   for (int i = 0; i < num_port; i++) ports[i] = ops->port[i];
   ret = mt_build_port_map(impl, ports, s->port_maps, num_port);
@@ -2902,12 +2908,19 @@ static int rv_attach(struct mtl_main_impl* impl, struct st_rx_video_sessions_mgr
     err("%s(%d), get pgroup fail %d\n", __func__, idx, ret);
     return ret;
   }
+  ret = st_get_fps_timing(ops->fps, &fps_tm);
+  if (ret < 0) {
+    err("%s(%d), invalid fps %d\n", __func__, idx, ops->fps);
+    return ret;
+  }
 
   if (st20_is_frame_type(ops->type) && (ops->flags & ST20_RX_FLAG_HDR_SPLIT)) {
     s->is_hdr_split = true;
     info("%s(%d), hdr_split enabled in ops\n", __func__, idx);
   }
 
+  s->frame_time = (double)1000000000.0 * fps_tm.den / fps_tm.mul;
+  s->frame_time_sampling = (double)(fps_tm.sampling_clock_rate) * fps_tm.den / fps_tm.mul;
   s->st20_bytes_in_line = ops->width * s->st20_pg.size / s->st20_pg.coverage;
   s->st20_linesize = s->st20_bytes_in_line;
   if (ops->linesize > s->st20_linesize)
@@ -3016,9 +3029,9 @@ static int rv_attach(struct mtl_main_impl* impl, struct st_rx_video_sessions_mgr
   info("%s(%d), %d frames with size %" PRIu64 "(%" PRIu64 ",%" PRIu64 "), type %d, %s\n",
        __func__, idx, s->st20_frames_cnt, s->st20_frame_size, s->st20_frame_bitmap_size,
        s->st20_uframe_size, ops->type, ops->interlaced ? "interlace" : "progressive");
-  info("%s(%d), w %u h %u fmt %s packing %d pt %d flags 0x%x\n", __func__, idx,
-       ops->width, ops->height, st20_frame_fmt_name(ops->fmt), ops->packing,
-       ops->payload_type, ops->flags);
+  info("%s(%d), w %u h %u fmt %s packing %d pt %d flags 0x%x frame time %fms\n", __func__,
+       idx, ops->width, ops->height, st20_frame_fmt_name(ops->fmt), ops->packing,
+       ops->payload_type, ops->flags, s->frame_time / NS_PER_MS);
   return 0;
 }
 

@@ -1237,7 +1237,7 @@ static void st22_rx_digest_test(enum st_fps fps[], int width[], int height[],
     tx_handle[i] = st22_tx_create(m_handle, &ops_tx);
     ASSERT_TRUE(tx_handle[i] != NULL);
 
-    /* sha caculate */
+    /* sha calculate */
     size_t frame_size = test_ctx_tx[i]->frame_size;
     uint8_t* fb;
     for (int frame = 0; frame < TEST_SHA_HIST_NUM; frame++) {

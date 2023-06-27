@@ -18,6 +18,16 @@
 * dpdk: upgrade dpdk version to latest 23.03
 * Windows: add MSYS2 build guide and CI
 * vm: add Windows guest OS support, see vm_WIN.md.
+* rx/video: add fpt(first packet time to epoch) in struct st20_rx_frame_meta.
+* st20p: add interlace format support, refer to tests/script/loop_json/st20p_2v_1080i50.json
+* CI: add ossf scorecard support.
+* gtest: support run with AWS ena driver.
+* dhcp: set proto to dhcp in interfaces segment of json to enable DHCP.
+* rx/video: support out of sequence for both first and last(marker) packet.
+* udp: add gso(general segment offload) for tx
+* udp: add reuse port support.
+* udp: add fork support
+* Windows: add MSVC sample build, refer to app/sample/msvc/imtl_sample.
 
 ## Changelog for 23.04
 

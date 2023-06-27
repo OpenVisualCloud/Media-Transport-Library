@@ -763,7 +763,7 @@ static void st22p_rx_digest_test(enum st_fps fps[], int width[], int height[],
     tx_handle[i] = st22p_tx_create(st, &ops_tx);
     ASSERT_TRUE(tx_handle[i] != NULL);
 
-    /* sha caculate */
+    /* sha calculate */
     size_t frame_size = test_ctx_tx[i]->frame_size;
     uint8_t* fb;
     for (int frame = 0; frame < ST22_TEST_SHA_HIST_NUM; frame++) {
@@ -896,7 +896,7 @@ static void st22p_rx_digest_test(enum st_fps fps[], int width[], int height[],
     EXPECT_GE(ret, 0);
     info("%s, session %d fb_rec %d framerate %f:%f\n", __func__, i,
          test_ctx_rx[i]->fb_rec, framerate_rx[i], expect_framerate_rx[i]);
-    EXPECT_GE(test_ctx_rx[i]->fb_rec, 0);
+    EXPECT_GT(test_ctx_rx[i]->fb_rec, 0);
     EXPECT_EQ(test_ctx_rx[i]->incomplete_frame_cnt, 0);
     EXPECT_EQ(test_ctx_rx[i]->fail_cnt, 0);
     if (para->check_fps) {

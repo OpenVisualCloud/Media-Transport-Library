@@ -345,6 +345,12 @@ struct st20_rx_frame_meta {
   size_t frame_recv_size;
   /** Private data for user, get from query_ext_frame callback */
   void* opaque;
+  /** timestamp(ST10_TIMESTAMP_FMT_TAI in ns, PTP) value for the first pkt */
+  uint64_t timestamp_first_pkt;
+  /** timestamp(ST10_TIMESTAMP_FMT_TAI in ns, PTP) value for the first pkt */
+  uint64_t timestamp_last_pkt;
+  /** first packet time in ns to the start of current epoch */
+  int64_t fpt;
 };
 
 /**

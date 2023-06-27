@@ -472,8 +472,9 @@ static int tv_init_pacing(struct mtl_main_impl* impl,
     pacing->warm_pkts = 0; /* no need warmup for wide */
     info("%s[%02d], wide pacing\n", __func__, idx);
   }
-  info("%s[%02d], trs %f trOffset %f vrx %u warm_pkts %u\n", __func__, idx, pacing->trs,
-       pacing->tr_offset, pacing->vrx, pacing->warm_pkts);
+  info("%s[%02d], trs %f trOffset %f vrx %u warm_pkts %u frame time %fms\n", __func__,
+       idx, pacing->trs, pacing->tr_offset, pacing->vrx, pacing->warm_pkts,
+       pacing->frame_time / NS_PER_MS);
 
   /* resolve pacing tasklet */
   for (int i = 0; i < num_port; i++) {
