@@ -48,7 +48,8 @@ static int tx_st22p_open_logo(struct st_sample_context* ctx,
     return -EIO;
   }
 
-  size_t logo_size = st_frame_size(ctx->input_fmt, ctx->logo_width, ctx->logo_height);
+  size_t logo_size =
+      st_frame_size(ctx->input_fmt, ctx->logo_width, ctx->logo_height, false);
   s->logo_buf = mtl_hp_malloc(s->st, logo_size, MTL_PORT_P);
   if (!s->logo_buf) {
     err("%s, logo buf malloc fail\n", __func__);

@@ -245,6 +245,10 @@ struct st_frame {
   size_t linesize[ST_MAX_PLANES];
   /** frame format */
   enum st_frame_fmt fmt;
+  /** interlace or not, false: non-interlaced: true: interlaced */
+  bool interlaced;
+  /** Second field type indicate for interlaced mode, for tx it's set by user */
+  bool second_field;
   /** frame buffer size, include all planes */
   size_t buffer_size;
   /**
@@ -261,6 +265,8 @@ struct st_frame {
   enum st10_timestamp_fmt tfmt;
   /** frame timestamp value */
   uint64_t timestamp;
+  /** epoch info for the done frame */
+  uint64_t epoch;
   /** flags, value in ST_FRAME_FLAG_* */
   uint32_t flags;
   /** frame status, complete or not */
@@ -659,6 +665,8 @@ struct st20p_tx_ops {
   enum st_frame_fmt input_fmt;
   /** Session transport frame format */
   enum st20_fmt transport_fmt;
+  /** interlace or not, false: non-interlaced: true: interlaced */
+  bool interlaced;
   /** Linesize for transport frame, only for non-convert mode */
   size_t transport_linesize;
   /** Convert plugin device, auto or special */
@@ -713,6 +721,8 @@ struct st20p_rx_ops {
   size_t transport_linesize;
   /** Session output frame format */
   enum st_frame_fmt output_fmt;
+  /** interlace or not, false: non-interlaced: true: interlaced */
+  bool interlaced;
   /** Convert plugin device, auto or special */
   enum st_plugin_device device;
   /** Array of external frames */
@@ -1522,11 +1532,14 @@ size_t st_frame_least_linesize(enum st_frame_fmt fmt, uint32_t width, uint8_t pl
  *   width.
  * @param height
  *   height.
+ * @param interlaced
+ *   interlace or not, false: non-interlaced: true: interlaced.
  * @return
  *   > 0 if successful.
  *   0: Fail.
  */
-size_t st_frame_size(enum st_frame_fmt fmt, uint32_t width, uint32_t height);
+size_t st_frame_size(enum st_frame_fmt fmt, uint32_t width, uint32_t height,
+                     bool interlaced);
 
 /**
  * St_frame sanity check

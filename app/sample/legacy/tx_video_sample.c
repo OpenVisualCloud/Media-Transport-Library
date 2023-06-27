@@ -188,6 +188,7 @@ int main(int argc, char** argv) {
     ops_tx.width = ctx.width;
     ops_tx.height = ctx.height;
     ops_tx.fps = ctx.fps;
+    ops_tx.interlaced = ctx.interlaced;
     ops_tx.fmt = ctx.fmt;
     ops_tx.payload_type = ctx.payload_type;
     ops_tx.framebuff_cnt = app[i]->framebuff_cnt;

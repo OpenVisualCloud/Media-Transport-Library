@@ -374,8 +374,8 @@ static void frame_draw_logo_test(enum st_frame_fmt fmt, uint32_t w, uint32_t h,
                                  bool expect) {
   auto ctx = (struct st_tests_context*)st_test_ctx();
   auto st = ctx->handle;
-  size_t logo_size = st_frame_size(fmt, logo_w, logo_h);
-  size_t frame_size = st_frame_size(fmt, w, h);
+  size_t logo_size = st_frame_size(fmt, logo_w, logo_h, false);
+  size_t frame_size = st_frame_size(fmt, w, h, false);
   void* frame_buf = mtl_hp_malloc(st, frame_size, MTL_PORT_P);
   if (!frame_buf) {
     err("%s, frame_buf malloc fail\n", __func__);
@@ -463,7 +463,8 @@ static void st22p_tx_ops_init(tests_context* st22, struct st22p_tx_ops* ops_tx) 
   ops_tx->quality = ST22_QUALITY_MODE_QUALITY;
   ops_tx->framebuff_cnt = st22->fb_cnt;
   ops_tx->notify_frame_available = test_st22p_tx_frame_available;
-  st22->frame_size = st_frame_size(ops_tx->input_fmt, ops_tx->width, ops_tx->height);
+  st22->frame_size =
+      st_frame_size(ops_tx->input_fmt, ops_tx->width, ops_tx->height, false);
   ops_tx->codestream_size = st22->frame_size / 8;
   ops_tx->notify_event = test_ctx_notify_event;
 }
@@ -490,7 +491,8 @@ static void st22p_rx_ops_init(tests_context* st22, struct st22p_rx_ops* ops_rx) 
   ops_rx->device = ST_PLUGIN_DEVICE_TEST;
   ops_rx->framebuff_cnt = st22->fb_cnt;
   ops_rx->notify_frame_available = test_st22p_rx_frame_available;
-  st22->frame_size = st_frame_size(ops_rx->output_fmt, ops_rx->width, ops_rx->height);
+  st22->frame_size =
+      st_frame_size(ops_rx->output_fmt, ops_rx->width, ops_rx->height, false);
   ops_rx->notify_event = test_ctx_notify_event;
 }
 
@@ -754,7 +756,7 @@ static void st22p_rx_digest_test(enum st_fps fps[], int width[], int height[],
     if (para->vsync) ops_tx.flags |= ST22P_TX_FLAG_ENABLE_VSYNC;
 
     test_ctx_tx[i]->frame_size =
-        st_frame_size(ops_tx.input_fmt, ops_tx.width, ops_tx.height);
+        st_frame_size(ops_tx.input_fmt, ops_tx.width, ops_tx.height, false);
 
     ops_tx.codestream_size = test_ctx_tx[i]->frame_size / compress_ratio[i];
 
@@ -825,7 +827,7 @@ static void st22p_rx_digest_test(enum st_fps fps[], int width[], int height[],
     if (para->vsync) ops_rx.flags |= ST22P_RX_FLAG_ENABLE_VSYNC;
 
     test_ctx_rx[i]->frame_size =
-        st_frame_size(ops_rx.output_fmt, ops_rx.width, ops_rx.height);
+        st_frame_size(ops_rx.output_fmt, ops_rx.width, ops_rx.height, false);
 
     rx_handle[i] = st22p_rx_create(st, &ops_rx);
     ASSERT_TRUE(rx_handle[i] != NULL);

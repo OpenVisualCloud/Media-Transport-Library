@@ -228,6 +228,7 @@ int main(int argc, char** argv) {
   ops_rx.width = ctx.width;
   ops_rx.height = ctx.height;
   ops_rx.fps = ctx.fps;
+  ops_rx.interlaced = ctx.interlaced;
   ops_rx.fmt = ctx.fmt;
   ops_rx.framebuff_cnt = FB_CNT;
   ops_rx.payload_type = ctx.payload_type;
@@ -261,6 +262,7 @@ int main(int argc, char** argv) {
     ops_tx.height = ctx.height / 2;
     ops_tx.linesize = ctx.width * st20_pg.size / st20_pg.coverage;
     ops_tx.fps = ctx.fps;
+    ops_rx.interlaced = ctx.interlaced;
     ops_tx.fmt = ctx.fmt;
     ops_tx.payload_type = ctx.payload_type;
     ops_tx.flags |= ST20_TX_FLAG_EXT_FRAME;

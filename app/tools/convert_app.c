@@ -55,8 +55,8 @@ static int convert(struct conv_app_context* ctx) {
   enum cvt_frame_fmt fmt_out = ctx->fmt_out;
   uint32_t w = ctx->w;
   uint32_t h = ctx->h;
-  size_t frame_size_in = st_frame_size(fmt_cvt2frame(fmt_in), w, h);
-  size_t frame_size_out = st_frame_size(fmt_cvt2frame(fmt_out), w, h);
+  size_t frame_size_in = st_frame_size(fmt_cvt2frame(fmt_in), w, h, false);
+  size_t frame_size_out = st_frame_size(fmt_cvt2frame(fmt_out), w, h, false);
   FILE *fp_in = NULL, *fp_out = NULL;
   void *buf_in = NULL, *buf_out = NULL;
   int ret = -EIO;

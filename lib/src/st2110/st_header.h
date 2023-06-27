@@ -278,6 +278,7 @@ struct st_tx_video_session_impl {
                                                    enum mtl_session_port s_port);
 
   struct st_vsync_info vsync;
+  bool second_field;
 
   struct st20_tx_ops ops;
   char ops_name[ST_MAX_NAME_LEN];
