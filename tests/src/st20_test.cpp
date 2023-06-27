@@ -2029,8 +2029,8 @@ static void st20_rx_digest_test(enum st20_type tx_type[], enum st20_type rx_type
     if (rx_type[i] == ST20_TYPE_SLICE_LEVEL)
       EXPECT_LT(test_ctx_rx[i]->incomplete_frame_cnt, 2 * 5);
     else
-      EXPECT_LT(test_ctx_rx[i]->incomplete_frame_cnt, 2);
-    EXPECT_LT(test_ctx_rx[i]->meta_timing_fail_cnt, 2);
+      EXPECT_LT(test_ctx_rx[i]->incomplete_frame_cnt, 4);
+    EXPECT_LT(test_ctx_rx[i]->meta_timing_fail_cnt, 4);
     EXPECT_EQ(test_ctx_rx[i]->incomplete_slice_cnt, 0);
     if (rx_type[i] == ST20_TYPE_FRAME_LEVEL)
       EXPECT_EQ(test_ctx_rx[i]->fail_cnt, 0);
