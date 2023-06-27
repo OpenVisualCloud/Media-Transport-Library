@@ -40,11 +40,11 @@ create_dcf_vf() {
 }
 
 bind_kernel() {
-    if [ -n "$ice" ]; then
-        dpdk-devbind.py -b ice "$bdf"
-    fi
-    if [ -n "$i40e" ]; then
-        dpdk-devbind.py -b i40e "$bdf"
+    kernel_drv=$(dpdk-devbind.py -s | grep "$bdf" | sed -e s/.*unused=//g | awk '{print $1;}')
+    if [ -n "$kernel_drv" ]; then
+        dpdk-devbind.py -b "$kernel_drv" "$bdf"
+    else
+        echo "No kernel drv found for $bdf"
     fi
 }
 
@@ -100,7 +100,8 @@ port=$(dpdk-devbind.py -s | grep "$bdf.*if" | sed -e s/.*if=//g | awk '{print $1
 if [ "$cmd" == "bind_kernel" ]; then
     if [ -z "$port" ]; then
         bind_kernel
-        echo "Bind bdf: $bdf to kernel succ"
+        port=$(dpdk-devbind.py -s | grep "$bdf.*if" | sed -e s/.*if=//g | awk '{print $1;}')
+        echo "Bind bdf: $bdf to kernel $port succ"
     else
         echo "bdf: $bdf to kernel $port already"
     fi
