@@ -413,14 +413,14 @@ struct st_rx_video_slot_impl {
   /* payload len for codestream packetization mode */
   uint16_t st22_payload_length;
   uint16_t st22_box_hdr_length;
+  /* timestamp(ST10_TIMESTAMP_FMT_TAI, PTP) value for the first pkt */
+  uint64_t timestamp_first_pkt;
 };
 
 struct st_rx_video_ebu_info {
-  double trs;        /* in ns for of 2 consecutive packets, T-Frame / N-Packets */
-  double tr_offset;  /* in ns, tr offset time of each frame */
-  double frame_time; /* time of the frame in nanoseconds */
-  double frame_time_sampling; /* time of the frame in sampling(90k) */
-  int dropped_results;        /* number of results to drop at the beginning */
+  double trs;          /* in ns for of 2 consecutive packets, T-Frame / N-Packets */
+  double tr_offset;    /* in ns, tr offset time of each frame */
+  int dropped_results; /* number of results to drop at the beginning */
 
   // pass criteria
   uint32_t c_max_narrow_pass;
@@ -602,6 +602,8 @@ struct st_rx_video_session_impl {
   int st20_frames_cnt;           /* numbers of frames requested */
   struct st_frame_trans* st20_frames;
   struct st20_pgroup st20_pg;
+  double frame_time;          /* time of the frame in nanoseconds */
+  double frame_time_sampling; /* time of the frame in sampling(90k) */
 
   size_t st20_uframe_size; /* size per user frame */
   struct st20_rx_uframe_pg_meta pg_meta;
