@@ -2962,6 +2962,7 @@ static int tv_mgr_detach(struct st_tx_video_sessions_mgr* mgr,
 
 static int tv_update_dst(struct mtl_main_impl* impl, struct st_tx_video_session_impl* s,
                          struct st_tx_dest_info* dst) {
+  int ret = -EIO;
   int idx = s->idx, num_port = s->ops.num_port;
   struct st20_tx_ops* ops = &s->ops;
 
@@ -2972,6 +2973,13 @@ static int tv_update_dst(struct mtl_main_impl* impl, struct st_tx_video_session_
     s->st20_dst_port[i] = (ops->udp_port[i]) ? (ops->udp_port[i]) : (10000 + idx);
     s->st20_dst_port[i] =
         (ops->udp_src_port[i]) ? (ops->udp_src_port[i]) : s->st20_dst_port[i];
+
+    /* update hdr */
+    ret = tv_init_hdr(impl, s, i);
+    if (ret < 0) {
+      err("%s(%d), init hdr fail %d\n", __func__, idx, ret);
+      return ret;
+    }
   }
 
   return 0;

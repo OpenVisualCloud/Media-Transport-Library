@@ -1362,8 +1362,10 @@ int tx_ancillary_session_detach(struct st_tx_ancillary_sessions_mgr* mgr,
 }
 
 static int tx_ancillary_session_update_dst(struct mtl_main_impl* impl,
+                                           struct st_tx_ancillary_sessions_mgr* mgr,
                                            struct st_tx_ancillary_session_impl* s,
                                            struct st_tx_dest_info* dest) {
+  int ret = -EIO;
   int idx = s->idx, num_port = s->ops.num_port;
   struct st40_tx_ops* ops = &s->ops;
 
@@ -1374,6 +1376,13 @@ static int tx_ancillary_session_update_dst(struct mtl_main_impl* impl,
     s->st40_dst_port[i] = (ops->udp_port[i]) ? (ops->udp_port[i]) : (30000 + idx);
     s->st40_src_port[i] =
         (ops->udp_src_port[i]) ? (ops->udp_src_port[i]) : s->st40_dst_port[i];
+
+    /* update hdr */
+    ret = tx_ancillary_session_init_hdr(impl, mgr, s, i);
+    if (ret < 0) {
+      err("%s(%d), init hdr fail %d\n", __func__, idx, ret);
+      return ret;
+    }
   }
   /* reset seq id */
   s->st40_seq_id = -1;
@@ -1392,7 +1401,7 @@ static int tx_ancillary_sessions_mgr_update_dst(struct st_tx_ancillary_sessions_
     return -EIO;
   }
 
-  ret = tx_ancillary_session_update_dst(mgr->parent, s, dest);
+  ret = tx_ancillary_session_update_dst(mgr->parent, mgr, s, dest);
   tx_ancillary_session_put(mgr, idx);
   if (ret < 0) {
     err("%s(%d,%d), fail %d\n", __func__, midx, idx, ret);

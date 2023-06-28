@@ -1376,8 +1376,10 @@ static int tx_audio_session_attach(struct mtl_main_impl* impl,
 }
 
 static int tx_audio_session_update_dst(struct mtl_main_impl* impl,
+                                       struct st_tx_audio_sessions_mgr* mgr,
                                        struct st_tx_audio_session_impl* s,
                                        struct st_tx_dest_info* dst) {
+  int ret = -EIO;
   int idx = s->idx, num_port = s->ops.num_port;
   struct st30_tx_ops* ops = &s->ops;
 
@@ -1388,6 +1390,13 @@ static int tx_audio_session_update_dst(struct mtl_main_impl* impl,
     s->st30_dst_port[i] = (ops->udp_port[i]) ? (ops->udp_port[i]) : (20000 + idx);
     s->st30_src_port[i] =
         (ops->udp_src_port[i]) ? (ops->udp_src_port[i]) : s->st30_dst_port[i];
+
+    /* update hdr */
+    ret = tx_audio_session_init_hdr(impl, mgr, s, i);
+    if (ret < 0) {
+      err("%s(%d), init hdr fail %d\n", __func__, idx, ret);
+      return ret;
+    }
   }
   /* reset seq id */
   s->st30_seq_id = -1;
@@ -1406,7 +1415,7 @@ static int tx_audio_sessions_mgr_update_dst(struct st_tx_audio_sessions_mgr* mgr
     return -EIO;
   }
 
-  ret = tx_audio_session_update_dst(mgr->parent, s, dst);
+  ret = tx_audio_session_update_dst(mgr->parent, mgr, s, dst);
   tx_audio_session_put(mgr, idx);
   if (ret < 0) {
     err("%s(%d,%d), fail %d\n", __func__, midx, idx, ret);
