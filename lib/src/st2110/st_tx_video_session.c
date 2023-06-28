@@ -3251,7 +3251,8 @@ st20_tx_handle st20_tx_create(mtl_handle mt, struct st20_tx_ops* ops) {
     return NULL;
   }
   int height = ops->interlaced ? (ops->height >> 1) : ops->height;
-  ret = st20_get_bandwidth_bps(ops->width, height, ops->fmt, ops->fps, &bps);
+  ret = st20_get_bandwidth_bps(ops->width, height, ops->fmt, ops->fps, ops->interlaced,
+                               &bps);
   if (ret < 0) {
     err("%s, st20_get_bandwidth_bps fail\n", __func__);
     return NULL;
