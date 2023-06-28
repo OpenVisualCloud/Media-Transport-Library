@@ -1494,6 +1494,8 @@ size_t st20_frame_size(enum st20_fmt fmt, uint32_t width, uint32_t height);
  *   The st2110-20(video) format.
  * @param fps
  *   The st2110-20(video) fps.
+ * @param interlaced
+ *   If interlaced.
  * @param bps
  *   A pointer to the return bit rate.
  * @return
@@ -1501,7 +1503,7 @@ size_t st20_frame_size(enum st20_fmt fmt, uint32_t width, uint32_t height);
  *   - <0: Error code if fail.
  */
 int st20_get_bandwidth_bps(int width, int height, enum st20_fmt fmt, enum st_fps fps,
-                           uint64_t* bps);
+                           bool interlaced, uint64_t* bps);
 
 /**
  * Inline function returning bandwidth(mega per second) for 1080 p59 yuv422 10bit
@@ -1510,7 +1512,7 @@ int st20_get_bandwidth_bps(int width, int height, enum st20_fmt fmt, enum st_fps
  */
 static inline uint64_t st20_1080p59_yuv422_10bit_bandwidth_mps(void) {
   uint64_t bps;
-  st20_get_bandwidth_bps(1920, 1080, ST20_FMT_YUV_422_10BIT, ST_FPS_P59_94, &bps);
+  st20_get_bandwidth_bps(1920, 1080, ST20_FMT_YUV_422_10BIT, ST_FPS_P59_94, false, &bps);
   return bps / 1000 / 1000;
 }
 

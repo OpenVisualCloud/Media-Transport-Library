@@ -813,10 +813,11 @@ int st_draw_logo(struct st_frame* frame, struct st_frame* logo, uint32_t x, uint
 }
 
 int st20_get_bandwidth_bps(int width, int height, enum st20_fmt fmt, enum st_fps fps,
-                           uint64_t* bps) {
+                           bool interlaced, uint64_t* bps) {
   struct st20_pgroup pg;
   struct st_fps_timing fps_tm;
   int ret;
+  double traffic;
 
   memset(&pg, 0, sizeof(pg));
   memset(&fps_tm, 0, sizeof(fps_tm));
@@ -828,8 +829,12 @@ int st20_get_bandwidth_bps(int width, int height, enum st20_fmt fmt, enum st_fps
   if (ret < 0) return ret;
 
   double reactive = 1080.0 / 1125.0;
-  *bps = (uint64_t)width * height * 8 * pg.size / pg.coverage * fps_tm.mul / fps_tm.den;
-  *bps = (double)*bps / reactive;
+  traffic =
+      (uint64_t)width * height * 8 * pg.size / pg.coverage * fps_tm.mul / fps_tm.den;
+  if (interlaced) traffic /= 2;
+  traffic = traffic / reactive;
+
+  *bps = traffic;
   return 0;
 }
 

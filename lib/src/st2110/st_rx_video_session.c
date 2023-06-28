@@ -2488,7 +2488,8 @@ static int rv_init_sw(struct mtl_main_impl* impl, struct st_rx_video_sessions_mg
 
   uint64_t bps;
   bool pkt_handle_lcore = false;
-  ret = st20_get_bandwidth_bps(ops->width, ops->height, ops->fmt, ops->fps, &bps);
+  ret = st20_get_bandwidth_bps(ops->width, ops->height, ops->fmt, ops->fps,
+                               ops->interlaced, &bps);
   if (ret < 0) {
     err("%s(%d), get bps fail %d\n", __func__, idx, ret);
     rv_uinit_sw(impl, s);
@@ -3731,7 +3732,8 @@ st20_rx_handle st20_rx_create_with_mask(struct mtl_main_impl* impl,
     return NULL;
   }
 
-  ret = st20_get_bandwidth_bps(ops->width, ops->height, ops->fmt, ops->fps, &bps);
+  ret = st20_get_bandwidth_bps(ops->width, ops->height, ops->fmt, ops->fps,
+                               ops->interlaced, &bps);
   if (ret < 0) {
     err("%s, st20_get_bandwidth_bps fail\n", __func__);
     return NULL;
@@ -4066,7 +4068,7 @@ st22_rx_handle st22_rx_create(mtl_handle mt, struct st22_rx_ops* ops) {
 
   if (ST22_TYPE_RTP_LEVEL == ops->type) {
     ret = st20_get_bandwidth_bps(ops->width, ops->height, ST20_FMT_YUV_422_10BIT,
-                                 ops->fps, &bps);
+                                 ops->fps, false, &bps);
     if (ret < 0) {
       err("%s, get_bandwidth_bps fail\n", __func__);
       return NULL;

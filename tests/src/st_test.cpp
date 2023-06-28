@@ -267,12 +267,12 @@ TEST(Main, bandwidth) {
   uint64_t bandwidth_1080p_mps = st20_1080p59_yuv422_10bit_bandwidth_mps();
   uint64_t bandwidth_1080p = 0;
   int ret = st20_get_bandwidth_bps(1920, 1080, ST20_FMT_YUV_422_10BIT, ST_FPS_P59_94,
-                                   &bandwidth_1080p);
+                                   false, &bandwidth_1080p);
   EXPECT_GE(ret, 0);
   EXPECT_EQ(bandwidth_1080p / 1000 / 1000, bandwidth_1080p_mps);
 
   uint64_t bandwidth_720p = 0;
-  ret = st20_get_bandwidth_bps(1280, 720, ST20_FMT_YUV_422_10BIT, ST_FPS_P59_94,
+  ret = st20_get_bandwidth_bps(1280, 720, ST20_FMT_YUV_422_10BIT, ST_FPS_P59_94, false,
                                &bandwidth_720p);
   EXPECT_GE(ret, 0);
   EXPECT_GT(bandwidth_1080p, bandwidth_720p);
