@@ -1364,6 +1364,19 @@ st20_tx_handle st20_tx_create(mtl_handle mt, struct st20_tx_ops* ops);
 int st20_tx_free(st20_tx_handle handle);
 
 /**
+ * Online update the destination info for the tx st2110-20(video) session.
+ *
+ * @param handle
+ *   The handle to the tx st2110-20(video) session.
+ * @param dst
+ *   The pointer to the tx st2110-20(video) destination info.
+ * @return
+ *   - 0: Success, tx st2110-20(video) session destination update succ.
+ *   - <0: Error code of the rx st2110-20(video) session destination update.
+ */
+int st20_tx_update_destination(st20_tx_handle handle, struct st_tx_dest_info* dst);
+
+/**
  * Set the frame virtual address and iova from user for the tx st2110-20(video) session.
  * For ST20_TYPE_FRAME_LEVEL.
  *
@@ -1529,6 +1542,19 @@ static inline uint64_t st20_1080p59_yuv422_10bit_bandwidth_mps(void) {
  *   - Otherwise, the handle to the tx st2110-22(compressed video) session.
  */
 st22_tx_handle st22_tx_create(mtl_handle mt, struct st22_tx_ops* ops);
+
+/**
+ * Online update the destination info for the tx st2110-22(compressed video) session.
+ *
+ * @param handle
+ *   The handle to the tx st2110-22(compressed video) session.
+ * @param dst
+ *   The pointer to the tx st2110-22(compressed video) destination info.
+ * @return
+ *   - 0: Success, tx st2110-22(compressed video) session destination update succ.
+ *   - <0: Error code of the rx st2110-22(compressed video) session destination update.
+ */
+int st22_tx_update_destination(st22_tx_handle handle, struct st_tx_dest_info* dst);
 
 /**
  * Free the tx st2110-22(compressed video) session.

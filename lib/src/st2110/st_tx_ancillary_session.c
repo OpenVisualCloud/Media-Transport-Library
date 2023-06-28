@@ -1361,6 +1361,47 @@ int tx_ancillary_session_detach(struct st_tx_ancillary_sessions_mgr* mgr,
   return 0;
 }
 
+static int tx_ancillary_session_update_dst(struct mtl_main_impl* impl,
+                                           struct st_tx_ancillary_session_impl* s,
+                                           struct st_tx_dest_info* dest) {
+  int idx = s->idx, num_port = s->ops.num_port;
+  struct st40_tx_ops* ops = &s->ops;
+
+  /* update ip and port */
+  for (int i = 0; i < num_port; i++) {
+    memcpy(ops->dip_addr[i], dest->dip_addr[i], MTL_IP_ADDR_LEN);
+    ops->udp_port[i] = dest->udp_port[i];
+    s->st40_dst_port[i] = (ops->udp_port[i]) ? (ops->udp_port[i]) : (30000 + idx);
+    s->st40_src_port[i] =
+        (ops->udp_src_port[i]) ? (ops->udp_src_port[i]) : s->st40_dst_port[i];
+  }
+  /* reset seq id */
+  s->st40_seq_id = -1;
+
+  return 0;
+}
+
+static int tx_ancillary_sessions_mgr_update_dst(struct st_tx_ancillary_sessions_mgr* mgr,
+                                                struct st_tx_ancillary_session_impl* s,
+                                                struct st_tx_dest_info* dest) {
+  int ret = -EIO, midx = mgr->idx, idx = s->idx;
+
+  s = tx_ancillary_session_get(mgr, idx); /* get the lock */
+  if (!s) {
+    err("%s(%d,%d), get session fail\n", __func__, midx, idx);
+    return -EIO;
+  }
+
+  ret = tx_ancillary_session_update_dst(mgr->parent, s, dest);
+  tx_ancillary_session_put(mgr, idx);
+  if (ret < 0) {
+    err("%s(%d,%d), fail %d\n", __func__, midx, idx, ret);
+    return ret;
+  }
+
+  return 0;
+}
+
 static int st_tx_ancillary_sessions_stat(void* priv) {
   struct st_tx_ancillary_sessions_mgr* mgr = priv;
   struct st_tx_ancillary_session_impl* s;
@@ -1721,6 +1762,34 @@ int st40_tx_put_mbuf(st40_tx_handle handle, void* mbuf, uint16_t len) {
     return -EBUSY;
   }
 
+  return 0;
+}
+
+int st40_tx_update_destination(st40_tx_handle handle, struct st_tx_dest_info* dst) {
+  struct st_tx_ancillary_session_handle_impl* s_impl = handle;
+  struct mtl_main_impl* impl;
+  struct st_tx_ancillary_session_impl* s;
+  int idx, ret;
+
+  if (s_impl->type != MT_HANDLE_TX_ANC) {
+    err("%s, invalid type %d\n", __func__, s_impl->type);
+    return -EIO;
+  }
+
+  impl = s_impl->parent;
+  s = s_impl->impl;
+  idx = s->idx;
+
+  ret = st_tx_dest_info_check(dst, s->ops.num_port);
+  if (ret < 0) return ret;
+
+  ret = tx_ancillary_sessions_mgr_update_dst(&impl->tx_anc_mgr, s, dst);
+  if (ret < 0) {
+    err("%s(%d), online update fail %d\n", __func__, idx, ret);
+    return ret;
+  }
+
+  info("%s, succ on session %d\n", __func__, idx);
   return 0;
 }
 

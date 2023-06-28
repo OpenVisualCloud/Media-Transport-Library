@@ -443,6 +443,19 @@ st30_tx_handle st30_tx_create(mtl_handle mt, struct st30_tx_ops* ops);
 int st30_tx_free(st30_tx_handle handle);
 
 /**
+ * Online update the destination info for the tx st2110-30(audio) session.
+ *
+ * @param handle
+ *   The handle to the tx st2110-30(audio) session.
+ * @param dst
+ *   The pointer to the tx st2110-30(audio) destination info.
+ * @return
+ *   - 0: Success, tx st2110-30(audio) session destination update succ.
+ *   - <0: Error code of the rx st2110-30(audio) session destination update.
+ */
+int st30_tx_update_destination(st30_tx_handle handle, struct st_tx_dest_info* dst);
+
+/**
  * Get the framebuffer pointer from the tx st2110-30(audio) session.
  * For ST30_TYPE_FRAME_LEVEL.
  *

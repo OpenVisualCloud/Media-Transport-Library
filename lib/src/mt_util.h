@@ -166,6 +166,8 @@ int mt_run_cmd(const char* cmd, char* out, size_t out_len);
 
 int mt_ip_addr_check(uint8_t* ip);
 
+int st_tx_dest_info_check(struct st_tx_dest_info* src, int num_ports);
+
 int st_rx_source_info_check(struct st_rx_source_info* src, int num_ports);
 
 int st_frame_trans_uinit(struct st_frame_trans* frame);

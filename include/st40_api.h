@@ -344,6 +344,19 @@ st40_tx_handle st40_tx_create(mtl_handle mt, struct st40_tx_ops* ops);
 int st40_tx_free(st40_tx_handle handle);
 
 /**
+ * Online update the destination info for the tx st2110-40(ancillary) session.
+ *
+ * @param handle
+ *   The handle to the tx st2110-40(ancillary) session.
+ * @param dst
+ *   The pointer to the tx st2110-40(ancillary) destination info.
+ * @return
+ *   - 0: Success, tx st2110-40(ancillary) session destination update succ.
+ *   - <0: Error code of the rx st2110-40(ancillary) session destination update.
+ */
+int st40_tx_update_destination(st40_tx_handle handle, struct st_tx_dest_info* dst);
+
+/**
  * Get the framebuffer pointer from the tx st2110-40(ancillary) session.
  * For ST40_TYPE_FRAME_LEVEL.
  *

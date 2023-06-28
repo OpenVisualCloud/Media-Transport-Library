@@ -556,6 +556,29 @@ int mt_ip_addr_check(uint8_t* ip) {
   return -EINVAL;
 }
 
+int st_tx_dest_info_check(struct st_tx_dest_info* dst, int num_ports) {
+  uint8_t* ip;
+  int ret;
+
+  for (int i = 0; i < num_ports; i++) {
+    ip = dst->dip_addr[i];
+    ret = mt_ip_addr_check(ip);
+    if (ret < 0) {
+      err("%s(%d), invalid ip %d.%d.%d.%d\n", __func__, i, ip[0], ip[1], ip[2], ip[3]);
+      return -EINVAL;
+    }
+  }
+
+  if (num_ports > 1) {
+    if (0 == memcmp(dst->dip_addr[0], dst->dip_addr[1], MTL_IP_ADDR_LEN)) {
+      err("%s, same %d.%d.%d.%d for both ip\n", __func__, ip[0], ip[1], ip[2], ip[3]);
+      return -EINVAL;
+    }
+  }
+
+  return 0;
+}
+
 int st_rx_source_info_check(struct st_rx_source_info* src, int num_ports) {
   uint8_t* ip;
   int ret;
