@@ -488,6 +488,8 @@ struct st_app_context {
   int tx_video_session_cnt;
   int tx_video_rtp_ring_size; /* the ring size for tx video rtp type */
   uint16_t tx_vrx;
+  uint16_t tx_pad_interval;
+  bool tx_no_pad_reference;
   enum st21_pacing tx_pacing_type;
 
   struct st_app_tx_audio_session* tx_audio_sessions;

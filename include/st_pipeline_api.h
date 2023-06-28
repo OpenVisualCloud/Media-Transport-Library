@@ -383,6 +383,11 @@ enum st22_quality_mode {
  * If enabled, lib will pass ST_EVENT_VSYNC by the notify_event on every epoch start.
  */
 #define ST20P_TX_FLAG_ENABLE_VSYNC (MTL_BIT32(5))
+/**
+ * Flag bit in flags of struct st20p_tx_ops.
+ * If disable the prebuilt RL pad interval reference.
+ */
+#define ST20P_TX_FLAG_DISABLE_RL_PAD_REFERENCE (MTL_BIT32(6))
 
 /**
  * Flag bit in flags of struct st22p_rx_ops, for non MTL_PMD_DPDK_USER.

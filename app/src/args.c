@@ -47,6 +47,8 @@ enum st_args_cmd {
   ST_ARG_HDR_SPLIT,
   ST_ARG_PACING_WAY,
   ST_ARG_VRX,
+  ST_ARG_PAD_INTERVAL,
+  ST_ARG_NO_PAD_REFERENCE,
   ST_ARG_SHAPING,
 
   ST_ARG_CONFIG_FILE = 0x300,
@@ -149,6 +151,8 @@ static struct option st_app_args_options[] = {
     {"hdr_split", no_argument, 0, ST_ARG_HDR_SPLIT},
     {"pacing_way", required_argument, 0, ST_ARG_PACING_WAY},
     {"vrx", required_argument, 0, ST_ARG_VRX},
+    {"pad_interval", required_argument, 0, ST_ARG_PAD_INTERVAL},
+    {"no_pad_reference", no_argument, 0, ST_ARG_NO_PAD_REFERENCE},
     {"shaping", required_argument, 0, ST_ARG_SHAPING},
 
     {"config_file", required_argument, 0, ST_ARG_CONFIG_FILE},
@@ -417,6 +421,12 @@ int st_app_parse_args(struct st_app_context* ctx, struct mtl_init_params* p, int
         break;
       case ST_ARG_VRX:
         ctx->tx_vrx = atoi(optarg);
+        break;
+      case ST_ARG_PAD_INTERVAL:
+        ctx->tx_pad_interval = atoi(optarg);
+        break;
+      case ST_ARG_NO_PAD_REFERENCE:
+        ctx->tx_no_pad_reference = true;
         break;
       case ST_ARG_SHAPING:
         if (!strcmp(optarg, "narrow"))

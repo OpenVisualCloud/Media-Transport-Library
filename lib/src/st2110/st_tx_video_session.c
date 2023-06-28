@@ -251,9 +251,9 @@ static int tv_poll_vsync(struct mtl_main_impl* impl, struct st_tx_video_session_
   return 0;
 }
 
-static int double_cmp(const void* a, const void* b) {
-  const double* ai = a;
-  const double* bi = b;
+static int uint64_t_cmp(const void* a, const void* b) {
+  const uint64_t* ai = a;
+  const uint64_t* bi = b;
 
   if (*ai < *bi) {
     return -1;
@@ -269,15 +269,29 @@ static int tv_train_pacing(struct mtl_main_impl* impl, struct st_tx_video_sessio
   struct rte_mbuf* pad = s->pad[s_port][ST20_PKT_TYPE_NORMAL];
   int idx = s->idx;
   struct mt_txq_entry* queue = s->queue[s_port];
-  unsigned int bulk = s->bulk;
   int pad_pkts, ret;
-  int loop_cnt = 30;
-  int trim = 5;
-  double array[loop_cnt];
-  double pkts_per_sec_sum = 0;
+  int up_trim = 5;
+  int low_trim = 10;
+  int loop_frame = 60 * 2 + up_trim + low_trim; /* the frames to be trained */
+  uint64_t frame_times_ns[loop_frame];
   float pad_interval;
   uint64_t rl_bps = tv_rl_bps(s);
   uint64_t train_start_time, train_end_time;
+
+  uint16_t resolved = s->ops.pad_interval;
+  if (resolved) {
+    s->pacing.pad_interval = resolved;
+    info("%s(%d), user customized pad_interval %u\n", __func__, idx, resolved);
+    return 0;
+  }
+  if (!(s->ops.flags & ST20_TX_FLAG_DISABLE_RL_PAD_REFERENCE)) {
+    resolved = st20_pacing_reference(s);
+    if (resolved) {
+      s->pacing.pad_interval = resolved;
+      info("%s(%d), user reference pad_interval %u\n", __func__, idx, resolved);
+      return 0;
+    }
+  }
 
   ret = mt_pacing_train_result_search(impl, port, rl_bps, &pad_interval);
   if (ret >= 0) {
@@ -291,46 +305,58 @@ static int tv_train_pacing(struct mtl_main_impl* impl, struct st_tx_video_sessio
 
   train_start_time = mt_get_tsc(impl);
 
-  /* warm stage to consume all nix tx buf */
-  pad_pkts = s->st20_total_pkts * 100;
+  /* warm-up stage to consume all nix tx buf */
+  pad_pkts = mt_if_nb_tx_desc(impl, port) * 1;
   for (int i = 0; i < pad_pkts; i++) {
     rte_mbuf_refcnt_update(pad, 1);
     mt_txq_burst_busy(queue, &pad, 1, 10);
   }
 
   /* training stage */
-  pad_pkts = s->st20_total_pkts * 2;
-  for (int loop = 0; loop < loop_cnt; loop++) {
+  for (int loop = 0; loop < loop_frame; loop++) {
     uint64_t start = mt_get_tsc(impl);
-    for (int i = 0; i < ST20_PKT_TYPE_MAX; i++) {
-      pad = s->pad[s_port][i];
-      int pkts = s->st20_pkt_info[i].number * 2;
+    for (int i = 0; i < s->st20_total_pkts; i++) {
+      enum st20_packet_type type;
 
-      struct rte_mbuf* bulk_pad[bulk];
-      for (int j = 0; j < bulk; j++) {
-        bulk_pad[j] = pad;
+      if ((s->ops.type == ST20_TYPE_RTP_LEVEL) ||
+          (s->s_type == MT_ST22_HANDLE_TX_VIDEO) ||
+          (s->ops.packing == ST20_PACKING_GPM_SL)) {
+        type = ST20_PKT_TYPE_NORMAL;
+      } else { /* frame type */
+        uint32_t offset = s->st20_pkt_len * i;
+        uint16_t line1_number = offset / s->st20_bytes_in_line;
+        /* last pkt should be treated as normal pkt also */
+        if ((offset + s->st20_pkt_len) < (line1_number + 1) * s->st20_bytes_in_line) {
+          type = ST20_PKT_TYPE_NORMAL;
+        } else {
+          type = ST20_PKT_TYPE_EXTRA;
+        }
       }
-      int bulk_batch = pkts / bulk;
-      for (int j = 0; j < bulk_batch; j++) {
-        rte_mbuf_refcnt_update(pad, bulk);
-        mt_txq_burst_busy(queue, bulk_pad, bulk, 10);
-      }
-      int remaining = pkts % bulk;
-      for (int j = 0; j < remaining; j++) {
-        rte_mbuf_refcnt_update(pad, 1);
-        mt_txq_burst_busy(queue, &pad, 1, 10);
-      }
+
+      pad = s->pad[s_port][type];
+      rte_mbuf_refcnt_update(pad, 1);
+      mt_txq_burst_busy(queue, &pad, 1, 10);
     }
     uint64_t end = mt_get_tsc(impl);
-    double time_sec = (double)(end - start) / NS_PER_S;
-    array[loop] = pad_pkts / time_sec;
+    frame_times_ns[loop] = end - start;
   }
 
-  qsort(array, loop_cnt, sizeof(double), double_cmp);
-  for (int i = trim; i < loop_cnt - trim; i++) {
-    pkts_per_sec_sum += array[i];
+  for (int loop = 0; loop < loop_frame; loop++) {
+    dbg("%s(%d), frame_time_ns %" PRIu64 "\n", __func__, idx, frame_times_ns[loop]);
   }
-  double pkts_per_sec = pkts_per_sec_sum / (loop_cnt - trim * 2);
+  qsort(frame_times_ns, loop_frame, sizeof(uint64_t), uint64_t_cmp);
+  for (int loop = 0; loop < loop_frame; loop++) {
+    dbg("%s(%d), sorted frame_time_ns %" PRIu64 "\n", __func__, idx,
+        frame_times_ns[loop]);
+  }
+  uint64_t frame_times_ns_sum = 0;
+  int entry_in_sum = 0;
+  for (int i = up_trim; i < loop_frame - low_trim; i++) {
+    frame_times_ns_sum += frame_times_ns[i];
+    entry_in_sum++;
+  }
+  double frame_avg_time_sec = (double)frame_times_ns_sum / entry_in_sum / NS_PER_S;
+  double pkts_per_sec = s->st20_total_pkts / frame_avg_time_sec;
 
   /* parse the pad interval */
   double pkts_per_frame = pkts_per_sec * s->fps_tm.den / s->fps_tm.mul;
@@ -2186,6 +2212,8 @@ static int tv_init_hw(struct mtl_main_impl* impl, struct st_tx_video_sessions_mg
     }
     for (int j = 0; j < ST20_PKT_TYPE_MAX; j++) {
       if (!s->st20_pkt_info[j].number) continue;
+      info("%s(%d), type %d number %u size %u\n", __func__, idx, j,
+           s->st20_pkt_info[j].number, s->st20_pkt_info[j].size);
       pad = mt_build_pad(impl, pad_mempool, port_id, RTE_ETHER_TYPE_IPV4,
                          s->st20_pkt_info[j].size);
       if (!pad) {
@@ -2509,7 +2537,7 @@ static int tv_init_pkt(struct mtl_main_impl* impl, struct st_tx_video_session_im
     s->st20_pkt_info[ST20_PKT_TYPE_NORMAL].size = s->st20_pkt_size;
     s->st20_pkt_info[ST20_PKT_TYPE_NORMAL].number =
         s->st20_total_pkts - s->st20_pkt_info[ST20_PKT_TYPE_LINE_TAIL].number;
-    info("%s(%d),  line_last_len: %d\n", __func__, idx, line_last_len);
+    dbg("%s(%d),  line_last_len: %d\n", __func__, idx, line_last_len);
   } else if (ops->packing == ST20_PACKING_BPM) {
     s->st20_pkt_len = ST_VIDEO_BPM_SIZE;
     int last_pkt_len = s->st20_frame_size % s->st20_pkt_len;
@@ -2536,7 +2564,7 @@ static int tv_init_pkt(struct mtl_main_impl* impl, struct st_tx_video_session_im
     s->st20_pkt_info[ST20_PKT_TYPE_NORMAL].number =
         s->st20_total_pkts - s->st20_pkt_info[ST20_PKT_TYPE_FRAME_TAIL].number -
         s->st20_pkt_info[ST20_PKT_TYPE_EXTRA].number;
-    info("%s(%d),  extra_pkts: %d\n", __func__, idx, extra_pkts);
+    dbg("%s(%d),  extra_pkts: %d\n", __func__, idx, extra_pkts);
   } else if (ops->packing == ST20_PACKING_GPM) {
     int max_data_len = impl->pkt_udp_suggest_max_size -
                        sizeof(struct st20_rfc4175_rtp_hdr) -
@@ -2570,7 +2598,7 @@ static int tv_init_pkt(struct mtl_main_impl* impl, struct st_tx_video_session_im
     s->st20_pkt_info[ST20_PKT_TYPE_NORMAL].number =
         s->st20_total_pkts - s->st20_pkt_info[ST20_PKT_TYPE_FRAME_TAIL].number -
         s->st20_pkt_info[ST20_PKT_TYPE_EXTRA].number;
-    info("%s(%d),  extra_pkts: %d\n", __func__, idx, extra_pkts);
+    dbg("%s(%d),  extra_pkts: %d\n", __func__, idx, extra_pkts);
   } else {
     err("%s(%d), invalid packing mode %d\n", __func__, idx, ops->packing);
     return -EIO;

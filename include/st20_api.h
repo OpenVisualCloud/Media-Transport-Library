@@ -60,6 +60,11 @@ extern "C" {
  * If enabled, lib will pass ST_EVENT_VSYNC by the notify_event on every epoch start.
  */
 #define ST20_TX_FLAG_ENABLE_VSYNC (MTL_BIT32(5))
+/**
+ * Flag bit in flags of struct st20_tx_ops.
+ * If disable the prebuilt RL pad interval reference.
+ */
+#define ST20_TX_FLAG_DISABLE_RL_PAD_REFERENCE (MTL_BIT32(6))
 
 /**
  * Flag bit in flags of struct st22_tx_ops.
@@ -906,6 +911,11 @@ struct st20_tx_ops {
    * zero value, and also fine tune is required since network setup difference.
    */
   uint16_t vrx;
+  /**
+   * Manually assigned padding pkt interval(pkts level) for RL pacing.
+   * Leave to zero if not know detail, lib will train the interval in the initial routine.
+   */
+  uint16_t pad_interval;
 
   /**
    * the frame buffer count requested for one st20 tx session,
