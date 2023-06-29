@@ -246,6 +246,8 @@ static int tx_st20p_create_transport(struct mtl_main_impl* impl, struct st20p_tx
     ops_tx.flags |= ST20_TX_FLAG_USER_R_MAC;
   }
   ops_tx.pacing = ST21_PACING_NARROW;
+  ops_tx.vrx = ops->vrx;
+  ops_tx.pad_interval = ops->pad_interval;
   ops_tx.width = ops->width;
   ops_tx.height = ops->height;
   ops_tx.fps = ops->fps;
