@@ -1096,7 +1096,7 @@ static const struct cvl_pad_table g_cvl_pad_tables[] = {
         .fps = ST_FPS_P59_94,
         .packing = ST20_PACKING_BPM,
         .interlaced = false,
-        .pad_interval = 233, /* measured with VERO avg vrx: 6.0 */
+        .pad_interval = 262, /* measured with VERO avg vrx: 7.0, narrow vrx: 9 */
     },
     {
         /* 4kp50 gpm */
