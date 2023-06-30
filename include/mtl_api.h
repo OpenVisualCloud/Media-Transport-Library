@@ -129,6 +129,13 @@ typedef struct mtl_dma_mem* mtl_dma_mem_handle;
  */
 #define MTL_ALIGN(val, align) (((val) + ((align)-1)) & ~((align)-1))
 
+#ifdef __MTL_LIB_BUILD__
+#define __mtl_deprecated_msg(msg)
+#else
+/** Macro to mark functions and fields to be removal */
+#define __mtl_deprecated_msg(msg) __attribute__((__deprecated__(msg)))
+#endif
+
 /**
  * Port logical type
  */
@@ -453,31 +460,29 @@ struct mtl_init_params {
    */
   uint8_t gateway[MTL_PORT_MAX][MTL_IP_ADDR_LEN];
   /**
-   * mandatory for MTL_TRANSPORT_ST2110.
+   * deprecated for MTL_TRANSPORT_ST2110.
    * max tx sessions(st20, st22, st30, st40) requested the lib to support,
    * use mtl_get_cap to query the actual count.
    * dpdk context will allocate the hw resources(queues, memory) based on this number.
    */
-  uint16_t tx_sessions_cnt_max;
+  uint16_t tx_sessions_cnt_max __mtl_deprecated_msg("Use tx_queues_cnt instead");
   /**
-   * mandatory for MTL_TRANSPORT_ST2110.
+   * deprecated for MTL_TRANSPORT_ST2110.
    * max rx sessions(st20, st22, st30, st40) requested the lib to support,
    * use mtl_get_cap to query the actual count.
    * dpdk context will allocate the hw resources(queues, memory) based on this number.
    */
-  uint16_t rx_sessions_cnt_max;
+  uint16_t rx_sessions_cnt_max __mtl_deprecated_msg("Use rx_queues_cnt instead");
   /**
-   * Only for MTL_TRANSPORT_UDP.
-   * max tx queues requested the lib to support.
-   * 0 means let lib to decide how many queues will be allocated.
+   * max tx user queues requested the lib to support.
+   * for MTL_TRANSPORT_ST2110, use st_tx_sessions_queue_cnt to query.
    */
-  uint16_t tx_queues_cnt_max;
+  uint16_t tx_queues_cnt[MTL_PORT_MAX];
   /**
-   * Only for MTL_TRANSPORT_UDP.
-   * max rx queues requested the lib to support.
-   * 0 means let lib to decide how many queues will be allocated.
+   * max rx user queues requested the lib to support.
+   * for MTL_TRANSPORT_ST2110, use st_rx_sessions_queue_cnt to query.
    */
-  uint16_t rx_queues_cnt_max;
+  uint16_t rx_queues_cnt[MTL_PORT_MAX];
 
   /** dpdk user pmd or af_xdp */
   enum mtl_pmd_type pmd[MTL_PORT_MAX];
@@ -568,10 +573,6 @@ struct mtl_init_params {
  * A structure used to retrieve capacity for an MTL instance.
  */
 struct mtl_cap {
-  /** max tx session count for current transport context */
-  uint16_t tx_sessions_cnt_max;
-  /** max rx session count for current transport context */
-  uint16_t rx_sessions_cnt_max;
   /** max dma dev count for current transport context */
   uint8_t dma_dev_cnt_max;
   /** the flags in mtl_init_params */

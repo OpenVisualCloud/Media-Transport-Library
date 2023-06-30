@@ -25,8 +25,8 @@ param.flags = ST_FLAG_BIND_NUMA; // default bind to numa
 param.log_level = ST_LOG_LEVEL_ERROR; // log level. ERROR, INFO, WARNING
 param.priv = ctx; // usr ctx pointer
 param.ptp_get_time_fn = test_ptp_from_real_time; // user regist ptp func, if not regist, the internal ptp will be used
-param.tx_sessions_cnt_max = session_num; // max tx session set by user
-param.rx_sessions_cnt_max = 0; // max rx session set by user
+param.tx_queues_cnt[MTL_PORT_P] = session_num; // tx queue cnt set by user
+param.rx_queues_cnt[MTL_PORT_P] = 0; // rx queue cnt set by user
 dev_handle = st_init(&param);
 
 //create and register tx session
@@ -115,8 +115,8 @@ param.flags = ST_FLAG_BIND_NUMA; // default bind to numa
 param.log_level = ST_LOG_LEVEL_ERROR; // log level. ERROR, INFO, WARNING
 param.priv = ctx; // usr ctx pointer
 param.ptp_get_time_fn = test_ptp_from_real_time; // user regist ptp func, if not regist, the internal ptp will be used
-param.tx_sessions_cnt_max = session_num; // max tx session set by user
-param.rx_sessions_cnt_max = 0; // max rx session set by user
+param.tx_queues_cnt[MTL_PORT_P] = session_num; // tx queue cnt set by user
+param.rx_queues_cnt[MTL_PORT_P] = 0; // rx queue cnt set by user
 dev_handle = st_init(&param);
 
 //create and register tx session
@@ -202,8 +202,8 @@ param.flags = ST_FLAG_BIND_NUMA; // default bind to numa
 param.log_level = ST_LOG_LEVEL_ERROR; // log level. ERROR, INFO, WARNING
 param.priv = ctx; // usr ctx pointer
 param.ptp_get_time_fn = test_ptp_from_real_time; // user regist ptp func, if not regist, the internal ptp will be used
-param.tx_sessions_cnt_max = 0; // max tx session set by user
-param.rx_sessions_cnt_max = session_num; // max rx session set by user
+param.tx_queues_cnt[MTL_PORT_P] = 0; // tx queue cnt set by user
+param.rx_queues_cnt[MTL_PORT_P] = session_num; // rx queue cnt set by user
 dev_handle = st_init(&param);
 
 //create and register rx session
@@ -286,8 +286,8 @@ param.flags = ST_FLAG_BIND_NUMA; // default bind to numa
 param.log_level = ST_LOG_LEVEL_ERROR; // log level. ERROR, INFO, WARNING
 param.priv = ctx; // usr ctx pointer
 param.ptp_get_time_fn = test_ptp_from_real_time; // user regist ptp func, if not regist, the internal ptp will be used
-param.tx_sessions_cnt_max = 0; // max tx session set by user
-param.rx_sessions_cnt_max = session_num; // max rx session set by user
+param.tx_queues_cnt[MTL_PORT_P] = 0; // tx queue cnt set by user
+param.rx_queues_cnt[MTL_PORT_P] = session_num; // rx queue cnt set by user
 dev_handle = st_init(&param);
 
 //create and register rx session

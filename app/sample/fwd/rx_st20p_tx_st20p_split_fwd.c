@@ -130,8 +130,7 @@ int main(int argc, char** argv) {
   memset(&ctx, 0, sizeof(ctx));
   sample_parse_args(&ctx, argc, argv, true, false, false);
   ctx.sessions = session_num;
-  ctx.param.tx_sessions_cnt_max = session_num;
-  ctx.param.rx_sessions_cnt_max = 1;
+  sample_tx_queue_cnt_set(&ctx, session_num);
   ctx.param.flags |=
       MTL_FLAG_RX_SEPARATE_VIDEO_LCORE; /* use separate lcores for tx and rx */
 

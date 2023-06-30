@@ -2404,25 +2404,24 @@ int mt_dev_if_init(struct mtl_main_impl* impl) {
       inf->max_rx_queues = inf->max_tx_queues;
       inf->system_rx_queues_end = 0;
     } else {
-      if (mt_udp_transport(impl, i)) {
-        inf->max_tx_queues = impl->user_tx_queues_cnt;
-      } else {
-        /* arp, mcast, ptp use shared sys queue */
-        inf->max_tx_queues = impl->user_tx_queues_cnt + 1;
+      info("%s(%d), user request queues tx %u rx %u, deprecated sessions tx %u rx %u\n",
+           __func__, i, p->tx_queues_cnt[i], p->rx_queues_cnt[i], p->tx_sessions_cnt_max,
+           p->rx_sessions_cnt_max);
+      inf->max_tx_queues =
+          p->tx_sessions_cnt_max ? p->tx_sessions_cnt_max : p->tx_queues_cnt[i];
+      inf->max_tx_queues++; /* arp, mcast, ptp use shared sys queue */
 #ifdef MTL_HAS_KNI
-        inf->max_tx_queues++; /* kni tx queue */
+      inf->max_tx_queues++; /* kni tx queue */
 #endif
 #ifdef MTL_HAS_TAP
-        inf->max_tx_queues++; /* tap tx queue */
+      inf->max_tx_queues++; /* tap tx queue */
 #endif
-      }
-      if (mt_no_system_rxq(impl) || mt_udp_transport(impl, i)) {
-        inf->max_rx_queues = impl->user_rx_queues_cnt;
-      } else if (mt_has_rss(impl, i)) {
-        inf->max_rx_queues = impl->user_rx_queues_cnt * 2;
-      } else {
-        inf->max_rx_queues = impl->user_rx_queues_cnt + 1; /* cni rx */
-        inf->system_rx_queues_end = 1;                     /* cni rx */
+
+      inf->max_rx_queues =
+          p->rx_sessions_cnt_max ? p->rx_sessions_cnt_max : p->rx_queues_cnt[i];
+      if (!mt_no_system_rxq(impl)) {
+        inf->max_rx_queues++;
+        inf->system_rx_queues_end = 1; /* cni rx */
         if (mt_has_ptp_service(impl)) {
           inf->max_rx_queues++;
           inf->system_rx_queues_end++;
