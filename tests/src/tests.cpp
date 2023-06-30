@@ -360,8 +360,10 @@ static void test_ctx_init(struct st_tests_context* ctx) {
   p->log_level = MTL_LOG_LEVEL_ERROR;
   p->priv = ctx;
   p->ptp_get_time_fn = test_ptp_from_real_time;
-  p->tx_sessions_cnt_max = 16;
-  p->rx_sessions_cnt_max = 16;
+  p->tx_queues_cnt[MTL_PORT_P] = 16;
+  p->tx_queues_cnt[MTL_PORT_R] = 16;
+  p->rx_queues_cnt[MTL_PORT_P] = 16;
+  p->rx_queues_cnt[MTL_PORT_R] = 16;
   /* default start queue set to 1 */
   p->xdp_info[MTL_PORT_P].start_queue = 1;
   p->xdp_info[MTL_PORT_R].start_queue = 1;
@@ -570,8 +572,6 @@ GTEST_API_ int main(int argc, char** argv) {
     if (ctx->para.pmd[i] != MTL_PMD_DPDK_USER) {
       mtl_get_if_ip(ctx->para.port[i], ctx->para.sip_addr[i], ctx->para.netmask[i]);
       ctx->para.flags |= MTL_FLAG_RX_SEPARATE_VIDEO_LCORE;
-      ctx->para.tx_sessions_cnt_max = 8;
-      ctx->para.rx_sessions_cnt_max = 8;
       ctx->para.xdp_info[i].queue_count = 8;
     } else {
       link_flap_wa = true;

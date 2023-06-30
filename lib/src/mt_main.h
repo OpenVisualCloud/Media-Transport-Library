@@ -880,10 +880,6 @@ struct mtl_main_impl {
   bool rx_anc_init;
   pthread_mutex_t rx_anc_mgr_mutex; /* protect rx_anc_mgr */
 
-  /* max queues user requested */
-  uint16_t user_tx_queues_cnt;
-  uint16_t user_rx_queues_cnt;
-
   /* cnt for open sessions */
   rte_atomic32_t st20_tx_sessions_cnt;
   rte_atomic32_t st22_tx_sessions_cnt;

@@ -1,4 +1,4 @@
-From 6af44c3f31423ac3245f9111e4ec95318bc62859 Mon Sep 17 00:00:00 2001
+From ca1e2319314c3653a85e717c96dfa46b11df4448 Mon Sep 17 00:00:00 2001
 From: Ric Li <ming3.li@intel.com>
 Date: Wed, 2 Nov 2022 16:06:39 +0800
 Subject: [PATCH] add imtl support in sample_encode
@@ -36,7 +36,7 @@ fix the format print
  6 files changed, 362 insertions(+), 7 deletions(-)
 
 diff --git a/CMakeLists.txt b/CMakeLists.txt
-index 7843dcf0..0c845fb8 100644
+index 97038ae9..beac42be 100644
 --- a/CMakeLists.txt
 +++ b/CMakeLists.txt
 @@ -202,6 +202,7 @@ message("  CMAKE_INSTALL_FULL_DATADIR              : ${CMAKE_INSTALL_FULL_DATADI
@@ -96,7 +96,7 @@ index 1c3bfe0a..3f4a2996 100644
  
  install( TARGETS ${target} RUNTIME DESTINATION ${MFX_SAMPLES_INSTALL_BIN_DIR} )
 diff --git a/samples/sample_encode/include/pipeline_encode.h b/samples/sample_encode/include/pipeline_encode.h
-index de02122e..0acc9302 100644
+index de02122e..5cab6473 100644
 --- a/samples/sample_encode/include/pipeline_encode.h
 +++ b/samples/sample_encode/include/pipeline_encode.h
 @@ -48,6 +48,11 @@ or https://software.intel.com/en-us/media-client-solutions-support.
@@ -199,7 +199,7 @@ index de02122e..0acc9302 100644
  
  #endif // __PIPELINE_ENCODE_H__
 diff --git a/samples/sample_encode/src/pipeline_encode.cpp b/samples/sample_encode/src/pipeline_encode.cpp
-index b0cac12a..8ebe09ec 100644
+index b0cac12a..6942eca0 100644
 --- a/samples/sample_encode/src/pipeline_encode.cpp
 +++ b/samples/sample_encode/src/pipeline_encode.cpp
 @@ -1349,6 +1349,7 @@ CEncodingPipeline::CEncodingPipeline()
@@ -271,8 +271,8 @@ index b0cac12a..8ebe09ec 100644
 +        param.log_level = MTL_LOG_LEVEL_NOTICE;
 +        param.priv = NULL;
 +        param.ptp_get_time_fn = NULL;
-+        param.rx_sessions_cnt_max = 1;
-+        param.tx_sessions_cnt_max = 0;
++        param.rx_queues_cnt[MTL_PORT_P] = 1;
++        param.tx_queues_cnt[MTL_PORT_P] = 0;
 +        param.lcores = NULL;
 +        mtl.MtlHandle = mtl_init(&param);
 +        if (!mtl.MtlHandle)

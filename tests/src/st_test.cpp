@@ -71,16 +71,6 @@ static void init_expect_fail_test(void) {
   para.num_ports = -1;
   handle = mtl_init(&para);
   EXPECT_TRUE(handle == NULL);
-
-  para.num_ports = 1;
-  para.tx_sessions_cnt_max = -1;
-  handle = mtl_init(&para);
-  EXPECT_TRUE(handle == NULL);
-
-  para.tx_sessions_cnt_max = 1;
-  para.rx_sessions_cnt_max = -1;
-  handle = mtl_init(&para);
-  EXPECT_TRUE(handle == NULL);
 }
 
 TEST(Main, init_expect_fail) { init_expect_fail_test(); }
@@ -154,8 +144,6 @@ TEST(Main, get_cap) {
 
   ret = mtl_get_cap(handle, &cap);
   EXPECT_GE(ret, 0);
-  EXPECT_GT(cap.tx_sessions_cnt_max, 0);
-  EXPECT_GT(cap.rx_sessions_cnt_max, 0);
   info("dma dev count %u\n", cap.dma_dev_cnt_max);
   info("init_flags 0x%" PRIx64 "\n", cap.init_flags);
 }

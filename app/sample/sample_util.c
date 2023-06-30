@@ -253,8 +253,10 @@ static int _sample_parse_args(struct st_sample_context* ctx, int argc, char** ar
           err("%s, unknow rss mode %s\n", __func__, optarg);
         break;
       case SAMPLE_ARG_QUEUES_CNT:
-        p->rx_queues_cnt_max = atoi(optarg);
-        p->tx_queues_cnt_max = p->rx_queues_cnt_max;
+        for (int i = 0; i < MTL_PORT_MAX; i++) {
+          p->rx_queues_cnt[i] = atoi(optarg);
+          p->tx_queues_cnt[i] = p->rx_queues_cnt[i];
+        }
         break;
       case SAMPLE_ARG_P_TX_DST_MAC:
         sample_args_parse_tx_mac(ctx, optarg, MTL_PORT_P);
@@ -413,15 +415,13 @@ int sample_parse_args(struct st_sample_context* ctx, int argc, char** argv, bool
   ctx->st22p_output_fmt = ST_FRAME_FMT_YUV422PLANAR10LE;
   ctx->st22p_codec = ST22_CODEC_JPEGXS;
 
-  p->tx_queues_cnt_max = 8;
-  p->rx_queues_cnt_max = 8;
-
   _sample_parse_args(ctx, argc, argv);
 
-  p->tx_sessions_cnt_max = ctx->sessions;
-  p->rx_sessions_cnt_max = ctx->sessions;
   /* always enable 1 port */
   if (!p->num_ports) p->num_ports = 1;
+
+  if (tx) sample_tx_queue_cnt_set(ctx, ctx->sessions);
+  if (rx) sample_rx_queue_cnt_set(ctx, ctx->sessions);
 
   return 0;
 }
@@ -445,6 +445,26 @@ int dma_sample_parse_args(struct st_sample_context* ctx, int argc, char** argv) 
   ctx->param.num_dma_dev_port = 1;
   return 0;
 };
+
+int sample_tx_queue_cnt_set(struct st_sample_context* ctx, uint16_t cnt) {
+  struct mtl_init_params* p = &ctx->param;
+
+  for (uint8_t i = 0; i < p->num_ports; i++) {
+    p->tx_queues_cnt[i] = cnt;
+  }
+
+  return 0;
+}
+
+int sample_rx_queue_cnt_set(struct st_sample_context* ctx, uint16_t cnt) {
+  struct mtl_init_params* p = &ctx->param;
+
+  for (uint8_t i = 0; i < p->num_ports; i++) {
+    p->rx_queues_cnt[i] = cnt;
+  }
+
+  return 0;
+}
 
 void fill_rfc4175_422_10_pg2_data(struct st20_rfc4175_422_10_pg2_be* data, int w, int h) {
   int pg_size = w * h / 2;

@@ -171,8 +171,10 @@ static int ufd_parse_json(struct mufd_init_params* init, const char* filename) {
       ret = -EINVAL;
       goto out;
     }
-    p->tx_queues_cnt_max = nb_nic_queues;
-    p->rx_queues_cnt_max = nb_nic_queues;
+    for (int i = 0; i < num_interfaces; i++) {
+      p->tx_queues_cnt[i] = nb_nic_queues;
+      p->rx_queues_cnt[i] = nb_nic_queues;
+    }
     info("%s, nb_nic_queues %d\n", __func__, nb_nic_queues);
   }
 

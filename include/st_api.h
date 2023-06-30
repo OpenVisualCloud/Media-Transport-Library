@@ -288,6 +288,45 @@ static inline uint32_t st10_get_media_clk(enum st10_timestamp_fmt tfmt,
   return st10_tai_to_media_clk(timestamp, sampling_rate);
 }
 
+/**
+ * Helper function to get tx queues cnt for st sessions.
+ *
+ * @param st20_sessions
+ * st20 tx sessions count.
+ * @param st30_sessions
+ * st30 tx sessions count.
+ * @param st30_sessions
+ * st30 sessions count.
+ * @return
+ *   queues count.
+ */
+static inline uint16_t st_tx_sessions_queue_cnt(uint16_t st20_sessions,
+                                                uint16_t st30_sessions,
+                                                uint16_t st40_sessions) {
+  uint16_t queues = st20_sessions;
+  if (st30_sessions) queues++;
+  if (st40_sessions) queues++;
+  return queues;
+}
+
+/**
+ * Helper function to get tx queues cnt for st sessions.
+ *
+ * @param st20_sessions
+ * st20 tx sessions count.
+ * @param st30_sessions
+ * st30 tx sessions count.
+ * @param st30_sessions
+ * st30 sessions count.
+ * @return
+ *   queues count.
+ */
+static inline uint16_t st_rx_sessions_queue_cnt(uint16_t st20_sessions,
+                                                uint16_t st30_sessions,
+                                                uint16_t st40_sessions) {
+  return st20_sessions + st30_sessions + st40_sessions;
+}
+
 #if defined(__cplusplus)
 }
 #endif

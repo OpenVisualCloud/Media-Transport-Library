@@ -45,8 +45,8 @@ int main() {
   param.sip_addr[MTL_PORT_P][2] = 96;
   param.sip_addr[MTL_PORT_P][3] = 12;
   param.log_level = MTL_LOG_LEVEL_INFO;
-  param.tx_sessions_cnt_max = 1;
-  param.rx_sessions_cnt_max = 0;
+  param.tx_queues_cnt[MTL_PORT_P] = 1;
+  param.rx_queues_cnt[MTL_PORT_P] = 0;
 
   /* init mtl */
   mtl_handle st = mtl_init(&param);

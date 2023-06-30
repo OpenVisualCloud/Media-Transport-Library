@@ -68,7 +68,7 @@ int main(int argc, char** argv) {
   memset(&ctx, 0, sizeof(ctx));
   sample_parse_args(&ctx, argc, argv, true, false, false);
   ctx.sessions = session_num;
-  ctx.param.tx_sessions_cnt_max = session_num;
+  sample_tx_queue_cnt_set(&ctx, session_num);
 
   ctx.st = mtl_init(&ctx.param);
   if (!ctx.st) {
