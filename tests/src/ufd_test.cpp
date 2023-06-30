@@ -136,8 +136,13 @@ static void utest_ctx_init(struct utest_ctx* ctx) {
 
   p->flags |= MTL_FLAG_BIND_NUMA; /* default bind to numa */
   p->log_level = MTL_LOG_LEVEL_ERROR;
+  p->tx_queues_cnt[MTL_PORT_P] = 16;
+  p->tx_queues_cnt[MTL_PORT_R] = 16;
+  p->rx_queues_cnt[MTL_PORT_P] = 16;
+  p->rx_queues_cnt[MTL_PORT_R] = 16;
 
   ctx->init_params.slots_nb_max = 256;
+  p->tasklets_nb_per_sch = ctx->init_params.slots_nb_max + 8;
 }
 
 static void utest_ctx_uinit(struct utest_ctx* ctx) { st_test_free(ctx); }
