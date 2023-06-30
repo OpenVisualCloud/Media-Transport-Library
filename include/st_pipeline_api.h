@@ -385,13 +385,13 @@ enum st22_quality_mode {
 #define ST20P_TX_FLAG_ENABLE_VSYNC (MTL_BIT32(5))
 /**
  * Flag bit in flags of struct st20p_tx_ops.
- * If disable the prebuilt RL pad interval reference.
+ * If disable the static RL pad interval profiling.
  */
-#define ST20P_TX_FLAG_DISABLE_RL_PAD_REFERENCE (MTL_BIT32(6))
+#define ST20P_TX_FLAG_DISABLE_STATIC_PAD_P (MTL_BIT32(6))
 
 /**
  * Flag bit in flags of struct st22p_rx_ops, for non MTL_PMD_DPDK_USER.
- * If set, it's application duty to set the rx flow(queue) and muticast join/drop.
+ * If set, it's application duty to set the rx flow(queue) and multicast join/drop.
  * Use st22p_rx_get_queue_meta to get the queue meta(queue number etc) info.
  */
 #define ST22P_RX_FLAG_DATA_PATH_ONLY (MTL_BIT32(0))
@@ -661,13 +661,12 @@ struct st20p_tx_ops {
    */
   uint8_t tx_dst_mac[MTL_SESSION_PORT_MAX][MTL_MAC_ADDR_LEN];
   /**
-   * vrx buffer for tx.
-   * Leave to zero if not know detail, lib will assign vrx(narrow) based on resolution and
-   * timing.
-   * Refer to st21 spec for the possible vrx value, lib will follow this VRX if it's not a
-   * zero value, and also fine tune is required since network setup difference.
+   * The start vrx buffer.
+   * Leave to zero if not know detail, lib will assign a start value of vrx(narrow) based
+   * on resolution and timing. Refer to st21 spec for the possible vrx value and also fine
+   * tune is required since network setup difference and RL burst.
    */
-  uint16_t vrx;
+  uint16_t start_vrx;
   /**
    * Manually assigned padding pkt interval(pkts level) for RL pacing.
    * Leave to zero if not know detail, lib will train the interval in the initial routine.

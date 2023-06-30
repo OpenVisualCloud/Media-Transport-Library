@@ -65,6 +65,6 @@ int st_tx_video_session_migrate(struct mtl_main_impl* impl,
                                 struct st_tx_video_sessions_mgr* mgr,
                                 struct st_tx_video_session_impl* s, int idx);
 
-int st20_pacing_reference(struct st_tx_video_session_impl* s);
+int st20_pacing_static_profiling(struct st_tx_video_session_impl* s);
 
 #endif

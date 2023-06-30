@@ -1037,7 +1037,7 @@ struct cvl_pad_table {
   uint16_t pad_interval;
 };
 
-static const struct cvl_pad_table g_cvl_pad_tables[] = {
+static const struct cvl_pad_table g_cvl_static_pad_tables[] = {
     {
         /* 1080i50 gpm */
         .fmt = ST20_FMT_YUV_422_10BIT,
@@ -1140,14 +1140,14 @@ static const struct cvl_pad_table g_cvl_pad_tables[] = {
     },
 };
 
-uint16_t st20_pacing_reference(struct st_tx_video_session_impl* s) {
+uint16_t st20_pacing_static_profiling(struct st_tx_video_session_impl* s) {
   const struct cvl_pad_table* refer;
   struct st20_tx_ops* ops = &s->ops;
 
   if (s->s_type == MT_ST22_HANDLE_TX_VIDEO) return 0; /* no for st22 */
 
-  for (int i = 0; i < MTL_ARRAY_SIZE(g_cvl_pad_tables); i++) {
-    refer = &g_cvl_pad_tables[i];
+  for (int i = 0; i < MTL_ARRAY_SIZE(g_cvl_static_pad_tables); i++) {
+    refer = &g_cvl_static_pad_tables[i];
     if ((ops->fmt == refer->fmt) && (ops->width == refer->width) &&
         (ops->height == refer->height) && (ops->fps == refer->fps) &&
         (ops->packing == refer->packing) && (ops->interlaced == refer->interlaced)) {

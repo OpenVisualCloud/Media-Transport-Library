@@ -284,11 +284,11 @@ static int tv_train_pacing(struct mtl_main_impl* impl, struct st_tx_video_sessio
     info("%s(%d), user customized pad_interval %u\n", __func__, idx, resolved);
     return 0;
   }
-  if (!(s->ops.flags & ST20_TX_FLAG_DISABLE_RL_PAD_REFERENCE)) {
-    resolved = st20_pacing_reference(s);
+  if (!(s->ops.flags & ST20_TX_FLAG_DISABLE_STATIC_PAD_P)) {
+    resolved = st20_pacing_static_profiling(s);
     if (resolved) {
       s->pacing.pad_interval = resolved;
-      info("%s(%d), user reference pad_interval %u\n", __func__, idx, resolved);
+      info("%s(%d), user static pad_interval %u\n", __func__, idx, resolved);
       return 0;
     }
   }
@@ -483,13 +483,13 @@ static int tv_init_pacing(struct mtl_main_impl* impl,
     pacing->vrx = 0;
     pacing->warm_pkts = 0;
   }
-  if (s->ops.vrx) {
-    if (s->ops.vrx >= pkts_in_tr_offset) {
-      err("%s[%02d], use vrx %u larger than pkts in tr offset %u\n", __func__, idx,
-          s->ops.vrx, pkts_in_tr_offset);
+  if (s->ops.start_vrx) {
+    if (s->ops.start_vrx >= pkts_in_tr_offset) {
+      err("%s[%02d], use start_vrx %u larger than pkts in tr offset %u\n", __func__, idx,
+          s->ops.start_vrx, pkts_in_tr_offset);
     } else {
-      info("%s[%02d], use vrx %u from user\n", __func__, idx, s->ops.vrx);
-      pacing->vrx = s->ops.vrx;
+      info("%s[%02d], use start_vrx %u from user\n", __func__, idx, s->ops.start_vrx);
+      pacing->vrx = s->ops.start_vrx;
     }
   } else if (s->ops.pacing == ST21_PACING_WIDE) {
     uint32_t wide_vrx = pkts_in_tr_offset * 8 / 10;

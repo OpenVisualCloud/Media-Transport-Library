@@ -238,9 +238,9 @@ static int app_tx_st20p_init(struct st_app_context* ctx, st_json_st20p_session_t
   ops.device = st20p ? st20p->info.device : ST_PLUGIN_DEVICE_AUTO;
   ops.framebuff_cnt = 2;
   ops.notify_frame_available = app_tx_st20p_frame_available;
-  ops.vrx = ctx->tx_vrx;
+  ops.start_vrx = ctx->tx_start_vrx;
   ops.pad_interval = ctx->tx_pad_interval;
-  if (ctx->tx_no_pad_reference) ops.flags |= ST20P_TX_FLAG_DISABLE_RL_PAD_REFERENCE;
+  if (ctx->tx_no_static_pad) ops.flags |= ST20P_TX_FLAG_DISABLE_STATIC_PAD_P;
 
   s->width = ops.width;
   s->height = ops.height;
