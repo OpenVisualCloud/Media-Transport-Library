@@ -246,6 +246,8 @@ static int tx_st20p_create_transport(struct mtl_main_impl* impl, struct st20p_tx
     ops_tx.flags |= ST20_TX_FLAG_USER_R_MAC;
   }
   ops_tx.pacing = ST21_PACING_NARROW;
+  ops_tx.start_vrx = ops->start_vrx;
+  ops_tx.pad_interval = ops->pad_interval;
   ops_tx.width = ops->width;
   ops_tx.height = ops->height;
   ops_tx.fps = ops->fps;
@@ -264,6 +266,8 @@ static int tx_st20p_create_transport(struct mtl_main_impl* impl, struct st20p_tx
   if (ops->flags & ST20P_TX_FLAG_USER_TIMESTAMP)
     ops_tx.flags |= ST20_TX_FLAG_USER_TIMESTAMP;
   if (ops->flags & ST20P_TX_FLAG_ENABLE_VSYNC) ops_tx.flags |= ST20_TX_FLAG_ENABLE_VSYNC;
+  if (ops->flags & ST20P_TX_FLAG_DISABLE_STATIC_PAD_P)
+    ops_tx.flags |= ST20_TX_FLAG_DISABLE_STATIC_PAD_P;
 
   transport = st20_tx_create(impl, &ops_tx);
   if (!transport) {

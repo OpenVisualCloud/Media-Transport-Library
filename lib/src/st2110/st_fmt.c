@@ -1025,3 +1025,136 @@ void st_frame_init_plane_single_src(struct st_frame* frame, void* addr, mtl_iova
     }
   }
 }
+
+/* the reference rl pad interval table for CVL NIC */
+struct cvl_pad_table {
+  enum st20_fmt fmt;
+  uint32_t width;
+  uint32_t height;
+  enum st_fps fps;
+  enum st20_packing packing;
+  bool interlaced;
+  uint16_t pad_interval;
+};
+
+static const struct cvl_pad_table g_cvl_static_pad_tables[] = {
+    {
+        /* 1080i50 gpm */
+        .fmt = ST20_FMT_YUV_422_10BIT,
+        .width = 1920,
+        .height = 1080,
+        .fps = ST_FPS_P50,
+        .packing = ST20_PACKING_GPM,
+        .interlaced = true,
+        .pad_interval = 155, /* measured with VERO avg vrx: 6.0 */
+    },
+    {
+        /* 1080i50 bpm */
+        .fmt = ST20_FMT_YUV_422_10BIT,
+        .width = 1920,
+        .height = 1080,
+        .fps = ST_FPS_P50,
+        .packing = ST20_PACKING_BPM,
+        .interlaced = true,
+        .pad_interval = 268, /* measured with VERO avg vrx: 6.0 */
+    },
+    {
+        /* 1080p50 gpm */
+        .fmt = ST20_FMT_YUV_422_10BIT,
+        .width = 1920,
+        .height = 1080,
+        .fps = ST_FPS_P50,
+        .packing = ST20_PACKING_GPM,
+        .interlaced = false,
+        .pad_interval = 156, /* measured with VERO avg vrx: 6.0 */
+    },
+    {
+        /* 1080p50 bpm */
+        .fmt = ST20_FMT_YUV_422_10BIT,
+        .width = 1920,
+        .height = 1080,
+        .fps = ST_FPS_P50,
+        .packing = ST20_PACKING_BPM,
+        .interlaced = false,
+        .pad_interval = 254, /* measured with VERO avg vrx: 6.0 */
+    },
+    {
+        /* 1080p59 gpm */
+        .fmt = ST20_FMT_YUV_422_10BIT,
+        .width = 1920,
+        .height = 1080,
+        .fps = ST_FPS_P59_94,
+        .packing = ST20_PACKING_GPM,
+        .interlaced = false,
+        .pad_interval = 160, /* measured with VERO avg vrx: 6.0 */
+    },
+    {
+        /* 1080p59 bpm */
+        .fmt = ST20_FMT_YUV_422_10BIT,
+        .width = 1920,
+        .height = 1080,
+        .fps = ST_FPS_P59_94,
+        .packing = ST20_PACKING_BPM,
+        .interlaced = false,
+        .pad_interval = 262, /* measured with VERO avg vrx: 7.0, narrow vrx: 9 */
+    },
+    {
+        /* 4kp50 gpm */
+        .fmt = ST20_FMT_YUV_422_10BIT,
+        .width = 1920 * 2,
+        .height = 1080 * 2,
+        .fps = ST_FPS_P50,
+        .packing = ST20_PACKING_GPM,
+        .interlaced = false,
+        .pad_interval = 144, /* measured with VERO uniform distribution */
+    },
+    {
+        /* 4kp50 bpm */
+        .fmt = ST20_FMT_YUV_422_10BIT,
+        .width = 1920 * 2,
+        .height = 1080 * 2,
+        .fps = ST_FPS_P59_94,
+        .packing = ST20_PACKING_BPM,
+        .interlaced = false,
+        .pad_interval = 215, /* measured with VERO uniform distribution */
+    },
+    {
+        /* 4kp59 gpm */
+        .fmt = ST20_FMT_YUV_422_10BIT,
+        .width = 1920 * 2,
+        .height = 1080 * 2,
+        .fps = ST_FPS_P59_94,
+        .packing = ST20_PACKING_GPM,
+        .interlaced = false,
+        .pad_interval = 145, /* measured with VERO uniform distribution */
+    },
+    {
+        /* 4kp59 bpm */
+        .fmt = ST20_FMT_YUV_422_10BIT,
+        .width = 1920 * 2,
+        .height = 1080 * 2,
+        .fps = ST_FPS_P59_94,
+        .packing = ST20_PACKING_BPM,
+        .interlaced = false,
+        .pad_interval = 217, /* measured with VERO uniform distribution */
+    },
+};
+
+uint16_t st20_pacing_static_profiling(struct st_tx_video_session_impl* s) {
+  const struct cvl_pad_table* refer;
+  struct st20_tx_ops* ops = &s->ops;
+
+  if (s->s_type == MT_ST22_HANDLE_TX_VIDEO) return 0; /* no for st22 */
+
+  for (int i = 0; i < MTL_ARRAY_SIZE(g_cvl_static_pad_tables); i++) {
+    refer = &g_cvl_static_pad_tables[i];
+    if ((ops->fmt == refer->fmt) && (ops->width == refer->width) &&
+        (ops->height == refer->height) && (ops->fps == refer->fps) &&
+        (ops->packing == refer->packing) && (ops->interlaced == refer->interlaced)) {
+      dbg("%s(%d), reference pad_interval %u\n", __func__, s->idx, refer->pad_interval);
+      return refer->pad_interval;
+    }
+  }
+
+  return 0; /* not found */
+}

@@ -724,8 +724,10 @@ static int app_tx_video_init(struct st_app_context* ctx, st_json_video_session_t
   ops.notify_event = app_tx_notify_event;
   ops.framebuff_cnt = 2;
   ops.payload_type = video ? video->base.payload_type : ST_APP_PAYLOAD_TYPE_VIDEO;
-  ops.vrx = ctx->tx_vrx;
+  ops.start_vrx = ctx->tx_start_vrx;
+  ops.pad_interval = ctx->tx_pad_interval;
   if (s->enable_vsync) ops.flags |= ST20_TX_FLAG_ENABLE_VSYNC;
+  if (ctx->tx_no_static_pad) ops.flags |= ST20_TX_FLAG_DISABLE_STATIC_PAD_P;
 
   ret = st20_get_pgroup(ops.fmt, &s->st20_pg);
   if (ret < 0) return ret;

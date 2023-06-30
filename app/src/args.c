@@ -46,7 +46,9 @@ enum st_args_cmd {
   ST22_ARG_RX_SESSIONS_CNT,
   ST_ARG_HDR_SPLIT,
   ST_ARG_PACING_WAY,
-  ST_ARG_VRX,
+  ST_ARG_START_VRX,
+  ST_ARG_PAD_INTERVAL,
+  ST_ARG_NO_PAD_STATIC,
   ST_ARG_SHAPING,
 
   ST_ARG_CONFIG_FILE = 0x300,
@@ -148,7 +150,9 @@ static struct option st_app_args_options[] = {
     {"rx_st22_sessions_count", required_argument, 0, ST22_ARG_RX_SESSIONS_CNT},
     {"hdr_split", no_argument, 0, ST_ARG_HDR_SPLIT},
     {"pacing_way", required_argument, 0, ST_ARG_PACING_WAY},
-    {"vrx", required_argument, 0, ST_ARG_VRX},
+    {"start_vrx", required_argument, 0, ST_ARG_START_VRX},
+    {"pad_interval", required_argument, 0, ST_ARG_PAD_INTERVAL},
+    {"no_static_pad", no_argument, 0, ST_ARG_NO_PAD_STATIC},
     {"shaping", required_argument, 0, ST_ARG_SHAPING},
 
     {"config_file", required_argument, 0, ST_ARG_CONFIG_FILE},
@@ -415,8 +419,14 @@ int st_app_parse_args(struct st_app_context* ctx, struct mtl_init_params* p, int
         else
           err("%s, unknow pacing way %s\n", __func__, optarg);
         break;
-      case ST_ARG_VRX:
-        ctx->tx_vrx = atoi(optarg);
+      case ST_ARG_START_VRX:
+        ctx->tx_start_vrx = atoi(optarg);
+        break;
+      case ST_ARG_PAD_INTERVAL:
+        ctx->tx_pad_interval = atoi(optarg);
+        break;
+      case ST_ARG_NO_PAD_STATIC:
+        ctx->tx_no_static_pad = true;
         break;
       case ST_ARG_SHAPING:
         if (!strcmp(optarg, "narrow"))
