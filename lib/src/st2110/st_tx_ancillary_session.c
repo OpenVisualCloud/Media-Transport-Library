@@ -1384,8 +1384,6 @@ static int tx_ancillary_session_update_dst(struct mtl_main_impl* impl,
       return ret;
     }
   }
-  /* reset seq id */
-  s->st40_seq_id = -1;
 
   return 0;
 }
