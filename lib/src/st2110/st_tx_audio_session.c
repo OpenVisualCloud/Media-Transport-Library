@@ -177,6 +177,7 @@ static int tx_audio_session_init_hdr(struct mtl_main_impl* impl,
                           ? ops->payload_type
                           : ST_RARTP_PAYLOAD_TYPE_PCM_AUDIO;
   rtp->ssrc = htonl(s->idx + 0x223450);
+  s->st30_seq_id = 0;
 
   info("%s(%d,%d), ip %u.%u.%u.%u port %u:%u\n", __func__, idx, s_port, dip[0], dip[1],
        dip[2], dip[3], s->st30_src_port[s_port], s->st30_dst_port[s_port]);
@@ -1375,6 +1376,54 @@ static int tx_audio_session_attach(struct mtl_main_impl* impl,
   return 0;
 }
 
+static int tx_audio_session_update_dst(struct mtl_main_impl* impl,
+                                       struct st_tx_audio_sessions_mgr* mgr,
+                                       struct st_tx_audio_session_impl* s,
+                                       struct st_tx_dest_info* dst) {
+  int ret = -EIO;
+  int idx = s->idx, num_port = s->ops.num_port;
+  struct st30_tx_ops* ops = &s->ops;
+
+  /* update ip and port */
+  for (int i = 0; i < num_port; i++) {
+    memcpy(ops->dip_addr[i], dst->dip_addr[i], MTL_IP_ADDR_LEN);
+    ops->udp_port[i] = dst->udp_port[i];
+    s->st30_dst_port[i] = (ops->udp_port[i]) ? (ops->udp_port[i]) : (20000 + idx);
+    s->st30_src_port[i] =
+        (ops->udp_src_port[i]) ? (ops->udp_src_port[i]) : s->st30_dst_port[i];
+
+    /* update hdr */
+    ret = tx_audio_session_init_hdr(impl, mgr, s, i);
+    if (ret < 0) {
+      err("%s(%d), init hdr fail %d\n", __func__, idx, ret);
+      return ret;
+    }
+  }
+
+  return 0;
+}
+
+static int tx_audio_sessions_mgr_update_dst(struct st_tx_audio_sessions_mgr* mgr,
+                                            struct st_tx_audio_session_impl* s,
+                                            struct st_tx_dest_info* dst) {
+  int ret = -EIO, midx = mgr->idx, idx = s->idx;
+
+  s = tx_audio_session_get(mgr, idx); /* get the lock */
+  if (!s) {
+    err("%s(%d,%d), get session fail\n", __func__, midx, idx);
+    return -EIO;
+  }
+
+  ret = tx_audio_session_update_dst(mgr->parent, mgr, s, dst);
+  tx_audio_session_put(mgr, idx);
+  if (ret < 0) {
+    err("%s(%d,%d), fail %d\n", __func__, midx, idx, ret);
+    return ret;
+  }
+
+  return 0;
+}
+
 static void tx_audio_session_stat(struct st_tx_audio_session_impl* s) {
   int idx = s->idx;
   int frame_cnt = rte_atomic32_read(&s->st30_stat_frame_cnt);
@@ -1721,6 +1770,33 @@ st30_tx_handle st30_tx_create(mtl_handle mt, struct st30_tx_ops* ops) {
   rte_atomic32_inc(&impl->st30_tx_sessions_cnt);
   info("%s, succ on session %d\n", __func__, s->idx);
   return s_impl;
+}
+
+int st30_tx_update_destination(st30_tx_handle handle, struct st_tx_dest_info* dst) {
+  struct st_tx_audio_session_handle_impl* s_impl = handle;
+  struct mtl_main_impl* impl;
+  struct st_tx_audio_session_impl* s;
+  int idx, ret;
+
+  if (s_impl->type != MT_HANDLE_TX_AUDIO) {
+    err("%s, invalid type %d\n", __func__, s_impl->type);
+    return -EIO;
+  }
+
+  impl = s_impl->parent;
+  s = s_impl->impl;
+  idx = s->idx;
+
+  ret = st_tx_dest_info_check(dst, s->ops.num_port);
+  if (ret < 0) return ret;
+
+  ret = tx_audio_sessions_mgr_update_dst(&impl->tx_a_mgr, s, dst);
+  if (ret < 0) {
+    err("%s(%d), tx_audio_sessions_mgr_update_dst fail\n", __func__, idx);
+    return ret;
+  }
+
+  return 0;
 }
 
 int st30_tx_free(st30_tx_handle handle) {

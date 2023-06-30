@@ -1274,6 +1274,7 @@ static void st20_rx_update_src_test(enum st20_type type, int tx_sessions,
     return;
   }
   ASSERT_TRUE(tx_sessions >= 1);
+  bool tx_update_dst = (tx_sessions == 1);
 
   /* return if level small than global */
   if (level < ctx->level) return;
@@ -1400,7 +1401,18 @@ static void st20_rx_update_src_test(enum st20_type type, int tx_sessions,
   src.udp_port[MTL_SESSION_PORT_P] = 10000 + 1;
   memcpy(src.sip_addr[MTL_SESSION_PORT_P], ctx->mcast_ip_addr[MTL_PORT_P],
          MTL_IP_ADDR_LEN);
-  test_ctx_tx[1]->seq_id = 0; /* reset seq id */
+  if (tx_update_dst) {
+    test_ctx_tx[0]->seq_id = 0; /* reset seq id */
+    struct st_tx_dest_info dst;
+    memset(&dst, 0, sizeof(dst));
+    dst.udp_port[MTL_SESSION_PORT_P] = 10000 + 1;
+    memcpy(dst.dip_addr[MTL_SESSION_PORT_P], ctx->mcast_ip_addr[MTL_PORT_P],
+           MTL_IP_ADDR_LEN);
+    ret = st20_tx_update_destination(tx_handle[0], &dst);
+    EXPECT_GE(ret, 0);
+  } else {
+    test_ctx_tx[1]->seq_id = 0; /* reset seq id */
+  }
   for (int i = 0; i < rx_sessions; i++) {
     ret = st20_rx_update_source(rx_handle[i], &src);
     EXPECT_GE(ret, 0);
@@ -1459,6 +1471,15 @@ static void st20_rx_update_src_test(enum st20_type type, int tx_sessions,
   memcpy(src.sip_addr[MTL_SESSION_PORT_P], ctx->para.sip_addr[MTL_PORT_P],
          MTL_IP_ADDR_LEN);
   test_ctx_tx[0]->seq_id = rand(); /* random seq id */
+  if (tx_update_dst) {
+    struct st_tx_dest_info dst;
+    memset(&dst, 0, sizeof(dst));
+    dst.udp_port[MTL_SESSION_PORT_P] = 10000 + 0;
+    memcpy(dst.dip_addr[MTL_SESSION_PORT_P], ctx->para.sip_addr[MTL_PORT_R],
+           MTL_IP_ADDR_LEN);
+    ret = st20_tx_update_destination(tx_handle[0], &dst);
+    EXPECT_GE(ret, 0);
+  }
   for (int i = 0; i < rx_sessions; i++) {
     ret = st20_rx_update_source(rx_handle[i], &src);
     EXPECT_GE(ret, 0);
@@ -1523,6 +1544,8 @@ static void st20_rx_update_src_test(enum st20_type type, int tx_sessions,
 
 TEST(St20_rx, update_source_frame) { st20_rx_update_src_test(ST20_TYPE_FRAME_LEVEL, 3); }
 TEST(St20_rx, update_source_rtp) { st20_rx_update_src_test(ST20_TYPE_RTP_LEVEL, 2); }
+TEST(St20_tx, update_dest_frame) { st20_rx_update_src_test(ST20_TYPE_FRAME_LEVEL, 1); }
+TEST(St20_tx, update_dest_rtp) { st20_rx_update_src_test(ST20_TYPE_RTP_LEVEL, 1); }
 
 static int st20_digest_rx_frame_ready(void* priv, void* frame,
                                       struct st20_rx_frame_meta* meta) {

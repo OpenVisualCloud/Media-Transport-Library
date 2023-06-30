@@ -126,6 +126,17 @@ MTL_PACK(struct st_rfc3550_rtp_hdr {
 #endif
 
 /**
+ * The structure describing the destination address(ip addr and port) info for TX.
+ * Leave redundant info to zero if the session only has primary port.
+ */
+struct st_tx_dest_info {
+  /** destination IP address of sender */
+  uint8_t dip_addr[MTL_PORT_MAX][MTL_IP_ADDR_LEN];
+  /** UDP port number */
+  uint16_t udp_port[MTL_PORT_MAX];
+};
+
+/**
  * The structure describing the source address(ip addr and port) info for RX.
  * Leave redundant info to zero if the session only has primary port.
  */

@@ -714,6 +714,9 @@ static void st40_rx_update_src_test(enum st40_type type, int tx_sessions,
   /* return if level lower than global */
   if (level < ctx->level) return;
 
+  ASSERT_TRUE(tx_sessions >= 1);
+  bool tx_update_dst = (tx_sessions == 1);
+
   int rx_sessions = 1;
 
   std::vector<tests_context*> test_ctx_tx;
@@ -816,10 +819,21 @@ static void st40_rx_update_src_test(enum st40_type type, int tx_sessions,
   src.udp_port[MTL_SESSION_PORT_P] = 30000 + 1;
   memcpy(src.sip_addr[MTL_SESSION_PORT_P], ctx->mcast_ip_addr[MTL_PORT_P],
          MTL_IP_ADDR_LEN);
+  if (tx_update_dst) {
+    test_ctx_tx[0]->seq_id = 0; /* reset seq id */
+    struct st_tx_dest_info dst;
+    memset(&dst, 0, sizeof(dst));
+    dst.udp_port[MTL_SESSION_PORT_P] = 30000 + 1;
+    memcpy(dst.dip_addr[MTL_SESSION_PORT_P], ctx->mcast_ip_addr[MTL_PORT_P],
+           MTL_IP_ADDR_LEN);
+    ret = st40_tx_update_destination(tx_handle[0], &dst);
+    EXPECT_GE(ret, 0);
+  } else {
+    test_ctx_tx[1]->seq_id = 0; /* reset seq id */
+  }
   for (int i = 0; i < rx_sessions; i++) {
     ret = st40_rx_update_source(rx_handle[i], &src);
     EXPECT_GE(ret, 0);
-    test_ctx_tx[1]->seq_id = 0; /* reset seq id */
     test_ctx_rx[i]->start_time = 0;
     test_ctx_rx[i]->fb_rec = 0;
   }
@@ -868,10 +882,19 @@ static void st40_rx_update_src_test(enum st40_type type, int tx_sessions,
   src.udp_port[MTL_SESSION_PORT_P] = 30000 + 0;
   memcpy(src.sip_addr[MTL_SESSION_PORT_P], ctx->para.sip_addr[MTL_PORT_P],
          MTL_IP_ADDR_LEN);
+  test_ctx_tx[0]->seq_id = rand(); /* random seq id */
+  if (tx_update_dst) {
+    struct st_tx_dest_info dst;
+    memset(&dst, 0, sizeof(dst));
+    dst.udp_port[MTL_SESSION_PORT_P] = 30000 + 0;
+    memcpy(dst.dip_addr[MTL_SESSION_PORT_P], ctx->para.sip_addr[MTL_PORT_R],
+           MTL_IP_ADDR_LEN);
+    ret = st40_tx_update_destination(tx_handle[0], &dst);
+    EXPECT_GE(ret, 0);
+  }
   for (int i = 0; i < rx_sessions; i++) {
     ret = st40_rx_update_source(rx_handle[i], &src);
     EXPECT_GE(ret, 0);
-    test_ctx_tx[0]->seq_id = rand(); /* random seq id */
     test_ctx_rx[i]->start_time = 0;
     test_ctx_rx[i]->fb_rec = 0;
   }
@@ -919,6 +942,9 @@ static void st40_rx_update_src_test(enum st40_type type, int tx_sessions,
 
 TEST(St40_rx, update_source_rtp) {
   st40_rx_update_src_test(ST40_TYPE_RTP_LEVEL, 3, ST_TEST_LEVEL_ALL);
+}
+TEST(St40_tx, update_dest_rtp) {
+  st40_rx_update_src_test(ST40_TYPE_RTP_LEVEL, 1, ST_TEST_LEVEL_ALL);
 }
 
 static void st40_after_start_test(enum st40_type type[], enum st_fps fps[], int sessions,

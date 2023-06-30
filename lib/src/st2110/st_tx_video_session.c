@@ -2988,6 +2988,52 @@ static int tv_mgr_detach(struct st_tx_video_sessions_mgr* mgr,
   return 0;
 }
 
+static int tv_update_dst(struct mtl_main_impl* impl, struct st_tx_video_session_impl* s,
+                         struct st_tx_dest_info* dst) {
+  int ret = -EIO;
+  int idx = s->idx, num_port = s->ops.num_port;
+  struct st20_tx_ops* ops = &s->ops;
+
+  /* update ip and port */
+  for (int i = 0; i < num_port; i++) {
+    memcpy(ops->dip_addr[i], dst->dip_addr[i], MTL_IP_ADDR_LEN);
+    ops->udp_port[i] = dst->udp_port[i];
+    s->st20_dst_port[i] = (ops->udp_port[i]) ? (ops->udp_port[i]) : (10000 + idx);
+    s->st20_dst_port[i] =
+        (ops->udp_src_port[i]) ? (ops->udp_src_port[i]) : s->st20_dst_port[i];
+
+    /* update hdr */
+    ret = tv_init_hdr(impl, s, i);
+    if (ret < 0) {
+      err("%s(%d), init hdr fail %d\n", __func__, idx, ret);
+      return ret;
+    }
+  }
+
+  return 0;
+}
+
+static int tv_mgr_update_dst(struct st_tx_video_sessions_mgr* mgr,
+                             struct st_tx_video_session_impl* s,
+                             struct st_tx_dest_info* dst) {
+  int ret = -EIO, midx = mgr->idx, idx = s->idx;
+
+  s = tx_video_session_get(mgr, idx); /* get the lock */
+  if (!s) {
+    err("%s(%d,%d), get session fail\n", __func__, midx, idx);
+    return -EIO;
+  }
+
+  ret = tv_update_dst(mgr->parent, s, dst);
+  tx_video_session_put(mgr, idx);
+  if (ret < 0) {
+    err("%s(%d,%d), fail %d\n", __func__, midx, idx, ret);
+    return ret;
+  }
+
+  return 0;
+}
+
 static int tv_mgr_init(struct mtl_main_impl* impl, struct mt_sch_impl* sch,
                        struct st_tx_video_sessions_mgr* mgr) {
   int idx = sch->idx;
@@ -3590,6 +3636,32 @@ int st20_tx_free(st20_tx_handle handle) {
   return 0;
 }
 
+int st20_tx_update_destination(st20_tx_handle handle, struct st_tx_dest_info* dst) {
+  struct st_tx_video_session_handle_impl* s_impl = handle;
+  struct st_tx_video_session_impl* s;
+  int idx, ret;
+
+  if (s_impl->type != MT_HANDLE_TX_VIDEO) {
+    err("%s, invalid type %d\n", __func__, s_impl->type);
+    return -EIO;
+  }
+
+  s = s_impl->impl;
+  idx = s->idx;
+
+  ret = st_tx_dest_info_check(dst, s->ops.num_port);
+  if (ret < 0) return ret;
+
+  ret = tv_mgr_update_dst(&s_impl->sch->tx_video_mgr, s, dst);
+  if (ret < 0) {
+    err("%s(%d), online update fail %d\n", __func__, idx, ret);
+    return ret;
+  }
+
+  info("%s, succ on session %d\n", __func__, idx);
+  return 0;
+}
+
 st22_tx_handle st22_tx_create(mtl_handle mt, struct st22_tx_ops* ops) {
   struct mtl_main_impl* impl = mt;
   struct mt_sch_impl* sch;
@@ -3760,6 +3832,32 @@ int st22_tx_free(st22_tx_handle handle) {
 
   rte_atomic32_dec(&impl->st22_tx_sessions_cnt);
   info("%s, succ on sch %d session %d\n", __func__, sch_idx, idx);
+  return 0;
+}
+
+int st22_tx_update_destination(st22_tx_handle handle, struct st_tx_dest_info* dst) {
+  struct st22_tx_video_session_handle_impl* s_impl = handle;
+  struct st_tx_video_session_impl* s;
+  int idx, ret;
+
+  if (s_impl->type != MT_ST22_HANDLE_TX_VIDEO) {
+    err("%s, invalid type %d\n", __func__, s_impl->type);
+    return -EIO;
+  }
+
+  s = s_impl->impl;
+  idx = s->idx;
+
+  ret = st_tx_dest_info_check(dst, s->ops.num_port);
+  if (ret < 0) return ret;
+
+  ret = tv_mgr_update_dst(&s_impl->sch->tx_video_mgr, s, dst);
+  if (ret < 0) {
+    err("%s(%d), online update fail %d\n", __func__, idx, ret);
+    return ret;
+  }
+
+  info("%s, succ on session %d\n", __func__, idx);
   return 0;
 }
 
