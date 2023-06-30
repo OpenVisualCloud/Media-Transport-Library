@@ -177,6 +177,7 @@ static int tx_audio_session_init_hdr(struct mtl_main_impl* impl,
                           ? ops->payload_type
                           : ST_RARTP_PAYLOAD_TYPE_PCM_AUDIO;
   rtp->ssrc = htonl(s->idx + 0x223450);
+  s->st30_seq_id = 0;
 
   info("%s(%d,%d), ip %u.%u.%u.%u port %u:%u\n", __func__, idx, s_port, dip[0], dip[1],
        dip[2], dip[3], s->st30_src_port[s_port], s->st30_dst_port[s_port]);
@@ -1398,8 +1399,6 @@ static int tx_audio_session_update_dst(struct mtl_main_impl* impl,
       return ret;
     }
   }
-  /* reset seq id */
-  s->st30_seq_id = -1;
 
   return 0;
 }
