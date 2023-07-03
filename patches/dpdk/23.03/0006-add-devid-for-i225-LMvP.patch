@@ -1,7 +1,7 @@
-From 5b79de80baca1e4f6b16742470f3a054b1774091 Mon Sep 17 00:00:00 2001
+From d04373b3d686895b368f58a8b54972e8cea6bf7c Mon Sep 17 00:00:00 2001
 From: intel <wallace-lee>
 Date: Sat, 20 May 2023 00:56:45 +0800
-Subject: [PATCH] add devid for i225-LMvP
+Subject: [PATCH 6/6] add devid for i225-LMvP
 
 ---
  drivers/net/igc/base/igc_api.c | 1 +
