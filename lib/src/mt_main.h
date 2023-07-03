@@ -757,7 +757,11 @@ struct mt_tsq_impl {
 struct mt_srss_entry {
   struct mt_rxq_flow flow;
   struct mt_srss_impl* srss;
-  uint16_t queue_id;
+  int idx;
+  struct rte_ring* ring;
+  uint32_t stat_enqueue_cnt;
+  uint32_t stat_dequeue_cnt;
+  uint32_t stat_enqueue_fail_cnt;
   /* linked list */
   MT_TAILQ_ENTRY(mt_srss_entry) next;
 };
@@ -773,6 +777,7 @@ struct mt_srss_impl {
   struct mt_sch_tasklet_impl* tasklet;
   struct mt_sch_impl* sch;
   struct mt_srss_entry* cni_entry;
+  int entry_idx;
 };
 
 struct mtl_main_impl {

@@ -6,17 +6,30 @@
 
 #include "mt_log.h"
 #include "mt_sch.h"
+#include "mt_stat.h"
 #include "mt_util.h"
 
 #define MT_SRSS_BURST_SIZE (128)
+#define MT_SRSS_RING_PREFIX "SR_"
 
-#define UPDATE_ENTRY()                                                       \
-  do {                                                                       \
-    if (matched_pkts_nb)                                                     \
-      last_srss_entry->flow.cb(last_srss_entry->flow.priv, &matched_pkts[0], \
-                               matched_pkts_nb);                             \
-    last_srss_entry = srss_entry;                                            \
-    matched_pkts_nb = 0;                                                     \
+static inline void srss_entry_pkts_enqueue(struct mt_srss_entry* entry,
+                                           struct rte_mbuf** pkts,
+                                           const uint16_t nb_pkts) {
+  /* use bulk version */
+  unsigned int n = rte_ring_sp_enqueue_bulk(entry->ring, (void**)pkts, nb_pkts, NULL);
+  entry->stat_enqueue_cnt += n;
+  if (n == 0) {
+    rte_pktmbuf_free_bulk(pkts, nb_pkts);
+    entry->stat_enqueue_fail_cnt += nb_pkts;
+  }
+}
+
+#define UPDATE_ENTRY()                                                             \
+  do {                                                                             \
+    if (matched_pkts_nb)                                                           \
+      srss_entry_pkts_enqueue(last_srss_entry, &matched_pkts[0], matched_pkts_nb); \
+    last_srss_entry = srss_entry;                                                  \
+    matched_pkts_nb = 0;                                                           \
   } while (0)
 
 static int srss_tasklet_handler(void* priv) {
@@ -29,9 +42,10 @@ static int srss_tasklet_handler(void* priv) {
   struct rte_ipv4_hdr* ipv4;
   struct rte_udp_hdr* udp;
 
+  pthread_mutex_lock(&srss->mutex);
   for (uint16_t queue = 0; queue < inf->max_rx_queues; queue++) {
     uint16_t matched_pkts_nb = 0;
-    pthread_mutex_lock(&srss->mutex);
+
     uint16_t rx =
         rte_eth_rx_burst(mt_port_id(impl, srss->port), queue, pkts, MT_SRSS_BURST_SIZE);
     if (rx) {
@@ -42,15 +56,13 @@ static int srss_tasklet_handler(void* priv) {
         if (hdr->eth.ether_type !=
             htons(RTE_ETHER_TYPE_IPV4)) { /* non ip, redirect to cni */
           UPDATE_ENTRY();
-          if (srss->cni_entry)
-            srss->cni_entry->flow.cb(srss->cni_entry->flow.priv, &pkts[i], 1);
+          srss_entry_pkts_enqueue(srss->cni_entry, &pkts[i], 1);
           continue;
         }
         ipv4 = &hdr->ipv4;
         if (ipv4->next_proto_id != IPPROTO_UDP) { /* non udp, redirect to cni */
           UPDATE_ENTRY();
-          if (srss->cni_entry)
-            srss->cni_entry->flow.cb(srss->cni_entry->flow.priv, &pkts[i], 1);
+          srss_entry_pkts_enqueue(srss->cni_entry, &pkts[i], 1);
           continue;
         }
         udp = &hdr->udp;
@@ -77,17 +89,14 @@ static int srss_tasklet_handler(void* priv) {
         }
         if (!srss_entry) { /* no match, redirect to cni */
           UPDATE_ENTRY();
-          if (srss->cni_entry)
-            srss->cni_entry->flow.cb(srss->cni_entry->flow.priv, &pkts[i], 1);
+          srss_entry_pkts_enqueue(srss->cni_entry, &pkts[i], 1);
         }
       }
       if (matched_pkts_nb)
-        last_srss_entry->flow.cb(last_srss_entry->flow.priv, &matched_pkts[0],
-                                 matched_pkts_nb);
-      rte_pktmbuf_free_bulk(&pkts[0], rx);
+        srss_entry_pkts_enqueue(last_srss_entry, &matched_pkts[0], matched_pkts_nb);
     }
-    pthread_mutex_unlock(&srss->mutex);
   }
+  pthread_mutex_unlock(&srss->mutex);
 
   return 0;
 }
@@ -141,6 +150,7 @@ static int srss_tasklet_start(void* priv) {
 
   return 0;
 }
+
 static int srss_tasklet_stop(void* priv) {
   struct mt_srss_impl* srss = priv;
 
@@ -149,56 +159,102 @@ static int srss_tasklet_stop(void* priv) {
   return 0;
 }
 
+static int srss_stat(void* priv) {
+  struct mt_srss_impl* srss = priv;
+  enum mtl_port port = srss->port;
+  struct mt_srss_entry* entry;
+  int idx;
+
+  pthread_mutex_lock(&srss->mutex);
+  MT_TAILQ_FOREACH(entry, &srss->head, next) {
+    idx = entry->idx;
+    notice("%s(%d,%d), enqueue %u dequeue %u\n", __func__, port, idx,
+           entry->stat_enqueue_cnt, entry->stat_dequeue_cnt);
+    entry->stat_enqueue_cnt = 0;
+    entry->stat_dequeue_cnt = 0;
+    if (entry->stat_enqueue_fail_cnt) {
+      warn("%s(%d,%d), enqueue fail %u\n", __func__, port, idx,
+           entry->stat_enqueue_fail_cnt);
+      entry->stat_enqueue_fail_cnt = 0;
+    }
+  }
+  pthread_mutex_unlock(&srss->mutex);
+
+  return 0;
+}
+
 struct mt_srss_entry* mt_srss_get(struct mtl_main_impl* impl, enum mtl_port port,
                                   struct mt_rxq_flow* flow) {
   struct mt_srss_impl* srss = impl->srss[port];
+  int idx = srss->entry_idx;
   struct mt_srss_entry* entry;
-  static uint16_t srss_queue_id;
 
   if (!mt_has_srss(impl, port)) {
-    err("%s(%d), shared rss not enabled\n", __func__, port);
+    err("%s(%d,%d), shared rss not enabled\n", __func__, port, idx);
     return NULL;
   }
   if (!flow->cb) {
-    err("%s(%d), no cb in the flow\n", __func__, port);
+    err("%s(%d,%d), no cb in the flow\n", __func__, port, idx);
     return NULL;
   }
 
   MT_TAILQ_FOREACH(entry, &srss->head, next) {
     if (entry->flow.dst_port == flow->dst_port &&
         *(uint32_t*)entry->flow.dip_addr == *(uint32_t*)flow->dip_addr) {
-      err("%s(%d), already has entry %u.%u.%u.%u:%u\n", __func__, port, flow->dip_addr[0],
-          flow->dip_addr[1], flow->dip_addr[2], flow->dip_addr[3], flow->dst_port);
+      err("%s(%d,%d), already has entry %u.%u.%u.%u:%u\n", __func__, port, idx,
+          flow->dip_addr[0], flow->dip_addr[1], flow->dip_addr[2], flow->dip_addr[3],
+          flow->dst_port);
       return NULL;
     }
   }
 
   entry = mt_rte_zmalloc_socket(sizeof(*entry), mt_socket_id(impl, port));
   if (!entry) {
-    err("%s(%d), malloc fail\n", __func__, port);
+    err("%s(%d,%d), malloc fail\n", __func__, port, idx);
     return NULL;
   }
+
+  /* ring create */
+  char ring_name[32];
+  snprintf(ring_name, 32, "%sP%d_%d", MT_SRSS_RING_PREFIX, port, idx);
+  entry->ring = rte_ring_create(ring_name, 512, mt_socket_id(impl, MTL_PORT_P),
+                                RING_F_SP_ENQ | RING_F_SC_DEQ);
+  if (!entry->ring) {
+    err("%s(%d,%d), ring create fail\n", __func__, port, idx);
+    mt_rte_free(entry);
+    return NULL;
+  }
+
   entry->flow = *flow;
   entry->srss = srss;
-  entry->queue_id = srss_queue_id; /* use a dummy queue id */
-  srss_queue_id++;
+  entry->idx = idx;
+
+  srss->entry_idx++;
   pthread_mutex_lock(&srss->mutex);
   MT_TAILQ_INSERT_TAIL(&srss->head, entry, next);
   if (flow->sys_queue) srss->cni_entry = entry;
   pthread_mutex_unlock(&srss->mutex);
 
-  info("%s(%d), entry %u.%u.%u.%u:(dst)%u succ\n", __func__, port, flow->dip_addr[0],
-       flow->dip_addr[1], flow->dip_addr[2], flow->dip_addr[3], flow->dst_port);
+  info("%s(%d), entry %u.%u.%u.%u:(dst)%u on %d\n", __func__, port, flow->dip_addr[0],
+       flow->dip_addr[1], flow->dip_addr[2], flow->dip_addr[3], flow->dst_port, idx);
   return entry;
 }
 
 int mt_srss_put(struct mt_srss_entry* entry) {
   struct mt_srss_impl* srss = entry->srss;
+  enum mtl_port port = srss->port;
 
   pthread_mutex_lock(&srss->mutex);
   MT_TAILQ_REMOVE(&srss->head, entry, next);
   pthread_mutex_unlock(&srss->mutex);
 
+  if (entry->ring) {
+    mt_ring_dequeue_clean(entry->ring);
+    rte_ring_free(entry->ring);
+    entry->ring = NULL;
+  }
+
+  notice("%s(%d), succ on %d\n", __func__, port, entry->idx);
   mt_rte_free(entry);
   return 0;
 }
@@ -209,6 +265,7 @@ int mt_srss_init(struct mtl_main_impl* impl) {
 
   for (int i = 0; i < num_ports; i++) {
     if (!mt_has_srss(impl, i)) continue;
+
     impl->srss[i] = mt_rte_zmalloc_socket(sizeof(*impl->srss[i]), mt_socket_id(impl, i));
     if (!impl->srss[i]) {
       err("%s(%d), srss malloc fail\n", __func__, i);
@@ -224,8 +281,7 @@ int mt_srss_init(struct mtl_main_impl* impl) {
       return ret;
     }
 
-    struct mt_sch_impl* sch = mt_sch_get(impl, mt_if(impl, i)->link_speed,
-                                         MT_SCH_TYPE_DEFAULT, MT_SCH_MASK_ALL);
+    struct mt_sch_impl* sch = mt_sch_get(impl, 0, MT_SCH_TYPE_DEFAULT, MT_SCH_MASK_ALL);
     if (!sch) {
       err("%s(%d), get sch fail\n", __func__, i);
       mt_srss_uinit(impl);
@@ -260,6 +316,8 @@ int mt_srss_init(struct mtl_main_impl* impl) {
       return ret;
     }
 
+    mt_stat_register(impl, srss_stat, srss, "srss");
+
     info("%s(%d), succ with shared rss mode\n", __func__, i);
   }
 
@@ -271,26 +329,28 @@ int mt_srss_uinit(struct mtl_main_impl* impl) {
 
   for (int i = 0; i < num_ports; i++) {
     struct mt_srss_impl* srss = impl->srss[i];
-    if (srss) {
-      srss_traffic_thread_stop(srss);
-      if (srss->tasklet) {
-        mt_sch_unregister_tasklet(srss->tasklet);
-        srss->tasklet = NULL;
-      }
-      if (srss->sch) {
-        mt_sch_put(srss->sch, mt_if(impl, i)->link_speed);
-        srss->sch = NULL;
-      }
-      struct mt_srss_entry* entry;
-      while ((entry = MT_TAILQ_FIRST(&srss->head))) {
-        warn("%s, still has entry %p\n", __func__, entry);
-        MT_TAILQ_REMOVE(&srss->head, entry, next);
-        mt_rte_free(entry);
-      }
-      pthread_mutex_destroy(&srss->mutex);
-      mt_rte_free(srss);
-      impl->srss[i] = NULL;
+    if (!srss) continue;
+
+    mt_stat_unregister(impl, srss_stat, srss);
+    srss_traffic_thread_stop(srss);
+    if (srss->tasklet) {
+      mt_sch_unregister_tasklet(srss->tasklet);
+      srss->tasklet = NULL;
     }
+    if (srss->sch) {
+      mt_sch_put(srss->sch, 0);
+      srss->sch = NULL;
+    }
+    struct mt_srss_entry* entry;
+    while ((entry = MT_TAILQ_FIRST(&srss->head))) {
+      warn("%s, still has entry %p\n", __func__, entry);
+      MT_TAILQ_REMOVE(&srss->head, entry, next);
+      mt_rte_free(entry);
+    }
+    pthread_mutex_destroy(&srss->mutex);
+    mt_rte_free(srss);
+    impl->srss[i] = NULL;
   }
+
   return 0;
 }
