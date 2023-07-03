@@ -137,8 +137,8 @@ static uint16_t urq_rx(struct mur_queue* q) {
   uint16_t rx_burst = q->rx_burst_pkts;
   struct rte_mbuf* pkts[rx_burst];
 
-  /* no lock need as rsq/rss/srss has lock already */
-  if (!q->rxq->rxq) return mt_rxq_burst(q->rxq, NULL, rx_burst);
+  /* no lock need as rsq has lock already */
+  if (q->rxq->rsq) return mt_rxq_burst(q->rxq, NULL, rx_burst);
 
   if (!urq_try_lock(q)) return 0;
   uint16_t rx = mt_rxq_burst(q->rxq, pkts, rx_burst);

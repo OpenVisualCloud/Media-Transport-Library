@@ -475,19 +475,17 @@ static int rx_ancillary_sessions_mgr_init(struct mtl_main_impl* impl,
     rte_spinlock_init(&mgr->mutex[i]);
   }
 
-  if (!mt_has_srss(impl, MTL_PORT_P)) {
-    memset(&ops, 0x0, sizeof(ops));
-    ops.priv = mgr;
-    ops.name = "rx_anc_sessions_mgr";
-    ops.start = rx_ancillary_sessions_tasklet_start;
-    ops.stop = rx_ancillary_sessions_tasklet_stop;
-    ops.handler = rx_ancillary_sessions_tasklet_handler;
+  memset(&ops, 0x0, sizeof(ops));
+  ops.priv = mgr;
+  ops.name = "rx_anc_sessions_mgr";
+  ops.start = rx_ancillary_sessions_tasklet_start;
+  ops.stop = rx_ancillary_sessions_tasklet_stop;
+  ops.handler = rx_ancillary_sessions_tasklet_handler;
 
-    mgr->tasklet = mt_sch_register_tasklet(sch, &ops);
-    if (!mgr->tasklet) {
-      err("%s(%d), mt_sch_register_tasklet fail\n", __func__, idx);
-      return -EIO;
-    }
+  mgr->tasklet = mt_sch_register_tasklet(sch, &ops);
+  if (!mgr->tasklet) {
+    err("%s(%d), mt_sch_register_tasklet fail\n", __func__, idx);
+    return -EIO;
   }
 
   mt_stat_register(mgr->parent, st_rx_ancillary_sessions_stat, mgr, "rx_anc");

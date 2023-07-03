@@ -58,7 +58,7 @@ uint16_t mt_rxq_burst(struct mt_rxq_entry* entry, struct rte_mbuf** rx_pkts,
                       const uint16_t nb_pkts) {
   uint16_t rx;
   if (entry->srss) {
-    rx = 0; /* srss rx on the srss tasklet */
+    rx = mt_srss_burst(entry->srss, rx_pkts, nb_pkts);
   } else if (entry->rsq) {
     mt_rsq_burst(entry->rsq, nb_pkts);
     rx = 0; /* the buf is handled in the callback */
