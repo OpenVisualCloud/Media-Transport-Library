@@ -15,7 +15,8 @@ struct mt_rsq_entry* mt_rsq_get(struct mtl_main_impl* impl, enum mtl_port port,
 static inline uint16_t mt_rsq_queue_id(struct mt_rsq_entry* entry) {
   return entry->queue_id;
 }
-uint16_t mt_rsq_burst(struct mt_rsq_entry* entry, uint16_t nb_pkts);
+uint16_t mt_rsq_burst(struct mt_rsq_entry* entry, struct rte_mbuf** rx_pkts,
+                      uint16_t nb_pkts);
 int mt_rsq_put(struct mt_rsq_entry* entry);
 
 int mt_tsq_init(struct mtl_main_impl* impl);

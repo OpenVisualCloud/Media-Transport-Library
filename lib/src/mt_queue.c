@@ -60,8 +60,7 @@ uint16_t mt_rxq_burst(struct mt_rxq_entry* entry, struct rte_mbuf** rx_pkts,
   if (entry->srss) {
     rx = mt_srss_burst(entry->srss, rx_pkts, nb_pkts);
   } else if (entry->rsq) {
-    mt_rsq_burst(entry->rsq, nb_pkts);
-    rx = 0; /* the buf is handled in the callback */
+    rx = mt_rsq_burst(entry->rsq, rx_pkts, nb_pkts);
   } else {
     rx = mt_dev_rx_burst(entry->rxq, rx_pkts, nb_pkts);
   }

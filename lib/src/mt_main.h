@@ -457,10 +457,6 @@ struct mt_rxq_flow {
 #ifdef ST_HAS_DPDK_HDR_SPLIT /* rte_eth_hdrs_mbuf_callback_fn define with this marco */
   rte_eth_hdrs_mbuf_callback_fn hdr_split_mbuf_cb;
 #endif
-  /* priv data to the cb for shared queue */
-  void* priv;
-  /* call back of the received mbufs by mt_rsq_burst or mt_rss_burst */
-  mt_rsq_mbuf_cb cb;
 };
 
 struct mt_rx_flow_rsp {
@@ -682,10 +678,15 @@ struct mt_rsq_impl; /* forward delcare */
 
 struct mt_rsq_entry {
   uint16_t queue_id;
+  int idx;
   struct mt_rxq_flow flow;
   uint16_t dst_port_net;
   struct mt_rx_flow_rsp* flow_rsp;
   struct mt_rsq_impl* parent;
+  struct rte_ring* ring;
+  uint32_t stat_enqueue_cnt;
+  uint32_t stat_dequeue_cnt;
+  uint32_t stat_enqueue_fail_cnt;
   /* linked list */
   MT_TAILQ_ENTRY(mt_rsq_entry) next;
 };
@@ -698,6 +699,8 @@ struct mt_rsq_queue {
   struct mt_rsq_entrys_list head;
   pthread_mutex_t mutex;
   rte_atomic32_t entry_cnt;
+  int entry_idx;
+  struct mt_rsq_entry* cni_entry;
   /* stat */
   int stat_pkts_recv;
   int stat_pkts_deliver;
@@ -742,6 +745,7 @@ struct mt_tsq_queue {
   pthread_mutex_t mutex;
   pthread_mutex_t tx_mutex;
   rte_atomic32_t entry_cnt;
+  uint64_t bytes_per_sec; /* rl rate in byte */
   /* stat */
   int stat_pkts_send;
 };

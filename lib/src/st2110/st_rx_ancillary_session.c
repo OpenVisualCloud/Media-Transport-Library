@@ -212,8 +212,6 @@ static int rx_ancillary_session_init_hw(struct mtl_main_impl* impl,
     rte_memcpy(flow.sip_addr, mt_sip_addr(impl, port), MTL_IP_ADDR_LEN);
     flow.dst_port = s->st40_dst_port[i];
     flow.src_port = s->st40_src_port[i];
-    flow.priv = &s->priv[i];
-    flow.cb = rx_ancillary_session_handle_mbuf;
 
     /* no flow for data path only */
     if (mt_pmd_is_kernel(impl, port) && (s->ops.flags & ST40_RX_FLAG_DATA_PATH_ONLY))

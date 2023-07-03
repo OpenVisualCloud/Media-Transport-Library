@@ -226,19 +226,6 @@ static int cni_tasklet_handler(void* priv) {
   return cni_traffic(impl);
 }
 
-static int cni_rsq_mbuf_cb(void* priv, struct rte_mbuf** mbuf, uint16_t nb) {
-  struct mt_cni_priv* cni_priv = priv;
-  struct mtl_main_impl* impl = cni_priv->impl;
-  enum mtl_port port = cni_priv->port;
-  struct mt_cni_impl* cni = mt_get_cni(impl);
-
-  cni->eth_rx_cnt[port] += nb;
-  for (uint16_t ri = 0; ri < nb; ri++) cni_rx_handle(impl, mbuf[ri], port);
-  mt_kni_handle(impl, port, mbuf, nb);
-
-  return 0;
-}
-
 static int cni_queues_uinit(struct mtl_main_impl* impl) {
   int num_ports = mt_num_ports(impl);
   struct mt_cni_impl* cni = mt_get_cni(impl);
@@ -271,9 +258,6 @@ static int cni_queues_init(struct mtl_main_impl* impl, struct mt_cni_impl* cni) 
     struct mt_rxq_flow flow;
     memset(&flow, 0, sizeof(flow));
     flow.sys_queue = true;
-    flow.priv = &cni->cni_priv[i];
-    flow.cb = cni_rsq_mbuf_cb;
-
     cni->rxq[i] = mt_rxq_get(impl, i, &flow);
     info("%s(%d), rxq %d\n", __func__, i, mt_rxq_queue_id(cni->rxq[i]));
     if (!cni->rxq[i]) {
