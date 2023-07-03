@@ -12,6 +12,20 @@
 #define MT_SRSS_BURST_SIZE (128)
 #define MT_SRSS_RING_PREFIX "SR_"
 
+static inline void srss_lock(struct mt_srss_impl* srss) {
+  mt_pthread_mutex_lock(&srss->mutex);
+}
+
+/* return true if try lock succ */
+static inline bool srss_try_lock(struct mt_srss_impl* srss) {
+  int ret = mt_pthread_mutex_try_lock(&srss->mutex);
+  return ret == 0 ? true : false;
+}
+
+static inline void srss_unlock(struct mt_srss_impl* srss) {
+  mt_pthread_mutex_unlock(&srss->mutex);
+}
+
 static inline void srss_entry_pkts_enqueue(struct mt_srss_entry* entry,
                                            struct rte_mbuf** pkts,
                                            const uint16_t nb_pkts) {
@@ -42,7 +56,7 @@ static int srss_tasklet_handler(void* priv) {
   struct rte_ipv4_hdr* ipv4;
   struct rte_udp_hdr* udp;
 
-  pthread_mutex_lock(&srss->mutex);
+  srss_lock(srss);
   for (uint16_t queue = 0; queue < inf->max_rx_queues; queue++) {
     uint16_t matched_pkts_nb = 0;
 
@@ -96,7 +110,7 @@ static int srss_tasklet_handler(void* priv) {
         srss_entry_pkts_enqueue(last_srss_entry, &matched_pkts[0], matched_pkts_nb);
     }
   }
-  pthread_mutex_unlock(&srss->mutex);
+  srss_unlock(srss);
 
   return 0;
 }
@@ -165,7 +179,7 @@ static int srss_stat(void* priv) {
   struct mt_srss_entry* entry;
   int idx;
 
-  pthread_mutex_lock(&srss->mutex);
+  if (!srss_try_lock(srss)) return 0;
   MT_TAILQ_FOREACH(entry, &srss->head, next) {
     idx = entry->idx;
     notice("%s(%d,%d), enqueue %u dequeue %u\n", __func__, port, idx,
@@ -178,7 +192,7 @@ static int srss_stat(void* priv) {
       entry->stat_enqueue_fail_cnt = 0;
     }
   }
-  pthread_mutex_unlock(&srss->mutex);
+  srss_unlock(srss);
 
   return 0;
 }
@@ -230,10 +244,10 @@ struct mt_srss_entry* mt_srss_get(struct mtl_main_impl* impl, enum mtl_port port
   entry->idx = idx;
 
   srss->entry_idx++;
-  pthread_mutex_lock(&srss->mutex);
+  srss_lock(srss);
   MT_TAILQ_INSERT_TAIL(&srss->head, entry, next);
   if (flow->sys_queue) srss->cni_entry = entry;
-  pthread_mutex_unlock(&srss->mutex);
+  srss_unlock(srss);
 
   info("%s(%d), entry %u.%u.%u.%u:(dst)%u on %d\n", __func__, port, flow->dip_addr[0],
        flow->dip_addr[1], flow->dip_addr[2], flow->dip_addr[3], flow->dst_port, idx);
@@ -244,9 +258,9 @@ int mt_srss_put(struct mt_srss_entry* entry) {
   struct mt_srss_impl* srss = entry->srss;
   enum mtl_port port = srss->port;
 
-  pthread_mutex_lock(&srss->mutex);
+  srss_lock(srss);
   MT_TAILQ_REMOVE(&srss->head, entry, next);
-  pthread_mutex_unlock(&srss->mutex);
+  srss_unlock(srss);
 
   if (entry->ring) {
     mt_ring_dequeue_clean(entry->ring);
@@ -274,7 +288,7 @@ int mt_srss_init(struct mtl_main_impl* impl) {
     }
     struct mt_srss_impl* srss = impl->srss[i];
 
-    ret = pthread_mutex_init(&srss->mutex, NULL);
+    ret = mt_pthread_mutex_init(&srss->mutex, NULL);
     if (ret < 0) {
       err("%s(%d), mutex init fail\n", __func__, i);
       mt_srss_uinit(impl);
@@ -347,7 +361,7 @@ int mt_srss_uinit(struct mtl_main_impl* impl) {
       MT_TAILQ_REMOVE(&srss->head, entry, next);
       mt_rte_free(entry);
     }
-    pthread_mutex_destroy(&srss->mutex);
+    mt_pthread_mutex_destroy(&srss->mutex);
     mt_rte_free(srss);
     impl->srss[i] = NULL;
   }
