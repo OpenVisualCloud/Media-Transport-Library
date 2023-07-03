@@ -678,33 +678,6 @@ struct mt_dev_stats {
   uint64_t tx_errors;
 };
 
-struct mt_rss_impl; /* forward delcare */
-
-struct mt_rss_entry {
-  uint16_t queue_id;
-  struct mt_rxq_flow flow;
-  struct mt_rss_impl* rss;
-  uint32_t hash;
-  /* linked list */
-  MT_TAILQ_ENTRY(mt_rss_entry) next;
-};
-MT_TAILQ_HEAD(mt_rss_entrys_list, mt_rss_entry);
-
-struct mt_rss_queue {
-  uint16_t port_id;
-  uint16_t queue_id;
-  /* List of rss entry */
-  struct mt_rss_entrys_list head;
-  pthread_mutex_t mutex;
-};
-
-struct mt_rss_impl {
-  enum mtl_port port;
-  /* rss queue resources */
-  uint16_t max_rss_queues;
-  struct mt_rss_queue* rss_queues;
-};
-
 struct mt_rsq_impl; /* forward delcare */
 
 struct mt_rsq_entry {
@@ -1064,12 +1037,8 @@ static inline enum mtl_rss_mode mt_get_rss_mode(struct mtl_main_impl* impl,
   return mt_if(impl, port)->rss_mode;
 }
 
-static inline bool mt_has_rss(struct mtl_main_impl* impl, enum mtl_port port) {
-  return mt_get_rss_mode(impl, port) != MTL_RSS_MODE_NONE;
-}
-
 static inline bool mt_has_srss(struct mtl_main_impl* impl, enum mtl_port port) {
-  return mt_get_rss_mode(impl, port) == MTL_RSS_MODE_L3_L4;
+  return mt_get_rss_mode(impl, port) != MTL_RSS_MODE_NONE;
 }
 
 static inline bool mt_udp_transport(struct mtl_main_impl* impl, enum mtl_port port) {

@@ -20,10 +20,6 @@ struct mt_rxq_entry* mt_rxq_get(struct mtl_main_impl* impl, enum mtl_port port,
     entry->srss = mt_srss_get(impl, port, flow);
     if (!entry->srss) goto fail;
     entry->queue_id = mt_srss_queue_id(entry->srss);
-  } else if (mt_has_rss(impl, port)) {
-    entry->rss = mt_rss_get(impl, port, flow);
-    if (!entry->rss) goto fail;
-    entry->queue_id = mt_rss_queue_id(entry->rss);
   } else if (mt_shared_queue(impl, port)) {
     entry->rsq = mt_rsq_get(impl, port, flow);
     if (!entry->rsq) goto fail;
@@ -50,10 +46,6 @@ int mt_rxq_put(struct mt_rxq_entry* entry) {
     mt_rsq_put(entry->rsq);
     entry->rsq = NULL;
   }
-  if (entry->rss) {
-    mt_rss_put(entry->rss);
-    entry->rss = NULL;
-  }
   if (entry->srss) {
     mt_srss_put(entry->srss);
     entry->srss = NULL;
@@ -69,9 +61,6 @@ uint16_t mt_rxq_burst(struct mt_rxq_entry* entry, struct rte_mbuf** rx_pkts,
     rx = 0; /* srss rx on the srss tasklet */
   } else if (entry->rsq) {
     mt_rsq_burst(entry->rsq, nb_pkts);
-    rx = 0; /* the buf is handled in the callback */
-  } else if (entry->rss) {
-    mt_rss_burst(entry->rss, nb_pkts);
     rx = 0; /* the buf is handled in the callback */
   } else {
     rx = mt_dev_rx_burst(entry->rxq, rx_pkts, nb_pkts);

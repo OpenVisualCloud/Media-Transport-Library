@@ -593,12 +593,6 @@ int st_app_parse_args(struct st_app_context* ctx, struct mtl_init_params* p, int
           p->rss_mode = MTL_RSS_MODE_L3;
         else if (!strcmp(optarg, "l3_l4"))
           p->rss_mode = MTL_RSS_MODE_L3_L4;
-        else if (!strcmp(optarg, "l3_l4_dst_port_only"))
-          p->rss_mode = MTL_RSS_MODE_L3_L4_DP_ONLY;
-        else if (!strcmp(optarg, "l3_da_l4_dst_port_only"))
-          p->rss_mode = MTL_RSS_MODE_L3_DA_L4_DP_ONLY;
-        else if (!strcmp(optarg, "l4_dst_port_only"))
-          p->rss_mode = MTL_RSS_MODE_L4_DP_ONLY;
         else if (!strcmp(optarg, "none"))
           p->rss_mode = MTL_RSS_MODE_NONE;
         else

@@ -194,12 +194,6 @@ enum mtl_rss_mode {
   MTL_RSS_MODE_L3,
   /** hash with l3 src and dst address, l4 src port and dst port, used with shared rss */
   MTL_RSS_MODE_L3_L4,
-  /** hash with l3 src and dst address, l4 dst port only, for st2110 unicast */
-  MTL_RSS_MODE_L3_L4_DP_ONLY,
-  /** hash with l3 dst address only, l4 dst port only, for st2110 multicast */
-  MTL_RSS_MODE_L3_DA_L4_DP_ONLY,
-  /** hash with l4 dst port only, for udp transport */
-  MTL_RSS_MODE_L4_DP_ONLY,
   /** max value of this enum */
   MTL_RSS_MODE_MAX,
 };

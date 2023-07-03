@@ -946,7 +946,7 @@ static int dev_config_port(struct mt_interface* inf) {
   }
 
   dbg("%s(%d), rss mode %d\n", __func__, port, inf->rss_mode);
-  if (mt_has_rss(impl, port)) {
+  if (mt_has_srss(impl, port)) {
     struct rte_eth_rss_conf* rss_conf;
     rss_conf = &port_conf.rx_adv_conf.rss_conf;
 
@@ -956,13 +956,6 @@ static int dev_config_port(struct mt_interface* inf) {
       rss_conf->rss_hf = RTE_ETH_RSS_IPV4;
     } else if (inf->rss_mode == MTL_RSS_MODE_L3_L4) {
       rss_conf->rss_hf = RTE_ETH_RSS_NONFRAG_IPV4_UDP;
-    } else if (inf->rss_mode == MTL_RSS_MODE_L3_L4_DP_ONLY) {
-      rss_conf->rss_hf = RTE_ETH_RSS_NONFRAG_IPV4_UDP | RTE_ETH_RSS_L4_DST_ONLY;
-    } else if (inf->rss_mode == MTL_RSS_MODE_L3_DA_L4_DP_ONLY) {
-      rss_conf->rss_hf = RTE_ETH_RSS_NONFRAG_IPV4_UDP | RTE_ETH_RSS_L4_DST_ONLY |
-                         RTE_ETH_RSS_L3_DST_ONLY;
-    } else if (inf->rss_mode == MTL_RSS_MODE_L4_DP_ONLY) {
-      rss_conf->rss_hf = RTE_ETH_RSS_PORT | RTE_ETH_RSS_L4_DST_ONLY;
     } else {
       err("%s(%d), not support rss_mode %d\n", __func__, port, inf->rss_mode);
       return -EIO;
@@ -1158,7 +1151,7 @@ static int dev_start_port(struct mt_interface* inf) {
   }
   inf->status |= MT_IF_STAT_PORT_STARTED;
 
-  if (mt_has_rss(impl, port)) {
+  if (mt_has_srss(impl, port)) {
     ret = dev_config_rss_reta(inf);
     if (ret < 0) {
       err("%s(%d), rss reta config fail %d\n", __func__, port, ret);
@@ -1829,8 +1822,8 @@ struct mt_rx_queue* mt_dev_get_rx_queue(struct mtl_main_impl* impl, enum mtl_por
   int ret;
   struct mt_rx_queue* rx_queue;
 
-  if (mt_has_rss(impl, port)) {
-    err("%s(%d), conflict with rss mode, use rss api instead\n", __func__, port);
+  if (mt_has_srss(impl, port)) {
+    err("%s(%d), conflict with srss mode, use srss api instead\n", __func__, port);
     return NULL;
   }
 
@@ -2391,10 +2384,7 @@ int mt_dev_if_init(struct mtl_main_impl* impl) {
     inf->rss_mode = p->rss_mode;
     /* enable rss if no flow support */
     if (inf->flow_type == MT_FLOW_NONE && inf->rss_mode == MTL_RSS_MODE_NONE) {
-      if (inf->drv_type == MT_DRV_ENA)
-        inf->rss_mode = MTL_RSS_MODE_L3_L4; /* only rss l3 and l4 support */
-      else
-        inf->rss_mode = MTL_RSS_MODE_L3_L4_DP_ONLY;
+      inf->rss_mode = MTL_RSS_MODE_L3_L4; /* default l3_l4 */
     }
 
     /* set max tx/rx queues */
