@@ -93,30 +93,16 @@ jobs:
         meson setup build
         meson install -C build
 
-    - name: Build IMTL lib
+    - name: Build
       run: |
-        meson setup build
-        meson install -C build
+        ./build.sh
 
-    - name: Build IMTL app
+    - name: Build with debug
       run: |
-        cd app
-        meson setup build
-        meson compile -C build
+        rm build -rf
+        ./build.sh debug
 
-    - name: Build IMTL test
-      run: |
-        cd tests
-        meson setup build
-        meson compile -C build
-
-    - name: Build IMTL plugins
-      run: |
-        cd plugins
-        meson setup build
-        meson install -C build
-
-    - name: Build IMTL lib with TAP
+    - name: Build with TAP
       run: |
         meson setup tap_build -Denable_tap=true
         meson install -C tap_build
