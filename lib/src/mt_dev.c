@@ -1627,6 +1627,12 @@ static int dev_if_init_pacing(struct mt_interface* inf) {
   enum mtl_port port = inf->port;
   int ret;
 
+  if (mt_shared_tx_queue(inf->parent, inf->port)) {
+    info("%s(%d), use tsc as shared tx queue\n", __func__, port);
+    inf->tx_pacing_way = ST21_TX_PACING_WAY_TSC;
+    return 0;
+  }
+
   if ((ST21_TX_PACING_WAY_AUTO == inf->tx_pacing_way) ||
       (ST21_TX_PACING_WAY_RL == inf->tx_pacing_way)) {
     /* VF require all q config with RL */
@@ -1783,8 +1789,9 @@ struct mt_tx_queue* mt_dev_get_tx_queue(struct mtl_main_impl* impl, enum mtl_por
   struct mt_tx_queue* tx_queue;
   int ret;
 
-  if (mt_shared_queue(impl, port)) {
-    err("%s(%d), conflict with shared queue mode, use sq api instead\n", __func__, port);
+  if (mt_shared_tx_queue(impl, port)) {
+    err("%s(%d), conflict with shared tx queue mode, use tsq api instead\n", __func__,
+        port);
     return NULL;
   }
 
@@ -1827,8 +1834,9 @@ struct mt_rx_queue* mt_dev_get_rx_queue(struct mtl_main_impl* impl, enum mtl_por
     return NULL;
   }
 
-  if (mt_shared_queue(impl, port)) {
-    err("%s(%d), conflict with shared queue mode, use rsq api instead\n", __func__, port);
+  if (mt_shared_rx_queue(impl, port)) {
+    err("%s(%d), conflict with shared rx queue mode, use rsq api instead\n", __func__,
+        port);
     return NULL;
   }
 

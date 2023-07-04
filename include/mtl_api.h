@@ -316,11 +316,6 @@ enum st21_tx_pacing_way {
 #define MTL_FLAG_RXTX_SIMD_512 (MTL_BIT64(7))
 /**
  * Flag bit in flags of struct mtl_init_params.
- * Enable shared queue for tx and rx, only support in MTL_TRANSPORT_UDP now.
- */
-#define MTL_FLAG_SHARED_QUEUE (MTL_BIT64(8))
-/**
- * Flag bit in flags of struct mtl_init_params.
  * Use PI controller for built-in PTP implementation, only for PF now.
  */
 #define MTL_FLAG_PTP_PI (MTL_BIT64(9))
@@ -339,6 +334,16 @@ enum st21_tx_pacing_way {
  * Enable multiple source port for MTL_TRANSPORT_ST2110 20 tx.
  */
 #define MTL_FLAG_MULTI_SRC_PORT (MTL_BIT64(12))
+/**
+ * Flag bit in flags of struct mtl_init_params.
+ * Enable shared queue for tx.
+ */
+#define MTL_FLAG_SHARED_TX_QUEUE (MTL_BIT64(13))
+/**
+ * Flag bit in flags of struct mtl_init_params.
+ * Enable shared queue for rx.
+ */
+#define MTL_FLAG_SHARED_RX_QUEUE (MTL_BIT64(14))
 
 /**
  * Flag bit in flags of struct mtl_init_params, debug usage only.

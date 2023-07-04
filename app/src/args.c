@@ -103,7 +103,8 @@ enum st_args_cmd {
   ST_ARG_TX_NO_BURST_CHECK,
   ST_ARG_DHCP,
   ST_ARG_IOVA_MODE,
-  ST_ARG_SHARED_QUEUES,
+  ST_ARG_SHARED_TX_QUEUES,
+  ST_ARG_SHARED_RX_QUEUES,
   ST_ARG_MAX,
 };
 
@@ -208,7 +209,8 @@ static struct option st_app_args_options[] = {
     {"tx_no_burst_check", no_argument, 0, ST_ARG_TX_NO_BURST_CHECK},
     {"dhcp", no_argument, 0, ST_ARG_DHCP},
     {"iova_mode", required_argument, 0, ST_ARG_IOVA_MODE},
-    {"shared_queues", no_argument, 0, ST_ARG_SHARED_QUEUES},
+    {"shared_tx_queues", no_argument, 0, ST_ARG_SHARED_TX_QUEUES},
+    {"shared_rx_queues", no_argument, 0, ST_ARG_SHARED_RX_QUEUES},
 
     {0, 0, 0, 0}};
 
@@ -627,8 +629,11 @@ int st_app_parse_args(struct st_app_context* ctx, struct mtl_init_params* p, int
         else
           err("%s, unknow iova mode %s\n", __func__, optarg);
         break;
-      case ST_ARG_SHARED_QUEUES:
-        p->flags |= MTL_FLAG_SHARED_QUEUE;
+      case ST_ARG_SHARED_TX_QUEUES:
+        p->flags |= MTL_FLAG_SHARED_TX_QUEUE;
+        break;
+      case ST_ARG_SHARED_RX_QUEUES:
+        p->flags |= MTL_FLAG_SHARED_RX_QUEUE;
         break;
       case '?':
         break;

@@ -68,9 +68,9 @@ static int utest_parse_args(struct utest_ctx* ctx, int argc, char** argv) {
         break;
       case UTEST_ARG_QUEUE_MODE:
         if (!strcmp(optarg, "shared"))
-          p->flags |= MTL_FLAG_SHARED_QUEUE;
+          p->flags |= (MTL_FLAG_SHARED_TX_QUEUE | MTL_FLAG_SHARED_RX_QUEUE);
         else if (!strcmp(optarg, "dedicated"))
-          p->flags &= ~MTL_FLAG_SHARED_QUEUE;
+          p->flags &= ~(MTL_FLAG_SHARED_TX_QUEUE | MTL_FLAG_SHARED_RX_QUEUE);
         else
           err("%s, unknow queue mode %s\n", __func__, optarg);
         break;

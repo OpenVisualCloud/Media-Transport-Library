@@ -22,7 +22,7 @@ struct loop_para {
 static bool loop_dedicated_mode(struct utest_ctx* ctx) {
   struct mtl_init_params* p = &ctx->init_params.mt_params;
 
-  if (p->flags & MTL_FLAG_SHARED_QUEUE) {
+  if (p->flags & (MTL_FLAG_SHARED_TX_QUEUE | MTL_FLAG_SHARED_RX_QUEUE)) {
     return false;
   }
 

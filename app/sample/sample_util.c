@@ -31,7 +31,8 @@ enum sample_args_cmd {
   SAMPLE_ARG_LOG_LEVEL,
   SAMPLE_ARG_DEV_AUTO_START,
   SAMPLE_ARG_DMA_PORT,
-  SAMPLE_ARG_SHARED_QUEUES,
+  SAMPLE_ARG_SHARED_TX_QUEUES,
+  SAMPLE_ARG_SHARED_RX_QUEUES,
   SAMPLE_ARG_QUEUES_CNT,
   SAMPLE_ARG_P_TX_DST_MAC,
   SAMPLE_ARG_R_TX_DST_MAC,
@@ -81,7 +82,8 @@ static struct option sample_args_options[] = {
     {"log_level", required_argument, 0, SAMPLE_ARG_LOG_LEVEL},
     {"dev_auto_start", no_argument, 0, SAMPLE_ARG_DEV_AUTO_START},
     {"dma_port", required_argument, 0, SAMPLE_ARG_DMA_PORT},
-    {"shared_queues", no_argument, 0, SAMPLE_ARG_SHARED_QUEUES},
+    {"shared_tx_queues", no_argument, 0, SAMPLE_ARG_SHARED_TX_QUEUES},
+    {"shared_rx_queues", no_argument, 0, SAMPLE_ARG_SHARED_RX_QUEUES},
     {"queues_cnt", required_argument, 0, SAMPLE_ARG_QUEUES_CNT},
     {"p_tx_dst_mac", required_argument, 0, SAMPLE_ARG_P_TX_DST_MAC},
     {"r_tx_dst_mac", required_argument, 0, SAMPLE_ARG_R_TX_DST_MAC},
@@ -227,8 +229,11 @@ static int _sample_parse_args(struct st_sample_context* ctx, int argc, char** ar
       case SAMPLE_ARG_DEV_AUTO_START:
         p->flags |= MTL_FLAG_DEV_AUTO_START_STOP;
         break;
-      case SAMPLE_ARG_SHARED_QUEUES:
-        p->flags |= MTL_FLAG_SHARED_QUEUE;
+      case SAMPLE_ARG_SHARED_TX_QUEUES:
+        p->flags |= MTL_FLAG_SHARED_TX_QUEUE;
+        break;
+      case SAMPLE_ARG_SHARED_RX_QUEUES:
+        p->flags |= MTL_FLAG_SHARED_RX_QUEUE;
         break;
       case SAMPLE_ARG_PTP_TSC:
         p->flags |= MTL_FLAG_PTP_SOURCE_TSC;
@@ -531,9 +536,17 @@ int ufd_override_check(struct st_sample_context* ctx) {
     has_override = true;
     override.lcore_mode = true;
   }
-  if (ctx->param.flags & MTL_FLAG_SHARED_QUEUE) {
+  if (ctx->param.flags & MTL_FLAG_SHARED_TX_QUEUE) {
     has_override = true;
-    override.shared_queue = true;
+    override.shared_tx_queue = true;
+  }
+  if (ctx->param.flags & MTL_FLAG_SHARED_RX_QUEUE) {
+    has_override = true;
+    override.shared_tx_queue = true;
+  }
+  if (ctx->param.rss_mode) {
+    has_override = true;
+    override.rss_mode = ctx->param.rss_mode;
   }
   if (has_override) {
     mufd_commit_override_params(&override);

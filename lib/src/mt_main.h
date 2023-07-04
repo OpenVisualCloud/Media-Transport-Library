@@ -745,7 +745,6 @@ struct mt_tsq_queue {
   pthread_mutex_t mutex;
   pthread_mutex_t tx_mutex;
   rte_atomic32_t entry_cnt;
-  uint64_t bytes_per_sec; /* rl rate in byte */
   /* stat */
   int stat_pkts_send;
 };
@@ -1085,8 +1084,15 @@ static inline bool mt_st2110_transport(struct mtl_main_impl* impl, enum mtl_port
     return false;
 }
 
-static inline bool mt_shared_queue(struct mtl_main_impl* impl, enum mtl_port port) {
-  if (mt_get_user_params(impl)->flags & MTL_FLAG_SHARED_QUEUE)
+static inline bool mt_shared_tx_queue(struct mtl_main_impl* impl, enum mtl_port port) {
+  if (mt_get_user_params(impl)->flags & MTL_FLAG_SHARED_TX_QUEUE)
+    return true;
+  else
+    return false;
+}
+
+static inline bool mt_shared_rx_queue(struct mtl_main_impl* impl, enum mtl_port port) {
+  if (mt_get_user_params(impl)->flags & MTL_FLAG_SHARED_RX_QUEUE)
     return true;
   else
     return false;

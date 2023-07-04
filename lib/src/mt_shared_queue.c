@@ -38,13 +38,13 @@ static int rsq_stat_dump(void* priv) {
 
   for (uint16_t q = 0; q < rsq->max_rsq_queues; q++) {
     s = &rsq->rsq_queues[q];
+    if (!rsq_try_lock(s)) continue;
     if (s->stat_pkts_recv) {
       notice("%s(%d,%u), entries %d, pkt recv %d deliver %d\n", __func__, port, q,
              rte_atomic32_read(&s->entry_cnt), s->stat_pkts_recv, s->stat_pkts_deliver);
       s->stat_pkts_recv = 0;
       s->stat_pkts_deliver = 0;
 
-      if (!rsq_try_lock(s)) continue;
       MT_TAILQ_FOREACH(entry, &s->head, next) {
         idx = entry->idx;
         notice("%s(%d,%u,%d), enqueue %u dequeue %u\n", __func__, port, q, idx,
@@ -154,7 +154,7 @@ static uint32_t rsq_flow_hash(struct mt_rxq_flow* flow) {
 
 struct mt_rsq_entry* mt_rsq_get(struct mtl_main_impl* impl, enum mtl_port port,
                                 struct mt_rxq_flow* flow) {
-  if (!mt_shared_queue(impl, port)) {
+  if (!mt_shared_rx_queue(impl, port)) {
     err("%s(%d), shared queue not enabled\n", __func__, port);
     return NULL;
   }
@@ -319,7 +319,7 @@ int mt_rsq_init(struct mtl_main_impl* impl) {
   int ret;
 
   for (int i = 0; i < num_ports; i++) {
-    if (!mt_shared_queue(impl, i)) continue;
+    if (!mt_shared_rx_queue(impl, i)) continue;
     impl->rsq[i] = mt_rte_zmalloc_socket(sizeof(*impl->rsq[i]), mt_socket_id(impl, i));
     if (!impl->rsq[i]) {
       err("%s(%d), rsq malloc fail\n", __func__, i);
@@ -376,11 +376,13 @@ static int tsq_stat_dump(void* priv) {
 
   for (uint16_t q = 0; q < tsq->max_tsq_queues; q++) {
     s = &tsq->tsq_queues[q];
+    if (!tsq_try_lock(s)) continue;
     if (s->stat_pkts_send) {
       notice("%s(%d,%u), entries %d, pkt send %d\n", __func__, tsq->port, q,
              rte_atomic32_read(&s->entry_cnt), s->stat_pkts_send);
       s->stat_pkts_send = 0;
     }
+    tsq_unlock(s);
   }
 
   return 0;
@@ -469,7 +471,7 @@ static uint32_t tsq_flow_hash(struct mt_txq_flow* flow) {
 
 struct mt_tsq_entry* mt_tsq_get(struct mtl_main_impl* impl, enum mtl_port port,
                                 struct mt_txq_flow* flow) {
-  if (!mt_shared_queue(impl, port)) {
+  if (!mt_shared_tx_queue(impl, port)) {
     err("%s(%d), shared queue not enabled\n", __func__, port);
     return NULL;
   }
@@ -504,10 +506,6 @@ struct mt_tsq_entry* mt_tsq_get(struct mtl_main_impl* impl, enum mtl_port port,
     tsq_queue->tx_pool = pool;
   }
   MT_TAILQ_INSERT_HEAD(&tsq_queue->head, entry, next);
-  if (flow->bytes_per_sec > tsq_queue->bytes_per_sec) {
-    mt_dev_set_tx_bps(impl, port, q, flow->bytes_per_sec);
-    tsq_queue->bytes_per_sec = flow->bytes_per_sec;
-  }
   rte_atomic32_inc(&tsq_queue->entry_cnt);
   tsq_unlock(tsq_queue);
 
@@ -591,7 +589,7 @@ int mt_tsq_init(struct mtl_main_impl* impl) {
   int ret;
 
   for (int i = 0; i < num_ports; i++) {
-    if (!mt_shared_queue(impl, i)) continue;
+    if (!mt_shared_tx_queue(impl, i)) continue;
     impl->tsq[i] = mt_rte_zmalloc_socket(sizeof(*impl->tsq[i]), mt_socket_id(impl, i));
     if (!impl->tsq[i]) {
       err("%s(%d), tsq malloc fail\n", __func__, i);
