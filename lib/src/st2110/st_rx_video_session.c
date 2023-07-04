@@ -2817,8 +2817,6 @@ static int rv_init_hw(struct mtl_main_impl* impl, struct st_rx_video_session_imp
     } else {
       flow.hdr_split = false;
     }
-    flow.priv = &s->priv[i];
-    flow.cb = rv_handle_mbuf;
 
     /* no flow for data path only */
     if (mt_pmd_is_kernel(impl, port) && (ops->flags & ST20_RX_FLAG_DATA_PATH_ONLY))

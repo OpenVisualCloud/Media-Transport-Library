@@ -207,10 +207,6 @@ struct mt_srss_entry* mt_srss_get(struct mtl_main_impl* impl, enum mtl_port port
     err("%s(%d,%d), shared rss not enabled\n", __func__, port, idx);
     return NULL;
   }
-  if (!flow->cb) {
-    err("%s(%d,%d), no cb in the flow\n", __func__, port, idx);
-    return NULL;
-  }
 
   MT_TAILQ_FOREACH(entry, &srss->head, next) {
     if (entry->flow.dst_port == flow->dst_port &&
@@ -243,10 +239,10 @@ struct mt_srss_entry* mt_srss_get(struct mtl_main_impl* impl, enum mtl_port port
   entry->srss = srss;
   entry->idx = idx;
 
-  srss->entry_idx++;
   srss_lock(srss);
   MT_TAILQ_INSERT_TAIL(&srss->head, entry, next);
   if (flow->sys_queue) srss->cni_entry = entry;
+  srss->entry_idx++;
   srss_unlock(srss);
 
   info("%s(%d), entry %u.%u.%u.%u:(dst)%u on %d\n", __func__, port, flow->dip_addr[0],
@@ -268,7 +264,7 @@ int mt_srss_put(struct mt_srss_entry* entry) {
     entry->ring = NULL;
   }
 
-  notice("%s(%d), succ on %d\n", __func__, port, entry->idx);
+  info("%s(%d), succ on %d\n", __func__, port, entry->idx);
   mt_rte_free(entry);
   return 0;
 }

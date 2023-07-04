@@ -9,23 +9,56 @@
 #include "mt_stat.h"
 #include "mt_util.h"
 
+#define MT_SQ_RING_PREFIX "SQ_"
+#define MT_SQ_BURST_SIZE (128)
+
 static inline struct mt_rsq_impl* rsq_ctx_get(struct mtl_main_impl* impl,
                                               enum mtl_port port) {
   return impl->rsq[port];
 }
 
+static inline void rsq_lock(struct mt_rsq_queue* s) { mt_pthread_mutex_lock(&s->mutex); }
+
+/* return true if try lock succ */
+static inline bool rsq_try_lock(struct mt_rsq_queue* s) {
+  int ret = mt_pthread_mutex_try_lock(&s->mutex);
+  return ret == 0 ? true : false;
+}
+
+static inline void rsq_unlock(struct mt_rsq_queue* s) {
+  mt_pthread_mutex_unlock(&s->mutex);
+}
+
 static int rsq_stat_dump(void* priv) {
   struct mt_rsq_impl* rsq = priv;
+  enum mtl_port port = rsq->port;
   struct mt_rsq_queue* s;
+  struct mt_rsq_entry* entry;
+  int idx;
 
   for (uint16_t q = 0; q < rsq->max_rsq_queues; q++) {
     s = &rsq->rsq_queues[q];
+    if (!rsq_try_lock(s)) continue;
     if (s->stat_pkts_recv) {
-      notice("%s(%d,%u), entries %d, pkt recv %d deliver %d\n", __func__, rsq->port, q,
+      notice("%s(%d,%u), entries %d, pkt recv %d deliver %d\n", __func__, port, q,
              rte_atomic32_read(&s->entry_cnt), s->stat_pkts_recv, s->stat_pkts_deliver);
       s->stat_pkts_recv = 0;
       s->stat_pkts_deliver = 0;
+
+      MT_TAILQ_FOREACH(entry, &s->head, next) {
+        idx = entry->idx;
+        notice("%s(%d,%u,%d), enqueue %u dequeue %u\n", __func__, port, q, idx,
+               entry->stat_enqueue_cnt, entry->stat_dequeue_cnt);
+        entry->stat_enqueue_cnt = 0;
+        entry->stat_dequeue_cnt = 0;
+        if (entry->stat_enqueue_fail_cnt) {
+          warn("%s(%d,%u,%d), enqueue fail %u\n", __func__, port, q, idx,
+               entry->stat_enqueue_fail_cnt);
+          entry->stat_enqueue_fail_cnt = 0;
+        }
+      }
     }
+    rsq_unlock(s);
   }
 
   return 0;
@@ -38,6 +71,12 @@ static int rsq_entry_free(struct mt_rsq_entry* entry) {
     mt_dev_free_rx_flow(rsqm->parent, rsqm->port, entry->flow_rsp);
     entry->flow_rsp = NULL;
   }
+  if (entry->ring) {
+    mt_ring_dequeue_clean(entry->ring);
+    rte_ring_free(entry->ring);
+  }
+  info("%s(%d), succ on q %u idx %d\n", __func__, rsqm->port, entry->queue_id,
+       entry->idx);
   mt_rte_free(entry);
   return 0;
 }
@@ -52,7 +91,7 @@ static int rsq_uinit(struct mt_rsq_impl* rsq) {
 
       /* check if any not free */
       while ((entry = MT_TAILQ_FIRST(&rsq_queue->head))) {
-        warn("%s(%u), entry %p not free\n", __func__, q, entry->flow.priv);
+        warn("%s(%u), entry %p not free\n", __func__, q, entry);
         MT_TAILQ_REMOVE(&rsq_queue->head, entry, next);
         rsq_entry_free(entry);
       }
@@ -115,12 +154,8 @@ static uint32_t rsq_flow_hash(struct mt_rxq_flow* flow) {
 
 struct mt_rsq_entry* mt_rsq_get(struct mtl_main_impl* impl, enum mtl_port port,
                                 struct mt_rxq_flow* flow) {
-  if (!mt_shared_queue(impl, port)) {
+  if (!mt_shared_rx_queue(impl, port)) {
     err("%s(%d), shared queue not enabled\n", __func__, port);
-    return NULL;
-  }
-  if (!flow->cb) {
-    err("%s(%d), no cb in the flow\n", __func__, port);
     return NULL;
   }
 
@@ -128,6 +163,7 @@ struct mt_rsq_entry* mt_rsq_get(struct mtl_main_impl* impl, enum mtl_port port,
   uint32_t hash = rsq_flow_hash(flow);
   uint16_t q = (hash % RTE_ETH_RETA_GROUP_SIZE) % rsqm->max_rsq_queues;
   struct mt_rsq_queue* rsq_queue = &rsqm->rsq_queues[q];
+  int idx = rsq_queue->entry_idx;
   struct mt_rsq_entry* entry =
       mt_rte_zmalloc_socket(sizeof(*entry), mt_socket_id(impl, port));
   if (!entry) {
@@ -135,6 +171,7 @@ struct mt_rsq_entry* mt_rsq_get(struct mtl_main_impl* impl, enum mtl_port port,
     return NULL;
   }
   entry->queue_id = q;
+  entry->idx = idx;
   entry->parent = rsqm;
   rte_memcpy(&entry->flow, flow, sizeof(entry->flow));
   entry->dst_port_net = htons(flow->dst_port);
@@ -147,15 +184,28 @@ struct mt_rsq_entry* mt_rsq_get(struct mtl_main_impl* impl, enum mtl_port port,
     }
   }
 
-  mt_pthread_mutex_lock(&rsq_queue->mutex);
-  /* todo: insert rsq entry by rbtree? */
+  /* ring create */
+  char ring_name[32];
+  snprintf(ring_name, 32, "%sP%d_Q%u_%d", MT_SQ_RING_PREFIX, port, q, idx);
+  entry->ring = rte_ring_create(ring_name, 512, mt_socket_id(impl, MTL_PORT_P),
+                                RING_F_SP_ENQ | RING_F_SC_DEQ);
+  if (!entry->ring) {
+    err("%s(%d,%d), ring %s create fail\n", __func__, port, idx, ring_name);
+    if (entry->flow_rsp) mt_dev_free_rx_flow(impl, port, entry->flow_rsp);
+    mt_rte_free(entry);
+    return NULL;
+  }
+
+  rsq_lock(rsq_queue);
   MT_TAILQ_INSERT_HEAD(&rsq_queue->head, entry, next);
   rte_atomic32_inc(&rsq_queue->entry_cnt);
-  mt_pthread_mutex_unlock(&rsq_queue->mutex);
+  rsq_queue->entry_idx++;
+  if (flow->sys_queue) rsq_queue->cni_entry = entry;
+  rsq_unlock(rsq_queue);
 
   uint8_t* ip = flow->dip_addr;
-  info("%s(%d), q %u ip %u.%u.%u.%u, port %u hash %u\n", __func__, port, q, ip[0], ip[1],
-       ip[2], ip[3], flow->dst_port, hash);
+  info("%s(%d), q %u ip %u.%u.%u.%u, port %u hash %u, on %d\n", __func__, port, q, ip[0],
+       ip[1], ip[2], ip[3], flow->dst_port, hash, idx);
   return entry;
 }
 
@@ -163,54 +213,105 @@ int mt_rsq_put(struct mt_rsq_entry* entry) {
   struct mt_rsq_impl* rsqm = entry->parent;
   struct mt_rsq_queue* rsq_queue = &rsqm->rsq_queues[entry->queue_id];
 
-  mt_pthread_mutex_lock(&rsq_queue->mutex);
+  rsq_lock(rsq_queue);
   MT_TAILQ_REMOVE(&rsq_queue->head, entry, next);
   rte_atomic32_dec(&rsq_queue->entry_cnt);
-  mt_pthread_mutex_unlock(&rsq_queue->mutex);
+  rsq_unlock(rsq_queue);
 
   rsq_entry_free(entry);
   return 0;
 }
 
-uint16_t mt_rsq_burst(struct mt_rsq_entry* entry, uint16_t nb_pkts) {
-  struct mt_rsq_impl* rsqm = entry->parent;
-  uint16_t q = entry->queue_id;
-  struct mt_rsq_queue* rsq_queue = &rsqm->rsq_queues[q];
-  struct rte_mbuf* pkts[nb_pkts];
+static inline void rsq_entry_pkts_enqueue(struct mt_rsq_entry* entry,
+                                          struct rte_mbuf** pkts,
+                                          const uint16_t nb_pkts) {
+  /* use bulk version */
+  unsigned int n = rte_ring_sp_enqueue_bulk(entry->ring, (void**)pkts, nb_pkts, NULL);
+  entry->stat_enqueue_cnt += n;
+  if (n == 0) {
+    rte_pktmbuf_free_bulk(pkts, nb_pkts);
+    entry->stat_enqueue_fail_cnt += nb_pkts;
+  }
+}
+
+#define UPDATE_ENTRY()                                                           \
+  do {                                                                           \
+    if (matched_pkts_nb)                                                         \
+      rsq_entry_pkts_enqueue(last_rsq_entry, &matched_pkts[0], matched_pkts_nb); \
+    last_rsq_entry = rsq_entry;                                                  \
+    matched_pkts_nb = 0;                                                         \
+  } while (0)
+
+static int rsq_rx(struct mt_rsq_queue* rsq_queue) {
+  uint16_t q = rsq_queue->queue_id;
+  struct rte_mbuf* pkts[MT_SQ_BURST_SIZE];
+  struct rte_mbuf* matched_pkts[MT_SQ_BURST_SIZE];
   uint16_t rx;
-  struct mt_rsq_entry* rsq_entry;
+  struct mt_rsq_entry* rsq_entry = NULL;
+  struct mt_rsq_entry* last_rsq_entry = NULL;
+  uint16_t matched_pkts_nb = 0;
   struct mt_udp_hdr* hdr;
+  struct rte_ipv4_hdr* ipv4;
   struct rte_udp_hdr* udp;
 
-  if (0 != mt_pthread_mutex_try_lock(&rsq_queue->mutex)) return 0;
-  rx = rte_eth_rx_burst(rsq_queue->port_id, q, pkts, nb_pkts);
+  rx = rte_eth_rx_burst(rsq_queue->port_id, q, pkts, MT_SQ_BURST_SIZE);
   if (rx) dbg("%s(%u), rx pkts %u\n", __func__, q, rx);
   rsq_queue->stat_pkts_recv += rx;
+
   for (uint16_t i = 0; i < rx; i++) {
+    rsq_entry = NULL;
+
     hdr = rte_pktmbuf_mtod(pkts[i], struct mt_udp_hdr*);
+    ipv4 = &hdr->ipv4;
     udp = &hdr->udp;
     dbg("%s(%u), pkt %u ip %u.%u.%u.%u, port dst %u src %u\n", __func__, q, i,
         ntohs(udp->dst_port), ntohs(udp->src_port));
+
     MT_TAILQ_FOREACH(rsq_entry, &rsq_queue->head, next) {
-      /* check if this is the matched pkt or sys entry */
-      /* only check udp port now, todo check ip if ip_flow is enabled */
-      if (rsq_entry->dst_port_net == udp->dst_port) {
-        rsq_entry->flow.cb(rsq_entry->flow.priv, &pkts[i], 1);
-        rsq_queue->stat_pkts_deliver++;
-        break;
+      bool ip_matched;
+      if (rsq_entry->flow.no_ip_flow) {
+        ip_matched = true;
+      } else {
+        ip_matched = mt_is_multicast_ip(rsq_entry->flow.dip_addr)
+                         ? (ipv4->dst_addr == *(uint32_t*)rsq_entry->flow.dip_addr)
+                         : (ipv4->src_addr == *(uint32_t*)rsq_entry->flow.dip_addr);
       }
-      if (rsq_entry->flow.sys_queue) { /* sys flow is always in last pos */
-        rsq_entry->flow.cb(rsq_entry->flow.priv, &pkts[i], 1);
-        rsq_queue->stat_pkts_deliver++;
+      bool port_matched;
+      if (rsq_entry->flow.no_port_flow) {
+        port_matched = true;
+      } else {
+        port_matched = ntohs(udp->dst_port) == rsq_entry->flow.dst_port;
+      }
+      if (ip_matched && port_matched) { /* match dst ip:port */
+        if (rsq_entry != last_rsq_entry) UPDATE_ENTRY();
+        matched_pkts[matched_pkts_nb++] = pkts[i];
         break;
       }
     }
+    if (!rsq_entry) { /* no match, redirect to cni */
+      UPDATE_ENTRY();
+      if (rsq_queue->cni_entry) rsq_entry_pkts_enqueue(rsq_queue->cni_entry, &pkts[i], 1);
+    }
   }
-  mt_pthread_mutex_unlock(&rsq_queue->mutex);
-
-  rte_pktmbuf_free_bulk(&pkts[0], rx);
+  if (matched_pkts_nb)
+    rsq_entry_pkts_enqueue(last_rsq_entry, &matched_pkts[0], matched_pkts_nb);
 
   return rx;
+}
+
+uint16_t mt_rsq_burst(struct mt_rsq_entry* entry, struct rte_mbuf** rx_pkts,
+                      uint16_t nb_pkts) {
+  struct mt_rsq_impl* rsqm = entry->parent;
+  uint16_t q = entry->queue_id;
+  struct mt_rsq_queue* rsq_queue = &rsqm->rsq_queues[q];
+
+  if (!rsq_try_lock(rsq_queue)) return 0;
+  rsq_rx(rsq_queue);
+  uint16_t n = rte_ring_sc_dequeue_burst(entry->ring, (void**)rx_pkts, nb_pkts, NULL);
+  entry->stat_dequeue_cnt += n;
+  rsq_unlock(rsq_queue);
+
+  return n;
 }
 
 int mt_rsq_init(struct mtl_main_impl* impl) {
@@ -218,7 +319,7 @@ int mt_rsq_init(struct mtl_main_impl* impl) {
   int ret;
 
   for (int i = 0; i < num_ports; i++) {
-    if (!mt_shared_queue(impl, i)) continue;
+    if (!mt_shared_rx_queue(impl, i)) continue;
     impl->rsq[i] = mt_rte_zmalloc_socket(sizeof(*impl->rsq[i]), mt_socket_id(impl, i));
     if (!impl->rsq[i]) {
       err("%s(%d), rsq malloc fail\n", __func__, i);
@@ -257,17 +358,31 @@ static inline struct mt_tsq_impl* tsq_ctx_get(struct mtl_main_impl* impl,
   return impl->tsq[port];
 }
 
+static inline void tsq_lock(struct mt_tsq_queue* s) { mt_pthread_mutex_lock(&s->mutex); }
+
+/* return true if try lock succ */
+static inline bool tsq_try_lock(struct mt_tsq_queue* s) {
+  int ret = mt_pthread_mutex_try_lock(&s->mutex);
+  return ret == 0 ? true : false;
+}
+
+static inline void tsq_unlock(struct mt_tsq_queue* s) {
+  mt_pthread_mutex_unlock(&s->mutex);
+}
+
 static int tsq_stat_dump(void* priv) {
   struct mt_tsq_impl* tsq = priv;
   struct mt_tsq_queue* s;
 
   for (uint16_t q = 0; q < tsq->max_tsq_queues; q++) {
     s = &tsq->tsq_queues[q];
+    if (!tsq_try_lock(s)) continue;
     if (s->stat_pkts_send) {
       notice("%s(%d,%u), entries %d, pkt send %d\n", __func__, tsq->port, q,
              rte_atomic32_read(&s->entry_cnt), s->stat_pkts_send);
       s->stat_pkts_send = 0;
     }
+    tsq_unlock(s);
   }
 
   return 0;
@@ -356,7 +471,7 @@ static uint32_t tsq_flow_hash(struct mt_txq_flow* flow) {
 
 struct mt_tsq_entry* mt_tsq_get(struct mtl_main_impl* impl, enum mtl_port port,
                                 struct mt_txq_flow* flow) {
-  if (!mt_shared_queue(impl, port)) {
+  if (!mt_shared_tx_queue(impl, port)) {
     err("%s(%d), shared queue not enabled\n", __func__, port);
     return NULL;
   }
@@ -375,7 +490,7 @@ struct mt_tsq_entry* mt_tsq_get(struct mtl_main_impl* impl, enum mtl_port port,
   entry->parent = tsqm;
   rte_memcpy(&entry->flow, flow, sizeof(entry->flow));
 
-  mt_pthread_mutex_lock(&tsq_queue->mutex);
+  tsq_lock(tsq_queue);
   if (!tsq_queue->tx_pool) {
     char pool_name[32];
     snprintf(pool_name, 32, "TSQ_P%dQ%u", port, q);
@@ -384,17 +499,15 @@ struct mt_tsq_entry* mt_tsq_get(struct mtl_main_impl* impl, enum mtl_port port,
                           MT_MBUF_CACHE_SIZE, 0, MTL_MTU_MAX_BYTES);
     if (!pool) {
       err("%s(%d:%u), mempool create fail\n", __func__, port, q);
-      mt_pthread_mutex_unlock(&tsq_queue->mutex);
+      tsq_unlock(tsq_queue);
       mt_rte_free(entry);
       return NULL;
     }
     tsq_queue->tx_pool = pool;
   }
   MT_TAILQ_INSERT_HEAD(&tsq_queue->head, entry, next);
-  /* todo: for different bps of shared queue */
-  mt_dev_set_tx_bps(impl, port, q, flow->bytes_per_sec);
   rte_atomic32_inc(&tsq_queue->entry_cnt);
-  mt_pthread_mutex_unlock(&tsq_queue->mutex);
+  tsq_unlock(tsq_queue);
 
   entry->tx_pool = tsq_queue->tx_pool;
 
@@ -408,10 +521,10 @@ int mt_tsq_put(struct mt_tsq_entry* entry) {
   struct mt_tsq_impl* tsqm = entry->parent;
   struct mt_tsq_queue* tsq_queue = &tsqm->tsq_queues[entry->queue_id];
 
-  mt_pthread_mutex_lock(&tsq_queue->mutex);
+  tsq_lock(tsq_queue);
   MT_TAILQ_REMOVE(&tsq_queue->head, entry, next);
   rte_atomic32_dec(&tsq_queue->entry_cnt);
-  mt_pthread_mutex_unlock(&tsq_queue->mutex);
+  tsq_unlock(tsq_queue);
 
   tsq_entry_free(entry);
   return 0;
@@ -476,7 +589,7 @@ int mt_tsq_init(struct mtl_main_impl* impl) {
   int ret;
 
   for (int i = 0; i < num_ports; i++) {
-    if (!mt_shared_queue(impl, i)) continue;
+    if (!mt_shared_tx_queue(impl, i)) continue;
     impl->tsq[i] = mt_rte_zmalloc_socket(sizeof(*impl->tsq[i]), mt_socket_id(impl, i));
     if (!impl->tsq[i]) {
       err("%s(%d), tsq malloc fail\n", __func__, i);

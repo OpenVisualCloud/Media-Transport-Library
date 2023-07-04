@@ -127,18 +127,9 @@ static uint16_t urq_rx_handle(struct mur_queue* q, struct rte_mbuf** pkts,
   return n;
 }
 
-static int urq_rsq_mbuf_cb(void* priv, struct rte_mbuf** mbuf, uint16_t nb) {
-  struct mur_queue* q = priv;
-  urq_rx_handle(q, mbuf, nb);
-  return 0;
-}
-
 static uint16_t urq_rx(struct mur_queue* q) {
   uint16_t rx_burst = q->rx_burst_pkts;
   struct rte_mbuf* pkts[rx_burst];
-
-  /* no lock need as rsq has lock already */
-  if (q->rxq->rsq) return mt_rxq_burst(q->rxq, NULL, rx_burst);
 
   if (!urq_try_lock(q)) return 0;
   uint16_t rx = mt_rxq_burst(q->rxq, pkts, rx_burst);
@@ -267,9 +258,6 @@ static struct mur_queue* urq_get(struct mudp_rxq_mgr* mgr,
   memset(&flow, 0, sizeof(flow));
   flow.no_ip_flow = true;
   flow.dst_port = dst_port;
-  flow.priv = q;
-  flow.cb = urq_rsq_mbuf_cb; /* for rss and rsq */
-
   q->rxq = mt_rxq_get(impl, port, &flow);
   if (!q->rxq) {
     err("%s(%d,%u), get rxq fail\n", __func__, port, dst_port);
