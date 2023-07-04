@@ -100,7 +100,7 @@ jobs:
     - name: Build with debug
       run: |
         rm build -rf
-        ./build.sh debug
+        ./build.sh debugonly
 
     - name: Build with TAP
       run: |
