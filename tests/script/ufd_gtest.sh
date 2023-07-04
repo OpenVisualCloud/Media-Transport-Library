@@ -39,12 +39,12 @@ echo "Test OK"
 echo ""
 
 echo "Test with rss mode"
-./build/tests/KahawaiUfdTest --p_port "$P_PORT" --r_port "$R_PORT" --queue_mode shared --rss_mode l4_dst_port_only
+./build/tests/KahawaiUfdTest --p_port "$P_PORT" --r_port "$R_PORT" --queue_mode shared --rss_mode l3_l4
 echo "Test OK"
 echo ""
 
 echo "Test with rss and lcore mode"
-./build/tests/KahawaiUfdTest --p_port "$P_PORT" --r_port "$R_PORT" --queue_mode shared --udp_lcore --rss_mode l4_dst_port_only
+./build/tests/KahawaiUfdTest --p_port "$P_PORT" --r_port "$R_PORT" --queue_mode shared --udp_lcore --rss_mode l3_l4
 echo "Test OK"
 echo ""
 
