@@ -1,8 +1,5 @@
 name: MSYS2 FFmpeg Plugins
-on:
-  push:
-    paths:
-      - .github/workflows/msys2_ffmpeg.yml
+on: [push, pull_request, workflow_call]
       
 env:
   FFMPEG_PREFIX: /c/ffmpeg_mtl
