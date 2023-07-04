@@ -44,9 +44,10 @@
 #define ST_VIDEO_BPM_SIZE (1260)
 
 /* max tx/rx audio(st_30) sessions */
-#define ST_MAX_TX_AUDIO_SESSIONS (180)
-#define ST_TX_AUDIO_SESSIONS_RING_SIZE (512)
-#define ST_MAX_RX_AUDIO_SESSIONS (180)
+#define ST_MAX_TX_AUDIO_SESSIONS (512)
+#define ST_TX_AUDIO_SESSIONS_RING_SIZE (ST_MAX_TX_AUDIO_SESSIONS * 2)
+#define ST_MAX_RX_AUDIO_SESSIONS (512)
+
 /* max tx/rx anc(st_40) sessions */
 #define ST_MAX_TX_ANC_SESSIONS (180)
 #define ST_TX_ANC_SESSIONS_RING_SIZE (512)
