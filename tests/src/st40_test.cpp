@@ -281,7 +281,7 @@ static void st40_rx_assert_cnt(int expect_s40_rx_cnt) {
 TEST(St40_tx, create_free_single) { create_free_test(st40_tx, 0, 1, 1); }
 TEST(St40_tx, create_free_multi) { create_free_test(st40_tx, 0, 1, 6); }
 TEST(St40_tx, create_free_mix) { create_free_test(st40_tx, 2, 3, 4); }
-TEST(St40_tx, create_free_max) { create_free_max(st40_tx, 100); }
+TEST(St40_tx, create_free_max) { create_free_max(st40_tx, TEST_CREATE_FREE_MAX); }
 TEST(St40_tx, create_expect_fail) { expect_fail_test(st40_tx); }
 TEST(St40_tx, create_expect_fail_ring_sz) {
   uint16_t ring_size = 0;
@@ -305,7 +305,7 @@ TEST(St40_tx, get_framebuffer_expect_fail) {
 TEST(St40_rx, create_free_single) { create_free_test(st40_rx, 0, 1, 1); }
 TEST(St40_rx, create_free_multi) { create_free_test(st40_rx, 0, 1, 6); }
 TEST(St40_rx, create_free_mix) { create_free_test(st40_rx, 2, 3, 4); }
-TEST(St40_rx, create_free_max) { create_free_max(st40_rx, 100); }
+TEST(St40_rx, create_free_max) { create_free_max(st40_rx, TEST_CREATE_FREE_MAX); }
 TEST(St40_rx, create_expect_fail) { expect_fail_test(st40_rx); }
 TEST(St40_rx, create_expect_fail_ring_sz) {
   uint16_t ring_size = 0;

@@ -226,6 +226,8 @@ int test_ctx_notify_event(void* priv, enum st_event event, void* args);
 
 int tx_next_frame(void* priv, uint16_t* next_frame_idx);
 
+#define TEST_CREATE_FREE_MAX (16)
+
 #define create_free_max(A, max)                             \
   do {                                                      \
     auto ctx = st_test_ctx();                               \

@@ -598,7 +598,7 @@ static void st20_rx_assert_cnt(int expect_s20_rx_cnt) {
 TEST(St20_tx, create_free_single) { create_free_test(st20_tx, 0, 1, 1); }
 TEST(St20_tx, create_free_multi) { create_free_test(st20_tx, 0, 1, 6); }
 TEST(St20_tx, create_free_mix) { create_free_test(st20_tx, 2, 3, 4); }
-TEST(St20_tx, create_free_max) { create_free_max(st20_tx, 100); }
+TEST(St20_tx, create_free_max) { create_free_max(st20_tx, TEST_CREATE_FREE_MAX); }
 TEST(St20_tx, create_expect_fail) { expect_fail_test(st20_tx); }
 TEST(St20_tx, create_expect_fail_fb_cnt) {
   uint16_t fbcnt = 1;
@@ -636,7 +636,7 @@ TEST(St20_tx, rtp_pkt_size) {
 TEST(St20_rx, create_free_single) { create_free_test(st20_rx, 0, 1, 1); }
 TEST(St20_rx, create_free_multi) { create_free_test(st20_rx, 0, 1, 6); }
 TEST(St20_rx, create_free_mix) { create_free_test(st20_rx, 2, 3, 4); }
-TEST(St20_rx, create_free_max) { create_free_max(st20_rx, 100); }
+TEST(St20_rx, create_free_max) { create_free_max(st20_rx, TEST_CREATE_FREE_MAX); }
 TEST(St20_rx, create_expect_fail) { expect_fail_test(st20_rx); }
 TEST(St20_rx, create_expect_fail_fb_cnt) {
   uint16_t fbcnt = 0;
