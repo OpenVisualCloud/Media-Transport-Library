@@ -1,0 +1,66 @@
+{
+    "shared_tx_queues": "true",
+    "shared_rx_queues": "true",
+    "tx_no_chain": "true",
+    "rss_mode": "none",
+    "interfaces": [
+        {
+            "name": "0000:af:01.0",
+            "ip": "192.168.17.101",
+            "tx_queues_cnt": "16",
+            "rx_queues_cnt": "16",
+        },
+        {
+            "name": "0000:af:01.1",
+            "ip": "192.168.17.102",
+            "tx_queues_cnt": "16",
+            "rx_queues_cnt": "16",
+        }
+    ],
+    "tx_sessions": [
+        {
+            "dip": [
+                "192.168.17.102"
+            ],
+            "interface": [
+                0
+            ],
+            "audio": [
+                {
+                    "replicas": 400,
+                    "type": "frame",
+                    "start_port": 30000,
+                    "payload_type": 111,
+                    "audio_format": "PCM16",
+                    "audio_channel": ["ST"],
+                    "audio_sampling": "48kHz",
+                    "audio_ptime": "1",
+                    "audio_url": "./test.wav"
+                }
+            ]
+        }
+    ],
+    "rx_sessions": [
+        {
+            "ip": [
+                "192.168.17.101",
+            ],
+            "interface": [
+                1
+            ],
+            "audio": [
+                {
+                    "replicas": 400,
+                    "type": "frame",
+                    "start_port": 30000,
+                    "payload_type": 111,
+                    "audio_format": "PCM16",
+                    "audio_channel": ["ST"],
+                    "audio_sampling": "48kHz",
+                    "audio_ptime": "1",
+                    "audio_url": "./test.wav"
+                }
+            ]
+        }
+    ]
+}

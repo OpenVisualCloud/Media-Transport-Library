@@ -286,12 +286,18 @@ static int app_args_json(struct st_app_context* ctx, struct mtl_init_params* p,
     memcpy(p->netmask[i], ctx->json_ctx->interfaces[i].netmask, sizeof(p->netmask[i]));
     memcpy(p->gateway[i], ctx->json_ctx->interfaces[i].gateway, sizeof(p->gateway[i]));
     p->net_proto[i] = ctx->json_ctx->interfaces[i].net_proto;
+    p->tx_queues_cnt[i] = ctx->json_ctx->interfaces[i].tx_queues_cnt;
+    p->rx_queues_cnt[i] = ctx->json_ctx->interfaces[i].rx_queues_cnt;
     p->num_ports++;
   }
   if (ctx->json_ctx->sch_quota) {
     p->data_quota_mbs_per_sch =
         ctx->json_ctx->sch_quota * st20_1080p59_yuv422_10bit_bandwidth_mps();
   }
+  if (ctx->json_ctx->shared_tx_queues) p->flags |= MTL_FLAG_SHARED_TX_QUEUE;
+  if (ctx->json_ctx->shared_rx_queues) p->flags |= MTL_FLAG_SHARED_RX_QUEUE;
+  if (ctx->json_ctx->tx_no_chain) p->flags |= MTL_FLAG_TX_NO_CHAIN;
+  if (ctx->json_ctx->rss_mode) p->rss_mode = ctx->json_ctx->rss_mode;
 
   return 0;
 }

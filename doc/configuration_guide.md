@@ -78,6 +78,10 @@ List all interfaces that can be used by app
 
 ​ **gateway (string):** interface gateway(optional), for example: 172.16.10.1, use "route -n" to check the gateway address before binding port to DPDK PMD.
 
+ **tx_queues_cnt (int):** the number of tx queues(optional). Default it will calculated based on the sessions number in this configuration.
+
+ **rx_queues_cnt (int):** the number of tx queues(optional). Default it will calculated based on the sessions number in this configuration.
+
 > Session group contains a group of sessions which use some common settings, there can be 0 or multiple video/audio/ancillary sessions in one group, and there can be 0 or multiple tx/rx session groups in the following parts in case you have multiple destination IP. (see [example config](../config/test_tx_1port_1v_2dest.json))
 
 ### TX Sessions (array of tx session groups)
@@ -215,3 +219,15 @@ Items in each element of the "ancillary" array
 ​ **start_port (int):** `0~65535` start udp port for copies of sessions
 
 ​ **payload_type (int):** `0~127` 7 bits payload type define in RFC3550
+
+### Others
+
+ **shared_tx_queues (bool):** If enable the shared tx queues or not, (optional). The queue number is limited for NIC, to support sessions more than queue number, enable this option to share queue resource between sessions.
+
+ **shared_rx_queues (bool):** If enable the shared rx queues or not, (optional). The queue number is limited for NIC, to support sessions more than queue number, enable this option to share queue resource between sessions.
+
+ **tx_no_chain (bool):** If disable the tx chain support or not, (optional). Tx chain is for zero copy support for audio and video transmitters with two different memory pool for header and payload. Use can enable this option to use copy mode to reduce the mempool usage, usually for audio sessions number max than 128.
+
+ **sch_session_quota (int):** The quota unit in 1080p59 yuv422_10bit for one single scheduler(core), (optional). Default it will use the quota define in the lib.
+
+ **rss_mode (string):** `"none", "l3_l4", "l3"` (optional). Default it will be detected by lib.

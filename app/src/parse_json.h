@@ -122,6 +122,8 @@ typedef struct st_json_interface {
   uint8_t ip_addr[MTL_IP_ADDR_LEN];
   uint8_t netmask[MTL_IP_ADDR_LEN];
   uint8_t gateway[MTL_IP_ADDR_LEN];
+  uint16_t tx_queues_cnt;
+  uint16_t rx_queues_cnt;
 } st_json_interface_t;
 
 enum st_json_ip_type {
@@ -238,8 +240,12 @@ typedef struct st_json_st20p_session {
 typedef struct st_json_context {
   st_json_interface_t* interfaces;
   int num_interfaces;
+  enum mtl_rss_mode rss_mode;
   int sch_quota;
   bool has_display;
+  bool shared_tx_queues;
+  bool shared_rx_queues;
+  bool tx_no_chain;
 
   st_json_video_session_t* tx_video_sessions;
   int tx_video_session_cnt;
