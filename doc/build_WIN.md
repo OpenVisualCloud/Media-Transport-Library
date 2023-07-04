@@ -90,37 +90,10 @@ meson setup build
 meson install -C build
 ```
 
-## 6. Build IMTL
-
-* Build and install IMTL lib:
+## 6. Build Intel® Media Transport Library and app
 
 ```bash
-meson setup build
-meson install -C build
-```
-
-* Build IMTL app:
-
-```bash
-cd app
-meson setup build
-meson compile -C build
-```
-
-* Build IMTL tests:
-
-```bash
-cd tests
-meson setup build
-meson compile -C build
-```
-
-* Build and install IMTL plugins:
-
-```bash
-cd plugins
-meson setup build
-meson install -C build
+./build.sh
 ```
 
 ## 7. Add MSYS2 binary PATH to system environment variables (Optional)
