@@ -22,11 +22,8 @@
 #include "mt_util.h"
 #include "st2110/pipeline/st_plugin.h"
 #include "st2110/st_ancillary_transmitter.h"
-#include "st2110/st_audio_transmitter.h"
 #include "st2110/st_rx_ancillary_session.h"
-#include "st2110/st_rx_audio_session.h"
 #include "st2110/st_tx_ancillary_session.h"
-#include "st2110/st_tx_audio_session.h"
 #include "udp/udp_rxq.h"
 
 enum mtl_port mt_port_by_id(struct mtl_main_impl* impl, uint16_t port_id) {
@@ -94,26 +91,6 @@ static void* mt_calibrate_tsc(void* arg) {
 
   info("%s, tscHz %" PRIu64 "\n", __func__, impl->tsc_hz);
   return NULL;
-}
-
-static int st_tx_audio_uinit(struct mtl_main_impl* impl) {
-  if (!impl->tx_a_init) return 0;
-
-  /* free tx audio context */
-  st_audio_transmitter_uinit(&impl->a_trs);
-  st_tx_audio_sessions_mgr_uinit(&impl->tx_a_mgr);
-
-  impl->tx_a_init = false;
-  return 0;
-}
-
-static int st_rx_audio_uinit(struct mtl_main_impl* impl) {
-  if (!impl->rx_a_init) return 0;
-
-  st_rx_audio_sessions_mgr_uinit(&impl->rx_a_mgr);
-
-  impl->rx_a_init = false;
-  return 0;
 }
 
 static int st_tx_anc_uinit(struct mtl_main_impl* impl) {
@@ -491,6 +468,15 @@ mtl_handle mtl_init(struct mtl_init_params* p) {
     impl->tasklets_nb_per_sch = 16; /* default 16 */
   }
 
+  impl->tx_audio_sessions_max_per_sch = p->tx_audio_sessions_max_per_sch;
+  if (!impl->tx_audio_sessions_max_per_sch) {
+    impl->tx_audio_sessions_max_per_sch = 300; /* default 300 */
+  }
+  impl->rx_audio_sessions_max_per_sch = p->rx_audio_sessions_max_per_sch;
+  if (!impl->rx_audio_sessions_max_per_sch) {
+    impl->rx_audio_sessions_max_per_sch = 1000; /* default 1000 */
+  }
+
   impl->pkt_udp_suggest_max_size = MTL_PKT_MAX_RTP_BYTES;
   if (p->pkt_udp_suggest_max_size) {
     if ((p->pkt_udp_suggest_max_size > 1000) &&
@@ -514,9 +500,7 @@ mtl_handle mtl_init(struct mtl_init_params* p) {
   }
   impl->sch_schedule_ns = 200 * NS_PER_US; /* max schedule ns for mt_sleep_ms(0) */
 
-  /* init mgr lock for audio and anc */
-  mt_pthread_mutex_init(&impl->tx_a_mgr_mutex, NULL);
-  mt_pthread_mutex_init(&impl->rx_a_mgr_mutex, NULL);
+  /* init mgr lock for anc */
   mt_pthread_mutex_init(&impl->tx_anc_mgr_mutex, NULL);
   mt_pthread_mutex_init(&impl->rx_anc_mgr_mutex, NULL);
 
@@ -571,8 +555,6 @@ int mtl_uninit(mtl_handle mt) {
 
   _mt_stop(impl);
 
-  st_tx_audio_uinit(impl);
-  st_rx_audio_uinit(impl);
   st_tx_anc_uinit(impl);
   st_rx_anc_uinit(impl);
 

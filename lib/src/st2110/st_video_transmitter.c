@@ -333,7 +333,7 @@ static int video_trs_tsc_tasklet(struct mtl_main_impl* impl,
 
   /* check valid bulk */
   int valid_bulk = bulk;
-  uint32_t pkt_idx;
+  uint32_t pkt_idx = 0;
   for (int i = 0; i < bulk; i++) {
     pkt_idx = st_tx_mbuf_get_idx(pkts[i]);
     if (pkt_idx == ST_TX_DUMMY_PKT_IDX) {

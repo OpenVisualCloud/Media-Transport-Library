@@ -1737,11 +1737,33 @@ int st_app_parse_json(st_json_context_t* ctx, const char* filename) {
   if (obj != NULL) {
     int sch_quota = json_object_get_int(obj);
     if (sch_quota <= 0) {
-      err("%s, invalid quota number\n", __func__);
+      err("%s, invalid quota number %d\n", __func__, sch_quota);
       ret = -ST_JSON_NOT_VALID;
       goto error;
     }
     ctx->sch_quota = sch_quota;
+  }
+
+  /* parse max audio sessions per sch */
+  obj = st_json_object_object_get(root_object, "max_tx_audio_sessions_per_sch");
+  if (obj != NULL) {
+    int max = json_object_get_int(obj);
+    if (max <= 0) {
+      err("%s, invalid max_tx_audio_sessions_per_sch %d\n", __func__, max);
+      ret = -ST_JSON_NOT_VALID;
+      goto error;
+    }
+    ctx->tx_audio_sessions_max_per_sch = max;
+  }
+  obj = st_json_object_object_get(root_object, "max_rx_audio_sessions_per_sch");
+  if (obj != NULL) {
+    int max = json_object_get_int(obj);
+    if (max <= 0) {
+      err("%s, invalid max_rx_audio_sessions_per_sch %d\n", __func__, max);
+      ret = -ST_JSON_NOT_VALID;
+      goto error;
+    }
+    ctx->rx_audio_sessions_max_per_sch = max;
   }
 
   /* parse shared queues */
