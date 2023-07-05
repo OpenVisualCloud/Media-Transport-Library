@@ -403,6 +403,17 @@ struct mt_sch_impl {
   bool rx_video_init;
   pthread_mutex_t rx_video_mgr_mutex; /* protect tx_video_mgr */
 
+  /* one tx audio sessions mgr/transmitter for one sch */
+  struct st_tx_audio_sessions_mgr tx_a_mgr;
+  struct st_audio_transmitter_impl a_trs;
+  bool tx_a_init;
+  pthread_mutex_t tx_a_mgr_mutex; /* protect tx_a_mgr */
+
+  /* one rx audio sessions mgr for one sch */
+  struct st_rx_audio_sessions_mgr rx_a_mgr;
+  bool rx_a_init;
+  pthread_mutex_t rx_a_mgr_mutex; /* protect rx_a_mgr */
+
   /* sch sleep info */
   bool allow_sleep;
   pthread_cond_t sleep_wake_cond;
@@ -837,20 +848,13 @@ struct mtl_main_impl {
   /* sch context */
   struct mt_sch_mgr sch_mgr;
   uint32_t tasklets_nb_per_sch;
+  uint32_t tx_audio_sessions_max_per_sch;
+  uint32_t rx_audio_sessions_max_per_sch;
 
   /* st plugin dev mgr */
   struct st_plugin_mgr plugin_mgr;
 
   void* mudp_rxq_mgr[MTL_PORT_MAX];
-
-  /* audio(st_30) context */
-  struct st_tx_audio_sessions_mgr tx_a_mgr;
-  struct st_audio_transmitter_impl a_trs;
-  struct st_rx_audio_sessions_mgr rx_a_mgr;
-  bool tx_a_init;
-  pthread_mutex_t tx_a_mgr_mutex; /* protect tx_a_mgr */
-  bool rx_a_init;
-  pthread_mutex_t rx_a_mgr_mutex; /* protect rx_a_mgr */
 
   /* ancillary(st_40) context */
   struct st_tx_ancillary_sessions_mgr tx_anc_mgr;

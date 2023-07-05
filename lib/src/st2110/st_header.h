@@ -44,9 +44,9 @@
 #define ST_VIDEO_BPM_SIZE (1260)
 
 /* max tx/rx audio(st_30) sessions */
-#define ST_MAX_TX_AUDIO_SESSIONS (512)
-#define ST_TX_AUDIO_SESSIONS_RING_SIZE (ST_MAX_TX_AUDIO_SESSIONS * 2)
-#define ST_MAX_RX_AUDIO_SESSIONS (512)
+#define ST_SCH_MAX_TX_AUDIO_SESSIONS (512) /* max audio tx sessions per sch lcore */
+#define ST_TX_AUDIO_SESSIONS_RING_SIZE (ST_SCH_MAX_TX_AUDIO_SESSIONS * 2)
+#define ST_SCH_MAX_RX_AUDIO_SESSIONS (512 * 2) /* max audio rx sessions per sch lcore */
 
 /* max tx/rx anc(st_40) sessions */
 #define ST_MAX_TX_ANC_SESSIONS (180)
@@ -800,9 +800,9 @@ struct st_tx_audio_sessions_mgr {
   uint16_t port_id[MTL_PORT_MAX];
   struct mt_txq_entry* queue[MTL_PORT_MAX];
 
-  struct st_tx_audio_session_impl* sessions[ST_MAX_TX_AUDIO_SESSIONS];
+  struct st_tx_audio_session_impl* sessions[ST_SCH_MAX_TX_AUDIO_SESSIONS];
   /* protect session, spin(fast) lock as it call from tasklet aslo */
-  rte_spinlock_t mutex[ST_MAX_TX_AUDIO_SESSIONS]; /* protect session */
+  rte_spinlock_t mutex[ST_SCH_MAX_TX_AUDIO_SESSIONS]; /* protect session */
 
   rte_atomic32_t transmitter_started;
 
@@ -915,9 +915,9 @@ struct st_rx_audio_sessions_mgr {
   int max_idx; /* max session index */
   struct mt_sch_tasklet_impl* tasklet;
 
-  struct st_rx_audio_session_impl* sessions[ST_MAX_RX_AUDIO_SESSIONS];
+  struct st_rx_audio_session_impl* sessions[ST_SCH_MAX_RX_AUDIO_SESSIONS];
   /* protect session, spin(fast) lock as it call from tasklet aslo */
-  rte_spinlock_t mutex[ST_MAX_RX_AUDIO_SESSIONS];
+  rte_spinlock_t mutex[ST_SCH_MAX_RX_AUDIO_SESSIONS];
 };
 
 struct st_tx_ancillary_session_pacing {
@@ -1188,6 +1188,8 @@ struct st22_tx_video_session_handle_impl {
 struct st_tx_audio_session_handle_impl {
   struct mtl_main_impl* parent;
   enum mt_handle_type type;
+  struct mt_sch_impl* sch; /* the sch this session attached */
+  int quota_mbs;           /* data quota for this session */
   struct st_tx_audio_session_impl* impl;
 };
 
@@ -1216,6 +1218,8 @@ struct st22_rx_video_session_handle_impl {
 struct st_rx_audio_session_handle_impl {
   struct mtl_main_impl* parent;
   enum mt_handle_type type;
+  struct mt_sch_impl* sch; /* the sch this session attached */
+  int quota_mbs;           /* data quota for this session */
   struct st_rx_audio_session_impl* impl;
 };
 

@@ -516,6 +516,10 @@ struct mtl_init_params {
   uint32_t data_quota_mbs_per_sch;
   /** the number of tasklets for each lcore, 0 means determined by lib */
   uint32_t tasklets_nb_per_sch;
+  /** the number of max tx audio session for each lcore, 0 means determined by lib */
+  uint32_t tx_audio_sessions_max_per_sch;
+  /** the number of max rx audio session for each lcore, 0 means determined by lib */
+  uint32_t rx_audio_sessions_max_per_sch;
   /**
    * number of transmit descriptors for each NIC TX queue, 0 means determined by lib.
    * It will affect the memory usage and the performance.
