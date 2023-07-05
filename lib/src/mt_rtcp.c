@@ -218,6 +218,7 @@ int mt_rtcp_rx_send_nack_packet(struct mt_rtcp_rx* rx) {
   uint16_t send = mt_dev_tx_sys_queue_burst(impl, port, &pkt, 1);
   if (send != 1) {
     err("%s, failed to send nack packet\n", __func__);
+    rte_pktmbuf_free(pkt);
     return -EIO;
   }
 
