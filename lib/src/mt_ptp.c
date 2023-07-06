@@ -888,7 +888,7 @@ static int ptp_stat(void* priv) {
   }
 
   if (ptp->stat_delta_cnt) {
-    if (ptp->phc2sys.stat_delta_max < 300) {
+    if (ptp->phc2sys.stat_delta_max < 300 && ptp->phc2sys.stat_delta_max > 0) {
       ptp->phc2sys.stat_sync = true;
     }
     
