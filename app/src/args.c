@@ -295,6 +295,12 @@ static int app_args_json(struct st_app_context* ctx, struct mtl_init_params* p,
     p->data_quota_mbs_per_sch =
         ctx->json_ctx->sch_quota * st20_1080p59_yuv422_10bit_bandwidth_mps();
   }
+  if (ctx->json_ctx->tx_audio_sessions_max_per_sch) {
+    p->tx_audio_sessions_max_per_sch = ctx->json_ctx->tx_audio_sessions_max_per_sch;
+  }
+  if (ctx->json_ctx->rx_audio_sessions_max_per_sch) {
+    p->rx_audio_sessions_max_per_sch = ctx->json_ctx->rx_audio_sessions_max_per_sch;
+  }
   if (ctx->json_ctx->shared_tx_queues) p->flags |= MTL_FLAG_SHARED_TX_QUEUE;
   if (ctx->json_ctx->shared_rx_queues) p->flags |= MTL_FLAG_SHARED_RX_QUEUE;
   if (ctx->json_ctx->tx_no_chain) p->flags |= MTL_FLAG_TX_NO_CHAIN;

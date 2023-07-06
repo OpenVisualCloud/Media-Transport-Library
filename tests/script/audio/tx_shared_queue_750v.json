@@ -1,0 +1,36 @@
+{
+    "shared_tx_queues": "true",
+    "tx_no_chain": "true",
+    "max_tx_audio_sessions_per_sch": "250",
+    "interfaces": [
+        {
+            "name": "0000:af:01.0",
+            "ip": "192.168.17.101",
+            "tx_queues_cnt": "16",
+            "rx_queues_cnt": "0",
+        },
+    ],
+    "tx_sessions": [
+        {
+            "dip": [
+                "239.168.17.100"
+            ],
+            "interface": [
+                0
+            ],
+            "audio": [
+                {
+                    "replicas": 750,
+                    "type": "frame",
+                    "start_port": 30000,
+                    "payload_type": 111,
+                    "audio_format": "PCM16",
+                    "audio_channel": ["ST"],
+                    "audio_sampling": "48kHz",
+                    "audio_ptime": "1",
+                    "audio_url": "./test.wav"
+                }
+            ]
+        }
+    ],
+}

@@ -126,23 +126,11 @@ static int cni_traffic(struct mtl_main_impl* impl) {
   int num_ports = mt_num_ports(impl);
   struct rte_mbuf* pkts_rx[ST_CNI_RX_BURST_SIZE];
   uint16_t rx;
-  struct mt_ptp_impl* ptp;
   bool done = true;
 
   for (int i = 0; i < num_ports; i++) {
-    ptp = mt_get_ptp(impl, i);
-
-    /* rx from ptp rx queue */
-    if (ptp && ptp->rxq) {
-      rx = mt_rxq_burst(ptp->rxq, pkts_rx, ST_CNI_RX_BURST_SIZE);
-      if (rx > 0) {
-        cni->eth_rx_cnt[i] += rx;
-        for (uint16_t ri = 0; ri < rx; ri++) cni_rx_handle(impl, pkts_rx[ri], i);
-        mt_free_mbufs(&pkts_rx[0], rx);
-        done = false;
-      }
-    }
     mt_tap_handle(impl, i);
+
     /* rx from cni rx queue */
     if (cni->rxq[i]) {
       rx = mt_rxq_burst(cni->rxq[i], pkts_rx, ST_CNI_RX_BURST_SIZE);

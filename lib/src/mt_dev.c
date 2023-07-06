@@ -144,11 +144,13 @@ static int dev_inf_stat(void* pri) {
       diff_and_update(&stats.rx_nombuf, &dev_stats->rx_nombuf);
     }
 
-    uint64_t orate_m = stats.obytes * 8 / MT_DEV_STAT_INTERVAL_S / MT_DEV_STAT_M_UNIT;
-    uint64_t irate_m = stats.ibytes * 8 / MT_DEV_STAT_INTERVAL_S / MT_DEV_STAT_M_UNIT;
+    double orate_m =
+        (double)stats.obytes * 8 / MT_DEV_STAT_INTERVAL_S / MT_DEV_STAT_M_UNIT;
+    double irate_m =
+        (double)stats.ibytes * 8 / MT_DEV_STAT_INTERVAL_S / MT_DEV_STAT_M_UNIT;
 
-    notice("DEV(%d): Avr rate, tx: %" PRIu64 " Mb/s, rx: %" PRIu64
-           " Mb/s, pkts, tx: %" PRIu64 ", rx: %" PRIu64 "\n",
+    notice("DEV(%d): Avr rate, tx: %f Mb/s, rx: %f Mb/s, pkts, tx: %" PRIu64
+           ", rx: %" PRIu64 "\n",
            port, orate_m, irate_m, stats.opackets, stats.ipackets);
     if (stats.imissed || stats.ierrors || stats.rx_nombuf ||
         (stats.oerrors && (MT_PORT_VF != port_type))) {
@@ -2193,11 +2195,6 @@ int mt_dev_free(struct mtl_main_impl* impl) {
   mt_pthread_mutex_destroy(&impl->stat_wake_mutex);
   mt_pthread_cond_destroy(&impl->stat_wake_cond);
 
-  if (impl->main_sch) {
-    mt_sch_put(impl->main_sch, 0);
-    impl->main_sch = NULL;
-  }
-
   mt_sch_mrg_uinit(impl);
   dev_uinit_lcores(impl);
 
@@ -2627,6 +2624,11 @@ int mt_dev_if_init(struct mtl_main_impl* impl) {
 int mt_dev_if_pre_uinit(struct mtl_main_impl* impl) {
   int num_ports = mt_num_ports(impl);
   struct mt_interface* inf;
+
+  if (impl->main_sch) {
+    mt_sch_put(impl->main_sch, 0);
+    impl->main_sch = NULL;
+  }
 
   for (int i = 0; i < num_ports; i++) {
     inf = mt_if(impl, i);

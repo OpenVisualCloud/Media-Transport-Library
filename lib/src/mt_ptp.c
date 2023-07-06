@@ -770,19 +770,8 @@ static int ptp_init(struct mtl_main_impl* impl, struct mt_ptp_impl* ptp,
 
   inet_pton(AF_INET, "224.0.1.129", ptp->mcast_group_addr);
 
-  /* create rx queue */
-  struct mt_rxq_flow flow;
-  memset(&flow, 0, sizeof(flow));
-  rte_memcpy(flow.dip_addr, ptp->mcast_group_addr, MTL_IP_ADDR_LEN);
-  rte_memcpy(flow.sip_addr, mt_sip_addr(impl, port), MTL_IP_ADDR_LEN);
-  flow.no_port_flow = true;
-  flow.dst_port = MT_PTP_UDP_GEN_PORT;
-  ptp->rxq = mt_rxq_get(impl, port, &flow);
-  if (ptp->rxq) {
-    info("%s(%d), rx queue %d\n", __func__, port, mt_rxq_queue_id(ptp->rxq));
-  } else {
-    warn("%s(%d), fall back to cni path\n", __func__, port);
-  }
+  /* no need to create rx queue, always use CNI path */
+
   /* join mcast */
   ret = mt_mcast_join(impl, mt_ip_to_u32(ptp->mcast_group_addr), port);
   if (ret < 0) {
@@ -809,11 +798,6 @@ static int ptp_uinit(struct mtl_main_impl* impl, struct mt_ptp_impl* ptp) {
 
   mt_mcast_l2_leave(impl, &ptp_l2_multicast_eaddr, port);
   mt_mcast_leave(impl, mt_ip_to_u32(ptp->mcast_group_addr), port);
-
-  if (ptp->rxq) {
-    mt_rxq_put(ptp->rxq);
-    ptp->rxq = NULL;
-  }
 
   info("%s(%d), succ\n", __func__, port);
   return 0;

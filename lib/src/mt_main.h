@@ -168,7 +168,6 @@ struct mt_ptp_impl {
   enum mtl_port port;
   uint16_t port_id;
 
-  struct mt_rxq_entry* rxq;
   struct rte_mempool* mbuf_pool;
 
   uint8_t mcast_group_addr[MTL_IP_ADDR_LEN]; /* 224.0.1.129 */
@@ -425,6 +424,17 @@ struct mt_sch_impl {
   bool rx_video_init;
   pthread_mutex_t rx_video_mgr_mutex; /* protect tx_video_mgr */
 
+  /* one tx audio sessions mgr/transmitter for one sch */
+  struct st_tx_audio_sessions_mgr tx_a_mgr;
+  struct st_audio_transmitter_impl a_trs;
+  bool tx_a_init;
+  pthread_mutex_t tx_a_mgr_mutex; /* protect tx_a_mgr */
+
+  /* one rx audio sessions mgr for one sch */
+  struct st_rx_audio_sessions_mgr rx_a_mgr;
+  bool rx_a_init;
+  pthread_mutex_t rx_a_mgr_mutex; /* protect rx_a_mgr */
+
   /* sch sleep info */
   bool allow_sleep;
   pthread_cond_t sleep_wake_cond;
@@ -468,10 +478,10 @@ struct mt_rxq_flow {
   bool no_ip_flow; /* no ip flow, only use port flow, for udp transport */
   /* mandatory if not no_ip_flow */
   uint8_t dip_addr[MTL_IP_ADDR_LEN]; /* rx destination IP */
+  /* source ip is ignored if destination is a multicast address */
   uint8_t sip_addr[MTL_IP_ADDR_LEN]; /* source IP */
-  bool no_port_flow;                 /* if apply port flow or not */
+  bool no_port_flow;                 /* if apply destination port flow or not */
   uint16_t dst_port;                 /* udp destination port */
-  uint16_t src_port;                 /* udp source port */
 
   /* optional */
   bool hdr_split; /* if request hdr split */
@@ -864,20 +874,13 @@ struct mtl_main_impl {
   /* sch context */
   struct mt_sch_mgr sch_mgr;
   uint32_t tasklets_nb_per_sch;
+  uint32_t tx_audio_sessions_max_per_sch;
+  uint32_t rx_audio_sessions_max_per_sch;
 
   /* st plugin dev mgr */
   struct st_plugin_mgr plugin_mgr;
 
   void* mudp_rxq_mgr[MTL_PORT_MAX];
-
-  /* audio(st_30) context */
-  struct st_tx_audio_sessions_mgr tx_a_mgr;
-  struct st_audio_transmitter_impl a_trs;
-  struct st_rx_audio_sessions_mgr rx_a_mgr;
-  bool tx_a_init;
-  pthread_mutex_t tx_a_mgr_mutex; /* protect tx_a_mgr */
-  bool rx_a_init;
-  pthread_mutex_t rx_a_mgr_mutex; /* protect rx_a_mgr */
 
   /* ancillary(st_40) context */
   struct st_tx_ancillary_sessions_mgr tx_anc_mgr;

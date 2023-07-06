@@ -255,8 +255,7 @@ int main(int argc, char** argv) {
       ctx->rx_st20p_session_cnt > ST_APP_MAX_RX_VIDEO_SESSIONS ||
       ctx->rx_audio_session_cnt > ST_APP_MAX_RX_AUDIO_SESSIONS ||
       ctx->rx_anc_session_cnt > ST_APP_MAX_RX_ANC_SESSIONS) {
-    err("%s, session cnt invalid, pass the restriction %d\n", __func__,
-        ST_APP_MAX_RX_VIDEO_SESSIONS);
+    err("%s, session cnt invalid, pass the restriction\n", __func__);
     return -EINVAL;
   }
 

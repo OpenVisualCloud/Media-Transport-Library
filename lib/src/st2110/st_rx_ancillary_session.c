@@ -211,7 +211,6 @@ static int rx_ancillary_session_init_hw(struct mtl_main_impl* impl,
     rte_memcpy(flow.dip_addr, s->ops.sip_addr[i], MTL_IP_ADDR_LEN);
     rte_memcpy(flow.sip_addr, mt_sip_addr(impl, port), MTL_IP_ADDR_LEN);
     flow.dst_port = s->st40_dst_port[i];
-    flow.src_port = s->st40_src_port[i];
 
     /* no flow for data path only */
     if (mt_pmd_is_kernel(impl, port) && (s->ops.flags & ST40_RX_FLAG_DATA_PATH_ONLY))
@@ -317,8 +316,6 @@ static int rx_ancillary_session_attach(struct mtl_main_impl* impl,
   s->ops = *ops;
   for (int i = 0; i < num_port; i++) {
     s->st40_dst_port[i] = (ops->udp_port[i]) ? (ops->udp_port[i]) : (30000 + idx);
-    s->st40_src_port[i] =
-        (ops->udp_src_port[i]) ? (ops->udp_src_port[i]) : s->st40_dst_port[i];
   }
 
   s->st40_seq_id = -1;
@@ -404,8 +401,6 @@ static int rx_ancillary_session_update_src(struct mtl_main_impl* impl,
     memcpy(ops->sip_addr[i], src->sip_addr[i], MTL_IP_ADDR_LEN);
     ops->udp_port[i] = src->udp_port[i];
     s->st40_dst_port[i] = (ops->udp_port[i]) ? (ops->udp_port[i]) : (30000 + idx);
-    s->st40_src_port[i] =
-        (ops->udp_src_port[i]) ? (ops->udp_src_port[i]) : s->st40_dst_port[i];
   }
   /* reset seq id */
   s->st40_seq_id = -1;

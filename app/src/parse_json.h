@@ -242,6 +242,8 @@ typedef struct st_json_context {
   int num_interfaces;
   enum mtl_rss_mode rss_mode;
   int sch_quota;
+  int tx_audio_sessions_max_per_sch;
+  int rx_audio_sessions_max_per_sch;
   bool has_display;
   bool shared_tx_queues;
   bool shared_rx_queues;
