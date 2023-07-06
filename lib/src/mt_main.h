@@ -150,7 +150,6 @@ struct mt_ptp_impl {
   enum mtl_port port;
   uint16_t port_id;
 
-  struct mt_rxq_entry* rxq;
   struct rte_mempool* mbuf_pool;
 
   uint8_t mcast_group_addr[MTL_IP_ADDR_LEN]; /* 224.0.1.129 */
@@ -457,10 +456,10 @@ struct mt_rxq_flow {
   bool no_ip_flow; /* no ip flow, only use port flow, for udp transport */
   /* mandatory if not no_ip_flow */
   uint8_t dip_addr[MTL_IP_ADDR_LEN]; /* rx destination IP */
+  /* source ip is ignored if destination is a multicast address */
   uint8_t sip_addr[MTL_IP_ADDR_LEN]; /* source IP */
-  bool no_port_flow;                 /* if apply port flow or not */
+  bool no_port_flow;                 /* if apply destination port flow or not */
   uint16_t dst_port;                 /* udp destination port */
-  uint16_t src_port;                 /* udp source port */
 
   /* optional */
   bool hdr_split; /* if request hdr split */

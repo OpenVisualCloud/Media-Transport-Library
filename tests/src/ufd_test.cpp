@@ -135,7 +135,7 @@ static void utest_ctx_init(struct utest_ctx* ctx) {
   p->rx_queues_cnt[MTL_PORT_P] = 16;
   p->rx_queues_cnt[MTL_PORT_R] = 16;
 
-  ctx->init_params.slots_nb_max = 256;
+  ctx->init_params.slots_nb_max = p->tx_queues_cnt[MTL_PORT_P] * 4;
   p->tasklets_nb_per_sch = ctx->init_params.slots_nb_max + 8;
 }
 

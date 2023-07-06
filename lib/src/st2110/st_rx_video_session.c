@@ -2803,7 +2803,6 @@ static int rv_init_hw(struct mtl_main_impl* impl, struct st_rx_video_session_imp
     rte_memcpy(flow.dip_addr, ops->sip_addr[i], MTL_IP_ADDR_LEN);
     rte_memcpy(flow.sip_addr, mt_sip_addr(impl, port), MTL_IP_ADDR_LEN);
     flow.dst_port = s->st20_dst_port[i];
-    flow.src_port = s->st20_src_port[i];
     if (rv_is_hdr_split(s)) {
       flow.hdr_split = true;
 #ifdef ST_HAS_DPDK_HDR_SPLIT
@@ -2952,8 +2951,6 @@ static int rv_attach(struct mtl_main_impl* impl, struct st_rx_video_sessions_mgr
   s->ops = *ops;
   for (int i = 0; i < num_port; i++) {
     s->st20_dst_port[i] = (ops->udp_port[i]) ? (ops->udp_port[i]) : (10000 + idx);
-    s->st20_src_port[i] =
-        (ops->udp_src_port[i]) ? (ops->udp_src_port[i]) : s->st20_dst_port[i];
   }
 
   s->stat_pkts_idx_dropped = 0;
@@ -3301,8 +3298,6 @@ static int rv_update_src(struct mtl_main_impl* impl, struct st_rx_video_session_
     memcpy(ops->sip_addr[i], src->sip_addr[i], MTL_IP_ADDR_LEN);
     ops->udp_port[i] = src->udp_port[i];
     s->st20_dst_port[i] = (ops->udp_port[i]) ? (ops->udp_port[i]) : (10000 + idx);
-    s->st20_src_port[i] =
-        (ops->udp_src_port[i]) ? (ops->udp_src_port[i]) : s->st20_dst_port[i];
   }
 
   ret = rv_init_hw(impl, s);
@@ -4110,7 +4105,6 @@ st22_rx_handle st22_rx_create(mtl_handle mt, struct st22_rx_ops* ops) {
   for (int i = 0; i < ops->num_port; i++) {
     memcpy(st20_ops.sip_addr[i], ops->sip_addr[i], MTL_IP_ADDR_LEN);
     strncpy(st20_ops.port[i], ops->port[i], MTL_PORT_MAX_LEN);
-    st20_ops.udp_src_port[i] = ops->udp_src_port[i];
     st20_ops.udp_port[i] = ops->udp_port[i];
   }
   if (ops->flags & ST22_RX_FLAG_DATA_PATH_ONLY)

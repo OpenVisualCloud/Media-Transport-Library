@@ -637,8 +637,6 @@ struct st_rx_port {
   uint8_t num_port;
   /** Pcie BDF path like 0000:af:00.0, should align to BDF of mtl_init */
   char port[MTL_SESSION_PORT_MAX][MTL_PORT_MAX_LEN];
-  /** UDP source port number, leave as 0 to use same port as dst */
-  uint16_t udp_src_port[MTL_SESSION_PORT_MAX];
   /** UDP destination port number */
   uint16_t udp_port[MTL_SESSION_PORT_MAX];
   /** 7 bits payload type define in RFC3550 */
