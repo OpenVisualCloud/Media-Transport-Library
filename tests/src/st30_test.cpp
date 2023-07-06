@@ -269,7 +269,7 @@ static void st30_rx_assert_cnt(int expect_s30_rx_cnt) {
 TEST(St30_tx, create_free_single) { create_free_test(st30_tx, 0, 1, 1); }
 TEST(St30_tx, create_free_multi) { create_free_test(st30_tx, 0, 1, 6); }
 TEST(St30_tx, create_free_mix) { create_free_test(st30_tx, 2, 3, 4); }
-TEST(St30_tx, create_free_max) { create_free_max(st30_tx, 100); }
+TEST(St30_tx, create_free_max) { create_free_max(st30_tx, TEST_CREATE_FREE_MAX); }
 TEST(St30_tx, create_expect_fail) { expect_fail_test(st30_tx); }
 TEST(St30_tx, create_expect_fail_ring_sz) {
   uint16_t ring_size = 0;
@@ -293,7 +293,7 @@ TEST(St30_tx, get_framebuffer_expect_fail) {
 TEST(St30_rx, create_free_single) { create_free_test(st30_rx, 0, 1, 1); }
 TEST(St30_rx, create_free_multi) { create_free_test(st30_rx, 0, 1, 6); }
 TEST(St30_rx, create_free_mix) { create_free_test(st30_rx, 2, 3, 4); }
-TEST(St30_rx, create_free_max) { create_free_max(st30_rx, 100); }
+TEST(St30_rx, create_free_max) { create_free_max(st30_rx, TEST_CREATE_FREE_MAX); }
 TEST(St30_rx, create_expect_fail) { expect_fail_test(st30_rx); }
 TEST(St30_rx, create_expect_fail_ring_sz) {
   uint16_t ring_size = 0;
@@ -802,6 +802,7 @@ static void st30_rx_update_src_test(enum st30_type type, int tx_sessions,
   if (level < ctx->level) return;
 
   ASSERT_TRUE(tx_sessions >= 1);
+  bool tx_update_dst = (tx_sessions == 1);
 
   int rx_sessions = 1;
 
@@ -922,10 +923,21 @@ static void st30_rx_update_src_test(enum st30_type type, int tx_sessions,
   src.udp_port[MTL_SESSION_PORT_P] = 20000 + 1;
   memcpy(src.sip_addr[MTL_SESSION_PORT_P], ctx->mcast_ip_addr[MTL_PORT_P],
          MTL_IP_ADDR_LEN);
+  if (tx_update_dst) {
+    test_ctx_tx[0]->seq_id = 0; /* reset seq id */
+    struct st_tx_dest_info dst;
+    memset(&dst, 0, sizeof(dst));
+    dst.udp_port[MTL_SESSION_PORT_P] = 20000 + 1;
+    memcpy(dst.dip_addr[MTL_SESSION_PORT_P], ctx->mcast_ip_addr[MTL_PORT_P],
+           MTL_IP_ADDR_LEN);
+    ret = st30_tx_update_destination(tx_handle[0], &dst);
+    EXPECT_GE(ret, 0);
+  } else {
+    test_ctx_tx[1]->seq_id = 0; /* reset seq id */
+  }
   for (int i = 0; i < rx_sessions; i++) {
     ret = st30_rx_update_source(rx_handle[i], &src);
     EXPECT_GE(ret, 0);
-    test_ctx_tx[1]->seq_id = 0; /* reset seq id */
     test_ctx_rx[i]->start_time = 0;
     test_ctx_rx[i]->fb_rec = 0;
   }
@@ -974,10 +986,19 @@ static void st30_rx_update_src_test(enum st30_type type, int tx_sessions,
   src.udp_port[MTL_SESSION_PORT_P] = 20000 + 0;
   memcpy(src.sip_addr[MTL_SESSION_PORT_P], ctx->para.sip_addr[MTL_PORT_P],
          MTL_IP_ADDR_LEN);
+  test_ctx_tx[0]->seq_id = rand(); /* random seq id */
+  if (tx_update_dst) {
+    struct st_tx_dest_info dst;
+    memset(&dst, 0, sizeof(dst));
+    dst.udp_port[MTL_SESSION_PORT_P] = 20000 + 0;
+    memcpy(dst.dip_addr[MTL_SESSION_PORT_P], ctx->para.sip_addr[MTL_PORT_R],
+           MTL_IP_ADDR_LEN);
+    ret = st30_tx_update_destination(tx_handle[0], &dst);
+    EXPECT_GE(ret, 0);
+  }
   for (int i = 0; i < rx_sessions; i++) {
     ret = st30_rx_update_source(rx_handle[i], &src);
     EXPECT_GE(ret, 0);
-    test_ctx_tx[0]->seq_id = rand(); /* random seq id */
     test_ctx_rx[i]->start_time = 0;
     test_ctx_rx[i]->fb_rec = 0;
   }
@@ -1037,6 +1058,12 @@ TEST(St30_rx, update_source_frame) {
 }
 TEST(St30_rx, update_source_rtp) {
   st30_rx_update_src_test(ST30_TYPE_RTP_LEVEL, 2, ST_TEST_LEVEL_ALL);
+}
+TEST(St30_tx, update_dest_frame) {
+  st30_rx_update_src_test(ST30_TYPE_FRAME_LEVEL, 1, ST_TEST_LEVEL_ALL);
+}
+TEST(St30_tx, update_dest_rtp) {
+  st30_rx_update_src_test(ST30_TYPE_RTP_LEVEL, 1, ST_TEST_LEVEL_ALL);
 }
 
 static int st30_rx_meta_frame_ready(void* priv, void* frame,

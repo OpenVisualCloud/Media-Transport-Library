@@ -24,12 +24,15 @@ enum sample_args_cmd {
   SAMPLE_ARG_P_SIP,
   SAMPLE_ARG_R_SIP,
   SAMPLE_ARG_UDP_PORT,
+  SAMPLE_ARG_PAYLOAD_TYPE,
   SAMPLE_ARG_FPS,
+  SAMPLE_ARG_INTERLACED,
   SAMPLE_ARG_P_FWD_IP,
   SAMPLE_ARG_LOG_LEVEL,
   SAMPLE_ARG_DEV_AUTO_START,
   SAMPLE_ARG_DMA_PORT,
-  SAMPLE_ARG_SHARED_QUEUES,
+  SAMPLE_ARG_SHARED_TX_QUEUES,
+  SAMPLE_ARG_SHARED_RX_QUEUES,
   SAMPLE_ARG_QUEUES_CNT,
   SAMPLE_ARG_P_TX_DST_MAC,
   SAMPLE_ARG_R_TX_DST_MAC,
@@ -71,13 +74,16 @@ static struct option sample_args_options[] = {
     {"p_sip", required_argument, 0, SAMPLE_ARG_P_SIP},
     {"r_sip", required_argument, 0, SAMPLE_ARG_R_SIP},
     {"udp_port", required_argument, 0, SAMPLE_ARG_UDP_PORT},
+    {"payload_type", required_argument, 0, SAMPLE_ARG_PAYLOAD_TYPE},
     {"fps", required_argument, 0, SAMPLE_ARG_FPS},
+    {"interlaced", no_argument, 0, SAMPLE_ARG_INTERLACED},
     {"p_fwd_ip", required_argument, 0, SAMPLE_ARG_P_FWD_IP},
     {"sessions_cnt", required_argument, 0, SAMPLE_ARG_SESSIONS_CNT},
     {"log_level", required_argument, 0, SAMPLE_ARG_LOG_LEVEL},
     {"dev_auto_start", no_argument, 0, SAMPLE_ARG_DEV_AUTO_START},
     {"dma_port", required_argument, 0, SAMPLE_ARG_DMA_PORT},
-    {"shared_queues", no_argument, 0, SAMPLE_ARG_SHARED_QUEUES},
+    {"shared_tx_queues", no_argument, 0, SAMPLE_ARG_SHARED_TX_QUEUES},
+    {"shared_rx_queues", no_argument, 0, SAMPLE_ARG_SHARED_RX_QUEUES},
     {"queues_cnt", required_argument, 0, SAMPLE_ARG_QUEUES_CNT},
     {"p_tx_dst_mac", required_argument, 0, SAMPLE_ARG_P_TX_DST_MAC},
     {"r_tx_dst_mac", required_argument, 0, SAMPLE_ARG_R_TX_DST_MAC},
@@ -155,6 +161,9 @@ static int _sample_parse_args(struct st_sample_context* ctx, int argc, char** ar
       case SAMPLE_ARG_UDP_PORT:
         ctx->udp_port = atoi(optarg);
         break;
+      case SAMPLE_ARG_PAYLOAD_TYPE:
+        ctx->payload_type = atoi(optarg);
+        break;
       case SAMPLE_ARG_FPS:
         if (!strcmp(optarg, "59.94"))
           ctx->fps = ST_FPS_P59_94;
@@ -172,6 +181,9 @@ static int _sample_parse_args(struct st_sample_context* ctx, int argc, char** ar
           ctx->fps = ST_FPS_P24;
         else
           err("%s, unknow fps %s\n", __func__, optarg);
+        break;
+      case SAMPLE_ARG_INTERLACED:
+        ctx->interlaced = true;
         break;
       case SAMPLE_ARG_P_TX_IP:
         inet_pton(AF_INET, optarg, ctx->tx_dip_addr[MTL_PORT_P]);
@@ -217,8 +229,11 @@ static int _sample_parse_args(struct st_sample_context* ctx, int argc, char** ar
       case SAMPLE_ARG_DEV_AUTO_START:
         p->flags |= MTL_FLAG_DEV_AUTO_START_STOP;
         break;
-      case SAMPLE_ARG_SHARED_QUEUES:
-        p->flags |= MTL_FLAG_SHARED_QUEUE;
+      case SAMPLE_ARG_SHARED_TX_QUEUES:
+        p->flags |= MTL_FLAG_SHARED_TX_QUEUE;
+        break;
+      case SAMPLE_ARG_SHARED_RX_QUEUES:
+        p->flags |= MTL_FLAG_SHARED_RX_QUEUE;
         break;
       case SAMPLE_ARG_PTP_TSC:
         p->flags |= MTL_FLAG_PTP_SOURCE_TSC;
@@ -231,20 +246,16 @@ static int _sample_parse_args(struct st_sample_context* ctx, int argc, char** ar
           p->rss_mode = MTL_RSS_MODE_L3;
         else if (!strcmp(optarg, "l3_l4"))
           p->rss_mode = MTL_RSS_MODE_L3_L4;
-        else if (!strcmp(optarg, "l3_l4_dst_port_only"))
-          p->rss_mode = MTL_RSS_MODE_L3_L4_DP_ONLY;
-        else if (!strcmp(optarg, "l3_da_l4_dst_port_only"))
-          p->rss_mode = MTL_RSS_MODE_L3_DA_L4_DP_ONLY;
-        else if (!strcmp(optarg, "l4_dst_port_only"))
-          p->rss_mode = MTL_RSS_MODE_L4_DP_ONLY;
         else if (!strcmp(optarg, "none"))
           p->rss_mode = MTL_RSS_MODE_NONE;
         else
           err("%s, unknow rss mode %s\n", __func__, optarg);
         break;
       case SAMPLE_ARG_QUEUES_CNT:
-        p->rx_queues_cnt_max = atoi(optarg);
-        p->tx_queues_cnt_max = p->rx_queues_cnt_max;
+        for (int i = 0; i < MTL_PORT_MAX; i++) {
+          p->rx_queues_cnt[i] = atoi(optarg);
+          p->tx_queues_cnt[i] = p->rx_queues_cnt[i];
+        }
         break;
       case SAMPLE_ARG_P_TX_DST_MAC:
         sample_args_parse_tx_mac(ctx, optarg, MTL_PORT_P);
@@ -403,15 +414,13 @@ int sample_parse_args(struct st_sample_context* ctx, int argc, char** argv, bool
   ctx->st22p_output_fmt = ST_FRAME_FMT_YUV422PLANAR10LE;
   ctx->st22p_codec = ST22_CODEC_JPEGXS;
 
-  p->tx_queues_cnt_max = 8;
-  p->rx_queues_cnt_max = 8;
-
   _sample_parse_args(ctx, argc, argv);
 
-  p->tx_sessions_cnt_max = ctx->sessions;
-  p->rx_sessions_cnt_max = ctx->sessions;
   /* always enable 1 port */
   if (!p->num_ports) p->num_ports = 1;
+
+  if (tx) sample_tx_queue_cnt_set(ctx, ctx->sessions);
+  if (rx) sample_rx_queue_cnt_set(ctx, ctx->sessions);
 
   return 0;
 }
@@ -435,6 +444,26 @@ int dma_sample_parse_args(struct st_sample_context* ctx, int argc, char** argv) 
   ctx->param.num_dma_dev_port = 1;
   return 0;
 };
+
+int sample_tx_queue_cnt_set(struct st_sample_context* ctx, uint16_t cnt) {
+  struct mtl_init_params* p = &ctx->param;
+
+  for (uint8_t i = 0; i < p->num_ports; i++) {
+    p->tx_queues_cnt[i] = cnt;
+  }
+
+  return 0;
+}
+
+int sample_rx_queue_cnt_set(struct st_sample_context* ctx, uint16_t cnt) {
+  struct mtl_init_params* p = &ctx->param;
+
+  for (uint8_t i = 0; i < p->num_ports; i++) {
+    p->rx_queues_cnt[i] = cnt;
+  }
+
+  return 0;
+}
 
 void fill_rfc4175_422_10_pg2_data(struct st20_rfc4175_422_10_pg2_be* data, int w, int h) {
   int pg_size = w * h / 2;
@@ -507,9 +536,17 @@ int ufd_override_check(struct st_sample_context* ctx) {
     has_override = true;
     override.lcore_mode = true;
   }
-  if (ctx->param.flags & MTL_FLAG_SHARED_QUEUE) {
+  if (ctx->param.flags & MTL_FLAG_SHARED_TX_QUEUE) {
     has_override = true;
-    override.shared_queue = true;
+    override.shared_tx_queue = true;
+  }
+  if (ctx->param.flags & MTL_FLAG_SHARED_RX_QUEUE) {
+    has_override = true;
+    override.shared_tx_queue = true;
+  }
+  if (ctx->param.rss_mode) {
+    has_override = true;
+    override.rss_mode = ctx->param.rss_mode;
   }
   if (has_override) {
     mufd_commit_override_params(&override);

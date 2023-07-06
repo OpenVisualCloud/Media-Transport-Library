@@ -20,6 +20,9 @@
 
 #define MT_EAL_MAX_ARGS (32)
 
+#define MT_TX_MEMPOOL_PREFIX "T_"
+#define MT_RX_MEMPOOL_PREFIX "R_"
+
 int mt_dev_get_socket(const char* port);
 
 int mt_dev_init(struct mtl_init_params* p, struct mt_kport_info* kport_info);

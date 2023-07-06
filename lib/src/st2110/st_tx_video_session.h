@@ -7,6 +7,8 @@
 
 #include "st_main.h"
 
+#define ST_TX_VIDEO_PREFIX "TV_"
+
 int st_tx_video_sessions_sch_init(struct mtl_main_impl* impl, struct mt_sch_impl* sch);
 
 int st_tx_video_sessions_sch_uinit(struct mtl_main_impl* impl, struct mt_sch_impl* sch);
@@ -62,5 +64,7 @@ static inline float tx_video_session_get_cpu_busy(struct st_tx_video_session_imp
 int st_tx_video_session_migrate(struct mtl_main_impl* impl,
                                 struct st_tx_video_sessions_mgr* mgr,
                                 struct st_tx_video_session_impl* s, int idx);
+
+int st20_pacing_static_profiling(struct st_tx_video_session_impl* s);
 
 #endif

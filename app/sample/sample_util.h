@@ -80,6 +80,7 @@ struct st_sample_context {
   uint32_t width;
   uint32_t height;
   enum st_fps fps;
+  bool interlaced;
   enum st20_fmt fmt;
   enum st_frame_fmt input_fmt;
   enum st_frame_fmt output_fmt;
@@ -136,5 +137,9 @@ static inline uint64_t sample_get_monotonic_time() {
 }
 
 int ufd_override_check(struct st_sample_context* ctx);
+
+int sample_tx_queue_cnt_set(struct st_sample_context* ctx, uint16_t cnt);
+
+int sample_rx_queue_cnt_set(struct st_sample_context* ctx, uint16_t cnt);
 
 #endif

@@ -294,7 +294,7 @@ static int dma_sw_init(struct mtl_main_impl* impl, struct mt_dma_dev* dev) {
   struct rte_ring* ring;
   unsigned int flags, count;
 
-  snprintf(ring_name, 32, "RX-DMA-BORROW-RING-D%d", idx);
+  snprintf(ring_name, 32, "%sD%d", MT_DMA_BORROW_RING_PREFIX, idx);
   flags = RING_F_SP_ENQ | RING_F_SC_DEQ;
   count = dev->nb_desc;
   ring = rte_ring_create(ring_name, count, mt_socket_id(impl, MTL_PORT_P), flags);

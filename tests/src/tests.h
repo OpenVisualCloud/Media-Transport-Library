@@ -193,6 +193,7 @@ class tests_context {
   bool check_sha = false;
   int fail_cnt = 0; /* fail as sha or wrong status, etc. */
   int incomplete_frame_cnt = 0;
+  int meta_timing_fail_cnt = 0;
   int incomplete_slice_cnt = 0;
   int check_sha_frame_cnt = 0;
   bool out_of_order_pkt = false; /* out of order pkt index */
@@ -212,10 +213,10 @@ class tests_context {
   bool rx_get_ext = false;
 
   bool user_pacing = false;
-  /* user timestamp which advanced by 1 for erery frame */
+  /* user timestamp which advanced by 1 for every frame */
   bool user_timestamp = false;
   uint32_t pre_timestamp = 0;
-  double frame_time = 0;
+  double frame_time = 0; /* in ns */
   uint64_t ptp_time_first_frame = 0;
 };
 
@@ -224,6 +225,8 @@ int tests_context_unit(tests_context* ctx);
 int test_ctx_notify_event(void* priv, enum st_event event, void* args);
 
 int tx_next_frame(void* priv, uint16_t* next_frame_idx);
+
+#define TEST_CREATE_FREE_MAX (16)
 
 #define create_free_max(A, max)                             \
   do {                                                      \

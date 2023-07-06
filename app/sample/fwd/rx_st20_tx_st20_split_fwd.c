@@ -196,8 +196,7 @@ int main(int argc, char** argv) {
   memset(&ctx, 0, sizeof(ctx));
   sample_parse_args(&ctx, argc, argv, true, false, false);
   ctx.sessions = session_num;
-  ctx.param.tx_sessions_cnt_max = session_num;
-  ctx.param.rx_sessions_cnt_max = 1;
+  sample_tx_queue_cnt_set(&ctx, session_num);
 
   struct st20_pgroup st20_pg;
   st20_get_pgroup(ctx.fmt, &st20_pg);
@@ -228,6 +227,7 @@ int main(int argc, char** argv) {
   ops_rx.width = ctx.width;
   ops_rx.height = ctx.height;
   ops_rx.fps = ctx.fps;
+  ops_rx.interlaced = ctx.interlaced;
   ops_rx.fmt = ctx.fmt;
   ops_rx.framebuff_cnt = FB_CNT;
   ops_rx.payload_type = ctx.payload_type;
@@ -261,6 +261,7 @@ int main(int argc, char** argv) {
     ops_tx.height = ctx.height / 2;
     ops_tx.linesize = ctx.width * st20_pg.size / st20_pg.coverage;
     ops_tx.fps = ctx.fps;
+    ops_rx.interlaced = ctx.interlaced;
     ops_tx.fmt = ctx.fmt;
     ops_tx.payload_type = ctx.payload_type;
     ops_tx.flags |= ST20_TX_FLAG_EXT_FRAME;

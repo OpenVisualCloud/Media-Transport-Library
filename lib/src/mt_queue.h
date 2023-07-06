@@ -3,7 +3,6 @@
  */
 
 #include "mt_dev.h"
-#include "mt_rss.h"
 #include "mt_shared_queue.h"
 #include "mt_shared_rss.h"
 

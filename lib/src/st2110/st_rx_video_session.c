@@ -160,10 +160,10 @@ static char* rv_ebu_rtp_offset_result(struct st_rx_video_ebu_stat* ebu,
   return ST_EBU_PASS;
 }
 
-static char* rv_ebu_rtp_ts_delta_result(struct st_rx_video_ebu_stat* ebu,
-                                        struct st_rx_video_ebu_info* ebu_info,
+static char* rv_ebu_rtp_ts_delta_result(struct st_rx_video_session_impl* s,
+                                        struct st_rx_video_ebu_stat* ebu,
                                         struct st_rx_video_ebu_result* ebu_result) {
-  int32_t rtd = ebu_info->frame_time_sampling;
+  int32_t rtd = s->frame_time_sampling;
 
   if ((ebu->rtp_ts_delta_min < rtd) || (ebu->rtp_ts_delta_max > (rtd + 1))) {
     ebu_result->rtp_ts_delta_fail++;
@@ -222,7 +222,7 @@ static void rv_ebu_result(struct st_rx_video_session_impl* s) {
        rv_ebu_rtp_offset_result(ebu, ebu_info, ebu_result));
   info("%s(%d), RTP TS Delta AVG %.2f MIN %d MAX %d test %s!\n", __func__, idx,
        ebu->rtp_ts_delta_avg, ebu->rtp_ts_delta_min, ebu->rtp_ts_delta_max,
-       rv_ebu_rtp_ts_delta_result(ebu, ebu_info, ebu_result));
+       rv_ebu_rtp_ts_delta_result(s, ebu, ebu_result));
   info("%s(%d), Inter-packet time(ns) AVG %.2f MIN %d MAX %d!\n", __func__, idx,
        ebu->rtp_ipt_avg, ebu->rtp_ipt_min, ebu->rtp_ipt_max);
 
@@ -237,8 +237,8 @@ static void rv_ebu_on_frame(struct st_rx_video_session_impl* s, uint32_t rtp_tms
   struct st_rx_video_ebu_stat* ebu = &s->ebu;
   struct st_rx_video_ebu_info* ebu_info = &s->ebu_info;
   struct st_rx_video_ebu_result* ebu_result = &s->ebu_result;
-  uint64_t epochs = (double)pkt_tmstamp / ebu_info->frame_time;
-  uint64_t epoch_tmstamp = (double)epochs * ebu_info->frame_time;
+  uint64_t epochs = (double)pkt_tmstamp / s->frame_time;
+  uint64_t epoch_tmstamp = (double)epochs * s->frame_time;
   double fpt_delta = (double)pkt_tmstamp - epoch_tmstamp;
 
   ebu->frame_idx++;
@@ -275,11 +275,10 @@ static void rv_ebu_on_frame(struct st_rx_video_session_impl* s, uint32_t rtp_tms
   ebu->fpt_max = RTE_MAX(fpt_delta, ebu->fpt_max);
   ebu->fpt_cnt++;
 
-  uint64_t tmstamp64 = epochs * ebu_info->frame_time_sampling;
+  uint64_t tmstamp64 = epochs * s->frame_time_sampling;
   uint32_t tmstamp32 = tmstamp64;
   double diff_rtp_ts = (double)rtp_tmstamp - tmstamp32;
-  double diff_rtp_ts_ns =
-      diff_rtp_ts * ebu_info->frame_time / ebu_info->frame_time_sampling;
+  double diff_rtp_ts_ns = diff_rtp_ts * s->frame_time / s->frame_time_sampling;
   double latency = fpt_delta - diff_rtp_ts_ns;
 
   /* calculate latency */
@@ -294,7 +293,7 @@ static void rv_ebu_on_frame(struct st_rx_video_session_impl* s, uint32_t rtp_tms
   ebu->rtp_offset_max = RTE_MAX(diff_rtp_ts, ebu->rtp_offset_max);
   ebu->rtp_offset_cnt++;
 
-  /* calculate rtp ts dleta */
+  /* calculate rtp ts delta */
   if (ebu->prev_rtp_ts) {
     int rtp_ts_delta = rtp_tmstamp - ebu->prev_rtp_ts;
 
@@ -318,7 +317,7 @@ static void rv_ebu_on_packet(struct st_rx_video_session_impl* s, uint32_t rtp_tm
   if (!pkt_idx) /* start of new frame */
     rv_ebu_on_frame(s, rtp_tmstamp, pkt_tmstamp);
 
-  epoch_tmstamp = (uint64_t)(ebu->cur_epochs * ebu_info->frame_time);
+  epoch_tmstamp = (uint64_t)(ebu->cur_epochs * s->frame_time);
   tvd = epoch_tmstamp + ebu_info->tr_offset;
 
   /* Calculate vrx */
@@ -359,7 +358,8 @@ static int rv_ebu_init(struct mtl_main_impl* impl, struct st_rx_video_session_im
   int idx = s->idx, ret;
   struct st_rx_video_ebu_info* ebu_info = &s->ebu_info;
   struct st20_rx_ops* ops = &s->ops;
-  double frame_time, frame_time_s;
+  double frame_time = s->frame_time;
+  double frame_time_s;
   struct st_fps_timing fps_tm;
 
   rv_ebu_clear_result(&s->ebu);
@@ -371,7 +371,6 @@ static int rv_ebu_init(struct mtl_main_impl* impl, struct st_rx_video_session_im
   }
 
   frame_time_s = (double)fps_tm.den / fps_tm.mul;
-  frame_time = (double)1000000000.0 * fps_tm.den / fps_tm.mul;
 
   int st20_total_pkts = s->detector.pkt_per_frame;
   info("%s(%d), st20_total_pkts %d\n", __func__, idx, st20_total_pkts);
@@ -385,9 +384,6 @@ static int rv_ebu_init(struct mtl_main_impl* impl, struct st_rx_video_session_im
     reactive = (ops->height == 480) ? 487.0 / 525.0 : 576.0 / 625.0;
   }
 
-  ebu_info->frame_time = frame_time;
-  ebu_info->frame_time_sampling =
-      (double)(fps_tm.sampling_clock_rate) * fps_tm.den / fps_tm.mul;
   ebu_info->trs = frame_time * reactive / st20_total_pkts;
   if (!ops->interlaced) {
     ebu_info->tr_offset =
@@ -416,7 +412,7 @@ static int rv_ebu_init(struct mtl_main_impl* impl, struct st_rx_video_session_im
   ebu_info->dropped_results = 4; /* we drop the first 4 results */
 
   info("%s[%02d], trs %f tr offset %f sampling %f\n", __func__, idx, ebu_info->trs,
-       ebu_info->tr_offset, ebu_info->frame_time_sampling);
+       ebu_info->tr_offset, s->frame_time_sampling);
   info(
       "%s[%02d], cmax_narrow %d cmax_wide %d vrx_full_narrow %d vrx_full_wide %d "
       "rtp_offset_max %d\n",
@@ -876,7 +872,7 @@ static int rv_alloc_rtps(struct mtl_main_impl* impl, struct st_rx_video_sessions
   int mgr_idx = mgr->idx, idx = s->idx;
   enum mtl_port port = mt_port_logic2phy(s->port_maps, MTL_SESSION_PORT_P);
 
-  snprintf(ring_name, 32, "RX-VIDEO-RTP-RING-M%d-R%d", mgr_idx, idx);
+  snprintf(ring_name, 32, "%sM%dS%d_RTP", ST_RX_VIDEO_PREFIX, mgr_idx, idx);
   flags = RING_F_SP_ENQ | RING_F_SC_DEQ; /* single-producer and single-consumer */
   count = s->ops.rtp_ring_size;
   if (count <= 0) {
@@ -1065,6 +1061,14 @@ static void rv_frame_notify(struct st_rx_video_session_impl* s,
   meta->fps = ops->fps;
   meta->tfmt = ST10_TIMESTAMP_FMT_MEDIA_CLK;
   meta->timestamp = slot->tmstamp;
+  meta->timestamp_first_pkt = slot->timestamp_first_pkt;
+  /* calculate FPT */
+  uint64_t epochs = (double)meta->timestamp_first_pkt / s->frame_time;
+  uint64_t epoch_tmstamp = (double)epochs * s->frame_time;
+  double fpt_delta = (double)meta->timestamp_first_pkt - epoch_tmstamp;
+  dbg("%s(%d): fpt_delta %f\n", __func__, s->idx, fpt_delta);
+  meta->fpt = fpt_delta;
+  meta->timestamp_last_pkt = mtl_ptp_read_time(s->parent->parent);
   meta->second_field = slot->second_field;
   meta->frame_total_size = s->st20_frame_size;
   meta->uframe_total_size = s->st20_uframe_size;
@@ -1324,6 +1328,7 @@ static struct st_rx_video_slot_impl* rv_slot_by_tmstamp(
     meta->opaque = ext_frame.opaque;
   }
   slot->frame = frame_info;
+  slot->timestamp_first_pkt = mtl_ptp_read_time(s->parent->parent);
 
   s->dma_slot = slot;
 
@@ -1487,7 +1492,7 @@ static int rv_start_pcapng(struct mtl_main_impl* impl, struct st_rx_video_sessio
 #endif
 
   char pool_name[ST_MAX_NAME_LEN];
-  snprintf(pool_name, ST_MAX_NAME_LEN, "pcapng_pool_p%d_s%d", port, idx);
+  snprintf(pool_name, ST_MAX_NAME_LEN, "%sP%dS%d_PCAPNG", ST_RX_VIDEO_PREFIX, port, idx);
   struct rte_mempool* mp =
       mt_mempool_create_by_ops(impl, port, pool_name, 256, MT_MBUF_CACHE_SIZE, 0,
                                rte_pcapng_mbuf_size(pkt_len), "ring_mp_sc");
@@ -2214,7 +2219,7 @@ static int rv_handle_hdr_split_pkt(struct st_rx_video_session_impl* s,
     }
   }
 
-  /* caculate offset */
+  /* calculate offset */
   uint32_t offset =
       (line1_number * ops->width + line1_offset) / s->st20_pg.coverage * s->st20_pg.size;
   size_t payload_length = line1_length;
@@ -2346,7 +2351,7 @@ static int rv_init_pkt_lcore(struct mtl_main_impl* impl,
   int mgr_idx = mgr->idx, idx = s->idx, ret;
   enum mtl_port port = mt_port_logic2phy(s->port_maps, MTL_SESSION_PORT_P);
 
-  snprintf(ring_name, 32, "RX-VIDEO-PKT-RING-M%d-R%d", mgr_idx, idx);
+  snprintf(ring_name, 32, "%sM%dS%d_PKT", ST_RX_VIDEO_PREFIX, mgr_idx, idx);
   flags = RING_F_SP_ENQ | RING_F_SC_DEQ; /* single-producer and single-consumer */
   count = ST_RX_VIDEO_BURST_SIZE * 4;
   ring = rte_ring_create(ring_name, count, mt_socket_id(impl, port), flags);
@@ -2483,7 +2488,8 @@ static int rv_init_sw(struct mtl_main_impl* impl, struct st_rx_video_sessions_mg
 
   uint64_t bps;
   bool pkt_handle_lcore = false;
-  ret = st20_get_bandwidth_bps(ops->width, ops->height, ops->fmt, ops->fps, &bps);
+  ret = st20_get_bandwidth_bps(ops->width, ops->height, ops->fmt, ops->fps,
+                               ops->interlaced, &bps);
   if (ret < 0) {
     err("%s(%d), get bps fail %d\n", __func__, idx, ret);
     rv_uinit_sw(impl, s);
@@ -2811,8 +2817,6 @@ static int rv_init_hw(struct mtl_main_impl* impl, struct st_rx_video_session_imp
     } else {
       flow.hdr_split = false;
     }
-    flow.priv = &s->priv[i];
-    flow.cb = rv_handle_mbuf;
 
     /* no flow for data path only */
     if (mt_pmd_is_kernel(impl, port) && (ops->flags & ST20_RX_FLAG_DATA_PATH_ONLY))
@@ -2892,6 +2896,7 @@ static int rv_attach(struct mtl_main_impl* impl, struct st_rx_video_sessions_mgr
   int ret;
   int idx = s->idx, num_port = ops->num_port;
   char* ports[MTL_SESSION_PORT_MAX];
+  struct st_fps_timing fps_tm;
 
   for (int i = 0; i < num_port; i++) ports[i] = ops->port[i];
   ret = mt_build_port_map(impl, ports, s->port_maps, num_port);
@@ -2902,12 +2907,19 @@ static int rv_attach(struct mtl_main_impl* impl, struct st_rx_video_sessions_mgr
     err("%s(%d), get pgroup fail %d\n", __func__, idx, ret);
     return ret;
   }
+  ret = st_get_fps_timing(ops->fps, &fps_tm);
+  if (ret < 0) {
+    err("%s(%d), invalid fps %d\n", __func__, idx, ops->fps);
+    return ret;
+  }
 
   if (st20_is_frame_type(ops->type) && (ops->flags & ST20_RX_FLAG_HDR_SPLIT)) {
     s->is_hdr_split = true;
     info("%s(%d), hdr_split enabled in ops\n", __func__, idx);
   }
 
+  s->frame_time = (double)1000000000.0 * fps_tm.den / fps_tm.mul;
+  s->frame_time_sampling = (double)(fps_tm.sampling_clock_rate) * fps_tm.den / fps_tm.mul;
   s->st20_bytes_in_line = ops->width * s->st20_pg.size / s->st20_pg.coverage;
   s->st20_linesize = s->st20_bytes_in_line;
   if (ops->linesize > s->st20_linesize)
@@ -3013,12 +3025,12 @@ static int rv_attach(struct mtl_main_impl* impl, struct st_rx_video_sessions_mgr
   }
 
   s->attached = true;
-  info("%s(%d), %d frames with size %" PRIu64 "(%" PRIu64 ",%" PRIu64 "), type %d\n",
+  info("%s(%d), %d frames with size %" PRIu64 "(%" PRIu64 ",%" PRIu64 "), type %d, %s\n",
        __func__, idx, s->st20_frames_cnt, s->st20_frame_size, s->st20_frame_bitmap_size,
-       s->st20_uframe_size, ops->type);
-  info("%s(%d), w %u h %u fmt %s packing %d pt %d flags 0x%x\n", __func__, idx,
-       ops->width, ops->height, st20_frame_fmt_name(ops->fmt), ops->packing,
-       ops->payload_type, ops->flags);
+       s->st20_uframe_size, ops->type, ops->interlaced ? "interlace" : "progressive");
+  info("%s(%d), w %u h %u fmt %s packing %d pt %d flags 0x%x frame time %fms\n", __func__,
+       idx, ops->width, ops->height, st20_frame_fmt_name(ops->fmt), ops->packing,
+       ops->payload_type, ops->flags, s->frame_time / NS_PER_MS);
   return 0;
 }
 
@@ -3341,17 +3353,27 @@ static int rvs_mgr_init(struct mtl_main_impl* impl, struct mt_sch_impl* sch,
     rte_spinlock_init(&mgr->mutex[i]);
   }
 
-  if (!mt_has_srss(impl, MTL_PORT_P)) {
-    memset(&ops, 0x0, sizeof(ops));
-    ops.priv = mgr;
-    ops.name = "rvs_pkt_rx";
-    ops.handler = rvs_pkt_rx_tasklet_handler;
+  memset(&ops, 0x0, sizeof(ops));
+  ops.priv = mgr;
+  ops.name = "rvs_pkt_rx";
+  ops.handler = rvs_pkt_rx_tasklet_handler;
 
-    mgr->pkt_rx_tasklet = mt_sch_register_tasklet(sch, &ops);
-    if (!mgr->pkt_rx_tasklet) {
-      err("%s(%d), pkt_rx_tasklet register fail\n", __func__, idx);
-      return -EIO;
-    }
+  mgr->pkt_rx_tasklet = mt_sch_register_tasklet(sch, &ops);
+  if (!mgr->pkt_rx_tasklet) {
+    err("%s(%d), pkt_rx_tasklet register fail\n", __func__, idx);
+    return -EIO;
+  }
+
+  memset(&ops, 0x0, sizeof(ops));
+  ops.priv = mgr;
+  ops.name = "rvs_ctl";
+  ops.start = rvs_ctl_tasklet_start;
+  ops.handler = rvs_ctl_tasklet_handler;
+
+  mgr->ctl_tasklet = mt_sch_register_tasklet(sch, &ops);
+  if (!mgr->ctl_tasklet) {
+    err("%s(%d), ctl_tasklet register fail\n", __func__, idx);
+    return -EIO;
   }
 
   memset(&ops, 0x0, sizeof(ops));
@@ -3718,7 +3740,8 @@ st20_rx_handle st20_rx_create_with_mask(struct mtl_main_impl* impl,
     return NULL;
   }
 
-  ret = st20_get_bandwidth_bps(ops->width, ops->height, ops->fmt, ops->fps, &bps);
+  ret = st20_get_bandwidth_bps(ops->width, ops->height, ops->fmt, ops->fps,
+                               ops->interlaced, &bps);
   if (ret < 0) {
     err("%s, st20_get_bandwidth_bps fail\n", __func__);
     return NULL;
@@ -3743,10 +3766,7 @@ st20_rx_handle st20_rx_create_with_mask(struct mtl_main_impl* impl,
 
   enum mt_sch_type type =
       mt_has_rxv_separate_sch(impl) ? MT_SCH_TYPE_RX_VIDEO_ONLY : MT_SCH_TYPE_DEFAULT;
-  if (mt_has_srss(impl, MTL_PORT_P))
-    sch = impl->srss[MTL_PORT_P]->sch;
-  else
-    sch = mt_sch_get(impl, quota_mbs, type, sch_mask);
+  sch = mt_sch_get(impl, quota_mbs, type, sch_mask);
   if (!sch) {
     mt_rte_free(s_impl);
     err("%s, get sch fail\n", __func__);
@@ -3758,7 +3778,7 @@ st20_rx_handle st20_rx_create_with_mask(struct mtl_main_impl* impl,
   mt_pthread_mutex_unlock(&sch->rx_video_mgr_mutex);
   if (ret < 0) {
     err("%s, st_rx_video_init fail %d\n", __func__, ret);
-    if (!mt_has_srss(impl, MTL_PORT_P)) mt_sch_put(sch, quota_mbs);
+    mt_sch_put(sch, quota_mbs);
     mt_rte_free(s_impl);
     return NULL;
   }
@@ -3768,7 +3788,7 @@ st20_rx_handle st20_rx_create_with_mask(struct mtl_main_impl* impl,
   mt_pthread_mutex_unlock(&sch->rx_video_mgr_mutex);
   if (!s) {
     err("%s(%d), rv_mgr_attach fail\n", __func__, sch->idx);
-    if (!mt_has_srss(impl, MTL_PORT_P)) mt_sch_put(sch, quota_mbs);
+    mt_sch_put(sch, quota_mbs);
     mt_rte_free(s_impl);
     return NULL;
   }
@@ -3878,10 +3898,8 @@ int st20_rx_free(st20_rx_handle handle) {
   if (ret < 0)
     err("%s(%d,%d), st_rx_video_sessions_mgr_detach fail\n", __func__, sch_idx, idx);
 
-  if (!mt_has_srss(impl, MTL_PORT_P)) {
-    ret = mt_sch_put(sch, s_impl->quota_mbs);
-    if (ret < 0) err("%s(%d,%d), mt_sch_put fail\n", __func__, sch_idx, idx);
-  }
+  ret = mt_sch_put(sch, s_impl->quota_mbs);
+  if (ret < 0) err("%s(%d,%d), mt_sch_put fail\n", __func__, sch_idx, idx);
 
   mt_rte_free(s_impl);
 
@@ -4053,7 +4071,7 @@ st22_rx_handle st22_rx_create(mtl_handle mt, struct st22_rx_ops* ops) {
 
   if (ST22_TYPE_RTP_LEVEL == ops->type) {
     ret = st20_get_bandwidth_bps(ops->width, ops->height, ST20_FMT_YUV_422_10BIT,
-                                 ops->fps, &bps);
+                                 ops->fps, false, &bps);
     if (ret < 0) {
       err("%s, get_bandwidth_bps fail\n", __func__);
       return NULL;
@@ -4095,7 +4113,7 @@ st22_rx_handle st22_rx_create(mtl_handle mt, struct st22_rx_ops* ops) {
   mt_pthread_mutex_unlock(&sch->rx_video_mgr_mutex);
   if (ret < 0) {
     err("%s, st_rx_video_init fail %d\n", __func__, ret);
-    if (!mt_has_srss(impl, MTL_PORT_P)) mt_sch_put(sch, quota_mbs);
+    mt_sch_put(sch, quota_mbs);
     mt_rte_free(s_impl);
     return NULL;
   }
@@ -4135,7 +4153,7 @@ st22_rx_handle st22_rx_create(mtl_handle mt, struct st22_rx_ops* ops) {
   mt_pthread_mutex_unlock(&sch->rx_video_mgr_mutex);
   if (!s) {
     err("%s(%d), rv_mgr_attach fail\n", __func__, sch->idx);
-    if (!mt_has_srss(impl, MTL_PORT_P)) mt_sch_put(sch, quota_mbs);
+    mt_sch_put(sch, quota_mbs);
     mt_rte_free(s_impl);
     return NULL;
   }
@@ -4229,10 +4247,8 @@ int st22_rx_free(st22_rx_handle handle) {
   if (ret < 0)
     err("%s(%d,%d), st_rx_video_sessions_mgr_detach fail\n", __func__, sch_idx, idx);
 
-  if (!mt_has_srss(impl, MTL_PORT_P)) {
-    ret = mt_sch_put(sch, s_impl->quota_mbs);
-    if (ret < 0) err("%s(%d,%d), mt_sch_put fail\n", __func__, sch_idx, idx);
-  }
+  ret = mt_sch_put(sch, s_impl->quota_mbs);
+  if (ret < 0) err("%s(%d,%d), mt_sch_put fail\n", __func__, sch_idx, idx);
 
   mt_rte_free(s_impl);
 

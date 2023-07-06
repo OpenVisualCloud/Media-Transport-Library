@@ -10,6 +10,8 @@
 #include "../mt_sch.h"
 #include "../mt_util.h"
 
+#define MT_UDP_RXQ_PREFIX "UR_"
+
 struct mur_queue;
 
 struct mur_client {

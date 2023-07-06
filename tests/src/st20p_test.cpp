@@ -264,7 +264,8 @@ static void st20p_tx_ops_init(tests_context* st20, struct st20p_tx_ops* ops_tx) 
   ops_tx->framebuff_cnt = st20->fb_cnt;
   ops_tx->notify_frame_available = test_st20p_tx_frame_available;
   ops_tx->notify_event = test_ctx_notify_event;
-  st20->frame_size = st_frame_size(ops_tx->input_fmt, ops_tx->width, ops_tx->height);
+  st20->frame_size =
+      st_frame_size(ops_tx->input_fmt, ops_tx->width, ops_tx->height, ops_tx->interlaced);
 }
 
 static void st20p_rx_ops_init(tests_context* st20, struct st20p_rx_ops* ops_rx) {
@@ -289,7 +290,8 @@ static void st20p_rx_ops_init(tests_context* st20, struct st20p_rx_ops* ops_rx) 
   ops_rx->framebuff_cnt = st20->fb_cnt;
   ops_rx->notify_frame_available = test_st20p_rx_frame_available;
   ops_rx->notify_event = test_ctx_notify_event;
-  st20->frame_size = st_frame_size(ops_rx->output_fmt, ops_rx->width, ops_rx->height);
+  st20->frame_size = st_frame_size(ops_rx->output_fmt, ops_rx->width, ops_rx->height,
+                                   ops_rx->interlaced);
 }
 
 static void st20p_tx_assert_cnt(int expect_st20_tx_cnt) {
@@ -320,8 +322,12 @@ TEST(St20p, tx_create_free_mix) { pipeline_create_free_test(st20p_tx, 2, 3, 4); 
 TEST(St20p, rx_create_free_single) { pipeline_create_free_test(st20p_rx, 0, 1, 1); }
 TEST(St20p, rx_create_free_multi) { pipeline_create_free_test(st20p_rx, 0, 1, 6); }
 TEST(St20p, rx_create_free_mix) { pipeline_create_free_test(st20p_rx, 2, 3, 4); }
-TEST(St20p, tx_create_free_max) { pipeline_create_free_max(st20p_tx, 100); }
-TEST(St20p, rx_create_free_max) { pipeline_create_free_max(st20p_rx, 100); }
+TEST(St20p, tx_create_free_max) {
+  pipeline_create_free_max(st20p_tx, TEST_CREATE_FREE_MAX);
+}
+TEST(St20p, rx_create_free_max) {
+  pipeline_create_free_max(st20p_rx, TEST_CREATE_FREE_MAX);
+}
 TEST(St20p, tx_create_expect_fail) { pipeline_expect_fail_test(st20p_tx); }
 TEST(St20p, rx_create_expect_fail) { pipeline_expect_fail_test(st20p_rx); }
 TEST(St20p, tx_create_expect_fail_fb_cnt) {
@@ -581,6 +587,7 @@ struct st20p_rx_digest_test_para {
   bool pkt_convert;
   size_t line_padding_size;
   bool send_done_check;
+  bool interlace;
 };
 
 static void test_st20p_init_rx_digest_para(struct st20p_rx_digest_test_para* para) {
@@ -600,6 +607,7 @@ static void test_st20p_init_rx_digest_para(struct st20p_rx_digest_test_para* par
   para->pkt_convert = false;
   para->line_padding_size = 0;
   para->send_done_check = false;
+  para->interlace = false;
 }
 
 static void st20p_rx_digest_test(enum st_fps fps[], int width[], int height[],
@@ -691,6 +699,7 @@ static void st20p_rx_digest_test(enum st_fps fps[], int width[], int height[],
     ops_tx.height = height[i];
     ops_tx.fps = fps[i];
     ops_tx.input_fmt = tx_fmt[i];
+    ops_tx.interlaced = para->interlace;
     ops_tx.transport_fmt = t_fmt[i];
     ops_tx.transport_linesize = 0;
     ops_tx.device = para->device;
@@ -705,8 +714,9 @@ static void st20p_rx_digest_test(enum st_fps fps[], int width[], int height[],
     if (para->vsync) ops_tx.flags |= ST20P_TX_FLAG_ENABLE_VSYNC;
 
     uint8_t planes = st_frame_fmt_planes(tx_fmt[i]);
-    test_ctx_tx[i]->frame_size = st_frame_size(tx_fmt[i], width[i], height[i]) +
-                                 para->line_padding_size * height[i] * planes;
+    test_ctx_tx[i]->frame_size =
+        st_frame_size(tx_fmt[i], width[i], height[i], ops_tx.interlaced) +
+        para->line_padding_size * height[i] * planes;
 
     tx_handle[i] = st20p_tx_create(st, &ops_tx);
     ASSERT_TRUE(tx_handle[i] != NULL);
@@ -739,7 +749,7 @@ static void st20p_rx_digest_test(enum st_fps fps[], int width[], int height[],
       info("%s, session %d ext_fb %p\n", __func__, i, test_ctx_tx[i]->ext_fb);
 
       for (int j = 0; j < test_ctx_tx[i]->fb_cnt; j++) {
-        for (uint8_t plane = 0; plane < planes; plane++) { /* assume planes continous */
+        for (uint8_t plane = 0; plane < planes; plane++) { /* assume planes continuous */
           test_ctx_tx[i]->p_ext_frames[j].linesize[plane] =
               st_frame_least_linesize(rx_fmt[i], width[i], plane) +
               para->line_padding_size;
@@ -831,7 +841,8 @@ static void st20p_rx_digest_test(enum st_fps fps[], int width[], int height[],
     test_ctx_rx[i]->fmt = rx_fmt[i];
     test_ctx_rx[i]->user_timestamp = para->user_timestamp;
     test_ctx_rx[i]->rx_get_ext = para->rx_get_ext;
-    test_ctx_rx[i]->frame_size = st_frame_size(rx_fmt[i], width[i], height[i]);
+    test_ctx_rx[i]->frame_size =
+        st_frame_size(rx_fmt[i], width[i], height[i], para->interlace);
     /* copy sha */
     memcpy(test_ctx_rx[i]->shas, test_ctx_tx[i]->shas,
            TEST_SHA_HIST_NUM * SHA256_DIGEST_LENGTH);
@@ -841,7 +852,7 @@ static void st20p_rx_digest_test(enum st_fps fps[], int width[], int height[],
       uint8_t planes = st_frame_fmt_planes(rx_fmt[i]);
       test_ctx_rx[i]->p_ext_frames = (struct st_ext_frame*)malloc(
           sizeof(*test_ctx_rx[i]->p_ext_frames) * test_ctx_rx[i]->fb_cnt);
-      size_t frame_size = st_frame_size(rx_fmt[i], width[i], height[i]) +
+      size_t frame_size = st_frame_size(rx_fmt[i], width[i], height[i], para->interlace) +
                           para->line_padding_size * height[i] * planes;
       size_t pg_sz = mtl_page_size(st);
       size_t fb_size = frame_size * test_ctx_rx[i]->fb_cnt;
@@ -858,7 +869,7 @@ static void st20p_rx_digest_test(enum st_fps fps[], int width[], int height[],
       ASSERT_TRUE(test_ctx_rx[i]->ext_fb_iova != MTL_BAD_IOVA);
 
       for (int j = 0; j < test_ctx_rx[i]->fb_cnt; j++) {
-        for (uint8_t plane = 0; plane < planes; plane++) { /* assume planes continous */
+        for (uint8_t plane = 0; plane < planes; plane++) { /* assume planes continuous */
           test_ctx_rx[i]->p_ext_frames[j].linesize[plane] =
               st_frame_least_linesize(rx_fmt[i], width[i], plane) +
               para->line_padding_size;
@@ -897,6 +908,7 @@ static void st20p_rx_digest_test(enum st_fps fps[], int width[], int height[],
     ops_rx.fps = fps[i];
     ops_rx.output_fmt = rx_fmt[i];
     ops_rx.transport_fmt = t_fmt[i];
+    ops_rx.interlaced = para->interlace;
     ops_rx.transport_linesize = 0;
     ops_rx.device = para->device;
     ops_rx.framebuff_cnt = test_ctx_rx[i]->fb_cnt;
@@ -1002,7 +1014,7 @@ static void st20p_rx_digest_test(enum st_fps fps[], int width[], int height[],
     EXPECT_GE(ret, 0);
     info("%s, session %d fb_rec %d framerate %f:%f\n", __func__, i,
          test_ctx_rx[i]->fb_rec, framerate_rx[i], expect_framerate_rx[i]);
-    EXPECT_GE(test_ctx_rx[i]->fb_rec, 0);
+    EXPECT_GT(test_ctx_rx[i]->fb_rec, 0);
     if (para->dynamic)
       EXPECT_LE(test_ctx_rx[i]->incomplete_frame_cnt, 4);
     else
@@ -1039,6 +1051,27 @@ TEST(St20p, digest_1080p_s1) {
   test_st20p_init_rx_digest_para(&para);
   para.level = ST_TEST_LEVEL_ALL;
   para.check_fps = false;
+
+  st20p_rx_digest_test(fps, width, height, tx_fmt, t_fmt, rx_fmt, &para);
+}
+
+TEST(St20p, digest_1080i_s2) {
+  enum st_fps fps[2] = {ST_FPS_P50, ST_FPS_P50};
+  int width[2] = {1920, 1920};
+  int height[2] = {1080, 1080};
+  enum st_frame_fmt tx_fmt[2] = {ST_FRAME_FMT_YUV422RFC4175PG2BE10,
+                                 ST_FRAME_FMT_YUV422PLANAR10LE};
+  enum st20_fmt t_fmt[2] = {ST20_FMT_YUV_422_10BIT, ST20_FMT_YUV_422_10BIT};
+  enum st_frame_fmt rx_fmt[2] = {ST_FRAME_FMT_YUV422RFC4175PG2BE10,
+                                 ST_FRAME_FMT_YUV422PLANAR10LE};
+
+  struct st20p_rx_digest_test_para para;
+  test_st20p_init_rx_digest_para(&para);
+  para.sessions = 2;
+  para.interlace = true;
+  para.level = ST_TEST_LEVEL_MANDATORY;
+  para.check_fps = false;
+  para.interlace = true;
 
   st20p_rx_digest_test(fps, width, height, tx_fmt, t_fmt, rx_fmt, &para);
 }

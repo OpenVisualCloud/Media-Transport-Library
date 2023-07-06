@@ -32,11 +32,12 @@
 #define _ST_APP_BASE_HEAD_H_
 
 #define ST_APP_MAX_TX_VIDEO_SESSIONS (180)
-#define ST_APP_MAX_TX_AUDIO_SESSIONS (180)
-#define ST_APP_MAX_TX_ANC_SESSIONS (180)
-
 #define ST_APP_MAX_RX_VIDEO_SESSIONS (180)
-#define ST_APP_MAX_RX_AUDIO_SESSIONS (180)
+
+#define ST_APP_MAX_TX_AUDIO_SESSIONS (512)
+#define ST_APP_MAX_RX_AUDIO_SESSIONS (512)
+
+#define ST_APP_MAX_TX_ANC_SESSIONS (180)
 #define ST_APP_MAX_RX_ANC_SESSIONS (180)
 
 #define ST_APP_MAX_LCORES (32)
@@ -49,6 +50,8 @@
 #endif
 
 #define UTC_OFFSET (37) /* 2022/07 */
+
+#define ST_MAX(a, b) ((a) > (b) ? (a) : (b))
 
 struct st_display {
   char name[36];
@@ -487,7 +490,9 @@ struct st_app_context {
   struct st_app_tx_video_session* tx_video_sessions;
   int tx_video_session_cnt;
   int tx_video_rtp_ring_size; /* the ring size for tx video rtp type */
-  uint16_t tx_vrx;
+  uint16_t tx_start_vrx;
+  uint16_t tx_pad_interval;
+  bool tx_no_static_pad;
   enum st21_pacing tx_pacing_type;
 
   struct st_app_tx_audio_session* tx_audio_sessions;

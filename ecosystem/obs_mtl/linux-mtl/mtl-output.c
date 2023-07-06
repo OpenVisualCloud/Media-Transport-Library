@@ -138,8 +138,8 @@ static void mtl_output_init(struct mtl_tx_session* s) {
   param.priv = s;                    // usr ctx pointer
   // user register ptp func, if not register, the internal ptp will be used
   param.ptp_get_time_fn = NULL;
-  param.tx_sessions_cnt_max = 0;
-  param.rx_sessions_cnt_max = 1;
+  param.tx_queues_cnt[MTL_PORT_P] = 1;
+  param.rx_queues_cnt[MTL_PORT_P] = 0;
   param.lcores = s->lcores;
   // create device
   mtl_handle dev_handle = mtl_init(&param);

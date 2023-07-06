@@ -27,8 +27,12 @@ extern "C" {
 struct mufd_override_params {
   /** log level */
   enum mtl_log_level log_level;
-  /** shared queue mode */
-  bool shared_queue;
+  /** shared tx queue mode */
+  bool shared_tx_queue;
+  /** shared rx queue mode */
+  bool shared_rx_queue;
+  /** rss mode */
+  enum mtl_rss_mode rss_mode;
   /** lcore mode */
   bool lcore_mode;
 };

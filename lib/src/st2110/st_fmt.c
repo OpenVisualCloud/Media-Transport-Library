@@ -407,17 +407,17 @@ size_t st_frame_least_linesize(enum st_frame_fmt fmt, uint32_t width, uint8_t pl
     if (plane > 0)
       err("%s, invalid plane idx %u for packed fmt\n", __func__, plane);
     else
-      linesize = st_frame_size(fmt, width, 1);
+      linesize = st_frame_size(fmt, width, 1, false);
   } else {
     switch (st_frame_fmt_get_sampling(fmt)) {
       case ST_FRAME_SAMPLING_422:
         switch (plane) {
           case 0:
-            linesize = st_frame_size(fmt, width, 1) / 2;
+            linesize = st_frame_size(fmt, width, 1, false) / 2;
             break;
           case 1:
           case 2:
-            linesize = st_frame_size(fmt, width, 1) / 4;
+            linesize = st_frame_size(fmt, width, 1, false) / 4;
             break;
           default:
             err("%s, invalid plane idx %u for 422 planar fmt\n", __func__, plane);
@@ -429,7 +429,7 @@ size_t st_frame_least_linesize(enum st_frame_fmt fmt, uint32_t width, uint8_t pl
           case 0:
           case 1:
           case 2:
-            linesize = st_frame_size(fmt, width, 1) / 3;
+            linesize = st_frame_size(fmt, width, 1, false) / 3;
             break;
           default:
             err("%s, invalid plane idx %u for 444 planar fmt\n", __func__, plane);
@@ -439,11 +439,11 @@ size_t st_frame_least_linesize(enum st_frame_fmt fmt, uint32_t width, uint8_t pl
       case ST_FRAME_SAMPLING_420:
         switch (plane) {
           case 0:
-            linesize = st_frame_size(fmt, width, 1) * 4 / 6;
+            linesize = st_frame_size(fmt, width, 1, false) * 4 / 6;
             break;
           case 1:
           case 2:
-            linesize = st_frame_size(fmt, width, 1) / 6;
+            linesize = st_frame_size(fmt, width, 1, false) / 6;
             break;
           default:
             err("%s, invalid plane idx %u for 422 planar fmt\n", __func__, plane);
@@ -459,7 +459,8 @@ size_t st_frame_least_linesize(enum st_frame_fmt fmt, uint32_t width, uint8_t pl
   return linesize;
 }
 
-size_t st_frame_size(enum st_frame_fmt fmt, uint32_t width, uint32_t height) {
+size_t st_frame_size(enum st_frame_fmt fmt, uint32_t width, uint32_t height,
+                     bool interlaced) {
   size_t size = 0;
   size_t pixels = (size_t)width * height;
 
@@ -517,6 +518,7 @@ size_t st_frame_size(enum st_frame_fmt fmt, uint32_t width, uint32_t height) {
       break;
   }
 
+  if (interlaced) size /= 2; /* if all fmt support interlace? */
   return size;
 }
 
@@ -811,10 +813,11 @@ int st_draw_logo(struct st_frame* frame, struct st_frame* logo, uint32_t x, uint
 }
 
 int st20_get_bandwidth_bps(int width, int height, enum st20_fmt fmt, enum st_fps fps,
-                           uint64_t* bps) {
+                           bool interlaced, uint64_t* bps) {
   struct st20_pgroup pg;
   struct st_fps_timing fps_tm;
   int ret;
+  double traffic;
 
   memset(&pg, 0, sizeof(pg));
   memset(&fps_tm, 0, sizeof(fps_tm));
@@ -826,8 +829,12 @@ int st20_get_bandwidth_bps(int width, int height, enum st20_fmt fmt, enum st_fps
   if (ret < 0) return ret;
 
   double reactive = 1080.0 / 1125.0;
-  *bps = (uint64_t)width * height * 8 * pg.size / pg.coverage * fps_tm.mul / fps_tm.den;
-  *bps = (double)*bps / reactive;
+  traffic =
+      (uint64_t)width * height * 8 * pg.size / pg.coverage * fps_tm.mul / fps_tm.den;
+  if (interlaced) traffic /= 2;
+  traffic = traffic / reactive;
+
+  *bps = traffic;
   return 0;
 }
 
@@ -1017,4 +1024,137 @@ void st_frame_init_plane_single_src(struct st_frame* frame, void* addr, mtl_iova
           frame->iova[plane - 1] + frame->linesize[plane - 1] * frame->height;
     }
   }
+}
+
+/* the reference rl pad interval table for CVL NIC */
+struct cvl_pad_table {
+  enum st20_fmt fmt;
+  uint32_t width;
+  uint32_t height;
+  enum st_fps fps;
+  enum st20_packing packing;
+  bool interlaced;
+  uint16_t pad_interval;
+};
+
+static const struct cvl_pad_table g_cvl_static_pad_tables[] = {
+    {
+        /* 1080i50 gpm */
+        .fmt = ST20_FMT_YUV_422_10BIT,
+        .width = 1920,
+        .height = 1080,
+        .fps = ST_FPS_P50,
+        .packing = ST20_PACKING_GPM,
+        .interlaced = true,
+        .pad_interval = 155, /* measured with VERO avg vrx: 6.0 */
+    },
+    {
+        /* 1080i50 bpm */
+        .fmt = ST20_FMT_YUV_422_10BIT,
+        .width = 1920,
+        .height = 1080,
+        .fps = ST_FPS_P50,
+        .packing = ST20_PACKING_BPM,
+        .interlaced = true,
+        .pad_interval = 268, /* measured with VERO avg vrx: 6.0 */
+    },
+    {
+        /* 1080p50 gpm */
+        .fmt = ST20_FMT_YUV_422_10BIT,
+        .width = 1920,
+        .height = 1080,
+        .fps = ST_FPS_P50,
+        .packing = ST20_PACKING_GPM,
+        .interlaced = false,
+        .pad_interval = 156, /* measured with VERO avg vrx: 6.0 */
+    },
+    {
+        /* 1080p50 bpm */
+        .fmt = ST20_FMT_YUV_422_10BIT,
+        .width = 1920,
+        .height = 1080,
+        .fps = ST_FPS_P50,
+        .packing = ST20_PACKING_BPM,
+        .interlaced = false,
+        .pad_interval = 254, /* measured with VERO avg vrx: 6.0 */
+    },
+    {
+        /* 1080p59 gpm */
+        .fmt = ST20_FMT_YUV_422_10BIT,
+        .width = 1920,
+        .height = 1080,
+        .fps = ST_FPS_P59_94,
+        .packing = ST20_PACKING_GPM,
+        .interlaced = false,
+        .pad_interval = 160, /* measured with VERO avg vrx: 6.0 */
+    },
+    {
+        /* 1080p59 bpm */
+        .fmt = ST20_FMT_YUV_422_10BIT,
+        .width = 1920,
+        .height = 1080,
+        .fps = ST_FPS_P59_94,
+        .packing = ST20_PACKING_BPM,
+        .interlaced = false,
+        .pad_interval = 262, /* measured with VERO avg vrx: 7.0, narrow vrx: 9 */
+    },
+    {
+        /* 4kp50 gpm */
+        .fmt = ST20_FMT_YUV_422_10BIT,
+        .width = 1920 * 2,
+        .height = 1080 * 2,
+        .fps = ST_FPS_P50,
+        .packing = ST20_PACKING_GPM,
+        .interlaced = false,
+        .pad_interval = 144, /* measured with VERO uniform distribution */
+    },
+    {
+        /* 4kp50 bpm */
+        .fmt = ST20_FMT_YUV_422_10BIT,
+        .width = 1920 * 2,
+        .height = 1080 * 2,
+        .fps = ST_FPS_P59_94,
+        .packing = ST20_PACKING_BPM,
+        .interlaced = false,
+        .pad_interval = 215, /* measured with VERO uniform distribution */
+    },
+    {
+        /* 4kp59 gpm */
+        .fmt = ST20_FMT_YUV_422_10BIT,
+        .width = 1920 * 2,
+        .height = 1080 * 2,
+        .fps = ST_FPS_P59_94,
+        .packing = ST20_PACKING_GPM,
+        .interlaced = false,
+        .pad_interval = 145, /* measured with VERO uniform distribution */
+    },
+    {
+        /* 4kp59 bpm */
+        .fmt = ST20_FMT_YUV_422_10BIT,
+        .width = 1920 * 2,
+        .height = 1080 * 2,
+        .fps = ST_FPS_P59_94,
+        .packing = ST20_PACKING_BPM,
+        .interlaced = false,
+        .pad_interval = 217, /* measured with VERO uniform distribution */
+    },
+};
+
+uint16_t st20_pacing_static_profiling(struct st_tx_video_session_impl* s) {
+  const struct cvl_pad_table* refer;
+  struct st20_tx_ops* ops = &s->ops;
+
+  if (s->s_type == MT_ST22_HANDLE_TX_VIDEO) return 0; /* no for st22 */
+
+  for (int i = 0; i < MTL_ARRAY_SIZE(g_cvl_static_pad_tables); i++) {
+    refer = &g_cvl_static_pad_tables[i];
+    if ((ops->fmt == refer->fmt) && (ops->width == refer->width) &&
+        (ops->height == refer->height) && (ops->fps == refer->fps) &&
+        (ops->packing == refer->packing) && (ops->interlaced == refer->interlaced)) {
+      dbg("%s(%d), reference pad_interval %u\n", __func__, s->idx, refer->pad_interval);
+      return refer->pad_interval;
+    }
+  }
+
+  return 0; /* not found */
 }

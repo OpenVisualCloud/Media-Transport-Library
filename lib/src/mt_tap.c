@@ -576,7 +576,7 @@ static int configure_tap() {
   }
   flags = RING_F_SP_ENQ | RING_F_SC_DEQ;
   count = ST_TX_VIDEO_SESSIONS_RING_SIZE;
-  snprintf(ring_name, 32, "TX-TAP-PACKET-RING%d", 0);
+  snprintf(ring_name, 32, "TX-TAP-PACKET-%d", 0);
   tap_tx_ring = rte_ring_create(ring_name, count, mt_socket_id(impl, 0), flags);
   if (!tap_tx_ring) {
     err("%s, tx rte_ring_create fail\n", __func__);

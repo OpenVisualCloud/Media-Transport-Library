@@ -414,7 +414,7 @@ static int video_trs_launch_time_tasklet(struct mtl_main_impl* impl,
   struct mt_ptp_impl* ptp = mt_get_ptp(impl, port_id);
   
   if (!ptp->phc2sys.stat_sync) {
-    return MT_TASKLET_HAS_PENDING;
+    return MT_TASKLET_ALL_DONE;
   }
 
   /* check if any inflight pkts in transmitter */

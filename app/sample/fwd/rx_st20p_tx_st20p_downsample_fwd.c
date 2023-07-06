@@ -144,6 +144,7 @@ int main(int argc, char** argv) {
   ops_rx.width = ctx.width;
   ops_rx.height = ctx.height;
   ops_rx.fps = ctx.fps;
+  ops_rx.interlaced = ctx.interlaced;
   ops_rx.transport_fmt = ctx.fmt;
   ops_rx.output_fmt = ctx.output_fmt;
   ops_rx.device = ST_PLUGIN_DEVICE_AUTO;
@@ -172,6 +173,7 @@ int main(int argc, char** argv) {
   ops_tx.width = ctx.width / 2;
   ops_tx.height = ctx.height / 2;
   ops_tx.fps = ctx.fps;
+  ops_tx.interlaced = ctx.interlaced;
   ops_tx.input_fmt = ctx.input_fmt;
   ops_tx.transport_fmt = ctx.fmt;
   ops_tx.device = ST_PLUGIN_DEVICE_AUTO;

@@ -36,6 +36,8 @@
 /* 1g */
 #define MUDP_DEFAULT_RL_BPS (1ul * 1024 * 1024 * 1024)
 
+#define MUDP_PREFIX "MU_"
+
 struct mudp_impl {
   struct mtl_main_impl* parent;
   enum mt_handle_type type;
@@ -103,6 +105,7 @@ struct mudp_impl {
   uint32_t stat_poll_cnt;
   uint32_t stat_poll_succ_cnt;
   uint32_t stat_poll_timeout_cnt;
+  uint32_t stat_poll_zero_timeout_cnt;
   uint32_t stat_poll_query_ret_cnt;
   uint32_t stat_rx_msg_cnt;
   uint32_t stat_rx_msg_succ_cnt;

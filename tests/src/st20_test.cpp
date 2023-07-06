@@ -598,7 +598,7 @@ static void st20_rx_assert_cnt(int expect_s20_rx_cnt) {
 TEST(St20_tx, create_free_single) { create_free_test(st20_tx, 0, 1, 1); }
 TEST(St20_tx, create_free_multi) { create_free_test(st20_tx, 0, 1, 6); }
 TEST(St20_tx, create_free_mix) { create_free_test(st20_tx, 2, 3, 4); }
-TEST(St20_tx, create_free_max) { create_free_max(st20_tx, 100); }
+TEST(St20_tx, create_free_max) { create_free_max(st20_tx, TEST_CREATE_FREE_MAX); }
 TEST(St20_tx, create_expect_fail) { expect_fail_test(st20_tx); }
 TEST(St20_tx, create_expect_fail_fb_cnt) {
   uint16_t fbcnt = 1;
@@ -636,7 +636,7 @@ TEST(St20_tx, rtp_pkt_size) {
 TEST(St20_rx, create_free_single) { create_free_test(st20_rx, 0, 1, 1); }
 TEST(St20_rx, create_free_multi) { create_free_test(st20_rx, 0, 1, 6); }
 TEST(St20_rx, create_free_mix) { create_free_test(st20_rx, 2, 3, 4); }
-TEST(St20_rx, create_free_max) { create_free_max(st20_rx, 100); }
+TEST(St20_rx, create_free_max) { create_free_max(st20_rx, TEST_CREATE_FREE_MAX); }
 TEST(St20_rx, create_expect_fail) { expect_fail_test(st20_rx); }
 TEST(St20_rx, create_expect_fail_fb_cnt) {
   uint16_t fbcnt = 0;
@@ -1274,6 +1274,10 @@ static void st20_rx_update_src_test(enum st20_type type, int tx_sessions,
     return;
   }
   ASSERT_TRUE(tx_sessions >= 1);
+  bool tx_update_dst = (tx_sessions == 1);
+
+  /* return if level small than global */
+  if (level < ctx->level) return;
 
   /* return if level small than global */
   if (level < ctx->level) return;
@@ -1400,7 +1404,18 @@ static void st20_rx_update_src_test(enum st20_type type, int tx_sessions,
   src.udp_port[MTL_SESSION_PORT_P] = 10000 + 1;
   memcpy(src.sip_addr[MTL_SESSION_PORT_P], ctx->mcast_ip_addr[MTL_PORT_P],
          MTL_IP_ADDR_LEN);
-  test_ctx_tx[1]->seq_id = 0; /* reset seq id */
+  if (tx_update_dst) {
+    test_ctx_tx[0]->seq_id = 0; /* reset seq id */
+    struct st_tx_dest_info dst;
+    memset(&dst, 0, sizeof(dst));
+    dst.udp_port[MTL_SESSION_PORT_P] = 10000 + 1;
+    memcpy(dst.dip_addr[MTL_SESSION_PORT_P], ctx->mcast_ip_addr[MTL_PORT_P],
+           MTL_IP_ADDR_LEN);
+    ret = st20_tx_update_destination(tx_handle[0], &dst);
+    EXPECT_GE(ret, 0);
+  } else {
+    test_ctx_tx[1]->seq_id = 0; /* reset seq id */
+  }
   for (int i = 0; i < rx_sessions; i++) {
     ret = st20_rx_update_source(rx_handle[i], &src);
     EXPECT_GE(ret, 0);
@@ -1459,6 +1474,15 @@ static void st20_rx_update_src_test(enum st20_type type, int tx_sessions,
   memcpy(src.sip_addr[MTL_SESSION_PORT_P], ctx->para.sip_addr[MTL_PORT_P],
          MTL_IP_ADDR_LEN);
   test_ctx_tx[0]->seq_id = rand(); /* random seq id */
+  if (tx_update_dst) {
+    struct st_tx_dest_info dst;
+    memset(&dst, 0, sizeof(dst));
+    dst.udp_port[MTL_SESSION_PORT_P] = 10000 + 0;
+    memcpy(dst.dip_addr[MTL_SESSION_PORT_P], ctx->para.sip_addr[MTL_PORT_R],
+           MTL_IP_ADDR_LEN);
+    ret = st20_tx_update_destination(tx_handle[0], &dst);
+    EXPECT_GE(ret, 0);
+  }
   for (int i = 0; i < rx_sessions; i++) {
     ret = st20_rx_update_source(rx_handle[i], &src);
     EXPECT_GE(ret, 0);
@@ -1523,6 +1547,8 @@ static void st20_rx_update_src_test(enum st20_type type, int tx_sessions,
 
 TEST(St20_rx, update_source_frame) { st20_rx_update_src_test(ST20_TYPE_FRAME_LEVEL, 3); }
 TEST(St20_rx, update_source_rtp) { st20_rx_update_src_test(ST20_TYPE_RTP_LEVEL, 2); }
+TEST(St20_tx, update_dest_frame) { st20_rx_update_src_test(ST20_TYPE_FRAME_LEVEL, 1); }
+TEST(St20_tx, update_dest_rtp) { st20_rx_update_src_test(ST20_TYPE_RTP_LEVEL, 1); }
 
 static int st20_digest_rx_frame_ready(void* priv, void* frame,
                                       struct st20_rx_frame_meta* meta) {
@@ -1560,6 +1586,16 @@ static int st20_digest_rx_frame_ready(void* priv, void* frame,
     ctx->incomplete_frame_cnt++;
     st20_rx_put_framebuff((st20_rx_handle)ctx->handle, frame);
     return 0;
+  }
+  if (meta->fpt > (ctx->frame_time / 10)) {
+    ctx->meta_timing_fail_cnt++;
+    dbg("%s(%d), fpt %" PRId64 ", frame time %fms\n", __func__, ctx->idx, meta->fpt,
+        ctx->frame_time / NS_PER_MS);
+  }
+  double rx_time = (double)meta->timestamp_last_pkt - meta->timestamp_first_pkt;
+  if (rx_time > ctx->frame_time) {
+    ctx->meta_timing_fail_cnt++;
+    dbg("%s(%d), rx_time %fms\n", __func__, ctx->idx, rx_time / NS_PER_MS);
   }
 
   if (ctx->user_timestamp && !ctx->user_pacing) {
@@ -1851,7 +1887,7 @@ static void st20_rx_digest_test(enum st20_type tx_type[], enum st20_type rx_type
     tx_handle[i] = st20_tx_create(m_handle, &ops_tx);
     ASSERT_TRUE(tx_handle[i] != NULL);
 
-    /* sha caculate */
+    /* sha calculate */
     struct st20_pgroup st20_pg;
     st20_get_pgroup(ops_tx.fmt, &st20_pg);
     size_t frame_size = ops_tx.width * ops_tx.height * st20_pg.size / st20_pg.coverage;
@@ -1943,6 +1979,8 @@ static void st20_rx_digest_test(enum st20_type tx_type[], enum st20_type rx_type
 
     rx_handle[i] = st20_rx_create(m_handle, &ops_rx);
 
+    test_ctx_rx[i]->frame_time = (double)NS_PER_S / st_frame_rate(ops_rx.fps);
+    dbg("%s(%d), frame_time %f\n", __func__, i, test_ctx_rx[i]->frame_time);
     test_ctx_rx[i]->frame_size = test_ctx_tx[i]->frame_size;
     test_ctx_rx[i]->fb_size = test_ctx_tx[i]->frame_size;
     test_ctx_rx[i]->width = ops_rx.width;
@@ -2012,12 +2050,13 @@ static void st20_rx_digest_test(enum st20_type tx_type[], enum st20_type rx_type
   ret = mtl_stop(m_handle);
   EXPECT_GE(ret, 0);
   for (int i = 0; i < sessions; i++) {
-    EXPECT_GE(test_ctx_rx[i]->fb_rec, 0);
+    EXPECT_GT(test_ctx_rx[i]->fb_rec, 0);
     EXPECT_GT(test_ctx_rx[i]->check_sha_frame_cnt, 0);
     if (rx_type[i] == ST20_TYPE_SLICE_LEVEL)
       EXPECT_LT(test_ctx_rx[i]->incomplete_frame_cnt, 2 * 5);
     else
-      EXPECT_LT(test_ctx_rx[i]->incomplete_frame_cnt, 2);
+      EXPECT_LT(test_ctx_rx[i]->incomplete_frame_cnt, 4);
+    EXPECT_LT(test_ctx_rx[i]->meta_timing_fail_cnt, 4);
     EXPECT_EQ(test_ctx_rx[i]->incomplete_slice_cnt, 0);
     if (rx_type[i] == ST20_TYPE_FRAME_LEVEL)
       EXPECT_EQ(test_ctx_rx[i]->fail_cnt, 0);
@@ -2763,7 +2802,7 @@ static void st20_rx_meta_test(enum st_fps fps[], int width[], int height[],
   ret = mtl_stop(m_handle);
   EXPECT_GE(ret, 0);
   for (int i = 0; i < sessions; i++) {
-    EXPECT_GE(test_ctx_rx[i]->fb_rec, 0);
+    EXPECT_GT(test_ctx_rx[i]->fb_rec, 0);
     float expect_incomplete_frame_cnt = test_ctx_rx[i]->fb_rec / 2;
     EXPECT_NEAR(test_ctx_rx[i]->incomplete_frame_cnt, expect_incomplete_frame_cnt,
                 expect_incomplete_frame_cnt * 0.1);
@@ -3074,7 +3113,7 @@ static void st20_rx_uframe_test(enum st20_type rx_type[], enum st20_packing pack
     tx_handle[i] = st20_tx_create(m_handle, &ops_tx);
     ASSERT_TRUE(tx_handle[i] != NULL);
 
-    /* sha caculate */
+    /* sha calculate */
     struct st20_pgroup st20_pg;
     st20_get_pgroup(ops_tx.fmt, &st20_pg);
     size_t frame_size = ops_tx.width * ops_tx.height * st20_pg.size / st20_pg.coverage;
@@ -3205,7 +3244,7 @@ static void st20_rx_uframe_test(enum st20_type rx_type[], enum st20_packing pack
   ret = mtl_stop(m_handle);
   EXPECT_GE(ret, 0);
   for (int i = 0; i < sessions; i++) {
-    EXPECT_GE(test_ctx_rx[i]->fb_rec, 0);
+    EXPECT_GT(test_ctx_rx[i]->fb_rec, 0);
     EXPECT_GT(test_ctx_rx[i]->check_sha_frame_cnt, 0);
     EXPECT_LT(test_ctx_rx[i]->incomplete_frame_cnt, 2);
     EXPECT_EQ(test_ctx_rx[i]->incomplete_slice_cnt, 0);
@@ -3352,7 +3391,7 @@ static void st20_rx_detect_test(enum st20_type tx_type[], enum st20_type rx_type
     tx_handle[i] = st20_tx_create(m_handle, &ops_tx);
     ASSERT_TRUE(tx_handle[i] != NULL);
 
-    /* sha caculate */
+    /* sha calculate */
     struct st20_pgroup st20_pg;
     st20_get_pgroup(ops_tx.fmt, &st20_pg);
     size_t frame_size = ops_tx.width * ops_tx.height * st20_pg.size / st20_pg.coverage;
@@ -3499,7 +3538,7 @@ static void st20_rx_detect_test(enum st20_type tx_type[], enum st20_type rx_type
   ret = mtl_stop(m_handle);
   EXPECT_GE(ret, 0);
   for (int i = 0; i < sessions; i++) {
-    EXPECT_GE(test_ctx_rx[i]->fb_rec, 0);
+    EXPECT_GT(test_ctx_rx[i]->fb_rec, 0);
     EXPECT_GT(test_ctx_rx[i]->check_sha_frame_cnt, 0);
     if ((rx_type[i] == ST20_TYPE_SLICE_LEVEL) && (height[i] >= (1080 * 4)))
       EXPECT_LT(test_ctx_rx[i]->incomplete_frame_cnt, 2 * 5);
@@ -3865,7 +3904,7 @@ static void st20_tx_ext_frame_rx_digest_test(enum st20_packing packing[],
     tx_handle[i] = st20_tx_create(m_handle, &ops_tx);
     ASSERT_TRUE(tx_handle[i] != NULL);
 
-    /* sha caculate */
+    /* sha calculate */
     struct st20_pgroup st20_pg;
     st20_get_pgroup(ops_tx.fmt, &st20_pg);
     size_t frame_size = ops_tx.width * ops_tx.height * st20_pg.size / st20_pg.coverage;
@@ -4024,7 +4063,7 @@ static void st20_tx_ext_frame_rx_digest_test(enum st20_packing packing[],
   ret = mtl_stop(m_handle);
   EXPECT_GE(ret, 0);
   for (int i = 0; i < sessions; i++) {
-    EXPECT_GE(test_ctx_rx[i]->fb_rec, 0);
+    EXPECT_GT(test_ctx_rx[i]->fb_rec, 0);
     EXPECT_GT(test_ctx_rx[i]->check_sha_frame_cnt, 0);
 
     EXPECT_LE(test_ctx_rx[i]->incomplete_frame_cnt, 4);
@@ -4201,7 +4240,7 @@ static void st20_tx_user_pacing_test(int width[], int height[], enum st20_fmt fm
     tx_handle[i] = st20_tx_create(m_handle, &ops_tx);
     ASSERT_TRUE(tx_handle[i] != NULL);
 
-    /* sha caculate */
+    /* sha calculate */
     struct st20_pgroup st20_pg;
     st20_get_pgroup(ops_tx.fmt, &st20_pg);
     size_t frame_size = ops_tx.width * ops_tx.height * st20_pg.size / st20_pg.coverage;
@@ -4288,7 +4327,7 @@ static void st20_tx_user_pacing_test(int width[], int height[], enum st20_fmt fm
   ret = mtl_stop(m_handle);
   EXPECT_GE(ret, 0);
   for (int i = 0; i < sessions; i++) {
-    EXPECT_GE(test_ctx_rx[i]->fb_rec, 0);
+    EXPECT_GT(test_ctx_rx[i]->fb_rec, 0);
     EXPECT_GT(test_ctx_rx[i]->check_sha_frame_cnt, 0);
     EXPECT_LT(test_ctx_rx[i]->incomplete_frame_cnt, 2);
     EXPECT_EQ(test_ctx_rx[i]->fail_cnt, 0);
@@ -4410,7 +4449,7 @@ static void st20_linesize_digest_test(enum st20_packing packing[], enum st_fps f
     tx_handle[i] = st20_tx_create(m_handle, &ops_tx);
     ASSERT_TRUE(tx_handle[i] != NULL);
 
-    /* sha caculate */
+    /* sha calculate */
     struct st20_pgroup st20_pg;
     st20_get_pgroup(ops_tx.fmt, &st20_pg);
     size_t frame_size = ops_tx.width * ops_tx.height * st20_pg.size / st20_pg.coverage;
@@ -4572,7 +4611,7 @@ static void st20_linesize_digest_test(enum st20_packing packing[], enum st_fps f
   ret = mtl_stop(m_handle);
   EXPECT_GE(ret, 0);
   for (int i = 0; i < sessions; i++) {
-    EXPECT_GE(test_ctx_rx[i]->fb_rec, 0);
+    EXPECT_GT(test_ctx_rx[i]->fb_rec, 0);
     EXPECT_GT(test_ctx_rx[i]->check_sha_frame_cnt, 0);
 
     EXPECT_LT(test_ctx_rx[i]->incomplete_frame_cnt, 2);

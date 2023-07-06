@@ -165,6 +165,7 @@ static int rx_st20r_create_transport(struct st20r_rx_ctx* ctx, struct st20r_rx_o
   ops_rx.height = ops->height;
   ops_rx.fps = ops->fps;
   ops_rx.fmt = ops->fmt;
+  ops_rx.interlaced = ops->interlaced;
   ops_rx.payload_type = ops->payload_type;
   ops_rx.type = ST20_TYPE_FRAME_LEVEL;
   ops_rx.framebuff_cnt = ops->framebuff_cnt;

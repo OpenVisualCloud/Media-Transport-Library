@@ -335,7 +335,7 @@ static int rx_audio_session_alloc_rtps(struct mtl_main_impl* impl,
   int mgr_idx = mgr->idx, idx = s->idx;
   enum mtl_port port = mt_port_logic2phy(s->port_maps, MTL_SESSION_PORT_P);
 
-  snprintf(ring_name, 32, "RX-AUDIO-RTP-RING-M%d-R%d", mgr_idx, idx);
+  snprintf(ring_name, 32, "%sM%dS%d_RTP", ST_RX_AUDIO_PREFIX, mgr_idx, idx);
   flags = RING_F_SP_ENQ | RING_F_SC_DEQ; /* single-producer and single-consumer */
   count = s->ops.rtp_ring_size;
   if (count <= 0) {
@@ -608,8 +608,6 @@ static int rx_audio_session_init_hw(struct mtl_main_impl* impl,
     rte_memcpy(flow.sip_addr, mt_sip_addr(impl, port), MTL_IP_ADDR_LEN);
     flow.dst_port = s->st30_dst_port[i];
     flow.src_port = s->st30_src_port[i];
-    flow.priv = &s->priv[i];
-    flow.cb = rx_audio_session_handle_mbuf;
 
     /* no flow for data path only */
     if (mt_pmd_is_kernel(impl, port) && (s->ops.flags & ST30_RX_FLAG_DATA_PATH_ONLY))
@@ -900,19 +898,17 @@ static int rx_audio_sessions_mgr_init(struct mtl_main_impl* impl, struct mt_sch_
     rte_spinlock_init(&mgr->mutex[i]);
   }
 
-  if (!mt_has_srss(impl, MTL_PORT_P)) {
-    memset(&ops, 0x0, sizeof(ops));
-    ops.priv = mgr;
-    ops.name = "rx_audio_sessions_mgr";
-    ops.start = rx_audio_sessions_tasklet_start;
-    ops.stop = rx_audio_sessions_tasklet_stop;
-    ops.handler = rx_audio_sessions_tasklet_handler;
+  memset(&ops, 0x0, sizeof(ops));
+  ops.priv = mgr;
+  ops.name = "rx_audio_sessions_mgr";
+  ops.start = rx_audio_sessions_tasklet_start;
+  ops.stop = rx_audio_sessions_tasklet_stop;
+  ops.handler = rx_audio_sessions_tasklet_handler;
 
-    mgr->tasklet = mt_sch_register_tasklet(sch, &ops);
-    if (!mgr->tasklet) {
-      err("%s(%d), mt_sch_register_tasklet fail\n", __func__, idx);
-      return -EIO;
-    }
+  mgr->tasklet = mt_sch_register_tasklet(sch, &ops);
+  if (!mgr->tasklet) {
+    err("%s(%d), mt_sch_register_tasklet fail\n", __func__, idx);
+    return -EIO;
   }
 
   mt_stat_register(mgr->parent, st_rx_audio_sessions_stat, mgr, "rx_audio");

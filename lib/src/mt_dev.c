@@ -946,7 +946,7 @@ static int dev_config_port(struct mt_interface* inf) {
   }
 
   dbg("%s(%d), rss mode %d\n", __func__, port, inf->rss_mode);
-  if (mt_has_rss(impl, port)) {
+  if (mt_has_srss(impl, port)) {
     struct rte_eth_rss_conf* rss_conf;
     rss_conf = &port_conf.rx_adv_conf.rss_conf;
 
@@ -956,13 +956,6 @@ static int dev_config_port(struct mt_interface* inf) {
       rss_conf->rss_hf = RTE_ETH_RSS_IPV4;
     } else if (inf->rss_mode == MTL_RSS_MODE_L3_L4) {
       rss_conf->rss_hf = RTE_ETH_RSS_NONFRAG_IPV4_UDP;
-    } else if (inf->rss_mode == MTL_RSS_MODE_L3_L4_DP_ONLY) {
-      rss_conf->rss_hf = RTE_ETH_RSS_NONFRAG_IPV4_UDP | RTE_ETH_RSS_L4_DST_ONLY;
-    } else if (inf->rss_mode == MTL_RSS_MODE_L3_DA_L4_DP_ONLY) {
-      rss_conf->rss_hf = RTE_ETH_RSS_NONFRAG_IPV4_UDP | RTE_ETH_RSS_L4_DST_ONLY |
-                         RTE_ETH_RSS_L3_DST_ONLY;
-    } else if (inf->rss_mode == MTL_RSS_MODE_L4_DP_ONLY) {
-      rss_conf->rss_hf = RTE_ETH_RSS_PORT | RTE_ETH_RSS_L4_DST_ONLY;
     } else {
       err("%s(%d), not support rss_mode %d\n", __func__, port, inf->rss_mode);
       return -EIO;
@@ -1158,7 +1151,7 @@ static int dev_start_port(struct mt_interface* inf) {
   }
   inf->status |= MT_IF_STAT_PORT_STARTED;
 
-  if (mt_has_rss(impl, port)) {
+  if (mt_has_srss(impl, port)) {
     ret = dev_config_rss_reta(inf);
     if (ret < 0) {
       err("%s(%d), rss reta config fail %d\n", __func__, port, ret);
@@ -1537,7 +1530,8 @@ static int dev_if_init_rx_queues(struct mtl_main_impl* impl, struct mt_interface
       /* Create mempool to hold the rx queue mbufs. */
       unsigned int mbuf_elements = inf->nb_rx_desc + 1024;
       char pool_name[ST_MAX_NAME_LEN];
-      snprintf(pool_name, ST_MAX_NAME_LEN, "ST%d_RX%d_MBUF_POOL", inf->port, q);
+      snprintf(pool_name, ST_MAX_NAME_LEN, "%sP%dQ%d_MBUF", MT_RX_MEMPOOL_PREFIX,
+               inf->port, q);
       struct rte_mempool* mbuf_pool = NULL;
 
       if (mt_pmd_is_kernel(impl, inf->port)) {
@@ -1572,7 +1566,8 @@ static int dev_if_init_rx_queues(struct mtl_main_impl* impl, struct mt_interface
           dev_if_uinit_rx_queues(inf);
           return -EIO;
         }
-        snprintf(pool_name, ST_MAX_NAME_LEN, "ST%d_RX%d_PAYLOAD_POOL", inf->port, q);
+        snprintf(pool_name, ST_MAX_NAME_LEN, "%sP%dQ%d_PAYLOAD", MT_RX_MEMPOOL_PREFIX,
+                 inf->port, q);
         mbuf_pool = mt_mempool_create(impl, inf->port, pool_name, mbuf_elements,
                                       MT_MBUF_CACHE_SIZE, sizeof(struct mt_muf_priv_data),
                                       ST_PKT_MAX_ETHER_BYTES);
@@ -1635,6 +1630,12 @@ static int dev_if_init_pacing(struct mt_interface* inf) {
   if ((ST21_TX_PACING_WAY_AUTO == inf->tx_pacing_way) && (inf->feature & MT_IF_FEATURE_TX_OFFLOAD_SEND_ON_TIMESTAMP)) {
     info("%s(%d), use TSN pacing\n", __func__, port);
     inf->tx_pacing_way = ST21_TX_PACING_WAY_TSN;
+    return 0;
+  }
+
+  if (mt_shared_tx_queue(inf->parent, inf->port)) {
+    info("%s(%d), use tsc as shared tx queue\n", __func__, port);
+    inf->tx_pacing_way = ST21_TX_PACING_WAY_TSC;
     return 0;
   }
 
@@ -1794,8 +1795,9 @@ struct mt_tx_queue* mt_dev_get_tx_queue(struct mtl_main_impl* impl, enum mtl_por
   struct mt_tx_queue* tx_queue;
   int ret;
 
-  if (mt_shared_queue(impl, port)) {
-    err("%s(%d), conflict with shared queue mode, use sq api instead\n", __func__, port);
+  if (mt_shared_tx_queue(impl, port)) {
+    err("%s(%d), conflict with shared tx queue mode, use tsq api instead\n", __func__,
+        port);
     return NULL;
   }
 
@@ -1834,13 +1836,14 @@ struct mt_tx_queue* mt_dev_get_tx_queue(struct mtl_main_impl* impl, enum mtl_por
           inf->tx_pacing_way = ST21_TX_PACING_WAY_TSC;
         }
       }
-      tx_queue->bps = bytes_per_sec;
       tx_queue->active = true;
       mt_pthread_mutex_unlock(&inf->tx_queues_mutex);
-      if (inf->tx_pacing_way == ST21_TX_PACING_WAY_RL)
-        info("%s(%d), q %d with speed %" PRIu64 "\n", __func__, port, q, bytes_per_sec);
-      else
+      if (inf->tx_pacing_way == ST21_TX_PACING_WAY_RL) {
+        float bps_g = (float)tx_queue->bps * 8 / (1000 * 1000 * 1000);
+        info("%s(%d), q %d with speed %fg bps\n", __func__, port, q, bps_g);
+      } else {
         info("%s(%d), q %d without rl\n", __func__, port, q);
+      }
       return tx_queue;
     }
   }
@@ -1856,13 +1859,14 @@ struct mt_rx_queue* mt_dev_get_rx_queue(struct mtl_main_impl* impl, enum mtl_por
   int ret;
   struct mt_rx_queue* rx_queue;
 
-  if (mt_has_rss(impl, port)) {
-    err("%s(%d), conflict with rss mode, use rss api instead\n", __func__, port);
+  if (mt_has_srss(impl, port)) {
+    err("%s(%d), conflict with srss mode, use srss api instead\n", __func__, port);
     return NULL;
   }
 
-  if (mt_shared_queue(impl, port)) {
-    err("%s(%d), conflict with shared queue mode, use rsq api instead\n", __func__, port);
+  if (mt_shared_rx_queue(impl, port)) {
+    err("%s(%d), conflict with shared rx queue mode, use rsq api instead\n", __func__,
+        port);
     return NULL;
   }
 
@@ -2418,10 +2422,7 @@ int mt_dev_if_init(struct mtl_main_impl* impl) {
     inf->rss_mode = p->rss_mode;
     /* enable rss if no flow support */
     if (inf->flow_type == MT_FLOW_NONE && inf->rss_mode == MTL_RSS_MODE_NONE) {
-      if (inf->drv_type == MT_DRV_ENA)
-        inf->rss_mode = MTL_RSS_MODE_L3_L4; /* only rss l3 and l4 support */
-      else
-        inf->rss_mode = MTL_RSS_MODE_L3_L4_DP_ONLY;
+      inf->rss_mode = MTL_RSS_MODE_L3_L4; /* default l3_l4 */
     }
 
     /* set max tx/rx queues */
@@ -2431,25 +2432,24 @@ int mt_dev_if_init(struct mtl_main_impl* impl) {
       inf->max_rx_queues = inf->max_tx_queues;
       inf->system_rx_queues_end = 0;
     } else {
-      if (mt_udp_transport(impl, i)) {
-        inf->max_tx_queues = impl->user_tx_queues_cnt;
-      } else {
-        /* arp, mcast, ptp use shared sys queue */
-        inf->max_tx_queues = impl->user_tx_queues_cnt + 1;
+      info("%s(%d), user request queues tx %u rx %u, deprecated sessions tx %u rx %u\n",
+           __func__, i, p->tx_queues_cnt[i], p->rx_queues_cnt[i], p->tx_sessions_cnt_max,
+           p->rx_sessions_cnt_max);
+      inf->max_tx_queues =
+          p->tx_sessions_cnt_max ? p->tx_sessions_cnt_max : p->tx_queues_cnt[i];
+      inf->max_tx_queues++; /* arp, mcast, ptp use shared sys queue */
 #ifdef MTL_HAS_KNI
-        inf->max_tx_queues++; /* kni tx queue */
+      inf->max_tx_queues++; /* kni tx queue */
 #endif
 #ifdef MTL_HAS_TAP
-        inf->max_tx_queues++; /* tap tx queue */
+      inf->max_tx_queues++; /* tap tx queue */
 #endif
-      }
-      if (mt_no_system_rxq(impl) || mt_udp_transport(impl, i)) {
-        inf->max_rx_queues = impl->user_rx_queues_cnt;
-      } else if (mt_has_rss(impl, i)) {
-        inf->max_rx_queues = impl->user_rx_queues_cnt * 2;
-      } else {
-        inf->max_rx_queues = impl->user_rx_queues_cnt + 1; /* cni rx */
-        inf->system_rx_queues_end = 1;                     /* cni rx */
+
+      inf->max_rx_queues =
+          p->rx_sessions_cnt_max ? p->rx_sessions_cnt_max : p->rx_queues_cnt[i];
+      if (!mt_no_system_rxq(impl)) {
+        inf->max_rx_queues++;
+        inf->system_rx_queues_end = 1; /* cni rx */
         if (mt_has_ptp_service(impl)) {
           inf->max_rx_queues++;
           inf->system_rx_queues_end++;
@@ -2557,7 +2557,7 @@ int mt_dev_if_init(struct mtl_main_impl* impl) {
       mbuf_elements = 1024;
       /* append as rx queues */
       mbuf_elements += inf->max_rx_queues * inf->nb_rx_desc;
-      snprintf(pool_name, ST_MAX_NAME_LEN, "ST%d_RX_SYS_MBUF_POOL", i);
+      snprintf(pool_name, ST_MAX_NAME_LEN, "%sP%d_SYS", MT_RX_MEMPOOL_PREFIX, i);
       mbuf_pool = mt_mempool_create_common(impl, i, pool_name, mbuf_elements);
       if (!mbuf_pool) {
         mt_dev_if_uinit(impl);
@@ -2572,7 +2572,7 @@ int mt_dev_if_init(struct mtl_main_impl* impl) {
       /* append as tx queues, double as tx ring */
       mbuf_elements += inf->max_tx_queues * inf->nb_tx_desc * 2;
     }
-    snprintf(pool_name, ST_MAX_NAME_LEN, "ST%d_TX_SYS_MBUF_POOL", i);
+    snprintf(pool_name, ST_MAX_NAME_LEN, "%sP%d_SYS", MT_TX_MEMPOOL_PREFIX, i);
     mbuf_pool = mt_mempool_create_common(impl, i, pool_name, mbuf_elements);
     if (!mbuf_pool) {
       mt_dev_if_uinit(impl);

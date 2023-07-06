@@ -226,6 +226,7 @@ int main(int argc, char** argv) {
     ops_rx.width = ctx.width;
     ops_rx.height = ctx.height;
     ops_rx.fps = ctx.fps;
+    ops_rx.interlaced = ctx.interlaced;
     ops_rx.transport_fmt = ctx.fmt;
     ops_rx.output_fmt = ctx.output_fmt;
     ops_rx.device = ST_PLUGIN_DEVICE_AUTO;
@@ -233,7 +234,8 @@ int main(int argc, char** argv) {
     ops_rx.notify_frame_available = rx_st20p_frame_available;
 
     /* map gddr */
-    app[i]->frame_size = st_frame_size(ops_rx.output_fmt, ops_rx.width, ops_rx.height);
+    app[i]->frame_size =
+        st_frame_size(ops_rx.output_fmt, ops_rx.width, ops_rx.height, ops_rx.interlaced);
     size_t fb_sz = app[i]->frame_size * (app[i]->fb_cnt + 1) + app[i]->pg_sz * 2;
     fb_sz = mtl_size_page_align(fb_sz, app[i]->pg_sz);
     ret = gddr_map(&ctx, &app[i]->gddr_frame, fb_sz, dev_mem_fd);

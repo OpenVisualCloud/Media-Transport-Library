@@ -491,6 +491,24 @@ static int st_json_parse_interfaces(json_object* interface_obj,
       return -ST_JSON_NOT_VALID;
     }
   }
+  obj = st_json_object_object_get(interface_obj, "tx_queues_cnt");
+  if (obj) {
+    int cnt = json_object_get_int(obj);
+    if (cnt < 0) {
+      err("%s, invalid tx_queues_cnt number: %d\n", __func__, cnt);
+      return -ST_JSON_NOT_VALID;
+    }
+    interface->tx_queues_cnt = cnt;
+  }
+  obj = st_json_object_object_get(interface_obj, "rx_queues_cnt");
+  if (obj) {
+    int cnt = json_object_get_int(obj);
+    if (cnt < 0) {
+      err("%s, invalid rx_queues_cnt number: %d\n", __func__, cnt);
+      return -ST_JSON_NOT_VALID;
+    }
+    interface->rx_queues_cnt = cnt;
+  }
 
   return ST_JSON_SUCCESS;
 }
@@ -1391,6 +1409,13 @@ static int parse_st20p_fps(json_object* st20p_obj, st_json_st20p_session_t* st20
   return ST_JSON_SUCCESS;
 }
 
+static int parse_st20p_interlace(json_object* st20p_obj, st_json_st20p_session_t* st20p) {
+  json_object* obj = st_json_object_object_get(st20p_obj, "interlaced");
+  if (!obj) return ST_JSON_SUCCESS;
+  st20p->info.interlaced = json_object_get_boolean(obj);
+  return ST_JSON_SUCCESS;
+}
+
 static int parse_st20p_device(json_object* st20p_obj, st_json_st20p_session_t* st20p) {
   const char* device =
       json_object_get_string(st_json_object_object_get(st20p_obj, "device"));
@@ -1529,6 +1554,10 @@ static int st_json_parse_tx_st20p(int idx, json_object* st20p_obj,
   ret = parse_st20p_fps(st20p_obj, st20p);
   if (ret < 0) return ret;
 
+  /* parse interlace */
+  ret = parse_st20p_interlace(st20p_obj, st20p);
+  if (ret < 0) return ret;
+
   /* parse device */
   ret = parse_st20p_device(st20p_obj, st20p);
   if (ret < 0) return ret;
@@ -1581,6 +1610,10 @@ static int st_json_parse_rx_st20p(int idx, json_object* st20p_obj,
 
   /* parse fps */
   ret = parse_st20p_fps(st20p_obj, st20p);
+  if (ret < 0) return ret;
+
+  /* parse interlace */
+  ret = parse_st20p_interlace(st20p_obj, st20p);
   if (ret < 0) return ret;
 
   /* parse device */
@@ -1691,6 +1724,7 @@ void st_app_free_json(st_json_context_t* ctx) {
 int st_app_parse_json(st_json_context_t* ctx, const char* filename) {
   info("%s, using json-c version: %s\n", __func__, json_c_version());
   int ret = ST_JSON_SUCCESS;
+  json_object* obj;
 
   json_object* root_object = json_object_from_file(filename);
   if (root_object == NULL) {
@@ -1699,16 +1733,39 @@ int st_app_parse_json(st_json_context_t* ctx, const char* filename) {
   }
 
   /* parse quota for system */
-  json_object* sch_quota_object =
-      st_json_object_object_get(root_object, "sch_session_quota");
-  if (sch_quota_object != NULL) {
-    int sch_quota = json_object_get_int(sch_quota_object);
+  obj = st_json_object_object_get(root_object, "sch_session_quota");
+  if (obj != NULL) {
+    int sch_quota = json_object_get_int(obj);
     if (sch_quota <= 0) {
       err("%s, invalid quota number\n", __func__);
       ret = -ST_JSON_NOT_VALID;
       goto error;
     }
     ctx->sch_quota = sch_quota;
+  }
+
+  /* parse shared queues */
+  obj = st_json_object_object_get(root_object, "shared_tx_queues");
+  if (obj != NULL) ctx->shared_tx_queues = json_object_get_boolean(obj);
+  obj = st_json_object_object_get(root_object, "shared_rx_queues");
+  if (obj != NULL) ctx->shared_rx_queues = json_object_get_boolean(obj);
+  /* if disable the chain for tx */
+  obj = st_json_object_object_get(root_object, "tx_no_chain");
+  if (obj != NULL) ctx->tx_no_chain = json_object_get_boolean(obj);
+  /* rss */
+  obj = st_json_object_object_get(root_object, "rss_mode");
+  if (obj != NULL) {
+    const char* rss = json_object_get_string(obj);
+    if (strcmp(rss, "l3") == 0) {
+      ctx->rss_mode = MTL_RSS_MODE_L3;
+    } else if (strcmp(rss, "l3_l4") == 0) {
+      ctx->rss_mode = MTL_RSS_MODE_L3_L4;
+    } else if (strcmp(rss, "none") == 0) {
+      ctx->rss_mode = MTL_RSS_MODE_NONE;
+    } else {
+      err("%s, invalid rss_mode %s\n", __func__, rss);
+      return -ST_JSON_NOT_VALID;
+    }
   }
 
   /* parse interfaces for system */

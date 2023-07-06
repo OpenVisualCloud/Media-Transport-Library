@@ -81,6 +81,10 @@ static uint16_t urq_rx_handle(struct mur_queue* q, struct rte_mbuf** pkts,
     cs[i] = MT_TAILQ_NEXT(cs[i - 1], next);
   }
 
+  int last_c_idx = -1;
+  int c_pkts_nb = 0;
+  struct rte_mbuf* c_pkts[valid_mbuf_cnt];
+
   for (uint16_t i = 0; i < valid_mbuf_cnt; i++) {
     struct rte_mbuf* mbuf = valid_mbuf[i];
     struct mt_udp_hdr* hdr = rte_pktmbuf_mtod(mbuf, struct mt_udp_hdr*);
@@ -88,12 +92,32 @@ static uint16_t urq_rx_handle(struct mur_queue* q, struct rte_mbuf** pkts,
     uint32_t tuple[3];
     rte_memcpy(tuple, &hdr->ipv4.src_addr, sizeof(tuple));
     uint32_t hash = mt_dev_softrss(tuple, 3);
-    struct mur_client* c = cs[hash % clients];
-    c->stat_pkt_rx++;
-    if (0 != rte_ring_sp_enqueue(c->ring, mbuf)) {
-      /* enqueue fail */
-      rte_pktmbuf_free(mbuf);
-      c->stat_pkt_rx_enq_fail++;
+    int c_idx = hash % clients;
+
+    if (c_idx != last_c_idx) {
+      if (c_pkts_nb) { /* push last client */
+        struct mur_client* c = cs[last_c_idx];
+        c->stat_pkt_rx += c_pkts_nb;
+        unsigned int e =
+            rte_ring_sp_enqueue_bulk(c->ring, (void**)&c_pkts[0], c_pkts_nb, NULL);
+        if (0 == e) { /* enqueue fail */
+          rte_pktmbuf_free_bulk(c_pkts, c_pkts_nb);
+          c->stat_pkt_rx_enq_fail += c_pkts_nb;
+        }
+      }
+      last_c_idx = c_idx;
+      c_pkts_nb = 0;
+    }
+    c_pkts[c_pkts_nb++] = mbuf;
+  }
+  if (c_pkts_nb) { /* push last client */
+    struct mur_client* c = cs[last_c_idx];
+    c->stat_pkt_rx += c_pkts_nb;
+    unsigned int e =
+        rte_ring_sp_enqueue_bulk(c->ring, (void**)&c_pkts[0], c_pkts_nb, NULL);
+    if (0 == e) { /* enqueue fail */
+      rte_pktmbuf_free_bulk(c_pkts, c_pkts_nb);
+      c->stat_pkt_rx_enq_fail += c_pkts_nb;
     }
   }
 
@@ -103,18 +127,9 @@ static uint16_t urq_rx_handle(struct mur_queue* q, struct rte_mbuf** pkts,
   return n;
 }
 
-static int urq_rsq_mbuf_cb(void* priv, struct rte_mbuf** mbuf, uint16_t nb) {
-  struct mur_queue* q = priv;
-  urq_rx_handle(q, mbuf, nb);
-  return 0;
-}
-
 static uint16_t urq_rx(struct mur_queue* q) {
   uint16_t rx_burst = q->rx_burst_pkts;
   struct rte_mbuf* pkts[rx_burst];
-
-  /* no lock need as rsq/rss/srss has lock already */
-  if (!q->rxq->rxq) return mt_rxq_burst(q->rxq, NULL, rx_burst);
 
   if (!urq_try_lock(q)) return 0;
   uint16_t rx = mt_rxq_burst(q->rxq, pkts, rx_burst);
@@ -243,9 +258,6 @@ static struct mur_queue* urq_get(struct mudp_rxq_mgr* mgr,
   memset(&flow, 0, sizeof(flow));
   flow.no_ip_flow = true;
   flow.dst_port = dst_port;
-  flow.priv = q;
-  flow.cb = urq_rsq_mbuf_cb; /* for rss and rsq */
-
   q->rxq = mt_rxq_get(impl, port, &flow);
   if (!q->rxq) {
     err("%s(%d,%u), get rxq fail\n", __func__, port, dst_port);
@@ -338,7 +350,8 @@ static int urc_init_tasklet(struct mtl_main_impl* impl, struct mur_client* c) {
 
   struct mt_sch_tasklet_ops ops;
   char name[32];
-  snprintf(name, 32, "MUDP%d-RX-P%d-Q%u-%d", c->port, c->dst_port, c->q->rxq_id, c->idx);
+  snprintf(name, 32, "%sP%dDP%dQ%uC%d", MT_UDP_RXQ_PREFIX, c->port, c->dst_port,
+           c->q->rxq_id, c->idx);
 
   memset(&ops, 0x0, sizeof(ops));
   ops.priv = c;
@@ -399,8 +412,8 @@ struct mur_client* mur_client_get(struct mur_client_create* create) {
   char ring_name[64];
   struct rte_ring* ring;
   unsigned int flags, count;
-  snprintf(ring_name, sizeof(ring_name), "MUDP%d-RX-P%d-Q%u-%d", port, dst_port,
-           q->rxq_id, idx);
+  snprintf(ring_name, sizeof(ring_name), "%sP%dDP%dQ%uC%d", MT_UDP_RXQ_PREFIX, port,
+           dst_port, q->rxq_id, idx);
   flags = RING_F_SP_ENQ | RING_F_SC_DEQ; /* single-producer and single-consumer */
   count = create->ring_count;
   ring = rte_ring_create(ring_name, count, mt_socket_id(impl, port), flags);

@@ -17,7 +17,6 @@ sources = files(
   'mt_config.c',
   'mt_socket.c',
   'mt_stat.c',
-  'mt_rss.c',
   'mt_shared_queue.c',
   'mt_shared_rss.c'
 )

@@ -71,9 +71,7 @@ devcon.exe install virt2phys.inf root\virt2phys
 * Find location of your virt2phys.inf driver.
 * Select it and click "Next".
 
-The previously installed drivers will now be installed for the "Virtual to physical address translator" device.
-
-### 2.6 Here we just go through next and finish buttons
+The previously installed drivers will now be installed for the "Virtual to physical address translator" device. Here we just go through next and finish buttons.
 
 ## 3. Steps for netuio driver
 

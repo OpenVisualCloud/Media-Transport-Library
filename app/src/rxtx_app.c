@@ -260,20 +260,24 @@ int main(int argc, char** argv) {
     return -EINVAL;
   }
 
-  ctx->para.tx_sessions_cnt_max = ctx->tx_video_session_cnt + ctx->tx_audio_session_cnt +
-                                  ctx->tx_anc_session_cnt + ctx->tx_st22_session_cnt +
-                                  ctx->tx_st20p_session_cnt + ctx->tx_st22p_session_cnt;
-  ctx->para.rx_sessions_cnt_max = ctx->rx_video_session_cnt + ctx->rx_audio_session_cnt +
-                                  ctx->rx_anc_session_cnt + ctx->rx_st22_session_cnt +
-                                  ctx->rx_st22p_session_cnt + ctx->rx_st20p_session_cnt;
-
-  /* parse af xdp pmd info */
+  int tx_st20_sessions = ctx->tx_video_session_cnt + ctx->tx_st22_session_cnt +
+                         ctx->tx_st20p_session_cnt + ctx->tx_st22p_session_cnt;
+  int rx_st20_sessions = ctx->rx_video_session_cnt + ctx->rx_st22_session_cnt +
+                         ctx->rx_st22p_session_cnt + ctx->rx_st20p_session_cnt;
   for (int i = 0; i < ctx->para.num_ports; i++) {
+    /* parse queue cnt, todo: split with ports */
+    if (!ctx->para.tx_queues_cnt[i]) {
+      ctx->para.tx_queues_cnt[i] = st_tx_sessions_queue_cnt(
+          tx_st20_sessions, ctx->tx_audio_session_cnt, ctx->tx_anc_session_cnt);
+    }
+    if (!ctx->para.rx_queues_cnt[i]) {
+      ctx->para.rx_queues_cnt[i] = st_rx_sessions_queue_cnt(
+          rx_st20_sessions, ctx->rx_audio_session_cnt, ctx->rx_anc_session_cnt);
+    }
+    /* parse af xdp pmd info */
     ctx->para.pmd[i] = mtl_pmd_by_port_name(ctx->para.port[i]);
-    if (ctx->para.tx_sessions_cnt_max > ctx->para.rx_sessions_cnt_max)
-      ctx->para.xdp_info[i].queue_count = ctx->para.tx_sessions_cnt_max;
-    else
-      ctx->para.xdp_info[i].queue_count = ctx->para.rx_sessions_cnt_max;
+    ctx->para.xdp_info[i].queue_count =
+        ST_MAX(ctx->para.tx_queues_cnt[i], ctx->para.rx_queues_cnt[i]);
   }
 
   /* hdr split special */

@@ -71,16 +71,6 @@ static void init_expect_fail_test(void) {
   para.num_ports = -1;
   handle = mtl_init(&para);
   EXPECT_TRUE(handle == NULL);
-
-  para.num_ports = 1;
-  para.tx_sessions_cnt_max = -1;
-  handle = mtl_init(&para);
-  EXPECT_TRUE(handle == NULL);
-
-  para.tx_sessions_cnt_max = 1;
-  para.rx_sessions_cnt_max = -1;
-  handle = mtl_init(&para);
-  EXPECT_TRUE(handle == NULL);
 }
 
 TEST(Main, init_expect_fail) { init_expect_fail_test(); }
@@ -154,8 +144,6 @@ TEST(Main, get_cap) {
 
   ret = mtl_get_cap(handle, &cap);
   EXPECT_GE(ret, 0);
-  EXPECT_GT(cap.tx_sessions_cnt_max, 0);
-  EXPECT_GT(cap.rx_sessions_cnt_max, 0);
   info("dma dev count %u\n", cap.dma_dev_cnt_max);
   info("init_flags 0x%" PRIx64 "\n", cap.init_flags);
 }
@@ -267,12 +255,12 @@ TEST(Main, bandwidth) {
   uint64_t bandwidth_1080p_mps = st20_1080p59_yuv422_10bit_bandwidth_mps();
   uint64_t bandwidth_1080p = 0;
   int ret = st20_get_bandwidth_bps(1920, 1080, ST20_FMT_YUV_422_10BIT, ST_FPS_P59_94,
-                                   &bandwidth_1080p);
+                                   false, &bandwidth_1080p);
   EXPECT_GE(ret, 0);
   EXPECT_EQ(bandwidth_1080p / 1000 / 1000, bandwidth_1080p_mps);
 
   uint64_t bandwidth_720p = 0;
-  ret = st20_get_bandwidth_bps(1280, 720, ST20_FMT_YUV_422_10BIT, ST_FPS_P59_94,
+  ret = st20_get_bandwidth_bps(1280, 720, ST20_FMT_YUV_422_10BIT, ST_FPS_P59_94, false,
                                &bandwidth_720p);
   EXPECT_GE(ret, 0);
   EXPECT_GT(bandwidth_1080p, bandwidth_720p);
@@ -358,7 +346,7 @@ static void frame_api_test() {
   /* yuv */
   for (int i = ST_FRAME_FMT_YUV_START; i < ST_FRAME_FMT_YUV_END; i++) {
     fmt = (enum st_frame_fmt)i;
-    size = st_frame_size(fmt, w, h);
+    size = st_frame_size(fmt, w, h, false);
     EXPECT_GT(size, szero);
     EXPECT_GT(st_frame_fmt_planes(fmt), 0);
     EXPECT_GT(st_frame_least_linesize(fmt, w, 0), szero);
@@ -366,7 +354,7 @@ static void frame_api_test() {
   /* rgb */
   for (int i = ST_FRAME_FMT_RGB_START; i < ST_FRAME_FMT_RGB_END; i++) {
     fmt = (enum st_frame_fmt)i;
-    size = st_frame_size(fmt, w, h);
+    size = st_frame_size(fmt, w, h, false);
     EXPECT_GT(size, szero);
     EXPECT_GT(st_frame_fmt_planes(fmt), 0);
     EXPECT_GT(st_frame_least_linesize(fmt, w, 0), szero);
@@ -374,20 +362,20 @@ static void frame_api_test() {
   /* codestream */
   for (int i = ST_FRAME_FMT_CODESTREAM_START; i < ST_FRAME_FMT_CODESTREAM_END; i++) {
     fmt = (enum st_frame_fmt)i;
-    size = st_frame_size(fmt, w, h);
+    size = st_frame_size(fmt, w, h, false);
     EXPECT_EQ(size, szero);
     EXPECT_EQ(st_frame_fmt_planes(fmt), 1);
     EXPECT_EQ(st_frame_least_linesize(fmt, w, 0), szero);
   }
 
   /* invalid fmt */
-  size = st_frame_size(ST_FRAME_FMT_YUV_END, w, h);
+  size = st_frame_size(ST_FRAME_FMT_YUV_END, w, h, false);
   EXPECT_EQ(size, szero);
-  size = st_frame_size(ST_FRAME_FMT_RGB_END, w, h);
+  size = st_frame_size(ST_FRAME_FMT_RGB_END, w, h, false);
   EXPECT_EQ(size, szero);
-  size = st_frame_size(ST_FRAME_FMT_CODESTREAM_END, w, h);
+  size = st_frame_size(ST_FRAME_FMT_CODESTREAM_END, w, h, false);
   EXPECT_EQ(size, szero);
-  size = st_frame_size(ST_FRAME_FMT_MAX, w, h);
+  size = st_frame_size(ST_FRAME_FMT_MAX, w, h, false);
   EXPECT_EQ(size, szero);
 }
 

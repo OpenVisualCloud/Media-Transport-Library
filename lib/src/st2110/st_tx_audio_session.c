@@ -177,6 +177,7 @@ static int tx_audio_session_init_hdr(struct mtl_main_impl* impl,
                           ? ops->payload_type
                           : ST_RARTP_PAYLOAD_TYPE_PCM_AUDIO;
   rtp->ssrc = htonl(s->idx + 0x223450);
+  s->st30_seq_id = 0;
 
   info("%s(%d,%d), ip %u.%u.%u.%u port %u:%u\n", __func__, idx, s_port, dip[0], dip[1],
        dip[2], dip[3], s->st30_src_port[s_port], s->st30_dst_port[s_port]);
@@ -532,14 +533,14 @@ static int tx_audio_session_tasklet_frame(struct mtl_main_impl* impl,
   struct rte_mempool* hdr_pool_p = s->mbuf_mempool_hdr[MTL_SESSION_PORT_P];
   struct rte_mempool* hdr_pool_r = NULL;
   struct rte_mempool* chain_pool = s->mbuf_mempool_chain;
-  struct rte_ring* ring_p = s->trans_ring[MTL_SESSION_PORT_P];
-  struct rte_ring* ring_r = NULL;
+  struct mt_u64_fifo* ring_p = s->trans_ring[MTL_SESSION_PORT_P];
+  struct mt_u64_fifo* ring_r = NULL;
 
-  if (rte_ring_full(ring_p)) {
+  if (mt_u64_fifo_full(ring_p)) {
     s->stat_build_ret_code = -STI_FRAME_RING_FULL;
     return MT_TASKLET_ALL_DONE;
   }
-  if (rte_ring_count(ring_p) > s->trans_ring_thresh) {
+  if (mt_u64_fifo_count(ring_p) > s->trans_ring_thresh) {
     s->stat_build_ret_code = -STI_FRAME_RING_FULL;
     return MT_TASKLET_ALL_DONE;
   }
@@ -552,7 +553,7 @@ static int tx_audio_session_tasklet_frame(struct mtl_main_impl* impl,
 
   /* check if any inflight pkts */
   if (s->inflight[MTL_SESSION_PORT_P]) {
-    ret = rte_ring_mp_enqueue(ring_p, (void*)s->inflight[MTL_SESSION_PORT_P]);
+    ret = mt_u64_fifo_put(ring_p, (uint64_t)s->inflight[MTL_SESSION_PORT_P]);
     if (ret == 0) {
       s->inflight[MTL_SESSION_PORT_P] = NULL;
     } else {
@@ -562,7 +563,7 @@ static int tx_audio_session_tasklet_frame(struct mtl_main_impl* impl,
   }
 
   if (send_r && s->inflight[MTL_SESSION_PORT_R]) {
-    ret = rte_ring_mp_enqueue(ring_r, (void*)s->inflight[MTL_SESSION_PORT_R]);
+    ret = mt_u64_fifo_put(ring_r, (uint64_t)s->inflight[MTL_SESSION_PORT_R]);
     if (ret == 0) {
       s->inflight[MTL_SESSION_PORT_R] = NULL;
     } else {
@@ -703,13 +704,13 @@ static int tx_audio_session_tasklet_frame(struct mtl_main_impl* impl,
   s->calculate_time_cursor = true;
 
   bool done = false;
-  if (rte_ring_mp_enqueue(ring_p, (void*)pkt) != 0) {
+  if (mt_u64_fifo_put(ring_p, (uint64_t)pkt) != 0) {
     s->inflight[MTL_SESSION_PORT_P] = pkt;
     s->inflight_cnt[MTL_SESSION_PORT_P]++;
     done = true;
     s->stat_build_ret_code = -STI_FRAME_PKT_ENQUEUE_FAIL;
   }
-  if (send_r && rte_ring_mp_enqueue(ring_r, (void*)pkt_r) != 0) {
+  if (send_r && mt_u64_fifo_put(ring_r, (uint64_t)pkt_r) != 0) {
     s->inflight[MTL_SESSION_PORT_R] = pkt_r;
     s->inflight_cnt[MTL_SESSION_PORT_R]++;
     done = true;
@@ -740,14 +741,14 @@ static int tx_audio_session_tasklet_rtp(struct mtl_main_impl* impl,
   bool send_r = false;
   struct rte_mempool* hdr_pool_p = s->mbuf_mempool_hdr[MTL_SESSION_PORT_P];
   struct rte_mempool* hdr_pool_r = NULL;
-  struct rte_ring* ring_p = s->trans_ring[MTL_SESSION_PORT_P];
-  struct rte_ring* ring_r = NULL;
+  struct mt_u64_fifo* ring_p = s->trans_ring[MTL_SESSION_PORT_P];
+  struct mt_u64_fifo* ring_r = NULL;
 
-  if (rte_ring_full(ring_p)) {
+  if (mt_u64_fifo_full(ring_p)) {
     s->stat_build_ret_code = -STI_RTP_RING_FULL;
     return MT_TASKLET_ALL_DONE;
   }
-  if (rte_ring_count(ring_p) > s->trans_ring_thresh) {
+  if (mt_u64_fifo_count(ring_p) > s->trans_ring_thresh) {
     s->stat_build_ret_code = -STI_FRAME_RING_FULL;
     return MT_TASKLET_ALL_DONE;
   }
@@ -760,7 +761,7 @@ static int tx_audio_session_tasklet_rtp(struct mtl_main_impl* impl,
 
   /* check if any inflight pkts */
   if (s->inflight[MTL_SESSION_PORT_P]) {
-    ret = rte_ring_mp_enqueue(ring_p, (void*)s->inflight[MTL_SESSION_PORT_P]);
+    ret = mt_u64_fifo_put(ring_p, (uint64_t)s->inflight[MTL_SESSION_PORT_P]);
     if (ret == 0) {
       s->inflight[MTL_SESSION_PORT_P] = NULL;
     } else {
@@ -770,7 +771,7 @@ static int tx_audio_session_tasklet_rtp(struct mtl_main_impl* impl,
   }
 
   if (send_r && s->inflight[MTL_SESSION_PORT_R]) {
-    ret = rte_ring_mp_enqueue(ring_r, (void*)s->inflight[MTL_SESSION_PORT_R]);
+    ret = mt_u64_fifo_put(ring_r, (uint64_t)s->inflight[MTL_SESSION_PORT_R]);
     if (ret == 0) {
       s->inflight[MTL_SESSION_PORT_R] = NULL;
     } else {
@@ -841,13 +842,13 @@ static int tx_audio_session_tasklet_rtp(struct mtl_main_impl* impl,
   pacing->tsc_time_cursor = 0;
 
   bool done = true;
-  if (rte_ring_mp_enqueue(ring_p, (void*)pkt) != 0) {
+  if (mt_u64_fifo_put(ring_p, (uint64_t)pkt) != 0) {
     s->inflight[MTL_SESSION_PORT_P] = pkt;
     s->inflight_cnt[MTL_SESSION_PORT_P]++;
     done = false;
     s->stat_build_ret_code = -STI_RTP_PKT_ENQUEUE_FAIL;
   }
-  if (send_r && rte_ring_mp_enqueue(ring_r, (void*)pkt_r) != 0) {
+  if (send_r && mt_u64_fifo_put(ring_r, (uint64_t)pkt_r) != 0) {
     s->inflight[MTL_SESSION_PORT_R] = pkt_r;
     s->inflight_cnt[MTL_SESSION_PORT_R]++;
     done = false;
@@ -885,7 +886,7 @@ static int tx_audio_session_tasklet_transmit(struct mtl_main_impl* impl,
   }
 
   /* try to dequeue pkt */
-  ret = rte_ring_sc_dequeue(s->trans_ring[s_port], (void**)&pkt);
+  ret = mt_u64_fifo_get(s->trans_ring[s_port], (uint64_t*)&pkt);
   if (ret < 0) {
     s->stat_transmit_ret_code = -STI_TSCTRS_PKT_DEQUEUE_FAIL;
     return MT_TASKLET_ALL_DONE; /* no pkt */
@@ -977,7 +978,7 @@ static int tx_audio_sessions_mgr_init_hw(struct mtl_main_impl* impl,
       return -EIO;
     }
 
-    snprintf(ring_name, 32, "TX-AUDIO-RING-M%d-P%d", mgr_idx, i);
+    snprintf(ring_name, 32, "%sM%dP%d", ST_TX_AUDIO_PREFIX, mgr_idx, i);
     flags = RING_F_MP_HTS_ENQ | RING_F_SC_DEQ; /* multi-producer and single-consumer */
     count = ST_TX_AUDIO_SESSIONS_RING_SIZE;
     ring = rte_ring_create(ring_name, count, mt_socket_id(impl, i), flags);
@@ -1104,7 +1105,7 @@ static int tx_audio_session_mempool_init(struct mtl_main_impl* impl,
       warn("%s(%d), use previous hdr mempool for port %d\n", __func__, idx, i);
     } else {
       char pool_name[32];
-      snprintf(pool_name, 32, "TXAUDIOHDR-M%d-R%d-P%d", mgr->idx, idx, i);
+      snprintf(pool_name, 32, "%sM%dS%dP%d_HDR", ST_TX_AUDIO_PREFIX, mgr->idx, idx, i);
       struct rte_mempool* mbuf_pool =
           mt_mempool_create(impl, port, pool_name, n, MT_MBUF_CACHE_SIZE,
                             sizeof(struct mt_muf_priv_data), hdr_room_size);
@@ -1130,7 +1131,7 @@ static int tx_audio_session_mempool_init(struct mtl_main_impl* impl,
       warn("%s(%d), use previous chain mempool\n", __func__, idx);
     } else {
       char pool_name[32];
-      snprintf(pool_name, 32, "TXAUDIOCHAIN-M%d-R%d", mgr->idx, idx);
+      snprintf(pool_name, 32, "%sM%dS%d_CHAIN", ST_TX_AUDIO_PREFIX, mgr->idx, idx);
       struct rte_mempool* mbuf_pool = mt_mempool_create(
           impl, port, pool_name, n, MT_MBUF_CACHE_SIZE, 0, chain_room_size);
       if (!mbuf_pool) {
@@ -1153,7 +1154,7 @@ static int tx_audio_session_init_rtp(struct mtl_main_impl* impl,
   int mgr_idx = mgr->idx, idx = s->idx;
   enum mtl_port port = mt_port_logic2phy(s->port_maps, MTL_SESSION_PORT_P);
 
-  snprintf(ring_name, 32, "TX-AUDIO-PACKET-RING-M%d-R%d", mgr_idx, idx);
+  snprintf(ring_name, 32, "%sM%dS%d_PKT", ST_TX_AUDIO_PREFIX, mgr_idx, idx);
   flags = RING_F_SP_ENQ | RING_F_SC_DEQ; /* single-producer and single-consumer */
   ring = rte_ring_create(ring_name, count, mt_socket_id(impl, port), flags);
   if (!ring) {
@@ -1169,8 +1170,12 @@ static int tx_audio_session_init_rtp(struct mtl_main_impl* impl,
 static int tx_audio_session_uinit_trans_ring(struct st_tx_audio_session_impl* s) {
   for (int port = 0; port < MTL_SESSION_PORT_MAX; port++) {
     if (s->trans_ring[port]) {
-      mt_ring_dequeue_clean(s->trans_ring[port]);
-      rte_ring_free(s->trans_ring[port]);
+      struct rte_mbuf* item;
+      while (mt_u64_fifo_count(s->trans_ring[port]) > 0) {
+        mt_u64_fifo_get(s->trans_ring[port], (uint64_t*)&item);
+        rte_pktmbuf_free(item);
+      }
+      mt_u64_fifo_uinit(s->trans_ring[port]);
       s->trans_ring[port] = NULL;
     }
   }
@@ -1181,9 +1186,8 @@ static int tx_audio_session_uinit_trans_ring(struct st_tx_audio_session_impl* s)
 static int tx_audio_session_init_trans_ring(struct mtl_main_impl* impl,
                                             struct st_tx_audio_sessions_mgr* mgr,
                                             struct st_tx_audio_session_impl* s) {
-  char ring_name[32];
-  struct rte_ring* ring;
-  unsigned int flags, count = ST_TX_AUDIO_SESSIONS_RING_SIZE;
+  struct mt_u64_fifo* ring;
+  unsigned int count = ST_TX_AUDIO_SESSIONS_RING_SIZE;
   int mgr_idx = mgr->idx, idx = s->idx;
   int num_port = s->ops.num_port;
   uint16_t trans_ring_thresh = s->ops.fifo_size;
@@ -1194,11 +1198,9 @@ static int tx_audio_session_init_trans_ring(struct mtl_main_impl* impl,
   }
 
   for (int port = 0; port < num_port; port++) {
-    snprintf(ring_name, 32, "TX-AUDIO-MBUF-RING-M%d-S%d-P%d", mgr_idx, idx, port);
-    flags = RING_F_SP_ENQ | RING_F_SC_DEQ; /* single-producer and single-consumer */
-    ring = rte_ring_create(ring_name, count, mt_socket_id(impl, port), flags);
+    ring = mt_u64_fifo_init(count, mt_socket_id(impl, port));
     if (!ring) {
-      err("%s(%d,%d), rte_ring_create fail\n", __func__, mgr_idx, idx);
+      err("%s(%d,%d), mt_u64_fifo_init fail\n", __func__, mgr_idx, idx);
       tx_audio_session_uinit_trans_ring(s);
       return -ENOMEM;
     }
@@ -1371,6 +1373,54 @@ static int tx_audio_session_attach(struct mtl_main_impl* impl,
 
   info("%s(%d), pkt_len %u frame_size %u\n", __func__, idx, s->pkt_len,
        s->st30_frame_size);
+  return 0;
+}
+
+static int tx_audio_session_update_dst(struct mtl_main_impl* impl,
+                                       struct st_tx_audio_sessions_mgr* mgr,
+                                       struct st_tx_audio_session_impl* s,
+                                       struct st_tx_dest_info* dst) {
+  int ret = -EIO;
+  int idx = s->idx, num_port = s->ops.num_port;
+  struct st30_tx_ops* ops = &s->ops;
+
+  /* update ip and port */
+  for (int i = 0; i < num_port; i++) {
+    memcpy(ops->dip_addr[i], dst->dip_addr[i], MTL_IP_ADDR_LEN);
+    ops->udp_port[i] = dst->udp_port[i];
+    s->st30_dst_port[i] = (ops->udp_port[i]) ? (ops->udp_port[i]) : (20000 + idx);
+    s->st30_src_port[i] =
+        (ops->udp_src_port[i]) ? (ops->udp_src_port[i]) : s->st30_dst_port[i];
+
+    /* update hdr */
+    ret = tx_audio_session_init_hdr(impl, mgr, s, i);
+    if (ret < 0) {
+      err("%s(%d), init hdr fail %d\n", __func__, idx, ret);
+      return ret;
+    }
+  }
+
+  return 0;
+}
+
+static int tx_audio_sessions_mgr_update_dst(struct st_tx_audio_sessions_mgr* mgr,
+                                            struct st_tx_audio_session_impl* s,
+                                            struct st_tx_dest_info* dst) {
+  int ret = -EIO, midx = mgr->idx, idx = s->idx;
+
+  s = tx_audio_session_get(mgr, idx); /* get the lock */
+  if (!s) {
+    err("%s(%d,%d), get session fail\n", __func__, midx, idx);
+    return -EIO;
+  }
+
+  ret = tx_audio_session_update_dst(mgr->parent, mgr, s, dst);
+  tx_audio_session_put(mgr, idx);
+  if (ret < 0) {
+    err("%s(%d,%d), fail %d\n", __func__, midx, idx, ret);
+    return ret;
+  }
+
   return 0;
 }
 
@@ -1720,6 +1770,33 @@ st30_tx_handle st30_tx_create(mtl_handle mt, struct st30_tx_ops* ops) {
   rte_atomic32_inc(&impl->st30_tx_sessions_cnt);
   info("%s, succ on session %d\n", __func__, s->idx);
   return s_impl;
+}
+
+int st30_tx_update_destination(st30_tx_handle handle, struct st_tx_dest_info* dst) {
+  struct st_tx_audio_session_handle_impl* s_impl = handle;
+  struct mtl_main_impl* impl;
+  struct st_tx_audio_session_impl* s;
+  int idx, ret;
+
+  if (s_impl->type != MT_HANDLE_TX_AUDIO) {
+    err("%s, invalid type %d\n", __func__, s_impl->type);
+    return -EIO;
+  }
+
+  impl = s_impl->parent;
+  s = s_impl->impl;
+  idx = s->idx;
+
+  ret = st_tx_dest_info_check(dst, s->ops.num_port);
+  if (ret < 0) return ret;
+
+  ret = tx_audio_sessions_mgr_update_dst(&impl->tx_a_mgr, s, dst);
+  if (ret < 0) {
+    err("%s(%d), tx_audio_sessions_mgr_update_dst fail\n", __func__, idx);
+    return ret;
+  }
+
+  return 0;
 }
 
 int st30_tx_free(st30_tx_handle handle) {

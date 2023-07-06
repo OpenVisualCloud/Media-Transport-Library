@@ -416,9 +416,9 @@ static void ptp_delay_req_task(struct mt_ptp_impl* ptp) {
   hdr_offset = sizeof(struct rte_ether_hdr);
 
   if (ptp->t2_mode == MT_PTP_L4) {
-    struct mt_ptp_ipv4_udp* ipv4_hdr =
-        rte_pktmbuf_mtod_offset(m, struct mt_ptp_ipv4_udp*, hdr_offset);
-    hdr_offset += sizeof(struct mt_ptp_ipv4_udp);
+    struct mt_ipv4_udp* ipv4_hdr =
+        rte_pktmbuf_mtod_offset(m, struct mt_ipv4_udp*, hdr_offset);
+    hdr_offset += sizeof(struct mt_ipv4_udp);
     rte_memcpy(ipv4_hdr, &ptp->dst_udp, sizeof(*ipv4_hdr));
     ipv4_hdr->udp.src_port = htons(MT_PTP_UDP_EVENT_PORT);
     ipv4_hdr->udp.dst_port = ipv4_hdr->udp.src_port;
@@ -566,7 +566,7 @@ static int ptp_parse_follow_up(struct mt_ptp_impl* ptp,
 }
 
 static int ptp_parse_announce(struct mt_ptp_impl* ptp, struct mt_ptp_announce_msg* msg,
-                              enum mt_ptp_l_mode mode, struct mt_ptp_ipv4_udp* ipv4_hdr) {
+                              enum mt_ptp_l_mode mode, struct mt_ipv4_udp* ipv4_hdr) {
   enum mtl_port port = ptp->port;
 
   if (!ptp->master_initialized) {
@@ -582,13 +582,13 @@ static int ptp_parse_announce(struct mt_ptp_impl* ptp, struct mt_ptp_announce_ms
          port, ptp_mode_str(mode), ptp->master_utc_offset, msg->hdr.domain_number);
     ptp_print_port_id(port, &ptp->master_port_id);
     if (mode == MT_PTP_L4) {
-      struct mt_ptp_ipv4_udp* dst_udp = &ptp->dst_udp;
+      struct mt_ipv4_udp* dst_udp = &ptp->dst_udp;
 
       rte_memcpy(dst_udp, ipv4_hdr, sizeof(*dst_udp));
       rte_memcpy(&dst_udp->ip.src_addr, &ptp->sip_addr[0], MTL_IP_ADDR_LEN);
       rte_memcpy(&dst_udp->ip.dst_addr, &ptp->mcast_group_addr[0], MTL_IP_ADDR_LEN);
       dst_udp->ip.total_length =
-          htons(sizeof(struct mt_ptp_ipv4_udp) + sizeof(struct mt_ptp_follow_up_msg));
+          htons(sizeof(struct mt_ipv4_udp) + sizeof(struct mt_ptp_follow_up_msg));
       dst_udp->ip.hdr_checksum = 0;
       dst_udp->udp.dgram_len =
           htons(sizeof(struct rte_udp_hdr) + sizeof(struct mt_ptp_follow_up_msg));
@@ -821,7 +821,7 @@ static int ptp_uinit(struct mtl_main_impl* impl, struct mt_ptp_impl* ptp) {
 
 int mt_ptp_parse(struct mt_ptp_impl* ptp, struct mt_ptp_header* hdr, bool vlan,
                  enum mt_ptp_l_mode mode, uint16_t timesync,
-                 struct mt_ptp_ipv4_udp* ipv4_hdr) {
+                 struct mt_ipv4_udp* ipv4_hdr) {
   enum mtl_port port = ptp->port;
 
   if (!mt_if_has_ptp(ptp->impl, port)) return 0;

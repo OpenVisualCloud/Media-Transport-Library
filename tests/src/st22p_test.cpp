@@ -374,8 +374,8 @@ static void frame_draw_logo_test(enum st_frame_fmt fmt, uint32_t w, uint32_t h,
                                  bool expect) {
   auto ctx = (struct st_tests_context*)st_test_ctx();
   auto st = ctx->handle;
-  size_t logo_size = st_frame_size(fmt, logo_w, logo_h);
-  size_t frame_size = st_frame_size(fmt, w, h);
+  size_t logo_size = st_frame_size(fmt, logo_w, logo_h, false);
+  size_t frame_size = st_frame_size(fmt, w, h, false);
   void* frame_buf = mtl_hp_malloc(st, frame_size, MTL_PORT_P);
   if (!frame_buf) {
     err("%s, frame_buf malloc fail\n", __func__);
@@ -463,7 +463,8 @@ static void st22p_tx_ops_init(tests_context* st22, struct st22p_tx_ops* ops_tx) 
   ops_tx->quality = ST22_QUALITY_MODE_QUALITY;
   ops_tx->framebuff_cnt = st22->fb_cnt;
   ops_tx->notify_frame_available = test_st22p_tx_frame_available;
-  st22->frame_size = st_frame_size(ops_tx->input_fmt, ops_tx->width, ops_tx->height);
+  st22->frame_size =
+      st_frame_size(ops_tx->input_fmt, ops_tx->width, ops_tx->height, false);
   ops_tx->codestream_size = st22->frame_size / 8;
   ops_tx->notify_event = test_ctx_notify_event;
 }
@@ -490,7 +491,8 @@ static void st22p_rx_ops_init(tests_context* st22, struct st22p_rx_ops* ops_rx) 
   ops_rx->device = ST_PLUGIN_DEVICE_TEST;
   ops_rx->framebuff_cnt = st22->fb_cnt;
   ops_rx->notify_frame_available = test_st22p_rx_frame_available;
-  st22->frame_size = st_frame_size(ops_rx->output_fmt, ops_rx->width, ops_rx->height);
+  st22->frame_size =
+      st_frame_size(ops_rx->output_fmt, ops_rx->width, ops_rx->height, false);
   ops_rx->notify_event = test_ctx_notify_event;
 }
 
@@ -522,8 +524,12 @@ TEST(St22p, tx_create_free_mix) { pipeline_create_free_test(st22p_tx, 2, 3, 4); 
 TEST(St22p, rx_create_free_single) { pipeline_create_free_test(st22p_rx, 0, 1, 1); }
 TEST(St22p, rx_create_free_multi) { pipeline_create_free_test(st22p_rx, 0, 1, 6); }
 TEST(St22p, rx_create_free_mix) { pipeline_create_free_test(st22p_rx, 2, 3, 4); }
-TEST(St22p, tx_create_free_max) { pipeline_create_free_max(st22p_tx, 100); }
-TEST(St22p, rx_create_free_max) { pipeline_create_free_max(st22p_rx, 100); }
+TEST(St22p, tx_create_free_max) {
+  pipeline_create_free_max(st22p_tx, TEST_CREATE_FREE_MAX);
+}
+TEST(St22p, rx_create_free_max) {
+  pipeline_create_free_max(st22p_rx, TEST_CREATE_FREE_MAX);
+}
 TEST(St22p, tx_create_expect_fail) { pipeline_expect_fail_test(st22p_tx); }
 TEST(St22p, rx_create_expect_fail) { pipeline_expect_fail_test(st22p_rx); }
 TEST(St22p, tx_create_expect_fail_fb_cnt) {
@@ -754,14 +760,14 @@ static void st22p_rx_digest_test(enum st_fps fps[], int width[], int height[],
     if (para->vsync) ops_tx.flags |= ST22P_TX_FLAG_ENABLE_VSYNC;
 
     test_ctx_tx[i]->frame_size =
-        st_frame_size(ops_tx.input_fmt, ops_tx.width, ops_tx.height);
+        st_frame_size(ops_tx.input_fmt, ops_tx.width, ops_tx.height, false);
 
     ops_tx.codestream_size = test_ctx_tx[i]->frame_size / compress_ratio[i];
 
     tx_handle[i] = st22p_tx_create(st, &ops_tx);
     ASSERT_TRUE(tx_handle[i] != NULL);
 
-    /* sha caculate */
+    /* sha calculate */
     size_t frame_size = test_ctx_tx[i]->frame_size;
     uint8_t* fb;
     for (int frame = 0; frame < ST22_TEST_SHA_HIST_NUM; frame++) {
@@ -825,7 +831,7 @@ static void st22p_rx_digest_test(enum st_fps fps[], int width[], int height[],
     if (para->vsync) ops_rx.flags |= ST22P_RX_FLAG_ENABLE_VSYNC;
 
     test_ctx_rx[i]->frame_size =
-        st_frame_size(ops_rx.output_fmt, ops_rx.width, ops_rx.height);
+        st_frame_size(ops_rx.output_fmt, ops_rx.width, ops_rx.height, false);
 
     rx_handle[i] = st22p_rx_create(st, &ops_rx);
     ASSERT_TRUE(rx_handle[i] != NULL);
@@ -894,7 +900,7 @@ static void st22p_rx_digest_test(enum st_fps fps[], int width[], int height[],
     EXPECT_GE(ret, 0);
     info("%s, session %d fb_rec %d framerate %f:%f\n", __func__, i,
          test_ctx_rx[i]->fb_rec, framerate_rx[i], expect_framerate_rx[i]);
-    EXPECT_GE(test_ctx_rx[i]->fb_rec, 0);
+    EXPECT_GT(test_ctx_rx[i]->fb_rec, 0);
     EXPECT_EQ(test_ctx_rx[i]->incomplete_frame_cnt, 0);
     EXPECT_EQ(test_ctx_rx[i]->fail_cnt, 0);
     if (para->check_fps) {

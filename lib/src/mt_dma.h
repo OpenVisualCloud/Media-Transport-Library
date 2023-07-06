@@ -7,6 +7,8 @@
 
 #include "mt_main.h"
 
+#define MT_DMA_BORROW_RING_PREFIX "DB_"
+
 int mt_dma_init(struct mtl_main_impl* impl);
 int mt_dma_uinit(struct mtl_main_impl* impl);
 

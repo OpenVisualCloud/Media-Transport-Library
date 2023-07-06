@@ -50,8 +50,8 @@ mtl_handle kahawai_init(char* port, char* local_addr, int enc_session_cnt,
     return NULL;
   }
 
-  if (enc_session_cnt > 0) param.tx_sessions_cnt_max = enc_session_cnt;
-  if (dec_session_cnt > 0) param.rx_sessions_cnt_max = dec_session_cnt;
+  if (enc_session_cnt > 0) param.tx_queues_cnt[MTL_PORT_P] = enc_session_cnt;
+  if (dec_session_cnt > 0) param.rx_queues_cnt[MTL_PORT_P] = dec_session_cnt;
   param.flags = MTL_FLAG_BIND_NUMA | MTL_FLAG_DEV_AUTO_START_STOP;
   param.log_level = MTL_LOG_LEVEL_DEBUG;  // log level. ERROR, INFO, WARNING
   param.priv = NULL;                      // usr crx pointer

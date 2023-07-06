@@ -9,6 +9,8 @@
 
 #define ST_RX_AUDIO_BURST_SIZE (128)
 
+#define ST_RX_AUDIO_PREFIX "RA_"
+
 int st_rx_audio_sessions_mgr_uinit(struct st_rx_audio_sessions_mgr* mgr);
 
 #endif

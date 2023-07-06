@@ -68,9 +68,9 @@ static int utest_parse_args(struct utest_ctx* ctx, int argc, char** argv) {
         break;
       case UTEST_ARG_QUEUE_MODE:
         if (!strcmp(optarg, "shared"))
-          p->flags |= MTL_FLAG_SHARED_QUEUE;
+          p->flags |= (MTL_FLAG_SHARED_TX_QUEUE | MTL_FLAG_SHARED_RX_QUEUE);
         else if (!strcmp(optarg, "dedicated"))
-          p->flags &= ~MTL_FLAG_SHARED_QUEUE;
+          p->flags &= ~(MTL_FLAG_SHARED_TX_QUEUE | MTL_FLAG_SHARED_RX_QUEUE);
         else
           err("%s, unknow queue mode %s\n", __func__, optarg);
         break;
@@ -82,12 +82,6 @@ static int utest_parse_args(struct utest_ctx* ctx, int argc, char** argv) {
           p->rss_mode = MTL_RSS_MODE_L3;
         else if (!strcmp(optarg, "l3_l4"))
           p->rss_mode = MTL_RSS_MODE_L3_L4;
-        else if (!strcmp(optarg, "l3_l4_dst_port_only"))
-          p->rss_mode = MTL_RSS_MODE_L3_L4_DP_ONLY;
-        else if (!strcmp(optarg, "l3_da_l4_dst_port_only"))
-          p->rss_mode = MTL_RSS_MODE_L3_DA_L4_DP_ONLY;
-        else if (!strcmp(optarg, "l4_dst_port_only"))
-          p->rss_mode = MTL_RSS_MODE_L4_DP_ONLY;
         else if (!strcmp(optarg, "none"))
           p->rss_mode = MTL_RSS_MODE_NONE;
         else
@@ -136,8 +130,13 @@ static void utest_ctx_init(struct utest_ctx* ctx) {
 
   p->flags |= MTL_FLAG_BIND_NUMA; /* default bind to numa */
   p->log_level = MTL_LOG_LEVEL_ERROR;
+  p->tx_queues_cnt[MTL_PORT_P] = 16;
+  p->tx_queues_cnt[MTL_PORT_R] = 16;
+  p->rx_queues_cnt[MTL_PORT_P] = 16;
+  p->rx_queues_cnt[MTL_PORT_R] = 16;
 
   ctx->init_params.slots_nb_max = 256;
+  p->tasklets_nb_per_sch = ctx->init_params.slots_nb_max + 8;
 }
 
 static void utest_ctx_uinit(struct utest_ctx* ctx) { st_test_free(ctx); }

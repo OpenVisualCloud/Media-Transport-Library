@@ -232,11 +232,15 @@ static int app_tx_st20p_init(struct st_app_context* ctx, st_json_st20p_session_t
   ops.width = st20p ? st20p->info.width : 1920;
   ops.height = st20p ? st20p->info.height : 1080;
   ops.fps = st20p ? st20p->info.fps : ST_FPS_P59_94;
+  ops.interlaced = st20p ? st20p->info.interlaced : false;
   ops.input_fmt = st20p ? st20p->info.format : ST_FRAME_FMT_YUV422RFC4175PG2BE10;
   ops.transport_fmt = st20p ? st20p->info.transport_format : ST20_FMT_YUV_422_10BIT;
   ops.device = st20p ? st20p->info.device : ST_PLUGIN_DEVICE_AUTO;
   ops.framebuff_cnt = 2;
   ops.notify_frame_available = app_tx_st20p_frame_available;
+  ops.start_vrx = ctx->tx_start_vrx;
+  ops.pad_interval = ctx->tx_pad_interval;
+  if (ctx->tx_no_static_pad) ops.flags |= ST20P_TX_FLAG_DISABLE_STATIC_PAD_P;
 
   s->width = ops.width;
   s->height = ops.height;

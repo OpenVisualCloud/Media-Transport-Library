@@ -50,6 +50,7 @@ static inline void mt_u32_to_ip(uint32_t group, uint8_t ip[MTL_IP_ADDR_LEN]) {
 bool mt_bitmap_test_and_set(uint8_t* bitmap, int idx);
 bool mt_bitmap_test(uint8_t* bitmap, int idx);
 
+/* only for mbuf ring with RING_F_SP_ENQ | RING_F_SC_DEQ */
 int mt_ring_dequeue_clean(struct rte_ring* ring);
 
 void mt_mbuf_sanity_check(struct rte_mbuf** mbufs, uint16_t nb, char* tag);
@@ -138,6 +139,12 @@ int mt_u64_fifo_uinit(struct mt_u64_fifo* fifo);
 int mt_u64_fifo_put(struct mt_u64_fifo* fifo, uint64_t item);
 int mt_u64_fifo_get(struct mt_u64_fifo* fifo, uint64_t* item);
 
+static inline int mt_u64_fifo_full(struct mt_u64_fifo* fifo) {
+  return fifo->used == fifo->size;
+}
+
+static inline int mt_u64_fifo_count(struct mt_u64_fifo* fifo) { return fifo->used; }
+
 struct mt_cvt_dma_ctx {
   struct mt_u64_fifo* fifo;
   int* tran;
@@ -159,6 +166,8 @@ static inline int mt_cvt_dma_ctx_get_tran(struct mt_cvt_dma_ctx* ctx, int type) 
 int mt_run_cmd(const char* cmd, char* out, size_t out_len);
 
 int mt_ip_addr_check(uint8_t* ip);
+
+int st_tx_dest_info_check(struct st_tx_dest_info* src, int num_ports);
 
 int st_rx_source_info_check(struct st_rx_source_info* src, int num_ports);
 

@@ -275,6 +275,7 @@ static int app_rx_st20r_init(struct st_app_context* ctx, st_json_video_session_t
   ops.width = video ? st_app_get_width(video->info.video_format) : 1920;
   ops.height = video ? st_app_get_height(video->info.video_format) : 1080;
   ops.fps = video ? st_app_get_fps(video->info.video_format) : ST_FPS_P59_94;
+  ops.interlaced = video ? st_app_get_interlaced(video->info.video_format) : false;
   ops.fmt = video ? video->info.pg_format : ST20_FMT_YUV_422_10BIT;
   ops.payload_type = video ? video->base.payload_type : ST_APP_PAYLOAD_TYPE_VIDEO;
   ops.notify_frame_ready = app_rx_st20r_frame_ready;

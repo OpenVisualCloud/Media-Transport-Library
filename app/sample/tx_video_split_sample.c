@@ -68,7 +68,7 @@ int main(int argc, char** argv) {
   memset(&ctx, 0, sizeof(ctx));
   sample_parse_args(&ctx, argc, argv, true, false, false);
   ctx.sessions = session_num;
-  ctx.param.tx_sessions_cnt_max = session_num;
+  sample_tx_queue_cnt_set(&ctx, session_num);
 
   ctx.st = mtl_init(&ctx.param);
   if (!ctx.st) {
@@ -118,6 +118,7 @@ int main(int argc, char** argv) {
     ops_tx.height = ctx.height;
     ops_tx.linesize = ops_tx.width * 2 * st20_pg.size / st20_pg.coverage;
     ops_tx.fps = ctx.fps;
+    ops_tx.interlaced = ctx.interlaced;
     ops_tx.fmt = ctx.fmt;
     ops_tx.payload_type = ctx.payload_type;
     ops_tx.framebuff_cnt = app[i]->fb_cnt;

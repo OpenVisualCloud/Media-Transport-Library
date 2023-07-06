@@ -1,6 +1,4 @@
-name: Windows MSYS2 build
-on: [push, pull_request, workflow_call]
-
+name: Windows MSYS2 Composite build
 env:
   # FIXME: For some reason enabling jit debugging "fixes" random python crashes
   # see https://github.com/msys2/MINGW-packages/issues/11864 and
@@ -10,20 +8,23 @@ env:
 permissions:
   contents: read
 
-jobs:
-  build:
-    runs-on: windows-latest
-    strategy:
-      fail-fast: false
-      matrix:
-        sys:
-          - mingw64
-          - ucrt64
-        dpdk: [22.11, 23.03]
-    defaults:
-      run:
-        shell: msys2 {0}
-    steps:
+inputs:
+  sys:
+    description: MSYS2 support on systems MinGW64, Ucrt64
+    required: true
+    default: mingw64
+  dpdk:
+    description: DPDK support version on Media Transport
+    required: true
+    default: 23.03
+  tap:
+    description: Enable TAP device
+    required: true
+    default: true
+
+runs:
+  using: "composite"
+  steps:
     - name: Harden Runner
       uses: step-security/harden-runner@55d479fb1c5bcad5a4f9099a5d9f37c8857b2845 # v2.4.1
       with:
@@ -32,12 +33,13 @@ jobs:
     - name: Install dependencies
       uses: msys2/setup-msys2@7efe20baefed56359985e327d329042cde2434ff # v2
       with:
-        msystem: ${{matrix.sys}}
+        msystem: ${{inputs.sys}}
         update: true
         install: >-
           git
           base-devel
           unzip
+          zip
         pacboy: >-
           openssl:p
           gcc:p
@@ -49,8 +51,17 @@ jobs:
           SDL2:p
           SDL2_ttf:p
           dlfcn:p
-
+          binutils:p
+          clang:p
+          diffutils:p
+          libx264:p
+          libva:p
+          ffnvcodec-headers:p
+          nasm:p
+          yasm:p
+            
     - name: Install tools
+      shell: msys2 {0}
       run: |
         wget https://nmap.org/npcap/dist/npcap-sdk-1.12.zip
         unzip -d npcap-sdk npcap-sdk-1.12.zip
@@ -62,18 +73,23 @@ jobs:
 
     - name: Checkout IMTL repo
       uses: actions/checkout@c85c95e3d7251135ab7dc9ce3241c5835cc595a9 # v3.5.3
+      with:
+        repository: 'OpenVisualCloud/Media-Transport-Library'
+        ref: main
+        path: .
 
     - name: Checkout DPDK repo
       uses: actions/checkout@c85c95e3d7251135ab7dc9ce3241c5835cc595a9 # v3.5.3
       with:
         repository: 'DPDK/dpdk'
-        ref: v${{matrix.dpdk}}
+        ref: v${{inputs.dpdk}}
         path: dpdk
         clean: true
 
     - name: Convert symlink patch files to real file
+      shell: msys2 {0}
       run: |
-        cd patches/dpdk/${{matrix.dpdk}}
+        cd patches/dpdk/${{inputs.dpdk}}
         ls *.patch | xargs -I{} bash -c 'if [[ $(sed -n '1p' "{}") =~ ^../.*\.patch$ ]]; then cp "$(cat "{}")" "{}"; fi'
         cd windows
         ls *.patch | xargs -I{} bash -c 'if [[ $(sed -n '1p' "{}") =~ ^../.*\.patch$ ]]; then cp "$(cat "{}")" "{}"; fi'
@@ -84,25 +100,45 @@ jobs:
         cd dpdk
         git config user.name github-actions
         git config user.email github-actions@github.com
-        git am ../patches/dpdk/${{matrix.dpdk}}/*.patch
-        git am ../patches/dpdk/${{matrix.dpdk}}/windows/*.patch
+        git am ../patches/dpdk/${{inputs.dpdk}}/*.patch
+        git am ../patches/dpdk/${{inputs.dpdk}}/windows/*.patch
 
     - name: Build dpdk
+      shell: msys2 {0}
       run: |
         cd dpdk
         meson setup build
         meson install -C build
 
-    - name: Build
+    - name: Build IMTL lib
+      shell: msys2 {0}
       run: |
-        ./build.sh
+        meson setup build
+        meson install -C build
 
-    - name: Build with debug
+    - name: Build IMTL app
+      shell: msys2 {0}
       run: |
-        rm build -rf
-        ./build.sh debugonly
+        cd app
+        meson setup build
+        meson compile -C build
 
-    - name: Build with TAP
+    - name: Build IMTL test
+      shell: msys2 {0}
       run: |
-        meson setup tap_build -Denable_tap=true
+        cd tests
+        meson setup build
+        meson compile -C build
+
+    - name: Build IMTL plugins
+      shell: msys2 {0}
+      run: |
+        cd plugins
+        meson setup build
+        meson install -C build
+
+    - name: Build IMTL lib with TAP
+      shell: msys2 {0}
+      run: |
+        meson setup tap_build -Denable_tap=${{inputs.tap}}
         meson install -C tap_build

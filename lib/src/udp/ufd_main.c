@@ -171,8 +171,10 @@ static int ufd_parse_json(struct mufd_init_params* init, const char* filename) {
       ret = -EINVAL;
       goto out;
     }
-    p->tx_queues_cnt_max = nb_nic_queues;
-    p->rx_queues_cnt_max = nb_nic_queues;
+    for (int i = 0; i < num_interfaces; i++) {
+      p->tx_queues_cnt[i] = nb_nic_queues;
+      p->rx_queues_cnt[i] = nb_nic_queues;
+    }
     info("%s, nb_nic_queues %d\n", __func__, nb_nic_queues);
   }
 
@@ -212,11 +214,19 @@ static int ufd_parse_json(struct mufd_init_params* init, const char* filename) {
     info("%s, nb_rx_desc %d\n", __func__, nb_rx_desc);
   }
 
-  obj = mt_json_object_get(root, "nic_shared_queues");
+  obj = mt_json_object_get(root, "nic_shared_tx_queues");
   if (obj) {
     if (json_object_get_boolean(obj)) {
-      info("%s, shared queues enabled\n", __func__);
-      p->flags |= MTL_FLAG_SHARED_QUEUE;
+      info("%s, shared tx queues enabled\n", __func__);
+      p->flags |= MTL_FLAG_SHARED_TX_QUEUE;
+    }
+  }
+
+  obj = mt_json_object_get(root, "nic_shared_rx_queues");
+  if (obj) {
+    if (json_object_get_boolean(obj)) {
+      info("%s, shared rx queues enabled\n", __func__);
+      p->flags |= MTL_FLAG_SHARED_RX_QUEUE;
     }
   }
 
@@ -225,6 +235,14 @@ static int ufd_parse_json(struct mufd_init_params* init, const char* filename) {
     if (json_object_get_boolean(obj)) {
       info("%s, udp lcore enabled\n", __func__);
       p->flags |= MTL_FLAG_UDP_LCORE;
+    }
+  }
+
+  obj = mt_json_object_get(root, "rss");
+  if (obj) {
+    if (json_object_get_boolean(obj)) {
+      info("%s, rss enabled\n", __func__);
+      p->rss_mode = MTL_RSS_MODE_L3_L4;
     }
   }
 
@@ -354,6 +372,7 @@ static struct ufd_mt_ctx* ufd_create_mt_ctx(void) {
   struct ufd_mt_ctx* ctx = mt_zmalloc(sizeof(*ctx));
   struct mufd_override_params* rt_para = g_rt_para;
   struct mufd_init_params* init_para = g_init_para;
+  int ret;
 
   if (!ctx) { /* create a new ctx */
     err("%s, malloc ctx mem fail\n", __func__);
@@ -383,7 +402,9 @@ static struct ufd_mt_ctx* ufd_create_mt_ctx(void) {
     if (rt_para) {
       info("%s, applied override config\n", __func__);
       p->log_level = rt_para->log_level;
-      if (rt_para->shared_queue) p->flags |= MTL_FLAG_SHARED_QUEUE;
+      if (rt_para->shared_tx_queue) p->flags |= MTL_FLAG_SHARED_TX_QUEUE;
+      if (rt_para->shared_rx_queue) p->flags |= MTL_FLAG_SHARED_RX_QUEUE;
+      if (rt_para->rss_mode) p->rss_mode = rt_para->rss_mode;
       if (rt_para->lcore_mode) p->flags |= MTL_FLAG_UDP_LCORE;
     }
   }
@@ -399,7 +420,8 @@ static struct ufd_mt_ctx* ufd_create_mt_ctx(void) {
   if (!ctx->init_params.txq_bps) ctx->init_params.txq_bps = MUDP_DEFAULT_RL_BPS;
 
   /* udp lcore and shared queue, set tasklets_nb_per_sch to allow max slots */
-  if ((p->flags & MTL_FLAG_SHARED_QUEUE) && (p->flags & MTL_FLAG_UDP_LCORE))
+  if ((p->flags & (MTL_FLAG_SHARED_TX_QUEUE | MTL_FLAG_SHARED_RX_QUEUE)) &&
+      (p->flags & MTL_FLAG_UDP_LCORE))
     p->tasklets_nb_per_sch = ctx->init_params.slots_nb_max + 8;
 
   ctx->mt = mtl_init(p);
@@ -407,6 +429,14 @@ static struct ufd_mt_ctx* ufd_create_mt_ctx(void) {
     err("%s, mtl init fail\n", __func__);
     ufd_free_mt_ctx(ctx);
     return NULL;
+  }
+  if (mtl_rss_mode_get(ctx->mt)) {
+    ret = mtl_start(ctx->mt);
+    if (ret < 0) {
+      err("%s, mtl start fail\n", __func__);
+      ufd_free_mt_ctx(ctx);
+      return NULL;
+    }
   }
 
   ctx->slots = mt_rte_zmalloc_socket(sizeof(*ctx->slots) * ufd_max_slot(ctx),

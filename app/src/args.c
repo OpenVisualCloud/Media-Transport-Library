@@ -46,7 +46,9 @@ enum st_args_cmd {
   ST22_ARG_RX_SESSIONS_CNT,
   ST_ARG_HDR_SPLIT,
   ST_ARG_PACING_WAY,
-  ST_ARG_VRX,
+  ST_ARG_START_VRX,
+  ST_ARG_PAD_INTERVAL,
+  ST_ARG_NO_PAD_STATIC,
   ST_ARG_SHAPING,
 
   ST_ARG_CONFIG_FILE = 0x300,
@@ -101,6 +103,8 @@ enum st_args_cmd {
   ST_ARG_TX_NO_BURST_CHECK,
   ST_ARG_DHCP,
   ST_ARG_IOVA_MODE,
+  ST_ARG_SHARED_TX_QUEUES,
+  ST_ARG_SHARED_RX_QUEUES,
   ST_ARG_MAX,
 };
 
@@ -148,7 +152,9 @@ static struct option st_app_args_options[] = {
     {"rx_st22_sessions_count", required_argument, 0, ST22_ARG_RX_SESSIONS_CNT},
     {"hdr_split", no_argument, 0, ST_ARG_HDR_SPLIT},
     {"pacing_way", required_argument, 0, ST_ARG_PACING_WAY},
-    {"vrx", required_argument, 0, ST_ARG_VRX},
+    {"start_vrx", required_argument, 0, ST_ARG_START_VRX},
+    {"pad_interval", required_argument, 0, ST_ARG_PAD_INTERVAL},
+    {"no_static_pad", no_argument, 0, ST_ARG_NO_PAD_STATIC},
     {"shaping", required_argument, 0, ST_ARG_SHAPING},
 
     {"config_file", required_argument, 0, ST_ARG_CONFIG_FILE},
@@ -203,6 +209,9 @@ static struct option st_app_args_options[] = {
     {"tx_no_burst_check", no_argument, 0, ST_ARG_TX_NO_BURST_CHECK},
     {"dhcp", no_argument, 0, ST_ARG_DHCP},
     {"iova_mode", required_argument, 0, ST_ARG_IOVA_MODE},
+    {"shared_tx_queues", no_argument, 0, ST_ARG_SHARED_TX_QUEUES},
+    {"shared_rx_queues", no_argument, 0, ST_ARG_SHARED_RX_QUEUES},
+
 
     {0, 0, 0, 0}};
 
@@ -278,12 +287,18 @@ static int app_args_json(struct st_app_context* ctx, struct mtl_init_params* p,
     memcpy(p->netmask[i], ctx->json_ctx->interfaces[i].netmask, sizeof(p->netmask[i]));
     memcpy(p->gateway[i], ctx->json_ctx->interfaces[i].gateway, sizeof(p->gateway[i]));
     p->net_proto[i] = ctx->json_ctx->interfaces[i].net_proto;
+    p->tx_queues_cnt[i] = ctx->json_ctx->interfaces[i].tx_queues_cnt;
+    p->rx_queues_cnt[i] = ctx->json_ctx->interfaces[i].rx_queues_cnt;
     p->num_ports++;
   }
   if (ctx->json_ctx->sch_quota) {
     p->data_quota_mbs_per_sch =
         ctx->json_ctx->sch_quota * st20_1080p59_yuv422_10bit_bandwidth_mps();
   }
+  if (ctx->json_ctx->shared_tx_queues) p->flags |= MTL_FLAG_SHARED_TX_QUEUE;
+  if (ctx->json_ctx->shared_rx_queues) p->flags |= MTL_FLAG_SHARED_RX_QUEUE;
+  if (ctx->json_ctx->tx_no_chain) p->flags |= MTL_FLAG_TX_NO_CHAIN;
+  if (ctx->json_ctx->rss_mode) p->rss_mode = ctx->json_ctx->rss_mode;
 
   return 0;
 }
@@ -415,8 +430,14 @@ int st_app_parse_args(struct st_app_context* ctx, struct mtl_init_params* p, int
         else
           err("%s, unknow pacing way %s\n", __func__, optarg);
         break;
-      case ST_ARG_VRX:
-        ctx->tx_vrx = atoi(optarg);
+      case ST_ARG_START_VRX:
+        ctx->tx_start_vrx = atoi(optarg);
+        break;
+      case ST_ARG_PAD_INTERVAL:
+        ctx->tx_pad_interval = atoi(optarg);
+        break;
+      case ST_ARG_NO_PAD_STATIC:
+        ctx->tx_no_static_pad = true;
         break;
       case ST_ARG_SHAPING:
         if (!strcmp(optarg, "narrow"))
@@ -583,12 +604,6 @@ int st_app_parse_args(struct st_app_context* ctx, struct mtl_init_params* p, int
           p->rss_mode = MTL_RSS_MODE_L3;
         else if (!strcmp(optarg, "l3_l4"))
           p->rss_mode = MTL_RSS_MODE_L3_L4;
-        else if (!strcmp(optarg, "l3_l4_dst_port_only"))
-          p->rss_mode = MTL_RSS_MODE_L3_L4_DP_ONLY;
-        else if (!strcmp(optarg, "l3_da_l4_dst_port_only"))
-          p->rss_mode = MTL_RSS_MODE_L3_DA_L4_DP_ONLY;
-        else if (!strcmp(optarg, "l4_dst_port_only"))
-          p->rss_mode = MTL_RSS_MODE_L4_DP_ONLY;
         else if (!strcmp(optarg, "none"))
           p->rss_mode = MTL_RSS_MODE_NONE;
         else
@@ -620,6 +635,12 @@ int st_app_parse_args(struct st_app_context* ctx, struct mtl_init_params* p, int
           p->iova_mode = MTL_IOVA_MODE_PA;
         else
           err("%s, unknow iova mode %s\n", __func__, optarg);
+        break;
+      case ST_ARG_SHARED_TX_QUEUES:
+        p->flags |= MTL_FLAG_SHARED_TX_QUEUE;
+        break;
+      case ST_ARG_SHARED_RX_QUEUES:
+        p->flags |= MTL_FLAG_SHARED_RX_QUEUE;
         break;
       case '?':
         break;

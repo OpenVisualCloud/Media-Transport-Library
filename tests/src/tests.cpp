@@ -241,12 +241,6 @@ static int test_parse_args(struct st_tests_context* ctx, struct mtl_init_params*
           p->rss_mode = MTL_RSS_MODE_L3;
         else if (!strcmp(optarg, "l3_l4"))
           p->rss_mode = MTL_RSS_MODE_L3_L4;
-        else if (!strcmp(optarg, "l3_l4_dst_port_only"))
-          p->rss_mode = MTL_RSS_MODE_L3_L4_DP_ONLY;
-        else if (!strcmp(optarg, "l3_da_l4_dst_port_only"))
-          p->rss_mode = MTL_RSS_MODE_L3_DA_L4_DP_ONLY;
-        else if (!strcmp(optarg, "l4_dst_port_only"))
-          p->rss_mode = MTL_RSS_MODE_L4_DP_ONLY;
         else if (!strcmp(optarg, "none"))
           p->rss_mode = MTL_RSS_MODE_NONE;
         else
@@ -295,25 +289,17 @@ static void test_random_ip(struct st_tests_context* ctx) {
   r_ip[2] = p_ip[2];
   r_ip[3] = p_ip[3] + 1;
 
-  /* MTL_RSS_MODE_L3_L4_DP_ONLY not support mcast */
-  if (p->rss_mode == MTL_RSS_MODE_L3_L4_DP_ONLY) {
-    memcpy(ctx->mcast_ip_addr[MTL_PORT_P], mtl_r_sip_addr(p),
-           sizeof(ctx->mcast_ip_addr[MTL_PORT_P]));
-    memcpy(ctx->mcast_ip_addr[MTL_PORT_R], mtl_p_sip_addr(p),
-           sizeof(ctx->mcast_ip_addr[MTL_PORT_R]));
-  } else {
-    p_ip = ctx->mcast_ip_addr[MTL_PORT_P];
-    r_ip = ctx->mcast_ip_addr[MTL_PORT_R];
+  p_ip = ctx->mcast_ip_addr[MTL_PORT_P];
+  r_ip = ctx->mcast_ip_addr[MTL_PORT_R];
 
-    p_ip[0] = 239;
-    p_ip[1] = rand() % 0xFF;
-    p_ip[2] = rand() % 0xFF;
-    p_ip[3] = rand() % 0xFF;
-    r_ip[0] = p_ip[0];
-    r_ip[1] = p_ip[1];
-    r_ip[2] = p_ip[2];
-    r_ip[3] = p_ip[3] + 1;
-  }
+  p_ip[0] = 239;
+  p_ip[1] = rand() % 0xFF;
+  p_ip[2] = rand() % 0xFF;
+  p_ip[3] = rand() % 0xFF;
+  r_ip[0] = p_ip[0];
+  r_ip[1] = p_ip[1];
+  r_ip[2] = p_ip[2];
+  r_ip[3] = p_ip[3] + 1;
 }
 
 static uint64_t test_ptp_from_real_time(void* priv) {
@@ -360,8 +346,10 @@ static void test_ctx_init(struct st_tests_context* ctx) {
   p->log_level = MTL_LOG_LEVEL_ERROR;
   p->priv = ctx;
   p->ptp_get_time_fn = test_ptp_from_real_time;
-  p->tx_sessions_cnt_max = 16;
-  p->rx_sessions_cnt_max = 16;
+  p->tx_queues_cnt[MTL_PORT_P] = 16;
+  p->tx_queues_cnt[MTL_PORT_R] = 16;
+  p->rx_queues_cnt[MTL_PORT_P] = 16;
+  p->rx_queues_cnt[MTL_PORT_R] = 16;
   /* default start queue set to 1 */
   p->xdp_info[MTL_PORT_P].start_queue = 1;
   p->xdp_info[MTL_PORT_R].start_queue = 1;
@@ -570,8 +558,6 @@ GTEST_API_ int main(int argc, char** argv) {
     if (ctx->para.pmd[i] != MTL_PMD_DPDK_USER) {
       mtl_get_if_ip(ctx->para.port[i], ctx->para.sip_addr[i], ctx->para.netmask[i]);
       ctx->para.flags |= MTL_FLAG_RX_SEPARATE_VIDEO_LCORE;
-      ctx->para.tx_sessions_cnt_max = 8;
-      ctx->para.rx_sessions_cnt_max = 8;
       ctx->para.xdp_info[i].queue_count = 8;
     } else {
       link_flap_wa = true;

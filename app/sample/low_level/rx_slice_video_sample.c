@@ -183,6 +183,7 @@ int main(int argc, char** argv) {
     ops_rx.width = ctx.width;
     ops_rx.height = ctx.height;
     ops_rx.fps = ctx.fps;
+    ops_rx.interlaced = ctx.interlaced;
     ops_rx.fmt = ctx.fmt;
     ops_rx.framebuff_cnt = app[i]->framebuff_cnt;
     ops_rx.payload_type = ctx.payload_type;

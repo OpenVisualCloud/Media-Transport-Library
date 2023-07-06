@@ -26,8 +26,8 @@
 #define NS_PER_US (1000)
 #endif
 
-#ifndef NS_PER_US
-#define NS_PER_US (1000 * 1000)
+#ifndef NS_PER_MS
+#define NS_PER_MS (1000 * 1000)
 #endif
 
 enum st_test_level {

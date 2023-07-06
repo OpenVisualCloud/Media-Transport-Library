@@ -60,6 +60,11 @@ extern "C" {
  * If enabled, lib will pass ST_EVENT_VSYNC by the notify_event on every epoch start.
  */
 #define ST20_TX_FLAG_ENABLE_VSYNC (MTL_BIT32(5))
+/**
+ * Flag bit in flags of struct st20_tx_ops.
+ * If disable the static RL pad interval profiling.
+ */
+#define ST20_TX_FLAG_DISABLE_STATIC_PAD_P (MTL_BIT32(6))
 
 /**
  * Flag bit in flags of struct st22_tx_ops.
@@ -345,6 +350,12 @@ struct st20_rx_frame_meta {
   size_t frame_recv_size;
   /** Private data for user, get from query_ext_frame callback */
   void* opaque;
+  /** timestamp(ST10_TIMESTAMP_FMT_TAI in ns, PTP) value for the first pkt */
+  uint64_t timestamp_first_pkt;
+  /** timestamp(ST10_TIMESTAMP_FMT_TAI in ns, PTP) value for the first pkt */
+  uint64_t timestamp_last_pkt;
+  /** first packet time in ns to the start of current epoch */
+  int64_t fpt;
 };
 
 /**
@@ -881,7 +892,7 @@ struct st20_tx_ops {
   enum st_fps fps;
   /** Session resolution format */
   enum st20_fmt fmt;
-  /** interlace or not false: non-interlaced: true: interlaced*/
+  /** interlace or not, false: non-interlaced: true: interlaced */
   bool interlaced;
   /** 7 bits payload type define in RFC3550 */
   uint8_t payload_type;
@@ -893,13 +904,17 @@ struct st20_tx_ops {
    */
   uint8_t tx_dst_mac[MTL_SESSION_PORT_MAX][MTL_MAC_ADDR_LEN];
   /**
-   * vrx buffer for tx.
-   * Leave to zero if not know detail, lib will assign vrx(narrow) based on resolution and
-   * timing.
-   * Refer to st21 spec for the possible vrx value, lib will follow this VRX if it's not a
-   * zero value, and also fine tune is required since network setup difference.
+   * The start vrx buffer.
+   * Leave to zero if not know detail, lib will assign a start value of vrx(narrow) based
+   * on resolution and timing. Refer to st21 spec for the possible vrx value and also fine
+   * tune is required since network setup difference and RL burst.
    */
-  uint16_t vrx;
+  uint16_t start_vrx;
+  /**
+   * Manually assigned padding pkt interval(pkts level) for RL pacing.
+   * Leave to zero if not know detail, lib will train the interval in the initial routine.
+   */
+  uint16_t pad_interval;
 
   /**
    * the frame buffer count requested for one st20 tx session,
@@ -1149,7 +1164,7 @@ struct st20_rx_ops {
   uint8_t payload_type;
   /** flags, value in ST20_RX_FLAG_* */
   uint32_t flags;
-  /** interlace or not false: non-interlaced: true: interlaced*/
+  /** interlace or not, false: non-interlaced: true: interlaced */
   bool interlaced;
 
   /**
@@ -1358,6 +1373,19 @@ st20_tx_handle st20_tx_create(mtl_handle mt, struct st20_tx_ops* ops);
 int st20_tx_free(st20_tx_handle handle);
 
 /**
+ * Online update the destination info for the tx st2110-20(video) session.
+ *
+ * @param handle
+ *   The handle to the tx st2110-20(video) session.
+ * @param dst
+ *   The pointer to the tx st2110-20(video) destination info.
+ * @return
+ *   - 0: Success, tx st2110-20(video) session destination update succ.
+ *   - <0: Error code of the rx st2110-20(video) session destination update.
+ */
+int st20_tx_update_destination(st20_tx_handle handle, struct st_tx_dest_info* dst);
+
+/**
  * Set the frame virtual address and iova from user for the tx st2110-20(video) session.
  * For ST20_TYPE_FRAME_LEVEL.
  *
@@ -1488,6 +1516,8 @@ size_t st20_frame_size(enum st20_fmt fmt, uint32_t width, uint32_t height);
  *   The st2110-20(video) format.
  * @param fps
  *   The st2110-20(video) fps.
+ * @param interlaced
+ *   If interlaced.
  * @param bps
  *   A pointer to the return bit rate.
  * @return
@@ -1495,7 +1525,7 @@ size_t st20_frame_size(enum st20_fmt fmt, uint32_t width, uint32_t height);
  *   - <0: Error code if fail.
  */
 int st20_get_bandwidth_bps(int width, int height, enum st20_fmt fmt, enum st_fps fps,
-                           uint64_t* bps);
+                           bool interlaced, uint64_t* bps);
 
 /**
  * Inline function returning bandwidth(mega per second) for 1080 p59 yuv422 10bit
@@ -1504,7 +1534,7 @@ int st20_get_bandwidth_bps(int width, int height, enum st20_fmt fmt, enum st_fps
  */
 static inline uint64_t st20_1080p59_yuv422_10bit_bandwidth_mps(void) {
   uint64_t bps;
-  st20_get_bandwidth_bps(1920, 1080, ST20_FMT_YUV_422_10BIT, ST_FPS_P59_94, &bps);
+  st20_get_bandwidth_bps(1920, 1080, ST20_FMT_YUV_422_10BIT, ST_FPS_P59_94, false, &bps);
   return bps / 1000 / 1000;
 }
 
@@ -1521,6 +1551,19 @@ static inline uint64_t st20_1080p59_yuv422_10bit_bandwidth_mps(void) {
  *   - Otherwise, the handle to the tx st2110-22(compressed video) session.
  */
 st22_tx_handle st22_tx_create(mtl_handle mt, struct st22_tx_ops* ops);
+
+/**
+ * Online update the destination info for the tx st2110-22(compressed video) session.
+ *
+ * @param handle
+ *   The handle to the tx st2110-22(compressed video) session.
+ * @param dst
+ *   The pointer to the tx st2110-22(compressed video) destination info.
+ * @return
+ *   - 0: Success, tx st2110-22(compressed video) session destination update succ.
+ *   - <0: Error code of the rx st2110-22(compressed video) session destination update.
+ */
+int st22_tx_update_destination(st22_tx_handle handle, struct st_tx_dest_info* dst);
 
 /**
  * Free the tx st2110-22(compressed video) session.
