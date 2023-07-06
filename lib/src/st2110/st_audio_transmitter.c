@@ -5,6 +5,7 @@
 #include "st_audio_transmitter.h"
 
 #include "../mt_log.h"
+#include "../mt_queue.h"
 #include "st_err.h"
 #include "st_tx_audio_session.h"
 
@@ -21,7 +22,7 @@ static int st_audio_trs_tasklet_start(void* priv) {
 
 static int st_audio_trs_tasklet_stop(void* priv) {
   struct st_audio_transmitter_impl* trs = priv;
-  struct mtl_main_impl* impl = trs->parnet;
+  struct mtl_main_impl* impl = trs->parent;
   struct st_tx_audio_sessions_mgr* mgr = trs->mgr;
   int idx = trs->idx, port;
 
@@ -29,7 +30,7 @@ static int st_audio_trs_tasklet_stop(void* priv) {
 
   for (port = 0; port < mt_num_ports(impl); port++) {
     /* flush all the pkts in the tx ring desc */
-    mt_dev_flush_tx_queue(impl, mgr->queue[port], mt_get_pad(impl, port));
+    mt_txq_flush(mgr->queue[port], mt_get_pad(impl, port));
     mt_ring_dequeue_clean(mgr->ring[port]);
     info("%s(%d), port %d, remaining entries %d\n", __func__, idx, port,
          rte_ring_count(mgr->ring[port]));
@@ -57,11 +58,11 @@ static int st_audio_trs_session_tasklet(struct mtl_main_impl* impl,
   /* check if any inflight pkts in transmitter */
   pkt = trs->inflight[port];
   if (pkt) {
-    n = mt_dev_tx_burst(mgr->queue[port], &pkt, 1);
+    n = mt_txq_burst(mgr->queue[port], &pkt, 1);
     if (n >= 1) {
       trs->inflight[port] = NULL;
     } else {
-      mgr->stat_trs_ret_code[port] = -STI_TSCTRS_BURST_INFILGHT_FAIL;
+      mgr->stat_trs_ret_code[port] = -STI_TSCTRS_BURST_INFLIGHT_FAIL;
       return MT_TASKLET_HAS_PENDING;
     }
     mgr->st30_stat_pkts_burst += n;
@@ -75,12 +76,12 @@ static int st_audio_trs_session_tasklet(struct mtl_main_impl* impl,
       return MT_TASKLET_ALL_DONE; /* all done */
     }
 
-    n = mt_dev_tx_burst(mgr->queue[port], &pkt, 1);
+    n = mt_txq_burst(mgr->queue[port], &pkt, 1);
     mgr->st30_stat_pkts_burst += n;
     if (n < 1) {
       trs->inflight[port] = pkt;
       trs->inflight_cnt[port]++;
-      mgr->stat_trs_ret_code[port] = -STI_TSCTRS_BURST_INFILGHT_FAIL;
+      mgr->stat_trs_ret_code[port] = -STI_TSCTRS_BURST_INFLIGHT_FAIL;
       return MT_TASKLET_HAS_PENDING;
     }
   }
@@ -91,7 +92,7 @@ static int st_audio_trs_session_tasklet(struct mtl_main_impl* impl,
 
 static int st_audio_trs_tasklet_handler(void* priv) {
   struct st_audio_transmitter_impl* trs = priv;
-  struct mtl_main_impl* impl = trs->parnet;
+  struct mtl_main_impl* impl = trs->parent;
   struct st_tx_audio_sessions_mgr* mgr = trs->mgr;
   int port;
   int pending = MT_TASKLET_ALL_DONE;
@@ -109,7 +110,7 @@ int st_audio_transmitter_init(struct mtl_main_impl* impl, struct mt_sch_impl* sc
   int idx = sch->idx;
   struct mt_sch_tasklet_ops ops;
 
-  trs->parnet = impl;
+  trs->parent = impl;
   trs->idx = idx;
   trs->mgr = mgr;
 
@@ -140,7 +141,8 @@ int st_audio_transmitter_uinit(struct st_audio_transmitter_impl* trs) {
     trs->tasklet = NULL;
   }
 
-  info("%s(%d), succ, inflight %d:%d\n", __func__, idx, trs->inflight_cnt[MTL_PORT_P],
-       trs->inflight_cnt[MTL_PORT_R]);
+  for (int i = 0; i < mt_num_ports(trs->parent); i++) {
+    info("%s(%d), succ, inflight %d:%d\n", __func__, idx, i, trs->inflight_cnt[i]);
+  }
   return 0;
 }

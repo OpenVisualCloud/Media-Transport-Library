@@ -8,16 +8,56 @@
 #include "mt_main.h"
 
 #ifdef MTL_HAS_ASAN
-/* additional memleak check for rte_malloc since dpdk asan not support this */
-static int g_mt_rte_malloc_cnt;
+#include <execinfo.h>
 
+#define MAX_BT_SIZE 32
+/* backtrace info */
+struct mt_backtrace_info {
+  void* pointer;
+  size_t size;
+  char** bt_strings;
+  int bt_size;
+  MT_TAILQ_ENTRY(mt_backtrace_info) next;
+};
+
+/* List of backtrace info */
+MT_TAILQ_HEAD(mt_backtrace_info_list, mt_backtrace_info);
+static struct mt_backtrace_info_list g_bt_head;
+static pthread_mutex_t g_bt_mutex;
+
+/* additional memleak check for mempool_create since dpdk asan not support this */
 static int g_mt_mempool_create_cnt;
 
+int mt_asan_init(void) {
+  mt_pthread_mutex_init(&g_bt_mutex, NULL);
+  MT_TAILQ_INIT(&g_bt_head);
+  return 0;
+}
+
 int mt_asan_check(void) {
-  if (g_mt_rte_malloc_cnt != 0) {
-    rte_panic("%s, detect not free memory by rte_malloc, leak cnt %d\n", __func__,
-              g_mt_rte_malloc_cnt);
+  /* check if any not freed */
+  int leak_cnt = 0;
+  struct mt_backtrace_info* bt_info = NULL;
+  while ((bt_info = MT_TAILQ_FIRST(&g_bt_head))) {
+    info("%s, \033[31mleak of %" PRIu64 " byte(s) at %p\033[0m\n", __func__,
+         bt_info->size, bt_info->pointer);
+    if (bt_info->bt_strings) {
+      info("%s, backtrace info:\n", __func__);
+      for (int i = 0; i < bt_info->bt_size; ++i) {
+        info("%s, %s\n", __func__, bt_info->bt_strings[i]);
+      }
+      mt_free(bt_info->bt_strings);
+      bt_info->bt_strings = NULL;
+    }
+    MT_TAILQ_REMOVE(&g_bt_head, bt_info, next);
+    rte_free(bt_info->pointer); /* free the leak from rte_malloc */
+    mt_free(bt_info);
+    leak_cnt++;
   }
+  if (leak_cnt)
+    info("%s, \033[33mfound %d rte_malloc leak(s) in total\033[0m\n", __func__, leak_cnt);
+
+  mt_pthread_mutex_destroy(&g_bt_mutex);
 
   if (g_mt_mempool_create_cnt != 0) {
     rte_panic("%s, detect not free mempool, leak cnt %d\n", __func__,
@@ -29,21 +69,67 @@ int mt_asan_check(void) {
 
 void* mt_rte_malloc_socket(size_t sz, int socket) {
   void* p = rte_malloc_socket(MT_DPDK_LIB_NAME, sz, RTE_CACHE_LINE_SIZE, socket);
-  if (p) g_mt_rte_malloc_cnt++;
+  if (p) {
+    /* insert bt_info to list */
+    struct mt_backtrace_info* bt_info = mt_zmalloc(sizeof(*bt_info));
+    if (bt_info) {
+      bt_info->pointer = p;
+      bt_info->size = sz;
+      void* buffer[MAX_BT_SIZE];
+      bt_info->bt_size = backtrace(buffer, MAX_BT_SIZE);
+      bt_info->bt_strings = backtrace_symbols(buffer, bt_info->bt_size);
+      mt_pthread_mutex_lock(&g_bt_mutex);
+      MT_TAILQ_INSERT_TAIL(&g_bt_head, bt_info, next);
+      mt_pthread_mutex_unlock(&g_bt_mutex);
+    }
+  }
   return p;
 }
 
 void* mt_rte_zmalloc_socket(size_t sz, int socket) {
   void* p = rte_zmalloc_socket(MT_DPDK_LIB_NAME, sz, RTE_CACHE_LINE_SIZE, socket);
-  if (p) g_mt_rte_malloc_cnt++;
+  if (p) {
+    /* insert bt_info to list */
+    struct mt_backtrace_info* bt_info = mt_zmalloc(sizeof(*bt_info));
+    if (bt_info) {
+      bt_info->pointer = p;
+      bt_info->size = sz;
+      void* buffer[MAX_BT_SIZE];
+      bt_info->bt_size = backtrace(buffer, MAX_BT_SIZE);
+      bt_info->bt_strings = backtrace_symbols(buffer, bt_info->bt_size);
+      mt_pthread_mutex_lock(&g_bt_mutex);
+      MT_TAILQ_INSERT_TAIL(&g_bt_head, bt_info, next);
+      mt_pthread_mutex_unlock(&g_bt_mutex);
+    }
+  }
   return p;
 }
 
 void mt_rte_free(void* p) {
+  /* remove bt_info from list */
+  struct mt_backtrace_info *bt_info, *tmp_bt_info;
+  mt_pthread_mutex_lock(&g_bt_mutex);
+  for (bt_info = MT_TAILQ_FIRST(&g_bt_head); bt_info != NULL; bt_info = tmp_bt_info) {
+    tmp_bt_info = MT_TAILQ_NEXT(bt_info, next);
+    if (bt_info->pointer == p) {
+      MT_TAILQ_REMOVE(&g_bt_head, bt_info, next);
+      if (bt_info->bt_strings) mt_free(bt_info->bt_strings);
+      mt_free(bt_info);
+      break;
+    }
+  }
+  mt_pthread_mutex_unlock(&g_bt_mutex);
   rte_free(p);
-  g_mt_rte_malloc_cnt--;
 }
 #endif
+
+bool mt_bitmap_test(uint8_t* bitmap, int idx) {
+  int pos = idx / 8;
+  int off = idx % 8;
+  uint8_t bits = bitmap[pos];
+
+  return (bits & (0x1 << off)) ? true : false;
+}
 
 bool mt_bitmap_test_and_set(uint8_t* bitmap, int idx) {
   int pos = idx / 8;
@@ -180,7 +266,7 @@ void st_video_rtp_dump(enum mtl_port port, int idx, char* tag,
   }
 }
 
-void mt_mbuf_dump(enum mtl_port port, int idx, char* tag, struct rte_mbuf* m) {
+void mt_mbuf_dump_hdr(enum mtl_port port, int idx, char* tag, struct rte_mbuf* m) {
   struct rte_ether_hdr* eth = rte_pktmbuf_mtod(m, struct rte_ether_hdr*);
   size_t hdr_offset = sizeof(struct rte_ether_hdr);
   struct rte_ipv4_hdr* ipv4 = NULL;
@@ -214,7 +300,10 @@ void mt_mbuf_dump(enum mtl_port port, int idx, char* tag, struct rte_mbuf* m) {
   if (udp) {
     info("dst_port %d src_port %d\n", ntohs(udp->dst_port), ntohs(udp->src_port));
   }
+}
 
+void mt_mbuf_dump(enum mtl_port port, int idx, char* tag, struct rte_mbuf* m) {
+  mt_mbuf_dump_hdr(port, idx, tag, m);
   rte_pktmbuf_dump(stdout, m, m->data_len);
 }
 
@@ -368,7 +457,7 @@ int mt_u64_fifo_uinit(struct mt_u64_fifo* fifo) {
 /* todo: add overflow check */
 int mt_u64_fifo_put(struct mt_u64_fifo* fifo, uint64_t item) {
   if (fifo->used >= fifo->size) {
-    err("%s, fail as fifo is full(%d)\n", __func__, fifo->size);
+    dbg("%s, fail as fifo is full(%d)\n", __func__, fifo->size);
     return -EIO;
   }
   fifo->data[fifo->write_idx] = item;
@@ -381,7 +470,7 @@ int mt_u64_fifo_put(struct mt_u64_fifo* fifo, uint64_t item) {
 /* todo: add overflow check */
 int mt_u64_fifo_get(struct mt_u64_fifo* fifo, uint64_t* item) {
   if (fifo->used <= 0) {
-    err("%s, fail as empty\n", __func__);
+    dbg("%s, fail as empty\n", __func__);
     return -EIO;
   }
   *item = fifo->data[fifo->read_idx];
@@ -467,6 +556,29 @@ int mt_ip_addr_check(uint8_t* ip) {
   return -EINVAL;
 }
 
+int st_tx_dest_info_check(struct st_tx_dest_info* dst, int num_ports) {
+  uint8_t* ip;
+  int ret;
+
+  for (int i = 0; i < num_ports; i++) {
+    ip = dst->dip_addr[i];
+    ret = mt_ip_addr_check(ip);
+    if (ret < 0) {
+      err("%s(%d), invalid ip %d.%d.%d.%d\n", __func__, i, ip[0], ip[1], ip[2], ip[3]);
+      return -EINVAL;
+    }
+  }
+
+  if (num_ports > 1) {
+    if (0 == memcmp(dst->dip_addr[0], dst->dip_addr[1], MTL_IP_ADDR_LEN)) {
+      err("%s, same %d.%d.%d.%d for both ip\n", __func__, ip[0], ip[1], ip[2], ip[3]);
+      return -EINVAL;
+    }
+  }
+
+  return 0;
+}
+
 int st_rx_source_info_check(struct st_rx_source_info* src, int num_ports) {
   uint8_t* ip;
   int ret;
@@ -510,6 +622,12 @@ int st_frame_trans_uinit(struct st_frame_trans* frame) {
   }
   frame->iova = 0;
 
+  if (frame->page_table) {
+    mt_rte_free(frame->page_table);
+    frame->page_table = NULL;
+    frame->page_table_len = 0;
+  }
+
   return 0;
 }
 
@@ -523,4 +641,21 @@ int st_vsync_calculate(struct mtl_main_impl* impl, struct st_vsync_info* vsync) 
 
   dbg("%s, to_next_epochs %fms\n", __func__, (float)to_next_epochs / NS_PER_MS);
   return 0;
+}
+
+uint16_t mt_random_port(uint16_t base_port) {
+  uint16_t port = base_port;
+
+  srand(mt_get_monotonic_time());
+  uint8_t r = rand() & 0xFF;
+
+  /* todo: random generation with awareness of other sessions */
+  if (r & 0x80) {
+    r &= 0x7F;
+    port -= r;
+  } else {
+    port += r;
+  }
+
+  return port;
 }

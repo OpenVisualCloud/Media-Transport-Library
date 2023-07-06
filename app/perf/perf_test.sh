@@ -16,7 +16,7 @@ LOG_LEVEL=notice
 perf_func() {
 	local perf_prog=$1
 	echo "Start to run: ${perf_prog}"
-	${TEST_BIN_PATH}/${perf_prog} --log_level ${LOG_LEVEL} --p_port ${ST_PORT} --p_sip ${ST_SIP} --dma_port ${DMA_PORT}
+	"${TEST_BIN_PATH}"/"${perf_prog}" --log_level "${LOG_LEVEL}" --p_port "${ST_PORT}" --p_sip "${ST_SIP}" --dma_port "${DMA_PORT}"
 	echo ""
 }
 
@@ -29,6 +29,8 @@ perf_func PerfRfc4175422be10ToV210
 perf_func PerfV210ToRfc4175422be10
 perf_func PerfRfc4175422be10ToY210
 perf_func PerfY210ToRfc4175422be10
+perf_func PerfRfc4175422be12ToLe
+perf_func PerfRfc4175422be12ToP12Le
 perf_func PerfDma
 
 echo "****** All Perf test OK ******"

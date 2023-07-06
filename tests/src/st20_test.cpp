@@ -48,7 +48,7 @@ static int tx_next_video_frame_timestamp(void* priv, uint16_t* next_frame_idx,
     meta->tfmt = ST10_TIMESTAMP_FMT_MEDIA_CLK;
     meta->timestamp = ctx->fb_send;
   }
-  dbg("%s, next_frame_idx %u timestamp %lu\n", __func__, *next_frame_idx,
+  dbg("%s, next_frame_idx %u timestamp %" PRIu64 "\n", __func__, *next_frame_idx,
       meta->timestamp);
   ctx->fb_idx++;
   if (ctx->fb_idx >= ctx->fb_cnt) ctx->fb_idx = 0;
@@ -64,7 +64,7 @@ static int tx_next_ext_video_frame(void* priv, uint16_t* next_frame_idx,
   if (!ctx->handle) return -EIO; /* not ready */
 
   if (ctx->ext_fb_in_use[ctx->fb_idx]) {
-    err("%s, ext frame %d not avaliable\n", __func__, ctx->fb_idx);
+    err("%s, ext frame %d not available\n", __func__, ctx->fb_idx);
     return -EIO;
   }
 
@@ -92,7 +92,7 @@ static int tx_next_ext_video_field(void* priv, uint16_t* next_frame_idx,
   if (!ctx->handle) return -EIO; /* not ready */
 
   if (ctx->ext_fb_in_use[ctx->fb_idx]) {
-    err("%s, ext frame %d not avaliable\n", __func__, ctx->fb_idx);
+    err("%s, ext frame %d not available\n", __func__, ctx->fb_idx);
     return -EIO;
   }
 
@@ -218,7 +218,8 @@ static int tx_frame_lines_ready(void* priv, uint16_t frame_idx,
   if (ctx->lines_ready[frame_idx] + lines > ctx->height)
     lines = ctx->height - ctx->lines_ready[frame_idx];
   if (lines)
-    mtl_memcpy(fb + offset, ctx->frame_buf[frame_idx] + offset, lines * ctx->stride);
+    mtl_memcpy(fb + offset, ctx->frame_buf[frame_idx] + offset,
+               (size_t)lines * ctx->stride);
 
   ctx->lines_ready[frame_idx] += lines;
   meta->lines_ready = ctx->lines_ready[frame_idx];
@@ -428,7 +429,7 @@ static void rx_handle_rtp(tests_context* s, struct st20_rfc4175_rtp_hdr* hdr,
   uint32_t offset =
       (row_number * s->width + row_offset) / s->st20_pg.coverage * s->st20_pg.size;
   if ((offset + row_length) > s->frame_size) {
-    err("%s(%d: invalid offset %u frame size %ld\n", __func__, idx, offset,
+    err("%s(%d: invalid offset %u frame size %" PRIu64 "\n", __func__, idx, offset,
         s->frame_size);
     return;
   }
@@ -442,8 +443,8 @@ static void rx_handle_rtp(tests_context* s, struct st20_rfc4175_rtp_hdr* hdr,
     uint32_t offset2 =
         (row2_number * s->width + row2_offset) / s->st20_pg.coverage * s->st20_pg.size;
     if ((offset2 + row2_length) > s->frame_size) {
-      err("%s(%d: invalid offset %u frame size %ld for extra hdr\n", __func__, idx,
-          offset2, s->frame_size);
+      err("%s(%d: invalid offset %u frame size %" PRIu64 " for extra hdr\n", __func__,
+          idx, offset2, s->frame_size);
       return;
     }
     mtl_memcpy(frame + offset2, payload + row_length, row2_length);
@@ -517,13 +518,15 @@ static void st20_tx_ops_init(tests_context* st20, struct st20_tx_ops* ops) {
   ops->name = "st20_test";
   ops->priv = st20;
   ops->num_port = ctx->para.num_ports;
-  memcpy(ops->dip_addr[MTL_PORT_P], ctx->mcast_ip_addr[MTL_PORT_P], MTL_IP_ADDR_LEN);
-  strncpy(ops->port[MTL_PORT_P], ctx->para.port[MTL_PORT_P], MTL_PORT_MAX_LEN);
-  ops->udp_port[MTL_PORT_P] = 10000 + st20->idx;
+  memcpy(ops->dip_addr[MTL_SESSION_PORT_P], ctx->mcast_ip_addr[MTL_PORT_P],
+         MTL_IP_ADDR_LEN);
+  strncpy(ops->port[MTL_SESSION_PORT_P], ctx->para.port[MTL_PORT_P], MTL_PORT_MAX_LEN);
+  ops->udp_port[MTL_SESSION_PORT_P] = 10000 + st20->idx;
   if (ops->num_port == 2) {
-    memcpy(ops->dip_addr[MTL_PORT_R], ctx->mcast_ip_addr[MTL_PORT_R], MTL_IP_ADDR_LEN);
-    strncpy(ops->port[MTL_PORT_R], ctx->para.port[MTL_PORT_R], MTL_PORT_MAX_LEN);
-    ops->udp_port[MTL_PORT_R] = 10000 + st20->idx;
+    memcpy(ops->dip_addr[MTL_SESSION_PORT_R], ctx->mcast_ip_addr[MTL_PORT_R],
+           MTL_IP_ADDR_LEN);
+    strncpy(ops->port[MTL_SESSION_PORT_R], ctx->para.port[MTL_PORT_R], MTL_PORT_MAX_LEN);
+    ops->udp_port[MTL_SESSION_PORT_R] = 10000 + st20->idx;
   }
   ops->pacing = ST21_PACING_NARROW;
   ops->type = ST20_TYPE_FRAME_LEVEL;
@@ -546,13 +549,15 @@ static void st20_rx_ops_init(tests_context* st20, struct st20_rx_ops* ops) {
   ops->name = "st20_test";
   ops->priv = st20;
   ops->num_port = ctx->para.num_ports;
-  memcpy(ops->sip_addr[MTL_PORT_P], ctx->mcast_ip_addr[MTL_PORT_P], MTL_IP_ADDR_LEN);
-  strncpy(ops->port[MTL_PORT_P], ctx->para.port[MTL_PORT_P], MTL_PORT_MAX_LEN);
-  ops->udp_port[MTL_PORT_P] = 10000 + st20->idx;
+  memcpy(ops->sip_addr[MTL_SESSION_PORT_P], ctx->mcast_ip_addr[MTL_PORT_P],
+         MTL_IP_ADDR_LEN);
+  strncpy(ops->port[MTL_SESSION_PORT_P], ctx->para.port[MTL_PORT_P], MTL_PORT_MAX_LEN);
+  ops->udp_port[MTL_SESSION_PORT_P] = 10000 + st20->idx;
   if (ops->num_port == 2) {
-    memcpy(ops->sip_addr[MTL_PORT_R], ctx->mcast_ip_addr[MTL_PORT_R], MTL_IP_ADDR_LEN);
-    strncpy(ops->port[MTL_PORT_R], ctx->para.port[MTL_PORT_R], MTL_PORT_MAX_LEN);
-    ops->udp_port[MTL_PORT_R] = 10000 + st20->idx;
+    memcpy(ops->sip_addr[MTL_SESSION_PORT_R], ctx->mcast_ip_addr[MTL_PORT_R],
+           MTL_IP_ADDR_LEN);
+    strncpy(ops->port[MTL_SESSION_PORT_R], ctx->para.port[MTL_PORT_R], MTL_PORT_MAX_LEN);
+    ops->udp_port[MTL_SESSION_PORT_R] = 10000 + st20->idx;
   }
   ops->pacing = ST21_PACING_NARROW;
   ops->type = ST20_TYPE_FRAME_LEVEL;
@@ -593,7 +598,7 @@ static void st20_rx_assert_cnt(int expect_s20_rx_cnt) {
 TEST(St20_tx, create_free_single) { create_free_test(st20_tx, 0, 1, 1); }
 TEST(St20_tx, create_free_multi) { create_free_test(st20_tx, 0, 1, 6); }
 TEST(St20_tx, create_free_mix) { create_free_test(st20_tx, 2, 3, 4); }
-TEST(St20_tx, create_free_max) { create_free_max(st20_tx, 100); }
+TEST(St20_tx, create_free_max) { create_free_max(st20_tx, TEST_CREATE_FREE_MAX); }
 TEST(St20_tx, create_expect_fail) { expect_fail_test(st20_tx); }
 TEST(St20_tx, create_expect_fail_fb_cnt) {
   uint16_t fbcnt = 1;
@@ -631,7 +636,7 @@ TEST(St20_tx, rtp_pkt_size) {
 TEST(St20_rx, create_free_single) { create_free_test(st20_rx, 0, 1, 1); }
 TEST(St20_rx, create_free_multi) { create_free_test(st20_rx, 0, 1, 6); }
 TEST(St20_rx, create_free_mix) { create_free_test(st20_rx, 2, 3, 4); }
-TEST(St20_rx, create_free_max) { create_free_max(st20_rx, 100); }
+TEST(St20_rx, create_free_max) { create_free_max(st20_rx, TEST_CREATE_FREE_MAX); }
 TEST(St20_rx, create_expect_fail) { expect_fail_test(st20_rx); }
 TEST(St20_rx, create_expect_fail_fb_cnt) {
   uint16_t fbcnt = 0;
@@ -712,8 +717,15 @@ static void st20_tx_fps_test(enum st20_type type[], enum st_fps fps[], int width
   std::vector<double> framerate;
   std::vector<std::thread> rtp_thread;
 
-  /* return if level small than gloabl */
+  /* return if level small than global */
   if (level < ctx->level) return;
+
+  if (ext_buf) {
+    if (ctx->iova == MTL_IOVA_MODE_PA) {
+      info("%s, skip ext_buf test as it's PA iova mode\n", __func__);
+      return;
+    }
+  }
 
   test_ctx.resize(sessions);
   handle.resize(sessions);
@@ -840,6 +852,13 @@ static void st20_rx_fps_test(enum st20_type type[], enum st_fps fps[], int width
   /* return if level small than global */
   if (level < ctx->level) return;
 
+  if (ext_buf) {
+    if (ctx->iova == MTL_IOVA_MODE_PA) {
+      info("%s, skip ext_buf test as it's PA iova mode\n", __func__);
+      return;
+    }
+  }
+
   std::vector<tests_context*> test_ctx_tx;
   std::vector<tests_context*> test_ctx_rx;
   std::vector<st20_tx_handle> tx_handle;
@@ -871,9 +890,11 @@ static void st20_rx_fps_test(enum st20_type type[], enum st_fps fps[], int width
     ops_tx.name = "st20_test";
     ops_tx.priv = test_ctx_tx[i];
     ops_tx.num_port = 1;
-    memcpy(ops_tx.dip_addr[MTL_PORT_P], ctx->para.sip_addr[MTL_PORT_R], MTL_IP_ADDR_LEN);
-    strncpy(ops_tx.port[MTL_PORT_P], ctx->para.port[MTL_PORT_P], MTL_PORT_MAX_LEN);
-    ops_tx.udp_port[MTL_PORT_P] = 10000 + i;
+    memcpy(ops_tx.dip_addr[MTL_SESSION_PORT_P], ctx->para.sip_addr[MTL_PORT_R],
+           MTL_IP_ADDR_LEN);
+    strncpy(ops_tx.port[MTL_SESSION_PORT_P], ctx->para.port[MTL_PORT_P],
+            MTL_PORT_MAX_LEN);
+    ops_tx.udp_port[MTL_SESSION_PORT_P] = 10000 + i;
     ops_tx.pacing = ST21_PACING_NARROW;
     ops_tx.type = type[i];
     ops_tx.width = width[i];
@@ -935,9 +956,11 @@ static void st20_rx_fps_test(enum st20_type type[], enum st_fps fps[], int width
     ops_rx.name = "st20_test";
     ops_rx.priv = test_ctx_rx[i];
     ops_rx.num_port = 1;
-    memcpy(ops_rx.sip_addr[MTL_PORT_P], ctx->para.sip_addr[MTL_PORT_P], MTL_IP_ADDR_LEN);
-    strncpy(ops_rx.port[MTL_PORT_P], ctx->para.port[MTL_PORT_R], MTL_PORT_MAX_LEN);
-    ops_rx.udp_port[MTL_PORT_P] = 10000 + i;
+    memcpy(ops_rx.sip_addr[MTL_SESSION_PORT_P], ctx->para.sip_addr[MTL_PORT_P],
+           MTL_IP_ADDR_LEN);
+    strncpy(ops_rx.port[MTL_SESSION_PORT_P], ctx->para.port[MTL_PORT_R],
+            MTL_PORT_MAX_LEN);
+    ops_rx.udp_port[MTL_SESSION_PORT_P] = 10000 + i;
     ops_rx.pacing = ST21_PACING_NARROW;
     ops_rx.type = type[i];
     ops_rx.width = width[i];
@@ -1238,7 +1261,8 @@ TEST(St20_rx, ext_frame_mix_s3) {
                    ST_TEST_LEVEL_MANDATORY, 3, true);
 }
 
-static void st20_rx_update_src_test(enum st20_type type, int tx_sessions) {
+static void st20_rx_update_src_test(enum st20_type type, int tx_sessions,
+                                    enum st_test_level level = ST_TEST_LEVEL_ALL) {
   auto ctx = (struct st_tests_context*)st_test_ctx();
   auto m_handle = ctx->handle;
   int ret;
@@ -1250,6 +1274,10 @@ static void st20_rx_update_src_test(enum st20_type type, int tx_sessions) {
     return;
   }
   ASSERT_TRUE(tx_sessions >= 1);
+  bool tx_update_dst = (tx_sessions == 1);
+
+  /* return if level small than global */
+  if (level < ctx->level) return;
 
   int rx_sessions = 1;
   // 1501/1502 for one frame, max two frames.
@@ -1289,16 +1317,17 @@ static void st20_rx_update_src_test(enum st20_type type, int tx_sessions) {
     ops_tx.priv = test_ctx_tx[i];
     ops_tx.num_port = 1;
     if (2 == i)
-      memcpy(ops_tx.dip_addr[MTL_PORT_P], ctx->mcast_ip_addr[MTL_PORT_R],
+      memcpy(ops_tx.dip_addr[MTL_SESSION_PORT_P], ctx->mcast_ip_addr[MTL_PORT_R],
              MTL_IP_ADDR_LEN);
     else if (1 == i)
-      memcpy(ops_tx.dip_addr[MTL_PORT_P], ctx->mcast_ip_addr[MTL_PORT_P],
+      memcpy(ops_tx.dip_addr[MTL_SESSION_PORT_P], ctx->mcast_ip_addr[MTL_PORT_P],
              MTL_IP_ADDR_LEN);
     else
-      memcpy(ops_tx.dip_addr[MTL_PORT_P], ctx->para.sip_addr[MTL_PORT_R],
+      memcpy(ops_tx.dip_addr[MTL_SESSION_PORT_P], ctx->para.sip_addr[MTL_PORT_R],
              MTL_IP_ADDR_LEN);
-    strncpy(ops_tx.port[MTL_PORT_P], ctx->para.port[MTL_PORT_P], MTL_PORT_MAX_LEN);
-    ops_tx.udp_port[MTL_PORT_P] = 10000 + i;
+    strncpy(ops_tx.port[MTL_SESSION_PORT_P], ctx->para.port[MTL_PORT_P],
+            MTL_PORT_MAX_LEN);
+    ops_tx.udp_port[MTL_SESSION_PORT_P] = 10000 + i;
     ops_tx.pacing = ST21_PACING_NARROW;
     ops_tx.type = type;
     ops_tx.width = 1920;
@@ -1333,9 +1362,11 @@ static void st20_rx_update_src_test(enum st20_type type, int tx_sessions) {
     ops_rx.name = "st20_test";
     ops_rx.priv = test_ctx_rx[i];
     ops_rx.num_port = 1;
-    memcpy(ops_rx.sip_addr[MTL_PORT_P], ctx->para.sip_addr[MTL_PORT_P], MTL_IP_ADDR_LEN);
-    strncpy(ops_rx.port[MTL_PORT_P], ctx->para.port[MTL_PORT_R], MTL_PORT_MAX_LEN);
-    ops_rx.udp_port[MTL_PORT_P] = 10000 + i;
+    memcpy(ops_rx.sip_addr[MTL_SESSION_PORT_P], ctx->para.sip_addr[MTL_PORT_P],
+           MTL_IP_ADDR_LEN);
+    strncpy(ops_rx.port[MTL_SESSION_PORT_P], ctx->para.port[MTL_PORT_R],
+            MTL_PORT_MAX_LEN);
+    ops_rx.udp_port[MTL_SESSION_PORT_P] = 10000 + i;
     ops_rx.pacing = ST21_PACING_NARROW;
     ops_rx.type = type;
     ops_rx.width = 1920;
@@ -1367,9 +1398,21 @@ static void st20_rx_update_src_test(enum st20_type type, int tx_sessions) {
   struct st_rx_source_info src;
   /* switch to mcast port p(tx_session:1) */
   memset(&src, 0, sizeof(src));
-  src.udp_port[MTL_PORT_P] = 10000 + 1;
-  memcpy(src.sip_addr[MTL_PORT_P], ctx->mcast_ip_addr[MTL_PORT_P], MTL_IP_ADDR_LEN);
-  test_ctx_tx[1]->seq_id = 0; /* reset seq id */
+  src.udp_port[MTL_SESSION_PORT_P] = 10000 + 1;
+  memcpy(src.sip_addr[MTL_SESSION_PORT_P], ctx->mcast_ip_addr[MTL_PORT_P],
+         MTL_IP_ADDR_LEN);
+  if (tx_update_dst) {
+    test_ctx_tx[0]->seq_id = 0; /* reset seq id */
+    struct st_tx_dest_info dst;
+    memset(&dst, 0, sizeof(dst));
+    dst.udp_port[MTL_SESSION_PORT_P] = 10000 + 1;
+    memcpy(dst.dip_addr[MTL_SESSION_PORT_P], ctx->mcast_ip_addr[MTL_PORT_P],
+           MTL_IP_ADDR_LEN);
+    ret = st20_tx_update_destination(tx_handle[0], &dst);
+    EXPECT_GE(ret, 0);
+  } else {
+    test_ctx_tx[1]->seq_id = 0; /* reset seq id */
+  }
   for (int i = 0; i < rx_sessions; i++) {
     ret = st20_rx_update_source(rx_handle[i], &src);
     EXPECT_GE(ret, 0);
@@ -1395,8 +1438,9 @@ static void st20_rx_update_src_test(enum st20_type type, int tx_sessions) {
   if (tx_sessions > 2) {
     /* switch to mcast port r(tx_session:2) */
     memset(&src, 0, sizeof(src));
-    src.udp_port[MTL_PORT_P] = 10000 + 2;
-    memcpy(src.sip_addr[MTL_PORT_P], ctx->mcast_ip_addr[MTL_PORT_R], MTL_IP_ADDR_LEN);
+    src.udp_port[MTL_SESSION_PORT_P] = 10000 + 2;
+    memcpy(src.sip_addr[MTL_SESSION_PORT_P], ctx->mcast_ip_addr[MTL_PORT_R],
+           MTL_IP_ADDR_LEN);
     test_ctx_tx[2]->seq_id = rand(); /* random seq id */
     for (int i = 0; i < rx_sessions; i++) {
       ret = st20_rx_update_source(rx_handle[i], &src);
@@ -1423,9 +1467,19 @@ static void st20_rx_update_src_test(enum st20_type type, int tx_sessions) {
 
   /* switch to unicast(tx_session:0) */
   memset(&src, 0, sizeof(src));
-  src.udp_port[MTL_PORT_P] = 10000 + 0;
-  memcpy(src.sip_addr[MTL_PORT_P], ctx->para.sip_addr[MTL_PORT_P], MTL_IP_ADDR_LEN);
+  src.udp_port[MTL_SESSION_PORT_P] = 10000 + 0;
+  memcpy(src.sip_addr[MTL_SESSION_PORT_P], ctx->para.sip_addr[MTL_PORT_P],
+         MTL_IP_ADDR_LEN);
   test_ctx_tx[0]->seq_id = rand(); /* random seq id */
+  if (tx_update_dst) {
+    struct st_tx_dest_info dst;
+    memset(&dst, 0, sizeof(dst));
+    dst.udp_port[MTL_SESSION_PORT_P] = 10000 + 0;
+    memcpy(dst.dip_addr[MTL_SESSION_PORT_P], ctx->para.sip_addr[MTL_PORT_R],
+           MTL_IP_ADDR_LEN);
+    ret = st20_tx_update_destination(tx_handle[0], &dst);
+    EXPECT_GE(ret, 0);
+  }
   for (int i = 0; i < rx_sessions; i++) {
     ret = st20_rx_update_source(rx_handle[i], &src);
     EXPECT_GE(ret, 0);
@@ -1490,6 +1544,8 @@ static void st20_rx_update_src_test(enum st20_type type, int tx_sessions) {
 
 TEST(St20_rx, update_source_frame) { st20_rx_update_src_test(ST20_TYPE_FRAME_LEVEL, 3); }
 TEST(St20_rx, update_source_rtp) { st20_rx_update_src_test(ST20_TYPE_RTP_LEVEL, 2); }
+TEST(St20_tx, update_dest_frame) { st20_rx_update_src_test(ST20_TYPE_FRAME_LEVEL, 1); }
+TEST(St20_tx, update_dest_rtp) { st20_rx_update_src_test(ST20_TYPE_RTP_LEVEL, 1); }
 
 static int st20_digest_rx_frame_ready(void* priv, void* frame,
                                       struct st20_rx_frame_meta* meta) {
@@ -1528,6 +1584,16 @@ static int st20_digest_rx_frame_ready(void* priv, void* frame,
     st20_rx_put_framebuff((st20_rx_handle)ctx->handle, frame);
     return 0;
   }
+  if (meta->fpt > (ctx->frame_time / 10)) {
+    ctx->meta_timing_fail_cnt++;
+    dbg("%s(%d), fpt %" PRId64 ", frame time %fms\n", __func__, ctx->idx, meta->fpt,
+        ctx->frame_time / NS_PER_MS);
+  }
+  double rx_time = (double)meta->timestamp_last_pkt - meta->timestamp_first_pkt;
+  if (rx_time > ctx->frame_time) {
+    ctx->meta_timing_fail_cnt++;
+    dbg("%s(%d), rx_time %fms\n", __func__, ctx->idx, rx_time / NS_PER_MS);
+  }
 
   if (ctx->user_timestamp && !ctx->user_pacing) {
     dbg("%s, timestamp %u %u\n", __func__, (uint32_t)meta->timestamp, ctx->pre_timestamp);
@@ -1555,7 +1621,7 @@ static int st20_digest_rx_frame_ready(void* priv, void* frame,
 static void dump_slice_meta(struct st20_rx_slice_meta* meta) {
   info("%s, width %u height %u fps %d fmd %d field %d\n", __func__, meta->width,
        meta->height, meta->fps, meta->fmt, meta->second_field);
-  info("%s, frame total size %ld recv size %ld recv lines %u\n", __func__,
+  info("%s, frame total size %" PRIu64 " recv size %" PRIu64 " recv lines %u\n", __func__,
        meta->frame_total_size, meta->frame_recv_size, meta->frame_recv_lines);
 }
 
@@ -1585,7 +1651,8 @@ static int st20_digest_rx_slice_ready(void* priv, void* frame,
       meta->frame_recv_lines * meta->width * st20_pg.size / st20_pg.coverage;
   if (meta->frame_recv_size < frame_ready_size) {
     ctx->incomplete_slice_cnt++;
-    dbg("%s, recv_size err %ld %ld\n", __func__, meta->frame_recv_size, frame_ready_size);
+    dbg("%s, recv_size err %" PRIu64 " %" PRIu64 "\n", __func__, meta->frame_recv_size,
+        frame_ready_size);
   }
   if (meta->frame_recv_lines < ctx->slice_recv_lines) {
     ctx->incomplete_slice_cnt++;
@@ -1596,7 +1663,7 @@ static int st20_digest_rx_slice_ready(void* priv, void* frame,
   } else {
     if (ctx->slice_recv_timestamp != meta->timestamp) {
       ctx->incomplete_slice_cnt++;
-      dbg("%s, time stamp err %ld %ld\n", __func__, meta->timestamp,
+      dbg("%s, time stamp err %" PRIu64 " %" PRIu64 "\n", __func__, meta->timestamp,
           ctx->slice_recv_timestamp);
     }
   }
@@ -1781,12 +1848,14 @@ static void st20_rx_digest_test(enum st20_type tx_type[], enum st20_type rx_type
     ops_tx.name = "st20_digest_test";
     ops_tx.priv = test_ctx_tx[i];
     ops_tx.num_port = 1;
-    memcpy(ops_tx.dip_addr[MTL_PORT_P], ctx->para.sip_addr[MTL_PORT_R], MTL_IP_ADDR_LEN);
-    strncpy(ops_tx.port[MTL_PORT_P], ctx->para.port[MTL_PORT_P], MTL_PORT_MAX_LEN);
+    memcpy(ops_tx.dip_addr[MTL_SESSION_PORT_P], ctx->para.sip_addr[MTL_PORT_R],
+           MTL_IP_ADDR_LEN);
+    strncpy(ops_tx.port[MTL_SESSION_PORT_P], ctx->para.port[MTL_PORT_P],
+            MTL_PORT_MAX_LEN);
     if (hdr_split)
-      ops_tx.udp_port[MTL_PORT_P] = 6970 + i;
+      ops_tx.udp_port[MTL_SESSION_PORT_P] = 6970 + i;
     else
-      ops_tx.udp_port[MTL_PORT_P] = 10000 + i;
+      ops_tx.udp_port[MTL_SESSION_PORT_P] = 10000 + i;
     ops_tx.pacing = ST21_PACING_NARROW;
     ops_tx.packing = packing[i];
     ops_tx.type = tx_type[i];
@@ -1815,7 +1884,7 @@ static void st20_rx_digest_test(enum st20_type tx_type[], enum st20_type rx_type
     tx_handle[i] = st20_tx_create(m_handle, &ops_tx);
     ASSERT_TRUE(tx_handle[i] != NULL);
 
-    /* sha caculate */
+    /* sha calculate */
     struct st20_pgroup st20_pg;
     st20_get_pgroup(ops_tx.fmt, &st20_pg);
     size_t frame_size = ops_tx.width * ops_tx.height * st20_pg.size / st20_pg.coverage;
@@ -1863,12 +1932,14 @@ static void st20_rx_digest_test(enum st20_type tx_type[], enum st20_type rx_type
     ops_rx.name = "st20_digest_test";
     ops_rx.priv = test_ctx_rx[i];
     ops_rx.num_port = 1;
-    memcpy(ops_rx.sip_addr[MTL_PORT_P], ctx->para.sip_addr[MTL_PORT_P], MTL_IP_ADDR_LEN);
-    strncpy(ops_rx.port[MTL_PORT_P], ctx->para.port[MTL_PORT_R], MTL_PORT_MAX_LEN);
+    memcpy(ops_rx.sip_addr[MTL_SESSION_PORT_P], ctx->para.sip_addr[MTL_PORT_P],
+           MTL_IP_ADDR_LEN);
+    strncpy(ops_rx.port[MTL_SESSION_PORT_P], ctx->para.port[MTL_PORT_R],
+            MTL_PORT_MAX_LEN);
     if (hdr_split)
-      ops_rx.udp_port[MTL_PORT_P] = 6970 + i;
+      ops_rx.udp_port[MTL_SESSION_PORT_P] = 6970 + i;
     else
-      ops_rx.udp_port[MTL_PORT_P] = 10000 + i;
+      ops_rx.udp_port[MTL_SESSION_PORT_P] = 10000 + i;
     ops_rx.pacing = ST21_PACING_NARROW;
     ops_rx.type = rx_type[i];
     ops_rx.width = width[i];
@@ -1905,6 +1976,8 @@ static void st20_rx_digest_test(enum st20_type tx_type[], enum st20_type rx_type
 
     rx_handle[i] = st20_rx_create(m_handle, &ops_rx);
 
+    test_ctx_rx[i]->frame_time = (double)NS_PER_S / st_frame_rate(ops_rx.fps);
+    dbg("%s(%d), frame_time %f\n", __func__, i, test_ctx_rx[i]->frame_time);
     test_ctx_rx[i]->frame_size = test_ctx_tx[i]->frame_size;
     test_ctx_rx[i]->fb_size = test_ctx_tx[i]->frame_size;
     test_ctx_rx[i]->width = ops_rx.width;
@@ -1974,12 +2047,13 @@ static void st20_rx_digest_test(enum st20_type tx_type[], enum st20_type rx_type
   ret = mtl_stop(m_handle);
   EXPECT_GE(ret, 0);
   for (int i = 0; i < sessions; i++) {
-    EXPECT_GE(test_ctx_rx[i]->fb_rec, 0);
+    EXPECT_GT(test_ctx_rx[i]->fb_rec, 0);
     EXPECT_GT(test_ctx_rx[i]->check_sha_frame_cnt, 0);
     if (rx_type[i] == ST20_TYPE_SLICE_LEVEL)
       EXPECT_LT(test_ctx_rx[i]->incomplete_frame_cnt, 2 * 5);
     else
-      EXPECT_LT(test_ctx_rx[i]->incomplete_frame_cnt, 2);
+      EXPECT_LT(test_ctx_rx[i]->incomplete_frame_cnt, 4);
+    EXPECT_LT(test_ctx_rx[i]->meta_timing_fail_cnt, 4);
     EXPECT_EQ(test_ctx_rx[i]->incomplete_slice_cnt, 0);
     if (rx_type[i] == ST20_TYPE_FRAME_LEVEL)
       EXPECT_EQ(test_ctx_rx[i]->fail_cnt, 0);
@@ -2404,7 +2478,7 @@ TEST(St20_rx, digest_frame_4096_2160_fps59_94_12bit_yuv444_s1) {
   int height[1] = {2160};
   bool interlaced[1] = {false};
   enum st20_fmt fmt[1] = {ST20_FMT_YUV_444_12BIT};
-  st20_rx_digest_test(type, rx_type, packing, fps, width, height, interlaced, fmt, true,
+  st20_rx_digest_test(type, rx_type, packing, fps, width, height, interlaced, fmt, false,
                       ST_TEST_LEVEL_MANDATORY);
 }
 
@@ -2631,9 +2705,11 @@ static void st20_rx_meta_test(enum st_fps fps[], int width[], int height[],
     ops_tx.name = "st20_meta_test";
     ops_tx.priv = test_ctx_tx[i];
     ops_tx.num_port = 1;
-    memcpy(ops_tx.dip_addr[MTL_PORT_P], ctx->para.sip_addr[MTL_PORT_R], MTL_IP_ADDR_LEN);
-    strncpy(ops_tx.port[MTL_PORT_P], ctx->para.port[MTL_PORT_P], MTL_PORT_MAX_LEN);
-    ops_tx.udp_port[MTL_PORT_P] = 10000 + i;
+    memcpy(ops_tx.dip_addr[MTL_SESSION_PORT_P], ctx->para.sip_addr[MTL_PORT_R],
+           MTL_IP_ADDR_LEN);
+    strncpy(ops_tx.port[MTL_SESSION_PORT_P], ctx->para.port[MTL_PORT_P],
+            MTL_PORT_MAX_LEN);
+    ops_tx.udp_port[MTL_SESSION_PORT_P] = 10000 + i;
     ops_tx.pacing = ST21_PACING_NARROW;
     ops_tx.packing = ST20_PACKING_BPM;
     ops_tx.type = ST20_TYPE_RTP_LEVEL;
@@ -2664,9 +2740,11 @@ static void st20_rx_meta_test(enum st_fps fps[], int width[], int height[],
     ops_rx.name = "st20_meta_test";
     ops_rx.priv = test_ctx_rx[i];
     ops_rx.num_port = 1;
-    memcpy(ops_rx.sip_addr[MTL_PORT_P], ctx->para.sip_addr[MTL_PORT_P], MTL_IP_ADDR_LEN);
-    strncpy(ops_rx.port[MTL_PORT_P], ctx->para.port[MTL_PORT_R], MTL_PORT_MAX_LEN);
-    ops_rx.udp_port[MTL_PORT_P] = 10000 + i;
+    memcpy(ops_rx.sip_addr[MTL_SESSION_PORT_P], ctx->para.sip_addr[MTL_PORT_P],
+           MTL_IP_ADDR_LEN);
+    strncpy(ops_rx.port[MTL_SESSION_PORT_P], ctx->para.port[MTL_PORT_R],
+            MTL_PORT_MAX_LEN);
+    ops_rx.udp_port[MTL_SESSION_PORT_P] = 10000 + i;
     ops_rx.pacing = ST21_PACING_NARROW;
     ops_rx.type = ST20_TYPE_FRAME_LEVEL;
     ops_rx.width = width[i];
@@ -2721,7 +2799,7 @@ static void st20_rx_meta_test(enum st_fps fps[], int width[], int height[],
   ret = mtl_stop(m_handle);
   EXPECT_GE(ret, 0);
   for (int i = 0; i < sessions; i++) {
-    EXPECT_GE(test_ctx_rx[i]->fb_rec, 0);
+    EXPECT_GT(test_ctx_rx[i]->fb_rec, 0);
     float expect_incomplete_frame_cnt = test_ctx_rx[i]->fb_rec / 2;
     EXPECT_NEAR(test_ctx_rx[i]->incomplete_frame_cnt, expect_incomplete_frame_cnt,
                 expect_incomplete_frame_cnt * 0.1);
@@ -2800,10 +2878,11 @@ static void st20_rx_after_start_test(enum st20_type type[], enum st_fps fps[],
       ops_tx.name = "st20_test";
       ops_tx.priv = test_ctx_tx[i];
       ops_tx.num_port = 1;
-      memcpy(ops_tx.dip_addr[MTL_PORT_P], ctx->para.sip_addr[MTL_PORT_R],
+      memcpy(ops_tx.dip_addr[MTL_SESSION_PORT_P], ctx->para.sip_addr[MTL_PORT_R],
              MTL_IP_ADDR_LEN);
-      strncpy(ops_tx.port[MTL_PORT_P], ctx->para.port[MTL_PORT_P], MTL_PORT_MAX_LEN);
-      ops_tx.udp_port[MTL_PORT_P] = 10000 + i;
+      strncpy(ops_tx.port[MTL_SESSION_PORT_P], ctx->para.port[MTL_PORT_P],
+              MTL_PORT_MAX_LEN);
+      ops_tx.udp_port[MTL_SESSION_PORT_P] = 10000 + i;
       ops_tx.pacing = ST21_PACING_NARROW;
       ops_tx.type = type[i];
       ops_tx.width = width[i];
@@ -2837,10 +2916,11 @@ static void st20_rx_after_start_test(enum st20_type type[], enum st_fps fps[],
       ops_rx.name = "st20_test";
       ops_rx.priv = test_ctx_rx[i];
       ops_rx.num_port = 1;
-      memcpy(ops_rx.sip_addr[MTL_PORT_P], ctx->para.sip_addr[MTL_PORT_P],
+      memcpy(ops_rx.sip_addr[MTL_SESSION_PORT_P], ctx->para.sip_addr[MTL_PORT_P],
              MTL_IP_ADDR_LEN);
-      strncpy(ops_rx.port[MTL_PORT_P], ctx->para.port[MTL_PORT_R], MTL_PORT_MAX_LEN);
-      ops_rx.udp_port[MTL_PORT_P] = 10000 + i;
+      strncpy(ops_rx.port[MTL_SESSION_PORT_P], ctx->para.port[MTL_PORT_R],
+              MTL_PORT_MAX_LEN);
+      ops_rx.udp_port[MTL_SESSION_PORT_P] = 10000 + i;
       ops_rx.pacing = ST21_PACING_NARROW;
       ops_rx.type = type[i];
       ops_rx.width = width[i];
@@ -3010,9 +3090,11 @@ static void st20_rx_uframe_test(enum st20_type rx_type[], enum st20_packing pack
     ops_tx.name = "st20_uframe_test";
     ops_tx.priv = test_ctx_tx[i];
     ops_tx.num_port = 1;
-    memcpy(ops_tx.dip_addr[MTL_PORT_P], ctx->para.sip_addr[MTL_PORT_R], MTL_IP_ADDR_LEN);
-    strncpy(ops_tx.port[MTL_PORT_P], ctx->para.port[MTL_PORT_P], MTL_PORT_MAX_LEN);
-    ops_tx.udp_port[MTL_PORT_P] = 10000 + i;
+    memcpy(ops_tx.dip_addr[MTL_SESSION_PORT_P], ctx->para.sip_addr[MTL_PORT_R],
+           MTL_IP_ADDR_LEN);
+    strncpy(ops_tx.port[MTL_SESSION_PORT_P], ctx->para.port[MTL_PORT_P],
+            MTL_PORT_MAX_LEN);
+    ops_tx.udp_port[MTL_SESSION_PORT_P] = 10000 + i;
     ops_tx.pacing = ST21_PACING_NARROW;
     ops_tx.packing = packing[i];
     ops_tx.type = ST20_TYPE_FRAME_LEVEL;
@@ -3028,14 +3110,14 @@ static void st20_rx_uframe_test(enum st20_type rx_type[], enum st20_packing pack
     tx_handle[i] = st20_tx_create(m_handle, &ops_tx);
     ASSERT_TRUE(tx_handle[i] != NULL);
 
-    /* sha caculate */
+    /* sha calculate */
     struct st20_pgroup st20_pg;
     st20_get_pgroup(ops_tx.fmt, &st20_pg);
     size_t frame_size = ops_tx.width * ops_tx.height * st20_pg.size / st20_pg.coverage;
     if (interlaced[i]) frame_size = frame_size >> 1;
     test_ctx_tx[i]->frame_size = frame_size;
     /* uframe fmt: yuv422 10bit planar */
-    size_t uframe_size = ops_tx.width * ops_tx.height * 2 * sizeof(uint16_t);
+    size_t uframe_size = (size_t)ops_tx.width * ops_tx.height * 2 * sizeof(uint16_t);
     if (interlaced[i]) uframe_size = uframe_size >> 1;
     test_ctx_tx[i]->uframe_size = uframe_size;
     test_ctx_tx[i]->slice = false;
@@ -3079,9 +3161,11 @@ static void st20_rx_uframe_test(enum st20_type rx_type[], enum st20_packing pack
     ops_rx.name = "st20_uframe_test";
     ops_rx.priv = test_ctx_rx[i];
     ops_rx.num_port = 1;
-    memcpy(ops_rx.sip_addr[MTL_PORT_P], ctx->para.sip_addr[MTL_PORT_P], MTL_IP_ADDR_LEN);
-    strncpy(ops_rx.port[MTL_PORT_P], ctx->para.port[MTL_PORT_R], MTL_PORT_MAX_LEN);
-    ops_rx.udp_port[MTL_PORT_P] = 10000 + i;
+    memcpy(ops_rx.sip_addr[MTL_SESSION_PORT_P], ctx->para.sip_addr[MTL_PORT_P],
+           MTL_IP_ADDR_LEN);
+    strncpy(ops_rx.port[MTL_SESSION_PORT_P], ctx->para.port[MTL_PORT_R],
+            MTL_PORT_MAX_LEN);
+    ops_rx.udp_port[MTL_SESSION_PORT_P] = 10000 + i;
     ops_rx.pacing = ST21_PACING_NARROW;
     ops_rx.type = rx_type[i];
     ops_rx.width = width[i];
@@ -3098,7 +3182,7 @@ static void st20_rx_uframe_test(enum st20_type rx_type[], enum st20_packing pack
     ops_rx.notify_rtp_ready = rx_rtp_ready;
     ops_rx.rtp_ring_size = 1024 * 2;
     /* uframe fmt: yuv422 10bit planar */
-    ops_rx.uframe_size = ops_rx.width * ops_rx.height * 2 * sizeof(uint16_t);
+    ops_rx.uframe_size = (size_t)ops_rx.width * ops_rx.height * 2 * sizeof(uint16_t);
     ops_rx.uframe_pg_callback = st20_rx_uframe_pg_callback;
     ops_rx.flags = ST20_RX_FLAG_DMA_OFFLOAD;
 
@@ -3157,7 +3241,7 @@ static void st20_rx_uframe_test(enum st20_type rx_type[], enum st20_packing pack
   ret = mtl_stop(m_handle);
   EXPECT_GE(ret, 0);
   for (int i = 0; i < sessions; i++) {
-    EXPECT_GE(test_ctx_rx[i]->fb_rec, 0);
+    EXPECT_GT(test_ctx_rx[i]->fb_rec, 0);
     EXPECT_GT(test_ctx_rx[i]->check_sha_frame_cnt, 0);
     EXPECT_LT(test_ctx_rx[i]->incomplete_frame_cnt, 2);
     EXPECT_EQ(test_ctx_rx[i]->incomplete_slice_cnt, 0);
@@ -3220,7 +3304,7 @@ static int st20_rx_detected(void* priv, const struct st20_detect_meta* meta,
   if (s_meta) reply->slice_lines = ctx->lines_per_slice;
   if (ctx->uframe_size != 0) {
     /* uframe fmt: yuv422 10bit planar */
-    ctx->uframe_size = meta->width * meta->height * 2 * sizeof(uint16_t);
+    ctx->uframe_size = (size_t)meta->width * meta->height * 2 * sizeof(uint16_t);
     reply->uframe_size = ctx->uframe_size;
     if (s_meta) s_meta->uframe_total_size = ctx->uframe_size;
   }
@@ -3283,9 +3367,11 @@ static void st20_rx_detect_test(enum st20_type tx_type[], enum st20_type rx_type
     ops_tx.name = "st20_detect_test";
     ops_tx.priv = test_ctx_tx[i];
     ops_tx.num_port = 1;
-    memcpy(ops_tx.dip_addr[MTL_PORT_P], ctx->para.sip_addr[MTL_PORT_R], MTL_IP_ADDR_LEN);
-    strncpy(ops_tx.port[MTL_PORT_P], ctx->para.port[MTL_PORT_P], MTL_PORT_MAX_LEN);
-    ops_tx.udp_port[MTL_PORT_P] = 10000 + i;
+    memcpy(ops_tx.dip_addr[MTL_SESSION_PORT_P], ctx->para.sip_addr[MTL_PORT_R],
+           MTL_IP_ADDR_LEN);
+    strncpy(ops_tx.port[MTL_SESSION_PORT_P], ctx->para.port[MTL_PORT_P],
+            MTL_PORT_MAX_LEN);
+    ops_tx.udp_port[MTL_SESSION_PORT_P] = 10000 + i;
     ops_tx.pacing = ST21_PACING_NARROW;
     ops_tx.packing = packing[i];
     ops_tx.type = tx_type[i];
@@ -3302,7 +3388,7 @@ static void st20_rx_detect_test(enum st20_type tx_type[], enum st20_type rx_type
     tx_handle[i] = st20_tx_create(m_handle, &ops_tx);
     ASSERT_TRUE(tx_handle[i] != NULL);
 
-    /* sha caculate */
+    /* sha calculate */
     struct st20_pgroup st20_pg;
     st20_get_pgroup(ops_tx.fmt, &st20_pg);
     size_t frame_size = ops_tx.width * ops_tx.height * st20_pg.size / st20_pg.coverage;
@@ -3313,7 +3399,7 @@ static void st20_rx_detect_test(enum st20_type tx_type[], enum st20_type rx_type
     uint8_t* fb;
     if (user_frame) {
       /* uframe fmt: yuv422 10bit planar */
-      size_t uframe_size = ops_tx.width * ops_tx.height * 2 * sizeof(uint16_t);
+      size_t uframe_size = (size_t)ops_tx.width * ops_tx.height * 2 * sizeof(uint16_t);
       if (interlaced[i]) uframe_size = uframe_size >> 1;
       test_ctx_tx[i]->uframe_size = uframe_size;
       test_ctx_tx[i]->slice = false;
@@ -3366,9 +3452,11 @@ static void st20_rx_detect_test(enum st20_type tx_type[], enum st20_type rx_type
     ops_rx.name = "st20_detect_test";
     ops_rx.priv = test_ctx_rx[i];
     ops_rx.num_port = 1;
-    memcpy(ops_rx.sip_addr[MTL_PORT_P], ctx->para.sip_addr[MTL_PORT_P], MTL_IP_ADDR_LEN);
-    strncpy(ops_rx.port[MTL_PORT_P], ctx->para.port[MTL_PORT_R], MTL_PORT_MAX_LEN);
-    ops_rx.udp_port[MTL_PORT_P] = 10000 + i;
+    memcpy(ops_rx.sip_addr[MTL_SESSION_PORT_P], ctx->para.sip_addr[MTL_PORT_P],
+           MTL_IP_ADDR_LEN);
+    strncpy(ops_rx.port[MTL_SESSION_PORT_P], ctx->para.port[MTL_PORT_R],
+            MTL_PORT_MAX_LEN);
+    ops_rx.udp_port[MTL_SESSION_PORT_P] = 10000 + i;
     ops_rx.pacing = ST21_PACING_NARROW;
     ops_rx.type = rx_type[i];
     ops_rx.width = 1920;
@@ -3447,7 +3535,7 @@ static void st20_rx_detect_test(enum st20_type tx_type[], enum st20_type rx_type
   ret = mtl_stop(m_handle);
   EXPECT_GE(ret, 0);
   for (int i = 0; i < sessions; i++) {
-    EXPECT_GE(test_ctx_rx[i]->fb_rec, 0);
+    EXPECT_GT(test_ctx_rx[i]->fb_rec, 0);
     EXPECT_GT(test_ctx_rx[i]->check_sha_frame_cnt, 0);
     if ((rx_type[i] == ST20_TYPE_SLICE_LEVEL) && (height[i] >= (1080 * 4)))
       EXPECT_LT(test_ctx_rx[i]->incomplete_frame_cnt, 2 * 5);
@@ -3578,9 +3666,11 @@ static void st20_rx_dump_test(enum st20_type type[], enum st_fps fps[], int widt
     ops_tx.name = "st20_dump_test";
     ops_tx.priv = test_ctx_tx[i];
     ops_tx.num_port = 1;
-    memcpy(ops_tx.dip_addr[MTL_PORT_P], ctx->para.sip_addr[MTL_PORT_R], MTL_IP_ADDR_LEN);
-    strncpy(ops_tx.port[MTL_PORT_P], ctx->para.port[MTL_PORT_P], MTL_PORT_MAX_LEN);
-    ops_tx.udp_port[MTL_PORT_P] = 10000 + i;
+    memcpy(ops_tx.dip_addr[MTL_SESSION_PORT_P], ctx->para.sip_addr[MTL_PORT_R],
+           MTL_IP_ADDR_LEN);
+    strncpy(ops_tx.port[MTL_SESSION_PORT_P], ctx->para.port[MTL_PORT_P],
+            MTL_PORT_MAX_LEN);
+    ops_tx.udp_port[MTL_SESSION_PORT_P] = 10000 + i;
     ops_tx.pacing = ST21_PACING_NARROW;
     ops_tx.type = type[i];
     ops_tx.width = width[i];
@@ -3615,9 +3705,11 @@ static void st20_rx_dump_test(enum st20_type type[], enum st_fps fps[], int widt
     ops_rx.name = "st20_dump_test";
     ops_rx.priv = test_ctx_rx[i];
     ops_rx.num_port = 1;
-    memcpy(ops_rx.sip_addr[MTL_PORT_P], ctx->para.sip_addr[MTL_PORT_P], MTL_IP_ADDR_LEN);
-    strncpy(ops_rx.port[MTL_PORT_P], ctx->para.port[MTL_PORT_R], MTL_PORT_MAX_LEN);
-    ops_rx.udp_port[MTL_PORT_P] = 10000 + i;
+    memcpy(ops_rx.sip_addr[MTL_SESSION_PORT_P], ctx->para.sip_addr[MTL_PORT_P],
+           MTL_IP_ADDR_LEN);
+    strncpy(ops_rx.port[MTL_SESSION_PORT_P], ctx->para.port[MTL_PORT_R],
+            MTL_PORT_MAX_LEN);
+    ops_rx.udp_port[MTL_SESSION_PORT_P] = 10000 + i;
     ops_rx.pacing = ST21_PACING_NARROW;
     ops_rx.type = type[i];
     ops_rx.width = width[i];
@@ -3739,6 +3831,11 @@ static void st20_tx_ext_frame_rx_digest_test(enum st20_packing packing[],
   /* return if level small than global */
   if (level < ctx->level) return;
 
+  if (ctx->iova == MTL_IOVA_MODE_PA) {
+    info("%s, skip as it's PA iova mode\n", __func__);
+    return;
+  }
+
   if (ctx->para.num_ports != 2) {
     info("%s, dual port should be enabled for tx test, one for tx and one for rx\n",
          __func__);
@@ -3781,9 +3878,11 @@ static void st20_tx_ext_frame_rx_digest_test(enum st20_packing packing[],
     ops_tx.name = "st20_ext_frame_digest_test";
     ops_tx.priv = test_ctx_tx[i];
     ops_tx.num_port = 1;
-    memcpy(ops_tx.dip_addr[MTL_PORT_P], ctx->para.sip_addr[MTL_PORT_R], MTL_IP_ADDR_LEN);
-    strncpy(ops_tx.port[MTL_PORT_P], ctx->para.port[MTL_PORT_P], MTL_PORT_MAX_LEN);
-    ops_tx.udp_port[MTL_PORT_P] = 10000 + i;
+    memcpy(ops_tx.dip_addr[MTL_SESSION_PORT_P], ctx->para.sip_addr[MTL_PORT_R],
+           MTL_IP_ADDR_LEN);
+    strncpy(ops_tx.port[MTL_SESSION_PORT_P], ctx->para.port[MTL_PORT_P],
+            MTL_PORT_MAX_LEN);
+    ops_tx.udp_port[MTL_SESSION_PORT_P] = 10000 + i;
     ops_tx.pacing = ST21_PACING_NARROW;
     ops_tx.packing = packing[i];
     ops_tx.type = ST20_TYPE_FRAME_LEVEL;
@@ -3802,7 +3901,7 @@ static void st20_tx_ext_frame_rx_digest_test(enum st20_packing packing[],
     tx_handle[i] = st20_tx_create(m_handle, &ops_tx);
     ASSERT_TRUE(tx_handle[i] != NULL);
 
-    /* sha caculate */
+    /* sha calculate */
     struct st20_pgroup st20_pg;
     st20_get_pgroup(ops_tx.fmt, &st20_pg);
     size_t frame_size = ops_tx.width * ops_tx.height * st20_pg.size / st20_pg.coverage;
@@ -3887,9 +3986,11 @@ static void st20_tx_ext_frame_rx_digest_test(enum st20_packing packing[],
     ops_rx.name = "st20_ext_frame_digest_test";
     ops_rx.priv = test_ctx_rx[i];
     ops_rx.num_port = 1;
-    memcpy(ops_rx.sip_addr[MTL_PORT_P], ctx->para.sip_addr[MTL_PORT_P], MTL_IP_ADDR_LEN);
-    strncpy(ops_rx.port[MTL_PORT_P], ctx->para.port[MTL_PORT_R], MTL_PORT_MAX_LEN);
-    ops_rx.udp_port[MTL_PORT_P] = 10000 + i;
+    memcpy(ops_rx.sip_addr[MTL_SESSION_PORT_P], ctx->para.sip_addr[MTL_PORT_P],
+           MTL_IP_ADDR_LEN);
+    strncpy(ops_rx.port[MTL_SESSION_PORT_P], ctx->para.port[MTL_PORT_R],
+            MTL_PORT_MAX_LEN);
+    ops_rx.udp_port[MTL_SESSION_PORT_P] = 10000 + i;
     ops_rx.pacing = ST21_PACING_NARROW;
     ops_rx.type = ST20_TYPE_FRAME_LEVEL;
     ops_rx.width = width[i];
@@ -3959,7 +4060,7 @@ static void st20_tx_ext_frame_rx_digest_test(enum st20_packing packing[],
   ret = mtl_stop(m_handle);
   EXPECT_GE(ret, 0);
   for (int i = 0; i < sessions; i++) {
-    EXPECT_GE(test_ctx_rx[i]->fb_rec, 0);
+    EXPECT_GT(test_ctx_rx[i]->fb_rec, 0);
     EXPECT_GT(test_ctx_rx[i]->check_sha_frame_cnt, 0);
 
     EXPECT_LE(test_ctx_rx[i]->incomplete_frame_cnt, 4);
@@ -4113,9 +4214,11 @@ static void st20_tx_user_pacing_test(int width[], int height[], enum st20_fmt fm
     ops_tx.name = "st20_timestamp_test";
     ops_tx.priv = test_ctx_tx[i];
     ops_tx.num_port = 1;
-    memcpy(ops_tx.dip_addr[MTL_PORT_P], ctx->para.sip_addr[MTL_PORT_R], MTL_IP_ADDR_LEN);
-    strncpy(ops_tx.port[MTL_PORT_P], ctx->para.port[MTL_PORT_P], MTL_PORT_MAX_LEN);
-    ops_tx.udp_port[MTL_PORT_P] = 10000 + i;
+    memcpy(ops_tx.dip_addr[MTL_SESSION_PORT_P], ctx->para.sip_addr[MTL_PORT_R],
+           MTL_IP_ADDR_LEN);
+    strncpy(ops_tx.port[MTL_SESSION_PORT_P], ctx->para.port[MTL_PORT_P],
+            MTL_PORT_MAX_LEN);
+    ops_tx.udp_port[MTL_SESSION_PORT_P] = 10000 + i;
     ops_tx.pacing = ST21_PACING_NARROW;
     ops_tx.packing = ST20_PACKING_BPM;
     ops_tx.type = ST20_TYPE_FRAME_LEVEL;
@@ -4134,7 +4237,7 @@ static void st20_tx_user_pacing_test(int width[], int height[], enum st20_fmt fm
     tx_handle[i] = st20_tx_create(m_handle, &ops_tx);
     ASSERT_TRUE(tx_handle[i] != NULL);
 
-    /* sha caculate */
+    /* sha calculate */
     struct st20_pgroup st20_pg;
     st20_get_pgroup(ops_tx.fmt, &st20_pg);
     size_t frame_size = ops_tx.width * ops_tx.height * st20_pg.size / st20_pg.coverage;
@@ -4169,9 +4272,11 @@ static void st20_tx_user_pacing_test(int width[], int height[], enum st20_fmt fm
     ops_rx.name = "st20_timestamp_test";
     ops_rx.priv = test_ctx_rx[i];
     ops_rx.num_port = 1;
-    memcpy(ops_rx.sip_addr[MTL_PORT_P], ctx->para.sip_addr[MTL_PORT_P], MTL_IP_ADDR_LEN);
-    strncpy(ops_rx.port[MTL_PORT_P], ctx->para.port[MTL_PORT_R], MTL_PORT_MAX_LEN);
-    ops_rx.udp_port[MTL_PORT_P] = 10000 + i;
+    memcpy(ops_rx.sip_addr[MTL_SESSION_PORT_P], ctx->para.sip_addr[MTL_PORT_P],
+           MTL_IP_ADDR_LEN);
+    strncpy(ops_rx.port[MTL_SESSION_PORT_P], ctx->para.port[MTL_PORT_R],
+            MTL_PORT_MAX_LEN);
+    ops_rx.udp_port[MTL_SESSION_PORT_P] = 10000 + i;
     ops_rx.pacing = ST21_PACING_NARROW;
     ops_rx.type = ST20_TYPE_FRAME_LEVEL;
     ops_rx.width = width[i];
@@ -4219,7 +4324,7 @@ static void st20_tx_user_pacing_test(int width[], int height[], enum st20_fmt fm
   ret = mtl_stop(m_handle);
   EXPECT_GE(ret, 0);
   for (int i = 0; i < sessions; i++) {
-    EXPECT_GE(test_ctx_rx[i]->fb_rec, 0);
+    EXPECT_GT(test_ctx_rx[i]->fb_rec, 0);
     EXPECT_GT(test_ctx_rx[i]->check_sha_frame_cnt, 0);
     EXPECT_LT(test_ctx_rx[i]->incomplete_frame_cnt, 2);
     EXPECT_EQ(test_ctx_rx[i]->fail_cnt, 0);
@@ -4267,6 +4372,13 @@ static void st20_linesize_digest_test(enum st20_packing packing[], enum st_fps f
   /* return if level small than global */
   if (level < ctx->level) return;
 
+  if (ext) {
+    if (ctx->iova == MTL_IOVA_MODE_PA) {
+      info("%s, skip ext test as it's PA iova mode\n", __func__);
+      return;
+    }
+  }
+
   if (ctx->para.num_ports != 2) {
     info("%s, dual port should be enabled for tx test, one for tx and one for rx\n",
          __func__);
@@ -4305,9 +4417,11 @@ static void st20_linesize_digest_test(enum st20_packing packing[], enum st_fps f
     ops_tx.name = "st20_linesize_digest_test";
     ops_tx.priv = test_ctx_tx[i];
     ops_tx.num_port = 1;
-    memcpy(ops_tx.dip_addr[MTL_PORT_P], ctx->para.sip_addr[MTL_PORT_R], MTL_IP_ADDR_LEN);
-    strncpy(ops_tx.port[MTL_PORT_P], ctx->para.port[MTL_PORT_P], MTL_PORT_MAX_LEN);
-    ops_tx.udp_port[MTL_PORT_P] = 10000 + i;
+    memcpy(ops_tx.dip_addr[MTL_SESSION_PORT_P], ctx->para.sip_addr[MTL_PORT_R],
+           MTL_IP_ADDR_LEN);
+    strncpy(ops_tx.port[MTL_SESSION_PORT_P], ctx->para.port[MTL_PORT_P],
+            MTL_PORT_MAX_LEN);
+    ops_tx.udp_port[MTL_SESSION_PORT_P] = 10000 + i;
     ops_tx.pacing = ST21_PACING_NARROW;
     ops_tx.packing = packing[i];
     ops_tx.type = ST20_TYPE_FRAME_LEVEL;
@@ -4332,7 +4446,7 @@ static void st20_linesize_digest_test(enum st20_packing packing[], enum st_fps f
     tx_handle[i] = st20_tx_create(m_handle, &ops_tx);
     ASSERT_TRUE(tx_handle[i] != NULL);
 
-    /* sha caculate */
+    /* sha calculate */
     struct st20_pgroup st20_pg;
     st20_get_pgroup(ops_tx.fmt, &st20_pg);
     size_t frame_size = ops_tx.width * ops_tx.height * st20_pg.size / st20_pg.coverage;
@@ -4344,7 +4458,7 @@ static void st20_linesize_digest_test(enum st20_packing packing[], enum st_fps f
     size_t fb_size = frame_size;
     if (linesize[i] > test_ctx_tx[i]->stride) {
       test_ctx_tx[i]->stride = linesize[i];
-      fb_size = linesize[i] * height[i];
+      fb_size = (size_t)linesize[i] * height[i];
       if (interlaced[i]) fb_size = fb_size >> 1;
     }
     test_ctx_tx[i]->fb_size = fb_size;
@@ -4369,7 +4483,7 @@ static void st20_linesize_digest_test(enum st20_packing packing[], enum st_fps f
 
     uint8_t* fb;
     int total_lines = height[i];
-    size_t bytes_per_line = ops_tx.width / st20_pg.coverage * st20_pg.size;
+    size_t bytes_per_line = (size_t)ops_tx.width / st20_pg.coverage * st20_pg.size;
     if (interlaced[i]) total_lines /= 2;
     for (int frame = 0; frame < TEST_SHA_HIST_NUM; frame++) {
       if (ext) {
@@ -4381,7 +4495,7 @@ static void st20_linesize_digest_test(enum st20_packing packing[], enum st_fps f
       ASSERT_TRUE(fb != NULL);
 
       for (int line = 0; line < total_lines; line++) {
-        st_test_rand_data(fb + test_ctx_tx[i]->stride, bytes_per_line, frame);
+        st_test_rand_data(fb + test_ctx_tx[i]->stride * line, bytes_per_line, frame);
       }
       unsigned char* result = test_ctx_tx[i]->shas[frame];
       SHA256((unsigned char*)fb, fb_size, result);
@@ -4425,9 +4539,11 @@ static void st20_linesize_digest_test(enum st20_packing packing[], enum st_fps f
     ops_rx.name = "st20_linesize_digest_test";
     ops_rx.priv = test_ctx_rx[i];
     ops_rx.num_port = 1;
-    memcpy(ops_rx.sip_addr[MTL_PORT_P], ctx->para.sip_addr[MTL_PORT_P], MTL_IP_ADDR_LEN);
-    strncpy(ops_rx.port[MTL_PORT_P], ctx->para.port[MTL_PORT_R], MTL_PORT_MAX_LEN);
-    ops_rx.udp_port[MTL_PORT_P] = 10000 + i;
+    memcpy(ops_rx.sip_addr[MTL_SESSION_PORT_P], ctx->para.sip_addr[MTL_PORT_P],
+           MTL_IP_ADDR_LEN);
+    strncpy(ops_rx.port[MTL_SESSION_PORT_P], ctx->para.port[MTL_PORT_R],
+            MTL_PORT_MAX_LEN);
+    ops_rx.udp_port[MTL_SESSION_PORT_P] = 10000 + i;
     ops_rx.pacing = ST21_PACING_NARROW;
     ops_rx.type = ST20_TYPE_FRAME_LEVEL;
     ops_rx.width = width[i];
@@ -4492,7 +4608,7 @@ static void st20_linesize_digest_test(enum st20_packing packing[], enum st_fps f
   ret = mtl_stop(m_handle);
   EXPECT_GE(ret, 0);
   for (int i = 0; i < sessions; i++) {
-    EXPECT_GE(test_ctx_rx[i]->fb_rec, 0);
+    EXPECT_GT(test_ctx_rx[i]->fb_rec, 0);
     EXPECT_GT(test_ctx_rx[i]->check_sha_frame_cnt, 0);
 
     EXPECT_LT(test_ctx_rx[i]->incomplete_frame_cnt, 2);

@@ -65,8 +65,8 @@ static void app_rx_video_consume_frame(struct st_app_rx_video_session* s, void* 
   } else {
     if (s->st20_dst_cursor + frame_size > s->st20_dst_end)
       s->st20_dst_cursor = s->st20_dst_begin;
-    dbg("%s(%d), dst %p src %p size %ld\n", __func__, s->idx, s->st20_dst_cursor, frame,
-        frame_size);
+    dbg("%s(%d), dst %p src %p size %" PRIu64 "\n", __func__, s->idx, s->st20_dst_cursor,
+        frame, frame_size);
     mtl_memcpy(s->st20_dst_cursor, frame, frame_size);
     s->st20_dst_cursor += frame_size;
   }
@@ -125,8 +125,8 @@ static int app_rx_video_handle_rtp(struct st_app_rx_video_session* s,
     s->st20_last_tmstamp = tmstamp;
     s->stat_frame_received++;
     s->stat_frame_total_received++;
-    if (!s->stat_frame_frist_rx_time)
-      s->stat_frame_frist_rx_time = st_app_get_monotonic_time();
+    if (!s->stat_frame_first_rx_time)
+      s->stat_frame_first_rx_time = st_app_get_monotonic_time();
 
     s->st20_dst_cursor += s->st20_frame_size;
     if ((s->st20_dst_cursor + s->st20_frame_size) > s->st20_dst_end)
@@ -238,7 +238,7 @@ static int app_rx_video_open_source(struct st_app_rx_video_session* s) {
     return -EIO;
   }
 
-  f_size = s->st20_dst_fb_cnt * s->st20_frame_size;
+  f_size = (off_t)s->st20_dst_fb_cnt * s->st20_frame_size;
   ret = ftruncate(fd, f_size);
   if (ret < 0) {
     err("%s(%d), ftruncate %s fail\n", __func__, idx, s->st20_dst_url);
@@ -316,12 +316,12 @@ static int app_rx_video_frame_ready(void* priv, void* frame,
     } else {
       latency_ns = ptp_ns - meta->timestamp;
     }
-    dbg("%s, latency_us %lu\n", __func__, latency_ns / 1000);
+    dbg("%s, latency_us %" PRIu64 "\n", __func__, latency_ns / 1000);
     s->stat_latency_us_sum += latency_ns / 1000;
   }
   s->stat_frame_total_received++;
-  if (!s->stat_frame_frist_rx_time)
-    s->stat_frame_frist_rx_time = st_app_get_monotonic_time();
+  if (!s->stat_frame_first_rx_time)
+    s->stat_frame_first_rx_time = st_app_get_monotonic_time();
 
   if (s->st20_dst_fd < 0 && s->display == NULL) {
     /* free the queue directly as no read thread is running */
@@ -436,21 +436,24 @@ static int app_rx_video_init(struct st_app_context* ctx, st_json_video_session_t
   ops.name = name;
   ops.priv = s;
   ops.num_port = video ? video->base.num_inf : ctx->para.num_ports;
-  memcpy(ops.sip_addr[MTL_PORT_P],
-         video ? video->base.ip[MTL_PORT_P] : ctx->rx_sip_addr[MTL_PORT_P],
+  memcpy(ops.sip_addr[MTL_SESSION_PORT_P],
+         video ? st_json_ip(ctx, &video->base, MTL_SESSION_PORT_P)
+               : ctx->rx_sip_addr[MTL_PORT_P],
          MTL_IP_ADDR_LEN);
-  strncpy(ops.port[MTL_PORT_P],
-          video ? video->base.inf[MTL_PORT_P]->name : ctx->para.port[MTL_PORT_P],
+  strncpy(ops.port[MTL_SESSION_PORT_P],
+          video ? video->base.inf[MTL_SESSION_PORT_P]->name : ctx->para.port[MTL_PORT_P],
           MTL_PORT_MAX_LEN);
-  ops.udp_port[MTL_PORT_P] = video ? video->base.udp_port : (10000 + s->idx);
+  ops.udp_port[MTL_SESSION_PORT_P] = video ? video->base.udp_port : (10000 + s->idx);
   if (ops.num_port > 1) {
-    memcpy(ops.sip_addr[MTL_PORT_R],
-           video ? video->base.ip[MTL_PORT_R] : ctx->rx_sip_addr[MTL_PORT_R],
+    memcpy(ops.sip_addr[MTL_SESSION_PORT_R],
+           video ? st_json_ip(ctx, &video->base, MTL_SESSION_PORT_R)
+                 : ctx->rx_sip_addr[MTL_PORT_R],
            MTL_IP_ADDR_LEN);
-    strncpy(ops.port[MTL_PORT_R],
-            video ? video->base.inf[MTL_PORT_R]->name : ctx->para.port[MTL_PORT_R],
-            MTL_PORT_MAX_LEN);
-    ops.udp_port[MTL_PORT_R] = video ? video->base.udp_port : (10000 + s->idx);
+    strncpy(
+        ops.port[MTL_SESSION_PORT_R],
+        video ? video->base.inf[MTL_SESSION_PORT_R]->name : ctx->para.port[MTL_PORT_R],
+        MTL_PORT_MAX_LEN);
+    ops.udp_port[MTL_SESSION_PORT_R] = video ? video->base.udp_port : (10000 + s->idx);
   }
   ops.pacing = ST21_PACING_NARROW;
   if (ctx->rx_video_rtp_ring_size > 0)
@@ -490,12 +493,12 @@ static int app_rx_video_init(struct st_app_context* ctx, st_json_video_session_t
   st_pthread_mutex_init(&s->st20_wake_mutex, NULL);
   st_pthread_cond_init(&s->st20_wake_cond, NULL);
 
-  if (mtl_pmd_by_port_name(ops.port[MTL_PORT_P]) == MTL_PMD_DPDK_AF_XDP) {
+  if (mtl_pmd_by_port_name(ops.port[MTL_SESSION_PORT_P]) == MTL_PMD_DPDK_AF_XDP) {
     snprintf(s->st20_dst_url, ST_APP_URL_MAX_LEN, "st_app%d_%d_%d_%s.yuv", idx, ops.width,
-             ops.height, ops.port[MTL_PORT_P]);
+             ops.height, ops.port[MTL_SESSION_PORT_P]);
   } else {
     uint32_t soc = 0, b = 0, d = 0, f = 0;
-    sscanf(ops.port[MTL_PORT_P], "%x:%x:%x.%x", &soc, &b, &d, &f);
+    sscanf(ops.port[MTL_SESSION_PORT_P], "%x:%x:%x.%x", &soc, &b, &d, &f);
     snprintf(s->st20_dst_url, ST_APP_URL_MAX_LEN,
              "st_app%d_%d_%d_%02x_%02x_%02x-%02x.yuv", idx, ops.width, ops.height, soc, b,
              d, f);
@@ -523,7 +526,7 @@ static int app_rx_video_init(struct st_app_context* ctx, st_json_video_session_t
   s->framebuffs =
       (struct st_rx_frame*)st_app_zmalloc(sizeof(*s->framebuffs) * s->framebuff_cnt);
   if (!s->framebuffs) return -ENOMEM;
-  for (uint16_t j = 0; j < s->framebuff_cnt; j++) {
+  for (int j = 0; j < s->framebuff_cnt; j++) {
     s->framebuffs[j].frame = NULL;
   }
 
@@ -599,7 +602,7 @@ static int app_rx_video_stat(struct st_app_rx_video_session* s) {
 static int app_rx_video_result(struct st_app_rx_video_session* s) {
   int idx = s->idx;
   uint64_t cur_time_ns = st_app_get_monotonic_time();
-  double time_sec = (double)(cur_time_ns - s->stat_frame_frist_rx_time) / NS_PER_S;
+  double time_sec = (double)(cur_time_ns - s->stat_frame_first_rx_time) / NS_PER_S;
   double framerate = s->stat_frame_total_received / time_sec;
 
   if (!s->stat_frame_total_received) return -EINVAL;

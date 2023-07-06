@@ -1,0 +1,802 @@
+From 1c5622477b07c14a18acb04fcda10b6132121dd2 Mon Sep 17 00:00:00 2001
+From: Frank Du <frank.du@intel.com>
+Date: Wed, 22 Feb 2023 10:06:28 +0800
+Subject: [PATCH] test: add seprate send and recv with multi session support
+
+usage:
+LD_PRELOAD=/usr/local/lib/x86_64-linux-gnu/libmtl_udp_preload.so
+MUFD_CFG=test/rist/ufd_send.json ./build/test/rist/test_send --sleep_us
+1 --sleep_step 3 --dip 192.168.85.80 --sessions_cnt 1
+
+LD_PRELOAD=/usr/local/lib/x86_64-linux-gnu/libmtl_udp_preload.so
+MUFD_CFG=test/rist/ufd_receive.json ./build/test/rist/test_receive
+--bind_ip 192.168.85.80 --sessions_cnt 1
+
+Signed-off-by: Frank Du <frank.du@intel.com>
+---
+ build.sh                   |   8 ++
+ test/rist/meson.build      |  19 +++
+ test/rist/test_receive.c   | 245 +++++++++++++++++++++++++++++++++++++
+ test/rist/test_send.c      | 236 +++++++++++++++++++++++++++++++++++
+ test/rist/test_util.c      | 108 ++++++++++++++++
+ test/rist/test_util.h      |  65 ++++++++++
+ test/rist/ufd_receive.json |  16 +++
+ test/rist/ufd_send.json    |  16 +++
+ 8 files changed, 713 insertions(+)
+ create mode 100755 build.sh
+ create mode 100644 test/rist/test_receive.c
+ create mode 100644 test/rist/test_send.c
+ create mode 100644 test/rist/test_util.c
+ create mode 100644 test/rist/test_util.h
+ create mode 100644 test/rist/ufd_receive.json
+ create mode 100644 test/rist/ufd_send.json
+
+diff --git a/build.sh b/build.sh
+new file mode 100755
+index 0000000..c4eb95d
+--- /dev/null
++++ b/build.sh
+@@ -0,0 +1,8 @@
++#!/bin/bash
++
++set -e
++
++#meson build -Dbuildtype=debug
++meson build
++ninja -C build
++#sudo ninja install
+diff --git a/test/rist/meson.build b/test/rist/meson.build
+index 101bd1a..a9bb907 100644
+--- a/test/rist/meson.build
++++ b/test/rist/meson.build
+@@ -40,6 +40,25 @@ test_send_receive = executable('test_send_receive',
+ 									stdatomic_dependency
+                                 ])
+ 
++test_send = executable('test_send',
++                                'test_send.c', 'test_util.c',
++                                extra_sources,
++                                include_directories: inc,
++                                link_with: librist,
++                                dependencies: [
++                                    threads,
++                                    stdatomic_dependency
++                                ])
++
++test_receive = executable('test_receive',
++                                'test_receive.c', 'test_util.c',
++                                extra_sources,
++                                include_directories: inc,
++                                link_with: librist,
++                                dependencies: [
++                                    threads,
++                                    stdatomic_dependency
++                                ])
+ 
+ if comockatests
+     test('rist test', risttest)
+diff --git a/test/rist/test_receive.c b/test/rist/test_receive.c
+new file mode 100644
+index 0000000..e298a8e
+--- /dev/null
++++ b/test/rist/test_receive.c
+@@ -0,0 +1,245 @@
++/* SPDX-License-Identifier: BSD-3-Clause
++ * Copyright(c) 2023 Intel Corporation
++ */
++
++#include "librist/librist.h"
++#include "rist-private.h"
++
++#include "test_util.h"
++
++struct recv_session_ctx {
++  struct test_ctx *parent;
++  int idx;
++  bool exit;
++  char url[64 * 2]; /* rist://@192.168.85.61:1234 */
++
++  struct rist_logging_settings *r_log;
++  struct rist_ctx *r_ctx;
++  struct rist_peer_config *r_peer_config;
++  struct rist_peer *r_peer;
++
++  pthread_t worker;
++
++  int stat_recv_cnt;
++  int stat_recv_wrong_cnt;
++  int stat_recv_size;
++};
++
++static int recv_log_cb(void *arg, int level, const char *msg) {
++  struct recv_session_ctx *s = arg;
++  int idx = s->idx;
++
++  if (level > RIST_LOG_ERROR)
++    info("recver(%d): %s", idx, msg);
++  if (level <= RIST_LOG_ERROR) {
++    err("recver(%d), error: %s", idx, msg);
++    s->exit = true;
++  }
++  return 0;
++}
++
++static int recver_uinit(struct recv_session_ctx *s) {
++  int idx = s->idx;
++
++  dbg("%s(%d), start\n", __func__, idx);
++  if (s->r_peer) {
++    dbg("%s(%d), rist_peer_destroy\n", __func__, idx);
++    // rist_peer_destroy(s->r_ctx, s->r_peer);
++    s->r_peer = NULL;
++  }
++  if (s->r_ctx) {
++    info("%s(%d), rist_destroy\n", __func__, idx);
++    rist_destroy(s->r_ctx);
++    s->r_ctx = NULL;
++  }
++  if (s->r_peer_config) {
++    free(s->r_peer_config);
++    s->r_peer_config = NULL;
++  }
++  if (s->r_log) {
++    free(s->r_log);
++    s->r_log = NULL;
++  }
++  info("%s(%d), succ\n", __func__, idx);
++  return 0;
++}
++
++static int recver_init(struct test_ctx *ctx, struct recv_session_ctx *s) {
++  struct rist_ctx *r_ctx = NULL;
++  struct rist_logging_settings *log = NULL;
++  int idx = s->idx;
++  int ret;
++
++  ret = rist_logging_set(&log, RIST_LOG_INFO, recv_log_cb, s, NULL, stderr);
++  if (ret < 0) {
++    err("%s(%d), rist_logging_set fail %d\n", __func__, idx, ret);
++    recver_uinit(s);
++    return ret;
++  }
++  s->r_log = log;
++
++  ret = rist_receiver_create(&r_ctx, ctx->profile, log);
++  if (ret < 0) {
++    err("%s(%d), rist_recver_create fail %d\n", __func__, idx, ret);
++    recver_uinit(s);
++    return ret;
++  }
++  s->r_ctx = r_ctx;
++
++  rist_receiver_set_output_fifo_size(r_ctx, ctx->rx_fifo_size);
++
++  snprintf(s->url, sizeof(s->url), "rist://@%s:%d", ctx->bind_ip,
++           ctx->udp_port + idx * 2);
++  struct rist_peer_config *peer_config = NULL;
++  ret = rist_parse_address2(s->url, &peer_config);
++  if (ret < 0) {
++    err("%s(%d), rist_parse_address2 fail %d\n", __func__, idx, ret);
++    recver_uinit(s);
++    return ret;
++  }
++  s->r_peer_config = peer_config;
++
++  struct rist_peer *peer;
++  ret = rist_peer_create(r_ctx, &peer, s->r_peer_config);
++  if (ret < 0) {
++    err("%s(%d), rist_peer_create fail %d\n", __func__, idx, ret);
++    recver_uinit(s);
++    return ret;
++  }
++  s->r_peer = peer;
++
++  ret = rist_start(r_ctx);
++  if (ret < 0) {
++    err("%s(%d), rist_start fail %d\n", __func__, idx, ret);
++    recver_uinit(s);
++    return ret;
++  }
++
++  return 0;
++}
++
++static double recver_status(struct recv_session_ctx *s) {
++  int idx = s->idx;
++  int recv_cnt = s->stat_recv_cnt;
++  int recv_sz = s->stat_recv_size;
++  double bps = (double)recv_sz * 8 / s->parent->stat_period_s;
++  double bps_g = bps / (1000 * 1000 * 1000);
++
++  info("%s(%d), Recv %d pkts(%f g/s), wrong %d\n", __func__, idx, recv_cnt,
++       bps_g, s->stat_recv_wrong_cnt);
++  s->stat_recv_cnt = 0;
++  s->stat_recv_size = 0;
++  s->stat_recv_wrong_cnt = 0;
++  return bps_g;
++}
++
++static PTHREAD_START_FUNC(recver_worker, arg) {
++  struct recv_session_ctx *s = arg;
++  int idx = s->idx;
++  struct test_ctx *parent = s->parent;
++  uint16_t recv_idx = 0; /* only 16bit seq idx in the rtp */
++  char buffer[1460] = {0};
++  struct rist_data_block *b = NULL;
++
++  info("%s(%d), start\n", __func__, idx);
++  while (!parent->exit && !s->exit) {
++    int read = rist_receiver_data_read2(s->r_ctx, &b, 5);
++    dbg("%s(%d), read %d\n", __func__, idx, read);
++    if (read <= 0)
++      continue;
++    sprintf(buffer, "DEADBEAF TEST PACKET #%u", recv_idx);
++    if (strcmp(buffer, b->payload)) {
++      dbg("%s(%d), wrong content at pkt %u, seq %lu\n", __func__, idx, recv_idx,
++          b->seq);
++      dbg("%s(%d), payload: %s\n", __func__, idx, (char *)b->payload);
++      recv_idx = b->seq;
++      s->stat_recv_wrong_cnt++;
++    }
++    recv_idx++;
++
++    s->stat_recv_cnt++;
++    s->stat_recv_size += b->payload_len;
++    rist_receiver_data_block_free2(&b);
++  }
++  info("%s(%d), stop\n", __func__, idx);
++
++  return 0;
++}
++
++int main(int argc, char *argv[]) {
++  struct test_ctx ctx;
++  int ret;
++
++  memset(&ctx, 0, sizeof(ctx));
++  ret = test_init_with_args(&ctx, argc, argv);
++  if (ret < 0)
++    return ret;
++  info("%s: sessions cnt %u\n", __func__, ctx.sessions);
++
++  int sessions = ctx.sessions;
++  struct recv_session_ctx **apps;
++  apps = test_zmalloc(sizeof(*apps) * sessions);
++  if (!apps) {
++    err("%s, apps malloc fail\n", __func__);
++    return -ENOMEM;
++  }
++
++  for (int i = 0; i < sessions; i++) {
++    struct recv_session_ctx *app = test_zmalloc(sizeof(*app));
++    if (!app) {
++      err("%s(%d), ctx malloc fail\n", __func__, i);
++      ret = -ENOMEM;
++      goto exit;
++    }
++    apps[i] = app;
++
++    app->idx = i;
++    app->worker = -1;
++    app->parent = &ctx;
++
++    ret = recver_init(&ctx, app);
++    if (ret < 0) {
++      err("%s(%d), recver_init fail %d\n", __func__, i, ret);
++      goto exit;
++    }
++
++    ret = pthread_create(&app->worker, NULL, recver_worker, app);
++    if (ret < 0) {
++      err("%s(%d), worker create fail %d\n", __func__, i, ret);
++      goto exit;
++    }
++  }
++
++  int time_s = 0;
++  while (!ctx.exit) {
++    sleep(1);
++    /* display server status every stat_period_s */
++    time_s++;
++    if ((time_s % ctx.stat_period_s) == 0) {
++      double bps_g = 0;
++      for (int i = 0; i < sessions; i++) {
++        bps_g += recver_status(apps[i]);
++      }
++      info("%s, total %f g/s\n", __func__, bps_g);
++    }
++  }
++
++  ret = 0;
++  info("%s, exit now\n", __func__);
++
++exit:
++  ctx.exit = true;
++  for (int i = 0; i < sessions; i++) {
++    struct recv_session_ctx *app = apps[i];
++    if (app) {
++      if (app->worker > 0) {
++        app->exit = true;
++        pthread_join(app->worker, NULL);
++      }
++      recver_uinit(app);
++      test_free(app);
++    }
++  }
++  test_free(apps);
++  return ret;
++}
+diff --git a/test/rist/test_send.c b/test/rist/test_send.c
+new file mode 100644
+index 0000000..5b89699
+--- /dev/null
++++ b/test/rist/test_send.c
+@@ -0,0 +1,236 @@
++/* SPDX-License-Identifier: BSD-3-Clause
++ * Copyright(c) 2023 Intel Corporation
++ */
++
++#include "librist/librist.h"
++#include "rist-private.h"
++
++#include "test_util.h"
++
++#define TX_UDP_LEN (1024 + 256)
++
++struct send_session_ctx {
++  struct test_ctx *parent;
++  int idx;
++  bool exit;
++  char url[64 * 2]; /* rist://192.168.85.61:1234 */
++
++  struct rist_logging_settings *r_log;
++  struct rist_ctx *r_ctx;
++  struct rist_peer_config *r_peer_config;
++  struct rist_peer *r_peer;
++
++  pthread_t worker;
++
++  int stat_send_cnt;
++};
++
++static int send_log_cb(void *arg, int level, const char *msg) {
++  struct send_session_ctx *s = arg;
++  int idx = s->idx;
++
++  if (level > RIST_LOG_ERROR)
++    info("sender(%d): %s", idx, msg);
++  if (level <= RIST_LOG_ERROR) {
++    err("sender(%d), error: %s", idx, msg);
++    s->exit = true;
++  }
++  return 0;
++}
++
++static int sender_uinit(struct send_session_ctx *s) {
++  if (s->r_peer) {
++    rist_peer_destroy(s->r_ctx, s->r_peer);
++    s->r_peer = NULL;
++  }
++  if (s->r_ctx) {
++    rist_destroy(s->r_ctx);
++    s->r_ctx = NULL;
++  }
++  if (s->r_peer_config) {
++    free(s->r_peer_config);
++    s->r_peer_config = NULL;
++  }
++  if (s->r_log) {
++    free(s->r_log);
++    s->r_log = NULL;
++  }
++  return 0;
++}
++
++static int sender_init(struct test_ctx *ctx, struct send_session_ctx *s) {
++  struct rist_ctx *r_ctx = NULL;
++  struct rist_logging_settings *log = NULL;
++  int idx = s->idx;
++  int ret;
++
++  ret = rist_logging_set(&log, RIST_LOG_INFO, send_log_cb, s, NULL, stderr);
++  if (ret < 0) {
++    err("%s(%d), rist_logging_set fail %d\n", __func__, idx, ret);
++    sender_uinit(s);
++    return ret;
++  }
++  s->r_log = log;
++
++  ret = rist_sender_create(&r_ctx, ctx->profile, 0, log);
++  if (ret < 0) {
++    err("%s(%d), rist_sender_create fail %d\n", __func__, idx, ret);
++    sender_uinit(s);
++    return ret;
++  }
++  s->r_ctx = r_ctx;
++
++  snprintf(s->url, sizeof(s->url), "rist://%s:%d", ctx->dip,
++           ctx->udp_port + idx * 2);
++  struct rist_peer_config *peer_config = NULL;
++  ret = rist_parse_address2(s->url, &peer_config);
++  if (ret < 0) {
++    err("%s(%d), rist_parse_address2 fail %d\n", __func__, idx, ret);
++    sender_uinit(s);
++    return ret;
++  }
++  s->r_peer_config = peer_config;
++
++  struct rist_peer *peer;
++  ret = rist_peer_create(r_ctx, &peer, s->r_peer_config);
++  if (ret < 0) {
++    err("%s(%d), rist_peer_create fail %d\n", __func__, idx, ret);
++    sender_uinit(s);
++    return ret;
++  }
++  s->r_peer = peer;
++
++  ret = rist_start(r_ctx);
++  if (ret < 0) {
++    err("%s(%d), rist_start fail %d\n", __func__, idx, ret);
++    sender_uinit(s);
++    return ret;
++  }
++
++  return 0;
++}
++
++static double sender_status(struct send_session_ctx *s) {
++  int idx = s->idx;
++  int send_cnt = s->stat_send_cnt;
++  double bps = (double)send_cnt * TX_UDP_LEN * 8 / s->parent->stat_period_s;
++  double bps_g = bps / (1000 * 1000 * 1000);
++
++  info("%s(%d), Send %d pkts(%f g/s)\n", __func__, idx, send_cnt, bps_g);
++  s->stat_send_cnt = 0;
++  return bps_g;
++}
++
++static PTHREAD_START_FUNC(sender_worker, arg) {
++  struct send_session_ctx *s = arg;
++  int idx = s->idx;
++  struct test_ctx *parent = s->parent;
++  uint16_t send_idx = 0;
++  char buffer[TX_UDP_LEN] = {0};
++  struct rist_data_block data = {0};
++
++  info("%s(%d), start\n", __func__, idx);
++  while (!parent->exit && !s->exit) {
++    sprintf(buffer, "DEADBEAF TEST PACKET #%u", send_idx);
++    data.payload = &buffer;
++    data.payload_len = sizeof(buffer);
++    int ret = rist_sender_data_write(s->r_ctx, &data);
++    if (ret < 0 || ret != (int)data.payload_len) {
++      err("%s(%d), rist_sender_data_write fail %d\n", __func__, idx, ret);
++      break;
++    }
++
++    send_idx++;
++    s->stat_send_cnt++;
++    if (parent->sleep_us) {
++      if (parent->sleep_step > 1) {
++        if ((send_idx % parent->sleep_step) == 0) {
++          usleep(parent->sleep_us);
++        }
++      } else {
++        usleep(parent->sleep_us);
++      }
++    }
++  }
++  info("%s(%d), stop\n", __func__, idx);
++
++  return 0;
++}
++
++int main(int argc, char *argv[]) {
++  struct test_ctx ctx;
++  int ret;
++
++  memset(&ctx, 0, sizeof(ctx));
++  ret = test_init_with_args(&ctx, argc, argv);
++  if (ret < 0)
++    return ret;
++  info("%s: sessions cnt %u\n", __func__, ctx.sessions);
++
++  int sessions = ctx.sessions;
++  struct send_session_ctx **apps;
++  apps = test_zmalloc(sizeof(*apps) * sessions);
++  if (!apps) {
++    err("%s, apps malloc fail\n", __func__);
++    return -ENOMEM;
++  }
++
++  for (int i = 0; i < sessions; i++) {
++    struct send_session_ctx *app = test_zmalloc(sizeof(*app));
++    if (!app) {
++      err("%s(%d), ctx malloc fail\n", __func__, i);
++      ret = -ENOMEM;
++      goto exit;
++    }
++    apps[i] = app;
++
++    app->idx = i;
++    app->worker = -1;
++    app->parent = &ctx;
++
++    ret = sender_init(&ctx, app);
++    if (ret < 0) {
++      err("%s(%d), sender_init fail %d\n", __func__, i, ret);
++      goto exit;
++    }
++
++    ret = pthread_create(&app->worker, NULL, sender_worker, app);
++    if (ret < 0) {
++      err("%s(%d), worker create fail %d\n", __func__, i, ret);
++      goto exit;
++    }
++  }
++
++  int time_s = 0;
++  while (!ctx.exit) {
++    sleep(1);
++    /* display server status every stat_period_s */
++    time_s++;
++    if ((time_s % ctx.stat_period_s) == 0) {
++      double bps_g = 0;
++      for (int i = 0; i < sessions; i++) {
++        bps_g += sender_status(apps[i]);
++      }
++      info("%s, total %f g/s\n", __func__, bps_g);
++    }
++  }
++
++  ret = 0;
++  info("%s, exit now\n", __func__);
++
++exit:
++  ctx.exit = true;
++  for (int i = 0; i < sessions; i++) {
++    struct send_session_ctx *app = apps[i];
++    if (app) {
++      if (app->worker > 0) {
++        app->exit = true;
++        pthread_join(app->worker, NULL);
++      }
++      sender_uinit(app);
++      test_free(app);
++    }
++  }
++  test_free(apps);
++  return ret;
++}
+diff --git a/test/rist/test_util.c b/test/rist/test_util.c
+new file mode 100644
+index 0000000..1a75cc5
+--- /dev/null
++++ b/test/rist/test_util.c
+@@ -0,0 +1,108 @@
++/* SPDX-License-Identifier: BSD-3-Clause
++ * Copyright(c) 2023 Intel Corporation
++ */
++
++#include "test_util.h"
++
++#include <getopt.h>
++#include <signal.h>
++
++enum test_args_cmd {
++  TEST_ARG_UNKNOWN = 0,
++
++  TEST_ARG_PROFILE = 0x100, /* start from end of ascii */
++  TEST_ARG_SESSIONS_CNT,
++  TEST_ARG_SLEEP_US,
++  TEST_ARG_SLEEP_STEP,
++  TEST_ARG_RX_FIFO_SIZE,
++  TEST_ARG_DIP,
++  TEST_ARG_BIND_IP,
++
++  TEST_ARG_MAX,
++};
++
++static struct option test_args_options[] = {
++    {"profile", required_argument, 0, TEST_ARG_PROFILE},
++    {"sessions_cnt", required_argument, 0, TEST_ARG_SESSIONS_CNT},
++    {"sleep_us", required_argument, 0, TEST_ARG_SLEEP_US},
++    {"sleep_step", required_argument, 0, TEST_ARG_SLEEP_STEP},
++    {"rx_fifo_size", required_argument, 0, TEST_ARG_RX_FIFO_SIZE},
++    {"dip", required_argument, 0, TEST_ARG_DIP},
++    {"bind_ip", required_argument, 0, TEST_ARG_BIND_IP},
++
++    {0, 0, 0, 0}};
++
++static int test_parse_args(struct test_ctx *ctx, int argc, char **argv) {
++  int cmd = -1, optIdx = 0;
++
++  while (1) {
++    cmd = getopt_long_only(argc, argv, "hv", test_args_options, &optIdx);
++    if (cmd == -1)
++      break;
++    dbg("%s, cmd %d %s\n", __func__, cmd, optarg);
++
++    switch (cmd) {
++    case TEST_ARG_PROFILE:
++      ctx->profile = atoi(optarg);
++      break;
++    case TEST_ARG_SESSIONS_CNT:
++      ctx->sessions = atoi(optarg);
++      break;
++    case TEST_ARG_SLEEP_US:
++      ctx->sleep_us = atoi(optarg);
++      break;
++    case TEST_ARG_SLEEP_STEP:
++      ctx->sleep_step = atoi(optarg);
++      break;
++    case TEST_ARG_RX_FIFO_SIZE:
++      ctx->rx_fifo_size = atoi(optarg);
++      break;
++    case TEST_ARG_DIP:
++      strncpy(ctx->dip, optarg, sizeof(ctx->dip));
++      break;
++    case TEST_ARG_BIND_IP:
++      strncpy(ctx->bind_ip, optarg, sizeof(ctx->dip));
++      break;
++    case '?':
++      break;
++    default:
++      break;
++    }
++  };
++
++  return 0;
++}
++
++static struct test_ctx *g_test_ctx;
++static void test_sig_handler(int signo) {
++  struct test_ctx *ctx = g_test_ctx;
++  info("%s, signal %d\n", __func__, signo);
++
++  switch (signo) {
++  case SIGINT: /* Interrupt from keyboard */
++    ctx->exit = true;
++    break;
++  }
++
++  return;
++}
++
++int test_init_with_args(struct test_ctx *ctx, int argc, char **argv) {
++  g_test_ctx = ctx;
++  signal(SIGINT, test_sig_handler);
++
++  /* default value */
++  ctx->sessions = 1;
++  ctx->profile = 0; /* simple */
++  ctx->udp_port = 1234;
++  ctx->sleep_us = 100;
++  ctx->sleep_step = 1;
++  ctx->stat_period_s = 5;
++  ctx->rx_fifo_size = 1024 * 1024;
++  snprintf(ctx->dip, sizeof(ctx->dip), "%s", "127.0.0.1");
++  snprintf(ctx->bind_ip, sizeof(ctx->dip), "%s", "127.0.0.1");
++
++  test_parse_args(ctx, argc, argv);
++
++  return 0;
++}
+diff --git a/test/rist/test_util.h b/test/rist/test_util.h
+new file mode 100644
+index 0000000..fd8c7ec
+--- /dev/null
++++ b/test/rist/test_util.h
+@@ -0,0 +1,65 @@
++/* SPDX-License-Identifier: BSD-3-Clause
++ * Copyright(c) 2023 Intel Corporation
++ */
++
++#ifndef _TEST_UTIL_H_
++#define _TEST_UTIL_H_
++
++#include <inttypes.h>
++#include <stdbool.h>
++#include <stddef.h>
++#include <stdio.h>
++#include <stdlib.h>
++#include <string.h>
++#include <unistd.h>
++
++/* log define */
++#ifdef DEBUG
++#define dbg(...)                                                               \
++  do {                                                                         \
++    printf(__VA_ARGS__);                                                       \
++  } while (0)
++#else
++#define dbg(...)                                                               \
++  do {                                                                         \
++  } while (0)
++#endif
++#define info(...)                                                              \
++  do {                                                                         \
++    printf(__VA_ARGS__);                                                       \
++  } while (0)
++#define warn(...)                                                              \
++  do {                                                                         \
++    printf(__VA_ARGS__);                                                       \
++  } while (0)
++#define err(...)                                                               \
++  do {                                                                         \
++    printf(__VA_ARGS__);                                                       \
++  } while (0)
++
++struct test_ctx {
++  int profile;
++  int sessions; /* number of sessions */
++  int udp_port;
++  int sleep_us;
++  int sleep_step;
++  int stat_period_s;
++  int rx_fifo_size;
++  char dip[64]; /* dst ip for tx */
++  char bind_ip[64]; /* bind ip for rx, only for kernel socket */
++
++  bool exit;
++};
++
++int test_init_with_args(struct test_ctx *ctx, int argc, char **argv);
++
++static inline void *test_zmalloc(size_t sz) {
++  void *p = malloc(sz);
++  if (p)
++    memset(p, 0x0, sz);
++  return p;
++}
++
++static inline void test_free(void *p) { free(p); }
++
++#endif
+diff --git a/test/rist/ufd_receive.json b/test/rist/ufd_receive.json
+new file mode 100644
+index 0000000..d65e718
+--- /dev/null
++++ b/test/rist/ufd_receive.json
+@@ -0,0 +1,16 @@
++{
++    "nb_udp_sockets" : "64",
++    "nb_nic_queues" : "64",
++    "nic_queue_rate_limit_g": 10,
++    "nic_shared_queues": false,
++    "udp_lcore": false,
++    "rx_poll_sleep_us" : "1",
++    "rx_ring_count" : "4096",
++    "wake_thresh_count" : "32",
++    "interfaces": [
++        {
++            "port": "0000:af:01.0",
++            "ip": "192.168.85.80"
++        }
++    ],
++}
+diff --git a/test/rist/ufd_send.json b/test/rist/ufd_send.json
+new file mode 100644
+index 0000000..c32fd23
+--- /dev/null
++++ b/test/rist/ufd_send.json
+@@ -0,0 +1,16 @@
++{
++    "nb_udp_sockets" : "64",
++    "nb_nic_queues" : "64",
++    "nic_queue_rate_limit_g": 10,
++    "nic_shared_queues": false,
++    "udp_lcore": false,
++    "rx_poll_sleep_us" : "10",
++    "rx_ring_count" : "2048",
++    "wake_thresh_count" : "32",
++    "interfaces": [
++        {
++            "port": "0000:af:01.1",
++            "ip": "192.168.85.60"
++        }
++    ],
++}
+-- 
+2.34.1
+

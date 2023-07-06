@@ -31,10 +31,10 @@ WORKSPACE=$PWD
 OBS_PLUGIN_BUILD_DIR=${WORKSPACE}/build/obs_plugin
 
 # build obs plugin
-pushd plugins/obs_mtl/linux-mtl
-meson ${OBS_PLUGIN_BUILD_DIR} -Dbuildtype=$buildtype
+pushd ecosystem/obs_mtl/linux-mtl
+meson "${OBS_PLUGIN_BUILD_DIR}" -Dbuildtype="$buildtype"
 popd
-pushd ${OBS_PLUGIN_BUILD_DIR}
+pushd "${OBS_PLUGIN_BUILD_DIR}"
 ninja
 sudo ninja install
 popd

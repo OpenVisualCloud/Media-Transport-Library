@@ -5,7 +5,7 @@
 /**
  * @file st40_api.h
  *
- * Interfaces to Media Transport Library for st2110-20 transport.
+ * Interfaces for st2110-40 transport.
  *
  */
 
@@ -52,7 +52,7 @@ typedef struct st_rx_ancillary_session_handle_impl* st40_rx_handle;
 
 /**
  * Flag bit in flags of struct st30_rx_ops, for non MTL_PMD_DPDK_USER.
- * If set, it's application duty to set the rx flow(queue) and muticast join/drop.
+ * If set, it's application duty to set the rx flow(queue) and multicast join/drop.
  * Use st40_rx_get_queue_meta to get the queue meta(queue number etc) info.
  */
 #define ST40_RX_FLAG_DATA_PATH_ONLY (MTL_BIT32(0))
@@ -207,6 +207,8 @@ struct st40_tx_frame_meta {
   enum st10_timestamp_fmt tfmt;
   /** Frame timestamp value */
   uint64_t timestamp;
+  /** epoch */
+  uint64_t epoch;
 };
 
 /**
@@ -219,13 +221,15 @@ struct st40_tx_ops {
   /** private data to the callback function */
   void* priv;
   /** destination IP address */
-  uint8_t dip_addr[MTL_PORT_MAX][MTL_IP_ADDR_LEN];
+  uint8_t dip_addr[MTL_SESSION_PORT_MAX][MTL_IP_ADDR_LEN];
   /** Pcie BDF path like 0000:af:00.0, should align to BDF of mtl_init */
-  char port[MTL_PORT_MAX][MTL_PORT_MAX_LEN];
+  char port[MTL_SESSION_PORT_MAX][MTL_PORT_MAX_LEN];
   /** 1 or 2, num of ports this session attached to */
   uint8_t num_port;
-  /** UDP port number */
-  uint16_t udp_port[MTL_PORT_MAX];
+  /** UDP source port number, leave as 0 to use same port as dst */
+  uint16_t udp_src_port[MTL_SESSION_PORT_MAX];
+  /** UDP destination port number */
+  uint16_t udp_port[MTL_SESSION_PORT_MAX];
   /** Session streaming type, frame or RTP */
   enum st40_type type;
   /** Session fps */
@@ -238,7 +242,7 @@ struct st40_tx_ops {
    * tx destination mac address.
    * Valid if ST40_TX_FLAG_USER_P(R)_MAC is enabled
    */
-  uint8_t tx_dst_mac[MTL_PORT_MAX][6];
+  uint8_t tx_dst_mac[MTL_SESSION_PORT_MAX][MTL_MAC_ADDR_LEN];
 
   /**
    * the frame buffer count requested for one st40 tx session,
@@ -247,7 +251,7 @@ struct st40_tx_ops {
   uint16_t framebuff_cnt;
   /**
    * ST40_TYPE_FRAME_LEVEL callback when lib require a new frame.
-   * User should provide the next avaiable frame index to next_frame_idx.
+   * User should provide the next available frame index to next_frame_idx.
    * It implicit means the frame ownership will be transferred to lib,
    * only for ST40_TYPE_FRAME_LEVEL.
    * And only non-block method can be used in this callback as it run from lcore tasklet
@@ -290,13 +294,13 @@ struct st40_rx_ops {
   /** private data to the callback function */
   void* priv;
   /** source IP address of sender */
-  uint8_t sip_addr[MTL_PORT_MAX][MTL_IP_ADDR_LEN];
+  uint8_t sip_addr[MTL_SESSION_PORT_MAX][MTL_IP_ADDR_LEN];
   /** 1 or 2, num of ports this session attached to */
   uint8_t num_port;
   /** Pcie BDF path like 0000:af:00.0, should align to BDF of mtl_init */
-  char port[MTL_PORT_MAX][MTL_PORT_MAX_LEN];
-  /** UDP port number */
-  uint16_t udp_port[MTL_PORT_MAX];
+  char port[MTL_SESSION_PORT_MAX][MTL_PORT_MAX_LEN];
+  /** UDP destination port number */
+  uint16_t udp_port[MTL_SESSION_PORT_MAX];
   /** flags, value in ST40_RX_FLAG_* */
   uint32_t flags;
 
@@ -338,6 +342,19 @@ st40_tx_handle st40_tx_create(mtl_handle mt, struct st40_tx_ops* ops);
 int st40_tx_free(st40_tx_handle handle);
 
 /**
+ * Online update the destination info for the tx st2110-40(ancillary) session.
+ *
+ * @param handle
+ *   The handle to the tx st2110-40(ancillary) session.
+ * @param dst
+ *   The pointer to the tx st2110-40(ancillary) destination info.
+ * @return
+ *   - 0: Success, tx st2110-40(ancillary) session destination update succ.
+ *   - <0: Error code of the rx st2110-40(ancillary) session destination update.
+ */
+int st40_tx_update_destination(st40_tx_handle handle, struct st_tx_dest_info* dst);
+
+/**
  * Get the framebuffer pointer from the tx st2110-40(ancillary) session.
  * For ST40_TYPE_FRAME_LEVEL.
  *
@@ -361,7 +378,7 @@ void* st40_tx_get_framebuffer(st40_tx_handle handle, uint16_t idx);
  * @param usrptr
  *   *usrptr will be point to the user data(rtp) area inside the mbuf.
  * @return
- *   - NULL if no avaiable mbuf in the ring.
+ *   - NULL if no available mbuf in the ring.
  *   - Otherwise, the dpdk mbuf pointer.
  */
 void* st40_tx_get_mbuf(st40_tx_handle handle, void** usrptr);
@@ -432,7 +449,7 @@ int st40_rx_free(st40_rx_handle handle);
  * @param len
  *   The length of the rtp packet, include both the header and payload.
  * @return
- *   - NULL if no avaiable mbuf in the ring.
+ *   - NULL if no available mbuf in the ring.
  *   - Otherwise, the dpdk mbuf pointer.
  */
 void* st40_rx_get_mbuf(st40_rx_handle handle, void** usrptr, uint16_t* len);

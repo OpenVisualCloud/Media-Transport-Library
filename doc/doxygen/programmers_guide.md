@@ -1,14 +1,16 @@
+# programmers_guide Programmer's Guide
+
 @page programmers_guide Programmer's Guide
 
 @section software_interactions Software interactions
 
 @subsection software_interactions_flow_tx_frame Transmitter frame mode
 
- lib takes resposibilty of rtp encapsulation 
+ lib takes resposibilty of rtp encapsulation
 
  Below pseudo code presenting flows from application to the library for transmitter in frame mode.
 
- you could refer app/sample/tx_video_sample.c for the whole sample 
+ you could refer app/sample/tx_video_sample.c for the whole sample
 
 ```bash
 //create device
@@ -23,8 +25,8 @@ param.flags = ST_FLAG_BIND_NUMA; // default bind to numa
 param.log_level = ST_LOG_LEVEL_ERROR; // log level. ERROR, INFO, WARNING
 param.priv = ctx; // usr ctx pointer
 param.ptp_get_time_fn = test_ptp_from_real_time; // user regist ptp func, if not regist, the internal ptp will be used
-param.tx_sessions_cnt_max = session_num; // max tx session set by user
-param.rx_sessions_cnt_max = 0; // max rx session set by user
+param.tx_queues_cnt[MTL_PORT_P] = session_num; // tx queue cnt set by user
+param.rx_queues_cnt[MTL_PORT_P] = 0; // rx queue cnt set by user
 dev_handle = st_init(&param);
 
 //create and register tx session
@@ -69,6 +71,7 @@ for (i = 0; i < session_num; i++)
 //destroy device
 st_uninit(dev_handle);
 ```
+
 app thread to get the frame buf and feed data to it, you could refer tx_video_app.c in app/src folder
 
 ```bash
@@ -86,10 +89,11 @@ static void* app_tx_video_frame_thread(void* arg) {
   xxxxx
 }
 ```
+
 \n
 
 @subsection software_interactions_flow_tx_rtp Transmitter rtp mode
- 
+
  app takes resposibilty of rtp encapsulation
 
  Below pseudo code presenting flows from application to the library for transmitter in rtp mode.
@@ -111,8 +115,8 @@ param.flags = ST_FLAG_BIND_NUMA; // default bind to numa
 param.log_level = ST_LOG_LEVEL_ERROR; // log level. ERROR, INFO, WARNING
 param.priv = ctx; // usr ctx pointer
 param.ptp_get_time_fn = test_ptp_from_real_time; // user regist ptp func, if not regist, the internal ptp will be used
-param.tx_sessions_cnt_max = session_num; // max tx session set by user
-param.rx_sessions_cnt_max = 0; // max rx session set by user
+param.tx_queues_cnt[MTL_PORT_P] = session_num; // tx queue cnt set by user
+param.rx_queues_cnt[MTL_PORT_P] = 0; // rx queue cnt set by user
 dev_handle = st_init(&param);
 
 //create and register tx session
@@ -158,6 +162,7 @@ st_uninit(dev_handle);
 ```
 
 app thread to feed encapsulated rtp buf, you could refer tx_video_app.c in app/src folder
+
 ```bash
 static void* app_tx_video_rtp_thread(void* arg) {
   //wait the rtp tx done notification from notify_rtp_done if there is no available mbuf in the rte ring.
@@ -174,7 +179,6 @@ static void* app_tx_video_rtp_thread(void* arg) {
 }
 ```
 
-
 \n
 
 @subsection software_interactions_flow_rx_frame Receiver frame mode
@@ -183,7 +187,7 @@ static void* app_tx_video_rtp_thread(void* arg) {
 
  Below pseudo code presenting flows from application to the library for receiver in frame mode.
 
- you could refer app/sample/rx_video_sample.c for the whole sample 
+ you could refer app/sample/rx_video_sample.c for the whole sample
 
 ```bash
 //create device
@@ -198,8 +202,8 @@ param.flags = ST_FLAG_BIND_NUMA; // default bind to numa
 param.log_level = ST_LOG_LEVEL_ERROR; // log level. ERROR, INFO, WARNING
 param.priv = ctx; // usr ctx pointer
 param.ptp_get_time_fn = test_ptp_from_real_time; // user regist ptp func, if not regist, the internal ptp will be used
-param.tx_sessions_cnt_max = 0; // max tx session set by user
-param.rx_sessions_cnt_max = session_num; // max rx session set by user
+param.tx_queues_cnt[MTL_PORT_P] = 0; // tx queue cnt set by user
+param.rx_queues_cnt[MTL_PORT_P] = session_num; // rx queue cnt set by user
 dev_handle = st_init(&param);
 
 //create and register rx session
@@ -240,6 +244,7 @@ for (i = 0; i < session_num; i++)
 //destroy device
 st_uninit(dev_handle);
 ```
+
 app thread to get the frame buf, dispose it and return to lib.you could refer rx_video_app.c in app/src folder
 
 ```bash
@@ -281,8 +286,8 @@ param.flags = ST_FLAG_BIND_NUMA; // default bind to numa
 param.log_level = ST_LOG_LEVEL_ERROR; // log level. ERROR, INFO, WARNING
 param.priv = ctx; // usr ctx pointer
 param.ptp_get_time_fn = test_ptp_from_real_time; // user regist ptp func, if not regist, the internal ptp will be used
-param.tx_sessions_cnt_max = 0; // max tx session set by user
-param.rx_sessions_cnt_max = session_num; // max rx session set by user
+param.tx_queues_cnt[MTL_PORT_P] = 0; // tx queue cnt set by user
+param.rx_queues_cnt[MTL_PORT_P] = session_num; // rx queue cnt set by user
 dev_handle = st_init(&param);
 
 //create and register rx session
@@ -340,4 +345,5 @@ static void* app_rx_video_rtp_thread(void* arg) {
   xxxxx
 }
 ```
+
 \n

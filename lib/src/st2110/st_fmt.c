@@ -122,6 +122,9 @@ static const struct st_fps_timing st_fps_timings[] = {
         .sampling_clock_rate = 90 * 1000,
         .mul = 120,
         .den = 1,
+        .framerate = 120.00,
+        .lower_limit = 0.00,
+        .upper_limit = 1.00,
     },
     {
         /* ST_FPS_P119_88 */
@@ -129,6 +132,9 @@ static const struct st_fps_timing st_fps_timings[] = {
         .sampling_clock_rate = 90 * 1000,
         .mul = 60000 * 2,
         .den = 1001,
+        .framerate = 119.88,
+        .lower_limit = 1.00,
+        .upper_limit = 0.11,
     },
     {
         /* ST_FPS_P100 */
@@ -136,6 +142,9 @@ static const struct st_fps_timing st_fps_timings[] = {
         .sampling_clock_rate = 90 * 1000,
         .mul = 100,
         .den = 1,
+        .framerate = 100.00,
+        .lower_limit = 1.00,
+        .upper_limit = 1.00,
     },
     {
         /* ST_FPS_P60 */
@@ -143,6 +152,9 @@ static const struct st_fps_timing st_fps_timings[] = {
         .sampling_clock_rate = 90 * 1000,
         .mul = 60,
         .den = 1,
+        .framerate = 60.00,
+        .lower_limit = 0.00,
+        .upper_limit = 1.00,
     },
     {
         /* ST_FPS_P59_94 */
@@ -150,6 +162,9 @@ static const struct st_fps_timing st_fps_timings[] = {
         .sampling_clock_rate = 90 * 1000,
         .mul = 60000,
         .den = 1001,
+        .framerate = 59.94,
+        .lower_limit = 1.00,
+        .upper_limit = 0.06,
     },
     {
         /* ST_FPS_P50 */
@@ -157,6 +172,9 @@ static const struct st_fps_timing st_fps_timings[] = {
         .sampling_clock_rate = 90 * 1000,
         .mul = 50,
         .den = 1,
+        .framerate = 50.00,
+        .lower_limit = 1.00,
+        .upper_limit = 1.00,
     },
     {
         /* ST_FPS_P30 */
@@ -164,6 +182,9 @@ static const struct st_fps_timing st_fps_timings[] = {
         .sampling_clock_rate = 90 * 1000,
         .mul = 30,
         .den = 1,
+        .framerate = 30.00,
+        .lower_limit = 0.00,
+        .upper_limit = 1.00,
     },
     {
         /* ST_FPS_P29_97 */
@@ -171,6 +192,9 @@ static const struct st_fps_timing st_fps_timings[] = {
         .sampling_clock_rate = 90 * 1000,
         .mul = 30000,
         .den = 1001,
+        .framerate = 29.97,
+        .lower_limit = 1.00,
+        .upper_limit = 0.02,
     },
     {
         /* ST_FPS_P25 */
@@ -178,6 +202,9 @@ static const struct st_fps_timing st_fps_timings[] = {
         .sampling_clock_rate = 90 * 1000,
         .mul = 25,
         .den = 1,
+        .framerate = 25.00,
+        .lower_limit = 0.00,
+        .upper_limit = 1.00,
     },
     {
         /* ST_FPS_P24 */
@@ -185,6 +212,9 @@ static const struct st_fps_timing st_fps_timings[] = {
         .sampling_clock_rate = 90 * 1000,
         .mul = 24,
         .den = 1,
+        .framerate = 24.00,
+        .lower_limit = 0.0,
+        .upper_limit = 0.99,
     },
     {
         /* ST_FPS_P23.98 */
@@ -192,6 +222,9 @@ static const struct st_fps_timing st_fps_timings[] = {
         .sampling_clock_rate = 90 * 1000,
         .mul = 24000,
         .den = 1001,
+        .framerate = 23.98,
+        .lower_limit = 1.00,
+        .upper_limit = 0.01,
     },
 };
 
@@ -374,17 +407,17 @@ size_t st_frame_least_linesize(enum st_frame_fmt fmt, uint32_t width, uint8_t pl
     if (plane > 0)
       err("%s, invalid plane idx %u for packed fmt\n", __func__, plane);
     else
-      linesize = st_frame_size(fmt, width, 1);
+      linesize = st_frame_size(fmt, width, 1, false);
   } else {
     switch (st_frame_fmt_get_sampling(fmt)) {
       case ST_FRAME_SAMPLING_422:
         switch (plane) {
           case 0:
-            linesize = st_frame_size(fmt, width, 1) / 2;
+            linesize = st_frame_size(fmt, width, 1, false) / 2;
             break;
           case 1:
           case 2:
-            linesize = st_frame_size(fmt, width, 1) / 4;
+            linesize = st_frame_size(fmt, width, 1, false) / 4;
             break;
           default:
             err("%s, invalid plane idx %u for 422 planar fmt\n", __func__, plane);
@@ -396,7 +429,7 @@ size_t st_frame_least_linesize(enum st_frame_fmt fmt, uint32_t width, uint8_t pl
           case 0:
           case 1:
           case 2:
-            linesize = st_frame_size(fmt, width, 1) / 3;
+            linesize = st_frame_size(fmt, width, 1, false) / 3;
             break;
           default:
             err("%s, invalid plane idx %u for 444 planar fmt\n", __func__, plane);
@@ -406,11 +439,11 @@ size_t st_frame_least_linesize(enum st_frame_fmt fmt, uint32_t width, uint8_t pl
       case ST_FRAME_SAMPLING_420:
         switch (plane) {
           case 0:
-            linesize = st_frame_size(fmt, width, 1) * 4 / 6;
+            linesize = st_frame_size(fmt, width, 1, false) * 4 / 6;
             break;
           case 1:
           case 2:
-            linesize = st_frame_size(fmt, width, 1) / 6;
+            linesize = st_frame_size(fmt, width, 1, false) / 6;
             break;
           default:
             err("%s, invalid plane idx %u for 422 planar fmt\n", __func__, plane);
@@ -426,9 +459,10 @@ size_t st_frame_least_linesize(enum st_frame_fmt fmt, uint32_t width, uint8_t pl
   return linesize;
 }
 
-size_t st_frame_size(enum st_frame_fmt fmt, uint32_t width, uint32_t height) {
+size_t st_frame_size(enum st_frame_fmt fmt, uint32_t width, uint32_t height,
+                     bool interlaced) {
   size_t size = 0;
-  size_t pixels = width * height;
+  size_t pixels = (size_t)width * height;
 
   switch (fmt) {
     case ST_FRAME_FMT_YUV422PLANAR10LE:
@@ -484,6 +518,7 @@ size_t st_frame_size(enum st_frame_fmt fmt, uint32_t width, uint32_t height) {
       break;
   }
 
+  if (interlaced) size /= 2; /* if all fmt support interlace? */
   return size;
 }
 
@@ -541,13 +576,15 @@ int st20_get_pgroup(enum st20_fmt fmt, struct st20_pgroup* pg) {
 
 size_t st20_frame_size(enum st20_fmt fmt, uint32_t width, uint32_t height) {
   struct st20_pgroup pg;
+  memset(&pg, 0, sizeof(pg));
+
   int ret = st20_get_pgroup(fmt, &pg);
   if (ret < 0) {
     err("%s, st20_get_pgroup fail %d, fmt %d\n", __func__, ret, fmt);
     return 0;
   }
 
-  size_t size = width * height;
+  size_t size = (size_t)width * height;
   if (size % pg.coverage) {
     err("%s, fmt %d, invalid w %u h %u, not multiple of %u\n", __func__, fmt, width,
         height, pg.coverage);
@@ -559,6 +596,8 @@ size_t st20_frame_size(enum st20_fmt fmt, uint32_t width, uint32_t height) {
 
 const char* st20_frame_fmt_name(enum st20_fmt fmt) {
   struct st20_pgroup pg;
+  memset(&pg, 0, sizeof(pg));
+
   int ret = st20_get_pgroup(fmt, &pg);
   if (ret < 0) {
     err("%s, st20_get_pgroup fail %d, fmt %d\n", __func__, ret, fmt);
@@ -592,6 +631,21 @@ double st_frame_rate(enum st_fps fps) {
 
   err("%s, invalid fps %d\n", __func__, fps);
   return 0;
+}
+
+enum st_fps st_frame_rate_to_st_fps(double framerate) {
+  int i;
+
+  for (i = 0; i < MTL_ARRAY_SIZE(st_fps_timings); i++) {
+    if (framerate == st_fps_timings[i].framerate ||
+        ((framerate >= st_fps_timings[i].framerate - st_fps_timings[i].lower_limit) &&
+         (framerate <= st_fps_timings[i].framerate + st_fps_timings[i].upper_limit))) {
+      return st_fps_timings[i].fps;
+    }
+  }
+
+  err("%s, invalid fps %f\n", __func__, framerate);
+  return ST_FPS_MAX;
 }
 
 const char* st_frame_fmt_name(enum st_frame_fmt fmt) {
@@ -759,10 +813,14 @@ int st_draw_logo(struct st_frame* frame, struct st_frame* logo, uint32_t x, uint
 }
 
 int st20_get_bandwidth_bps(int width, int height, enum st20_fmt fmt, enum st_fps fps,
-                           uint64_t* bps) {
+                           bool interlaced, uint64_t* bps) {
   struct st20_pgroup pg;
   struct st_fps_timing fps_tm;
   int ret;
+  double traffic;
+
+  memset(&pg, 0, sizeof(pg));
+  memset(&fps_tm, 0, sizeof(fps_tm));
 
   ret = st20_get_pgroup(fmt, &pg);
   if (ret < 0) return ret;
@@ -770,9 +828,13 @@ int st20_get_bandwidth_bps(int width, int height, enum st20_fmt fmt, enum st_fps
   ret = st_get_fps_timing(fps, &fps_tm);
   if (ret < 0) return ret;
 
-  double ractive = 1080.0 / 1125.0;
-  *bps = (uint64_t)width * height * 8 * pg.size / pg.coverage * fps_tm.mul / fps_tm.den;
-  *bps = (double)*bps / ractive;
+  double reactive = 1080.0 / 1125.0;
+  traffic =
+      (uint64_t)width * height * 8 * pg.size / pg.coverage * fps_tm.mul / fps_tm.den;
+  if (interlaced) traffic /= 2;
+  traffic = traffic / reactive;
+
+  *bps = traffic;
   return 0;
 }
 
@@ -781,12 +843,14 @@ int st22_rtp_bandwidth_bps(uint32_t total_pkts, uint16_t pkt_size, enum st_fps f
   struct st_fps_timing fps_tm;
   int ret;
 
+  memset(&fps_tm, 0, sizeof(fps_tm));
+
   ret = st_get_fps_timing(fps, &fps_tm);
   if (ret < 0) return ret;
 
-  double ractive = 1080.0 / 1125.0;
+  double reactive = 1080.0 / 1125.0;
   *bps = (uint64_t)total_pkts * pkt_size * fps_tm.mul / fps_tm.den;
-  *bps = (double)*bps / ractive;
+  *bps = (double)*bps / reactive;
   return 0;
 }
 
@@ -794,12 +858,14 @@ int st22_frame_bandwidth_bps(size_t frame_size, enum st_fps fps, uint64_t* bps) 
   struct st_fps_timing fps_tm;
   int ret;
 
+  memset(&fps_tm, 0, sizeof(fps_tm));
+
   ret = st_get_fps_timing(fps, &fps_tm);
   if (ret < 0) return ret;
 
-  double ractive = 1080.0 / 1125.0;
+  double reactive = 1080.0 / 1125.0;
   *bps = frame_size * fps_tm.mul / fps_tm.den;
-  *bps = (double)*bps / ractive;
+  *bps = (double)*bps / reactive;
   return 0;
 }
 
@@ -958,4 +1024,137 @@ void st_frame_init_plane_single_src(struct st_frame* frame, void* addr, mtl_iova
           frame->iova[plane - 1] + frame->linesize[plane - 1] * frame->height;
     }
   }
+}
+
+/* the reference rl pad interval table for CVL NIC */
+struct cvl_pad_table {
+  enum st20_fmt fmt;
+  uint32_t width;
+  uint32_t height;
+  enum st_fps fps;
+  enum st20_packing packing;
+  bool interlaced;
+  uint16_t pad_interval;
+};
+
+static const struct cvl_pad_table g_cvl_static_pad_tables[] = {
+    {
+        /* 1080i50 gpm */
+        .fmt = ST20_FMT_YUV_422_10BIT,
+        .width = 1920,
+        .height = 1080,
+        .fps = ST_FPS_P50,
+        .packing = ST20_PACKING_GPM,
+        .interlaced = true,
+        .pad_interval = 155, /* measured with VERO avg vrx: 6.0 */
+    },
+    {
+        /* 1080i50 bpm */
+        .fmt = ST20_FMT_YUV_422_10BIT,
+        .width = 1920,
+        .height = 1080,
+        .fps = ST_FPS_P50,
+        .packing = ST20_PACKING_BPM,
+        .interlaced = true,
+        .pad_interval = 268, /* measured with VERO avg vrx: 6.0 */
+    },
+    {
+        /* 1080p50 gpm */
+        .fmt = ST20_FMT_YUV_422_10BIT,
+        .width = 1920,
+        .height = 1080,
+        .fps = ST_FPS_P50,
+        .packing = ST20_PACKING_GPM,
+        .interlaced = false,
+        .pad_interval = 156, /* measured with VERO avg vrx: 6.0 */
+    },
+    {
+        /* 1080p50 bpm */
+        .fmt = ST20_FMT_YUV_422_10BIT,
+        .width = 1920,
+        .height = 1080,
+        .fps = ST_FPS_P50,
+        .packing = ST20_PACKING_BPM,
+        .interlaced = false,
+        .pad_interval = 254, /* measured with VERO avg vrx: 6.0 */
+    },
+    {
+        /* 1080p59 gpm */
+        .fmt = ST20_FMT_YUV_422_10BIT,
+        .width = 1920,
+        .height = 1080,
+        .fps = ST_FPS_P59_94,
+        .packing = ST20_PACKING_GPM,
+        .interlaced = false,
+        .pad_interval = 160, /* measured with VERO avg vrx: 6.0 */
+    },
+    {
+        /* 1080p59 bpm */
+        .fmt = ST20_FMT_YUV_422_10BIT,
+        .width = 1920,
+        .height = 1080,
+        .fps = ST_FPS_P59_94,
+        .packing = ST20_PACKING_BPM,
+        .interlaced = false,
+        .pad_interval = 262, /* measured with VERO avg vrx: 7.0, narrow vrx: 9 */
+    },
+    {
+        /* 4kp50 gpm */
+        .fmt = ST20_FMT_YUV_422_10BIT,
+        .width = 1920 * 2,
+        .height = 1080 * 2,
+        .fps = ST_FPS_P50,
+        .packing = ST20_PACKING_GPM,
+        .interlaced = false,
+        .pad_interval = 144, /* measured with VERO uniform distribution */
+    },
+    {
+        /* 4kp50 bpm */
+        .fmt = ST20_FMT_YUV_422_10BIT,
+        .width = 1920 * 2,
+        .height = 1080 * 2,
+        .fps = ST_FPS_P59_94,
+        .packing = ST20_PACKING_BPM,
+        .interlaced = false,
+        .pad_interval = 215, /* measured with VERO uniform distribution */
+    },
+    {
+        /* 4kp59 gpm */
+        .fmt = ST20_FMT_YUV_422_10BIT,
+        .width = 1920 * 2,
+        .height = 1080 * 2,
+        .fps = ST_FPS_P59_94,
+        .packing = ST20_PACKING_GPM,
+        .interlaced = false,
+        .pad_interval = 145, /* measured with VERO uniform distribution */
+    },
+    {
+        /* 4kp59 bpm */
+        .fmt = ST20_FMT_YUV_422_10BIT,
+        .width = 1920 * 2,
+        .height = 1080 * 2,
+        .fps = ST_FPS_P59_94,
+        .packing = ST20_PACKING_BPM,
+        .interlaced = false,
+        .pad_interval = 217, /* measured with VERO uniform distribution */
+    },
+};
+
+uint16_t st20_pacing_static_profiling(struct st_tx_video_session_impl* s) {
+  const struct cvl_pad_table* refer;
+  struct st20_tx_ops* ops = &s->ops;
+
+  if (s->s_type == MT_ST22_HANDLE_TX_VIDEO) return 0; /* no for st22 */
+
+  for (int i = 0; i < MTL_ARRAY_SIZE(g_cvl_static_pad_tables); i++) {
+    refer = &g_cvl_static_pad_tables[i];
+    if ((ops->fmt == refer->fmt) && (ops->width == refer->width) &&
+        (ops->height == refer->height) && (ops->fps == refer->fps) &&
+        (ops->packing == refer->packing) && (ops->interlaced == refer->interlaced)) {
+      dbg("%s(%d), reference pad_interval %u\n", __func__, s->idx, refer->pad_interval);
+      return refer->pad_interval;
+    }
+  }
+
+  return 0; /* not found */
 }

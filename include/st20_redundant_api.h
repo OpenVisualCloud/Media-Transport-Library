@@ -5,14 +5,14 @@
 /**
  * @file st20_redundant_api.h
  *
- * Interfaces to Media Transport Library for st2110-20 redundant transport.
+ * Interfaces for st2110-20 redundant transport.
  *
  */
 
 #include "st20_api.h"
 
 #ifndef _ST20_REDUNDANT_API_HEAD_H_
-/** Marco for re-inculde protect */
+/** Marco for re-include protect */
 #define _ST20_REDUNDANT_API_HEAD_H_
 
 #if defined(__cplusplus)
@@ -24,7 +24,7 @@ typedef struct st20r_rx_ctx* st20r_rx_handle;
 
 /**
  * Flag bit in flags of struct st20r_rx_ops, for non MTL_PMD_DPDK_USER.
- * If set, it's application duty to set the rx flow(queue) and muticast join/drop.
+ * If set, it's application duty to set the rx flow(queue) and multicast join/drop.
  * Use st20p_rx_get_queue_meta to get the queue meta(queue number etc) info.
  */
 #define ST20R_RX_FLAG_DATA_PATH_ONLY (MTL_BIT32(0))
@@ -64,13 +64,13 @@ struct st20r_rx_ops {
   /** private data to the callback function */
   void* priv;
   /** source IP address of sender */
-  uint8_t sip_addr[MTL_PORT_MAX][MTL_IP_ADDR_LEN];
+  uint8_t sip_addr[MTL_SESSION_PORT_MAX][MTL_IP_ADDR_LEN];
   /** num of ports this session attached to, must be 2 */
   uint8_t num_port;
   /** Pcie BDF path like 0000:af:00.0, should align to BDF of mtl_init */
-  char port[MTL_PORT_MAX][MTL_PORT_MAX_LEN];
-  /** UDP port number */
-  uint16_t udp_port[MTL_PORT_MAX];
+  char port[MTL_SESSION_PORT_MAX][MTL_PORT_MAX_LEN];
+  /** UDP destination port number */
+  uint16_t udp_port[MTL_SESSION_PORT_MAX];
 
   /** Sender pacing type */
   enum st21_pacing pacing;
@@ -84,6 +84,8 @@ struct st20r_rx_ops {
   enum st_fps fps;
   /** Session resolution format */
   enum st20_fmt fmt;
+  /** interlace or not, false: non-interlaced: true: interlaced */
+  bool interlaced;
   /** 7 bits payload type define in RFC3550 */
   uint8_t payload_type;
   /** flags, value in ST20R_RX_FLAG_* */
@@ -100,7 +102,7 @@ struct st20r_rx_ops {
    * return:
    *   - 0: if app consume the frame successful. App should call st20r_rx_put_frame
    * to return the frame when it finish the handling
-   *   < 0: the error code if app cann't handle, lib will free the frame then.
+   *   < 0: the error code if app can't handle, lib will free the frame then.
    * Only for ST20_TYPE_FRAME_LEVEL/ST20_TYPE_SLICE_LEVEL.
    * And only non-block method can be used in this callback as it run from lcore tasklet
    * routine.
@@ -178,7 +180,7 @@ int st20r_rx_get_framebuffer_count(st20r_rx_handle handle);
  * @param handle
  *   The handle to the rx st2110-20(redundant) session.
  * @param max_dump_packets
- *   The max number of packets to be dumpped.
+ *   The max number of packets to be dumped.
  * @param sync
  *   synchronous or asynchronous, true means this func will return after dump
  * progress is finished.

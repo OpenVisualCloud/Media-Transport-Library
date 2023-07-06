@@ -8,7 +8,7 @@ project('mtl', 'c', default_options: ['buildtype=release'],
 
 exec_env = host_machine.system()
 set_variable('is_windows', exec_env == 'windows')
-message('BUILD Enviroment: ' + exec_env)
+message('BUILD Environment: ' + exec_env)
 
 # enable BSD_SOURCE
 add_global_arguments('-D_DEFAULT_SOURCE', language : 'c')
@@ -63,5 +63,5 @@ pkg.generate(
   version : meson.project_version(),
   libraries : mtl_lib,
   filebase : meson.project_name(),
-  description : 'Media Transport Library based on DPDK'
+  description : 'Intel® Media Transport Library based on DPDK'
 )

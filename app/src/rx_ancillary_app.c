@@ -52,8 +52,8 @@ static void app_rx_anc_handle_rtp(struct st_app_rx_anc_session* s, void* usrptr)
   }
 
   s->stat_frame_total_received++;
-  if (!s->stat_frame_frist_rx_time)
-    s->stat_frame_frist_rx_time = st_app_get_monotonic_time();
+  if (!s->stat_frame_first_rx_time)
+    s->stat_frame_first_rx_time = st_app_get_monotonic_time();
 }
 
 static void* app_rx_anc_read_thread(void* arg) {
@@ -126,20 +126,23 @@ static int app_rx_anc_init(struct st_app_context* ctx, st_json_ancillary_session
   ops.name = name;
   ops.priv = s;
   ops.num_port = anc ? anc->base.num_inf : ctx->para.num_ports;
-  memcpy(ops.sip_addr[MTL_PORT_P],
-         anc ? anc->base.ip[MTL_PORT_P] : ctx->rx_sip_addr[MTL_PORT_P], MTL_IP_ADDR_LEN);
-  strncpy(ops.port[MTL_PORT_P],
-          anc ? anc->base.inf[MTL_PORT_P]->name : ctx->para.port[MTL_PORT_P],
+  memcpy(ops.sip_addr[MTL_SESSION_PORT_P],
+         anc ? st_json_ip(ctx, &anc->base, MTL_SESSION_PORT_P)
+             : ctx->rx_sip_addr[MTL_PORT_P],
+         MTL_IP_ADDR_LEN);
+  strncpy(ops.port[MTL_SESSION_PORT_P],
+          anc ? anc->base.inf[MTL_SESSION_PORT_P]->name : ctx->para.port[MTL_PORT_P],
           MTL_PORT_MAX_LEN);
-  ops.udp_port[MTL_PORT_P] = anc ? anc->base.udp_port : (10200 + s->idx);
+  ops.udp_port[MTL_SESSION_PORT_P] = anc ? anc->base.udp_port : (10200 + s->idx);
   if (ops.num_port > 1) {
-    memcpy(ops.sip_addr[MTL_PORT_R],
-           anc ? anc->base.ip[MTL_PORT_R] : ctx->rx_sip_addr[MTL_PORT_R],
+    memcpy(ops.sip_addr[MTL_SESSION_PORT_R],
+           anc ? st_json_ip(ctx, &anc->base, MTL_SESSION_PORT_R)
+               : ctx->rx_sip_addr[MTL_PORT_R],
            MTL_IP_ADDR_LEN);
-    strncpy(ops.port[MTL_PORT_R],
-            anc ? anc->base.inf[MTL_PORT_R]->name : ctx->para.port[MTL_PORT_R],
+    strncpy(ops.port[MTL_SESSION_PORT_R],
+            anc ? anc->base.inf[MTL_SESSION_PORT_R]->name : ctx->para.port[MTL_PORT_R],
             MTL_PORT_MAX_LEN);
-    ops.udp_port[MTL_PORT_R] = anc ? anc->base.udp_port : (10200 + s->idx);
+    ops.udp_port[MTL_SESSION_PORT_R] = anc ? anc->base.udp_port : (10200 + s->idx);
   }
   ops.rtp_ring_size = 1024;
   ops.payload_type = anc ? anc->base.payload_type : ST_APP_PAYLOAD_TYPE_ANCILLARY;
@@ -177,7 +180,7 @@ static bool app_rx_anc_fps_check(double framerate) {
 static int app_rx_anc_result(struct st_app_rx_anc_session* s) {
   int idx = s->idx;
   uint64_t cur_time_ns = st_app_get_monotonic_time();
-  double time_sec = (double)(cur_time_ns - s->stat_frame_frist_rx_time) / NS_PER_S;
+  double time_sec = (double)(cur_time_ns - s->stat_frame_first_rx_time) / NS_PER_S;
   double framerate = s->stat_frame_total_received / time_sec;
 
   if (!s->stat_frame_total_received) return -EINVAL;

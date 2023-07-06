@@ -7,8 +7,8 @@
 
 #include "st_main.h"
 
-int st_tx_ancillary_sessions_mgr_uinit(struct st_tx_ancillary_sessions_mgr* mgr);
+#define ST_TX_ANCILLARY_PREFIX "TC_"
 
-void st_tx_ancillary_sessions_stat(struct mtl_main_impl* impl);
+int st_tx_ancillary_sessions_mgr_uinit(struct st_tx_ancillary_sessions_mgr* mgr);
 
 #endif

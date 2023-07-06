@@ -104,7 +104,7 @@ struct mt_ptp_delay_resp_msg {
 
 static inline struct mt_ptp_impl* mt_get_ptp(struct mtl_main_impl* impl,
                                              enum mtl_port port) {
-  return &impl->ptp[port];
+  return impl->ptp[port];
 }
 
 int mt_ptp_init(struct mtl_main_impl* impl);
@@ -112,8 +112,6 @@ int mt_ptp_uinit(struct mtl_main_impl* impl);
 
 int mt_ptp_parse(struct mt_ptp_impl* ptp, struct mt_ptp_header* hdr, bool vlan,
                  enum mt_ptp_l_mode mode, uint16_t timesync,
-                 struct mt_ptp_ipv4_udp* ipv4_hdr);
-
-void mt_ptp_stat(struct mtl_main_impl* impl);
+                 struct mt_ipv4_udp* ipv4_hdr);
 
 #endif

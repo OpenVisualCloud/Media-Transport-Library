@@ -5,6 +5,7 @@
 #include "mt_dma.h"
 
 #include "mt_log.h"
+#include "mt_stat.h"
 
 static inline struct mt_map_mgr* mt_get_map_mgr(struct mtl_main_impl* impl) {
   return &impl->map_mgr;
@@ -125,7 +126,7 @@ int mt_map_uinit(struct mtl_main_impl* impl) {
   return 0;
 }
 
-/* dmadev only available from DPDK 21.11 */
+/* dma dev only available from DPDK 21.11 */
 #if RTE_VERSION >= RTE_VERSION_NUM(21, 11, 0, 0)
 #include <rte_dmadev.h>
 
@@ -266,14 +267,34 @@ static int dma_hw_stop(struct mt_dma_dev* dev) {
   return 0;
 }
 
+static int dma_stat(void* priv) {
+  struct mt_dma_dev* dev = priv;
+  int16_t dev_id = dev->dev_id;
+  int idx = dev->idx;
+  struct rte_dma_stats stats;
+  uint64_t avg_nb_inflight = 0;
+
+  rte_dma_stats_get(dev_id, 0, &stats);
+  rte_dma_stats_reset(dev_id, 0);
+  if (dev->stat_commit_sum)
+    avg_nb_inflight = dev->stat_inflight_sum / dev->stat_commit_sum;
+  dev->stat_inflight_sum = 0;
+  dev->stat_commit_sum = 0;
+  notice("DMA(%d), s %" PRIu64 " c %" PRIu64 " e %" PRIu64 " avg q %" PRIu64 "\n", idx,
+         stats.submitted, stats.completed, stats.errors, avg_nb_inflight);
+
+  return 0;
+}
+
 static int dma_sw_init(struct mtl_main_impl* impl, struct mt_dma_dev* dev) {
   int idx = dev->idx;
+
 #if MT_DMA_RTE_RING
   char ring_name[32];
   struct rte_ring* ring;
   unsigned int flags, count;
 
-  snprintf(ring_name, 32, "RX-DMA-BORROW-RING-D%d", idx);
+  snprintf(ring_name, 32, "%sD%d", MT_DMA_BORROW_RING_PREFIX, idx);
   flags = RING_F_SP_ENQ | RING_F_SC_DEQ;
   count = dev->nb_desc;
   ring = rte_ring_create(ring_name, count, mt_socket_id(impl, MTL_PORT_P), flags);
@@ -294,11 +315,15 @@ static int dma_sw_init(struct mtl_main_impl* impl, struct mt_dma_dev* dev) {
 #endif
   dev->nb_inflight = 0;
 
+  mt_stat_register(impl, dma_stat, dev, "dma");
+
   return 0;
 }
 
-static int dma_sw_uinit(struct mt_dma_dev* dev) {
+static int dma_sw_uinit(struct mtl_main_impl* impl, struct mt_dma_dev* dev) {
   uint16_t nb_inflight = 0;
+
+  mt_stat_unregister(impl, dma_stat, dev);
 
 #if MT_DMA_RTE_RING
   if (dev->borrow_queue) {
@@ -325,24 +350,6 @@ static int dma_sw_uinit(struct mt_dma_dev* dev) {
   return 0;
 }
 
-static int dma_stat(struct mtl_main_impl* impl, struct mt_dma_dev* dev) {
-  int16_t dev_id = dev->dev_id;
-  int idx = dev->idx;
-  struct rte_dma_stats stats;
-  uint64_t avg_nb_inflight = 0;
-
-  rte_dma_stats_get(dev_id, 0, &stats);
-  rte_dma_stats_reset(dev_id, 0);
-  if (dev->stat_commit_sum)
-    avg_nb_inflight = dev->stat_inflight_sum / dev->stat_commit_sum;
-  dev->stat_inflight_sum = 0;
-  dev->stat_commit_sum = 0;
-  notice("DMA(%d), s %" PRIu64 " c %" PRIu64 " e %" PRIu64 " avg q %" PRIu64 "\n", idx,
-         stats.submitted, stats.completed, stats.errors, avg_nb_inflight);
-
-  return 0;
-}
-
 static int dma_free(struct mtl_main_impl* impl, struct mt_dma_dev* dev) {
   if (!dev->active) {
     err("%s(%d), not active\n", __func__, dev->idx);
@@ -350,7 +357,7 @@ static int dma_free(struct mtl_main_impl* impl, struct mt_dma_dev* dev) {
   }
 
   dma_hw_stop(dev);
-  dma_sw_uinit(dev);
+  dma_sw_uinit(impl, dev);
   dev->active = false;
 
   return 0;
@@ -495,6 +502,9 @@ int mt_dma_borrow_mbuf(struct mtl_dma_lender_dev* dev, struct rte_mbuf* mbuf) {
 #endif
   dma_dev->nb_inflight++;
   dev->nb_borrowed++;
+
+  rte_mbuf_refcnt_update(mbuf, 1);
+
   return 0;
 }
 
@@ -568,18 +578,6 @@ int mt_dma_uinit(struct mtl_main_impl* impl) {
   return 0;
 }
 
-int mt_dma_stat(struct mtl_main_impl* impl) {
-  struct mt_dma_mgr* mgr = mt_get_dma_mgr(impl);
-  int idx;
-  struct mt_dma_dev* dev;
-
-  for (idx = 0; idx < MTL_DMA_DEV_MAX; idx++) {
-    dev = &mgr->devs[idx];
-    if (dev->active) dma_stat(impl, dev);
-  }
-
-  return 0;
-}
 #else
 int mt_dma_init(struct mtl_main_impl* impl) {
   struct mtl_init_params* p = mt_get_user_params(impl);
@@ -593,8 +591,6 @@ int mt_dma_init(struct mtl_main_impl* impl) {
 }
 
 int mt_dma_uinit(struct mtl_main_impl* impl) { return -EINVAL; }
-
-int mt_dma_stat(struct mtl_main_impl* impl) { return -EINVAL; }
 
 struct mtl_dma_lender_dev* mt_dma_request_dev(struct mtl_main_impl* impl,
                                               struct mt_dma_request_req* req) {

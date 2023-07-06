@@ -54,7 +54,7 @@ static void user_param_init(struct st_app_context* ctx, struct mtl_init_params* 
 
   p->pmd[MTL_PORT_P] = MTL_PMD_DPDK_USER;
   p->pmd[MTL_PORT_R] = MTL_PMD_DPDK_USER;
-  /* defalut start queue set to 1 */
+  /* default start queue set to 1 */
   p->xdp_info[MTL_PORT_P].start_queue = 1;
   p->xdp_info[MTL_PORT_R].start_queue = 1;
   p->flags |= MTL_FLAG_BIND_NUMA; /* default bind to numa */
@@ -102,7 +102,7 @@ static void st_app_ctx_init(struct st_app_context* ctx) {
   /* st22 */
   ctx->st22_bpp = 3; /* 3bit per pixel */
 
-  ctx->utc_offset = UTC_OFFSSET;
+  ctx->utc_offset = UTC_OFFSET;
 
   /* init lcores and sch */
   for (int i = 0; i < ST_APP_MAX_LCORES; i++) {
@@ -255,25 +255,28 @@ int main(int argc, char** argv) {
       ctx->rx_st20p_session_cnt > ST_APP_MAX_RX_VIDEO_SESSIONS ||
       ctx->rx_audio_session_cnt > ST_APP_MAX_RX_AUDIO_SESSIONS ||
       ctx->rx_anc_session_cnt > ST_APP_MAX_RX_ANC_SESSIONS) {
-    err("%s, session cnt invalid, pass the restriction %d\n", __func__,
-        ST_APP_MAX_RX_VIDEO_SESSIONS);
+    err("%s, session cnt invalid, pass the restriction\n", __func__);
     return -EINVAL;
   }
 
-  ctx->para.tx_sessions_cnt_max = ctx->tx_video_session_cnt + ctx->tx_audio_session_cnt +
-                                  ctx->tx_anc_session_cnt + ctx->tx_st22_session_cnt +
-                                  ctx->tx_st20p_session_cnt + ctx->tx_st22p_session_cnt;
-  ctx->para.rx_sessions_cnt_max = ctx->rx_video_session_cnt + ctx->rx_audio_session_cnt +
-                                  ctx->rx_anc_session_cnt + ctx->rx_st22_session_cnt +
-                                  ctx->rx_st22p_session_cnt + ctx->rx_st20p_session_cnt;
-
-  /* parse af xdp pmd info */
+  int tx_st20_sessions = ctx->tx_video_session_cnt + ctx->tx_st22_session_cnt +
+                         ctx->tx_st20p_session_cnt + ctx->tx_st22p_session_cnt;
+  int rx_st20_sessions = ctx->rx_video_session_cnt + ctx->rx_st22_session_cnt +
+                         ctx->rx_st22p_session_cnt + ctx->rx_st20p_session_cnt;
   for (int i = 0; i < ctx->para.num_ports; i++) {
+    /* parse queue cnt, todo: split with ports */
+    if (!ctx->para.tx_queues_cnt[i]) {
+      ctx->para.tx_queues_cnt[i] = st_tx_sessions_queue_cnt(
+          tx_st20_sessions, ctx->tx_audio_session_cnt, ctx->tx_anc_session_cnt);
+    }
+    if (!ctx->para.rx_queues_cnt[i]) {
+      ctx->para.rx_queues_cnt[i] = st_rx_sessions_queue_cnt(
+          rx_st20_sessions, ctx->rx_audio_session_cnt, ctx->rx_anc_session_cnt);
+    }
+    /* parse af xdp pmd info */
     ctx->para.pmd[i] = mtl_pmd_by_port_name(ctx->para.port[i]);
-    if (ctx->para.tx_sessions_cnt_max > ctx->para.rx_sessions_cnt_max)
-      ctx->para.xdp_info[i].queue_count = ctx->para.tx_sessions_cnt_max;
-    else
-      ctx->para.xdp_info[i].queue_count = ctx->para.rx_sessions_cnt_max;
+    ctx->para.xdp_info[i].queue_count =
+        ST_MAX(ctx->para.tx_queues_cnt[i], ctx->para.rx_queues_cnt[i]);
   }
 
   /* hdr split special */

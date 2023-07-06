@@ -2,5 +2,5 @@
 # Copyright 2022 Intel Corporation
 
 sources += files(
-  'udp_main.c',
+  'udp_rxq.c', 'udp_main.c', 'ufd_main.c',
 )

@@ -13,7 +13,7 @@
 
 static inline struct mt_mcast_impl* get_mcast(struct mtl_main_impl* impl,
                                               enum mtl_port port) {
-  return &impl->mcast[port];
+  return impl->mcast[port];
 }
 
 /* Computing the Internet Checksum based on rfc1071 */
@@ -259,7 +259,7 @@ static int mcast_addr_pool_append(struct mt_interface* inf,
 static void mcast_addr_pool_remove(struct mt_interface* inf, uint32_t addr_idx) {
   inf->mcast_nb--;
   if (addr_idx == inf->mcast_nb) {
-    /* No need to recompact the set of multicast addressses. */
+    /* No need to recompose the set of multicast address. */
     if (inf->mcast_nb == 0) {
       /* free the pool of multicast addresses. */
       free(inf->mcast_mac_lists);
@@ -315,15 +315,25 @@ static int mcast_inf_remove_mac(struct mt_interface* inf,
 }
 
 int mt_mcast_init(struct mtl_main_impl* impl) {
-  int ret;
+  int num_ports = mt_num_ports(impl);
+  int socket = mt_socket_id(impl, MTL_PORT_P);
 
-  for (int port = 0; port < MTL_PORT_MAX; ++port) {
-    struct mt_mcast_impl* mcast = get_mcast(impl, port);
+  for (int i = 0; i < num_ports; i++) {
+    struct mt_mcast_impl* mcast = mt_rte_zmalloc_socket(sizeof(*mcast), socket);
+    if (!mcast) {
+      err("%s(%d), mcast malloc fail\n", __func__, i);
+      mt_mcast_uinit(impl);
+      return -ENOMEM;
+    }
 
     mt_pthread_mutex_init(&mcast->group_mutex, NULL);
+
+    /* assign arp instance */
+    impl->mcast[i] = mcast;
   }
 
-  ret = rte_eal_alarm_set(IGMP_JOIN_GROUP_PERIOD_US, mcast_membership_report_cb, impl);
+  int ret =
+      rte_eal_alarm_set(IGMP_JOIN_GROUP_PERIOD_US, mcast_membership_report_cb, impl);
   if (ret < 0) err("%s, set igmp alarm fail %d\n", __func__, ret);
 
   info("%s, report every %d seconds\n", __func__, IGMP_JOIN_GROUP_PERIOD_S);
@@ -331,18 +341,23 @@ int mt_mcast_init(struct mtl_main_impl* impl) {
 }
 
 int mt_mcast_uinit(struct mtl_main_impl* impl) {
-  int ret;
+  int num_ports = mt_num_ports(impl);
 
-  for (int port = 0; port < MTL_PORT_MAX; ++port) {
-    struct mt_mcast_impl* mcast = get_mcast(impl, port);
+  for (int i = 0; i < num_ports; i++) {
+    struct mt_mcast_impl* mcast = get_mcast(impl, i);
+    if (!mcast) continue;
 
     mt_pthread_mutex_destroy(&mcast->group_mutex);
+
+    /* free the memory */
+    mt_rte_free(mcast);
+    impl->mcast[i] = NULL;
   }
 
-  ret = rte_eal_alarm_cancel(mcast_membership_report_cb, impl);
+  int ret = rte_eal_alarm_cancel(mcast_membership_report_cb, impl);
   if (ret < 0) err("%s, alarm cancel fail %d\n", __func__, ret);
 
-  info("%s, succ\n", __func__);
+  dbg("%s, succ\n", __func__);
   return 0;
 }
 

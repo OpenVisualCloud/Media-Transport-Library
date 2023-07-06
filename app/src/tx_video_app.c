@@ -43,7 +43,9 @@ static int app_tx_video_next_frame(void* priv, uint16_t* next_frame_idx,
 
   st_pthread_mutex_lock(&s->st20_wake_mutex);
   if (ST_TX_FRAME_READY == framebuff->stat) {
-    dbg("%s(%d), next frame idx %u\n", __func__, s->idx, consumer_idx);
+    dbg("%s(%d), next frame idx %u, epoch %" PRIu64 ", tai %" PRIu64 "\n", __func__,
+        s->idx, consumer_idx, meta->epoch,
+        st10_get_tai(meta->tfmt, meta->timestamp, ST10_VIDEO_SAMPLING_RATE_90K));
     ret = 0;
     framebuff->stat = ST_TX_FRAME_IN_TRANSMITTING;
     *next_frame_idx = consumer_idx;
@@ -73,7 +75,9 @@ static int app_tx_video_frame_done(void* priv, uint16_t frame_idx,
   if (ST_TX_FRAME_IN_TRANSMITTING == framebuff->stat) {
     ret = 0;
     framebuff->stat = ST_TX_FRAME_FREE;
-    dbg("%s(%d), done_idx %u\n", __func__, s->idx, frame_idx);
+    dbg("%s(%d), done frame idx %u, epoch %" PRIu64 ", tai %" PRIu64 "\n", __func__,
+        s->idx, frame_idx, meta->epoch,
+        st10_get_tai(meta->tfmt, meta->timestamp, ST10_VIDEO_SAMPLING_RATE_90K));
   } else {
     ret = -EIO;
     err("%s(%d), err status %d for frame %u\n", __func__, s->idx, framebuff->stat,
@@ -83,8 +87,8 @@ static int app_tx_video_frame_done(void* priv, uint16_t frame_idx,
   st_pthread_mutex_unlock(&s->st20_wake_mutex);
 
   s->st20_frame_done_cnt++;
-  if (!s->stat_frame_frist_tx_time)
-    s->stat_frame_frist_tx_time = st_app_get_monotonic_time();
+  if (!s->stat_frame_first_tx_time)
+    s->stat_frame_first_tx_time = st_app_get_monotonic_time();
 
   return ret;
 }
@@ -456,8 +460,8 @@ static int app_tx_video_build_rtp_packet(struct st_app_tx_video_session* s,
     s->st20_pkt_idx = 0;
     s->st20_rtp_tmstamp++;
     s->st20_frame_done_cnt++;
-    if (!s->stat_frame_frist_tx_time)
-      s->stat_frame_frist_tx_time = st_app_get_monotonic_time();
+    if (!s->stat_frame_first_tx_time)
+      s->stat_frame_first_tx_time = st_app_get_monotonic_time();
     int frame_size = s->interlaced ? s->st20_frame_size * 2 : s->st20_frame_size;
     if (!s->interlaced) {
       s->st20_frame_cursor += frame_size;
@@ -649,7 +653,7 @@ static int app_tx_video_uinit(struct st_app_tx_video_session* s) {
 static int app_tx_video_result(struct st_app_tx_video_session* s) {
   int idx = s->idx;
   uint64_t cur_time_ns = st_app_get_monotonic_time();
-  double time_sec = (double)(cur_time_ns - s->stat_frame_frist_tx_time) / NS_PER_S;
+  double time_sec = (double)(cur_time_ns - s->stat_frame_first_tx_time) / NS_PER_S;
   double framerate = s->st20_frame_done_cnt / time_sec;
 
   if (!s->st20_frame_done_cnt) return -EINVAL;
@@ -676,31 +680,36 @@ static int app_tx_video_init(struct st_app_context* ctx, st_json_video_session_t
   ops.name = name;
   ops.priv = s;
   ops.num_port = video ? video->base.num_inf : ctx->para.num_ports;
-  memcpy(ops.dip_addr[MTL_PORT_P],
-         video ? video->base.ip[MTL_PORT_P] : ctx->tx_dip_addr[MTL_PORT_P],
+  memcpy(ops.dip_addr[MTL_SESSION_PORT_P],
+         video ? st_json_ip(ctx, &video->base, MTL_SESSION_PORT_P)
+               : ctx->tx_dip_addr[MTL_PORT_P],
          MTL_IP_ADDR_LEN);
-  strncpy(ops.port[MTL_PORT_P],
-          video ? video->base.inf[MTL_PORT_P]->name : ctx->para.port[MTL_PORT_P],
+  strncpy(ops.port[MTL_SESSION_PORT_P],
+          video ? video->base.inf[MTL_SESSION_PORT_P]->name : ctx->para.port[MTL_PORT_P],
           MTL_PORT_MAX_LEN);
-  ops.udp_port[MTL_PORT_P] = video ? video->base.udp_port : (10000 + s->idx);
+  ops.udp_port[MTL_SESSION_PORT_P] = video ? video->base.udp_port : (10000 + s->idx);
   if (ctx->has_tx_dst_mac[MTL_PORT_P]) {
-    memcpy(&ops.tx_dst_mac[MTL_PORT_P][0], ctx->tx_dst_mac[MTL_PORT_P], 6);
+    memcpy(&ops.tx_dst_mac[MTL_SESSION_PORT_P][0], ctx->tx_dst_mac[MTL_PORT_P],
+           MTL_MAC_ADDR_LEN);
     ops.flags |= ST20_TX_FLAG_USER_P_MAC;
   }
   if (ops.num_port > 1) {
-    memcpy(ops.dip_addr[MTL_PORT_R],
-           video ? video->base.ip[MTL_PORT_R] : ctx->tx_dip_addr[MTL_PORT_R],
+    memcpy(ops.dip_addr[MTL_SESSION_PORT_R],
+           video ? st_json_ip(ctx, &video->base, MTL_SESSION_PORT_R)
+                 : ctx->tx_dip_addr[MTL_PORT_R],
            MTL_IP_ADDR_LEN);
-    strncpy(ops.port[MTL_PORT_R],
-            video ? video->base.inf[MTL_PORT_R]->name : ctx->para.port[MTL_PORT_R],
-            MTL_PORT_MAX_LEN);
-    ops.udp_port[MTL_PORT_R] = video ? video->base.udp_port : (10000 + s->idx);
+    strncpy(
+        ops.port[MTL_SESSION_PORT_R],
+        video ? video->base.inf[MTL_SESSION_PORT_R]->name : ctx->para.port[MTL_PORT_R],
+        MTL_PORT_MAX_LEN);
+    ops.udp_port[MTL_SESSION_PORT_R] = video ? video->base.udp_port : (10000 + s->idx);
     if (ctx->has_tx_dst_mac[MTL_PORT_R]) {
-      memcpy(&ops.tx_dst_mac[MTL_PORT_R][0], ctx->tx_dst_mac[MTL_PORT_R], 6);
+      memcpy(&ops.tx_dst_mac[MTL_SESSION_PORT_R][0], ctx->tx_dst_mac[MTL_PORT_R],
+             MTL_MAC_ADDR_LEN);
       ops.flags |= ST20_TX_FLAG_USER_R_MAC;
     }
   }
-  ops.pacing = ST21_PACING_NARROW;
+  ops.pacing = ctx->tx_pacing_type;
   ops.packing = video ? video->info.packing : ST20_PACKING_BPM;
   ops.type = video ? video->info.type : ST20_TYPE_FRAME_LEVEL;
   ops.width = video ? st_app_get_width(video->info.video_format) : 1920;
@@ -715,7 +724,10 @@ static int app_tx_video_init(struct st_app_context* ctx, st_json_video_session_t
   ops.notify_event = app_tx_notify_event;
   ops.framebuff_cnt = 2;
   ops.payload_type = video ? video->base.payload_type : ST_APP_PAYLOAD_TYPE_VIDEO;
+  ops.start_vrx = ctx->tx_start_vrx;
+  ops.pad_interval = ctx->tx_pad_interval;
   if (s->enable_vsync) ops.flags |= ST20_TX_FLAG_ENABLE_VSYNC;
+  if (ctx->tx_no_static_pad) ops.flags |= ST20_TX_FLAG_DISABLE_STATIC_PAD_P;
 
   ret = st20_get_pgroup(ops.fmt, &s->st20_pg);
   if (ret < 0) return ret;

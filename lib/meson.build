@@ -6,7 +6,7 @@ cc = meson.get_compiler('c')
 # allow experimental api
 add_global_arguments('-DALLOW_EXPERIMENTAL_API', language : 'c')
 
-# add dependences
+# add dependencies
 dpdk_dep = dependency('libdpdk', required : true)
 libm_dep = cc.find_library('m', required : true)
 libpthread_dep = cc.find_library('pthread', required : true)
@@ -22,8 +22,10 @@ subdir('src')
 mtl_c_args = []
 mtl_link_c_args = []
 
-# enable warning as error
-mtl_c_args += ['-Werror']
+# enable warning as error for non debug build
+if get_option('buildtype') != 'debug'
+  mtl_c_args += ['-Werror']
+endif
 mtl_c_args += ['-Wall']
 
 #simd build option, enable sse4.2 default
@@ -46,11 +48,15 @@ if is_windows
   mtl_include_dir += include_directories('''.\windows\''')
   mtl_include_dir += include_directories(dpdk_root_dir + '''\lib\eal\windows\include\''')
   mtl_include_dir += include_directories(dpdk_root_dir + '''\lib\kni\''')
-  mtl_c_args += ['-static','-DWINDOWSENV','-D_WIN32_WINNT=0x0600','-Wformat=0','-Wno-maybe-uninitialized','-mno-ms-bitfields', '-Og']
+  mtl_c_args += ['-static','-DWINDOWSENV','-D__USE_MINGW_ANSI_STDIO','-D_WIN32_WINNT=0x0600','-mno-ms-bitfields']
+  # For issues: "Error: invalid register for .seh_savexmm", see https://gcc.gnu.org/bugzilla/show_bug.cgi?id=65782
+  mtl_c_args += ['-fno-asynchronous-unwind-tables']
   mtl_link_c_args += ['-static','-limagehlp', '-lsetupapi', '-lWs2_32']
   mtl_link_c_args += ['-Wl,--whole-archive']
   mtl_link_c_args += [dpdklibs.stdout().strip().split()]
   mtl_link_c_args += ['-Wl,--no-whole-archive']
+  # generate .def file to be converted to .lib for msvc
+  mtl_link_c_args += ['-Wl,--output-def,libmtl.def']
 endif
 
 if cc.has_argument('-mavx2')

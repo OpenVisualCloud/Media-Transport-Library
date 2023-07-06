@@ -118,15 +118,30 @@ struct st_video_fmt_desc {
 
 typedef struct st_json_interface {
   char name[MTL_PORT_MAX_LEN];
+  enum mtl_net_proto net_proto;
   uint8_t ip_addr[MTL_IP_ADDR_LEN];
+  uint8_t netmask[MTL_IP_ADDR_LEN];
+  uint8_t gateway[MTL_IP_ADDR_LEN];
+  uint16_t tx_queues_cnt;
+  uint16_t rx_queues_cnt;
 } st_json_interface_t;
 
+enum st_json_ip_type {
+  ST_JSON_IP_ADDR = 0,
+  ST_JSON_IP_LOCAL_IF,
+  ST_JSON_IP_MAX,
+};
+
 typedef struct st_json_session_base {
-  uint8_t ip[MTL_PORT_MAX][MTL_IP_ADDR_LEN];
-  st_json_interface_t* inf[MTL_PORT_MAX];
+  uint8_t ip[MTL_SESSION_PORT_MAX][MTL_IP_ADDR_LEN];
+  st_json_interface_t* inf[MTL_SESSION_PORT_MAX];
   int num_inf;
   uint16_t udp_port;
   uint8_t payload_type;
+  enum st_json_ip_type type[MTL_SESSION_PORT_MAX];
+  enum mtl_port local[MTL_SESSION_PORT_MAX]; /* if use ST_JSON_IP_LOCAL_IF */
+  uint8_t local_ip[MTL_SESSION_PORT_MAX]
+                  [MTL_IP_ADDR_LEN]; /* if use ST_JSON_IP_LOCAL_IF */
 } st_json_session_base_t;
 
 typedef struct st_json_video_info {
@@ -181,7 +196,7 @@ typedef struct st_json_st20p_info {
   uint32_t height;
   enum st_fps fps;
   enum st_plugin_device device;
-
+  bool interlaced;
   char st20p_url[ST_APP_URL_MAX_LEN];
 } st_json_st20p_info_t;
 
@@ -225,8 +240,14 @@ typedef struct st_json_st20p_session {
 typedef struct st_json_context {
   st_json_interface_t* interfaces;
   int num_interfaces;
+  enum mtl_rss_mode rss_mode;
   int sch_quota;
+  int tx_audio_sessions_max_per_sch;
+  int rx_audio_sessions_max_per_sch;
   bool has_display;
+  bool shared_tx_queues;
+  bool shared_rx_queues;
+  bool tx_no_chain;
 
   st_json_video_session_t* tx_video_sessions;
   int tx_video_session_cnt;
@@ -260,4 +281,5 @@ enum st_fps st_app_get_fps(enum video_format fmt);
 uint32_t st_app_get_width(enum video_format fmt);
 uint32_t st_app_get_height(enum video_format fmt);
 bool st_app_get_interlaced(enum video_format fmt);
+
 #endif

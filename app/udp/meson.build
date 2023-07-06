@@ -3,3 +3,9 @@
 
 upd_server_sample_sources = files('udp_server_sample.c', '../sample/sample_util.c')
 upd_client_sample_sources = files('udp_client_sample.c', '../sample/sample_util.c')
+
+ufd_server_sample_sources = files('ufd_server_sample.c', '../sample/sample_util.c')
+ufd_client_sample_sources = files('ufd_client_sample.c', '../sample/sample_util.c')
+
+usocket_server_sample_sources = files('usocket_server_sample.c', '../sample/sample_util.c')
+usocket_client_sample_sources = files('usocket_client_sample.c', '../sample/sample_util.c')

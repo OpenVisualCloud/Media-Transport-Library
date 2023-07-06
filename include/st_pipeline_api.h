@@ -5,9 +5,9 @@
 /**
  * @file st_pipeline_api.h
  *
- * Interfaces to Media Transport Library for st2110-20/22 pipeline transport.
+ * Interfaces for st2110-20/22 pipeline transport.
  * It include a plugin layer to hide the covert/encode detail that application can
- * foucs on the raw pixel handling.
+ * focus on the raw pixel handling.
  *
  */
 
@@ -81,15 +81,15 @@ struct st_plugin_meta {
   uint32_t magic;
 };
 
-/** Get meta function porotype of plugin */
+/** Get meta function prototype of plugin */
 typedef int (*st_plugin_get_meta_fn)(struct st_plugin_meta* meta);
 /** Get meta function name of plugin */
 #define ST_PLUGIN_GET_META_API "st_plugin_get_meta"
-/** Create function porotype of plugin */
+/** Create function prototype of plugin */
 typedef st_plugin_priv (*st_plugin_create_fn)(mtl_handle mt);
 /** Create function name of plugin */
 #define ST_PLUGIN_CREATE_API "st_plugin_create"
-/** Free function porotype of plugin */
+/** Free function prototype of plugin */
 typedef int (*st_plugin_free_fn)(st_plugin_priv handle);
 /** Free function name of plugin */
 #define ST_PLUGIN_FREE_API "st_plugin_free"
@@ -245,6 +245,10 @@ struct st_frame {
   size_t linesize[ST_MAX_PLANES];
   /** frame format */
   enum st_frame_fmt fmt;
+  /** interlace or not, false: non-interlaced: true: interlaced */
+  bool interlaced;
+  /** Second field type indicate for interlaced mode, for tx it's set by user */
+  bool second_field;
   /** frame buffer size, include all planes */
   size_t buffer_size;
   /**
@@ -261,6 +265,8 @@ struct st_frame {
   enum st10_timestamp_fmt tfmt;
   /** frame timestamp value */
   uint64_t timestamp;
+  /** epoch info for the done frame */
+  uint64_t epoch;
   /** flags, value in ST_FRAME_FLAG_* */
   uint32_t flags;
   /** frame status, complete or not */
@@ -300,7 +306,7 @@ enum st22_codec {
   ST22_CODEC_MAX,
 };
 
-/** Qulity mode type of st22, speed or quality */
+/** Quality mode type of st22, speed or quality */
 enum st22_quality_mode {
   /** speed mode */
   ST22_QUALITY_MODE_SPEED = 0,
@@ -377,10 +383,15 @@ enum st22_quality_mode {
  * If enabled, lib will pass ST_EVENT_VSYNC by the notify_event on every epoch start.
  */
 #define ST20P_TX_FLAG_ENABLE_VSYNC (MTL_BIT32(5))
+/**
+ * Flag bit in flags of struct st20p_tx_ops.
+ * If disable the static RL pad interval profiling.
+ */
+#define ST20P_TX_FLAG_DISABLE_STATIC_PAD_P (MTL_BIT32(6))
 
 /**
  * Flag bit in flags of struct st22p_rx_ops, for non MTL_PMD_DPDK_USER.
- * If set, it's application duty to set the rx flow(queue) and muticast join/drop.
+ * If set, it's application duty to set the rx flow(queue) and multicast join/drop.
  * Use st22p_rx_get_queue_meta to get the queue meta(queue number etc) info.
  */
 #define ST22P_RX_FLAG_DATA_PATH_ONLY (MTL_BIT32(0))
@@ -398,7 +409,7 @@ enum st22_quality_mode {
 
 /**
  * Flag bit in flags of struct st20p_rx_ops, for non MTL_PMD_DPDK_USER.
- * If set, it's application duty to set the rx flow(queue) and muticast join/drop.
+ * If set, it's application duty to set the rx flow(queue) and multicast join/drop.
  * Use st20p_rx_get_queue_meta to get the queue meta(queue number etc) info.
  */
 #define ST20P_RX_FLAG_DATA_PATH_ONLY (MTL_BIT32(0))
@@ -411,7 +422,7 @@ enum st22_quality_mode {
  * Flag bit in flags of struct st20p_rx_ops.
  * Only used for internal convert mode.
  * The external frames are provided by calling
- * st20_rx_get_ext_frame.
+ * st20p_rx_get_ext_frame.
  */
 #define ST20P_RX_FLAG_EXT_FRAME (MTL_BIT32(2))
 /**
@@ -434,6 +445,12 @@ enum st22_quality_mode {
  * Pls note it could fallback to CPU if no DMA device is available.
  */
 #define ST20P_RX_FLAG_DMA_OFFLOAD (MTL_BIT32(17))
+/**
+ * Flag bit in flags of struct st20p_rx_ops.
+ * Only ST20_PACKING_BPM stream can enable this offload as software limit
+ * Try to enable header split offload feature.
+ */
+#define ST20P_RX_FLAG_HDR_SPLIT (MTL_BIT32(19))
 /**
  * Flag bit in flags of struct st20p_rx_ops.
  * Only for MTL_FLAG_RX_VIDEO_MIGRATE is enabled.
@@ -479,12 +496,12 @@ struct st22_encoder_dev {
   uint64_t input_fmt_caps;
   /** supported output format for encode, ST_FMT_CAP_* */
   uint64_t output_fmt_caps;
-  /** create session funtion */
+  /** create session function */
   st22_encode_priv (*create_session)(void* priv, st22p_encode_session session_p,
                                      struct st22_encoder_create_req* req);
   /** Callback when frame available in the lib. */
   int (*notify_frame_available)(st22_encode_priv encode_priv);
-  /** free session funtion */
+  /** free session function */
   int (*free_session)(void* priv, st22_encode_priv encode_priv);
 };
 
@@ -529,12 +546,12 @@ struct st22_decoder_dev {
   uint64_t input_fmt_caps;
   /** supported output format for decode, ST_FMT_CAP_* */
   uint64_t output_fmt_caps;
-  /** create session funtion */
+  /** create session function */
   st22_decode_priv (*create_session)(void* priv, st22p_decode_session session_p,
                                      struct st22_decoder_create_req* req);
   /** Callback when frame available in the lib. */
   int (*notify_frame_available)(st22_decode_priv decode_priv);
-  /** free session funtion */
+  /** free session function */
   int (*free_session)(void* priv, st22_decode_priv decode_priv);
 };
 
@@ -577,12 +594,12 @@ struct st20_converter_dev {
   uint64_t input_fmt_caps;
   /** supported output format for convert, ST_FMT_CAP_* */
   uint64_t output_fmt_caps;
-  /** create session funtion */
+  /** create session function */
   st20_convert_priv (*create_session)(void* priv, st20p_convert_session session_p,
                                       struct st20_converter_create_req* req);
   /** Callback when frame available in the lib. */
   int (*notify_frame_available)(st20_convert_priv convert_priv);
-  /** free session funtion */
+  /** free session function */
   int (*free_session)(void* priv, st20_convert_priv convert_priv);
 };
 
@@ -599,13 +616,15 @@ struct st20_convert_frame_meta {
 /** The structure info for st tx port, used in creating session. */
 struct st_tx_port {
   /** destination IP address */
-  uint8_t dip_addr[MTL_PORT_MAX][MTL_IP_ADDR_LEN];
+  uint8_t dip_addr[MTL_SESSION_PORT_MAX][MTL_IP_ADDR_LEN];
   /** Pcie BDF path like 0000:af:00.0, should align to BDF of mtl_init */
-  char port[MTL_PORT_MAX][MTL_PORT_MAX_LEN];
+  char port[MTL_SESSION_PORT_MAX][MTL_PORT_MAX_LEN];
   /** 1 or 2, num of ports this session attached to */
   uint8_t num_port;
-  /** UDP port number */
-  uint16_t udp_port[MTL_PORT_MAX];
+  /** UDP source port number, leave as 0 to use same port as dst */
+  uint16_t udp_src_port[MTL_SESSION_PORT_MAX];
+  /** UDP destination port number */
+  uint16_t udp_port[MTL_SESSION_PORT_MAX];
   /** 7 bits payload type define in RFC3550 */
   uint8_t payload_type;
 };
@@ -613,13 +632,13 @@ struct st_tx_port {
 /** The structure info for st rx port, used in creating session. */
 struct st_rx_port {
   /** source IP address of sender */
-  uint8_t sip_addr[MTL_PORT_MAX][MTL_IP_ADDR_LEN];
+  uint8_t sip_addr[MTL_SESSION_PORT_MAX][MTL_IP_ADDR_LEN];
   /** 1 or 2, num of ports this session attached to */
   uint8_t num_port;
   /** Pcie BDF path like 0000:af:00.0, should align to BDF of mtl_init */
-  char port[MTL_PORT_MAX][MTL_PORT_MAX_LEN];
-  /** UDP port number */
-  uint16_t udp_port[MTL_PORT_MAX];
+  char port[MTL_SESSION_PORT_MAX][MTL_PORT_MAX_LEN];
+  /** UDP destination port number */
+  uint16_t udp_port[MTL_SESSION_PORT_MAX];
   /** 7 bits payload type define in RFC3550 */
   uint8_t payload_type;
 };
@@ -638,7 +657,19 @@ struct st20p_tx_ops {
    * tx destination mac address.
    * Valid if ST20P_TX_FLAG_USER_P(R)_MAC is enabled
    */
-  uint8_t tx_dst_mac[MTL_PORT_MAX][6];
+  uint8_t tx_dst_mac[MTL_SESSION_PORT_MAX][MTL_MAC_ADDR_LEN];
+  /**
+   * The start vrx buffer.
+   * Leave to zero if not know detail, lib will assign a start value of vrx(narrow) based
+   * on resolution and timing. Refer to st21 spec for the possible vrx value and also fine
+   * tune is required since network setup difference and RL burst.
+   */
+  uint16_t start_vrx;
+  /**
+   * Manually assigned padding pkt interval(pkts level) for RL pacing.
+   * Leave to zero if not know detail, lib will train the interval in the initial routine.
+   */
+  uint16_t pad_interval;
   /** Session resolution width */
   uint32_t width;
   /** Session resolution height */
@@ -649,6 +680,8 @@ struct st20p_tx_ops {
   enum st_frame_fmt input_fmt;
   /** Session transport frame format */
   enum st20_fmt transport_fmt;
+  /** interlace or not, false: non-interlaced: true: interlaced */
+  bool interlaced;
   /** Linesize for transport frame, only for non-convert mode */
   size_t transport_linesize;
   /** Convert plugin device, auto or special */
@@ -703,6 +736,8 @@ struct st20p_rx_ops {
   size_t transport_linesize;
   /** Session output frame format */
   enum st_frame_fmt output_fmt;
+  /** interlace or not, false: non-interlaced: true: interlaced */
+  bool interlaced;
   /** Convert plugin device, auto or special */
   enum st_plugin_device device;
   /** Array of external frames */
@@ -750,7 +785,7 @@ struct st22p_tx_ops {
    * tx destination mac address.
    * Valid if ST22P_TX_FLAG_USER_P(R)_MAC is enabled
    */
-  uint8_t tx_dst_mac[MTL_PORT_MAX][6];
+  uint8_t tx_dst_mac[MTL_SESSION_PORT_MAX][MTL_MAC_ADDR_LEN];
   /** Session resolution width */
   uint32_t width;
   /** Session resolution height */
@@ -877,7 +912,7 @@ int st22_encoder_unregister(st22_encoder_dev_handle handle);
  * @param session
  *   The handle to the tx st2110-22 pipeline session.
  * @return
- *   - NULL if no avaiable frame in the session.
+ *   - NULL if no available frame in the session.
  *   - Otherwise, the frame pointer.
  */
 struct st22_encode_frame_meta* st22_encoder_get_frame(st22p_encode_session session);
@@ -931,7 +966,7 @@ int st22_decoder_unregister(st22_decoder_dev_handle handle);
  * @param session
  *   The handle to the rx st2110-22 pipeline session.
  * @return
- *   - NULL if no avaiable frame in the session.
+ *   - NULL if no available frame in the session.
  *   - Otherwise, the frame pointer.
  */
 struct st22_decode_frame_meta* st22_decoder_get_frame(st22p_decode_session session);
@@ -985,7 +1020,7 @@ int st20_converter_unregister(st20_converter_dev_handle handle);
  * @param session
  *   The handle to the rx st2110-20 pipeline session.
  * @return
- *   - NULL if no avaiable frame in the session.
+ *   - NULL if no available frame in the session.
  *   - Otherwise, the frame pointer.
  */
 struct st20_convert_frame_meta* st20_converter_get_frame(st20p_convert_session session);
@@ -1077,7 +1112,7 @@ int st22p_tx_free(st22p_tx_handle handle);
  * @param handle
  *   The handle to the tx st2110-22 pipeline session.
  * @return
- *   - NULL if no avaiable frame in the session.
+ *   - NULL if no available frame in the session.
  *   - Otherwise, the frame meta pointer.
  */
 struct st_frame* st22p_tx_get_frame(st22p_tx_handle handle);
@@ -1151,7 +1186,7 @@ int st22p_rx_free(st22p_rx_handle handle);
  * @param handle
  *   The handle to the rx st2110-22 pipeline session.
  * @return
- *   - NULL if no avaiable frame in the session.
+ *   - NULL if no available frame in the session.
  *   - Otherwise, the frame pointer.
  */
 struct st_frame* st22p_rx_get_frame(st22p_rx_handle handle);
@@ -1199,7 +1234,7 @@ size_t st22p_rx_frame_size(st22p_rx_handle handle);
  * @param handle
  *   The handle to the rx st2110-22 pipeline session.
  * @param max_dump_packets
- *   The max number of packets to be dumpped.
+ *   The max number of packets to be dumped.
  * @param sync
  *   synchronous or asynchronous, true means this func will return after dump
  * progress is finished.
@@ -1257,7 +1292,7 @@ int st20p_tx_free(st20p_tx_handle handle);
  * @param handle
  *   The handle to the tx st2110-20 pipeline session.
  * @return
- *   - NULL if no avaiable frame in the session.
+ *   - NULL if no available frame in the session.
  *   - Otherwise, the frame meta pointer.
  */
 struct st_frame* st20p_tx_get_frame(st20p_tx_handle handle);
@@ -1362,7 +1397,7 @@ int st20p_rx_free(st20p_rx_handle handle);
  * @param ext_frame
  *   The pointer to the structure describing external framebuffer.
  * @return
- *   - NULL if no avaiable frame in the session.
+ *   - NULL if no available frame in the session.
  *   - Otherwise, the frame pointer.
  */
 struct st_frame* st20p_rx_get_ext_frame(st20p_rx_handle handle,
@@ -1375,7 +1410,7 @@ struct st_frame* st20p_rx_get_ext_frame(st20p_rx_handle handle,
  * @param handle
  *   The handle to the rx st2110-20 pipeline session.
  * @return
- *   - NULL if no avaiable frame in the session.
+ *   - NULL if no available frame in the session.
  *   - Otherwise, the frame pointer.
  */
 struct st_frame* st20p_rx_get_frame(st20p_rx_handle handle);
@@ -1423,7 +1458,7 @@ size_t st20p_rx_frame_size(st20p_rx_handle handle);
  * @param handle
  *   The handle to the rx st2110-20 pipeline session.
  * @param max_dump_packets
- *   The max number of packets to be dumpped.
+ *   The max number of packets to be dumped.
  * @param sync
  *   synchronous or asynchronous, true means this func will return after dump
  * progress is finished.
@@ -1474,6 +1509,21 @@ int st20p_rx_get_sch_idx(st20p_rx_handle handle);
 int st_frame_convert(struct st_frame* src, struct st_frame* dst);
 
 /**
+ * Downsample frame size to destination frame.
+ *
+ * @param src
+ *   The source frame.
+ * @param dst
+ *   The destination frame.
+ * @param idx
+ *   The index of the sample box.
+ * @return
+ *   - 0: Success.
+ *   - <0: Error code.
+ */
+int st_frame_downsample(struct st_frame* src, struct st_frame* dst, int idx);
+
+/**
  * Calculate the least linesize per the format, w, plane
  *
  * @param fmt
@@ -1497,11 +1547,14 @@ size_t st_frame_least_linesize(enum st_frame_fmt fmt, uint32_t width, uint8_t pl
  *   width.
  * @param height
  *   height.
+ * @param interlaced
+ *   interlace or not, false: non-interlaced: true: interlaced.
  * @return
  *   > 0 if successful.
  *   0: Fail.
  */
-size_t st_frame_size(enum st_frame_fmt fmt, uint32_t width, uint32_t height);
+size_t st_frame_size(enum st_frame_fmt fmt, uint32_t width, uint32_t height,
+                     bool interlaced);
 
 /**
  * St_frame sanity check
@@ -1531,7 +1584,7 @@ const char* st_frame_fmt_name(enum st_frame_fmt fmt);
  * @param name
  *   name.
  * @return
- *   The frmae fmt.
+ *   The frame fmt.
  *   ST_FRAME_FMT_MAX: Fail.
  */
 enum st_frame_fmt st_frame_name_to_fmt(const char* name);
@@ -1553,7 +1606,7 @@ uint8_t st_frame_fmt_planes(enum st_frame_fmt fmt);
  * @param fmt
  *   st_frame_fmt format.
  * @return
- *   The compatible st20 tranport fmt.
+ *   The compatible st20 transport fmt.
  *   ST20_FMT_MAX: Fail.
  */
 enum st20_fmt st_frame_fmt_to_transport(enum st_frame_fmt fmt);
@@ -1578,7 +1631,7 @@ enum st_frame_fmt st_frame_fmt_from_transport(enum st20_fmt tfmt);
  *   st20_fmt format.
  * @return
  *   - true if the same.
- *   - flase if not the same.
+ *   - false if not the same.
  */
 bool st_frame_fmt_equal_transport(enum st_frame_fmt fmt, enum st20_fmt tfmt);
 

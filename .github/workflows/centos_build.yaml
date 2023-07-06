@@ -4,7 +4,11 @@ on: [push, pull_request]
 
 env:
   # Customize the env if
+  # Disable since mtl patched dpdk pcapng and this job use prebuilt pkg
   MTL_BUILD_DISABLE_PCAPNG: true
+
+permissions:
+  contents: read
 
 jobs:
   build:
@@ -18,28 +22,31 @@ jobs:
         os: [ubuntu-latest]
 
     steps:
-    - uses: actions/checkout@v3
-    - uses: DoozyX/clang-format-lint-action@v0.14
+    - name: Harden Runner
+      uses: step-security/harden-runner@55d479fb1c5bcad5a4f9099a5d9f37c8857b2845 # v2.4.1
+      with:
+        egress-policy: audit
+
+    - uses: actions/checkout@c85c95e3d7251135ab7dc9ce3241c5835cc595a9 # v3.5.3
+    - uses: DoozyX/clang-format-lint-action@a83a8fb7d371f66da7dd1c4f33a193023899494b # v0.16
       with:
         source: '.'
         extensions: 'hpp,h,cpp,c,cc'
 
     - name: Install the build dependency
       run: |
+        yum install -y dnf-plugins-core
         dnf config-manager --set-enabled powertools
         yum install -y sudo git gcc gcc-c++ meson python3 python3-pip pkg-config json-c-devel libpcap-devel gtest-devel SDL2-devel openssl-devel numactl-devel libasan
         yum install -y dpdk-devel
 
     - name: Install the python package
-      run: pip3 install pyelftools
+      run: pip3 install pyelftools==0.29
 
     - name: Git config
       run: |
         git config --global user.email "you@example.com"
         git config --global user.name "Your Name"
-
-    #- name: Build dpdk
-    #  run: ./script/build_dpdk.sh
 
     - name: Build
       run: |

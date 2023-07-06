@@ -71,14 +71,17 @@ static int rx_st22p_open_source(struct rx_st22p_sample_ctx* s, const char* file)
   s->dst_cursor = m;
   s->dst_end = m + f_size;
   s->dst_fd = fd;
-  info("%s(%d), save %d framebuffers to file %s(%p,%ld)\n", __func__, idx, fb_cnt, file,
-       m, f_size);
+  info("%s(%d), save %d framebuffers to file %s(%p,%" PRIu64 ")\n", __func__, idx, fb_cnt,
+       file, m, f_size);
 
   return 0;
 }
 
 static void rx_st22p_consume_frame(struct rx_st22p_sample_ctx* s,
                                    struct st_frame* frame) {
+  s->fb_recv++;
+  if (s->dst_fd < 0) return; /* no dump */
+
   if (s->dst_cursor + s->frame_size > s->dst_end) s->dst_cursor = s->dst_begin;
 
   uint8_t planes = st_frame_fmt_planes(frame->fmt);
@@ -89,8 +92,6 @@ static void rx_st22p_consume_frame(struct rx_st22p_sample_ctx* s,
     dst += plane_sz;
   }
   s->dst_cursor += s->frame_size;
-
-  s->fb_recv++;
 }
 
 static void* rx_st22p_frame_thread(void* arg) {
@@ -153,10 +154,11 @@ int main(int argc, char** argv) {
     ops_rx.name = "st22p_sample";
     ops_rx.priv = app[i];  // app handle register to lib
     ops_rx.port.num_port = 1;
-    memcpy(ops_rx.port.sip_addr[MTL_PORT_P], ctx.rx_sip_addr[MTL_PORT_P],
+    memcpy(ops_rx.port.sip_addr[MTL_SESSION_PORT_P], ctx.rx_sip_addr[MTL_PORT_P],
            MTL_IP_ADDR_LEN);
-    strncpy(ops_rx.port.port[MTL_PORT_P], ctx.param.port[MTL_PORT_P], MTL_PORT_MAX_LEN);
-    ops_rx.port.udp_port[MTL_PORT_P] = ctx.udp_port + i;
+    strncpy(ops_rx.port.port[MTL_SESSION_PORT_P], ctx.param.port[MTL_PORT_P],
+            MTL_PORT_MAX_LEN);
+    ops_rx.port.udp_port[MTL_SESSION_PORT_P] = ctx.udp_port + i;
     ops_rx.port.payload_type = ctx.payload_type;
     ops_rx.width = ctx.width;
     ops_rx.height = ctx.height;
@@ -179,9 +181,11 @@ int main(int argc, char** argv) {
     app[i]->handle = rx_handle;
 
     app[i]->frame_size = st22p_rx_frame_size(rx_handle);
-    ret = rx_st22p_open_source(app[i], ctx.rx_url);
-    if (ret < 0) {
-      goto error;
+    if (ctx.rx_dump) {
+      ret = rx_st22p_open_source(app[i], ctx.rx_url);
+      if (ret < 0) {
+        goto error;
+      }
     }
 
     ret = pthread_create(&app[i]->frame_thread, NULL, rx_st22p_frame_thread, app[i]);

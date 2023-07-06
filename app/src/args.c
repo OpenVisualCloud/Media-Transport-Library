@@ -20,6 +20,10 @@ enum st_args_cmd {
   ST_ARG_R_RX_IP,
   ST_ARG_P_SIP,
   ST_ARG_R_SIP,
+  ST_ARG_P_NETMASK,
+  ST_ARG_R_NETMASK,
+  ST_ARG_P_GATEWAY,
+  ST_ARG_R_GATEWAY,
 
   ST_ARG_TX_VIDEO_URL = 0x200,
   ST_ARG_TX_VIDEO_SESSIONS_CNT,
@@ -33,7 +37,7 @@ enum st_args_cmd {
   ST22_ARG_TX_SESSIONS_CNT,
   ST22_ARG_TX_URL,
   ST_ARG_RX_VIDEO_SESSIONS_CNT,
-  ST_ARG_RX_VIDEO_FLIE_FRAMES,
+  ST_ARG_RX_VIDEO_FILE_FRAMES,
   ST_ARG_RX_VIDEO_FB_CNT,
   ST_ARG_RX_VIDEO_RTP_RING_SIZE,
   ST_ARG_RX_AUDIO_SESSIONS_CNT,
@@ -42,6 +46,10 @@ enum st_args_cmd {
   ST22_ARG_RX_SESSIONS_CNT,
   ST_ARG_HDR_SPLIT,
   ST_ARG_PACING_WAY,
+  ST_ARG_START_VRX,
+  ST_ARG_PAD_INTERVAL,
+  ST_ARG_NO_PAD_STATIC,
+  ST_ARG_SHAPING,
 
   ST_ARG_CONFIG_FILE = 0x300,
   ST_ARG_TEST_TIME,
@@ -85,6 +93,18 @@ enum st_args_cmd {
   ST_ARG_PTP_PI,
   ST_ARG_PTP_KP,
   ST_ARG_PTP_KI,
+  ST_ARG_PTP_TSC,
+  ST_ARG_RSS_MODE,
+  ST_ARG_RANDOM_SRC_PORT,
+  ST_ARG_TX_NO_CHAIN,
+  ST_ARG_MULTI_SRC_PORT,
+  ST_ARG_AUDIO_BUILD_PACING,
+  ST_ARG_AUDIO_FIFO_SIZE,
+  ST_ARG_TX_NO_BURST_CHECK,
+  ST_ARG_DHCP,
+  ST_ARG_IOVA_MODE,
+  ST_ARG_SHARED_TX_QUEUES,
+  ST_ARG_SHARED_RX_QUEUES,
   ST_ARG_MAX,
 };
 
@@ -105,6 +125,10 @@ static struct option st_app_args_options[] = {
     {"r_rx_ip", required_argument, 0, ST_ARG_R_RX_IP},
     {"p_sip", required_argument, 0, ST_ARG_P_SIP},
     {"r_sip", required_argument, 0, ST_ARG_R_SIP},
+    {"p_netmask", required_argument, 0, ST_ARG_P_NETMASK},
+    {"r_netmask", required_argument, 0, ST_ARG_R_NETMASK},
+    {"p_gateway", required_argument, 0, ST_ARG_P_GATEWAY},
+    {"r_gateway", required_argument, 0, ST_ARG_R_GATEWAY},
 
     {"tx_video_url", required_argument, 0, ST_ARG_TX_VIDEO_URL},
     {"tx_video_sessions_count", required_argument, 0, ST_ARG_TX_VIDEO_SESSIONS_CNT},
@@ -119,7 +143,7 @@ static struct option st_app_args_options[] = {
     {"tx_st22_url", required_argument, 0, ST22_ARG_TX_URL},
 
     {"rx_video_sessions_count", required_argument, 0, ST_ARG_RX_VIDEO_SESSIONS_CNT},
-    {"rx_video_file_frames", required_argument, 0, ST_ARG_RX_VIDEO_FLIE_FRAMES},
+    {"rx_video_file_frames", required_argument, 0, ST_ARG_RX_VIDEO_FILE_FRAMES},
     {"rx_video_fb_cnt", required_argument, 0, ST_ARG_RX_VIDEO_FB_CNT},
     {"rx_video_rtp_ring_size", required_argument, 0, ST_ARG_RX_VIDEO_RTP_RING_SIZE},
     {"rx_audio_sessions_count", required_argument, 0, ST_ARG_RX_AUDIO_SESSIONS_CNT},
@@ -128,6 +152,10 @@ static struct option st_app_args_options[] = {
     {"rx_st22_sessions_count", required_argument, 0, ST22_ARG_RX_SESSIONS_CNT},
     {"hdr_split", no_argument, 0, ST_ARG_HDR_SPLIT},
     {"pacing_way", required_argument, 0, ST_ARG_PACING_WAY},
+    {"start_vrx", required_argument, 0, ST_ARG_START_VRX},
+    {"pad_interval", required_argument, 0, ST_ARG_PAD_INTERVAL},
+    {"no_static_pad", no_argument, 0, ST_ARG_NO_PAD_STATIC},
+    {"shaping", required_argument, 0, ST_ARG_SHAPING},
 
     {"config_file", required_argument, 0, ST_ARG_CONFIG_FILE},
     {"test_time", required_argument, 0, ST_ARG_TEST_TIME},
@@ -171,6 +199,18 @@ static struct option st_app_args_options[] = {
     {"pi", no_argument, 0, ST_ARG_PTP_PI},
     {"kp", required_argument, 0, ST_ARG_PTP_KP},
     {"ki", required_argument, 0, ST_ARG_PTP_KI},
+    {"ptp_tsc", no_argument, 0, ST_ARG_PTP_TSC},
+    {"rss_mode", required_argument, 0, ST_ARG_RSS_MODE},
+    {"random_src_port", no_argument, 0, ST_ARG_RANDOM_SRC_PORT},
+    {"tx_no_chain", no_argument, 0, ST_ARG_TX_NO_CHAIN},
+    {"multi_src_port", no_argument, 0, ST_ARG_MULTI_SRC_PORT},
+    {"audio_build_pacing", no_argument, 0, ST_ARG_AUDIO_BUILD_PACING},
+    {"audio_fifo_size", required_argument, 0, ST_ARG_AUDIO_FIFO_SIZE},
+    {"tx_no_burst_check", no_argument, 0, ST_ARG_TX_NO_BURST_CHECK},
+    {"dhcp", no_argument, 0, ST_ARG_DHCP},
+    {"iova_mode", required_argument, 0, ST_ARG_IOVA_MODE},
+    {"shared_tx_queues", no_argument, 0, ST_ARG_SHARED_TX_QUEUES},
+    {"shared_rx_queues", no_argument, 0, ST_ARG_SHARED_RX_QUEUES},
 
     {0, 0, 0, 0}};
 
@@ -182,35 +222,20 @@ static int app_args_parse_lcores(struct mtl_init_params* p, char* list) {
   return 0;
 }
 
-static int app_args_parse_p_tx_mac(struct st_app_context* ctx, char* mac_str) {
+static int app_args_parse_tx_mac(struct st_app_context* ctx, char* mac_str,
+                                 enum mtl_port port) {
   int ret;
   uint8_t* mac;
 
   if (!mac_str) return -EIO;
   dbg("%s, tx dst mac %s\n", __func__, mac_str);
 
-  mac = &ctx->tx_dst_mac[MTL_PORT_P][0];
+  mac = &ctx->tx_dst_mac[port][0];
   ret = sscanf(mac_str, "%02hhx:%02hhx:%02hhx:%02hhx:%02hhx:%02hhx", &mac[0], &mac[1],
                &mac[2], &mac[3], &mac[4], &mac[5]);
   if (ret < 0) return ret;
 
-  ctx->has_tx_dst_mac[MTL_PORT_P] = true;
-  return 0;
-}
-
-static int app_args_parse_r_tx_mac(struct st_app_context* ctx, char* mac_str) {
-  int ret;
-  uint8_t* mac;
-
-  if (!mac_str) return -EIO;
-  dbg("%s, tx dst mac %s\n", __func__, mac_str);
-
-  mac = &ctx->tx_dst_mac[MTL_PORT_R][0];
-  ret = sscanf(mac_str, "%02hhx:%02hhx:%02hhx:%02hhx:%02hhx:%02hhx", &mac[0], &mac[1],
-               &mac[2], &mac[3], &mac[4], &mac[5]);
-  if (ret < 0) return ret;
-
-  ctx->has_tx_dst_mac[MTL_PORT_R] = true;
+  ctx->has_tx_dst_mac[port] = true;
   return 0;
 }
 
@@ -258,12 +283,27 @@ static int app_args_json(struct st_app_context* ctx, struct mtl_init_params* p,
   for (int i = 0; i < ctx->json_ctx->num_interfaces; ++i) {
     snprintf(p->port[i], sizeof(p->port[i]), "%s", ctx->json_ctx->interfaces[i].name);
     memcpy(p->sip_addr[i], ctx->json_ctx->interfaces[i].ip_addr, sizeof(p->sip_addr[i]));
+    memcpy(p->netmask[i], ctx->json_ctx->interfaces[i].netmask, sizeof(p->netmask[i]));
+    memcpy(p->gateway[i], ctx->json_ctx->interfaces[i].gateway, sizeof(p->gateway[i]));
+    p->net_proto[i] = ctx->json_ctx->interfaces[i].net_proto;
+    p->tx_queues_cnt[i] = ctx->json_ctx->interfaces[i].tx_queues_cnt;
+    p->rx_queues_cnt[i] = ctx->json_ctx->interfaces[i].rx_queues_cnt;
     p->num_ports++;
   }
   if (ctx->json_ctx->sch_quota) {
     p->data_quota_mbs_per_sch =
         ctx->json_ctx->sch_quota * st20_1080p59_yuv422_10bit_bandwidth_mps();
   }
+  if (ctx->json_ctx->tx_audio_sessions_max_per_sch) {
+    p->tx_audio_sessions_max_per_sch = ctx->json_ctx->tx_audio_sessions_max_per_sch;
+  }
+  if (ctx->json_ctx->rx_audio_sessions_max_per_sch) {
+    p->rx_audio_sessions_max_per_sch = ctx->json_ctx->rx_audio_sessions_max_per_sch;
+  }
+  if (ctx->json_ctx->shared_tx_queues) p->flags |= MTL_FLAG_SHARED_TX_QUEUE;
+  if (ctx->json_ctx->shared_rx_queues) p->flags |= MTL_FLAG_SHARED_RX_QUEUE;
+  if (ctx->json_ctx->tx_no_chain) p->flags |= MTL_FLAG_TX_NO_CHAIN;
+  if (ctx->json_ctx->rss_mode) p->rss_mode = ctx->json_ctx->rss_mode;
 
   return 0;
 }
@@ -305,6 +345,18 @@ int st_app_parse_args(struct st_app_context* ctx, struct mtl_init_params* p, int
       case ST_ARG_R_RX_IP:
         inet_pton(AF_INET, optarg, ctx->rx_sip_addr[MTL_PORT_R]);
         break;
+      case ST_ARG_P_NETMASK:
+        inet_pton(AF_INET, optarg, p->netmask[MTL_PORT_P]);
+        break;
+      case ST_ARG_R_NETMASK:
+        inet_pton(AF_INET, optarg, p->netmask[MTL_PORT_R]);
+        break;
+      case ST_ARG_P_GATEWAY:
+        inet_pton(AF_INET, optarg, p->gateway[MTL_PORT_P]);
+        break;
+      case ST_ARG_R_GATEWAY:
+        inet_pton(AF_INET, optarg, p->gateway[MTL_PORT_R]);
+        break;
       case ST_ARG_TX_VIDEO_URL:
         snprintf(ctx->tx_video_url, sizeof(ctx->tx_video_url), "%s", optarg);
         break;
@@ -335,7 +387,7 @@ int st_app_parse_args(struct st_app_context* ctx, struct mtl_init_params* p, int
       case ST_ARG_RX_VIDEO_SESSIONS_CNT:
         ctx->rx_video_session_cnt = atoi(optarg);
         break;
-      case ST_ARG_RX_VIDEO_FLIE_FRAMES:
+      case ST_ARG_RX_VIDEO_FILE_FRAMES:
         ctx->rx_video_file_frames = atoi(optarg);
         break;
       case ST_ARG_RX_VIDEO_FB_CNT:
@@ -374,10 +426,33 @@ int st_app_parse_args(struct st_app_context* ctx, struct mtl_init_params* p, int
           p->pacing = ST21_TX_PACING_WAY_TSN;
         else if (!strcmp(optarg, "tsc"))
           p->pacing = ST21_TX_PACING_WAY_TSC;
+        else if (!strcmp(optarg, "tsc_narrow"))
+          p->pacing = ST21_TX_PACING_WAY_TSC_NARROW;
         else if (!strcmp(optarg, "ptp"))
           p->pacing = ST21_TX_PACING_WAY_PTP;
+        else if (!strcmp(optarg, "be"))
+          p->pacing = ST21_TX_PACING_WAY_BE;
         else
           err("%s, unknow pacing way %s\n", __func__, optarg);
+        break;
+      case ST_ARG_START_VRX:
+        ctx->tx_start_vrx = atoi(optarg);
+        break;
+      case ST_ARG_PAD_INTERVAL:
+        ctx->tx_pad_interval = atoi(optarg);
+        break;
+      case ST_ARG_NO_PAD_STATIC:
+        ctx->tx_no_static_pad = true;
+        break;
+      case ST_ARG_SHAPING:
+        if (!strcmp(optarg, "narrow"))
+          ctx->tx_pacing_type = ST21_PACING_NARROW;
+        else if (!strcmp(optarg, "wide"))
+          ctx->tx_pacing_type = ST21_PACING_WIDE;
+        else if (!strcmp(optarg, "linear"))
+          ctx->tx_pacing_type = ST21_PACING_LINEAR;
+        else
+          err("%s, unknow shaping way %s\n", __func__, optarg);
         break;
       case ST_ARG_CONFIG_FILE:
         app_args_json(ctx, p, optarg);
@@ -429,10 +504,10 @@ int st_app_parse_args(struct st_app_context* ctx, struct mtl_init_params* p, int
         }
         break;
       case ST_ARG_P_TX_DST_MAC:
-        app_args_parse_p_tx_mac(ctx, optarg);
+        app_args_parse_tx_mac(ctx, optarg, MTL_PORT_P);
         break;
       case ST_ARG_R_TX_DST_MAC:
-        app_args_parse_r_tx_mac(ctx, optarg);
+        app_args_parse_tx_mac(ctx, optarg, MTL_PORT_R);
         break;
       case ST_ARG_NIC_RX_PROMISCUOUS:
         p->flags |= MTL_FLAG_NIC_RX_PROMISCUOUS;
@@ -522,6 +597,55 @@ int st_app_parse_args(struct st_app_context* ctx, struct mtl_init_params* p, int
         break;
       case ST_ARG_PTP_KI:
         p->ki = strtod(optarg, NULL);
+        break;
+      case ST_ARG_PTP_TSC:
+        p->flags |= MTL_FLAG_PTP_SOURCE_TSC;
+        break;
+      case ST_ARG_RANDOM_SRC_PORT:
+        p->flags |= MTL_FLAG_RANDOM_SRC_PORT;
+        break;
+      case ST_ARG_RSS_MODE:
+        if (!strcmp(optarg, "l3"))
+          p->rss_mode = MTL_RSS_MODE_L3;
+        else if (!strcmp(optarg, "l3_l4"))
+          p->rss_mode = MTL_RSS_MODE_L3_L4;
+        else if (!strcmp(optarg, "none"))
+          p->rss_mode = MTL_RSS_MODE_NONE;
+        else
+          err("%s, unknow rss mode %s\n", __func__, optarg);
+        break;
+      case ST_ARG_TX_NO_CHAIN:
+        p->flags |= MTL_FLAG_TX_NO_CHAIN;
+        break;
+      case ST_ARG_TX_NO_BURST_CHECK:
+        p->flags |= MTL_FLAG_TX_NO_BURST_CHK;
+        break;
+      case ST_ARG_MULTI_SRC_PORT:
+        p->flags |= MTL_FLAG_MULTI_SRC_PORT;
+        break;
+      case ST_ARG_AUDIO_BUILD_PACING:
+        ctx->tx_audio_build_pacing = true;
+        break;
+      case ST_ARG_AUDIO_FIFO_SIZE:
+        ctx->tx_audio_fifo_size = atoi(optarg);
+        break;
+      case ST_ARG_DHCP:
+        for (int port = 0; port < MTL_PORT_MAX; ++port)
+          p->net_proto[port] = MTL_PROTO_DHCP;
+        break;
+      case ST_ARG_IOVA_MODE:
+        if (!strcmp(optarg, "va"))
+          p->iova_mode = MTL_IOVA_MODE_VA;
+        else if (!strcmp(optarg, "pa"))
+          p->iova_mode = MTL_IOVA_MODE_PA;
+        else
+          err("%s, unknow iova mode %s\n", __func__, optarg);
+        break;
+      case ST_ARG_SHARED_TX_QUEUES:
+        p->flags |= MTL_FLAG_SHARED_TX_QUEUE;
+        break;
+      case ST_ARG_SHARED_RX_QUEUES:
+        p->flags |= MTL_FLAG_SHARED_RX_QUEUE;
         break;
       case '?':
         break;

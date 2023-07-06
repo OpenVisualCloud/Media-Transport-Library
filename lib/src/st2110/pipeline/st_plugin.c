@@ -7,6 +7,9 @@
 #include <dlfcn.h>
 
 #include "../../mt_log.h"
+#include "../../mt_stat.h"
+
+static int st_plugins_dump(void* priv);
 
 static inline struct st_plugin_mgr* st_get_plugins_mgr(struct mtl_main_impl* impl) {
   return &impl->plugin_mgr;
@@ -28,6 +31,7 @@ int st_plugins_init(struct mtl_main_impl* impl) {
 
   mt_pthread_mutex_init(&mgr->lock, NULL);
   mt_pthread_mutex_init(&mgr->plugins_lock, NULL);
+  mt_stat_register(impl, st_plugins_dump, impl, "plugins");
 
   info("%s, succ\n", __func__);
   return 0;
@@ -36,6 +40,7 @@ int st_plugins_init(struct mtl_main_impl* impl) {
 int st_plugins_uinit(struct mtl_main_impl* impl) {
   struct st_plugin_mgr* mgr = st_get_plugins_mgr(impl);
 
+  mt_stat_unregister(impl, st_plugins_dump, impl);
   for (int i = 0; i < ST_MAX_DL_PLUGINS; i++) {
     if (mgr->plugins[i]) {
       dbg("%s, active plugin in %d\n", __func__, i);
@@ -71,7 +76,7 @@ int st_plugins_uinit(struct mtl_main_impl* impl) {
 }
 
 int st22_encode_notify_frame_ready(struct st22_encode_session_impl* encoder) {
-  struct st22_encode_dev_impl* dev_impl = encoder->parnet;
+  struct st22_encode_dev_impl* dev_impl = encoder->parent;
   struct st22_encoder_dev* dev = &dev_impl->dev;
   st22_encode_priv session = encoder->session;
 
@@ -81,7 +86,7 @@ int st22_encode_notify_frame_ready(struct st22_encode_session_impl* encoder) {
 int st22_put_encoder(struct mtl_main_impl* impl,
                      struct st22_encode_session_impl* encoder) {
   struct st_plugin_mgr* mgr = st_get_plugins_mgr(impl);
-  struct st22_encode_dev_impl* dev_impl = encoder->parnet;
+  struct st22_encode_dev_impl* dev_impl = encoder->parent;
   struct st22_encoder_dev* dev = &dev_impl->dev;
   int idx = dev_impl->idx;
   st22_encode_priv session = encoder->session;
@@ -104,7 +109,7 @@ static struct st22_encode_session_impl* st22_get_encoder_session(
   struct st22_encode_session_impl* session_impl;
   st22_encode_priv session;
 
-  for (int i = 0; i < ST_MAX_SESSIIONS_PER_ENCODER; i++) {
+  for (int i = 0; i < ST_MAX_SESSIONS_PER_ENCODER; i++) {
     session_impl = &dev_impl->sessions[i];
     if (session_impl->session) continue;
 
@@ -114,8 +119,8 @@ static struct st22_encode_session_impl* st22_get_encoder_session(
       session_impl->codestream_max_size = create_req->max_codestream_size;
       session_impl->req = *req;
       session_impl->type = MT_ST22_HANDLE_PIPELINE_ENCODE;
-      info("%s(%d), get one session at %d on dev %s, max codestream size %ld\n", __func__,
-           idx, i, dev->name, session_impl->codestream_max_size);
+      info("%s(%d), get one session at %d on dev %s, max codestream size %" PRIu64 "\n",
+           __func__, idx, i, dev->name, session_impl->codestream_max_size);
       info("%s(%d), input fmt: %s, output fmt: %s\n", __func__, idx,
            st_frame_fmt_name(req->req.input_fmt), st_frame_fmt_name(req->req.output_fmt));
       return session_impl;
@@ -177,7 +182,7 @@ struct st22_encode_session_impl* st22_get_encoder(struct mtl_main_impl* impl,
 }
 
 int st22_decode_notify_frame_ready(struct st22_decode_session_impl* decoder) {
-  struct st22_decode_dev_impl* dev_impl = decoder->parnet;
+  struct st22_decode_dev_impl* dev_impl = decoder->parent;
   struct st22_decoder_dev* dev = &dev_impl->dev;
   st22_decode_priv session = decoder->session;
 
@@ -187,7 +192,7 @@ int st22_decode_notify_frame_ready(struct st22_decode_session_impl* decoder) {
 int st22_put_decoder(struct mtl_main_impl* impl,
                      struct st22_decode_session_impl* decoder) {
   struct st_plugin_mgr* mgr = st_get_plugins_mgr(impl);
-  struct st22_decode_dev_impl* dev_impl = decoder->parnet;
+  struct st22_decode_dev_impl* dev_impl = decoder->parent;
   struct st22_decoder_dev* dev = &dev_impl->dev;
   int idx = dev_impl->idx;
   st22_decode_priv session = decoder->session;
@@ -210,7 +215,7 @@ static struct st22_decode_session_impl* st22_get_decoder_session(
   struct st22_decode_session_impl* session_impl;
   st22_decode_priv session;
 
-  for (int i = 0; i < ST_MAX_SESSIIONS_PER_DECODER; i++) {
+  for (int i = 0; i < ST_MAX_SESSIONS_PER_DECODER; i++) {
     session_impl = &dev_impl->sessions[i];
     if (session_impl->session) continue;
 
@@ -278,7 +283,7 @@ struct st22_decode_session_impl* st22_get_decoder(struct mtl_main_impl* impl,
 }
 
 int st20_convert_notify_frame_ready(struct st20_convert_session_impl* converter) {
-  struct st20_convert_dev_impl* dev_impl = converter->parnet;
+  struct st20_convert_dev_impl* dev_impl = converter->parent;
   struct st20_converter_dev* dev = &dev_impl->dev;
   st20_convert_priv session = converter->session;
 
@@ -288,7 +293,7 @@ int st20_convert_notify_frame_ready(struct st20_convert_session_impl* converter)
 int st20_put_converter(struct mtl_main_impl* impl,
                        struct st20_convert_session_impl* converter) {
   struct st_plugin_mgr* mgr = st_get_plugins_mgr(impl);
-  struct st20_convert_dev_impl* dev_impl = converter->parnet;
+  struct st20_convert_dev_impl* dev_impl = converter->parent;
   struct st20_converter_dev* dev = &dev_impl->dev;
   int idx = dev_impl->idx;
   st20_convert_priv session = converter->session;
@@ -311,7 +316,7 @@ static struct st20_convert_session_impl* st20_get_converter_session(
   struct st20_convert_session_impl* session_impl;
   st20_convert_priv session;
 
-  for (int i = 0; i < ST_MAX_SESSIIONS_PER_CONVERTER; i++) {
+  for (int i = 0; i < ST_MAX_SESSIONS_PER_CONVERTER; i++) {
     session_impl = &dev_impl->sessions[i];
     if (session_impl->session) continue;
 
@@ -382,8 +387,8 @@ static int st22_encode_dev_dump(struct st22_encode_dev_impl* encode) {
   struct st22_encode_session_impl* session;
   int ref_cnt = rte_atomic32_read(&encode->ref_cnt);
 
-  if (ref_cnt) notice("ST22 encoder dev: %s with %d sessons\n", encode->name, ref_cnt);
-  for (int i = 0; i < ST_MAX_SESSIIONS_PER_ENCODER; i++) {
+  if (ref_cnt) notice("ST22 encoder dev: %s with %d sessions\n", encode->name, ref_cnt);
+  for (int i = 0; i < ST_MAX_SESSIONS_PER_ENCODER; i++) {
     session = &encode->sessions[i];
     if (!session->session) continue;
     if (session->req.dump) session->req.dump(session->req.priv);
@@ -396,8 +401,8 @@ static int st22_decode_dev_dump(struct st22_decode_dev_impl* decode) {
   struct st22_decode_session_impl* session;
   int ref_cnt = rte_atomic32_read(&decode->ref_cnt);
 
-  if (ref_cnt) notice("ST22 encoder dev: %s with %d sessons\n", decode->name, ref_cnt);
-  for (int i = 0; i < ST_MAX_SESSIIONS_PER_DECODER; i++) {
+  if (ref_cnt) notice("ST22 encoder dev: %s with %d sessions\n", decode->name, ref_cnt);
+  for (int i = 0; i < ST_MAX_SESSIONS_PER_DECODER; i++) {
     session = &decode->sessions[i];
     if (!session->session) continue;
     if (session->req.dump) session->req.dump(session->req.priv);
@@ -410,8 +415,8 @@ static int st20_convert_dev_dump(struct st20_convert_dev_impl* convert) {
   struct st20_convert_session_impl* session;
   int ref_cnt = rte_atomic32_read(&convert->ref_cnt);
 
-  if (ref_cnt) notice("ST20 convert dev: %s with %d sessons\n", convert->name, ref_cnt);
-  for (int i = 0; i < ST_MAX_SESSIIONS_PER_CONVERTER; i++) {
+  if (ref_cnt) notice("ST20 convert dev: %s with %d sessions\n", convert->name, ref_cnt);
+  for (int i = 0; i < ST_MAX_SESSIONS_PER_CONVERTER; i++) {
     session = &convert->sessions[i];
     if (!session->session) continue;
     if (session->req.dump) session->req.dump(session->req.priv);
@@ -420,7 +425,8 @@ static int st20_convert_dev_dump(struct st20_convert_dev_impl* convert) {
   return 0;
 }
 
-int st_plugins_dump(struct mtl_main_impl* impl) {
+static int st_plugins_dump(void* priv) {
+  struct mtl_main_impl* impl = priv;
   struct st_plugin_mgr* mgr = st_get_plugins_mgr(impl);
   struct st22_encode_dev_impl* encode;
   struct st22_decode_dev_impl* decode;
@@ -455,7 +461,7 @@ int st22_encoder_unregister(st22_encoder_dev_handle handle) {
     return -EIO;
   }
 
-  struct mtl_main_impl* impl = dev->parnet;
+  struct mtl_main_impl* impl = dev->parent;
   struct st_plugin_mgr* mgr = st_get_plugins_mgr(impl);
   int idx = dev->idx;
 
@@ -487,7 +493,7 @@ int st22_decoder_unregister(st22_decoder_dev_handle handle) {
     return -EIO;
   }
 
-  struct mtl_main_impl* impl = dev->parnet;
+  struct mtl_main_impl* impl = dev->parent;
   struct st_plugin_mgr* mgr = st_get_plugins_mgr(impl);
   int idx = dev->idx;
 
@@ -519,7 +525,7 @@ int st20_converter_unregister(st20_converter_dev_handle handle) {
     return -EIO;
   }
 
-  struct mtl_main_impl* impl = dev->parnet;
+  struct mtl_main_impl* impl = dev->parent;
   struct st_plugin_mgr* mgr = st_get_plugins_mgr(impl);
   int idx = dev->idx;
 
@@ -578,19 +584,20 @@ st22_encoder_dev_handle st22_encoder_register(mtl_handle mt,
       return NULL;
     }
     encode_dev->type = MT_ST22_HANDLE_DEV_ENCODE;
-    encode_dev->parnet = impl;
+    encode_dev->parent = impl;
     encode_dev->idx = i;
     rte_atomic32_set(&encode_dev->ref_cnt, 0);
     strncpy(encode_dev->name, dev->name, ST_MAX_NAME_LEN - 1);
     encode_dev->dev = *dev;
-    for (int j = 0; j < ST_MAX_SESSIIONS_PER_ENCODER; j++) {
+    for (int j = 0; j < ST_MAX_SESSIONS_PER_ENCODER; j++) {
       encode_dev->sessions[j].idx = j;
-      encode_dev->sessions[j].parnet = encode_dev;
+      encode_dev->sessions[j].parent = encode_dev;
     }
     mgr->encode_devs[i] = encode_dev;
     mt_pthread_mutex_unlock(&mgr->lock);
-    info("%s(%d), %s registered, device %d cap(0x%lx:0x%lx)\n", __func__, i,
-         encode_dev->name, dev->target_device, dev->input_fmt_caps, dev->output_fmt_caps);
+    info("%s(%d), %s registered, device %d cap(0x%" PRIx64 ":0x%" PRIx64 ")\n", __func__,
+         i, encode_dev->name, dev->target_device, dev->input_fmt_caps,
+         dev->output_fmt_caps);
     return encode_dev;
   }
   mt_pthread_mutex_unlock(&mgr->lock);
@@ -634,19 +641,20 @@ st22_decoder_dev_handle st22_decoder_register(mtl_handle mt,
       return NULL;
     }
     decode_dev->type = MT_ST22_HANDLE_DEV_DECODE;
-    decode_dev->parnet = impl;
+    decode_dev->parent = impl;
     decode_dev->idx = i;
     rte_atomic32_set(&decode_dev->ref_cnt, 0);
     strncpy(decode_dev->name, dev->name, ST_MAX_NAME_LEN - 1);
     decode_dev->dev = *dev;
-    for (int j = 0; j < ST_MAX_SESSIIONS_PER_DECODER; j++) {
+    for (int j = 0; j < ST_MAX_SESSIONS_PER_DECODER; j++) {
       decode_dev->sessions[j].idx = j;
-      decode_dev->sessions[j].parnet = decode_dev;
+      decode_dev->sessions[j].parent = decode_dev;
     }
     mgr->decode_devs[i] = decode_dev;
     mt_pthread_mutex_unlock(&mgr->lock);
-    info("%s(%d), %s registered, device %d cap(0x%lx:0x%lx)\n", __func__, i,
-         decode_dev->name, dev->target_device, dev->input_fmt_caps, dev->output_fmt_caps);
+    info("%s(%d), %s registered, device %d cap(0x%" PRIx64 ":0x%" PRIx64 ")\n", __func__,
+         i, decode_dev->name, dev->target_device, dev->input_fmt_caps,
+         dev->output_fmt_caps);
     return decode_dev;
   }
   mt_pthread_mutex_unlock(&mgr->lock);
@@ -690,19 +698,19 @@ st20_converter_dev_handle st20_converter_register(mtl_handle mt,
       return NULL;
     }
     convert_dev->type = MT_ST20_HANDLE_DEV_CONVERT;
-    convert_dev->parnet = impl;
+    convert_dev->parent = impl;
     convert_dev->idx = i;
     rte_atomic32_set(&convert_dev->ref_cnt, 0);
     strncpy(convert_dev->name, dev->name, ST_MAX_NAME_LEN - 1);
     convert_dev->dev = *dev;
-    for (int j = 0; j < ST_MAX_SESSIIONS_PER_CONVERTER; j++) {
+    for (int j = 0; j < ST_MAX_SESSIONS_PER_CONVERTER; j++) {
       convert_dev->sessions[j].idx = j;
-      convert_dev->sessions[j].parnet = convert_dev;
+      convert_dev->sessions[j].parent = convert_dev;
     }
     mgr->convert_devs[i] = convert_dev;
     mt_pthread_mutex_unlock(&mgr->lock);
-    info("%s(%d), %s registered, device %d cap(0x%lx:0x%lx)\n", __func__, i,
-         convert_dev->name, dev->target_device, dev->input_fmt_caps,
+    info("%s(%d), %s registered, device %d cap(0x%" PRIx64 ":0x%" PRIx64 ")\n", __func__,
+         i, convert_dev->name, dev->target_device, dev->input_fmt_caps,
          dev->output_fmt_caps);
     return convert_dev;
   }
@@ -790,7 +798,7 @@ static struct st_dl_plugin_impl* st_plugin_by_path(struct mtl_main_impl* impl,
   for (int i = 0; i < ST_MAX_DL_PLUGINS; i++) {
     plugin = mgr->plugins[i];
     if (plugin) {
-      if (!strncmp(plugin->path, path, ST_PLUNGIN_MAX_PATH_LEN - 1)) {
+      if (!strncmp(plugin->path, path, ST_PLUGIN_MAX_PATH_LEN - 1)) {
         dbg("%s, %s registered\n", __func__, path);
         mt_pthread_mutex_unlock(&mgr->plugins_lock);
         return plugin;
@@ -899,7 +907,7 @@ int st_plugin_register(mtl_handle mt, const char* path) {
       return -ENOMEM;
     }
     plugin->idx = i;
-    strncpy(plugin->path, path, ST_PLUNGIN_MAX_PATH_LEN - 1);
+    strncpy(plugin->path, path, ST_PLUGIN_MAX_PATH_LEN - 1);
     plugin->dl_handle = dl_handle;
     plugin->create = create_fn;
     plugin->free = free_fn;
@@ -927,7 +935,7 @@ int st_plugin_unregister(mtl_handle mt, const char* path) {
   for (int i = 0; i < ST_MAX_DL_PLUGINS; i++) {
     plugin = mgr->plugins[i];
     if (plugin) {
-      if (!strncmp(plugin->path, path, ST_PLUNGIN_MAX_PATH_LEN - 1)) {
+      if (!strncmp(plugin->path, path, ST_PLUGIN_MAX_PATH_LEN - 1)) {
         info("%s, unregister %s at %d\n", __func__, path, i);
         st_plugin_free(plugin);
         mgr->plugins[i] = NULL;

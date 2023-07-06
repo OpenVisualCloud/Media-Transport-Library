@@ -13,7 +13,9 @@ static int app_tx_anc_next_frame(void* priv, uint16_t* next_frame_idx,
 
   st_pthread_mutex_lock(&s->st40_wake_mutex);
   if (ST_TX_FRAME_READY == framebuff->stat) {
-    dbg("%s(%d), next frame idx %u\n", __func__, s->idx, consumer_idx);
+    dbg("%s(%d), next frame idx %u, epoch %" PRIu64 ", tai %" PRIu64 "\n", __func__,
+        s->idx, consumer_idx, meta->epoch,
+        st10_get_tai(meta->tfmt, meta->timestamp, ST10_VIDEO_SAMPLING_RATE_90K));
     ret = 0;
     framebuff->stat = ST_TX_FRAME_IN_TRANSMITTING;
     *next_frame_idx = consumer_idx;
@@ -41,7 +43,9 @@ static int app_tx_anc_frame_done(void* priv, uint16_t frame_idx,
   if (ST_TX_FRAME_IN_TRANSMITTING == framebuff->stat) {
     ret = 0;
     framebuff->stat = ST_TX_FRAME_FREE;
-    dbg("%s(%d), done_idx %u\n", __func__, s->idx, frame_idx);
+    dbg("%s(%d), done frame idx %u, epoch %" PRIu64 ", tai %" PRIu64 "\n", __func__,
+        s->idx, frame_idx, meta->epoch,
+        st10_get_tai(meta->tfmt, meta->timestamp, ST10_VIDEO_SAMPLING_RATE_90K));
   } else {
     ret = -EIO;
     err("%s(%d), err status %d for frame %u\n", __func__, s->idx, framebuff->stat,
@@ -408,26 +412,31 @@ static int app_tx_anc_init(struct st_app_context* ctx, st_json_ancillary_session
   ops.name = name;
   ops.priv = s;
   ops.num_port = anc ? anc->base.num_inf : ctx->para.num_ports;
-  memcpy(ops.dip_addr[MTL_PORT_P],
-         anc ? anc->base.ip[MTL_PORT_P] : ctx->tx_dip_addr[MTL_PORT_P], MTL_IP_ADDR_LEN);
-  strncpy(ops.port[MTL_PORT_P],
-          anc ? anc->base.inf[MTL_PORT_P]->name : ctx->para.port[MTL_PORT_P],
+  memcpy(ops.dip_addr[MTL_SESSION_PORT_P],
+         anc ? st_json_ip(ctx, &anc->base, MTL_SESSION_PORT_P)
+             : ctx->tx_dip_addr[MTL_PORT_P],
+         MTL_IP_ADDR_LEN);
+  strncpy(ops.port[MTL_SESSION_PORT_P],
+          anc ? anc->base.inf[MTL_SESSION_PORT_P]->name : ctx->para.port[MTL_PORT_P],
           MTL_PORT_MAX_LEN);
-  ops.udp_port[MTL_PORT_P] = anc ? anc->base.udp_port : (10200 + s->idx);
+  ops.udp_port[MTL_SESSION_PORT_P] = anc ? anc->base.udp_port : (10200 + s->idx);
   if (ctx->has_tx_dst_mac[MTL_PORT_P]) {
-    memcpy(&ops.tx_dst_mac[MTL_PORT_P][0], ctx->tx_dst_mac[MTL_PORT_P], 6);
+    memcpy(&ops.tx_dst_mac[MTL_SESSION_PORT_P][0], ctx->tx_dst_mac[MTL_PORT_P],
+           MTL_MAC_ADDR_LEN);
     ops.flags |= ST40_TX_FLAG_USER_P_MAC;
   }
   if (ops.num_port > 1) {
-    memcpy(ops.dip_addr[MTL_PORT_R],
-           anc ? anc->base.ip[MTL_PORT_R] : ctx->tx_dip_addr[MTL_PORT_R],
+    memcpy(ops.dip_addr[MTL_SESSION_PORT_R],
+           anc ? st_json_ip(ctx, &anc->base, MTL_SESSION_PORT_R)
+               : ctx->tx_dip_addr[MTL_PORT_R],
            MTL_IP_ADDR_LEN);
-    strncpy(ops.port[MTL_PORT_R],
-            anc ? anc->base.inf[MTL_PORT_R]->name : ctx->para.port[MTL_PORT_R],
+    strncpy(ops.port[MTL_SESSION_PORT_R],
+            anc ? anc->base.inf[MTL_SESSION_PORT_R]->name : ctx->para.port[MTL_PORT_R],
             MTL_PORT_MAX_LEN);
-    ops.udp_port[MTL_PORT_R] = anc ? anc->base.udp_port : (10200 + s->idx);
+    ops.udp_port[MTL_SESSION_PORT_R] = anc ? anc->base.udp_port : (10200 + s->idx);
     if (ctx->has_tx_dst_mac[MTL_PORT_R]) {
-      memcpy(&ops.tx_dst_mac[MTL_PORT_R][0], ctx->tx_dst_mac[MTL_PORT_R], 6);
+      memcpy(&ops.tx_dst_mac[MTL_SESSION_PORT_R][0], ctx->tx_dst_mac[MTL_PORT_R],
+             MTL_MAC_ADDR_LEN);
       ops.flags |= ST40_TX_FLAG_USER_R_MAC;
     }
   }

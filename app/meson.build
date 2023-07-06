@@ -20,7 +20,14 @@ libjson_c = dependency('json-c', required : true)
 if not is_windows
   libpcap = dependency('pcap', required: true)
 endif
-libsdl2 = dependency('sdl2', required: true)
+libsdl2 = dependency('sdl2', required: false)
+if libsdl2.found()
+  add_global_arguments('-DAPP_HAS_SDL2', language : 'c')
+  set_variable('app_has_sdl2', true)
+else
+  message('SDL2 not found')
+  set_variable('app_has_sdl2', false)
+endif
 libsdl2_ttf = dependency('SDL2_ttf', required: false)
 if libsdl2_ttf.found()
   add_global_arguments('-DAPP_HAS_SDL2_TTF', language : 'c')
@@ -40,15 +47,16 @@ subdir('udp')
 app_c_args = []
 app_ld_args = []
 
-#enable warning as error
-app_c_args += ['-Werror']
+# enable warning as error for non debug build
+if get_option('buildtype') != 'debug'
+  app_c_args += ['-Werror']
+endif
 app_c_args += ['-Wall']
 
 if is_windows
   libpcap =[]
   mingw_root_dir = 'c:\mingw64'
   app_c_args += ['-DWINDOWSENV','-D_WIN32_WINNT=0x0600']
-  app_c_args += ['-Wformat=0']
   app_c_args += ['-D__USE_MINGW_ANSI_STDIO']
   mingw_include_dir = mingw_root_dir + '''\include'''
   windows_include_dir = '..\..\lib\windows'
@@ -91,6 +99,7 @@ executable('RxTxApp', sources,
   dependencies: [asan_dep, mtl, libjson_c, libpcap, libsdl2, libsdl2_ttf, libm, libpthread]
 )
 
+# Color convert tool for raw yuv file
 executable('ConvApp', conv_sources,
   c_args : app_c_args,
   link_args: app_ld_args,
@@ -98,6 +107,7 @@ executable('ConvApp', conv_sources,
   dependencies: [asan_dep, mtl]
 )
 
+# Performance benchmarks for color convert
 executable('PerfRfc4175422be10ToP10Le', perf_rfc4175_422be10_to_p10le_sources,
   c_args : app_c_args,
   link_args: app_ld_args,
@@ -161,42 +171,29 @@ executable('PerfY210ToRfc4175422be10', perf_y210_to_rfc4175_422be10_sources,
   dependencies: [asan_dep, mtl, libpthread]
 )
 
-executable('TxVideoSample', video_tx_sample_sources,
+executable('PerfRfc4175422be12ToLe', perf_rfc4175_422be12_to_le_sources,
   c_args : app_c_args,
   link_args: app_ld_args,
   # asan should be always the first dep
   dependencies: [asan_dep, mtl, libpthread]
 )
 
-executable('TxRtpVideoSample', video_tx_rtp_sample_sources,
+executable('PerfRfc4175422be12ToP12Le', perf_rfc4175_422be12_to_p12le_sources,
   c_args : app_c_args,
   link_args: app_ld_args,
   # asan should be always the first dep
   dependencies: [asan_dep, mtl, libpthread]
 )
 
-executable('RxVideoSample', video_rx_sample_sources,
+# Pipeline video samples app
+executable('TxSt20PipelineSample', pipeline_tx_st20_sample_sources,
   c_args : app_c_args,
   link_args: app_ld_args,
   # asan should be always the first dep
   dependencies: [asan_dep, mtl, libpthread]
 )
 
-executable('RxRtpVideoSample', video_rx_rtp_sample_sources,
-  c_args : app_c_args,
-  link_args: app_ld_args,
-  # asan should be always the first dep
-  dependencies: [asan_dep, mtl, libpthread]
-)
-
-executable('TxSt22VideoSample', video_tx_st22_sample_sources,
-  c_args : app_c_args,
-  link_args: app_ld_args,
-  # asan should be always the first dep
-  dependencies: [asan_dep, mtl, libpthread]
-)
-
-executable('RxSt22VideoSample', video_rx_st22_sample_sources,
+executable('RxSt20PipelineSample', pipeline_rx_st20_sample_sources,
   c_args : app_c_args,
   link_args: app_ld_args,
   # asan should be always the first dep
@@ -217,20 +214,7 @@ executable('RxSt22PipelineSample', pipeline_rx_st22_sample_sources,
   dependencies: [asan_dep, mtl, libpthread]
 )
 
-executable('RxSliceVideoSample', video_rx_slice_sample_sources,
-  c_args : app_c_args,
-  link_args: app_ld_args,
-  # asan should be always the first dep
-  dependencies: [asan_dep, mtl, libpthread]
-)
-
-executable('TxSliceVideoSample', video_tx_slice_sample_sources,
-  c_args : app_c_args,
-  link_args: app_ld_args,
-  # asan should be always the first dep
-  dependencies: [asan_dep, mtl, libpthread]
-)
-
+# Video forward samples app
 executable('RxSt20pTxSt22pFwd', rx_st20p_tx_st22p_fwd_sources,
   c_args : app_c_args,
   link_args: app_ld_args,
@@ -245,25 +229,49 @@ executable('RxSt20pTxSt20pFwd', rx_st20p_tx_st20p_fwd_sources,
   dependencies: [asan_dep, mtl, libpthread]
 )
 
-executable('RxSt20TxSt20Fwd', rx_st20_tx_st20_fwd_sources,
+executable('RxSt20pTxSt20pDownsampleFwd', rx_st20p_tx_st20p_downsample_fwd_sources,
   c_args : app_c_args,
   link_args: app_ld_args,
   # asan should be always the first dep
   dependencies: [asan_dep, mtl, libpthread]
 )
 
-executable('TxSt20PipelineSample', pipeline_tx_st20_sample_sources,
+executable('RxSt20pTxSt20pDownsampleMergeFwd', rx_st20p_tx_st20p_downsample_merge_fwd_sources,
+  c_args : app_c_args,
+  link_args: app_ld_args,
+  # asan should be always the first dep
+  dependencies: [asan_dep, mtl, libpthread]
+)
+# WA: no <sys/queue.h> for windows
+if not is_windows
+executable('RxSt20TxSt20SplitFwd', rx_st20_tx_st20_split_fwd_sources,
+  c_args : app_c_args,
+  link_args: app_ld_args,
+  # asan should be always the first dep
+  dependencies: [asan_dep, mtl]
+)
+endif
+
+executable('RxSt20pTxSt20pSplitFwd', rx_st20p_tx_st20p_split_fwd_sources,
   c_args : app_c_args,
   link_args: app_ld_args,
   # asan should be always the first dep
   dependencies: [asan_dep, mtl, libpthread]
 )
 
-executable('RxSt20PipelineSample', pipeline_rx_st20_sample_sources,
+executable('RxSt20pTxSt20pMergeFwd', rx_st20p_tx_st20p_merge_fwd_sources,
   c_args : app_c_args,
   link_args: app_ld_args,
   # asan should be always the first dep
   dependencies: [asan_dep, mtl, libpthread]
+)
+
+# Misc video samples app
+executable('TxVideoSplitSample', video_tx_split_sample_sources,
+  c_args : app_c_args,
+  link_args: app_ld_args,
+  # asan should be always the first dep
+  dependencies: [asan_dep, mtl]
 )
 
 executable('RxSt20RedundantSample', redundant_rx_st20_sample_sources,
@@ -273,6 +281,94 @@ executable('RxSt20RedundantSample', redundant_rx_st20_sample_sources,
   dependencies: [asan_dep, mtl, libpthread]
 )
 
+# Legacy video samples app
+executable('TxVideoSample', video_tx_sample_sources,
+  c_args : app_c_args,
+  link_args: app_ld_args,
+  # asan should be always the first dep
+  dependencies: [asan_dep, mtl, libpthread]
+)
+
+executable('RxVideoSample', video_rx_sample_sources,
+  c_args : app_c_args,
+  link_args: app_ld_args,
+  # asan should be always the first dep
+  dependencies: [asan_dep, mtl, libpthread]
+)
+
+executable('TxSt22VideoSample', video_tx_st22_sample_sources,
+  c_args : app_c_args,
+  link_args: app_ld_args,
+  # asan should be always the first dep
+  dependencies: [asan_dep, mtl, libpthread]
+)
+
+executable('RxSt22VideoSample', video_rx_st22_sample_sources,
+  c_args : app_c_args,
+  link_args: app_ld_args,
+  # asan should be always the first dep
+  dependencies: [asan_dep, mtl, libpthread]
+)
+
+executable('RxSt20TxSt20Fwd', rx_st20_tx_st20_fwd_sources,
+  c_args : app_c_args,
+  link_args: app_ld_args,
+  # asan should be always the first dep
+  dependencies: [asan_dep, mtl, libpthread]
+)
+
+# Ext frame samples app
+executable('TxSt20pExtFrameSample', pipeline_tx_st20_ext_frame_sample_sources,
+  c_args : app_c_args,
+  link_args: app_ld_args,
+  # asan should be always the first dep
+  dependencies: [asan_dep, mtl, libpthread]
+)
+
+executable('RxSt20pDynExtFrameSample', pipeline_rx_st20_dyn_ext_frame_sample_sources,
+  c_args : app_c_args,
+  link_args: app_ld_args,
+  # asan should be always the first dep
+  dependencies: [asan_dep, mtl, libpthread]
+)
+
+executable('RxSt20pHdrSplitGpuDirect', pipeline_rx_st20_dyn_hdr_split_gpu_direct_sources,
+  c_args : app_c_args,
+  link_args: app_ld_args,
+  # asan should be always the first dep
+  dependencies: [asan_dep, mtl, libpthread]
+)
+
+# Low level video samples app
+executable('TxRtpVideoSample', video_tx_rtp_sample_sources,
+  c_args : app_c_args,
+  link_args: app_ld_args,
+  # asan should be always the first dep
+  dependencies: [asan_dep, mtl, libpthread]
+)
+
+executable('RxRtpVideoSample', video_rx_rtp_sample_sources,
+  c_args : app_c_args,
+  link_args: app_ld_args,
+  # asan should be always the first dep
+  dependencies: [asan_dep, mtl, libpthread]
+)
+
+executable('TxSliceVideoSample', video_tx_slice_sample_sources,
+  c_args : app_c_args,
+  link_args: app_ld_args,
+  # asan should be always the first dep
+  dependencies: [asan_dep, mtl, libpthread]
+)
+
+executable('RxSliceVideoSample', video_rx_slice_sample_sources,
+  c_args : app_c_args,
+  link_args: app_ld_args,
+  # asan should be always the first dep
+  dependencies: [asan_dep, mtl, libpthread]
+)
+
+# Dma sample app
 executable('DmaSample', dma_sample_sources,
   c_args : app_c_args,
   link_args: app_ld_args,
@@ -280,6 +376,7 @@ executable('DmaSample', dma_sample_sources,
   dependencies: [asan_dep, mtl, libopenssl]
 )
 
+# Dma performance benchmark
 executable('PerfDma', perf_dma_sources,
   c_args : app_c_args,
   link_args: app_ld_args,
@@ -287,23 +384,7 @@ executable('PerfDma', perf_dma_sources,
   dependencies: [asan_dep, mtl]
 )
 
-executable('TxVideoSplitSample', video_tx_split_sample_sources,
-  c_args : app_c_args,
-  link_args: app_ld_args,
-  # asan should be always the first dep
-  dependencies: [asan_dep, mtl]
-)
-
-# TODO: allow windows to link with dpdk_dep.
-if not is_windows
-executable('RxSt20TxSt20SplitFwd', rx_st20_tx_st20_split_fwd_sources,
-  c_args : app_c_args,
-  link_args: app_ld_args,
-  # asan should be always the first dep
-  dependencies: [asan_dep, mtl, dpdk_dep]
-)
-endif
-
+# UDP sample app
 executable('UdpServerSample', upd_server_sample_sources,
   c_args : app_c_args,
   link_args: app_ld_args,
@@ -317,3 +398,34 @@ executable('UdpClientSample', upd_client_sample_sources,
   # asan should be always the first dep
   dependencies: [asan_dep, mtl, libpthread]
 )
+
+executable('UfdServerSample', ufd_server_sample_sources,
+  c_args : app_c_args,
+  link_args: app_ld_args,
+  # asan should be always the first dep
+  dependencies: [asan_dep, mtl, libpthread]
+)
+
+executable('UfdClientSample', ufd_client_sample_sources,
+  c_args : app_c_args,
+  link_args: app_ld_args,
+  # asan should be always the first dep
+  dependencies: [asan_dep, mtl, libpthread]
+)
+
+# WA: no socket/poll API for windows
+if not is_windows
+executable('UsocketServerSample', usocket_server_sample_sources,
+  c_args : app_c_args,
+  link_args: app_ld_args,
+  # asan should be always the first dep
+  dependencies: [asan_dep, mtl, libpthread]
+)
+
+executable('UsocketClientSample', usocket_client_sample_sources,
+  c_args : app_c_args,
+  link_args: app_ld_args,
+  # asan should be always the first dep
+  dependencies: [asan_dep, mtl, libpthread]
+)
+endif

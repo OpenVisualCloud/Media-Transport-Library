@@ -6,7 +6,7 @@ project('mtl_test', 'cpp', default_options: ['buildtype=release'],
 
 exec_env = host_machine.system()
 set_variable('is_windows', exec_env == 'windows')
-message('BUILD Enviroment: ' + exec_env)
+message('BUILD Environment: ' + exec_env)
 
 cpp_c = meson.get_compiler('cpp')
 
@@ -30,24 +30,26 @@ test_c_args = []
 test_cpp_args = []
 test_ld_args = []
 
-# enable warning as error
-test_c_args += ['-Werror']
+is_gtest_newer_than_1_9_0 = gtest.version().version_compare('>=1.9.0')
+if is_gtest_newer_than_1_9_0
+  message('Gtest version: > 1.9.0; ' +  gtest.version())
+  test_c_args += ['-DMTL_GTEST_AFTER_1_9_0']
+  test_cpp_args += ['-DMTL_GTEST_AFTER_1_9_0']
+endif
+
+# enable warning as error for non debug build
+if get_option('buildtype') != 'debug'
+  test_c_args += ['-Werror']
+  test_cpp_args += ['-Werror']
+endif
 test_c_args += ['-Wall']
-test_cpp_args += ['-Werror']
 test_cpp_args += ['-Wall']
 
 if is_windows
-  test_c_args += ['-DWINDOWSENV']
-  test_cpp_args += ['-DWINDOWSENV']
-  test_c_args += ['-Wno-sign-compare']
-  test_cpp_args += ['-Wno-sign-compare']
-  test_c_args += ['-Wformat=0']
-  test_cpp_args += ['-Wformat=0']
-endif
-
-if is_windows
+  test_c_args += ['-DWINDOWSENV', '-D__USE_MINGW_ANSI_STDIO', '-D_WIN32_WINNT=0x0600']
+  test_cpp_args += ['-DWINDOWSENV', '-D__USE_MINGW_ANSI_STDIO', '-D__STDC_FORMAT_MACROS', '-D_WIN32_WINNT=0x0600']
   libdpdklinkflags = run_command('pkg-config', '--static', '--libs', 'libdpdk')
-  test_ld_args += ['-static-libstdc++','-lmingw32','-lws2_32','-lDbghelp','-lSetupapi','-ldinput8', '-ldxguid', '-ldxerr8', '-lwinmm', '-limm32','-lversion','-ljson-c','-ldl']
+  test_ld_args += ['-static-libstdc++','-lmingw32','-lws2_32','-lDbghelp','-lSetupapi','-ldinput8', '-ldxguid', '-ldxerr8', '-lwinmm', '-limm32','-lversion','-ldl']
 endif
 
 # default no asan dep
@@ -67,3 +69,23 @@ executable('KahawaiTest', sources,
   # asan should be always the first dep
   dependencies: [asan_dep, mtl, gtest, libnuma, libopenssl, libpthread]
 )
+
+if not is_windows
+# build ufd test executable
+executable('KahawaiUfdTest', ufd_sources,
+  c_args : test_c_args,
+  cpp_args : test_cpp_args,
+  link_args: test_ld_args,
+  # asan should be always the first dep
+  dependencies: [asan_dep, mtl, gtest, libopenssl]
+)
+
+# build upl test executable
+executable('KahawaiUplTest', upl_sources,
+  c_args : test_c_args,
+  cpp_args : test_cpp_args,
+  link_args: test_ld_args,
+  # asan should be always the first dep
+  dependencies: [asan_dep, gtest, libopenssl]
+)
+endif

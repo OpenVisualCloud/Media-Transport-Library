@@ -1,0 +1,79 @@
+From 19af7a580cdc84f07f4ef378c1e9e9c695a202ef Mon Sep 17 00:00:00 2001
+From: Jing Sun <jing.a.sun@intel.com>
+Date: Thu, 10 Nov 2022 10:43:36 +0800
+Subject: [PATCH] avdevice/kahawai: Add kahawai input/output devices
+
+Signed-off-by: Jing Sun <jing.a.sun@intel.com>
+Signed-off-by: Yew, Chang Ching <chang.ching.yew@intel.com>
+---
+ configure                | 5 +++++
+ libavdevice/Makefile     | 2 ++
+ libavdevice/alldevices.c | 2 ++
+ 3 files changed, 9 insertions(+)
+
+diff --git a/configure b/configure
+index 414fde7f8b..09ad8aab1c 100755
+--- a/configure
++++ b/configure
+@@ -216,6 +216,7 @@ External library support:
+                            if openssl, libtls or mbedtls is not used [no]
+   --disable-iconv          disable iconv [autodetect]
+   --enable-jni             enable JNI support [no]
++  --enable-mtl             enable Kahawai indev [no]
+   --enable-ladspa          enable LADSPA audio filtering [no]
+   --enable-libaom          enable AV1 video encoding/decoding via libaom [no]
+   --enable-libaribb24      enable ARIB text and caption decoding via libaribb24 [no]
+@@ -1808,6 +1809,7 @@ EXTERNAL_LIBRARY_LIST="
+     libspeex
+     libsrt
+     libssh
++    mtl
+     libsvtav1
+     libtensorflow
+     libtesseract
+@@ -3422,6 +3424,8 @@ gdigrab_indev_select="bmp_decoder"
+ iec61883_indev_deps="libiec61883"
+ jack_indev_deps="libjack"
+ jack_indev_deps_any="sem_timedwait dispatch_dispatch_h"
++kahawai_indev_deps="mtl"
++kahawai_outdev_deps="mtl"
+ kmsgrab_indev_deps="libdrm"
+ lavfi_indev_deps="avfilter"
+ libcdio_indev_deps="libcdio"
+@@ -6339,6 +6343,7 @@ enabled frei0r            && require_headers "frei0r.h dlfcn.h"
+ enabled gmp               && require gmp gmp.h mpz_export -lgmp
+ enabled gnutls            && require_pkg_config gnutls gnutls gnutls/gnutls.h gnutls_global_init
+ enabled jni               && { [ $target_os = "android" ] && check_headers jni.h && enabled pthreads || die "ERROR: jni not found"; }
++enabled mtl               && require_pkg_config mtl "mtl >= 22.12.0" mtl/st_pipeline_api.h mtl_init
+ enabled ladspa            && require_headers "ladspa.h dlfcn.h"
+ enabled libaom            && require_pkg_config libaom "aom >= 1.0.0" aom/aom_codec.h aom_codec_version
+ enabled libaribb24        && { check_pkg_config libaribb24 "aribb24 > 1.0.3" "aribb24/aribb24.h" arib_instance_new ||
+diff --git a/libavdevice/Makefile b/libavdevice/Makefile
+index 0dfe47a1f4..421a787f5d 100644
+--- a/libavdevice/Makefile
++++ b/libavdevice/Makefile
+@@ -31,6 +31,8 @@ OBJS-$(CONFIG_FBDEV_OUTDEV)              += fbdev_enc.o \
+ OBJS-$(CONFIG_GDIGRAB_INDEV)             += gdigrab.o
+ OBJS-$(CONFIG_IEC61883_INDEV)            += iec61883.o
+ OBJS-$(CONFIG_JACK_INDEV)                += jack.o timefilter.o
++OBJS-$(CONFIG_KAHAWAI_INDEV)             += kahawai_common.o kahawai_dec.o
++OBJS-$(CONFIG_KAHAWAI_OUTDEV)            += kahawai_common.o kahawai_enc.o
+ OBJS-$(CONFIG_KMSGRAB_INDEV)             += kmsgrab.o
+ OBJS-$(CONFIG_LAVFI_INDEV)               += lavfi.o
+ OBJS-$(CONFIG_OPENAL_INDEV)              += openal-dec.o
+diff --git a/libavdevice/alldevices.c b/libavdevice/alldevices.c
+index 92b27a1d14..b8baf822fd 100644
+--- a/libavdevice/alldevices.c
++++ b/libavdevice/alldevices.c
+@@ -39,6 +39,8 @@ extern AVOutputFormat ff_fbdev_muxer;
+ extern AVInputFormat  ff_gdigrab_demuxer;
+ extern AVInputFormat  ff_iec61883_demuxer;
+ extern AVInputFormat  ff_jack_demuxer;
++extern AVInputFormat  ff_kahawai_demuxer;
++extern AVOutputFormat ff_kahawai_muxer;
+ extern AVInputFormat  ff_kmsgrab_demuxer;
+ extern AVInputFormat  ff_lavfi_demuxer;
+ extern AVInputFormat  ff_openal_demuxer;
+-- 
+2.25.1
+

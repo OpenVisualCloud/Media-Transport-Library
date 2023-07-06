@@ -5,8 +5,8 @@ on:
     paths:
       - 'include/**'
       - 'lib/**'
+      - 'ld_preload/**'
       - 'patches/dpdk/**'
-      - script/build_dpdk.sh
       - 'tests/**'
       - build.sh
       - kahawai.json
@@ -14,12 +14,13 @@ on:
       - meson_options.txt
       - VERSION
       - .github/workflows/ubuntu_build_with_gtest.yml
+      - '.github/workflows/upl*'
   pull_request:
     paths:
       - 'include/**'
       - 'lib/**'
+      - 'ld_preload/**'
       - 'patches/dpdk/**'
-      - script/build_dpdk.sh
       - 'tests/**'
       - build.sh
       - kahawai.json
@@ -27,6 +28,7 @@ on:
       - meson_options.txt
       - VERSION
       - .github/workflows/ubuntu_build_with_gtest.yml
+      - '.github/workflows/upl*'
 
 concurrency: 
   group: ${{ github.head_ref || github.run_id }}
@@ -35,41 +37,110 @@ concurrency:
 env:
   # Customize the env if
   BUILD_TYPE: Release
+  DPDK_VERSION: 23.03
+  TEST_PF_PORT_P: 0000:af:00.0
+  TEST_PF_PORT_R: 0000:af:00.0
+  TEST_PORT_P: 0000:af:01.0
+  TEST_PORT_R: 0000:af:01.1
+  TEST_DMA_PORT_P: 0000:80:04.0
+  TEST_DMA_PORT_R: 0000:80:04.1
+
+permissions:
+  contents: read
 
 jobs:
   Build:
     if: github.repository == 'OpenVisualCloud/Media-Transport-Library'
-    runs-on: [Ubuntu, self-hosted]
+    runs-on: [Linux, self-hosted]
     timeout-minutes: 60
 
     steps:
-    - uses: actions/checkout@v3
+    - name: Harden Runner
+      uses: step-security/harden-runner@55d479fb1c5bcad5a4f9099a5d9f37c8857b2845 # v2.4.1
+      with:
+        egress-policy: audit
+
+    - name: checkout kahawai repo
+      uses: actions/checkout@c85c95e3d7251135ab7dc9ce3241c5835cc595a9 # v3.5.3
+
+    - name: checkout dpdk repo
+      uses: actions/checkout@c85c95e3d7251135ab7dc9ce3241c5835cc595a9 # v3.5.3
+      with:
+        repository: 'DPDK/dpdk'
+        ref: v${{  env.DPDK_VERSION  }}
+        path: dpdk
 
     - name: Install the build dependency
       run: |
-        sudo apt-get update -y
         sudo apt-get install -y git gcc meson python3 python3-pip pkg-config libnuma-dev libjson-c-dev libpcap-dev libgtest-dev libsdl2-dev libsdl2-ttf-dev libssl-dev
 
     - name: Install the python package
-      run: pip install pyelftools ninja
+      run: pip install pyelftools==0.29 ninja==1.11.1
+
+    - name: Apply dpdk patches
+      run: |
+        cd dpdk
+        git am ../patches/dpdk/${{  env.DPDK_VERSION  }}/*.patch
 
     - name: Build dpdk
-      run: ./script/build_dpdk.sh
+      run: |
+        cd dpdk
+        meson build
+        ninja -C build
+        cd build
+        sudo ninja install
 
     - name: Build
-      run: ./build.sh
-  
+      run: |
+        ./build.sh
+        sudo ldconfig
+
   Test:
     if: github.repository == 'OpenVisualCloud/Media-Transport-Library'
     needs: Build
-    runs-on: [Ubuntu, self-hosted]
+    runs-on: [Linux, self-hosted]
     steps:
+      - name: Harden Runner
+        uses: step-security/harden-runner@55d479fb1c5bcad5a4f9099a5d9f37c8857b2845 # v2.4.1
+        with:
+          egress-policy: audit
+
+      - name: Kill previous gtest routine
+        run: |
+          sudo killall -SIGINT KahawaiTest || true
+          sudo killall -SIGINT KahawaiUfdTest || true
+          sudo killall -SIGINT KahawaiUplTest || true
+
       - name: Binding network adapter
         run: |
-          ./script/nicctl.sh bind_pmd 0000:31:00.0
-          ./script/nicctl.sh bind_pmd 0000:31:00.1
-          ./dpdk/usertools/dpdk-devbind.py -b vfio-pci 0000:00:01.0
-          ./dpdk/usertools/dpdk-devbind.py -b vfio-pci 0000:00:01.1
+          sudo ./script/nicctl.sh create_vf ${{  env.TEST_PF_PORT_P  }} || true
+          sudo ./dpdk/usertools/dpdk-devbind.py -b vfio-pci ${{  env.TEST_DMA_PORT_P  }} || true
+          sudo ./dpdk/usertools/dpdk-devbind.py -b vfio-pci ${{  env.TEST_DMA_PORT_R  }} || true
 
-      - name: Run test case
-        run: sudo ./build/tests/KahawaiTest --auto_start_stop --p_port 0000:31:00.0 --r_port 0000:31:00.1 --dma_dev 0000:00:01.0,0000:00:01.1
+      - name: Run ufd test case
+        run: |
+          sudo ./build/tests/KahawaiUfdTest --p_port ${{  env.TEST_PORT_P  }} --r_port ${{  env.TEST_PORT_R  }}
+
+      - name: Run shared ufd test case
+        run: |
+          sudo ./build/tests/KahawaiUfdTest --p_port ${{  env.TEST_PORT_P  }} --r_port ${{  env.TEST_PORT_R  }} --queue_mode shared
+
+      - name: Run shared ufd test case with lcore
+        run: |
+          sudo ./build/tests/KahawaiUfdTest --p_port ${{  env.TEST_PORT_P  }} --r_port ${{  env.TEST_PORT_R  }} --queue_mode shared --udp_lcore
+
+      - name: Run ufd test case with rss
+        run: |
+          sudo ./build/tests/KahawaiUfdTest --p_port ${{  env.TEST_PORT_P  }} --r_port ${{  env.TEST_PORT_R  }} --rss_mode l3_l4
+
+      - name: Run udp ld preload test case
+        run: |
+          sudo MUFD_CFG=.github/workflows/upl_gtest.json LD_PRELOAD=/usr/local/lib/x86_64-linux-gnu/libmtl_udp_preload.so ./build/tests/KahawaiUplTest --p_sip 192.168.89.80 --r_sip 192.168.89.81
+
+      - name: Run st2110 test case
+        run: |
+          sudo ./build/tests/KahawaiTest --auto_start_stop --p_port ${{  env.TEST_PORT_P  }} --r_port ${{  env.TEST_PORT_R  }} --dma_dev ${{  env.TEST_DMA_PORT_P  }},${{  env.TEST_DMA_PORT_R  }} --gtest_filter=-St22_?x.*
+
+      - name: Run st2110 st20p test case in simulation ENA environment
+        run: |
+          sudo ./build/tests/KahawaiTest --auto_start_stop --p_port ${{  env.TEST_PORT_P  }} --r_port ${{  env.TEST_PORT_R  }} --rss_mode l3_l4 --pacing_way tsc --iova_mode pa --multi_src_port --gtest_filter=Main.*:St20p*:-*ext*

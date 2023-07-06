@@ -5,39 +5,29 @@
 #pragma once
 
 #include <gtest/gtest.h>
+#include <inttypes.h>
 #include <math.h>
 #include <mtl/st30_api.h>
 #include <mtl/st40_api.h>
 #include <mtl/st_convert_api.h>
 #include <mtl/st_pipeline_api.h>
-#include <openssl/sha.h>
 
-#include <condition_variable>
-#include <mutex>
-#include <queue>
-
-#include "test_platform.h"
+#include "test_util.h"
 
 #define TEST_LCORE_LIST_MAX_LEN (128)
 #define TEST_SHA_HIST_NUM (2)
 #define ST22_TEST_SHA_HIST_NUM (3)
 #define TEST_MAX_SHA_HIST_NUM (3)
 
-#define TEST_DATA_FIXED_PATTER (0)
-
-#ifndef NS_PER_S
-#define NS_PER_S (1000000000)
-#endif
-
-enum st_test_level {
-  ST_TEST_LEVEL_ALL = 0,
-  ST_TEST_LEVEL_MANDATORY,
-  ST_TEST_LEVEL_MAX, /* max value of this enum */
-};
-
 #define MAX_TEST_ENCODER_SESSIONS (8)
 #define MAX_TEST_DECODER_SESSIONS (8)
 #define MAX_TEST_CONVERTER_SESSIONS (8)
+
+#ifdef MTL_GTEST_AFTER_1_9_0
+#define PARAMETERIZED_TEST INSTANTIATE_TEST_SUITE_P
+#else
+#define PARAMETERIZED_TEST INSTANTIATE_TEST_CASE_P
+#endif
 
 struct test_converter_session {
   int idx;
@@ -102,6 +92,9 @@ struct st_tests_context {
   uint64_t ptp_time;
   enum st_test_level level;
   bool hdr_split;
+  bool dhcp;
+  enum mtl_iova_mode iova;
+  enum mtl_rss_mode rss_mode;
 
   st22_encoder_dev_handle encoder_dev_handle;
   st22_decoder_dev_handle decoder_dev_handle;
@@ -121,12 +114,6 @@ static inline int st_test_num_port(struct st_tests_context* ctx) {
   return ctx->para.num_ports;
 }
 
-static inline void* st_test_zmalloc(size_t sz) {
-  void* p = malloc(sz);
-  if (p) memset(p, 0x0, sz);
-  return p;
-}
-
 static inline void st_test_jxs_fail_interval(struct st_tests_context* ctx, int interval) {
   ctx->plugin_fail_interval = interval;
 }
@@ -144,35 +131,6 @@ static inline void st_test_jxs_rand_ratio(struct st_tests_context* ctx, int rand
   ctx->plugin_rand_ratio = rand_ratio;
 }
 
-static inline void st_test_free(void* p) { free(p); }
-
-static inline void st_test_rand_data(uint8_t* p, size_t sz, uint8_t base) {
-  for (size_t i = 0; i < sz; i++) {
-#if TEST_DATA_FIXED_PATTER
-    p[i] = base + i;
-#else
-    p[i] = rand();
-#endif
-  }
-}
-
-static inline void st_test_rand_v210(uint8_t* p, size_t sz, uint8_t base) {
-  for (size_t i = 0; i < sz; i++) {
-#if TEST_DATA_FIXED_PATTER
-    p[i] = base + i;
-#else
-    p[i] = rand();
-#endif
-    if ((i % 4) == 3) p[i] &= 0x3F;
-  }
-}
-
-int st_test_check_patter(uint8_t* p, size_t sz, uint8_t base);
-
-int st_test_cmp(uint8_t* s1, uint8_t* s2, size_t sz);
-
-int st_test_cmp_u16(uint16_t* s1, uint16_t* s2, size_t sz);
-
 int st_test_sch_cnt(struct st_tests_context* ctx);
 
 bool st_test_dma_available(struct st_tests_context* ctx);
@@ -185,15 +143,6 @@ int st_test_convert_plugin_register(struct st_tests_context* ctx);
 
 int st_test_convert_plugin_unregister(struct st_tests_context* ctx);
 
-/* Monotonic time (in nanoseconds) since some unspecified starting point. */
-static inline uint64_t st_test_get_monotonic_time() {
-  struct timespec ts;
-
-  clock_gettime(ST_CLOCK_MONOTONIC_ID, &ts);
-  return ((uint64_t)ts.tv_sec * NS_PER_S) + ts.tv_nsec;
-}
-
-void test_sha_dump(const char* tag, unsigned char* sha);
 void sha_frame_check(void* args);
 
 class tests_context {
@@ -203,6 +152,7 @@ class tests_context {
   int fb_cnt = 0;
   uint16_t fb_idx = 0;
   int fb_send = 0;
+  int fb_send_done = 0;
   int fb_rec = 0;
   int vsync_cnt = 0;
   uint64_t first_vsync_time = 0;
@@ -243,6 +193,7 @@ class tests_context {
   bool check_sha = false;
   int fail_cnt = 0; /* fail as sha or wrong status, etc. */
   int incomplete_frame_cnt = 0;
+  int meta_timing_fail_cnt = 0;
   int incomplete_slice_cnt = 0;
   int check_sha_frame_cnt = 0;
   bool out_of_order_pkt = false; /* out of order pkt index */
@@ -262,9 +213,11 @@ class tests_context {
   bool rx_get_ext = false;
 
   bool user_pacing = false;
-  /* user timestamp which advanced by 1 for erery frame */
+  /* user timestamp which advanced by 1 for every frame */
   bool user_timestamp = false;
   uint32_t pre_timestamp = 0;
+  double frame_time = 0; /* in ns */
+  uint64_t ptp_time_first_frame = 0;
 };
 
 int tests_context_unit(tests_context* ctx);
@@ -272,6 +225,8 @@ int tests_context_unit(tests_context* ctx);
 int test_ctx_notify_event(void* priv, enum st_event event, void* args);
 
 int tx_next_frame(void* priv, uint16_t* next_frame_idx);
+
+#define TEST_CREATE_FREE_MAX (16)
 
 #define create_free_max(A, max)                             \
   do {                                                      \
@@ -293,8 +248,8 @@ int tx_next_frame(void* priv, uint16_t* next_frame_idx);
     for (int i = 0; i < max; i++) {                         \
       handle[i] = A##_create(m_handle, &ops);               \
       if (!handle[i]) break;                                \
-      ops.udp_port[MTL_PORT_P]++;                           \
-      ops.udp_port[MTL_PORT_R]++;                           \
+      ops.udp_port[MTL_SESSION_PORT_P]++;                   \
+      ops.udp_port[MTL_SESSION_PORT_R]++;                   \
       expect_cnt++;                                         \
       A##_assert_cnt(expect_cnt);                           \
       st_usleep(100 * 1000);                                \
@@ -334,8 +289,8 @@ int tx_next_frame(void* priv, uint16_t* next_frame_idx);
     for (int i = 0; i < base; i++) {               \
       handle_base[i] = A##_create(m_handle, &ops); \
       ASSERT_TRUE(handle_base[i]);                 \
-      ops.udp_port[MTL_PORT_P]++;                  \
-      ops.udp_port[MTL_PORT_R]++;                  \
+      ops.udp_port[MTL_SESSION_PORT_P]++;          \
+      ops.udp_port[MTL_SESSION_PORT_R]++;          \
       expect_cnt++;                                \
       A##_assert_cnt(expect_cnt);                  \
     }                                              \
@@ -346,8 +301,8 @@ int tx_next_frame(void* priv, uint16_t* next_frame_idx);
       for (int j = 0; j < step; j++) {             \
         handle[j] = A##_create(m_handle, &ops);    \
         ASSERT_TRUE(handle[j] != NULL);            \
-        ops.udp_port[MTL_PORT_P]++;                \
-        ops.udp_port[MTL_PORT_R]++;                \
+        ops.udp_port[MTL_SESSION_PORT_P]++;        \
+        ops.udp_port[MTL_SESSION_PORT_R]++;        \
         expect_cnt++;                              \
         A##_assert_cnt(expect_cnt);                \
       }                                            \
@@ -609,8 +564,8 @@ int tx_next_frame(void* priv, uint16_t* next_frame_idx);
     for (int i = 0; i < base; i++) {                     \
       handle_base[i] = A##_create(m_handle, &ops);       \
       ASSERT_TRUE(handle_base[i]);                       \
-      ops.port.udp_port[MTL_PORT_P]++;                   \
-      ops.port.udp_port[MTL_PORT_R]++;                   \
+      ops.port.udp_port[MTL_SESSION_PORT_P]++;           \
+      ops.port.udp_port[MTL_SESSION_PORT_R]++;           \
       expect_cnt++;                                      \
       A##_assert_cnt(expect_cnt);                        \
     }                                                    \
@@ -621,8 +576,8 @@ int tx_next_frame(void* priv, uint16_t* next_frame_idx);
       for (int j = 0; j < step; j++) {                   \
         handle[j] = A##_create(m_handle, &ops);          \
         ASSERT_TRUE(handle[j] != NULL);                  \
-        ops.port.udp_port[MTL_PORT_P]++;                 \
-        ops.port.udp_port[MTL_PORT_R]++;                 \
+        ops.port.udp_port[MTL_SESSION_PORT_P]++;         \
+        ops.port.udp_port[MTL_SESSION_PORT_R]++;         \
         expect_cnt++;                                    \
         A##_assert_cnt(expect_cnt);                      \
       }                                                  \
@@ -667,8 +622,8 @@ int tx_next_frame(void* priv, uint16_t* next_frame_idx);
     for (int i = 0; i < max; i++) {                         \
       handle[i] = A##_create(m_handle, &ops);               \
       if (!handle[i]) break;                                \
-      ops.port.udp_port[MTL_PORT_P]++;                      \
-      ops.port.udp_port[MTL_PORT_R]++;                      \
+      ops.port.udp_port[MTL_SESSION_PORT_P]++;              \
+      ops.port.udp_port[MTL_SESSION_PORT_R]++;              \
       expect_cnt++;                                         \
       A##_assert_cnt(expect_cnt);                           \
     }                                                       \

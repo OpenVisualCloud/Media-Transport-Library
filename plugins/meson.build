@@ -22,16 +22,17 @@ subdir('sample')
 plugins_c_args = []
 plugins_ld_args = []
 
-#enable warning as error
-plugins_c_args += ['-Werror']
+# enable warning as error for non debug build
+if get_option('buildtype') != 'debug'
+  plugins_c_args += ['-Werror']
+endif
 plugins_c_args += ['-Wall']
 #simd build option, enable sse4.2 default, todo: do we need AVX2/AVX512 for app ?
 plugins_c_args += ['-msse4.2']
 
 if is_windows
-  plugins_c_args += ['-Wformat=0']
   libdpdklinkflags = run_command('pkg-config', '--static', '--libs', 'libdpdk')
-  plugins_ld_args += ['-lmingw32','-lws2_32','-lDbghelp','-lSetupapi','-ldinput8', '-ldxguid', '-ldxerr8', '-lwinmm', '-limm32','-lversion','-lwpcap','-lPacket','-lSDL2','-lSDL2Main','-lmman','-ljson-c','-ldl']
+  plugins_ld_args += ['-lmingw32','-lws2_32','-lDbghelp','-lSetupapi','-ldinput8', '-ldxguid', '-ldxerr8', '-lwinmm', '-limm32', '-lversion', '-lwpcap', '-lPacket', '-lmman', '-ldl']
   plugins_ld_args += ['-Wl,--whole-archive']
   plugins_ld_args += [libdpdklinkflags.stdout().strip().split()]
   plugins_ld_args += ['-Wl,--no-whole-archive']

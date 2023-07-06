@@ -8,7 +8,8 @@
 #include "mt_util.h"
 
 #ifndef WINDOWSENV
-int mt_socket_get_if_ip(char* if_name, uint8_t ip[MTL_IP_ADDR_LEN]) {
+int mt_socket_get_if_ip(char* if_name, uint8_t ip[MTL_IP_ADDR_LEN],
+                        uint8_t netmask[MTL_IP_ADDR_LEN]) {
   int sock, ret;
   struct ifreq ifr;
 
@@ -27,9 +28,42 @@ int mt_socket_get_if_ip(char* if_name, uint8_t ip[MTL_IP_ADDR_LEN]) {
     return ret;
   }
   struct sockaddr_in* ipaddr = (struct sockaddr_in*)&ifr.ifr_addr;
-  memcpy(ip, &ipaddr->sin_addr.s_addr, MTL_IP_ADDR_LEN);
+  if (ip) memcpy(ip, &ipaddr->sin_addr.s_addr, MTL_IP_ADDR_LEN);
+
+  ret = ioctl(sock, SIOCGIFNETMASK, &ifr);
+  if (ret < 0) {
+    err("%s, SIOCGIFADDR fail %d for if %s\n", __func__, ret, if_name);
+    close(sock);
+    return ret;
+  }
+  ipaddr = (struct sockaddr_in*)&ifr.ifr_addr;
+  if (netmask) memcpy(netmask, &ipaddr->sin_addr.s_addr, MTL_IP_ADDR_LEN);
 
   close(sock);
+  return 0;
+}
+
+int mt_socket_get_if_gateway(char* if_name, uint8_t gateway[MTL_IP_ADDR_LEN]) {
+  char cmd[256];
+  char out[256];
+
+  snprintf(cmd, sizeof(cmd), "route -n | grep 'UG' | grep '%s' | awk '{print $2}'",
+           if_name);
+  int ret = mt_run_cmd(cmd, out, sizeof(out));
+  if (ret < 0) return ret;
+
+  uint8_t a, b, c, d;
+  ret = sscanf(out, "%" SCNu8 ".%" SCNu8 ".%" SCNu8 ".%" SCNu8 "", &a, &b, &c, &d);
+  if (ret < 0) {
+    info("%s, cmd: %s fail\n", __func__, cmd);
+    return ret;
+  }
+
+  dbg("%s, cmd %s out %s\n", __func__, cmd, out);
+  gateway[0] = a;
+  gateway[1] = b;
+  gateway[2] = c;
+  gateway[3] = d;
   return 0;
 }
 
@@ -124,7 +158,7 @@ static int socket_arp_get(int sfd, in_addr_t ip, struct rte_ether_addr* ea,
     return -EIO;
   }
 
-  dbg("%s, entry has been successfully retreived\n", __func__);
+  dbg("%s, entry has been successfully retrieved\n", __func__);
   hw_addr = (unsigned char*)arp.arp_ha.sa_data;
   memcpy(ea->addr_bytes, hw_addr, RTE_ETHER_ADDR_LEN);
   dbg("%s, mac addr found : %02x:%02x:%02x:%02x:%02x:%02x\n", __func__, hw_addr[0],
@@ -221,19 +255,21 @@ int mt_socket_get_mac(struct mtl_main_impl* impl, char* if_name,
 
   int retry = 0;
   while (socket_arp_get(sock, addr.sin_addr.s_addr, ea, if_name) < 0) {
+    memset(dummy_buf, 0, sizeof(dummy_buf));
+    /* tx one dummy pkt to send arp request */
+    sendto(sock, dummy_buf, 0, 0, (struct sockaddr*)&addr, sizeof(struct sockaddr_in));
+
     if (mt_aborted(impl)) {
       err("%s, fail as user aborted\n", __func__);
       close(sock);
       return -EIO;
     }
-    if ((max_retry > 0) && (retry > max_retry)) {
-      err("%s, fail as timeout to %d ms\n", __func__, timeout_ms);
+    if (retry >= max_retry) {
+      if (max_retry) /* log only if not zero timeout */
+        err("%s, fail as timeout to %d ms\n", __func__, timeout_ms);
       close(sock);
       return -EIO;
     }
-
-    sendto(sock, dummy_buf, 0, 0, (struct sockaddr*)&addr, sizeof(struct sockaddr_in));
-
     retry++;
     if (0 == (retry % 50)) {
       info("%s(%s), waiting arp from %d.%d.%d.%d\n", __func__, if_name, dip[0], dip[1],
@@ -247,7 +283,7 @@ int mt_socket_get_mac(struct mtl_main_impl* impl, char* if_name,
 }
 
 int mt_socket_add_flow(struct mtl_main_impl* impl, enum mtl_port port, uint16_t queue_id,
-                       struct mt_rx_flow* flow) {
+                       struct mt_rxq_flow* flow) {
   char cmd[256];
   char out[128]; /* Added rule with ID 15871 */
   int ret;
@@ -277,28 +313,34 @@ int mt_socket_add_flow(struct mtl_main_impl* impl, enum mtl_port port, uint16_t 
     info("%s(%d), unknown out: %s\n", __func__, port, out);
     return ret;
   }
-  flow->flow_id = flow_id;
-  info("%s(%d), succ, flow_id %d, cmd %s\n", __func__, port, flow->flow_id, cmd);
-  return 0;
+
+  info("%s(%d), succ, flow_id %d, cmd %s\n", __func__, port, flow_id, cmd);
+  return flow_id;
 }
 
-int mt_socket_remove_flow(struct mtl_main_impl* impl, enum mtl_port port,
-                          uint16_t queue_id, struct mt_rx_flow* flow) {
+int mt_socket_remove_flow(struct mtl_main_impl* impl, enum mtl_port port, int flow_id) {
   char cmd[128];
   int ret;
 
-  if (flow->flow_id > 0) {
+  if (flow_id > 0) {
     snprintf(cmd, sizeof(cmd), "ethtool -N %s delete %d",
-             mt_get_user_params(impl)->port[port], flow->flow_id);
+             mt_get_user_params(impl)->port[port], flow_id);
     ret = mt_run_cmd(cmd, NULL, 0);
     if (ret < 0) return ret;
-    info("%s(%d), succ, flow_id %d, cmd %s\n", __func__, port, flow->flow_id, cmd);
+    info("%s(%d), succ, flow_id %d, cmd %s\n", __func__, port, flow_id, cmd);
   }
 
   return 0;
 }
 #else
-int mt_socket_get_if_ip(char* if_name, uint8_t ip[MTL_IP_ADDR_LEN]) { return -ENOTSUP; }
+int mt_socket_get_if_ip(char* if_name, uint8_t ip[MTL_IP_ADDR_LEN],
+                        uint8_t netmask[MTL_IP_ADDR_LEN]) {
+  return -ENOTSUP;
+}
+
+int mt_socket_get_if_gateway(char* if_name, uint8_t gateway[MTL_IP_ADDR_LEN]) {
+  return -ENOTSUP;
+}
 
 int mt_socket_get_if_mac(char* if_name, struct rte_ether_addr* ea) { return -ENOTSUP; }
 
@@ -317,16 +359,16 @@ int mt_socket_get_mac(struct mtl_main_impl* impl, char* if_name,
 }
 
 int mt_socket_add_flow(struct mtl_main_impl* impl, enum mtl_port port, uint16_t queue_id,
-                       struct mt_rx_flow* flow) {
+                       struct mt_rxq_flow* flow) {
   return -ENOTSUP;
 }
 
-int mt_socket_remove_flow(struct mtl_main_impl* impl, enum mtl_port port,
-                          uint16_t queue_id, struct mt_rx_flow* flow) {
+int mt_socket_remove_flow(struct mtl_main_impl* impl, enum mtl_port port, int flow_id) {
   return -ENOTSUP;
 }
 #endif
 
-int mtl_get_if_ip(char* if_name, uint8_t ip[MTL_IP_ADDR_LEN]) {
-  return mt_socket_get_if_ip(if_name, ip);
+int mtl_get_if_ip(char* if_name, uint8_t ip[MTL_IP_ADDR_LEN],
+                  uint8_t netmask[MTL_IP_ADDR_LEN]) {
+  return mt_socket_get_if_ip(if_name, ip, netmask);
 }

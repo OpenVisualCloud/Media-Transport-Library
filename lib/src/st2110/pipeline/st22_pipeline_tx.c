@@ -66,8 +66,8 @@ static int tx_st22p_next_frame(void* priv, uint16_t* next_frame_idx,
   if (ctx->ops.flags & (ST22P_TX_FLAG_USER_PACING | ST22P_TX_FLAG_USER_TIMESTAMP)) {
     meta->tfmt = framebuff->src.tfmt;
     meta->timestamp = framebuff->src.timestamp;
-    dbg("%s(%d), frame %u succ timestamp %lu\n", __func__, ctx->idx, framebuff->idx,
-        meta->timestamp);
+    dbg("%s(%d), frame %u succ timestamp %" PRIu64 "\n", __func__, ctx->idx,
+        framebuff->idx, meta->timestamp);
   }
   meta->codestream_size = framebuff->dst.data_size;
   /* point to next */
@@ -174,8 +174,8 @@ static int tx_st22p_encode_put_frame(void* priv, struct st22_encode_frame_meta* 
     return -EIO;
   }
 
-  dbg("%s(%d), frame %u result %d data_size %ld\n", __func__, idx, encode_idx, result,
-      data_size);
+  dbg("%s(%d), frame %u result %d data_size %" PRIu64 "\n", __func__, idx, encode_idx,
+      result, data_size);
   if ((result < 0) || (data_size <= ST22_ENCODE_MIN_FRAME_SZ) || (data_size > max_size)) {
     info("%s(%d), invalid frame %u result %d data_size %" PRIu64
          ", allowed min %u max %" PRIu64 "\n",
@@ -225,18 +225,21 @@ static int tx_st22p_create_transport(struct mtl_main_impl* impl, struct st22p_tx
   memset(&ops_tx, 0, sizeof(ops_tx));
   ops_tx.name = ops->name;
   ops_tx.priv = ctx;
-  ops_tx.num_port = RTE_MIN(ops->port.num_port, MTL_PORT_MAX);
+  ops_tx.num_port = RTE_MIN(ops->port.num_port, MTL_SESSION_PORT_MAX);
   for (int i = 0; i < ops_tx.num_port; i++) {
     memcpy(ops_tx.dip_addr[i], ops->port.dip_addr[i], MTL_IP_ADDR_LEN);
     strncpy(ops_tx.port[i], ops->port.port[i], MTL_PORT_MAX_LEN);
+    ops_tx.udp_src_port[i] = ops->port.udp_src_port[i];
     ops_tx.udp_port[i] = ops->port.udp_port[i];
   }
   if (ops->flags & ST22P_TX_FLAG_USER_P_MAC) {
-    memcpy(&ops_tx.tx_dst_mac[MTL_PORT_P][0], &ops->tx_dst_mac[MTL_PORT_P][0], 6);
+    memcpy(&ops_tx.tx_dst_mac[MTL_SESSION_PORT_P][0], &ops->tx_dst_mac[MTL_PORT_P][0],
+           MTL_MAC_ADDR_LEN);
     ops_tx.flags |= ST22_TX_FLAG_USER_P_MAC;
   }
   if (ops->flags & ST22P_TX_FLAG_USER_R_MAC) {
-    memcpy(&ops_tx.tx_dst_mac[MTL_PORT_R][0], &ops->tx_dst_mac[MTL_PORT_R][0], 6);
+    memcpy(&ops_tx.tx_dst_mac[MTL_SESSION_PORT_R][0], &ops->tx_dst_mac[MTL_PORT_R][0],
+           MTL_MAC_ADDR_LEN);
     ops_tx.flags |= ST22_TX_FLAG_USER_R_MAC;
   }
   if (ops->flags & ST22P_TX_FLAG_DISABLE_BOXES)
@@ -342,7 +345,7 @@ static int tx_st22p_init_src_fbs(struct mtl_main_impl* impl, struct st22p_tx_ctx
     }
   }
 
-  info("%s(%d), size %ld fmt %d with %u frames\n", __func__, idx, src_size,
+  info("%s(%d), size %" PRIu64 " fmt %d with %u frames\n", __func__, idx, src_size,
        ops->input_fmt, ctx->framebuff_cnt);
   return 0;
 }
@@ -457,7 +460,7 @@ st22p_tx_handle st22p_tx_create(mtl_handle mt, struct st22p_tx_ops* ops) {
     return NULL;
   }
 
-  src_size = st_frame_size(ops->input_fmt, ops->width, ops->height);
+  src_size = st_frame_size(ops->input_fmt, ops->width, ops->height, false);
   if (!src_size) {
     err("%s(%d), get source size fail\n", __func__, idx);
     return NULL;

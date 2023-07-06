@@ -9,7 +9,6 @@ on:
       - 'include/**'
       - 'lib/**'
       - 'patches/dpdk/**'
-      - script/build_dpdk.sh
       - 'tests/**'
       - build.sh
       - kahawai.json
@@ -22,7 +21,6 @@ on:
       - 'include/**'
       - 'lib/**'
       - 'patches/dpdk/**'
-      - script/build_dpdk.sh
       - 'tests/**'
       - build.sh
       - kahawai.json
@@ -31,6 +29,9 @@ on:
       - VERSION
       - .github/workflows/ubuntu_build_with_gtest.yml
 
+permissions:
+  contents: read
+
 jobs:
   Build:
     if: github.repository == 'OpenVisualCloud/Media-Transport-Library'
@@ -38,6 +39,11 @@ jobs:
     timeout-minutes: 60
 
     steps:
+      - name: Harden Runner
+        uses: step-security/harden-runner@55d479fb1c5bcad5a4f9099a5d9f37c8857b2845 # v2.4.1
+        with:
+          egress-policy: audit
+
       - run: 'echo "No gtest build required"'
   
   Test:
@@ -45,4 +51,9 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
+      - name: Harden Runner
+        uses: step-security/harden-runner@55d479fb1c5bcad5a4f9099a5d9f37c8857b2845 # v2.4.1
+        with:
+          egress-policy: audit
+
       - run: 'echo "No gtest test required"'

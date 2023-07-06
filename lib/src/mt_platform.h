@@ -7,11 +7,20 @@
 
 #ifdef WINDOWSENV /* Windows */
 #include "win_posix.h"
-#else /* Linux */
+#ifndef MTL_DISABLE_PCAPNG
+/* pcapng only available from DPDK 23.03 for Windows */
+#if RTE_VERSION >= RTE_VERSION_NUM(23, 03, 0, 0)
+#include <rte_pcapng.h>
+#define ST_PCAPNG_ENABLED
+#endif /* RTE_VERSION */
+#endif /* MTL_DISABLE_PCAPNG */
+#else  /* Linux */
 #include <arpa/inet.h>
 #include <net/if.h>
 #include <net/if_arp.h>
+#include <netinet/udp.h>
 #include <numa.h>
+#include <poll.h>
 #include <sys/ioctl.h>
 #include <sys/shm.h>
 #include <sys/socket.h>
@@ -25,8 +34,8 @@
 #if RTE_VERSION >= RTE_VERSION_NUM(21, 11, 0, 0)
 #include <rte_pcapng.h>
 #define ST_PCAPNG_ENABLED
-#endif
-#endif
+#endif /* RTE_VERSION */
+#endif /* MTL_DISABLE_PCAPNG */
 
 #endif /* end of WINDOWSENV */
 
@@ -34,6 +43,19 @@
 #define MT_CLOCK_MONOTONIC_ID CLOCK_MONOTONIC_RAW
 #else
 #define MT_CLOCK_MONOTONIC_ID CLOCK_MONOTONIC
+#endif
+
+#ifdef WINDOWSENV
+typedef unsigned long int nfds_t;
+#endif
+
+#ifndef POLLIN /* For windows */
+/* There is data to read */
+#define POLLIN 0x001
+#endif
+
+#ifndef MSG_DONTWAIT /* For windows */
+#define MSG_DONTWAIT (0x40)
 #endif
 
 #ifdef WINDOWSENV
@@ -49,13 +71,32 @@
 #define MT_FLOCK_PATH "/tmp/kahawai_lcore.lock"
 #endif
 
+#ifndef WINDOWSENV
+#define MT_ENABLE_P_SHARED /* default enable PTHREAD_PROCESS_SHARED */
+#endif
+
 static inline int mt_pthread_mutex_init(pthread_mutex_t* mutex,
-                                        pthread_mutexattr_t* attr) {
-  return pthread_mutex_init(mutex, attr);
+                                        pthread_mutexattr_t* p_attr) {
+#ifdef MT_ENABLE_P_SHARED
+  if (p_attr) {
+    pthread_mutexattr_setpshared(p_attr, PTHREAD_PROCESS_SHARED);
+  } else {
+    pthread_mutexattr_t attr;
+    pthread_mutexattr_init(&attr);
+    pthread_mutexattr_setpshared(&attr, PTHREAD_PROCESS_SHARED);
+    p_attr = &attr;
+  }
+#endif
+
+  return pthread_mutex_init(mutex, p_attr);
 }
 
 static inline int mt_pthread_mutex_lock(pthread_mutex_t* mutex) {
   return pthread_mutex_lock(mutex);
+}
+
+static inline int mt_pthread_mutex_try_lock(pthread_mutex_t* mutex) {
+  return pthread_mutex_trylock(mutex);
 }
 
 static inline int mt_pthread_mutex_unlock(pthread_mutex_t* mutex) {

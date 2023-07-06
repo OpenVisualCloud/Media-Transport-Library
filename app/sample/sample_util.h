@@ -7,6 +7,7 @@
 
 #include <errno.h>
 #include <fcntl.h>
+#include <inttypes.h>
 #include <mtl/st20_redundant_api.h>
 #include <mtl/st_convert_api.h>
 #include <mtl/st_pipeline_api.h>
@@ -49,9 +50,19 @@
 
 #define ST_SAMPLE_URL_MAX_LEN (256)
 
+#ifndef NS_PER_S
+#define NS_PER_S (1000000000)
+#endif
+
 enum sample_udp_mode {
-  SAMPLE_UDP_DEFAULT = 0, /* client/server mode */
-  SAMPLE_UDP_TRANSPORT,   /* transport only */
+  /* client/server mode */
+  SAMPLE_UDP_DEFAULT = 0,
+  /* transport only */
+  SAMPLE_UDP_TRANSPORT,
+  /* transport with poll */
+  SAMPLE_UDP_TRANSPORT_POLL,
+  /* transport with unify poll */
+  SAMPLE_UDP_TRANSPORT_UNIFY_POLL,
   SAMPLE_UDP_MODE_MAX,
 };
 
@@ -63,10 +74,13 @@ struct st_sample_context {
   uint8_t fwd_dip_addr[MTL_PORT_MAX][MTL_IP_ADDR_LEN]; /* fwd destination IP */
   char tx_url[ST_SAMPLE_URL_MAX_LEN];
   char rx_url[ST_SAMPLE_URL_MAX_LEN];
+  bool has_tx_dst_mac[MTL_PORT_MAX];
+  uint8_t tx_dst_mac[MTL_PORT_MAX][MTL_MAC_ADDR_LEN];
 
   uint32_t width;
   uint32_t height;
   enum st_fps fps;
+  bool interlaced;
   enum st20_fmt fmt;
   enum st_frame_fmt input_fmt;
   enum st_frame_fmt output_fmt;
@@ -76,6 +90,7 @@ struct st_sample_context {
   uint32_t sessions; /* number of sessions */
   bool ext_frame;
   bool hdr_split;
+  bool rx_dump;
 
   char logo_url[ST_SAMPLE_URL_MAX_LEN];
   uint32_t logo_width;
@@ -87,8 +102,15 @@ struct st_sample_context {
 
   enum sample_udp_mode udp_mode;
   uint64_t udp_tx_bps;
+  int udp_len;
 
   bool exit;
+  void (*sig_handler)(int signo);
+
+  /* the PA of gpu PCIE bar which connected with GDDR */
+  off_t gddr_pa;
+  off_t gddr_offset;
+  bool use_cpu_copy;
 };
 
 int sample_parse_args(struct st_sample_context* ctx, int argc, char** argv, bool tx,
@@ -103,5 +125,21 @@ int fwd_sample_parse_args(struct st_sample_context* ctx, int argc, char** argv);
 int dma_sample_parse_args(struct st_sample_context* ctx, int argc, char** argv);
 
 void fill_rfc4175_422_10_pg2_data(struct st20_rfc4175_422_10_pg2_be* data, int w, int h);
+
+void fill_rfc4175_422_12_pg2_data(struct st20_rfc4175_422_12_pg2_be* data, int w, int h);
+
+/* Monotonic time (in nanoseconds) since some unspecified starting point. */
+static inline uint64_t sample_get_monotonic_time() {
+  struct timespec ts;
+
+  clock_gettime(ST_CLOCK_MONOTONIC_ID, &ts);
+  return ((uint64_t)ts.tv_sec * NS_PER_S) + ts.tv_nsec;
+}
+
+int ufd_override_check(struct st_sample_context* ctx);
+
+int sample_tx_queue_cnt_set(struct st_sample_context* ctx, uint16_t cnt);
+
+int sample_rx_queue_cnt_set(struct st_sample_context* ctx, uint16_t cnt);
 
 #endif

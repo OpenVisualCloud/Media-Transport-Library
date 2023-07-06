@@ -7,10 +7,10 @@
 
 #include "st_main.h"
 
-#define ST_RX_AUDIO_BURTS_SIZE (128)
+#define ST_RX_AUDIO_BURST_SIZE (128)
 
-int st_rx_audio_sessions_mgr_uinit(struct st_rx_audio_sessions_mgr* mgr);
+#define ST_RX_AUDIO_PREFIX "RA_"
 
-void st_rx_audio_sessions_stat(struct mtl_main_impl* impl);
+int st_rx_audio_sessions_sch_uinit(struct mtl_main_impl* impl, struct mt_sch_impl* sch);
 
 #endif

@@ -48,7 +48,8 @@ static int tx_st22p_open_logo(struct st_sample_context* ctx,
     return -EIO;
   }
 
-  size_t logo_size = st_frame_size(ctx->input_fmt, ctx->logo_width, ctx->logo_height);
+  size_t logo_size =
+      st_frame_size(ctx->input_fmt, ctx->logo_width, ctx->logo_height, false);
   s->logo_buf = mtl_hp_malloc(s->st, logo_size, MTL_PORT_P);
   if (!s->logo_buf) {
     err("%s, logo buf malloc fail\n", __func__);
@@ -87,7 +88,8 @@ static int tx_st22p_open_source(struct st_sample_context* ctx,
 
   fstat(fd, &i);
   if (i.st_size < s->frame_size) {
-    err("%s, %s file size small then a frame %ld\n", __func__, file, s->frame_size);
+    err("%s, %s file size small then a frame %" PRIu64 "\n", __func__, file,
+        s->frame_size);
     close(fd);
     return -EIO;
   }
@@ -135,7 +137,7 @@ static void tx_st22p_build_frame(struct tx_st22p_sample_ctx* s, struct st_frame*
   uint8_t planes = st_frame_fmt_planes(frame->fmt);
   for (uint8_t plane = 0; plane < planes; plane++) {
     size_t plane_sz = st_frame_plane_size(frame, plane);
-    dbg("%s(%d), src frame, plane %u size %lu addr %p\n", __func__, s->idx, plane,
+    dbg("%s(%d), src frame, plane %u size %" PRIu64 " addr %p\n", __func__, s->idx, plane,
         plane_sz, frame->addr[plane]);
     dbg("%s(%d), plane %u src addr %p\n", __func__, s->idx, plane, src);
     mtl_memcpy(frame->addr[plane], src, plane_sz);
@@ -212,10 +214,11 @@ int main(int argc, char** argv) {
     ops_tx.name = "st22p_sample";
     ops_tx.priv = app[i];  // app handle register to lib
     ops_tx.port.num_port = 1;
-    memcpy(ops_tx.port.dip_addr[MTL_PORT_P], ctx.tx_dip_addr[MTL_PORT_P],
+    memcpy(ops_tx.port.dip_addr[MTL_SESSION_PORT_P], ctx.tx_dip_addr[MTL_PORT_P],
            MTL_IP_ADDR_LEN);
-    strncpy(ops_tx.port.port[MTL_PORT_P], ctx.param.port[MTL_PORT_P], MTL_PORT_MAX_LEN);
-    ops_tx.port.udp_port[MTL_PORT_P] = ctx.udp_port + i;
+    strncpy(ops_tx.port.port[MTL_SESSION_PORT_P], ctx.param.port[MTL_PORT_P],
+            MTL_PORT_MAX_LEN);
+    ops_tx.port.udp_port[MTL_SESSION_PORT_P] = ctx.udp_port + i;
     ops_tx.port.payload_type = ctx.payload_type;
     ops_tx.width = ctx.width;
     ops_tx.height = ctx.height;

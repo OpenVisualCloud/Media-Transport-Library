@@ -39,6 +39,11 @@ enum test_args_cmd {
   TEST_ARG_TSC_PACING,
   TEST_ARG_RXTX_SIMD_512,
   TEST_ARG_PACING_WAY,
+  TEST_ARG_RSS_MODE,
+  TEST_ARG_TX_NO_CHAIN,
+  TEST_ARG_IOVA_MODE,
+  TEST_ARG_MULTI_SRC_PORT,
+  TEST_ARG_DHCP,
 };
 
 static struct option test_args_options[] = {
@@ -70,6 +75,11 @@ static struct option test_args_options[] = {
     {"tsc", no_argument, 0, TEST_ARG_TSC_PACING},
     {"rxtx_simd_512", no_argument, 0, TEST_ARG_RXTX_SIMD_512},
     {"pacing_way", required_argument, 0, TEST_ARG_PACING_WAY},
+    {"rss_mode", required_argument, 0, TEST_ARG_RSS_MODE},
+    {"tx_no_chain", no_argument, 0, TEST_ARG_TX_NO_CHAIN},
+    {"iova_mode", required_argument, 0, TEST_ARG_IOVA_MODE},
+    {"multi_src_port", no_argument, 0, TEST_ARG_MULTI_SRC_PORT},
+    {"dhcp", no_argument, 0, TEST_ARG_DHCP},
 
     {0, 0, 0, 0}};
 
@@ -221,8 +231,39 @@ static int test_parse_args(struct st_tests_context* ctx, struct mtl_init_params*
           p->pacing = ST21_TX_PACING_WAY_TSC;
         else if (!strcmp(optarg, "ptp"))
           p->pacing = ST21_TX_PACING_WAY_PTP;
+        else if (!strcmp(optarg, "be"))
+          p->pacing = ST21_TX_PACING_WAY_BE;
         else
           err("%s, unknow pacing way %s\n", __func__, optarg);
+        break;
+      case TEST_ARG_RSS_MODE:
+        if (!strcmp(optarg, "l3"))
+          p->rss_mode = MTL_RSS_MODE_L3;
+        else if (!strcmp(optarg, "l3_l4"))
+          p->rss_mode = MTL_RSS_MODE_L3_L4;
+        else if (!strcmp(optarg, "none"))
+          p->rss_mode = MTL_RSS_MODE_NONE;
+        else
+          err("%s, unknow rss mode %s\n", __func__, optarg);
+        break;
+      case TEST_ARG_TX_NO_CHAIN:
+        p->flags |= MTL_FLAG_TX_NO_CHAIN;
+        break;
+      case TEST_ARG_IOVA_MODE:
+        if (!strcmp(optarg, "va"))
+          p->iova_mode = MTL_IOVA_MODE_VA;
+        else if (!strcmp(optarg, "pa"))
+          p->iova_mode = MTL_IOVA_MODE_PA;
+        else
+          err("%s, unknow iova mode %s\n", __func__, optarg);
+        break;
+      case TEST_ARG_MULTI_SRC_PORT:
+        p->flags |= MTL_FLAG_MULTI_SRC_PORT;
+        break;
+      case TEST_ARG_DHCP:
+        for (int port = 0; port < MTL_PORT_MAX; ++port)
+          p->net_proto[port] = MTL_PROTO_DHCP;
+        ctx->dhcp = true;
         break;
       default:
         break;
@@ -250,6 +291,7 @@ static void test_random_ip(struct st_tests_context* ctx) {
 
   p_ip = ctx->mcast_ip_addr[MTL_PORT_P];
   r_ip = ctx->mcast_ip_addr[MTL_PORT_R];
+
   p_ip[0] = 239;
   p_ip[1] = rand() % 0xFF;
   p_ip[2] = rand() % 0xFF;
@@ -260,7 +302,7 @@ static void test_random_ip(struct st_tests_context* ctx) {
   r_ip[3] = p_ip[3] + 1;
 }
 
-static uint64_t temt_ptp_from_real_time(void* priv) {
+static uint64_t test_ptp_from_real_time(void* priv) {
   auto ctx = (struct st_tests_context*)priv;
   struct timespec spec;
 #ifndef WINDOWSENV
@@ -300,12 +342,15 @@ static void test_ctx_init(struct st_tests_context* ctx) {
 #endif
   memset(p, 0x0, sizeof(*p));
   p->flags = MTL_FLAG_BIND_NUMA; /* default bind to numa */
+  p->flags |= MTL_FLAG_RANDOM_SRC_PORT;
   p->log_level = MTL_LOG_LEVEL_ERROR;
   p->priv = ctx;
-  p->ptp_get_time_fn = temt_ptp_from_real_time;
-  p->tx_sessions_cnt_max = 16;
-  p->rx_sessions_cnt_max = 16;
-  /* defalut start queue set to 1 */
+  p->ptp_get_time_fn = test_ptp_from_real_time;
+  p->tx_queues_cnt[MTL_PORT_P] = 16;
+  p->tx_queues_cnt[MTL_PORT_R] = 16;
+  p->rx_queues_cnt[MTL_PORT_P] = 16;
+  p->rx_queues_cnt[MTL_PORT_R] = 16;
+  /* default start queue set to 1 */
   p->xdp_info[MTL_PORT_P].start_queue = 1;
   p->xdp_info[MTL_PORT_R].start_queue = 1;
 
@@ -318,7 +363,9 @@ static void test_ctx_init(struct st_tests_context* ctx) {
     int cpus_add = 0;
     for (int cpu = 0; cpu < max_cpus; cpu++) {
       if (numa_node_of_cpu(cpu) == numa) {
-        pos += snprintf(lcores_list + pos, TEST_LCORE_LIST_MAX_LEN - pos, ",%d", cpu);
+        int n = snprintf(lcores_list + pos, TEST_LCORE_LIST_MAX_LEN - pos, ",%d", cpu);
+        if (n < 0 || n >= (TEST_LCORE_LIST_MAX_LEN - pos)) break;
+        pos += n;
         cpus_add++;
         if (cpus_add >= cpus_per_soc) break;
       }
@@ -341,7 +388,7 @@ TEST(Misc, version) {
 
   uint32_t version_no =
       MTL_VERSION_NUM(MTL_VERSION_MAJOR, MTL_VERSION_MINOR, MTL_VERSION_LAST);
-  EXPECT_EQ(MTL_VERSION, version_no);
+  EXPECT_EQ((uint32_t)MTL_VERSION, version_no);
 }
 
 TEST(Misc, version_compare) {
@@ -442,12 +489,24 @@ TEST(Misc, hp_zmalloc_expect_fail) {
 TEST(Misc, ptp) {
   auto ctx = (struct st_tests_context*)st_test_ctx();
   auto handle = ctx->handle;
+  uint64_t real_time;
+  uint64_t diff;
+
+  /* the first read */
   uint64_t ptp = mtl_ptp_read_time(handle);
   EXPECT_EQ(ptp, ctx->ptp_time);
-  /* try again */
-  st_usleep(1);
-  ptp = mtl_ptp_read_time(handle);
-  EXPECT_EQ(ptp, ctx->ptp_time);
+
+  for (int i = 0; i < 5; i++) {
+    /* try again */
+    st_usleep(1000 * 2);
+    ptp = mtl_ptp_read_time(handle);
+    real_time = test_ptp_from_real_time(ctx);
+    if (ptp > real_time)
+      diff = ptp - real_time;
+    else
+      diff = real_time - ptp;
+    EXPECT_LT(diff, NS_PER_US * 5);
+  }
 }
 
 static void st10_timestamp_test(uint32_t sampling_rate) {
@@ -465,7 +524,7 @@ static void st10_timestamp_test(uint32_t sampling_rate) {
 
   uint64_t ns_delta = st10_media_clk_to_ns(media2 - media1, sampling_rate);
   uint64_t expect_delta = ptp2 - ptp1;
-  dbg("%s, delta %lu %lu\n", __func__, ns_delta, expect_delta);
+  dbg("%s, delta %" PRIu64 " %" PRIu64 "\n", __func__, ns_delta, expect_delta);
   EXPECT_NEAR(ns_delta, expect_delta, expect_delta * 0.5);
 }
 
@@ -497,10 +556,8 @@ GTEST_API_ int main(int argc, char** argv) {
   for (int i = 0; i < ctx->para.num_ports; i++) {
     ctx->para.pmd[i] = mtl_pmd_by_port_name(ctx->para.port[i]);
     if (ctx->para.pmd[i] != MTL_PMD_DPDK_USER) {
-      mtl_get_if_ip(ctx->para.port[i], ctx->para.sip_addr[i]);
+      mtl_get_if_ip(ctx->para.port[i], ctx->para.sip_addr[i], ctx->para.netmask[i]);
       ctx->para.flags |= MTL_FLAG_RX_SEPARATE_VIDEO_LCORE;
-      ctx->para.tx_sessions_cnt_max = 8;
-      ctx->para.rx_sessions_cnt_max = 8;
       ctx->para.xdp_info[i].queue_count = 8;
     } else {
       link_flap_wa = true;
@@ -515,6 +572,17 @@ GTEST_API_ int main(int argc, char** argv) {
     err("%s, mtl_init fail\n", __func__);
     return -EIO;
   }
+
+  if (ctx->dhcp) {
+    for (int i = 0; i < ctx->para.num_ports; i++) {
+      /* get the assigned dhcp ip */
+      mtl_port_ip_info(ctx->handle, (enum mtl_port)i, ctx->para.sip_addr[i],
+                       ctx->para.netmask[i], ctx->para.gateway[i]);
+    }
+  }
+
+  ctx->iova = mtl_iova_mode_get(ctx->handle);
+  ctx->rss_mode = mtl_rss_mode_get(ctx->handle);
 
   st_test_st22_plugin_register(ctx);
   st_test_convert_plugin_register(ctx);
@@ -550,46 +618,6 @@ int tx_next_frame(void* priv, uint16_t* next_frame_idx) {
   if (ctx->fb_idx >= ctx->fb_cnt) ctx->fb_idx = 0;
   ctx->fb_send++;
   if (!ctx->start_time) ctx->start_time = st_test_get_monotonic_time();
-  return 0;
-}
-
-void test_sha_dump(const char* tag, unsigned char* sha) {
-  for (size_t i = 0; i < SHA256_DIGEST_LENGTH; i++) {
-    dbg("0x%02x ", sha[i]);
-  }
-  dbg(", %s done\n", tag);
-}
-
-int st_test_check_patter(uint8_t* p, size_t sz, uint8_t base) {
-  for (size_t i = 0; i < sz; i++) {
-    if (p[i] != ((base + i) & 0xFF)) {
-      err("%s, fail data 0x%x on %lu base 0x%x\n", __func__, p[i], i, base);
-      return -EIO;
-    }
-  }
-
-  return 0;
-}
-
-int st_test_cmp(uint8_t* s1, uint8_t* s2, size_t sz) {
-  for (size_t i = 0; i < sz; i++) {
-    if (s1[i] != s2[i]) {
-      err("%s, mismatch on %lu, 0x%x 0x%x\n", __func__, i, s1[i], s2[i]);
-      return -EIO;
-    }
-  }
-
-  return 0;
-}
-
-int st_test_cmp_u16(uint16_t* s1, uint16_t* s2, size_t sz) {
-  for (size_t i = 0; i < sz; i++) {
-    if (s1[i] != s2[i]) {
-      err("%s, mismatch on %lu\n", __func__, i);
-      return -EIO;
-    }
-  }
-
   return 0;
 }
 
@@ -655,7 +683,7 @@ int test_ctx_notify_event(void* priv, enum st_event event, void* args) {
     if (!s->first_vsync_time) s->first_vsync_time = st_test_get_monotonic_time();
 #ifdef DEBUG
     struct st10_vsync_meta* meta = (struct st10_vsync_meta*)args;
-    dbg("%s(%d,%p), epoch %lu vsync_cnt %d\n", __func__, s->idx, s, meta->epoch,
+    dbg("%s(%d,%p), epoch %" PRIu64 " vsync_cnt %d\n", __func__, s->idx, s, meta->epoch,
         s->vsync_cnt);
 #endif
   }

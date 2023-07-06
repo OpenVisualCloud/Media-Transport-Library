@@ -36,7 +36,7 @@ static int test_encode_frame(struct test_st22_encoder_session* s,
   frame->dst->data_size = codestream_size;
 
   s->frame_cnt++;
-  dbg("%s(%d), succ, codestream_size %ld\n", __func__, s->idx, codestream_size);
+  dbg("%s(%d), succ, codestream_size %" PRIu64 "\n", __func__, s->idx, codestream_size);
 
   /* simulate fail and timeout */
   if (s->fail_interval) {
@@ -117,7 +117,7 @@ static st22_encode_priv test_encoder_create_session(void* priv,
     ctx->encoder_sessions[i] = session;
     dbg("%s(%d), input fmt: %s, output fmt: %s\n", __func__, i,
         st_frame_fmt_name(req->input_fmt), st_frame_fmt_name(req->output_fmt));
-    dbg("%s(%d), frame_max_size %ld\n", __func__, i, frame_max_size);
+    dbg("%s(%d), frame_max_size %" PRIu64 "\n", __func__, i, frame_max_size);
     return session;
   }
 
@@ -374,8 +374,8 @@ static void frame_draw_logo_test(enum st_frame_fmt fmt, uint32_t w, uint32_t h,
                                  bool expect) {
   auto ctx = (struct st_tests_context*)st_test_ctx();
   auto st = ctx->handle;
-  size_t logo_size = st_frame_size(fmt, logo_w, logo_h);
-  size_t frame_size = st_frame_size(fmt, w, h);
+  size_t logo_size = st_frame_size(fmt, logo_w, logo_h, false);
+  size_t frame_size = st_frame_size(fmt, w, h, false);
   void* frame_buf = mtl_hp_malloc(st, frame_size, MTL_PORT_P);
   if (!frame_buf) {
     err("%s, frame_buf malloc fail\n", __func__);
@@ -447,10 +447,11 @@ static void st22p_tx_ops_init(tests_context* st22, struct st22p_tx_ops* ops_tx) 
   ops_tx->name = "st22p_test";
   ops_tx->priv = st22;
   ops_tx->port.num_port = 1;
-  memcpy(ops_tx->port.dip_addr[MTL_PORT_P], ctx->mcast_ip_addr[MTL_PORT_P],
+  memcpy(ops_tx->port.dip_addr[MTL_SESSION_PORT_P], ctx->mcast_ip_addr[MTL_PORT_P],
          MTL_IP_ADDR_LEN);
-  strncpy(ops_tx->port.port[MTL_PORT_P], ctx->para.port[MTL_PORT_P], MTL_PORT_MAX_LEN);
-  ops_tx->port.udp_port[MTL_PORT_P] = ST22P_TEST_UDP_PORT + st22->idx;
+  strncpy(ops_tx->port.port[MTL_SESSION_PORT_P], ctx->para.port[MTL_PORT_P],
+          MTL_PORT_MAX_LEN);
+  ops_tx->port.udp_port[MTL_SESSION_PORT_P] = ST22P_TEST_UDP_PORT + st22->idx;
   ops_tx->port.payload_type = ST22P_TEST_PAYLOAD_TYPE;
   ops_tx->width = 1920;
   ops_tx->height = 1080;
@@ -462,7 +463,8 @@ static void st22p_tx_ops_init(tests_context* st22, struct st22p_tx_ops* ops_tx) 
   ops_tx->quality = ST22_QUALITY_MODE_QUALITY;
   ops_tx->framebuff_cnt = st22->fb_cnt;
   ops_tx->notify_frame_available = test_st22p_tx_frame_available;
-  st22->frame_size = st_frame_size(ops_tx->input_fmt, ops_tx->width, ops_tx->height);
+  st22->frame_size =
+      st_frame_size(ops_tx->input_fmt, ops_tx->width, ops_tx->height, false);
   ops_tx->codestream_size = st22->frame_size / 8;
   ops_tx->notify_event = test_ctx_notify_event;
 }
@@ -474,10 +476,11 @@ static void st22p_rx_ops_init(tests_context* st22, struct st22p_rx_ops* ops_rx) 
   ops_rx->name = "st22p_test";
   ops_rx->priv = st22;
   ops_rx->port.num_port = 1;
-  memcpy(ops_rx->port.sip_addr[MTL_PORT_P], ctx->mcast_ip_addr[MTL_PORT_P],
+  memcpy(ops_rx->port.sip_addr[MTL_SESSION_PORT_P], ctx->mcast_ip_addr[MTL_PORT_P],
          MTL_IP_ADDR_LEN);
-  strncpy(ops_rx->port.port[MTL_PORT_P], ctx->para.port[MTL_PORT_R], MTL_PORT_MAX_LEN);
-  ops_rx->port.udp_port[MTL_PORT_P] = ST22P_TEST_UDP_PORT + st22->idx;
+  strncpy(ops_rx->port.port[MTL_SESSION_PORT_P], ctx->para.port[MTL_PORT_R],
+          MTL_PORT_MAX_LEN);
+  ops_rx->port.udp_port[MTL_SESSION_PORT_P] = ST22P_TEST_UDP_PORT + st22->idx;
   ops_rx->port.payload_type = ST22P_TEST_PAYLOAD_TYPE;
   ops_rx->width = 1920;
   ops_rx->height = 1080;
@@ -488,7 +491,8 @@ static void st22p_rx_ops_init(tests_context* st22, struct st22p_rx_ops* ops_rx) 
   ops_rx->device = ST_PLUGIN_DEVICE_TEST;
   ops_rx->framebuff_cnt = st22->fb_cnt;
   ops_rx->notify_frame_available = test_st22p_rx_frame_available;
-  st22->frame_size = st_frame_size(ops_rx->output_fmt, ops_rx->width, ops_rx->height);
+  st22->frame_size =
+      st_frame_size(ops_rx->output_fmt, ops_rx->width, ops_rx->height, false);
   ops_rx->notify_event = test_ctx_notify_event;
 }
 
@@ -520,8 +524,12 @@ TEST(St22p, tx_create_free_mix) { pipeline_create_free_test(st22p_tx, 2, 3, 4); 
 TEST(St22p, rx_create_free_single) { pipeline_create_free_test(st22p_rx, 0, 1, 1); }
 TEST(St22p, rx_create_free_multi) { pipeline_create_free_test(st22p_rx, 0, 1, 6); }
 TEST(St22p, rx_create_free_mix) { pipeline_create_free_test(st22p_rx, 2, 3, 4); }
-TEST(St22p, tx_create_free_max) { pipeline_create_free_max(st22p_tx, 100); }
-TEST(St22p, rx_create_free_max) { pipeline_create_free_max(st22p_rx, 100); }
+TEST(St22p, tx_create_free_max) {
+  pipeline_create_free_max(st22p_tx, TEST_CREATE_FREE_MAX);
+}
+TEST(St22p, rx_create_free_max) {
+  pipeline_create_free_max(st22p_rx, TEST_CREATE_FREE_MAX);
+}
 TEST(St22p, tx_create_expect_fail) { pipeline_expect_fail_test(st22p_tx); }
 TEST(St22p, rx_create_expect_fail) { pipeline_expect_fail_test(st22p_rx); }
 TEST(St22p, tx_create_expect_fail_fb_cnt) {
@@ -567,7 +575,7 @@ static void test_st22p_tx_frame_thread(void* args) {
     s->fb_send++;
     if (!s->start_time) {
       s->start_time = st_test_get_monotonic_time();
-      dbg("%s(%d), start_time %ld\n", __func__, s->idx, s->start_time);
+      dbg("%s(%d), start_time %" PRIu64 "\n", __func__, s->idx, s->start_time);
     }
   }
   dbg("%s(%d), stop\n", __func__, s->idx);
@@ -595,7 +603,7 @@ static void test_st22p_rx_frame_thread(void* args) {
     if (frame->width != s->width) s->incomplete_frame_cnt++;
     if (frame->height != s->height) s->incomplete_frame_cnt++;
     if (frame->fmt != s->fmt) s->incomplete_frame_cnt++;
-    dbg("%s(%d), timestamp %ld\n", __func__, s->idx, frame->timestamp);
+    dbg("%s(%d), timestamp %" PRIu64 "\n", __func__, s->idx, frame->timestamp);
     if (frame->timestamp == timestamp) s->incomplete_frame_cnt++;
     timestamp = frame->timestamp;
 
@@ -608,8 +616,8 @@ static void test_st22p_rx_frame_thread(void* args) {
          */
         if (((uint32_t)frame->timestamp - s->pre_timestamp) > 4) {
           s->incomplete_frame_cnt++;
-          err("%s(%d), frame user timestamp %lu pre_timestamp %u\n", __func__, s->idx,
-              frame->timestamp, s->pre_timestamp);
+          err("%s(%d), frame user timestamp %" PRIu64 " pre_timestamp %u\n", __func__,
+              s->idx, frame->timestamp, s->pre_timestamp);
         }
       }
       s->pre_timestamp = (uint32_t)frame->timestamp;
@@ -731,10 +739,11 @@ static void st22p_rx_digest_test(enum st_fps fps[], int width[], int height[],
     ops_tx.name = "st22p_test";
     ops_tx.priv = test_ctx_tx[i];
     ops_tx.port.num_port = 1;
-    memcpy(ops_tx.port.dip_addr[MTL_PORT_P], ctx->para.sip_addr[MTL_PORT_R],
+    memcpy(ops_tx.port.dip_addr[MTL_SESSION_PORT_P], ctx->para.sip_addr[MTL_PORT_R],
            MTL_IP_ADDR_LEN);
-    strncpy(ops_tx.port.port[MTL_PORT_P], ctx->para.port[MTL_PORT_P], MTL_PORT_MAX_LEN);
-    ops_tx.port.udp_port[MTL_PORT_P] = ST22P_TEST_UDP_PORT + i;
+    strncpy(ops_tx.port.port[MTL_SESSION_PORT_P], ctx->para.port[MTL_PORT_P],
+            MTL_PORT_MAX_LEN);
+    ops_tx.port.udp_port[MTL_SESSION_PORT_P] = ST22P_TEST_UDP_PORT + i;
     ops_tx.port.payload_type = ST22P_TEST_PAYLOAD_TYPE;
     ops_tx.width = width[i];
     ops_tx.height = height[i];
@@ -751,14 +760,14 @@ static void st22p_rx_digest_test(enum st_fps fps[], int width[], int height[],
     if (para->vsync) ops_tx.flags |= ST22P_TX_FLAG_ENABLE_VSYNC;
 
     test_ctx_tx[i]->frame_size =
-        st_frame_size(ops_tx.input_fmt, ops_tx.width, ops_tx.height);
+        st_frame_size(ops_tx.input_fmt, ops_tx.width, ops_tx.height, false);
 
     ops_tx.codestream_size = test_ctx_tx[i]->frame_size / compress_ratio[i];
 
     tx_handle[i] = st22p_tx_create(st, &ops_tx);
     ASSERT_TRUE(tx_handle[i] != NULL);
 
-    /* sha caculate */
+    /* sha calculate */
     size_t frame_size = test_ctx_tx[i]->frame_size;
     uint8_t* fb;
     for (int frame = 0; frame < ST22_TEST_SHA_HIST_NUM; frame++) {
@@ -778,15 +787,12 @@ static void st22p_rx_digest_test(enum st_fps fps[], int width[], int height[],
   }
 
   for (int i = 0; i < sessions; i++) {
-    expect_framerate_rx[i] = expect_framerate_tx[i];
     if (para->fail_interval) {
       /* loss in the tx */
-      expect_framerate_rx[i] =
-          expect_framerate_rx[i] * (para->fail_interval - 1) / para->fail_interval;
-      /* loss in the rx */
-      expect_framerate_rx[i] =
-          expect_framerate_rx[i] * (para->fail_interval - 1) / para->fail_interval;
+      expect_framerate_tx[i] =
+          expect_framerate_tx[i] * (para->fail_interval - 1) / para->fail_interval;
     }
+    expect_framerate_rx[i] = expect_framerate_tx[i];
     test_ctx_rx[i] = new tests_context();
     ASSERT_TRUE(test_ctx_tx[i] != NULL);
 
@@ -806,10 +812,11 @@ static void st22p_rx_digest_test(enum st_fps fps[], int width[], int height[],
     ops_rx.name = "st22p_test";
     ops_rx.priv = test_ctx_rx[i];
     ops_rx.port.num_port = 1;
-    memcpy(ops_rx.port.sip_addr[MTL_PORT_P], ctx->para.sip_addr[MTL_PORT_P],
+    memcpy(ops_rx.port.sip_addr[MTL_SESSION_PORT_P], ctx->para.sip_addr[MTL_PORT_P],
            MTL_IP_ADDR_LEN);
-    strncpy(ops_rx.port.port[MTL_PORT_P], ctx->para.port[MTL_PORT_R], MTL_PORT_MAX_LEN);
-    ops_rx.port.udp_port[MTL_PORT_P] = ST22P_TEST_UDP_PORT + i;
+    strncpy(ops_rx.port.port[MTL_SESSION_PORT_P], ctx->para.port[MTL_PORT_R],
+            MTL_PORT_MAX_LEN);
+    ops_rx.port.udp_port[MTL_SESSION_PORT_P] = ST22P_TEST_UDP_PORT + i;
     ops_rx.port.payload_type = ST22P_TEST_PAYLOAD_TYPE;
     ops_rx.width = width[i];
     ops_rx.height = height[i];
@@ -824,7 +831,7 @@ static void st22p_rx_digest_test(enum st_fps fps[], int width[], int height[],
     if (para->vsync) ops_rx.flags |= ST22P_RX_FLAG_ENABLE_VSYNC;
 
     test_ctx_rx[i]->frame_size =
-        st_frame_size(ops_rx.output_fmt, ops_rx.width, ops_rx.height);
+        st_frame_size(ops_rx.output_fmt, ops_rx.width, ops_rx.height, false);
 
     rx_handle[i] = st22p_rx_create(st, &ops_rx);
     ASSERT_TRUE(rx_handle[i] != NULL);
@@ -893,7 +900,7 @@ static void st22p_rx_digest_test(enum st_fps fps[], int width[], int height[],
     EXPECT_GE(ret, 0);
     info("%s, session %d fb_rec %d framerate %f:%f\n", __func__, i,
          test_ctx_rx[i]->fb_rec, framerate_rx[i], expect_framerate_rx[i]);
-    EXPECT_GE(test_ctx_rx[i]->fb_rec, 0);
+    EXPECT_GT(test_ctx_rx[i]->fb_rec, 0);
     EXPECT_EQ(test_ctx_rx[i]->incomplete_frame_cnt, 0);
     EXPECT_EQ(test_ctx_rx[i]->fail_cnt, 0);
     if (para->check_fps) {

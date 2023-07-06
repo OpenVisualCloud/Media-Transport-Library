@@ -87,8 +87,8 @@ static int app_rx_audio_handle_rtp(struct st_app_rx_audio_session* s,
   uint8_t* payload = (uint8_t*)hdr + sizeof(*hdr);
 
   s->stat_frame_total_received++;
-  if (!s->stat_frame_frist_rx_time)
-    s->stat_frame_frist_rx_time = st_app_get_monotonic_time();
+  if (!s->stat_frame_first_rx_time)
+    s->stat_frame_first_rx_time = st_app_get_monotonic_time();
 
   if (s->st30_ref_fd > 0) app_rx_audio_compare_with_ref(s, payload);
   return 0;
@@ -144,8 +144,8 @@ static int app_rx_audio_frame_done(void* priv, void* frame,
   if (!s->handle) return -EIO;
 
   s->stat_frame_total_received++;
-  if (!s->stat_frame_frist_rx_time)
-    s->stat_frame_frist_rx_time = st_app_get_monotonic_time();
+  if (!s->stat_frame_first_rx_time)
+    s->stat_frame_first_rx_time = st_app_get_monotonic_time();
 
   if (s->st30_ref_fd > 0) app_rx_audio_compare_with_ref(s, frame);
 
@@ -193,7 +193,7 @@ static int app_rx_audio_uinit(struct st_app_rx_audio_session* s) {
 static int app_rx_audio_result(struct st_app_rx_audio_session* s) {
   int idx = s->idx;
   uint64_t cur_time_ns = st_app_get_monotonic_time();
-  double time_sec = (double)(cur_time_ns - s->stat_frame_frist_rx_time) / NS_PER_S;
+  double time_sec = (double)(cur_time_ns - s->stat_frame_first_rx_time) / NS_PER_S;
   double framerate = s->stat_frame_total_received / time_sec;
 
   if (!s->stat_frame_total_received) return -EINVAL;
@@ -217,21 +217,23 @@ static int app_rx_audio_init(struct st_app_context* ctx, st_json_audio_session_t
   ops.name = name;
   ops.priv = s;
   ops.num_port = audio ? audio->base.num_inf : ctx->para.num_ports;
-  memcpy(ops.sip_addr[MTL_PORT_P],
-         audio ? audio->base.ip[MTL_PORT_P] : ctx->rx_sip_addr[MTL_PORT_P],
+  memcpy(ops.sip_addr[MTL_SESSION_PORT_P],
+         audio ? st_json_ip(ctx, &audio->base, MTL_SESSION_PORT_P)
+               : ctx->rx_sip_addr[MTL_PORT_P],
          MTL_IP_ADDR_LEN);
-  strncpy(ops.port[MTL_PORT_P],
-          audio ? audio->base.inf[MTL_PORT_P]->name : ctx->para.port[MTL_PORT_P],
+  strncpy(ops.port[MTL_SESSION_PORT_P],
+          audio ? audio->base.inf[MTL_SESSION_PORT_P]->name : ctx->para.port[MTL_PORT_P],
           MTL_PORT_MAX_LEN);
-  ops.udp_port[MTL_PORT_P] = audio ? audio->base.udp_port : (10100 + s->idx);
+  ops.udp_port[MTL_SESSION_PORT_P] = audio ? audio->base.udp_port : (10100 + s->idx);
   if (ops.num_port > 1) {
-    memcpy(ops.sip_addr[MTL_PORT_R],
-           audio ? audio->base.ip[MTL_PORT_R] : ctx->rx_sip_addr[MTL_PORT_R],
+    memcpy(ops.sip_addr[MTL_SESSION_PORT_R],
+           audio ? st_json_ip(ctx, &audio->base, MTL_SESSION_PORT_R)
+                 : ctx->rx_sip_addr[MTL_PORT_R],
            MTL_IP_ADDR_LEN);
-    strncpy(ops.port[MTL_PORT_R],
+    strncpy(ops.port[MTL_SESSION_PORT_R],
             audio ? audio->base.inf[MTL_PORT_R]->name : ctx->para.port[MTL_PORT_R],
             MTL_PORT_MAX_LEN);
-    ops.udp_port[MTL_PORT_R] = audio ? audio->base.udp_port : (10100 + s->idx);
+    ops.udp_port[MTL_SESSION_PORT_R] = audio ? audio->base.udp_port : (10100 + s->idx);
   }
   ops.notify_frame_ready = app_rx_audio_frame_done;
   ops.notify_rtp_ready = app_rx_audio_rtp_ready;

@@ -65,14 +65,14 @@ static void* app_rx_st20p_frame_thread(void* arg) {
       } else {
         latency_ns = ptp_ns - frame->timestamp;
       }
-      dbg("%s, latency_us %lu\n", __func__, latency_ns / 1000);
+      dbg("%s, latency_us %" PRIu64 "\n", __func__, latency_ns / 1000);
       s->stat_latency_us_sum += latency_ns / 1000;
     }
 
     app_rx_st20p_consume_frame(s, frame);
     s->stat_frame_total_received++;
-    if (!s->stat_frame_frist_rx_time)
-      s->stat_frame_frist_rx_time = st_app_get_monotonic_time();
+    if (!s->stat_frame_first_rx_time)
+      s->stat_frame_first_rx_time = st_app_get_monotonic_time();
     st20p_rx_put_frame(s->handle, frame);
   }
   info("%s(%d), stop\n", __func__, s->idx);
@@ -136,32 +136,39 @@ static int app_rx_st20p_init(struct st_app_context* ctx,
   ops.name = name;
   ops.priv = s;
   ops.port.num_port = st20p ? st20p->base.num_inf : ctx->para.num_ports;
-  memcpy(ops.port.sip_addr[MTL_PORT_P],
-         st20p ? st20p->base.ip[MTL_PORT_P] : ctx->rx_sip_addr[MTL_PORT_P],
+  memcpy(ops.port.sip_addr[MTL_SESSION_PORT_P],
+         st20p ? st_json_ip(ctx, &st20p->base, MTL_SESSION_PORT_P)
+               : ctx->rx_sip_addr[MTL_PORT_P],
          MTL_IP_ADDR_LEN);
-  strncpy(ops.port.port[MTL_PORT_P],
-          st20p ? st20p->base.inf[MTL_PORT_P]->name : ctx->para.port[MTL_PORT_P],
+  strncpy(ops.port.port[MTL_SESSION_PORT_P],
+          st20p ? st20p->base.inf[MTL_SESSION_PORT_P]->name : ctx->para.port[MTL_PORT_P],
           MTL_PORT_MAX_LEN);
-  ops.port.udp_port[MTL_PORT_P] = st20p ? st20p->base.udp_port : (10000 + s->idx);
+  ops.port.udp_port[MTL_SESSION_PORT_P] = st20p ? st20p->base.udp_port : (10000 + s->idx);
   if (ops.port.num_port > 1) {
-    memcpy(ops.port.sip_addr[MTL_PORT_R],
-           st20p ? st20p->base.ip[MTL_PORT_R] : ctx->rx_sip_addr[MTL_PORT_R],
+    memcpy(ops.port.sip_addr[MTL_SESSION_PORT_R],
+           st20p ? st_json_ip(ctx, &st20p->base, MTL_SESSION_PORT_R)
+                 : ctx->rx_sip_addr[MTL_PORT_R],
            MTL_IP_ADDR_LEN);
-    strncpy(ops.port.port[MTL_PORT_R],
-            st20p ? st20p->base.inf[MTL_PORT_R]->name : ctx->para.port[MTL_PORT_R],
-            MTL_PORT_MAX_LEN);
-    ops.port.udp_port[MTL_PORT_R] = st20p ? st20p->base.udp_port : (10000 + s->idx);
+    strncpy(
+        ops.port.port[MTL_SESSION_PORT_R],
+        st20p ? st20p->base.inf[MTL_SESSION_PORT_R]->name : ctx->para.port[MTL_PORT_R],
+        MTL_PORT_MAX_LEN);
+    ops.port.udp_port[MTL_SESSION_PORT_R] =
+        st20p ? st20p->base.udp_port : (10000 + s->idx);
   }
 
   ops.width = st20p ? st20p->info.width : 1920;
   ops.height = st20p ? st20p->info.height : 1080;
   ops.fps = st20p ? st20p->info.fps : ST_FPS_P59_94;
+  ops.interlaced = st20p ? st20p->info.interlaced : false;
   ops.output_fmt = st20p ? st20p->info.format : ST_FRAME_FMT_YUV422RFC4175PG2BE10;
   ops.transport_fmt = st20p ? st20p->info.transport_format : ST20_FMT_YUV_422_10BIT;
   ops.port.payload_type = st20p ? st20p->base.payload_type : ST_APP_PAYLOAD_TYPE_VIDEO;
   ops.device = st20p ? st20p->info.device : ST_PLUGIN_DEVICE_AUTO;
   ops.notify_frame_available = app_rx_st20p_frame_available;
   ops.framebuff_cnt = s->framebuff_cnt;
+  /* always try to enable DMA offload */
+  ops.flags = ST20P_RX_FLAG_DMA_OFFLOAD;
 
   st_pthread_mutex_init(&s->st20p_wake_mutex, NULL);
   st_pthread_cond_init(&s->st20p_wake_cond, NULL);
@@ -230,7 +237,7 @@ static int app_rx_st20p_stat(struct st_app_rx_st20p_session* s) {
 static int app_rx_st20p_result(struct st_app_rx_st20p_session* s) {
   int idx = s->idx;
   uint64_t cur_time_ns = st_app_get_monotonic_time();
-  double time_sec = (double)(cur_time_ns - s->stat_frame_frist_rx_time) / NS_PER_S;
+  double time_sec = (double)(cur_time_ns - s->stat_frame_first_rx_time) / NS_PER_S;
   double framerate = s->stat_frame_total_received / time_sec;
 
   if (!s->stat_frame_total_received) return -EINVAL;

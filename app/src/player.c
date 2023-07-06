@@ -4,7 +4,9 @@
 
 #include "player.h"
 
-#define FPS_CALCULATE_INTERVEL (30)
+#include <SDL2/SDL_thread.h>
+
+#define FPS_CALCULATE_INTERVAL (30)
 #define SCREEN_WIDTH (640)
 #define SCREEN_HEIGHT (360)
 #define MSG_WIDTH (60)
@@ -102,9 +104,9 @@ static void* display_thread_func(void* arg) {
     st_pthread_mutex_unlock(&d->display_wake_mutex);
 
     /* calculate fps*/
-    if (d->frame_cnt % FPS_CALCULATE_INTERVEL == 0) {
+    if (d->frame_cnt % FPS_CALCULATE_INTERVAL == 0) {
       uint32_t time = SDL_GetTicks();
-      d->fps = 1000.0 * FPS_CALCULATE_INTERVEL / (time - d->last_time);
+      d->fps = 1000.0 * FPS_CALCULATE_INTERVAL / (time - d->last_time);
       d->last_time = time;
     }
     d->frame_cnt++;

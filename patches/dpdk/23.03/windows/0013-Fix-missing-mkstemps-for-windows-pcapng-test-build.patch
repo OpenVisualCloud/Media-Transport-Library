@@ -1,0 +1,51 @@
+From ba8e0b4276c1384715f0d7a81ae056ec693a849f Mon Sep 17 00:00:00 2001
+From: Ric Li <ming3.li@intel.com>
+Date: Mon, 15 May 2023 12:19:48 +0800
+Subject: [PATCH] Fix missing mkstemps for windows pcapng test build
+
+---
+ app/test/test_pcapng.c | 12 +++++++++++-
+ 1 file changed, 11 insertions(+), 1 deletion(-)
+
+diff --git a/app/test/test_pcapng.c b/app/test/test_pcapng.c
+index 14c58c5f20..c209038c1e 100644
+--- a/app/test/test_pcapng.c
++++ b/app/test/test_pcapng.c
+@@ -11,6 +11,7 @@
+ #include <rte_mbuf.h>
+ #include <rte_mempool.h>
+ #include <rte_net.h>
++#include <rte_os_shim.h>
+ #include <rte_pcapng.h>
+ 
+ #include <pcap/pcap.h>
+@@ -24,7 +25,12 @@ static rte_pcapng_t *pcapng;
+ static struct rte_mempool *mp;
+ static const uint32_t pkt_len = 200;
+ static uint16_t port_id;
++#ifndef RTE_EXEC_ENV_IS_WINDOWS
+ static char file_name[] = "/tmp/pcapng_test_XXXXXX.pcapng";
++#else
++static char file_name[] = "/tmp/pcapng_test_XXXXXX";
++#define IOV_MAX 128
++#endif
+ 
+ /* first mbuf in the packet, should always be at offset 0 */
+ struct dummy_mbuf {
+@@ -93,8 +99,12 @@ test_setup(void)
+ 		fprintf(stderr, "No valid Ether port\n");
+ 		return -1;
+ 	}
+-
++#ifndef RTE_EXEC_ENV_IS_WINDOWS
+ 	tmp_fd = mkstemps(file_name, strlen(".pcapng"));
++#else
++	/* MinGW only implement mkstemp */
++	tmp_fd = mkstemp(file_name);
++#endif
+ 	if (tmp_fd == -1) {
+ 		perror("mkstemps() failure");
+ 		return -1;
+-- 
+2.40.1
+

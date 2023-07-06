@@ -7,9 +7,10 @@
 
 #include "mt_main.h"
 
+#define MT_DMA_BORROW_RING_PREFIX "DB_"
+
 int mt_dma_init(struct mtl_main_impl* impl);
 int mt_dma_uinit(struct mtl_main_impl* impl);
-int mt_dma_stat(struct mtl_main_impl* impl);
 
 struct mt_dma_request_req {
   uint16_t nb_desc;

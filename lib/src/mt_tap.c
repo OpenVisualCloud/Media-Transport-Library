@@ -9,8 +9,8 @@
 
 #include "mt_arp.h"
 #include "mt_cni.h"
-#include "mt_dev.h"
 #include "mt_log.h"
+#include "mt_queue.h"
 #include "mt_sch.h"
 #include "mt_util.h"
 
@@ -306,6 +306,8 @@ static struct rte_flow* tap_create_flow(struct mt_cni_impl* cni, uint16_t port_i
   int ret;
   struct tap_rt_context* tap_ctx = (struct tap_rt_context*)cni->tap_context;
 
+  memset(&error, 0, sizeof(error));
+
   /* queue */
   queue.index = q;
 
@@ -343,14 +345,14 @@ static struct rte_flow* tap_create_flow(struct mt_cni_impl* cni, uint16_t port_i
   ret = rte_flow_validate(port_id, &attr, pattern, action, &error);
   if (ret < 0) {
     err("%s(%d), rte_flow_validate fail %d for queue %d, %s\n", __func__, port_id, ret, q,
-        error.message);
+        mt_msg_safe(error.message));
     return NULL;
   }
 
   r_flow = rte_flow_create(port_id, &attr, pattern, action, &error);
   if (!r_flow) {
     err("%s(%d), rte_flow_create fail for queue %d, %s\n", __func__, port_id, q,
-        error.message);
+        mt_msg_safe(error.message));
     return NULL;
   }
 
@@ -391,7 +393,7 @@ static struct rte_flow* tap_create_flow(struct mt_cni_impl* cni, uint16_t port_i
   r_flow = rte_flow_create(port_id, &attr, pattern, action, &error);
   if (!r_flow) {
     err("%s(%d), rte_flow_create 2 fail for queue %d, %s\n", __func__, port_id, q,
-        error.message);
+        mt_msg_safe(error.message));
     return NULL;
   }
   return r_flow;
@@ -500,7 +502,7 @@ static int tap_bkg_thread(void* arg) {
     for (i = 0; i < num_ports; i++) {
       if (rx > 0 && pkts_rx[0]) {
         cni->tap_rx_cnt[i] += 1;
-        mt_dev_tx_burst(cni->tap_tx_q[i], pkts_rx, 1);
+        mt_txq_burst(cni->tap_tx_q[i], pkts_rx, 1);
       }
     }
     if (rx) {
@@ -519,11 +521,11 @@ static int tap_queues_uinit(struct mtl_main_impl* impl) {
   struct tap_rt_context* tap_ctx = (struct tap_rt_context*)cni->tap_context;
   for (int i = 0; i < num_ports; i++) {
     if (cni->tap_tx_q[i]) {
-      mt_dev_put_tx_queue(impl, cni->tap_tx_q[i]);
+      mt_txq_put(cni->tap_tx_q[i]);
       cni->tap_tx_q[i] = NULL;
     }
     if (cni->tap_rx_q[i]) {
-      mt_dev_put_rx_queue(impl, cni->tap_rx_q[i]);
+      mt_rxq_put(cni->tap_rx_q[i]);
       cni->tap_rx_q[i] = NULL;
     }
   }
@@ -574,7 +576,7 @@ static int configure_tap() {
   }
   flags = RING_F_SP_ENQ | RING_F_SC_DEQ;
   count = ST_TX_VIDEO_SESSIONS_RING_SIZE;
-  snprintf(ring_name, 32, "TX-TAP-PACKET-RING%d", 0);
+  snprintf(ring_name, 32, "TX-TAP-PACKET-%d", 0);
   tap_tx_ring = rte_ring_create(ring_name, count, mt_socket_id(impl, 0), flags);
   if (!tap_tx_ring) {
     err("%s, tx rte_ring_create fail\n", __func__);
@@ -656,7 +658,7 @@ static bool tap_open_device(struct mt_cni_impl* cni,
     for (int i = 0; i < num_ports; i++) {
       if (rte_eth_dev_mac_addr_add(mt_port_id(impl, i), &tap_ctx->mac_addr, 0))
         err("%s bind to mac failed \n", __func__);
-      tap_create_flow(cni, mt_port_id(impl, i), mt_dev_rx_queue_id(cni->tap_rx_q[i]));
+      tap_create_flow(cni, mt_port_id(impl, i), mt_rxq_queue_id(cni->tap_rx_q[i]));
     }
   }
   return true;
@@ -723,7 +725,7 @@ static PSP_DEVICE_INTERFACE_DETAIL_DATA get_tap_device_interface_detail(HDEVINFO
       }
     }
   } else {
-    err("No ndis interface devcie enumerate");
+    err("No ndis interface device enumerate");
   }
   return NULL;
 }
@@ -811,7 +813,9 @@ static int tap_queues_init(struct mtl_main_impl* impl, struct mt_cni_impl* cni) 
     return ret;
   }
   for (i = 0; i < num_ports; i++) {
-    cni->tap_tx_q[i] = mt_dev_get_tx_queue(impl, i, 1024 * 1024 * 1024);
+    struct mt_txq_flow flow;
+    memset(&flow, 0, sizeof(flow));
+    cni->tap_tx_q[i] = mt_txq_get(impl, i, &flow);
     if (!cni->tap_tx_q[i]) {
       err("%s(%d), tap_tx_q create fail\n", __func__, i);
       tap_queues_uinit(impl);
@@ -819,58 +823,54 @@ static int tap_queues_init(struct mtl_main_impl* impl, struct mt_cni_impl* cni) 
     }
     ret = rte_eth_dev_stop((mt_port_id(impl, i)));
     if (ret < 0) {
-      err("%s(%d), rte_eth_tx_queue_stop fail %d for queue %d\n", __func__, i, ret,
-          mt_dev_tx_queue_id(cni->tap_tx_q[i]));
+      err("%s(%d), rte_eth_tx_queue_stop fail %d\n", __func__, i, ret);
       return ret;
     }
     nb_tx_desc = mt_if_nb_tx_desc(impl, i);
     socket_id = rte_eth_dev_socket_id(mt_port_id(impl, i));
-    ret =
-        rte_eth_tx_queue_setup(mt_port_id(impl, i), mt_dev_tx_queue_id(cni->tap_tx_q[i]),
-                               nb_tx_desc, socket_id, &dev_tx_port_conf);
+    ret = rte_eth_tx_queue_setup(mt_port_id(impl, i), mt_txq_queue_id(cni->tap_tx_q[i]),
+                                 nb_tx_desc, socket_id, &dev_tx_port_conf);
     if (ret < 0) {
-      err("%s(%d), rte_eth_tx_queue_setup fail %d for queue %d\n", __func__, i, ret,
-          mt_dev_tx_queue_id(cni->tap_tx_q[i]));
+      err("%s(%d), rte_eth_tx_queue_setup fail %d\n", __func__, i, ret);
       return ret;
     }
     ret = rte_eth_dev_start((mt_port_id(impl, i)));
     if (ret < 0) {
-      err("%s(%d), rte_eth_tx_queue_start fail %d for queue %d\n", __func__, i, ret,
-          mt_dev_tx_queue_id(cni->tap_tx_q[i]));
+      err("%s(%d), rte_eth_tx_queue_start fail %d\n", __func__, i, ret);
       return ret;
     }
-    info("%s(%d), tx q %d\n", __func__, i, mt_dev_tx_queue_id(cni->tap_tx_q[i]));
+    info("%s(%d), tx q %d\n", __func__, i, mt_txq_queue_id(cni->tap_tx_q[i]));
   }
   for (i = 0; i < num_ports; i++) {
-    cni->tap_rx_q[i] = mt_dev_get_rx_queue(impl, i, NULL);
+    struct mt_rxq_flow flow;
+    memset(&flow, 0, sizeof(flow));
+    cni->tap_rx_q[i] = mt_rxq_get(impl, i, &flow);
     if (!cni->tap_rx_q[i]) {
       err("%s(%d), tap_rx_q create fail\n", __func__, i);
       tap_queues_uinit(impl);
       return -EIO;
     }
-    info("%s(%d), rx q %d\n", __func__, i, mt_dev_rx_queue_id(cni->tap_rx_q[i]));
+    info("%s(%d), rx q %d\n", __func__, i, mt_rxq_queue_id(cni->tap_rx_q[i]));
   }
 
   return 0;
 }
 
-int mt_tap_handle(struct mtl_main_impl* impl, enum mtl_port port,
-                  struct rte_mbuf** rx_pkts, uint16_t nb_pkts) {
+int mt_tap_handle(struct mtl_main_impl* impl, enum mtl_port port) {
   struct mt_cni_impl* cni = mt_get_cni(impl);
   struct rte_mbuf* pkts_rx[ST_CNI_RX_BURST_SIZE];
   uint16_t rx;
-  int i;
 
   if (rte_atomic32_read(&cni->stop_tap)) {
     return -EBUSY;
   }
 
   if (cni->tap_rx_q[port]) {
-    rx = mt_dev_rx_burst(cni->tap_rx_q[port], pkts_rx, ST_CNI_RX_BURST_SIZE);
+    rx = mt_rxq_burst(cni->tap_rx_q[port], pkts_rx, ST_CNI_RX_BURST_SIZE);
 
     if (rx > 0) {
-      cni->eth_rx_cnt[i] += rx;
-      for (i = 0; i < rx; i++) {
+      cni->eth_rx_cnt[port] += rx;
+      for (int i = 0; i < rx; i++) {
         tap_put_mbuf(tap_tx_ring, pkts_rx[i]);
       }
     }

@@ -7,18 +7,18 @@
 
 #include "st_main.h"
 
-#define ST_RX_VIDEO_BURTS_SIZE (128)
+#define ST_RX_VIDEO_BURST_SIZE (128)
 
 #define ST_RX_VIDEO_DMA_MIN_SIZE (1024)
 
 #define ST_RV_EBU_TSC_SYNC_MS (100) /* sync tsc with ptp period(ms) */
 #define ST_RV_EBU_TSC_SYNC_NS (ST_RV_EBU_TSC_SYNC_MS * 1000 * 1000)
 
+#define ST_RX_VIDEO_PREFIX "RV_"
+
 int st_rx_video_sessions_sch_init(struct mtl_main_impl* impl, struct mt_sch_impl* sch);
 
 int st_rx_video_sessions_sch_uinit(struct mtl_main_impl* impl, struct mt_sch_impl* sch);
-
-void st_rx_video_sessions_stat(struct mtl_main_impl* impl);
 
 /* call rx_video_session_put always if get successfully */
 static inline struct st_rx_video_session_impl* rx_video_session_get(

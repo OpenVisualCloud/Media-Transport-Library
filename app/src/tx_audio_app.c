@@ -13,7 +13,9 @@ static int app_tx_audio_next_frame(void* priv, uint16_t* next_frame_idx,
 
   st_pthread_mutex_lock(&s->st30_wake_mutex);
   if (ST_TX_FRAME_READY == framebuff->stat) {
-    dbg("%s(%d), next frame idx %u\n", __func__, s->idx, consumer_idx);
+    dbg("%s(%d), next frame idx %u, epoch %" PRIu64 ", tai %" PRIu64 "\n", __func__,
+        s->idx, consumer_idx, meta->epoch,
+        st10_get_tai(meta->tfmt, meta->timestamp, st30_get_sample_rate(s->sampling)));
     ret = 0;
     framebuff->stat = ST_TX_FRAME_IN_TRANSMITTING;
     *next_frame_idx = consumer_idx;
@@ -41,7 +43,9 @@ static int app_tx_audio_frame_done(void* priv, uint16_t frame_idx,
   if (ST_TX_FRAME_IN_TRANSMITTING == framebuff->stat) {
     ret = 0;
     framebuff->stat = ST_TX_FRAME_FREE;
-    dbg("%s(%d), done_idx %u\n", __func__, s->idx, frame_idx);
+    dbg("%s(%d), done frame idx %u, epoch %" PRIu64 ", tai %" PRIu64 "\n", __func__,
+        s->idx, frame_idx, meta->epoch,
+        st10_get_tai(meta->tfmt, meta->timestamp, st30_get_sample_rate(s->sampling)));
   } else {
     ret = -EIO;
     err("%s(%d), err status %d for frame %u\n", __func__, s->idx, framebuff->stat,
@@ -377,27 +381,34 @@ static int app_tx_audio_init(struct st_app_context* ctx, st_json_audio_session_t
   ops.name = name;
   ops.priv = s;
   ops.num_port = audio ? audio->base.num_inf : ctx->para.num_ports;
-  memcpy(ops.dip_addr[MTL_PORT_P],
-         audio ? audio->base.ip[MTL_PORT_P] : ctx->tx_dip_addr[MTL_PORT_P],
+  memcpy(ops.dip_addr[MTL_SESSION_PORT_P],
+         audio ? st_json_ip(ctx, &audio->base, MTL_SESSION_PORT_P)
+               : ctx->tx_dip_addr[MTL_PORT_P],
          MTL_IP_ADDR_LEN);
-  strncpy(ops.port[MTL_PORT_P],
-          audio ? audio->base.inf[MTL_PORT_P]->name : ctx->para.port[MTL_PORT_P],
+  strncpy(ops.port[MTL_SESSION_PORT_P],
+          audio ? audio->base.inf[MTL_SESSION_PORT_P]->name : ctx->para.port[MTL_PORT_P],
           MTL_PORT_MAX_LEN);
-  ops.udp_port[MTL_PORT_P] = audio ? audio->base.udp_port : (10100 + s->idx);
+  ops.udp_port[MTL_SESSION_PORT_P] = audio ? audio->base.udp_port : (10100 + s->idx);
   if (ctx->has_tx_dst_mac[MTL_PORT_P]) {
-    memcpy(&ops.tx_dst_mac[MTL_PORT_P][0], ctx->tx_dst_mac[MTL_PORT_P], 6);
+    memcpy(&ops.tx_dst_mac[MTL_SESSION_PORT_P][0], ctx->tx_dst_mac[MTL_PORT_P],
+           MTL_MAC_ADDR_LEN);
     ops.flags |= ST30_TX_FLAG_USER_P_MAC;
   }
+  if (ctx->tx_audio_build_pacing) ops.flags |= ST30_TX_FLAG_BUILD_PACING;
+  if (ctx->tx_audio_fifo_size) ops.fifo_size = ctx->tx_audio_fifo_size;
   if (ops.num_port > 1) {
-    memcpy(ops.dip_addr[MTL_PORT_R],
-           audio ? audio->base.ip[MTL_PORT_R] : ctx->tx_dip_addr[MTL_PORT_R],
+    memcpy(ops.dip_addr[MTL_SESSION_PORT_R],
+           audio ? st_json_ip(ctx, &audio->base, MTL_SESSION_PORT_R)
+                 : ctx->tx_dip_addr[MTL_PORT_R],
            MTL_IP_ADDR_LEN);
-    strncpy(ops.port[MTL_PORT_R],
-            audio ? audio->base.inf[MTL_PORT_R]->name : ctx->para.port[MTL_PORT_R],
-            MTL_PORT_MAX_LEN);
-    ops.udp_port[MTL_PORT_R] = audio ? audio->base.udp_port : (10100 + s->idx);
+    strncpy(
+        ops.port[MTL_SESSION_PORT_R],
+        audio ? audio->base.inf[MTL_SESSION_PORT_R]->name : ctx->para.port[MTL_PORT_R],
+        MTL_PORT_MAX_LEN);
+    ops.udp_port[MTL_SESSION_PORT_R] = audio ? audio->base.udp_port : (10100 + s->idx);
     if (ctx->has_tx_dst_mac[MTL_PORT_R]) {
-      memcpy(&ops.tx_dst_mac[MTL_PORT_R][0], ctx->tx_dst_mac[MTL_PORT_R], 6);
+      memcpy(&ops.tx_dst_mac[MTL_SESSION_PORT_R][0], ctx->tx_dst_mac[MTL_PORT_R],
+             MTL_MAC_ADDR_LEN);
       ops.flags |= ST30_TX_FLAG_USER_R_MAC;
     }
   }
@@ -411,6 +422,7 @@ static int app_tx_audio_init(struct st_app_context* ctx, st_json_audio_session_t
   ops.ptime = audio ? audio->info.audio_ptime : ST30_PTIME_1MS;
   ops.sample_size = st30_get_sample_size(ops.fmt);
   ops.sample_num = st30_get_sample_num(ops.ptime, ops.sampling);
+  s->sampling = ops.sampling;
   s->pkt_len = ops.sample_size * ops.sample_num * ops.channel;
   if (ops.ptime == ST30_PTIME_4MS) {
     s->st30_frame_size =

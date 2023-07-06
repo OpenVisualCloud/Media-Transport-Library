@@ -1,0 +1,169 @@
+From 79e45f5d3509c552d18ac668371595bb5934ac3d Mon Sep 17 00:00:00 2001
+From: Frank Du <frank.du@intel.com>
+Date: Fri, 3 Mar 2023 19:36:23 +0800
+Subject: [PATCH 8/8] net/ice: add dst/src only support for rss l3 and l4
+
+Signed-off-by: Frank Du <frank.du@intel.com>
+---
+ drivers/net/ice/base/ice_flow.h |  8 ++++
+ drivers/net/ice/ice_ethdev.c    | 74 ++++++++++++++++++++++++++++++++-
+ drivers/net/ice/ice_ethdev.h    |  5 +++
+ 3 files changed, 85 insertions(+), 2 deletions(-)
+
+diff --git a/drivers/net/ice/base/ice_flow.h b/drivers/net/ice/base/ice_flow.h
+index dba71aab74..d3f80235a4 100644
+--- a/drivers/net/ice/base/ice_flow.h
++++ b/drivers/net/ice/base/ice_flow.h
+@@ -23,6 +23,10 @@
+ #define ICE_FLOW_HASH_IPV4	\
+ 	(BIT_ULL(ICE_FLOW_FIELD_IDX_IPV4_SA) | \
+ 	 BIT_ULL(ICE_FLOW_FIELD_IDX_IPV4_DA))
++#define ICE_FLOW_HASH_IPV4_SA \
++	(BIT_ULL(ICE_FLOW_FIELD_IDX_IPV4_SA))
++#define ICE_FLOW_HASH_IPV4_DA \
++	(BIT_ULL(ICE_FLOW_FIELD_IDX_IPV4_DA))
+ #define ICE_FLOW_HASH_IPV6	\
+ 	(BIT_ULL(ICE_FLOW_FIELD_IDX_IPV6_SA) | \
+ 	 BIT_ULL(ICE_FLOW_FIELD_IDX_IPV6_DA))
+@@ -41,6 +45,10 @@
+ #define ICE_FLOW_HASH_UDP_PORT	\
+ 	(BIT_ULL(ICE_FLOW_FIELD_IDX_UDP_SRC_PORT) | \
+ 	 BIT_ULL(ICE_FLOW_FIELD_IDX_UDP_DST_PORT))
++#define ICE_FLOW_HASH_UDP_PORT_SRC	\
++	(BIT_ULL(ICE_FLOW_FIELD_IDX_UDP_SRC_PORT))
++#define ICE_FLOW_HASH_UDP_PORT_DST	\
++	(BIT_ULL(ICE_FLOW_FIELD_IDX_UDP_DST_PORT))
+ #define ICE_FLOW_HASH_SCTP_PORT	\
+ 	(BIT_ULL(ICE_FLOW_FIELD_IDX_SCTP_SRC_PORT) | \
+ 	 BIT_ULL(ICE_FLOW_FIELD_IDX_SCTP_DST_PORT))
+diff --git a/drivers/net/ice/ice_ethdev.c b/drivers/net/ice/ice_ethdev.c
+index 48cf43b2ad..776a3fd77b 100644
+--- a/drivers/net/ice/ice_ethdev.c
++++ b/drivers/net/ice/ice_ethdev.c
+@@ -3084,6 +3084,48 @@ ice_add_rss_cfg_wrap(struct ice_pf *pf, uint16_t vsi_id,
+ 	return 0;
+ }
+ 
++static u64 rss_l3_hash_flds(uint64_t rss_hf)
++{
++	u64 hash_flds = 0;
++
++	/* Determine L3 hash fields. */
++	switch (rss_hf & (RTE_ETH_RSS_L3_SRC_ONLY | RTE_ETH_RSS_L3_DST_ONLY)) {
++	case RTE_ETH_RSS_L3_DST_ONLY:
++		hash_flds |= ICE_FLOW_HASH_IPV4_DA;
++		break;
++	case RTE_ETH_RSS_L3_SRC_ONLY:
++		hash_flds |= ICE_FLOW_HASH_IPV4_SA;
++		break;
++	default:
++		/* both src and dst */
++		hash_flds |= ICE_FLOW_HASH_IPV4;
++		break;
++	}
++
++	return hash_flds;
++}
++
++static u64 rss_l4_hash_flds(uint64_t rss_hf)
++{
++	u64 hash_flds = 0;
++
++	/* Determine L4 hash fields. */
++	switch (rss_hf & (RTE_ETH_RSS_L4_SRC_ONLY | RTE_ETH_RSS_L4_DST_ONLY)) {
++	case RTE_ETH_RSS_L4_DST_ONLY:
++		hash_flds |= ICE_FLOW_HASH_UDP_PORT_DST;
++		break;
++	case RTE_ETH_RSS_L4_SRC_ONLY:
++		hash_flds |= ICE_FLOW_HASH_UDP_PORT_SRC;
++		break;
++	default:
++		/* both src and dst */
++		hash_flds |= ICE_FLOW_HASH_UDP_PORT;
++		break;
++	}
++
++	return hash_flds;
++}
++
+ static void
+ ice_rss_hash_set(struct ice_pf *pf, uint64_t rss_hf)
+ {
+@@ -3096,6 +3138,11 @@ ice_rss_hash_set(struct ice_pf *pf, uint64_t rss_hf)
+ 	RTE_ETH_RSS_IPV4 | \
+ 	RTE_ETH_RSS_IPV6 | \
+ 	RTE_ETH_RSS_NONFRAG_IPV4_UDP | \
++	RTE_ETH_RSS_PORT | \
++	RTE_ETH_RSS_L4_DST_ONLY | \
++	RTE_ETH_RSS_L4_SRC_ONLY | \
++	RTE_ETH_RSS_L3_DST_ONLY | \
++	RTE_ETH_RSS_L3_SRC_ONLY | \
+ 	RTE_ETH_RSS_NONFRAG_IPV6_UDP | \
+ 	RTE_ETH_RSS_NONFRAG_IPV4_TCP | \
+ 	RTE_ETH_RSS_NONFRAG_IPV6_TCP | \
+@@ -3133,7 +3180,19 @@ ice_rss_hash_set(struct ice_pf *pf, uint64_t rss_hf)
+ 	if (rss_hf & RTE_ETH_RSS_NONFRAG_IPV4_UDP) {
+ 		cfg.addl_hdrs = ICE_FLOW_SEG_HDR_UDP | ICE_FLOW_SEG_HDR_IPV4 |
+ 				ICE_FLOW_SEG_HDR_IPV_OTHER;
+-		cfg.hash_flds = ICE_HASH_UDP_IPV4;
++		cfg.hash_flds = rss_l3_hash_flds(rss_hf);
++		cfg.hash_flds |= rss_l4_hash_flds(rss_hf);
++		ret = ice_add_rss_cfg_wrap(pf, vsi->idx, &cfg);
++		if (ret)
++			PMD_DRV_LOG(ERR, "%s UDP_IPV4 rss flow fail %d",
++				    __func__, ret);
++	}
++
++	/* Configure RSS for port as input set */
++	if (rss_hf & RTE_ETH_RSS_PORT) {
++		cfg.addl_hdrs = ICE_FLOW_SEG_HDR_UDP | ICE_FLOW_SEG_HDR_IPV4 |
++				ICE_FLOW_SEG_HDR_IPV_OTHER;
++		cfg.hash_flds = rss_l4_hash_flds(rss_hf);
+ 		ret = ice_add_rss_cfg_wrap(pf, vsi->idx, &cfg);
+ 		if (ret)
+ 			PMD_DRV_LOG(ERR, "%s UDP_IPV4 rss flow fail %d",
+@@ -3218,13 +3277,24 @@ ice_rss_hash_set(struct ice_pf *pf, uint64_t rss_hf)
+ 	if (rss_hf & RTE_ETH_RSS_NONFRAG_IPV4_UDP) {
+ 		cfg.addl_hdrs = ICE_FLOW_SEG_HDR_PPPOE | ICE_FLOW_SEG_HDR_UDP |
+ 				ICE_FLOW_SEG_HDR_IPV4 | ICE_FLOW_SEG_HDR_IPV_OTHER;
+-		cfg.hash_flds = ICE_HASH_UDP_IPV4;
++		cfg.hash_flds = rss_l3_hash_flds(rss_hf);
++		cfg.hash_flds |= rss_l4_hash_flds(rss_hf);
+ 		ret = ice_add_rss_cfg_wrap(pf, vsi->idx, &cfg);
+ 		if (ret)
+ 			PMD_DRV_LOG(ERR, "%s PPPoE_IPV4_UDP rss flow fail %d",
+ 				    __func__, ret);
+ 	}
+ 
++	if (rss_hf & RTE_ETH_RSS_PORT) {
++		cfg.addl_hdrs = ICE_FLOW_SEG_HDR_PPPOE | ICE_FLOW_SEG_HDR_UDP |
++				ICE_FLOW_SEG_HDR_IPV4 | ICE_FLOW_SEG_HDR_IPV_OTHER;
++		cfg.hash_flds = rss_l4_hash_flds(rss_hf);
++		ret = ice_add_rss_cfg_wrap(pf, vsi->idx, &cfg);
++		if (ret)
++			PMD_DRV_LOG(ERR, "%s PPPoE_PORT rss flow fail %d",
++				    __func__, ret);
++	}
++
+ 	if (rss_hf & RTE_ETH_RSS_NONFRAG_IPV6_UDP) {
+ 		cfg.addl_hdrs = ICE_FLOW_SEG_HDR_PPPOE | ICE_FLOW_SEG_HDR_UDP |
+ 				ICE_FLOW_SEG_HDR_IPV6 | ICE_FLOW_SEG_HDR_IPV_OTHER;
+diff --git a/drivers/net/ice/ice_ethdev.h b/drivers/net/ice/ice_ethdev.h
+index c8311be179..e8e2910218 100644
+--- a/drivers/net/ice/ice_ethdev.h
++++ b/drivers/net/ice/ice_ethdev.h
+@@ -122,6 +122,11 @@
+ 	RTE_ETH_RSS_FRAG_IPV4 | \
+ 	RTE_ETH_RSS_NONFRAG_IPV4_TCP | \
+ 	RTE_ETH_RSS_NONFRAG_IPV4_UDP | \
++	RTE_ETH_RSS_PORT | \
++	RTE_ETH_RSS_L4_DST_ONLY | \
++	RTE_ETH_RSS_L4_SRC_ONLY | \
++	RTE_ETH_RSS_L3_DST_ONLY | \
++	RTE_ETH_RSS_L3_SRC_ONLY | \
+ 	RTE_ETH_RSS_NONFRAG_IPV4_SCTP | \
+ 	RTE_ETH_RSS_NONFRAG_IPV4_OTHER | \
+ 	RTE_ETH_RSS_IPV6 | \
+-- 
+2.34.1
+

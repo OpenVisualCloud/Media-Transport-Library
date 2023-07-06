@@ -5,19 +5,18 @@
 #ifndef _MT_LIB_ST_HEAD_H_
 #define _MT_LIB_ST_HEAD_H_
 
-#include <st20_api.h>
-#include <st30_api.h>
-#include <st40_api.h>
-#include <st_pipeline_api.h>
-
 #include "../mt_header.h"
+#include "st20_api.h"
+#include "st30_api.h"
+#include "st40_api.h"
 #include "st_convert.h"
 #include "st_fmt.h"
+#include "st_pipeline_api.h"
 #include "st_pkt.h"
 
 #define ST_MAX_NAME_LEN (32)
 
-#define ST_PLUNGIN_MAX_PATH_LEN (128)
+#define ST_PLUGIN_MAX_PATH_LEN (128)
 
 /* max 12 1080p tx session per sch lcore */
 #define ST_QUOTA_TX1080P_PER_SCH (12)
@@ -45,9 +44,10 @@
 #define ST_VIDEO_BPM_SIZE (1260)
 
 /* max tx/rx audio(st_30) sessions */
-#define ST_MAX_TX_AUDIO_SESSIONS (180)
-#define ST_TX_AUDIO_SESSIONS_RING_SIZE (512)
-#define ST_MAX_RX_AUDIO_SESSIONS (180)
+#define ST_SCH_MAX_TX_AUDIO_SESSIONS (512) /* max audio tx sessions per sch lcore */
+#define ST_TX_AUDIO_SESSIONS_RING_SIZE (ST_SCH_MAX_TX_AUDIO_SESSIONS * 2)
+#define ST_SCH_MAX_RX_AUDIO_SESSIONS (512 * 2) /* max audio rx sessions per sch lcore */
+
 /* max tx/rx anc(st_40) sessions */
 #define ST_MAX_TX_ANC_SESSIONS (180)
 #define ST_TX_ANC_SESSIONS_RING_SIZE (512)
@@ -62,11 +62,11 @@
 /* max converter devices number */
 #define ST_MAX_CONVERTER_DEV (8)
 /* max sessions number per encoder */
-#define ST_MAX_SESSIIONS_PER_ENCODER (16)
+#define ST_MAX_SESSIONS_PER_ENCODER (16)
 /* max sessions number per decoder */
-#define ST_MAX_SESSIIONS_PER_DECODER (16)
+#define ST_MAX_SESSIONS_PER_DECODER (16)
 /* max sessions number per converter */
-#define ST_MAX_SESSIIONS_PER_CONVERTER (16)
+#define ST_MAX_SESSIONS_PER_CONVERTER (16)
 
 #define ST_TX_DUMMY_PKT_IDX (0xFFFFFFFF)
 
@@ -108,14 +108,23 @@ struct st_rx_muf_priv_data {
 /* ext frame by application */
 #define ST_FT_FLAG_EXT (MTL_BIT32(1))
 
+/* IOVA mapping info of each page in frame, used for IOVA:PA mode */
+struct st_page_info {
+  rte_iova_t iova; /* page begin iova */
+  void* addr;      /* page begin va */
+  size_t len;      /* page length */
+};
+
 /* describe the frame used in transport(both tx and rx) */
 struct st_frame_trans {
   /* todo: use struct st_frame as base */
   int idx;
-  void* addr;            /* virtual address */
-  rte_iova_t iova;       /* iova for hw */
-  rte_atomic32_t refcnt; /* 0 means it's free */
-  void* priv;            /* private data for lib */
+  void* addr;                      /* virtual address */
+  rte_iova_t iova;                 /* iova for hw */
+  struct st_page_info* page_table; /* page table for hw, used for IOVA:PA mode */
+  uint16_t page_table_len;         /* page table len for hw, used for IOVA:PA mode */
+  rte_atomic32_t refcnt;           /* 0 means it's free */
+  void* priv;                      /* private data for lib */
 
   uint32_t flags;                          /* ST_FT_FLAG_* */
   struct rte_mbuf_ext_shared_info sh_info; /* for st20 tx ext shared */
@@ -133,21 +142,24 @@ struct st_frame_trans {
 
 /* timing for pacing */
 struct st_tx_video_pacing {
-  double trs;             /* in ns for of 2 consecutive packets, T-Frame / N-Packets */
-  double tr_offset;       /* in ns, tr offset time of each frame */
-  uint32_t tr_offset_vrx; /* packets unit, VRX start value of each frame */
-  double frame_time;      /* time of the frame in nanoseconds */
+  double trs;         /* in ns for of 2 consecutive packets, T-Frame / N-Packets */
+  double tr_offset;   /* in ns, tr offset time of each frame */
+  uint32_t vrx;       /* packets unit, VRX start value of each frame */
+  uint32_t warm_pkts; /* packets unit, pkts for RL pacing warm boot */
+  double frame_time;  /* time of the frame in nanoseconds */
   double frame_time_sampling; /* time of the frame in sampling(90k) */
-  uint32_t warm_pkts;         /* pkts for RL pacing warm boot */
-  float pad_interval;         /* padding pkt interval(pkts level) for RL pacing */
+  /* in ns, idle time at the end of frame, frame_time - tr_offset - (trs * pkts) */
+  double frame_idle_time;
+  float pad_interval; /* padding pkt interval(pkts level) for RL pacing */
 
   uint64_t cur_epochs; /* epoch of current frame */
   /* timestamp for rtp header */
   uint32_t rtp_time_stamp;
-  /* timestamp for pacing */
-  uint32_t pacing_time_stamp;
+  uint64_t cur_epoch_time;
   double tsc_time_cursor; /* in ns, tsc time cursor for packet pacing */
   double ptp_time_cursor; /* in ns, ptp time cursor for packet pacing */
+  /* ptp time may onward */
+  uint32_t max_onward_epochs;
 };
 
 enum st20_packet_type {
@@ -213,7 +225,7 @@ struct st22_tx_video_info {
   int (*notify_frame_done)(void* priv, uint16_t frame_idx,
                            struct st22_tx_frame_meta* meta);
 
-  struct st22_rfc9134_rtp_hdr rtp_hdr[MT_SESSION_PORT_MAX];
+  struct st22_rfc9134_rtp_hdr rtp_hdr[MTL_SESSION_PORT_MAX];
   int pkt_idx;           /* for P&F counter*/
   size_t cur_frame_size; /* size per frame */
   int frame_idx;         /* The Frame (F) counter */
@@ -230,59 +242,64 @@ struct st_vsync_info {
 };
 
 struct st_tx_video_session_impl {
-  enum mtl_port port_maps[MT_SESSION_PORT_MAX];
-  struct rte_mempool* mbuf_mempool_hdr[MT_SESSION_PORT_MAX];
-  bool mbuf_mempool_reuse_rx[MT_SESSION_PORT_MAX]; /* af_xdp zero copy */
+  enum mtl_port port_maps[MTL_SESSION_PORT_MAX];
+  struct rte_mempool* mbuf_mempool_hdr[MTL_SESSION_PORT_MAX];
+  bool mbuf_mempool_reuse_rx[MTL_SESSION_PORT_MAX]; /* af_xdp zero copy */
   struct rte_mempool* mbuf_mempool_chain;
-  bool tx_mono_pool; /* if reuse tx mono pool */
+  struct rte_mempool* mbuf_mempool_copy_chain;
+  bool tx_mono_pool;   /* if reuse tx mono pool */
+  bool tx_no_chain;    /* if tx not use chain mbuf */
+  bool multi_src_port; /* if tx use multiple src port */
   /* if the eth dev support chain buff */
-  bool eth_has_chain[MT_SESSION_PORT_MAX];
+  bool eth_has_chain[MTL_SESSION_PORT_MAX];
   /* if the eth dev support ipv4 checksum offload */
-  bool eth_ipv4_cksum_offload[MT_SESSION_PORT_MAX];
+  bool eth_ipv4_cksum_offload[MTL_SESSION_PORT_MAX];
   unsigned int ring_count;
-  struct rte_ring* ring[MT_SESSION_PORT_MAX];
+  struct rte_ring* ring[MTL_SESSION_PORT_MAX];
   struct rte_ring* packet_ring; /* rtp ring */
-  uint16_t port_id[MT_SESSION_PORT_MAX];
-  struct mt_tx_queue* queue[MT_SESSION_PORT_MAX];
+  uint16_t port_id[MTL_SESSION_PORT_MAX];
+  struct mt_txq_entry* queue[MTL_SESSION_PORT_MAX];
   int idx; /* index for current tx_session */
   uint64_t advice_sleep_us;
+  uint16_t queue_burst_pkts[MTL_SESSION_PORT_MAX];
+  uint16_t tx_done_cleanup[MTL_SESSION_PORT_MAX];
 
   struct st_tx_video_session_handle_impl* st20_handle;
   struct st22_tx_video_session_handle_impl* st22_handle;
 
   uint16_t st20_ipv4_packet_id;
-  uint16_t st20_src_port[MT_SESSION_PORT_MAX]; /* udp port */
-  uint16_t st20_dst_port[MT_SESSION_PORT_MAX]; /* udp port */
-  struct st_rfc4175_video_hdr s_hdr[MT_SESSION_PORT_MAX];
+  uint16_t st20_src_port[MTL_SESSION_PORT_MAX]; /* udp port */
+  uint16_t st20_dst_port[MTL_SESSION_PORT_MAX]; /* udp port */
+  struct st_rfc4175_video_hdr s_hdr[MTL_SESSION_PORT_MAX];
 
   struct st_tx_video_pacing pacing;
-  enum st21_tx_pacing_way pacing_way[MT_SESSION_PORT_MAX];
-  int (*pacing_tasklet_func[MT_SESSION_PORT_MAX])(struct mtl_main_impl* impl,
-                                                  struct st_tx_video_session_impl* s,
-                                                  enum mt_session_port s_port);
+  enum st21_tx_pacing_way pacing_way[MTL_SESSION_PORT_MAX];
+  int (*pacing_tasklet_func[MTL_SESSION_PORT_MAX])(struct mtl_main_impl* impl,
+                                                   struct st_tx_video_session_impl* s,
+                                                   enum mtl_session_port s_port);
 
   struct st_vsync_info vsync;
+  bool second_field;
 
   struct st20_tx_ops ops;
   char ops_name[ST_MAX_NAME_LEN];
   enum mt_handle_type s_type; /* st22 or st20 */
 
   unsigned int bulk; /* Enqueue bulk objects on the ring */
-  struct rte_mbuf* inflight[MT_SESSION_PORT_MAX][ST_SESSION_MAX_BULK];
-  bool has_inflight[MT_SESSION_PORT_MAX];
-  int inflight_cnt[MT_SESSION_PORT_MAX]; /* for stats */
+  struct rte_mbuf* inflight[MTL_SESSION_PORT_MAX][ST_SESSION_MAX_BULK];
+  int inflight_cnt[MTL_SESSION_PORT_MAX]; /* for stats */
 
   /* info for transmitter */
-  uint64_t trs_target_tsc[MT_SESSION_PORT_MAX];
-  struct rte_mbuf* trs_inflight[MT_SESSION_PORT_MAX][ST_SESSION_MAX_BULK];
-  unsigned int trs_inflight_num[MT_SESSION_PORT_MAX];
-  unsigned int trs_inflight_idx[MT_SESSION_PORT_MAX];
-  unsigned int trs_pad_inflight_num[MT_SESSION_PORT_MAX]; /* inflight padding */
-  int trs_inflight_cnt[MT_SESSION_PORT_MAX];              /* for stats */
-  struct rte_mbuf* trs_inflight2[MT_SESSION_PORT_MAX][ST_SESSION_MAX_BULK];
-  unsigned int trs_inflight_num2[MT_SESSION_PORT_MAX];
-  unsigned int trs_inflight_idx2[MT_SESSION_PORT_MAX];
-  int trs_inflight_cnt2[MT_SESSION_PORT_MAX]; /* for stats */
+  uint64_t trs_target_tsc[MTL_SESSION_PORT_MAX];
+  struct rte_mbuf* trs_inflight[MTL_SESSION_PORT_MAX][ST_SESSION_MAX_BULK];
+  unsigned int trs_inflight_num[MTL_SESSION_PORT_MAX];
+  unsigned int trs_inflight_idx[MTL_SESSION_PORT_MAX];
+  unsigned int trs_pad_inflight_num[MTL_SESSION_PORT_MAX]; /* inflight padding */
+  int trs_inflight_cnt[MTL_SESSION_PORT_MAX];              /* for stats */
+  struct rte_mbuf* trs_inflight2[MTL_SESSION_PORT_MAX][ST_SESSION_MAX_BULK];
+  unsigned int trs_inflight_num2[MTL_SESSION_PORT_MAX];
+  unsigned int trs_inflight_idx2[MTL_SESSION_PORT_MAX];
+  int trs_inflight_cnt2[MTL_SESSION_PORT_MAX]; /* for stats */
 
   /* frame info */
   size_t st20_frame_size;   /* size per frame */
@@ -310,7 +327,7 @@ struct st_tx_video_session_impl {
   int st21_vrx_wide;         /* pass criteria for wide */
 
   struct st20_packet_group_info st20_pkt_info[ST20_PKT_TYPE_MAX];
-  struct rte_mbuf* pad[MT_SESSION_PORT_MAX][ST20_PKT_TYPE_MAX];
+  struct rte_mbuf* pad[MTL_SESSION_PORT_MAX][ST20_PKT_TYPE_MAX];
 
   /* the cpu resource to handle tx, 0: full, 100: cpu is very busy */
   float cpu_busy_score;
@@ -330,10 +347,12 @@ struct st_tx_video_session_impl {
   int stat_pkts_dummy;
   int stat_pkts_burst;
   int stat_pkts_burst_dummy;
-  int stat_trs_ret_code[MT_SESSION_PORT_MAX];
+  int stat_pkts_chain_realloc_fail;
+  int stat_trs_ret_code[MTL_SESSION_PORT_MAX];
   int stat_build_ret_code;
   uint64_t stat_last_time;
   uint32_t stat_epoch_drop;
+  uint32_t stat_epoch_onward;
   uint32_t stat_error_user_timestamp;
   uint32_t stat_epoch_troffset_mismatch; /* pacing mismatch the epoch troffset */
   uint32_t stat_trans_troffset_mismatch; /* transmitter mismatch the epoch troffset */
@@ -342,10 +361,12 @@ struct st_tx_video_session_impl {
   uint32_t stat_user_busy;       /* get_next_frame or dequeue_bulk from rtp ring fail */
   uint32_t stat_lines_not_ready; /* query app lines not ready */
   uint32_t stat_vsync_mismatch;
+  uint32_t stat_tx_done_cleanup;
+  uint64_t stat_bytes_build;
 };
 
 struct st_tx_video_sessions_mgr {
-  struct mtl_main_impl* parnet;
+  struct mtl_main_impl* parent;
   int idx;     /* index for current session mgr */
   int max_idx; /* max session index */
   struct mt_sch_tasklet_impl* tasklet;
@@ -356,7 +377,7 @@ struct st_tx_video_sessions_mgr {
 };
 
 struct st_video_transmitter_impl {
-  struct mtl_main_impl* parnet;
+  struct mtl_main_impl* parent;
   struct st_tx_video_sessions_mgr* mgr;
   struct mt_sch_tasklet_impl* tasklet;
   int idx; /* index for current transmitter */
@@ -376,16 +397,15 @@ struct st_rx_video_slot_slice_info {
 struct st_rx_video_slot_impl {
   int idx;
   uint32_t tmstamp;
-  uint16_t seq_id_base;     /* seq id for the first packt */
-  uint32_t seq_id_base_u32; /* seq id for the first packt with u32 */
+  uint16_t seq_id_base;     /* seq id for the first packet */
+  uint32_t seq_id_base_u32; /* seq id for the first packet with u32 */
   bool seq_id_got;
-  void* frame; /* only for frame type */
-  rte_iova_t frame_iova;
+  struct st_frame_trans* frame; /* only for frame type */
   uint8_t* frame_bitmap;
   size_t frame_recv_size;           /* for frame type */
   size_t pkt_lcore_frame_recv_size; /* frame_recv_size for pkt lcore */
   uint32_t pkts_received;
-  uint32_t pkts_redunant_received;
+  uint32_t pkts_redundant_received;
   struct st20_rx_frame_meta meta;      /* only for frame type */
   struct st22_rx_frame_meta st22_meta; /* only for st22 frame type */
   /* Second field type indicate */
@@ -394,14 +414,14 @@ struct st_rx_video_slot_impl {
   /* payload len for codestream packetization mode */
   uint16_t st22_payload_length;
   uint16_t st22_box_hdr_length;
+  /* timestamp(ST10_TIMESTAMP_FMT_TAI, PTP) value for the first pkt */
+  uint64_t timestamp_first_pkt;
 };
 
 struct st_rx_video_ebu_info {
-  double trs;        /* in ns for of 2 consecutive packets, T-Frame / N-Packets */
-  double tr_offset;  /* in ns, tr offset time of each frame */
-  double frame_time; /* time of the frame in nanoseconds */
-  double frame_time_sampling; /* time of the frame in sampling(90k) */
-  int dropped_results;        /* number of results to drop at the beginning */
+  double trs;          /* in ns for of 2 consecutive packets, T-Frame / N-Packets */
+  double tr_offset;    /* in ns, tr offset time of each frame */
+  int dropped_results; /* number of results to drop at the beginning */
 
   // pass criteria
   uint32_t c_max_narrow_pass;
@@ -420,7 +440,7 @@ struct st_rx_video_ebu_stat {
   bool compliant_narrow;
 
   /* Cinst, packet level check */
-  uint64_t cinmtl_initial_time;
+  uint64_t cinst_initial_time;
   int32_t cinst_max;
   int32_t cinst_min;
   uint32_t cinst_cnt;
@@ -539,19 +559,26 @@ struct st_rx_video_hdr_split_info {
 
 struct st_rx_video_sessions_mgr; /* forward declare */
 
+struct st_rx_session_priv {
+  void* session;
+  struct mtl_main_impl* impl;
+  enum mtl_session_port s_port;
+};
+
 struct st_rx_video_session_impl {
   int idx; /* index for current session */
-  struct st_rx_video_sessions_mgr* parnet;
+  bool attached;
+  struct st_rx_video_sessions_mgr* parent;
+  struct st_rx_session_priv priv[MTL_SESSION_PORT_MAX];
 
   struct st20_rx_ops ops;
   char ops_name[ST_MAX_NAME_LEN];
   uint64_t advice_sleep_us;
 
-  enum mtl_port port_maps[MT_SESSION_PORT_MAX];
-  struct mt_rx_queue* queue[MT_SESSION_PORT_MAX];
-  uint16_t port_id[MT_SESSION_PORT_MAX];
-  uint16_t st20_src_port[MT_SESSION_PORT_MAX]; /* udp port */
-  uint16_t st20_dst_port[MT_SESSION_PORT_MAX]; /* udp port */
+  enum mtl_port port_maps[MTL_SESSION_PORT_MAX];
+  struct mt_rxq_entry* rxq[MTL_SESSION_PORT_MAX];
+  uint16_t port_id[MTL_SESSION_PORT_MAX];
+  uint16_t st20_dst_port[MTL_SESSION_PORT_MAX]; /* udp port */
 
   struct st_rx_video_session_handle_impl* st20_handle;
   struct st22_rx_video_session_handle_impl* st22_handle;
@@ -559,7 +586,7 @@ struct st_rx_video_session_impl {
   struct st22_rx_video_info* st22_info;
 
   bool is_hdr_split;
-  struct st_rx_video_hdr_split_info hdr_split_info[MT_SESSION_PORT_MAX];
+  struct st_rx_video_hdr_split_info hdr_split_info[MTL_SESSION_PORT_MAX];
 
   /* st20 detector info */
   struct st_rx_video_detector detector;
@@ -575,9 +602,17 @@ struct st_rx_video_session_impl {
   int st20_frames_cnt;           /* numbers of frames requested */
   struct st_frame_trans* st20_frames;
   struct st20_pgroup st20_pg;
+  double frame_time;          /* time of the frame in nanoseconds */
+  double frame_time_sampling; /* time of the frame in sampling(90k) */
 
   size_t st20_uframe_size; /* size per user frame */
   struct st20_rx_uframe_pg_meta pg_meta;
+
+  uint32_t st22_ops_flags;       /* copy of st22_rx_ops->flags */
+  size_t st22_expect_frame_size; /* total frame size calculated from marker */
+  /* expect for each frame, st22_expect_frame_size is clear to zero in the init slot of
+   * each frame, in case we don't get maker, it can use previous frame size */
+  size_t st22_expect_size_per_frame;
 
   /* rtp info */
   struct rte_ring* rtps_ring;
@@ -596,6 +631,7 @@ struct st_rx_video_session_impl {
   struct mtl_dma_lender_dev* dma_dev;
   uint16_t dma_nb_desc;
   struct st_rx_video_slot_impl* dma_slot;
+  bool dma_copy;
 #ifdef ST_PCAPNG_ENABLED
   /* pcap dumper */
   uint32_t pcapng_dumped_pkts;
@@ -603,6 +639,7 @@ struct st_rx_video_session_impl {
   uint32_t pcapng_max_pkts;
   struct rte_pcapng* pcapng;
   struct rte_mempool* pcapng_pool;
+  char pcapng_file_name[MTL_PCAP_FILE_MAX_LEN];
 #endif
   /* additional lcore for pkt handling */
   unsigned int pkt_lcore;
@@ -627,7 +664,7 @@ struct st_rx_video_session_impl {
   int stat_pkts_idx_oo_bitmap;
   int stat_pkts_enqueue_fallback; /* for pkt lcore */
   int stat_pkts_offset_dropped;
-  int stat_pkts_redunant_dropped;
+  int stat_pkts_redundant_dropped;
   int stat_pkts_wrong_hdr_dropped;
   int stat_pkts_received;
   int stat_pkts_multi_segments_received;
@@ -639,6 +676,7 @@ struct st_rx_video_session_impl {
   int stat_pkts_wrong_payload_hdr_split;
   int stat_mismatch_hdr_split_frame;
   int stat_frames_dropped;
+  int stat_frames_pks_missed;
   rte_atomic32_t stat_frames_received;
   int stat_slices_received;
   int stat_pkts_slice_fail;
@@ -647,21 +685,24 @@ struct st_rx_video_session_impl {
   uint32_t stat_vsync_mismatch;
   uint32_t stat_slot_get_frame_fail;
   uint32_t stat_slot_query_ext_fail;
+  uint64_t stat_bytes_received;
 
   struct st_rx_video_ebu_info ebu_info;
   struct st_rx_video_ebu_stat ebu;
   struct st_rx_video_ebu_result ebu_result;
 
-  /* ret > 0 if it's handled by DMA */
   int (*pkt_handler)(struct st_rx_video_session_impl* s, struct rte_mbuf* mbuf,
-                     enum mt_session_port s_port, bool ctrl_thread);
+                     enum mtl_session_port s_port, bool ctrl_thread);
 };
 
 struct st_rx_video_sessions_mgr {
-  struct mtl_main_impl* parnet;
+  struct mtl_main_impl* parent;
   int idx;     /* index for current session mgr */
   int max_idx; /* max session index */
-  struct mt_sch_tasklet_impl* tasklet;
+  /* pkt rx task */
+  struct mt_sch_tasklet_impl* pkt_rx_tasklet;
+  /* control task */
+  struct mt_sch_tasklet_impl* ctl_tasklet;
 
   struct st_rx_video_session_impl* sessions[ST_SCH_MAX_RX_VIDEO_SESSIONS];
   /* protect session, spin(fast) lock as it call from tasklet aslo */
@@ -677,7 +718,13 @@ struct st_tx_audio_session_pacing {
   uint32_t rtp_time_stamp;
   /* timestamp for pacing */
   uint32_t pacing_time_stamp;
-  uint64_t tsc_time_cursor; /* in ns, tsc time cursor for packet pacing */
+  uint64_t cur_epoch_time;
+  /* in ns, tsc time cursor for packet pacing */
+  uint64_t tsc_time_cursor;
+  /* ptp time may onward */
+  uint32_t max_onward_epochs;
+  /* sometimes it may reach tx_audio_session_sync_pacing in a late time */
+  uint32_t max_late_epochs;
 };
 
 struct st_tx_audio_session_impl {
@@ -685,18 +732,22 @@ struct st_tx_audio_session_impl {
   struct st30_tx_ops ops;
   char ops_name[ST_MAX_NAME_LEN];
 
-  enum mtl_port port_maps[MT_SESSION_PORT_MAX];
-  struct rte_mempool* mbuf_mempool_hdr[MT_SESSION_PORT_MAX];
+  enum mtl_port port_maps[MTL_SESSION_PORT_MAX];
+  struct rte_mempool* mbuf_mempool_hdr[MTL_SESSION_PORT_MAX];
   struct rte_mempool* mbuf_mempool_chain;
   bool tx_mono_pool; /* if reuse tx mono pool */
+  bool tx_no_chain;  /* if tx not use chain mbuf */
   /* if the eth dev support chain buff */
-  bool eth_has_chain[MT_SESSION_PORT_MAX];
+  bool eth_has_chain[MTL_SESSION_PORT_MAX];
   /* if the eth dev support ipv4 checksum offload */
-  bool eth_ipv4_cksum_offload[MT_SESSION_PORT_MAX];
-  struct rte_mbuf* inflight[MT_SESSION_PORT_MAX];
-  bool has_inflight[MT_SESSION_PORT_MAX];
-  int inflight_cnt[MT_SESSION_PORT_MAX]; /* for stats */
+  bool eth_ipv4_cksum_offload[MTL_SESSION_PORT_MAX];
+  struct rte_mbuf* inflight[MTL_SESSION_PORT_MAX];
+  int inflight_cnt[MTL_SESSION_PORT_MAX]; /* for stats */
+  struct mt_u64_fifo* trans_ring[MTL_SESSION_PORT_MAX];
+  uint16_t trans_ring_thresh;
+  struct rte_mbuf* trans_ring_inflight[MTL_SESSION_PORT_MAX];
   struct rte_ring* packet_ring;
+  bool pacing_in_build; /* if control pacing in the build stage */
 
   uint16_t st30_frames_cnt; /* numbers of frames requested */
   struct st_frame_trans* st30_frames;
@@ -705,11 +756,13 @@ struct st_tx_audio_session_impl {
   enum st30_tx_frame_status st30_frame_stat;
 
   uint16_t st30_ipv4_packet_id;
-  uint16_t st30_src_port[MT_SESSION_PORT_MAX]; /* udp port */
-  uint16_t st30_dst_port[MT_SESSION_PORT_MAX]; /* udp port */
-  struct st_rfc3550_audio_hdr hdr[MT_SESSION_PORT_MAX];
+  uint16_t st30_src_port[MTL_SESSION_PORT_MAX]; /* udp port */
+  uint16_t st30_dst_port[MTL_SESSION_PORT_MAX]; /* udp port */
+  struct st_rfc3550_audio_hdr hdr[MTL_SESSION_PORT_MAX];
 
   struct st_tx_audio_session_pacing pacing;
+  bool calculate_time_cursor;
+  bool check_frame_done_time;
 
   uint32_t pkt_len;           /* data len(byte) for each pkt */
   uint32_t st30_pkt_size;     /* size for each pkt which include the header */
@@ -720,16 +773,23 @@ struct st_tx_audio_session_impl {
   uint32_t st30_rtp_time;     /* record rtp time */
 
   int stat_build_ret_code;
+  int stat_transmit_ret_code;
 
   /* stat */
   rte_atomic32_t st30_stat_frame_cnt;
   int st30_stat_pkt_cnt;
-  uint32_t st30_epoch_mismatch; /* count of frame lower than pacing */
+  /* count of frame not match the epoch */
+  uint32_t stat_epoch_mismatch;
+  uint32_t stat_epoch_drop;
+  uint32_t stat_epoch_onward;
+  uint32_t stat_epoch_late;
   uint32_t stat_error_user_timestamp;
+  uint32_t stat_exceed_frame_time;
+  uint64_t stat_last_time;
 };
 
 struct st_tx_audio_sessions_mgr {
-  struct mtl_main_impl* parnet;
+  struct mtl_main_impl* parent;
   int idx;     /* index for current sessions mgr */
   int max_idx; /* max session index */
   struct mt_sch_tasklet_impl* tasklet;
@@ -737,11 +797,11 @@ struct st_tx_audio_sessions_mgr {
   /* all audio sessions share same ring/queue */
   struct rte_ring* ring[MTL_PORT_MAX];
   uint16_t port_id[MTL_PORT_MAX];
-  struct mt_tx_queue* queue[MTL_PORT_MAX];
+  struct mt_txq_entry* queue[MTL_PORT_MAX];
 
-  struct st_tx_audio_session_impl* sessions[ST_MAX_TX_AUDIO_SESSIONS];
+  struct st_tx_audio_session_impl* sessions[ST_SCH_MAX_TX_AUDIO_SESSIONS];
   /* protect session, spin(fast) lock as it call from tasklet aslo */
-  rte_spinlock_t mutex[ST_MAX_TX_AUDIO_SESSIONS]; /* protect session */
+  rte_spinlock_t mutex[ST_SCH_MAX_TX_AUDIO_SESSIONS]; /* protect session */
 
   rte_atomic32_t transmitter_started;
 
@@ -752,7 +812,7 @@ struct st_tx_audio_sessions_mgr {
 };
 
 struct st_audio_transmitter_impl {
-  struct mtl_main_impl* parnet;
+  struct mtl_main_impl* parent;
   struct st_tx_audio_sessions_mgr* mgr;
   struct mt_sch_tasklet_impl* tasklet;
   int idx; /* index for current transmitter */
@@ -801,15 +861,17 @@ struct st_rx_audio_ebu_result {
 
 struct st_rx_audio_session_impl {
   int idx; /* index for current session */
+  bool attached;
   struct st30_rx_ops ops;
   char ops_name[ST_MAX_NAME_LEN];
+  struct st_rx_session_priv priv[MTL_SESSION_PORT_MAX];
+  struct st_rx_audio_session_handle_impl* st30_handle;
 
-  enum mtl_port port_maps[MT_SESSION_PORT_MAX];
-  struct mt_rx_queue* queue[MT_SESSION_PORT_MAX];
-  uint16_t port_id[MT_SESSION_PORT_MAX];
+  enum mtl_port port_maps[MTL_SESSION_PORT_MAX];
+  struct mt_rxq_entry* rxq[MTL_SESSION_PORT_MAX];
+  uint16_t port_id[MTL_SESSION_PORT_MAX];
 
-  uint16_t st30_src_port[MT_SESSION_PORT_MAX]; /* udp port */
-  uint16_t st30_dst_port[MT_SESSION_PORT_MAX]; /* udp port */
+  uint16_t st30_dst_port[MTL_SESSION_PORT_MAX]; /* udp port */
 
   struct st_frame_trans* st30_frames;
   int st30_frames_cnt; /* numbers of frames requested */
@@ -833,25 +895,27 @@ struct st_rx_audio_session_impl {
   /* status */
   int st30_stat_pkts_dropped;
   int st30_stat_pkts_wrong_hdr_dropped;
+  int st30_stat_pkts_len_mismatch_dropped;
   int st30_stat_pkts_received;
   int st30_stat_frames_dropped;
   rte_atomic32_t st30_stat_frames_received;
   int st30_stat_pkts_rtp_ring_full;
   uint64_t st30_stat_last_time;
+
   struct st_rx_audio_ebu_info ebu_info;
   struct st_rx_audio_ebu_stat ebu;
   struct st_rx_audio_ebu_result ebu_result;
 };
 
 struct st_rx_audio_sessions_mgr {
-  struct mtl_main_impl* parnet;
+  struct mtl_main_impl* parent;
   int idx;     /* index for current session mgr */
   int max_idx; /* max session index */
   struct mt_sch_tasklet_impl* tasklet;
 
-  struct st_rx_audio_session_impl* sessions[ST_MAX_RX_AUDIO_SESSIONS];
+  struct st_rx_audio_session_impl* sessions[ST_SCH_MAX_RX_AUDIO_SESSIONS];
   /* protect session, spin(fast) lock as it call from tasklet aslo */
-  rte_spinlock_t mutex[ST_MAX_RX_AUDIO_SESSIONS];
+  rte_spinlock_t mutex[ST_SCH_MAX_RX_AUDIO_SESSIONS];
 };
 
 struct st_tx_ancillary_session_pacing {
@@ -862,7 +926,10 @@ struct st_tx_ancillary_session_pacing {
   uint32_t rtp_time_stamp;
   /* timestamp for pacing */
   uint32_t pacing_time_stamp;
+  uint64_t cur_epoch_time;
   double tsc_time_cursor; /* in ns, tsc time cursor for packet pacing */
+  /* ptp time may onward */
+  uint32_t max_onward_epochs;
 };
 
 struct st_tx_ancillary_session_impl {
@@ -870,17 +937,17 @@ struct st_tx_ancillary_session_impl {
   struct st40_tx_ops ops;
   char ops_name[ST_MAX_NAME_LEN];
 
-  enum mtl_port port_maps[MT_SESSION_PORT_MAX];
-  struct rte_mempool* mbuf_mempool_hdr[MT_SESSION_PORT_MAX];
+  enum mtl_port port_maps[MTL_SESSION_PORT_MAX];
+  struct rte_mempool* mbuf_mempool_hdr[MTL_SESSION_PORT_MAX];
   struct rte_mempool* mbuf_mempool_chain;
   bool tx_mono_pool; /* if reuse tx mono pool */
+  bool tx_no_chain;  /* if tx not use chain mbuf */
   /* if the eth dev support chain buff */
-  bool eth_has_chain[MT_SESSION_PORT_MAX];
+  bool eth_has_chain[MTL_SESSION_PORT_MAX];
   /* if the eth dev support ipv4 checksum offload */
-  bool eth_ipv4_cksum_offload[MT_SESSION_PORT_MAX];
-  struct rte_mbuf* inflight[MT_SESSION_PORT_MAX];
-  bool has_inflight[MT_SESSION_PORT_MAX];
-  int inflight_cnt[MT_SESSION_PORT_MAX]; /* for stats */
+  bool eth_ipv4_cksum_offload[MTL_SESSION_PORT_MAX];
+  struct rte_mbuf* inflight[MTL_SESSION_PORT_MAX];
+  int inflight_cnt[MTL_SESSION_PORT_MAX]; /* for stats */
   struct rte_ring* packet_ring;
 
   uint32_t max_pkt_len; /* max data len(byte) for each pkt */
@@ -891,11 +958,13 @@ struct st_tx_ancillary_session_impl {
   enum st40_tx_frame_status st40_frame_stat;
 
   uint16_t st40_ipv4_packet_id;
-  uint16_t st40_src_port[MT_SESSION_PORT_MAX]; /* udp port */
-  uint16_t st40_dst_port[MT_SESSION_PORT_MAX]; /* udp port */
-  struct st_rfc8331_anc_hdr hdr[MT_SESSION_PORT_MAX];
+  uint16_t st40_src_port[MTL_SESSION_PORT_MAX]; /* udp port */
+  uint16_t st40_dst_port[MTL_SESSION_PORT_MAX]; /* udp port */
+  struct st_rfc8331_anc_hdr hdr[MTL_SESSION_PORT_MAX];
 
   struct st_tx_ancillary_session_pacing pacing;
+  bool calculate_time_cursor;
+  bool check_frame_done_time;
   struct st_fps_timing fps_tm;
 
   uint16_t st40_seq_id;     /* seq id for each pkt */
@@ -909,12 +978,17 @@ struct st_tx_ancillary_session_impl {
   /* stat */
   rte_atomic32_t st40_stat_frame_cnt;
   int st40_stat_pkt_cnt;
-  uint32_t st40_epoch_mismatch; /* count of frame lower than pacing */
+  /* count of frame not match the epoch */
+  uint32_t stat_epoch_mismatch;
+  uint32_t stat_epoch_drop;
+  uint32_t stat_epoch_onward;
   uint32_t stat_error_user_timestamp;
+  uint32_t stat_exceed_frame_time;
+  uint64_t stat_last_time;
 };
 
 struct st_tx_ancillary_sessions_mgr {
-  struct mtl_main_impl* parnet;
+  struct mtl_main_impl* parent;
   int idx;     /* index for current sessions mgr */
   int max_idx; /* max session index */
   struct mt_sch_tasklet_impl* tasklet;
@@ -922,7 +996,7 @@ struct st_tx_ancillary_sessions_mgr {
   /* all anc sessions share same ring/queue */
   struct rte_ring* ring[MTL_PORT_MAX];
   uint16_t port_id[MTL_PORT_MAX];
-  struct mt_tx_queue* queue[MTL_PORT_MAX];
+  struct mt_txq_entry* queue[MTL_PORT_MAX];
 
   struct st_tx_ancillary_session_impl* sessions[ST_MAX_TX_ANC_SESSIONS];
   /* protect session, spin(fast) lock as it call from tasklet aslo */
@@ -938,16 +1012,18 @@ struct st_tx_ancillary_sessions_mgr {
 
 struct st_rx_ancillary_session_impl {
   int idx; /* index for current session */
+  bool attached;
   struct st40_rx_ops ops;
   char ops_name[ST_MAX_NAME_LEN];
+  struct st_rx_session_priv priv[MTL_SESSION_PORT_MAX];
+  struct st_rx_ancillary_session_handle_impl* st40_handle;
 
-  enum mtl_port port_maps[MT_SESSION_PORT_MAX];
-  struct mt_rx_queue* queue[MT_SESSION_PORT_MAX];
-  uint16_t port_id[MT_SESSION_PORT_MAX];
+  enum mtl_port port_maps[MTL_SESSION_PORT_MAX];
+  struct mt_rxq_entry* rxq[MTL_SESSION_PORT_MAX];
+  uint16_t port_id[MTL_SESSION_PORT_MAX];
   struct rte_ring* packet_ring;
 
-  uint16_t st40_src_port[MT_SESSION_PORT_MAX]; /* udp port */
-  uint16_t st40_dst_port[MT_SESSION_PORT_MAX]; /* udp port */
+  uint16_t st40_dst_port[MTL_SESSION_PORT_MAX]; /* udp port */
 
   int st40_seq_id; /* seq id for each pkt */
 
@@ -961,7 +1037,7 @@ struct st_rx_ancillary_session_impl {
 };
 
 struct st_rx_ancillary_sessions_mgr {
-  struct mtl_main_impl* parnet;
+  struct mtl_main_impl* parent;
   int idx;     /* index for current session mgr */
   int max_idx; /* max session index */
   struct mt_sch_tasklet_impl* tasklet;
@@ -972,7 +1048,7 @@ struct st_rx_ancillary_sessions_mgr {
 };
 
 struct st_ancillary_transmitter_impl {
-  struct mtl_main_impl* parnet;
+  struct mtl_main_impl* parent;
   struct st_tx_ancillary_sessions_mgr* mgr;
   struct mt_sch_tasklet_impl* tasklet;
   int idx; /* index for current transmitter */
@@ -1013,7 +1089,7 @@ struct st20_get_converter_request {
 
 struct st22_encode_session_impl {
   int idx;
-  void* parnet; /* point to struct st22_encode_dev_impl */
+  void* parent; /* point to struct st22_encode_dev_impl */
   st22_encode_priv session;
   enum mt_handle_type type; /* for sanity check */
 
@@ -1024,17 +1100,17 @@ struct st22_encode_session_impl {
 
 struct st22_encode_dev_impl {
   enum mt_handle_type type; /* for sanity check */
-  struct mtl_main_impl* parnet;
+  struct mtl_main_impl* parent;
   int idx;
   char name[ST_MAX_NAME_LEN];
   struct st22_encoder_dev dev;
   rte_atomic32_t ref_cnt;
-  struct st22_encode_session_impl sessions[ST_MAX_SESSIIONS_PER_ENCODER];
+  struct st22_encode_session_impl sessions[ST_MAX_SESSIONS_PER_ENCODER];
 };
 
 struct st22_decode_session_impl {
   int idx;
-  void* parnet; /* point to struct st22_decode_dev_impl */
+  void* parent; /* point to struct st22_decode_dev_impl */
   st22_decode_priv session;
   enum mt_handle_type type; /* for sanity check */
 
@@ -1043,17 +1119,17 @@ struct st22_decode_session_impl {
 
 struct st22_decode_dev_impl {
   enum mt_handle_type type; /* for sanity check */
-  struct mtl_main_impl* parnet;
+  struct mtl_main_impl* parent;
   int idx;
   char name[ST_MAX_NAME_LEN];
   struct st22_decoder_dev dev;
   rte_atomic32_t ref_cnt;
-  struct st22_decode_session_impl sessions[ST_MAX_SESSIIONS_PER_DECODER];
+  struct st22_decode_session_impl sessions[ST_MAX_SESSIONS_PER_DECODER];
 };
 
 struct st20_convert_session_impl {
   int idx;
-  void* parnet; /* point to struct st20_convert_dev_impl */
+  void* parent; /* point to struct st20_convert_dev_impl */
   st20_convert_priv session;
   enum mt_handle_type type; /* for sanity check */
 
@@ -1062,17 +1138,17 @@ struct st20_convert_session_impl {
 
 struct st20_convert_dev_impl {
   enum mt_handle_type type; /* for sanity check */
-  struct mtl_main_impl* parnet;
+  struct mtl_main_impl* parent;
   int idx;
   char name[ST_MAX_NAME_LEN];
   struct st20_converter_dev dev;
   rte_atomic32_t ref_cnt;
-  struct st20_convert_session_impl sessions[ST_MAX_SESSIIONS_PER_CONVERTER];
+  struct st20_convert_session_impl sessions[ST_MAX_SESSIONS_PER_CONVERTER];
 };
 
 struct st_dl_plugin_impl {
   int idx;
-  char path[ST_PLUNGIN_MAX_PATH_LEN];
+  char path[ST_PLUGIN_MAX_PATH_LEN];
   void* dl_handle;
   st_plugin_create_fn create;
   st_plugin_priv handle;
@@ -1091,7 +1167,7 @@ struct st_plugin_mgr {
 };
 
 struct st_tx_video_session_handle_impl {
-  struct mtl_main_impl* parnet;
+  struct mtl_main_impl* parent;
   enum mt_handle_type type;
   struct mt_sch_impl* sch; /* the sch this session attached */
   int quota_mbs;           /* data quota for this session */
@@ -1099,7 +1175,7 @@ struct st_tx_video_session_handle_impl {
 };
 
 struct st22_tx_video_session_handle_impl {
-  struct mtl_main_impl* parnet;
+  struct mtl_main_impl* parent;
   enum mt_handle_type type;
   struct mt_sch_impl* sch; /* the sch this session attached */
   int quota_mbs;           /* data quota for this session */
@@ -1107,19 +1183,21 @@ struct st22_tx_video_session_handle_impl {
 };
 
 struct st_tx_audio_session_handle_impl {
-  struct mtl_main_impl* parnet;
+  struct mtl_main_impl* parent;
   enum mt_handle_type type;
+  struct mt_sch_impl* sch; /* the sch this session attached */
+  int quota_mbs;           /* data quota for this session */
   struct st_tx_audio_session_impl* impl;
 };
 
 struct st_tx_ancillary_session_handle_impl {
-  struct mtl_main_impl* parnet;
+  struct mtl_main_impl* parent;
   enum mt_handle_type type;
   struct st_tx_ancillary_session_impl* impl;
 };
 
 struct st_rx_video_session_handle_impl {
-  struct mtl_main_impl* parnet;
+  struct mtl_main_impl* parent;
   enum mt_handle_type type;
   struct mt_sch_impl* sch; /* the sch this session attached */
   int quota_mbs;           /* data quota for this session */
@@ -1127,7 +1205,7 @@ struct st_rx_video_session_handle_impl {
 };
 
 struct st22_rx_video_session_handle_impl {
-  struct mtl_main_impl* parnet;
+  struct mtl_main_impl* parent;
   enum mt_handle_type type;
   struct mt_sch_impl* sch; /* the sch this session attached */
   int quota_mbs;           /* data quota for this session */
@@ -1135,13 +1213,15 @@ struct st22_rx_video_session_handle_impl {
 };
 
 struct st_rx_audio_session_handle_impl {
-  struct mtl_main_impl* parnet;
+  struct mtl_main_impl* parent;
   enum mt_handle_type type;
+  struct mt_sch_impl* sch; /* the sch this session attached */
+  int quota_mbs;           /* data quota for this session */
   struct st_rx_audio_session_impl* impl;
 };
 
 struct st_rx_ancillary_session_handle_impl {
-  struct mtl_main_impl* parnet;
+  struct mtl_main_impl* parent;
   enum mt_handle_type type;
   struct st_rx_ancillary_session_impl* impl;
 };

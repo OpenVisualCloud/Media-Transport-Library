@@ -4,7 +4,11 @@ on: [push, pull_request]
 
 env:
   # Customize the env if
+  # Disable since mtl patched dpdk pcapng and this job use prebuilt pkg
   MTL_BUILD_DISABLE_PCAPNG: true
+
+permissions:
+  contents: read
 
 jobs:
   build:
@@ -17,8 +21,13 @@ jobs:
         os: [ubuntu-latest]
 
     steps:
-    - uses: actions/checkout@v3
-    - uses: DoozyX/clang-format-lint-action@v0.14
+    - name: Harden Runner
+      uses: step-security/harden-runner@55d479fb1c5bcad5a4f9099a5d9f37c8857b2845 # v2.4.1
+      with:
+        egress-policy: audit
+
+    - uses: actions/checkout@c85c95e3d7251135ab7dc9ce3241c5835cc595a9 # v3.5.3
+    - uses: DoozyX/clang-format-lint-action@a83a8fb7d371f66da7dd1c4f33a193023899494b # v0.16
       with:
         source: '.'
         extensions: 'hpp,h,cpp,c,cc'
@@ -28,31 +37,19 @@ jobs:
         apt-get update -y
         apt-get install -y sudo git gcc meson python3 python3-pip pkg-config libnuma-dev libjson-c-dev libpcap-dev libgtest-dev libsdl2-dev libsdl2-ttf-dev libssl-dev
         apt-get install -y dpdk-dev
-        apt-get install -y libavcodec-dev
-        apt-get install -y libobs-dev
+        apt-get install -y doxygen
 
     - name: Install the python package
-      run: pip install pyelftools ninja
+      run: pip install pyelftools==0.29 ninja==1.11.1
 
     - name: Git config
       run: |
         git config --global user.email "you@example.com"
         git config --global user.name "Your Name"
 
-    #- name: Build dpdk
-    #  run: ./script/build_dpdk.sh
-
     - name: Build
       run: |
         ./build.sh
-
-    - name: Build st22 ffmpeg plugin
-      run: |
-        ./script/build_st22_ffmpeg_plugin.sh
-
-    - name: Build obs plugin
-      run: |
-        ./script/build_obs_plugin.sh
 
     - name: Build with debug
       run: |
@@ -63,3 +60,9 @@ jobs:
       run: |
         rm build -rf
         MTL_BUILD_ENABLE_KNI=true ./build.sh
+
+    - name: doxygen
+      run: |
+        cd doc/doxygen
+        ./build-doc.sh
+        cd ../../

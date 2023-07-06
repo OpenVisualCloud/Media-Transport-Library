@@ -192,7 +192,7 @@ static int rx_st22p_create_transport(struct mtl_main_impl* impl, struct st22p_rx
   memset(&ops_rx, 0, sizeof(ops_rx));
   ops_rx.name = ops->name;
   ops_rx.priv = ctx;
-  ops_rx.num_port = RTE_MIN(ops->port.num_port, MTL_PORT_MAX);
+  ops_rx.num_port = RTE_MIN(ops->port.num_port, MTL_SESSION_PORT_MAX);
   for (int i = 0; i < ops_rx.num_port; i++) {
     memcpy(ops_rx.sip_addr[i], ops->port.sip_addr[i], MTL_IP_ADDR_LEN);
     strncpy(ops_rx.port[i], ops->port.port[i], MTL_PORT_MAX_LEN);
@@ -295,7 +295,7 @@ static int rx_st22p_init_dst_fbs(struct mtl_main_impl* impl, struct st22p_rx_ctx
     }
   }
 
-  info("%s(%d), size %ld fmt %d with %u frames\n", __func__, idx, dst_size,
+  info("%s(%d), size %" PRIu64 " fmt %d with %u frames\n", __func__, idx, dst_size,
        ops->output_fmt, ctx->framebuff_cnt);
   return 0;
 }
@@ -402,7 +402,7 @@ st22p_rx_handle st22p_rx_create(mtl_handle mt, struct st22p_rx_ops* ops) {
     return NULL;
   }
 
-  dst_size = st_frame_size(ops->output_fmt, ops->width, ops->height);
+  dst_size = st_frame_size(ops->output_fmt, ops->width, ops->height, false);
   if (!dst_size) {
     err("%s(%d), get dst size fail\n", __func__, idx);
     return NULL;

@@ -4,10 +4,12 @@
 sources = files(
   'mt_main.c',
   'mt_dev.c',
+  'mt_queue.c',
   'mt_sch.c',
   'mt_cni.c',
   'mt_ptp.c',
   'mt_arp.c',
+  'mt_dhcp.c',
   'mt_mcast.c',
   'mt_util.c',
   'mt_dma.c',
@@ -15,6 +17,8 @@ sources = files(
   'mt_config.c',
   'mt_socket.c',
   'mt_stat.c',
+  'mt_shared_queue.c',
+  'mt_shared_rss.c'
 )
 
 if get_option('enable_kni') == true

@@ -1,10 +1,62 @@
-# Change log
+# Changelog
 
-## Change log for 22.12:
+## Changelog for 23.07
+
+* lib: add DHCP client implementation.
+* ice: update driver to 1.11.14
+* udp: add LD_PRELOAD to support no-code change deployment, see doc/udp.md
+* udp: add select/epoll/send_msg/recvmsg support.
+* ecosystem/ffmpeg: add output support.
+* rss: add shared mode support, see mt_shared_rss.h
+* st/video: add multi_src_port support.
+* sample: add hdr split with gpu direct, see app/sample/ext_frame/rx_st20p_hdr_split_gpu_direct.c
+* api/ops: add udp_src_port configuration
+* build: disable Werror for debug build.
+* tx/st30: separate build and pacing stage.
+* tx/pacing: add epoch drop/onward stat.
+* tx/st2110: add epoch information in stxx_tx_frame_meta for get_next_frame callback.
+* dpdk: upgrade dpdk version to latest 23.03
+* Windows: add MSYS2 build guide and CI
+* vm: add Windows guest OS support, see vm_WIN.md.
+* rx/video: add fpt(first packet time to epoch) in struct st20_rx_frame_meta.
+* st20p: add interlace format support, refer to tests/script/loop_json/st20p_2v_1080i50.json
+* CI: add ossf scorecard support.
+* gtest: support run with AWS ena driver.
+* dhcp: set proto to dhcp in interfaces segment of json to enable DHCP.
+* rx/video: support out of sequence for both first and last(marker) packet.
+* udp: add gso(general segment offload) for tx
+* udp: add reuse port support.
+* udp: add fork support
+* Windows: add MSVC sample build, refer to app/sample/msvc/imtl_sample.
+
+## Changelog for 23.04
+
+* dpdk: upgrade dpdk version to latest 22.11 for both windows and linux.
+* ptp: add pi controller and software frequency adjust to improve the accuracy to ~100ns.
+* mtl_init_params: add gateway and netmask support for wan.
+* udp: introduce a highly efficient udp stack support, see mudp_api.h
+* udp: add POSIX socket compatible(file descriptor) API support, see mudp_sockfd_api.h
+* udp: add sample code, see app/udp
+* arp: add zero timeout support for UDP stack.
+* mtl_init_params: add multi port support, user can initial MTL instance with up to 8 ports. See tests/script/multi_port_json/ for how to use from RxTxApp.
+* sch/tasklet: add runtime unregister support.
+* udp: add lcore daemon mode support for rx, see MTL_FLAG_UDP_LCORE.
+* dev: add rss mode support for rx queue in case no rte_flow available.
+* st2110/rx: add rss queue mode support
+* st2110/tx/video: add tx no chain mode support
+* st2110/tx/video: enable IOVA PA mode in 2M huge page environment
+* sample/pipeline: add SQD split and merge sample
+* sample/pipeline: add downscale sample
+* sample/pipeline: add 2si-down sample
+* CSC: add rfc4175 422be12 to le/planar avx512 version
+* AWS: add ENA running guide, see aws.md for detail
+
+## Changelog for 22.12
+
 * tasklet: add thread and sleep option for core usage, see ST_FLAG_TASKLET_THREAD and ST_FLAG_TASKLET_SLEEP.
-* tx: add user time stamp control, see ST20_TX_FLAG_USER_TIMESTAMP/ST30_TX_FLAG_USER_TIMESTAMP/ST40_TX_FLAG_USER_TIMESTAMP.
+* tx: add user timestamp control, see ST20_TX_FLAG_USER_TIMESTAMP/ST30_TX_FLAG_USER_TIMESTAMP/ST40_TX_FLAG_USER_TIMESTAMP.
 * rx/video: add dual core redundant mode support. See st20_redundant_api.h for detail. Header split only support this dual core redundant mode.
-* lib/log: add noice level log, see ST_LOG_LEVEL_NOTICE.
+* lib/log: add notice level log, see ST_LOG_LEVEL_NOTICE.
 * build: add clang support. See "Build with clang" section in build.md.
 * tx: add user pacing control, see ST20_TX_FLAG_USER_PACING, ST30_TX_FLAG_USER_PACING, ST40_TX_FLAG_USER_PACING.
 * video: add notify_vsync callback which happened when epoch time change to a new frame, vsync period is same to fps. See notify_vsync parameter in the session create ops for detail.
@@ -23,12 +75,13 @@
 * st20p: add st_frame_convert API which both the source and destination are st_frame.
 * sample: add MSDK encode sample with MTL source, see app/msdk.
 
-## Change log for 22.09:
+## Changelog for 22.09
+
 * License: update to BSD-3
 * dpdk: update DPDK to v22.07
 * ice: update driver to 1.9.11
 * vf: add SRIOV based virtual NIC support, see vf.md.
-* vm: add SRIOV+KVM based virtulization support, see vm.md.
+* vm: add SRIOV+KVM based virtualization support, see vm.md.
 * CSC: Color format SIMD convert API from CPU little endian format to RFC4175 YUV422 10bit BE, see st_convert_api.h.
 * AF_XDP: introduce AF_XDP PMD experimental support, see af_xdp.md.
 * pipeline: introduce pipeline friendly API for both st20 tx and rx, see st_pipeline_api.h for detail.
@@ -39,11 +92,12 @@
 * Windows: support DSA for rx offload.
 * Windows: add TAP driver support.
 * API: change st20_frame_meta to st20_rx_frame_meta, also add st20_tx_frame_meta for get_next_frame of st20 tx.
-* API: change st_frame_meta to st_frame, also change the callback arg of st20p.notify_frame_done from void* to struct st_frame*.
-* plugin: add kahawai as a plugin to OBS, only rx path now.
+* API: change st_frame_meta to st_frame, also change the callback arg of st20p.notify_frame_done from (void*) to struct (st_frame*).
+* plugin: add Intel® Media Transport Library as a plugin to OBS, only rx path now.
 * fps: add 120(119.88) fps support, see ST_FPS_P119_88.
 
-## Change log for 22.06:
+## Changelog for 22.06
+
 * User frame mode with uframe_pg_callback for rx video session.
 * Color format SIMD convert API between RFC4175 YUV422 10bit BE and other LE format, see st_convert_api.h.
 * SIMD build and runtime framework.
@@ -58,7 +112,8 @@
 * tx/st20: runtime session create/free features, adding runtime ratelimit support.
 * st30: support 125us and 80us in audio pacing
 
-## Change log for Beta 22.04:
+## Changelog for Beta 22.04
+
 * Enabled field mode to support 1080i,PAL,NTSC with narrow pacing.
 * Mempool usage optimization for both TX/RX, each TX session has dedicated mempool, one mempool for each RX queue. It also improve LLC affinity extremely.
 * DMA offload support for RX video, lcore usage reduced.
@@ -73,9 +128,10 @@
 * PCAP dump API support for RX video session.
 * Support for yuv444 8, 10, 12, 16 bit.
 
-## Change log for V0.7.1:
+## Changelog for V0.7.1
+
 * Dynamic IP address change support for RX video session.
-* Provide meta data info in the RX callback.
+* Provide metadata info in the RX callback.
 * Full audio channels support.
 * GPM(general packet mode) and BPM(block packet mode) support for TX.
 * 8K resolution support for both TX and RX.
@@ -83,5 +139,6 @@
 * Add rtp path sample code.
 * Add ST2110-22 sample code.
 
-## Change log for first version V0.7.0:
+## Changelog for first version V0.7.0
+
 * First version with new design based on DPDK 21.08.

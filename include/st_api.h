@@ -18,6 +18,15 @@
 extern "C" {
 #endif
 
+/** 90k video sampling rate */
+#define ST10_VIDEO_SAMPLING_RATE_90K (90 * 1000)
+/** 48k audio sampling rate */
+#define ST10_AUDIO_SAMPLING_RATE_48K (48 * 1000)
+/** 44.1k audio sampling rate */
+#define ST10_AUDIO_SAMPLING_RATE_44K (441 * 100)
+/** 96k audio sampling rate */
+#define ST10_AUDIO_SAMPLING_RATE_96K (96 * 1000)
+
 /**
  * Timestamp type of st2110-10
  */
@@ -117,6 +126,17 @@ MTL_PACK(struct st_rfc3550_rtp_hdr {
 #endif
 
 /**
+ * The structure describing the destination address(ip addr and port) info for TX.
+ * Leave redundant info to zero if the session only has primary port.
+ */
+struct st_tx_dest_info {
+  /** destination IP address of sender */
+  uint8_t dip_addr[MTL_PORT_MAX][MTL_IP_ADDR_LEN];
+  /** UDP port number */
+  uint16_t udp_port[MTL_PORT_MAX];
+};
+
+/**
  * The structure describing the source address(ip addr and port) info for RX.
  * Leave redundant info to zero if the session only has primary port.
  */
@@ -198,6 +218,15 @@ static inline bool st_is_frame_complete(enum st_frame_status status) {
 double st_frame_rate(enum st_fps fps);
 
 /**
+ * Helper function returning enum st_fps from frame rate
+ * @param framerate
+ *   frame rate number
+ * @return
+ *   enum st_fps fps.
+ */
+enum st_fps st_frame_rate_to_st_fps(double framerate);
+
+/**
  * Helper function to convert ST10_TIMESTAMP_FMT_TAI to ST10_TIMESTAMP_FMT_MEDIA_CLK.
  *
  * @param tai_ns
@@ -257,6 +286,45 @@ static inline uint32_t st10_get_media_clk(enum st10_timestamp_fmt tfmt,
                                           uint64_t timestamp, uint32_t sampling_rate) {
   if (tfmt == ST10_TIMESTAMP_FMT_MEDIA_CLK) return (uint32_t)timestamp;
   return st10_tai_to_media_clk(timestamp, sampling_rate);
+}
+
+/**
+ * Helper function to get tx queues cnt for st sessions.
+ *
+ * @param st20_sessions
+ * st20 tx sessions count.
+ * @param st30_sessions
+ * st30 tx sessions count.
+ * @param st30_sessions
+ * st30 sessions count.
+ * @return
+ *   queues count.
+ */
+static inline uint16_t st_tx_sessions_queue_cnt(uint16_t st20_sessions,
+                                                uint16_t st30_sessions,
+                                                uint16_t st40_sessions) {
+  uint16_t queues = st20_sessions;
+  if (st30_sessions) queues++;
+  if (st40_sessions) queues++;
+  return queues;
+}
+
+/**
+ * Helper function to get tx queues cnt for st sessions.
+ *
+ * @param st20_sessions
+ * st20 tx sessions count.
+ * @param st30_sessions
+ * st30 tx sessions count.
+ * @param st30_sessions
+ * st30 sessions count.
+ * @return
+ *   queues count.
+ */
+static inline uint16_t st_rx_sessions_queue_cnt(uint16_t st20_sessions,
+                                                uint16_t st30_sessions,
+                                                uint16_t st40_sessions) {
+  return st20_sessions + st30_sessions + st40_sessions;
 }
 
 #if defined(__cplusplus)

@@ -5,19 +5,38 @@
 #pragma once
 
 #ifdef WINDOWSENV /* Windows */
-#include <Winsock2.h>
+// clang-format off
+#include <winsock2.h>
+#include <windows.h>
+// clang-format on
 #include <ws2tcpip.h>
 #ifndef sleep
 #define sleep(x) Sleep(1000 * x)
 #endif
 #else /* Linux */
 #include <arpa/inet.h>
+#include <poll.h>
 #endif
+
 #include <unistd.h>
+
 #ifdef CLOCK_MONOTONIC_RAW
 #define ST_CLOCK_MONOTONIC_ID CLOCK_MONOTONIC_RAW
 #else
 #define ST_CLOCK_MONOTONIC_ID CLOCK_MONOTONIC
+#endif
+
+#ifdef WINDOWSENV
+typedef unsigned long int nfds_t;
+#endif
+
+#ifndef POLLIN /* For windows */
+/* There is data to read */
+#define POLLIN 0x001
+#endif
+
+#ifndef MSG_DONTWAIT /* For windows */
+#define MSG_DONTWAIT (0x40)
 #endif
 
 static inline int st_pthread_mutex_init(pthread_mutex_t* mutex,

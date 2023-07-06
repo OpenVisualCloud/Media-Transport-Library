@@ -1,46 +1,107 @@
-# Media Transport Library
+# Intel® Media Transport Library
+
 [![Ubuntu](https://github.com/OpenVisualCloud/Media-Transport-Library/actions/workflows/ubuntu_build.yml/badge.svg)](https://github.com/OpenVisualCloud/Media-Transport-Library/actions/workflows/ubuntu_build.yml)
-[![Centos](https://github.com/OpenVisualCloud/Media-Transport-Library/actions/workflows/centos_build.yaml/badge.svg)](https://github.com/OpenVisualCloud/Media-Transport-Library/actions/workflows/centos_build.yaml)
-[![Windows](https://github.com/OpenVisualCloud/Media-Transport-Library/actions/workflows/windows.yml/badge.svg)](https://github.com/OpenVisualCloud/Media-Transport-Library/actions/workflows/windows.yml)
-[![Clang](https://github.com/OpenVisualCloud/Media-Transport-Library/actions/workflows/clang_build.yml/badge.svg)](https://github.com/OpenVisualCloud/Media-Transport-Library/actions/workflows/clang_build.yml)
+[![Windows](https://github.com/OpenVisualCloud/Media-Transport-Library/actions/workflows/msys2_build.yml/badge.svg)](https://github.com/OpenVisualCloud/Media-Transport-Library/actions/workflows/msys2_build.yml)
 [![Test](https://github.com/OpenVisualCloud/Media-Transport-Library/actions/workflows/ubuntu_build_with_gtest.yml/badge.svg)](https://github.com/OpenVisualCloud/Media-Transport-Library/actions/workflows/ubuntu_build_with_gtest.yml)
+[![OpenSSF
+Scorecard](https://api.securityscorecards.dev/projects/github.com/OpenVisualCloud/Media-Transport-Library/badge)](https://api.securityscorecards.dev/projects/github.com/OpenVisualCloud/Media-Transport-Library)
+[![CodeQL](https://github.com/OpenVisualCloud/Media-Transport-Library/actions/workflows/codeql.yml/badge.svg)](https://github.com/OpenVisualCloud/Media-Transport-Library/actions/workflows/codeql.yml)
+[![Dependency Review](https://github.com/OpenVisualCloud/Media-Transport-Library/actions/workflows/dependency-review.yml/badge.svg)](https://github.com/OpenVisualCloud/Media-Transport-Library/actions/workflows/dependency-review.yml)
 
-## 1. Overview:
-The Media Transport Library(Kahawai) is a solution based on DPDK prepared for transmitting and receiving high quality video with low latency. It include a compliant implementation to the SMPTE ST 2110 Professional Media Over Managed IP Networks suite of standards.
+## 1. Overview
 
-#### 1.1 Features:
+The Intel® Media Transport Library is a DPDK-based solution designed for high-throughput, low-latency transmission and reception of media data. It features an efficient user-space LibOS UDP stack specifically crafted for media transport, and comes equipped with a built-in SMPTE ST 2110-compliant implementation for Professional Media over Managed IP Networks.
+
+### 1.1 Features
+
+* The User-space LibOS UDP stack features a POSIX socket compatible API.
+
+#### 1.1.1 ST2110 features
+
 * ST2110-10, ST2110-20, ST2110-21, ST2110-30, ST2110-40, ST2110-22, ST2022-7
 * 1080p, 720p, 4k, 8k and other
 * FPS: 120, 119.88, 100, 60, 59.94, 50, 30, 29.97, 25, 24, 23.98
-* All the video format listed in ST2110-20, include YUV 4:2:2 10bit and others.
+* All video formats listed in ST2110-20, including YUV 4:2:2 10-bit and others, are supported.
 * CSC support status: [status](doc/convert.md)
 
-#### 1.2 Architecture:
-Media transport library takes advantage DPDK features to implement a highly efficient, real-time & low-latency media transport stack, software based media transport makes it feasible for edge and cloud deployment based on COTS hardware.<br>
-Kahawai introduce a tasklet async based scheduler to fully utilize CPU resources, easy integration with different packet processing unit and accelerators.<br>
-The packet pacing module support different ways(algorithm) to acheive narrow pacing, RL(rate limit) is partially hardware offload while TSC is fully software based.<br>
-Kahawai also develope SIMD CSC(color space format covert), DMA, plugin interface to build a fulll video production ecosystem.
+### 1.2 Architecture
+
+The Intel® Media Transport Library leverages DPDK features to implement a highly efficient, real-time, and low-latency media transport stack. This software-based media transport solution enables deployment on edge and cloud environments using COTS hardware.
+
+The library introduces a tasklet asynchronous-based scheduler that maximizes CPU resources, making it easy to integrate with various packet processing units and accelerators.
+
+The packet pacing module supports various algorithms to achieve narrow pacing, including RL (rate limit) which is partially hardware offloaded and TSC which is fully software-based.
+
+The library also includes SIMD CSC (color space format conversion), DMA, and plugin interfaces to enable the creation of a complete video production ecosystem.
+
 <div align="center">
 <img src="doc/png/arch.png" align="center" alt="overall architecture">
 </div>
 
-## 2. Build:
-Please refer to [build guide](doc/build.md) for how to build DPDK, the library and the sample application.<br>
-For Windows, please refer to [Win build guide](doc/build_WIN.md) for how to build.
+## 2. Build
 
-## 3. Run:
-Please refer to [run guide](doc/run.md) for how to setup and run the demo pipeline application.<br>
-For Windows, please refer to [Win run guide](doc/run_WIN.md) for how to setup and run the demo.<br>
-For VF and VM support under Linux, please refer to [vf guide](doc/vf.md) for how to setup VF based on SRIOV, [vm guide](doc/vm.md) for how to setup VM based on VF passthrough.
+Please refer to [build guide](doc/build.md) for instructions on how to build DPDK, the library, and the sample application.
 
-## 4. Programmers guide:
-For how to develop application quickly based on Kahawai library, pls refer to [sample code](app/sample).
+For Windows, please refer to the [Win build guide](doc/build_WIN.md) for instructions on how to build.
 
-## 5. How to Contribute:
-We welcome community contributions to the Media Transport Library project. If you have any ideas/issues, please share it with us by the github issues or opening a pull request.
+## 3. Run ST2110
 
-#### 5.1 Coding style:
-Run below command before opening a PR.
+Please refer to [run guide](doc/run.md) for instructions on how to set up and run the demo pipeline application.
+
+For Windows, please refer to [Windows run guide](doc/run_WIN.md).
+
+To set up VF and guest VM support under a Linux host, please refer to the [VF guide](doc/vf.md) instructions on setting up VF based on SR-IOV. Additionally, please refer to the [VM guide](doc/vm.md) and [Windows VM guide](doc/vm_WIN.md) for instructions on setting up Linux and Windows guest VMs based on VF passthrough.
+
+For AWS (cloud environment), please refer to [AWS run guide](doc/aws.md) for instructions on how to set up and run the demo.
+
+## 4. ST2110 Programmers guide
+
+To quickly develop applications based on the Intel® Media Transport Library, please refer to the [sample code](app/sample).
+
+## 5. User space LibOS UDP stack guide
+
+Starting from version 23.03.0, this library extends support for a user-space UDP stack that runs directly under the current process context for improved performance. Other user-space UDP stacks typically run with a client-service architecture, which introduces cross-core message costs that can negatively impact performance.
+
+Our stack runs the NIC tx/rx function directly from the sendto/recvfrom API, which eliminates the need for cross-core calls and maintains data affinity (LLC) to the UDP consumer.
+
+To learn how to use the LibOS UDP stack, please refer to the [udp doc](doc/udp.md).
+
+## 6. How to Contribute
+
+We welcome community contributions to the Intel® Media Transport Library project. If you have any ideas or issues, please share them with us by using GitHub issues or opening a pull request.
+
+### 6.1 Coding style
+
+We use the super-linter action for style checks.
+
+For C/C++ coding, you can run the following command to quickly fix the style:
+
 ```bash
 ./format-coding.sh
+```
+
+For other languages, please check with the following example command inside the Docker container:
+
+```bash
+# super-linter
+docker run -it --rm  -v "$PWD":/opt/ --entrypoint /bin/bash github/super-linter
+
+cd /opt/
+
+# echo "shell check"
+find ./ -name "*.sh" -exec shellcheck {} \;
+
+# hadolint check
+hadolint docker/ubuntu.dockerfile
+
+# actionlint check
+actionlint
+
+# markdownlint check
+find ./ -name "*.md" -exec markdownlint {} -c .markdown-lint.yml \;
+# find ./ -name "*.md" -exec markdownlint {} --fix -c .markdown-lint.yml \;
+
+# textlint
+find ./ -name "*.md" -exec textlint {} \;
+# find ./ -name "*.md" -exec textlint {} --fix \;
 ```

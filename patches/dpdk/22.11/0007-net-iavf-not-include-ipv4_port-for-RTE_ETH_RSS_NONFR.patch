@@ -1,0 +1,148 @@
+From b028cea5d6fba2a3ea714f3a8d7bdb856240b7cd Mon Sep 17 00:00:00 2001
+From: Frank Du <frank.du@intel.com>
+Date: Tue, 28 Feb 2023 16:12:21 +0800
+Subject: [PATCH 7/8] net/iavf: not include ipv4_port for
+ RTE_ETH_RSS_NONFRAG_IPV4_UDP
+
+RTE_ETH_RSS_NONFRAG_IPV4_UDP hash is consist of l3 src/dst and l4 udp
+src_port and dst_port
+Also add dst/src only support for l3/l4
+
+Signed-off-by: Frank Du <frank.du@intel.com>
+---
+ drivers/net/iavf/iavf.h      |  5 +++
+ drivers/net/iavf/iavf_hash.c | 78 +++++++++++++++++++++++++++++++++++-
+ 2 files changed, 81 insertions(+), 2 deletions(-)
+
+diff --git a/drivers/net/iavf/iavf.h b/drivers/net/iavf/iavf.h
+index 1edebab8dc..9b0b806078 100644
+--- a/drivers/net/iavf/iavf.h
++++ b/drivers/net/iavf/iavf.h
+@@ -56,6 +56,11 @@
+ 	RTE_ETH_RSS_FRAG_IPV4 |         \
+ 	RTE_ETH_RSS_NONFRAG_IPV4_TCP |  \
+ 	RTE_ETH_RSS_NONFRAG_IPV4_UDP |  \
++	RTE_ETH_RSS_PORT | \
++	RTE_ETH_RSS_L4_DST_ONLY | \
++	RTE_ETH_RSS_L4_SRC_ONLY | \
++	RTE_ETH_RSS_L3_DST_ONLY | \
++	RTE_ETH_RSS_L3_SRC_ONLY | \
+ 	RTE_ETH_RSS_NONFRAG_IPV4_SCTP | \
+ 	RTE_ETH_RSS_NONFRAG_IPV4_OTHER | \
+ 	RTE_ETH_RSS_IPV6 | \
+diff --git a/drivers/net/iavf/iavf_hash.c b/drivers/net/iavf/iavf_hash.c
+index ae6fb38594..ec34ae75a9 100644
+--- a/drivers/net/iavf/iavf_hash.c
++++ b/drivers/net/iavf/iavf_hash.c
+@@ -244,7 +244,7 @@ struct virtchnl_proto_hdrs inner_ipv4_tmplt = {
+ };
+ 
+ struct virtchnl_proto_hdrs inner_ipv4_udp_tmplt = {
+-	TUNNEL_LEVEL_INNER, 2, {{proto_hdr_ipv4_with_prot, proto_hdr_udp}}
++	TUNNEL_LEVEL_INNER, 2, {{proto_hdr_ipv4, proto_hdr_udp}}
+ };
+ 
+ struct virtchnl_proto_hdrs inner_ipv4_tcp_tmplt = {
+@@ -694,6 +694,50 @@ static struct iavf_flow_parser iavf_hash_parser = {
+ 	.stage = IAVF_FLOW_STAGE_RSS,
+ };
+ 
++static u32 rss_l3_hash_field_selector(uint64_t rss_hf)
++{
++	u64 field = 0;
++
++	/* Determine L3 hash fields. */
++	switch (rss_hf & (RTE_ETH_RSS_L3_SRC_ONLY | RTE_ETH_RSS_L3_DST_ONLY)) {
++	case RTE_ETH_RSS_L3_DST_ONLY:
++		field |= FIELD_SELECTOR(VIRTCHNL_PROTO_HDR_IPV4_DST);
++		break;
++	case RTE_ETH_RSS_L3_SRC_ONLY:
++		field |= FIELD_SELECTOR(VIRTCHNL_PROTO_HDR_IPV4_SRC);
++		break;
++	default:
++		/* both src and dst */
++		field |= FIELD_SELECTOR(VIRTCHNL_PROTO_HDR_IPV4_DST) |
++				FIELD_SELECTOR(VIRTCHNL_PROTO_HDR_IPV4_SRC);
++		break;
++	}
++
++	return field;
++}
++
++static u32 rss_l4_hash_field_selector(uint64_t rss_hf)
++{
++	u64 field = 0;
++
++	/* Determine L4 hash fields. */
++	switch (rss_hf & (RTE_ETH_RSS_L4_SRC_ONLY | RTE_ETH_RSS_L4_DST_ONLY)) {
++	case RTE_ETH_RSS_L4_DST_ONLY:
++		field |= FIELD_SELECTOR(VIRTCHNL_PROTO_HDR_UDP_DST_PORT);
++		break;
++	case RTE_ETH_RSS_L4_SRC_ONLY:
++		field |= FIELD_SELECTOR(VIRTCHNL_PROTO_HDR_UDP_SRC_PORT);
++		break;
++	default:
++		/* both src and dst */
++		field |= FIELD_SELECTOR(VIRTCHNL_PROTO_HDR_UDP_SRC_PORT) |
++				FIELD_SELECTOR(VIRTCHNL_PROTO_HDR_UDP_DST_PORT);
++		break;
++	}
++
++	return field;
++}
++
+ int
+ iavf_rss_hash_set(struct iavf_adapter *ad, uint64_t rss_hf, bool add)
+ {
+@@ -704,6 +748,11 @@ iavf_rss_hash_set(struct iavf_adapter *ad, uint64_t rss_hf, bool add)
+ 	RTE_ETH_RSS_IPV4 | \
+ 	RTE_ETH_RSS_IPV6 | \
+ 	RTE_ETH_RSS_NONFRAG_IPV4_UDP | \
++	RTE_ETH_RSS_PORT | \
++	RTE_ETH_RSS_L4_DST_ONLY | \
++	RTE_ETH_RSS_L4_SRC_ONLY | \
++	RTE_ETH_RSS_L3_DST_ONLY | \
++	RTE_ETH_RSS_L3_SRC_ONLY | \
+ 	RTE_ETH_RSS_NONFRAG_IPV6_UDP | \
+ 	RTE_ETH_RSS_NONFRAG_IPV4_TCP | \
+ 	RTE_ETH_RSS_NONFRAG_IPV6_TCP | \
+@@ -717,10 +766,35 @@ iavf_rss_hash_set(struct iavf_adapter *ad, uint64_t rss_hf, bool add)
+ 	}
+ 
+ 	if (rss_hf & RTE_ETH_RSS_NONFRAG_IPV4_UDP) {
+-		rss_cfg.proto_hdrs = inner_ipv4_udp_tmplt;
++		struct virtchnl_proto_hdrs* hdr = &rss_cfg.proto_hdrs;
++		memset(hdr, 0, sizeof(*hdr));
++		hdr->tunnel_level = TUNNEL_LEVEL_INNER;
++		hdr->count = 2;
++		hdr->proto_hdr[0].type = VIRTCHNL_PROTO_HDR_IPV4;
++		hdr->proto_hdr[0].buffer[0] = BUFF_NOUSED;
++		hdr->proto_hdr[0].field_selector = rss_l3_hash_field_selector(rss_hf);
++		hdr->proto_hdr[1].type = VIRTCHNL_PROTO_HDR_UDP;
++		hdr->proto_hdr[1].buffer[0] = BUFF_NOUSED;
++		hdr->proto_hdr[1].field_selector = rss_l4_hash_field_selector(rss_hf);
+ 		iavf_add_del_rss_cfg(ad, &rss_cfg, add);
+ 	}
+ 
++	if (rss_hf & RTE_ETH_RSS_PORT) {
++		struct virtchnl_proto_hdrs* hdr = &rss_cfg.proto_hdrs;
++		memset(hdr, 0, sizeof(*hdr));
++		hdr->tunnel_level = TUNNEL_LEVEL_INNER;
++		hdr->count = 2;
++		hdr->proto_hdr[0].type = VIRTCHNL_PROTO_HDR_IPV4;
++		hdr->proto_hdr[0].buffer[0] = BUFF_NOUSED;
++		hdr->proto_hdr[0].field_selector = 0;
++		hdr->proto_hdr[1].type = VIRTCHNL_PROTO_HDR_UDP;
++		hdr->proto_hdr[1].buffer[0] = BUFF_NOUSED;
++		hdr->proto_hdr[1].field_selector = rss_l4_hash_field_selector(rss_hf);
++		int ret = iavf_add_del_rss_cfg(ad, &rss_cfg, add);
++		if (ret)
++			PMD_DRV_LOG(ERR, "%s, add rss PORT cfg fail %d", __func__, ret);
++	}
++
+ 	if (rss_hf & RTE_ETH_RSS_NONFRAG_IPV4_TCP) {
+ 		rss_cfg.proto_hdrs = inner_ipv4_tcp_tmplt;
+ 		iavf_add_del_rss_cfg(ad, &rss_cfg, add);
+-- 
+2.34.1
+

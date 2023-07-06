@@ -22,6 +22,11 @@ static uint16_t tx_st20p_next_idx(struct st20p_tx_ctx* ctx, uint16_t idx) {
   return next_idx;
 }
 
+static inline struct st_frame* tx_st20p_user_frame(struct st20p_tx_ctx* ctx,
+                                                   struct st20p_tx_frame* framebuff) {
+  return ctx->derive ? &framebuff->dst : &framebuff->src;
+}
+
 static struct st20p_tx_frame* tx_st20p_next_available(
     struct st20p_tx_ctx* ctx, uint16_t idx_start, enum st20p_tx_frame_status desired) {
   uint16_t idx = idx_start;
@@ -63,14 +68,12 @@ static int tx_st20p_next_frame(void* priv, uint16_t* next_frame_idx,
 
   framebuff->stat = ST20P_TX_FRAME_IN_TRANSMITTING;
   *next_frame_idx = framebuff->idx;
+
+  struct st_frame* frame = tx_st20p_user_frame(ctx, framebuff);
+  meta->second_field = frame->second_field;
   if (ctx->ops.flags & (ST20P_TX_FLAG_USER_PACING | ST20P_TX_FLAG_USER_TIMESTAMP)) {
-    if (ctx->derive) {
-      meta->tfmt = framebuff->dst.tfmt;
-      meta->timestamp = framebuff->dst.timestamp;
-    } else {
-      meta->tfmt = framebuff->src.tfmt;
-      meta->timestamp = framebuff->src.timestamp;
-    }
+    meta->tfmt = frame->tfmt;
+    meta->timestamp = frame->timestamp;
   }
   /* point to next */
   ctx->framebuff_consumer_idx = tx_st20p_next_idx(ctx, framebuff->idx);
@@ -97,14 +100,13 @@ static int tx_st20p_frame_done(void* priv, uint16_t frame_idx,
   }
   mt_pthread_mutex_unlock(&ctx->lock);
 
-  framebuff->src.tfmt = meta->tfmt;
-  framebuff->dst.tfmt = meta->tfmt;
-  framebuff->src.timestamp = meta->timestamp;
-  framebuff->dst.timestamp = meta->timestamp;
+  struct st_frame* frame = tx_st20p_user_frame(ctx, framebuff);
+  frame->tfmt = meta->tfmt;
+  frame->timestamp = meta->timestamp;
+  frame->epoch = meta->epoch;
 
   if (ctx->ops.notify_frame_done) { /* notify app which frame done */
-    ctx->ops.notify_frame_done(ctx->ops.priv,
-                               ctx->derive ? &framebuff->dst : &framebuff->src);
+    ctx->ops.notify_frame_done(ctx->ops.priv, frame);
   }
 
   if (ctx->ops.notify_frame_available) { /* notify app can get frame */
@@ -173,11 +175,9 @@ static int tx_st20p_convert_put_frame(void* priv, struct st20_convert_frame_meta
     return -EIO;
   }
 
-  dbg("%s(%d), frame %u result %d data_size %ld\n", __func__, idx, convert_idx, result,
-      data_size);
   if ((result < 0) || (data_size <= 0)) {
-    info("%s(%d), frame %u result %d data_size %ld\n", __func__, idx, convert_idx, result,
-         data_size);
+    dbg("%s(%d), frame %u result %d data_size %" PRIu64 "\n", __func__, idx, convert_idx,
+        result, data_size);
     framebuff->stat = ST20P_TX_FRAME_FREE;
     if (ctx->ops.notify_frame_available) { /* notify app */
       ctx->ops.notify_frame_available(ctx->ops.priv);
@@ -228,25 +228,31 @@ static int tx_st20p_create_transport(struct mtl_main_impl* impl, struct st20p_tx
   memset(&ops_tx, 0, sizeof(ops_tx));
   ops_tx.name = ops->name;
   ops_tx.priv = ctx;
-  ops_tx.num_port = RTE_MIN(ops->port.num_port, MTL_PORT_MAX);
+  ops_tx.num_port = RTE_MIN(ops->port.num_port, MTL_SESSION_PORT_MAX);
   for (int i = 0; i < ops_tx.num_port; i++) {
     memcpy(ops_tx.dip_addr[i], ops->port.dip_addr[i], MTL_IP_ADDR_LEN);
     strncpy(ops_tx.port[i], ops->port.port[i], MTL_PORT_MAX_LEN);
+    ops_tx.udp_src_port[i] = ops->port.udp_src_port[i];
     ops_tx.udp_port[i] = ops->port.udp_port[i];
   }
   if (ops->flags & ST20P_TX_FLAG_USER_P_MAC) {
-    memcpy(&ops_tx.tx_dst_mac[MTL_PORT_P][0], &ops->tx_dst_mac[MTL_PORT_P][0], 6);
+    memcpy(&ops_tx.tx_dst_mac[MTL_SESSION_PORT_P][0],
+           &ops->tx_dst_mac[MTL_SESSION_PORT_P][0], MTL_MAC_ADDR_LEN);
     ops_tx.flags |= ST20_TX_FLAG_USER_P_MAC;
   }
   if (ops->flags & ST20P_TX_FLAG_USER_R_MAC) {
-    memcpy(&ops_tx.tx_dst_mac[MTL_PORT_R][0], &ops->tx_dst_mac[MTL_PORT_R][0], 6);
+    memcpy(&ops_tx.tx_dst_mac[MTL_SESSION_PORT_R][0],
+           &ops->tx_dst_mac[MTL_SESSION_PORT_R][0], MTL_MAC_ADDR_LEN);
     ops_tx.flags |= ST20_TX_FLAG_USER_R_MAC;
   }
   ops_tx.pacing = ST21_PACING_NARROW;
+  ops_tx.start_vrx = ops->start_vrx;
+  ops_tx.pad_interval = ops->pad_interval;
   ops_tx.width = ops->width;
   ops_tx.height = ops->height;
   ops_tx.fps = ops->fps;
   ops_tx.fmt = ops->transport_fmt;
+  ops_tx.interlaced = ops->interlaced;
   ops_tx.linesize = ops->transport_linesize;
   ops_tx.payload_type = ops->port.payload_type;
   ops_tx.type = ST20_TYPE_FRAME_LEVEL;
@@ -260,6 +266,8 @@ static int tx_st20p_create_transport(struct mtl_main_impl* impl, struct st20p_tx
   if (ops->flags & ST20P_TX_FLAG_USER_TIMESTAMP)
     ops_tx.flags |= ST20_TX_FLAG_USER_TIMESTAMP;
   if (ops->flags & ST20P_TX_FLAG_ENABLE_VSYNC) ops_tx.flags |= ST20_TX_FLAG_ENABLE_VSYNC;
+  if (ops->flags & ST20P_TX_FLAG_DISABLE_STATIC_PAD_P)
+    ops_tx.flags |= ST20_TX_FLAG_DISABLE_STATIC_PAD_P;
 
   transport = st20_tx_create(impl, &ops_tx);
   if (!transport) {
@@ -276,7 +284,9 @@ static int tx_st20p_create_transport(struct mtl_main_impl* impl, struct st20p_tx
       frames[i].dst.addr[0] = st20_tx_get_framebuffer(transport, i);
     }
     frames[i].dst.fmt = st_frame_fmt_from_transport(ctx->ops.transport_fmt);
-    frames[i].dst.buffer_size = st_frame_size(frames[i].dst.fmt, ops->width, ops->height);
+    frames[i].dst.interlaced = ops->interlaced;
+    frames[i].dst.buffer_size =
+        st_frame_size(frames[i].dst.fmt, ops->width, ops->height, ops->interlaced);
     frames[i].dst.data_size = frames[i].dst.buffer_size;
     frames[i].dst.width = ops->width;
     frames[i].dst.height = ops->height;
@@ -331,6 +341,7 @@ static int tx_st20p_init_src_fbs(struct mtl_main_impl* impl, struct st20p_tx_ctx
     frames[i].stat = ST20P_TX_FRAME_FREE;
     frames[i].idx = i;
     frames[i].src.fmt = ops->input_fmt;
+    frames[i].src.interlaced = ops->interlaced;
     frames[i].src.width = ops->width;
     frames[i].src.height = ops->height;
     if (!ctx->derive) { /* when derive, no need to alloc src frames */
@@ -362,7 +373,7 @@ static int tx_st20p_init_src_fbs(struct mtl_main_impl* impl, struct st20p_tx_ctx
       frames[i].src.priv = &frames[i];
     }
   }
-  info("%s(%d), size %ld fmt %d with %u frames\n", __func__, idx, src_size,
+  info("%s(%d), size %" PRIu64 " fmt %d with %u frames\n", __func__, idx, src_size,
        ops->transport_fmt, ctx->framebuff_cnt);
   return 0;
 }
@@ -435,9 +446,12 @@ struct st_frame* st20p_tx_get_frame(st20p_tx_handle handle) {
   mt_pthread_mutex_unlock(&ctx->lock);
 
   dbg("%s(%d), frame %u succ\n", __func__, idx, framebuff->idx);
-  if (ctx->derive) /* derive from dst frame */
-    return &framebuff->dst;
-  return &framebuff->src;
+  struct st_frame* frame = tx_st20p_user_frame(ctx, framebuff);
+  if (ctx->ops.interlaced) { /* init second_field but user still can customize also */
+    frame->second_field = ctx->second_field;
+    ctx->second_field = ctx->second_field ? false : true;
+  }
+  return frame;
 }
 
 int st20p_tx_put_frame(st20p_tx_handle handle, struct st_frame* frame) {
@@ -558,7 +572,7 @@ st20p_tx_handle st20p_tx_create(mtl_handle mt, struct st20p_tx_ops* ops) {
     return NULL;
   }
 
-  src_size = st_frame_size(ops->input_fmt, ops->width, ops->height);
+  src_size = st_frame_size(ops->input_fmt, ops->width, ops->height, ops->interlaced);
   if (!src_size) {
     err("%s(%d), get src size fail\n", __func__, idx);
     return NULL;

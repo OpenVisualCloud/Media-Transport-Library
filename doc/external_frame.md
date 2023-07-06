@@ -2,9 +2,9 @@
 
 ## 1. Overview
 
-In the general API, the video frames used in MTL are allcated by library with rte_malloc(usually with hugepages).
-In some use cases, each frame data needs to be copied from/to user. When it's UHD or high framerate video, the copying can cause CPU/memory stall and become bottleneck of the whole pipeline.
-The external frame API is introduced so the library can use user provided memory to receive/send st2110-20 frames, or as the color format conversion destination/source in the pipeline API.
+In the general API, the video frames used are allocated by the library with rte_malloc (usually using hugepages). In some use cases, each frame data needs to be copied to/from the user. When working with UHD or high frame rate videos, copying can cause CPU/memory stalls and become a bottleneck in the pipeline.
+
+The external frame API is introduced so that the library can use user-provided memory to receive/send ST2110-20 frames or as the color format conversion destination/source in the pipeline API.
 
 ## 2. ST20 Pipeline ext_frame API
 
@@ -120,7 +120,7 @@ user should maintain the lifetime of frames
 
 #### 2.3.3 dynamic frames - no convert mode
 
-(the same usage as raw video api 3.3.2)  
+(the same usage as raw video API 3.3.2)  
 implement and set query_ext_frame callback and set incomplete frame flag
 
 ```c
@@ -155,7 +155,7 @@ struct st20_ext_frame {
   mtl_iova_t buf_iova;
   /** Length of external framebuffer */
   size_t buf_len;
-  /** Private data for user, will be retrived with st_frame or st20_rx_frame_meta */
+  /** Private data for user, will be retrieved with st_frame or st20_rx_frame_meta */
   void* opaque;
 };
 ```
@@ -167,10 +167,10 @@ struct st20_ext_frame {
 in ops, set the flag
 
 ```c
-ops_rx.flags |=ST20_TX_FLAG_EXT_FRAME;
+ops_rx.flags |= ST20_TX_FLAG_EXT_FRAME;
 ```
 
-explcitly set the ext frame, and in query_next_frame callback, provide the index
+explicitly set the ext frame, and in query_next_frame callback, provide the index
 
 ```c
 st20_tx_set_ext_frame(s->handle, idx, &ext_frame);
@@ -185,15 +185,15 @@ st20_tx_set_ext_frame(s->handle, idx, &ext_frame);
 set the ext_frames array in ops
 
 ```c
-struct st20_ext_frameext_frames[fb_cnt];
+struct st20_ext_frame ext_frames[fb_cnt];
 for (int i = 0; i < fb_cnt;++i) {
     ext_frames[i].buf_addr = your_addr;
     ext_frames[i].buf_iova = your_iova;
     ext_frames[i].buf_len = your_frame_size;
     ext_frames[i].opaque = your_frame_handle;
 }
-ops_rx.ext_frames =ext_frames;
-rx_handle = st20_rx_creat(st, &ops_rx);
+ops_rx.ext_frames = ext_frames;
+rx_handle = st20_rx_create(st, &ops_rx);
 ```
 
 use as the general API
@@ -204,12 +204,12 @@ implement and set query_ext_frame callback and set incomplete frame flag
 
 ```c
 // set the callback in ops
-// set the incomplete frameflag
-ops_rx.query_ext_frame =rx_query_ext_frame;
-ops_rx.flags |=ST20_RX_FLAG_RECEIVE_INCOMPLEE_FRAME;
+// set the incomplete frame flag
+ops_rx.query_ext_frame = rx_query_ext_frame;
+ops_rx.flags |= ST20_RX_FLAG_RECEIVE_INCOMPLETE_FRAME;
 //...
 //implement the callback
-static int rx_query_ext_frame(void* priv, st20_ext_frame*ext_frame, structst20_rx_frame_meta* meta) {
+static int rx_query_ext_frame(void* priv, st20_ext_frame*ext_frame, struct st20_rx_frame_meta* meta) {
     ctx* s = (ctx*)priv;
     ext_frame->buf_addr = your_addr;
     ext_frame->buf_iova = your_iova;

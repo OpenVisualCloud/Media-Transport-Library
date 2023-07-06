@@ -69,7 +69,7 @@ static int rx_st20p_packet_convert(void* priv, void* frame,
           rx_st20p_next_available(ctx, framebuff->idx, ST20P_RX_FRAME_IN_CONVERTING);
       if (framebuff && framebuff->dst.timestamp != meta->timestamp) {
         /* should never happen */
-        err("%s(%d), wrong frame timestamp\n", __func__, ctx->idx);
+        err_once("%s(%d), wrong frame timestamp\n", __func__, ctx->idx);
         mt_pthread_mutex_unlock(&ctx->lock);
         return -EIO;
       }
@@ -122,8 +122,8 @@ static int rx_st20p_frame_ready(void* priv, void* frame,
       if (framebuff && framebuff->dst.timestamp != meta->timestamp) {
         /* should never happen */
         mt_pthread_mutex_unlock(&ctx->lock);
-        err("%s(%d), wrong frame timestamp\n", __func__, ctx->idx);
-        return -EIO;
+        err_once("%s(%d), wrong frame timestamp\n", __func__, ctx->idx);
+        return 0; /* surpress the error */
       }
     }
   } else
@@ -138,6 +138,7 @@ static int rx_st20p_frame_ready(void* priv, void* frame,
 
   framebuff->src.addr[0] = frame;
   framebuff->src.data_size = meta->frame_total_size;
+  framebuff->src.second_field = framebuff->dst.second_field = meta->second_field;
   framebuff->src.tfmt = framebuff->dst.tfmt = meta->tfmt;
   framebuff->src.timestamp = framebuff->dst.timestamp = meta->timestamp;
   framebuff->src.status = framebuff->dst.status = meta->status;
@@ -317,7 +318,7 @@ static int rx_st20p_create_transport(struct mtl_main_impl* impl, struct st20p_rx
   memset(&ops_rx, 0, sizeof(ops_rx));
   ops_rx.name = ops->name;
   ops_rx.priv = ctx;
-  ops_rx.num_port = RTE_MIN(ops->port.num_port, MTL_PORT_MAX);
+  ops_rx.num_port = RTE_MIN(ops->port.num_port, MTL_SESSION_PORT_MAX);
   for (int i = 0; i < ops_rx.num_port; i++) {
     memcpy(ops_rx.sip_addr[i], ops->port.sip_addr[i], MTL_IP_ADDR_LEN);
     strncpy(ops_rx.port[i], ops->port.port[i], MTL_PORT_MAX_LEN);
@@ -329,6 +330,7 @@ static int rx_st20p_create_transport(struct mtl_main_impl* impl, struct st20p_rx
   if (ops->flags & ST20P_RX_FLAG_RECEIVE_INCOMPLETE_FRAME)
     ops_rx.flags |= ST20_RX_FLAG_RECEIVE_INCOMPLETE_FRAME;
   if (ops->flags & ST20P_RX_FLAG_DMA_OFFLOAD) ops_rx.flags |= ST20_RX_FLAG_DMA_OFFLOAD;
+  if (ops->flags & ST20P_RX_FLAG_HDR_SPLIT) ops_rx.flags |= ST20_RX_FLAG_HDR_SPLIT;
   if (ops->flags & ST20P_RX_FLAG_DISABLE_MIGRATE)
     ops_rx.flags |= ST20_RX_FLAG_DISABLE_MIGRATE;
   if (ops->flags & ST20P_RX_FLAG_PKT_CONVERT) {
@@ -351,6 +353,7 @@ static int rx_st20p_create_transport(struct mtl_main_impl* impl, struct st20p_rx
   ops_rx.height = ops->height;
   ops_rx.fps = ops->fps;
   ops_rx.fmt = ops->transport_fmt;
+  ops_rx.interlaced = ops->interlaced;
   ops_rx.linesize = ops->transport_linesize;
   ops_rx.payload_type = ops->port.payload_type;
   ops_rx.type = ST20_TYPE_FRAME_LEVEL;
@@ -360,14 +363,16 @@ static int rx_st20p_create_transport(struct mtl_main_impl* impl, struct st20p_rx
   if (ctx->derive) {
     /* ext frame info directly passed down to st20 lib */
     if (ops->ext_frames) {
-      trans_ext_frames =
-          mt_rte_zmalloc_socket(sizeof(*trans_ext_frames) * ctx->framebuff_cnt,
-                                mt_socket_id(ctx->impl, MTL_PORT_P));
+      uint16_t framebuff_cnt = ctx->framebuff_cnt;
+      /* hdr split use continuous frame */
+      if (ops->flags & ST20P_RX_FLAG_HDR_SPLIT) framebuff_cnt = 1;
+      trans_ext_frames = mt_rte_zmalloc_socket(sizeof(*trans_ext_frames) * framebuff_cnt,
+                                               mt_socket_id(ctx->impl, MTL_PORT_P));
       if (!trans_ext_frames) {
         err("%s, trans_ext_frames malloc fail\n", __func__);
         return -ENOMEM;
       }
-      for (int i = 0; i < ctx->framebuff_cnt; i++) {
+      for (uint16_t i = 0; i < framebuff_cnt; i++) {
         trans_ext_frames[i].buf_addr = ops->ext_frames[i].addr[0];
         trans_ext_frames[i].buf_iova = ops->ext_frames[i].iova[0];
         trans_ext_frames[i].buf_len = ops->ext_frames[i].size;
@@ -377,6 +382,7 @@ static int rx_st20p_create_transport(struct mtl_main_impl* impl, struct st20p_rx
     if (ops->query_ext_frame) {
       if (!(ops->flags & ST20P_RX_FLAG_RECEIVE_INCOMPLETE_FRAME)) {
         err("%s, pls enable incomplete frame flag for query ext mode\n", __func__);
+        if (trans_ext_frames) mt_rte_free(trans_ext_frames);
         return -EINVAL;
       }
       ops_rx.query_ext_frame = rx_st20p_query_ext_frame;
@@ -386,6 +392,7 @@ static int rx_st20p_create_transport(struct mtl_main_impl* impl, struct st20p_rx
   transport = st20_rx_create(impl, &ops_rx);
   if (!transport) {
     err("%s(%d), transport create fail\n", __func__, idx);
+    if (trans_ext_frames) mt_rte_free(trans_ext_frames);
     return -EIO;
   }
   ctx->transport = transport;
@@ -393,7 +400,9 @@ static int rx_st20p_create_transport(struct mtl_main_impl* impl, struct st20p_rx
   struct st20p_rx_frame* frames = ctx->framebuffs;
   for (uint16_t i = 0; i < ctx->framebuff_cnt; i++) {
     frames[i].src.fmt = st_frame_fmt_from_transport(ctx->ops.transport_fmt);
-    frames[i].src.buffer_size = st_frame_size(frames[i].src.fmt, ops->width, ops->height);
+    frames[i].src.interlaced = ops->interlaced;
+    frames[i].src.buffer_size =
+        st_frame_size(frames[i].src.fmt, ops->width, ops->height, ops->interlaced);
     frames[i].src.data_size = frames[i].src.buffer_size;
     frames[i].src.width = ops->width;
     frames[i].src.height = ops->height;
@@ -451,6 +460,7 @@ static int rx_st20p_init_dst_fbs(struct mtl_main_impl* impl, struct st20p_rx_ctx
     frames[i].stat = ST20P_RX_FRAME_FREE;
     frames[i].idx = i;
     frames[i].dst.fmt = ops->output_fmt;
+    frames[i].dst.interlaced = ops->interlaced;
     frames[i].dst.width = ops->width;
     frames[i].dst.height = ops->height;
     if (!ctx->derive) { /* when derive, no need to alloc dst frames */
@@ -491,7 +501,7 @@ static int rx_st20p_init_dst_fbs(struct mtl_main_impl* impl, struct st20p_rx_ctx
       frames[i].dst.priv = &frames[i];
     }
   }
-  info("%s(%d), size %ld fmt %d with %u frames\n", __func__, idx, dst_size,
+  info("%s(%d), size %" PRIu64 " fmt %d with %u frames\n", __func__, idx, dst_size,
        ops->output_fmt, ctx->framebuff_cnt);
   return 0;
 }
@@ -681,7 +691,7 @@ st20p_rx_handle st20p_rx_create(mtl_handle mt, struct st20p_rx_ops* ops) {
     return NULL;
   }
 
-  dst_size = st_frame_size(ops->output_fmt, ops->width, ops->height);
+  dst_size = st_frame_size(ops->output_fmt, ops->width, ops->height, ops->interlaced);
   if (!dst_size) {
     err("%s(%d), get dst size fail\n", __func__, idx);
     return NULL;
