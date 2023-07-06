@@ -1629,6 +1629,12 @@ static int dev_if_init_pacing(struct mt_interface* inf) {
   enum mtl_port port = inf->port;
   int ret;
 
+  if ((ST21_TX_PACING_WAY_AUTO == inf->tx_pacing_way) && (inf->feature & MT_IF_FEATURE_TX_OFFLOAD_SEND_ON_TIMESTAMP)) {
+    info("%s(%d), use TSN pacing\n", __func__, port);
+    inf->tx_pacing_way = ST21_TX_PACING_WAY_TSN;
+    return 0;
+  }
+
   if (mt_shared_tx_queue(inf->parent, inf->port)) {
     info("%s(%d), use tsc as shared tx queue\n", __func__, port);
     inf->tx_pacing_way = ST21_TX_PACING_WAY_TSC;
@@ -2456,6 +2462,31 @@ int mt_dev_if_init(struct mtl_main_impl* impl) {
 #else
     if (dev_info->tx_offload_capa & DEV_TX_OFFLOAD_IPV4_CKSUM)
       inf->feature |= MT_IF_FEATURE_TX_OFFLOAD_IPV4_CKSUM;
+#endif
+
+#if RTE_VERSION >= RTE_VERSION_NUM(23, 3, 0, 0)
+    /* Detect LaunchTime capability */
+    if (dev_info->tx_offload_capa & RTE_ETH_TX_OFFLOAD_SEND_ON_TIMESTAMP) {
+      inf->feature |= MT_IF_FEATURE_TX_OFFLOAD_SEND_ON_TIMESTAMP;
+
+      int* dev_tx_timestamp_dynfield_offset_ptr =
+          dev_info->default_txconf.reserved_ptrs[1];
+      uint64_t* dev_tx_timestamp_dynflag_ptr = dev_info->default_txconf.reserved_ptrs[0];
+      ret = rte_mbuf_dyn_tx_timestamp_register(dev_tx_timestamp_dynfield_offset_ptr,
+                                               dev_tx_timestamp_dynflag_ptr);
+      if (ret < 0) {
+        err("%s, rte_mbuf_dyn_tx_timestamp_register fail\n", __func__);
+        return ret;
+      }
+
+      ret = rte_mbuf_dynflag_lookup(RTE_MBUF_DYNFLAG_TX_TIMESTAMP_NAME, NULL);
+      if (ret < 0) return ret;
+      inf->tx_launch_time_flag = 1ULL << ret;
+
+      ret = rte_mbuf_dynfield_lookup(RTE_MBUF_DYNFIELD_TIMESTAMP_NAME, NULL);
+      if (ret < 0) return ret;
+      inf->tx_dynfield_offset = ret;
+    }
 #endif
 
     if (mt_has_ebu(impl) &&
