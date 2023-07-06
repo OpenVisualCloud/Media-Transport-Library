@@ -3371,18 +3371,6 @@ static int rvs_mgr_init(struct mtl_main_impl* impl, struct mt_sch_impl* sch,
     return -EIO;
   }
 
-  memset(&ops, 0x0, sizeof(ops));
-  ops.priv = mgr;
-  ops.name = "rvs_ctl";
-  ops.start = rvs_ctl_tasklet_start;
-  ops.handler = rvs_ctl_tasklet_handler;
-
-  mgr->ctl_tasklet = mt_sch_register_tasklet(sch, &ops);
-  if (!mgr->ctl_tasklet) {
-    err("%s(%d), ctl_tasklet register fail\n", __func__, idx);
-    return -EIO;
-  }
-
   info("%s(%d), succ\n", __func__, idx);
   return 0;
 }
@@ -3788,8 +3776,7 @@ st20_rx_handle st20_rx_create_with_mask(struct mtl_main_impl* impl,
     return NULL;
   }
 
-  if (!mt_has_user_quota(impl) && st20_is_frame_type(ops->type) && !s->dma_dev &&
-      !mt_has_srss(impl, MTL_PORT_P)) {
+  if (!mt_has_user_quota(impl) && st20_is_frame_type(ops->type) && !s->dma_dev) {
     int extra_quota_mbs = quota_mbs_wo_dma - quota_mbs;
     ret = mt_sch_add_quota(sch, extra_quota_mbs);
     if (ret >= 0) quota_mbs += extra_quota_mbs;
@@ -4093,10 +4080,7 @@ st22_rx_handle st22_rx_create(mtl_handle mt, struct st22_rx_ops* ops) {
 
   enum mt_sch_type type =
       mt_has_rxv_separate_sch(impl) ? MT_SCH_TYPE_RX_VIDEO_ONLY : MT_SCH_TYPE_DEFAULT;
-  if (mt_has_srss(impl, MTL_PORT_P))
-    sch = impl->srss[MTL_PORT_P]->sch;
-  else
-    sch = mt_sch_get(impl, quota_mbs, type, MT_SCH_MASK_ALL);
+  sch = mt_sch_get(impl, quota_mbs, type, MT_SCH_MASK_ALL);
   if (!sch) {
     mt_rte_free(s_impl);
     err("%s, get sch fail\n", __func__);
