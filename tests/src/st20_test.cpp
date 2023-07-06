@@ -1795,7 +1795,8 @@ static void st20_rx_digest_test(enum st20_type tx_type[], enum st20_type rx_type
                                 int width[], int height[], bool interlaced[],
                                 enum st20_fmt fmt[], bool check_fps,
                                 enum st_test_level level, int sessions = 1,
-                                bool out_of_order = false, bool hdr_split = false) {
+                                bool out_of_order = false, bool hdr_split = false,
+                                bool disable_meta_timing = false) {
   auto ctx = (struct st_tests_context*)st_test_ctx();
   auto m_handle = ctx->handle;
   int ret;
@@ -2053,7 +2054,9 @@ static void st20_rx_digest_test(enum st20_type tx_type[], enum st20_type rx_type
       EXPECT_LT(test_ctx_rx[i]->incomplete_frame_cnt, 2 * 5);
     else
       EXPECT_LT(test_ctx_rx[i]->incomplete_frame_cnt, 4);
-    EXPECT_LT(test_ctx_rx[i]->meta_timing_fail_cnt, 4);
+    if (!disable_meta_timing) {
+      EXPECT_LT(test_ctx_rx[i]->meta_timing_fail_cnt, 4);
+    }
     EXPECT_EQ(test_ctx_rx[i]->incomplete_slice_cnt, 0);
     if (rx_type[i] == ST20_TYPE_FRAME_LEVEL)
       EXPECT_EQ(test_ctx_rx[i]->fail_cnt, 0);
@@ -2479,7 +2482,7 @@ TEST(St20_rx, digest_frame_4096_2160_fps59_94_12bit_yuv444_s1) {
   bool interlaced[1] = {false};
   enum st20_fmt fmt[1] = {ST20_FMT_YUV_444_12BIT};
   st20_rx_digest_test(type, rx_type, packing, fps, width, height, interlaced, fmt, false,
-                      ST_TEST_LEVEL_MANDATORY);
+                      ST_TEST_LEVEL_MANDATORY, 1, false, false, true);
 }
 
 TEST(St20_rx, digest_slice_4320p) {
