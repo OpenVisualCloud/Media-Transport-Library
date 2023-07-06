@@ -6,77 +6,7 @@
 
 #include "mt_dev.h"
 #include "mt_log.h"
-
-struct mt_rtcp_tx* mt_rtcp_tx_create(struct mtl_main_impl* impl,
-                                     struct mt_rtcp_tx_ops* ops) {
-  struct mt_rtcp_tx* tx =
-      mt_rte_zmalloc_socket(sizeof(struct mt_rtcp_tx), mt_socket_id(impl, ops->port));
-  if (!tx) {
-    err("%s, failed to allocate memory for mt_rtcp_tx\n", __func__);
-    return NULL;
-  }
-
-  struct rte_ring* ring =
-      rte_ring_create(ops->name, ops->buffer_size, mt_socket_id(impl, ops->port),
-                      RING_F_SP_ENQ | RING_F_SC_DEQ);
-  if (!ring) {
-    err("%s, failed to create ring for mt_rtcp_tx\n", __func__);
-    mt_rtcp_tx_free(tx);
-    return NULL;
-  }
-
-  tx->parent = impl;
-  tx->port = ops->port;
-  tx->udp_hdr = *ops->rtp_udp_hdr;
-  uint16_t udp_port = ntohs(ops->rtp_udp_hdr->udp.dst_port) + 1;
-  tx->udp_hdr.udp.dst_port = htons(udp_port);
-  tx->mbuf_ring = ring;
-  tx->ipv4_packet_id = 0;
-
-  return tx;
-}
-
-void mt_rtcp_tx_free(struct mt_rtcp_tx* tx) {
-  if (!tx) {
-    return;
-  }
-
-  if (tx->mbuf_ring) {
-    rte_ring_free(tx->mbuf_ring);
-  }
-
-  mt_rte_free(tx);
-}
-
-struct mt_rtcp_rx* mt_rtcp_rx_create(struct mtl_main_impl* impl,
-                                     struct mt_rtcp_rx_ops* ops) {
-  struct mt_rtcp_rx* rx =
-      mt_rte_zmalloc_socket(sizeof(struct mt_rtcp_rx), mt_socket_id(impl, ops->port));
-  if (!rx) {
-    err("%s, failed to allocate memory for mt_rtcp_rx\n", __func__);
-    return NULL;
-  }
-
-  rx->parent = impl;
-  rx->port = ops->port;
-  rx->udp_hdr = *ops->rtp_udp_hdr;
-  uint16_t udp_port = ntohs(ops->rtp_udp_hdr->udp.dst_port) + 1;
-  rx->udp_hdr.udp.dst_port = htons(udp_port);
-  rx->max_retry = ops->max_retry;
-  rx->ipv4_packet_id = 0;
-
-  MT_TAILQ_INIT(&rx->nack_list);
-
-  return rx;
-}
-
-void mt_rtcp_rx_free(struct mt_rtcp_rx* rx) {
-  if (!rx) {
-    return;
-  }
-
-  mt_rte_free(rx);
-}
+#include "mt_stat.h"
 
 int mt_rtcp_tx_buffer_rtp_packets(struct mt_rtcp_tx* tx, struct rte_mbuf** mbufs,
                                   unsigned int bulk) {
@@ -103,6 +33,8 @@ int mt_rtcp_tx_buffer_rtp_packets(struct mt_rtcp_tx* tx, struct rte_mbuf** mbufs
     //? rte_pktmbuf_free(mbuf);
     return -EIO;
   }
+
+  tx->stat_rtp_sent += bulk;
 
   return 0;
 }
@@ -132,6 +64,9 @@ static int rtcp_tx_retransmit_rtp_packets(struct mt_rtcp_tx* tx, uint16_t seq_id
 
   uint16_t send = mt_dev_tx_sys_queue_burst(impl, port, mbufs, nb_rt);
 
+  tx->stat_rtp_retransmit_succ += send;
+  tx->stat_rtp_retransmit_drop += bulk - send;
+
   return send;
 }
 
@@ -152,6 +87,7 @@ int mt_rtcp_tx_parse_nack_packet(struct mt_rtcp_tx* tx, struct mt_rtcp_hdr* rtcp
       err("%s, not IMTL RTCP packet\n", __func__);
       return -EIO;
     }
+    tx->stat_nack_received++;
     uint16_t num_fcis = ntohs(rtcp->len) + 1 - sizeof(struct mt_rtcp_hdr) / 4;
     for (uint16_t i = 0; i < num_fcis; i++) {
       struct mt_rtcp_fci* fci =
@@ -176,11 +112,13 @@ int mt_rtcp_rx_parse_rtp_packet(struct mt_rtcp_rx* rx, struct st_rfc3550_rtp_hdr
   // uint16_t seq_id = ntohs(rtp->seq_number);
 
   /* TODO: update nack list
-   * 1. remove received item from nack list
+   * 1. remove received item from nack list (rx->stat_rtp_retransmit_succ++)
    * 2. calculate missing seq_id(s)
    * 3. make nack item
    * 4. insert to nack list
    **/
+
+  rx->stat_rtp_received++;
 
   return 0;
 }
@@ -222,5 +160,125 @@ int mt_rtcp_rx_send_nack_packet(struct mt_rtcp_rx* rx) {
     return -EIO;
   }
 
+  rx->stat_nack_sent++;
+
   return 0;
+}
+
+static int rtcp_tx_stat(void* priv) {
+  struct mt_rtcp_tx* tx = priv;
+  enum mtl_port port = tx->port;
+
+  notice("%s(%d,%s), rtp sent %u nack recv %u rtp retansmit %u\n", __func__, port,
+         tx->name, tx->stat_rtp_sent, tx->stat_nack_received,
+         tx->stat_rtp_retransmit_succ);
+  tx->stat_rtp_sent = 0;
+  tx->stat_nack_received = 0;
+  tx->stat_rtp_retransmit_succ = 0;
+  if (tx->stat_rtp_retransmit_drop) {
+    warn("%s(%d,%s), rtp retansmit fail %u\n", __func__, port, tx->name,
+         tx->stat_rtp_retransmit_drop);
+    tx->stat_rtp_retransmit_drop = 0;
+  }
+
+  return 0;
+}
+
+static int rtcp_rx_stat(void* priv) {
+  struct mt_rtcp_rx* rx = priv;
+  enum mtl_port port = rx->port;
+
+  notice("%s(%d,%s), rtp recv %u nack sent %u rtp retransmit %u\n", __func__, port,
+         rx->name, rx->stat_rtp_received, rx->stat_nack_sent,
+         rx->stat_rtp_retransmit_succ);
+  rx->stat_rtp_received = 0;
+  rx->stat_nack_sent = 0;
+  rx->stat_rtp_retransmit_succ = 0;
+
+  return 0;
+}
+
+struct mt_rtcp_tx* mt_rtcp_tx_create(struct mtl_main_impl* impl,
+                                     struct mt_rtcp_tx_ops* ops) {
+  struct mt_rtcp_tx* tx =
+      mt_rte_zmalloc_socket(sizeof(struct mt_rtcp_tx), mt_socket_id(impl, ops->port));
+  if (!tx) {
+    err("%s, failed to allocate memory for mt_rtcp_tx\n", __func__);
+    return NULL;
+  }
+
+  struct rte_ring* ring =
+      rte_ring_create(ops->name, ops->buffer_size, mt_socket_id(impl, ops->port),
+                      RING_F_SP_ENQ | RING_F_SC_DEQ);
+  if (!ring) {
+    err("%s, failed to create ring for mt_rtcp_tx\n", __func__);
+    mt_rtcp_tx_free(tx);
+    return NULL;
+  }
+
+  tx->parent = impl;
+  tx->port = ops->port;
+  tx->udp_hdr = *ops->rtp_udp_hdr;
+  uint16_t udp_port = ntohs(ops->rtp_udp_hdr->udp.dst_port) + 1;
+  tx->udp_hdr.udp.dst_port = htons(udp_port);
+  tx->mbuf_ring = ring;
+  tx->ipv4_packet_id = 0;
+  strncpy(tx->name, ops->name, sizeof(tx->name) - 1);
+
+  mt_stat_register(impl, rtcp_tx_stat, tx, tx->name);
+
+  info("%s(%d,%s), suss\n", __func__, tx->port, tx->name);
+
+  return tx;
+}
+
+void mt_rtcp_tx_free(struct mt_rtcp_tx* tx) {
+  if (!tx) {
+    return;
+  }
+
+  mt_stat_unregister(tx->parent, rtcp_tx_stat, tx);
+
+  if (tx->mbuf_ring) {
+    rte_ring_free(tx->mbuf_ring);
+  }
+
+  mt_rte_free(tx);
+}
+
+struct mt_rtcp_rx* mt_rtcp_rx_create(struct mtl_main_impl* impl,
+                                     struct mt_rtcp_rx_ops* ops) {
+  struct mt_rtcp_rx* rx =
+      mt_rte_zmalloc_socket(sizeof(struct mt_rtcp_rx), mt_socket_id(impl, ops->port));
+  if (!rx) {
+    err("%s, failed to allocate memory for mt_rtcp_rx\n", __func__);
+    return NULL;
+  }
+
+  rx->parent = impl;
+  rx->port = ops->port;
+  rx->udp_hdr = *ops->rtp_udp_hdr;
+  uint16_t udp_port = ntohs(ops->rtp_udp_hdr->udp.dst_port) + 1;
+  rx->udp_hdr.udp.dst_port = htons(udp_port);
+  rx->max_retry = ops->max_retry;
+  rx->ipv4_packet_id = 0;
+  strncpy(rx->name, ops->name, sizeof(rx->name) - 1);
+
+  MT_TAILQ_INIT(&rx->nack_list);
+
+  mt_stat_register(impl, rtcp_rx_stat, rx, rx->name);
+
+  info("%s(%d,%s), suss\n", __func__, rx->port, rx->name);
+
+  return rx;
+}
+
+void mt_rtcp_rx_free(struct mt_rtcp_rx* rx) {
+  if (!rx) {
+    return;
+  }
+
+  mt_stat_unregister(rx->parent, rtcp_rx_stat, rx);
+
+  mt_rte_free(rx);
 }

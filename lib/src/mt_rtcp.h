@@ -55,8 +55,15 @@ struct mt_rtcp_tx {
   struct rte_ring* mbuf_ring;
   uint16_t ring_first_idx;
   struct mt_udp_hdr udp_hdr;
+  char name[32];
 
   uint16_t ipv4_packet_id;
+
+  /* stat */
+  uint32_t stat_rtp_sent;
+  uint32_t stat_rtp_retransmit_succ;
+  uint32_t stat_rtp_retransmit_drop;
+  uint32_t stat_nack_received;
 };
 
 struct mt_rtcp_rx {
@@ -66,8 +73,14 @@ struct mt_rtcp_rx {
   uint16_t max_retry;
   uint16_t last_seq_id;
   struct mt_udp_hdr udp_hdr;
+  char name[32];
 
   uint16_t ipv4_packet_id;
+
+  /* stat */
+  uint32_t stat_rtp_received;
+  uint32_t stat_rtp_retransmit_succ;
+  uint32_t stat_nack_sent;
 };
 
 struct mt_rtcp_tx* mt_rtcp_tx_create(struct mtl_main_impl* mtl,
