@@ -212,7 +212,6 @@ static struct option st_app_args_options[] = {
     {"shared_tx_queues", no_argument, 0, ST_ARG_SHARED_TX_QUEUES},
     {"shared_rx_queues", no_argument, 0, ST_ARG_SHARED_RX_QUEUES},
 
-
     {0, 0, 0, 0}};
 
 static int app_args_parse_lcores(struct mtl_init_params* p, char* list) {

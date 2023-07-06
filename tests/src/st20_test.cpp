@@ -1279,9 +1279,6 @@ static void st20_rx_update_src_test(enum st20_type type, int tx_sessions,
   /* return if level small than global */
   if (level < ctx->level) return;
 
-  /* return if level small than global */
-  if (level < ctx->level) return;
-
   int rx_sessions = 1;
   // 1501/1502 for one frame, max two frames.
   int max_rtp_delta = 3003;
