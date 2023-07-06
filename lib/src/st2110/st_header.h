@@ -578,7 +578,6 @@ struct st_rx_video_session_impl {
   enum mtl_port port_maps[MTL_SESSION_PORT_MAX];
   struct mt_rxq_entry* rxq[MTL_SESSION_PORT_MAX];
   uint16_t port_id[MTL_SESSION_PORT_MAX];
-  uint16_t st20_src_port[MTL_SESSION_PORT_MAX]; /* udp port */
   uint16_t st20_dst_port[MTL_SESSION_PORT_MAX]; /* udp port */
 
   struct st_rx_video_session_handle_impl* st20_handle;
@@ -872,7 +871,6 @@ struct st_rx_audio_session_impl {
   struct mt_rxq_entry* rxq[MTL_SESSION_PORT_MAX];
   uint16_t port_id[MTL_SESSION_PORT_MAX];
 
-  uint16_t st30_src_port[MTL_SESSION_PORT_MAX]; /* udp port */
   uint16_t st30_dst_port[MTL_SESSION_PORT_MAX]; /* udp port */
 
   struct st_frame_trans* st30_frames;
@@ -1025,7 +1023,6 @@ struct st_rx_ancillary_session_impl {
   uint16_t port_id[MTL_SESSION_PORT_MAX];
   struct rte_ring* packet_ring;
 
-  uint16_t st40_src_port[MTL_SESSION_PORT_MAX]; /* udp port */
   uint16_t st40_dst_port[MTL_SESSION_PORT_MAX]; /* udp port */
 
   int st40_seq_id; /* seq id for each pkt */

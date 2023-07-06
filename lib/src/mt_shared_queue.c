@@ -147,8 +147,8 @@ static uint32_t rsq_flow_hash(struct mt_rxq_flow* flow) {
                             flow->dip_addr[3]);
   tuple.dst_addr = RTE_IPV4(flow->sip_addr[0], flow->sip_addr[1], flow->sip_addr[2],
                             flow->sip_addr[3]);
-  tuple.sport = flow->src_port;
   tuple.dport = flow->dst_port;
+  tuple.sport = tuple.dport;
   return mt_dev_softrss((uint32_t*)&tuple, len);
 }
 
