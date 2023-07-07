@@ -78,6 +78,8 @@
 #define MT_IF_FEATURE_TX_OFFLOAD_IPV4_CKSUM (MTL_BIT32(5))
 /* Rx queue support hdr split */
 #define MT_IF_FEATURE_RXQ_OFFLOAD_BUFFER_SPLIT (MTL_BIT32(6))
+/* LaunchTime Tx */
+#define MT_IF_FEATURE_TX_OFFLOAD_SEND_ON_TIMESTAMP (MTL_BIT32(7))
 
 #define MT_IF_STAT_PORT_CONFIGURED (MTL_BIT32(0))
 #define MT_IF_STAT_PORT_STARTED (MTL_BIT32(1))
@@ -554,6 +556,11 @@ struct mt_interface {
   uint64_t (*ptp_get_time_fn)(struct mtl_main_impl* impl, enum mtl_port port);
 
   enum st21_tx_pacing_way tx_pacing_way;
+
+  /* LaunchTime register */
+  int tx_dynfield_offset;
+  /* tx launch time enable flag */
+  uint64_t tx_launch_time_flag;
 
   /* time base for MTL_FLAG_PTP_SOURCE_TSC*/
   uint64_t tsc_time_base;
