@@ -112,8 +112,9 @@ int mt_rtcp_rx_parse_rtp_packet(struct mt_rtcp_rx* rx, struct rte_mbuf* m) {
     return -EINVAL;
   }
 
-  struct st_rfc3550_rtp_hdr* rtp =
-      rte_pktmbuf_mtod_offset(m, struct st_rfc3550_rtp_hdr*, sizeof(struct mt_udp_hdr));
+  // struct st_rfc3550_rtp_hdr* rtp =
+  //     rte_pktmbuf_mtod_offset(m, struct st_rfc3550_rtp_hdr*, sizeof(struct
+  //     mt_udp_hdr));
 
   // uint16_t seq_id = ntohs(rtp->seq_number);
 
