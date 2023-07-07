@@ -1629,7 +1629,8 @@ static int dev_if_init_pacing(struct mt_interface* inf) {
   enum mtl_port port = inf->port;
   int ret;
 
-  if ((ST21_TX_PACING_WAY_AUTO == inf->tx_pacing_way) && (inf->feature & MT_IF_FEATURE_TX_OFFLOAD_SEND_ON_TIMESTAMP)) {
+  if ((ST21_TX_PACING_WAY_AUTO == inf->tx_pacing_way) &&
+      (inf->feature & MT_IF_FEATURE_TX_OFFLOAD_SEND_ON_TIMESTAMP)) {
     info("%s(%d), use TSN pacing\n", __func__, port);
     inf->tx_pacing_way = ST21_TX_PACING_WAY_TSN;
     return 0;

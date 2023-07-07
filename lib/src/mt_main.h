@@ -556,11 +556,11 @@ struct mt_interface {
   uint64_t (*ptp_get_time_fn)(struct mtl_main_impl* impl, enum mtl_port port);
 
   enum st21_tx_pacing_way tx_pacing_way;
-  
+
   /* LaunchTime register */
   int tx_dynfield_offset;
   /* tx launch time enable flag */
-  uint64_t tx_launch_time_flag;  
+  uint64_t tx_launch_time_flag;
 
   /* time base for MTL_FLAG_PTP_SOURCE_TSC*/
   uint64_t tsc_time_base;
