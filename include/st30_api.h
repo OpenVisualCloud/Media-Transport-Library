@@ -55,6 +55,11 @@ typedef struct st_rx_audio_session_handle_impl* st30_rx_handle;
  * Control frame pacing in the build stage also.
  */
 #define ST30_TX_FLAG_BUILD_PACING (MTL_BIT32(5))
+/**
+ * Flag bit in flags of struct st30_tx_ops.
+ * If enable the rtcp.
+ */
+#define ST30_TX_FLAG_ENABLE_RTCP (MTL_BIT32(6))
 
 /**
  * Flag bit in flags of struct st30_rx_ops, for non MTL_PMD_DPDK_USER.
@@ -62,6 +67,11 @@ typedef struct st_rx_audio_session_handle_impl* st30_rx_handle;
  * Use st30_rx_get_queue_meta to get the queue meta(queue number etc) info.
  */
 #define ST30_RX_FLAG_DATA_PATH_ONLY (MTL_BIT32(0))
+/**
+ * Flag bit in flags of struct st30_rx_ops.
+ * If enable the rtcp.
+ */
+#define ST30_RX_FLAG_ENABLE_RTCP (MTL_BIT32(1))
 
 /** default time in the fifo between packet builder and pacing */
 #define ST30_TX_FIFO_DEFAULT_TIME_MS (10)

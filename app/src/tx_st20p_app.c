@@ -241,6 +241,7 @@ static int app_tx_st20p_init(struct st_app_context* ctx, st_json_st20p_session_t
   ops.start_vrx = ctx->tx_start_vrx;
   ops.pad_interval = ctx->tx_pad_interval;
   if (ctx->tx_no_static_pad) ops.flags |= ST20P_TX_FLAG_DISABLE_STATIC_PAD_P;
+  if (st20p && st20p->enable_rtcp) ops.flags |= ST20P_TX_FLAG_ENABLE_RTCP;
 
   s->width = ops.width;
   s->height = ops.height;

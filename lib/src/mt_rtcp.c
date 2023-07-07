@@ -71,11 +71,14 @@ static int rtcp_tx_retransmit_rtp_packets(struct mt_rtcp_tx* tx, uint16_t seq_id
 }
 
 /* where to receive rtcp packet? add flow or rss? */
-int mt_rtcp_tx_parse_nack_packet(struct mt_rtcp_tx* tx, struct mt_rtcp_hdr* rtcp) {
-  if (!rtcp) {
+int mt_rtcp_tx_parse_nack_packet(struct mt_rtcp_tx* tx, struct rte_mbuf* m) {
+  if (!m) {
     err("%s, no packet\n", __func__);
     return -EIO;
   }
+
+  struct mt_rtcp_hdr* rtcp =
+      rte_pktmbuf_mtod_offset(m, struct mt_rtcp_hdr*, sizeof(struct mt_udp_hdr));
 
   if (rtcp->flags != 0x80) {
     err("%s, wrong rtcp flags %u\n", __func__, rtcp->flags);
@@ -103,11 +106,14 @@ int mt_rtcp_tx_parse_nack_packet(struct mt_rtcp_tx* tx, struct mt_rtcp_hdr* rtcp
   return 0;
 }
 
-int mt_rtcp_rx_parse_rtp_packet(struct mt_rtcp_rx* rx, struct st_rfc3550_rtp_hdr* rtp) {
-  if (!rtp) {
+int mt_rtcp_rx_parse_rtp_packet(struct mt_rtcp_rx* rx, struct rte_mbuf* m) {
+  if (!m) {
     err("%s, invalid packet\n", __func__);
     return -EINVAL;
   }
+
+  struct st_rfc3550_rtp_hdr* rtp =
+      rte_pktmbuf_mtod_offset(m, struct st_rfc3550_rtp_hdr*, sizeof(struct mt_udp_hdr));
 
   // uint16_t seq_id = ntohs(rtp->seq_number);
 
@@ -142,6 +148,7 @@ int mt_rtcp_rx_send_nack_packet(struct mt_rtcp_rx* rx) {
   rte_memcpy(hdr, &rx->udp_hdr, sizeof(*hdr));
   ipv4->packet_id = rx->ipv4_packet_id++;
 
+  mt_mbuf_init_ipv4(pkt);
   pkt->data_len = sizeof(*hdr);
   pkt->pkt_len = pkt->data_len;
 
@@ -218,12 +225,11 @@ struct mt_rtcp_tx* mt_rtcp_tx_create(struct mtl_main_impl* impl,
 
   tx->parent = impl;
   tx->port = ops->port;
-  tx->udp_hdr = *ops->rtp_udp_hdr;
-  uint16_t udp_port = ntohs(ops->rtp_udp_hdr->udp.dst_port) + 1;
-  tx->udp_hdr.udp.dst_port = htons(udp_port);
   tx->mbuf_ring = ring;
   tx->ipv4_packet_id = 0;
+  tx->ssrc = ops->ssrc;
   strncpy(tx->name, ops->name, sizeof(tx->name) - 1);
+  mtl_memcpy(&tx->udp_hdr, ops->udp_hdr, sizeof(tx->udp_hdr));
 
   mt_stat_register(impl, rtcp_tx_stat, tx, tx->name);
 
@@ -257,12 +263,11 @@ struct mt_rtcp_rx* mt_rtcp_rx_create(struct mtl_main_impl* impl,
 
   rx->parent = impl;
   rx->port = ops->port;
-  rx->udp_hdr = *ops->rtp_udp_hdr;
-  uint16_t udp_port = ntohs(ops->rtp_udp_hdr->udp.dst_port) + 1;
-  rx->udp_hdr.udp.dst_port = htons(udp_port);
   rx->max_retry = ops->max_retry;
   rx->ipv4_packet_id = 0;
+  rx->ssrc = ops->ssrc;
   strncpy(rx->name, ops->name, sizeof(rx->name) - 1);
+  mtl_memcpy(&rx->udp_hdr, ops->udp_hdr, sizeof(rx->udp_hdr));
 
   MT_TAILQ_INIT(&rx->nack_list);
 

@@ -489,6 +489,7 @@ static int app_rx_video_init(struct st_app_context* ctx, st_json_video_session_t
     s->slice = false;
   }
   if (ctx->enable_hdr_split) ops.flags |= ST20_RX_FLAG_HDR_SPLIT;
+  if (video && video->enable_rtcp) ops.flags |= ST20_RX_FLAG_ENABLE_RTCP;
 
   st_pthread_mutex_init(&s->st20_wake_mutex, NULL);
   st_pthread_cond_init(&s->st20_wake_cond, NULL);

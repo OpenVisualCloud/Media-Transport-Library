@@ -33,7 +33,7 @@ MT_TAILQ_HEAD(mt_rtcp_nack_list, mt_rtcp_nack_item);
 
 struct mt_rtcp_tx_ops {
   const char* name;
-  struct mt_udp_hdr* rtp_udp_hdr;
+  struct mt_udp_hdr* udp_hdr;
   uint32_t ssrc;
   uint16_t buffer_size;
   enum mtl_port port;
@@ -41,7 +41,7 @@ struct mt_rtcp_tx_ops {
 
 struct mt_rtcp_rx_ops {
   const char* name;
-  struct mt_udp_hdr* rtp_udp_hdr;
+  struct mt_udp_hdr* udp_hdr;
   uint32_t ssrc;
   uint16_t max_idx;
   uint16_t max_retry;
@@ -56,6 +56,7 @@ struct mt_rtcp_tx {
   uint16_t ring_first_idx;
   struct mt_udp_hdr udp_hdr;
   char name[32];
+  uint32_t ssrc;
 
   uint16_t ipv4_packet_id;
 
@@ -74,6 +75,7 @@ struct mt_rtcp_rx {
   uint16_t last_seq_id;
   struct mt_udp_hdr udp_hdr;
   char name[32];
+  uint32_t ssrc;
 
   uint16_t ipv4_packet_id;
 
@@ -93,9 +95,9 @@ void mt_rtcp_rx_free(struct mt_rtcp_rx* rx);
 
 int mt_rtcp_tx_buffer_rtp_packets(struct mt_rtcp_tx* tx, struct rte_mbuf** mbufs,
                                   unsigned int bulk);
-int mt_rtcp_tx_parse_nack_packet(struct mt_rtcp_tx* tx, struct mt_rtcp_hdr* hdr);
+int mt_rtcp_tx_parse_nack_packet(struct mt_rtcp_tx* tx, struct rte_mbuf* m);
 
-int mt_rtcp_rx_parse_rtp_packet(struct mt_rtcp_rx* rx, struct st_rfc3550_rtp_hdr* hdr);
+int mt_rtcp_rx_parse_rtp_packet(struct mt_rtcp_rx* rx, struct rte_mbuf* m);
 int mt_rtcp_rx_send_nack_packet(struct mt_rtcp_rx* rx);
 
 #endif
