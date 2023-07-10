@@ -81,6 +81,7 @@ struct mt_rtcp_rx {
 
   /* stat */
   uint32_t stat_rtp_received;
+  uint32_t stat_rtp_lost_detected;
   uint32_t stat_rtp_retransmit_succ;
   uint32_t stat_nack_sent;
 };
@@ -95,9 +96,9 @@ void mt_rtcp_rx_free(struct mt_rtcp_rx* rx);
 
 int mt_rtcp_tx_buffer_rtp_packets(struct mt_rtcp_tx* tx, struct rte_mbuf** mbufs,
                                   unsigned int bulk);
-int mt_rtcp_tx_parse_nack_packet(struct mt_rtcp_tx* tx, struct rte_mbuf* m);
+int mt_rtcp_tx_parse_nack_packet(struct mt_rtcp_tx* tx, struct mt_rtcp_hdr* rtcp);
 
-int mt_rtcp_rx_parse_rtp_packet(struct mt_rtcp_rx* rx, struct rte_mbuf* m);
+int mt_rtcp_rx_parse_rtp_packet(struct mt_rtcp_rx* rx, struct st_rfc3550_rtp_hdr* rtp);
 int mt_rtcp_rx_send_nack_packet(struct mt_rtcp_rx* rx);
 
 #endif

@@ -28,10 +28,13 @@ int mt_rtcp_tx_buffer_rtp_packets(struct mt_rtcp_tx* tx, struct rte_mbuf** mbufs
     tx->ring_first_idx += clean;
   }
 
-  if (rte_ring_sp_enqueue_bulk(tx->mbuf_ring, (void**)mbufs, bulk, NULL) != 0) {
+  if (rte_ring_sp_enqueue_bulk(tx->mbuf_ring, (void**)mbufs, bulk, NULL) == 0) {
     err("%s, failed to enqueue mbuf to ring\n", __func__);
-    //? rte_pktmbuf_free(mbuf);
     return -EIO;
+  }
+
+  for (int i = 0; i < bulk; i++) {
+    rte_mbuf_refcnt_update(mbufs[i], 1);
   }
 
   tx->stat_rtp_sent += bulk;
@@ -49,7 +52,7 @@ static int rtcp_tx_retransmit_rtp_packets(struct mt_rtcp_tx* tx, uint16_t seq_id
     struct rte_mbuf* clean_mbufs[clean];
     if (rte_ring_sc_dequeue_bulk(tx->mbuf_ring, (void**)clean_mbufs, clean, NULL) !=
         clean) {
-      err("%s, failed to dequeue mbuf from ring\n", __func__);
+      err("%s, failed to dequeue old mbufs from ring\n", __func__);
       return -EIO;
     }
     rte_pktmbuf_free_bulk(clean_mbufs, clean);
@@ -58,6 +61,7 @@ static int rtcp_tx_retransmit_rtp_packets(struct mt_rtcp_tx* tx, uint16_t seq_id
   unsigned int nb_rt =
       rte_ring_sc_dequeue_burst(tx->mbuf_ring, (void**)mbufs, bulk, NULL);
   if (nb_rt == 0) {
+    warn("%s, no mbufs to retransmit\n", __func__);
     return 0;
   }
   tx->ring_first_idx += nb_rt;
@@ -71,15 +75,7 @@ static int rtcp_tx_retransmit_rtp_packets(struct mt_rtcp_tx* tx, uint16_t seq_id
 }
 
 /* where to receive rtcp packet? add flow or rss? */
-int mt_rtcp_tx_parse_nack_packet(struct mt_rtcp_tx* tx, struct rte_mbuf* m) {
-  if (!m) {
-    err("%s, no packet\n", __func__);
-    return -EIO;
-  }
-
-  struct mt_rtcp_hdr* rtcp =
-      rte_pktmbuf_mtod_offset(m, struct mt_rtcp_hdr*, sizeof(struct mt_udp_hdr));
-
+int mt_rtcp_tx_parse_nack_packet(struct mt_rtcp_tx* tx, struct mt_rtcp_hdr* rtcp) {
   if (rtcp->flags != 0x80) {
     err("%s, wrong rtcp flags %u\n", __func__, rtcp->flags);
     return -EIO;
@@ -106,24 +102,33 @@ int mt_rtcp_tx_parse_nack_packet(struct mt_rtcp_tx* tx, struct rte_mbuf* m) {
   return 0;
 }
 
-int mt_rtcp_rx_parse_rtp_packet(struct mt_rtcp_rx* rx, struct rte_mbuf* m) {
-  if (!m) {
-    err("%s, invalid packet\n", __func__);
-    return -EINVAL;
+int mt_rtcp_rx_parse_rtp_packet(struct mt_rtcp_rx* rx, struct st_rfc3550_rtp_hdr* rtp) {
+  struct mtl_main_impl* impl = rx->parent;
+  enum mtl_port port = rx->port;
+
+  uint16_t seq_id = ntohs(rtp->seq_number);
+  if (seq_id == rx->last_seq_id + 1) {
+    // pkt received in sequence
+    rx->last_seq_id = seq_id;
+  } else if (seq_id > rx->last_seq_id + 1) {
+    // pkt(s) lost
+    uint16_t lost_packets = seq_id - rx->last_seq_id - 1;
+    rx->stat_rtp_lost_detected += lost_packets;
+    /* insert nack */
+    struct mt_rtcp_nack_item* nack =
+        mt_rte_zmalloc_socket(sizeof(*nack), mt_socket_id(impl, port));
+    if (!nack) {
+      err("%s, failed to alloc nack item\n", __func__);
+      return -ENOMEM;
+    }
+    nack->seq_id = rx->last_seq_id + 1;
+    nack->bulk = lost_packets - 1;
+    nack->retry_count = rx->max_retry;
+    MT_TAILQ_INSERT_TAIL(&rx->nack_list, nack, next);
+    rx->last_seq_id = seq_id;
+  } else {
+    // TODO: remove out of order pkt from nack list
   }
-
-  // struct st_rfc3550_rtp_hdr* rtp =
-  //     rte_pktmbuf_mtod_offset(m, struct st_rfc3550_rtp_hdr*, sizeof(struct
-  //     mt_udp_hdr));
-
-  // uint16_t seq_id = ntohs(rtp->seq_number);
-
-  /* TODO: update nack list
-   * 1. remove received item from nack list (rx->stat_rtp_retransmit_succ++)
-   * 2. calculate missing seq_id(s)
-   * 3. make nack item
-   * 4. insert to nack list
-   **/
 
   rx->stat_rtp_received++;
 
