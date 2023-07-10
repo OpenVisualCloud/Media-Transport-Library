@@ -156,15 +156,32 @@ int mt_rtcp_rx_send_nack_packet(struct mt_rtcp_rx* rx) {
 
   mt_mbuf_init_ipv4(pkt);
   pkt->data_len = sizeof(*hdr);
-  pkt->pkt_len = pkt->data_len;
 
-  /* TODO: build the nack packet
-   * 1. fill rtcp header
-   * 2. walk through the nack list
-   * 3. get the retransmit requests
-   * 4. fill the FCIs
-   * 5. update mbuf len
-   **/
+  struct mt_rtcp_hdr* rtcp =
+      rte_pktmbuf_mtod_offset(pkt, struct mt_rtcp_hdr*, pkt->pkt_len);
+  rtcp->flags = 0x80;
+  rtcp->ptype = MT_RTCP_PTYPE_NACK;
+  rtcp->ssrc = htonl(rx->ssrc);
+  strncpy(rtcp->name, "IMTL", 4);
+  uint16_t num_fci = 0;
+
+  struct mt_rtcp_nack_item* nack;
+  while ((nack = MT_TAILQ_FIRST(&rx->nack_list))) {
+    struct mt_rtcp_fci* fci =
+        (struct mt_rtcp_fci*)(rtcp->name + 4 + num_fci * sizeof(struct mt_rtcp_fci));
+    fci->start = htons(nack->seq_id);
+    fci->follow = htons(nack->bulk);
+    num_fci++;
+    nack->retry_count--;
+    if (nack->retry_count == 0) {
+      MT_TAILQ_REMOVE(&rx->nack_list, nack, next);
+      mt_rte_free(nack);
+    }
+  }
+  rtcp->len = htons(sizeof(struct mt_rtcp_hdr) / 4 - 1 + num_fci);
+
+  pkt->data_len += sizeof(struct mt_rtcp_hdr) + num_fci * sizeof(struct mt_rtcp_fci);
+  pkt->pkt_len = pkt->data_len;
 
   uint16_t send = mt_dev_tx_sys_queue_burst(impl, port, &pkt, 1);
   if (send != 1) {
