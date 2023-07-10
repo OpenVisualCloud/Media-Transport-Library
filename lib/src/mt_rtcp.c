@@ -107,11 +107,10 @@ int mt_rtcp_rx_parse_rtp_packet(struct mt_rtcp_rx* rx, struct st_rfc3550_rtp_hdr
   enum mtl_port port = rx->port;
 
   uint16_t seq_id = ntohs(rtp->seq_number);
-  if (seq_id == rx->last_seq_id + 1) {
-    // pkt received in sequence
+  if (seq_id == rx->last_seq_id + 1) { /* pkt received in sequence */
+
     rx->last_seq_id = seq_id;
-  } else if (seq_id > rx->last_seq_id + 1) {
-    // pkt(s) lost
+  } else if (seq_id > rx->last_seq_id + 1) { /* pkt(s) lost */
     uint16_t lost_packets = seq_id - rx->last_seq_id - 1;
     rx->stat_rtp_lost_detected += lost_packets;
     /* insert nack */
@@ -127,7 +126,7 @@ int mt_rtcp_rx_parse_rtp_packet(struct mt_rtcp_rx* rx, struct st_rfc3550_rtp_hdr
     MT_TAILQ_INSERT_TAIL(&rx->nack_list, nack, next);
     rx->last_seq_id = seq_id;
   } else {
-    // TODO: remove out of order pkt from nack list
+    /* TODO: remove out of order pkt from nack list */
   }
 
   rx->stat_rtp_received++;
@@ -162,7 +161,7 @@ int mt_rtcp_rx_send_nack_packet(struct mt_rtcp_rx* rx) {
   rtcp->flags = 0x80;
   rtcp->ptype = MT_RTCP_PTYPE_NACK;
   rtcp->ssrc = htonl(rx->ssrc);
-  strncpy(rtcp->name, "IMTL", 4);
+  mtl_memcpy(rtcp->name, "IMTL", 4);
   uint16_t num_fci = 0;
 
   struct mt_rtcp_nack_item* nack;
@@ -218,10 +217,11 @@ static int rtcp_rx_stat(void* priv) {
   struct mt_rtcp_rx* rx = priv;
   enum mtl_port port = rx->port;
 
-  notice("%s(%d,%s), rtp recv %u nack sent %u rtp retransmit %u\n", __func__, port,
-         rx->name, rx->stat_rtp_received, rx->stat_nack_sent,
-         rx->stat_rtp_retransmit_succ);
+  notice("%s(%d,%s), rtp recv %u lost %u nack sent %u rtp retransmit %u\n", __func__,
+         port, rx->name, rx->stat_rtp_received, rx->stat_rtp_lost_detected,
+         rx->stat_nack_sent, rx->stat_rtp_retransmit_succ);
   rx->stat_rtp_received = 0;
+  rx->stat_rtp_lost_detected = 0;
   rx->stat_nack_sent = 0;
   rx->stat_rtp_retransmit_succ = 0;
 
