@@ -108,18 +108,6 @@ static int csq_stat(struct mt_cni_entry* cni) {
   return 0;
 }
 
-static inline void csq_entry_pkts_enqueue(struct mt_csq_entry* entry,
-                                          struct rte_mbuf** pkts,
-                                          const uint16_t nb_pkts) {
-  /* use bulk version */
-  unsigned int n = rte_ring_sp_enqueue_bulk(entry->ring, (void**)pkts, nb_pkts, NULL);
-  entry->stat_enqueue_cnt += n;
-  if (n == 0) {
-    rte_pktmbuf_free_bulk(pkts, nb_pkts);
-    entry->stat_enqueue_fail_cnt += nb_pkts;
-  }
-}
-
 static int cni_udp_handle(struct mt_cni_entry* cni, struct rte_mbuf* m) {
   struct mt_udp_hdr* hdr;
   struct rte_ipv4_hdr* ipv4;
