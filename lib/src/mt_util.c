@@ -633,10 +633,16 @@ int st_frame_trans_uinit(struct st_frame_trans* frame) {
 
 int st_vsync_calculate(struct mtl_main_impl* impl, struct st_vsync_info* vsync) {
   uint64_t ptp_time = mt_get_ptp_time(impl, MTL_PORT_P);
+  uint64_t next_epoch;
   uint64_t to_next_epochs;
 
-  vsync->meta.epoch = ptp_time / vsync->meta.frame_time + 1;
-  to_next_epochs = vsync->meta.epoch * vsync->meta.frame_time - ptp_time;
+  next_epoch = ptp_time / vsync->meta.frame_time + 1;
+  if (next_epoch == vsync->meta.epoch) {
+    dbg("%s, ptp_time still in current epoch\n", __func__);
+    next_epoch++; /* sync to next */
+  }
+  to_next_epochs = next_epoch * vsync->meta.frame_time - ptp_time;
+  vsync->meta.epoch = next_epoch;
   vsync->next_epoch_tsc = mt_get_tsc(impl) + to_next_epochs;
 
   dbg("%s, to_next_epochs %fms\n", __func__, (float)to_next_epochs / NS_PER_MS);
