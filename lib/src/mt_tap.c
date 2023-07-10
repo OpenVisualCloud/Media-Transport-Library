@@ -869,7 +869,7 @@ int mt_tap_handle(struct mtl_main_impl* impl, enum mtl_port port) {
     rx = mt_rxq_burst(cni->tap_rx_q[port], pkts_rx, ST_CNI_RX_BURST_SIZE);
 
     if (rx > 0) {
-      cni->eth_rx_cnt[port] += rx;
+      cni->entries[port].eth_rx_cnt += rx;
       for (int i = 0; i < rx; i++) {
         tap_put_mbuf(tap_tx_ring, pkts_rx[i]);
       }

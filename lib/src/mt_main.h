@@ -220,36 +220,79 @@ struct mt_ptp_impl {
   int32_t stat_sync_cnt;
 };
 
-struct mt_cni_priv {
-  struct mtl_main_impl* impl;
-  enum mtl_port port;
+/* request of rx queue flow */
+struct mt_rxq_flow {
+  /* used for cni queue */
+  bool sys_queue;
+  /* no ip flow, only use port flow, for udp transport */
+  bool no_ip_flow;
+  /* if apply destination port flow or not */
+  bool no_port_flow;
+  /* child of cni to save queue usage */
+  bool use_cni_queue;
+  /* mandatory if not no_ip_flow */
+  uint8_t dip_addr[MTL_IP_ADDR_LEN]; /* rx destination IP */
+  /* source ip is ignored if destination is a multicast address */
+  uint8_t sip_addr[MTL_IP_ADDR_LEN]; /* source IP */
+  uint16_t dst_port;                 /* udp destination port */
+
+  /* optional */
+  bool hdr_split; /* if request hdr split */
+  void* hdr_split_mbuf_cb_priv;
+#ifdef ST_HAS_DPDK_HDR_SPLIT /* rte_eth_hdrs_mbuf_callback_fn define with this marco */
+  rte_eth_hdrs_mbuf_callback_fn hdr_split_mbuf_cb;
+#endif
 };
 
-struct mt_cni_udp_entry {
+struct mt_cni_udp_detect_entry {
   uint32_t tuple[3]; /* udp tuple identify */
   int pkt_cnt;
   /* linked list */
-  MT_TAILQ_ENTRY(mt_cni_udp_entry) next;
+  MT_TAILQ_ENTRY(mt_cni_udp_detect_entry) next;
 };
 
-MT_TAILQ_HEAD(mt_cni_udp_list, mt_cni_udp_entry);
+MT_TAILQ_HEAD(mt_cni_udp_detect_list, mt_cni_udp_detect_entry);
+
+struct mt_csq_entry {
+  int idx;
+  struct mt_cni_entry* parent;
+  struct mt_rxq_flow flow;
+  struct rte_ring* ring;
+  uint32_t stat_enqueue_cnt;
+  uint32_t stat_dequeue_cnt;
+  uint32_t stat_enqueue_fail_cnt;
+  /* linked list */
+  MT_TAILQ_ENTRY(mt_csq_entry) next;
+};
+
+MT_TAILQ_HEAD(mt_csq_queue, mt_csq_entry);
+
+struct mt_cni_entry {
+  struct mtl_main_impl* impl;
+  enum mtl_port port;
+  struct mt_rxq_entry* rxq;
+
+  struct mt_csq_queue csq_queues; /* for cni udp queue */
+  int csq_idx;
+  pthread_mutex_t csq_mutex;
+
+  struct mt_cni_udp_detect_list udp_detect; /* for udp stream debug usage */
+
+  /* stat */
+  uint32_t eth_rx_cnt;
+  uint64_t eth_rx_bytes;
+};
 
 struct mt_cni_impl {
   bool used; /* if enable cni */
   int num_ports;
 
-  struct mt_rxq_entry* rxq[MTL_PORT_MAX];
-  struct mt_cni_priv cni_priv[MTL_PORT_MAX];
   pthread_t tid; /* thread id for rx */
   rte_atomic32_t stop_thread;
   bool lcore_tasklet;
   struct mt_sch_tasklet_impl* tasklet;
 
-  struct mt_cni_udp_list udps[MTL_PORT_MAX]; /* for udp stream debug usage */
-
-  /* stat */
-  uint32_t eth_rx_cnt[MTL_PORT_MAX];
-  uint64_t eth_rx_bytes[MTL_PORT_MAX];
+  struct mt_cni_entry entries[MTL_PORT_MAX];
 
 #ifdef MTL_HAS_KNI
   bool has_kni_kmod;
@@ -447,28 +490,6 @@ struct mt_rl_shaper {
   uint64_t rl_bps; /* input, byte per sec */
   uint32_t shaper_profile_id;
   int idx;
-};
-
-typedef int (*mt_rsq_mbuf_cb)(void* priv, struct rte_mbuf** mbuf, uint16_t nb);
-
-/* request of rx queue flow */
-struct mt_rxq_flow {
-  /* for cni queue */
-  bool sys_queue;
-  bool no_ip_flow; /* no ip flow, only use port flow, for udp transport */
-  /* mandatory if not no_ip_flow */
-  uint8_t dip_addr[MTL_IP_ADDR_LEN]; /* rx destination IP */
-  /* source ip is ignored if destination is a multicast address */
-  uint8_t sip_addr[MTL_IP_ADDR_LEN]; /* source IP */
-  bool no_port_flow;                 /* if apply destination port flow or not */
-  uint16_t dst_port;                 /* udp destination port */
-
-  /* optional */
-  bool hdr_split; /* if request hdr split */
-  void* hdr_split_mbuf_cb_priv;
-#ifdef ST_HAS_DPDK_HDR_SPLIT /* rte_eth_hdrs_mbuf_callback_fn define with this marco */
-  rte_eth_hdrs_mbuf_callback_fn hdr_split_mbuf_cb;
-#endif
 };
 
 struct mt_rx_flow_rsp {
@@ -697,7 +718,6 @@ struct mt_rsq_entry {
   uint16_t queue_id;
   int idx;
   struct mt_rxq_flow flow;
-  uint16_t dst_port_net;
   struct mt_rx_flow_rsp* flow_rsp;
   struct mt_rsq_impl* parent;
   struct rte_ring* ring;
@@ -1045,6 +1065,13 @@ static inline bool mt_has_tx_mono_pool(struct mtl_main_impl* impl) {
 
 static inline bool mt_has_tx_no_chain(struct mtl_main_impl* impl) {
   if (mt_get_user_params(impl)->flags & MTL_FLAG_TX_NO_CHAIN)
+    return true;
+  else
+    return false;
+}
+
+static inline bool mt_has_cni_rx(struct mtl_main_impl* impl) {
+  if (mt_get_user_params(impl)->flags & MTL_FLAG_RX_USE_CNI)
     return true;
   else
     return false;

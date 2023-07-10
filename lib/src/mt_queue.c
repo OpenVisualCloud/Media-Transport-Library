@@ -24,6 +24,10 @@ struct mt_rxq_entry* mt_rxq_get(struct mtl_main_impl* impl, enum mtl_port port,
     entry->rsq = mt_rsq_get(impl, port, flow);
     if (!entry->rsq) goto fail;
     entry->queue_id = mt_rsq_queue_id(entry->rsq);
+  } else if (flow->use_cni_queue) {
+    entry->csq = mt_csq_get(impl, port, flow);
+    if (!entry->csq) goto fail;
+    entry->queue_id = mt_csq_queue_id(entry->csq);
   } else {
     entry->rxq = mt_dev_get_rx_queue(impl, port, flow);
     if (!entry->rxq) goto fail;
@@ -50,6 +54,10 @@ int mt_rxq_put(struct mt_rxq_entry* entry) {
     mt_srss_put(entry->srss);
     entry->srss = NULL;
   }
+  if (entry->csq) {
+    mt_csq_put(entry->csq);
+    entry->csq = NULL;
+  }
   mt_rte_free(entry);
   return 0;
 }
@@ -61,6 +69,8 @@ uint16_t mt_rxq_burst(struct mt_rxq_entry* entry, struct rte_mbuf** rx_pkts,
     rx = mt_srss_burst(entry->srss, rx_pkts, nb_pkts);
   } else if (entry->rsq) {
     rx = mt_rsq_burst(entry->rsq, rx_pkts, nb_pkts);
+  } else if (entry->csq) {
+    rx = mt_csq_burst(entry->csq, rx_pkts, nb_pkts);
   } else {
     rx = mt_dev_rx_burst(entry->rxq, rx_pkts, nb_pkts);
   }
