@@ -211,6 +211,7 @@ static int rx_ancillary_session_init_hw(struct mtl_main_impl* impl,
     rte_memcpy(flow.dip_addr, s->ops.sip_addr[i], MTL_IP_ADDR_LEN);
     rte_memcpy(flow.sip_addr, mt_sip_addr(impl, port), MTL_IP_ADDR_LEN);
     flow.dst_port = s->st40_dst_port[i];
+    if (mt_has_cni_rx(impl)) flow.use_cni_queue = true;
 
     /* no flow for data path only */
     if (mt_pmd_is_kernel(impl, port) && (s->ops.flags & ST40_RX_FLAG_DATA_PATH_ONLY))

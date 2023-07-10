@@ -2,6 +2,7 @@
  * Copyright(c) 2023 Intel Corporation
  */
 
+#include "mt_cni.h"
 #include "mt_dev.h"
 #include "mt_shared_queue.h"
 #include "mt_shared_rss.h"
@@ -14,8 +15,8 @@ struct mt_rxq_entry {
   uint16_t queue_id;
   struct mt_rx_queue* rxq;
   struct mt_rsq_entry* rsq;
-  struct mt_rss_entry* rss;
   struct mt_srss_entry* srss;
+  struct mt_csq_entry* csq;
 };
 
 struct mt_rxq_entry* mt_rxq_get(struct mtl_main_impl* impl, enum mtl_port port,
