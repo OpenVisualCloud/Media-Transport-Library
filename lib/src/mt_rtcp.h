@@ -42,7 +42,6 @@ struct mt_rtcp_tx_ops {
 struct mt_rtcp_rx_ops {
   const char* name;
   struct mt_udp_hdr* udp_hdr;
-  uint32_t ssrc;
   uint16_t max_idx;
   uint16_t max_retry;
   enum mtl_port port;

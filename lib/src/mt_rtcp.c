@@ -106,9 +106,10 @@ int mt_rtcp_rx_parse_rtp_packet(struct mt_rtcp_rx* rx, struct st_rfc3550_rtp_hdr
   struct mtl_main_impl* impl = rx->parent;
   enum mtl_port port = rx->port;
 
+  if (rx->ssrc == 0) rx->ssrc = ntohl(rtp->ssrc);
+
   uint16_t seq_id = ntohs(rtp->seq_number);
   if (seq_id == rx->last_seq_id + 1) { /* pkt received in sequence */
-
     rx->last_seq_id = seq_id;
   } else if (seq_id > rx->last_seq_id + 1) { /* pkt(s) lost */
     uint16_t lost_packets = seq_id - rx->last_seq_id - 1;
@@ -288,7 +289,7 @@ struct mt_rtcp_rx* mt_rtcp_rx_create(struct mtl_main_impl* impl,
   rx->port = ops->port;
   rx->max_retry = ops->max_retry;
   rx->ipv4_packet_id = 0;
-  rx->ssrc = ops->ssrc;
+  rx->ssrc = 0;
   strncpy(rx->name, ops->name, sizeof(rx->name) - 1);
   mtl_memcpy(&rx->udp_hdr, ops->udp_hdr, sizeof(rx->udp_hdr));
 
