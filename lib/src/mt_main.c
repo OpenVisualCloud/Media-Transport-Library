@@ -21,9 +21,6 @@
 #include "mt_stat.h"
 #include "mt_util.h"
 #include "st2110/pipeline/st_plugin.h"
-#include "st2110/st_ancillary_transmitter.h"
-#include "st2110/st_rx_ancillary_session.h"
-#include "st2110/st_tx_ancillary_session.h"
 #include "udp/udp_rxq.h"
 
 enum mtl_port mt_port_by_id(struct mtl_main_impl* impl, uint16_t port_id) {
@@ -91,26 +88,6 @@ static void* mt_calibrate_tsc(void* arg) {
 
   info("%s, tscHz %" PRIu64 "\n", __func__, impl->tsc_hz);
   return NULL;
-}
-
-static int st_tx_anc_uinit(struct mtl_main_impl* impl) {
-  if (!impl->tx_anc_init) return 0;
-
-  /* free tx ancillary context */
-  st_ancillary_transmitter_uinit(&impl->anc_trs);
-  st_tx_ancillary_sessions_mgr_uinit(&impl->tx_anc_mgr);
-
-  impl->tx_anc_init = false;
-  return 0;
-}
-
-static int st_rx_anc_uinit(struct mtl_main_impl* impl) {
-  if (!impl->rx_anc_init) return 0;
-
-  st_rx_ancillary_sessions_mgr_uinit(&impl->rx_anc_mgr);
-
-  impl->rx_anc_init = false;
-  return 0;
 }
 
 static int mt_main_create(struct mtl_main_impl* impl) {
@@ -500,10 +477,6 @@ mtl_handle mtl_init(struct mtl_init_params* p) {
   }
   impl->sch_schedule_ns = 200 * NS_PER_US; /* max schedule ns for mt_sleep_ms(0) */
 
-  /* init mgr lock for anc */
-  mt_pthread_mutex_init(&impl->tx_anc_mgr_mutex, NULL);
-  mt_pthread_mutex_init(&impl->rx_anc_mgr_mutex, NULL);
-
   impl->tsc_hz = rte_get_tsc_hz();
 
   impl->iova_mode = rte_eal_iova_mode();
@@ -554,9 +527,6 @@ int mtl_uninit(mtl_handle mt) {
   }
 
   _mt_stop(impl);
-
-  st_tx_anc_uinit(impl);
-  st_rx_anc_uinit(impl);
 
   mt_main_free(impl);
 

@@ -174,7 +174,6 @@ struct mt_rsq_entry* mt_rsq_get(struct mtl_main_impl* impl, enum mtl_port port,
   entry->idx = idx;
   entry->parent = rsqm;
   rte_memcpy(&entry->flow, flow, sizeof(entry->flow));
-  entry->dst_port_net = htons(flow->dst_port);
 
   if (!flow->sys_queue) {
     entry->flow_rsp = mt_dev_create_rx_flow(impl, port, q, flow);

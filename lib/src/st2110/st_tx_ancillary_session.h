@@ -9,6 +9,7 @@
 
 #define ST_TX_ANCILLARY_PREFIX "TC_"
 
-int st_tx_ancillary_sessions_mgr_uinit(struct st_tx_ancillary_sessions_mgr* mgr);
+int st_tx_ancillary_sessions_sch_uinit(struct mtl_main_impl* impl,
+                                       struct mt_sch_impl* sch);
 
 #endif

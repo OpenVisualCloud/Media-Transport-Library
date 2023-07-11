@@ -7,8 +7,10 @@
 #include "mt_dev.h"
 #include "mt_log.h"
 #include "mt_stat.h"
+#include "st2110/st_rx_ancillary_session.h"
 #include "st2110/st_rx_audio_session.h"
 #include "st2110/st_rx_video_session.h"
+#include "st2110/st_tx_ancillary_session.h"
 #include "st2110/st_tx_audio_session.h"
 #include "st2110/st_tx_video_session.h"
 
@@ -514,6 +516,9 @@ int mt_sch_mrg_init(struct mtl_main_impl* impl, int data_quota_mbs_limit) {
     /* init mgr lock for audio */
     mt_pthread_mutex_init(&sch->tx_a_mgr_mutex, NULL);
     mt_pthread_mutex_init(&sch->rx_a_mgr_mutex, NULL);
+    /* init mgr lock for anc */
+    mt_pthread_mutex_init(&sch->tx_anc_mgr_mutex, NULL);
+    mt_pthread_mutex_init(&sch->rx_anc_mgr_mutex, NULL);
 
     mt_stat_register(impl, sch_stat, sch, "sch");
 
@@ -550,6 +555,9 @@ int mt_sch_mrg_uinit(struct mtl_main_impl* impl) {
 
     mt_pthread_mutex_destroy(&sch->tx_a_mgr_mutex);
     mt_pthread_mutex_destroy(&sch->rx_a_mgr_mutex);
+
+    mt_pthread_mutex_destroy(&sch->tx_anc_mgr_mutex);
+    mt_pthread_mutex_destroy(&sch->rx_anc_mgr_mutex);
 
     mt_pthread_mutex_destroy(&sch->sleep_wake_mutex);
     mt_pthread_cond_destroy(&sch->sleep_wake_cond);
@@ -617,6 +625,14 @@ int mt_sch_put(struct mt_sch_impl* sch, int quota_mbs) {
     mt_pthread_mutex_lock(&sch->rx_a_mgr_mutex);
     st_rx_audio_sessions_sch_uinit(impl, sch);
     mt_pthread_mutex_unlock(&sch->rx_a_mgr_mutex);
+
+    mt_pthread_mutex_lock(&sch->tx_anc_mgr_mutex);
+    st_tx_ancillary_sessions_sch_uinit(impl, sch);
+    mt_pthread_mutex_unlock(&sch->tx_anc_mgr_mutex);
+
+    mt_pthread_mutex_lock(&sch->rx_anc_mgr_mutex);
+    st_rx_ancillary_sessions_sch_uinit(impl, sch);
+    mt_pthread_mutex_unlock(&sch->rx_anc_mgr_mutex);
 
     sch_free(sch);
   }

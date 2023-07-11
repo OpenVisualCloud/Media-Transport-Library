@@ -349,69 +349,74 @@ enum st21_tx_pacing_way {
  * Flag bit in flags of struct mtl_init_params, debug usage only.
  * dedicate thread for cni message
  */
-#define MTL_FLAG_CNI_THREAD (MTL_BIT64(16))
+#define MTL_FLAG_CNI_THREAD (MTL_BIT64(32))
 /**
  * Flag bit in flags of struct mtl_init_params, debug usage only.
  * Enable video rx ebu check
  */
-#define MTL_FLAG_RX_VIDEO_EBU (MTL_BIT64(17))
+#define MTL_FLAG_RX_VIDEO_EBU (MTL_BIT64(33))
 /**
  * Flag bit in flags of struct mtl_init_params, debug usage only.
  * Enable NIC promiscuous mode for RX
  */
-#define MTL_FLAG_NIC_RX_PROMISCUOUS (MTL_BIT64(20))
+#define MTL_FLAG_NIC_RX_PROMISCUOUS (MTL_BIT64(34))
 /**
  * Flag bit in flags of struct mtl_init_params, debug usage only.
  * use unicast address for ptp PTP_DELAY_REQ message
  */
-#define MTL_FLAG_PTP_UNICAST_ADDR (MTL_BIT64(21))
+#define MTL_FLAG_PTP_UNICAST_ADDR (MTL_BIT64(35))
 /**
  * Flag bit in flags of struct mtl_init_params, debug usage only.
  * Mono memory pool for all rx queue(sessions)
  */
-#define MTL_FLAG_RX_MONO_POOL (MTL_BIT64(22))
+#define MTL_FLAG_RX_MONO_POOL (MTL_BIT64(36))
 /**
  * Flag bit in flags of struct mtl_init_params, debug usage only.
  * Do mtl_start in mtl_init, mtl_stop in mtl_uninit, and skip the mtl_start/mtl_stop
  */
-#define MTL_FLAG_DEV_AUTO_START_STOP (MTL_BIT64(24))
+#define MTL_FLAG_DEV_AUTO_START_STOP (MTL_BIT64(37))
 /**
  * Flag bit in flags of struct mtl_init_params, debug usage only.
  * Enable tasklet time measurement, report status if tasklet run time longer than
  * tasklet_time_thresh_us in mtl_init_params.
  */
-#define MTL_FLAG_TASKLET_TIME_MEASURE (MTL_BIT64(25))
+#define MTL_FLAG_TASKLET_TIME_MEASURE (MTL_BIT64(38))
 /**
  * Flag bit in flags of struct mtl_init_params, debug usage only.
  * Disable the zero copy for af_xdp tx video session
  */
-#define MTL_FLAG_AF_XDP_ZC_DISABLE (MTL_BIT64(26))
+#define MTL_FLAG_AF_XDP_ZC_DISABLE (MTL_BIT64(39))
 /**
  * Flag bit in flags of struct mtl_init_params, debug usage only.
  * Mono memory pool for all tx queue(session)
  */
-#define MTL_FLAG_TX_MONO_POOL (MTL_BIT64(27))
+#define MTL_FLAG_TX_MONO_POOL (MTL_BIT64(40))
 /**
  * Flag bit in flags of struct mtl_init_params, debug usage only.
  * Disable system rx queues, pls use mcast or manual TX mac.
  */
-#define MTL_FLAG_DISABLE_SYSTEM_RX_QUEUES (MTL_BIT64(28))
+#define MTL_FLAG_DISABLE_SYSTEM_RX_QUEUES (MTL_BIT64(41))
 /**
  * Flag bit in flags of struct mtl_init_params, debug usage only.
  * Force to get ptp time from tsc source.
  */
-#define MTL_FLAG_PTP_SOURCE_TSC (MTL_BIT64(29))
+#define MTL_FLAG_PTP_SOURCE_TSC (MTL_BIT64(42))
 /**
  * Flag bit in flags of struct mtl_init_params, debug usage only.
  * Disable TX chain mbuf, use same mbuf for header and payload.
  * Will do memcpy from framebuffer to packet payload.
  */
-#define MTL_FLAG_TX_NO_CHAIN (MTL_BIT64(30))
+#define MTL_FLAG_TX_NO_CHAIN (MTL_BIT64(43))
 /**
  * Flag bit in flags of struct mtl_init_params, debug usage only.
  * Disable the pkt check for TX burst API.
  */
-#define MTL_FLAG_TX_NO_BURST_CHK (MTL_BIT64(31))
+#define MTL_FLAG_TX_NO_BURST_CHK (MTL_BIT64(44))
+/**
+ * Flag bit in flags of struct mtl_init_params, debug usage only.
+ * Use CNI based queue for RX.
+ */
+#define MTL_FLAG_RX_USE_CNI (MTL_BIT64(45))
 
 /**
  * The structure describing how to init af_xdp interface.

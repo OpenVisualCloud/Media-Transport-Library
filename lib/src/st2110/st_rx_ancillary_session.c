@@ -211,6 +211,7 @@ static int rx_ancillary_session_init_hw(struct mtl_main_impl* impl,
     rte_memcpy(flow.dip_addr, s->ops.sip_addr[i], MTL_IP_ADDR_LEN);
     rte_memcpy(flow.sip_addr, mt_sip_addr(impl, port), MTL_IP_ADDR_LEN);
     flow.dst_port = s->st40_dst_port[i];
+    if (mt_has_cni_rx(impl)) flow.use_cni_queue = true;
 
     /* no flow for data path only */
     if (mt_pmd_is_kernel(impl, port) && (s->ops.flags & ST40_RX_FLAG_DATA_PATH_ONLY))
@@ -559,7 +560,7 @@ static int rx_ancillary_sessions_mgr_update(struct st_rx_ancillary_sessions_mgr*
   return 0;
 }
 
-int st_rx_ancillary_sessions_mgr_uinit(struct st_rx_ancillary_sessions_mgr* mgr) {
+static int rx_ancillary_sessions_mgr_uinit(struct st_rx_ancillary_sessions_mgr* mgr) {
   int m_idx = mgr->idx;
   struct st_rx_ancillary_session_impl* s;
 
@@ -626,27 +627,39 @@ static int rx_ancillary_ops_check(struct st40_rx_ops* ops) {
   return 0;
 }
 
-static int st_rx_anc_init(struct mtl_main_impl* impl) {
+static int st_rx_anc_init(struct mtl_main_impl* impl, struct mt_sch_impl* sch) {
   int ret;
 
-  if (impl->rx_anc_init) return 0;
+  if (sch->rx_anc_init) return 0;
 
   /* create rx ancillary context */
-  ret = rx_ancillary_sessions_mgr_init(impl, impl->main_sch, &impl->rx_anc_mgr);
+  ret = rx_ancillary_sessions_mgr_init(impl, sch, &sch->rx_anc_mgr);
   if (ret < 0) {
     err("%s, rx_ancillary_sessions_mgr_init fail\n", __func__);
     return ret;
   }
 
-  impl->rx_anc_init = true;
+  sch->rx_anc_init = true;
+  return 0;
+}
+
+int st_rx_ancillary_sessions_sch_uinit(struct mtl_main_impl* impl,
+                                       struct mt_sch_impl* sch) {
+  if (!sch->rx_anc_init) return 0;
+
+  rx_ancillary_sessions_mgr_uinit(&sch->rx_anc_mgr);
+
+  sch->rx_anc_init = false;
   return 0;
 }
 
 st40_rx_handle st40_rx_create(mtl_handle mt, struct st40_rx_ops* ops) {
   struct mtl_main_impl* impl = mt;
+  struct mt_sch_impl* sch;
   struct st_rx_ancillary_session_handle_impl* s_impl;
   struct st_rx_ancillary_session_impl* s;
   int ret;
+  int quota_mbs;
 
   if (impl->type != MT_HANDLE_MAIN) {
     err("%s, invalid type %d\n", __func__, impl->type);
@@ -659,64 +672,78 @@ st40_rx_handle st40_rx_create(mtl_handle mt, struct st40_rx_ops* ops) {
     return NULL;
   }
 
-  mt_pthread_mutex_lock(&impl->rx_anc_mgr_mutex);
-  ret = st_rx_anc_init(impl);
-  mt_pthread_mutex_unlock(&impl->rx_anc_mgr_mutex);
-  if (ret < 0) {
-    err("%s, st_rx_audio_init fail %d\n", __func__, ret);
-    return NULL;
-  }
-
   s_impl = mt_rte_zmalloc_socket(sizeof(*s_impl), mt_socket_id(impl, MTL_PORT_P));
   if (!s_impl) {
     err("%s, s_impl malloc fail\n", __func__);
     return NULL;
   }
 
-  mt_pthread_mutex_lock(&impl->rx_anc_mgr_mutex);
-  s = rx_ancillary_sessions_mgr_attach(&impl->rx_anc_mgr, ops);
-  mt_pthread_mutex_unlock(&impl->rx_anc_mgr_mutex);
+  quota_mbs = 0;
+  sch = mt_sch_get(impl, quota_mbs, MT_SCH_TYPE_DEFAULT, MT_SCH_MASK_ALL);
+  if (!sch) {
+    mt_rte_free(s_impl);
+    err("%s, get sch fail\n", __func__);
+    return NULL;
+  }
+
+  mt_pthread_mutex_lock(&sch->rx_anc_mgr_mutex);
+  ret = st_rx_anc_init(impl, sch);
+  mt_pthread_mutex_unlock(&sch->rx_anc_mgr_mutex);
+  if (ret < 0) {
+    err("%s, st_rx_anc_init fail %d\n", __func__, ret);
+    mt_sch_put(sch, quota_mbs);
+    mt_rte_free(s_impl);
+    return NULL;
+  }
+
+  mt_pthread_mutex_lock(&sch->rx_anc_mgr_mutex);
+  s = rx_ancillary_sessions_mgr_attach(&sch->rx_anc_mgr, ops);
+  mt_pthread_mutex_unlock(&sch->rx_anc_mgr_mutex);
   if (!s) {
     err("%s, rx_ancillary_sessions_mgr_attach fail\n", __func__);
+    mt_sch_put(sch, quota_mbs);
     mt_rte_free(s_impl);
     return NULL;
   }
 
   s_impl->parent = impl;
   s_impl->type = MT_HANDLE_RX_ANC;
+  s_impl->sch = sch;
+  s_impl->quota_mbs = quota_mbs;
   s_impl->impl = s;
   s->st40_handle = s_impl;
 
   rte_atomic32_inc(&impl->st40_rx_sessions_cnt);
-  info("%s, succ on session %d\n", __func__, s->idx);
+  info("%s, succ on sch %d session %d\n", __func__, sch->idx, s->idx);
   return s_impl;
 }
 
 int st40_rx_update_source(st40_rx_handle handle, struct st_rx_source_info* src) {
   struct st_rx_ancillary_session_handle_impl* s_impl = handle;
-  struct mtl_main_impl* impl;
   struct st_rx_ancillary_session_impl* s;
-  int idx, ret;
+  struct mt_sch_impl* sch;
+  int idx, ret, sch_idx;
 
   if (s_impl->type != MT_HANDLE_RX_ANC) {
     err("%s, invalid type %d\n", __func__, s_impl->type);
     return -EIO;
   }
 
-  impl = s_impl->parent;
   s = s_impl->impl;
   idx = s->idx;
+  sch = s_impl->sch;
+  sch_idx = sch->idx;
 
   ret = st_rx_source_info_check(src, s->ops.num_port);
   if (ret < 0) return ret;
 
-  ret = rx_ancillary_sessions_mgr_update_src(&impl->rx_anc_mgr, s, src);
+  ret = rx_ancillary_sessions_mgr_update_src(&sch->rx_anc_mgr, s, src);
   if (ret < 0) {
-    err("%s(%d), online update fail %d\n", __func__, idx, ret);
+    err("%s(%d,%d), online update fail %d\n", __func__, sch_idx, idx, ret);
     return ret;
   }
 
-  info("%s, succ on session %d\n", __func__, idx);
+  info("%s(%d,%d), succ\n", __func__, sch_idx, idx);
   return 0;
 }
 
@@ -724,7 +751,9 @@ int st40_rx_free(st40_rx_handle handle) {
   struct st_rx_ancillary_session_handle_impl* s_impl = handle;
   struct mtl_main_impl* impl;
   struct st_rx_ancillary_session_impl* s;
+  struct mt_sch_impl* sch;
   int ret, idx;
+  int sch_idx;
 
   if (s_impl->type != MT_HANDLE_RX_ANC) {
     err("%s, invalid type %d\n", __func__, s_impl->type);
@@ -734,20 +763,25 @@ int st40_rx_free(st40_rx_handle handle) {
   impl = s_impl->parent;
   s = s_impl->impl;
   idx = s->idx;
+  sch = s_impl->sch;
+  sch_idx = sch->idx;
 
   /* no need to lock as session is located already */
-  ret = rx_ancillary_sessions_mgr_detach(&impl->rx_anc_mgr, s);
-  if (ret < 0) err("%s(%d), rx_ancillary_sessions_mgr_detach fail\n", __func__, idx);
+  ret = rx_ancillary_sessions_mgr_detach(&sch->rx_anc_mgr, s);
+  if (ret < 0) err("%s(%d, %d), mgr detach fail\n", __func__, sch_idx, idx);
+
+  ret = mt_sch_put(sch, s_impl->quota_mbs);
+  if (ret < 0) err("%s(%d, %d), mt_sch_put fail\n", __func__, sch_idx, idx);
 
   mt_rte_free(s_impl);
 
   /* update max idx */
-  mt_pthread_mutex_lock(&impl->rx_anc_mgr_mutex);
-  rx_ancillary_sessions_mgr_update(&impl->rx_anc_mgr);
-  mt_pthread_mutex_unlock(&impl->rx_anc_mgr_mutex);
+  mt_pthread_mutex_lock(&sch->rx_anc_mgr_mutex);
+  rx_ancillary_sessions_mgr_update(&sch->rx_anc_mgr);
+  mt_pthread_mutex_unlock(&sch->rx_anc_mgr_mutex);
 
   rte_atomic32_dec(&impl->st40_rx_sessions_cnt);
-  info("%s, succ on session %d\n", __func__, idx);
+  info("%s, succ on sch %d session %d\n", __func__, sch_idx, s->idx);
   return 0;
 }
 
