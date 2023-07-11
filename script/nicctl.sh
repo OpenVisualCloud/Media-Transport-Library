@@ -14,8 +14,18 @@ if [ $# -lt 2 ]; then
     echo "   create_vf                create VF and bind to VFIO"
     echo "   create_dcf_vf            create DCF VF and bind to VFIO"
     echo "   disable_vf               Disable VF"
+    echo "   status                   List the DPDK port status"
     exit 0
 fi
+
+iommu_check() {
+    iommu_groups_dir="/sys/kernel/iommu_groups/"
+    iommu_groups_count=$(find "$iommu_groups_dir" -maxdepth 1 -mindepth 1 -type d | wc -l)
+    if [ "$iommu_groups_count" == "0" ]; then
+        echo "Warn: no iommu_groups in $iommu_groups_dir"
+        echo "Warn: IOMMU is not enabled on this setup, please check kernel command line and BIOS settings"
+    fi
+}
 
 create_dcf_vf() {
     local numvfs=$1
@@ -74,7 +84,7 @@ create_vf() {
     done
 }
 
-cmdlist=("bind_kernel" "create_vf" "disable_vf" "bind_pmd" "create_dcf_vf")
+cmdlist=("bind_kernel" "create_vf" "disable_vf" "bind_pmd" "create_dcf_vf" "status")
 
 for c in "${cmdlist[@]}"; do
    if [ "$c" == "$1" ]; then
@@ -107,6 +117,8 @@ if [ "$cmd" == "bind_kernel" ]; then
     fi
     exit 0
 fi
+
+iommu_check
 
 if [ "$cmd" == "bind_pmd" ]; then
     modprobe vfio-pci
