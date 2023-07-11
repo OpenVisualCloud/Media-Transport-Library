@@ -458,6 +458,17 @@ struct mt_sch_impl {
   bool rx_a_init;
   pthread_mutex_t rx_a_mgr_mutex; /* protect rx_a_mgr */
 
+  /* one tx ancillary sessions mgr/transmitter for one sch */
+  struct st_tx_ancillary_sessions_mgr tx_anc_mgr;
+  struct st_ancillary_transmitter_impl anc_trs;
+  bool tx_anc_init;
+  pthread_mutex_t tx_anc_mgr_mutex; /* protect tx_anc_mgr */
+
+  /* one rx ancillary sessions mgr for one sch */
+  struct st_rx_ancillary_sessions_mgr rx_anc_mgr;
+  bool rx_anc_init;
+  pthread_mutex_t rx_anc_mgr_mutex; /* protect rx_anc_mgr */
+
   /* sch sleep info */
   bool allow_sleep;
   pthread_cond_t sleep_wake_cond;
@@ -881,15 +892,6 @@ struct mtl_main_impl {
   struct st_plugin_mgr plugin_mgr;
 
   void* mudp_rxq_mgr[MTL_PORT_MAX];
-
-  /* ancillary(st_40) context */
-  struct st_tx_ancillary_sessions_mgr tx_anc_mgr;
-  struct st_ancillary_transmitter_impl anc_trs;
-  struct st_rx_ancillary_sessions_mgr rx_anc_mgr;
-  bool tx_anc_init;
-  pthread_mutex_t tx_anc_mgr_mutex; /* protect tx_anc_mgr */
-  bool rx_anc_init;
-  pthread_mutex_t rx_anc_mgr_mutex; /* protect rx_anc_mgr */
 
   /* cnt for open sessions */
   rte_atomic32_t st20_tx_sessions_cnt;
