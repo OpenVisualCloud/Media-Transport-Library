@@ -8,6 +8,7 @@
 
 #include "../mt_log.h"
 #include "../mt_queue.h"
+#include "../mt_rtcp.h"
 #include "../mt_stat.h"
 #include "st_fmt.h"
 
@@ -2725,6 +2726,11 @@ static int rv_handle_mbuf(void* priv, struct rte_mbuf** mbuf, uint16_t nb) {
 
   /* now dispatch the pkts to handler */
   for (uint16_t i = 0; i < nb; i++) {
+    if (s->rtcp_rx[s_port]) {
+      struct st_rfc3550_rtp_hdr* rtp = rte_pktmbuf_mtod_offset(
+          mbuf[i], struct st_rfc3550_rtp_hdr*, sizeof(struct mt_udp_hdr));
+      mt_rtcp_rx_parse_rtp_packet(s->rtcp_rx[s_port], rtp);
+    }
     ret += s->pkt_handler(s, mbuf[i], s_port, ctl_thread);
     s->stat_bytes_received += mbuf[i]->pkt_len;
   }
@@ -2862,6 +2868,91 @@ static int rv_init_mcast(struct mtl_main_impl* impl, struct st_rx_video_session_
     }
     ret = mt_mcast_join(impl, mt_ip_to_u32(ops->sip_addr[i]), port);
     if (ret < 0) return ret;
+  }
+
+  return 0;
+}
+
+static int rv_init_rtcp_uhdr(struct mtl_main_impl* impl,
+                             struct st_rx_video_session_impl* s,
+                             enum mtl_session_port s_port, struct mt_udp_hdr* uhdr) {
+  int idx = s->idx;
+  enum mtl_port port = mt_port_logic2phy(s->port_maps, s_port);
+  int ret;
+  struct rte_ether_hdr* eth = &uhdr->eth;
+  struct rte_ipv4_hdr* ipv4 = &uhdr->ipv4;
+  struct rte_udp_hdr* udp = &uhdr->udp;
+  struct st20_rx_ops* ops = &s->ops;
+  uint8_t* dip = ops->sip_addr[s_port];
+  uint8_t* sip = mt_sip_addr(impl, port);
+  struct rte_ether_addr* d_addr = mt_eth_d_addr(eth);
+
+  /* ether hdr */
+  ret = mt_dev_dst_ip_mac(impl, dip, d_addr, port, MT_DEV_TIMEOUT_INFINITE);
+  if (ret < 0) {
+    err("%s(%d), get mac fail %d for %d.%d.%d.%d\n", __func__, idx, ret, dip[0], dip[1],
+        dip[2], dip[3]);
+    return ret;
+  }
+
+  ret = rte_eth_macaddr_get(s->port_id[s_port], mt_eth_s_addr(eth));
+  if (ret < 0) {
+    err("%s(%d), rte_eth_macaddr_get fail %d for port %d\n", __func__, idx, ret, s_port);
+    return ret;
+  }
+  eth->ether_type = htons(RTE_ETHER_TYPE_IPV4);
+
+  /* ipv4 hdr */
+  memset(ipv4, 0x0, sizeof(*ipv4));
+  ipv4->version_ihl = (4 << 4) | (sizeof(struct rte_ipv4_hdr) / 4);
+  ipv4->time_to_live = 64;
+  ipv4->type_of_service = 0;
+  ipv4->fragment_offset = MT_IP_DONT_FRAGMENT_FLAG;
+  ipv4->next_proto_id = IPPROTO_UDP;
+  mtl_memcpy(&ipv4->src_addr, sip, MTL_IP_ADDR_LEN);
+  mtl_memcpy(&ipv4->dst_addr, dip, MTL_IP_ADDR_LEN);
+
+  /* udp hdr */
+  udp->src_port = htons(s->st20_dst_port[s_port]);
+  udp->dst_port = htons(s->st20_dst_port[s_port]);
+  udp->dgram_cksum = 0;
+
+  return 0;
+}
+
+static int rv_init_rtcp(struct mtl_main_impl* impl, struct st_rx_video_session_impl* s) {
+  struct st20_rx_ops* ops = &s->ops;
+  enum mtl_port port;
+
+  for (int i = 0; i < ops->num_port; i++) {
+    port = mt_port_logic2phy(s->port_maps, i);
+    struct mt_udp_hdr uhdr;
+    memset(&uhdr, 0x0, sizeof(uhdr));
+    int ret = rv_init_rtcp_uhdr(impl, s, i, &uhdr);
+    if (ret < 0) return ret;
+    struct mt_rtcp_rx_ops rtcp_ops = {
+        .port = port,
+        .max_idx = 256,
+        .max_retry = 1,
+        .name = ops->name,
+        .udp_hdr = &uhdr,
+    };
+    s->rtcp_rx[i] = mt_rtcp_rx_create(impl, &rtcp_ops);
+    if (!s->rtcp_rx[i]) {
+      err("%s(%d), mt_rtcp_rx_create fail\n", __func__, s->idx);
+      return -EIO;
+    }
+  }
+
+  return 0;
+}
+
+static int rv_uinit_rtcp(struct st_rx_video_session_impl* s) {
+  for (int i = 0; i < s->ops.num_port; i++) {
+    if (s->rtcp_rx[i]) {
+      mt_rtcp_rx_free(s->rtcp_rx[i]);
+      s->rtcp_rx[i] = NULL;
+    }
   }
 
   return 0;
@@ -3012,6 +3103,17 @@ static int rv_attach(struct mtl_main_impl* impl, struct st_rx_video_sessions_mgr
     rv_uinit_sw(impl, s);
     rv_uinit_hw(impl, s);
     return -EIO;
+  }
+
+  if (ops->flags & ST20_RX_FLAG_ENABLE_RTCP) {
+    ret = rv_init_rtcp(impl, s);
+    if (ret < 0) {
+      rv_uinit_mcast(impl, s);
+      rv_uinit_sw(impl, s);
+      rv_uinit_hw(impl, s);
+      err("%s(%d), rv_init_rtcp fail %d\n", __func__, idx, ret);
+      return ret;
+    }
   }
 
   ret = rv_init_pkt_handler(s);
@@ -3280,6 +3382,7 @@ static int rv_detach(struct mtl_main_impl* impl, struct st_rx_video_sessions_mgr
   if (mt_has_ebu(mgr->parent)) rv_ebu_final_result(s);
   rv_stat(mgr, s);
   rv_uinit_mcast(impl, s);
+  rv_uinit_rtcp(s);
   rv_uinit_sw(impl, s);
   rv_uinit_hw(impl, s);
   return 0;
@@ -3291,6 +3394,7 @@ static int rv_update_src(struct mtl_main_impl* impl, struct st_rx_video_session_
   int idx = s->idx, num_port = s->ops.num_port;
   struct st20_rx_ops* ops = &s->ops;
 
+  rv_uinit_rtcp(s);
   rv_uinit_mcast(impl, s);
   rv_uinit_hw(impl, s);
 
@@ -3310,7 +3414,18 @@ static int rv_update_src(struct mtl_main_impl* impl, struct st_rx_video_session_
   ret = rv_init_mcast(impl, s);
   if (ret < 0) {
     err("%s(%d), init mcast fail %d\n", __func__, idx, ret);
+    rv_uinit_hw(impl, s);
     return ret;
+  }
+
+  if (ops->flags & ST20_RX_FLAG_ENABLE_RTCP) {
+    ret = rv_init_rtcp(impl, s);
+    if (ret < 0) {
+      rv_uinit_mcast(impl, s);
+      rv_uinit_hw(impl, s);
+      err("%s(%d), init rtcp fail %d\n", __func__, idx, ret);
+      return ret;
+    }
   }
 
   return 0;

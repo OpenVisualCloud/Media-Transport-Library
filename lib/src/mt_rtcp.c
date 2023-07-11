@@ -10,11 +10,6 @@
 
 int mt_rtcp_tx_buffer_rtp_packets(struct mt_rtcp_tx* tx, struct rte_mbuf** mbufs,
                                   unsigned int bulk) {
-  if (!mbufs) {
-    err("%s, no mbufs\n", __func__);
-    return -EIO;
-  }
-
   int free = rte_ring_get_capacity(tx->mbuf_ring);
   if (free < bulk) {
     int clean = bulk - free;
@@ -106,9 +101,13 @@ int mt_rtcp_rx_parse_rtp_packet(struct mt_rtcp_rx* rx, struct st_rfc3550_rtp_hdr
   struct mtl_main_impl* impl = rx->parent;
   enum mtl_port port = rx->port;
 
-  if (rx->ssrc == 0) rx->ssrc = ntohl(rtp->ssrc);
-
   uint16_t seq_id = ntohs(rtp->seq_number);
+
+  if (rx->ssrc == 0) { /* first received */
+    rx->ssrc = ntohl(rtp->ssrc);
+    rx->last_seq_id = seq_id;
+  }
+
   if (seq_id == rx->last_seq_id + 1) { /* pkt received in sequence */
     rx->last_seq_id = seq_id;
   } else if (seq_id > rx->last_seq_id + 1) { /* pkt(s) lost */
@@ -263,10 +262,6 @@ struct mt_rtcp_tx* mt_rtcp_tx_create(struct mtl_main_impl* impl,
 }
 
 void mt_rtcp_tx_free(struct mt_rtcp_tx* tx) {
-  if (!tx) {
-    return;
-  }
-
   mt_stat_unregister(tx->parent, rtcp_tx_stat, tx);
 
   if (tx->mbuf_ring) {
@@ -303,10 +298,6 @@ struct mt_rtcp_rx* mt_rtcp_rx_create(struct mtl_main_impl* impl,
 }
 
 void mt_rtcp_rx_free(struct mt_rtcp_rx* rx) {
-  if (!rx) {
-    return;
-  }
-
   mt_stat_unregister(rx->parent, rtcp_rx_stat, rx);
 
   mt_rte_free(rx);

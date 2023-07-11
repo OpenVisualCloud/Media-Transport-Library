@@ -341,7 +341,7 @@ struct st_tx_video_session_impl {
   uint16_t st22_box_hdr_length;
   size_t st22_codestream_size;
 
-  struct mt_rtcp_tx* rtcp_tx;
+  struct mt_rtcp_tx* rtcp_tx[MTL_SESSION_PORT_MAX];
 
   /* stat */
   rte_atomic32_t stat_frame_cnt;
@@ -661,7 +661,7 @@ struct st_rx_video_session_impl {
   rte_atomic32_t cbs_frame_slot_cnt;
   rte_atomic32_t cbs_incomplete_frame_cnt;
 
-  struct mt_rtcp_rx* rtcp_rx;
+  struct mt_rtcp_rx* rtcp_rx[MTL_SESSION_PORT_MAX];
 
   /* status */
   int stat_pkts_idx_dropped;
@@ -779,7 +779,7 @@ struct st_tx_audio_session_impl {
   int stat_build_ret_code;
   int stat_transmit_ret_code;
 
-  struct mt_rtcp_tx* rtcp_tx;
+  struct mt_rtcp_tx* rtcp_tx[MTL_SESSION_PORT_MAX];
 
   /* stat */
   rte_atomic32_t st30_stat_frame_cnt;
@@ -898,7 +898,7 @@ struct st_rx_audio_session_impl {
 
   struct st30_rx_frame_meta meta; /* only for frame type */
 
-  struct mt_rtcp_rx* rtcp_rx;
+  struct mt_rtcp_rx* rtcp_rx[MTL_SESSION_PORT_MAX];
 
   /* status */
   int st30_stat_pkts_dropped;
@@ -983,7 +983,7 @@ struct st_tx_ancillary_session_impl {
 
   int stat_build_ret_code;
 
-  struct mt_rtcp_tx* rtcp_tx;
+  struct mt_rtcp_tx* rtcp_tx[MTL_SESSION_PORT_MAX];
 
   /* stat */
   rte_atomic32_t st40_stat_frame_cnt;
@@ -1037,7 +1037,7 @@ struct st_rx_ancillary_session_impl {
 
   int st40_seq_id; /* seq id for each pkt */
 
-  struct mt_rtcp_rx* rtcp_rx;
+  struct mt_rtcp_rx* rtcp_rx[MTL_SESSION_PORT_MAX];
 
   uint32_t tmstamp;
   /* status */
