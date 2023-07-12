@@ -151,6 +151,7 @@ struct mt_ptp_impl {
   struct mtl_main_impl* impl;
   enum mtl_port port;
   uint16_t port_id;
+  bool active; /* if the ptp stack is running */
 
   struct rte_mempool* mbuf_pool;
 
@@ -1423,6 +1424,8 @@ uint64_t mt_mbuf_hw_time_stamp(struct mtl_main_impl* impl, struct rte_mbuf* mbuf
 static inline uint64_t mt_get_ptp_time(struct mtl_main_impl* impl, enum mtl_port port) {
   return mt_if(impl, port)->ptp_get_time_fn(impl, port);
 }
+
+int mt_ptp_wait_stable(struct mtl_main_impl* impl, enum mtl_port port, int timeout_ms);
 
 uint64_t mt_get_raw_ptp_time(struct mtl_main_impl* impl, enum mtl_port port);
 
