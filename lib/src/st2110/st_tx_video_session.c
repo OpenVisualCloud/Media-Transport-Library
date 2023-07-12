@@ -301,8 +301,8 @@ static int tv_train_pacing(struct mtl_main_impl* impl, struct st_tx_video_sessio
     return 0;
   }
 
-  /* wait tsc calibrate done, pacing need fine tuned TSC */
-  mt_wait_tsc_stable(impl);
+  /* wait ptp calibrate done, pacing ptp time */
+  mt_ptp_wait_stable(impl, MTL_PORT_P, 60 * 3 * MS_PER_S);
 
   train_start_time = mt_get_tsc(impl);
 
@@ -319,7 +319,7 @@ static int tv_train_pacing(struct mtl_main_impl* impl, struct st_tx_video_sessio
 
   /* training stage */
   for (int loop = 0; loop < loop_frame; loop++) {
-    uint64_t start = mt_get_tsc(impl);
+    uint64_t start = mt_get_ptp_time(impl, MTL_PORT_P);
     for (int i = 0; i < total; i++) {
       enum st20_packet_type type;
 
@@ -347,7 +347,7 @@ static int tv_train_pacing(struct mtl_main_impl* impl, struct st_tx_video_sessio
       rte_mbuf_refcnt_update(pad, 1);
       mt_txq_burst_busy(queue, &pad, 1, 10);
     }
-    uint64_t end = mt_get_tsc(impl);
+    uint64_t end = mt_get_ptp_time(impl, MTL_PORT_P);
     double time = ((double)end - start) * total / (total + remain);
     frame_times_ns[loop] = time;
   }
