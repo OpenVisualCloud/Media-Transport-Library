@@ -1,5 +1,7 @@
 name: MSYS2 FFmpeg Plugins
-on: [push, pull_request, workflow_call]
+on:
+  schedule:
+    - cron: '0 22 * * 1-5'
       
 env:
   FFMPEG_PREFIX: /c/ffmpeg_mtl
