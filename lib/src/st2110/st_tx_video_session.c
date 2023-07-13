@@ -266,13 +266,14 @@ static int uint64_t_cmp(const void* a, const void* b) {
 static int tv_train_pacing(struct mtl_main_impl* impl, struct st_tx_video_session_impl* s,
                            enum mtl_session_port s_port) {
   enum mtl_port port = mt_port_logic2phy(s->port_maps, s_port);
-  struct rte_mbuf* pad = s->pad[s_port][ST20_PKT_TYPE_NORMAL];
+  struct rte_mbuf* pad;
+
   int idx = s->idx;
   struct mt_txq_entry* queue = s->queue[s_port];
   int pad_pkts, ret;
   int up_trim = 5;
-  int low_trim = 10;
-  int loop_frame = 60 * 2 + up_trim + low_trim; /* the frames to be trained */
+  int low_trim = up_trim + 1;
+  int loop_frame = 60 * 1 + up_trim + low_trim; /* the frames to be trained */
   uint64_t frame_times_ns[loop_frame];
   float pad_interval;
   uint64_t rl_bps = tv_rl_bps(s);
@@ -300,22 +301,26 @@ static int tv_train_pacing(struct mtl_main_impl* impl, struct st_tx_video_sessio
     return 0;
   }
 
-  /* wait tsc calibrate done, pacing need fine tuned TSC */
-  mt_wait_tsc_stable(impl);
+  /* wait ptp calibrate done, pacing ptp time */
+  mt_ptp_wait_stable(impl, MTL_PORT_P, 60 * 3 * MS_PER_S);
 
   train_start_time = mt_get_tsc(impl);
 
   /* warm-up stage to consume all nix tx buf */
   pad_pkts = mt_if_nb_tx_desc(impl, port) * 1;
+  pad = s->pad[s_port][ST20_PKT_TYPE_NORMAL];
   for (int i = 0; i < pad_pkts; i++) {
     rte_mbuf_refcnt_update(pad, 1);
     mt_txq_burst_busy(queue, &pad, 1, 10);
   }
 
+  int total = s->st20_total_pkts;
+  int remain = 32 - (total % 32);
+
   /* training stage */
   for (int loop = 0; loop < loop_frame; loop++) {
-    uint64_t start = mt_get_tsc(impl);
-    for (int i = 0; i < s->st20_total_pkts; i++) {
+    uint64_t start = mt_get_ptp_time(impl, MTL_PORT_P);
+    for (int i = 0; i < total; i++) {
       enum st20_packet_type type;
 
       if ((s->ops.type == ST20_TYPE_RTP_LEVEL) ||
@@ -337,8 +342,14 @@ static int tv_train_pacing(struct mtl_main_impl* impl, struct st_tx_video_sessio
       rte_mbuf_refcnt_update(pad, 1);
       mt_txq_burst_busy(queue, &pad, 1, 10);
     }
-    uint64_t end = mt_get_tsc(impl);
-    frame_times_ns[loop] = end - start;
+    pad = s->pad[s_port][ST20_PKT_TYPE_NORMAL];
+    for (int i = 0; i < remain; i++) {
+      rte_mbuf_refcnt_update(pad, 1);
+      mt_txq_burst_busy(queue, &pad, 1, 10);
+    }
+    uint64_t end = mt_get_ptp_time(impl, MTL_PORT_P);
+    double time = ((double)end - start) * total / (total + remain);
+    frame_times_ns[loop] = time;
   }
 
   for (int loop = 0; loop < loop_frame; loop++) {
@@ -351,7 +362,7 @@ static int tv_train_pacing(struct mtl_main_impl* impl, struct st_tx_video_sessio
   }
   uint64_t frame_times_ns_sum = 0;
   int entry_in_sum = 0;
-  for (int i = up_trim; i < loop_frame - low_trim; i++) {
+  for (int i = low_trim; i < (loop_frame - up_trim); i++) {
     frame_times_ns_sum += frame_times_ns[i];
     entry_in_sum++;
   }
