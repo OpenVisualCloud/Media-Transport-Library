@@ -699,6 +699,7 @@ static int ptp_init(struct mtl_main_impl* impl, struct mt_ptp_impl* ptp,
     if (mt_has_ebu(impl)) {
       ptp_sync_from_user(impl, ptp);
       rte_eal_alarm_set(MT_PTP_EBU_SYNC_MS * 1000, ptp_sync_from_user_handler, ptp);
+      ptp->active = true;
     }
     return 0;
   }
@@ -720,6 +721,7 @@ static int ptp_init(struct mtl_main_impl* impl, struct mt_ptp_impl* ptp,
   }
   mt_mcast_l2_join(impl, &ptp_l2_multicast_eaddr, port);
 
+  ptp->active = true;
   info("%s(%d), sip: %d.%d.%d.%d\n", __func__, port, ip[0], ip[1], ip[2], ip[3]);
   return 0;
 }
@@ -883,7 +885,7 @@ int mt_ptp_init(struct mtl_main_impl* impl) {
 
     mt_stat_register(impl, ptp_stat, ptp, "ptp");
 
-    /* assign arp instance */
+    /* assign ptp instance */
     impl->ptp[i] = ptp;
   }
 
@@ -921,4 +923,28 @@ uint64_t mt_mbuf_hw_time_stamp(struct mtl_main_impl* impl, struct rte_mbuf* mbuf
       *RTE_MBUF_DYNFIELD(mbuf, impl->dynfield_offset, rte_mbuf_timestamp_t*);
   time_stamp += ptp->ptp_delta;
   return ptp_correct_ts(ptp, time_stamp);
+}
+
+int mt_ptp_wait_stable(struct mtl_main_impl* impl, enum mtl_port port, int timeout_ms) {
+  struct mt_ptp_impl* ptp = mt_get_ptp(impl, port);
+  uint64_t start_ts = mt_get_tsc(impl);
+  int retry = 0;
+
+  if (!ptp->active) return 0;
+
+  while (ptp->delta_result_cnt <= 5) {
+    if (timeout_ms >= 0) {
+      int ms = (mt_get_tsc(impl) - start_ts) / NS_PER_MS;
+      if (ms > timeout_ms) {
+        err("%s(%d), fail as timeout to %d ms\n", __func__, port, timeout_ms);
+        return -ETIMEDOUT;
+      }
+    }
+    retry++;
+    if (0 == (retry % 500))
+      info("%s(%d), wait PTP stable, timeout %d ms\n", __func__, port, timeout_ms);
+    mt_sleep_ms(10);
+  }
+
+  return 0;
 }
