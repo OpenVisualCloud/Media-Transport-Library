@@ -77,7 +77,7 @@ Bind 0000:af:01.2(enp175s0f0v2) to vfio-pci success
 Bind 0000:af:01.3(enp175s0f0v3) to vfio-pci success
 Bind 0000:af:01.4(enp175s0f0v4) to vfio-pci success
 Bind 0000:af:01.5(enp175s0f0v5) to vfio-pci success
-Create vf bdf: 0000:af:00.0 enp175s0f0 succ
+Create VFs on PF bdf: 0000:af:00.0 enp175s0f0 succ
 ```
 
 Check the kernel dmesg log to find possible reasons if fail to create.
@@ -391,7 +391,26 @@ sudo ./script/nicctl.sh bind_pmd 0000:af:00.0
 dpdk-devbind.py -s
 ```
 
-### 8.10 Lower fps if ptp4l&phc2sys is enabled
+### 8.10 How to find the BDF number which is ready for IMTL use
+
+```bash
+dpdk-devbind.py -s
+```
+
+And check the device which are DPDK-compatible.
+
+```bash
+Network devices using DPDK-compatible driver
+============================================
+0000:af:01.0 'Ethernet Adaptive Virtual Function 1889' drv=vfio-pci unused=iavf
+0000:af:01.1 'Ethernet Adaptive Virtual Function 1889' drv=vfio-pci unused=iavf
+0000:af:01.2 'Ethernet Adaptive Virtual Function 1889' drv=vfio-pci unused=iavf
+0000:af:01.3 'Ethernet Adaptive Virtual Function 1889' drv=vfio-pci unused=iavf
+0000:af:01.4 'Ethernet Adaptive Virtual Function 1889' drv=vfio-pci unused=iavf
+0000:af:01.5 'Ethernet Adaptive Virtual Function 1889' drv=vfio-pci unused=iavf
+```
+
+### 8.11 Lower fps if ptp4l&phc2sys is enabled
 
 You may have noticed a similar epoch drop log, which is likely caused by both NTP and phc2sys adjusting the system. To address this issue, please disable the NTP service.
 
