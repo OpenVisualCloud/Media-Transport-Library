@@ -123,7 +123,7 @@ To identify the socket if you do not know it, in the NIC card driver property pa
 start /Node 0 /B .\build\app\RxTxApp --config_file config\test_tx_1port_1v.json
 ```
 
-Please refer to sections 3, 4, and 5 in the [linux run guide](run.md) for instructions on how to run the sample application. The Windows version shares the same codebase as the Linux version, and the application/library behavior is the same.
+Please refer to sections "## 5. Run the sample application" in the [linux run guide](run.md) for instructions on how to run the sample application. The Windows version shares the same codebase as the Linux version, and the application/library behavior is the same.
 
 ## 6. Windows TAP support (Optional)
 
