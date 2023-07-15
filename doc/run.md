@@ -4,7 +4,7 @@ The Intel® Media Transport Library requires VFIO (IOMMU) and huge pages to run,
 
 ## 1. IOMMU setup
 
-Skip this if you already has IOMMU turned on. Check with if there's iommu groups under "/sys/kernel/iommu_groups/"
+If you have already enabled IOMMU, you can skip this step. To check if IOMMU is enabled, please verify if there are any IOMMU groups listed under the "/sys/kernel/iommu_groups/" directory. If no groups are found, it indicates that IOMMU is not enabled.
 
 ```bash
 ls -l /sys/kernel/iommu_groups/
@@ -12,7 +12,7 @@ ls -l /sys/kernel/iommu_groups/
 
 ### 1.1 Enable IOMMU(VT-D and VT-X) in BIOS
 
-Refer to the support from your BIOS vendor if you don't know how to enable it.
+If you are unsure how to enable IOMMU, I recommend referring to the support documentation or contacting the BIOS vendor for assistance. They can provide guidance on how to enable IOMMU in your specific BIOS setup.
 
 ### 1.2 Enable IOMMU in kernel
 
@@ -45,7 +45,7 @@ sudo reboot
 ls -l /sys/kernel/iommu_groups/
 ```
 
-If no any group found under this path, it's mostly like previous two steps is not done as expected. Use below two commands to check which part is missed.
+If no IOMMU groups are found under the "/sys/kernel/iommu_groups/" directory, it is likely that the previous two steps were not completed as expected. You can use the following two commands to identify which part was missed:
 
 ```bash
 # Check if "intel_iommu=on iommu=pt" is included
@@ -60,7 +60,7 @@ For Intel® E810 Series Ethernet Adapter, refer to [Intel® E810 Series Ethernet
 
 ## 3. Create VF and bind the driver to DPDK PMD
 
-Note: this operation should repeat again after reboot.
+Note: It is important to repeat this operation again after rebooting the system. The steps mentioned should be followed again to ensure that the desired configuration is maintained after a reboot.
 
 Get Device to Bus info mapping
 
@@ -82,7 +82,7 @@ cd $imtl_source_code
 sudo ./script/nicctl.sh create_vf 0000:af:00.0
 ```
 
-Pls check below output to find the VF BDF info, 0000:af:01.0 to 0000:af:01.5 in below example. Remember these VF BDFs, we will use it when run the sample application.
+To find the VF BDF (Bus Device Function) information, please check the output below. In this example, the VF BDFs range from 0000:af:01.0 to 0000:af:01.5. Remember these VF BDFs as you will need them when running the sample application.
 
 ```bash
 0000:af:00.0 'Ethernet Controller E810-C for QSFP 1592' if=enp175s0f0 drv=ice unused=vfio-pci *Active*
@@ -95,24 +95,24 @@ Bind 0000:af:01.5(enp175s0f0v5) to vfio-pci success
 Create VFs on PF bdf: 0000:af:00.0 enp175s0f0 succ
 ```
 
-Check the kernel dmesg log to find possible reasons if it failed to create.
+If the creation of VF BDFs fails, you can check the kernel dmesg log to find possible reasons for the failure. The dmesg log contains valuable information that can help identify any issues or errors related to the VF creation process. Please review the dmesg log for any relevant messages or error codes that can provide insights into why the creation of VF BDFs was unsuccessful.
 
 ```bash
 sudo dmesg
 ```
 
-Run below command to add VFIO device permissions for current user if you are not running from root user:
+If you are not running the sample application from the root user, you can execute the following command to add VFIO device permissions for the current user:
 
 ```bash
-# change <USER> to the user name currently login.
+# replace "$USER" with your actual username.
 sudo chown -R <USER>:<USER> /dev/vfio/
 ```
 
 ## 4. Setup Hugepage
 
-Note: this operation should repeat again after reboot.
+Note: After rebooting the system, it is essential to configure hugepages again, as the configuration will be lost.
 
-e.g Enable 2048 2M huge pages, in total 4g memory.
+For example, if you want to enable 2048 2M huge pages, which would total to 4GB of memory, you can follow the step below:
 
 ```bash
 sudo sysctl -w vm.nr_hugepages=2048
@@ -243,8 +243,6 @@ ST: * *    E N D    S T A T E   * *
 
 This project also provide many loop test(1 port as tx, 1 port as rx) config file , pls refer to [loop config](../tests/script/).
 
-
-
 ### 5.3 Available parameters in sample app
 
 ```bash
@@ -302,7 +300,7 @@ sudo sysctl -w vm.nr_hugepages=4096
 
 ## 7. Optional setup
 
-This part include some optional guides, skip this if you don't know the detail.
+This section includes some optional guides. If you are not familiar with the details or do not require this information, you can skip this part.
 
 ### 7.1 PTP setup
 
@@ -328,7 +326,7 @@ sudo phc2sys -s ens801f2 -m -w
 
 ### 8.1 Notes after reboot
 
-After a reboot, the operating system may update to a new kernel version. In such cases, remember to rebuild the NIC driver. And also the steps to create VF, bind VF to DPDK PMD, hugepage setup.
+After a system reboot, it is possible for the operating system to update to a new kernel version. In such cases, it is important to remember to rebuild the NIC driver to ensure compatibility with the new kernel version. Additionally, you may need to repeat the steps to create Virtual Functions (VF), bind the VF to DPDK PMD, and set up the hugepages configuration.
 
 ### 8.2 Notes for non-root run
 
@@ -418,7 +416,7 @@ sudo ./script/nicctl.sh bind_pmd 0000:af:00.0
 dpdk-devbind.py -s
 ```
 
-### 8.10 How to find the BDF number which is ready for IMTL use
+### 8.10 How to find the BDF number which is ready for IMTL usage
 
 ```bash
 dpdk-devbind.py -s
