@@ -21,6 +21,7 @@ Refer to the support from your BIOS vendor if you don't know how to enable it.
 Edit GRUB_CMDLINE_LINUX_DEFAULT item in /etc/default/grub file, append below parameters into GRUB_CMDLINE_LINUX_DEFAULT item if it's not there.
 
 ```bash
+vim /etc/default/grub
 intel_iommu=on iommu=pt
 ```
 
@@ -61,9 +62,23 @@ For Intel® E810 Series Ethernet Adapter, refer to [Intel® E810 Series Ethernet
 
 Note: this operation should repeat again after reboot.
 
+Get Device to Bus info mapping
+
+```bash
+lshw -c network -businfo
+```
+
+```bash
+Bus info          Device       Class          Description
+=========================================================
+pci@0000:af:00.0  ens801f0     network        Ethernet Controller E810-C for QSFP
+pci@0000:af:00.1  ens801f1     network        Ethernet Controller E810-C for QSFP
+```
+
 Below is the command to create VF for BDF 0000:af:00.0, and bind the VFs to DPDK PMD.
 
 ```bash
+cd $imtl_source_code
 sudo ./script/nicctl.sh create_vf 0000:af:00.0
 ```
 
@@ -80,7 +95,7 @@ Bind 0000:af:01.5(enp175s0f0v5) to vfio-pci success
 Create VFs on PF bdf: 0000:af:00.0 enp175s0f0 succ
 ```
 
-Check the kernel dmesg log to find possible reasons if fail to create.
+Check the kernel dmesg log to find possible reasons if it failed to create.
 
 ```bash
 sudo dmesg
@@ -175,7 +190,19 @@ ffmpeg -s 1920x1080 -pix_fmt yuv420p10le -i yuv420p10le_1080p.yuv -pix_fmt yuv44
 
 ### 5.2 Run sample app with json config
 
-Below is the command to run one video tx/rx session with json config, customize the config item in json as your setup.
+Before running samples the JSON configuration files must be modified. The "name" tag in "interfaces" must be updated to VF BDF, e.g 0000:af:01.0.  No other changes are required to run samples.
+
+```bash
+"interfaces": [
+        {
+            "name": "0000:af:01.0",
+            "ip": "192.168.88.189"
+        }
+```
+
+For the supported parameters in the json, please refer to [JSON configuration guide](configuration_guide.md) for detail.
+
+Below is the command to run one video tx/rx session with json config.
 
 ```bash
 ./build/app/RxTxApp --config_file config/test_tx_1port_1v.json
@@ -216,7 +243,7 @@ ST: * *    E N D    S T A T E   * *
 
 This project also provide many loop test(1 port as tx, 1 port as rx) config file , pls refer to [loop config](../tests/script/).
 
-For the supported parameters in the json, please refer to [JSON configuration guide](configuration_guide.md) for detail.
+
 
 ### 5.3 Available parameters in sample app
 
