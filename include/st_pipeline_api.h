@@ -348,6 +348,11 @@ enum st22_quality_mode {
  * If enabled, lib will pass ST_EVENT_VSYNC by the notify_event on every epoch start.
  */
 #define ST22P_TX_FLAG_ENABLE_VSYNC (MTL_BIT32(5))
+/**
+ * Flag bit in flags of struct st22p_tx_ops.
+ * If enable the rtcp.
+ */
+#define ST22P_TX_FLAG_ENABLE_RTCP (MTL_BIT32(6))
 
 /**
  * Flag bit in flags of struct st20p_tx_ops.
@@ -388,6 +393,11 @@ enum st22_quality_mode {
  * If disable the static RL pad interval profiling.
  */
 #define ST20P_TX_FLAG_DISABLE_STATIC_PAD_P (MTL_BIT32(6))
+/**
+ * Flag bit in flags of struct st20p_tx_ops.
+ * If enable the rtcp.
+ */
+#define ST20P_TX_FLAG_ENABLE_RTCP (MTL_BIT32(7))
 
 /**
  * Flag bit in flags of struct st22p_rx_ops, for non MTL_PMD_DPDK_USER.
@@ -400,6 +410,11 @@ enum st22_quality_mode {
  * If enabled, lib will pass ST_EVENT_VSYNC by the notify_event on every epoch start.
  */
 #define ST22P_RX_FLAG_ENABLE_VSYNC (MTL_BIT32(1))
+/**
+ * Flag bit in flags of struct st22p_rx_ops.
+ * If enable the rtcp.
+ */
+#define ST22P_RX_FLAG_ENABLE_RTCP (MTL_BIT32(2))
 /**
  * Flag bit in flags of struct st22p_rx_ops.
  * If set, lib will pass the incomplete frame to app also.
@@ -432,6 +447,11 @@ enum st22_quality_mode {
  * Perform the color format conversion on each packet.
  */
 #define ST20P_RX_FLAG_PKT_CONVERT (MTL_BIT32(3))
+/**
+ * Flag bit in flags of struct st20p_rx_ops.
+ * If enable the rtcp.
+ */
+#define ST20P_RX_FLAG_ENABLE_RTCP (MTL_BIT32(4))
 /**
  * Flag bit in flags of struct st20p_rx_ops.
  * If set, lib will pass the incomplete frame to app also.

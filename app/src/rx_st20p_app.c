@@ -169,6 +169,7 @@ static int app_rx_st20p_init(struct st_app_context* ctx,
   ops.framebuff_cnt = s->framebuff_cnt;
   /* always try to enable DMA offload */
   ops.flags = ST20P_RX_FLAG_DMA_OFFLOAD;
+  if (st20p && st20p->enable_rtcp) ops.flags |= ST20P_RX_FLAG_ENABLE_RTCP;
 
   st_pthread_mutex_init(&s->st20p_wake_mutex, NULL);
   st_pthread_cond_init(&s->st20p_wake_cond, NULL);

@@ -18,7 +18,8 @@ sources = files(
   'mt_socket.c',
   'mt_stat.c',
   'mt_shared_queue.c',
-  'mt_shared_rss.c'
+  'mt_shared_rss.c',
+  'mt_rtcp.c',
 )
 
 if get_option('enable_kni') == true

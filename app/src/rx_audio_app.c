@@ -260,6 +260,7 @@ static int app_rx_audio_init(struct st_app_context* ctx, st_json_audio_session_t
   ops.framebuff_size = s->st30_frame_size;
   ops.framebuff_cnt = s->framebuff_cnt;
   ops.rtp_ring_size = ctx->rx_audio_rtp_ring_size ? ctx->rx_audio_rtp_ring_size : 16;
+  if (audio && audio->enable_rtcp) ops.flags |= ST30_RX_FLAG_ENABLE_RTCP;
 
   st_pthread_mutex_init(&s->st30_wake_mutex, NULL);
   st_pthread_cond_init(&s->st30_wake_cond, NULL);

@@ -715,6 +715,10 @@ static int st_json_parse_tx_video(int idx, json_object* video_obj,
   video->display =
       json_object_get_boolean(st_json_object_object_get(video_obj, "display"));
 
+  /* parse enable rtcp */
+  video->enable_rtcp =
+      json_object_get_boolean(st_json_object_object_get(video_obj, "enable_rtcp"));
+
   return ST_JSON_SUCCESS;
 }
 
@@ -777,6 +781,10 @@ static int st_json_parse_rx_video(int idx, json_object* video_obj,
   /* parse measure_latency option */
   video->measure_latency =
       json_object_get_boolean(st_json_object_object_get(video_obj, "measure_latency"));
+
+  /* parse enable rtcp */
+  video->enable_rtcp =
+      json_object_get_boolean(st_json_object_object_get(video_obj, "enable_rtcp"));
 
   return ST_JSON_SUCCESS;
 }
@@ -948,6 +956,10 @@ static int st_json_parse_tx_audio(int idx, json_object* audio_obj,
   ret = parse_url(audio_obj, "audio_url", audio->info.audio_url);
   if (ret < 0) return ret;
 
+  /* parse enable rtcp */
+  audio->enable_rtcp =
+      json_object_get_boolean(st_json_object_object_get(audio_obj, "enable_rtcp"));
+
   return ST_JSON_SUCCESS;
 }
 
@@ -995,6 +1007,10 @@ static int st_json_parse_rx_audio(int idx, json_object* audio_obj,
   if (ret < 0) {
     err("%s, no reference file\n", __func__);
   }
+
+  /* parse enable rtcp */
+  audio->enable_rtcp =
+      json_object_get_boolean(st_json_object_object_get(audio_obj, "enable_rtcp"));
 
   return ST_JSON_SUCCESS;
 }
@@ -1061,6 +1077,10 @@ static int st_json_parse_tx_anc(int idx, json_object* anc_obj,
   ret = parse_url(anc_obj, "ancillary_url", anc->info.anc_url);
   if (ret < 0) return ret;
 
+  /* parse enable rtcp */
+  anc->enable_rtcp =
+      json_object_get_boolean(st_json_object_object_get(anc_obj, "enable_rtcp"));
+
   return ST_JSON_SUCCESS;
 }
 
@@ -1082,6 +1102,10 @@ static int st_json_parse_rx_anc(int idx, json_object* anc_obj,
     err("%s, use default pt %u\n", __func__, ST_APP_PAYLOAD_TYPE_ANCILLARY);
     anc->base.payload_type = ST_APP_PAYLOAD_TYPE_ANCILLARY;
   }
+
+  /* parse enable rtcp */
+  anc->enable_rtcp =
+      json_object_get_boolean(st_json_object_object_get(anc_obj, "enable_rtcp"));
 
   return ST_JSON_SUCCESS;
 }
@@ -1302,6 +1326,10 @@ static int st_json_parse_tx_st22p(int idx, json_object* st22p_obj,
   st22p->display =
       json_object_get_boolean(st_json_object_object_get(st22p_obj, "display"));
 
+  /* parse enable rtcp */
+  st22p->enable_rtcp =
+      json_object_get_boolean(st_json_object_object_get(st22p_obj, "enable_rtcp"));
+
   return ST_JSON_SUCCESS;
 }
 
@@ -1367,6 +1395,10 @@ static int st_json_parse_rx_st22p(int idx, json_object* st22p_obj,
   /* parse codec_thread_count option */
   st22p->info.codec_thread_count =
       json_object_get_int(st_json_object_object_get(st22p_obj, "codec_thread_count"));
+
+  /* parse enable rtcp */
+  st22p->enable_rtcp =
+      json_object_get_boolean(st_json_object_object_get(st22p_obj, "enable_rtcp"));
 
   return ST_JSON_SUCCESS;
 }
@@ -1578,6 +1610,10 @@ static int st_json_parse_tx_st20p(int idx, json_object* st20p_obj,
   st20p->display =
       json_object_get_boolean(st_json_object_object_get(st20p_obj, "display"));
 
+  /* parse enable rtcp */
+  st20p->enable_rtcp =
+      json_object_get_boolean(st_json_object_object_get(st20p_obj, "enable_rtcp"));
+
   return ST_JSON_SUCCESS;
 }
 
@@ -1635,6 +1671,10 @@ static int st_json_parse_rx_st20p(int idx, json_object* st20p_obj,
   /* parse measure_latency option */
   st20p->measure_latency =
       json_object_get_boolean(st_json_object_object_get(st20p_obj, "measure_latency"));
+
+  /* parse enable rtcp */
+  st20p->enable_rtcp =
+      json_object_get_boolean(st_json_object_object_get(st20p_obj, "enable_rtcp"));
 
   return ST_JSON_SUCCESS;
 }

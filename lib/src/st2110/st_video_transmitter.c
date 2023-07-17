@@ -8,6 +8,7 @@
 
 #include "../mt_log.h"
 #include "../mt_queue.h"
+#include "../mt_rtcp.h"
 #include "st_err.h"
 #include "st_tx_video_session.h"
 
@@ -78,6 +79,10 @@ static int video_burst_packet(struct st_tx_video_session_impl* s,
   struct st_tx_video_pacing* pacing = &s->pacing;
   int tx = mt_txq_burst(s->queue[s_port], &pkts[0], bulk);
   int pkt_idx = st_tx_mbuf_get_idx(pkts[0]);
+
+  if (tx && s->rtcp_tx[s_port]) {
+    mt_rtcp_tx_buffer_rtp_packets(s->rtcp_tx[s_port], pkts, tx);
+  }
 
   s->stat_pkts_burst += tx;
   s->pri_nic_burst_cnt++;

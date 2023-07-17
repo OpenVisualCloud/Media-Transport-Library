@@ -205,6 +205,7 @@ typedef struct st_json_video_session {
   st_json_video_info_t info;
 
   bool display;
+  bool enable_rtcp;
 
   /* rx only items */
   enum user_pg_fmt user_pg_format;
@@ -214,11 +215,15 @@ typedef struct st_json_video_session {
 typedef struct st_json_audio_session {
   st_json_session_base_t base;
   st_json_audio_info_t info;
+
+  bool enable_rtcp;
 } st_json_audio_session_t;
 
 typedef struct st_json_ancillary_session {
   st_json_session_base_t base;
   st_json_ancillary_info_t info;
+
+  bool enable_rtcp;
 } st_json_ancillary_session_t;
 
 typedef struct st_json_st22p_session {
@@ -227,6 +232,7 @@ typedef struct st_json_st22p_session {
 
   bool display;
   bool measure_latency;
+  bool enable_rtcp;
 } st_json_st22p_session_t;
 
 typedef struct st_json_st20p_session {
@@ -235,6 +241,7 @@ typedef struct st_json_st20p_session {
 
   bool display;
   bool measure_latency;
+  bool enable_rtcp;
 } st_json_st20p_session_t;
 
 typedef struct st_json_context {

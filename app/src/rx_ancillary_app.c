@@ -147,6 +147,7 @@ static int app_rx_anc_init(struct st_app_context* ctx, st_json_ancillary_session
   ops.rtp_ring_size = 1024;
   ops.payload_type = anc ? anc->base.payload_type : ST_APP_PAYLOAD_TYPE_ANCILLARY;
   ops.notify_rtp_ready = app_rx_anc_rtp_ready;
+  if (anc && anc->enable_rtcp) ops.flags |= ST40_RX_FLAG_ENABLE_RTCP;
   st_pthread_mutex_init(&s->st40_wake_mutex, NULL);
   st_pthread_cond_init(&s->st40_wake_cond, NULL);
 
