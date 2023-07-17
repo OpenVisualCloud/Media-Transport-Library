@@ -46,11 +46,11 @@ For Windows, please refer to the [Win build guide](doc/build_WIN.md) for instruc
 
 ## 3. Run ST2110
 
-Please refer to [run guide](doc/run.md) for instructions on how to set up and run the demo pipeline application.
+Please refer to [run guide](doc/run.md) for instructions on how to set up and run the demo pipeline application based on VF with SR-IOV.
 
 For Windows, please refer to [Windows run guide](doc/run_WIN.md).
 
-To set up VF and guest VM support under a Linux host, please refer to the [VF guide](doc/vf.md) instructions on setting up VF based on SR-IOV. Additionally, please refer to the [VM guide](doc/vm.md) and [Windows VM guide](doc/vm_WIN.md) for instructions on setting up Linux and Windows guest VMs based on VF passthrough.
+Additionally, please refer to the [VM guide](doc/vm.md) and [Windows VM guide](doc/vm_WIN.md) for instructions on setting up Linux and Windows guest VMs based on VF passthrough.
 
 For AWS (cloud environment), please refer to [AWS run guide](doc/aws.md) for instructions on how to set up and run the demo.
 

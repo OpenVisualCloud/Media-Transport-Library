@@ -2,17 +2,26 @@
 
 The Intel® Media Transport Library requires VFIO (IOMMU) and huge pages to run, but it also supports non-root run, making it easy to deploy within Docker/Kubernetes environments.
 
-## 1. System setup
+## 1. IOMMU setup
+
+If you have already enabled IOMMU, you can skip this step. To check if IOMMU is enabled, please verify if there are any IOMMU groups listed under the "/sys/kernel/iommu_groups/" directory. If no groups are found, it indicates that IOMMU is not enabled.
+
+```bash
+ls -l /sys/kernel/iommu_groups/
+```
 
 ### 1.1 Enable IOMMU(VT-D and VT-X) in BIOS
+
+If you are unsure how to enable IOMMU, I recommend referring to the support documentation or contacting the BIOS vendor for assistance. They can provide guidance on how to enable IOMMU in your specific BIOS setup.
 
 ### 1.2 Enable IOMMU in kernel
 
 #### 1.2.1 Ubuntu/Debian
 
-Edit GRUB_CMDLINE_LINUX_DEFAULT item in /etc/default/grub file, append below parameters into GRUB_CMDLINE_LINUX_DEFAULT item.
+Edit GRUB_CMDLINE_LINUX_DEFAULT item in /etc/default/grub file, append below parameters into GRUB_CMDLINE_LINUX_DEFAULT item if it's not there.
 
 ```bash
+vim /etc/default/grub
 intel_iommu=on iommu=pt
 ```
 
@@ -36,72 +45,86 @@ sudo reboot
 ls -l /sys/kernel/iommu_groups/
 ```
 
-## 2. NIC setup
-
-### 2.1 Update NIC FW and driver to latest version
-
-Refer to <https://www.intel.com/content/www/us/en/download/15084/intel-ethernet-adapter-complete-driver-pack.html>
-
-After upgrading, please double-check that the DDP version is correct (i.e., greater than 1.3.30.0) by running the dmesg command.
+If no IOMMU groups are found under the "/sys/kernel/iommu_groups/" directory, it is likely that the previous two steps were not completed as expected. You can use the following two commands to identify which part was missed:
 
 ```bash
-The DDP package was successfully loaded: ICE OS Default Package (mc) version 1.3.30.0
+# Check if "intel_iommu=on iommu=pt" is included
+cat /proc/cmdline
+# Check if CPU flags has vmx feature
+lscpu | grep vmx
 ```
 
-If the DDP version is not the latest, please use the following command to update it. The DDP package can be found in the latest Intel ice driver.
+## 2. NIC driver setup
+
+For Intel® E810 Series Ethernet Adapter, refer to [Intel® E810 Series Ethernet Adapter driver guide](e810.md)
+
+## 3. Create VF and bind the driver to DPDK PMD
+
+Note: It is important to repeat this operation again after rebooting the system. The steps mentioned should be followed again to ensure that the desired configuration is maintained after a reboot.
+
+Get Device to Bus info mapping
 
 ```bash
-cd /usr/lib/firmware/updates/intel/ice/ddp
-cp <latest_ddp_dir>/ice-1.3.30.0.pkg ./
-rm ice.pkg
-ln -s ice-1.3.30.0.pkg ice.pkg
-rmmod ice
-modprobe ice
-```
-
-### 2.2 Bind NIC to DPDK PMD mode
-
-Below is the command to bind the BDF port 0000:af:00.0 to PF PMD mode. Please customize the BDF port based on your setup.
-
-```bash
-sudo ./script/nicctl.sh bind_pmd 0000:af:00.0
-```
-
-If you see the following error, please double-check if IOMMU is enabled:
-
-```bash
-Error: bind failed for 0000:af:00.0 - Cannot bind to driver vfio-pci: [Errno 19] No such device
-Error: unbind failed for 0000:af:00.0 - Cannot open /sys/bus/pci/drivers//unbind: [Errno 13] Permission denied:
+lshw -c network -businfo
 ```
 
 ```bash
-ls -l /sys/kernel/iommu_groups/
+Bus info          Device       Class          Description
+=========================================================
+pci@0000:af:00.0  ens801f0     network        Ethernet Controller E810-C for QSFP
+pci@0000:af:00.1  ens801f1     network        Ethernet Controller E810-C for QSFP
 ```
 
-## 3. Run the sample application
-
-### 3.1 VFIO access for non-root run
-
-To add VFIO device permissions to the current user:
+Below is the command to create VF for BDF 0000:af:00.0, and bind the VFs to DPDK PMD.
 
 ```bash
-# change <USER> to the user name currently login.
+cd $imtl_source_code
+sudo ./script/nicctl.sh create_vf 0000:af:00.0
+```
+
+To find the VF BDF (Bus Device Function) information, please check the output below. In this example, the VF BDFs range from 0000:af:01.0 to 0000:af:01.5. Remember these VF BDFs as you will need them when running the sample application.
+
+```bash
+0000:af:00.0 'Ethernet Controller E810-C for QSFP 1592' if=enp175s0f0 drv=ice unused=vfio-pci *Active*
+Bind 0000:af:01.0(enp175s0f0v0) to vfio-pci success
+Bind 0000:af:01.1(enp175s0f0v1) to vfio-pci success
+Bind 0000:af:01.2(enp175s0f0v2) to vfio-pci success
+Bind 0000:af:01.3(enp175s0f0v3) to vfio-pci success
+Bind 0000:af:01.4(enp175s0f0v4) to vfio-pci success
+Bind 0000:af:01.5(enp175s0f0v5) to vfio-pci success
+Create VFs on PF bdf: 0000:af:00.0 enp175s0f0 succ
+```
+
+If the creation of VF BDFs fails, you can check the kernel dmesg log to find possible reasons for the failure. The dmesg log contains valuable information that can help identify any issues or errors related to the VF creation process. Please review the dmesg log for any relevant messages or error codes that can provide insights into why the creation of VF BDFs was unsuccessful.
+
+```bash
+sudo dmesg
+```
+
+If you are not running the sample application from the root user, you can execute the following command to add VFIO device permissions for the current user:
+
+```bash
+# replace "$USER" with your actual username.
 sudo chown -R <USER>:<USER> /dev/vfio/
 ```
 
-### 3.2 Huge page setup
+## 4. Setup Hugepage
 
-e.g Enable 2048 2M huge pages, in total 4g memory.
+Note: After rebooting the system, it is essential to configure hugepages again, as the configuration will be lost.
+
+For example, if you want to enable 2048 2M huge pages, which would total to 4GB of memory, you can follow the step below:
 
 ```bash
 sudo sysctl -w vm.nr_hugepages=2048
 ```
 
-### 3.3 Prepare source files
+## 5. Run the sample application
+
+### 5.1 Prepare source files
 
 Please note that the input YUV source file for the sample application is in the RFC4175 YUV422BE10 (big-endian 10-bit) pixel group format, which is defined in the ST2110 specification. This project includes a simple tool to convert the format from YUV422 planar 10-bit little-endian format.
 
-#### 3.3.1 Prepare a yuv422p10le file
+#### 5.1.1 Prepare a yuv422p10le file
 
 The following command shows how to decode two frames from the encoder file and convert it from 420 to 422 planar file. Change the 'vframes' value if you want to generate more frames.
 
@@ -111,7 +134,7 @@ ffmpeg -i jellyfish-3-mbps-hd-hevc-10bit.mkv -vframes 2 -c:v rawvideo yuv420p10l
 ffmpeg -s 1920x1080 -pix_fmt yuv420p10le -i yuv420p10le_1080p.yuv -pix_fmt yuv422p10le yuv422p10le_1080p.yuv
 ```
 
-#### 3.3.2 Convert yuv422p10le to yuv422rfc4175be10
+#### 5.1.2 Convert yuv422p10le to yuv422rfc4175be10
 
 Below is the command to convert yuv422p10le file to yuv422rfc4175be10 pg format(ST2110-20 supported pg format for 422 10bit)
 
@@ -124,7 +147,7 @@ The yuv422rfc4175be10 files can be viewed by YUV Viewer tools(<https://github.co
 <img src="png/yuview_yuv422rfc4175be10_layout.png" align="center" alt="yuview yuv422rfc4175be10 custom layout">
 </div>
 
-#### 3.3.3 Convert yuv422rfc4175be10 back to yuv422p10le
+#### 5.1.3 Convert yuv422rfc4175be10 back to yuv422p10le
 
 Below is the command to convert yuv422rfc4175be10 pg format(ST2110-20 supported pg format for 422 10bit) to yuv422p10le file
 
@@ -132,7 +155,7 @@ Below is the command to convert yuv422rfc4175be10 pg format(ST2110-20 supported 
 ./build/app/ConvApp -width 1920 -height 1080 -in_pix_fmt yuv422rfc4175be10 -i yuv422rfc4175be10_1080p.yuv -out_pix_fmt yuv422p10le -o out_yuv422p10le_1080p.yuv
 ```
 
-#### 3.3.4 v210 support
+#### 5.1.4 v210 support
 
 This tools also support v210 format, use "v210" for the in_pix_fmt/out_pix_fmt args instead.
 
@@ -141,7 +164,7 @@ This tools also support v210 format, use "v210" for the in_pix_fmt/out_pix_fmt a
 ./build/app/ConvApp -width 1920 -height 1080 -in_pix_fmt v210 -i v210_1080p.yuv -out_pix_fmt yuv422rfc4175be10 -o out_yuv422rfc4175be10_1080p.yuv
 ```
 
-#### 3.3.5 yuv422 12bit support
+#### 5.1.5 yuv422 12bit support
 
 ```bash
 ffmpeg -s 1920x1080 -pix_fmt yuv420p10le -i yuv420p10le_1080p.yuv -pix_fmt yuv422p12le yuv422p12le_1080p.yuv
@@ -149,7 +172,7 @@ ffmpeg -s 1920x1080 -pix_fmt yuv420p10le -i yuv420p10le_1080p.yuv -pix_fmt yuv42
 ./build/app/ConvApp -width 1920 -height 1080 -in_pix_fmt yuv422rfc4175be12 -i yuv422rfc4175be12_1080p.yuv -out_pix_fmt yuv422p12le -o out_yuv422p12le_1080p.yuv
 ```
 
-#### 3.3.6 yuv444 10bit support
+#### 5.1.6 yuv444 10bit support
 
 ```bash
 ffmpeg -s 1920x1080 -pix_fmt yuv420p10le -i yuv420p10le_1080p.yuv -pix_fmt yuv444p10le yuv444p10le_1080p.yuv
@@ -157,7 +180,7 @@ ffmpeg -s 1920x1080 -pix_fmt yuv420p10le -i yuv420p10le_1080p.yuv -pix_fmt yuv44
 ./build/app/ConvApp -width 1920 -height 1080 -in_pix_fmt yuv444rfc4175be10 -i yuv444rfc4175be10_1080p.yuv -out_pix_fmt yuv444p10le -o out_yuv444p10le_1080p.yuv
 ```
 
-#### 3.3.7 yuv444 12bit support
+#### 5.1.7 yuv444 12bit support
 
 ```bash
 ffmpeg -s 1920x1080 -pix_fmt yuv420p10le -i yuv420p10le_1080p.yuv -pix_fmt yuv444p12le yuv444p12le_1080p.yuv
@@ -165,29 +188,21 @@ ffmpeg -s 1920x1080 -pix_fmt yuv420p10le -i yuv420p10le_1080p.yuv -pix_fmt yuv44
 ./build/app/ConvApp -width 1920 -height 1080 -in_pix_fmt yuv444rfc4175be12 -i yuv444rfc4175be12_1080p.yuv -out_pix_fmt yuv444p12le -o out_yuv444p12le_1080p.yuv
 ```
 
-### 3.4 PTP setup(optional)
+### 5.2 Run sample app with json config
 
-The Precision Time Protocol (PTP) enables global microsecond accuracy timing of all essences and is typically deployed with a PTP grandmaster within the network, while clients use tools such as ptp4l to synchronize with it. This library also includes a built-in PTP implementation, and a sample application provides an option to enable it. See section 3.6 for instructions on how to enable it.
+Before running samples the JSON configuration files must be modified. The "name" tag in "interfaces" must be updated to VF BDF, e.g 0000:af:01.0.  No other changes are required to run samples.
 
-By default, the built-in PTP is disabled, and the user application's system time source (clock_gettime) is used as the PTP clock. However, if the built-in PTP is enabled, the internal NIC time will be selected as the PTP source.
-
-#### 3.4.1 ptp4l setup sample
-
-Firstly run ptp4l to sync the PHC time with grandmaster, customize the interface as your setup.
-
-```shell
-sudo ptp4l -i ens801f2 -m -s -H
+```bash
+"interfaces": [
+        {
+            "name": "0000:af:01.0",
+            "ip": "192.168.88.189"
+        }
 ```
 
-Then run phc2sys to sync the PHC time to system time, please make sure NTP service is disabled as it has conflict with phc2sys.
+For the supported parameters in the json, please refer to [JSON configuration guide](configuration_guide.md) for detail.
 
-```shell
-sudo phc2sys -s ens801f2 -m -w
-```
-
-### 3.5 Run sample app with json config
-
-Below is the command to run one video tx/rx session with json config, customize the config item in json as your setup.
+Below is the command to run one video tx/rx session with json config.
 
 ```bash
 ./build/app/RxTxApp --config_file config/test_tx_1port_1v.json
@@ -228,9 +243,7 @@ ST: * *    E N D    S T A T E   * *
 
 This project also provide many loop test(1 port as tx, 1 port as rx) config file , pls refer to [loop config](../tests/script/).
 
-For the supported parameters in the json, please refer to [JSON configuration guide](configuration_guide.md) for detail.
-
-### 3.6 Available parameters in sample app
+### 5.3 Available parameters in sample app
 
 ```bash
 --config_file <URL>                  : the json config file path
@@ -271,12 +284,12 @@ For the supported parameters in the json, please refer to [JSON configuration gu
 --dhcp                               : debug option, enable DHCP for all ports.
 ```
 
-## 4. Tests
+## 6. Tests
 
 This project include many automate test cases based on gtest, below is the example command to run, customize the argument as your setup.
 
 ```bash
-./build/tests/KahawaiTest --p_port 0000:af:00.0 --r_port 0000:af:00.1
+./build/tests/KahawaiTest --p_port 0000:af:01.0 --r_port 0000:af:01.1
 ```
 
 BTW, the test required large huge page settings, pls expend it to 8g.
@@ -285,17 +298,41 @@ BTW, the test required large huge page settings, pls expend it to 8g.
 sudo sysctl -w vm.nr_hugepages=4096
 ```
 
-## 5. FAQs
+## 7. Optional setup
 
-### 5.1 Notes after reboot
+This section includes some optional guides. If you are not familiar with the details or do not require this information, you can skip this part.
 
-After a reboot, the operating system may update to a new kernel version. In such cases, remember to rebuild the firmware/DDP version.
+### 7.1 PTP setup
 
-### 5.2 Notes for non-root run
+The Precision Time Protocol (PTP) enables global microsecond accuracy timing of all essences and is typically deployed with a PTP grandmaster within the network, while clients use tools such as ptp4l to synchronize with it. This library also includes a built-in PTP implementation, and a sample application provides an option to enable it. See section 3.6 for instructions on how to enable it.
+
+By default, the built-in PTP is disabled, and the user application's system time source (clock_gettime) is used as the PTP clock. However, if the built-in PTP is enabled, the internal NIC time will be selected as the PTP source.
+
+#### 7.1.1 ptp4l setup sample
+
+Firstly run ptp4l to sync the PHC time with grandmaster, customize the interface as your setup.
+
+```shell
+sudo ptp4l -i ens801f2 -m -s -H
+```
+
+Then run phc2sys to sync the PHC time to system time, please make sure NTP service is disabled as it has conflict with phc2sys.
+
+```shell
+sudo phc2sys -s ens801f2 -m -w
+```
+
+## 8. FAQs
+
+### 8.1 Notes after reboot
+
+After a system reboot, it is possible for the operating system to update to a new kernel version. In such cases, it is important to remember to rebuild the NIC driver to ensure compatibility with the new kernel version. Additionally, you may need to repeat the steps to create Virtual Functions (VF), bind the VF to DPDK PMD, and set up the hugepages configuration.
+
+### 8.2 Notes for non-root run
 
 When running as non-root user, there may be some additional resource limits that are imposed by the system.
 
-### 5.2.1 RLIMIT_MEMLOCK
+### 8.2.1 RLIMIT_MEMLOCK
 
 RLIMIT_MEMLOCK (amount of pinned pages the process is allowed to have), if you see below error at start up, it's likely caused by too small RLIMIT_MEMLOCK settings.
 
@@ -321,7 +358,7 @@ ulimit -a | grep "max locked memory"
 max locked memory       (kbytes, -l) unlimited
 ```
 
-### 5.3 BDF port not bind to DPDK PMD mode
+### 8.3 BDF port not bind to DPDK PMD mode
 
 The following error indicates that the port driver is not configured to DPDK PMD mode. Please run nicctl.sh to configure it:
 
@@ -329,7 +366,7 @@ The following error indicates that the port driver is not configured to DPDK PMD
 ST: st_dev_get_socket, failed to locate 0000:86:20.0. Please run nicctl.sh
 ```
 
-### 5.4 Hugepage not available
+### 8.4 Hugepage not available
 
 If you encounter the following hugepage error while running, it is likely caused by the absence of 1G or 2M huge pages in the current setup.
 
@@ -344,7 +381,7 @@ This error message usually indicates that the mbuf pool creation has failed due 
 ST: st_init, mbuf_pool create fail
 ```
 
-### 5.5 No access to vfio device
+### 8.5 No access to vfio device
 
 If you encounter the following error message, please grant the current user access to the dev:
 
@@ -353,7 +390,7 @@ EAL: Cannot open /dev/vfio/147: Permission denied
 EAL: Failed to open VFIO group 147
 ```
 
-### 5.6 Link not connected
+### 8.6 Link not connected
 
 The following error indicates that the physical port link is not connected to a network. Please confirm that the cable link is working properly.
 
@@ -361,19 +398,44 @@ The following error indicates that the physical port link is not connected to a 
 ST: dev_create_port(0), link not connected
 ```
 
-### 5.7 Bind BDF port back to kernel mode
+### 8.7 Bind BDF port back to kernel mode
 
 ```bash
 sudo ./script/nicctl.sh bind_kernel 0000:af:00.0
 ```
 
-### 5.8 How to find the BDF number
+### 8.8 Bind BDF port to pure DPDK PF mode
 
 ```bash
-lspci | grep Eth
+sudo ./script/nicctl.sh bind_pmd 0000:af:00.0
 ```
 
-### 5.9 Lower fps if ptp4l&phc2sys is enabled
+### 8.9 How to find the BDF number for NICs
+
+```bash
+dpdk-devbind.py -s
+```
+
+### 8.10 How to find the BDF number which is ready for IMTL usage
+
+```bash
+dpdk-devbind.py -s
+```
+
+And check the device which are DPDK-compatible.
+
+```bash
+Network devices using DPDK-compatible driver
+============================================
+0000:af:01.0 'Ethernet Adaptive Virtual Function 1889' drv=vfio-pci unused=iavf
+0000:af:01.1 'Ethernet Adaptive Virtual Function 1889' drv=vfio-pci unused=iavf
+0000:af:01.2 'Ethernet Adaptive Virtual Function 1889' drv=vfio-pci unused=iavf
+0000:af:01.3 'Ethernet Adaptive Virtual Function 1889' drv=vfio-pci unused=iavf
+0000:af:01.4 'Ethernet Adaptive Virtual Function 1889' drv=vfio-pci unused=iavf
+0000:af:01.5 'Ethernet Adaptive Virtual Function 1889' drv=vfio-pci unused=iavf
+```
+
+### 8.11 Lower fps if ptp4l&phc2sys is enabled
 
 You may have noticed a similar epoch drop log, which is likely caused by both NTP and phc2sys adjusting the system. To address this issue, please disable the NTP service.
 

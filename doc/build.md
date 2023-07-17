@@ -31,11 +31,20 @@ git checkout v23.03
 git switch -c v23.03
 ```
 
+#### 2.1.1 Download Media Transport Library to top folder Directory
+
+```bash
+git clone https://github.com/OpenVisualCloud/Media-Transport-Library.git
+export imtl_source_code=${PWD}/Media-Transport-Library
+```
+
 ### 2.2 Apply the DPDK patches required to run Intel® Media Transport Library
 
-Note: $imtl_source_cod point to source code of Intel® Media Transport Library.
+Note: $imtl_source_code point to source code of Intel® Media Transport Library.
+
 ```bash
-git am $imtl_source_cod/patches/dpdk/23.03/*.patch
+cd dpdk
+git am $imtl_source_code/patches/dpdk/23.03/*.patch
 ```
 
 ### 2.3 Build and install DPDK library
@@ -53,6 +62,7 @@ pkg-config --modversion libdpdk
 ## 3. Build Intel® Media Transport Library and app
 
 ```bash
+cd $imtl_source_code
 ./build.sh
 ```
 

@@ -170,6 +170,6 @@ if [ "$cmd" == "create_vf" ]; then
     modprobe vfio-pci
     disable_vf
     create_vf $numvfs
-    echo "Create vf bdf: $bdf $port succ"
+    echo "Create VFs on PF bdf: $bdf $port succ"
 fi
 

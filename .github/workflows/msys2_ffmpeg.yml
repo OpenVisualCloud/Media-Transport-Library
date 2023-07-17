@@ -1,0 +1,128 @@
+name: MSYS2 FFmpeg Plugins
+on:
+  schedule:
+    - cron: '0 22 * * 1-5'
+      
+env:
+  FFMPEG_PREFIX: /c/ffmpeg_mtl
+  
+jobs:
+  ffmpeg_build:
+    name: MSYS2 FFmpeg Build
+    runs-on: windows-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        sys:
+          - mingw64
+        dpdk: [23.03]
+    defaults:
+      run:
+        shell: msys2 {0}        
+    steps:
+      - uses: actions/checkout@8e5e7e5ab8b370d6c329ec480221332ada57f0ab # v3.5.2
+      
+      - id: ffmpeg_compose
+        uses: OpenVisualCloud/Media-Transport-Library@main
+        with:
+          sys: ${{matrix.sys}}
+          dpdk: ${{matrix.dpdk}}
+          tap: false
+            
+      - name: Checkout mman-win32
+        uses: actions/checkout@8e5e7e5ab8b370d6c329ec480221332ada57f0ab # v3.5.2
+        with:
+          repository: 'alitrack/mman-win32'
+          ref: master
+          path: mman-win32
+          
+      - name: Checkout Cisco H264
+        uses: actions/checkout@8e5e7e5ab8b370d6c329ec480221332ada57f0ab # v3.5.2
+        with:
+          repository: 'cisco/openh264'
+          ref: openh264v2.3.1
+          path: openh264
+
+      - name: Build IMTL app dependency
+        run: | 
+         cd mman-win32
+          ./configure --prefix=${MSYSTEM_PREFIX}
+          make -j$(nproc) && make install
+          
+      - name: Build H264
+        run: |
+          cd openh264
+          meson build
+          ninja -C build install
+          
+        # Fixes in https://sourceforge.net/p/mingw-w64/mailman/message/29053757/
+      - name: Fix mingw64 binutils 
+        run: |
+          cp -f /mingw64/bin/ar.exe /mingw64/bin/x86_64-w64-mingw32-ar.exe
+          cp -f /mingw64/bin/dlltool.exe /mingw64/bin/x86_64-w64-mingw32-dlltool.exe
+          cp -f /mingw64/bin/nm.exe /mingw64/bin/x86_64-w64-mingw32-nm.exe
+          cp -f /mingw64/bin/strip.exe /mingw64/bin/x86_64-w64-mingw32-strip.exe
+          cp -f /mingw64/bin/windres.exe /mingw64/bin/x86_64-w64-mingw32-windres.exe
+          
+      - name: Checkout FFmpeg v4.4.2 aa28df
+        run: |
+          git config --global user.name github-actions
+          git config --global user.email github-actions@github.com
+          git clone https://git.ffmpeg.org/ffmpeg.git 
+          cd ffmpeg
+          git checkout release/4.4
+          git reset --hard aa28df74ab197c49a05fecc40c81e0f8ec4ad0c3
+          
+      - name: Apply IMTL patches
+        run: |
+          pushd ffmpeg
+          cp -f ../ecosystem/ffmpeg_plugin/kahawai_common.c ./libavdevice/
+          cp -f ../ecosystem/ffmpeg_plugin/kahawai_common.h ./libavdevice/
+          cp -f ../ecosystem/ffmpeg_plugin/kahawai_dec.c ./libavdevice/
+          cp -f ../ecosystem/ffmpeg_plugin/kahawai_enc.c ./libavdevice/
+          git am --whitespace=fix ../ecosystem/ffmpeg_plugin/0001-avdevice-kahawai-Add-kahawai-input-output-devices.patch
+    
+      - name: Setup FFmpeg enable MTL
+        run: >
+          cd ffmpeg &&
+          ./configure --arch=x86_64
+          --target-os=${{matrix.sys}}
+          --cross-prefix=x86_64-w64-mingw32- 
+          --prefix=${FFMPEG_PREFIX}
+          --enable-shared 
+          --enable-nonfree 
+          --enable-gpl 
+          --disable-lto 
+          --enable-pic  
+          --disable-w32threads 
+          --enable-mtl 
+          --enable-libx264 
+          --enable-libopenh264 
+          --enable-encoder=libopenh264
+       
+      - name: Build FFmpeg enable MTL
+        run: |
+          cd ffmpeg
+          make -j$(nproc)
+          make install
+          cat ffbuild/config.log
+          
+      - name: Checks FFmpeg enable MTL
+        run: |
+          cd ${FFMPEG_PREFIX}/bin
+          ./ffmpeg -version
+      
+      - name: Zip archive FFmpeg enable mtl
+        run: |
+          zip -r libmtl-${{matrix.sys}}-dpdk-v${{matrix.dpdk}}.zip build/lib
+          zip -r ffmpeg-mtl-${{matrix.sys}}-dpdk-v${{matrix.dpdk}}.zip $FFMPEG_PREFIX/bin
+      
+      - uses: actions/upload-artifact@v3
+        with:
+          name: Intel Media Transport Library (libmtl.dll) Built on MSYS2 ${{matrix.sys}} DPDK v${{matrix.dpdk}}
+          path: libmtl-${{matrix.sys}}-dpdk-v${{matrix.dpdk}}.zip
+
+      - uses: actions/upload-artifact@v3
+        with:
+          name: FFmpeg enable MTL MSYS2 Windows Release (non-free, GPL) Built on MSYS2 ${{matrix.sys}} DPDK v${{matrix.dpdk}}
+          path: ffmpeg-mtl-${{matrix.sys}}-dpdk-v${{matrix.dpdk}}.zip
