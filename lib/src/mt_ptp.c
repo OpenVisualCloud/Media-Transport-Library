@@ -262,7 +262,6 @@ static void ptp_result_reset(struct mt_ptp_impl* ptp) {
 }
 
 static int ptp_sync_expect_result(struct mt_ptp_impl* ptp) {
-  if (ptp->expect_result_avg) ptp_adjust_delta(ptp, ptp->expect_result_avg);
   if (ptp->expect_correct_result_avg) {
     if (ptp->use_pi) {
       /* fine tune coefficient */
@@ -274,6 +273,7 @@ static int ptp_sync_expect_result(struct mt_ptp_impl* ptp) {
       ptp_calculate_coefficient(ptp, ptp->expect_result_avg);
     }
   }
+  if (ptp->expect_result_avg) ptp_adjust_delta(ptp, ptp->expect_result_avg);
   return 0;
 }
 
