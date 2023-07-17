@@ -2718,7 +2718,7 @@ static int rv_handle_mbuf(void* priv, struct rte_mbuf** mbuf, uint16_t nb) {
 
   /* now dispatch the pkts to handler */
   for (uint16_t i = 0; i < nb; i++) {
-#if 1 /* simulate a pkt loss for test */
+#if 0 /* simulate a pkt loss for test */
     if (((float)rand() / RAND_MAX) < 0.0001) {
       dbg("%s(%d,%d), drop as simulate pkt loss\n", __func__, s->idx, s_port);
       s->stat_pkts_simulate_loss++;

@@ -99,11 +99,14 @@ int mt_rtcp_tx_parse_nack_packet(struct mt_rtcp_tx* tx, struct mt_rtcp_hdr* rtcp
 
 static int rtp_seq_num_cmp(uint16_t seq0, uint16_t seq1) {
   if (seq0 == seq1) {
+    /* equal */
     return 0;
   } else if ((seq0 < seq1 && seq1 - seq0 < 32768) ||
              (seq0 > seq1 && seq0 - seq1 > 32768)) {
+    /* seq1 newer than seq0 */
     return -1;
   } else {
+    /* seq0 newer than seq1 */
     return 1;
   }
 }
