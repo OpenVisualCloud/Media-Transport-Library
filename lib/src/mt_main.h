@@ -152,6 +152,8 @@ struct mt_ptp_impl {
   enum mtl_port port;
   uint16_t port_id;
   bool active; /* if the ptp stack is running */
+  bool no_timesync;
+  int64_t no_timesync_delta;
 
   struct rte_mempool* mbuf_pool;
 
@@ -1198,13 +1200,6 @@ static inline bool mt_if_has_hdr_split(struct mtl_main_impl* impl, enum mtl_port
 static inline struct rte_mempool* mt_if_hdr_split_pool(struct mt_interface* inf,
                                                        uint16_t q) {
   return inf->rx_queues[q].mbuf_payload_pool;
-}
-
-static inline bool mt_if_has_ptp(struct mtl_main_impl* impl, enum mtl_port port) {
-  if (mt_has_ptp_service(impl) && mt_if_has_timesync(impl, port))
-    return true;
-  else
-    return false;
 }
 
 static inline uint16_t mt_if_nb_tx_desc(struct mtl_main_impl* impl, enum mtl_port port) {
