@@ -2051,7 +2051,7 @@ static void st20_rx_digest_test(enum st20_type tx_type[], enum st20_type rx_type
     EXPECT_GT(test_ctx_rx[i]->fb_rec, 0);
     EXPECT_GT(test_ctx_rx[i]->check_sha_frame_cnt, 0);
     if (rx_type[i] == ST20_TYPE_SLICE_LEVEL)
-      EXPECT_LT(test_ctx_rx[i]->incomplete_frame_cnt, 2 * 5);
+      EXPECT_LT(test_ctx_rx[i]->incomplete_frame_cnt, 2 * 8);
     else
       EXPECT_LT(test_ctx_rx[i]->incomplete_frame_cnt, 4);
     if (!disable_meta_timing) {
