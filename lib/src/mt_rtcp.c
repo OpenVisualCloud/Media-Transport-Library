@@ -10,26 +10,25 @@
 
 int mt_rtcp_tx_buffer_rtp_packets(struct mt_rtcp_tx* tx, struct rte_mbuf** mbufs,
                                   unsigned int bulk) {
-  int free = rte_ring_get_capacity(tx->mbuf_ring);
-  if (free < bulk) {
-    int clean = bulk - free;
-    struct rte_mbuf* clean_mbufs[clean];
-    if (rte_ring_sc_dequeue_bulk(tx->mbuf_ring, (void**)clean_mbufs, clean, NULL) !=
-        clean) {
+  if (rte_ring_free_count(tx->mbuf_ring) < bulk) {
+    struct rte_mbuf* clean_mbufs[bulk];
+    if (rte_ring_sc_dequeue_bulk(tx->mbuf_ring, (void**)clean_mbufs, bulk, NULL) !=
+        bulk) {
       err("%s, failed to dequeue mbuf from ring\n", __func__);
       return -EIO;
     }
-    rte_pktmbuf_free_bulk(clean_mbufs, clean);
-    tx->ring_first_idx += clean;
+    rte_pktmbuf_free_bulk(clean_mbufs, bulk);
+    tx->ring_first_idx += bulk;
   }
 
   if (rte_ring_sp_enqueue_bulk(tx->mbuf_ring, (void**)mbufs, bulk, NULL) == 0) {
-    err("%s, failed to enqueue mbuf to ring\n", __func__);
+    err("%s, failed to enqueue %u mbuf to ring\n", __func__, bulk);
     return -EIO;
   }
 
   for (int i = 0; i < bulk; i++) {
     rte_mbuf_refcnt_update(mbufs[i], 1);
+    if (mbufs[i]->next) rte_mbuf_refcnt_update(mbufs[i]->next, 1);
   }
 
   tx->stat_rtp_sent += bulk;
