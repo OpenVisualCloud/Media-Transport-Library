@@ -1722,11 +1722,7 @@ static int rv_handle_frame_pkt(struct st_rx_video_session_impl* s, struct rte_mb
       s->stat_pkts_idx_oo_bitmap++;
       return -EIO;
     }
-#if 0 /* simulate a pkt loss for test */
-    if (s->stat_frames_pks_missed < 20) {
-      if ((pkt_idx % 400) == 1) return -EIO;
-    }
-#endif
+
     bool is_set = mt_bitmap_test_and_set(bitmap, pkt_idx);
     if (is_set) {
       dbg("%s(%d,%d), drop as pkt %d already received\n", __func__, s->idx, s_port,
@@ -2048,11 +2044,7 @@ static int rv_handle_st22_pkt(struct st_rx_video_session_impl* s, struct rte_mbu
       s->stat_pkts_idx_oo_bitmap++;
       return -EIO;
     }
-#if 0 /* simulate a pkt loss for test */
-    if (s->stat_frames_pks_missed < 20) {
-      if ((pkt_idx % 50) == 1) return -EIO;
-    }
-#endif
+
     bool is_set = mt_bitmap_test_and_set(bitmap, pkt_idx);
     if (is_set) {
       dbg("%s(%d,%d), drop as pkt %d already received\n", __func__, s->idx, s_port,
@@ -2726,6 +2718,13 @@ static int rv_handle_mbuf(void* priv, struct rte_mbuf** mbuf, uint16_t nb) {
 
   /* now dispatch the pkts to handler */
   for (uint16_t i = 0; i < nb; i++) {
+#if 1 /* simulate a pkt loss for test */
+    if (((float)rand() / RAND_MAX) < 0.0001) {
+      dbg("%s(%d,%d), drop as simulate pkt loss\n", __func__, s->idx, s_port);
+      s->stat_pkts_simulate_loss++;
+      continue;
+    }
+#endif
     if (s->rtcp_rx[s_port]) {
       struct st_rfc3550_rtp_hdr* rtp = rte_pktmbuf_mtod_offset(
           mbuf[i], struct st_rfc3550_rtp_hdr*, sizeof(struct mt_udp_hdr));
@@ -3056,6 +3055,7 @@ static int rv_attach(struct mtl_main_impl* impl, struct st_rx_video_sessions_mgr
   s->stat_pkts_dma = 0;
   s->stat_pkts_rtp_ring_full = 0;
   s->stat_frames_dropped = 0;
+  s->stat_pkts_simulate_loss = 0;
   rte_atomic32_set(&s->stat_frames_received, 0);
   rte_atomic32_set(&s->cbs_incomplete_frame_cnt, 0);
   rte_atomic32_set(&s->cbs_frame_slot_cnt, 0);
@@ -3355,6 +3355,11 @@ static void rv_stat(struct st_rx_video_sessions_mgr* mgr,
     notice("RX_VIDEO_SESSION(%d,%d): slot query ext fail %u\n", m_idx, idx,
            s->stat_slot_query_ext_fail);
     s->stat_slot_query_ext_fail = 0;
+  }
+  if (s->stat_pkts_simulate_loss) {
+    notice("RX_VIDEO_SESSION(%d,%d): simulate loss drop %u\n", m_idx, idx,
+           s->stat_pkts_simulate_loss);
+    s->stat_pkts_simulate_loss = 0;
   }
 }
 

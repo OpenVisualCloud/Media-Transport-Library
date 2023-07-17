@@ -7,6 +7,7 @@
 #include "mt_dev.h"
 #include "mt_log.h"
 #include "mt_stat.h"
+#include "mt_util.h"
 
 int mt_rtcp_tx_buffer_rtp_packets(struct mt_rtcp_tx* tx, struct rte_mbuf** mbufs,
                                   unsigned int bulk) {
@@ -96,6 +97,17 @@ int mt_rtcp_tx_parse_nack_packet(struct mt_rtcp_tx* tx, struct mt_rtcp_hdr* rtcp
   return 0;
 }
 
+static int rtp_seq_num_cmp(uint16_t seq0, uint16_t seq1) {
+  if (seq0 == seq1) {
+    return 0;
+  } else if ((seq0 < seq1 && seq1 - seq0 < 32768) ||
+             (seq0 > seq1 && seq0 - seq1 > 32768)) {
+    return -1;
+  } else {
+    return 1;
+  }
+}
+
 int mt_rtcp_rx_parse_rtp_packet(struct mt_rtcp_rx* rx, struct st_rfc3550_rtp_hdr* rtp) {
   struct mtl_main_impl* impl = rx->parent;
   enum mtl_port port = rx->port;
@@ -107,9 +119,10 @@ int mt_rtcp_rx_parse_rtp_packet(struct mt_rtcp_rx* rx, struct st_rfc3550_rtp_hdr
     rx->last_seq_id = seq_id;
   }
 
-  if (seq_id == rx->last_seq_id + 1) { /* pkt received in sequence */
+  int cmp_result = rtp_seq_num_cmp(seq_id, rx->last_seq_id + 1);
+  if (cmp_result == 0) { /* pkt received in sequence */
     rx->last_seq_id = seq_id;
-  } else if (seq_id > rx->last_seq_id + 1) { /* pkt(s) lost */
+  } else if (cmp_result > 0) { /* pkt(s) lost */
     uint16_t lost_packets = seq_id - rx->last_seq_id - 1;
     rx->stat_rtp_lost_detected += lost_packets;
     /* insert nack */
@@ -125,10 +138,12 @@ int mt_rtcp_rx_parse_rtp_packet(struct mt_rtcp_rx* rx, struct st_rfc3550_rtp_hdr
     MT_TAILQ_INSERT_TAIL(&rx->nack_list, nack, next);
     rx->last_seq_id = seq_id;
   } else {
-    /* TODO: remove out of order pkt from nack list */
+    /* TODO: remove out-of-date / recovered pkt from nack list */
   }
 
   rx->stat_rtp_received++;
+
+  if (seq_id % 128 == 0) mt_rtcp_rx_send_nack_packet(rx);
 
   return 0;
 }
@@ -139,6 +154,8 @@ int mt_rtcp_rx_send_nack_packet(struct mt_rtcp_rx* rx) {
   enum mtl_port port = rx->port;
   struct rte_mbuf* pkt;
   struct rte_ipv4_hdr* ipv4;
+
+  if (MT_TAILQ_FIRST(&rx->nack_list) == NULL) return 0;
 
   pkt = rte_pktmbuf_alloc(mt_get_tx_mempool(impl, port));
   if (!pkt) {
@@ -264,6 +281,7 @@ void mt_rtcp_tx_free(struct mt_rtcp_tx* tx) {
   mt_stat_unregister(tx->parent, rtcp_tx_stat, tx);
 
   if (tx->mbuf_ring) {
+    mt_ring_dequeue_clean(tx->mbuf_ring);
     rte_ring_free(tx->mbuf_ring);
   }
 

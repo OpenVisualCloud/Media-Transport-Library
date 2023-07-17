@@ -678,6 +678,7 @@ struct st_rx_video_session_impl {
   int stat_pkts_not_bpm;
   int stat_pkts_copy_hdr_split;
   int stat_pkts_wrong_payload_hdr_split;
+  int stat_pkts_simulate_loss;
   int stat_mismatch_hdr_split_frame;
   int stat_frames_dropped;
   int stat_frames_pks_missed;
