@@ -185,6 +185,8 @@ struct mt_ptp_impl {
   int32_t expect_result_cnt;
   int32_t expect_result_sum;
   int32_t expect_result_avg;
+  int32_t expect_correct_result_sum;
+  int32_t expect_correct_result_avg;
   uint64_t expect_result_start_ns;
   uint64_t expect_result_period_ns;
 

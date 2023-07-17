@@ -324,7 +324,9 @@ sudo phc2sys -s ens801f2 -m -w
 
 #### 7.1.2 Built-in PTP
 
-This project includes built-in support for the Precision Time Protocol (PTP) protocol, which is also based on the hardware Network Interface Card (NIC) timesync feature. This combination allows for achieving a PTP time clock source with an accuracy of approximately 30ns. To enable this feature in the RxTxApp sample application, use the "--ptp" argument. The control for the built-in PTP feature is the "MTL_FLAG_PTP_ENABLE" flag in the "mtl_init_params" structure.
+This project includes built-in support for the Precision Time Protocol (PTP) protocol, which is also based on the hardware Network Interface Card (NIC) timesync feature. This combination allows for achieving a PTP time clock source with an accuracy of approximately 30ns.
+
+To enable this feature in the RxTxApp sample application, use the "--ptp" argument. The control for the built-in PTP feature is the "MTL_FLAG_PTP_ENABLE" flag in the "mtl_init_params" structure.
 
 Note: Currently, the VF (Virtual Function) does not support the hardware timesync feature. Therefore, for VF deployment, the timestamp of the transmitted (TX) and received (RX) packets is read from the CPU TSC (TimeStamp Counter) instead. In this case, it is not possible to obtain a stable delta in the PTP adjustment, and the maximum accuracy achieved will be up to 1us.
 
