@@ -49,6 +49,11 @@ typedef struct st_rx_ancillary_session_handle_impl* st40_rx_handle;
  * st40_tx_frame_meta(ST10_TIMESTAMP_FMT_MEDIA_CLK is used)
  */
 #define ST40_TX_FLAG_USER_TIMESTAMP (MTL_BIT32(4))
+/**
+ * Flag bit in flags of struct st40_tx_ops.
+ * If enable the rtcp.
+ */
+#define ST40_TX_FLAG_ENABLE_RTCP (MTL_BIT32(5))
 
 /**
  * Flag bit in flags of struct st30_rx_ops, for non MTL_PMD_DPDK_USER.
@@ -56,6 +61,11 @@ typedef struct st_rx_ancillary_session_handle_impl* st40_rx_handle;
  * Use st40_rx_get_queue_meta to get the queue meta(queue number etc) info.
  */
 #define ST40_RX_FLAG_DATA_PATH_ONLY (MTL_BIT32(0))
+/**
+ * Flag bit in flags of struct st40_rx_ops.
+ * If enable the rtcp.
+ */
+#define ST40_RX_FLAG_ENABLE_RTCP (MTL_BIT32(1))
 
 /**
  * Session type of st2110-40(ancillary) streaming

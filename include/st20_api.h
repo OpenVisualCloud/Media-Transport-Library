@@ -65,6 +65,11 @@ extern "C" {
  * If disable the static RL pad interval profiling.
  */
 #define ST20_TX_FLAG_DISABLE_STATIC_PAD_P (MTL_BIT32(6))
+/**
+ * Flag bit in flags of struct st20_tx_ops.
+ * If enable the rtcp.
+ */
+#define ST20_TX_FLAG_ENABLE_RTCP (MTL_BIT32(7))
 
 /**
  * Flag bit in flags of struct st22_tx_ops.
@@ -98,6 +103,11 @@ extern "C" {
  * If enabled, lib will pass ST_EVENT_VSYNC by the notify_event on every epoch start.
  */
 #define ST22_TX_FLAG_ENABLE_VSYNC (MTL_BIT32(5))
+/**
+ * Flag bit in flags of struct st22_tx_ops.
+ * If enable the rtcp.
+ */
+#define ST22_TX_FLAG_ENABLE_RTCP (MTL_BIT32(6))
 
 /**
  * Flag bit in flags of struct st20_rx_ops, for non MTL_PMD_DPDK_USER.
@@ -110,6 +120,11 @@ extern "C" {
  * If enabled, lib will pass ST_EVENT_VSYNC by the notify_event on every epoch start.
  */
 #define ST20_RX_FLAG_ENABLE_VSYNC (MTL_BIT32(1))
+/**
+ * Flag bit in flags of struct st20_rx_ops.
+ * If enable the rtcp.
+ */
+#define ST20_RX_FLAG_ENABLE_RTCP (MTL_BIT32(2))
 
 /**
  * Flag bit in flags of struct st20_rx_ops.
@@ -164,6 +179,11 @@ extern "C" {
  * Disable ST22 boxes, for ST22_TYPE_FRAME_LEVEL
  */
 #define ST22_RX_FLAG_DISABLE_BOXES (MTL_BIT32(2))
+/**
+ * Flag bit in flags of struct st22_rx_ops.
+ * If enable the rtcp.
+ */
+#define ST22_RX_FLAG_ENABLE_RTCP (MTL_BIT32(3))
 
 /**
  * Flag bit in flags of struct st22_rx_ops.

@@ -169,6 +169,7 @@ static int app_rx_st22p_init(struct st_app_context* ctx,
   ops.max_codestream_size = 0;
   ops.notify_frame_available = app_rx_st22p_frame_available;
   ops.framebuff_cnt = s->framebuff_cnt;
+  if (st22p && st22p->enable_rtcp) ops.flags |= ST22P_RX_FLAG_ENABLE_RTCP;
 
   st_pthread_mutex_init(&s->st22p_wake_mutex, NULL);
   st_pthread_cond_init(&s->st22p_wake_cond, NULL);

@@ -728,6 +728,7 @@ static int app_tx_video_init(struct st_app_context* ctx, st_json_video_session_t
   ops.pad_interval = ctx->tx_pad_interval;
   if (s->enable_vsync) ops.flags |= ST20_TX_FLAG_ENABLE_VSYNC;
   if (ctx->tx_no_static_pad) ops.flags |= ST20_TX_FLAG_DISABLE_STATIC_PAD_P;
+  if (video && video->enable_rtcp) ops.flags |= ST20_TX_FLAG_ENABLE_RTCP;
 
   ret = st20_get_pgroup(ops.fmt, &s->st20_pg);
   if (ret < 0) return ret;

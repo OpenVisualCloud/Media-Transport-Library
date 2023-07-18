@@ -241,6 +241,7 @@ static int app_tx_st22p_init(struct st_app_context* ctx, st_json_st22p_session_t
   ops.codestream_size = ops.width * ops.height * 3 / 8;
   ops.framebuff_cnt = 2;
   ops.notify_frame_available = app_tx_st22p_frame_available;
+  if (st22p && st22p->enable_rtcp) ops.flags |= ST22P_TX_FLAG_ENABLE_RTCP;
 
   s->width = ops.width;
   s->height = ops.height;
