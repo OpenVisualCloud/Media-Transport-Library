@@ -890,6 +890,15 @@ double st30_get_packet_time(enum st30_ptime ptime) {
     case ST31_PTIME_80US:
       packet_time_ns = (double)1000000000.0 * 1 / 12500;
       break;
+    case ST31_PTIME_1_09MS:
+      packet_time_ns = (double)1000000000.0 * 48 / 44100;
+      break;
+    case ST31_PTIME_0_14MS:
+      packet_time_ns = (double)1000000000.0 * 6 / 44100;
+      break;
+    case ST31_PTIME_0_09MS:
+      packet_time_ns = (double)1000000000.0 * 4 / 44100;
+      break;
     default:
       err("%s, wrong ptime %d\n", __func__, ptime);
       return -EINVAL;

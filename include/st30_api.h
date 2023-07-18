@@ -280,14 +280,12 @@ struct st30_tx_ops {
    * size for each sample group,
    * use st30_get_sample_size to get the size for different format.
    */
-  uint16_t sample_size
-      __mtl_deprecated_msg("Not use anymore, plan to remove in next version");
+  uint16_t sample_size __mtl_deprecated_msg("Not use anymore, plan to remove");
   /**
    * number of samples for single channel in packet,
    * use st30_get_sample_num to get the number from different ptime and sampling rate.
    */
-  uint16_t sample_num
-      __mtl_deprecated_msg("Not use anymore, plan to remove in next version");
+  uint16_t sample_num __mtl_deprecated_msg("Not use anymore, plan to remove");
   /*
    * The size of fifo ring which used between the packet builder and pacing.
    * Leave to zero to use default value: the packet number within
@@ -308,7 +306,7 @@ struct st30_tx_ops {
    */
   uint16_t framebuff_cnt;
   /**
-   * size for each frame buffer, should be multiple of packet size(st30_get_packet_size),,
+   * size for each frame buffer, should be multiple of packet size(st30_get_packet_size),
    * only for ST30_TYPE_FRAME_LEVEL.
    */
   uint32_t framebuff_size;
@@ -383,12 +381,12 @@ struct st30_rx_ops {
    * size for each sample group,
    * use st30_get_sample_size to get the size for different format.
    */
-  uint16_t sample_size;
+  // uint16_t sample_size __mtl_deprecated_msg("Not use anymore, plan to remove");
   /**
    * number of samples for single channel in packet,
    * use st30_get_sample_num to get the number from different ptime and sampling rate.
    */
-  uint16_t sample_num;
+  // uint16_t sample_num __mtl_deprecated_msg("Not use anymore, plan to remove");
 
   /**
    * the frame buffer count requested for one st30 rx session,
@@ -396,7 +394,7 @@ struct st30_rx_ops {
    */
   uint16_t framebuff_cnt;
   /**
-   * size for each frame buffer, should be multiple of sample_size,
+   * size for each frame buffer, should be multiple of packet size(st30_get_packet_size),
    * only for ST30_TX_TYPE_FRAME_LEVEL.
    */
   uint32_t framebuff_size;

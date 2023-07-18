@@ -193,6 +193,7 @@ static int tx_audio_session_init_pacing(struct mtl_main_impl* impl,
   struct st_tx_audio_session_pacing* pacing = &s->pacing;
   struct st30_tx_ops* ops = &s->ops;
   double pkt_time = st30_get_packet_time(ops->ptime);
+  if (pkt_time < 0) return -EINVAL;
 
   pacing->pkt_time_sampling = (double)(s->sample_num * 1000) * 1 / 1000;
   pacing->trs = pkt_time;
@@ -1331,7 +1332,7 @@ static int tx_audio_session_attach(struct mtl_main_impl* impl,
 
   /* calculate pkts in line*/
   size_t bytes_in_pkt = ST_PKT_MAX_ETHER_BYTES - sizeof(struct st_rfc3550_audio_hdr);
-  
+
   s->st30_pkt_size = s->pkt_len + sizeof(struct st_rfc3550_audio_hdr);
   if (s->pkt_len > bytes_in_pkt) {
     err("%s(%d), invalid pkt_len %d\n", __func__, idx, s->pkt_len);
@@ -1381,8 +1382,8 @@ static int tx_audio_session_attach(struct mtl_main_impl* impl,
     return ret;
   }
 
-  info("%s(%d), pkt_len %u frame_size %u\n", __func__, idx, s->pkt_len,
-       s->st30_frame_size);
+  info("%s(%d), pkt_len %u frame_size %u fps %f\n", __func__, idx, s->pkt_len,
+       s->st30_frame_size, (double)NS_PER_S / s->pacing.trs / s->st30_total_pkts);
   return 0;
 }
 

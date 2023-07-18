@@ -202,10 +202,9 @@ static void st30_rx_ops_init(tests_context* st30, struct st30_rx_ops* ops) {
   ops->payload_type = ST30_TEST_PAYLOAD_TYPE;
   ops->sampling = ST30_SAMPLING_48K;
   ops->ptime = ST30_PTIME_1MS;
-  ops->sample_size = st30_get_sample_size(ops->fmt);
-  ops->sample_num = st30_get_sample_num(ops->ptime, ops->sampling);
   ops->framebuff_cnt = st30->fb_cnt;
-  ops->framebuff_size = ops->sample_size * ops->sample_num * ops->channel;
+  ops->framebuff_size =
+      st30_get_packet_size(ops->fmt, ops->ptime, ops->sampling, ops->channel);
   ops->notify_frame_ready = st30_rx_frame_ready;
   ops->notify_rtp_ready = rx_rtp_ready;
   ops->rtp_ring_size = 1024;
@@ -509,9 +508,8 @@ static void st30_rx_fps_test(enum st30_type type[], enum st30_sampling sample[],
     ops_rx.fmt = fmt[i];
     ops_rx.payload_type = ST30_TEST_PAYLOAD_TYPE;
     ops_rx.ptime = ptime[i];
-    ops_rx.sample_size = st30_get_sample_size(ops_rx.fmt);
-    ops_rx.sample_num = st30_get_sample_num(ops_rx.ptime, ops_rx.sampling);
-    ops_rx.framebuff_size = ops_rx.sample_size * ops_rx.sample_num * ops_rx.channel;
+    ops_rx.framebuff_size =
+        st30_get_packet_size(ops_rx.fmt, ops_rx.ptime, ops_rx.sampling, ops_rx.channel);
     ops_rx.framebuff_cnt = test_ctx_rx[i]->fb_cnt;
     ops_rx.notify_frame_ready = st30_rx_frame_ready;
     ops_rx.notify_rtp_ready = rx_rtp_ready;
@@ -888,9 +886,8 @@ static void st30_rx_update_src_test(enum st30_type type, int tx_sessions,
     ops_rx.fmt = ST30_FMT_PCM24;
     ops_rx.payload_type = ST30_TEST_PAYLOAD_TYPE;
     ops_rx.ptime = ST30_PTIME_1MS;
-    ops_rx.sample_size = st30_get_sample_size(ops_rx.fmt);
-    ops_rx.sample_num = st30_get_sample_num(ops_rx.ptime, ops_rx.sampling);
-    ops_rx.framebuff_size = ops_rx.sample_size * ops_rx.sample_num * ops_rx.channel;
+    ops_rx.framebuff_size =
+        st30_get_packet_size(ops_rx.fmt, ops_rx.ptime, ops_rx.sampling, ops_rx.channel);
     ops_rx.framebuff_cnt = test_ctx_rx[i]->fb_cnt;
     ops_rx.notify_frame_ready = st30_rx_frame_ready;
     ops_rx.notify_rtp_ready = rx_rtp_ready;
@@ -1178,9 +1175,8 @@ static void st30_rx_meta_test(enum st30_fmt fmt[], enum st30_sampling sampling[]
     ops_rx.fmt = fmt[i];
     ops_rx.payload_type = ST30_TEST_PAYLOAD_TYPE;
     ops_rx.ptime = ST30_PTIME_1MS;
-    ops_rx.sample_size = st30_get_sample_size(ops_rx.fmt);
-    ops_rx.sample_num = st30_get_sample_num(ops_rx.ptime, ops_rx.sampling);
-    ops_rx.framebuff_size = ops_rx.sample_size * ops_rx.sample_num * ops_rx.channel;
+    ops_rx.framebuff_size =
+        st30_get_packet_size(ops_rx.fmt, ops_rx.ptime, ops_rx.sampling, ops_rx.channel);
     ops_rx.framebuff_cnt = test_ctx_rx[i]->fb_cnt;
     ops_rx.notify_frame_ready = st30_rx_meta_frame_ready;
     ops_rx.notify_rtp_ready = rx_rtp_ready;
@@ -1357,9 +1353,8 @@ static void st30_create_after_start_test(enum st30_type type[],
       ops_rx.fmt = fmt[i];
       ops_rx.payload_type = ST30_TEST_PAYLOAD_TYPE;
       ops_rx.ptime = ST30_PTIME_1MS;
-      ops_rx.sample_size = st30_get_sample_size(ops_rx.fmt);
-      ops_rx.sample_num = st30_get_sample_num(ops_rx.ptime, ops_rx.sampling);
-      ops_rx.framebuff_size = ops_rx.sample_size * ops_rx.sample_num * ops_rx.channel;
+      ops_rx.framebuff_size =
+          st30_get_packet_size(ops_rx.fmt, ops_rx.ptime, ops_rx.sampling, ops_rx.channel);
       ops_rx.framebuff_cnt = test_ctx_rx[i]->fb_cnt;
       ops_rx.notify_frame_ready = st30_rx_frame_ready;
       ops_rx.notify_rtp_ready = rx_rtp_ready;
