@@ -1629,13 +1629,6 @@ static int dev_if_init_pacing(struct mt_interface* inf) {
   enum mtl_port port = inf->port;
   int ret;
 
-  if ((ST21_TX_PACING_WAY_AUTO == inf->tx_pacing_way) &&
-      (inf->feature & MT_IF_FEATURE_TX_OFFLOAD_SEND_ON_TIMESTAMP)) {
-    info("%s(%d), use TSN pacing\n", __func__, port);
-    inf->tx_pacing_way = ST21_TX_PACING_WAY_TSN;
-    return 0;
-  }
-
   if (mt_shared_tx_queue(inf->parent, inf->port)) {
     info("%s(%d), use tsc as shared tx queue\n", __func__, port);
     inf->tx_pacing_way = ST21_TX_PACING_WAY_TSC;
@@ -2467,7 +2460,8 @@ int mt_dev_if_init(struct mtl_main_impl* impl) {
 
 #if RTE_VERSION >= RTE_VERSION_NUM(23, 3, 0, 0)
     /* Detect LaunchTime capability */
-    if (dev_info->tx_offload_capa & RTE_ETH_TX_OFFLOAD_SEND_ON_TIMESTAMP) {
+    if (dev_info->tx_offload_capa & RTE_ETH_TX_OFFLOAD_SEND_ON_TIMESTAMP &&
+        ST21_TX_PACING_WAY_TSN == inf->tx_pacing_way) {
       inf->feature |= MT_IF_FEATURE_TX_OFFLOAD_SEND_ON_TIMESTAMP;
 
       int* dev_tx_timestamp_dynfield_offset_ptr =
