@@ -890,6 +890,15 @@ double st30_get_packet_time(enum st30_ptime ptime) {
     case ST31_PTIME_80US:
       packet_time_ns = (double)1000000000.0 * 1 / 12500;
       break;
+    case ST31_PTIME_1_09MS:
+      packet_time_ns = (double)1000000000.0 * 48 / 44100;
+      break;
+    case ST31_PTIME_0_14MS:
+      packet_time_ns = (double)1000000000.0 * 6 / 44100;
+      break;
+    case ST31_PTIME_0_09MS:
+      packet_time_ns = (double)1000000000.0 * 4 / 44100;
+      break;
     default:
       err("%s, wrong ptime %d\n", __func__, ptime);
       return -EINVAL;
@@ -943,7 +952,7 @@ int st30_get_sample_num(enum st30_ptime ptime, enum st30_sampling sampling) {
           samples = 4;
           break;
         default:
-          err("%s, wrong ptime %d\n", __func__, ptime);
+          err("%s, wrong ptime %d for 48k\n", __func__, ptime);
           return -EINVAL;
       }
       break;
@@ -968,7 +977,7 @@ int st30_get_sample_num(enum st30_ptime ptime, enum st30_sampling sampling) {
           samples = 8;
           break;
         default:
-          err("%s, wrong ptime %d\n", __func__, ptime);
+          err("%s, wrong ptime %d for 96k\n", __func__, ptime);
           return -EINVAL;
       }
       break;
@@ -984,7 +993,7 @@ int st30_get_sample_num(enum st30_ptime ptime, enum st30_sampling sampling) {
           samples = 4;
           break;
         default:
-          err("%s, wrong ptime %d\n", __func__, ptime);
+          err("%s, wrong ptime %d for 44k\n", __func__, ptime);
           return -EINVAL;
       }
       break;
@@ -1007,6 +1016,28 @@ int st30_get_sample_rate(enum st30_sampling sampling) {
       err("%s, wrong sampling %d\n", __func__, sampling);
       return -EINVAL;
   }
+}
+
+int st30_get_packet_size(enum st30_fmt fmt, enum st30_ptime ptime,
+                         enum st30_sampling sampling, uint16_t channel) {
+  int ret;
+  int sample_size;
+  int sample_num;
+
+  ret = st30_get_sample_size(fmt);
+  if (ret < 0) return ret;
+  sample_size = ret;
+
+  ret = st30_get_sample_num(ptime, sampling);
+  if (ret < 0) return ret;
+  sample_num = ret;
+
+  if (!channel) {
+    err("%s, invalid channel %u\n", __func__, channel);
+    return -EINVAL;
+  }
+
+  return sample_size * sample_num * channel;
 }
 
 void st_frame_init_plane_single_src(struct st_frame* frame, void* addr, mtl_iova_t iova) {
