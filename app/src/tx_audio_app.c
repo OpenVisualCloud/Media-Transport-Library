@@ -420,18 +420,22 @@ static int app_tx_audio_init(struct st_app_context* ctx, st_json_audio_session_t
   ops.channel = audio ? audio->info.audio_channel : 2;
   ops.sampling = audio ? audio->info.audio_sampling : ST30_SAMPLING_48K;
   ops.ptime = audio ? audio->info.audio_ptime : ST30_PTIME_1MS;
-  ops.sample_size = st30_get_sample_size(ops.fmt);
-  ops.sample_num = st30_get_sample_num(ops.ptime, ops.sampling);
   s->sampling = ops.sampling;
-  s->pkt_len = ops.sample_size * ops.sample_num * ops.channel;
-  if (ops.ptime == ST30_PTIME_4MS) {
-    s->st30_frame_size =
-        ops.sample_size * st30_get_sample_num(ST30_PTIME_4MS, ops.sampling) * ops.channel;
-  } else {
-    /* when ptime <= 1ms, set frame time to 1ms */
-    s->st30_frame_size =
-        ops.sample_size * st30_get_sample_num(ST30_PTIME_1MS, ops.sampling) * ops.channel;
+  s->pkt_len = st30_get_packet_size(ops.fmt, ops.ptime, ops.sampling, ops.channel);
+  if (s->pkt_len < 0) {
+    err("%s(%d), st30_get_packet_size fail\n", __func__, idx);
+    app_tx_audio_uinit(s);
+    return -EIO;
   }
+  int pkt_per_frame = 1;
+
+  double pkt_time = st30_get_packet_time(ops.ptime);
+  /* when ptime <= 1ms, set frame time to 1ms */
+  if (pkt_time < NS_PER_MS) {
+    pkt_per_frame = NS_PER_MS / pkt_time;
+  }
+
+  s->st30_frame_size = pkt_per_frame * s->pkt_len;
   ops.framebuff_size = s->st30_frame_size;
   ops.payload_type = audio ? audio->base.payload_type : ST_APP_PAYLOAD_TYPE_AUDIO;
 

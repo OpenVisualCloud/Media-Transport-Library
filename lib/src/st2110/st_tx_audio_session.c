@@ -194,7 +194,7 @@ static int tx_audio_session_init_pacing(struct mtl_main_impl* impl,
   struct st30_tx_ops* ops = &s->ops;
   double pkt_time = st30_get_packet_time(ops->ptime);
 
-  pacing->pkt_time_sampling = (double)(ops->sample_num * 1000) * 1 / 1000;
+  pacing->pkt_time_sampling = (double)(s->sample_num * 1000) * 1 / 1000;
   pacing->trs = pkt_time;
 
   pacing->max_onward_epochs = (double)(NS_PER_S * 1) / pkt_time;     /* 1s */
@@ -1318,9 +1318,20 @@ static int tx_audio_session_attach(struct mtl_main_impl* impl,
 
   s->st30_frames_cnt = ops->framebuff_cnt;
 
+  ret = st30_get_sample_size(ops->fmt);
+  if (ret < 0) return ret;
+  s->sample_size = ret;
+  ret = st30_get_sample_num(ops->ptime, ops->sampling);
+  if (ret < 0) return ret;
+  s->sample_num = ret;
+
+  ret = st30_get_packet_size(ops->fmt, ops->ptime, ops->sampling, ops->channel);
+  if (ret < 0) return ret;
+  s->pkt_len = ret;
+
   /* calculate pkts in line*/
   size_t bytes_in_pkt = ST_PKT_MAX_ETHER_BYTES - sizeof(struct st_rfc3550_audio_hdr);
-  s->pkt_len = ops->sample_size * ops->sample_num * ops->channel;
+  
   s->st30_pkt_size = s->pkt_len + sizeof(struct st_rfc3550_audio_hdr);
   if (s->pkt_len > bytes_in_pkt) {
     err("%s(%d), invalid pkt_len %d\n", __func__, idx, s->pkt_len);
@@ -1686,10 +1697,6 @@ static int tx_audio_ops_check(struct st30_tx_ops* ops) {
   } else if (ops->type == ST30_TYPE_RTP_LEVEL) {
     if (ops->rtp_ring_size <= 0) {
       err("%s, invalid rtp_ring_size %d\n", __func__, ops->rtp_ring_size);
-      return -EINVAL;
-    }
-    if ((ops->sample_size <= 0) || (ops->sample_size > MTL_PKT_MAX_RTP_BYTES)) {
-      err("%s, invalid sample_size %d\n", __func__, ops->sample_size);
       return -EINVAL;
     }
     if (!ops->notify_rtp_done) {

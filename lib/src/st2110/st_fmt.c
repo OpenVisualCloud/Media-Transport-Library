@@ -1009,6 +1009,28 @@ int st30_get_sample_rate(enum st30_sampling sampling) {
   }
 }
 
+int st30_get_packet_size(enum st30_fmt fmt, enum st30_ptime ptime,
+                         enum st30_sampling sampling, uint16_t channel) {
+  int ret;
+  int sample_size;
+  int sample_num;
+
+  ret = st30_get_sample_size(fmt);
+  if (ret < 0) return ret;
+  sample_size = ret;
+
+  ret = st30_get_sample_num(ptime, sampling);
+  if (ret < 0) return ret;
+  sample_num = ret;
+
+  if (!channel) {
+    err("%s, invalid channel %u\n", __func__, channel);
+    return -EINVAL;
+  }
+
+  return sample_size * sample_num * channel;
+}
+
 void st_frame_init_plane_single_src(struct st_frame* frame, void* addr, mtl_iova_t iova) {
   uint8_t planes = st_frame_fmt_planes(frame->fmt);
 

@@ -768,6 +768,8 @@ struct st_tx_audio_session_impl {
   bool calculate_time_cursor;
   bool check_frame_done_time;
 
+  uint16_t sample_size;
+  uint16_t sample_num;
   uint32_t pkt_len;           /* data len(byte) for each pkt */
   uint32_t st30_pkt_size;     /* size for each pkt which include the header */
   int st30_total_pkts;        /* total pkts in one frame */
