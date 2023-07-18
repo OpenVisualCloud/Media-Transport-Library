@@ -192,19 +192,18 @@ static int tx_audio_session_init_pacing(struct mtl_main_impl* impl,
   int idx = s->idx;
   struct st_tx_audio_session_pacing* pacing = &s->pacing;
   struct st30_tx_ops* ops = &s->ops;
-  double frame_time = st30_get_packet_time(ops->ptime);
+  double pkt_time = st30_get_packet_time(ops->ptime);
 
-  pacing->frame_time = frame_time;
-  pacing->frame_time_sampling = (double)(ops->sample_num * 1000) * 1 / 1000;
-  pacing->trs = frame_time;
+  pacing->pkt_time_sampling = (double)(ops->sample_num * 1000) * 1 / 1000;
+  pacing->trs = pkt_time;
 
-  pacing->max_onward_epochs = (double)(NS_PER_S * 1) / frame_time;     /* 1s */
-  pacing->max_late_epochs = (double)(NS_PER_S * 1) / frame_time / 100; /* 10ms */
+  pacing->max_onward_epochs = (double)(NS_PER_S * 1) / pkt_time;     /* 1s */
+  pacing->max_late_epochs = (double)(NS_PER_S * 1) / pkt_time / 100; /* 10ms */
   dbg("%s[%02d], max_onward_epochs %u max_late_epochs %u\n", __func__, idx,
       pacing->max_onward_epochs, pacing->max_late_epochs);
 
-  info("%s[%02d], frame_time %f frame_time_sampling %f\n", __func__, idx,
-       pacing->frame_time, pacing->frame_time_sampling);
+  info("%s[%02d], trs %f pkt_time_sampling %f\n", __func__, idx, pacing->trs,
+       pacing->pkt_time_sampling);
   return 0;
 }
 
@@ -212,18 +211,18 @@ static int tx_audio_session_init_pacing_epoch(struct mtl_main_impl* impl,
                                               struct st_tx_audio_session_impl* s) {
   uint64_t ptp_time = mt_get_ptp_time(impl, MTL_PORT_P);
   struct st_tx_audio_session_pacing* pacing = &s->pacing;
-  pacing->cur_epochs = ptp_time / pacing->frame_time;
+  pacing->cur_epochs = ptp_time / pacing->trs;
   return 0;
 }
 
 static inline double tx_audio_pacing_time(struct st_tx_audio_session_pacing* pacing,
                                           uint64_t epochs) {
-  return epochs * pacing->frame_time;
+  return epochs * pacing->trs;
 }
 
 static inline uint32_t tx_audio_pacing_time_stamp(
     struct st_tx_audio_session_pacing* pacing, uint64_t epochs) {
-  uint64_t tmstamp64 = epochs * pacing->frame_time_sampling;
+  uint64_t tmstamp64 = epochs * pacing->pkt_time_sampling;
   uint32_t tmstamp32 = tmstamp64;
 
   return tmstamp32;
@@ -254,7 +253,7 @@ static int tx_audio_session_sync_pacing(struct mtl_main_impl* impl,
                                         struct st_tx_audio_session_impl* s, bool sync,
                                         uint64_t required_tai) {
   struct st_tx_audio_session_pacing* pacing = &s->pacing;
-  double frame_time = pacing->frame_time;
+  double pkt_time = pacing->trs;
   /* always use MTL_PORT_P for ptp now */
   uint64_t ptp_time = mt_get_ptp_time(impl, MTL_PORT_P);
   uint64_t next_epochs = pacing->cur_epochs + 1;
@@ -262,13 +261,13 @@ static int tx_audio_session_sync_pacing(struct mtl_main_impl* impl,
   double to_epoch;
 
   if (required_tai) {
-    uint64_t ptp_epochs = ptp_time / frame_time;
-    epochs = required_tai / frame_time;
+    uint64_t ptp_epochs = ptp_time / pkt_time;
+    epochs = required_tai / pkt_time;
     dbg("%s(%d), required tai %" PRIu64 " ptp_epochs %" PRIu64 " epochs %" PRIu64 "\n",
         __func__, s->idx, required_tai, ptp_epochs, epochs);
     if (epochs < ptp_epochs) s->stat_error_user_timestamp++;
   } else {
-    epochs = ptp_time / frame_time;
+    epochs = ptp_time / pkt_time;
 
     dbg("%s(%d), epochs %" PRIu64 " %" PRIu64 "\n", __func__, s->idx, epochs,
         pacing->cur_epochs);
@@ -699,7 +698,7 @@ static int tx_audio_session_tasklet_frame(struct mtl_main_impl* impl,
 
   s->st30_pkt_idx++;
   s->st30_stat_pkt_cnt++;
-  pacing->tsc_time_cursor += pacing->frame_time;
+  pacing->tsc_time_cursor += pacing->trs;
   /* sync pacing for pkt, even in one frame */
   s->calculate_time_cursor = true;
 
@@ -1209,7 +1208,7 @@ static int tx_audio_session_init_trans_ring(struct mtl_main_impl* impl,
 
   if (!trans_ring_thresh) {
     trans_ring_thresh =
-        (double)(ST30_TX_FIFO_DEFAULT_TIME_MS * NS_PER_MS) / s->pacing.frame_time;
+        (double)(ST30_TX_FIFO_DEFAULT_TIME_MS * NS_PER_MS) / s->pacing.trs;
     trans_ring_thresh = RTE_MAX(trans_ring_thresh, 2); /* min: 2 frame */
   }
   s->trans_ring_thresh = trans_ring_thresh;

@@ -943,7 +943,7 @@ int st30_get_sample_num(enum st30_ptime ptime, enum st30_sampling sampling) {
           samples = 4;
           break;
         default:
-          err("%s, wrong ptime %d\n", __func__, ptime);
+          err("%s, wrong ptime %d for 48k\n", __func__, ptime);
           return -EINVAL;
       }
       break;
@@ -968,7 +968,7 @@ int st30_get_sample_num(enum st30_ptime ptime, enum st30_sampling sampling) {
           samples = 8;
           break;
         default:
-          err("%s, wrong ptime %d\n", __func__, ptime);
+          err("%s, wrong ptime %d for 96k\n", __func__, ptime);
           return -EINVAL;
       }
       break;
@@ -984,7 +984,7 @@ int st30_get_sample_num(enum st30_ptime ptime, enum st30_sampling sampling) {
           samples = 4;
           break;
         default:
-          err("%s, wrong ptime %d\n", __func__, ptime);
+          err("%s, wrong ptime %d for 44k\n", __func__, ptime);
           return -EINVAL;
       }
       break;

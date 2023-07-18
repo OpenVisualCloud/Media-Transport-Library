@@ -715,10 +715,9 @@ struct st_rx_video_sessions_mgr {
 };
 
 struct st_tx_audio_session_pacing {
-  double trs;                 /* in ns for of 2 consecutive packets */
-  double frame_time;          /* time of the frame in nanoseconds */
-  double frame_time_sampling; /* time of the frame in sampling(48k) */
-  uint64_t cur_epochs;        /* epoch of current frame */
+  double trs;               /* in ns for of 2 consecutive packets */
+  double pkt_time_sampling; /* time of each pkt in sampling(48k) */
+  uint64_t cur_epochs;      /* epoch of current pkt */
   /* timestamp for rtp header */
   uint32_t rtp_time_stamp;
   /* timestamp for pacing */

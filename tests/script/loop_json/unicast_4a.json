@@ -1,0 +1,124 @@
+{
+    "interfaces": [
+        {
+            "name": "0000:af:01.0",
+            "ip": "192.168.17.101"
+        },
+        {
+            "name": "0000:af:01.1",
+            "ip": "192.168.17.102"
+        }
+    ],
+    "tx_sessions": [
+        {
+            "dip": [
+                "192.168.17.102"
+            ],
+            "interface": [
+                0
+            ],
+            "audio": [
+                {
+                    "replicas": 1,
+                    "type": "frame",
+                    "start_port": 30000,
+                    "payload_type": 111,
+                    "audio_format": "PCM16",
+                    "audio_channel": ["ST"],
+                    "audio_sampling": "48kHz",
+                    "audio_ptime": "1",
+                    "audio_url": "./test.wav"
+                },
+                {
+                    "replicas": 1,
+                    "type": "frame",
+                    "start_port": 30001,
+                    "payload_type": 111,
+                    "audio_format": "PCM16",
+                    "audio_channel": ["ST"],
+                    "audio_sampling": "48kHz",
+                    "audio_ptime": "0.12",
+                    "audio_url": "./test.wav"
+                },
+                {
+                    "replicas": 1,
+                    "type": "frame",
+                    "start_port": 30002,
+                    "payload_type": 111,
+                    "audio_format": "PCM16",
+                    "audio_channel": ["ST"],
+                    "audio_sampling": "48kHz",
+                    "audio_ptime": "0.25",
+                    "audio_url": "./test.wav"
+                },
+                {
+                    "replicas": 1,
+                    "type": "frame",
+                    "start_port": 30003,
+                    "payload_type": 111,
+                    "audio_format": "PCM16",
+                    "audio_channel": ["ST"],
+                    "audio_sampling": "48kHz",
+                    "audio_ptime": "4",
+                    "audio_url": "./test.wav"
+                },
+            ],
+        }
+    ],
+    "rx_sessions": [
+        {
+            "ip": [
+                "192.168.17.101",
+            ],
+            "interface": [
+                1
+            ],
+            "audio": [
+                {
+                    "replicas": 1,
+                    "type": "frame",
+                    "start_port": 30000,
+                    "payload_type": 111,
+                    "audio_format": "PCM16",
+                    "audio_channel": ["ST"],
+                    "audio_sampling": "48kHz",
+                    "audio_ptime": "1",
+                    "audio_url": "./test.wav"
+                },
+                {
+                    "replicas": 1,
+                    "type": "frame",
+                    "start_port": 30001,
+                    "payload_type": 111,
+                    "audio_format": "PCM16",
+                    "audio_channel": ["ST"],
+                    "audio_sampling": "48kHz",
+                    "audio_ptime": "0.12",
+                    "audio_url": "./test.wav"
+                },
+                {
+                    "replicas": 1,
+                    "type": "frame",
+                    "start_port": 30002,
+                    "payload_type": 111,
+                    "audio_format": "PCM16",
+                    "audio_channel": ["ST"],
+                    "audio_sampling": "48kHz",
+                    "audio_ptime": "0.25",
+                    "audio_url": "./test.wav"
+                },
+                {
+                    "replicas": 1,
+                    "type": "frame",
+                    "start_port": 30003,
+                    "payload_type": 111,
+                    "audio_format": "PCM16",
+                    "audio_channel": ["ST"],
+                    "audio_sampling": "48kHz",
+                    "audio_ptime": "4",
+                    "audio_url": "./test.wav"
+                },
+            ],
+        }
+    ]
+}
