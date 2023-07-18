@@ -381,12 +381,12 @@ struct st30_rx_ops {
    * size for each sample group,
    * use st30_get_sample_size to get the size for different format.
    */
-  // uint16_t sample_size __mtl_deprecated_msg("Not use anymore, plan to remove");
+  uint16_t sample_size __mtl_deprecated_msg("Not use anymore, plan to remove");
   /**
    * number of samples for single channel in packet,
    * use st30_get_sample_num to get the number from different ptime and sampling rate.
    */
-  // uint16_t sample_num __mtl_deprecated_msg("Not use anymore, plan to remove");
+  uint16_t sample_num __mtl_deprecated_msg("Not use anymore, plan to remove");
 
   /**
    * the frame buffer count requested for one st30 rx session,
