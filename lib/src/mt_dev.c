@@ -2463,7 +2463,7 @@ int mt_dev_if_init(struct mtl_main_impl* impl) {
     if (dev_info->tx_offload_capa & RTE_ETH_TX_OFFLOAD_SEND_ON_TIMESTAMP &&
         ST21_TX_PACING_WAY_TSN == inf->tx_pacing_way) {
       inf->feature |= MT_IF_FEATURE_TX_OFFLOAD_SEND_ON_TIMESTAMP;
-      
+
       int* dev_tx_timestamp_dynfield_offset_ptr =
           dev_info->default_txconf.reserved_ptrs[1];
       uint64_t* dev_tx_timestamp_dynflag_ptr = dev_info->default_txconf.reserved_ptrs[0];
