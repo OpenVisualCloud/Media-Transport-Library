@@ -519,7 +519,7 @@ static int parse_base_udp_port(json_object* obj, st_json_session_base_t* base, i
     err("%s, invalid start port %d\n", __func__, start_port);
     return -ST_JSON_NOT_VALID;
   }
-  base->udp_port = start_port + idx;
+  base->udp_port = start_port + idx * 2;
 
   return ST_JSON_SUCCESS;
 }

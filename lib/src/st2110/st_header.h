@@ -342,6 +342,7 @@ struct st_tx_video_session_impl {
   size_t st22_codestream_size;
 
   struct mt_rtcp_tx* rtcp_tx[MTL_SESSION_PORT_MAX];
+  struct mt_rxq_entry* rtcp_q[MTL_SESSION_PORT_MAX];
 
   /* stat */
   rte_atomic32_t stat_frame_cnt;
