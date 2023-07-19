@@ -10,6 +10,7 @@
 #define ST_TX_VIDEO_PREFIX "TV_"
 
 #define ST_TX_RTCP_BURST_SIZE (32)
+#define ST_TX_RTCP_RING_SIZE (1024)
 
 int st_tx_video_sessions_sch_init(struct mtl_main_impl* impl, struct mt_sch_impl* sch);
 

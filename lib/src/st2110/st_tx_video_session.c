@@ -828,7 +828,7 @@ static int tv_init_rtcp(struct mtl_main_impl* impl, struct st_tx_video_session_i
     mtl_memcpy(&hdr, &s->s_hdr[i], sizeof(hdr));
     hdr.udp.dst_port++;
     rtcp_ops.udp_hdr = &hdr;
-    rtcp_ops.buffer_size = 1024;
+    rtcp_ops.buffer_size = ST_TX_RTCP_RING_SIZE;
     s->rtcp_tx[i] = mt_rtcp_tx_create(impl, &rtcp_ops);
     if (!s->rtcp_tx[i]) {
       err("%s(%d), mt_rtcp_tx_create fail\n", __func__, idx);
@@ -2397,7 +2397,8 @@ static int tv_mempool_init(struct mtl_main_impl* impl,
       info("%s(%d), use tx mono hdr mempool(%p) for port %d\n", __func__, idx,
            s->mbuf_mempool_hdr[i], i);
     } else {
-      n = mt_if_nb_tx_desc(impl, port) + s->ring_count + 1024;
+      n = mt_if_nb_tx_desc(impl, port) + s->ring_count;
+      if (s->ops.flags & ST20_TX_FLAG_ENABLE_RTCP) n += ST_TX_RTCP_RING_SIZE;
       if (s->mbuf_mempool_hdr[i]) {
         warn("%s(%d), use previous hdr mempool for port %d\n", __func__, idx, i);
       } else {
@@ -2418,7 +2419,8 @@ static int tv_mempool_init(struct mtl_main_impl* impl,
   /* allocate payload(chain) mbuf pool on primary port */
   if (!s->tx_no_chain) {
     port = mt_port_logic2phy(s->port_maps, MTL_SESSION_PORT_P);
-    n = mt_if_nb_tx_desc(impl, port) + s->ring_count + 1024;
+    n = mt_if_nb_tx_desc(impl, port) + s->ring_count;
+    if (s->ops.flags & ST20_TX_FLAG_ENABLE_RTCP) n += ST_TX_RTCP_RING_SIZE;
     if (ops->type == ST20_TYPE_RTP_LEVEL) n += ops->rtp_ring_size;
 
     if (s->tx_mono_pool) {

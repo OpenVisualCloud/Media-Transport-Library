@@ -59,6 +59,7 @@ static int rtcp_tx_retransmit_rtp_packets(struct mt_rtcp_tx* tx, uint16_t seq_id
   struct mtl_main_impl* impl = tx->parent;
   enum mtl_port port = tx->port;
   struct rte_mbuf* mbufs[bulk];
+  uint16_t ring_head_id = 0;
 
   struct rte_mbuf* head_mbuf = NULL;
   uint32_t ts = 0;
@@ -69,6 +70,9 @@ static int rtcp_tx_retransmit_rtp_packets(struct mt_rtcp_tx* tx, uint16_t seq_id
     ring_head_id = ntohs(rtp->seq_number);
     ts = ntohl(rtp->tmstamp);
     rte_ring_dequeue_finish(tx->mbuf_ring, 0);
+  } else {
+    err("%s, empty ring\n", __func__);
+    return -EIO;
   }
 
   int cmp_result = rtp_seq_num_cmp(ring_head_id, seq_id);
@@ -86,7 +90,6 @@ static int rtcp_tx_retransmit_rtp_packets(struct mt_rtcp_tx* tx, uint16_t seq_id
       return -EIO;
     }
     rte_pktmbuf_free_bulk(clean_mbufs, clean);
-    ring_head_id += clean;
   } else if (cmp_result > 0) {
     warn("%s, ts %u seq %u out of date, ring head %u, you ask late\n", __func__, ts,
          seq_id, ring_head_id);
@@ -254,7 +257,7 @@ int mt_rtcp_rx_send_nack_packet(struct mt_rtcp_rx* rx) {
   rtcp->flags = 0x80;
   rtcp->ptype = MT_RTCP_PTYPE_NACK;
   rtcp->ssrc = htonl(rx->ssrc);
-  mtl_memcpy(rtcp->name, "IMTL", 4);
+  rte_memcpy(rtcp->name, "IMTL", 4);
   uint16_t num_fci = 0;
 
   struct mt_rtcp_nack_item *nack, *tmp_nack;
@@ -350,7 +353,7 @@ struct mt_rtcp_tx* mt_rtcp_tx_create(struct mtl_main_impl* impl,
   tx->ipv4_packet_id = 0;
   tx->ssrc = ops->ssrc;
   strncpy(tx->name, ops->name, sizeof(tx->name) - 1);
-  mtl_memcpy(&tx->udp_hdr, ops->udp_hdr, sizeof(tx->udp_hdr));
+  rte_memcpy(&tx->udp_hdr, ops->udp_hdr, sizeof(tx->udp_hdr));
 
   mt_stat_register(impl, rtcp_tx_stat, tx, tx->name);
 
@@ -385,7 +388,7 @@ struct mt_rtcp_rx* mt_rtcp_rx_create(struct mtl_main_impl* impl,
   rx->ipv4_packet_id = 0;
   rx->ssrc = 0;
   strncpy(rx->name, ops->name, sizeof(rx->name) - 1);
-  mtl_memcpy(&rx->udp_hdr, ops->udp_hdr, sizeof(rx->udp_hdr));
+  rte_memcpy(&rx->udp_hdr, ops->udp_hdr, sizeof(rx->udp_hdr));
 
   MT_TAILQ_INIT(&rx->nack_list);
 
