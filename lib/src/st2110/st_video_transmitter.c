@@ -28,6 +28,17 @@ static int video_trs_tasklet_stop(void* priv) {
   return 0;
 }
 
+/* for normal pkts, pad still call the mt_txq_burst directly */
+static inline uint16_t video_trs_burst(struct st_tx_video_session_impl* s,
+                                       enum mtl_session_port s_port,
+                                       struct rte_mbuf** tx_pkts, uint16_t nb_pkts) {
+  uint16_t tx = mt_txq_burst(s->queue[s_port], tx_pkts, nb_pkts);
+  if (tx && s->rtcp_tx[s_port]) {
+    mt_rtcp_tx_buffer_rtp_packets(s->rtcp_tx[s_port], tx_pkts, tx);
+  }
+  return tx;
+}
+
 /* warm start for the first packet */
 static int video_trs_rl_warm_up(struct mtl_main_impl* impl,
                                 struct st_tx_video_session_impl* s,
@@ -77,12 +88,8 @@ static int video_burst_packet(struct st_tx_video_session_impl* s,
                               enum mtl_session_port s_port, struct rte_mbuf** pkts,
                               int bulk, bool use_two) {
   struct st_tx_video_pacing* pacing = &s->pacing;
-  int tx = mt_txq_burst(s->queue[s_port], &pkts[0], bulk);
+  int tx = video_trs_burst(s, s_port, &pkts[0], bulk);
   int pkt_idx = st_tx_mbuf_get_idx(pkts[0]);
-
-  if (tx && s->rtcp_tx[s_port]) {
-    mt_rtcp_tx_buffer_rtp_packets(s->rtcp_tx[s_port], pkts, tx);
-  }
 
   s->stat_pkts_burst += tx;
   s->pri_nic_burst_cnt++;
@@ -132,9 +139,9 @@ static int _video_trs_rl_tasklet(struct mtl_main_impl* impl,
 
   /* check if any inflight pkts in transmitter inflight 2 */
   if (s->trs_inflight_num2[s_port] > 0) {
-    tx = mt_txq_burst(s->queue[s_port],
-                      &s->trs_inflight2[s_port][s->trs_inflight_idx2[s_port]],
-                      s->trs_inflight_num2[s_port]);
+    tx = video_trs_burst(s, s_port,
+                         &s->trs_inflight2[s_port][s->trs_inflight_idx2[s_port]],
+                         s->trs_inflight_num2[s_port]);
     s->trs_inflight_num2[s_port] -= tx;
     s->trs_inflight_idx2[s_port] += tx;
     s->stat_pkts_burst += tx;
@@ -181,9 +188,8 @@ static int _video_trs_rl_tasklet(struct mtl_main_impl* impl,
 
   /* check if any inflight pkts in transmitter */
   if (s->trs_inflight_num[s_port] > 0) {
-    tx = mt_txq_burst(s->queue[s_port],
-                      &s->trs_inflight[s_port][s->trs_inflight_idx[s_port]],
-                      s->trs_inflight_num[s_port]);
+    tx = video_trs_burst(s, s_port, &s->trs_inflight[s_port][s->trs_inflight_idx[s_port]],
+                         s->trs_inflight_num[s_port]);
     s->trs_inflight_num[s_port] -= tx;
     s->trs_inflight_idx[s_port] += tx;
     s->stat_pkts_burst += tx;
@@ -314,9 +320,8 @@ static int video_trs_tsc_tasklet(struct mtl_main_impl* impl,
 
   /* check if any inflight pkts in transmitter */
   if (s->trs_inflight_num[s_port] > 0) {
-    tx = mt_txq_burst(s->queue[s_port],
-                      &s->trs_inflight[s_port][s->trs_inflight_idx[s_port]],
-                      s->trs_inflight_num[s_port]);
+    tx = video_trs_burst(s, s_port, &s->trs_inflight[s_port][s->trs_inflight_idx[s_port]],
+                         s->trs_inflight_num[s_port]);
     s->trs_inflight_num[s_port] -= tx;
     s->trs_inflight_idx[s_port] += tx;
     s->stat_pkts_burst += tx;
@@ -388,7 +393,7 @@ static int video_trs_tsc_tasklet(struct mtl_main_impl* impl,
     }
   }
 
-  tx = mt_txq_burst(s->queue[s_port], &pkts[0], valid_bulk);
+  tx = video_trs_burst(s, s_port, &pkts[0], valid_bulk);
   s->stat_pkts_burst += tx;
 
   if (tx < valid_bulk) {
@@ -433,9 +438,8 @@ static int video_trs_ptp_tasklet(struct mtl_main_impl* impl,
 
   /* check if any inflight pkts in transmitter */
   if (s->trs_inflight_num[s_port] > 0) {
-    tx = mt_txq_burst(s->queue[s_port],
-                      &s->trs_inflight[s_port][s->trs_inflight_idx[s_port]],
-                      s->trs_inflight_num[s_port]);
+    tx = video_trs_burst(s, s_port, &s->trs_inflight[s_port][s->trs_inflight_idx[s_port]],
+                         s->trs_inflight_num[s_port]);
     s->trs_inflight_num[s_port] -= tx;
     s->trs_inflight_idx[s_port] += tx;
     s->stat_pkts_burst += tx;
@@ -505,7 +509,7 @@ static int video_trs_ptp_tasklet(struct mtl_main_impl* impl,
     }
   }
 
-  tx = mt_txq_burst(s->queue[s_port], &pkts[0], valid_bulk);
+  tx = video_trs_burst(s, s_port, &pkts[0], valid_bulk);
   s->stat_pkts_burst += tx;
 
   if (tx < valid_bulk) {
