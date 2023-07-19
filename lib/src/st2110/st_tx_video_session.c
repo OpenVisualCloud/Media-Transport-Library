@@ -797,10 +797,26 @@ static int tv_init_hdr(struct mtl_main_impl* impl, struct st_tx_video_session_im
   return 0;
 }
 
+static int tv_uinit_rtcp(struct st_tx_video_session_impl* s) {
+  for (int i = 0; i < s->ops.num_port; i++) {
+    if (s->rtcp_tx[i]) {
+      mt_rtcp_tx_free(s->rtcp_tx[i]);
+      s->rtcp_tx[i] = NULL;
+    }
+    if (s->rtcp_q[i]) {
+      mt_rxq_put(s->rtcp_q[i]);
+      s->rtcp_q[i] = NULL;
+    }
+  }
+
+  return 0;
+}
+
 static int tv_init_rtcp(struct mtl_main_impl* impl, struct st_tx_video_session_impl* s) {
   int idx = s->idx;
   struct st20_tx_ops* ops = &s->ops;
   int num_port = ops->num_port;
+  struct mt_rxq_flow flow;
 
   for (int i = 0; i < num_port; i++) {
     enum mtl_port port = mt_port_logic2phy(s->port_maps, i);
@@ -812,27 +828,22 @@ static int tv_init_rtcp(struct mtl_main_impl* impl, struct st_tx_video_session_i
     mtl_memcpy(&hdr, &s->s_hdr[i], sizeof(hdr));
     hdr.udp.dst_port++;
     rtcp_ops.udp_hdr = &hdr;
-    rtcp_ops.buffer_size = 512;
+    rtcp_ops.buffer_size = 1024;
     s->rtcp_tx[i] = mt_rtcp_tx_create(impl, &rtcp_ops);
     if (!s->rtcp_tx[i]) {
       err("%s(%d), mt_rtcp_tx_create fail\n", __func__, idx);
       return -EIO;
     }
-  }
-
-  /* TODO: where to receive NACK packets */
-  /* 1. create rxq
-   * 2. create rx flow
-   */
-
-  return 0;
-}
-
-static int tv_uinit_rtcp(struct st_tx_video_session_impl* s) {
-  for (int i = 0; i < s->ops.num_port; i++) {
-    if (s->rtcp_tx[i]) {
-      mt_rtcp_tx_free(s->rtcp_tx[i]);
-      s->rtcp_tx[i] = NULL;
+    /* create flow to receive rtcp nack */
+    memset(&flow, 0, sizeof(flow));
+    flow.no_ip_flow = true;
+    flow.dst_port = s->st20_dst_port[i] + 1;
+    flow.use_cni_queue = true;
+    s->rtcp_q[i] = mt_rxq_get(impl, port, &flow);
+    if (!s->rtcp_q[i]) {
+      err("%s(%d), mt_rxq_get fail\n", __func__, idx);
+      tv_uinit_rtcp(s);
+      return -EIO;
     }
   }
 
@@ -1746,6 +1757,30 @@ static int tv_tasklet_frame(struct mtl_main_impl* impl,
   return done ? MT_TASKLET_ALL_DONE : MT_TASKLET_HAS_PENDING;
 }
 
+static int tv_tasklet_rtcp(struct mtl_main_impl* impl,
+                           struct st_tx_video_session_impl* s) {
+  struct rte_mbuf* mbuf[ST_TX_RTCP_BURST_SIZE];
+  uint16_t rv;
+  int num_port = s->ops.num_port;
+
+  for (int s_port = 0; s_port < num_port; s_port++) {
+    if (!s->rtcp_q[s_port]) continue;
+
+    rv = mt_rxq_burst(s->rtcp_q[s_port], &mbuf[0], ST_TX_RTCP_BURST_SIZE);
+    if (rv) {
+      for (uint16_t i = 0; i < rv; i++) {
+        // rte_pktmbuf_dump(stdout, mbuf[i], mbuf[i]->pkt_len);
+        struct mt_rtcp_hdr* rtcp = rte_pktmbuf_mtod_offset(mbuf[i], struct mt_rtcp_hdr*,
+                                                           sizeof(struct mt_udp_hdr));
+        mt_rtcp_tx_parse_nack_packet(s->rtcp_tx[s_port], rtcp);
+      }
+      rte_pktmbuf_free_bulk(&mbuf[0], rv);
+    }
+  }
+
+  return 0;
+}
+
 static int tv_tasklet_rtp(struct mtl_main_impl* impl,
                           struct st_tx_video_session_impl* s) {
   unsigned int bulk = s->bulk;
@@ -2166,6 +2201,8 @@ static int tvs_tasklet_handler(void* priv) {
     else
       pending = tv_tasklet_rtp(impl, s);
 
+    if (s->ops.flags & ST20_TX_FLAG_ENABLE_RTCP) tv_tasklet_rtcp(impl, s);
+
     tx_video_session_put(mgr, sidx);
   }
 
@@ -2360,7 +2397,7 @@ static int tv_mempool_init(struct mtl_main_impl* impl,
       info("%s(%d), use tx mono hdr mempool(%p) for port %d\n", __func__, idx,
            s->mbuf_mempool_hdr[i], i);
     } else {
-      n = mt_if_nb_tx_desc(impl, port) + s->ring_count + 512;
+      n = mt_if_nb_tx_desc(impl, port) + s->ring_count + 1024;
       if (s->mbuf_mempool_hdr[i]) {
         warn("%s(%d), use previous hdr mempool for port %d\n", __func__, idx, i);
       } else {
@@ -2381,7 +2418,7 @@ static int tv_mempool_init(struct mtl_main_impl* impl,
   /* allocate payload(chain) mbuf pool on primary port */
   if (!s->tx_no_chain) {
     port = mt_port_logic2phy(s->port_maps, MTL_SESSION_PORT_P);
-    n = mt_if_nb_tx_desc(impl, port) + s->ring_count + 512;
+    n = mt_if_nb_tx_desc(impl, port) + s->ring_count + 1024;
     if (ops->type == ST20_TYPE_RTP_LEVEL) n += ops->rtp_ring_size;
 
     if (s->tx_mono_pool) {
