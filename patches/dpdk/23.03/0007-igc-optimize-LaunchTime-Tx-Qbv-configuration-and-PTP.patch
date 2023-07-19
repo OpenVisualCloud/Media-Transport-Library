@@ -1,7 +1,7 @@
-From 578e611c80f20b54b57e04a7a4dec4c552cdc502 Mon Sep 17 00:00:00 2001
+From 83031a42782ff66b304aaf1d5c649e22a5f9bae8 Mon Sep 17 00:00:00 2001
 From: gongxiao-intel <xiaoyan.gong@intel.com>
 Date: Mon, 12 Jun 2023 13:05:39 +0000
-Subject: [PATCH 9/9] igc: optimize LaunchTime Tx, Qbv configuration and PTP 
+Subject: [PATCH 7/7] igc: optimize LaunchTime Tx, Qbv configuration and PTP
  for SMPTE 2110-21 n-type transmission of 1080p 50fps video.
 
 1. Optimize LaunchTime Tx feature based on section 3.3.2.9.3.4 of doc#682924 rev-1.4.2 requirement.
@@ -1781,4 +1781,5 @@ index 357d1a88c0..4434a57c2f 100644
  	rte_eth_timesync_enable;
  	rte_eth_timesync_read_rx_timestamp;
 -- 
-2.25.1
+2.34.1
+
