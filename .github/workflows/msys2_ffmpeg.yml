@@ -5,7 +5,10 @@ on:
       
 env:
   FFMPEG_PREFIX: /c/ffmpeg_mtl
-  
+
+permissions:
+  contents: read
+
 jobs:
   ffmpeg_build:
     name: MSYS2 FFmpeg Build
