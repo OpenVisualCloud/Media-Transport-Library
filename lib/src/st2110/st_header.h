@@ -92,7 +92,8 @@ enum st40_tx_frame_status {
 struct st_tx_muf_priv_data {
   uint64_t tsc_time_stamp; /* tsc time stamp of current mbuf */
   uint64_t ptp_time_stamp; /* ptp time stamp of current mbuf */
-  uint32_t idx;            /* index inside current frame */
+  void* priv;              /* private data to current frame */
+  uint32_t idx;            /* index of current frame */
 };
 
 /* info passing between dma and rx */

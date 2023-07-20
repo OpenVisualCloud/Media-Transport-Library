@@ -1385,6 +1385,16 @@ static inline uint32_t st_tx_mbuf_get_idx(struct rte_mbuf* mbuf) {
   return priv->tx_priv.idx;
 }
 
+static inline void st_tx_mbuf_set_priv(struct rte_mbuf* mbuf, void* p) {
+  struct mt_muf_priv_data* priv = rte_mbuf_to_priv(mbuf);
+  priv->tx_priv.priv = p;
+}
+
+static inline void* st_tx_mbuf_get_priv(struct rte_mbuf* mbuf) {
+  struct mt_muf_priv_data* priv = rte_mbuf_to_priv(mbuf);
+  return priv->tx_priv.priv;
+}
+
 static inline void st_rx_mbuf_set_lender(struct rte_mbuf* mbuf, uint32_t lender) {
   struct mt_muf_priv_data* priv = rte_mbuf_to_priv(mbuf);
   priv->rx_priv.lender = lender;

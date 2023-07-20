@@ -1671,6 +1671,7 @@ static int tv_tasklet_frame(struct mtl_main_impl* impl,
   }
 
   for (unsigned int i = 0; i < bulk; i++) {
+    st_tx_mbuf_set_priv(pkts[i], &s->st20_frames[s->st20_frame_idx]);
     if (s->st20_pkt_idx >= s->st20_total_pkts) {
       s->stat_pkts_dummy++;
       if (!s->tx_no_chain) rte_pktmbuf_free(pkts_chain[i]);
@@ -1685,6 +1686,7 @@ static int tv_tasklet_frame(struct mtl_main_impl* impl,
     pacing_set_mbuf_time_stamp(pkts[i], pacing);
 
     if (send_r) {
+      st_tx_mbuf_set_priv(pkts_r[i], &s->st20_frames[s->st20_frame_idx]);
       if (s->st20_pkt_idx >= s->st20_total_pkts) {
         st_tx_mbuf_set_idx(pkts_r[i], ST_TX_DUMMY_PKT_IDX);
       } else {
@@ -3408,6 +3410,13 @@ static int tv_st22_ops_check(struct st22_tx_ops* ops) {
     return -EINVAL;
   }
 
+  return 0;
+}
+
+/* only st20 frame mode has this callback */
+int st20_frame_tx_start(struct st_tx_video_session_impl* s, enum mtl_session_port port,
+                        struct st_frame_trans* frame) {
+  dbg("%s(%d,%d), start trans for frame %p\n", __func__, s->idx, port, frame);
   return 0;
 }
 

@@ -15,4 +15,7 @@ int st_video_transmitter_uinit(struct st_video_transmitter_impl* trs);
 int st_video_resolve_pacing_tasklet(struct st_tx_video_session_impl* s,
                                     enum mtl_session_port port);
 
+int st20_frame_tx_start(struct st_tx_video_session_impl* s, enum mtl_session_port port,
+                        struct st_frame_trans* frame);
+
 #endif

@@ -33,8 +33,14 @@ static inline uint16_t video_trs_burst(struct st_tx_video_session_impl* s,
                                        enum mtl_session_port s_port,
                                        struct rte_mbuf** tx_pkts, uint16_t nb_pkts) {
   uint16_t tx = mt_txq_burst(s->queue[s_port], tx_pkts, nb_pkts);
-  if (tx && s->rtcp_tx[s_port]) {
+  if (!tx) return 0;
+  if (s->rtcp_tx[s_port]) {
     mt_rtcp_tx_buffer_rtp_packets(s->rtcp_tx[s_port], tx_pkts, tx);
+  }
+  int pkt_idx = st_tx_mbuf_get_idx(tx_pkts[0]);
+  if (0 == pkt_idx) {
+    struct st_frame_trans* frame = st_tx_mbuf_get_priv(tx_pkts[0]);
+    if (frame) st20_frame_tx_start(s, s_port, frame);
   }
   return tx;
 }
