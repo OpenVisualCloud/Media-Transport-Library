@@ -114,7 +114,7 @@ static int rtcp_tx_retransmit_rtp_packets(struct mt_rtcp_tx* tx, uint16_t seq_id
   rte_pktmbuf_free_bulk(mbufs, nb_rt);
   uint16_t send = mt_dev_tx_sys_queue_burst(tx->parent, tx->port, copy_mbufs, nb_rt);
 
-  info("%s, ts %u seq %u retransmit %u pkt(s)\n", __func__, ts, seq_id, send);
+  dbg("%s, ts %u seq %u retransmit %u pkt(s)\n", __func__, ts, seq_id, send);
 
   tx->stat_rtp_retransmit_succ += send;
   tx->stat_rtp_retransmit_drop += bulk - send;
@@ -140,7 +140,7 @@ int mt_rtcp_tx_parse_nack_packet(struct mt_rtcp_tx* tx, struct mt_rtcp_hdr* rtcp
     for (uint16_t i = 0; i < num_fcis; i++) {
       uint16_t start = ntohs(fci->start);
       uint16_t follow = ntohs(fci->follow);
-      info("%s, nack %u,%u\n", __func__, start, follow);
+      dbg("%s, nack %u,%u\n", __func__, start, follow);
 
       if (rtcp_tx_retransmit_rtp_packets(tx, start, follow + 1) < 0) {
         warn("%s, failed to retransmit rtp packets %u,%u\n", __func__, start, follow);
@@ -158,7 +158,6 @@ int mt_rtcp_rx_parse_rtp_packet(struct mt_rtcp_rx* rx, struct st_rfc3550_rtp_hdr
   enum mtl_port port = rx->port;
 
   uint16_t seq_id = ntohs(rtp->seq_number);
-  uint32_t ts = ntohl(rtp->tmstamp);
 
   if (rx->ssrc == 0) { /* first received */
     rx->ssrc = ntohl(rtp->ssrc);
@@ -185,8 +184,8 @@ int mt_rtcp_rx_parse_rtp_packet(struct mt_rtcp_rx* rx, struct st_rfc3550_rtp_hdr
     nack->bulk = lost_packets - 1;
     nack->retry_count = rx->max_retry;
     MT_TAILQ_INSERT_TAIL(&rx->nack_list, nack, next);
-    info("%s, pkt lost, ts %u seq %u last_seq %u, insert nack %u,%u\n", __func__, ts,
-         seq_id, rx->last_seq_id, nack->seq_id, nack->bulk);
+    dbg("%s, pkt lost, ts %u seq %u last_seq %u, insert nack %u,%u\n", __func__,
+        ntohl(rtp->tmstamp), seq_id, rx->last_seq_id, nack->seq_id, nack->bulk);
     rx->last_seq_id = seq_id;
   } else {
     /* remove out-of-date/recovered pkt from nack list, split nack to left and right */
