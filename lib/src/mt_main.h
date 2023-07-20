@@ -574,7 +574,7 @@ struct mt_interface {
 
   /* the shared tx sys queue */
   struct mt_txq_entry* txq_sys_entry;
-  pthread_mutex_t tx_sys_queue_mutex; /* protect tx_sys_queue */
+  rte_spinlock_t txq_sys_entry_lock; /* protect txq_sys_entry */
 
   /* rx queue resources */
   uint16_t max_rx_queues;

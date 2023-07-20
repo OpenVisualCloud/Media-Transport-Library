@@ -1762,9 +1762,9 @@ uint16_t mt_dev_tx_sys_queue_burst(struct mtl_main_impl* impl, enum mtl_port por
   }
 
   uint16_t tx;
-  mt_pthread_mutex_lock(&inf->tx_sys_queue_mutex);
+  rte_spinlock_lock(&inf->txq_sys_entry_lock);
   tx = mt_txq_burst(inf->txq_sys_entry, tx_pkts, nb_pkts);
-  mt_pthread_mutex_unlock(&inf->tx_sys_queue_mutex);
+  rte_spinlock_unlock(&inf->txq_sys_entry_lock);
   return tx;
 }
 
@@ -2320,7 +2320,6 @@ int mt_dev_if_uinit(struct mtl_main_impl* impl) {
 
     mt_pthread_mutex_destroy(&inf->tx_queues_mutex);
     mt_pthread_mutex_destroy(&inf->rx_queues_mutex);
-    mt_pthread_mutex_destroy(&inf->tx_sys_queue_mutex);
     mt_pthread_mutex_destroy(&inf->vf_cmd_mutex);
 
     dev_close_port(inf);
@@ -2371,8 +2370,8 @@ int mt_dev_if_init(struct mtl_main_impl* impl) {
     dbg("%s(%d), reta_size %u\n", __func__, i, dev_info->reta_size);
     mt_pthread_mutex_init(&inf->tx_queues_mutex, NULL);
     mt_pthread_mutex_init(&inf->rx_queues_mutex, NULL);
-    mt_pthread_mutex_init(&inf->tx_sys_queue_mutex, NULL);
     mt_pthread_mutex_init(&inf->vf_cmd_mutex, NULL);
+    rte_spinlock_init(&inf->txq_sys_entry_lock);
 
     if (mt_ptp_tsc_source(impl)) {
       info("%s(%d), use tsc ptp source\n", __func__, i);
