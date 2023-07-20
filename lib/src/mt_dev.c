@@ -1132,11 +1132,6 @@ static int dev_start_port(struct mt_interface* inf) {
 
   for (uint16_t q = 0; q < nb_tx_q; q++) {
     tx_port_conf = inf->dev_info.default_txconf;
-    if (!mt_pmd_is_kernel(impl, port) && q == 0) {
-      /* set free thresh to 1 for sys_queue */
-      tx_port_conf.tx_rs_thresh = 1;
-      tx_port_conf.tx_free_thresh = 1;
-    }
     ret = rte_eth_tx_queue_setup(port_id, q, nb_tx_desc, socket_id, &tx_port_conf);
     if (ret < 0) {
       err("%s(%d), rte_eth_tx_queue_setup fail %d for queue %d\n", __func__, port, ret,
