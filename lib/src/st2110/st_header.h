@@ -118,7 +118,6 @@ struct st_page_info {
 
 /* describe the frame used in transport(both tx and rx) */
 struct st_frame_trans {
-  /* todo: use struct st_frame as base */
   int idx;
   void* addr;                      /* virtual address */
   rte_iova_t iova;                 /* iova for hw */
@@ -129,6 +128,10 @@ struct st_frame_trans {
 
   uint32_t flags;                          /* ST_FT_FLAG_* */
   struct rte_mbuf_ext_shared_info sh_info; /* for st20 tx ext shared */
+
+  void* user_meta; /* the meta data from user */
+  size_t user_meta_buffer_size;
+  size_t user_meta_data_size;
 
   /* metadata */
   union {
@@ -367,6 +370,8 @@ struct st_tx_video_session_impl {
   uint32_t stat_vsync_mismatch;
   uint32_t stat_tx_done_cleanup;
   uint64_t stat_bytes_build;
+  uint32_t stat_user_meta_cnt;
+  uint32_t stat_user_meta_pkt_cnt;
 };
 
 struct st_tx_video_sessions_mgr {
@@ -688,6 +693,8 @@ struct st_rx_video_session_impl {
   int stat_slices_received;
   int stat_pkts_slice_fail;
   int stat_pkts_slice_merged;
+  int stat_pkts_user_meta;
+  int stat_pkts_user_meta_err;
   uint64_t stat_last_time;
   uint32_t stat_vsync_mismatch;
   uint32_t stat_slot_get_frame_fail;

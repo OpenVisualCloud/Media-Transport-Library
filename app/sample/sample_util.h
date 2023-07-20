@@ -111,6 +111,13 @@ struct st_sample_context {
   off_t gddr_pa;
   off_t gddr_offset;
   bool use_cpu_copy;
+
+  bool has_user_meta; /* if provide user meta data with the st2110-20 frame */
+};
+
+struct st_frame_user_meta {
+  int idx; /* frame index */
+  char dummy[512];
 };
 
 int sample_parse_args(struct st_sample_context* ctx, int argc, char** argv, bool tx,

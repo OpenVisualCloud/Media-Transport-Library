@@ -37,6 +37,9 @@ struct st_rfc3550_hdr {
   struct st_rfc3550_rtp_hdr rtp; /* size: 12 */
 } __attribute__((__packed__)) __rte_aligned(2);
 
+/* if this rfc4175 rtp carry a user meta data */
+#define ST20_LEN_USER_META (0x1 << 15)
+
 /* total size: 62 */
 struct st_rfc4175_video_hdr {
   struct rte_ether_hdr eth;        /* size: 14 */

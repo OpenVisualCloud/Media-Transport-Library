@@ -47,6 +47,14 @@ static int rx_video_frame_ready(void* priv, void* frame,
 
   if (!s->handle) return -EIO;
 
+  if (meta->user_meta) {
+    const struct st_frame_user_meta* user_meta = meta->user_meta;
+    if (meta->user_meta_size != sizeof(*user_meta)) {
+      err("%s(%d), user_meta_size wrong\n", __func__, s->idx);
+    }
+    info("%s(%d), user_meta %d %s\n", __func__, s->idx, user_meta->idx, user_meta->dummy);
+  }
+
   /* incomplete frame */
   if (!st_is_frame_complete(meta->status)) {
     st20_rx_put_framebuff(s->handle, frame);

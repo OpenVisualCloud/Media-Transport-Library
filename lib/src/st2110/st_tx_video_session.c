@@ -214,6 +214,17 @@ static int tv_alloc_frames(struct mtl_main_impl* impl,
         tv_frame_create_page_table(impl, s, frame_info);
     }
     frame_info->priv = s;
+
+    /* init user meta */
+    frame_info->user_meta_buffer_size =
+        impl->pkt_udp_suggest_max_size - sizeof(struct st20_rfc4175_rtp_hdr);
+    frame_info->user_meta =
+        mt_rte_zmalloc_socket(frame_info->user_meta_buffer_size, soc_id);
+    if (!frame_info->user_meta) {
+      err("%s(%d), user_meta malloc %" PRIu64 " fail at %d\n", __func__, idx,
+          frame_info->user_meta_buffer_size, i);
+      return -ENOMEM;
+    }
   }
 
   dbg("%s(%d), succ\n", __func__, idx);
@@ -1582,6 +1593,20 @@ static int tv_tasklet_frame(struct mtl_main_impl* impl,
         return MT_TASKLET_ALL_DONE;
       }
       frame->tv_meta = meta;
+
+      frame->user_meta_data_size = 0;
+      if (meta.user_meta) {
+        if (meta.user_meta_size > frame->user_meta_buffer_size) {
+          err("%s(%d), frame %u user meta size %" PRId64 " too large\n", __func__, idx,
+              next_frame_idx, meta.user_meta_size);
+          s->stat_build_ret_code = -STI_FRAME_APP_ERR_USER_META;
+          return MT_TASKLET_ALL_DONE;
+        }
+        s->stat_user_meta_cnt++;
+        /* copy user meta to frame meta */
+        rte_memcpy(frame->user_meta, meta.user_meta, meta.user_meta_size);
+        frame->user_meta_data_size = meta.user_meta_size;
+      }
 
       s->stat_user_busy_first = true;
       /* all check fine */
@@ -3000,6 +3025,12 @@ static void tv_stat(struct st_tx_video_sessions_mgr* mgr,
          s->ops_name, s->stat_build_ret_code, s->stat_trs_ret_code[MTL_SESSION_PORT_P],
          s->stat_trs_ret_code[MTL_SESSION_PORT_R]);
   }
+  if (s->stat_user_meta_cnt || s->stat_user_meta_pkt_cnt) {
+    notice("TX_VIDEO_SESSION(%d,%d): user meta %u pkt %u\n", m_idx, idx,
+           s->stat_user_meta_cnt, s->stat_user_meta_pkt_cnt);
+    s->stat_user_meta_cnt = 0;
+    s->stat_user_meta_pkt_cnt = 0;
+  }
 
   /* check frame busy stat */
   if (s->st20_frames) {
@@ -3414,9 +3445,63 @@ static int tv_st22_ops_check(struct st22_tx_ops* ops) {
 }
 
 /* only st20 frame mode has this callback */
-int st20_frame_tx_start(struct st_tx_video_session_impl* s, enum mtl_session_port port,
-                        struct st_frame_trans* frame) {
+int st20_frame_tx_start(struct mtl_main_impl* impl, struct st_tx_video_session_impl* s,
+                        enum mtl_session_port s_port, struct st_frame_trans* frame) {
   dbg("%s(%d,%d), start trans for frame %p\n", __func__, s->idx, port, frame);
+  if (!frame->user_meta_data_size) return 0;
+
+  enum mtl_port port = mt_port_logic2phy(s->port_maps, s_port);
+  /* tx the user meta */
+  struct rte_mbuf* pkt;
+  struct st_rfc4175_video_hdr* hdr;
+  struct rte_ipv4_hdr* ipv4;
+  struct st20_rfc4175_rtp_hdr* rtp;
+  struct rte_udp_hdr* udp;
+
+  pkt = rte_pktmbuf_alloc(mt_get_tx_mempool(impl, port));
+  if (!pkt) {
+    err("%s(%d), pkt alloc fail\n", __func__, port);
+    return -ENOMEM;
+  }
+
+  hdr = rte_pktmbuf_mtod(pkt, struct st_rfc4175_video_hdr*);
+  ipv4 = &hdr->ipv4;
+  rtp = &hdr->rtp;
+  udp = &hdr->udp;
+
+  /* copy the basic hdrs: eth, ip, udp, rtp */
+  rte_memcpy(hdr, &s->s_hdr[s_port], sizeof(*hdr));
+
+  /* update ipv4 hdr */
+  ipv4->packet_id = htons(s->st20_ipv4_packet_id);
+  s->st20_ipv4_packet_id++;
+  /* set timestamp */
+  rtp->base.tmstamp = htonl(s->pacing.rtp_time_stamp);
+  /* indicate it's user meta pkt */
+  rtp->row_length = htons(frame->user_meta_data_size | ST20_LEN_USER_META);
+
+  /* copy user meta */
+  void* payload = &rtp[1];
+  mtl_memcpy(payload, frame->user_meta, frame->user_meta_data_size);
+
+  pkt->data_len = sizeof(struct st_rfc4175_video_hdr) + frame->user_meta_data_size;
+  pkt->pkt_len = pkt->data_len;
+
+  udp->dgram_len = htons(pkt->pkt_len - pkt->l2_len - pkt->l3_len);
+  ipv4->total_length = htons(pkt->pkt_len - pkt->l2_len);
+  if (!s->eth_ipv4_cksum_offload[s_port]) {
+    /* generate cksum if no offload */
+    ipv4->hdr_checksum = rte_ipv4_cksum(ipv4);
+  }
+
+  uint16_t send = mt_dev_tx_sys_queue_burst(impl, port, &pkt, 1);
+  if (send < 1) {
+    err("%s(%d), tx fail\n", __func__, port);
+    rte_pktmbuf_free(pkt);
+    return -EIO;
+  }
+  s->stat_user_meta_pkt_cnt++;
+
   return 0;
 }
 

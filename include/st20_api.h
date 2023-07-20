@@ -329,6 +329,14 @@ struct st20_tx_frame_meta {
   uint64_t timestamp;
   /** epoch */
   uint64_t epoch;
+  /**
+   * The user meta data buffer for current frame, the size must smaller than
+   * MTL_PKT_MAX_RTP_BYTES. This data will be transported to RX with video data and passed
+   * to user by user_meta in st20_rx_frame_meta.
+   */
+  const void* user_meta;
+  /** size for meta data buffer */
+  size_t user_meta_size;
 };
 
 /**
@@ -376,6 +384,12 @@ struct st20_rx_frame_meta {
   uint64_t timestamp_last_pkt;
   /** first packet time in ns to the start of current epoch */
   int64_t fpt;
+  /**
+   * The received user meta data buffer for current frame.
+   */
+  const void* user_meta;
+  /** size for meta data buffer */
+  size_t user_meta_size;
 };
 
 /**
@@ -471,15 +485,15 @@ struct st22_rx_frame_meta {
 };
 
 /**
- * The Continuation bit shall be set to 1 if an additional Sample Row Data.
+ * The Continuation bit shall in row_offset be set to 1 if an additional Sample Row Data.
  * Header follows the current Sample Row Data Header in the RTP Payload
  * Header, which signals that the RTP packet is carrying data for more than one
  * sample row. The Continuation bit shall be set to 0 otherwise.
  */
 #define ST20_SRD_OFFSET_CONTINUATION (0x1 << 15)
 /**
- * The field identification bit shall be set to 1 if the payload comes from second
- * field.The field identification bit shall be set to 0 otherwise.
+ * The field identification bit in row_number shall be set to 1 if the payload comes from
+ * second field.The field identification bit shall be set to 0 otherwise.
  */
 #define ST20_SECOND_FIELD (0x1 << 15)
 
