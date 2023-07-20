@@ -2719,7 +2719,7 @@ static int rv_handle_mbuf(void* priv, struct rte_mbuf** mbuf, uint16_t nb) {
   /* now dispatch the pkts to handler */
   for (uint16_t i = 0; i < nb; i++) {
 #if 0 /* simulate a pkt loss for test */
-    if (((float)rand() / RAND_MAX) < 0.0001) {
+    if (((float)rand() / RAND_MAX) < 0.00001) {
       dbg("%s(%d,%d), drop as simulate pkt loss\n", __func__, s->idx, s_port);
       s->stat_pkts_simulate_loss++;
       continue;
@@ -2912,8 +2912,8 @@ static int rv_init_rtcp_uhdr(struct mtl_main_impl* impl,
   mtl_memcpy(&ipv4->dst_addr, dip, MTL_IP_ADDR_LEN);
 
   /* udp hdr */
-  udp->src_port = htons(s->st20_dst_port[s_port]);
-  udp->dst_port = htons(s->st20_dst_port[s_port]);
+  udp->src_port = htons(s->st20_dst_port[s_port] + 1);
+  udp->dst_port = htons(s->st20_dst_port[s_port] + 1);
   udp->dgram_cksum = 0;
 
   return 0;

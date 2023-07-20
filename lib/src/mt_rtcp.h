@@ -51,7 +51,6 @@ struct mt_rtcp_tx {
   struct mtl_main_impl* parent;
   enum mtl_port port;
   struct rte_ring* mbuf_ring;
-  uint16_t ring_first_idx;
   struct mt_udp_hdr udp_hdr;
   char name[32];
   uint32_t ssrc;
