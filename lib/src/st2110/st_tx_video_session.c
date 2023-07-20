@@ -2190,6 +2190,8 @@ static int tvs_tasklet_handler(void* priv) {
     s = tx_video_session_try_get(mgr, sidx);
     if (!s) continue;
 
+    if (s->ops.flags & ST20_TX_FLAG_ENABLE_RTCP) tv_tasklet_rtcp(impl, s);
+
     /* check vsync if it has vsync enabled */
     if (s->ops.flags & ST20_TX_FLAG_ENABLE_VSYNC) tv_poll_vsync(impl, s);
 
@@ -2200,8 +2202,6 @@ static int tvs_tasklet_handler(void* priv) {
       pending = tv_tasklet_frame(impl, s);
     else
       pending = tv_tasklet_rtp(impl, s);
-
-    if (s->ops.flags & ST20_TX_FLAG_ENABLE_RTCP) tv_tasklet_rtcp(impl, s);
 
     tx_video_session_put(mgr, sidx);
   }
