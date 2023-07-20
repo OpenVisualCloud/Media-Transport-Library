@@ -99,13 +99,21 @@ static int rtcp_tx_retransmit_rtp_packets(struct mt_rtcp_tx* tx, uint16_t seq_id
     err("%s, failed to dequeue mbuf from ring\n", __func__);
     return -EIO;
   }
-#if 0
-  uint16_t send = mt_dev_tx_sys_queue_burst(tx->parent, tx->port, mbufs, nb_rt);
-#else
-  /* pretend to send */
+
+  /* deep copy the mbuf then send */
+  struct rte_mbuf* copy_mbufs[nb_rt];
+  for (int i = 0; i < bulk; i++) {
+    copy_mbufs[i] = rte_pktmbuf_copy(mbufs[i], mt_get_tx_mempool(tx->parent, tx->port), 0,
+                                     UINT32_MAX);
+    if (!copy_mbufs[i]) {
+      err("%s, failed to copy mbuf\n", __func__);
+      rte_pktmbuf_free_bulk(mbufs, nb_rt);
+      return -ENOMEM;
+    }
+  }
   rte_pktmbuf_free_bulk(mbufs, nb_rt);
-  uint16_t send = nb_rt;
-#endif
+  uint16_t send = mt_dev_tx_sys_queue_burst(tx->parent, tx->port, copy_mbufs, nb_rt);
+
   info("%s, ts %u seq %u retransmit %u pkt(s)\n", __func__, ts, seq_id, send);
 
   tx->stat_rtp_retransmit_succ += send;
