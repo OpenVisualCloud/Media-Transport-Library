@@ -91,7 +91,7 @@ static inline int ptp_timesync_read_tx_time(struct mt_ptp_impl* ptp, uint64_t* t
   ret = rte_eth_timesync_read_tx_timestamp(port_id, &spec);
   ptp_timesync_unlock(ptp);
 
-  // if (ret < 0) err("%s(%d), err %d\n", __func__, port, ret);
+  if (ret < 0) dbg("%s(%d), err %d\n", __func__, port, ret);
   if (tai) *tai = mt_timespec_to_ns(&spec);
   return ret;
 }
