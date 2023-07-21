@@ -32,10 +32,6 @@ int mt_rtcp_tx_buffer_rtp_packets(struct mt_rtcp_tx* tx, struct rte_mbuf** mbufs
       err("%s, failed to dequeue mbuf from ring\n", __func__);
       return -EIO;
     }
-    // struct st_rfc3550_rtp_hdr* crtp = rte_pktmbuf_mtod_offset(
-    //     clean_mbufs[0], struct st_rfc3550_rtp_hdr*, sizeof(struct mt_udp_hdr));
-    // dbg("%s, ring full, drop %u pkts, seq %u\n", __func__, bulk,
-    // ntohs(crtp->seq_number));
     rte_pktmbuf_free_bulk(clean_mbufs, bulk);
   }
 
@@ -56,7 +52,9 @@ int mt_rtcp_tx_buffer_rtp_packets(struct mt_rtcp_tx* tx, struct rte_mbuf** mbufs
 
 static int rtcp_tx_retransmit_rtp_packets(struct mt_rtcp_tx* tx, uint16_t seq_id,
                                           uint16_t bulk) {
-  struct rte_mbuf* mbufs[bulk];
+  int ret = 0;
+  uint16_t send = 0;
+  struct rte_mbuf *mbufs[bulk], *copy_mbufs[bulk];
   uint16_t ring_head_id = 0;
   uint32_t ts = 0;
 
@@ -71,7 +69,8 @@ static int rtcp_tx_retransmit_rtp_packets(struct mt_rtcp_tx* tx, uint16_t seq_id
     rte_ring_dequeue_finish(tx->mbuf_ring, 0);
   } else {
     err("%s, empty ring\n", __func__);
-    return -EIO;
+    ret = -EIO;
+    goto rt_exit;
   }
 
   int cmp_result = rtp_seq_num_cmp(ring_head_id, seq_id);
@@ -80,46 +79,52 @@ static int rtcp_tx_retransmit_rtp_packets(struct mt_rtcp_tx* tx, uint16_t seq_id
     if (clean >= rte_ring_count(tx->mbuf_ring)) {
       err("%s, ts %u seq %u not sent yet, ring head %u, how can you ask for it???\n",
           __func__, ts, seq_id, ring_head_id);
-      return -EIO;
+      ret = -EIO;
+      goto rt_exit;
     }
     struct rte_mbuf* clean_mbufs[clean];
     if (rte_ring_sc_dequeue_bulk(tx->mbuf_ring, (void**)clean_mbufs, clean, NULL) !=
         clean) {
       err("%s, failed to dequeue mbuf from ring\n", __func__);
-      return -EIO;
+      ret = -EIO;
+      goto rt_exit;
     }
     rte_pktmbuf_free_bulk(clean_mbufs, clean);
   } else if (cmp_result > 0) {
     warn("%s, ts %u seq %u out of date, ring head %u, you ask late\n", __func__, ts,
          seq_id, ring_head_id);
-    return -EIO;
+    ret = -EIO;
+    goto rt_exit;
   }
   unsigned int nb_rt = rte_ring_sc_dequeue_bulk(tx->mbuf_ring, (void**)mbufs, bulk, NULL);
   if (nb_rt == 0) {
     err("%s, failed to dequeue mbuf from ring\n", __func__);
-    return -EIO;
+    ret = -EIO;
+    goto rt_exit;
   }
 
   /* deep copy the mbuf then send */
-  struct rte_mbuf* copy_mbufs[nb_rt];
   for (int i = 0; i < bulk; i++) {
     copy_mbufs[i] = rte_pktmbuf_copy(mbufs[i], mt_get_tx_mempool(tx->parent, tx->port), 0,
                                      UINT32_MAX);
     if (!copy_mbufs[i]) {
       err("%s, failed to copy mbuf\n", __func__);
-      rte_pktmbuf_free_bulk(mbufs, nb_rt);
-      return -ENOMEM;
+      rte_pktmbuf_free_bulk(mbufs, bulk);
+      ret = -ENOMEM;
+      goto rt_exit;
     }
   }
-  rte_pktmbuf_free_bulk(mbufs, nb_rt);
-  uint16_t send = mt_dev_tx_sys_queue_burst(tx->parent, tx->port, copy_mbufs, nb_rt);
+  rte_pktmbuf_free_bulk(mbufs, bulk);
+  send = mt_dev_tx_sys_queue_burst(tx->parent, tx->port, copy_mbufs, nb_rt);
+  ret = send;
 
   dbg("%s, ts %u seq %u retransmit %u pkt(s)\n", __func__, ts, seq_id, send);
 
+rt_exit:
   tx->stat_rtp_retransmit_succ += send;
-  tx->stat_rtp_retransmit_drop += bulk - send;
+  tx->stat_rtp_retransmit_fail += bulk - send;
 
-  return send;
+  return ret;
 }
 
 int mt_rtcp_tx_parse_nack_packet(struct mt_rtcp_tx* tx, struct mt_rtcp_hdr* rtcp) {
@@ -179,7 +184,7 @@ int mt_rtcp_rx_parse_rtp_packet(struct mt_rtcp_rx* rx, struct st_rfc3550_rtp_hdr
       err("%s, failed to alloc nack item\n", __func__);
       return -ENOMEM;
     }
-
+    nack->expire_time = mt_get_tsc(impl) + rx->nack_expire_interval;
     nack->seq_id = rx->last_seq_id + 1;
     nack->bulk = lost_packets - 1;
     nack->retry_count = rx->max_retry;
@@ -205,7 +210,8 @@ int mt_rtcp_rx_parse_rtp_packet(struct mt_rtcp_rx* rx, struct st_rfc3550_rtp_hdr
           }
           right_nack->seq_id = seq_id + 1;
           right_nack->bulk = nack->seq_id + nack->bulk - seq_id - 1;
-          nack->retry_count = rx->max_retry;
+          right_nack->retry_count = nack->retry_count;
+          right_nack->expire_time = nack->expire_time;
           MT_TAILQ_INSERT_HEAD(&rx->nack_list, right_nack, next);
         }
         if (seq_id - nack->seq_id > 0) {
@@ -218,7 +224,8 @@ int mt_rtcp_rx_parse_rtp_packet(struct mt_rtcp_rx* rx, struct st_rfc3550_rtp_hdr
           }
           left_nack->seq_id = nack->seq_id;
           left_nack->bulk = seq_id - nack->seq_id - 1;
-          nack->retry_count = rx->max_retry;
+          left_nack->retry_count = nack->retry_count;
+          left_nack->expire_time = nack->expire_time;
           MT_TAILQ_INSERT_HEAD(&rx->nack_list, left_nack, next);
         }
         MT_TAILQ_REMOVE(&rx->nack_list, nack, next);
@@ -231,8 +238,6 @@ int mt_rtcp_rx_parse_rtp_packet(struct mt_rtcp_rx* rx, struct st_rfc3550_rtp_hdr
 
   rx->stat_rtp_received++;
 
-  if (seq_id % 64 == 0) mt_rtcp_rx_send_nack_packet(rx);
-
   return 0;
 }
 
@@ -242,6 +247,10 @@ int mt_rtcp_rx_send_nack_packet(struct mt_rtcp_rx* rx) {
   struct rte_mbuf* pkt;
   struct rte_ipv4_hdr* ipv4;
   struct rte_udp_hdr* udp;
+
+  uint64_t now = mt_get_tsc(impl);
+  if (now < rx->nacks_send_time) return 0;
+  rx->nacks_send_time = now + rx->nacks_send_interval;
 
   if (MT_TAILQ_FIRST(&rx->nack_list) == NULL) return 0;
 
@@ -270,18 +279,21 @@ int mt_rtcp_rx_send_nack_packet(struct mt_rtcp_rx* rx) {
   uint16_t num_fci = 0;
 
   struct mt_rtcp_nack_item *nack, *tmp_nack;
+  struct mt_rtcp_fci* fci = (struct mt_rtcp_fci*)(rtcp->name + 4);
   for (nack = MT_TAILQ_FIRST(&rx->nack_list); nack != NULL; nack = tmp_nack) {
     tmp_nack = MT_TAILQ_NEXT(nack, next);
-    struct mt_rtcp_fci* fci =
-        (struct mt_rtcp_fci*)(rtcp->name + 4 + num_fci * sizeof(struct mt_rtcp_fci));
+    if (now > nack->expire_time) {
+      MT_TAILQ_REMOVE(&rx->nack_list, nack, next);
+      mt_rte_free(nack);
+      rx->stat_nack_expire++;
+      continue;
+    }
+    if (nack->retry_count == 0) continue;
     fci->start = htons(nack->seq_id);
     fci->follow = htons(nack->bulk);
     num_fci++;
+    fci++;
     nack->retry_count--;
-    if (nack->retry_count == 0) {
-      MT_TAILQ_REMOVE(&rx->nack_list, nack, next);
-      mt_rte_free(nack);
-    }
   }
   rtcp->len = htons(sizeof(struct mt_rtcp_hdr) / 4 - 1 + num_fci);
 
@@ -308,16 +320,16 @@ static int rtcp_tx_stat(void* priv) {
   struct mt_rtcp_tx* tx = priv;
   enum mtl_port port = tx->port;
 
-  notice("%s(%d,%s), rtp sent %u nack recv %u rtp retransmit %u\n", __func__, port,
+  notice("%s(%d,%s), rtp sent %u nack recv %u rtp retransmit succ %u\n", __func__, port,
          tx->name, tx->stat_rtp_sent, tx->stat_nack_received,
          tx->stat_rtp_retransmit_succ);
   tx->stat_rtp_sent = 0;
   tx->stat_nack_received = 0;
   tx->stat_rtp_retransmit_succ = 0;
-  if (tx->stat_rtp_retransmit_drop) {
+  if (tx->stat_rtp_retransmit_fail) {
     warn("%s(%d,%s), rtp retransmit fail %u\n", __func__, port, tx->name,
-         tx->stat_rtp_retransmit_drop);
-    tx->stat_rtp_retransmit_drop = 0;
+         tx->stat_rtp_retransmit_fail);
+    tx->stat_rtp_retransmit_fail = 0;
   }
 
   return 0;
@@ -327,13 +339,20 @@ static int rtcp_rx_stat(void* priv) {
   struct mt_rtcp_rx* rx = priv;
   enum mtl_port port = rx->port;
 
-  notice("%s(%d,%s), rtp recv %u lost %u nack sent %u rtp recovered %u\n", __func__, port,
-         rx->name, rx->stat_rtp_received, rx->stat_rtp_lost_detected, rx->stat_nack_sent,
-         rx->stat_rtp_retransmit_succ);
+  notice("%s(%d,%s), rtp recv %u lost %u nack sent %u\n", __func__, port, rx->name,
+         rx->stat_rtp_received, rx->stat_rtp_lost_detected, rx->stat_nack_sent);
   rx->stat_rtp_received = 0;
   rx->stat_rtp_lost_detected = 0;
   rx->stat_nack_sent = 0;
-  rx->stat_rtp_retransmit_succ = 0;
+  if (rx->stat_nack_expire) {
+    warn("%s(%d,%s), nack expire %u\n", __func__, port, rx->name, rx->stat_nack_expire);
+    rx->stat_nack_expire = 0;
+  }
+  if (rx->stat_rtp_retransmit_succ) {
+    notice("%s(%d,%s), rtp recovered %u\n", __func__, port, rx->name,
+           rx->stat_rtp_retransmit_succ);
+    rx->stat_rtp_retransmit_succ = 0;
+  }
 
   return 0;
 }
@@ -396,6 +415,9 @@ struct mt_rtcp_rx* mt_rtcp_rx_create(struct mtl_main_impl* impl,
   rx->max_retry = ops->max_retry;
   rx->ipv4_packet_id = 0;
   rx->ssrc = 0;
+  rx->nack_expire_interval = ops->nack_expire_interval;
+  rx->nacks_send_interval = ops->nacks_send_interval;
+  rx->nacks_send_time = mt_get_tsc(impl);
   strncpy(rx->name, ops->name, sizeof(rx->name) - 1);
   rte_memcpy(&rx->udp_hdr, ops->udp_hdr, sizeof(rx->udp_hdr));
 
