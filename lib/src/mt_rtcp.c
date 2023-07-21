@@ -179,7 +179,7 @@ int mt_rtcp_rx_parse_rtp_packet(struct mt_rtcp_rx* rx, struct st_rfc3550_rtp_hdr
       err("%s, failed to alloc nack item\n", __func__);
       return -ENOMEM;
     }
-
+    nack->expire_time = mt_get_tsc(impl) + rx->nack_expire_interval;
     nack->seq_id = rx->last_seq_id + 1;
     nack->bulk = lost_packets - 1;
     nack->retry_count = rx->max_retry;
@@ -205,7 +205,8 @@ int mt_rtcp_rx_parse_rtp_packet(struct mt_rtcp_rx* rx, struct st_rfc3550_rtp_hdr
           }
           right_nack->seq_id = seq_id + 1;
           right_nack->bulk = nack->seq_id + nack->bulk - seq_id - 1;
-          nack->retry_count = rx->max_retry;
+          right_nack->retry_count = nack->retry_count;
+          right_nack->expire_time = nack->expire_time;
           MT_TAILQ_INSERT_HEAD(&rx->nack_list, right_nack, next);
         }
         if (seq_id - nack->seq_id > 0) {
@@ -218,7 +219,8 @@ int mt_rtcp_rx_parse_rtp_packet(struct mt_rtcp_rx* rx, struct st_rfc3550_rtp_hdr
           }
           left_nack->seq_id = nack->seq_id;
           left_nack->bulk = seq_id - nack->seq_id - 1;
-          nack->retry_count = rx->max_retry;
+          left_nack->retry_count = nack->retry_count;
+          left_nack->expire_time = nack->expire_time;
           MT_TAILQ_INSERT_HEAD(&rx->nack_list, left_nack, next);
         }
         MT_TAILQ_REMOVE(&rx->nack_list, nack, next);
@@ -231,8 +233,6 @@ int mt_rtcp_rx_parse_rtp_packet(struct mt_rtcp_rx* rx, struct st_rfc3550_rtp_hdr
 
   rx->stat_rtp_received++;
 
-  if (seq_id % 64 == 0) mt_rtcp_rx_send_nack_packet(rx);
-
   return 0;
 }
 
@@ -242,6 +242,10 @@ int mt_rtcp_rx_send_nack_packet(struct mt_rtcp_rx* rx) {
   struct rte_mbuf* pkt;
   struct rte_ipv4_hdr* ipv4;
   struct rte_udp_hdr* udp;
+
+  uint64_t now = mt_get_tsc(impl);
+  if (now < rx->nacks_send_time) return 0;
+  rx->nacks_send_time = now + rx->nacks_send_interval;
 
   if (MT_TAILQ_FIRST(&rx->nack_list) == NULL) return 0;
 
@@ -270,18 +274,21 @@ int mt_rtcp_rx_send_nack_packet(struct mt_rtcp_rx* rx) {
   uint16_t num_fci = 0;
 
   struct mt_rtcp_nack_item *nack, *tmp_nack;
+  struct mt_rtcp_fci* fci = (struct mt_rtcp_fci*)(rtcp->name + 4);
   for (nack = MT_TAILQ_FIRST(&rx->nack_list); nack != NULL; nack = tmp_nack) {
     tmp_nack = MT_TAILQ_NEXT(nack, next);
-    struct mt_rtcp_fci* fci =
-        (struct mt_rtcp_fci*)(rtcp->name + 4 + num_fci * sizeof(struct mt_rtcp_fci));
+    if (now > nack->expire_time) {
+      MT_TAILQ_REMOVE(&rx->nack_list, nack, next);
+      mt_rte_free(nack);
+      rx->stat_nack_expire++;
+      continue;
+    }
+    if (nack->retry_count == 0) continue;
     fci->start = htons(nack->seq_id);
     fci->follow = htons(nack->bulk);
     num_fci++;
+    fci++;
     nack->retry_count--;
-    if (nack->retry_count == 0) {
-      MT_TAILQ_REMOVE(&rx->nack_list, nack, next);
-      mt_rte_free(nack);
-    }
   }
   rtcp->len = htons(sizeof(struct mt_rtcp_hdr) / 4 - 1 + num_fci);
 
@@ -327,13 +334,20 @@ static int rtcp_rx_stat(void* priv) {
   struct mt_rtcp_rx* rx = priv;
   enum mtl_port port = rx->port;
 
-  notice("%s(%d,%s), rtp recv %u lost %u nack sent %u rtp recovered %u\n", __func__, port,
-         rx->name, rx->stat_rtp_received, rx->stat_rtp_lost_detected, rx->stat_nack_sent,
-         rx->stat_rtp_retransmit_succ);
+  notice("%s(%d,%s), rtp recv %u lost %u nack sent %u\n", __func__, port, rx->name,
+         rx->stat_rtp_received, rx->stat_rtp_lost_detected, rx->stat_nack_sent);
   rx->stat_rtp_received = 0;
   rx->stat_rtp_lost_detected = 0;
   rx->stat_nack_sent = 0;
-  rx->stat_rtp_retransmit_succ = 0;
+  if (rx->stat_nack_expire) {
+    notice("%s(%d,%s), nack expire %u\n", __func__, port, rx->name, rx->stat_nack_expire);
+    rx->stat_nack_expire = 0;
+  }
+  if (rx->stat_rtp_retransmit_succ) {
+    notice("%s(%d,%s), rtp recovered %u\n", __func__, port, rx->name,
+           rx->stat_rtp_retransmit_succ);
+    rx->stat_rtp_retransmit_succ = 0;
+  }
 
   return 0;
 }
@@ -396,6 +410,9 @@ struct mt_rtcp_rx* mt_rtcp_rx_create(struct mtl_main_impl* impl,
   rx->max_retry = ops->max_retry;
   rx->ipv4_packet_id = 0;
   rx->ssrc = 0;
+  rx->nack_expire_interval = ops->nack_expire_interval;
+  rx->nacks_send_interval = ops->nacks_send_interval;
+  rx->nacks_send_time = mt_get_tsc(impl);
   strncpy(rx->name, ops->name, sizeof(rx->name) - 1);
   rte_memcpy(&rx->udp_hdr, ops->udp_hdr, sizeof(rx->udp_hdr));
 

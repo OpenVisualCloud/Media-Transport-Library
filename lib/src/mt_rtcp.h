@@ -26,7 +26,7 @@ struct mt_rtcp_nack_item {
   uint16_t seq_id;
   uint16_t bulk;
   uint16_t retry_count;
-  /* expire time? */
+  uint64_t expire_time;
   MT_TAILQ_ENTRY(mt_rtcp_nack_item) next;
 };
 MT_TAILQ_HEAD(mt_rtcp_nack_list, mt_rtcp_nack_item);
@@ -42,8 +42,9 @@ struct mt_rtcp_tx_ops {
 struct mt_rtcp_rx_ops {
   const char* name;
   struct mt_udp_hdr* udp_hdr;
-  uint16_t max_idx;
   uint16_t max_retry;
+  uint64_t nacks_send_interval;
+  uint64_t nack_expire_interval;
   enum mtl_port port;
 };
 
@@ -75,12 +76,16 @@ struct mt_rtcp_rx {
   uint32_t ssrc;
 
   uint16_t ipv4_packet_id;
+  uint64_t nacks_send_time;
+  uint64_t nacks_send_interval;
+  uint64_t nack_expire_interval;
 
   /* stat */
   uint32_t stat_rtp_received;
   uint32_t stat_rtp_lost_detected;
   uint32_t stat_rtp_retransmit_succ;
   uint32_t stat_nack_sent;
+  uint32_t stat_nack_expire;
 };
 
 struct mt_rtcp_tx* mt_rtcp_tx_create(struct mtl_main_impl* mtl,

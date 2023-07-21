@@ -2719,7 +2719,7 @@ static int rv_handle_mbuf(void* priv, struct rte_mbuf** mbuf, uint16_t nb) {
   /* now dispatch the pkts to handler */
   for (uint16_t i = 0; i < nb; i++) {
 #if 0 /* simulate a pkt loss for test */
-    if (((float)rand() / RAND_MAX) < 0.00001) {
+    if (((float)rand() / RAND_MAX) < 0.0001) {
       dbg("%s(%d,%d), drop as simulate pkt loss\n", __func__, s->idx, s_port);
       s->stat_pkts_simulate_loss++;
       continue;
@@ -2931,10 +2931,11 @@ static int rv_init_rtcp(struct mtl_main_impl* impl, struct st_rx_video_session_i
     if (ret < 0) return ret;
     struct mt_rtcp_rx_ops rtcp_ops = {
         .port = port,
-        .max_idx = 256,
-        .max_retry = 1,
+        .max_retry = 2,
         .name = ops->name,
         .udp_hdr = &uhdr,
+        .nacks_send_interval = 250 * NS_PER_US,
+        .nack_expire_interval = 1000 * NS_PER_US,
     };
     s->rtcp_rx[i] = mt_rtcp_rx_create(impl, &rtcp_ops);
     if (!s->rtcp_rx[i]) {
@@ -3152,6 +3153,13 @@ static int rv_poll_vsync(struct mtl_main_impl* impl, struct st_rx_video_session_
   return 0;
 }
 
+static int rv_send_nack(struct mtl_main_impl* impl, struct st_rx_video_session_impl* s) {
+  for (int i = 0; i < s->ops.num_port; i++) {
+    if (s->rtcp_rx[i]) mt_rtcp_rx_send_nack_packet(s->rtcp_rx[i]);
+  }
+  return 0;
+}
+
 static int rvs_pkt_rx_tasklet_handler(void* priv) {
   struct st_rx_video_sessions_mgr* mgr = priv;
   struct mtl_main_impl* impl = mgr->parent;
@@ -3182,6 +3190,8 @@ static int rvs_ctl_tasklet_handler(void* priv) {
 
     /* check vsync if it has vsync flag enabled */
     if (s->ops.flags & ST20_RX_FLAG_ENABLE_VSYNC) rv_poll_vsync(impl, s);
+
+    if (s->ops.flags & ST20_RX_FLAG_ENABLE_RTCP) rv_send_nack(impl, s);
 
     rx_video_session_put(mgr, sidx);
   }
