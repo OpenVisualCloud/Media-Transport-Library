@@ -53,16 +53,15 @@ int mt_rtcp_tx_buffer_rtp_packets(struct mt_rtcp_tx* tx, struct rte_mbuf** mbufs
 
   return 0;
 }
-#if 0
+
 static int rtcp_tx_retransmit_rtp_packets(struct mt_rtcp_tx* tx, uint16_t seq_id,
                                           uint16_t bulk) {
-  struct mtl_main_impl* impl = tx->parent;
-  enum mtl_port port = tx->port;
   struct rte_mbuf* mbufs[bulk];
   uint16_t ring_head_id = 0;
+  uint32_t ts = 0;
 
   struct rte_mbuf* head_mbuf = NULL;
-  uint32_t ts = 0;
+
   uint32_t n = rte_ring_dequeue_bulk_start(tx->mbuf_ring, (void**)&head_mbuf, 1, NULL);
   if (n != 0) {
     struct st_rfc3550_rtp_hdr* rtp = rte_pktmbuf_mtod_offset(
@@ -77,7 +76,7 @@ static int rtcp_tx_retransmit_rtp_packets(struct mt_rtcp_tx* tx, uint16_t seq_id
 
   int cmp_result = rtp_seq_num_cmp(ring_head_id, seq_id);
   if (cmp_result < 0) {
-    int clean = seq_id - ring_head_id;
+    uint16_t clean = seq_id - ring_head_id;
     if (clean >= rte_ring_count(tx->mbuf_ring)) {
       err("%s, ts %u seq %u not sent yet, ring head %u, how can you ask for it???\n",
           __func__, ts, seq_id, ring_head_id);
@@ -95,23 +94,34 @@ static int rtcp_tx_retransmit_rtp_packets(struct mt_rtcp_tx* tx, uint16_t seq_id
          seq_id, ring_head_id);
     return -EIO;
   }
-  unsigned int nb_rt =
-      rte_ring_sc_dequeue_burst(tx->mbuf_ring, (void**)mbufs, bulk, NULL);
+  unsigned int nb_rt = rte_ring_sc_dequeue_bulk(tx->mbuf_ring, (void**)mbufs, bulk, NULL);
   if (nb_rt == 0) {
-    warn("%s, no mbufs to retransmit\n", __func__);
-    return 0;
+    err("%s, failed to dequeue mbuf from ring\n", __func__);
+    return -EIO;
   }
 
-  uint16_t send = mt_dev_tx_sys_queue_burst(impl, port, mbufs, nb_rt);
+  /* deep copy the mbuf then send */
+  struct rte_mbuf* copy_mbufs[nb_rt];
+  for (int i = 0; i < bulk; i++) {
+    copy_mbufs[i] = rte_pktmbuf_copy(mbufs[i], mt_get_tx_mempool(tx->parent, tx->port), 0,
+                                     UINT32_MAX);
+    if (!copy_mbufs[i]) {
+      err("%s, failed to copy mbuf\n", __func__);
+      rte_pktmbuf_free_bulk(mbufs, nb_rt);
+      return -ENOMEM;
+    }
+  }
+  rte_pktmbuf_free_bulk(mbufs, nb_rt);
+  uint16_t send = mt_dev_tx_sys_queue_burst(tx->parent, tx->port, copy_mbufs, nb_rt);
 
-  info("%s, ts %u seq %u retransmit %u pkts\n", __func__, ts, seq_id, send);
+  dbg("%s, ts %u seq %u retransmit %u pkt(s)\n", __func__, ts, seq_id, send);
 
   tx->stat_rtp_retransmit_succ += send;
   tx->stat_rtp_retransmit_drop += bulk - send;
 
   return send;
 }
-#endif
+
 int mt_rtcp_tx_parse_nack_packet(struct mt_rtcp_tx* tx, struct mt_rtcp_hdr* rtcp) {
   if (rtcp->flags != 0x80) {
     err("%s, wrong rtcp flags %u\n", __func__, rtcp->flags);
@@ -126,17 +136,17 @@ int mt_rtcp_tx_parse_nack_packet(struct mt_rtcp_tx* tx, struct mt_rtcp_hdr* rtcp
     tx->stat_nack_received++;
 
     uint16_t num_fcis = ntohs(rtcp->len) + 1 - sizeof(struct mt_rtcp_hdr) / 4;
+    struct mt_rtcp_fci* fci = (struct mt_rtcp_fci*)(rtcp->name + 4);
     for (uint16_t i = 0; i < num_fcis; i++) {
-      struct mt_rtcp_fci* fci =
-          (struct mt_rtcp_fci*)(rtcp->name + 4 + i * sizeof(struct mt_rtcp_fci));
       uint16_t start = ntohs(fci->start);
       uint16_t follow = ntohs(fci->follow);
-      info("%s, nack %u,%u\n", __func__, start, follow);
-#if 0
+      dbg("%s, nack %u,%u\n", __func__, start, follow);
+
       if (rtcp_tx_retransmit_rtp_packets(tx, start, follow + 1) < 0) {
         warn("%s, failed to retransmit rtp packets %u,%u\n", __func__, start, follow);
       }
-#endif
+
+      fci++;
     }
   }
 
@@ -148,7 +158,6 @@ int mt_rtcp_rx_parse_rtp_packet(struct mt_rtcp_rx* rx, struct st_rfc3550_rtp_hdr
   enum mtl_port port = rx->port;
 
   uint16_t seq_id = ntohs(rtp->seq_number);
-  uint32_t ts = ntohl(rtp->tmstamp);
 
   if (rx->ssrc == 0) { /* first received */
     rx->ssrc = ntohl(rtp->ssrc);
@@ -175,8 +184,8 @@ int mt_rtcp_rx_parse_rtp_packet(struct mt_rtcp_rx* rx, struct st_rfc3550_rtp_hdr
     nack->bulk = lost_packets - 1;
     nack->retry_count = rx->max_retry;
     MT_TAILQ_INSERT_TAIL(&rx->nack_list, nack, next);
-    info("%s, pkt lost, ts %u seq %u last_seq %u, insert nack %u,%u\n", __func__, ts,
-         seq_id, rx->last_seq_id, nack->seq_id, nack->bulk);
+    dbg("%s, pkt lost, ts %u seq %u last_seq %u, insert nack %u,%u\n", __func__,
+        ntohl(rtp->tmstamp), seq_id, rx->last_seq_id, nack->seq_id, nack->bulk);
     rx->last_seq_id = seq_id;
   } else {
     /* remove out-of-date/recovered pkt from nack list, split nack to left and right */
@@ -222,7 +231,7 @@ int mt_rtcp_rx_parse_rtp_packet(struct mt_rtcp_rx* rx, struct st_rfc3550_rtp_hdr
 
   rx->stat_rtp_received++;
 
-  if (seq_id % 128 == 0) mt_rtcp_rx_send_nack_packet(rx);
+  if (seq_id % 64 == 0) mt_rtcp_rx_send_nack_packet(rx);
 
   return 0;
 }
