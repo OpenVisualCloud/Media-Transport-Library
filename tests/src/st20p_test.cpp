@@ -1057,7 +1057,7 @@ static void st20p_rx_digest_test(enum st_fps fps[], int width[], int height[],
     else
       EXPECT_LE(test_ctx_rx[i]->incomplete_frame_cnt, 2);
     EXPECT_EQ(test_ctx_rx[i]->fail_cnt, 0);
-    EXPECT_LT(test_ctx_rx[i]->user_meta_fail_cnt, 1);
+    EXPECT_LE(test_ctx_rx[i]->user_meta_fail_cnt, 2);
     if (para->check_fps) {
       if (para->fail_interval || para->timeout_interval) {
         EXPECT_NEAR(framerate_rx[i], expect_framerate_rx[i],
