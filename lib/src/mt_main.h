@@ -574,7 +574,7 @@ struct mt_interface {
 
   /* the shared tx sys queue */
   struct mt_txq_entry* txq_sys_entry;
-  pthread_mutex_t tx_sys_queue_mutex; /* protect tx_sys_queue */
+  rte_spinlock_t txq_sys_entry_lock; /* protect txq_sys_entry */
 
   /* rx queue resources */
   uint16_t max_rx_queues;
@@ -1383,6 +1383,16 @@ static inline void st_tx_mbuf_set_idx(struct rte_mbuf* mbuf, uint32_t idx) {
 static inline uint32_t st_tx_mbuf_get_idx(struct rte_mbuf* mbuf) {
   struct mt_muf_priv_data* priv = rte_mbuf_to_priv(mbuf);
   return priv->tx_priv.idx;
+}
+
+static inline void st_tx_mbuf_set_priv(struct rte_mbuf* mbuf, void* p) {
+  struct mt_muf_priv_data* priv = rte_mbuf_to_priv(mbuf);
+  priv->tx_priv.priv = p;
+}
+
+static inline void* st_tx_mbuf_get_priv(struct rte_mbuf* mbuf) {
+  struct mt_muf_priv_data* priv = rte_mbuf_to_priv(mbuf);
+  return priv->tx_priv.priv;
 }
 
 static inline void st_rx_mbuf_set_lender(struct rte_mbuf* mbuf, uint32_t lender) {

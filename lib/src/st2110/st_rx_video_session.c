@@ -849,6 +849,17 @@ static int rv_alloc_frames(struct mtl_main_impl* impl,
         }
       }
     }
+
+    /* init user meta */
+    st20_frame->user_meta_buffer_size =
+        impl->pkt_udp_suggest_max_size - sizeof(struct st20_rfc4175_rtp_hdr);
+    st20_frame->user_meta =
+        mt_rte_zmalloc_socket(st20_frame->user_meta_buffer_size, soc_id);
+    if (!st20_frame->user_meta) {
+      err("%s(%d), user_meta malloc %" PRIu64 " fail at %d\n", __func__, idx,
+          st20_frame->user_meta_buffer_size, i);
+      return -ENOMEM;
+    }
   }
 
   dbg("%s(%d), succ\n", __func__, idx);
@@ -1074,6 +1085,13 @@ static void rv_frame_notify(struct st_rx_video_session_impl* s,
   meta->frame_total_size = s->st20_frame_size;
   meta->uframe_total_size = s->st20_uframe_size;
   meta->frame_recv_size = rv_slot_get_frame_size(s, slot);
+  if (slot->frame->user_meta_data_size) {
+    meta->user_meta_size = slot->frame->user_meta_data_size;
+    meta->user_meta = slot->frame->user_meta;
+  } else {
+    meta->user_meta_size = 0;
+    meta->user_meta = NULL;
+  }
   if (meta->frame_recv_size >= s->st20_frame_size) {
     meta->status = ST_FRAME_STATUS_COMPLETE;
     if (ops->num_port > 1) {
@@ -1328,6 +1346,7 @@ static struct st_rx_video_slot_impl* rv_slot_by_tmstamp(
     frame_info->flags |= ST_FT_FLAG_EXT;
     meta->opaque = ext_frame.opaque;
   }
+  frame_info->user_meta_data_size = 0;
   slot->frame = frame_info;
   slot->timestamp_first_pkt = mtl_ptp_read_time(s->parent->parent);
 
@@ -1690,6 +1709,20 @@ static int rv_handle_frame_pkt(struct st_rx_video_session_impl* s, struct rte_mb
     s->stat_pkts_no_slot++;
     return -EIO;
   }
+
+  if (line1_length & ST20_LEN_USER_META) {
+    line1_length &= ~ST20_LEN_USER_META;
+    dbg("%s(%d,%d): ST20_LEN_USER_META %u\n", __func__, s->idx, s_port, line1_length);
+    if (line1_length <= slot->frame->user_meta_buffer_size) {
+      rte_memcpy(slot->frame->user_meta, payload, line1_length);
+      slot->frame->user_meta_data_size = line1_length;
+    } else {
+      s->stat_pkts_user_meta_err++;
+    }
+    s->stat_pkts_user_meta++;
+    return 0;
+  }
+
   uint8_t* bitmap = slot->frame_bitmap;
   slot->second_field = (line1_number & ST20_SECOND_FIELD) ? true : false;
   line1_number &= ~ST20_SECOND_FIELD;
@@ -3360,6 +3393,12 @@ static void rv_stat(struct st_rx_video_sessions_mgr* mgr,
     notice("RX_VIDEO_SESSION(%d,%d): simulate loss drop %u\n", m_idx, idx,
            s->stat_pkts_simulate_loss);
     s->stat_pkts_simulate_loss = 0;
+  }
+  if (s->stat_pkts_user_meta) {
+    notice("RX_VIDEO_SESSION(%d,%d): user meta pkts %d invalid %d\n", m_idx, idx,
+           s->stat_pkts_user_meta, s->stat_pkts_user_meta_err);
+    s->stat_pkts_user_meta = 0;
+    s->stat_pkts_user_meta_err = 0;
   }
 }
 

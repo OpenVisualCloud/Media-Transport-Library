@@ -103,6 +103,14 @@ static void* rx_st20p_frame_thread(void* arg) {
       st_pthread_mutex_unlock(&s->wake_mutex);
       continue;
     }
+    if (frame->user_meta) {
+      const struct st_frame_user_meta* user_meta = frame->user_meta;
+      if (frame->user_meta_size != sizeof(*user_meta)) {
+        err("%s(%d), user_meta_size wrong\n", __func__, s->idx);
+      }
+      info("%s(%d), user_meta %d %s\n", __func__, s->idx, user_meta->idx,
+           user_meta->dummy);
+    }
     rx_st20p_consume_frame(s, frame);
     st20p_rx_put_frame(handle, frame);
   }

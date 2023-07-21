@@ -29,12 +29,19 @@ static int video_trs_tasklet_stop(void* priv) {
 }
 
 /* for normal pkts, pad still call the mt_txq_burst directly */
-static inline uint16_t video_trs_burst(struct st_tx_video_session_impl* s,
+static inline uint16_t video_trs_burst(struct mtl_main_impl* impl,
+                                       struct st_tx_video_session_impl* s,
                                        enum mtl_session_port s_port,
                                        struct rte_mbuf** tx_pkts, uint16_t nb_pkts) {
   uint16_t tx = mt_txq_burst(s->queue[s_port], tx_pkts, nb_pkts);
-  if (tx && s->rtcp_tx[s_port]) {
+  if (!tx) return 0;
+  if (s->rtcp_tx[s_port]) {
     mt_rtcp_tx_buffer_rtp_packets(s->rtcp_tx[s_port], tx_pkts, tx);
+  }
+  int pkt_idx = st_tx_mbuf_get_idx(tx_pkts[0]);
+  if (0 == pkt_idx) {
+    struct st_frame_trans* frame = st_tx_mbuf_get_priv(tx_pkts[0]);
+    if (frame) st20_frame_tx_start(impl, s, s_port, frame);
   }
   return tx;
 }
@@ -84,11 +91,12 @@ static int video_trs_rl_warm_up(struct mtl_main_impl* impl,
   return 0;
 }
 
-static int video_burst_packet(struct st_tx_video_session_impl* s,
+static int video_burst_packet(struct mtl_main_impl* impl,
+                              struct st_tx_video_session_impl* s,
                               enum mtl_session_port s_port, struct rte_mbuf** pkts,
                               int bulk, bool use_two) {
   struct st_tx_video_pacing* pacing = &s->pacing;
-  int tx = video_trs_burst(s, s_port, &pkts[0], bulk);
+  int tx = video_trs_burst(impl, s, s_port, &pkts[0], bulk);
   int pkt_idx = st_tx_mbuf_get_idx(pkts[0]);
 
   s->stat_pkts_burst += tx;
@@ -139,7 +147,7 @@ static int _video_trs_rl_tasklet(struct mtl_main_impl* impl,
 
   /* check if any inflight pkts in transmitter inflight 2 */
   if (s->trs_inflight_num2[s_port] > 0) {
-    tx = video_trs_burst(s, s_port,
+    tx = video_trs_burst(impl, s, s_port,
                          &s->trs_inflight2[s_port][s->trs_inflight_idx2[s_port]],
                          s->trs_inflight_num2[s_port]);
     s->trs_inflight_num2[s_port] -= tx;
@@ -188,7 +196,8 @@ static int _video_trs_rl_tasklet(struct mtl_main_impl* impl,
 
   /* check if any inflight pkts in transmitter */
   if (s->trs_inflight_num[s_port] > 0) {
-    tx = video_trs_burst(s, s_port, &s->trs_inflight[s_port][s->trs_inflight_idx[s_port]],
+    tx = video_trs_burst(impl, s, s_port,
+                         &s->trs_inflight[s_port][s->trs_inflight_idx[s_port]],
                          s->trs_inflight_num[s_port]);
     s->trs_inflight_num[s_port] -= tx;
     s->trs_inflight_idx[s_port] += tx;
@@ -222,7 +231,7 @@ static int _video_trs_rl_tasklet(struct mtl_main_impl* impl,
 
   /* builder always build bulk pkts per enqueue, pkts after dummy are all dummy */
   if (unlikely(pkt_idx == ST_TX_DUMMY_PKT_IDX)) {
-    video_burst_packet(s, s_port, pkts, valid_bulk, false);
+    video_burst_packet(impl, s, s_port, pkts, valid_bulk, false);
     rte_pktmbuf_free_bulk(&pkts[valid_bulk], bulk - valid_bulk);
     s->stat_pkts_burst_dummy += bulk - valid_bulk;
     dbg("%s(%d), pkt_idx %" PRIu64 " ts %" PRIu64 "\n", __func__, idx, pkt_idx,
@@ -234,7 +243,7 @@ static int _video_trs_rl_tasklet(struct mtl_main_impl* impl,
   if (unlikely(!pkt_idx)) {
     uint64_t cur_tsc = mt_get_tsc(impl);
     if (valid_bulk != 0) {
-      video_burst_packet(s, s_port, pkts, valid_bulk, true);
+      video_burst_packet(impl, s, s_port, pkts, valid_bulk, true);
     }
     uint64_t target_tsc = st_tx_mbuf_get_tsc(pkts[valid_bulk]);
     dbg("%s(%d), first pkt, ts cur %" PRIu64 " target %" PRIu64 "\n", __func__, idx,
@@ -265,7 +274,7 @@ static int _video_trs_rl_tasklet(struct mtl_main_impl* impl,
 
   int pos = (valid_bulk == bulk) ? 0 : valid_bulk;
 
-  video_burst_packet(s, s_port, &pkts[pos], bulk - pos, false);
+  video_burst_packet(impl, s, s_port, &pkts[pos], bulk - pos, false);
 
   *ret_status = 1;
   return MT_TASKLET_HAS_PENDING;
@@ -320,7 +329,8 @@ static int video_trs_tsc_tasklet(struct mtl_main_impl* impl,
 
   /* check if any inflight pkts in transmitter */
   if (s->trs_inflight_num[s_port] > 0) {
-    tx = video_trs_burst(s, s_port, &s->trs_inflight[s_port][s->trs_inflight_idx[s_port]],
+    tx = video_trs_burst(impl, s, s_port,
+                         &s->trs_inflight[s_port][s->trs_inflight_idx[s_port]],
                          s->trs_inflight_num[s_port]);
     s->trs_inflight_num[s_port] -= tx;
     s->trs_inflight_idx[s_port] += tx;
@@ -393,7 +403,7 @@ static int video_trs_tsc_tasklet(struct mtl_main_impl* impl,
     }
   }
 
-  tx = video_trs_burst(s, s_port, &pkts[0], valid_bulk);
+  tx = video_trs_burst(impl, s, s_port, &pkts[0], valid_bulk);
   s->stat_pkts_burst += tx;
 
   if (tx < valid_bulk) {
@@ -438,7 +448,8 @@ static int video_trs_ptp_tasklet(struct mtl_main_impl* impl,
 
   /* check if any inflight pkts in transmitter */
   if (s->trs_inflight_num[s_port] > 0) {
-    tx = video_trs_burst(s, s_port, &s->trs_inflight[s_port][s->trs_inflight_idx[s_port]],
+    tx = video_trs_burst(impl, s, s_port,
+                         &s->trs_inflight[s_port][s->trs_inflight_idx[s_port]],
                          s->trs_inflight_num[s_port]);
     s->trs_inflight_num[s_port] -= tx;
     s->trs_inflight_idx[s_port] += tx;
@@ -509,7 +520,7 @@ static int video_trs_ptp_tasklet(struct mtl_main_impl* impl,
     }
   }
 
-  tx = video_trs_burst(s, s_port, &pkts[0], valid_bulk);
+  tx = video_trs_burst(impl, s, s_port, &pkts[0], valid_bulk);
   s->stat_pkts_burst += tx;
 
   if (tx < valid_bulk) {

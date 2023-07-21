@@ -46,6 +46,14 @@ static inline void srss_entry_pkts_enqueue(struct mt_srss_entry* entry,
     matched_pkts_nb = 0;                                                           \
   } while (0)
 
+#define CNI_ENQUEUE()                                        \
+  do {                                                       \
+    if (srss->cni_entry)                                     \
+      srss_entry_pkts_enqueue(srss->cni_entry, &pkts[i], 1); \
+    else                                                     \
+      rte_pktmbuf_free(pkts[i]);                             \
+  } while (0)
+
 static int srss_tasklet_handler(void* priv) {
   struct mt_srss_impl* srss = priv;
   struct mtl_main_impl* impl = srss->parent;
@@ -70,13 +78,13 @@ static int srss_tasklet_handler(void* priv) {
         if (hdr->eth.ether_type !=
             htons(RTE_ETHER_TYPE_IPV4)) { /* non ip, redirect to cni */
           UPDATE_ENTRY();
-          srss_entry_pkts_enqueue(srss->cni_entry, &pkts[i], 1);
+          CNI_ENQUEUE();
           continue;
         }
         ipv4 = &hdr->ipv4;
         if (ipv4->next_proto_id != IPPROTO_UDP) { /* non udp, redirect to cni */
           UPDATE_ENTRY();
-          srss_entry_pkts_enqueue(srss->cni_entry, &pkts[i], 1);
+          CNI_ENQUEUE();
           continue;
         }
         udp = &hdr->udp;
@@ -103,7 +111,7 @@ static int srss_tasklet_handler(void* priv) {
         }
         if (!srss_entry) { /* no match, redirect to cni */
           UPDATE_ENTRY();
-          srss_entry_pkts_enqueue(srss->cni_entry, &pkts[i], 1);
+          CNI_ENQUEUE();
         }
       }
       if (matched_pkts_nb)
