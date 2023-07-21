@@ -76,7 +76,6 @@ static inline uint64_t ptp_timesync_read_time(struct mt_ptp_impl* ptp) {
 }
 
 static inline int ptp_timesync_read_tx_time(struct mt_ptp_impl* ptp, uint64_t* tai) {
-  enum mtl_port port = ptp->port;
   uint16_t port_id = ptp->port_id;
   int ret;
   struct timespec spec;
@@ -92,7 +91,7 @@ static inline int ptp_timesync_read_tx_time(struct mt_ptp_impl* ptp, uint64_t* t
   ret = rte_eth_timesync_read_tx_timestamp(port_id, &spec);
   ptp_timesync_unlock(ptp);
 
-  if (ret < 0) err("%s(%d), err %d\n", __func__, port, ret);
+  if (ret < 0) dbg("%s(%d), err %d\n", __func__, port, ret);
   if (tai) *tai = mt_timespec_to_ns(&spec);
   return ret;
 }
@@ -435,8 +434,11 @@ static void ptp_delay_req_task(struct mt_ptp_impl* ptp) {
     rte_memcpy(ipv4_hdr, &ptp->dst_udp, sizeof(*ipv4_hdr));
     ipv4_hdr->udp.src_port = htons(MT_PTP_UDP_EVENT_PORT);
     ipv4_hdr->udp.dst_port = ipv4_hdr->udp.src_port;
+    ipv4_hdr->udp.dgram_cksum = 0;
     ipv4_hdr->ip.time_to_live = 255;
     ipv4_hdr->ip.packet_id = htons(ptp->t3_sequence_id);
+    ipv4_hdr->ip.next_proto_id = IPPROTO_UDP;
+    ipv4_hdr->ip.hdr_checksum = 0;
     mt_mbuf_init_ipv4(m);
     hdr->ether_type = htons(RTE_ETHER_TYPE_IPV4);
   } else {
@@ -449,6 +451,7 @@ static void ptp_delay_req_task(struct mt_ptp_impl* ptp) {
   msg->hdr.version = 2;
   msg->hdr.message_length = htons(sizeof(struct mt_ptp_sync_msg));
   msg->hdr.domain_number = ptp->t1_domain_number;
+  msg->hdr.log_message_interval = 0x7f;
   rte_memcpy(&msg->hdr.source_port_identity, &ptp->our_port_id,
              sizeof(struct mt_ptp_port_id));
   ptp->t3_sequence_id++;
@@ -480,7 +483,9 @@ static void ptp_delay_req_task(struct mt_ptp_impl* ptp) {
     ptp_timesync_lock(ptp);
     ret = ptp_timesync_read_tx_time(ptp, &tx_ns);
     ptp_timesync_unlock(ptp);
-    if (ret >= 0) break;
+    if (ret >= 0) {
+      break;
+    }
 
     mt_delay_us(1);
     max_retry--;
