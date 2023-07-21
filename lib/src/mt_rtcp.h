@@ -61,7 +61,7 @@ struct mt_rtcp_tx {
   /* stat */
   uint32_t stat_rtp_sent;
   uint32_t stat_rtp_retransmit_succ;
-  uint32_t stat_rtp_retransmit_drop;
+  uint32_t stat_rtp_retransmit_fail;
   uint32_t stat_nack_received;
 };
 
