@@ -17,7 +17,7 @@ static inline json_object* st_json_object_object_get(json_object* obj, const cha
   json_object* value;
   int ret = json_object_object_get_ex(obj, key, &value);
   if (ret) return value;
-  err("%s, can not get object with key: %s!\n", __func__, key);
+  dbg("%s, can not get object with key: %s!\n", __func__, key);
   return NULL;
 }
 #endif
