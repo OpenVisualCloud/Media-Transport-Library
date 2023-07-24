@@ -628,6 +628,12 @@ int st_frame_trans_uinit(struct st_frame_trans* frame) {
     frame->page_table_len = 0;
   }
 
+  if (frame->user_meta) {
+    mt_rte_free(frame->user_meta);
+    frame->user_meta = NULL;
+    frame->user_meta_buffer_size = 0;
+  }
+
   return 0;
 }
 

@@ -22,6 +22,9 @@ struct tv_sample_context {
   struct st_tx_frame* framebuffs;
 
   mtl_dma_mem_handle dma_mem;
+
+  struct st_frame_user_meta meta;
+  bool has_user_meta;
 };
 
 static int tx_video_next_frame(void* priv, uint16_t* next_frame_idx,
@@ -43,6 +46,11 @@ static int tx_video_next_frame(void* priv, uint16_t* next_frame_idx,
     consumer_idx++;
     if (consumer_idx >= s->framebuff_cnt) consumer_idx = 0;
     s->framebuff_consumer_idx = consumer_idx;
+    if (s->has_user_meta) {
+      s->meta.idx = s->fb_send;
+      meta->user_meta = &s->meta;
+      meta->user_meta_size = sizeof(s->meta);
+    }
   } else {
     /* not ready */
     ret = -EIO;
@@ -160,6 +168,10 @@ int main(int argc, char** argv) {
     st_pthread_mutex_init(&app[i]->wake_mutex, NULL);
     st_pthread_cond_init(&app[i]->wake_cond, NULL);
     app[i]->idx = i;
+    if (ctx.has_user_meta) {
+      snprintf(app[i]->meta.dummy, sizeof(app[i]->meta.dummy), "st20_tx_%d", i);
+      app[i]->has_user_meta = true;
+    }
     app[i]->framebuff_cnt = ctx.framebuff_cnt;
     app[i]->framebuffs =
         (struct st_tx_frame*)malloc(sizeof(*app[i]->framebuffs) * app[i]->framebuff_cnt);

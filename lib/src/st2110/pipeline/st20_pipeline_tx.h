@@ -24,6 +24,9 @@ struct st20p_tx_frame {
   struct st_frame dst; /* converted */
   struct st20_convert_frame_meta convert_frame;
   uint16_t idx;
+  void* user_meta; /* the meta data from user */
+  size_t user_meta_buffer_size;
+  size_t user_meta_data_size;
 };
 
 struct st20p_tx_ctx {

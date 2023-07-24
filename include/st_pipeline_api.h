@@ -271,6 +271,14 @@ struct st_frame {
   uint32_t flags;
   /** frame status, complete or not */
   enum st_frame_status status;
+  /**
+   * The user meta data buffer for current frame of st20, the size must smaller than
+   * MTL_PKT_MAX_RTP_BYTES. This data will be transported to RX with video data and passed
+   * to user by user_meta also.
+   */
+  const void* user_meta;
+  /** size for meta data buffer */
+  size_t user_meta_size;
 
   /** priv pointer for lib, do not touch this */
   void* priv;

@@ -56,6 +56,7 @@ enum sample_args_cmd {
   SAMPLE_ARG_GDDR_PA,
   SAMPLE_ARG_RX_DUMP,
   SAMPLE_ARG_USE_CPU_COPY,
+  SAMPLE_ARG_USER_META,
 
   SAMPLE_ARG_UDP_MODE = 0x300,
   SAMPLE_ARG_UDP_LEN,
@@ -110,6 +111,7 @@ static struct option sample_args_options[] = {
     {"gddr_pa", required_argument, 0, SAMPLE_ARG_GDDR_PA},
     {"use_cpu_copy", no_argument, 0, SAMPLE_ARG_USE_CPU_COPY},
     {"rx_dump", no_argument, 0, SAMPLE_ARG_RX_DUMP},
+    {"user_meta", no_argument, 0, SAMPLE_ARG_USER_META},
 
     {0, 0, 0, 0}};
 
@@ -325,6 +327,9 @@ static int _sample_parse_args(struct st_sample_context* ctx, int argc, char** ar
         break;
       case SAMPLE_ARG_RX_DUMP:
         ctx->rx_dump = true;
+        break;
+      case SAMPLE_ARG_USER_META:
+        ctx->has_user_meta = true;
         break;
       case SAMPLE_ARG_USE_CPU_COPY:
         ctx->use_cpu_copy = true;

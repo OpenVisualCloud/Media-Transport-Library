@@ -22,6 +22,9 @@ struct tx_st20p_sample_ctx {
   mtl_iova_t source_begin_iova;
   uint8_t* source_end;
   uint8_t* frame_cursor;
+
+  struct st_frame_user_meta meta;
+  bool has_user_meta;
 };
 
 static int tx_st20p_close_source(struct tx_st20p_sample_ctx* s) {
@@ -124,6 +127,11 @@ static void* tx_st20p_frame_thread(void* arg) {
     }
 
     if (s->source_begin) tx_st20p_build_frame(s, frame);
+    if (s->has_user_meta) {
+      s->meta.idx = s->fb_send;
+      frame->user_meta = &s->meta;
+      frame->user_meta_size = sizeof(s->meta);
+    }
     st20p_tx_put_frame(handle, frame);
 
     /* point to next frame */
@@ -169,6 +177,10 @@ int main(int argc, char** argv) {
     app[i]->st = ctx.st;
     app[i]->idx = i;
     app[i]->stop = false;
+    if (ctx.has_user_meta) {
+      snprintf(app[i]->meta.dummy, sizeof(app[i]->meta.dummy), "st20p_tx_%d", i);
+      app[i]->has_user_meta = true;
+    }
     st_pthread_mutex_init(&app[i]->wake_mutex, NULL);
     st_pthread_cond_init(&app[i]->wake_cond, NULL);
 

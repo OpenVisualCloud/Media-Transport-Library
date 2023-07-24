@@ -196,6 +196,8 @@ class tests_context {
   int meta_timing_fail_cnt = 0;
   int incomplete_slice_cnt = 0;
   int check_sha_frame_cnt = 0;
+  int last_user_meta_frame_idx = 0;
+  int user_meta_fail_cnt = 0;
   bool out_of_order_pkt = false; /* out of order pkt index */
   int* ooo_mapping = NULL;
   int slice_cnt = 0;
@@ -218,6 +220,15 @@ class tests_context {
   uint32_t pre_timestamp = 0;
   double frame_time = 0; /* in ns */
   uint64_t ptp_time_first_frame = 0;
+  bool user_meta = false;
+};
+
+#define TEST_USER_META_MAGIC ST_PLUGIN_MAGIC('U', 'S', 'M', 'T')
+
+struct test_user_meta {
+  uint32_t magic;
+  int session_idx;
+  int frame_idx;
 };
 
 int tests_context_unit(tests_context* ctx);

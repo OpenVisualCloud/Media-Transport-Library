@@ -126,9 +126,11 @@ static int rx_st20p_frame_ready(void* priv, void* frame,
         return 0; /* surpress the error */
       }
     }
-  } else
+  } else {
     framebuff =
         rx_st20p_next_available(ctx, ctx->framebuff_producer_idx, ST20P_RX_FRAME_FREE);
+  }
+
   /* not any free frame */
   if (!framebuff) {
     rte_atomic32_inc(&ctx->stat_busy);
@@ -142,6 +144,17 @@ static int rx_st20p_frame_ready(void* priv, void* frame,
   framebuff->src.tfmt = framebuff->dst.tfmt = meta->tfmt;
   framebuff->src.timestamp = framebuff->dst.timestamp = meta->timestamp;
   framebuff->src.status = framebuff->dst.status = meta->status;
+
+  /* check user meta */
+  framebuff->user_meta_data_size = 0;
+  if (meta->user_meta) {
+    if (meta->user_meta_size <= framebuff->user_meta_buffer_size) {
+      rte_memcpy(framebuff->user_meta, meta->user_meta, meta->user_meta_size);
+      framebuff->user_meta_data_size = meta->user_meta_size;
+    } else {
+      err("%s(%d), wrong user_meta_size\n", __func__, ctx->idx);
+    }
+  }
 
   /* ask app to consume src frame directly */
   if (ctx->derive || (ctx->ops.flags & ST20P_RX_FLAG_PKT_CONVERT)) {
@@ -433,6 +446,12 @@ static int rx_st20p_uinit_dst_fbs(struct st20p_rx_ctx* ctx) {
         }
       }
     }
+    for (uint16_t i = 0; i < ctx->framebuff_cnt; i++) {
+      if (ctx->framebuffs[i].user_meta) {
+        mt_rte_free(ctx->framebuffs[i].user_meta);
+        ctx->framebuffs[i].user_meta = NULL;
+      }
+    }
     mt_rte_free(ctx->framebuffs);
     ctx->framebuffs = NULL;
   }
@@ -500,6 +519,16 @@ static int rx_st20p_init_dst_fbs(struct mtl_main_impl* impl, struct st20p_rx_ctx
       }
       frames[i].dst.priv = &frames[i];
     }
+    /* init user meta */
+    frames[i].user_meta_buffer_size =
+        impl->pkt_udp_suggest_max_size - sizeof(struct st20_rfc4175_rtp_hdr);
+    frames[i].user_meta = mt_rte_zmalloc_socket(frames[i].user_meta_buffer_size, soc_id);
+    if (!frames[i].user_meta) {
+      err("%s(%d), user_meta malloc %" PRIu64 " fail at %d\n", __func__, idx,
+          frames[i].user_meta_buffer_size, i);
+      rx_st20p_uinit_dst_fbs(ctx);
+      return -ENOMEM;
+    }
   }
   info("%s(%d), size %" PRIu64 " fmt %d with %u frames\n", __func__, idx, dst_size,
        ops->output_fmt, ctx->framebuff_cnt);
@@ -552,6 +581,7 @@ struct st_frame* st20p_rx_get_ext_frame(st20p_rx_handle handle,
   struct st20p_rx_ctx* ctx = handle;
   int idx = ctx->idx;
   struct st20p_rx_frame* framebuff;
+  struct st_frame* frame;
 
   if (ctx->type != MT_ST20_HANDLE_PIPELINE_RX) {
     err("%s(%d), invalid type %d\n", __func__, idx, ctx->type);
@@ -603,13 +633,22 @@ struct st_frame* st20p_rx_get_ext_frame(st20p_rx_handle handle,
   mt_pthread_mutex_unlock(&ctx->lock);
 
   dbg("%s(%d), frame %u succ\n", __func__, idx, framebuff->idx);
-  return &framebuff->dst;
+  frame = &framebuff->dst;
+  if (framebuff->user_meta_data_size) {
+    frame->user_meta = framebuff->user_meta;
+    frame->user_meta_size = framebuff->user_meta_data_size;
+  } else {
+    frame->user_meta = NULL;
+    frame->user_meta_size = 0;
+  }
+  return frame;
 }
 
 struct st_frame* st20p_rx_get_frame(st20p_rx_handle handle) {
   struct st20p_rx_ctx* ctx = handle;
   int idx = ctx->idx;
   struct st20p_rx_frame* framebuff;
+  struct st_frame* frame;
 
   if (ctx->type != MT_ST20_HANDLE_PIPELINE_RX) {
     err("%s(%d), invalid type %d\n", __func__, idx, ctx->type);
@@ -646,7 +685,15 @@ struct st_frame* st20p_rx_get_frame(st20p_rx_handle handle) {
   mt_pthread_mutex_unlock(&ctx->lock);
 
   dbg("%s(%d), frame %u succ\n", __func__, idx, framebuff->idx);
-  return &framebuff->dst;
+  frame = &framebuff->dst;
+  if (framebuff->user_meta_data_size) {
+    frame->user_meta = framebuff->user_meta;
+    frame->user_meta_size = framebuff->user_meta_data_size;
+  } else {
+    frame->user_meta = NULL;
+    frame->user_meta_size = 0;
+  }
+  return frame;
 }
 
 int st20p_rx_put_frame(st20p_rx_handle handle, struct st_frame* frame) {

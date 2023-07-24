@@ -75,6 +75,10 @@ static int tx_st20p_next_frame(void* priv, uint16_t* next_frame_idx,
     meta->tfmt = frame->tfmt;
     meta->timestamp = frame->timestamp;
   }
+  if (framebuff->user_meta_data_size) {
+    meta->user_meta = framebuff->user_meta;
+    meta->user_meta_size = framebuff->user_meta_data_size;
+  }
   /* point to next */
   ctx->framebuff_consumer_idx = tx_st20p_next_idx(ctx, framebuff->idx);
   mt_pthread_mutex_unlock(&ctx->lock);
@@ -314,6 +318,12 @@ static int tx_st20p_uinit_src_fbs(struct st20p_tx_ctx* ctx) {
         }
       }
     }
+    for (uint16_t i = 0; i < ctx->framebuff_cnt; i++) {
+      if (ctx->framebuffs[i].user_meta) {
+        mt_rte_free(ctx->framebuffs[i].user_meta);
+        ctx->framebuffs[i].user_meta = NULL;
+      }
+    }
     mt_rte_free(ctx->framebuffs);
     ctx->framebuffs = NULL;
   }
@@ -371,6 +381,16 @@ static int tx_st20p_init_src_fbs(struct mtl_main_impl* impl, struct st20p_tx_ctx
         }
       }
       frames[i].src.priv = &frames[i];
+    }
+    /* init user meta */
+    frames[i].user_meta_buffer_size =
+        impl->pkt_udp_suggest_max_size - sizeof(struct st20_rfc4175_rtp_hdr);
+    frames[i].user_meta = mt_rte_zmalloc_socket(frames[i].user_meta_buffer_size, soc_id);
+    if (!frames[i].user_meta) {
+      err("%s(%d), user_meta malloc %" PRIu64 " fail at %d\n", __func__, idx,
+          frames[i].user_meta_buffer_size, i);
+      tx_st20p_uinit_src_fbs(ctx);
+      return -ENOMEM;
     }
   }
   info("%s(%d), size %" PRIu64 " fmt %d with %u frames\n", __func__, idx, src_size,
@@ -451,6 +471,8 @@ struct st_frame* st20p_tx_get_frame(st20p_tx_handle handle) {
     frame->second_field = ctx->second_field;
     ctx->second_field = ctx->second_field ? false : true;
   }
+  frame->user_meta = NULL;
+  frame->user_meta_size = 0;
   return frame;
 }
 
@@ -469,6 +491,20 @@ int st20p_tx_put_frame(st20p_tx_handle handle, struct st_frame* frame) {
     err("%s(%d), frame %u not in user %d\n", __func__, idx, producer_idx,
         framebuff->stat);
     return -EIO;
+  }
+
+  framebuff->user_meta_data_size = 0;
+  if (frame->user_meta) {
+    if (frame->user_meta_size > framebuff->user_meta_buffer_size) {
+      err("%s(%d), frame %u user meta size %" PRId64 " too large\n", __func__, idx,
+          producer_idx, frame->user_meta_size);
+      framebuff->stat = ST20P_TX_FRAME_FREE;
+      return -EIO;
+    }
+
+    /* copy user meta to framebuff user_meta */
+    rte_memcpy(framebuff->user_meta, frame->user_meta, frame->user_meta_size);
+    framebuff->user_meta_data_size = frame->user_meta_size;
   }
 
   if (ctx->internal_converter) { /* convert internal */
