@@ -165,7 +165,7 @@ static void* app_tx_anc_pcap_thread(void* arg) {
         if (ip_hdr->ip_p == IPPROTO_UDP) {
           udp_hdr =
               (struct udphdr*)(packet + sizeof(struct ether_header) + sizeof(struct ip));
-          udp_data_len = ntohs(udp_hdr->uh_ulen) - sizeof(struct udphdr);
+          udp_data_len = ntohs(udp_hdr->len) - sizeof(struct udphdr);
           mtl_memcpy(usrptr,
                      packet + sizeof(struct ether_header) + sizeof(struct ip) +
                          sizeof(struct udphdr),
