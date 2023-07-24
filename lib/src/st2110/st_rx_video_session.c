@@ -2751,13 +2751,13 @@ static int rv_handle_mbuf(void* priv, struct rte_mbuf** mbuf, uint16_t nb) {
 
   /* now dispatch the pkts to handler */
   for (uint16_t i = 0; i < nb; i++) {
-#if 0 /* simulate a pkt loss for test */
-    if (((float)rand() / RAND_MAX) < 0.0001) {
-      dbg("%s(%d,%d), drop as simulate pkt loss\n", __func__, s->idx, s_port);
-      s->stat_pkts_simulate_loss++;
-      continue;
+    if (s->ops.flags & ST20_RX_FLAG_SIMULATE_PKT_LOSS) {
+      if (((float)rand() / RAND_MAX) < 0.0001) {
+        dbg("%s(%d,%d), drop as simulate pkt loss\n", __func__, s->idx, s_port);
+        s->stat_pkts_simulate_loss++;
+        continue;
+      }
     }
-#endif
     if (s->rtcp_rx[s_port]) {
       struct st_rfc3550_rtp_hdr* rtp = rte_pktmbuf_mtod_offset(
           mbuf[i], struct st_rfc3550_rtp_hdr*, sizeof(struct mt_udp_hdr));
@@ -2952,7 +2952,10 @@ static int rv_init_rtcp_uhdr(struct mtl_main_impl* impl,
   return 0;
 }
 
-static int rv_init_rtcp(struct mtl_main_impl* impl, struct st_rx_video_session_impl* s) {
+static int rv_init_rtcp(struct mtl_main_impl* impl, struct st_rx_video_sessions_mgr* mgr,
+                        struct st_rx_video_session_impl* s) {
+  int idx = s->idx;
+  int mgr_idx = mgr->idx;
   struct st20_rx_ops* ops = &s->ops;
   enum mtl_port port;
 
@@ -2962,17 +2965,19 @@ static int rv_init_rtcp(struct mtl_main_impl* impl, struct st_rx_video_session_i
     memset(&uhdr, 0x0, sizeof(uhdr));
     int ret = rv_init_rtcp_uhdr(impl, s, i, &uhdr);
     if (ret < 0) return ret;
+    char name[24];
+    snprintf(name, sizeof(name), ST_RX_VIDEO_PREFIX "M%dS%dP%d", mgr_idx, idx, i);
     struct mt_rtcp_rx_ops rtcp_ops = {
         .port = port,
         .max_retry = 2,
-        .name = ops->name,
+        .name = name,
         .udp_hdr = &uhdr,
         .nacks_send_interval = 250 * NS_PER_US,
         .nack_expire_interval = 1000 * NS_PER_US,
     };
     s->rtcp_rx[i] = mt_rtcp_rx_create(impl, &rtcp_ops);
     if (!s->rtcp_rx[i]) {
-      err("%s(%d), mt_rtcp_rx_create fail\n", __func__, s->idx);
+      err("%s(%d,%d), mt_rtcp_rx_create fail on port %d\n", __func__, mgr_idx, idx, i);
       return -EIO;
     }
   }
@@ -3075,7 +3080,7 @@ static int rv_attach(struct mtl_main_impl* impl, struct st_rx_video_sessions_mgr
   strncpy(s->ops_name, ops->name, ST_MAX_NAME_LEN - 1);
   s->ops = *ops;
   for (int i = 0; i < num_port; i++) {
-    s->st20_dst_port[i] = (ops->udp_port[i]) ? (ops->udp_port[i]) : (10000 + idx);
+    s->st20_dst_port[i] = (ops->udp_port[i]) ? (ops->udp_port[i]) : (10000 + idx * 2);
   }
 
   s->stat_pkts_idx_dropped = 0;
@@ -3140,7 +3145,7 @@ static int rv_attach(struct mtl_main_impl* impl, struct st_rx_video_sessions_mgr
   }
 
   if (ops->flags & ST20_RX_FLAG_ENABLE_RTCP) {
-    ret = rv_init_rtcp(impl, s);
+    ret = rv_init_rtcp(impl, mgr, s);
     if (ret < 0) {
       rv_uinit_mcast(impl, s);
       rv_uinit_sw(impl, s);
@@ -3442,11 +3447,13 @@ static int rv_detach(struct mtl_main_impl* impl, struct st_rx_video_sessions_mgr
   return 0;
 }
 
-static int rv_update_src(struct mtl_main_impl* impl, struct st_rx_video_session_impl* s,
+static int rv_update_src(struct st_rx_video_sessions_mgr* mgr,
+                         struct st_rx_video_session_impl* s,
                          struct st_rx_source_info* src) {
   int ret = -EIO;
   int idx = s->idx, num_port = s->ops.num_port;
   struct st20_rx_ops* ops = &s->ops;
+  struct mtl_main_impl* impl = mgr->parent;
 
   rv_uinit_rtcp(s);
   rv_uinit_mcast(impl, s);
@@ -3456,7 +3463,7 @@ static int rv_update_src(struct mtl_main_impl* impl, struct st_rx_video_session_
   for (int i = 0; i < num_port; i++) {
     memcpy(ops->sip_addr[i], src->sip_addr[i], MTL_IP_ADDR_LEN);
     ops->udp_port[i] = src->udp_port[i];
-    s->st20_dst_port[i] = (ops->udp_port[i]) ? (ops->udp_port[i]) : (10000 + idx);
+    s->st20_dst_port[i] = (ops->udp_port[i]) ? (ops->udp_port[i]) : (10000 + idx * 2);
   }
 
   ret = rv_init_hw(impl, s);
@@ -3473,7 +3480,7 @@ static int rv_update_src(struct mtl_main_impl* impl, struct st_rx_video_session_
   }
 
   if (ops->flags & ST20_RX_FLAG_ENABLE_RTCP) {
-    ret = rv_init_rtcp(impl, s);
+    ret = rv_init_rtcp(impl, mgr, s);
     if (ret < 0) {
       rv_uinit_mcast(impl, s);
       rv_uinit_hw(impl, s);
@@ -3495,8 +3502,7 @@ static int rv_mgr_update_src(struct st_rx_video_sessions_mgr* mgr,
     err("%s(%d,%d), get session fail\n", __func__, midx, idx);
     return -EIO;
   }
-
-  ret = rv_update_src(mgr->parent, s, src);
+  ret = rv_update_src(mgr, s, src);
   rx_video_session_put(mgr, idx);
   if (ret < 0) {
     err("%s(%d,%d), fail %d\n", __func__, midx, idx, ret);

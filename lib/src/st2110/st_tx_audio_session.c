@@ -1302,7 +1302,7 @@ static int tx_audio_session_attach(struct mtl_main_impl* impl,
   strncpy(s->ops_name, ops->name, ST_MAX_NAME_LEN - 1);
   s->ops = *ops;
   for (int i = 0; i < num_port; i++) {
-    s->st30_dst_port[i] = (ops->udp_port[i]) ? (ops->udp_port[i]) : (10100 + idx);
+    s->st30_dst_port[i] = (ops->udp_port[i]) ? (ops->udp_port[i]) : (10100 + idx * 2);
     if (mt_random_src_port(impl))
       s->st30_src_port[i] = mt_random_port(s->st30_dst_port[i]);
     else
@@ -1399,7 +1399,7 @@ static int tx_audio_session_update_dst(struct mtl_main_impl* impl,
   for (int i = 0; i < num_port; i++) {
     memcpy(ops->dip_addr[i], dst->dip_addr[i], MTL_IP_ADDR_LEN);
     ops->udp_port[i] = dst->udp_port[i];
-    s->st30_dst_port[i] = (ops->udp_port[i]) ? (ops->udp_port[i]) : (20000 + idx);
+    s->st30_dst_port[i] = (ops->udp_port[i]) ? (ops->udp_port[i]) : (20000 + idx * 2);
     s->st30_src_port[i] =
         (ops->udp_src_port[i]) ? (ops->udp_src_port[i]) : s->st30_dst_port[i];
 

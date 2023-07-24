@@ -9,6 +9,8 @@
 
 #define MT_RTCP_PTYPE_NACK (204)
 
+#define MT_RTCP_TX_RING_PREFIX "TRT_"
+
 MTL_PACK(struct mt_rtcp_hdr {
   uint8_t flags;
   uint8_t ptype;
@@ -53,7 +55,7 @@ struct mt_rtcp_tx {
   enum mtl_port port;
   struct rte_ring* mbuf_ring;
   struct mt_udp_hdr udp_hdr;
-  char name[32];
+  char name[24];
   uint32_t ssrc;
 
   uint16_t ipv4_packet_id;
@@ -72,7 +74,7 @@ struct mt_rtcp_rx {
   uint16_t max_retry;
   uint16_t last_seq_id;
   struct mt_udp_hdr udp_hdr;
-  char name[32];
+  char name[24];
   uint32_t ssrc;
 
   uint16_t ipv4_packet_id;
