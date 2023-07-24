@@ -2540,8 +2540,6 @@ TEST(St20_rx, digest_hdr_split) {
 TEST(St20_rx, digest_rtcp_s3) {
   enum st20_type type[3] = {ST20_TYPE_FRAME_LEVEL, ST20_TYPE_FRAME_LEVEL,
                             ST20_TYPE_FRAME_LEVEL};
-  enum st20_type rx_type[3] = {ST20_TYPE_FRAME_LEVEL, ST20_TYPE_FRAME_LEVEL,
-                               ST20_TYPE_FRAME_LEVEL};
   enum st20_packing packing[3] = {ST20_PACKING_GPM_SL, ST20_PACKING_GPM,
                                   ST20_PACKING_BPM};
   enum st_fps fps[3] = {ST_FPS_P59_94, ST_FPS_P50, ST_FPS_P29_97};
@@ -2550,15 +2548,13 @@ TEST(St20_rx, digest_rtcp_s3) {
   bool interlaced[3] = {true, false, false};
   enum st20_fmt fmt[3] = {ST20_FMT_YUV_422_10BIT, ST20_FMT_YUV_422_10BIT,
                           ST20_FMT_YUV_422_10BIT};
-  st20_rx_digest_test(type, rx_type, packing, fps, width, height, interlaced, fmt, false,
+  st20_rx_digest_test(type, type, packing, fps, width, height, interlaced, fmt, false,
                       ST_TEST_LEVEL_MANDATORY, 3, false, false, false, true);
 }
 
 TEST(St20_rx, digest_ooo_rtcp_s3) {
   enum st20_type type[3] = {ST20_TYPE_FRAME_LEVEL, ST20_TYPE_FRAME_LEVEL,
                             ST20_TYPE_FRAME_LEVEL};
-  enum st20_type rx_type[3] = {ST20_TYPE_FRAME_LEVEL, ST20_TYPE_FRAME_LEVEL,
-                               ST20_TYPE_FRAME_LEVEL};
   enum st20_packing packing[3] = {ST20_PACKING_GPM_SL, ST20_PACKING_GPM,
                                   ST20_PACKING_BPM};
   enum st_fps fps[3] = {ST_FPS_P59_94, ST_FPS_P50, ST_FPS_P29_97};
@@ -2567,7 +2563,7 @@ TEST(St20_rx, digest_ooo_rtcp_s3) {
   bool interlaced[3] = {false, false, false};
   enum st20_fmt fmt[3] = {ST20_FMT_YUV_422_10BIT, ST20_FMT_YUV_422_10BIT,
                           ST20_FMT_YUV_422_10BIT};
-  st20_rx_digest_test(type, rx_type, packing, fps, width, height, interlaced, fmt, false,
+  st20_rx_digest_test(type, type, packing, fps, width, height, interlaced, fmt, false,
                       ST_TEST_LEVEL_MANDATORY, 3, true, false, false, true);
 }
 
