@@ -232,7 +232,7 @@ static int mt_user_params_check(struct mtl_init_params* p) {
   uint8_t if_netmask[MTL_IP_ADDR_LEN];
 
   /* transport check */
-  if ((p->transport >= MTL_TRANSPORT_TYPE_MAX) || (p->transport < 0)) {
+  if (p->transport >= MTL_TRANSPORT_TYPE_MAX) {
     err("%s, invalid transport %d\n", __func__, p->transport);
     return -EINVAL;
   }
@@ -246,7 +246,7 @@ static int mt_user_params_check(struct mtl_init_params* p) {
     enum mtl_pmd_type pmd = p->pmd[i];
 
     /* type check */
-    if ((pmd >= MTL_PMD_TYPE_MAX) || (pmd < 0)) {
+    if (pmd >= MTL_PMD_TYPE_MAX) {
       err("%s(%d), invalid pmd type %d\n", __func__, i, pmd);
       return -EINVAL;
     }
@@ -636,7 +636,7 @@ void* mtl_hp_malloc(mtl_handle mt, size_t size, enum mtl_port port) {
     return NULL;
   }
 
-  if (port < 0 || port >= num_ports) {
+  if (port >= num_ports) {
     err("%s, invalid port %d\n", __func__, port);
     return NULL;
   }
@@ -653,7 +653,7 @@ void* mtl_hp_zmalloc(mtl_handle mt, size_t size, enum mtl_port port) {
     return NULL;
   }
 
-  if (port < 0 || port >= num_ports) {
+  if (port >= num_ports) {
     err("%s, invalid port %d\n", __func__, port);
     return NULL;
   }
@@ -1075,7 +1075,7 @@ int mtl_port_ip_info(mtl_handle mt, enum mtl_port port, uint8_t ip[MTL_IP_ADDR_L
     err("%s, invalid type %d\n", __func__, impl->type);
     return -EINVAL;
   }
-  if (port < 0 || port >= mt_num_ports(impl)) {
+  if (port >= mt_num_ports(impl)) {
     err("%s, invalid port %d\n", __func__, port);
     return -EINVAL;
   }
@@ -1103,7 +1103,7 @@ static const char* mt_simd_level_names[MTL_SIMD_LEVEL_MAX] = {
 };
 
 const char* mtl_get_simd_level_name(enum mtl_simd_level level) {
-  if ((level >= MTL_SIMD_LEVEL_MAX) || (level < 0)) {
+  if (level >= MTL_SIMD_LEVEL_MAX) {
     err("%s, invalid level %d\n", __func__, level);
     return "unknown";
   }

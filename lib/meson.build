@@ -64,7 +64,7 @@ mtl_has_simd = true
 
 # "clang attribute push" support from clang 9.0
 if (toolchain == 'clang' and cc.version().version_compare('<9.0.0'))
-  message('Disable SIMD build as clang not support')
+  message('Disable SIMD build as clang version too old')
   mtl_has_simd = false
 endif
 
