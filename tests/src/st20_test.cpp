@@ -2548,7 +2548,7 @@ TEST(St20_rx, digest_rtcp_s3) {
   bool interlaced[3] = {true, false, false};
   enum st20_fmt fmt[3] = {ST20_FMT_YUV_422_10BIT, ST20_FMT_YUV_422_10BIT,
                           ST20_FMT_YUV_422_10BIT};
-  st20_rx_digest_test(type, type, packing, fps, width, height, interlaced, fmt, false,
+  st20_rx_digest_test(type, type, packing, fps, width, height, interlaced, fmt, true,
                       ST_TEST_LEVEL_MANDATORY, 3, false, false, false, true);
 }
 
@@ -2563,7 +2563,7 @@ TEST(St20_rx, digest_ooo_rtcp_s3) {
   bool interlaced[3] = {false, false, false};
   enum st20_fmt fmt[3] = {ST20_FMT_YUV_422_10BIT, ST20_FMT_YUV_422_10BIT,
                           ST20_FMT_YUV_422_10BIT};
-  st20_rx_digest_test(type, type, packing, fps, width, height, interlaced, fmt, false,
+  st20_rx_digest_test(type, type, packing, fps, width, height, interlaced, fmt, true,
                       ST_TEST_LEVEL_MANDATORY, 3, true, false, false, true);
 }
 
