@@ -29,6 +29,17 @@ static char* ptp_mode_strs[MT_PTP_MAX_MODE] = {
     "l4",
 };
 
+#define KP 0.7
+#define KI 0.3
+
+enum servo_state {
+  UNLOCKED,
+  JUMP,
+  LOCKED,
+};
+
+enum controller_mode { NONE, PI, ALL } mode;
+
 static inline char* ptp_mode_str(enum mt_ptp_l_mode mode) { return ptp_mode_strs[mode]; }
 
 static inline uint64_t ptp_net_tmstamp_to_ns(struct mt_ptp_tmstamp* ts) {
@@ -40,6 +51,141 @@ static inline void ptp_timesync_lock(struct mt_ptp_impl* ptp) { /* todo */
 }
 
 static inline void ptp_timesync_unlock(struct mt_ptp_impl* ptp) { /* todo */
+}
+
+static inline double pi_sample(struct mt_pi_servo* s, double offset, double local_ts,
+                               enum servo_state* state) {
+  double ppb = 0.0;
+
+  switch (s->count) {
+    case 0:
+      s->offset[0] = offset;
+      s->local[0] = local_ts;
+      *state = UNLOCKED;
+      s->count = 1;
+      break;
+    case 1:
+      s->offset[1] = offset;
+      s->local[1] = local_ts;
+      *state = UNLOCKED;
+      s->count = 2;
+      break;
+    case 2:
+      s->drift += (s->offset[1] - s->offset[0]) / (s->local[1] - s->local[0]);
+      *state = UNLOCKED;
+      s->count = 3;
+      break;
+    case 3:
+      *state = JUMP;
+      s->count = 4;
+      break;
+    case 4:
+      s->drift += KI * offset;
+      ppb = KP * offset + s->drift;
+      *state = LOCKED;
+      break;
+  }
+
+  return ppb;
+}
+
+void ptp_adj_system_clock_time(struct mt_ptp_impl* ptp, int64_t delta) {
+  struct timex adjtime;
+  int sign = 1;
+
+  if (delta < 0) {
+    sign = -1;
+    delta *= -1;
+  }
+
+  memset(&adjtime, 0, sizeof(adjtime));
+  adjtime.modes = ADJ_SETOFFSET | ADJ_NANO;
+  adjtime.time.tv_sec = sign * (delta / NS_PER_S);
+  adjtime.time.tv_usec = sign * (delta % NS_PER_S);
+  if (adjtime.time.tv_usec < 0) {
+    adjtime.time.tv_sec -= 1;
+    adjtime.time.tv_usec += 1000000000;
+  }
+
+  clock_adjtime(CLOCK_REALTIME, &adjtime);
+}
+
+void ptp_adj_system_clock_freq(struct mt_ptp_impl* ptp, double freq) {
+  struct timex adjfreq;
+  memset(&adjfreq, 0, sizeof(adjfreq));
+
+  if (ptp->phc2sys.realtime_nominal_tick) {
+    adjfreq.modes |= ADJ_TICK;
+    adjfreq.tick =
+        round(freq / 1e3 / ptp->phc2sys.realtime_hz) + ptp->phc2sys.realtime_nominal_tick;
+    freq -= 1e3 * ptp->phc2sys.realtime_hz *
+            (adjfreq.tick - ptp->phc2sys.realtime_nominal_tick);
+  }
+
+  adjfreq.modes |= ADJ_FREQUENCY;
+  adjfreq.freq = (long)(freq * 65.536);
+  clock_adjtime(CLOCK_REALTIME, &adjfreq);
+}
+
+static void phc2sys_adjust(struct mt_ptp_impl* ptp) {
+  enum servo_state state = UNLOCKED;
+  double ppb;
+  struct timespec ts1_sys, ts2_sys, ts_phc;
+  uint64_t t_phc, t1_sys, t2_sys, t_sys, shortest_delay, delay;
+  int64_t offset;
+  int ret;
+
+  ptp_timesync_lock(ptp);
+  shortest_delay = UINT64_MAX;
+  offset = 0;
+  t_sys = 0;
+  for (uint8_t i = 0; i < 10; i++) {
+    clock_gettime(CLOCK_REALTIME, &ts1_sys);
+    ret = rte_eth_timesync_read_time(ptp->port_id, &ts_phc);
+    clock_gettime(CLOCK_REALTIME, &ts2_sys);
+    if (ret >= 0) {
+      t1_sys = mt_timespec_to_ns(&ts1_sys);
+      ;
+      t2_sys = mt_timespec_to_ns(&ts2_sys);
+      t_phc = mt_timespec_to_ns(&ts_phc);
+
+      delay = t2_sys - t1_sys;
+      if (shortest_delay > delay) {
+        t_sys = (t1_sys + t2_sys) / 2;
+        offset = t_sys - t_phc;
+        shortest_delay = delay;
+      }
+    }
+  }
+  ptp_timesync_unlock(ptp);
+  if (ret >= 0) {
+    ppb = pi_sample(&ptp->phc2sys.servo, offset, t_sys, &state);
+
+    switch (state) {
+      case UNLOCKED:
+        break;
+      case JUMP:
+        ptp_adj_system_clock_time(ptp, -offset);
+        dbg("%s(%d), CLOCK_REALTIME offset %" PRId64 ", delay %" PRIu64 " adjust time.\n",
+            __func__, ptp->port_id, offset, shortest_delay);
+        break;
+      case LOCKED:
+        ptp_adj_system_clock_freq(ptp, -ppb);
+        dbg("%s(%d), CLOCK_REALTIME offset %" PRId64 ", delay %" PRIu64 " adjust freq.\n",
+            __func__, ptp->port_id, offset, shortest_delay);
+        break;
+    }
+
+    ptp->phc2sys.stat_delta_max = RTE_MAX(abs(offset), ptp->phc2sys.stat_delta_max);
+  } else {
+    err("%s(%d), PHC time retrieving failed. Err %d\n", __func__, ptp->port_id, ret);
+  }
+}
+
+static void ptp2sys_handler(void* param) {
+  struct mt_ptp_impl* ptp = param;
+  phc2sys_adjust(ptp);
+  rte_eal_alarm_set(100000, ptp2sys_handler, ptp);
 }
 
 static inline uint64_t ptp_correct_ts(struct mt_ptp_impl* ptp, uint64_t ts) {
@@ -759,6 +905,16 @@ static int ptp_init(struct mtl_main_impl* impl, struct mt_ptp_impl* ptp,
   if (ptp->use_pi)
     info("%s(%d), use pi controller, kp %e, ki %e\n", __func__, port, ptp->kp, ptp->ki);
 
+  memset(&ptp->phc2sys.servo, 0, sizeof(struct mt_pi_servo));
+  ptp->phc2sys.realtime_hz = sysconf(_SC_CLK_TCK);
+  ptp->phc2sys.realtime_nominal_tick = 0;
+  if (ptp->phc2sys.realtime_hz > 0) {
+    ptp->phc2sys.realtime_nominal_tick =
+        (1000000 + ptp->phc2sys.realtime_hz / 2) / ptp->phc2sys.realtime_hz;
+  }
+  ptp->phc2sys.stat_sync = false;
+  rte_eal_alarm_set(100000, ptp2sys_handler, ptp);
+
   struct mtl_init_params* p = mt_get_user_params(impl);
   if (p->flags & MTL_FLAG_PTP_UNICAST_ADDR) {
     ptp->master_addr_mode = MT_PTP_UNICAST_ADDR;
@@ -893,6 +1049,13 @@ static int ptp_stat(void* priv) {
   localtime_r(&spec.tv_sec, &t);
   strftime(date_time, sizeof(date_time), "%Y-%m-%d %H:%M:%S", &t);
   notice("PTP(%d): time %" PRIu64 ", %s\n", port, ns, date_time);
+
+  if (ptp->phc2sys.stat_delta_max < 300 && ptp->phc2sys.stat_delta_max > 0) {
+    ptp->phc2sys.stat_sync = true;
+  }
+  notice("PTP(%d): system clock offset max %" PRId64 "\n", port,
+         ptp->phc2sys.stat_delta_max);
+  ptp->phc2sys.stat_delta_max = 0;
 
   if (!ptp->active) {
     if (mt_has_ebu(impl)) {
