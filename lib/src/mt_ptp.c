@@ -176,7 +176,7 @@ static void phc2sys_adjust(struct mt_ptp_impl* ptp) {
         break;
     }
 
-    ptp->phc2sys.stat_delta_max = RTE_MAX(abs(offset), ptp->phc2sys.stat_delta_max);
+    ptp->phc2sys.stat_delta_max = RTE_MAX(labs(offset), ptp->phc2sys.stat_delta_max);
   } else {
     err("%s(%d), PHC time retrieving failed. Err %d\n", __func__, ptp->port_id, ret);
   }
