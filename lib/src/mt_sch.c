@@ -145,7 +145,7 @@ static int sch_tasklet_func(void* args) {
       if (time_measure) tsc_s = mt_get_tsc(impl);
       pending += ops->handler(ops->priv);
       if (time_measure) {
-        uint32_t delta_us = (mt_get_tsc(impl) - tsc_s) / 1000;
+        uint32_t delta_us = (mt_get_tsc(impl) - tsc_s) / NS_PER_US;
         tasklet->stat_max_time_us = RTE_MAX(tasklet->stat_max_time_us, delta_us);
         tasklet->stat_min_time_us = RTE_MIN(tasklet->stat_min_time_us, delta_us);
         tasklet->stat_sum_time_us += delta_us;

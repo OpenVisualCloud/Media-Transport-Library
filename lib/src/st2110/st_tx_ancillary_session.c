@@ -664,7 +664,13 @@ static int tx_ancillary_session_tasklet_frame(struct mtl_main_impl* impl,
 
     tx_ancillary_session_init_next_meta(s, &meta);
     /* Query next frame buffer idx */
+    uint64_t tsc_start = 0;
+    if (s->time_measure) tsc_start = mt_get_tsc(impl);
     ret = ops->get_next_frame(ops->priv, &next_frame_idx, &meta);
+    if (s->time_measure) {
+      uint32_t delta_us = (mt_get_tsc(impl) - tsc_start) / NS_PER_US;
+      s->stat_max_next_frame_us = RTE_MAX(s->stat_max_next_frame_us, delta_us);
+    }
     if (ret < 0) { /* no frame ready from app */
       dbg("%s(%d), get_next_frame fail %d\n", __func__, idx, ret);
       s->stat_build_ret_code = -STI_FRAME_APP_GET_FRAME_BUSY;
@@ -806,9 +812,15 @@ static int tx_ancillary_session_tasklet_frame(struct mtl_main_impl* impl,
   if (s->st40_pkt_idx >= s->st40_total_pkts) {
     dbg("%s(%d), frame %d done\n", __func__, idx, s->st40_frame_idx);
     struct st_frame_trans* frame = &s->st40_frames[s->st40_frame_idx];
+    uint64_t tsc_start = 0;
+    if (s->time_measure) tsc_start = mt_get_tsc(impl);
     /* end of current frame */
     if (s->ops.notify_frame_done)
       ops->notify_frame_done(ops->priv, s->st40_frame_idx, &frame->tc_meta);
+    if (s->time_measure) {
+      uint32_t delta_us = (mt_get_tsc(impl) - tsc_start) / NS_PER_US;
+      s->stat_max_notify_frame_us = RTE_MAX(s->stat_max_notify_frame_us, delta_us);
+    }
     rte_atomic32_dec(&frame->refcnt);
     s->st40_frame_stat = ST40_TX_STAT_WAIT_FRAME;
     s->st40_pkt_idx = 0;
@@ -1251,6 +1263,7 @@ static int tx_ancillary_session_attach(struct mtl_main_impl* impl,
   ret = mt_build_port_map(impl, ports, s->port_maps, num_port);
   if (ret < 0) return ret;
 
+  s->time_measure = mt_has_tasklet_time_measure(impl);
   strncpy(s->ops_name, ops->name, ST_MAX_NAME_LEN - 1);
   s->ops = *ops;
   for (int i = 0; i < num_port; i++) {
@@ -1352,10 +1365,16 @@ static void tx_ancillary_session_stat(struct st_tx_ancillary_session_impl* s) {
            s->stat_error_user_timestamp);
     s->stat_error_user_timestamp = 0;
   }
+  if (s->time_measure) {
+    notice("TX_ANC_SESSION(%d): get next frame max %uus, notify done max %uus\n", idx,
+           s->stat_max_next_frame_us, s->stat_max_notify_frame_us);
+    s->stat_max_next_frame_us = 0;
+    s->stat_max_notify_frame_us = 0;
+  }
 }
 
-int tx_ancillary_session_detach(struct st_tx_ancillary_sessions_mgr* mgr,
-                                struct st_tx_ancillary_session_impl* s) {
+static int tx_ancillary_session_detach(struct st_tx_ancillary_sessions_mgr* mgr,
+                                       struct st_tx_ancillary_session_impl* s) {
   tx_ancillary_session_stat(s);
   tx_ancillary_session_uinit_sw(mgr, s);
   return 0;
