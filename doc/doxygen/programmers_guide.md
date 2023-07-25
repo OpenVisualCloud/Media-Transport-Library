@@ -39,7 +39,7 @@ for (i = 0; i < session_num; i++)
     uint8_t ip[4]={xx,xx,xx,xx};
     memcpy(ops_tx.dip_addr[ST_PORT_P], ip, ST_IP_ADDR_LEN); //tx dst ip like 239.0.0.1
     strncpy(ops_tx.port[ST_PORT_P], "xxxx:xx:xx.x", ST_PORT_MAX_LEN); // send port interface like 0000:af:00.0
-    ops_tx.udp_port[ST_PORT_P] = 10000 + i; // user could config the udp port in this interface.
+    ops_tx.udp_port[ST_PORT_P] = 10000 + i * 2; // user could config the udp port in this interface.
     ops_tx.pacing = ST21_PACING_NARROW;
     ops_tx.type = ST20_TYPE_FRAME_LEVEL;
     ops_tx.width = 1920;
@@ -129,7 +129,7 @@ for (i = 0; i < session_num; i++)
     uint8_t ip[4]={xx,xx,xx,xx};
     memcpy(ops_tx.dip_addr[ST_PORT_P], ip, ST_IP_ADDR_LEN); //tx dst ip like 239.0.0.1
     strncpy(ops_tx.port[ST_PORT_P], "xxxx:xx:xx.x", ST_PORT_MAX_LEN); // send port interface like 0000:af:00.0
-    ops_tx.udp_port[ST_PORT_P] = 10000 + i; // user could config the udp port in this interface.
+    ops_tx.udp_port[ST_PORT_P] = 10000 + i * 2; // user could config the udp port in this interface.
     ops_tx.pacing = ST21_PACING_NARROW;
     ops_tx.type = ST20_TYPE_RTP_LEVEL;
     ops_tx.width = 1920;
@@ -216,7 +216,7 @@ for (i = 0; i < session_num; i++)
     uint8_t ip[4]={xx,xx,xx,xx};
     memcpy(ops_rx.sip_addr[ST_PORT_P], ip, ST_IP_ADDR_LEN); //tx src ip like 239.0.0.1
     strncpy(ops_rx.port[ST_PORT_P], "xxxx:xx:xx.x", ST_PORT_MAX_LEN); // send port interface like 0000:af:00.0
-    ops_rx.udp_port[ST_PORT_P] = 10000 + i; // user could config the udp port in this interface.
+    ops_rx.udp_port[ST_PORT_P] = 10000 + i * 2; // user could config the udp port in this interface.
     ops_rx.pacing = ST21_PACING_NARROW;
     ops_rx.type = ST20_TYPE_FRAME_LEVEL;
     ops_rx.width = 1920;
@@ -300,7 +300,7 @@ for (i = 0; i < session_num; i++)
     uint8_t ip[4] = {xx,xx,xx,xx};
     memcpy(ops_rx.sip_addr[ST_PORT_P], ip, ST_IP_ADDR_LEN); //tx src ip like 239.0.0.1
     strncpy(ops_rx.port[ST_PORT_P], "xxxx:xx:xx.x", ST_PORT_MAX_LEN); // send port interface like 0000:af:00.0
-    ops_rx.udp_port[ST_PORT_P] = 10000 + i; // user could config the udp port in this interface.
+    ops_rx.udp_port[ST_PORT_P] = 10000 + i * 2; // user could config the udp port in this interface.
     ops_rx.pacing = ST21_PACING_NARROW;
     ops_rx.type = ST20_TYPE_RTP_LEVEL;
     ops_rx.width = 1920;

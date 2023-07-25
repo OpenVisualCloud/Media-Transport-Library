@@ -441,7 +441,7 @@ static void st30_rx_fps_test(enum st30_type type[], enum st30_sampling sample[],
            MTL_IP_ADDR_LEN);
     strncpy(ops_tx.port[MTL_SESSION_PORT_P], ctx->para.port[MTL_PORT_P],
             MTL_PORT_MAX_LEN);
-    ops_tx.udp_port[MTL_SESSION_PORT_P] = 20000 + i;
+    ops_tx.udp_port[MTL_SESSION_PORT_P] = 20000 + i * 2;
     ops_tx.type = type[i];
     ops_tx.sampling = sample[i];
     ops_tx.channel = channel[i];
@@ -501,7 +501,7 @@ static void st30_rx_fps_test(enum st30_type type[], enum st30_sampling sample[],
            MTL_IP_ADDR_LEN);
     strncpy(ops_rx.port[MTL_SESSION_PORT_P], ctx->para.port[MTL_PORT_R],
             MTL_PORT_MAX_LEN);
-    ops_rx.udp_port[MTL_SESSION_PORT_P] = 20000 + i;
+    ops_rx.udp_port[MTL_SESSION_PORT_P] = 20000 + i * 2;
     ops_rx.type = type[i];
     ops_rx.sampling = sample[i];
     ops_rx.channel = channel[i];
@@ -838,7 +838,7 @@ static void st30_rx_update_src_test(enum st30_type type, int tx_sessions,
              MTL_IP_ADDR_LEN);
     strncpy(ops_tx.port[MTL_SESSION_PORT_P], ctx->para.port[MTL_PORT_P],
             MTL_PORT_MAX_LEN);
-    ops_tx.udp_port[MTL_SESSION_PORT_P] = 20000 + i;
+    ops_tx.udp_port[MTL_SESSION_PORT_P] = 20000 + i * 2;
     ops_tx.type = type;
     ops_tx.sampling = ST30_SAMPLING_48K;
     ops_tx.channel = 2;
@@ -879,7 +879,7 @@ static void st30_rx_update_src_test(enum st30_type type, int tx_sessions,
            MTL_IP_ADDR_LEN);
     strncpy(ops_rx.port[MTL_SESSION_PORT_P], ctx->para.port[MTL_PORT_R],
             MTL_PORT_MAX_LEN);
-    ops_rx.udp_port[MTL_SESSION_PORT_P] = 20000 + i;
+    ops_rx.udp_port[MTL_SESSION_PORT_P] = 20000 + i * 2;
     ops_rx.type = type;
     ops_rx.sampling = ST30_SAMPLING_48K;
     ops_rx.channel = 2;
@@ -1123,7 +1123,7 @@ static void st30_rx_meta_test(enum st30_fmt fmt[], enum st30_sampling sampling[]
            MTL_IP_ADDR_LEN);
     strncpy(ops_tx.port[MTL_SESSION_PORT_P], ctx->para.port[MTL_PORT_P],
             MTL_PORT_MAX_LEN);
-    ops_tx.udp_port[MTL_SESSION_PORT_P] = 20000 + i;
+    ops_tx.udp_port[MTL_SESSION_PORT_P] = 20000 + i * 2;
     ops_tx.type = ST30_TYPE_FRAME_LEVEL;
     ops_tx.sampling = sampling[i];
     ops_tx.channel = channel[i];
@@ -1168,7 +1168,7 @@ static void st30_rx_meta_test(enum st30_fmt fmt[], enum st30_sampling sampling[]
            MTL_IP_ADDR_LEN);
     strncpy(ops_rx.port[MTL_SESSION_PORT_P], ctx->para.port[MTL_PORT_R],
             MTL_PORT_MAX_LEN);
-    ops_rx.udp_port[MTL_SESSION_PORT_P] = 20000 + i;
+    ops_rx.udp_port[MTL_SESSION_PORT_P] = 20000 + i * 2;
     ops_rx.type = ST30_TYPE_FRAME_LEVEL;
     ops_rx.sampling = sampling[i];
     ops_rx.channel = channel[i];
@@ -1305,7 +1305,7 @@ static void st30_create_after_start_test(enum st30_type type[],
              MTL_IP_ADDR_LEN);
       strncpy(ops_tx.port[MTL_SESSION_PORT_P], ctx->para.port[MTL_PORT_P],
               MTL_PORT_MAX_LEN);
-      ops_tx.udp_port[MTL_SESSION_PORT_P] = 20000 + i;
+      ops_tx.udp_port[MTL_SESSION_PORT_P] = 20000 + i * 2;
       ops_tx.type = type[i];
       ops_tx.sampling = sample[i];
       ops_tx.channel = channel[i];
@@ -1346,7 +1346,7 @@ static void st30_create_after_start_test(enum st30_type type[],
              MTL_IP_ADDR_LEN);
       strncpy(ops_rx.port[MTL_SESSION_PORT_P], ctx->para.port[MTL_PORT_R],
               MTL_PORT_MAX_LEN);
-      ops_rx.udp_port[MTL_SESSION_PORT_P] = 20000 + i;
+      ops_rx.udp_port[MTL_SESSION_PORT_P] = 20000 + i * 2;
       ops_rx.type = type[i];
       ops_rx.sampling = sample[i];
       ops_rx.channel = channel[i];
