@@ -1061,6 +1061,37 @@ static int rv_init_slot(struct mtl_main_impl* impl, struct st_rx_video_session_i
   return 0;
 }
 
+static inline int rv_notify_frame_ready(struct st_rx_video_session_impl* s, void* frame,
+                                        struct st20_rx_frame_meta* meta) {
+  int ret;
+  uint64_t tsc_start = 0;
+
+  if (s->time_measure) tsc_start = mt_get_tsc(s->impl);
+  ret = s->ops.notify_frame_ready(s->ops.priv, frame, meta);
+  if (s->time_measure) {
+    uint32_t delta_us = (mt_get_tsc(s->impl) - tsc_start) / NS_PER_US;
+    s->stat_max_notify_frame_us = RTE_MAX(s->stat_max_notify_frame_us, delta_us);
+  }
+
+  return ret;
+}
+
+static inline int st22_notify_frame_ready(struct st_rx_video_session_impl* s, void* frame,
+                                          struct st22_rx_frame_meta* meta) {
+  int ret;
+  uint64_t tsc_start = 0;
+  struct st22_rx_video_info* st22_info = s->st22_info;
+
+  if (s->time_measure) tsc_start = mt_get_tsc(s->impl);
+  ret = st22_info->notify_frame_ready(s->ops.priv, frame, meta);
+  if (s->time_measure) {
+    uint32_t delta_us = (mt_get_tsc(s->impl) - tsc_start) / NS_PER_US;
+    s->stat_max_notify_frame_us = RTE_MAX(s->stat_max_notify_frame_us, delta_us);
+  }
+
+  return ret;
+}
+
 static void rv_frame_notify(struct st_rx_video_session_impl* s,
                             struct st_rx_video_slot_impl* slot) {
   struct st20_rx_ops* ops = &s->ops;
@@ -1103,12 +1134,10 @@ static void rv_frame_notify(struct st_rx_video_session_impl* s,
     rte_atomic32_inc(&s->stat_frames_received);
 
     /* notify frame */
-    int ret = -EIO;
     dbg("%s(%d): tmstamp %u\n", __func__, s->idx, slot->tmstamp);
-    if (ops->notify_frame_ready)
-      ret = ops->notify_frame_ready(ops->priv, slot->frame->addr, meta);
+    int ret = rv_notify_frame_ready(s, slot->frame->addr, meta);
     if (ret < 0) {
-      err("%s(%d), notify_frame_ready return fail %d\n", __func__, s->idx, ret);
+      err("%s(%d), notify_frame_ready fail %d\n", __func__, s->idx, ret);
       rv_put_frame(s, slot->frame);
       slot->frame = NULL;
     }
@@ -1134,7 +1163,7 @@ static void rv_frame_notify(struct st_rx_video_session_impl* s,
     rte_atomic32_inc(&s->cbs_incomplete_frame_cnt);
     /* notify the incomplete frame if user required */
     if (ops->flags & ST20_RX_FLAG_RECEIVE_INCOMPLETE_FRAME) {
-      ops->notify_frame_ready(ops->priv, slot->frame->addr, meta);
+      rv_notify_frame_ready(s, slot->frame->addr, meta);
     } else {
       rv_put_frame(s, slot->frame);
       slot->frame = NULL;
@@ -1155,12 +1184,10 @@ static void rv_st22_frame_notify(struct st_rx_video_session_impl* s,
 
   /* notify frame */
   int ret = -EIO;
-  struct st22_rx_video_info* st22_info = s->st22_info;
 
   if (st_is_frame_complete(status)) {
     rte_atomic32_inc(&s->stat_frames_received);
-    if (st22_info->notify_frame_ready)
-      ret = st22_info->notify_frame_ready(ops->priv, slot->frame->addr, meta);
+    ret = st22_notify_frame_ready(s, slot->frame->addr, meta);
     if (ret < 0) {
       err("%s(%d), notify_frame_ready return fail %d\n", __func__, s->idx, ret);
       rv_put_frame(s, slot->frame);
@@ -1187,7 +1214,7 @@ static void rv_st22_frame_notify(struct st_rx_video_session_impl* s,
     rte_atomic32_inc(&s->cbs_incomplete_frame_cnt);
     /* notify the incomplete frame if user required */
     if (ops->flags & ST20_RX_FLAG_RECEIVE_INCOMPLETE_FRAME) {
-      st22_info->notify_frame_ready(ops->priv, slot->frame->addr, meta);
+      st22_notify_frame_ready(s, slot->frame->addr, meta);
     } else {
       rv_put_frame(s, slot->frame);
       slot->frame = NULL;
@@ -3047,6 +3074,8 @@ static int rv_attach(struct mtl_main_impl* impl, struct st_rx_video_sessions_mgr
     info("%s(%d), hdr_split enabled in ops\n", __func__, idx);
   }
 
+  s->impl = impl;
+  s->time_measure = mt_has_tasklet_time_measure(impl);
   s->frame_time = (double)1000000000.0 * fps_tm.den / fps_tm.mul;
   s->frame_time_sampling = (double)(fps_tm.sampling_clock_rate) * fps_tm.den / fps_tm.mul;
   s->st20_bytes_in_line = ops->width * s->st20_pg.size / s->st20_pg.coverage;
@@ -3414,6 +3443,11 @@ static void rv_stat(struct st_rx_video_sessions_mgr* mgr,
            s->stat_pkts_user_meta, s->stat_pkts_user_meta_err);
     s->stat_pkts_user_meta = 0;
     s->stat_pkts_user_meta_err = 0;
+  }
+  if (s->time_measure) {
+    notice("RX_VIDEO_SESSION(%d,%d): notify frame max %uus\n", m_idx, idx,
+           s->stat_max_notify_frame_us);
+    s->stat_max_notify_frame_us = 0;
   }
 }
 

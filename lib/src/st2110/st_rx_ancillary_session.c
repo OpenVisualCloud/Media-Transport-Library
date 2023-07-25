@@ -116,8 +116,15 @@ static int rx_ancillary_session_handle_pkt(struct mtl_main_impl* impl,
     s->tmstamp = rtp->tmstamp;
   }
   s->st40_stat_pkts_received++;
+
   /* get a valid packet */
-  if (ops->priv) ops->notify_rtp_ready(ops->priv);
+  uint64_t tsc_start = 0;
+  if (s->time_measure) tsc_start = mt_get_tsc(impl);
+  ops->notify_rtp_ready(ops->priv);
+  if (s->time_measure) {
+    uint32_t delta_us = (mt_get_tsc(impl) - tsc_start) / NS_PER_US;
+    s->stat_max_notify_rtp_us = RTE_MAX(s->stat_max_notify_rtp_us, delta_us);
+  }
 
   return 0;
 }
@@ -313,6 +320,7 @@ static int rx_ancillary_session_attach(struct mtl_main_impl* impl,
   ret = mt_build_port_map(impl, ports, s->port_maps, num_port);
   if (ret < 0) return ret;
 
+  s->time_measure = mt_has_tasklet_time_measure(impl);
   strncpy(s->ops_name, ops->name, ST_MAX_NAME_LEN - 1);
   s->ops = *ops;
   for (int i = 0; i < num_port; i++) {
@@ -371,9 +379,13 @@ static void rx_ancillary_session_stat(struct st_rx_ancillary_session_impl* s) {
     s->st40_stat_pkts_dropped = 0;
   }
   if (s->st40_stat_pkts_wrong_hdr_dropped) {
-    notice("RX_AUDIO_SESSION(%d): wrong hdr dropped pkts %d\n", idx,
+    notice("RX_ANC_SESSION(%d): wrong hdr dropped pkts %d\n", idx,
            s->st40_stat_pkts_wrong_hdr_dropped);
     s->st40_stat_pkts_wrong_hdr_dropped = 0;
+  }
+  if (s->time_measure) {
+    notice("RX_ANC_SESSION(%d): notify rtp max %uus\n", idx, s->stat_max_notify_rtp_us);
+    s->stat_max_notify_rtp_us = 0;
   }
 }
 

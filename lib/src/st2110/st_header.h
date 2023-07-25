@@ -246,6 +246,8 @@ struct st_vsync_info {
 };
 
 struct st_tx_video_session_impl {
+  struct mtl_main_impl* impl;
+  bool time_measure;
   enum mtl_port port_maps[MTL_SESSION_PORT_MAX];
   struct rte_mempool* mbuf_mempool_hdr[MTL_SESSION_PORT_MAX];
   bool mbuf_mempool_reuse_rx[MTL_SESSION_PORT_MAX]; /* af_xdp zero copy */
@@ -372,6 +374,8 @@ struct st_tx_video_session_impl {
   uint64_t stat_bytes_build;
   uint32_t stat_user_meta_cnt;
   uint32_t stat_user_meta_pkt_cnt;
+  uint32_t stat_max_next_frame_us;
+  uint32_t stat_max_notify_frame_us;
 };
 
 struct st_tx_video_sessions_mgr {
@@ -575,10 +579,12 @@ struct st_rx_session_priv {
 };
 
 struct st_rx_video_session_impl {
+  struct mtl_main_impl* impl;
   int idx; /* index for current session */
   bool attached;
   struct st_rx_video_sessions_mgr* parent;
   struct st_rx_session_priv priv[MTL_SESSION_PORT_MAX];
+  bool time_measure;
 
   struct st20_rx_ops ops;
   char ops_name[ST_MAX_NAME_LEN];
@@ -700,6 +706,7 @@ struct st_rx_video_session_impl {
   uint32_t stat_slot_get_frame_fail;
   uint32_t stat_slot_query_ext_fail;
   uint64_t stat_bytes_received;
+  uint32_t stat_max_notify_frame_us;
 
   struct st_rx_video_ebu_info ebu_info;
   struct st_rx_video_ebu_stat ebu;
@@ -761,6 +768,7 @@ struct st_tx_audio_session_impl {
   struct rte_mbuf* trans_ring_inflight[MTL_SESSION_PORT_MAX];
   struct rte_ring* packet_ring;
   bool pacing_in_build; /* if control pacing in the build stage */
+  bool time_measure;
 
   uint16_t st30_frames_cnt; /* numbers of frames requested */
   struct st_frame_trans* st30_frames;
@@ -803,13 +811,16 @@ struct st_tx_audio_session_impl {
   uint32_t stat_error_user_timestamp;
   uint32_t stat_exceed_frame_time;
   uint64_t stat_last_time;
+  uint32_t stat_max_next_frame_us;
+  uint32_t stat_max_notify_frame_us;
 };
 
 struct st_tx_audio_sessions_mgr {
   struct mtl_main_impl* parent;
   int idx;     /* index for current sessions mgr */
   int max_idx; /* max session index */
-  struct mt_sch_tasklet_impl* tasklet;
+  struct mt_sch_tasklet_impl* tasklet_build;
+  struct mt_sch_tasklet_impl* tasklet_trans;
 
   /* all audio sessions share same ring/queue */
   struct rte_ring* ring[MTL_PORT_MAX];
@@ -883,6 +894,7 @@ struct st_rx_audio_session_impl {
   char ops_name[ST_MAX_NAME_LEN];
   struct st_rx_session_priv priv[MTL_SESSION_PORT_MAX];
   struct st_rx_audio_session_handle_impl* st30_handle;
+  bool time_measure;
 
   enum mtl_port port_maps[MTL_SESSION_PORT_MAX];
   struct mt_rxq_entry* rxq[MTL_SESSION_PORT_MAX];
@@ -920,6 +932,7 @@ struct st_rx_audio_session_impl {
   rte_atomic32_t st30_stat_frames_received;
   int st30_stat_pkts_rtp_ring_full;
   uint64_t st30_stat_last_time;
+  uint32_t stat_max_notify_frame_us;
 
   struct st_rx_audio_ebu_info ebu_info;
   struct st_rx_audio_ebu_stat ebu;
@@ -968,6 +981,7 @@ struct st_tx_ancillary_session_impl {
   struct rte_mbuf* inflight[MTL_SESSION_PORT_MAX];
   int inflight_cnt[MTL_SESSION_PORT_MAX]; /* for stats */
   struct rte_ring* packet_ring;
+  bool time_measure;
 
   uint32_t max_pkt_len; /* max data len(byte) for each pkt */
 
@@ -1006,6 +1020,8 @@ struct st_tx_ancillary_session_impl {
   uint32_t stat_error_user_timestamp;
   uint32_t stat_exceed_frame_time;
   uint64_t stat_last_time;
+  uint32_t stat_max_next_frame_us;
+  uint32_t stat_max_notify_frame_us;
 };
 
 struct st_tx_ancillary_sessions_mgr {
@@ -1038,6 +1054,7 @@ struct st_rx_ancillary_session_impl {
   char ops_name[ST_MAX_NAME_LEN];
   struct st_rx_session_priv priv[MTL_SESSION_PORT_MAX];
   struct st_rx_ancillary_session_handle_impl* st40_handle;
+  bool time_measure;
 
   enum mtl_port port_maps[MTL_SESSION_PORT_MAX];
   struct mt_rxq_entry* rxq[MTL_SESSION_PORT_MAX];
@@ -1057,6 +1074,7 @@ struct st_rx_ancillary_session_impl {
   int st40_stat_pkts_wrong_hdr_dropped;
   int st40_stat_pkts_received;
   uint64_t st40_stat_last_time;
+  uint32_t stat_max_notify_rtp_us;
 };
 
 struct st_rx_ancillary_sessions_mgr {
