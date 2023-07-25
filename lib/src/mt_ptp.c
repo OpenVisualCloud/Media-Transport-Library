@@ -53,6 +53,39 @@ static inline void ptp_timesync_lock(struct mt_ptp_impl* ptp) { /* todo */
 static inline void ptp_timesync_unlock(struct mt_ptp_impl* ptp) { /* todo */
 }
 
+static inline uint64_t ptp_correct_ts(struct mt_ptp_impl* ptp, uint64_t ts) {
+  int64_t ts_local_advanced = ts - ptp->last_sync_ts;
+  int64_t ts_ptp_advanced = ptp->coefficient * ts_local_advanced;
+  return ptp->last_sync_ts + ts_ptp_advanced;
+}
+
+static inline uint64_t ptp_no_timesync_time(struct mt_ptp_impl* ptp) {
+  uint64_t tsc = mt_get_tsc(ptp->impl);
+  return tsc + ptp->no_timesync_delta;
+}
+
+static inline void ptp_no_timesync_adjust(struct mt_ptp_impl* ptp, int64_t delta) {
+  ptp->no_timesync_delta += delta;
+}
+
+static inline uint64_t ptp_timesync_read_time(struct mt_ptp_impl* ptp) {
+  enum mtl_port port = ptp->port;
+  uint16_t port_id = ptp->port_id;
+  int ret;
+  struct timespec spec;
+
+  if (ptp->no_timesync) return ptp_no_timesync_time(ptp);
+
+  memset(&spec, 0, sizeof(spec));
+
+  ptp_timesync_lock(ptp);
+  ret = rte_eth_timesync_read_time(port_id, &spec);
+  ptp_timesync_unlock(ptp);
+
+  if (ret < 0) err("%s(%d), err %d\n", __func__, port, ret);
+  return mt_timespec_to_ns(&spec);
+}
+
 static inline double pi_sample(struct mt_pi_servo* s, double offset, double local_ts,
                                enum servo_state* state) {
   double ppb = 0.0;
@@ -89,7 +122,7 @@ static inline double pi_sample(struct mt_pi_servo* s, double offset, double loca
   return ppb;
 }
 
-void ptp_adj_system_clock_time(struct mt_ptp_impl* ptp, int64_t delta) {
+static void ptp_adj_system_clock_time(struct mt_ptp_impl* ptp, int64_t delta) {
   struct timex adjtime;
   int sign = 1;
 
@@ -110,7 +143,7 @@ void ptp_adj_system_clock_time(struct mt_ptp_impl* ptp, int64_t delta) {
   clock_adjtime(CLOCK_REALTIME, &adjtime);
 }
 
-void ptp_adj_system_clock_freq(struct mt_ptp_impl* ptp, double freq) {
+static void ptp_adj_system_clock_freq(struct mt_ptp_impl* ptp, double freq) {
   struct timex adjfreq;
   memset(&adjfreq, 0, sizeof(adjfreq));
 
@@ -186,39 +219,6 @@ static void ptp2sys_handler(void* param) {
   struct mt_ptp_impl* ptp = param;
   phc2sys_adjust(ptp);
   rte_eal_alarm_set(100000, ptp2sys_handler, ptp);
-}
-
-static inline uint64_t ptp_correct_ts(struct mt_ptp_impl* ptp, uint64_t ts) {
-  int64_t ts_local_advanced = ts - ptp->last_sync_ts;
-  int64_t ts_ptp_advanced = ptp->coefficient * ts_local_advanced;
-  return ptp->last_sync_ts + ts_ptp_advanced;
-}
-
-static inline uint64_t ptp_no_timesync_time(struct mt_ptp_impl* ptp) {
-  uint64_t tsc = mt_get_tsc(ptp->impl);
-  return tsc + ptp->no_timesync_delta;
-}
-
-static inline void ptp_no_timesync_adjust(struct mt_ptp_impl* ptp, int64_t delta) {
-  ptp->no_timesync_delta += delta;
-}
-
-static inline uint64_t ptp_timesync_read_time(struct mt_ptp_impl* ptp) {
-  enum mtl_port port = ptp->port;
-  uint16_t port_id = ptp->port_id;
-  int ret;
-  struct timespec spec;
-
-  if (ptp->no_timesync) return ptp_no_timesync_time(ptp);
-
-  memset(&spec, 0, sizeof(spec));
-
-  ptp_timesync_lock(ptp);
-  ret = rte_eth_timesync_read_time(port_id, &spec);
-  ptp_timesync_unlock(ptp);
-
-  if (ret < 0) err("%s(%d), err %d\n", __func__, port, ret);
-  return mt_timespec_to_ns(&spec);
 }
 
 static inline int ptp_timesync_read_tx_time(struct mt_ptp_impl* ptp, uint64_t* tai) {
