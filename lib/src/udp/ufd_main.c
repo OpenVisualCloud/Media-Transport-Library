@@ -517,7 +517,7 @@ int mufd_socket_port(int domain, int type, int protocol, enum mtl_port port) {
     err("%s, fail to get ufd mt ctx\n", __func__);
     MUDP_ERR_RET(EIO);
   }
-  if ((port < 0) || (port >= ctx->init_params.mt_params.num_ports)) {
+  if (port >= ctx->init_params.mt_params.num_ports) {
     err("%s, invalid port %d\n", __func__, port);
     MUDP_ERR_RET(EINVAL);
   }

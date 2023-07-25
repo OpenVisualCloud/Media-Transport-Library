@@ -73,8 +73,7 @@ ls *.patch | xargs -I{} bash -c 'if [[ $(sed -n '1p' "{}") =~ ^../.*\.patch$ ]];
 ```bash
 git clone https://github.com/DPDK/dpdk.git
 cd dpdk
-git checkout v23.03
-git switch -c v23.03
+git checkout -b v23.03
 
 git config user.name "Your Name"        # config if not
 git config user.email "you@example.com" # config if not

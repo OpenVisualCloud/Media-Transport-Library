@@ -9,6 +9,7 @@
 
 // Push the SIMD compiler flag online to build the code path
 #if defined(__clang__)
+/* "clang attribute push" support from clang 9.0 */
 #define MT_TARGET_CODE_START(Target) \
   _Pragma(STRINGIFY(                 \
       clang attribute push(__attribute__((target(Target))), apply_to = function)))

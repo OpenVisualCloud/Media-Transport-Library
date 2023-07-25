@@ -12,6 +12,7 @@ exec_env = host_machine.system()
 set_variable('is_windows', exec_env == 'windows')
 
 cc = meson.get_compiler('c')
+toolchain = cc.get_id()
 
 mtl = dependency('mtl', required : true)
 libm = cc.find_library('m', required : true)
@@ -81,6 +82,16 @@ app_c_args += ['-msse4.2']
 
 if is_windows
   app_ld_args += ['-lmingw32','-lws2_32','-lDbghelp','-lSetupapi','-ldinput8', '-ldxguid', '-ldxerr8', '-lwinmm', '-limm32','-lversion','-lwpcap','-lPacket','-lSDL2','-lSDL2Main','-lmman','-ljson-c','-ldl']
+endif
+
+mtl_has_RxSt20TxSt20SplitFwd = true
+if (toolchain == 'clang' and cc.version().version_compare('<9.0.0'))
+  message('Disable RxSt20TxSt20SplitFwd as no stdatomic for this clang version')
+  mtl_has_RxSt20TxSt20SplitFwd = false
+endif
+if is_windows
+  message('Disable RxSt20TxSt20SplitFwd as no <sys/queue.h> for windows')
+  mtl_has_RxSt20TxSt20SplitFwd = false
 endif
 
 # default no asan dep
@@ -242,8 +253,8 @@ executable('RxSt20pTxSt20pDownsampleMergeFwd', rx_st20p_tx_st20p_downsample_merg
   # asan should be always the first dep
   dependencies: [asan_dep, mtl, libpthread]
 )
-# WA: no <sys/queue.h> for windows
-if not is_windows
+
+if mtl_has_RxSt20TxSt20SplitFwd
 executable('RxSt20TxSt20SplitFwd', rx_st20_tx_st20_split_fwd_sources,
   c_args : app_c_args,
   link_args: app_ld_args,

@@ -51,10 +51,10 @@ struct ether_header {
 } __attribute__((__packed__));
 
 struct udphdr {
-  u_short uh_sport; /* source port */
-  u_short uh_dport; /* destination port */
-  short uh_ulen;    /* udp length */
-  u_short uh_sum;   /* udp checksum */
+  u_short source; /* source port */
+  u_short dest;   /* destination port */
+  u_short len;    /* udp length */
+  u_short check;  /* udp checksum */
 };
 #pragma pack(pop)
 

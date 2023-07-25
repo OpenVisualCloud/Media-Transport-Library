@@ -2,6 +2,7 @@
 # Copyright 2022 Intel Corporation
 
 cc = meson.get_compiler('c')
+toolchain = cc.get_id()
 
 # allow experimental api
 add_global_arguments('-DALLOW_EXPERIMENTAL_API', language : 'c')
@@ -59,16 +60,28 @@ if is_windows
   mtl_link_c_args += ['-Wl,--output-def,libmtl.def']
 endif
 
-if cc.has_argument('-mavx2')
-  mtl_c_args += ['-DMTL_HAS_AVX2']
+mtl_has_simd = true
+
+# "clang attribute push" support from clang 9.0
+if (toolchain == 'clang' and cc.version().version_compare('<9.0.0'))
+  message('Disable SIMD build as clang version too old')
+  mtl_has_simd = false
 endif
 
-if cc.has_argument('-mavx512vl')
-  mtl_c_args += ['-DMTL_HAS_AVX512']
-endif
+if mtl_has_simd
+  if cc.has_argument('-mavx2')
+    mtl_c_args += ['-DMTL_HAS_AVX2']
+  endif
 
-if cc.has_argument('-mavx512vbmi2')
-  mtl_c_args += ['-DMTL_HAS_AVX512_VBMI2']
+  if cc.has_argument('-mavx512vl')
+    mtl_c_args += ['-DMTL_HAS_AVX512']
+  endif
+
+  if cc.has_argument('-mavx512vbmi2')
+    mtl_c_args += ['-DMTL_HAS_AVX512_VBMI2']
+  endif
+else
+  message('SIMD build is not supported on this system')
 endif
 
 # build library

@@ -15,6 +15,7 @@ sudo pip install pyelftools ninja
 ### 1.2 Centos
 
 ```bash
+sudo yum install -y dnf-plugins-core
 sudo dnf config-manager --set-enabled powertools
 sudo yum install git gcc gcc-c++ meson python3 python3-pip pkg-config json-c-devel libpcap-devel gtest-devel SDL2-devel openssl-devel numactl-devel libasan
 sudo pip3 install pyelftools
@@ -27,8 +28,7 @@ sudo pip3 install pyelftools
 ```bash
 git clone https://github.com/DPDK/dpdk.git
 cd dpdk
-git checkout v23.03
-git switch -c v23.03
+git checkout -b v23.03
 ```
 
 #### 2.1.1 Download Media Transport Library to top folder Directory

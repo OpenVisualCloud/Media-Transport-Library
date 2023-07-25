@@ -13,6 +13,11 @@
 #define UDP_SEGMENT 103 /* Set GSO segmentation size */
 #endif
 
+#ifndef SO_COOKIE
+/* fix for centos 7 build */
+#define SO_COOKIE 57
+#endif
+
 static inline void udp_set_flag(struct mudp_impl* s, uint32_t flag) { s->flags |= flag; }
 
 static inline void udp_clear_flag(struct mudp_impl* s, uint32_t flag) {

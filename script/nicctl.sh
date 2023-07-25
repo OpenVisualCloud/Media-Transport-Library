@@ -67,6 +67,8 @@ create_vf() {
 
     # Enable VFs
     echo "$numvfs" > /sys/bus/pci/devices/"$bdf"/sriov_numvfs
+    # wait VF driver
+    sleep 2
 
     # Start to bind to VFIO
     for ((i=0;i<numvfs;i++)); do
