@@ -215,12 +215,6 @@ static void phc2sys_adjust(struct mt_ptp_impl* ptp) {
   }
 }
 
-static void ptp2sys_handler(void* param) {
-  struct mt_ptp_impl* ptp = param;
-  phc2sys_adjust(ptp);
-  rte_eal_alarm_set(100000, ptp2sys_handler, ptp);
-}
-
 static inline int ptp_timesync_read_tx_time(struct mt_ptp_impl* ptp, uint64_t* tai) {
   uint16_t port_id = ptp->port_id;
   int ret;
@@ -382,6 +376,7 @@ static void ptp_adjust_delta(struct mt_ptp_impl* ptp, int64_t delta) {
   ptp->stat_delta_max = RTE_MAX(delta, ptp->stat_delta_max);
   ptp->stat_delta_cnt++;
   ptp->stat_delta_sum += labs(delta);
+  phc2sys_adjust(ptp);
 }
 
 static void ptp_expect_result_clear(struct mt_ptp_impl* ptp) {
@@ -825,6 +820,7 @@ static void ptp_stat_clear(struct mt_ptp_impl* ptp) {
   ptp->stat_result_err = 0;
   ptp->stat_sync_timeout_err = 0;
   ptp->stat_sync_cnt = 0;
+  ptp->phc2sys.stat_delta_max = 0;
 }
 
 static void ptp_sync_from_user(struct mtl_main_impl* impl, struct mt_ptp_impl* ptp) {
@@ -913,7 +909,6 @@ static int ptp_init(struct mtl_main_impl* impl, struct mt_ptp_impl* ptp,
         (1000000 + ptp->phc2sys.realtime_hz / 2) / ptp->phc2sys.realtime_hz;
   }
   ptp->phc2sys.stat_sync = false;
-  rte_eal_alarm_set(100000, ptp2sys_handler, ptp);
 
   struct mtl_init_params* p = mt_get_user_params(impl);
   if (p->flags & MTL_FLAG_PTP_UNICAST_ADDR) {
@@ -1050,13 +1045,6 @@ static int ptp_stat(void* priv) {
   strftime(date_time, sizeof(date_time), "%Y-%m-%d %H:%M:%S", &t);
   notice("PTP(%d): time %" PRIu64 ", %s\n", port, ns, date_time);
 
-  if (ptp->phc2sys.stat_delta_max < 300 && ptp->phc2sys.stat_delta_max > 0) {
-    ptp->phc2sys.stat_sync = true;
-  }
-  notice("PTP(%d): system clock offset max %" PRId64 "\n", port,
-         ptp->phc2sys.stat_delta_max);
-  ptp->phc2sys.stat_delta_max = 0;
-
   if (!ptp->active) {
     if (mt_has_ebu(impl)) {
       notice("PTP(%d): raw ptp %" PRIu64 "\n", port, ptp_get_raw_time(ptp));
@@ -1071,10 +1059,16 @@ static int ptp_stat(void* priv) {
     return 0;
   }
 
-  if (ptp->stat_delta_cnt)
+  if (ptp->stat_delta_cnt) {
+    if (ptp->phc2sys.stat_delta_max < 300 && ptp->phc2sys.stat_delta_max > 0) {
+      ptp->phc2sys.stat_sync = true;
+    }
+    notice("PTP(%d): system clock offset max %" PRId64 "\n", port,
+           ptp->phc2sys.stat_delta_max);    
     notice("PTP(%d): delta avg %" PRId64 ", min %" PRId64 ", max %" PRId64 ", cnt %d\n",
            port, ptp->stat_delta_sum / ptp->stat_delta_cnt, ptp->stat_delta_min,
            ptp->stat_delta_max, ptp->stat_delta_cnt);
+  }
   else
     notice("PTP(%d): not connected\n", port);
   if (ptp->stat_correct_delta_cnt)
