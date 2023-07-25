@@ -201,7 +201,7 @@ int mt_rtcp_rx_parse_rtp_packet(struct mt_rtcp_rx* rx, struct st_rfc3550_rtp_hdr
     struct mt_rtcp_nack_item *nack, *tmp_nack;
     for (nack = MT_TAILQ_FIRST(&rx->nack_list); nack != NULL; nack = tmp_nack) {
       tmp_nack = MT_TAILQ_NEXT(nack, next);
-      if (seq_id >= nack->seq_id && seq_id <= nack->seq_id + nack->bulk) {
+      if (seq_id - nack->seq_id >= 0 && seq_id - nack->seq_id <= nack->bulk) {
         if (nack->seq_id + nack->bulk - seq_id > 0) {
           /* insert right nack */
           struct mt_rtcp_nack_item* right_nack =

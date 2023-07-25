@@ -2965,7 +2965,7 @@ static int rv_init_rtcp(struct mtl_main_impl* impl, struct st_rx_video_sessions_
     memset(&uhdr, 0x0, sizeof(uhdr));
     int ret = rv_init_rtcp_uhdr(impl, s, i, &uhdr);
     if (ret < 0) return ret;
-    char name[24];
+    char name[MT_RTCP_MAX_NAME_LEN];
     snprintf(name, sizeof(name), ST_RX_VIDEO_PREFIX "M%dS%dP%d", mgr_idx, idx, i);
     struct mt_rtcp_rx_ops rtcp_ops = {
         .port = port,

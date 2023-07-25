@@ -836,7 +836,7 @@ static int tv_init_rtcp(struct mtl_main_impl* impl, struct st_tx_video_sessions_
     struct mt_rtcp_tx_ops rtcp_ops;
     memset(&rtcp_ops, 0, sizeof(rtcp_ops));
     rtcp_ops.port = port;
-    char name[24];
+    char name[MT_RTCP_MAX_NAME_LEN];
     snprintf(name, sizeof(name), ST_TX_VIDEO_PREFIX "M%dS%dP%d", mgr_idx, idx, i);
     rtcp_ops.name = name;
     struct mt_udp_hdr hdr;
