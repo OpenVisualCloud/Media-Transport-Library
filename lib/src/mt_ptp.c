@@ -82,7 +82,10 @@ static inline uint64_t ptp_timesync_read_time(struct mt_ptp_impl* ptp) {
   ret = rte_eth_timesync_read_time(port_id, &spec);
   ptp_timesync_unlock(ptp);
 
-  if (ret < 0) err("%s(%d), err %d\n", __func__, port, ret);
+  if (ret < 0) {
+    err("%s(%d), err %d\n", __func__, port, ret);
+    return 0;
+  }
   return mt_timespec_to_ns(&spec);
 }
 
