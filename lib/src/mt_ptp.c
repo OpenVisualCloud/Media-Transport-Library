@@ -166,10 +166,9 @@ static void ptp_adj_system_clock_freq(struct mt_ptp_impl* ptp, double freq) {
 static void phc2sys_adjust(struct mt_ptp_impl* ptp) {
   enum servo_state state = UNLOCKED;
   double ppb;
-  struct timespec ts1_sys, ts2_sys, ts_phc;
+  struct timespec ts1_sys, ts2_sys;
   uint64_t t_phc, t1_sys, t2_sys, t_sys, shortest_delay, delay;
   int64_t offset;
-  int ret;
 
   ptp_timesync_lock(ptp);
   shortest_delay = UINT64_MAX;
@@ -177,13 +176,11 @@ static void phc2sys_adjust(struct mt_ptp_impl* ptp) {
   t_sys = 0;
   for (uint8_t i = 0; i < 10; i++) {
     clock_gettime(CLOCK_REALTIME, &ts1_sys);
-    ret = rte_eth_timesync_read_time(ptp->port_id, &ts_phc);
+    t_phc = ptp_timesync_read_time(ptp);
     clock_gettime(CLOCK_REALTIME, &ts2_sys);
-    if (ret >= 0) {
+    if (t_phc > 0) {
       t1_sys = mt_timespec_to_ns(&ts1_sys);
-      ;
       t2_sys = mt_timespec_to_ns(&ts2_sys);
-      t_phc = mt_timespec_to_ns(&ts_phc);
 
       delay = t2_sys - t1_sys;
       if (shortest_delay > delay) {
@@ -194,7 +191,7 @@ static void phc2sys_adjust(struct mt_ptp_impl* ptp) {
     }
   }
   ptp_timesync_unlock(ptp);
-  if (ret >= 0) {
+  if (t_phc > 0) {
     ppb = pi_sample(&ptp->phc2sys.servo, offset, t_sys, &state);
 
     switch (state) {
@@ -214,7 +211,7 @@ static void phc2sys_adjust(struct mt_ptp_impl* ptp) {
 
     ptp->phc2sys.stat_delta_max = RTE_MAX(labs(offset), ptp->phc2sys.stat_delta_max);
   } else {
-    err("%s(%d), PHC time retrieving failed. Err %d\n", __func__, ptp->port_id, ret);
+    err("%s(%d), PHC time retrieving failed.\n", __func__, ptp->port_id);
   }
 }
 
