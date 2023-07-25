@@ -29,9 +29,6 @@ static char* ptp_mode_strs[MT_PTP_MAX_MODE] = {
     "l4",
 };
 
-#define KP 0.7
-#define KI 0.3
-
 enum servo_state {
   UNLOCKED,
   JUMP,
@@ -116,8 +113,8 @@ static inline double pi_sample(struct mt_pi_servo* s, double offset, double loca
       s->count = 4;
       break;
     case 4:
-      s->drift += KI * offset;
-      ppb = KP * offset + s->drift;
+      s->drift += 0.7 * offset;
+      ppb = 0.3 * offset + s->drift;
       *state = LOCKED;
       break;
   }
