@@ -2969,13 +2969,14 @@ static int rv_init_rtcp(struct mtl_main_impl* impl, struct st_rx_video_sessions_
     snprintf(name, sizeof(name), ST_RX_VIDEO_PREFIX "M%dS%dP%d", mgr_idx, idx, i);
     struct mt_rtcp_rx_ops rtcp_ops = {
         .port = port,
-        .max_retry = ops->rtcp->nack_max_retry ? ops->rtcp->nack_max_retry : 2,
+        .max_retry =
+            (ops->rtcp && ops->rtcp->nack_max_retry) ? ops->rtcp->nack_max_retry : 2,
         .name = name,
         .udp_hdr = &uhdr,
-        .nacks_send_interval = ops->rtcp->nack_interval_us
+        .nacks_send_interval = (ops->rtcp && ops->rtcp->nack_interval_us)
                                    ? ops->rtcp->nack_interval_us * NS_PER_US
                                    : 250 * NS_PER_US,
-        .nack_expire_interval = ops->rtcp->nack_expire_us
+        .nack_expire_interval = (ops->rtcp && ops->rtcp->nack_expire_us)
                                     ? ops->rtcp->nack_expire_us * NS_PER_US
                                     : 500 * NS_PER_US,
     };

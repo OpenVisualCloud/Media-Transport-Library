@@ -843,8 +843,9 @@ static int tv_init_rtcp(struct mtl_main_impl* impl, struct st_tx_video_sessions_
     mtl_memcpy(&hdr, &s->s_hdr[i], sizeof(hdr));
     hdr.udp.dst_port++;
     rtcp_ops.udp_hdr = &hdr;
-    rtcp_ops.buffer_size = ops->rtcp->rtcp_buffer_size ? ops->rtcp->rtcp_buffer_size
-                                                       : ST_TX_VIDEO_RTCP_RING_SIZE;
+    rtcp_ops.buffer_size = (ops->rtcp && ops->rtcp->rtcp_buffer_size)
+                               ? ops->rtcp->rtcp_buffer_size
+                               : ST_TX_VIDEO_RTCP_RING_SIZE;
     s->rtcp_tx[i] = mt_rtcp_tx_create(impl, &rtcp_ops);
     if (!s->rtcp_tx[i]) {
       err("%s(%d,%d), mt_rtcp_tx_create fail on port %d\n", __func__, mgr_idx, idx, i);
