@@ -2996,11 +2996,16 @@ static int rv_init_rtcp(struct mtl_main_impl* impl, struct st_rx_video_sessions_
     snprintf(name, sizeof(name), ST_RX_VIDEO_PREFIX "M%dS%dP%d", mgr_idx, idx, i);
     struct mt_rtcp_rx_ops rtcp_ops = {
         .port = port,
-        .max_retry = 2,
+        .max_retry =
+            (ops->rtcp && ops->rtcp->nack_max_retry) ? ops->rtcp->nack_max_retry : 2,
         .name = name,
         .udp_hdr = &uhdr,
-        .nacks_send_interval = 250 * NS_PER_US,
-        .nack_expire_interval = 1000 * NS_PER_US,
+        .nacks_send_interval = (ops->rtcp && ops->rtcp->nack_interval_us)
+                                   ? ops->rtcp->nack_interval_us * NS_PER_US
+                                   : 250 * NS_PER_US,
+        .nack_expire_interval = (ops->rtcp && ops->rtcp->nack_expire_us)
+                                    ? ops->rtcp->nack_expire_us * NS_PER_US
+                                    : 500 * NS_PER_US,
     };
     s->rtcp_rx[i] = mt_rtcp_rx_create(impl, &rtcp_ops);
     if (!s->rtcp_rx[i]) {
@@ -4322,6 +4327,12 @@ st22_rx_handle st22_rx_create(mtl_handle mt, struct st22_rx_ops* ops) {
   if (ops->flags & ST22_RX_FLAG_ENABLE_VSYNC) st20_ops.flags |= ST20_RX_FLAG_ENABLE_VSYNC;
   if (ops->flags & ST22_RX_FLAG_RECEIVE_INCOMPLETE_FRAME)
     st20_ops.flags |= ST20_RX_FLAG_RECEIVE_INCOMPLETE_FRAME;
+  if (ops->flags & ST22_RX_FLAG_ENABLE_RTCP) {
+    st20_ops.flags |= ST20_RX_FLAG_ENABLE_RTCP;
+    st20_ops.rtcp = ops->rtcp;
+  }
+  if (ops->flags & ST22_RX_FLAG_SIMULATE_PKT_LOSS)
+    st20_ops.flags |= ST20_RX_FLAG_SIMULATE_PKT_LOSS;
   st20_ops.pacing = ops->pacing;
   if (ops->type == ST22_TYPE_RTP_LEVEL)
     st20_ops.type = ST20_TYPE_RTP_LEVEL;
