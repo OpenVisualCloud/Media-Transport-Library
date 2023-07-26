@@ -26,12 +26,16 @@ static inline struct mt_cni_entry* cni_get_entry(struct mtl_main_impl* impl,
 
 /* return true if try lock succ */
 static inline bool csq_try_lock(struct mt_cni_entry* cni) {
-  int ret = mt_pthread_mutex_try_lock(&cni->csq_mutex);
-  return ret == 0 ? true : false;
+  int ret = rte_spinlock_trylock(&cni->csq_lock);
+  return ret ? true : false;
+}
+
+static inline void csq_lock(struct mt_cni_entry* cni) {
+  rte_spinlock_lock(&cni->csq_lock);
 }
 
 static inline void csq_unlock(struct mt_cni_entry* cni) {
-  mt_pthread_mutex_unlock(&cni->csq_mutex);
+  rte_spinlock_unlock(&cni->csq_lock);
 }
 
 static int csq_entry_free(struct mt_csq_entry* entry) {
@@ -90,7 +94,10 @@ static int csq_stat(struct mt_cni_entry* cni) {
   struct mt_csq_entry* csq = NULL;
   int idx;
 
-  if (!csq_try_lock(cni)) return 0;
+  if (!csq_try_lock(cni)) {
+    notice("%s(%d), get lock fail\n", __func__, port);
+    return 0;
+  }
   MT_TAILQ_FOREACH(csq, &cni->csq_queues, next) {
     idx = csq->idx;
     notice("%s(%d,%d), enqueue %u dequeue %u\n", __func__, port, idx,
@@ -119,6 +126,7 @@ static int cni_udp_handle(struct mt_cni_entry* cni, struct rte_mbuf* m) {
   ipv4 = &hdr->ipv4;
   udp = &hdr->udp;
 
+  csq_lock(cni);
   MT_TAILQ_FOREACH(csq, &cni->csq_queues, next) {
     bool ip_matched;
     if (csq->flow.no_ip_flow) {
@@ -142,9 +150,11 @@ static int cni_udp_handle(struct mt_cni_entry* cni, struct rte_mbuf* m) {
         rte_mbuf_refcnt_update(m, 1);
         csq->stat_enqueue_cnt++;
       }
+      csq_unlock(cni);
       return 0;
     }
   }
+  csq_unlock(cni);
 
   /* analyses if it's a UDP stream, for debug usage */
   cni_udp_detect_analyses(cni, hdr);
@@ -401,7 +411,7 @@ int mt_cni_init(struct mtl_main_impl* impl) {
     cni->port = i;
     cni->impl = impl;
     MT_TAILQ_INIT(&cni->csq_queues);
-    mt_pthread_mutex_init(&cni->csq_mutex, NULL);
+    rte_spinlock_init(&cni->csq_lock);
     MT_TAILQ_INIT(&cni->udp_detect);
   }
 
@@ -512,10 +522,6 @@ int mt_cni_stop(struct mtl_main_impl* impl) {
   return 0;
 }
 
-static inline void csq_lock(struct mt_cni_entry* cni) {
-  mt_pthread_mutex_lock(&cni->csq_mutex);
-}
-
 struct mt_csq_entry* mt_csq_get(struct mtl_main_impl* impl, enum mtl_port port,
                                 struct mt_rxq_flow* flow) {
   struct mt_cni_entry* cni = cni_get_entry(impl, port);
@@ -571,12 +577,7 @@ int mt_csq_put(struct mt_csq_entry* entry) {
 
 uint16_t mt_csq_burst(struct mt_csq_entry* entry, struct rte_mbuf** rx_pkts,
                       uint16_t nb_pkts) {
-  struct mt_cni_entry* cni = entry->parent;
-
-  if (!csq_try_lock(cni)) return 0;
   uint16_t n = rte_ring_sc_dequeue_burst(entry->ring, (void**)rx_pkts, nb_pkts, NULL);
   entry->stat_dequeue_cnt += n;
-  csq_unlock(cni);
-
   return n;
 }
