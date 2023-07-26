@@ -437,6 +437,8 @@ static int rx_audio_session_handle_frame_pkt(struct mtl_main_impl* impl,
   // notify frame done
   if (s->frame_recv_size >= s->st30_frame_size) {
     struct st30_rx_frame_meta* meta = &s->meta;
+    uint64_t tsc_start = 0;
+
     meta->tfmt = ST10_TIMESTAMP_FMT_MEDIA_CLK;
     meta->timestamp = tmstamp;
     meta->fmt = ops->fmt;
@@ -444,9 +446,12 @@ static int rx_audio_session_handle_frame_pkt(struct mtl_main_impl* impl,
     meta->channel = ops->channel;
 
     /* get a full frame */
-    int ret = -EIO;
-    if (ops->notify_frame_ready)
-      ret = ops->notify_frame_ready(ops->priv, s->st30_cur_frame, meta);
+    if (s->time_measure) tsc_start = mt_get_tsc(impl);
+    int ret = ops->notify_frame_ready(ops->priv, s->st30_cur_frame, meta);
+    if (s->time_measure) {
+      uint32_t delta_us = (mt_get_tsc(impl) - tsc_start) / NS_PER_US;
+      s->stat_max_notify_frame_us = RTE_MAX(s->stat_max_notify_frame_us, delta_us);
+    }
     if (ret < 0) {
       err("%s(%d), notify_frame_ready return fail %d\n", __func__, s->idx, ret);
       rx_audio_session_put_frame(s, s->st30_cur_frame);
@@ -702,10 +707,11 @@ static int rx_audio_session_attach(struct mtl_main_impl* impl,
   ret = mt_build_port_map(impl, ports, s->port_maps, num_port);
   if (ret < 0) return ret;
 
+  s->time_measure = mt_has_tasklet_time_measure(impl);
   strncpy(s->ops_name, ops->name, ST_MAX_NAME_LEN - 1);
   s->ops = *ops;
   for (int i = 0; i < num_port; i++) {
-    s->st30_dst_port[i] = (ops->udp_port[i]) ? (ops->udp_port[i]) : (20000 + idx);
+    s->st30_dst_port[i] = (ops->udp_port[i]) ? (ops->udp_port[i]) : (20000 + idx * 2);
   }
 
   ret = st30_get_packet_size(ops->fmt, ops->ptime, ops->sampling, ops->channel);
@@ -806,6 +812,11 @@ static void rx_audio_session_stat(struct st_rx_audio_sessions_mgr* mgr,
            s->st30_stat_pkts_len_mismatch_dropped);
     s->st30_stat_pkts_len_mismatch_dropped = 0;
   }
+  if (s->time_measure) {
+    notice("RX_AUDIO_SESSION(%d,%d): notify frame max %uus\n", m_idx, idx,
+           s->stat_max_notify_frame_us);
+    s->stat_max_notify_frame_us = 0;
+  }
 }
 
 static int rx_audio_session_detach(struct mtl_main_impl* impl,
@@ -834,7 +845,7 @@ static int rx_audio_session_update_src(struct mtl_main_impl* impl,
   for (int i = 0; i < num_port; i++) {
     memcpy(ops->sip_addr[i], src->sip_addr[i], MTL_IP_ADDR_LEN);
     ops->udp_port[i] = src->udp_port[i];
-    s->st30_dst_port[i] = (ops->udp_port[i]) ? (ops->udp_port[i]) : (20000 + idx);
+    s->st30_dst_port[i] = (ops->udp_port[i]) ? (ops->udp_port[i]) : (20000 + idx * 2);
   }
   /* reset seq id */
   s->st30_seq_id = -1;

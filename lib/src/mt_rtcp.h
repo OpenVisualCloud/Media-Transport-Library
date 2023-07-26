@@ -8,6 +8,9 @@
 #include "mt_main.h"
 
 #define MT_RTCP_PTYPE_NACK (204)
+#define MT_RTCP_MAX_NAME_LEN (24)
+
+#define MT_RTCP_TX_RING_PREFIX "TRT_"
 
 MTL_PACK(struct mt_rtcp_hdr {
   uint8_t flags;
@@ -32,20 +35,20 @@ struct mt_rtcp_nack_item {
 MT_TAILQ_HEAD(mt_rtcp_nack_list, mt_rtcp_nack_item);
 
 struct mt_rtcp_tx_ops {
-  const char* name;
-  struct mt_udp_hdr* udp_hdr;
-  uint32_t ssrc;
-  uint16_t buffer_size;
-  enum mtl_port port;
+  const char* name;           /* short and unique name for each session */
+  struct mt_udp_hdr* udp_hdr; /* headers including eth, ipv4 and udp */
+  uint32_t ssrc;              /* ssrc of rtp session */
+  uint16_t buffer_size;       /* max number of buffered rtp packets */
+  enum mtl_port port;         /* port of rtp session */
 };
 
 struct mt_rtcp_rx_ops {
-  const char* name;
-  struct mt_udp_hdr* udp_hdr;
-  uint16_t max_retry;
-  uint64_t nacks_send_interval;
-  uint64_t nack_expire_interval;
-  enum mtl_port port;
+  const char* name;              /* short and unique name for each session */
+  struct mt_udp_hdr* udp_hdr;    /* headers including eth, ipv4 and udp */
+  uint16_t max_retry;            /* max retry count for each nack item */
+  uint64_t nacks_send_interval;  /* nack sending interval */
+  uint64_t nack_expire_interval; /* nack expire time interval */
+  enum mtl_port port;            /* port of rtp session */
 };
 
 struct mt_rtcp_tx {
@@ -53,7 +56,7 @@ struct mt_rtcp_tx {
   enum mtl_port port;
   struct rte_ring* mbuf_ring;
   struct mt_udp_hdr udp_hdr;
-  char name[32];
+  char name[MT_RTCP_MAX_NAME_LEN];
   uint32_t ssrc;
 
   uint16_t ipv4_packet_id;
@@ -72,7 +75,7 @@ struct mt_rtcp_rx {
   uint16_t max_retry;
   uint16_t last_seq_id;
   struct mt_udp_hdr udp_hdr;
-  char name[32];
+  char name[MT_RTCP_MAX_NAME_LEN];
   uint32_t ssrc;
 
   uint16_t ipv4_packet_id;

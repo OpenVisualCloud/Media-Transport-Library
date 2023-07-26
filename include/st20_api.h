@@ -125,6 +125,11 @@ extern "C" {
  * If enable the rtcp.
  */
 #define ST20_RX_FLAG_ENABLE_RTCP (MTL_BIT32(2))
+/**
+ * Flag bit in flags of struct st20_rx_ops.
+ * If enabled, simulate random packet loss.
+ */
+#define ST20_RX_FLAG_SIMULATE_PKT_LOSS (MTL_BIT32(3))
 
 /**
  * Flag bit in flags of struct st20_rx_ops.

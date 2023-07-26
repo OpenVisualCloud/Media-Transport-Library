@@ -576,6 +576,7 @@ static int tx_audio_session_tasklet_frame(struct mtl_main_impl* impl,
     if (ST30_TX_STAT_WAIT_FRAME == s->st30_frame_stat) {
       uint16_t next_frame_idx;
       struct st30_tx_frame_meta meta;
+      uint64_t tsc_start = 0;
 
       if (s->check_frame_done_time) {
         uint64_t frame_end_time = mt_get_tsc(impl);
@@ -589,7 +590,12 @@ static int tx_audio_session_tasklet_frame(struct mtl_main_impl* impl,
 
       tx_audio_session_init_next_meta(s, &meta);
       /* Query next frame buffer idx */
+      if (s->time_measure) tsc_start = mt_get_tsc(impl);
       ret = ops->get_next_frame(ops->priv, &next_frame_idx, &meta);
+      if (s->time_measure) {
+        uint32_t delta_us = (mt_get_tsc(impl) - tsc_start) / NS_PER_US;
+        s->stat_max_next_frame_us = RTE_MAX(s->stat_max_next_frame_us, delta_us);
+      }
       if (ret < 0) { /* no frame ready from app */
         dbg("%s(%d), get_next_frame fail %d\n", __func__, idx, ret);
         s->stat_build_ret_code = -STI_FRAME_APP_GET_FRAME_BUSY;
@@ -720,9 +726,16 @@ static int tx_audio_session_tasklet_frame(struct mtl_main_impl* impl,
   if (s->st30_pkt_idx >= s->st30_total_pkts) {
     dbg("%s(%d), frame %d done\n", __func__, idx, s->st30_frame_idx);
     struct st_frame_trans* frame = &s->st30_frames[s->st30_frame_idx];
+    uint64_t tsc_start = 0;
+    if (s->time_measure) tsc_start = mt_get_tsc(impl);
     /* end of current frame */
     if (s->ops.notify_frame_done)
       ops->notify_frame_done(ops->priv, s->st30_frame_idx, &frame->ta_meta);
+    if (s->time_measure) {
+      uint32_t delta_us = (mt_get_tsc(impl) - tsc_start) / NS_PER_US;
+      s->stat_max_notify_frame_us = RTE_MAX(s->stat_max_notify_frame_us, delta_us);
+    }
+
     rte_atomic32_dec(&frame->refcnt);
     s->st30_frame_stat = ST30_TX_STAT_WAIT_FRAME;
     s->check_frame_done_time = true;
@@ -919,7 +932,7 @@ static int tx_audio_session_tasklet_transmit(struct mtl_main_impl* impl,
   return 0;
 }
 
-static int tx_audio_sessions_tasklet_handler(void* priv) {
+static int tx_audio_sessions_tasklet_build(void* priv) {
   struct st_tx_audio_sessions_mgr* mgr = priv;
   struct mtl_main_impl* impl = mgr->parent;
   struct st_tx_audio_session_impl* s;
@@ -934,6 +947,21 @@ static int tx_audio_sessions_tasklet_handler(void* priv) {
       pending += tx_audio_session_tasklet_frame(impl, s);
     else
       pending += tx_audio_session_tasklet_rtp(impl, s);
+    tx_audio_session_put(mgr, sidx);
+  }
+
+  return pending;
+}
+
+static int tx_audio_sessions_tasklet_trans(void* priv) {
+  struct st_tx_audio_sessions_mgr* mgr = priv;
+  struct mtl_main_impl* impl = mgr->parent;
+  struct st_tx_audio_session_impl* s;
+  int pending = MT_TASKLET_ALL_DONE;
+
+  for (int sidx = 0; sidx < mgr->max_idx; sidx++) {
+    s = tx_audio_session_try_get(mgr, sidx);
+    if (!s) continue;
     for (int port = 0; port < s->ops.num_port; port++) {
       pending += tx_audio_session_tasklet_transmit(impl, mgr, s, port);
     }
@@ -1299,10 +1327,11 @@ static int tx_audio_session_attach(struct mtl_main_impl* impl,
   ret = mt_build_port_map(impl, ports, s->port_maps, num_port);
   if (ret < 0) return ret;
 
+  s->time_measure = mt_has_tasklet_time_measure(impl);
   strncpy(s->ops_name, ops->name, ST_MAX_NAME_LEN - 1);
   s->ops = *ops;
   for (int i = 0; i < num_port; i++) {
-    s->st30_dst_port[i] = (ops->udp_port[i]) ? (ops->udp_port[i]) : (10100 + idx);
+    s->st30_dst_port[i] = (ops->udp_port[i]) ? (ops->udp_port[i]) : (10100 + idx * 2);
     if (mt_random_src_port(impl))
       s->st30_src_port[i] = mt_random_port(s->st30_dst_port[i]);
     else
@@ -1399,7 +1428,7 @@ static int tx_audio_session_update_dst(struct mtl_main_impl* impl,
   for (int i = 0; i < num_port; i++) {
     memcpy(ops->dip_addr[i], dst->dip_addr[i], MTL_IP_ADDR_LEN);
     ops->udp_port[i] = dst->udp_port[i];
-    s->st30_dst_port[i] = (ops->udp_port[i]) ? (ops->udp_port[i]) : (20000 + idx);
+    s->st30_dst_port[i] = (ops->udp_port[i]) ? (ops->udp_port[i]) : (20000 + idx * 2);
     s->st30_src_port[i] =
         (ops->udp_src_port[i]) ? (ops->udp_src_port[i]) : s->st30_dst_port[i];
 
@@ -1487,6 +1516,12 @@ static void tx_audio_session_stat(struct st_tx_audio_sessions_mgr* mgr,
            s->stat_error_user_timestamp);
     s->stat_error_user_timestamp = 0;
   }
+  if (s->time_measure) {
+    notice("TX_AUDIO_SESSION(%d,%d): get next frame max %uus, notify done max %uus\n",
+           m_idx, idx, s->stat_max_next_frame_us, s->stat_max_notify_frame_us);
+    s->stat_max_next_frame_us = 0;
+    s->stat_max_notify_frame_us = 0;
+  }
 }
 
 static int tx_audio_session_detach(struct st_tx_audio_sessions_mgr* mgr,
@@ -1544,15 +1579,27 @@ static int tx_audio_sessions_mgr_init(struct mtl_main_impl* impl, struct mt_sch_
 
   memset(&ops, 0x0, sizeof(ops));
   ops.priv = mgr;
-  ops.name = "tx_audio_sessions_mgr";
+  ops.name = "tx_audio_sessions_build";
   ops.start = tx_audio_sessions_tasklet_start;
   ops.stop = tx_audio_sessions_tasklet_stop;
-  ops.handler = tx_audio_sessions_tasklet_handler;
+  ops.handler = tx_audio_sessions_tasklet_build;
 
-  mgr->tasklet = mt_sch_register_tasklet(sch, &ops);
-  if (!mgr->tasklet) {
+  mgr->tasklet_build = mt_sch_register_tasklet(sch, &ops);
+  if (!mgr->tasklet_build) {
     tx_audio_sessions_mgr_uinit_hw(impl, mgr);
-    err("%s(%d), mt_sch_register_tasklet fail\n", __func__, idx);
+    err("%s(%d), tasklet_build register fail\n", __func__, idx);
+    return -EIO;
+  }
+
+  memset(&ops, 0x0, sizeof(ops));
+  ops.priv = mgr;
+  ops.name = "tx_audio_sessions_trans";
+  ops.handler = tx_audio_sessions_tasklet_trans;
+
+  mgr->tasklet_trans = mt_sch_register_tasklet(sch, &ops);
+  if (!mgr->tasklet_trans) {
+    tx_audio_sessions_mgr_uinit_hw(impl, mgr);
+    err("%s(%d), tasklet_trans register fail\n", __func__, idx);
     return -EIO;
   }
 
@@ -1641,9 +1688,13 @@ static int tx_audio_sessions_mgr_uinit(struct st_tx_audio_sessions_mgr* mgr) {
 
   mt_stat_unregister(mgr->parent, st_tx_audio_sessions_stat, mgr);
 
-  if (mgr->tasklet) {
-    mt_sch_unregister_tasklet(mgr->tasklet);
-    mgr->tasklet = NULL;
+  if (mgr->tasklet_build) {
+    mt_sch_unregister_tasklet(mgr->tasklet_build);
+    mgr->tasklet_build = NULL;
+  }
+  if (mgr->tasklet_trans) {
+    mt_sch_unregister_tasklet(mgr->tasklet_trans);
+    mgr->tasklet_trans = NULL;
   }
 
   for (int i = 0; i < ST_SCH_MAX_TX_AUDIO_SESSIONS; i++) {

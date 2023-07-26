@@ -812,7 +812,7 @@ struct mt_tsq_queue {
   /* List of rsq entry */
   struct mt_tsq_entrys_list head;
   pthread_mutex_t mutex;
-  pthread_mutex_t tx_mutex;
+  rte_spinlock_t tx_mutex;
   rte_atomic32_t entry_cnt;
   /* stat */
   int stat_pkts_send;

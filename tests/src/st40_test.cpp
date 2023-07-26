@@ -488,7 +488,7 @@ static void st40_rx_fps_test(enum st40_type type[], enum st_fps fps[],
            MTL_IP_ADDR_LEN);
     strncpy(ops_tx.port[MTL_SESSION_PORT_P], ctx->para.port[MTL_PORT_P],
             MTL_PORT_MAX_LEN);
-    ops_tx.udp_port[MTL_SESSION_PORT_P] = 30000 + i;
+    ops_tx.udp_port[MTL_SESSION_PORT_P] = 30000 + i * 2;
     ops_tx.type = type[i];
     ops_tx.fps = fps[i];
     ops_tx.payload_type = ST40_TEST_PAYLOAD_TYPE;
@@ -542,7 +542,7 @@ static void st40_rx_fps_test(enum st40_type type[], enum st_fps fps[],
            MTL_IP_ADDR_LEN);
     strncpy(ops_rx.port[MTL_SESSION_PORT_P], ctx->para.port[MTL_PORT_R],
             MTL_PORT_MAX_LEN);
-    ops_rx.udp_port[MTL_SESSION_PORT_P] = 30000 + i;
+    ops_rx.udp_port[MTL_SESSION_PORT_P] = 30000 + i * 2;
     ops_rx.notify_rtp_ready = rx_rtp_ready;
     ops_rx.rtp_ring_size = 1024;
     ops_rx.payload_type = ST40_TEST_PAYLOAD_TYPE;
@@ -761,7 +761,7 @@ static void st40_rx_update_src_test(enum st40_type type, int tx_sessions,
              MTL_IP_ADDR_LEN);
     strncpy(ops_tx.port[MTL_SESSION_PORT_P], ctx->para.port[MTL_PORT_P],
             MTL_PORT_MAX_LEN);
-    ops_tx.udp_port[MTL_SESSION_PORT_P] = 30000 + i;
+    ops_tx.udp_port[MTL_SESSION_PORT_P] = 30000 + i * 2;
     ops_tx.type = type;
     ops_tx.fps = ST_FPS_P59_94;
     ops_tx.payload_type = ST40_TEST_PAYLOAD_TYPE;
@@ -799,7 +799,7 @@ static void st40_rx_update_src_test(enum st40_type type, int tx_sessions,
            MTL_IP_ADDR_LEN);
     strncpy(ops_rx.port[MTL_SESSION_PORT_P], ctx->para.port[MTL_PORT_R],
             MTL_PORT_MAX_LEN);
-    ops_rx.udp_port[MTL_SESSION_PORT_P] = 30000 + i;
+    ops_rx.udp_port[MTL_SESSION_PORT_P] = 30000 + i * 2;
     ops_rx.notify_rtp_ready = rx_rtp_ready;
     ops_rx.rtp_ring_size = 1024;
     ops_rx.payload_type = ST40_TEST_PAYLOAD_TYPE;
@@ -998,7 +998,7 @@ static void st40_after_start_test(enum st40_type type[], enum st_fps fps[], int 
              MTL_IP_ADDR_LEN);
       strncpy(ops_tx.port[MTL_SESSION_PORT_P], ctx->para.port[MTL_PORT_P],
               MTL_PORT_MAX_LEN);
-      ops_tx.udp_port[MTL_SESSION_PORT_P] = 30000 + i;
+      ops_tx.udp_port[MTL_SESSION_PORT_P] = 30000 + i * 2;
       ops_tx.type = type[i];
       ops_tx.fps = fps[i];
       ops_tx.payload_type = ST40_TEST_PAYLOAD_TYPE;
@@ -1036,7 +1036,7 @@ static void st40_after_start_test(enum st40_type type[], enum st_fps fps[], int 
              MTL_IP_ADDR_LEN);
       strncpy(ops_rx.port[MTL_SESSION_PORT_P], ctx->para.port[MTL_PORT_R],
               MTL_PORT_MAX_LEN);
-      ops_rx.udp_port[MTL_SESSION_PORT_P] = 30000 + i;
+      ops_rx.udp_port[MTL_SESSION_PORT_P] = 30000 + i * 2;
       ops_rx.notify_rtp_ready = rx_rtp_ready;
       ops_rx.rtp_ring_size = 1024;
       ops_rx.payload_type = ST40_TEST_PAYLOAD_TYPE;

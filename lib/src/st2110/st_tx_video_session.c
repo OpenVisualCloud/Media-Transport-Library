@@ -63,6 +63,8 @@ static inline uint64_t tv_rl_bps(struct st_tx_video_session_impl* s) {
 }
 
 static void tv_notify_frame_done(struct st_tx_video_session_impl* s, uint16_t frame_idx) {
+  uint64_t tsc_start = 0;
+  if (s->time_measure) tsc_start = mt_get_tsc(s->impl);
   if (s->st22_info) {
     if (s->st22_info->notify_frame_done)
       s->st22_info->notify_frame_done(s->ops.priv, frame_idx,
@@ -71,6 +73,10 @@ static void tv_notify_frame_done(struct st_tx_video_session_impl* s, uint16_t fr
     if (s->ops.notify_frame_done)
       s->ops.notify_frame_done(s->ops.priv, frame_idx,
                                &s->st20_frames[frame_idx].tv_meta);
+  }
+  if (s->time_measure) {
+    uint32_t delta_us = (mt_get_tsc(s->impl) - tsc_start) / NS_PER_US;
+    s->stat_max_notify_frame_us = RTE_MAX(s->stat_max_notify_frame_us, delta_us);
   }
 }
 
@@ -823,8 +829,10 @@ static int tv_uinit_rtcp(struct st_tx_video_session_impl* s) {
   return 0;
 }
 
-static int tv_init_rtcp(struct mtl_main_impl* impl, struct st_tx_video_session_impl* s) {
+static int tv_init_rtcp(struct mtl_main_impl* impl, struct st_tx_video_sessions_mgr* mgr,
+                        struct st_tx_video_session_impl* s) {
   int idx = s->idx;
+  int mgr_idx = mgr->idx;
   struct st20_tx_ops* ops = &s->ops;
   int num_port = ops->num_port;
   struct mt_rxq_flow flow;
@@ -834,7 +842,9 @@ static int tv_init_rtcp(struct mtl_main_impl* impl, struct st_tx_video_session_i
     struct mt_rtcp_tx_ops rtcp_ops;
     memset(&rtcp_ops, 0, sizeof(rtcp_ops));
     rtcp_ops.port = port;
-    rtcp_ops.name = ops->name;
+    char name[MT_RTCP_MAX_NAME_LEN];
+    snprintf(name, sizeof(name), ST_TX_VIDEO_PREFIX "M%dS%dP%d", mgr_idx, idx, i);
+    rtcp_ops.name = name;
     struct mt_udp_hdr hdr;
     mtl_memcpy(&hdr, &s->s_hdr[i], sizeof(hdr));
     hdr.udp.dst_port++;
@@ -842,7 +852,7 @@ static int tv_init_rtcp(struct mtl_main_impl* impl, struct st_tx_video_session_i
     rtcp_ops.buffer_size = ST_TX_RTCP_RING_SIZE;
     s->rtcp_tx[i] = mt_rtcp_tx_create(impl, &rtcp_ops);
     if (!s->rtcp_tx[i]) {
-      err("%s(%d), mt_rtcp_tx_create fail\n", __func__, idx);
+      err("%s(%d,%d), mt_rtcp_tx_create fail on port %d\n", __func__, mgr_idx, idx, i);
       return -EIO;
     }
     /* create flow to receive rtcp nack */
@@ -852,7 +862,7 @@ static int tv_init_rtcp(struct mtl_main_impl* impl, struct st_tx_video_session_i
     flow.use_cni_queue = true;
     s->rtcp_q[i] = mt_rxq_get(impl, port, &flow);
     if (!s->rtcp_q[i]) {
-      err("%s(%d), mt_rxq_get fail\n", __func__, idx);
+      err("%s(%d,%d), mt_rxq_get fail on port %d\n", __func__, mgr_idx, idx, i);
       tv_uinit_rtcp(s);
       return -EIO;
     }
@@ -1551,10 +1561,16 @@ static int tv_tasklet_frame(struct mtl_main_impl* impl,
     if (ST21_TX_STAT_WAIT_FRAME == s->st20_frame_stat) {
       uint16_t next_frame_idx = 0;
       struct st20_tx_frame_meta meta;
+      uint64_t tsc_start = 0;
 
       tv_init_next_meta(s, &meta);
       /* Query next frame buffer idx */
+      if (s->time_measure) tsc_start = mt_get_tsc(impl);
       ret = ops->get_next_frame(ops->priv, &next_frame_idx, &meta);
+      if (s->time_measure) {
+        uint32_t delta_us = (mt_get_tsc(impl) - tsc_start) / NS_PER_US;
+        s->stat_max_next_frame_us = RTE_MAX(s->stat_max_next_frame_us, delta_us);
+      }
       if (ret < 0) { /* no frame ready from app */
         if (s->stat_user_busy_first) {
           s->stat_user_busy++;
@@ -1587,8 +1603,8 @@ static int tv_tasklet_frame(struct mtl_main_impl* impl,
       struct st_frame_trans* frame = &s->st20_frames[next_frame_idx];
       int refcnt = rte_atomic32_read(&frame->refcnt);
       if (refcnt) {
-        info("%s(%d), frame %u refcnt not zero %d\n", __func__, idx, next_frame_idx,
-             refcnt);
+        err("%s(%d), frame %u refcnt not zero %d\n", __func__, idx, next_frame_idx,
+            refcnt);
         s->stat_build_ret_code = -STI_FRAME_APP_ERR_TX_FRAME;
         return MT_TASKLET_ALL_DONE;
       }
@@ -2004,10 +2020,16 @@ static int tv_tasklet_st22(struct mtl_main_impl* impl,
     if (ST21_TX_STAT_WAIT_FRAME == s->st20_frame_stat) {
       uint16_t next_frame_idx;
       struct st22_tx_frame_meta meta;
+      uint64_t tsc_start = 0;
 
       tv_init_st22_next_meta(s, &meta);
       /* Query next frame buffer idx */
+      if (s->time_measure) tsc_start = mt_get_tsc(impl);
       ret = st22_info->get_next_frame(ops->priv, &next_frame_idx, &meta);
+      if (s->time_measure) {
+        uint32_t delta_us = (mt_get_tsc(impl) - tsc_start) / NS_PER_US;
+        s->stat_max_next_frame_us = RTE_MAX(s->stat_max_next_frame_us, delta_us);
+      }
       if (ret < 0) { /* no frame ready from app */
         if (s->stat_user_busy_first) {
           s->stat_user_busy++;
@@ -2755,6 +2777,8 @@ static int tv_attach(struct mtl_main_impl* impl, struct st_tx_video_sessions_mgr
     return ret;
   }
 
+  s->impl = impl;
+
   s->st20_linesize = ops->width * s->st20_pg.size / s->st20_pg.coverage;
   if (ops->linesize > s->st20_linesize)
     s->st20_linesize = ops->linesize;
@@ -2777,6 +2801,7 @@ static int tv_attach(struct mtl_main_impl* impl, struct st_tx_video_sessions_mgr
     s->st20_fb_size = s->st20_linesize * height;
   }
   s->st20_frames_cnt = ops->framebuff_cnt;
+  s->time_measure = mt_has_tasklet_time_measure(impl);
 
   ret = tv_init_pkt(impl, s, ops, s_type, st22_frame_ops);
   if (ret < 0) {
@@ -2801,7 +2826,7 @@ static int tv_attach(struct mtl_main_impl* impl, struct st_tx_video_sessions_mgr
   s->ops = *ops;
   s->s_type = s_type;
   for (int i = 0; i < num_port; i++) {
-    s->st20_dst_port[i] = (ops->udp_port[i]) ? (ops->udp_port[i]) : (10000 + idx);
+    s->st20_dst_port[i] = (ops->udp_port[i]) ? (ops->udp_port[i]) : (10000 + idx * 2);
     if (mt_random_src_port(impl))
       s->st20_src_port[i] = mt_random_port(s->st20_dst_port[i]);
     else
@@ -2845,7 +2870,7 @@ static int tv_attach(struct mtl_main_impl* impl, struct st_tx_video_sessions_mgr
   for (int i = 0; i < num_port; i++) {
     ret = tv_init_hdr(impl, s, i);
     if (ret < 0) {
-      err("%s(%d), tx_session_init_hdr fail %d prot %d\n", __func__, idx, ret, i);
+      err("%s(%d), tx_session_init_hdr fail %d port %d\n", __func__, idx, ret, i);
       tv_uinit_hw(impl, s);
       tv_uinit_sw(s);
       return ret;
@@ -2853,7 +2878,7 @@ static int tv_attach(struct mtl_main_impl* impl, struct st_tx_video_sessions_mgr
   }
 
   if (ops->flags & ST20_TX_FLAG_ENABLE_RTCP) {
-    ret = tv_init_rtcp(impl, s);
+    ret = tv_init_rtcp(impl, mgr, s);
     if (ret < 0) {
       err("%s(%d), tx_session_init_rtcp fail %d\n", __func__, idx, ret);
       tv_uinit_hw(impl, s);
@@ -3031,6 +3056,12 @@ static void tv_stat(struct st_tx_video_sessions_mgr* mgr,
     s->stat_user_meta_cnt = 0;
     s->stat_user_meta_pkt_cnt = 0;
   }
+  if (s->time_measure) {
+    notice("TX_VIDEO_SESSION(%d,%d): get next frame max %uus, notify done max %uus\n",
+           m_idx, idx, s->stat_max_next_frame_us, s->stat_max_notify_frame_us);
+    s->stat_max_next_frame_us = 0;
+    s->stat_max_notify_frame_us = 0;
+  }
 
   /* check frame busy stat */
   if (s->st20_frames) {
@@ -3136,7 +3167,7 @@ static int tv_update_dst(struct mtl_main_impl* impl, struct st_tx_video_session_
   for (int i = 0; i < num_port; i++) {
     memcpy(ops->dip_addr[i], dst->dip_addr[i], MTL_IP_ADDR_LEN);
     ops->udp_port[i] = dst->udp_port[i];
-    s->st20_dst_port[i] = (ops->udp_port[i]) ? (ops->udp_port[i]) : (10000 + idx);
+    s->st20_dst_port[i] = (ops->udp_port[i]) ? (ops->udp_port[i]) : (10000 + idx * 2);
     s->st20_dst_port[i] =
         (ops->udp_src_port[i]) ? (ops->udp_src_port[i]) : s->st20_dst_port[i];
 

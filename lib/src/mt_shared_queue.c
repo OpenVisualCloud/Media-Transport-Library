@@ -411,7 +411,7 @@ static int tsq_uinit(struct mt_tsq_impl* tsq) {
         tsq_queue->tx_pool = NULL;
       }
       mt_pthread_mutex_destroy(&tsq_queue->mutex);
-      mt_pthread_mutex_destroy(&tsq_queue->tx_mutex);
+      rte_spinlock_init(&tsq_queue->tx_mutex);
     }
     mt_rte_free(tsq->tsq_queues);
     tsq->tsq_queues = NULL;
@@ -440,7 +440,6 @@ static int tsq_init(struct mtl_main_impl* impl, struct mt_tsq_impl* tsq) {
     tsq_queue->port_id = mt_port_id(impl, port);
     rte_atomic32_set(&tsq_queue->entry_cnt, 0);
     mt_pthread_mutex_init(&tsq_queue->mutex, NULL);
-    mt_pthread_mutex_init(&tsq_queue->tx_mutex, NULL);
     MT_TAILQ_INIT(&tsq_queue->head);
   }
 
@@ -535,10 +534,10 @@ uint16_t mt_tsq_burst(struct mt_tsq_entry* entry, struct rte_mbuf** tx_pkts,
   struct mt_tsq_queue* tsq_queue = &tsqm->tsq_queues[entry->queue_id];
   uint16_t tx;
 
-  mt_pthread_mutex_lock(&tsq_queue->tx_mutex);
+  rte_spinlock_lock(&tsq_queue->tx_mutex);
   tx = rte_eth_tx_burst(tsq_queue->port_id, tsq_queue->queue_id, tx_pkts, nb_pkts);
   tsq_queue->stat_pkts_send += tx;
-  mt_pthread_mutex_unlock(&tsq_queue->tx_mutex);
+  rte_spinlock_unlock(&tsq_queue->tx_mutex);
 
   return tx;
 }
