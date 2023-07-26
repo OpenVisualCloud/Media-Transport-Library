@@ -1871,6 +1871,7 @@ static void st20_rx_digest_test(
       rtp_tx_specific_init(&ops_tx, test_ctx_tx[i]);
     }
     struct st_tx_rtcp_ops ops_tx_rtcp;
+    memset(&ops_tx_rtcp, 0, sizeof(ops_tx_rtcp));
     if (enable_rtcp) {
       ops_tx.flags |= ST20_TX_FLAG_ENABLE_RTCP;
       ops_tx_rtcp.rtcp_buffer_size = 1024;
@@ -1963,6 +1964,7 @@ static void st20_rx_digest_test(
     ops_rx.flags = ST20_RX_FLAG_DMA_OFFLOAD;
     if (hdr_split) ops_rx.flags |= ST20_RX_FLAG_HDR_SPLIT;
     struct st_rx_rtcp_ops ops_rx_rtcp;
+    memset(&ops_rx_rtcp, 0, sizeof(ops_rx_rtcp));
     if (enable_rtcp) {
       ops_rx.flags |= ST20_RX_FLAG_ENABLE_RTCP | ST20_RX_FLAG_SIMULATE_PKT_LOSS;
       ops_rx_rtcp.nack_interval_us = 250;
