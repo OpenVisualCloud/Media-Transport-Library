@@ -750,7 +750,7 @@ struct mt_rsq_queue {
   uint16_t queue_id;
   /* List of rsq entry */
   struct mt_rsq_entrys_list head;
-  pthread_mutex_t mutex;
+  rte_spinlock_t mutex;
   rte_atomic32_t entry_cnt;
   int entry_idx;
   struct mt_rsq_entry* cni_entry;

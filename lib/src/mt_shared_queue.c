@@ -17,17 +17,15 @@ static inline struct mt_rsq_impl* rsq_ctx_get(struct mtl_main_impl* impl,
   return impl->rsq[port];
 }
 
-static inline void rsq_lock(struct mt_rsq_queue* s) { mt_pthread_mutex_lock(&s->mutex); }
+static inline void rsq_lock(struct mt_rsq_queue* s) { rte_spinlock_lock(&s->mutex); }
 
 /* return true if try lock succ */
 static inline bool rsq_try_lock(struct mt_rsq_queue* s) {
-  int ret = mt_pthread_mutex_try_lock(&s->mutex);
-  return ret == 0 ? true : false;
+  int ret = rte_spinlock_trylock(&s->mutex);
+  return ret ? true : false;
 }
 
-static inline void rsq_unlock(struct mt_rsq_queue* s) {
-  mt_pthread_mutex_unlock(&s->mutex);
-}
+static inline void rsq_unlock(struct mt_rsq_queue* s) { rte_spinlock_unlock(&s->mutex); }
 
 static int rsq_stat_dump(void* priv) {
   struct mt_rsq_impl* rsq = priv;
@@ -95,7 +93,6 @@ static int rsq_uinit(struct mt_rsq_impl* rsq) {
         MT_TAILQ_REMOVE(&rsq_queue->head, entry, next);
         rsq_entry_free(entry);
       }
-      mt_pthread_mutex_destroy(&rsq_queue->mutex);
     }
     mt_rte_free(rsq->rsq_queues);
     rsq->rsq_queues = NULL;
@@ -123,7 +120,7 @@ static int rsq_init(struct mtl_main_impl* impl, struct mt_rsq_impl* rsq) {
     rsq_queue->queue_id = q;
     rsq_queue->port_id = mt_port_id(impl, port);
     rte_atomic32_set(&rsq_queue->entry_cnt, 0);
-    mt_pthread_mutex_init(&rsq_queue->mutex, NULL);
+    rte_spinlock_init(&rsq_queue->mutex);
     MT_TAILQ_INIT(&rsq_queue->head);
   }
 
@@ -306,9 +303,9 @@ uint16_t mt_rsq_burst(struct mt_rsq_entry* entry, struct rte_mbuf** rx_pkts,
 
   if (!rsq_try_lock(rsq_queue)) return 0;
   rsq_rx(rsq_queue);
+  rsq_unlock(rsq_queue);
   uint16_t n = rte_ring_sc_dequeue_burst(entry->ring, (void**)rx_pkts, nb_pkts, NULL);
   entry->stat_dequeue_cnt += n;
-  rsq_unlock(rsq_queue);
 
   return n;
 }
