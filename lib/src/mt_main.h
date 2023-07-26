@@ -147,6 +147,7 @@ enum mt_ptp_addr_mode {
   MT_PTP_UNICAST_ADDR,
 };
 
+#ifndef WINDOWSENV
 struct mt_pi_servo {
   double offset[2];
   double local[2];
@@ -161,10 +162,13 @@ struct mt_phc2sys_impl {
   int64_t stat_delta_max;
   bool stat_sync;
 };
+#endif
 
 struct mt_ptp_impl {
   struct mtl_main_impl* impl;
+#ifndef WINDOWSENV
   struct mt_phc2sys_impl phc2sys;
+#endif
   enum mtl_port port;
   uint16_t port_id;
   bool active; /* if the ptp stack is running */

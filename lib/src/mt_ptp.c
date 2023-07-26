@@ -29,13 +29,13 @@ static char* ptp_mode_strs[MT_PTP_MAX_MODE] = {
     "l4",
 };
 
+#ifndef WINDOWSENV
 enum servo_state {
   UNLOCKED,
   JUMP,
   LOCKED,
 };
-
-enum controller_mode { NONE, PI, ALL } mode;
+#endif
 
 static inline char* ptp_mode_str(enum mt_ptp_l_mode mode) { return ptp_mode_strs[mode]; }
 
@@ -85,7 +85,7 @@ static inline uint64_t ptp_timesync_read_time(struct mt_ptp_impl* ptp) {
   }
   return mt_timespec_to_ns(&spec);
 }
-
+#ifndef WINDOWSENV
 static inline double pi_sample(struct mt_pi_servo* s, double offset, double local_ts,
                                enum servo_state* state) {
   double ppb = 0.0;
@@ -211,7 +211,7 @@ static void phc2sys_adjust(struct mt_ptp_impl* ptp) {
     err("%s(%d), PHC time retrieving failed.\n", __func__, ptp->port_id);
   }
 }
-
+#endif
 static inline int ptp_timesync_read_tx_time(struct mt_ptp_impl* ptp, uint64_t* tai) {
   uint16_t port_id = ptp->port_id;
   int ret;
@@ -897,7 +897,7 @@ static int ptp_init(struct mtl_main_impl* impl, struct mt_ptp_impl* ptp,
   ptp->use_pi = (impl->user_para.flags & MTL_FLAG_PTP_PI);
   if (ptp->use_pi)
     info("%s(%d), use pi controller, kp %e, ki %e\n", __func__, port, ptp->kp, ptp->ki);
-
+#ifndef WINDOWSENV
   memset(&ptp->phc2sys.servo, 0, sizeof(struct mt_pi_servo));
   ptp->phc2sys.realtime_hz = sysconf(_SC_CLK_TCK);
   ptp->phc2sys.realtime_nominal_tick = 0;
@@ -906,7 +906,7 @@ static int ptp_init(struct mtl_main_impl* impl, struct mt_ptp_impl* ptp,
         (1000000 + ptp->phc2sys.realtime_hz / 2) / ptp->phc2sys.realtime_hz;
   }
   ptp->phc2sys.stat_sync = false;
-
+#endif
   struct mtl_init_params* p = mt_get_user_params(impl);
   if (p->flags & MTL_FLAG_PTP_UNICAST_ADDR) {
     ptp->master_addr_mode = MT_PTP_UNICAST_ADDR;
@@ -1057,11 +1057,13 @@ static int ptp_stat(void* priv) {
   }
 
   if (ptp->stat_delta_cnt) {
+#ifndef WINDOWSENV
     if (ptp->phc2sys.stat_delta_max < 300 && ptp->phc2sys.stat_delta_max > 0) {
       ptp->phc2sys.stat_sync = true;
     }
     notice("PTP(%d): system clock offset max %" PRId64 "\n", port,
            ptp->phc2sys.stat_delta_max);
+#endif
     notice("PTP(%d): delta avg %" PRId64 ", min %" PRId64 ", max %" PRId64 ", cnt %d\n",
            port, ptp->stat_delta_sum / ptp->stat_delta_cnt, ptp->stat_delta_min,
            ptp->stat_delta_max, ptp->stat_delta_cnt);
