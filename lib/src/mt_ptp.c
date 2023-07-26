@@ -373,7 +373,9 @@ static void ptp_adjust_delta(struct mt_ptp_impl* ptp, int64_t delta) {
   ptp->stat_delta_max = RTE_MAX(delta, ptp->stat_delta_max);
   ptp->stat_delta_cnt++;
   ptp->stat_delta_sum += labs(delta);
-  phc2sys_adjust(ptp);
+#ifndef WINDOWSENV
+  if (mt_has_phc2sys_service(ptp->impl)) phc2sys_adjust(ptp);
+#endif
 }
 
 static void ptp_expect_result_clear(struct mt_ptp_impl* ptp) {
@@ -817,7 +819,9 @@ static void ptp_stat_clear(struct mt_ptp_impl* ptp) {
   ptp->stat_result_err = 0;
   ptp->stat_sync_timeout_err = 0;
   ptp->stat_sync_cnt = 0;
-  ptp->phc2sys.stat_delta_max = 0;
+#ifndef WINDOWSENV
+  if (mt_has_phc2sys_service(ptp->impl)) ptp->phc2sys.stat_delta_max = 0;
+#endif
 }
 
 static void ptp_sync_from_user(struct mtl_main_impl* impl, struct mt_ptp_impl* ptp) {
@@ -898,14 +902,16 @@ static int ptp_init(struct mtl_main_impl* impl, struct mt_ptp_impl* ptp,
   if (ptp->use_pi)
     info("%s(%d), use pi controller, kp %e, ki %e\n", __func__, port, ptp->kp, ptp->ki);
 #ifndef WINDOWSENV
-  memset(&ptp->phc2sys.servo, 0, sizeof(struct mt_pi_servo));
-  ptp->phc2sys.realtime_hz = sysconf(_SC_CLK_TCK);
-  ptp->phc2sys.realtime_nominal_tick = 0;
-  if (ptp->phc2sys.realtime_hz > 0) {
-    ptp->phc2sys.realtime_nominal_tick =
-        (1000000 + ptp->phc2sys.realtime_hz / 2) / ptp->phc2sys.realtime_hz;
+  if (mt_has_phc2sys_service(impl)) {
+    memset(&ptp->phc2sys.servo, 0, sizeof(struct mt_pi_servo));
+    ptp->phc2sys.realtime_hz = sysconf(_SC_CLK_TCK);
+    ptp->phc2sys.realtime_nominal_tick = 0;
+    if (ptp->phc2sys.realtime_hz > 0) {
+      ptp->phc2sys.realtime_nominal_tick =
+          (1000000 + ptp->phc2sys.realtime_hz / 2) / ptp->phc2sys.realtime_hz;
+    }
+    ptp->phc2sys.stat_sync = false;
   }
-  ptp->phc2sys.stat_sync = false;
 #endif
   struct mtl_init_params* p = mt_get_user_params(impl);
   if (p->flags & MTL_FLAG_PTP_UNICAST_ADDR) {
@@ -1058,11 +1064,13 @@ static int ptp_stat(void* priv) {
 
   if (ptp->stat_delta_cnt) {
 #ifndef WINDOWSENV
-    if (ptp->phc2sys.stat_delta_max < 300 && ptp->phc2sys.stat_delta_max > 0) {
-      ptp->phc2sys.stat_sync = true;
+    if (mt_has_phc2sys_service(impl)) {
+      if (ptp->phc2sys.stat_delta_max < 300 && ptp->phc2sys.stat_delta_max > 0) {
+        ptp->phc2sys.stat_sync = true;
+      }
+      notice("PTP(%d): system clock offset max %" PRId64 "\n", port,
+             ptp->phc2sys.stat_delta_max);
     }
-    notice("PTP(%d): system clock offset max %" PRId64 "\n", port,
-           ptp->phc2sys.stat_delta_max);
 #endif
     notice("PTP(%d): delta avg %" PRId64 ", min %" PRId64 ", max %" PRId64 ", cnt %d\n",
            port, ptp->stat_delta_sum / ptp->stat_delta_cnt, ptp->stat_delta_min,
