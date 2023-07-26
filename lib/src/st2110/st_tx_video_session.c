@@ -843,7 +843,8 @@ static int tv_init_rtcp(struct mtl_main_impl* impl, struct st_tx_video_sessions_
     mtl_memcpy(&hdr, &s->s_hdr[i], sizeof(hdr));
     hdr.udp.dst_port++;
     rtcp_ops.udp_hdr = &hdr;
-    rtcp_ops.buffer_size = ST_TX_RTCP_RING_SIZE;
+    rtcp_ops.buffer_size = ops->rtcp->rtcp_buffer_size ? ops->rtcp->rtcp_buffer_size
+                                                       : ST_TX_VIDEO_RTCP_RING_SIZE;
     s->rtcp_tx[i] = mt_rtcp_tx_create(impl, &rtcp_ops);
     if (!s->rtcp_tx[i]) {
       err("%s(%d,%d), mt_rtcp_tx_create fail on port %d\n", __func__, mgr_idx, idx, i);
@@ -1790,14 +1791,14 @@ static int tv_tasklet_frame(struct mtl_main_impl* impl,
 
 static int tv_tasklet_rtcp(struct mtl_main_impl* impl,
                            struct st_tx_video_session_impl* s) {
-  struct rte_mbuf* mbuf[ST_TX_RTCP_BURST_SIZE];
+  struct rte_mbuf* mbuf[ST_TX_VIDEO_RTCP_BURST_SIZE];
   uint16_t rv;
   int num_port = s->ops.num_port;
 
   for (int s_port = 0; s_port < num_port; s_port++) {
     if (!s->rtcp_q[s_port]) continue;
 
-    rv = mt_rxq_burst(s->rtcp_q[s_port], &mbuf[0], ST_TX_RTCP_BURST_SIZE);
+    rv = mt_rxq_burst(s->rtcp_q[s_port], &mbuf[0], ST_TX_VIDEO_RTCP_BURST_SIZE);
     if (rv) {
       for (uint16_t i = 0; i < rv; i++) {
         // rte_pktmbuf_dump(stdout, mbuf[i], mbuf[i]->pkt_len);
@@ -2429,7 +2430,7 @@ static int tv_mempool_init(struct mtl_main_impl* impl,
            s->mbuf_mempool_hdr[i], i);
     } else {
       n = mt_if_nb_tx_desc(impl, port) + s->ring_count;
-      if (s->ops.flags & ST20_TX_FLAG_ENABLE_RTCP) n += ST_TX_RTCP_RING_SIZE;
+      if (s->ops.flags & ST20_TX_FLAG_ENABLE_RTCP) n += ST_TX_VIDEO_RTCP_RING_SIZE;
       if (s->mbuf_mempool_hdr[i]) {
         warn("%s(%d), use previous hdr mempool for port %d\n", __func__, idx, i);
       } else {
@@ -2451,7 +2452,7 @@ static int tv_mempool_init(struct mtl_main_impl* impl,
   if (!s->tx_no_chain) {
     port = mt_port_logic2phy(s->port_maps, MTL_SESSION_PORT_P);
     n = mt_if_nb_tx_desc(impl, port) + s->ring_count;
-    if (s->ops.flags & ST20_TX_FLAG_ENABLE_RTCP) n += ST_TX_RTCP_RING_SIZE;
+    if (s->ops.flags & ST20_TX_FLAG_ENABLE_RTCP) n += ST_TX_VIDEO_RTCP_RING_SIZE;
     if (ops->type == ST20_TYPE_RTP_LEVEL) n += ops->rtp_ring_size;
 
     if (s->tx_mono_pool) {
@@ -3957,6 +3958,10 @@ st22_tx_handle st22_tx_create(mtl_handle mt, struct st22_tx_ops* ops) {
   if (ops->flags & ST22_TX_FLAG_USER_TIMESTAMP)
     st20_ops.flags |= ST20_TX_FLAG_USER_TIMESTAMP;
   if (ops->flags & ST22_TX_FLAG_ENABLE_VSYNC) st20_ops.flags |= ST20_TX_FLAG_ENABLE_VSYNC;
+  if (ops->flags & ST22_TX_FLAG_ENABLE_RTCP) {
+    st20_ops.flags |= ST20_TX_FLAG_ENABLE_RTCP;
+    st20_ops.rtcp = ops->rtcp;
+  }
   st20_ops.pacing = ops->pacing;
   if (ST22_TYPE_RTP_LEVEL == ops->type)
     st20_ops.type = ST20_TYPE_RTP_LEVEL;

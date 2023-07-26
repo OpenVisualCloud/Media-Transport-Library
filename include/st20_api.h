@@ -189,6 +189,11 @@ extern "C" {
  * If enable the rtcp.
  */
 #define ST22_RX_FLAG_ENABLE_RTCP (MTL_BIT32(3))
+/**
+ * Flag bit in flags of struct st22_rx_ops.
+ * If enabled, simulate random packet loss.
+ */
+#define ST22_RX_FLAG_SIMULATE_PKT_LOSS (MTL_BIT32(4))
 
 /**
  * Flag bit in flags of struct st22_rx_ops.
@@ -893,6 +898,18 @@ struct st20_ext_frame {
 };
 
 /**
+ * The RTCP info for tx st2110-20/22 session.
+ */
+struct st_tx_rtcp_ops {
+  /**
+   * The size of the packets buffer for RTCP, should be power of two.
+   * Only used when ST20/22_TX_FLAG_ENABLE_RTCP flag set.
+   * If leave it to 0 the lib will use ST_TX_VIDEO_RTCP_RING_SIZE.
+   */
+  uint16_t rtcp_buffer_size;
+};
+
+/**
  * The structure describing how to create a tx st2110-20(video) session.
  * Include the PCIE port and other required info.
  */
@@ -911,6 +928,8 @@ struct st20_tx_ops {
   uint16_t udp_src_port[MTL_SESSION_PORT_MAX];
   /** UDP destination port number */
   uint16_t udp_port[MTL_SESSION_PORT_MAX];
+  /** RTCP info */
+  struct st_tx_rtcp_ops* rtcp;
 
   /** Sender pacing type */
   enum st21_pacing pacing;
@@ -1040,6 +1059,8 @@ struct st22_tx_ops {
   uint16_t udp_src_port[MTL_SESSION_PORT_MAX];
   /** UDP destination port number */
   uint16_t udp_port[MTL_SESSION_PORT_MAX];
+  /** RTCP info */
+  struct st_tx_rtcp_ops* rtcp;
 
   /** Session streaming type, frame or RTP */
   enum st22_type type;
@@ -1161,6 +1182,27 @@ struct st20_detect_reply {
 };
 
 /**
+ * The RTCP info for rx st2110-20/22 session.
+ */
+struct st_rx_rtcp_ops {
+  /**
+   * RTCP NACK send interval in us.
+   * Only used when ST20/22_RX_FLAG_ENABLE_RTCP flag set.
+   */
+  uint32_t nack_interval_us;
+  /**
+   * RTCP NACK expire interval in us.
+   * Only used when ST20/22_RX_FLAG_ENABLE_RTCP flag set.
+   */
+  uint32_t nack_expire_us;
+  /**
+   * RTCP NACK max retry count.
+   * Only used when ST20_RX_FLAG_ENABLE_RTCP flag set.
+   */
+  uint32_t nack_max_retry;
+};
+
+/**
  * The structure describing how to create a rx st2110-20(video) session.
  * Include the PCIE port and other required info.
  */
@@ -1177,6 +1219,8 @@ struct st20_rx_ops {
   char port[MTL_SESSION_PORT_MAX][MTL_PORT_MAX_LEN];
   /** UDP destination port number */
   uint16_t udp_port[MTL_SESSION_PORT_MAX];
+  /** RTCP info */
+  struct st_rx_rtcp_ops* rtcp;
 
   /** Sender pacing type */
   enum st21_pacing pacing;
@@ -1319,6 +1363,8 @@ struct st22_rx_ops {
   uint16_t udp_port[MTL_SESSION_PORT_MAX];
   /** flags, value in ST22_RX_FLAG_* */
   uint32_t flags;
+  /** RTCP info */
+  struct st_rx_rtcp_ops* rtcp;
 
   /** Session streaming type, frame or RTP */
   enum st22_type type;

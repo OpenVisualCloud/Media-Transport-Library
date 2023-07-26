@@ -1870,7 +1870,12 @@ static void st20_rx_digest_test(
     if (tx_type[i] == ST20_TYPE_RTP_LEVEL) {
       rtp_tx_specific_init(&ops_tx, test_ctx_tx[i]);
     }
-    if (enable_rtcp) ops_tx.flags |= ST20_TX_FLAG_ENABLE_RTCP;
+    struct st_tx_rtcp_ops ops_tx_rtcp;
+    if (enable_rtcp) {
+      ops_tx.flags |= ST20_TX_FLAG_ENABLE_RTCP;
+      ops_tx_rtcp.rtcp_buffer_size = 1024;
+      ops_tx.rtcp = &ops_tx_rtcp;
+    }
 
     // out of order
     if (out_of_order) {
@@ -1957,8 +1962,14 @@ static void st20_rx_digest_test(
     ops_rx.rtp_ring_size = 1024 * 2;
     ops_rx.flags = ST20_RX_FLAG_DMA_OFFLOAD;
     if (hdr_split) ops_rx.flags |= ST20_RX_FLAG_HDR_SPLIT;
-    if (enable_rtcp)
+    struct st_rx_rtcp_ops ops_rx_rtcp;
+    if (enable_rtcp) {
       ops_rx.flags |= ST20_RX_FLAG_ENABLE_RTCP | ST20_RX_FLAG_SIMULATE_PKT_LOSS;
+      ops_rx_rtcp.nack_interval_us = 250;
+      ops_rx_rtcp.nack_expire_us = 500;
+      ops_rx_rtcp.nack_max_retry = 2;
+      ops_rx.rtcp = &ops_rx_rtcp;
+    }
 
     if (rx_type[i] == ST20_TYPE_SLICE_LEVEL) {
       /* set expect meta data to private */
