@@ -80,7 +80,7 @@ PLUGINS_BUILD_DIR=${WORKSPACE}/build/plugins
 LD_PRELOAD_BUILD_DIR=${WORKSPACE}/build/ld_preload
 
 # build lib
-meson "${LIB_BUILD_DIR}" -Dbuildtype="$buildtype" -Ddisable_pcapng="$disable_pcapng" -Denable_asan="$enable_asan" -Denable_kni="$enable_kni" -Denable_tap="$enable_tap"
+meson setup "${LIB_BUILD_DIR}" -Dbuildtype="$buildtype" -Ddisable_pcapng="$disable_pcapng" -Denable_asan="$enable_asan" -Denable_kni="$enable_kni" -Denable_tap="$enable_tap"
 pushd "${LIB_BUILD_DIR}"
 ninja
 if [ "$user" == "root" ] || [ "$OS" == "Windows_NT" ]; then
@@ -92,7 +92,7 @@ popd
 
 # build app
 pushd app/
-meson "${APP_BUILD_DIR}" -Dbuildtype="$buildtype" -Denable_asan="$enable_asan"
+meson setup "${APP_BUILD_DIR}" -Dbuildtype="$buildtype" -Denable_asan="$enable_asan"
 popd
 pushd "${APP_BUILD_DIR}"
 ninja
@@ -100,7 +100,7 @@ popd
 
 # build tests
 pushd tests/
-meson "${TEST_BUILD_DIR}" -Dbuildtype="$buildtype" -Denable_asan="$enable_asan"
+meson setup "${TEST_BUILD_DIR}" -Dbuildtype="$buildtype" -Denable_asan="$enable_asan"
 popd
 pushd "${TEST_BUILD_DIR}"
 ninja
@@ -108,7 +108,7 @@ popd
 
 # build plugins
 pushd plugins/
-meson "${PLUGINS_BUILD_DIR}" -Dbuildtype="$buildtype" -Denable_asan="$enable_asan"
+meson setup "${PLUGINS_BUILD_DIR}" -Dbuildtype="$buildtype" -Denable_asan="$enable_asan"
 popd
 pushd "${PLUGINS_BUILD_DIR}"
 ninja
@@ -122,7 +122,7 @@ popd
 # build ld_preload
 if [ "$OS" != "Windows_NT" ]; then
 pushd ld_preload/
-meson "${LD_PRELOAD_BUILD_DIR}" -Dbuildtype="$buildtype" -Denable_asan="$enable_asan"
+meson setup "${LD_PRELOAD_BUILD_DIR}" -Dbuildtype="$buildtype" -Denable_asan="$enable_asan"
 popd
 pushd "${LD_PRELOAD_BUILD_DIR}"
 ninja

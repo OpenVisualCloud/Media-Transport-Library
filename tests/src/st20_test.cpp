@@ -2556,8 +2556,8 @@ TEST(St20_rx, digest_rtcp_s3) {
   enum st20_packing packing[3] = {ST20_PACKING_GPM_SL, ST20_PACKING_GPM,
                                   ST20_PACKING_BPM};
   enum st_fps fps[3] = {ST_FPS_P59_94, ST_FPS_P50, ST_FPS_P29_97};
-  int width[3] = {1920, 1920, 3840};
-  int height[3] = {1080, 1080, 2160};
+  int width[3] = {1920, 1920, 1280};
+  int height[3] = {1080, 1080, 720};
   bool interlaced[3] = {true, false, false};
   enum st20_fmt fmt[3] = {ST20_FMT_YUV_422_10BIT, ST20_FMT_YUV_422_10BIT,
                           ST20_FMT_YUV_422_10BIT};
@@ -2571,8 +2571,8 @@ TEST(St20_rx, digest_ooo_rtcp_s3) {
   enum st20_packing packing[3] = {ST20_PACKING_GPM_SL, ST20_PACKING_GPM,
                                   ST20_PACKING_BPM};
   enum st_fps fps[3] = {ST_FPS_P59_94, ST_FPS_P50, ST_FPS_P29_97};
-  int width[3] = {1920, 1920, 3840};
-  int height[3] = {1080, 1080, 2160};
+  int width[3] = {1920, 1920, 1280};
+  int height[3] = {1080, 1080, 720};
   bool interlaced[3] = {false, false, false};
   enum st20_fmt fmt[3] = {ST20_FMT_YUV_422_10BIT, ST20_FMT_YUV_422_10BIT,
                           ST20_FMT_YUV_422_10BIT};
