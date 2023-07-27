@@ -39,6 +39,8 @@ sudo grubby --update-kernel=ALL --args="intel_iommu=on iommu=pt"
 sudo reboot
 ```
 
+For non-intel device, contact vender for how enable iommu.
+
 ### 1.3 Double check iommu_groups is created by kernel after reboot
 
 ```bash
@@ -53,6 +55,19 @@ cat /proc/cmdline
 # Check if CPU flags has vmx feature
 lscpu | grep vmx
 ```
+
+### 1.4 Unlock RLIMIT_MEMLOCK for non-root run
+
+Skip this step for Ubuntu since default RLIMIT_MEMLOCK is set to unlimited already.
+
+Some operating systems, including CentOS stream and RHEL 9, has a small limit to RLIMIT_MEMLOCK (amount of pinned pages the process is allowed to have) which will cause DMA remapping fail during the running, please edit /etc/security/limits.conf, append below two lines at the end of file, change <USER> to the username currently login.
+
+```bash
+<USER>    hard   memlock           unlimited
+<USER>    soft   memlock           unlimited
+```
+
+Reboot the system to let the settings take effect.
 
 ## 2. NIC driver setup
 
@@ -334,7 +349,15 @@ Note: Currently, the VF (Virtual Function) does not support the hardware timesyn
 
 ### 8.1 Notes after reboot
 
-After a system reboot, it is possible for the operating system to update to a new kernel version. In such cases, it is important to remember to rebuild the NIC driver to ensure compatibility with the new kernel version. Additionally, you may need to repeat the steps to create Virtual Functions (VF), bind the VF to DPDK PMD, and set up the hugepages configuration.
+You need to repeat below steps to create Virtual Functions (VF), bind the VF to DPDK PMD, and set up the hugepages configuration again since it's lost after reboot.
+
+```bash
+sudo ./script/nicctl.sh create_vf 0000:a1:00.0
+sudo chown elemental:elemental /dev/vfio/* -R
+sudo sysctl -w vm.nr_hugepages=2048
+```
+
+And, sometimes after a system reboot, it is possible for the operating system to update to a new kernel version. In such cases, it is important to remember to rebuild the NIC driver to ensure compatibility with the new kernel version.
 
 ### 8.2 Notes for non-root run
 
@@ -353,7 +376,7 @@ EAL: Requested device 0000:af:01.0 cannot be used
 Pls
 
 ```bash
-# Edit /etc/security/limits.conf, append below two lines at the end of file, change <USER> to the user name currently login.
+# Edit /etc/security/limits.conf, append below two lines at the end of file, change <USER> to the username currently login.
 <USER>    hard   memlock           unlimited
 <USER>    soft   memlock           unlimited
 sudo reboot

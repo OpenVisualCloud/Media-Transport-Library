@@ -1,0 +1,51 @@
+From 033c70e98424316abceb0dc31c0abe45ee2d2f81 Mon Sep 17 00:00:00 2001
+From: elemental <elemental@localhost.localdomain>
+Date: Thu, 27 Jul 2023 00:33:56 -0400
+Subject: [PATCH] RHEL9: fix build with 5.14.0-284
+
+Signed-off-by: Frank Du <frank.du@intel.com>
+---
+ src/ice_devlink.c  | 6 ++++--
+ src/kcompat_impl.h | 2 +-
+ 2 files changed, 5 insertions(+), 3 deletions(-)
+
+diff --git a/src/ice_devlink.c b/src/ice_devlink.c
+index 8fbdcef..91f0257 100644
+--- a/src/ice_devlink.c
++++ b/src/ice_devlink.c
+@@ -1137,7 +1137,8 @@ ice_devlink_aq_set_port_option(struct ice_pf *pf, u8 option_idx)
+  * Return: zero on success or an error code on failure.
+  */
+ #ifdef HAVE_DEVLINK_PORT_SPLIT_EXTACK
+-#ifdef HAVE_DEVLINK_PORT_SPLIT_PORT_STRUCT
++//#ifdef HAVE_DEVLINK_PORT_SPLIT_PORT_STRUCT
++#if 1
+ static int
+ ice_devlink_port_split(struct devlink *devlink, struct devlink_port *port,
+ 		       unsigned int count, struct netlink_ext_ack *extack)
+@@ -1232,7 +1233,8 @@ ice_devlink_port_split(struct devlink *devlink, unsigned int port_index,
+  * Return: zero on success or an error code on failure.
+  */
+ #ifdef HAVE_DEVLINK_PORT_SPLIT_EXTACK
+-#ifdef HAVE_DEVLINK_PORT_SPLIT_PORT_STRUCT
++//#ifdef HAVE_DEVLINK_PORT_SPLIT_PORT_STRUCT
++#if 1
+ static int
+ ice_devlink_port_unsplit(struct devlink *devlink, struct devlink_port *port,
+ 			 struct netlink_ext_ack *extack)
+diff --git a/src/kcompat_impl.h b/src/kcompat_impl.h
+index f1c740d..43257cc 100644
+--- a/src/kcompat_impl.h
++++ b/src/kcompat_impl.h
+@@ -1384,7 +1384,7 @@ static inline void
+ _kc_netif_napi_add(struct net_device *dev, struct napi_struct *napi,
+ 		   int (*poll)(struct napi_struct *, int))
+ {
+-	return netif_napi_add(dev, napi, poll, NAPI_POLL_WEIGHT);
++	return netif_napi_add(dev, napi, poll);
+ }
+ 
+ /* RHEL7 complains about redefines. Undef first, then define compat wrapper */
+-- 
+2.34.1
+
