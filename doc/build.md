@@ -89,6 +89,8 @@ Edit the file `/etc/sudoers`, find `secure_path` and append `/usr/local/bin`
 Defaults    secure_path = /sbin:/bin:/usr/sbin:/usr/bin:/usr/local/bin
 ```
 
+Reboot the system to let change take effect.
+
 ### 1.4 Clone Intel® Media Transport Library code
 
 Download Intel® Media Transport Library to top folder Directory
