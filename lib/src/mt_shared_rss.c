@@ -13,17 +13,17 @@
 #define MT_SRSS_RING_PREFIX "SR_"
 
 static inline void srss_lock(struct mt_srss_impl* srss) {
-  mt_pthread_mutex_lock(&srss->mutex);
+  rte_spinlock_lock(&srss->mutex);
 }
 
 /* return true if try lock succ */
 static inline bool srss_try_lock(struct mt_srss_impl* srss) {
-  int ret = mt_pthread_mutex_try_lock(&srss->mutex);
-  return ret == 0 ? true : false;
+  int ret = rte_spinlock_trylock(&srss->mutex);
+  return ret ? true : false;
 }
 
 static inline void srss_unlock(struct mt_srss_impl* srss) {
-  mt_pthread_mutex_unlock(&srss->mutex);
+  rte_spinlock_unlock(&srss->mutex);
 }
 
 static inline void srss_entry_pkts_enqueue(struct mt_srss_entry* entry,
@@ -64,61 +64,61 @@ static int srss_tasklet_handler(void* priv) {
   struct rte_ipv4_hdr* ipv4;
   struct rte_udp_hdr* udp;
 
-  srss_lock(srss);
   for (uint16_t queue = 0; queue < inf->max_rx_queues; queue++) {
     uint16_t matched_pkts_nb = 0;
 
     uint16_t rx =
         rte_eth_rx_burst(mt_port_id(impl, srss->port), queue, pkts, MT_SRSS_BURST_SIZE);
-    if (rx) {
-      last_srss_entry = NULL;
-      for (uint16_t i = 0; i < rx; i++) {
-        srss_entry = NULL;
-        hdr = rte_pktmbuf_mtod(pkts[i], struct mt_udp_hdr*);
-        if (hdr->eth.ether_type !=
-            htons(RTE_ETHER_TYPE_IPV4)) { /* non ip, redirect to cni */
-          UPDATE_ENTRY();
-          CNI_ENQUEUE();
-          continue;
+    if (!rx) continue;
+
+    srss_lock(srss);
+    last_srss_entry = NULL;
+    for (uint16_t i = 0; i < rx; i++) {
+      srss_entry = NULL;
+      hdr = rte_pktmbuf_mtod(pkts[i], struct mt_udp_hdr*);
+      if (hdr->eth.ether_type !=
+          htons(RTE_ETHER_TYPE_IPV4)) { /* non ip, redirect to cni */
+        UPDATE_ENTRY();
+        CNI_ENQUEUE();
+        continue;
+      }
+      ipv4 = &hdr->ipv4;
+      if (ipv4->next_proto_id != IPPROTO_UDP) { /* non udp, redirect to cni */
+        UPDATE_ENTRY();
+        CNI_ENQUEUE();
+        continue;
+      }
+      udp = &hdr->udp;
+      MT_TAILQ_FOREACH(srss_entry, &srss->head, next) {
+        bool ip_matched;
+        if (srss_entry->flow.no_ip_flow) {
+          ip_matched = true;
+        } else {
+          ip_matched = mt_is_multicast_ip(srss_entry->flow.dip_addr)
+                           ? (ipv4->dst_addr == *(uint32_t*)srss_entry->flow.dip_addr)
+                           : (ipv4->src_addr == *(uint32_t*)srss_entry->flow.dip_addr);
         }
-        ipv4 = &hdr->ipv4;
-        if (ipv4->next_proto_id != IPPROTO_UDP) { /* non udp, redirect to cni */
-          UPDATE_ENTRY();
-          CNI_ENQUEUE();
-          continue;
+        bool port_matched;
+        if (srss_entry->flow.no_port_flow) {
+          port_matched = true;
+        } else {
+          port_matched = ntohs(udp->dst_port) == srss_entry->flow.dst_port;
         }
-        udp = &hdr->udp;
-        MT_TAILQ_FOREACH(srss_entry, &srss->head, next) {
-          bool ip_matched;
-          if (srss_entry->flow.no_ip_flow) {
-            ip_matched = true;
-          } else {
-            ip_matched = mt_is_multicast_ip(srss_entry->flow.dip_addr)
-                             ? (ipv4->dst_addr == *(uint32_t*)srss_entry->flow.dip_addr)
-                             : (ipv4->src_addr == *(uint32_t*)srss_entry->flow.dip_addr);
-          }
-          bool port_matched;
-          if (srss_entry->flow.no_port_flow) {
-            port_matched = true;
-          } else {
-            port_matched = ntohs(udp->dst_port) == srss_entry->flow.dst_port;
-          }
-          if (ip_matched && port_matched) { /* match dst ip:port */
-            if (srss_entry != last_srss_entry) UPDATE_ENTRY();
-            matched_pkts[matched_pkts_nb++] = pkts[i];
-            break;
-          }
-        }
-        if (!srss_entry) { /* no match, redirect to cni */
-          UPDATE_ENTRY();
-          CNI_ENQUEUE();
+        if (ip_matched && port_matched) { /* match dst ip:port */
+          if (srss_entry != last_srss_entry) UPDATE_ENTRY();
+          matched_pkts[matched_pkts_nb++] = pkts[i];
+          break;
         }
       }
-      if (matched_pkts_nb)
-        srss_entry_pkts_enqueue(last_srss_entry, &matched_pkts[0], matched_pkts_nb);
+      if (!srss_entry) { /* no match, redirect to cni */
+        UPDATE_ENTRY();
+        CNI_ENQUEUE();
+      }
     }
+    if (matched_pkts_nb)
+      srss_entry_pkts_enqueue(last_srss_entry, &matched_pkts[0], matched_pkts_nb);
+    srss_unlock(srss);
   }
-  srss_unlock(srss);
 
   return 0;
 }
@@ -187,7 +187,10 @@ static int srss_stat(void* priv) {
   struct mt_srss_entry* entry;
   int idx;
 
-  if (!srss_try_lock(srss)) return 0;
+  if (!srss_try_lock(srss)) {
+    notice("%s(%d), get lock fail\n", __func__, port);
+    return 0;
+  }
   MT_TAILQ_FOREACH(entry, &srss->head, next) {
     idx = entry->idx;
     notice("%s(%d,%d), enqueue %u dequeue %u\n", __func__, port, idx,
@@ -292,13 +295,6 @@ int mt_srss_init(struct mtl_main_impl* impl) {
     }
     struct mt_srss_impl* srss = impl->srss[i];
 
-    ret = mt_pthread_mutex_init(&srss->mutex, NULL);
-    if (ret < 0) {
-      err("%s(%d), mutex init fail\n", __func__, i);
-      mt_srss_uinit(impl);
-      return ret;
-    }
-
     struct mt_sch_impl* sch = mt_sch_get(impl, 0, MT_SCH_TYPE_DEFAULT, MT_SCH_MASK_ALL);
     if (!sch) {
       err("%s(%d), get sch fail\n", __func__, i);
@@ -365,7 +361,7 @@ int mt_srss_uinit(struct mtl_main_impl* impl) {
       MT_TAILQ_REMOVE(&srss->head, entry, next);
       mt_rte_free(entry);
     }
-    mt_pthread_mutex_destroy(&srss->mutex);
+
     mt_rte_free(srss);
     impl->srss[i] = NULL;
   }

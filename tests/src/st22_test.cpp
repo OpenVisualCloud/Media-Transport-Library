@@ -235,7 +235,7 @@ static int st22_tx_build_rtp_packet(tests_context* s, struct st22_rfc9134_rtp_hd
   if (s->check_sha) {
     uint8_t* payload = (uint8_t*)rtp + sizeof(*rtp);
     mtl_memcpy(payload,
-               s->frame_buf[s->fb_idx % TEST_SHA_HIST_NUM] + s->pkt_idx * data_len,
+               s->frame_buf[s->fb_idx % ST22_TEST_SHA_HIST_NUM] + s->pkt_idx * data_len,
                data_len);
   }
 
@@ -1146,11 +1146,11 @@ static void st22_digest_rx_frame_check(void* args) {
       dbg("%s, frame %p\n", __func__, frame);
       int i;
       SHA256((unsigned char*)frame, ctx->frame_size, result);
-      for (i = 0; i < TEST_SHA_HIST_NUM; i++) {
+      for (i = 0; i < ST22_TEST_SHA_HIST_NUM; i++) {
         unsigned char* target_sha = ctx->shas[i];
         if (!memcmp(result, target_sha, SHA256_DIGEST_LENGTH)) break;
       }
-      if (i >= TEST_SHA_HIST_NUM) {
+      if (i >= ST22_TEST_SHA_HIST_NUM) {
         test_sha_dump("st22_rx_error_sha", result);
         ctx->fail_cnt++;
       }
@@ -1162,7 +1162,8 @@ static void st22_digest_rx_frame_check(void* args) {
 
 /* only frame level */
 static void st22_rx_digest_test(enum st_fps fps[], int width[], int height[],
-                                int pkt_data_len[], int total_pkts[], int sessions = 1) {
+                                int pkt_data_len[], int total_pkts[], int sessions = 1,
+                                bool enable_rtcp = false) {
   auto ctx = (struct st_tests_context*)st_test_ctx();
   auto m_handle = ctx->handle;
   int ret;
@@ -1197,7 +1198,7 @@ static void st22_rx_digest_test(enum st_fps fps[], int width[], int height[],
 
     test_ctx_tx[i]->idx = i;
     test_ctx_tx[i]->ctx = ctx;
-    test_ctx_tx[i]->fb_cnt = TEST_SHA_HIST_NUM;
+    test_ctx_tx[i]->fb_cnt = ST22_TEST_SHA_HIST_NUM;
     test_ctx_tx[i]->fb_idx = 0;
 
     memset(&ops_tx, 0, sizeof(ops_tx));
@@ -1233,6 +1234,13 @@ static void st22_rx_digest_test(enum st_fps fps[], int width[], int height[],
     ops_tx.rtp_frame_total_pkts = test_ctx_tx[i]->total_pkts_in_frame;
     ops_tx.notify_frame_done = st22_frame_done;
     ops_tx.get_next_frame = st22_next_video_frame;
+    struct st_tx_rtcp_ops ops_tx_rtcp;
+    memset(&ops_tx_rtcp, 0, sizeof(ops_tx_rtcp));
+    if (enable_rtcp) {
+      ops_tx.flags |= ST22_TX_FLAG_ENABLE_RTCP;
+      ops_tx_rtcp.rtcp_buffer_size = 512;
+      ops_tx.rtcp = &ops_tx_rtcp;
+    }
 
     tx_handle[i] = st22_tx_create(m_handle, &ops_tx);
     ASSERT_TRUE(tx_handle[i] != NULL);
@@ -1240,7 +1248,7 @@ static void st22_rx_digest_test(enum st_fps fps[], int width[], int height[],
     /* sha calculate */
     size_t frame_size = test_ctx_tx[i]->frame_size;
     uint8_t* fb;
-    for (int frame = 0; frame < TEST_SHA_HIST_NUM; frame++) {
+    for (int frame = 0; frame < ST22_TEST_SHA_HIST_NUM; frame++) {
       fb = (uint8_t*)st22_tx_get_fb_addr(tx_handle[i], frame);
       ASSERT_TRUE(fb != NULL);
       st_test_rand_data(fb, frame_size, frame);
@@ -1258,7 +1266,7 @@ static void st22_rx_digest_test(enum st_fps fps[], int width[], int height[],
 
     test_ctx_rx[i]->idx = i;
     test_ctx_rx[i]->ctx = ctx;
-    test_ctx_rx[i]->fb_cnt = TEST_SHA_HIST_NUM;
+    test_ctx_rx[i]->fb_cnt = ST22_TEST_SHA_HIST_NUM;
     test_ctx_rx[i]->fb_idx = 0;
 
     memset(&ops_rx, 0, sizeof(ops_rx));
@@ -1277,6 +1285,15 @@ static void st22_rx_digest_test(enum st_fps fps[], int width[], int height[],
     ops_rx.payload_type = ST22_TEST_PAYLOAD_TYPE;
     ops_rx.type = ST22_TYPE_FRAME_LEVEL;
     ops_rx.framebuff_cnt = test_ctx_rx[i]->fb_cnt;
+    struct st_rx_rtcp_ops ops_rx_rtcp;
+    memset(&ops_rx_rtcp, 0, sizeof(ops_rx_rtcp));
+    if (enable_rtcp) {
+      ops_rx.flags |= ST22_RX_FLAG_ENABLE_RTCP | ST22_RX_FLAG_SIMULATE_PKT_LOSS;
+      ops_rx_rtcp.nack_interval_us = 100;
+      ops_rx_rtcp.nack_expire_us = 200;
+      ops_rx_rtcp.nack_max_retry = 2;
+      ops_rx.rtcp = &ops_rx_rtcp;
+    }
 
     ops_rx.notify_rtp_ready = st22_rx_rtp_ready;
     ops_rx.rtp_ring_size = 1024;
@@ -1296,7 +1313,7 @@ static void st22_rx_digest_test(enum st_fps fps[], int width[], int height[],
 
     /* copy sha from tx */
     memcpy(test_ctx_rx[i]->shas, test_ctx_tx[i]->shas,
-           TEST_SHA_HIST_NUM * SHA256_DIGEST_LENGTH);
+           ST22_TEST_SHA_HIST_NUM * SHA256_DIGEST_LENGTH);
 
     test_ctx_rx[i]->stop = false;
     sha_check[i] = std::thread(st22_digest_rx_frame_check, test_ctx_rx[i]);
@@ -1347,6 +1364,15 @@ TEST(St22_rx, digest_s2) {
   int pkt_data_len[2] = {1280, 1280};
   int total_pkts[2] = {551, 1520};
   st22_rx_digest_test(fps, width, height, pkt_data_len, total_pkts, 2);
+}
+
+TEST(St22_rx, digest_rtcp_s2) {
+  enum st_fps fps[2] = {ST_FPS_P59_94, ST_FPS_P50};
+  int width[2] = {1920, 1920};
+  int height[2] = {1080, 1080};
+  int pkt_data_len[2] = {1280, 1280};
+  int total_pkts[2] = {551, 1520};
+  st22_rx_digest_test(fps, width, height, pkt_data_len, total_pkts, 2, true);
 }
 
 static void st22_tx_user_pacing_test(int width[], int height[], int pkt_data_len[],

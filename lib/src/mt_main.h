@@ -299,7 +299,7 @@ struct mt_cni_entry {
 
   struct mt_csq_queue csq_queues; /* for cni udp queue */
   int csq_idx;
-  pthread_mutex_t csq_mutex;
+  rte_spinlock_t csq_lock; /* protect csq_queues */
 
   struct mt_cni_udp_detect_list udp_detect; /* for udp stream debug usage */
 
@@ -770,7 +770,7 @@ struct mt_rsq_queue {
   uint16_t queue_id;
   /* List of rsq entry */
   struct mt_rsq_entrys_list head;
-  pthread_mutex_t mutex;
+  rte_spinlock_t mutex;
   rte_atomic32_t entry_cnt;
   int entry_idx;
   struct mt_rsq_entry* cni_entry;
@@ -845,7 +845,7 @@ MT_TAILQ_HEAD(mt_srss_entrys_list, mt_srss_entry);
 
 struct mt_srss_impl {
   struct mtl_main_impl* parent;
-  pthread_mutex_t mutex;
+  rte_spinlock_t mutex; /* protect struct mt_srss_entrys_list head */
   enum mtl_port port;
   struct mt_srss_entrys_list head;
   pthread_t tid;

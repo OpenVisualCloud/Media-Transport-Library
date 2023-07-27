@@ -1,6 +1,6 @@
 # Changelog
 
-## Changelog for 23.07
+## Changelog for 23.08
 
 * lib: add DHCP client implementation.
 * ice: update driver to 1.11.14
@@ -28,6 +28,10 @@
 * udp: add reuse port support.
 * udp: add fork support
 * Windows: add MSVC sample build, refer to app/sample/msvc/imtl_sample.
+* audio: improve max density per process to 750 for both tx and rx by shared queue and no_tx_chain.
+* ptp: add tsc time source support for VF.
+* doc: use vf mode as default for E810 nic.
+* tx/st20: improve the pacing profile accuracy.
 
 ## Changelog for 23.04
 
