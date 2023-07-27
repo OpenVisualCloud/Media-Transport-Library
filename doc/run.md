@@ -60,7 +60,7 @@ lscpu | grep vmx
 
 Skip this step for Ubuntu since default RLIMIT_MEMLOCK is set to unlimited already.
 
-Some operating systems, including CentOS stream and RHEL 9, has a small limit to RLIMIT_MEMLOCK (amount of pinned pages the process is allowed to have) which will cause DMA remapping fail during the running, please edit /etc/security/limits.conf, append below two lines at the end of file, change <USER> to the user name currently login.
+Some operating systems, including CentOS stream and RHEL 9, has a small limit to RLIMIT_MEMLOCK (amount of pinned pages the process is allowed to have) which will cause DMA remapping fail during the running, please edit /etc/security/limits.conf, append below two lines at the end of file, change <USER> to the username currently login.
 
 ```bash
 <USER>    hard   memlock           unlimited
@@ -376,7 +376,7 @@ EAL: Requested device 0000:af:01.0 cannot be used
 Pls
 
 ```bash
-# Edit /etc/security/limits.conf, append below two lines at the end of file, change <USER> to the user name currently login.
+# Edit /etc/security/limits.conf, append below two lines at the end of file, change <USER> to the username currently login.
 <USER>    hard   memlock           unlimited
 <USER>    soft   memlock           unlimited
 sudo reboot
