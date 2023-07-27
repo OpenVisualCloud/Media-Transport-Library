@@ -1,5 +1,7 @@
 # Changelog
 
+## Changelog for 23.12
+
 ## Changelog for 23.08
 
 * lib: add DHCP client implementation.
