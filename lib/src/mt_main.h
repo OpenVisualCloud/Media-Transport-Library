@@ -147,6 +147,7 @@ enum mt_ptp_addr_mode {
   MT_PTP_UNICAST_ADDR,
 };
 
+
 struct mt_pi_servo {
   double offset[2];
   double local[2];
@@ -1002,14 +1003,14 @@ bool mt_is_valid_socket(struct mtl_main_impl* impl, int soc_id);
 static inline uint8_t mt_start_queue(struct mtl_main_impl* impl, enum mtl_port port) {
   return impl->user_para.xdp_info[port].start_queue;
 }
-#ifndef WINDOWSENV
+
 static inline bool mt_has_phc2sys_service(struct mtl_main_impl* impl) {
   if (mt_get_user_params(impl)->flags & MTL_FLAG_PHC2SYS_ENABLE)
     return true;
   else
     return false;
 }
-#endif
+
 static inline bool mt_has_ptp_service(struct mtl_main_impl* impl) {
   if (mt_get_user_params(impl)->flags & MTL_FLAG_PTP_ENABLE)
     return true;
