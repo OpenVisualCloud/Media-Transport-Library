@@ -2,6 +2,8 @@
 
 ## Changelog for 23.12
 
+* ice: update driver to 1.11.17.1
+
 ## Changelog for 23.08
 
 * lib: add DHCP client implementation.
