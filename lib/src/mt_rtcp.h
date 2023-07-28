@@ -65,6 +65,9 @@ struct mt_rtcp_tx {
   uint32_t stat_rtp_sent;
   uint32_t stat_rtp_retransmit_succ;
   uint32_t stat_rtp_retransmit_fail;
+  uint32_t stat_rtp_retransmit_fail_nobuf;
+  uint32_t stat_rtp_retransmit_fail_dequeue;
+  uint32_t stat_rtp_retransmit_fail_obsolete;
   uint32_t stat_nack_received;
 };
 
@@ -88,7 +91,9 @@ struct mt_rtcp_rx {
   uint32_t stat_rtp_lost_detected;
   uint32_t stat_rtp_retransmit_succ;
   uint32_t stat_nack_sent;
-  uint32_t stat_nack_expire;
+  uint32_t stat_nack_drop_expire;
+  uint32_t stat_nack_drop_oor;
+  uint32_t stat_nack_drop_exceed;
 };
 
 struct mt_rtcp_tx* mt_rtcp_tx_create(struct mtl_main_impl* mtl,
