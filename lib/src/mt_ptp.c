@@ -140,6 +140,8 @@ static void ptp_adj_system_clock_time(struct mt_ptp_impl* ptp, int64_t delta) {
   }
 
   clock_adjtime(CLOCK_REALTIME, &adjtime);
+#else
+  err("%s(%d), not supported for windows\n", __func__, ptp->port);
 #endif
 }
 
@@ -159,6 +161,8 @@ static void ptp_adj_system_clock_freq(struct mt_ptp_impl* ptp, double freq) {
   adjfreq.modes |= ADJ_FREQUENCY;
   adjfreq.freq = (long)(freq * 65.536);
   clock_adjtime(CLOCK_REALTIME, &adjfreq);
+#else
+  err("%s(%d), not supported for windows\n", __func__, ptp->port);
 #endif
 }
 
