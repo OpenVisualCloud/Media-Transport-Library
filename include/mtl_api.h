@@ -423,7 +423,6 @@ enum st21_tx_pacing_way {
  */
 #define MTL_FLAG_PHC2SYS_ENABLE (MTL_BIT64(46))
 
-
 /**
  * The structure describing how to init af_xdp interface.
  * See https://doc.dpdk.org/guides/nics/af_xdp.html for detail.
