@@ -147,7 +147,6 @@ enum mt_ptp_addr_mode {
   MT_PTP_UNICAST_ADDR,
 };
 
-
 struct mt_pi_servo {
   double offset[2];
   double local[2];
