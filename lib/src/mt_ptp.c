@@ -121,7 +121,7 @@ static inline double pi_sample(struct mt_pi_servo* s, double offset, double loca
 }
 
 static void ptp_adj_system_clock_time(struct mt_ptp_impl* ptp, int64_t delta) {
-#ifndef WINDOWSENV  
+#ifndef WINDOWSENV
   struct timex adjtime;
   int sign = 1;
 
@@ -140,11 +140,11 @@ static void ptp_adj_system_clock_time(struct mt_ptp_impl* ptp, int64_t delta) {
   }
 
   clock_adjtime(CLOCK_REALTIME, &adjtime);
-#endif  
+#endif
 }
 
 static void ptp_adj_system_clock_freq(struct mt_ptp_impl* ptp, double freq) {
-#ifndef WINDOWSENV  
+#ifndef WINDOWSENV
   struct timex adjfreq;
   memset(&adjfreq, 0, sizeof(adjfreq));
 
@@ -159,7 +159,7 @@ static void ptp_adj_system_clock_freq(struct mt_ptp_impl* ptp, double freq) {
   adjfreq.modes |= ADJ_FREQUENCY;
   adjfreq.freq = (long)(freq * 65.536);
   clock_adjtime(CLOCK_REALTIME, &adjfreq);
-#endif  
+#endif
 }
 
 static void phc2sys_adjust(struct mt_ptp_impl* ptp) {
@@ -209,15 +209,17 @@ static void phc2sys_adjust(struct mt_ptp_impl* ptp) {
     }
 
     ptp->phc2sys.stat_delta_max = RTE_MAX(labs(offset), ptp->phc2sys.stat_delta_max);
-    
+
     if (!ptp->phc2sys.stat_sync) {
       /*
        * Be considered as synchronized while the max delta is continuously below
        * 300ns.
        */
       if (ptp->phc2sys.stat_delta_max < 300 && ptp->phc2sys.stat_delta_max > 0) {
-        if (ptp->phc2sys.stat_sync_keep > 100) ptp->phc2sys.stat_sync = true;
-        else ptp->phc2sys.stat_sync_keep ++;
+        if (ptp->phc2sys.stat_sync_keep > 100)
+          ptp->phc2sys.stat_sync = true;
+        else
+          ptp->phc2sys.stat_sync_keep++;
       } else {
         ptp->phc2sys.stat_sync_keep = 0;
       }
@@ -878,9 +880,9 @@ static void ptp_sync_from_user_handler(void* param) {
 
 static void phc2sys_init(struct mt_ptp_impl* ptp) {
   memset(&ptp->phc2sys.servo, 0, sizeof(struct mt_pi_servo));
-#ifndef WINDOWSENV    
+#ifndef WINDOWSENV
   ptp->phc2sys.realtime_hz = sysconf(_SC_CLK_TCK);
-#endif    
+#endif
   ptp->phc2sys.realtime_nominal_tick = 0;
   if (ptp->phc2sys.realtime_hz > 0) {
     ptp->phc2sys.realtime_nominal_tick =
