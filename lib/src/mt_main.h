@@ -147,8 +147,25 @@ enum mt_ptp_addr_mode {
   MT_PTP_UNICAST_ADDR,
 };
 
+struct mt_pi_servo {
+  double offset[2];
+  double local[2];
+  double drift;
+  int count;
+};
+
+struct mt_phc2sys_impl {
+  struct mt_pi_servo servo;
+  long realtime_hz;
+  long realtime_nominal_tick;
+  int64_t stat_delta_max;
+  bool stat_sync;
+  uint16_t stat_sync_keep;
+};
+
 struct mt_ptp_impl {
   struct mtl_main_impl* impl;
+  struct mt_phc2sys_impl phc2sys;
   enum mtl_port port;
   uint16_t port_id;
   bool active; /* if the ptp stack is running */
@@ -984,6 +1001,13 @@ bool mt_is_valid_socket(struct mtl_main_impl* impl, int soc_id);
 
 static inline uint8_t mt_start_queue(struct mtl_main_impl* impl, enum mtl_port port) {
   return impl->user_para.xdp_info[port].start_queue;
+}
+
+static inline bool mt_has_phc2sys_service(struct mtl_main_impl* impl) {
+  if (mt_get_user_params(impl)->flags & MTL_FLAG_PHC2SYS_ENABLE)
+    return true;
+  else
+    return false;
 }
 
 static inline bool mt_has_ptp_service(struct mtl_main_impl* impl) {
