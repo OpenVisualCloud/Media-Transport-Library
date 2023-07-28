@@ -209,6 +209,21 @@ static void phc2sys_adjust(struct mt_ptp_impl* ptp) {
     }
 
     ptp->phc2sys.stat_delta_max = RTE_MAX(labs(offset), ptp->phc2sys.stat_delta_max);
+
+    if (!ptp->phc2sys.stat_sync) {
+      /*
+       * Be considered as synchronized while the max delta is continuously below
+       * 300ns.
+       */
+      if (ptp->phc2sys.stat_delta_max < 300 && ptp->phc2sys.stat_delta_max > 0) {
+        if (ptp->phc2sys.stat_sync_keep > 100)
+          ptp->phc2sys.stat_sync = true;
+        else
+          ptp->phc2sys.stat_sync_keep++;
+      } else {
+        ptp->phc2sys.stat_sync_keep = 0;
+      }
+    }
   } else {
     err("%s(%d), PHC time retrieving failed.\n", __func__, ptp->port_id);
   }
@@ -908,6 +923,7 @@ static int ptp_init(struct mtl_main_impl* impl, struct mt_ptp_impl* ptp,
           (1000000 + ptp->phc2sys.realtime_hz / 2) / ptp->phc2sys.realtime_hz;
     }
     ptp->phc2sys.stat_sync = false;
+    ptp->phc2sys.stat_sync_keep = 0;
   }
   struct mtl_init_params* p = mt_get_user_params(impl);
   if (p->flags & MTL_FLAG_PTP_UNICAST_ADDR) {
@@ -1060,9 +1076,6 @@ static int ptp_stat(void* priv) {
 
   if (ptp->stat_delta_cnt) {
     if (mt_has_phc2sys_service(impl)) {
-      if (ptp->phc2sys.stat_delta_max < 300 && ptp->phc2sys.stat_delta_max > 0) {
-        ptp->phc2sys.stat_sync = true;
-      }
       notice("PTP(%d): system clock offset max %" PRId64 "\n", port,
              ptp->phc2sys.stat_delta_max);
     }

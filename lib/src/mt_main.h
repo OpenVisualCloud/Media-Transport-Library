@@ -160,6 +160,7 @@ struct mt_phc2sys_impl {
   long realtime_nominal_tick;
   int64_t stat_delta_max;
   bool stat_sync;
+  uint16_t stat_sync_keep;
 };
 
 struct mt_ptp_impl {
