@@ -121,7 +121,7 @@ static inline double pi_sample(struct mt_pi_servo* s, double offset, double loca
 }
 
 static void ptp_adj_system_clock_time(struct mt_ptp_impl* ptp, int64_t delta) {
-#ifndef WINDOWSENV
+#ifndef WINDOWSENV  
   struct timex adjtime;
   int sign = 1;
 
@@ -140,11 +140,11 @@ static void ptp_adj_system_clock_time(struct mt_ptp_impl* ptp, int64_t delta) {
   }
 
   clock_adjtime(CLOCK_REALTIME, &adjtime);
-#endif
+#endif  
 }
 
 static void ptp_adj_system_clock_freq(struct mt_ptp_impl* ptp, double freq) {
-#ifndef WINDOWSENV
+#ifndef WINDOWSENV  
   struct timex adjfreq;
   memset(&adjfreq, 0, sizeof(adjfreq));
 
@@ -159,7 +159,7 @@ static void ptp_adj_system_clock_freq(struct mt_ptp_impl* ptp, double freq) {
   adjfreq.modes |= ADJ_FREQUENCY;
   adjfreq.freq = (long)(freq * 65.536);
   clock_adjtime(CLOCK_REALTIME, &adjfreq);
-#endif
+#endif  
 }
 
 static void phc2sys_adjust(struct mt_ptp_impl* ptp) {
@@ -209,17 +209,15 @@ static void phc2sys_adjust(struct mt_ptp_impl* ptp) {
     }
 
     ptp->phc2sys.stat_delta_max = RTE_MAX(labs(offset), ptp->phc2sys.stat_delta_max);
-
+    
     if (!ptp->phc2sys.stat_sync) {
       /*
        * Be considered as synchronized while the max delta is continuously below
        * 300ns.
        */
       if (ptp->phc2sys.stat_delta_max < 300 && ptp->phc2sys.stat_delta_max > 0) {
-        if (ptp->phc2sys.stat_sync_keep > 100)
-          ptp->phc2sys.stat_sync = true;
-        else
-          ptp->phc2sys.stat_sync_keep++;
+        if (ptp->phc2sys.stat_sync_keep > 100) ptp->phc2sys.stat_sync = true;
+        else ptp->phc2sys.stat_sync_keep ++;
       } else {
         ptp->phc2sys.stat_sync_keep = 0;
       }
@@ -878,6 +876,20 @@ static void ptp_sync_from_user_handler(void* param) {
   rte_eal_alarm_set(MT_PTP_EBU_SYNC_MS * 1000, ptp_sync_from_user_handler, ptp);
 }
 
+static void phc2sys_init(struct mt_ptp_impl* ptp) {
+  memset(&ptp->phc2sys.servo, 0, sizeof(struct mt_pi_servo));
+#ifndef WINDOWSENV    
+  ptp->phc2sys.realtime_hz = sysconf(_SC_CLK_TCK);
+#endif    
+  ptp->phc2sys.realtime_nominal_tick = 0;
+  if (ptp->phc2sys.realtime_hz > 0) {
+    ptp->phc2sys.realtime_nominal_tick =
+        (1000000 + ptp->phc2sys.realtime_hz / 2) / ptp->phc2sys.realtime_hz;
+  }
+  ptp->phc2sys.stat_sync = false;
+  ptp->phc2sys.stat_sync_keep = 0;
+}
+
 static int ptp_init(struct mtl_main_impl* impl, struct mt_ptp_impl* ptp,
                     enum mtl_port port) {
   uint16_t port_id = mt_port_id(impl, port);
@@ -914,17 +926,7 @@ static int ptp_init(struct mtl_main_impl* impl, struct mt_ptp_impl* ptp,
   ptp->use_pi = (impl->user_para.flags & MTL_FLAG_PTP_PI);
   if (ptp->use_pi)
     info("%s(%d), use pi controller, kp %e, ki %e\n", __func__, port, ptp->kp, ptp->ki);
-  if (mt_has_phc2sys_service(impl)) {
-    memset(&ptp->phc2sys.servo, 0, sizeof(struct mt_pi_servo));
-    ptp->phc2sys.realtime_hz = sysconf(_SC_CLK_TCK);
-    ptp->phc2sys.realtime_nominal_tick = 0;
-    if (ptp->phc2sys.realtime_hz > 0) {
-      ptp->phc2sys.realtime_nominal_tick =
-          (1000000 + ptp->phc2sys.realtime_hz / 2) / ptp->phc2sys.realtime_hz;
-    }
-    ptp->phc2sys.stat_sync = false;
-    ptp->phc2sys.stat_sync_keep = 0;
-  }
+  if (mt_has_phc2sys_service(impl)) phc2sys_init(ptp);
   struct mtl_init_params* p = mt_get_user_params(impl);
   if (p->flags & MTL_FLAG_PTP_UNICAST_ADDR) {
     ptp->master_addr_mode = MT_PTP_UNICAST_ADDR;
