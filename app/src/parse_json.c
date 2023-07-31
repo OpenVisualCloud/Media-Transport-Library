@@ -1760,7 +1760,7 @@ void st_app_free_json(st_json_context_t* ctx) {
     ctx->rx_st20r_sessions = NULL;
   }
   if (ctx->log_file) {
-    /* malloc use strndup */
+    /* malloc use strdup */
     free(ctx->log_file);
     ctx->log_file = NULL;
   }
@@ -1838,7 +1838,7 @@ int st_app_parse_json(st_json_context_t* ctx, const char* filename) {
   obj = st_json_object_object_get(root_object, "log_file");
   if (obj != NULL) {
     const char* log_file = json_object_get_string(obj);
-    ctx->log_file = strndup(log_file, 128);
+    ctx->log_file = strdup(log_file);
   }
 
   /* parse interfaces for system */
