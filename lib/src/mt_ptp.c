@@ -377,7 +377,32 @@ static void ptp_calculate_coefficient(struct mt_ptp_impl* ptp, int64_t delta) {
 }
 
 static void ptp_adjust_delta(struct mt_ptp_impl* ptp, int64_t delta) {
-  ptp_timesync_adjust_time(ptp, delta);
+  double ppb;
+  enum servo_state state = UNLOCKED;
+
+  if (mt_has_phc2sys_service(ptp->impl)) {
+    ppb = pi_sample(&ptp->servo, -1 * delta, ptp->t2, &state);
+
+    switch (state) {
+      case UNLOCKED:
+        break;
+      case JUMP:
+        ptp_timesync_adjust_time(ptp, delta);
+        dbg("%s(%d), master offset: %" PRId64 " path delay: %" PRId64 " adjust time.\n",
+            __func__, ptp->port_id, delta, ptp->path_delay);
+        break;
+      case LOCKED:
+        ptp_timesync_lock(ptp);
+        rte_eth_timesync_adjust_freq(ptp->port_id, -1 * (long)(ppb * 65.536));
+        ptp_timesync_unlock(ptp);
+        dbg("%s(%d), master offset: %" PRId64 " path delay: %" PRId64 " adjust freq.\n",
+            __func__, ptp->port_id, delta, ptp->path_delay);
+        break;
+    }
+    phc2sys_adjust(ptp);
+  } else {
+    ptp_timesync_adjust_time(ptp, delta);
+  }
 
   dbg("%s(%d), delta %" PRId64 ", ptp %" PRIu64 "\n", __func__, ptp->port, delta,
       ptp_get_raw_time(ptp));
@@ -394,7 +419,6 @@ static void ptp_adjust_delta(struct mt_ptp_impl* ptp, int64_t delta) {
   ptp->stat_delta_max = RTE_MAX(delta, ptp->stat_delta_max);
   ptp->stat_delta_cnt++;
   ptp->stat_delta_sum += labs(delta);
-  if (mt_has_phc2sys_service(ptp->impl)) phc2sys_adjust(ptp);
 }
 
 static void ptp_expect_result_clear(struct mt_ptp_impl* ptp) {
@@ -472,6 +496,13 @@ static int ptp_parse_result(struct mt_ptp_impl* ptp) {
       ptp->port, ptp->t1, ptp->t2, ptp->t3, ptp->t4);
 
   delta /= 2;
+
+  if (mt_has_phc2sys_service(ptp->impl)) {
+    ptp_adjust_delta(ptp, delta);
+    ptp_t_result_clear(ptp);
+    return 0;
+  }
+
   path_delay /= 2;
   abs_delta = labs(delta);
 
@@ -639,9 +670,7 @@ static void ptp_delay_req_task(struct mt_ptp_impl* ptp) {
   int ret;
 
   while (max_retry > 0) {
-    ptp_timesync_lock(ptp);
     ret = ptp_timesync_read_tx_time(ptp, &tx_ns);
-    ptp_timesync_unlock(ptp);
     if (ret >= 0) {
       break;
     }
@@ -692,18 +721,20 @@ static int ptp_parse_sync(struct mt_ptp_impl* ptp, struct mt_ptp_sync_msg* msg, 
 
   ptp->stat_sync_cnt++;
 
-  uint64_t monitor_period_us = ptp->expect_result_period_ns / 1000 / 2;
-  if (monitor_period_us) {
-    monitor_period_us = RTE_MAX(monitor_period_us, 100 * 1000 * 1000); /* min 100ms */
-    if (ptp->t2) { /* already has a pending t2 */
-      ptp_expect_result_clear(ptp);
-      ptp_t_result_clear(ptp);
-      ptp->stat_sync_timeout_err++;
-      ptp_sync_expect_result(ptp);
+  if (!mt_has_phc2sys_service(ptp->impl)) {
+    uint64_t monitor_period_us = ptp->expect_result_period_ns / 1000 / 2;
+    if (monitor_period_us) {
+      monitor_period_us = RTE_MAX(monitor_period_us, 100 * 1000 * 1000); /* min 100ms */
+      if (ptp->t2) { /* already has a pending t2 */
+        ptp_expect_result_clear(ptp);
+        ptp_t_result_clear(ptp);
+        ptp->stat_sync_timeout_err++;
+        ptp_sync_expect_result(ptp);
+      }
+      rte_eal_alarm_cancel(ptp_monitor_handler, ptp);
+      rte_eal_alarm_cancel(ptp_sync_timeout_handler, ptp);
+      rte_eal_alarm_set(monitor_period_us, ptp_sync_timeout_handler, ptp);
     }
-    rte_eal_alarm_cancel(ptp_monitor_handler, ptp);
-    rte_eal_alarm_cancel(ptp_sync_timeout_handler, ptp);
-    rte_eal_alarm_set(monitor_period_us, ptp_sync_timeout_handler, ptp);
   }
 
   ptp_timesync_read_rx_time(ptp, timesync, &rx_ns);
@@ -729,6 +760,7 @@ static int ptp_parse_sync(struct mt_ptp_impl* ptp, struct mt_ptp_sync_msg* msg, 
   ptp->t2_mode = mode;
   dbg("%s(%d), t2 %" PRIu64 ", seq %d, ptp %" PRIu64 "\n", __func__, ptp->port, ptp->t2,
       ptp->t2_sequence_id, ptp_get_raw_time(ptp));
+
   return 0;
 }
 
@@ -740,7 +772,8 @@ static int ptp_parse_follow_up(struct mt_ptp_impl* ptp,
     return -EINVAL;
   }
 
-  ptp->t1 = ptp_net_tmstamp_to_ns(&msg->precise_origin_timestamp);
+  ptp->t1 = ptp_net_tmstamp_to_ns(&msg->precise_origin_timestamp) +
+            (be64toh(msg->hdr.correction_field) >> 16);
   ptp->t1_domain_number = msg->hdr.domain_number;
   dbg("%s(%d), t1 %" PRIu64 ", ptp %" PRIu64 "\n", __func__, ptp->port, ptp->t1,
       ptp_get_raw_time(ptp));
@@ -808,7 +841,8 @@ static int ptp_parse_delay_resp(struct mt_ptp_impl* ptp,
     return -EIO;
   }
 
-  ptp->t4 = ptp_net_tmstamp_to_ns(&msg->receive_timestamp);
+  ptp->t4 = ptp_net_tmstamp_to_ns(&msg->receive_timestamp) -
+            (be64toh(msg->hdr.correction_field) >> 16);
   dbg("%s(%d), t4 %" PRIu64 ", seq %d, ptp %" PRIu64 "\n", __func__, ptp->port, ptp->t4,
       ptp->t3_sequence_id, ptp_get_raw_time(ptp));
 
@@ -884,6 +918,7 @@ static void ptp_sync_from_user_handler(void* param) {
 
 static void phc2sys_init(struct mt_ptp_impl* ptp) {
   memset(&ptp->phc2sys.servo, 0, sizeof(struct mt_pi_servo));
+  memset(&ptp->servo, 0, sizeof(struct mt_pi_servo));
 #ifndef WINDOWSENV
   ptp->phc2sys.realtime_hz = sysconf(_SC_CLK_TCK);
 #endif
