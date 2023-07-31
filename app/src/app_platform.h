@@ -50,6 +50,10 @@
 typedef unsigned long int nfds_t;
 #endif
 
+#ifdef WINDOWSENV
+#define strdup(p) _strdup(p)
+#endif
+
 enum st_tx_frame_status {
   ST_TX_FRAME_FREE = 0,
   ST_TX_FRAME_READY,

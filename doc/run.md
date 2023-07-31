@@ -268,6 +268,8 @@ This project also provide many loop test(1 port as tx, 1 port as rx) config file
 --rx_separate_lcore                  : If enabled, RX video session will run on dedicated lcores, it means TX video and RX video is not running on the same core.
 --dma_dev <DMA1,DMA2,DMA3...>        : DMA dev list to offload the packet memory copy for RX video frame session.
 --runtime_session                    : start instance before create video/audio/anc sessions, similar to runtime tx/rx create.
+--log_level <level>                  : set log level. e.g. debug, info, notice, warning, error.
+--log_file <file path>               : set log file for mtl log. If you're initiating multiple RxTxApp processes simultaneously, please ensure each process has a unique filename path. Default the log is writing to stderr.
 
 --ebu                                : debug option, enable timing check for video rx streams.
 --pcapng_dump <n>                    : debug option, dump n packets from rx video streams to pcapng files.
@@ -278,7 +280,6 @@ This project also provide many loop test(1 port as tx, 1 port as rx) config file
 --sch_session_quota <count>          : debug option, max sessions count for one lcore, unit: 1080P 60FPS TX.
 --p_tx_dst_mac <mac>                 : debug option, destination MAC address for primary port.
 --r_tx_dst_mac <mac>                 : debug option, destination MAC address for redundant port.
---log_level <level>                  : debug option, set log level. e.g. debug, info, notice, warning, error.
 --nb_tx_desc <count>                 : debug option, number of transmit descriptors for each NIC TX queue, affect the memory usage and the performance.
 --nb_rx_desc <count>                 : debug option, number of receive descriptors for each NIC RX queue, affect the memory usage and the performance.
 --tasklet_time                       : debug option, enable stat info for tasklet running time.

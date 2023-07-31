@@ -69,6 +69,7 @@ enum st_args_cmd {
   ST_ARG_MONO_POOL,
   ST_ARG_RX_POOL_DATA_SIZE,
   ST_ARG_LOG_LEVEL,
+  ST_ARG_LOG_FILE,
   ST_ARG_NB_TX_DESC,
   ST_ARG_NB_RX_DESC,
   ST_ARG_DMA_DEV,
@@ -171,6 +172,7 @@ static struct option st_app_args_options[] = {
     {"r_tx_dst_mac", required_argument, 0, ST_ARG_R_TX_DST_MAC},
     {"promiscuous", no_argument, 0, ST_ARG_NIC_RX_PROMISCUOUS},
     {"log_level", required_argument, 0, ST_ARG_LOG_LEVEL},
+    {"log_file", required_argument, 0, ST_ARG_LOG_FILE},
     {"ptp", no_argument, 0, ST_ARG_LIB_PTP},
     {"phc2sys", no_argument, 0, ST_ARG_LIB_PHC2SYS},
     {"rx_mono_pool", no_argument, 0, ST_ARG_RX_MONO_POOL},
@@ -308,6 +310,7 @@ static int app_args_json(struct st_app_context* ctx, struct mtl_init_params* p,
   if (ctx->json_ctx->shared_rx_queues) p->flags |= MTL_FLAG_SHARED_RX_QUEUE;
   if (ctx->json_ctx->tx_no_chain) p->flags |= MTL_FLAG_TX_NO_CHAIN;
   if (ctx->json_ctx->rss_mode) p->rss_mode = ctx->json_ctx->rss_mode;
+  if (ctx->json_ctx->log_file) st_set_mtl_log_file(ctx, ctx->json_ctx->log_file);
 
   return 0;
 }
@@ -537,6 +540,9 @@ int st_app_parse_args(struct st_app_context* ctx, struct mtl_init_params* p, int
         else
           err("%s, unknow log level %s\n", __func__, optarg);
         app_set_log_level(p->log_level);
+        break;
+      case ST_ARG_LOG_FILE:
+        st_set_mtl_log_file(ctx, optarg);
         break;
       case ST_ARG_NB_TX_DESC:
         p->nb_tx_desc = atoi(optarg);
