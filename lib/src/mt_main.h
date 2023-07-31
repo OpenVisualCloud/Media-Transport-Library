@@ -621,6 +621,8 @@ struct mt_interface {
   uint64_t real_time_base;
 
   struct mt_dev_stats* dev_stats; /* for nic without reset func */
+  double stat_tx_rate_bps_m;
+  double stat_rx_rate_bps_m;
 };
 
 struct mt_lcore_shm {

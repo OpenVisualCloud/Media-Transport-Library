@@ -862,7 +862,9 @@ int mtl_get_fix_info(mtl_handle mt, struct mtl_fix_info* info) {
     return -EIO;
   }
 
+  memset(info, 0, sizeof(*info));
   info->dma_dev_cnt_max = impl->dma_mgr.num_dma_dev;
+  info->num_ports = mt_num_ports(impl);
   info->init_flags = mt_get_user_params(impl)->flags;
   return 0;
 }
@@ -876,10 +878,19 @@ int mtl_get_var_info(mtl_handle mt, struct mtl_var_info* info) {
     return -EIO;
   }
 
+  memset(info, 0, sizeof(*info));
   info->sch_cnt = rte_atomic32_read(&mt_sch_get_mgr(impl)->sch_cnt);
   info->lcore_cnt = rte_atomic32_read(&impl->lcore_cnt);
   info->dma_dev_cnt = rte_atomic32_read(&mgr->num_dma_dev_active);
   info->dev_started = mt_started(impl);
+
+  int num_ports = mt_num_ports(impl);
+  struct mt_interface* inf;
+  for (int port = 0; port < num_ports; port++) {
+    inf = mt_if(impl, port);
+    info->tx_rate_bps_m[port] = inf->stat_tx_rate_bps_m;
+    info->rx_rate_bps_m[port] = inf->stat_rx_rate_bps_m;
+  }
 
   return 0;
 }
@@ -892,6 +903,7 @@ int st_get_var_info(mtl_handle mt, struct st_var_info* info) {
     return -EIO;
   }
 
+  memset(info, 0, sizeof(*info));
   info->st20_tx_sessions_cnt = rte_atomic32_read(&impl->st20_tx_sessions_cnt);
   info->st22_tx_sessions_cnt = rte_atomic32_read(&impl->st22_tx_sessions_cnt);
   info->st30_tx_sessions_cnt = rte_atomic32_read(&impl->st30_tx_sessions_cnt);

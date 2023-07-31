@@ -443,7 +443,7 @@ struct mtl_init_params {
   /* below are mandatory parameters */
   /** Pcie BDF(ex: 0000:af:00.0) or enp175s0f0(MTL_PMD_DPDK_AF_XDP) */
   char port[MTL_PORT_MAX][MTL_PORT_MAX_LEN];
-  /** number of pcie ports, 1 or 2, mandatory */
+  /** number of pcie ports, 1 to MTL_PORT_MAX_LEN, mandatory */
   uint8_t num_ports;
   /** bound IP of ports, for MTL_PMD_DPDK_USER
    * This is not used when DHCP enabled, otherwise set the valid value.
@@ -587,16 +587,22 @@ struct mtl_init_params {
  * A structure used to retrieve fixed info for an MTL instance.
  */
 struct mtl_fix_info {
-  /** max dma dev count for current transport context */
-  uint8_t dma_dev_cnt_max;
   /** the flags in mtl_init_params */
   uint64_t init_flags;
+  /** number of pcie ports */
+  uint8_t num_ports;
+  /** max dma dev count for current transport context */
+  uint8_t dma_dev_cnt_max;
 };
 
 /**
  * A structure used to retrieve varied info for an MTL instance.
  */
 struct mtl_var_info {
+  /** the tx rate in megabits per second, updated for each dump period */
+  double tx_rate_bps_m[MTL_PORT_MAX_LEN];
+  /** the tx rate in megabits per second, updated for each dump period */
+  double rx_rate_bps_m[MTL_PORT_MAX_LEN];
   /** active scheduler count */
   uint8_t sch_cnt;
   /** active lcore count */

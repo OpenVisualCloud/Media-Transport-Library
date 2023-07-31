@@ -148,6 +148,8 @@ static int dev_inf_stat(void* pri) {
         (double)stats.obytes * 8 / MT_DEV_STAT_INTERVAL_S / MT_DEV_STAT_M_UNIT;
     double irate_m =
         (double)stats.ibytes * 8 / MT_DEV_STAT_INTERVAL_S / MT_DEV_STAT_M_UNIT;
+    inf->stat_tx_rate_bps_m = orate_m;
+    inf->stat_rx_rate_bps_m = irate_m;
 
     notice("DEV(%d): Avr rate, tx: %f Mb/s, rx: %f Mb/s, pkts, tx: %" PRIu64
            ", rx: %" PRIu64 "\n",
@@ -178,8 +180,11 @@ static void dev_stat(struct mtl_main_impl* impl) {
   }
 
   notice("* *    M T    D E V   S T A T E   * * \n");
-  if (p->stat_dump_cb_fn) p->stat_dump_cb_fn(p->priv);
   mt_stat_dump(impl);
+  if (p->stat_dump_cb_fn) {
+    dbg("%s, start stat_dump_cb_fn\n", __func__);
+    p->stat_dump_cb_fn(p->priv);
+  }
   notice("* *    E N D    S T A T E   * * \n\n");
 }
 
@@ -211,7 +216,10 @@ static void* dev_stat_thread(void* arg) {
       mt_pthread_cond_wait(&impl->stat_wake_cond, &impl->stat_wake_mutex);
     mt_pthread_mutex_unlock(&impl->stat_wake_mutex);
 
-    if (!rte_atomic32_read(&impl->stat_stop)) dev_stat(impl);
+    if (!rte_atomic32_read(&impl->stat_stop)) {
+      dbg("%s, dev_stat\n", __func__);
+      dev_stat(impl);
+    }
   }
   info("%s, stop\n", __func__);
 

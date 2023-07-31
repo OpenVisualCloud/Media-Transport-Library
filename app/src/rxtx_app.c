@@ -28,8 +28,28 @@
 static struct st_app_context* g_app_ctx; /* only for st_app_sig_handler */
 static enum mtl_log_level app_log_level;
 
+static int app_dump_mtl_stat(struct st_app_context* ctx) {
+  struct mtl_fix_info fix;
+  struct mtl_var_info var;
+  int ret;
+
+  ret = mtl_get_fix_info(ctx->st, &fix);
+  if (ret < 0) return ret;
+  ret = mtl_get_var_info(ctx->st, &var);
+  if (ret < 0) return ret;
+
+  for (uint8_t port = 0; port < fix.num_ports; port++) {
+    info("%s(%u), tx %f Mb/s rx %f Mb/s\n", __func__, port, var.tx_rate_bps_m[port],
+         var.rx_rate_bps_m[port]);
+  }
+
+  return 0;
+}
+
 static void app_stat(void* priv) {
   struct st_app_context* ctx = priv;
+
+  if (ctx->mtl_log_stream) app_dump_mtl_stat(ctx);
 
   st_app_rx_video_sessions_stat(ctx);
   st_app_rx_st22p_sessions_stat(ctx);
