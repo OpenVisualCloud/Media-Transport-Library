@@ -102,7 +102,7 @@ extern "C" {
 #define MTL_ARRAY_SIZE(arr) (sizeof(arr) / sizeof(arr[0]))
 
 /**
- * Handle to media transport device context
+ * Handle to MTL transport device context
  */
 typedef struct mtl_main_impl* mtl_handle;
 /**
@@ -162,7 +162,7 @@ enum mtl_session_port {
 };
 
 /**
- * Log level type to media context
+ * Log level type to MTL context
  */
 enum mtl_log_level {
   MTL_LOG_LEVEL_DEBUG = 0, /**< debug log level */
@@ -472,14 +472,14 @@ struct mtl_init_params {
   /**
    * deprecated for MTL_TRANSPORT_ST2110.
    * max tx sessions(st20, st22, st30, st40) requested the lib to support,
-   * use mtl_get_cap to query the actual count.
+   * use mtl_get_fix_info to query the actual count.
    * dpdk context will allocate the hw resources(queues, memory) based on this number.
    */
   uint16_t tx_sessions_cnt_max __mtl_deprecated_msg("Use tx_queues_cnt instead");
   /**
    * deprecated for MTL_TRANSPORT_ST2110.
    * max rx sessions(st20, st22, st30, st40) requested the lib to support,
-   * use mtl_get_cap to query the actual count.
+   * use mtl_get_fix_info to query the actual count.
    * dpdk context will allocate the hw resources(queues, memory) based on this number.
    */
   uint16_t rx_sessions_cnt_max __mtl_deprecated_msg("Use rx_queues_cnt instead");
@@ -584,9 +584,9 @@ struct mtl_init_params {
 };
 
 /**
- * A structure used to retrieve capacity for an MTL instance.
+ * A structure used to retrieve fixed info for an MTL instance.
  */
-struct mtl_cap {
+struct mtl_fix_info {
   /** max dma dev count for current transport context */
   uint8_t dma_dev_cnt_max;
   /** the flags in mtl_init_params */
@@ -594,34 +594,44 @@ struct mtl_cap {
 };
 
 /**
- * A structure used to retrieve state for an MTL instance.
+ * A structure used to retrieve varied info for an MTL instance.
  */
-struct mtl_stats {
-  /** st20 tx session count in current transport context */
-  uint16_t st20_tx_sessions_cnt;
-  /** st22 tx session count in current transport context */
-  uint16_t st22_tx_sessions_cnt;
-  /** st30 tx session count in current transport context */
-  uint16_t st30_tx_sessions_cnt;
-  /** st40 tx session count in current transport context */
-  uint16_t st40_tx_sessions_cnt;
-  /** st20 rx session count in current transport context */
-  uint16_t st20_rx_sessions_cnt;
-  /** st22 rx session count in current transport context */
-  uint16_t st22_rx_sessions_cnt;
-  /** st30 rx session count in current transport context */
-  uint16_t st30_rx_sessions_cnt;
-  /** st40 rx session count in current transport context */
-  uint16_t st40_rx_sessions_cnt;
-  /** active scheduler count in current transport context */
+struct mtl_var_info {
+  /** active scheduler count */
   uint8_t sch_cnt;
-  /** active lcore count in current transport context */
+  /** active lcore count */
   uint8_t lcore_cnt;
   /** active dma dev count for current transport context */
   uint8_t dma_dev_cnt;
   /** if transport device is started(mtl_start) */
-  uint8_t dev_started;
+  bool dev_started;
 };
+
+/**
+ * Retrieve the fixed information of an MTL instance.
+ *
+ * @param mt
+ *   The handle to MTL instance.
+ * @param info
+ *   A pointer to info structure.
+ * @return
+ *   - 0 if successful.
+ *   - <0: Error code if fail.
+ */
+int mtl_get_fix_info(mtl_handle mt, struct mtl_fix_info* info);
+
+/**
+ * Retrieve the varied information of an MTL instance.
+ *
+ * @param mt
+ *   The handle to MTL instance.
+ * @param info
+ *   A pointer to info structure.
+ * @return
+ *   - 0 if successful.
+ *   - <0: Error code if fail.
+ */
+int mtl_get_var_info(mtl_handle mt, struct mtl_var_info* info);
 
 /**
  * Inline function returning primary port pointer from mtl_init_params
@@ -673,21 +683,21 @@ static inline uint8_t* mtl_r_sip_addr(struct mtl_init_params* p) {
 const char* mtl_version(void);
 
 /**
- * Initialize the media transport device context which based on DPDK.
+ * Initialize the MTL transport device context which based on DPDK.
  *
  * @param p
  *   The pointer to the init parameters.
  * @return
  *   - NULL on error.
- *   - Otherwise, the handle to the media transport device context.
+ *   - Otherwise, the handle to the MTL transport device context.
  */
 mtl_handle mtl_init(struct mtl_init_params* p);
 
 /**
- * Un-initialize the media transport device context.
+ * Un-initialize the MTL transport device context.
  *
  * @param mt
- *   The handle to the media transport device context.
+ *   The handle to the MTL transport device context.
  * @return
  *   - 0: Success, device un-initialized.
  *   - <0: Error code of the device un-initialize.
@@ -695,10 +705,10 @@ mtl_handle mtl_init(struct mtl_init_params* p);
 int mtl_uninit(mtl_handle mt);
 
 /**
- * Start the media transport device context.
+ * Start the MTL transport device context.
  *
  * @param mt
- *   The handle to the media transport device context.
+ *   The handle to the MTL transport device context.
  * @return
  *   - 0: Success, device started.
  *   - <0: Error code of the device start.
@@ -706,10 +716,10 @@ int mtl_uninit(mtl_handle mt);
 int mtl_start(mtl_handle mt);
 
 /**
- * Stop the media transport device context.
+ * Stop the MTL transport device context.
  *
  * @param mt
- *   The handle to the media transport device context.
+ *   The handle to the MTL transport device context.
  * @return
  *   - 0: Success, device stopped.
  *   - <0: Error code of the device stop.
@@ -717,11 +727,11 @@ int mtl_start(mtl_handle mt);
 int mtl_stop(mtl_handle mt);
 
 /**
- * Abort the media transport device context.
+ * Abort the MTL transport device context.
  * Usually called in the exception case, e.g CTRL-C.
  *
  * @param mt
- *   The handle to the media transport device context.
+ *   The handle to the MTL transport device context.
  * @return
  *   - 0: Success, device aborted.
  *   - <0: Error code of the device abort.
@@ -729,36 +739,10 @@ int mtl_stop(mtl_handle mt);
 int mtl_abort(mtl_handle mt);
 
 /**
- * Retrieve the capacity of the media transport device context.
- *
- * @param mt
- *   The handle to the media transport device context.
- * @param cap
- *   A pointer to a structure of type *st_cap* to be filled.
- * @return
- *   - 0 if successful.
- *   - <0: Error code if fail.
- */
-int mtl_get_cap(mtl_handle mt, struct mtl_cap* cap);
-
-/**
- * Retrieve the stat info of the media transport device context.
- *
- * @param mt
- *   The handle to the media transport device context.
- * @param stats
- *   A pointer to a structure of type *st_stats* to be filled.
- * @return
- *   - 0 if successful.
- *   - <0: Error code if fail.
- */
-int mtl_get_stats(mtl_handle mt, struct mtl_stats* stats);
-
-/**
  * Enable or disable sleep mode for sch.
  *
  * @param mt
- *   The handle to the media transport device context.
+ *   The handle to the MTL transport device context.
  * @param sch_idx
  *   The sch index, get from st20_tx_get_sch_idx or st20_rx_get_sch_idx.
  * @param enable
@@ -774,7 +758,7 @@ int mtl_sch_enable_sleep(mtl_handle mt, int sch_idx, bool enable);
  * Debug usage only.
  *
  * @param mt
- *   The handle to the media transport device context.
+ *   The handle to the MTL transport device context.
  * @param us
  *   The max sleep us.
  * @return
@@ -784,10 +768,10 @@ int mtl_sch_enable_sleep(mtl_handle mt, int sch_idx, bool enable);
 int mtl_sch_set_sleep_us(mtl_handle mt, uint64_t us);
 
 /**
- * Request one DPDK lcore from the media transport device context.
+ * Request one DPDK lcore from the MTL transport device context.
  *
  * @param mt
- *   The handle to the media transport device context.
+ *   The handle to the MTL transport device context.
  * @param lcore
  *   A pointer to the returned lcore number.
  * @return
@@ -800,7 +784,7 @@ int mtl_get_lcore(mtl_handle mt, unsigned int* lcore);
  * Bind one thread to lcore.
  *
  * @param mt
- *   The handle to the media transport device context.
+ *   The handle to the MTL transport device context.
  * @param thread
  *   the thread which request the bind action.
  * @param lcore
@@ -812,10 +796,10 @@ int mtl_get_lcore(mtl_handle mt, unsigned int* lcore);
 int mtl_bind_to_lcore(mtl_handle mt, pthread_t thread, unsigned int lcore);
 
 /**
- * Put back the DPDK lcore which requested from the media transport device context.
+ * Put back the DPDK lcore which requested from the MTL transport device context.
  *
  * @param mt
- *   The handle to the media transport device context.
+ *   The handle to the MTL transport device context.
  * @param lcore
  *   the DPDK lcore which requested by mtl_get_lcore.
  * @return
@@ -842,7 +826,7 @@ void* mtl_memcpy(void* dest, const void* src, size_t n);
  * Read current time from ptp source.
  *
  * @param mt
- *   The handle to the media transport device context.
+ *   The handle to the MTL transport device context.
  * @return
  *   - The time in nanoseconds in current ptp system
  */
@@ -854,7 +838,7 @@ uint64_t mtl_ptp_read_time(mtl_handle mt);
  * Note the memory is mmap to IOVA already, use mtl_hp_virt2iova to get the iova.
  *
  * @param mt
- *   The handle to the media transport device context.
+ *   The handle to the MTL transport device context.
  * @param size
  *   Size (in bytes) to be allocated.
  * @param port
@@ -872,7 +856,7 @@ void* mtl_hp_malloc(mtl_handle mt, size_t size, enum mtl_port port);
  * Note the memory is mmap to IOVA already, use mtl_hp_virt2iova to get the iova.
  *
  * @param mt
- *   The handle to the media transport device context.
+ *   The handle to the MTL transport device context.
  * @param size
  *   Size (in bytes) to be allocated.
  * @param port
@@ -891,7 +875,7 @@ void* mtl_hp_zmalloc(mtl_handle mt, size_t size, enum mtl_port port);
  * The behaviour is undefined if the pointer does not match this requirement.
  *
  * @param mt
- *   The handle to the media transport device context.
+ *   The handle to the MTL transport device context.
  * @param ptr
  *   The virtual address pointer to memory to be freed.
  */
@@ -901,7 +885,7 @@ void mtl_hp_free(mtl_handle mt, void* ptr);
  * Return the IO address of a virtual address from mtl_hp_malloc/mtl_hp_zmalloc
  *
  * @param mt
- *   The handle to the media transport device context.
+ *   The handle to the MTL transport device context.
  * @param vaddr
  *   Virtual address obtained from previous mtl_hp_malloc/mtl_hp_zmalloc call
  * @return
@@ -914,7 +898,7 @@ mtl_iova_t mtl_hp_virt2iova(mtl_handle mt, const void* vaddr);
  * Return the detected page size on the system.
  *
  * @param mt
- *   The handle to the media transport device context.
+ *   The handle to the MTL transport device context.
  * @return
  *   page size
  */
@@ -925,7 +909,7 @@ size_t mtl_page_size(mtl_handle mt);
  * The virtual address and size must align to page size(mtl_page_size).
  *
  * @param mt
- *   The handle to the media transport device context.
+ *   The handle to the MTL transport device context.
  * @param vaddr
  *   Virtual address of memory to be mapped and must align to page size.
  * @param size
@@ -941,7 +925,7 @@ mtl_iova_t mtl_dma_map(mtl_handle mt, const void* vaddr, size_t size);
  * Perform DMA unmapping on the mtl_dma_map
  *
  * @param mt
- *   The handle to the media transport device context.
+ *   The handle to the MTL transport device context.
  * @param vaddr
  *   Virtual address of memory to be unmapped and must align to page size.
  * @param iova
@@ -971,7 +955,7 @@ int mtl_dma_unmap(mtl_handle mt, const void* vaddr, mtl_iova_t iova, size_t size
  * *alloc_addr *addr(page aligned)
  *
  * @param mt
- *   The handle to the media transport device context.
+ *   The handle to the MTL transport device context.
  * @param size
  *   Size of valid data.
  * @return
@@ -985,7 +969,7 @@ mtl_dma_mem_handle mtl_dma_mem_alloc(mtl_handle mt, size_t size);
  * This will use memset to clear the st dma mem struct.
  *
  * @param mt
- *   The handle to the media transport device context.
+ *   The handle to the MTL transport device context.
  * @param handle
  *   The handle to the st dma mem.
  */
@@ -1016,7 +1000,7 @@ mtl_iova_t mtl_dma_mem_iova(mtl_dma_mem_handle handle);
  * In NUMA systems, the dma dev allocated from the same NUMA socket of the port.
  *
  * @param mt
- *   The handle to the media transport device context.
+ *   The handle to the MTL transport device context.
  * @param nb_desc
  *   Number of descriptor for the user DMA device
  * @param port
@@ -1136,7 +1120,7 @@ uint16_t mtl_udma_completed(mtl_udma_handle handle, const uint16_t nb_cpls);
  * Get the rss mode.
  *
  * @param mt
- *   The handle to the media transport device context.
+ *   The handle to the MTL transport device context.
  * @return
  *   - enum mtl_rss_mode.
  */
@@ -1146,7 +1130,7 @@ enum mtl_rss_mode mtl_rss_mode_get(mtl_handle mt);
  * Get the iova mode.
  *
  * @param mt
- *   The handle to the media transport device context.
+ *   The handle to the MTL transport device context.
  * @return
  *   - enum mtl_iova_mode.
  */

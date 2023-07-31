@@ -854,7 +854,7 @@ const char* mtl_version(void) {
   return version;
 }
 
-int mtl_get_cap(mtl_handle mt, struct mtl_cap* cap) {
+int mtl_get_fix_info(mtl_handle mt, struct mtl_fix_info* info) {
   struct mtl_main_impl* impl = mt;
 
   if (impl->type != MT_HANDLE_MAIN) {
@@ -862,12 +862,12 @@ int mtl_get_cap(mtl_handle mt, struct mtl_cap* cap) {
     return -EIO;
   }
 
-  cap->dma_dev_cnt_max = impl->dma_mgr.num_dma_dev;
-  cap->init_flags = mt_get_user_params(impl)->flags;
+  info->dma_dev_cnt_max = impl->dma_mgr.num_dma_dev;
+  info->init_flags = mt_get_user_params(impl)->flags;
   return 0;
 }
 
-int mtl_get_stats(mtl_handle mt, struct mtl_stats* stats) {
+int mtl_get_var_info(mtl_handle mt, struct mtl_var_info* info) {
   struct mtl_main_impl* impl = mt;
   struct mt_dma_mgr* mgr = mt_get_dma_mgr(impl);
 
@@ -876,21 +876,31 @@ int mtl_get_stats(mtl_handle mt, struct mtl_stats* stats) {
     return -EIO;
   }
 
-  stats->st20_tx_sessions_cnt = rte_atomic32_read(&impl->st20_tx_sessions_cnt);
-  stats->st22_tx_sessions_cnt = rte_atomic32_read(&impl->st22_tx_sessions_cnt);
-  stats->st30_tx_sessions_cnt = rte_atomic32_read(&impl->st30_tx_sessions_cnt);
-  stats->st40_tx_sessions_cnt = rte_atomic32_read(&impl->st40_tx_sessions_cnt);
-  stats->st20_rx_sessions_cnt = rte_atomic32_read(&impl->st20_rx_sessions_cnt);
-  stats->st22_rx_sessions_cnt = rte_atomic32_read(&impl->st22_rx_sessions_cnt);
-  stats->st30_rx_sessions_cnt = rte_atomic32_read(&impl->st30_rx_sessions_cnt);
-  stats->st40_rx_sessions_cnt = rte_atomic32_read(&impl->st40_rx_sessions_cnt);
-  stats->sch_cnt = rte_atomic32_read(&mt_sch_get_mgr(impl)->sch_cnt);
-  stats->lcore_cnt = rte_atomic32_read(&impl->lcore_cnt);
-  stats->dma_dev_cnt = rte_atomic32_read(&mgr->num_dma_dev_active);
-  if (mt_started(impl))
-    stats->dev_started = 1;
-  else
-    stats->dev_started = 0;
+  info->sch_cnt = rte_atomic32_read(&mt_sch_get_mgr(impl)->sch_cnt);
+  info->lcore_cnt = rte_atomic32_read(&impl->lcore_cnt);
+  info->dma_dev_cnt = rte_atomic32_read(&mgr->num_dma_dev_active);
+  info->dev_started = mt_started(impl);
+
+  return 0;
+}
+
+int st_get_var_info(mtl_handle mt, struct st_var_info* info) {
+  struct mtl_main_impl* impl = mt;
+
+  if (impl->type != MT_HANDLE_MAIN) {
+    err("%s, invalid type %d\n", __func__, impl->type);
+    return -EIO;
+  }
+
+  info->st20_tx_sessions_cnt = rte_atomic32_read(&impl->st20_tx_sessions_cnt);
+  info->st22_tx_sessions_cnt = rte_atomic32_read(&impl->st22_tx_sessions_cnt);
+  info->st30_tx_sessions_cnt = rte_atomic32_read(&impl->st30_tx_sessions_cnt);
+  info->st40_tx_sessions_cnt = rte_atomic32_read(&impl->st40_tx_sessions_cnt);
+  info->st20_rx_sessions_cnt = rte_atomic32_read(&impl->st20_rx_sessions_cnt);
+  info->st22_rx_sessions_cnt = rte_atomic32_read(&impl->st22_rx_sessions_cnt);
+  info->st30_rx_sessions_cnt = rte_atomic32_read(&impl->st30_rx_sessions_cnt);
+  info->st40_rx_sessions_cnt = rte_atomic32_read(&impl->st40_rx_sessions_cnt);
+
   return 0;
 }
 

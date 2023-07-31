@@ -7,13 +7,13 @@
 
 static int test_dma_cnt(struct st_tests_context* ctx) {
   mtl_handle handle = ctx->handle;
-  struct mtl_stats stats;
+  struct mtl_var_info var;
   int ret;
 
-  ret = mtl_get_stats(handle, &stats);
+  ret = mtl_get_var_info(handle, &var);
   if (ret < 0) return ret;
 
-  return stats.dma_dev_cnt;
+  return var.dma_dev_cnt;
 }
 
 static void test_dma_create_one(struct st_tests_context* ctx) {
