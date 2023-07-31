@@ -13,6 +13,7 @@
 #include <stdbool.h>
 #include <stddef.h>
 #include <stdint.h>
+#include <stdio.h>
 #include <string.h>
 #include <time.h>
 
@@ -93,7 +94,7 @@ extern "C" {
 #define MTL_DMA_DEV_MAX (8)
 
 /**
- * Max length of a pcap dump file name
+ * Max length of a pcap dump filename
  */
 #define MTL_PCAP_FILE_MAX_LEN (32)
 
@@ -1210,6 +1211,20 @@ enum mtl_pmd_type mtl_pmd_by_port_name(const char* port);
  */
 int mtl_get_if_ip(char* if_name, uint8_t ip[MTL_IP_ADDR_LEN],
                   uint8_t netmask[MTL_IP_ADDR_LEN]);
+
+/**
+ * Change the stream that will be used by the logging system.
+ *
+ * The FILE* f argument represents the stream to be used for logging.
+ * If f is NULL, the default output is used. This can be done at any time.
+ *
+ * @param f
+ *   Pointer to the FILE stream.
+ * @return
+ *   - 0: Success.
+ *   - <0: Error code.
+ */
+int mtl_openlog_stream(FILE* f);
 
 /**
  * Helper function which align a size with pages

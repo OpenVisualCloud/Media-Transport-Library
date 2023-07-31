@@ -1110,3 +1110,5 @@ const char* mtl_get_simd_level_name(enum mtl_simd_level level) {
 
   return mt_simd_level_names[level];
 }
+
+int mtl_openlog_stream(FILE* f) { return rte_openlog_stream(f); }

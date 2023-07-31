@@ -3,6 +3,7 @@
 ## Changelog for 23.12
 
 * ice: update driver to 1.11.17.1
+* log: add log to file support, see mtl_openlog_stream
 
 ## Changelog for 23.08
 

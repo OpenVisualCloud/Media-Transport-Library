@@ -231,3 +231,5 @@ Items in each element of the "ancillary" array
  **sch_session_quota (int):** The quota unit in 1080p59 yuv422_10bit for one single scheduler(core), (optional). Default it will use the quota define in the lib.
 
  **rss_mode (string):** `"none", "l3_l4", "l3"` (optional). Default it will be detected by lib.
+
+ **log_file (string):** set log file for mtl log. If you're initiating multiple RxTxApp processes simultaneously, please ensure each process has a unique filename path. Default the log is writing to stderr.

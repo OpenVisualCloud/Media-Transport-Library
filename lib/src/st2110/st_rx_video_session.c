@@ -1590,7 +1590,7 @@ static int rv_stop_pcapng(struct st_rx_video_session_impl* s) {
     rte_pcapng_close(s->pcapng);
     s->pcapng = NULL;
 #ifdef WINDOWSENV
-    /* add suffix to saved file name */
+    /* add suffix to saved filename */
     int temp_len = strlen(s->pcapng_file_name);
     s->pcapng_file_name[temp_len] = '.';
     char old_name[temp_len + 1];
