@@ -675,6 +675,7 @@ struct st_rx_video_session_impl {
   rte_atomic32_t cbs_incomplete_frame_cnt;
 
   struct mt_rtcp_rx* rtcp_rx[MTL_SESSION_PORT_MAX];
+  uint16_t burst_loss_cnt;
 
   /* status */
   int stat_pkts_idx_dropped;
