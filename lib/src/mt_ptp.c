@@ -409,6 +409,7 @@ static void ptp_adjust_delta(struct mt_ptp_impl* ptp, int64_t delta) {
   }
 #else
   ptp_timesync_adjust_time(ptp, delta);
+  if (mt_has_phc2sys_service(ptp->impl)) phc2sys_adjust(ptp);
 #endif
   dbg("%s(%d), delta %" PRId64 ", ptp %" PRIu64 "\n", __func__, ptp->port, delta,
       ptp_get_raw_time(ptp));
@@ -502,12 +503,6 @@ static int ptp_parse_result(struct mt_ptp_impl* ptp) {
       ptp->port, ptp->t1, ptp->t2, ptp->t3, ptp->t4);
 
   delta /= 2;
-
-  if (mt_has_phc2sys_service(ptp->impl)) {
-    ptp_adjust_delta(ptp, delta);
-    ptp_t_result_clear(ptp);
-    return 0;
-  }
 
   path_delay /= 2;
   abs_delta = labs(delta);
