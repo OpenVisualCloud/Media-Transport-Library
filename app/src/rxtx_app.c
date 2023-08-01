@@ -144,6 +144,15 @@ int st_app_video_get_lcore(struct st_app_context* ctx, int sch_idx, bool rtp,
   return 0;
 }
 
+static int st_mtl_log_file_free(struct st_app_context* ctx) {
+  if (ctx->mtl_log_stream) {
+    fclose(ctx->mtl_log_stream);
+    ctx->mtl_log_stream = NULL;
+  }
+
+  return 0;
+}
+
 static void st_app_ctx_free(struct st_app_context* ctx) {
   st_app_tx_video_sessions_uinit(ctx);
   st_app_tx_audio_sessions_uinit(ctx);
@@ -185,6 +194,7 @@ static void st_app_ctx_free(struct st_app_context* ctx) {
   }
 
   st_app_player_uinit(ctx);
+  st_mtl_log_file_free(ctx);
   st_app_free(ctx);
 }
 
@@ -442,4 +452,25 @@ int main(int argc, char** argv) {
   st_app_ctx_free(ctx);
 
   return ret;
+}
+
+int st_set_mtl_log_file(struct st_app_context* ctx, const char* file) {
+  FILE* f = fopen(file, "w");
+  if (!f) {
+    err("%s, fail(%s) to open %s\n", __func__, strerror(errno), file);
+    return -EIO;
+  }
+
+  /* close any log file */
+  st_mtl_log_file_free(ctx);
+
+  int ret = mtl_openlog_stream(f);
+  if (ret < 0) {
+    err("%s, set mtl log stream fail %d\n", __func__, ret);
+    return -EIO;
+  }
+
+  ctx->mtl_log_stream = f;
+  info("%s, succ to %s\n", __func__, file);
+  return 0;
 }

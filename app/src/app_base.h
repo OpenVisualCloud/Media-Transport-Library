@@ -488,6 +488,7 @@ struct st_app_context {
 
   int lcore[ST_APP_MAX_LCORES];
   int rtp_lcore[ST_APP_MAX_LCORES];
+  FILE* mtl_log_stream;
 
   bool runtime_session;
   bool enable_hdr_split;
@@ -583,5 +584,7 @@ int st_app_video_get_lcore(struct st_app_context* ctx, int sch_idx, bool rtp,
 
 uint8_t* st_json_ip(struct st_app_context* ctx, st_json_session_base_t* base,
                     enum mtl_session_port port);
+
+int st_set_mtl_log_file(struct st_app_context* ctx, const char* file);
 
 #endif

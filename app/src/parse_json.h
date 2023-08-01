@@ -255,6 +255,7 @@ typedef struct st_json_context {
   bool shared_tx_queues;
   bool shared_rx_queues;
   bool tx_no_chain;
+  char* log_file;
 
   st_json_video_session_t* tx_video_sessions;
   int tx_video_session_cnt;
