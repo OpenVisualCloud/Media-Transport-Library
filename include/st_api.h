@@ -195,6 +195,41 @@ enum st_event {
 };
 
 /**
+ * A structure used to retrieve varied info for an media instance.
+ */
+struct st_var_info {
+  /** st20 tx session count */
+  uint16_t st20_tx_sessions_cnt;
+  /** st22 tx session count */
+  uint16_t st22_tx_sessions_cnt;
+  /** st30 tx session count */
+  uint16_t st30_tx_sessions_cnt;
+  /** st40 tx session count */
+  uint16_t st40_tx_sessions_cnt;
+  /** st20 rx session count */
+  uint16_t st20_rx_sessions_cnt;
+  /** st22 rx session count */
+  uint16_t st22_rx_sessions_cnt;
+  /** st30 rx session count */
+  uint16_t st30_rx_sessions_cnt;
+  /** st40 rx session count */
+  uint16_t st40_rx_sessions_cnt;
+};
+
+/**
+ * Retrieve the info of the media transport device context.
+ *
+ * @param mt
+ *   The handle to the media transport device context.
+ * @param info
+ *   A pointer to info structure.
+ * @return
+ *   - 0 if successful.
+ *   - <0: Error code if fail.
+ */
+int st_get_var_info(mtl_handle mt, struct st_var_info* info);
+
+/**
  * Inline function to check the  rx frame is a completed frame.
  * @param status
  *   The input frame status.

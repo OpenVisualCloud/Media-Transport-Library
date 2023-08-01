@@ -489,6 +489,7 @@ struct st_app_context {
   int lcore[ST_APP_MAX_LCORES];
   int rtp_lcore[ST_APP_MAX_LCORES];
   FILE* mtl_log_stream;
+  uint64_t last_stat_time_ns;
 
   bool runtime_session;
   bool enable_hdr_split;
