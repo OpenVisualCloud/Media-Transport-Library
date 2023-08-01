@@ -30,17 +30,29 @@ static enum mtl_log_level app_log_level;
 
 static int app_dump_mtl_stat(struct st_app_context* ctx) {
   struct mtl_fix_info fix;
-  struct mtl_var_info var;
+  struct mtl_port_status stats;
   int ret;
+  double time_sec =
+      (double)(st_app_get_monotonic_time() - ctx->last_stat_time_ns) / NS_PER_S;
+  double tx_rate_m, rx_rate_m;
 
   ret = mtl_get_fix_info(ctx->st, &fix);
   if (ret < 0) return ret;
-  ret = mtl_get_var_info(ctx->st, &var);
-  if (ret < 0) return ret;
 
   for (uint8_t port = 0; port < fix.num_ports; port++) {
-    info("%s(%u), tx %f Mb/s rx %f Mb/s\n", __func__, port, var.tx_rate_bps_m[port],
-         var.rx_rate_bps_m[port]);
+    ret = mtl_get_port_stats(ctx->st, port, &stats);
+    if (ret < 0) return ret;
+    tx_rate_m = (double)stats.tx_bytes * 8 / time_sec / (1000 * 1000);
+    rx_rate_m = (double)stats.rx_bytes * 8 / time_sec / (1000 * 1000);
+    info("%s(%u), tx %f Mb/s rx %f Mb/s\n", __func__, port, tx_rate_m, rx_rate_m);
+    if (stats.rx_hw_dropped_packets || stats.rx_err_packets || stats.rx_nombuf_packets ||
+        stats.tx_err_packets) {
+      warn("%s(%u), hw drop %" PRIu64 " rx err %" PRIu64 " no mbuf %" PRIu64
+           " tx err %" PRIu64 "\n",
+           __func__, port, stats.rx_hw_dropped_packets, stats.rx_err_packets,
+           stats.rx_nombuf_packets, stats.tx_err_packets);
+    }
+    mtl_reset_port_stats(ctx->st, port);
   }
 
   return 0;
@@ -55,6 +67,8 @@ static void app_stat(void* priv) {
   st_app_rx_st22p_sessions_stat(ctx);
   st_app_rx_st20p_sessions_stat(ctx);
   st_app_rx_st20r_sessions_stat(ctx);
+
+  ctx->last_stat_time_ns = st_app_get_monotonic_time();
 }
 
 void app_set_log_level(enum mtl_log_level level) { app_log_level = level; }
@@ -129,6 +143,8 @@ static void st_app_ctx_init(struct st_app_context* ctx) {
     ctx->lcore[i] = -1;
     ctx->rtp_lcore[i] = -1;
   }
+
+  ctx->last_stat_time_ns = st_app_get_monotonic_time();
 }
 
 int st_app_video_get_lcore(struct st_app_context* ctx, int sch_idx, bool rtp,

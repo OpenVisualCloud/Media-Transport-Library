@@ -884,14 +884,6 @@ int mtl_get_var_info(mtl_handle mt, struct mtl_var_info* info) {
   info->dma_dev_cnt = rte_atomic32_read(&mgr->num_dma_dev_active);
   info->dev_started = mt_started(impl);
 
-  int num_ports = mt_num_ports(impl);
-  struct mt_interface* inf;
-  for (int port = 0; port < num_ports; port++) {
-    inf = mt_if(impl, port);
-    info->tx_rate_bps_m[port] = inf->stat_tx_rate_bps_m;
-    info->rx_rate_bps_m[port] = inf->stat_rx_rate_bps_m;
-  }
-
   return 0;
 }
 

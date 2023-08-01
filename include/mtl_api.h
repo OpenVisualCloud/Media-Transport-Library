@@ -599,10 +599,6 @@ struct mtl_fix_info {
  * A structure used to retrieve varied info for an MTL instance.
  */
 struct mtl_var_info {
-  /** the tx rate in megabits per second, updated for each dump period */
-  double tx_rate_bps_m[MTL_PORT_MAX_LEN];
-  /** the tx rate in megabits per second, updated for each dump period */
-  double rx_rate_bps_m[MTL_PORT_MAX_LEN];
   /** active scheduler count */
   uint8_t sch_cnt;
   /** active lcore count */
@@ -611,6 +607,28 @@ struct mtl_var_info {
   uint8_t dma_dev_cnt;
   /** if transport device is started(mtl_start) */
   bool dev_started;
+};
+
+/**
+ * A structure used to retrieve general statistics(I/O) for a MTL port.
+ */
+struct mtl_port_status {
+  /** Total number of received packets. */
+  uint64_t rx_packets;
+  /** Total number of transmitted packets. */
+  uint64_t tx_packets;
+  /** Total number of received bytes. */
+  uint64_t rx_bytes;
+  /** Total number of transmitted bytes. */
+  uint64_t tx_bytes;
+  /** Total number of failed received packets. */
+  uint64_t rx_err_packets;
+  /** Total number of received packets dropped by the HW. (i.e. Rx queues are full) */
+  uint64_t rx_hw_dropped_packets;
+  /** Total number of Rx mbuf allocation failures. */
+  uint64_t rx_nombuf_packets;
+  /** Total number of failed transmitted packets. */
+  uint64_t tx_err_packets;
 };
 
 /**
@@ -638,6 +656,34 @@ int mtl_get_fix_info(mtl_handle mt, struct mtl_fix_info* info);
  *   - <0: Error code if fail.
  */
 int mtl_get_var_info(mtl_handle mt, struct mtl_var_info* info);
+
+/**
+ * Retrieve the general statistics(I/O) for a MTL port.
+ *
+ * @param mt
+ *   The handle to MTL instance.
+ * @param port
+ *   The port number.
+ * @param stats
+ *   A pointer to stats structure.
+ * @return
+ *   - 0 if successful.
+ *   - <0: Error code if fail.
+ */
+int mtl_get_port_stats(mtl_handle mt, enum mtl_port port, struct mtl_port_status* stats);
+
+/**
+ * Reset the general statistics(I/O) for a MTL port.
+ *
+ * @param mt
+ *   The handle to MTL instance.
+ * @param port
+ *   The port number.
+ * @return
+ *   - 0 if successful.
+ *   - <0: Error code if fail.
+ */
+int mtl_reset_port_stats(mtl_handle mt, enum mtl_port port);
 
 /**
  * Inline function returning primary port pointer from mtl_init_params
