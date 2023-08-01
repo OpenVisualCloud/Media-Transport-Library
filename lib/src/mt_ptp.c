@@ -727,20 +727,18 @@ static int ptp_parse_sync(struct mt_ptp_impl* ptp, struct mt_ptp_sync_msg* msg, 
 
   ptp->stat_sync_cnt++;
 
-  if (!mt_has_phc2sys_service(ptp->impl)) {
-    uint64_t monitor_period_us = ptp->expect_result_period_ns / 1000 / 2;
-    if (monitor_period_us) {
-      monitor_period_us = RTE_MAX(monitor_period_us, 100 * 1000 * 1000); /* min 100ms */
-      if (ptp->t2) { /* already has a pending t2 */
-        ptp_expect_result_clear(ptp);
-        ptp_t_result_clear(ptp);
-        ptp->stat_sync_timeout_err++;
-        ptp_sync_expect_result(ptp);
-      }
-      rte_eal_alarm_cancel(ptp_monitor_handler, ptp);
-      rte_eal_alarm_cancel(ptp_sync_timeout_handler, ptp);
-      rte_eal_alarm_set(monitor_period_us, ptp_sync_timeout_handler, ptp);
+  uint64_t monitor_period_us = ptp->expect_result_period_ns / 1000 / 2;
+  if (monitor_period_us) {
+    monitor_period_us = RTE_MAX(monitor_period_us, 100 * 1000 * 1000); /* min 100ms */
+    if (ptp->t2) { /* already has a pending t2 */
+      ptp_expect_result_clear(ptp);
+      ptp_t_result_clear(ptp);
+      ptp->stat_sync_timeout_err++;
+      ptp_sync_expect_result(ptp);
     }
+    rte_eal_alarm_cancel(ptp_monitor_handler, ptp);
+    rte_eal_alarm_cancel(ptp_sync_timeout_handler, ptp);
+    rte_eal_alarm_set(monitor_period_us, ptp_sync_timeout_handler, ptp);
   }
 
   ptp_timesync_read_rx_time(ptp, timesync, &rx_ns);
