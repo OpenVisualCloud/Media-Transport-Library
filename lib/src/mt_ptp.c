@@ -169,21 +169,24 @@ static void ptp_adj_system_clock_freq(struct mt_ptp_impl* ptp, double freq) {
 static void phc2sys_adjust(struct mt_ptp_impl* ptp) {
   enum servo_state state = UNLOCKED;
   double ppb;
-  struct timespec ts1_sys, ts2_sys;
+  struct timespec ts1_sys, ts2_sys, ts_phc;
   uint64_t t_phc, t1_sys, t2_sys, t_sys, shortest_delay, delay;
   int64_t offset;
+  int ret;
 
   ptp_timesync_lock(ptp);
   shortest_delay = UINT64_MAX;
   offset = 0;
   t_sys = 0;
+  t_phc = 0;
   for (uint8_t i = 0; i < 10; i++) {
     clock_gettime(CLOCK_REALTIME, &ts1_sys);
-    t_phc = ptp_timesync_read_time(ptp);
+    ret = rte_eth_timesync_read_time(ptp->port_id, &ts_phc);
     clock_gettime(CLOCK_REALTIME, &ts2_sys);
-    if (t_phc > 0) {
+    if (ret >= 0) {
       t1_sys = mt_timespec_to_ns(&ts1_sys);
       t2_sys = mt_timespec_to_ns(&ts2_sys);
+      t_phc = mt_timespec_to_ns(&ts_phc);
 
       delay = t2_sys - t1_sys;
       if (shortest_delay > delay) {
