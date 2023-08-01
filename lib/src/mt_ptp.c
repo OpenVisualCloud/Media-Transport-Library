@@ -770,9 +770,12 @@ static int ptp_parse_follow_up(struct mt_ptp_impl* ptp,
         ptp->t2_sequence_id);
     return -EINVAL;
   }
-
+#ifndef WINDOWSENV
   ptp->t1 = ptp_net_tmstamp_to_ns(&msg->precise_origin_timestamp) +
             (be64toh(msg->hdr.correction_field) >> 16);
+#else
+  ptp->t1 = ptp_net_tmstamp_to_ns(&msg->precise_origin_timestamp);
+#endif
   ptp->t1_domain_number = msg->hdr.domain_number;
   dbg("%s(%d), t1 %" PRIu64 ", ptp %" PRIu64 "\n", __func__, ptp->port, ptp->t1,
       ptp_get_raw_time(ptp));
@@ -839,9 +842,12 @@ static int ptp_parse_delay_resp(struct mt_ptp_impl* ptp,
         ptp->t3_sequence_id);
     return -EIO;
   }
-
+#ifndef WINDOWSENV
   ptp->t4 = ptp_net_tmstamp_to_ns(&msg->receive_timestamp) -
             (be64toh(msg->hdr.correction_field) >> 16);
+#else
+  ptp->t4 = ptp_net_tmstamp_to_ns(&msg->receive_timestamp);
+#endif
   dbg("%s(%d), t4 %" PRIu64 ", seq %d, ptp %" PRIu64 "\n", __func__, ptp->port, ptp->t4,
       ptp->t3_sequence_id, ptp_get_raw_time(ptp));
 
