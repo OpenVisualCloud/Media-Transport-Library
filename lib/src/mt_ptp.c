@@ -380,6 +380,7 @@ static void ptp_calculate_coefficient(struct mt_ptp_impl* ptp, int64_t delta) {
 }
 
 static void ptp_adjust_delta(struct mt_ptp_impl* ptp, int64_t delta) {
+#if RTE_VERSION >= RTE_VERSION_NUM(23, 3, 0, 0)
   double ppb;
   enum servo_state state = UNLOCKED;
 
@@ -406,7 +407,9 @@ static void ptp_adjust_delta(struct mt_ptp_impl* ptp, int64_t delta) {
   } else {
     ptp_timesync_adjust_time(ptp, delta);
   }
-
+#else
+  ptp_timesync_adjust_time(ptp, delta);
+#endif
   dbg("%s(%d), delta %" PRId64 ", ptp %" PRIu64 "\n", __func__, ptp->port, delta,
       ptp_get_raw_time(ptp));
   ptp->ptp_delta += delta;
