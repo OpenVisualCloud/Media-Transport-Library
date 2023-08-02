@@ -2736,12 +2736,11 @@ static int rv_handle_detect_pkt(struct st_rx_video_session_impl* s, struct rte_m
 }
 
 static bool rv_simulate_pkt_loss(struct st_rx_video_session_impl* s) {
-#define BURST_LOSS_MAX (32)
   if (s->burst_loss_cnt == 0) {
-    /* create a burst of pkt loss at 0.01% rate */
-    if (((float)rand() / (float)RAND_MAX) < 0.0001) {
+    /* create a burst of pkt loss at fixed rate */
+    if (((float)rand() / (float)RAND_MAX) < s->sim_loss_rate) {
       /* burst_loss_cnt at least 1 to prevent underflow */
-      s->burst_loss_cnt = rand() % BURST_LOSS_MAX + 1;
+      s->burst_loss_cnt = rand() % s->burst_loss_max + 1;
     } else {
       return false;
     }
@@ -3129,6 +3128,10 @@ static int rv_attach(struct mtl_main_impl* impl, struct st_rx_video_sessions_mgr
   for (int i = 0; i < num_port; i++) {
     s->st20_dst_port[i] = (ops->udp_port[i]) ? (ops->udp_port[i]) : (10000 + idx * 2);
   }
+  s->burst_loss_max = ops->burst_loss_max ? ops->burst_loss_max : 32;
+  s->sim_loss_rate = (ops->sim_loss_rate > 0.0 && ops->sim_loss_rate < 1.0)
+                         ? ops->sim_loss_rate
+                         : 0.0001;
 
   s->stat_pkts_idx_dropped = 0;
   s->stat_pkts_idx_oo_bitmap = 0;
@@ -4361,6 +4364,8 @@ st22_rx_handle st22_rx_create(mtl_handle mt, struct st22_rx_ops* ops) {
   st20_ops.notify_rtp_ready = ops->notify_rtp_ready;
   st20_ops.framebuff_cnt = ops->framebuff_cnt;
   st20_ops.notify_event = ops->notify_event;
+  st20_ops.burst_loss_max = ops->burst_loss_max;
+  st20_ops.sim_loss_rate = ops->sim_loss_rate;
   mt_pthread_mutex_lock(&sch->rx_video_mgr_mutex);
   s = rv_mgr_attach(&sch->rx_video_mgr, &st20_ops, ops);
   mt_pthread_mutex_unlock(&sch->rx_video_mgr_mutex);

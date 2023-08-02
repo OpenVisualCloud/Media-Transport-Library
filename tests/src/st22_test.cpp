@@ -1293,6 +1293,8 @@ static void st22_rx_digest_test(enum st_fps fps[], int width[], int height[],
       ops_rx_rtcp.nack_expire_us = 200;
       ops_rx_rtcp.nack_max_retry = 2;
       ops_rx.rtcp = &ops_rx_rtcp;
+      ops_rx.burst_loss_max = 4;
+      ops_rx.sim_loss_rate = 0.002;
     }
 
     ops_rx.notify_rtp_ready = st22_rx_rtp_ready;
