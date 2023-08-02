@@ -299,6 +299,24 @@ static inline int ptp_timesync_read_rx_time(struct mt_ptp_impl* ptp, uint32_t fl
   return ret;
 }
 
+#ifdef MTL_HAS_DPDK_TIMESYNC_ADJUST_FREQ
+static inline int ptp_timesync_adjust_freq(struct mt_ptp_impl* ptp, int64_t ppm,
+                                           int64_t delta) {
+  int ret;
+
+  if (ptp->no_timesync) {
+    ptp_no_timesync_adjust(ptp, delta);
+    return 0;
+  }
+
+  ptp_timesync_lock(ptp);
+  ret = rte_eth_timesync_adjust_freq(ptp->port_id, ppm);
+  ptp_timesync_unlock(ptp);
+
+  return ret;
+}
+#endif
+
 static inline int ptp_timesync_adjust_time(struct mt_ptp_impl* ptp, int64_t delta) {
   int ret;
 
@@ -410,24 +428,34 @@ static void ptp_adjust_delta(struct mt_ptp_impl* ptp, int64_t delta) {
       case UNLOCKED:
         break;
       case JUMP:
-        ptp_timesync_adjust_time(ptp, delta);
-        dbg("%s(%d), master offset: %" PRId64 " path delay: %" PRId64 " adjust time.\n",
-            __func__, ptp->port_id, delta, ptp->path_delay);
+        if (!ptp_timesync_adjust_time(ptp, delta))
+          dbg("%s(%d), master offset: %" PRId64 " path delay: %" PRId64 " adjust time.\n",
+              __func__, ptp->port_id, delta, ptp->path_delay);
+        else
+          err("%s(%d), PHC time adjust failed.\n", __func__, ptp->port_id);
         break;
       case LOCKED:
-        ptp_timesync_lock(ptp);
-        rte_eth_timesync_adjust_freq(ptp->port_id, -1 * (long)(ppb * 65.536));
-        ptp_timesync_unlock(ptp);
-        dbg("%s(%d), master offset: %" PRId64 " path delay: %" PRId64 " adjust freq.\n",
-            __func__, ptp->port_id, delta, ptp->path_delay);
+        if (!ptp_timesync_adjust_freq(ptp, -1 * (long)(ppb * 65.536), delta))
+          dbg("%s(%d), master offset: %" PRId64 " path delay: %" PRId64 " adjust freq.\n",
+              __func__, ptp->port_id, delta, ptp->path_delay);
+        else
+          err("%s(%d), PHC freqency adjust failed.\n", __func__, ptp->port_id);
         break;
     }
     phc2sys_adjust(ptp);
   } else {
-    ptp_timesync_adjust_time(ptp, delta);
+    if (!ptp_timesync_adjust_time(ptp, delta))
+      dbg("%s(%d), master offset: %" PRId64 " path delay: %" PRId64 " adjust time.\n",
+          __func__, ptp->port_id, delta, ptp->path_delay);
+    else
+      err("%s(%d), PHC time adjust failed.\n", __func__, ptp->port_id);
   }
 #else
-  ptp_timesync_adjust_time(ptp, delta);
+  if (!ptp_timesync_adjust_time(ptp, delta))
+    dbg("%s(%d), master offset: %" PRId64 " path delay: %" PRId64 " adjust time.\n",
+        __func__, ptp->port_id, delta, ptp->path_delay);
+  else
+    err("%s(%d), PHC time adjust failed.\n", __func__, ptp->port_id);
   if (mt_has_phc2sys_service(ptp->impl)) phc2sys_adjust(ptp);
 #endif
   dbg("%s(%d), delta %" PRId64 ", ptp %" PRIu64 "\n", __func__, ptp->port, delta,
