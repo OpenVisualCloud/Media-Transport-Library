@@ -1203,7 +1203,14 @@ static int tv_build_rtp_chain(struct mtl_main_impl* impl,
     s->st20_pkt_idx = 0;
     rte_atomic32_inc(&s->stat_frame_cnt);
     s->st20_rtp_time = rtp->tmstamp;
-    tv_sync_pacing(impl, s, false, 0, false);
+    bool second_field = false;
+    if (s->ops.interlaced) {
+      struct st20_rfc4175_rtp_hdr* rfc4175 =
+          rte_pktmbuf_mtod(pkt_chain, struct st20_rfc4175_rtp_hdr*);
+      uint16_t line1_number = ntohs(rfc4175->row_number);
+      second_field = (line1_number & ST20_SECOND_FIELD) ? true : false;
+    }
+    tv_sync_pacing(impl, s, false, 0, second_field);
     if (s->ops.flags & ST20_TX_FLAG_USER_TIMESTAMP) {
       s->pacing.rtp_time_stamp = ntohl(rtp->tmstamp);
     }
