@@ -1702,8 +1702,13 @@ static int parse_session_ip(const char* str_ip, struct st_json_session_base* bas
   if (ret == 1) return 0;
 
   /* if it's local interface case for test */
-  ret = strtol(str_ip, NULL, 10);
+  char* endptr;
+  ret = strtol(str_ip, &endptr, 10);
   if (ret < 0) return ret;
+  if (endptr == str_ip) {
+    err("%s, No digits were found in %s\n", __func__, str_ip);
+    return -EIO;
+  }
   base->type[port] = ST_JSON_IP_LOCAL_IF;
   base->local[port] = ret;
   dbg("%s, local if port %d\n", __func__, ret);
