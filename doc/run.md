@@ -353,8 +353,10 @@ Note: Currently, the VF (Virtual Function) does not support the hardware timesyn
 You need to repeat below steps to create Virtual Functions (VF), bind the VF to DPDK PMD, and set up the hugepages configuration again since it's lost after reboot.
 
 ```bash
+# replace "0000:a1:00.0" with the port on your setup
 sudo ./script/nicctl.sh create_vf 0000:a1:00.0
-sudo chown elemental:elemental /dev/vfio/* -R
+# replace "$USER" with your actual username.
+sudo chown -R <USER>:<USER> /dev/vfio/
 sudo sysctl -w vm.nr_hugepages=2048
 ```
 
