@@ -380,7 +380,7 @@ static void ptp_calculate_coefficient(struct mt_ptp_impl* ptp, int64_t delta) {
 }
 
 static void ptp_adjust_delta(struct mt_ptp_impl* ptp, int64_t delta) {
-#if RTE_VERSION >= RTE_VERSION_NUM(23, 3, 0, 0)
+#ifdef MTL_HAS_DPDK_TIMESYNC_ADJUST_FREQ
   double ppb;
   enum servo_state state = UNLOCKED;
 
@@ -510,7 +510,6 @@ static int ptp_parse_result(struct mt_ptp_impl* ptp) {
   /* cancel the monitor */
   rte_eal_alarm_cancel(ptp_sync_timeout_handler, ptp);
   rte_eal_alarm_cancel(ptp_monitor_handler, ptp);
-
   if (ptp->delta_result_cnt) {
     expect_delta = abs(ptp->expect_result_avg) * (RTE_MIN(ptp->delta_result_err + 2, 5));
     if (!expect_delta) {
@@ -532,7 +531,9 @@ static int ptp_parse_result(struct mt_ptp_impl* ptp) {
         ptp_result_reset(ptp);
       }
       ptp_sync_expect_result(ptp);
+#ifndef MTL_HAS_DPDK_TIMESYNC_ADJUST_FREQ
       return -EIO;
+#endif
     }
   }
   ptp->delta_result_err = 0;
