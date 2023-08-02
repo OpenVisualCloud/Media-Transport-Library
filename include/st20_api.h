@@ -1250,12 +1250,12 @@ struct st20_rx_ops {
 
   /**
    * max burst of simulated packet loss
-   * Only sued when ST20_RX_FLAG_SIMULATE_PKT_LOSS enabled.
+   * Only used when ST20_RX_FLAG_SIMULATE_PKT_LOSS enabled.
    */
   uint16_t burst_loss_max;
   /**
    * simulated packet loss rate
-   * Only sued when ST20_RX_FLAG_SIMULATE_PKT_LOSS enabled.
+   * Only used when ST20_RX_FLAG_SIMULATE_PKT_LOSS enabled.
    */
   float sim_loss_rate;
 
@@ -1395,12 +1395,12 @@ struct st22_rx_ops {
 
   /**
    * max burst of simulated packet loss
-   * Only sued when ST20_RX_FLAG_SIMULATE_PKT_LOSS enabled.
+   * Only used when ST22_RX_FLAG_SIMULATE_PKT_LOSS enabled.
    */
   uint16_t burst_loss_max;
   /**
    * simulated packet loss rate
-   * Only sued when ST20_RX_FLAG_SIMULATE_PKT_LOSS enabled.
+   * Only used when ST22_RX_FLAG_SIMULATE_PKT_LOSS enabled.
    */
   float sim_loss_rate;
 
