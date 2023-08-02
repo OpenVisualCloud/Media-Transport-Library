@@ -63,6 +63,25 @@ static inline void ptp_no_timesync_adjust(struct mt_ptp_impl* ptp, int64_t delta
   ptp->no_timesync_delta += delta;
 }
 
+static inline uint64_t ptp_timesync_read_time_no_lock(struct mt_ptp_impl* ptp) {
+  enum mtl_port port = ptp->port;
+  uint16_t port_id = ptp->port_id;
+  int ret;
+  struct timespec spec;
+
+  if (ptp->no_timesync) return ptp_no_timesync_time(ptp);
+
+  memset(&spec, 0, sizeof(spec));
+
+  ret = rte_eth_timesync_read_time(port_id, &spec);
+
+  if (ret < 0) {
+    err("%s(%d), err %d\n", __func__, port, ret);
+    return 0;
+  }
+  return mt_timespec_to_ns(&spec);
+}
+
 static inline uint64_t ptp_timesync_read_time(struct mt_ptp_impl* ptp) {
   enum mtl_port port = ptp->port;
   uint16_t port_id = ptp->port_id;
@@ -169,7 +188,7 @@ static void ptp_adj_system_clock_freq(struct mt_ptp_impl* ptp, double freq) {
 static void phc2sys_adjust(struct mt_ptp_impl* ptp) {
   enum servo_state state = UNLOCKED;
   double ppb;
-  struct timespec ts1_sys, ts2_sys, ts_phc;
+  struct timespec ts1_sys, ts2_sys;
   uint64_t t_phc, t1_sys, t2_sys, t_sys, shortest_delay, delay;
   int64_t offset;
   int ret;
@@ -179,14 +198,14 @@ static void phc2sys_adjust(struct mt_ptp_impl* ptp) {
   offset = 0;
   t_sys = 0;
   t_phc = 0;
+  ret = 0;
   for (uint8_t i = 0; i < 10; i++) {
-    clock_gettime(CLOCK_REALTIME, &ts1_sys);
-    ret = rte_eth_timesync_read_time(ptp->port_id, &ts_phc);
-    clock_gettime(CLOCK_REALTIME, &ts2_sys);
-    if (ret >= 0) {
+    ret = ret + clock_gettime(CLOCK_REALTIME, &ts1_sys);
+    t_phc = ptp_timesync_read_time_no_lock(ptp);
+    ret = ret + clock_gettime(CLOCK_REALTIME, &ts2_sys);
+    if (!ret && t_phc > 0) {
       t1_sys = mt_timespec_to_ns(&ts1_sys);
       t2_sys = mt_timespec_to_ns(&ts2_sys);
-      t_phc = mt_timespec_to_ns(&ts_phc);
 
       delay = t2_sys - t1_sys;
       if (shortest_delay > delay) {
@@ -197,7 +216,7 @@ static void phc2sys_adjust(struct mt_ptp_impl* ptp) {
     }
   }
   ptp_timesync_unlock(ptp);
-  if (t_phc > 0) {
+  if (!ret && t_phc > 0) {
     ppb = pi_sample(&ptp->phc2sys.servo, offset, t_sys, &state);
 
     switch (state) {
@@ -232,7 +251,7 @@ static void phc2sys_adjust(struct mt_ptp_impl* ptp) {
       }
     }
   } else {
-    err("%s(%d), PHC time retrieving failed.\n", __func__, ptp->port_id);
+    err("%s(%d), PHC or system time retrieving failed.\n", __func__, ptp->port_id);
   }
 }
 
@@ -462,7 +481,9 @@ static int ptp_sync_expect_result(struct mt_ptp_impl* ptp) {
       ptp_calculate_coefficient(ptp, ptp->expect_result_avg);
     }
   }
+#ifndef MTL_HAS_DPDK_TIMESYNC_ADJUST_FREQ
   if (ptp->expect_result_avg) ptp_adjust_delta(ptp, ptp->expect_result_avg);
+#endif
   return 0;
 }
 
