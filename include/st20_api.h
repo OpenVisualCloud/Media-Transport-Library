@@ -1249,6 +1249,17 @@ struct st20_rx_ops {
   bool interlaced;
 
   /**
+   * max burst of simulated packet loss
+   * Only used when ST20_RX_FLAG_SIMULATE_PKT_LOSS enabled.
+   */
+  uint16_t burst_loss_max;
+  /**
+   * simulated packet loss rate
+   * Only used when ST20_RX_FLAG_SIMULATE_PKT_LOSS enabled.
+   */
+  float sim_loss_rate;
+
+  /**
    * the ST20_TYPE_FRAME_LEVEL frame buffer count requested,
    * should be in range [2, ST20_FB_MAX_COUNT].
    * Only for ST20_TYPE_FRAME_LEVEL/ST20_TYPE_SLICE_LEVEL.
@@ -1381,6 +1392,17 @@ struct st22_rx_ops {
   uint8_t payload_type;
   /** packetization modes define in RFC9134 */
   enum st22_pack_type pack_type;
+
+  /**
+   * max burst of simulated packet loss
+   * Only used when ST22_RX_FLAG_SIMULATE_PKT_LOSS enabled.
+   */
+  uint16_t burst_loss_max;
+  /**
+   * simulated packet loss rate
+   * Only used when ST22_RX_FLAG_SIMULATE_PKT_LOSS enabled.
+   */
+  float sim_loss_rate;
 
   /**
    * the frame buffer count requested for one st22 rx session,
