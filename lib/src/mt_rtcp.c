@@ -307,7 +307,7 @@ int mt_rtcp_rx_send_nack_packet(struct mt_rtcp_rx* rx) {
     nack->retry_count--;
   }
   if (num_fci > 32) {
-    dbg("%s(%s), too many nack items\n", __func__, rx->name);
+    dbg("%s(%s), too many nack items %u\n", __func__, rx->name, num_fci);
     rte_pktmbuf_free(pkt);
     rx->stat_nack_drop_exceed += num_fci;
     return -EINVAL;

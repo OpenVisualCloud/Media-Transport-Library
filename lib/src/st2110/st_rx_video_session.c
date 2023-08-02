@@ -3131,7 +3131,7 @@ static int rv_attach(struct mtl_main_impl* impl, struct st_rx_video_sessions_mgr
   s->burst_loss_max = ops->burst_loss_max ? ops->burst_loss_max : 32;
   s->sim_loss_rate = (ops->sim_loss_rate > 0.0 && ops->sim_loss_rate < 1.0)
                          ? ops->sim_loss_rate
-                         : 0.0001;
+                         : 0.00005;
 
   s->stat_pkts_idx_dropped = 0;
   s->stat_pkts_idx_oo_bitmap = 0;

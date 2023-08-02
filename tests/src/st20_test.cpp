@@ -1972,7 +1972,7 @@ static void st20_rx_digest_test(
       ops_rx_rtcp.nack_max_retry = 2;
       ops_rx.rtcp = &ops_rx_rtcp;
       ops_rx.burst_loss_max = 32;
-      ops_rx.sim_loss_rate = 0.0001;
+      ops_rx.sim_loss_rate = 0.00005;
     }
 
     if (rx_type[i] == ST20_TYPE_SLICE_LEVEL) {
