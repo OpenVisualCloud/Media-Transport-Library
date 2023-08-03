@@ -22,4 +22,7 @@ int st_app_tx_video_sessions_stop(struct st_app_context* ctx);
 int st_app_tx_video_sessions_uinit(struct st_app_context* ctx);
 
 int st_app_tx_video_sessions_result(struct st_app_context* ctx);
+
+int st_app_tx_videos_io_stat(struct st_app_context* ctx);
+
 #endif

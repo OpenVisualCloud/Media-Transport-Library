@@ -217,7 +217,7 @@ struct st_var_info {
 };
 
 /**
- * Retrieve the info of the media transport device context.
+ * Retrieve the varied info of the media transport device context.
  *
  * @param mt
  *   The handle to the media transport device context.

@@ -350,6 +350,9 @@ struct st_tx_video_session_impl {
   struct mt_rtcp_tx* rtcp_tx[MTL_SESSION_PORT_MAX];
   struct mt_rxq_entry* rtcp_q[MTL_SESSION_PORT_MAX];
 
+  /* use atomic safe? */
+  struct st20_tx_port_status port_user_stats[MTL_SESSION_PORT_MAX];
+
   /* stat */
   rte_atomic32_t stat_frame_cnt;
   int stat_pkts_build;
@@ -371,7 +374,7 @@ struct st_tx_video_session_impl {
   uint32_t stat_lines_not_ready; /* query app lines not ready */
   uint32_t stat_vsync_mismatch;
   uint32_t stat_tx_done_cleanup;
-  uint64_t stat_bytes_build;
+  uint64_t stat_bytes_tx[MTL_SESSION_PORT_MAX];
   uint32_t stat_user_meta_cnt;
   uint32_t stat_user_meta_pkt_cnt;
   uint32_t stat_max_next_frame_us;

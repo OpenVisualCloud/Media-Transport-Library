@@ -194,9 +194,9 @@ static int dev_inf_stat(void* pri) {
   stats_sum = &inf->stats_sum;
 
   double orate_m =
-      (double)stats_sum->obytes * 8 / MT_DEV_STAT_INTERVAL_S / MT_DEV_STAT_M_UNIT;
+      (double)stats_sum->obytes * 8 / MT_DEV_STAT_INTERVAL_S / MTL_STAT_M_UNIT;
   double irate_m =
-      (double)stats_sum->ibytes * 8 / MT_DEV_STAT_INTERVAL_S / MT_DEV_STAT_M_UNIT;
+      (double)stats_sum->ibytes * 8 / MT_DEV_STAT_INTERVAL_S / MTL_STAT_M_UNIT;
 
   notice("DEV(%d): Avr rate, tx: %f Mb/s, rx: %f Mb/s, pkts, tx: %" PRIu64
          ", rx: %" PRIu64 "\n",
