@@ -101,6 +101,9 @@ extern "C" {
 /** Helper to get array size from arrays */
 #define MTL_ARRAY_SIZE(arr) (sizeof(arr) / sizeof(arr[0]))
 
+/** Helper to get M unit */
+#define MTL_STAT_M_UNIT (1000 * 1000)
+
 /**
  * Handle to MTL transport device context
  */
@@ -663,7 +666,7 @@ int mtl_get_var_info(mtl_handle mt, struct mtl_var_info* info);
  * @param mt
  *   The handle to MTL instance.
  * @param port
- *   The port number.
+ *   The port index.
  * @param stats
  *   A pointer to stats structure.
  * @return
@@ -678,7 +681,7 @@ int mtl_get_port_stats(mtl_handle mt, enum mtl_port port, struct mtl_port_status
  * @param mt
  *   The handle to MTL instance.
  * @param port
- *   The port number.
+ *   The port index.
  * @return
  *   - 0 if successful.
  *   - <0: Error code if fail.

@@ -13,7 +13,6 @@
 
 #define MT_DEV_STAT_INTERVAL_S (10) /* 10s */
 #define MT_DEV_STAT_INTERVAL_US(s) (s * US_PER_S)
-#define MT_DEV_STAT_M_UNIT (1000 * 1000)
 
 #define MT_DEV_TIMEOUT_INFINITE (INT_MAX)
 #define MT_DEV_TIMEOUT_ZERO (0)

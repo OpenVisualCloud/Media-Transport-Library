@@ -3356,7 +3356,7 @@ static void rv_stat(struct st_rx_video_sessions_mgr* mgr,
   }
   notice("RX_VIDEO_SESSION(%d,%d:%s): throughput %" PRIu64 " Mb/s, cpu busy %f\n", m_idx,
          idx, s->ops_name,
-         s->stat_bytes_received * 8 / MT_DEV_STAT_INTERVAL_S / MT_DEV_STAT_M_UNIT,
+         s->stat_bytes_received * 8 / MT_DEV_STAT_INTERVAL_S / MTL_STAT_M_UNIT,
          s->cpu_busy_score);
   s->stat_pkts_received = 0;
   s->stat_bytes_received = 0;

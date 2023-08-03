@@ -386,7 +386,7 @@ static int cni_stat(void* priv) {
     cni = &cni_impl->entries[i];
 
     notice("CNI(%d): eth_rx_rate %" PRIu64 " Mb/s, eth_rx_cnt %u\n", i,
-           cni->eth_rx_bytes * 8 / MT_DEV_STAT_INTERVAL_S / MT_DEV_STAT_M_UNIT,
+           cni->eth_rx_bytes * 8 / MT_DEV_STAT_INTERVAL_S / MTL_STAT_M_UNIT,
            cni->eth_rx_cnt);
     cni->eth_rx_cnt = 0;
     cni->eth_rx_bytes = 0;

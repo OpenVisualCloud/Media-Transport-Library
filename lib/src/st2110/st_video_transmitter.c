@@ -43,6 +43,10 @@ static inline uint16_t video_trs_burst(struct mtl_main_impl* impl,
     struct st_frame_trans* frame = st_tx_mbuf_get_priv(tx_pkts[0]);
     if (frame) st20_frame_tx_start(impl, s, s_port, frame);
   }
+  for (uint16_t i = 0; i < tx; i++) {
+    s->stat_bytes_tx[s_port] += tx_pkts[i]->pkt_len;
+    s->port_user_stats[s_port].bytes += tx_pkts[i]->pkt_len;
+  }
   return tx;
 }
 

@@ -28,7 +28,7 @@
 static struct st_app_context* g_app_ctx; /* only for st_app_sig_handler */
 static enum mtl_log_level app_log_level;
 
-static int app_dump_mtl_stat(struct st_app_context* ctx) {
+static int app_dump_io_stat(struct st_app_context* ctx) {
   struct mtl_fix_info fix;
   struct mtl_port_status stats;
   int ret;
@@ -42,8 +42,8 @@ static int app_dump_mtl_stat(struct st_app_context* ctx) {
   for (uint8_t port = 0; port < fix.num_ports; port++) {
     ret = mtl_get_port_stats(ctx->st, port, &stats);
     if (ret < 0) return ret;
-    tx_rate_m = (double)stats.tx_bytes * 8 / time_sec / (1000 * 1000);
-    rx_rate_m = (double)stats.rx_bytes * 8 / time_sec / (1000 * 1000);
+    tx_rate_m = (double)stats.tx_bytes * 8 / time_sec / MTL_STAT_M_UNIT;
+    rx_rate_m = (double)stats.rx_bytes * 8 / time_sec / MTL_STAT_M_UNIT;
     info("%s(%u), tx %f Mb/s rx %f Mb/s\n", __func__, port, tx_rate_m, rx_rate_m);
     if (stats.rx_hw_dropped_packets || stats.rx_err_packets || stats.rx_nombuf_packets ||
         stats.tx_err_packets) {
@@ -61,7 +61,10 @@ static int app_dump_mtl_stat(struct st_app_context* ctx) {
 static void app_stat(void* priv) {
   struct st_app_context* ctx = priv;
 
-  if (ctx->mtl_log_stream) app_dump_mtl_stat(ctx);
+  if (ctx->mtl_log_stream) {
+    app_dump_io_stat(ctx);
+    st_app_tx_videos_io_stat(ctx);
+  }
 
   st_app_rx_video_sessions_stat(ctx);
   st_app_rx_st22p_sessions_stat(ctx);

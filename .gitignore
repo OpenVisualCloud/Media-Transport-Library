@@ -61,6 +61,7 @@ dkms.conf
 *.pcap
 *.raw
 *.dat
+*.json
 html/
 test.*
 build/
