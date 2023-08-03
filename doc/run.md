@@ -119,8 +119,7 @@ sudo dmesg
 If you are not running the sample application from the root user, you can execute the following command to add VFIO device permissions for the current user:
 
 ```bash
-# replace "$USER" with your actual username.
-sudo chown -R <USER>:<USER> /dev/vfio/
+sudo chown -R $USER:$USER /dev/vfio/
 ```
 
 ## 4. Setup Hugepage
@@ -132,6 +131,8 @@ For example, if you want to enable 2048 2M huge pages, which would total to 4GB 
 ```bash
 sudo sysctl -w vm.nr_hugepages=2048
 ```
+
+The number is dependent on the workloads you wish to execute. Consider increasing the value if memory allocation failures occur during runtime.
 
 ## 5. Run the sample application
 
@@ -355,8 +356,9 @@ You need to repeat below steps to create Virtual Functions (VF), bind the VF to 
 ```bash
 # replace "0000:a1:00.0" with the port on your setup
 sudo ./script/nicctl.sh create_vf 0000:a1:00.0
-# replace "$USER" with your actual username.
-sudo chown -R <USER>:<USER> /dev/vfio/
+# add VFIO device permissions for current user
+sudo chown -R $USER:$USER /dev/vfio/
+# setup hugepages, the number(2048) is dependent on the workloads you wish to execute.
 sudo sysctl -w vm.nr_hugepages=2048
 ```
 
