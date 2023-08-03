@@ -119,6 +119,9 @@ void mt_rte_free(void* p) {
     }
   }
   mt_pthread_mutex_unlock(&g_bt_mutex);
+  if (bt_info == NULL) { /* not found */
+    err("%s, \033[31mnot found %p in list\033[0m\n", __func__, p);
+  }
   rte_free(p);
 }
 #endif
