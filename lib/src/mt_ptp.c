@@ -299,24 +299,6 @@ static inline int ptp_timesync_read_rx_time(struct mt_ptp_impl* ptp, uint32_t fl
   return ret;
 }
 
-#ifdef MTL_HAS_DPDK_TIMESYNC_ADJUST_FREQ
-static inline int ptp_timesync_adjust_freq(struct mt_ptp_impl* ptp, int64_t ppm,
-                                           int64_t delta) {
-  int ret;
-
-  if (ptp->no_timesync) {
-    ptp_no_timesync_adjust(ptp, delta);
-    return 0;
-  }
-
-  ptp_timesync_lock(ptp);
-  ret = rte_eth_timesync_adjust_freq(ptp->port_id, ppm);
-  ptp_timesync_unlock(ptp);
-
-  return ret;
-}
-#endif
-
 static inline int ptp_timesync_adjust_time(struct mt_ptp_impl* ptp, int64_t delta) {
   int ret;
 
@@ -331,6 +313,26 @@ static inline int ptp_timesync_adjust_time(struct mt_ptp_impl* ptp, int64_t delt
 
   return ret;
 }
+
+#ifdef MTL_HAS_DPDK_TIMESYNC_ADJUST_FREQ
+static inline int ptp_timesync_adjust_freq(struct mt_ptp_impl* ptp, int64_t ppm,
+                                           int64_t delta) {
+  int ret;
+
+  if (ptp->no_timesync) {
+    ptp_no_timesync_adjust(ptp, delta);
+    return 0;
+  }
+
+  ptp_timesync_lock(ptp);
+  ret = rte_eth_timesync_adjust_freq(ptp->port_id, ppm);
+  ptp_timesync_unlock(ptp);
+
+  if (ret) ptp_timesync_adjust_time(ptp, delta);
+
+  return ret;
+}
+#endif
 
 static inline uint64_t ptp_get_raw_time(struct mt_ptp_impl* ptp) {
   return ptp_timesync_read_time(ptp);
@@ -416,33 +418,37 @@ static void ptp_calculate_coefficient(struct mt_ptp_impl* ptp, int64_t delta) {
       delta, ptp->coefficient, ts_m);
 }
 
-static void ptp_adjust_delta(struct mt_ptp_impl* ptp, int64_t delta) {
+static void ptp_adjust_delta(struct mt_ptp_impl* ptp, int64_t delta, bool error_correct) {
 #ifdef MTL_HAS_DPDK_TIMESYNC_ADJUST_FREQ
   double ppb;
   enum servo_state state = UNLOCKED;
 
   if (mt_has_phc2sys_service(ptp->impl)) {
-    ppb = pi_sample(&ptp->servo, -1 * delta, ptp->t2, &state);
+    if (!error_correct) {
+      ppb = pi_sample(&ptp->servo, -1 * delta, ptp->t2, &state);
 
-    switch (state) {
-      case UNLOCKED:
-        break;
-      case JUMP:
-        if (!ptp_timesync_adjust_time(ptp, delta))
-          dbg("%s(%d), master offset: %" PRId64 " path delay: %" PRId64 " adjust time.\n",
-              __func__, ptp->port_id, delta, ptp->path_delay);
-        else
-          err("%s(%d), PHC time adjust failed.\n", __func__, ptp->port_id);
-        break;
-      case LOCKED:
-        if (!ptp_timesync_adjust_freq(ptp, -1 * (long)(ppb * 65.536), delta))
-          dbg("%s(%d), master offset: %" PRId64 " path delay: %" PRId64 " adjust freq.\n",
-              __func__, ptp->port_id, delta, ptp->path_delay);
-        else
-          err("%s(%d), PHC freqency adjust failed.\n", __func__, ptp->port_id);
-        break;
+      switch (state) {
+        case UNLOCKED:
+          break;
+        case JUMP:
+          if (!ptp_timesync_adjust_time(ptp, delta))
+            dbg("%s(%d), master offset: %" PRId64 " path delay: %" PRId64
+                " adjust time.\n",
+                __func__, ptp->port_id, delta, ptp->path_delay);
+          else
+            err("%s(%d), PHC time adjust failed.\n", __func__, ptp->port_id);
+          break;
+        case LOCKED:
+          if (!ptp_timesync_adjust_freq(ptp, -1 * (long)(ppb * 65.536), delta))
+            dbg("%s(%d), master offset: %" PRId64 " path delay: %" PRId64
+                " adjust freq.\n",
+                __func__, ptp->port_id, delta, ptp->path_delay);
+          else
+            err("%s(%d), PHC freqency adjust failed.\n", __func__, ptp->port_id);
+          break;
+      }
+      phc2sys_adjust(ptp);
     }
-    phc2sys_adjust(ptp);
   } else {
     if (!ptp_timesync_adjust_time(ptp, delta))
       dbg("%s(%d), master offset: %" PRId64 " path delay: %" PRId64 " adjust time.\n",
@@ -509,9 +515,7 @@ static int ptp_sync_expect_result(struct mt_ptp_impl* ptp) {
       ptp_calculate_coefficient(ptp, ptp->expect_result_avg);
     }
   }
-#ifndef MTL_HAS_DPDK_TIMESYNC_ADJUST_FREQ
-  if (ptp->expect_result_avg) ptp_adjust_delta(ptp, ptp->expect_result_avg);
-#endif
+  if (ptp->expect_result_avg) ptp_adjust_delta(ptp, ptp->expect_result_avg, true);
   return 0;
 }
 
@@ -611,7 +615,7 @@ static int ptp_parse_result(struct mt_ptp_impl* ptp) {
     ptp_calculate_coefficient(ptp, delta);
   }
 
-  ptp_adjust_delta(ptp, delta);
+  ptp_adjust_delta(ptp, delta, false);
   ptp_t_result_clear(ptp);
 
   if (ptp->delta_result_cnt > 10) {
