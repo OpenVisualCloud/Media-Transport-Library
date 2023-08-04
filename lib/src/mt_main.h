@@ -165,13 +165,14 @@ struct mt_phc2sys_impl {
 
 struct mt_ptp_impl {
   struct mtl_main_impl* impl;
-  struct mt_phc2sys_impl phc2sys;
-  struct mt_pi_servo servo;
   enum mtl_port port;
   uint16_t port_id;
   bool active; /* if the ptp stack is running */
   bool no_timesync;
   int64_t no_timesync_delta;
+
+  struct mt_phc2sys_impl phc2sys;
+  bool phc2sys_active;
 
   struct rte_mempool* mbuf_pool;
 

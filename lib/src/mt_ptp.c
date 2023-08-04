@@ -163,7 +163,9 @@ static void ptp_adj_system_clock_time(struct mt_ptp_impl* ptp, int64_t delta) {
     adjtime.time.tv_usec += 1000000000;
   }
 
-  clock_adjtime(CLOCK_REALTIME, &adjtime);
+  dbg("%s(%d), delta %" PRId64 "\n", __func__, ptp->port, delta);
+  int ret = clock_adjtime(CLOCK_REALTIME, &adjtime);
+  if (ret < 0) err("%s(%d), adj system time offset fail %d\n", __func__, ptp->port, ret);
 #else
   err("%s(%d), not supported for windows\n", __func__, ptp->port);
 #endif
@@ -184,7 +186,8 @@ static void ptp_adj_system_clock_freq(struct mt_ptp_impl* ptp, double freq) {
 
   adjfreq.modes |= ADJ_FREQUENCY;
   adjfreq.freq = (long)(freq * 65.536);
-  clock_adjtime(CLOCK_REALTIME, &adjfreq);
+  int ret = clock_adjtime(CLOCK_REALTIME, &adjfreq);
+  if (ret < 0) err("%s(%d), adj system time freq fail %d\n", __func__, ptp->port, ret);
 #else
   err("%s(%d), not supported for windows\n", __func__, ptp->port);
 #endif
@@ -223,6 +226,7 @@ static void phc2sys_adjust(struct mt_ptp_impl* ptp) {
   ptp_timesync_unlock(ptp);
   if (!ret && t_phc > 0) {
     ppb = pi_sample(&ptp->phc2sys.servo, offset, t_sys, &state);
+    dbg("%s(%d), state %d\n", __func__, ptp->port, state);
 
     switch (state) {
       case UNLOCKED:
@@ -428,7 +432,7 @@ static void ptp_adjust_delta(struct mt_ptp_impl* ptp, int64_t delta, bool error_
   double ppb;
   enum servo_state state = UNLOCKED;
 
-  if (mt_has_phc2sys_service(ptp->impl)) {
+  if (ptp->phc2sys_active) {
     if (!error_correct) {
       ppb = pi_sample(&ptp->servo, -1 * delta, ptp->t2, &state);
 
@@ -467,7 +471,7 @@ static void ptp_adjust_delta(struct mt_ptp_impl* ptp, int64_t delta, bool error_
         __func__, ptp->port_id, delta, ptp->path_delay);
   else
     err("%s(%d), PHC time adjust failed.\n", __func__, ptp->port_id);
-  if (mt_has_phc2sys_service(ptp->impl)) phc2sys_adjust(ptp);
+  if (ptp->phc2sys_active) phc2sys_adjust(ptp);
 #endif
   dbg("%s(%d), delta %" PRId64 ", ptp %" PRIu64 "\n", __func__, ptp->port, delta,
       ptp_get_raw_time(ptp));
@@ -590,7 +594,7 @@ static int ptp_parse_result(struct mt_ptp_impl* ptp) {
       }
       ptp_sync_expect_result(ptp);
 #ifndef MTL_HAS_DPDK_TIMESYNC_ADJUST_FREQ
-      if (!mt_has_phc2sys_service(ptp->impl)) return -EIO;
+      if (!ptp->phc2sys_active) return -EIO;
 #else
       return -EIO;
 #endif
@@ -626,7 +630,7 @@ static int ptp_parse_result(struct mt_ptp_impl* ptp) {
   ptp_t_result_clear(ptp);
 
   if (ptp->delta_result_cnt > 10) {
-    if (labs(delta) < 10000) {
+    if (labs(delta) < 30000) {
       ptp->expect_result_cnt++;
       if (!ptp->expect_result_start_ns)
         ptp->expect_result_start_ns = mt_get_monotonic_time();
@@ -930,7 +934,7 @@ static void ptp_stat_clear(struct mt_ptp_impl* ptp) {
   ptp->stat_result_err = 0;
   ptp->stat_sync_timeout_err = 0;
   ptp->stat_sync_cnt = 0;
-  if (mt_has_phc2sys_service(ptp->impl)) ptp->phc2sys.stat_delta_max = 0;
+  if (ptp->phc2sys_active) ptp->phc2sys.stat_delta_max = 0;
 }
 
 static void ptp_sync_from_user(struct mtl_main_impl* impl, struct mt_ptp_impl* ptp) {
@@ -976,7 +980,6 @@ static void ptp_sync_from_user_handler(void* param) {
 
 static void phc2sys_init(struct mt_ptp_impl* ptp) {
   memset(&ptp->phc2sys.servo, 0, sizeof(struct mt_pi_servo));
-  memset(&ptp->servo, 0, sizeof(struct mt_pi_servo));
 #ifndef WINDOWSENV
   ptp->phc2sys.realtime_hz = sysconf(_SC_CLK_TCK);
 #endif
@@ -987,6 +990,8 @@ static void phc2sys_init(struct mt_ptp_impl* ptp) {
   }
   ptp->phc2sys.stat_sync = false;
   ptp->phc2sys.stat_sync_keep = 0;
+  ptp->phc2sys_active = true;
+  info("%s(%d), succ\n", __func__, ptp->port);
 }
 
 static int ptp_init(struct mtl_main_impl* impl, struct mt_ptp_impl* ptp,
@@ -1025,7 +1030,8 @@ static int ptp_init(struct mtl_main_impl* impl, struct mt_ptp_impl* ptp,
   ptp->use_pi = (impl->user_para.flags & MTL_FLAG_PTP_PI);
   if (ptp->use_pi)
     info("%s(%d), use pi controller, kp %e, ki %e\n", __func__, port, ptp->kp, ptp->ki);
-  if (mt_has_phc2sys_service(impl)) phc2sys_init(ptp);
+  if (mt_has_phc2sys_service(impl) && (MTL_PORT_P == port)) phc2sys_init(ptp);
+
   struct mtl_init_params* p = mt_get_user_params(impl);
   if (p->flags & MTL_FLAG_PTP_UNICAST_ADDR) {
     ptp->master_addr_mode = MT_PTP_UNICAST_ADDR;
@@ -1176,7 +1182,7 @@ static int ptp_stat(void* priv) {
   }
 
   if (ptp->stat_delta_cnt) {
-    if (mt_has_phc2sys_service(impl)) {
+    if (ptp->phc2sys_active) {
       notice("PTP(%d): system clock offset max %" PRId64 "\n", port,
              ptp->phc2sys.stat_delta_max);
     }
