@@ -3623,7 +3623,7 @@ TEST(St20_rx, detect_uframe_mix_s2) {
   int height[2] = {720, 1080};
   bool interlaced[2] = {false, false};
   st20_rx_detect_test(tx_type, rx_type, packing, fps, width, height, interlaced, true,
-                      ST20_FMT_YUV_422_10BIT, true, ST_TEST_LEVEL_MANDATORY, 2);
+                      ST20_FMT_YUV_422_10BIT, false, ST_TEST_LEVEL_MANDATORY, 2);
 }
 
 TEST(St20_rx, detect_mix_frame_s3) {
