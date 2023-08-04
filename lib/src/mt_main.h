@@ -155,7 +155,7 @@ struct mt_pi_servo {
 };
 
 struct mt_phc2sys_impl {
-  struct mt_pi_servo servo;
+  struct mt_pi_servo servo; /* PI for phc2sys */
   long realtime_hz;
   long realtime_nominal_tick;
   int64_t stat_delta_max;
@@ -173,6 +173,7 @@ struct mt_ptp_impl {
 
   struct mt_phc2sys_impl phc2sys;
   bool phc2sys_active;
+  struct mt_pi_servo servo; /* PI for PTP */
 
   struct rte_mempool* mbuf_pool;
 

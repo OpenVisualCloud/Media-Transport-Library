@@ -980,6 +980,7 @@ static void ptp_sync_from_user_handler(void* param) {
 
 static void phc2sys_init(struct mt_ptp_impl* ptp) {
   memset(&ptp->phc2sys.servo, 0, sizeof(struct mt_pi_servo));
+  memset(&ptp->servo, 0, sizeof(struct mt_pi_servo));
 #ifndef WINDOWSENV
   ptp->phc2sys.realtime_hz = sysconf(_SC_CLK_TCK);
 #endif
