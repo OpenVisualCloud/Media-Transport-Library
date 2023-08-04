@@ -2552,6 +2552,19 @@ TEST(St20_rx, digest_hdr_split) {
   }
 }
 
+TEST(St20_rx, digest_rtcp_s1) {
+  enum st20_type type[1] = {ST20_TYPE_FRAME_LEVEL};
+  enum st20_packing packing[1] = {ST20_PACKING_BPM};
+  enum st_fps fps[1] = {ST_FPS_P50};
+  int width[1] = {1920};
+  int height[1] = {1080};
+  bool interlaced[1] = {false};
+  enum st20_fmt fmt[1] = {ST20_FMT_YUV_422_10BIT};
+  /* check fps */
+  st20_rx_digest_test(type, type, packing, fps, width, height, interlaced, fmt, true,
+                      ST_TEST_LEVEL_MANDATORY, 1, false, false, true);
+}
+
 TEST(St20_rx, digest_rtcp_s3) {
   enum st20_type type[3] = {ST20_TYPE_FRAME_LEVEL, ST20_TYPE_FRAME_LEVEL,
                             ST20_TYPE_FRAME_LEVEL};
@@ -2563,7 +2576,8 @@ TEST(St20_rx, digest_rtcp_s3) {
   bool interlaced[3] = {true, false, false};
   enum st20_fmt fmt[3] = {ST20_FMT_YUV_422_10BIT, ST20_FMT_YUV_422_10BIT,
                           ST20_FMT_YUV_422_10BIT};
-  st20_rx_digest_test(type, type, packing, fps, width, height, interlaced, fmt, true,
+  /* no fps check */
+  st20_rx_digest_test(type, type, packing, fps, width, height, interlaced, fmt, false,
                       ST_TEST_LEVEL_MANDATORY, 3, false, false, true);
 }
 
