@@ -107,15 +107,15 @@ static int rtcp_tx_retransmit_rtp_packets(struct mt_rtcp_tx* tx, uint16_t seq_id
 
   /* deep copy the mbuf then send */
   for (int i = 0; i < bulk; i++) {
-    copy_mbufs[i] = rte_pktmbuf_copy(mbufs[i], mt_get_tx_mempool(tx->parent, tx->port), 0,
-                                     UINT32_MAX);
-    if (!copy_mbufs[i]) {
+    struct rte_mbuf* copied = rte_pktmbuf_copy(
+        mbufs[i], mt_get_tx_mempool(tx->parent, tx->port), 0, UINT32_MAX);
+    if (!copied) {
       dbg("%s(%s), failed to copy mbuf\n", __func__, tx->name);
-      rte_pktmbuf_free_bulk(mbufs, bulk);
-      tx->stat_rtp_retransmit_fail_nobuf += bulk;
-      ret = -ENOMEM;
-      goto rt_exit;
+      tx->stat_rtp_retransmit_fail_nobuf += bulk - i;
+      nb_rt = i;
+      break;
     }
+    copy_mbufs[i] = copied;
   }
   rte_pktmbuf_free_bulk(mbufs, bulk);
   send = mt_dev_tx_sys_queue_burst(tx->parent, tx->port, copy_mbufs, nb_rt);
@@ -145,7 +145,7 @@ int mt_rtcp_tx_parse_nack_packet(struct mt_rtcp_tx* tx, struct mt_rtcp_hdr* rtcp
     tx->stat_nack_received++;
 
     uint16_t num_fcis = ntohs(rtcp->len) + 1 - sizeof(struct mt_rtcp_hdr) / 4;
-    struct mt_rtcp_fci* fci = (struct mt_rtcp_fci*)(rtcp->name + 4);
+    struct mt_rtcp_fci* fci = rtcp->fci;
     for (uint16_t i = 0; i < num_fcis; i++) {
       uint16_t start = ntohs(fci->start);
       uint16_t follow = ntohs(fci->follow);
@@ -290,7 +290,7 @@ int mt_rtcp_rx_send_nack_packet(struct mt_rtcp_rx* rx) {
   uint16_t num_fci = 0;
 
   struct mt_rtcp_nack_item *nack, *tmp_nack;
-  struct mt_rtcp_fci* fci = (struct mt_rtcp_fci*)(rtcp->name + 4);
+  struct mt_rtcp_fci* fci = rtcp->fci;
   for (nack = MT_TAILQ_FIRST(&rx->nack_list); nack != NULL; nack = tmp_nack) {
     tmp_nack = MT_TAILQ_NEXT(nack, next);
     if (now > nack->expire_time) {
