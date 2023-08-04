@@ -1996,7 +1996,8 @@ int mt_dev_flush_tx_queue(struct mtl_main_impl* impl, struct mt_tx_queue* queue,
   enum mtl_port port = queue->port;
   uint16_t queue_id = queue->queue_id;
 
-  int burst_pkts = mt_if_nb_tx_burst(impl, port);
+  /* use double to make sure all the fifo are burst out to clean all mbufs in the pool */
+  int burst_pkts = mt_if_nb_tx_burst(impl, port) * 2;
   struct rte_mbuf* pads[1];
   pads[0] = pad;
 
