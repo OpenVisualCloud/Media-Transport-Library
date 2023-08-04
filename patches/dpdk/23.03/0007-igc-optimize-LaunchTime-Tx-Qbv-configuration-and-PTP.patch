@@ -1742,7 +1742,7 @@ diff --git a/lib/ethdev/rte_ethdev.h b/lib/ethdev/rte_ethdev.h
 index 99fe9e238b..9fb7d51488 100644
 --- a/lib/ethdev/rte_ethdev.h
 +++ b/lib/ethdev/rte_ethdev.h
-@@ -5101,6 +5101,25 @@ int rte_eth_timesync_read_tx_timestamp(uint16_t port_id,
+@@ -5101,6 +5101,27 @@ int rte_eth_timesync_read_tx_timestamp(uint16_t port_id,
   */
  int rte_eth_timesync_adjust_time(uint16_t port_id, int64_t delta);
  
@@ -1763,8 +1763,10 @@ index 99fe9e238b..9fb7d51488 100644
 + *   - -EIO: if device is removed.
 + *   - -ENOTSUP: The function is not supported by the Ethernet driver.
 + */
++#ifndef MTL_HAS_DPDK_TIMESYNC_ADJUST_FREQ
++#define MTL_HAS_DPDK_TIMESYNC_ADJUST_FREQ
++#endif
 +int rte_eth_timesync_adjust_freq(uint16_t port_id, int64_t ppm);
-+
  /**
   * Read the time from the timesync clock on an Ethernet device.
   *
