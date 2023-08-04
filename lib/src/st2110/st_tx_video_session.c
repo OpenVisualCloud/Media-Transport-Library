@@ -3520,6 +3520,9 @@ int st20_frame_tx_start(struct mtl_main_impl* impl, struct st_tx_video_session_i
   /* indicate it's user meta pkt */
   rtp->row_length = htons(frame->user_meta_data_size | ST20_LEN_USER_META);
 
+  /* init mbuf with ipv4 */
+  mt_mbuf_init_ipv4(pkt);
+
   /* copy user meta */
   void* payload = &rtp[1];
   mtl_memcpy(payload, frame->user_meta, frame->user_meta_data_size);
