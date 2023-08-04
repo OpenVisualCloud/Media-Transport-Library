@@ -131,8 +131,10 @@ struct st_app_tx_video_session {
   bool single_line;
   bool slice;
   bool enable_vsync;
+  uint8_t num_port;
+  uint64_t last_stat_time_ns;
 
-  /* rtp info */
+  /* rtp mode info */
   bool st20_rtp_input;
   int st20_pkts_in_line;  /* GPM only, number of packets per each line, 4 for 1080p */
   int st20_bytes_in_line; /* bytes per line, 4800 for 1080p yuv422 10bit */
@@ -489,6 +491,7 @@ struct st_app_context {
   int lcore[ST_APP_MAX_LCORES];
   int rtp_lcore[ST_APP_MAX_LCORES];
   FILE* mtl_log_stream;
+  uint64_t last_stat_time_ns;
 
   bool runtime_session;
   bool enable_hdr_split;

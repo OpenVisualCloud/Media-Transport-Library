@@ -576,23 +576,23 @@ static void st20_rx_ops_init(tests_context* st20, struct st20_rx_ops* ops) {
 static void st20_tx_assert_cnt(int expect_s20_tx_cnt) {
   auto ctx = st_test_ctx();
   auto handle = ctx->handle;
-  struct mtl_stats stats;
+  struct st_var_info var;
   int ret;
 
-  ret = mtl_get_stats(handle, &stats);
+  ret = st_get_var_info(handle, &var);
   EXPECT_GE(ret, 0);
-  EXPECT_EQ(stats.st20_tx_sessions_cnt, expect_s20_tx_cnt);
+  EXPECT_EQ(var.st20_tx_sessions_cnt, expect_s20_tx_cnt);
 }
 
 static void st20_rx_assert_cnt(int expect_s20_rx_cnt) {
   auto ctx = st_test_ctx();
   auto handle = ctx->handle;
-  struct mtl_stats stats;
+  struct st_var_info var;
   int ret;
 
-  ret = mtl_get_stats(handle, &stats);
+  ret = st_get_var_info(handle, &var);
   EXPECT_GE(ret, 0);
-  EXPECT_EQ(stats.st20_rx_sessions_cnt, expect_s20_rx_cnt);
+  EXPECT_EQ(var.st20_rx_sessions_cnt, expect_s20_rx_cnt);
 }
 
 TEST(St20_tx, create_free_single) { create_free_test(st20_tx, 0, 1, 1); }
@@ -1971,6 +1971,8 @@ static void st20_rx_digest_test(
       ops_rx_rtcp.nack_expire_us = 500;
       ops_rx_rtcp.nack_max_retry = 2;
       ops_rx.rtcp = &ops_rx_rtcp;
+      ops_rx.burst_loss_max = 32;
+      ops_rx.sim_loss_rate = 0.0001;
     }
 
     if (rx_type[i] == ST20_TYPE_SLICE_LEVEL) {

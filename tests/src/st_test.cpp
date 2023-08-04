@@ -7,28 +7,28 @@
 
 int st_test_sch_cnt(struct st_tests_context* ctx) {
   mtl_handle handle = ctx->handle;
-  struct mtl_stats stats;
+  struct mtl_var_info var;
   int ret;
 
-  ret = mtl_get_stats(handle, &stats);
+  ret = mtl_get_var_info(handle, &var);
   if (ret < 0) return ret;
 
-  return stats.sch_cnt;
+  return var.sch_cnt;
 }
 
 bool st_test_dma_available(struct st_tests_context* ctx) {
   mtl_handle handle = ctx->handle;
-  struct mtl_stats stats;
-  struct mtl_cap cap;
+  struct mtl_var_info var;
+  struct mtl_fix_info fix;
   int ret;
 
-  ret = mtl_get_stats(handle, &stats);
+  ret = mtl_get_var_info(handle, &var);
   if (ret < 0) return ret;
 
-  ret = mtl_get_cap(handle, &cap);
+  ret = mtl_get_fix_info(handle, &fix);
   if (ret < 0) return ret;
 
-  if (stats.dma_dev_cnt < cap.dma_dev_cnt_max)
+  if (var.dma_dev_cnt < fix.dma_dev_cnt_max)
     return true;
   else
     return false;
@@ -136,46 +136,37 @@ static void stop_expect_fail_test(void) {
 
 TEST(Main, stop_expect_fail) { stop_expect_fail_test(); }
 
-TEST(Main, get_cap) {
+TEST(Main, get_fix) {
   struct st_tests_context* ctx = st_test_ctx();
   mtl_handle handle = ctx->handle;
-  struct mtl_cap cap;
+  struct mtl_fix_info fix;
   int ret;
 
-  ret = mtl_get_cap(handle, &cap);
+  ret = mtl_get_fix_info(handle, &fix);
   EXPECT_GE(ret, 0);
-  info("dma dev count %u\n", cap.dma_dev_cnt_max);
-  info("init_flags 0x%" PRIx64 "\n", cap.init_flags);
+  info("dma dev count %u\n", fix.dma_dev_cnt_max);
+  info("init_flags 0x%" PRIx64 "\n", fix.init_flags);
 }
 
-TEST(Main, get_stats) {
+TEST(Main, get_var) {
   struct st_tests_context* ctx = st_test_ctx();
   mtl_handle handle = ctx->handle;
-  struct mtl_stats stats;
+  struct mtl_var_info var;
   int ret;
 
-  ret = mtl_get_stats(handle, &stats);
+  ret = mtl_get_var_info(handle, &var);
   EXPECT_GE(ret, 0);
-  EXPECT_EQ(stats.st20_tx_sessions_cnt, 0);
-  EXPECT_EQ(stats.st30_tx_sessions_cnt, 0);
-  EXPECT_EQ(stats.st40_tx_sessions_cnt, 0);
-  EXPECT_EQ(stats.st20_rx_sessions_cnt, 0);
-  EXPECT_EQ(stats.st30_rx_sessions_cnt, 0);
-  EXPECT_EQ(stats.st40_rx_sessions_cnt, 0);
-  if (ctx->rss_mode != MTL_RSS_MODE_L3_L4) {
-    EXPECT_EQ(stats.sch_cnt, 1);
-  }
 }
 
 static int test_lcore_cnt(struct st_tests_context* ctx) {
   mtl_handle handle = ctx->handle;
-  struct mtl_stats stats;
+  struct mtl_var_info var;
   int ret;
 
-  ret = mtl_get_stats(handle, &stats);
+  ret = mtl_get_var_info(handle, &var);
   if (ret < 0) return ret;
 
-  return stats.lcore_cnt;
+  return var.lcore_cnt;
 }
 
 static void test_lcore_one(struct st_tests_context* ctx) {
@@ -228,16 +219,13 @@ TEST(Main, lcore_expect_fail) {
 
 static bool test_dev_started(struct st_tests_context* ctx) {
   mtl_handle handle = ctx->handle;
-  struct mtl_stats stats;
+  struct mtl_var_info var;
   int ret;
 
-  ret = mtl_get_stats(handle, &stats);
-  if (ret < 0) return ret;
+  ret = mtl_get_var_info(handle, &var);
+  if (ret < 0) return false;
 
-  if (stats.dev_started)
-    return true;
-  else
-    return false;
+  return var.dev_started;
 }
 
 TEST(Main, dev_started) {

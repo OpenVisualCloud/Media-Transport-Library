@@ -665,6 +665,28 @@ static int app_tx_video_result(struct st_app_tx_video_session* s) {
   return 0;
 }
 
+static int app_tx_video_io_stat(struct st_app_tx_video_session* s) {
+  int idx = s->idx;
+  uint64_t cur_time = st_app_get_monotonic_time();
+  double time_sec = (double)(cur_time - s->last_stat_time_ns) / NS_PER_S;
+  double tx_rate_m, fps;
+  int ret;
+  struct st20_tx_port_status stats;
+
+  for (uint8_t port = 0; port < s->num_port; port++) {
+    ret = st20_tx_get_port_stats(s->handle, port, &stats);
+    if (ret < 0) return ret;
+    tx_rate_m = (double)stats.bytes * 8 / time_sec / MTL_STAT_M_UNIT;
+    fps = (double)stats.frames / time_sec;
+
+    info("%s(%d,%u), tx %f Mb/s fps %f\n", __func__, idx, port, tx_rate_m, fps);
+    st20_tx_reset_port_stats(s->handle, port);
+  }
+
+  s->last_stat_time_ns = cur_time;
+  return 0;
+}
+
 static int app_tx_video_init(struct st_app_context* ctx, st_json_video_session_t* video,
                              struct st_app_tx_video_session* s) {
   int idx = s->idx, ret;
@@ -675,6 +697,7 @@ static int app_tx_video_init(struct st_app_context* ctx, st_json_video_session_t
 
   s->ctx = ctx;
   s->enable_vsync = false;
+  s->last_stat_time_ns = st_app_get_monotonic_time();
 
   snprintf(name, 32, "app_tx_video_%d", idx);
   ops.name = name;
@@ -741,6 +764,7 @@ static int app_tx_video_init(struct st_app_context* ctx, st_json_video_session_t
   s->width = ops.width;
   s->height = ops.height;
   s->interlaced = ops.interlaced ? true : false;
+  s->num_port = ops.num_port;
   memcpy(s->st20_source_url, video ? video->info.video_url : ctx->tx_video_url,
          ST_APP_URL_MAX_LEN);
   s->st20_pcap_input = false;
@@ -879,9 +903,23 @@ int st_app_tx_video_sessions_result(struct st_app_context* ctx) {
   int i, ret = 0;
   struct st_app_tx_video_session* s;
   if (!ctx->tx_video_sessions) return 0;
+
   for (i = 0; i < ctx->tx_video_session_cnt; i++) {
     s = &ctx->tx_video_sessions[i];
     ret += app_tx_video_result(s);
+  }
+
+  return ret;
+}
+
+int st_app_tx_videos_io_stat(struct st_app_context* ctx) {
+  int i, ret = 0;
+  struct st_app_tx_video_session* s;
+  if (!ctx->tx_video_sessions) return 0;
+
+  for (i = 0; i < ctx->tx_video_session_cnt; i++) {
+    s = &ctx->tx_video_sessions[i];
+    ret += app_tx_video_io_stat(s);
   }
 
   return ret;

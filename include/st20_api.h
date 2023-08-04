@@ -1249,6 +1249,17 @@ struct st20_rx_ops {
   bool interlaced;
 
   /**
+   * max burst of simulated packet loss
+   * Only used when ST20_RX_FLAG_SIMULATE_PKT_LOSS enabled.
+   */
+  uint16_t burst_loss_max;
+  /**
+   * simulated packet loss rate
+   * Only used when ST20_RX_FLAG_SIMULATE_PKT_LOSS enabled.
+   */
+  float sim_loss_rate;
+
+  /**
    * the ST20_TYPE_FRAME_LEVEL frame buffer count requested,
    * should be in range [2, ST20_FB_MAX_COUNT].
    * Only for ST20_TYPE_FRAME_LEVEL/ST20_TYPE_SLICE_LEVEL.
@@ -1383,6 +1394,17 @@ struct st22_rx_ops {
   enum st22_pack_type pack_type;
 
   /**
+   * max burst of simulated packet loss
+   * Only used when ST22_RX_FLAG_SIMULATE_PKT_LOSS enabled.
+   */
+  uint16_t burst_loss_max;
+  /**
+   * simulated packet loss rate
+   * Only used when ST22_RX_FLAG_SIMULATE_PKT_LOSS enabled.
+   */
+  float sim_loss_rate;
+
+  /**
    * the frame buffer count requested for one st22 rx session,
    * should be in range [2, ST22_FB_MAX_COUNT],
    * only for ST22_TYPE_FRAME_LEVEL.
@@ -1427,6 +1449,20 @@ struct st22_rx_ops {
    * Ex, cast to struct st10_vsync_meta for ST_EVENT_VSYNC.
    */
   int (*notify_event)(void* priv, enum st_event event, void* args);
+};
+
+/**
+ * A structure used to retrieve general statistics(I/O) for a st20 tx port.
+ */
+struct st20_tx_port_status {
+  /** Total number of transmitted packets. */
+  uint64_t packets;
+  /** Total number of transmitted bytes. */
+  uint64_t bytes;
+  /** Total number of build packets. */
+  uint64_t build;
+  /** Total number of transmitted frames. */
+  uint64_t frames;
 };
 
 /**
@@ -1558,6 +1594,35 @@ int st20_tx_put_mbuf(st20_tx_handle handle, void* mbuf, uint16_t len);
  *   - <0: Error code.
  */
 int st20_tx_get_sch_idx(st20_tx_handle handle);
+
+/**
+ * Retrieve the general statistics(I/O) for one tx st2110-20(video) session port.
+ *
+ * @param handle
+ *   The handle to the tx st2110-20(video) session.
+ * @param port
+ *   The port index.
+ * @param stats
+ *   A pointer to stats structure.
+ * @return
+ *   - >=0 the scheduler index.
+ *   - <0: Error code.
+ */
+int st20_tx_get_port_stats(st20_tx_handle handle, enum mtl_session_port port,
+                           struct st20_tx_port_status* stats);
+
+/**
+ * Reset the general statistics(I/O) for one tx st2110-20(video) session port.
+ *
+ * @param handle
+ *   The handle to the tx st2110-20(video) session.
+ * @param port
+ *   The port index.
+ * @return
+ *   - >=0 the scheduler index.
+ *   - <0: Error code.
+ */
+int st20_tx_reset_port_stats(st20_tx_handle handle, enum mtl_session_port port);
 
 /**
  * Retrieve the pixel group info from st2110-20(video) format.

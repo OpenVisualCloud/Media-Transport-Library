@@ -499,23 +499,23 @@ static void st22p_rx_ops_init(tests_context* st22, struct st22p_rx_ops* ops_rx) 
 static void st22p_tx_assert_cnt(int expect_s22_tx_cnt) {
   auto ctx = st_test_ctx();
   auto handle = ctx->handle;
-  struct mtl_stats stats;
+  struct st_var_info var;
   int ret;
 
-  ret = mtl_get_stats(handle, &stats);
+  ret = st_get_var_info(handle, &var);
   EXPECT_GE(ret, 0);
-  EXPECT_EQ(stats.st22_tx_sessions_cnt, expect_s22_tx_cnt);
+  EXPECT_EQ(var.st22_tx_sessions_cnt, expect_s22_tx_cnt);
 }
 
 static void st22p_rx_assert_cnt(int expect_s22_rx_cnt) {
   auto ctx = st_test_ctx();
   auto handle = ctx->handle;
-  struct mtl_stats stats;
+  struct st_var_info var;
   int ret;
 
-  ret = mtl_get_stats(handle, &stats);
+  ret = st_get_var_info(handle, &var);
   EXPECT_GE(ret, 0);
-  EXPECT_EQ(stats.st22_rx_sessions_cnt, expect_s22_rx_cnt);
+  EXPECT_EQ(var.st22_rx_sessions_cnt, expect_s22_rx_cnt);
 }
 
 TEST(St22p, tx_create_free_single) { pipeline_create_free_test(st22p_tx, 0, 1, 1); }

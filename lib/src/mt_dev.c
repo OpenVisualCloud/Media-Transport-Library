@@ -124,47 +124,98 @@ static inline void diff_and_update(uint64_t* new, uint64_t* old) {
   *old = temp;
 }
 
+static int dev_inf_get_stat(struct mt_interface* inf) {
+  enum mtl_port port = inf->port;
+  uint16_t port_id = inf->port_id;
+  enum mt_driver_type drv_type = inf->drv_type;
+  struct rte_eth_stats stats;
+  int ret;
+
+  rte_spinlock_lock(&inf->stats_lock);
+
+  ret = rte_eth_stats_get(port_id, &stats);
+  if (ret < 0) {
+    rte_spinlock_unlock(&inf->stats_lock);
+    err("%s(%d), eth stats get fail %d\n", __func__, port, ret);
+    return ret;
+  }
+
+  struct mt_dev_stats* dev_stats_not_reset = inf->dev_stats_not_reset;
+  if (dev_stats_not_reset) {
+    dbg("%s(%d), diff_and_update\n", __func__, port);
+    diff_and_update(&stats.ipackets, &dev_stats_not_reset->rx_pkts);
+    diff_and_update(&stats.opackets, &dev_stats_not_reset->tx_pkts);
+    diff_and_update(&stats.ibytes, &dev_stats_not_reset->rx_bytes);
+    diff_and_update(&stats.obytes, &dev_stats_not_reset->tx_bytes);
+    diff_and_update(&stats.ierrors, &dev_stats_not_reset->rx_errors);
+    diff_and_update(&stats.oerrors, &dev_stats_not_reset->tx_errors);
+    diff_and_update(&stats.imissed, &dev_stats_not_reset->rx_missed);
+    diff_and_update(&stats.rx_nombuf, &dev_stats_not_reset->rx_nombuf);
+  }
+
+  struct rte_eth_stats* stats_sum = &inf->stats_sum;
+  stats_sum->ipackets += stats.ipackets;
+  stats_sum->opackets += stats.opackets;
+  stats_sum->ibytes += stats.ibytes;
+  stats_sum->obytes += stats.obytes;
+  stats_sum->ierrors += stats.ierrors;
+  /* iavf wrong report the tx error */
+  if (drv_type != MT_DRV_IAVF) stats_sum->oerrors += stats.oerrors;
+  stats_sum->imissed += stats.imissed;
+  stats_sum->rx_nombuf += stats.rx_nombuf;
+
+  struct mtl_port_status* port_stats = &inf->user_stats_port;
+  port_stats->rx_packets += stats.ipackets;
+  port_stats->tx_packets += stats.opackets;
+  port_stats->rx_bytes += stats.ibytes;
+  port_stats->tx_bytes += stats.obytes;
+  port_stats->rx_err_packets += stats.ierrors;
+  /* iavf wrong report the tx error */
+  if (drv_type != MT_DRV_IAVF) port_stats->tx_err_packets += stats.oerrors;
+  port_stats->rx_hw_dropped_packets += stats.imissed;
+  port_stats->rx_nombuf_packets += stats.rx_nombuf;
+
+  if (!dev_stats_not_reset) {
+    dbg("%s(%d), reset eth status\n", __func__, port);
+    rte_eth_stats_reset(port_id);
+  }
+
+  rte_spinlock_unlock(&inf->stats_lock);
+  return 0;
+}
+
 static int dev_inf_stat(void* pri) {
   struct mt_interface* inf = pri;
   enum mtl_port port = inf->port;
   uint16_t port_id = inf->port_id;
-  enum mt_port_type port_type = inf->port_type;
-  struct rte_eth_stats stats;
+  struct rte_eth_stats* stats_sum;
 
-  if (rte_eth_stats_get(port_id, &stats) == 0) {
-    struct mt_dev_stats* dev_stats = inf->dev_stats;
-    if (dev_stats) {
-      diff_and_update(&stats.ipackets, &dev_stats->rx_pkts);
-      diff_and_update(&stats.opackets, &dev_stats->tx_pkts);
-      diff_and_update(&stats.ibytes, &dev_stats->rx_bytes);
-      diff_and_update(&stats.obytes, &dev_stats->tx_bytes);
-      diff_and_update(&stats.ierrors, &dev_stats->rx_errors);
-      diff_and_update(&stats.oerrors, &dev_stats->tx_errors);
-      diff_and_update(&stats.imissed, &dev_stats->rx_missed);
-      diff_and_update(&stats.rx_nombuf, &dev_stats->rx_nombuf);
-    }
+  dev_inf_get_stat(inf);
+  stats_sum = &inf->stats_sum;
 
-    double orate_m =
-        (double)stats.obytes * 8 / MT_DEV_STAT_INTERVAL_S / MT_DEV_STAT_M_UNIT;
-    double irate_m =
-        (double)stats.ibytes * 8 / MT_DEV_STAT_INTERVAL_S / MT_DEV_STAT_M_UNIT;
+  double orate_m =
+      (double)stats_sum->obytes * 8 / MT_DEV_STAT_INTERVAL_S / MTL_STAT_M_UNIT;
+  double irate_m =
+      (double)stats_sum->ibytes * 8 / MT_DEV_STAT_INTERVAL_S / MTL_STAT_M_UNIT;
 
-    notice("DEV(%d): Avr rate, tx: %f Mb/s, rx: %f Mb/s, pkts, tx: %" PRIu64
-           ", rx: %" PRIu64 "\n",
-           port, orate_m, irate_m, stats.opackets, stats.ipackets);
-    if (stats.imissed || stats.ierrors || stats.rx_nombuf ||
-        (stats.oerrors && (MT_PORT_VF != port_type))) {
-      err("DEV(%d): Status: imissed %" PRIu64 " ierrors %" PRIu64 " oerrors %" PRIu64
-          " rx_nombuf %" PRIu64 "\n",
-          port, stats.imissed, stats.ierrors, stats.oerrors, stats.rx_nombuf);
-      dev_eth_xstat(port_id);
-    }
-
-    if (!dev_stats) {
-      rte_eth_stats_reset(port_id);
-      rte_eth_xstats_reset(port_id);
-    }
+  notice("DEV(%d): Avr rate, tx: %f Mb/s, rx: %f Mb/s, pkts, tx: %" PRIu64
+         ", rx: %" PRIu64 "\n",
+         port, orate_m, irate_m, stats_sum->opackets, stats_sum->ipackets);
+  if (stats_sum->imissed || stats_sum->ierrors || stats_sum->rx_nombuf ||
+      stats_sum->oerrors) {
+    err("DEV(%d): Status: imissed %" PRIu64 " ierrors %" PRIu64 " oerrors %" PRIu64
+        " rx_nombuf %" PRIu64 "\n",
+        port, stats_sum->imissed, stats_sum->ierrors, stats_sum->oerrors,
+        stats_sum->rx_nombuf);
+    dev_eth_xstat(port_id);
   }
+
+  if (!inf->dev_stats_not_reset) {
+    rte_eth_xstats_reset(port_id);
+  }
+
+  /* clear the stats_sum */
+  memset(stats_sum, 0, sizeof(*stats_sum));
 
   return 0;
 }
@@ -178,8 +229,11 @@ static void dev_stat(struct mtl_main_impl* impl) {
   }
 
   notice("* *    M T    D E V   S T A T E   * * \n");
-  if (p->stat_dump_cb_fn) p->stat_dump_cb_fn(p->priv);
   mt_stat_dump(impl);
+  if (p->stat_dump_cb_fn) {
+    dbg("%s, start stat_dump_cb_fn\n", __func__);
+    p->stat_dump_cb_fn(p->priv);
+  }
   notice("* *    E N D    S T A T E   * * \n\n");
 }
 
@@ -211,7 +265,10 @@ static void* dev_stat_thread(void* arg) {
       mt_pthread_cond_wait(&impl->stat_wake_cond, &impl->stat_wake_mutex);
     mt_pthread_mutex_unlock(&impl->stat_wake_mutex);
 
-    if (!rte_atomic32_read(&impl->stat_stop)) dev_stat(impl);
+    if (!rte_atomic32_read(&impl->stat_stop)) {
+      dbg("%s, dev_stat\n", __func__);
+      dev_stat(impl);
+    }
   }
   info("%s, stop\n", __func__);
 
@@ -2091,9 +2148,10 @@ int mt_dev_create(struct mtl_main_impl* impl) {
     }
 
     if (inf->drv_type == MT_DRV_ENA) {
-      inf->dev_stats = mt_rte_zmalloc_socket(sizeof(struct mt_dev_stats), inf->socket_id);
-      if (!inf->dev_stats) {
-        err("%s(%d), malloc dev_stats fail\n", __func__, i);
+      inf->dev_stats_not_reset =
+          mt_rte_zmalloc_socket(sizeof(struct mt_dev_stats), inf->socket_id);
+      if (!inf->dev_stats_not_reset) {
+        err("%s(%d), malloc dev_stats_not_reset fail\n", __func__, i);
         ret = -ENOMEM;
         goto err_exit;
       }
@@ -2172,9 +2230,9 @@ int mt_dev_free(struct mtl_main_impl* impl) {
     inf = mt_if(impl, i);
 
     mt_stat_unregister(impl, dev_inf_stat, inf);
-    if (inf->dev_stats) {
-      mt_rte_free(inf->dev_stats);
-      inf->dev_stats = NULL;
+    if (inf->dev_stats_not_reset) {
+      mt_rte_free(inf->dev_stats_not_reset);
+      inf->dev_stats_not_reset = NULL;
     }
     dev_stop_port(inf);
   }
@@ -2372,6 +2430,7 @@ int mt_dev_if_init(struct mtl_main_impl* impl) {
     mt_pthread_mutex_init(&inf->rx_queues_mutex, NULL);
     mt_pthread_mutex_init(&inf->vf_cmd_mutex, NULL);
     rte_spinlock_init(&inf->txq_sys_entry_lock);
+    rte_spinlock_init(&inf->stats_lock);
 
     if (mt_ptp_tsc_source(impl)) {
       info("%s(%d), use tsc ptp source\n", __func__, i);
@@ -2701,4 +2760,41 @@ uint8_t* mt_sip_gateway(struct mtl_main_impl* impl, enum mtl_port port) {
   if (mt_if(impl, port)->net_proto == MTL_PROTO_DHCP)
     return mt_dhcp_get_gateway(impl, port);
   return mt_get_user_params(impl)->gateway[port];
+}
+
+int mtl_get_port_stats(mtl_handle mt, enum mtl_port port, struct mtl_port_status* stats) {
+  struct mtl_main_impl* impl = mt;
+
+  if (impl->type != MT_HANDLE_MAIN) {
+    err("%s, invalid type %d\n", __func__, impl->type);
+    return -EIO;
+  }
+  if (port >= mt_num_ports(impl)) {
+    err("%s, invalid port %d\n", __func__, port);
+    return -EIO;
+  }
+
+  struct mt_interface* inf = mt_if(impl, port);
+  dev_inf_get_stat(inf);
+  memcpy(stats, &inf->user_stats_port, sizeof(*stats));
+
+  return 0;
+}
+
+int mtl_reset_port_stats(mtl_handle mt, enum mtl_port port) {
+  struct mtl_main_impl* impl = mt;
+
+  if (impl->type != MT_HANDLE_MAIN) {
+    err("%s, invalid type %d\n", __func__, impl->type);
+    return -EIO;
+  }
+  if (port >= mt_num_ports(impl)) {
+    err("%s, invalid port %d\n", __func__, port);
+    return -EIO;
+  }
+
+  struct mt_interface* inf = mt_if(impl, port);
+  memset(&inf->user_stats_port, 0, sizeof(inf->user_stats_port));
+
+  return 0;
 }

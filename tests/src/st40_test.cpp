@@ -259,23 +259,23 @@ static void st40_tx_ops_init(tests_context* st40, struct st40_tx_ops* ops) {
 static void st40_tx_assert_cnt(int expect_s40_tx_cnt) {
   auto ctx = st_test_ctx();
   auto handle = ctx->handle;
-  struct mtl_stats stats;
+  struct st_var_info var;
   int ret;
 
-  ret = mtl_get_stats(handle, &stats);
+  ret = st_get_var_info(handle, &var);
   EXPECT_GE(ret, 0);
-  EXPECT_EQ(stats.st40_tx_sessions_cnt, expect_s40_tx_cnt);
+  EXPECT_EQ(var.st40_tx_sessions_cnt, expect_s40_tx_cnt);
 }
 
 static void st40_rx_assert_cnt(int expect_s40_rx_cnt) {
   auto ctx = st_test_ctx();
   auto handle = ctx->handle;
-  struct mtl_stats stats;
+  struct st_var_info var;
   int ret;
 
-  ret = mtl_get_stats(handle, &stats);
+  ret = st_get_var_info(handle, &var);
   EXPECT_GE(ret, 0);
-  EXPECT_EQ(stats.st40_rx_sessions_cnt, expect_s40_rx_cnt);
+  EXPECT_EQ(var.st40_rx_sessions_cnt, expect_s40_rx_cnt);
 }
 
 TEST(St40_tx, create_free_single) { create_free_test(st40_tx, 0, 1, 1); }

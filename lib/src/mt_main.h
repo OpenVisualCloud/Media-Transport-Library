@@ -621,7 +621,10 @@ struct mt_interface {
   uint64_t tsc_time_base;
   uint64_t real_time_base;
 
-  struct mt_dev_stats* dev_stats; /* for nic without reset func */
+  rte_spinlock_t stats_lock;
+  struct mt_dev_stats* dev_stats_not_reset; /* for nic without reset func */
+  struct rte_eth_stats stats_sum;           /* for dev_inf_stat dump */
+  struct mtl_port_status user_stats_port;   /* for mtl_get_port_stats */
 };
 
 struct mt_lcore_shm {
