@@ -590,6 +590,8 @@ static int ptp_parse_result(struct mt_ptp_impl* ptp) {
       }
       ptp_sync_expect_result(ptp);
 #ifndef MTL_HAS_DPDK_TIMESYNC_ADJUST_FREQ
+      if (!mt_has_phc2sys_service(ptp->impl)) return -EIO;
+#else
       return -EIO;
 #endif
     }
