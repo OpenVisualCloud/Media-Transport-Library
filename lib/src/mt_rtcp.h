@@ -12,17 +12,18 @@
 
 #define MT_RTCP_TX_RING_PREFIX "TRT_"
 
+MTL_PACK(struct mt_rtcp_fci {
+  uint16_t start;
+  uint16_t follow;
+});
+
 MTL_PACK(struct mt_rtcp_hdr {
   uint8_t flags;
   uint8_t ptype;
   uint16_t len;
   uint32_t ssrc;
   uint8_t name[4];
-});
-
-MTL_PACK(struct mt_rtcp_fci {
-  uint16_t start;
-  uint16_t follow;
+  struct mt_rtcp_fci fci[0];
 });
 
 struct mt_rtcp_nack_item {
