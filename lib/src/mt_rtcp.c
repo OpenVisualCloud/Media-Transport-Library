@@ -236,8 +236,10 @@ int mt_rtcp_rx_send_nack_packet(struct mt_rtcp_rx* rx) {
   /* check missing pkts with bitmap, fill fci fields */
   uint16_t seq = rx->last_cont + 1;
   uint16_t start = seq;
+  uint16_t end = rx->last_seq - rx->seq_skip_window;
   uint16_t miss = 0;
-  while (rtp_seq_num_cmp(seq, rx->last_seq - rx->seq_skip_window) <= 0) {
+  bool end_state = mt_bitmap_test_and_set(rx->seq_bitmap, end % rx->seq_window_size);
+  while (rtp_seq_num_cmp(seq, end) <= 0) {
     if (!mt_bitmap_test(rx->seq_bitmap, seq % rx->seq_window_size)) {
       miss++;
     } else if (miss != 0) {
@@ -246,6 +248,8 @@ int mt_rtcp_rx_send_nack_packet(struct mt_rtcp_rx* rx) {
       if (++num_fci > 32) {
         dbg("%s(%s), too many nack items %u\n", __func__, rx->name, num_fci);
         rx->stat_nack_drop_exceed += num_fci;
+        if (!end_state)
+          mt_bitmap_test_and_unset(rx->seq_bitmap, end % rx->seq_window_size);
         return -EINVAL;
       }
       rx->stat_rtp_lost_detected += miss;
@@ -254,6 +258,7 @@ int mt_rtcp_rx_send_nack_packet(struct mt_rtcp_rx* rx) {
     }
     seq++;
   }
+  if (!end_state) mt_bitmap_test_and_unset(rx->seq_bitmap, end % rx->seq_window_size);
   if (num_fci == 0) return 0;
 
   pkt = rte_pktmbuf_alloc(mt_get_tx_mempool(impl, port));
