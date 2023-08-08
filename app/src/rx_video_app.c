@@ -494,8 +494,6 @@ static int app_rx_video_init(struct st_app_context* ctx, st_json_video_session_t
   if (video && video->enable_rtcp) {
     ops.flags |= ST20_RX_FLAG_ENABLE_RTCP;
     ops_rtcp.nack_interval_us = 250;
-    ops_rtcp.nack_expire_us = 500;
-    ops_rtcp.nack_max_retry = 2;
     ops.rtcp = &ops_rtcp;
   }
 
