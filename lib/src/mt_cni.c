@@ -65,6 +65,15 @@ static int cni_udp_detect_analyses(struct mt_cni_entry* cni, struct mt_udp_hdr* 
   uint32_t tuple[3];
   struct mt_cni_udp_detect_entry* entry;
   struct mt_cni_udp_detect_list* list = &cni->udp_detect;
+  uint8_t* dip = (uint8_t*)&hdr->ipv4.dst_addr;
+
+  if (!mt_is_multicast_ip(dip) &&
+      memcmp(mt_sip_addr(cni->impl, port), dip, MTL_IP_ADDR_LEN)) {
+    dbg("%s(%d), not our ip %u.%u.%u.%u\n", __func__, port, dip[0], dip[1], dip[2],
+        dip[3]);
+    return -EINVAL;
+  }
+
   rte_memcpy(tuple, &hdr->ipv4.src_addr, sizeof(tuple));
 
   /* search if it's a known udp stream */

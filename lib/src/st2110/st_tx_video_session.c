@@ -495,7 +495,7 @@ static int tv_init_pacing(struct mtl_main_impl* impl,
   pacing->vrx = s->st21_vrx_narrow;
   if (s->pacing_way[MTL_SESSION_PORT_P] == ST21_TX_PACING_WAY_RL) {
     pacing->vrx -= 2; /* VRX compensate to rl burst(max_burst_size=2048) */
-    pacing->vrx -= 2; /* leave VRX space for deviation */
+    pacing->vrx -= 1; /* leave VRX space for deviation */
     if (s->ops.height <= 576) {
       pacing->warm_pkts = 8; /* fix me */
       pacing->vrx = s->st21_vrx_narrow;
