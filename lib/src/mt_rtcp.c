@@ -207,7 +207,7 @@ int mt_rtcp_rx_parse_rtp_packet(struct mt_rtcp_rx* rx, struct st_rfc3550_rtp_hdr
         /* the ideal case where all pkts come in sequence */
         rx->last_cont = seq_id;
       }
-    } else if (seq_id == rx->last_cont + 1) {
+    } else if (seq_id == rx->last_cont + 1) { /* old seq and need update cont */
       rx->last_cont = seq_id;
       rtcp_rx_update_last_cont(rx);
     }
@@ -237,7 +237,7 @@ int mt_rtcp_rx_send_nack_packet(struct mt_rtcp_rx* rx) {
   uint16_t seq = rx->last_cont + 1;
   uint16_t start = seq;
   uint16_t miss = 0;
-  while (rtp_seq_num_cmp(seq, rx->last_seq - rx->seq_skip_window) < 0) {
+  while (rtp_seq_num_cmp(seq, rx->last_seq - rx->seq_skip_window) <= 0) {
     if (!mt_bitmap_test(rx->seq_bitmap, seq % rx->seq_window_size)) {
       miss++;
     } else if (miss != 0) {
