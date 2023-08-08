@@ -1466,6 +1466,20 @@ struct st20_tx_port_status {
 };
 
 /**
+ * A structure used to retrieve general statistics(I/O) for a st20 rx port.
+ */
+struct st20_rx_port_status {
+  /** Total number of received packets. */
+  uint64_t packets;
+  /** Total number of received bytes. */
+  uint64_t bytes;
+  /** Total number of received frames. */
+  uint64_t frames;
+  /** Total number of received packets which are not valid. */
+  uint64_t err_packets;
+};
+
+/**
  * Create one tx st2110-20(video) session.
  *
  * @param mt
@@ -1605,7 +1619,7 @@ int st20_tx_get_sch_idx(st20_tx_handle handle);
  * @param stats
  *   A pointer to stats structure.
  * @return
- *   - >=0 the scheduler index.
+ *   - >=0 succ.
  *   - <0: Error code.
  */
 int st20_tx_get_port_stats(st20_tx_handle handle, enum mtl_session_port port,
@@ -1619,10 +1633,39 @@ int st20_tx_get_port_stats(st20_tx_handle handle, enum mtl_session_port port,
  * @param port
  *   The port index.
  * @return
- *   - >=0 the scheduler index.
+ *   - >=0 succ.
  *   - <0: Error code.
  */
 int st20_tx_reset_port_stats(st20_tx_handle handle, enum mtl_session_port port);
+
+/**
+ * Retrieve the general statistics(I/O) for one rx st2110-20(video) session port.
+ *
+ * @param handle
+ *   The handle to the rx st2110-20(video) session.
+ * @param port
+ *   The port index.
+ * @param stats
+ *   A pointer to stats structure.
+ * @return
+ *   - >=0 succ.
+ *   - <0: Error code.
+ */
+int st20_rx_get_port_stats(st20_rx_handle handle, enum mtl_session_port port,
+                           struct st20_rx_port_status* stats);
+
+/**
+ * Reset the general statistics(I/O) for one rx st2110-20(video) session port.
+ *
+ * @param handle
+ *   The handle to the rx st2110-20(video) session.
+ * @param port
+ *   The port index.
+ * @return
+ *   - >=0 succ.
+ *   - <0: Error code.
+ */
+int st20_rx_reset_port_stats(st20_rx_handle handle, enum mtl_session_port port);
 
 /**
  * Retrieve the pixel group info from st2110-20(video) format.

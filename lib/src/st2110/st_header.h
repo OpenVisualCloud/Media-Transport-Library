@@ -683,6 +683,9 @@ struct st_rx_video_session_impl {
   float sim_loss_rate;
   uint16_t burst_loss_cnt;
 
+  /* use atomic safe? */
+  struct st20_rx_port_status port_user_stats[MTL_SESSION_PORT_MAX];
+
   /* status */
   int stat_pkts_idx_dropped;
   int stat_pkts_idx_oo_bitmap;

@@ -64,6 +64,9 @@ static void app_stat(void* priv) {
   if (ctx->mtl_log_stream) {
     app_dump_io_stat(ctx);
     st_app_tx_videos_io_stat(ctx);
+    st_app_rx_videos_io_stat(ctx);
+    st_app_tx_st20p_io_stat(ctx);
+    st_app_rx_st20p_io_stat(ctx);
   }
 
   st_app_rx_video_sessions_stat(ctx);

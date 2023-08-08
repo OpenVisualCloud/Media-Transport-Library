@@ -186,6 +186,28 @@ static int app_tx_st20p_uinit(struct st_app_tx_st20p_session* s) {
   return 0;
 }
 
+static int app_tx_st20p_io_stat(struct st_app_tx_st20p_session* s) {
+  int idx = s->idx;
+  uint64_t cur_time = st_app_get_monotonic_time();
+  double time_sec = (double)(cur_time - s->last_stat_time_ns) / NS_PER_S;
+  double tx_rate_m, fps;
+  int ret;
+  struct st20_tx_port_status stats;
+
+  for (uint8_t port = 0; port < s->num_port; port++) {
+    ret = st20p_tx_get_port_stats(s->handle, port, &stats);
+    if (ret < 0) return ret;
+    tx_rate_m = (double)stats.bytes * 8 / time_sec / MTL_STAT_M_UNIT;
+    fps = (double)stats.frames / time_sec;
+
+    info("%s(%d,%u), tx %f Mb/s fps %f\n", __func__, idx, port, tx_rate_m, fps);
+    st20p_tx_reset_port_stats(s->handle, port);
+  }
+
+  s->last_stat_time_ns = cur_time;
+  return 0;
+}
+
 static int app_tx_st20p_init(struct st_app_context* ctx, st_json_st20p_session_t* st20p,
                              struct st_app_tx_st20p_session* s) {
   int idx = s->idx, ret;
@@ -193,6 +215,8 @@ static int app_tx_st20p_init(struct st_app_context* ctx, st_json_st20p_session_t
   char name[32];
   st20p_tx_handle handle;
   memset(&ops, 0, sizeof(ops));
+
+  s->last_stat_time_ns = st_app_get_monotonic_time();
 
   snprintf(name, 32, "app_tx_st20p_%d", idx);
   ops.name = name;
@@ -245,6 +269,7 @@ static int app_tx_st20p_init(struct st_app_context* ctx, st_json_st20p_session_t
 
   s->width = ops.width;
   s->height = ops.height;
+  s->num_port = ops.port.num_port;
   memcpy(s->st20p_source_url, st20p ? st20p->info.st20p_url : ctx->tx_st20p_url,
          ST_APP_URL_MAX_LEN);
   s->st = ctx->st;
@@ -334,4 +359,17 @@ int st_app_tx_st20p_sessions_uinit(struct st_app_context* ctx) {
   st_app_free(ctx->tx_st20p_sessions);
 
   return 0;
+}
+
+int st_app_tx_st20p_io_stat(struct st_app_context* ctx) {
+  int i, ret = 0;
+  struct st_app_tx_st20p_session* s;
+  if (!ctx->tx_st20p_sessions) return 0;
+
+  for (i = 0; i < ctx->tx_st20p_session_cnt; i++) {
+    s = &ctx->tx_st20p_sessions[i];
+    ret += app_tx_st20p_io_stat(s);
+  }
+
+  return ret;
 }

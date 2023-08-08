@@ -899,3 +899,28 @@ int st20p_rx_get_sch_idx(st20p_rx_handle handle) {
 
   return st20_rx_get_sch_idx(ctx->transport);
 }
+
+int st20p_rx_get_port_stats(st20p_rx_handle handle, enum mtl_session_port port,
+                            struct st20_rx_port_status* stats) {
+  struct st20p_rx_ctx* ctx = handle;
+  int cidx = ctx->idx;
+
+  if (ctx->type != MT_ST20_HANDLE_PIPELINE_RX) {
+    err("%s(%d), invalid type %d\n", __func__, cidx, ctx->type);
+    return 0;
+  }
+
+  return st20_rx_get_port_stats(ctx->transport, port, stats);
+}
+
+int st20p_rx_reset_port_stats(st20p_rx_handle handle, enum mtl_session_port port) {
+  struct st20p_rx_ctx* ctx = handle;
+  int cidx = ctx->idx;
+
+  if (ctx->type != MT_ST20_HANDLE_PIPELINE_RX) {
+    err("%s(%d), invalid type %d\n", __func__, cidx, ctx->type);
+    return 0;
+  }
+
+  return st20_rx_reset_port_stats(ctx->transport, port);
+}
