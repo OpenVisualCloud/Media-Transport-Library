@@ -1970,6 +1970,8 @@ static void st20_rx_digest_test(enum st20_type tx_type[], enum st20_type rx_type
     if (enable_rtcp) {
       ops_rx.flags |= ST20_RX_FLAG_ENABLE_RTCP | ST20_RX_FLAG_SIMULATE_PKT_LOSS;
       ops_rx_rtcp.nack_interval_us = 250;
+      ops_rx_rtcp.seq_bitmap_size = 32;
+      ops_rx_rtcp.seq_skip_window = 10;
       ops_rx.rtcp = &ops_rx_rtcp;
       ops_rx.burst_loss_max = 32;
       ops_rx.sim_loss_rate = 0.0001;

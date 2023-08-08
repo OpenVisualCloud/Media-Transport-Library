@@ -1191,15 +1191,15 @@ struct st_rx_rtcp_ops {
    */
   uint32_t nack_interval_us;
   /**
-   * RTCP NACK seq bitmap size, window size is bitmap size * 8.
+   * RTCP seq bitmap size, window size is bitmap size * 8.
    * Only used when ST20/22_RX_FLAG_ENABLE_RTCP flag set.
    */
-  uint32_t seq_bitmap_size;
+  uint16_t seq_bitmap_size;
   /**
    * RTCP seq skip window, missing within skip window will be ignored.
-   * Only used when ST20_RX_FLAG_ENABLE_RTCP flag set.
+   * Only used when ST20/22_RX_FLAG_ENABLE_RTCP flag set.
    */
-  uint32_t seq_skip_window;
+  uint16_t seq_skip_window;
 };
 
 /**
