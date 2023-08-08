@@ -1290,6 +1290,7 @@ static void st22_rx_digest_test(enum st_fps fps[], int width[], int height[],
     if (enable_rtcp) {
       ops_rx.flags |= ST22_RX_FLAG_ENABLE_RTCP | ST22_RX_FLAG_SIMULATE_PKT_LOSS;
       ops_rx_rtcp.nack_interval_us = 100;
+      ops_rx_rtcp.seq_skip_window = 0;
       ops_rx.rtcp = &ops_rx_rtcp;
       ops_rx.burst_loss_max = 4;
       ops_rx.sim_loss_rate = 0.002;

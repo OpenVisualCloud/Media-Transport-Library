@@ -3015,8 +3015,7 @@ static int rv_init_rtcp(struct mtl_main_impl* impl, struct st_rx_video_sessions_
                                    : 250 * NS_PER_US,
         .seq_bitmap_size =
             (ops->rtcp && ops->rtcp->seq_bitmap_size) ? ops->rtcp->seq_bitmap_size : 16,
-        .seq_skip_window =
-            (ops->rtcp && ops->rtcp->seq_skip_window) ? ops->rtcp->seq_skip_window : 10,
+        .seq_skip_window = (ops->rtcp) ? ops->rtcp->seq_skip_window : 10,
     };
     s->rtcp_rx[i] = mt_rtcp_rx_create(impl, &rtcp_ops);
     if (!s->rtcp_rx[i]) {
