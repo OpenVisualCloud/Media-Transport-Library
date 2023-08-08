@@ -1191,15 +1191,15 @@ struct st_rx_rtcp_ops {
    */
   uint32_t nack_interval_us;
   /**
-   * RTCP NACK expire interval in us.
+   * RTCP NACK seq bitmap size.
    * Only used when ST20/22_RX_FLAG_ENABLE_RTCP flag set.
    */
-  uint32_t nack_expire_us;
+  uint32_t seq_bitmap_size;
   /**
-   * RTCP NACK max retry count.
+   * RTCP seq skip window.
    * Only used when ST20_RX_FLAG_ENABLE_RTCP flag set.
    */
-  uint32_t nack_max_retry;
+  uint32_t seq_skip_window;
 };
 
 /**
