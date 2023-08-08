@@ -199,9 +199,9 @@ int mt_rtcp_rx_parse_rtp_packet(struct mt_rtcp_rx* rx, struct st_rfc3550_rtp_hdr
       rx->last_seq = seq_id;
 
       uint16_t last_cont_diff = seq_id - rx->last_cont;
-      if (last_cont_diff > rx->seq_bitmap_size * 8) {
+      if (last_cont_diff > rx->seq_window_size) {
         /* last cont is out of bitmap window, re-calculate from bitmap begin */
-        rx->last_cont = seq_id - rx->seq_bitmap_size * 8;
+        rx->last_cont = seq_id - rx->seq_window_size;
         rtcp_rx_update_last_cont(rx);
       } else if (last_cont_diff == 1) {
         /* the ideal case where all pkts come in sequence */
@@ -406,11 +406,10 @@ struct mt_rtcp_rx* mt_rtcp_rx_create(struct mtl_main_impl* impl,
   rx->ssrc = 0;
   rx->nacks_send_interval = ops->nacks_send_interval;
   rx->nacks_send_time = mt_get_tsc(impl);
-  rx->seq_bitmap_size = ops->seq_bitmap_size;
   strncpy(rx->name, ops->name, sizeof(rx->name) - 1);
   rte_memcpy(&rx->udp_hdr, ops->udp_hdr, sizeof(rx->udp_hdr));
 
-  uint8_t* seq_bitmap = mt_rte_zmalloc_socket(sizeof(uint8_t) * rx->seq_bitmap_size,
+  uint8_t* seq_bitmap = mt_rte_zmalloc_socket(sizeof(uint8_t) * ops->seq_bitmap_size,
                                               mt_socket_id(impl, rx->port));
   if (!seq_bitmap) {
     err("%s(%s), failed to allocate memory for seq_bitmap\n", __func__, rx->name);
@@ -418,7 +417,7 @@ struct mt_rtcp_rx* mt_rtcp_rx_create(struct mtl_main_impl* impl,
     return NULL;
   }
   rx->seq_bitmap = seq_bitmap;
-  rx->seq_window_size = rx->seq_bitmap_size * 8;
+  rx->seq_window_size = ops->seq_bitmap_size * 8;
 
   mt_stat_register(impl, rtcp_rx_stat, rx, rx->name);
 
