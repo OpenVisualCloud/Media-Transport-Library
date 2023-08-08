@@ -230,6 +230,32 @@ int mt_rtcp_rx_send_nack_packet(struct mt_rtcp_rx* rx) {
   if (now < rx->nacks_send_time) return 0;
   rx->nacks_send_time = now + rx->nacks_send_interval;
 
+  uint16_t num_fci = 0;
+  struct mt_rtcp_fci fcis[32];
+
+  /* check missing pkts with bitmap, fill fci fields */
+  uint16_t seq = rx->last_cont + 1;
+  uint16_t start = seq;
+  uint16_t miss = 0;
+  while (rtp_seq_num_cmp(seq, rx->last_seq - rx->seq_skip_window) < 0) {
+    if (!mt_bitmap_test(rx->seq_bitmap, seq % rx->seq_window_size)) {
+      miss++;
+    } else if (miss != 0) {
+      fcis[num_fci].start = htons(start);
+      fcis[num_fci].follow = htons(miss - 1);
+      if (++num_fci > 32) {
+        dbg("%s(%s), too many nack items %u\n", __func__, rx->name, num_fci);
+        rx->stat_nack_drop_exceed += num_fci;
+        return -EINVAL;
+      }
+      rx->stat_rtp_lost_detected += miss;
+      start = seq + 1;
+      miss = 0;
+    }
+    seq++;
+  }
+  if (num_fci == 0) return 0;
+
   pkt = rte_pktmbuf_alloc(mt_get_tx_mempool(impl, port));
   if (!pkt) {
     err("%s(%s), pkt alloc fail\n", __func__, rx->name);
@@ -250,44 +276,10 @@ int mt_rtcp_rx_send_nack_packet(struct mt_rtcp_rx* rx) {
       rte_pktmbuf_mtod_offset(pkt, struct mt_rtcp_hdr*, sizeof(*hdr));
   rtcp->flags = 0x80;
   rtcp->ptype = MT_RTCP_PTYPE_NACK;
+  rtcp->len = htons(sizeof(struct mt_rtcp_hdr) / 4 - 1 + num_fci);
   rtcp->ssrc = htonl(rx->ssrc);
   rte_memcpy(rtcp->name, "IMTL", 4);
-  uint16_t num_fci = 0;
-
-  struct mt_rtcp_fci* fci = rtcp->fci;
-
-  /* check missing pkts with bitmap, fill fci fields */
-  uint16_t seq = rx->last_cont + 1;
-  uint16_t start = seq;
-  uint16_t miss = 0;
-  while (rtp_seq_num_cmp(seq, rx->last_seq - rx->seq_skip_window) < 0) {
-    if (!mt_bitmap_test(rx->seq_bitmap, seq % rx->seq_window_size)) {
-      miss++;
-    } else if (miss != 0) {
-      fci->start = htons(start);
-      fci->follow = htons(miss - 1);
-      fci++;
-      num_fci++;
-      rx->stat_rtp_lost_detected += miss;
-      start = seq + 1;
-      miss = 0;
-    }
-    seq++;
-  }
-  if (miss != 0) {
-    fci->start = htons(start);
-    fci->follow = htons(miss - 1);
-    num_fci++;
-    rx->stat_rtp_lost_detected += miss;
-  }
-
-  if (num_fci == 0 || num_fci > 32) {
-    dbg("%s(%s), no / too many nack items %u\n", __func__, rx->name, num_fci);
-    rte_pktmbuf_free(pkt);
-    rx->stat_nack_drop_exceed += num_fci;
-    return -EINVAL;
-  }
-  rtcp->len = htons(sizeof(struct mt_rtcp_hdr) / 4 - 1 + num_fci);
+  rte_memcpy(rtcp->fci, fcis, num_fci * sizeof(struct mt_rtcp_fci));
 
   pkt->data_len += sizeof(struct mt_rtcp_hdr) + num_fci * sizeof(struct mt_rtcp_fci);
   pkt->pkt_len = pkt->data_len;
