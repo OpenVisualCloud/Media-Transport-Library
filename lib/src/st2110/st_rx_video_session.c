@@ -119,12 +119,12 @@ static char* rv_ebu_cinst_result(struct st_rx_video_ebu_stat* ebu,
 static char* rv_ebu_vrx_result(struct st_rx_video_ebu_stat* ebu,
                                struct st_rx_video_ebu_info* ebu_info,
                                struct st_rx_video_ebu_result* ebu_result) {
-  if ((ebu->vrx_min > 0) && (ebu->vrx_max <= ebu_info->vrx_full_narrow_pass)) {
+  if ((ebu->vrx_min >= 0) && (ebu->vrx_max <= ebu_info->vrx_full_narrow_pass)) {
     ebu_result->vrx_pass_narrow++;
     return ST_EBU_PASS_NARROW;
   }
 
-  if ((ebu->vrx_min > 0) && (ebu->vrx_max <= ebu_info->vrx_full_wide_pass)) {
+  if ((ebu->vrx_min >= 0) && (ebu->vrx_max <= ebu_info->vrx_full_wide_pass)) {
     ebu_result->vrx_pass_wide++;
     ebu->compliant_narrow = false;
     return ST_EBU_PASS_WIDE;
@@ -212,8 +212,9 @@ static void rv_ebu_result(struct st_rx_video_session_impl* s) {
        ebu->cinst_min, ebu->cinst_max, rv_ebu_cinst_result(ebu, ebu_info, ebu_result));
   info("%s(%d), VRX AVG %.2f MIN %d MAX %d test %s!\n", __func__, idx, ebu->vrx_avg,
        ebu->vrx_min, ebu->vrx_max, rv_ebu_vrx_result(ebu, ebu_info, ebu_result));
-  info("%s(%d), TRO %.2f TPRS %.2f FPT AVG %.2f MIN %d MAX %d test %s!\n", __func__, idx,
-       ebu_info->tr_offset, ebu_info->trs, ebu->fpt_avg, ebu->fpt_min, ebu->fpt_max,
+  info("%s(%d), TRO %.2f TPRS %.2f FPT AVG %.2f MIN %d MAX %d DIFF %d test %s!\n",
+       __func__, idx, ebu_info->tr_offset, ebu_info->trs, ebu->fpt_avg, ebu->fpt_min,
+       ebu->fpt_max, ebu->fpt_max - ebu->fpt_min,
        rv_ebu_fpt_result(ebu, ebu_info->tr_offset, ebu_result));
   info("%s(%d), LATENCY AVG %.2f MIN %d MAX %d test %s!\n", __func__, idx,
        ebu->latency_avg, ebu->latency_min, ebu->latency_max,
