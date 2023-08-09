@@ -22,6 +22,7 @@
 #define MT_TX_MEMPOOL_PREFIX "T_"
 #define MT_RX_MEMPOOL_PREFIX "R_"
 
+/* set to 1 to enable the simulated test */
 #define MT_DEV_SIMULATE_MALICIOUS_PKT (0)
 
 int mt_dev_get_socket(const char* port);

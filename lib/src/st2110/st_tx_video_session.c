@@ -3516,7 +3516,7 @@ static int tv_st22_ops_check(struct st22_tx_ops* ops) {
 int st20_tx_queue_fatal_error(struct mtl_main_impl* impl,
                               struct st_tx_video_session_impl* s,
                               enum mtl_session_port s_port) {
-  enum mtl_port port = mt_port_id(impl, s_port);
+  enum mtl_port port = mt_port_logic2phy(s->port_maps, s_port);
   int idx = s->idx;
   int ret;
 
