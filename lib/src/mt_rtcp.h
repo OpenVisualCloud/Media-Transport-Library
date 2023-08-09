@@ -26,15 +26,6 @@ MTL_PACK(struct mt_rtcp_hdr {
   struct mt_rtcp_fci fci[0];
 });
 
-struct mt_rtcp_nack_item {
-  uint16_t seq_id;
-  uint16_t bulk;
-  uint16_t retry_count;
-  uint64_t expire_time;
-  MT_TAILQ_ENTRY(mt_rtcp_nack_item) next;
-};
-MT_TAILQ_HEAD(mt_rtcp_nack_list, mt_rtcp_nack_item);
-
 struct mt_rtcp_tx_ops {
   const char* name;           /* short and unique name for each session */
   struct mt_udp_hdr* udp_hdr; /* headers including eth, ipv4 and udp */
@@ -44,12 +35,12 @@ struct mt_rtcp_tx_ops {
 };
 
 struct mt_rtcp_rx_ops {
-  const char* name;              /* short and unique name for each session */
-  struct mt_udp_hdr* udp_hdr;    /* headers including eth, ipv4 and udp */
-  uint16_t max_retry;            /* max retry count for each nack item */
-  uint64_t nacks_send_interval;  /* nack sending interval */
-  uint64_t nack_expire_interval; /* nack expire time interval */
-  enum mtl_port port;            /* port of rtp session */
+  const char* name;             /* short and unique name for each session */
+  struct mt_udp_hdr* udp_hdr;   /* headers including eth, ipv4 and udp */
+  uint64_t nacks_send_interval; /* nack sending interval */
+  enum mtl_port port;           /* port of rtp session */
+  uint16_t seq_bitmap_size;     /* bitmap size of detecting window, can hold n * 8 seq */
+  uint16_t seq_skip_window;     /* skip some seq to handle out of order while detecting */
 };
 
 struct mt_rtcp_tx {
@@ -75,25 +66,24 @@ struct mt_rtcp_tx {
 struct mt_rtcp_rx {
   struct mtl_main_impl* parent;
   enum mtl_port port;
-  struct mt_rtcp_nack_list nack_list;
-  uint16_t max_retry;
-  uint16_t last_seq_id;
   struct mt_udp_hdr udp_hdr;
   char name[MT_RTCP_MAX_NAME_LEN];
+  uint64_t nacks_send_interval;
   uint32_t ssrc;
 
   uint16_t ipv4_packet_id;
   uint64_t nacks_send_time;
-  uint64_t nacks_send_interval;
-  uint64_t nack_expire_interval;
+
+  uint16_t last_seq;
+  uint16_t last_cont;
+  uint8_t* seq_bitmap;
+  uint16_t seq_window_size;
+  uint16_t seq_skip_window;
 
   /* stat */
   uint32_t stat_rtp_received;
   uint32_t stat_rtp_lost_detected;
-  uint32_t stat_rtp_retransmit_succ;
   uint32_t stat_nack_sent;
-  uint32_t stat_nack_drop_expire;
-  uint32_t stat_nack_drop_oor;
   uint32_t stat_nack_drop_exceed;
 };
 

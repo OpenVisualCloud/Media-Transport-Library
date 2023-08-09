@@ -229,6 +229,8 @@ struct st_app_rx_video_session {
   int framebuff_cnt;
   int st20_frame_size;
   bool slice;
+  uint8_t num_port;
+  uint64_t last_stat_time_ns;
 
   char st20_dst_url[ST_APP_URL_MAX_LEN];
   int st20_dst_fb_cnt; /* the count of received fbs will be saved to file */
@@ -428,6 +430,8 @@ struct st_app_tx_st20p_session {
   int st20p_frame_size;
   int width;
   int height;
+  uint8_t num_port;
+  uint64_t last_stat_time_ns;
 
   char st20p_source_url[ST_APP_URL_MAX_LEN];
   uint8_t* st20p_source_begin;
@@ -452,6 +456,8 @@ struct st_app_rx_st20p_session {
   int st20p_frame_size;
   int width;
   int height;
+  uint8_t num_port;
+  uint64_t last_stat_time_ns;
 
   /* stat */
   int stat_frame_received;

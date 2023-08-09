@@ -55,15 +55,17 @@ static int video_trs_rl_warm_up(struct mtl_main_impl* impl,
                                 struct st_tx_video_session_impl* s,
                                 enum mtl_session_port s_port) {
   struct st_tx_video_pacing* pacing = &s->pacing;
-  uint64_t target_tsc = s->trs_target_tsc[s_port];
+  uint64_t target_ptp = s->trs_target_ptp[s_port];
   uint64_t cur_tsc, pre_tsc;
+  uint64_t cur_ptp;
   int32_t warm_pkts = pacing->warm_pkts;
   struct rte_mbuf* pads[1];
   int32_t delta_pkts;
   unsigned int tx;
 
   cur_tsc = mt_get_tsc(impl);
-  delta_pkts = (cur_tsc - target_tsc) / pacing->trs;
+  cur_ptp = mt_get_ptp_time(impl, MTL_PORT_P);
+  delta_pkts = (cur_ptp - target_ptp) / pacing->trs;
   pre_tsc = cur_tsc;
   warm_pkts -= delta_pkts;
   if (warm_pkts < 0) {
@@ -250,6 +252,7 @@ static int _video_trs_rl_tasklet(struct mtl_main_impl* impl,
       video_burst_packet(impl, s, s_port, pkts, valid_bulk, true);
     }
     uint64_t target_tsc = st_tx_mbuf_get_tsc(pkts[valid_bulk]);
+    uint64_t target_ptp = st_tx_mbuf_get_ptp(pkts[valid_bulk]);
     dbg("%s(%d), first pkt, ts cur %" PRIu64 " target %" PRIu64 "\n", __func__, idx,
         cur_tsc, target_tsc);
     if (likely(cur_tsc < target_tsc || s->trs_inflight_num2[s_port])) {
@@ -258,6 +261,7 @@ static int _video_trs_rl_tasklet(struct mtl_main_impl* impl,
 
       if (likely(delta < NS_PER_S || s->trs_inflight_num2[s_port])) {
         s->trs_target_tsc[s_port] = target_tsc;
+        s->trs_target_ptp[s_port] = target_ptp;
         /* save it on inflight */
         s->trs_inflight_num[s_port] = bulk - valid_bulk;
         s->trs_inflight_idx[s_port] = 0;

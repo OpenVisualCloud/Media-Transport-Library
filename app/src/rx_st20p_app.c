@@ -123,6 +123,28 @@ static int app_rx_st20p_uinit(struct st_app_rx_st20p_session* s) {
   return 0;
 }
 
+static int app_rx_st20p_io_stat(struct st_app_rx_st20p_session* s) {
+  int idx = s->idx;
+  uint64_t cur_time = st_app_get_monotonic_time();
+  double time_sec = (double)(cur_time - s->last_stat_time_ns) / NS_PER_S;
+  double tx_rate_m, fps;
+  int ret;
+  struct st20_rx_port_status stats;
+
+  for (uint8_t port = 0; port < s->num_port; port++) {
+    ret = st20p_rx_get_port_stats(s->handle, port, &stats);
+    if (ret < 0) return ret;
+    tx_rate_m = (double)stats.bytes * 8 / time_sec / MTL_STAT_M_UNIT;
+    fps = (double)stats.frames / time_sec;
+
+    info("%s(%d,%u), rx %f Mb/s fps %f\n", __func__, idx, port, tx_rate_m, fps);
+    st20p_rx_reset_port_stats(s->handle, port);
+  }
+
+  s->last_stat_time_ns = cur_time;
+  return 0;
+}
+
 static int app_rx_st20p_init(struct st_app_context* ctx,
                              struct st_json_st20p_session* st20p,
                              struct st_app_rx_st20p_session* s) {
@@ -131,6 +153,8 @@ static int app_rx_st20p_init(struct st_app_context* ctx,
   char name[32];
   st20p_rx_handle handle;
   memset(&ops, 0, sizeof(ops));
+
+  s->last_stat_time_ns = st_app_get_monotonic_time();
 
   snprintf(name, 32, "app_rx_st20p_%d", idx);
   ops.name = name;
@@ -176,6 +200,7 @@ static int app_rx_st20p_init(struct st_app_context* ctx,
 
   s->width = ops.width;
   s->height = ops.height;
+  s->num_port = ops.port.num_port;
 
   s->pcapng_max_pkts = ctx->pcapng_max_pkts;
   s->expect_fps = st_frame_rate(ops.fps);
@@ -333,4 +358,17 @@ int st_app_rx_st20p_sessions_pcap(struct st_app_context* ctx) {
   }
 
   return 0;
+}
+
+int st_app_rx_st20p_io_stat(struct st_app_context* ctx) {
+  int i, ret = 0;
+  struct st_app_rx_st20p_session* s;
+  if (!ctx->rx_st20p_sessions) return 0;
+
+  for (i = 0; i < ctx->rx_st20p_session_cnt; i++) {
+    s = &ctx->rx_st20p_sessions[i];
+    ret += app_rx_st20p_io_stat(s);
+  }
+
+  return ret;
 }

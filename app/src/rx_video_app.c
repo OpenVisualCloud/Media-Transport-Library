@@ -424,6 +424,28 @@ static int app_rx_video_uinit(struct st_app_rx_video_session* s) {
   return 0;
 }
 
+static int app_rx_video_io_stat(struct st_app_rx_video_session* s) {
+  int idx = s->idx;
+  uint64_t cur_time = st_app_get_monotonic_time();
+  double time_sec = (double)(cur_time - s->last_stat_time_ns) / NS_PER_S;
+  double tx_rate_m, fps;
+  int ret;
+  struct st20_rx_port_status stats;
+
+  for (uint8_t port = 0; port < s->num_port; port++) {
+    ret = st20_rx_get_port_stats(s->handle, port, &stats);
+    if (ret < 0) return ret;
+    tx_rate_m = (double)stats.bytes * 8 / time_sec / MTL_STAT_M_UNIT;
+    fps = (double)stats.frames / time_sec;
+
+    info("%s(%d,%u), rx %f Mb/s fps %f\n", __func__, idx, port, tx_rate_m, fps);
+    st20_rx_reset_port_stats(s->handle, port);
+  }
+
+  s->last_stat_time_ns = cur_time;
+  return 0;
+}
+
 static int app_rx_video_init(struct st_app_context* ctx, st_json_video_session_t* video,
                              struct st_app_rx_video_session* s) {
   int idx = s->idx, ret;
@@ -431,6 +453,8 @@ static int app_rx_video_init(struct st_app_context* ctx, st_json_video_session_t
   char name[32];
   st20_rx_handle handle;
   memset(&ops, 0, sizeof(ops));
+
+  s->last_stat_time_ns = st_app_get_monotonic_time();
 
   snprintf(name, 32, "app_rx_video_%d", idx);
   ops.name = name;
@@ -494,8 +518,6 @@ static int app_rx_video_init(struct st_app_context* ctx, st_json_video_session_t
   if (video && video->enable_rtcp) {
     ops.flags |= ST20_RX_FLAG_ENABLE_RTCP;
     ops_rtcp.nack_interval_us = 250;
-    ops_rtcp.nack_expire_us = 500;
-    ops_rtcp.nack_max_retry = 2;
     ops.rtcp = &ops_rtcp;
   }
 
@@ -524,6 +546,7 @@ static int app_rx_video_init(struct st_app_context* ctx, st_json_video_session_t
 
   s->width = ops.width;
   s->height = ops.height;
+  s->num_port = ops.num_port;
   if (ops.interlaced) {
     s->height >>= 1;
   }
@@ -708,4 +731,17 @@ int st_app_rx_video_sessions_pcap(struct st_app_context* ctx) {
   }
 
   return 0;
+}
+
+int st_app_rx_videos_io_stat(struct st_app_context* ctx) {
+  int i, ret = 0;
+  struct st_app_rx_video_session* s;
+  if (!ctx->rx_video_sessions) return 0;
+
+  for (i = 0; i < ctx->rx_video_session_cnt; i++) {
+    s = &ctx->rx_video_sessions[i];
+    ret += app_rx_video_io_stat(s);
+  }
+
+  return ret;
 }

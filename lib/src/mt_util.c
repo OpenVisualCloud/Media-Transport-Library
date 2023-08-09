@@ -147,6 +147,19 @@ bool mt_bitmap_test_and_set(uint8_t* bitmap, int idx) {
   return false;
 }
 
+bool mt_bitmap_test_and_unset(uint8_t* bitmap, int idx) {
+  int pos = idx / 8;
+  int off = idx % 8;
+  uint8_t bits = bitmap[pos];
+
+  /* already unset */
+  if (!(bits & (0x1 << off))) return true;
+
+  /* unset the bit */
+  bitmap[pos] = bits & (UINT8_MAX ^ (0x1 << off));
+  return false;
+}
+
 int mt_ring_dequeue_clean(struct rte_ring* ring) {
   int ret;
   struct rte_mbuf* pkt;
