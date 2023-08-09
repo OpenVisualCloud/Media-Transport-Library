@@ -400,8 +400,9 @@ struct rte_mempool* mt_mempool_create_by_ops(struct mtl_main_impl* impl,
 int mt_mempool_free(struct rte_mempool* mp) {
   unsigned int in_use_count = rte_mempool_in_use_count(mp);
   if (in_use_count) {
-    /* caused by the mbuf is still in nix tx queues? */
+    /* failed to free the mempool, caused by the mbuf is still in nix tx queues? */
     err("%s, still has %d mbuf in mempool %s\n", __func__, in_use_count, mp->name);
+    return 0;
   }
 
   /* no any in-use mbuf */

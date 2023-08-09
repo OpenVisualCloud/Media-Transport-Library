@@ -4,11 +4,16 @@
 
 #include "tx_video_app.h"
 
-static int app_tx_notify_event(void* priv, enum st_event event, void* args) {
+static int app_tx_video_notify_event(void* priv, enum st_event event, void* args) {
+  struct st_app_tx_video_session* s = priv;
   if (event == ST_EVENT_VSYNC) {
-    struct st_app_tx_video_session* s = priv;
     struct st10_vsync_meta* meta = args;
     info("%s(%d), epoch %" PRIu64 "\n", __func__, s->idx, meta->epoch);
+  } else if (event == ST_EVENT_FATAL_ERROR) {
+    err("%s(%d), ST_EVENT_FATAL_ERROR\n", __func__, s->idx);
+    /* add a exist routine */
+  } else if (event == ST_EVENT_RECOVERY_ERROR) {
+    info("%s(%d), ST_EVENT_RECOVERY_ERROR\n", __func__, s->idx);
   }
   return 0;
 }
@@ -744,7 +749,7 @@ static int app_tx_video_init(struct st_app_context* ctx, st_json_video_session_t
   ops.notify_frame_done = app_tx_video_frame_done;
   ops.query_frame_lines_ready = app_tx_video_frame_lines_ready;
   ops.notify_rtp_done = app_tx_video_rtp_done;
-  ops.notify_event = app_tx_notify_event;
+  ops.notify_event = app_tx_video_notify_event;
   ops.framebuff_cnt = 2;
   ops.payload_type = video ? video->base.payload_type : ST_APP_PAYLOAD_TYPE_VIDEO;
   ops.start_vrx = ctx->tx_start_vrx;

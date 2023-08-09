@@ -1078,6 +1078,7 @@ static int dev_config_port(struct mt_interface* inf) {
   return 0;
 }
 
+#if !MT_DEV_SIMULATE_MALICIOUS_PKT
 static bool dev_pkt_valid(struct mt_interface* inf, uint16_t queue,
                           struct rte_mbuf* pkt) {
   uint32_t pkt_len = pkt->pkt_len;
@@ -1095,11 +1096,26 @@ static bool dev_pkt_valid(struct mt_interface* inf, uint16_t queue,
 
   return true;
 }
+#endif
 
 static uint16_t dev_tx_pkt_check(uint16_t port, uint16_t queue, struct rte_mbuf** pkts,
                                  uint16_t nb_pkts, void* priv) {
   struct mt_interface* inf = priv;
 
+#if MT_DEV_SIMULATE_MALICIOUS_PKT /* for recovery test */
+  if (port == 0 && queue > 0) {
+    if (!inf->simulate_malicious_pkt_tsc)
+      inf->simulate_malicious_pkt_tsc = mt_get_tsc(inf->parent);
+
+    uint64_t cur_tsc = mt_get_tsc(inf->parent);
+    uint64_t diff = cur_tsc - inf->simulate_malicious_pkt_tsc;
+    if (diff > ((uint64_t)NS_PER_S * 30)) {
+      pkts[0]->nb_segs = 100;
+      err("%s(%d), trigger error pkt on queue %u\n", __func__, port, queue);
+      inf->simulate_malicious_pkt_tsc = cur_tsc;
+    }
+  }
+#else
   for (uint16_t i = 0; i < nb_pkts; i++) {
     if (!dev_pkt_valid(inf, queue, pkts[i])) {
       /* should never happen, replace with dummy pkt */
@@ -1107,6 +1123,7 @@ static uint16_t dev_tx_pkt_check(uint16_t port, uint16_t queue, struct rte_mbuf*
       pkts[i] = inf->pad;
     }
   }
+#endif
 
   return nb_pkts;
 }
@@ -1857,24 +1874,24 @@ struct mt_tx_queue* mt_dev_get_tx_queue(struct mtl_main_impl* impl, enum mtl_por
   mt_pthread_mutex_lock(&inf->tx_queues_mutex);
   for (uint16_t q = 0; q < inf->max_tx_queues; q++) {
     tx_queue = &inf->tx_queues[q];
-    if (!tx_queue->active) {
-      if (inf->tx_pacing_way == ST21_TX_PACING_WAY_RL) {
-        ret = dev_tx_queue_set_rl_rate(inf, q, bytes_per_sec);
-        if (ret < 0) {
-          err("%s(%d), fallback to tsc as rl fail\n", __func__, port);
-          inf->tx_pacing_way = ST21_TX_PACING_WAY_TSC;
-        }
+    if (tx_queue->active || tx_queue->fatal_error) continue;
+
+    if (inf->tx_pacing_way == ST21_TX_PACING_WAY_RL) {
+      ret = dev_tx_queue_set_rl_rate(inf, q, bytes_per_sec);
+      if (ret < 0) {
+        err("%s(%d), fallback to tsc as rl fail\n", __func__, port);
+        inf->tx_pacing_way = ST21_TX_PACING_WAY_TSC;
       }
-      tx_queue->active = true;
-      mt_pthread_mutex_unlock(&inf->tx_queues_mutex);
-      if (inf->tx_pacing_way == ST21_TX_PACING_WAY_RL) {
-        float bps_g = (float)tx_queue->bps * 8 / (1000 * 1000 * 1000);
-        info("%s(%d), q %d with speed %fg bps\n", __func__, port, q, bps_g);
-      } else {
-        info("%s(%d), q %d without rl\n", __func__, port, q);
-      }
-      return tx_queue;
     }
+    tx_queue->active = true;
+    mt_pthread_mutex_unlock(&inf->tx_queues_mutex);
+    if (inf->tx_pacing_way == ST21_TX_PACING_WAY_RL) {
+      float bps_g = (float)tx_queue->bps * 8 / (1000 * 1000 * 1000);
+      info("%s(%d), q %d with speed %fg bps\n", __func__, port, q, bps_g);
+    } else {
+      info("%s(%d), q %d without rl\n", __func__, port, q);
+    }
+    return tx_queue;
   }
   mt_pthread_mutex_unlock(&inf->tx_queues_mutex);
 
@@ -2004,7 +2021,7 @@ int mt_dev_flush_tx_queue(struct mtl_main_impl* impl, struct mt_tx_queue* queue,
   info("%s(%d), queue %u burst_pkts %d\n", __func__, port, queue_id, burst_pkts);
   for (int i = 0; i < burst_pkts; i++) {
     rte_mbuf_refcnt_update(pad, 1);
-    mt_dev_tx_burst_busy(impl, queue, &pads[0], 1, 10);
+    mt_dev_tx_burst_busy(impl, queue, &pads[0], 1, 1);
   }
   dbg("%s, end\n", __func__);
   return 0;
@@ -2040,6 +2057,32 @@ int mt_dev_put_tx_queue(struct mtl_main_impl* impl, struct mt_tx_queue* queue) {
 
   tx_queue->active = false;
   info("%s(%d), q %d\n", __func__, port, queue_id);
+  return 0;
+}
+
+int mt_dev_tx_queue_fatal_error(struct mtl_main_impl* impl, struct mt_tx_queue* queue) {
+  enum mtl_port port = queue->port;
+  struct mt_interface* inf = mt_if(impl, port);
+  struct mt_tx_queue* tx_queue;
+  uint16_t queue_id = queue->queue_id;
+
+  if (queue_id >= inf->max_tx_queues) {
+    err("%s(%d), invalid queue %d\n", __func__, port, queue_id);
+    return -EIO;
+  }
+
+  tx_queue = &inf->tx_queues[queue_id];
+  if (!tx_queue->active) {
+    err("%s(%d), queue %d is not allocated\n", __func__, port, queue_id);
+    return -EIO;
+  }
+  if (queue != tx_queue) {
+    err("%s(%d), queue %d ctx mismatch\n", __func__, port, queue_id);
+    return -EIO;
+  }
+
+  tx_queue->fatal_error = true;
+  err("%s(%d), q %d masked as fatal error\n", __func__, port, queue_id);
   return 0;
 }
 

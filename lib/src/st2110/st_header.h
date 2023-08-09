@@ -247,6 +247,7 @@ struct st_vsync_info {
 
 struct st_tx_video_session_impl {
   struct mtl_main_impl* impl;
+  struct st_tx_video_sessions_mgr* mgr;
   bool time_measure;
   enum mtl_port port_maps[MTL_SESSION_PORT_MAX];
   struct rte_mempool* mbuf_mempool_hdr[MTL_SESSION_PORT_MAX];
@@ -269,6 +270,7 @@ struct st_tx_video_session_impl {
   uint64_t advice_sleep_us;
   uint16_t queue_burst_pkts[MTL_SESSION_PORT_MAX];
   uint16_t tx_done_cleanup[MTL_SESSION_PORT_MAX];
+  int recovery_idx;
 
   struct st_tx_video_session_handle_impl* st20_handle;
   struct st22_tx_video_session_handle_impl* st22_handle;
@@ -307,6 +309,10 @@ struct st_tx_video_session_impl {
   unsigned int trs_inflight_num2[MTL_SESSION_PORT_MAX];
   unsigned int trs_inflight_idx2[MTL_SESSION_PORT_MAX];
   int trs_inflight_cnt2[MTL_SESSION_PORT_MAX]; /* for stats */
+
+  /* the last burst succ time(tsc) */
+  uint64_t last_burst_succ_time_tsc[MTL_SESSION_PORT_MAX];
+  uint64_t tx_hang_detect_time_thresh;
 
   /* frame info */
   size_t st20_frame_size;   /* size per frame */
@@ -380,6 +386,8 @@ struct st_tx_video_session_impl {
   uint32_t stat_user_meta_pkt_cnt;
   uint32_t stat_max_next_frame_us;
   uint32_t stat_max_notify_frame_us;
+  uint32_t stat_unrecoverable_error;
+  uint32_t stat_recoverable_error;
 };
 
 struct st_tx_video_sessions_mgr {
