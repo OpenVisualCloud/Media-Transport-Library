@@ -286,7 +286,7 @@ static int mcast_inf_add_mac(struct mt_interface* inf, struct rte_ether_addr* mc
   }
 
   mcast_addr_pool_append(inf, mcast_mac);
-  if (MT_PORT_VF == inf->port_type)
+  if (inf->drv_info.use_mc_addr_list)
     return rte_eth_dev_set_mc_addr_list(port_id, inf->mcast_mac_lists, inf->mcast_nb);
   else
     return rte_eth_dev_mac_addr_add(port_id, mcast_mac, 0);
@@ -308,7 +308,7 @@ static int mcast_inf_remove_mac(struct mt_interface* inf,
   }
 
   mcast_addr_pool_remove(inf, i);
-  if (MT_PORT_VF == inf->port_type)
+  if (inf->drv_info.use_mc_addr_list)
     return rte_eth_dev_set_mc_addr_list(port_id, inf->mcast_mac_lists, inf->mcast_nb);
   else
     return rte_eth_dev_mac_addr_remove(port_id, mcast_mac);
@@ -454,7 +454,7 @@ int mt_mcast_restore(struct mtl_main_impl* impl, enum mtl_port port) {
   struct mt_interface* inf = mt_if(impl, port);
   uint16_t port_id = inf->port_id;
 
-  if (MT_PORT_VF == inf->port_type) {
+  if (inf->drv_info.use_mc_addr_list) {
     rte_eth_dev_set_mc_addr_list(port_id, inf->mcast_mac_lists, inf->mcast_nb);
   } else {
     for (uint32_t i = 0; i < inf->mcast_nb; i++)
