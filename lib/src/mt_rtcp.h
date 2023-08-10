@@ -46,7 +46,7 @@ struct mt_rtcp_rx_ops {
 struct mt_rtcp_tx {
   struct mtl_main_impl* parent;
   enum mtl_port port;
-  struct rte_ring* mbuf_ring;
+  struct mt_u64_fifo* mbuf_ring;
   struct mt_udp_hdr udp_hdr;
   char name[MT_RTCP_MAX_NAME_LEN];
   uint32_t ssrc;
@@ -58,7 +58,7 @@ struct mt_rtcp_tx {
   uint32_t stat_rtp_retransmit_succ;
   uint32_t stat_rtp_retransmit_fail;
   uint32_t stat_rtp_retransmit_fail_nobuf;
-  uint32_t stat_rtp_retransmit_fail_dequeue;
+  uint32_t stat_rtp_retransmit_fail_read;
   uint32_t stat_rtp_retransmit_fail_obsolete;
   uint32_t stat_nack_received;
 };
