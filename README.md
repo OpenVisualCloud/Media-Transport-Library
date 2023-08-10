@@ -66,11 +66,17 @@ Our stack runs the NIC tx/rx function directly from the sendto/recvfrom API, whi
 
 To learn how to use the LibOS UDP stack, please refer to the [udp doc](doc/udp.md).
 
-## 6. How to Contribute
+## 6. Publication
+
+MHV'23: A Real-time Media Transport Stack Based on Commercial Off-the-shelf Hardware. <https://dl.acm.org/doi/10.1145/3588444.3591002>
+
+2022 DPDK Userspace Summit: Real-time and low latency media transport stack based on DPDK. <https://www.youtube.com/watch?v=fiiOvHezpBs>
+
+## 7. How to Contribute
 
 We welcome community contributions to the Intel® Media Transport Library project. If you have any ideas or issues, please share them with us by using GitHub issues or opening a pull request.
 
-### 6.1 Coding style
+### 7.1 Coding style
 
 We use the super-linter action for style checks.
 
