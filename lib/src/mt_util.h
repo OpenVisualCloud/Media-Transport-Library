@@ -157,6 +157,9 @@ static inline int mt_u64_fifo_free_count(struct mt_u64_fifo* fifo) {
   return fifo->size - fifo->used;
 }
 
+/* only for the mbuf fifo */
+int mt_fifo_mbuf_clean(struct mt_u64_fifo* fifo);
+
 struct mt_cvt_dma_ctx {
   struct mt_u64_fifo* fifo;
   int* tran;

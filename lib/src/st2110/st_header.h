@@ -248,6 +248,7 @@ struct st_vsync_info {
 struct st_tx_video_session_impl {
   struct mtl_main_impl* impl;
   struct st_tx_video_sessions_mgr* mgr;
+  bool active;
   bool time_measure;
   enum mtl_port port_maps[MTL_SESSION_PORT_MAX];
   struct rte_mempool* mbuf_mempool_hdr[MTL_SESSION_PORT_MAX];
@@ -769,6 +770,8 @@ struct st_tx_audio_session_impl {
   int idx; /* index for current session */
   struct st30_tx_ops ops;
   char ops_name[ST_MAX_NAME_LEN];
+  int recovery_idx;
+  bool active;
 
   enum mtl_port port_maps[MTL_SESSION_PORT_MAX];
   struct rte_mempool* mbuf_mempool_hdr[MTL_SESSION_PORT_MAX];
@@ -831,6 +834,8 @@ struct st_tx_audio_session_impl {
   uint64_t stat_last_time;
   uint32_t stat_max_next_frame_us;
   uint32_t stat_max_notify_frame_us;
+  uint32_t stat_unrecoverable_error;
+  uint32_t stat_recoverable_error;
 };
 
 struct st_tx_audio_sessions_mgr {
@@ -844,6 +849,9 @@ struct st_tx_audio_sessions_mgr {
   struct rte_ring* ring[MTL_PORT_MAX];
   uint16_t port_id[MTL_PORT_MAX];
   struct mt_txq_entry* queue[MTL_PORT_MAX];
+  /* the last burst succ time(tsc) */
+  uint64_t last_burst_succ_time_tsc[MTL_PORT_MAX];
+  uint64_t tx_hang_detect_time_thresh;
 
   struct st_tx_audio_session_impl* sessions[ST_SCH_MAX_TX_AUDIO_SESSIONS];
   /* protect session, spin(fast) lock as it call from tasklet aslo */
@@ -853,8 +861,9 @@ struct st_tx_audio_sessions_mgr {
 
   /* status */
   int st30_stat_pkts_burst;
-
   int stat_trs_ret_code[MTL_PORT_MAX];
+  uint32_t stat_unrecoverable_error;
+  uint32_t stat_recoverable_error;
 };
 
 struct st_audio_transmitter_impl {

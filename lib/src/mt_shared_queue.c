@@ -562,6 +562,17 @@ int mt_tsq_fatal_error(struct mt_tsq_entry* entry) {
   return 0;
 }
 
+int mt_tsq_done_cleanup(struct mt_tsq_entry* entry) {
+  struct mt_tsq_impl* tsqm = entry->parent;
+  struct mt_tsq_queue* tsq_queue = &tsqm->tsq_queues[entry->queue_id];
+
+  tsq_lock(tsq_queue);
+  rte_eth_tx_done_cleanup(tsq_queue->port_id, tsq_queue->queue_id, 0);
+  tsq_unlock(tsq_queue);
+
+  return 0;
+}
+
 uint16_t mt_tsq_burst(struct mt_tsq_entry* entry, struct rte_mbuf** tx_pkts,
                       uint16_t nb_pkts) {
   struct mt_tsq_impl* tsqm = entry->parent;

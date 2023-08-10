@@ -124,6 +124,12 @@ int mt_txq_fatal_error(struct mt_txq_entry* entry) {
   return 0;
 }
 
+int mt_txq_done_cleanup(struct mt_txq_entry* entry) {
+  if (entry->txq) mt_dev_tx_done_cleanup(entry->parent, entry->txq);
+  if (entry->tsq) mt_tsq_done_cleanup(entry->tsq);
+  return 0;
+}
+
 int mt_txq_flush(struct mt_txq_entry* entry, struct rte_mbuf* pad) {
   if (entry->tsq)
     return mt_tsq_flush(entry->parent, entry->tsq, pad);
