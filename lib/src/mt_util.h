@@ -137,14 +137,25 @@ struct mt_u64_fifo {
 
 struct mt_u64_fifo* mt_u64_fifo_init(int size, int soc_id);
 int mt_u64_fifo_uinit(struct mt_u64_fifo* fifo);
-int mt_u64_fifo_put(struct mt_u64_fifo* fifo, uint64_t item);
+int mt_u64_fifo_put(struct mt_u64_fifo* fifo, const uint64_t item);
 int mt_u64_fifo_get(struct mt_u64_fifo* fifo, uint64_t* item);
+int mt_u64_fifo_put_bulk(struct mt_u64_fifo* fifo, const uint64_t* items, uint32_t n);
+int mt_u64_fifo_get_bulk(struct mt_u64_fifo* fifo, uint64_t* items, uint32_t n);
+int mt_u64_fifo_read_back(struct mt_u64_fifo* fifo, uint64_t* item);
+int mt_u64_fifo_read_front(struct mt_u64_fifo* fifo, uint64_t* item);
+int mt_u64_fifo_read_any(struct mt_u64_fifo* fifo, uint64_t* item, int skip);
+int mt_u64_fifo_read_any_bulk(struct mt_u64_fifo* fifo, uint64_t* items, uint32_t n,
+                              int skip);
 
 static inline int mt_u64_fifo_full(struct mt_u64_fifo* fifo) {
   return fifo->used == fifo->size;
 }
 
 static inline int mt_u64_fifo_count(struct mt_u64_fifo* fifo) { return fifo->used; }
+
+static inline int mt_u64_fifo_free_count(struct mt_u64_fifo* fifo) {
+  return fifo->size - fifo->used;
+}
 
 struct mt_cvt_dma_ctx {
   struct mt_u64_fifo* fifo;

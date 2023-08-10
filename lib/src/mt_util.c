@@ -472,7 +472,7 @@ int mt_u64_fifo_uinit(struct mt_u64_fifo* fifo) {
 }
 
 /* todo: add overflow check */
-int mt_u64_fifo_put(struct mt_u64_fifo* fifo, uint64_t item) {
+int mt_u64_fifo_put(struct mt_u64_fifo* fifo, const uint64_t item) {
   if (fifo->used >= fifo->size) {
     dbg("%s, fail as fifo is full(%d)\n", __func__, fifo->size);
     return -EIO;
@@ -494,6 +494,92 @@ int mt_u64_fifo_get(struct mt_u64_fifo* fifo, uint64_t* item) {
   fifo->read_idx++;
   if (fifo->read_idx >= fifo->size) fifo->read_idx = 0;
   fifo->used--;
+  return 0;
+}
+
+int mt_u64_fifo_put_bulk(struct mt_u64_fifo* fifo, const uint64_t* items, uint32_t n) {
+  if (fifo->used + n > fifo->size) {
+    dbg("%s, fail as fifo is full(%d)\n", __func__, fifo->size);
+    return -EIO;
+  }
+  uint32_t i = 0;
+  for (i = 0; i < n; i++) {
+    fifo->data[fifo->write_idx] = items[i];
+    fifo->write_idx++;
+    if (fifo->write_idx >= fifo->size) fifo->write_idx = 0;
+  }
+  fifo->used += n;
+  return 0;
+}
+
+int mt_u64_fifo_get_bulk(struct mt_u64_fifo* fifo, uint64_t* items, uint32_t n) {
+  if (fifo->used < n) {
+    dbg("%s, fail as no enough item\n", __func__);
+    return -EIO;
+  }
+  uint32_t i = 0;
+  for (i = 0; i < n; i++) {
+    items[i] = fifo->data[fifo->read_idx];
+    fifo->read_idx++;
+    if (fifo->read_idx >= fifo->size) fifo->read_idx = 0;
+  }
+  fifo->used -= n;
+  return 0;
+}
+
+int mt_u64_fifo_read_back(struct mt_u64_fifo* fifo, uint64_t* item) {
+  if (fifo->used <= 0) {
+    dbg("%s, fail as empty\n", __func__);
+    return -EIO;
+  }
+  int idx = fifo->write_idx - 1;
+  if (idx < 0) idx = fifo->size - 1;
+  *item = fifo->data[idx];
+  return 0;
+}
+
+int mt_u64_fifo_read_front(struct mt_u64_fifo* fifo, uint64_t* item) {
+  if (fifo->used <= 0) {
+    dbg("%s, fail as empty\n", __func__);
+    return -EIO;
+  }
+  *item = fifo->data[fifo->read_idx];
+  return 0;
+}
+
+int mt_u64_fifo_read_any(struct mt_u64_fifo* fifo, uint64_t* item, int skip) {
+  if (fifo->used <= 0) {
+    dbg("%s, fail as empty\n", __func__);
+    return -EIO;
+  }
+  if (skip < 0 || skip >= fifo->used) {
+    dbg("%s, fail as idx(%d) is invalid\n", __func__, idx);
+    return -EIO;
+  }
+  int read_idx = fifo->read_idx + skip;
+  if (read_idx >= fifo->size) read_idx -= fifo->size;
+  *item = fifo->data[read_idx];
+  return 0;
+}
+
+int mt_u64_fifo_read_any_bulk(struct mt_u64_fifo* fifo, uint64_t* items, uint32_t n,
+                              int skip) {
+  if (fifo->used < n) {
+    dbg("%s, fail as no enough item\n", __func__);
+    return -EIO;
+  }
+  if (skip < 0 || skip + n > fifo->used) {
+    dbg("%s, fail as skip(%d)/n(%u) is invalid\n", __func__, skip, n);
+    return -EIO;
+  }
+  int read_idx = fifo->read_idx + skip;
+  if (read_idx >= fifo->size) read_idx -= fifo->size;
+  uint32_t i = 0;
+  for (i = 0; i < n; i++) {
+    items[i] = fifo->data[read_idx];
+    read_idx++;
+    if (read_idx >= fifo->size) read_idx = 0;
+  }
   return 0;
 }
 
