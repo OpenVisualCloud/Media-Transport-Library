@@ -552,6 +552,8 @@ struct mt_tx_queue {
   uint16_t port_id;
   uint16_t queue_id;
   bool active;
+  /* VF, caused by malicious detection in the PF */
+  bool fatal_error;
   int rl_shapers_mapping; /* map to tx_rl_shapers */
   uint64_t bps;           /* bytes per sec for rate limit */
 };
@@ -627,6 +629,8 @@ struct mt_interface {
   struct mt_dev_stats* dev_stats_not_reset; /* for nic without reset func */
   struct rte_eth_stats stats_sum;           /* for dev_inf_stat dump */
   struct mtl_port_status user_stats_port;   /* for mtl_get_port_stats */
+
+  uint64_t simulate_malicious_pkt_tsc;
 };
 
 struct mt_lcore_shm {
@@ -821,6 +825,7 @@ struct mt_tsq_queue {
   pthread_mutex_t mutex;
   rte_spinlock_t tx_mutex;
   rte_atomic32_t entry_cnt;
+  bool fatal_error;
   /* stat */
   int stat_pkts_send;
 };

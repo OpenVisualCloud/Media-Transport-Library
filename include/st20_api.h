@@ -975,6 +975,12 @@ struct st20_tx_ops {
   uint16_t pad_interval;
 
   /**
+   * the time for lib to detect the hang on the tx queue and try to recovery
+   * Leave to zero system will use the default value(1s).
+   */
+  uint32_t tx_hang_detect_ms;
+
+  /**
    * the frame buffer count requested for one st20 tx session,
    * should be in range [2, ST20_FB_MAX_COUNT],
    * only for ST20_TYPE_FRAME_LEVEL.

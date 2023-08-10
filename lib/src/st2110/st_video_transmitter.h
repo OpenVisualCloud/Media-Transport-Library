@@ -18,4 +18,8 @@ int st_video_resolve_pacing_tasklet(struct st_tx_video_session_impl* s,
 int st20_frame_tx_start(struct mtl_main_impl* impl, struct st_tx_video_session_impl* s,
                         enum mtl_session_port s_port, struct st_frame_trans* frame);
 
+int st20_tx_queue_fatal_error(struct mtl_main_impl* impl,
+                              struct st_tx_video_session_impl* s,
+                              enum mtl_session_port s_port);
+
 #endif

@@ -473,8 +473,33 @@ struct mt_tsq_entry* mt_tsq_get(struct mtl_main_impl* impl, enum mtl_port port,
 
   struct mt_tsq_impl* tsqm = tsq_ctx_get(impl, port);
   uint32_t hash = tsq_flow_hash(flow);
-  uint16_t q = (hash % RTE_ETH_RETA_GROUP_SIZE) % tsqm->max_tsq_queues;
+  uint16_t q = 0;
+  if (!flow->sys_queue) { /* queue zero is reserved for system queue */
+    q = (hash % RTE_ETH_RETA_GROUP_SIZE) % (tsqm->max_tsq_queues - 1) + 1;
+  }
   struct mt_tsq_queue* tsq_queue = &tsqm->tsq_queues[q];
+
+  if (tsq_queue->fatal_error) {
+    /* try to find one valid queue */
+    uint16_t q_b = rand() % (tsqm->max_tsq_queues - 1) + 1;
+    tsq_queue = &tsqm->tsq_queues[q];
+
+    if (tsq_queue->fatal_error) { /* loop to find a valid queue*/
+      for (q_b = 1; q_b < tsqm->max_tsq_queues; q_b++) {
+        tsq_queue = &tsqm->tsq_queues[q_b];
+        if (!tsq_queue->fatal_error) break;
+      }
+    }
+
+    if (tsq_queue->fatal_error) {
+      err("%s(%d), all queues are in fatal error stat\n", __func__, port);
+      return NULL;
+    }
+
+    warn("%s(%d), q %u is fatal error, use %u instead\n", __func__, port, q, q_b);
+    q = q_b;
+    tsq_queue = &tsqm->tsq_queues[q];
+  }
   struct mt_tsq_entry* entry =
       mt_rte_zmalloc_socket(sizeof(*entry), mt_socket_id(impl, port));
   if (!entry) {
@@ -522,6 +547,18 @@ int mt_tsq_put(struct mt_tsq_entry* entry) {
   tsq_unlock(tsq_queue);
 
   tsq_entry_free(entry);
+  return 0;
+}
+
+int mt_tsq_fatal_error(struct mt_tsq_entry* entry) {
+  struct mt_tsq_impl* tsqm = entry->parent;
+  struct mt_tsq_queue* tsq_queue = &tsqm->tsq_queues[entry->queue_id];
+
+  tsq_lock(tsq_queue);
+  tsq_queue->fatal_error = true;
+  tsq_unlock(tsq_queue);
+
+  err("%s(%d), q %d masked as fatal error\n", __func__, tsqm->port, tsq_queue->queue_id);
   return 0;
 }
 

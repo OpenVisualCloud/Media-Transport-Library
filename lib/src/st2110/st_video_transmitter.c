@@ -28,25 +28,55 @@ static int video_trs_tasklet_stop(void* priv) {
   return 0;
 }
 
-/* for normal pkts, pad still call the mt_txq_burst directly */
-static inline uint16_t video_trs_burst(struct mtl_main_impl* impl,
-                                       struct st_tx_video_session_impl* s,
-                                       enum mtl_session_port s_port,
-                                       struct rte_mbuf** tx_pkts, uint16_t nb_pkts) {
+static uint16_t video_trs_burst_fail(struct mtl_main_impl* impl,
+                                     struct st_tx_video_session_impl* s,
+                                     enum mtl_session_port s_port,
+                                     struct rte_mbuf** tx_pkts, uint16_t nb_pkts) {
+  uint64_t cur_tsc = mt_get_tsc(impl);
+  uint64_t fail_duration = cur_tsc - s->last_burst_succ_time_tsc[s_port];
+  if (fail_duration > s->tx_hang_detect_time_thresh) {
+    err("%s(%d,%d), hang duration %" PRIu64 " ms\n", __func__, s->idx, s_port,
+        fail_duration / NS_PER_MS);
+    st20_tx_queue_fatal_error(impl, s, s_port);
+    s->last_burst_succ_time_tsc[s_port] = cur_tsc;
+    return nb_pkts; /* skip current pkts */
+  }
+
+  return 0;
+}
+
+static uint16_t video_trs_burst_pad(struct mtl_main_impl* impl,
+                                    struct st_tx_video_session_impl* s,
+                                    enum mtl_session_port s_port,
+                                    struct rte_mbuf** tx_pkts, uint16_t nb_pkts) {
   uint16_t tx = mt_txq_burst(s->queue[s_port], tx_pkts, nb_pkts);
-  if (!tx) return 0;
+  if (!tx) return video_trs_burst_fail(impl, s, s_port, tx_pkts, nb_pkts);
+  return tx;
+}
+
+/* for normal pkts, pad should call the video_trs_burst_pad */
+static uint16_t video_trs_burst(struct mtl_main_impl* impl,
+                                struct st_tx_video_session_impl* s,
+                                enum mtl_session_port s_port, struct rte_mbuf** tx_pkts,
+                                uint16_t nb_pkts) {
+  uint16_t tx = mt_txq_burst(s->queue[s_port], tx_pkts, nb_pkts);
+  if (!tx) return video_trs_burst_fail(impl, s, s_port, tx_pkts, nb_pkts);
+
   if (s->rtcp_tx[s_port]) {
     mt_rtcp_tx_buffer_rtp_packets(s->rtcp_tx[s_port], tx_pkts, tx);
   }
+
   int pkt_idx = st_tx_mbuf_get_idx(tx_pkts[0]);
   if (0 == pkt_idx) {
     struct st_frame_trans* frame = st_tx_mbuf_get_priv(tx_pkts[0]);
     if (frame) st20_frame_tx_start(impl, s, s_port, frame);
   }
+
   for (uint16_t i = 0; i < tx; i++) {
     s->stat_bytes_tx[s_port] += tx_pkts[i]->pkt_len;
     s->port_user_stats[s_port].bytes += tx_pkts[i]->pkt_len;
   }
+  s->last_burst_succ_time_tsc[s_port] = mt_get_tsc(impl);
   return tx;
 }
 
@@ -78,7 +108,7 @@ static int video_trs_rl_warm_up(struct mtl_main_impl* impl,
   pads[0] = s->pad[s_port][ST20_PKT_TYPE_NORMAL];
   for (int i = 0; i < warm_pkts; i++) {
     rte_mbuf_refcnt_update(pads[0], 1);
-    tx = mt_txq_burst(s->queue[s_port], &pads[0], 1);
+    tx = video_trs_burst_pad(impl, s, s_port, &pads[0], 1);
     if (tx < 1) {
       dbg("%s(%d), warm_pkts fail at %d\n", __func__, s->idx, i);
       s->trs_pad_inflight_num[s_port] += (warm_pkts - i);
@@ -135,7 +165,7 @@ static int video_burst_packet(struct mtl_main_impl* impl,
   /* check if it need insert padding packet */
   if (fmodf(pkt_idx + 1 + pacing->pad_interval / 2, pacing->pad_interval) < bulk) {
     rte_mbuf_refcnt_update(s->pad[s_port][ST20_PKT_TYPE_NORMAL], 1);
-    tx = mt_txq_burst(s->queue[s_port], &s->pad[s_port][ST20_PKT_TYPE_NORMAL], 1);
+    tx = video_trs_burst_pad(impl, s, s_port, &s->pad[s_port][ST20_PKT_TYPE_NORMAL], 1);
     if (tx < 1) s->trs_pad_inflight_num[s_port]++;
   }
 
@@ -190,7 +220,7 @@ static int _video_trs_rl_tasklet(struct mtl_main_impl* impl,
   if (s->trs_pad_inflight_num[s_port] > 0) {
     dbg("%s(%d), inflight padding pkts %d\n", __func__, idx,
         s->trs_pad_inflight_num[s_port]);
-    tx = mt_txq_burst(s->queue[s_port], &s->pad[s_port][ST20_PKT_TYPE_NORMAL], 1);
+    tx = video_trs_burst_pad(impl, s, s_port, &s->pad[s_port][ST20_PKT_TYPE_NORMAL], 1);
     s->trs_pad_inflight_num[s_port] -= tx;
     if (tx > 0) {
       return MT_TASKLET_HAS_PENDING;
@@ -557,6 +587,7 @@ static int video_trs_tasklet_handler(void* priv) {
     if (!s) continue;
 
     for (s_port = 0; s_port < s->ops.num_port; s_port++) {
+      if (!s->queue[s_port]) continue;
       pending += s->pacing_tasklet_func[s_port](impl, s, s_port);
     }
     tx_video_session_put(mgr, sidx);
