@@ -53,5 +53,6 @@ uint16_t mt_txq_burst_busy(struct mt_txq_entry* entry, struct rte_mbuf** tx_pkts
 int mt_txq_flush(struct mt_txq_entry* entry, struct rte_mbuf* pad);
 int mt_txq_put(struct mt_txq_entry* entry);
 int mt_txq_fatal_error(struct mt_txq_entry* entry);
+int mt_txq_done_cleanup(struct mt_txq_entry* entry);
 
 #endif

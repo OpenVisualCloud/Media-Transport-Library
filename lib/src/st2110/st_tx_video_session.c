@@ -2256,6 +2256,8 @@ static int tvs_tasklet_handler(void* priv) {
     s = tx_video_session_try_get(mgr, sidx);
     if (!s) continue;
 
+    if (!s->active) goto exit;
+
     if (s->ops.flags & ST20_TX_FLAG_ENABLE_RTCP) tv_tasklet_rtcp(impl, s);
 
     /* check vsync if it has vsync enabled */
@@ -2269,6 +2271,7 @@ static int tvs_tasklet_handler(void* priv) {
     else
       pending = tv_tasklet_rtp(impl, s);
 
+  exit:
     tx_video_session_put(mgr, sidx);
   }
 
@@ -2867,6 +2870,7 @@ static int tv_attach(struct mtl_main_impl* impl, struct st_tx_video_sessions_mgr
     } else {
       s->mbuf_mempool_reuse_rx[i] = false;
     }
+    s->last_burst_succ_time_tsc[i] = mt_get_tsc(impl);
   }
   s->tx_mono_pool = mt_has_tx_mono_pool(impl);
   /* manually disable chain or any port can't support chain */
@@ -2955,6 +2959,8 @@ static int tv_attach(struct mtl_main_impl* impl, struct st_tx_video_sessions_mgr
     s->trs_pad_inflight_num[i] = 0;
     s->trs_target_tsc[i] = 0;
   }
+
+  s->active = true;
 
   info("%s(%d), len %d(%d) total %d each line %d type %d flags 0x%x, %s\n", __func__, idx,
        s->st20_pkt_len, s->st20_pkt_size, s->st20_total_pkts, s->st20_pkts_in_line,
@@ -3096,7 +3102,7 @@ static void tv_stat(struct st_tx_video_sessions_mgr* mgr,
     s->stat_recoverable_error = 0;
   }
   if (s->stat_unrecoverable_error) {
-    err("TX_VIDEO_SESSION(%d,%d): stat_unrecoverable_error %u \n", m_idx, idx,
+    err("TX_VIDEO_SESSION(%d,%d): unrecoverable_error %u \n", m_idx, idx,
         s->stat_unrecoverable_error);
     /* not reset unrecoverable_error */
   }
@@ -3525,6 +3531,14 @@ int st20_tx_queue_fatal_error(struct mtl_main_impl* impl,
     return -EIO;
   }
 
+  /* clear all tx ring buffer */
+  if (s->packet_ring) mt_ring_dequeue_clean(s->packet_ring);
+  for (uint8_t i = 0; i < s->ops.num_port; i++) {
+    if (s->ring[i]) mt_ring_dequeue_clean(s->ring[i]);
+  }
+  /* clean the queue done mbuf */
+  mt_txq_done_cleanup(s->queue[s_port]);
+
   mt_txq_fatal_error(s->queue[s_port]);
   mt_txq_put(s->queue[s_port]);
   s->queue[s_port] = NULL;
@@ -3538,6 +3552,7 @@ int st20_tx_queue_fatal_error(struct mtl_main_impl* impl,
   if (!s->queue[s_port]) {
     err("%s(%d,%d), get new txq fail\n", __func__, idx, s_port);
     s->stat_unrecoverable_error++;
+    s->active = false; /* mark current session to dead */
     if (s->ops.notify_event) s->ops.notify_event(s->ops.priv, ST_EVENT_FATAL_ERROR, NULL);
     return -EIO;
   }
@@ -3564,6 +3579,7 @@ int st20_tx_queue_fatal_error(struct mtl_main_impl* impl,
   if (ret < 0) {
     err("%s(%d,%d), reset mempool fail\n", __func__, idx, s_port);
     s->stat_unrecoverable_error++;
+    s->active = false; /* mark current session to dead */
     if (s->ops.notify_event) s->ops.notify_event(s->ops.priv, ST_EVENT_FATAL_ERROR, NULL);
     return ret;
   }

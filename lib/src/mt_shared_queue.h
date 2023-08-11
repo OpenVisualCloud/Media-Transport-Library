@@ -38,5 +38,6 @@ int mt_tsq_flush(struct mtl_main_impl* impl, struct mt_tsq_entry* entry,
                  struct rte_mbuf* pad);
 int mt_tsq_put(struct mt_tsq_entry* entry);
 int mt_tsq_fatal_error(struct mt_tsq_entry* entry);
+int mt_tsq_done_cleanup(struct mt_tsq_entry* entry);
 
 #endif

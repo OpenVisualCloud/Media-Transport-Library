@@ -359,10 +359,7 @@ void mt_rtcp_tx_free(struct mt_rtcp_tx* tx) {
   mt_stat_unregister(tx->parent, rtcp_tx_stat, tx);
 
   if (tx->mbuf_ring) {
-    struct rte_mbuf* pkt = NULL;
-    while (mt_u64_fifo_get(tx->mbuf_ring, (uint64_t*)&pkt) == 0) {
-      if (pkt) rte_pktmbuf_free(pkt);
-    }
+    mt_fifo_mbuf_clean(tx->mbuf_ring);
     mt_u64_fifo_uinit(tx->mbuf_ring);
     tx->mbuf_ring = NULL;
   }

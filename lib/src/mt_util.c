@@ -580,6 +580,19 @@ int mt_u64_fifo_read_any_bulk(struct mt_u64_fifo* fifo, uint64_t* items, uint32_
     read_idx++;
     if (read_idx >= fifo->size) read_idx = 0;
   }
+
+  return 0;
+}
+
+/* only for the mbuf fifo */
+int mt_fifo_mbuf_clean(struct mt_u64_fifo* fifo) {
+  struct rte_mbuf* mbuf;
+
+  while (mt_u64_fifo_count(fifo) > 0) {
+    mt_u64_fifo_get(fifo, (uint64_t*)&mbuf);
+    rte_pktmbuf_free(mbuf);
+  }
+
   return 0;
 }
 
