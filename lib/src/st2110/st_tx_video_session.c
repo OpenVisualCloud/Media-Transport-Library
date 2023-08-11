@@ -1829,7 +1829,7 @@ static int tv_tasklet_rtcp(struct mtl_main_impl* impl,
         // rte_pktmbuf_dump(stdout, mbuf[i], mbuf[i]->pkt_len);
         struct mt_rtcp_hdr* rtcp = rte_pktmbuf_mtod_offset(mbuf[i], struct mt_rtcp_hdr*,
                                                            sizeof(struct mt_udp_hdr));
-        mt_rtcp_tx_parse_nack_packet(s->rtcp_tx[s_port], rtcp);
+        mt_rtcp_tx_parse_rtcp_packet(s->rtcp_tx[s_port], rtcp);
       }
       rte_pktmbuf_free_bulk(&mbuf[0], rv);
     }
