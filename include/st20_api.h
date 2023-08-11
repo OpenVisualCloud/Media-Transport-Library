@@ -70,6 +70,12 @@ extern "C" {
  * If enable the rtcp.
  */
 #define ST20_TX_FLAG_ENABLE_RTCP (MTL_BIT32(7))
+/**
+ * Flag bit in flags of struct st20_tx_ops.
+ * Set this flag to set rtp timestamp at the time of the first packet egresses from the
+ * sender.
+ */
+#define ST20_TX_FLAG_RTP_TIMESTAMP_FIRST_PKT (MTL_BIT32(8))
 
 /**
  * Flag bit in flags of struct st22_tx_ops.
@@ -973,6 +979,11 @@ struct st20_tx_ops {
    * Leave to zero if not know detail, lib will train the interval in the initial routine.
    */
   uint16_t pad_interval;
+  /**
+   * The rtp timestamp delta(us) to the start time of frame.
+   * Zero means the rtp timestamp at the start of the frame.
+   */
+  int32_t rtp_timestamp_delta_us;
 
   /**
    * the time for lib to detect the hang on the tx queue and try to recovery

@@ -17,7 +17,7 @@ static inline double pacing_time(struct st_tx_video_pacing* pacing, uint64_t epo
   return epochs * pacing->frame_time;
 }
 
-static inline double pacing_tr_offset_time(struct st_tx_video_pacing* pacing,
+static inline double pacing_first_pkt_time(struct st_tx_video_pacing* pacing,
                                            uint64_t epochs) {
   return pacing_time(pacing, epochs) + pacing->tr_offset - (pacing->vrx * pacing->trs);
 }
@@ -30,12 +30,20 @@ static inline double pacing_start_time(struct st_tx_video_pacing* pacing,
 }
 
 /* time stamp on the first pkt video pkt(not the warmup) */
-static inline uint32_t pacing_time_stamp(struct st_tx_video_pacing* pacing,
+static inline uint32_t pacing_time_stamp(struct st_tx_video_session_impl* s,
+                                         struct st_tx_video_pacing* pacing,
                                          uint64_t epochs) {
-  double tr_offset_time = pacing_tr_offset_time(pacing, epochs);
-  if (pacing->warm_pkts) tr_offset_time -= 3 * pacing->trs; /* deviation for VRX */
-  uint64_t tmstamp64 =
-      (tr_offset_time / pacing->frame_time) * pacing->frame_time_sampling;
+  uint64_t tmstamp64;
+  double time;
+  if (s->ops.flags & ST20_TX_FLAG_RTP_TIMESTAMP_FIRST_PKT) {
+    /* the start of first pkt */
+    time = pacing_first_pkt_time(pacing, epochs);
+    if (pacing->warm_pkts) time -= 3 * pacing->trs; /* deviation for VRX */
+  } else {
+    int32_t rtp_timestamp_delta_us = s->ops.rtp_timestamp_delta_us;
+    time = pacing_time(pacing, epochs) + (rtp_timestamp_delta_us * NS_PER_US);
+  }
+  tmstamp64 = (time / pacing->frame_time) * pacing->frame_time_sampling;
   uint32_t tmstamp32 = tmstamp64;
 
   return tmstamp32;
@@ -613,7 +621,7 @@ static int tv_sync_pacing(struct mtl_main_impl* impl, struct st_tx_video_session
   if (epochs < next_epochs) s->stat_epoch_onward += (next_epochs - epochs);
   pacing->cur_epochs = epochs;
   pacing->cur_epoch_time = pacing_time(pacing, epochs);
-  pacing->rtp_time_stamp = pacing_time_stamp(pacing, epochs);
+  pacing->rtp_time_stamp = pacing_time_stamp(s, pacing, epochs);
   dbg("%s(%d), old time_cursor %fms\n", __func__, idx,
       pacing->tsc_time_cursor / 1000 / 1000);
   pacing->tsc_time_cursor = (double)mt_get_tsc(impl) + to_epoch;
