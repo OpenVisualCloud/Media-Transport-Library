@@ -80,7 +80,7 @@ static int kahawai_read_header(AVFormatContext* ctx) {
   AVStream* st = NULL;
   enum AVPixelFormat pix_fmt = AV_PIX_FMT_NONE;
   int packet_size = 0;
-  int ret = 0;
+  const AVPixFmtDescriptor* pix_fmt_desc = NULL;
 
   // struct mtl_init_params param;
   struct st20p_rx_ops ops_rx;
@@ -127,7 +127,7 @@ static int kahawai_read_header(AVFormatContext* ctx) {
   ops_rx.height = s->height;
 
   pix_fmt = av_get_pix_fmt(s->pixel_format);
-  const AVPixFmtDescriptor* pix_fmt_desc = av_pix_fmt_desc_get(pix_fmt);
+  pix_fmt_desc = av_pix_fmt_desc_get(pix_fmt);
   switch (pix_fmt) {
     case AV_PIX_FMT_YUV422P10LE:
       ops_rx.transport_fmt = ST20_FMT_YUV_422_10BIT;
