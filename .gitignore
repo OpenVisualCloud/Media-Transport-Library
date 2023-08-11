@@ -71,3 +71,4 @@ assets/
 *.pkg
 *.jxs
 *.mkv
+mtl_system_status_*
