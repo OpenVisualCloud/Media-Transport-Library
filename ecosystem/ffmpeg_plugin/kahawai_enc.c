@@ -245,8 +245,9 @@ static int kahawai_write_packet(AVFormatContext* ctx, AVPacket* pkt) {
     case AV_PIX_FMT_RGB24:
       av_image_fill_arrays(data, linesize, pkt->data, s->pixel_format, s->width,
                            s->height, 1);
-      av_image_copy((uint8_t **)s->frame->addr, (int*)s->frame->linesize,
-                    (const uint8_t**)data, linesize, s->pixel_format, s->width, s->height);
+      av_image_copy((uint8_t**)s->frame->addr, (int*)s->frame->linesize,
+                    (const uint8_t**)data, linesize, s->pixel_format, s->width,
+                    s->height);
       break;
     default:
       av_log(ctx, AV_LOG_ERROR, "Unsupported pixel format: %s.\n", pix_fmt_desc->name);
