@@ -68,6 +68,12 @@ create_vf() {
     # Enable VFs
     echo "$numvfs" > /sys/bus/pci/devices/"$bdf"/sriov_numvfs
     # wait VF driver
+    bifurcated_driver=0
+    kernel_drv=$(dpdk-devbind.py -s | grep "$bdf.*drv" | sed -e s/.*drv=//g | awk '{print $1;}')
+    # check if mellanox driver is loaded, NVIDIA/Mellanox PMD uses bifurcated driver
+    if [[ $kernel_drv == *"mlx"* ]]; then
+	bifurcated_driver=1
+    fi
     sleep 2
 
     # Start to bind to VFIO
@@ -80,9 +86,14 @@ create_vf() {
         fi
         #enable trust
         #ip link set $port vf $i trust on
-        if dpdk-devbind.py -b vfio-pci "$vfport"; then
-            echo "Bind $vfport($vfif) to vfio-pci success"
-        fi
+	if [ $bifurcated_driver -eq 0 ]; then
+            if dpdk-devbind.py -b vfio-pci "$vfport"; then
+                echo "Bind $vfport($vfif) to vfio-pci success"
+            fi
+	else
+	    echo "PMD uses bifurcated driver, No need to bind the $vfport($vfif) to vfio-pci"
+	fi
+
     done
 }
 
