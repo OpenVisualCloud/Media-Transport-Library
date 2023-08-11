@@ -51,12 +51,12 @@ int mt_rtcp_tx_buffer_rtp_packets(struct mt_rtcp_tx* tx, struct rte_mbuf** mbufs
   return 0;
 }
 
-static int rtcp_tx_retransmit_rtp_packets(struct mt_rtcp_tx* tx, uint16_t seq_id,
+static int rtcp_tx_retransmit_rtp_packets(struct mt_rtcp_tx* tx, uint16_t seq,
                                           uint16_t bulk) {
   int ret = 0;
   uint16_t nb_rt = bulk, send = 0;
   struct rte_mbuf *mbufs[bulk], *copy_mbufs[bulk];
-  uint16_t ring_head_id = 0;
+  uint16_t ring_head_seq = 0;
   uint32_t ts = 0;
   MT_MAY_UNUSED(ts);
 
@@ -69,19 +69,19 @@ static int rtcp_tx_retransmit_rtp_packets(struct mt_rtcp_tx* tx, uint16_t seq_id
 
   struct st_rfc3550_rtp_hdr* rtp = rte_pktmbuf_mtod_offset(
       head_mbuf, struct st_rfc3550_rtp_hdr*, sizeof(struct mt_udp_hdr));
-  ring_head_id = ntohs(rtp->seq_number);
+  ring_head_seq = ntohs(rtp->seq_number);
   ts = ntohl(rtp->tmstamp);
 
-  int cmp_result = rtp_seq_num_cmp(ring_head_id, seq_id);
+  int cmp_result = rtp_seq_num_cmp(ring_head_seq, seq);
   if (cmp_result > 0) {
     dbg("%s(%s), ts %u seq %u out of date, ring head %u, you ask late\n", __func__,
-        tx->name, ts, seq_id, ring_head_id);
+        tx->name, ts, seq, ring_head_seq);
     tx->stat_rtp_retransmit_fail_obsolete += bulk;
     ret = -EIO;
     goto rt_exit;
   }
 
-  uint16_t diff = seq_id - ring_head_id;
+  uint16_t diff = seq - ring_head_seq;
   if (mt_u64_fifo_read_any_bulk(tx->mbuf_ring, (uint64_t*)mbufs, bulk, diff) < 0) {
     dbg("%s(%s), failed to read retransmit mbufs from ring\n", __func__, tx->name);
     tx->stat_rtp_retransmit_fail_read += bulk;
@@ -104,8 +104,7 @@ static int rtcp_tx_retransmit_rtp_packets(struct mt_rtcp_tx* tx, uint16_t seq_id
   send = mt_dev_tx_sys_queue_burst(tx->parent, tx->port, copy_mbufs, nb_rt);
   ret = send;
 
-  dbg("%s(%s), ts %u seq %u retransmit %u pkt(s)\n", __func__, tx->name, ts, seq_id,
-      send);
+  dbg("%s(%s), ts %u seq %u retransmit %u pkt(s)\n", __func__, tx->name, ts, seq, send);
 
 rt_exit:
   tx->stat_rtp_retransmit_succ += send;
@@ -114,13 +113,13 @@ rt_exit:
   return ret;
 }
 
-int mt_rtcp_tx_parse_nack_packet(struct mt_rtcp_tx* tx, struct mt_rtcp_hdr* rtcp) {
+int mt_rtcp_tx_parse_rtcp_packet(struct mt_rtcp_tx* tx, struct mt_rtcp_hdr* rtcp) {
   if (rtcp->flags != 0x80) {
     err("%s(%s), wrong rtcp flags %u\n", __func__, tx->name, rtcp->flags);
     return -EIO;
   }
 
-  if (rtcp->ptype == MT_RTCP_PTYPE_NACK) {
+  if (rtcp->ptype == MT_RTCP_PTYPE_NACK) { /* nack packet */
     if (memcmp(rtcp->name, "IMTL", 4) != 0) {
       err("%s(%s), not IMTL RTCP packet\n", __func__, tx->name);
       return -EIO;
@@ -159,42 +158,42 @@ static int rtcp_rx_update_last_cont(struct mt_rtcp_rx* rx) {
 }
 
 int mt_rtcp_rx_parse_rtp_packet(struct mt_rtcp_rx* rx, struct st_rfc3550_rtp_hdr* rtp) {
-  uint16_t seq_id = ntohs(rtp->seq_number);
+  uint16_t seq = ntohs(rtp->seq_number);
 
   if (rx->ssrc == 0) { /* first received */
     rx->ssrc = ntohl(rtp->ssrc);
-    rx->last_cont = seq_id;
-    rx->last_seq = seq_id;
-    mt_bitmap_test_and_set(rx->seq_bitmap, seq_id % rx->seq_window_size);
+    rx->last_cont = seq;
+    rx->last_seq = seq;
+    mt_bitmap_test_and_set(rx->seq_bitmap, seq % rx->seq_window_size);
     rx->stat_rtp_received++;
     return 0;
   }
 
-  uint16_t diff = seq_id - rx->last_seq;
-  if (diff != 0) {
-    if (diff < UINT16_MAX_HALF) { /* new seq */
-      /* clean the bitmap for missing packets */
-      for (uint16_t i = rx->last_seq + 1; i < seq_id; i++) {
-        mt_bitmap_test_and_unset(rx->seq_bitmap, i % rx->seq_window_size);
-      }
-      rx->last_seq = seq_id;
+  int cmp_result = rtp_seq_num_cmp(seq, rx->last_seq);
+  if (cmp_result > 0) { /* new seq */
+    /* clean the bitmap for missing packets */
+    for (uint16_t i = rx->last_seq + 1; i < seq; i++) {
+      mt_bitmap_test_and_unset(rx->seq_bitmap, i % rx->seq_window_size);
+    }
+    rx->last_seq = seq;
 
-      uint16_t last_cont_diff = seq_id - rx->last_cont;
-      if (last_cont_diff > rx->seq_window_size) {
-        /* last cont is out of bitmap window, re-calculate from bitmap begin */
-        rx->last_cont = seq_id - rx->seq_window_size;
-        rtcp_rx_update_last_cont(rx);
-      } else if (last_cont_diff == 1) {
-        /* the ideal case where all pkts come in sequence */
-        rx->last_cont = seq_id;
-      }
-    } else if (seq_id == rx->last_cont + 1) { /* old seq and need update cont */
-      rx->last_cont = seq_id;
+    uint16_t last_cont_diff = seq - rx->last_cont;
+    if (last_cont_diff > rx->seq_window_size) {
+      /* last cont is out of bitmap window, re-calculate from bitmap begin */
+      rx->last_cont = seq - rx->seq_window_size;
+      rtcp_rx_update_last_cont(rx);
+    } else if (last_cont_diff == 1) {
+      /* the ideal case where all pkts come in sequence */
+      rx->last_cont = seq;
+    }
+  } else if (cmp_result < 0) {      /* old seq */
+    if (seq == rx->last_cont + 1) { /* need to update cont */
+      rx->last_cont = seq;
       rtcp_rx_update_last_cont(rx);
     }
-  } /* else diff == 0, duplicate pkt */
+  } /* else, ignore duplicate seq */
 
-  mt_bitmap_test_and_set(rx->seq_bitmap, seq_id % rx->seq_window_size);
+  mt_bitmap_test_and_set(rx->seq_bitmap, seq % rx->seq_window_size);
   rx->stat_rtp_received++;
 
   return 0;
@@ -223,19 +222,21 @@ int mt_rtcp_rx_send_nack_packet(struct mt_rtcp_rx* rx) {
   while (rtp_seq_num_cmp(seq, end) <= 0) {
     if (!mt_bitmap_test(rx->seq_bitmap, seq % rx->seq_window_size)) {
       miss++;
-    } else if (miss != 0) {
-      fcis[num_fci].start = htons(start);
-      fcis[num_fci].follow = htons(miss - 1);
-      if (++num_fci > 32) {
-        dbg("%s(%s), too many nack items %u\n", __func__, rx->name, num_fci);
-        rx->stat_nack_drop_exceed += num_fci;
-        if (!end_state)
-          mt_bitmap_test_and_unset(rx->seq_bitmap, end % rx->seq_window_size);
-        return -EINVAL;
+    } else {
+      if (miss != 0) {
+        fcis[num_fci].start = htons(start);
+        fcis[num_fci].follow = htons(miss - 1);
+        if (++num_fci > 32) {
+          dbg("%s(%s), too many nack items %u\n", __func__, rx->name, num_fci);
+          rx->stat_nack_drop_exceed += num_fci;
+          if (!end_state)
+            mt_bitmap_test_and_unset(rx->seq_bitmap, end % rx->seq_window_size);
+          return -EINVAL;
+        }
+        rx->stat_rtp_lost_detected += miss;
+        miss = 0;
       }
-      rx->stat_rtp_lost_detected += miss;
       start = seq + 1;
-      miss = 0;
     }
     seq++;
   }
