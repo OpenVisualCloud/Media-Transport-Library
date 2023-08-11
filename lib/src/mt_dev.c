@@ -64,6 +64,12 @@ static const struct mt_dev_driver_info dev_drvs[] = {
         .flow_type = MT_FLOW_NONE,
         .no_dev_stats_reset = true,
     },
+    {
+        .name = "mlx5_pci",
+        .port_type = MT_PORT_PF,
+        .drv_type = MT_DRV_MLX5,
+        .flow_type = MT_FLOW_ALL,
+    },
 };
 
 static int parse_driver_info(const char* driver, struct mt_dev_driver_info* drv_info) {

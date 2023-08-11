@@ -128,6 +128,7 @@ enum mt_driver_type {
   MT_DRV_E1000_IGB, /* e1000 igb, net_e1000_igb */
   MT_DRV_IGC,       /* igc, net_igc */
   MT_DRV_ENA,       /* aws ena, net_ena */
+  MT_DRV_MLX5,      /* mlx, mlx5_pci */
 };
 
 enum mt_flow_type {
