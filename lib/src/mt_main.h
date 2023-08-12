@@ -797,6 +797,7 @@ struct mt_txq_flow {
   /* mandatory if not sys_queue */
   uint8_t dip_addr[MTL_IP_ADDR_LEN]; /* tx destination IP */
   uint16_t dst_port;                 /* udp destination port */
+  bool launch_time_enabled;
 };
 
 struct mt_tsq_impl; /* forward delcare */
