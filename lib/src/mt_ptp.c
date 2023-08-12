@@ -507,7 +507,6 @@ static void ptp_delay_req_read_tx_time_handler(void* param) {
   }
 }
 
-
 static void ptp_expect_result_clear(struct mt_ptp_impl* ptp) {
   ptp->expect_result_cnt = 0;
   ptp->expect_result_sum = 0;
@@ -749,10 +748,10 @@ static void ptp_delay_req_task(struct mt_ptp_impl* ptp) {
   }
 
 #if MT_PTP_USE_TX_TIME_STAMP
-  if(ptp->qbv_enabled) {
+  if (ptp->qbv_enabled) {
     /*
      * The DELAY_REQ packet will be blocked max 1.2ms by Qbv scheduler.
-     * The Tx timestamp will not be created immediately. So, start an 
+     * The Tx timestamp will not be created immediately. So, start an
      * alarm task to poll the Tx timestamp.
      */
     rte_eal_alarm_set(5, ptp_delay_req_read_tx_time_handler, ptp);
@@ -788,7 +787,7 @@ static void ptp_delay_req_task(struct mt_ptp_impl* ptp) {
 
     ptp->t3 = tx_ns;
 #else
-    ptp->t3 = ptp_get_raw_time(ptp);
+  ptp->t3 = ptp_get_raw_time(ptp);
 #endif
     dbg("%s(%d), t3 %" PRIu64 ", seq %d, max_retry %d, ptp %" PRIu64 "\n", __func__, port,
         ptp->t3, ptp->t3_sequence_id, max_retry, ptp_get_raw_time(ptp));
@@ -1117,8 +1116,8 @@ static int ptp_uinit(struct mtl_main_impl* impl, struct mt_ptp_impl* ptp) {
   rte_eal_alarm_cancel(ptp_sync_timeout_handler, ptp);
   rte_eal_alarm_cancel(ptp_monitor_handler, ptp);
 #ifdef MT_PTP_USE_TX_TIME_STAMP
-  if (ptp->qbv_enabled) rte_eal_alarm_cancel(ptp_delay_req_read_tx_time_handler,ptp);
-#endif  
+  if (ptp->qbv_enabled) rte_eal_alarm_cancel(ptp_delay_req_read_tx_time_handler, ptp);
+#endif
 
   if (!ptp->active) return 0;
 
