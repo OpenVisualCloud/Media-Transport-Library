@@ -169,6 +169,7 @@ struct mt_ptp_impl {
   uint16_t port_id;
   bool active; /* if the ptp stack is running */
   bool no_timesync;
+  bool qbv_enabled;
   int64_t no_timesync_delta;
 
   struct mt_phc2sys_impl phc2sys;
