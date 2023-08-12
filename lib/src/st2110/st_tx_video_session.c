@@ -455,13 +455,9 @@ static int tv_init_pacing(struct mtl_main_impl* impl,
   pacing->pad_interval = s->st20_total_pkts;
 
   int num_port = s->ops.num_port;
-  enum mtl_port port;
   int ret;
 
   for (int i = 0; i < num_port; i++) {
-    port = mt_port_logic2phy(s->port_maps, i);
-    /* use system pacing way now */
-    s->pacing_way[i] = st_tx_pacing_way(impl, port);
     if (s->pacing_way[i] == ST21_TX_PACING_WAY_RL) {
       ret = tv_train_pacing(impl, s, i);
       if (ret < 0) {
@@ -2326,6 +2322,7 @@ static int tv_init_hw(struct mtl_main_impl* impl, struct st_tx_video_sessions_mg
     flow.bytes_per_sec = tv_rl_bps(s);
     mtl_memcpy(&flow.dip_addr, &s->ops.dip_addr[i], MTL_IP_ADDR_LEN);
     flow.dst_port = s->ops.udp_port[i];
+    if (ST21_TX_PACING_WAY_TSN == s->pacing_way[i]) flow.launch_time_enabled = true;
     s->queue[i] = mt_txq_get(impl, port, &flow);
     if (!s->queue[i]) {
       tv_uinit_hw(impl, s);
@@ -2869,6 +2866,13 @@ static int tv_attach(struct mtl_main_impl* impl, struct st_tx_video_sessions_mgr
   /* make sure the ring is smaller than total pkts */
   while (s->ring_count > s->st20_total_pkts) {
     s->ring_count /= 2;
+  }
+
+  enum mtl_port port;
+  for (int i = 0; i < num_port; i++) {
+    port = mt_port_logic2phy(s->port_maps, i);
+    /* use system pacing way now */
+    s->pacing_way[i] = st_tx_pacing_way(impl, port);
   }
 
   ret = tv_init_sw(impl, mgr, s, st22_frame_ops);
