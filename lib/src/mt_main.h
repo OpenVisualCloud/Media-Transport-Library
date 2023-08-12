@@ -127,13 +127,14 @@ enum mt_driver_type {
   MT_DRV_AF_XDP,    /* af xdp, net_af_xdp */
   MT_DRV_E1000_IGB, /* e1000 igb, net_e1000_igb */
   MT_DRV_IGC,       /* igc, net_igc */
-  MT_DRV_ENA,       /* ena, net_ena */
+  MT_DRV_ENA,       /* aws ena, net_ena */
+  MT_DRV_MLX5,      /* mlx, mlx5_pci */
 };
 
 enum mt_flow_type {
-  MT_FLOW_ALL,
-  MT_FLOW_NO_IP,
-  MT_FLOW_NONE,
+  MT_FLOW_ALL,   /* full feature on rte flow */
+  MT_FLOW_NO_IP, /* no ip on rte flow, port is supported */
+  MT_FLOW_NONE,  /* no rte flow */
 };
 
 enum mt_ptp_l_mode {
@@ -553,8 +554,21 @@ struct mt_tx_queue {
   uint16_t port_id;
   uint16_t queue_id;
   bool active;
+  /* VF, caused by malicious detection in the PF */
+  bool fatal_error;
   int rl_shapers_mapping; /* map to tx_rl_shapers */
   uint64_t bps;           /* bytes per sec for rate limit */
+};
+
+struct mt_dev_driver_info {
+  char* name;
+  enum mt_port_type port_type;
+  enum mt_driver_type drv_type;
+  enum mt_flow_type flow_type;
+  /* use rte_eth_dev_set_mc_addr_list instead of rte_eth_dev_mac_addr_add for multicast */
+  bool use_mc_addr_list;
+  /* no rte_eth_stats_reset support */
+  bool no_dev_stats_reset;
 };
 
 struct mt_interface {
@@ -562,9 +576,7 @@ struct mt_interface {
   enum mtl_port port;
   uint16_t port_id;
   struct rte_eth_dev_info dev_info;
-  enum mt_port_type port_type;
-  enum mt_driver_type drv_type;
-  enum mt_flow_type flow_type;
+  struct mt_dev_driver_info drv_info;
   enum mtl_rss_mode rss_mode;
   enum mtl_net_proto net_proto;
   int socket_id;                          /* socket id for the port */
@@ -628,6 +640,8 @@ struct mt_interface {
   struct mt_dev_stats* dev_stats_not_reset; /* for nic without reset func */
   struct rte_eth_stats stats_sum;           /* for dev_inf_stat dump */
   struct mtl_port_status user_stats_port;   /* for mtl_get_port_stats */
+
+  uint64_t simulate_malicious_pkt_tsc;
 };
 
 struct mt_lcore_shm {
@@ -823,6 +837,7 @@ struct mt_tsq_queue {
   pthread_mutex_t mutex;
   rte_spinlock_t tx_mutex;
   rte_atomic32_t entry_cnt;
+  bool fatal_error;
   /* stat */
   int stat_pkts_send;
 };
@@ -971,7 +986,7 @@ static inline struct rte_device* mt_port_device(struct mtl_main_impl* impl,
 
 static inline enum mt_port_type mt_port_type(struct mtl_main_impl* impl,
                                              enum mtl_port port) {
-  return mt_if(impl, port)->port_type;
+  return mt_if(impl, port)->drv_info.port_type;
 }
 
 enum mtl_port mt_port_by_id(struct mtl_main_impl* impl, uint16_t port_id);

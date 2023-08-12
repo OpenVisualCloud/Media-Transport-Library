@@ -1825,7 +1825,7 @@ static int tv_tasklet_rtcp(struct mtl_main_impl* impl,
         // rte_pktmbuf_dump(stdout, mbuf[i], mbuf[i]->pkt_len);
         struct mt_rtcp_hdr* rtcp = rte_pktmbuf_mtod_offset(mbuf[i], struct mt_rtcp_hdr*,
                                                            sizeof(struct mt_udp_hdr));
-        mt_rtcp_tx_parse_nack_packet(s->rtcp_tx[s_port], rtcp);
+        mt_rtcp_tx_parse_rtcp_packet(s->rtcp_tx[s_port], rtcp);
       }
       rte_pktmbuf_free_bulk(&mbuf[0], rv);
     }
@@ -2252,6 +2252,8 @@ static int tvs_tasklet_handler(void* priv) {
     s = tx_video_session_try_get(mgr, sidx);
     if (!s) continue;
 
+    if (!s->active) goto exit;
+
     if (s->ops.flags & ST20_TX_FLAG_ENABLE_RTCP) tv_tasklet_rtcp(impl, s);
 
     /* check vsync if it has vsync enabled */
@@ -2265,6 +2267,7 @@ static int tvs_tasklet_handler(void* priv) {
     else
       pending = tv_tasklet_rtp(impl, s);
 
+  exit:
     tx_video_session_put(mgr, sidx);
   }
 
@@ -2466,7 +2469,8 @@ static int tv_mempool_init(struct mtl_main_impl* impl,
         warn("%s(%d), use previous hdr mempool for port %d\n", __func__, idx, i);
       } else {
         char pool_name[32];
-        snprintf(pool_name, 32, "%sM%dS%dP%d_HDR", ST_TX_VIDEO_PREFIX, mgr->idx, idx, i);
+        snprintf(pool_name, 32, "%sM%dS%dP%d_HDR_%d", ST_TX_VIDEO_PREFIX, mgr->idx, idx,
+                 i, s->recovery_idx);
         struct rte_mempool* mbuf_pool =
             mt_mempool_create(impl, port, pool_name, n, MT_MBUF_CACHE_SIZE,
                               sizeof(struct mt_muf_priv_data), hdr_room_size);
@@ -2492,7 +2496,8 @@ static int tv_mempool_init(struct mtl_main_impl* impl,
            s->mbuf_mempool_chain);
     } else {
       char pool_name[32];
-      snprintf(pool_name, 32, "%sM%dS%d_CHAIN", ST_TX_VIDEO_PREFIX, mgr->idx, idx);
+      snprintf(pool_name, 32, "%sM%dS%d_CHAIN_%d", ST_TX_VIDEO_PREFIX, mgr->idx, idx,
+               s->recovery_idx);
       struct rte_mempool* mbuf_pool = mt_mempool_create(
           impl, port, pool_name, n, MT_MBUF_CACHE_SIZE, 0, chain_room_size);
       if (!mbuf_pool) {
@@ -2507,7 +2512,8 @@ static int tv_mempool_init(struct mtl_main_impl* impl,
         chain_room_size = s->st20_pkt_len;
         n /= s->st20_total_pkts / s->st20_pkt_info[ST20_PKT_TYPE_EXTRA].number;
         char pool_name[32];
-        snprintf(pool_name, 32, "%sM%dS%d_COPY", ST_TX_VIDEO_PREFIX, mgr->idx, idx);
+        snprintf(pool_name, 32, "%sM%dS%d_COPY_%d", ST_TX_VIDEO_PREFIX, mgr->idx, idx,
+                 s->recovery_idx);
         struct rte_mempool* mbuf_pool = mt_mempool_create(
             impl, port, pool_name, n, MT_MBUF_CACHE_SIZE, 0, chain_room_size);
         if (!mbuf_pool) {
@@ -2792,6 +2798,12 @@ static int tv_attach(struct mtl_main_impl* impl, struct st_tx_video_sessions_mgr
   }
 
   s->impl = impl;
+  s->mgr = mgr;
+  /* mark the queue to fatal error if burst fail exceed tx_hang_detect_time_thresh */
+  if (ops->tx_hang_detect_ms)
+    s->tx_hang_detect_time_thresh = ops->tx_hang_detect_ms * NS_PER_MS;
+  else
+    s->tx_hang_detect_time_thresh = NS_PER_S;
 
   s->st20_linesize = ops->width * s->st20_pg.size / s->st20_pg.coverage;
   if (ops->linesize > s->st20_linesize)
@@ -2855,6 +2867,7 @@ static int tv_attach(struct mtl_main_impl* impl, struct st_tx_video_sessions_mgr
     } else {
       s->mbuf_mempool_reuse_rx[i] = false;
     }
+    s->last_burst_succ_time_tsc[i] = mt_get_tsc(impl);
   }
   s->tx_mono_pool = mt_has_tx_mono_pool(impl);
   /* manually disable chain or any port can't support chain */
@@ -2950,6 +2963,8 @@ static int tv_attach(struct mtl_main_impl* impl, struct st_tx_video_sessions_mgr
     s->trs_pad_inflight_num[i] = 0;
     s->trs_target_tsc[i] = 0;
   }
+
+  s->active = true;
 
   info("%s(%d), len %d(%d) total %d each line %d type %d flags 0x%x, %s\n", __func__, idx,
        s->st20_pkt_len, s->st20_pkt_size, s->st20_total_pkts, s->st20_pkts_in_line,
@@ -3084,6 +3099,16 @@ static void tv_stat(struct st_tx_video_sessions_mgr* mgr,
            m_idx, idx, s->stat_max_next_frame_us, s->stat_max_notify_frame_us);
     s->stat_max_next_frame_us = 0;
     s->stat_max_notify_frame_us = 0;
+  }
+  if (s->stat_recoverable_error) {
+    notice("TX_VIDEO_SESSION(%d,%d): recoverable_error %u \n", m_idx, idx,
+           s->stat_recoverable_error);
+    s->stat_recoverable_error = 0;
+  }
+  if (s->stat_unrecoverable_error) {
+    err("TX_VIDEO_SESSION(%d,%d): unrecoverable_error %u \n", m_idx, idx,
+        s->stat_unrecoverable_error);
+    /* not reset unrecoverable_error */
   }
 
   /* check frame busy stat */
@@ -3494,6 +3519,81 @@ static int tv_st22_ops_check(struct st22_tx_ops* ops) {
     err("%s, invalid payload_type %d\n", __func__, ops->payload_type);
     return -EINVAL;
   }
+
+  return 0;
+}
+
+int st20_tx_queue_fatal_error(struct mtl_main_impl* impl,
+                              struct st_tx_video_session_impl* s,
+                              enum mtl_session_port s_port) {
+  enum mtl_port port = mt_port_logic2phy(s->port_maps, s_port);
+  int idx = s->idx;
+  int ret;
+
+  if (!s->queue[s_port]) {
+    err("%s(%d,%d), no queue\n", __func__, idx, s_port);
+    return -EIO;
+  }
+
+  /* clear all tx ring buffer */
+  if (s->packet_ring) mt_ring_dequeue_clean(s->packet_ring);
+  for (uint8_t i = 0; i < s->ops.num_port; i++) {
+    if (s->ring[i]) mt_ring_dequeue_clean(s->ring[i]);
+  }
+  /* clean the queue done mbuf */
+  mt_txq_done_cleanup(s->queue[s_port]);
+
+  mt_txq_fatal_error(s->queue[s_port]);
+  mt_txq_put(s->queue[s_port]);
+  s->queue[s_port] = NULL;
+
+  struct mt_txq_flow flow;
+  memset(&flow, 0, sizeof(flow));
+  flow.bytes_per_sec = tv_rl_bps(s);
+  mtl_memcpy(&flow.dip_addr, &s->ops.dip_addr[s_port], MTL_IP_ADDR_LEN);
+  flow.dst_port = s->ops.udp_port[s_port];
+  s->queue[s_port] = mt_txq_get(impl, port, &flow);
+  if (!s->queue[s_port]) {
+    err("%s(%d,%d), get new txq fail\n", __func__, idx, s_port);
+    s->stat_unrecoverable_error++;
+    s->active = false; /* mark current session to dead */
+    if (s->ops.notify_event) s->ops.notify_event(s->ops.priv, ST_EVENT_FATAL_ERROR, NULL);
+    return -EIO;
+  }
+  uint16_t queue_id = mt_txq_queue_id(s->queue[s_port]);
+  info("%s(%d,%d), new queue_id %u\n", __func__, idx, s_port, queue_id);
+
+  /* cleanup frame manager */
+  struct st_frame_trans* frame;
+  for (uint16_t i = 0; i < s->st20_frames_cnt; i++) {
+    frame = &s->st20_frames[i];
+    int refcnt = rte_atomic32_read(&frame->refcnt);
+    if (refcnt) {
+      info("%s(%d,%d), stop frame %u\n", __func__, idx, s_port, i);
+      tv_notify_frame_done(s, i);
+      rte_atomic32_dec(&frame->refcnt);
+      rte_mbuf_ext_refcnt_set(&frame->sh_info, 0);
+    }
+  }
+
+  /* reset mempool */
+  tv_mempool_free(s);
+  s->recovery_idx++;
+  ret = tv_mempool_init(impl, s->mgr, s);
+  if (ret < 0) {
+    err("%s(%d,%d), reset mempool fail\n", __func__, idx, s_port);
+    s->stat_unrecoverable_error++;
+    s->active = false; /* mark current session to dead */
+    if (s->ops.notify_event) s->ops.notify_event(s->ops.priv, ST_EVENT_FATAL_ERROR, NULL);
+    return ret;
+  }
+
+  /* point to next frame */
+  s->st20_pkt_idx = 0;
+  s->st20_frame_stat = ST21_TX_STAT_WAIT_FRAME;
+  s->stat_recoverable_error++;
+  if (s->ops.notify_event)
+    s->ops.notify_event(s->ops.priv, ST_EVENT_RECOVERY_ERROR, NULL);
 
   return 0;
 }

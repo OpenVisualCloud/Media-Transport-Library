@@ -942,11 +942,15 @@ static int tx_audio_sessions_tasklet_build(void* priv) {
     s = tx_audio_session_try_get(mgr, sidx);
     if (!s) continue;
 
+    if (!s->active) goto exit;
+
     s->stat_build_ret_code = 0;
     if (s->ops.type == ST30_TYPE_FRAME_LEVEL)
       pending += tx_audio_session_tasklet_frame(impl, s);
     else
       pending += tx_audio_session_tasklet_rtp(impl, s);
+
+  exit:
     tx_audio_session_put(mgr, sidx);
   }
 
@@ -962,9 +966,14 @@ static int tx_audio_sessions_tasklet_trans(void* priv) {
   for (int sidx = 0; sidx < mgr->max_idx; sidx++) {
     s = tx_audio_session_try_get(mgr, sidx);
     if (!s) continue;
+
+    if (!s->active) goto exit;
+
     for (int port = 0; port < s->ops.num_port; port++) {
       pending += tx_audio_session_tasklet_transmit(impl, mgr, s, port);
     }
+
+  exit:
     tx_audio_session_put(mgr, sidx);
   }
 
@@ -1018,6 +1027,7 @@ static int tx_audio_sessions_mgr_init_hw(struct mtl_main_impl* impl,
     mgr->ring[i] = ring;
     info("%s(%d,%d), succ, queue %d\n", __func__, mgr_idx, i,
          mt_txq_queue_id(mgr->queue[i]));
+    mgr->last_burst_succ_time_tsc[i] = mt_get_tsc(impl);
   }
 
   return 0;
@@ -1133,7 +1143,8 @@ static int tx_audio_session_mempool_init(struct mtl_main_impl* impl,
       warn("%s(%d), use previous hdr mempool for port %d\n", __func__, idx, i);
     } else {
       char pool_name[32];
-      snprintf(pool_name, 32, "%sM%dS%dP%d_HDR", ST_TX_AUDIO_PREFIX, mgr->idx, idx, i);
+      snprintf(pool_name, 32, "%sM%dS%dP%d_HDR_%d", ST_TX_AUDIO_PREFIX, mgr->idx, idx, i,
+               s->recovery_idx);
       struct rte_mempool* mbuf_pool =
           mt_mempool_create(impl, port, pool_name, n, MT_MBUF_CACHE_SIZE,
                             sizeof(struct mt_muf_priv_data), hdr_room_size);
@@ -1159,7 +1170,8 @@ static int tx_audio_session_mempool_init(struct mtl_main_impl* impl,
       warn("%s(%d), use previous chain mempool\n", __func__, idx);
     } else {
       char pool_name[32];
-      snprintf(pool_name, 32, "%sM%dS%d_CHAIN", ST_TX_AUDIO_PREFIX, mgr->idx, idx);
+      snprintf(pool_name, 32, "%sM%dS%d_CHAIN_%d", ST_TX_AUDIO_PREFIX, mgr->idx, idx,
+               s->recovery_idx);
       struct rte_mempool* mbuf_pool = mt_mempool_create(
           impl, port, pool_name, n, MT_MBUF_CACHE_SIZE, 0, chain_room_size);
       if (!mbuf_pool) {
@@ -1198,11 +1210,7 @@ static int tx_audio_session_init_rtp(struct mtl_main_impl* impl,
 static int tx_audio_session_uinit_trans_ring(struct st_tx_audio_session_impl* s) {
   for (int port = 0; port < MTL_SESSION_PORT_MAX; port++) {
     if (s->trans_ring[port]) {
-      struct rte_mbuf* item;
-      while (mt_u64_fifo_count(s->trans_ring[port]) > 0) {
-        mt_u64_fifo_get(s->trans_ring[port], (uint64_t*)&item);
-        rte_pktmbuf_free(item);
-      }
+      mt_fifo_mbuf_clean(s->trans_ring[port]);
       mt_u64_fifo_uinit(s->trans_ring[port]);
       s->trans_ring[port] = NULL;
     }
@@ -1411,6 +1419,8 @@ static int tx_audio_session_attach(struct mtl_main_impl* impl,
     return ret;
   }
 
+  s->active = true;
+
   info("%s(%d), pkt_len %u frame_size %u fps %f\n", __func__, idx, s->pkt_len,
        s->st30_frame_size, (double)NS_PER_S / s->pacing.trs / s->st30_total_pkts);
   return 0;
@@ -1522,6 +1532,16 @@ static void tx_audio_session_stat(struct st_tx_audio_sessions_mgr* mgr,
     s->stat_max_next_frame_us = 0;
     s->stat_max_notify_frame_us = 0;
   }
+  if (s->stat_recoverable_error) {
+    notice("TX_AUDIO_SESSION(%d,%d): recoverable_error %u \n", m_idx, idx,
+           s->stat_recoverable_error);
+    s->stat_recoverable_error = 0;
+  }
+  if (s->stat_unrecoverable_error) {
+    err("TX_AUDIO_SESSION(%d,%d): unrecoverable_error %u \n", m_idx, idx,
+        s->stat_unrecoverable_error);
+    /* not reset unrecoverable_error */
+  }
 }
 
 static int tx_audio_session_detach(struct st_tx_audio_sessions_mgr* mgr,
@@ -1552,6 +1572,16 @@ static int st_tx_audio_sessions_stat(void* priv) {
       }
     }
   }
+  if (mgr->stat_recoverable_error) {
+    notice("TX_AUDIO_MGR(%d): recoverable_error %u \n", m_idx,
+           mgr->stat_recoverable_error);
+    mgr->stat_recoverable_error = 0;
+  }
+  if (mgr->stat_unrecoverable_error) {
+    err("TX_AUDIO_MGR(%d): unrecoverable_error %u \n", m_idx,
+        mgr->stat_unrecoverable_error);
+    /* not reset unrecoverable_error */
+  }
 
   return 0;
 }
@@ -1566,6 +1596,7 @@ static int tx_audio_sessions_mgr_init(struct mtl_main_impl* impl, struct mt_sch_
 
   mgr->parent = impl;
   mgr->idx = idx;
+  mgr->tx_hang_detect_time_thresh = NS_PER_S;
 
   for (i = 0; i < ST_SCH_MAX_TX_AUDIO_SESSIONS; i++) {
     rte_spinlock_init(&mgr->mutex[i]);
@@ -1784,6 +1815,67 @@ static int st_tx_audio_init(struct mtl_main_impl* impl, struct mt_sch_impl* sch)
   }
 
   sch->tx_a_init = true;
+  return 0;
+}
+
+int st_audio_queue_fatal_error(struct mtl_main_impl* impl,
+                               struct st_tx_audio_sessions_mgr* mgr, enum mtl_port port) {
+  int idx = mgr->idx;
+  int ret;
+  struct st_tx_audio_session_impl* s;
+
+  if (!mgr->queue[port]) {
+    err("%s(%d,%d), no queue\n", __func__, idx, port);
+    return -EIO;
+  }
+
+  /* clean mbuf in the ring as we will free the mempool then */
+  if (mgr->ring[port]) mt_ring_dequeue_clean(mgr->ring[port]);
+  /* clean the queue done mbuf */
+  mt_txq_done_cleanup(mgr->queue[port]);
+
+  mt_txq_fatal_error(mgr->queue[port]);
+  mt_txq_put(mgr->queue[port]);
+  mgr->queue[port] = NULL;
+
+  /* init all session mempool again as we don't know which session has the bad pkt */
+  for (int sidx = 0; sidx < mgr->max_idx; sidx++) {
+    s = tx_audio_session_get(mgr, sidx);
+    if (!s) continue;
+
+    /* clear all tx ring buffer */
+    if (s->packet_ring) mt_ring_dequeue_clean(s->packet_ring);
+    for (uint8_t i = 0; i < s->ops.num_port; i++) {
+      if (s->trans_ring[i]) mt_fifo_mbuf_clean(s->trans_ring[i]);
+    }
+
+    s->recovery_idx++;
+    tx_audio_session_mempool_free(s);
+    ret = tx_audio_session_mempool_init(impl, mgr, s);
+    if (ret < 0) {
+      err("%s(%d,%d), init mempool fail %d for session %d\n", __func__, idx, port, ret,
+          sidx);
+      s->stat_unrecoverable_error++;
+      s->active = false; /* mark current session to dead */
+    } else {
+      s->stat_recoverable_error++;
+    }
+    tx_audio_session_put(mgr, sidx);
+  }
+
+  /* now create new queue */
+  struct mt_txq_flow flow;
+  memset(&flow, 0, sizeof(flow));
+  mgr->queue[port] = mt_txq_get(impl, port, &flow);
+  if (!mgr->queue[port]) {
+    err("%s(%d,%d), get new txq fail\n", __func__, idx, port);
+    mgr->stat_unrecoverable_error++;
+    return -EIO;
+  }
+  uint16_t queue_id = mt_txq_queue_id(mgr->queue[port]);
+  info("%s(%d,%d), new queue_id %u\n", __func__, idx, port, queue_id);
+  mgr->stat_recoverable_error++;
+
   return 0;
 }
 

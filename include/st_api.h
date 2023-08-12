@@ -190,6 +190,10 @@ enum st_event {
    * args point to struct st10_vsync_meta.
    */
   ST_EVENT_VSYNC = 0,
+  /** the error occurred and session recovery successfully */
+  ST_EVENT_RECOVERY_ERROR,
+  /** fatal error and session can't recovery, app should free the session then */
+  ST_EVENT_FATAL_ERROR,
   /** max value of this enum */
   ST_EVENT_MAX,
 };

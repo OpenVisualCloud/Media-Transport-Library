@@ -89,6 +89,7 @@ static int tx_st20p_frame_done(void* priv, struct st_frame* frame) {
 static int kahawai_write_header(AVFormatContext* ctx) {
   KahawaiMuxerContext* s = ctx->priv_data;
   struct st20p_tx_ops ops_tx;
+  const AVPixFmtDescriptor* pix_fmt_desc = NULL;
 
   av_log(ctx, AV_LOG_VERBOSE, "kahawai_write_header triggered\n");
 
@@ -124,7 +125,7 @@ static int kahawai_write_header(AVFormatContext* ctx) {
   ops_tx.height = s->height = ctx->streams[0]->codecpar->height;
 
   s->pixel_format = ctx->streams[0]->codecpar->format;
-  const AVPixFmtDescriptor* pix_fmt_desc = av_pix_fmt_desc_get(s->pixel_format);
+  av_pix_fmt_desc_get(s->pixel_format);
 
   switch (s->pixel_format) {
     case AV_PIX_FMT_YUV422P10LE:
@@ -205,6 +206,9 @@ static int kahawai_write_header(AVFormatContext* ctx) {
 
 static int kahawai_write_packet(AVFormatContext* ctx, AVPacket* pkt) {
   KahawaiMuxerContext* s = ctx->priv_data;
+  uint8_t* data[4] = {NULL};
+  int linesize[4] = {0};
+  const AVPixFmtDescriptor* pix_fmt_desc = NULL;
 
   av_log(ctx, AV_LOG_VERBOSE, "kahawai_write_packet triggered\n");
   s->frame = st20p_tx_get_frame(s->tx_handle);
@@ -229,9 +233,7 @@ static int kahawai_write_packet(AVFormatContext* ctx, AVPacket* pkt) {
     return AVERROR(EIO);
   }
 
-  uint8_t* data[4];
-  int linesize[4];
-  const AVPixFmtDescriptor* pix_fmt_desc = av_pix_fmt_desc_get(s->pixel_format);
+  pix_fmt_desc = av_pix_fmt_desc_get(s->pixel_format);
 
   switch (s->pixel_format) {
     case AV_PIX_FMT_YUV422P10LE:
@@ -243,8 +245,9 @@ static int kahawai_write_packet(AVFormatContext* ctx, AVPacket* pkt) {
     case AV_PIX_FMT_RGB24:
       av_image_fill_arrays(data, linesize, pkt->data, s->pixel_format, s->width,
                            s->height, 1);
-      av_image_copy(s->frame->addr, s->frame->linesize, data, linesize, s->pixel_format,
-                    s->width, s->height);
+      av_image_copy((uint8_t**)s->frame->addr, (int*)s->frame->linesize,
+                    (const uint8_t**)data, linesize, s->pixel_format, s->width,
+                    s->height);
       break;
     default:
       av_log(ctx, AV_LOG_ERROR, "Unsupported pixel format: %s.\n", pix_fmt_desc->name);

@@ -259,6 +259,12 @@ ST: * *    E N D    S T A T E   * *
 
 This project also provide many loop test(1 port as tx, 1 port as rx) config file , pls refer to [loop config](../tests/script/).
 
+If it failed to run the sample, please help to collect the system setup status by `status_report.sh` and shared the log for further analyses.
+
+```bash
+./script/status_report.sh
+```
+
 ### 5.3 Available parameters in sample app
 
 ```bash

@@ -22,6 +22,9 @@
 #define MT_TX_MEMPOOL_PREFIX "T_"
 #define MT_RX_MEMPOOL_PREFIX "R_"
 
+/* set to 1 to enable the simulated test */
+#define MT_DEV_SIMULATE_MALICIOUS_PKT (0)
+
 int mt_dev_get_socket(const char* port);
 
 int mt_dev_init(struct mtl_init_params* p, struct mt_kport_info* kport_info);
@@ -42,6 +45,7 @@ int mt_dev_put_tx_queue(struct mtl_main_impl* impl, struct mt_tx_queue* queue);
 static inline uint16_t mt_dev_tx_queue_id(struct mt_tx_queue* queue) {
   return queue->queue_id;
 }
+int mt_dev_tx_queue_fatal_error(struct mtl_main_impl* impl, struct mt_tx_queue* queue);
 int mt_dev_set_tx_bps(struct mtl_main_impl* impl, enum mtl_port port, uint16_t q,
                       uint64_t bytes_per_sec);
 int mt_dev_flush_tx_queue(struct mtl_main_impl* impl, struct mt_tx_queue* queue,

@@ -37,6 +37,20 @@ static int app_tx_st20p_frame_available(void* priv) {
   return 0;
 }
 
+static int app_tx_st20p_notify_event(void* priv, enum st_event event, void* args) {
+  struct st_app_tx_st20p_session* s = priv;
+  if (event == ST_EVENT_VSYNC) {
+    struct st10_vsync_meta* meta = args;
+    info("%s(%d), epoch %" PRIu64 "\n", __func__, s->idx, meta->epoch);
+  } else if (event == ST_EVENT_FATAL_ERROR) {
+    err("%s(%d), ST_EVENT_FATAL_ERROR\n", __func__, s->idx);
+    /* add a exist routine */
+  } else if (event == ST_EVENT_RECOVERY_ERROR) {
+    info("%s(%d), ST_EVENT_RECOVERY_ERROR\n", __func__, s->idx);
+  }
+  return 0;
+}
+
 static void app_tx_st20p_build_frame(struct st_app_tx_st20p_session* s,
                                      struct st_frame* frame) {
   if (s->st20p_frame_cursor + s->st20p_frame_size > s->st20p_source_end) {
@@ -264,6 +278,7 @@ static int app_tx_st20p_init(struct st_app_context* ctx, st_json_st20p_session_t
   ops.notify_frame_available = app_tx_st20p_frame_available;
   ops.start_vrx = ctx->tx_start_vrx;
   ops.pad_interval = ctx->tx_pad_interval;
+  ops.notify_event = app_tx_st20p_notify_event;
   if (ctx->tx_no_static_pad) ops.flags |= ST20P_TX_FLAG_DISABLE_STATIC_PAD_P;
   if (st20p && st20p->enable_rtcp) ops.flags |= ST20P_TX_FLAG_ENABLE_RTCP;
 
