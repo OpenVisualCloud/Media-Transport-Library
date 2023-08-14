@@ -479,7 +479,7 @@ static void test_st20p_rx_frame_thread(void* args) {
     }
     if (i >= TEST_SHA_HIST_NUM) {
       test_sha_dump("st20p_rx_error_sha", sha);
-      s->fail_cnt++;
+      s->sha_fail_cnt++;
     }
     /* directly put */
     st20p_rx_put_frame((st20p_rx_handle)handle, frame);
@@ -569,7 +569,7 @@ static void test_internal_st20p_rx_frame_thread(void* args) {
     }
     if (i >= TEST_SHA_HIST_NUM) {
       test_sha_dump("st20p_rx_error_sha", result);
-      s->fail_cnt++;
+      s->sha_fail_cnt++;
     }
     /* directly put */
     st20p_rx_put_frame((st20p_rx_handle)handle, frame);
@@ -1056,7 +1056,7 @@ static void st20p_rx_digest_test(enum st_fps fps[], int width[], int height[],
       EXPECT_LE(test_ctx_rx[i]->incomplete_frame_cnt, 4);
     else
       EXPECT_LE(test_ctx_rx[i]->incomplete_frame_cnt, 2);
-    EXPECT_EQ(test_ctx_rx[i]->fail_cnt, 0);
+    EXPECT_EQ(test_ctx_rx[i]->sha_fail_cnt, 0);
     EXPECT_LE(test_ctx_rx[i]->user_meta_fail_cnt, 2);
     if (para->check_fps) {
       if (para->fail_interval || para->timeout_interval) {
