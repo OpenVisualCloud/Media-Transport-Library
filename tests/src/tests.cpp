@@ -643,7 +643,7 @@ void sha_frame_check(void* args) {
       }
       if (i >= TEST_SHA_HIST_NUM) {
         test_sha_dump("rx_error_sha", result);
-        ctx->fail_cnt++;
+        ctx->sha_fail_cnt++;
       }
       ctx->check_sha_frame_cnt++;
       st_test_free(frame);
