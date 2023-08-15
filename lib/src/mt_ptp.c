@@ -1214,8 +1214,9 @@ static int ptp_stat(void* priv) {
 
   if (ptp->stat_delta_cnt) {
     if (ptp->phc2sys_active) {
-      notice("PTP(%d): system clock offset max %" PRId64 "\n", port,
-             ptp->phc2sys.stat_delta_max);
+      notice("PTP(%d): system clock offset max %" PRId64 ", %s\n", port,
+             ptp->phc2sys.stat_delta_max,
+             ptp->phc2sys.stat_sync ? "synchronized" : "not synchronized");
     }
     notice("PTP(%d): delta avg %" PRId64 ", min %" PRId64 ", max %" PRId64 ", cnt %d\n",
            port, ptp->stat_delta_sum / ptp->stat_delta_cnt, ptp->stat_delta_min,
