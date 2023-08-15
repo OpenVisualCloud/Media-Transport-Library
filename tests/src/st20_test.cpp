@@ -1842,7 +1842,7 @@ static void st20_rx_digest_test(enum st20_type tx_type[], enum st20_type rx_type
 
     test_ctx_tx[i]->idx = i;
     test_ctx_tx[i]->ctx = ctx;
-    test_ctx_tx[i]->fb_cnt = enable_rtcp ? TEST_MAX_SHA_HIST_NUM : TEST_SHA_HIST_NUM;
+    test_ctx_tx[i]->fb_cnt = TEST_SHA_HIST_NUM;
     test_ctx_tx[i]->fb_idx = 0;
     test_ctx_tx[i]->check_sha = true;
     memset(&ops_tx, 0, sizeof(ops_tx));
