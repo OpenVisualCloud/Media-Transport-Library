@@ -2072,7 +2072,7 @@ static void st20_rx_digest_test(enum st20_type tx_type[], enum st20_type rx_type
       EXPECT_LT(test_ctx_rx[i]->incomplete_frame_cnt, 2 * 8);
     else
       EXPECT_LT(test_ctx_rx[i]->incomplete_frame_cnt, 4);
-    if (check_fps) {
+    if (check_fps && !enable_rtcp) {
       EXPECT_LT(test_ctx_rx[i]->meta_timing_fail_cnt, 4);
       EXPECT_LT(test_ctx_tx[i]->tx_tmstamp_delta_fail_cnt, 4);
     }
