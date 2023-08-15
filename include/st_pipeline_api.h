@@ -406,6 +406,12 @@ enum st22_quality_mode {
  * If enable the rtcp.
  */
 #define ST20P_TX_FLAG_ENABLE_RTCP (MTL_BIT32(7))
+/**
+ * Flag bit in flags of struct st20p_tx_ops.
+ * Set this flag to set rtp timestamp at the time of the first packet egresses from the
+ * sender.
+ */
+#define ST20P_TX_FLAG_RTP_TIMESTAMP_FIRST_PKT (MTL_BIT32(8))
 
 /**
  * Flag bit in flags of struct st22p_rx_ops, for non MTL_PMD_DPDK_USER.
@@ -686,6 +692,7 @@ struct st20p_tx_ops {
    * Valid if ST20P_TX_FLAG_USER_P(R)_MAC is enabled
    */
   uint8_t tx_dst_mac[MTL_SESSION_PORT_MAX][MTL_MAC_ADDR_LEN];
+
   /**
    * The start vrx buffer.
    * Leave to zero if not know detail, lib will assign a start value of vrx(narrow) based
@@ -698,6 +705,18 @@ struct st20p_tx_ops {
    * Leave to zero if not know detail, lib will train the interval in the initial routine.
    */
   uint16_t pad_interval;
+  /**
+   * The rtp timestamp delta(us) to the start time of frame.
+   * Zero means the rtp timestamp at the start of the frame.
+   */
+  int32_t rtp_timestamp_delta_us;
+
+  /**
+   * the time for lib to detect the hang on the tx queue and try to recovery
+   * Leave to zero system will use the default value(1s).
+   */
+  uint32_t tx_hang_detect_ms;
+
   /** Session resolution width */
   uint32_t width;
   /** Session resolution height */

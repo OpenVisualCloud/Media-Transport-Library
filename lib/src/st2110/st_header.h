@@ -454,7 +454,7 @@ struct st_rx_video_ebu_info {
   uint32_t c_max_wide_pass;
   uint32_t vrx_full_narrow_pass;
   uint32_t vrx_full_wide_pass;
-  uint32_t rtp_offset_max_pass;
+  int32_t rtp_offset_max_pass;
 
   bool init;
 };
