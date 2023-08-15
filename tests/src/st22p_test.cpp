@@ -632,7 +632,7 @@ static void test_st22p_rx_frame_thread(void* args) {
     }
     if (i >= ST22_TEST_SHA_HIST_NUM) {
       test_sha_dump("st22p_rx_error_sha", sha);
-      s->fail_cnt++;
+      s->sha_fail_cnt++;
     }
     /* directly put */
     st22p_rx_put_frame((st22p_rx_handle)handle, frame);
@@ -902,7 +902,7 @@ static void st22p_rx_digest_test(enum st_fps fps[], int width[], int height[],
          test_ctx_rx[i]->fb_rec, framerate_rx[i], expect_framerate_rx[i]);
     EXPECT_GT(test_ctx_rx[i]->fb_rec, 0);
     EXPECT_EQ(test_ctx_rx[i]->incomplete_frame_cnt, 0);
-    EXPECT_EQ(test_ctx_rx[i]->fail_cnt, 0);
+    EXPECT_EQ(test_ctx_rx[i]->sha_fail_cnt, 0);
     if (para->check_fps) {
       if (para->fail_interval || para->timeout_interval) {
         EXPECT_NEAR(framerate_rx[i], expect_framerate_rx[i],

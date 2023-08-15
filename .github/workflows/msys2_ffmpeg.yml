@@ -24,14 +24,14 @@ jobs:
         shell: msys2 {0}        
     steps:
       - name: Harden Runner
-        uses: step-security/harden-runner@cba0d00b1fc9a034e1e642ea0f1103c282990604 # v2.5.0
+        uses: step-security/harden-runner@8ca2b8b2ece13480cda6dacd3511b49857a23c09 # v2.5.1
         with:
           egress-policy: audit
 
       - uses: actions/checkout@c85c95e3d7251135ab7dc9ce3241c5835cc595a9 # v3.5.3
       
       - id: ffmpeg_compose
-        uses: OpenVisualCloud/Media-Transport-Library@729424706b681e8ec27d535a58ebbc9a766b6694 # main
+        uses: OpenVisualCloud/Media-Transport-Library@3353bbff59b145c90774880f4e5d709e3d78b692 # main
         with:
           sys: ${{matrix.sys}}
           dpdk: ${{matrix.dpdk}}

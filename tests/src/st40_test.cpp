@@ -141,7 +141,7 @@ static void rx_handle_rtp(tests_context* s, struct st40_rfc8331_rtp_hdr* hdr) {
         !st40_check_parity_bits(payload_hdr->second_hdr_chunk.sdid) ||
         !st40_check_parity_bits(payload_hdr->second_hdr_chunk.data_count)) {
       err("anc RTP checkParityBits for payload hdr error\n");
-      s->fail_cnt++;
+      s->rx_meta_fail_cnt++;
       return;
     }
     int udw_size = payload_hdr->second_hdr_chunk.data_count & 0xff;
@@ -152,7 +152,7 @@ static void rx_handle_rtp(tests_context* s, struct st40_rfc8331_rtp_hdr* hdr) {
     payload_hdr->swaped_second_hdr_chunk = htonl(payload_hdr->swaped_second_hdr_chunk);
     if (checksum !=
         st40_calc_checksum(3 + udw_size, (uint8_t*)&payload_hdr->second_hdr_chunk)) {
-      s->fail_cnt++;
+      s->sha_fail_cnt++;
       return;
     }
     // get payload
@@ -163,7 +163,7 @@ static void rx_handle_rtp(tests_context* s, struct st40_rfc8331_rtp_hdr* hdr) {
       data = st40_get_udw(i + 3, (uint8_t*)&payload_hdr->second_hdr_chunk);
       if (!st40_check_parity_bits(data)) {
         err("anc RTP checkParityBits for udw error\n");
-        s->fail_cnt++;
+        s->rx_meta_fail_cnt++;
       }
       udw[i] = data & 0xff;
     }
@@ -603,7 +603,8 @@ static void st40_rx_fps_test(enum st40_type type[], enum st_fps fps[],
     info("%s, session %d fb_rec %d framerate %f\n", __func__, i, test_ctx_rx[i]->fb_rec,
          framerate[i]);
     EXPECT_NEAR(framerate[i], expect_framerate[i], expect_framerate[i] * 0.1);
-    EXPECT_LE(test_ctx_rx[i]->fail_cnt, 2);
+    EXPECT_LE(test_ctx_rx[i]->sha_fail_cnt, 2);
+    EXPECT_LE(test_ctx_rx[i]->rx_meta_fail_cnt, 2);
     ret = st40_tx_free(tx_handle[i]);
     EXPECT_GE(ret, 0);
     ret = st40_rx_free(rx_handle[i]);

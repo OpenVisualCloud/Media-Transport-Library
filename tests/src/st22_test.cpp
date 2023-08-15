@@ -916,7 +916,7 @@ static void st22_rx_after_start_test(enum st_fps fps[], int width[], int height[
       info("%s, session %d fb_rec %d framerate %f\n", __func__, i, test_ctx_rx[i]->fb_rec,
            framerate[i]);
       EXPECT_NEAR(framerate[i], expect_framerate[i], expect_framerate[i] * 0.1);
-      EXPECT_LT(test_ctx_rx[i]->fail_cnt, 2);  // the first frame may be incompleted
+      EXPECT_LT(test_ctx_rx[i]->sha_fail_cnt, 2);  // the first frame may be incomplete
       ret = st22_rx_free(rx_handle[i]);
       EXPECT_GE(ret, 0);
     }
@@ -1152,7 +1152,7 @@ static void st22_digest_rx_frame_check(void* args) {
       }
       if (i >= ST22_TEST_SHA_HIST_NUM) {
         test_sha_dump("st22_rx_error_sha", result);
-        ctx->fail_cnt++;
+        ctx->sha_fail_cnt++;
       }
       ctx->check_sha_frame_cnt++;
       st22_rx_put_framebuff((st22_rx_handle)ctx->handle, frame);
@@ -1347,7 +1347,7 @@ static void st22_rx_digest_test(enum st_fps fps[], int width[], int height[],
     info("%s, session %d fb_rec %d framerate %f\n", __func__, i, test_ctx_rx[i]->fb_rec,
          framerate[i]);
     EXPECT_NEAR(framerate[i], expect_framerate[i], expect_framerate[i] * 0.1);
-    EXPECT_EQ(test_ctx_rx[i]->fail_cnt, 0);
+    EXPECT_EQ(test_ctx_rx[i]->sha_fail_cnt, 0);
     EXPECT_EQ(test_ctx_rx[i]->incomplete_frame_cnt, 0);
     ret = st22_tx_free(tx_handle[i]);
     EXPECT_GE(ret, 0);

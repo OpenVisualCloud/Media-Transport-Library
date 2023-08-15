@@ -191,7 +191,10 @@ class tests_context {
   uint8_t* frame_buf[TEST_MAX_SHA_HIST_NUM] = {};
   uint16_t lines_ready[TEST_MAX_SHA_HIST_NUM] = {};
   bool check_sha = false;
-  int fail_cnt = 0; /* fail as sha or wrong status, etc. */
+  int sha_fail_cnt = 0; /* fail as sha check fail */
+  int tx_tmstamp_delta_fail_cnt = 0;
+  int rx_meta_fail_cnt = 0;
+  int rx_field_fail_cnt = 0;
   int incomplete_frame_cnt = 0;
   int meta_timing_fail_cnt = 0;
   int incomplete_slice_cnt = 0;

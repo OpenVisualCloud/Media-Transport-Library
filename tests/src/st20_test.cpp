@@ -181,7 +181,7 @@ static int tx_notify_frame_done_check_tmstamp(void* priv, uint16_t frame_idx,
       int delta = meta->timestamp - ctx->rtp_tmstamp;
       if (tmstamp_delta_to_fps(delta) != meta->fps) {
         dbg("fail delta: %d\n", delta);
-        ctx->fail_cnt++;
+        ctx->tx_tmstamp_delta_fail_cnt++;
       }
       ctx->rtp_tmstamp = meta->timestamp;
     }
@@ -820,7 +820,7 @@ static void st20_tx_fps_test(enum st20_type type[], enum st_fps fps[], int width
   EXPECT_GE(ret, 0);
   for (int i = 0; i < sessions; i++) {
     EXPECT_GT(test_ctx[i]->fb_send, 0);
-    EXPECT_LE(test_ctx[i]->fail_cnt, 1);
+    EXPECT_LE(test_ctx[i]->tx_tmstamp_delta_fail_cnt, 1);
     info("%s, session %d fb_send %d framerate %f\n", __func__, i, test_ctx[i]->fb_send,
          framerate[i]);
     EXPECT_NEAR(framerate[i], expect_framerate[i], expect_framerate[i] * 0.1);
@@ -1744,7 +1744,7 @@ static void st20_digest_rx_frame_check(void* args) {
       }
       if (i >= TEST_SHA_HIST_NUM) {
         test_sha_dump("st20_rx_error_sha", result);
-        ctx->fail_cnt++;
+        ctx->sha_fail_cnt++;
       }
       ctx->check_sha_frame_cnt++;
       st20_rx_put_framebuff((st20_rx_handle)ctx->handle, frame);
@@ -1777,12 +1777,12 @@ static void st20_digest_rx_field_check(void* args) {
       }
       if (i >= TEST_SHA_HIST_NUM) {
         test_sha_dump("st20_rx_error_sha", result);
-        ctx->fail_cnt++;
+        ctx->sha_fail_cnt++;
       }
       bool expect_second_field = i % 2 ? true : false;
       if (expect_second_field != second_field) {
         test_sha_dump("field split error", result);
-        ctx->fail_cnt++;
+        ctx->rx_field_fail_cnt++;
       }
       ctx->check_sha_frame_cnt++;
       st20_rx_put_framebuff((st20_rx_handle)ctx->handle, frame);
@@ -2074,12 +2074,13 @@ static void st20_rx_digest_test(enum st20_type tx_type[], enum st20_type rx_type
       EXPECT_LT(test_ctx_rx[i]->incomplete_frame_cnt, 4);
     if (check_fps) {
       EXPECT_LT(test_ctx_rx[i]->meta_timing_fail_cnt, 4);
+      EXPECT_LT(test_ctx_tx[i]->tx_tmstamp_delta_fail_cnt, 4);
     }
     EXPECT_EQ(test_ctx_rx[i]->incomplete_slice_cnt, 0);
     if (rx_type[i] == ST20_TYPE_FRAME_LEVEL)
-      EXPECT_EQ(test_ctx_rx[i]->fail_cnt, 0);
+      EXPECT_EQ(test_ctx_rx[i]->sha_fail_cnt, 0);
     else
-      EXPECT_LE(test_ctx_rx[i]->fail_cnt, 2);
+      EXPECT_LE(test_ctx_rx[i]->sha_fail_cnt, 2);
     info("%s, session %d fb_rec %d framerate %f fb_send %d\n", __func__, i,
          test_ctx_rx[i]->fb_rec, framerate[i], test_ctx_tx[i]->fb_send);
     if (rx_type[i] == ST20_TYPE_SLICE_LEVEL) {
@@ -2696,17 +2697,17 @@ static int st20_rx_meta_frame_ready(void* priv, void* frame,
 
   ctx->fb_rec++;
   if (!ctx->start_time) ctx->start_time = st_test_get_monotonic_time();
-  if (expect_meta->width != meta->width) ctx->fail_cnt++;
-  if (expect_meta->height != meta->height) ctx->fail_cnt++;
-  if (expect_meta->fps != meta->fps) ctx->fail_cnt++;
-  if (expect_meta->fmt != meta->fmt) ctx->fail_cnt++;
-  if (expect_meta->timestamp == meta->timestamp) ctx->fail_cnt++;
+  if (expect_meta->width != meta->width) ctx->rx_meta_fail_cnt++;
+  if (expect_meta->height != meta->height) ctx->rx_meta_fail_cnt++;
+  if (expect_meta->fps != meta->fps) ctx->rx_meta_fail_cnt++;
+  if (expect_meta->fmt != meta->fmt) ctx->rx_meta_fail_cnt++;
+  if (expect_meta->timestamp == meta->timestamp) ctx->rx_meta_fail_cnt++;
   expect_meta->timestamp = meta->timestamp;
   if (!st_is_frame_complete(meta->status)) {
     ctx->incomplete_frame_cnt++;
-    if (meta->frame_total_size <= meta->frame_recv_size) ctx->fail_cnt++;
+    if (meta->frame_total_size <= meta->frame_recv_size) ctx->rx_meta_fail_cnt++;
   } else {
-    if (meta->frame_total_size != meta->frame_recv_size) ctx->fail_cnt++;
+    if (meta->frame_total_size != meta->frame_recv_size) ctx->rx_meta_fail_cnt++;
   }
   st20_rx_put_framebuff((st20_rx_handle)ctx->handle, frame);
 
@@ -2853,7 +2854,8 @@ static void st20_rx_meta_test(enum st_fps fps[], int width[], int height[],
     float expect_incomplete_frame_cnt = test_ctx_rx[i]->fb_rec / 2;
     EXPECT_NEAR(test_ctx_rx[i]->incomplete_frame_cnt, expect_incomplete_frame_cnt,
                 expect_incomplete_frame_cnt * 0.1);
-    EXPECT_EQ(test_ctx_rx[i]->fail_cnt, 0);
+    EXPECT_EQ(test_ctx_rx[i]->sha_fail_cnt, 0);
+    EXPECT_EQ(test_ctx_rx[i]->rx_meta_fail_cnt, 0);
     info("%s, session %d fb_rec %d fb_incomplete %d framerate %f\n", __func__, i,
          test_ctx_rx[i]->fb_rec, test_ctx_rx[i]->incomplete_frame_cnt, framerate[i]);
     EXPECT_NEAR(framerate[i], expect_framerate[i], expect_framerate[i] * 0.1);
@@ -3296,9 +3298,9 @@ static void st20_rx_uframe_test(enum st20_type rx_type[], enum st20_packing pack
     EXPECT_LT(test_ctx_rx[i]->incomplete_frame_cnt, 2);
     EXPECT_EQ(test_ctx_rx[i]->incomplete_slice_cnt, 0);
     if (rx_type[i] == ST20_TYPE_FRAME_LEVEL)
-      EXPECT_EQ(test_ctx_rx[i]->fail_cnt, 0);
+      EXPECT_EQ(test_ctx_rx[i]->sha_fail_cnt, 0);
     else
-      EXPECT_LE(test_ctx_rx[i]->fail_cnt, 2);
+      EXPECT_LE(test_ctx_rx[i]->sha_fail_cnt, 2);
     info("%s, session %d fb_rec %d framerate %f\n", __func__, i, test_ctx_rx[i]->fb_rec,
          framerate[i]);
     if (rx_type[i] == ST20_TYPE_SLICE_LEVEL) {
@@ -3593,9 +3595,9 @@ static void st20_rx_detect_test(enum st20_type tx_type[], enum st20_type rx_type
       EXPECT_LT(test_ctx_rx[i]->incomplete_frame_cnt, 2 * 2);
     EXPECT_EQ(test_ctx_rx[i]->incomplete_slice_cnt, 0);
     if (rx_type[i] == ST20_TYPE_FRAME_LEVEL)
-      EXPECT_EQ(test_ctx_rx[i]->fail_cnt, 0);
+      EXPECT_EQ(test_ctx_rx[i]->sha_fail_cnt, 0);
     else
-      EXPECT_LE(test_ctx_rx[i]->fail_cnt, 2);
+      EXPECT_LE(test_ctx_rx[i]->sha_fail_cnt, 2);
     info("%s, session %d fb_rec %d framerate %f\n", __func__, i, test_ctx_rx[i]->fb_rec,
          framerate[i]);
     if (rx_type[i] == ST20_TYPE_SLICE_LEVEL) {
@@ -4115,7 +4117,7 @@ static void st20_tx_ext_frame_rx_digest_test(enum st20_packing packing[],
 
     EXPECT_LE(test_ctx_rx[i]->incomplete_frame_cnt, 4);
     EXPECT_EQ(test_ctx_rx[i]->incomplete_slice_cnt, 0);
-    EXPECT_EQ(test_ctx_rx[i]->fail_cnt, 0);
+    EXPECT_EQ(test_ctx_rx[i]->sha_fail_cnt, 0);
     info("%s, session %d fb_rec %d framerate %f fb_send %d\n", __func__, i,
          test_ctx_rx[i]->fb_rec, framerate[i], test_ctx_tx[i]->fb_send);
     if (check_fps) {
@@ -4377,7 +4379,7 @@ static void st20_tx_user_pacing_test(int width[], int height[], enum st20_fmt fm
     EXPECT_GT(test_ctx_rx[i]->fb_rec, 0);
     EXPECT_GT(test_ctx_rx[i]->check_sha_frame_cnt, 0);
     EXPECT_LT(test_ctx_rx[i]->incomplete_frame_cnt, 2);
-    EXPECT_EQ(test_ctx_rx[i]->fail_cnt, 0);
+    EXPECT_EQ(test_ctx_rx[i]->sha_fail_cnt, 0);
 
     info("%s, session %d fb_rec %d framerate %f\n", __func__, i, test_ctx_rx[i]->fb_rec,
          rx_framerate[i]);
@@ -4663,7 +4665,7 @@ static void st20_linesize_digest_test(enum st20_packing packing[], enum st_fps f
 
     EXPECT_LT(test_ctx_rx[i]->incomplete_frame_cnt, 2);
     EXPECT_EQ(test_ctx_rx[i]->incomplete_slice_cnt, 0);
-    EXPECT_EQ(test_ctx_rx[i]->fail_cnt, 0);
+    EXPECT_EQ(test_ctx_rx[i]->sha_fail_cnt, 0);
     info("%s, session %d fb_rec %d framerate %f fb_send %d\n", __func__, i,
          test_ctx_rx[i]->fb_rec, framerate[i], test_ctx_tx[i]->fb_send);
     if (check_fps) {

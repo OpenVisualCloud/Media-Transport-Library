@@ -145,7 +145,7 @@ static void rx_get_packet(void* args) {
       }
       if (i >= TEST_SHA_HIST_NUM) {
         test_sha_dump("st30_rx_error_sha", result);
-        ctx->fail_cnt++;
+        ctx->sha_fail_cnt++;
       }
       ctx->check_sha_frame_cnt++;
     }
@@ -170,7 +170,7 @@ static int st30_rx_frame_ready(void* priv, void* frame, struct st30_rx_frame_met
     }
     if (i >= TEST_SHA_HIST_NUM) {
       test_sha_dump("st30_rx_error_sha", result);
-      ctx->fail_cnt++;
+      ctx->sha_fail_cnt++;
     }
     ctx->check_sha_frame_cnt++;
   }
@@ -570,7 +570,7 @@ static void st30_rx_fps_test(enum st30_type type[], enum st30_sampling sample[],
   EXPECT_GE(ret, 0);
   for (int i = 0; i < sessions; i++) {
     EXPECT_GT(test_ctx_rx[i]->fb_rec, 0);
-    EXPECT_LE(test_ctx_rx[i]->fail_cnt, 2);
+    EXPECT_LE(test_ctx_rx[i]->sha_fail_cnt, 2);
     if (check_sha) {
       EXPECT_GT(test_ctx_rx[i]->check_sha_frame_cnt, 0);
     }
@@ -1065,10 +1065,10 @@ static int st30_rx_meta_frame_ready(void* priv, void* frame,
 
   ctx->fb_rec++;
   if (!ctx->start_time) ctx->start_time = st_test_get_monotonic_time();
-  if (expect_meta->sampling != meta->sampling) ctx->fail_cnt++;
-  if (expect_meta->channel != meta->channel) ctx->fail_cnt++;
-  if (expect_meta->fmt != meta->fmt) ctx->fail_cnt++;
-  if (expect_meta->timestamp == meta->timestamp) ctx->fail_cnt++;
+  if (expect_meta->sampling != meta->sampling) ctx->rx_meta_fail_cnt++;
+  if (expect_meta->channel != meta->channel) ctx->rx_meta_fail_cnt++;
+  if (expect_meta->fmt != meta->fmt) ctx->rx_meta_fail_cnt++;
+  if (expect_meta->timestamp == meta->timestamp) ctx->rx_meta_fail_cnt++;
   expect_meta->timestamp = meta->timestamp;
 
   st30_rx_put_framebuff((st30_rx_handle)ctx->handle, frame);
@@ -1223,8 +1223,9 @@ static void st30_rx_meta_test(enum st30_fmt fmt[], enum st30_sampling sampling[]
   for (int i = 0; i < sessions; i++) {
     EXPECT_GT(test_ctx_rx[i]->fb_rec, 0);
     info("%s, session %d fb_rec %d fail %d framerate %f, fb send %d\n", __func__, i,
-         test_ctx_rx[i]->fb_rec, test_ctx_rx[i]->fail_cnt, framerate[i],
+         test_ctx_rx[i]->fb_rec, test_ctx_rx[i]->rx_meta_fail_cnt, framerate[i],
          test_ctx_tx[i]->fb_send);
+    EXPECT_LE(test_ctx_rx[i]->rx_meta_fail_cnt, 2);
     EXPECT_NEAR(framerate[i], expect_framerate, expect_framerate * 0.1);
     ret = st30_tx_free(tx_handle[i]);
     EXPECT_GE(ret, 0);
