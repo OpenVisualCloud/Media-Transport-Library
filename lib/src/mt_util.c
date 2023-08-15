@@ -380,9 +380,12 @@ struct rte_mempool* mt_mempool_create_by_ops(struct mtl_main_impl* impl,
   if (cache_size && (element_size % cache_size)) { /* align to cache size */
     element_size = (element_size / cache_size + 1) * cache_size;
   }
+  char name_with_idx[32];
+  snprintf(name_with_idx, sizeof(name_with_idx), "%s_%d", name, impl->mempool_idx++);
   uint16_t data_room_size = element_size + MT_MBUF_HEADROOM_SIZE; /* include head room */
-  struct rte_mempool* mbuf_pool = rte_pktmbuf_pool_create_by_ops(
-      name, n, cache_size, priv_size, data_room_size, mt_socket_id(impl, port), ops_name);
+  struct rte_mempool* mbuf_pool =
+      rte_pktmbuf_pool_create_by_ops(name_with_idx, n, cache_size, priv_size,
+                                     data_room_size, mt_socket_id(impl, port), ops_name);
   if (!mbuf_pool) {
     err("%s(%d), fail(%s) for %s, n %u\n", __func__, port, rte_strerror(rte_errno), name,
         n);

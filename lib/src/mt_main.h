@@ -963,6 +963,7 @@ struct mtl_main_impl {
   uint16_t pkt_udp_suggest_max_size;
   uint16_t rx_pool_data_size;
   uint32_t sch_schedule_ns;
+  int mempool_idx;
 };
 
 static inline struct mtl_init_params* mt_get_user_params(struct mtl_main_impl* impl) {
