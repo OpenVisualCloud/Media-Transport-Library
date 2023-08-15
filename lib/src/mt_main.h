@@ -119,8 +119,13 @@ enum mt_port_type {
   MT_PORT_AF_XDP,
 };
 
+enum mt_rl_type {
+  MT_RL_TYPE_NONE = 0,
+  MT_RL_TYPE_TM, /* RL based on RTE Generic Traffic Manager*/
+};
+
 enum mt_driver_type {
-  MT_DRV_ERR = 0,
+  MT_DRV_DEFAULT = 0,
   MT_DRV_ICE,       /* ice pf, net_ice */
   MT_DRV_I40E,      /* flv pf, net_i40e */
   MT_DRV_IAVF,      /* IA vf, net_iavf */
@@ -564,6 +569,7 @@ struct mt_dev_driver_info {
   enum mt_port_type port_type;
   enum mt_driver_type drv_type;
   enum mt_flow_type flow_type;
+  enum mt_rl_type rl_type;
   /* use rte_eth_dev_set_mc_addr_list instead of rte_eth_dev_mac_addr_add for multicast */
   bool use_mc_addr_list;
   /* no rte_eth_stats_reset support */

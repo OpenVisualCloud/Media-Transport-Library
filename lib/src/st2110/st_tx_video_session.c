@@ -2878,7 +2878,6 @@ static int tv_attach(struct mtl_main_impl* impl, struct st_tx_video_sessions_mgr
     } else {
       s->mbuf_mempool_reuse_rx[i] = false;
     }
-    s->last_burst_succ_time_tsc[i] = mt_get_tsc(impl);
   }
   s->tx_mono_pool = mt_has_tx_mono_pool(impl);
   /* manually disable chain or any port can't support chain */
@@ -2966,6 +2965,7 @@ static int tv_attach(struct mtl_main_impl* impl, struct st_tx_video_sessions_mgr
     s->trs_inflight_num2[i] = 0;
     s->trs_pad_inflight_num[i] = 0;
     s->trs_target_tsc[i] = 0;
+    s->last_burst_succ_time_tsc[i] = mt_get_tsc(impl);
   }
 
   s->active = true;
