@@ -492,15 +492,11 @@ static void ptp_adjust_delta(struct mt_ptp_impl* ptp, int64_t delta, bool error_
 
 static void ptp_delay_req_read_tx_time_handler(void* param) {
   struct mt_ptp_impl* ptp = param;
-  struct timespec ts;
-  uint16_t port_id = ptp->port_id;
   uint64_t tx_ns = 0;
   int ret;
-  ptp_timesync_lock(ptp);
-  ret = rte_eth_timesync_read_tx_timestamp(port_id, &ts);
-  ptp_timesync_unlock(ptp);
+  
+  ret = ptp_timesync_read_tx_time(ptp, &tx_ns);
   if (ret >= 0) {
-    tx_ns = mt_timespec_to_ns(&ts);
     ptp->t3 = tx_ns;
   } else {
     if (!ptp->t4) rte_eal_alarm_set(5, ptp_delay_req_read_tx_time_handler, ptp);
