@@ -83,7 +83,7 @@ Reboot the system to let the settings take effect.
 
 ## 2. NIC driver setup
 
-For Intel® E810 Series Ethernet Adapter, refer to [Intel® E810 Series Ethernet Adapter driver guide](e810.md). For other NIC, you may need follow the steps on the DPDK website <http://doc.dpdk.org/guides/nics/overview.html>.
+For Intel® E810 Series Ethernet Adapter, refer to [Intel® E810 Series Ethernet Adapter driver guide](e810.md). For other NIC, you may need follow the steps on the DPDK site <http://doc.dpdk.org/guides/nics/overview.html>.
 
 ## 3. Create VF and bind the driver to DPDK PMD
 
