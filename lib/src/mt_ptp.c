@@ -1023,6 +1023,7 @@ static int ptp_init(struct mtl_main_impl* impl, struct mt_ptp_impl* ptp,
   struct rte_ether_addr mac;
   int ret;
   uint8_t* ip = &ptp->sip_addr[0];
+  struct mt_interface* inf = mt_if(impl, port);
 
   ret = rte_eth_macaddr_get(port_id, &mac);
   if (ret < 0) {
@@ -1062,7 +1063,8 @@ static int ptp_init(struct mtl_main_impl* impl, struct mt_ptp_impl* ptp,
   } else {
     ptp->master_addr_mode = MT_PTP_MULTICAST_ADDR;
   }
-  ptp->qbv_enabled = (ST21_TX_PACING_WAY_TSN == p->pacing);
+  ptp->qbv_enabled = ((ST21_TX_PACING_WAY_TSN == p->pacing) &&
+                      (MT_DRV_IGC == inf->drv_info.drv_type));
 
   ptp_stat_clear(ptp);
   ptp_coefficient_result_reset(ptp);
