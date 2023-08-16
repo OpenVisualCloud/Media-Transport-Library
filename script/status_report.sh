@@ -34,6 +34,10 @@ echo "Collect iommu_groups:" | tee -a "$SYS_INFO_OUT"
 find /sys/kernel/iommu_groups/ -maxdepth 1 -mindepth 1 -type d | tee -a "$SYS_INFO_OUT" > /dev/null
 echo "" | tee -a "$SYS_INFO_OUT" > /dev/null
 
+echo "Collect cpu info:" | tee -a "$SYS_INFO_OUT"
+lscpu | tee -a "$SYS_INFO_OUT" > /dev/null
+echo "" | tee -a "$SYS_INFO_OUT" > /dev/null
+
 echo "Collect ethernet interface info:"
 for iface in $(ip -o link show | awk -F': ' '{print $2}')
 do
