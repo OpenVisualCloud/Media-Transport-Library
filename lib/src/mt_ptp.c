@@ -494,7 +494,7 @@ static void ptp_delay_req_read_tx_time_handler(void* param) {
   struct mt_ptp_impl* ptp = param;
   uint64_t tx_ns = 0;
   int ret;
-  
+
   ret = ptp_timesync_read_tx_time(ptp, &tx_ns);
   if (ret >= 0) {
     ptp->t3 = tx_ns;
@@ -1063,8 +1063,8 @@ static int ptp_init(struct mtl_main_impl* impl, struct mt_ptp_impl* ptp,
   } else {
     ptp->master_addr_mode = MT_PTP_MULTICAST_ADDR;
   }
-  ptp->qbv_enabled = ((ST21_TX_PACING_WAY_TSN == p->pacing) &&
-                      (MT_DRV_IGC == inf->drv_info.drv_type));
+  ptp->qbv_enabled =
+      ((ST21_TX_PACING_WAY_TSN == p->pacing) && (MT_DRV_IGC == inf->drv_info.drv_type));
 
   ptp_stat_clear(ptp);
   ptp_coefficient_result_reset(ptp);

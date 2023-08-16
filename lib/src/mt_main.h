@@ -176,7 +176,7 @@ struct mt_ptp_impl {
   bool active; /* if the ptp stack is running */
   bool no_timesync;
   /*
-   * The flag indicates Qbv (IEEE 802.1Qbv) traffic shaper 
+   * The flag indicates Qbv (IEEE 802.1Qbv) traffic shaper
    * enable.
    *
    * The IEEE 802.1Qbv is designed to seperate traffics
