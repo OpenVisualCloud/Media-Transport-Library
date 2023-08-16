@@ -477,7 +477,7 @@ static int video_trs_launch_time_tasklet(struct mtl_main_impl* impl,
 
   /* check if any inflight pkts in transmitter */
   if (s->trs_inflight_num[s_port] > 0) {
-    tx = mt_txq_burst(s->queue[s_port],
+    tx = video_trs_burst(impl, s, s_port,
                       &s->trs_inflight[s_port][s->trs_inflight_idx[s_port]],
                       s->trs_inflight_num[s_port]);
 
@@ -524,7 +524,7 @@ static int video_trs_launch_time_tasklet(struct mtl_main_impl* impl,
       *RTE_MBUF_DYNFIELD(pkts[i], inf->tx_dynfield_offset, uint64_t*) = target_ptp;
     }
 
-    tx = mt_txq_burst(s->queue[s_port], &pkts[0], valid_bulk);
+    tx = video_trs_burst(impl, s, s_port, &pkts[0], valid_bulk);
     s->stat_pkts_burst += tx;
 
     if (tx < valid_bulk) {
