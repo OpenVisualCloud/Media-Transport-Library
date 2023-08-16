@@ -294,6 +294,9 @@ If it failed to run the sample, please help to collect the system setup status b
 --pacing_way <way>                   : debug option, set pacing way, available value: "auto", "rl", "tsc", "tsc_narrow", "ptp", "tsn".
 --shaping <shaping>                  : debug option, set st21 shaping type, available value: "narrow", "wide".
 --vrx <n>                            : debug option, set st21 vrx value, refer to st21 spec for possible vrx value.
+--ts_first_pkt                       : debug option, to set the st20 RTP timestamp at the time the first
+packet egresses from the sender.
+--ts_delta_us <n>                    : debug option, to set the st20 rtp timestamp delta(us) to the start time of frame.
 --mono_pool                          : debug option, use mono pool for all tx and rx queues(sessions).
 --tasklet_thread                     : debug option, run the tasklet under thread instead of a pinned lcore.
 --tasklet_sleep                      : debug option, enable sleep if all tasklet report done status.

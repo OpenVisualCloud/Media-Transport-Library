@@ -21,10 +21,18 @@ static int dev_if_free_rx_flow(struct mt_interface* inf, struct mt_rx_flow_rsp* 
 
 static const struct mt_dev_driver_info dev_drvs[] = {
     {
+        /* put the default at the first */
+        .name = "default",
+        .port_type = MT_PORT_PF,
+        .drv_type = MT_DRV_DEFAULT,
+        .flow_type = MT_FLOW_ALL, /* or MT_FLOW_NONE? */
+    },
+    {
         .name = "net_ice",
         .port_type = MT_PORT_PF,
         .drv_type = MT_DRV_ICE,
         .flow_type = MT_FLOW_ALL,
+        .rl_type = MT_RL_TYPE_TM,
     },
     {
         .name = "net_i40e",
@@ -37,6 +45,7 @@ static const struct mt_dev_driver_info dev_drvs[] = {
         .port_type = MT_PORT_VF,
         .drv_type = MT_DRV_IAVF,
         .flow_type = MT_FLOW_ALL,
+        .rl_type = MT_RL_TYPE_TM,
         .use_mc_addr_list = true,
     },
     {
@@ -80,8 +89,10 @@ static int parse_driver_info(const char* driver, struct mt_dev_driver_info* drv_
     }
   }
 
-  err("%s, unknown nic driver %s\n", __func__, driver);
-  return -EIO;
+  warn("%s, unknown nic driver %s, use the default drv info\n", __func__, driver);
+  warn("%s, use the default drv info, please add one item in dev_drvs array\n", __func__);
+  *drv_info = dev_drvs[0]; /* the default is always the first one in the arrays */
+  return 0;
 }
 
 static void dev_eth_xstat(uint16_t port_id) {
@@ -1700,6 +1711,7 @@ static int dev_if_init_tx_queues(struct mtl_main_impl* impl, struct mt_interface
 static int dev_if_init_pacing(struct mt_interface* inf) {
   enum mtl_port port = inf->port;
   int ret;
+  bool auto_detect = false;
 
   if (mt_shared_tx_queue(inf->parent, inf->port)) {
     info("%s(%d), use tsc as shared tx queue\n", __func__, port);
@@ -1707,8 +1719,24 @@ static int dev_if_init_pacing(struct mt_interface* inf) {
     return 0;
   }
 
-  if ((ST21_TX_PACING_WAY_AUTO == inf->tx_pacing_way) ||
-      (ST21_TX_PACING_WAY_RL == inf->tx_pacing_way)) {
+  /* pacing select for auto */
+  if (ST21_TX_PACING_WAY_AUTO == inf->tx_pacing_way) {
+    auto_detect = true;
+    if (inf->drv_info.rl_type != MT_RL_TYPE_NONE) {
+      info("%s(%d), try rl as drv support\n", __func__, port);
+      inf->tx_pacing_way = ST21_TX_PACING_WAY_RL;
+    } else {
+      info("%s(%d), use tsc as default\n", __func__, port);
+      inf->tx_pacing_way = ST21_TX_PACING_WAY_TSC;
+      return 0;
+    }
+  }
+
+  if (ST21_TX_PACING_WAY_RL == inf->tx_pacing_way) {
+    if (inf->drv_info.rl_type == MT_RL_TYPE_NONE) {
+      err("%s(%d), this port not support rl\n", __func__, port);
+      return -EINVAL;
+    }
     /* IAVF require all q config with RL */
     if (inf->drv_info.drv_type == MT_DRV_IAVF) {
       ret = dev_init_ratelimit_all(inf);
@@ -1717,15 +1745,13 @@ static int dev_if_init_pacing(struct mt_interface* inf) {
       if (ret >= 0) dev_tx_queue_set_rl_rate(inf, 0, 0);
     }
     if (ret < 0) { /* fallback to tsc if no rl */
-      if (ST21_TX_PACING_WAY_AUTO == inf->tx_pacing_way) {
+      if (auto_detect) {
         warn("%s(%d), fallback to tsc as rl init fail\n", __func__, port);
         inf->tx_pacing_way = ST21_TX_PACING_WAY_TSC;
       } else {
         err("%s(%d), rl init fail\n", __func__, port);
         return ret;
       }
-    } else {
-      inf->tx_pacing_way = ST21_TX_PACING_WAY_RL;
     }
   }
 
