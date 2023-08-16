@@ -1871,7 +1871,8 @@ struct mt_tx_queue* mt_dev_get_tx_queue(struct mtl_main_impl* impl, enum mtl_por
 
   mt_pthread_mutex_lock(&inf->tx_queues_mutex);
   for (uint16_t q = 0; q < inf->max_tx_queues; q++) {
-    if (ST21_TX_PACING_WAY_TSN == inf->tx_pacing_way) {
+    if ((ST21_TX_PACING_WAY_TSN == inf->tx_pacing_way) &&
+        (MT_DRV_IGC == inf->drv_info.drv_type)) {
       /*
        * igc corresponding network card i225/i226, implements TSN pacing based on
        * LaunchTime Tx feature. Currently, igc driver enables LaunchTime Tx feature
