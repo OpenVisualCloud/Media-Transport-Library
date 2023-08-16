@@ -12,9 +12,21 @@ ls -l /sys/kernel/iommu_groups/
 
 ### 1.1 Enable IOMMU(VT-D and VT-X) in BIOS
 
-If you are unsure how to enable IOMMU, I recommend referring to the support documentation or contacting the BIOS vendor for assistance. They can provide guidance on how to enable IOMMU in your specific BIOS setup.
+The steps to enable IOMMU in your BIOS/UEFI may vary depending on the manufacturer and model of your motherboard. Here are general steps that should guide you:
+
+```bash
+    1. Restart your computer. During the boot process, you'll need to press a specific key to enter the BIOS/UEFI setup. This key varies depending on your system's manufacturer. It's often one of the function keys (like F2, F10, F12), the ESC key, or the DEL key.
+
+    2. Navigate to the advanced settings. Once you're in the BIOS/UEFI setup menu, look for a section with a name like "Advanced", "Advanced Options", or "Advanced Settings".
+
+    3. Look for IOMMU setting. Within the advanced settings, look for an option related to IOMMU. It might be listed under CPU Configuration or Chipset Configuration, depending on your system. For Intel systems, it's typically labeled as "VT-d" (Virtualization Technology for Directed I/O). Once you've located the appropriate option, change the setting to "Enabled".
+
+    4. Save your changes and exit. There will typically be an option to "Save & Exit" or "Save Changes and Reset". Select this to save your changes and restart the computer.
+```
 
 ### 1.2 Enable IOMMU in kernel
+
+After enabling IOMMU in the BIOS, you need to enable it in your operating system as well.
 
 #### 1.2.1 Ubuntu/Debian
 
@@ -39,7 +51,7 @@ sudo grubby --update-kernel=ALL --args="intel_iommu=on iommu=pt"
 sudo reboot
 ```
 
-For non-intel device, contact vender for how enable iommu.
+For non-intel device, contact vender for how to enable iommu.
 
 ### 1.3 Double check iommu_groups is created by kernel after reboot
 
@@ -71,7 +83,7 @@ Reboot the system to let the settings take effect.
 
 ## 2. NIC driver setup
 
-For Intel® E810 Series Ethernet Adapter, refer to [Intel® E810 Series Ethernet Adapter driver guide](e810.md)
+For Intel® E810 Series Ethernet Adapter, refer to [Intel® E810 Series Ethernet Adapter driver guide](e810.md). For other NIC, you may need follow the steps on the DPDK website <http://doc.dpdk.org/guides/nics/overview.html>.
 
 ## 3. Create VF and bind the driver to DPDK PMD
 

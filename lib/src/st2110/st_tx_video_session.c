@@ -3042,6 +3042,11 @@ static void tv_stat(struct st_tx_video_sessions_mgr* mgr,
            s->stat_trans_troffset_mismatch);
     s->stat_trans_troffset_mismatch = 0;
   }
+  if (s->stat_trans_recalculate_warmup) {
+    notice("TX_VIDEO_SESSION(%d,%d): transmitter recalculate warmup %u\n", m_idx, idx,
+           s->stat_trans_recalculate_warmup);
+    s->stat_trans_recalculate_warmup = 0;
+  }
   if (s->stat_epoch_drop) {
     notice("TX_VIDEO_SESSION(%d,%d): epoch drop %u\n", m_idx, idx, s->stat_epoch_drop);
     s->stat_epoch_drop = 0;

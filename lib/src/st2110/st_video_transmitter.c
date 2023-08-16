@@ -86,17 +86,22 @@ static int video_trs_rl_warm_up(struct mtl_main_impl* impl,
                                 enum mtl_session_port s_port) {
   struct st_tx_video_pacing* pacing = &s->pacing;
   uint64_t target_ptp = s->trs_target_ptp[s_port];
+  uint64_t target_tsc = s->trs_target_tsc[s_port];
   uint64_t cur_tsc, pre_tsc;
   uint64_t cur_ptp;
   int32_t warm_pkts = pacing->warm_pkts;
   struct rte_mbuf* pads[1];
   int32_t delta_pkts;
   unsigned int tx;
+  bool warm_use_tsc = true;
 
   cur_tsc = mt_get_tsc(impl);
-  cur_ptp = mt_get_ptp_time(impl, MTL_PORT_P);
-  delta_pkts = (cur_ptp - target_ptp) / pacing->trs;
-  pre_tsc = cur_tsc;
+  if (warm_use_tsc) {
+    delta_pkts = ((double)cur_tsc - target_tsc) / pacing->trs;
+  } else {
+    cur_ptp = mt_get_ptp_time(impl, MTL_PORT_P);
+    delta_pkts = ((double)cur_ptp - target_ptp) / pacing->trs;
+  }
   warm_pkts -= delta_pkts;
   if (warm_pkts < 0) {
     dbg("%s(%d), mismatch timing with %d\n", __func__, s->idx, warm_pkts);
@@ -106,6 +111,7 @@ static int video_trs_rl_warm_up(struct mtl_main_impl* impl,
 
   dbg("%s(%d), send warm_pkts %d\n", __func__, s->idx, warm_pkts);
   pads[0] = s->pad[s_port][ST20_PKT_TYPE_NORMAL];
+  pre_tsc = cur_tsc;
   for (int i = 0; i < warm_pkts; i++) {
     rte_mbuf_refcnt_update(pads[0], 1);
     tx = video_trs_burst_pad(impl, s, s_port, &pads[0], 1);
@@ -120,6 +126,7 @@ static int video_trs_rl_warm_up(struct mtl_main_impl* impl,
     pre_tsc = cur_tsc;
     if (delta_pkts > i) {
       warm_pkts -= (delta_pkts - i);
+      s->stat_trans_recalculate_warmup++;
       dbg("%s(%d), mismatch delta_pkts %d at %d\n", __func__, s->idx, delta_pkts, i);
     }
   }

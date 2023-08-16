@@ -678,6 +678,8 @@ static int app_tx_video_io_stat(struct st_app_tx_video_session* s) {
   int ret;
   struct st20_tx_port_status stats;
 
+  if (!s->handle) return 0;
+
   for (uint8_t port = 0; port < s->num_port; port++) {
     ret = st20_tx_get_port_stats(s->handle, port, &stats);
     if (ret < 0) return ret;
