@@ -124,6 +124,12 @@ typedef struct st_json_interface {
   uint8_t gateway[MTL_IP_ADDR_LEN];
   uint16_t tx_queues_cnt;
   uint16_t rx_queues_cnt;
+  int tx_video_sessions_cnt; /* st20/st22/st20p/st22p on interface level */
+  int rx_video_sessions_cnt; /* st20/st22/st20p/st22p on interface level */
+  int tx_audio_sessions_cnt; /* st30 on interface level */
+  int rx_audio_sessions_cnt; /* st30 on interface level */
+  int tx_anc_sessions_cnt;   /* st40 on interface level */
+  int rx_anc_sessions_cnt;   /* st40 on interface level */
 } st_json_interface_t;
 
 enum st_json_ip_type {

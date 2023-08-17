@@ -376,6 +376,7 @@ struct st_tx_video_session_impl {
   uint32_t stat_error_user_timestamp;
   uint32_t stat_epoch_troffset_mismatch; /* pacing mismatch the epoch troffset */
   uint32_t stat_trans_troffset_mismatch; /* transmitter mismatch the epoch troffset */
+  uint32_t stat_trans_recalculate_warmup;
   uint32_t stat_exceed_frame_time;
   bool stat_user_busy_first;
   uint32_t stat_user_busy;       /* get_next_frame or dequeue_bulk from rtp ring fail */
