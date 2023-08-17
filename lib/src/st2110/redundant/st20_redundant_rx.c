@@ -266,7 +266,11 @@ st20r_rx_handle st20r_rx_create(mtl_handle mt, struct st20r_rx_ops* ops) {
   mt_pthread_mutex_init(&ctx->lock, NULL);
 
   /* copy ops */
-  strncpy(ctx->ops_name, ops->name, ST_MAX_NAME_LEN - 1);
+  if (ops->name) {
+    snprintf(ctx->ops_name, sizeof(ctx->ops_name), "%s", ops->name);
+  } else {
+    snprintf(ctx->ops_name, sizeof(ctx->ops_name), "ST20R_RX_%d", idx);
+  }
   ctx->ops = *ops;
 
   /* crete transport handle */

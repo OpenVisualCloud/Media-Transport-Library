@@ -649,109 +649,110 @@ struct st20_convert_frame_meta {
 
 /** The structure info for st tx port, used in creating session. */
 struct st_tx_port {
-  /** destination IP address */
+  /** Mandatory. Destination IP address */
   uint8_t dip_addr[MTL_SESSION_PORT_MAX][MTL_IP_ADDR_LEN];
-  /** Pcie BDF path like 0000:af:00.0, should align to BDF of mtl_init */
+  /** Mandatory. Pcie BDF path like 0000:af:00.0, should align to BDFs of mtl_init */
   char port[MTL_SESSION_PORT_MAX][MTL_PORT_MAX_LEN];
-  /** 1 or 2, num of ports this session attached to */
+  /** Mandatory. 1 or 2, num of ports this session attached to */
   uint8_t num_port;
-  /** UDP source port number, leave as 0 to use same port as dst */
-  uint16_t udp_src_port[MTL_SESSION_PORT_MAX];
-  /** UDP destination port number */
+  /** Mandatory. UDP destination port number for this tx session */
   uint16_t udp_port[MTL_SESSION_PORT_MAX];
-  /** 7 bits payload type define in RFC3550 */
+  /** Mandatory. 7 bits payload type define in RFC3550 */
   uint8_t payload_type;
+  /** Optional. UDP source port number, leave as 0 to use same port as dst */
+  uint16_t udp_src_port[MTL_SESSION_PORT_MAX];
 };
 
 /** The structure info for st rx port, used in creating session. */
 struct st_rx_port {
-  /** source IP address of sender */
+  /** Mandatory. source IP address of sender */
   uint8_t sip_addr[MTL_SESSION_PORT_MAX][MTL_IP_ADDR_LEN];
-  /** 1 or 2, num of ports this session attached to */
+  /** Mandatory. 1 or 2, num of ports this session attached to */
   uint8_t num_port;
-  /** Pcie BDF path like 0000:af:00.0, should align to BDF of mtl_init */
+  /** Mandatory. Pcie BDF path like 0000:af:00.0, should align to BDF of mtl_init */
   char port[MTL_SESSION_PORT_MAX][MTL_PORT_MAX_LEN];
-  /** UDP destination port number */
+  /** Mandatory. UDP destination port number */
   uint16_t udp_port[MTL_SESSION_PORT_MAX];
-  /** 7 bits payload type define in RFC3550 */
+  /** Mandatory. 7 bits payload type define in RFC3550 */
   uint8_t payload_type;
 };
 
 /** The structure describing how to create a tx st2110-20 pipeline session. */
 struct st20p_tx_ops {
-  /** name */
-  const char* name;
-  /** private data to the callback function */
-  void* priv;
-  /** tx port info */
+  /** Mandatory. tx port info */
   struct st_tx_port port;
-  /** flags, value in ST20P_TX_FLAG_* */
+
+  /** Mandatory. Session resolution width */
+  uint32_t width;
+  /** Mandatory. Session resolution height */
+  uint32_t height;
+  /** Mandatory. Session resolution fps */
+  enum st_fps fps;
+  /** Mandatory. Session input frame format */
+  enum st_frame_fmt input_fmt;
+  /** Mandatory. Session transport frame format */
+  enum st20_fmt transport_fmt;
+  /** Mandatory. Convert plugin device, auto or special */
+  enum st_plugin_device device;
+  /**
+   * Mandatory. The frame buffer count requested for one st20 pipeline tx session,
+   * should be in range [2, ST20_FB_MAX_COUNT],
+   */
+  uint16_t framebuff_cnt;
+
+  /** Optional. name */
+  const char* name;
+  /** Optional. private data to the callback function */
+  void* priv;
+  /** Optional. Flags to control session behaviors. See ST20P_TX_FLAG_* for possible value
+   */
   uint32_t flags;
   /**
-   * tx destination mac address.
+   * Optional.Callback when frame available in the lib.
+   * And only non-block method can be used within this callback as it run from lcore
+   * tasklet routine.
+   */
+  int (*notify_frame_available)(void* priv);
+  /**
+   * Optional. Callback when frame done in the lib.
+   * And only non-block method can be used within this callback as it run from lcore
+   * tasklet routine.
+   */
+  int (*notify_frame_done)(void* priv, struct st_frame* frame);
+  /** Optional. interlace or not, false: non-interlaced: true: interlaced */
+  bool interlaced;
+  /** Optional. Linesize for transport frame, only for non-convert mode */
+  size_t transport_linesize;
+  /** Optional. Array of external frames */
+  struct st_ext_frame* ext_frames;
+
+  /**
+   * Optional. tx destination mac address.
    * Valid if ST20P_TX_FLAG_USER_P(R)_MAC is enabled
    */
   uint8_t tx_dst_mac[MTL_SESSION_PORT_MAX][MTL_MAC_ADDR_LEN];
-
   /**
-   * The start vrx buffer.
+   * Optional. The start vrx buffer.
    * Leave to zero if not know detail, lib will assign a start value of vrx(narrow) based
    * on resolution and timing. Refer to st21 spec for the possible vrx value and also fine
    * tune is required since network setup difference and RL burst.
    */
   uint16_t start_vrx;
   /**
-   * Manually assigned padding pkt interval(pkts level) for RL pacing.
+   * Optional. Manually assigned padding pkt interval(pkts level) for RL pacing.
    * Leave to zero if not know detail, lib will train the interval in the initial routine.
    */
   uint16_t pad_interval;
   /**
-   * The rtp timestamp delta(us) to the start time of frame.
+   * Optional. The rtp timestamp delta(us) to the start time of frame.
    * Zero means the rtp timestamp at the start of the frame.
    */
   int32_t rtp_timestamp_delta_us;
-
   /**
-   * the time for lib to detect the hang on the tx queue and try to recovery
+   * Optional. the time for lib to detect the hang on the tx queue and try to recovery
    * Leave to zero system will use the default value(1s).
    */
   uint32_t tx_hang_detect_ms;
-
-  /** Session resolution width */
-  uint32_t width;
-  /** Session resolution height */
-  uint32_t height;
-  /** Session resolution fps */
-  enum st_fps fps;
-  /** Session input frame format */
-  enum st_frame_fmt input_fmt;
-  /** Session transport frame format */
-  enum st20_fmt transport_fmt;
-  /** interlace or not, false: non-interlaced: true: interlaced */
-  bool interlaced;
-  /** Linesize for transport frame, only for non-convert mode */
-  size_t transport_linesize;
-  /** Convert plugin device, auto or special */
-  enum st_plugin_device device;
-  /** Array of external frames */
-  struct st_ext_frame* ext_frames;
-  /**
-   * The frame buffer count requested for one st20 pipeline tx session,
-   * should be in range [2, ST20_FB_MAX_COUNT],
-   */
-  uint16_t framebuff_cnt;
-  /**
-   * Callback when frame available in the lib.
-   * And only non-block method can be used within this callback as it run from lcore
-   * tasklet routine.
-   */
-  int (*notify_frame_available)(void* priv);
-  /**
-   * Callback when frame done in the lib.
-   * And only non-block method can be used within this callback as it run from lcore
-   * tasklet routine.
-   */
-  int (*notify_frame_done)(void* priv, struct st_frame* frame);
   /**
    * event callback, lib will call this when there is some event happened.
    * Only non-block method can be used in this callback as it run from lcore routine.
@@ -763,46 +764,48 @@ struct st20p_tx_ops {
 
 /** The structure describing how to create a rx st2110-20 pipeline session. */
 struct st20p_rx_ops {
-  /** name */
-  const char* name;
-  /** private data to the callback function */
-  void* priv;
-  /** rx port info */
+  /** Mandatory. rx port info */
   struct st_rx_port port;
-  /** flags, value in ST20P_RX_FLAG_* */
-  uint32_t flags;
-  /** Session resolution width */
+  /** Mandatory. Session resolution width */
   uint32_t width;
-  /** Session resolution height */
+  /** Mandatory. Session resolution height */
   uint32_t height;
-  /** Session resolution fps */
+  /** Mandatory. Session resolution fps */
   enum st_fps fps;
-  /** Session transport frame format */
+  /** Mandatory. Session transport frame format */
   enum st20_fmt transport_fmt;
-  /** Linesize for transport frame, only for non-convert mode */
-  size_t transport_linesize;
-  /** Session output frame format */
+  /** Mandatory. Session output frame format */
   enum st_frame_fmt output_fmt;
-  /** interlace or not, false: non-interlaced: true: interlaced */
-  bool interlaced;
-  /** Convert plugin device, auto or special */
+  /** Mandatory. Convert plugin device, auto or special */
   enum st_plugin_device device;
-  /** Array of external frames */
-  struct st_ext_frame* ext_frames;
   /**
-   * The frame buffer count requested for one st20 pipeline rx session,
+   * Mandatory. The frame buffer count requested for one st20 pipeline rx session,
    * should be in range [2, ST20_FB_MAX_COUNT],
    */
   uint16_t framebuff_cnt;
+
+  /** Optional. name */
+  const char* name;
+  /** Optional. private data to the callback function */
+  void* priv;
+  /** Optional. Flags to control session behaviors. See ST20P_RX_FLAG_* for possible value
+   */
+  uint32_t flags;
   /**
-   * Callback when frame available in the lib.
+   * Optional. Callback when frame available in the lib.
    * And only non-block method can be used within this callback as it run from lcore
    * tasklet routine.
    */
   int (*notify_frame_available)(void* priv);
 
+  /** Optional. interlace or not, false: non-interlaced: true: interlaced */
+  bool interlaced;
+  /** Optional. Linesize for transport frame, only for non-convert mode */
+  size_t transport_linesize;
+  /** Optional. Array of external frames */
+  struct st_ext_frame* ext_frames;
   /**
-   * Callback when the lib query next external frame's data address.
+   * Optional. Callback when the lib query next external frame's data address.
    * Only for non-convert mode with ST20P_RX_FLAG_RECEIVE_INCOMPLETE_FRAME.
    * And only non-block method can be used within this callback as it run from lcore
    * tasklet routine.
@@ -810,7 +813,7 @@ struct st20p_rx_ops {
   int (*query_ext_frame)(void* priv, struct st20_ext_frame* ext_frame,
                          struct st20_rx_frame_meta* meta);
   /**
-   * event callback, lib will call this when there is some event happened.
+   * Optional. event callback, lib will call this when there is some event happened.
    * Only non-block method can be used in this callback as it run from lcore routine.
    * args point to the meta data of each event.
    * Ex, cast to struct st10_vsync_meta for ST_EVENT_VSYNC.
@@ -820,58 +823,61 @@ struct st20p_rx_ops {
 
 /** The structure describing how to create a tx st2110-22 pipeline session. */
 struct st22p_tx_ops {
-  /** name */
-  const char* name;
-  /** private data to the callback function */
-  void* priv;
-  /** tx port info */
+  /** Mandatory. tx port info */
   struct st_tx_port port;
-  /** flags, value in ST22P_TX_FLAG_* */
-  uint32_t flags;
-  /**
-   * tx destination mac address.
-   * Valid if ST22P_TX_FLAG_USER_P(R)_MAC is enabled
-   */
-  uint8_t tx_dst_mac[MTL_SESSION_PORT_MAX][MTL_MAC_ADDR_LEN];
-  /** Session resolution width */
+  /** Mandatory. Session resolution width */
   uint32_t width;
-  /** Session resolution height */
+  /** Mandatory. Session resolution height */
   uint32_t height;
-  /** Session resolution fps */
+  /** Mandatory. Session resolution fps */
   enum st_fps fps;
-  /** Session input frame format */
+  /** Mandatory. Session input frame format */
   enum st_frame_fmt input_fmt;
-  /** packetization modes define in RFC9134 */
+  /** Mandatory. packetization modes define in RFC9134 */
   enum st22_pack_type pack_type;
-  /** codec for this pipeline */
+  /** Mandatory. codec for this pipeline */
   enum st22_codec codec;
-  /** encode plugin device, auto or special */
+  /** Mandatory. encode plugin device, auto or special */
   enum st_plugin_device device;
-  /** speed or quality mode */
+  /** Mandatory. speed or quality mode */
   enum st22_quality_mode quality;
-  /** thread count for codec, leave to zero if not know */
-  uint32_t codec_thread_cnt;
-  /** codestream size, calculate as compress ratio */
+  /** Mandatory. codestream size, calculate as compress ratio */
   size_t codestream_size;
   /**
-   * the frame buffer count requested for one st22 pipeline tx session,
+   *  Mandatory. the frame buffer count requested for one st22 pipeline tx session,
    * should be in range [2, ST22_FB_MAX_COUNT],
    */
   uint16_t framebuff_cnt;
+
+  /** Optional. name */
+  const char* name;
+  /** Optional. private data to the callback function */
+  void* priv;
+  /** Optional. Flags to control session behaviors. See ST22P_TX_FLAG_* for possible value
+   */
+  uint32_t flags;
+  /** Optional. thread count for codec, leave to zero if not know */
+  uint32_t codec_thread_cnt;
   /**
-   * Callback when frame available in the lib.
+   * Optional. Callback when frame available in the lib.
    * And only non-block method can be used within this callback as it run from lcore
    * tasklet routine.
    */
   int (*notify_frame_available)(void* priv);
   /**
-   * Callback when frame done in the lib.
+   * Optional. Callback when frame done in the lib.
    * And only non-block method can be used within this callback as it run from lcore
    * tasklet routine.
    */
   int (*notify_frame_done)(void* priv, struct st_frame* frame);
+
   /**
-   * event callback, lib will call this when there is some event happened.
+   * Optional. tx destination mac address.
+   * Valid if ST22P_TX_FLAG_USER_P(R)_MAC is enabled
+   */
+  uint8_t tx_dst_mac[MTL_SESSION_PORT_MAX][MTL_MAC_ADDR_LEN];
+  /**
+   * Optional. event callback, lib will call this when there is some event happened.
    * Only non-block method can be used in this callback as it run from lcore routine.
    * args point to the meta data of each event.
    * Ex, cast to struct st10_vsync_meta for ST_EVENT_VSYNC.
@@ -881,45 +887,47 @@ struct st22p_tx_ops {
 
 /** The structure describing how to create a rx st2110-22 pipeline session. */
 struct st22p_rx_ops {
-  /** name */
-  const char* name;
-  /** private data to the callback function */
-  void* priv;
-  /** tx port info */
+  /** Mandatory. tx port info */
   struct st_rx_port port;
-  /** flags, value in ST22P_RX_FLAG_* */
-  uint32_t flags;
-  /** Session resolution width */
+  /** Mandatory. Session resolution width */
   uint32_t width;
-  /** Session resolution height */
+  /** Mandatory. Session resolution height */
   uint32_t height;
-  /** Session resolution fps */
+  /** Mandatory. Session resolution fps */
   enum st_fps fps;
-  /** Session output frame format */
+  /** Mandatory. Session output frame format */
   enum st_frame_fmt output_fmt;
-  /** packetization modes define in RFC9134 */
+  /** Mandatory. packetization modes define in RFC9134 */
   enum st22_pack_type pack_type;
-  /** codec for this pipeline */
+  /** Mandatory. codec for this pipeline */
   enum st22_codec codec;
-  /** encode plugin device, auto or special */
+  /** Mandatory. encode plugin device, auto or special */
   enum st_plugin_device device;
-  /** thread count for codec, leave to zero if not know */
-  uint32_t codec_thread_cnt;
-  /** max codestream size, lib will use output frame size if not set */
-  size_t max_codestream_size;
   /**
-   * the frame buffer count requested for one st22 pipeline rx session,
+   * Mandatory. the frame buffer count requested for one st22 pipeline rx session,
    * should be in range [2, ST22_FB_MAX_COUNT],
    */
   uint16_t framebuff_cnt;
+
+  /** Optional. name */
+  const char* name;
+  /** Optional. private data to the callback function */
+  void* priv;
+  /** Optional. Flags to control session behaviors. See ST22P_RX_FLAG_* for possible value
+   */
+  uint32_t flags;
+  /** Optional. thread count for codec, leave to zero if not know */
+  uint32_t codec_thread_cnt;
+  /** Optional. max codestream size, lib will use output frame size if not set */
+  size_t max_codestream_size;
   /**
-   * Callback when frame available in the lib.
+   * Optional. Callback when frame available in the lib.
    * And only non-block method can be used within this callback as it run from lcore
    * tasklet routine.
    */
   int (*notify_frame_available)(void* priv);
   /**
-   * event callback, lib will call this when there is some event happened.
+   * Optional. event callback, lib will call this when there is some event happened.
    * Only non-block method can be used in this callback as it run from lcore routine.
    * args point to the meta data of each event.
    * Ex, cast to struct st10_vsync_meta for ST_EVENT_VSYNC.

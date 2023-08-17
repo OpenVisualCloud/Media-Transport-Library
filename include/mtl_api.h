@@ -443,35 +443,156 @@ struct mtl_af_xdp_params {
  * Include the PCIE port and other required info.
  */
 struct mtl_init_params {
-  /* below are mandatory parameters */
-  /** Pcie BDF(ex: 0000:af:00.0) or enp175s0f0(MTL_PMD_DPDK_AF_XDP) */
-  char port[MTL_PORT_MAX][MTL_PORT_MAX_LEN];
-  /** number of pcie ports, 1 to MTL_PORT_MAX_LEN, mandatory */
-  uint8_t num_ports;
-  /** bound IP of ports, for MTL_PMD_DPDK_USER
-   * This is not used when DHCP enabled, otherwise set the valid value.
-   */
-  uint8_t sip_addr[MTL_PORT_MAX][MTL_IP_ADDR_LEN];
-  /** log level */
-  enum mtl_log_level log_level;
-
-  /* below are optional parameters */
-  /** transport type, st2110 or udp */
+  /** Mandatory. Transport type, st2110(default) or udp */
   enum mtl_transport_type transport;
   /**
-   * net mask of ports, for MTL_PMD_DPDK_USER.
-   * This is not used when DHCP enabled, otherwise set the valid value.
-   * Lib will use 255.255.255.0 if this value is blank
+   * Mandatory. PCIE BDF port, ex: 0000:af:01.0.
+   * For MTL_PMD_DPDK_AF_XDP, set kernel interface name here, ex: enp175s0f0.
+   * */
+  char port[MTL_PORT_MAX][MTL_PORT_MAX_LEN];
+  /** Mandatory. The element number in the port array, 1 to MTL_PORT_MAX_LEN */
+  uint8_t num_ports;
+  /**
+   * Mandatory. Interface network protocol.
+   * Static(default) or DHCP(please make sure you have a DHCP server inside LAN)
+   */
+  enum mtl_net_proto net_proto[MTL_PORT_MAX];
+  /** Mandatory. dpdk user pmd(default) or af_xdp */
+  enum mtl_pmd_type pmd[MTL_PORT_MAX];
+  /**
+   * Mandatory. Max NIC tx queues requested the lib to support.
+   * for MTL_TRANSPORT_ST2110, you can use helper api: st_tx_sessions_queue_cnt to
+   * calculate.
+   */
+  uint16_t tx_queues_cnt[MTL_PORT_MAX];
+  /**
+   * Mandatory. Max NIC rx queues requested the lib to support.
+   * for MTL_TRANSPORT_ST2110, you can use helper api: st_rx_sessions_queue_cnt to
+   * calculate.
+   */
+  uint16_t rx_queues_cnt[MTL_PORT_MAX];
+
+  /**
+   * Mandatory for MTL_PMD_DPDK_USER. The static assigned IP for ports.
+   * This is ignored when MTL_PROTO_DHCP enabled.
+   */
+  uint8_t sip_addr[MTL_PORT_MAX][MTL_IP_ADDR_LEN];
+  /**
+   * Optional for MTL_PMD_DPDK_USER. Net mask for ports.
+   * This is ignored when MTL_PROTO_DHCP enabled.
+   * Lib will use 255.255.255.0 as default if this item is zero.
    */
   uint8_t netmask[MTL_PORT_MAX][MTL_IP_ADDR_LEN];
   /**
-   * default gateway of ports, for MTL_PMD_DPDK_USER.
-   * This is not used when DHCP enabled, otherwise set the valid value.
+   * Optional for MTL_PMD_DPDK_USER. Default gateway for ports.
+   * This is ignored when MTL_PROTO_DHCP enabled.
    * User can use "route -n" to get gateway before bind the port to DPDK PMD.
-   * For MTL_PMD_DPDK_AF_XDP, lib will try to fetch gateway by route command
-   * if this value is not assigned.
    */
   uint8_t gateway[MTL_PORT_MAX][MTL_IP_ADDR_LEN];
+
+  /**
+   * Mandatory only for MTL_PMD_DPDK_AF_XDP. af_xdp port init info.
+   */
+  struct mtl_af_xdp_params xdp_info[MTL_PORT_MAX];
+
+  /** Optional. Flags to control MTL behaviors. See MTL_FLAG_* for possible value */
+  uint64_t flags;
+  /** Optional. Private data to the cb functions(ptp_get_time_fn and stat_dump_cb_fn) */
+  void* priv;
+  /** Optional. log level control */
+  enum mtl_log_level log_level;
+  /**
+   * Optional. The logical cores list can be used in the MTL, e.g. "28,29,30,31".
+   * If not assigned, the core usage will be determined by MTL itself.
+   */
+  char* lcores;
+
+  /**
+   * Optional. Dma(CBDMA or DSA) device can be used in the MTL.
+   * DMA can be used to offload the CPU for copy the payload for video rx sessions.
+   * See more from ST20_RX_FLAG_DMA_OFFLOAD in st20_api.h.
+   * PCIE BDF path like 0000:80:04.0.
+   */
+  char dma_dev_port[MTL_DMA_DEV_MAX][MTL_PORT_MAX_LEN];
+  /** Optional. The element number in the dma_dev_port array, leave to zero if no DMA */
+  uint8_t num_dma_dev_port;
+
+  /**
+   * Optional. If using rss (L3 or L4) for the rx packets classification, default use RTE
+   * flow director.
+   */
+  enum mtl_rss_mode rss_mode;
+  /**
+   * Optional. Select default(auto) or force IOVA(va or pa) mode.
+   */
+  enum mtl_iova_mode iova_mode;
+  /**
+   * Optional. Number of transmit descriptors for each NIC TX queue, 0 means determined by
+   * lib. It will affect the memory usage and the performance.
+   */
+  uint16_t nb_tx_desc;
+  /**
+   * Optional. Number of receive descriptors for each NIC RX queue, 0 means determined by
+   * lib. It will affect the memory usage and the performance.
+   */
+  uint16_t nb_rx_desc;
+
+  /**
+   * Optional. Function to acquire current ptp time(in nanoseconds) from user.
+   * If NULL, MTL will get from built-in ptp source(NIC) if built-in ptp4l is enabled or
+   * system time if built-in ptp4l is not enabled.
+   */
+  uint64_t (*ptp_get_time_fn)(void* priv);
+
+  /** Optional. Stats dump period in seconds, zero means determined by lib(10s default) */
+  uint16_t dump_period_s;
+  /** Optional. Stats dump callback for user in every dump_period_s */
+  void (*stat_dump_cb_fn)(void* priv);
+
+  /**
+   * Optional for MTL_TRANSPORT_ST2110. The st21 tx pacing way, leave to zero(auto) if you
+   * don't known the detail.
+   */
+  enum st21_tx_pacing_way pacing;
+  /**
+   * Optional for MTL_TRANSPORT_ST2110. The max data quota for the sessions of each lcore
+   * can handled, 0 means determined by lib. If exceed this limit, the new created
+   * sessions will be scheduled to a new lcore.
+   */
+  uint32_t data_quota_mbs_per_sch;
+  /**
+   * Optional for MTL_TRANSPORT_ST2110. The number of max tx audio session for each lcore,
+   * 0 means determined by lib */
+  uint32_t tx_audio_sessions_max_per_sch;
+  /**
+   * Optional for MTL_TRANSPORT_ST2110. The number of max rx audio session for each lcore,
+   * 0 means determined by lib */
+  uint32_t rx_audio_sessions_max_per_sch;
+  /**
+   * Optional for MTL_TRANSPORT_ST2110. Suggest max allowed udp size for each network pkt,
+   * leave to zero if you don't known detail.
+   */
+  uint16_t pkt_udp_suggest_max_size;
+  /**
+   * Optional for MTL_TRANSPORT_ST2110. The number for hdr split queues of rx, should be
+   * smaller than rx_sessions_cnt_max. Experimental feature for header split.
+   */
+  uint16_t nb_rx_hdr_split_queues;
+  /**
+   * Optional for MTL_TRANSPORT_ST2110. Suggest data room size for rx mempool,
+   * the final data room size may be aligned to larger value,
+   * some NICs may need this to avoid mbuf split.
+   */
+  uint16_t rx_pool_data_size;
+
+  /** Optional. The number of tasklets for each lcore, 0 means determined by lib */
+  uint32_t tasklets_nb_per_sch;
+
+  /** Optional for MTL_FLAG_PTP_ENABLE. The ptp pi controller proportional gain. */
+  double kp;
+  /** Optional for MTL_FLAG_PTP_ENABLE. The ptp pi controller integral gain. */
+  double ki;
+
   /**
    * deprecated for MTL_TRANSPORT_ST2110.
    * max tx sessions(st20, st22, st30, st40) requested the lib to support,
@@ -486,104 +607,6 @@ struct mtl_init_params {
    * dpdk context will allocate the hw resources(queues, memory) based on this number.
    */
   uint16_t rx_sessions_cnt_max __mtl_deprecated_msg("Use rx_queues_cnt instead");
-  /**
-   * max tx user queues requested the lib to support.
-   * for MTL_TRANSPORT_ST2110, use st_tx_sessions_queue_cnt to query.
-   */
-  uint16_t tx_queues_cnt[MTL_PORT_MAX];
-  /**
-   * max rx user queues requested the lib to support.
-   * for MTL_TRANSPORT_ST2110, use st_rx_sessions_queue_cnt to query.
-   */
-  uint16_t rx_queues_cnt[MTL_PORT_MAX];
-
-  /** dpdk user pmd or af_xdp */
-  enum mtl_pmd_type pmd[MTL_PORT_MAX];
-  /**
-   * af_xdp port info, mandatory for MTL_PMD_DPDK_AF_XDP.
-   * MTL_PMD_DPDK_AF_XDP will use the IP of kernel itself.
-   */
-  struct mtl_af_xdp_params xdp_info[MTL_PORT_MAX];
-  /**
-   * logical cores list can be used, e.g. "28,29,30,31".
-   * NULL means determined by system itself
-   */
-  char* lcores;
-  /** dma(CBDMA or DSA) dev Pcie BDF path like 0000:80:04.0 */
-  char dma_dev_port[MTL_DMA_DEV_MAX][MTL_PORT_MAX_LEN];
-  /** number of dma dev ports in dma_dev_port, leave to zero if no dma dev */
-  uint8_t num_dma_dev_port;
-  /** flags, value in MTL_FLAG_* */
-  uint64_t flags;
-  /** private data to the callback function */
-  void* priv;
-  /**
-   * Function to acquire current ptp time(in nanoseconds) from user.
-   * if NULL, ST instance will get from built-in ptp source(NIC) or system time instead.
-   */
-  uint64_t (*ptp_get_time_fn)(void* priv);
-  /** stats dump period in seconds, 0 means determined by lib */
-  uint16_t dump_period_s;
-  /** stats dump callback in every dump_period_s */
-  void (*stat_dump_cb_fn)(void* priv);
-  /** data quota for each lcore, 0 means determined by lib */
-  uint32_t data_quota_mbs_per_sch;
-  /** the number of tasklets for each lcore, 0 means determined by lib */
-  uint32_t tasklets_nb_per_sch;
-  /** the number of max tx audio session for each lcore, 0 means determined by lib */
-  uint32_t tx_audio_sessions_max_per_sch;
-  /** the number of max rx audio session for each lcore, 0 means determined by lib */
-  uint32_t rx_audio_sessions_max_per_sch;
-  /**
-   * number of transmit descriptors for each NIC TX queue, 0 means determined by lib.
-   * It will affect the memory usage and the performance.
-   */
-  uint16_t nb_tx_desc;
-  /**
-   * number of receive descriptors for each NIC RX queue, 0 means determined by lib.
-   * It will affect the memory usage and the performance.
-   */
-  uint16_t nb_rx_desc;
-  /**
-   * Suggest max allowed udp size for each network pkt, leave to zero if you don't known.
-   */
-  uint16_t pkt_udp_suggest_max_size;
-  /**
-   * The number for hdr split queues of rx, should smaller than rx_sessions_cnt_max.
-   * Experimental feature.
-   */
-  uint16_t nb_rx_hdr_split_queues;
-  /**
-   * Suggest data room size for rx mempool,
-   * the final data room size may be aligned to larger value,
-   * some NICs may need this to avoid mbuf split.
-   */
-  uint16_t rx_pool_data_size;
-  /**
-   * The st21 tx pacing way, leave to zero(auto) if you don't known the detail.
-   */
-  enum st21_tx_pacing_way pacing;
-  /**
-   * The ptp pi controller proportional gain.
-   */
-  double kp;
-  /**
-   * The ptp pi controller integral gain.
-   */
-  double ki;
-  /**
-   * Suggest using rss (L3 or L4) for rx packets direction.
-   */
-  enum mtl_rss_mode rss_mode;
-  /**
-   * Select default or force IOVA mode.
-   */
-  enum mtl_iova_mode iova_mode;
-  /**
-   * Interface network protocol
-   * static or DHCP
-   */
-  enum mtl_net_proto net_proto[MTL_PORT_MAX];
 };
 
 /**

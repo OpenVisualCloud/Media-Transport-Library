@@ -1264,7 +1264,11 @@ static int tx_ancillary_session_attach(struct mtl_main_impl* impl,
   if (ret < 0) return ret;
 
   s->time_measure = mt_has_tasklet_time_measure(impl);
-  strncpy(s->ops_name, ops->name, ST_MAX_NAME_LEN - 1);
+  if (ops->name) {
+    snprintf(s->ops_name, sizeof(s->ops_name), "%s", ops->name);
+  } else {
+    snprintf(s->ops_name, sizeof(s->ops_name), "TX_ANC_M%dS%d", mgr->idx, idx);
+  }
   s->ops = *ops;
   for (int i = 0; i < num_port; i++) {
     s->st40_dst_port[i] = (ops->udp_port[i]) ? (ops->udp_port[i]) : (10200 + idx * 2);
