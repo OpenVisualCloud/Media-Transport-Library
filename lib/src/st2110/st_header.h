@@ -146,7 +146,7 @@ struct st_frame_trans {
 
 /* timing for pacing */
 struct st_tx_video_pacing {
-  uint64_t trs;       /* in ns for of 2 consecutive packets, T-Frame / N-Packets */
+  double trs;         /* in ns for of 2 consecutive packets, T-Frame / N-Packets */
   double tr_offset;   /* in ns, tr offset time of each frame */
   uint32_t vrx;       /* packets unit, VRX start value of each frame */
   uint32_t warm_pkts; /* packets unit, pkts for RL pacing warm boot */
@@ -160,8 +160,8 @@ struct st_tx_video_pacing {
   /* timestamp for rtp header */
   uint32_t rtp_time_stamp;
   uint64_t cur_epoch_time;
-  uint64_t tsc_time_cursor; /* in ns, tsc time cursor for packet pacing */
-  uint64_t ptp_time_cursor; /* in ns, ptp time cursor for packet pacing */
+  double tsc_time_cursor; /* in ns, tsc time cursor for packet pacing */
+  double ptp_time_cursor; /* in ns, ptp time cursor for packet pacing */
   /* ptp time may onward */
   uint32_t max_onward_epochs;
 };
