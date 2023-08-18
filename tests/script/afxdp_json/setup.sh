@@ -5,8 +5,8 @@
 
 set -e
 
-AFXDP_PORT_0=ens801f0
-AFXDP_PORT_1=ens801f1
+AFXDP_PORT_0=enp175s0f0np0
+AFXDP_PORT_1=enp175s0f1np1
 
 echo "Config  ${AFXDP_PORT_0}"
 sudo nmcli dev set ${AFXDP_PORT_0} managed no

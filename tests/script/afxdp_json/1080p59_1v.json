@@ -1,16 +1,16 @@
 {
     "interfaces": [
         {
-            "name": "ens801f0",
+            "name": "enp175s0f0np0",
         },
         {
-            "name": "ens801f1",
+            "name": "enp175s0f1np1",
         }
     ],
     "tx_sessions": [
         {
             "dip": [
-                "239.168.17.101"
+                "1"
             ],
             "interface": [
                 0
@@ -34,7 +34,7 @@
     "rx_sessions": [
         {
             "ip": [
-                "239.168.17.101"
+                "0"
             ],
             "interface": [
                 1

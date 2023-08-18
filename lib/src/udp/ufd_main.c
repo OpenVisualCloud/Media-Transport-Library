@@ -91,6 +91,7 @@ static int ufd_parse_interfaces(struct mufd_init_params* init, json_object* obj,
     MUDP_ERR_RET(EINVAL);
   }
   snprintf(p->port[port], MTL_PORT_MAX_LEN, "%s", name);
+  enum mtl_pmd_type pmd = mtl_pmd_by_port_name(name);
 
   json_object* obj_item = mt_json_object_get(obj, "proto");
   if (obj_item) {
@@ -105,7 +106,7 @@ static int ufd_parse_interfaces(struct mufd_init_params* init, json_object* obj,
     }
   }
 
-  if (p->net_proto[port] == MTL_PROTO_STATIC) {
+  if ((p->net_proto[port] == MTL_PROTO_STATIC) && (pmd != MTL_PMD_DPDK_AF_XDP)) {
     obj_item = mt_json_object_get(obj, "ip");
     if (!obj_item) {
       err("%s, no ip in the json interface\n", __func__);
@@ -353,6 +354,19 @@ out:
   return ret;
 }
 
+static int ufd_set_afxdp(struct ufd_mt_ctx* ctx) {
+  struct mtl_init_params* p = &ctx->init_params.mt_params;
+
+  for (uint8_t i = 0; i < p->num_ports; i++) {
+    p->pmd[i] = mtl_pmd_by_port_name(p->port[i]);
+    if (p->pmd[i] != MTL_PMD_DPDK_AF_XDP) continue;
+    p->xdp_info[i].start_queue = 1;
+    p->xdp_info[i].queue_count = RTE_MAX(p->tx_queues_cnt[i], p->rx_queues_cnt[i]);
+  }
+
+  return 0;
+}
+
 static int ufd_config_init(struct ufd_mt_ctx* ctx) {
   const char* cfg_path = getenv(MUFD_CFG_ENV_NAME);
   int ret;
@@ -423,6 +437,8 @@ static struct ufd_mt_ctx* ufd_create_mt_ctx(void) {
   if ((p->flags & (MTL_FLAG_SHARED_TX_QUEUE | MTL_FLAG_SHARED_RX_QUEUE)) &&
       (p->flags & MTL_FLAG_UDP_LCORE))
     p->tasklets_nb_per_sch = ctx->init_params.slots_nb_max + 8;
+
+  ufd_set_afxdp(ctx);
 
   ctx->mt = mtl_init(p);
   if (!ctx->mt) {

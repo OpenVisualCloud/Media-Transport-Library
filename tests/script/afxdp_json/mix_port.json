@@ -5,7 +5,7 @@
             "ip": "192.168.17.101"
         },
         {
-            "name": "ens801f1",
+            "name": "enp175s0f1np1",
         }
     ],
     "tx_sessions": [

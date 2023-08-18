@@ -411,6 +411,9 @@ int mt_cni_init(struct mtl_main_impl* impl) {
   struct mt_cni_impl* cni_impl = mt_get_cni(impl);
   struct mtl_init_params* p = mt_get_user_params(impl);
 
+  cni_impl->used = cni_if_need(impl);
+  if (!cni_impl->used) return 0;
+
   cni_impl->num_ports = mt_num_ports(impl);
   cni_impl->lcore_tasklet = (p->flags & MTL_FLAG_CNI_THREAD) ? false : true;
   rte_atomic32_set(&cni_impl->stop_thread, 0);
@@ -423,9 +426,6 @@ int mt_cni_init(struct mtl_main_impl* impl) {
     rte_spinlock_init(&cni->csq_lock);
     MT_TAILQ_INIT(&cni->udp_detect);
   }
-
-  cni_impl->used = cni_if_need(impl);
-  if (!cni_impl->used) return 0;
 
   ret = mt_kni_init(impl);
   if (ret < 0) return ret;
@@ -472,6 +472,8 @@ int mt_cni_uinit(struct mtl_main_impl* impl) {
   struct mt_cni_impl* cni_impl = mt_get_cni(impl);
   struct mt_cni_udp_detect_entry* udp_detect;
   struct mt_csq_entry* csq;
+
+  if (!cni_impl->used) return 0;
 
   for (int i = 0; i < cni_impl->num_ports; i++) {
     struct mt_cni_entry* cni = cni_get_entry(impl, i);
