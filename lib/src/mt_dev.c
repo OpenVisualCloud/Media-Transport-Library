@@ -197,8 +197,9 @@ static void dev_stat_alarm_handler(void* param) {
   else
     dev_stat(impl);
 
-  rte_eal_alarm_set(MT_DEV_STAT_INTERVAL_US(mt_get_user_params(impl)->dump_period_s),
-                    dev_stat_alarm_handler, impl);
+  rte_eal_alarm_set(
+      MT_DEV_STAT_INTERVAL_US((uint64_t)mt_get_user_params(impl)->dump_period_s),
+      dev_stat_alarm_handler, impl);
 }
 
 static void* dev_stat_thread(void* arg) {
@@ -2142,8 +2143,8 @@ int mt_dev_create(struct mtl_main_impl* impl) {
     goto err_exit;
   }
   if (!p->dump_period_s) p->dump_period_s = MT_DEV_STAT_INTERVAL_S;
-  rte_eal_alarm_set(MT_DEV_STAT_INTERVAL_US(p->dump_period_s), dev_stat_alarm_handler,
-                    impl);
+  rte_eal_alarm_set(MT_DEV_STAT_INTERVAL_US((uint64_t)p->dump_period_s),
+                    dev_stat_alarm_handler, impl);
 
   info("%s, succ, stat period %ds\n", __func__, p->dump_period_s);
   return 0;
