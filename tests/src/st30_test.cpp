@@ -452,6 +452,7 @@ static void st30_rx_fps_test(enum st30_type type[], enum st30_sampling sample[],
     ops_tx.ptime = ptime[i];
     ops_tx.framebuff_size =
         st30_get_packet_size(ops_tx.fmt, ops_tx.ptime, ops_tx.sampling, ops_tx.channel);
+    EXPECT_GE(ops_tx.framebuff_size, 0);
     ops_tx.framebuff_cnt = test_ctx_tx[i]->fb_cnt;
     ops_tx.get_next_frame = tx_audio_next_frame;
     ops_tx.notify_rtp_done = tx_rtp_done;
