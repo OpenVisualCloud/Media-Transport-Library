@@ -5,7 +5,7 @@
 #include "mt_arp.h"
 
 #include "mt_dev.h"
-//#define DEBUG
+// #define DEBUG
 #include "mt_log.h"
 #include "mt_util.h"
 
@@ -22,7 +22,7 @@ static inline struct mt_arp_impl* get_arp(struct mtl_main_impl* impl,
 static void arp_reset(struct mt_arp_impl* arp) {
   struct mt_arp_entry* entry = NULL;
 
-  for (int i = 0; i > MT_ARP_ENTRY_MAX; i++) {
+  for (int i = 0; i < MT_ARP_ENTRY_MAX; i++) {
     entry = &arp->entries[i];
 
     rte_atomic32_set(&entry->mac_ready, 0);
