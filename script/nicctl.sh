@@ -12,6 +12,7 @@ if [ $# -lt 2 ]; then
     echo "   bind_pmd                 bind driver to DPDK PMD driver"
     echo "   bind_kernel              bind driver to kernel driver"
     echo "   create_vf                create VF and bind to VFIO"
+    echo "   create_kvf               create VF and bind to kernel driver"
     echo "   create_dcf_vf            create DCF VF and bind to VFIO"
     echo "   disable_vf               Disable VF"
     echo "   status                   List the DPDK port status"
@@ -35,7 +36,7 @@ create_dcf_vf() {
     echo "$numvfs" > /sys/bus/pci/devices/"$bdf"/sriov_numvfs
 
     #enable trust
-    ip link set "$port" vf 0 trust on
+    ip link set "$inf" vf 0 trust on
 
     # Start to bind to DCF VFIO
     for ((i=0;i<"$numvfs";i++)); do
@@ -72,7 +73,7 @@ create_vf() {
     kernel_drv=$(dpdk-devbind.py -s | grep "$bdf.*drv" | sed -e s/.*drv=//g | awk '{print $1;}')
     # check if mellanox driver is loaded, NVIDIA/Mellanox PMD uses bifurcated driver
     if [[ $kernel_drv == *"mlx"* ]]; then
-	bifurcated_driver=1
+        bifurcated_driver=1
     fi
     sleep 2
 
@@ -86,18 +87,29 @@ create_vf() {
         fi
         #enable trust
         #ip link set $port vf $i trust on
-	if [ $bifurcated_driver -eq 0 ]; then
+        if [ $bifurcated_driver -eq 0 ]; then
             if dpdk-devbind.py -b vfio-pci "$vfport"; then
                 echo "Bind $vfport($vfif) to vfio-pci success"
             fi
-	else
+        else
 	    echo "PMD uses bifurcated driver, No need to bind the $vfport($vfif) to vfio-pci"
-	fi
-
+        fi
     done
 }
 
-cmdlist=("bind_kernel" "create_vf" "disable_vf" "bind_pmd" "create_dcf_vf" "status")
+create_kvf() {
+    local numvfs=$1
+    # Enable VFs
+    echo "$numvfs" > /sys/bus/pci/devices/"$bdf"/sriov_numvfs
+    for ((i=0;i<numvfs;i++)); do
+        vfpath="/sys/bus/pci/devices/$bdf/virtfn$i"
+        vfport=$(readlink "$vfpath" | awk -F/ '{print $NF;}')
+        vfif=$(dpdk-devbind.py -s | grep "$vfport.*if" | sed -e s/.*if=//g | awk '{print $1;}')
+        echo "Bind $vfport($vfif) to kernel success"
+    done
+}
+
+cmdlist=("bind_kernel" "create_vf" "create_kvf" "disable_vf" "bind_pmd" "create_dcf_vf" "status")
 
 for c in "${cmdlist[@]}"; do
    if [ "$c" == "$1" ]; then
@@ -119,14 +131,14 @@ if [ -z "$bdf_stat" ]; then
 fi
 echo "$bdf_stat"
 
-port=$(dpdk-devbind.py -s | grep "$bdf.*if" | sed -e s/.*if=//g | awk '{print $1;}')
+inf=$(dpdk-devbind.py -s | grep "$bdf.*if" | sed -e s/.*if=//g | awk '{print $1;}')
 if [ "$cmd" == "bind_kernel" ]; then
-    if [ -z "$port" ]; then
+    if [ -z "$inf" ]; then
         bind_kernel
-        port=$(dpdk-devbind.py -s | grep "$bdf.*if" | sed -e s/.*if=//g | awk '{print $1;}')
-        echo "Bind bdf: $bdf to kernel $port succ"
+        inf=$(dpdk-devbind.py -s | grep "$bdf.*if" | sed -e s/.*if=//g | awk '{print $1;}')
+        echo "Bind bdf: $bdf to kernel $inf succ"
     else
-        echo "bdf: $bdf to kernel $port already"
+        echo "bdf: $bdf to kernel $inf already"
     fi
     exit 0
 fi
@@ -135,8 +147,8 @@ iommu_check
 
 if [ "$cmd" == "bind_pmd" ]; then
     modprobe vfio-pci
-    if [ -n "$port" ]; then
-        ip link set "$port" down
+    if [ -n "$inf" ]; then
+        ip link set "$inf" down
     fi
     dpdk-devbind.py -b vfio-pci "$bdf"
     echo "Bind bdf: $bdf to vfio-pci succ"
@@ -144,16 +156,15 @@ if [ "$cmd" == "bind_pmd" ]; then
 fi
 
 # suppose bind kernel should be called
-
-if [ -z "$port" ]; then
+if [ -z "$inf" ]; then
     bind_kernel
-    port=$(dpdk-devbind.py -s | grep "$bdf.*if" | sed -e s/.*if=//g | awk '{print $1;}')
-    echo "Bind bdf: $bdf to kernel $port succ"
+    inf=$(dpdk-devbind.py -s | grep "$bdf.*if" | sed -e s/.*if=//g | awk '{print $1;}')
+    echo "Bind bdf: $bdf to kernel $inf succ"
 fi
 
 if [ "$cmd" == "disable_vf" ]; then
     disable_vf
-    echo "Disable vf bdf: $bdf $port succ"
+    echo "Disable vf bdf: $bdf $inf succ"
 fi
 
 if [ "$cmd" == "create_dcf_vf" ]; then
@@ -170,19 +181,30 @@ if [ "$cmd" == "create_dcf_vf" ]; then
     fi
     disable_vf
     create_dcf_vf $numvfs
-    echo "Create dcf vf bdf: $bdf $port succ"
+    echo "Create dcf vf bdf: $bdf $inf succ"
 fi
 
 if [ "$cmd" == "create_vf" ]; then
     if [ -n "$3" ]; then
         numvfs=$(($3+0))
     else
-        #default VF number
+        # default VF number
         numvfs=6
     fi
     modprobe vfio-pci
     disable_vf
     create_vf $numvfs
-    echo "Create VFs on PF bdf: $bdf $port succ"
+    echo "Create VFs on PF bdf: $bdf $inf succ"
 fi
 
+if [ "$cmd" == "create_kvf" ]; then
+    if [ -n "$3" ]; then
+        numvfs=$(($3+0))
+    else
+        # default VF number
+        numvfs=6
+    fi
+    disable_vf
+    create_kvf $numvfs
+    echo "Create kernel VFs on PF bdf: $bdf $inf succ"
+fi
