@@ -24,7 +24,11 @@ static int app_rx_audio_open_source(struct st_app_rx_audio_session* session) {
     return 0;
   }
 
-  fstat(fd, &i);
+  if (fstat(fd, &i) < 0) {
+    err("%s, fstat %s fail\n", __func__, session->st30_ref_url);
+    close(fd);
+    return -EIO;
+  }
   uint8_t* m = mmap(NULL, i.st_size, PROT_READ, MAP_SHARED, fd, 0);
   if (MAP_FAILED == m) {
     err("%s(%d), mmap %s fail\n", __func__, idx, session->st30_ref_url);
@@ -222,18 +226,17 @@ static int app_rx_audio_init(struct st_app_context* ctx, st_json_audio_session_t
          audio ? st_json_ip(ctx, &audio->base, MTL_SESSION_PORT_P)
                : ctx->rx_sip_addr[MTL_PORT_P],
          MTL_IP_ADDR_LEN);
-  strncpy(ops.port[MTL_SESSION_PORT_P],
-          audio ? audio->base.inf[MTL_SESSION_PORT_P]->name : ctx->para.port[MTL_PORT_P],
-          MTL_PORT_MAX_LEN);
+  snprintf(
+      ops.port[MTL_SESSION_PORT_P], MTL_PORT_MAX_LEN, "%s",
+      audio ? audio->base.inf[MTL_SESSION_PORT_P]->name : ctx->para.port[MTL_PORT_P]);
   ops.udp_port[MTL_SESSION_PORT_P] = audio ? audio->base.udp_port : (10100 + s->idx);
   if (ops.num_port > 1) {
     memcpy(ops.sip_addr[MTL_SESSION_PORT_R],
            audio ? st_json_ip(ctx, &audio->base, MTL_SESSION_PORT_R)
                  : ctx->rx_sip_addr[MTL_PORT_R],
            MTL_IP_ADDR_LEN);
-    strncpy(ops.port[MTL_SESSION_PORT_R],
-            audio ? audio->base.inf[MTL_PORT_R]->name : ctx->para.port[MTL_PORT_R],
-            MTL_PORT_MAX_LEN);
+    snprintf(ops.port[MTL_SESSION_PORT_R], MTL_PORT_MAX_LEN, "%s",
+             audio ? audio->base.inf[MTL_PORT_R]->name : ctx->para.port[MTL_PORT_R]);
     ops.udp_port[MTL_SESSION_PORT_R] = audio ? audio->base.udp_port : (10100 + s->idx);
   }
   ops.notify_frame_ready = app_rx_audio_frame_done;
@@ -269,8 +272,8 @@ static int app_rx_audio_init(struct st_app_context* ctx, st_json_audio_session_t
   st_pthread_mutex_init(&s->st30_wake_mutex, NULL);
   st_pthread_cond_init(&s->st30_wake_cond, NULL);
 
-  strncpy(s->st30_ref_url, audio ? audio->info.audio_url : "null",
-          sizeof(s->st30_ref_url));
+  snprintf(s->st30_ref_url, sizeof(s->st30_ref_url), "%s",
+           audio ? audio->info.audio_url : "null");
 
   ret = app_rx_audio_open_source(s);
   if (ret < 0) {

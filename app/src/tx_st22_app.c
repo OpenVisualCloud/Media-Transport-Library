@@ -179,11 +179,15 @@ static int app_tx_st22_open_source(struct st22_app_tx_session* s) {
 
   fd = st_open(s->st22_source_url, O_RDONLY);
   if (fd < 0) {
-    err("%s, open %s fai\n", __func__, s->st22_source_url);
+    err("%s, open %s fail\n", __func__, s->st22_source_url);
     return -EIO;
   }
 
-  fstat(fd, &i);
+  if (fstat(fd, &i) < 0) {
+    err("%s, fstat %s fail\n", __func__, s->st22_source_url);
+    close(fd);
+    return -EIO;
+  }
   if (i.st_size < s->bytes_per_frame) {
     err("%s, %s file size small then a frame %" PRIu64 "\n", __func__, s->st22_source_url,
         s->bytes_per_frame);
@@ -257,7 +261,8 @@ static int app_tx_st22_init(struct st_app_context* ctx, struct st22_app_tx_sessi
   ops.priv = s;
   ops.num_port = ctx->para.num_ports;
   memcpy(ops.dip_addr[MTL_SESSION_PORT_P], ctx->tx_dip_addr[MTL_PORT_P], MTL_IP_ADDR_LEN);
-  strncpy(ops.port[MTL_SESSION_PORT_P], ctx->para.port[MTL_PORT_P], MTL_PORT_MAX_LEN);
+  snprintf(ops.port[MTL_SESSION_PORT_P], MTL_PORT_MAX_LEN, "%s",
+           ctx->para.port[MTL_PORT_P]);
   ops.udp_port[MTL_SESSION_PORT_P] = 15000 + s->idx;
   if (ctx->has_tx_dst_mac[MTL_PORT_P]) {
     memcpy(&ops.tx_dst_mac[MTL_SESSION_PORT_P][0], ctx->tx_dst_mac[MTL_PORT_P],
@@ -267,7 +272,8 @@ static int app_tx_st22_init(struct st_app_context* ctx, struct st22_app_tx_sessi
   if (ops.num_port > 1) {
     memcpy(ops.dip_addr[MTL_SESSION_PORT_R], ctx->tx_dip_addr[MTL_PORT_R],
            MTL_IP_ADDR_LEN);
-    strncpy(ops.port[MTL_SESSION_PORT_R], ctx->para.port[MTL_PORT_R], MTL_PORT_MAX_LEN);
+    snprintf(ops.port[MTL_SESSION_PORT_R], MTL_PORT_MAX_LEN, "%s",
+             ctx->para.port[MTL_PORT_R]);
     ops.udp_port[MTL_SESSION_PORT_R] = 15000 + s->idx;
     if (ctx->has_tx_dst_mac[MTL_PORT_R]) {
       memcpy(&ops.tx_dst_mac[MTL_SESSION_PORT_R][0], ctx->tx_dst_mac[MTL_PORT_R],

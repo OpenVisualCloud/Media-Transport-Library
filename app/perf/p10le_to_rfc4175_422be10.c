@@ -191,9 +191,11 @@ int main(int argc, char** argv) {
   }
 
   pthread_t thread;
-  pthread_create(&thread, NULL, perf_thread, ctx.st);
+  ret = pthread_create(&thread, NULL, perf_thread, ctx.st);
+  if (ret) goto exit;
   pthread_join(thread, NULL);
 
+exit:
   /* release sample(st) dev */
   if (ctx.st) {
     mtl_uninit(ctx.st);

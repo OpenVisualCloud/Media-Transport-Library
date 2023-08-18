@@ -38,7 +38,7 @@ mtl_handle kahawai_init(char* port, char* local_addr, int enc_session_cnt,
                         int dec_session_cnt, char* dma_dev) {
   param.num_ports = 1;
 
-  strncpy(param.port[MTL_PORT_P], port, MTL_PORT_MAX_LEN);
+  snprintf(param.port[MTL_PORT_P], MTL_PORT_MAX_LEN, "%s", port);
 
   if (NULL == local_addr) {
     av_log(NULL, AV_LOG_ERROR, "Invalid local IP address\n");
@@ -60,7 +60,7 @@ mtl_handle kahawai_init(char* port, char* local_addr, int enc_session_cnt,
 
   if (dma_dev) {
     param.num_dma_dev_port = 1;
-    strncpy(param.dma_dev_port[0], dma_dev, MTL_PORT_MAX_LEN);
+    snprintf(param.dma_dev_port[0], MTL_PORT_MAX_LEN, "%s", dma_dev);
     av_log(NULL, AV_LOG_VERBOSE, "DMA enabled on %s\n", dma_dev);
   }
 

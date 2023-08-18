@@ -94,7 +94,7 @@ static int kahawai_read_header(AVFormatContext* ctx) {
     return AVERROR(EINVAL);
   }
   ops_rx.port.num_port = 1;
-  strncpy(ops_rx.port.port[MTL_PORT_P], s->port, MTL_PORT_MAX_LEN);
+  snprintf(ops_rx.port.port[MTL_PORT_P], MTL_PORT_MAX_LEN, "%s", s->port);
 
   if (NULL == s->src_addr) {
     av_log(ctx, AV_LOG_ERROR, "Invalid source IP address\n");

@@ -519,7 +519,7 @@ int mur_client_timedwait(struct mur_client* c, unsigned int timedwait_us,
   struct timespec time;
   clock_gettime(MT_THREAD_TIMEDWAIT_CLOCK_ID, &time);
   uint64_t ns = mt_timespec_to_ns(&time);
-  ns += timedwait_us * NS_PER_US;
+  ns += (uint64_t)timedwait_us * NS_PER_US;
   mt_ns_to_timespec(ns, &time);
   ret = mt_pthread_cond_timedwait(&c->lcore_wake_cond, &c->lcore_wake_mutex, &time);
   dbg("%s(%u), timedwait ret %d\n", __func__, q->dst_port, ret);

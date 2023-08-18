@@ -18,7 +18,7 @@
 struct st_init_params param;
 memset(&param, 0, sizeof(param));
 param.num_ports = 1;
-strncpy(param.port[ST_PORT_P], "xxxx:xx:xx.x", ST_PORT_MAX_LEN);
+snprintf(param.port[ST_PORT_P], ST_PORT_MAX_LEN, "%s", "xxxx:xx:xx.x");
 uint8_t sip[4]={xx,xx,xx,xx};
 memcpy(param.sip_addr[ST_PORT_P], sip, ST_IP_ADDR_LEN);
 param.flags = ST_FLAG_BIND_NUMA; // default bind to numa
@@ -38,7 +38,7 @@ for (i = 0; i < session_num; i++)
     ops_tx.num_port = 1;
     uint8_t ip[4]={xx,xx,xx,xx};
     memcpy(ops_tx.dip_addr[ST_PORT_P], ip, ST_IP_ADDR_LEN); //tx dst ip like 239.0.0.1
-    strncpy(ops_tx.port[ST_PORT_P], "xxxx:xx:xx.x", ST_PORT_MAX_LEN); // send port interface like 0000:af:00.0
+    snprintf(ops_tx.port[ST_PORT_P], ST_PORT_MAX_LEN, "%s", "xxxx:xx:xx.x"); // send port interface like 0000:af:00.0
     ops_tx.udp_port[ST_PORT_P] = 10000 + i * 2; // user could config the udp port in this interface.
     ops_tx.pacing = ST21_PACING_NARROW;
     ops_tx.type = ST20_TYPE_FRAME_LEVEL;
@@ -108,7 +108,7 @@ static void* app_tx_video_frame_thread(void* arg) {
 struct st_init_params param;
 memset(&param, 0, sizeof(param));
 param.num_ports = 1;
-strncpy(param.port[ST_PORT_P], "xxxx:xx:xx.x", ST_PORT_MAX_LEN);
+snprintf(param.port[ST_PORT_P], ST_PORT_MAX_LEN, "%s", "xxxx:xx:xx.x");
 uint8_t sip[4]={xx,xx,xx,xx};
 memcpy(param.sip_addr[ST_PORT_P], sip, ST_IP_ADDR_LEN);
 param.flags = ST_FLAG_BIND_NUMA; // default bind to numa
@@ -128,7 +128,7 @@ for (i = 0; i < session_num; i++)
     ops_tx.num_port = 1;
     uint8_t ip[4]={xx,xx,xx,xx};
     memcpy(ops_tx.dip_addr[ST_PORT_P], ip, ST_IP_ADDR_LEN); //tx dst ip like 239.0.0.1
-    strncpy(ops_tx.port[ST_PORT_P], "xxxx:xx:xx.x", ST_PORT_MAX_LEN); // send port interface like 0000:af:00.0
+    snprintf(ops_tx.port[ST_PORT_P], ST_PORT_MAX_LEN, "%s", "xxxx:xx:xx.x"); // send port interface like 0000:af:00.0
     ops_tx.udp_port[ST_PORT_P] = 10000 + i * 2; // user could config the udp port in this interface.
     ops_tx.pacing = ST21_PACING_NARROW;
     ops_tx.type = ST20_TYPE_RTP_LEVEL;
@@ -195,7 +195,7 @@ static void* app_tx_video_rtp_thread(void* arg) {
 struct st_init_params param;
 memset(&param, 0, sizeof(param));
 param.num_ports = 1;
-strncpy(param.port[ST_PORT_P], "xxxx:xx:xx.x", ST_PORT_MAX_LEN);
+snprintf(param.port[ST_PORT_P], ST_PORT_MAX_LEN, "%s", "xxxx:xx:xx.x");
 uint8_t sip[4]={xx,xx,xx,xx};
 memcpy(param.sip_addr[ST_PORT_P], sip, ST_IP_ADDR_LEN);
 param.flags = ST_FLAG_BIND_NUMA; // default bind to numa
@@ -215,7 +215,7 @@ for (i = 0; i < session_num; i++)
     ops_rx.num_port = 1;
     uint8_t ip[4]={xx,xx,xx,xx};
     memcpy(ops_rx.sip_addr[ST_PORT_P], ip, ST_IP_ADDR_LEN); //tx src ip like 239.0.0.1
-    strncpy(ops_rx.port[ST_PORT_P], "xxxx:xx:xx.x", ST_PORT_MAX_LEN); // send port interface like 0000:af:00.0
+    snprintf(ops_rx.port[ST_PORT_P], ST_PORT_MAX_LEN, "%s", "xxxx:xx:xx.x"); // send port interface like 0000:af:00.0
     ops_rx.udp_port[ST_PORT_P] = 10000 + i * 2; // user could config the udp port in this interface.
     ops_rx.pacing = ST21_PACING_NARROW;
     ops_rx.type = ST20_TYPE_FRAME_LEVEL;
@@ -279,7 +279,7 @@ you could refer app/sample/rx_rtp_video_sample.c for the whole sample of st22 ca
 struct st_init_params param;
 memset(&param, 0, sizeof(param));
 param.num_ports = 1;
-strncpy(param.port[ST_PORT_P], "xxxx:xx:xx.x", ST_PORT_MAX_LEN);
+snprintf(param.port[ST_PORT_P], ST_PORT_MAX_LEN, "%s", "xxxx:xx:xx.x");
 uint8_t sip[4] = {xx,xx,xx,xx};
 memcpy(param.sip_addr[ST_PORT_P], sip, ST_IP_ADDR_LEN);
 param.flags = ST_FLAG_BIND_NUMA; // default bind to numa
@@ -299,7 +299,7 @@ for (i = 0; i < session_num; i++)
     ops_rx.num_port = 1;
     uint8_t ip[4] = {xx,xx,xx,xx};
     memcpy(ops_rx.sip_addr[ST_PORT_P], ip, ST_IP_ADDR_LEN); //tx src ip like 239.0.0.1
-    strncpy(ops_rx.port[ST_PORT_P], "xxxx:xx:xx.x", ST_PORT_MAX_LEN); // send port interface like 0000:af:00.0
+    snprintf(ops_rx.port[ST_PORT_P], ST_PORT_MAX_LEN, "%s", "xxxx:xx:xx.x"); // send port interface like 0000:af:00.0
     ops_rx.udp_port[ST_PORT_P] = 10000 + i * 2; // user could config the udp port in this interface.
     ops_rx.pacing = ST21_PACING_NARROW;
     ops_rx.type = ST20_TYPE_RTP_LEVEL;

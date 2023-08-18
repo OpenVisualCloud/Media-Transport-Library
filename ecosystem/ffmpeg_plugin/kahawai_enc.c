@@ -99,7 +99,7 @@ static int kahawai_write_header(AVFormatContext* ctx) {
     return AVERROR(EINVAL);
   }
   ops_tx.port.num_port = 1;
-  strncpy(ops_tx.port.port[MTL_PORT_P], s->port, MTL_PORT_MAX_LEN);
+  snprintf(ops_tx.port.port[MTL_PORT_P], MTL_PORT_MAX_LEN, "%s", s->port);
 
   if (NULL == s->dst_addr) {
     av_log(ctx, AV_LOG_ERROR, "Invalid destination IP address\n");

@@ -235,7 +235,7 @@ static int tx_st20p_create_transport(struct mtl_main_impl* impl, struct st20p_tx
   ops_tx.num_port = RTE_MIN(ops->port.num_port, MTL_SESSION_PORT_MAX);
   for (int i = 0; i < ops_tx.num_port; i++) {
     memcpy(ops_tx.dip_addr[i], ops->port.dip_addr[i], MTL_IP_ADDR_LEN);
-    strncpy(ops_tx.port[i], ops->port.port[i], MTL_PORT_MAX_LEN);
+    snprintf(ops_tx.port[i], MTL_PORT_MAX_LEN, "%s", ops->port.port[i]);
     ops_tx.udp_src_port[i] = ops->port.udp_src_port[i];
     ops_tx.udp_port[i] = ops->port.udp_port[i];
   }
@@ -631,7 +631,7 @@ st20p_tx_handle st20p_tx_create(mtl_handle mt, struct st20p_tx_ops* ops) {
   mt_pthread_mutex_init(&ctx->lock, NULL);
 
   /* copy ops */
-  strncpy(ctx->ops_name, ops->name, ST_MAX_NAME_LEN - 1);
+  snprintf(ctx->ops_name, ST_MAX_NAME_LEN - 1, "%s", ops->name);
   ctx->ops = *ops;
 
   /* get one suitable convert device */

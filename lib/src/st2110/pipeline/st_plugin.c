@@ -587,7 +587,7 @@ st22_encoder_dev_handle st22_encoder_register(mtl_handle mt,
     encode_dev->parent = impl;
     encode_dev->idx = i;
     rte_atomic32_set(&encode_dev->ref_cnt, 0);
-    strncpy(encode_dev->name, dev->name, ST_MAX_NAME_LEN - 1);
+    snprintf(encode_dev->name, ST_MAX_NAME_LEN - 1, "%s", dev->name);
     encode_dev->dev = *dev;
     for (int j = 0; j < ST_MAX_SESSIONS_PER_ENCODER; j++) {
       encode_dev->sessions[j].idx = j;
@@ -644,7 +644,7 @@ st22_decoder_dev_handle st22_decoder_register(mtl_handle mt,
     decode_dev->parent = impl;
     decode_dev->idx = i;
     rte_atomic32_set(&decode_dev->ref_cnt, 0);
-    strncpy(decode_dev->name, dev->name, ST_MAX_NAME_LEN - 1);
+    snprintf(decode_dev->name, ST_MAX_NAME_LEN - 1, "%s", dev->name);
     decode_dev->dev = *dev;
     for (int j = 0; j < ST_MAX_SESSIONS_PER_DECODER; j++) {
       decode_dev->sessions[j].idx = j;
@@ -701,7 +701,7 @@ st20_converter_dev_handle st20_converter_register(mtl_handle mt,
     convert_dev->parent = impl;
     convert_dev->idx = i;
     rte_atomic32_set(&convert_dev->ref_cnt, 0);
-    strncpy(convert_dev->name, dev->name, ST_MAX_NAME_LEN - 1);
+    snprintf(convert_dev->name, ST_MAX_NAME_LEN - 1, "%s", dev->name);
     convert_dev->dev = *dev;
     for (int j = 0; j < ST_MAX_SESSIONS_PER_CONVERTER; j++) {
       convert_dev->sessions[j].idx = j;
@@ -907,7 +907,7 @@ int st_plugin_register(mtl_handle mt, const char* path) {
       return -ENOMEM;
     }
     plugin->idx = i;
-    strncpy(plugin->path, path, ST_PLUGIN_MAX_PATH_LEN - 1);
+    snprintf(plugin->path, ST_PLUGIN_MAX_PATH_LEN - 1, "%s", path);
     plugin->dl_handle = dl_handle;
     plugin->create = create_fn;
     plugin->free = free_fn;
