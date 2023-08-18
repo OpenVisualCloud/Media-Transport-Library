@@ -511,7 +511,7 @@ void* st22p_rx_get_fb_addr(st22p_rx_handle handle, uint16_t idx) {
     return NULL;
   }
 
-  if (idx < 0 || idx >= ctx->framebuff_cnt) {
+  if (idx >= ctx->framebuff_cnt) {
     err("%s, invalid idx %d, should be in range [0, %d]\n", __func__, cidx,
         ctx->framebuff_cnt);
     return NULL;
