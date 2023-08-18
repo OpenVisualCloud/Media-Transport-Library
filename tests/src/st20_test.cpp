@@ -2852,7 +2852,7 @@ static void st20_rx_meta_test(enum st_fps fps[], int width[], int height[],
   EXPECT_GE(ret, 0);
   for (int i = 0; i < sessions; i++) {
     EXPECT_GT(test_ctx_rx[i]->fb_rec, 0);
-    float expect_incomplete_frame_cnt = test_ctx_rx[i]->fb_rec / 2;
+    float expect_incomplete_frame_cnt = (float)test_ctx_rx[i]->fb_rec / 2;
     EXPECT_NEAR(test_ctx_rx[i]->incomplete_frame_cnt, expect_incomplete_frame_cnt,
                 expect_incomplete_frame_cnt * 0.1);
     EXPECT_EQ(test_ctx_rx[i]->fail_cnt, 0);

@@ -77,6 +77,7 @@ init_fb:
   mtl_dma_mem_handle dma_mem = mtl_dma_mem_alloc(s->st, fbs_size);
   if (!dma_mem) {
     err("%s(%d), dma mem alloc/map fail\n", __func__, s->idx);
+    munmap(m, fbs_size);
     close(fd);
     return -EIO;
   }
@@ -92,6 +93,7 @@ init_fb:
     } else {
       mtl_memcpy(s->source_begin, m, i.st_size);
     }
+    munmap(m, fbs_size);
   }
   s->source_end = s->source_begin + fbs_size;
   info("%s, source begin at %p, end at %p\n", __func__, s->source_begin, s->source_end);
