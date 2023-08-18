@@ -257,7 +257,9 @@ int mt_socket_get_mac(struct mtl_main_impl* impl, char* if_name,
   while (socket_arp_get(sock, addr.sin_addr.s_addr, ea, if_name) < 0) {
     memset(dummy_buf, 0, sizeof(dummy_buf));
     /* tx one dummy pkt to send arp request */
-    sendto(sock, dummy_buf, 0, 0, (struct sockaddr*)&addr, sizeof(struct sockaddr_in));
+    if (sendto(sock, dummy_buf, 0, 0, (struct sockaddr*)&addr,
+               sizeof(struct sockaddr_in)) < 0)
+      continue;
 
     if (mt_aborted(impl)) {
       err("%s, fail as user aborted\n", __func__);
