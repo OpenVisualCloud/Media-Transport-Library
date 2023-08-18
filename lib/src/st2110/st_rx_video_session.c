@@ -3111,7 +3111,7 @@ static int rv_attach(struct mtl_main_impl* impl, struct st_rx_video_sessions_mgr
   /* one line at line 2 packets for all the format */
   if (s->st20_frame_bitmap_size < ops->height * 2 / 8)
     s->st20_frame_bitmap_size = ops->height * 2 / 8;
-  strncpy(s->ops_name, ops->name, ST_MAX_NAME_LEN - 1);
+  snprintf(s->ops_name, ST_MAX_NAME_LEN - 1, "%s", ops->name);
   s->ops = *ops;
   for (int i = 0; i < num_port; i++) {
     s->st20_dst_port[i] = (ops->udp_port[i]) ? (ops->udp_port[i]) : (10000 + idx * 2);
@@ -4319,7 +4319,7 @@ st22_rx_handle st22_rx_create(mtl_handle mt, struct st22_rx_ops* ops) {
   st20_ops.num_port = ops->num_port;
   for (int i = 0; i < ops->num_port; i++) {
     memcpy(st20_ops.sip_addr[i], ops->sip_addr[i], MTL_IP_ADDR_LEN);
-    strncpy(st20_ops.port[i], ops->port[i], MTL_PORT_MAX_LEN);
+    snprintf(st20_ops.port[i], MTL_PORT_MAX_LEN, "%s", ops->port[i]);
     st20_ops.udp_port[i] = ops->udp_port[i];
   }
   if (ops->flags & ST22_RX_FLAG_DATA_PATH_ONLY)

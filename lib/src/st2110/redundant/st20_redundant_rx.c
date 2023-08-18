@@ -146,7 +146,7 @@ static int rx_st20r_create_transport(struct st20r_rx_ctx* ctx, struct st20r_rx_o
   ops_rx.priv = transport;
   ops_rx.num_port = 1;
   memcpy(ops_rx.sip_addr[MTL_SESSION_PORT_P], ops->sip_addr[port], MTL_IP_ADDR_LEN);
-  strncpy(ops_rx.port[MTL_SESSION_PORT_P], ops->port[port], MTL_PORT_MAX_LEN - 1);
+  snprintf(ops_rx.port[MTL_SESSION_PORT_P], MTL_PORT_MAX_LEN - 1, "%s", ops->port[port]);
   ops_rx.udp_port[MTL_SESSION_PORT_P] = ops->udp_port[port];
 
   if (ops->flags & ST20R_RX_FLAG_DATA_PATH_ONLY)
@@ -266,7 +266,7 @@ st20r_rx_handle st20r_rx_create(mtl_handle mt, struct st20r_rx_ops* ops) {
   mt_pthread_mutex_init(&ctx->lock, NULL);
 
   /* copy ops */
-  strncpy(ctx->ops_name, ops->name, ST_MAX_NAME_LEN - 1);
+  snprintf(ctx->ops_name, ST_MAX_NAME_LEN - 1, "%s", ops->name);
   ctx->ops = *ops;
 
   /* crete transport handle */

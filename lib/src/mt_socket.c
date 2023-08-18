@@ -20,7 +20,7 @@ int mt_socket_get_if_ip(char* if_name, uint8_t ip[MTL_IP_ADDR_LEN],
   }
 
   memset(&ifr, 0x0, sizeof(ifr));
-  strncpy(ifr.ifr_name, if_name, sizeof(ifr.ifr_name) - 1);
+  snprintf(ifr.ifr_name, sizeof(ifr.ifr_name) - 1, "%s", if_name);
   ret = ioctl(sock, SIOCGIFADDR, &ifr);
   if (ret < 0) {
     err("%s, SIOCGIFADDR fail %d for if %s\n", __func__, ret, if_name);
@@ -78,7 +78,7 @@ int mt_socket_get_if_mac(char* if_name, struct rte_ether_addr* ea) {
   }
 
   memset(&ifr, 0x0, sizeof(ifr));
-  strncpy(ifr.ifr_name, if_name, sizeof(ifr.ifr_name) - 1);
+  snprintf(ifr.ifr_name, sizeof(ifr.ifr_name) - 1, "%s", if_name);
   ret = ioctl(sock, SIOCGIFHWADDR, &ifr);
   if (ret < 0) {
     err("%s, SIOCGIFADDR fail %d for if %s\n", __func__, ret, if_name);
@@ -146,7 +146,7 @@ static int socket_arp_get(int sfd, in_addr_t ip, struct rte_ether_addr* ea,
   ina.s_addr = ip;
   memcpy(&sin->sin_addr, (char*)&ina, sizeof(struct in_addr));
 
-  strncpy(arp.arp_dev, if_name, sizeof(arp.arp_dev) - 1);
+  snprintf(arp.arp_dev, sizeof(arp.arp_dev) - 1, "%s", if_name);
   int ret = ioctl(sfd, SIOCGARP, &arp);
   if (ret < 0) {
     dbg("%s, entry not available in cache...\n", __func__);

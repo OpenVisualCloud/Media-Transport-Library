@@ -195,7 +195,7 @@ static int rx_st22p_create_transport(struct mtl_main_impl* impl, struct st22p_rx
   ops_rx.num_port = RTE_MIN(ops->port.num_port, MTL_SESSION_PORT_MAX);
   for (int i = 0; i < ops_rx.num_port; i++) {
     memcpy(ops_rx.sip_addr[i], ops->port.sip_addr[i], MTL_IP_ADDR_LEN);
-    strncpy(ops_rx.port[i], ops->port.port[i], MTL_PORT_MAX_LEN);
+    snprintf(ops_rx.port[i], MTL_PORT_MAX_LEN, "%s", ops->port.port[i]);
     ops_rx.udp_port[i] = ops->port.udp_port[i];
   }
   if (ops->flags & ST22P_RX_FLAG_DATA_PATH_ONLY)
@@ -437,7 +437,7 @@ st22p_rx_handle st22p_rx_create(mtl_handle mt, struct st22p_rx_ops* ops) {
   mt_pthread_mutex_init(&ctx->lock, NULL);
 
   /* copy ops */
-  strncpy(ctx->ops_name, ops->name, ST_MAX_NAME_LEN - 1);
+  snprintf(ctx->ops_name, ST_MAX_NAME_LEN - 1, "%s", ops->name);
   ctx->ops = *ops;
 
   /* get one suitable jpegxs decode device */

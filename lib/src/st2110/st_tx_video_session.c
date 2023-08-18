@@ -2831,7 +2831,7 @@ static int tv_attach(struct mtl_main_impl* impl, struct st_tx_video_sessions_mgr
   s->st20_frame_stat = ST21_TX_STAT_WAIT_FRAME;
   s->bulk = RTE_MIN(4, ST_SESSION_MAX_BULK);
 
-  strncpy(s->ops_name, ops->name, ST_MAX_NAME_LEN - 1);
+  snprintf(s->ops_name, ST_MAX_NAME_LEN - 1, "%s", ops->name);
   s->ops = *ops;
   s->s_type = s_type;
   for (int i = 0; i < num_port; i++) {
@@ -3976,7 +3976,7 @@ st22_tx_handle st22_tx_create(mtl_handle mt, struct st22_tx_ops* ops) {
   st20_ops.num_port = ops->num_port;
   for (int i = 0; i < ops->num_port; i++) {
     memcpy(st20_ops.dip_addr[i], ops->dip_addr[i], MTL_IP_ADDR_LEN);
-    strncpy(st20_ops.port[i], ops->port[i], MTL_PORT_MAX_LEN);
+    snprintf(st20_ops.port[i], MTL_PORT_MAX_LEN, "%s", ops->port[i]);
     st20_ops.udp_src_port[i] = ops->udp_src_port[i];
     st20_ops.udp_port[i] = ops->udp_port[i];
   }

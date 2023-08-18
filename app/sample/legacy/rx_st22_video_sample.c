@@ -154,8 +154,8 @@ int main(int argc, char** argv) {
     ops_rx.num_port = 1;
     memcpy(ops_rx.sip_addr[MTL_SESSION_PORT_P], ctx.rx_sip_addr[MTL_PORT_P],
            MTL_IP_ADDR_LEN);
-    strncpy(ops_rx.port[MTL_SESSION_PORT_P], ctx.param.port[MTL_PORT_P],
-            MTL_PORT_MAX_LEN);
+    snprintf(ops_rx.port[MTL_SESSION_PORT_P], MTL_PORT_MAX_LEN, "%s",
+             ctx.param.port[MTL_PORT_P]);
     // user could config the udp port in this interface.
     ops_rx.udp_port[MTL_SESSION_PORT_P] = ctx.udp_port + i * 2;
     ops_rx.width = ctx.width;

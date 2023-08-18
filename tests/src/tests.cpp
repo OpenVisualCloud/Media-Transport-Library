@@ -92,13 +92,13 @@ struct st_tests_context* st_test_ctx(void) {
 static int test_args_dma_dev(struct mtl_init_params* p, const char* in_dev) {
   if (!in_dev) return -EIO;
   char devs[128] = {0};
-  strncpy(devs, in_dev, 128 - 1);
+  snprintf(devs, 128 - 1, "%s", in_dev);
 
   dbg("%s, dev list %s\n", __func__, devs);
   char* next_dev = strtok(devs, ",");
   while (next_dev && (p->num_dma_dev_port < MTL_DMA_DEV_MAX)) {
     dbg("next_dev: %s\n", next_dev);
-    strncpy(p->dma_dev_port[p->num_dma_dev_port], next_dev, MTL_PORT_MAX_LEN - 1);
+    snprintf(p->dma_dev_port[p->num_dma_dev_port], MTL_PORT_MAX_LEN - 1, "%s", next_dev);
     p->num_dma_dev_port++;
     next_dev = strtok(NULL, ",");
   }

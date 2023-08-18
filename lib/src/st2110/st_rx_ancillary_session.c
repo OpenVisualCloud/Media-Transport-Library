@@ -321,7 +321,7 @@ static int rx_ancillary_session_attach(struct mtl_main_impl* impl,
   if (ret < 0) return ret;
 
   s->time_measure = mt_has_tasklet_time_measure(impl);
-  strncpy(s->ops_name, ops->name, ST_MAX_NAME_LEN - 1);
+  snprintf(s->ops_name, ST_MAX_NAME_LEN - 1, "%s", ops->name);
   s->ops = *ops;
   for (int i = 0; i < num_port; i++) {
     s->st40_dst_port[i] = (ops->udp_port[i]) ? (ops->udp_port[i]) : (30000 + idx * 2);
