@@ -226,70 +226,66 @@ struct st40_tx_frame_meta {
  * Include the PCIE port and other required info.
  */
 struct st40_tx_ops {
-  /** name */
-  const char* name;
-  /** private data to the callback function */
-  void* priv;
-  /** destination IP address */
+  /** Mandatory. destination IP address */
   uint8_t dip_addr[MTL_SESSION_PORT_MAX][MTL_IP_ADDR_LEN];
-  /** Pcie BDF path like 0000:af:00.0, should align to BDF of mtl_init */
+  /** Mandatory. Pcie BDF path like 0000:af:00.0, should align to BDF of mtl_init */
   char port[MTL_SESSION_PORT_MAX][MTL_PORT_MAX_LEN];
-  /** 1 or 2, num of ports this session attached to */
+  /** Mandatory. 1 or 2, num of ports this session attached to */
   uint8_t num_port;
-  /** UDP source port number, leave as 0 to use same port as dst */
-  uint16_t udp_src_port[MTL_SESSION_PORT_MAX];
-  /** UDP destination port number */
+  /** Mandatory. UDP destination port number */
   uint16_t udp_port[MTL_SESSION_PORT_MAX];
-  /** Session streaming type, frame or RTP */
+
+  /** Mandatory. Session streaming type, frame or RTP */
   enum st40_type type;
-  /** Session fps */
+  /** Mandatory. Session fps */
   enum st_fps fps;
-  /** 7 bits payload type define in RFC3550 */
+  /** Mandatory. 7 bits payload type define in RFC3550 */
   uint8_t payload_type;
-  /** flags, value in ST40_TX_FLAG_* */
+
+  /** Optional. name */
+  const char* name;
+  /** Optional. private data to the callback function */
+  void* priv;
+  /** Optional. see ST40_TX_FLAG_* for possible flags */
   uint32_t flags;
-  /**
-   * tx destination mac address.
-   * Valid if ST40_TX_FLAG_USER_P(R)_MAC is enabled
-   */
-  uint8_t tx_dst_mac[MTL_SESSION_PORT_MAX][MTL_MAC_ADDR_LEN];
 
   /**
+   * Mandatory for ST40_TYPE_FRAME_LEVEL.
    * the frame buffer count requested for one st40 tx session,
-   * only for ST40_TYPE_FRAME_LEVEL.
    */
   uint16_t framebuff_cnt;
   /**
-   * ST40_TYPE_FRAME_LEVEL callback when lib require a new frame.
-   * User should provide the next available frame index to next_frame_idx.
-   * It implicit means the frame ownership will be transferred to lib,
-   * only for ST40_TYPE_FRAME_LEVEL.
-   * And only non-block method can be used in this callback as it run from lcore tasklet
-   * routine.
+   * Mandatory for ST40_TYPE_FRAME_LEVEL. callback when lib require a new frame for
+   * sending. User should provide the next available frame index to next_frame_idx. It
+   * implicit means the frame ownership will be transferred to lib, And only non-block
+   * method can be used in this callback as it run from lcore tasklet routine.
    */
   int (*get_next_frame)(void* priv, uint16_t* next_frame_idx,
                         struct st40_tx_frame_meta* meta);
   /**
-   * ST30_TYPE_FRAME_LEVEL callback when lib finish current frame.
+   * Optional for ST40_TYPE_FRAME_LEVEL. callback when lib finish sending one frame.
    * frame_idx indicate the frame which finish the transmit.
    * It implicit means the frame ownership is transferred to app.
-   * only for ST40_TYPE_FRAME_LEVEL,
    * And only non-block method can be used in this callback as it run from lcore tasklet
    * routine.
    */
   int (*notify_frame_done)(void* priv, uint16_t frame_idx,
                            struct st40_tx_frame_meta* meta);
 
+  /** Optional. UDP source port number, leave as 0 to use same port as dst */
+  uint16_t udp_src_port[MTL_SESSION_PORT_MAX];
   /**
-   * rtp ring size, must be power of 2.
-   * only for ST40_TYPE_RTP_LEVEL
+   * Optional. tx destination mac address.
+   * Valid if ST40_TX_FLAG_USER_P(R)_MAC is enabled
    */
+  uint8_t tx_dst_mac[MTL_SESSION_PORT_MAX][MTL_MAC_ADDR_LEN];
+
+  /** Mandatory for ST40_TYPE_RTP_LEVEL. rtp ring size, must be power of 2 */
   uint32_t rtp_ring_size;
   /**
-   * ST40_TYPE_RTP_LEVEL callback when lib consume one rtp packet,
-   * only for ST40_TYPE_RTP_LEVEL.
-   * And only non-block method can be used in this callback as it run from lcore tasklet
-   * routine.
+   * Optional for ST40_TYPE_RTP_LEVEL. callback when lib finish the sending of one rtp
+   * packet, And only non-block method can be used in this callback as it run from lcore
+   * tasklet routine.
    */
   int (*notify_rtp_done)(void* priv);
 };
@@ -299,29 +295,30 @@ struct st40_tx_ops {
  * Include the PCIE port and other required info
  */
 struct st40_rx_ops {
-  /** name */
-  const char* name;
-  /** private data to the callback function */
-  void* priv;
-  /** source IP address of sender */
+  /** Mandatory. source IP address of sender */
   uint8_t sip_addr[MTL_SESSION_PORT_MAX][MTL_IP_ADDR_LEN];
-  /** 1 or 2, num of ports this session attached to */
+  /** Mandatory. 1 or 2, num of ports this session attached to */
   uint8_t num_port;
-  /** Pcie BDF path like 0000:af:00.0, should align to BDF of mtl_init */
+  /** Mandatory. Pcie BDF path like 0000:af:00.0, should align to BDF of mtl_init */
   char port[MTL_SESSION_PORT_MAX][MTL_PORT_MAX_LEN];
-  /** UDP destination port number */
+  /** Mandatory. UDP source port number */
   uint16_t udp_port[MTL_SESSION_PORT_MAX];
-  /** flags, value in ST40_RX_FLAG_* */
+
+  /** Mandatory. 7 bits payload type define in RFC3550 */
+  uint8_t payload_type;
+
+  /** Optional. name */
+  const char* name;
+  /** Optional. private data to the callback function */
+  void* priv;
+  /** Optional. see ST40_RX_FLAG_* for possible flags */
   uint32_t flags;
 
-  /** 7 bits payload type define in RFC3550 */
-  uint8_t payload_type;
-  /** rtp ring size, must be power of 2 */
+  /** Mandatory. rtp ring size, must be power of 2 */
   uint32_t rtp_ring_size;
   /**
-   * callback when lib consume current rtp packet
-   * And only non-block method can be used in this callback as it run from lcore tasklet
-   * routine.
+   * Optional. the callback when lib finish the sending of one rtp packet. And only
+   * non-block method can be used in this callback as it run from lcore tasklet routine.
    */
   int (*notify_rtp_ready)(void* priv);
 };

@@ -2859,7 +2859,11 @@ static int tv_attach(struct mtl_main_impl* impl, struct st_tx_video_sessions_mgr
   s->st20_frame_stat = ST21_TX_STAT_WAIT_FRAME;
   s->bulk = RTE_MIN(4, ST_SESSION_MAX_BULK);
 
-  strncpy(s->ops_name, ops->name, ST_MAX_NAME_LEN - 1);
+  if (ops->name) {
+    snprintf(s->ops_name, sizeof(s->ops_name), "%s", ops->name);
+  } else {
+    snprintf(s->ops_name, sizeof(s->ops_name), "TX_VIDEO_M%dS%d", mgr->idx, idx);
+  }
   s->ops = *ops;
   s->s_type = s_type;
   for (int i = 0; i < num_port; i++) {
