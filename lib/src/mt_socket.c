@@ -238,7 +238,7 @@ int mt_socket_get_mac(struct mtl_main_impl* impl, char* if_name,
 
   ret = socket_query_local_mac(dip, ea);
   if (ret >= 0) {
-    info("%s: %u.%u.%u.%u is a local ip\n", __func__, dip[0], dip[1], dip[2], dip[3]);
+    dbg("%s: %u.%u.%u.%u is a local ip\n", __func__, dip[0], dip[1], dip[2], dip[3]);
     return 0;
   }
 
@@ -288,9 +288,22 @@ int mt_socket_add_flow(struct mtl_main_impl* impl, enum mtl_port port, uint16_t 
   char out[128]; /* Added rule with ID 15871 */
   int ret;
   int flow_id = -1;
-  uint8_t start_queue = mt_start_queue(impl, port);
+  uint8_t start_queue = mt_afxdp_start_queue(impl, port);
 
-  if (mt_is_multicast_ip(flow->dip_addr)) {
+  if (flow->sys_queue) {
+    err("%s(%d), sys_queue not supported\n", __func__, port);
+    return -EIO;
+  }
+  if (flow->no_port_flow) {
+    err("%s(%d), no_port_flow not supported\n", __func__, port);
+    return -EIO;
+  }
+
+  if (flow->no_ip_flow) {
+    snprintf(cmd, sizeof(cmd), "ethtool -N %s flow-type udp4 dst-port %u action %u",
+             mt_get_user_params(impl)->port[port], flow->dst_port,
+             queue_id + start_queue);
+  } else if (mt_is_multicast_ip(flow->dip_addr)) {
     snprintf(cmd, sizeof(cmd),
              "ethtool -N %s flow-type udp4 dst-ip %u.%u.%u.%u dst-port %u action %u",
              mt_get_user_params(impl)->port[port], flow->dip_addr[0], flow->dip_addr[1],
@@ -310,7 +323,7 @@ int mt_socket_add_flow(struct mtl_main_impl* impl, enum mtl_port port, uint16_t 
 
   ret = sscanf(out, "Added rule with ID %d", &flow_id);
   if (ret < 0) {
-    info("%s(%d), unknown out: %s\n", __func__, port, out);
+    err("%s(%d), unknown out: %s\n", __func__, port, out);
     return ret;
   }
 

@@ -360,6 +360,19 @@ static void sample_sig_handler(int signo) {
   return;
 }
 
+static int sample_set_afxdp(struct st_sample_context* ctx) {
+  struct mtl_init_params* p = &ctx->param;
+
+  for (uint8_t i = 0; i < p->num_ports; i++) {
+    p->pmd[i] = mtl_pmd_by_port_name(p->port[i]);
+    if (p->pmd[i] != MTL_PMD_DPDK_AF_XDP) continue;
+    p->xdp_info[i].start_queue = 1;
+    p->xdp_info[i].queue_count = ST_MAX(p->tx_queues_cnt[i], p->rx_queues_cnt[i]);
+  }
+
+  return 0;
+}
+
 int sample_parse_args(struct st_sample_context* ctx, int argc, char** argv, bool tx,
                       bool rx, bool unicast) {
   struct mtl_init_params* p = &ctx->param;
@@ -426,6 +439,7 @@ int sample_parse_args(struct st_sample_context* ctx, int argc, char** argv, bool
 
   if (tx) sample_tx_queue_cnt_set(ctx, ctx->sessions);
   if (rx) sample_rx_queue_cnt_set(ctx, ctx->sessions);
+  sample_set_afxdp(ctx);
 
   return 0;
 }

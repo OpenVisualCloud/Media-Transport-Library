@@ -1325,7 +1325,7 @@ int st30_rx_get_queue_meta(st30_rx_handle handle, struct st_queue_meta* meta) {
 
     if (mt_pmd_type(impl, port) == MTL_PMD_DPDK_AF_XDP) {
       /* af_xdp pmd */
-      meta->start_queue[i] = mt_start_queue(impl, port);
+      meta->start_queue[i] = mt_afxdp_start_queue(impl, port);
     }
     meta->queue_id[i] = rx_audio_queue_id(s, i);
   }
