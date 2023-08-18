@@ -920,141 +920,133 @@ struct st_tx_rtcp_ops {
  * Include the PCIE port and other required info.
  */
 struct st20_tx_ops {
-  /** name */
-  const char* name;
-  /** private data to the callback function */
-  void* priv;
-  /** destination IP address */
+  /** Mandatory. Destination IP address */
   uint8_t dip_addr[MTL_SESSION_PORT_MAX][MTL_IP_ADDR_LEN];
-  /** Pcie BDF path like 0000:af:00.0, should align to BDF of mtl_init */
+  /** Mandatory. Pcie BDF path like 0000:af:00.0, should align to BDFs of mtl_init */
   char port[MTL_SESSION_PORT_MAX][MTL_PORT_MAX_LEN];
-  /** 1 or 2, num of ports this session attached to */
+  /** Mandatory. 1 or 2, num of ports this session attached to */
   uint8_t num_port;
-  /** UDP source port number, leave as 0 to use same port as dst */
-  uint16_t udp_src_port[MTL_SESSION_PORT_MAX];
-  /** UDP destination port number */
+  /** Mandatory. UDP destination port number for this tx session */
   uint16_t udp_port[MTL_SESSION_PORT_MAX];
-  /** RTCP info */
-  struct st_tx_rtcp_ops* rtcp;
 
-  /** Sender pacing type */
+  /** Mandatory. Sender pacing type, default is narrow */
   enum st21_pacing pacing;
-  /** Session streaming type, frame or RTP */
+  /** Mandatory. Session streaming type, frame(default) or RTP */
   enum st20_type type;
-  /** Session packing mode */
+  /** Mandatory. Session packing mode, default is BPM */
   enum st20_packing packing;
-  /** Session resolution width */
+  /** Mandatory. Session resolution width */
   uint32_t width;
-  /** Session resolution height */
+  /** Mandatory. Session resolution height */
   uint32_t height;
+  /** Mandatory. Session resolution fps */
+  enum st_fps fps;
+  /** Mandatory. Session resolution format */
+  enum st20_fmt fmt;
+  /** Mandatory. 7 bits payload type define in RFC3550 */
+  uint8_t payload_type;
+
+  /** Optional. Name */
+  const char* name;
+  /** Optional. Private data to the cb functions(get_next_frame and others) */
+  void* priv;
+  /** Optional. Flags to control session behaviors. See ST20_TX_FLAG_* for possible value
+   */
+  uint32_t flags;
+  /** Optional. interlace or not, false(default): non-interlaced: true: interlaced */
+  bool interlaced;
+
   /**
-   * Session linesize(stride) in bytes, 0 if not set
-   * Valid linesize should be wider than width size
+   * Mandatory for ST20_TYPE_FRAME_LEVEL/ST20_TYPE_SLICE_LEVEL.
+   * the frame buffer count requested for one st20 tx session,
+   * should be in range [2, ST20_FB_MAX_COUNT].
+   */
+  uint16_t framebuff_cnt;
+  /**
+   * Mandatory for ST20_TYPE_FRAME_LEVEL/ST20_TYPE_SLICE_LEVEL.
+   * The callback when lib require a new frame for sending, user should provide the next
+   * available frame index to next_frame_idx. It implicit means the frame ownership will
+   * be transferred to lib. And only non-block method can be used within this callback, as
+   * it run from lcore tasklet routine.
+   */
+  int (*get_next_frame)(void* priv, uint16_t* next_frame_idx,
+                        struct st20_tx_frame_meta* meta);
+  /**
+   * Optional for ST20_TYPE_FRAME_LEVEL/ST20_TYPE_SLICE_LEVEL.
+   * The callback when lib finish the sending of one frame, frame_idx indicate the
+   * done frame. It implicit means the frame ownership is transferred to app. And only
+   * non-block method can be used within this callback as it run from lcore tasklet
+   * routine.
+   */
+  int (*notify_frame_done)(void* priv, uint16_t frame_idx,
+                           struct st20_tx_frame_meta* meta);
+
+  /**
+   * Optional. The event callback when there is some event(vsync or others) happened for
+   * this session. Only non-block method can be used in this callback as it run from lcore
+   * routine. Args point to the meta data of each event. Ex, cast to struct
+   * st10_vsync_meta for ST_EVENT_VSYNC.
+   */
+  int (*notify_event)(void* priv, enum st_event event, void* args);
+  /** Optional for ST20_TX_FLAG_ENABLE_RTCP. RTCP info */
+  struct st_tx_rtcp_ops* rtcp;
+  /**
+   * Optional. Session linesize(stride) in bytes, leave to zero if no padding for each
+   * line. Valid linesize should be wider than width size.
    */
   uint32_t linesize;
-  /** Session resolution fps */
-  enum st_fps fps;
-  /** Session resolution format */
-  enum st20_fmt fmt;
-  /** interlace or not, false: non-interlaced: true: interlaced */
-  bool interlaced;
-  /** 7 bits payload type define in RFC3550 */
-  uint8_t payload_type;
-  /** flags, value in ST20_TX_FLAG_* */
-  uint32_t flags;
-  /**
-   * tx destination mac address.
-   * Valid if ST20_TX_FLAG_USER_P(R)_MAC is enabled
-   */
+  /** Optional. UDP source port number, leave as 0 to use same port as destination port */
+  uint16_t udp_src_port[MTL_SESSION_PORT_MAX];
+  /** Optional. The tx destination mac address if ST20_TX_FLAG_USER_P(R)_MAC is enabled */
   uint8_t tx_dst_mac[MTL_SESSION_PORT_MAX][MTL_MAC_ADDR_LEN];
   /**
-   * The start vrx buffer.
+   * Optional. The start vrx buffer.
    * Leave to zero if not know detail, lib will assign a start value of vrx(narrow) based
    * on resolution and timing. Refer to st21 spec for the possible vrx value and also fine
    * tune is required since network setup difference and RL burst.
    */
   uint16_t start_vrx;
   /**
-   * Manually assigned padding pkt interval(pkts level) for RL pacing.
+   * Optional. Manually assigned padding pkt interval(pkts level) for RL pacing.
    * Leave to zero if not know detail, lib will train the interval in the initial routine.
    */
   uint16_t pad_interval;
   /**
-   * The rtp timestamp delta(us) to the start time of frame.
+   * Optional. The rtp timestamp delta(us) to the start time of frame.
    * Zero means the rtp timestamp at the start of the frame.
    */
   int32_t rtp_timestamp_delta_us;
-
   /**
-   * the time for lib to detect the hang on the tx queue and try to recovery
+   * Optional. The time for lib to detect the hang on the tx queue and try to recovery
    * Leave to zero system will use the default value(1s).
    */
   uint32_t tx_hang_detect_ms;
 
   /**
-   * the frame buffer count requested for one st20 tx session,
-   * should be in range [2, ST20_FB_MAX_COUNT],
-   * only for ST20_TYPE_FRAME_LEVEL.
-   */
-  uint16_t framebuff_cnt;
-  /**
-   * ST20_TYPE_FRAME_LEVEL callback when lib require a new frame.
-   * User should provide the next available frame index to next_frame_idx.
-   * It implicit means the frame ownership will be transferred to lib.
-   * only for ST20_TYPE_FRAME_LEVEL.
-   * And only non-block method can be used within this callback, as it run from lcore
-   * tasklet routine.
-   */
-  int (*get_next_frame)(void* priv, uint16_t* next_frame_idx,
-                        struct st20_tx_frame_meta* meta);
-  /**
-   * ST20_TYPE_FRAME_LEVEL callback when lib finish current frame.
-   * frame_idx indicate the frame which finish the transmit.
-   * It implicit means the frame ownership is transferred to app.
-   * only for ST20_TYPE_FRAME_LEVEL.
-   * And only non-block method can be used within this callback as it run from lcore
-   * tasklet routine.
-   */
-  int (*notify_frame_done)(void* priv, uint16_t frame_idx,
-                           struct st20_tx_frame_meta* meta);
-  /**
-   * ST20_TYPE_SLICE_LEVEL callback when lib requires new lines.
-   * User should provide the ready lines number.
+   * Mandatory for ST20_TYPE_SLICE_LEVEL.
+   * The callback when lib requires new ready lines, user should provide the ready lines
+   * number by the meta.
    */
   int (*query_frame_lines_ready)(void* priv, uint16_t frame_idx,
                                  struct st20_tx_slice_meta* meta);
 
-  /**
-   * rtp ring size, must be power of 2
-   * only for ST20_TYPE_RTP_LEVEL
-   */
+  /** Mandatory for ST20_TYPE_RTP_LEVEL. rtp ring size, must be power of 2 */
   uint32_t rtp_ring_size;
-  /**
-   * total pkts in one rtp frame, ex: 4320 for 1080p,
-   * only for ST20_TYPE_RTP_LEVEL
-   */
+  /** Mandatory for ST20_TYPE_RTP_LEVEL. total pkts in one frame, ex: 4320 for 1080p. */
   uint32_t rtp_frame_total_pkts;
   /**
-   * size for each rtp pkt, both the data and rtp header,
-   * must small than MTL_PKT_MAX_RTP_BYTES,
-   * only for ST20_TYPE_RTP_LEVEL.
+   * Mandatory for ST20_TYPE_RTP_LEVEL.
+   * size for each rtp pkt, include both the payload data and rtp header, must small than
+   * MTL_PKT_MAX_RTP_BYTES
    */
   uint16_t rtp_pkt_size;
   /**
-   * ST20_TYPE_RTP_LEVEL callback when lib consume one rtp packet,
-   * only for ST20_TYPE_RTP_LEVEL,
+   * Optional for ST20_TYPE_RTP_LEVEL.
+   * The callback when lib finish the sending of one rtp packet.
    * And only non-block method can be used within this callback as it run from lcore
    * tasklet routine.
    */
   int (*notify_rtp_done)(void* priv);
-
-  /**
-   * event callback, lib will call this when there is some event happened.
-   * Only non-block method can be used in this callback as it run from lcore routine.
-   * args point to the meta data of each event.
-   * Ex, cast to struct st10_vsync_meta for ST_EVENT_VSYNC.
-   */
-  int (*notify_event)(void* priv, enum st_event event, void* args);
 };
 
 /**
@@ -1062,108 +1054,103 @@ struct st20_tx_ops {
  * Include the PCIE port and other required info.
  */
 struct st22_tx_ops {
-  /** name */
-  const char* name;
-  /** private data to the callback function */
-  void* priv;
-  /** destination IP address */
+  /** Mandatory. Destination IP address */
   uint8_t dip_addr[MTL_SESSION_PORT_MAX][MTL_IP_ADDR_LEN];
-  /** Pcie BDF path like 0000:af:00.0, should align to BDF of mtl_init */
+  /** Mandatory. Pcie BDF path like 0000:af:00.0, should align to BDFs of mtl_init */
   char port[MTL_SESSION_PORT_MAX][MTL_PORT_MAX_LEN];
-  /** 1 or 2, num of ports this session attached to */
+  /** Mandatory. 1 or 2, num of ports this session attached to */
   uint8_t num_port;
-  /** UDP source port number, leave as 0 to use same port as dst */
-  uint16_t udp_src_port[MTL_SESSION_PORT_MAX];
-  /** UDP destination port number */
+  /** Mandatory. UDP destination port number for this tx session */
   uint16_t udp_port[MTL_SESSION_PORT_MAX];
-  /** RTCP info */
-  struct st_tx_rtcp_ops* rtcp;
 
-  /** Session streaming type, frame or RTP */
-  enum st22_type type;
-
-  /** Sender pacing type */
+  /** Mandatory. Sender pacing type, default is narrow */
   enum st21_pacing pacing;
-  /** Session resolution width */
-  uint32_t width;
-  /** Session resolution height */
-  uint32_t height;
-  /** Session resolution fps */
-  enum st_fps fps;
-  /** 7 bits payload type define in RFC3550 */
-  uint8_t payload_type;
-  /** packetization modes define in RFC9134 */
+  /** Mandatory. Session streaming type, frame(default) or RTP */
+  enum st22_type type;
+  /** Mandatory. Packetization modes define in RFC9134 */
   enum st22_pack_type pack_type;
-  /** flags, value in ST22_TX_FLAG_* */
-  uint32_t flags;
-  /**
-   * tx destination mac address.
-   * Valid if ST22_TX_FLAG_USER_P(R)_MAC is enabled
+  /** Mandatory. Session resolution width */
+  uint32_t width;
+  /** Mandatory. Session resolution height */
+  uint32_t height;
+  /** Mandatory. Session resolution fps */
+  enum st_fps fps;
+  /** Mandatory. Session resolution format */
+  enum st20_fmt fmt;
+  /** Mandatory. 7 bits payload type define in RFC3550 */
+  uint8_t payload_type;
+
+  /** Optional. Name */
+  const char* name;
+  /** Optional. Private data to the cb functions(get_next_frame and others) */
+  void* priv;
+  /** Optional. Flags to control session behaviors. See ST22_TX_FLAG_* for possible value
    */
-  uint8_t tx_dst_mac[MTL_SESSION_PORT_MAX][MTL_MAC_ADDR_LEN];
+  uint32_t flags;
 
   /**
+   * Mandatory for ST22_TYPE_FRAME_LEVEL.
    * the frame buffer count requested for one st22 tx session,
    * should be in range [2, ST22_FB_MAX_COUNT],
-   * only for ST22_TYPE_FRAME_LEVEL.
    */
   uint16_t framebuff_cnt;
   /**
+   * Mandatory for ST22_TYPE_FRAME_LEVEL.
    * max framebuffer size for one st22 tx session codestream,
    * usually ST22 use constant bitrate (CBR) mode.
    * lib will allocate all frame buffer with this size,
    * app can indicate the real codestream size later in get_next_frame query.
-   * only for ST22_TYPE_FRAME_LEVEL.
    */
   size_t framebuff_max_size;
   /**
-   * ST22_TYPE_FRAME_LEVEL callback when lib require a new frame.
-   * User should provide the next available frame index to next_frame_idx.
-   * It implicit means the frame ownership will be transferred to lib.
-   * only for ST22_TYPE_FRAME_LEVEL.
-   * And only non-block method can be used within this callback, as it run from lcore
-   * tasklet routine.
-   * next_frame_idx: next available frame index.
-   * meta: meta for next_frame_idx.
+   * Mandatory for ST22_TYPE_FRAME_LEVEL. The callback when lib require a new frame for
+   * sending. User should provide the next available frame index to next_frame_idx. It
+   * implicit means the frame ownership will be transferred to lib. And only non-block
+   * method can be used within this callback, as it run from lcore tasklet routine.
    */
   int (*get_next_frame)(void* priv, uint16_t* next_frame_idx,
                         struct st22_tx_frame_meta* meta);
   /**
-   * ST20_TYPE_FRAME_LEVEL callback when lib finish current frame.
-   * frame_idx indicate the frame which finish the transmit.
-   * It implicit means the frame ownership is transferred to app.
-   * only for ST20_TYPE_FRAME_LEVEL.
-   * And only non-block method can be used within this callback as it run from lcore
-   * tasklet routine.
+   * Optional for ST22_TYPE_FRAME_LEVEL.
+   * The callback when lib finish the sending of current frame, frame_idx indicate the
+   * done frame. It implicit means the frame ownership is transferred to app. And only
+   * non-block method can be used within this callback as it run from lcore tasklet
+   * routine.
    */
   int (*notify_frame_done)(void* priv, uint16_t frame_idx,
                            struct st22_tx_frame_meta* meta);
 
-  /** rtp ring size, must be power of 2, for ST22_TYPE_RTP_LEVEL */
+  /**
+   * Optional. The event callback when there is some event(vsync or others) happened for
+   * this session. Only non-block method can be used in this callback as it run from lcore
+   * routine. Args point to the meta data of each event. Ex, cast to struct
+   * st10_vsync_meta for ST_EVENT_VSYNC.
+   */
+  int (*notify_event)(void* priv, enum st_event event, void* args);
+  /** Optional. UDP source port number, leave as 0 to use same port as destination port */
+  uint16_t udp_src_port[MTL_SESSION_PORT_MAX];
+  /** Optional for ST20_TX_FLAG_ENABLE_RTCP. RTCP info */
+  struct st_tx_rtcp_ops* rtcp;
+  /** Optional. The tx destination mac address if ST20_TX_FLAG_USER_P(R)_MAC is enabled */
+  uint8_t tx_dst_mac[MTL_SESSION_PORT_MAX][MTL_MAC_ADDR_LEN];
+
+  /** Mandatory for ST22_TYPE_RTP_LEVEL. rtp ring size, must be power of 2 */
   uint32_t rtp_ring_size;
-  /** total pkts in one rtp frame, for ST22_TYPE_RTP_LEVEL */
+  /** Mandatory for ST22_TYPE_RTP_LEVEL. total pkts in one rtp frame */
   uint32_t rtp_frame_total_pkts;
   /**
-   * size for each rtp pkt, both the data and rtp header,
-   * must small than MTL_PKT_MAX_RTP_BYTES.
-   * for ST22_TYPE_RTP_LEVEL
+   * Mandatory for ST22_TYPE_RTP_LEVEL.
+   * size for each rtp pkt, include both the payload data and rtp header, must small than
+   * MTL_PKT_MAX_RTP_BYTES
    */
   uint16_t rtp_pkt_size;
   /**
-   * callback when lib consume one rtp packet.
-   * And only non-block method can be used in this callback as it run from lcore tasklet
-   * routine.
-   * for ST22_TYPE_RTP_LEVEL
+   * Optional for ST22_TYPE_RTP_LEVEL.
+   * The callback when lib finish the sending of one rtp packet.
+   * And only non-block method can be used within this callback as it run from lcore
+   * tasklet routine.
    */
   int (*notify_rtp_done)(void* priv);
-
-  /**
-   * event callback, lib will call this when there is some event happened.
-   * Only non-block method can be used in this callback as it run from lcore routine.
-   * args point to the meta data of each event.
-   * Ex, cast to struct st10_vsync_meta for ST_EVENT_VSYNC.
-   */
-  int (*notify_event)(void* priv, enum st_event event, void* args);
 };
 
 /**
@@ -1224,152 +1211,147 @@ struct st_rx_rtcp_ops {
  * Include the PCIE port and other required info.
  */
 struct st20_rx_ops {
-  /** name */
-  const char* name;
-  /** private data to the callback function */
-  void* priv;
-  /** source IP address of sender */
+  /** Mandatory. source IP address of sender */
   uint8_t sip_addr[MTL_SESSION_PORT_MAX][MTL_IP_ADDR_LEN];
-  /** 1 or 2, num of ports this session attached to */
+  /** Mandatory. 1 or 2, num of ports this session attached to */
   uint8_t num_port;
-  /** Pcie BDF path like 0000:af:00.0, should align to BDF of mtl_init */
+  /** Mandatory. Pcie BDF path like 0000:af:00.0, should align to BDF of mtl_init */
   char port[MTL_SESSION_PORT_MAX][MTL_PORT_MAX_LEN];
-  /** UDP destination port number */
+  /** Mandatory. UDP source port number */
   uint16_t udp_port[MTL_SESSION_PORT_MAX];
-  /** RTCP info */
-  struct st_rx_rtcp_ops* rtcp;
 
-  /** Sender pacing type */
+  /** Mandatory. Sender pacing type, default is narrow */
   enum st21_pacing pacing;
-  /** Session streaming type, frame or RTP */
+  /** Mandatory. Session streaming type, frame(default) or RTP */
   enum st20_type type;
-  /** Session packing mode */
+  /** Mandatory. Session packing mode, default is BPM */
   enum st20_packing packing;
-  /** Session resolution width */
+  /** Mandatory. Session resolution width */
   uint32_t width;
-  /** Session resolution height */
+  /** Mandatory. Session resolution height */
   uint32_t height;
-  /**
-   * Session linesize(stride) in bytes, 0 if not set
-   * Valid linesize should be wider than width size
-   */
-  uint32_t linesize;
-  /** Session resolution fps */
+  /** Mandatory. Session resolution fps */
   enum st_fps fps;
-  /** Session resolution format */
+  /** Mandatory. Session resolution format */
   enum st20_fmt fmt;
-  /** 7 bits payload type define in RFC3550 */
+  /** Mandatory. 7 bits payload type define in RFC3550 */
   uint8_t payload_type;
-  /** flags, value in ST20_RX_FLAG_* */
+
+  /** Optional. Name */
+  const char* name;
+  /** Optional. Private data to the cb functions(notify_frame_ready and others) */
+  void* priv;
+  /** Optional. Flags to control session behaviors. See ST20_RX_FLAG_* for possible value
+   */
   uint32_t flags;
-  /** interlace or not, false: non-interlaced: true: interlaced */
+  /** Optional. interlace or not, false(default): non-interlaced: true: interlaced */
   bool interlaced;
 
   /**
-   * max burst of simulated packet loss
-   * Only used when ST20_RX_FLAG_SIMULATE_PKT_LOSS enabled.
-   */
-  uint16_t burst_loss_max;
-  /**
-   * simulated packet loss rate
-   * Only used when ST20_RX_FLAG_SIMULATE_PKT_LOSS enabled.
-   */
-  float sim_loss_rate;
-
-  /**
-   * the ST20_TYPE_FRAME_LEVEL frame buffer count requested,
+   * Mandatory for ST20_TYPE_FRAME_LEVEL/ST20_TYPE_SLICE_LEVEL.
+   * the frame buffer count requested for one st20 rx session,
    * should be in range [2, ST20_FB_MAX_COUNT].
-   * Only for ST20_TYPE_FRAME_LEVEL/ST20_TYPE_SLICE_LEVEL.
    */
   uint16_t framebuff_cnt;
   /**
-   * the ST20_TYPE_FRAME_LEVEL external frame buffer info array,
-   * Only for ST20_TYPE_FRAME_LEVEL/ST20_TYPE_SLICE_LEVEL.
-   */
-  struct st20_ext_frame* ext_frames;
-  /**
-   * ST20_TYPE_FRAME_LEVEL callback when lib receive one frame.
+   * Mandatory for ST20_TYPE_FRAME_LEVEL/ST20_TYPE_SLICE_LEVEL.
+   * The callback when lib receive a new frame. It implicit means the frame ownership is
+   * transferred to app.
    * frame: point to the address of the frame buf.
    * meta: point to the meta data.
    * return:
    *   - 0: if app consume the frame successful. App should call st20_rx_put_framebuff
    * to return the frame when it finish the handling
    *   < 0: the error code if app can't handle, lib will free the frame then.
-   * Only for ST20_TYPE_FRAME_LEVEL/ST20_TYPE_SLICE_LEVEL.
    * And only non-block method can be used in this callback as it run from lcore tasklet
    * routine.
    */
   int (*notify_frame_ready)(void* priv, void* frame, struct st20_rx_frame_meta* meta);
 
   /**
+   * Optional. the ST20_TYPE_FRAME_LEVEL external frame buffer info array,
+   * Only for ST20_TYPE_FRAME_LEVEL/ST20_TYPE_SLICE_LEVEL.
+   */
+  struct st20_ext_frame* ext_frames;
+  /**
+   * Optional. The event callback when there is some event(vsync or others) happened for
+   * this session. Only non-block method can be used in this callback as it run from lcore
+   * routine. Args point to the meta data of each event. Ex, cast to struct
+   * st10_vsync_meta for ST_EVENT_VSYNC.
+   */
+  int (*notify_event)(void* priv, enum st_event event, void* args);
+  /** Optional for ST20_RX_FLAG_ENABLE_RTCP. RTCP info */
+  struct st_rx_rtcp_ops* rtcp;
+  /**
+   * Optional. max burst of simulated packet loss.
+   * Only used when ST20_RX_FLAG_SIMULATE_PKT_LOSS enabled.
+   */
+  uint16_t burst_loss_max;
+  /**
+   * Optional. simulated packet loss rate
+   * Only used when ST20_RX_FLAG_SIMULATE_PKT_LOSS enabled.
+   */
+  float sim_loss_rate;
+  /**
+   * Optional. Session linesize(stride) in bytes, leave to zero if no padding for each
+   * line. Valid linesize should be wider than width size.
+   */
+  uint32_t linesize;
+
+  /**
+   * Optional for ST20_TYPE_FRAME_LEVEL/ST20_TYPE_SLICE_LEVEL.
    * Total size for user frame, lib will allocate frame with this value. When lib receive
    * a payload from network, it will call uframe_pg_callback to let user to handle the
    * pixel group data in the payload, the callback should convert the pixel group data to
    * the data format app required.
    * Zero means the user frame mode is disabled.
-   * Only for ST20_TYPE_FRAME_LEVEL/ST20_TYPE_SLICE_LEVEL.
    */
   size_t uframe_size;
   /**
+   * Optional for ST20_TYPE_FRAME_LEVEL/ST20_TYPE_SLICE_LEVEL.
    * User frame callback when lib receive pixel group data from network.
    * frame: point to the address of the user frame buf.
    * meta: point to the meta data.
    * return:
    *   - 0: if app consume the pixel group successfully.
    *   < 0: the error code if app can't handle.
-   * Only for ST20_TYPE_FRAME_LEVEL/ST20_TYPE_SLICE_LEVEL.
    * And only non-block method can be used in this callback as it run from lcore tasklet
    * routine.
    */
   int (*uframe_pg_callback)(void* priv, void* frame, struct st20_rx_uframe_pg_meta* meta);
-
-  /** lines in one slice, for ST20_TYPE_SLICE_LEVEL */
-  uint32_t slice_lines;
   /**
-   * ST20_TYPE_SLICE_LEVEL callback when lib received slice info for one frame.
-   * frame: point to the address of the frame buf.
-   * meta: point to the meta data.
-   * And only non-block method can be used in this callback as it run from lcore tasklet
-   * routine.
-   */
-  int (*notify_slice_ready)(void* priv, void* frame, struct st20_rx_slice_meta* meta);
-
-  /**
-   * rtp ring size, must be power of 2.
-   * Only for ST20_TYPE_RTP_LEVEL.
-   */
-  uint32_t rtp_ring_size;
-  /**
-   * ST20_TYPE_RTP_LEVEL callback when lib receive one rtp packet.
-   * Only for ST20_TYPE_RTP_LEVEL.
-   * And only non-block method can be used in this callback as it run from lcore tasklet
-   * routine.
-   */
-  int (*notify_rtp_ready)(void* priv);
-  /**
-   * ST20_TYPE_FRAME_LEVEL/ST20_TYPE_SLICE_LEVEL callback when lib detected video format.
-   * Only for ST20_TYPE_FRAME_LEVEL/ST20_TYPE_SLICE_LEVEL.
-   * And only non-block method can be used in this callback as it run from lcore tasklet
-   * routine.
+   * Optional for ST20_TYPE_FRAME_LEVEL/ST20_TYPE_SLICE_LEVEL with
+   * ST20_RX_FLAG_AUTO_DETECT. The callback when lib detected video format. And only
+   * non-block method can be used in this callback as it run from lcore tasklet routine.
    */
   int (*notify_detected)(void* priv, const struct st20_detect_meta* meta,
                          struct st20_detect_reply* reply);
   /**
-   * ST20_TYPE_FRAME_LEVEL callback when lib query next external frame's data address.
-   * Only for ST20_TYPE_FRAME_LEVEL with ST20_RX_FLAG_RECEIVE_INCOMPLETE_FRAME.
+   * Optional only for ST20_TYPE_FRAME_LEVEL with ST20_RX_FLAG_RECEIVE_INCOMPLETE_FRAME.
    * And only non-block method can be used in this callback as it run from lcore tasklet
    * routine.
    */
   int (*query_ext_frame)(void* priv, struct st20_ext_frame* ext_frame,
                          struct st20_rx_frame_meta* meta);
 
+  /** Mandatory for ST20_TYPE_SLICE_LEVEL, lines in one slice */
+  uint32_t slice_lines;
   /**
-   * event callback, lib will call this when there is some event happened.
-   * Only non-block method can be used in this callback as it run from lcore routine.
-   * args point to the meta data of each event.
-   * Ex, cast to struct st10_vsync_meta for ST_EVENT_VSYNC.
+   * Mandatory for ST20_TYPE_SLICE_LEVEL.
+   * the callback when lib received one more full slice info for a frame.
+   * And only non-block method can be used in this callback as it run from lcore tasklet
+   * routine.
    */
-  int (*notify_event)(void* priv, enum st_event event, void* args);
+  int (*notify_slice_ready)(void* priv, void* frame, struct st20_rx_slice_meta* meta);
+
+  /** Mandatory for ST20_TYPE_RTP_LEVEL. rtp ring size, must be power of 2 */
+  uint32_t rtp_ring_size;
+  /**
+   * Optional for ST20_TYPE_RTP_LEVEL. The callback when lib receive one rtp packet.
+   * And only non-block method can be used in this callback as it run from lcore tasklet
+   * routine.
+   */
+  int (*notify_rtp_ready)(void* priv);
 };
 
 /**
@@ -1377,66 +1359,55 @@ struct st20_rx_ops {
  * Include the PCIE port and other required info.
  */
 struct st22_rx_ops {
-  /** name */
-  const char* name;
-  /** private data to the callback function */
-  void* priv;
-  /** source IP address of sender */
+  /** Mandatory. source IP address of sender */
   uint8_t sip_addr[MTL_SESSION_PORT_MAX][MTL_IP_ADDR_LEN];
-  /** 1 or 2, num of ports this session attached to */
+  /** Mandatory. 1 or 2, num of ports this session attached to */
   uint8_t num_port;
-  /** Pcie BDF path like 0000:af:00.0, should align to BDF of mtl_init */
+  /** Mandatory. Pcie BDF path like 0000:af:00.0, should align to BDF of mtl_init */
   char port[MTL_SESSION_PORT_MAX][MTL_PORT_MAX_LEN];
-  /** UDP destination port number */
+  /** Mandatory. UDP source port number */
   uint16_t udp_port[MTL_SESSION_PORT_MAX];
-  /** flags, value in ST22_RX_FLAG_* */
-  uint32_t flags;
-  /** RTCP info */
-  struct st_rx_rtcp_ops* rtcp;
 
-  /** Session streaming type, frame or RTP */
-  enum st22_type type;
-
-  /** Sender pacing type */
+  /** Mandatory. Sender pacing type, default is narrow */
   enum st21_pacing pacing;
-  /** Session resolution width */
-  uint32_t width;
-  /** Session resolution height */
-  uint32_t height;
-  /** Session resolution fps */
-  enum st_fps fps;
-  /** 7 bits payload type define in RFC3550 */
-  uint8_t payload_type;
-  /** packetization modes define in RFC9134 */
+  /** Mandatory. Session streaming type, frame(default) or RTP */
+  enum st22_type type;
+  /** Mandatory. packetization modes define in RFC9134 */
   enum st22_pack_type pack_type;
+  /** Mandatory. Session resolution width */
+  uint32_t width;
+  /** Mandatory. Session resolution height */
+  uint32_t height;
+  /** Mandatory. Session resolution fps */
+  enum st_fps fps;
+  /** Mandatory. Session resolution format */
+  enum st20_fmt fmt;
+  /** Mandatory. 7 bits payload type define in RFC3550 */
+  uint8_t payload_type;
+
+  /** Optional. Name */
+  const char* name;
+  /** Optional. Private data to the cb functions(notify_frame_ready and others) */
+  void* priv;
+  /** Optional. Flags to control session behaviors. See ST22_RX_FLAG_* for possible value
+   */
+  uint32_t flags;
 
   /**
-   * max burst of simulated packet loss
-   * Only used when ST22_RX_FLAG_SIMULATE_PKT_LOSS enabled.
-   */
-  uint16_t burst_loss_max;
-  /**
-   * simulated packet loss rate
-   * Only used when ST22_RX_FLAG_SIMULATE_PKT_LOSS enabled.
-   */
-  float sim_loss_rate;
-
-  /**
+   * Mandatory for ST22_TYPE_FRAME_LEVEL.
    * the frame buffer count requested for one st22 rx session,
-   * should be in range [2, ST22_FB_MAX_COUNT],
-   * only for ST22_TYPE_FRAME_LEVEL.
+   * should be in range [2, ST20_FB_MAX_COUNT].
    */
   uint16_t framebuff_cnt;
   /**
-   * max framebuffer size for one st22 rx session,
+   * Mandatory for ST22_TYPE_FRAME_LEVEL. max framebuffer size for one st22 rx session,
    * usually ST22 use constant bitrate (CBR) mode.
    * lib will allocate all frame buffer with this size,
    * app can get the real codestream size later in notify_frame_ready callback.
-   * only for ST22_TYPE_FRAME_LEVEL.
    */
   size_t framebuff_max_size;
   /**
-   * ST22_TYPE_FRAME_LEVEL callback when lib receive one frame.
+   * Mandatory for ST22_TYPE_FRAME_LEVEL. the callback when lib receive one frame.
    * frame: point to the address of the frame buf.
    * meta: point to the meta data.
    * return:
@@ -1449,23 +1420,34 @@ struct st22_rx_ops {
    */
   int (*notify_frame_ready)(void* priv, void* frame, struct st22_rx_frame_meta* meta);
 
-  /** rtp ring size, must be power of 2, for ST22_TYPE_RTP_LEVEL */
-  uint32_t rtp_ring_size;
   /**
-   * callback when lib receive one rtp packet.
-   * And only non-block method can be used in this callback as it run from lcore tasklet
-   * routine.
-   * For ST22_TYPE_RTP_LEVEL.
-   */
-  int (*notify_rtp_ready)(void* priv);
-
-  /**
-   * event callback, lib will call this when there is some event happened.
-   * Only non-block method can be used in this callback as it run from lcore routine.
-   * args point to the meta data of each event.
-   * Ex, cast to struct st10_vsync_meta for ST_EVENT_VSYNC.
+   * Optional. The event callback when there is some event(vsync or others) happened for
+   * this session. Only non-block method can be used in this callback as it run from lcore
+   * routine. Args point to the meta data of each event. Ex, cast to struct
+   * st10_vsync_meta for ST_EVENT_VSYNC.
    */
   int (*notify_event)(void* priv, enum st_event event, void* args);
+  /** Optional for ST22_RX_FLAG_ENABLE_RTCP, RTCP info */
+  struct st_rx_rtcp_ops* rtcp;
+  /**
+   * Optional. max burst of simulated packet loss.
+   * Only used when ST20_RX_FLAG_SIMULATE_PKT_LOSS enabled.
+   */
+  uint16_t burst_loss_max;
+  /**
+   * Optional. simulated packet loss rate
+   * Only used when ST20_RX_FLAG_SIMULATE_PKT_LOSS enabled.
+   */
+  float sim_loss_rate;
+
+  /** Mandatory for ST22_TYPE_RTP_LEVEL. rtp ring size, must be power of 2 */
+  uint32_t rtp_ring_size;
+  /**
+   * Optional for ST22_TYPE_RTP_LEVEL. The callback when lib receive one rtp packet.
+   * And only non-block method can be used in this callback as it run from lcore tasklet
+   * routine.
+   */
+  int (*notify_rtp_ready)(void* priv);
 };
 
 /**

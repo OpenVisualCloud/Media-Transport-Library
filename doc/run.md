@@ -216,7 +216,7 @@ ffmpeg -s 1920x1080 -pix_fmt yuv420p10le -i yuv420p10le_1080p.yuv -pix_fmt yuv44
 ./build/app/ConvApp -width 1920 -height 1080 -in_pix_fmt yuv444rfc4175be12 -i yuv444rfc4175be12_1080p.yuv -out_pix_fmt yuv444p12le -o out_yuv444p12le_1080p.yuv
 ```
 
-### 5.2 Run sample app with json config
+### 5.2 Run RxTxApp with json config
 
 Before running samples the JSON configuration files must be modified. The "name" tag in "interfaces" must be updated to VF BDF, e.g 0000:af:01.0.  No other changes are required to run samples.
 
@@ -277,7 +277,7 @@ If it failed to run the sample, please help to collect the system setup status b
 ./script/status_report.sh
 ```
 
-### 5.3 Available parameters in sample app
+### 5.3 Available parameters in RxTxApp
 
 ```bash
 --config_file <URL>                  : the json config file path

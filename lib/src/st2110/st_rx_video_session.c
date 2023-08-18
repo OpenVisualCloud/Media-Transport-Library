@@ -3136,7 +3136,11 @@ static int rv_attach(struct mtl_main_impl* impl, struct st_rx_video_sessions_mgr
   /* one line at line 2 packets for all the format */
   if (s->st20_frame_bitmap_size < ops->height * 2 / 8)
     s->st20_frame_bitmap_size = ops->height * 2 / 8;
-  strncpy(s->ops_name, ops->name, ST_MAX_NAME_LEN - 1);
+  if (ops->name) {
+    snprintf(s->ops_name, sizeof(s->ops_name), "%s", ops->name);
+  } else {
+    snprintf(s->ops_name, sizeof(s->ops_name), "RX_VIDEO_M%dS%d", mgr->idx, idx);
+  }
   s->ops = *ops;
   for (int i = 0; i < num_port; i++) {
     s->st20_dst_port[i] = (ops->udp_port[i]) ? (ops->udp_port[i]) : (10000 + idx * 2);
