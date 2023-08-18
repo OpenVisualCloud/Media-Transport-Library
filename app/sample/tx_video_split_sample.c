@@ -145,7 +145,12 @@ int main(int argc, char** argv) {
         goto dma_alloc;
       }
       struct stat st;
-      fstat(fd, &st);
+      if (fstat(fd, &st) < 0) {
+        err("%s, fstat %s fail\n", __func__, ctx.tx_url);
+        close(fd);
+        ret = -EIO;
+        goto error;
+      }
       if (st.st_size < (app[i]->fb_size * app[i]->fb_cnt)) {
         err("%s, %s file size too small %" PRIu64 "\n", __func__, ctx.tx_url, st.st_size);
         close(fd);

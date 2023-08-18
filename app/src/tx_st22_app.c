@@ -179,11 +179,15 @@ static int app_tx_st22_open_source(struct st22_app_tx_session* s) {
 
   fd = st_open(s->st22_source_url, O_RDONLY);
   if (fd < 0) {
-    err("%s, open %s fai\n", __func__, s->st22_source_url);
+    err("%s, open %s fail\n", __func__, s->st22_source_url);
     return -EIO;
   }
 
-  fstat(fd, &i);
+  if (fstat(fd, &i) < 0) {
+    err("%s, fstat %s fail\n", __func__, s->st22_source_url);
+    close(fd);
+    return -EIO;
+  }
   if (i.st_size < s->bytes_per_frame) {
     err("%s, %s file size small then a frame %" PRIu64 "\n", __func__, s->st22_source_url,
         s->bytes_per_frame);

@@ -526,7 +526,11 @@ static int app_tx_video_open_source(struct st_app_tx_video_session* s) {
       return -EIO;
     }
 
-    fstat(fd, &i);
+    if (fstat(fd, &i) < 0) {
+      err("%s, fstat %s fail\n", __func__, s->st20_source_url);
+      close(fd);
+      return -EIO;
+    }
     if (i.st_size < s->st20_frame_size) {
       err("%s, %s file size small then a frame %d\n", __func__, s->st20_source_url,
           s->st20_frame_size);

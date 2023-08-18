@@ -24,7 +24,11 @@ static int app_rx_audio_open_source(struct st_app_rx_audio_session* session) {
     return 0;
   }
 
-  fstat(fd, &i);
+  if (fstat(fd, &i) < 0) {
+    err("%s, fstat %s fail\n", __func__, session->st30_ref_url);
+    close(fd);
+    return -EIO;
+  }
   uint8_t* m = mmap(NULL, i.st_size, PROT_READ, MAP_SHARED, fd, 0);
   if (MAP_FAILED == m) {
     err("%s(%d), mmap %s fail\n", __func__, idx, session->st30_ref_url);

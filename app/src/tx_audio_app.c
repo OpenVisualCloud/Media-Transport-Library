@@ -256,7 +256,12 @@ static int app_tx_audio_open_source(struct st_app_tx_audio_session* s) {
 
     s->st30_source_fd = st_open(s->st30_source_url, O_RDONLY);
     if (s->st30_source_fd >= 0) {
-      fstat(s->st30_source_fd, &i);
+      if (fstat(s->st30_source_fd, &i) < 0) {
+        err("%s, fstat %s fail\n", __func__, s->st30_source_url);
+        close(s->st30_source_fd);
+        s->st30_source_fd = -1;
+        return -EIO;
+      }
 
       uint8_t* m = mmap(NULL, i.st_size, PROT_READ, MAP_SHARED, s->st30_source_fd, 0);
 
@@ -266,6 +271,8 @@ static int app_tx_audio_open_source(struct st_app_tx_audio_session* s) {
         s->st30_source_end = m + i.st_size;
       } else {
         err("%s, mmap fail '%s'\n", __func__, s->st30_source_url);
+        close(s->st30_source_fd);
+        s->st30_source_fd = -1;
         return -EIO;
       }
     } else {
