@@ -70,6 +70,8 @@ To learn how to use the LibOS UDP stack, please refer to the [udp doc](doc/udp.m
 
 MHV'23: A Real-time Media Transport Stack Based on Commercial Off-the-shelf Hardware. <https://dl.acm.org/doi/10.1145/3588444.3591002>
 
+Whitepaper: Open Source Library Enables Real-Time Media over IP Networks. <https://www.intel.com/content/www/us/en/content-details/786203/open-source-library-enables-real-time-media-over-ip-networks.html>
+
 2022 DPDK Userspace Summit: Real-time and low latency media transport stack based on DPDK. <https://www.youtube.com/watch?v=fiiOvHezpBs>
 
 ## 7. How to Contribute
