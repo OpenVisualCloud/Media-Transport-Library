@@ -2499,7 +2499,7 @@ int st_app_parse_json(st_json_context_t* ctx, const char* filename) {
             ret = st_json_parse_rx_video(k, st20r_session,
                                          &ctx->rx_st20r_sessions[num_st20r]);
             if (ret) goto error;
-            if (ctx->rx_st20r_sessions[num_st20p].display) ctx->has_display = true;
+            if (ctx->rx_st20r_sessions[num_st20r].display) ctx->has_display = true;
             num_st20r++;
           }
         }

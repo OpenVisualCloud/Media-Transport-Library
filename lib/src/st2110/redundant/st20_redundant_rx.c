@@ -175,8 +175,13 @@ static int rx_st20r_create_transport(struct st20r_rx_ctx* ctx, struct st20r_rx_o
   mt_sch_mask_t sch_mask = MT_SCH_MASK_ALL;
   if (port == MTL_SESSION_PORT_R) {
     /* let R port select a different sch */
-    sch_mask &=
-        ~(MTL_BIT64(st20_rx_get_sch_idx(ctx->transport[MTL_SESSION_PORT_P]->handle)));
+    int sch_idx = st20_rx_get_sch_idx(ctx->transport[MTL_SESSION_PORT_P]->handle);
+    if (sch_idx < 0) {
+      err("%s(%d), st20_rx_get_sch_idx fail \n", __func__, idx);
+      rx_st20r_free_transport(transport);
+      return -EIO;
+    }
+    sch_mask &= ~(MTL_BIT64(sch_idx));
   }
   dbg("%s(%d,%d), sch_mask %" PRIx64 "\n", __func__, idx, port, sch_mask);
   transport->handle = st20_rx_create_with_mask(impl, &ops_rx, sch_mask);
