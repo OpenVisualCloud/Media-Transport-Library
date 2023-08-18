@@ -451,7 +451,7 @@ struct mt_sch_tasklet_impl* mt_sch_register_tasklet(
     }
 
     tasklet->ops = *tasklet_ops;
-    strncpy(tasklet->name, tasklet_ops->name, ST_MAX_NAME_LEN - 1);
+    snprintf(tasklet->name, ST_MAX_NAME_LEN - 1, "%s", tasklet_ops->name);
     tasklet->sch = sch;
     tasklet->idx = i;
     sch_tasklet_stat_clear(tasklet);

@@ -630,7 +630,8 @@ int mt_cvt_dma_ctx_uinit(struct mt_cvt_dma_ctx* ctx) {
 }
 
 int mt_cvt_dma_ctx_push(struct mt_cvt_dma_ctx* ctx, int type) {
-  mt_u64_fifo_put(ctx->fifo, type);
+  int ret = mt_u64_fifo_put(ctx->fifo, type);
+  if (ret < 0) return ret;
   ctx->tran[type]++;
   dbg("%s, tran %d for type %d\n", __func__, ctx->tran[type], type);
   return 0;
@@ -638,7 +639,8 @@ int mt_cvt_dma_ctx_push(struct mt_cvt_dma_ctx* ctx, int type) {
 
 int mt_cvt_dma_ctx_pop(struct mt_cvt_dma_ctx* ctx) {
   uint64_t type = 0;
-  mt_u64_fifo_get(ctx->fifo, &type);
+  int ret = mt_u64_fifo_get(ctx->fifo, &type);
+  if (ret < 0) return ret;
   ctx->done[type]++;
   dbg("%s, done %d for type %" PRIu64 "\n", __func__, ctx->done[type], type);
   return 0;

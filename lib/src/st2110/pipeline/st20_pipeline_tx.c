@@ -235,7 +235,7 @@ static int tx_st20p_create_transport(struct mtl_main_impl* impl, struct st20p_tx
   ops_tx.num_port = RTE_MIN(ops->port.num_port, MTL_SESSION_PORT_MAX);
   for (int i = 0; i < ops_tx.num_port; i++) {
     memcpy(ops_tx.dip_addr[i], ops->port.dip_addr[i], MTL_IP_ADDR_LEN);
-    strncpy(ops_tx.port[i], ops->port.port[i], MTL_PORT_MAX_LEN);
+    snprintf(ops_tx.port[i], MTL_PORT_MAX_LEN, "%s", ops->port.port[i]);
     ops_tx.udp_src_port[i] = ops->port.udp_src_port[i];
     ops_tx.udp_port[i] = ops->port.udp_port[i];
   }

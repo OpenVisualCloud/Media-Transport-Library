@@ -101,7 +101,7 @@ static int kni_assign_ip(struct mtl_main_impl* impl, enum mtl_port port) {
   // Assign IP to KNI
   ip = mt_sip_addr(impl, port);
   if_name = cni->conf[port].name;
-  strncpy(ifr.ifr_name, if_name, sizeof(ifr.ifr_name) - 1);
+  snprintf(ifr.ifr_name, sizeof(ifr.ifr_name) - 1, "%s", if_name);
   ifr.ifr_ifru.ifru_addr.sa_family = AF_INET;
   ((struct sockaddr_in*)&ifr.ifr_ifru.ifru_addr)->sin_port = 0;
   memcpy(&((struct sockaddr_in*)&ifr.ifr_ifru.ifru_addr)->sin_addr.s_addr, ip,

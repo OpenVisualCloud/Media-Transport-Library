@@ -286,7 +286,12 @@ static int app_tx_anc_open_source(struct st_app_tx_anc_session* s) {
 
     s->st40_source_fd = st_open(s->st40_source_url, O_RDONLY);
     if (s->st40_source_fd >= 0) {
-      fstat(s->st40_source_fd, &i);
+      if (fstat(s->st40_source_fd, &i) < 0) {
+        err("%s, fstat %s fail\n", __func__, s->st40_source_url);
+        close(s->st40_source_fd);
+        s->st40_source_fd = -1;
+        return -EIO;
+      }
 
       uint8_t* m = mmap(NULL, i.st_size, PROT_READ, MAP_SHARED, s->st40_source_fd, 0);
 
@@ -296,6 +301,8 @@ static int app_tx_anc_open_source(struct st_app_tx_anc_session* s) {
         s->st40_source_end = m + i.st_size;
       } else {
         err("%s, mmap fail '%s'\n", __func__, s->st40_source_url);
+        close(s->st40_source_fd);
+        s->st40_source_fd = -1;
         return -EIO;
       }
     } else {
@@ -416,9 +423,8 @@ static int app_tx_anc_init(struct st_app_context* ctx, st_json_ancillary_session
          anc ? st_json_ip(ctx, &anc->base, MTL_SESSION_PORT_P)
              : ctx->tx_dip_addr[MTL_PORT_P],
          MTL_IP_ADDR_LEN);
-  strncpy(ops.port[MTL_SESSION_PORT_P],
-          anc ? anc->base.inf[MTL_SESSION_PORT_P]->name : ctx->para.port[MTL_PORT_P],
-          MTL_PORT_MAX_LEN);
+  snprintf(ops.port[MTL_SESSION_PORT_P], MTL_PORT_MAX_LEN, "%s",
+           anc ? anc->base.inf[MTL_SESSION_PORT_P]->name : ctx->para.port[MTL_PORT_P]);
   ops.udp_port[MTL_SESSION_PORT_P] = anc ? anc->base.udp_port : (10200 + s->idx);
   if (ctx->has_tx_dst_mac[MTL_PORT_P]) {
     memcpy(&ops.tx_dst_mac[MTL_SESSION_PORT_P][0], ctx->tx_dst_mac[MTL_PORT_P],
@@ -430,9 +436,8 @@ static int app_tx_anc_init(struct st_app_context* ctx, st_json_ancillary_session
            anc ? st_json_ip(ctx, &anc->base, MTL_SESSION_PORT_R)
                : ctx->tx_dip_addr[MTL_PORT_R],
            MTL_IP_ADDR_LEN);
-    strncpy(ops.port[MTL_SESSION_PORT_R],
-            anc ? anc->base.inf[MTL_SESSION_PORT_R]->name : ctx->para.port[MTL_PORT_R],
-            MTL_PORT_MAX_LEN);
+    snprintf(ops.port[MTL_SESSION_PORT_R], MTL_PORT_MAX_LEN, "%s",
+             anc ? anc->base.inf[MTL_SESSION_PORT_R]->name : ctx->para.port[MTL_PORT_R]);
     ops.udp_port[MTL_SESSION_PORT_R] = anc ? anc->base.udp_port : (10200 + s->idx);
     if (ctx->has_tx_dst_mac[MTL_PORT_R]) {
       memcpy(&ops.tx_dst_mac[MTL_SESSION_PORT_R][0], ctx->tx_dst_mac[MTL_PORT_R],
@@ -473,8 +478,8 @@ static int app_tx_anc_init(struct st_app_context* ctx, st_json_ancillary_session
   }
 
   s->handle = handle;
-  strncpy(s->st40_source_url, anc ? anc->info.anc_url : ctx->tx_anc_url,
-          sizeof(s->st40_source_url));
+  snprintf(s->st40_source_url, sizeof(s->st40_source_url), "%s",
+           anc ? anc->info.anc_url : ctx->tx_anc_url);
 
   ret = app_tx_anc_open_source(s);
   if (ret < 0) {

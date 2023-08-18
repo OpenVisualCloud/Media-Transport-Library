@@ -385,14 +385,14 @@ int sample_parse_args(struct st_sample_context* ctx, int argc, char** argv, bool
   p->log_level = MTL_LOG_LEVEL_INFO; /* default to info */
   /* use different default port/ip for tx and rx */
   if (rx) {
-    strncpy(p->port[MTL_PORT_P], "0000:af:01.0", MTL_PORT_MAX_LEN);
+    snprintf(p->port[MTL_PORT_P], MTL_PORT_MAX_LEN, "%s", "0000:af:01.0");
     inet_pton(AF_INET, "192.168.85.80", mtl_p_sip_addr(p));
-    strncpy(p->port[MTL_PORT_R], "0000:af:01.1", MTL_PORT_MAX_LEN);
+    snprintf(p->port[MTL_PORT_R], MTL_PORT_MAX_LEN, "%s", "0000:af:01.1");
     inet_pton(AF_INET, "192.168.85.81", mtl_r_sip_addr(p));
   } else {
-    strncpy(p->port[MTL_PORT_P], "0000:af:01.1", MTL_PORT_MAX_LEN);
+    snprintf(p->port[MTL_PORT_P], MTL_PORT_MAX_LEN, "%s", "0000:af:01.1");
     inet_pton(AF_INET, "192.168.85.60", mtl_p_sip_addr(p));
-    strncpy(p->port[MTL_PORT_R], "0000:af:01.0", MTL_PORT_MAX_LEN);
+    snprintf(p->port[MTL_PORT_R], MTL_PORT_MAX_LEN, "%s", "0000:af:01.0");
     inet_pton(AF_INET, "192.168.85.61", mtl_r_sip_addr(p));
   }
   if (unicast) {
@@ -409,7 +409,7 @@ int sample_parse_args(struct st_sample_context* ctx, int argc, char** argv, bool
   inet_pton(AF_INET, "239.168.86.20", ctx->fwd_dip_addr[MTL_PORT_P]);
   inet_pton(AF_INET, "239.168.86.21", ctx->fwd_dip_addr[MTL_PORT_R]);
 
-  strncpy(p->dma_dev_port[0], "0000:80:04.0", MTL_PORT_MAX_LEN);
+  snprintf(p->dma_dev_port[0], MTL_PORT_MAX_LEN, "%s", "0000:80:04.0");
 
   if (!ctx->sessions) ctx->sessions = 1;
   ctx->framebuff_cnt = 3;
@@ -421,10 +421,10 @@ int sample_parse_args(struct st_sample_context* ctx, int argc, char** argv, bool
   ctx->output_fmt = ST_FRAME_FMT_YUV422RFC4175PG2BE10;
   ctx->udp_port = 20000;
   ctx->payload_type = 112;
-  strncpy(ctx->tx_url, "test.yuv", sizeof(ctx->tx_url));
-  strncpy(ctx->rx_url, "rx.yuv", sizeof(ctx->rx_url));
+  snprintf(ctx->tx_url, sizeof(ctx->tx_url), "%s", "test.yuv");
+  snprintf(ctx->rx_url, sizeof(ctx->rx_url), "%s", "rx.yuv");
 
-  strncpy(ctx->logo_url, "logo.yuv", sizeof(ctx->rx_url));
+  snprintf(ctx->logo_url, sizeof(ctx->rx_url), "%s", "logo.yuv");
   ctx->logo_width = 200;
   ctx->logo_height = 200;
 

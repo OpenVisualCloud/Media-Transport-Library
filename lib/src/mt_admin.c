@@ -377,7 +377,9 @@ int mt_admin_init(struct mtl_main_impl* impl) {
   mt_pthread_cond_init(&admin->admin_wake_cond, NULL);
   rte_atomic32_set(&admin->admin_stop, 0);
 
-  pthread_create(&admin->admin_tid, NULL, admin_thread, impl);
+  int ret = pthread_create(&admin->admin_tid, NULL, admin_thread, impl);
+  if (ret < 0) return ret;
+
   rte_eal_alarm_set(admin->period_us, admin_alarm_handler, impl);
 
   return 0;

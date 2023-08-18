@@ -1743,20 +1743,22 @@ static int tv_tasklet_frame(struct mtl_main_impl* impl,
     pacing_set_mbuf_time_stamp(pkts[i], pacing);
 
     if (send_r) {
+      if (s->tx_no_chain) {
+        pkts_r[i] = rte_pktmbuf_copy(pkts[i], hdr_pool_r, 0, UINT32_MAX);
+        if (pkts_r[i] == NULL) {
+          dbg("%s(%d), pkts_r alloc fail %d\n", __func__, idx, ret);
+          rte_pktmbuf_free_bulk(pkts, bulk);
+          rte_pktmbuf_free_bulk(pkts_r, bulk);
+          s->stat_build_ret_code = -STI_FRAME_PKT_ALLOC_FAIL;
+          s->st20_pkt_idx -= i; /* todo: revert all status */
+          return MT_TASKLET_ALL_DONE;
+        }
+      }
       st_tx_mbuf_set_priv(pkts_r[i], &s->st20_frames[s->st20_frame_idx]);
       if (s->st20_pkt_idx >= s->st20_total_pkts) {
         st_tx_mbuf_set_idx(pkts_r[i], ST_TX_DUMMY_PKT_IDX);
       } else {
         if (s->tx_no_chain) {
-          pkts_r[i] = rte_pktmbuf_copy(pkts[i], hdr_pool_r, 0, UINT32_MAX);
-          if (pkts_r[i] == NULL) {
-            dbg("%s(%d), pkts_r alloc fail %d\n", __func__, idx, ret);
-            rte_pktmbuf_free_bulk(pkts, bulk);
-            rte_pktmbuf_free_bulk(pkts_r, bulk);
-            s->stat_build_ret_code = -STI_FRAME_PKT_ALLOC_FAIL;
-            s->st20_pkt_idx -= i; /* todo: revert all status */
-            return MT_TASKLET_ALL_DONE;
-          }
           tv_update_redundant(s, pkts_r[i]);
         } else
           tv_build_st20_redundant_chain(s, pkts_r[i], pkts[i]);
@@ -4142,7 +4144,7 @@ st22_tx_handle st22_tx_create(mtl_handle mt, struct st22_tx_ops* ops) {
   st20_ops.num_port = ops->num_port;
   for (int i = 0; i < ops->num_port; i++) {
     memcpy(st20_ops.dip_addr[i], ops->dip_addr[i], MTL_IP_ADDR_LEN);
-    strncpy(st20_ops.port[i], ops->port[i], MTL_PORT_MAX_LEN);
+    snprintf(st20_ops.port[i], MTL_PORT_MAX_LEN, "%s", ops->port[i]);
     st20_ops.udp_src_port[i] = ops->udp_src_port[i];
     st20_ops.udp_port[i] = ops->udp_port[i];
   }
