@@ -258,6 +258,8 @@ struct mt_ptp_impl {
   int32_t stat_result_err;
   int32_t stat_sync_timeout_err;
   int32_t stat_sync_cnt;
+  bool stat_sync;
+  uint16_t stat_sync_keep;
 };
 
 /* request of rx queue flow */

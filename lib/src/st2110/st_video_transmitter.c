@@ -478,7 +478,7 @@ static int video_trs_launch_time_tasklet(struct mtl_main_impl* impl,
   struct mt_interface* inf = mt_if(impl, port_id);
   struct mt_ptp_impl* ptp = mt_get_ptp(impl, port_id);
 
-  if (!ptp->phc2sys.stat_sync) {
+  if (!ptp->stat_sync) {
     return video_trs_tsc_tasklet(impl, s, s_port);
   }
 

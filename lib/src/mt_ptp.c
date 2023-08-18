@@ -488,6 +488,22 @@ static void ptp_adjust_delta(struct mt_ptp_impl* ptp, int64_t delta, bool error_
   ptp->stat_delta_max = RTE_MAX(delta, ptp->stat_delta_max);
   ptp->stat_delta_cnt++;
   ptp->stat_delta_sum += labs(delta);
+
+  if (!ptp->stat_sync) {
+    /*
+     * Be considered as synchronized while the max delta is continuously below
+     * 100ns.
+     */
+    if (labs(ptp->stat_delta_max) < 100 && labs(ptp->stat_delta_max) > 0 &&
+        labs(ptp->stat_delta_min) < 100 && labs(ptp->stat_delta_min) > 0) {
+      if (ptp->stat_sync_keep > 100)
+        ptp->stat_sync = true;
+      else
+        ptp->stat_sync_keep++;
+    } else {
+      ptp->stat_sync_keep = 0;
+    }
+  }
 }
 
 static void ptp_delay_req_read_tx_time_handler(void* param) {
@@ -1065,6 +1081,8 @@ static int ptp_init(struct mtl_main_impl* impl, struct mt_ptp_impl* ptp,
   }
   ptp->qbv_enabled =
       ((ST21_TX_PACING_WAY_TSN == p->pacing) && (MT_DRV_IGC == inf->drv_info.drv_type));
+  ptp->stat_sync = false;
+  ptp->stat_sync_keep = 0;
 
   ptp_stat_clear(ptp);
   ptp_coefficient_result_reset(ptp);
