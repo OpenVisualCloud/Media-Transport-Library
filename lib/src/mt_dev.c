@@ -357,7 +357,11 @@ static int dev_eal_init(struct mtl_init_params* p, struct mt_kport_info* kport_i
     i_args.argc = argc;
     i_args.argv = argv;
     pthread_t eal_init_thread = 0;
-    pthread_create(&eal_init_thread, NULL, dev_eal_init_thread, &i_args);
+    ret = pthread_create(&eal_init_thread, NULL, dev_eal_init_thread, &i_args);
+    if (ret < 0) {
+      err("%s, pthread_create fail\n", __func__);
+      return ret;
+    }
     info("%s, wait eal_init_thread done\n", __func__);
     pthread_join(eal_init_thread, NULL);
     ret = i_args.result;
@@ -2132,7 +2136,11 @@ int mt_dev_create(struct mtl_main_impl* impl) {
   mt_pthread_mutex_init(&impl->stat_wake_mutex, NULL);
   mt_pthread_cond_init(&impl->stat_wake_cond, NULL);
   rte_atomic32_set(&impl->stat_stop, 0);
-  pthread_create(&impl->stat_tid, NULL, dev_stat_thread, impl);
+  ret = pthread_create(&impl->stat_tid, NULL, dev_stat_thread, impl);
+  if (ret < 0) {
+    err("%s, pthread_create fail\n", __func__);
+    goto err_exit;
+  }
   if (!p->dump_period_s) p->dump_period_s = MT_DEV_STAT_INTERVAL_S;
   rte_eal_alarm_set(MT_DEV_STAT_INTERVAL_US(p->dump_period_s), dev_stat_alarm_handler,
                     impl);
