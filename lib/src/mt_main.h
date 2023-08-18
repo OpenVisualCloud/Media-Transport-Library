@@ -175,6 +175,15 @@ struct mt_ptp_impl {
   uint16_t port_id;
   bool active; /* if the ptp stack is running */
   bool no_timesync;
+  /*
+   * The flag indicates Qbv (IEEE 802.1Qbv) traffic shaper
+   * enable.
+   *
+   * The IEEE 802.1Qbv is designed to seperate traffics
+   * transmission into different time slices to prevent
+   * traffics transmission interfereing.
+   */
+  bool qbv_enabled;
   int64_t no_timesync_delta;
 
   struct mt_phc2sys_impl phc2sys;
@@ -249,6 +258,8 @@ struct mt_ptp_impl {
   int32_t stat_result_err;
   int32_t stat_sync_timeout_err;
   int32_t stat_sync_cnt;
+  bool stat_sync;
+  uint16_t stat_sync_keep;
 };
 
 /* request of rx queue flow */
@@ -817,6 +828,7 @@ struct mt_txq_flow {
   /* mandatory if not sys_queue */
   uint8_t dip_addr[MTL_IP_ADDR_LEN]; /* tx destination IP */
   uint16_t dst_port;                 /* udp destination port */
+  bool launch_time_enabled;
 };
 
 struct mt_tsq_impl; /* forward delcare */

@@ -488,6 +488,35 @@ static void ptp_adjust_delta(struct mt_ptp_impl* ptp, int64_t delta, bool error_
   ptp->stat_delta_max = RTE_MAX(delta, ptp->stat_delta_max);
   ptp->stat_delta_cnt++;
   ptp->stat_delta_sum += labs(delta);
+
+  if (!ptp->stat_sync) {
+    /*
+     * Be considered as synchronized while the max delta is continuously below
+     * 100ns.
+     */
+    if (labs(ptp->stat_delta_max) < 100 && labs(ptp->stat_delta_max) > 0 &&
+        labs(ptp->stat_delta_min) < 100 && labs(ptp->stat_delta_min) > 0) {
+      if (ptp->stat_sync_keep > 100)
+        ptp->stat_sync = true;
+      else
+        ptp->stat_sync_keep++;
+    } else {
+      ptp->stat_sync_keep = 0;
+    }
+  }
+}
+
+static void ptp_delay_req_read_tx_time_handler(void* param) {
+  struct mt_ptp_impl* ptp = param;
+  uint64_t tx_ns = 0;
+  int ret;
+
+  ret = ptp_timesync_read_tx_time(ptp, &tx_ns);
+  if (ret >= 0) {
+    ptp->t3 = tx_ns;
+  } else {
+    if (!ptp->t4) rte_eal_alarm_set(5, ptp_delay_req_read_tx_time_handler, ptp);
+  }
 }
 
 static void ptp_expect_result_clear(struct mt_ptp_impl* ptp) {
@@ -731,45 +760,54 @@ static void ptp_delay_req_task(struct mt_ptp_impl* ptp) {
   }
 
 #if MT_PTP_USE_TX_TIME_STAMP
-  /* Wait max 50 us to read TX timestamp. */
-  int max_retry = 50;
-  int ret;
+  if (ptp->qbv_enabled) {
+    /*
+     * The DELAY_REQ packet will be blocked max 1.2ms by Qbv scheduler.
+     * The Tx timestamp will not be created immediately. So, start an
+     * alarm task to poll the Tx timestamp.
+     */
+    rte_eal_alarm_set(5, ptp_delay_req_read_tx_time_handler, ptp);
+  } else {
+    /* Wait max 50 us to read TX timestamp. */
+    int max_retry = 50;
+    int ret;
 
-  while (max_retry > 0) {
-    ret = ptp_timesync_read_tx_time(ptp, &tx_ns);
-    if (ret >= 0) {
-      break;
+    while (max_retry > 0) {
+      ret = ptp_timesync_read_tx_time(ptp, &tx_ns);
+      if (ret >= 0) {
+        break;
+      }
+
+      mt_delay_us(1);
+      max_retry--;
     }
 
-    mt_delay_us(1);
-    max_retry--;
-  }
-
-  if (max_retry <= 0) {
-    err("%s(%d), read tx reach max retry\n", __func__, port);
-  }
+    if (max_retry <= 0) {
+      err("%s(%d), read tx reach max retry\n", __func__, port);
+    }
 
 #if MT_PTP_CHECK_TX_TIME_STAMP
-  uint64_t ptp_ns = ptp_timesync_read_time(ptp);
-  uint64_t delta = ptp_ns - tx_ns;
+    uint64_t ptp_ns = ptp_timesync_read_time(ptp);
+    uint64_t delta = ptp_ns - tx_ns;
 #define TX_MAX_DELTA (1 * 1000 * 1000) /* 1ms */
-  if (unlikely(delta > TX_MAX_DELTA)) {
-    err("%s(%d), tx_ns %" PRIu64 ", delta %" PRIu64 "\n", __func__, ptp->port, tx_ns,
-        delta);
-    ptp->stat_tx_sync_err++;
-  }
+    if (unlikely(delta > TX_MAX_DELTA)) {
+      err("%s(%d), tx_ns %" PRIu64 ", delta %" PRIu64 "\n", __func__, ptp->port, tx_ns,
+          delta);
+      ptp->stat_tx_sync_err++;
+    }
 #endif
 
-  ptp->t3 = tx_ns;
+    ptp->t3 = tx_ns;
 #else
   ptp->t3 = ptp_get_raw_time(ptp);
 #endif
-  dbg("%s(%d), t3 %" PRIu64 ", seq %d, max_retry %d, ptp %" PRIu64 "\n", __func__, port,
-      ptp->t3, ptp->t3_sequence_id, max_retry, ptp_get_raw_time(ptp));
+    dbg("%s(%d), t3 %" PRIu64 ", seq %d, max_retry %d, ptp %" PRIu64 "\n", __func__, port,
+        ptp->t3, ptp->t3_sequence_id, max_retry, ptp_get_raw_time(ptp));
 
-  /* all time get */
-  if (ptp->t4 && ptp->t2 && ptp->t1) {
-    ptp_parse_result(ptp);
+    /* all time get */
+    if (ptp->t4 && ptp->t2 && ptp->t1) {
+      ptp_parse_result(ptp);
+    }
   }
 }
 
@@ -1001,6 +1039,7 @@ static int ptp_init(struct mtl_main_impl* impl, struct mt_ptp_impl* ptp,
   struct rte_ether_addr mac;
   int ret;
   uint8_t* ip = &ptp->sip_addr[0];
+  struct mt_interface* inf = mt_if(impl, port);
 
   ret = rte_eth_macaddr_get(port_id, &mac);
   if (ret < 0) {
@@ -1040,6 +1079,10 @@ static int ptp_init(struct mtl_main_impl* impl, struct mt_ptp_impl* ptp,
   } else {
     ptp->master_addr_mode = MT_PTP_MULTICAST_ADDR;
   }
+  ptp->qbv_enabled =
+      ((ST21_TX_PACING_WAY_TSN == p->pacing) && (MT_DRV_IGC == inf->drv_info.drv_type));
+  ptp->stat_sync = false;
+  ptp->stat_sync_keep = 0;
 
   ptp_stat_clear(ptp);
   ptp_coefficient_result_reset(ptp);
@@ -1088,6 +1131,9 @@ static int ptp_uinit(struct mtl_main_impl* impl, struct mt_ptp_impl* ptp) {
 #endif
   rte_eal_alarm_cancel(ptp_sync_timeout_handler, ptp);
   rte_eal_alarm_cancel(ptp_monitor_handler, ptp);
+#ifdef MT_PTP_USE_TX_TIME_STAMP
+  if (ptp->qbv_enabled) rte_eal_alarm_cancel(ptp_delay_req_read_tx_time_handler, ptp);
+#endif
 
   if (!ptp->active) return 0;
 
@@ -1184,8 +1230,9 @@ static int ptp_stat(void* priv) {
 
   if (ptp->stat_delta_cnt) {
     if (ptp->phc2sys_active) {
-      notice("PTP(%d): system clock offset max %" PRId64 "\n", port,
-             ptp->phc2sys.stat_delta_max);
+      notice("PTP(%d): system clock offset max %" PRId64 ", %s\n", port,
+             ptp->phc2sys.stat_delta_max,
+             ptp->phc2sys.stat_sync ? "synchronized" : "not synchronized");
     }
     notice("PTP(%d): delta avg %" PRId64 ", min %" PRId64 ", max %" PRId64 ", cnt %d\n",
            port, ptp->stat_delta_sum / ptp->stat_delta_cnt, ptp->stat_delta_min,
