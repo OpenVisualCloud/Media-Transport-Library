@@ -117,17 +117,17 @@ static void st_app_ctx_init(struct st_app_context* ctx) {
   user_param_init(ctx, &ctx->para);
 
   /* tx */
-  strncpy(ctx->tx_video_url, "test.yuv", sizeof(ctx->tx_video_url));
+  snprintf(ctx->tx_video_url, sizeof(ctx->tx_video_url), "%s", "test.yuv");
   ctx->tx_video_session_cnt = 0;
-  strncpy(ctx->tx_audio_url, "test.wav", sizeof(ctx->tx_audio_url));
+  snprintf(ctx->tx_audio_url, sizeof(ctx->tx_audio_url), "%s", "test.wav");
   ctx->tx_audio_session_cnt = 0;
-  strncpy(ctx->tx_anc_url, "test.txt", sizeof(ctx->tx_anc_url));
+  snprintf(ctx->tx_anc_url, sizeof(ctx->tx_anc_url), "%s", "test.txt");
   ctx->tx_anc_session_cnt = 0;
-  strncpy(ctx->tx_st22_url, "test.raw", sizeof(ctx->tx_st22_url));
+  snprintf(ctx->tx_st22_url, sizeof(ctx->tx_st22_url), "%s", "test.raw");
   ctx->tx_st22_session_cnt = 0;
-  strncpy(ctx->tx_st22p_url, "test_rfc4175.yuv", sizeof(ctx->tx_st22p_url));
+  snprintf(ctx->tx_st22p_url, sizeof(ctx->tx_st22p_url), "%s", "test_rfc4175.yuv");
   ctx->tx_st22p_session_cnt = 0;
-  strncpy(ctx->tx_st20p_url, "test_rfc4175.yuv", sizeof(ctx->tx_st20p_url));
+  snprintf(ctx->tx_st20p_url, sizeof(ctx->tx_st20p_url), "%s", "test_rfc4175.yuv");
   ctx->tx_st20p_session_cnt = 0;
 
   /* rx */

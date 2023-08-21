@@ -346,7 +346,7 @@ struct mt_rtcp_tx* mt_rtcp_tx_create(struct mtl_main_impl* impl,
   tx->mbuf_ring = ring;
   tx->ipv4_packet_id = 0;
   tx->ssrc = ops->ssrc;
-  strncpy(tx->name, ops->name, sizeof(tx->name) - 1);
+  snprintf(tx->name, sizeof(tx->name) - 1, "%s", ops->name);
   rte_memcpy(&tx->udp_hdr, ops->udp_hdr, sizeof(tx->udp_hdr));
 
   mt_stat_register(impl, rtcp_tx_stat, tx, tx->name);
@@ -383,7 +383,7 @@ struct mt_rtcp_rx* mt_rtcp_rx_create(struct mtl_main_impl* impl,
   rx->ssrc = 0;
   rx->nacks_send_interval = ops->nacks_send_interval;
   rx->nacks_send_time = mt_get_tsc(impl);
-  strncpy(rx->name, ops->name, sizeof(rx->name) - 1);
+  snprintf(rx->name, sizeof(rx->name) - 1, "%s", ops->name);
   rte_memcpy(&rx->udp_hdr, ops->udp_hdr, sizeof(rx->udp_hdr));
 
   uint8_t* seq_bitmap = mt_rte_zmalloc_socket(sizeof(uint8_t) * ops->seq_bitmap_size,

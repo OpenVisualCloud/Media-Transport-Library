@@ -190,7 +190,11 @@ static int mt_main_create(struct mtl_main_impl* impl) {
     return ret;
   }
 
-  pthread_create(&impl->tsc_cal_tid, NULL, mt_calibrate_tsc, impl);
+  ret = pthread_create(&impl->tsc_cal_tid, NULL, mt_calibrate_tsc, impl);
+  if (ret < 0) {
+    err("%s, pthread_create fail %d\n", __func__, ret);
+    return ret;
+  }
 
   info("%s, succ\n", __func__);
   return 0;
