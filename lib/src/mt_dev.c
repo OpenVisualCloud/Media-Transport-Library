@@ -350,25 +350,20 @@ static int dev_eal_init(struct mtl_init_params* p, struct mt_kport_info* kport_i
     return -EIO;
   }
 
-  bool init_use_thread = true;
-  if (init_use_thread) {
-    /* dpdk default pin CPU to main lcore in the call of rte_eal_init */
-    struct dev_eal_init_args i_args;
-    memset(&i_args, 0, sizeof(i_args));
-    i_args.argc = argc;
-    i_args.argv = argv;
-    pthread_t eal_init_thread = 0;
-    ret = pthread_create(&eal_init_thread, NULL, dev_eal_init_thread, &i_args);
-    if (ret < 0) {
-      err("%s, pthread_create fail\n", __func__);
-      return ret;
-    }
-    info("%s, wait eal_init_thread done\n", __func__);
-    pthread_join(eal_init_thread, NULL);
-    ret = i_args.result;
-  } else {
-    ret = rte_eal_init(argc, argv);
+  /* dpdk default pin CPU to main lcore in the call of rte_eal_init */
+  struct dev_eal_init_args i_args;
+  memset(&i_args, 0, sizeof(i_args));
+  i_args.argc = argc;
+  i_args.argv = argv;
+  pthread_t eal_init_thread = 0;
+  ret = pthread_create(&eal_init_thread, NULL, dev_eal_init_thread, &i_args);
+  if (ret < 0) {
+    err("%s, pthread_create fail\n", __func__);
+    return ret;
   }
+  info("%s, wait eal_init_thread done\n", __func__);
+  pthread_join(eal_init_thread, NULL);
+  ret = i_args.result;
   if (ret < 0) return ret;
 
   eal_initted = true;
@@ -1238,12 +1233,7 @@ int dev_reset_port(struct mtl_main_impl* impl, enum mtl_port port) {
 }
 
 static int dev_filelock_lock(struct mtl_main_impl* impl) {
-  int fd = -1;
-  if (access(MT_FLOCK_PATH, F_OK) < 0) {
-    fd = open(MT_FLOCK_PATH, O_RDONLY | O_CREAT, 0666);
-  } else {
-    fd = open(MT_FLOCK_PATH, O_RDONLY);
-  }
+  int fd = open(MT_FLOCK_PATH, O_RDONLY | O_CREAT, 0666);
 
   if (fd < 0) {
     err("%s, failed to open %s, %s\n", __func__, MT_FLOCK_PATH, strerror(errno));
