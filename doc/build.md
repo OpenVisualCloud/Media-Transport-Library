@@ -10,8 +10,14 @@ Building the Intel® Media Transport Library requires three parts: building the 
 
 ```bash
 sudo apt-get update
-sudo apt-get install git gcc meson python3 python3-pip pkg-config libnuma-dev libjson-c-dev libpcap-dev libgtest-dev libsdl2-dev libsdl2-ttf-dev libssl-dev
+sudo apt-get install git gcc meson python3 python3-pip pkg-config libnuma-dev libjson-c-dev libpcap-dev libgtest-dev libssl-dev
 sudo pip install pyelftools ninja
+```
+
+Install below SDL2 packages if you want the display support for RxTxApp.
+
+```bash
+sudo apt-get install libsdl2-dev libsdl2-ttf-dev
 ```
 
 #### 1.1.2 Centos stream
@@ -19,8 +25,14 @@ sudo pip install pyelftools ninja
 ```bash
 sudo yum install -y dnf-plugins-core
 sudo dnf config-manager --set-enabled powertools
-sudo yum install git gcc gcc-c++ meson python3 python3-pip pkg-config json-c-devel libpcap-devel gtest-devel SDL2-devel openssl-devel numactl-devel libasan
+sudo yum install git gcc gcc-c++ meson python3 python3-pip pkg-config json-c-devel libpcap-devel gtest-devel openssl-devel numactl-devel libasan
 sudo pip3 install pyelftools
+```
+
+Install below SDL2 packages if you want the display support for RxTxApp.
+
+```bash
+sudo yum install SDL2-devel
 ```
 
 #### 1.1.3 RHEL 9
@@ -109,6 +121,7 @@ git clone https://github.com/DPDK/dpdk.git
 cd dpdk
 git checkout v23.03
 git switch -c v23.03
+cd ..
 ```
 
 ### 2.2 Apply the DPDK patches required to run Intel® Media Transport Library

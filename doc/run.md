@@ -33,7 +33,7 @@ After enabling IOMMU in the BIOS, you need to enable it in your operating system
 Edit GRUB_CMDLINE_LINUX_DEFAULT item in /etc/default/grub file, append below parameters into GRUB_CMDLINE_LINUX_DEFAULT item if it's not there.
 
 ```bash
-vim /etc/default/grub
+sudo vim /etc/default/grub
 intel_iommu=on iommu=pt
 ```
 
@@ -44,7 +44,7 @@ sudo update-grub
 sudo reboot
 ```
 
-#### 1.2.2 Centos
+#### 1.2.2 Centos/RHEL9
 
 ```bash
 sudo grubby --update-kernel=ALL --args="intel_iommu=on iommu=pt"
