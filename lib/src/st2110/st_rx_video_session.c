@@ -1469,12 +1469,11 @@ static int rv_slice_dma_drop_mbuf(void* priv, struct rte_mbuf* mbuf) {
 static int rv_init_dma(struct mtl_main_impl* impl, struct st_rx_video_session_impl* s) {
   enum mtl_port port = mt_port_logic2phy(s->port_maps, MTL_SESSION_PORT_P);
   int idx = s->idx;
-  bool share_dma = true;
   enum st20_type type = s->ops.type;
 
   struct mt_dma_request_req req;
   req.nb_desc = s->dma_nb_desc;
-  req.max_shared = share_dma ? MT_DMA_MAX_SESSIONS : 1;
+  req.max_shared = MT_DMA_MAX_SESSIONS;
   req.sch_idx = s->parent->idx;
   req.socket_id = mt_socket_id(impl, port);
   req.priv = s;
