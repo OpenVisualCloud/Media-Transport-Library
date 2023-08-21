@@ -16,7 +16,7 @@
 
 #pragma once
 
-#define TEST_DATA_FIXED_PATTER (0)
+#define TEST_DATA_FIXED_PATTER (1)
 
 #ifndef NS_PER_S
 #define NS_PER_S (1000000000)

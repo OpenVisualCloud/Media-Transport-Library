@@ -10,9 +10,9 @@
 
 void test_sha_dump(const char* tag, unsigned char* sha) {
   for (size_t i = 0; i < SHA256_DIGEST_LENGTH; i++) {
-    dbg("0x%02x ", sha[i]);
+    err("0x%02x ", sha[i]);
   }
-  dbg(", %s done\n", tag);
+  err(", %s done\n", tag);
 }
 
 int st_test_check_patter(uint8_t* p, size_t sz, uint8_t base) {
