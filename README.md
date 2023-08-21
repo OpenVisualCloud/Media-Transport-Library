@@ -47,7 +47,7 @@ Regarding supported Ethernet, since MTL is based on DPDK, it can essentially run
 
 However, please note that our daily development and validation is primarily conducted on the Intel E810 series and AWS ENA, so we can't guarantee the status for other network interface cards (NICs).
 
-An important point to note is that narrow pacing of TX is only supported for the Intel E810 series due to its rate limit feature. All other NICs have to use TSC (Time Stamp Counter) as the pacing source, which can only ensure a broad wide pacing.
+An important point to note is that narrow pacing of TX is only supported for the Intel E810 series due to its rate limit feature. All other NICs have to use TSC (Timestamp Counter) as the pacing source, which can only ensure a broad wide pacing.
 
 ## 2. Build
 
