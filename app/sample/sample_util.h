@@ -54,6 +54,8 @@
 #define NS_PER_S (1000000000)
 #endif
 
+#define ST_MAX(a, b) ((a) > (b) ? (a) : (b))
+
 enum sample_udp_mode {
   /* client/server mode */
   SAMPLE_UDP_DEFAULT = 0,

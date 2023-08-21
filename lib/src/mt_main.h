@@ -1039,7 +1039,8 @@ static inline int mt_num_ports(struct mtl_main_impl* impl) {
 
 bool mt_is_valid_socket(struct mtl_main_impl* impl, int soc_id);
 
-static inline uint8_t mt_start_queue(struct mtl_main_impl* impl, enum mtl_port port) {
+static inline uint8_t mt_afxdp_start_queue(struct mtl_main_impl* impl,
+                                           enum mtl_port port) {
   return impl->user_para.xdp_info[port].start_queue;
 }
 

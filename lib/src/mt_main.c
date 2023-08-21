@@ -263,7 +263,7 @@ static int mt_user_params_check(struct mtl_init_params* p) {
       }
       ret = mt_socket_get_if_ip(p->port[i], if_ip, if_netmask);
       if (ret < 0) {
-        err("%s(%d), get ip fail from if %s for P port\n", __func__, i, p->port[i]);
+        err("%s(%d), get ip fail from if %s\n", __func__, i, p->port[i]);
         return ret;
       }
     }

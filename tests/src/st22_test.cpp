@@ -347,7 +347,7 @@ static void st22_rx_get_packet(void* args) {
 
 static void st22_rx_fps_test(enum st22_type type[], enum st_fps fps[], int width[],
                              int height[], int pkt_data_len[], int total_pkts[],
-                             int sessions = 1) {
+                             enum st_test_level level, int sessions = 1) {
   auto ctx = (struct st_tests_context*)st_test_ctx();
   auto m_handle = ctx->handle;
   int ret;
@@ -358,6 +358,9 @@ static void st22_rx_fps_test(enum st22_type type[], enum st_fps fps[], int width
          __func__);
     return;
   }
+
+  /* return if level lower than global */
+  if (level < ctx->level) return;
 
   std::vector<tests_context*> test_ctx_tx;
   std::vector<tests_context*> test_ctx_rx;
@@ -531,7 +534,8 @@ TEST(St22_rx, fps_1080p_s2) {
   int height[2] = {1080, 1080};
   int pkt_data_len[2] = {1280, 1280};
   int total_pkts[2] = {546, 540};
-  st22_rx_fps_test(type, fps, width, height, pkt_data_len, total_pkts, 2);
+  st22_rx_fps_test(type, fps, width, height, pkt_data_len, total_pkts,
+                   ST_TEST_LEVEL_MANDATORY, 2);
 }
 
 TEST(St22_rx, fps_mix_s2) {
@@ -541,7 +545,8 @@ TEST(St22_rx, fps_mix_s2) {
   int height[2] = {1080, 720};
   int pkt_data_len[2] = {1280, 1300};
   int total_pkts[2] = {540, 150};
-  st22_rx_fps_test(type, fps, width, height, pkt_data_len, total_pkts, 2);
+  st22_rx_fps_test(type, fps, width, height, pkt_data_len, total_pkts, ST_TEST_LEVEL_ALL,
+                   2);
 }
 
 static void st22_rx_update_src_test(int tx_sessions, enum st_test_level level) {

@@ -2515,7 +2515,7 @@ TEST(St20_rx, digest_slice_4320p) {
   enum st20_fmt fmt[1] = {ST20_FMT_YUV_422_10BIT};
   if (st_test_dma_available(st_test_ctx())) {
     st20_rx_digest_test(type, rx_type, packing, fps, width, height, interlaced, fmt,
-                        false, ST_TEST_LEVEL_MANDATORY, 1);
+                        false, ST_TEST_LEVEL_ALL, 1);
   } else {
     info("%s, skip as no dma available\n", __func__);
   }

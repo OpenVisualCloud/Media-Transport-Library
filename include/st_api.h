@@ -163,7 +163,7 @@ struct st_pcap_dump_meta {
 struct st_queue_meta {
   /** 1 or 2, num of ports this session attached to */
   uint8_t num_port;
-  /** starting netdev queue id */
+  /** starting netdev queue id for afxdp */
   uint8_t start_queue[MTL_PORT_MAX];
   /** queue id this session attached to */
   uint8_t queue_id[MTL_PORT_MAX];
