@@ -4,6 +4,8 @@
 
 #include "../sample/sample_util.h"
 
+#define TEST_2_STEPS (0)
+
 static int perf_cvt_422_10_pg2_be_to_v210(mtl_handle st, int w, int h, int frames,
                                           int fb_cnt) {
   size_t fb_pg2_size = w * h * 5 / 2;
@@ -26,7 +28,6 @@ static int perf_cvt_422_10_pg2_be_to_v210(mtl_handle st, int w, int h, int frame
   info("v210_1line_size %" PRIu64 "\n", v210_1line_size);
 
   struct st20_rfc4175_422_10_pg2_be* pg_be_in;
-  struct st20_rfc4175_422_10_pg2_le* pg_le_out;
   uint8_t* pg_v210_out;
 
   for (int i = 0; i < fb_cnt; i++) {
@@ -36,7 +37,6 @@ static int perf_cvt_422_10_pg2_be_to_v210(mtl_handle st, int w, int h, int frame
 
   clock_t start, end;
   float duration;
-  bool test_2step = false;
 
   info("1 step conversion (be->v210)\n");
   start = clock();
@@ -132,8 +132,8 @@ static int perf_cvt_422_10_pg2_be_to_v210(mtl_handle st, int w, int h, int frame
     }
   }
 
-  if (!test_2step) goto exit;
-
+#if TEST_2_STEPS
+  struct st20_rfc4175_422_10_pg2_le* pg_le_out;
   info("2 steps conversion (be->le->v210)\n");
   start = clock();
   for (int i = 0; i < frames; i++) {
@@ -184,8 +184,8 @@ static int perf_cvt_422_10_pg2_be_to_v210(mtl_handle st, int w, int h, int frame
          frames, w, h, fb_cnt);
     info("avx512_vbmi, %fx performance to scalar\n", duration / duration_vbmi);
   }
+#endif
 
-exit:
   mtl_hp_free(st, pg_be);
   free(pg_le);
   free(pg_v210);

@@ -81,7 +81,7 @@ init_fb:
   mtl_dma_mem_handle dma_mem = mtl_dma_mem_alloc(s->st, fbs_size);
   if (!dma_mem) {
     err("%s(%d), dma mem alloc/map fail\n", __func__, s->idx);
-    munmap(m, fbs_size);
+    if (m) munmap(m, fbs_size);
     if (fd >= 0) close(fd);
     return -EIO;
   }

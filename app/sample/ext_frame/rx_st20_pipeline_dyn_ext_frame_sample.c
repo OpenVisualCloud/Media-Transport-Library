@@ -57,6 +57,10 @@ static int rx_st20p_query_ext_frame(void* priv, struct st20_ext_frame* ext_frame
 }
 
 static int rx_st20p_close_source(struct rx_st20p_sample_ctx* s) {
+  if (s->dst_begin) {
+    munmap(s->dst_begin, s->dst_end - s->dst_begin);
+    s->dst_begin = NULL;
+  }
   if (s->dst_fd >= 0) {
     close(s->dst_fd);
     s->dst_fd = 0;
