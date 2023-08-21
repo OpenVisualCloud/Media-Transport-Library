@@ -1238,12 +1238,7 @@ int dev_reset_port(struct mtl_main_impl* impl, enum mtl_port port) {
 }
 
 static int dev_filelock_lock(struct mtl_main_impl* impl) {
-  int fd = -1;
-  if (access(MT_FLOCK_PATH, F_OK) < 0) {
-    fd = open(MT_FLOCK_PATH, O_RDONLY | O_CREAT, 0666);
-  } else {
-    fd = open(MT_FLOCK_PATH, O_RDONLY);
-  }
+  int fd = open(MT_FLOCK_PATH, O_RDONLY | O_CREAT, 0666);
 
   if (fd < 0) {
     err("%s, failed to open %s, %s\n", __func__, MT_FLOCK_PATH, strerror(errno));
