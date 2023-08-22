@@ -6,6 +6,10 @@
 
 #include <inttypes.h>
 
+#include <chrono>
+#include <ctime>
+#include <fstream>
+
 #include "log.h"
 
 void test_sha_dump(const char* tag, unsigned char* sha) {
@@ -46,4 +50,20 @@ int st_test_cmp_u16(uint16_t* s1, uint16_t* s2, size_t sz) {
   }
 
   return 0;
+}
+
+void test_frame_dump(void* addr, size_t size, const char* prefix) {
+  // Get current time
+  auto now = std::chrono::system_clock::now();
+  auto now_c = std::chrono::system_clock::to_time_t(now);
+
+  // Open file with name prefix_<time>
+  std::string filename = std::string(prefix) + "_" + std::to_string(now_c) + ".bin";
+  std::ofstream file(filename, std::ios::out | std::ios::binary);
+
+  // Write frame to file
+  file.write(reinterpret_cast<const char*>(addr), size);
+
+  // Close file
+  file.close();
 }

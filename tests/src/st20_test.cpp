@@ -1748,6 +1748,7 @@ static void st20_digest_rx_frame_check(void* args) {
       }
       if (i >= TEST_SHA_HIST_NUM) {
         test_sha_dump("st20_rx_error_sha", result);
+        test_frame_dump(frame, ctx->fb_size, "st20_rx_error_sha");
         ctx->sha_fail_cnt++;
       }
       ctx->check_sha_frame_cnt++;
@@ -1923,6 +1924,7 @@ static void st20_rx_digest_test(enum st20_type tx_type[], enum st20_type rx_type
       unsigned char* result = test_ctx_tx[i]->shas[frame];
       SHA256((unsigned char*)fb, frame_size, result);
       test_sha_dump("st20_rx", result);
+      if (enable_rtcp) test_frame_dump(fb, frame_size, "st20_rx");
     }
     test_ctx_tx[i]->handle = tx_handle[i];
     if (tx_type[i] == ST20_TYPE_RTP_LEVEL) {
