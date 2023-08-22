@@ -509,6 +509,20 @@ TEST(Misc, ptp) {
   }
 }
 
+TEST(Misc, log_level) {
+  auto ctx = (struct st_tests_context*)st_test_ctx();
+  auto handle = ctx->handle;
+  int ret;
+
+  enum mtl_log_level orig_level = mtl_get_log_level(handle);
+  ret = mtl_set_log_level(handle, MTL_LOG_LEVEL_INFO);
+  EXPECT_GE(ret, 0);
+  ret = mtl_set_log_level(handle, MTL_LOG_LEVEL_ERROR);
+  EXPECT_GE(ret, 0);
+  ret = mtl_set_log_level(handle, orig_level);
+  EXPECT_GE(ret, 0);
+}
+
 static void st10_timestamp_test(uint32_t sampling_rate) {
   auto ctx = (struct st_tests_context*)st_test_ctx();
   auto handle = ctx->handle;
