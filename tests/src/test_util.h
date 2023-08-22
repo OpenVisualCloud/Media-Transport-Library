@@ -80,5 +80,3 @@ static inline uint64_t st_test_get_monotonic_time() {
 }
 
 void test_sha_dump(const char* tag, unsigned char* sha);
-
-void test_frame_dump(void* addr, size_t size, const char* prefix);
