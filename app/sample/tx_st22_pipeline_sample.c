@@ -108,6 +108,7 @@ static int tx_st22p_open_source(struct st_sample_context* ctx,
   s->source_begin = mtl_hp_malloc(s->st, i.st_size, MTL_PORT_P);
   if (!s->source_begin) {
     err("%s, source malloc on hugepage fail\n", __func__);
+    munmap(m, i.st_size);
     close(fd);
     return -EIO;
   }
@@ -115,6 +116,7 @@ static int tx_st22p_open_source(struct st_sample_context* ctx,
   s->frame_cursor = s->source_begin;
   mtl_memcpy(s->source_begin, m, i.st_size);
   s->source_end = s->source_begin + i.st_size;
+  munmap(m, i.st_size);
   close(fd);
 
   tx_st22p_open_logo(ctx, s, ctx->logo_url);

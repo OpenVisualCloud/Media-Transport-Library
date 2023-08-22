@@ -80,13 +80,15 @@ init_fb:
   s->source_begin = mtl_hp_zmalloc(s->st, fbs_size, MTL_PORT_P);
   if (!s->source_begin) {
     err("%s, source malloc on hugepage fail\n", __func__);
-    close(fd);
+    if (m) munmap(m, i.st_size);
+    if (fd >= 0) close(fd);
     return -EIO;
   }
   s->frame_cursor = s->source_begin;
   if (m) mtl_memcpy(s->source_begin, m, fbs_size);
   s->source_end = s->source_begin + fbs_size;
 
+  if (m) munmap(m, i.st_size);
   if (fd >= 0) close(fd);
 
   return 0;

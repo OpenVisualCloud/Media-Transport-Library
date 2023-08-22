@@ -11,6 +11,8 @@
 
 #define ST20_TEST_PAYLOAD_TYPE (112)
 
+#define DUMP_INCOMPLITE_SLICE (0)
+
 static int tx_next_video_frame(void* priv, uint16_t* next_frame_idx,
                                struct st20_tx_frame_meta* meta) {
   auto ctx = (tests_context*)priv;
@@ -1622,22 +1624,23 @@ static int st20_digest_rx_frame_ready(void* priv, void* frame,
   return 0;
 }
 
+#if DUMP_INCOMPLITE_SLICE
 static void dump_slice_meta(struct st20_rx_slice_meta* meta) {
   info("%s, width %u height %u fps %d fmd %d field %d\n", __func__, meta->width,
        meta->height, meta->fps, meta->fmt, meta->second_field);
   info("%s, frame total size %" PRIu64 " recv size %" PRIu64 " recv lines %u\n", __func__,
        meta->frame_total_size, meta->frame_recv_size, meta->frame_recv_lines);
 }
+#endif
 
 static int st20_digest_rx_slice_ready(void* priv, void* frame,
                                       struct st20_rx_slice_meta* meta) {
   auto ctx = (tests_context*)priv;
 
   if (!ctx->handle) return -EIO;
-
+#if DUMP_INCOMPLITE_SLICE
   int old_incomplete_slice_cnt = ctx->incomplete_slice_cnt;
-  bool dump = false;
-
+#endif
   ctx->slice_cnt++;
 
   struct st20_rx_slice_meta* expect_meta = (struct st20_rx_slice_meta*)ctx->priv;
@@ -1671,13 +1674,13 @@ static int st20_digest_rx_slice_ready(void* priv, void* frame,
           ctx->slice_recv_timestamp);
     }
   }
-
-  if (dump && (old_incomplete_slice_cnt != ctx->incomplete_slice_cnt)) {
+#if DUMP_INCOMPLITE_SLICE
+  if (old_incomplete_slice_cnt != ctx->incomplete_slice_cnt) {
     dbg("%s, incomplete_slice detected\n", __func__);
     dump_slice_meta(meta);
     dump_slice_meta(expect_meta);
   }
-
+#endif
   return 0;
 }
 

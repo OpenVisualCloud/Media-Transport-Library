@@ -33,6 +33,10 @@ static int rx_st22p_frame_available(void* priv) {
 }
 
 static int rx_st22p_close_source(struct rx_st22p_sample_ctx* s) {
+  if (s->dst_begin) {
+    munmap(s->dst_begin, s->dst_end - s->dst_begin);
+    s->dst_begin = NULL;
+  }
   if (s->dst_fd >= 0) {
     close(s->dst_fd);
     s->dst_fd = 0;
