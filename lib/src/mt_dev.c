@@ -1317,10 +1317,13 @@ int dev_reset_port(struct mtl_main_impl* impl, enum mtl_port port) {
 
 static int dev_filelock_lock(struct mtl_main_impl* impl) {
   int fd = open(MT_FLOCK_PATH, O_RDONLY | O_CREAT, 0666);
-
   if (fd < 0) {
-    err("%s, failed to open %s, %s\n", __func__, MT_FLOCK_PATH, strerror(errno));
-    return -EIO;
+    /* sometimes may fail due to user permission, try open read-only */
+    fd = open(MT_FLOCK_PATH, O_RDONLY);
+    if (fd < 0) {
+      err("%s, failed to open %s, %s\n", __func__, MT_FLOCK_PATH, strerror(errno));
+      return -EIO;
+    }
   }
   impl->lcore_lock_fd = fd;
   /* wait until locked */
