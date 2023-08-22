@@ -939,7 +939,7 @@ struct st_rx_audio_session_impl {
   uint32_t st30_pkt_size; /* size for each pkt which include the header */
   int st30_total_pkts;    /* total pkts in one frame */
   int st30_pkt_idx;       /* pkt index in current frame */
-  int st30_seq_id;        /* seq id for each pkt */
+  int latest_seq_id;      /* latest seq id */
 
   uint32_t tmstamp;
   size_t frame_recv_size;
@@ -1091,7 +1091,7 @@ struct st_rx_ancillary_session_impl {
 
   uint16_t st40_dst_port[MTL_SESSION_PORT_MAX]; /* udp port */
 
-  int st40_seq_id; /* seq id for each pkt */
+  int latest_seq_id; /* latest seq id */
 
   struct mt_rtcp_rx* rtcp_rx[MTL_SESSION_PORT_MAX];
 

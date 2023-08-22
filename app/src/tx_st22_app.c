@@ -291,6 +291,7 @@ static int app_tx_st22_init(struct st_app_context* ctx, struct st22_app_tx_sessi
   ops.framebuff_max_size = s->bytes_per_frame;
   ops.get_next_frame = app_tx_st22_next_frame;
   ops.notify_frame_done = app_tx_st22_frame_done;
+  if (ctx->tx_no_bulk) ops.flags |= ST22_TX_FLAG_DISABLE_BULK;
 
   s->framebuff_cnt = ops.framebuff_cnt;
   s->framebuff_producer_idx = 0;

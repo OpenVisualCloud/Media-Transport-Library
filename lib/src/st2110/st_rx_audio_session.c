@@ -399,15 +399,15 @@ static int rx_audio_session_handle_frame_pkt(struct mtl_main_impl* impl,
   }
 
   /* set first seq_id - 1 */
-  if (unlikely(s->st30_seq_id == -1)) s->st30_seq_id = seq_id - 1;
+  if (unlikely(s->latest_seq_id == -1)) s->latest_seq_id = seq_id - 1;
   /* drop old packet */
-  if (st_rx_seq_drop(seq_id, s->st30_seq_id, 5)) {
+  if (st_rx_seq_drop(seq_id, s->latest_seq_id, 5)) {
     dbg("%s(%d,%d), drop as pkt seq %d is old\n", __func__, s->idx, s_port, seq_id);
     s->st30_stat_pkts_dropped++;
     return -EIO;
   }
   /* update seq id */
-  s->st30_seq_id = seq_id;
+  s->latest_seq_id = seq_id;
 
   // copy frame
   if (!s->st30_cur_frame) {
@@ -487,15 +487,15 @@ static int rx_audio_session_handle_rtp_pkt(struct mtl_main_impl* impl,
   }
 
   /* set first seq_id - 1 */
-  if (unlikely(s->st30_seq_id == -1)) s->st30_seq_id = seq_id - 1;
+  if (unlikely(s->latest_seq_id == -1)) s->latest_seq_id = seq_id - 1;
   /* drop old packet */
-  if (st_rx_seq_drop(seq_id, s->st30_seq_id, 5)) {
+  if (st_rx_seq_drop(seq_id, s->latest_seq_id, 5)) {
     dbg("%s(%d,%d), drop as pkt seq %d is old\n", __func__, s->idx, s_port, seq_id);
     s->st30_stat_pkts_dropped++;
     return -EIO;
   }
   /* update seq id */
-  s->st30_seq_id = seq_id;
+  s->latest_seq_id = seq_id;
 
   /* enqueue the packet ring to app */
   int ret = rte_ring_sp_enqueue(s->st30_rtps_ring, (void*)mbuf);
@@ -740,7 +740,7 @@ static int rx_audio_session_attach(struct mtl_main_impl* impl,
   s->st30_pkt_idx = 0;
   s->st30_frame_size = ops->framebuff_size;
 
-  s->st30_seq_id = -1;
+  s->latest_seq_id = -1;
   s->st30_stat_pkts_received = 0;
   s->st30_stat_pkts_dropped = 0;
   s->st30_stat_pkts_wrong_hdr_dropped = 0;
@@ -852,7 +852,7 @@ static int rx_audio_session_update_src(struct mtl_main_impl* impl,
     s->st30_dst_port[i] = (ops->udp_port[i]) ? (ops->udp_port[i]) : (20000 + idx * 2);
   }
   /* reset seq id */
-  s->st30_seq_id = -1;
+  s->latest_seq_id = -1;
 
   ret = rx_audio_session_init_hw(impl, s);
   if (ret < 0) {

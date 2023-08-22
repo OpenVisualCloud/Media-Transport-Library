@@ -2856,7 +2856,12 @@ static int tv_attach(struct mtl_main_impl* impl, struct st_tx_video_sessions_mgr
   s->st20_seq_id = 0;
   s->st20_rtp_time = UINT32_MAX;
   s->st20_frame_stat = ST21_TX_STAT_WAIT_FRAME;
-  s->bulk = RTE_MIN(4, ST_SESSION_MAX_BULK);
+  if (ops->flags & ST20_TX_FLAG_DISABLE_BULK) {
+    s->bulk = 1;
+    info("%s(%d), bulk is disabled\n", __func__, idx);
+  } else {
+    s->bulk = RTE_MIN(4, ST_SESSION_MAX_BULK);
+  }
 
   if (ops->name) {
     snprintf(s->ops_name, sizeof(s->ops_name), "%s", ops->name);
@@ -4168,6 +4173,7 @@ st22_tx_handle st22_tx_create(mtl_handle mt, struct st22_tx_ops* ops) {
     st20_ops.flags |= ST20_TX_FLAG_ENABLE_RTCP;
     st20_ops.rtcp = ops->rtcp;
   }
+  if (ops->flags & ST22_TX_FLAG_DISABLE_BULK) st20_ops.flags |= ST20_TX_FLAG_DISABLE_BULK;
   st20_ops.pacing = ops->pacing;
   if (ST22_TYPE_RTP_LEVEL == ops->type)
     st20_ops.type = ST20_TYPE_RTP_LEVEL;

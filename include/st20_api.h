@@ -76,6 +76,12 @@ extern "C" {
  * sender.
  */
 #define ST20_TX_FLAG_RTP_TIMESTAMP_FIRST_PKT (MTL_BIT32(8))
+/**
+ * Flag bit in flags of struct st20_tx_ops.
+ * Set this flag to the bulk operation on all internal buffer rings. It may degrade the
+ * performance since the object enqueue/dequeue will be acted one by one.
+ */
+#define ST20_TX_FLAG_DISABLE_BULK (MTL_BIT32(9))
 
 /**
  * Flag bit in flags of struct st22_tx_ops.
@@ -114,6 +120,12 @@ extern "C" {
  * If enable the rtcp.
  */
 #define ST22_TX_FLAG_ENABLE_RTCP (MTL_BIT32(6))
+/**
+ * Flag bit in flags of struct st22_tx_ops.
+ * Set this flag to the bulk operation on all internal buffer rings. It may degrade the
+ * performance since the object enqueue/dequeue will be acted one by one.
+ */
+#define ST22_TX_FLAG_DISABLE_BULK (MTL_BIT32(7))
 
 /**
  * Flag bit in flags of struct st20_rx_ops, for non MTL_PMD_DPDK_USER.
@@ -909,7 +921,7 @@ struct st20_ext_frame {
 struct st_tx_rtcp_ops {
   /**
    * The size of the packets buffer for RTCP, should be power of two.
-   * Only used when ST20/22_TX_FLAG_ENABLE_RTCP flag set.
+   * Only used when ST20(P)/22(P)_TX_FLAG_ENABLE_RTCP flag set.
    * If leave it to 0 the lib will use ST_TX_VIDEO_RTCP_RING_SIZE.
    */
   uint16_t rtcp_buffer_size;
@@ -1030,14 +1042,18 @@ struct st20_tx_ops {
   int (*query_frame_lines_ready)(void* priv, uint16_t frame_idx,
                                  struct st20_tx_slice_meta* meta);
 
-  /** Mandatory for ST20_TYPE_RTP_LEVEL. rtp ring size, must be power of 2 */
+  /** Mandatory for ST20_TYPE_RTP_LEVEL. rtp ring queue size, must be power of 2 */
   uint32_t rtp_ring_size;
-  /** Mandatory for ST20_TYPE_RTP_LEVEL. total pkts in one frame, ex: 4320 for 1080p. */
+  /**
+   * Mandatory for ST20_TYPE_RTP_LEVEL. Total pkts in one frame, ex: 4320 for 1080p.
+   */
   uint32_t rtp_frame_total_pkts;
   /**
    * Mandatory for ST20_TYPE_RTP_LEVEL.
-   * size for each rtp pkt, include both the payload data and rtp header, must small than
-   * MTL_PKT_MAX_RTP_BYTES
+   * Size for each rtp pkt, include both the payload data and rtp header, must small than
+   * MTL_PKT_MAX_RTP_BYTES. Used by MTL to calculate the total bandwidth of each frame.
+   * App still can customize the size of each pkt by the `len` parameter of
+   * `st20_tx_put_mbuf`
    */
   uint16_t rtp_pkt_size;
   /**
@@ -1134,14 +1150,19 @@ struct st22_tx_ops {
   /** Optional. The tx destination mac address if ST20_TX_FLAG_USER_P(R)_MAC is enabled */
   uint8_t tx_dst_mac[MTL_SESSION_PORT_MAX][MTL_MAC_ADDR_LEN];
 
-  /** Mandatory for ST22_TYPE_RTP_LEVEL. rtp ring size, must be power of 2 */
+  /** Mandatory for ST22_TYPE_RTP_LEVEL. rtp ring queue size, must be power of 2 */
   uint32_t rtp_ring_size;
-  /** Mandatory for ST22_TYPE_RTP_LEVEL. total pkts in one rtp frame */
+  /**
+   * Mandatory for ST22_TYPE_RTP_LEVEL. total pkts in one rtp frame. Used by MTL to
+   * calculate the total bandwidth of each frame, and user must build exactly the same
+   * number packets of each frame by `st20_tx_put_mbuf` */
   uint32_t rtp_frame_total_pkts;
   /**
    * Mandatory for ST22_TYPE_RTP_LEVEL.
-   * size for each rtp pkt, include both the payload data and rtp header, must small than
-   * MTL_PKT_MAX_RTP_BYTES
+   * Size for each rtp pkt, include both the payload data and rtp header, must small than
+   * MTL_PKT_MAX_RTP_BYTES. Used by MTL to calculate the total bandwidth of each frame.
+   * App still can customize the size of each pkt by the `len` parameter of
+   * `st20_tx_put_mbuf`
    */
   uint16_t rtp_pkt_size;
   /**
@@ -1344,7 +1365,7 @@ struct st20_rx_ops {
    */
   int (*notify_slice_ready)(void* priv, void* frame, struct st20_rx_slice_meta* meta);
 
-  /** Mandatory for ST20_TYPE_RTP_LEVEL. rtp ring size, must be power of 2 */
+  /** Mandatory for ST20_TYPE_RTP_LEVEL. rtp ring queue size, must be power of 2 */
   uint32_t rtp_ring_size;
   /**
    * Optional for ST20_TYPE_RTP_LEVEL. The callback when lib receive one rtp packet.
@@ -1440,7 +1461,7 @@ struct st22_rx_ops {
    */
   float sim_loss_rate;
 
-  /** Mandatory for ST22_TYPE_RTP_LEVEL. rtp ring size, must be power of 2 */
+  /** Mandatory for ST22_TYPE_RTP_LEVEL. rtp ring queue size, must be power of 2 */
   uint32_t rtp_ring_size;
   /**
    * Optional for ST22_TYPE_RTP_LEVEL. The callback when lib receive one rtp packet.
