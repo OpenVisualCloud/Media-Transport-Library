@@ -361,6 +361,12 @@ enum st22_quality_mode {
  * If enable the rtcp.
  */
 #define ST22P_TX_FLAG_ENABLE_RTCP (MTL_BIT32(6))
+/**
+ * Flag bit in flags of struct st22p_tx_ops.
+ * Set this flag to the bulk operation on all internal buffer rings. It may degrade the
+ * performance since the object enqueue/dequeue will be acted one by one.
+ */
+#define ST22P_TX_FLAG_DISABLE_BULK (MTL_BIT32(7))
 
 /**
  * Flag bit in flags of struct st20p_tx_ops.
@@ -412,6 +418,12 @@ enum st22_quality_mode {
  * sender.
  */
 #define ST20P_TX_FLAG_RTP_TIMESTAMP_FIRST_PKT (MTL_BIT32(8))
+/**
+ * Flag bit in flags of struct st20p_tx_ops.
+ * Set this flag to the bulk operation on all internal buffer rings. It may degrade the
+ * performance since the object enqueue/dequeue will be acted one by one.
+ */
+#define ST20P_TX_FLAG_DISABLE_BULK (MTL_BIT32(9))
 
 /**
  * Flag bit in flags of struct st22p_rx_ops, for non MTL_PMD_DPDK_USER.
@@ -871,6 +883,8 @@ struct st22p_tx_ops {
    */
   int (*notify_frame_done)(void* priv, struct st_frame* frame);
 
+  /** Optional for ST22_TX_FLAG_ENABLE_RTCP. RTCP info */
+  struct st_tx_rtcp_ops* rtcp;
   /**
    * Optional. tx destination mac address.
    * Valid if ST22P_TX_FLAG_USER_P(R)_MAC is enabled

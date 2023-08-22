@@ -248,6 +248,11 @@ static int tx_st22p_create_transport(struct mtl_main_impl* impl, struct st22p_tx
   if (ops->flags & ST22P_TX_FLAG_USER_TIMESTAMP)
     ops_tx.flags |= ST22_TX_FLAG_USER_TIMESTAMP;
   if (ops->flags & ST22P_TX_FLAG_ENABLE_VSYNC) ops_tx.flags |= ST22_TX_FLAG_ENABLE_VSYNC;
+  if (ops->flags & ST22P_TX_FLAG_ENABLE_RTCP) {
+    ops_tx.flags |= ST22_TX_FLAG_ENABLE_RTCP;
+    ops_tx.rtcp = ops->rtcp;
+  }
+  if (ops->flags & ST22P_TX_FLAG_DISABLE_BULK) ops_tx.flags |= ST22_TX_FLAG_DISABLE_BULK;
   ops_tx.pacing = ST21_PACING_NARROW;
   ops_tx.width = ops->width;
   ops_tx.height = ops->height;

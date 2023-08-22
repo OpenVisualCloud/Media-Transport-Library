@@ -514,6 +514,7 @@ struct st_app_context {
   bool tx_ts_first_pkt;
   int32_t tx_ts_delta_us;
   enum st21_pacing tx_pacing_type;
+  bool tx_no_bulk;
 
   struct st_app_tx_audio_session* tx_audio_sessions;
   char tx_audio_url[ST_APP_URL_MAX_LEN];

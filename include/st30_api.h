@@ -320,7 +320,7 @@ struct st30_tx_ops {
    */
   uint8_t tx_dst_mac[MTL_SESSION_PORT_MAX][MTL_MAC_ADDR_LEN];
 
-  /** Mandatory for ST30_TYPE_RTP_LEVEL. rtp ring size, must be power of 2 */
+  /** Mandatory for ST30_TYPE_RTP_LEVEL. rtp ring queue size, must be power of 2 */
   uint32_t rtp_ring_size;
   /**
    * Optional for ST30_TYPE_RTP_LEVEL. the callback when lib finish the sending of one rtp
@@ -399,7 +399,7 @@ struct st30_rx_ops {
    */
   int (*notify_frame_ready)(void* priv, void* frame, struct st30_rx_frame_meta* meta);
 
-  /** Mandatory for ST30_TYPE_RTP_LEVEL. rtp ring size, must be power of 2 */
+  /** Mandatory for ST30_TYPE_RTP_LEVEL. rtp ring queue size, must be power of 2 */
   uint32_t rtp_ring_size;
   /**
    * Optional for ST20_TYPE_RTP_LEVEL. The callback when lib receive one rtp packet.

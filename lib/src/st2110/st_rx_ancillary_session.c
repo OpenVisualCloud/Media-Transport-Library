@@ -90,16 +90,16 @@ static int rx_ancillary_session_handle_pkt(struct mtl_main_impl* impl,
     return -EINVAL;
   }
 
-  /* set first seq_id - 1 */
-  if (unlikely(s->st40_seq_id == -1)) s->st40_seq_id = seq_id - 1;
+  /* set if it is first pkt */
+  if (unlikely(s->latest_seq_id == -1)) s->latest_seq_id = seq_id - 1;
   /* drop old packet */
-  if (st_rx_seq_drop(seq_id, s->st40_seq_id, 5)) {
+  if (st_rx_seq_drop(seq_id, s->latest_seq_id, 5)) {
     dbg("%s(%d,%d), drop as pkt seq %d is old\n", __func__, s->idx, s_port, seq_id);
     s->st40_stat_pkts_dropped++;
     return 0;
   }
   /* update seq id */
-  s->st40_seq_id = seq_id;
+  s->latest_seq_id = seq_id;
 
   /* enqueue to packet ring to let app to handle */
   int ret = rte_ring_sp_enqueue(s->packet_ring, (void*)mbuf);
@@ -331,7 +331,7 @@ static int rx_ancillary_session_attach(struct mtl_main_impl* impl,
     s->st40_dst_port[i] = (ops->udp_port[i]) ? (ops->udp_port[i]) : (30000 + idx * 2);
   }
 
-  s->st40_seq_id = -1;
+  s->latest_seq_id = -1;
   s->st40_stat_pkts_received = 0;
   s->st40_stat_pkts_dropped = 0;
   s->st40_stat_pkts_wrong_hdr_dropped = 0;
@@ -420,7 +420,7 @@ static int rx_ancillary_session_update_src(struct mtl_main_impl* impl,
     s->st40_dst_port[i] = (ops->udp_port[i]) ? (ops->udp_port[i]) : (30000 + idx * 2);
   }
   /* reset seq id */
-  s->st40_seq_id = -1;
+  s->latest_seq_id = -1;
 
   ret = rx_ancillary_session_init_hw(impl, s);
   if (ret < 0) {

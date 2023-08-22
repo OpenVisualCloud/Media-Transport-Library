@@ -52,6 +52,7 @@ enum st_args_cmd {
   ST_ARG_SHAPING,
   ST_ARG_TIMESTAMP_FIRST_PKT,
   ST_ARG_TIMESTAMP_DELTA_US,
+  ST_ARG_NO_BULK,
 
   ST_ARG_CONFIG_FILE = 0x300,
   ST_ARG_TEST_TIME,
@@ -163,6 +164,7 @@ static struct option st_app_args_options[] = {
     {"shaping", required_argument, 0, ST_ARG_SHAPING},
     {"ts_first_pkt", no_argument, 0, ST_ARG_TIMESTAMP_FIRST_PKT},
     {"ts_delta_us", required_argument, 0, ST_ARG_TIMESTAMP_DELTA_US},
+    {"no_bulk", no_argument, 0, ST_ARG_NO_BULK},
 
     {"config_file", required_argument, 0, ST_ARG_CONFIG_FILE},
     {"test_time", required_argument, 0, ST_ARG_TEST_TIME},
@@ -460,6 +462,9 @@ int st_app_parse_args(struct st_app_context* ctx, struct mtl_init_params* p, int
         break;
       case ST_ARG_TIMESTAMP_DELTA_US:
         ctx->tx_ts_delta_us = atoi(optarg);
+        break;
+      case ST_ARG_NO_BULK:
+        ctx->tx_no_bulk = true;
         break;
       case ST_ARG_SHAPING:
         if (!strcmp(optarg, "narrow"))

@@ -26,6 +26,7 @@ The Intel® Media Transport Library is a DPDK-based solution designed for high-t
 * FPS: 120, 119.88, 100, 60, 59.94, 50, 30, 29.97, 25, 24, 23.98
 * All video formats listed in ST2110-20, including YUV 4:2:2 10-bit and others, are supported.
 * CSC support status: [status](doc/convert.md)
+* ST2022-6 by RTP passthrough interface.
 
 ### 1.2 Architecture
 
