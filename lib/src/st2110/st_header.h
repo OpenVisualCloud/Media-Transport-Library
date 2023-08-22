@@ -727,6 +727,7 @@ struct st_rx_video_session_impl {
   uint32_t stat_slot_query_ext_fail;
   uint64_t stat_bytes_received;
   uint32_t stat_max_notify_frame_us;
+  uint32_t stat_latest_tmstamp;
 
   struct st_rx_video_ebu_info ebu_info;
   struct st_rx_video_ebu_stat ebu;

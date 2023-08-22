@@ -1317,6 +1317,14 @@ static struct st_rx_video_slot_impl* rv_slot_by_tmstamp(
     if (tmstamp == slot->tmstamp) return slot;
   }
 
+  if (tmstamp - s->stat_latest_tmstamp < UINT32_MAX / 2 || s->stat_latest_tmstamp == 0) {
+    s->stat_latest_tmstamp = tmstamp;
+  } else {
+    dbg("%s(%d): tmstamp %u is older than latest %u\n", __func__, s->idx, tmstamp,
+        s->stat_latest_tmstamp);
+    return NULL;
+  }
+
   dbg("%s(%d): new tmstamp %u\n", __func__, s->idx, tmstamp);
   if (s->dma_dev && !mt_dma_empty(s->dma_dev)) {
     /* still in progress of previous frame, drop current pkt */
