@@ -86,7 +86,11 @@ static int tx_st22p_open_source(struct st_sample_context* ctx,
     return -EIO;
   }
 
-  fstat(fd, &i);
+  if (fstat(fd, &i) < 0) {
+    err("%s, fstat %s fail\n", __func__, file);
+    close(fd);
+    return -EIO;
+  }
   if (i.st_size < s->frame_size) {
     err("%s, %s file size small then a frame %" PRIu64 "\n", __func__, file,
         s->frame_size);
@@ -104,6 +108,7 @@ static int tx_st22p_open_source(struct st_sample_context* ctx,
   s->source_begin = mtl_hp_malloc(s->st, i.st_size, MTL_PORT_P);
   if (!s->source_begin) {
     err("%s, source malloc on hugepage fail\n", __func__);
+    munmap(m, i.st_size);
     close(fd);
     return -EIO;
   }
@@ -111,6 +116,7 @@ static int tx_st22p_open_source(struct st_sample_context* ctx,
   s->frame_cursor = s->source_begin;
   mtl_memcpy(s->source_begin, m, i.st_size);
   s->source_end = s->source_begin + i.st_size;
+  munmap(m, i.st_size);
   close(fd);
 
   tx_st22p_open_logo(ctx, s, ctx->logo_url);
@@ -216,8 +222,8 @@ int main(int argc, char** argv) {
     ops_tx.port.num_port = 1;
     memcpy(ops_tx.port.dip_addr[MTL_SESSION_PORT_P], ctx.tx_dip_addr[MTL_PORT_P],
            MTL_IP_ADDR_LEN);
-    strncpy(ops_tx.port.port[MTL_SESSION_PORT_P], ctx.param.port[MTL_PORT_P],
-            MTL_PORT_MAX_LEN);
+    snprintf(ops_tx.port.port[MTL_SESSION_PORT_P], MTL_PORT_MAX_LEN, "%s",
+             ctx.param.port[MTL_PORT_P]);
     ops_tx.port.udp_port[MTL_SESSION_PORT_P] = ctx.udp_port + i * 2;
     ops_tx.port.payload_type = ctx.payload_type;
     ops_tx.width = ctx.width;

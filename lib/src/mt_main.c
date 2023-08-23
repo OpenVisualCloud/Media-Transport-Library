@@ -190,7 +190,11 @@ static int mt_main_create(struct mtl_main_impl* impl) {
     return ret;
   }
 
-  pthread_create(&impl->tsc_cal_tid, NULL, mt_calibrate_tsc, impl);
+  ret = pthread_create(&impl->tsc_cal_tid, NULL, mt_calibrate_tsc, impl);
+  if (ret < 0) {
+    err("%s, pthread_create fail %d\n", __func__, ret);
+    return ret;
+  }
 
   info("%s, succ\n", __func__);
   return 0;
@@ -621,6 +625,57 @@ int mtl_abort(mtl_handle mt) {
   rte_atomic32_set(&impl->instance_aborted, 1);
 
   return 0;
+}
+
+int mtl_set_log_level(mtl_handle mt, enum mtl_log_level level) {
+  struct mtl_main_impl* impl = mt;
+  uint32_t rte_level;
+
+  if (impl->type != MT_HANDLE_MAIN) {
+    err("%s, invalid type %d\n", __func__, impl->type);
+    return -EIO;
+  }
+
+  dbg("%s, set log level %d\n", __func__, level);
+  if (level == mtl_get_log_level(mt)) return 0;
+
+  switch (level) {
+    case MTL_LOG_LEVEL_DEBUG:
+      rte_level = RTE_LOG_DEBUG;
+      break;
+    case MTL_LOG_LEVEL_INFO:
+      rte_level = RTE_LOG_INFO;
+      break;
+    case MTL_LOG_LEVEL_NOTICE:
+      rte_level = RTE_LOG_NOTICE;
+      break;
+    case MTL_LOG_LEVEL_WARNING:
+      rte_level = RTE_LOG_WARNING;
+      break;
+    case MTL_LOG_LEVEL_ERROR:
+      rte_level = RTE_LOG_ERR;
+      break;
+    default:
+      err("%s, invalid level %d\n", __func__, level);
+      return -EINVAL;
+  }
+
+  rte_log_set_global_level(rte_level);
+
+  info("%s, set log level %d succ\n", __func__, level);
+  mt_get_user_params(impl)->log_level = level;
+  return 0;
+}
+
+enum mtl_log_level mtl_get_log_level(mtl_handle mt) {
+  struct mtl_main_impl* impl = mt;
+
+  if (impl->type != MT_HANDLE_MAIN) {
+    err("%s, invalid type %d\n", __func__, impl->type);
+    return -EIO;
+  }
+
+  return mt_get_user_params(impl)->log_level;
 }
 
 void* mtl_memcpy(void* dest, const void* src, size_t n) {

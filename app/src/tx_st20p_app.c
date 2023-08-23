@@ -99,7 +99,11 @@ static int app_tx_st20p_open_source(struct st_app_tx_st20p_session* s) {
     return -EIO;
   }
 
-  fstat(fd, &i);
+  if (fstat(fd, &i) < 0) {
+    err("%s, fstat %s fail\n", __func__, s->st20p_source_url);
+    close(fd);
+    return -EIO;
+  }
   if (i.st_size < s->st20p_frame_size) {
     err("%s, %s file size small then a frame %d\n", __func__, s->st20p_source_url,
         s->st20p_frame_size);
@@ -242,9 +246,9 @@ static int app_tx_st20p_init(struct st_app_context* ctx, st_json_st20p_session_t
          st20p ? st_json_ip(ctx, &st20p->base, MTL_SESSION_PORT_P)
                : ctx->tx_dip_addr[MTL_PORT_P],
          MTL_IP_ADDR_LEN);
-  strncpy(ops.port.port[MTL_SESSION_PORT_P],
-          st20p ? st20p->base.inf[MTL_SESSION_PORT_P]->name : ctx->para.port[MTL_PORT_P],
-          MTL_PORT_MAX_LEN);
+  snprintf(
+      ops.port.port[MTL_SESSION_PORT_P], MTL_PORT_MAX_LEN, "%s",
+      st20p ? st20p->base.inf[MTL_SESSION_PORT_P]->name : ctx->para.port[MTL_PORT_P]);
   ops.port.udp_port[MTL_SESSION_PORT_P] = st20p ? st20p->base.udp_port : (10000 + s->idx);
   if (ctx->has_tx_dst_mac[MTL_PORT_P]) {
     memcpy(&ops.tx_dst_mac[MTL_SESSION_PORT_P][0], ctx->tx_dst_mac[MTL_PORT_P],
@@ -256,10 +260,9 @@ static int app_tx_st20p_init(struct st_app_context* ctx, st_json_st20p_session_t
            st20p ? st_json_ip(ctx, &st20p->base, MTL_SESSION_PORT_R)
                  : ctx->tx_dip_addr[MTL_PORT_R],
            MTL_IP_ADDR_LEN);
-    strncpy(
-        ops.port.port[MTL_SESSION_PORT_R],
-        st20p ? st20p->base.inf[MTL_SESSION_PORT_R]->name : ctx->para.port[MTL_PORT_R],
-        MTL_PORT_MAX_LEN);
+    snprintf(
+        ops.port.port[MTL_SESSION_PORT_R], MTL_PORT_MAX_LEN, "%s",
+        st20p ? st20p->base.inf[MTL_SESSION_PORT_R]->name : ctx->para.port[MTL_PORT_R]);
     ops.port.udp_port[MTL_SESSION_PORT_R] =
         st20p ? st20p->base.udp_port : (10000 + s->idx);
     if (ctx->has_tx_dst_mac[MTL_PORT_R]) {
@@ -285,6 +288,7 @@ static int app_tx_st20p_init(struct st_app_context* ctx, st_json_st20p_session_t
   if (ctx->tx_no_static_pad) ops.flags |= ST20P_TX_FLAG_DISABLE_STATIC_PAD_P;
   if (st20p && st20p->enable_rtcp) ops.flags |= ST20P_TX_FLAG_ENABLE_RTCP;
   if (ctx->tx_ts_first_pkt) ops.flags |= ST20P_TX_FLAG_RTP_TIMESTAMP_FIRST_PKT;
+  if (ctx->tx_no_bulk) ops.flags |= ST20P_TX_FLAG_DISABLE_BULK;
 
   s->width = ops.width;
   s->height = ops.height;

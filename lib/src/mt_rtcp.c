@@ -27,6 +27,7 @@ static int rtp_seq_num_cmp(uint16_t seq0, uint16_t seq1) {
 
 int mt_rtcp_tx_buffer_rtp_packets(struct mt_rtcp_tx* tx, struct rte_mbuf** mbufs,
                                   unsigned int bulk) {
+  if (!tx->active) return 0;
   if (mt_u64_fifo_free_count(tx->mbuf_ring) < bulk) {
     struct rte_mbuf* clean_mbufs[bulk];
     if (mt_u64_fifo_get_bulk(tx->mbuf_ring, (uint64_t*)clean_mbufs, bulk) < 0) {
@@ -114,6 +115,7 @@ rt_exit:
 }
 
 int mt_rtcp_tx_parse_rtcp_packet(struct mt_rtcp_tx* tx, struct mt_rtcp_hdr* rtcp) {
+  if (!tx->active) return 0;
   if (rtcp->flags != 0x80) {
     err("%s(%s), wrong rtcp flags %u\n", __func__, tx->name, rtcp->flags);
     return -EIO;
@@ -158,6 +160,7 @@ static int rtcp_rx_update_last_cont(struct mt_rtcp_rx* rx) {
 }
 
 int mt_rtcp_rx_parse_rtp_packet(struct mt_rtcp_rx* rx, struct st_rfc3550_rtp_hdr* rtp) {
+  if (!rx->active) return 0;
   uint16_t seq = ntohs(rtp->seq_number);
 
   if (rx->ssrc == 0) { /* first received */
@@ -200,6 +203,7 @@ int mt_rtcp_rx_parse_rtp_packet(struct mt_rtcp_rx* rx, struct st_rfc3550_rtp_hdr
 }
 
 int mt_rtcp_rx_send_nack_packet(struct mt_rtcp_rx* rx) {
+  if (!rx->active) return 0;
   struct mtl_main_impl* impl = rx->parent;
   enum mtl_port port = rx->port;
   struct rte_mbuf* pkt;
@@ -346,10 +350,11 @@ struct mt_rtcp_tx* mt_rtcp_tx_create(struct mtl_main_impl* impl,
   tx->mbuf_ring = ring;
   tx->ipv4_packet_id = 0;
   tx->ssrc = ops->ssrc;
-  strncpy(tx->name, ops->name, sizeof(tx->name) - 1);
+  snprintf(tx->name, sizeof(tx->name) - 1, "%s", ops->name);
   rte_memcpy(&tx->udp_hdr, ops->udp_hdr, sizeof(tx->udp_hdr));
 
   mt_stat_register(impl, rtcp_tx_stat, tx, tx->name);
+  tx->active = true;
 
   info("%s(%s), suss\n", __func__, tx->name);
 
@@ -358,6 +363,8 @@ struct mt_rtcp_tx* mt_rtcp_tx_create(struct mtl_main_impl* impl,
 
 void mt_rtcp_tx_free(struct mt_rtcp_tx* tx) {
   mt_stat_unregister(tx->parent, rtcp_tx_stat, tx);
+
+  tx->active = false;
 
   if (tx->mbuf_ring) {
     mt_fifo_mbuf_clean(tx->mbuf_ring);
@@ -383,7 +390,7 @@ struct mt_rtcp_rx* mt_rtcp_rx_create(struct mtl_main_impl* impl,
   rx->ssrc = 0;
   rx->nacks_send_interval = ops->nacks_send_interval;
   rx->nacks_send_time = mt_get_tsc(impl);
-  strncpy(rx->name, ops->name, sizeof(rx->name) - 1);
+  snprintf(rx->name, sizeof(rx->name) - 1, "%s", ops->name);
   rte_memcpy(&rx->udp_hdr, ops->udp_hdr, sizeof(rx->udp_hdr));
 
   uint8_t* seq_bitmap = mt_rte_zmalloc_socket(sizeof(uint8_t) * ops->seq_bitmap_size,
@@ -397,6 +404,7 @@ struct mt_rtcp_rx* mt_rtcp_rx_create(struct mtl_main_impl* impl,
   rx->seq_window_size = ops->seq_bitmap_size * 8;
 
   mt_stat_register(impl, rtcp_rx_stat, rx, rx->name);
+  rx->active = true;
 
   info("%s(%s), suss\n", __func__, rx->name);
 
@@ -405,6 +413,8 @@ struct mt_rtcp_rx* mt_rtcp_rx_create(struct mtl_main_impl* impl,
 
 void mt_rtcp_rx_free(struct mt_rtcp_rx* rx) {
   mt_stat_unregister(rx->parent, rtcp_rx_stat, rx);
+
+  rx->active = false;
 
   if (rx->seq_bitmap) mt_rte_free(rx->seq_bitmap);
 

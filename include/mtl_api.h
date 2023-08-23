@@ -817,6 +817,29 @@ int mtl_stop(mtl_handle mt);
 int mtl_abort(mtl_handle mt);
 
 /**
+ * Set the log level for the MTL transport device context.
+ *
+ * @param mt
+ *   The handle to the MTL transport device context.
+ * @param level
+ *   The log level define.
+ * @return
+ *   - 0: Success.
+ *   - <0: Error code.
+ */
+int mtl_set_log_level(mtl_handle mt, enum mtl_log_level level);
+
+/**
+ * Get the log level for the MTL transport device context.
+ *
+ * @param mt
+ *   The handle to the MTL transport device context.
+ * @return
+ *   The log level.
+ */
+enum mtl_log_level mtl_get_log_level(mtl_handle mt);
+
+/**
  * Enable or disable sleep mode for sch.
  *
  * @param mt

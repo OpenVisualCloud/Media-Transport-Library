@@ -166,10 +166,10 @@ int main(int argc, char** argv) {
            MTL_IP_ADDR_LEN);
     memcpy(ops_rx.sip_addr[MTL_SESSION_PORT_R], ctx.rx_sip_addr[MTL_PORT_R],
            MTL_IP_ADDR_LEN);
-    strncpy(ops_rx.port[MTL_SESSION_PORT_P], ctx.param.port[MTL_PORT_P],
-            MTL_PORT_MAX_LEN);
-    strncpy(ops_rx.port[MTL_SESSION_PORT_R], ctx.param.port[MTL_PORT_R],
-            MTL_PORT_MAX_LEN);
+    snprintf(ops_rx.port[MTL_SESSION_PORT_P], MTL_PORT_MAX_LEN, "%s",
+             ctx.param.port[MTL_PORT_P]);
+    snprintf(ops_rx.port[MTL_SESSION_PORT_R], MTL_PORT_MAX_LEN, "%s",
+             ctx.param.port[MTL_PORT_R]);
     ops_rx.udp_port[MTL_SESSION_PORT_P] = ctx.udp_port + i * 2;
     ops_rx.udp_port[MTL_SESSION_PORT_R] = ctx.udp_port + i * 2;
     ops_rx.width = ctx.width;

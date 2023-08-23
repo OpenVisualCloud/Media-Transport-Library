@@ -3888,12 +3888,10 @@ static void frame_malloc(struct st_frame* frame, uint8_t rand, bool align) {
       }
     }
   }
-  for (int plane = 0; plane < planes; plane++) {
-    if (plane == 0)
-      frame->addr[plane] = fb;
-    else
-      frame->addr[plane] =
-          (uint8_t*)frame->addr[plane - 1] + st_frame_plane_size(frame, plane - 1);
+  frame->addr[0] = fb;
+  for (int plane = 1; plane < planes; plane++) {
+    frame->addr[plane] =
+        (uint8_t*)frame->addr[plane - 1] + st_frame_plane_size(frame, plane - 1);
   }
   frame->data_size = frame->buffer_size = fb_size;
 }

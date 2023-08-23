@@ -280,7 +280,7 @@ struct st40_tx_ops {
    */
   uint8_t tx_dst_mac[MTL_SESSION_PORT_MAX][MTL_MAC_ADDR_LEN];
 
-  /** Mandatory for ST40_TYPE_RTP_LEVEL. rtp ring size, must be power of 2 */
+  /** Mandatory for ST40_TYPE_RTP_LEVEL. rtp ring queue size, must be power of 2 */
   uint32_t rtp_ring_size;
   /**
    * Optional for ST40_TYPE_RTP_LEVEL. callback when lib finish the sending of one rtp
@@ -314,7 +314,7 @@ struct st40_rx_ops {
   /** Optional. see ST40_RX_FLAG_* for possible flags */
   uint32_t flags;
 
-  /** Mandatory. rtp ring size, must be power of 2 */
+  /** Mandatory. rtp ring queue size, must be power of 2 */
   uint32_t rtp_ring_size;
   /**
    * Optional. the callback when lib finish the sending of one rtp packet. And only

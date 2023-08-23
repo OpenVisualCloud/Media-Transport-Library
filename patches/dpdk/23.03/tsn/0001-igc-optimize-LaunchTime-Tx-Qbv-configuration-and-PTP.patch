@@ -1,8 +1,8 @@
-From 83031a42782ff66b304aaf1d5c649e22a5f9bae8 Mon Sep 17 00:00:00 2001
+From 7b419930e5cf831c51f46d0591c0b1de8fa70535 Mon Sep 17 00:00:00 2001
 From: gongxiao-intel <xiaoyan.gong@intel.com>
 Date: Mon, 12 Jun 2023 13:05:39 +0000
-Subject: [PATCH 7/7] igc: optimize LaunchTime Tx, Qbv configuration and PTP
- for SMPTE 2110-21 n-type transmission of 1080p 50fps video.
+Subject: [PATCH] igc: optimize LaunchTime Tx, Qbv configuration and PTP for
+ SMPTE 2110-21 n-type transmission of 1080p 50fps video.
 
 1. Optimize LaunchTime Tx feature based on section 3.3.2.9.3.4 of doc#682924 rev-1.4.2 requirement.
 
@@ -32,9 +32,9 @@ other queues is opened at the 784us from the end of cycle.
  lib/ethdev/ethdev_trace.h          |   8 +
  lib/ethdev/ethdev_trace_points.c   |   3 +
  lib/ethdev/rte_ethdev.c            |  19 ++
- lib/ethdev/rte_ethdev.h            |  19 ++
+ lib/ethdev/rte_ethdev.h            |  21 ++
  lib/ethdev/version.map             |   1 +
- 16 files changed, 727 insertions(+), 415 deletions(-)
+ 16 files changed, 729 insertions(+), 415 deletions(-)
 
 diff --git a/drivers/net/igc/base/igc_defines.h b/drivers/net/igc/base/igc_defines.h
 index 280570b157..30fd7affda 100644
@@ -1739,7 +1739,7 @@ index 4d03255683..2ae0dfed53 100644
  rte_eth_timesync_read_time(uint16_t port_id, struct timespec *timestamp)
  {
 diff --git a/lib/ethdev/rte_ethdev.h b/lib/ethdev/rte_ethdev.h
-index 99fe9e238b..9fb7d51488 100644
+index 99fe9e238b..40fc90d724 100644
 --- a/lib/ethdev/rte_ethdev.h
 +++ b/lib/ethdev/rte_ethdev.h
 @@ -5101,6 +5101,27 @@ int rte_eth_timesync_read_tx_timestamp(uint16_t port_id,

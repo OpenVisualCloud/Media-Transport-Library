@@ -260,8 +260,9 @@ static void dev_stat_alarm_handler(void* param) {
   else
     dev_stat(impl);
 
-  rte_eal_alarm_set(MT_DEV_STAT_INTERVAL_US(mt_get_user_params(impl)->dump_period_s),
-                    dev_stat_alarm_handler, impl);
+  rte_eal_alarm_set(
+      MT_DEV_STAT_INTERVAL_US((uint64_t)mt_get_user_params(impl)->dump_period_s),
+      dev_stat_alarm_handler, impl);
 }
 
 static void* dev_stat_thread(void* arg) {
@@ -415,21 +416,20 @@ static int dev_eal_init(struct mtl_init_params* p, struct mt_kport_info* kport_i
     return -EIO;
   }
 
-  bool init_use_thread = true;
-  if (init_use_thread) {
-    /* dpdk default pin CPU to main lcore in the call of rte_eal_init */
-    struct dev_eal_init_args i_args;
-    memset(&i_args, 0, sizeof(i_args));
-    i_args.argc = argc;
-    i_args.argv = argv;
-    pthread_t eal_init_thread = 0;
-    pthread_create(&eal_init_thread, NULL, dev_eal_init_thread, &i_args);
-    info("%s, wait eal_init_thread done\n", __func__);
-    pthread_join(eal_init_thread, NULL);
-    ret = i_args.result;
-  } else {
-    ret = rte_eal_init(argc, argv);
+  /* dpdk default pin CPU to main lcore in the call of rte_eal_init */
+  struct dev_eal_init_args i_args;
+  memset(&i_args, 0, sizeof(i_args));
+  i_args.argc = argc;
+  i_args.argv = argv;
+  pthread_t eal_init_thread = 0;
+  ret = pthread_create(&eal_init_thread, NULL, dev_eal_init_thread, &i_args);
+  if (ret < 0) {
+    err("%s, pthread_create fail\n", __func__);
+    return ret;
   }
+  info("%s, wait eal_init_thread done\n", __func__);
+  pthread_join(eal_init_thread, NULL);
+  ret = i_args.result;
   if (ret < 0) return ret;
 
   eal_initted = true;
@@ -1316,16 +1316,14 @@ int dev_reset_port(struct mtl_main_impl* impl, enum mtl_port port) {
 }
 
 static int dev_filelock_lock(struct mtl_main_impl* impl) {
-  int fd = -1;
-  if (access(MT_FLOCK_PATH, F_OK) < 0) {
-    fd = open(MT_FLOCK_PATH, O_RDONLY | O_CREAT, 0666);
-  } else {
-    fd = open(MT_FLOCK_PATH, O_RDONLY);
-  }
-
+  int fd = open(MT_FLOCK_PATH, O_RDONLY | O_CREAT, 0666);
   if (fd < 0) {
-    err("%s, failed to open %s, %s\n", __func__, MT_FLOCK_PATH, strerror(errno));
-    return -EIO;
+    /* sometimes may fail due to user permission, try open read-only */
+    fd = open(MT_FLOCK_PATH, O_RDONLY);
+    if (fd < 0) {
+      err("%s, failed to open %s, %s\n", __func__, MT_FLOCK_PATH, strerror(errno));
+      return -EIO;
+    }
   }
   impl->lcore_lock_fd = fd;
   /* wait until locked */
@@ -2273,10 +2271,14 @@ int mt_dev_create(struct mtl_main_impl* impl) {
   mt_pthread_mutex_init(&impl->stat_wake_mutex, NULL);
   mt_pthread_cond_init(&impl->stat_wake_cond, NULL);
   rte_atomic32_set(&impl->stat_stop, 0);
-  pthread_create(&impl->stat_tid, NULL, dev_stat_thread, impl);
+  ret = pthread_create(&impl->stat_tid, NULL, dev_stat_thread, impl);
+  if (ret < 0) {
+    err("%s, pthread_create fail\n", __func__);
+    goto err_exit;
+  }
   if (!p->dump_period_s) p->dump_period_s = MT_DEV_STAT_INTERVAL_S;
-  rte_eal_alarm_set(MT_DEV_STAT_INTERVAL_US(p->dump_period_s), dev_stat_alarm_handler,
-                    impl);
+  rte_eal_alarm_set(MT_DEV_STAT_INTERVAL_US((uint64_t)p->dump_period_s),
+                    dev_stat_alarm_handler, impl);
 
   info("%s, succ, stat period %ds\n", __func__, p->dump_period_s);
   return 0;

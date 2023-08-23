@@ -182,7 +182,7 @@ int st_app_init_display(struct st_display* d, char* name, int width, int height,
                         char* font) {
   int ret;
   if (!d) return -ENOMEM;
-  strncpy(d->name, name, 32);
+  snprintf(d->name, 32, "%s", name);
   d->window_w = SCREEN_WIDTH;
   d->window_h = SCREEN_HEIGHT;
   d->pixel_w = width;

@@ -33,7 +33,7 @@ int mt_stat_register(struct mtl_main_impl* impl, mt_stat_cb_t cb, void* priv,
   }
   item->cb_func = cb;
   item->cb_priv = priv;
-  if (name) strncpy(item->name, name, ST_MAX_NAME_LEN - 1);
+  if (name) snprintf(item->name, ST_MAX_NAME_LEN - 1, "%s", name);
 
   mt_pthread_mutex_lock(&mgr->mutex);
   MT_TAILQ_INSERT_TAIL(&mgr->head, item, next);

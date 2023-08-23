@@ -103,8 +103,8 @@ int main(int argc, char** argv) {
     ops_tx.num_port = 1;
     memcpy(ops_tx.dip_addr[MTL_SESSION_PORT_P], ctx.tx_dip_addr[MTL_PORT_P],
            MTL_IP_ADDR_LEN);
-    strncpy(ops_tx.port[MTL_SESSION_PORT_P], ctx.param.port[MTL_PORT_P],
-            MTL_PORT_MAX_LEN);
+    snprintf(ops_tx.port[MTL_SESSION_PORT_P], MTL_PORT_MAX_LEN, "%s",
+             ctx.param.port[MTL_PORT_P]);
 
     struct st20_pgroup st20_pg;
     st20_get_pgroup(ST20_FMT_YUV_422_10BIT, &st20_pg);
@@ -145,7 +145,12 @@ int main(int argc, char** argv) {
         goto dma_alloc;
       }
       struct stat st;
-      fstat(fd, &st);
+      if (fstat(fd, &st) < 0) {
+        err("%s, fstat %s fail\n", __func__, ctx.tx_url);
+        close(fd);
+        ret = -EIO;
+        goto error;
+      }
       if (st.st_size < (app[i]->fb_size * app[i]->fb_cnt)) {
         err("%s, %s file size too small %" PRIu64 "\n", __func__, ctx.tx_url, st.st_size);
         close(fd);

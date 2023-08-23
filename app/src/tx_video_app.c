@@ -531,7 +531,11 @@ static int app_tx_video_open_source(struct st_app_tx_video_session* s) {
       return -EIO;
     }
 
-    fstat(fd, &i);
+    if (fstat(fd, &i) < 0) {
+      err("%s, fstat %s fail\n", __func__, s->st20_source_url);
+      close(fd);
+      return -EIO;
+    }
     if (i.st_size < s->st20_frame_size) {
       err("%s, %s file size small then a frame %d\n", __func__, s->st20_source_url,
           s->st20_frame_size);
@@ -714,9 +718,9 @@ static int app_tx_video_init(struct st_app_context* ctx, st_json_video_session_t
          video ? st_json_ip(ctx, &video->base, MTL_SESSION_PORT_P)
                : ctx->tx_dip_addr[MTL_PORT_P],
          MTL_IP_ADDR_LEN);
-  strncpy(ops.port[MTL_SESSION_PORT_P],
-          video ? video->base.inf[MTL_SESSION_PORT_P]->name : ctx->para.port[MTL_PORT_P],
-          MTL_PORT_MAX_LEN);
+  snprintf(
+      ops.port[MTL_SESSION_PORT_P], MTL_PORT_MAX_LEN, "%s",
+      video ? video->base.inf[MTL_SESSION_PORT_P]->name : ctx->para.port[MTL_PORT_P]);
   ops.udp_port[MTL_SESSION_PORT_P] = video ? video->base.udp_port : (10000 + s->idx);
   if (ctx->has_tx_dst_mac[MTL_PORT_P]) {
     memcpy(&ops.tx_dst_mac[MTL_SESSION_PORT_P][0], ctx->tx_dst_mac[MTL_PORT_P],
@@ -728,10 +732,9 @@ static int app_tx_video_init(struct st_app_context* ctx, st_json_video_session_t
            video ? st_json_ip(ctx, &video->base, MTL_SESSION_PORT_R)
                  : ctx->tx_dip_addr[MTL_PORT_R],
            MTL_IP_ADDR_LEN);
-    strncpy(
-        ops.port[MTL_SESSION_PORT_R],
-        video ? video->base.inf[MTL_SESSION_PORT_R]->name : ctx->para.port[MTL_PORT_R],
-        MTL_PORT_MAX_LEN);
+    snprintf(
+        ops.port[MTL_SESSION_PORT_R], MTL_PORT_MAX_LEN, "%s",
+        video ? video->base.inf[MTL_SESSION_PORT_R]->name : ctx->para.port[MTL_PORT_R]);
     ops.udp_port[MTL_SESSION_PORT_R] = video ? video->base.udp_port : (10000 + s->idx);
     if (ctx->has_tx_dst_mac[MTL_PORT_R]) {
       memcpy(&ops.tx_dst_mac[MTL_SESSION_PORT_R][0], ctx->tx_dst_mac[MTL_PORT_R],
@@ -760,6 +763,7 @@ static int app_tx_video_init(struct st_app_context* ctx, st_json_video_session_t
   if (s->enable_vsync) ops.flags |= ST20_TX_FLAG_ENABLE_VSYNC;
   if (ctx->tx_no_static_pad) ops.flags |= ST20_TX_FLAG_DISABLE_STATIC_PAD_P;
   if (ctx->tx_ts_first_pkt) ops.flags |= ST20_TX_FLAG_RTP_TIMESTAMP_FIRST_PKT;
+  if (ctx->tx_no_bulk) ops.flags |= ST20_TX_FLAG_DISABLE_BULK;
 
   struct st_tx_rtcp_ops ops_rtcp;
   memset(&ops_rtcp, 0, sizeof(ops_rtcp));

@@ -15,6 +15,9 @@ The Intel® Media Transport Library is a DPDK-based solution designed for high-t
 ### 1.1 Features
 
 * The User-space LibOS UDP stack features a POSIX socket compatible API.
+* Non-root run.
+* Multi-process handling, allowing for up to 8 NICs per process.
+* Virtualization support by SR-IOV.
 
 #### 1.1.1 ST2110 features
 
@@ -23,6 +26,7 @@ The Intel® Media Transport Library is a DPDK-based solution designed for high-t
 * FPS: 120, 119.88, 100, 60, 59.94, 50, 30, 29.97, 25, 24, 23.98
 * All video formats listed in ST2110-20, including YUV 4:2:2 10-bit and others, are supported.
 * CSC support status: [status](doc/convert.md)
+* ST2022-6 by RTP passthrough interface.
 
 ### 1.2 Architecture
 
@@ -37,6 +41,14 @@ The library also includes SIMD CSC (color space format conversion), DMA, and plu
 <div align="center">
 <img src="doc/png/arch.png" align="center" alt="overall architecture">
 </div>
+
+### 1.3 Ethernet supported
+
+Regarding supported Ethernet, since MTL is based on DPDK, it can essentially run well on any Ethernet already supported by DPDK. You can refer to the site <https://doc.dpdk.org/guides/nics/> for a list of supported Ethernet hardware in DPDK.
+
+However, please note that our daily development and validation is primarily conducted on the Intel E810 series and AWS ENA, so we can't guarantee the status for other network interface cards (NICs).
+
+An important point to note is that narrow pacing of TX is only supported for the Intel E810 series due to its rate limit feature. All other NICs have to use TSC (Timestamp Counter) as the pacing source, which can only ensure a broad wide pacing.
 
 ## 2. Build
 

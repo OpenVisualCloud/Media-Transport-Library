@@ -1307,14 +1307,18 @@ static void rv_slice_add(struct st_rx_video_session_impl* s,
 }
 
 static struct st_rx_video_slot_impl* rv_slot_by_tmstamp(
-    struct st_rx_video_session_impl* s, uint32_t tmstamp, void* hdr_split_pd) {
+    struct st_rx_video_session_impl* s, uint32_t tmstamp, void* hdr_split_pd,
+    bool* exist_ts) {
   int i, slot_idx;
   struct st_rx_video_slot_impl* slot;
 
   for (i = 0; i < s->slot_max; i++) {
     slot = &s->slots[i];
 
-    if (tmstamp == slot->tmstamp) return slot;
+    if (tmstamp == slot->tmstamp) {
+      *exist_ts = true;
+      return slot;
+    }
   }
 
   dbg("%s(%d): new tmstamp %u\n", __func__, s->idx, tmstamp);
@@ -1475,12 +1479,11 @@ static int rv_slice_dma_drop_mbuf(void* priv, struct rte_mbuf* mbuf) {
 static int rv_init_dma(struct mtl_main_impl* impl, struct st_rx_video_session_impl* s) {
   enum mtl_port port = mt_port_logic2phy(s->port_maps, MTL_SESSION_PORT_P);
   int idx = s->idx;
-  bool share_dma = true;
   enum st20_type type = s->ops.type;
 
   struct mt_dma_request_req req;
   req.nb_desc = s->dma_nb_desc;
-  req.max_shared = share_dma ? MT_DMA_MAX_SESSIONS : 1;
+  req.max_shared = MT_DMA_MAX_SESSIONS;
   req.sch_idx = s->parent->idx;
   req.socket_id = mt_socket_id(impl, port);
   req.priv = s;
@@ -1737,12 +1740,20 @@ static int rv_handle_frame_pkt(struct st_rx_video_session_impl* s, struct rte_mb
   }
 
   /* find the target slot by tmstamp */
-  struct st_rx_video_slot_impl* slot = rv_slot_by_tmstamp(s, tmstamp, NULL);
+  bool exist_ts = false;
+  struct st_rx_video_slot_impl* slot = rv_slot_by_tmstamp(s, tmstamp, NULL, &exist_ts);
   if (!slot || !slot->frame) {
-    s->stat_pkts_no_slot++;
+    if (exist_ts) {
+      s->stat_pkts_redundant_dropped++;
+      slot->pkts_redundant_received++;
+    } else {
+      s->stat_pkts_no_slot++;
+    }
     return -EIO;
   }
 
+  /* special MTL extension to carry optional meta data between tx and rx, not standard of
+   * ST2110 */
   if (line1_length & ST20_LEN_USER_META) {
     line1_length &= ~ST20_LEN_USER_META;
     dbg("%s(%d,%d): ST20_LEN_USER_META %u\n", __func__, s->idx, s_port, line1_length);
@@ -2084,9 +2095,15 @@ static int rv_handle_st22_pkt(struct st_rx_video_session_impl* s, struct rte_mbu
   }
 
   /* find the target slot by tmstamp */
-  struct st_rx_video_slot_impl* slot = rv_slot_by_tmstamp(s, tmstamp, NULL);
-  if (!slot) {
-    s->stat_pkts_no_slot++;
+  bool exist_ts = false;
+  struct st_rx_video_slot_impl* slot = rv_slot_by_tmstamp(s, tmstamp, NULL, &exist_ts);
+  if (!slot || !slot->frame) {
+    if (exist_ts) {
+      s->stat_pkts_redundant_dropped++;
+      slot->pkts_redundant_received++;
+    } else {
+      s->stat_pkts_no_slot++;
+    }
     return -EIO;
   }
   uint8_t* bitmap = slot->frame_bitmap;
@@ -2143,12 +2160,6 @@ static int rv_handle_st22_pkt(struct st_rx_video_session_impl* s, struct rte_mbu
         "payload_length %u\n",
         __func__, s->idx, s_port, seq_id, tmstamp, p_counter, sep_counter,
         payload_length);
-  }
-
-  if (!slot->frame) {
-    dbg("%s(%d,%d): slot frame not initted\n", __func__, s->idx, s_port);
-    s->stat_pkts_no_slot++;
-    return -EIO;
   }
 
   /* copy payload */
@@ -2235,9 +2246,15 @@ static int rv_handle_hdr_split_pkt(struct st_rx_video_session_impl* s,
   }
 
   /* find the target slot by tmstamp */
-  struct st_rx_video_slot_impl* slot = rv_slot_by_tmstamp(s, tmstamp, payload);
+  bool exist_ts = false;
+  struct st_rx_video_slot_impl* slot = rv_slot_by_tmstamp(s, tmstamp, NULL, &exist_ts);
   if (!slot || !slot->frame) {
-    s->stat_pkts_no_slot++;
+    if (exist_ts) {
+      s->stat_pkts_redundant_dropped++;
+      slot->pkts_redundant_received++;
+    } else {
+      s->stat_pkts_no_slot++;
+    }
     return -EIO;
   }
   uint8_t* bitmap = slot->frame_bitmap;
@@ -4388,7 +4405,7 @@ st22_rx_handle st22_rx_create(mtl_handle mt, struct st22_rx_ops* ops) {
   st20_ops.num_port = ops->num_port;
   for (int i = 0; i < ops->num_port; i++) {
     memcpy(st20_ops.sip_addr[i], ops->sip_addr[i], MTL_IP_ADDR_LEN);
-    strncpy(st20_ops.port[i], ops->port[i], MTL_PORT_MAX_LEN);
+    snprintf(st20_ops.port[i], MTL_PORT_MAX_LEN, "%s", ops->port[i]);
     st20_ops.udp_port[i] = ops->udp_port[i];
   }
   if (ops->flags & ST22_RX_FLAG_DATA_PATH_ONLY)

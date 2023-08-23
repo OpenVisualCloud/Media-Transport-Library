@@ -476,9 +476,9 @@ static int video_trs_launch_time_tasklet(struct mtl_main_impl* impl,
   uint64_t target_ptp;
   uint16_t port_id = s->port_id[s_port];
   struct mt_interface* inf = mt_if(impl, port_id);
-  struct mt_ptp_impl* ptp = mt_get_ptp(impl, port_id);
 
-  if (!ptp->stat_sync) {
+  if (!mt_ptp_is_sync(impl, MTL_PORT_P)) {
+    /* fallback to tsc if ptp is not synced */
     return video_trs_tsc_tasklet(impl, s, s_port);
   }
 

@@ -52,6 +52,7 @@ enum st_args_cmd {
   ST_ARG_SHAPING,
   ST_ARG_TIMESTAMP_FIRST_PKT,
   ST_ARG_TIMESTAMP_DELTA_US,
+  ST_ARG_NO_BULK,
 
   ST_ARG_CONFIG_FILE = 0x300,
   ST_ARG_TEST_TIME,
@@ -163,6 +164,7 @@ static struct option st_app_args_options[] = {
     {"shaping", required_argument, 0, ST_ARG_SHAPING},
     {"ts_first_pkt", no_argument, 0, ST_ARG_TIMESTAMP_FIRST_PKT},
     {"ts_delta_us", required_argument, 0, ST_ARG_TIMESTAMP_DELTA_US},
+    {"no_bulk", no_argument, 0, ST_ARG_NO_BULK},
 
     {"config_file", required_argument, 0, ST_ARG_CONFIG_FILE},
     {"test_time", required_argument, 0, ST_ARG_TEST_TIME},
@@ -252,13 +254,13 @@ static int app_args_parse_tx_mac(struct st_app_context* ctx, char* mac_str,
 static int app_args_dma_dev(struct mtl_init_params* p, char* in_dev) {
   if (!in_dev) return -EIO;
   char devs[128] = {0};
-  strncpy(devs, in_dev, 128 - 1);
+  snprintf(devs, 128 - 1, "%s", in_dev);
 
   dbg("%s, dev list %s\n", __func__, devs);
   char* next_dev = strtok(devs, ",");
   while (next_dev && (p->num_dma_dev_port < MTL_DMA_DEV_MAX)) {
     dbg("next_dev: %s\n", next_dev);
-    strncpy(p->dma_dev_port[p->num_dma_dev_port], next_dev, MTL_PORT_MAX_LEN - 1);
+    snprintf(p->dma_dev_port[p->num_dma_dev_port], MTL_PORT_MAX_LEN - 1, "%s", next_dev);
     p->num_dma_dev_port++;
     next_dev = strtok(NULL, ",");
   }
@@ -460,6 +462,9 @@ int st_app_parse_args(struct st_app_context* ctx, struct mtl_init_params* p, int
         break;
       case ST_ARG_TIMESTAMP_DELTA_US:
         ctx->tx_ts_delta_us = atoi(optarg);
+        break;
+      case ST_ARG_NO_BULK:
+        ctx->tx_no_bulk = true;
         break;
       case ST_ARG_SHAPING:
         if (!strcmp(optarg, "narrow"))

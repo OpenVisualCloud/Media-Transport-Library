@@ -114,4 +114,8 @@ int mt_ptp_parse(struct mt_ptp_impl* ptp, struct mt_ptp_header* hdr, bool vlan,
                  enum mt_ptp_l_mode mode, uint16_t timesync,
                  struct mt_ipv4_udp* ipv4_hdr);
 
+static inline bool mt_ptp_is_sync(struct mtl_main_impl* impl, enum mtl_port port) {
+  return mt_get_ptp(impl, port)->stat_sync;
+}
+
 #endif

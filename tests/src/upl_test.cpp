@@ -91,8 +91,9 @@ static int check_r_port_alive(struct uplt_ctx* ctx) {
 
   info("%s, start to rx port status\n", __func__);
   while (retry < max_retry) {
-    sendto(tx_fd, send_buf, sizeof(send_buf), 0, (const struct sockaddr*)&rx_addr,
-           sizeof(rx_addr));
+    if (sendto(tx_fd, send_buf, sizeof(send_buf), 0, (const struct sockaddr*)&rx_addr,
+               sizeof(rx_addr)) < 0)
+      continue;
     ssize_t recv = recvfrom(rx_fd, recv_buf, sizeof(recv_buf), 0, NULL, NULL);
     if (recv > 0) {
       info("%s, rx port alive at %d\n", __func__, retry);

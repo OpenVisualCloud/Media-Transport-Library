@@ -50,6 +50,7 @@ struct mt_rtcp_tx {
   struct mt_udp_hdr udp_hdr;
   char name[MT_RTCP_MAX_NAME_LEN];
   uint32_t ssrc;
+  bool active;
 
   uint16_t ipv4_packet_id;
 
@@ -70,6 +71,7 @@ struct mt_rtcp_rx {
   char name[MT_RTCP_MAX_NAME_LEN];
   uint64_t nacks_send_interval;
   uint32_t ssrc;
+  bool active;
 
   uint16_t ipv4_packet_id;
   uint64_t nacks_send_time;

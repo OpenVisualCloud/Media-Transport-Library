@@ -228,7 +228,7 @@ static int tx_st22p_create_transport(struct mtl_main_impl* impl, struct st22p_tx
   ops_tx.num_port = RTE_MIN(ops->port.num_port, MTL_SESSION_PORT_MAX);
   for (int i = 0; i < ops_tx.num_port; i++) {
     memcpy(ops_tx.dip_addr[i], ops->port.dip_addr[i], MTL_IP_ADDR_LEN);
-    strncpy(ops_tx.port[i], ops->port.port[i], MTL_PORT_MAX_LEN);
+    snprintf(ops_tx.port[i], MTL_PORT_MAX_LEN, "%s", ops->port.port[i]);
     ops_tx.udp_src_port[i] = ops->port.udp_src_port[i];
     ops_tx.udp_port[i] = ops->port.udp_port[i];
   }
@@ -248,6 +248,11 @@ static int tx_st22p_create_transport(struct mtl_main_impl* impl, struct st22p_tx
   if (ops->flags & ST22P_TX_FLAG_USER_TIMESTAMP)
     ops_tx.flags |= ST22_TX_FLAG_USER_TIMESTAMP;
   if (ops->flags & ST22P_TX_FLAG_ENABLE_VSYNC) ops_tx.flags |= ST22_TX_FLAG_ENABLE_VSYNC;
+  if (ops->flags & ST22P_TX_FLAG_ENABLE_RTCP) {
+    ops_tx.flags |= ST22_TX_FLAG_ENABLE_RTCP;
+    ops_tx.rtcp = ops->rtcp;
+  }
+  if (ops->flags & ST22P_TX_FLAG_DISABLE_BULK) ops_tx.flags |= ST22_TX_FLAG_DISABLE_BULK;
   ops_tx.pacing = ST21_PACING_NARROW;
   ops_tx.width = ops->width;
   ops_tx.height = ops->height;
@@ -569,7 +574,7 @@ void* st22p_tx_get_fb_addr(st22p_tx_handle handle, uint16_t idx) {
     return NULL;
   }
 
-  if (idx < 0 || idx >= ctx->framebuff_cnt) {
+  if (idx >= ctx->framebuff_cnt) {
     err("%s, invalid idx %d, should be in range [0, %d]\n", __func__, cidx,
         ctx->framebuff_cnt);
     return NULL;

@@ -235,7 +235,7 @@ static int tx_st20p_create_transport(struct mtl_main_impl* impl, struct st20p_tx
   ops_tx.num_port = RTE_MIN(ops->port.num_port, MTL_SESSION_PORT_MAX);
   for (int i = 0; i < ops_tx.num_port; i++) {
     memcpy(ops_tx.dip_addr[i], ops->port.dip_addr[i], MTL_IP_ADDR_LEN);
-    strncpy(ops_tx.port[i], ops->port.port[i], MTL_PORT_MAX_LEN);
+    snprintf(ops_tx.port[i], MTL_PORT_MAX_LEN, "%s", ops->port.port[i]);
     ops_tx.udp_src_port[i] = ops->port.udp_src_port[i];
     ops_tx.udp_port[i] = ops->port.udp_port[i];
   }
@@ -277,6 +277,7 @@ static int tx_st20p_create_transport(struct mtl_main_impl* impl, struct st20p_tx
   if (ops->flags & ST20P_TX_FLAG_ENABLE_RTCP) ops_tx.flags |= ST20_TX_FLAG_ENABLE_RTCP;
   if (ops->flags & ST20P_TX_FLAG_RTP_TIMESTAMP_FIRST_PKT)
     ops_tx.flags |= ST20_TX_FLAG_RTP_TIMESTAMP_FIRST_PKT;
+  if (ops->flags & ST20P_TX_FLAG_DISABLE_BULK) ops_tx.flags |= ST20_TX_FLAG_DISABLE_BULK;
 
   transport = st20_tx_create(impl, &ops_tx);
   if (!transport) {
