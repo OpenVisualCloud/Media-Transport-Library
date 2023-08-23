@@ -245,14 +245,14 @@ static void phc2sys_adjust(struct mt_ptp_impl* ptp) {
 
     ptp->phc2sys.stat_delta_max = RTE_MAX(labs(offset), ptp->phc2sys.stat_delta_max);
 
-    if (!ptp->phc2sys.stat_sync) {
+    if (!ptp->phc2sys.locked) {
       /*
        * Be considered as synchronized while the max delta is continuously below
        * 300ns.
        */
       if (ptp->phc2sys.stat_delta_max < 300 && ptp->phc2sys.stat_delta_max > 0) {
         if (ptp->phc2sys.stat_sync_keep > 100)
-          ptp->phc2sys.stat_sync = true;
+          ptp->phc2sys.locked = true;
         else
           ptp->phc2sys.stat_sync_keep++;
       } else {
@@ -489,15 +489,14 @@ static void ptp_adjust_delta(struct mt_ptp_impl* ptp, int64_t delta, bool error_
   ptp->stat_delta_cnt++;
   ptp->stat_delta_sum += labs(delta);
 
-  if (!ptp->stat_sync) {
+  if (!ptp->locked) {
     /*
-     * Be considered as synchronized while the max delta is continuously below
-     * 100ns.
+     * Be considered as locked while the max delta is continuously below 100ns.
      */
     if (labs(ptp->stat_delta_max) < 100 && labs(ptp->stat_delta_max) > 0 &&
         labs(ptp->stat_delta_min) < 100 && labs(ptp->stat_delta_min) > 0) {
       if (ptp->stat_sync_keep > 100)
-        ptp->stat_sync = true;
+        ptp->locked = true;
       else
         ptp->stat_sync_keep++;
     } else {
@@ -657,6 +656,7 @@ static int ptp_parse_result(struct mt_ptp_impl* ptp) {
 
   ptp_adjust_delta(ptp, delta, false);
   ptp_t_result_clear(ptp);
+  ptp->connected = true;
 
   if (ptp->delta_result_cnt > 10) {
     if (labs(delta) < 30000) {
@@ -1001,6 +1001,7 @@ static void ptp_sync_from_user(struct mtl_main_impl* impl, struct mt_ptp_impl* p
   ptp_timesync_adjust_time(ptp, delta);
   ptp->ptp_delta += delta;
   dbg("%s(%d), delta %" PRId64 "\n", __func__, port, delta);
+  ptp->connected = true;
 
   /* update status */
   ptp->stat_delta_min = RTE_MIN(delta, ptp->stat_delta_min);
@@ -1027,7 +1028,7 @@ static void phc2sys_init(struct mt_ptp_impl* ptp) {
     ptp->phc2sys.realtime_nominal_tick =
         (1000000 + ptp->phc2sys.realtime_hz / 2) / ptp->phc2sys.realtime_hz;
   }
-  ptp->phc2sys.stat_sync = false;
+  ptp->phc2sys.locked = false;
   ptp->phc2sys.stat_sync_keep = 0;
   ptp->phc2sys_active = true;
   info("%s(%d), succ\n", __func__, ptp->port);
@@ -1081,7 +1082,7 @@ static int ptp_init(struct mtl_main_impl* impl, struct mt_ptp_impl* ptp,
   }
   ptp->qbv_enabled =
       ((ST21_TX_PACING_WAY_TSN == p->pacing) && (MT_DRV_IGC == inf->drv_info.drv_type));
-  ptp->stat_sync = false;
+  ptp->locked = false;
   ptp->stat_sync_keep = 0;
 
   ptp_stat_clear(ptp);
@@ -1231,14 +1232,14 @@ static int ptp_stat(void* priv) {
   if (ptp->stat_delta_cnt) {
     if (ptp->phc2sys_active) {
       notice("PTP(%d): system clock offset max %" PRId64 ", %s\n", port,
-             ptp->phc2sys.stat_delta_max,
-             ptp->phc2sys.stat_sync ? "synchronized" : "not synchronized");
+             ptp->phc2sys.stat_delta_max, ptp->phc2sys.locked ? "locked" : "not locked");
     }
     notice("PTP(%d): delta avg %" PRId64 ", min %" PRId64 ", max %" PRId64 ", cnt %d\n",
            port, ptp->stat_delta_sum / ptp->stat_delta_cnt, ptp->stat_delta_min,
            ptp->stat_delta_max, ptp->stat_delta_cnt);
-  } else
+  } else {
     notice("PTP(%d): not connected\n", port);
+  }
   if (ptp->stat_correct_delta_cnt)
     notice("PTP(%d): correct_delta avg %" PRId64 ", min %" PRId64 ", max %" PRId64
            ", cnt %d\n",
