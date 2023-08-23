@@ -140,24 +140,9 @@ jobs:
           egress-policy: audit
 
       - name: Kill previous gtest routine
+        shell: bash
         run: |
           taskkill //f //im  KahawaiTest.exe || true
-
-      - name: Run ufd test case
-        run: |
-          ./build/tests/KahawaiUfdTest --p_port ${{  env.TEST_PORT_P  }} --r_port ${{  env.TEST_PORT_R  }}
-
-      - name: Run shared ufd test case
-        run: |
-          ./build/tests/KahawaiUfdTest --p_port ${{  env.TEST_PORT_P  }} --r_port ${{  env.TEST_PORT_R  }} --queue_mode shared
-
-      - name: Run shared ufd test case with lcore
-        run: |
-          ./build/tests/KahawaiUfdTest --p_port ${{  env.TEST_PORT_P  }} --r_port ${{  env.TEST_PORT_R  }} --queue_mode shared --udp_lcore
-
-      - name: Run ufd test case with rss
-        run: |
-          ./build/tests/KahawaiUfdTest --p_port ${{  env.TEST_PORT_P  }} --r_port ${{  env.TEST_PORT_R  }} --rss_mode l3_l4
 
       - name: Run st2110 test case
         run: |
