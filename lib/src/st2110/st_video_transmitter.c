@@ -502,7 +502,7 @@ static int video_trs_launch_time_tasklet(struct mtl_main_impl* impl,
 
   /* dequeue from ring */
   struct rte_mbuf* pkts[bulk];
-  n = rte_ring_sc_dequeue_bulk(ring, (void**)&pkts[0], bulk, NULL);
+  n = mt_rte_ring_sc_dequeue_bulk(ring, (void**)&pkts[0], bulk, NULL);
   if (n == 0) {
     s->stat_trs_ret_code[s_port] = -STI_TSCTRS_DEQUEUE_FAIL;
     return MT_TASKLET_ALL_DONE;
