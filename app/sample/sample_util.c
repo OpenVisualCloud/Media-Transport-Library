@@ -43,6 +43,8 @@ enum sample_args_cmd {
   SAMPLE_ARG_PTP_TSC,
   SAMPLE_ARG_UDP_LCORE,
   SAMPLE_ARG_RSS_MODE,
+  SAMPLE_ARG_NB_TX_DESC,
+  SAMPLE_ARG_NB_RX_DESC,
 
   SAMPLE_ARG_TX_VIDEO_URL = 0x200,
   SAMPLE_ARG_RX_VIDEO_URL,
@@ -95,6 +97,8 @@ static struct option sample_args_options[] = {
     {"ptp_tsc", no_argument, 0, SAMPLE_ARG_PTP_TSC},
     {"udp_lcore", no_argument, 0, SAMPLE_ARG_UDP_LCORE},
     {"rss_mode", required_argument, 0, SAMPLE_ARG_RSS_MODE},
+    {"nb_tx_desc", required_argument, 0, SAMPLE_ARG_NB_TX_DESC},
+    {"nb_rx_desc", required_argument, 0, SAMPLE_ARG_NB_RX_DESC},
 
     {"tx_url", required_argument, 0, SAMPLE_ARG_TX_VIDEO_URL},
     {"rx_url", required_argument, 0, SAMPLE_ARG_RX_VIDEO_URL},
@@ -252,6 +256,12 @@ static int _sample_parse_args(struct st_sample_context* ctx, int argc, char** ar
           p->rss_mode = MTL_RSS_MODE_NONE;
         else
           err("%s, unknow rss mode %s\n", __func__, optarg);
+        break;
+      case SAMPLE_ARG_NB_TX_DESC:
+        p->nb_tx_desc = atoi(optarg);
+        break;
+      case SAMPLE_ARG_NB_RX_DESC:
+        p->nb_rx_desc = atoi(optarg);
         break;
       case SAMPLE_ARG_QUEUES_CNT:
         for (int i = 0; i < MTL_PORT_MAX; i++) {
