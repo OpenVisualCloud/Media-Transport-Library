@@ -61,7 +61,7 @@ jobs:
     - name: Install dependencies
       uses: msys2/setup-msys2@7efe20baefed56359985e327d329042cde2434ff # v2
       with:
-        msystem: ${{matrix.sys}}
+        msystem: ucrt64
         update: true
         install: >-
           git
