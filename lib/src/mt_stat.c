@@ -11,13 +11,28 @@ static inline struct mt_stat_mgr* get_stat_mgr(struct mtl_main_impl* impl) {
   return &impl->stat_mgr;
 }
 
+static inline void stat_lock(struct mt_stat_mgr* mgr) { rte_spinlock_lock(&mgr->lock); }
+
+/* return true if try lock succ */
+static inline bool stat_try_lock(struct mt_stat_mgr* mgr) {
+  int ret = rte_spinlock_trylock(&mgr->lock);
+  return ret ? true : false;
+}
+
+static inline void stat_unlock(struct mt_stat_mgr* mgr) {
+  rte_spinlock_unlock(&mgr->lock);
+}
+
 int mt_stat_dump(struct mtl_main_impl* impl) {
   struct mt_stat_mgr* mgr = get_stat_mgr(impl);
   struct mt_stat_item* item;
 
-  mt_pthread_mutex_lock(&mgr->mutex);
+  if (!stat_try_lock(mgr)) {
+    notice("STAT: failed to get lock\n");
+    return -EIO;
+  }
   MT_TAILQ_FOREACH(item, &mgr->head, next) { item->cb_func(item->cb_priv); }
-  mt_pthread_mutex_unlock(&mgr->mutex);
+  stat_unlock(mgr);
 
   return 0;
 }
@@ -35,9 +50,9 @@ int mt_stat_register(struct mtl_main_impl* impl, mt_stat_cb_t cb, void* priv,
   item->cb_priv = priv;
   if (name) snprintf(item->name, ST_MAX_NAME_LEN - 1, "%s", name);
 
-  mt_pthread_mutex_lock(&mgr->mutex);
+  stat_lock(mgr);
   MT_TAILQ_INSERT_TAIL(&mgr->head, item, next);
-  mt_pthread_mutex_unlock(&mgr->mutex);
+  stat_unlock(mgr);
 
   dbg("%s, succ, priv %p\n", __func__, priv);
   return 0;
@@ -47,19 +62,19 @@ int mt_stat_unregister(struct mtl_main_impl* impl, mt_stat_cb_t cb, void* priv) 
   struct mt_stat_mgr* mgr = get_stat_mgr(impl);
   struct mt_stat_item *item, *tmp_item;
 
-  mt_pthread_mutex_lock(&mgr->mutex);
+  stat_lock(mgr);
   for (item = MT_TAILQ_FIRST(&mgr->head); item != NULL; item = tmp_item) {
     tmp_item = MT_TAILQ_NEXT(item, next);
     if ((item->cb_func == cb && item->cb_priv == priv)) {
       /* found the matched item, remove it */
       MT_TAILQ_REMOVE(&mgr->head, item, next);
-      mt_pthread_mutex_unlock(&mgr->mutex);
+      stat_unlock(mgr);
       mt_rte_free(item);
       dbg("%s, succ, priv %p\n", __func__, priv);
       return 0;
     }
   }
-  mt_pthread_mutex_unlock(&mgr->mutex);
+  stat_unlock(mgr);
 
   warn("%s, cb %p priv %p not found\n", __func__, cb, priv);
   return -EIO;
@@ -68,7 +83,7 @@ int mt_stat_unregister(struct mtl_main_impl* impl, mt_stat_cb_t cb, void* priv) 
 int mt_stat_init(struct mtl_main_impl* impl) {
   struct mt_stat_mgr* mgr = get_stat_mgr(impl);
 
-  mt_pthread_mutex_init(&mgr->mutex, NULL);
+  rte_spinlock_init(&mgr->lock);
   MT_TAILQ_INIT(&mgr->head);
 
   return 0;
@@ -84,8 +99,6 @@ int mt_stat_uinit(struct mtl_main_impl* impl) {
     MT_TAILQ_REMOVE(&mgr->head, item, next);
     mt_free(item);
   }
-
-  mt_pthread_mutex_destroy(&mgr->mutex);
 
   return 0;
 }

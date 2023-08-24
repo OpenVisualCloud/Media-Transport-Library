@@ -770,7 +770,7 @@ struct mt_stat_item {
 MT_TAILQ_HEAD(mt_stat_items_list, mt_stat_item);
 
 struct mt_stat_mgr {
-  pthread_mutex_t mutex;
+  rte_spinlock_t lock;
   struct mt_stat_items_list head;
 };
 
