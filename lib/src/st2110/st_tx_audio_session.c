@@ -1561,7 +1561,7 @@ static int st_tx_audio_sessions_stat(void* priv) {
   int m_idx = mgr->idx;
 
   for (int j = 0; j < mgr->max_idx; j++) {
-    s = tx_audio_session_get(mgr, j);
+    s = tx_audio_session_try_get(mgr, j);
     if (!s) continue;
     tx_audio_session_stat(mgr, s);
     tx_audio_session_put(mgr, j);

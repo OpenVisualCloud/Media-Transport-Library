@@ -895,7 +895,7 @@ static int st_rx_audio_sessions_stat(void* priv) {
   struct st_rx_audio_session_impl* s;
 
   for (int j = 0; j < mgr->max_idx; j++) {
-    s = rx_audio_session_get(mgr, j);
+    s = rx_audio_session_try_get(mgr, j);
     if (!s) continue;
     rx_audio_session_stat(mgr, s);
     rx_audio_session_put(mgr, j);
