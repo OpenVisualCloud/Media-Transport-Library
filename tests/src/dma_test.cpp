@@ -363,7 +363,7 @@ TEST(Dma, map) {
   auto st = ctx->handle;
 
   if (ctx->iova == MTL_IOVA_MODE_PA) {
-    info("%s, skip as it's PA iova mode\n", __func__);
+    info("%s, skip as it's IOVA PA mode\n", __func__);
     return;
   }
 
@@ -419,7 +419,7 @@ TEST(Dma, map_remap) {
   auto st = ctx->handle;
 
   if (ctx->iova == MTL_IOVA_MODE_PA) {
-    info("%s, skip as it's PA iova mode\n", __func__);
+    info("%s, skip as it's IOVA PA mode\n", __func__);
     return;
   }
 
@@ -498,7 +498,7 @@ TEST(Dma, mem_alloc_free) {
   struct st_tests_context* ctx = st_test_ctx();
 
   if (ctx->iova == MTL_IOVA_MODE_PA) {
-    info("%s, skip as it's PA iova mode\n", __func__);
+    info("%s, skip as it's IOVA PA mode\n", __func__);
     return;
   }
 

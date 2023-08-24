@@ -1037,6 +1037,11 @@ mtl_udma_handle mtl_udma_create(mtl_handle mt, uint16_t nb_desc, enum mtl_port p
     return NULL;
   }
 
+  if (impl->iova_mode == RTE_IOVA_PA) {
+    err("%s, invalid IOVA mode %d\n", __func__, impl->iova_mode);
+    return NULL;
+  }
+
   req.nb_desc = nb_desc;
   req.max_shared = 1;
   req.sch_idx = 0;

@@ -22,6 +22,11 @@ bool st_test_dma_available(struct st_tests_context* ctx) {
   struct mtl_fix_info fix;
   int ret;
 
+  if (ctx->iova == MTL_IOVA_MODE_PA) {
+    info("%s, DMA not full supported under IOVA PA mode\n", __func__);
+    return false;
+  }
+
   ret = mtl_get_var_info(handle, &var);
   if (ret < 0) return ret;
 
