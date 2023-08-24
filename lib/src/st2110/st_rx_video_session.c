@@ -7,6 +7,7 @@
 #include <math.h>
 
 #include "../mt_log.h"
+#include "../mt_ptp.h"
 #include "../mt_queue.h"
 #include "../mt_rtcp.h"
 #include "../mt_stat.h"
@@ -243,29 +244,26 @@ static void rv_ebu_on_frame(struct st_rx_video_session_impl* s, uint32_t rtp_tms
   uint64_t epoch_tmstamp = (double)epochs * s->frame_time;
   double fpt_delta = (double)pkt_tmstamp - epoch_tmstamp;
 
-  ebu->frame_idx++;
-  if (ebu->frame_idx % (60 * 5) == 0) { /* every 5(60fps)/10(30fps) seconds */
+  ebu_info->frame_idx++;
+
+  /* skip first 2 frames */
+  if (ebu_info->frame_idx < 3) return;
+
+  if (ebu_info->frame_idx % (60 * 5) == 0) { /* every 5(60fps)/10(30fps) seconds */
     ebu_result->ebu_result_num++;
-    if (!ebu_info->dropped_results) {
-      rv_ebu_result(s);
-      if (ebu_result->ebu_result_num) {
-        double pass_narrow = rv_ebu_pass_rate(ebu_result, ebu_result->compliance_narrow);
-        double pass_wide = rv_ebu_pass_rate(
-            ebu_result, ebu_result->compliance - ebu_result->compliance_narrow);
-        info("%s(%d), Compliance Rate Narrow %.2f%% Wide %.2f%%, total %d narrow %d\n\n",
-             __func__, s->idx, pass_narrow, pass_wide, ebu_result->ebu_result_num,
-             ebu_result->compliance_narrow);
-      }
-    } else {
-      if (ebu_result->ebu_result_num > ebu_info->dropped_results) {
-        ebu_info->dropped_results = 0;
-        ebu_result->ebu_result_num = 0;
-      }
+    rv_ebu_result(s);
+    if (ebu_result->ebu_result_num) {
+      double pass_narrow = rv_ebu_pass_rate(ebu_result, ebu_result->compliance_narrow);
+      double pass_wide = rv_ebu_pass_rate(
+          ebu_result, ebu_result->compliance - ebu_result->compliance_narrow);
+      info("%s(%d), Compliance Rate Narrow %.2f%% Wide %.2f%%, total %d narrow %d\n\n",
+           __func__, s->idx, pass_narrow, pass_wide, ebu_result->ebu_result_num,
+           ebu_result->compliance_narrow);
     }
     rv_ebu_clear_result(ebu);
   }
 
-  ebu->cur_epochs = epochs;
+  ebu_info->cur_epochs = epochs;
   ebu->vrx_drained_prev = 0;
   ebu->vrx_prev = 0;
   ebu->cinst_initial_time = pkt_tmstamp;
@@ -319,7 +317,9 @@ static void rv_ebu_on_packet(struct st_rx_video_session_impl* s, uint32_t rtp_tm
   if (!pkt_idx) /* start of new frame */
     rv_ebu_on_frame(s, rtp_tmstamp, pkt_tmstamp);
 
-  epoch_tmstamp = (uint64_t)(ebu->cur_epochs * s->frame_time);
+  if (!ebu_info->cur_epochs) return;
+
+  epoch_tmstamp = (uint64_t)(ebu_info->cur_epochs * s->frame_time);
   tvd = epoch_tmstamp + ebu_info->tr_offset;
 
   /* Calculate vrx */
@@ -410,8 +410,6 @@ static int rv_ebu_init(struct mtl_main_impl* impl, struct st_rx_video_session_im
 
   ebu_info->rtp_offset_max_pass =
       ceil((ebu_info->tr_offset / NS_PER_S) * fps_tm.sampling_clock_rate) + 1;
-
-  ebu_info->dropped_results = 4; /* we drop the first 4 results */
 
   info("%s[%02d], trs %f tr offset %f sampling %f\n", __func__, idx, ebu_info->trs,
        ebu_info->tr_offset, s->frame_time_sampling);
@@ -1845,7 +1843,8 @@ static int rv_handle_frame_pkt(struct st_rx_video_session_impl* s, struct rte_mb
     need_copy = false;
     enum mtl_port port = mt_port_logic2phy(s->port_maps, s_port);
     struct mt_interface* inf = mt_if(impl, port);
-    if (inf->feature & MT_IF_FEATURE_RX_OFFLOAD_TIMESTAMP) {
+    if ((inf->feature & MT_IF_FEATURE_RX_OFFLOAD_TIMESTAMP) &&
+        mt_ptp_is_connected(impl, port)) {
       rv_ebu_on_packet(s, tmstamp, mt_mbuf_hw_time_stamp(impl, mbuf, port), pkt_idx);
     }
   }

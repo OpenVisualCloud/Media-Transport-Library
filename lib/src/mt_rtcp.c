@@ -37,15 +37,28 @@ int mt_rtcp_tx_buffer_rtp_packets(struct mt_rtcp_tx* tx, struct rte_mbuf** mbufs
     rte_pktmbuf_free_bulk(clean_mbufs, bulk);
   }
 
+  /* check the seq num in order, if err happens user should check the enqueue logic */
+  struct st_rfc3550_rtp_hdr* rtp = rte_pktmbuf_mtod_offset(
+      mbufs[0], struct st_rfc3550_rtp_hdr*, sizeof(struct mt_udp_hdr));
+  uint16_t seq = ntohs(rtp->seq_number);
+  uint16_t diff = seq - tx->last_seq_num; /* uint16_t wrap-around should be ok */
+  if (diff != 1 && mt_u64_fifo_count(tx->mbuf_ring) != 0) {
+    uint32_t ts = ntohl(rtp->tmstamp);
+    err("%s(%s), ts 0x%x seq %u out of order, last seq %u\n", __func__, tx->name, ts, seq,
+        tx->last_seq_num);
+    return -EIO;
+  }
+
   if (mt_u64_fifo_put_bulk(tx->mbuf_ring, (uint64_t*)mbufs, bulk) < 0) {
     err("%s(%s), failed to enqueue %u mbuf to ring\n", __func__, tx->name, bulk);
     return -EIO;
   }
+  mt_mbuf_refcnt_inc_bulk(mbufs, bulk);
 
-  for (int i = 0; i < bulk; i++) {
-    rte_mbuf_refcnt_update(mbufs[i], 1);
-    if (mbufs[i]->next) rte_mbuf_refcnt_update(mbufs[i]->next, 1);
-  }
+  /* save the last rtp seq num */
+  rtp = rte_pktmbuf_mtod_offset(mbufs[bulk - 1], struct st_rfc3550_rtp_hdr*,
+                                sizeof(struct mt_udp_hdr));
+  tx->last_seq_num = ntohs(rtp->seq_number);
 
   tx->stat_rtp_sent += bulk;
 
@@ -75,7 +88,7 @@ static int rtcp_tx_retransmit_rtp_packets(struct mt_rtcp_tx* tx, uint16_t seq,
 
   int cmp_result = rtp_seq_num_cmp(ring_head_seq, seq);
   if (cmp_result > 0) {
-    dbg("%s(%s), ts %u seq %u out of date, ring head %u, you ask late\n", __func__,
+    dbg("%s(%s), ts 0x%x seq %u out of date, ring head %u, you ask late\n", __func__,
         tx->name, ts, seq, ring_head_seq);
     tx->stat_rtp_retransmit_fail_obsolete += bulk;
     ret = -EIO;
@@ -103,9 +116,14 @@ static int rtcp_tx_retransmit_rtp_packets(struct mt_rtcp_tx* tx, uint16_t seq,
     copy_mbufs[i] = copied;
   }
   send = mt_dev_tx_sys_queue_burst(tx->parent, tx->port, copy_mbufs, nb_rt);
+  if (send < nb_rt) {
+    uint16_t burst_fail = nb_rt - send;
+    rte_pktmbuf_free_bulk(&copy_mbufs[send], burst_fail);
+    tx->stat_rtp_retransmit_fail_burst += burst_fail;
+  }
   ret = send;
 
-  dbg("%s(%s), ts %u seq %u retransmit %u pkt(s)\n", __func__, tx->name, ts, seq, send);
+  dbg("%s(%s), ts 0x%x seq %u retransmit %u pkt(s)\n", __func__, tx->name, ts, seq, send);
 
 rt_exit:
   tx->stat_rtp_retransmit_succ += send;
@@ -300,12 +318,14 @@ static int rtcp_tx_stat(void* priv) {
   tx->stat_nack_received = 0;
   tx->stat_rtp_retransmit_succ = 0;
   if (tx->stat_rtp_retransmit_fail) {
-    notice("%s(%s), retransmit fail %u no mbuf %u read %u obsolete %u\n", __func__,
-           tx->name, tx->stat_rtp_retransmit_fail, tx->stat_rtp_retransmit_fail_nobuf,
-           tx->stat_rtp_retransmit_fail_read, tx->stat_rtp_retransmit_fail_obsolete);
+    notice("%s(%s), retransmit fail %u no mbuf %u read %u obsolete %u burst %u\n",
+           __func__, tx->name, tx->stat_rtp_retransmit_fail,
+           tx->stat_rtp_retransmit_fail_nobuf, tx->stat_rtp_retransmit_fail_read,
+           tx->stat_rtp_retransmit_fail_obsolete, tx->stat_rtp_retransmit_fail_burst);
     tx->stat_rtp_retransmit_fail_nobuf = 0;
     tx->stat_rtp_retransmit_fail_read = 0;
     tx->stat_rtp_retransmit_fail_obsolete = 0;
+    tx->stat_rtp_retransmit_fail_burst = 0;
     tx->stat_rtp_retransmit_fail = 0;
   }
 
@@ -366,6 +386,8 @@ void mt_rtcp_tx_free(struct mt_rtcp_tx* tx) {
 
   tx->active = false;
 
+  rtcp_tx_stat(tx);
+
   if (tx->mbuf_ring) {
     mt_fifo_mbuf_clean(tx->mbuf_ring);
     mt_u64_fifo_uinit(tx->mbuf_ring);
@@ -415,6 +437,8 @@ void mt_rtcp_rx_free(struct mt_rtcp_rx* rx) {
   mt_stat_unregister(rx->parent, rtcp_rx_stat, rx);
 
   rx->active = false;
+
+  rtcp_rx_stat(rx);
 
   if (rx->seq_bitmap) mt_rte_free(rx->seq_bitmap);
 

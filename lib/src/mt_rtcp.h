@@ -53,6 +53,7 @@ struct mt_rtcp_tx {
   bool active;
 
   uint16_t ipv4_packet_id;
+  uint16_t last_seq_num;
 
   /* stat */
   uint32_t stat_rtp_sent;
@@ -61,6 +62,7 @@ struct mt_rtcp_tx {
   uint32_t stat_rtp_retransmit_fail_nobuf;
   uint32_t stat_rtp_retransmit_fail_read;
   uint32_t stat_rtp_retransmit_fail_obsolete;
+  uint32_t stat_rtp_retransmit_fail_burst;
   uint32_t stat_nack_received;
 };
 

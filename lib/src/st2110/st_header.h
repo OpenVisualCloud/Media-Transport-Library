@@ -446,9 +446,8 @@ struct st_rx_video_slot_impl {
 };
 
 struct st_rx_video_ebu_info {
-  double trs;          /* in ns for of 2 consecutive packets, T-Frame / N-Packets */
-  double tr_offset;    /* in ns, tr offset time of each frame */
-  int dropped_results; /* number of results to drop at the beginning */
+  double trs;       /* in ns for of 2 consecutive packets, T-Frame / N-Packets */
+  double tr_offset; /* in ns, tr offset time of each frame */
 
   // pass criteria
   uint32_t c_max_narrow_pass;
@@ -458,11 +457,11 @@ struct st_rx_video_ebu_info {
   int32_t rtp_offset_max_pass;
 
   bool init;
+  uint64_t cur_epochs; /* epoch of current frame */
+  int frame_idx;
 };
 
 struct st_rx_video_ebu_stat {
-  uint64_t cur_epochs; /* epoch of current frame */
-  int frame_idx;
   bool compliant;
   bool compliant_narrow;
 

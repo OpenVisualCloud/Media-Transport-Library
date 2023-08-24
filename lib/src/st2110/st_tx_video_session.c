@@ -613,7 +613,11 @@ static int tv_sync_pacing(struct mtl_main_impl* impl, struct st_tx_video_session
     to_epoch = 0;
   }
 
-  if (epochs > next_epochs) s->stat_epoch_drop += (epochs - next_epochs);
+  if (epochs > next_epochs) {
+    dbg("%s(%d), epochs %" PRIu64 " next_epochs %" PRIu64 "\n", __func__, idx, epochs,
+        next_epochs);
+    s->stat_epoch_drop += (epochs - next_epochs);
+  }
   if (epochs < next_epochs) s->stat_epoch_onward += (next_epochs - epochs);
   pacing->cur_epochs = epochs;
   pacing->cur_epoch_time = pacing_time(pacing, epochs);
@@ -859,6 +863,7 @@ static int tv_init_rtcp(struct mtl_main_impl* impl, struct st_tx_video_sessions_
     s->rtcp_tx[i] = mt_rtcp_tx_create(impl, &rtcp_ops);
     if (!s->rtcp_tx[i]) {
       err("%s(%d,%d), mt_rtcp_tx_create fail on port %d\n", __func__, mgr_idx, idx, i);
+      tv_uinit_rtcp(s);
       return -EIO;
     }
     /* create flow to receive rtcp nack */
@@ -2983,6 +2988,7 @@ static int tv_attach(struct mtl_main_impl* impl, struct st_tx_video_sessions_mgr
     s->last_burst_succ_time_tsc[i] = mt_get_tsc(impl);
   }
 
+  tv_init_pacing_epoch(impl, s);
   s->active = true;
 
   info("%s(%d), len %d(%d) total %d each line %d type %d flags 0x%x, %s\n", __func__, idx,

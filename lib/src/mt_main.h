@@ -165,7 +165,7 @@ struct mt_phc2sys_impl {
   long realtime_hz;
   long realtime_nominal_tick;
   int64_t stat_delta_max;
-  bool stat_sync;
+  bool locked;
   uint16_t stat_sync_keep;
 };
 
@@ -212,6 +212,10 @@ struct mt_ptp_impl {
   uint64_t t3;
   uint16_t t3_sequence_id;
   uint64_t t4;
+
+  bool locked;
+  bool connected;
+
   /* result */
   uint64_t delta_result_cnt;
   uint64_t delta_result_sum;
@@ -258,7 +262,6 @@ struct mt_ptp_impl {
   int32_t stat_result_err;
   int32_t stat_sync_timeout_err;
   int32_t stat_sync_cnt;
-  bool stat_sync;
   uint16_t stat_sync_keep;
 };
 
@@ -767,7 +770,7 @@ struct mt_stat_item {
 MT_TAILQ_HEAD(mt_stat_items_list, mt_stat_item);
 
 struct mt_stat_mgr {
-  pthread_mutex_t mutex;
+  rte_spinlock_t lock;
   struct mt_stat_items_list head;
 };
 
