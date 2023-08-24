@@ -103,6 +103,11 @@ static int rtcp_tx_retransmit_rtp_packets(struct mt_rtcp_tx* tx, uint16_t seq,
     copy_mbufs[i] = copied;
   }
   send = mt_dev_tx_sys_queue_burst(tx->parent, tx->port, copy_mbufs, nb_rt);
+  if (send < nb_rt) {
+    uint16_t burst_fail = nb_rt - send;
+    rte_pktmbuf_free_bulk(&copy_mbufs[send], burst_fail);
+    tx->stat_rtp_retransmit_fail_burst += burst_fail;
+  }
   ret = send;
 
   dbg("%s(%s), ts %u seq %u retransmit %u pkt(s)\n", __func__, tx->name, ts, seq, send);
@@ -300,12 +305,14 @@ static int rtcp_tx_stat(void* priv) {
   tx->stat_nack_received = 0;
   tx->stat_rtp_retransmit_succ = 0;
   if (tx->stat_rtp_retransmit_fail) {
-    notice("%s(%s), retransmit fail %u no mbuf %u read %u obsolete %u\n", __func__,
-           tx->name, tx->stat_rtp_retransmit_fail, tx->stat_rtp_retransmit_fail_nobuf,
-           tx->stat_rtp_retransmit_fail_read, tx->stat_rtp_retransmit_fail_obsolete);
+    notice("%s(%s), retransmit fail %u no mbuf %u read %u obsolete %u burst %u\n",
+           __func__, tx->name, tx->stat_rtp_retransmit_fail,
+           tx->stat_rtp_retransmit_fail_nobuf, tx->stat_rtp_retransmit_fail_read,
+           tx->stat_rtp_retransmit_fail_obsolete, tx->stat_rtp_retransmit_fail_burst);
     tx->stat_rtp_retransmit_fail_nobuf = 0;
     tx->stat_rtp_retransmit_fail_read = 0;
     tx->stat_rtp_retransmit_fail_obsolete = 0;
+    tx->stat_rtp_retransmit_fail_burst = 0;
     tx->stat_rtp_retransmit_fail = 0;
   }
 
@@ -366,6 +373,8 @@ void mt_rtcp_tx_free(struct mt_rtcp_tx* tx) {
 
   tx->active = false;
 
+  rtcp_tx_stat(tx);
+
   if (tx->mbuf_ring) {
     mt_fifo_mbuf_clean(tx->mbuf_ring);
     mt_u64_fifo_uinit(tx->mbuf_ring);
@@ -415,6 +424,8 @@ void mt_rtcp_rx_free(struct mt_rtcp_rx* rx) {
   mt_stat_unregister(rx->parent, rtcp_rx_stat, rx);
 
   rx->active = false;
+
+  rtcp_rx_stat(rx);
 
   if (rx->seq_bitmap) mt_rte_free(rx->seq_bitmap);
 

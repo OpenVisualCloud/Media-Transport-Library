@@ -61,6 +61,7 @@ struct mt_rtcp_tx {
   uint32_t stat_rtp_retransmit_fail_nobuf;
   uint32_t stat_rtp_retransmit_fail_read;
   uint32_t stat_rtp_retransmit_fail_obsolete;
+  uint32_t stat_rtp_retransmit_fail_burst;
   uint32_t stat_nack_received;
 };
 
