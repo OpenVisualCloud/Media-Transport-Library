@@ -37,15 +37,28 @@ int mt_rtcp_tx_buffer_rtp_packets(struct mt_rtcp_tx* tx, struct rte_mbuf** mbufs
     rte_pktmbuf_free_bulk(clean_mbufs, bulk);
   }
 
+  /* check the seq num in order, if err happens user should check the enqueue logic */
+  struct st_rfc3550_rtp_hdr* rtp = rte_pktmbuf_mtod_offset(
+      mbufs[0], struct st_rfc3550_rtp_hdr*, sizeof(struct mt_udp_hdr));
+  uint16_t seq = ntohs(rtp->seq_number);
+  uint16_t diff = seq - tx->last_seq_num; /* uint16_t wrap-around should be ok */
+  if (diff != 1 && mt_u64_fifo_count(tx->mbuf_ring) != 0) {
+    uint32_t ts = ntohl(rtp->tmstamp);
+    err("%s(%s), ts 0x%x seq %u out of order, last seq %u\n", __func__, tx->name, ts, seq,
+        tx->last_seq_num);
+    return -EIO;
+  }
+
   if (mt_u64_fifo_put_bulk(tx->mbuf_ring, (uint64_t*)mbufs, bulk) < 0) {
     err("%s(%s), failed to enqueue %u mbuf to ring\n", __func__, tx->name, bulk);
     return -EIO;
   }
+  mt_mbuf_refcnt_inc_bulk(mbufs, bulk);
 
-  for (int i = 0; i < bulk; i++) {
-    rte_mbuf_refcnt_update(mbufs[i], 1);
-    if (mbufs[i]->next) rte_mbuf_refcnt_update(mbufs[i]->next, 1);
-  }
+  /* save the last rtp seq num */
+  rtp = rte_pktmbuf_mtod_offset(mbufs[bulk - 1], struct st_rfc3550_rtp_hdr*,
+                                sizeof(struct mt_udp_hdr));
+  tx->last_seq_num = ntohs(rtp->seq_number);
 
   tx->stat_rtp_sent += bulk;
 
@@ -75,7 +88,7 @@ static int rtcp_tx_retransmit_rtp_packets(struct mt_rtcp_tx* tx, uint16_t seq,
 
   int cmp_result = rtp_seq_num_cmp(ring_head_seq, seq);
   if (cmp_result > 0) {
-    dbg("%s(%s), ts %u seq %u out of date, ring head %u, you ask late\n", __func__,
+    dbg("%s(%s), ts 0x%x seq %u out of date, ring head %u, you ask late\n", __func__,
         tx->name, ts, seq, ring_head_seq);
     tx->stat_rtp_retransmit_fail_obsolete += bulk;
     ret = -EIO;
@@ -110,7 +123,7 @@ static int rtcp_tx_retransmit_rtp_packets(struct mt_rtcp_tx* tx, uint16_t seq,
   }
   ret = send;
 
-  dbg("%s(%s), ts %u seq %u retransmit %u pkt(s)\n", __func__, tx->name, ts, seq, send);
+  dbg("%s(%s), ts 0x%x seq %u retransmit %u pkt(s)\n", __func__, tx->name, ts, seq, send);
 
 rt_exit:
   tx->stat_rtp_retransmit_succ += send;
