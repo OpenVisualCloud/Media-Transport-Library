@@ -43,8 +43,9 @@ int mt_rtcp_tx_buffer_rtp_packets(struct mt_rtcp_tx* tx, struct rte_mbuf** mbufs
   uint16_t seq = ntohs(rtp->seq_number);
   uint16_t diff = seq - tx->last_seq_num; /* uint16_t wrap-around should be ok */
   if (diff != 1 && mt_u64_fifo_count(tx->mbuf_ring) != 0) {
-    err("%s(%s), ts 0x%x seq %u out of order, last seq %u\n", __func__, tx->name,
-        ntohl(rtp->tmstamp), seq, tx->last_seq_num);
+    uint32_t ts = ntohl(rtp->tmstamp);
+    err("%s(%s), ts 0x%x seq %u out of order, last seq %u\n", __func__, tx->name, ts, seq,
+        tx->last_seq_num);
     return -EIO;
   }
 
