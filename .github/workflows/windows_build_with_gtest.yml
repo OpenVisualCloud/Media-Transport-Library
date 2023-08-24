@@ -38,8 +38,6 @@ env:
   DPDK_VERSION: 23.03
   TEST_PORT_P: 0000:af:00.0
   TEST_PORT_R: 0000:af:00.1
-  TEST_DMA_PORT_P: 0000:80:04.0
-  TEST_DMA_PORT_R: 0000:80:04.1
 
 permissions:
   contents: read
@@ -146,4 +144,4 @@ jobs:
 
       - name: Run st2110 test case
         run: |
-          ./build/tests/KahawaiTest --auto_start_stop --p_port ${{  env.TEST_PORT_P  }} --r_port ${{  env.TEST_PORT_R  }} --dma_dev ${{  env.TEST_DMA_PORT_P  }},${{  env.TEST_DMA_PORT_R  }} --gtest_filter=-St22_?x.*
+          ./build/tests/KahawaiTest --auto_start_stop --p_port ${{  env.TEST_PORT_P  }} --r_port ${{  env.TEST_PORT_R  }} --gtest_filter=-St22_?x.*
