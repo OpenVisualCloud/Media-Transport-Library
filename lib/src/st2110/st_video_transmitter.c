@@ -60,16 +60,16 @@ static uint16_t video_trs_burst(struct mtl_main_impl* impl,
                                 struct st_tx_video_session_impl* s,
                                 enum mtl_session_port s_port, struct rte_mbuf** tx_pkts,
                                 uint16_t nb_pkts) {
-  if (s->rtcp_tx[s_port]) mt_mbufs_refcnt_inc(tx_pkts, nb_pkts);
+  if (s->rtcp_tx[s_port]) mt_mbuf_refcnt_inc_bulk(tx_pkts, nb_pkts);
   uint16_t tx = mt_txq_burst(s->queue[s_port], tx_pkts, nb_pkts);
   if (!tx) {
-    if (s->rtcp_tx[s_port]) mt_mbufs_refcnt_dec(tx_pkts, nb_pkts);
+    if (s->rtcp_tx[s_port]) rte_pktmbuf_free_bulk(tx_pkts, nb_pkts);
     return video_trs_burst_fail(impl, s, s_port, tx_pkts, nb_pkts);
   }
 
   if (s->rtcp_tx[s_port]) {
     mt_rtcp_tx_buffer_rtp_packets(s->rtcp_tx[s_port], tx_pkts, tx);
-    mt_mbufs_refcnt_dec(tx_pkts, nb_pkts);
+    rte_pktmbuf_free_bulk(tx_pkts, nb_pkts);
   }
 
   int pkt_idx = st_tx_mbuf_get_idx(tx_pkts[0]);

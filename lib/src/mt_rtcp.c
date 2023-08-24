@@ -43,7 +43,7 @@ int mt_rtcp_tx_buffer_rtp_packets(struct mt_rtcp_tx* tx, struct rte_mbuf** mbufs
   uint16_t seq = ntohs(rtp->seq_number);
   uint16_t diff = seq - tx->last_seq_num; /* uint16_t wrap-around should be ok */
   if (diff != 1 && mt_u64_fifo_count(tx->mbuf_ring) != 0) {
-    err("%s(%s), ts %u seq %u out of order, last seq %u\n", __func__, tx->name,
+    err("%s(%s), ts 0x%x seq %u out of order, last seq %u\n", __func__, tx->name,
         ntohl(rtp->tmstamp), seq, tx->last_seq_num);
     return -EIO;
   }
@@ -52,7 +52,7 @@ int mt_rtcp_tx_buffer_rtp_packets(struct mt_rtcp_tx* tx, struct rte_mbuf** mbufs
     err("%s(%s), failed to enqueue %u mbuf to ring\n", __func__, tx->name, bulk);
     return -EIO;
   }
-  mt_mbufs_refcnt_inc(mbufs, bulk);
+  mt_mbuf_refcnt_inc_bulk(mbufs, bulk);
 
   /* save the last rtp seq num */
   rtp = rte_pktmbuf_mtod_offset(mbufs[bulk - 1], struct st_rfc3550_rtp_hdr*,
@@ -87,7 +87,7 @@ static int rtcp_tx_retransmit_rtp_packets(struct mt_rtcp_tx* tx, uint16_t seq,
 
   int cmp_result = rtp_seq_num_cmp(ring_head_seq, seq);
   if (cmp_result > 0) {
-    dbg("%s(%s), ts %u seq %u out of date, ring head %u, you ask late\n", __func__,
+    dbg("%s(%s), ts 0x%x seq %u out of date, ring head %u, you ask late\n", __func__,
         tx->name, ts, seq, ring_head_seq);
     tx->stat_rtp_retransmit_fail_obsolete += bulk;
     ret = -EIO;
@@ -117,7 +117,7 @@ static int rtcp_tx_retransmit_rtp_packets(struct mt_rtcp_tx* tx, uint16_t seq,
   send = mt_dev_tx_sys_queue_burst(tx->parent, tx->port, copy_mbufs, nb_rt);
   ret = send;
 
-  dbg("%s(%s), ts %u seq %u retransmit %u pkt(s)\n", __func__, tx->name, ts, seq, send);
+  dbg("%s(%s), ts 0x%x seq %u retransmit %u pkt(s)\n", __func__, tx->name, ts, seq, send);
 
 rt_exit:
   tx->stat_rtp_retransmit_succ += send;
