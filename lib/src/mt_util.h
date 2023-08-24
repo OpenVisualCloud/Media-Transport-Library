@@ -194,4 +194,24 @@ uint16_t mt_random_port(uint16_t base_port);
 
 static inline const char* mt_msg_safe(const char* msg) { return msg ? msg : "null"; }
 
+static inline void mt_mbufs_refcnt_inc(struct rte_mbuf** mbufs, uint16_t nb) {
+  for (int i = 0; i < nb; i++) {
+    struct rte_mbuf* m = mbufs[i];
+    while (m) {
+      rte_mbuf_refcnt_update(m, 1);
+      m = m->next;
+    }
+  }
+}
+
+static inline void mt_mbufs_refcnt_dec(struct rte_mbuf** mbufs, uint16_t nb) {
+  for (int i = 0; i < nb; i++) {
+    struct rte_mbuf* m = mbufs[i];
+    while (m) {
+      rte_mbuf_refcnt_update(m, -1);
+      m = m->next;
+    }
+  }
+}
+
 #endif
