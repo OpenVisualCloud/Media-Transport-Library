@@ -56,37 +56,6 @@ jobs:
       with:
         egress-policy: audit
 
-    - name: Install dependencies
-      uses: msys2/setup-msys2@7efe20baefed56359985e327d329042cde2434ff # v2
-      with:
-        msystem: ucrt64
-        update: true
-        install: >-
-          git
-          base-devel
-          unzip
-        pacboy: >-
-          openssl:p
-          gcc:p
-          meson:p
-          pkg-config:p
-          json-c:p
-          libpcap:p
-          gtest:p
-          SDL2:p
-          SDL2_ttf:p
-          dlfcn:p
-
-    - name: Install tools
-      run: |
-        wget https://nmap.org/npcap/dist/npcap-sdk-1.12.zip
-        unzip -d npcap-sdk npcap-sdk-1.12.zip
-        cp npcap-sdk/Lib/x64/* $MSYSTEM_PREFIX/lib/
-        git clone https://github.com/alitrack/mman-win32
-        cd mman-win32
-        ./configure --prefix=$MSYSTEM_PREFIX
-        make && make install
-
     - name: Checkout IMTL repo
       uses: actions/checkout@c85c95e3d7251135ab7dc9ce3241c5835cc595a9 # v3.5.3
 
@@ -106,7 +75,6 @@ jobs:
         ls *.patch | xargs -I{} bash -c 'if [[ $(sed -n '1p' "{}") =~ ^../.*\.patch$ ]]; then cp "$(cat "{}")" "{}"; fi'
     
     - name: Apply patches for DPDK
-      shell: bash
       run: |
         cd dpdk
         git config user.name github-actions
