@@ -2088,8 +2088,8 @@ error:
         if ((tx_video_session->ext_frames[j].buf_iova != MTL_BAD_IOVA) &&
             (tx_video_session->ext_frames[j].buf_iova != 0)) {
           ret = mtl_dma_unmap(st_v4l2_tx->st, tx_video_session->ext_frames[j].buf_addr,
-                             tx_video_session->ext_frames[j].buf_iova,
-                             tx_video_session->ext_frames[j].buf_len);
+                              tx_video_session->ext_frames[j].buf_iova,
+                              tx_video_session->ext_frames[j].buf_len);
           if (0 != ret) {
             printf("%s st_dma_unmap fail\n", __func__);
           }
