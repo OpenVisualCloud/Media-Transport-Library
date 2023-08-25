@@ -345,14 +345,14 @@ static struct rte_flow* tap_create_flow(struct mt_cni_impl* cni, uint16_t port_i
   ret = rte_flow_validate(port_id, &attr, pattern, action, &error);
   if (ret < 0) {
     err("%s(%d), rte_flow_validate fail %d for queue %d, %s\n", __func__, port_id, ret, q,
-        mt_msg_safe(error.message));
+        mt_string_safe(error.message));
     return NULL;
   }
 
   r_flow = rte_flow_create(port_id, &attr, pattern, action, &error);
   if (!r_flow) {
     err("%s(%d), rte_flow_create fail for queue %d, %s\n", __func__, port_id, q,
-        mt_msg_safe(error.message));
+        mt_string_safe(error.message));
     return NULL;
   }
 
@@ -393,7 +393,7 @@ static struct rte_flow* tap_create_flow(struct mt_cni_impl* cni, uint16_t port_i
   r_flow = rte_flow_create(port_id, &attr, pattern, action, &error);
   if (!r_flow) {
     err("%s(%d), rte_flow_create 2 fail for queue %d, %s\n", __func__, port_id, q,
-        mt_msg_safe(error.message));
+        mt_string_safe(error.message));
     return NULL;
   }
   return r_flow;

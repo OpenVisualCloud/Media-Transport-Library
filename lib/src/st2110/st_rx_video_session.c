@@ -4195,9 +4195,11 @@ int st20_rx_free(st20_rx_handle handle) {
   s = s_impl->impl;
   idx = s->idx;
   sch_idx = sch->idx;
+  notice("%s(%d,%d), start\n", __func__, sch_idx, idx);
 
-  /* no need to lock as session is located already */
+  mt_pthread_mutex_lock(&sch->rx_video_mgr_mutex);
   ret = st_rvs_mgr_detach(&sch->rx_video_mgr, s);
+  mt_pthread_mutex_unlock(&sch->rx_video_mgr_mutex);
   if (ret < 0)
     err("%s(%d,%d), st_rx_video_sessions_mgr_detach fail\n", __func__, sch_idx, idx);
 
@@ -4212,7 +4214,7 @@ int st20_rx_free(st20_rx_handle handle) {
   mt_pthread_mutex_unlock(&sch->rx_video_mgr_mutex);
 
   rte_atomic32_dec(&impl->st20_rx_sessions_cnt);
-  info("%s, succ on sch %d session %d\n", __func__, sch_idx, idx);
+  notice("%s, succ on sch %d session %d\n", __func__, sch_idx, idx);
   return 0;
 }
 
@@ -4549,8 +4551,9 @@ int st22_rx_free(st22_rx_handle handle) {
   idx = s->idx;
   sch_idx = sch->idx;
 
-  /* no need to lock as session is located already */
+  mt_pthread_mutex_lock(&sch->rx_video_mgr_mutex);
   ret = st_rvs_mgr_detach(&sch->rx_video_mgr, s);
+  mt_pthread_mutex_unlock(&sch->rx_video_mgr_mutex);
   if (ret < 0)
     err("%s(%d,%d), st_rx_video_sessions_mgr_detach fail\n", __func__, sch_idx, idx);
 

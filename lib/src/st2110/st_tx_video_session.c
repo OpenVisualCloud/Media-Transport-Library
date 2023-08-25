@@ -10,6 +10,7 @@
 #include "../mt_queue.h"
 #include "../mt_rtcp.h"
 #include "../mt_stat.h"
+#include "../mt_util.h"
 #include "st_err.h"
 #include "st_video_transmitter.h"
 
@@ -3419,7 +3420,7 @@ int st_tx_video_session_migrate(struct mtl_main_impl* impl,
 
 static int tv_ops_check(struct st20_tx_ops* ops) {
   int num_ports = ops->num_port, ret;
-  uint8_t* ip;
+  uint8_t* ip = NULL;
 
   if ((num_ports > MTL_SESSION_PORT_MAX) || (num_ports <= 0)) {
     err("%s, invalid num_ports %d\n", __func__, num_ports);
@@ -3487,7 +3488,7 @@ static int tv_ops_check(struct st20_tx_ops* ops) {
 
 static int tv_st22_ops_check(struct st22_tx_ops* ops) {
   int num_ports = ops->num_port, ret;
-  uint8_t* ip;
+  uint8_t* ip = NULL;
 
   if ((num_ports > MTL_SESSION_PORT_MAX) || (num_ports <= 0)) {
     err("%s, invalid num_ports %d\n", __func__, num_ports);
@@ -3700,6 +3701,8 @@ st20_tx_handle st20_tx_create(mtl_handle mt, struct st20_tx_ops* ops) {
   int quota_mbs, ret;
   uint64_t bps;
 
+  notice("%s, start for %s\n", __func__, mt_string_safe(ops->name));
+
   if (impl->type != MT_HANDLE_MAIN) {
     err("%s, invalid type %d\n", __func__, impl->type);
     return NULL;
@@ -3772,8 +3775,7 @@ st20_tx_handle st20_tx_create(mtl_handle mt, struct st20_tx_ops* ops) {
   s->st20_handle = s_impl;
 
   rte_atomic32_inc(&impl->st20_tx_sessions_cnt);
-  info("%s, succ on sch %d session %p,%d num_port %d\n", __func__, sch->idx, s, s->idx,
-       ops->num_port);
+  notice("%s(%d,%d), succ on %p\n", __func__, sch->idx, s->idx, s);
   return s_impl;
 }
 
@@ -4036,6 +4038,7 @@ int st20_tx_free(st20_tx_handle handle) {
   s = s_impl->impl;
   idx = s->idx;
   sch_idx = sch->idx;
+  notice("%s(%d,%d), start\n", __func__, sch_idx, idx);
 
   mt_pthread_mutex_lock(&sch->tx_video_mgr_mutex);
   ret = tv_mgr_detach(&sch->tx_video_mgr, s);
@@ -4053,14 +4056,14 @@ int st20_tx_free(st20_tx_handle handle) {
   mt_pthread_mutex_unlock(&sch->tx_video_mgr_mutex);
 
   rte_atomic32_dec(&impl->st20_tx_sessions_cnt);
-  info("%s, succ on sch %d session %d\n", __func__, sch_idx, idx);
+  notice("%s(%d,%d), succ\n", __func__, sch_idx, idx);
   return 0;
 }
 
 int st20_tx_update_destination(st20_tx_handle handle, struct st_tx_dest_info* dst) {
   struct st_tx_video_session_handle_impl* s_impl = handle;
   struct st_tx_video_session_impl* s;
-  int idx, ret;
+  int idx, ret, sch_idx;
 
   if (s_impl->type != MT_HANDLE_TX_VIDEO) {
     err("%s, invalid type %d\n", __func__, s_impl->type);
@@ -4069,6 +4072,7 @@ int st20_tx_update_destination(st20_tx_handle handle, struct st_tx_dest_info* ds
 
   s = s_impl->impl;
   idx = s->idx;
+  sch_idx = s_impl->sch->idx;
 
   ret = st_tx_dest_info_check(dst, s->ops.num_port);
   if (ret < 0) return ret;
@@ -4079,7 +4083,7 @@ int st20_tx_update_destination(st20_tx_handle handle, struct st_tx_dest_info* ds
     return ret;
   }
 
-  info("%s, succ on session %d\n", __func__, idx);
+  info("%s(%d,%d), succ\n", __func__, sch_idx, idx);
   return 0;
 }
 
@@ -4091,6 +4095,8 @@ st22_tx_handle st22_tx_create(mtl_handle mt, struct st22_tx_ops* ops) {
   int quota_mbs, ret;
   uint64_t bps;
   struct st20_tx_ops st20_ops;
+
+  notice("%s, start for %s\n", __func__, mt_string_safe(ops->name));
 
   if (impl->type != MT_HANDLE_MAIN) {
     err("%s, invalid type %d\n", __func__, impl->type);
@@ -4218,8 +4224,7 @@ st22_tx_handle st22_tx_create(mtl_handle mt, struct st22_tx_ops* ops) {
   s->st22_handle = s_impl;
 
   rte_atomic32_inc(&impl->st22_tx_sessions_cnt);
-  info("%s, succ on sch %d session %d num_port %d\n", __func__, sch->idx, s->idx,
-       ops->num_port);
+  notice("%s(%d,%d), succ on %p\n", __func__, sch->idx, s->idx, s);
   return s_impl;
 }
 
@@ -4240,6 +4245,7 @@ int st22_tx_free(st22_tx_handle handle) {
   s = s_impl->impl;
   idx = s->idx;
   sch_idx = sch->idx;
+  notice("%s(%d,%d), start\n", __func__, sch_idx, idx);
 
   mt_pthread_mutex_lock(&sch->tx_video_mgr_mutex);
   ret = tv_mgr_detach(&sch->tx_video_mgr, s);
@@ -4257,14 +4263,14 @@ int st22_tx_free(st22_tx_handle handle) {
   mt_pthread_mutex_unlock(&sch->tx_video_mgr_mutex);
 
   rte_atomic32_dec(&impl->st22_tx_sessions_cnt);
-  info("%s, succ on sch %d session %d\n", __func__, sch_idx, idx);
+  notice("%s(%d,%d), succ\n", __func__, sch_idx, idx);
   return 0;
 }
 
 int st22_tx_update_destination(st22_tx_handle handle, struct st_tx_dest_info* dst) {
   struct st22_tx_video_session_handle_impl* s_impl = handle;
   struct st_tx_video_session_impl* s;
-  int idx, ret;
+  int idx, ret, sch_idx;
 
   if (s_impl->type != MT_ST22_HANDLE_TX_VIDEO) {
     err("%s, invalid type %d\n", __func__, s_impl->type);
@@ -4273,6 +4279,7 @@ int st22_tx_update_destination(st22_tx_handle handle, struct st_tx_dest_info* ds
 
   s = s_impl->impl;
   idx = s->idx;
+  sch_idx = s_impl->sch->idx;
 
   ret = st_tx_dest_info_check(dst, s->ops.num_port);
   if (ret < 0) return ret;
@@ -4283,7 +4290,7 @@ int st22_tx_update_destination(st22_tx_handle handle, struct st_tx_dest_info* ds
     return ret;
   }
 
-  info("%s, succ on session %d\n", __func__, idx);
+  info("%s(%d,%d), succ\n", __func__, sch_idx, idx);
   return 0;
 }
 

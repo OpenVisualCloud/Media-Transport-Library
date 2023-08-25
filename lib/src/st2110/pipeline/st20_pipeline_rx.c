@@ -722,11 +722,14 @@ int st20p_rx_put_frame(st20p_rx_handle handle, struct st_frame* frame) {
 }
 
 st20p_rx_handle st20p_rx_create(mtl_handle mt, struct st20p_rx_ops* ops) {
+  static int st20p_rx_idx;
   struct mtl_main_impl* impl = mt;
   struct st20p_rx_ctx* ctx;
   int ret;
-  int idx = 0; /* todo */
+  int idx = st20p_rx_idx;
   size_t dst_size;
+
+  notice("%s, start for %s\n", __func__, mt_string_safe(ops->name));
 
   if (impl->type != MT_HANDLE_MAIN) {
     err("%s, invalid type %d\n", __func__, impl->type);
@@ -796,8 +799,9 @@ st20p_rx_handle st20p_rx_create(mtl_handle mt, struct st20p_rx_ops* ops) {
 
   /* all ready now */
   ctx->ready = true;
-  info("%s(%d), transport fmt %s, output fmt %s\n", __func__, idx,
-       st20_frame_fmt_name(ops->transport_fmt), st_frame_fmt_name(ops->output_fmt));
+  notice("%s(%d), transport fmt %s, output fmt %s\n", __func__, idx,
+         st20_frame_fmt_name(ops->transport_fmt), st_frame_fmt_name(ops->output_fmt));
+  st20p_rx_idx++;
 
   if (ctx->ops.notify_frame_available) { /* notify app */
     ctx->ops.notify_frame_available(ctx->ops.priv);
@@ -814,6 +818,8 @@ int st20p_rx_free(st20p_rx_handle handle) {
     err("%s(%d), invalid type %d\n", __func__, ctx->idx, ctx->type);
     return -EIO;
   }
+
+  notice("%s(%d), start\n", __func__, ctx->idx);
 
   if (ctx->convert_impl) {
     st20_put_converter(impl, ctx->convert_impl);
@@ -832,6 +838,7 @@ int st20p_rx_free(st20p_rx_handle handle) {
   rx_st20p_uinit_dst_fbs(ctx);
 
   mt_pthread_mutex_destroy(&ctx->lock);
+  notice("%s(%d), succ\n", __func__, ctx->idx);
   mt_rte_free(ctx);
 
   return 0;

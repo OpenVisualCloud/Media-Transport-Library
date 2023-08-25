@@ -492,7 +492,7 @@ static int dev_rl_init_root(struct mt_interface* inf, uint32_t shaper_profile_id
   ret = rte_tm_node_add(port_id, ST_ROOT_NODE_ID, -1, 0, 1, 0, &np, &error);
   if (ret < 0) {
     err("%s(%d), root add error: (%d)%s\n", __func__, port, ret,
-        mt_msg_safe(error.message));
+        mt_string_safe(error.message));
     return ret;
   }
 
@@ -501,7 +501,7 @@ static int dev_rl_init_root(struct mt_interface* inf, uint32_t shaper_profile_id
       rte_tm_node_add(port_id, ST_DEFAULT_NODE_ID, ST_ROOT_NODE_ID, 0, 1, 1, &np, &error);
   if (ret < 0) {
     err("%s(%d), node add error: (%d)%s\n", __func__, port, ret,
-        mt_msg_safe(error.message));
+        mt_string_safe(error.message));
     return ret;
   }
 
@@ -531,7 +531,7 @@ static struct mt_rl_shaper* dev_rl_shaper_add(struct mt_interface* inf, uint64_t
     ret = rte_tm_shaper_profile_add(port_id, shaper_profile_id, &sp, &error);
     if (ret < 0) {
       err("%s(%d), shaper add error: (%d)%s\n", __func__, port, ret,
-          mt_msg_safe(error.message));
+          mt_string_safe(error.message));
       return NULL;
     }
 
@@ -591,7 +591,7 @@ static int dev_init_ratelimit_all(struct mt_interface* inf) {
     ret = rte_tm_node_add(port_id, q, ST_DEFAULT_NODE_ID, 0, 1, 2, &qp, &error);
     if (ret < 0) {
       err("%s(%d), q %d add fail %d(%s)\n", __func__, port, q, ret,
-          mt_msg_safe(error.message));
+          mt_string_safe(error.message));
       return ret;
     }
     tx_queue->rl_shapers_mapping = shaper->idx;
@@ -602,7 +602,8 @@ static int dev_init_ratelimit_all(struct mt_interface* inf) {
 
   ret = rte_tm_hierarchy_commit(port_id, 1, &error);
   if (ret < 0)
-    err("%s(%d), commit error (%d)%s\n", __func__, port, ret, mt_msg_safe(error.message));
+    err("%s(%d), commit error (%d)%s\n", __func__, port, ret,
+        mt_string_safe(error.message));
 
   dbg("%s(%d), succ\n", __func__, port);
   return ret;
@@ -633,7 +634,7 @@ static int dev_tx_queue_set_rl_rate(struct mt_interface* inf, uint16_t queue,
     ret = rte_tm_node_delete(port_id, queue, &error);
     if (ret < 0) {
       err("%s(%d), node %d delete fail %d(%s)\n", __func__, port, queue, ret,
-          mt_msg_safe(error.message));
+          mt_string_safe(error.message));
       return ret;
     }
     tx_queue->rl_shapers_mapping = -1;
@@ -652,7 +653,7 @@ static int dev_tx_queue_set_rl_rate(struct mt_interface* inf, uint16_t queue,
     ret = rte_tm_node_add(port_id, queue, ST_DEFAULT_NODE_ID, 0, 1, 2, &qp, &error);
     if (ret < 0) {
       err("%s(%d), q %d add fail %d(%s)\n", __func__, port, queue, ret,
-          mt_msg_safe(error.message));
+          mt_string_safe(error.message));
       return ret;
     }
     tx_queue->rl_shapers_mapping = shaper->idx;
@@ -664,7 +665,8 @@ static int dev_tx_queue_set_rl_rate(struct mt_interface* inf, uint16_t queue,
   ret = rte_tm_hierarchy_commit(port_id, 1, &error);
   mt_pthread_mutex_unlock(&inf->vf_cmd_mutex);
   if (ret < 0) {
-    err("%s(%d), commit error (%d)%s\n", __func__, port, ret, mt_msg_safe(error.message));
+    err("%s(%d), commit error (%d)%s\n", __func__, port, ret,
+        mt_string_safe(error.message));
     return ret;
   }
 
@@ -719,7 +721,7 @@ static struct rte_flow* dev_rx_queue_create_flow_raw(struct mt_interface* inf, u
   mt_pthread_mutex_unlock(&inf->vf_cmd_mutex);
   if (!r_flow) {
     err("%s(%d), rte_flow_create fail for queue %d, %s\n", __func__, port_id, q,
-        mt_msg_safe(error.message));
+        mt_string_safe(error.message));
     return NULL;
   }
 
@@ -819,7 +821,7 @@ static struct rte_flow* dev_rx_queue_create_flow(struct mt_interface* inf, uint1
   ret = rte_flow_validate(port_id, &attr, pattern, action, &error);
   if (ret < 0) {
     err("%s(%d), rte_flow_validate fail %d for queue %d, %s\n", __func__, port_id, ret, q,
-        mt_msg_safe(error.message));
+        mt_string_safe(error.message));
     return NULL;
   }
 
@@ -828,7 +830,7 @@ static struct rte_flow* dev_rx_queue_create_flow(struct mt_interface* inf, uint1
   mt_pthread_mutex_unlock(&inf->vf_cmd_mutex);
   if (!r_flow) {
     err("%s(%d), rte_flow_create fail for queue %d, %s\n", __func__, port_id, q,
-        mt_msg_safe(error.message));
+        mt_string_safe(error.message));
     return NULL;
   }
 
