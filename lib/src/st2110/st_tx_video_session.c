@@ -3363,7 +3363,7 @@ static int tv_sessions_stat(void* priv) {
   struct st_tx_video_session_impl* s;
 
   for (int j = 0; j < mgr->max_idx; j++) {
-    s = tx_video_session_get(mgr, j);
+    s = tx_video_session_try_get(mgr, j);
     if (!s) continue;
     tv_stat(mgr, s);
     tx_video_session_put(mgr, j);

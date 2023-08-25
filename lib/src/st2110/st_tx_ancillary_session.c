@@ -1437,7 +1437,7 @@ static int st_tx_ancillary_sessions_stat(void* priv) {
   struct st_tx_ancillary_session_impl* s;
 
   for (int j = 0; j < mgr->max_idx; j++) {
-    s = tx_ancillary_session_get(mgr, j);
+    s = tx_ancillary_session_try_get(mgr, j);
     if (!s) continue;
     tx_ancillary_session_stat(s);
     tx_ancillary_session_put(mgr, j);

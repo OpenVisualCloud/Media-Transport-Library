@@ -443,6 +443,7 @@ struct st_rx_video_slot_impl {
   uint16_t st22_box_hdr_length;
   /* timestamp(ST10_TIMESTAMP_FMT_TAI, PTP) value for the first pkt */
   uint64_t timestamp_first_pkt;
+  int last_pkt_idx;
 };
 
 struct st_rx_video_ebu_info {
@@ -700,6 +701,7 @@ struct st_rx_video_session_impl {
   int stat_pkts_idx_oo_bitmap;
   int stat_pkts_enqueue_fallback; /* for pkt lcore */
   int stat_pkts_offset_dropped;
+  int stat_pkts_out_of_order;
   int stat_pkts_redundant_dropped;
   int stat_pkts_wrong_hdr_dropped;
   int stat_pkts_received;
