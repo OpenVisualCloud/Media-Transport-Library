@@ -1426,7 +1426,7 @@ static int tx_video_copy_frame(struct st_v4l2_tx_video_session* tx_video_session
   struct tx_frame_buff_ct* framebuff_ctl = &(tx_video_session->framebuff_ctl);
   void* frame_addr;
   unsigned int i;
-  void* data;
+  void* data = NULL;
   unsigned int length = 0;
 
   pthread_mutex_lock(&(framebuff_ctl->wake_mutex));
@@ -1469,7 +1469,7 @@ static int tx_video_copy_frame(struct st_v4l2_tx_video_session* tx_video_session
       }
     }
 
-    memcpy(frame_addr, data, length);
+    if (data) memcpy(frame_addr, data, length);
   }
 
   pthread_mutex_lock(&(framebuff_ctl->wake_mutex));
