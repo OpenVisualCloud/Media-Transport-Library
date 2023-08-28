@@ -441,10 +441,12 @@ executable('UsocketClientSample', usocket_client_sample_sources,
 )
 endif
 
+if not is_windows
 # v4l2 to IP sample app
-executable('V4l2toIPSample', v4l2_to_ip_sample_sources,
+executable('V4l2toIPApp', v4l2_to_ip_sources,
   c_args : app_c_args,
   link_args: app_ld_args,
   # asan should be always the first dep
-  dependencies: [asan_dep, mtl, libjson_c, libpcap, libsdl2, libsdl2_ttf, libm, libpthread]
+  dependencies: [asan_dep, mtl, libsdl2, libsdl2_ttf, libm, libpthread]
 )
+endif
