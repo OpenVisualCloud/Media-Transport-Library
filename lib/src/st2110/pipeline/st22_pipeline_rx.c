@@ -385,12 +385,15 @@ int st22p_rx_put_frame(st22p_rx_handle handle, struct st_frame* frame) {
 }
 
 st22p_rx_handle st22p_rx_create(mtl_handle mt, struct st22p_rx_ops* ops) {
+  static int st22p_rx_idx;
   struct mtl_main_impl* impl = mt;
   struct st22p_rx_ctx* ctx;
   int ret;
-  int idx = 0; /* todo */
+  int idx = st22p_rx_idx;
   size_t dst_size;
   enum st_frame_fmt codestream_fmt;
+
+  notice("%s, start for %s\n", __func__, mt_string_safe(ops->name));
 
   if (impl->type != MT_HANDLE_MAIN) {
     err("%s, invalid type %d\n", __func__, impl->type);
@@ -470,8 +473,9 @@ st22p_rx_handle st22p_rx_create(mtl_handle mt, struct st22p_rx_ops* ops) {
 
   /* all ready now */
   ctx->ready = true;
-  info("%s(%d), codestream fmt %s, output fmt: %s\n", __func__, idx,
-       st_frame_fmt_name(ctx->codestream_fmt), st_frame_fmt_name(ops->output_fmt));
+  notice("%s(%d), codestream fmt %s, output fmt: %s\n", __func__, idx,
+         st_frame_fmt_name(ctx->codestream_fmt), st_frame_fmt_name(ops->output_fmt));
+  st22p_rx_idx++;
 
   if (ctx->ops.notify_frame_available) { /* notify app */
     ctx->ops.notify_frame_available(ctx->ops.priv);

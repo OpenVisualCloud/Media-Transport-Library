@@ -192,7 +192,7 @@ int st_vsync_calculate(struct mtl_main_impl* impl, struct st_vsync_info* vsync);
 
 uint16_t mt_random_port(uint16_t base_port);
 
-static inline const char* mt_msg_safe(const char* msg) { return msg ? msg : "null"; }
+static inline const char* mt_string_safe(const char* msg) { return msg ? msg : "null"; }
 
 static inline void mt_mbuf_refcnt_inc_bulk(struct rte_mbuf** mbufs, uint16_t nb) {
   struct rte_mbuf* m = NULL;
