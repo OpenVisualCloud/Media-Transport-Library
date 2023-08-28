@@ -448,12 +448,15 @@ int st22p_tx_put_frame(st22p_tx_handle handle, struct st_frame* frame) {
 }
 
 st22p_tx_handle st22p_tx_create(mtl_handle mt, struct st22p_tx_ops* ops) {
+  static int st22p_tx_idx;
   struct mtl_main_impl* impl = mt;
   struct st22p_tx_ctx* ctx;
   int ret;
-  int idx = 0; /* todo */
+  int idx = st22p_tx_idx;
   size_t src_size;
   enum st_frame_fmt codestream_fmt;
+
+  notice("%s, start for %s\n", __func__, mt_string_safe(ops->name));
 
   if (impl->type != MT_HANDLE_MAIN) {
     err("%s, invalid type %d\n", __func__, impl->type);
@@ -529,8 +532,9 @@ st22p_tx_handle st22p_tx_create(mtl_handle mt, struct st22p_tx_ops* ops) {
 
   /* all ready now */
   ctx->ready = true;
-  info("%s(%d), codestream fmt %s, input fmt: %s\n", __func__, idx,
-       st_frame_fmt_name(ctx->codestream_fmt), st_frame_fmt_name(ops->input_fmt));
+  notice("%s(%d), codestream fmt %s, input fmt: %s\n", __func__, idx,
+         st_frame_fmt_name(ctx->codestream_fmt), st_frame_fmt_name(ops->input_fmt));
+  st22p_tx_idx++;
 
   if (ctx->ops.notify_frame_available) { /* notify app */
     ctx->ops.notify_frame_available(ctx->ops.priv);
@@ -542,6 +546,8 @@ st22p_tx_handle st22p_tx_create(mtl_handle mt, struct st22p_tx_ops* ops) {
 int st22p_tx_free(st22p_tx_handle handle) {
   struct st22p_tx_ctx* ctx = handle;
   struct mtl_main_impl* impl = ctx->impl;
+
+  notice("%s(%d), start\n", __func__, ctx->idx);
 
   if (ctx->type != MT_ST22_HANDLE_PIPELINE_TX) {
     err("%s(%d), invalid type %d\n", __func__, ctx->idx, ctx->type);
@@ -560,6 +566,7 @@ int st22p_tx_free(st22p_tx_handle handle) {
   tx_st22p_uinit_src_fbs(ctx);
 
   mt_pthread_mutex_destroy(&ctx->lock);
+  notice("%s(%d), succ\n", __func__, ctx->idx);
   mt_rte_free(ctx);
 
   return 0;

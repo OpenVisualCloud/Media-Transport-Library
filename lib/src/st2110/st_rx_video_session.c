@@ -1807,6 +1807,9 @@ static int rv_handle_frame_pkt(struct st_rx_video_session_impl* s, struct rte_mb
       slot->pkts_redundant_received++;
       return 0;
     }
+    if (pkt_idx != (slot->last_pkt_idx + 1)) {
+      s->stat_pkts_out_of_order++;
+    }
   } else {
     /* the first pkt should always dispatch to control thread */
     if (ctrl_thread) {
@@ -1832,6 +1835,7 @@ static int rv_handle_frame_pkt(struct st_rx_video_session_impl* s, struct rte_mb
       return -EIO;
     }
   }
+  slot->last_pkt_idx = pkt_idx;
 
   bool dma_copy = false;
   bool need_copy = true;
@@ -1986,6 +1990,9 @@ static int rv_handle_rtp_pkt(struct st_rx_video_session_impl* s, struct rte_mbuf
       s->stat_pkts_redundant_dropped++;
       return 0;
     }
+    if (pkt_idx != (slot->last_pkt_idx + 1)) {
+      s->stat_pkts_out_of_order++;
+    }
   } else {
     if (!slot->seq_id_got) { /* first packet */
       slot->seq_id_base = seq_id;
@@ -2004,6 +2011,7 @@ static int rv_handle_rtp_pkt(struct st_rx_video_session_impl* s, struct rte_mbuf
       return -EIO;
     }
   }
+  slot->last_pkt_idx = pkt_idx;
 
   /* enqueue the packet ring to app */
   int ret = rte_ring_sp_enqueue(s->rtps_ring, (void*)mbuf);
@@ -2137,6 +2145,9 @@ static int rv_handle_st22_pkt(struct st_rx_video_session_impl* s, struct rte_mbu
       slot->pkts_redundant_received++;
       return 0;
     }
+    if (pkt_idx != (slot->last_pkt_idx + 1)) {
+      s->stat_pkts_out_of_order++;
+    }
   } else {
     /* first packet */
     if (!pkt_counter) { /* first packet */
@@ -2160,6 +2171,7 @@ static int rv_handle_st22_pkt(struct st_rx_video_session_impl* s, struct rte_mbu
         __func__, s->idx, s_port, seq_id, tmstamp, p_counter, sep_counter,
         payload_length);
   }
+  slot->last_pkt_idx = pkt_idx;
 
   /* copy payload */
   uint32_t offset;
@@ -2280,6 +2292,9 @@ static int rv_handle_hdr_split_pkt(struct st_rx_video_session_impl* s,
       slot->pkts_redundant_received++;
       return 0;
     }
+    if (pkt_idx != (slot->last_pkt_idx + 1)) {
+      s->stat_pkts_out_of_order++;
+    }
   } else {
     if (!line1_number && !line1_offset) { /* first packet */
       slot->seq_id_base_u32 = seq_id_u32;
@@ -2295,6 +2310,7 @@ static int rv_handle_hdr_split_pkt(struct st_rx_video_session_impl* s,
       return -EIO;
     }
   }
+  slot->last_pkt_idx = pkt_idx;
 
   /* calculate offset */
   uint32_t offset =
@@ -3418,6 +3434,11 @@ static void rv_stat(struct st_rx_video_sessions_mgr* mgr,
            s->stat_pkts_no_slot);
     s->stat_pkts_no_slot = 0;
   }
+  if (s->stat_pkts_out_of_order) {
+    notice("RX_VIDEO_SESSION(%d,%d): out of order pkts %d\n", m_idx, idx,
+           s->stat_pkts_out_of_order);
+    s->stat_pkts_out_of_order = 0;
+  }
   if (s->stat_pkts_redundant_dropped) {
     notice("RX_VIDEO_SESSION(%d,%d): redundant dropped pkts %d\n", m_idx, idx,
            s->stat_pkts_redundant_dropped);
@@ -3760,7 +3781,7 @@ static int rv_sessions_stat(void* priv) {
   struct st_rx_video_session_impl* s;
 
   for (int j = 0; j < mgr->max_idx; j++) {
-    s = rx_video_session_get(mgr, j);
+    s = rx_video_session_try_get(mgr, j);
     if (!s) continue;
     rv_stat(mgr, s);
     rx_video_session_put(mgr, j);
@@ -4174,9 +4195,11 @@ int st20_rx_free(st20_rx_handle handle) {
   s = s_impl->impl;
   idx = s->idx;
   sch_idx = sch->idx;
+  notice("%s(%d,%d), start\n", __func__, sch_idx, idx);
 
-  /* no need to lock as session is located already */
+  mt_pthread_mutex_lock(&sch->rx_video_mgr_mutex);
   ret = st_rvs_mgr_detach(&sch->rx_video_mgr, s);
+  mt_pthread_mutex_unlock(&sch->rx_video_mgr_mutex);
   if (ret < 0)
     err("%s(%d,%d), st_rx_video_sessions_mgr_detach fail\n", __func__, sch_idx, idx);
 
@@ -4191,7 +4214,7 @@ int st20_rx_free(st20_rx_handle handle) {
   mt_pthread_mutex_unlock(&sch->rx_video_mgr_mutex);
 
   rte_atomic32_dec(&impl->st20_rx_sessions_cnt);
-  info("%s, succ on sch %d session %d\n", __func__, sch_idx, idx);
+  notice("%s, succ on sch %d session %d\n", __func__, sch_idx, idx);
   return 0;
 }
 
@@ -4528,8 +4551,9 @@ int st22_rx_free(st22_rx_handle handle) {
   idx = s->idx;
   sch_idx = sch->idx;
 
-  /* no need to lock as session is located already */
+  mt_pthread_mutex_lock(&sch->rx_video_mgr_mutex);
   ret = st_rvs_mgr_detach(&sch->rx_video_mgr, s);
+  mt_pthread_mutex_unlock(&sch->rx_video_mgr_mutex);
   if (ret < 0)
     err("%s(%d,%d), st_rx_video_sessions_mgr_detach fail\n", __func__, sch_idx, idx);
 

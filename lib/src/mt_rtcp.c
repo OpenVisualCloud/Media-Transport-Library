@@ -169,7 +169,7 @@ static int rtcp_rx_update_last_cont(struct mt_rtcp_rx* rx) {
   uint16_t last_cont = rx->last_cont;
   uint16_t last_seq = rx->last_seq;
   /* find the last continuous seq */
-  for (uint16_t i = last_cont + 1; i <= last_seq; i++) {
+  for (uint16_t i = last_cont + 1; rtp_seq_num_cmp(i, last_seq) <= 0; i++) {
     if (!mt_bitmap_test(rx->seq_bitmap, i % rx->seq_window_size)) break;
     rx->last_cont = i;
   }

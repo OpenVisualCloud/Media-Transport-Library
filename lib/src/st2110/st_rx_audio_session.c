@@ -895,7 +895,7 @@ static int st_rx_audio_sessions_stat(void* priv) {
   struct st_rx_audio_session_impl* s;
 
   for (int j = 0; j < mgr->max_idx; j++) {
-    s = rx_audio_session_get(mgr, j);
+    s = rx_audio_session_try_get(mgr, j);
     if (!s) continue;
     rx_audio_session_stat(mgr, s);
     rx_audio_session_put(mgr, j);
@@ -1040,7 +1040,7 @@ static int rx_audio_sessions_mgr_uinit(struct st_rx_audio_sessions_mgr* mgr) {
 
 static int rx_audio_ops_check(struct st30_rx_ops* ops) {
   int num_ports = ops->num_port, ret;
-  uint8_t* ip;
+  uint8_t* ip = NULL;
 
   if ((num_ports > MTL_SESSION_PORT_MAX) || (num_ports <= 0)) {
     err("%s, invalid num_ports %d\n", __func__, num_ports);
@@ -1123,6 +1123,8 @@ st30_rx_handle st30_rx_create(mtl_handle mt, struct st30_rx_ops* ops) {
   struct st_rx_audio_session_impl* s;
   int quota_mbs, ret;
 
+  notice("%s, start for %s\n", __func__, mt_string_safe(ops->name));
+
   if (impl->type != MT_HANDLE_MAIN) {
     err("%s, invalid type %d\n", __func__, impl->type);
     return NULL;
@@ -1176,7 +1178,7 @@ st30_rx_handle st30_rx_create(mtl_handle mt, struct st30_rx_ops* ops) {
   s->st30_handle = s_impl;
 
   rte_atomic32_inc(&impl->st30_rx_sessions_cnt);
-  info("%s, succ on sch %d session %d\n", __func__, sch->idx, s->idx);
+  notice("%s(%d,%d), succ on %p\n", __func__, sch->idx, s->idx, s);
   return s_impl;
 }
 
@@ -1227,9 +1229,11 @@ int st30_rx_free(st30_rx_handle handle) {
   idx = s->idx;
   sch = s_impl->sch;
   sch_idx = sch->idx;
+  notice("%s(%d,%d), start\n", __func__, sch_idx, idx);
 
-  /* no need to lock as session is located already */
+  mt_pthread_mutex_lock(&sch->rx_a_mgr_mutex);
   ret = rx_audio_sessions_mgr_detach(&sch->rx_a_mgr, s);
+  mt_pthread_mutex_unlock(&sch->rx_a_mgr_mutex);
   if (ret < 0) err("%s(%d, %d), mgr detach fail\n", __func__, sch_idx, idx);
 
   ret = mt_sch_put(sch, s_impl->quota_mbs);
@@ -1243,7 +1247,7 @@ int st30_rx_free(st30_rx_handle handle) {
   mt_pthread_mutex_unlock(&sch->rx_a_mgr_mutex);
 
   rte_atomic32_dec(&impl->st30_rx_sessions_cnt);
-  info("%s, succ on sch %d session %d\n", __func__, sch_idx, idx);
+  notice("%s(%d,%d), succ\n", __func__, sch_idx, idx);
   return 0;
 }
 
