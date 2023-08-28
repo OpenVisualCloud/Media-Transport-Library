@@ -163,5 +163,3 @@ The dir include the simple sample code for how to develop application quickly ba
 ```bash
 ./build/app/RxSt20pDynExtFrameSample --p_port 0000:af:01.1 --p_sip 192.168.75.22 --p_rx_ip 239.168.75.20
 ```
-## 9. v4l2 to IP sample
-[v4l2_to_ip_sample.c] (v4l2_to_ip/v4l2_to_ip_sample.c): A tx video(st2110-20) application based on frame interface, application reads a series of frames from the v4l2 API, transmits them as RTP stream over IP network.

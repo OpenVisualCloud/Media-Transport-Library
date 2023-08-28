@@ -44,6 +44,7 @@ subdir('tools')
 subdir('sample')
 subdir('perf')
 subdir('udp')
+subdir('v4l2_to_ip')
 
 app_c_args = []
 app_ld_args = []

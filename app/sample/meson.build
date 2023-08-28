@@ -40,6 +40,3 @@ video_tx_slice_sample_sources = files('low_level/tx_slice_video_sample.c', 'samp
 
 # dma
 dma_sample_sources = files('dma/dma_sample.c', 'sample_util.c')
-
-# v4l2 to IP sample
-v4l2_to_ip_sample_sources = files('v4l2_to_ip/v4l2_to_ip_sample.c')
