@@ -18,7 +18,7 @@ UZEL UM-H3910
 - Boot Options: iommu=pt intel_iommu=on hugepages=2048 rdt=!l3cat,!l2cat efi=runtime art=virtallow clocksource=tsc tsc=reliable no_ipi_broadcast=1 nosoftlockup idle=poll audit=0 nmi_watchdog=0 irqaffinity=0 noht isolcpus=1-3 rcu_nocbs=1-3 nohz_full=1-3 intel_pstate=disable intel.max_cstate=0 intel_idle.max_cstate=0 processor.max_cstate=0 processor_idle.max_cstate=0 vt.handoff=7
 - Complete all steps in doc#646935.
 ## Run
-```
+```bash
 sudo media-ctl -r
 sudo media-ctl -v -V "\"lt6911uxc a\":0 [fmt:UYVY/1920x1080]"
 sudo media-ctl -v -V "\"Intel IPU6 CSI-2 1\":0 [fmt:UYVY/1920x1080]"
@@ -29,7 +29,7 @@ sudo media-ctl -v -l "\"Intel IPU6 CSI2 BE SOC\":16 -> \"Intel IPU6 BE SOC captu
 sudo ./build/app/V4l2toIPApp /dev/video51 --log-status --ptp --tsn
 ```
 ## Expected Output
-```
+```bash
 MT: * *    M T    D E V   S T A T E   * *
 MT: DEV(0): Avr rate, tx: 1743.150045 Mb/s, rx: 0.017576 Mb/s, pkts, tx: 1646228, rx: 245
 MT: CNI(0): eth_rx_rate 0 Mb/s, eth_rx_cnt 245
