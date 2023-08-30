@@ -29,15 +29,6 @@ pacboy -S openssl:p gcc:p meson:p pkg-config:p json-c:p libpcap:p gtest:p SDL2:p
 
 ## 4. Install tools
 
-* Install mman (mmap for windows):
-
-```bash
-git clone https://github.com/alitrack/mman-win32
-cd mman-win32
-./configure --prefix=$MSYSTEM_PREFIX
-make && make install
-```
-
 * Install npcap SDK:
 
 ```bash
@@ -47,6 +38,15 @@ cp npcap-sdk/Lib/x64/* $MSYSTEM_PREFIX/lib/
 ```
 
 * Download and install npcap from <https://npcap.com/dist/npcap-1.60.exe>.
+
+* Install mman (mmap for windows):
+
+```bash
+git clone https://github.com/alitrack/mman-win32
+cd mman-win32
+./configure --prefix=$MSYSTEM_PREFIX
+make && make install
+```
 
 ## 5. Build DPDK
 
