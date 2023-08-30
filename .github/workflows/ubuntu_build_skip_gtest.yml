@@ -45,7 +45,7 @@ jobs:
           egress-policy: audit
 
       - run: 'echo "No gtest build required"'
-  
+
   Test:
     if: github.repository == 'OpenVisualCloud/Media-Transport-Library'
     runs-on: ubuntu-latest

@@ -16,14 +16,14 @@ inputs:
   dpdk:
     description: DPDK support version on Media Transport
     required: true
-    default: 23.03
+    default: 23.07
   tap:
     description: Enable TAP device
     required: true
     default: true
 
 runs:
-  using: "composite"
+  using: 'composite'
   steps:
     - name: Harden Runner
       uses: step-security/harden-runner@8ca2b8b2ece13480cda6dacd3511b49857a23c09 # v2.5.1
@@ -59,7 +59,7 @@ runs:
           ffnvcodec-headers:p
           nasm:p
           yasm:p
-            
+
     - name: Install tools
       shell: msys2 {0}
       run: |
@@ -93,7 +93,7 @@ runs:
         ls *.patch | xargs -I{} bash -c 'if [[ $(sed -n '1p' "{}") =~ ^../.*\.patch$ ]]; then cp "$(cat "{}")" "{}"; fi'
         cd windows
         ls *.patch | xargs -I{} bash -c 'if [[ $(sed -n '1p' "{}") =~ ^../.*\.patch$ ]]; then cp "$(cat "{}")" "{}"; fi'
-    
+
     - name: Apply patches for DPDK
       shell: bash
       run: |

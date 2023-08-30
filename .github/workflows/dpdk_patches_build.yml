@@ -12,7 +12,7 @@ on:
 
 env:
   # Customize the env if
-  DPDK_VERSION: 23.03
+  DPDK_VERSION: 23.07
 
 permissions:
   contents: read
@@ -28,52 +28,52 @@ jobs:
         os: [ubuntu-latest]
 
     steps:
-    - name: Harden Runner
-      uses: step-security/harden-runner@8ca2b8b2ece13480cda6dacd3511b49857a23c09 # v2.5.1
-      with:
-        egress-policy: audit
+      - name: Harden Runner
+        uses: step-security/harden-runner@8ca2b8b2ece13480cda6dacd3511b49857a23c09 # v2.5.1
+        with:
+          egress-policy: audit
 
-    - name: Update to latest git
-      run: |
-        apt-get update -y
-        apt-get install -y git
+      - name: Update to latest git
+        run: |
+          apt-get update -y
+          apt-get install -y git
 
-    - name: checkout kahawai repo
-      uses: actions/checkout@f43a0e5ff2bd294095638e18286ca9a3d1956744 # v3.6.0
+      - name: checkout kahawai repo
+        uses: actions/checkout@f43a0e5ff2bd294095638e18286ca9a3d1956744 # v3.6.0
 
-    - name: checkout dpdk repo
-      uses: actions/checkout@f43a0e5ff2bd294095638e18286ca9a3d1956744 # v3.6.0
-      with:
-        repository: 'DPDK/dpdk'
-        ref: v${{  env.DPDK_VERSION  }}
-        path: dpdk
+      - name: checkout dpdk repo
+        uses: actions/checkout@f43a0e5ff2bd294095638e18286ca9a3d1956744 # v3.6.0
+        with:
+          repository: 'DPDK/dpdk'
+          ref: v${{  env.DPDK_VERSION  }}
+          path: dpdk
 
-    - name: Install the build dependency
-      run: |
-        apt-get update -y
-        apt-get install -y sudo git gcc meson python3 python3-pip pkg-config libnuma-dev libjson-c-dev libpcap-dev libgtest-dev libsdl2-dev libsdl2-ttf-dev libssl-dev 
+      - name: Install the build dependency
+        run: |
+          apt-get update -y
+          apt-get install -y sudo git gcc meson python3 python3-pip pkg-config libnuma-dev libjson-c-dev libpcap-dev libgtest-dev libsdl2-dev libsdl2-ttf-dev libssl-dev
 
-    - name: Install the python package
-      run: pip install pyelftools==0.29 ninja==1.11.1
+      - name: Install the python package
+        run: pip install pyelftools==0.29 ninja==1.11.1
 
-    - name: Git config
-      run: |
-        git config --global user.email "you@example.com"
-        git config --global user.name "Your Name"
+      - name: Git config
+        run: |
+          git config --global user.email "you@example.com"
+          git config --global user.name "Your Name"
 
-    - name: Apply dpdk patches
-      run: |
-        cd dpdk
-        git am ../patches/dpdk/${{  env.DPDK_VERSION  }}/*.patch
+      - name: Apply dpdk patches
+        run: |
+          cd dpdk
+          git am ../patches/dpdk/${{  env.DPDK_VERSION  }}/*.patch
 
-    - name: Build dpdk
-      run: |
-        cd dpdk
-        meson build
-        ninja -C build
-        cd build
-        sudo ninja install
+      - name: Build dpdk
+        run: |
+          cd dpdk
+          meson build
+          ninja -C build
+          cd build
+          sudo ninja install
 
-    - name: Build
-      run: |
-        ./build.sh
+      - name: Build
+        run: |
+          ./build.sh

@@ -7,7 +7,7 @@ LABEL maintainer="frank.du@intel.com"
 
 ENV MTL_REPO=Media-Transport-Library
 ENV DPDK_REPO=dpdk
-ENV DPDK_VER=23.03
+ENV DPDK_VER=23.07
 ENV IMTL_USER=imtl
 
 RUN apt-get update -y

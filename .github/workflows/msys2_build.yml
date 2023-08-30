@@ -19,90 +19,90 @@ jobs:
         sys:
           - mingw64
           - ucrt64
-        dpdk: [22.11, 23.03]
+        dpdk: [23.07, 23.03]
     defaults:
       run:
         shell: msys2 {0}
     steps:
-    - name: Harden Runner
-      uses: step-security/harden-runner@8ca2b8b2ece13480cda6dacd3511b49857a23c09 # v2.5.1
-      with:
-        egress-policy: audit
+      - name: Harden Runner
+        uses: step-security/harden-runner@8ca2b8b2ece13480cda6dacd3511b49857a23c09 # v2.5.1
+        with:
+          egress-policy: audit
 
-    - name: Install dependencies
-      uses: msys2/setup-msys2@7efe20baefed56359985e327d329042cde2434ff # v2
-      with:
-        msystem: ${{matrix.sys}}
-        update: true
-        install: >-
-          git
-          base-devel
-          unzip
-        pacboy: >-
-          openssl:p
-          gcc:p
-          meson:p
-          pkg-config:p
-          json-c:p
-          libpcap:p
-          gtest:p
-          SDL2:p
-          SDL2_ttf:p
-          dlfcn:p
+      - name: Install dependencies
+        uses: msys2/setup-msys2@7efe20baefed56359985e327d329042cde2434ff # v2
+        with:
+          msystem: ${{matrix.sys}}
+          update: true
+          install: >-
+            git
+            base-devel
+            unzip
+          pacboy: >-
+            openssl:p
+            gcc:p
+            meson:p
+            pkg-config:p
+            json-c:p
+            libpcap:p
+            gtest:p
+            SDL2:p
+            SDL2_ttf:p
+            dlfcn:p
 
-    - name: Install tools
-      run: |
-        wget https://nmap.org/npcap/dist/npcap-sdk-1.12.zip
-        unzip -d npcap-sdk npcap-sdk-1.12.zip
-        cp npcap-sdk/Lib/x64/* $MSYSTEM_PREFIX/lib/
-        git clone https://github.com/alitrack/mman-win32
-        cd mman-win32
-        ./configure --prefix=$MSYSTEM_PREFIX
-        make && make install
+      - name: Install tools
+        run: |
+          wget https://nmap.org/npcap/dist/npcap-sdk-1.12.zip
+          unzip -d npcap-sdk npcap-sdk-1.12.zip
+          cp npcap-sdk/Lib/x64/* $MSYSTEM_PREFIX/lib/
+          git clone https://github.com/alitrack/mman-win32
+          cd mman-win32
+          ./configure --prefix=$MSYSTEM_PREFIX
+          make && make install
 
-    - name: Checkout IMTL repo
-      uses: actions/checkout@f43a0e5ff2bd294095638e18286ca9a3d1956744 # v3.6.0
+      - name: Checkout IMTL repo
+        uses: actions/checkout@f43a0e5ff2bd294095638e18286ca9a3d1956744 # v3.6.0
 
-    - name: Checkout DPDK repo
-      uses: actions/checkout@f43a0e5ff2bd294095638e18286ca9a3d1956744 # v3.6.0
-      with:
-        repository: 'DPDK/dpdk'
-        ref: v${{matrix.dpdk}}
-        path: dpdk
-        clean: true
+      - name: Checkout DPDK repo
+        uses: actions/checkout@f43a0e5ff2bd294095638e18286ca9a3d1956744 # v3.6.0
+        with:
+          repository: 'DPDK/dpdk'
+          ref: v${{matrix.dpdk}}
+          path: dpdk
+          clean: true
 
-    - name: Convert symlink patch files to real file
-      run: |
-        cd patches/dpdk/${{matrix.dpdk}}
-        ls *.patch | xargs -I{} bash -c 'if [[ $(sed -n '1p' "{}") =~ ^../.*\.patch$ ]]; then cp "$(cat "{}")" "{}"; fi'
-        cd windows
-        ls *.patch | xargs -I{} bash -c 'if [[ $(sed -n '1p' "{}") =~ ^../.*\.patch$ ]]; then cp "$(cat "{}")" "{}"; fi'
-    
-    - name: Apply patches for DPDK
-      shell: bash
-      run: |
-        cd dpdk
-        git config user.name github-actions
-        git config user.email github-actions@github.com
-        git am ../patches/dpdk/${{matrix.dpdk}}/*.patch
-        git am ../patches/dpdk/${{matrix.dpdk}}/windows/*.patch
+      - name: Convert symlink patch files to real file
+        run: |
+          cd patches/dpdk/${{matrix.dpdk}}
+          ls *.patch | xargs -I{} bash -c 'if [[ $(sed -n '1p' "{}") =~ ^../.*\.patch$ ]]; then cp "$(cat "{}")" "{}"; fi'
+          cd windows
+          ls *.patch | xargs -I{} bash -c 'if [[ $(sed -n '1p' "{}") =~ ^../.*\.patch$ ]]; then cp "$(cat "{}")" "{}"; fi'
 
-    - name: Build dpdk
-      run: |
-        cd dpdk
-        meson setup build
-        meson install -C build
+      - name: Apply patches for DPDK
+        shell: bash
+        run: |
+          cd dpdk
+          git config user.name github-actions
+          git config user.email github-actions@github.com
+          git am ../patches/dpdk/${{matrix.dpdk}}/*.patch
+          git am ../patches/dpdk/${{matrix.dpdk}}/windows/*.patch
 
-    - name: Build
-      run: |
-        ./build.sh
+      - name: Build dpdk
+        run: |
+          cd dpdk
+          meson setup build
+          meson install -C build
 
-    - name: Build with debug
-      run: |
-        rm build -rf
-        ./build.sh debugonly
+      - name: Build
+        run: |
+          ./build.sh
 
-    - name: Build with TAP
-      run: |
-        meson setup tap_build -Denable_tap=true
-        meson install -C tap_build
+      - name: Build with debug
+        run: |
+          rm build -rf
+          ./build.sh debugonly
+
+      - name: Build with TAP
+        run: |
+          meson setup tap_build -Denable_tap=true
+          meson install -C tap_build

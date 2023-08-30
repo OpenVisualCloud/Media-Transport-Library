@@ -114,13 +114,13 @@ export imtl_source_code=${PWD}/Media-Transport-Library
 
 ## 2. DPDK build and install
 
-### 2.1 Get DPDK 23.03 source code
+### 2.1 Get DPDK 23.07 source code
 
 ```bash
 git clone https://github.com/DPDK/dpdk.git
 cd dpdk
-git checkout v23.03
-git switch -c v23.03
+git checkout v23.07
+git switch -c v23.07
 cd ..
 ```
 
@@ -130,7 +130,7 @@ Note: $imtl_source_code should be pointed to top source code tree of Intel® Med
 
 ```bash
 cd dpdk
-git am $imtl_source_code/patches/dpdk/23.03/*.patch
+git am $imtl_source_code/patches/dpdk/23.07/*.patch
 ```
 
 ### 2.3 Build and install DPDK library
