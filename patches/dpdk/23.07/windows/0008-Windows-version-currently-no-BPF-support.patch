@@ -1,0 +1,25 @@
+From 1410565d4dfb6b08dc4ee072f2407018caf72418 Mon Sep 17 00:00:00 2001
+From: Ric Li <ming3.li@intel.com>
+Date: Wed, 30 Aug 2023 15:01:15 +0800
+Subject: [PATCH] Windows version currently no BPF support
+
+Signed-off-by: Ric Li <ming3.li@intel.com>
+---
+ app/test/meson.build | 1 -
+ 1 file changed, 1 deletion(-)
+
+diff --git a/app/test/meson.build b/app/test/meson.build
+index b89cf0368f..42895b56ef 100644
+--- a/app/test/meson.build
++++ b/app/test/meson.build
+@@ -15,7 +15,6 @@ test_sources = files(
+         'test_barrier.c',
+         'test_bitops.c',
+         'test_bitmap.c',
+-        'test_bpf.c',
+         'test_byteorder.c',
+         'test_cksum.c',
+         'test_cksum_perf.c',
+-- 
+2.34.1
+

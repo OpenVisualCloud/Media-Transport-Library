@@ -2,8 +2,9 @@
 
 ## Changelog for 23.12
 
-* ice: update driver to 1.11.17.1
+* ice: update driver to 1.12.6
 * log: add log to file support, see mtl_openlog_stream
+* dpdk: upgrade dpdk version to 23.07
 
 ## Changelog for 23.08
 

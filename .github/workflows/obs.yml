@@ -22,32 +22,32 @@ jobs:
         os: [ubuntu-latest]
 
     steps:
-    - name: Harden Runner
-      uses: step-security/harden-runner@8ca2b8b2ece13480cda6dacd3511b49857a23c09 # v2.5.1
-      with:
-        egress-policy: audit
+      - name: Harden Runner
+        uses: step-security/harden-runner@8ca2b8b2ece13480cda6dacd3511b49857a23c09 # v2.5.1
+        with:
+          egress-policy: audit
 
-    - uses: actions/checkout@f43a0e5ff2bd294095638e18286ca9a3d1956744 # v3.6.0
+      - uses: actions/checkout@f43a0e5ff2bd294095638e18286ca9a3d1956744 # v3.6.0
 
-    - name: Install the build dependency
-      run: |
-        apt-get update -y
-        apt-get install -y sudo git gcc meson python3 python3-pip pkg-config libnuma-dev libjson-c-dev libpcap-dev libgtest-dev libsdl2-dev libsdl2-ttf-dev libssl-dev
-        apt-get install -y dpdk-dev
-        apt-get install -y libobs-dev
+      - name: Install the build dependency
+        run: |
+          apt-get update -y
+          apt-get install -y sudo git gcc meson python3 python3-pip pkg-config libnuma-dev libjson-c-dev libpcap-dev libgtest-dev libsdl2-dev libsdl2-ttf-dev libssl-dev
+          apt-get install -y dpdk-dev
+          apt-get install -y libobs-dev
 
-    - name: Install the python package
-      run: pip install pyelftools==0.29 ninja==1.11.1
+      - name: Install the python package
+        run: pip install pyelftools==0.29 ninja==1.11.1
 
-    - name: Git config
-      run: |
-        git config --global user.email "you@example.com"
-        git config --global user.name "Your Name"
+      - name: Git config
+        run: |
+          git config --global user.email "you@example.com"
+          git config --global user.name "Your Name"
 
-    - name: Build
-      run: |
-        ./build.sh
+      - name: Build
+        run: |
+          ./build.sh
 
-    - name: Build obs plugin
-      run: |
-        ./script/build_obs_plugin.sh
+      - name: Build obs plugin
+        run: |
+          ./script/build_obs_plugin.sh

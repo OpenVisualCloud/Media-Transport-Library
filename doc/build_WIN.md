@@ -29,14 +29,7 @@ pacboy -S openssl:p gcc:p meson:p pkg-config:p json-c:p libpcap:p gtest:p SDL2:p
 
 ## 4. Install tools
 
-* Install mman (mmap for windows):
-
-```bash
-git clone https://github.com/alitrack/mman-win32
-cd mman-win32
-./configure --prefix=$MSYSTEM_PREFIX
-make && make install
-```
+* Download and install npcap from <https://npcap.com/dist/npcap-1.60.exe>.
 
 * Install npcap SDK:
 
@@ -46,7 +39,14 @@ unzip -d npcap-sdk npcap-sdk-1.12.zip
 cp npcap-sdk/Lib/x64/* $MSYSTEM_PREFIX/lib/
 ```
 
-* Download and install npcap from <https://npcap.com/dist/npcap-1.60.exe>.
+* Install mman (mmap for windows):
+
+```bash
+git clone https://github.com/alitrack/mman-win32
+cd mman-win32
+./configure --prefix=$MSYSTEM_PREFIX
+make && make install
+```
 
 ## 5. Build DPDK
 
@@ -54,15 +54,13 @@ cp npcap-sdk/Lib/x64/* $MSYSTEM_PREFIX/lib/
 
 ```bash
 git clone https://github.com/OpenVisualCloud/Media-Transport-Library.git
-cd Media-Transport-Library
+export imtl_source_code=${PWD}/Media-Transport-Library
 ```
-
-For all steps below, the default work dir is IMTL repository.
 
 * Convert symlink patch files to real file:
 
 ```bash
-cd patches/dpdk/23.03
+cd $imtl_source_code/patches/dpdk/23.07
 ls *.patch | xargs -I{} bash -c 'if [[ $(sed -n '1p' "{}") =~ ^../.*\.patch$ ]]; then cp "$(cat "{}")" "{}"; fi'
 cd windows
 ls *.patch | xargs -I{} bash -c 'if [[ $(sed -n '1p' "{}") =~ ^../.*\.patch$ ]]; then cp "$(cat "{}")" "{}"; fi'
@@ -71,21 +69,21 @@ ls *.patch | xargs -I{} bash -c 'if [[ $(sed -n '1p' "{}") =~ ^../.*\.patch$ ]];
 * Clone the DPDK repository and apply patches:
 
 ```bash
+cd $imtl_source_code
 git clone https://github.com/DPDK/dpdk.git
 cd dpdk
-git checkout v23.03
-git switch -c v23.03
+git checkout v23.07
+git switch -c v23.07
 
 git config user.name "Your Name"        # config if not
 git config user.email "you@example.com" # config if not
-git am ../patches/dpdk/23.03/*.patch
-git am ../patches/dpdk/23.03/windows/*.patch
+git am $imtl_source_code/patches/dpdk/23.07/*.patch
+git am $imtl_source_code/patches/dpdk/23.07/windows/*.patch
 ```
 
 * Build and install DPDK:
 
 ```bash
-cd dpdk
 meson setup build
 meson install -C build
 ```
@@ -93,6 +91,7 @@ meson install -C build
 ## 6. Build Intel® Media Transport Library and app
 
 ```bash
+cd $imtl_source_code
 ./build.sh
 ```
 

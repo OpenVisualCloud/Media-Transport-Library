@@ -8,8 +8,8 @@ set -e
 if [ -n "$1" ];  then
   dpdk_ver=$1
 else
-  # default to latest 23.03
-  dpdk_ver=23.03
+  # default to latest 23.07
+  dpdk_ver=23.07
 fi
 
 echo "DPDK version: $dpdk_ver"

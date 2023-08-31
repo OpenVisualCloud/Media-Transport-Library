@@ -30,14 +30,14 @@ on:
       - .github/workflows/ubuntu_build_with_gtest.yml
       - '.github/workflows/upl*'
 
-concurrency: 
+concurrency:
   group: ${{ github.head_ref || github.run_id }}
   cancel-in-progress: true
 
 env:
   # Customize the env if
   BUILD_TYPE: Release
-  DPDK_VERSION: 23.03
+  DPDK_VERSION: 23.07
   TEST_PF_PORT_P: 0000:af:00.0
   TEST_PF_PORT_R: 0000:af:00.0
   TEST_PORT_P: 0000:af:01.0
@@ -55,45 +55,45 @@ jobs:
     timeout-minutes: 60
 
     steps:
-    - name: Harden Runner
-      uses: step-security/harden-runner@8ca2b8b2ece13480cda6dacd3511b49857a23c09 # v2.5.1
-      with:
-        egress-policy: audit
+      - name: Harden Runner
+        uses: step-security/harden-runner@8ca2b8b2ece13480cda6dacd3511b49857a23c09 # v2.5.1
+        with:
+          egress-policy: audit
 
-    - name: checkout kahawai repo
-      uses: actions/checkout@f43a0e5ff2bd294095638e18286ca9a3d1956744 # v3.6.0
+      - name: checkout kahawai repo
+        uses: actions/checkout@f43a0e5ff2bd294095638e18286ca9a3d1956744 # v3.6.0
 
-    - name: checkout dpdk repo
-      uses: actions/checkout@f43a0e5ff2bd294095638e18286ca9a3d1956744 # v3.6.0
-      with:
-        repository: 'DPDK/dpdk'
-        ref: v${{  env.DPDK_VERSION  }}
-        path: dpdk
+      - name: checkout dpdk repo
+        uses: actions/checkout@f43a0e5ff2bd294095638e18286ca9a3d1956744 # v3.6.0
+        with:
+          repository: 'DPDK/dpdk'
+          ref: v${{  env.DPDK_VERSION  }}
+          path: dpdk
 
-    - name: Install the build dependency
-      run: |
-        sudo apt-get install -y git gcc meson python3 python3-pip pkg-config libnuma-dev libjson-c-dev libpcap-dev libgtest-dev libsdl2-dev libsdl2-ttf-dev libssl-dev
+      - name: Install the build dependency
+        run: |
+          sudo apt-get install -y git gcc meson python3 python3-pip pkg-config libnuma-dev libjson-c-dev libpcap-dev libgtest-dev libsdl2-dev libsdl2-ttf-dev libssl-dev
 
-    - name: Install the python package
-      run: pip install pyelftools==0.29 ninja==1.11.1
+      - name: Install the python package
+        run: pip install pyelftools==0.29 ninja==1.11.1
 
-    - name: Apply dpdk patches
-      run: |
-        cd dpdk
-        git am ../patches/dpdk/${{  env.DPDK_VERSION  }}/*.patch
+      - name: Apply dpdk patches
+        run: |
+          cd dpdk
+          git am ../patches/dpdk/${{  env.DPDK_VERSION  }}/*.patch
 
-    - name: Build dpdk
-      run: |
-        cd dpdk
-        meson build
-        ninja -C build
-        cd build
-        sudo ninja install
+      - name: Build dpdk
+        run: |
+          cd dpdk
+          meson build
+          ninja -C build
+          cd build
+          sudo ninja install
 
-    - name: Build
-      run: |
-        ./build.sh
-        sudo ldconfig
+      - name: Build
+        run: |
+          ./build.sh
+          sudo ldconfig
 
   Test:
     if: github.repository == 'OpenVisualCloud/Media-Transport-Library'

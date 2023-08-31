@@ -22,39 +22,39 @@ jobs:
         os: [ubuntu-latest]
 
     steps:
-    - name: Harden Runner
-      uses: step-security/harden-runner@8ca2b8b2ece13480cda6dacd3511b49857a23c09 # v2.5.1
-      with:
-        egress-policy: audit
+      - name: Harden Runner
+        uses: step-security/harden-runner@8ca2b8b2ece13480cda6dacd3511b49857a23c09 # v2.5.1
+        with:
+          egress-policy: audit
 
-    - uses: actions/checkout@f43a0e5ff2bd294095638e18286ca9a3d1956744 # v3.6.0
-    - uses: DoozyX/clang-format-lint-action@a83a8fb7d371f66da7dd1c4f33a193023899494b # v0.16
-      with:
-        source: '.'
-        extensions: 'hpp,h,cpp,c,cc'
+      - uses: actions/checkout@f43a0e5ff2bd294095638e18286ca9a3d1956744 # v3.6.0
+      - uses: DoozyX/clang-format-lint-action@a83a8fb7d371f66da7dd1c4f33a193023899494b # v0.16
+        with:
+          source: '.'
+          extensions: 'hpp,h,cpp,c,cc'
 
-    - name: Install the build dependency
-      run: |
-        yum install -y dnf-plugins-core
-        dnf config-manager --set-enabled powertools
-        yum install -y sudo git gcc gcc-c++ meson python3 python3-pip pkg-config json-c-devel libpcap-devel gtest-devel SDL2-devel openssl-devel numactl-devel libasan
-        yum install -y dpdk-devel
+      - name: Install the build dependency
+        run: |
+          yum install -y dnf-plugins-core
+          dnf config-manager --set-enabled powertools
+          yum install -y sudo git gcc gcc-c++ meson python3 python3-pip pkg-config json-c-devel libpcap-devel gtest-devel SDL2-devel openssl-devel numactl-devel libasan
+          yum install -y dpdk-devel
 
-    - name: Install the python package
-      run: pip3 install pyelftools==0.29
+      - name: Install the python package
+        run: pip3 install pyelftools==0.29
 
-    - name: Git config
-      run: |
-        git config --global user.email "you@example.com"
-        git config --global user.name "Your Name"
+      - name: Git config
+        run: |
+          git config --global user.email "you@example.com"
+          git config --global user.name "Your Name"
 
-    - name: Build
-      run: |
-        export PKG_CONFIG_PATH=/usr/local/lib64/pkgconfig/:/usr/local/lib/pkgconfig/
-        ./build.sh
+      - name: Build
+        run: |
+          export PKG_CONFIG_PATH=/usr/local/lib64/pkgconfig/:/usr/local/lib/pkgconfig/
+          ./build.sh
 
-    - name: Build with debug
-      run: |
-        rm build -rf
-        export PKG_CONFIG_PATH=/usr/local/lib64/pkgconfig/:/usr/local/lib/pkgconfig/
-        ./build.sh debug
+      - name: Build with debug
+        run: |
+          rm build -rf
+          export PKG_CONFIG_PATH=/usr/local/lib64/pkgconfig/:/usr/local/lib/pkgconfig/
+          ./build.sh debug
