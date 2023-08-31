@@ -41,7 +41,7 @@ Privilege is applied upon next logon. In particular, if privilege has been grant
 
 <git://dpdk.org/dpdk-kmods>
 
-Compile the virt2phys and netuio project using visual studio 2019, see README in dpdk-kmods repo.
+Compile the virt2phys and netuio project using visual studio 2019, see README in dpdk-kmods repository.
 
 ### 2.2 Then, execute command in cmd
 
