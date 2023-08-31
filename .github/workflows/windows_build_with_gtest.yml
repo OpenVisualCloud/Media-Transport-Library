@@ -43,7 +43,7 @@ permissions:
   contents: read
 
 jobs:
-  Build:
+  Win_Build:
     if: github.repository == 'OpenVisualCloud/Media-Transport-Library'
     runs-on: [Windows, self-hosted]
     timeout-minutes: 60
@@ -92,9 +92,9 @@ jobs:
         run: |
           ./build.sh
 
-  Test:
+  Win_Test:
     if: github.repository == 'OpenVisualCloud/Media-Transport-Library'
-    needs: Build
+    needs: Win_Build
     runs-on: [Windows, self-hosted]
     defaults:
       run:
