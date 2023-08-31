@@ -39,8 +39,9 @@ Privilege is applied upon next logon. In particular, if privilege has been grant
 
 ### 2.1 Download dpdk-kmods pack from
 
-git://dpdk.org/dpdk-kmods
-Compile the virt2phys and netuio project using visual studio 2019
+<git://dpdk.org/dpdk-kmods>
+
+Compile the virt2phys and netuio project using visual studio 2019, see README in dpdk-kmods repo.
 
 ### 2.2 Then, execute command in cmd
 
@@ -75,7 +76,7 @@ The previously installed drivers will now be installed for the "Virtual to physi
 
 ## 3. Steps for netuio driver
 
-### 3.1 Use devcon install netuio driver
+### 3.1 Use devcon to install netuio driver
 
 execute command:
 
@@ -83,7 +84,7 @@ execute command:
 devcon.exe update netuio.inf "PCI\VEN_8086&DEV_1592"
 ```
 
-You can change "1592" per your NIC type.
+"1592" is for E810, You can change it per your NIC type.
 
 ### 3.2 Manually install netuio driver
 
@@ -112,6 +113,8 @@ ice_dev_init(): Failed to load the DDP package, Use safe-mode-support=1 to enter
 ```
 
 ### 4.3 Create the temp folder in root directory c:\temp
+
+The library will generate or search for `kahawai.lcore` file in this path.
 
 ## 5. Run and test
 

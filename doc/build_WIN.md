@@ -29,6 +29,8 @@ pacboy -S openssl:p gcc:p meson:p pkg-config:p json-c:p libpcap:p gtest:p SDL2:p
 
 ## 4. Install tools
 
+* Download and install npcap from <https://npcap.com/dist/npcap-1.60.exe>.
+
 * Install npcap SDK:
 
 ```bash
@@ -36,8 +38,6 @@ wget https://nmap.org/npcap/dist/npcap-sdk-1.12.zip
 unzip -d npcap-sdk npcap-sdk-1.12.zip
 cp npcap-sdk/Lib/x64/* $MSYSTEM_PREFIX/lib/
 ```
-
-* Download and install npcap from <https://npcap.com/dist/npcap-1.60.exe>.
 
 * Install mman (mmap for windows):
 
