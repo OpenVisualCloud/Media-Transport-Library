@@ -28,14 +28,14 @@ on:
       - VERSION
       - .github/workflows/windows_build_with_gtest.yml
 
-concurrency: 
+concurrency:
   group: ${{ github.head_ref || github.run_id }}
   cancel-in-progress: true
 
 env:
   # Customize the env if
   BUILD_TYPE: Release
-  DPDK_VERSION: 23.03
+  DPDK_VERSION: 23.07
   TEST_PORT_P: 0000:af:00.0
   TEST_PORT_R: 0000:af:00.1
 
@@ -51,46 +51,46 @@ jobs:
       run:
         shell: bash
     steps:
-    - name: Harden Runner
-      uses: step-security/harden-runner@8ca2b8b2ece13480cda6dacd3511b49857a23c09 # v2.5.1
-      with:
-        egress-policy: audit
+      - name: Harden Runner
+        uses: step-security/harden-runner@8ca2b8b2ece13480cda6dacd3511b49857a23c09 # v2.5.1
+        with:
+          egress-policy: audit
 
-    - name: Checkout IMTL repo
-      uses: actions/checkout@c85c95e3d7251135ab7dc9ce3241c5835cc595a9 # v3.5.3
+      - name: Checkout IMTL repo
+        uses: actions/checkout@c85c95e3d7251135ab7dc9ce3241c5835cc595a9 # v3.5.3
 
-    - name: Checkout DPDK repo
-      uses: actions/checkout@c85c95e3d7251135ab7dc9ce3241c5835cc595a9 # v3.5.3
-      with:
-        repository: 'DPDK/dpdk'
-        ref: v${{  env.DPDK_VERSION  }}
-        path: dpdk
-        clean: true
+      - name: Checkout DPDK repo
+        uses: actions/checkout@c85c95e3d7251135ab7dc9ce3241c5835cc595a9 # v3.5.3
+        with:
+          repository: 'DPDK/dpdk'
+          ref: v${{  env.DPDK_VERSION  }}
+          path: dpdk
+          clean: true
 
-    - name: Convert symlink patch files to real file
-      run: |
-        cd patches/dpdk/${{  env.DPDK_VERSION  }}
-        ls *.patch | xargs -I{} bash -c 'if [[ $(sed -n '1p' "{}") =~ ^../.*\.patch$ ]]; then cp "$(cat "{}")" "{}"; fi'
-        cd windows
-        ls *.patch | xargs -I{} bash -c 'if [[ $(sed -n '1p' "{}") =~ ^../.*\.patch$ ]]; then cp "$(cat "{}")" "{}"; fi'
-    
-    - name: Apply patches for DPDK
-      run: |
-        cd dpdk
-        git config user.name github-actions
-        git config user.email github-actions@github.com
-        git am ../patches/dpdk/${{  env.DPDK_VERSION  }}/*.patch
-        git am ../patches/dpdk/${{  env.DPDK_VERSION  }}/windows/*.patch
+      - name: Convert symlink patch files to real file
+        run: |
+          cd patches/dpdk/${{  env.DPDK_VERSION  }}
+          ls *.patch | xargs -I{} bash -c 'if [[ $(sed -n '1p' "{}") =~ ^../.*\.patch$ ]]; then cp "$(cat "{}")" "{}"; fi'
+          cd windows
+          ls *.patch | xargs -I{} bash -c 'if [[ $(sed -n '1p' "{}") =~ ^../.*\.patch$ ]]; then cp "$(cat "{}")" "{}"; fi'
 
-    - name: Build dpdk
-      run: |
-        cd dpdk
-        meson setup build
-        meson install -C build
+      - name: Apply patches for DPDK
+        run: |
+          cd dpdk
+          git config user.name github-actions
+          git config user.email github-actions@github.com
+          git am ../patches/dpdk/${{  env.DPDK_VERSION  }}/*.patch
+          git am ../patches/dpdk/${{  env.DPDK_VERSION  }}/windows/*.patch
 
-    - name: Build
-      run: |
-        ./build.sh
+      - name: Build dpdk
+        run: |
+          cd dpdk
+          meson setup build
+          meson install -C build
+
+      - name: Build
+        run: |
+          ./build.sh
 
   Test:
     if: github.repository == 'OpenVisualCloud/Media-Transport-Library'
@@ -106,7 +106,6 @@ jobs:
           egress-policy: audit
 
       - name: Kill previous gtest routine
-        shell: bash
         run: |
           taskkill //f //im  KahawaiTest.exe || true
 
