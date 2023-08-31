@@ -1,0 +1,70 @@
+From 6800337c4ed9f2db1702983190d4fac40a9d245c Mon Sep 17 00:00:00 2001
+From: Ric Li <ming3.li@intel.com>
+Date: Thu, 31 Aug 2023 10:02:00 +0800
+Subject: [PATCH] Use MinGW pthread implementations
+
+Signed-off-by: Ric Li <ming3.li@intel.com>
+---
+ lib/eal/windows/include/pthread.h | 39 +++++++++++++++++++++++++++++++
+ 1 file changed, 39 insertions(+)
+
+diff --git a/lib/eal/windows/include/pthread.h b/lib/eal/windows/include/pthread.h
+index 051b9311c2..101f8a7d12 100644
+--- a/lib/eal/windows/include/pthread.h
++++ b/lib/eal/windows/include/pthread.h
+@@ -42,6 +42,7 @@ typedef SYNCHRONIZATION_BARRIER pthread_barrier_t;
+ 	!DeleteSynchronizationBarrier(barrier)
+ #define pthread_cancel(thread) !TerminateThread((HANDLE) thread, 0)
+ 
++#ifndef __MINGW32__
+ static inline int
+ pthread_create(void *threadid, const void *threadattr, void *threadfunc,
+ 		void *args)
+@@ -86,6 +87,44 @@ pthread_mutex_destroy(pthread_mutex_t *mutex)
+ 	DeleteCriticalSection(mutex);
+ 	return 0;
+ }
++#else
++int pthread_create(void *threadid, const void *threadattr,
++		void *threadfunc, void *args);
++int pthread_mutex_init(pthread_mutex_t *mutex, pthread_mutexattr_t *attr);
++int pthread_mutex_lock(pthread_mutex_t *mutex);
++int pthread_mutex_unlock(pthread_mutex_t *mutex);
++int pthread_mutex_destroy(pthread_mutex_t *mutex);
++#endif /* not __MINGW32__ */
++
++static inline int
++pthread_setaffinity_np(pthread_t threadid, size_t cpuset_size,
++			rte_cpuset_t *cpuset)
++{
++	DWORD_PTR ret = 0;
++	HANDLE thread_handle;
++
++	if (cpuset == NULL || cpuset_size == 0)
++		return -1;
++
++	thread_handle = OpenThread(THREAD_ALL_ACCESS, FALSE, threadid);
++	if (thread_handle == NULL) {
++		RTE_LOG_WIN32_ERR("OpenThread()");
++		return -1;
++	}
++
++	ret = SetThreadAffinityMask(thread_handle, *cpuset->_bits);
++	if (ret == 0) {
++		RTE_LOG_WIN32_ERR("SetThreadAffinityMask()");
++		goto close_handle;
++	}
++
++close_handle:
++	if (CloseHandle(thread_handle) == 0) {
++		RTE_LOG_WIN32_ERR("CloseHandle()");
++		return -1;
++	}
++	return (ret == 0) ? -1 : 0;
++}
+ 
+ #ifdef __cplusplus
+ }
+-- 
+2.34.1
+

@@ -131,6 +131,7 @@ int pthread_cond_timedwait(pthread_cond_t* cond, pthread_mutex_t* mutex,
                            const struct timespec* time);
 int pthread_cond_destroy(pthread_cond_t* cv);
 int pthread_mutex_trylock(pthread_mutex_t* mutex);
+int pthread_join(pthread_t thread, void** res);
 
 #ifdef __MTL_LIB_BUILD__
 static inline pid_t getpid() { return GetCurrentProcessId(); }
