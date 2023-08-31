@@ -1,15 +1,15 @@
-From 6800337c4ed9f2db1702983190d4fac40a9d245c Mon Sep 17 00:00:00 2001
+From a9cd03b47a2d836061a980f3305fa319769f1a5a Mon Sep 17 00:00:00 2001
 From: Ric Li <ming3.li@intel.com>
 Date: Thu, 31 Aug 2023 10:02:00 +0800
 Subject: [PATCH] Use MinGW pthread implementations
 
 Signed-off-by: Ric Li <ming3.li@intel.com>
 ---
- lib/eal/windows/include/pthread.h | 39 +++++++++++++++++++++++++++++++
- 1 file changed, 39 insertions(+)
+ lib/eal/windows/include/pthread.h | 40 +++++++++++++++++++++++++++++++
+ 1 file changed, 40 insertions(+)
 
 diff --git a/lib/eal/windows/include/pthread.h b/lib/eal/windows/include/pthread.h
-index 051b9311c2..101f8a7d12 100644
+index 051b9311c2..1d140774ef 100644
 --- a/lib/eal/windows/include/pthread.h
 +++ b/lib/eal/windows/include/pthread.h
 @@ -42,6 +42,7 @@ typedef SYNCHRONIZATION_BARRIER pthread_barrier_t;
@@ -20,7 +20,7 @@ index 051b9311c2..101f8a7d12 100644
  static inline int
  pthread_create(void *threadid, const void *threadattr, void *threadfunc,
  		void *args)
-@@ -86,6 +87,44 @@ pthread_mutex_destroy(pthread_mutex_t *mutex)
+@@ -86,6 +87,45 @@ pthread_mutex_destroy(pthread_mutex_t *mutex)
  	DeleteCriticalSection(mutex);
  	return 0;
  }
@@ -31,6 +31,7 @@ index 051b9311c2..101f8a7d12 100644
 +int pthread_mutex_lock(pthread_mutex_t *mutex);
 +int pthread_mutex_unlock(pthread_mutex_t *mutex);
 +int pthread_mutex_destroy(pthread_mutex_t *mutex);
++int pthread_join(pthread_t thread, void** res);
 +#endif /* not __MINGW32__ */
 +
 +static inline int
