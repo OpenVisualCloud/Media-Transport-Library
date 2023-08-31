@@ -47,9 +47,7 @@ jobs:
     if: github.repository == 'OpenVisualCloud/Media-Transport-Library'
     runs-on: [Windows, self-hosted]
     timeout-minutes: 60
-    defaults:
-      run:
-        shell: bash
+
     steps:
       - name: Harden Runner
         uses: step-security/harden-runner@8ca2b8b2ece13480cda6dacd3511b49857a23c09 # v2.5.1
@@ -73,6 +71,7 @@ jobs:
           ls *.patch | xargs -I{} bash -c 'if [[ $(sed -n '1p' "{}") =~ ^../.*\.patch$ ]]; then cp "$(cat "{}")" "{}"; fi'
           cd windows
           ls *.patch | xargs -I{} bash -c 'if [[ $(sed -n '1p' "{}") =~ ^../.*\.patch$ ]]; then cp "$(cat "{}")" "{}"; fi'
+        shell: bash
 
       - name: Apply patches for DPDK
         run: |
@@ -81,24 +80,25 @@ jobs:
           git config user.email github-actions@github.com
           git am ../patches/dpdk/${{  env.DPDK_VERSION  }}/*.patch
           git am ../patches/dpdk/${{  env.DPDK_VERSION  }}/windows/*.patch
+        shell: bash
 
       - name: Build dpdk
         run: |
           cd dpdk
           meson setup build
           meson install -C build
+        shell: bash
 
       - name: Build
         run: |
           ./build.sh
+        shell: bash
 
   Win_Test:
     if: github.repository == 'OpenVisualCloud/Media-Transport-Library'
     needs: Win_Build
     runs-on: [Windows, self-hosted]
-    defaults:
-      run:
-        shell: bash
+
     steps:
       - name: Harden Runner
         uses: step-security/harden-runner@8ca2b8b2ece13480cda6dacd3511b49857a23c09 # v2.5.1
@@ -112,3 +112,4 @@ jobs:
       - name: Run st2110 test case
         run: |
           ./build/tests/KahawaiTest --auto_start_stop --p_port ${{  env.TEST_PORT_P  }} --r_port ${{  env.TEST_PORT_R  }} --gtest_filter=-St22_?x.*
+        shell: bash

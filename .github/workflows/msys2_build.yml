@@ -50,15 +50,11 @@ jobs:
             SDL2_ttf:p
             dlfcn:p
 
-      - name: Install tools
+      - name: Install npcap-sdk
         run: |
           wget https://nmap.org/npcap/dist/npcap-sdk-1.12.zip
           unzip -d npcap-sdk npcap-sdk-1.12.zip
-          cp npcap-sdk/Lib/x64/* $MSYSTEM_PREFIX/lib/
-          git clone https://github.com/alitrack/mman-win32
-          cd mman-win32
-          ./configure --prefix=$MSYSTEM_PREFIX
-          make && make install
+          cp npcap-sdk/Lib/x64/* ${MSYSTEM_PREFIX}/lib/
 
       - name: Checkout IMTL repo
         uses: actions/checkout@f43a0e5ff2bd294095638e18286ca9a3d1956744 # v3.6.0
@@ -70,6 +66,19 @@ jobs:
           ref: v${{matrix.dpdk}}
           path: dpdk
           clean: true
+
+      - name: Checkout mman-win32 repo
+        uses: actions/checkout@f43a0e5ff2bd294095638e18286ca9a3d1956744 # v3.6.0
+        with:
+          repository: 'alitrack/mman-win32'
+          ref: master
+          path: mman-win32
+
+      - name: Build and install mman-win32
+        run: |
+          cd mman-win32
+          ./configure --prefix=${MSYSTEM_PREFIX}
+          make -j$(nproc) && make install
 
       - name: Convert symlink patch files to real file
         run: |
