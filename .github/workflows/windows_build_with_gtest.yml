@@ -43,7 +43,7 @@ permissions:
   contents: read
 
 jobs:
-  Win_Build:
+  Build_and_Test:
     if: github.repository == 'OpenVisualCloud/Media-Transport-Library'
     runs-on: [Windows, self-hosted]
     timeout-minutes: 60
@@ -106,7 +106,7 @@ jobs:
           cd windows
           ls *.patch | xargs -I{} bash -c 'if [[ $(sed -n '1p' "{}") =~ ^../.*\.patch$ ]]; then cp "$(cat "{}")" "{}"; fi'
 
-      - name: Hash DPDK Patches
+      - name: Hash DPDK patches
         id: hash-patches
         run: |
           HASH=$(sha1sum patches/dpdk/${{ env.DPDK_VERSION }}/*.patch patches/dpdk/${{ env.DPDK_VERSION }}/windows/*.patch | sha1sum | cut -d" " -f1)
@@ -150,22 +150,11 @@ jobs:
           cd dpdk
           meson install -C build
 
-      - name: Build
+      - name: Build gtest
         run: |
-          ./build.sh
-
-  Win_Test:
-    if: github.repository == 'OpenVisualCloud/Media-Transport-Library'
-    needs: Win_Build
-    runs-on: [Windows, self-hosted]
-    defaults:
-      run:
-        shell: msys2 {0}
-    steps:
-      - name: Harden Runner
-        uses: step-security/harden-runner@8ca2b8b2ece13480cda6dacd3511b49857a23c09 # v2.5.1
-        with:
-          egress-policy: audit
+          cd tests
+          meson setup build
+          meson compile -C build
 
       - name: Kill previous gtest routine
         shell: cmd
@@ -174,4 +163,4 @@ jobs:
 
       - name: Run st2110 test case
         run: |
-          ./build/tests/KahawaiTest --auto_start_stop --p_port ${{  env.TEST_PORT_P  }} --r_port ${{  env.TEST_PORT_R  }} --gtest_filter=-St22_?x.*
+          ./build/KahawaiTest --auto_start_stop --p_port ${{  env.TEST_PORT_P  }} --r_port ${{  env.TEST_PORT_R  }} --gtest_filter=-St22_?x.*
