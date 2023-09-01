@@ -130,7 +130,7 @@ jobs:
       
       - name: Apply patches for DPDK
         if: ${{ steps.cache-dpdk.outputs.cache-hit != 'true' }}
-        shell: pwsh
+        shell: cmd
         run: |
           cd dpdk
           git config user.name github-actions
