@@ -29,7 +29,7 @@ on:
       - .github/workflows/windows_build_with_gtest.yml
 
 concurrency:
-  group: ${{ github.head_ref || github.run_id }}
+  group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
 env:
@@ -83,10 +83,10 @@ jobs:
           unzip -d npcap-sdk npcap-sdk-1.12.zip
           cp npcap-sdk/Lib/x64/* ${MSYSTEM_PREFIX}/lib/
 
-      - name: Checkout IMTL repo
+      - name: Checkout IMTL code
         uses: actions/checkout@f43a0e5ff2bd294095638e18286ca9a3d1956744 # v3.6.0
 
-      - name: Checkout mman-win32 repo
+      - name: Checkout mman-win32 code
         uses: actions/checkout@f43a0e5ff2bd294095638e18286ca9a3d1956744 # v3.6.0
         with:
           repository: 'alitrack/mman-win32'
@@ -99,7 +99,7 @@ jobs:
           ./configure --prefix=${MSYSTEM_PREFIX}
           make -j$(nproc) && make install
 
-      - name: Checkout DPDK repo
+      - name: Checkout DPDK code
         uses: actions/checkout@f43a0e5ff2bd294095638e18286ca9a3d1956744 # v3.6.0
         with:
           repository: 'DPDK/dpdk'
@@ -119,26 +119,19 @@ jobs:
           path: dpdk
           key: dpdk-${DPDK_VERSION}-${DPDK_VERSION}-${{ steps.hash-patches.outputs.hash }}
 
-      - name: Convert symlink patch files to real file
+      - name: Build and install DPDK
+        if: steps.cache-dpdk.outputs.cache-hit != 'true'
+        shell: bash
         run: |
           cd patches/dpdk/${DPDK_VERSION}
           ls *.patch | xargs -I{} bash -c 'if [[ $(sed -n '1p' "{}") =~ ^../.*\.patch$ ]]; then cp "$(cat "{}")" "{}"; fi'
           cd windows
           ls *.patch | xargs -I{} bash -c 'if [[ $(sed -n '1p' "{}") =~ ^../.*\.patch$ ]]; then cp "$(cat "{}")" "{}"; fi'
-
-      - name: Apply patches for DPDK
-        shell: bash
-        run: |
-          cd dpdk
+          cd ../../../dpdk
           git config user.name github-actions
           git config user.email github-actions@github.com
           git am ../patches/dpdk/${DPDK_VERSION}/*.patch
           git am ../patches/dpdk/${DPDK_VERSION}/windows/*.patch
-
-      - name: Build and install DPDK
-        if: steps.cache-dpdk.outputs.cache-hit != 'true'
-        run: |
-          cd dpdk
           meson setup build
           meson install -C build
 
