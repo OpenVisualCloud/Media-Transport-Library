@@ -110,7 +110,7 @@ jobs:
         uses: actions/cache@v3
         with:
           path: dpdk
-          key: dpdk-${DPDK_VERSION}-${MSYSTEM}-${{ steps.hash-patches.outputs.hash }}
+          key: dpdk-${DPDK_VERSION}-winself-${{ steps.hash-patches.outputs.hash }}
   
       - name: Checkout DPDK code
         if: ${{ steps.cache-dpdk.outputs.cache-hit != 'true' }}
