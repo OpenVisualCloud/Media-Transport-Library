@@ -120,15 +120,20 @@ jobs:
           ref: v${DPDK_VERSION}
           path: dpdk
           clean: true
-  
-      - name: Apply patches for DPDK
+
+      - name: Convert patches for DPDK
         if: ${{ steps.cache-dpdk.outputs.cache-hit != 'true' }}
         run: |
-          pushd patches/dpdk/${DPDK_VERSION}
+          cd patches/dpdk/${DPDK_VERSION}
           ls *.patch | xargs -I{} bash -c 'if [[ $(sed -n '1p' "{}") =~ ^../.*\.patch$ ]]; then cp "$(cat "{}")" "{}"; fi'
           cd windows
           ls *.patch | xargs -I{} bash -c 'if [[ $(sed -n '1p' "{}") =~ ^../.*\.patch$ ]]; then cp "$(cat "{}")" "{}"; fi'
-          popd && cd dpdk
+
+      - name: Apply patches for DPDK
+        if: ${{ steps.cache-dpdk.outputs.cache-hit != 'true' }}
+        shell: bash
+        run: |
+          cd dpdk
           git config user.name github-actions
           git config user.email github-actions@github.com
           git am ../patches/dpdk/${DPDK_VERSION}/*.patch
