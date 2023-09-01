@@ -119,7 +119,6 @@ jobs:
           repository: 'DPDK/dpdk'
           ref: v${DPDK_VERSION}
           path: dpdk
-          clean: true
 
       - name: Convert patches for DPDK
         if: ${{ steps.cache-dpdk.outputs.cache-hit != 'true' }}
