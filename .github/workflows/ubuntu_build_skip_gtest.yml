@@ -16,7 +16,6 @@ on:
       - meson_options.txt
       - VERSION
       - .github/workflows/ubuntu_build_with_gtest.yml
-      - .github/workflows/windows_build_with_gtest.yml
   pull_request:
     paths-ignore:
       - 'include/**'
@@ -29,7 +28,6 @@ on:
       - meson_options.txt
       - VERSION
       - .github/workflows/ubuntu_build_with_gtest.yml
-      - .github/workflows/windows_build_with_gtest.yml
 
 permissions:
   contents: read
