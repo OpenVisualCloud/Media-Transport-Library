@@ -130,13 +130,12 @@ jobs:
       
       - name: Apply patches for DPDK
         if: ${{ steps.cache-dpdk.outputs.cache-hit != 'true' }}
-        shell: cmd
         run: |
           cd dpdk
           git config user.name github-actions
           git config user.email github-actions@github.com
-          git am ../patches/dpdk/${{ env.DPDK_VERSION }}/*.patch
-          git am ../patches/dpdk/${{ env.DPDK_VERSION }}/windows/*.patch
+          for f in ../patches/dpdk/${{ env.DPDK_VERSION }}/*.patch; do patch -p1 < "$f"; done
+          for f in ../patches/dpdk/${{ env.DPDK_VERSION }}/windows/*.patch; do patch -p1 < "$f"; done
 
       - name: Build and install DPDK
         if: ${{ steps.cache-dpdk.outputs.cache-hit != 'true' }}
