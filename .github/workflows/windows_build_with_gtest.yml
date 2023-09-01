@@ -99,6 +99,13 @@ jobs:
           ./configure --prefix=${MSYSTEM_PREFIX}
           make -j$(nproc) && make install
 
+      - name: Convert patches for DPDK
+        run: |
+          cd patches/dpdk/${{ env.DPDK_VERSION }}
+          ls *.patch | xargs -I{} bash -c 'if [[ $(sed -n '1p' "{}") =~ ^../.*\.patch$ ]]; then cp "$(cat "{}")" "{}"; fi'
+          cd windows
+          ls *.patch | xargs -I{} bash -c 'if [[ $(sed -n '1p' "{}") =~ ^../.*\.patch$ ]]; then cp "$(cat "{}")" "{}"; fi'
+
       - name: Hash DPDK Patches
         id: hash-patches
         run: |
@@ -120,19 +127,16 @@ jobs:
           ref: v${{ env.DPDK_VERSION }}
           path: dpdk
           clean: true
-
+      
       - name: Apply patches for DPDK
         if: ${{ steps.cache-dpdk.outputs.cache-hit != 'true' }}
         run: |
-          pushd patches/dpdk/${{ env.DPDK_VERSION }}
-          ls *.patch | xargs -I{} bash -c 'if [[ $(sed -n '1p' "{}") =~ ^../.*\.patch$ ]]; then cp "$(cat "{}")" "{}"; fi'
-          cd windows
-          ls *.patch | xargs -I{} bash -c 'if [[ $(sed -n '1p' "{}") =~ ^../.*\.patch$ ]]; then cp "$(cat "{}")" "{}"; fi'
-          popd && cd dpdk
+          cd dpdk
           git config user.name github-actions
           git config user.email github-actions@github.com
-          bash -c 'git am ../patches/dpdk/${{ env.DPDK_VERSION }}/*.patch'
-          bash -c 'git am ../patches/dpdk/${{ env.DPDK_VERSION }}/windows/*.patch'
+          git update-index --refresh
+          git am ../patches/dpdk/${{ env.DPDK_VERSION }}/*.patch
+          git am ../patches/dpdk/${{ env.DPDK_VERSION }}/windows/*.patch
 
       - name: Build and install DPDK
         if: ${{ steps.cache-dpdk.outputs.cache-hit != 'true' }}
