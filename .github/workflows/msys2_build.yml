@@ -35,7 +35,6 @@ jobs:
           msystem: ${{matrix.sys}}
           update: true
           install: >-
-            git
             base-devel
             unzip
           pacboy: >-
@@ -107,7 +106,6 @@ jobs:
           cd dpdk
           git config user.name github-actions
           git config user.email github-actions@github.com
-          git switch -c v${{matrix.dpdk}}
           git am ../patches/dpdk/${{matrix.dpdk}}/*.patch
           git am ../patches/dpdk/${{matrix.dpdk}}/windows/*.patch
 
