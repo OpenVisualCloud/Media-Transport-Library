@@ -121,9 +121,8 @@ jobs:
           path: dpdk
           clean: true
   
-      - name: Build and install DPDK
+      - name: Apply patches for DPDK
         if: ${{ steps.cache-dpdk.outputs.cache-hit != 'true' }}
-        shell: bash
         run: |
           pushd patches/dpdk/${DPDK_VERSION}
           ls *.patch | xargs -I{} bash -c 'if [[ $(sed -n '1p' "{}") =~ ^../.*\.patch$ ]]; then cp "$(cat "{}")" "{}"; fi'
@@ -134,9 +133,14 @@ jobs:
           git config user.email github-actions@github.com
           git am ../patches/dpdk/${DPDK_VERSION}/*.patch
           git am ../patches/dpdk/${DPDK_VERSION}/windows/*.patch
+
+      - name: Build and install DPDK
+        if: ${{ steps.cache-dpdk.outputs.cache-hit != 'true' }}
+        run: |
+          cd dpdk
           meson setup build
-          meson install -C build
-  
+          meson install -C build          
+
       - name: Install cached DPDK
         if: ${{ steps.cache-dpdk.outputs.cache-hit == 'true' }}
         run: |
