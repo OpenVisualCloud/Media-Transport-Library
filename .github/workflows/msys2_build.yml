@@ -96,11 +96,11 @@ jobs:
         if: steps.cache-dpdk.outputs.cache-hit != 'true'
         shell: bash
         run: |
-          cd patches/dpdk/${{matrix.dpdk}}
+          pushd patches/dpdk/${{matrix.dpdk}}
           ls *.patch | xargs -I{} bash -c 'if [[ $(sed -n '1p' "{}") =~ ^../.*\.patch$ ]]; then cp "$(cat "{}")" "{}"; fi'
           cd windows
           ls *.patch | xargs -I{} bash -c 'if [[ $(sed -n '1p' "{}") =~ ^../.*\.patch$ ]]; then cp "$(cat "{}")" "{}"; fi'
-          cd ../../../dpdk
+          popd && cd dpdk
           git config user.name github-actions
           git config user.email github-actions@github.com
           git am ../patches/dpdk/${{matrix.dpdk}}/*.patch
