@@ -170,7 +170,7 @@ jobs:
       - name: Kill previous gtest routine
         shell: cmd
         run: |
-          taskkill //f //im KahawaiTest.exe          
+          taskkill /f /im KahawaiTest.exe          
 
       - name: Run st2110 test case
         run: |
