@@ -35,6 +35,7 @@ jobs:
           msystem: ${{matrix.sys}}
           update: true
           install: >-
+            git
             base-devel
             unzip
           pacboy: >-
@@ -102,6 +103,7 @@ jobs:
 
       - name: Apply patches for DPDK
         if: ${{ steps.cache-dpdk.outputs.cache-hit != 'true' }}
+        shell: bash
         run: |
           cd dpdk
           git config user.name github-actions

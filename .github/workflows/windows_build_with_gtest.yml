@@ -62,6 +62,7 @@ jobs:
           msystem: ucrt64
           update: true
           install: >-
+            git
             base-devel
             unzip
           pacboy: >-
@@ -129,6 +130,7 @@ jobs:
       
       - name: Apply patches for DPDK
         if: ${{ steps.cache-dpdk.outputs.cache-hit != 'true' }}
+        shell: pwsh
         run: |
           cd dpdk
           git config user.name github-actions
