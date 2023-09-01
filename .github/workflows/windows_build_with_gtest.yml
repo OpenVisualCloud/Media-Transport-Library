@@ -170,9 +170,8 @@ jobs:
       - name: Kill previous gtest routine
         shell: cmd
         run: |
-          taskkill /f /im KahawaiTest.exe          
+          taskkill /f /im KahawaiTest.exe || VER>NUL
 
       - name: Run st2110 test case
         run: |
           ./build/tests/KahawaiTest --auto_start_stop --p_port ${{  env.TEST_PORT_P  }} --r_port ${{  env.TEST_PORT_R  }} --gtest_filter=-St22_?x.*
-        shell: bash
