@@ -99,14 +99,6 @@ jobs:
           ./configure --prefix=${MSYSTEM_PREFIX}
           make -j$(nproc) && make install
 
-      - name: Checkout DPDK code
-        uses: actions/checkout@f43a0e5ff2bd294095638e18286ca9a3d1956744 # v3.6.0
-        with:
-          repository: 'DPDK/dpdk'
-          ref: v${DPDK_VERSION}
-          path: dpdk
-          clean: true
-
       - name: Hash DPDK Patches
         id: hash-patches
         run: |
@@ -154,16 +146,6 @@ jobs:
       - name: Build
         run: |
           ./build.sh
-
-      - name: Build with debug
-        run: |
-          rm build -rf
-          ./build.sh debugonly
-
-      - name: Build with TAP
-        run: |
-          meson setup tap_build -Denable_tap=true
-          meson install -C tap_build
 
   Win_Test:
     if: github.repository == 'OpenVisualCloud/Media-Transport-Library'
