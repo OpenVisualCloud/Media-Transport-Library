@@ -112,15 +112,25 @@ jobs:
         run: |
           HASH=$(sha1sum patches/dpdk/${DPDK_VERSION}/*.patch patches/dpdk/${DPDK_VERSION}/windows/*.patch | sha1sum | cut -d" " -f1)
           echo "hash=${HASH}"  >> $GITHUB_OUTPUT
-
+  
       - name: Cache DPDK
+        id: cache-dpdk
         uses: actions/cache@v3
         with:
           path: dpdk
-          key: dpdk-${DPDK_VERSION}-${DPDK_VERSION}-${{ steps.hash-patches.outputs.hash }}
-
+          key: dpdk-${DPDK_VERSION}-${MSYSTEM}-${{ steps.hash-patches.outputs.hash }}
+  
+      - name: Checkout DPDK code
+        if: ${{ steps.cache-dpdk.outputs.cache-hit != 'true' }}
+        uses: actions/checkout@f43a0e5ff2bd294095638e18286ca9a3d1956744 # v3.6.0
+        with:
+          repository: 'DPDK/dpdk'
+          ref: v${DPDK_VERSION}
+          path: dpdk
+          clean: true
+  
       - name: Build and install DPDK
-        if: steps.cache-dpdk.outputs.cache-hit != 'true'
+        if: ${{ steps.cache-dpdk.outputs.cache-hit != 'true' }}
         shell: bash
         run: |
           pushd patches/dpdk/${DPDK_VERSION}
@@ -134,9 +144,9 @@ jobs:
           git am ../patches/dpdk/${DPDK_VERSION}/windows/*.patch
           meson setup build
           meson install -C build
-
+  
       - name: Install cached DPDK
-        if: steps.cache-dpdk.outputs.cache-hit == 'true'
+        if: ${{ steps.cache-dpdk.outputs.cache-hit == 'true' }}
         run: |
           cd dpdk
           meson install -C build
