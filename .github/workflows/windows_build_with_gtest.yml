@@ -47,58 +47,128 @@ jobs:
     if: github.repository == 'OpenVisualCloud/Media-Transport-Library'
     runs-on: [Windows, self-hosted]
     timeout-minutes: 60
-
+    defaults:
+      run:
+        shell: msys2 {0}
     steps:
       - name: Harden Runner
         uses: step-security/harden-runner@8ca2b8b2ece13480cda6dacd3511b49857a23c09 # v2.5.1
         with:
           egress-policy: audit
 
+      - name: Install dependencies
+        uses: msys2/setup-msys2@7efe20baefed56359985e327d329042cde2434ff # v2
+        with:
+          msystem: ucrt64
+          update: true
+          install: >-
+            git
+            base-devel
+            unzip
+          pacboy: >-
+            openssl:p
+            gcc:p
+            meson:p
+            pkg-config:p
+            json-c:p
+            libpcap:p
+            gtest:p
+            SDL2:p
+            SDL2_ttf:p
+            dlfcn:p
+
+      - name: Install npcap-sdk
+        run: |
+          wget https://nmap.org/npcap/dist/npcap-sdk-1.12.zip
+          unzip -d npcap-sdk npcap-sdk-1.12.zip
+          cp npcap-sdk/Lib/x64/* ${MSYSTEM_PREFIX}/lib/
+
       - name: Checkout IMTL repo
-        uses: actions/checkout@c85c95e3d7251135ab7dc9ce3241c5835cc595a9 # v3.5.3
+        uses: actions/checkout@f43a0e5ff2bd294095638e18286ca9a3d1956744 # v3.6.0
+
+      - name: Checkout mman-win32 repo
+        uses: actions/checkout@f43a0e5ff2bd294095638e18286ca9a3d1956744 # v3.6.0
+        with:
+          repository: 'alitrack/mman-win32'
+          ref: master
+          path: mman-win32
+
+      - name: Build and install mman-win32
+        run: |
+          cd mman-win32
+          ./configure --prefix=${MSYSTEM_PREFIX}
+          make -j$(nproc) && make install
 
       - name: Checkout DPDK repo
-        uses: actions/checkout@c85c95e3d7251135ab7dc9ce3241c5835cc595a9 # v3.5.3
+        uses: actions/checkout@f43a0e5ff2bd294095638e18286ca9a3d1956744 # v3.6.0
         with:
           repository: 'DPDK/dpdk'
-          ref: v${{  env.DPDK_VERSION  }}
+          ref: v${DPDK_VERSION}
           path: dpdk
           clean: true
 
+      - name: Hash DPDK Patches
+        id: hash-patches
+        run: |
+          HASH=$(sha1sum patches/dpdk/${DPDK_VERSION}/*.patch patches/dpdk/${DPDK_VERSION}/windows/*.patch | sha1sum | cut -d" " -f1)
+          echo "hash=${HASH}"  >> $GITHUB_OUTPUT
+
+      - name: Cache DPDK
+        uses: actions/cache@v3
+        with:
+          path: dpdk
+          key: dpdk-${DPDK_VERSION}-${DPDK_VERSION}-${{ steps.hash-patches.outputs.hash }}
+
       - name: Convert symlink patch files to real file
         run: |
-          cd patches/dpdk/${{  env.DPDK_VERSION  }}
+          cd patches/dpdk/${DPDK_VERSION}
           ls *.patch | xargs -I{} bash -c 'if [[ $(sed -n '1p' "{}") =~ ^../.*\.patch$ ]]; then cp "$(cat "{}")" "{}"; fi'
           cd windows
           ls *.patch | xargs -I{} bash -c 'if [[ $(sed -n '1p' "{}") =~ ^../.*\.patch$ ]]; then cp "$(cat "{}")" "{}"; fi'
-        shell: bash
 
       - name: Apply patches for DPDK
+        shell: bash
         run: |
           cd dpdk
           git config user.name github-actions
           git config user.email github-actions@github.com
-          git am ../patches/dpdk/${{  env.DPDK_VERSION  }}/*.patch
-          git am ../patches/dpdk/${{  env.DPDK_VERSION  }}/windows/*.patch
-        shell: bash
+          git am ../patches/dpdk/${DPDK_VERSION}/*.patch
+          git am ../patches/dpdk/${DPDK_VERSION}/windows/*.patch
 
-      - name: Build dpdk
+      - name: Build and install DPDK
+        if: steps.cache-dpdk.outputs.cache-hit != 'true'
         run: |
           cd dpdk
           meson setup build
           meson install -C build
-        shell: bash
+
+      - name: Install cached DPDK
+        if: steps.cache-dpdk.outputs.cache-hit == 'true'
+        run: |
+          cd dpdk
+          meson install -C build
 
       - name: Build
         run: |
           ./build.sh
-        shell: bash
+
+      - name: Build with debug
+        run: |
+          rm build -rf
+          ./build.sh debugonly
+
+      - name: Build with TAP
+        run: |
+          meson setup tap_build -Denable_tap=true
+          meson install -C tap_build
 
   Win_Test:
     if: github.repository == 'OpenVisualCloud/Media-Transport-Library'
     needs: Win_Build
     runs-on: [Windows, self-hosted]
-
+    defaults:
+      run:
+        shell: msys2 {0}
     steps:
       - name: Harden Runner
         uses: step-security/harden-runner@8ca2b8b2ece13480cda6dacd3511b49857a23c09 # v2.5.1

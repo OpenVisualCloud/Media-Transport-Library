@@ -84,7 +84,7 @@ jobs:
         id: hash-patches
         run: |
           HASH=$(sha1sum patches/dpdk/${{matrix.dpdk}}/*.patch patches/dpdk/${{matrix.dpdk}}/windows/*.patch | sha1sum | cut -d" " -f1)
-          echo "::set-output name=hash::${HASH}"
+          echo "hash=${HASH}"  >> $GITHUB_OUTPUT
 
       - name: Cache DPDK
         uses: actions/cache@v3
