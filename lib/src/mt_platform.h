@@ -78,10 +78,10 @@ typedef unsigned long int nfds_t;
 static inline int mt_pthread_mutex_init(pthread_mutex_t* mutex,
                                         pthread_mutexattr_t* p_attr) {
 #ifdef MT_ENABLE_P_SHARED
+  pthread_mutexattr_t attr;
   if (p_attr) {
     pthread_mutexattr_setpshared(p_attr, PTHREAD_PROCESS_SHARED);
   } else {
-    pthread_mutexattr_t attr;
     pthread_mutexattr_init(&attr);
     pthread_mutexattr_setpshared(&attr, PTHREAD_PROCESS_SHARED);
     p_attr = &attr;
