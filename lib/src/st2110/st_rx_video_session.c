@@ -1803,6 +1803,16 @@ static int rv_handle_frame_pkt(struct st_rx_video_session_impl* s, struct rte_mb
     return -EIO;
   }
 
+  /* check if valid pkt len */
+  size_t pkt_payload_len = mbuf->pkt_len - sizeof(struct st_rfc4175_video_hdr);
+  if (extra_rtp) pkt_payload_len -= sizeof(*extra_rtp);
+  if (pkt_payload_len != payload_length) {
+    dbg("%s, invalid pkt_payload_len %" PRIu64 " payload_length %" PRIu64 "\n", __func__,
+        pkt_payload_len, payload_length);
+    s->stat_pkts_wrong_len_dropped++;
+    return -EIO;
+  }
+
   /* check if the same pkt got already */
   if (slot->seq_id_got) {
     if (seq_id_u32 >= slot->seq_id_base_u32)
@@ -3205,6 +3215,7 @@ static int rv_attach(struct mtl_main_impl* impl, struct st_rx_video_sessions_mgr
   s->stat_pkts_offset_dropped = 0;
   s->stat_pkts_redundant_dropped = 0;
   s->stat_pkts_wrong_hdr_dropped = 0;
+  s->stat_pkts_wrong_len_dropped = 0;
   s->stat_pkts_received = 0;
   s->stat_bytes_received = 0;
   s->stat_pkts_dma = 0;
@@ -3466,6 +3477,11 @@ static void rv_stat(struct st_rx_video_sessions_mgr* mgr,
     notice("RX_VIDEO_SESSION(%d,%d): wrong hdr dropped pkts %d\n", m_idx, idx,
            s->stat_pkts_wrong_hdr_dropped);
     s->stat_pkts_wrong_hdr_dropped = 0;
+  }
+  if (s->stat_pkts_wrong_len_dropped) {
+    notice("RX_VIDEO_SESSION(%d,%d): wrong len dropped pkts %d\n", m_idx, idx,
+           s->stat_pkts_wrong_len_dropped);
+    s->stat_pkts_wrong_len_dropped = 0;
   }
   if (s->stat_pkts_enqueue_fallback) {
     notice("RX_VIDEO_SESSION(%d,%d): lcore enqueue fallback pkts %d\n", m_idx, idx,
