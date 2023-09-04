@@ -101,11 +101,25 @@ static const struct st_video_fmt_desc st_video_fmt_descs[] = {
         .fps = ST_FPS_P23_98,
     },
     {
+        .fmt = VIDEO_FORMAT_1080P_120FPS,
+        .name = "i1080p120",
+        .width = 1920,
+        .height = 1080,
+        .fps = ST_FPS_P120,
+    },
+    {
         .fmt = VIDEO_FORMAT_1080P_119FPS,
         .name = "i1080p119",
         .width = 1920,
         .height = 1080,
         .fps = ST_FPS_P119_88,
+    },
+    {
+        .fmt = VIDEO_FORMAT_1080P_100FPS,
+        .name = "i1080p100",
+        .width = 1920,
+        .height = 1080,
+        .fps = ST_FPS_P100,
     },
     {
         .fmt = VIDEO_FORMAT_1080P_59FPS,
