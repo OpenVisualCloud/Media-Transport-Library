@@ -442,8 +442,8 @@ executable('UsocketClientSample', usocket_client_sample_sources,
 )
 endif
 
-if not is_windows
 # v4l2 to IP sample app
+if app_has_sdl2 and not is_windows
 executable('V4l2toIPApp', v4l2_to_ip_sources,
   c_args : app_c_args,
   link_args: app_ld_args,
