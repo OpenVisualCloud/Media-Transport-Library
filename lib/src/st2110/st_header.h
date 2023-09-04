@@ -705,6 +705,7 @@ struct st_rx_video_session_impl {
   int stat_pkts_out_of_order;
   int stat_pkts_redundant_dropped;
   int stat_pkts_wrong_hdr_dropped;
+  int stat_pkts_wrong_len_dropped;
   int stat_pkts_received;
   int stat_pkts_multi_segments_received;
   int stat_pkts_dma;
