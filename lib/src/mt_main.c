@@ -235,11 +235,6 @@ static int mt_user_params_check(struct mtl_init_params* p) {
   uint8_t if_ip[MTL_IP_ADDR_LEN];
   uint8_t if_netmask[MTL_IP_ADDR_LEN];
 
-  /* transport check */
-  if (p->transport >= MTL_TRANSPORT_TYPE_MAX) {
-    err("%s, invalid transport %d\n", __func__, p->transport);
-    return -EINVAL;
-  }
   /* num_ports check */
   if ((num_ports > MTL_PORT_MAX) || (num_ports <= 0)) {
     err("%s, invalid num_ports %d\n", __func__, num_ports);

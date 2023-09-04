@@ -142,7 +142,6 @@ int main(int argc, char** argv) {
   ret = sample_parse_args(&ctx, argc, argv, true, false, true);
   if (ret < 0) return ret;
 
-  ctx.param.transport = MTL_TRANSPORT_UDP; /* udp transport */
   ctx.st = mtl_init(&ctx.param);
   if (!ctx.st) {
     err("%s, mtl_init fail\n", __func__);

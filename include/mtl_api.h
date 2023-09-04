@@ -443,8 +443,6 @@ struct mtl_af_xdp_params {
  * Include the PCIE port and other required info.
  */
 struct mtl_init_params {
-  /** Mandatory. Transport type, st2110(default) or udp */
-  enum mtl_transport_type transport;
   /**
    * Mandatory. PCIE BDF port, ex: 0000:af:01.0.
    * For MTL_PMD_DPDK_AF_XDP, set kernel interface name here, ex: enp175s0f0.

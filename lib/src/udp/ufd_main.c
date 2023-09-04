@@ -423,9 +423,6 @@ static struct ufd_mt_ctx* ufd_create_mt_ctx(void) {
     }
   }
 
-  /* force udp mode */
-  p->transport = MTL_TRANSPORT_UDP;
-
   /* assign a default if not set by user */
   if (!ctx->init_params.slots_nb_max) ctx->init_params.slots_nb_max = 1024;
   /* ufd is assigned to top of INT, the bottom fd is used by OS */
