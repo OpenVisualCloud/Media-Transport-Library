@@ -524,6 +524,10 @@ struct st22_rx_frame_meta {
  * second field.The field identification bit shall be set to 0 otherwise.
  */
 #define ST20_SECOND_FIELD (0x1 << 15)
+/**
+ * The retransmit bit in row_length shall be set to 1 if it is a retransmit packet.
+ */
+#define ST20_RETRANSMIT (0x1 << 15)
 
 /**
  * A structure describing a st2110-20(video) rfc4175 rtp header, size: 20

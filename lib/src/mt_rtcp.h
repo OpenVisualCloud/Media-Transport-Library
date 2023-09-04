@@ -26,12 +26,19 @@ MTL_PACK(struct mt_rtcp_hdr {
   struct mt_rtcp_fci fci[0];
 });
 
+enum mt_rtp_payload_format {
+  MT_RTP_PAYLOAD_FORMAT_RAW = 0,
+  MT_RTP_PAYLOAD_FORMAT_RFC4175,
+  MT_RTP_PAYLOAD_FORMAT_RFC9134,
+};
+
 struct mt_rtcp_tx_ops {
-  const char* name;           /* short and unique name for each session */
-  struct mt_udp_hdr* udp_hdr; /* headers including eth, ipv4 and udp */
-  uint32_t ssrc;              /* ssrc of rtp session */
-  uint16_t buffer_size;       /* max number of buffered rtp packets */
-  enum mtl_port port;         /* port of rtp session */
+  const char* name;                          /* short and unique name for each session */
+  struct mt_udp_hdr* udp_hdr;                /* headers including eth, ipv4 and udp */
+  uint32_t ssrc;                             /* ssrc of rtp session */
+  uint16_t buffer_size;                      /* max number of buffered rtp packets */
+  enum mtl_port port;                        /* port of rtp session */
+  enum mt_rtp_payload_format payload_format; /* payload format */
 };
 
 struct mt_rtcp_rx_ops {
@@ -51,6 +58,7 @@ struct mt_rtcp_tx {
   char name[MT_RTCP_MAX_NAME_LEN];
   uint32_t ssrc;
   bool active;
+  enum mt_rtp_payload_format payload_format;
 
   uint16_t ipv4_packet_id;
   uint16_t last_seq_num;

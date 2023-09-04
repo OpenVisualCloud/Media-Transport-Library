@@ -1737,6 +1737,10 @@ static int rv_handle_frame_pkt(struct st_rx_video_session_impl* s, struct rte_mb
     payload += sizeof(*extra_rtp);
   }
   uint16_t line1_length = ntohs(rtp->row_length); /* 1200 for 1080p */
+  if (line1_length & ST20_RETRANSMIT) {
+    line1_length &= ~ST20_RETRANSMIT;
+    s->stat_pkts_retransmit++;
+  }
   uint32_t tmstamp = ntohl(rtp->base.tmstamp);
   uint32_t seq_id_u32 = rfc4175_rtp_seq_id(rtp);
   uint8_t payload_type = rtp->base.payload_type;
@@ -1807,8 +1811,10 @@ static int rv_handle_frame_pkt(struct st_rx_video_session_impl* s, struct rte_mb
   size_t pkt_payload_len = mbuf->pkt_len - sizeof(struct st_rfc4175_video_hdr);
   if (extra_rtp) pkt_payload_len -= sizeof(*extra_rtp);
   if (pkt_payload_len != payload_length) {
-    dbg("%s, invalid pkt_payload_len %" PRIu64 " payload_length %" PRIu64 "\n", __func__,
-        pkt_payload_len, payload_length);
+    dbg("%s, invalid pkt_payload_len %" PRIu64 " payload_length %" PRIu64
+        " retransmit %d\n",
+        __func__, pkt_payload_len, payload_length,
+        (ntohs(rtp->row_length) & ST20_RETRANSMIT) ? 1 : 0);
     s->stat_pkts_wrong_len_dropped++;
     return -EIO;
   }
@@ -3217,6 +3223,7 @@ static int rv_attach(struct mtl_main_impl* impl, struct st_rx_video_sessions_mgr
   s->stat_pkts_wrong_hdr_dropped = 0;
   s->stat_pkts_wrong_len_dropped = 0;
   s->stat_pkts_received = 0;
+  s->stat_pkts_retransmit = 0;
   s->stat_bytes_received = 0;
   s->stat_pkts_dma = 0;
   s->stat_pkts_rtp_ring_full = 0;
@@ -3558,6 +3565,11 @@ static void rv_stat(struct st_rx_video_sessions_mgr* mgr,
     notice("RX_VIDEO_SESSION(%d,%d): notify frame max %uus\n", m_idx, idx,
            s->stat_max_notify_frame_us);
     s->stat_max_notify_frame_us = 0;
+  }
+  if (s->stat_pkts_retransmit) {
+    notice("RX_VIDEO_SESSION(%d,%d): retransmit pkts %d\n", m_idx, idx,
+           s->stat_pkts_retransmit);
+    s->stat_pkts_retransmit = 0;
   }
 }
 
