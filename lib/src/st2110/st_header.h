@@ -460,6 +460,7 @@ struct st_rx_video_ebu_info {
   bool init;
   uint64_t cur_epochs; /* epoch of current frame */
   int frame_idx;
+  int result_interval;
 };
 
 struct st_rx_video_ebu_stat {

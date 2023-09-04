@@ -249,7 +249,7 @@ static void rv_ebu_on_frame(struct st_rx_video_session_impl* s, uint32_t rtp_tms
   /* skip first 2 frames */
   if (ebu_info->frame_idx < 3) return;
 
-  if (ebu_info->frame_idx % (60 * 5) == 0) { /* every 5(60fps)/10(30fps) seconds */
+  if (ebu_info->frame_idx % ebu_info->result_interval == 0) {
     ebu_result->ebu_result_num++;
     rv_ebu_result(s);
     if (ebu_result->ebu_result_num) {
@@ -386,6 +386,7 @@ static int rv_ebu_init(struct mtl_main_impl* impl, struct st_rx_video_session_im
     reactive = (ops->height == 480) ? 487.0 / 525.0 : 576.0 / 625.0;
   }
 
+  ebu_info->result_interval = fps_tm.framerate * 5; /* result every 5s */
   ebu_info->trs = frame_time * reactive / st20_total_pkts;
   if (!ops->interlaced) {
     ebu_info->tr_offset =
@@ -513,12 +514,24 @@ static void rv_detector_calculate_fps(struct st_rx_video_session_impl* s,
   if (abs(d0 - d1) <= 1) {
     dbg("%s(%d), d0 = %d, d1 = %d\n", __func__, s->idx, d0, d1);
     switch (d0) {
+      case 750:
+        meta->fps = ST_FPS_P120;
+        return;
+      case 751:
+        meta->fps = ST_FPS_P119_88;
+        return;
+      case 900:
+        meta->fps = ST_FPS_P100;
+        return;
       case 1500:
         meta->fps = ST_FPS_P60;
         return;
       case 1501:
       case 1502:
         meta->fps = ST_FPS_P59_94;
+        return;
+      case 1800:
+        meta->fps = ST_FPS_P50;
         return;
       case 3000:
         meta->fps = ST_FPS_P30;
@@ -529,8 +542,12 @@ static void rv_detector_calculate_fps(struct st_rx_video_session_impl* s,
       case 3600:
         meta->fps = ST_FPS_P25;
         return;
-      case 1800:
-        meta->fps = ST_FPS_P50;
+      case 3750:
+        meta->fps = ST_FPS_P24;
+        return;
+      case 3753:
+      case 3754:
+        meta->fps = ST_FPS_P23_98;
         return;
       default:
         err("%s(%d), err d0 %d d1 %d\n", __func__, s->idx, d0, d1);
@@ -3267,9 +3284,10 @@ static int rv_attach(struct mtl_main_impl* impl, struct st_rx_video_sessions_mgr
   info("%s(%d), %d frames with size %" PRIu64 "(%" PRIu64 ",%" PRIu64 "), type %d, %s\n",
        __func__, idx, s->st20_frames_cnt, s->st20_frame_size, s->st20_frame_bitmap_size,
        s->st20_uframe_size, ops->type, ops->interlaced ? "interlace" : "progressive");
-  info("%s(%d), w %u h %u fmt %s packing %d pt %d flags 0x%x frame time %fms\n", __func__,
-       idx, ops->width, ops->height, st20_frame_fmt_name(ops->fmt), ops->packing,
-       ops->payload_type, ops->flags, s->frame_time / NS_PER_MS);
+  info("%s(%d), w %u h %u fmt %s packing %d pt %d flags 0x%x frame time %fms fps %f\n",
+       __func__, idx, ops->width, ops->height, st20_frame_fmt_name(ops->fmt),
+       ops->packing, ops->payload_type, ops->flags, s->frame_time / NS_PER_MS,
+       st_frame_rate(s->ops.fps));
   return 0;
 }
 
