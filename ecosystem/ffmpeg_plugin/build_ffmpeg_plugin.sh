@@ -7,7 +7,7 @@ build_openh264(){
 
     cd ./openh264
     git checkout -b openh264v2.3.1 origin/openh264v2.3.1
-    make -j32
+    make -j "$(nproc)"
     sudo make install
     sudo ldconfig
     cd ../
@@ -26,7 +26,7 @@ build_ffmpeg(){
     git am --whitespace=fix ../0001-avdevice-kahawai-Add-kahawai-input-output-devices.patch
     ./configure --enable-shared --disable-static --enable-nonfree --enable-pic --enable-gpl --enable-mtl --enable-libopenh264 --enable-encoder=libopenh264
     make clean
-    make -j32
+    make -j "$(nproc)"
     sudo make install
     sudo ldconfig
     cd ../

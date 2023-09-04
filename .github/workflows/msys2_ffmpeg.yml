@@ -54,8 +54,8 @@ jobs:
       - name: Build IMTL app dependency
         run: |
           cd mman-win32
-           ./configure --prefix=${MSYSTEM_PREFIX}
-           make -j$(nproc) && make install
+          ./configure --prefix=${MSYSTEM_PREFIX}
+          make -j$(nproc) && make install
 
       - name: Build H264
         run: |
