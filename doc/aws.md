@@ -24,7 +24,7 @@ Refer to CentOS part of [build.md](./build.md).
 
 Since the default vfio driver does not support WC(Write Combining), patches should be applied for the kernel.
 
-```shell
+```bash
 git clone https://github.com/amzn/amzn-drivers.git
 cd amzn-drivers/userspace/dpdk/enav2-vfio-patch
 sudo get-vfio-with-wc.sh
@@ -36,7 +36,7 @@ If you use bare metal, you can turn on IOMMU refer to [run.md](./run.md).
 
 If you use VM, set NO-IOMMU mode for vfio after each boot.
 
-```shell
+```bash
 sudo modprobe vfio-pci
 sudo bash -c 'echo 1 > /sys/module/vfio/parameters/enable_unsafe_noiommu_mode'
 ```
@@ -61,7 +61,7 @@ After attaching the interface, remember the Private IPv4 address allocated by AW
 
 Unbind the interface from kernel driver and bind to PMD.
 
-```shell
+```bash
 sudo ifconfig eth1 down
 sudo dpdk-devbind.py -b vfio-pci 0000:00:06.0
 # check the interfaces
@@ -117,7 +117,7 @@ Or you can manually set the IPs(which should work with current security group). 
 
 **A:** run below commands before starting the app
 
-```shell
+```bash
 export PATH=$PATH:/usr/local/bin/
 export PKG_CONFIG_PATH=/usr/local/lib64/pkgconfig/
 export LD_LIBRARY_PATH=/usr/local/lib64/
@@ -133,7 +133,7 @@ To use the ENA PMD, IOMMU support is required. However, the .nxlarge instance do
 
 ### 7.2 No ptype support
 
-```shell
+```bash
 MT: Warn: dev_config_port(0), failed to setup all ptype, only 0 supported
 ```
 
@@ -141,7 +141,7 @@ This is ENA PMD limitation, can be ignored for now.
 
 ### 7.3 Setting RSS hash fields is not supported (WA fixed)
 
-```shell
+```bash
 ena_rss_hash_set(): Setting RSS hash fields is not supported. Using default values: 0xc30
 ```
 

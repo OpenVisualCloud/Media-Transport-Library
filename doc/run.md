@@ -350,13 +350,13 @@ By default, the built-in PTP feature is disabled, and the PTP clock relies on th
 
 Firstly run ptp4l to sync the PHC time with grandmaster, customize the interface as your setup.
 
-```shell
+```bash
 sudo ptp4l -i ens801f2 -m -s -H
 ```
 
 Then run phc2sys to sync the PHC time to system time, please make sure NTP service is disabled as it has conflict with phc2sys.
 
-```shell
+```bash
 sudo phc2sys -s ens801f2 -m -w
 ```
 
