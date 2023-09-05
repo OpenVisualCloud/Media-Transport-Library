@@ -17,9 +17,14 @@
 #include <windows.h>
 // clang-format on
 
+#ifndef MTL_MAY_UNUSED
+#define MTL_MAY_UNUSED(x) (void)(x)
+#endif
+
 #ifdef interface
 #undef interface
 #endif
+
 #define CLOCK_MONOTONIC_RAW CLOCK_MONOTONIC
 
 #define ETH_ALEN 6

@@ -469,6 +469,8 @@ static int app_init_display(struct st_display* d, int idx, int width, int height
                             char* font) {
   int ret;
   if (!d) return -ENOMEM;
+  MTL_MAY_UNUSED(font);
+
   d->idx = idx;
   d->window_w = SCREEN_WIDTH;
   d->window_h = SCREEN_HEIGHT;
