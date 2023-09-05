@@ -114,6 +114,13 @@ static int rtcp_tx_retransmit_rtp_packets(struct mt_rtcp_tx* tx, uint16_t seq,
       break;
     }
     copy_mbufs[i] = copied;
+    if (tx->payload_format == MT_RTP_PAYLOAD_FORMAT_RFC4175) {
+      /* set the retransmit bit */
+      struct st20_rfc4175_rtp_hdr* rtp = rte_pktmbuf_mtod_offset(
+          copied, struct st20_rfc4175_rtp_hdr*, sizeof(struct mt_udp_hdr));
+      uint16_t line1_length = ntohs(rtp->row_length);
+      rtp->row_length = htons(line1_length | ST20_RETRANSMIT);
+    }
   }
   send = mt_dev_tx_sys_queue_burst(tx->parent, tx->port, copy_mbufs, nb_rt);
   if (send < nb_rt) {
@@ -359,6 +366,7 @@ struct mt_rtcp_tx* mt_rtcp_tx_create(struct mtl_main_impl* impl,
   }
   tx->parent = impl;
   tx->port = ops->port;
+  tx->payload_format = ops->payload_format;
 
   struct mt_u64_fifo* ring =
       mt_u64_fifo_init(ops->buffer_size, mt_socket_id(impl, ops->port));

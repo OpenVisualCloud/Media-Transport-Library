@@ -861,6 +861,10 @@ static int tv_init_rtcp(struct mtl_main_impl* impl, struct st_tx_video_sessions_
     rtcp_ops.buffer_size = (ops->rtcp && ops->rtcp->rtcp_buffer_size)
                                ? ops->rtcp->rtcp_buffer_size
                                : ST_TX_VIDEO_RTCP_RING_SIZE;
+    if (s->st22_info)
+      rtcp_ops.payload_format = MT_RTP_PAYLOAD_FORMAT_RFC9134;
+    else
+      rtcp_ops.payload_format = MT_RTP_PAYLOAD_FORMAT_RFC4175;
     s->rtcp_tx[i] = mt_rtcp_tx_create(impl, &rtcp_ops);
     if (!s->rtcp_tx[i]) {
       err("%s(%d,%d), mt_rtcp_tx_create fail on port %d\n", __func__, mgr_idx, idx, i);
