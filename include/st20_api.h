@@ -525,8 +525,8 @@ struct st22_rx_frame_meta {
  */
 #define ST20_SECOND_FIELD (0x1 << 15)
 /**
- * The retransmit bit in row_number shall be set to 1 if it is a retransmit packet.
- * Do not use it when row number can be larger than 16383.
+ * The retransmit bit in row_length shall be set to 1 if it is a retransmit packet.
+ * Do not use it when row length can be larger than 16383.
  */
 #define ST20_RETRANSMIT (0x1 << 14)
 

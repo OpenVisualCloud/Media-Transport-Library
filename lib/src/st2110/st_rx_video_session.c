@@ -1729,10 +1729,6 @@ static int rv_handle_frame_pkt(struct st_rx_video_session_impl* s, struct rte_mb
       rte_pktmbuf_mtod_offset(mbuf, struct st20_rfc4175_rtp_hdr*, hdr_offset);
   void* payload = &rtp[1];
   uint16_t line1_number = ntohs(rtp->row_number); /* 0 to 1079 for 1080p */
-  if (line1_number & ST20_RETRANSMIT) {
-    line1_number &= ~ST20_RETRANSMIT;
-    s->stat_pkts_retransmit++;
-  }
   uint16_t line1_offset = ntohs(rtp->row_offset); /* [0, 480, 960, 1440] for 1080p */
   struct st20_rfc4175_extra_rtp_hdr* extra_rtp = NULL;
   if (line1_offset & ST20_SRD_OFFSET_CONTINUATION) {
@@ -1741,6 +1737,10 @@ static int rv_handle_frame_pkt(struct st_rx_video_session_impl* s, struct rte_mb
     payload += sizeof(*extra_rtp);
   }
   uint16_t line1_length = ntohs(rtp->row_length); /* 1200 for 1080p */
+  if (line1_length & ST20_RETRANSMIT) {
+    line1_length &= ~ST20_RETRANSMIT;
+    s->stat_pkts_retransmit++;
+  }
   uint32_t tmstamp = ntohl(rtp->base.tmstamp);
   uint32_t seq_id_u32 = rfc4175_rtp_seq_id(rtp);
   uint8_t payload_type = rtp->base.payload_type;
@@ -1814,7 +1814,7 @@ static int rv_handle_frame_pkt(struct st_rx_video_session_impl* s, struct rte_mb
     dbg("%s, invalid pkt_payload_len %" PRIu64 " payload_length %" PRIu64
         " retransmit %d\n",
         __func__, pkt_payload_len, payload_length,
-        (ntohs(rtp->row_number) & ST20_RETRANSMIT) ? 1 : 0);
+        (ntohs(rtp->row_length) & ST20_RETRANSMIT) ? 1 : 0);
     s->stat_pkts_wrong_len_dropped++;
     return -EIO;
   }
