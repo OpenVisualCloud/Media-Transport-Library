@@ -38,6 +38,7 @@ env:
   DPDK_VERSION: 23.07
   TEST_PORT_P: 0000:af:00.0
   TEST_PORT_R: 0000:af:00.1
+  MSYSTEM: UCRT64
 
 permissions:
   contents: read
@@ -49,7 +50,7 @@ jobs:
     timeout-minutes: 60
     defaults:
       run:
-        shell: C:\msys64\msys2_shell.cmd -ucrt64 {0}
+        shell: C:\msys64\msys2_shell.cmd {0}
     steps:
       - name: Harden Runner
         uses: step-security/harden-runner@8ca2b8b2ece13480cda6dacd3511b49857a23c09 # v2.5.1
