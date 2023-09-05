@@ -49,55 +49,15 @@ jobs:
     timeout-minutes: 60
     defaults:
       run:
-        shell: msys2 {0}
+        shell: C:\msys64\msys2_shell.cmd -ucrt64 {0}
     steps:
       - name: Harden Runner
         uses: step-security/harden-runner@8ca2b8b2ece13480cda6dacd3511b49857a23c09 # v2.5.1
         with:
           egress-policy: audit
 
-      - name: Install dependencies
-        uses: msys2/setup-msys2@7efe20baefed56359985e327d329042cde2434ff # v2
-        with:
-          msystem: ucrt64
-          update: true
-          install: >-
-            git
-            base-devel
-            unzip
-          pacboy: >-
-            openssl:p
-            gcc:p
-            meson:p
-            pkg-config:p
-            json-c:p
-            libpcap:p
-            gtest:p
-            SDL2:p
-            SDL2_ttf:p
-            dlfcn:p
-
-      - name: Install npcap-sdk
-        run: |
-          wget https://nmap.org/npcap/dist/npcap-sdk-1.12.zip
-          unzip -d npcap-sdk npcap-sdk-1.12.zip
-          cp npcap-sdk/Lib/x64/* ${MSYSTEM_PREFIX}/lib/
-
       - name: Checkout IMTL code
         uses: actions/checkout@3df4ab11eba7bda6032a0b82a6bb43b11571feac # v4.0.0
-
-      - name: Checkout mman-win32 code
-        uses: actions/checkout@3df4ab11eba7bda6032a0b82a6bb43b11571feac # v4.0.0
-        with:
-          repository: 'alitrack/mman-win32'
-          ref: master
-          path: mman-win32
-
-      - name: Build and install mman-win32
-        run: |
-          cd mman-win32
-          ./configure --prefix=${MSYSTEM_PREFIX}
-          make -j$(nproc) && make install
 
       - name: Convert patches for DPDK
         run: |
@@ -168,4 +128,4 @@ jobs:
 
       - name: Run st2110 test case
         run: |
-          ./tests/build/KahawaiTest --auto_start_stop --p_port ${{  env.TEST_PORT_P  }} --r_port ${{  env.TEST_PORT_R  }} --gtest_filter=-St22_?x.*:*4320p*:*rtcp*
+          ./tests/build/KahawaiTest --auto_start_stop --p_port ${{  env.TEST_PORT_P  }} --r_port ${{  env.TEST_PORT_R  }} --gtest_filter=-St22_?x.*:*4320p*
