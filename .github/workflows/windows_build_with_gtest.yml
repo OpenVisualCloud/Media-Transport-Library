@@ -105,18 +105,18 @@ jobs:
       - name: Build and install DPDK
         run: |
           cd dpdk
-          meson setup build
+          meson setup build --wipe
           meson install -C build
 
       - name: Build IMTL lib
         run: |
-          meson setup build
+          meson setup build --wipe
           meson install -C build
 
       - name: Build gtest
         run: |
           cd tests
-          meson setup build
+          meson setup build --wipe
           meson compile -C build
 
       - name: Kill previous gtest routine
