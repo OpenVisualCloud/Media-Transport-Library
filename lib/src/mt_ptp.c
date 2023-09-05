@@ -169,6 +169,7 @@ static void ptp_adj_system_clock_time(struct mt_ptp_impl* ptp, int64_t delta) {
   int ret = clock_adjtime(CLOCK_REALTIME, &adjtime);
   if (ret < 0) err("%s(%d), adj system time offset fail %d\n", __func__, ptp->port, ret);
 #else
+  MTL_MAY_UNUSED(delta);
   err("%s(%d), not supported for windows\n", __func__, ptp->port);
 #endif
 }
@@ -191,6 +192,7 @@ static void ptp_adj_system_clock_freq(struct mt_ptp_impl* ptp, double freq) {
   int ret = clock_adjtime(CLOCK_REALTIME, &adjfreq);
   if (ret < 0) err("%s(%d), adj system time freq fail %d\n", __func__, ptp->port, ret);
 #else
+  MTL_MAY_UNUSED(freq);
   err("%s(%d), not supported for windows\n", __func__, ptp->port);
 #endif
 }
