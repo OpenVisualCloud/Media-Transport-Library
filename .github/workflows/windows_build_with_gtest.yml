@@ -85,21 +85,7 @@ jobs:
           cd windows
           ls *.patch | xargs -I{} bash -c 'if [[ $(sed -n '1p' "{}") =~ ^../.*\.patch$ ]]; then cp "$(cat "{}")" "{}"; fi'
 
-      - name: Hash DPDK patches
-        id: hash-patches
-        run: |
-          HASH=$(sha1sum patches/dpdk/${{ env.DPDK_VERSION }}/*.patch patches/dpdk/${{ env.DPDK_VERSION }}/windows/*.patch | sha1sum | cut -d" " -f1)
-          echo "hash=${HASH}"  >> $GITHUB_OUTPUT
-  
-      - name: Cache DPDK
-        id: cache-dpdk
-        uses: actions/cache@88522ab9f39a2ea568f7027eddc7d8d8bc9d59c8 # v3.3.1
-        with:
-          path: dpdk
-          key: dpdk-${{ env.DPDK_VERSION }}-winself-${{ steps.hash-patches.outputs.hash }}
-  
       - name: Checkout DPDK code
-        if: ${{ steps.cache-dpdk.outputs.cache-hit != 'true' }}
         uses: actions/checkout@3df4ab11eba7bda6032a0b82a6bb43b11571feac # v4.0.0
         with:
           repository: 'DPDK/dpdk'
@@ -108,7 +94,6 @@ jobs:
           clean: true
       
       - name: Apply patches for DPDK
-        if: ${{ steps.cache-dpdk.outputs.cache-hit != 'true' }}
         run: |
           cd dpdk
           git config user.name github-actions
@@ -117,16 +102,9 @@ jobs:
           for f in ../patches/dpdk/${{ env.DPDK_VERSION }}/windows/*.patch; do patch -p1 < "$f"; done
 
       - name: Build and install DPDK
-        if: ${{ steps.cache-dpdk.outputs.cache-hit != 'true' }}
         run: |
           cd dpdk
           meson setup build
-          meson install -C build          
-
-      - name: Install cached DPDK
-        if: ${{ steps.cache-dpdk.outputs.cache-hit == 'true' }}
-        run: |
-          cd dpdk
           meson install -C build
 
       - name: Build IMTL lib
