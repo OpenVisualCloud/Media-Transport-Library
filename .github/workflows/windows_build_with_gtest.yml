@@ -56,8 +56,27 @@ jobs:
         with:
           egress-policy: audit
 
+      - name: Update dependencies
+        run: |
+          pacman --noconfirm -Syuu
+          pacman --noconfirm -S --needed --overwrite git base-devel unzip pactoys
+          pacboy --noconfirm -S --needed openssl:p gcc:p meson:p pkg-config:p json-c:p libpcap:p gtest:p SDL2:p SDL2_ttf:p dlfcn:p
+
       - name: Checkout IMTL code
         uses: actions/checkout@3df4ab11eba7bda6032a0b82a6bb43b11571feac # v4.0.0
+
+      - name: Checkout mman-win32 code
+        uses: actions/checkout@3df4ab11eba7bda6032a0b82a6bb43b11571feac # v4.0.0
+        with:
+          repository: 'alitrack/mman-win32'
+          ref: master
+          path: mman-win32
+
+      - name: Build and install mman-win32
+        run: |
+          cd mman-win32
+          ./configure --prefix=${MSYSTEM_PREFIX}
+          make -j$(nproc) && make install
 
       - name: Convert patches for DPDK
         run: |
