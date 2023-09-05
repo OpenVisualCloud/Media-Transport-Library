@@ -57,10 +57,10 @@ jobs:
           cp npcap-sdk/Lib/x64/* ${MSYSTEM_PREFIX}/lib/
 
       - name: Checkout IMTL code
-        uses: actions/checkout@f43a0e5ff2bd294095638e18286ca9a3d1956744 # v3.6.0
+        uses: actions/checkout@3df4ab11eba7bda6032a0b82a6bb43b11571feac # v4.0.0
 
       - name: Checkout mman-win32 code
-        uses: actions/checkout@f43a0e5ff2bd294095638e18286ca9a3d1956744 # v3.6.0
+        uses: actions/checkout@3df4ab11eba7bda6032a0b82a6bb43b11571feac # v4.0.0
         with:
           repository: 'alitrack/mman-win32'
           ref: master
@@ -94,7 +94,7 @@ jobs:
 
       - name: Checkout DPDK code
         if: ${{ steps.cache-dpdk.outputs.cache-hit != 'true' }}
-        uses: actions/checkout@f43a0e5ff2bd294095638e18286ca9a3d1956744 # v3.6.0
+        uses: actions/checkout@3df4ab11eba7bda6032a0b82a6bb43b11571feac # v4.0.0
         with:
           repository: 'DPDK/dpdk'
           ref: v${{matrix.dpdk}}
