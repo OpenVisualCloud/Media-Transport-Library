@@ -54,6 +54,7 @@ struct mt_rtcp_tx {
   struct mtl_main_impl* parent;
   enum mtl_port port;
   struct mt_u64_fifo* mbuf_ring;
+  struct rte_mempool* mbuf_pool;
   struct mt_udp_hdr udp_hdr;
   char name[MT_RTCP_MAX_NAME_LEN];
   uint32_t ssrc;

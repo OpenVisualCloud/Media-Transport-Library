@@ -105,8 +105,7 @@ static int rtcp_tx_retransmit_rtp_packets(struct mt_rtcp_tx* tx, uint16_t seq,
 
   /* deep copy the mbuf then send */
   for (int i = 0; i < bulk; i++) {
-    struct rte_mbuf* copied = rte_pktmbuf_copy(
-        mbufs[i], mt_get_tx_mempool(tx->parent, tx->port), 0, UINT32_MAX);
+    struct rte_mbuf* copied = rte_pktmbuf_copy(mbufs[i], tx->mbuf_pool, 0, UINT32_MAX);
     if (!copied) {
       dbg("%s(%s), failed to copy mbuf\n", __func__, tx->name);
       tx->stat_rtp_retransmit_fail_nobuf += bulk - i;
@@ -368,6 +367,15 @@ struct mt_rtcp_tx* mt_rtcp_tx_create(struct mtl_main_impl* impl,
   tx->port = ops->port;
   tx->payload_format = ops->payload_format;
 
+  struct rte_mempool* pool =
+      mt_mempool_create(impl, ops->port, ops->name, ops->buffer_size, MT_MBUF_CACHE_SIZE,
+                        0, MTL_MTU_MAX_BYTES);
+  if (!pool) {
+    err("%s(%s), failed to create mempool for mt_rtcp_tx\n", __func__, ops->name);
+    mt_rtcp_tx_free(tx);
+    return NULL;
+  }
+  tx->mbuf_pool = pool;
   struct mt_u64_fifo* ring =
       mt_u64_fifo_init(ops->buffer_size, mt_socket_id(impl, ops->port));
   if (!ring) {
@@ -400,6 +408,11 @@ void mt_rtcp_tx_free(struct mt_rtcp_tx* tx) {
     mt_fifo_mbuf_clean(tx->mbuf_ring);
     mt_u64_fifo_uinit(tx->mbuf_ring);
     tx->mbuf_ring = NULL;
+  }
+
+  if (tx->mbuf_pool) {
+    mt_mempool_free(tx->mbuf_pool);
+    tx->mbuf_pool = NULL;
   }
 
   mt_rte_free(tx);
