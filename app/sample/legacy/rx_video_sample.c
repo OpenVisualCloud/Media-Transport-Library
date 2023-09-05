@@ -78,6 +78,8 @@ static int rx_video_frame_ready(void* priv, void* frame,
 
 static void rx_video_consume_frame(struct rv_sample_context* s, void* frame,
                                    size_t frame_size) {
+  MTL_MAY_UNUSED(frame);
+  MTL_MAY_UNUSED(frame_size);
   dbg("%s(%d), frame %p\n", __func__, s->idx, frame);
 
   /* call the real consumer here, sample just sleep */

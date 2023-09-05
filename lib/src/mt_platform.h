@@ -131,6 +131,8 @@ static inline int mt_pthread_cond_signal(pthread_cond_t* cond) {
 
 static inline bool mt_socket_match(int cpu_socket, int dev_socket) {
 #ifdef WINDOWSENV
+  MTL_MAY_UNUSED(cpu_socket);
+  MTL_MAY_UNUSED(dev_socket);
   return true;  // windows cpu socket always 0
 #else
   return (cpu_socket == dev_socket);

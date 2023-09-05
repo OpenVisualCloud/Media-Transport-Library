@@ -10,6 +10,7 @@ static int app_tx_st22_next_frame(void* priv, uint16_t* next_frame_idx,
   int ret;
   uint16_t consumer_idx = s->framebuff_consumer_idx;
   struct st_tx_frame* framebuff = &s->framebuffs[consumer_idx];
+  MTL_MAY_UNUSED(meta);
 
   st_pthread_mutex_lock(&s->wake_mutex);
   if (ST_TX_FRAME_READY == framebuff->stat) {
@@ -38,6 +39,7 @@ static int app_tx_st22_frame_done(void* priv, uint16_t frame_idx,
   struct st22_app_tx_session* s = priv;
   int ret;
   struct st_tx_frame* framebuff = &s->framebuffs[frame_idx];
+  MTL_MAY_UNUSED(meta);
 
   st_pthread_mutex_lock(&s->wake_mutex);
   if (ST_TX_FRAME_IN_TRANSMITTING == framebuff->stat) {
@@ -82,6 +84,7 @@ static void app_tx_st22_build_frame(struct st22_app_tx_session* s, void* codestr
   uint8_t* src = s->st22_frame_cursor;
   uint8_t* dst = codestream_addr;
   int framesize = s->bytes_per_frame;
+  MTL_MAY_UNUSED(max_codestream_size);
 
   if (s->st22_frame_cursor + framesize > s->st22_source_end) {
     s->st22_frame_cursor = s->st22_source_begin;
@@ -149,8 +152,7 @@ static void app_tx_st22_stop_source(struct st22_app_tx_session* s) {
   }
 }
 
-static int app_tx_st22_start_source(struct st_app_context* ctx,
-                                    struct st22_app_tx_session* s) {
+static int app_tx_st22_start_source(struct st22_app_tx_session* s) {
   int ret = -EINVAL;
 
   s->st22_app_thread_stop = false;
@@ -329,7 +331,7 @@ static int app_tx_st22_init(struct st_app_context* ctx, struct st22_app_tx_sessi
     return ret;
   }
 
-  ret = app_tx_st22_start_source(ctx, s);
+  ret = app_tx_st22_start_source(s);
   if (ret < 0) {
     err("%s(%d), app_tx_st22_start_source fail %d\n", __func__, idx, ret);
     app_tx_st22_uinit(s);

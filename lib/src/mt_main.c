@@ -711,9 +711,13 @@ void* mtl_hp_zmalloc(mtl_handle mt, size_t size, enum mtl_port port) {
   return mt_rte_zmalloc_socket(size, mt_socket_id(impl, port));
 }
 
-void mtl_hp_free(mtl_handle mt, void* ptr) { return mt_rte_free(ptr); }
+void mtl_hp_free(mtl_handle mt, void* ptr) {
+  MTL_MAY_UNUSED(mt);
+  return mt_rte_free(ptr);
+}
 
 mtl_iova_t mtl_hp_virt2iova(mtl_handle mt, const void* vaddr) {
+  MTL_MAY_UNUSED(mt);
   return rte_malloc_virt2iova(vaddr);
 }
 

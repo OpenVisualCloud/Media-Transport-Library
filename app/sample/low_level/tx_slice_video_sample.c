@@ -30,6 +30,7 @@ static int tx_video_next_frame(void* priv, uint16_t* next_frame_idx,
   int ret;
   uint16_t consumer_idx = s->framebuff_consumer_idx;
   struct st_tx_frame* framebuff = &s->framebuffs[consumer_idx];
+  MTL_MAY_UNUSED(meta);
 
   st_pthread_mutex_lock(&s->wake_mutex);
   if (ST_TX_FRAME_READY == framebuff->stat) {
@@ -56,6 +57,7 @@ static int tx_video_frame_done(void* priv, uint16_t frame_idx,
   struct tv_slice_sample_ctx* s = priv;
   int ret;
   struct st_tx_frame* framebuff = &s->framebuffs[frame_idx];
+  MTL_MAY_UNUSED(meta);
 
   st_pthread_mutex_lock(&s->wake_mutex);
   if (ST_TX_FRAME_IN_TRANSMITTING == framebuff->stat) {
@@ -93,6 +95,7 @@ static void tx_video_build_slice(struct tv_slice_sample_ctx* s,
                                  struct st_tx_frame* framebuff, void* frame_addr) {
   int lines_build = 0;
   int slices = (s->height / s->lines_per_slice) + 1;
+  MTL_MAY_UNUSED(frame_addr);
 
   /* simulate the timing */
   while (!framebuff->slice_trigger) {

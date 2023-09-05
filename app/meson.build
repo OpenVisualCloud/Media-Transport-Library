@@ -54,6 +54,7 @@ if get_option('buildtype') != 'debug'
   app_c_args += ['-Werror']
 endif
 app_c_args += ['-Wall']
+app_c_args += ['-Wunused-parameter']
 
 if is_windows
   libpcap =[]

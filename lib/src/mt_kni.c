@@ -81,6 +81,7 @@ static int kni_config_network_if(uint16_t port_id, uint8_t if_up) {
 }
 
 static int kni_config_mac_address(uint16_t port, uint8_t macAddr[]) {
+  MTL_MAY_UNUSED(macAddr);
   info("%s(%d), start\n", __func__, port);
   return 0;
 }

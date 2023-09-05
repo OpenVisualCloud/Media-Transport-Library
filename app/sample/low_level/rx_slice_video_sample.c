@@ -43,6 +43,8 @@ static int rx_video_enqueue_frame(struct rv_slice_sample_ctx* s, void* frame,
 static int rx_video_slice_ready(void* priv, void* frame,
                                 struct st20_rx_slice_meta* meta) {
   struct rv_slice_sample_ctx* s = (struct rv_slice_sample_ctx*)priv;
+  MTL_MAY_UNUSED(frame);
+  MTL_MAY_UNUSED(meta);
 
   if (!s->handle) return -EIO;
 
@@ -82,6 +84,8 @@ static int rx_video_frame_ready(void* priv, void* frame,
 
 static void rx_video_consume_frame(struct rv_slice_sample_ctx* s, void* frame,
                                    size_t frame_size) {
+  MTL_MAY_UNUSED(frame);
+  MTL_MAY_UNUSED(frame_size);
   dbg("%s(%d), frame %p\n", __func__, s->idx, frame);
 
   /* call the real consumer here, sample just sleep */

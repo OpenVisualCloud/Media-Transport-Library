@@ -158,7 +158,7 @@ static void ra_ebu_on_packet(struct st_rx_audio_session_impl* s, uint32_t rtp_tm
   if (!ebu->dpvr_first) ebu->dpvr_first = dpvr;
 }
 
-static int ra_ebu_init(struct mtl_main_impl* impl, struct st_rx_audio_session_impl* s) {
+static int ra_ebu_init(struct st_rx_audio_session_impl* s) {
   int idx = s->idx;
   struct st_rx_audio_ebu_info* ebu_info = &s->ebu_info;
   struct st30_rx_ops* ops = &s->ops;
@@ -540,8 +540,7 @@ static int rx_audio_session_handle_mbuf(void* priv, struct rte_mbuf** mbuf, uint
   return 0;
 }
 
-static int rx_audio_session_tasklet(struct mtl_main_impl* impl,
-                                    struct st_rx_audio_session_impl* s) {
+static int rx_audio_session_tasklet(struct st_rx_audio_session_impl* s) {
   struct rte_mbuf* mbuf[ST_RX_AUDIO_BURST_SIZE];
   uint16_t rv;
   int num_port = s->ops.num_port;
@@ -565,7 +564,6 @@ static int rx_audio_session_tasklet(struct mtl_main_impl* impl,
 
 static int rx_audio_sessions_tasklet_handler(void* priv) {
   struct st_rx_audio_sessions_mgr* mgr = priv;
-  struct mtl_main_impl* impl = mgr->parent;
   struct st_rx_audio_session_impl* s;
   int pending = MT_TASKLET_ALL_DONE;
 
@@ -573,15 +571,14 @@ static int rx_audio_sessions_tasklet_handler(void* priv) {
     s = rx_audio_session_try_get(mgr, sidx);
     if (!s) continue;
 
-    pending += rx_audio_session_tasklet(impl, s);
+    pending += rx_audio_session_tasklet(s);
     rx_audio_session_put(mgr, sidx);
   }
 
   return pending;
 }
 
-static int rx_audio_session_uinit_hw(struct mtl_main_impl* impl,
-                                     struct st_rx_audio_session_impl* s) {
+static int rx_audio_session_uinit_hw(struct st_rx_audio_session_impl* s) {
   int num_port = s->ops.num_port;
 
   for (int i = 0; i < num_port; i++) {
@@ -620,7 +617,7 @@ static int rx_audio_session_init_hw(struct mtl_main_impl* impl,
     else
       s->rxq[i] = mt_rxq_get(impl, port, &flow);
     if (!s->rxq[i]) {
-      rx_audio_session_uinit_hw(impl, s);
+      rx_audio_session_uinit_hw(s);
       return -EIO;
     }
 
@@ -665,8 +662,7 @@ static int rx_audio_session_init_mcast(struct mtl_main_impl* impl,
   return 0;
 }
 
-static int rx_audio_session_uinit_sw(struct mtl_main_impl* impl,
-                                     struct st_rx_audio_session_impl* s) {
+static int rx_audio_session_uinit_sw(struct st_rx_audio_session_impl* s) {
   rx_audio_session_free_frames(s);
   rx_audio_session_free_rtps(s);
   return 0;
@@ -749,7 +745,7 @@ static int rx_audio_session_attach(struct mtl_main_impl* impl,
   s->st30_stat_last_time = mt_get_monotonic_time();
 
   if (mt_has_ebu(impl)) {
-    ret = ra_ebu_init(impl, s);
+    ret = ra_ebu_init(s);
     if (ret < 0) {
       err("%s(%d), ra_ebu_init fail %d\n", __func__, idx, ret);
       return -EIO;
@@ -765,15 +761,15 @@ static int rx_audio_session_attach(struct mtl_main_impl* impl,
   ret = rx_audio_session_init_sw(impl, mgr, s);
   if (ret < 0) {
     err("%s(%d), rx_audio_session_init_sw fail %d\n", __func__, idx, ret);
-    rx_audio_session_uinit_hw(impl, s);
+    rx_audio_session_uinit_hw(s);
     return -EIO;
   }
 
   ret = rx_audio_session_init_mcast(impl, s);
   if (ret < 0) {
     err("%s(%d), rx_audio_session_init_mcast fail %d\n", __func__, idx, ret);
-    rx_audio_session_uinit_sw(impl, s);
-    rx_audio_session_uinit_hw(impl, s);
+    rx_audio_session_uinit_sw(s);
+    rx_audio_session_uinit_hw(s);
     return -EIO;
   }
 
@@ -830,8 +826,8 @@ static int rx_audio_session_detach(struct mtl_main_impl* impl,
   if (mt_has_ebu(impl)) rx_audio_session_ebu_result(s);
   rx_audio_session_stat(mgr, s);
   rx_audio_session_uinit_mcast(impl, s);
-  rx_audio_session_uinit_sw(impl, s);
-  rx_audio_session_uinit_hw(impl, s);
+  rx_audio_session_uinit_sw(s);
+  rx_audio_session_uinit_hw(s);
   return 0;
 }
 
@@ -843,7 +839,7 @@ static int rx_audio_session_update_src(struct mtl_main_impl* impl,
   struct st30_rx_ops* ops = &s->ops;
 
   rx_audio_session_uinit_mcast(impl, s);
-  rx_audio_session_uinit_hw(impl, s);
+  rx_audio_session_uinit_hw(s);
 
   /* update ip and port */
   for (int i = 0; i < num_port; i++) {
@@ -934,9 +930,9 @@ static int rx_audio_sessions_mgr_init(struct mtl_main_impl* impl, struct mt_sch_
   return 0;
 }
 
-static int rx_audio_session_init(struct mtl_main_impl* impl,
-                                 struct st_rx_audio_sessions_mgr* mgr,
+static int rx_audio_session_init(struct st_rx_audio_sessions_mgr* mgr,
                                  struct st_rx_audio_session_impl* s, int idx) {
+  MTL_MAY_UNUSED(mgr);
   s->idx = idx;
   return 0;
 }
@@ -958,7 +954,7 @@ static struct st_rx_audio_session_impl* rx_audio_sessions_mgr_attach(
       rx_audio_session_put(mgr, i);
       return NULL;
     }
-    ret = rx_audio_session_init(impl, mgr, s, i);
+    ret = rx_audio_session_init(mgr, s, i);
     if (ret < 0) {
       err("%s(%d), init fail on %d\n", __func__, midx, i);
       rx_audio_session_put(mgr, i);
@@ -1107,7 +1103,7 @@ static int st_rx_audio_init(struct mtl_main_impl* impl, struct mt_sch_impl* sch)
   return 0;
 }
 
-int st_rx_audio_sessions_sch_uinit(struct mtl_main_impl* impl, struct mt_sch_impl* sch) {
+int st_rx_audio_sessions_sch_uinit(struct mt_sch_impl* sch) {
   if (!sch->rx_a_init) return 0;
 
   rx_audio_sessions_mgr_uinit(&sch->rx_a_mgr);

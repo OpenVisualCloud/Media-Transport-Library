@@ -11,6 +11,6 @@
 
 #define ST_RX_AUDIO_PREFIX "RA_"
 
-int st_rx_audio_sessions_sch_uinit(struct mtl_main_impl* impl, struct mt_sch_impl* sch);
+int st_rx_audio_sessions_sch_uinit(struct mt_sch_impl* sch);
 
 #endif

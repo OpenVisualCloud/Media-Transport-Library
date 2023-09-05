@@ -55,6 +55,7 @@ static int tx_st22_frame_done(void* priv, uint16_t frame_idx,
   struct tx_st22_sample_ctx* s = priv;
   int ret;
   struct st_tx_frame* framebuff = &s->framebuffs[frame_idx];
+  MTL_MAY_UNUSED(meta);
 
   st_pthread_mutex_lock(&s->wake_mutex);
   if (ST_TX_FRAME_IN_TRANSMITTING == framebuff->stat) {
@@ -75,6 +76,9 @@ static int tx_st22_frame_done(void* priv, uint16_t frame_idx,
 
 static void st22_encode_frame(struct tx_st22_sample_ctx* s, void* codestream_addr,
                               size_t max_codestream_size, size_t* codestream_size) {
+  MTL_MAY_UNUSED(codestream_addr);
+  MTL_MAY_UNUSED(max_codestream_size);
+
   /* call the real encoding here, sample just sleep */
   st_usleep(10 * 1000);
   *codestream_size = s->bytes_per_frame;

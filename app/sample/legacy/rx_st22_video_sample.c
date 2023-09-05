@@ -60,6 +60,9 @@ static int rx_st22_frame_ready(void* priv, void* frame, struct st22_rx_frame_met
 
 static void st22_decode_frame(struct rx_st22_sample_ctx* s, void* codestream_addr,
                               size_t codestream_size) {
+  MTL_MAY_UNUSED(codestream_addr);
+  MTL_MAY_UNUSED(codestream_size);
+
   dbg("%s(%d), frame %p\n", __func__, s->idx, frame);
 
   /* call the real decoding here, sample just sleep */

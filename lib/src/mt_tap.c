@@ -730,7 +730,7 @@ static PSP_DEVICE_INTERFACE_DETAIL_DATA get_tap_device_interface_detail(HDEVINFO
   return NULL;
 }
 
-static int tap_device_init(struct mtl_main_impl* impl, struct mt_cni_impl* cni) {
+static int tap_device_init(struct mt_cni_impl* cni) {
   DWORD device_index = 0;
   HDEVINFO dev_info;
   SP_DEVINFO_DATA device_info_data;
@@ -893,7 +893,7 @@ int mt_tap_init(struct mtl_main_impl* impl) {
   ret = tap_queues_init(impl, cni);
   if (ret < 0) return ret;
 
-  ret = tap_device_init(impl, cni);
+  ret = tap_device_init(cni);
   if (ret < 0) return ret;
 
   rte_atomic32_set(&cni->stop_tap, 0);

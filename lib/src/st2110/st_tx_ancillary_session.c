@@ -187,8 +187,7 @@ static int tx_ancillary_session_init_hdr(struct mtl_main_impl* impl,
   return 0;
 }
 
-static int tx_ancillary_session_init_pacing(struct mtl_main_impl* impl,
-                                            struct st_tx_ancillary_session_impl* s) {
+static int tx_ancillary_session_init_pacing(struct st_tx_ancillary_session_impl* s) {
   int idx = s->idx;
   struct st_tx_ancillary_session_pacing* pacing = &s->pacing;
   double frame_time = (double)1000000000.0 * s->fps_tm.den / s->fps_tm.mul;
@@ -318,9 +317,9 @@ static int tx_ancillary_session_init_next_meta(struct st_tx_ancillary_session_im
   return 0;
 }
 
-static int tx_ancillary_session_init(struct mtl_main_impl* impl,
-                                     struct st_tx_ancillary_sessions_mgr* mgr,
+static int tx_ancillary_session_init(struct st_tx_ancillary_sessions_mgr* mgr,
                                      struct st_tx_ancillary_session_impl* s, int idx) {
+  MTL_MAY_UNUSED(mgr);
   s->idx = idx;
   return 0;
 }
@@ -340,8 +339,6 @@ static int tx_ancillary_sessions_tasklet_start(void* priv) {
 
   return 0;
 }
-
-static int tx_ancillary_sessions_tasklet_stop(void* priv) { return 0; }
 
 static int tx_ancillary_session_update_redundant(struct st_tx_ancillary_session_impl* s,
                                                  struct rte_mbuf* pkt) {
@@ -1305,7 +1302,7 @@ static int tx_ancillary_session_attach(struct mtl_main_impl* impl,
     return ret;
   }
 
-  ret = tx_ancillary_session_init_pacing(impl, s);
+  ret = tx_ancillary_session_init_pacing(s);
   if (ret < 0) {
     err("%s(%d), init pacing fail %d\n", __func__, idx, ret);
     return ret;
@@ -1482,7 +1479,6 @@ static int tx_ancillary_sessions_mgr_init(struct mtl_main_impl* impl,
   ops.priv = mgr;
   ops.name = "tx_ancillary_sessions_mgr";
   ops.start = tx_ancillary_sessions_tasklet_start;
-  ops.stop = tx_ancillary_sessions_tasklet_stop;
   ops.handler = tx_ancillary_sessions_tasklet_handler;
 
   mgr->tasklet = mt_sch_register_tasklet(sch, &ops);
@@ -1514,7 +1510,7 @@ static struct st_tx_ancillary_session_impl* tx_ancillary_sessions_mgr_attach(
       tx_ancillary_session_put(mgr, i);
       return NULL;
     }
-    ret = tx_ancillary_session_init(impl, mgr, s, i);
+    ret = tx_ancillary_session_init(mgr, s, i);
     if (ret < 0) {
       err("%s(%d), init fail on %d\n", __func__, midx, i);
       tx_ancillary_session_put(mgr, i);
@@ -1672,8 +1668,7 @@ static int st_tx_anc_init(struct mtl_main_impl* impl, struct mt_sch_impl* sch) {
   return 0;
 }
 
-int st_tx_ancillary_sessions_sch_uinit(struct mtl_main_impl* impl,
-                                       struct mt_sch_impl* sch) {
+int st_tx_ancillary_sessions_sch_uinit(struct mt_sch_impl* sch) {
   if (!sch->tx_anc_init) return 0;
 
   /* free tx ancillary context */

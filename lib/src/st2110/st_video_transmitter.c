@@ -31,10 +31,10 @@ static int video_trs_tasklet_stop(void* priv) {
 
 static uint16_t video_trs_burst_fail(struct mtl_main_impl* impl,
                                      struct st_tx_video_session_impl* s,
-                                     enum mtl_session_port s_port,
-                                     struct rte_mbuf** tx_pkts, uint16_t nb_pkts) {
+                                     enum mtl_session_port s_port, uint16_t nb_pkts) {
   uint64_t cur_tsc = mt_get_tsc(impl);
   uint64_t fail_duration = cur_tsc - s->last_burst_succ_time_tsc[s_port];
+
   if (fail_duration > s->tx_hang_detect_time_thresh) {
     err("%s(%d,%d), hang duration %" PRIu64 " ms\n", __func__, s->idx, s_port,
         fail_duration / NS_PER_MS);
@@ -51,7 +51,7 @@ static uint16_t video_trs_burst_pad(struct mtl_main_impl* impl,
                                     enum mtl_session_port s_port,
                                     struct rte_mbuf** tx_pkts, uint16_t nb_pkts) {
   uint16_t tx = mt_txq_burst(s->queue[s_port], tx_pkts, nb_pkts);
-  if (!tx) return video_trs_burst_fail(impl, s, s_port, tx_pkts, nb_pkts);
+  if (!tx) return video_trs_burst_fail(impl, s, s_port, nb_pkts);
   return tx;
 }
 
@@ -64,7 +64,7 @@ static uint16_t video_trs_burst(struct mtl_main_impl* impl,
   uint16_t tx = mt_txq_burst(s->queue[s_port], tx_pkts, nb_pkts);
   if (!tx) {
     if (s->rtcp_tx[s_port]) rte_pktmbuf_free_bulk(tx_pkts, nb_pkts);
-    return video_trs_burst_fail(impl, s, s_port, tx_pkts, nb_pkts);
+    return video_trs_burst_fail(impl, s, s_port, nb_pkts);
   }
 
   if (s->rtcp_tx[s_port]) {

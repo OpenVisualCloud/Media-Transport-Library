@@ -51,6 +51,8 @@ static int rx_st20p_packet_convert(void* priv, void* frame,
   struct st20p_rx_frame* framebuff;
   int ret = 0;
   struct st20_rfc4175_422_10_pg2_be* src = meta->payload;
+  MTL_MAY_UNUSED(frame);
+
   mt_pthread_mutex_lock(&ctx->lock);
   if (meta->row_number == 0 && meta->row_offset == 0) {
     /* first packet of frame */

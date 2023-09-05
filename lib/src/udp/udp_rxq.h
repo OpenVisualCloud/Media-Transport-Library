@@ -106,11 +106,6 @@ static inline int mur_client_set_wake_timeout(struct mur_client* c, unsigned int
   return 0;
 }
 
-static inline int mur_client_set_reuse(struct mur_client* c, int reuse) {
-  // c->reuse_port = reuse;
-  return 0;
-}
-
 int mudp_rxq_init(struct mtl_main_impl* impl);
 int mudp_rxq_uinit(struct mtl_main_impl* impl);
 

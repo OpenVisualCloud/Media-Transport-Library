@@ -41,6 +41,7 @@ static int rx_st20p_query_ext_frame(void* priv, struct st20_ext_frame* ext_frame
                                     struct st20_rx_frame_meta* meta) {
   struct rx_st20p_sample_ctx* s = priv;
   int i = s->ext_idx;
+  MTL_MAY_UNUSED(meta);
 
   /* you can check the timestamp from lib by meta->timestamp */
 

@@ -15,6 +15,8 @@
 #define MSG_HEIGHT_MARGIN (5)
 
 int st_app_player_uinit(struct st_app_context* ctx) {
+  MTL_MAY_UNUSED(ctx);
+
   SDL_Quit();
 #ifdef APP_HAS_SDL2_TTF
   TTF_Quit();
@@ -181,6 +183,8 @@ int st_app_uinit_display(struct st_display* d) {
 int st_app_init_display(struct st_display* d, char* name, int width, int height,
                         char* font) {
   int ret;
+  MTL_MAY_UNUSED(font);
+
   if (!d) return -ENOMEM;
   snprintf(d->name, 32, "%s", name);
   d->window_w = SCREEN_WIDTH;

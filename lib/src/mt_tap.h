@@ -80,9 +80,17 @@ int mt_tap_uinit(struct mtl_main_impl* impl);
 int mt_tap_handle(struct mtl_main_impl* impl, enum mtl_port port);
 
 #else
-static inline int mt_tap_init(struct mtl_main_impl* impl) { return 0; }
-static inline int mt_tap_uinit(struct mtl_main_impl* impl) { return 0; }
+static inline int mt_tap_init(struct mtl_main_impl* impl) {
+  MTL_MAY_UNUSED(impl);
+  return 0;
+}
+static inline int mt_tap_uinit(struct mtl_main_impl* impl) {
+  MTL_MAY_UNUSED(impl);
+  return 0;
+}
 static inline int mt_tap_handle(struct mtl_main_impl* impl, enum mtl_port port) {
+  MTL_MAY_UNUSED(impl);
+  MTL_MAY_UNUSED(port);
   return -EIO;
 }
 #endif

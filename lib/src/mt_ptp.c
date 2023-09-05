@@ -48,9 +48,11 @@ static inline uint64_t ptp_net_tmstamp_to_ns(struct mt_ptp_tmstamp* ts) {
 }
 
 static inline void ptp_timesync_lock(struct mt_ptp_impl* ptp) { /* todo */
+  MTL_MAY_UNUSED(ptp);
 }
 
 static inline void ptp_timesync_unlock(struct mt_ptp_impl* ptp) { /* todo */
+  MTL_MAY_UNUSED(ptp);
 }
 
 static inline uint64_t ptp_correct_ts(struct mt_ptp_impl* ptp, uint64_t ts) {
@@ -167,6 +169,7 @@ static void ptp_adj_system_clock_time(struct mt_ptp_impl* ptp, int64_t delta) {
   int ret = clock_adjtime(CLOCK_REALTIME, &adjtime);
   if (ret < 0) err("%s(%d), adj system time offset fail %d\n", __func__, ptp->port, ret);
 #else
+  MTL_MAY_UNUSED(delta);
   err("%s(%d), not supported for windows\n", __func__, ptp->port);
 #endif
 }
@@ -189,6 +192,7 @@ static void ptp_adj_system_clock_freq(struct mt_ptp_impl* ptp, double freq) {
   int ret = clock_adjtime(CLOCK_REALTIME, &adjfreq);
   if (ret < 0) err("%s(%d), adj system time freq fail %d\n", __func__, ptp->port, ret);
 #else
+  MTL_MAY_UNUSED(freq);
   err("%s(%d), not supported for windows\n", __func__, ptp->port);
 #endif
 }
@@ -428,6 +432,8 @@ static void ptp_calculate_coefficient(struct mt_ptp_impl* ptp, int64_t delta) {
 }
 
 static void ptp_adjust_delta(struct mt_ptp_impl* ptp, int64_t delta, bool error_correct) {
+  MTL_MAY_UNUSED(error_correct);
+
 #ifdef MTL_HAS_DPDK_TIMESYNC_ADJUST_FREQ
   double ppb;
   enum servo_state state = UNLOCKED;

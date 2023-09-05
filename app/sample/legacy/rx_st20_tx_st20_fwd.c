@@ -122,6 +122,7 @@ static int tx_video_next_frame(void* priv, uint16_t* next_frame_idx,
   int ret;
   uint16_t consumer_idx = s->tx_framebuff_consumer_idx;
   struct st_tx_frame* framebuff = &s->tx_framebuffs[consumer_idx];
+  MTL_MAY_UNUSED(meta);
 
   st_pthread_mutex_lock(&s->wake_mutex);
   if (ST_TX_FRAME_READY == framebuff->stat) {
@@ -148,6 +149,7 @@ static int tx_video_frame_done(void* priv, uint16_t frame_idx,
   struct rx_st20_tx_st20_sample_ctx* s = priv;
   int ret;
   struct st_tx_frame* framebuff = &s->tx_framebuffs[frame_idx];
+  MTL_MAY_UNUSED(meta);
 
   if (s->zero_copy) { /* rx framebuffer put back to lib here */
     void* frame_addr = st20_tx_get_framebuffer(s->tx_handle, frame_idx);

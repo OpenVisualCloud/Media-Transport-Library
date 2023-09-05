@@ -674,6 +674,7 @@ int mufd_setsockopt(int sockfd, int level, int optname, const void* optval,
 int mufd_fcntl(int sockfd, int cmd, va_list args) {
   struct ufd_slot* slot = ufd_fd2slot(sockfd);
   int idx = slot->idx;
+  MTL_MAY_UNUSED(args);
 
 #ifdef WINDOWSENV
   err("%s(%d), invalid cmd %d, not support on windows\n", __func__, idx, cmd);

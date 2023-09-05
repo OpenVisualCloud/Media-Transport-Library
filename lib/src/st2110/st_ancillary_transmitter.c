@@ -46,8 +46,7 @@ static int st_ancillary_trs_tasklet_stop(void* priv) {
 }
 
 /* pacing handled by session itself */
-static int st_ancillary_trs_session_tasklet(struct mtl_main_impl* impl,
-                                            struct st_ancillary_transmitter_impl* trs,
+static int st_ancillary_trs_session_tasklet(struct st_ancillary_transmitter_impl* trs,
                                             struct st_tx_ancillary_sessions_mgr* mgr,
                                             enum mtl_port port) {
   struct rte_ring* ring = mgr->ring[port];
@@ -99,7 +98,7 @@ static int st_ancillary_trs_tasklet_handler(void* priv) {
   int pending = MT_TASKLET_ALL_DONE;
 
   for (port = 0; port < mt_num_ports(impl); port++) {
-    pending += st_ancillary_trs_session_tasklet(impl, trs, mgr, port);
+    pending += st_ancillary_trs_session_tasklet(trs, mgr, port);
   }
 
   return pending;

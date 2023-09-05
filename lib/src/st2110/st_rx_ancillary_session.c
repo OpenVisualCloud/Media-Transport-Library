@@ -50,9 +50,9 @@ static inline uint16_t rx_ancillary_queue_id(struct st_rx_ancillary_session_impl
   return mt_rxq_queue_id(s->rxq[s_port]);
 }
 
-static int rx_ancillary_session_init(struct mtl_main_impl* impl,
-                                     struct st_rx_ancillary_sessions_mgr* mgr,
+static int rx_ancillary_session_init(struct st_rx_ancillary_sessions_mgr* mgr,
                                      struct st_rx_ancillary_session_impl* s, int idx) {
+  MTL_MAY_UNUSED(mgr);
   s->idx = idx;
   return 0;
 }
@@ -81,9 +81,9 @@ static int rx_ancillary_session_handle_pkt(struct mtl_main_impl* impl,
   size_t hdr_offset = sizeof(struct st_rfc3550_hdr) - sizeof(struct st_rfc3550_rtp_hdr);
   struct st_rfc3550_rtp_hdr* rtp =
       rte_pktmbuf_mtod_offset(mbuf, struct st_rfc3550_rtp_hdr*, hdr_offset);
-
   uint16_t seq_id = ntohs(rtp->seq_number);
   uint8_t payload_type = rtp->payload_type;
+  MTL_MAY_UNUSED(s_port);
 
   if (payload_type != ops->payload_type) {
     s->st40_stat_pkts_wrong_hdr_dropped++;
@@ -147,8 +147,7 @@ static int rx_ancillary_session_handle_mbuf(void* priv, struct rte_mbuf** mbuf,
   return 0;
 }
 
-static int rx_ancillary_session_tasklet(struct mtl_main_impl* impl,
-                                        struct st_rx_ancillary_session_impl* s) {
+static int rx_ancillary_session_tasklet(struct st_rx_ancillary_session_impl* s) {
   struct rte_mbuf* mbuf[ST_RX_ANCILLARY_BURST_SIZE];
   uint16_t rv;
   int num_port = s->ops.num_port;
@@ -171,7 +170,6 @@ static int rx_ancillary_session_tasklet(struct mtl_main_impl* impl,
 
 static int rx_ancillary_sessions_tasklet_handler(void* priv) {
   struct st_rx_ancillary_sessions_mgr* mgr = priv;
-  struct mtl_main_impl* impl = mgr->parent;
   struct st_rx_ancillary_session_impl* s;
   int pending = MT_TASKLET_ALL_DONE;
 
@@ -179,15 +177,14 @@ static int rx_ancillary_sessions_tasklet_handler(void* priv) {
     s = rx_ancillary_session_try_get(mgr, sidx);
     if (!s) continue;
 
-    pending += rx_ancillary_session_tasklet(impl, s);
+    pending += rx_ancillary_session_tasklet(s);
     rx_ancillary_session_put(mgr, sidx);
   }
 
   return pending;
 }
 
-static int rx_ancillary_session_uinit_hw(struct mtl_main_impl* impl,
-                                         struct st_rx_ancillary_session_impl* s) {
+static int rx_ancillary_session_uinit_hw(struct st_rx_ancillary_session_impl* s) {
   int num_port = s->ops.num_port;
 
   for (int i = 0; i < num_port; i++) {
@@ -226,7 +223,7 @@ static int rx_ancillary_session_init_hw(struct mtl_main_impl* impl,
     else
       s->rxq[i] = mt_rxq_get(impl, port, &flow);
     if (!s->rxq[i]) {
-      rx_ancillary_session_uinit_hw(impl, s);
+      rx_ancillary_session_uinit_hw(s);
       return -EIO;
     }
 
@@ -297,8 +294,7 @@ static int rx_ancillary_session_init_sw(struct mtl_main_impl* impl,
   return 0;
 }
 
-static int rx_ancillary_session_uinit_sw(struct mtl_main_impl* impl,
-                                         struct st_rx_ancillary_session_impl* s) {
+static int rx_ancillary_session_uinit_sw(struct st_rx_ancillary_session_impl* s) {
   if (s->packet_ring) {
     mt_ring_dequeue_clean(s->packet_ring);
     rte_ring_free(s->packet_ring);
@@ -347,15 +343,15 @@ static int rx_ancillary_session_attach(struct mtl_main_impl* impl,
   ret = rx_ancillary_session_init_sw(impl, mgr, s);
   if (ret < 0) {
     err("%s(%d), rx_ancillary_session_init_rtps fail %d\n", __func__, idx, ret);
-    rx_ancillary_session_uinit_hw(impl, s);
+    rx_ancillary_session_uinit_hw(s);
     return -EIO;
   }
 
   ret = rx_ancillary_session_init_mcast(impl, s);
   if (ret < 0) {
     err("%s(%d), rx_ancillary_session_init_mcast fail %d\n", __func__, idx, ret);
-    rx_ancillary_session_uinit_sw(impl, s);
-    rx_ancillary_session_uinit_hw(impl, s);
+    rx_ancillary_session_uinit_sw(s);
+    rx_ancillary_session_uinit_hw(s);
     return -EIO;
   }
 
@@ -398,8 +394,8 @@ static int rx_ancillary_session_detach(struct mtl_main_impl* impl,
   s->attached = false;
   rx_ancillary_session_stat(s);
   rx_ancillary_session_uinit_mcast(impl, s);
-  rx_ancillary_session_uinit_sw(impl, s);
-  rx_ancillary_session_uinit_hw(impl, s);
+  rx_ancillary_session_uinit_sw(s);
+  rx_ancillary_session_uinit_hw(s);
   return 0;
 }
 
@@ -411,7 +407,7 @@ static int rx_ancillary_session_update_src(struct mtl_main_impl* impl,
   struct st40_rx_ops* ops = &s->ops;
 
   rx_ancillary_session_uinit_mcast(impl, s);
-  rx_ancillary_session_uinit_hw(impl, s);
+  rx_ancillary_session_uinit_hw(s);
 
   /* update ip and port */
   for (int i = 0; i < num_port; i++) {
@@ -520,7 +516,7 @@ static struct st_rx_ancillary_session_impl* rx_ancillary_sessions_mgr_attach(
       rx_ancillary_session_put(mgr, i);
       return NULL;
     }
-    ret = rx_ancillary_session_init(impl, mgr, s, i);
+    ret = rx_ancillary_session_init(mgr, s, i);
     if (ret < 0) {
       err("%s(%d), init fail on %d\n", __func__, midx, i);
       rx_ancillary_session_put(mgr, i);
@@ -659,8 +655,7 @@ static int st_rx_anc_init(struct mtl_main_impl* impl, struct mt_sch_impl* sch) {
   return 0;
 }
 
-int st_rx_ancillary_sessions_sch_uinit(struct mtl_main_impl* impl,
-                                       struct mt_sch_impl* sch) {
+int st_rx_ancillary_sessions_sch_uinit(struct mt_sch_impl* sch) {
   if (!sch->rx_anc_init) return 0;
 
   rx_ancillary_sessions_mgr_uinit(&sch->rx_anc_mgr);

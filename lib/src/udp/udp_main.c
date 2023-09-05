@@ -110,6 +110,8 @@ static int udp_verify_sendto_args(size_t len, int flags, const struct sockaddr_i
 }
 
 static int udp_verify_poll(struct mudp_pollfd* fds, mudp_nfds_t nfds, int timeout) {
+  MTL_MAY_UNUSED(timeout);
+
   if (!fds) {
     err("%s, NULL fds\n", __func__);
     MUDP_ERR_RET(EINVAL);
@@ -482,7 +484,7 @@ static int udp_init_txq(struct mtl_main_impl* impl, struct mudp_impl* s,
   return 0;
 }
 
-static int udp_uinit_rxq(struct mtl_main_impl* impl, struct mudp_impl* s) {
+static int udp_uinit_rxq(struct mudp_impl* s) {
   if (s->rxq) {
     mur_client_put(s->rxq);
     s->rxq = NULL;
@@ -710,9 +712,6 @@ static int udp_set_reuse_port(struct mudp_impl* s, const void* optval, socklen_t
   reuse_port = *((int*)optval);
   info("%s(%d), reuse_port %d\n", __func__, idx, reuse_port);
   s->reuse_port = reuse_port;
-  if (s->rxq) {
-    mur_client_set_reuse(s->rxq, reuse_port);
-  }
   return 0;
 }
 
@@ -777,7 +776,7 @@ static int udp_init_mcast(struct mtl_main_impl* impl, struct mudp_impl* s) {
   return 0;
 }
 
-static int udp_uinit_mcast(struct mtl_main_impl* impl, struct mudp_impl* s) {
+static int udp_uinit_mcast(struct mudp_impl* s) {
   int idx = s->idx;
 
   if (!s->mcast_addrs) {
@@ -899,6 +898,7 @@ static ssize_t udp_rx_dequeue(struct mudp_impl* s, void* buf, size_t len, int fl
   int ret;
   ssize_t copied = 0;
   struct rte_mbuf* pkt = NULL;
+  MTL_MAY_UNUSED(flags);
 
   /* dequeue pkt from rx ring */
   ret = rte_ring_sc_dequeue(mur_client_ring(s->rxq), (void**)&pkt);
@@ -986,6 +986,7 @@ static ssize_t udp_rx_msg_dequeue(struct mudp_impl* s, struct msghdr* msg, int f
   int ret;
   ssize_t copied = 0;
   struct rte_mbuf* pkt = NULL;
+  MTL_MAY_UNUSED(flags);
 
   /* dequeue pkt from rx ring */
   ret = rte_ring_sc_dequeue(mur_client_ring(s->rxq), (void**)&pkt);
@@ -1235,8 +1236,8 @@ int mudp_close(mudp_handle ut) {
   udp_stat_dump(s);
 
   udp_uinit_txq(impl, s);
-  udp_uinit_rxq(impl, s);
-  udp_uinit_mcast(impl, s);
+  udp_uinit_rxq(s);
+  udp_uinit_mcast(s);
 
   mt_pthread_mutex_destroy(&s->mcast_addrs_mutex);
   mt_rte_free(s);
@@ -1260,7 +1261,7 @@ int mudp_bind(mudp_handle ut, const struct sockaddr* addr, socklen_t addrlen) {
   if (ret < 0) return ret;
 
   /* uinit rx if any */
-  udp_uinit_rxq(impl, s);
+  udp_uinit_rxq(s);
 
   /* set bind port */
   udp_bind_port(s, htons(addr_in->sin_port));
@@ -1582,6 +1583,7 @@ int mudp_setsockopt(mudp_handle ut, int level, int optname, const void* optval,
 int mudp_ioctl(mudp_handle ut, unsigned long cmd, va_list args) {
   struct mudp_impl* s = ut;
   int idx = s->idx;
+  MTL_MAY_UNUSED(args);
 
   switch (cmd) {
     case FIONBIO:

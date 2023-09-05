@@ -73,7 +73,7 @@ static int rtcp_tx_retransmit_rtp_packets(struct mt_rtcp_tx* tx, uint16_t seq,
   struct rte_mbuf *mbufs[bulk], *copy_mbufs[bulk];
   uint16_t ring_head_seq = 0;
   uint32_t ts = 0;
-  MT_MAY_UNUSED(ts);
+  MTL_MAY_UNUSED(ts);
 
   struct rte_mbuf* head_mbuf = NULL;
   if (mt_u64_fifo_read_front(tx->mbuf_ring, (uint64_t*)&head_mbuf) < 0 || !head_mbuf) {

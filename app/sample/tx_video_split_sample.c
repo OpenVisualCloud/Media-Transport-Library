@@ -25,6 +25,7 @@ static int tx_video_next_frame(void* priv, uint16_t* next_frame_idx,
                                struct st20_tx_frame_meta* meta) {
   struct tv_split_sample_ctx* s = priv;
   int ret = 0;
+  MTL_MAY_UNUSED(meta);
 
   if (!s->handle) return -EIO; /* not ready */
 
@@ -50,6 +51,9 @@ static int tx_video_next_frame(void* priv, uint16_t* next_frame_idx,
 
 int tx_video_frame_done(void* priv, uint16_t frame_idx, struct st20_tx_frame_meta* meta) {
   struct tv_split_sample_ctx* s = priv;
+  MTL_MAY_UNUSED(frame_idx);
+  MTL_MAY_UNUSED(meta);
+
   s->fb_send++;
 
   /* when using ext frame, the frame lifetime should be considered */

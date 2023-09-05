@@ -145,6 +145,7 @@ static int app_rx_audio_init_rtp_thread(struct st_app_rx_audio_session* s) {
 static int app_rx_audio_frame_done(void* priv, void* frame,
                                    struct st30_rx_frame_meta* meta) {
   struct st_app_rx_audio_session* s = priv;
+  MTL_MAY_UNUSED(meta);
 
   if (!s->handle) return -EIO;
 
