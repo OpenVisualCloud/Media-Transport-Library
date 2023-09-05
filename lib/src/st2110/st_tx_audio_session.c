@@ -187,8 +187,7 @@ static int tx_audio_session_init_hdr(struct mtl_main_impl* impl,
   return 0;
 }
 
-static int tx_audio_session_init_pacing(struct mtl_main_impl* impl,
-                                        struct st_tx_audio_session_impl* s) {
+static int tx_audio_session_init_pacing(struct st_tx_audio_session_impl* s) {
   int idx = s->idx;
   struct st_tx_audio_session_pacing* pacing = &s->pacing;
   struct st30_tx_ops* ops = &s->ops;
@@ -330,9 +329,9 @@ static int tx_audio_session_init_next_meta(struct st_tx_audio_session_impl* s,
   return 0;
 }
 
-static int tx_audio_session_init(struct mtl_main_impl* impl,
-                                 struct st_tx_audio_sessions_mgr* mgr,
+static int tx_audio_session_init(struct st_tx_audio_sessions_mgr* mgr,
                                  struct st_tx_audio_session_impl* s, int idx) {
+  MTL_MAY_UNUSED(mgr);
   s->idx = idx;
   return 0;
 }
@@ -352,8 +351,6 @@ static int tx_audio_sessions_tasklet_start(void* priv) {
 
   return 0;
 }
-
-static int tx_audio_sessions_tasklet_stop(void* priv) { return 0; }
 
 static int tx_audio_session_update_redundant(struct st_tx_audio_session_impl* s,
                                              struct rte_mbuf* pkt) {
@@ -434,7 +431,7 @@ static int tx_audio_session_build_packet(struct st_tx_audio_session_impl* s,
 }
 
 static int tx_audio_session_build_rtp_packet(struct st_tx_audio_session_impl* s,
-                                             struct rte_mbuf* pkt, int pkt_idx) {
+                                             struct rte_mbuf* pkt) {
   struct st_rfc3550_rtp_hdr* rtp;
   uint16_t len = s->pkt_len + sizeof(struct st_rfc3550_rtp_hdr);
 
@@ -669,7 +666,7 @@ static int tx_audio_session_tasklet_frame(struct mtl_main_impl* impl,
       s->stat_build_ret_code = -STI_FRAME_PKT_ALLOC_FAIL;
       return MT_TASKLET_ALL_DONE;
     }
-    tx_audio_session_build_rtp_packet(s, pkt_rtp, s->st30_pkt_idx);
+    tx_audio_session_build_rtp_packet(s, pkt_rtp);
     tx_audio_session_build_packet_chain(s, pkt, pkt_rtp, MTL_SESSION_PORT_P);
     if (send_r) {
       pkt_r = rte_pktmbuf_alloc(hdr_pool_r);
@@ -1403,7 +1400,7 @@ static int tx_audio_session_attach(struct mtl_main_impl* impl,
   }
   if (ops->flags & ST30_TX_FLAG_BUILD_PACING) s->pacing_in_build = true;
   s->calculate_time_cursor = true;
-  ret = tx_audio_session_init_pacing(impl, s);
+  ret = tx_audio_session_init_pacing(s);
   if (ret < 0) {
     err("%s(%d), tx_audio_session_init_pacing fail %d\n", __func__, idx, ret);
     return ret;
@@ -1616,7 +1613,6 @@ static int tx_audio_sessions_mgr_init(struct mtl_main_impl* impl, struct mt_sch_
   ops.priv = mgr;
   ops.name = "tx_audio_sessions_build";
   ops.start = tx_audio_sessions_tasklet_start;
-  ops.stop = tx_audio_sessions_tasklet_stop;
   ops.handler = tx_audio_sessions_tasklet_build;
 
   mgr->tasklet_build = mt_sch_register_tasklet(sch, &ops);
@@ -1660,7 +1656,7 @@ static struct st_tx_audio_session_impl* tx_audio_sessions_mgr_attach(
       tx_audio_session_put(mgr, i);
       return NULL;
     }
-    ret = tx_audio_session_init(impl, mgr, s, i);
+    ret = tx_audio_session_init(mgr, s, i);
     if (ret < 0) {
       err("%s(%d), init fail on %d\n", __func__, midx, i);
       tx_audio_session_put(mgr, i);
@@ -1883,7 +1879,7 @@ int st_audio_queue_fatal_error(struct mtl_main_impl* impl,
   return 0;
 }
 
-int st_tx_audio_sessions_sch_uinit(struct mtl_main_impl* impl, struct mt_sch_impl* sch) {
+int st_tx_audio_sessions_sch_uinit(struct mt_sch_impl* sch) {
   if (!sch->tx_a_init) return 0;
 
   /* free tx audio context */

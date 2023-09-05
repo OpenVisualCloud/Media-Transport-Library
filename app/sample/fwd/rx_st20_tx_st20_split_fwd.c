@@ -157,6 +157,7 @@ static int tx_video_frame_done(void* priv, uint16_t frame_idx,
                                struct st20_tx_frame_meta* meta) {
   struct tx_ctx* s = priv;
   struct split_fwd_sample_ctx* app = s->app;
+  MTL_MAY_UNUSED(frame_idx);
 
   /* try to release the sending frame */
   if (app->ready) sending_frames_delete(app, meta->timestamp);

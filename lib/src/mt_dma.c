@@ -481,7 +481,7 @@ int mt_dma_submit(struct mtl_dma_lender_dev* dev) {
 uint16_t mt_dma_completed(struct mtl_dma_lender_dev* dev, uint16_t nb_cpls,
                           uint16_t* last_idx, bool* has_error) {
   struct mt_dma_dev* dma_dev = dev->parent;
-  return rte_dma_completed(dma_dev->dev_id, 0, nb_cpls, NULL, NULL);
+  return rte_dma_completed(dma_dev->dev_id, 0, nb_cpls, last_idx, has_error);
 }
 
 int mt_dma_borrow_mbuf(struct mtl_dma_lender_dev* dev, struct rte_mbuf* mbuf) {

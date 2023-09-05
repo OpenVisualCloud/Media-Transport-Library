@@ -33,6 +33,7 @@ static int tx_video_next_frame(void* priv, uint16_t* next_frame_idx,
   int ret;
   uint16_t consumer_idx = s->framebuff_consumer_idx;
   struct st_tx_frame* framebuff = &s->framebuffs[consumer_idx];
+  MTL_MAY_UNUSED(meta);
 
   if (!s->handle) return -EIO; /* not ready */
 
@@ -66,6 +67,7 @@ static int tx_video_frame_done(void* priv, uint16_t frame_idx,
   struct tv_sample_context* s = priv;
   int ret;
   struct st_tx_frame* framebuff = &s->framebuffs[frame_idx];
+  MTL_MAY_UNUSED(meta);
 
   if (!s->handle) return -EIO; /* not ready */
 
@@ -88,6 +90,10 @@ static int tx_video_frame_done(void* priv, uint16_t frame_idx,
 
 static void tx_video_build_frame(struct tv_sample_context* s, void* frame,
                                  size_t frame_size) {
+  MTL_MAY_UNUSED(s);
+  MTL_MAY_UNUSED(frame);
+  MTL_MAY_UNUSED(frame_size);
+
   /* call the real build here, sample just sleep */
   st_usleep(10 * 1000);
 }

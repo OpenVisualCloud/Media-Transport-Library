@@ -135,8 +135,7 @@ static int app_tx_st20p_open_source(struct st_app_tx_st20p_session* s) {
   return 0;
 }
 
-static int app_tx_st20p_start_source(struct st_app_context* ctx,
-                                     struct st_app_tx_st20p_session* s) {
+static int app_tx_st20p_start_source(struct st_app_tx_st20p_session* s) {
   int ret = -EINVAL;
 
   ret = pthread_create(&s->st20p_app_thread, NULL, app_tx_st20p_frame_thread, s);
@@ -319,7 +318,7 @@ static int app_tx_st20p_init(struct st_app_context* ctx, st_json_st20p_session_t
     app_tx_st20p_uinit(s);
     return ret;
   }
-  ret = app_tx_st20p_start_source(ctx, s);
+  ret = app_tx_st20p_start_source(s);
   if (ret < 0) {
     err("%s(%d), app_tx_st20p_start_source fail %d\n", __func__, idx, ret);
     app_tx_st20p_uinit(s);

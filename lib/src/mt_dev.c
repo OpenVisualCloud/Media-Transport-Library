@@ -694,6 +694,7 @@ static struct rte_flow* dev_rx_queue_create_flow_raw(struct mt_interface* inf, u
   char msk_buf[] =
       "000000000000000000000000000000000000000000000000000000000000000000000000FFFF000000"
       "000000000000000000000000000000000000000000";
+  MTL_MAY_UNUSED(flow);
 
   attr.ingress = 1;
 
@@ -1112,6 +1113,8 @@ static bool dev_pkt_valid(struct mt_interface* inf, uint16_t queue,
 static uint16_t dev_tx_pkt_check(uint16_t port, uint16_t queue, struct rte_mbuf** pkts,
                                  uint16_t nb_pkts, void* priv) {
   struct mt_interface* inf = priv;
+  MTL_MAY_UNUSED(port);
+  MTL_MAY_UNUSED(nb_pkts);
 
 #if MT_DEV_SIMULATE_MALICIOUS_PKT /* for recovery test */
   if (port == 0 && queue > 0) {
@@ -1688,7 +1691,7 @@ static int dev_if_uinit_tx_queues(struct mt_interface* inf) {
   return 0;
 }
 
-static int dev_if_init_tx_queues(struct mtl_main_impl* impl, struct mt_interface* inf) {
+static int dev_if_init_tx_queues(struct mt_interface* inf) {
   struct mt_tx_queue* tx_queues =
       mt_rte_zmalloc_socket(sizeof(*tx_queues) * inf->max_tx_queues, inf->socket_id);
   if (!tx_queues) {
@@ -1835,11 +1838,14 @@ retry:
 }
 
 static uint64_t ptp_from_real_time(struct mtl_main_impl* impl, enum mtl_port port) {
+  MTL_MAY_UNUSED(impl);
+  MTL_MAY_UNUSED(port);
   return mt_get_real_time();
 }
 
 static uint64_t ptp_from_user(struct mtl_main_impl* impl, enum mtl_port port) {
   struct mtl_init_params* p = mt_get_user_params(impl);
+  MTL_MAY_UNUSED(port);
 
   return p->ptp_get_time_fn(p->priv);
 }
@@ -2070,6 +2076,7 @@ int mt_dev_flush_tx_queue(struct mtl_main_impl* impl, struct mt_tx_queue* queue,
 int mt_dev_tx_done_cleanup(struct mtl_main_impl* impl, struct mt_tx_queue* queue) {
   uint16_t port_id = queue->port_id;
   uint16_t queue_id = queue->queue_id;
+  MTL_MAY_UNUSED(impl);
 
   return rte_eth_tx_done_cleanup(port_id, queue_id, 0);
 }
@@ -2377,6 +2384,8 @@ int mt_dev_init(struct mtl_init_params* p, struct mt_kport_info* kport_info) {
 }
 
 int mt_dev_uinit(struct mtl_init_params* p) {
+  MTL_MAY_UNUSED(p);
+
   rte_eal_cleanup();
 
   info("%s, succ\n", __func__);
@@ -2693,7 +2702,7 @@ int mt_dev_if_init(struct mtl_main_impl* impl) {
     }
     inf->tx_mbuf_pool = mbuf_pool;
 
-    ret = dev_if_init_tx_queues(impl, inf);
+    ret = dev_if_init_tx_queues(inf);
     if (ret < 0) {
       mt_dev_if_uinit(impl);
       return -ENOMEM;

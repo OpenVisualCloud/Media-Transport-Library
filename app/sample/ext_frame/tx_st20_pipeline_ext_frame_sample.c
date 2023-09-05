@@ -118,6 +118,9 @@ static int tx_st20p_frame_available(void* priv) {
 }
 
 static int tx_st20p_frame_done(void* priv, struct st_frame* frame) {
+  MTL_MAY_UNUSED(priv);
+  MTL_MAY_UNUSED(frame);
+
   /* free or return the ext memory here if necessary */
   /* then clear the frame buffer */
 

@@ -677,8 +677,7 @@ static int tv_init_st22_next_meta(struct st_tx_video_session_impl* s,
   return 0;
 }
 
-static int tv_init_st22_boxes(struct mtl_main_impl* impl,
-                              struct st_tx_video_session_impl* s) {
+static int tv_init_st22_boxes(struct st_tx_video_session_impl* s) {
   struct st22_tx_video_info* st22_info = s->st22_info;
   struct st22_jpvs* jpvs = &st22_info->st22_boxes.jpvs;
   uint32_t lbox = sizeof(*jpvs);
@@ -1511,8 +1510,6 @@ static uint64_t tv_pacing_required_tai(struct st_tx_video_session_impl* s,
   return required_tai;
 }
 
-static int tv_tasklet_pre_start(void* priv) { return 0; }
-
 static int tv_tasklet_start(void* priv) {
   struct st_tx_video_sessions_mgr* mgr = priv;
   struct mtl_main_impl* impl = mgr->parent;
@@ -1530,8 +1527,6 @@ static int tv_tasklet_start(void* priv) {
 
   return 0;
 }
-
-static int tv_tasklet_stop(void* priv) { return 0; }
 
 static int tv_tasklet_frame(struct mtl_main_impl* impl,
                             struct st_tx_video_session_impl* s) {
@@ -1830,8 +1825,7 @@ static int tv_tasklet_frame(struct mtl_main_impl* impl,
   return done ? MT_TASKLET_ALL_DONE : MT_TASKLET_HAS_PENDING;
 }
 
-static int tv_tasklet_rtcp(struct mtl_main_impl* impl,
-                           struct st_tx_video_session_impl* s) {
+static int tv_tasklet_rtcp(struct st_tx_video_session_impl* s) {
   struct rte_mbuf* mbuf[ST_TX_VIDEO_RTCP_BURST_SIZE];
   uint16_t rv;
   int num_port = s->ops.num_port;
@@ -2274,7 +2268,7 @@ static int tvs_tasklet_handler(void* priv) {
 
     if (!s->active) goto exit;
 
-    if (s->ops.flags & ST20_TX_FLAG_ENABLE_RTCP) tv_tasklet_rtcp(impl, s);
+    if (s->ops.flags & ST20_TX_FLAG_ENABLE_RTCP) tv_tasklet_rtcp(s);
 
     /* check vsync if it has vsync enabled */
     if (s->ops.flags & ST20_TX_FLAG_ENABLE_VSYNC) tv_poll_vsync(impl, s);
@@ -2294,7 +2288,7 @@ static int tvs_tasklet_handler(void* priv) {
   return pending;
 }
 
-static int tv_uinit_hw(struct mtl_main_impl* impl, struct st_tx_video_session_impl* s) {
+static int tv_uinit_hw(struct st_tx_video_session_impl* s) {
   int num_port = s->ops.num_port;
 
   for (int i = 0; i < num_port; i++) {
@@ -2348,7 +2342,7 @@ static int tv_init_hw(struct mtl_main_impl* impl, struct st_tx_video_sessions_mg
     if (ST21_TX_PACING_WAY_TSN == s->pacing_way[i]) flow.launch_time_enabled = true;
     s->queue[i] = mt_txq_get(impl, port, &flow);
     if (!s->queue[i]) {
-      tv_uinit_hw(impl, s);
+      tv_uinit_hw(s);
       return -EIO;
     }
     queue_id = mt_txq_queue_id(s->queue[i]);
@@ -2359,7 +2353,7 @@ static int tv_init_hw(struct mtl_main_impl* impl, struct st_tx_video_sessions_mg
     ring = rte_ring_create(ring_name, count, mt_socket_id(impl, i), flags);
     if (!ring) {
       err("%s(%d,%d), rte_ring_create fail for port %d\n", __func__, mgr_idx, idx, i);
-      tv_uinit_hw(impl, s);
+      tv_uinit_hw(s);
       return -ENOMEM;
     }
     s->ring[i] = ring;
@@ -2394,7 +2388,7 @@ static int tv_init_hw(struct mtl_main_impl* impl, struct st_tx_video_sessions_mg
       pad = mt_build_pad(impl, pad_mempool, port_id, RTE_ETHER_TYPE_IPV4,
                          s->st20_pkt_info[j].size);
       if (!pad) {
-        tv_uinit_hw(impl, s);
+        tv_uinit_hw(s);
         return -ENOMEM;
       }
       s->pad[i][j] = pad;
@@ -2639,7 +2633,7 @@ static int tv_init_sw(struct mtl_main_impl* impl, struct st_tx_video_sessions_mg
       tv_uinit_sw(s);
       return -EIO;
     }
-    tv_init_st22_boxes(impl, s);
+    tv_init_st22_boxes(s);
   }
 
   /* free the pool if any in previous session */
@@ -2665,8 +2659,7 @@ static int tv_init_sw(struct mtl_main_impl* impl, struct st_tx_video_sessions_mg
 }
 
 static int tv_init_pkt(struct mtl_main_impl* impl, struct st_tx_video_session_impl* s,
-                       struct st20_tx_ops* ops, enum mt_handle_type s_type,
-                       struct st22_tx_ops* st22_frame_ops) {
+                       struct st20_tx_ops* ops, struct st22_tx_ops* st22_frame_ops) {
   int idx = s->idx;
   uint32_t height = ops->interlaced ? (ops->height >> 1) : ops->height;
   enum st20_type type = ops->type;
@@ -2849,7 +2842,7 @@ static int tv_attach(struct mtl_main_impl* impl, struct st_tx_video_sessions_mgr
   s->st20_frames_cnt = ops->framebuff_cnt;
   s->time_measure = mt_has_tasklet_time_measure(impl);
 
-  ret = tv_init_pkt(impl, s, ops, s_type, st22_frame_ops);
+  ret = tv_init_pkt(impl, s, ops, st22_frame_ops);
   if (ret < 0) {
     err("%s(%d), pkt init fail %d\n", __func__, idx, ret);
     return ret;
@@ -2933,7 +2926,7 @@ static int tv_attach(struct mtl_main_impl* impl, struct st_tx_video_sessions_mgr
     ret = tv_init_hdr(impl, s, i);
     if (ret < 0) {
       err("%s(%d), tx_session_init_hdr fail %d port %d\n", __func__, idx, ret, i);
-      tv_uinit_hw(impl, s);
+      tv_uinit_hw(s);
       tv_uinit_sw(s);
       return ret;
     }
@@ -2943,7 +2936,7 @@ static int tv_attach(struct mtl_main_impl* impl, struct st_tx_video_sessions_mgr
     ret = tv_init_rtcp(impl, mgr, s);
     if (ret < 0) {
       err("%s(%d), tx_session_init_rtcp fail %d\n", __func__, idx, ret);
-      tv_uinit_hw(impl, s);
+      tv_uinit_hw(s);
       tv_uinit_sw(s);
       return ret;
     }
@@ -2953,7 +2946,7 @@ static int tv_attach(struct mtl_main_impl* impl, struct st_tx_video_sessions_mgr
   if (ret < 0) {
     err("%s(%d), tx_session_init_pacing fail %d\n", __func__, idx, ret);
     tv_uinit_rtcp(s);
-    tv_uinit_hw(impl, s);
+    tv_uinit_hw(s);
     tv_uinit_sw(s);
     return ret;
   }
@@ -3162,18 +3155,17 @@ static void tv_stat(struct st_tx_video_sessions_mgr* mgr,
   }
 }
 
-static int tv_detach(struct mtl_main_impl* impl, struct st_tx_video_sessions_mgr* mgr,
+static int tv_detach(struct st_tx_video_sessions_mgr* mgr,
                      struct st_tx_video_session_impl* s) {
   tv_stat(mgr, s);
   /* must uinit hw firstly as frame use shared external buffer */
   tv_uinit_rtcp(s);
-  tv_uinit_hw(impl, s);
+  tv_uinit_hw(s);
   tv_uinit_sw(s);
   return 0;
 }
 
-static int tv_init(struct mtl_main_impl* impl, struct st_tx_video_sessions_mgr* mgr,
-                   struct st_tx_video_session_impl* s, int idx) {
+static int tv_init(struct st_tx_video_session_impl* s, int idx) {
   s->idx = idx;
   return 0;
 }
@@ -3196,7 +3188,7 @@ static struct st_tx_video_session_impl* tv_mgr_attach(
       tx_video_session_put(mgr, i);
       return NULL;
     }
-    ret = tv_init(impl, mgr, s, i);
+    ret = tv_init(s, i);
     if (ret < 0) {
       err("%s(%d), init fail on %d\n", __func__, midx, i);
       tx_video_session_put(mgr, i);
@@ -3231,7 +3223,7 @@ static int tv_mgr_detach(struct st_tx_video_sessions_mgr* mgr,
     return -EIO;
   }
 
-  tv_detach(mgr->parent, mgr, s);
+  tv_detach(mgr, s);
   mgr->sessions[idx] = NULL;
   mt_rte_free(s);
 
@@ -3307,9 +3299,7 @@ static int tv_mgr_init(struct mtl_main_impl* impl, struct mt_sch_impl* sch,
   memset(&ops, 0x0, sizeof(ops));
   ops.priv = mgr;
   ops.name = "tx_video_sessions_mgr";
-  ops.pre_start = tv_tasklet_pre_start;
   ops.start = tv_tasklet_start;
-  ops.stop = tv_tasklet_stop;
   ops.handler = tvs_tasklet_handler;
 
   mgr->tasklet = mt_sch_register_tasklet(sch, &ops);
@@ -3415,10 +3405,10 @@ int st_tx_video_sessions_sch_uinit(struct mtl_main_impl* impl, struct mt_sch_imp
   return 0;
 }
 
-int st_tx_video_session_migrate(struct mtl_main_impl* impl,
-                                struct st_tx_video_sessions_mgr* mgr,
+int st_tx_video_session_migrate(struct st_tx_video_sessions_mgr* mgr,
                                 struct st_tx_video_session_impl* s, int idx) {
-  tv_init(impl, mgr, s, idx);
+  MTL_MAY_UNUSED(mgr);
+  tv_init(s, idx);
   return 0;
 }
 

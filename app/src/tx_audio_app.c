@@ -10,6 +10,7 @@ static int app_tx_audio_next_frame(void* priv, uint16_t* next_frame_idx,
   int ret;
   uint16_t consumer_idx = s->framebuff_consumer_idx;
   struct st_tx_frame* framebuff = &s->framebuffs[consumer_idx];
+  MTL_MAY_UNUSED(meta);
 
   st_pthread_mutex_lock(&s->st30_wake_mutex);
   if (ST_TX_FRAME_READY == framebuff->stat) {
@@ -38,6 +39,7 @@ static int app_tx_audio_frame_done(void* priv, uint16_t frame_idx,
   struct st_app_tx_audio_session* s = priv;
   int ret;
   struct st_tx_frame* framebuff = &s->framebuffs[frame_idx];
+  MTL_MAY_UNUSED(meta);
 
   st_pthread_mutex_lock(&s->st30_wake_mutex);
   if (ST_TX_FRAME_IN_TRANSMITTING == framebuff->stat) {

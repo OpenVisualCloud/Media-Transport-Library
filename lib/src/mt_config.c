@@ -62,4 +62,7 @@ int mt_config_init(struct mtl_main_impl* impl) {
   return 0;
 }
 
-int mt_config_uinit(struct mtl_main_impl* impl) { return 0; }
+int mt_config_uinit(struct mtl_main_impl* impl) {
+  MTL_MAY_UNUSED(impl);
+  return 0;
+}

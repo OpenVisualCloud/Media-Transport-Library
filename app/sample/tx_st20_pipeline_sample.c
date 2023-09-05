@@ -106,6 +106,8 @@ static int tx_st20p_frame_available(void* priv) {
 
 static int tx_st20p_frame_done(void* priv, struct st_frame* frame) {
   struct tx_st20p_sample_ctx* s = priv;
+  MTL_MAY_UNUSED(frame);
+
   s->fb_send_done++;
   dbg("%s(%d), done %d\n", __func__, s->idx, s->fb_send_done);
   return 0;

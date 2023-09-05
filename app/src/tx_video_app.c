@@ -45,6 +45,7 @@ static int app_tx_video_next_frame(void* priv, uint16_t* next_frame_idx,
   int ret;
   uint16_t consumer_idx = s->framebuff_consumer_idx;
   struct st_tx_frame* framebuff = &s->framebuffs[consumer_idx];
+  MTL_MAY_UNUSED(meta);
 
   st_pthread_mutex_lock(&s->st20_wake_mutex);
   if (ST_TX_FRAME_READY == framebuff->stat) {
@@ -75,6 +76,7 @@ static int app_tx_video_frame_done(void* priv, uint16_t frame_idx,
   struct st_app_tx_video_session* s = priv;
   int ret;
   struct st_tx_frame* framebuff = &s->framebuffs[frame_idx];
+  MTL_MAY_UNUSED(meta);
 
   st_pthread_mutex_lock(&s->st20_wake_mutex);
   if (ST_TX_FRAME_IN_TRANSMITTING == framebuff->stat) {
@@ -577,8 +579,7 @@ static int app_tx_video_open_source(struct st_app_tx_video_session* s) {
   return 0;
 }
 
-static int app_tx_video_start_source(struct st_app_context* ctx,
-                                     struct st_app_tx_video_session* s) {
+static int app_tx_video_start_source(struct st_app_tx_video_session* s) {
   int ret = -EINVAL;
 
   if (s->st20_pcap_input)
@@ -847,7 +848,7 @@ static int app_tx_video_init(struct st_app_context* ctx, st_json_video_session_t
     app_tx_video_uinit(s);
     return ret;
   }
-  ret = app_tx_video_start_source(ctx, s);
+  ret = app_tx_video_start_source(s);
   if (ret < 0) {
     err("%s(%d), app_tx_video_start_source fail %d\n", __func__, idx, ret);
     app_tx_video_uinit(s);

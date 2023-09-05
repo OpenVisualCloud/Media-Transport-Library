@@ -619,19 +619,19 @@ int mt_sch_put(struct mt_sch_impl* sch, int quota_mbs) {
     mt_pthread_mutex_unlock(&sch->rx_video_mgr_mutex);
 
     mt_pthread_mutex_lock(&sch->tx_a_mgr_mutex);
-    st_tx_audio_sessions_sch_uinit(impl, sch);
+    st_tx_audio_sessions_sch_uinit(sch);
     mt_pthread_mutex_unlock(&sch->tx_a_mgr_mutex);
 
     mt_pthread_mutex_lock(&sch->rx_a_mgr_mutex);
-    st_rx_audio_sessions_sch_uinit(impl, sch);
+    st_rx_audio_sessions_sch_uinit(sch);
     mt_pthread_mutex_unlock(&sch->rx_a_mgr_mutex);
 
     mt_pthread_mutex_lock(&sch->tx_anc_mgr_mutex);
-    st_tx_ancillary_sessions_sch_uinit(impl, sch);
+    st_tx_ancillary_sessions_sch_uinit(sch);
     mt_pthread_mutex_unlock(&sch->tx_anc_mgr_mutex);
 
     mt_pthread_mutex_lock(&sch->rx_anc_mgr_mutex);
-    st_rx_ancillary_sessions_sch_uinit(impl, sch);
+    st_rx_ancillary_sessions_sch_uinit(sch);
     mt_pthread_mutex_unlock(&sch->rx_anc_mgr_mutex);
 
     sch_free(sch);

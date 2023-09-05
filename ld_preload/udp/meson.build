@@ -7,6 +7,8 @@ if get_option('buildtype') != 'debug'
   udp_preload_c_args += ['-Werror']
 endif
 udp_preload_c_args += ['-Wall']
+udp_preload_c_args += ['-Wunused-parameter']
+
 # simd build option, enable sse4.2 default, todo: do we need AVX2/AVX512 ?
 udp_preload_c_args += ['-msse4.2']
 

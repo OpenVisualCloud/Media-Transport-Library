@@ -348,6 +348,7 @@ struct rte_mbuf* mt_build_pad(struct mtl_main_impl* impl, struct rte_mempool* me
   struct rte_ether_addr src_mac;
   struct rte_mbuf* pad;
   struct rte_ether_hdr* eth_hdr;
+  MTL_MAY_UNUSED(impl);
 
   pad = rte_pktmbuf_alloc(mempool);
   if (unlikely(pad == NULL)) {

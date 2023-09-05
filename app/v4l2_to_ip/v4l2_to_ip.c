@@ -1280,6 +1280,7 @@ static int tx_video_next_frame(void* priv, uint16_t* next_frame_idx,
   struct st_v4l2_tx_video_session* tx_video_session = priv;
   struct tx_frame_buff_ct* framebuff_ctl = &(tx_video_session->framebuff_ctl);
   int ret;
+  MTL_MAY_UNUSED(meta);
 
   pthread_mutex_lock(&(framebuff_ctl->wake_mutex));
 
@@ -1313,6 +1314,7 @@ static int tx_video_frame_done(void* priv, uint16_t frame_idx,
   struct st_v4l2_tx_context* st_v4l2_tx = tx_video_session->ctx;
   struct tx_frame_buff_ct* framebuff_ctl = &(tx_video_session->framebuff_ctl);
   int ret;
+  MTL_MAY_UNUSED(meta);
 
   if (frame_idx != framebuff_ctl->receive_idx) {
     ret = -EIO;

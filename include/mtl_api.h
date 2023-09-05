@@ -140,6 +140,9 @@ typedef struct mtl_dma_mem* mtl_dma_mem_handle;
 #define __mtl_deprecated_msg(msg) __attribute__((__deprecated__(msg)))
 #endif
 
+/** Macro to mark unused-parameter */
+#define MTL_MAY_UNUSED(x) (void)(x)
+
 /**
  * Port logical type
  */

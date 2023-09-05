@@ -348,6 +348,7 @@ static int app_rx_video_slice_ready(void* priv, void* frame,
   struct st_app_rx_video_session* s = priv;
   int idx = s->idx;
   size_t frame_ready_size;
+  MTL_MAY_UNUSED(frame);
 
   if (!s->handle) return -EIO;
 

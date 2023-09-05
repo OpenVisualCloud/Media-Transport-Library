@@ -13,10 +13,20 @@ int mt_kni_uinit(struct mtl_main_impl* impl);
 int mt_kni_handle(struct mtl_main_impl* impl, enum mtl_port port,
                   struct rte_mbuf** rx_pkts, uint16_t nb_pkts);
 #else
-static inline int mt_kni_init(struct mtl_main_impl* impl) { return 0; }
-static inline int mt_kni_uinit(struct mtl_main_impl* impl) { return 0; }
+static inline int mt_kni_init(struct mtl_main_impl* impl) {
+  MTL_MAY_UNUSED(impl);
+  return 0;
+}
+static inline int mt_kni_uinit(struct mtl_main_impl* impl) {
+  MTL_MAY_UNUSED(impl);
+  return 0;
+}
 static inline int mt_kni_handle(struct mtl_main_impl* impl, enum mtl_port port,
                                 struct rte_mbuf** rx_pkts, uint16_t nb_pkts) {
+  MTL_MAY_UNUSED(impl);
+  MTL_MAY_UNUSED(port);
+  MTL_MAY_UNUSED(rx_pkts);
+  MTL_MAY_UNUSED(nb_pkts);
   return -EIO;
 }
 #endif

@@ -98,8 +98,7 @@ static inline void tx_video_set_sch(struct st_tx_video_session_impl* s,
     s->st20_handle->sch = sch;
 }
 
-static int tx_video_migrate_to(struct mtl_main_impl* impl,
-                               struct st_tx_video_session_impl* s,
+static int tx_video_migrate_to(struct st_tx_video_session_impl* s,
                                struct mt_sch_impl* from_sch, struct mt_sch_impl* to_sch) {
   struct st_tx_video_sessions_mgr* to_tx_mgr = &to_sch->tx_video_mgr;
   int to_midx = to_tx_mgr->idx;
@@ -122,7 +121,7 @@ static int tx_video_migrate_to(struct mtl_main_impl* impl,
     /* remove from old sch */
     from_tx_mgr->sessions[from_idx] = NULL;
     /* migrate resource */
-    st_tx_video_session_migrate(impl, to_tx_mgr, s, i);
+    st_tx_video_session_migrate(to_tx_mgr, s, i);
     /* link to new sch */
     to_tx_mgr->sessions[i] = s;
     to_tx_mgr->max_idx = RTE_MAX(to_tx_mgr->max_idx, i + 1);
@@ -188,7 +187,7 @@ static int admin_tx_video_migrate(struct mtl_main_impl* impl, bool* migrated) {
   st_tx_video_sessions_sch_init(impl, to_sch); /* ensure video sch context */
   mt_pthread_mutex_unlock(&to_sch->tx_video_mgr_mutex);
 
-  ret = tx_video_migrate_to(impl, busy_s, from_sch, to_sch);
+  ret = tx_video_migrate_to(busy_s, from_sch, to_sch);
   if (ret < 0) {
     err("%s, session(%d,%d) migrate to fail\n", __func__, from_sch->idx, busy_s->idx);
     mt_sch_put(to_sch, quota_mbs); /* put back new sch */

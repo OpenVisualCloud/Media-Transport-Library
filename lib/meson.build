@@ -28,6 +28,7 @@ if get_option('buildtype') != 'debug'
   mtl_c_args += ['-Werror']
 endif
 mtl_c_args += ['-Wall']
+mtl_c_args += ['-Wunused-parameter']
 
 #simd build option, enable sse4.2 default
 mtl_c_args += ['-msse4.2']
