@@ -38,6 +38,7 @@ env:
   DPDK_VERSION: 23.07
   TEST_PORT_P: 0000:af:00.0
   TEST_PORT_R: 0000:af:00.1
+  MSYSTEM: UCRT64
 
 permissions:
   contents: read
@@ -49,39 +50,18 @@ jobs:
     timeout-minutes: 60
     defaults:
       run:
-        shell: msys2 {0}
+        shell: C:\msys64\msys2.cmd {0}
     steps:
       - name: Harden Runner
         uses: step-security/harden-runner@8ca2b8b2ece13480cda6dacd3511b49857a23c09 # v2.5.1
         with:
           egress-policy: audit
 
-      - name: Install dependencies
-        uses: msys2/setup-msys2@7efe20baefed56359985e327d329042cde2434ff # v2
-        with:
-          msystem: ucrt64
-          update: true
-          install: >-
-            git
-            base-devel
-            unzip
-          pacboy: >-
-            openssl:p
-            gcc:p
-            meson:p
-            pkg-config:p
-            json-c:p
-            libpcap:p
-            gtest:p
-            SDL2:p
-            SDL2_ttf:p
-            dlfcn:p
-
-      - name: Install npcap-sdk
+      - name: Update dependencies
         run: |
-          wget https://nmap.org/npcap/dist/npcap-sdk-1.12.zip
-          unzip -d npcap-sdk npcap-sdk-1.12.zip
-          cp npcap-sdk/Lib/x64/* ${MSYSTEM_PREFIX}/lib/
+          pacman --noconfirm -Syuu
+          pacman --noconfirm -S --needed --overwrite git base-devel unzip pactoys
+          pacboy --noconfirm -S --needed openssl:p gcc:p meson:p pkg-config:p json-c:p libpcap:p gtest:p SDL2:p SDL2_ttf:p dlfcn:p
 
       - name: Checkout IMTL code
         uses: actions/checkout@3df4ab11eba7bda6032a0b82a6bb43b11571feac # v4.0.0
@@ -106,21 +86,7 @@ jobs:
           cd windows
           ls *.patch | xargs -I{} bash -c 'if [[ $(sed -n '1p' "{}") =~ ^../.*\.patch$ ]]; then cp "$(cat "{}")" "{}"; fi'
 
-      - name: Hash DPDK patches
-        id: hash-patches
-        run: |
-          HASH=$(sha1sum patches/dpdk/${{ env.DPDK_VERSION }}/*.patch patches/dpdk/${{ env.DPDK_VERSION }}/windows/*.patch | sha1sum | cut -d" " -f1)
-          echo "hash=${HASH}"  >> $GITHUB_OUTPUT
-  
-      - name: Cache DPDK
-        id: cache-dpdk
-        uses: actions/cache@88522ab9f39a2ea568f7027eddc7d8d8bc9d59c8 # v3.3.1
-        with:
-          path: dpdk
-          key: dpdk-${{ env.DPDK_VERSION }}-winself-${{ steps.hash-patches.outputs.hash }}
-  
       - name: Checkout DPDK code
-        if: ${{ steps.cache-dpdk.outputs.cache-hit != 'true' }}
         uses: actions/checkout@3df4ab11eba7bda6032a0b82a6bb43b11571feac # v4.0.0
         with:
           repository: 'DPDK/dpdk'
@@ -129,7 +95,6 @@ jobs:
           clean: true
       
       - name: Apply patches for DPDK
-        if: ${{ steps.cache-dpdk.outputs.cache-hit != 'true' }}
         run: |
           cd dpdk
           git config user.name github-actions
@@ -138,27 +103,20 @@ jobs:
           for f in ../patches/dpdk/${{ env.DPDK_VERSION }}/windows/*.patch; do patch -p1 < "$f"; done
 
       - name: Build and install DPDK
-        if: ${{ steps.cache-dpdk.outputs.cache-hit != 'true' }}
         run: |
           cd dpdk
-          meson setup build
-          meson install -C build          
-
-      - name: Install cached DPDK
-        if: ${{ steps.cache-dpdk.outputs.cache-hit == 'true' }}
-        run: |
-          cd dpdk
+          meson setup build --wipe
           meson install -C build
 
       - name: Build IMTL lib
         run: |
-          meson setup build
+          meson setup build --wipe
           meson install -C build
 
       - name: Build gtest
         run: |
           cd tests
-          meson setup build
+          meson setup build --wipe
           meson compile -C build
 
       - name: Kill previous gtest routine
@@ -168,4 +126,4 @@ jobs:
 
       - name: Run st2110 test case
         run: |
-          ./tests/build/KahawaiTest --auto_start_stop --p_port ${{  env.TEST_PORT_P  }} --r_port ${{  env.TEST_PORT_R  }} --gtest_filter=-St22_?x.*:*4320p*:*rtcp*
+          ./tests/build/KahawaiTest --auto_start_stop --p_port ${{  env.TEST_PORT_P  }} --r_port ${{  env.TEST_PORT_R  }} --gtest_filter=-St22_?x.*:*4320p*
