@@ -350,35 +350,62 @@ int mt_socket_remove_flow(struct mtl_main_impl* impl, enum mtl_port port, int fl
 #else
 int mt_socket_get_if_ip(char* if_name, uint8_t ip[MTL_IP_ADDR_LEN],
                         uint8_t netmask[MTL_IP_ADDR_LEN]) {
+  MTL_MAY_UNUSED(if_name);
+  MTL_MAY_UNUSED(ip);
+  MTL_MAY_UNUSED(netmask);
   return -ENOTSUP;
 }
 
 int mt_socket_get_if_gateway(char* if_name, uint8_t gateway[MTL_IP_ADDR_LEN]) {
+  MTL_MAY_UNUSED(if_name);
+  MTL_MAY_UNUSED(gateway);
   return -ENOTSUP;
 }
 
-int mt_socket_get_if_mac(char* if_name, struct rte_ether_addr* ea) { return -ENOTSUP; }
+int mt_socket_get_if_mac(char* if_name, struct rte_ether_addr* ea) {
+  MTL_MAY_UNUSED(if_name);
+  MTL_MAY_UNUSED(ea);
+  return -ENOTSUP;
+}
 
 int mt_socket_join_mcast(struct mtl_main_impl* impl, enum mtl_port port, uint32_t group) {
+  MTL_MAY_UNUSED(impl);
+  MTL_MAY_UNUSED(port);
+  MTL_MAY_UNUSED(group);
   return -ENOTSUP;
 }
 
 int mt_socket_drop_mcast(struct mtl_main_impl* impl, enum mtl_port port, uint32_t group) {
+  MTL_MAY_UNUSED(impl);
+  MTL_MAY_UNUSED(port);
+  MTL_MAY_UNUSED(group);
   return -ENOTSUP;
 }
 
 int mt_socket_get_mac(struct mtl_main_impl* impl, char* if_name,
                       uint8_t dip[MTL_IP_ADDR_LEN], struct rte_ether_addr* ea,
                       int timeout_ms) {
+  MTL_MAY_UNUSED(impl);
+  MTL_MAY_UNUSED(if_name);
+  MTL_MAY_UNUSED(dip);
+  MTL_MAY_UNUSED(ea);
+  MTL_MAY_UNUSED(timeout_ms);
   return -ENOTSUP;
 }
 
 int mt_socket_add_flow(struct mtl_main_impl* impl, enum mtl_port port, uint16_t queue_id,
                        struct mt_rxq_flow* flow) {
+  MTL_MAY_UNUSED(impl);
+  MTL_MAY_UNUSED(port);
+  MTL_MAY_UNUSED(queue_id);
+  MTL_MAY_UNUSED(flow);
   return -ENOTSUP;
 }
 
 int mt_socket_remove_flow(struct mtl_main_impl* impl, enum mtl_port port, int flow_id) {
+  MTL_MAY_UNUSED(impl);
+  MTL_MAY_UNUSED(port);
+  MTL_MAY_UNUSED(flow_id);
   return -ENOTSUP;
 }
 #endif
