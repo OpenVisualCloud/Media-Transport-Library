@@ -2759,6 +2759,7 @@ int mt_dev_if_pre_uinit(struct mtl_main_impl* impl) {
     inf = mt_if(impl, i);
 
     if (inf->txq_sys_entry) {
+      mt_txq_flush(inf->txq_sys_entry, mt_get_pad(impl, i));
       mt_txq_put(inf->txq_sys_entry);
       inf->txq_sys_entry = NULL;
     }
