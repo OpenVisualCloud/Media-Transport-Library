@@ -12,6 +12,8 @@ Scorecard](https://api.securityscorecards.dev/projects/github.com/OpenVisualClou
 
 The Intel® Media Transport Library is a DPDK-based solution designed for high-throughput, low-latency transmission and reception of media data. It features an efficient user-space LibOS UDP stack specifically crafted for media transport, and comes equipped with a built-in SMPTE ST 2110-compliant implementation for Professional Media over Managed IP Networks.
 
+The Intel® Media Transport Library solves the strict timing challenges of transporting ST2110 compliant media streams using a software library and through IP networks. Instead of specialized hardware, this library leverages existing  commonly available CPU platforms with conventional NICs that incorporate rate limiting to meet the strict timing challenges in the SMPTE ST 2110 standard.
+
 ### 1.1 Features
 
 * The User-space LibOS UDP stack features a POSIX socket compatible API.
@@ -21,6 +23,7 @@ The Intel® Media Transport Library is a DPDK-based solution designed for high-t
 
 #### 1.1.1 ST2110 features
 
+* Narrow and wide pacing. Please see [compliance](doc/compliance.md) page for the ST2110 narrow report on our software solution.
 * ST2110-10, ST2110-20, ST2110-21, ST2110-30, ST2110-40, ST2110-22, ST2022-7
 * 1080p, 720p, 4k, 8k and other
 * FPS: 120, 119.88, 100, 60, 59.94, 50, 30, 29.97, 25, 24, 23.98
