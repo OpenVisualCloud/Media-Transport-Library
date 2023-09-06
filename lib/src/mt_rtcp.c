@@ -200,7 +200,7 @@ int mt_rtcp_rx_parse_rtp_packet(struct mt_rtcp_rx* rx, struct st_rfc3550_rtp_hdr
   int cmp_result = rtp_seq_num_cmp(seq, rx->last_seq);
   if (cmp_result > 0) { /* new seq */
     /* clean the bitmap for missing packets */
-    for (uint16_t i = rx->last_seq + 1; i < seq; i++) {
+    for (uint16_t i = rx->last_seq + 1; rtp_seq_num_cmp(i, seq) < 0; i++) {
       mt_bitmap_test_and_unset(rx->seq_bitmap, i % rx->seq_window_size);
     }
     rx->last_seq = seq;
