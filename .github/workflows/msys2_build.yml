@@ -42,6 +42,7 @@ jobs:
             openssl:p
             gcc:p
             meson:p
+            pkg-config:p
             json-c:p
             libpcap:p
             gtest:p
