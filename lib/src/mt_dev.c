@@ -336,11 +336,14 @@ static int dev_eal_init(struct mtl_init_params* p, struct mt_kport_info* kport_i
     port_param = port_params[i];
     memset(port_param, 0, 2 * MTL_PORT_MAX_LEN);
     if (p->pmd[i] == MTL_PMD_DPDK_AF_XDP) {
+      const char* if_name = mt_afxdp_port2if(p->port[i]);
+      if (!if_name) return -EINVAL;
       snprintf(port_param, 2 * MTL_PORT_MAX_LEN,
-               "net_af_xdp%d,iface=%s,start_queue=%u,queue_count=%u", i, p->port[i],
+               "net_af_xdp%d,iface=%s,start_queue=%u,queue_count=%u", i, if_name,
                p->xdp_info[i].start_queue, p->xdp_info[i].queue_count);
-      /* save port name */
-      snprintf(kport_info->port[i], MTL_PORT_MAX_LEN, "net_af_xdp%d", i);
+      /* save kport info */
+      snprintf(kport_info->dpdk_port[i], MTL_PORT_MAX_LEN, "net_af_xdp%d", i);
+      snprintf(kport_info->kernel_if[i], MTL_PORT_MAX_LEN, "%s", if_name);
     } else {
       snprintf(port_param, 2 * MTL_PORT_MAX_LEN, "%s", p->port[i]);
     }
@@ -2497,7 +2500,7 @@ int mt_dev_if_init(struct mtl_main_impl* impl) {
     dev_info = &inf->dev_info;
 
     if (mt_pmd_is_kernel(impl, i))
-      port = impl->kport_info.port[i];
+      port = impl->kport_info.dpdk_port[i];
     else
       port = p->port[i];
     ret = rte_eth_dev_get_port_by_name(port, &port_id);

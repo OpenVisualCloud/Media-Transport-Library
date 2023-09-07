@@ -794,3 +794,20 @@ uint16_t mt_random_port(uint16_t base_port) {
 
   return port;
 }
+
+static const char* mtl_afxdp_port_prefix = "afxdp:";
+
+enum mtl_pmd_type mtl_pmd_by_port_name(const char* port) {
+  if (strncmp(port, mtl_afxdp_port_prefix, strlen(mtl_afxdp_port_prefix)) == 0)
+    return MTL_PMD_DPDK_AF_XDP;
+  else
+    return MTL_PMD_DPDK_USER; /* default */
+}
+
+const char* mt_afxdp_port2if(const char* port) {
+  if (mtl_pmd_by_port_name(port) != MTL_PMD_DPDK_AF_XDP) {
+    err("%s, port %s is not afxdp\n", __func__, port);
+    return NULL;
+  }
+  return port + strlen(mtl_afxdp_port_prefix);
+}

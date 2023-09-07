@@ -730,7 +730,9 @@ struct mt_admin {
 
 struct mt_kport_info {
   /* dpdk port name for kernel port(MTL_PMD_DPDK_AF_XDP) */
-  char port[MTL_PORT_MAX][MTL_PORT_MAX_LEN];
+  char dpdk_port[MTL_PORT_MAX][MTL_PORT_MAX_LEN];
+  /* kernel interface name */
+  char kernel_if[MTL_PORT_MAX][MTL_PORT_MAX_LEN];
 };
 
 struct mt_map_item {

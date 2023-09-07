@@ -450,8 +450,8 @@ struct mtl_af_xdp_params {
 struct mtl_init_params {
   /**
    * Mandatory. PCIE BDF port, ex: 0000:af:01.0.
-   * For MTL_PMD_DPDK_AF_XDP, set kernel interface name here, ex: enp175s0f0.
-   * */
+   * For MTL_PMD_DPDK_AF_XDP, use afxdp + ifname, ex: afxdp:enp175s0f0.
+   */
   char port[MTL_PORT_MAX][MTL_PORT_MAX_LEN];
   /** Mandatory. The element number in the port array, 1 to MTL_PORT_MAX_LEN */
   uint8_t num_ports;

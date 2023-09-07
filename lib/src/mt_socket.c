@@ -8,7 +8,7 @@
 #include "mt_util.h"
 
 #ifndef WINDOWSENV
-int mt_socket_get_if_ip(char* if_name, uint8_t ip[MTL_IP_ADDR_LEN],
+int mt_socket_get_if_ip(const char* if_name, uint8_t ip[MTL_IP_ADDR_LEN],
                         uint8_t netmask[MTL_IP_ADDR_LEN]) {
   int sock, ret;
   struct ifreq ifr;
@@ -43,7 +43,7 @@ int mt_socket_get_if_ip(char* if_name, uint8_t ip[MTL_IP_ADDR_LEN],
   return 0;
 }
 
-int mt_socket_get_if_gateway(char* if_name, uint8_t gateway[MTL_IP_ADDR_LEN]) {
+int mt_socket_get_if_gateway(const char* if_name, uint8_t gateway[MTL_IP_ADDR_LEN]) {
   char cmd[256];
   char out[256];
 
@@ -67,7 +67,7 @@ int mt_socket_get_if_gateway(char* if_name, uint8_t gateway[MTL_IP_ADDR_LEN]) {
   return 0;
 }
 
-int mt_socket_get_if_mac(char* if_name, struct rte_ether_addr* ea) {
+int mt_socket_get_if_mac(const char* if_name, struct rte_ether_addr* ea) {
   int sock, ret;
   struct ifreq ifr;
 
@@ -95,6 +95,7 @@ int mt_socket_join_mcast(struct mtl_main_impl* impl, enum mtl_port port, uint32_
   int ret;
   char cmd[128];
   uint8_t ip[MTL_IP_ADDR_LEN];
+  const char* if_name = impl->kport_info.kernel_if[port];
 
   if (!mt_pmd_is_kernel(impl, port)) {
     err("%s(%d), not kernel based pmd\n", __func__, port);
@@ -103,7 +104,7 @@ int mt_socket_join_mcast(struct mtl_main_impl* impl, enum mtl_port port, uint32_
 
   mt_u32_to_ip(group, ip);
   snprintf(cmd, sizeof(cmd), "ip addr add %u.%u.%u.%u/24 dev %s autojoin", ip[0], ip[1],
-           ip[2], ip[3], mt_get_user_params(impl)->port[port]);
+           ip[2], ip[3], if_name);
   ret = mt_run_cmd(cmd, NULL, 0);
   if (ret < 0) return ret;
 
@@ -115,6 +116,7 @@ int mt_socket_drop_mcast(struct mtl_main_impl* impl, enum mtl_port port, uint32_
   int ret;
   char cmd[128];
   uint8_t ip[MTL_IP_ADDR_LEN];
+  const char* if_name = impl->kport_info.kernel_if[port];
 
   if (!mt_pmd_is_kernel(impl, port)) {
     err("%s(%d), not kernel based pmd\n", __func__, port);
@@ -123,7 +125,7 @@ int mt_socket_drop_mcast(struct mtl_main_impl* impl, enum mtl_port port, uint32_
 
   mt_u32_to_ip(group, ip);
   snprintf(cmd, sizeof(cmd), "ip addr del %u.%u.%u.%u/24 dev %s autojoin", ip[0], ip[1],
-           ip[2], ip[3], mt_get_user_params(impl)->port[port]);
+           ip[2], ip[3], if_name);
   ret = mt_run_cmd(cmd, NULL, 0);
   if (ret < 0) return ret;
 
@@ -291,6 +293,7 @@ int mt_socket_add_flow(struct mtl_main_impl* impl, enum mtl_port port, uint16_t 
   int ret;
   int flow_id = -1;
   uint8_t start_queue = mt_afxdp_start_queue(impl, port);
+  const char* if_name = impl->kport_info.kernel_if[port];
 
   if (flow->sys_queue) {
     err("%s(%d), sys_queue not supported\n", __func__, port);
@@ -303,22 +306,19 @@ int mt_socket_add_flow(struct mtl_main_impl* impl, enum mtl_port port, uint16_t 
 
   if (flow->no_ip_flow) {
     snprintf(cmd, sizeof(cmd), "ethtool -N %s flow-type udp4 dst-port %u action %u",
-             mt_get_user_params(impl)->port[port], flow->dst_port,
-             queue_id + start_queue);
+             if_name, flow->dst_port, queue_id + start_queue);
   } else if (mt_is_multicast_ip(flow->dip_addr)) {
     snprintf(cmd, sizeof(cmd),
              "ethtool -N %s flow-type udp4 dst-ip %u.%u.%u.%u dst-port %u action %u",
-             mt_get_user_params(impl)->port[port], flow->dip_addr[0], flow->dip_addr[1],
-             flow->dip_addr[2], flow->dip_addr[3], flow->dst_port,
-             queue_id + start_queue);
+             if_name, flow->dip_addr[0], flow->dip_addr[1], flow->dip_addr[2],
+             flow->dip_addr[3], flow->dst_port, queue_id + start_queue);
   } else {
     snprintf(cmd, sizeof(cmd),
              "ethtool -N %s flow-type udp4 src-ip %u.%u.%u.%u dst-ip %u.%u.%u.%u "
              "dst-port %u action %u",
-             mt_get_user_params(impl)->port[port], flow->dip_addr[0], flow->dip_addr[1],
-             flow->dip_addr[2], flow->dip_addr[3], flow->sip_addr[0], flow->sip_addr[1],
-             flow->sip_addr[2], flow->sip_addr[3], flow->dst_port,
-             queue_id + start_queue);
+             if_name, flow->dip_addr[0], flow->dip_addr[1], flow->dip_addr[2],
+             flow->dip_addr[3], flow->sip_addr[0], flow->sip_addr[1], flow->sip_addr[2],
+             flow->sip_addr[3], flow->dst_port, queue_id + start_queue);
   }
   ret = mt_run_cmd(cmd, out, sizeof(out));
   if (ret < 0) return ret;
@@ -336,10 +336,10 @@ int mt_socket_add_flow(struct mtl_main_impl* impl, enum mtl_port port, uint16_t 
 int mt_socket_remove_flow(struct mtl_main_impl* impl, enum mtl_port port, int flow_id) {
   char cmd[128];
   int ret;
+  const char* if_name = impl->kport_info.kernel_if[port];
 
   if (flow_id > 0) {
-    snprintf(cmd, sizeof(cmd), "ethtool -N %s delete %d",
-             mt_get_user_params(impl)->port[port], flow_id);
+    snprintf(cmd, sizeof(cmd), "ethtool -N %s delete %d", if_name, flow_id);
     ret = mt_run_cmd(cmd, NULL, 0);
     if (ret < 0) return ret;
     info("%s(%d), succ, flow_id %d, cmd %s\n", __func__, port, flow_id, cmd);
@@ -348,7 +348,7 @@ int mt_socket_remove_flow(struct mtl_main_impl* impl, enum mtl_port port, int fl
   return 0;
 }
 #else
-int mt_socket_get_if_ip(char* if_name, uint8_t ip[MTL_IP_ADDR_LEN],
+int mt_socket_get_if_ip(const char* if_name, uint8_t ip[MTL_IP_ADDR_LEN],
                         uint8_t netmask[MTL_IP_ADDR_LEN]) {
   MTL_MAY_UNUSED(if_name);
   MTL_MAY_UNUSED(ip);
@@ -356,13 +356,13 @@ int mt_socket_get_if_ip(char* if_name, uint8_t ip[MTL_IP_ADDR_LEN],
   return -ENOTSUP;
 }
 
-int mt_socket_get_if_gateway(char* if_name, uint8_t gateway[MTL_IP_ADDR_LEN]) {
+int mt_socket_get_if_gateway(const char* if_name, uint8_t gateway[MTL_IP_ADDR_LEN]) {
   MTL_MAY_UNUSED(if_name);
   MTL_MAY_UNUSED(gateway);
   return -ENOTSUP;
 }
 
-int mt_socket_get_if_mac(char* if_name, struct rte_ether_addr* ea) {
+int mt_socket_get_if_mac(const char* if_name, struct rte_ether_addr* ea) {
   MTL_MAY_UNUSED(if_name);
   MTL_MAY_UNUSED(ea);
   return -ENOTSUP;

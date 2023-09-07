@@ -253,16 +253,23 @@ static int mt_user_params_check(struct mtl_init_params* p) {
     /* af xdp check */
     if (pmd == MTL_PMD_DPDK_AF_XDP) {
       if (p->xdp_info[i].queue_count <= 0) {
-        err("%s(%d), invalid queue_count %u\n", __func__, i, p->xdp_info[i].queue_count);
+        err("%s(%d), invalid afxdp queue_count %u\n", __func__, i,
+            p->xdp_info[i].queue_count);
         return -EINVAL;
       }
       if (p->xdp_info[i].start_queue <= 0) {
-        err("%s(%d), invalid start_queue %u\n", __func__, i, p->xdp_info[i].start_queue);
+        err("%s(%d), invalid afxdp start_queue %u\n", __func__, i,
+            p->xdp_info[i].start_queue);
         return -EINVAL;
       }
-      ret = mt_socket_get_if_ip(p->port[i], if_ip, if_netmask);
+      const char* if_name = mt_afxdp_port2if(p->port[i]);
+      if (!if_name) {
+        err("%s(%d), get afxdp if name fail from %s\n", __func__, i, p->port[i]);
+        return -EINVAL;
+      }
+      ret = mt_socket_get_if_ip(if_name, if_ip, if_netmask);
       if (ret < 0) {
-        err("%s(%d), get ip fail from if %s\n", __func__, i, p->port[i]);
+        err("%s(%d), get ip fail from if %s for afxdp\n", __func__, i, if_name);
         return ret;
       }
     }
@@ -359,7 +366,7 @@ mtl_handle mtl_init(struct mtl_init_params* p) {
 
   for (int i = 0; i < num_ports; i++) {
     if (p->pmd[i] != MTL_PMD_DPDK_USER)
-      socket[i] = mt_dev_get_socket(kport_info.port[i]);
+      socket[i] = mt_dev_get_socket(kport_info.dpdk_port[i]);
     else
       socket[i] = mt_dev_get_socket(p->port[i]);
     if (socket[i] < 0) {
@@ -405,7 +412,9 @@ mtl_handle mtl_init(struct mtl_init_params* p) {
       uint8_t if_ip[MTL_IP_ADDR_LEN];
       uint8_t if_netmask[MTL_IP_ADDR_LEN];
       uint8_t if_gateway[MTL_IP_ADDR_LEN];
-      ret = mt_socket_get_if_ip(impl->user_para.port[i], if_ip, if_netmask);
+      const char* if_name = kport_info.kernel_if[i];
+
+      ret = mt_socket_get_if_ip(if_name, if_ip, if_netmask);
       if (ret < 0) {
         err("%s(%d), get IP fail\n", __func__, i);
         goto err_exit;
@@ -415,7 +424,7 @@ mtl_handle mtl_init(struct mtl_init_params* p) {
       rte_memcpy(impl->user_para.netmask[i], if_netmask, MTL_IP_ADDR_LEN);
       if (!mt_ip_to_u32(impl->user_para.gateway[i])) {
         /* try to fetch gateway */
-        ret = mt_socket_get_if_gateway(impl->user_para.port[i], if_gateway);
+        ret = mt_socket_get_if_gateway(if_name, if_gateway);
         if (ret >= 0) {
           info("%s(%d), get gateway succ from if\n", __func__, i);
           rte_memcpy(impl->user_para.gateway[i], if_gateway, MTL_IP_ADDR_LEN);

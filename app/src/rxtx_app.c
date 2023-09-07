@@ -316,7 +316,8 @@ int main(int argc, char** argv) {
   int rx_st20_sessions = ctx->rx_video_session_cnt + ctx->rx_st22_session_cnt +
                          ctx->rx_st22p_session_cnt + ctx->rx_st20p_session_cnt;
   for (int i = 0; i < ctx->para.num_ports; i++) {
-    /* parse queue cnt, todo: split with ports */
+    ctx->para.pmd[i] = mtl_pmd_by_port_name(ctx->para.port[i]);
+
     if (!ctx->para.tx_queues_cnt[i]) {
       if (ctx->json_ctx) {
         /* get from the assigned sessions on each interface */
@@ -328,7 +329,9 @@ int main(int argc, char** argv) {
         ctx->para.tx_queues_cnt[i] = st_tx_sessions_queue_cnt(
             tx_st20_sessions, ctx->tx_audio_session_cnt, ctx->tx_anc_session_cnt);
       }
-      ctx->para.tx_queues_cnt[i] += 4; /* add extra 4 queues for recovery */
+      if (ctx->para.pmd[i] == MTL_PMD_DPDK_USER) {
+        ctx->para.tx_queues_cnt[i] += 4; /* add extra 4 queues for recovery */
+      }
     }
     if (!ctx->para.rx_queues_cnt[i]) {
       if (ctx->json_ctx) {
@@ -342,10 +345,12 @@ int main(int argc, char** argv) {
             rx_st20_sessions, ctx->rx_audio_session_cnt, ctx->rx_anc_session_cnt);
       }
     }
-    /* parse af xdp pmd info */
-    ctx->para.pmd[i] = mtl_pmd_by_port_name(ctx->para.port[i]);
-    ctx->para.xdp_info[i].queue_count =
-        ST_MAX(ctx->para.tx_queues_cnt[i], ctx->para.rx_queues_cnt[i]);
+
+    /* af xdp pmd info */
+    if (ctx->para.pmd[i] == MTL_PMD_DPDK_AF_XDP) {
+      ctx->para.xdp_info[i].queue_count =
+          ST_MAX(ctx->para.tx_queues_cnt[i], ctx->para.rx_queues_cnt[i]);
+    }
   }
 
   /* hdr split special */
