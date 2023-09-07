@@ -240,8 +240,7 @@ int mt_rtcp_rx_send_nack_packet(struct mt_rtcp_rx* rx) {
   rx->nacks_send_time = now + rx->nacks_send_interval;
 
   uint16_t num_fci = 0;
-  struct mt_rtcp_fci* fcis = mt_rte_zmalloc_socket(
-      MT_RTCP_MAX_FCIS * sizeof(struct mt_rtcp_fci), mt_socket_id(impl, port));
+  struct mt_rtcp_fci fcis[MT_RTCP_MAX_FCIS];
 
   /* check missing pkts with bitmap, fill fci fields */
   uint16_t seq = rx->last_cont + 1;
@@ -296,8 +295,7 @@ int mt_rtcp_rx_send_nack_packet(struct mt_rtcp_rx* rx) {
   rtcp->len = htons(sizeof(struct mt_rtcp_hdr) / 4 - 1 + num_fci);
   rtcp->ssrc = htonl(rx->ssrc);
   rte_memcpy(rtcp->name, "IMTL", 4);
-  rte_memcpy(rtcp->fci, fcis, num_fci * sizeof(struct mt_rtcp_fci));
-  mt_rte_free(fcis);
+  memcpy(rtcp->fci, fcis, num_fci * sizeof(struct mt_rtcp_fci));
 
   pkt->data_len += sizeof(struct mt_rtcp_hdr) + num_fci * sizeof(struct mt_rtcp_fci);
   pkt->pkt_len = pkt->data_len;
