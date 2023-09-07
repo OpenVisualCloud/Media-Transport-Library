@@ -1,7 +1,7 @@
 {
     "interfaces": [
         {
-            "name": "enp175s0f0np0",
+            "name": "afxdp:enp175s0f0np0",
         },
         {
             "name": "0000:af:01.1",

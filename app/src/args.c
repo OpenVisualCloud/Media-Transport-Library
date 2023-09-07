@@ -318,6 +318,7 @@ static int app_args_json(struct st_app_context* ctx, struct mtl_init_params* p,
   if (ctx->json_ctx->rss_mode) p->rss_mode = ctx->json_ctx->rss_mode;
   if (ctx->json_ctx->log_file) st_set_mtl_log_file(ctx, ctx->json_ctx->log_file);
 
+  info("%s, json_file %s succ\n", __func__, json_file);
   return 0;
 }
 
