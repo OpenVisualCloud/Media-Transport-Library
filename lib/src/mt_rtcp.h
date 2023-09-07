@@ -9,6 +9,7 @@
 
 #define MT_RTCP_PTYPE_NACK (204)
 #define MT_RTCP_MAX_NAME_LEN (24)
+#define MT_RTCP_MAX_FCIS (32)
 
 #define MT_RTCP_TX_RING_PREFIX "TRT_"
 
