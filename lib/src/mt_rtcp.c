@@ -255,7 +255,7 @@ int mt_rtcp_rx_send_nack_packet(struct mt_rtcp_rx* rx) {
       if (miss != 0) {
         fcis[num_fci].start = htons(start);
         fcis[num_fci].follow = htons(miss - 1);
-        if (++num_fci > MT_RTCP_MAX_FCIS) {
+        if (++num_fci >= MT_RTCP_MAX_FCIS) {
           dbg("%s(%s), too many nack items %u\n", __func__, rx->name, num_fci);
           rx->stat_nack_drop_exceed += num_fci;
           if (!end_state)
@@ -295,7 +295,7 @@ int mt_rtcp_rx_send_nack_packet(struct mt_rtcp_rx* rx) {
   rtcp->len = htons(sizeof(struct mt_rtcp_hdr) / 4 - 1 + num_fci);
   rtcp->ssrc = htonl(rx->ssrc);
   rte_memcpy(rtcp->name, "IMTL", 4);
-  memcpy(rtcp->fci, fcis, num_fci * sizeof(struct mt_rtcp_fci));
+  rte_memcpy(rtcp->fci, fcis, num_fci * sizeof(struct mt_rtcp_fci));
 
   pkt->data_len += sizeof(struct mt_rtcp_hdr) + num_fci * sizeof(struct mt_rtcp_fci);
   pkt->pkt_len = pkt->data_len;
