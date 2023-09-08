@@ -377,7 +377,6 @@ static int sample_set_afxdp(struct st_sample_context* ctx) {
     p->pmd[i] = mtl_pmd_by_port_name(p->port[i]);
     if (p->pmd[i] != MTL_PMD_DPDK_AF_XDP) continue;
     p->xdp_info[i].start_queue = 1;
-    p->xdp_info[i].queue_count = ST_MAX(p->tx_queues_cnt[i], p->rx_queues_cnt[i]);
   }
 
   return 0;

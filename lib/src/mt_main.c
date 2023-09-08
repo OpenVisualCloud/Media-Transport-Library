@@ -252,11 +252,6 @@ static int mt_user_params_check(struct mtl_init_params* p) {
 
     /* af xdp check */
     if (pmd == MTL_PMD_DPDK_AF_XDP) {
-      if (p->xdp_info[i].queue_count <= 0) {
-        err("%s(%d), invalid afxdp queue_count %u\n", __func__, i,
-            p->xdp_info[i].queue_count);
-        return -EINVAL;
-      }
       if (p->xdp_info[i].start_queue <= 0) {
         err("%s(%d), invalid afxdp start_queue %u\n", __func__, i,
             p->xdp_info[i].start_queue);
@@ -270,6 +265,19 @@ static int mt_user_params_check(struct mtl_init_params* p) {
       ret = mt_socket_get_if_ip(if_name, if_ip, if_netmask);
       if (ret < 0) {
         err("%s(%d), get ip fail from if %s for afxdp\n", __func__, i, if_name);
+        return ret;
+      }
+    }
+    /* af pkt check */
+    if (pmd == MTL_PMD_DPDK_AF_PACKET) {
+      const char* if_name = mt_afpkt_port2if(p->port[i]);
+      if (!if_name) {
+        err("%s(%d), get afpkt if name fail from %s\n", __func__, i, p->port[i]);
+        return -EINVAL;
+      }
+      ret = mt_socket_get_if_ip(if_name, if_ip, if_netmask);
+      if (ret < 0) {
+        err("%s(%d), get ip fail from if %s for afpkt\n", __func__, i, if_name);
         return ret;
       }
     }

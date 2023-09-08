@@ -5,7 +5,7 @@
             "ip": "192.168.17.101"
         },
         {
-            "name": "afxdp:enp175s0f1np1",
+            "name": "af_xdp:enp175s0f1np1",
         }
     ],
     "tx_sessions": [

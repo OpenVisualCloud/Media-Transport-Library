@@ -206,5 +206,6 @@ static inline void mt_mbuf_refcnt_inc_bulk(struct rte_mbuf** mbufs, uint16_t nb)
 }
 
 const char* mt_afxdp_port2if(const char* port);
+const char* mt_afpkt_port2if(const char* port);
 
 #endif

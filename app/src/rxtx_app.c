@@ -345,12 +345,6 @@ int main(int argc, char** argv) {
             rx_st20_sessions, ctx->rx_audio_session_cnt, ctx->rx_anc_session_cnt);
       }
     }
-
-    /* af xdp pmd info */
-    if (ctx->para.pmd[i] == MTL_PMD_DPDK_AF_XDP) {
-      ctx->para.xdp_info[i].queue_count =
-          ST_MAX(ctx->para.tx_queues_cnt[i], ctx->para.rx_queues_cnt[i]);
-    }
   }
 
   /* hdr split special */
