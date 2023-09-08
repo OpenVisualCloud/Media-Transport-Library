@@ -549,7 +549,7 @@ struct mt_rl_shaper {
 };
 
 struct mt_rx_flow_rsp {
-  int flow_id; /* flow id for afxdp */
+  int flow_id; /* flow id for socket based flow */
   struct rte_flow* flow;
   uint16_t queue_id;
 };

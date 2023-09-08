@@ -7,17 +7,13 @@
 #include "mt_arp.h"
 #include "mt_cni.h"
 #include "mt_dhcp.h"
+#include "mt_flow.h"
 #include "mt_log.h"
 #include "mt_mcast.h"
 #include "mt_queue.h"
 #include "mt_sch.h"
-#include "mt_socket.h"
 #include "mt_stat.h"
 #include "mt_util.h"
-
-static struct mt_rx_flow_rsp* dev_if_create_rx_flow(struct mt_interface* inf, uint16_t q,
-                                                    struct mt_rxq_flow* flow);
-static int dev_if_free_rx_flow(struct mt_interface* inf, struct mt_rx_flow_rsp* rsp);
 
 static const struct mt_dev_driver_info dev_drvs[] = {
     {
@@ -703,172 +699,6 @@ static int dev_tx_queue_set_rl_rate(struct mt_interface* inf, uint16_t queue,
   return 0;
 }
 
-static struct rte_flow* dev_rx_queue_create_flow_raw(struct mt_interface* inf, uint16_t q,
-                                                     struct mt_rxq_flow* flow) {
-  struct rte_flow_error error;
-  struct rte_flow* r_flow;
-
-  struct rte_flow_attr attr = {0};
-  struct rte_flow_item pattern[2];
-  struct rte_flow_action action[2];
-  struct rte_flow_item_raw spec = {0};
-  struct rte_flow_item_raw mask = {0};
-  struct rte_flow_action_queue to_queue = {0};
-
-  uint16_t port_id = inf->port_id;
-  char pkt_buf[] =
-      "0000000000010000000000020800450000300000000000110000010101010202020200001B3A001C00"
-      "008000000000000000000000000000000000000000";
-  char msk_buf[] =
-      "000000000000000000000000000000000000000000000000000000000000000000000000FFFF000000"
-      "000000000000000000000000000000000000000000";
-  MTL_MAY_UNUSED(flow);
-
-  attr.ingress = 1;
-
-  memset(&error, 0, sizeof(error));
-  memset(pattern, 0, sizeof(pattern));
-  memset(action, 0, sizeof(action));
-
-  spec.pattern = (const void*)pkt_buf;
-  spec.length = 62;
-  mask.pattern = (const void*)msk_buf;
-  mask.length = 62;
-
-  pattern[0].type = RTE_FLOW_ITEM_TYPE_RAW;
-  pattern[0].spec = &spec;
-  pattern[0].mask = &mask;
-  pattern[1].type = RTE_FLOW_ITEM_TYPE_END;
-
-  to_queue.index = q;
-  action[0].type = RTE_FLOW_ACTION_TYPE_QUEUE;
-  action[0].conf = &to_queue;
-  action[1].type = RTE_FLOW_ACTION_TYPE_END;
-
-  mt_pthread_mutex_lock(&inf->vf_cmd_mutex);
-  r_flow = rte_flow_create(port_id, &attr, pattern, action, &error);
-  mt_pthread_mutex_unlock(&inf->vf_cmd_mutex);
-  if (!r_flow) {
-    err("%s(%d), rte_flow_create fail for queue %d, %s\n", __func__, port_id, q,
-        mt_string_safe(error.message));
-    return NULL;
-  }
-
-  info("%s(%d), queue %u succ\n", __func__, inf->port, q);
-  return r_flow;
-}
-
-static struct rte_flow* dev_rx_queue_create_flow(struct mt_interface* inf, uint16_t q,
-                                                 struct mt_rxq_flow* flow) {
-  struct rte_flow_attr attr;
-  struct rte_flow_item pattern[4];
-  struct rte_flow_action action[2];
-  struct rte_flow_action_queue queue;
-  struct rte_flow_item_eth eth_spec;
-  struct rte_flow_item_eth eth_mask;
-  struct rte_flow_item_ipv4 ipv4_spec;
-  struct rte_flow_item_ipv4 ipv4_mask;
-  struct rte_flow_item_udp udp_spec;
-  struct rte_flow_item_udp udp_mask;
-  struct rte_flow_error error;
-  struct rte_flow* r_flow;
-  int ret;
-  bool has_ip_flow = true;
-  bool has_port_flow = true;
-
-  uint16_t port_id = inf->port_id;
-
-  memset(&error, 0, sizeof(error));
-
-  /* drv not support ip flow */
-  if (inf->drv_info.flow_type == MT_FLOW_NO_IP) has_ip_flow = false;
-  /* no ip flow requested */
-  if (flow->no_ip_flow) has_ip_flow = false;
-  /* no port flow requested */
-  if (flow->no_port_flow) has_port_flow = false;
-
-  /* only raw flow can be applied on the hdr split queue */
-  if (mt_if_hdr_split_pool(inf, q)) {
-    return dev_rx_queue_create_flow_raw(inf, q, flow);
-  }
-
-  /* queue */
-  queue.index = q;
-
-  /* nothing for eth flow */
-  memset(&eth_spec, 0, sizeof(eth_spec));
-  memset(&eth_mask, 0, sizeof(eth_mask));
-
-  /* ipv4 flow */
-  memset(&ipv4_spec, 0, sizeof(ipv4_spec));
-  memset(&ipv4_mask, 0, sizeof(ipv4_mask));
-  ipv4_spec.hdr.next_proto_id = IPPROTO_UDP;
-
-  if (has_ip_flow) {
-    memset(&ipv4_mask.hdr.dst_addr, 0xFF, MTL_IP_ADDR_LEN);
-    if (mt_is_multicast_ip(flow->dip_addr)) {
-      rte_memcpy(&ipv4_spec.hdr.dst_addr, flow->dip_addr, MTL_IP_ADDR_LEN);
-    } else {
-      rte_memcpy(&ipv4_spec.hdr.src_addr, flow->dip_addr, MTL_IP_ADDR_LEN);
-      rte_memcpy(&ipv4_spec.hdr.dst_addr, flow->sip_addr, MTL_IP_ADDR_LEN);
-      memset(&ipv4_mask.hdr.src_addr, 0xFF, MTL_IP_ADDR_LEN);
-    }
-  }
-
-  /* udp port flow */
-  if (has_port_flow) {
-    memset(&udp_spec, 0, sizeof(udp_spec));
-    memset(&udp_mask, 0, sizeof(udp_mask));
-    udp_spec.hdr.dst_port = htons(flow->dst_port);
-    udp_mask.hdr.dst_port = htons(0xFFFF);
-  }
-
-  memset(&attr, 0, sizeof(attr));
-  attr.ingress = 1;
-
-  memset(action, 0, sizeof(action));
-  action[0].type = RTE_FLOW_ACTION_TYPE_QUEUE;
-  action[0].conf = &queue;
-  action[1].type = RTE_FLOW_ACTION_TYPE_END;
-
-  memset(pattern, 0, sizeof(pattern));
-  pattern[0].type = RTE_FLOW_ITEM_TYPE_ETH;
-  pattern[0].spec = has_ip_flow ? &eth_spec : NULL;
-  pattern[0].mask = has_ip_flow ? &eth_mask : NULL;
-  pattern[1].type = RTE_FLOW_ITEM_TYPE_IPV4;
-  pattern[1].spec = &ipv4_spec;
-  pattern[1].mask = &ipv4_mask;
-  if (has_port_flow) {
-    pattern[2].type = RTE_FLOW_ITEM_TYPE_UDP;
-    pattern[2].spec = &udp_spec;
-    pattern[2].mask = &udp_mask;
-    pattern[3].type = RTE_FLOW_ITEM_TYPE_END;
-  } else {
-    pattern[2].type = RTE_FLOW_ITEM_TYPE_END;
-  }
-
-  ret = rte_flow_validate(port_id, &attr, pattern, action, &error);
-  if (ret < 0) {
-    err("%s(%d), rte_flow_validate fail %d for queue %d, %s\n", __func__, port_id, ret, q,
-        mt_string_safe(error.message));
-    return NULL;
-  }
-
-  mt_pthread_mutex_lock(&inf->vf_cmd_mutex);
-  r_flow = rte_flow_create(port_id, &attr, pattern, action, &error);
-  mt_pthread_mutex_unlock(&inf->vf_cmd_mutex);
-  if (!r_flow) {
-    err("%s(%d), rte_flow_create fail for queue %d, %s\n", __func__, port_id, q,
-        mt_string_safe(error.message));
-    return NULL;
-  }
-
-  uint8_t* ip = flow->dip_addr;
-  info("%s(%d), queue %u succ, ip %u.%u.%u.%u port %u\n", __func__, inf->port, q, ip[0],
-       ip[1], ip[2], ip[3], flow->dst_port);
-  return r_flow;
-}
-
 static int dev_stop_port(struct mt_interface* inf) {
   int ret;
   uint16_t port_id = inf->port_id;
@@ -1288,66 +1118,6 @@ static int dev_start_port(struct mt_interface* inf) {
   return 0;
 }
 
-int dev_reset_port(struct mtl_main_impl* impl, enum mtl_port port) {
-  int ret;
-  uint16_t port_id = mt_port_id(impl, port);
-  struct mt_interface* inf = mt_if(impl, port);
-
-  if (mt_started(impl)) {
-    err("%s, only allowed when instance is in stop state\n", __func__);
-    return -EIO;
-  }
-
-  rte_atomic32_set(&impl->instance_in_reset, 1);
-
-  mt_cni_stop(impl);
-
-  rte_eth_dev_reset(port_id);
-
-  ret = dev_config_port(inf);
-  if (ret < 0) {
-    err("%s(%d), dev_config_port fail %d\n", __func__, port, ret);
-    rte_atomic32_set(&impl->instance_in_reset, 0);
-    return ret;
-  }
-
-  ret = dev_start_port(inf);
-  if (ret < 0) {
-    err("%s(%d), dev_start_port fail %d\n", __func__, port, ret);
-    rte_atomic32_set(&impl->instance_in_reset, 0);
-    return ret;
-  }
-
-  mt_cni_start(impl);
-
-  /* clear rl status */
-  for (uint16_t q = 0; q < inf->max_tx_queues; q++) {
-    inf->tx_queues[q].rl_shapers_mapping = -1; /* init to invalid */
-  }
-  inf->tx_rl_root_active = false;
-  struct mt_rl_shaper* shapers = &inf->tx_rl_shapers[0];
-  memset(shapers, 0, sizeof(*shapers) * MT_MAX_RL_ITEMS);
-
-  /* restore rte flow */
-  struct mt_rx_queue* rx_queue;
-  for (uint16_t rx_q = 0; rx_q < inf->max_rx_queues; rx_q++) {
-    rx_queue = &inf->rx_queues[rx_q];
-    if (rx_queue->flow_rsp) {
-      mt_rte_free(rx_queue->flow_rsp);
-      rx_queue->flow_rsp = dev_if_create_rx_flow(inf, rx_q, &rx_queue->flow);
-      if (!rx_queue->flow_rsp) {
-        err("%s(%d), restore flow fail for q %d\n", __func__, port, rx_q);
-        rte_atomic32_set(&impl->instance_in_reset, 0);
-        return -EIO;
-      }
-    }
-  }
-  /* restore mcast */
-  mt_mcast_restore(impl, port);
-
-  return 0;
-}
-
 static int dev_filelock_lock(struct mtl_main_impl* impl) {
   int fd = open(MT_FLOCK_PATH, O_RDONLY | O_CREAT, 0666);
   if (fd < 0) {
@@ -1610,7 +1380,7 @@ static int dev_if_uinit_rx_queues(struct mt_interface* inf) {
     }
     if (rx_queue->flow_rsp) {
       warn("%s(%d), flow %d still active\n", __func__, port, q);
-      dev_if_free_rx_flow(inf, rx_queue->flow_rsp);
+      mt_rx_flow_free(inf->parent, port, rx_queue->flow_rsp);
       rx_queue->flow_rsp = NULL;
     }
     if (rx_queue->mbuf_pool) {
@@ -1790,82 +1560,6 @@ static int dev_if_init_pacing(struct mt_interface* inf) {
   return 0;
 }
 
-static struct mt_rx_flow_rsp* dev_if_create_rx_flow(struct mt_interface* inf, uint16_t q,
-                                                    struct mt_rxq_flow* flow) {
-  int ret;
-  enum mtl_port port = inf->port;
-  struct mtl_main_impl* impl = inf->parent;
-  uint8_t* ip = flow->dip_addr;
-
-  if (q >= inf->max_rx_queues) {
-    err("%s(%d), invalid q %u\n", __func__, port, q);
-    return NULL;
-  }
-
-  struct mt_rx_flow_rsp* rsp = mt_rte_zmalloc_socket(sizeof(*rsp), inf->socket_id);
-  rsp->flow_id = -1;
-  rsp->queue_id = q;
-
-  if (mt_pmd_is_kernel(impl, port)) {
-    ret = mt_socket_add_flow(impl, port, q, flow);
-    if (ret < 0) {
-      err("%s(%d), socket add flow fail for queue %d\n", __func__, port, q);
-      mt_rte_free(rsp);
-      return NULL;
-    }
-    rsp->flow_id = ret;
-  } else {
-    struct rte_flow* r_flow;
-
-    r_flow = dev_rx_queue_create_flow(inf, q, flow);
-    if (!r_flow) {
-      err("%s(%d), create flow fail for queue %d, ip %u.%u.%u.%u port %u\n", __func__,
-          port, q, ip[0], ip[1], ip[2], ip[3], flow->dst_port);
-      mt_rte_free(rsp);
-      return NULL;
-    }
-
-    rsp->flow = r_flow;
-    /* WA to avoid iavf_flow_create fail in 1000+ mudp close at same time */
-    if (inf->drv_info.drv_type == MT_DRV_IAVF) mt_sleep_ms(5);
-  }
-
-  return rsp;
-}
-
-static int dev_if_free_rx_flow(struct mt_interface* inf, struct mt_rx_flow_rsp* rsp) {
-  enum mtl_port port = inf->port;
-  struct rte_flow_error error;
-  int ret;
-  int max_retry = 5;
-  int retry = 0;
-
-retry:
-  if (rsp->flow_id > 0) {
-    mt_socket_remove_flow(inf->parent, port, rsp->flow_id);
-    rsp->flow_id = -1;
-  }
-  if (rsp->flow) {
-    mt_pthread_mutex_lock(&inf->vf_cmd_mutex);
-    ret = rte_flow_destroy(inf->port_id, rsp->flow, &error);
-    mt_pthread_mutex_unlock(&inf->vf_cmd_mutex);
-    if (ret < 0) {
-      err("%s(%d), flow destroy fail, queue %d, retry %d\n", __func__, port,
-          rsp->queue_id, retry);
-      retry++;
-      if (retry < max_retry) {
-        mt_sleep_ms(10); /* WA: to wait pf finish the vf request */
-        goto retry;
-      }
-    }
-    rsp->flow = NULL;
-  }
-  mt_rte_free(rsp);
-  /* WA to avoid iavf_flow_destroy fail in 1000+ mudp close at same time */
-  if (inf->drv_info.drv_type == MT_DRV_IAVF) mt_sleep_ms(1);
-  return 0;
-}
-
 static uint64_t ptp_from_real_time(struct mtl_main_impl* impl, enum mtl_port port) {
   MTL_MAY_UNUSED(impl);
   MTL_MAY_UNUSED(port);
@@ -2014,13 +1708,13 @@ struct mt_rx_queue* mt_dev_get_rx_queue(struct mtl_main_impl* impl, enum mtl_por
 
     /* free the dummy flow if any */
     if (rx_queue->flow_rsp) {
-      dev_if_free_rx_flow(inf, rx_queue->flow_rsp);
+      mt_rx_flow_free(impl, port, rx_queue->flow_rsp);
       rx_queue->flow_rsp = NULL;
     }
 
     memset(&rx_queue->flow, 0, sizeof(rx_queue->flow));
     if (flow && !flow->sys_queue) {
-      rx_queue->flow_rsp = dev_if_create_rx_flow(inf, q, flow);
+      rx_queue->flow_rsp = mt_rx_flow_create(impl, port, q, flow);
       if (!rx_queue->flow_rsp) {
         err("%s(%d), create flow fail for queue %d\n", __func__, port, q);
         mt_pthread_mutex_unlock(&inf->rx_queues_mutex);
@@ -2034,7 +1728,7 @@ struct mt_rx_queue* mt_dev_get_rx_queue(struct mtl_main_impl* impl, enum mtl_por
       if (ret < 0) {
         err("%s(%d), start runtime rx queue %d fail %d\n", __func__, port, q, ret);
         if (rx_queue->flow_rsp) {
-          dev_if_free_rx_flow(inf, rx_queue->flow_rsp);
+          mt_rx_flow_free(impl, port, rx_queue->flow_rsp);
           rx_queue->flow_rsp = NULL;
         }
         mt_pthread_mutex_unlock(&inf->rx_queues_mutex);
@@ -2181,7 +1875,7 @@ int mt_dev_put_rx_queue(struct mtl_main_impl* impl, struct mt_rx_queue* queue) {
   }
 
   if (rx_queue->flow_rsp) {
-    dev_if_free_rx_flow(inf, rx_queue->flow_rsp);
+    mt_rx_flow_free(impl, port, rx_queue->flow_rsp);
     rx_queue->flow_rsp = NULL;
   }
 
@@ -2421,30 +2115,6 @@ int mt_dev_uinit(struct mtl_init_params* p) {
   return 0;
 }
 
-int dev_arp_mac(struct mtl_main_impl* impl, uint8_t dip[MTL_IP_ADDR_LEN],
-                struct rte_ether_addr* ea, enum mtl_port port, int timeout_ms) {
-  int ret;
-
-  dbg("%s(%d), start to get mac for ip %d.%d.%d.%d\n", __func__, port, dip[0], dip[1],
-      dip[2], dip[3]);
-  if (mt_pmd_is_kernel(impl, port)) {
-    ret = mt_socket_get_mac(impl, mt_get_user_params(impl)->port[port], dip, ea,
-                            timeout_ms);
-    if (ret < 0) {
-      dbg("%s(%d), failed to get mac from socket %d\n", __func__, port, ret);
-      return ret;
-    }
-  } else {
-    ret = mt_arp_cni_get_mac(impl, ea, port, mt_ip_to_u32(dip), timeout_ms);
-    if (ret < 0) {
-      dbg("%s(%d), failed to get mac from cni %d\n", __func__, port, ret);
-      return ret;
-    }
-  }
-
-  return 0;
-}
-
 int mt_dev_dst_ip_mac(struct mtl_main_impl* impl, uint8_t dip[MTL_IP_ADDR_LEN],
                       struct rte_ether_addr* ea, enum mtl_port port, int timeout_ms) {
   int ret;
@@ -2453,11 +2123,11 @@ int mt_dev_dst_ip_mac(struct mtl_main_impl* impl, uint8_t dip[MTL_IP_ADDR_LEN],
     mt_mcast_ip_to_mac(dip, ea);
     ret = 0;
   } else if (mt_is_lan_ip(dip, mt_sip_addr(impl, port), mt_sip_netmask(impl, port))) {
-    ret = dev_arp_mac(impl, dip, ea, port, timeout_ms);
+    ret = mt_arp_get_mac(impl, dip, ea, port, timeout_ms);
   } else {
     uint8_t* gateway = mt_sip_gateway(impl, port);
     if (mt_ip_to_u32(gateway)) {
-      ret = dev_arp_mac(impl, gateway, ea, port, timeout_ms);
+      ret = mt_arp_get_mac(impl, gateway, ea, port, timeout_ms);
     } else {
       err("%s(%d), ip %d.%d.%d.%d is wan but no gateway support\n", __func__, port,
           dip[0], dip[1], dip[2], dip[3]);
@@ -2831,30 +2501,6 @@ uint16_t mt_dev_rss_hash_queue(struct mtl_main_impl* impl, enum mtl_port port,
                                uint32_t hash) {
   struct mt_interface* inf = mt_if(impl, port);
   return (hash % inf->dev_info.reta_size) % inf->max_rx_queues;
-}
-
-struct mt_rx_flow_rsp* mt_dev_create_rx_flow(struct mtl_main_impl* impl,
-                                             enum mtl_port port, uint16_t q,
-                                             struct mt_rxq_flow* flow) {
-  struct mt_interface* inf = mt_if(impl, port);
-  struct mt_rx_flow_rsp* rsp;
-
-  if (q >= inf->max_rx_queues) {
-    err("%s(%d), invalid q %u\n", __func__, port, q);
-    return NULL;
-  }
-
-  mt_pthread_mutex_lock(&inf->rx_queues_mutex);
-  rsp = dev_if_create_rx_flow(inf, q, flow);
-  mt_pthread_mutex_unlock(&inf->rx_queues_mutex);
-
-  return rsp;
-}
-
-int mt_dev_free_rx_flow(struct mtl_main_impl* impl, enum mtl_port port,
-                        struct mt_rx_flow_rsp* rsp) {
-  struct mt_interface* inf = mt_if(impl, port);
-  return dev_if_free_rx_flow(inf, rsp);
 }
 
 int mt_dev_tsc_done_action(struct mtl_main_impl* impl) {
