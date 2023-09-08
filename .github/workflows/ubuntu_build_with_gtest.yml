@@ -37,7 +37,7 @@ jobs:
 
   Build:
     needs: changes
-    if: ${{ github.repository == 'OpenVisualCloud/Media-Transport-Library' && needs.changes.outputs.changed }}
+    if: ${{ github.repository == 'OpenVisualCloud/Media-Transport-Library' && needs.changes.outputs.changed == 'true' }}
     runs-on: [Linux, self-hosted]
     timeout-minutes: 60
 
@@ -84,7 +84,7 @@ jobs:
 
   Test:
     needs: [changes, Build]
-    if: ${{ github.repository == 'OpenVisualCloud/Media-Transport-Library' && needs.changes.outputs.changed }}
+    if: ${{ github.repository == 'OpenVisualCloud/Media-Transport-Library' && needs.changes.outputs.changed == 'true' }}
     runs-on: [Linux, self-hosted]
     steps:
       - name: Harden Runner
