@@ -3,38 +3,29 @@
 # More info refer to https://docs.github.com/en/repositories/configuring-branches-and-merges-in-your-repository/defining-the-mergeability-of-pull-requests/troubleshooting-required-status-checks#handling-skipped-but-required-checks
 name: gtest
 
-on:
-  push:
-    paths-ignore:
-      - 'include/**'
-      - 'lib/**'
-      - 'patches/dpdk/**'
-      - 'tests/**'
-      - build.sh
-      - kahawai.json
-      - meson.build
-      - meson_options.txt
-      - VERSION
-      - .github/workflows/ubuntu_build_with_gtest.yml
-  pull_request:
-    paths-ignore:
-      - 'include/**'
-      - 'lib/**'
-      - 'patches/dpdk/**'
-      - 'tests/**'
-      - build.sh
-      - kahawai.json
-      - meson.build
-      - meson_options.txt
-      - VERSION
-      - .github/workflows/ubuntu_build_with_gtest.yml
+on: [push, pull_request]
 
 permissions:
   contents: read
 
 jobs:
+  changes:
+    runs-on: ubuntu-latest
+    permissions:
+      pull-requests: read
+    outputs:
+      changed: ${{ steps.filter.outputs.src == 'true' || steps.filter.outputs.build == 'true' || steps.filter.outputs.workflow_linux == 'true' }}
+    steps:
+      - uses: actions/checkout@3df4ab11eba7bda6032a0b82a6bb43b11571feac # v4.0.0
+      
+      - uses: dorny/paths-filter@4512585405083f25c027a35db413c2b3b9006d50 # v2
+        id: filter
+        with:
+          filters: .github/path_filters.yml
+
   Build:
-    if: github.repository == 'OpenVisualCloud/Media-Transport-Library'
+    needs: changes
+    if: ${{ github.repository == 'OpenVisualCloud/Media-Transport-Library' && needs.changes.outputs.changed != 'true' }}
     runs-on: ubuntu-latest
     timeout-minutes: 60
 
@@ -47,7 +38,8 @@ jobs:
       - run: 'echo "No gtest build required"'
 
   Test:
-    if: github.repository == 'OpenVisualCloud/Media-Transport-Library'
+    needs: changes
+    if: ${{ github.repository == 'OpenVisualCloud/Media-Transport-Library' && needs.changes.outputs.changed != 'true' }}
     runs-on: ubuntu-latest
 
     steps:
