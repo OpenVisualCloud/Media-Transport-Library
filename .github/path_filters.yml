@@ -26,9 +26,12 @@ api: &api
 
 ffmpeg_plugin: &ffmpeg_plugin
   - 'ecosystem/ffmpeg_plugin/**'
+  - .github/workflows/ffmpeg_plugin.yml
 
 librist: &librist
   - 'ecosystem/librist/**'
+  - .github/workflows/rist.yml
 
 obs_plugin: &obs_plugin
   - 'ecosystem/obs_mtl/**'
+  - .github/workflows/obs.yml

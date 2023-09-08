@@ -16,7 +16,7 @@ jobs:
     permissions:
       pull-requests: read
     outputs:
-      changed: ${{ steps.filter.outputs.api || steps.filter.outputs.obs_plugin }}
+      changed: ${{ steps.filter.outputs.api == 'true' || steps.filter.outputs.obs_plugin == 'true' }}
     steps:
       - uses: actions/checkout@3df4ab11eba7bda6032a0b82a6bb43b11571feac # v4.0.0
       
@@ -27,7 +27,7 @@ jobs:
 
   build:
     needs: changes
-    if: ${{ github.repository == 'OpenVisualCloud/Media-Transport-Library' && needs.changes.outputs.changed == 'true' }}
+    if: ${{ github.repository == 'OpenVisualCloud/Media-Transport-Library' && needs.changes.outputs.changed }}
     runs-on: ${{ matrix.os }}
     timeout-minutes: 60
     container:

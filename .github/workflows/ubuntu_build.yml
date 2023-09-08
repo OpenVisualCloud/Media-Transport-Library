@@ -16,7 +16,7 @@ jobs:
     permissions:
       pull-requests: read
     outputs:
-      changed: ${{ steps.filter.outputs.src || steps.filter.outputs.build }}
+      changed: ${{ steps.filter.outputs.src == 'true' || steps.filter.outputs.build == 'true' }}
     steps:
       - uses: actions/checkout@3df4ab11eba7bda6032a0b82a6bb43b11571feac # v4.0.0
       
@@ -27,7 +27,7 @@ jobs:
 
   build:
     needs: changes
-    if: ${{ needs.changes.outputs.changed == 'true' }}
+    if: ${{ needs.changes.outputs.changed }}
     runs-on: ${{ matrix.os }}
     timeout-minutes: 60
     container:

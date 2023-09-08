@@ -23,7 +23,7 @@ jobs:
     permissions:
       pull-requests: read
     outputs:
-      changed: ${{ steps.filter.outputs.src || steps.filter.outputs.build || steps.filter.outputs.workflow_windows }}
+      changed: ${{ steps.filter.outputs.src == 'true' || steps.filter.outputs.build == 'true' || steps.filter.outputs.workflow_windows == 'true' }}
     steps:
       - uses: actions/checkout@3df4ab11eba7bda6032a0b82a6bb43b11571feac # v4.0.0
       
@@ -34,7 +34,7 @@ jobs:
 
   Build_and_Test:
     needs: changes
-    if: ${{ github.repository == 'OpenVisualCloud/Media-Transport-Library' && needs.changes.outputs.changed == 'true' }}
+    if: ${{ github.repository == 'OpenVisualCloud/Media-Transport-Library' && needs.changes.outputs.changed }}
     runs-on: [Windows, self-hosted]
     timeout-minutes: 60
     defaults:
