@@ -115,6 +115,7 @@ enum mt_port_type {
   MT_PORT_VF,
   MT_PORT_PF,
   MT_PORT_AF_XDP,
+  MT_PORT_AF_PKT,
 };
 
 enum mt_rl_type {
@@ -132,6 +133,7 @@ enum mt_driver_type {
   MT_DRV_IGC,       /* igc, net_igc */
   MT_DRV_ENA,       /* aws ena, net_ena */
   MT_DRV_MLX5,      /* mlx, mlx5_pci */
+  MT_DRV_AF_PKT,    /* af packet, net_af_packet */
 };
 
 enum mt_flow_type {
@@ -1031,6 +1033,13 @@ static inline bool mt_pmd_is_kernel(struct mtl_main_impl* impl, enum mtl_port po
 
 static inline bool mt_pmd_is_af_xdp(struct mtl_main_impl* impl, enum mtl_port port) {
   if (MTL_PMD_DPDK_AF_XDP == mt_get_user_params(impl)->pmd[port])
+    return true;
+  else
+    return false;
+}
+
+static inline bool mt_pmd_is_af_packet(struct mtl_main_impl* impl, enum mtl_port port) {
+  if (MTL_PMD_DPDK_AF_PACKET == mt_get_user_params(impl)->pmd[port])
     return true;
   else
     return false;

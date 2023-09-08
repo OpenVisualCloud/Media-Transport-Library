@@ -322,8 +322,7 @@ static void mtl_input_init(struct mtl_rx_session* s) {
   snprintf(param.port[MTL_PORT_P], MTL_PORT_MAX_LEN, "%s", s->port);
   inet_pton(AF_INET, s->sip, param.sip_addr[MTL_PORT_P]);
   param.pmd[MTL_PORT_P] = MTL_PMD_DPDK_USER;
-  param.xdp_info[MTL_PORT_P].queue_count = 1;
-  param.xdp_info[MTL_PORT_P].start_queue = 16;
+  param.xdp_info[MTL_PORT_P].start_queue = 1;
   param.flags = MTL_FLAG_BIND_NUMA;  // default bind to numa
   param.log_level = s->log_level;    // mtl lib log level
   param.priv = s;                    // usr ctx pointer

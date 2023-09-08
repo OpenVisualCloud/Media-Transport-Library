@@ -1,7 +1,7 @@
 {
     "interfaces": [
         {
-            "port": "afxdp:enp175s0f1np1",
+            "port": "af_xdp:enp175s0f0np0",
         }
     ],
     "nb_udp_sockets": "64",

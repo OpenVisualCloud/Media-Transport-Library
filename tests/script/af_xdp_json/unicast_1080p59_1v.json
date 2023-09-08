@@ -1,17 +1,16 @@
 {
     "interfaces": [
         {
-            "name": "afxdp:enp175s0f0np0",
+            "name": "af_xdp:enp175s0f0np0"
         },
         {
-            "name": "0000:af:01.1",
-            "ip": "192.168.17.102"
+            "name": "af_xdp:enp175s0f1np1"
         }
     ],
     "tx_sessions": [
         {
             "dip": [
-                "239.168.17.101"
+                "192.168.108.102"
             ],
             "interface": [
                 0
@@ -35,7 +34,7 @@
     "rx_sessions": [
         {
             "ip": [
-                "239.168.17.101"
+                "192.168.108.101"
             ],
             "interface": [
                 1
@@ -51,7 +50,6 @@
                     "video_format": "i1080p59",
                     "pg_format": "YUV_422_10bit",
                     "display": false,
-                    "measure_latency": true,
                 }
             ]
         }

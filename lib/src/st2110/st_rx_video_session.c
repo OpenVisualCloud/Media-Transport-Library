@@ -1746,6 +1746,9 @@ static int rv_handle_frame_pkt(struct st_rx_video_session_impl* s, struct rte_mb
   int pkt_idx = -1, ret;
   struct rte_mbuf* mbuf_next = mbuf->next;
 
+  dbg("%s(%d,%d): line info %u %u %u\n", __func__, s->idx, s_port, line1_number,
+      line1_offset, line1_length);
+
   if (payload_type != ops->payload_type) {
     s->stat_pkts_wrong_hdr_dropped++;
     return -EINVAL;
@@ -3831,7 +3834,7 @@ static int rv_sessions_stat(void* priv) {
   struct st_rx_video_session_impl* s;
 
   for (int j = 0; j < mgr->max_idx; j++) {
-    s = rx_video_session_try_get(mgr, j);
+    s = rx_video_session_get(mgr, j);
     if (!s) continue;
     rv_stat(mgr, s);
     rx_video_session_put(mgr, j);

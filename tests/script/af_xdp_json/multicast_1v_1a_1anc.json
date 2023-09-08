@@ -1,10 +1,10 @@
 {
     "interfaces": [
         {
-            "name": "afxdp:enp175s0f0np0",
+            "name": "af_xdp:enp175s0f0np0",
         },
         {
-            "name": "afxdp:enp175s0f1np1",
+            "name": "af_xdp:enp175s0f1np1",
         }
     ],
     "tx_sessions": [
@@ -18,7 +18,7 @@
             "video": [
                 {
                     "replicas": 1,
-                    "type": "rtp",
+                    "type": "frame",
                     "pacing": "gap",
                     "packing": "BPM",
                     "start_port": 20000,
@@ -32,7 +32,7 @@
             "audio": [
                 {
                     "replicas": 1,
-                    "type": "rtp",
+                    "type": "frame",
                     "start_port": 30000,
                     "payload_type": 111,
                     "audio_format": "PCM16",
@@ -47,7 +47,7 @@
                     "replicas": 1,
                     "start_port": 40000,
                     "payload_type": 113,
-                    "type": "rtp",
+                    "type": "frame",
                     "ancillary_format": "closed_caption",
                     "ancillary_url": "./test.txt",
                     "ancillary_fps": "p59"
@@ -66,7 +66,7 @@
             "video": [
                 {
                     "replicas": 1,
-                    "type": "rtp",
+                    "type": "frame",
                     "pacing": "gap",
                     "start_port": 20000,
                     "payload_type": 112,
@@ -79,7 +79,7 @@
             "audio": [
                 {
                     "replicas": 1,
-                    "type": "rtp",
+                    "type": "frame",
                     "start_port": 30000,
                     "payload_type": 111,
                     "audio_format": "PCM16",

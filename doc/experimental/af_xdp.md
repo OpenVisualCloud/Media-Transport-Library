@@ -42,15 +42,28 @@ You may need disable rp_filter for multicast report message.
 sudo sysctl -w net.ipv4.conf.all.rp_filter=0
 ```
 
-## 4. Run with root user
+## 4. Run AF_XDP PMD with root user
 
-Refer to [afxdp config](../tests/script/afxdp_json/) for how to config the AF_XDP pmd in json config.
+AF_XDP PMD rely on kernel AF_XDP support which need root access, and please refer to [af_xdp config](../..//tests/script/af_xdp_json/) for how to config the AF_XDP pmd in json config.
+
+Customize the kernel network interface name `enp175s0f0np0` as your setup
+
+```bash
+    "interfaces": [
+        {
+            "name": "af_xdp:enp175s0f0np0",
+        },
+        {
+            "name": "af_xdp:enp175s0f1np1",
+        }
+    ],
+```
 
 ## 5. FAQs
 
 ### 5.1 No IP assigned
 
-If you see below error while running RxTxApp with AFXDP json, please assign an IP for the port.
+If you see below error while running RxTxApp with AF_XDP json, please assign an IP for the port.
 
 ```bash
 st_app_parse_json, using json-c version: 0.13.1

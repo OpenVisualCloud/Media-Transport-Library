@@ -189,6 +189,8 @@ enum mtl_pmd_type {
   MTL_PMD_DPDK_USER = 0,
   /** address family(kernel) high performance packet processing */
   MTL_PMD_DPDK_AF_XDP,
+  /** allows a DPDK application to send and receive raw packets through the kernel */
+  MTL_PMD_DPDK_AF_PACKET,
   /** max value of this enum */
   MTL_PMD_TYPE_MAX,
 };
@@ -439,8 +441,6 @@ enum st21_tx_pacing_way {
 struct mtl_af_xdp_params {
   /** starting netdev queue id, must > 0, 0 is reserved for system usage */
   uint8_t start_queue;
-  /** total netdev queue number, must > 0 */
-  uint8_t queue_count;
 };
 
 /**

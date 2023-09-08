@@ -85,9 +85,19 @@ Reboot the system to let the settings take effect.
 
 For Intel® E810 Series Ethernet Adapter, refer to [Intel® E810 Series Ethernet Adapter driver guide](e810.md). For other NIC, you may need follow the steps on the DPDK site <http://doc.dpdk.org/guides/nics/overview.html>.
 
-## 3. Create VF and bind the driver to DPDK PMD
+## 3. Create DPDK PMD
 
 Note: It is important to repeat this operation again after rebooting the system. The steps mentioned should be followed again to ensure that the desired configuration is maintained after a reboot.
+
+### 3.1 Create DPDK PMD
+
+For the Intel® E810 Series Ethernet Adapter, which supports Virtual Functions (VFs) based on Single Root I/O Virtualization (SR-IOV), please refer to section `### 3.1.1` to learn how to create VFs and bind them to the DPDK Poll Mode Driver (PMD).
+
+For other Network Interface Cards (NICs), please verify if your NIC is supported by DPDK by referring to the following link: <https://doc.dpdk.org/guides/nics/>. If it is, follow the guide provided there for further instructions.
+
+If your NIC is not supported by DPDK's native Poll Mode Driver (PMD), DPDK does offer AF_PACKET PMD support. This allows a DPDK application to send and receive raw packets through the Kernel. For more information, please refer to the [AF_PACKET](doc/experimental/af_packet.md) documentation. However, please be aware that this is an experimental feature and is intended for trial usage only.
+
+#### 3.1.1 Create Intel® E810 VFs PMD
 
 Get Device to Bus info mapping
 
@@ -127,6 +137,17 @@ If the creation of VF BDFs fails, you can check the kernel dmesg log to find pos
 ```bash
 sudo dmesg
 ```
+
+#### 3.1.2 Bind PF DPDK PMD
+
+If your Network Interface Card (NIC) is not from the Intel® E810 Series, but is supported by DPDK, you have the option to directly bind the Physical Function (PF) to the DPDK Poll Mode Driver (PMD) for Bus Device Function (BDF) 0000:32:00.0 using the command provided below.
+
+```bash
+cd $imtl_source_code
+sudo ./script/nicctl.sh bind_pmd 0000:32:00.0
+```
+
+### 3.2 Grant /dev/vfio/* access to current user
 
 If you are not running the sample application from the root user, you can execute the following command to add VFIO device permissions for the current user:
 

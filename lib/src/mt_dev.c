@@ -79,6 +79,12 @@ static const struct mt_dev_driver_info dev_drvs[] = {
         .drv_type = MT_DRV_MLX5,
         .flow_type = MT_FLOW_ALL,
     },
+    {
+        .name = "net_af_packet",
+        .port_type = MT_PORT_AF_PKT,
+        .drv_type = MT_DRV_AF_PKT,
+        .flow_type = MT_FLOW_ALL,
+    },
 };
 
 static int parse_driver_info(const char* driver, struct mt_dev_driver_info* drv_info) {
@@ -305,6 +311,7 @@ static int dev_eal_init(struct mtl_init_params* p, struct mt_kport_info* kport_i
   int num_ports = RTE_MIN(p->num_ports, MTL_PORT_MAX);
   static bool eal_initted = false; /* eal cann't re-enter in one process */
   bool has_afxdp = false;
+  bool has_afpkt = false;
   char port_params[MTL_PORT_MAX][2 * MTL_PORT_MAX_LEN];
   char* port_param;
   int pci_ports = 0;
@@ -328,6 +335,9 @@ static int dev_eal_init(struct mtl_init_params* p, struct mt_kport_info* kport_i
     if (p->pmd[i] == MTL_PMD_DPDK_AF_XDP) {
       argv[argc] = "--vdev";
       has_afxdp = true;
+    } else if (p->pmd[i] == MTL_PMD_DPDK_AF_PACKET) {
+      argv[argc] = "--vdev";
+      has_afpkt = true;
     } else {
       argv[argc] = "-a";
       pci_ports++;
@@ -335,14 +345,25 @@ static int dev_eal_init(struct mtl_init_params* p, struct mt_kport_info* kport_i
     argc++;
     port_param = port_params[i];
     memset(port_param, 0, 2 * MTL_PORT_MAX_LEN);
+
+    uint16_t queue_pair_cnt = RTE_MAX(p->tx_queues_cnt[i], p->rx_queues_cnt[i]);
     if (p->pmd[i] == MTL_PMD_DPDK_AF_XDP) {
       const char* if_name = mt_afxdp_port2if(p->port[i]);
       if (!if_name) return -EINVAL;
       snprintf(port_param, 2 * MTL_PORT_MAX_LEN,
                "net_af_xdp%d,iface=%s,start_queue=%u,queue_count=%u", i, if_name,
-               p->xdp_info[i].start_queue, p->xdp_info[i].queue_count);
+               p->xdp_info[i].start_queue, queue_pair_cnt);
       /* save kport info */
       snprintf(kport_info->dpdk_port[i], MTL_PORT_MAX_LEN, "net_af_xdp%d", i);
+      snprintf(kport_info->kernel_if[i], MTL_PORT_MAX_LEN, "%s", if_name);
+    } else if (p->pmd[i] == MTL_PMD_DPDK_AF_PACKET) {
+      const char* if_name = mt_afpkt_port2if(p->port[i]);
+      if (!if_name) return -EINVAL;
+      snprintf(port_param, 2 * MTL_PORT_MAX_LEN,
+               "eth_af_packet%d,iface=%s,framesz=2048,blocksz=4096,qpairs=%u", i, if_name,
+               queue_pair_cnt);
+      /* save kport info */
+      snprintf(kport_info->dpdk_port[i], MTL_PORT_MAX_LEN, "eth_af_packet%d", i);
       snprintf(kport_info->kernel_if[i], MTL_PORT_MAX_LEN, "%s", if_name);
     } else {
       snprintf(port_param, 2 * MTL_PORT_MAX_LEN, "%s", p->port[i]);
@@ -391,8 +412,12 @@ static int dev_eal_init(struct mtl_init_params* p, struct mt_kport_info* kport_i
   if (p->log_level == MTL_LOG_LEVEL_DEBUG) {
     argv[argc] = "user,debug";
   } else if (p->log_level == MTL_LOG_LEVEL_INFO) {
-    if (has_afxdp)
+    if (has_afxdp && has_afpkt)
+      argv[argc] = "pmd.net.af_xdp,pmd.net.af_packet,info";
+    else if (has_afxdp)
       argv[argc] = "pmd.net.af_xdp,info";
+    else if (has_afpkt)
+      argv[argc] = "pmd.net.af_packet,info";
     else
       argv[argc] = "info";
   } else if (p->log_level == MTL_LOG_LEVEL_NOTICE) {
@@ -1608,7 +1633,8 @@ static int dev_if_init_rx_queues(struct mtl_main_impl* impl, struct mt_interface
   struct mt_rx_queue* rx_queues =
       mt_rte_zmalloc_socket(sizeof(*rx_queues) * inf->max_rx_queues, inf->socket_id);
   if (!rx_queues) {
-    err("%s(%d), rx_queues not alloc\n", __func__, inf->port);
+    err("%s(%d), rx_queues zmalloc fail, queues %u\n", __func__, inf->port,
+        inf->max_rx_queues);
     return -ENOMEM;
   }
 
@@ -1626,9 +1652,9 @@ static int dev_if_init_rx_queues(struct mtl_main_impl* impl, struct mt_interface
       struct rte_mempool* mbuf_pool = NULL;
 
       if (mt_pmd_is_kernel(impl, inf->port)) {
-        mbuf_pool = mt_mempool_create_by_ops(
-            impl, inf->port, pool_name, mbuf_elements, MT_MBUF_CACHE_SIZE,
-            sizeof(struct mt_muf_priv_data), 2048 - MT_MBUF_CACHE_SIZE, NULL);
+        /* no priv for af_xdp/af_packet  */
+        mbuf_pool = mt_mempool_create_by_ops(impl, inf->port, pool_name, mbuf_elements,
+                                             MT_MBUF_CACHE_SIZE, 0, 2048, NULL);
       } else {
         if (q < inf->system_rx_queues_end)
           mbuf_pool = mt_mempool_create_common(impl, inf->port, pool_name, mbuf_elements);
@@ -2549,11 +2575,11 @@ int mt_dev_if_init(struct mtl_main_impl* impl) {
       inf->rss_mode = MTL_RSS_MODE_L3_L4; /* default l3_l4 */
     }
 
+    uint16_t queue_pair_cnt = RTE_MAX(p->tx_queues_cnt[i], p->rx_queues_cnt[i]);
     /* set max tx/rx queues */
-    if (p->pmd[i] == MTL_PMD_DPDK_AF_XDP) {
-      /* af_xdp queues(ring pairs) count indicate by user */
-      inf->max_tx_queues = p->xdp_info[i].queue_count;
-      inf->max_rx_queues = inf->max_tx_queues;
+    if (p->pmd[i] != MTL_PMD_DPDK_USER) {
+      inf->max_tx_queues = queue_pair_cnt;
+      inf->max_rx_queues = queue_pair_cnt;
       inf->system_rx_queues_end = 0;
     } else {
       info("%s(%d), user request queues tx %u rx %u, deprecated sessions tx %u rx %u\n",
@@ -2592,8 +2618,8 @@ int mt_dev_if_init(struct mtl_main_impl* impl) {
 
     /* when using IAVF, num_queue_pairs will be set as the max of tx/rx */
     if (inf->drv_info.drv_type == MT_DRV_IAVF) {
-      inf->max_tx_queues = RTE_MAX(inf->max_rx_queues, inf->max_tx_queues);
-      inf->max_rx_queues = inf->max_tx_queues;
+      inf->max_tx_queues = queue_pair_cnt;
+      inf->max_rx_queues = queue_pair_cnt;
     }
 
     if (dev_info->dev_capa & RTE_ETH_DEV_CAPA_RUNTIME_RX_QUEUE_SETUP)
