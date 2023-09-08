@@ -2578,6 +2578,7 @@ int mt_dev_if_init(struct mtl_main_impl* impl) {
     uint16_t queue_pair_cnt = RTE_MAX(p->tx_queues_cnt[i], p->rx_queues_cnt[i]);
     /* set max tx/rx queues */
     if (p->pmd[i] != MTL_PMD_DPDK_USER) {
+      /* no system queues for kernel based pmd */
       inf->max_tx_queues = queue_pair_cnt;
       inf->max_rx_queues = queue_pair_cnt;
       inf->system_rx_queues_end = 0;
@@ -2618,8 +2619,8 @@ int mt_dev_if_init(struct mtl_main_impl* impl) {
 
     /* when using IAVF, num_queue_pairs will be set as the max of tx/rx */
     if (inf->drv_info.drv_type == MT_DRV_IAVF) {
-      inf->max_tx_queues = queue_pair_cnt;
-      inf->max_rx_queues = queue_pair_cnt;
+      inf->max_tx_queues = RTE_MAX(inf->max_tx_queues, inf->max_rx_queues);
+      inf->max_rx_queues = inf->max_tx_queues;
     }
 
     if (dev_info->dev_capa & RTE_ETH_DEV_CAPA_RUNTIME_RX_QUEUE_SETUP)
