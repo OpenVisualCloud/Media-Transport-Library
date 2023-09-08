@@ -34,7 +34,7 @@ jobs:
 
   Build_and_Test:
     needs: changes
-    if: ${{ github.repository == 'OpenVisualCloud/Media-Transport-Library' && needs.changes.outputs.changed }}
+    if: ${{ github.repository == 'OpenVisualCloud/Media-Transport-Library' && needs.changes.outputs.changed == 'true' }}
     runs-on: [Windows, self-hosted]
     timeout-minutes: 60
     defaults:

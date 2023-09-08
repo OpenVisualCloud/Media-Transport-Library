@@ -37,13 +37,15 @@ Privilege is applied upon next logon. In particular, if privilege has been grant
 
 ## 2 Install virt2phys Driver
 
-### 2.1 Download dpdk-kmods pack from
+### 2.1 Compile the driver
 
-<git://dpdk.org/dpdk-kmods>
+Donwnload the source code from <git://dpdk.org/dpdk-kmods>.
 
-Compile the virt2phys and netuio project using visual studio 2019, see README in dpdk-kmods repository.
+Currently the virt2phy driver has a bug to get the valid iova (physical address), please checkout to d1a4940a (windows/virt2phys: add PnpLockdown directive).
 
-### 2.2 Then, execute command in cmd
+Compile the virt2phys project using VS(Visual Studio) 2019, see README in dpdk-kmods repository.
+
+### 2.2 Option 1: use devcon to install driver
 
 Get devcon.exe from Windows WDK package (if you don't want WDK, you can refer to <https://networchestration.wordpress.com/2016/07/11/how-to-obtain-device-console-utility-devcon-exe-without-downloading-and-installing-the-entire-windows-driver-kit-100-working-method/> for how to get devcon.exe), copy the devcon.exe to your netuio driver folder.
 
@@ -53,15 +55,7 @@ execute command:
 devcon.exe install virt2phys.inf root\virt2phys
 ```
 
-### 2.3 Make sure that the driver was installed
-
-### 2.4 When there is a problem with driver installation are needed more steps
-
-* Test sign the driver using a test certificate and then boot the Windows in "Test mode", or
-
-* Use the boot time option to "Disable driver signature enforcement".
-
-### 2.5 Manually install virt2phys steps for Windows Server
+### 2.3 Option 2: manually install virt2phys driver
 
 * From Device Manager, Action menu, select "Add legacy hardware".
 * It will launch the "Add Hardware Wizard". Click "Next".
@@ -74,9 +68,23 @@ devcon.exe install virt2phys.inf root\virt2phys
 
 The previously installed drivers will now be installed for the "Virtual to physical address translator" device. Here we just go through next and finish buttons.
 
+### 2.4 When there is a problem with driver installation are needed more steps
+
+* Test sign the driver using a test certificate and then boot the Windows in "Test mode", or
+
+* Use the boot time option to "Disable driver signature enforcement".
+
+### 2.5 Make sure that the driver was installed
+
+![Image](./png/virt2phy.png)
+
 ## 3. Steps for netuio driver
 
-### 3.1 Use devcon to install netuio driver
+### 3.1 Compile the driver
+
+Compile the netuio project with latest dpdk-kmod code using VS 2019, see README in dpdk-kmods repository.
+
+### 3.2 Option 1: use devcon to install driver
 
 execute command:
 
@@ -86,14 +94,18 @@ devcon.exe update netuio.inf "PCI\VEN_8086&DEV_1592"
 
 "1592" is for E810, You can change it per your NIC type.
 
-### 3.2 Manually install netuio driver
+### 3.3 Option 2: manually install netuio driver
 
 * Go to Device Manager -> Network Adapters.
-* Right Click on target e810 network adapter -> Select Update Driver.
+* Right Click on target E810 network adapter -> Select Update Driver.
 * Select "Browse my computer for driver software".
 * In the resultant window, select "Let me pick from a list of available drivers on my computer".
 * Select "DPDK netUIO for Network Adapter" from the list of drivers.
 * The NetUIO.sys driver is successfully installed.
+
+### 3.4 Make sure that the driver was installed
+
+![Image](./png/netuio.png)
 
 ## 4. NIC setup
 
@@ -126,7 +138,7 @@ To identify the socket if you do not know it, in the NIC card driver property pa
 start /Node 0 /B .\build\app\RxTxApp --config_file config\test_tx_1port_1v.json
 ```
 
-Please refer to sections "## 5. Run the sample application" in the [linux run guide](run.md) for instructions on how to run the sample application. The Windows version shares the same codebase as the Linux version, and the application/library behavior is the same.
+Please refer to sections "5. Run the sample application" in the [linux run guide](run.md) for instructions on how to run the sample application. The Windows version shares the same codebase as the Linux version, and the application/library behavior is the same.
 
 ## 6. Windows TAP support (Optional)
 

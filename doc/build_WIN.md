@@ -15,7 +15,7 @@ This document contains instructions for installing and configuring the Intel® M
 * Update packages:
 
 ```bash
-pacman -Syu
+pacman -Syuu
 ```
 
 ## 4. Install dependencies

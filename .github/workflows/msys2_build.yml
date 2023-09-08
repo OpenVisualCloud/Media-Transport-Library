@@ -27,7 +27,7 @@ jobs:
 
   build:
     needs: changes
-    if: ${{ needs.changes.outputs.changed }}
+    if: ${{ needs.changes.outputs.changed == 'true' }}
     runs-on: windows-latest
     strategy:
       fail-fast: false

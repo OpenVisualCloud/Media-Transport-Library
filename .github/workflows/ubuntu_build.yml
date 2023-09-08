@@ -27,7 +27,7 @@ jobs:
 
   build:
     needs: changes
-    if: ${{ needs.changes.outputs.changed }}
+    if: ${{ needs.changes.outputs.changed == 'true' }}
     runs-on: ${{ matrix.os }}
     timeout-minutes: 60
     container:
