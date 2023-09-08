@@ -46,10 +46,11 @@ test_c_args += ['-Wall']
 test_cpp_args += ['-Wall']
 
 if is_windows
-  test_c_args += ['-DWINDOWSENV', '-D__USE_MINGW_ANSI_STDIO', '-D_WIN32_WINNT=0x0600']
-  test_cpp_args += ['-DWINDOWSENV', '-D__USE_MINGW_ANSI_STDIO', '-D__STDC_FORMAT_MACROS', '-D_WIN32_WINNT=0x0600']
-  libdpdklinkflags = run_command('pkg-config', '--static', '--libs', 'libdpdk')
-  test_ld_args += ['-static-libstdc++','-lmingw32','-lws2_32','-lDbghelp','-lSetupapi','-ldinput8', '-ldxguid', '-ldxerr8', '-lwinmm', '-limm32','-lversion','-ldl']
+  test_c_args += ['-DWINDOWSENV']
+  test_cpp_args += ['-DWINDOWSENV']
+  ws2_32_dep = cpp_c.find_library('ws2_32', required: true)
+else
+  ws2_32_dep = [] # add this when the code uses hton/ntoh
 endif
 
 # default no asan dep
@@ -67,7 +68,7 @@ executable('KahawaiTest', sources,
   cpp_args : test_cpp_args,
   link_args: test_ld_args,
   # asan should be always the first dep
-  dependencies: [asan_dep, mtl, gtest, libnuma, libopenssl, libpthread]
+  dependencies: [asan_dep, mtl, gtest, libnuma, libopenssl, libpthread, ws2_32_dep]
 )
 
 if not is_windows

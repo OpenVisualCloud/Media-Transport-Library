@@ -33,11 +33,9 @@ plugins_c_args += ['-Wunused-parameter']
 plugins_c_args += ['-msse4.2']
 
 if is_windows
-  libdpdklinkflags = run_command('pkg-config', '--static', '--libs', 'libdpdk')
-  plugins_ld_args += ['-lmingw32','-lws2_32','-lDbghelp','-lSetupapi','-ldinput8', '-ldxguid', '-ldxerr8', '-lwinmm', '-limm32', '-lversion', '-lwpcap', '-lPacket', '-lmman', '-ldl']
-  plugins_ld_args += ['-Wl,--whole-archive']
-  plugins_ld_args += [libdpdklinkflags.stdout().strip().split()]
-  plugins_ld_args += ['-Wl,--no-whole-archive']
+  ws2_32_dep = cc.find_library('ws2_32', required: true)
+else
+  ws2_32_dep = [] # add this when the code uses hton/ntoh
 endif
 
 # default no asan dep
@@ -53,7 +51,7 @@ shared_library('st_plugin_st22_sample', plugins_st22_sample_sources,
   c_args : plugins_c_args,
   link_args : plugins_ld_args,
   # asan should be always the first dep
-  dependencies: [asan_dep, mtl_dep, libpthread_dep],
+  dependencies: [asan_dep, mtl_dep, libpthread_dep, ws2_32_dep],
   install: true
 )
 
@@ -61,6 +59,6 @@ shared_library('st_plugin_convert_sample', plugins_convert_sample_sources,
   c_args : plugins_c_args,
   link_args : plugins_ld_args,
   # asan should be always the first dep
-  dependencies: [asan_dep, mtl_dep, libpthread_dep],
+  dependencies: [asan_dep, mtl_dep, libpthread_dep, ws2_32_dep],
   install: true
 )
