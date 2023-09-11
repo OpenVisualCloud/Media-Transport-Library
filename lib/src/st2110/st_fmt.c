@@ -1044,10 +1044,10 @@ void st_frame_init_plane_single_src(struct st_frame* frame, void* addr, mtl_iova
       frame->addr[plane] = addr;
       frame->iova[plane] = iova;
     } else {
-      frame->addr[plane] =
-          frame->addr[plane - 1] + frame->linesize[plane - 1] * frame->height;
-      frame->iova[plane] =
-          frame->iova[plane - 1] + frame->linesize[plane - 1] * frame->height;
+      frame->addr[plane] = frame->addr[plane - 1] +
+                           frame->linesize[plane - 1] * st_frame_data_height(frame);
+      frame->iova[plane] = frame->iova[plane - 1] +
+                           frame->linesize[plane - 1] * st_frame_data_height(frame);
     }
   }
 }

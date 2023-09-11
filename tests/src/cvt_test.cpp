@@ -3908,8 +3908,10 @@ static int frame_compare_each_line(struct st_frame* old_frame,
                                    struct st_frame* new_frame) {
   int ret = 0;
   int planes = st_frame_fmt_planes(old_frame->fmt);
+  uint32_t h = st_frame_data_height(old_frame);
+
   for (int plane = 0; plane < planes; plane++) {
-    for (uint32_t line = 0; line < old_frame->height; line++) {
+    for (uint32_t line = 0; line < h; line++) {
       uint8_t* old_addr =
           (uint8_t*)old_frame->addr[plane] + old_frame->linesize[plane] * line;
       uint8_t* new_addr =

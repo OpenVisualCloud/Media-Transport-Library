@@ -98,8 +98,6 @@ struct st_sample_context {
   uint32_t logo_width;
   uint32_t logo_height;
 
-  enum st_frame_fmt st22p_input_fmt;
-  enum st_frame_fmt st22p_output_fmt;
   enum st22_codec st22p_codec; /* st22 codec */
 
   enum sample_udp_mode udp_mode;

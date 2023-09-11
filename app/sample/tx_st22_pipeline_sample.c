@@ -229,7 +229,7 @@ int main(int argc, char** argv) {
     ops_tx.width = ctx.width;
     ops_tx.height = ctx.height;
     ops_tx.fps = ctx.fps;
-    ops_tx.input_fmt = ctx.st22p_input_fmt;
+    ops_tx.input_fmt = ctx.input_fmt;
     ops_tx.pack_type = ST22_PACK_CODESTREAM;
     ops_tx.codec = ctx.st22p_codec;
     ops_tx.device = ST_PLUGIN_DEVICE_AUTO;

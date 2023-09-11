@@ -107,6 +107,7 @@ static void* rx_st20p_frame_thread(void* arg) {
       st_pthread_mutex_unlock(&s->wake_mutex);
       continue;
     }
+    dbg("%s(%d), one new frame\n", __func__, s->idx);
     if (frame->user_meta) {
       const struct st_frame_user_meta* user_meta = frame->user_meta;
       if (frame->user_meta_size != sizeof(*user_meta)) {
@@ -187,6 +188,7 @@ int main(int argc, char** argv) {
     app[i]->handle = rx_handle;
 
     app[i]->frame_size = st20p_rx_frame_size(rx_handle);
+    info("%s(%d), frame_size %" PRId64 "\n", __func__, i, app[i]->frame_size);
     if (ctx.rx_dump) {
       ret = rx_st20p_open_source(app[i], ctx.rx_url);
       if (ret < 0) {

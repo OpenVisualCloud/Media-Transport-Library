@@ -230,6 +230,7 @@ int main(int argc, char** argv) {
     app[i]->handle = tx_handle;
 
     app[i]->frame_size = st20p_tx_frame_size(tx_handle);
+    info("%s(%d), frame_size %" PRId64 "\n", __func__, i, app[i]->frame_size);
     ret = tx_st20p_open_source(app[i], ctx.tx_url);
     if (ret < 0) {
       err("%s(%d), open source fail\n", __func__, i);
