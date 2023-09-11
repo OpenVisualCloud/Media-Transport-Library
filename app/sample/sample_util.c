@@ -54,7 +54,7 @@ enum sample_args_cmd {
   SAMPLE_ARG_SESSIONS_CNT,
   SAMPLE_ARG_EXT_FRAME,
   SAMPLE_ARG_ST22_CODEC,
-  SAMPLE_ARG_ST22_FRAME_FMT,
+  SAMPLE_ARG_PIPELINE_FRAME_FMT,
   SAMPLE_ARG_GDDR_PA,
   SAMPLE_ARG_RX_DUMP,
   SAMPLE_ARG_USE_CPU_COPY,
@@ -107,7 +107,7 @@ static struct option sample_args_options[] = {
     {"height", required_argument, 0, SAMPLE_ARG_HEIGHT},
     {"ext_frame", no_argument, 0, SAMPLE_ARG_EXT_FRAME},
     {"st22_codec", required_argument, 0, SAMPLE_ARG_ST22_CODEC},
-    {"st22_fmt", required_argument, 0, SAMPLE_ARG_ST22_FRAME_FMT},
+    {"pipeline_fmt", required_argument, 0, SAMPLE_ARG_PIPELINE_FRAME_FMT},
 
     {"udp_mode", required_argument, 0, SAMPLE_ARG_UDP_MODE},
     {"udp_len", required_argument, 0, SAMPLE_ARG_UDP_LEN},
@@ -304,11 +304,11 @@ static int _sample_parse_args(struct st_sample_context* ctx, int argc, char** ar
         else
           err("%s, unknown codec %s\n", __func__, optarg);
         break;
-      case SAMPLE_ARG_ST22_FRAME_FMT: {
+      case SAMPLE_ARG_PIPELINE_FRAME_FMT: {
         enum st_frame_fmt fmt = st_frame_name_to_fmt(optarg);
         if (fmt < ST_FRAME_FMT_MAX) {
-          ctx->st22p_input_fmt = fmt;
-          ctx->st22p_output_fmt = fmt;
+          ctx->input_fmt = fmt;
+          ctx->output_fmt = fmt;
         } else {
           err("%s, unknown fmt %s\n", __func__, optarg);
         }
@@ -426,8 +426,8 @@ int sample_parse_args(struct st_sample_context* ctx, int argc, char** argv, bool
   ctx->height = 1080;
   ctx->fps = ST_FPS_P59_94;
   ctx->fmt = ST20_FMT_YUV_422_10BIT;
-  ctx->input_fmt = ST_FRAME_FMT_YUV422RFC4175PG2BE10;
-  ctx->output_fmt = ST_FRAME_FMT_YUV422RFC4175PG2BE10;
+  ctx->input_fmt = ST_FRAME_FMT_YUV422PLANAR10LE;
+  ctx->output_fmt = ST_FRAME_FMT_YUV422PLANAR10LE;
   ctx->udp_port = 20000;
   ctx->payload_type = 112;
   snprintf(ctx->tx_url, sizeof(ctx->tx_url), "%s", "test.yuv");
@@ -437,8 +437,6 @@ int sample_parse_args(struct st_sample_context* ctx, int argc, char** argv, bool
   ctx->logo_width = 200;
   ctx->logo_height = 200;
 
-  ctx->st22p_input_fmt = ST_FRAME_FMT_YUV422PLANAR10LE;
-  ctx->st22p_output_fmt = ST_FRAME_FMT_YUV422PLANAR10LE;
   ctx->st22p_codec = ST22_CODEC_JPEGXS;
 
   _sample_parse_args(ctx, argc, argv);

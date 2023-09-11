@@ -1110,6 +1110,7 @@ TEST(St20p, digest_1080i_s2) {
   para.level = ST_TEST_LEVEL_MANDATORY;
   para.check_fps = false;
   para.interlace = true;
+  para.device = ST_PLUGIN_DEVICE_TEST_INTERNAL;
 
   st20p_rx_digest_test(fps, width, height, tx_fmt, t_fmt, rx_fmt, &para);
 }

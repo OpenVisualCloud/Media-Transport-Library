@@ -1790,7 +1790,24 @@ int st_draw_logo(struct st_frame* frame, struct st_frame* logo, uint32_t x, uint
  *   size
  */
 static inline size_t st_frame_plane_size(struct st_frame* frame, uint8_t plane) {
-  return frame->linesize[plane] * frame->height;
+  size_t sz = frame->linesize[plane] * frame->height;
+  if (frame->interlaced) sz /= 2;
+  return sz;
+}
+
+/**
+ * This helper function retrieves the actual data height in one st frame. Please note that
+ * for an interlaced frame, it will return half the height.
+ *
+ * @param frame
+ *   The st_frame pointer.
+ * @return
+ *   height
+ */
+static inline uint32_t st_frame_data_height(struct st_frame* frame) {
+  uint32_t h = frame->height;
+  if (frame->interlaced) h /= 2;
+  return h;
 }
 
 #if defined(__cplusplus)

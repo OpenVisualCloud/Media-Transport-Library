@@ -44,14 +44,16 @@ static int convert_rfc4175_422be10_to_yuv422p10le(struct st_frame* src,
   uint16_t* y = NULL;
   uint16_t* b = NULL;
   uint16_t* r = NULL;
+  uint32_t h = st_frame_data_height(dst);
+
   if (!has_lines_padding(src, dst)) {
     be10 = src->addr[0];
     y = dst->addr[0];
     b = dst->addr[1];
     r = dst->addr[2];
-    ret = st20_rfc4175_422be10_to_yuv422p10le(be10, y, b, r, dst->width, dst->height);
+    ret = st20_rfc4175_422be10_to_yuv422p10le(be10, y, b, r, dst->width, h);
   } else {
-    for (uint32_t line = 0; line < dst->height; line++) {
+    for (uint32_t line = 0; line < h; line++) {
       be10 = src->addr[0] + src->linesize[0] * line;
       y = dst->addr[0] + dst->linesize[0] * line;
       b = dst->addr[1] + dst->linesize[1] * line;
@@ -66,12 +68,14 @@ static int convert_rfc4175_422be10_to_422le8(struct st_frame* src, struct st_fra
   int ret = 0;
   struct st20_rfc4175_422_10_pg2_be* be10 = NULL;
   struct st20_rfc4175_422_8_pg2_le* le8 = NULL;
+  uint32_t h = st_frame_data_height(dst);
+
   if (!has_lines_padding(src, dst)) {
     be10 = src->addr[0];
     le8 = dst->addr[0];
-    ret = st20_rfc4175_422be10_to_422le8(be10, le8, dst->width, dst->height);
+    ret = st20_rfc4175_422be10_to_422le8(be10, le8, dst->width, h);
   } else {
-    for (uint32_t line = 0; line < dst->height; line++) {
+    for (uint32_t line = 0; line < h; line++) {
       be10 = src->addr[0] + src->linesize[0] * line;
       le8 = dst->addr[0] + dst->linesize[0] * line;
       ret = st20_rfc4175_422be10_to_422le8(be10, le8, dst->width, 1);
@@ -84,12 +88,14 @@ static int convert_rfc4175_422be10_to_v210(struct st_frame* src, struct st_frame
   int ret = 0;
   struct st20_rfc4175_422_10_pg2_be* be10 = NULL;
   uint8_t* v210 = NULL;
+  uint32_t h = st_frame_data_height(dst);
+
   if (!has_lines_padding(src, dst)) {
     be10 = src->addr[0];
     v210 = dst->addr[0];
-    ret = st20_rfc4175_422be10_to_v210(be10, v210, dst->width, dst->height);
+    ret = st20_rfc4175_422be10_to_v210(be10, v210, dst->width, h);
   } else {
-    for (uint32_t line = 0; line < dst->height; line++) {
+    for (uint32_t line = 0; line < h; line++) {
       be10 = src->addr[0] + src->linesize[0] * line;
       v210 = dst->addr[0] + dst->linesize[0] * line;
       ret = st20_rfc4175_422be10_to_v210(be10, v210, dst->width, 1);
@@ -102,12 +108,14 @@ static int convert_rfc4175_422be10_to_y210(struct st_frame* src, struct st_frame
   int ret = 0;
   struct st20_rfc4175_422_10_pg2_be* be10 = NULL;
   uint16_t* y210 = NULL;
+  uint32_t h = st_frame_data_height(dst);
+
   if (!has_lines_padding(src, dst)) {
     be10 = src->addr[0];
     y210 = dst->addr[0];
-    ret = st20_rfc4175_422be10_to_y210(be10, y210, dst->width, dst->height);
+    ret = st20_rfc4175_422be10_to_y210(be10, y210, dst->width, h);
   } else {
-    for (uint32_t line = 0; line < dst->height; line++) {
+    for (uint32_t line = 0; line < h; line++) {
       be10 = src->addr[0] + src->linesize[0] * line;
       y210 = dst->addr[0] + dst->linesize[0] * line;
       ret = st20_rfc4175_422be10_to_y210(be10, y210, dst->width, 1);
@@ -123,14 +131,16 @@ static int convert_rfc4175_422be12_to_yuv422p12le(struct st_frame* src,
   uint16_t* y = NULL;
   uint16_t* b = NULL;
   uint16_t* r = NULL;
+  uint32_t h = st_frame_data_height(dst);
+
   if (!has_lines_padding(src, dst)) {
     be12 = src->addr[0];
     y = dst->addr[0];
     b = dst->addr[1];
     r = dst->addr[2];
-    ret = st20_rfc4175_422be12_to_yuv422p12le(be12, y, b, r, dst->width, dst->height);
+    ret = st20_rfc4175_422be12_to_yuv422p12le(be12, y, b, r, dst->width, h);
   } else {
-    for (uint32_t line = 0; line < dst->height; line++) {
+    for (uint32_t line = 0; line < h; line++) {
       be12 = src->addr[0] + src->linesize[0] * line;
       y = dst->addr[0] + dst->linesize[0] * line;
       b = dst->addr[1] + dst->linesize[1] * line;
@@ -148,14 +158,16 @@ static int convert_rfc4175_444be10_to_yuv444p10le(struct st_frame* src,
   uint16_t* y = NULL;
   uint16_t* b = NULL;
   uint16_t* r = NULL;
+  uint32_t h = st_frame_data_height(dst);
+
   if (!has_lines_padding(src, dst)) {
     be10 = src->addr[0];
     y = dst->addr[0];
     b = dst->addr[1];
     r = dst->addr[2];
-    ret = st20_rfc4175_444be10_to_yuv444p10le(be10, y, b, r, dst->width, dst->height);
+    ret = st20_rfc4175_444be10_to_yuv444p10le(be10, y, b, r, dst->width, h);
   } else {
-    for (uint32_t line = 0; line < dst->height; line++) {
+    for (uint32_t line = 0; line < h; line++) {
       be10 = src->addr[0] + src->linesize[0] * line;
       y = dst->addr[0] + dst->linesize[0] * line;
       b = dst->addr[1] + dst->linesize[1] * line;
@@ -173,14 +185,16 @@ static int convert_rfc4175_444be10_to_gbrp10le(struct st_frame* src,
   uint16_t* g = NULL;
   uint16_t* b = NULL;
   uint16_t* r = NULL;
+  uint32_t h = st_frame_data_height(dst);
+
   if (!has_lines_padding(src, dst)) {
     be10 = src->addr[0];
     g = dst->addr[0];
     b = dst->addr[1];
     r = dst->addr[2];
-    ret = st20_rfc4175_444be10_to_gbrp10le(be10, g, b, r, dst->width, dst->height);
+    ret = st20_rfc4175_444be10_to_gbrp10le(be10, g, b, r, dst->width, h);
   } else {
-    for (uint32_t line = 0; line < dst->height; line++) {
+    for (uint32_t line = 0; line < h; line++) {
       be10 = src->addr[0] + src->linesize[0] * line;
       g = dst->addr[0] + dst->linesize[0] * line;
       b = dst->addr[1] + dst->linesize[1] * line;
@@ -198,14 +212,16 @@ static int convert_rfc4175_444be12_to_yuv444p12le(struct st_frame* src,
   uint16_t* y = NULL;
   uint16_t* b = NULL;
   uint16_t* r = NULL;
+  uint32_t h = st_frame_data_height(dst);
+
   if (!has_lines_padding(src, dst)) {
     be12 = src->addr[0];
     y = dst->addr[0];
     b = dst->addr[1];
     r = dst->addr[2];
-    ret = st20_rfc4175_444be12_to_yuv444p12le(be12, y, b, r, dst->width, dst->height);
+    ret = st20_rfc4175_444be12_to_yuv444p12le(be12, y, b, r, dst->width, h);
   } else {
-    for (uint32_t line = 0; line < dst->height; line++) {
+    for (uint32_t line = 0; line < h; line++) {
       be12 = src->addr[0] + src->linesize[0] * line;
       y = dst->addr[0] + dst->linesize[0] * line;
       b = dst->addr[1] + dst->linesize[1] * line;
@@ -223,14 +239,16 @@ static int convert_rfc4175_444be12_to_gbrp12le(struct st_frame* src,
   uint16_t* g = NULL;
   uint16_t* b = NULL;
   uint16_t* r = NULL;
+  uint32_t h = st_frame_data_height(dst);
+
   if (!has_lines_padding(src, dst)) {
     be12 = src->addr[0];
     g = dst->addr[0];
     b = dst->addr[1];
     r = dst->addr[2];
-    ret = st20_rfc4175_444be12_to_gbrp12le(be12, g, b, r, dst->width, dst->height);
+    ret = st20_rfc4175_444be12_to_gbrp12le(be12, g, b, r, dst->width, h);
   } else {
-    for (uint32_t line = 0; line < dst->height; line++) {
+    for (uint32_t line = 0; line < h; line++) {
       be12 = src->addr[0] + src->linesize[0] * line;
       g = dst->addr[0] + dst->linesize[0] * line;
       b = dst->addr[1] + dst->linesize[1] * line;
@@ -248,14 +266,16 @@ static int convert_yuv422p10le_to_rfc4175_422be10(struct st_frame* src,
   uint16_t* y = NULL;
   uint16_t* b = NULL;
   uint16_t* r = NULL;
+  uint32_t h = st_frame_data_height(dst);
+
   if (!has_lines_padding(src, dst)) {
     y = src->addr[0];
     b = src->addr[1];
     r = src->addr[2];
     be10 = dst->addr[0];
-    ret = st20_yuv422p10le_to_rfc4175_422be10(y, b, r, be10, dst->width, dst->height);
+    ret = st20_yuv422p10le_to_rfc4175_422be10(y, b, r, be10, dst->width, h);
   } else {
-    for (uint32_t line = 0; line < dst->height; line++) {
+    for (uint32_t line = 0; line < h; line++) {
       y = src->addr[0] + src->linesize[0] * line;
       b = src->addr[1] + src->linesize[1] * line;
       r = src->addr[2] + src->linesize[2] * line;
@@ -270,12 +290,14 @@ static int convert_v210_to_rfc4175_422be10(struct st_frame* src, struct st_frame
   int ret = 0;
   struct st20_rfc4175_422_10_pg2_be* be10 = NULL;
   uint8_t* v210 = NULL;
+  uint32_t h = st_frame_data_height(dst);
+
   if (!has_lines_padding(src, dst)) {
     v210 = src->addr[0];
     be10 = dst->addr[0];
-    ret = st20_v210_to_rfc4175_422be10(v210, be10, dst->width, dst->height);
+    ret = st20_v210_to_rfc4175_422be10(v210, be10, dst->width, h);
   } else {
-    for (uint32_t line = 0; line < dst->height; line++) {
+    for (uint32_t line = 0; line < h; line++) {
       v210 = src->addr[0] + src->linesize[0] * line;
       be10 = dst->addr[0] + dst->linesize[0] * line;
       ret = st20_v210_to_rfc4175_422be10(v210, be10, dst->width, 1);
@@ -288,12 +310,14 @@ static int convert_y210_to_rfc4175_422be10(struct st_frame* src, struct st_frame
   int ret = 0;
   struct st20_rfc4175_422_10_pg2_be* be10 = NULL;
   uint16_t* y210 = NULL;
+  uint32_t h = st_frame_data_height(dst);
+
   if (!has_lines_padding(src, dst)) {
     y210 = src->addr[0];
     be10 = dst->addr[0];
-    ret = st20_y210_to_rfc4175_422be10(y210, be10, dst->width, dst->height);
+    ret = st20_y210_to_rfc4175_422be10(y210, be10, dst->width, h);
   } else {
-    for (uint32_t line = 0; line < dst->height; line++) {
+    for (uint32_t line = 0; line < h; line++) {
       y210 = src->addr[0] + src->linesize[0] * line;
       be10 = dst->addr[0] + dst->linesize[0] * line;
       ret = st20_y210_to_rfc4175_422be10(y210, be10, dst->width, 1);
@@ -309,14 +333,16 @@ static int convert_yuv422p12le_to_rfc4175_422be12(struct st_frame* src,
   uint16_t* y = NULL;
   uint16_t* b = NULL;
   uint16_t* r = NULL;
+  uint32_t h = st_frame_data_height(dst);
+
   if (!has_lines_padding(src, dst)) {
     be12 = dst->addr[0];
     y = src->addr[0];
     b = src->addr[1];
     r = src->addr[2];
-    ret = st20_yuv422p12le_to_rfc4175_422be12(y, b, r, be12, dst->width, dst->height);
+    ret = st20_yuv422p12le_to_rfc4175_422be12(y, b, r, be12, dst->width, h);
   } else {
-    for (uint32_t line = 0; line < dst->height; line++) {
+    for (uint32_t line = 0; line < h; line++) {
       be12 = dst->addr[0] + dst->linesize[0] * line;
       y = src->addr[0] + src->linesize[0] * line;
       b = src->addr[1] + src->linesize[1] * line;
@@ -334,14 +360,16 @@ static int convert_yuv444p10le_to_rfc4175_444be10(struct st_frame* src,
   uint16_t* y = NULL;
   uint16_t* b = NULL;
   uint16_t* r = NULL;
+  uint32_t h = st_frame_data_height(dst);
+
   if (!has_lines_padding(src, dst)) {
     be10 = dst->addr[0];
     y = src->addr[0];
     b = src->addr[1];
     r = src->addr[2];
-    ret = st20_yuv444p10le_to_rfc4175_444be10(y, b, r, be10, dst->width, dst->height);
+    ret = st20_yuv444p10le_to_rfc4175_444be10(y, b, r, be10, dst->width, h);
   } else {
-    for (uint32_t line = 0; line < dst->height; line++) {
+    for (uint32_t line = 0; line < h; line++) {
       be10 = dst->addr[0] + dst->linesize[0] * line;
       y = src->addr[0] + src->linesize[0] * line;
       b = src->addr[1] + src->linesize[1] * line;
@@ -359,14 +387,16 @@ static int convert_gbrp10le_to_rfc4175_444be10(struct st_frame* src,
   uint16_t* g = NULL;
   uint16_t* b = NULL;
   uint16_t* r = NULL;
+  uint32_t h = st_frame_data_height(dst);
+
   if (!has_lines_padding(src, dst)) {
     be10 = dst->addr[0];
     g = src->addr[0];
     b = src->addr[1];
     r = src->addr[2];
-    ret = st20_gbrp10le_to_rfc4175_444be10(g, b, r, be10, dst->width, dst->height);
+    ret = st20_gbrp10le_to_rfc4175_444be10(g, b, r, be10, dst->width, h);
   } else {
-    for (uint32_t line = 0; line < dst->height; line++) {
+    for (uint32_t line = 0; line < h; line++) {
       be10 = dst->addr[0] + dst->linesize[0] * line;
       g = src->addr[0] + src->linesize[0] * line;
       b = src->addr[1] + src->linesize[1] * line;
@@ -384,14 +414,16 @@ static int convert_yuv444p12le_to_rfc4175_444be12(struct st_frame* src,
   uint16_t* y = NULL;
   uint16_t* b = NULL;
   uint16_t* r = NULL;
+  uint32_t h = st_frame_data_height(dst);
+
   if (!has_lines_padding(src, dst)) {
     be12 = dst->addr[0];
     y = src->addr[0];
     b = src->addr[1];
     r = src->addr[2];
-    ret = st20_yuv444p12le_to_rfc4175_444be12(y, b, r, be12, dst->width, dst->height);
+    ret = st20_yuv444p12le_to_rfc4175_444be12(y, b, r, be12, dst->width, h);
   } else {
-    for (uint32_t line = 0; line < dst->height; line++) {
+    for (uint32_t line = 0; line < h; line++) {
       be12 = dst->addr[0] + dst->linesize[0] * line;
       y = src->addr[0] + src->linesize[0] * line;
       b = src->addr[1] + src->linesize[1] * line;
@@ -409,14 +441,16 @@ static int convert_gbrp12le_to_rfc4175_444be12(struct st_frame* src,
   uint16_t* g = NULL;
   uint16_t* b = NULL;
   uint16_t* r = NULL;
+  uint32_t h = st_frame_data_height(dst);
+
   if (!has_lines_padding(src, dst)) {
     be12 = dst->addr[0];
     g = src->addr[0];
     b = src->addr[1];
     r = src->addr[2];
-    ret = st20_gbrp12le_to_rfc4175_444be12(g, b, r, be12, dst->width, dst->height);
+    ret = st20_gbrp12le_to_rfc4175_444be12(g, b, r, be12, dst->width, h);
   } else {
-    for (uint32_t line = 0; line < dst->height; line++) {
+    for (uint32_t line = 0; line < h; line++) {
       be12 = dst->addr[0] + dst->linesize[0] * line;
       g = src->addr[0] + src->linesize[0] * line;
       b = src->addr[1] + src->linesize[1] * line;
@@ -556,7 +590,7 @@ static int downsample_rfc4175_wh_half(struct st_frame* old_frame,
   st20_get_pgroup(t_fmt, &st20_pg);
 
   uint32_t width = new_frame->width;
-  uint32_t height = new_frame->height;
+  uint32_t height = st_frame_data_height(new_frame);
   uint32_t src_linesize = old_frame->linesize[0];
   uint32_t dst_linesize = new_frame->linesize[0];
   uint8_t* src_start = old_frame->addr[0];
