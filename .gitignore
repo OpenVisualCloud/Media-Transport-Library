@@ -71,4 +71,7 @@ assets/
 *.pkg
 *.jxs
 *.mkv
+*.zip
+*.gz
+*.tar
 mtl_system_status_*

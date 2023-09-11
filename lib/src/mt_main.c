@@ -11,6 +11,7 @@
 #include "mt_dev.h"
 #include "mt_dhcp.h"
 #include "mt_dma.h"
+#include "mt_flow.h"
 #include "mt_log.h"
 #include "mt_mcast.h"
 #include "mt_ptp.h"
@@ -96,6 +97,12 @@ static int mt_main_create(struct mtl_main_impl* impl) {
   ret = mt_stat_init(impl);
   if (ret < 0) {
     err("%s, mt stat init fail %d\n", __func__, ret);
+    return ret;
+  }
+
+  ret = mt_flow_init(impl);
+  if (ret < 0) {
+    err("%s, mt flow init fail %d\n", __func__, ret);
     return ret;
   }
 
@@ -224,6 +231,7 @@ static int mt_main_free(struct mtl_main_impl* impl) {
   mt_srss_uinit(impl);
 
   mt_dev_free(impl);
+  mt_flow_uinit(impl);
   mt_stat_uinit(impl);
   info("%s, succ\n", __func__);
   return 0;

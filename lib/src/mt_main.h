@@ -897,6 +897,10 @@ struct mt_srss_impl {
   int entry_idx;
 };
 
+struct mt_flow_impl {
+  pthread_mutex_t mutex; /* protect mt_rx_flow_create */
+};
+
 struct mtl_main_impl {
   struct mt_interface inf[MTL_PORT_MAX];
 
@@ -910,6 +914,8 @@ struct mtl_main_impl {
   enum rte_iova_mode iova_mode; /* current IOVA mode */
   size_t page_size;
 
+  /* flow */
+  struct mt_flow_impl* flow[MTL_PORT_MAX];
   /* rss */
   struct mt_rss_impl* rss[MTL_PORT_MAX];
   struct mt_srss_impl* srss[MTL_PORT_MAX];

@@ -8,6 +8,14 @@
 #include "mt_socket.h"
 #include "mt_util.h"
 
+static inline void rx_flow_lock(struct mt_flow_impl* flow) {
+  mt_pthread_mutex_lock(&flow->mutex);
+}
+
+static inline void rx_flow_unlock(struct mt_flow_impl* flow) {
+  mt_pthread_mutex_unlock(&flow->mutex);
+}
+
 static struct rte_flow* rte_rx_flow_create_raw(struct mt_interface* inf, uint16_t q,
                                                struct mt_rxq_flow* flow) {
   struct rte_flow_error error;
@@ -254,15 +262,16 @@ struct mt_rx_flow_rsp* mt_rx_flow_create(struct mtl_main_impl* impl, enum mtl_po
                                          uint16_t q, struct mt_rxq_flow* flow) {
   struct mt_interface* inf = mt_if(impl, port);
   struct mt_rx_flow_rsp* rsp;
+  struct mt_flow_impl* flow_impl = impl->flow[port];
 
   if (q >= inf->max_rx_queues) {
     err("%s(%d), invalid q %u\n", __func__, port, q);
     return NULL;
   }
 
-  mt_pthread_mutex_lock(&inf->rx_queues_mutex);
+  rx_flow_lock(flow_impl);
   rsp = rx_flow_create(inf, q, flow);
-  mt_pthread_mutex_unlock(&inf->rx_queues_mutex);
+  rx_flow_unlock(flow_impl);
 
   return rsp;
 }
@@ -270,5 +279,39 @@ struct mt_rx_flow_rsp* mt_rx_flow_create(struct mtl_main_impl* impl, enum mtl_po
 int mt_rx_flow_free(struct mtl_main_impl* impl, enum mtl_port port,
                     struct mt_rx_flow_rsp* rsp) {
   struct mt_interface* inf = mt_if(impl, port);
+  /* no lock need */
   return rx_flow_free(inf, rsp);
+}
+
+int mt_flow_uinit(struct mtl_main_impl* impl) {
+  int num_ports = mt_num_ports(impl);
+
+  for (int i = 0; i < num_ports; i++) {
+    struct mt_flow_impl* flow = impl->flow[i];
+    if (!flow) continue;
+
+    mt_pthread_mutex_destroy(&flow->mutex);
+    mt_rte_free(flow);
+    impl->flow[i] = NULL;
+  }
+
+  return 0;
+}
+
+int mt_flow_init(struct mtl_main_impl* impl) {
+  int num_ports = mt_num_ports(impl);
+  struct mt_flow_impl* flow;
+
+  for (int i = 0; i < num_ports; i++) {
+    flow = mt_rte_zmalloc_socket(sizeof(*flow), mt_socket_id(impl, i));
+    if (!flow) {
+      err("%s(%d), flow malloc fail\n", __func__, i);
+      mt_flow_uinit(impl);
+      return -ENOMEM;
+    }
+    mt_pthread_mutex_init(&flow->mutex, NULL);
+    impl->flow[i] = flow;
+  }
+
+  return 0;
 }
