@@ -20,6 +20,15 @@ static inline struct st_tx_audio_session_impl* tx_audio_session_get(
 }
 
 /* call tx_audio_session_put always if get successfully */
+static inline struct st_tx_audio_session_impl* tx_audio_session_get_timeout(
+    struct st_tx_audio_sessions_mgr* mgr, int idx, int timeout_us) {
+  if (!mt_spinlock_lock_timeout(mgr->parent, &mgr->mutex[idx], timeout_us)) return NULL;
+  struct st_tx_audio_session_impl* s = mgr->sessions[idx];
+  if (!s) rte_spinlock_unlock(&mgr->mutex[idx]);
+  return s;
+}
+
+/* call tx_audio_session_put always if get successfully */
 static inline struct st_tx_audio_session_impl* tx_audio_session_try_get(
     struct st_tx_audio_sessions_mgr* mgr, int idx) {
   if (!rte_spinlock_trylock(&mgr->mutex[idx])) return NULL;
@@ -1558,7 +1567,7 @@ static int st_tx_audio_sessions_stat(void* priv) {
   int m_idx = mgr->idx;
 
   for (int j = 0; j < mgr->max_idx; j++) {
-    s = tx_audio_session_try_get(mgr, j);
+    s = tx_audio_session_get_timeout(mgr, j, ST_SESSION_STAT_TIMEOUT_US);
     if (!s) continue;
     tx_audio_session_stat(mgr, s);
     tx_audio_session_put(mgr, j);

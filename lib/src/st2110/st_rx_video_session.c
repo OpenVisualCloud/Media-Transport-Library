@@ -3834,7 +3834,7 @@ static int rv_sessions_stat(void* priv) {
   struct st_rx_video_session_impl* s;
 
   for (int j = 0; j < mgr->max_idx; j++) {
-    s = rx_video_session_get(mgr, j);
+    s = rx_video_session_get_timeout(mgr, j, ST_SESSION_STAT_TIMEOUT_US);
     if (!s) continue;
     rv_stat(mgr, s);
     rx_video_session_put(mgr, j);

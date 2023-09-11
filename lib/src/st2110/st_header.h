@@ -70,6 +70,8 @@
 
 #define ST_TX_DUMMY_PKT_IDX (0xFFFFFFFF)
 
+#define ST_SESSION_STAT_TIMEOUT_US (10)
+
 enum st21_tx_frame_status {
   ST21_TX_STAT_UNKNOWN = 0,
   ST21_TX_STAT_WAIT_FRAME,
