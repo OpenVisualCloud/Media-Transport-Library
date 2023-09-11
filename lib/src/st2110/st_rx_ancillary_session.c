@@ -28,6 +28,15 @@ static inline struct st_rx_ancillary_session_impl* rx_ancillary_session_try_get(
 }
 
 /* call rx_ancillary_session_put always if get successfully */
+static inline struct st_rx_ancillary_session_impl* rx_ancillary_session_get_timeout(
+    struct st_rx_ancillary_sessions_mgr* mgr, int idx, int timeout_us) {
+  if (!mt_spinlock_lock_timeout(mgr->parent, &mgr->mutex[idx], timeout_us)) return NULL;
+  struct st_rx_ancillary_session_impl* s = mgr->sessions[idx];
+  if (!s) rte_spinlock_unlock(&mgr->mutex[idx]);
+  return s;
+}
+
+/* call rx_ancillary_session_put always if get successfully */
 static inline bool rx_ancillary_session_get_empty(
     struct st_rx_ancillary_sessions_mgr* mgr, int idx) {
   rte_spinlock_lock(&mgr->mutex[idx]);
@@ -459,7 +468,7 @@ static int st_rx_ancillary_sessions_stat(void* priv) {
   struct st_rx_ancillary_session_impl* s;
 
   for (int j = 0; j < mgr->max_idx; j++) {
-    s = rx_ancillary_session_get(mgr, j);
+    s = rx_ancillary_session_get_timeout(mgr, j, ST_SESSION_STAT_TIMEOUT_US);
     if (!s) continue;
     rx_ancillary_session_stat(s);
     rx_ancillary_session_put(mgr, j);

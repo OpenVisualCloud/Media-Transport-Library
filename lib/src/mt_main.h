@@ -1540,4 +1540,15 @@ static inline json_object* mt_json_object_get(json_object* obj, const char* key)
 }
 #endif
 
+static inline bool mt_spinlock_lock_timeout(struct mtl_main_impl* impl,
+                                            rte_spinlock_t* lock, int timeout_us) {
+  uint64_t time = mt_get_tsc(impl);
+  uint64_t end = time + timeout_us * NS_PER_US;
+  while (time < end) {
+    if (rte_spinlock_trylock(lock)) return true;
+    time = mt_get_tsc(impl);
+  }
+  return false; /* timeout */
+}
+
 #endif

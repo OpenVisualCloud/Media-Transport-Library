@@ -35,6 +35,15 @@ static inline struct st_tx_video_session_impl* tx_video_session_try_get(
 }
 
 /* call tx_video_session_put always if get successfully */
+static inline struct st_tx_video_session_impl* tx_video_session_get_timeout(
+    struct st_tx_video_sessions_mgr* mgr, int idx, int timeout_us) {
+  if (!mt_spinlock_lock_timeout(mgr->parent, &mgr->mutex[idx], timeout_us)) return NULL;
+  struct st_tx_video_session_impl* s = mgr->sessions[idx];
+  if (!s) rte_spinlock_unlock(&mgr->mutex[idx]);
+  return s;
+}
+
+/* call tx_video_session_put always if get successfully */
 static inline bool tx_video_session_get_empty(struct st_tx_video_sessions_mgr* mgr,
                                               int idx) {
   rte_spinlock_lock(&mgr->mutex[idx]);
