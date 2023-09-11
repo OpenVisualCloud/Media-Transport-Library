@@ -3947,6 +3947,10 @@ static void test_st_frame_convert(struct st_frame* src, struct st_frame* dst,
 
 TEST(Cvt, st_frame_convert_fail_resolution) {
   struct st_frame src, dst, new_src;
+  memset(&src, 0, sizeof(src));
+  memset(&dst, 0, sizeof(dst));
+  memset(&new_src, 0, sizeof(new_src));
+
   src.fmt = new_src.fmt = ST_FRAME_FMT_YUV422RFC4175PG2BE10;
   dst.fmt = ST_FRAME_FMT_Y210;
 
@@ -3969,6 +3973,9 @@ TEST(Cvt, st_frame_convert_fail_resolution) {
 
 TEST(Cvt, st_frame_convert_fail_fmt) {
   struct st_frame src, dst, new_src;
+  memset(&src, 0, sizeof(src));
+  memset(&dst, 0, sizeof(dst));
+  memset(&new_src, 0, sizeof(new_src));
 
   src.width = new_src.width = dst.width = 1920;
   src.height = new_src.height = dst.height = 1080;
@@ -3988,6 +3995,9 @@ TEST(Cvt, st_frame_convert_fail_fmt) {
 
 TEST(Cvt, st_frame_convert_rotate_no_padding) {
   struct st_frame src, dst, new_src;
+  memset(&src, 0, sizeof(src));
+  memset(&dst, 0, sizeof(dst));
+  memset(&new_src, 0, sizeof(new_src));
 
   src.width = new_src.width = dst.width = 1920;
   src.height = new_src.height = dst.height = 1080;
@@ -4028,6 +4038,9 @@ TEST(Cvt, st_frame_convert_rotate_no_padding) {
 
 TEST(Cvt, st_frame_convert_rotate_padding) {
   struct st_frame src, dst, new_src;
+  memset(&src, 0, sizeof(src));
+  memset(&dst, 0, sizeof(dst));
+  memset(&new_src, 0, sizeof(new_src));
 
   src.width = new_src.width = dst.width = 1920;
   src.height = new_src.height = dst.height = 1080;
@@ -4068,6 +4081,9 @@ TEST(Cvt, st_frame_convert_rotate_padding) {
 
 TEST(Cvt, st_frame_convert_rotate_mix_padding) {
   struct st_frame src, dst, new_src;
+  memset(&src, 0, sizeof(src));
+  memset(&dst, 0, sizeof(dst));
+  memset(&new_src, 0, sizeof(new_src));
 
   src.width = new_src.width = dst.width = 1920;
   src.height = new_src.height = dst.height = 1080;
