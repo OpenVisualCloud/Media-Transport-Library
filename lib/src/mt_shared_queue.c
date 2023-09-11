@@ -5,6 +5,7 @@
 #include "mt_shared_queue.h"
 
 #include "mt_dev.h"
+#include "mt_flow.h"
 #include "mt_log.h"
 #include "mt_stat.h"
 #include "mt_util.h"
@@ -66,7 +67,7 @@ static int rsq_entry_free(struct mt_rsq_entry* entry) {
   struct mt_rsq_impl* rsqm = entry->parent;
 
   if (entry->flow_rsp) {
-    mt_dev_free_rx_flow(rsqm->parent, rsqm->port, entry->flow_rsp);
+    mt_rx_flow_free(rsqm->parent, rsqm->port, entry->flow_rsp);
     entry->flow_rsp = NULL;
   }
   if (entry->ring) {
@@ -173,7 +174,7 @@ struct mt_rsq_entry* mt_rsq_get(struct mtl_main_impl* impl, enum mtl_port port,
   rte_memcpy(&entry->flow, flow, sizeof(entry->flow));
 
   if (!flow->sys_queue) {
-    entry->flow_rsp = mt_dev_create_rx_flow(impl, port, q, flow);
+    entry->flow_rsp = mt_rx_flow_create(impl, port, q, flow);
     if (!entry->flow_rsp) {
       err("%s(%u), create flow fail\n", __func__, q);
       return NULL;
@@ -187,7 +188,7 @@ struct mt_rsq_entry* mt_rsq_get(struct mtl_main_impl* impl, enum mtl_port port,
                                 RING_F_SP_ENQ | RING_F_SC_DEQ);
   if (!entry->ring) {
     err("%s(%d,%d), ring %s create fail\n", __func__, port, idx, ring_name);
-    if (entry->flow_rsp) mt_dev_free_rx_flow(impl, port, entry->flow_rsp);
+    if (entry->flow_rsp) mt_rx_flow_free(impl, port, entry->flow_rsp);
     mt_rte_free(entry);
     return NULL;
   }

@@ -20,6 +20,7 @@ sources = files(
   'mt_shared_queue.c',
   'mt_shared_rss.c',
   'mt_rtcp.c',
+  'mt_flow.c',
 )
 
 if get_option('enable_kni') == true

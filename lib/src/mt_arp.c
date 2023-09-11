@@ -7,6 +7,7 @@
 #include "mt_dev.h"
 // #define DEBUG
 #include "mt_log.h"
+#include "mt_socket.h"
 #include "mt_util.h"
 
 #define ARP_REQ_PERIOD_MS (500)
@@ -266,8 +267,8 @@ int mt_arp_parse(struct mtl_main_impl* impl, struct rte_arp_hdr* hdr,
   return 0;
 }
 
-int mt_arp_cni_get_mac(struct mtl_main_impl* impl, struct rte_ether_addr* ea,
-                       enum mtl_port port, uint32_t ip, int timeout_ms) {
+static int mt_arp_cni_get_mac(struct mtl_main_impl* impl, struct rte_ether_addr* ea,
+                              enum mtl_port port, uint32_t ip, int timeout_ms) {
   struct mt_arp_impl* arp_impl = get_arp(impl, port);
   struct mt_arp_entry* entry = NULL;
   int ret;
@@ -355,6 +356,30 @@ int mt_arp_uinit(struct mtl_main_impl* impl) {
     /* free the memory */
     mt_rte_free(arp);
     impl->arp[i] = NULL;
+  }
+
+  return 0;
+}
+
+int mt_arp_get_mac(struct mtl_main_impl* impl, uint8_t dip[MTL_IP_ADDR_LEN],
+                   struct rte_ether_addr* ea, enum mtl_port port, int timeout_ms) {
+  int ret;
+
+  dbg("%s(%d), start to get mac for ip %d.%d.%d.%d\n", __func__, port, dip[0], dip[1],
+      dip[2], dip[3]);
+  if (mt_pmd_is_kernel(impl, port)) {
+    ret = mt_socket_get_mac(impl, mt_get_user_params(impl)->port[port], dip, ea,
+                            timeout_ms);
+    if (ret < 0) {
+      dbg("%s(%d), failed to get mac from socket %d\n", __func__, port, ret);
+      return ret;
+    }
+  } else {
+    ret = mt_arp_cni_get_mac(impl, ea, port, mt_ip_to_u32(dip), timeout_ms);
+    if (ret < 0) {
+      dbg("%s(%d), failed to get mac from cni %d\n", __func__, port, ret);
+      return ret;
+    }
   }
 
   return 0;
