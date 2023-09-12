@@ -1004,6 +1004,8 @@ static int tx_ancillary_sessions_mgr_init_hw(struct mtl_main_impl* impl,
   char ring_name[32];
   int mgr_idx = mgr->idx;
 
+  if (mgr->queue[port]) return 0; /* init already */
+
   mgr->port_id[port] = mt_port_id(impl, port);
 
   struct mt_txq_flow flow;
