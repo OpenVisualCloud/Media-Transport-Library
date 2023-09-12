@@ -420,7 +420,7 @@ EAL: 0000:af:01.0 DMA remapping failed, error 12 (Cannot allocate memory)
 EAL: Requested device 0000:af:01.0 cannot be used
 ```
 
-Pls
+Please increase the value of RLIMIT_MEMLOCK, below is a example to enable unlimited RLIMIT_MEMLOCK.
 
 ```bash
 # Edit /etc/security/limits.conf, append below two lines at the end of file, change <USER> to the username currently login.
@@ -441,7 +441,8 @@ max locked memory       (kbytes, -l) unlimited
 The following error indicates that the port driver is not configured to DPDK PMD mode. Please run nicctl.sh to configure it:
 
 ```bash
-ST: st_dev_get_socket, failed to locate 0000:86:20.0. Please run nicctl.sh
+ST: st_dev_get_socket, failed to locate 0000:86:20.0
+ST: st_dev_get_socket, please make sure the driver of 0000:86:20.0 is configured to DPDK PMD
 ```
 
 ### 8.4 Hugepage not available

@@ -197,6 +197,7 @@ static int dev_inf_get_stat(struct mt_interface* inf) {
 
 static int dev_inf_stat(void* pri) {
   struct mt_interface* inf = pri;
+  struct mtl_main_impl* impl = inf->parent;
   enum mtl_port port = inf->port;
   uint16_t port_id = inf->port_id;
   struct rte_eth_stats* stats_sum;
@@ -204,10 +205,9 @@ static int dev_inf_stat(void* pri) {
   dev_inf_get_stat(inf);
   stats_sum = &inf->stats_sum;
 
-  double orate_m =
-      (double)stats_sum->obytes * 8 / MT_DEV_STAT_INTERVAL_S / MTL_STAT_M_UNIT;
-  double irate_m =
-      (double)stats_sum->ibytes * 8 / MT_DEV_STAT_INTERVAL_S / MTL_STAT_M_UNIT;
+  double dump_period_s = mt_stat_dump_period_s(impl);
+  double orate_m = (double)stats_sum->obytes * 8 / dump_period_s / MTL_STAT_M_UNIT;
+  double irate_m = (double)stats_sum->ibytes * 8 / dump_period_s / MTL_STAT_M_UNIT;
 
   notice("DEV(%d): Avr rate, tx: %f Mb/s, rx: %f Mb/s, pkts, tx: %" PRIu64
          ", rx: %" PRIu64 "\n",
@@ -229,62 +229,6 @@ static int dev_inf_stat(void* pri) {
   memset(stats_sum, 0, sizeof(*stats_sum));
 
   return 0;
-}
-
-static void dev_stat(struct mtl_main_impl* impl) {
-  struct mtl_init_params* p = mt_get_user_params(impl);
-
-  if (mt_in_reset(impl)) {
-    notice("* *    M T    D E V   I N   R E S E T   * * \n");
-    return;
-  }
-
-  notice("* *    M T    D E V   S T A T E   * * \n");
-  mt_stat_dump(impl);
-  if (p->stat_dump_cb_fn) {
-    dbg("%s, start stat_dump_cb_fn\n", __func__);
-    p->stat_dump_cb_fn(p->priv);
-  }
-  notice("* *    E N D    S T A T E   * * \n\n");
-}
-
-static void dev_stat_wakeup_thread(struct mtl_main_impl* impl) {
-  mt_pthread_mutex_lock(&impl->stat_wake_mutex);
-  mt_pthread_cond_signal(&impl->stat_wake_cond);
-  mt_pthread_mutex_unlock(&impl->stat_wake_mutex);
-}
-
-static void dev_stat_alarm_handler(void* param) {
-  struct mtl_main_impl* impl = param;
-
-  if (impl->stat_tid)
-    dev_stat_wakeup_thread(impl);
-  else
-    dev_stat(impl);
-
-  rte_eal_alarm_set(
-      MT_DEV_STAT_INTERVAL_US((uint64_t)mt_get_user_params(impl)->dump_period_s),
-      dev_stat_alarm_handler, impl);
-}
-
-static void* dev_stat_thread(void* arg) {
-  struct mtl_main_impl* impl = arg;
-
-  info("%s, start\n", __func__);
-  while (rte_atomic32_read(&impl->stat_stop) == 0) {
-    mt_pthread_mutex_lock(&impl->stat_wake_mutex);
-    if (!rte_atomic32_read(&impl->stat_stop))
-      mt_pthread_cond_wait(&impl->stat_wake_cond, &impl->stat_wake_mutex);
-    mt_pthread_mutex_unlock(&impl->stat_wake_mutex);
-
-    if (!rte_atomic32_read(&impl->stat_stop)) {
-      dbg("%s, dev_stat\n", __func__);
-      dev_stat(impl);
-    }
-  }
-  info("%s, stop\n", __func__);
-
-  return NULL;
 }
 
 struct dev_eal_init_args {
@@ -1899,7 +1843,6 @@ int mt_dev_put_rx_queue(struct mtl_main_impl* impl, struct mt_rx_queue* queue) {
 
 int mt_dev_create(struct mtl_main_impl* impl) {
   int num_ports = mt_num_ports(impl);
-  struct mtl_init_params* p = mt_get_user_params(impl);
   int ret;
   struct mt_interface* inf;
   enum mt_port_type port_type;
@@ -1999,20 +1942,6 @@ int mt_dev_create(struct mtl_main_impl* impl) {
     goto err_exit;
   }
 
-  /* rte_eth_stats_get fail in alarm context for VF, move it to thread */
-  mt_pthread_mutex_init(&impl->stat_wake_mutex, NULL);
-  mt_pthread_cond_init(&impl->stat_wake_cond, NULL);
-  rte_atomic32_set(&impl->stat_stop, 0);
-  ret = pthread_create(&impl->stat_tid, NULL, dev_stat_thread, impl);
-  if (ret < 0) {
-    err("%s, pthread_create fail\n", __func__);
-    goto err_exit;
-  }
-  if (!p->dump_period_s) p->dump_period_s = MT_DEV_STAT_INTERVAL_S;
-  rte_eal_alarm_set(MT_DEV_STAT_INTERVAL_US((uint64_t)p->dump_period_s),
-                    dev_stat_alarm_handler, impl);
-
-  info("%s, succ, stat period %ds\n", __func__, p->dump_period_s);
   return 0;
 
 err_exit:
@@ -2027,19 +1956,7 @@ err_exit:
 
 int mt_dev_free(struct mtl_main_impl* impl) {
   int num_ports = mt_num_ports(impl);
-  int ret;
   struct mt_interface* inf;
-
-  ret = rte_eal_alarm_cancel(dev_stat_alarm_handler, impl);
-  if (ret < 0) err("%s, dev_stat_alarm_handler cancel fail %d\n", __func__, ret);
-  if (impl->stat_tid) {
-    rte_atomic32_set(&impl->stat_stop, 1);
-    dev_stat_wakeup_thread(impl);
-    pthread_join(impl->stat_tid, NULL);
-    impl->stat_tid = 0;
-  }
-  mt_pthread_mutex_destroy(&impl->stat_wake_mutex);
-  mt_pthread_cond_destroy(&impl->stat_wake_cond);
 
   mt_sch_mrg_uinit(impl);
   dev_uinit_lcores(impl);
@@ -2082,7 +1999,9 @@ int mt_dev_get_socket(const char* port) {
   uint16_t port_id = 0;
   int ret = rte_eth_dev_get_port_by_name(port, &port_id);
   if (ret < 0) {
-    err("%s, failed to locate %s. Please run nicctl.sh\n", __func__, port);
+    err("%s, failed to get port for %s\n", __func__, port);
+    err("%s, please make sure the driver of %s is configured to DPDK PMD\n", __func__,
+        port);
     return ret;
   }
   int soc_id;
@@ -2201,7 +2120,7 @@ int mt_dev_if_init(struct mtl_main_impl* impl) {
       port = p->port[i];
     ret = rte_eth_dev_get_port_by_name(port, &port_id);
     if (ret < 0) {
-      err("%s, failed to locate %s. Please run nicctl.sh\n", __func__, port);
+      err("%s, failed to get port for %s\n", __func__, port);
       mt_dev_if_uinit(impl);
       return ret;
     }
