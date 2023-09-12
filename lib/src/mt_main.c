@@ -251,6 +251,7 @@ static int mt_user_params_check(struct mtl_init_params* p) {
   /* info check for each port */
   for (int i = 0; i < num_ports; i++) {
     enum mtl_pmd_type pmd = p->pmd[i];
+    const char* if_name = NULL;
 
     /* type check */
     if (pmd >= MTL_PMD_TYPE_MAX) {
@@ -265,27 +266,32 @@ static int mt_user_params_check(struct mtl_init_params* p) {
             p->xdp_info[i].start_queue);
         return -EINVAL;
       }
-      const char* if_name = mt_afxdp_port2if(p->port[i]);
+      if_name = mt_afxdp_port2if(p->port[i]);
       if (!if_name) {
         err("%s(%d), get afxdp if name fail from %s\n", __func__, i, p->port[i]);
         return -EINVAL;
       }
-      ret = mt_socket_get_if_ip(if_name, if_ip, if_netmask);
-      if (ret < 0) {
-        err("%s(%d), get ip fail from if %s for afxdp\n", __func__, i, if_name);
-        return ret;
-      }
     }
     /* af pkt check */
     if (pmd == MTL_PMD_DPDK_AF_PACKET) {
-      const char* if_name = mt_afpkt_port2if(p->port[i]);
+      if_name = mt_afpkt_port2if(p->port[i]);
       if (!if_name) {
         err("%s(%d), get afpkt if name fail from %s\n", __func__, i, p->port[i]);
         return -EINVAL;
       }
+    }
+    /* kernel based port check */
+    if (pmd == MTL_PMD_KERNEL_SOCKET) {
+      if_name = mt_kernel_port2if(p->port[i]);
+      if (!if_name) {
+        err("%s(%d), get kernel socket if name fail from %s\n", __func__, i, p->port[i]);
+        return -EINVAL;
+      }
+    }
+    if (if_name) {
       ret = mt_socket_get_if_ip(if_name, if_ip, if_netmask);
       if (ret < 0) {
-        err("%s(%d), get ip fail from if %s for afpkt\n", __func__, i, if_name);
+        err("%s(%d), get ip fail from if %s\n", __func__, i, if_name);
         return ret;
       }
     }
@@ -381,10 +387,12 @@ mtl_handle mtl_init(struct mtl_init_params* p) {
   info("st version: %s, dpdk version: %s\n", mtl_version(), rte_version());
 
   for (int i = 0; i < num_ports; i++) {
-    if (p->pmd[i] != MTL_PMD_DPDK_USER)
-      socket[i] = mt_dev_get_socket(kport_info.dpdk_port[i]);
+    if (p->pmd[i] == MTL_PMD_KERNEL_SOCKET)
+      socket[i] = mt_socket_get_numa(kport_info.kernel_if[i]);
+    else if (p->pmd[i] != MTL_PMD_DPDK_USER)
+      socket[i] = mt_dev_get_socket_id(kport_info.dpdk_port[i]);
     else
-      socket[i] = mt_dev_get_socket(p->port[i]);
+      socket[i] = mt_dev_get_socket_id(p->port[i]);
     if (socket[i] < 0) {
       err("%s, get socket fail %d\n", __func__, socket[i]);
       goto err_exit;

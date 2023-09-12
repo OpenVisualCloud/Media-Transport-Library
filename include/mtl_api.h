@@ -191,6 +191,8 @@ enum mtl_pmd_type {
   MTL_PMD_DPDK_AF_XDP,
   /** allows a DPDK application to send and receive raw packets through the kernel */
   MTL_PMD_DPDK_AF_PACKET,
+  /** Run MTL directly on kernel socket APIs */
+  MTL_PMD_KERNEL_SOCKET,
   /** max value of this enum */
   MTL_PMD_TYPE_MAX,
 };

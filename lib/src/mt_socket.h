@@ -14,6 +14,8 @@ int mt_socket_get_if_gateway(const char* if_name, uint8_t gateway[MTL_IP_ADDR_LE
 
 int mt_socket_get_if_mac(const char* if_name, struct rte_ether_addr* ea);
 
+int mt_socket_get_numa(const char* if_name);
+
 int mt_socket_join_mcast(struct mtl_main_impl* impl, enum mtl_port port, uint32_t group);
 
 int mt_socket_drop_mcast(struct mtl_main_impl* impl, enum mtl_port port, uint32_t group);

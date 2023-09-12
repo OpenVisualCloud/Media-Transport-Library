@@ -81,6 +81,13 @@ static const struct mt_dev_driver_info dev_drvs[] = {
         .drv_type = MT_DRV_AF_PKT,
         .flow_type = MT_FLOW_ALL,
     },
+    {
+        .name = "kernel_socket",
+        .port_type = MT_PORT_KERNEL_SOCKET,
+        .drv_type = MT_DRV_KERNEL_SOCKET,
+        .flow_type = MT_FLOW_ALL,
+        .not_dpdk_based = true,
+    },
 };
 
 static int parse_driver_info(const char* driver, struct mt_dev_driver_info* drv_info) {
@@ -272,7 +279,13 @@ static int dev_eal_init(struct mtl_init_params* p, struct mt_kport_info* kport_i
   argc++;
 
   for (int i = 0; i < num_ports; i++) {
-    if (p->pmd[i] == MTL_PMD_DPDK_AF_XDP) {
+    if (p->pmd[i] == MTL_PMD_KERNEL_SOCKET) {
+      const char* if_name = mt_kernel_port2if(p->port[i]);
+      if (!if_name) return -EINVAL;
+      snprintf(kport_info->dpdk_port[i], MTL_PORT_MAX_LEN, "kernel_socket_%d", i);
+      snprintf(kport_info->kernel_if[i], MTL_PORT_MAX_LEN, "%s", if_name);
+      continue;
+    } else if (p->pmd[i] == MTL_PMD_DPDK_AF_XDP) {
       argv[argc] = "--vdev";
       has_afxdp = true;
     } else if (p->pmd[i] == MTL_PMD_DPDK_AF_PACKET) {
@@ -431,7 +444,8 @@ static int dev_flush_rx_queue(struct mt_interface* inf, struct mt_rx_queue* queu
 
   for (int i = 0; i < loop; i++) {
     rv = mt_dev_rx_burst(queue, &mbuf[0], mbuf_size);
-    if (rv) rte_pktmbuf_free_bulk(&mbuf[0], rv);
+    if (!rv) break;
+    rte_pktmbuf_free_bulk(&mbuf[0], rv);
   }
 
   return 0;
@@ -794,6 +808,15 @@ static int dev_config_port(struct mt_interface* inf) {
   uint16_t nb_rx_q = inf->max_rx_queues, nb_tx_q = inf->max_tx_queues;
   struct rte_eth_conf port_conf = dev_port_conf;
 
+  if (inf->drv_info.not_dpdk_based) {
+    inf->nb_tx_desc = nb_tx_desc;
+    inf->nb_rx_desc = nb_rx_desc;
+    inf->status |= MT_IF_STAT_PORT_CONFIGURED;
+    info("%s(%d), direct tx_q(%d with %d desc) rx_q (%d with %d desc)\n", __func__, port,
+         nb_tx_q, nb_tx_desc, nb_rx_q, nb_rx_desc);
+    return 0;
+  }
+
   if (inf->feature & MT_IF_FEATURE_TX_MULTI_SEGS) {
 #if RTE_VERSION >= RTE_VERSION_NUM(22, 3, 0, 0)
     port_conf.txmode.offloads |= RTE_ETH_TX_OFFLOAD_MULTI_SEGS;
@@ -883,10 +906,8 @@ static int dev_config_port(struct mt_interface* inf) {
            num_ptypes);
     }
   }
-  inf->net_proto = p->net_proto[port];
 
   inf->status |= MT_IF_STAT_PORT_CONFIGURED;
-
   info("%s(%d), tx_q(%d with %d desc) rx_q (%d with %d desc)\n", __func__, port, nb_tx_q,
        nb_tx_desc, nb_rx_q, nb_rx_desc);
   return 0;
@@ -1319,6 +1340,7 @@ static int dev_if_uinit_rx_queues(struct mt_interface* inf) {
 
   for (uint16_t q = 0; q < inf->max_rx_queues; q++) {
     rx_queue = &inf->rx_queues[q];
+
     if (rx_queue->active) {
       warn("%s(%d), rx queue %d still active\n", __func__, port, q);
     }
@@ -1344,6 +1366,8 @@ static int dev_if_uinit_rx_queues(struct mt_interface* inf) {
 }
 
 static int dev_if_init_rx_queues(struct mtl_main_impl* impl, struct mt_interface* inf) {
+  if (!inf->max_rx_queues) return 0;
+
   struct mt_rx_queue* rx_queues =
       mt_rte_zmalloc_socket(sizeof(*rx_queues) * inf->max_rx_queues, inf->socket_id);
   if (!rx_queues) {
@@ -1412,6 +1436,7 @@ static int dev_if_init_rx_queues(struct mtl_main_impl* impl, struct mt_interface
   }
   inf->rx_queues = rx_queues;
 
+  info("%s(%d), rx_queues %u malloc succ\n", __func__, inf->port, inf->max_rx_queues);
   return 0;
 }
 
@@ -1435,10 +1460,12 @@ static int dev_if_uinit_tx_queues(struct mt_interface* inf) {
 }
 
 static int dev_if_init_tx_queues(struct mt_interface* inf) {
+  if (!inf->max_tx_queues) return 0;
+
   struct mt_tx_queue* tx_queues =
       mt_rte_zmalloc_socket(sizeof(*tx_queues) * inf->max_tx_queues, inf->socket_id);
   if (!tx_queues) {
-    err("%s(%d), tx_queues not alloc\n", __func__, inf->port);
+    err("%s(%d), tx_queues %u malloc alloc\n", __func__, inf->port, inf->max_tx_queues);
     return -ENOMEM;
   }
 
@@ -1450,6 +1477,7 @@ static int dev_if_init_tx_queues(struct mt_interface* inf) {
   }
   inf->tx_queues = tx_queues;
 
+  info("%s(%d), tx_queues %u malloc succ\n", __func__, inf->port, inf->max_tx_queues);
   return 0;
 }
 
@@ -1995,7 +2023,7 @@ int mt_dev_stop(struct mtl_main_impl* impl) {
   return 0;
 }
 
-int mt_dev_get_socket(const char* port) {
+int mt_dev_get_socket_id(const char* port) {
   uint16_t port_id = 0;
   int ret = rte_eth_dev_get_port_by_name(port, &port_id);
   if (ret < 0) {
@@ -2113,33 +2141,45 @@ int mt_dev_if_init(struct mtl_main_impl* impl) {
   for (int i = 0; i < num_ports; i++) {
     inf = mt_if(impl, i);
     dev_info = &inf->dev_info;
-
-    if (mt_pmd_is_kernel(impl, i))
-      port = impl->kport_info.dpdk_port[i];
-    else
-      port = p->port[i];
-    ret = rte_eth_dev_get_port_by_name(port, &port_id);
-    if (ret < 0) {
-      err("%s, failed to get port for %s\n", __func__, port);
-      mt_dev_if_uinit(impl);
-      return ret;
-    }
-    ret = rte_eth_dev_info_get(port_id, dev_info);
-    if (ret < 0) {
-      err("%s, rte_eth_dev_info_get fail for %s\n", __func__, port);
-      mt_dev_if_uinit(impl);
-      return ret;
-    }
-    ret = parse_driver_info(dev_info->driver_name, &inf->drv_info);
-    if (ret < 0) {
-      err("%s, parse_driver_info fail(%d) for %s\n", __func__, ret, port);
-      mt_dev_if_uinit(impl);
-      return ret;
-    }
     inf->port = i;
+
+    /* parse port id */
+    if (mt_pmd_is_kernel_socket(impl, i)) {
+      port = impl->kport_info.kernel_if[i];
+      port_id = i;
+    } else {
+      if (mt_pmd_is_kernel(impl, i))
+        port = impl->kport_info.dpdk_port[i];
+      else
+        port = p->port[i];
+      ret = rte_eth_dev_get_port_by_name(port, &port_id);
+      if (ret < 0) {
+        err("%s, failed to get port for %s\n", __func__, port);
+        mt_dev_if_uinit(impl);
+        return ret;
+      }
+      ret = rte_eth_dev_info_get(port_id, dev_info);
+      if (ret < 0) {
+        err("%s, failed to get dev info for %s\n", __func__, port);
+        mt_dev_if_uinit(impl);
+        return ret;
+      }
+      dbg("%s(%d), reta_size %u\n", __func__, i, dev_info->reta_size);
+    }
     inf->port_id = port_id;
+
+    /* parse drv info */
+    if (mt_pmd_is_kernel_socket(impl, i))
+      ret = parse_driver_info("kernel_socket", &inf->drv_info);
+    else
+      ret = parse_driver_info(dev_info->driver_name, &inf->drv_info);
+    if (ret < 0) {
+      err("%s, parse drv_info fail(%d) for %s\n", __func__, ret, port);
+      mt_dev_if_uinit(impl);
+      return ret;
+    }
+
     inf->tx_pacing_way = p->pacing;
-    dbg("%s(%d), reta_size %u\n", __func__, i, dev_info->reta_size);
     mt_pthread_mutex_init(&inf->tx_queues_mutex, NULL);
     mt_pthread_mutex_init(&inf->rx_queues_mutex, NULL);
     mt_pthread_mutex_init(&inf->vf_cmd_mutex, NULL);
@@ -2158,23 +2198,35 @@ int mt_dev_if_init(struct mtl_main_impl* impl) {
       inf->ptp_get_time_fn = ptp_from_real_time;
     }
 
+    inf->net_proto = p->net_proto[i];
     inf->rss_mode = p->rss_mode;
     /* enable rss if no flow support */
     if (inf->drv_info.flow_type == MT_FLOW_NONE && inf->rss_mode == MTL_RSS_MODE_NONE) {
       inf->rss_mode = MTL_RSS_MODE_L3_L4; /* default l3_l4 */
     }
 
+    info("%s(%d), user request queues tx %u rx %u\n", __func__, i, p->tx_queues_cnt[i],
+         p->rx_queues_cnt[i]);
     uint16_t queue_pair_cnt = RTE_MAX(p->tx_queues_cnt[i], p->rx_queues_cnt[i]);
     /* set max tx/rx queues */
-    if (p->pmd[i] != MTL_PMD_DPDK_USER) {
+    if (mt_pmd_is_kernel_socket(impl, i)) {
+      inf->max_tx_queues = p->tx_queues_cnt[i];
+      inf->max_rx_queues = p->rx_queues_cnt[i];
+      inf->system_rx_queues_end = 0;
+    } else if (mt_pmd_is_af_packet(impl, i)) {
+      inf->max_tx_queues = p->tx_queues_cnt[i];
+      /* force to shared since the packet is dispatched by kernel */
+      inf->max_rx_queues = 1;
+      p->flags |= MTL_FLAG_SHARED_RX_QUEUE;
+      inf->system_rx_queues_end = 0;
+    } else if (mt_pmd_is_kernel(impl, i)) {
       /* no system queues for kernel based pmd */
       inf->max_tx_queues = queue_pair_cnt;
       inf->max_rx_queues = queue_pair_cnt;
       inf->system_rx_queues_end = 0;
     } else {
-      info("%s(%d), user request queues tx %u rx %u, deprecated sessions tx %u rx %u\n",
-           __func__, i, p->tx_queues_cnt[i], p->rx_queues_cnt[i], p->tx_sessions_cnt_max,
-           p->rx_sessions_cnt_max);
+      info("%s(%d), deprecated sessions tx %u rx %u\n", __func__, i,
+           p->tx_sessions_cnt_max, p->rx_sessions_cnt_max);
       inf->max_tx_queues =
           p->tx_sessions_cnt_max ? p->tx_sessions_cnt_max : p->tx_queues_cnt[i];
       inf->max_tx_queues++; /* arp, mcast, ptp use shared sys queue */
@@ -2202,16 +2254,18 @@ int mt_dev_if_init(struct mtl_main_impl* impl) {
       inf->hdr_split_rx_queues_end =
           inf->system_rx_queues_end + p->nb_rx_hdr_split_queues;
     }
-    /* max tx/rx queues don't exceed dev limit */
-    inf->max_tx_queues = RTE_MIN(inf->max_tx_queues, dev_info->max_tx_queues);
-    inf->max_rx_queues = RTE_MIN(inf->max_rx_queues, dev_info->max_rx_queues);
-
+    if (!inf->drv_info.not_dpdk_based) {
+      /* max tx/rx queues don't exceed dev limit */
+      inf->max_tx_queues = RTE_MIN(inf->max_tx_queues, dev_info->max_tx_queues);
+      inf->max_rx_queues = RTE_MIN(inf->max_rx_queues, dev_info->max_rx_queues);
+    }
     /* when using IAVF, num_queue_pairs will be set as the max of tx/rx */
     if (inf->drv_info.drv_type == MT_DRV_IAVF) {
       inf->max_tx_queues = RTE_MAX(inf->max_tx_queues, inf->max_rx_queues);
       inf->max_rx_queues = inf->max_tx_queues;
     }
 
+    /* feature detect */
     if (dev_info->dev_capa & RTE_ETH_DEV_CAPA_RUNTIME_RX_QUEUE_SETUP)
       inf->feature |= MT_IF_FEATURE_RUNTIME_RX_QUEUE;
 
@@ -2355,11 +2409,13 @@ int mt_dev_if_init(struct mtl_main_impl* impl) {
     info("%s(%d), netmask: %u.%u.%u.%u\n", __func__, i, nm[0], nm[1], nm[2], nm[3]);
     uint8_t* gw = p->gateway[i];
     info("%s(%d), gateway: %u.%u.%u.%u\n", __func__, i, gw[0], gw[1], gw[2], gw[3]);
-    struct rte_ether_addr mac;
-    rte_eth_macaddr_get(port_id, &mac);
-    info("%s(%d), mac: %02x:%02x:%02x:%02x:%02x:%02x\n", __func__, i, mac.addr_bytes[0],
-         mac.addr_bytes[1], mac.addr_bytes[2], mac.addr_bytes[3], mac.addr_bytes[4],
-         mac.addr_bytes[5]);
+    if (!inf->drv_info.not_dpdk_based) {
+      struct rte_ether_addr mac;
+      rte_eth_macaddr_get(port_id, &mac);
+      info("%s(%d), mac: %02x:%02x:%02x:%02x:%02x:%02x\n", __func__, i, mac.addr_bytes[0],
+           mac.addr_bytes[1], mac.addr_bytes[2], mac.addr_bytes[3], mac.addr_bytes[4],
+           mac.addr_bytes[5]);
+    }
   }
 
   return 0;

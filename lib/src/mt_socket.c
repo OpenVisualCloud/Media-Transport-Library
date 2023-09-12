@@ -91,6 +91,28 @@ int mt_socket_get_if_mac(const char* if_name, struct rte_ether_addr* ea) {
   return 0;
 }
 
+int mt_socket_get_numa(const char* if_name) {
+  char path[256];
+  snprintf(path, sizeof(path), "/sys/class/net/%s/device/numa_node", if_name);
+
+  FILE* file = fopen(path, "r");
+  if (!file) {
+    err("%s, open %s fail\n", __func__, path);
+    return 0;
+  }
+
+  int numa_node = 0;
+  if (fscanf(file, "%d", &numa_node) != 1) {
+    err("%s, fscanf %s fail\n", __func__, path);
+    fclose(file);
+    return 0;
+  }
+
+  fclose(file);
+  dbg("%s, numa_node %d for %s\n", __func__, numa_node, if_name);
+  return numa_node;
+}
+
 int mt_socket_join_mcast(struct mtl_main_impl* impl, enum mtl_port port, uint32_t group) {
   int ret;
   char cmd[128];
@@ -366,6 +388,11 @@ int mt_socket_get_if_mac(const char* if_name, struct rte_ether_addr* ea) {
   MTL_MAY_UNUSED(if_name);
   MTL_MAY_UNUSED(ea);
   return -ENOTSUP;
+}
+
+int mt_socket_get_numa(const char* if_name) {
+  MTL_MAY_UNUSED(if_name);
+  return 0;
 }
 
 int mt_socket_join_mcast(struct mtl_main_impl* impl, enum mtl_port port, uint32_t group) {
