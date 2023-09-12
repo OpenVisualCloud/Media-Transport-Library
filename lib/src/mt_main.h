@@ -329,6 +329,8 @@ struct mt_cni_entry {
 };
 
 struct mt_cni_impl {
+  struct mtl_main_impl* parent;
+
   bool used; /* if enable cni */
   int num_ports;
 
@@ -772,8 +774,16 @@ struct mt_stat_item {
 MT_TAILQ_HEAD(mt_stat_items_list, mt_stat_item);
 
 struct mt_stat_mgr {
+  struct mtl_main_impl* parent;
+
+  uint64_t dump_period_us;
   rte_spinlock_t lock;
   struct mt_stat_items_list head;
+
+  pthread_t stat_tid;
+  pthread_cond_t stat_wake_cond;
+  pthread_mutex_t stat_wake_mutex;
+  rte_atomic32_t stat_stop;
 };
 
 struct mt_dev_stats {
@@ -924,10 +934,6 @@ struct mtl_main_impl {
   struct mt_tsq_impl* tsq[MTL_PORT_MAX];
 
   /* stat */
-  pthread_t stat_tid;
-  pthread_cond_t stat_wake_cond;
-  pthread_mutex_t stat_wake_mutex;
-  rte_atomic32_t stat_stop;
   struct mt_stat_mgr stat_mgr;
 
   /* dev context */

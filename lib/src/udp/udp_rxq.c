@@ -47,6 +47,7 @@ static uint16_t urq_rx_handle(struct mur_queue* q, struct rte_mbuf** pkts,
       rte_mbuf_refcnt_update(pkts[i], 1);
     } else { /* invalid pkt */
       warn("%s(%u), not udp pkt %u\n", __func__, idx, ipv4->next_proto_id);
+      // mt_mbuf_dump(q->port, i, "urq", pkts[i]);
     }
   }
 

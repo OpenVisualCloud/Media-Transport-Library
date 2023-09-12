@@ -388,14 +388,15 @@ static int cni_stat(void* priv) {
   struct mt_cni_impl* cni_impl = priv;
   struct mt_cni_entry* cni;
   int num_ports = cni_impl->num_ports;
+  double dump_period_s = mt_stat_dump_period_s(cni_impl->parent);
 
   if (!cni_impl->used) return 0;
 
   for (int i = 0; i < num_ports; i++) {
     cni = &cni_impl->entries[i];
 
-    notice("CNI(%d): eth_rx_rate %" PRIu64 " Mb/s, eth_rx_cnt %u\n", i,
-           cni->eth_rx_bytes * 8 / MT_DEV_STAT_INTERVAL_S / MTL_STAT_M_UNIT,
+    notice("CNI(%d): eth_rx_rate %f Mb/s, eth_rx_cnt %u\n", i,
+           (double)cni->eth_rx_bytes * 8 / dump_period_s / MTL_STAT_M_UNIT,
            cni->eth_rx_cnt);
     cni->eth_rx_cnt = 0;
     cni->eth_rx_bytes = 0;
@@ -410,6 +411,8 @@ int mt_cni_init(struct mtl_main_impl* impl) {
   int ret;
   struct mt_cni_impl* cni_impl = mt_get_cni(impl);
   struct mtl_init_params* p = mt_get_user_params(impl);
+
+  cni_impl->parent = impl;
 
   cni_impl->used = cni_if_need(impl);
   if (!cni_impl->used) return 0;

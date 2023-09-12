@@ -3435,6 +3435,7 @@ static void rv_stat(struct st_rx_video_sessions_mgr* mgr,
   double time_sec = (double)(cur_time_ns - s->stat_last_time) / NS_PER_S;
   int frames_received = rte_atomic32_read(&s->stat_frames_received);
   double framerate = frames_received / time_sec;
+  double dump_period_s = mt_stat_dump_period_s(mgr->parent);
 
   rte_atomic32_set(&s->stat_frames_received, 0);
 
@@ -3446,9 +3447,9 @@ static void rv_stat(struct st_rx_video_sessions_mgr* mgr,
     notice("RX_VIDEO_SESSION(%d,%d:%s): fps %f frames %d pkts %d\n", m_idx, idx,
            s->ops_name, framerate, frames_received, s->stat_pkts_received);
   }
-  notice("RX_VIDEO_SESSION(%d,%d:%s): throughput %" PRIu64 " Mb/s, cpu busy %f\n", m_idx,
-         idx, s->ops_name,
-         s->stat_bytes_received * 8 / MT_DEV_STAT_INTERVAL_S / MTL_STAT_M_UNIT,
+  notice("RX_VIDEO_SESSION(%d,%d:%s): throughput %f Mb/s, cpu busy %f\n", m_idx, idx,
+         s->ops_name,
+         (double)s->stat_bytes_received * 8 / dump_period_s / MTL_STAT_M_UNIT,
          s->cpu_busy_score);
   s->stat_pkts_received = 0;
   s->stat_bytes_received = 0;
