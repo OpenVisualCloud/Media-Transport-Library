@@ -398,9 +398,9 @@ static int udp_init_hdr(struct mtl_main_impl* impl, struct mudp_impl* s) {
 
   /* eth */
   memset(eth, 0x0, sizeof(*eth));
-  ret = rte_eth_macaddr_get(mt_port_id(impl, port), mt_eth_s_addr(eth));
+  ret = mt_macaddr_get(impl, port, mt_eth_s_addr(eth));
   if (ret < 0) {
-    err("%s(%d), rte_eth_macaddr_get fail %d for port %d\n", __func__, idx, ret, port);
+    err("%s(%d), macaddr get fail %d for port %d\n", __func__, idx, ret, port);
     return ret;
   }
   eth->ether_type = htons(RTE_ETHER_TYPE_IPV4);

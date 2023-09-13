@@ -62,9 +62,7 @@ static int arp_receive_request(struct mtl_main_impl* impl, struct rte_arp_hdr* r
       sizeof(struct rte_ether_hdr) + sizeof(struct rte_arp_hdr);
 
   struct rte_ether_hdr* eth = rte_pktmbuf_mtod(rpl_pkt, struct rte_ether_hdr*);
-  uint16_t port_id = mt_port_id(impl, port);
-
-  rte_eth_macaddr_get(port_id, mt_eth_s_addr(eth));
+  mt_macaddr_get(impl, port, mt_eth_s_addr(eth));
   rte_ether_addr_copy(&request->arp_data.arp_sha, mt_eth_d_addr(eth));
   eth->ether_type = htons(RTE_ETHER_TYPE_ARP);  // ARP_PROTOCOL
 
@@ -77,7 +75,7 @@ static int arp_receive_request(struct mtl_main_impl* impl, struct rte_arp_hdr* r
   arp->arp_opcode = htons(RTE_ARP_OP_REPLY);
   rte_ether_addr_copy(&request->arp_data.arp_sha, &arp->arp_data.arp_tha);
   arp->arp_data.arp_tip = request->arp_data.arp_sip;
-  rte_eth_macaddr_get(port_id, &arp->arp_data.arp_sha);
+  mt_macaddr_get(impl, port, &arp->arp_data.arp_sha);
   arp->arp_data.arp_sip = *(uint32_t*)mt_sip_addr(impl, port);
 
   /* send arp reply packet */
@@ -134,7 +132,6 @@ static int arp_receive_reply(struct mtl_main_impl* impl, struct rte_arp_hdr* rep
 }
 
 static int arp_send_req(struct mtl_main_impl* impl, enum mtl_port port, uint32_t ip) {
-  uint16_t port_id = mt_port_id(impl, port);
   struct rte_mbuf* req_pkt = rte_pktmbuf_alloc(mt_get_tx_mempool(impl, port));
   if (!req_pkt) {
     err("%s(%d), req_pkt malloc fail\n", __func__, port);
@@ -145,7 +142,7 @@ static int arp_send_req(struct mtl_main_impl* impl, enum mtl_port port, uint32_t
       sizeof(struct rte_ether_hdr) + sizeof(struct rte_arp_hdr);
 
   struct rte_ether_hdr* eth = rte_pktmbuf_mtod(req_pkt, struct rte_ether_hdr*);
-  rte_eth_macaddr_get(port_id, mt_eth_s_addr(eth));
+  mt_macaddr_get(impl, port, mt_eth_s_addr(eth));
   memset(mt_eth_d_addr(eth), 0xFF, RTE_ETHER_ADDR_LEN);
   eth->ether_type = htons(RTE_ETHER_TYPE_ARP);  // ARP_PROTOCOL
   struct rte_arp_hdr* arp =
@@ -157,7 +154,7 @@ static int arp_send_req(struct mtl_main_impl* impl, enum mtl_port port, uint32_t
   arp->arp_opcode = htons(RTE_ARP_OP_REQUEST);
   arp->arp_data.arp_tip = ip;
   arp->arp_data.arp_sip = *(uint32_t*)mt_sip_addr(impl, port);
-  rte_eth_macaddr_get(port_id, &arp->arp_data.arp_sha);
+  mt_macaddr_get(impl, port, &arp->arp_data.arp_sha);
   memset(&arp->arp_data.arp_tha, 0, RTE_ETHER_ADDR_LEN);
 
   uint16_t send = mt_dev_tx_sys_queue_burst(impl, port, &req_pkt, 1);
@@ -364,10 +361,11 @@ int mt_arp_uinit(struct mtl_main_impl* impl) {
 int mt_arp_get_mac(struct mtl_main_impl* impl, uint8_t dip[MTL_IP_ADDR_LEN],
                    struct rte_ether_addr* ea, enum mtl_port port, int timeout_ms) {
   int ret;
+  struct mt_interface* inf = mt_if(impl, port);
 
   dbg("%s(%d), start to get mac for ip %d.%d.%d.%d\n", __func__, port, dip[0], dip[1],
       dip[2], dip[3]);
-  if (mt_pmd_is_kernel(impl, port)) {
+  if (inf->drv_info.flags & MT_DRV_F_USE_KERNEL_CTL) {
     ret = mt_socket_get_mac(impl, mt_get_user_params(impl)->port[port], dip, ea,
                             timeout_ms);
     if (ret < 0) {

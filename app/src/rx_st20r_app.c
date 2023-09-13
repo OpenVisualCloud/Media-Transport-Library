@@ -283,9 +283,9 @@ static int app_rx_st20r_init(struct st_app_context* ctx, st_json_video_session_t
   st_pthread_mutex_init(&s->st20_wake_mutex, NULL);
   st_pthread_cond_init(&s->st20_wake_cond, NULL);
 
-  if (mtl_pmd_by_port_name(ops.port[MTL_SESSION_PORT_P]) == MTL_PMD_DPDK_AF_XDP) {
-    snprintf(s->st20_dst_url, ST_APP_URL_MAX_LEN, "st_app%d_%d_%d_%s.yuv", idx, ops.width,
-             ops.height, ops.port[MTL_SESSION_PORT_P]);
+  if (mtl_pmd_by_port_name(ops.port[MTL_SESSION_PORT_P]) != MTL_PMD_DPDK_USER) {
+    snprintf(s->st20_dst_url, ST_APP_URL_MAX_LEN, "st_app%d_%d_%d.yuv", idx, ops.width,
+             ops.height);
   } else {
     uint32_t soc = 0, b = 0, d = 0, f = 0;
     sscanf(ops.port[MTL_SESSION_PORT_P], "%x:%x:%x.%x", &soc, &b, &d, &f);

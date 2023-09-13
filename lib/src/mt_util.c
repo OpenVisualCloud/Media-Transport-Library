@@ -6,6 +6,7 @@
 
 #include "mt_log.h"
 #include "mt_main.h"
+#include "mt_queue.h"
 
 #ifdef MTL_HAS_ASAN
 #include <execinfo.h>
@@ -344,11 +345,10 @@ void mt_eth_macaddr_dump(enum mtl_port port, char* tag, struct rte_ether_addr* m
 }
 
 struct rte_mbuf* mt_build_pad(struct mtl_main_impl* impl, struct rte_mempool* mempool,
-                              uint16_t port_id, uint16_t ether_type, uint16_t len) {
+                              enum mtl_port port, uint16_t ether_type, uint16_t len) {
   struct rte_ether_addr src_mac;
   struct rte_mbuf* pad;
   struct rte_ether_hdr* eth_hdr;
-  MTL_MAY_UNUSED(impl);
 
   pad = rte_pktmbuf_alloc(mempool);
   if (unlikely(pad == NULL)) {
@@ -356,7 +356,7 @@ struct rte_mbuf* mt_build_pad(struct mtl_main_impl* impl, struct rte_mempool* me
     return NULL;
   }
 
-  rte_eth_macaddr_get(port_id, &src_mac);
+  mt_macaddr_get(impl, port, &src_mac);
   rte_pktmbuf_append(pad, len);
   pad->data_len = len;
   pad->pkt_len = len;
@@ -372,6 +372,40 @@ struct rte_mbuf* mt_build_pad(struct mtl_main_impl* impl, struct rte_mempool* me
 
   return pad;
 }
+
+int mt_macaddr_get(struct mtl_main_impl* impl, enum mtl_port port,
+                   struct rte_ether_addr* mac_addr) {
+  struct mt_interface* inf = mt_if(impl, port);
+
+  if (inf->drv_info.flags & MT_DRV_F_NOT_DPDK_PMD) {
+    /* do we has mac for kernel socket based transport */
+    return 0;
+  }
+
+  uint16_t port_id = mt_port_id(impl, port);
+  return rte_eth_macaddr_get(port_id, mac_addr);
+}
+
+#ifdef ST_PCAPNG_ENABLED
+struct rte_mbuf* mt_pcapng_copy(struct mtl_main_impl* impl, enum mtl_port port,
+                                struct mt_rxq_entry* rxq, const struct rte_mbuf* m,
+                                struct rte_mempool* mp, uint32_t length,
+                                uint64_t timestamp, uint64_t tm_ns,
+                                enum rte_pcapng_direction direction) {
+  struct rte_mbuf* mc = NULL;
+  uint16_t port_id = mt_port_id(impl, port);
+  uint32_t queue_id = mt_rxq_queue_id(rxq);
+
+#if RTE_VERSION >= RTE_VERSION_NUM(23, 3, 0, 0)
+  mc = rte_pcapng_copy(port_id, queue_id, m, mp, length, timestamp, tm_ns, direction,
+                       NULL);
+#else
+  mc = rte_pcapng_copy(port_id, queue_id, m, mp, length, timestamp, tm_ns, direction);
+#endif
+
+  return mc;
+}
+#endif
 
 struct rte_mempool* mt_mempool_create_by_ops(struct mtl_main_impl* impl,
                                              enum mtl_port port, const char* name,
@@ -661,7 +695,7 @@ int mt_run_cmd(const char* cmd, char* out, size_t out_len) {
     out[0] = 0;
     ret = fgets(out, out_len, fp);
     if (!ret) {
-      err("%s, cmd %s read return fail\n", __func__, cmd);
+      warn("%s, cmd %s read return fail\n", __func__, cmd);
       pclose(fp);
       return -EIO;
     }

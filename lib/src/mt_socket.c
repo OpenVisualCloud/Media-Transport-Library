@@ -119,7 +119,7 @@ int mt_socket_join_mcast(struct mtl_main_impl* impl, enum mtl_port port, uint32_
   uint8_t ip[MTL_IP_ADDR_LEN];
   const char* if_name = impl->kport_info.kernel_if[port];
 
-  if (!mt_pmd_is_kernel(impl, port)) {
+  if (!mt_drv_use_kernel_ctl(impl, port)) {
     err("%s(%d), not kernel based pmd\n", __func__, port);
     return -EIO;
   }
@@ -140,7 +140,7 @@ int mt_socket_drop_mcast(struct mtl_main_impl* impl, enum mtl_port port, uint32_
   uint8_t ip[MTL_IP_ADDR_LEN];
   const char* if_name = impl->kport_info.kernel_if[port];
 
-  if (!mt_pmd_is_kernel(impl, port)) {
+  if (!mt_drv_use_kernel_ctl(impl, port)) {
     err("%s(%d), not kernel based pmd\n", __func__, port);
     return -EIO;
   }

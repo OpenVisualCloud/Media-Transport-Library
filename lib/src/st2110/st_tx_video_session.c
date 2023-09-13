@@ -766,9 +766,9 @@ static int tv_init_hdr(struct mtl_main_impl* impl, struct st_tx_video_session_im
     }
   }
 
-  ret = rte_eth_macaddr_get(s->port_id[s_port], mt_eth_s_addr(eth));
+  ret = mt_macaddr_get(impl, port, mt_eth_s_addr(eth));
   if (ret < 0) {
-    err("%s(%d), rte_eth_macaddr_get fail %d for port %d\n", __func__, idx, ret, s_port);
+    err("%s(%d), macaddr get fail %d for port %d\n", __func__, idx, ret, s_port);
     return ret;
   }
   eth->ether_type = htons(RTE_ETHER_TYPE_IPV4);
@@ -2323,7 +2323,6 @@ static int tv_init_hw(struct mtl_main_impl* impl, struct st_tx_video_sessions_mg
   struct rte_ring* ring;
   char ring_name[32];
   int mgr_idx = mgr->idx, idx = s->idx, num_port = s->ops.num_port;
-  uint16_t port_id;
   struct rte_mempool* pad_mempool;
   struct rte_mbuf* pad;
   enum mtl_port port;
@@ -2331,8 +2330,6 @@ static int tv_init_hw(struct mtl_main_impl* impl, struct st_tx_video_sessions_mg
 
   for (int i = 0; i < num_port; i++) {
     port = mt_port_logic2phy(s->port_maps, i);
-    port_id = mt_port_id(impl, port);
-    s->port_id[i] = port_id;
 
     struct mt_txq_flow flow;
     memset(&flow, 0, sizeof(flow));
@@ -2360,7 +2357,7 @@ static int tv_init_hw(struct mtl_main_impl* impl, struct st_tx_video_sessions_mg
     info("%s(%d,%d), port(l:%d,p:%d), queue %d, count %u\n", __func__, mgr_idx, idx, i,
          port, queue_id, count);
 
-    if (mt_pmd_is_kernel(impl, port) && s->mbuf_mempool_reuse_rx[i]) {
+    if (mt_pmd_is_af_xdp(impl, port) && s->mbuf_mempool_reuse_rx[i]) {
       if (s->mbuf_mempool_hdr[i]) {
         err("%s(%d,%d), fail to reuse rx, has mempool_hdr for port %d\n", __func__,
             mgr_idx, idx, i);
@@ -2375,7 +2372,7 @@ static int tv_init_hw(struct mtl_main_impl* impl, struct st_tx_video_sessions_mg
       }
     }
 
-    if (false & mt_pmd_is_kernel(impl, port)) {
+    if (false & mt_pmd_is_af_xdp(impl, port)) {
       /* disable now, always use no zc mempool for the flush pad */
       pad_mempool = s->mbuf_mempool_hdr[i];
     } else {
@@ -2385,7 +2382,7 @@ static int tv_init_hw(struct mtl_main_impl* impl, struct st_tx_video_sessions_mg
       if (!s->st20_pkt_info[j].number) continue;
       info("%s(%d), type %d number %u size %u\n", __func__, idx, j,
            s->st20_pkt_info[j].number, s->st20_pkt_info[j].size);
-      pad = mt_build_pad(impl, pad_mempool, port_id, RTE_ETHER_TYPE_IPV4,
+      pad = mt_build_pad(impl, pad_mempool, port, RTE_ETHER_TYPE_IPV4,
                          s->st20_pkt_info[j].size);
       if (!pad) {
         tv_uinit_hw(s);
@@ -2883,7 +2880,7 @@ static int tv_attach(struct mtl_main_impl* impl, struct st_tx_video_sessions_mgr
     enum mtl_port port = mt_port_logic2phy(s->port_maps, i);
     s->eth_ipv4_cksum_offload[i] = mt_if_has_offload_ipv4_cksum(impl, port);
     s->eth_has_chain[i] = mt_if_has_multi_seg(impl, port);
-    if (mt_pmd_is_kernel(impl, port) && mt_has_af_xdp_zc(impl)) {
+    if (mt_pmd_is_af_xdp(impl, port) && mt_has_af_xdp_zc(impl)) {
       /* enable zero copy for tx */
       s->mbuf_mempool_reuse_rx[i] = true;
     } else {

@@ -214,7 +214,6 @@ static int rx_ancillary_session_init_hw(struct mtl_main_impl* impl,
 
   for (int i = 0; i < num_port; i++) {
     port = mt_port_logic2phy(s->port_maps, i);
-    s->port_id[i] = mt_port_id(impl, port);
 
     s->priv[i].session = s;
     s->priv[i].impl = impl;
@@ -227,10 +226,13 @@ static int rx_ancillary_session_init_hw(struct mtl_main_impl* impl,
     if (mt_has_cni_rx(impl)) flow.use_cni_queue = true;
 
     /* no flow for data path only */
-    if (mt_pmd_is_kernel(impl, port) && (s->ops.flags & ST40_RX_FLAG_DATA_PATH_ONLY))
+    if (s->ops.flags & ST40_RX_FLAG_DATA_PATH_ONLY) {
+      info("%s(%d), rxq get without flow for port %d as data path only\n", __func__,
+           s->idx, i);
       s->rxq[i] = mt_rxq_get(impl, port, NULL);
-    else
+    } else {
       s->rxq[i] = mt_rxq_get(impl, port, &flow);
+    }
     if (!s->rxq[i]) {
       rx_ancillary_session_uinit_hw(s);
       return -EIO;
@@ -260,12 +262,11 @@ static int rx_ancillary_session_init_mcast(struct mtl_main_impl* impl,
                                            struct st_rx_ancillary_session_impl* s) {
   struct st40_rx_ops* ops = &s->ops;
   int ret;
-  enum mtl_port port;
 
   for (int i = 0; i < ops->num_port; i++) {
     if (!mt_is_multicast_ip(ops->sip_addr[i])) continue;
-    port = mt_port_logic2phy(s->port_maps, i);
-    if (mt_pmd_is_kernel(impl, port) && (ops->flags & ST30_RX_FLAG_DATA_PATH_ONLY)) {
+
+    if (ops->flags & ST40_RX_FLAG_DATA_PATH_ONLY) {
       info("%s(%d), skip mcast join for port %d\n", __func__, s->idx, i);
       return 0;
     }
@@ -870,7 +871,7 @@ int st40_rx_get_queue_meta(st40_rx_handle handle, struct st_queue_meta* meta) {
   for (uint8_t i = 0; i < meta->num_port; i++) {
     port = mt_port_logic2phy(s->port_maps, i);
 
-    if (mt_pmd_type(impl, port) == MTL_PMD_DPDK_AF_XDP) {
+    if (mt_pmd_is_af_xdp(impl, port)) {
       /* af_xdp pmd */
       meta->start_queue[i] = mt_afxdp_start_queue(impl, port);
     }

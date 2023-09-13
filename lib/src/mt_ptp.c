@@ -692,7 +692,6 @@ static int ptp_parse_result(struct mt_ptp_impl* ptp) {
 
 static void ptp_delay_req_task(struct mt_ptp_impl* ptp) {
   enum mtl_port port = ptp->port;
-  uint16_t port_id = ptp->port_id;
   size_t hdr_offset;
   struct mt_ptp_sync_msg* msg;
   uint64_t tx_ns = 0;
@@ -748,7 +747,7 @@ static void ptp_delay_req_task(struct mt_ptp_impl* ptp) {
   ptp->t3_sequence_id++;
   msg->hdr.sequence_id = htons(ptp->t3_sequence_id);
 
-  rte_eth_macaddr_get(port_id, mt_eth_s_addr(hdr));
+  mt_macaddr_get(ptp->impl, port, mt_eth_s_addr(hdr));
   ptp_set_master_addr(ptp, mt_eth_d_addr(hdr));
   m->pkt_len = hdr_offset + sizeof(struct mt_ptp_sync_msg);
   m->data_len = m->pkt_len;
@@ -1048,9 +1047,9 @@ static int ptp_init(struct mtl_main_impl* impl, struct mt_ptp_impl* ptp,
   uint8_t* ip = &ptp->sip_addr[0];
   struct mt_interface* inf = mt_if(impl, port);
 
-  ret = rte_eth_macaddr_get(port_id, &mac);
+  ret = mt_macaddr_get(impl, port, &mac);
   if (ret < 0) {
-    err("%s(%d), succ rte_eth_macaddr_get fail %d\n", __func__, port, ret);
+    err("%s(%d), macaddr get fail %d\n", __func__, port, ret);
     return ret;
   }
 
@@ -1276,8 +1275,8 @@ int mt_ptp_init(struct mtl_main_impl* impl) {
   int ret;
 
   for (int i = 0; i < num_ports; i++) {
-    /* no ptp for kernel based pmd */
-    if (mt_pmd_is_kernel(impl, i)) continue;
+    /* no ptp if no cni */
+    if (mt_drv_no_cni(impl, i)) continue;
 
     struct mt_ptp_impl* ptp = mt_rte_zmalloc_socket(sizeof(*ptp), socket);
     if (!ptp) {
