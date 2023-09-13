@@ -267,7 +267,6 @@ struct st_tx_video_session_impl {
   unsigned int ring_count;
   struct rte_ring* ring[MTL_SESSION_PORT_MAX];
   struct rte_ring* packet_ring; /* rtp ring */
-  uint16_t port_id[MTL_SESSION_PORT_MAX];
   struct mt_txq_entry* queue[MTL_SESSION_PORT_MAX];
   int idx; /* index for current tx_session */
   uint64_t advice_sleep_us;
@@ -609,7 +608,6 @@ struct st_rx_video_session_impl {
 
   enum mtl_port port_maps[MTL_SESSION_PORT_MAX];
   struct mt_rxq_entry* rxq[MTL_SESSION_PORT_MAX];
-  uint16_t port_id[MTL_SESSION_PORT_MAX];
   uint16_t st20_dst_port[MTL_SESSION_PORT_MAX]; /* udp port */
 
   struct st_rx_video_session_handle_impl* st20_handle;
@@ -854,7 +852,6 @@ struct st_tx_audio_sessions_mgr {
 
   /* all audio sessions share same ring/queue */
   struct rte_ring* ring[MTL_PORT_MAX];
-  uint16_t port_id[MTL_PORT_MAX];
   struct mt_txq_entry* queue[MTL_PORT_MAX];
   /* the last burst succ time(tsc) */
   uint64_t last_burst_succ_time_tsc[MTL_PORT_MAX];
@@ -932,7 +929,6 @@ struct st_rx_audio_session_impl {
 
   enum mtl_port port_maps[MTL_SESSION_PORT_MAX];
   struct mt_rxq_entry* rxq[MTL_SESSION_PORT_MAX];
-  uint16_t port_id[MTL_SESSION_PORT_MAX];
 
   uint16_t st30_dst_port[MTL_SESSION_PORT_MAX]; /* udp port */
 
@@ -1066,7 +1062,6 @@ struct st_tx_ancillary_sessions_mgr {
 
   /* all anc sessions share same ring/queue */
   struct rte_ring* ring[MTL_PORT_MAX];
-  uint16_t port_id[MTL_PORT_MAX];
   struct mt_txq_entry* queue[MTL_PORT_MAX];
 
   struct st_tx_ancillary_session_impl* sessions[ST_MAX_TX_ANC_SESSIONS];
@@ -1092,7 +1087,6 @@ struct st_rx_ancillary_session_impl {
 
   enum mtl_port port_maps[MTL_SESSION_PORT_MAX];
   struct mt_rxq_entry* rxq[MTL_SESSION_PORT_MAX];
-  uint16_t port_id[MTL_SESSION_PORT_MAX];
   struct rte_ring* packet_ring;
 
   uint16_t st40_dst_port[MTL_SESSION_PORT_MAX]; /* udp port */

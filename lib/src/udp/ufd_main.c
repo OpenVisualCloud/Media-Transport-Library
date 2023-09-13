@@ -106,7 +106,7 @@ static int ufd_parse_interfaces(struct mufd_init_params* init, json_object* obj,
     }
   }
 
-  if ((p->net_proto[port] == MTL_PROTO_STATIC) && (pmd != MTL_PMD_DPDK_AF_XDP)) {
+  if ((p->net_proto[port] == MTL_PROTO_STATIC) && (pmd == MTL_PMD_DPDK_USER)) {
     obj_item = mt_json_object_get(obj, "ip");
     if (!obj_item) {
       err("%s, no ip in the json interface\n", __func__);

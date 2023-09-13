@@ -1634,7 +1634,6 @@ static int rv_dump_pcapng(struct mtl_main_impl* impl, struct st_rx_video_session
   ssize_t len;
   enum mtl_port port = mt_port_logic2phy(s->port_maps, s_port);
   struct mt_interface* inf = mt_if(impl, port);
-  uint16_t queue_id = rv_queue_id(s, s_port);
 
   for (uint16_t i = 0; i < rv; i++) {
     struct rte_mbuf* mc;
@@ -1646,15 +1645,10 @@ static int rv_dump_pcapng(struct mtl_main_impl* impl, struct st_rx_video_session
       timestamp_cycle = rte_get_tsc_cycles();
       timestamp_ns = 0;
     }
-#if RTE_VERSION >= RTE_VERSION_NUM(23, 3, 0, 0)
-    mc = rte_pcapng_copy(s->port_id[s_port], queue_id, mbuf[i], s->pcapng_pool,
-                         ST_PKT_MAX_ETHER_BYTES, timestamp_cycle, timestamp_ns,
-                         RTE_PCAPNG_DIRECTION_IN, NULL);
-#else
-    mc = rte_pcapng_copy(s->port_id[s_port], queue_id, mbuf[i], s->pcapng_pool,
-                         ST_PKT_MAX_ETHER_BYTES, timestamp_cycle, timestamp_ns,
-                         RTE_PCAPNG_DIRECTION_IN);
-#endif
+
+    mc = mt_pcapng_copy(impl, port, s->rxq[s_port], mbuf[i], s->pcapng_pool,
+                        ST_PKT_MAX_ETHER_BYTES, timestamp_cycle, timestamp_ns,
+                        RTE_PCAPNG_DIRECTION_IN);
     if (mc == NULL) {
       warn("%s(%d,%d), can not copy packet\n", __func__, s->idx, s_port);
       s->pcapng_dropped_pkts++;
@@ -2984,15 +2978,17 @@ static int rv_init_hw(struct mtl_main_impl* impl, struct st_rx_video_session_imp
     if (mt_has_cni_rx(impl)) flow.use_cni_queue = true;
 
     /* no flow for data path only */
-    if (mt_pmd_is_kernel(impl, port) && (ops->flags & ST20_RX_FLAG_DATA_PATH_ONLY))
+    if (ops->flags & ST20_RX_FLAG_DATA_PATH_ONLY) {
+      info("%s(%d), rxq get without flow for port %d as data path only\n", __func__,
+           s->idx, i);
       s->rxq[i] = mt_rxq_get(impl, port, NULL);
-    else
+    } else {
       s->rxq[i] = mt_rxq_get(impl, port, &flow);
+    }
     if (!s->rxq[i]) {
       rv_uinit_hw(s);
       return -EIO;
     }
-    s->port_id[i] = mt_port_id(impl, port);
     info("%s(%d), port(l:%d,p:%d), queue %d udp %d\n", __func__, idx, i, port,
          rv_queue_id(s, i), flow.dst_port);
   }
@@ -3021,7 +3017,7 @@ static int rv_init_mcast(struct mtl_main_impl* impl, struct st_rx_video_session_
   for (int i = 0; i < ops->num_port; i++) {
     if (!mt_is_multicast_ip(ops->sip_addr[i])) continue;
     port = mt_port_logic2phy(s->port_maps, i);
-    if (mt_pmd_is_kernel(impl, port) && (ops->flags & ST20_RX_FLAG_DATA_PATH_ONLY)) {
+    if (ops->flags & ST20_RX_FLAG_DATA_PATH_ONLY) {
       info("%s(%d), skip mcast join for port %d\n", __func__, s->idx, i);
       return 0;
     }
@@ -3054,9 +3050,9 @@ static int rv_init_rtcp_uhdr(struct mtl_main_impl* impl,
     return ret;
   }
 
-  ret = rte_eth_macaddr_get(s->port_id[s_port], mt_eth_s_addr(eth));
+  ret = mt_macaddr_get(impl, port, mt_eth_s_addr(eth));
   if (ret < 0) {
-    err("%s(%d), rte_eth_macaddr_get fail %d for port %d\n", __func__, idx, ret, s_port);
+    err("%s(%d), macaddr get fail %d for port %d\n", __func__, idx, ret, s_port);
     return ret;
   }
   eth->ether_type = htons(RTE_ETHER_TYPE_IPV4);
@@ -4398,7 +4394,7 @@ int st20_rx_get_queue_meta(st20_rx_handle handle, struct st_queue_meta* meta) {
   for (uint8_t i = 0; i < meta->num_port; i++) {
     port = mt_port_logic2phy(s->port_maps, i);
 
-    if (mt_pmd_type(impl, port) == MTL_PMD_DPDK_AF_XDP) {
+    if (mt_pmd_is_af_xdp(impl, port)) {
       /* af_xdp pmd */
       meta->start_queue[i] = mt_afxdp_start_queue(impl, port);
     }
@@ -4736,7 +4732,7 @@ int st22_rx_get_queue_meta(st22_rx_handle handle, struct st_queue_meta* meta) {
   for (uint8_t i = 0; i < meta->num_port; i++) {
     port = mt_port_logic2phy(s->port_maps, i);
 
-    if (mt_pmd_type(impl, port) == MTL_PMD_DPDK_AF_XDP) {
+    if (mt_pmd_is_af_xdp(impl, port)) {
       /* af_xdp pmd */
       meta->start_queue[i] = mt_afxdp_start_queue(impl, port);
     }

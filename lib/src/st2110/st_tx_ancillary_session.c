@@ -123,6 +123,7 @@ static int tx_ancillary_session_init_hdr(struct mtl_main_impl* impl,
                                          struct st_tx_ancillary_sessions_mgr* mgr,
                                          struct st_tx_ancillary_session_impl* s,
                                          enum mtl_session_port s_port) {
+  MTL_MAY_UNUSED(mgr);
   int idx = s->idx;
   enum mtl_port port = mt_port_logic2phy(s->port_maps, s_port);
   struct st40_tx_ops* ops = &s->ops;
@@ -152,9 +153,9 @@ static int tx_ancillary_session_init_hdr(struct mtl_main_impl* impl,
     }
   }
 
-  ret = rte_eth_macaddr_get(mgr->port_id[port], mt_eth_s_addr(eth));
+  ret = mt_macaddr_get(impl, port, mt_eth_s_addr(eth));
   if (ret < 0) {
-    err("%s(%d), rte_eth_macaddr_get fail %d for port %d\n", __func__, idx, ret, port);
+    err("%s(%d), macaddr get fail %d for port %d\n", __func__, idx, ret, port);
     return ret;
   }
   eth->ether_type = htons(RTE_ETHER_TYPE_IPV4);
@@ -1005,8 +1006,6 @@ static int tx_ancillary_sessions_mgr_init_hw(struct mtl_main_impl* impl,
   int mgr_idx = mgr->idx;
 
   if (mgr->queue[port]) return 0; /* init already */
-
-  mgr->port_id[port] = mt_port_id(impl, port);
 
   struct mt_txq_flow flow;
   memset(&flow, 0, sizeof(flow));

@@ -6,6 +6,7 @@
 
 #include "mt_dev.h"
 #include "mt_log.h"
+#include "mt_util.h"
 
 #define DHCP_OP_BOOTREQUEST (1)
 #define DHCP_OP_BOOTREPLY (2)
@@ -54,8 +55,7 @@ static int dhcp_send_discover(struct mtl_main_impl* impl, enum mtl_port port) {
   }
 
   eth = rte_pktmbuf_mtod(pkt, struct rte_ether_hdr*);
-  uint16_t port_id = mt_port_id(impl, port);
-  rte_eth_macaddr_get(port_id, mt_eth_s_addr(eth));
+  mt_macaddr_get(impl, port, mt_eth_s_addr(eth));
   memset(mt_eth_d_addr(eth), 0xFF, RTE_ETHER_ADDR_LEN); /* send to broadcast */
   eth->ether_type = htons(RTE_ETHER_TYPE_IPV4);
   hdr_offset += sizeof(*eth);
@@ -135,8 +135,7 @@ static int dhcp_send_request(struct mtl_main_impl* impl, enum mtl_port port) {
   }
 
   eth = rte_pktmbuf_mtod(pkt, struct rte_ether_hdr*);
-  uint16_t port_id = mt_port_id(impl, port);
-  rte_eth_macaddr_get(port_id, mt_eth_s_addr(eth));
+  mt_macaddr_get(impl, port, mt_eth_s_addr(eth));
   memset(mt_eth_d_addr(eth), 0xFF, RTE_ETHER_ADDR_LEN);
   eth->ether_type = htons(RTE_ETHER_TYPE_IPV4);
   hdr_offset += sizeof(*eth);
@@ -368,8 +367,7 @@ static int dhcp_send_release(struct mtl_main_impl* impl, enum mtl_port port) {
   }
 
   eth = rte_pktmbuf_mtod(pkt, struct rte_ether_hdr*);
-  uint16_t port_id = mt_port_id(impl, port);
-  rte_eth_macaddr_get(port_id, mt_eth_s_addr(eth));
+  mt_macaddr_get(impl, port, mt_eth_s_addr(eth));
   memset(mt_eth_d_addr(eth), 0xFF, RTE_ETHER_ADDR_LEN);
   eth->ether_type = htons(RTE_ETHER_TYPE_IPV4);
   hdr_offset += sizeof(*eth);

@@ -583,18 +583,27 @@ struct mt_tx_queue {
   uint64_t bps;           /* bytes per sec for rate limit */
 };
 
+/* use rte_eth_dev_set_mc_addr_list instead of rte_eth_dev_mac_addr_add for multicast */
+#define MT_DRV_F_USE_MC_ADDR_LIST (MTL_BIT64(0))
+/* no rte_eth_stats_reset support */
+#define MT_DRV_F_NO_STATUS_RESET (MTL_BIT64(1))
+/* no CNI support */
+#define MT_DRV_F_NO_CNI (MTL_BIT64(2))
+/* the driver is not dpdk based */
+#define MT_DRV_F_NOT_DPDK_PMD (MTL_BIT64(3))
+/* use kernel socket control path for arp/mcast */
+#define MT_DRV_F_USE_KERNEL_CTL (MTL_BIT64(4))
+/* no priv for the mbuf in the rx queue */
+#define MT_DRV_F_RX_POOL_COMMON (MTL_BIT64(5))
+
 struct mt_dev_driver_info {
   char* name;
   enum mt_port_type port_type;
   enum mt_driver_type drv_type;
+
   enum mt_flow_type flow_type;
   enum mt_rl_type rl_type;
-  /* use rte_eth_dev_set_mc_addr_list instead of rte_eth_dev_mac_addr_add for multicast */
-  bool use_mc_addr_list;
-  /* no rte_eth_stats_reset support */
-  bool no_dev_stats_reset;
-  /* the pmd is not dpdk based */
-  bool not_dpdk_based;
+  uint64_t flags; /* value with MT_DRV_F_* */
 };
 
 struct mt_interface {
@@ -1055,6 +1064,20 @@ static inline bool mt_pmd_is_kernel(struct mtl_main_impl* impl, enum mtl_port po
     return true;
 }
 
+static inline bool mt_drv_use_kernel_ctl(struct mtl_main_impl* impl, enum mtl_port port) {
+  if (mt_if(impl, port)->drv_info.flags & MT_DRV_F_USE_KERNEL_CTL)
+    return true;
+  else
+    return false;
+}
+
+static inline bool mt_drv_no_cni(struct mtl_main_impl* impl, enum mtl_port port) {
+  if (mt_if(impl, port)->drv_info.flags & MT_DRV_F_NO_CNI)
+    return true;
+  else
+    return false;
+}
+
 static inline bool mt_pmd_is_af_xdp(struct mtl_main_impl* impl, enum mtl_port port) {
   if (MTL_PMD_DPDK_AF_XDP == mt_get_user_params(impl)->pmd[port])
     return true;
@@ -1315,7 +1338,7 @@ static inline uint16_t mt_if_nb_tx_burst(struct mtl_main_impl* impl, enum mtl_po
 
   if (mt_pmd_is_af_xdp(impl, port)) {
     /* same umem for both tx and rx */
-    burst_pkts = mt_if_nb_rx_desc(impl, port);
+    burst_pkts = RTE_MAX(mt_if_nb_rx_desc(impl, port), mt_if_nb_tx_desc(impl, port));
   } else {
     burst_pkts = mt_if_nb_tx_desc(impl, port);
   }

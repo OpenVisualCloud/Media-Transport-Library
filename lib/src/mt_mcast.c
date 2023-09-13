@@ -70,7 +70,7 @@ int mcast_membership_general_query(struct mtl_main_impl* impl, enum mtl_port por
   }
 
   eth_hdr = rte_pktmbuf_mtod_offset(pkt, struct rte_ether_hdr*, hdr_offset);
-  rte_eth_macaddr_get(mt_port_id(impl, port), mt_eth_s_addr(eth_hdr));
+  mt_macaddr_get(impl, port, mt_eth_s_addr(eth_hdr));
   rte_ether_addr_copy(&mcast_mac_query, mt_eth_d_addr(eth_hdr));
   eth_hdr->ether_type = htons(RTE_ETHER_TYPE_IPV4);
   hdr_offset += sizeof(*eth_hdr);
@@ -149,7 +149,7 @@ static int mcast_membership_report(struct mtl_main_impl* impl,
   }
 
   eth_hdr = rte_pktmbuf_mtod_offset(pkt, struct rte_ether_hdr*, hdr_offset);
-  rte_eth_macaddr_get(mt_port_id(impl, port), mt_eth_s_addr(eth_hdr));
+  mt_macaddr_get(impl, port, mt_eth_s_addr(eth_hdr));
   rte_ether_addr_copy(&mcast_mac_dst, mt_eth_d_addr(eth_hdr));
   eth_hdr->ether_type = htons(RTE_ETHER_TYPE_IPV4);
   hdr_offset += sizeof(*eth_hdr);
@@ -212,7 +212,7 @@ static void mcast_membership_report_cb(void* param) {
   int ret;
 
   for (int port = 0; port < num_ports; port++) {
-    if (!mt_pmd_is_kernel(impl, port)) {
+    if (!mt_drv_use_kernel_ctl(impl, port)) {
       ret = mcast_membership_report(impl, MCAST_MODE_IS_EXCLUDE, port);
       if (ret < 0) {
         err("%s(%d), mcast_membership_report fail %d\n", __func__, port, ret);
@@ -286,7 +286,7 @@ static int mcast_inf_add_mac(struct mt_interface* inf, struct rte_ether_addr* mc
   }
 
   mcast_addr_pool_append(inf, mcast_mac);
-  if (inf->drv_info.use_mc_addr_list)
+  if (inf->drv_info.flags & MT_DRV_F_USE_MC_ADDR_LIST)
     return rte_eth_dev_set_mc_addr_list(port_id, inf->mcast_mac_lists, inf->mcast_nb);
   else
     return rte_eth_dev_mac_addr_add(port_id, mcast_mac, 0);
@@ -308,7 +308,7 @@ static int mcast_inf_remove_mac(struct mt_interface* inf,
   }
 
   mcast_addr_pool_remove(inf, i);
-  if (inf->drv_info.use_mc_addr_list)
+  if (inf->drv_info.flags & MT_DRV_F_USE_MC_ADDR_LIST)
     return rte_eth_dev_set_mc_addr_list(port_id, inf->mcast_mac_lists, inf->mcast_nb);
   else
     return rte_eth_dev_mac_addr_remove(port_id, mcast_mac);
@@ -385,7 +385,7 @@ int mt_mcast_join(struct mtl_main_impl* impl, uint32_t group_addr, enum mtl_port
       return 0;
     }
   }
-  if (mt_pmd_is_kernel(impl, port)) {
+  if (mt_drv_use_kernel_ctl(impl, port)) {
     ret = mt_socket_join_mcast(impl, port, group_addr);
     if (ret < 0) {
       mt_pthread_mutex_unlock(&mcast->group_mutex);
@@ -404,7 +404,7 @@ int mt_mcast_join(struct mtl_main_impl* impl, uint32_t group_addr, enum mtl_port
   mcast_inf_add_mac(inf, &mcast_mac);
 
   /* report to switch to join group */
-  if (!mt_pmd_is_kernel(impl, port)) {
+  if (!mt_drv_use_kernel_ctl(impl, port)) {
     mcast_membership_report(impl, MCAST_MODE_IS_EXCLUDE, port);
   }
 
@@ -435,7 +435,7 @@ int mt_mcast_leave(struct mtl_main_impl* impl, uint32_t group_addr, enum mtl_por
       }
       mcast->group_ip[i] = mcast->group_ip[group_num - 1];
       mcast->group_num--;
-      if (mt_pmd_is_kernel(impl, port)) {
+      if (mt_drv_use_kernel_ctl(impl, port)) {
         mt_socket_drop_mcast(impl, port, group_addr);
       }
       mt_pthread_mutex_unlock(&mcast->group_mutex);
@@ -454,7 +454,7 @@ int mt_mcast_restore(struct mtl_main_impl* impl, enum mtl_port port) {
   struct mt_interface* inf = mt_if(impl, port);
   uint16_t port_id = inf->port_id;
 
-  if (inf->drv_info.use_mc_addr_list) {
+  if (inf->drv_info.flags & MT_DRV_F_USE_MC_ADDR_LIST) {
     rte_eth_dev_set_mc_addr_list(port_id, inf->mcast_mac_lists, inf->mcast_nb);
   } else {
     for (uint32_t i = 0; i < inf->mcast_nb; i++)

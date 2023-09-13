@@ -198,7 +198,10 @@ static struct mt_rx_flow_rsp* rx_flow_create(struct mt_interface* inf, uint16_t 
   rsp->flow_id = -1;
   rsp->queue_id = q;
 
-  if (mt_pmd_is_af_xdp(impl, port)) {
+  /* no flow for af packet */
+  if (mt_pmd_is_af_packet(impl, port)) return rsp;
+
+  if (inf->drv_info.flags & MT_DRV_F_USE_KERNEL_CTL) {
     ret = mt_socket_add_flow(impl, port, q, flow);
     if (ret < 0) {
       err("%s(%d), socket add flow fail for queue %d\n", __func__, port, q);
@@ -206,7 +209,7 @@ static struct mt_rx_flow_rsp* rx_flow_create(struct mt_interface* inf, uint16_t 
       return NULL;
     }
     rsp->flow_id = ret;
-  } else if (mt_pmd_is_dpdk_user(impl, port)) {
+  } else {
     struct rte_flow* r_flow;
 
     r_flow = rte_rx_flow_create(inf, q, flow);
@@ -220,8 +223,6 @@ static struct mt_rx_flow_rsp* rx_flow_create(struct mt_interface* inf, uint16_t 
     rsp->flow = r_flow;
     /* WA to avoid iavf_flow_create fail in 1000+ mudp close at same time */
     if (inf->drv_info.drv_type == MT_DRV_IAVF) mt_sleep_ms(5);
-  } else {
-    /* no flow need */
   }
 
   return rsp;

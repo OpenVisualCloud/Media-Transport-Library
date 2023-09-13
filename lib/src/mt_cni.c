@@ -347,6 +347,7 @@ static int cni_queues_uinit(struct mtl_main_impl* impl) {
 static int cni_queues_init(struct mtl_main_impl* impl) {
   int num_ports = mt_num_ports(impl);
   struct mt_cni_entry* cni;
+  struct mt_interface* inf;
 
   if (mt_no_system_rxq(impl)) {
     warn("%s, disabled as no system rx queues\n", __func__);
@@ -355,9 +356,10 @@ static int cni_queues_init(struct mtl_main_impl* impl) {
 
   for (int i = 0; i < num_ports; i++) {
     cni = cni_get_entry(impl, i);
+    inf = mt_if(impl, i);
 
-    /* no cni for kernel based pmd */
-    if (mt_pmd_is_kernel(impl, i)) continue;
+    /* continue if no cni */
+    if (inf->drv_info.flags & MT_DRV_F_NO_CNI) continue;
 
     struct mt_rxq_flow flow;
     memset(&flow, 0, sizeof(flow));
@@ -376,9 +378,12 @@ static int cni_queues_init(struct mtl_main_impl* impl) {
 
 static bool cni_if_need(struct mtl_main_impl* impl) {
   int num_ports = mt_num_ports(impl);
+  struct mt_interface* inf;
 
   for (int i = 0; i < num_ports; i++) {
-    if (!mt_pmd_is_kernel(impl, i)) return true;
+    inf = mt_if(impl, i);
+
+    if (!(inf->drv_info.flags & MT_DRV_F_NO_CNI)) return true;
   }
 
   return false;
