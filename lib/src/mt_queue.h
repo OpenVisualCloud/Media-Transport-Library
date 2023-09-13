@@ -17,6 +17,9 @@ struct mt_rxq_entry {
   struct mt_rsq_entry* rsq;
   struct mt_srss_entry* srss;
   struct mt_csq_entry* csq;
+
+  uint16_t (*burst)(struct mt_rxq_entry* entry, struct rte_mbuf** rx_pkts,
+                    const uint16_t nb_pkts);
 };
 
 struct mt_rxq_entry* mt_rxq_get(struct mtl_main_impl* impl, enum mtl_port port,
@@ -33,6 +36,9 @@ struct mt_txq_entry {
   uint16_t queue_id;
   struct mt_tx_queue* txq;
   struct mt_tsq_entry* tsq;
+
+  uint16_t (*burst)(struct mt_txq_entry* entry, struct rte_mbuf** tx_pkts,
+                    uint16_t nb_pkts);
 };
 
 struct mt_txq_entry* mt_txq_get(struct mtl_main_impl* impl, enum mtl_port port,

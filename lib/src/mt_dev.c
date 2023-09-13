@@ -82,14 +82,15 @@ static const struct mt_dev_driver_info dev_drvs[] = {
         .port_type = MT_PORT_AF_PKT,
         .drv_type = MT_DRV_AF_PKT,
         .flow_type = MT_FLOW_ALL,
-        .flags = MT_DRV_F_USE_KERNEL_CTL | MT_DRV_F_RX_POOL_COMMON,
+        .flags = MT_DRV_F_USE_KERNEL_CTL | MT_DRV_F_RX_POOL_COMMON | MT_DRV_F_RX_NO_FLOW,
     },
     {
         .name = "kernel_socket",
         .port_type = MT_PORT_KERNEL_SOCKET,
         .drv_type = MT_DRV_KERNEL_SOCKET,
         .flow_type = MT_FLOW_ALL,
-        .flags = MT_DRV_F_NOT_DPDK_PMD | MT_DRV_F_NO_CNI | MT_DRV_F_USE_KERNEL_CTL,
+        .flags = MT_DRV_F_NOT_DPDK_PMD | MT_DRV_F_NO_CNI | MT_DRV_F_USE_KERNEL_CTL |
+                 MT_DRV_F_RX_NO_FLOW,
     },
 };
 
@@ -446,7 +447,7 @@ static int dev_flush_rx_queue(struct mt_interface* inf, struct mt_rx_queue* queu
   uint16_t rv;
 
   for (int i = 0; i < loop; i++) {
-    rv = mt_dev_rx_burst(queue, &mbuf[0], mbuf_size);
+    rv = mt_dpdk_rx_burst(queue, &mbuf[0], mbuf_size);
     if (!rv) break;
     rte_pktmbuf_free_bulk(&mbuf[0], rv);
   }
@@ -670,8 +671,10 @@ static int dev_stop_port(struct mt_interface* inf) {
     return 0;
   }
 
-  ret = rte_eth_dev_stop(port_id);
-  if (ret < 0) err("%s(%d), rte_eth_dev_stop fail %d\n", __func__, port, ret);
+  if (!(inf->drv_info.flags & MT_DRV_F_NOT_DPDK_PMD)) {
+    ret = rte_eth_dev_stop(port_id);
+    if (ret < 0) err("%s(%d), rte_eth_dev_stop fail %d\n", __func__, port, ret);
+  }
 
   inf->status &= ~MT_IF_STAT_PORT_STARTED;
   info("%s(%d), succ\n", __func__, port);
@@ -688,8 +691,10 @@ static int dev_close_port(struct mt_interface* inf) {
     return 0;
   }
 
-  ret = rte_eth_dev_close(port_id);
-  if (ret < 0) err("%s(%d), rte_eth_dev_close fail %d\n", __func__, port, ret);
+  if (!(inf->drv_info.flags & MT_DRV_F_NOT_DPDK_PMD)) {
+    ret = rte_eth_dev_close(port_id);
+    if (ret < 0) err("%s(%d), rte_eth_dev_close fail %d\n", __func__, port, ret);
+  }
 
   inf->status &= ~MT_IF_STAT_PORT_CONFIGURED;
   info("%s(%d), succ\n", __func__, port);
@@ -703,7 +708,7 @@ static int dev_detect_link(struct mt_interface* inf) {
   enum mtl_port port = inf->port;
 
   if (inf->drv_info.flags & MT_DRV_F_NOT_DPDK_PMD) {
-    info("%s(%d), not dpdk based\n", __func__, port);
+    dbg("%s(%d), not dpdk based\n", __func__, port);
     return 0;
   }
 
@@ -1739,9 +1744,9 @@ struct mt_rx_queue* mt_dev_get_rx_queue(struct mtl_main_impl* impl, enum mtl_por
   return NULL;
 }
 
-uint16_t mt_dev_tx_burst_busy(struct mtl_main_impl* impl, struct mt_tx_queue* queue,
-                              struct rte_mbuf** tx_pkts, uint16_t nb_pkts,
-                              int timeout_ms) {
+uint16_t mt_dpdk_tx_burst_busy(struct mtl_main_impl* impl, struct mt_tx_queue* queue,
+                               struct rte_mbuf** tx_pkts, uint16_t nb_pkts,
+                               int timeout_ms) {
   uint16_t sent = 0;
   uint64_t start_ts = mt_get_tsc(impl);
 
@@ -1755,14 +1760,14 @@ uint16_t mt_dev_tx_burst_busy(struct mtl_main_impl* impl, struct mt_tx_queue* qu
         return sent;
       }
     }
-    sent += mt_dev_tx_burst(queue, &tx_pkts[sent], nb_pkts - sent);
+    sent += mt_dpdk_tx_burst(queue, &tx_pkts[sent], nb_pkts - sent);
   }
 
   return sent;
 }
 
-int mt_dev_flush_tx_queue(struct mtl_main_impl* impl, struct mt_tx_queue* queue,
-                          struct rte_mbuf* pad) {
+int mt_dpdk_flush_tx_queue(struct mtl_main_impl* impl, struct mt_tx_queue* queue,
+                           struct rte_mbuf* pad) {
   enum mtl_port port = queue->port;
   uint16_t queue_id = queue->queue_id;
 
@@ -1774,7 +1779,7 @@ int mt_dev_flush_tx_queue(struct mtl_main_impl* impl, struct mt_tx_queue* queue,
   info("%s(%d), queue %u burst_pkts %d\n", __func__, port, queue_id, burst_pkts);
   for (int i = 0; i < burst_pkts; i++) {
     rte_mbuf_refcnt_update(pad, 1);
-    mt_dev_tx_burst_busy(impl, queue, &pads[0], 1, 1);
+    mt_dpdk_tx_burst_busy(impl, queue, &pads[0], 1, 1);
   }
   dbg("%s, end\n", __func__);
   return 0;
@@ -1954,7 +1959,8 @@ int mt_dev_create(struct mtl_main_impl* impl) {
       }
     }
 
-    mt_stat_register(impl, dev_inf_stat, inf, "dev_inf");
+    if (!(inf->drv_info.flags & MT_DRV_F_NOT_DPDK_PMD))
+      mt_stat_register(impl, dev_inf_stat, inf, "dev_inf");
 
     info("%s(%d), feature 0x%x, tx pacing %s\n", __func__, i, inf->feature,
          st_tx_pacing_way_name(inf->tx_pacing_way));
@@ -2004,7 +2010,8 @@ int mt_dev_free(struct mtl_main_impl* impl) {
   for (int i = 0; i < num_ports; i++) {
     inf = mt_if(impl, i);
 
-    mt_stat_unregister(impl, dev_inf_stat, inf);
+    if (!(inf->drv_info.flags & MT_DRV_F_NOT_DPDK_PMD))
+      mt_stat_unregister(impl, dev_inf_stat, inf);
     if (inf->dev_stats_not_reset) {
       mt_rte_free(inf->dev_stats_not_reset);
       inf->dev_stats_not_reset = NULL;
