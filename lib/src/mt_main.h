@@ -116,6 +116,7 @@ enum mt_port_type {
   MT_PORT_PF,
   MT_PORT_AF_XDP,
   MT_PORT_AF_PKT,
+  MT_PORT_KERNEL_SOCKET,
 };
 
 enum mt_rl_type {
@@ -134,6 +135,8 @@ enum mt_driver_type {
   MT_DRV_ENA,       /* aws ena, net_ena */
   MT_DRV_MLX5,      /* mlx, mlx5_pci */
   MT_DRV_AF_PKT,    /* af packet, net_af_packet */
+  /* kernel based socket */
+  MT_DRV_KERNEL_SOCKET,
 };
 
 enum mt_flow_type {
@@ -590,6 +593,8 @@ struct mt_dev_driver_info {
   bool use_mc_addr_list;
   /* no rte_eth_stats_reset support */
   bool no_dev_stats_reset;
+  /* the pmd is not dpdk based */
+  bool not_dpdk_based;
 };
 
 struct mt_interface {
@@ -1036,6 +1041,13 @@ static inline enum mtl_pmd_type mt_pmd_type(struct mtl_main_impl* impl,
   return mt_get_user_params(impl)->pmd[port];
 }
 
+static inline bool mt_pmd_is_dpdk_user(struct mtl_main_impl* impl, enum mtl_port port) {
+  if (MTL_PMD_DPDK_USER == mt_get_user_params(impl)->pmd[port])
+    return true;
+  else
+    return false;
+}
+
 static inline bool mt_pmd_is_kernel(struct mtl_main_impl* impl, enum mtl_port port) {
   if (MTL_PMD_DPDK_USER == mt_get_user_params(impl)->pmd[port])
     return false;
@@ -1052,6 +1064,14 @@ static inline bool mt_pmd_is_af_xdp(struct mtl_main_impl* impl, enum mtl_port po
 
 static inline bool mt_pmd_is_af_packet(struct mtl_main_impl* impl, enum mtl_port port) {
   if (MTL_PMD_DPDK_AF_PACKET == mt_get_user_params(impl)->pmd[port])
+    return true;
+  else
+    return false;
+}
+
+static inline bool mt_pmd_is_kernel_socket(struct mtl_main_impl* impl,
+                                           enum mtl_port port) {
+  if (MTL_PMD_KERNEL_SOCKET == mt_get_user_params(impl)->pmd[port])
     return true;
   else
     return false;

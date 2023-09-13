@@ -22,7 +22,7 @@
 /* set to 1 to enable the simulated test */
 #define MT_DEV_SIMULATE_MALICIOUS_PKT (0)
 
-int mt_dev_get_socket(const char* port);
+int mt_dev_get_socket_id(const char* port);
 
 int mt_dev_init(struct mtl_init_params* p, struct mt_kport_info* kport_info);
 int mt_dev_uinit(struct mtl_init_params* p);

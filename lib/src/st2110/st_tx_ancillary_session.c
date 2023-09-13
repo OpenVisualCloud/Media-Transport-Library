@@ -981,54 +981,52 @@ static int tx_ancillary_sessions_tasklet_handler(void* priv) {
   return pending;
 }
 
-static int tx_ancillary_sessions_mgr_uinit_hw(struct mtl_main_impl* impl,
-                                              struct st_tx_ancillary_sessions_mgr* mgr) {
-  for (int i = 0; i < mt_num_ports(impl); i++) {
-    if (mgr->ring[i]) {
-      rte_ring_free(mgr->ring[i]);
-      mgr->ring[i] = NULL;
-    }
-    if (mgr->queue[i]) {
-      mt_txq_put(mgr->queue[i]);
-      mgr->queue[i] = NULL;
-    }
+static int tx_ancillary_sessions_mgr_uinit_hw(struct st_tx_ancillary_sessions_mgr* mgr,
+                                              enum mtl_port port) {
+  if (mgr->ring[port]) {
+    rte_ring_free(mgr->ring[port]);
+    mgr->ring[port] = NULL;
+  }
+  if (mgr->queue[port]) {
+    mt_txq_put(mgr->queue[port]);
+    mgr->queue[port] = NULL;
   }
 
-  dbg("%s(%d), succ\n", __func__, mgr->idx);
+  dbg("%s(%d,%d), succ\n", __func__, mgr->idx, port);
   return 0;
 }
 
 static int tx_ancillary_sessions_mgr_init_hw(struct mtl_main_impl* impl,
-                                             struct st_tx_ancillary_sessions_mgr* mgr) {
+                                             struct st_tx_ancillary_sessions_mgr* mgr,
+                                             enum mtl_port port) {
   unsigned int flags, count;
   struct rte_ring* ring;
   char ring_name[32];
   int mgr_idx = mgr->idx;
 
-  for (int i = 0; i < mt_num_ports(impl); i++) {
-    mgr->port_id[i] = mt_port_id(impl, i);
+  if (mgr->queue[port]) return 0; /* init already */
 
-    struct mt_txq_flow flow;
-    memset(&flow, 0, sizeof(flow));
-    mgr->queue[i] = mt_txq_get(impl, i, &flow);
-    if (!mgr->queue[i]) {
-      tx_ancillary_sessions_mgr_uinit_hw(impl, mgr);
-      return -EIO;
-    }
+  mgr->port_id[port] = mt_port_id(impl, port);
 
-    snprintf(ring_name, 32, "%sM%dP%d", ST_TX_ANCILLARY_PREFIX, mgr_idx, i);
-    flags = RING_F_MP_HTS_ENQ | RING_F_SC_DEQ; /* multi-producer and single-consumer */
-    count = ST_TX_ANC_SESSIONS_RING_SIZE;
-    ring = rte_ring_create(ring_name, count, mt_socket_id(impl, i), flags);
-    if (!ring) {
-      err("%s(%d), rte_ring_create fail for port %d\n", __func__, mgr_idx, i);
-      tx_ancillary_sessions_mgr_uinit_hw(impl, mgr);
-      return -ENOMEM;
-    }
-    mgr->ring[i] = ring;
-    info("%s(%d,%d), succ, queue %d\n", __func__, mgr_idx, i,
-         mt_txq_queue_id(mgr->queue[i]));
+  struct mt_txq_flow flow;
+  memset(&flow, 0, sizeof(flow));
+  mgr->queue[port] = mt_txq_get(impl, port, &flow);
+  if (!mgr->queue[port]) {
+    return -EIO;
   }
+
+  snprintf(ring_name, 32, "%sM%dP%d", ST_TX_ANCILLARY_PREFIX, mgr_idx, port);
+  flags = RING_F_MP_HTS_ENQ | RING_F_SC_DEQ; /* multi-producer and single-consumer */
+  count = ST_TX_ANC_SESSIONS_RING_SIZE;
+  ring = rte_ring_create(ring_name, count, mt_socket_id(impl, port), flags);
+  if (!ring) {
+    err("%s(%d), rte_ring_create fail for port %d\n", __func__, mgr_idx, port);
+    tx_ancillary_sessions_mgr_uinit_hw(mgr, port);
+    return -ENOMEM;
+  }
+  mgr->ring[port] = ring;
+  info("%s(%d,%d), succ, queue %d\n", __func__, mgr_idx, port,
+       mt_txq_queue_id(mgr->queue[port]));
 
   return 0;
 }
@@ -1286,6 +1284,12 @@ static int tx_ancillary_session_attach(struct mtl_main_impl* impl,
     enum mtl_port port = mt_port_logic2phy(s->port_maps, i);
     s->eth_ipv4_cksum_offload[i] = mt_if_has_offload_ipv4_cksum(impl, port);
     s->eth_has_chain[i] = mt_if_has_multi_seg(impl, port);
+
+    ret = tx_ancillary_sessions_mgr_init_hw(impl, mgr, port);
+    if (ret < 0) {
+      err("%s(%d), mgr init hw fail for port %d\n", __func__, idx, port);
+      return -EIO;
+    }
   }
   s->tx_mono_pool = mt_has_tx_mono_pool(impl);
   /* manually disable chain or any port can't support chain */
@@ -1467,7 +1471,7 @@ static int tx_ancillary_sessions_mgr_init(struct mtl_main_impl* impl,
                                           struct st_tx_ancillary_sessions_mgr* mgr) {
   int idx = sch->idx;
   struct mt_sch_tasklet_ops ops;
-  int ret, i;
+  int i;
 
   RTE_BUILD_BUG_ON(sizeof(struct st_rfc8331_anc_hdr) != 62);
 
@@ -1478,12 +1482,6 @@ static int tx_ancillary_sessions_mgr_init(struct mtl_main_impl* impl,
     rte_spinlock_init(&mgr->mutex[i]);
   }
 
-  ret = tx_ancillary_sessions_mgr_init_hw(impl, mgr);
-  if (ret < 0) {
-    err("%s(%d), tx_ancillary_sessions_mgr_init_hw fail %d\n", __func__, idx, ret);
-    return -EIO;
-  }
-
   memset(&ops, 0x0, sizeof(ops));
   ops.priv = mgr;
   ops.name = "tx_ancillary_sessions_mgr";
@@ -1492,7 +1490,6 @@ static int tx_ancillary_sessions_mgr_init(struct mtl_main_impl* impl,
 
   mgr->tasklet = mt_sch_register_tasklet(sch, &ops);
   if (!mgr->tasklet) {
-    tx_ancillary_sessions_mgr_uinit_hw(impl, mgr);
     err("%s(%d), mt_sch_register_tasklet fail\n", __func__, idx);
     return -EIO;
   }
@@ -1596,7 +1593,9 @@ static int tx_ancillary_sessions_mgr_uinit(struct st_tx_ancillary_sessions_mgr* 
     tx_ancillary_session_put(mgr, i);
   }
 
-  tx_ancillary_sessions_mgr_uinit_hw(impl, mgr);
+  for (int i = 0; i < mt_num_ports(impl); i++) {
+    tx_ancillary_sessions_mgr_uinit_hw(mgr, i);
+  }
 
   info("%s(%d), succ\n", __func__, m_idx);
   return 0;
