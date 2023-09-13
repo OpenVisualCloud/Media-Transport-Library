@@ -386,6 +386,7 @@ int mt_macaddr_get(struct mtl_main_impl* impl, enum mtl_port port,
   return rte_eth_macaddr_get(port_id, mac_addr);
 }
 
+#ifdef ST_PCAPNG_ENABLED
 struct rte_mbuf* mt_pcapng_copy(struct mtl_main_impl* impl, enum mtl_port port,
                                 struct mt_rxq_entry* rxq, const struct rte_mbuf* m,
                                 struct rte_mempool* mp, uint32_t length,
@@ -404,6 +405,7 @@ struct rte_mbuf* mt_pcapng_copy(struct mtl_main_impl* impl, enum mtl_port port,
 
   return mc;
 }
+#endif
 
 struct rte_mempool* mt_mempool_create_by_ops(struct mtl_main_impl* impl,
                                              enum mtl_port port, const char* name,

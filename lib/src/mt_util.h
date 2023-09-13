@@ -104,12 +104,6 @@ struct rte_mbuf* mt_build_pad(struct mtl_main_impl* impl, struct rte_mempool* me
 int mt_macaddr_get(struct mtl_main_impl* impl, enum mtl_port port,
                    struct rte_ether_addr* mac_addr);
 
-struct rte_mbuf* mt_pcapng_copy(struct mtl_main_impl* impl, enum mtl_port port,
-                                struct mt_rxq_entry* rxq, const struct rte_mbuf* m,
-                                struct rte_mempool* mp, uint32_t length,
-                                uint64_t timestamp, uint64_t tm_ns,
-                                enum rte_pcapng_direction direction);
-
 struct rte_mempool* mt_mempool_create_by_ops(struct mtl_main_impl* impl,
                                              enum mtl_port port, const char* name,
                                              unsigned int n, unsigned int cache_size,
