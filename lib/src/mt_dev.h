@@ -45,16 +45,16 @@ static inline uint16_t mt_dev_tx_queue_id(struct mt_tx_queue* queue) {
 int mt_dev_tx_queue_fatal_error(struct mtl_main_impl* impl, struct mt_tx_queue* queue);
 int mt_dev_set_tx_bps(struct mtl_main_impl* impl, enum mtl_port port, uint16_t q,
                       uint64_t bytes_per_sec);
-int mt_dev_flush_tx_queue(struct mtl_main_impl* impl, struct mt_tx_queue* queue,
-                          struct rte_mbuf* pad);
+int mt_dpdk_flush_tx_queue(struct mtl_main_impl* impl, struct mt_tx_queue* queue,
+                           struct rte_mbuf* pad);
 int mt_dev_tx_done_cleanup(struct mtl_main_impl* impl, struct mt_tx_queue* queue);
-static inline uint16_t mt_dev_tx_burst(struct mt_tx_queue* queue,
-                                       struct rte_mbuf** tx_pkts, uint16_t nb_pkts) {
+static inline uint16_t mt_dpdk_tx_burst(struct mt_tx_queue* queue,
+                                        struct rte_mbuf** tx_pkts, uint16_t nb_pkts) {
   return rte_eth_tx_burst(queue->port_id, queue->queue_id, tx_pkts, nb_pkts);
 }
-uint16_t mt_dev_tx_burst_busy(struct mtl_main_impl* impl, struct mt_tx_queue* queue,
-                              struct rte_mbuf** tx_pkts, uint16_t nb_pkts,
-                              int timeout_ms);
+uint16_t mt_dpdk_tx_burst_busy(struct mtl_main_impl* impl, struct mt_tx_queue* queue,
+                               struct rte_mbuf** tx_pkts, uint16_t nb_pkts,
+                               int timeout_ms);
 
 uint16_t mt_dev_tx_sys_queue_burst(struct mtl_main_impl* impl, enum mtl_port port,
                                    struct rte_mbuf** tx_pkts, uint16_t nb_pkts);
@@ -65,9 +65,9 @@ int mt_dev_put_rx_queue(struct mtl_main_impl* impl, struct mt_rx_queue* queue);
 static inline uint16_t mt_dev_rx_queue_id(struct mt_rx_queue* queue) {
   return queue->queue_id;
 }
-static inline uint16_t mt_dev_rx_burst(struct mt_rx_queue* queue,
-                                       struct rte_mbuf** rx_pkts,
-                                       const uint16_t nb_pkts) {
+static inline uint16_t mt_dpdk_rx_burst(struct mt_rx_queue* queue,
+                                        struct rte_mbuf** rx_pkts,
+                                        const uint16_t nb_pkts) {
   return rte_eth_rx_burst(queue->port_id, queue->queue_id, rx_pkts, nb_pkts);
 }
 

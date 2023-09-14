@@ -198,8 +198,8 @@ static struct mt_rx_flow_rsp* rx_flow_create(struct mt_interface* inf, uint16_t 
   rsp->flow_id = -1;
   rsp->queue_id = q;
 
-  /* no flow for af packet */
-  if (mt_pmd_is_af_packet(impl, port)) return rsp;
+  /* no flow if MT_DRV_F_RX_NO_FLOW */
+  if (inf->drv_info.flags & MT_DRV_F_RX_NO_FLOW) return rsp;
 
   if (inf->drv_info.flags & MT_DRV_F_USE_KERNEL_CTL) {
     ret = mt_socket_add_flow(impl, port, q, flow);
