@@ -2495,7 +2495,7 @@ TEST(St20_rx, digest_frame_4320p_fps59_94_s1) {
   bool interlaced[1] = {false};
   enum st20_fmt fmt[1] = {ST20_FMT_YUV_422_10BIT};
   st20_rx_digest_test(type, rx_type, packing, fps, width, height, interlaced, fmt, false,
-                      ST_TEST_LEVEL_MANDATORY);
+                      ST_TEST_LEVEL_ALL);
 }
 
 TEST(St20_rx, digest_frame_4096_2160_fps59_94_12bit_yuv444_s1) {

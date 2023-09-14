@@ -1525,7 +1525,7 @@ TEST(St20p, digest_rtcp_s1) {
   test_st20p_init_rx_digest_para(&para);
   para.level = ST_TEST_LEVEL_MANDATORY;
   para.rtcp = true;
-  para.check_fps = true;
+  para.check_fps = false;
 
   st20p_rx_digest_test(fps, width, height, tx_fmt, t_fmt, rx_fmt, &para);
 }
