@@ -656,6 +656,8 @@ struct st22p_rx_digest_test_para {
 };
 
 static void test_st22p_init_rx_digest_para(struct st22p_rx_digest_test_para* para) {
+  memset(para, 0, sizeof(*para));
+
   para->sessions = 1;
   para->fail_interval = 0;
   para->timeout_interval = 0;
@@ -665,6 +667,7 @@ static void test_st22p_init_rx_digest_para(struct st22p_rx_digest_test_para* par
   para->level = ST_TEST_LEVEL_MANDATORY;
   para->user_timestamp = false;
   para->vsync = true;
+  para->rtcp = false;
 }
 
 static void st22p_rx_digest_test(enum st_fps fps[], int width[], int height[],

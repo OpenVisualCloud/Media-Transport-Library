@@ -626,6 +626,8 @@ struct st20p_rx_digest_test_para {
 };
 
 static void test_st20p_init_rx_digest_para(struct st20p_rx_digest_test_para* para) {
+  memset(para, 0, sizeof(*para));
+
   para->device = ST_PLUGIN_DEVICE_TEST;
   para->sessions = 1;
   para->fail_interval = 0;
@@ -644,6 +646,7 @@ static void test_st20p_init_rx_digest_para(struct st20p_rx_digest_test_para* par
   para->send_done_check = false;
   para->interlace = false;
   para->user_meta = false;
+  para->rtcp = false;
 }
 
 static void st20p_rx_digest_test(enum st_fps fps[], int width[], int height[],
