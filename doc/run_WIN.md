@@ -35,9 +35,30 @@ Privilege is applied upon next logon. In particular, if privilege has been grant
 
 * Reboot to enable it.
 
-## 2 Install virt2phys Driver
+## 2. NIC setup
 
-### 2.1 Compile the driver
+### 2.1 Update NIC FW and driver to latest version
+
+Refer to <https://www.intel.com/content/www/us/en/download/15084/intel-ethernet-adapter-complete-driver-pack.html>.
+
+### 2.2 Update the ICE DDP package file: ice.pkg
+
+To get the latest DDP file (ice-1.3.30.0.pkg), visit <https://www.intel.com/content/www/us/en/download/19630/intel-network-adapter-driver-for-e810-series-devices-under-linux.html>, unzip the driver and go to the DDP directory.
+
+The Windows ICE driver will try to search for the DDP file with the path "c:\dpdk\lib\ice.pkg" or ".\ice.pkg". Please place the latest DDP file in one of these locations and rename it to ice.pkg. Otherwise, you will see the following error when running the RxTxApp.
+
+```bash
+ice_load_pkg(): failed to search file path
+ice_dev_init(): Failed to load the DDP package, Use safe-mode-support=1 to enter Safe Mode
+```
+
+### 2.3 Create the temp folder in root directory c:\temp
+
+The library will generate or search for `kahawai.lcore` file in this path.
+
+## 3 Install virt2phys Driver
+
+### 3.1 Compile the driver
 
 Donwnload the source code from <git://dpdk.org/dpdk-kmods>.
 
@@ -45,7 +66,7 @@ Currently the virt2phy driver has a bug to get the valid iova (physical address)
 
 Compile the virt2phys project using VS(Visual Studio) 2019, see README in dpdk-kmods repository.
 
-### 2.2 Option 1: use devcon to install driver
+### 3.2 Option 1: use devcon to install driver
 
 Get devcon.exe from Windows WDK package (if you don't want WDK, you can refer to <https://networchestration.wordpress.com/2016/07/11/how-to-obtain-device-console-utility-devcon-exe-without-downloading-and-installing-the-entire-windows-driver-kit-100-working-method/> for how to get devcon.exe), copy the devcon.exe to your netuio driver folder.
 
@@ -55,7 +76,7 @@ execute command:
 devcon.exe install virt2phys.inf root\virt2phys
 ```
 
-### 2.3 Option 2: manually install virt2phys driver
+### 3.3 Option 2: manually install virt2phys driver
 
 * From Device Manager, Action menu, select "Add legacy hardware".
 * It will launch the "Add Hardware Wizard". Click "Next".
@@ -68,23 +89,23 @@ devcon.exe install virt2phys.inf root\virt2phys
 
 The previously installed drivers will now be installed for the "Virtual to physical address translator" device. Here we just go through next and finish buttons.
 
-### 2.4 When there is a problem with driver installation are needed more steps
+### 3.4 When there is a problem with driver installation are needed more steps
 
 * Test sign the driver using a test certificate and then boot the Windows in "Test mode", or
 
 * Use the boot time option to "Disable driver signature enforcement".
 
-### 2.5 Make sure that the driver was installed
+### 3.5 Make sure that the driver was installed
 
 ![Image](./png/virt2phy.png)
 
-## 3. Steps for netuio driver
+## 4. Steps for netuio driver
 
-### 3.1 Compile the driver
+### 4.1 Compile the driver
 
 Compile the netuio project with latest dpdk-kmod code using VS 2019, see README in dpdk-kmods repository.
 
-### 3.2 Option 1: use devcon to install driver
+### 4.2 Option 1: use devcon to install driver
 
 execute command:
 
@@ -94,7 +115,7 @@ devcon.exe update netuio.inf "PCI\VEN_8086&DEV_1592"
 
 "1592" is for E810, You can change it per your NIC type.
 
-### 3.3 Option 2: manually install netuio driver
+### 4.3 Option 2: manually install netuio driver
 
 * Go to Device Manager -> Network Adapters.
 * Right Click on target E810 network adapter -> Select Update Driver.
@@ -103,30 +124,15 @@ devcon.exe update netuio.inf "PCI\VEN_8086&DEV_1592"
 * Select "DPDK netUIO for Network Adapter" from the list of drivers.
 * The NetUIO.sys driver is successfully installed.
 
-### 3.4 Make sure that the driver was installed
+### 4.4 Make sure that the driver was installed
 
 ![Image](./png/netuio.png)
 
-## 4. NIC setup
+### 4.5 Get the PCI port name used for IMTL
 
-### 4.1 Update NIC FW and driver to latest version
+In contrast to Linux, Windows does not support the use of the nicctl.sh script, lspci, and dpdk-devbind.py. Once the driver is installed in the Windows UIO section, the NIC is automatically bound to PMD in the Device Manager.
 
-Refer to <https://www.intel.com/content/www/us/en/download/15084/intel-ethernet-adapter-complete-driver-pack.html>.
-
-### 4.2 Update the ICE DDP package file: ice.pkg
-
-To get the latest DDP file (ice-1.3.30.0.pkg), visit <https://www.intel.com/content/www/us/en/download/19630/intel-network-adapter-driver-for-e810-series-devices-under-linux.html>, unzip the driver and go to the DDP directory.
-
-The Windows ICE driver will try to search for the DDP file with the path "c:\dpdk\lib\ice.pkg" or ".\ice.pkg". Please place the latest DDP file in one of these locations and rename it to ice.pkg. Otherwise, you will see the following error when running the RxTxApp.
-
-```bash
-ice_load_pkg(): failed to search file path
-ice_dev_init(): Failed to load the DDP package, Use safe-mode-support=1 to enter Safe Mode
-```
-
-### 4.3 Create the temp folder in root directory c:\temp
-
-The library will generate or search for `kahawai.lcore` file in this path.
+The port name can be obtained from the same location. For instance, as shown in the previous figure, the PCI number in the Location field is `bus 175, device 0, function 0`. When converted to hexadecimal format, this becomes `0000:af:00.0`, which is usable for IMTL.
 
 ## 5. Run and test
 
