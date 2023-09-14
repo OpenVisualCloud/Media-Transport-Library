@@ -145,7 +145,7 @@ extern "C" {
 #define ST20_RX_FLAG_ENABLE_RTCP (MTL_BIT32(2))
 /**
  * Flag bit in flags of struct st20_rx_ops.
- * If enabled, simulate random packet loss.
+ * If enabled, simulate random packet loss, test usage only.
  */
 #define ST20_RX_FLAG_SIMULATE_PKT_LOSS (MTL_BIT32(3))
 
@@ -209,7 +209,7 @@ extern "C" {
 #define ST22_RX_FLAG_ENABLE_RTCP (MTL_BIT32(3))
 /**
  * Flag bit in flags of struct st22_rx_ops.
- * If enabled, simulate random packet loss.
+ * If enabled, simulate random packet loss, test usage only.
  */
 #define ST22_RX_FLAG_SIMULATE_PKT_LOSS (MTL_BIT32(4))
 
@@ -1230,6 +1230,16 @@ struct st_rx_rtcp_ops {
    * Only used when ST20/22_RX_FLAG_ENABLE_RTCP flag set.
    */
   uint16_t seq_skip_window;
+  /**
+   * Optional. max burst of simulated packet loss.
+   * Only used when ST2*_RX_FLAG_SIMULATE_PKT_LOSS enabled.
+   */
+  uint16_t burst_loss_max;
+  /**
+   * Optional. simulated packet loss rate
+   * Only used when ST2*_RX_FLAG_SIMULATE_PKT_LOSS enabled.
+   */
+  float sim_loss_rate;
 };
 
 /**
@@ -1308,16 +1318,6 @@ struct st20_rx_ops {
   int (*notify_event)(void* priv, enum st_event event, void* args);
   /** Optional for ST20_RX_FLAG_ENABLE_RTCP. RTCP info */
   struct st_rx_rtcp_ops* rtcp;
-  /**
-   * Optional. max burst of simulated packet loss.
-   * Only used when ST20_RX_FLAG_SIMULATE_PKT_LOSS enabled.
-   */
-  uint16_t burst_loss_max;
-  /**
-   * Optional. simulated packet loss rate
-   * Only used when ST20_RX_FLAG_SIMULATE_PKT_LOSS enabled.
-   */
-  float sim_loss_rate;
   /**
    * Optional. Session linesize(stride) in bytes, leave to zero if no padding for each
    * line. Valid linesize should be wider than width size.
@@ -1455,16 +1455,6 @@ struct st22_rx_ops {
   int (*notify_event)(void* priv, enum st_event event, void* args);
   /** Optional for ST22_RX_FLAG_ENABLE_RTCP, RTCP info */
   struct st_rx_rtcp_ops* rtcp;
-  /**
-   * Optional. max burst of simulated packet loss.
-   * Only used when ST20_RX_FLAG_SIMULATE_PKT_LOSS enabled.
-   */
-  uint16_t burst_loss_max;
-  /**
-   * Optional. simulated packet loss rate
-   * Only used when ST20_RX_FLAG_SIMULATE_PKT_LOSS enabled.
-   */
-  float sim_loss_rate;
 
   /** Mandatory for ST22_TYPE_RTP_LEVEL. rtp ring queue size, must be power of 2 */
   uint32_t rtp_ring_size;

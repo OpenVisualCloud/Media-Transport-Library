@@ -622,6 +622,7 @@ struct st20p_rx_digest_test_para {
   bool send_done_check;
   bool interlace;
   bool user_meta;
+  bool rtcp;
 };
 
 static void test_st20p_init_rx_digest_para(struct st20p_rx_digest_test_para* para) {
@@ -748,6 +749,14 @@ static void st20p_rx_digest_test(enum st_fps fps[], int width[], int height[],
     }
     if (para->user_timestamp) ops_tx.flags |= ST20P_TX_FLAG_USER_TIMESTAMP;
     if (para->vsync) ops_tx.flags |= ST20P_TX_FLAG_ENABLE_VSYNC;
+
+    struct st_tx_rtcp_ops ops_tx_rtcp;
+    memset(&ops_tx_rtcp, 0, sizeof(ops_tx_rtcp));
+    if (para->rtcp) {
+      ops_tx.flags |= ST20P_TX_FLAG_ENABLE_RTCP;
+      ops_tx_rtcp.rtcp_buffer_size = 512;
+      ops_tx.rtcp = &ops_tx_rtcp;
+    }
 
     uint8_t planes = st_frame_fmt_planes(tx_fmt[i]);
     test_ctx_tx[i]->frame_size =
@@ -960,6 +969,17 @@ static void st20p_rx_digest_test(enum st_fps fps[], int width[], int height[],
     if (para->vsync) ops_rx.flags |= ST20P_RX_FLAG_ENABLE_VSYNC;
     if (para->rx_get_ext) ops_rx.flags |= ST20P_RX_FLAG_EXT_FRAME;
     if (para->pkt_convert) ops_rx.flags |= ST20P_RX_FLAG_PKT_CONVERT;
+
+    struct st_rx_rtcp_ops ops_rx_rtcp;
+    memset(&ops_rx_rtcp, 0, sizeof(ops_rx_rtcp));
+    if (para->rtcp) {
+      ops_rx.flags |= ST20P_RX_FLAG_ENABLE_RTCP | ST20P_RX_FLAG_SIMULATE_PKT_LOSS;
+      ops_rx_rtcp.nack_interval_us = 100;
+      ops_rx_rtcp.seq_skip_window = 0;
+      ops_rx_rtcp.burst_loss_max = 4;
+      ops_rx_rtcp.sim_loss_rate = 0.0001;
+      ops_rx.rtcp = &ops_rx_rtcp;
+    }
 
     rx_handle[i] = st20p_rx_create(st, &ops_rx);
     ASSERT_TRUE(rx_handle[i] != NULL);
@@ -1489,6 +1509,23 @@ TEST(St20p, digest_user_meta_s2) {
   para.level = ST_TEST_LEVEL_MANDATORY;
   para.user_meta = true;
   para.check_fps = false;
+
+  st20p_rx_digest_test(fps, width, height, tx_fmt, t_fmt, rx_fmt, &para);
+}
+
+TEST(St20p, digest_rtcp_s1) {
+  enum st_fps fps[1] = {ST_FPS_P59_94};
+  int width[1] = {1920};
+  int height[1] = {1080};
+  enum st_frame_fmt tx_fmt[1] = {ST_FRAME_FMT_YUV422RFC4175PG2BE10};
+  enum st20_fmt t_fmt[1] = {ST20_FMT_YUV_422_10BIT};
+  enum st_frame_fmt rx_fmt[1] = {ST_FRAME_FMT_YUV422RFC4175PG2BE10};
+
+  struct st20p_rx_digest_test_para para;
+  test_st20p_init_rx_digest_para(&para);
+  para.level = ST_TEST_LEVEL_MANDATORY;
+  para.rtcp = true;
+  para.check_fps = true;
 
   st20p_rx_digest_test(fps, width, height, tx_fmt, t_fmt, rx_fmt, &para);
 }

@@ -1171,13 +1171,18 @@ static void st22_digest_rx_frame_check(void* args) {
 
 /* only frame level */
 static void st22_rx_digest_test(enum st_fps fps[], int width[], int height[],
-                                int pkt_data_len[], int total_pkts[], int sessions = 1,
+                                int pkt_data_len[], int total_pkts[],
+                                enum st_test_level level, int sessions = 1,
                                 bool enable_rtcp = false) {
   auto ctx = (struct st_tests_context*)st_test_ctx();
   auto m_handle = ctx->handle;
   int ret;
   struct st22_tx_ops ops_tx;
   struct st22_rx_ops ops_rx;
+
+  /* return if level small than global */
+  if (level < ctx->level) return;
+
   if (ctx->para.num_ports != 2) {
     info("%s, dual port should be enabled for tx test, one for tx and one for rx\n",
          __func__);
@@ -1300,9 +1305,9 @@ static void st22_rx_digest_test(enum st_fps fps[], int width[], int height[],
       ops_rx.flags |= ST22_RX_FLAG_ENABLE_RTCP | ST22_RX_FLAG_SIMULATE_PKT_LOSS;
       ops_rx_rtcp.nack_interval_us = 100;
       ops_rx_rtcp.seq_skip_window = 0;
+      ops_rx_rtcp.burst_loss_max = 4;
+      ops_rx_rtcp.sim_loss_rate = 0.0001;
       ops_rx.rtcp = &ops_rx_rtcp;
-      ops_rx.burst_loss_max = 4;
-      ops_rx.sim_loss_rate = 0.002;
     }
 
     ops_rx.notify_rtp_ready = st22_rx_rtp_ready;
@@ -1373,7 +1378,8 @@ TEST(St22_rx, digest_s2) {
   int height[2] = {1080, 1080};
   int pkt_data_len[2] = {1280, 1280};
   int total_pkts[2] = {551, 1520};
-  st22_rx_digest_test(fps, width, height, pkt_data_len, total_pkts, 2);
+  st22_rx_digest_test(fps, width, height, pkt_data_len, total_pkts,
+                      ST_TEST_LEVEL_MANDATORY, 2);
 }
 
 TEST(St22_rx, digest_rtcp_s2) {
@@ -1382,7 +1388,8 @@ TEST(St22_rx, digest_rtcp_s2) {
   int height[2] = {1080, 1080};
   int pkt_data_len[2] = {1280, 1280};
   int total_pkts[2] = {551, 1520};
-  st22_rx_digest_test(fps, width, height, pkt_data_len, total_pkts, 2, true);
+  st22_rx_digest_test(fps, width, height, pkt_data_len, total_pkts, ST_TEST_LEVEL_ALL, 2,
+                      true);
 }
 
 static void st22_tx_user_pacing_test(int width[], int height[], int pkt_data_len[],

@@ -1979,9 +1979,9 @@ static void st20_rx_digest_test(enum st20_type tx_type[], enum st20_type rx_type
       ops_rx_rtcp.nack_interval_us = 250;
       ops_rx_rtcp.seq_bitmap_size = 32;
       ops_rx_rtcp.seq_skip_window = 10;
+      ops_rx_rtcp.burst_loss_max = 32;
+      ops_rx_rtcp.sim_loss_rate = 0.0001;
       ops_rx.rtcp = &ops_rx_rtcp;
-      ops_rx.burst_loss_max = 32;
-      ops_rx.sim_loss_rate = 0.0001;
     }
 
     if (rx_type[i] == ST20_TYPE_SLICE_LEVEL) {
@@ -2572,7 +2572,7 @@ TEST(St20_rx, digest_rtcp_s1) {
   enum st20_fmt fmt[1] = {ST20_FMT_YUV_422_10BIT};
   /* check fps */
   st20_rx_digest_test(type, type, packing, fps, width, height, interlaced, fmt, true,
-                      ST_TEST_LEVEL_MANDATORY, 1, false, false, true);
+                      ST_TEST_LEVEL_ALL, 1, false, false, true);
 }
 
 TEST(St20_rx, digest_rtcp_s3) {

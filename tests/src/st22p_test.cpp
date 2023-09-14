@@ -652,6 +652,7 @@ struct st22p_rx_digest_test_para {
   enum st_test_level level;
   bool user_timestamp;
   bool vsync;
+  bool rtcp;
 };
 
 static void test_st22p_init_rx_digest_para(struct st22p_rx_digest_test_para* para) {
@@ -759,6 +760,14 @@ static void st22p_rx_digest_test(enum st_fps fps[], int width[], int height[],
     if (para->user_timestamp) ops_tx.flags |= ST22P_TX_FLAG_USER_TIMESTAMP;
     if (para->vsync) ops_tx.flags |= ST22P_TX_FLAG_ENABLE_VSYNC;
 
+    struct st_tx_rtcp_ops ops_tx_rtcp;
+    memset(&ops_tx_rtcp, 0, sizeof(ops_tx_rtcp));
+    if (para->rtcp) {
+      ops_tx.flags |= ST22P_TX_FLAG_ENABLE_RTCP;
+      ops_tx_rtcp.rtcp_buffer_size = 512;
+      ops_tx.rtcp = &ops_tx_rtcp;
+    }
+
     test_ctx_tx[i]->frame_size =
         st_frame_size(ops_tx.input_fmt, ops_tx.width, ops_tx.height, false);
 
@@ -829,6 +838,17 @@ static void st22p_rx_digest_test(enum st_fps fps[], int width[], int height[],
     ops_rx.notify_frame_available = test_st22p_rx_frame_available;
     ops_rx.notify_event = test_ctx_notify_event;
     if (para->vsync) ops_rx.flags |= ST22P_RX_FLAG_ENABLE_VSYNC;
+
+    struct st_rx_rtcp_ops ops_rx_rtcp;
+    memset(&ops_rx_rtcp, 0, sizeof(ops_rx_rtcp));
+    if (para->rtcp) {
+      ops_rx.flags |= ST22P_RX_FLAG_ENABLE_RTCP | ST22P_RX_FLAG_SIMULATE_PKT_LOSS;
+      ops_rx_rtcp.nack_interval_us = 100;
+      ops_rx_rtcp.seq_skip_window = 0;
+      ops_rx_rtcp.burst_loss_max = 4;
+      ops_rx_rtcp.sim_loss_rate = 0.0001;
+      ops_rx.rtcp = &ops_rx_rtcp;
+    }
 
     test_ctx_rx[i]->frame_size =
         st_frame_size(ops_rx.output_fmt, ops_rx.width, ops_rx.height, false);
@@ -1005,6 +1025,24 @@ TEST(St22p, digest_st22_1080p_rand_size) {
   struct st22p_rx_digest_test_para para;
   test_st22p_init_rx_digest_para(&para);
   para.rand_ratio = 30;
+
+  st22p_rx_digest_test(fps, width, height, fmt, codec, compress_ratio, &para);
+}
+
+TEST(St22p, digest_st22_s2_rtcp) {
+  enum st_fps fps[2] = {ST_FPS_P59_94, ST_FPS_P50};
+  int width[2] = {1920, 1920};
+  int height[2] = {1080, 1080};
+  enum st_frame_fmt fmt[2] = {ST_FRAME_FMT_YUV422PLANAR10LE,
+                              ST_FRAME_FMT_YUV422PLANAR10LE};
+  enum st22_codec codec[2] = {ST22_CODEC_JPEGXS, ST22_CODEC_JPEGXS};
+  int compress_ratio[2] = {10, 16};
+
+  struct st22p_rx_digest_test_para para;
+  test_st22p_init_rx_digest_para(&para);
+  para.sessions = 2;
+  para.check_fps = false;
+  para.rtcp = true;
 
   st22p_rx_digest_test(fps, width, height, fmt, codec, compress_ratio, &para);
 }

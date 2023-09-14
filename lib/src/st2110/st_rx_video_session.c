@@ -3214,10 +3214,21 @@ static int rv_attach(struct mtl_main_impl* impl, struct st_rx_video_sessions_mgr
   for (int i = 0; i < num_port; i++) {
     s->st20_dst_port[i] = (ops->udp_port[i]) ? (ops->udp_port[i]) : (10000 + idx * 2);
   }
-  s->burst_loss_max = ops->burst_loss_max ? ops->burst_loss_max : 32;
-  s->sim_loss_rate = (ops->sim_loss_rate > 0.0 && ops->sim_loss_rate < 1.0)
-                         ? ops->sim_loss_rate
-                         : 0.0001;
+
+  /* init simulated packet loss for test usage */
+  if (s->ops.flags & ST20_RX_FLAG_SIMULATE_PKT_LOSS) {
+    uint16_t burst_loss_max = 32;
+    float sim_loss_rate = 0.0001;
+    if (ops->rtcp) {
+      if (ops->rtcp->burst_loss_max) burst_loss_max = ops->rtcp->burst_loss_max;
+      if (ops->rtcp->sim_loss_rate > 0.0 && ops->rtcp->sim_loss_rate < 1.0)
+        sim_loss_rate = ops->rtcp->sim_loss_rate;
+    }
+    s->burst_loss_max = burst_loss_max;
+    s->sim_loss_rate = sim_loss_rate;
+    info("%s(%d), simulated packet loss max burst %u rate %f\n", __func__, idx,
+         burst_loss_max, sim_loss_rate);
+  }
 
   s->stat_pkts_idx_dropped = 0;
   s->stat_pkts_idx_oo_bitmap = 0;
@@ -4505,8 +4516,6 @@ st22_rx_handle st22_rx_create(mtl_handle mt, struct st22_rx_ops* ops) {
   st20_ops.notify_rtp_ready = ops->notify_rtp_ready;
   st20_ops.framebuff_cnt = ops->framebuff_cnt;
   st20_ops.notify_event = ops->notify_event;
-  st20_ops.burst_loss_max = ops->burst_loss_max;
-  st20_ops.sim_loss_rate = ops->sim_loss_rate;
   mt_pthread_mutex_lock(&sch->rx_video_mgr_mutex);
   s = rv_mgr_attach(&sch->rx_video_mgr, &st20_ops, ops);
   mt_pthread_mutex_unlock(&sch->rx_video_mgr_mutex);
