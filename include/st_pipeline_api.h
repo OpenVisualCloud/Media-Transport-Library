@@ -443,6 +443,12 @@ enum st22_quality_mode {
 #define ST22P_RX_FLAG_ENABLE_RTCP (MTL_BIT32(2))
 /**
  * Flag bit in flags of struct st22p_rx_ops.
+ * If enabled, simulate random packet loss, test usage only.
+ */
+#define ST22P_RX_FLAG_SIMULATE_PKT_LOSS (MTL_BIT32(3))
+
+/**
+ * Flag bit in flags of struct st22p_rx_ops.
  * If set, lib will pass the incomplete frame to app also.
  * User can check st_frame_status data for the frame integrity
  */
@@ -478,6 +484,12 @@ enum st22_quality_mode {
  * If enable the rtcp.
  */
 #define ST20P_RX_FLAG_ENABLE_RTCP (MTL_BIT32(4))
+/**
+ * Flag bit in flags of struct st20p_rx_ops.
+ * If enabled, simulate random packet loss, test usage only.
+ */
+#define ST20P_RX_FLAG_SIMULATE_PKT_LOSS (MTL_BIT32(5))
+
 /**
  * Flag bit in flags of struct st20p_rx_ops.
  * If set, lib will pass the incomplete frame to app also.
@@ -738,6 +750,8 @@ struct st20p_tx_ops {
   /** Optional. Array of external frames */
   struct st_ext_frame* ext_frames;
 
+  /** Optional for ST20P_TX_FLAG_ENABLE_RTCP. RTCP info */
+  struct st_tx_rtcp_ops* rtcp;
   /**
    * Optional. tx destination mac address.
    * Valid if ST20P_TX_FLAG_USER_P(R)_MAC is enabled
@@ -816,6 +830,8 @@ struct st20p_rx_ops {
   size_t transport_linesize;
   /** Optional. Array of external frames */
   struct st_ext_frame* ext_frames;
+  /** Optional for ST20_RX_FLAG_ENABLE_RTCP. RTCP info */
+  struct st_rx_rtcp_ops* rtcp;
   /**
    * Optional. Callback when the lib query next external frame's data address.
    * Only for non-convert mode with ST20P_RX_FLAG_RECEIVE_INCOMPLETE_FRAME.
@@ -883,7 +899,7 @@ struct st22p_tx_ops {
    */
   int (*notify_frame_done)(void* priv, struct st_frame* frame);
 
-  /** Optional for ST22_TX_FLAG_ENABLE_RTCP. RTCP info */
+  /** Optional for ST22P_TX_FLAG_ENABLE_RTCP. RTCP info */
   struct st_tx_rtcp_ops* rtcp;
   /**
    * Optional. tx destination mac address.
@@ -934,6 +950,8 @@ struct st22p_rx_ops {
   uint32_t codec_thread_cnt;
   /** Optional. max codestream size, lib will use output frame size if not set */
   size_t max_codestream_size;
+  /** Optional for ST22P_RX_FLAG_ENABLE_RTCP. RTCP info */
+  struct st_rx_rtcp_ops* rtcp;
   /**
    * Optional. Callback when frame available in the lib.
    * And only non-block method can be used within this callback as it run from lcore

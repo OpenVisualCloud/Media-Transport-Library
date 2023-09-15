@@ -363,6 +363,12 @@ static int rx_st20p_create_transport(struct mtl_main_impl* impl, struct st20p_rx
     ops_rx.uframe_pg_callback = rx_st20p_packet_convert;
     ops_rx.uframe_size = st20_frame_size(ops->transport_fmt, ops->width, ops->height);
   }
+  if (ops->flags & ST20P_RX_FLAG_ENABLE_RTCP) {
+    ops_rx.flags |= ST20_RX_FLAG_ENABLE_RTCP;
+    ops_rx.rtcp = ops->rtcp;
+    if (ops->flags & ST20P_RX_FLAG_SIMULATE_PKT_LOSS)
+      ops_rx.flags |= ST20_RX_FLAG_SIMULATE_PKT_LOSS;
+  }
   ops_rx.pacing = ST21_PACING_NARROW;
   ops_rx.width = ops->width;
   ops_rx.height = ops->height;

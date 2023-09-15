@@ -274,7 +274,10 @@ static int tx_st20p_create_transport(struct mtl_main_impl* impl, struct st20p_tx
   if (ops->flags & ST20P_TX_FLAG_ENABLE_VSYNC) ops_tx.flags |= ST20_TX_FLAG_ENABLE_VSYNC;
   if (ops->flags & ST20P_TX_FLAG_DISABLE_STATIC_PAD_P)
     ops_tx.flags |= ST20_TX_FLAG_DISABLE_STATIC_PAD_P;
-  if (ops->flags & ST20P_TX_FLAG_ENABLE_RTCP) ops_tx.flags |= ST20_TX_FLAG_ENABLE_RTCP;
+  if (ops->flags & ST20P_TX_FLAG_ENABLE_RTCP) {
+    ops_tx.flags |= ST20_TX_FLAG_ENABLE_RTCP;
+    ops_tx.rtcp = ops->rtcp;
+  }
   if (ops->flags & ST20P_TX_FLAG_RTP_TIMESTAMP_FIRST_PKT)
     ops_tx.flags |= ST20_TX_FLAG_RTP_TIMESTAMP_FIRST_PKT;
   if (ops->flags & ST20P_TX_FLAG_DISABLE_BULK) ops_tx.flags |= ST20_TX_FLAG_DISABLE_BULK;

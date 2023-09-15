@@ -201,6 +201,12 @@ static int rx_st22p_create_transport(struct mtl_main_impl* impl, struct st22p_rx
   if (ops->flags & ST22P_RX_FLAG_DATA_PATH_ONLY)
     ops_rx.flags |= ST22_RX_FLAG_DATA_PATH_ONLY;
   if (ops->flags & ST22P_RX_FLAG_ENABLE_VSYNC) ops_rx.flags |= ST22_RX_FLAG_ENABLE_VSYNC;
+  if (ops->flags & ST22P_RX_FLAG_ENABLE_RTCP) {
+    ops_rx.flags |= ST22_RX_FLAG_ENABLE_RTCP;
+    ops_rx.rtcp = ops->rtcp;
+    if (ops->flags & ST22P_RX_FLAG_SIMULATE_PKT_LOSS)
+      ops_rx.flags |= ST22_RX_FLAG_SIMULATE_PKT_LOSS;
+  }
   if (ops->flags & ST22P_RX_FLAG_RECEIVE_INCOMPLETE_FRAME)
     ops_rx.flags |= ST22_RX_FLAG_RECEIVE_INCOMPLETE_FRAME;
   ops_rx.pacing = ST21_PACING_NARROW;
