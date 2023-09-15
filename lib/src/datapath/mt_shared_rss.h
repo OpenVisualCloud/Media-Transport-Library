@@ -5,7 +5,7 @@
 #ifndef _MT_LIB_SHARED_RSS_HEAD_H_
 #define _MT_LIB_SHARED_RSS_HEAD_H_
 
-#include "mt_main.h"
+#include "../mt_main.h"
 
 int mt_srss_init(struct mtl_main_impl* impl);
 

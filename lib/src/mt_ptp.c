@@ -5,7 +5,7 @@
 #include "mt_ptp.h"
 
 #include "mt_cni.h"
-#include "mt_queue.h"
+#include "mt_dev.h"
 // #define DEBUG
 #include "mt_log.h"
 #include "mt_mcast.h"

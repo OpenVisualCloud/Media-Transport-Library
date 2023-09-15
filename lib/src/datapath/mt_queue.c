@@ -2,9 +2,13 @@
  * Copyright(c) 2023 Intel Corporation
  */
 
-#include "mt_queue.h"
+#include "../mt_queue.h"
 
-#include "mt_log.h"
+#include "../mt_cni.h"
+#include "../mt_dev.h"
+#include "../mt_log.h"
+#include "mt_shared_queue.h"
+#include "mt_shared_rss.h"
 
 static uint16_t rx_socket_burst(struct mt_rxq_entry* entry, struct rte_mbuf** rx_pkts,
                                 const uint16_t nb_pkts) {

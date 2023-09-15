@@ -2,10 +2,7 @@
  * Copyright(c) 2023 Intel Corporation
  */
 
-#include "mt_cni.h"
-#include "mt_dev.h"
-#include "mt_shared_queue.h"
-#include "mt_shared_rss.h"
+#include "mt_main.h"
 
 #ifndef _MT_LIB_QUEUE_HEAD_H_
 #define _MT_LIB_QUEUE_HEAD_H_
