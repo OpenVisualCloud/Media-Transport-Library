@@ -5,10 +5,9 @@
 
 #include "mt_dp_socket.h"
 
-#include <mtl/mudp_api.h>
-
 #include "../mt_log.h"
 #include "../mt_util.h"
+#include "mudp_api.h"
 
 #define MT_RX_DP_SOCKET_MEMPOOL_PREFIX "SR_"
 
