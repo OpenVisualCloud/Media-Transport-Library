@@ -126,9 +126,9 @@ static int csq_stat(struct mt_cni_entry* cni) {
 
 static int cni_virtio_handle(struct mt_cni_entry* cni, struct rte_mbuf* m) {
   struct mt_interface* inf = mt_if(cni->impl, cni->port);
-  int ret;
+  if (inf->virtio_port_id == 0) return 0;
 
-  ret = rte_eth_tx_burst(inf->virtio_port_id, 0, &m, 1);
+  int ret = rte_eth_tx_burst(inf->virtio_port_id, 0, &m, 1);
   if (ret < 1) {
     warn("%s(%d), forward packet to kernel fail\n", __func__, cni->port);
     return -EIO;
