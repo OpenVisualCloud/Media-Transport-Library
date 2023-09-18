@@ -6,8 +6,8 @@
 
 #include <math.h>
 
+#include "../datapath/mt_queue.h"
 #include "../mt_log.h"
-#include "../mt_queue.h"
 #include "../mt_rtcp.h"
 #include "../mt_stat.h"
 #include "../mt_util.h"

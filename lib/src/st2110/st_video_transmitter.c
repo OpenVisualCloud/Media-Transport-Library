@@ -6,9 +6,9 @@
 
 #include <math.h>
 
+#include "../datapath/mt_queue.h"
 #include "../mt_log.h"
 #include "../mt_ptp.h"
-#include "../mt_queue.h"
 #include "../mt_rtcp.h"
 #include "st_err.h"
 #include "st_tx_video_session.h"

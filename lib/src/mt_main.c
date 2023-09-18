@@ -4,8 +4,7 @@
 
 #include "mt_main.h"
 
-#include "datapath/mt_shared_queue.h"
-#include "datapath/mt_shared_rss.h"
+#include "datapath/mt_queue.h"
 #include "mt_admin.h"
 #include "mt_arp.h"
 #include "mt_cni.h"
@@ -114,20 +113,9 @@ static int mt_main_create(struct mtl_main_impl* impl) {
 
   mt_dma_init(impl);
 
-  ret = mt_srss_init(impl);
+  ret = mt_dp_queue_init(impl);
   if (ret < 0) {
-    err("%s, mt_srss_init fail %d\n", __func__, ret);
-    return ret;
-  }
-
-  ret = mt_rsq_init(impl);
-  if (ret < 0) {
-    err("%s, mt_rsq_init fail %d\n", __func__, ret);
-    return ret;
-  }
-  ret = mt_tsq_init(impl);
-  if (ret < 0) {
-    err("%s, mt_tsq_init fail %d\n", __func__, ret);
+    err("%s, dp queue init fail %d\n", __func__, ret);
     return ret;
   }
 
@@ -226,9 +214,7 @@ static int mt_main_free(struct mtl_main_impl* impl) {
   mt_map_uinit(impl);
   mt_dma_uinit(impl);
   mt_dev_if_pre_uinit(impl);
-  mt_rsq_uinit(impl);
-  mt_tsq_uinit(impl);
-  mt_srss_uinit(impl);
+  mt_dp_queue_uinit(impl);
 
   mt_dev_free(impl);
   mt_flow_uinit(impl);

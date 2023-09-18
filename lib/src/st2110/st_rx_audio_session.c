@@ -6,8 +6,8 @@
 
 #include <math.h>
 
+#include "../datapath/mt_queue.h"
 #include "../mt_log.h"
-#include "../mt_queue.h"
 #include "../mt_stat.h"
 
 static inline double ra_ebu_pass_rate(struct st_rx_audio_ebu_result* ebu_result,

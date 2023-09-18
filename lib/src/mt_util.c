@@ -4,9 +4,9 @@
 
 #include "mt_util.h"
 
+#include "datapath/mt_queue.h"
 #include "mt_log.h"
 #include "mt_main.h"
-#include "mt_queue.h"
 
 #ifdef MTL_HAS_ASAN
 #include <execinfo.h>
