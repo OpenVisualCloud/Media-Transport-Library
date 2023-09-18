@@ -435,6 +435,11 @@ enum st21_tx_pacing_way {
  * Enable built-in PHC2SYS implementation.
  */
 #define MTL_FLAG_PHC2SYS_ENABLE (MTL_BIT64(46))
+/**
+ * Flag bit in flags of struct mtl_init_params.
+ * Enable virtio_user as exception path.
+ */
+#define MTL_FLAG_VIRTIO_USER (MTL_BIT64(47))
 
 /**
  * The structure describing how to init af_xdp interface.

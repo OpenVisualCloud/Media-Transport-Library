@@ -672,6 +672,11 @@ static int dev_stop_port(struct mt_interface* inf) {
   }
 
   if (!(inf->drv_info.flags & MT_DRV_F_NOT_DPDK_PMD)) {
+    if (mt_has_virtio_user(inf->parent)) {
+      ret = rte_eth_dev_stop(inf->virtio_port_id);
+      if (ret < 0)
+        err("%s(%d), rte_eth_dev_stop virtio port fail %d\n", __func__, port, ret);
+    }
     ret = rte_eth_dev_stop(port_id);
     if (ret < 0) err("%s(%d), rte_eth_dev_stop fail %d\n", __func__, port, ret);
   }
@@ -692,6 +697,11 @@ static int dev_close_port(struct mt_interface* inf) {
   }
 
   if (!(inf->drv_info.flags & MT_DRV_F_NOT_DPDK_PMD)) {
+    if (mt_has_virtio_user(inf->parent)) {
+      ret = rte_eth_dev_close(inf->virtio_port_id);
+      if (ret < 0)
+        err("%s(%d), rte_eth_dev_stop virtio port fail %d\n", __func__, port, ret);
+    }
     ret = rte_eth_dev_close(port_id);
     if (ret < 0) err("%s(%d), rte_eth_dev_close fail %d\n", __func__, port, ret);
   }
@@ -881,6 +891,15 @@ static int dev_config_port(struct mt_interface* inf) {
   if (ret < 0) {
     err("%s(%d), rte_eth_dev_configure fail %d\n", __func__, port, ret);
     return ret;
+  }
+
+  if (mt_has_virtio_user(impl)) {
+    port_conf = dev_port_conf;
+    ret = rte_eth_dev_configure(inf->virtio_port_id, 1, 1, &port_conf);
+    if (ret < 0) {
+      err("%s(%d), rte_eth_dev_configure virtio port fail %d\n", __func__, port, ret);
+      return ret;
+    }
   }
 
   /* apply if user has rx_tx_desc config */
@@ -1079,6 +1098,29 @@ static int dev_start_port(struct mt_interface* inf) {
     err("%s(%d), rte_eth_dev_start fail %d\n", __func__, port, ret);
     return ret;
   }
+
+  if (mt_has_virtio_user(impl)) {
+    mbuf_pool = inf->rx_queues[0].mbuf_pool ? inf->rx_queues[0].mbuf_pool
+                                            : mt_get_rx_mempool(impl, port);
+    ret = rte_eth_rx_queue_setup(inf->virtio_port_id, 0, 0, socket_id, NULL, mbuf_pool);
+    if (ret < 0) {
+      err("%s(%d), rte_eth_rx_queue_setup fail %d for virtio port\n", __func__, port,
+          ret);
+      return ret;
+    }
+    ret = rte_eth_tx_queue_setup(inf->virtio_port_id, 0, 0, socket_id, NULL);
+    if (ret < 0) {
+      err("%s(%d), rte_eth_tx_queue_setup fail %d for virtio port\n", __func__, port,
+          ret);
+      return ret;
+    }
+    ret = rte_eth_dev_start(inf->virtio_port_id);
+    if (ret < 0) {
+      err("%s(%d), rte_eth_dev_start virtio port fail %d\n", __func__, port, ret);
+      return ret;
+    }
+  }
+
   inf->status |= MT_IF_STAT_PORT_STARTED;
 
   if (mt_has_srss(impl, port)) {
@@ -1547,6 +1589,46 @@ static int dev_if_init_pacing(struct mt_interface* inf) {
   }
 
   return 0;
+}
+
+static int dev_if_init_virtio_user(struct mt_interface* inf) {
+#ifndef WINDOWSENV
+  enum mtl_port port = inf->port;
+  uint16_t port_id = inf->port_id;
+  int ret;
+  char name[32];
+  char args[256];
+  struct rte_ether_addr addr = {0};
+
+  rte_eth_macaddr_get(port_id, &addr);
+
+  snprintf(name, sizeof(name), "virtio_user%u", port_id);
+  snprintf(
+      args, sizeof(args),
+      "path=/dev/vhost-net,queues=1,queue_size=%u,iface=%s,mac=" RTE_ETHER_ADDR_PRT_FMT,
+      1024, name, RTE_ETHER_ADDR_BYTES(&addr));
+
+  ret = rte_eal_hotplug_add("vdev", name, args);
+  if (ret < 0) {
+    err("%s(%d), cannot create virtio port for port %u\n", __func__, port, port_id);
+    return ret;
+  }
+
+  uint16_t virtio_port_id;
+  ret = rte_eth_dev_get_port_by_name(name, &virtio_port_id);
+  if (ret < 0) {
+    err("%s(%d), cannot get virtio port id for port %u\n", __func__, port, port_id);
+    return ret;
+  }
+  inf->virtio_port_id = virtio_port_id;
+
+  info("%s(%d), succ\n", __func__, port);
+  return 0;
+#else
+  MTL_MAY_UNUSED(inf);
+  warn("%s, virtio_user not support on Windows, you may need TAP\n", __func__);
+  return -ENOTSUP;
+#endif
 }
 
 static uint64_t ptp_from_real_time(struct mtl_main_impl* impl, enum mtl_port port) {
@@ -2360,6 +2442,14 @@ int mt_dev_if_init(struct mtl_main_impl* impl) {
       dbg("%s(%d), has rxq hdr split\n", __func__, i);
     }
 #endif
+
+    if (mt_has_virtio_user(impl)) {
+      ret = dev_if_init_virtio_user(inf);
+      if (ret < 0) {
+        err("%s(%d), init virtio_user fail\n", __func__, i);
+        return ret;
+      }
+    }
 
     ret = dev_config_port(inf);
     if (ret < 0) {
