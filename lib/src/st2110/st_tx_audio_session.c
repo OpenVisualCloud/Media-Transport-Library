@@ -4,8 +4,8 @@
 
 #include "st_tx_audio_session.h"
 
+#include "../datapath/mt_queue.h"
 #include "../mt_log.h"
-#include "../mt_queue.h"
 #include "../mt_stat.h"
 #include "st_audio_transmitter.h"
 #include "st_err.h"

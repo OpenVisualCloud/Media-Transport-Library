@@ -4,13 +4,13 @@
 
 #include "mt_dev.h"
 
+#include "datapath/mt_queue.h"
 #include "mt_arp.h"
 #include "mt_cni.h"
 #include "mt_dhcp.h"
 #include "mt_flow.h"
 #include "mt_log.h"
 #include "mt_mcast.h"
-#include "mt_queue.h"
 #include "mt_sch.h"
 #include "mt_stat.h"
 #include "mt_util.h"

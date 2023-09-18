@@ -2,13 +2,13 @@
  * Copyright(c) 2023 Intel Corporation
  */
 
-#include "mt_cni.h"
-#include "mt_dev.h"
-#include "mt_shared_queue.h"
-#include "mt_shared_rss.h"
+#include "../mt_main.h"
 
-#ifndef _MT_LIB_QUEUE_HEAD_H_
-#define _MT_LIB_QUEUE_HEAD_H_
+#ifndef _MT_LIB_DP_QUEUE_HEAD_H_
+#define _MT_LIB_DP_QUEUE_HEAD_H_
+
+int mt_dp_queue_init(struct mtl_main_impl* impl);
+int mt_dp_queue_uinit(struct mtl_main_impl* impl);
 
 struct mt_rxq_entry {
   struct mtl_main_impl* parent;

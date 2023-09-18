@@ -4,8 +4,8 @@
 
 #include "st_ancillary_transmitter.h"
 
+#include "../datapath/mt_queue.h"
 #include "../mt_log.h"
-#include "../mt_queue.h"
 #include "st_err.h"
 #include "st_tx_ancillary_session.h"
 

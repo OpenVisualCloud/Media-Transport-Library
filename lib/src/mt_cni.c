@@ -4,10 +4,10 @@
 
 #include "mt_cni.h"
 
+#include "datapath/mt_queue.h"
 #include "mt_arp.h"
 #include "mt_dhcp.h"
 #include "mt_kni.h"
-#include "mt_queue.h"
 // #define DEBUG
 #include "mt_dhcp.h"
 #include "mt_log.h"

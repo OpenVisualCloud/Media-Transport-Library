@@ -5,7 +5,7 @@
 #ifndef _MT_LIB_SQ_HEAD_H_
 #define _MT_LIB_SQ_HEAD_H_
 
-#include "mt_main.h"
+#include "../mt_main.h"
 
 int mt_rsq_init(struct mtl_main_impl* impl);
 int mt_rsq_uinit(struct mtl_main_impl* impl);

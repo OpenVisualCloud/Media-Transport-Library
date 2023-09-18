@@ -4,7 +4,11 @@
 
 #include "mt_queue.h"
 
-#include "mt_log.h"
+#include "../mt_cni.h"
+#include "../mt_dev.h"
+#include "../mt_log.h"
+#include "mt_shared_queue.h"
+#include "mt_shared_rss.h"
 
 static uint16_t rx_socket_burst(struct mt_rxq_entry* entry, struct rte_mbuf** rx_pkts,
                                 const uint16_t nb_pkts) {
@@ -211,4 +215,34 @@ uint16_t mt_txq_burst_busy(struct mt_txq_entry* entry, struct rte_mbuf** tx_pkts
   }
 
   return sent;
+}
+
+int mt_dp_queue_init(struct mtl_main_impl* impl) {
+  int ret;
+
+  ret = mt_srss_init(impl);
+  if (ret < 0) {
+    err("%s, srss init fail %d\n", __func__, ret);
+    return ret;
+  }
+
+  ret = mt_rsq_init(impl);
+  if (ret < 0) {
+    err("%s, rsq init fail %d\n", __func__, ret);
+    return ret;
+  }
+  ret = mt_tsq_init(impl);
+  if (ret < 0) {
+    err("%s, tsq init fail %d\n", __func__, ret);
+    return ret;
+  }
+
+  return 0;
+}
+
+int mt_dp_queue_uinit(struct mtl_main_impl* impl) {
+  mt_rsq_uinit(impl);
+  mt_tsq_uinit(impl);
+  mt_srss_uinit(impl);
+  return 0;
 }

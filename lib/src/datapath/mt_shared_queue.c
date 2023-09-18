@@ -4,11 +4,11 @@
 
 #include "mt_shared_queue.h"
 
-#include "mt_dev.h"
-#include "mt_flow.h"
-#include "mt_log.h"
-#include "mt_stat.h"
-#include "mt_util.h"
+#include "../mt_dev.h"
+#include "../mt_flow.h"
+#include "../mt_log.h"
+#include "../mt_stat.h"
+#include "../mt_util.h"
 
 #define MT_SQ_RING_PREFIX "SQ_"
 #define MT_SQ_BURST_SIZE (128)

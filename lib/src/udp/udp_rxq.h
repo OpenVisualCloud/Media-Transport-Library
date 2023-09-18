@@ -5,8 +5,8 @@
 #ifndef _MT_LIB_UDP_RXQ_H_
 #define _MT_LIB_UDP_RXQ_H_
 
+#include "../datapath/mt_queue.h"
 #include "../mt_main.h"
-#include "../mt_queue.h"
 #include "../mt_sch.h"
 #include "../mt_util.h"
 
