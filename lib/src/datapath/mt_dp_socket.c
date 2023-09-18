@@ -7,7 +7,9 @@
 
 #include "../mt_log.h"
 #include "../mt_util.h"
+#ifndef WINDOWSENV
 #include "mudp_api.h"
+#endif
 
 #define MT_RX_DP_SOCKET_MEMPOOL_PREFIX "SR_"
 
