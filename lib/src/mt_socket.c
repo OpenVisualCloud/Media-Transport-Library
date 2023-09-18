@@ -117,7 +117,7 @@ int mt_socket_join_mcast(struct mtl_main_impl* impl, enum mtl_port port, uint32_
   int ret;
   char cmd[128];
   uint8_t ip[MTL_IP_ADDR_LEN];
-  const char* if_name = impl->kport_info.kernel_if[port];
+  const char* if_name = mt_kernel_if_name(impl, port);
 
   if (!mt_drv_use_kernel_ctl(impl, port)) {
     err("%s(%d), not kernel based pmd\n", __func__, port);
@@ -138,7 +138,7 @@ int mt_socket_drop_mcast(struct mtl_main_impl* impl, enum mtl_port port, uint32_
   int ret;
   char cmd[128];
   uint8_t ip[MTL_IP_ADDR_LEN];
-  const char* if_name = impl->kport_info.kernel_if[port];
+  const char* if_name = mt_kernel_if_name(impl, port);
 
   if (!mt_drv_use_kernel_ctl(impl, port)) {
     err("%s(%d), not kernel based pmd\n", __func__, port);
@@ -249,7 +249,7 @@ static int socket_query_local_mac(uint8_t ip[MTL_IP_ADDR_LEN],
   return -EIO;
 }
 
-int mt_socket_get_mac(struct mtl_main_impl* impl, char* if_name,
+int mt_socket_get_mac(struct mtl_main_impl* impl, const char* if_name,
                       uint8_t dip[MTL_IP_ADDR_LEN], struct rte_ether_addr* ea,
                       int timeout_ms) {
   int sock, ret;
@@ -315,7 +315,7 @@ int mt_socket_add_flow(struct mtl_main_impl* impl, enum mtl_port port, uint16_t 
   int ret;
   int flow_id = -1;
   uint8_t start_queue = mt_afxdp_start_queue(impl, port);
-  const char* if_name = impl->kport_info.kernel_if[port];
+  const char* if_name = mt_kernel_if_name(impl, port);
 
   if (flow->sys_queue) {
     err("%s(%d), sys_queue not supported\n", __func__, port);
@@ -358,7 +358,7 @@ int mt_socket_add_flow(struct mtl_main_impl* impl, enum mtl_port port, uint16_t 
 int mt_socket_remove_flow(struct mtl_main_impl* impl, enum mtl_port port, int flow_id) {
   char cmd[128];
   int ret;
-  const char* if_name = impl->kport_info.kernel_if[port];
+  const char* if_name = mt_kernel_if_name(impl, port);
 
   if (flow_id > 0) {
     snprintf(cmd, sizeof(cmd), "ethtool -N %s delete %d", if_name, flow_id);
@@ -409,7 +409,7 @@ int mt_socket_drop_mcast(struct mtl_main_impl* impl, enum mtl_port port, uint32_
   return -ENOTSUP;
 }
 
-int mt_socket_get_mac(struct mtl_main_impl* impl, char* if_name,
+int mt_socket_get_mac(struct mtl_main_impl* impl, const char* if_name,
                       uint8_t dip[MTL_IP_ADDR_LEN], struct rte_ether_addr* ea,
                       int timeout_ms) {
   MTL_MAY_UNUSED(impl);

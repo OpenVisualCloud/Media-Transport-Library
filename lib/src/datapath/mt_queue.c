@@ -7,16 +7,13 @@
 #include "../mt_cni.h"
 #include "../mt_dev.h"
 #include "../mt_log.h"
+#include "mt_dp_socket.h"
 #include "mt_shared_queue.h"
 #include "mt_shared_rss.h"
 
 static uint16_t rx_socket_burst(struct mt_rxq_entry* entry, struct rte_mbuf** rx_pkts,
                                 const uint16_t nb_pkts) {
-  MTL_MAY_UNUSED(entry);
-  MTL_MAY_UNUSED(rx_pkts);
-  MTL_MAY_UNUSED(nb_pkts);
-  /* todo */
-  return 0;
+  return mt_rx_socket_burst(entry->rx_socket_q, rx_pkts, nb_pkts);
 }
 
 static uint16_t rx_srss_burst(struct mt_rxq_entry* entry, struct rte_mbuf** rx_pkts,
@@ -50,7 +47,9 @@ struct mt_rxq_entry* mt_rxq_get(struct mtl_main_impl* impl, enum mtl_port port,
   entry->parent = impl;
 
   if (mt_pmd_is_kernel_socket(impl, port)) {
-    entry->queue_id = 0;
+    entry->rx_socket_q = mt_rx_socket_get(impl, port, flow);
+    if (!entry->rx_socket_q) goto fail;
+    entry->queue_id = mt_rx_socket_queue_id(entry->rx_socket_q);
     entry->burst = rx_socket_burst;
   } else if (mt_has_srss(impl, port)) {
     entry->srss = mt_srss_get(impl, port, flow);
@@ -98,6 +97,10 @@ int mt_rxq_put(struct mt_rxq_entry* entry) {
     mt_csq_put(entry->csq);
     entry->csq = NULL;
   }
+  if (entry->rx_socket_q) {
+    mt_rx_socket_put(entry->rx_socket_q);
+    entry->rx_socket_q = NULL;
+  }
   mt_rte_free(entry);
   return 0;
 }
@@ -109,10 +112,7 @@ uint16_t mt_rxq_burst(struct mt_rxq_entry* entry, struct rte_mbuf** rx_pkts,
 
 static uint16_t tx_socket_burst(struct mt_txq_entry* entry, struct rte_mbuf** tx_pkts,
                                 uint16_t nb_pkts) {
-  MTL_MAY_UNUSED(entry);
-  /* todo */
-  rte_pktmbuf_free_bulk(tx_pkts, nb_pkts);
-  return nb_pkts;
+  return mt_tx_socket_burst(entry->tx_socket_q, tx_pkts, nb_pkts);
 }
 
 static uint16_t tx_tsq_burst(struct mt_txq_entry* entry, struct rte_mbuf** tx_pkts,
@@ -136,7 +136,9 @@ struct mt_txq_entry* mt_txq_get(struct mtl_main_impl* impl, enum mtl_port port,
   entry->parent = impl;
 
   if (mt_pmd_is_kernel_socket(impl, port)) {
-    entry->queue_id = 0;
+    entry->tx_socket_q = mt_tx_socket_get(impl, port, flow);
+    if (!entry->tx_socket_q) goto fail;
+    entry->queue_id = mt_tx_socket_queue_id(entry->tx_socket_q);
     entry->burst = tx_socket_burst;
   } else if (mt_shared_tx_queue(impl, port)) {
     entry->tsq = mt_tsq_get(impl, port, flow);
@@ -165,6 +167,10 @@ int mt_txq_put(struct mt_txq_entry* entry) {
   if (entry->tsq) {
     mt_tsq_put(entry->tsq);
     entry->tsq = NULL;
+  }
+  if (entry->tx_socket_q) {
+    mt_tx_socket_put(entry->tx_socket_q);
+    entry->tx_socket_q = NULL;
   }
   mt_rte_free(entry);
   return 0;

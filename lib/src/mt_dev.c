@@ -672,7 +672,7 @@ static int dev_stop_port(struct mt_interface* inf) {
   }
 
   if (!(inf->drv_info.flags & MT_DRV_F_NOT_DPDK_PMD)) {
-    if (mt_has_virtio_user(inf->parent)) {
+    if (mt_has_virtio_user(inf->parent, port)) {
       ret = rte_eth_dev_stop(inf->virtio_port_id);
       if (ret < 0)
         err("%s(%d), rte_eth_dev_stop virtio port fail %d\n", __func__, port, ret);
@@ -697,7 +697,7 @@ static int dev_close_port(struct mt_interface* inf) {
   }
 
   if (!(inf->drv_info.flags & MT_DRV_F_NOT_DPDK_PMD)) {
-    if (mt_has_virtio_user(inf->parent)) {
+    if (mt_has_virtio_user(inf->parent, port)) {
       ret = rte_eth_dev_close(inf->virtio_port_id);
       if (ret < 0)
         err("%s(%d), rte_eth_dev_stop virtio port fail %d\n", __func__, port, ret);
@@ -893,7 +893,7 @@ static int dev_config_port(struct mt_interface* inf) {
     return ret;
   }
 
-  if (mt_has_virtio_user(impl)) {
+  if (mt_has_virtio_user(impl, port)) {
     port_conf = dev_port_conf;
     ret = rte_eth_dev_configure(inf->virtio_port_id, 1, 1, &port_conf);
     if (ret < 0) {
@@ -1099,7 +1099,7 @@ static int dev_start_port(struct mt_interface* inf) {
     return ret;
   }
 
-  if (mt_has_virtio_user(impl)) {
+  if (mt_has_virtio_user(impl, port)) {
     mbuf_pool = inf->rx_queues[0].mbuf_pool ? inf->rx_queues[0].mbuf_pool
                                             : mt_get_rx_mempool(impl, port);
     ret = rte_eth_rx_queue_setup(inf->virtio_port_id, 0, 0, socket_id, NULL, mbuf_pool);
@@ -2443,7 +2443,7 @@ int mt_dev_if_init(struct mtl_main_impl* impl) {
     }
 #endif
 
-    if (mt_has_virtio_user(impl)) {
+    if (mt_has_virtio_user(impl, i)) {
       ret = dev_if_init_virtio_user(inf);
       if (ret < 0) {
         err("%s(%d), init virtio_user fail\n", __func__, i);

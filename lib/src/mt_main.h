@@ -927,6 +927,28 @@ struct mt_srss_impl {
   int entry_idx;
 };
 
+struct mt_tx_socket_entry {
+  struct mtl_main_impl* parent;
+  enum mtl_port port;
+  struct mt_txq_flow flow;
+
+  int fd;
+#ifndef WINDOWSENV
+  struct sockaddr_in send_addr;
+#endif
+};
+
+struct mt_rx_socket_entry {
+  struct mtl_main_impl* parent;
+  enum mtl_port port;
+  struct mt_rxq_flow flow;
+
+  int fd;
+  struct rte_mempool* pool;
+  uint16_t pool_element_sz;
+  struct rte_mbuf* pkt;
+};
+
 struct mt_flow_impl {
   pthread_mutex_t mutex; /* protect mt_rx_flow_create */
 };
@@ -1077,6 +1099,11 @@ static inline bool mt_drv_use_kernel_ctl(struct mtl_main_impl* impl, enum mtl_po
     return false;
 }
 
+static inline const char* mt_kernel_if_name(struct mtl_main_impl* impl,
+                                            enum mtl_port port) {
+  return impl->kport_info.kernel_if[port];
+}
+
 static inline bool mt_drv_no_cni(struct mtl_main_impl* impl, enum mtl_port port) {
   if (mt_if(impl, port)->drv_info.flags & MT_DRV_F_NO_CNI)
     return true;
@@ -1222,8 +1249,9 @@ static inline bool mt_has_cni_rx(struct mtl_main_impl* impl) {
     return false;
 }
 
-static inline bool mt_has_virtio_user(struct mtl_main_impl* impl) {
-  if (mt_get_user_params(impl)->flags & MTL_FLAG_VIRTIO_USER)
+static inline bool mt_has_virtio_user(struct mtl_main_impl* impl, enum mtl_port port) {
+  if ((mt_get_user_params(impl)->flags & MTL_FLAG_VIRTIO_USER) &&
+      mt_pmd_is_dpdk_user(impl, port))
     return true;
   else
     return false;
