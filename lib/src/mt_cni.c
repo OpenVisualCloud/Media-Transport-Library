@@ -124,6 +124,20 @@ static int csq_stat(struct mt_cni_entry* cni) {
   return 0;
 }
 
+static int cni_virtio_handle(struct mt_cni_entry* cni, struct rte_mbuf* m) {
+  struct mt_interface* inf = mt_if(cni->impl, cni->port);
+  int ret;
+
+  ret = rte_eth_tx_burst(inf->virtio_port_id, 0, &m, 1);
+  if (ret < 1) {
+    warn("%s(%d), forward packet to kernel fail\n", __func__, cni->port);
+    return -EIO;
+  }
+  cni->virtio_rx_cnt++;
+
+  return 0;
+}
+
 static int cni_udp_handle(struct mt_cni_entry* cni, struct rte_mbuf* m) {
   struct mt_udp_hdr* hdr;
   struct rte_ipv4_hdr* ipv4;
@@ -164,6 +178,9 @@ static int cni_udp_handle(struct mt_cni_entry* cni, struct rte_mbuf* m) {
     }
   }
   csq_unlock(cni);
+
+  /* unmatched UDP packets fallback to kernel */
+  cni_virtio_handle(cni, m);
 
   /* analyses if it's a UDP stream, for debug usage */
   cni_udp_detect_analyses(cni, hdr);
@@ -222,10 +239,15 @@ static int cni_rx_handle(struct mt_cni_entry* cni, struct rte_mbuf* m) {
         } else {
           cni_udp_handle(cni, m);
         }
+      } else {
+        /* ipv4 packets other than UDP fallback to kernel */
+        cni_virtio_handle(cni, m);
       }
       break;
     default:
       // dbg("%s(%d), unknown ether_type %d\n", __func__, port, ether_type);
+      /* unknown eth packets fallback to kernel */
+      cni_virtio_handle(cni, m);
       break;
   }
   cni->eth_rx_bytes += m->pkt_len;
@@ -405,6 +427,11 @@ static int cni_stat(void* priv) {
            cni->eth_rx_cnt);
     cni->eth_rx_cnt = 0;
     cni->eth_rx_bytes = 0;
+
+    if (cni->virtio_rx_cnt) {
+      notice("CNI(%d): virtio_rx_cnt %u\n", i, cni->virtio_rx_cnt);
+      cni->virtio_rx_cnt = 0;
+    }
 
     csq_stat(cni);
   }

@@ -329,6 +329,8 @@ struct mt_cni_entry {
   /* stat */
   uint32_t eth_rx_cnt;
   uint64_t eth_rx_bytes;
+  uint32_t virtio_rx_cnt; /* rx to kernel pkts */
+  uint32_t virtio_tx_cnt; /* tx from kernal pkts, not support yet */
 };
 
 struct mt_cni_impl {
@@ -679,6 +681,8 @@ struct mt_interface {
   struct mtl_port_status user_stats_port;   /* for mtl_get_port_stats */
 
   uint64_t simulate_malicious_pkt_tsc;
+
+  uint16_t virtio_port_id; /* virtio_user port id */
 };
 
 struct mt_lcore_shm {
@@ -1213,6 +1217,13 @@ static inline bool mt_has_tx_no_chain(struct mtl_main_impl* impl) {
 
 static inline bool mt_has_cni_rx(struct mtl_main_impl* impl) {
   if (mt_get_user_params(impl)->flags & MTL_FLAG_RX_USE_CNI)
+    return true;
+  else
+    return false;
+}
+
+static inline bool mt_has_virtio_user(struct mtl_main_impl* impl) {
+  if (mt_get_user_params(impl)->flags & MTL_FLAG_VIRTIO_USER)
     return true;
   else
     return false;
