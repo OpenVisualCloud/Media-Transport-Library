@@ -10,9 +10,14 @@
 int mt_socket_get_if_ip(const char* if_name, uint8_t ip[MTL_IP_ADDR_LEN],
                         uint8_t netmask[MTL_IP_ADDR_LEN]);
 
+int mt_socket_set_if_ip(const char* if_name, uint8_t ip[MTL_IP_ADDR_LEN],
+                        uint8_t netmask[MTL_IP_ADDR_LEN]);
+
 int mt_socket_get_if_gateway(const char* if_name, uint8_t gateway[MTL_IP_ADDR_LEN]);
 
 int mt_socket_get_if_mac(const char* if_name, struct rte_ether_addr* ea);
+
+int mt_socket_set_if_up(const char* if_name);
 
 int mt_socket_get_numa(const char* if_name);
 

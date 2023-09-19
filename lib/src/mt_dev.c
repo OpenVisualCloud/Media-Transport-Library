@@ -12,6 +12,7 @@
 #include "mt_log.h"
 #include "mt_mcast.h"
 #include "mt_sch.h"
+#include "mt_socket.h"
 #include "mt_stat.h"
 #include "mt_util.h"
 
@@ -1594,15 +1595,17 @@ static int dev_if_init_pacing(struct mt_interface* inf) {
 static int dev_if_init_virtio_user(struct mt_interface* inf) {
 #ifndef WINDOWSENV
   enum mtl_port port = inf->port;
+  struct mtl_main_impl* impl = inf->parent;
   uint16_t port_id = inf->port_id;
   int ret;
-  char name[32];
+  char name[IF_NAMESIZE];
   char args[256];
   struct rte_ether_addr addr = {0};
 
   rte_eth_macaddr_get(port_id, &addr);
 
-  snprintf(name, sizeof(name), "virtio_user%u", port_id);
+  snprintf(name, sizeof(name), "virtio_user%u",
+           (uint8_t)port_id); /* to limit name length, assume port_id < 255 */
   snprintf(
       args, sizeof(args),
       "path=/dev/vhost-net,queues=1,queue_size=%u,iface=%s,mac=" RTE_ETHER_ADDR_PRT_FMT,
@@ -1610,19 +1613,33 @@ static int dev_if_init_virtio_user(struct mt_interface* inf) {
 
   ret = rte_eal_hotplug_add("vdev", name, args);
   if (ret < 0) {
-    err("%s(%d), cannot create virtio port for port %u\n", __func__, port, port_id);
+    err("%s(%d), cannot create virtio port\n", __func__, port);
     return ret;
   }
 
   uint16_t virtio_port_id;
   ret = rte_eth_dev_get_port_by_name(name, &virtio_port_id);
   if (ret < 0) {
-    err("%s(%d), cannot get virtio port id for port %u\n", __func__, port, port_id);
+    err("%s(%d), cannot get virtio port id\n", __func__, port);
     return ret;
   }
   inf->virtio_port_id = virtio_port_id;
 
-  info("%s(%d), succ\n", __func__, port);
+  ret = mt_socket_set_if_ip(name, mt_sip_addr(impl, port), mt_sip_netmask(impl, port));
+  if (ret < 0) {
+    err("%s(%d), cannot set interface ip\n", __func__, port);
+    return ret;
+  }
+
+  ret = mt_socket_set_if_up(name);
+  if (ret < 0) {
+    err("%s(%d), cannot set interface up\n", __func__, port);
+    return ret;
+  }
+
+  inf->virtio_port_active = true;
+
+  info("%s(%d), succ, kernel interface %s\n", __func__, port, name);
   return 0;
 #else
   MTL_MAY_UNUSED(inf);

@@ -20,7 +20,7 @@ int mt_socket_get_if_ip(const char* if_name, uint8_t ip[MTL_IP_ADDR_LEN],
   }
 
   memset(&ifr, 0x0, sizeof(ifr));
-  snprintf(ifr.ifr_name, sizeof(ifr.ifr_name) - 1, "%s", if_name);
+  snprintf(ifr.ifr_name, sizeof(ifr.ifr_name), "%s", if_name);
   ret = ioctl(sock, SIOCGIFADDR, &ifr);
   if (ret < 0) {
     err("%s, SIOCGIFADDR fail %d for if %s\n", __func__, ret, if_name);
@@ -40,6 +40,45 @@ int mt_socket_get_if_ip(const char* if_name, uint8_t ip[MTL_IP_ADDR_LEN],
   if (netmask) memcpy(netmask, &ipaddr->sin_addr.s_addr, MTL_IP_ADDR_LEN);
 
   close(sock);
+  return 0;
+}
+
+int mt_socket_set_if_ip(const char* if_name, uint8_t ip[MTL_IP_ADDR_LEN],
+                        uint8_t netmask[MTL_IP_ADDR_LEN]) {
+  struct ifreq ifr;
+  int sock;
+  int ret;
+
+  sock = socket(AF_INET, SOCK_DGRAM, 0);
+  if (sock < 0) {
+    err("%s, socket call fail\n", __func__);
+    return sock;
+  }
+
+  memset(&ifr, 0x0, sizeof(ifr));
+  snprintf(ifr.ifr_name, sizeof(ifr.ifr_name), "%s", if_name);
+
+  ifr.ifr_addr.sa_family = AF_INET;
+  memcpy(&((struct sockaddr_in*)&ifr.ifr_addr)->sin_addr.s_addr, ip, MTL_IP_ADDR_LEN);
+  ret = ioctl(sock, SIOCSIFADDR, &ifr);
+  if (ret < 0) {
+    err("%s, SIOCSIFADDR fail %d for if %s\n", __func__, ret, if_name);
+    close(sock);
+    return ret;
+  }
+
+  ifr.ifr_addr.sa_family = AF_INET;
+  memcpy(&((struct sockaddr_in*)&ifr.ifr_addr)->sin_addr.s_addr, netmask,
+         MTL_IP_ADDR_LEN);
+  ret = ioctl(sock, SIOCSIFNETMASK, &ifr);
+  if (ret < 0) {
+    err("%s, SIOCSIFNETMASK fail %d for if %s\n", __func__, ret, if_name);
+    close(sock);
+    return ret;
+  }
+
+  close(sock);
+
   return 0;
 }
 
@@ -78,7 +117,7 @@ int mt_socket_get_if_mac(const char* if_name, struct rte_ether_addr* ea) {
   }
 
   memset(&ifr, 0x0, sizeof(ifr));
-  snprintf(ifr.ifr_name, sizeof(ifr.ifr_name) - 1, "%s", if_name);
+  snprintf(ifr.ifr_name, sizeof(ifr.ifr_name), "%s", if_name);
   ret = ioctl(sock, SIOCGIFHWADDR, &ifr);
   if (ret < 0) {
     err("%s, SIOCGIFADDR fail %d for if %s\n", __func__, ret, if_name);
@@ -86,6 +125,37 @@ int mt_socket_get_if_mac(const char* if_name, struct rte_ether_addr* ea) {
     return ret;
   }
   memcpy(ea->addr_bytes, ifr.ifr_hwaddr.sa_data, RTE_ETHER_ADDR_LEN);
+
+  close(sock);
+  return 0;
+}
+
+int mt_socket_set_if_up(const char* if_name) {
+  int sock, ret;
+  struct ifreq ifr;
+
+  sock = socket(AF_INET, SOCK_DGRAM, 0);
+  if (sock < 0) {
+    err("%s, socket call fail\n", __func__);
+    return sock;
+  }
+
+  memset(&ifr, 0x0, sizeof(ifr));
+  snprintf(ifr.ifr_name, sizeof(ifr.ifr_name), "%s", if_name);
+  ret = ioctl(sock, SIOCGIFFLAGS, &ifr);
+  if (ret < 0) {
+    err("%s, SIOCGIFFLAGS fail %d for if %s\n", __func__, ret, if_name);
+    close(sock);
+    return ret;
+  }
+
+  ifr.ifr_flags |= IFF_UP;
+  ret = ioctl(sock, SIOCSIFFLAGS, &ifr);
+  if (ret < 0) {
+    err("%s, SIOCSIFFLAGS fail %d for if %s\n", __func__, ret, if_name);
+    close(sock);
+    return ret;
+  }
 
   close(sock);
   return 0;
