@@ -146,7 +146,20 @@ static inline void diff_and_update(uint64_t* new, uint64_t* old) {
   *old = temp;
 }
 
-static int dev_inf_get_stat(struct mt_interface* inf) {
+static void stat_update_dpdk(struct mtl_port_status* sum, struct rte_eth_stats* update,
+                             enum mt_driver_type drv_type) {
+  sum->rx_packets += update->ipackets;
+  sum->tx_packets += update->opackets;
+  sum->rx_bytes += update->ibytes;
+  sum->tx_bytes += update->obytes;
+  sum->rx_err_packets += update->ierrors;
+  /* iavf wrong report the tx error */
+  if (drv_type != MT_DRV_IAVF) sum->tx_err_packets += update->oerrors;
+  sum->rx_hw_dropped_packets += update->imissed;
+  sum->rx_nombuf_packets += update->rx_nombuf;
+}
+
+static int dev_inf_get_stat_dpdk(struct mt_interface* inf) {
   enum mtl_port port = inf->port;
   uint16_t port_id = inf->port_id;
   enum mt_driver_type drv_type = inf->drv_info.drv_type;
@@ -162,40 +175,23 @@ static int dev_inf_get_stat(struct mt_interface* inf) {
     return ret;
   }
 
-  struct mt_dev_stats* dev_stats_not_reset = inf->dev_stats_not_reset;
+  struct mtl_port_status* dev_stats_not_reset = inf->dev_stats_not_reset;
   if (dev_stats_not_reset) {
     dbg("%s(%d), diff_and_update\n", __func__, port);
-    diff_and_update(&stats.ipackets, &dev_stats_not_reset->rx_pkts);
-    diff_and_update(&stats.opackets, &dev_stats_not_reset->tx_pkts);
+    diff_and_update(&stats.ipackets, &dev_stats_not_reset->rx_packets);
+    diff_and_update(&stats.opackets, &dev_stats_not_reset->tx_packets);
     diff_and_update(&stats.ibytes, &dev_stats_not_reset->rx_bytes);
     diff_and_update(&stats.obytes, &dev_stats_not_reset->tx_bytes);
-    diff_and_update(&stats.ierrors, &dev_stats_not_reset->rx_errors);
-    diff_and_update(&stats.oerrors, &dev_stats_not_reset->tx_errors);
-    diff_and_update(&stats.imissed, &dev_stats_not_reset->rx_missed);
-    diff_and_update(&stats.rx_nombuf, &dev_stats_not_reset->rx_nombuf);
+    diff_and_update(&stats.ierrors, &dev_stats_not_reset->rx_err_packets);
+    diff_and_update(&stats.oerrors, &dev_stats_not_reset->tx_err_packets);
+    diff_and_update(&stats.imissed, &dev_stats_not_reset->rx_hw_dropped_packets);
+    diff_and_update(&stats.rx_nombuf, &dev_stats_not_reset->rx_nombuf_packets);
   }
 
-  struct rte_eth_stats* stats_sum = &inf->stats_sum;
-  stats_sum->ipackets += stats.ipackets;
-  stats_sum->opackets += stats.opackets;
-  stats_sum->ibytes += stats.ibytes;
-  stats_sum->obytes += stats.obytes;
-  stats_sum->ierrors += stats.ierrors;
-  /* iavf wrong report the tx error */
-  if (drv_type != MT_DRV_IAVF) stats_sum->oerrors += stats.oerrors;
-  stats_sum->imissed += stats.imissed;
-  stats_sum->rx_nombuf += stats.rx_nombuf;
-
+  struct mtl_port_status* stats_sum = &inf->stats_sum;
+  stat_update_dpdk(stats_sum, &stats, drv_type);
   struct mtl_port_status* port_stats = &inf->user_stats_port;
-  port_stats->rx_packets += stats.ipackets;
-  port_stats->tx_packets += stats.opackets;
-  port_stats->rx_bytes += stats.ibytes;
-  port_stats->tx_bytes += stats.obytes;
-  port_stats->rx_err_packets += stats.ierrors;
-  /* iavf wrong report the tx error */
-  if (drv_type != MT_DRV_IAVF) port_stats->tx_err_packets += stats.oerrors;
-  port_stats->rx_hw_dropped_packets += stats.imissed;
-  port_stats->rx_nombuf_packets += stats.rx_nombuf;
+  stat_update_dpdk(port_stats, &stats, drv_type);
 
   if (!dev_stats_not_reset) {
     dbg("%s(%d), reset eth status\n", __func__, port);
@@ -206,33 +202,66 @@ static int dev_inf_get_stat(struct mt_interface* inf) {
   return 0;
 }
 
+static void stat_update_sw(struct mtl_port_status* sum, struct mtl_port_status* update) {
+  sum->rx_packets += update->rx_packets;
+  sum->tx_packets += update->tx_packets;
+  sum->rx_bytes += update->rx_bytes;
+  sum->tx_bytes += update->tx_bytes;
+  sum->rx_err_packets += update->rx_err_packets;
+  sum->tx_err_packets += update->tx_err_packets;
+  sum->rx_hw_dropped_packets += update->rx_hw_dropped_packets;
+  sum->rx_nombuf_packets += update->rx_nombuf_packets;
+}
+
+static int dev_inf_get_stat_sw(struct mt_interface* inf) {
+  struct mtl_port_status* stats = inf->dev_stats_sw;
+
+  rte_spinlock_lock(&inf->stats_lock);
+
+  struct mtl_port_status* stats_sum = &inf->stats_sum;
+  stat_update_sw(stats_sum, stats);
+  struct mtl_port_status* port_stats = &inf->user_stats_port;
+  stat_update_sw(port_stats, stats);
+  memset(stats, 0, sizeof(*stats));
+
+  rte_spinlock_unlock(&inf->stats_lock);
+  return 0;
+}
+
+static int dev_inf_get_stat(struct mt_interface* inf) {
+  if (inf->dev_stats_sw)
+    return dev_inf_get_stat_sw(inf);
+  else
+    return dev_inf_get_stat_dpdk(inf);
+}
+
 static int dev_inf_stat(void* pri) {
   struct mt_interface* inf = pri;
   struct mtl_main_impl* impl = inf->parent;
   enum mtl_port port = inf->port;
   uint16_t port_id = inf->port_id;
-  struct rte_eth_stats* stats_sum;
+  struct mtl_port_status* stats_sum;
 
   dev_inf_get_stat(inf);
   stats_sum = &inf->stats_sum;
 
   double dump_period_s = mt_stat_dump_period_s(impl);
-  double orate_m = (double)stats_sum->obytes * 8 / dump_period_s / MTL_STAT_M_UNIT;
-  double irate_m = (double)stats_sum->ibytes * 8 / dump_period_s / MTL_STAT_M_UNIT;
+  double orate_m = (double)stats_sum->tx_bytes * 8 / dump_period_s / MTL_STAT_M_UNIT;
+  double irate_m = (double)stats_sum->rx_bytes * 8 / dump_period_s / MTL_STAT_M_UNIT;
 
   notice("DEV(%d): Avr rate, tx: %f Mb/s, rx: %f Mb/s, pkts, tx: %" PRIu64
          ", rx: %" PRIu64 "\n",
-         port, orate_m, irate_m, stats_sum->opackets, stats_sum->ipackets);
-  if (stats_sum->imissed || stats_sum->ierrors || stats_sum->rx_nombuf ||
-      stats_sum->oerrors) {
-    err("DEV(%d): Status: imissed %" PRIu64 " ierrors %" PRIu64 " oerrors %" PRIu64
-        " rx_nombuf %" PRIu64 "\n",
-        port, stats_sum->imissed, stats_sum->ierrors, stats_sum->oerrors,
-        stats_sum->rx_nombuf);
+         port, orate_m, irate_m, stats_sum->tx_packets, stats_sum->rx_packets);
+  if (stats_sum->rx_hw_dropped_packets || stats_sum->rx_err_packets ||
+      stats_sum->rx_nombuf_packets || stats_sum->tx_err_packets) {
+    err("DEV(%d): Status: rx_hw_dropped_packets %" PRIu64 " rx_err_packets %" PRIu64
+        " rx_nombuf_packets %" PRIu64 " tx_err_packets %" PRIu64 "\n",
+        port, stats_sum->rx_hw_dropped_packets, stats_sum->rx_err_packets,
+        stats_sum->rx_nombuf_packets, stats_sum->tx_err_packets);
     dev_eth_xstat(port_id);
   }
 
-  if (!inf->dev_stats_not_reset) {
+  if (!inf->dev_stats_not_reset && !inf->dev_stats_sw) {
     rte_eth_xstats_reset(port_id);
   }
 
@@ -2033,7 +2062,7 @@ int mt_dev_create(struct mtl_main_impl* impl) {
 
     if (inf->drv_info.flags & MT_DRV_F_NO_STATUS_RESET) {
       inf->dev_stats_not_reset =
-          mt_rte_zmalloc_socket(sizeof(struct mt_dev_stats), inf->socket_id);
+          mt_rte_zmalloc_socket(sizeof(*inf->dev_stats_not_reset), inf->socket_id);
       if (!inf->dev_stats_not_reset) {
         err("%s(%d), malloc dev_stats_not_reset fail\n", __func__, i);
         ret = -ENOMEM;
@@ -2041,8 +2070,16 @@ int mt_dev_create(struct mtl_main_impl* impl) {
       }
     }
 
-    if (!(inf->drv_info.flags & MT_DRV_F_NOT_DPDK_PMD))
-      mt_stat_register(impl, dev_inf_stat, inf, "dev_inf");
+    if (inf->drv_info.flags & MT_DRV_F_NOT_DPDK_PMD) {
+      inf->dev_stats_sw =
+          mt_rte_zmalloc_socket(sizeof(*inf->dev_stats_sw), inf->socket_id);
+      if (!inf->dev_stats_sw) {
+        err("%s(%d), malloc devstats_sw fail\n", __func__, i);
+        ret = -ENOMEM;
+        goto err_exit;
+      }
+    }
+    mt_stat_register(impl, dev_inf_stat, inf, "dev_inf");
 
     info("%s(%d), feature 0x%x, tx pacing %s\n", __func__, i, inf->feature,
          st_tx_pacing_way_name(inf->tx_pacing_way));
@@ -2092,11 +2129,14 @@ int mt_dev_free(struct mtl_main_impl* impl) {
   for (int i = 0; i < num_ports; i++) {
     inf = mt_if(impl, i);
 
-    if (!(inf->drv_info.flags & MT_DRV_F_NOT_DPDK_PMD))
-      mt_stat_unregister(impl, dev_inf_stat, inf);
+    mt_stat_unregister(impl, dev_inf_stat, inf);
     if (inf->dev_stats_not_reset) {
       mt_rte_free(inf->dev_stats_not_reset);
       inf->dev_stats_not_reset = NULL;
+    }
+    if (inf->dev_stats_sw) {
+      mt_rte_free(inf->dev_stats_sw);
+      inf->dev_stats_sw = NULL;
     }
     dev_stop_port(inf);
   }

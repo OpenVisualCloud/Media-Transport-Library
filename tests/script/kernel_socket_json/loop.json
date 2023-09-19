@@ -1,16 +1,13 @@
 {
     "interfaces": [
         {
-            "name": "kernel:enp175s0f0np0",
+            "name": "kernel:lo",
         },
-        {
-            "name": "kernel:enp175s0f1np1",
-        }
     ],
     "tx_sessions": [
         {
             "dip": [
-                "1"
+                "127.0.0.1"
             ],
             "interface": [
                 0
@@ -34,10 +31,10 @@
     "rx_sessions": [
         {
             "ip": [
-                "0"
+                "127.0.0.1"
             ],
             "interface": [
-                1
+                0
             ],
             "video": [
                 {
