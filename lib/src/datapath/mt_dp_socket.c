@@ -40,7 +40,7 @@ struct mt_tx_socket_entry* mt_tx_socket_get(struct mtl_main_impl* impl,
     close(fd);
     return NULL;
   }
-#if 0
+
   /* bind to device */
   const char* if_name = mt_kernel_if_name(impl, port);
   ret = setsockopt(fd, SOL_SOCKET, SO_BINDTODEVICE, if_name, strlen(if_name));
@@ -49,7 +49,6 @@ struct mt_tx_socket_entry* mt_tx_socket_get(struct mtl_main_impl* impl,
     close(fd);
     return NULL;
   }
-#endif
 
   struct mt_tx_socket_entry* entry =
       mt_rte_zmalloc_socket(sizeof(*entry), mt_socket_id(impl, port));
@@ -84,6 +83,7 @@ uint16_t mt_tx_socket_burst(struct mt_tx_socket_entry* entry, struct rte_mbuf** 
   uint16_t tx = 0;
   enum mtl_port port = entry->port;
   int fd = entry->fd;
+  struct mtl_port_status* stats = mt_if(entry->parent, port)->dev_stats_sw;
 
   for (tx = 0; tx < nb_pkts; tx++) {
     struct rte_mbuf* m = tx_pkts[tx];
@@ -108,10 +108,12 @@ uint16_t mt_tx_socket_burst(struct mt_tx_socket_entry* entry, struct rte_mbuf** 
     dbg("%s(%d,%d), len %" PRId64 " send %" PRId64 "\n", __func__, port, fd, payload_len,
         send);
     if (send != payload_len) {
-      err("%s(%d,%d), sendto fail, len %" PRId64 " send %" PRId64 "\n", __func__, port,
+      dbg("%s(%d,%d), sendto fail, len %" PRId64 " send %" PRId64 "\n", __func__, port,
           fd, payload_len, send);
       goto done;
     }
+    stats->tx_packets++;
+    stats->tx_bytes += m->data_len;
   }
 
 done:
@@ -152,7 +154,7 @@ struct mt_rx_socket_entry* mt_rx_socket_get(struct mtl_main_impl* impl,
     close(fd);
     return NULL;
   }
-#if 0
+
   /* bind to device */
   const char* if_name = mt_kernel_if_name(impl, port);
   info("%s(%d,%d), SO_BINDTODEVICE to %s\n", __func__, port, fd, if_name);
@@ -162,7 +164,7 @@ struct mt_rx_socket_entry* mt_rx_socket_get(struct mtl_main_impl* impl,
     close(fd);
     return NULL;
   }
-#endif
+
   /* bind to port */
   struct sockaddr_in bind_addr;
   mudp_init_sockaddr(&bind_addr, mt_sip_addr(impl, port), flow->dst_port);
@@ -235,6 +237,7 @@ uint16_t mt_rx_socket_burst(struct mt_rx_socket_entry* entry, struct rte_mbuf** 
   enum mtl_port port = entry->port;
   int fd = entry->fd;
   uint16_t rx = 0;
+  struct mtl_port_status* stats = mt_if(entry->parent, port)->dev_stats_sw;
 
   if (!entry->pkt) {
     entry->pkt = rte_pktmbuf_alloc(entry->pool);
@@ -267,6 +270,9 @@ uint16_t mt_rx_socket_burst(struct mt_rx_socket_entry* entry, struct rte_mbuf** 
     addr_in.sin_addr.s_addr = ipv4->src_addr;
 
     rx_pkts[rx] = pkt;
+    stats->rx_packets++;
+    stats->rx_bytes += pkt->data_len;
+
     /* allocate a new pkt for next iteration */
     entry->pkt = rte_pktmbuf_alloc(entry->pool);
     if (!entry->pkt) {

@@ -676,9 +676,10 @@ struct mt_interface {
   uint64_t real_time_base;
 
   rte_spinlock_t stats_lock;
-  struct mt_dev_stats* dev_stats_not_reset; /* for nic without reset func */
-  struct rte_eth_stats stats_sum;           /* for dev_inf_stat dump */
-  struct mtl_port_status user_stats_port;   /* for mtl_get_port_stats */
+  struct mtl_port_status* dev_stats_not_reset; /* for nic without reset func */
+  struct mtl_port_status* dev_stats_sw;        /* for MT_DRV_F_NOT_DPDK_PMD */
+  struct mtl_port_status stats_sum;            /* for dev_inf_stat dump */
+  struct mtl_port_status user_stats_port;      /* for mtl_get_port_stats */
 
   uint64_t simulate_malicious_pkt_tsc;
 
@@ -805,17 +806,6 @@ struct mt_stat_mgr {
   pthread_cond_t stat_wake_cond;
   pthread_mutex_t stat_wake_mutex;
   rte_atomic32_t stat_stop;
-};
-
-struct mt_dev_stats {
-  uint64_t rx_pkts;
-  uint64_t rx_bytes;
-  uint64_t rx_missed;
-  uint64_t rx_errors;
-  uint64_t rx_nombuf;
-  uint64_t tx_pkts;
-  uint64_t tx_bytes;
-  uint64_t tx_errors;
 };
 
 struct mt_rsq_impl; /* forward delcare */
