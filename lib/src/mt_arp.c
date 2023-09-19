@@ -251,17 +251,13 @@ int mt_arp_parse(struct mtl_main_impl* impl, struct rte_arp_hdr* hdr,
                  enum mtl_port port) {
   switch (ntohs(hdr->arp_opcode)) {
     case RTE_ARP_OP_REQUEST:
-      arp_receive_request(impl, hdr, port);
-      break;
+      return arp_receive_request(impl, hdr, port);
     case RTE_ARP_OP_REPLY:
-      arp_receive_reply(impl, hdr, port);
-      break;
+      return arp_receive_reply(impl, hdr, port);
     default:
       err("%s, mt_arp_parse %04x unimplemented\n", __func__, ntohs(hdr->arp_opcode));
       return -EINVAL;
   }
-
-  return 0;
 }
 
 static int mt_arp_cni_get_mac(struct mtl_main_impl* impl, struct rte_ether_addr* ea,

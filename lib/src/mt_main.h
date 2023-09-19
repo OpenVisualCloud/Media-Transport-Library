@@ -329,8 +329,9 @@ struct mt_cni_entry {
   /* stat */
   uint32_t eth_rx_cnt;
   uint64_t eth_rx_bytes;
-  uint32_t virtio_rx_cnt; /* rx to kernel pkts */
-  uint32_t virtio_tx_cnt; /* tx from kernal pkts, not support yet */
+  uint32_t virtio_rx_cnt;      /* rx pkts to kernel */
+  uint32_t virtio_tx_cnt;      /* tx pkts from kernal */
+  uint32_t virtio_tx_fail_cnt; /* tx failed kernal pkts */
 };
 
 struct mt_cni_impl {
