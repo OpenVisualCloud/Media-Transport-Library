@@ -190,10 +190,11 @@ static int mcast_membership_report(struct mtl_main_impl* impl,
   pkt->data_len = pkt->pkt_len;
 
 #ifdef MCAST_DEBUG
-  /* send packet to kni for capturing */
-  struct mt_kni_impl* kni = &impl->kni;
-  struct rte_kni* rkni = kni->rkni[port];
-  if (rkni) rte_kni_tx_burst(rkni, (struct rte_mbuf**)&report_pkt, 1);
+  /* send packet to kernel for capturing */
+  if (mt_has_virtio_user(impl, port)) {
+    struct mt_interface* inf = mt_if(impl, port);
+    rte_eth_tx_burst(inf->virtio_port_id, 0, (struct rte_mbuf**)&report_pkt, 1);
+  }
 #endif
 
   uint16_t tx = mt_dev_tx_sys_queue_burst(impl, port, &pkt, 1);

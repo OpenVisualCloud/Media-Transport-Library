@@ -3,16 +3,13 @@
  */
 
 #define _GNU_SOURCE
+#include <json-c/json.h>
 #include <math.h>
 #include <rte_alarm.h>
 #include <rte_arp.h>
 #include <rte_errno.h>
 #include <rte_ethdev.h>
 #include <rte_thash.h>
-#ifdef MTL_HAS_KNI
-#include <rte_kni.h>
-#endif
-#include <json-c/json.h>
 #include <rte_tm.h>
 #include <rte_version.h>
 #include <rte_vfio.h>
@@ -346,16 +343,6 @@ struct mt_cni_impl {
   struct mt_sch_tasklet_impl* tasklet;
 
   struct mt_cni_entry entries[MTL_PORT_MAX];
-
-#ifdef MTL_HAS_KNI
-  bool has_kni_kmod;
-  rte_atomic32_t if_up[MTL_PORT_MAX];
-  struct rte_kni_conf conf[MTL_PORT_MAX];
-  struct rte_kni* rkni[MTL_PORT_MAX];
-  pthread_t kni_bkg_tid; /* bkg thread id for kni */
-  rte_atomic32_t stop_kni;
-  int kni_rx_cnt[MTL_PORT_MAX];
-#endif
 
 #ifdef MTL_HAS_TAP
   pthread_t tap_bkg_tid; /* bkg thread id for tap */

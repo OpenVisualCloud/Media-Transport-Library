@@ -7,7 +7,6 @@
 #include "datapath/mt_queue.h"
 #include "mt_arp.h"
 #include "mt_dhcp.h"
-#include "mt_kni.h"
 // #define DEBUG
 #include "mt_dev.h"
 #include "mt_dhcp.h"
@@ -298,7 +297,6 @@ static int cni_traffic(struct mtl_main_impl* impl) {
       if (rx > 0) {
         cni->eth_rx_cnt += rx;
         for (uint16_t ri = 0; ri < rx; ri++) cni_rx_handle(cni, pkts_rx[ri]);
-        mt_kni_handle(impl, i, pkts_rx, rx);
         mt_free_mbufs(&pkts_rx[0], rx);
         done = false;
       }
@@ -492,9 +490,6 @@ int mt_cni_init(struct mtl_main_impl* impl) {
     MT_TAILQ_INIT(&cni->udp_detect);
   }
 
-  ret = mt_kni_init(impl);
-  if (ret < 0) return ret;
-
   ret = cni_queues_init(impl);
   if (ret < 0) {
     mt_cni_uinit(impl);
@@ -567,8 +562,6 @@ int mt_cni_uinit(struct mtl_main_impl* impl) {
   mt_cni_stop(impl);
 
   cni_queues_uinit(impl);
-
-  mt_kni_uinit(impl);
 
   mt_tap_uinit(impl);
 

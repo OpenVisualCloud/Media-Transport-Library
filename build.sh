@@ -16,7 +16,6 @@ function usage()
 buildtype=release
 disable_pcapng=false
 enable_asan=false
-enable_kni=false
 enable_tap=false
 
 if [ -n "$MTL_BUILD_DISABLE_PCAPNG" ];  then
@@ -31,13 +30,6 @@ if [ -n "$MTL_BUILD_ENABLE_ASAN" ];  then
         enable_asan=true
         buildtype=debug # use debug build as default for asan
         echo "Enable asan check."
-    fi
-fi
-
-if [ -n "$MTL_BUILD_ENABLE_KNI" ];  then
-    if [ "$MTL_BUILD_ENABLE_KNI" == "true" ]; then
-        enable_kni=true
-        echo "Enable kni"
     fi
 fi
 
@@ -80,7 +72,7 @@ PLUGINS_BUILD_DIR=${WORKSPACE}/build/plugins
 LD_PRELOAD_BUILD_DIR=${WORKSPACE}/build/ld_preload
 
 # build lib
-meson setup "${LIB_BUILD_DIR}" -Dbuildtype="$buildtype" -Ddisable_pcapng="$disable_pcapng" -Denable_asan="$enable_asan" -Denable_kni="$enable_kni" -Denable_tap="$enable_tap"
+meson setup "${LIB_BUILD_DIR}" -Dbuildtype="$buildtype" -Ddisable_pcapng="$disable_pcapng" -Denable_asan="$enable_asan" -Denable_tap="$enable_tap"
 pushd "${LIB_BUILD_DIR}"
 ninja
 if [ "$user" == "root" ] || [ "$OS" == "Windows_NT" ]; then

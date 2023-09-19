@@ -2379,9 +2379,6 @@ int mt_dev_if_init(struct mtl_main_impl* impl) {
       inf->max_tx_queues =
           p->tx_sessions_cnt_max ? p->tx_sessions_cnt_max : p->tx_queues_cnt[i];
       inf->max_tx_queues++; /* arp, mcast, ptp use shared sys queue */
-#ifdef MTL_HAS_KNI
-      inf->max_tx_queues++; /* kni tx queue */
-#endif
 #ifdef MTL_HAS_TAP
       inf->max_tx_queues++; /* tap tx queue */
 #endif

@@ -20,10 +20,6 @@ sources = files(
   'mt_flow.c',
 )
 
-if get_option('enable_kni') == true
-  sources += files('mt_kni.c')
-endif
-
 if is_windows
 if get_option('enable_tap') == true
   sources += files('mt_tap.c')

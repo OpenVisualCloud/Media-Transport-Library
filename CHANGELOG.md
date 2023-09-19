@@ -2,9 +2,10 @@
 
 ## Changelog for 23.12
 
-* ice: update driver to 1.12.6
-* log: add log to file support, see mtl_openlog_stream
-* dpdk: upgrade dpdk version to 23.07
+* ice: update driver to 1.12.6.
+* log: add log to file support, see mtl_openlog_stream.
+* dpdk: upgrade dpdk version to 23.07.
+* virtio_user: add virtio_user support for exception path, deprecate kni.
 
 ## Changelog for 23.08
 
