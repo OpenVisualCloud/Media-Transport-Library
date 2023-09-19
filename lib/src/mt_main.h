@@ -683,6 +683,7 @@ struct mt_interface {
   uint64_t simulate_malicious_pkt_tsc;
 
   uint16_t virtio_port_id; /* virtio_user port id */
+  bool virtio_port_active; /* virtio_user port active */
 };
 
 struct mt_lcore_shm {

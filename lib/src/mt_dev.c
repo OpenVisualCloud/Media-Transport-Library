@@ -1594,15 +1594,18 @@ static int dev_if_init_pacing(struct mt_interface* inf) {
 static int dev_if_init_virtio_user(struct mt_interface* inf) {
 #ifndef WINDOWSENV
   enum mtl_port port = inf->port;
+  struct mtl_main_impl* impl = inf->parent;
   uint16_t port_id = inf->port_id;
   int ret;
-  char name[32];
+  char name[IF_NAMESIZE];
   char args[256];
   struct rte_ether_addr addr = {0};
+  int sockfd;
+  struct ifreq ifr;
 
   rte_eth_macaddr_get(port_id, &addr);
 
-  snprintf(name, sizeof(name), "virtio_user%u", port_id);
+  snprintf(name, sizeof(name), "virtio_user%u", (uint8_t)port_id);
   snprintf(
       args, sizeof(args),
       "path=/dev/vhost-net,queues=1,queue_size=%u,iface=%s,mac=" RTE_ETHER_ADDR_PRT_FMT,
@@ -1622,7 +1625,47 @@ static int dev_if_init_virtio_user(struct mt_interface* inf) {
   }
   inf->virtio_port_id = virtio_port_id;
 
-  info("%s(%d), succ\n", __func__, port);
+  sockfd = socket(AF_INET, SOCK_DGRAM, 0);
+  if (sockfd < 0) {
+    err("%s(%d), cannot create socket\n", __func__, port);
+    return sockfd;
+  }
+  memset(&ifr, 0, sizeof(ifr));
+  snprintf(ifr.ifr_name, sizeof(ifr.ifr_name), "%s", name);
+
+  /* setup IP addresses, not support dhcp for now */
+  uint8_t* ip = mt_sip_addr(impl, port);
+  ifr.ifr_ifru.ifru_addr.sa_family = AF_INET;
+  ((struct sockaddr_in*)&ifr.ifr_ifru.ifru_addr)->sin_port = 0;
+  memcpy(&((struct sockaddr_in*)&ifr.ifr_ifru.ifru_addr)->sin_addr.s_addr, ip,
+         MTL_IP_ADDR_LEN);
+  ret = ioctl(sockfd, SIOCSIFADDR, &ifr);
+  if (ret < 0) {
+    err("%s(%d), cannot set interface ip\n", __func__, port);
+    close(sockfd);
+    return ret;
+  }
+
+  /* set interface up */
+  ret = ioctl(sockfd, SIOCGIFFLAGS, &ifr);
+  if (ret < 0) {
+    err("%s(%d), cannot get interface flags\n", __func__, port);
+    close(sockfd);
+    return ret;
+  }
+  ifr.ifr_flags |= IFF_UP;
+  ret = ioctl(sockfd, SIOCSIFFLAGS, &ifr);
+  if (ret < 0) {
+    err("%s(%d), cannot set interface up\n", __func__, port);
+    close(sockfd);
+    return ret;
+  }
+
+  close(sockfd);
+
+  inf->virtio_port_active = true;
+
+  info("%s(%d), succ, virtio port_id %u\n", __func__, port, virtio_port_id);
   return 0;
 #else
   MTL_MAY_UNUSED(inf);
