@@ -702,11 +702,6 @@ static int dev_stop_port(struct mt_interface* inf) {
   }
 
   if (!(inf->drv_info.flags & MT_DRV_F_NOT_DPDK_PMD)) {
-    if (mt_has_virtio_user(inf->parent, port)) {
-      ret = rte_eth_dev_stop(inf->virtio_port_id);
-      if (ret < 0)
-        err("%s(%d), rte_eth_dev_stop virtio port fail %d\n", __func__, port, ret);
-    }
     ret = rte_eth_dev_stop(port_id);
     if (ret < 0) err("%s(%d), rte_eth_dev_stop fail %d\n", __func__, port, ret);
   }
@@ -727,11 +722,6 @@ static int dev_close_port(struct mt_interface* inf) {
   }
 
   if (!(inf->drv_info.flags & MT_DRV_F_NOT_DPDK_PMD)) {
-    if (mt_has_virtio_user(inf->parent, port)) {
-      ret = rte_eth_dev_close(inf->virtio_port_id);
-      if (ret < 0)
-        err("%s(%d), rte_eth_dev_stop virtio port fail %d\n", __func__, port, ret);
-    }
     ret = rte_eth_dev_close(port_id);
     if (ret < 0) err("%s(%d), rte_eth_dev_close fail %d\n", __func__, port, ret);
   }
@@ -2606,6 +2596,14 @@ int mt_dev_if_pre_uinit(struct mtl_main_impl* impl) {
       mt_txq_flush(inf->txq_sys_entry, mt_get_pad(impl, i));
       mt_txq_put(inf->txq_sys_entry);
       inf->txq_sys_entry = NULL;
+    }
+
+    if (mt_has_virtio_user(impl, i)) {
+      inf->virtio_port_active = false;
+      int ret = rte_eth_dev_stop(inf->virtio_port_id);
+      if (ret < 0) warn("%s(%d), stop virtio port fail %d\n", __func__, i, ret);
+      ret = rte_eth_dev_close(inf->virtio_port_id);
+      if (ret < 0) warn("%s(%d), close virtio port fail %d\n", __func__, i, ret);
     }
   }
 
