@@ -1613,14 +1613,14 @@ static int dev_if_init_virtio_user(struct mt_interface* inf) {
 
   ret = rte_eal_hotplug_add("vdev", name, args);
   if (ret < 0) {
-    err("%s(%d), cannot create virtio port for port %u\n", __func__, port, port_id);
+    err("%s(%d), cannot create virtio port\n", __func__, port);
     return ret;
   }
 
   uint16_t virtio_port_id;
   ret = rte_eth_dev_get_port_by_name(name, &virtio_port_id);
   if (ret < 0) {
-    err("%s(%d), cannot get virtio port id for port %u\n", __func__, port, port_id);
+    err("%s(%d), cannot get virtio port id\n", __func__, port);
     return ret;
   }
   inf->virtio_port_id = virtio_port_id;
@@ -1665,7 +1665,7 @@ static int dev_if_init_virtio_user(struct mt_interface* inf) {
 
   inf->virtio_port_active = true;
 
-  info("%s(%d), succ, virtio port_id %u\n", __func__, port, virtio_port_id);
+  info("%s(%d), succ, kernel interface %s\n", __func__, port, name);
   return 0;
 #else
   MTL_MAY_UNUSED(inf);
