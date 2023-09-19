@@ -17,6 +17,7 @@ struct mt_rxq_entry {
   struct mt_rsq_entry* rsq;
   struct mt_srss_entry* srss;
   struct mt_csq_entry* csq;
+  struct mt_rx_socket_entry* rx_socket_q;
 
   uint16_t (*burst)(struct mt_rxq_entry* entry, struct rte_mbuf** rx_pkts,
                     const uint16_t nb_pkts);
@@ -36,6 +37,7 @@ struct mt_txq_entry {
   uint16_t queue_id;
   struct mt_tx_queue* txq;
   struct mt_tsq_entry* tsq;
+  struct mt_tx_socket_entry* tx_socket_q;
 
   uint16_t (*burst)(struct mt_txq_entry* entry, struct rte_mbuf** tx_pkts,
                     uint16_t nb_pkts);

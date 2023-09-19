@@ -366,8 +366,7 @@ int mt_arp_get_mac(struct mtl_main_impl* impl, uint8_t dip[MTL_IP_ADDR_LEN],
   dbg("%s(%d), start to get mac for ip %d.%d.%d.%d\n", __func__, port, dip[0], dip[1],
       dip[2], dip[3]);
   if (inf->drv_info.flags & MT_DRV_F_USE_KERNEL_CTL) {
-    ret = mt_socket_get_mac(impl, mt_get_user_params(impl)->port[port], dip, ea,
-                            timeout_ms);
+    ret = mt_socket_get_mac(impl, mt_kernel_if_name(impl, port), dip, ea, timeout_ms);
     if (ret < 0) {
       dbg("%s(%d), failed to get mac from socket %d\n", __func__, port, ret);
       return ret;
