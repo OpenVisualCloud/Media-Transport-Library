@@ -61,7 +61,6 @@ struct mt_tx_socket_entry* mt_tx_socket_get(struct mtl_main_impl* impl,
   entry->port = port;
   entry->fd = fd;
   rte_memcpy(&entry->flow, flow, sizeof(entry->flow));
-  mudp_init_sockaddr(&entry->send_addr, flow->dip_addr, flow->dst_port);
 
   uint8_t* ip = flow->dip_addr;
   info("%s(%d), fd %d ip %u.%u.%u.%u, port %u\n", __func__, port, fd, ip[0], ip[1], ip[2],
@@ -83,6 +82,7 @@ uint16_t mt_tx_socket_burst(struct mt_tx_socket_entry* entry, struct rte_mbuf** 
   uint16_t tx = 0;
   enum mtl_port port = entry->port;
   int fd = entry->fd;
+  struct sockaddr_in send_addr;
   struct mtl_port_status* stats = mt_if(entry->parent, port)->dev_stats_sw;
 
   for (tx = 0; tx < nb_pkts; tx++) {
@@ -93,7 +93,9 @@ uint16_t mt_tx_socket_burst(struct mt_tx_socket_entry* entry, struct rte_mbuf** 
       err("%s(%d,%d), only support one nb_segs %u\n", __func__, port, fd, m->nb_segs);
       goto done;
     }
-    struct rte_ether_hdr* eth = rte_pktmbuf_mtod(m, struct rte_ether_hdr*);
+    struct mt_udp_hdr* hdr = rte_pktmbuf_mtod(m, struct mt_udp_hdr*);
+    struct rte_ether_hdr* eth = &hdr->eth;
+
     if (eth->ether_type != htons(RTE_ETHER_TYPE_IPV4)) {
       err("%s(%d,%d), not ipv4\n", __func__, port, fd);
       goto done;
@@ -101,10 +103,14 @@ uint16_t mt_tx_socket_burst(struct mt_tx_socket_entry* entry, struct rte_mbuf** 
 
     void* payload = rte_pktmbuf_mtod_offset(m, void*, sizeof(struct mt_udp_hdr));
     ssize_t payload_len = m->data_len - sizeof(struct mt_udp_hdr);
+
+    struct rte_ipv4_hdr* ipv4 = &hdr->ipv4;
+    struct rte_udp_hdr* udp = &hdr->udp;
+    mudp_init_sockaddr(&send_addr, (uint8_t*)&ipv4->dst_addr, ntohs(udp->dst_port));
+
     /* nonblocking */
-    ssize_t send =
-        sendto(entry->fd, payload, payload_len, MSG_DONTWAIT,
-               (const struct sockaddr*)&entry->send_addr, sizeof(entry->send_addr));
+    ssize_t send = sendto(entry->fd, payload, payload_len, MSG_DONTWAIT,
+                          (const struct sockaddr*)&send_addr, sizeof(send_addr));
     dbg("%s(%d,%d), len %" PRId64 " send %" PRId64 "\n", __func__, port, fd, payload_len,
         send);
     if (send != payload_len) {

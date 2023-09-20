@@ -912,9 +912,6 @@ struct mt_tx_socket_entry {
   struct mt_txq_flow flow;
 
   int fd;
-#ifndef WINDOWSENV
-  struct sockaddr_in send_addr;
-#endif
 };
 
 struct mt_rx_socket_entry {
