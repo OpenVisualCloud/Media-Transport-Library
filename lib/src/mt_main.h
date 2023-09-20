@@ -587,6 +587,8 @@ struct mt_tx_queue {
 #define MT_DRV_F_RX_POOL_COMMON (MTL_BIT64(5))
 /* no rx flow, for MTL_PMD_DPDK_AF_PACKET and MTL_PMD_DPDK_AF_PACKET */
 #define MT_DRV_F_RX_NO_FLOW (MTL_BIT64(6))
+/* mcast control in data path, for MTL_PMD_KERNEL_SOCKET */
+#define MT_DRV_F_MCAST_IN_DP (MTL_BIT64(7))
 
 struct mt_dev_driver_info {
   char* name;
@@ -912,9 +914,6 @@ struct mt_tx_socket_entry {
   struct mt_txq_flow flow;
 
   int fd;
-#ifndef WINDOWSENV
-  struct sockaddr_in send_addr;
-#endif
 };
 
 struct mt_rx_socket_entry {
@@ -1073,6 +1072,13 @@ static inline bool mt_pmd_is_kernel(struct mtl_main_impl* impl, enum mtl_port po
 
 static inline bool mt_drv_use_kernel_ctl(struct mtl_main_impl* impl, enum mtl_port port) {
   if (mt_if(impl, port)->drv_info.flags & MT_DRV_F_USE_KERNEL_CTL)
+    return true;
+  else
+    return false;
+}
+
+static inline bool mt_drv_mcast_in_dp(struct mtl_main_impl* impl, enum mtl_port port) {
+  if (mt_if(impl, port)->drv_info.flags & MT_DRV_F_MCAST_IN_DP)
     return true;
   else
     return false;

@@ -2342,6 +2342,11 @@ static int tv_tasklet_st22(struct mtl_main_impl* impl,
     if (send_r) s->port_user_stats[MTL_SESSION_PORT_R].frames++;
     rte_atomic32_inc(&s->stat_frame_cnt);
     st22_info->frame_idx++;
+    if (s->tx_no_chain) {
+      /* trigger extbuf free cb since mbuf attach not used */
+      struct st_frame_trans* frame_info = &s->st20_frames[s->st20_frame_idx];
+      tv_frame_free_cb(frame_info->addr, frame_info);
+    }
 
     uint64_t frame_end_time = mt_get_tsc(impl);
     if (frame_end_time > pacing->tsc_time_cursor) {

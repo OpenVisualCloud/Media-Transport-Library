@@ -49,6 +49,7 @@ Output parameters description:
 2. "udp_port port local_addr src_addr fb_cnt" definitions are the same as in sample.
 3. "total_sessions" shall be set with the total number of tx sessions.
 
-Known issue
+Known issues:
+
 1. Only RGB24 pixel format supported for output
 2. Either input or output only operation could be enabled and kahawai transcoding is not supported
