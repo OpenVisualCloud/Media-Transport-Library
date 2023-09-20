@@ -173,8 +173,10 @@ struct mt_rx_socket_entry* mt_rx_socket_get(struct mtl_main_impl* impl,
 
   /* bind to port */
   struct sockaddr_in bind_addr;
-  // mudp_init_sockaddr(&bind_addr, mt_sip_addr(impl, port), flow->dst_port);
-  mudp_init_sockaddr_any(&bind_addr, flow->dst_port);
+  if (mt_is_multicast_ip(flow->dip_addr))
+    mudp_init_sockaddr(&bind_addr, flow->dip_addr, flow->dst_port);
+  else
+    mudp_init_sockaddr(&bind_addr, mt_sip_addr(impl, port), flow->dst_port);
   ret = bind(fd, (const struct sockaddr*)&bind_addr, sizeof(bind_addr));
   if (ret < 0) {
     err("%s(%d,%d), bind to port %u fail %d\n", __func__, port, fd, flow->dst_port, ret);
