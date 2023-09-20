@@ -398,11 +398,14 @@ int mt_mcast_join(struct mtl_main_impl* impl, uint32_t group_addr, enum mtl_port
   mcast->group_ip[group_num] = group_addr;
   mcast->group_ref_cnt[group_num] = 1;
   mcast->group_num++;
-  mt_pthread_mutex_unlock(&mcast->group_mutex);
 
-  /* add mcast mac to interface */
-  mt_mcast_ip_to_mac(ip, &mcast_mac);
-  mcast_inf_add_mac(inf, &mcast_mac);
+  if (!mt_drv_use_kernel_ctl(impl, port)) {
+    /* add mcast mac to interface */
+    mt_mcast_ip_to_mac(ip, &mcast_mac);
+    mcast_inf_add_mac(inf, &mcast_mac);
+  }
+
+  mt_pthread_mutex_unlock(&mcast->group_mutex);
 
   /* report to switch to join group */
   if (!mt_drv_use_kernel_ctl(impl, port)) {
@@ -438,11 +441,13 @@ int mt_mcast_leave(struct mtl_main_impl* impl, uint32_t group_addr, enum mtl_por
       mcast->group_num--;
       if (mt_drv_use_kernel_ctl(impl, port)) {
         mt_socket_drop_mcast(impl, port, group_addr);
+      } else {
+        /* remove mcast mac from interface */
+        mt_mcast_ip_to_mac(ip, &mcast_mac);
+        mcast_inf_remove_mac(inf, &mcast_mac);
       }
       mt_pthread_mutex_unlock(&mcast->group_mutex);
-      /* remove mcast mac from interface */
-      mt_mcast_ip_to_mac(ip, &mcast_mac);
-      mcast_inf_remove_mac(inf, &mcast_mac);
+
       return 0;
     }
   }
