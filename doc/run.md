@@ -95,7 +95,7 @@ For the Intel® E810 Series Ethernet Adapter, which supports Virtual Functions (
 
 For other Network Interface Cards (NICs), please verify if your NIC is supported by DPDK by referring to the following link: <https://doc.dpdk.org/guides/nics/>. If it is, follow the guide provided there for further instructions.
 
-If your NIC is not supported by DPDK's native Poll Mode Driver (PMD), DPDK does offer AF_PACKET PMD support. This allows a DPDK application to send and receive raw packets through the Kernel. For more information, please refer to the [AF_PACKET](doc/experimental/af_packet.md) documentation. However, please be aware that this is an experimental feature and is intended for trial usage only.
+If your NIC is not supported by DPDK's native Poll Mode Driver (PMD), MTL provides an alternative in the form of kernel socket-based transport support. This enables an MTL application to send and receive UDP packets via the Kernel. Please refer to [kernel tx config](../tests/script/kernel_socket_json/tx.json) and [kernel rx config](../tests/script/kernel_socket_json/rx.json) for how to config the kernel transport in json config. However, it's important to note that this is an experimental feature intended solely for trial usage. Consequently, its performance and pacing accuracy may be limited.
 
 #### 3.1.1 Create Intel® E810 VFs PMD
 
