@@ -371,6 +371,10 @@ int mt_mcast_join(struct mtl_main_impl* impl, uint32_t group_addr, enum mtl_port
   uint8_t* ip = (uint8_t*)&group_addr;
   int ret;
 
+  if (mt_drv_mcast_in_dp(impl, port)) {
+    return 0;
+  }
+
   if (group_num >= MT_MCAST_GROUP_MAX) {
     err("%s, reach max multicast group number!\n", __func__);
     return -EIO;
@@ -394,20 +398,18 @@ int mt_mcast_join(struct mtl_main_impl* impl, uint32_t group_addr, enum mtl_port
           ip[0], ip[1], ip[2], ip[3]);
       return ret;
     }
+  } else {
+    /* add mcast mac to dpdk interface */
+    mt_mcast_ip_to_mac(ip, &mcast_mac);
+    mcast_inf_add_mac(inf, &mcast_mac);
   }
   mcast->group_ip[group_num] = group_addr;
   mcast->group_ref_cnt[group_num] = 1;
   mcast->group_num++;
 
-  if (!mt_drv_use_kernel_ctl(impl, port)) {
-    /* add mcast mac to interface */
-    mt_mcast_ip_to_mac(ip, &mcast_mac);
-    mcast_inf_add_mac(inf, &mcast_mac);
-  }
-
   mt_pthread_mutex_unlock(&mcast->group_mutex);
 
-  /* report to switch to join group */
+  /* send mcast report msg if dpdk based */
   if (!mt_drv_use_kernel_ctl(impl, port)) {
     mcast_membership_report(impl, MCAST_MODE_IS_EXCLUDE, port);
   }
@@ -424,6 +426,10 @@ int mt_mcast_leave(struct mtl_main_impl* impl, uint32_t group_addr, enum mtl_por
   struct mt_interface* inf = mt_if(impl, port);
   uint8_t* ip = (uint8_t*)&group_addr;
   struct rte_ether_addr mcast_mac;
+
+  if (mt_drv_mcast_in_dp(impl, port)) {
+    return 0;
+  }
 
   mt_pthread_mutex_lock(&mcast->group_mutex);
   /* search the group ip list and delete the addr */
@@ -473,11 +479,13 @@ int mt_mcast_restore(struct mtl_main_impl* impl, enum mtl_port port) {
 int mt_mcast_l2_join(struct mtl_main_impl* impl, struct rte_ether_addr* addr,
                      enum mtl_port port) {
   struct mt_interface* inf = mt_if(impl, port);
+  if (mt_drv_use_kernel_ctl(impl, port)) return 0;
   return mcast_inf_add_mac(inf, addr);
 }
 
 int mt_mcast_l2_leave(struct mtl_main_impl* impl, struct rte_ether_addr* addr,
                       enum mtl_port port) {
   struct mt_interface* inf = mt_if(impl, port);
+  if (mt_drv_use_kernel_ctl(impl, port)) return 0;
   return mcast_inf_remove_mac(inf, addr);
 }

@@ -173,12 +173,29 @@ struct mt_rx_socket_entry* mt_rx_socket_get(struct mtl_main_impl* impl,
 
   /* bind to port */
   struct sockaddr_in bind_addr;
-  mudp_init_sockaddr(&bind_addr, mt_sip_addr(impl, port), flow->dst_port);
+  // mudp_init_sockaddr(&bind_addr, mt_sip_addr(impl, port), flow->dst_port);
+  mudp_init_sockaddr_any(&bind_addr, flow->dst_port);
   ret = bind(fd, (const struct sockaddr*)&bind_addr, sizeof(bind_addr));
   if (ret < 0) {
     err("%s(%d,%d), bind to port %u fail %d\n", __func__, port, fd, flow->dst_port, ret);
     close(fd);
     return NULL;
+  }
+
+  if (mt_is_multicast_ip(flow->dip_addr)) {
+    struct ip_mreq mreq;
+    memset(&mreq, 0, sizeof(mreq));
+    /* multicast addr */
+    memcpy(&mreq.imr_multiaddr.s_addr, flow->dip_addr, MTL_IP_ADDR_LEN);
+    /* local nic src ip */
+    memcpy(&mreq.imr_interface.s_addr, mt_sip_addr(impl, port), MTL_IP_ADDR_LEN);
+    ret = setsockopt(fd, IPPROTO_IP, IP_ADD_MEMBERSHIP, &mreq, sizeof(mreq));
+    if (ret < 0) {
+      err("%s(%d), join multicast fail %d\n", __func__, fd, ret);
+      close(fd);
+      return NULL;
+    }
+    info("%s(%d), join multicast succ\n", __func__, fd);
   }
 
   struct mt_rx_socket_entry* entry =

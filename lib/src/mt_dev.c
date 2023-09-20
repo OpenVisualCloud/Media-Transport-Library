@@ -91,7 +91,7 @@ static const struct mt_dev_driver_info dev_drvs[] = {
         .drv_type = MT_DRV_KERNEL_SOCKET,
         .flow_type = MT_FLOW_ALL,
         .flags = MT_DRV_F_NOT_DPDK_PMD | MT_DRV_F_NO_CNI | MT_DRV_F_USE_KERNEL_CTL |
-                 MT_DRV_F_RX_NO_FLOW,
+                 MT_DRV_F_RX_NO_FLOW | MT_DRV_F_MCAST_IN_DP,
     },
 };
 

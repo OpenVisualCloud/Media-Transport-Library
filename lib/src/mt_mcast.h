@@ -76,7 +76,6 @@ int mt_mcast_init(struct mtl_main_impl* impl);
 int mt_mcast_uinit(struct mtl_main_impl* impl);
 int mt_mcast_join(struct mtl_main_impl* impl, uint32_t group_addr, enum mtl_port port);
 int mt_mcast_leave(struct mtl_main_impl* impl, uint32_t group_addr, enum mtl_port port);
-int mt_mcast_restore(struct mtl_main_impl* impl, enum mtl_port port);
 int mt_mcast_l2_join(struct mtl_main_impl* impl, struct rte_ether_addr* addr,
                      enum mtl_port port);
 int mt_mcast_l2_leave(struct mtl_main_impl* impl, struct rte_ether_addr* addr,
