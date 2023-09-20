@@ -50,7 +50,6 @@ if is_windows
   dpdk_root_dir = get_option('dpdk_root_dir')
   mtl_include_dir += include_directories('''.\windows\''')
   mtl_include_dir += include_directories(dpdk_root_dir + '''\lib\eal\windows\include\''')
-  mtl_include_dir += include_directories(dpdk_root_dir + '''\lib\kni\''')
   dpdklibs = run_command('pkg-config', '--static', '--libs', 'libdpdk')
   mtl_link_c_args += [dpdklibs.stdout().strip().split()]
   # generate .def file to be converted to .lib for msvc

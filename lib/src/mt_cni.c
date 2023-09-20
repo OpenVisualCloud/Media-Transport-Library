@@ -7,8 +7,8 @@
 #include "datapath/mt_queue.h"
 #include "mt_arp.h"
 #include "mt_dhcp.h"
-#include "mt_kni.h"
 // #define DEBUG
+#include "mt_dev.h"
 #include "mt_dhcp.h"
 #include "mt_log.h"
 #include "mt_ptp.h"
@@ -140,6 +140,27 @@ static int cni_burst_to_kernel(struct mt_cni_entry* cni, struct rte_mbuf* m) {
   return 0;
 }
 
+static int cni_burst_from_kernel(struct mt_cni_entry* cni) {
+  struct mtl_main_impl* impl = cni->impl;
+  enum mtl_port port = cni->port;
+  struct mt_interface* inf = mt_if(impl, port);
+  if (!inf->virtio_port_active) return 0;
+
+  struct rte_mbuf* pkts[ST_CNI_RX_BURST_SIZE];
+
+  uint16_t revd = rte_eth_rx_burst(inf->virtio_port_id, 0, pkts, ST_CNI_RX_BURST_SIZE);
+  if (revd > 0) {
+    cni->virtio_tx_cnt += revd;
+    uint16_t sent = mt_dev_tx_sys_queue_burst(impl, port, pkts, revd);
+    if (sent != revd) {
+      cni->virtio_tx_fail_cnt += revd - sent;
+      return -EIO;
+    }
+  }
+
+  return 0;
+}
+
 static int cni_udp_handle(struct mt_cni_entry* cni, struct rte_mbuf* m) {
   struct mt_udp_hdr* hdr;
   struct rte_ipv4_hdr* ipv4;
@@ -224,7 +245,8 @@ static int cni_rx_handle(struct mt_cni_entry* cni, struct rte_mbuf* m) {
       break;
     case RTE_ETHER_TYPE_ARP:
       arp_hdr = rte_pktmbuf_mtod_offset(m, struct rte_arp_hdr*, hdr_offset);
-      mt_arp_parse(impl, arp_hdr, port);
+      if (mt_arp_parse(impl, arp_hdr, port) < 0)
+        cni_burst_to_kernel(cni, m); /* ARP fallback to kernel, for ping use */
       break;
     case RTE_ETHER_TYPE_IPV4:
       ipv4_hdr = rte_pktmbuf_mtod_offset(m, struct mt_ipv4_udp*, hdr_offset);
@@ -275,11 +297,12 @@ static int cni_traffic(struct mtl_main_impl* impl) {
       if (rx > 0) {
         cni->eth_rx_cnt += rx;
         for (uint16_t ri = 0; ri < rx; ri++) cni_rx_handle(cni, pkts_rx[ri]);
-        mt_kni_handle(impl, i, pkts_rx, rx);
         mt_free_mbufs(&pkts_rx[0], rx);
         done = false;
       }
     }
+
+    cni_burst_from_kernel(cni);
   }
 
   return done ? MT_TASKLET_ALL_DONE : MT_TASKLET_HAS_PENDING;
@@ -430,9 +453,12 @@ static int cni_stat(void* priv) {
     cni->eth_rx_cnt = 0;
     cni->eth_rx_bytes = 0;
 
-    if (cni->virtio_rx_cnt) {
-      notice("CNI(%d): virtio_rx_cnt %u\n", i, cni->virtio_rx_cnt);
+    if (cni->virtio_rx_cnt || cni->virtio_tx_cnt || cni->virtio_tx_fail_cnt) {
+      notice("CNI(%d): virtio_rx_cnt %u, virtio_tx_cnt(all:fail) %u:%u\n", i,
+             cni->virtio_rx_cnt, cni->virtio_tx_cnt, cni->virtio_tx_fail_cnt);
       cni->virtio_rx_cnt = 0;
+      cni->virtio_tx_cnt = 0;
+      cni->virtio_tx_fail_cnt = 0;
     }
 
     csq_stat(cni);
@@ -463,9 +489,6 @@ int mt_cni_init(struct mtl_main_impl* impl) {
     rte_spinlock_init(&cni->csq_lock);
     MT_TAILQ_INIT(&cni->udp_detect);
   }
-
-  ret = mt_kni_init(impl);
-  if (ret < 0) return ret;
 
   ret = cni_queues_init(impl);
   if (ret < 0) {
@@ -539,8 +562,6 @@ int mt_cni_uinit(struct mtl_main_impl* impl) {
   mt_cni_stop(impl);
 
   cni_queues_uinit(impl);
-
-  mt_kni_uinit(impl);
 
   mt_tap_uinit(impl);
 
