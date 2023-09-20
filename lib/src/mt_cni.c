@@ -244,9 +244,14 @@ static int cni_rx_handle(struct mt_cni_entry* cni, struct rte_mbuf* m) {
       mt_ptp_parse(ptp, ptp_hdr, vlan, MT_PTP_L2, m->timesync, NULL);
       break;
     case RTE_ETHER_TYPE_ARP:
-      arp_hdr = rte_pktmbuf_mtod_offset(m, struct rte_arp_hdr*, hdr_offset);
-      if (mt_arp_parse(impl, arp_hdr, port) < 0)
-        cni_burst_to_kernel(cni, m); /* ARP fallback to kernel, for ping use */
+      if (mt_has_virtio_user(impl, port)) {
+        /* use kernel implementation */
+        cni_burst_to_kernel(cni, m);
+      } else {
+        /* use internal implementation */
+        arp_hdr = rte_pktmbuf_mtod_offset(m, struct rte_arp_hdr*, hdr_offset);
+        mt_arp_parse(impl, arp_hdr, port);
+      }
       break;
     case RTE_ETHER_TYPE_IPV4:
       ipv4_hdr = rte_pktmbuf_mtod_offset(m, struct mt_ipv4_udp*, hdr_offset);
