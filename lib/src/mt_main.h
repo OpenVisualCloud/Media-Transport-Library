@@ -1064,7 +1064,8 @@ static inline bool mt_pmd_is_dpdk_user(struct mtl_main_impl* impl, enum mtl_port
     return false;
 }
 
-static inline bool mt_pmd_is_kernel(struct mtl_main_impl* impl, enum mtl_port port) {
+static inline bool mt_pmd_is_kernel_based(struct mtl_main_impl* impl,
+                                          enum mtl_port port) {
   if (MTL_PMD_DPDK_USER == mt_get_user_params(impl)->pmd[port])
     return false;
   else

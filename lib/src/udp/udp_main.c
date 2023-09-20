@@ -39,6 +39,13 @@ static inline bool udp_alive(struct mudp_impl* s) {
     return false;
 }
 
+static inline bool udp_is_fallback(struct mudp_impl* s) {
+  if (s->fallback_fd >= 0)
+    return true;
+  else
+    return false;
+}
+
 int mudp_verify_socket_args(int domain, int type, int protocol) {
   if (domain != AF_INET) {
     dbg("%s, invalid domain %d\n", __func__, domain);
@@ -1082,16 +1089,56 @@ dequeue:
   return udp_rx_ret_timeout(s);
 }
 
+static int udp_fallback_poll(struct mudp_pollfd* fds, mudp_nfds_t nfds, int timeout) {
+  struct mudp_impl* s;
+  struct pollfd p_fds[nfds];
+  int ret;
+
+  dbg("%s(%d), nfds %d timeout %d\n", __func__, s->idx, (int)nfds, timeout);
+  for (mudp_nfds_t i = 0; i < nfds; i++) {
+    s = fds[i].fd;
+
+    if (!udp_is_fallback(s)) {
+      err("%s(%d), it's not a fallback fd\n", __func__, s->idx);
+      return -EIO;
+    }
+    p_fds[i].fd = s->fallback_fd;
+    p_fds[i].events = fds[i].events;
+    p_fds[i].revents = fds[i].revents;
+  }
+
+  ret = poll(p_fds, nfds, timeout);
+
+  for (mudp_nfds_t i = 0; i < nfds; i++) {
+    fds[i].revents = p_fds[i].revents;
+  }
+
+  return ret;
+}
+
 static int udp_poll(struct mudp_pollfd* fds, mudp_nfds_t nfds, int timeout,
                     int (*query)(void* priv), void* priv) {
   struct mudp_impl* s = fds[0].fd;
   struct mtl_main_impl* impl = s->parent;
   uint64_t start_ts = mt_get_tsc(impl);
-  int rc;
+  int rc, ret;
 
   dbg("%s(%d), nfds %d timeout %d\n", __func__, s->idx, (int)nfds, timeout);
   for (mudp_nfds_t i = 0; i < nfds; i++) {
     s = fds[i].fd;
+
+    if (udp_is_fallback(s)) {
+      err("%s(%d), it's backed by a fallback fd\n", __func__, s->idx);
+      return -EIO;
+    }
+
+    if (!s->rxq) {
+      ret = udp_init_rxq(impl, s);
+      if (ret < 0) {
+        err("%s(%d), init rxq fail\n", __func__, s->idx);
+        return ret;
+      }
+    }
     s->stat_poll_cnt++;
   }
 
@@ -1193,7 +1240,20 @@ mudp_handle mudp_socket_port(mtl_handle mt, int domain, int type, int protocol,
   s->cookie = idx;
   s->mcast_addrs_nb = 16; /* max 16 mcast address */
   s->gso_segment_sz = MUDP_MAX_BYTES;
+  s->fallback_fd = -1;
   mt_pthread_mutex_init(&s->mcast_addrs_mutex, NULL);
+
+  if (mt_pmd_is_kernel_socket(impl, port)) {
+    ret = socket(domain, type, protocol);
+    if (ret < 0) {
+      err("%s(%d), fall back to socket fail %d\n", __func__, idx, ret);
+      mudp_close(s);
+      return NULL;
+    }
+    s->fallback_fd = ret;
+    info("%s(%d), fall back to socket fd %d\n", __func__, idx, s->fallback_fd);
+    goto succ;
+  }
 
   ret = udp_init_hdr(impl, s);
   if (ret < 0) {
@@ -1212,6 +1272,7 @@ mudp_handle mudp_socket_port(mtl_handle mt, int domain, int type, int protocol,
     return NULL;
   }
 
+succ:
   s->alive = true;
   info("%s(%d), succ, socket %p\n", __func__, idx, s);
   return s;
@@ -1232,6 +1293,11 @@ int mudp_close(mudp_handle ut) {
   }
 
   s->alive = false;
+
+  if (s->fallback_fd >= 0) {
+    close(s->fallback_fd);
+    s->fallback_fd = -1;
+  }
 
   mt_stat_unregister(impl, udp_stat_dump, s);
   udp_stat_dump(s);
@@ -1256,6 +1322,14 @@ int mudp_bind(mudp_handle ut, const struct sockaddr* addr, socklen_t addrlen) {
   if (s->type != MT_HANDLE_UDP) {
     err("%s(%d), invalid type %d\n", __func__, idx, s->type);
     MUDP_ERR_RET(EIO);
+  }
+
+  if (udp_is_fallback(s)) {
+    ret = bind(s->fallback_fd, addr, addrlen);
+    uint8_t* ip = (uint8_t*)&addr_in->sin_addr.s_addr;
+    info("%s(%d), fallback fd %d bind ip %u.%u.%u.%u port %u ret %d\n", __func__, idx,
+         s->fallback_fd, ip[0], ip[1], ip[2], ip[3], htons(addr_in->sin_port), ret);
+    return ret;
   }
 
   ret = udp_verify_bind_addr(s, addr_in, addrlen);
@@ -1293,6 +1367,9 @@ ssize_t mudp_sendto(mudp_handle ut, const void* buf, size_t len, int flags,
   int idx = s->idx;
   int arp_timeout_ms = s->arp_timeout_us / 1000;
   int ret;
+
+  if (udp_is_fallback(s))
+    return sendto(s->fallback_fd, buf, len, flags, dest_addr, addrlen);
 
   const struct sockaddr_in* addr_in = (struct sockaddr_in*)dest_addr;
   ret = udp_verify_sendto_args(len, flags, addr_in, addrlen);
@@ -1361,6 +1438,8 @@ ssize_t mudp_sendmsg(mudp_handle ut, const struct msghdr* msg, int flags) {
   int arp_timeout_ms = s->msg_arp_timeout_us / 1000;
   int ret;
 
+  if (udp_is_fallback(s)) return sendmsg(s->fallback_fd, msg, flags);
+
   const struct sockaddr_in* addr_in = (struct sockaddr_in*)msg->msg_name;
   /* len to 1 to let the verify happy */
   ret = udp_verify_sendto_args(1, flags, addr_in, msg->msg_namelen);
@@ -1428,21 +1507,16 @@ int mudp_poll_query(struct mudp_pollfd* fds, mudp_nfds_t nfds, int timeout,
   if (ret < 0) return ret;
 
   struct mudp_impl* s = fds[0].fd;
-  struct mtl_main_impl* impl = s->parent;
 
-  /* init rxq if not */
-  for (mudp_nfds_t i = 0; i < nfds; i++) {
-    s = fds[i].fd;
-    if (!s->rxq) {
-      ret = udp_init_rxq(impl, s);
-      if (ret < 0) {
-        err("%s(%d), init rxq fail\n", __func__, s->idx);
-        return ret;
-      }
+  if (udp_is_fallback(s)) {
+    if (query) {
+      err("%s(%d), query not support for fallback pth\n", __func__, s->idx);
+      return -EIO;
     }
+    return udp_fallback_poll(fds, nfds, timeout);
+  } else {
+    return udp_poll(fds, nfds, timeout, query, priv);
   }
-
-  return udp_poll(fds, nfds, timeout, query, priv);
 }
 
 int mudp_poll(struct mudp_pollfd* fds, mudp_nfds_t nfds, int timeout) {
@@ -1455,6 +1529,9 @@ ssize_t mudp_recvfrom(mudp_handle ut, void* buf, size_t len, int flags,
   struct mtl_main_impl* impl = s->parent;
   int idx = s->idx;
   int ret;
+
+  if (udp_is_fallback(s))
+    return recvfrom(s->fallback_fd, buf, len, flags, src_addr, addrlen);
 
   /* init rxq if not */
   if (!s->rxq) {
@@ -1474,6 +1551,8 @@ ssize_t mudp_recvmsg(mudp_handle ut, struct msghdr* msg, int flags) {
   int idx = s->idx;
   int ret;
 
+  if (udp_is_fallback(s)) return recvmsg(s->fallback_fd, msg, flags);
+
   /* init rxq if not */
   if (!s->rxq) {
     ret = udp_init_rxq(impl, s);
@@ -1490,6 +1569,9 @@ int mudp_getsockopt(mudp_handle ut, int level, int optname, void* optval,
                     socklen_t* optlen) {
   struct mudp_impl* s = ut;
   int idx = s->idx;
+
+  if (udp_is_fallback(s))
+    return getsockopt(s->fallback_fd, level, optname, optval, optlen);
 
   switch (level) {
     case SOL_SOCKET: {
@@ -1525,6 +1607,9 @@ int mudp_setsockopt(mudp_handle ut, int level, int optname, const void* optval,
                     socklen_t optlen) {
   struct mudp_impl* s = ut;
   int idx = s->idx;
+
+  if (udp_is_fallback(s))
+    return setsockopt(s->fallback_fd, level, optname, optval, optlen);
 
   switch (level) {
     case SOL_SOCKET: {
@@ -1585,6 +1670,8 @@ int mudp_ioctl(mudp_handle ut, unsigned long cmd, va_list args) {
   struct mudp_impl* s = ut;
   int idx = s->idx;
   MTL_MAY_UNUSED(args);
+
+  if (udp_is_fallback(s)) return ioctl(s->fallback_fd, cmd, args);
 
   switch (cmd) {
     case FIONBIO:

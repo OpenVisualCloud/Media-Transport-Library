@@ -451,7 +451,7 @@ mtl_handle mtl_init(struct mtl_init_params* p) {
     }
     /* update socket */
     mt_if(impl, i)->socket_id = socket[i];
-    info("%s(%d), socket_id %d\n", __func__, i, socket[i]);
+    info("%s(%d), socket_id %d port %s\n", __func__, i, socket[i], p->port[i]);
   }
   rte_atomic32_set(&impl->instance_started, 0);
   rte_atomic32_set(&impl->instance_aborted, 0);

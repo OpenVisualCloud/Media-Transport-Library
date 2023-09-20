@@ -2298,7 +2298,7 @@ int mt_dev_if_init(struct mtl_main_impl* impl) {
       port = impl->kport_info.kernel_if[i];
       port_id = i;
     } else {
-      if (mt_pmd_is_kernel(impl, i))
+      if (mt_pmd_is_kernel_based(impl, i))
         port = impl->kport_info.dpdk_port[i];
       else
         port = p->port[i];

@@ -291,8 +291,10 @@ uint16_t mt_rx_socket_burst(struct mt_rx_socket_entry* entry, struct rte_mbuf** 
     dbg("%s(%d,%d), recv len %" PRId64 "\n", __func__, port, fd, len);
     pkt->pkt_len = len + sizeof(*hdr);
     pkt->data_len = pkt->pkt_len;
-    addr_in.sin_port = udp->src_port;
-    addr_in.sin_addr.s_addr = ipv4->src_addr;
+    udp->dgram_len = htons(len + sizeof(*udp));
+    udp->src_port = addr_in.sin_port;
+    ipv4->src_addr = addr_in.sin_addr.s_addr;
+    ipv4->next_proto_id = IPPROTO_UDP;
 
     rx_pkts[rx] = pkt;
     stats->rx_packets++;
