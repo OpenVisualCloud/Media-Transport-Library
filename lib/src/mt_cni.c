@@ -130,12 +130,13 @@ static int cni_burst_to_kernel(struct mt_cni_entry* cni, struct rte_mbuf* m) {
   struct mt_interface* inf = mt_if(impl, port);
   if (!inf->virtio_port_active) return 0;
 
+  cni->virtio_rx_cnt++;
   int ret = rte_eth_tx_burst(inf->virtio_port_id, 0, &m, 1);
   if (ret < 1) {
-    warn("%s(%d), forward packet to kernel fail\n", __func__, port);
+    dbg("%s(%d), forward packet to kernel fail\n", __func__, port);
+    cni->virtio_rx_fail_cnt++;
     return -EIO;
   }
-  cni->virtio_rx_cnt++;
 
   return 0;
 }
@@ -458,10 +459,11 @@ static int cni_stat(void* priv) {
     cni->eth_rx_cnt = 0;
     cni->eth_rx_bytes = 0;
 
-    if (cni->virtio_rx_cnt || cni->virtio_tx_cnt || cni->virtio_tx_fail_cnt) {
-      notice("CNI(%d): virtio_rx_cnt %u, virtio_tx_cnt(all:fail) %u:%u\n", i,
-             cni->virtio_rx_cnt, cni->virtio_tx_cnt, cni->virtio_tx_fail_cnt);
+    if (cni->virtio_rx_cnt || cni->virtio_tx_cnt) {
+      notice("CNI(%d): virtio pkts(all:fail) rx %u:%u, tx %u:%u\n", i, cni->virtio_rx_cnt,
+             cni->virtio_rx_fail_cnt, cni->virtio_tx_cnt, cni->virtio_tx_fail_cnt);
       cni->virtio_rx_cnt = 0;
+      cni->virtio_rx_fail_cnt = 0;
       cni->virtio_tx_cnt = 0;
       cni->virtio_tx_fail_cnt = 0;
     }

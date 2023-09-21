@@ -342,7 +342,7 @@ packet egresses from the sender.
 --multi_src_port                     : debug option, use multiple src port for st20 tx stream.
 --audio_fifo_size <count>            : debug option, the audio fifo size between packet builder and pacing.
 --dhcp                               : debug option, enable DHCP for all ports.
---virtio_user                        : debug option, enable virtio_user ports for control plane packets. Linux only, need root user.
+--virtio_user                        : debug option, enable virtio_user ports for control plane packets. Linux only, need to set capability for the app before running, `sudo setcap 'cap_net_admin+ep' ./build/app/RxTxApp`.
 ```
 
 ## 6. Tests
