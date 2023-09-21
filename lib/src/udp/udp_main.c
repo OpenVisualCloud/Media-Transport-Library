@@ -1107,7 +1107,12 @@ static int udp_fallback_poll(struct mudp_pollfd* fds, mudp_nfds_t nfds, int time
     p_fds[i].revents = fds[i].revents;
   }
 
+#ifdef WINDOWSENV
+  ret = -EIO;
+  err("%s(%d), not support on this platform\n", __func__, s->idx);
+#else
   ret = poll(p_fds, nfds, timeout);
+#endif
 
   for (mudp_nfds_t i = 0; i < nfds; i++) {
     fds[i].revents = p_fds[i].revents;
@@ -1438,7 +1443,9 @@ ssize_t mudp_sendmsg(mudp_handle ut, const struct msghdr* msg, int flags) {
   int arp_timeout_ms = s->msg_arp_timeout_us / 1000;
   int ret;
 
+#ifndef WINDOWSENV
   if (udp_is_fallback(s)) return sendmsg(s->fallback_fd, msg, flags);
+#endif
 
   const struct sockaddr_in* addr_in = (struct sockaddr_in*)msg->msg_name;
   /* len to 1 to let the verify happy */
@@ -1551,7 +1558,9 @@ ssize_t mudp_recvmsg(mudp_handle ut, struct msghdr* msg, int flags) {
   int idx = s->idx;
   int ret;
 
+#ifndef WINDOWSENV
   if (udp_is_fallback(s)) return recvmsg(s->fallback_fd, msg, flags);
+#endif
 
   /* init rxq if not */
   if (!s->rxq) {
@@ -1671,7 +1680,9 @@ int mudp_ioctl(mudp_handle ut, unsigned long cmd, va_list args) {
   int idx = s->idx;
   MTL_MAY_UNUSED(args);
 
+#ifndef WINDOWSENV
   if (udp_is_fallback(s)) return ioctl(s->fallback_fd, cmd, args);
+#endif
 
   switch (cmd) {
     case FIONBIO:
