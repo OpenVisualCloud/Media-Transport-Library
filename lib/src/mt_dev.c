@@ -1656,6 +1656,8 @@ static int dev_if_init_virtio_user(struct mt_interface* inf) {
     return ret;
   }
 
+  snprintf(impl->kport_info.kernel_if[port], IF_NAMESIZE, "%s", name);
+
   inf->virtio_port_active = true;
 
   info("%s(%d), succ, kernel interface %s\n", __func__, port, name);

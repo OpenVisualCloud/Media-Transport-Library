@@ -130,12 +130,13 @@ static int cni_burst_to_kernel(struct mt_cni_entry* cni, struct rte_mbuf* m) {
   struct mt_interface* inf = mt_if(impl, port);
   if (!inf->virtio_port_active) return 0;
 
+  cni->virtio_rx_cnt++;
   int ret = rte_eth_tx_burst(inf->virtio_port_id, 0, &m, 1);
   if (ret < 1) {
-    warn("%s(%d), forward packet to kernel fail\n", __func__, port);
+    dbg("%s(%d), forward packet to kernel fail\n", __func__, port);
+    cni->virtio_rx_fail_cnt++;
     return -EIO;
   }
-  cni->virtio_rx_cnt++;
 
   return 0;
 }
@@ -244,9 +245,14 @@ static int cni_rx_handle(struct mt_cni_entry* cni, struct rte_mbuf* m) {
       mt_ptp_parse(ptp, ptp_hdr, vlan, MT_PTP_L2, m->timesync, NULL);
       break;
     case RTE_ETHER_TYPE_ARP:
-      arp_hdr = rte_pktmbuf_mtod_offset(m, struct rte_arp_hdr*, hdr_offset);
-      if (mt_arp_parse(impl, arp_hdr, port) < 0)
-        cni_burst_to_kernel(cni, m); /* ARP fallback to kernel, for ping use */
+      if (mt_has_virtio_user(impl, port)) {
+        /* use kernel implementation */
+        cni_burst_to_kernel(cni, m);
+      } else {
+        /* use internal implementation */
+        arp_hdr = rte_pktmbuf_mtod_offset(m, struct rte_arp_hdr*, hdr_offset);
+        mt_arp_parse(impl, arp_hdr, port);
+      }
       break;
     case RTE_ETHER_TYPE_IPV4:
       ipv4_hdr = rte_pktmbuf_mtod_offset(m, struct mt_ipv4_udp*, hdr_offset);
@@ -453,10 +459,11 @@ static int cni_stat(void* priv) {
     cni->eth_rx_cnt = 0;
     cni->eth_rx_bytes = 0;
 
-    if (cni->virtio_rx_cnt || cni->virtio_tx_cnt || cni->virtio_tx_fail_cnt) {
-      notice("CNI(%d): virtio_rx_cnt %u, virtio_tx_cnt(all:fail) %u:%u\n", i,
-             cni->virtio_rx_cnt, cni->virtio_tx_cnt, cni->virtio_tx_fail_cnt);
+    if (cni->virtio_rx_cnt || cni->virtio_tx_cnt) {
+      notice("CNI(%d): virtio pkts(all:fail) rx %u:%u, tx %u:%u\n", i, cni->virtio_rx_cnt,
+             cni->virtio_rx_fail_cnt, cni->virtio_tx_cnt, cni->virtio_tx_fail_cnt);
       cni->virtio_rx_cnt = 0;
+      cni->virtio_rx_fail_cnt = 0;
       cni->virtio_tx_cnt = 0;
       cni->virtio_tx_fail_cnt = 0;
     }
