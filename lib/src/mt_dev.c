@@ -2660,19 +2660,17 @@ int mt_dev_tsc_done_action(struct mtl_main_impl* impl) {
 }
 
 uint8_t* mt_sip_addr(struct mtl_main_impl* impl, enum mtl_port port) {
-  if (mt_if(impl, port)->net_proto == MTL_PROTO_DHCP) return mt_dhcp_get_ip(impl, port);
+  if (mt_dhcp_service_active(impl, port)) return mt_dhcp_get_ip(impl, port);
   return mt_get_user_params(impl)->sip_addr[port];
 }
 
 uint8_t* mt_sip_netmask(struct mtl_main_impl* impl, enum mtl_port port) {
-  if (mt_if(impl, port)->net_proto == MTL_PROTO_DHCP)
-    return mt_dhcp_get_netmask(impl, port);
+  if (mt_dhcp_service_active(impl, port)) return mt_dhcp_get_netmask(impl, port);
   return mt_get_user_params(impl)->netmask[port];
 }
 
 uint8_t* mt_sip_gateway(struct mtl_main_impl* impl, enum mtl_port port) {
-  if (mt_if(impl, port)->net_proto == MTL_PROTO_DHCP)
-    return mt_dhcp_get_gateway(impl, port);
+  if (mt_dhcp_service_active(impl, port)) return mt_dhcp_get_gateway(impl, port);
   return mt_get_user_params(impl)->gateway[port];
 }
 

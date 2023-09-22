@@ -10,7 +10,7 @@
     "tx_sessions": [
         {
             "dip": [
-                "192.168.108.102"
+                "local:1"
             ],
             "interface": [
                 0
@@ -34,7 +34,7 @@
     "rx_sessions": [
         {
             "ip": [
-                "192.168.108.101"
+                "local:0"
             ],
             "interface": [
                 1
