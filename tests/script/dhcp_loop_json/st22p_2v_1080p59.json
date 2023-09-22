@@ -12,7 +12,7 @@
     "tx_sessions": [
         {
             "dip": [
-                "1"
+                "local:1"
             ],
             "interface": [
                 0
@@ -37,7 +37,7 @@
     "rx_sessions": [
         {
             "ip": [
-                "0"
+                "local:0"
             ],
             "interface": [
                 1

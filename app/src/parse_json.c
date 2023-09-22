@@ -1710,22 +1710,28 @@ static int parse_session_num(json_object* group, const char* name) {
   return num;
 }
 
+static const char* local_ip_prefix = "local:";
+
 static int parse_session_ip(const char* str_ip, struct st_json_session_base* base,
                             enum mtl_session_port port) {
-  int ret = inet_pton(AF_INET, str_ip, base->ip[port]);
-  if (ret == 1) return 0;
+  int ret;
 
+  dbg("%s, %s start\n", __func__, str_ip);
   /* if it's local interface case for test */
-  char* endptr;
-  ret = strtol(str_ip, &endptr, 10);
-  if (ret < 0) return ret;
-  if (endptr == str_ip) {
-    err("%s, No digits were found in %s\n", __func__, str_ip);
+  if (strncmp(str_ip, local_ip_prefix, strlen(local_ip_prefix)) == 0) {
+    base->type[port] = ST_JSON_IP_LOCAL_IF;
+    base->local[port] = atoi(str_ip + strlen(local_ip_prefix));
+    dbg("%s, local if port %d\n", __func__, base->local[port]);
+  } else {
+    ret = inet_pton(AF_INET, str_ip, base->ip[port]);
+    if (ret == 1) {
+      base->type[port] = ST_JSON_IP_ADDR;
+      return 0;
+    }
+    err("%s, %s is not a valid ip\n", __func__, str_ip);
     return -EIO;
   }
-  base->type[port] = ST_JSON_IP_LOCAL_IF;
-  base->local[port] = ret;
-  dbg("%s, local if port %d\n", __func__, ret);
+
   return 0;
 }
 

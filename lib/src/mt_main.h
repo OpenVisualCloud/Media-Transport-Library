@@ -1244,6 +1244,14 @@ static inline bool mt_has_virtio_user(struct mtl_main_impl* impl, enum mtl_port 
     return false;
 }
 
+static inline bool mt_dhcp_service_active(struct mtl_main_impl* impl,
+                                          enum mtl_port port) {
+  if ((mt_if(impl, port)->net_proto == MTL_PROTO_DHCP) && impl->dhcp[port])
+    return true;
+  else
+    return false;
+}
+
 static inline enum mtl_rss_mode mt_get_rss_mode(struct mtl_main_impl* impl,
                                                 enum mtl_port port) {
   return mt_if(impl, port)->rss_mode;
