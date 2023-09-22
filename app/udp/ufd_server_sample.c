@@ -62,6 +62,12 @@ static void* ufd_server_thread(void* arg) {
     s->recv_cnt_total++;
     s->recv_len += recv;
     dbg("%s(%d), recv %d bytes\n", __func__, s->idx, (int)recv);
+    dbg("%s(%d), sin_port %u\n", __func__, s->idx, ntohs(cli_addr.sin_port));
+#ifdef DEBUG
+    uint8_t* ip = (uint8_t*)&cli_addr.sin_addr.s_addr;
+#endif
+    dbg("%s(%d), ip %u.%u.%u.%u\n", __func__, s->idx, ip[0], ip[1], ip[2], ip[3]);
+
     ssize_t send = mufd_sendto(socket, buf, recv, 0, (const struct sockaddr*)&cli_addr,
                                cli_addr_len);
     if (send != recv) {
@@ -248,11 +254,13 @@ int main(int argc, char** argv) {
                        ctx.udp_port + i);
     bool mcast = mudp_is_multicast(&app[i]->client_addr);
 
-    if (mcast) /* bind to any addr for mcast */
+    if (mcast) { /* bind to any addr for mcast */
       mudp_init_sockaddr_any(&app[i]->bind_addr, ctx.udp_port + i);
-    else
-      mudp_init_sockaddr(&app[i]->bind_addr, ctx.param.sip_addr[MTL_PORT_P],
-                         ctx.udp_port + i);
+    } else {
+      uint8_t sip[MTL_IP_ADDR_LEN];
+      mufd_port_ip_info(MTL_PORT_P, sip, NULL, NULL);
+      mudp_init_sockaddr(&app[i]->bind_addr, sip, ctx.udp_port + i);
+    }
     ret = mufd_bind(app[i]->socket, (const struct sockaddr*)&app[i]->bind_addr,
                     sizeof(app[i]->bind_addr));
     if (ret < 0) {

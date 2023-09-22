@@ -311,6 +311,22 @@ int mufd_set_tx_rate(int sockfd, uint64_t bps);
 uint64_t mufd_get_tx_rate(int sockfd);
 
 /**
+ * Get the ip info(address, netmask, gateway) for mufd port.
+ *
+ * @param ip
+ *   The buffer for IP address.
+ * @param netmask
+ *   The buffer for netmask address.
+ * @param gateway
+ *   The buffer for gateway address.
+ * @return
+ *   - 0: Success.
+ *   - <0: Error code.
+ */
+int mufd_port_ip_info(enum mtl_port port, uint8_t ip[MTL_IP_ADDR_LEN],
+                      uint8_t netmask[MTL_IP_ADDR_LEN], uint8_t gateway[MTL_IP_ADDR_LEN]);
+
+/**
  * Create a sockfd udp transport socket on one PCIE port.
  *
  * @param domain

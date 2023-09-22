@@ -242,11 +242,14 @@ int main(int argc, char** argv) {
                        ctx.udp_port + i);
     bool mcast = mudp_is_multicast(&app[i]->client_addr);
 
-    if (mcast) /* bind to any addr for mcast */
+    if (mcast) { /* bind to any addr for mcast */
       mudp_init_sockaddr_any(&app[i]->bind_addr, ctx.udp_port + i);
-    else
+    } else {
+      uint8_t sip[MTL_IP_ADDR_LEN];
+      mtl_port_ip_info(ctx.st, MTL_PORT_P, sip, NULL, NULL);
       mudp_init_sockaddr(&app[i]->bind_addr, ctx.param.sip_addr[MTL_PORT_P],
                          ctx.udp_port + i);
+    }
     ret = mudp_bind(app[i]->socket, (const struct sockaddr*)&app[i]->bind_addr,
                     sizeof(app[i]->bind_addr));
     if (ret < 0) {
