@@ -492,7 +492,6 @@ mtl_handle mtl_init(struct mtl_init_params* p) {
   rte_atomic32_set(&impl->instance_started, 0);
   rte_atomic32_set(&impl->instance_aborted, 0);
   rte_atomic32_set(&impl->instance_in_reset, 0);
-  impl->lcore_lock_fd = -1;
 
   impl->tasklets_nb_per_sch = p->tasklets_nb_per_sch;
   if (!impl->tasklets_nb_per_sch) {
@@ -629,7 +628,7 @@ int mtl_get_lcore(mtl_handle mt, unsigned int* lcore) {
     return -EIO;
   }
 
-  return mt_dev_get_lcore(impl, lcore);
+  return mt_sch_get_lcore(impl, lcore);
 }
 
 int mtl_put_lcore(mtl_handle mt, unsigned int lcore) {
@@ -640,7 +639,7 @@ int mtl_put_lcore(mtl_handle mt, unsigned int lcore) {
     return -EIO;
   }
 
-  return mt_dev_put_lcore(impl, lcore);
+  return mt_sch_put_lcore(impl, lcore);
 }
 
 int mtl_bind_to_lcore(mtl_handle mt, pthread_t thread, unsigned int lcore) {
@@ -651,7 +650,7 @@ int mtl_bind_to_lcore(mtl_handle mt, pthread_t thread, unsigned int lcore) {
     return -EIO;
   }
 
-  if (!mt_dev_lcore_valid(impl, lcore)) {
+  if (!mt_sch_lcore_valid(impl, lcore)) {
     err("%s, invalid lcore %d\n", __func__, lcore);
     return -EINVAL;
   }

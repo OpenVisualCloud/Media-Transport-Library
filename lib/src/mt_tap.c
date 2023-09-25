@@ -8,7 +8,6 @@
 #include <iphlpapi.h>
 
 #include "datapath/mt_queue.h"
-#include "dev/mt_dev.h"
 #include "mt_arp.h"
 #include "mt_cni.h"
 #include "mt_log.h"
@@ -462,7 +461,7 @@ static int tap_uninit_lcore(struct mtl_main_impl* impl) {
   }
   if (tap_ctx->has_lcore) {
     rte_eal_wait_lcore(tap_ctx->lcore);
-    mt_dev_put_lcore(impl, tap_ctx->lcore);
+    mt_sch_put_lcore(impl, tap_ctx->lcore);
   }
   return 0;
 }
@@ -901,7 +900,7 @@ int mt_tap_init(struct mtl_main_impl* impl) {
 
   rte_atomic32_set(&cni->stop_tap, 0);
   tap_ctx->has_lcore = false;
-  ret = mt_dev_get_lcore(impl, &lcore);
+  ret = mt_sch_get_lcore(impl, &lcore);
   if (ret < 0) {
     err("%s, get lcore fail %d\n", __func__, ret);
     mt_tap_uinit(impl);

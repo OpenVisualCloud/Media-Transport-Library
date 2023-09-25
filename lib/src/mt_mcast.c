@@ -4,7 +4,7 @@
 
 #include "mt_mcast.h"
 
-#include "dev/mt_dev.h"
+#include "datapath/mt_queue.h"
 #include "mt_log.h"
 #include "mt_socket.h"
 #include "mt_util.h"
@@ -110,7 +110,7 @@ int mcast_membership_general_query(struct mtl_main_impl* impl, enum mtl_port por
   pkt->pkt_len = pkt->l2_len + pkt->l3_len + mb_query_len;
   pkt->data_len = pkt->pkt_len;
 
-  uint16_t tx = mt_dev_tx_sys_queue_burst(impl, port, &pkt, 1);
+  uint16_t tx = mt_sys_queue_tx_burst(impl, port, &pkt, 1);
   if (tx < 1) {
     err("%s, send pkt fail\n", __func__);
     rte_pktmbuf_free(pkt);
@@ -197,7 +197,7 @@ static int mcast_membership_report(struct mtl_main_impl* impl,
   }
 #endif
 
-  uint16_t tx = mt_dev_tx_sys_queue_burst(impl, port, &pkt, 1);
+  uint16_t tx = mt_sys_queue_tx_burst(impl, port, &pkt, 1);
   if (tx < 1) {
     err("%s, send pkt fail\n", __func__);
     rte_pktmbuf_free(pkt);

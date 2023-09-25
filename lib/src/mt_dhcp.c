@@ -4,7 +4,7 @@
 
 #include "mt_dhcp.h"
 
-#include "dev/mt_dev.h"
+#include "datapath/mt_queue.h"
 #include "mt_log.h"
 #include "mt_util.h"
 
@@ -104,7 +104,7 @@ static int dhcp_send_discover(struct mtl_main_impl* impl, enum mtl_port port) {
   udp->dgram_len = htons(pkt->pkt_len - sizeof(*eth) - sizeof(*ip));
 
   /* send dhcp discover packet */
-  uint16_t send = mt_dev_tx_sys_queue_burst(impl, port, &pkt, 1);
+  uint16_t send = mt_sys_queue_tx_burst(impl, port, &pkt, 1);
   if (send < 1) {
     err_once("%s(%d), tx fail\n", __func__, port);
     rte_pktmbuf_free(pkt);
@@ -211,7 +211,7 @@ static int dhcp_send_request(struct mtl_main_impl* impl, enum mtl_port port) {
   udp->dgram_len = htons(pkt->pkt_len - sizeof(*eth) - sizeof(*ip));
 
   /* send dhcp request packet */
-  uint16_t send = mt_dev_tx_sys_queue_burst(impl, port, &pkt, 1);
+  uint16_t send = mt_sys_queue_tx_burst(impl, port, &pkt, 1);
   if (send < 1) {
     err_once("%s(%d), tx fail\n", __func__, port);
     rte_pktmbuf_free(pkt);
@@ -424,7 +424,7 @@ static int dhcp_send_release(struct mtl_main_impl* impl, enum mtl_port port) {
   udp->dgram_len = htons(pkt->pkt_len - sizeof(*eth) - sizeof(*ip));
 
   /* send dhcp release packet */
-  uint16_t send = mt_dev_tx_sys_queue_burst(impl, port, &pkt, 1);
+  uint16_t send = mt_sys_queue_tx_burst(impl, port, &pkt, 1);
   if (send < 1) {
     err_once("%s(%d), tx fail\n", __func__, port);
     rte_pktmbuf_free(pkt);

@@ -4,7 +4,7 @@
 
 #include "mt_ptp.h"
 
-#include "dev/mt_dev.h"
+#include "datapath/mt_queue.h"
 #include "mt_cni.h"
 // #define DEBUG
 #include "mt_log.h"
@@ -757,7 +757,7 @@ static void ptp_delay_req_task(struct mt_ptp_impl* ptp) {
 #endif
 
   // mt_mbuf_dump(port, 0, "PTP_DELAY_REQ", m);
-  uint16_t tx = mt_dev_tx_sys_queue_burst(ptp->impl, port, &m, 1);
+  uint16_t tx = mt_sys_queue_tx_burst(ptp->impl, port, &m, 1);
   if (tx < 1) {
     rte_pktmbuf_free(m);
     err("%s(%d), tx fail\n", __func__, port);

@@ -758,7 +758,7 @@ static int tv_init_hdr(struct mtl_main_impl* impl, struct st_tx_video_session_im
     rte_memcpy(d_addr->addr_bytes, &ops->tx_dst_mac[s_port][0], RTE_ETHER_ADDR_LEN);
     info("%s, USER_R_TX_MAC\n", __func__);
   } else {
-    ret = mt_dst_ip_mac(impl, dip, d_addr, port, MT_DEV_TIMEOUT_INFINITE);
+    ret = mt_dst_ip_mac(impl, dip, d_addr, port, MT_TIMEOUT_INFINITE);
     if (ret < 0) {
       err("%s(%d), get mac fail %d for %d.%d.%d.%d\n", __func__, idx, ret, dip[0], dip[1],
           dip[2], dip[3]);
@@ -3757,7 +3757,7 @@ int st20_frame_tx_start(struct mtl_main_impl* impl, struct st_tx_video_session_i
     ipv4->hdr_checksum = rte_ipv4_cksum(ipv4);
   }
 
-  uint16_t send = mt_dev_tx_sys_queue_burst(impl, port, &pkt, 1);
+  uint16_t send = mt_sys_queue_tx_burst(impl, port, &pkt, 1);
   if (send < 1) {
     err("%s(%d), tx fail\n", __func__, port);
     rte_pktmbuf_free(pkt);

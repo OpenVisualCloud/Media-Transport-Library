@@ -306,8 +306,8 @@ int mt_dp_queue_uinit(struct mtl_main_impl* impl) {
   return 0;
 }
 
-uint16_t mt_dev_tx_sys_queue_burst(struct mtl_main_impl* impl, enum mtl_port port,
-                                   struct rte_mbuf** tx_pkts, uint16_t nb_pkts) {
+uint16_t mt_sys_queue_tx_burst(struct mtl_main_impl* impl, enum mtl_port port,
+                               struct rte_mbuf** tx_pkts, uint16_t nb_pkts) {
   struct mt_dp_impl* dp = impl->dp[port];
 
   if (!dp->txq_sys_entry) {

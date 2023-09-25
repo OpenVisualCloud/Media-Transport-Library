@@ -11,9 +11,6 @@
 #define MT_DEV_RX_DESC (4096 / 2)
 #define MT_DEV_TX_DESC (4096 / 8)
 
-#define MT_DEV_TIMEOUT_INFINITE (INT_MAX)
-#define MT_DEV_TIMEOUT_ZERO (0)
-
 #define MT_EAL_MAX_ARGS (32)
 
 #define MT_TX_MEMPOOL_PREFIX "T_"
@@ -53,9 +50,6 @@ uint16_t mt_dpdk_tx_burst_busy(struct mtl_main_impl* impl, struct mt_tx_queue* q
                                struct rte_mbuf** tx_pkts, uint16_t nb_pkts,
                                int timeout_ms);
 
-uint16_t mt_dev_tx_sys_queue_burst(struct mtl_main_impl* impl, enum mtl_port port,
-                                   struct rte_mbuf** tx_pkts, uint16_t nb_pkts);
-
 struct mt_rx_queue* mt_dev_get_rx_queue(struct mtl_main_impl* impl, enum mtl_port port,
                                         struct mt_rxq_flow* flow);
 int mt_dev_put_rx_queue(struct mtl_main_impl* impl, struct mt_rx_queue* queue);
@@ -71,10 +65,6 @@ static inline uint16_t mt_dpdk_rx_burst(struct mt_rx_queue* queue,
 int mt_dev_if_init(struct mtl_main_impl* impl);
 int mt_dev_if_uinit(struct mtl_main_impl* impl);
 int mt_dev_if_pre_uinit(struct mtl_main_impl* impl);
-
-int mt_dev_put_lcore(struct mtl_main_impl* impl, unsigned int lcore);
-int mt_dev_get_lcore(struct mtl_main_impl* impl, unsigned int* lcore);
-bool mt_dev_lcore_valid(struct mtl_main_impl* impl, unsigned int lcore);
 
 int mt_dev_tsc_done_action(struct mtl_main_impl* impl);
 

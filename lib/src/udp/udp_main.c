@@ -4,7 +4,6 @@
 
 #include "udp_main.h"
 
-#include "../dev/mt_dev.h"
 #include "../mt_log.h"
 #include "../mt_stat.h"
 #include "udp_rxq.h"
@@ -1232,8 +1231,8 @@ mudp_handle mudp_socket_port(mtl_handle mt, int domain, int type, int protocol,
   s->element_nb = mt_if_nb_tx_desc(impl, port) + 512;
   s->element_size = MUDP_MAX_BYTES;
   /* No dependency to arp for kernel based udp stack */
-  s->arp_timeout_us = MT_DEV_TIMEOUT_ZERO;
-  s->msg_arp_timeout_us = MT_DEV_TIMEOUT_ZERO;
+  s->arp_timeout_us = MT_TIMEOUT_ZERO;
+  s->msg_arp_timeout_us = MT_TIMEOUT_ZERO;
   s->tx_timeout_us = 10 * US_PER_MS;
   s->rx_timeout_us = 0;
   s->txq_bps = MUDP_DEFAULT_RL_BPS;

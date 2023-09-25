@@ -83,6 +83,9 @@
 #define NS_PER_US (1000)
 #define US_PER_MS (1000)
 
+#define MT_TIMEOUT_INFINITE (INT_MAX)
+#define MT_TIMEOUT_ZERO (0)
+
 struct mtl_main_impl; /* forward declare */
 
 /* dynamic fields are implemented after rte_mbuf */
@@ -531,6 +534,11 @@ struct mt_sch_mgr {
   /* active sch cnt */
   rte_atomic32_t sch_cnt;
   pthread_mutex_t mgr_mutex; /* protect sch mgr */
+
+  struct mt_lcore_shm* lcore_shm;
+  int lcore_shm_id;
+  int lcore_lock_fd;
+  bool local_lcores_active[RTE_MAX_LCORE]; /* local lcores active map */
 };
 
 struct mt_pacing_train_result {
@@ -987,6 +995,7 @@ struct mtl_main_impl {
 
   /* sch context */
   struct mt_sch_mgr sch_mgr;
+  uint32_t sch_schedule_ns;
   uint32_t tasklets_nb_per_sch;
   uint32_t tx_audio_sessions_max_per_sch;
   uint32_t rx_audio_sessions_max_per_sch;
@@ -1008,11 +1017,6 @@ struct mtl_main_impl {
   /* active lcore cnt */
   rte_atomic32_t lcore_cnt;
 
-  struct mt_lcore_shm* lcore_shm;
-  int lcore_shm_id;
-  int lcore_lock_fd;
-  bool local_lcores_active[RTE_MAX_LCORE]; /* local lcores active map */
-
   /* rx timestamp register */
   int dynfield_offset;
 
@@ -1022,7 +1026,6 @@ struct mtl_main_impl {
 
   uint16_t pkt_udp_suggest_max_size;
   uint16_t rx_pool_data_size;
-  uint32_t sch_schedule_ns;
   int mempool_idx;
 };
 

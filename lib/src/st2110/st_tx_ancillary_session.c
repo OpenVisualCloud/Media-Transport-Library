@@ -145,7 +145,7 @@ static int tx_ancillary_session_init_hdr(struct mtl_main_impl* impl,
     rte_memcpy(d_addr->addr_bytes, &ops->tx_dst_mac[s_port][0], RTE_ETHER_ADDR_LEN);
     info("%s, USER_R_TX_MAC\n", __func__);
   } else {
-    ret = mt_dst_ip_mac(impl, dip, d_addr, port, MT_DEV_TIMEOUT_INFINITE);
+    ret = mt_dst_ip_mac(impl, dip, d_addr, port, MT_TIMEOUT_INFINITE);
     if (ret < 0) {
       err("%s(%d), get mac fail %d for %d.%d.%d.%d\n", __func__, idx, ret, dip[0], dip[1],
           dip[2], dip[3]);
