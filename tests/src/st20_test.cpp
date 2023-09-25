@@ -524,13 +524,13 @@ static void st20_tx_ops_init(tests_context* st20, struct st20_tx_ops* ops) {
          MTL_IP_ADDR_LEN);
   snprintf(ops->port[MTL_SESSION_PORT_P], MTL_PORT_MAX_LEN, "%s",
            ctx->para.port[MTL_PORT_P]);
-  ops->udp_port[MTL_SESSION_PORT_P] = 10000 + st20->idx;
+  ops->udp_port[MTL_SESSION_PORT_P] = 10000 + st20->idx * 2;
   if (ops->num_port == 2) {
     memcpy(ops->dip_addr[MTL_SESSION_PORT_R], ctx->mcast_ip_addr[MTL_PORT_R],
            MTL_IP_ADDR_LEN);
     snprintf(ops->port[MTL_SESSION_PORT_R], MTL_PORT_MAX_LEN, "%s",
              ctx->para.port[MTL_PORT_R]);
-    ops->udp_port[MTL_SESSION_PORT_R] = 10000 + st20->idx;
+    ops->udp_port[MTL_SESSION_PORT_R] = 10000 + st20->idx * 2;
   }
   ops->pacing = ST21_PACING_NARROW;
   ops->type = ST20_TYPE_FRAME_LEVEL;
@@ -1404,14 +1404,14 @@ static void st20_rx_update_src_test(enum st20_type type, int tx_sessions,
   struct st_rx_source_info src;
   /* switch to mcast port p(tx_session:1) */
   memset(&src, 0, sizeof(src));
-  src.udp_port[MTL_SESSION_PORT_P] = 10000 + 1;
+  src.udp_port[MTL_SESSION_PORT_P] = 10000 + 2;
   memcpy(src.sip_addr[MTL_SESSION_PORT_P], ctx->mcast_ip_addr[MTL_PORT_P],
          MTL_IP_ADDR_LEN);
   if (tx_update_dst) {
     test_ctx_tx[0]->seq_id = 0; /* reset seq id */
     struct st_tx_dest_info dst;
     memset(&dst, 0, sizeof(dst));
-    dst.udp_port[MTL_SESSION_PORT_P] = 10000 + 1;
+    dst.udp_port[MTL_SESSION_PORT_P] = 10000 + 2;
     memcpy(dst.dip_addr[MTL_SESSION_PORT_P], ctx->mcast_ip_addr[MTL_PORT_P],
            MTL_IP_ADDR_LEN);
     ret = st20_tx_update_destination(tx_handle[0], &dst);
