@@ -466,6 +466,54 @@ static int tx_audio_session_build_rtp_packet(struct st_tx_audio_session_impl* s,
   return 0;
 }
 
+static int tx_audio_session_rtp_update_packet(struct st_tx_audio_session_impl* s,
+                                              struct rte_mbuf* pkt) {
+  struct mt_udp_hdr* hdr;
+  struct rte_ipv4_hdr* ipv4;
+  struct st_rfc3550_rtp_hdr* rtp;
+  struct rte_udp_hdr* udp;
+
+  hdr = rte_pktmbuf_mtod(pkt, struct mt_udp_hdr*);
+  ipv4 = &hdr->ipv4;
+  udp = &hdr->udp;
+  rtp =
+      rte_pktmbuf_mtod_offset(pkt, struct st_rfc3550_rtp_hdr*, sizeof(struct mt_udp_hdr));
+
+  /* copy the hdr: eth, ip, udp */
+  rte_memcpy(&hdr->eth, &s->hdr[MTL_SESSION_PORT_P].eth, sizeof(hdr->eth));
+  rte_memcpy(ipv4, &s->hdr[MTL_SESSION_PORT_P].ipv4, sizeof(hdr->ipv4));
+  rte_memcpy(udp, &s->hdr[MTL_SESSION_PORT_P].udp, sizeof(hdr->udp));
+
+  /* update ipv4 hdr */
+  ipv4->packet_id = htons(s->st30_ipv4_packet_id);
+  s->st30_ipv4_packet_id++;
+
+  if (rtp->tmstamp != s->st30_rtp_time_app) {
+    /* start of a new epoch */
+    s->st30_rtp_time_app = rtp->tmstamp;
+    if (s->ops.flags & ST30_TX_FLAG_USER_TIMESTAMP) {
+      s->pacing.rtp_time_stamp = ntohl(rtp->tmstamp);
+    }
+    s->st30_rtp_time = s->pacing.rtp_time_stamp;
+    rte_atomic32_inc(&s->st30_stat_frame_cnt);
+  }
+  /* update rtp time */
+  rtp->tmstamp = htonl(s->st30_rtp_time);
+
+  /* update mbuf */
+  mt_mbuf_init_ipv4(pkt);
+
+  /* update udp header */
+  udp->dgram_len = htons(pkt->pkt_len - pkt->l2_len - pkt->l3_len);
+  ipv4->total_length = htons(pkt->pkt_len - pkt->l2_len);
+  if (!s->eth_ipv4_cksum_offload[MTL_SESSION_PORT_P]) {
+    /* generate cksum if no offload */
+    ipv4->hdr_checksum = rte_ipv4_cksum(ipv4);
+  }
+
+  return 0;
+}
+
 static int tx_audio_session_build_packet_chain(struct st_tx_audio_session_impl* s,
                                                struct rte_mbuf* pkt,
                                                struct rte_mbuf* pkt_rtp,
@@ -832,30 +880,48 @@ static int tx_audio_session_tasklet_rtp(struct mtl_main_impl* impl,
   }
   s->ops.notify_rtp_done(s->ops.priv);
 
-  pkt = rte_pktmbuf_alloc(hdr_pool_p);
-  if (!pkt) {
-    err("%s(%d), rte_pktmbuf_alloc fail\n", __func__, idx);
-    rte_pktmbuf_free(pkt_rtp);
-    s->stat_build_ret_code = -STI_RTP_PKT_ALLOC_FAIL;
-    return MT_TASKLET_ALL_DONE;
-  }
-
-  if (send_r) {
-    pkt_r = rte_pktmbuf_alloc(hdr_pool_r);
-    if (!pkt_r) {
+  if (!s->tx_no_chain) {
+    pkt = rte_pktmbuf_alloc(hdr_pool_p);
+    if (!pkt) {
       err("%s(%d), rte_pktmbuf_alloc fail\n", __func__, idx);
-      rte_pktmbuf_free(pkt);
       rte_pktmbuf_free(pkt_rtp);
       s->stat_build_ret_code = -STI_RTP_PKT_ALLOC_FAIL;
       return MT_TASKLET_ALL_DONE;
     }
+
+    if (send_r) {
+      pkt_r = rte_pktmbuf_alloc(hdr_pool_r);
+      if (!pkt_r) {
+        err("%s(%d), rte_pktmbuf_alloc fail\n", __func__, idx);
+        rte_pktmbuf_free(pkt);
+        rte_pktmbuf_free(pkt_rtp);
+        s->stat_build_ret_code = -STI_RTP_PKT_ALLOC_FAIL;
+        return MT_TASKLET_ALL_DONE;
+      }
+    }
   }
 
-  tx_audio_session_build_packet_chain(s, pkt, pkt_rtp, MTL_SESSION_PORT_P);
+  if (s->tx_no_chain) {
+    pkt = pkt_rtp;
+    tx_audio_session_rtp_update_packet(s, pkt);
+  } else {
+    tx_audio_session_build_packet_chain(s, pkt, pkt_rtp, MTL_SESSION_PORT_P);
+  }
   st_tx_mbuf_set_tsc(pkt, pacing->tsc_time_cursor);
 
   if (send_r) {
-    tx_audio_session_build_packet_chain(s, pkt_r, pkt_rtp, MTL_SESSION_PORT_R);
+    if (s->tx_no_chain) {
+      pkt_r = rte_pktmbuf_copy(pkt, hdr_pool_r, 0, UINT32_MAX);
+      if (!pkt_r) {
+        err("%s(%d), rte_pktmbuf_copy fail\n", __func__, idx);
+        rte_pktmbuf_free(pkt);
+        s->stat_build_ret_code = -STI_RTP_PKT_ALLOC_FAIL;
+        return MT_TASKLET_ALL_DONE;
+      }
+      tx_audio_session_update_redundant(s, pkt_r);
+    } else {
+      tx_audio_session_build_packet_chain(s, pkt_r, pkt_rtp, MTL_SESSION_PORT_R);
+    }
     st_tx_mbuf_set_tsc(pkt_r, pacing->tsc_time_cursor);
   }
   s->st30_stat_pkt_cnt++;
@@ -994,6 +1060,9 @@ static int tx_audio_sessions_mgr_uinit_hw(struct st_tx_audio_sessions_mgr* mgr,
     mgr->ring[port] = NULL;
   }
   if (mgr->queue[port]) {
+    struct rte_mbuf* pad = mt_get_pad(mgr->parent, port);
+    /* flush all the pkts in the tx ring desc */
+    if (pad) mt_txq_flush(mgr->queue[port], pad);
     mt_txq_put(mgr->queue[port]);
     mgr->queue[port] = NULL;
   }
@@ -1137,7 +1206,6 @@ static int tx_audio_session_mempool_init(struct mtl_main_impl* impl,
   /* allocate hdr pool */
   for (int i = 0; i < num_port; i++) {
     port = mt_port_logic2phy(s->port_maps, i);
-    n = mt_if_nb_tx_desc(impl, port) + ST_TX_AUDIO_SESSIONS_RING_SIZE;
     if (s->tx_mono_pool) {
       s->mbuf_mempool_hdr[i] = mt_get_tx_mempool(impl, port);
       info("%s(%d), use tx mono hdr mempool(%p) for port %d\n", __func__, idx,
@@ -1145,6 +1213,8 @@ static int tx_audio_session_mempool_init(struct mtl_main_impl* impl,
     } else if (s->mbuf_mempool_hdr[i]) {
       warn("%s(%d), use previous hdr mempool for port %d\n", __func__, idx, i);
     } else {
+      n = mt_if_nb_tx_desc(impl, port) + ST_TX_AUDIO_SESSIONS_RING_SIZE;
+      if (ops->type == ST30_TYPE_RTP_LEVEL) n += ops->rtp_ring_size;
       char pool_name[32];
       snprintf(pool_name, 32, "%sM%dS%dP%d_HDR_%d", ST_TX_AUDIO_PREFIX, mgr->idx, idx, i,
                s->recovery_idx);
@@ -2083,13 +2153,16 @@ void* st30_tx_get_mbuf(st30_tx_handle handle, void** usrptr) {
     return NULL;
   }
 
-  pkt = rte_pktmbuf_alloc(s->mbuf_mempool_chain);
+  struct rte_mempool* mp =
+      s->tx_no_chain ? s->mbuf_mempool_hdr[MTL_SESSION_PORT_P] : s->mbuf_mempool_chain;
+  pkt = rte_pktmbuf_alloc(mp);
   if (!pkt) {
     dbg("%s(%d), pkt alloc fail\n", __func__, idx);
     return NULL;
   }
 
-  *usrptr = rte_pktmbuf_mtod(pkt, void*);
+  size_t hdr_offset = s->tx_no_chain ? sizeof(struct mt_udp_hdr) : 0;
+  *usrptr = rte_pktmbuf_mtod_offset(pkt, void*, hdr_offset);
   return pkt;
 }
 
@@ -2120,6 +2193,8 @@ int st30_tx_put_mbuf(st30_tx_handle handle, void* mbuf, uint16_t len) {
     rte_pktmbuf_free(mbuf);
     return -EIO;
   }
+
+  if (s->tx_no_chain) len += sizeof(struct mt_udp_hdr);
 
   pkt->data_len = pkt->pkt_len = len;
   ret = rte_ring_sp_enqueue(packet_ring, (void*)pkt);
