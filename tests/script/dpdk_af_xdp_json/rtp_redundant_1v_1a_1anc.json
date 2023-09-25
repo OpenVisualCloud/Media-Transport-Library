@@ -1,26 +1,26 @@
 {
     "interfaces": [
         {
-            "name": "af_xdp:enp175s0f0np0",
+            "name": "dpdk_af_xdp:enp175s0f0np0",
         },
         {
-            "name": "af_xdp:enp175s0f1np1",
+            "name": "dpdk_af_xdp:enp175s0f1np1",
         }
     ],
     "tx_sessions": [
         {
             "dip": [
-                "239.168.17.101",
-                "239.168.17.102"
+                "local:1",
+                "local:0"
             ],
             "interface": [
                 0,
-				1
+                1
             ],
             "video": [
                 {
                     "replicas": 1,
-                    "type": "frame",
+                    "type": "rtp",
                     "pacing": "gap",
                     "packing": "BPM",
                     "start_port": 20000,
@@ -34,7 +34,7 @@
             "audio": [
                 {
                     "replicas": 1,
-                    "type": "frame",
+                    "type": "rtp",
                     "start_port": 30000,
                     "payload_type": 111,
                     "audio_format": "PCM16",
@@ -49,7 +49,7 @@
                     "replicas": 1,
                     "start_port": 40000,
                     "payload_type": 113,
-                    "type": "frame",
+                    "type": "rtp",
                     "ancillary_format": "closed_caption",
                     "ancillary_url": "./test.txt",
                     "ancillary_fps": "p59"
@@ -60,17 +60,17 @@
     "rx_sessions": [
         {
             "ip": [
-                "239.168.17.101",
-                "239.168.17.102",
+                "local:0",
+                "local:1",
             ],
             "interface": [
                 1,
-				0
+                0
             ],
             "video": [
                 {
                     "replicas": 1,
-                    "type": "frame",
+                    "type": "rtp",
                     "pacing": "gap",
                     "start_port": 20000,
                     "payload_type": 112,
@@ -83,7 +83,7 @@
             "audio": [
                 {
                     "replicas": 1,
-                    "type": "frame",
+                    "type": "rtp",
                     "start_port": 30000,
                     "payload_type": 111,
                     "audio_format": "PCM16",
@@ -96,8 +96,8 @@
             "ancillary": [
                 {
                     "replicas": 1,
-                    "start_port": 40000,
                     "payload_type": 113,
+                    "start_port": 40000
                 }
             ]
         }

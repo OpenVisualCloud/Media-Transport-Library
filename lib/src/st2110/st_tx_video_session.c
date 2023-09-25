@@ -2440,7 +2440,7 @@ static int tv_init_hw(struct mtl_main_impl* impl, struct st_tx_video_sessions_mg
     info("%s(%d,%d), port(l:%d,p:%d), queue %d, count %u\n", __func__, mgr_idx, idx, i,
          port, queue_id, count);
 
-    if (mt_pmd_is_af_xdp(impl, port) && s->mbuf_mempool_reuse_rx[i]) {
+    if (mt_pmd_is_dpdk_af_xdp(impl, port) && s->mbuf_mempool_reuse_rx[i]) {
       if (s->mbuf_mempool_hdr[i]) {
         err("%s(%d,%d), fail to reuse rx, has mempool_hdr for port %d\n", __func__,
             mgr_idx, idx, i);
@@ -2455,7 +2455,7 @@ static int tv_init_hw(struct mtl_main_impl* impl, struct st_tx_video_sessions_mg
       }
     }
 
-    if (false & mt_pmd_is_af_xdp(impl, port)) {
+    if (false & mt_pmd_is_dpdk_af_xdp(impl, port)) {
       /* disable now, always use no zc mempool for the flush pad */
       pad_mempool = s->mbuf_mempool_hdr[i];
     } else {
@@ -2964,7 +2964,7 @@ static int tv_attach(struct mtl_main_impl* impl, struct st_tx_video_sessions_mgr
     enum mtl_port port = mt_port_logic2phy(s->port_maps, i);
     s->eth_ipv4_cksum_offload[i] = mt_if_has_offload_ipv4_cksum(impl, port);
     s->eth_has_chain[i] = mt_if_has_multi_seg(impl, port);
-    if (mt_pmd_is_af_xdp(impl, port) && mt_has_af_xdp_zc(impl)) {
+    if (mt_pmd_is_dpdk_af_xdp(impl, port) && mt_has_af_xdp_zc(impl)) {
       /* enable zero copy for tx */
       s->mbuf_mempool_reuse_rx[i] = true;
     } else {

@@ -2178,8 +2178,7 @@ int mt_dev_get_socket_id(const char* port) {
   int ret = rte_eth_dev_get_port_by_name(port, &port_id);
   if (ret < 0) {
     err("%s, failed to get port for %s\n", __func__, port);
-    err("%s, please make sure the driver of %s is configured to DPDK PMD\n", __func__,
-        port);
+    err("%s, please make sure the driver of %s is configured rightly\n", __func__, port);
     return ret;
   }
   int soc_id;
@@ -2363,14 +2362,14 @@ int mt_dev_if_init(struct mtl_main_impl* impl) {
       inf->max_tx_queues = p->tx_queues_cnt[i];
       inf->max_rx_queues = p->rx_queues_cnt[i];
       inf->system_rx_queues_end = 0;
-    } else if (mt_pmd_is_af_packet(impl, i)) {
+    } else if (mt_pmd_is_dpdk_af_packet(impl, i)) {
       inf->max_tx_queues = p->tx_queues_cnt[i];
       inf->max_tx_queues++; /* arp, mcast, ptp use shared sys queue */
       /* force to shared since the packet is dispatched by kernel */
       inf->max_rx_queues = 1;
       p->flags |= MTL_FLAG_SHARED_RX_QUEUE;
       inf->system_rx_queues_end = 0;
-    } else if (mt_pmd_is_af_xdp(impl, i)) {
+    } else if (mt_pmd_is_dpdk_af_xdp(impl, i)) {
       /* no system queues as no cni */
       inf->max_tx_queues = queue_pair_cnt;
       inf->max_rx_queues = queue_pair_cnt;

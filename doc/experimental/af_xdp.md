@@ -44,7 +44,7 @@ sudo sysctl -w net.ipv4.conf.all.rp_filter=0
 
 ## 4. Run AF_XDP PMD with root user
 
-AF_XDP PMD rely on kernel AF_XDP support which need root access, and please refer to [af_xdp config](../..//tests/script/af_xdp_json/) for how to config the AF_XDP pmd in json config.
+AF_XDP PMD rely on kernel AF_XDP support which need root access, and please refer to [dpdk_af_xdp config](../../tests/scripts/dpdk_af_xdp_json/) for how to config the AF_XDP pmd in json config.
 
 Customize the kernel network interface name `enp175s0f0np0` as your setup
 

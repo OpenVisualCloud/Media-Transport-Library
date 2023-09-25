@@ -829,17 +829,17 @@ uint16_t mt_random_port(uint16_t base_port) {
   return port;
 }
 
-static const char* mtl_afxdp_port_prefix = "af_xdp:";
-static const char* mtl_afpkt_port_prefix = "af_packet:";
-static const char* mtl_kernel_port_prefix = "kernel:";
+static const char* dpdk_afxdp_port_prefix = "dpdk_af_xdp:";
+static const char* dpdk_afpkt_port_prefix = "dpdk_af_packet:";
+static const char* kernel_port_prefix = "kernel:";
 
 enum mtl_pmd_type mtl_pmd_by_port_name(const char* port) {
   dbg("%s, port %s\n", __func__, port);
-  if (strncmp(port, mtl_afxdp_port_prefix, strlen(mtl_afxdp_port_prefix)) == 0)
+  if (strncmp(port, dpdk_afxdp_port_prefix, strlen(dpdk_afxdp_port_prefix)) == 0)
     return MTL_PMD_DPDK_AF_XDP;
-  else if (strncmp(port, mtl_afpkt_port_prefix, strlen(mtl_afpkt_port_prefix)) == 0)
+  else if (strncmp(port, dpdk_afpkt_port_prefix, strlen(dpdk_afpkt_port_prefix)) == 0)
     return MTL_PMD_DPDK_AF_PACKET;
-  else if (strncmp(port, mtl_kernel_port_prefix, strlen(mtl_kernel_port_prefix)) == 0)
+  else if (strncmp(port, kernel_port_prefix, strlen(kernel_port_prefix)) == 0)
     return MTL_PMD_KERNEL_SOCKET;
   else
     return MTL_PMD_DPDK_USER; /* default */
@@ -850,7 +850,7 @@ const char* mt_kernel_port2if(const char* port) {
     err("%s, port %s is not a kernel based\n", __func__, port);
     return NULL;
   }
-  return port + strlen(mtl_kernel_port_prefix);
+  return port + strlen(kernel_port_prefix);
 }
 
 const char* mt_afxdp_port2if(const char* port) {
@@ -858,7 +858,7 @@ const char* mt_afxdp_port2if(const char* port) {
     err("%s, port %s is not afxdp\n", __func__, port);
     return NULL;
   }
-  return port + strlen(mtl_afxdp_port_prefix);
+  return port + strlen(dpdk_afxdp_port_prefix);
 }
 
 const char* mt_afpkt_port2if(const char* port) {
@@ -866,5 +866,5 @@ const char* mt_afpkt_port2if(const char* port) {
     err("%s, port %s is not a af pkt\n", __func__, port);
     return NULL;
   }
-  return port + strlen(mtl_afpkt_port_prefix);
+  return port + strlen(dpdk_afpkt_port_prefix);
 }

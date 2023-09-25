@@ -1098,14 +1098,15 @@ static inline bool mt_drv_no_cni(struct mtl_main_impl* impl, enum mtl_port port)
     return false;
 }
 
-static inline bool mt_pmd_is_af_xdp(struct mtl_main_impl* impl, enum mtl_port port) {
+static inline bool mt_pmd_is_dpdk_af_xdp(struct mtl_main_impl* impl, enum mtl_port port) {
   if (MTL_PMD_DPDK_AF_XDP == mt_get_user_params(impl)->pmd[port])
     return true;
   else
     return false;
 }
 
-static inline bool mt_pmd_is_af_packet(struct mtl_main_impl* impl, enum mtl_port port) {
+static inline bool mt_pmd_is_dpdk_af_packet(struct mtl_main_impl* impl,
+                                            enum mtl_port port) {
   if (MTL_PMD_DPDK_AF_PACKET == mt_get_user_params(impl)->pmd[port])
     return true;
   else
@@ -1372,7 +1373,7 @@ static inline uint16_t mt_if_nb_rx_desc(struct mtl_main_impl* impl, enum mtl_por
 static inline uint16_t mt_if_nb_tx_burst(struct mtl_main_impl* impl, enum mtl_port port) {
   uint16_t burst_pkts;
 
-  if (mt_pmd_is_af_xdp(impl, port)) {
+  if (mt_pmd_is_dpdk_af_xdp(impl, port)) {
     /* same umem for both tx and rx */
     burst_pkts = RTE_MAX(mt_if_nb_rx_desc(impl, port), mt_if_nb_tx_desc(impl, port));
   } else {
