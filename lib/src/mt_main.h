@@ -635,10 +635,6 @@ struct mt_interface {
   struct mt_tx_queue* tx_queues;
   pthread_mutex_t tx_queues_mutex; /* protect tx_queues */
 
-  /* the shared tx sys queue */
-  struct mt_txq_entry* txq_sys_entry;
-  rte_spinlock_t txq_sys_entry_lock; /* protect txq_sys_entry */
-
   /* rx queue resources */
   uint16_t max_rx_queues;
   uint16_t system_rx_queues_end;
@@ -932,6 +928,12 @@ struct mt_flow_impl {
   pthread_mutex_t mutex; /* protect mt_rx_flow_create */
 };
 
+struct mt_dp_impl {
+  /* the shared tx sys queue */
+  struct mt_txq_entry* txq_sys_entry;
+  rte_spinlock_t txq_sys_entry_lock; /* protect txq_sys_entry */
+};
+
 struct mtl_main_impl {
   struct mt_interface inf[MTL_PORT_MAX];
 
@@ -947,6 +949,8 @@ struct mtl_main_impl {
 
   /* flow */
   struct mt_flow_impl* flow[MTL_PORT_MAX];
+  /* data path queue mgr */
+  struct mt_dp_impl* dp[MTL_PORT_MAX];
   /* rss */
   struct mt_rss_impl* rss[MTL_PORT_MAX];
   struct mt_srss_impl* srss[MTL_PORT_MAX];
@@ -1045,12 +1049,11 @@ static inline enum mt_port_type mt_port_type(struct mtl_main_impl* impl,
 }
 
 enum mtl_port mt_port_by_id(struct mtl_main_impl* impl, uint16_t port_id);
-
 uint8_t* mt_sip_addr(struct mtl_main_impl* impl, enum mtl_port port);
-
 uint8_t* mt_sip_netmask(struct mtl_main_impl* impl, enum mtl_port port);
-
 uint8_t* mt_sip_gateway(struct mtl_main_impl* impl, enum mtl_port port);
+int mt_dst_ip_mac(struct mtl_main_impl* impl, uint8_t dip[MTL_IP_ADDR_LEN],
+                  struct rte_ether_addr* ea, enum mtl_port port, int timeout_ms);
 
 static inline enum mtl_pmd_type mt_pmd_type(struct mtl_main_impl* impl,
                                             enum mtl_port port) {

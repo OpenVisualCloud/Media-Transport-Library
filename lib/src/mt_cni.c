@@ -8,7 +8,7 @@
 #include "mt_arp.h"
 #include "mt_dhcp.h"
 // #define DEBUG
-#include "mt_dev.h"
+#include "dev/mt_dev.h"
 #include "mt_dhcp.h"
 #include "mt_log.h"
 #include "mt_ptp.h"

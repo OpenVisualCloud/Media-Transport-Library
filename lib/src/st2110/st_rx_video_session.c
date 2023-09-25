@@ -3043,7 +3043,7 @@ static int rv_init_rtcp_uhdr(struct mtl_main_impl* impl,
   struct rte_ether_addr* d_addr = mt_eth_d_addr(eth);
 
   /* ether hdr */
-  ret = mt_dev_dst_ip_mac(impl, dip, d_addr, port, MT_DEV_TIMEOUT_INFINITE);
+  ret = mt_dst_ip_mac(impl, dip, d_addr, port, MT_DEV_TIMEOUT_INFINITE);
   if (ret < 0) {
     err("%s(%d), get mac fail %d for %d.%d.%d.%d\n", __func__, idx, ret, dip[0], dip[1],
         dip[2], dip[3]);

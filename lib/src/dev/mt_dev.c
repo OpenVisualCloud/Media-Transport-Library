@@ -4,17 +4,12 @@
 
 #include "mt_dev.h"
 
-#include "datapath/mt_queue.h"
-#include "mt_arp.h"
-#include "mt_cni.h"
-#include "mt_dhcp.h"
-#include "mt_flow.h"
-#include "mt_log.h"
-#include "mt_mcast.h"
-#include "mt_sch.h"
-#include "mt_socket.h"
-#include "mt_stat.h"
-#include "mt_util.h"
+#include "../mt_flow.h"
+#include "../mt_log.h"
+#include "../mt_sch.h"
+#include "../mt_socket.h"
+#include "../mt_stat.h"
+#include "../mt_util.h"
 
 static const struct mt_dev_driver_info dev_drvs[] = {
     {
@@ -1688,22 +1683,6 @@ static uint64_t ptp_from_tsc(struct mtl_main_impl* impl, enum mtl_port port) {
   return inf->real_time_base + tsc - inf->tsc_time_base;
 }
 
-uint16_t mt_dev_tx_sys_queue_burst(struct mtl_main_impl* impl, enum mtl_port port,
-                                   struct rte_mbuf** tx_pkts, uint16_t nb_pkts) {
-  struct mt_interface* inf = mt_if(impl, port);
-
-  if (!inf->txq_sys_entry) {
-    err("%s(%d), txq sys queue not active\n", __func__, port);
-    return 0;
-  }
-
-  uint16_t tx;
-  rte_spinlock_lock(&inf->txq_sys_entry_lock);
-  tx = mt_txq_burst(inf->txq_sys_entry, tx_pkts, nb_pkts);
-  rte_spinlock_unlock(&inf->txq_sys_entry_lock);
-  return tx;
-}
-
 int mt_dev_set_tx_bps(struct mtl_main_impl* impl, enum mtl_port port, uint16_t q,
                       uint64_t bytes_per_sec) {
   struct mt_interface* inf = mt_if(impl, port);
@@ -2211,33 +2190,6 @@ int mt_dev_uinit(struct mtl_init_params* p) {
   return 0;
 }
 
-int mt_dev_dst_ip_mac(struct mtl_main_impl* impl, uint8_t dip[MTL_IP_ADDR_LEN],
-                      struct rte_ether_addr* ea, enum mtl_port port, int timeout_ms) {
-  int ret;
-
-  if (mt_is_multicast_ip(dip)) {
-    mt_mcast_ip_to_mac(dip, ea);
-    ret = 0;
-  } else if (mt_is_lan_ip(dip, mt_sip_addr(impl, port), mt_sip_netmask(impl, port))) {
-    ret = mt_arp_get_mac(impl, dip, ea, port, timeout_ms);
-  } else {
-    uint8_t* gateway = mt_sip_gateway(impl, port);
-    if (mt_ip_to_u32(gateway)) {
-      ret = mt_arp_get_mac(impl, gateway, ea, port, timeout_ms);
-    } else {
-      err("%s(%d), ip %d.%d.%d.%d is wan but no gateway support\n", __func__, port,
-          dip[0], dip[1], dip[2], dip[3]);
-      return -EIO;
-    }
-  }
-
-  dbg("%s(%d), ip: %d.%d.%d.%d, mac: %02hhx:%02hhx:%02hhx:%02hhx:%02hhx:%02hhx\n",
-      __func__, port, dip[0], dip[1], dip[2], dip[3], ea->addr_bytes[0],
-      ea->addr_bytes[1], ea->addr_bytes[2], ea->addr_bytes[3], ea->addr_bytes[4],
-      ea->addr_bytes[5]);
-  return ret;
-}
-
 int mt_dev_if_uinit(struct mtl_main_impl* impl) {
   int num_ports = mt_num_ports(impl), ret;
   struct mt_interface* inf;
@@ -2332,7 +2284,6 @@ int mt_dev_if_init(struct mtl_main_impl* impl) {
     mt_pthread_mutex_init(&inf->tx_queues_mutex, NULL);
     mt_pthread_mutex_init(&inf->rx_queues_mutex, NULL);
     mt_pthread_mutex_init(&inf->vf_cmd_mutex, NULL);
-    rte_spinlock_init(&inf->txq_sys_entry_lock);
     rte_spinlock_init(&inf->stats_lock);
 
     if (mt_ptp_tsc_source(impl)) {
@@ -2590,42 +2541,12 @@ int mt_dev_if_pre_uinit(struct mtl_main_impl* impl) {
   for (int i = 0; i < num_ports; i++) {
     inf = mt_if(impl, i);
 
-    if (inf->txq_sys_entry) {
-      mt_txq_flush(inf->txq_sys_entry, mt_get_pad(impl, i));
-      mt_txq_put(inf->txq_sys_entry);
-      inf->txq_sys_entry = NULL;
-    }
-
     if (mt_has_virtio_user(impl, i)) {
       inf->virtio_port_active = false;
       int ret = rte_eth_dev_stop(inf->virtio_port_id);
       if (ret < 0) warn("%s(%d), stop virtio port fail %d\n", __func__, i, ret);
       ret = rte_eth_dev_close(inf->virtio_port_id);
       if (ret < 0) warn("%s(%d), close virtio port fail %d\n", __func__, i, ret);
-    }
-  }
-
-  return 0;
-}
-
-int mt_dev_if_post_init(struct mtl_main_impl* impl) {
-  int num_ports = mt_num_ports(impl);
-  struct mt_interface* inf;
-
-  for (int i = 0; i < num_ports; i++) {
-    inf = mt_if(impl, i);
-
-    /* no sys queue for kernel based pmd */
-    if (inf->drv_info.flags & MT_DRV_F_NO_CNI) continue;
-
-    struct mt_txq_flow flow;
-    memset(&flow, 0, sizeof(flow));
-    flow.sys_queue = true;
-    inf->txq_sys_entry = mt_txq_get(impl, i, &flow);
-    if (!inf->txq_sys_entry) {
-      err("%s(%d), txq sys entry get fail\n", __func__, i);
-      mt_dev_if_pre_uinit(impl);
-      return -ENOMEM;
     }
   }
 
@@ -2656,21 +2577,6 @@ int mt_dev_tsc_done_action(struct mtl_main_impl* impl) {
   }
 
   return 0;
-}
-
-uint8_t* mt_sip_addr(struct mtl_main_impl* impl, enum mtl_port port) {
-  if (mt_dhcp_service_active(impl, port)) return mt_dhcp_get_ip(impl, port);
-  return mt_get_user_params(impl)->sip_addr[port];
-}
-
-uint8_t* mt_sip_netmask(struct mtl_main_impl* impl, enum mtl_port port) {
-  if (mt_dhcp_service_active(impl, port)) return mt_dhcp_get_netmask(impl, port);
-  return mt_get_user_params(impl)->netmask[port];
-}
-
-uint8_t* mt_sip_gateway(struct mtl_main_impl* impl, enum mtl_port port) {
-  if (mt_dhcp_service_active(impl, port)) return mt_dhcp_get_gateway(impl, port);
-  return mt_get_user_params(impl)->gateway[port];
 }
 
 int mtl_get_port_stats(mtl_handle mt, enum mtl_port port, struct mtl_port_status* stats) {

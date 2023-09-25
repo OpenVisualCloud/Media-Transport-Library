@@ -4,7 +4,7 @@
 
 #include "udp_main.h"
 
-#include "../mt_dev.h"
+#include "../dev/mt_dev.h"
 #include "../mt_log.h"
 #include "../mt_stat.h"
 #include "udp_rxq.h"
@@ -164,11 +164,11 @@ static int udp_build_tx_pkt(struct mtl_main_impl* impl, struct mudp_impl* s,
   if (udp_get_flag(s, MUDP_TX_USER_MAC)) {
     rte_memcpy(d_addr->addr_bytes, s->user_mac, RTE_ETHER_ADDR_LEN);
   } else {
-    ret = mt_dev_dst_ip_mac(impl, dip, d_addr, port, arp_timeout_ms);
+    ret = mt_dst_ip_mac(impl, dip, d_addr, port, arp_timeout_ms);
     if (ret < 0) {
       if (arp_timeout_ms) /* log only if not zero timeout */
-        err("%s(%d), mt_dev_dst_ip_mac fail %d for %u.%u.%u.%u\n", __func__, idx, ret,
-            dip[0], dip[1], dip[2], dip[3]);
+        err("%s(%d), mt_dst_ip_mac fail %d for %u.%u.%u.%u\n", __func__, idx, ret, dip[0],
+            dip[1], dip[2], dip[3]);
       s->stat_pkt_arp_fail++;
       MUDP_ERR_RET(EIO);
     }
@@ -253,11 +253,11 @@ static int udp_build_tx_msg_pkt(struct mtl_main_impl* impl, struct mudp_impl* s,
   if (udp_get_flag(s, MUDP_TX_USER_MAC)) {
     rte_memcpy(&d_addr.addr_bytes, s->user_mac, RTE_ETHER_ADDR_LEN);
   } else {
-    ret = mt_dev_dst_ip_mac(impl, dip, &d_addr, port, arp_timeout_ms);
+    ret = mt_dst_ip_mac(impl, dip, &d_addr, port, arp_timeout_ms);
     if (ret < 0) {
       if (arp_timeout_ms) /* log only if not zero timeout */
-        err("%s(%d), mt_dev_dst_ip_mac fail %d for %u.%u.%u.%u\n", __func__, idx, ret,
-            dip[0], dip[1], dip[2], dip[3]);
+        err("%s(%d), mt_dst_ip_mac fail %d for %u.%u.%u.%u\n", __func__, idx, ret, dip[0],
+            dip[1], dip[2], dip[3]);
       s->stat_pkt_arp_fail++;
       MUDP_ERR_RET(EIO);
     }

@@ -4,7 +4,7 @@
 
 #include "mt_sch.h"
 
-#include "mt_dev.h"
+#include "dev/mt_dev.h"
 #include "mt_log.h"
 #include "mt_stat.h"
 #include "st2110/st_rx_ancillary_session.h"

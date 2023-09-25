@@ -4,7 +4,7 @@
 
 #include "mt_mcast.h"
 
-#include "mt_dev.h"
+#include "dev/mt_dev.h"
 #include "mt_log.h"
 #include "mt_socket.h"
 #include "mt_util.h"

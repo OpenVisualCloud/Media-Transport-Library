@@ -8,9 +8,9 @@
 #include <iphlpapi.h>
 
 #include "datapath/mt_queue.h"
+#include "dev/mt_dev.h"
 #include "mt_arp.h"
 #include "mt_cni.h"
-#include "mt_dev.h"
 #include "mt_log.h"
 #include "mt_sch.h"
 #include "mt_util.h"

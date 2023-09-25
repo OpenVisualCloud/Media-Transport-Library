@@ -63,4 +63,7 @@ int mt_txq_put(struct mt_txq_entry* entry);
 int mt_txq_fatal_error(struct mt_txq_entry* entry);
 int mt_txq_done_cleanup(struct mt_txq_entry* entry);
 
+uint16_t mt_dev_tx_sys_queue_burst(struct mtl_main_impl* impl, enum mtl_port port,
+                                   struct rte_mbuf** tx_pkts, uint16_t nb_pkts);
+
 #endif
