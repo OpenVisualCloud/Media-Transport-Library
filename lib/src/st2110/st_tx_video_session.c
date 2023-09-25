@@ -1958,7 +1958,7 @@ static int tv_tasklet_rtp(struct mtl_main_impl* impl,
 
   struct rte_mbuf* pkts[bulk];
   struct rte_mbuf* pkts_r[bulk];
-  struct rte_mbuf* pkts_chain[bulk];
+  struct rte_mbuf* pkts_rtp[bulk];
   int pkts_remaining = s->st20_total_pkts - s->st20_pkt_idx;
   bool eof = (pkts_remaining > 0) && (pkts_remaining < bulk) ? true : false;
   unsigned int pkts_bulk = eof ? 1 : bulk; /* bulk one only at end of frame */
@@ -1966,7 +1966,7 @@ static int tv_tasklet_rtp(struct mtl_main_impl* impl,
   if (eof)
     dbg("%s(%d), pkts_bulk %d pkt idx %d\n", __func__, idx, pkts_bulk, s->st20_pkt_idx);
 
-  n = mt_rte_ring_sc_dequeue_bulk(s->packet_ring, (void**)&pkts_chain, pkts_bulk, NULL);
+  n = mt_rte_ring_sc_dequeue_bulk(s->packet_ring, (void**)&pkts_rtp, pkts_bulk, NULL);
   if (n == 0) {
     if (s->stat_user_busy_first) {
       s->stat_user_busy++;
@@ -1980,52 +1980,32 @@ static int tv_tasklet_rtp(struct mtl_main_impl* impl,
   s->stat_user_busy_first = true;
   s->ops.notify_rtp_done(s->ops.priv);
 
-  if (!s->tx_no_chain) {
-    ret = rte_pktmbuf_alloc_bulk(hdr_pool_p, pkts, bulk);
+  uint16_t alloc_begin = s->tx_no_chain ? pkts_bulk : 0;
+  uint16_t alloc_bulk = s->tx_no_chain ? bulk - pkts_bulk : bulk;
+  ret = rte_pktmbuf_alloc_bulk(hdr_pool_p, &pkts[alloc_begin], alloc_bulk);
+  if (ret < 0) {
+    dbg("%s(%d), pkts alloc fail %d\n", __func__, idx, ret);
+    rte_pktmbuf_free_bulk(pkts_rtp, pkts_bulk);
+    s->stat_build_ret_code = -STI_RTP_PKT_ALLOC_FAIL;
+    return MT_TASKLET_ALL_DONE;
+  }
+  if (send_r) {
+    ret = rte_pktmbuf_alloc_bulk(hdr_pool_r, &pkts_r[alloc_begin], alloc_bulk);
     if (ret < 0) {
-      dbg("%s(%d), pkts alloc fail %d\n", __func__, idx, ret);
-      rte_pktmbuf_free_bulk(pkts_chain, bulk);
+      dbg("%s(%d), pkts_r alloc fail %d\n", __func__, idx, ret);
+      rte_pktmbuf_free_bulk(&pkts[alloc_begin], alloc_bulk);
+      rte_pktmbuf_free_bulk(pkts_rtp, pkts_bulk);
       s->stat_build_ret_code = -STI_RTP_PKT_ALLOC_FAIL;
       return MT_TASKLET_ALL_DONE;
-    }
-    if (send_r) {
-      ret = rte_pktmbuf_alloc_bulk(hdr_pool_r, pkts_r, bulk);
-      if (ret < 0) {
-        dbg("%s(%d), pkts_r alloc fail %d\n", __func__, idx, ret);
-        rte_pktmbuf_free_bulk(pkts, bulk);
-        rte_pktmbuf_free_bulk(pkts_chain, bulk);
-        s->stat_build_ret_code = -STI_RTP_PKT_ALLOC_FAIL;
-        return MT_TASKLET_ALL_DONE;
-      }
-    }
-  } else {
-    ret =
-        rte_pktmbuf_alloc_bulk(s->mbuf_mempool_chain, &pkts[pkts_bulk], bulk - pkts_bulk);
-    if (ret < 0) {
-      dbg("%s(%d), pkts alloc fail %d\n", __func__, idx, ret);
-      rte_pktmbuf_free_bulk(pkts_chain, bulk);
-      s->stat_build_ret_code = -STI_RTP_PKT_ALLOC_FAIL;
-      return MT_TASKLET_ALL_DONE;
-    }
-    if (send_r) {
-      ret = rte_pktmbuf_alloc_bulk(s->mbuf_mempool_chain, &pkts_r[pkts_bulk],
-                                   bulk - pkts_bulk);
-      if (ret < 0) {
-        dbg("%s(%d), pkts_r alloc fail %d\n", __func__, idx, ret);
-        rte_pktmbuf_free_bulk(pkts, bulk);
-        rte_pktmbuf_free_bulk(pkts_chain, bulk);
-        s->stat_build_ret_code = -STI_RTP_PKT_ALLOC_FAIL;
-        return MT_TASKLET_ALL_DONE;
-      }
     }
   }
 
   for (unsigned int i = 0; i < pkts_bulk; i++) {
     if (s->tx_no_chain) {
-      pkts[i] = pkts_chain[i];
+      pkts[i] = pkts_rtp[i];
       tv_build_rtp(impl, s, pkts[i]);
     } else {
-      tv_build_rtp_chain(impl, s, pkts[i], pkts_chain[i]);
+      tv_build_rtp_chain(impl, s, pkts[i], pkts_rtp[i]);
     }
     st_tx_mbuf_set_idx(pkts[i], s->st20_pkt_idx);
     pacing_set_mbuf_time_stamp(pkts[i], pacing);
@@ -2033,7 +2013,7 @@ static int tv_tasklet_rtp(struct mtl_main_impl* impl,
 
     if (send_r) {
       if (s->tx_no_chain) {
-        pkts_r[i] = rte_pktmbuf_copy(pkts[i], s->mbuf_mempool_chain, 0, UINT32_MAX);
+        pkts_r[i] = rte_pktmbuf_copy(pkts[i], hdr_pool_r, 0, UINT32_MAX);
         if (pkts_r[i] == NULL) {
           dbg("%s(%d), pkts_r alloc fail %d\n", __func__, idx, ret);
           rte_pktmbuf_free_bulk(pkts, bulk);
@@ -2550,11 +2530,6 @@ static int tv_mempool_init(struct mtl_main_impl* impl,
   if (s->tx_no_chain) {
     /* do not use mbuf chain, use same mbuf for hdr+payload */
     hdr_room_size = s->st20_pkt_size;
-    if (ops->type == ST20_TYPE_RTP_LEVEL) {
-      /* only use chain mbufs */
-      hdr_room_size = 0;
-      chain_room_size = s->st20_pkt_size;
-    }
   } else if (s->st22_info) {
     hdr_room_size = sizeof(struct st22_rfc9134_video_hdr);
     /* attach extbuf used, only placeholder mbuf */
@@ -2573,7 +2548,6 @@ static int tv_mempool_init(struct mtl_main_impl* impl,
   }
 
   for (int i = 0; i < num_port; i++) {
-    if (hdr_room_size == 0) continue;
     port = mt_port_logic2phy(s->port_maps, i);
     /* allocate header mbuf pool */
     if (s->mbuf_mempool_reuse_rx[i]) {
@@ -2584,7 +2558,8 @@ static int tv_mempool_init(struct mtl_main_impl* impl,
            s->mbuf_mempool_hdr[i], i);
     } else {
       n = mt_if_nb_tx_desc(impl, port) + s->ring_count;
-      if (s->ops.flags & ST20_TX_FLAG_ENABLE_RTCP) n += ST_TX_VIDEO_RTCP_RING_SIZE;
+      if (ops->flags & ST20_TX_FLAG_ENABLE_RTCP) n += ST_TX_VIDEO_RTCP_RING_SIZE;
+      if (ops->type == ST20_TYPE_RTP_LEVEL) n += ops->rtp_ring_size;
       if (s->mbuf_mempool_hdr[i]) {
         warn("%s(%d), use previous hdr mempool for port %d\n", __func__, idx, i);
       } else {
@@ -2604,10 +2579,10 @@ static int tv_mempool_init(struct mtl_main_impl* impl,
   }
 
   /* allocate payload(chain) mbuf pool on primary port */
-  if (!s->tx_no_chain || ops->type == ST20_TYPE_RTP_LEVEL) {
+  if (!s->tx_no_chain) {
     port = mt_port_logic2phy(s->port_maps, MTL_SESSION_PORT_P);
     n = mt_if_nb_tx_desc(impl, port) + s->ring_count;
-    if (s->ops.flags & ST20_TX_FLAG_ENABLE_RTCP) n += ST_TX_VIDEO_RTCP_RING_SIZE;
+    if (ops->flags & ST20_TX_FLAG_ENABLE_RTCP) n += ST_TX_VIDEO_RTCP_RING_SIZE;
     if (ops->type == ST20_TYPE_RTP_LEVEL) n += ops->rtp_ring_size;
 
     if (s->tx_mono_pool) {
@@ -4020,7 +3995,9 @@ void* st20_tx_get_mbuf(st20_tx_handle handle, void** usrptr) {
     return NULL;
   }
 
-  pkt = rte_pktmbuf_alloc(s->mbuf_mempool_chain);
+  struct rte_mempool* mp =
+      s->tx_no_chain ? s->mbuf_mempool_hdr[MTL_SESSION_PORT_P] : s->mbuf_mempool_chain;
+  pkt = rte_pktmbuf_alloc(mp);
   if (!pkt) {
     dbg("%s(%d), pkt alloc fail\n", __func__, idx);
     return NULL;
@@ -4422,13 +4399,16 @@ void* st22_tx_get_mbuf(st22_tx_handle handle, void** usrptr) {
     return NULL;
   }
 
-  pkt = rte_pktmbuf_alloc(s->mbuf_mempool_chain);
+  struct rte_mempool* mp =
+      s->tx_no_chain ? s->mbuf_mempool_hdr[MTL_SESSION_PORT_P] : s->mbuf_mempool_chain;
+  pkt = rte_pktmbuf_alloc(mp);
   if (!pkt) {
     dbg("%s(%d), pkt alloc fail\n", __func__, idx);
     return NULL;
   }
 
-  *usrptr = rte_pktmbuf_mtod(pkt, void*);
+  size_t hdr_offset = s->tx_no_chain ? sizeof(struct mt_udp_hdr) : 0;
+  *usrptr = rte_pktmbuf_mtod_offset(pkt, void*, hdr_offset);
   return pkt;
 }
 
@@ -4465,6 +4445,8 @@ int st22_tx_put_mbuf(st22_tx_handle handle, void* mbuf, uint16_t len) {
     rte_pktmbuf_free(mbuf);
     return -EIO;
   }
+
+  if (s->tx_no_chain) len += sizeof(struct mt_udp_hdr);
 
   pkt->data_len = pkt->pkt_len = len;
   ret = rte_ring_sp_enqueue(packet_ring, (void*)pkt);
