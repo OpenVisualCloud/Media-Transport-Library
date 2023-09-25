@@ -522,6 +522,8 @@ static int tap_queues_uinit(struct mtl_main_impl* impl) {
   struct tap_rt_context* tap_ctx = (struct tap_rt_context*)cni->tap_context;
   for (int i = 0; i < num_ports; i++) {
     if (cni->tap_tx_q[i]) {
+      struct rte_mbuf* pad = mt_get_pad(impl, i);
+      if (pad) mt_txq_flush(cni->tap_tx_q[i], pad);
       mt_txq_put(cni->tap_tx_q[i]);
       cni->tap_tx_q[i] = NULL;
     }

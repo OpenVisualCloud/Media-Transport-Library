@@ -1057,6 +1057,9 @@ static int tx_ancillary_sessions_mgr_uinit_hw(struct st_tx_ancillary_sessions_mg
     mgr->ring[port] = NULL;
   }
   if (mgr->queue[port]) {
+    struct rte_mbuf* pad = mt_get_pad(mgr->parent, port);
+    /* flush all the pkts in the tx ring desc */
+    if (pad) mt_txq_flush(mgr->queue[port], pad);
     mt_txq_put(mgr->queue[port]);
     mgr->queue[port] = NULL;
   }
