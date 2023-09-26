@@ -1,6 +1,14 @@
 name: Centos build
 
-on: [push, pull_request]
+on:
+  push:
+    branches:
+      - main
+      - 'maint-**'
+  pull_request:
+    branches:
+      - main
+      - 'maint-**'
 
 env:
   # Customize the env if

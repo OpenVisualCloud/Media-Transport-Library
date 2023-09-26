@@ -1,6 +1,14 @@
 name: gtest
 
-on: [push, pull_request]
+on:
+  push:
+    branches:
+      - main
+      - 'maint-**'
+  pull_request:
+    branches:
+      - main
+      - 'maint-**'
 
 concurrency:
   group: ${{ github.head_ref || github.run_id }}
