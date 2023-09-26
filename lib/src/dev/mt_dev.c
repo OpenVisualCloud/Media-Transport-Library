@@ -10,6 +10,7 @@
 #include "../mt_socket.h"
 #include "../mt_stat.h"
 #include "../mt_util.h"
+#include "mt_af_xdp.h"
 
 static const struct mt_dev_driver_info dev_drvs[] = {
     {
@@ -68,15 +69,15 @@ static const struct mt_dev_driver_info dev_drvs[] = {
     /* below for other not MTL_PMD_DPDK_USER */
     {
         .name = "net_af_xdp",
-        .port_type = MT_PORT_AF_XDP,
-        .drv_type = MT_DRV_AF_XDP,
+        .port_type = MT_PORT_DPDK_AF_XDP,
+        .drv_type = MT_DRV_DPDK_AF_XDP,
         .flow_type = MT_FLOW_ALL,
         .flags = MT_DRV_F_NO_CNI | MT_DRV_F_USE_KERNEL_CTL | MT_DRV_F_RX_POOL_COMMON,
     },
     {
         .name = "net_af_packet",
-        .port_type = MT_PORT_AF_PKT,
-        .drv_type = MT_DRV_AF_PKT,
+        .port_type = MT_PORT_DPDK_AF_PKT,
+        .drv_type = MT_DRV_DPDK_AF_PKT,
         .flow_type = MT_FLOW_ALL,
         .flags = MT_DRV_F_USE_KERNEL_CTL | MT_DRV_F_RX_POOL_COMMON | MT_DRV_F_RX_NO_FLOW,
     },
@@ -87,6 +88,13 @@ static const struct mt_dev_driver_info dev_drvs[] = {
         .flow_type = MT_FLOW_ALL,
         .flags = MT_DRV_F_NOT_DPDK_PMD | MT_DRV_F_NO_CNI | MT_DRV_F_USE_KERNEL_CTL |
                  MT_DRV_F_RX_NO_FLOW | MT_DRV_F_MCAST_IN_DP,
+    },
+    {
+        .name = "native_af_xdp",
+        .port_type = MT_PORT_NATIVE_AF_XDP,
+        .drv_type = MT_DRV_NATIVE_AF_XDP,
+        .flow_type = MT_FLOW_ALL,
+        .flags = MT_DRV_F_NOT_DPDK_PMD | MT_DRV_F_NO_CNI | MT_DRV_F_USE_KERNEL_CTL,
     },
 };
 
@@ -291,6 +299,7 @@ static int dev_eal_init(struct mtl_init_params* p, struct mt_kport_info* kport_i
   char port_params[MTL_PORT_MAX][2 * MTL_PORT_MAX_LEN];
   char* port_param;
   int pci_ports = 0;
+  enum mtl_pmd_type pmd;
 
   argc = 0;
 
@@ -308,21 +317,31 @@ static int dev_eal_init(struct mtl_init_params* p, struct mt_kport_info* kport_i
   argc++;
 
   for (int i = 0; i < num_ports; i++) {
-    if (p->pmd[i] == MTL_PMD_KERNEL_SOCKET) {
+    pmd = p->pmd[i];
+    if (pmd == MTL_PMD_KERNEL_SOCKET) {
       const char* if_name = mt_kernel_port2if(p->port[i]);
       if (!if_name) return -EINVAL;
       snprintf(kport_info->dpdk_port[i], MTL_PORT_MAX_LEN, "kernel_socket_%d", i);
       snprintf(kport_info->kernel_if[i], MTL_PORT_MAX_LEN, "%s", if_name);
       continue;
-    } else if (p->pmd[i] == MTL_PMD_DPDK_AF_XDP) {
+    } else if (pmd == MTL_PMD_NATIVE_AF_XDP) {
+      const char* if_name = mt_native_afxdp_port2if(p->port[i]);
+      if (!if_name) return -EINVAL;
+      snprintf(kport_info->dpdk_port[i], MTL_PORT_MAX_LEN, "native_af_xdp_%d", i);
+      snprintf(kport_info->kernel_if[i], MTL_PORT_MAX_LEN, "%s", if_name);
+      continue;
+    } else if (pmd == MTL_PMD_DPDK_AF_XDP) {
       argv[argc] = "--vdev";
       has_afxdp = true;
-    } else if (p->pmd[i] == MTL_PMD_DPDK_AF_PACKET) {
+    } else if (pmd == MTL_PMD_DPDK_AF_PACKET) {
       argv[argc] = "--vdev";
       has_afpkt = true;
-    } else {
+    } else if (pmd == MTL_PMD_DPDK_USER) {
       argv[argc] = "-a";
       pci_ports++;
+    } else {
+      err("%s(%d), unknown pmd %d\n", __func__, i, pmd);
+      return -ENOTSUP;
     }
     argc++;
     port_param = port_params[i];
@@ -330,7 +349,7 @@ static int dev_eal_init(struct mtl_init_params* p, struct mt_kport_info* kport_i
 
     uint16_t queue_pair_cnt = RTE_MAX(p->tx_queues_cnt[i], p->rx_queues_cnt[i]);
     if (p->pmd[i] == MTL_PMD_DPDK_AF_XDP) {
-      const char* if_name = mt_afxdp_port2if(p->port[i]);
+      const char* if_name = mt_dpdk_afxdp_port2if(p->port[i]);
       if (!if_name) return -EINVAL;
       snprintf(port_param, 2 * MTL_PORT_MAX_LEN,
                "net_af_xdp%d,iface=%s,start_queue=%u,queue_count=%u", i, if_name,
@@ -339,7 +358,7 @@ static int dev_eal_init(struct mtl_init_params* p, struct mt_kport_info* kport_i
       snprintf(kport_info->dpdk_port[i], MTL_PORT_MAX_LEN, "net_af_xdp%d", i);
       snprintf(kport_info->kernel_if[i], MTL_PORT_MAX_LEN, "%s", if_name);
     } else if (p->pmd[i] == MTL_PMD_DPDK_AF_PACKET) {
-      const char* if_name = mt_afpkt_port2if(p->port[i]);
+      const char* if_name = mt_dpdk_afpkt_port2if(p->port[i]);
       if (!if_name) return -EINVAL;
       snprintf(port_param, 2 * MTL_PORT_MAX_LEN,
                "eth_af_packet%d,iface=%s,framesz=2048,blocksz=4096,qpairs=%u", i, if_name,
@@ -1944,6 +1963,10 @@ int mt_dev_if_uinit(struct mtl_main_impl* impl) {
   for (int i = 0; i < num_ports; i++) {
     inf = mt_if(impl, i);
 
+    if (mt_pmd_is_native_af_xdp(impl, i)) {
+      mt_dev_xdp_uinit(inf);
+    }
+
     if (inf->pad) {
       rte_pktmbuf_free(inf->pad);
       inf->pad = NULL;
@@ -1992,7 +2015,7 @@ int mt_dev_if_init(struct mtl_main_impl* impl) {
     inf->port = i;
 
     /* parse port id */
-    if (mt_pmd_is_kernel_socket(impl, i)) {
+    if (mt_pmd_is_kernel_socket(impl, i) || mt_pmd_is_native_af_xdp(impl, i)) {
       port = impl->kport_info.kernel_if[i];
       port_id = i;
     } else {
@@ -2019,6 +2042,8 @@ int mt_dev_if_init(struct mtl_main_impl* impl) {
     /* parse drv info */
     if (mt_pmd_is_kernel_socket(impl, i))
       ret = parse_driver_info("kernel_socket", &inf->drv_info);
+    else if (mt_pmd_is_native_af_xdp(impl, i))
+      ret = parse_driver_info("native_af_xdp", &inf->drv_info);
     else
       ret = parse_driver_info(dev_info->driver_name, &inf->drv_info);
     if (ret < 0) {
@@ -2067,7 +2092,7 @@ int mt_dev_if_init(struct mtl_main_impl* impl) {
       inf->max_rx_queues = 1;
       p->flags |= MTL_FLAG_SHARED_RX_QUEUE;
       inf->system_rx_queues_end = 0;
-    } else if (mt_pmd_is_dpdk_af_xdp(impl, i)) {
+    } else if (mt_pmd_is_dpdk_af_xdp(impl, i) || mt_pmd_is_native_af_xdp(impl, i)) {
       /* no system queues as no cni */
       inf->max_tx_queues = queue_pair_cnt;
       inf->max_rx_queues = queue_pair_cnt;
@@ -2249,6 +2274,15 @@ int mt_dev_if_init(struct mtl_main_impl* impl) {
       err("%s(%d), pad alloc fail\n", __func__, i);
       mt_dev_if_uinit(impl);
       return -ENOMEM;
+    }
+
+    if (mt_pmd_is_native_af_xdp(impl, i)) {
+      ret = mt_dev_xdp_init(inf);
+      if (ret < 0) {
+        err("%s(%d), native xdp dev init fail %d\n", __func__, i, ret);
+        mt_dev_if_uinit(impl);
+        return -ENOMEM;
+      }
     }
 
     info("%s(%d), port_id %d port_type %d drv_type %d\n", __func__, i, port_id,

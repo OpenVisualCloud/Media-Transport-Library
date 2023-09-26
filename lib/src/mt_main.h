@@ -114,9 +114,10 @@ enum mt_port_type {
   MT_PORT_ERR = 0,
   MT_PORT_VF,
   MT_PORT_PF,
-  MT_PORT_AF_XDP,
-  MT_PORT_AF_PKT,
+  MT_PORT_DPDK_AF_XDP,
+  MT_PORT_DPDK_AF_PKT,
   MT_PORT_KERNEL_SOCKET,
+  MT_PORT_NATIVE_AF_XDP,
 };
 
 enum mt_rl_type {
@@ -126,17 +127,21 @@ enum mt_rl_type {
 
 enum mt_driver_type {
   MT_DRV_DEFAULT = 0,
-  MT_DRV_ICE,       /* ice pf, net_ice */
-  MT_DRV_I40E,      /* flv pf, net_i40e */
-  MT_DRV_IAVF,      /* IA vf, net_iavf */
-  MT_DRV_AF_XDP,    /* af xdp, net_af_xdp */
+  MT_DRV_ICE,  /* ice pf, net_ice */
+  MT_DRV_I40E, /* flv pf, net_i40e */
+  MT_DRV_IAVF, /* IA vf, net_iavf */
+  /* dpdk af xdp, net_af_xdp */
+  MT_DRV_DPDK_AF_XDP,
   MT_DRV_E1000_IGB, /* e1000 igb, net_e1000_igb */
   MT_DRV_IGC,       /* igc, net_igc */
   MT_DRV_ENA,       /* aws ena, net_ena */
   MT_DRV_MLX5,      /* mlx, mlx5_pci */
-  MT_DRV_AF_PKT,    /* af packet, net_af_packet */
+  /* dpdk af packet, net_af_packet */
+  MT_DRV_DPDK_AF_PKT,
   /* kernel based socket */
   MT_DRV_KERNEL_SOCKET,
+  /* native af xdp */
+  MT_DRV_NATIVE_AF_XDP,
 };
 
 enum mt_flow_type {
@@ -680,6 +685,8 @@ struct mt_interface {
 
   uint16_t virtio_port_id; /* virtio_user port id */
   bool virtio_port_active; /* virtio_user port active */
+
+  void* xdp;
 };
 
 struct mt_lcore_shm {
@@ -1122,6 +1129,14 @@ static inline bool mt_pmd_is_dpdk_af_packet(struct mtl_main_impl* impl,
 static inline bool mt_pmd_is_kernel_socket(struct mtl_main_impl* impl,
                                            enum mtl_port port) {
   if (MTL_PMD_KERNEL_SOCKET == mt_get_user_params(impl)->pmd[port])
+    return true;
+  else
+    return false;
+}
+
+static inline bool mt_pmd_is_native_af_xdp(struct mtl_main_impl* impl,
+                                           enum mtl_port port) {
+  if (MTL_PMD_NATIVE_AF_XDP == mt_get_user_params(impl)->pmd[port])
     return true;
   else
     return false;

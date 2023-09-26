@@ -1,8 +1,8 @@
 {
     "interfaces": [
         {
-            "name": "kernel:enp175s0f0np0",
-	},
+            "name": "dpdk_af_xdp:enp175s0f0np0",
+        },
     ],
     "rx_sessions": [
         {
@@ -24,26 +24,6 @@
                     "pg_format": "YUV_422_10bit",
                     "display": false,
                     "measure_latency": true,
-                }
-            ],
-            "audio": [
-                {
-                    "replicas": 1,
-                    "type": "frame",
-                    "start_port": 30000,
-                    "payload_type": 111,
-                    "audio_format": "PCM16",
-                    "audio_channel": ["ST"],
-                    "audio_sampling": "48kHz",
-                    "audio_ptime": "1",
-                    "audio_url": "./test.wav"
-                }
-            ],
-            "ancillary": [
-                {
-                    "replicas": 1,
-                    "payload_type": 113,
-                    "start_port": 40000
                 }
             ]
         }

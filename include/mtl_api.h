@@ -193,6 +193,8 @@ enum mtl_pmd_type {
   MTL_PMD_DPDK_AF_PACKET,
   /** Run MTL directly on kernel socket APIs */
   MTL_PMD_KERNEL_SOCKET,
+  /** Run MTL directly on AF_XDP */
+  MTL_PMD_NATIVE_AF_XDP,
   /** max value of this enum */
   MTL_PMD_TYPE_MAX,
 };
@@ -457,7 +459,10 @@ struct mtl_af_xdp_params {
 struct mtl_init_params {
   /**
    * Mandatory. PCIE BDF port, ex: 0000:af:01.0.
-   * For MTL_PMD_DPDK_AF_XDP, use afxdp + ifname, ex: afxdp:enp175s0f0.
+   * For MTL_PMD_DPDK_AF_XDP, use dpdk_af_xdp + ifname, ex: dpdk_af_xdp:enp175s0f0.
+   *  MTL_PMD_KERNEL_SOCKET, use kernel + ifname, ex: kernel:enp175s0f0.
+   *  MTL_PMD_DPDK_AF_PACKET, use dpdk_af_packet + ifname, ex: dpdk_af_packet:enp175s0f0.
+   *  MTL_PMD_NATIVE_AF_XDP, use native_af_xdp + ifname, ex: native_af_xdp:enp175s0f0.
    */
   char port[MTL_PORT_MAX][MTL_PORT_MAX_LEN];
   /** Mandatory. The element number in the port array, 1 to MTL_PORT_MAX_LEN */
@@ -1292,6 +1297,21 @@ const char* mtl_get_simd_level_name(enum mtl_simd_level level);
  *   pmd type.
  */
 enum mtl_pmd_type mtl_pmd_by_port_name(const char* port);
+
+/**
+ * Helper function to check if it's a af_xdp based pmd.
+ *
+ * @param pmd
+ *   pmd type.
+ * @return
+ *   true or false.
+ */
+static inline bool mtl_pmd_is_af_xdp(enum mtl_pmd_type pmd) {
+  if (pmd == MTL_PMD_DPDK_AF_XDP || pmd == MTL_PMD_NATIVE_AF_XDP)
+    return true;
+  else
+    return false;
+}
 
 /**
  * Helper function to get ip for interface.
