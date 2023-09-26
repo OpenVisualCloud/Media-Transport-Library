@@ -18,7 +18,7 @@ jobs:
     outputs:
       changed: ${{ steps.filter.outputs.src == 'true' || steps.filter.outputs.build == 'true' }}
     steps:
-      - uses: actions/checkout@3df4ab11eba7bda6032a0b82a6bb43b11571feac # v4.0.0
+      - uses: actions/checkout@8ade135a41bc03ea155e62e844d188df1ea18608 # v4.1.0
       
       - uses: dorny/paths-filter@4512585405083f25c027a35db413c2b3b9006d50 # v2
         id: filter
@@ -73,10 +73,10 @@ jobs:
           cp npcap-sdk/Lib/x64/* ${MSYSTEM_PREFIX}/lib/
 
       - name: Checkout IMTL code
-        uses: actions/checkout@3df4ab11eba7bda6032a0b82a6bb43b11571feac # v4.0.0
+        uses: actions/checkout@8ade135a41bc03ea155e62e844d188df1ea18608 # v4.1.0
 
       - name: Checkout mman-win32 code
-        uses: actions/checkout@3df4ab11eba7bda6032a0b82a6bb43b11571feac # v4.0.0
+        uses: actions/checkout@8ade135a41bc03ea155e62e844d188df1ea18608 # v4.1.0
         with:
           repository: 'alitrack/mman-win32'
           ref: master
@@ -110,7 +110,7 @@ jobs:
 
       - name: Checkout DPDK code
         if: ${{ steps.cache-dpdk.outputs.cache-hit != 'true' }}
-        uses: actions/checkout@3df4ab11eba7bda6032a0b82a6bb43b11571feac # v4.0.0
+        uses: actions/checkout@8ade135a41bc03ea155e62e844d188df1ea18608 # v4.1.0
         with:
           repository: 'DPDK/dpdk'
           ref: v${{matrix.dpdk}}
