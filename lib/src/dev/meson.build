@@ -4,3 +4,7 @@
 sources += files(
   'mt_dev.c',
 )
+
+if mtl_has_xdp_backend
+  sources += files('mt_af_xdp.c')
+endif

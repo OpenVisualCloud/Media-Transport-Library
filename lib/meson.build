@@ -18,6 +18,16 @@ if not is_windows
 endif
 jsonc_dep = dependency('json-c', required : true)
 
+# xdp check
+libxdp_dep = dependency('libxdp', required: false)
+if libxdp_dep.found()
+  add_global_arguments('-DMTL_HAS_XDP_BACKEND', language : 'c')
+  set_variable('mtl_has_xdp_backend', true)
+else
+  message('libxdp not found, no af_xdp backend')
+  set_variable('mtl_has_xdp_backend', false)
+endif
+
 # add source file
 subdir('src')
 
@@ -86,6 +96,6 @@ mtl_lib += shared_library(meson.project_name(), sources,
   c_args : mtl_c_args,
   link_args : mtl_link_c_args,
   # asan should be always the first dep
-  dependencies: [asan_dep, dpdk_dep, libm_dep, libnuma_dep, libpthread_dep, libdl_dep, jsonc_dep, ws2_32_dep],
+  dependencies: [asan_dep, dpdk_dep, libm_dep, libnuma_dep, libpthread_dep, libdl_dep, jsonc_dep, ws2_32_dep, libxdp_dep],
   install: true
 )

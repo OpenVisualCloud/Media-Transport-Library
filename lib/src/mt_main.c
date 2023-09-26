@@ -282,13 +282,16 @@ static int mt_user_params_check(struct mtl_init_params* p) {
     }
 
     /* af xdp check */
-    if (pmd == MTL_PMD_DPDK_AF_XDP) {
+    if (mtl_pmd_is_af_xdp(p->pmd[i])) {
       if (p->xdp_info[i].start_queue <= 0) {
         err("%s(%d), invalid afxdp start_queue %u\n", __func__, i,
             p->xdp_info[i].start_queue);
         return -EINVAL;
       }
-      if_name = mt_afxdp_port2if(p->port[i]);
+      if (p->pmd[i] == MTL_PMD_NATIVE_AF_XDP)
+        if_name = mt_native_afxdp_port2if(p->port[i]);
+      else
+        if_name = mt_dpdk_afxdp_port2if(p->port[i]);
       if (!if_name) {
         err("%s(%d), get afxdp if name fail from %s\n", __func__, i, p->port[i]);
         return -EINVAL;
@@ -296,7 +299,7 @@ static int mt_user_params_check(struct mtl_init_params* p) {
     }
     /* af pkt check */
     if (pmd == MTL_PMD_DPDK_AF_PACKET) {
-      if_name = mt_afpkt_port2if(p->port[i]);
+      if_name = mt_dpdk_afpkt_port2if(p->port[i]);
       if (!if_name) {
         err("%s(%d), get afpkt if name fail from %s\n", __func__, i, p->port[i]);
         return -EINVAL;
@@ -391,6 +394,7 @@ mtl_handle mtl_init(struct mtl_init_params* p) {
   int num_ports = p->num_ports;
   struct mt_kport_info kport_info;
   struct mt_interface* inf;
+  enum mtl_pmd_type pmd;
 
   RTE_BUILD_BUG_ON(MTL_SESSION_PORT_MAX > (int)MTL_PORT_MAX);
   RTE_BUILD_BUG_ON(sizeof(struct mt_udp_hdr) != 42);
@@ -409,14 +413,15 @@ mtl_handle mtl_init(struct mtl_init_params* p) {
   info("st version: %s, dpdk version: %s\n", mtl_version(), rte_version());
 
   for (int i = 0; i < num_ports; i++) {
-    if (p->pmd[i] == MTL_PMD_KERNEL_SOCKET)
+    pmd = p->pmd[i];
+    if (pmd == MTL_PMD_KERNEL_SOCKET || pmd == MTL_PMD_NATIVE_AF_XDP)
       socket[i] = mt_socket_get_numa(kport_info.kernel_if[i]);
-    else if (p->pmd[i] != MTL_PMD_DPDK_USER)
+    else if (pmd != MTL_PMD_DPDK_USER)
       socket[i] = mt_dev_get_socket_id(kport_info.dpdk_port[i]);
     else
       socket[i] = mt_dev_get_socket_id(p->port[i]);
     if (socket[i] < 0) {
-      err("%s, get socket fail %d\n", __func__, socket[i]);
+      err("%s, get socket fail %d for pmd %d\n", __func__, socket[i], p->pmd[i]);
       goto err_exit;
     }
   }

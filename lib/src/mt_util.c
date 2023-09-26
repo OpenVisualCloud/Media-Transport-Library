@@ -832,6 +832,7 @@ uint16_t mt_random_port(uint16_t base_port) {
 static const char* dpdk_afxdp_port_prefix = "dpdk_af_xdp:";
 static const char* dpdk_afpkt_port_prefix = "dpdk_af_packet:";
 static const char* kernel_port_prefix = "kernel:";
+static const char* native_afxdp_port_prefix = "native_af_xdp:";
 
 enum mtl_pmd_type mtl_pmd_by_port_name(const char* port) {
   dbg("%s, port %s\n", __func__, port);
@@ -841,6 +842,8 @@ enum mtl_pmd_type mtl_pmd_by_port_name(const char* port) {
     return MTL_PMD_DPDK_AF_PACKET;
   else if (strncmp(port, kernel_port_prefix, strlen(kernel_port_prefix)) == 0)
     return MTL_PMD_KERNEL_SOCKET;
+  else if (strncmp(port, native_afxdp_port_prefix, strlen(native_afxdp_port_prefix)) == 0)
+    return MTL_PMD_NATIVE_AF_XDP;
   else
     return MTL_PMD_DPDK_USER; /* default */
 }
@@ -853,18 +856,26 @@ const char* mt_kernel_port2if(const char* port) {
   return port + strlen(kernel_port_prefix);
 }
 
-const char* mt_afxdp_port2if(const char* port) {
+const char* mt_dpdk_afxdp_port2if(const char* port) {
   if (mtl_pmd_by_port_name(port) != MTL_PMD_DPDK_AF_XDP) {
-    err("%s, port %s is not afxdp\n", __func__, port);
+    err("%s, port %s is not dpdk_af_xdp\n", __func__, port);
     return NULL;
   }
   return port + strlen(dpdk_afxdp_port_prefix);
 }
 
-const char* mt_afpkt_port2if(const char* port) {
+const char* mt_dpdk_afpkt_port2if(const char* port) {
   if (mtl_pmd_by_port_name(port) != MTL_PMD_DPDK_AF_PACKET) {
-    err("%s, port %s is not a af pkt\n", __func__, port);
+    err("%s, port %s is not a dpdk_af_pkt\n", __func__, port);
     return NULL;
   }
   return port + strlen(dpdk_afpkt_port_prefix);
+}
+
+const char* mt_native_afxdp_port2if(const char* port) {
+  if (mtl_pmd_by_port_name(port) != MTL_PMD_NATIVE_AF_XDP) {
+    err("%s, port %s is not native_af_xdp\n", __func__, port);
+    return NULL;
+  }
+  return port + strlen(native_afxdp_port_prefix);
 }
