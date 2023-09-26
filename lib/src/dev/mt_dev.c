@@ -4,17 +4,12 @@
 
 #include "mt_dev.h"
 
-#include "datapath/mt_queue.h"
-#include "mt_arp.h"
-#include "mt_cni.h"
-#include "mt_dhcp.h"
-#include "mt_flow.h"
-#include "mt_log.h"
-#include "mt_mcast.h"
-#include "mt_sch.h"
-#include "mt_socket.h"
-#include "mt_stat.h"
-#include "mt_util.h"
+#include "../mt_flow.h"
+#include "../mt_log.h"
+#include "../mt_sch.h"
+#include "../mt_socket.h"
+#include "../mt_stat.h"
+#include "../mt_util.h"
 
 static const struct mt_dev_driver_info dev_drvs[] = {
     {
@@ -1162,255 +1157,6 @@ static int dev_start_port(struct mt_interface* inf) {
   return 0;
 }
 
-static int dev_filelock_lock(struct mtl_main_impl* impl) {
-  int fd = open(MT_FLOCK_PATH, O_RDONLY | O_CREAT, 0666);
-  if (fd < 0) {
-    /* sometimes may fail due to user permission, try open read-only */
-    fd = open(MT_FLOCK_PATH, O_RDONLY);
-    if (fd < 0) {
-      err("%s, failed to open %s, %s\n", __func__, MT_FLOCK_PATH, strerror(errno));
-      return -EIO;
-    }
-  }
-  impl->lcore_lock_fd = fd;
-  /* wait until locked */
-  if (flock(fd, LOCK_EX) != 0) {
-    err("%s, can not lock file\n", __func__);
-    close(fd);
-    impl->lcore_lock_fd = -1;
-    return -EIO;
-  }
-
-  return 0;
-}
-
-static int dev_filelock_unlock(struct mtl_main_impl* impl) {
-  int fd = impl->lcore_lock_fd;
-
-  if (fd < 0) {
-    err("%s, wrong lock file fd %d\n", __func__, fd);
-    return -EIO;
-  }
-
-  if (flock(fd, LOCK_UN) != 0) {
-    err("%s, can not unlock file\n", __func__);
-    return -EIO;
-  }
-  close(fd);
-  impl->lcore_lock_fd = -1;
-  return 0;
-}
-
-int mt_dev_get_lcore(struct mtl_main_impl* impl, unsigned int* lcore) {
-  unsigned int cur_lcore = 0;
-  int ret;
-  struct mt_lcore_shm* lcore_shm = impl->lcore_shm;
-
-  ret = dev_filelock_lock(impl);
-  if (ret < 0) {
-    err("%s, dev_filelock_lock fail\n", __func__);
-    return ret;
-  }
-
-  do {
-    cur_lcore = rte_get_next_lcore(cur_lcore, 1, 0);
-
-    if ((cur_lcore < RTE_MAX_LCORE) && mt_socket_match(rte_lcore_to_socket_id(cur_lcore),
-                                                       mt_socket_id(impl, MTL_PORT_P))) {
-      if (!lcore_shm->lcores_active[cur_lcore]) {
-        *lcore = cur_lcore;
-        lcore_shm->lcores_active[cur_lcore] = true;
-        lcore_shm->used++;
-        rte_atomic32_inc(&impl->lcore_cnt);
-        impl->local_lcores_active[cur_lcore] = true;
-        ret = dev_filelock_unlock(impl);
-        info("%s, available lcore %d\n", __func__, cur_lcore);
-        if (ret < 0) {
-          err("%s, dev_filelock_unlock fail\n", __func__);
-          return ret;
-        }
-        return 0;
-      }
-    }
-  } while (cur_lcore < RTE_MAX_LCORE);
-
-  dev_filelock_unlock(impl);
-  err("%s, fail to find lcore\n", __func__);
-  return -EIO;
-}
-
-int mt_dev_put_lcore(struct mtl_main_impl* impl, unsigned int lcore) {
-  int ret;
-  struct mt_lcore_shm* lcore_shm = impl->lcore_shm;
-
-  if (lcore >= RTE_MAX_LCORE) {
-    err("%s, invalid lcore %d\n", __func__, lcore);
-    return -EIO;
-  }
-  if (!lcore_shm) {
-    err("%s, no lcore shm attached\n", __func__);
-    return -EIO;
-  }
-  ret = dev_filelock_lock(impl);
-  if (ret < 0) {
-    err("%s, dev_filelock_lock fail\n", __func__);
-    return ret;
-  }
-  if (!lcore_shm->lcores_active[lcore]) {
-    err("%s, lcore %d not active\n", __func__, lcore);
-    ret = -EIO;
-    goto err_unlock;
-  }
-
-  lcore_shm->lcores_active[lcore] = false;
-  lcore_shm->used--;
-  rte_atomic32_dec(&impl->lcore_cnt);
-  impl->local_lcores_active[lcore] = false;
-  ret = dev_filelock_unlock(impl);
-  info("%s, lcore %d\n", __func__, lcore);
-  if (ret < 0) {
-    err("%s, dev_filelock_unlock fail\n", __func__);
-    return ret;
-  }
-  return 0;
-
-err_unlock:
-  dev_filelock_unlock(impl);
-  return ret;
-}
-
-bool mt_dev_lcore_valid(struct mtl_main_impl* impl, unsigned int lcore) {
-  struct mt_lcore_shm* lcore_shm = impl->lcore_shm;
-
-  if (lcore >= RTE_MAX_LCORE) {
-    err("%s, invalid lcore %d\n", __func__, lcore);
-    return -EIO;
-  }
-  if (!lcore_shm) {
-    err("%s, no lcore shm attached\n", __func__);
-    return -EIO;
-  }
-
-  return lcore_shm->lcores_active[lcore];
-}
-
-static int dev_uinit_lcores(struct mtl_main_impl* impl) {
-  int ret;
-  int shm_id = impl->lcore_shm_id;
-  struct mt_lcore_shm* lcore_shm = impl->lcore_shm;
-  if (!lcore_shm || shm_id == -1) {
-    err("%s, no lcore shm attached\n", __func__);
-    return -EIO;
-  }
-
-  for (unsigned int lcore = 0; lcore < RTE_MAX_LCORE; lcore++) {
-    if (impl->local_lcores_active[lcore]) {
-      warn("%s, lcore %d still active\n", __func__, lcore);
-      mt_dev_put_lcore(impl, lcore);
-    }
-  }
-
-  ret = dev_filelock_lock(impl);
-  if (ret < 0) {
-    err("%s, dev_filelock_lock fail\n", __func__);
-    return ret;
-  }
-
-  ret = shmdt(impl->lcore_shm);
-  if (ret == -1) {
-    err("%s, shared memory detach failed, %s\n", __func__, strerror(errno));
-    goto err_unlock;
-  }
-
-  struct shmid_ds shmds;
-  ret = shmctl(shm_id, IPC_STAT, &shmds);
-  if (ret < 0) {
-    err("%s, can not stat shared memory, %s\n", __func__, strerror(errno));
-    goto err_unlock;
-  }
-  if (shmds.shm_nattch == 0) { /* remove ipc if we are the last user */
-    ret = shmctl(shm_id, IPC_RMID, NULL);
-    if (ret < 0) {
-      warn("%s, can not remove shared memory, %s\n", __func__, strerror(errno));
-      goto err_unlock;
-    }
-  }
-
-  impl->lcore_shm_id = -1;
-  impl->lcore_shm = NULL;
-  ret = dev_filelock_unlock(impl);
-  if (ret < 0) {
-    err("%s, dev_filelock_unlock fail\n", __func__);
-    return ret;
-  }
-  return 0;
-
-err_unlock:
-  dev_filelock_unlock(impl);
-  return ret;
-}
-
-static int dev_init_lcores(struct mtl_main_impl* impl) {
-  int ret;
-  struct mt_lcore_shm* lcore_shm;
-
-  if (impl->lcore_shm) {
-    err("%s, lcore_shm attached\n", __func__);
-    return -EIO;
-  }
-
-  ret = dev_filelock_lock(impl);
-  if (ret < 0) {
-    err("%s, dev_filelock_lock fail\n", __func__);
-    return ret;
-  }
-
-  key_t key = ftok("/dev/null", 21);
-  if (key < 0) {
-    err("%s, ftok error: %s\n", __func__, strerror(errno));
-    ret = -EIO;
-    goto err_unlock;
-  }
-  int shm_id = shmget(key, sizeof(*lcore_shm), 0666 | IPC_CREAT);
-  if (shm_id < 0) {
-    err("%s, can not get shared memory for lcore, %s\n", __func__, strerror(errno));
-    ret = -EIO;
-    goto err_unlock;
-  }
-  impl->lcore_shm_id = shm_id;
-
-  lcore_shm = shmat(shm_id, NULL, 0);
-  if (lcore_shm == (void*)-1) {
-    err("%s, can not attach shared memory for lcore, %s\n", __func__, strerror(errno));
-    ret = -EIO;
-    goto err_unlock;
-  }
-
-  struct shmid_ds stat;
-  ret = shmctl(shm_id, IPC_STAT, &stat);
-  if (ret < 0) {
-    err("%s, shmctl fail\n", __func__);
-    shmdt(lcore_shm);
-    goto err_unlock;
-  }
-  if (stat.shm_nattch == 1) /* clear shm as we are the first user */
-    memset(lcore_shm, 0, sizeof(*lcore_shm));
-
-  impl->lcore_shm = lcore_shm;
-  info("%s, shared memory attached at %p nattch %d\n", __func__, impl->lcore_shm,
-       (int)stat.shm_nattch);
-  ret = dev_filelock_unlock(impl);
-  if (ret < 0) {
-    err("%s, dev_filelock_unlock fail\n", __func__);
-    return ret;
-  }
-  return 0;
-
-err_unlock:
-  dev_filelock_unlock(impl);
-  return ret;
-}
-
 static int dev_if_uinit_rx_queues(struct mt_interface* inf) {
   enum mtl_port port = inf->port;
   struct mt_rx_queue* rx_queue;
@@ -1686,22 +1432,6 @@ static uint64_t ptp_from_tsc(struct mtl_main_impl* impl, enum mtl_port port) {
   struct mt_interface* inf = mt_if(impl, port);
   uint64_t tsc = mt_get_tsc(impl);
   return inf->real_time_base + tsc - inf->tsc_time_base;
-}
-
-uint16_t mt_dev_tx_sys_queue_burst(struct mtl_main_impl* impl, enum mtl_port port,
-                                   struct rte_mbuf** tx_pkts, uint16_t nb_pkts) {
-  struct mt_interface* inf = mt_if(impl, port);
-
-  if (!inf->txq_sys_entry) {
-    err("%s(%d), txq sys queue not active\n", __func__, port);
-    return 0;
-  }
-
-  uint16_t tx;
-  rte_spinlock_lock(&inf->txq_sys_entry_lock);
-  tx = mt_txq_burst(inf->txq_sys_entry, tx_pkts, nb_pkts);
-  rte_spinlock_unlock(&inf->txq_sys_entry_lock);
-  return tx;
 }
 
 int mt_dev_set_tx_bps(struct mtl_main_impl* impl, enum mtl_port port, uint16_t q,
@@ -2012,9 +1742,6 @@ int mt_dev_create(struct mtl_main_impl* impl) {
   struct mt_interface* inf;
   enum mt_port_type port_type;
 
-  ret = dev_init_lcores(impl);
-  if (ret < 0) return ret;
-
   for (int i = 0; i < num_ports; i++) {
     int detect_retry = 0;
 
@@ -2133,7 +1860,6 @@ int mt_dev_free(struct mtl_main_impl* impl) {
   struct mt_interface* inf;
 
   mt_sch_mrg_uinit(impl);
-  dev_uinit_lcores(impl);
 
   for (int i = 0; i < num_ports; i++) {
     inf = mt_if(impl, i);
@@ -2178,8 +1904,7 @@ int mt_dev_get_socket_id(const char* port) {
   int ret = rte_eth_dev_get_port_by_name(port, &port_id);
   if (ret < 0) {
     err("%s, failed to get port for %s\n", __func__, port);
-    err("%s, please make sure the driver of %s is configured to DPDK PMD\n", __func__,
-        port);
+    err("%s, please make sure the driver of %s is configured rightly\n", __func__, port);
     return ret;
   }
   int soc_id;
@@ -2210,33 +1935,6 @@ int mt_dev_uinit(struct mtl_init_params* p) {
 
   info("%s, succ\n", __func__);
   return 0;
-}
-
-int mt_dev_dst_ip_mac(struct mtl_main_impl* impl, uint8_t dip[MTL_IP_ADDR_LEN],
-                      struct rte_ether_addr* ea, enum mtl_port port, int timeout_ms) {
-  int ret;
-
-  if (mt_is_multicast_ip(dip)) {
-    mt_mcast_ip_to_mac(dip, ea);
-    ret = 0;
-  } else if (mt_is_lan_ip(dip, mt_sip_addr(impl, port), mt_sip_netmask(impl, port))) {
-    ret = mt_arp_get_mac(impl, dip, ea, port, timeout_ms);
-  } else {
-    uint8_t* gateway = mt_sip_gateway(impl, port);
-    if (mt_ip_to_u32(gateway)) {
-      ret = mt_arp_get_mac(impl, gateway, ea, port, timeout_ms);
-    } else {
-      err("%s(%d), ip %d.%d.%d.%d is wan but no gateway support\n", __func__, port,
-          dip[0], dip[1], dip[2], dip[3]);
-      return -EIO;
-    }
-  }
-
-  dbg("%s(%d), ip: %d.%d.%d.%d, mac: %02hhx:%02hhx:%02hhx:%02hhx:%02hhx:%02hhx\n",
-      __func__, port, dip[0], dip[1], dip[2], dip[3], ea->addr_bytes[0],
-      ea->addr_bytes[1], ea->addr_bytes[2], ea->addr_bytes[3], ea->addr_bytes[4],
-      ea->addr_bytes[5]);
-  return ret;
 }
 
 int mt_dev_if_uinit(struct mtl_main_impl* impl) {
@@ -2333,7 +2031,6 @@ int mt_dev_if_init(struct mtl_main_impl* impl) {
     mt_pthread_mutex_init(&inf->tx_queues_mutex, NULL);
     mt_pthread_mutex_init(&inf->rx_queues_mutex, NULL);
     mt_pthread_mutex_init(&inf->vf_cmd_mutex, NULL);
-    rte_spinlock_init(&inf->txq_sys_entry_lock);
     rte_spinlock_init(&inf->stats_lock);
 
     if (mt_ptp_tsc_source(impl)) {
@@ -2363,14 +2060,14 @@ int mt_dev_if_init(struct mtl_main_impl* impl) {
       inf->max_tx_queues = p->tx_queues_cnt[i];
       inf->max_rx_queues = p->rx_queues_cnt[i];
       inf->system_rx_queues_end = 0;
-    } else if (mt_pmd_is_af_packet(impl, i)) {
+    } else if (mt_pmd_is_dpdk_af_packet(impl, i)) {
       inf->max_tx_queues = p->tx_queues_cnt[i];
       inf->max_tx_queues++; /* arp, mcast, ptp use shared sys queue */
       /* force to shared since the packet is dispatched by kernel */
       inf->max_rx_queues = 1;
       p->flags |= MTL_FLAG_SHARED_RX_QUEUE;
       inf->system_rx_queues_end = 0;
-    } else if (mt_pmd_is_af_xdp(impl, i)) {
+    } else if (mt_pmd_is_dpdk_af_xdp(impl, i)) {
       /* no system queues as no cni */
       inf->max_tx_queues = queue_pair_cnt;
       inf->max_rx_queues = queue_pair_cnt;
@@ -2591,42 +2288,12 @@ int mt_dev_if_pre_uinit(struct mtl_main_impl* impl) {
   for (int i = 0; i < num_ports; i++) {
     inf = mt_if(impl, i);
 
-    if (inf->txq_sys_entry) {
-      mt_txq_flush(inf->txq_sys_entry, mt_get_pad(impl, i));
-      mt_txq_put(inf->txq_sys_entry);
-      inf->txq_sys_entry = NULL;
-    }
-
     if (mt_has_virtio_user(impl, i)) {
       inf->virtio_port_active = false;
       int ret = rte_eth_dev_stop(inf->virtio_port_id);
       if (ret < 0) warn("%s(%d), stop virtio port fail %d\n", __func__, i, ret);
       ret = rte_eth_dev_close(inf->virtio_port_id);
       if (ret < 0) warn("%s(%d), close virtio port fail %d\n", __func__, i, ret);
-    }
-  }
-
-  return 0;
-}
-
-int mt_dev_if_post_init(struct mtl_main_impl* impl) {
-  int num_ports = mt_num_ports(impl);
-  struct mt_interface* inf;
-
-  for (int i = 0; i < num_ports; i++) {
-    inf = mt_if(impl, i);
-
-    /* no sys queue for kernel based pmd */
-    if (inf->drv_info.flags & MT_DRV_F_NO_CNI) continue;
-
-    struct mt_txq_flow flow;
-    memset(&flow, 0, sizeof(flow));
-    flow.sys_queue = true;
-    inf->txq_sys_entry = mt_txq_get(impl, i, &flow);
-    if (!inf->txq_sys_entry) {
-      err("%s(%d), txq sys entry get fail\n", __func__, i);
-      mt_dev_if_pre_uinit(impl);
-      return -ENOMEM;
     }
   }
 
@@ -2657,21 +2324,6 @@ int mt_dev_tsc_done_action(struct mtl_main_impl* impl) {
   }
 
   return 0;
-}
-
-uint8_t* mt_sip_addr(struct mtl_main_impl* impl, enum mtl_port port) {
-  if (mt_dhcp_service_active(impl, port)) return mt_dhcp_get_ip(impl, port);
-  return mt_get_user_params(impl)->sip_addr[port];
-}
-
-uint8_t* mt_sip_netmask(struct mtl_main_impl* impl, enum mtl_port port) {
-  if (mt_dhcp_service_active(impl, port)) return mt_dhcp_get_netmask(impl, port);
-  return mt_get_user_params(impl)->netmask[port];
-}
-
-uint8_t* mt_sip_gateway(struct mtl_main_impl* impl, enum mtl_port port) {
-  if (mt_dhcp_service_active(impl, port)) return mt_dhcp_get_gateway(impl, port);
-  return mt_get_user_params(impl)->gateway[port];
 }
 
 int mtl_get_port_stats(mtl_handle mt, enum mtl_port port, struct mtl_port_status* stats) {

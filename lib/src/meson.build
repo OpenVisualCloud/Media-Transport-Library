@@ -3,7 +3,6 @@
 
 sources = files(
   'mt_main.c',
-  'mt_dev.c',
   'mt_sch.c',
   'mt_cni.c',
   'mt_ptp.c',
@@ -27,6 +26,8 @@ endif
   sources += files('../windows/win_posix.c')
 endif
 
+subdir('datapath')
+subdir('dev')
 subdir('st2110')
 subdir('udp')
-subdir('datapath')
+

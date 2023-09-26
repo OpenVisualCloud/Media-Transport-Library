@@ -2437,7 +2437,7 @@ static int rv_uinit_pkt_lcore(struct mtl_main_impl* impl,
 
   if (s->has_pkt_lcore) {
     rte_eal_wait_lcore(s->pkt_lcore);
-    mt_dev_put_lcore(impl, s->pkt_lcore);
+    mt_sch_put_lcore(impl, s->pkt_lcore);
     s->has_pkt_lcore = false;
   }
 
@@ -2488,7 +2488,7 @@ static int rv_init_pkt_lcore(struct mtl_main_impl* impl,
   }
   s->pkt_lcore_ring = ring;
 
-  ret = mt_dev_get_lcore(impl, &lcore);
+  ret = mt_sch_get_lcore(impl, &lcore);
   if (ret < 0) {
     err("%s(%d,%d), get lcore fail %d\n", __func__, mgr_idx, idx, ret);
     rv_uinit_pkt_lcore(impl, s);
@@ -3043,7 +3043,7 @@ static int rv_init_rtcp_uhdr(struct mtl_main_impl* impl,
   struct rte_ether_addr* d_addr = mt_eth_d_addr(eth);
 
   /* ether hdr */
-  ret = mt_dev_dst_ip_mac(impl, dip, d_addr, port, MT_DEV_TIMEOUT_INFINITE);
+  ret = mt_dst_ip_mac(impl, dip, d_addr, port, MT_TIMEOUT_INFINITE);
   if (ret < 0) {
     err("%s(%d), get mac fail %d for %d.%d.%d.%d\n", __func__, idx, ret, dip[0], dip[1],
         dip[2], dip[3]);
@@ -4405,7 +4405,7 @@ int st20_rx_get_queue_meta(st20_rx_handle handle, struct st_queue_meta* meta) {
   for (uint8_t i = 0; i < meta->num_port; i++) {
     port = mt_port_logic2phy(s->port_maps, i);
 
-    if (mt_pmd_is_af_xdp(impl, port)) {
+    if (mt_pmd_is_dpdk_af_xdp(impl, port)) {
       /* af_xdp pmd */
       meta->start_queue[i] = mt_afxdp_start_queue(impl, port);
     }
@@ -4741,7 +4741,7 @@ int st22_rx_get_queue_meta(st22_rx_handle handle, struct st_queue_meta* meta) {
   for (uint8_t i = 0; i < meta->num_port; i++) {
     port = mt_port_logic2phy(s->port_maps, i);
 
-    if (mt_pmd_is_af_xdp(impl, port)) {
+    if (mt_pmd_is_dpdk_af_xdp(impl, port)) {
       /* af_xdp pmd */
       meta->start_queue[i] = mt_afxdp_start_queue(impl, port);
     }

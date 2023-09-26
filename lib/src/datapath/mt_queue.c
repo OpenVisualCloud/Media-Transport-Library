@@ -4,8 +4,8 @@
 
 #include "mt_queue.h"
 
+#include "../dev/mt_dev.h"
 #include "../mt_cni.h"
-#include "../mt_dev.h"
 #include "../mt_log.h"
 #include "mt_dp_socket.h"
 #include "mt_shared_queue.h"
@@ -225,6 +225,21 @@ uint16_t mt_txq_burst_busy(struct mt_txq_entry* entry, struct rte_mbuf** tx_pkts
 
 int mt_dp_queue_init(struct mtl_main_impl* impl) {
   int ret;
+  struct mt_dp_impl* dp;
+  int num_ports = mt_num_ports(impl);
+
+  for (int i = 0; i < num_ports; i++) {
+    dp = mt_rte_zmalloc_socket(sizeof(*dp), mt_socket_id(impl, i));
+    if (!dp) {
+      err("%s(%d), dp malloc fail\n", __func__, i);
+      mt_dp_queue_uinit(impl);
+      return -ENOMEM;
+    }
+
+    rte_spinlock_init(&dp->txq_sys_entry_lock);
+
+    impl->dp[i] = dp;
+  }
 
   ret = mt_srss_init(impl);
   if (ret < 0) {
@@ -243,12 +258,67 @@ int mt_dp_queue_init(struct mtl_main_impl* impl) {
     return ret;
   }
 
+  for (int i = 0; i < num_ports; i++) {
+    dp = impl->dp[i];
+    /* no sys queue for kernel based pmd */
+    if (mt_drv_no_cni(impl, i)) continue;
+
+    struct mt_txq_flow flow;
+    memset(&flow, 0, sizeof(flow));
+    flow.sys_queue = true;
+    dp->txq_sys_entry = mt_txq_get(impl, i, &flow);
+    if (!dp->txq_sys_entry) {
+      err("%s(%d), txq sys entry get fail\n", __func__, i);
+      mt_dp_queue_uinit(impl);
+      return -ENOMEM;
+    }
+  }
+
   return 0;
 }
 
 int mt_dp_queue_uinit(struct mtl_main_impl* impl) {
+  int num_ports = mt_num_ports(impl);
+
+  for (int i = 0; i < num_ports; i++) {
+    struct mt_dp_impl* dp = impl->dp[i];
+    if (!dp) continue;
+
+    if (dp->txq_sys_entry) {
+      mt_txq_flush(dp->txq_sys_entry, mt_get_pad(impl, i));
+      mt_txq_put(dp->txq_sys_entry);
+      dp->txq_sys_entry = NULL;
+    }
+  }
+
   mt_rsq_uinit(impl);
   mt_tsq_uinit(impl);
   mt_srss_uinit(impl);
+
+  for (int i = 0; i < num_ports; i++) {
+    struct mt_dp_impl* dp = impl->dp[i];
+    if (!dp) continue;
+
+    mt_rte_free(dp);
+    impl->dp[i] = NULL;
+  }
+
   return 0;
+}
+
+uint16_t mt_sys_queue_tx_burst(struct mtl_main_impl* impl, enum mtl_port port,
+                               struct rte_mbuf** tx_pkts, uint16_t nb_pkts) {
+  struct mt_dp_impl* dp = impl->dp[port];
+
+  if (!dp->txq_sys_entry) {
+    err("%s(%d), txq sys queue not active\n", __func__, port);
+    return 0;
+  }
+
+  uint16_t tx;
+  rte_spinlock_lock(&dp->txq_sys_entry_lock);
+  tx = mt_txq_burst(dp->txq_sys_entry, tx_pkts, nb_pkts);
+  rte_spinlock_unlock(&dp->txq_sys_entry_lock);
+
+  return tx;
 }

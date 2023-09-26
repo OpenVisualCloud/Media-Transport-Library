@@ -8,7 +8,6 @@
 #include "mt_arp.h"
 #include "mt_dhcp.h"
 // #define DEBUG
-#include "mt_dev.h"
 #include "mt_dhcp.h"
 #include "mt_log.h"
 #include "mt_ptp.h"
@@ -152,7 +151,7 @@ static int cni_burst_from_kernel(struct mt_cni_entry* cni) {
   uint16_t revd = rte_eth_rx_burst(inf->virtio_port_id, 0, pkts, ST_CNI_RX_BURST_SIZE);
   if (revd > 0) {
     cni->virtio_tx_cnt += revd;
-    uint16_t sent = mt_dev_tx_sys_queue_burst(impl, port, pkts, revd);
+    uint16_t sent = mt_sys_queue_tx_burst(impl, port, pkts, revd);
     if (sent != revd) {
       cni->virtio_tx_fail_cnt += revd - sent;
       return -EIO;

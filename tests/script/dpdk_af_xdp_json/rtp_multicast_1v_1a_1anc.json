@@ -1,21 +1,19 @@
 {
     "interfaces": [
         {
-            "name": "af_xdp:enp175s0f0np0",
+            "name": "dpdk_af_xdp:enp175s0f0np0",
         },
         {
-            "name": "af_xdp:enp175s0f1np1",
+            "name": "dpdk_af_xdp:enp175s0f1np1",
         }
     ],
     "tx_sessions": [
         {
             "dip": [
-                "local:1",
-                "local:0"
+                "239.168.18.101"
             ],
             "interface": [
-                0,
-                1
+                0
             ],
             "video": [
                 {
@@ -60,12 +58,10 @@
     "rx_sessions": [
         {
             "ip": [
-                "local:0",
-                "local:1",
+                "239.168.18.101",
             ],
             "interface": [
-                1,
-                0
+                1
             ],
             "video": [
                 {
@@ -96,8 +92,8 @@
             "ancillary": [
                 {
                     "replicas": 1,
-                    "payload_type": 113,
-                    "start_port": 40000
+                    "start_port": 40000,
+                    "payload_type": 113
                 }
             ]
         }

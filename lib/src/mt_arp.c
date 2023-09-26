@@ -4,7 +4,7 @@
 
 #include "mt_arp.h"
 
-#include "mt_dev.h"
+#include "datapath/mt_queue.h"
 // #define DEBUG
 #include "mt_log.h"
 #include "mt_socket.h"
@@ -79,7 +79,7 @@ static int arp_receive_request(struct mtl_main_impl* impl, struct rte_arp_hdr* r
   arp->arp_data.arp_sip = *(uint32_t*)mt_sip_addr(impl, port);
 
   /* send arp reply packet */
-  uint16_t send = mt_dev_tx_sys_queue_burst(impl, port, &rpl_pkt, 1);
+  uint16_t send = mt_sys_queue_tx_burst(impl, port, &rpl_pkt, 1);
   if (send < 1) {
     err_once("%s(%d), tx fail\n", __func__, port);
     rte_pktmbuf_free(rpl_pkt);
@@ -157,7 +157,7 @@ static int arp_send_req(struct mtl_main_impl* impl, enum mtl_port port, uint32_t
   mt_macaddr_get(impl, port, &arp->arp_data.arp_sha);
   memset(&arp->arp_data.arp_tha, 0, RTE_ETHER_ADDR_LEN);
 
-  uint16_t send = mt_dev_tx_sys_queue_burst(impl, port, &req_pkt, 1);
+  uint16_t send = mt_sys_queue_tx_burst(impl, port, &req_pkt, 1);
   if (send < 1) {
     err("%s(%d), tx fail\n", __func__, port);
     rte_pktmbuf_free(req_pkt);

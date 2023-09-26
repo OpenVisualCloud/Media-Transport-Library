@@ -83,6 +83,9 @@
 #define NS_PER_US (1000)
 #define US_PER_MS (1000)
 
+#define MT_TIMEOUT_INFINITE (INT_MAX)
+#define MT_TIMEOUT_ZERO (0)
+
 struct mtl_main_impl; /* forward declare */
 
 /* dynamic fields are implemented after rte_mbuf */
@@ -531,6 +534,11 @@ struct mt_sch_mgr {
   /* active sch cnt */
   rte_atomic32_t sch_cnt;
   pthread_mutex_t mgr_mutex; /* protect sch mgr */
+
+  struct mt_lcore_shm* lcore_shm;
+  int lcore_shm_id;
+  int lcore_lock_fd;
+  bool local_lcores_active[RTE_MAX_LCORE]; /* local lcores active map */
 };
 
 struct mt_pacing_train_result {
@@ -634,10 +642,6 @@ struct mt_interface {
   uint16_t max_tx_queues;
   struct mt_tx_queue* tx_queues;
   pthread_mutex_t tx_queues_mutex; /* protect tx_queues */
-
-  /* the shared tx sys queue */
-  struct mt_txq_entry* txq_sys_entry;
-  rte_spinlock_t txq_sys_entry_lock; /* protect txq_sys_entry */
 
   /* rx queue resources */
   uint16_t max_rx_queues;
@@ -932,6 +936,12 @@ struct mt_flow_impl {
   pthread_mutex_t mutex; /* protect mt_rx_flow_create */
 };
 
+struct mt_dp_impl {
+  /* the shared tx sys queue */
+  struct mt_txq_entry* txq_sys_entry;
+  rte_spinlock_t txq_sys_entry_lock; /* protect txq_sys_entry */
+};
+
 struct mtl_main_impl {
   struct mt_interface inf[MTL_PORT_MAX];
 
@@ -947,6 +957,8 @@ struct mtl_main_impl {
 
   /* flow */
   struct mt_flow_impl* flow[MTL_PORT_MAX];
+  /* data path queue mgr */
+  struct mt_dp_impl* dp[MTL_PORT_MAX];
   /* rss */
   struct mt_rss_impl* rss[MTL_PORT_MAX];
   struct mt_srss_impl* srss[MTL_PORT_MAX];
@@ -983,6 +995,7 @@ struct mtl_main_impl {
 
   /* sch context */
   struct mt_sch_mgr sch_mgr;
+  uint32_t sch_schedule_ns;
   uint32_t tasklets_nb_per_sch;
   uint32_t tx_audio_sessions_max_per_sch;
   uint32_t rx_audio_sessions_max_per_sch;
@@ -1004,11 +1017,6 @@ struct mtl_main_impl {
   /* active lcore cnt */
   rte_atomic32_t lcore_cnt;
 
-  struct mt_lcore_shm* lcore_shm;
-  int lcore_shm_id;
-  int lcore_lock_fd;
-  bool local_lcores_active[RTE_MAX_LCORE]; /* local lcores active map */
-
   /* rx timestamp register */
   int dynfield_offset;
 
@@ -1018,7 +1026,6 @@ struct mtl_main_impl {
 
   uint16_t pkt_udp_suggest_max_size;
   uint16_t rx_pool_data_size;
-  uint32_t sch_schedule_ns;
   int mempool_idx;
 };
 
@@ -1045,12 +1052,11 @@ static inline enum mt_port_type mt_port_type(struct mtl_main_impl* impl,
 }
 
 enum mtl_port mt_port_by_id(struct mtl_main_impl* impl, uint16_t port_id);
-
 uint8_t* mt_sip_addr(struct mtl_main_impl* impl, enum mtl_port port);
-
 uint8_t* mt_sip_netmask(struct mtl_main_impl* impl, enum mtl_port port);
-
 uint8_t* mt_sip_gateway(struct mtl_main_impl* impl, enum mtl_port port);
+int mt_dst_ip_mac(struct mtl_main_impl* impl, uint8_t dip[MTL_IP_ADDR_LEN],
+                  struct rte_ether_addr* ea, enum mtl_port port, int timeout_ms);
 
 static inline enum mtl_pmd_type mt_pmd_type(struct mtl_main_impl* impl,
                                             enum mtl_port port) {
@@ -1098,14 +1104,15 @@ static inline bool mt_drv_no_cni(struct mtl_main_impl* impl, enum mtl_port port)
     return false;
 }
 
-static inline bool mt_pmd_is_af_xdp(struct mtl_main_impl* impl, enum mtl_port port) {
+static inline bool mt_pmd_is_dpdk_af_xdp(struct mtl_main_impl* impl, enum mtl_port port) {
   if (MTL_PMD_DPDK_AF_XDP == mt_get_user_params(impl)->pmd[port])
     return true;
   else
     return false;
 }
 
-static inline bool mt_pmd_is_af_packet(struct mtl_main_impl* impl, enum mtl_port port) {
+static inline bool mt_pmd_is_dpdk_af_packet(struct mtl_main_impl* impl,
+                                            enum mtl_port port) {
   if (MTL_PMD_DPDK_AF_PACKET == mt_get_user_params(impl)->pmd[port])
     return true;
   else
@@ -1372,7 +1379,7 @@ static inline uint16_t mt_if_nb_rx_desc(struct mtl_main_impl* impl, enum mtl_por
 static inline uint16_t mt_if_nb_tx_burst(struct mtl_main_impl* impl, enum mtl_port port) {
   uint16_t burst_pkts;
 
-  if (mt_pmd_is_af_xdp(impl, port)) {
+  if (mt_pmd_is_dpdk_af_xdp(impl, port)) {
     /* same umem for both tx and rx */
     burst_pkts = RTE_MAX(mt_if_nb_rx_desc(impl, port), mt_if_nb_tx_desc(impl, port));
   } else {

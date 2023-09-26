@@ -5,11 +5,11 @@
 #include "mt_main.h"
 
 #include "datapath/mt_queue.h"
+#include "dev/mt_dev.h"
 #include "mt_admin.h"
 #include "mt_arp.h"
 #include "mt_cni.h"
 #include "mt_config.h"
-#include "mt_dev.h"
 #include "mt_dhcp.h"
 #include "mt_dma.h"
 #include "mt_flow.h"
@@ -33,6 +33,48 @@ enum mtl_port mt_port_by_id(struct mtl_main_impl* impl, uint16_t port_id) {
 
   err("%s, invalid port_id %d\n", __func__, port_id);
   return MTL_PORT_MAX;
+}
+
+int mt_dst_ip_mac(struct mtl_main_impl* impl, uint8_t dip[MTL_IP_ADDR_LEN],
+                  struct rte_ether_addr* ea, enum mtl_port port, int timeout_ms) {
+  int ret;
+
+  if (mt_is_multicast_ip(dip)) {
+    mt_mcast_ip_to_mac(dip, ea);
+    ret = 0;
+  } else if (mt_is_lan_ip(dip, mt_sip_addr(impl, port), mt_sip_netmask(impl, port))) {
+    ret = mt_arp_get_mac(impl, dip, ea, port, timeout_ms);
+  } else {
+    uint8_t* gateway = mt_sip_gateway(impl, port);
+    if (mt_ip_to_u32(gateway)) {
+      ret = mt_arp_get_mac(impl, gateway, ea, port, timeout_ms);
+    } else {
+      err("%s(%d), ip %d.%d.%d.%d is wan but no gateway support\n", __func__, port,
+          dip[0], dip[1], dip[2], dip[3]);
+      return -EIO;
+    }
+  }
+
+  dbg("%s(%d), ip: %d.%d.%d.%d, mac: %02hhx:%02hhx:%02hhx:%02hhx:%02hhx:%02hhx\n",
+      __func__, port, dip[0], dip[1], dip[2], dip[3], ea->addr_bytes[0],
+      ea->addr_bytes[1], ea->addr_bytes[2], ea->addr_bytes[3], ea->addr_bytes[4],
+      ea->addr_bytes[5]);
+  return ret;
+}
+
+uint8_t* mt_sip_addr(struct mtl_main_impl* impl, enum mtl_port port) {
+  if (mt_dhcp_service_active(impl, port)) return mt_dhcp_get_ip(impl, port);
+  return mt_get_user_params(impl)->sip_addr[port];
+}
+
+uint8_t* mt_sip_netmask(struct mtl_main_impl* impl, enum mtl_port port) {
+  if (mt_dhcp_service_active(impl, port)) return mt_dhcp_get_netmask(impl, port);
+  return mt_get_user_params(impl)->netmask[port];
+}
+
+uint8_t* mt_sip_gateway(struct mtl_main_impl* impl, enum mtl_port port) {
+  if (mt_dhcp_service_active(impl, port)) return mt_dhcp_get_gateway(impl, port);
+  return mt_get_user_params(impl)->gateway[port];
 }
 
 bool mt_is_valid_socket(struct mtl_main_impl* impl, int soc_id) {
@@ -116,12 +158,6 @@ static int mt_main_create(struct mtl_main_impl* impl) {
   ret = mt_dp_queue_init(impl);
   if (ret < 0) {
     err("%s, dp queue init fail %d\n", __func__, ret);
-    return ret;
-  }
-
-  ret = mt_dev_if_post_init(impl);
-  if (ret < 0) {
-    err("%s, if post init fail %d\n", __func__, ret);
     return ret;
   }
 
@@ -456,7 +492,6 @@ mtl_handle mtl_init(struct mtl_init_params* p) {
   rte_atomic32_set(&impl->instance_started, 0);
   rte_atomic32_set(&impl->instance_aborted, 0);
   rte_atomic32_set(&impl->instance_in_reset, 0);
-  impl->lcore_lock_fd = -1;
 
   impl->tasklets_nb_per_sch = p->tasklets_nb_per_sch;
   if (!impl->tasklets_nb_per_sch) {
@@ -593,7 +628,7 @@ int mtl_get_lcore(mtl_handle mt, unsigned int* lcore) {
     return -EIO;
   }
 
-  return mt_dev_get_lcore(impl, lcore);
+  return mt_sch_get_lcore(impl, lcore);
 }
 
 int mtl_put_lcore(mtl_handle mt, unsigned int lcore) {
@@ -604,7 +639,7 @@ int mtl_put_lcore(mtl_handle mt, unsigned int lcore) {
     return -EIO;
   }
 
-  return mt_dev_put_lcore(impl, lcore);
+  return mt_sch_put_lcore(impl, lcore);
 }
 
 int mtl_bind_to_lcore(mtl_handle mt, pthread_t thread, unsigned int lcore) {
@@ -615,7 +650,7 @@ int mtl_bind_to_lcore(mtl_handle mt, pthread_t thread, unsigned int lcore) {
     return -EIO;
   }
 
-  if (!mt_dev_lcore_valid(impl, lcore)) {
+  if (!mt_sch_lcore_valid(impl, lcore)) {
     err("%s, invalid lcore %d\n", __func__, lcore);
     return -EINVAL;
   }

@@ -1,17 +1,16 @@
 {
     "interfaces": [
         {
-            "name": "0000:af:01.0",
-            "ip": "192.168.17.101"
+            "name": "dpdk_af_packet:enp175s0f0np0",
         },
         {
-            "name": "af_xdp:enp175s0f1np1",
+            "name": "dpdk_af_packet:enp175s0f1np1",
         }
     ],
     "tx_sessions": [
         {
             "dip": [
-                "239.168.17.101"
+                "local:1"
             ],
             "interface": [
                 0
@@ -35,7 +34,7 @@
     "rx_sessions": [
         {
             "ip": [
-                "239.168.17.101"
+                "local:0"
             ],
             "interface": [
                 1

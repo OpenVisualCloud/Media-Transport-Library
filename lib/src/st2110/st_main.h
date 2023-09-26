@@ -5,7 +5,7 @@
 #ifndef _MT_LIB_ST_MAIN_H_
 #define _MT_LIB_ST_MAIN_H_
 
-#include "../mt_dev.h"
+#include "../dev/mt_dev.h"
 #include "../mt_dma.h"
 #include "../mt_main.h"
 #include "../mt_mcast.h"

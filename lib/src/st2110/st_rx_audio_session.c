@@ -1333,7 +1333,7 @@ int st30_rx_get_queue_meta(st30_rx_handle handle, struct st_queue_meta* meta) {
   for (uint8_t i = 0; i < meta->num_port; i++) {
     port = mt_port_logic2phy(s->port_maps, i);
 
-    if (mt_pmd_is_af_xdp(impl, port)) {
+    if (mt_pmd_is_dpdk_af_xdp(impl, port)) {
       /* af_xdp pmd */
       meta->start_queue[i] = mt_afxdp_start_queue(impl, port);
     }

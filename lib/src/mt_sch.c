@@ -4,7 +4,6 @@
 
 #include "mt_sch.h"
 
-#include "mt_dev.h"
 #include "mt_log.h"
 #include "mt_stat.h"
 #include "st2110/st_rx_ancillary_session.h"
@@ -192,7 +191,7 @@ static int sch_start(struct mt_sch_impl* sch) {
   rte_atomic32_set(&sch->stopped, 0);
 
   if (!sch->run_in_thread) {
-    ret = mt_dev_get_lcore(sch->parent, &sch->lcore);
+    ret = mt_sch_get_lcore(sch->parent, &sch->lcore);
     if (ret < 0) {
       err("%s(%d), get lcore fail %d\n", __func__, idx, ret);
       sch_unlock(sch);
@@ -234,7 +233,7 @@ static int sch_stop(struct mt_sch_impl* sch) {
   }
   if (!sch->run_in_thread) {
     rte_eal_wait_lcore(sch->lcore);
-    mt_dev_put_lcore(sch->parent, sch->lcore);
+    mt_sch_put_lcore(sch->parent, sch->lcore);
   } else {
     pthread_join(sch->tid, NULL);
   }
@@ -380,6 +379,258 @@ static int sch_stat(void* priv) {
   return 0;
 }
 
+static int sch_filelock_lock(struct mt_sch_mgr* mgr) {
+  int fd = open(MT_FLOCK_PATH, O_RDONLY | O_CREAT, 0666);
+  if (fd < 0) {
+    /* sometimes may fail due to user permission, try open read-only */
+    fd = open(MT_FLOCK_PATH, O_RDONLY);
+    if (fd < 0) {
+      err("%s, failed to open %s, %s\n", __func__, MT_FLOCK_PATH, strerror(errno));
+      return -EIO;
+    }
+  }
+  mgr->lcore_lock_fd = fd;
+  /* wait until locked */
+  if (flock(fd, LOCK_EX) != 0) {
+    err("%s, can not lock file\n", __func__);
+    close(fd);
+    mgr->lcore_lock_fd = -1;
+    return -EIO;
+  }
+
+  return 0;
+}
+
+static int sch_filelock_unlock(struct mt_sch_mgr* mgr) {
+  int fd = mgr->lcore_lock_fd;
+
+  if (fd < 0) {
+    err("%s, wrong lock file fd %d\n", __func__, fd);
+    return -EIO;
+  }
+
+  if (flock(fd, LOCK_UN) != 0) {
+    err("%s, can not unlock file\n", __func__);
+    return -EIO;
+  }
+  close(fd);
+  mgr->lcore_lock_fd = -1;
+  return 0;
+}
+
+static int sch_uinit_lcores(struct mtl_main_impl* impl, struct mt_sch_mgr* mgr) {
+  int ret;
+  int shm_id = mgr->lcore_shm_id;
+  struct mt_lcore_shm* lcore_shm = mgr->lcore_shm;
+  if (!lcore_shm || shm_id == -1) {
+    err("%s, no lcore shm attached\n", __func__);
+    return -EIO;
+  }
+
+  for (unsigned int lcore = 0; lcore < RTE_MAX_LCORE; lcore++) {
+    if (mgr->local_lcores_active[lcore]) {
+      warn("%s, lcore %d still active\n", __func__, lcore);
+      mt_sch_put_lcore(impl, lcore);
+    }
+  }
+
+  ret = sch_filelock_lock(mgr);
+  if (ret < 0) {
+    err("%s, sch_filelock_lock fail\n", __func__);
+    return ret;
+  }
+
+  ret = shmdt(mgr->lcore_shm);
+  if (ret == -1) {
+    err("%s, shared memory detach failed, %s\n", __func__, strerror(errno));
+    goto err_unlock;
+  }
+
+  struct shmid_ds shmds;
+  ret = shmctl(shm_id, IPC_STAT, &shmds);
+  if (ret < 0) {
+    err("%s, can not stat shared memory, %s\n", __func__, strerror(errno));
+    goto err_unlock;
+  }
+  if (shmds.shm_nattch == 0) { /* remove ipc if we are the last user */
+    ret = shmctl(shm_id, IPC_RMID, NULL);
+    if (ret < 0) {
+      warn("%s, can not remove shared memory, %s\n", __func__, strerror(errno));
+      goto err_unlock;
+    }
+  }
+
+  mgr->lcore_shm_id = -1;
+  mgr->lcore_shm = NULL;
+  ret = sch_filelock_unlock(mgr);
+  if (ret < 0) {
+    err("%s, sch_filelock_unlock fail\n", __func__);
+    return ret;
+  }
+  return 0;
+
+err_unlock:
+  sch_filelock_unlock(mgr);
+  return ret;
+}
+
+static int sch_init_lcores(struct mt_sch_mgr* mgr) {
+  int ret;
+  struct mt_lcore_shm* lcore_shm;
+
+  if (mgr->lcore_shm) {
+    err("%s, lcore_shm attached\n", __func__);
+    return -EIO;
+  }
+
+  ret = sch_filelock_lock(mgr);
+  if (ret < 0) {
+    err("%s, sch_filelock_lock fail\n", __func__);
+    return ret;
+  }
+
+  key_t key = ftok("/dev/null", 21);
+  if (key < 0) {
+    err("%s, ftok error: %s\n", __func__, strerror(errno));
+    ret = -EIO;
+    goto err_unlock;
+  }
+  int shm_id = shmget(key, sizeof(*lcore_shm), 0666 | IPC_CREAT);
+  if (shm_id < 0) {
+    err("%s, can not get shared memory for lcore, %s\n", __func__, strerror(errno));
+    ret = -EIO;
+    goto err_unlock;
+  }
+  mgr->lcore_shm_id = shm_id;
+
+  lcore_shm = shmat(shm_id, NULL, 0);
+  if (lcore_shm == (void*)-1) {
+    err("%s, can not attach shared memory for lcore, %s\n", __func__, strerror(errno));
+    ret = -EIO;
+    goto err_unlock;
+  }
+
+  struct shmid_ds stat;
+  ret = shmctl(shm_id, IPC_STAT, &stat);
+  if (ret < 0) {
+    err("%s, shmctl fail\n", __func__);
+    shmdt(lcore_shm);
+    goto err_unlock;
+  }
+  if (stat.shm_nattch == 1) /* clear shm as we are the first user */
+    memset(lcore_shm, 0, sizeof(*lcore_shm));
+
+  mgr->lcore_shm = lcore_shm;
+  info("%s, shared memory attached at %p nattch %d\n", __func__, mgr->lcore_shm,
+       (int)stat.shm_nattch);
+  ret = sch_filelock_unlock(mgr);
+  if (ret < 0) {
+    err("%s, sch_filelock_unlock fail\n", __func__);
+    return ret;
+  }
+  return 0;
+
+err_unlock:
+  sch_filelock_unlock(mgr);
+  return ret;
+}
+
+int mt_sch_get_lcore(struct mtl_main_impl* impl, unsigned int* lcore) {
+  struct mt_sch_mgr* mgr = mt_sch_get_mgr(impl);
+  unsigned int cur_lcore = 0;
+  int ret;
+  struct mt_lcore_shm* lcore_shm = mgr->lcore_shm;
+
+  ret = sch_filelock_lock(mgr);
+  if (ret < 0) {
+    err("%s, sch_filelock_lock fail\n", __func__);
+    return ret;
+  }
+
+  do {
+    cur_lcore = rte_get_next_lcore(cur_lcore, 1, 0);
+
+    if ((cur_lcore < RTE_MAX_LCORE) && mt_socket_match(rte_lcore_to_socket_id(cur_lcore),
+                                                       mt_socket_id(impl, MTL_PORT_P))) {
+      if (!lcore_shm->lcores_active[cur_lcore]) {
+        *lcore = cur_lcore;
+        lcore_shm->lcores_active[cur_lcore] = true;
+        lcore_shm->used++;
+        rte_atomic32_inc(&impl->lcore_cnt);
+        mgr->local_lcores_active[cur_lcore] = true;
+        ret = sch_filelock_unlock(mgr);
+        info("%s, available lcore %d\n", __func__, cur_lcore);
+        if (ret < 0) {
+          err("%s, sch_filelock_unlock fail\n", __func__);
+          return ret;
+        }
+        return 0;
+      }
+    }
+  } while (cur_lcore < RTE_MAX_LCORE);
+
+  sch_filelock_unlock(mgr);
+  err("%s, fail to find lcore\n", __func__);
+  return -EIO;
+}
+
+int mt_sch_put_lcore(struct mtl_main_impl* impl, unsigned int lcore) {
+  int ret;
+  struct mt_sch_mgr* mgr = mt_sch_get_mgr(impl);
+  struct mt_lcore_shm* lcore_shm = mgr->lcore_shm;
+
+  if (lcore >= RTE_MAX_LCORE) {
+    err("%s, invalid lcore %d\n", __func__, lcore);
+    return -EIO;
+  }
+  if (!lcore_shm) {
+    err("%s, no lcore shm attached\n", __func__);
+    return -EIO;
+  }
+  ret = sch_filelock_lock(mgr);
+  if (ret < 0) {
+    err("%s, sch_filelock_lock fail\n", __func__);
+    return ret;
+  }
+  if (!lcore_shm->lcores_active[lcore]) {
+    err("%s, lcore %d not active\n", __func__, lcore);
+    ret = -EIO;
+    goto err_unlock;
+  }
+
+  lcore_shm->lcores_active[lcore] = false;
+  lcore_shm->used--;
+  rte_atomic32_dec(&impl->lcore_cnt);
+  mgr->local_lcores_active[lcore] = false;
+  ret = sch_filelock_unlock(mgr);
+  info("%s, lcore %d\n", __func__, lcore);
+  if (ret < 0) {
+    err("%s, sch_filelock_unlock fail\n", __func__);
+    return ret;
+  }
+  return 0;
+
+err_unlock:
+  sch_filelock_unlock(mgr);
+  return ret;
+}
+
+bool mt_sch_lcore_valid(struct mtl_main_impl* impl, unsigned int lcore) {
+  struct mt_sch_mgr* mgr = mt_sch_get_mgr(impl);
+  struct mt_lcore_shm* lcore_shm = mgr->lcore_shm;
+
+  if (lcore >= RTE_MAX_LCORE) {
+    err("%s, invalid lcore %d\n", __func__, lcore);
+    return -EIO;
+  }
+  if (!lcore_shm) {
+    err("%s, no lcore shm attached\n", __func__);
+    return -EIO;
+  }
+
+  return lcore_shm->lcores_active[lcore];
+}
+
 int mt_sch_unregister_tasklet(struct mt_sch_tasklet_impl* tasklet) {
   struct mt_sch_impl* sch = tasklet->sch;
   int sch_idx = sch->idx;
@@ -480,8 +731,13 @@ int mt_sch_mrg_init(struct mtl_main_impl* impl, int data_quota_mbs_limit) {
   struct mt_sch_mgr* mgr = mt_sch_get_mgr(impl);
   int socket = mt_socket_id(impl, MTL_PORT_P);
   int nb_tasklets = impl->tasklets_nb_per_sch;
+  int ret;
 
   mt_pthread_mutex_init(&mgr->mgr_mutex, NULL);
+
+  mgr->lcore_lock_fd = -1;
+  ret = sch_init_lcores(mgr);
+  if (ret < 0) return ret;
 
   for (int sch_idx = 0; sch_idx < MT_MAX_SCH_NUM; sch_idx++) {
     sch = mt_sch_instance(impl, sch_idx);
@@ -539,6 +795,8 @@ int mt_sch_mrg_init(struct mtl_main_impl* impl, int data_quota_mbs_limit) {
 int mt_sch_mrg_uinit(struct mtl_main_impl* impl) {
   struct mt_sch_impl* sch;
   struct mt_sch_mgr* mgr = mt_sch_get_mgr(impl);
+
+  sch_uinit_lcores(impl, mgr);
 
   for (int sch_idx = 0; sch_idx < MT_MAX_SCH_NUM; sch_idx++) {
     sch = mt_sch_instance(impl, sch_idx);

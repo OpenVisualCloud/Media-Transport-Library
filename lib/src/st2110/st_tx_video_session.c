@@ -758,7 +758,7 @@ static int tv_init_hdr(struct mtl_main_impl* impl, struct st_tx_video_session_im
     rte_memcpy(d_addr->addr_bytes, &ops->tx_dst_mac[s_port][0], RTE_ETHER_ADDR_LEN);
     info("%s, USER_R_TX_MAC\n", __func__);
   } else {
-    ret = mt_dev_dst_ip_mac(impl, dip, d_addr, port, MT_DEV_TIMEOUT_INFINITE);
+    ret = mt_dst_ip_mac(impl, dip, d_addr, port, MT_TIMEOUT_INFINITE);
     if (ret < 0) {
       err("%s(%d), get mac fail %d for %d.%d.%d.%d\n", __func__, idx, ret, dip[0], dip[1],
           dip[2], dip[3]);
@@ -2440,7 +2440,7 @@ static int tv_init_hw(struct mtl_main_impl* impl, struct st_tx_video_sessions_mg
     info("%s(%d,%d), port(l:%d,p:%d), queue %d, count %u\n", __func__, mgr_idx, idx, i,
          port, queue_id, count);
 
-    if (mt_pmd_is_af_xdp(impl, port) && s->mbuf_mempool_reuse_rx[i]) {
+    if (mt_pmd_is_dpdk_af_xdp(impl, port) && s->mbuf_mempool_reuse_rx[i]) {
       if (s->mbuf_mempool_hdr[i]) {
         err("%s(%d,%d), fail to reuse rx, has mempool_hdr for port %d\n", __func__,
             mgr_idx, idx, i);
@@ -2455,7 +2455,7 @@ static int tv_init_hw(struct mtl_main_impl* impl, struct st_tx_video_sessions_mg
       }
     }
 
-    if (false & mt_pmd_is_af_xdp(impl, port)) {
+    if (false & mt_pmd_is_dpdk_af_xdp(impl, port)) {
       /* disable now, always use no zc mempool for the flush pad */
       pad_mempool = s->mbuf_mempool_hdr[i];
     } else {
@@ -2964,7 +2964,7 @@ static int tv_attach(struct mtl_main_impl* impl, struct st_tx_video_sessions_mgr
     enum mtl_port port = mt_port_logic2phy(s->port_maps, i);
     s->eth_ipv4_cksum_offload[i] = mt_if_has_offload_ipv4_cksum(impl, port);
     s->eth_has_chain[i] = mt_if_has_multi_seg(impl, port);
-    if (mt_pmd_is_af_xdp(impl, port) && mt_has_af_xdp_zc(impl)) {
+    if (mt_pmd_is_dpdk_af_xdp(impl, port) && mt_has_af_xdp_zc(impl)) {
       /* enable zero copy for tx */
       s->mbuf_mempool_reuse_rx[i] = true;
     } else {
@@ -3757,7 +3757,7 @@ int st20_frame_tx_start(struct mtl_main_impl* impl, struct st_tx_video_session_i
     ipv4->hdr_checksum = rte_ipv4_cksum(ipv4);
   }
 
-  uint16_t send = mt_dev_tx_sys_queue_burst(impl, port, &pkt, 1);
+  uint16_t send = mt_sys_queue_tx_burst(impl, port, &pkt, 1);
   if (send < 1) {
     err("%s(%d), tx fail\n", __func__, port);
     rte_pktmbuf_free(pkt);

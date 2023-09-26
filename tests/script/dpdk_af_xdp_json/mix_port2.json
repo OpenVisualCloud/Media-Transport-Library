@@ -1,7 +1,7 @@
 {
     "interfaces": [
         {
-            "name": "af_xdp:enp175s0f0np0",
+            "name": "dpdk_af_xdp:enp175s0f0np0",
         },
         {
             "name": "0000:af:01.1",
