@@ -2,13 +2,13 @@ name: DPDK patches build
 
 on:
   push:
-    paths:
-      - 'patches/dpdk/**'
-      - .github/workflows/dpdk_patches_build.yml
+    branches:
+      - main
+      - 'maint-**'
   pull_request:
-    paths:
-      - 'patches/dpdk/**'
-      - .github/workflows/dpdk_patches_build.yml
+    branches:
+      - main
+      - 'maint-**'
 
 env:
   # Customize the env if
@@ -18,7 +18,23 @@ permissions:
   contents: read
 
 jobs:
+  changes:
+    runs-on: ubuntu-latest
+    permissions:
+      pull-requests: read
+    outputs:
+      changed: ${{ steps.filter.outputs.dpdk_patches == 'true' }}
+    steps:
+      - uses: actions/checkout@8ade135a41bc03ea155e62e844d188df1ea18608 # v4.1.0
+
+      - uses: dorny/paths-filter@4512585405083f25c027a35db413c2b3b9006d50 # v2
+        id: filter
+        with:
+          filters: .github/path_filters.yml
+
   build:
+    needs: changes
+    if: ${{ needs.changes.outputs.changed == 'true' }}
     runs-on: ${{ matrix.os }}
     timeout-minutes: 60
     container:

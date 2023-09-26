@@ -1,6 +1,14 @@
 name: win_gtest
 
-on: [push, pull_request]
+on:
+  push:
+    branches:
+      - main
+      - 'maint-**'
+  pull_request:
+    branches:
+      - main
+      - 'maint-**'
 
 concurrency:
   group: win-${{ github.head_ref || github.run_id }}
@@ -100,6 +108,6 @@ jobs:
         run: |
           taskkill /f /im KahawaiTest.exe || VER>NUL
 
-      - name: Run st2110 test case
+      - name: Run st2110 test cases except st22
         run: |
-          ./tests/build/KahawaiTest --auto_start_stop --p_port ${{  env.TEST_PORT_P  }} --r_port ${{  env.TEST_PORT_R  }} --gtest_filter=-St22_?x.*:*4320p*
+          ./tests/build/KahawaiTest --auto_start_stop --p_port ${{  env.TEST_PORT_P  }} --r_port ${{  env.TEST_PORT_R  }} --gtest_filter=-St22*

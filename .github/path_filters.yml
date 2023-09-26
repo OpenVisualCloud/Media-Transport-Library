@@ -35,3 +35,7 @@ librist: &librist
 obs_plugin: &obs_plugin
   - 'ecosystem/obs_mtl/**'
   - .github/workflows/obs.yml
+
+dpdk_patches: &dpdk_patches
+  - 'patches/dpdk/**'
+  - .github/workflows/dpdk_patches_build.yml

@@ -1,5 +1,15 @@
 name: Windows MSYS2 build
-on: [push, pull_request, workflow_call]
+
+on:
+  push:
+    branches:
+      - main
+      - 'maint-**'
+  pull_request:
+    branches:
+      - main
+      - 'maint-**'
+  workflow_call:
 
 env:
   # FIXME: For some reason enabling jit debugging "fixes" random python crashes
