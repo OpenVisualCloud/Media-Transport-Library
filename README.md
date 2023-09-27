@@ -10,7 +10,7 @@ Scorecard](https://api.securityscorecards.dev/projects/github.com/OpenVisualClou
 
 ## 1. Overview
 
-The Intel® Media Transport Library is a DPDK-based solution designed for high-throughput, low-latency transmission and reception of media data. It features an efficient user-space LibOS UDP stack specifically crafted for media transport, and comes equipped with a built-in SMPTE ST 2110-compliant implementation for Professional Media over Managed IP Networks.
+The Intel® Media Transport Library is a software based solution designed for high-throughput, low-latency transmission and reception of media data. It features an efficient user-space LibOS UDP stack specifically crafted for media transport, and comes equipped with a built-in SMPTE ST 2110-compliant implementation for Professional Media over Managed IP Networks.
 
 The Intel® Media Transport Library solves the strict timing challenges of transporting ST2110 compliant media streams using a software library and through IP networks. Instead of specialized hardware, this library leverages existing  commonly available CPU platforms with conventional NICs that incorporate rate limiting to meet the strict timing challenges in the SMPTE ST 2110 standard.
 
@@ -33,7 +33,7 @@ The Intel® Media Transport Library solves the strict timing challenges of trans
 
 ### 1.2 Architecture
 
-The Intel® Media Transport Library leverages DPDK features to implement a highly efficient, real-time, and low-latency media transport stack. This software-based media transport solution enables deployment on edge and cloud environments using COTS hardware.
+The Intel® Media Transport Library leverages DPDK features(hugepages, memory pool, thread management) to implement a highly efficient, real-time, and low-latency media transport stack. This software-based media transport solution enables deployment on edge and cloud environments using COTS hardware.
 
 The library introduces a tasklet asynchronous-based scheduler that maximizes CPU resources, making it easy to integrate with various packet processing units and accelerators.
 
@@ -47,7 +47,9 @@ The library also includes SIMD CSC (color space format conversion), DMA, and plu
 
 ### 1.3 Ethernet supported
 
-Regarding supported Ethernet, since MTL is based on DPDK, it can essentially run well on any Ethernet already supported by DPDK. You can refer to the site <https://doc.dpdk.org/guides/nics/> for a list of supported Ethernet hardware in DPDK.
+Regarding supported Ethernet, it can essentially run well on any Ethernet already supported by DPDK. You can refer to the site <https://doc.dpdk.org/guides/nics/> for a list of supported Ethernet hardware in DPDK.
+
+In addition, this implementation provides a fallback kernel(Linux) socket transport support for cases where your NIC is not supported by DPDK.
 
 However, please note that our daily development and validation is primarily conducted on the Intel E810 series and AWS ENA, so we can't guarantee the status for other network interface cards (NICs).
 
@@ -61,13 +63,15 @@ For Windows, please refer to the [Win build guide](doc/build_WIN.md) for instruc
 
 ## 3. Run ST2110
 
-Please refer to [run guide](doc/run.md) for instructions on how to set up and run the demo pipeline application based on VF with SR-IOV.
+Please refer to [run guide](doc/run.md) for instructions on how to set up and run the demo pipeline application based on DPDK PMD.
 
 For Windows, please refer to [Windows run guide](doc/run_WIN.md).
 
 Additionally, please refer to the [VM guide](doc/vm.md) and [Windows VM guide](doc/vm_WIN.md) for instructions on setting up Linux and Windows guest VMs based on VF passthrough.
 
 For AWS (cloud environment), please refer to [AWS run guide](doc/aws.md) for instructions on how to set up and run the demo.
+
+To run this library on the kernel network stack with the built-in kernel NIC driver, please follow the instructions provided in the [kernel socket guide](doc/kernel_socket.md).
 
 ## 4. ST2110 Programmers guide
 

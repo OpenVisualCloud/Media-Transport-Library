@@ -970,7 +970,12 @@ struct st20_tx_ops {
   /** Optional. Flags to control session behaviors. See ST20_TX_FLAG_* for possible value
    */
   uint32_t flags;
-  /** Optional. interlace or not, false(default): non-interlaced: true: interlaced */
+  /** Optional.
+   * interlace or not, false(default): non-interlaced: true: interlaced.
+   * Ex for format 1080i50, please refer to below parameter configurations:
+   *   interlaced: true, width: 1920, height: 1080, fps: ST_FPS_P50
+   * and filled each frame(field) with 540 lines.
+   */
   bool interlaced;
 
   /**
@@ -1280,7 +1285,12 @@ struct st20_rx_ops {
   /** Optional. Flags to control session behaviors. See ST20_RX_FLAG_* for possible value
    */
   uint32_t flags;
-  /** Optional. interlace or not, false(default): non-interlaced: true: interlaced */
+  /** Optional.
+   * interlace or not, false(default): non-interlaced: true: interlaced.
+   * Ex for format 1080i50, please refer to below parameter configurations:
+   *   interlaced: true, width: 1920, height: 1080, fps: ST_FPS_P50
+   * and each frame(field) received has 540 lines data.
+   */
   bool interlaced;
 
   /**

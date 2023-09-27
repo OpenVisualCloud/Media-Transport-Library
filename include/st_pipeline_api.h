@@ -743,7 +743,12 @@ struct st20p_tx_ops {
    * tasklet routine.
    */
   int (*notify_frame_done)(void* priv, struct st_frame* frame);
-  /** Optional. interlace or not, false: non-interlaced: true: interlaced */
+  /** Optional.
+   * interlace or not, false(default): non-interlaced: true: interlaced.
+   * Ex for format 1080i50, please refer to below parameter configurations:
+   *   interlaced: true, width: 1920, height: 1080, fps: ST_FPS_P50
+   * and filled each frame(field) with 540 lines.
+   */
   bool interlaced;
   /** Optional. Linesize for transport frame, only for non-convert mode */
   size_t transport_linesize;
@@ -824,7 +829,12 @@ struct st20p_rx_ops {
    */
   int (*notify_frame_available)(void* priv);
 
-  /** Optional. interlace or not, false: non-interlaced: true: interlaced */
+  /** Optional.
+   * interlace or not, false(default): non-interlaced: true: interlaced.
+   * Ex for format 1080i50, please refer to below parameter configurations:
+   *   interlaced: true, width: 1920, height: 1080, fps: ST_FPS_P50
+   * and each frame(field) received has 540 lines data.
+   */
   bool interlaced;
   /** Optional. Linesize for transport frame, only for non-convert mode */
   size_t transport_linesize;
