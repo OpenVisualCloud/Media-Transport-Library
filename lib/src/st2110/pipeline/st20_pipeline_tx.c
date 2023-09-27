@@ -502,6 +502,12 @@ int st20p_tx_put_frame(st20p_tx_handle handle, struct st_frame* frame) {
     return -EIO;
   }
 
+  if (ctx->ops.flags & ST20P_TX_FLAG_EXT_FRAME) {
+    err("%s(%d), EXT_FRAME flag enabled, use st20p_tx_put_ext_frame instead\n", __func__,
+        idx);
+    return -EIO;
+  }
+
   framebuff->user_meta_data_size = 0;
   if (frame->user_meta) {
     if (frame->user_meta_size > framebuff->user_meta_buffer_size) {
@@ -737,6 +743,12 @@ void* st20p_tx_get_fb_addr(st20p_tx_handle handle, uint16_t idx) {
         ctx->framebuff_cnt);
     return NULL;
   }
+
+  if (ctx->ops.flags & ST20P_TX_FLAG_EXT_FRAME) {
+    err("%s(%d), not known as EXT_FRAME flag enabled\n", __func__, cidx);
+    return NULL;
+  }
+
   if (ctx->derive) /* derive dst to src frame */
     return ctx->framebuffs[idx].dst.addr[0];
   return ctx->framebuffs[idx].src.addr[0];
