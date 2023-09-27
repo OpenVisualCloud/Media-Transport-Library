@@ -148,7 +148,7 @@ jobs:
         if: ${{ steps.cache-dpdk.outputs.cache-hit == 'true' }}
         run: |
           cd dpdk
-          meson install -C build
+          meson install -C build --no-rebuild
 
       - name: Build
         run: |
