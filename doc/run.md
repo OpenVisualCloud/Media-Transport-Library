@@ -1,6 +1,6 @@
 # Run Guide
 
-The Intel® Media Transport Library requires VFIO (IOMMU) and huge pages to run, but it also supports non-root run, making it easy to deploy within Docker/Kubernetes environments.
+The DPDK based PMD requires VFIO (IOMMU) and huge pages to run, but it also supports non-root run, making it easy to deploy within Docker/Kubernetes environments.
 
 ## 1. IOMMU setup
 
@@ -528,4 +528,12 @@ MT: TX_VIDEO_SESSION(0,0:app_tx_video_0): fps 27.499879, frame 275 pkts 4526532:
 MT: TX_VIDEO_SESSION(0,0): dummy pkts 550, burst 550
 MT: TX_VIDEO_SESSION(0,0): mismatch epoch troffset 275
 MT: TX_VIDEO_SESSION(0,0): epoch drop 275
+```
+
+### 8.12 NO-IOMMU mode for vfio
+
+The VFIO driver can run without the IOMMU feature, enable it with below command to bypass IOMMU. As the name suggests, `enable_unsafe_noiommu_mode` is considered unsafe, and should only be used if you understand the risks.
+
+```bash
+sudo bash -c 'echo 1 > /sys/module/vfio/parameters/enable_unsafe_noiommu_mode'
 ```
