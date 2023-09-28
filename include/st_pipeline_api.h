@@ -453,6 +453,13 @@ enum st22_quality_mode {
  * If enabled, simulate random packet loss, test usage only.
  */
 #define ST22P_RX_FLAG_SIMULATE_PKT_LOSS (MTL_BIT32(3))
+/**
+ * Flag bit in flags of struct st22p_rx_ops.
+ * Only used for internal convert mode.
+ * The external frames are provided by calling
+ * st22p_rx_get_ext_frame.
+ */
+#define ST22P_RX_FLAG_EXT_FRAME (MTL_BIT32(4))
 
 /**
  * Flag bit in flags of struct st22p_rx_ops.
