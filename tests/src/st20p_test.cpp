@@ -1427,6 +1427,7 @@ TEST(St20p, rx_dedicated_ext_digest_1080p_convert_with_padding_s2) {
   test_st20p_init_rx_digest_para(&para);
   para.sessions = 2;
   para.device = ST_PLUGIN_DEVICE_TEST_INTERNAL;
+  para.tx_ext = true;
   para.rx_ext = true;
   para.rx_dedicated_ext = true;
   para.check_fps = false;
