@@ -296,7 +296,7 @@ static int tx_st22p_create_transport(struct mtl_main_impl* impl, struct st22p_tx
 
 static int tx_st22p_uinit_src_fbs(struct st22p_tx_ctx* ctx) {
   if (ctx->framebuffs) {
-    if (!(ctx->ops.flags & ST22P_TX_FLAG_EXT_FRAME)) {
+    if (!ctx->ext_frame) {
       for (uint16_t i = 0; i < ctx->framebuff_cnt; i++) {
         if (ctx->framebuffs[i].src.addr[0]) {
           mt_rte_free(ctx->framebuffs[i].src.addr[0]);
@@ -337,7 +337,7 @@ static int tx_st22p_init_src_fbs(struct mtl_main_impl* impl, struct st22p_tx_ctx
     frames[i].src.height = ops->height;
     frames[i].src.priv = &frames[i];
 
-    if (ops->flags & ST22P_TX_FLAG_EXT_FRAME) { /* will use ext frame from user */
+    if (ctx->ext_frame) { /* will use ext frame from user */
       uint8_t planes = st_frame_fmt_planes(frames[i].src.fmt);
       for (uint8_t plane = 0; plane < planes; plane++) {
         frames[i].src.addr[plane] = NULL;
@@ -453,9 +453,8 @@ int st22p_tx_put_frame(st22p_tx_handle handle, struct st_frame* frame) {
     return -EIO;
   }
 
-  if (ctx->ops.flags & ST22P_TX_FLAG_EXT_FRAME) {
-    err("%s(%d), EXT_FRAME flag enabled, use st22p_tx_put_ext_frame instead\n", __func__,
-        idx);
+  if (ctx->ext_frame) {
+    err("%s(%d), EXT_FRAME enabled, use st22p_tx_put_ext_frame instead\n", __func__, idx);
     return -EIO;
   }
 
@@ -479,7 +478,7 @@ int st22p_tx_put_ext_frame(st22p_tx_handle handle, struct st_frame* frame,
     return -EIO;
   }
 
-  if (!(ctx->ops.flags & ST22P_TX_FLAG_EXT_FRAME)) {
+  if (!ctx->ext_frame) {
     err("%s(%d), EXT_FRAME flag not enabled\n", __func__, idx);
     return -EIO;
   }
@@ -504,7 +503,7 @@ int st22p_tx_put_ext_frame(st22p_tx_handle handle, struct st_frame* frame,
   if (ret < 0) {
     err("%s, ext framebuffer sanity check fail %d fb_idx %d\n", __func__, ret,
         producer_idx);
-    return -EIO;
+    return ret;
   }
 
   framebuff->stat = ST22P_TX_FRAME_READY;
@@ -559,6 +558,7 @@ st22p_tx_handle st22p_tx_create(mtl_handle mt, struct st22p_tx_ops* ops) {
   ctx->idx = idx;
   ctx->codestream_fmt = codestream_fmt;
   ctx->ready = false;
+  ctx->ext_frame = (ops->flags & ST22P_TX_FLAG_EXT_FRAME) ? true : false;
   ctx->impl = impl;
   ctx->type = MT_ST22_HANDLE_PIPELINE_TX;
   ctx->src_size = src_size;
@@ -599,8 +599,9 @@ st22p_tx_handle st22p_tx_create(mtl_handle mt, struct st22p_tx_ops* ops) {
 
   /* all ready now */
   ctx->ready = true;
-  notice("%s(%d), codestream fmt %s, input fmt: %s\n", __func__, idx,
-         st_frame_fmt_name(ctx->codestream_fmt), st_frame_fmt_name(ops->input_fmt));
+  notice("%s(%d), codestream fmt %s, input fmt: %s, ext frame: %s\n", __func__, idx,
+         st_frame_fmt_name(ctx->codestream_fmt), st_frame_fmt_name(ops->input_fmt),
+         ctx->ext_frame ? "true" : "false");
   st22p_tx_idx++;
 
   if (ctx->ops.notify_frame_available) { /* notify app */
@@ -654,7 +655,7 @@ void* st22p_tx_get_fb_addr(st22p_tx_handle handle, uint16_t idx) {
     return NULL;
   }
 
-  if (ctx->ops.flags & ST22P_TX_FLAG_EXT_FRAME) {
+  if (ctx->ext_frame) {
     err("%s(%d), not known as EXT_FRAME flag enabled\n", __func__, cidx);
     return NULL;
   }

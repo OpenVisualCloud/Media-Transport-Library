@@ -9,6 +9,7 @@
 * st22p/tx: add external frame support, see ST22P_TX_FLAG_EXT_FRAME.
 * backend: add kernel socket based backend, see doc/kernel_socket.md.
 * dpdk pmd: add AF_PACKET PMD support, see doc/experimental/af_packet.md.
+* st22p/rx: add external frame support, see ST22P_RX_FLAG_EXT_FRAME.
 
 ## Changelog for 23.08
 

@@ -45,6 +45,7 @@ struct st22p_tx_ctx {
 
   struct st22_encode_session_impl* encode_impl;
   bool ready;
+  bool ext_frame;
 
   size_t src_size;
 
