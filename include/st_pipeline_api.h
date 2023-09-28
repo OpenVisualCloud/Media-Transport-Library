@@ -455,9 +455,8 @@ enum st22_quality_mode {
 #define ST22P_RX_FLAG_SIMULATE_PKT_LOSS (MTL_BIT32(3))
 /**
  * Flag bit in flags of struct st22p_rx_ops.
- * Only used for internal convert mode.
- * The external frames are provided by calling
- * st22p_rx_get_ext_frame.
+ * Enable the external frame mode, and user must provide a query callback(query_ext_frame
+ * in st22p_rx_ops) to let MTL can get the frame when needed.
  */
 #define ST22P_RX_FLAG_EXT_FRAME (MTL_BIT32(4))
 
@@ -987,6 +986,13 @@ struct st22p_rx_ops {
    * Ex, cast to struct st10_vsync_meta for ST_EVENT_VSYNC.
    */
   int (*notify_event)(void* priv, enum st_event event, void* args);
+  /**
+   * Mandatory for ST22P_RX_FLAG_EXT_FRAME. Callback when the lib query next external
+   * frame's data address. And only non-block method can be used within this callback as
+   * it run from lcore tasklet routine.
+   */
+  int (*query_ext_frame)(void* priv, struct st_ext_frame* ext_frame,
+                         struct st22_rx_frame_meta* meta);
 };
 
 /**

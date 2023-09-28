@@ -44,6 +44,7 @@ struct st22p_rx_ctx {
 
   struct st22_decode_session_impl* decode_impl;
   bool ready;
+  bool ext_frame;
 
   size_t dst_size;
   size_t max_codestream_size;
