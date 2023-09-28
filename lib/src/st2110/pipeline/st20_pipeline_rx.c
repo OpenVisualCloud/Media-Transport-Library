@@ -140,6 +140,36 @@ static int rx_st20p_frame_ready(void* priv, void* frame,
     return -EBUSY;
   }
 
+  /* query the ext frame for no convert mode */
+  if (ctx->dynamic_ext_frame && !ctx->derive) {
+    struct st_ext_frame ext_frame;
+    memset(&ext_frame, 0x0, sizeof(ext_frame));
+    int ret = ctx->ops.query_ext_frame(ctx->ops.priv, &ext_frame, meta);
+    if (ret < 0) {
+      err("%s(%d), query_ext_frame for frame %u fail %d\n", __func__, ctx->idx,
+          framebuff->idx, ret);
+      mt_pthread_mutex_unlock(&ctx->lock);
+      return ret;
+    }
+
+    uint8_t planes = st_frame_fmt_planes(framebuff->dst.fmt);
+    for (int plane = 0; plane < planes; plane++) {
+      framebuff->dst.addr[plane] = ext_frame.addr[plane];
+      framebuff->dst.iova[plane] = ext_frame.iova[plane];
+      framebuff->dst.linesize[plane] = ext_frame.linesize[plane];
+    }
+    framebuff->dst.data_size = framebuff->dst.buffer_size = ext_frame.size;
+    framebuff->dst.opaque = ext_frame.opaque;
+    framebuff->dst.flags |= ST_FRAME_FLAG_EXT_BUF;
+    ret = st_frame_sanity_check(&framebuff->dst);
+    if (ret < 0) {
+      err("%s(%d), ext_frame check frame %u fail %d\n", __func__, ctx->idx,
+          framebuff->idx, ret);
+      mt_pthread_mutex_unlock(&ctx->lock);
+      return ret;
+    }
+  }
+
   framebuff->src.addr[0] = frame;
   framebuff->src.data_size = meta->frame_total_size;
   framebuff->src.second_field = framebuff->dst.second_field = meta->second_field;
@@ -209,12 +239,19 @@ static int rx_st20p_query_ext_frame(void* priv, struct st20_ext_frame* ext_frame
     return -EBUSY;
   }
 
-  ret = ctx->ops.query_ext_frame(ctx->ops.priv, ext_frame, meta);
+  struct st_ext_frame ext_st;
+  memset(&ext_st, 0, sizeof(ext_st));
+  ret = ctx->ops.query_ext_frame(ctx->ops.priv, &ext_st, meta);
   if (ret < 0) {
     mt_pthread_mutex_unlock(&ctx->lock);
     return -EBUSY;
   }
-  framebuff->src.opaque = ext_frame->opaque;
+  /* only 1 plane for no converter mode */
+  ext_frame->buf_addr = ext_st.addr[0];
+  ext_frame->buf_iova = ext_st.iova[0];
+  ext_frame->buf_len = ext_st.size;
+  ext_frame->opaque = ext_st.opaque;
+  framebuff->src.opaque = ext_st.opaque;
   mt_pthread_mutex_unlock(&ctx->lock);
 
   return 0;
@@ -402,7 +439,7 @@ static int rx_st20p_create_transport(struct mtl_main_impl* impl, struct st20p_rx
     }
     if (ops->query_ext_frame) {
       if (!(ops->flags & ST20P_RX_FLAG_RECEIVE_INCOMPLETE_FRAME)) {
-        err("%s, pls enable incomplete frame flag for query ext mode\n", __func__);
+        err("%s, pls enable incomplete frame flag for derive query ext mode\n", __func__);
         if (trans_ext_frames) mt_rte_free(trans_ext_frames);
         return -EINVAL;
       }
@@ -584,74 +621,6 @@ static int rx_st20p_get_converter(struct mtl_main_impl* impl, struct st20p_rx_ct
   return 0;
 }
 
-struct st_frame* st20p_rx_get_ext_frame(st20p_rx_handle handle,
-                                        struct st_ext_frame* ext_frame) {
-  struct st20p_rx_ctx* ctx = handle;
-  int idx = ctx->idx;
-  struct st20p_rx_frame* framebuff;
-  struct st_frame* frame;
-
-  if (ctx->type != MT_ST20_HANDLE_PIPELINE_RX) {
-    err("%s(%d), invalid type %d\n", __func__, idx, ctx->type);
-    return NULL;
-  }
-
-  if (!(ctx->ops.flags & ST20P_RX_FLAG_EXT_FRAME)) {
-    err("%s(%d), EXT_FRAME flag not enabled\n", __func__, idx);
-    return NULL;
-  }
-
-  if (!ctx->internal_converter) {
-    err("%s(%d), only used for internal converter\n", __func__, idx);
-    return NULL;
-  }
-
-  if (!ctx->ready) return NULL; /* not ready */
-
-  mt_pthread_mutex_lock(&ctx->lock);
-
-  framebuff =
-      rx_st20p_next_available(ctx, ctx->framebuff_consumer_idx, ST20P_RX_FRAME_READY);
-  /* not any ready frame */
-  if (!framebuff) {
-    mt_pthread_mutex_unlock(&ctx->lock);
-    return NULL;
-  }
-  for (int plane = 0; plane < st_frame_fmt_planes(framebuff->dst.fmt); plane++) {
-    framebuff->dst.addr[plane] = ext_frame->addr[plane];
-    framebuff->dst.iova[plane] = ext_frame->iova[plane];
-    framebuff->dst.linesize[plane] = ext_frame->linesize[plane];
-  }
-  framebuff->dst.data_size = framebuff->dst.buffer_size = ext_frame->size;
-  framebuff->dst.opaque = ext_frame->opaque;
-  framebuff->dst.flags |= ST_FRAME_FLAG_EXT_BUF;
-  int ret = st_frame_sanity_check(&framebuff->dst);
-  if (ret < 0) {
-    err("%s, ext framebuffer sanity check fail %d fb_idx %d\n", __func__, ret,
-        ctx->framebuff_consumer_idx);
-    mt_pthread_mutex_unlock(&ctx->lock);
-    return NULL;
-  }
-  ctx->internal_converter->convert_func(&framebuff->src, &framebuff->dst);
-
-  framebuff->stat = ST20P_RX_FRAME_IN_USER;
-  /* point to next */
-  ctx->framebuff_consumer_idx = rx_st20p_next_idx(ctx, framebuff->idx);
-
-  mt_pthread_mutex_unlock(&ctx->lock);
-
-  dbg("%s(%d), frame %u succ\n", __func__, idx, framebuff->idx);
-  frame = &framebuff->dst;
-  if (framebuff->user_meta_data_size) {
-    frame->user_meta = framebuff->user_meta;
-    frame->user_meta_size = framebuff->user_meta_data_size;
-  } else {
-    frame->user_meta = NULL;
-    frame->user_meta_size = 0;
-  }
-  return frame;
-}
-
 struct st_frame* st20p_rx_get_frame(st20p_rx_handle handle) {
   struct st20p_rx_ctx* ctx = handle;
   int idx = ctx->idx;
@@ -749,6 +718,13 @@ st20p_rx_handle st20p_rx_create(mtl_handle mt, struct st20p_rx_ops* ops) {
     return NULL;
   }
 
+  if (ops->flags & ST20P_RX_FLAG_EXT_FRAME) {
+    if (!ops->query_ext_frame) {
+      err("%s, no query_ext_frame query callback for dynamic ext frame mode\n", __func__);
+      return NULL;
+    }
+  }
+
   dst_size = st_frame_size(ops->output_fmt, ops->width, ops->height, ops->interlaced);
   if (!dst_size) {
     err("%s(%d), get dst size fail\n", __func__, idx);
@@ -764,6 +740,7 @@ st20p_rx_handle st20p_rx_create(mtl_handle mt, struct st20p_rx_ops* ops) {
   ctx->idx = idx;
   ctx->ready = false;
   ctx->derive = st_frame_fmt_equal_transport(ops->output_fmt, ops->transport_fmt);
+  ctx->dynamic_ext_frame = (ops->flags & ST20P_RX_FLAG_EXT_FRAME) ? true : false;
   ctx->impl = impl;
   ctx->type = MT_ST20_HANDLE_PIPELINE_RX;
   ctx->dst_size = dst_size;
@@ -807,8 +784,9 @@ st20p_rx_handle st20p_rx_create(mtl_handle mt, struct st20p_rx_ops* ops) {
 
   /* all ready now */
   ctx->ready = true;
-  notice("%s(%d), transport fmt %s, output fmt %s\n", __func__, idx,
-         st20_frame_fmt_name(ops->transport_fmt), st_frame_fmt_name(ops->output_fmt));
+  notice("%s(%d), transport fmt %s, output fmt %s, dynamic_ext_frame %s\n", __func__, idx,
+         st20_frame_fmt_name(ops->transport_fmt), st_frame_fmt_name(ops->output_fmt),
+         ctx->dynamic_ext_frame ? "true" : "false");
   st20p_rx_idx++;
 
   if (ctx->ops.notify_frame_available) { /* notify app */

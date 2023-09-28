@@ -215,7 +215,6 @@ class tests_context {
   int ext_idx = 0;
   bool ext_fb_in_use[3] = {false}; /* assume 3 framebuffer */
   mtl_dma_mem_handle dma_mem = NULL;
-  bool rx_get_ext = false;
 
   bool user_pacing = false;
   /* user timestamp which advanced by 1 for every frame */

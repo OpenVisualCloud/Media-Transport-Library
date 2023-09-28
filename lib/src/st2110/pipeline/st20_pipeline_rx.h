@@ -48,6 +48,7 @@ struct st20p_rx_ctx {
   struct st_frame_converter* internal_converter;
   bool ready;
   bool derive;
+  bool dynamic_ext_frame;
 
   size_t dst_size;
 

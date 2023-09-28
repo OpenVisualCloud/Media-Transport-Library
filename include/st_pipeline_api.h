@@ -369,7 +369,7 @@ enum st22_quality_mode {
 #define ST22P_TX_FLAG_DISABLE_BULK (MTL_BIT32(7))
 /**
  * Flag bit in flags of struct st22p_tx_ops.
- * Lib uses user allocated memory for frames.
+ * Lib uses user dynamic allocated memory for frames.
  * The external frames are provided by calling
  * st22p_tx_put_ext_frame.
  */
@@ -387,7 +387,7 @@ enum st22_quality_mode {
 #define ST20P_TX_FLAG_USER_R_MAC (MTL_BIT32(1))
 /**
  * Flag bit in flags of struct st20p_tx_ops.
- * Lib uses user allocated memory for frames.
+ * Lib uses user dynamic allocated memory for frames.
  * The external frames are provided by calling
  * st20p_tx_put_ext_frame.
  */
@@ -455,8 +455,8 @@ enum st22_quality_mode {
 #define ST22P_RX_FLAG_SIMULATE_PKT_LOSS (MTL_BIT32(3))
 /**
  * Flag bit in flags of struct st22p_rx_ops.
- * Enable the external frame mode, and user must provide a query callback(query_ext_frame
- * in st22p_rx_ops) to let MTL can get the frame when needed.
+ * Enable the dynamic external frame mode, and user must provide a query
+ * callback(query_ext_frame in st22p_rx_ops) to let MTL can get the frame when needed.
  */
 #define ST22P_RX_FLAG_EXT_FRAME (MTL_BIT32(4))
 
@@ -480,9 +480,9 @@ enum st22_quality_mode {
 #define ST20P_RX_FLAG_ENABLE_VSYNC (MTL_BIT32(1))
 /**
  * Flag bit in flags of struct st20p_rx_ops.
- * Only used for internal convert mode.
- * The external frames are provided by calling
- * st20p_rx_get_ext_frame.
+ * Enable the dynamic external frame mode, and user must provide a query
+ * callback(query_ext_frame in st20p_rx_ops) to let MTL can get the frame when needed.
+ * Note to enable ST20P_RX_FLAG_RECEIVE_INCOMPLETE_FRAME also for non-converter mode.
  */
 #define ST20P_RX_FLAG_EXT_FRAME (MTL_BIT32(2))
 /**
@@ -855,11 +855,10 @@ struct st20p_rx_ops {
   struct st_rx_rtcp_ops* rtcp;
   /**
    * Optional. Callback when the lib query next external frame's data address.
-   * Only for non-convert mode with ST20P_RX_FLAG_RECEIVE_INCOMPLETE_FRAME.
    * And only non-block method can be used within this callback as it run from lcore
    * tasklet routine.
    */
-  int (*query_ext_frame)(void* priv, struct st20_ext_frame* ext_frame,
+  int (*query_ext_frame)(void* priv, struct st_ext_frame* ext_frame,
                          struct st20_rx_frame_meta* meta);
   /**
    * Optional. event callback, lib will call this when there is some event happened.
@@ -1549,22 +1548,6 @@ st20p_rx_handle st20p_rx_create(mtl_handle mt, struct st20p_rx_ops* ops);
  *   - <0: Error code of the rx st2110-20 pipeline session free.
  */
 int st20p_rx_free(st20p_rx_handle handle);
-
-/**
- * Get one rx frame from the rx st2110-20 pipeline session with external framebuffer.
- * This is only used for internal convert mode, the convert is done in this call.
- * Call st20p_rx_put_frame to return the frame to session.
- *
- * @param handle
- *   The handle to the rx st2110-20 pipeline session.
- * @param ext_frame
- *   The pointer to the structure describing external framebuffer.
- * @return
- *   - NULL if no available frame in the session.
- *   - Otherwise, the frame pointer.
- */
-struct st_frame* st20p_rx_get_ext_frame(st20p_rx_handle handle,
-                                        struct st_ext_frame* ext_frame);
 
 /**
  * Get one rx frame from the rx st2110-20 pipeline session.
