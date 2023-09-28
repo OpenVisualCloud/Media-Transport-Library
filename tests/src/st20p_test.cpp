@@ -225,12 +225,12 @@ static int test_st20p_tx_frame_done(void* priv, struct st_frame* frame) {
   for (int i = 0; i < s->fb_cnt; ++i) {
     if (frame->addr[0] == s->ext_fb + i * s->frame_size) {
       s->ext_fb_in_use[i] = false;
+      dbg("%s(%d), frame done at %d\n", __func__, i, s->idx);
       return 0;
     }
   }
 
-  err("%s, unknown frame_addr %p\n", __func__, frame->addr[0]);
-
+  err("%s(%d), unknown frame_addr %p\n", __func__, s->idx, frame->addr[0]);
   return 0;
 }
 

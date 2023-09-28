@@ -432,6 +432,27 @@ static int test_st22p_tx_frame_available(void* priv) {
   return 0;
 }
 
+static int test_st22p_tx_frame_done(void* priv, struct st_frame* frame) {
+  tests_context* s = (tests_context*)priv;
+
+  if (!s->handle) return -EIO; /* not ready */
+
+  s->fb_send_done++;
+
+  if (!(frame->flags & ST_FRAME_FLAG_EXT_BUF)) return 0;
+
+  for (int i = 0; i < s->fb_cnt; ++i) {
+    if (frame->addr[0] == s->ext_fb + i * s->frame_size) {
+      s->ext_fb_in_use[i] = false;
+      dbg("%s(%d), frame done at %d\n", __func__, i, s->idx);
+      return 0;
+    }
+  }
+
+  err("%s(%d), unknown frame_addr %p\n", __func__, s->idx, frame->addr[0]);
+  return 0;
+}
+
 static int test_st22p_rx_frame_available(void* priv) {
   tests_context* s = (tests_context*)priv;
 
@@ -570,8 +591,20 @@ static void test_st22p_tx_frame_thread(void* args) {
       frame->timestamp = s->fb_send;
       dbg("%s(%d), timestamp %d\n", __func__, s->idx, s->fb_send);
     }
-    /* directly put */
-    st22p_tx_put_frame((st22p_tx_handle)handle, frame);
+    if (s->p_ext_frames) {
+      int ret = st22p_tx_put_ext_frame((st22p_tx_handle)handle, frame,
+                                       &s->p_ext_frames[s->ext_idx]);
+      if (ret < 0) {
+        err("%s, put ext framebuffer fail %d fb_idx %d\n", __func__, ret, s->ext_idx);
+        continue;
+      }
+      s->ext_fb_in_use[s->ext_idx] = true;
+      s->ext_idx++;
+      if (s->ext_idx >= s->fb_cnt) s->ext_idx = 0;
+    } else {
+      /* directly put */
+      st22p_tx_put_frame((st22p_tx_handle)handle, frame);
+    }
     s->fb_send++;
     if (!s->start_time) {
       s->start_time = st_test_get_monotonic_time();
@@ -653,6 +686,8 @@ struct st22p_rx_digest_test_para {
   bool user_timestamp;
   bool vsync;
   bool rtcp;
+  bool tx_ext;
+  bool rx_ext;
 };
 
 static void test_st22p_init_rx_digest_para(struct st22p_rx_digest_test_para* para) {
@@ -668,6 +703,8 @@ static void test_st22p_init_rx_digest_para(struct st22p_rx_digest_test_para* par
   para->user_timestamp = false;
   para->vsync = true;
   para->rtcp = false;
+  para->tx_ext = false;
+  para->rx_ext = false;
 }
 
 static void st22p_rx_digest_test(enum st_fps fps[], int width[], int height[],
@@ -760,8 +797,12 @@ static void st22p_rx_digest_test(enum st_fps fps[], int width[], int height[],
     ops_tx.framebuff_cnt = test_ctx_tx[i]->fb_cnt;
     ops_tx.notify_frame_available = test_st22p_tx_frame_available;
     ops_tx.notify_event = test_ctx_notify_event;
+    ops_tx.notify_frame_done = test_st22p_tx_frame_done;
     if (para->user_timestamp) ops_tx.flags |= ST22P_TX_FLAG_USER_TIMESTAMP;
     if (para->vsync) ops_tx.flags |= ST22P_TX_FLAG_ENABLE_VSYNC;
+    if (para->tx_ext) {
+      ops_tx.flags |= ST22P_TX_FLAG_EXT_FRAME;
+    }
 
     struct st_tx_rtcp_ops ops_tx_rtcp;
     memset(&ops_tx_rtcp, 0, sizeof(ops_tx_rtcp));
@@ -779,11 +820,58 @@ static void st22p_rx_digest_test(enum st_fps fps[], int width[], int height[],
     tx_handle[i] = st22p_tx_create(st, &ops_tx);
     ASSERT_TRUE(tx_handle[i] != NULL);
 
+    /* init ext frames, only for no convert */
+    if (para->tx_ext) {
+      uint8_t planes = st_frame_fmt_planes(fmt[i]);
+      size_t frame_size = test_ctx_tx[i]->frame_size;
+
+      test_ctx_tx[i]->p_ext_frames = (struct st_ext_frame*)malloc(
+          sizeof(*test_ctx_tx[i]->p_ext_frames) * test_ctx_tx[i]->fb_cnt);
+      size_t pg_sz = mtl_page_size(st);
+      size_t fb_size = test_ctx_tx[i]->frame_size * test_ctx_tx[i]->fb_cnt;
+      test_ctx_tx[i]->ext_fb_iova_map_sz =
+          mtl_size_page_align(fb_size, pg_sz); /* align */
+      size_t fb_size_malloc = test_ctx_tx[i]->ext_fb_iova_map_sz + pg_sz;
+      test_ctx_tx[i]->ext_fb_malloc = st_test_zmalloc(fb_size_malloc);
+      ASSERT_TRUE(test_ctx_tx[i]->ext_fb_malloc != NULL);
+      test_ctx_tx[i]->ext_fb =
+          (uint8_t*)MTL_ALIGN((uint64_t)test_ctx_tx[i]->ext_fb_malloc, pg_sz);
+      test_ctx_tx[i]->ext_fb_iova =
+          mtl_dma_map(st, test_ctx_tx[i]->ext_fb, test_ctx_tx[i]->ext_fb_iova_map_sz);
+      ASSERT_TRUE(test_ctx_tx[i]->ext_fb_iova != MTL_BAD_IOVA);
+      info("%s, session %d ext_fb %p\n", __func__, i, test_ctx_tx[i]->ext_fb);
+
+      for (int j = 0; j < test_ctx_tx[i]->fb_cnt; j++) {
+        for (uint8_t plane = 0; plane < planes; plane++) { /* assume planes continuous */
+          test_ctx_tx[i]->p_ext_frames[j].linesize[plane] =
+              st_frame_least_linesize(fmt[i], width[i], plane);
+          if (plane == 0) {
+            test_ctx_tx[i]->p_ext_frames[j].addr[plane] =
+                test_ctx_tx[i]->ext_fb + j * frame_size;
+            test_ctx_tx[i]->p_ext_frames[j].iova[plane] =
+                test_ctx_tx[i]->ext_fb_iova + j * frame_size;
+          } else {
+            test_ctx_tx[i]->p_ext_frames[j].addr[plane] =
+                (uint8_t*)test_ctx_tx[i]->p_ext_frames[j].addr[plane - 1] +
+                test_ctx_tx[i]->p_ext_frames[j].linesize[plane - 1] * height[i];
+            test_ctx_tx[i]->p_ext_frames[j].iova[plane] =
+                test_ctx_tx[i]->p_ext_frames[j].iova[plane - 1] +
+                test_ctx_tx[i]->p_ext_frames[j].linesize[plane - 1] * height[i];
+          }
+        }
+        test_ctx_tx[i]->p_ext_frames[j].size = frame_size;
+        test_ctx_tx[i]->p_ext_frames[j].opaque = NULL;
+      }
+    }
+
     /* sha calculate */
     size_t frame_size = test_ctx_tx[i]->frame_size;
     uint8_t* fb;
     for (int frame = 0; frame < ST22_TEST_SHA_HIST_NUM; frame++) {
-      fb = (uint8_t*)st22p_tx_get_fb_addr(tx_handle[i], frame);
+      if (para->tx_ext)
+        fb = (uint8_t*)test_ctx_tx[i]->ext_fb + frame * frame_size;
+      else
+        fb = (uint8_t*)st22p_tx_get_fb_addr(tx_handle[i], frame);
       ASSERT_TRUE(fb != NULL);
       st_test_rand_data(fb, frame_size, frame);
       unsigned char* result = test_ctx_tx[i]->shas[frame];
@@ -916,6 +1004,12 @@ static void st22p_rx_digest_test(enum st_fps fps[], int width[], int height[],
          test_ctx_tx[i]->fb_send, framerate_tx[i], expect_framerate_tx[i]);
     EXPECT_GE(test_ctx_rx[i]->fb_send, 0);
     EXPECT_EQ(test_ctx_rx[i]->incomplete_frame_cnt, 0);
+    if (para->tx_ext) {
+      mtl_dma_unmap(st, test_ctx_tx[i]->ext_fb, test_ctx_tx[i]->ext_fb_iova,
+                    test_ctx_tx[i]->ext_fb_iova_map_sz);
+      st_test_free(test_ctx_tx[i]->ext_fb_malloc);
+      st_test_free(test_ctx_tx[i]->p_ext_frames);
+    }
     delete test_ctx_tx[i];
   }
   for (int i = 0; i < sessions; i++) {
@@ -1046,6 +1140,23 @@ TEST(St22p, digest_st22_s2_rtcp) {
   para.sessions = 2;
   para.check_fps = false;
   para.rtcp = true;
+
+  st22p_rx_digest_test(fps, width, height, fmt, codec, compress_ratio, &para);
+}
+
+TEST(St22p, digest_st22_s2_ext) {
+  enum st_fps fps[2] = {ST_FPS_P59_94, ST_FPS_P50};
+  int width[2] = {1920, 1920};
+  int height[2] = {1080, 1080};
+  enum st_frame_fmt fmt[2] = {ST_FRAME_FMT_YUV422PLANAR10LE,
+                              ST_FRAME_FMT_YUV422PLANAR10LE};
+  enum st22_codec codec[2] = {ST22_CODEC_JPEGXS, ST22_CODEC_JPEGXS};
+  int compress_ratio[2] = {10, 16};
+
+  struct st22p_rx_digest_test_para para;
+  test_st22p_init_rx_digest_para(&para);
+  para.sessions = 2;
+  para.tx_ext = true;
 
   st22p_rx_digest_test(fps, width, height, fmt, codec, compress_ratio, &para);
 }

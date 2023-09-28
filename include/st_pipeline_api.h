@@ -367,6 +367,13 @@ enum st22_quality_mode {
  * performance since the object enqueue/dequeue will be acted one by one.
  */
 #define ST22P_TX_FLAG_DISABLE_BULK (MTL_BIT32(7))
+/**
+ * Flag bit in flags of struct st22p_tx_ops.
+ * Lib uses user allocated memory for frames.
+ * The external frames are provided by calling
+ * st22p_tx_put_ext_frame.
+ */
+#define ST22P_TX_FLAG_EXT_FRAME (MTL_BIT32(8))
 
 /**
  * Flag bit in flags of struct st20p_tx_ops.
@@ -382,7 +389,7 @@ enum st22_quality_mode {
  * Flag bit in flags of struct st20p_tx_ops.
  * Lib uses user allocated memory for frames.
  * The external frames are provided by calling
- * st20_tx_put_ext_frame.
+ * st20p_tx_put_ext_frame.
  */
 #define ST20P_TX_FLAG_EXT_FRAME (MTL_BIT32(2))
 /**
@@ -752,8 +759,6 @@ struct st20p_tx_ops {
   bool interlaced;
   /** Optional. Linesize for transport frame, only for non-convert mode */
   size_t transport_linesize;
-  /** Optional. Array of external frames */
-  struct st_ext_frame* ext_frames;
 
   /** Optional for ST20P_TX_FLAG_ENABLE_RTCP. RTCP info */
   struct st_tx_rtcp_ops* rtcp;
@@ -1204,7 +1209,8 @@ int st22p_tx_free(st22p_tx_handle handle);
 
 /**
  * Get one tx frame from the tx st2110-22 pipeline session.
- * Call st22p_tx_put_frame to return the frame to session.
+ * Call st22p_tx_put_frame or st22p_tx_put_ext_frame(if ST22P_TX_FLAG_EXT_FRAME) to return
+ * the frame to session.
  *
  * @param handle
  *   The handle to the tx st2110-22 pipeline session.
@@ -1227,6 +1233,23 @@ struct st_frame* st22p_tx_get_frame(st22p_tx_handle handle);
  *   - <0: Error code if put fail.
  */
 int st22p_tx_put_frame(st22p_tx_handle handle, struct st_frame* frame);
+
+/**
+ * Put back the frame which get by st22p_tx_get_frame to the tx
+ * st2110-22 pipeline session with external framebuffer.
+ *
+ * @param handle
+ *   The handle to the tx st2110-22 pipeline session.
+ * @param frame
+ *   The frame pointer by st22p_tx_get_frame.
+ * @param ext_frame
+ *   The pointer to the structure describing external framebuffer.
+ * @return
+ *   - 0 if successful.
+ *   - <0: Error code if put fail.
+ */
+int st22p_tx_put_ext_frame(st22p_tx_handle handle, struct st_frame* frame,
+                           struct st_ext_frame* ext_frame);
 
 /**
  * Get the framebuffer pointer from the tx st2110-22 pipeline session.
@@ -1384,7 +1407,8 @@ int st20p_tx_free(st20p_tx_handle handle);
 
 /**
  * Get one tx frame from the tx st2110-20 pipeline session.
- * Call st20p_tx_put_frame to return the frame to session.
+ * Call st20p_tx_put_frame/st20p_tx_put_ext_frame(if ST20P_TX_FLAG_EXT_FRAME) to return
+ * the frame to session.
  *
  * @param handle
  *   The handle to the tx st2110-20 pipeline session.

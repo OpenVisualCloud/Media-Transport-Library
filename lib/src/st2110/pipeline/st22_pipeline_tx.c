@@ -296,10 +296,12 @@ static int tx_st22p_create_transport(struct mtl_main_impl* impl, struct st22p_tx
 
 static int tx_st22p_uinit_src_fbs(struct st22p_tx_ctx* ctx) {
   if (ctx->framebuffs) {
-    for (uint16_t i = 0; i < ctx->framebuff_cnt; i++) {
-      if (ctx->framebuffs[i].src.addr[0]) {
-        mt_rte_free(ctx->framebuffs[i].src.addr[0]);
-        ctx->framebuffs[i].src.addr[0] = NULL;
+    if (!(ctx->ops.flags & ST22P_TX_FLAG_EXT_FRAME)) {
+      for (uint16_t i = 0; i < ctx->framebuff_cnt; i++) {
+        if (ctx->framebuffs[i].src.addr[0]) {
+          mt_rte_free(ctx->framebuffs[i].src.addr[0]);
+          ctx->framebuffs[i].src.addr[0] = NULL;
+        }
       }
     }
     mt_rte_free(ctx->framebuffs);
@@ -328,25 +330,36 @@ static int tx_st22p_init_src_fbs(struct mtl_main_impl* impl, struct st22p_tx_ctx
   for (uint16_t i = 0; i < ctx->framebuff_cnt; i++) {
     frames[i].stat = ST22P_TX_FRAME_FREE;
     frames[i].idx = i;
-    src = mt_rte_zmalloc_socket(src_size, soc_id);
-    if (!src) {
-      err("%s(%d), src frame malloc fail at %u\n", __func__, idx, i);
-      tx_st22p_uinit_src_fbs(ctx);
-      return -ENOMEM;
-    }
     frames[i].src.fmt = ops->input_fmt;
     frames[i].src.buffer_size = src_size;
     frames[i].src.data_size = src_size;
     frames[i].src.width = ops->width;
     frames[i].src.height = ops->height;
     frames[i].src.priv = &frames[i];
-    /* init plane */
-    st_frame_init_plane_single_src(&frames[i].src, src, mtl_hp_virt2iova(ctx->impl, src));
-    /* check plane */
-    if (st_frame_sanity_check(&frames[i].src) < 0) {
-      err("%s(%d), src frame %d sanity check fail\n", __func__, idx, i);
-      tx_st22p_uinit_src_fbs(ctx);
-      return -EINVAL;
+
+    if (ops->flags & ST22P_TX_FLAG_EXT_FRAME) { /* will use ext frame from user */
+      uint8_t planes = st_frame_fmt_planes(frames[i].src.fmt);
+      for (uint8_t plane = 0; plane < planes; plane++) {
+        frames[i].src.addr[plane] = NULL;
+        frames[i].src.iova[plane] = 0;
+      }
+    } else {
+      src = mt_rte_zmalloc_socket(src_size, soc_id);
+      if (!src) {
+        err("%s(%d), src frame malloc fail at %u\n", __func__, idx, i);
+        tx_st22p_uinit_src_fbs(ctx);
+        return -ENOMEM;
+      }
+
+      /* init plane */
+      st_frame_init_plane_single_src(&frames[i].src, src,
+                                     mtl_hp_virt2iova(ctx->impl, src));
+      /* check plane */
+      if (st_frame_sanity_check(&frames[i].src) < 0) {
+        err("%s(%d), src frame %d sanity check fail\n", __func__, idx, i);
+        tx_st22p_uinit_src_fbs(ctx);
+        return -EINVAL;
+      }
     }
   }
 
@@ -435,8 +448,14 @@ int st22p_tx_put_frame(st22p_tx_handle handle, struct st_frame* frame) {
   }
 
   if (ST22P_TX_FRAME_IN_USER != framebuff->stat) {
-    err("%s(%d), frame %u not in free %d\n", __func__, idx, producer_idx,
+    err("%s(%d), frame %u not in user %d\n", __func__, idx, producer_idx,
         framebuff->stat);
+    return -EIO;
+  }
+
+  if (ctx->ops.flags & ST22P_TX_FLAG_EXT_FRAME) {
+    err("%s(%d), EXT_FRAME flag enabled, use st22p_tx_put_ext_frame instead\n", __func__,
+        idx);
     return -EIO;
   }
 
@@ -444,6 +463,54 @@ int st22p_tx_put_frame(st22p_tx_handle handle, struct st_frame* frame) {
   st22_encode_notify_frame_ready(ctx->encode_impl);
   dbg("%s(%d), frame %u succ\n", __func__, idx, producer_idx);
 
+  return 0;
+}
+
+int st22p_tx_put_ext_frame(st22p_tx_handle handle, struct st_frame* frame,
+                           struct st_ext_frame* ext_frame) {
+  struct st22p_tx_ctx* ctx = handle;
+  int idx = ctx->idx;
+  struct st22p_tx_frame* framebuff = frame->priv;
+  uint16_t producer_idx = framebuff->idx;
+  int ret = 0;
+
+  if (ctx->type != MT_ST22_HANDLE_PIPELINE_TX) {
+    err("%s(%d), invalid type %d\n", __func__, idx, ctx->type);
+    return -EIO;
+  }
+
+  if (!(ctx->ops.flags & ST22P_TX_FLAG_EXT_FRAME)) {
+    err("%s(%d), EXT_FRAME flag not enabled\n", __func__, idx);
+    return -EIO;
+  }
+
+  if (ST22P_TX_FRAME_IN_USER != framebuff->stat) {
+    err("%s(%d), frame %u not in user %d\n", __func__, idx, producer_idx,
+        framebuff->stat);
+    return -EIO;
+  }
+
+  uint8_t planes = st_frame_fmt_planes(framebuff->src.fmt);
+
+  for (int plane = 0; plane < planes; plane++) {
+    framebuff->src.addr[plane] = ext_frame->addr[plane];
+    framebuff->src.iova[plane] = ext_frame->iova[plane];
+    framebuff->src.linesize[plane] = ext_frame->linesize[plane];
+  }
+  framebuff->src.data_size = framebuff->src.buffer_size = ext_frame->size;
+  framebuff->src.opaque = ext_frame->opaque;
+  framebuff->src.flags |= ST_FRAME_FLAG_EXT_BUF;
+  ret = st_frame_sanity_check(&framebuff->src);
+  if (ret < 0) {
+    err("%s, ext framebuffer sanity check fail %d fb_idx %d\n", __func__, ret,
+        producer_idx);
+    return -EIO;
+  }
+
+  framebuff->stat = ST22P_TX_FRAME_READY;
+  st22_encode_notify_frame_ready(ctx->encode_impl);
+
+  dbg("%s(%d), frame %u succ\n", __func__, idx, producer_idx);
   return 0;
 }
 
@@ -584,6 +651,11 @@ void* st22p_tx_get_fb_addr(st22p_tx_handle handle, uint16_t idx) {
   if (idx >= ctx->framebuff_cnt) {
     err("%s, invalid idx %d, should be in range [0, %d]\n", __func__, cidx,
         ctx->framebuff_cnt);
+    return NULL;
+  }
+
+  if (ctx->ops.flags & ST22P_TX_FLAG_EXT_FRAME) {
+    err("%s(%d), not known as EXT_FRAME flag enabled\n", __func__, cidx);
     return NULL;
   }
 
