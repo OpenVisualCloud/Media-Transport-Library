@@ -41,6 +41,7 @@ runs:
           unzip
           zip
         pacboy: >-
+          pkgconf:p
           openssl:p
           gcc:p
           meson:p
