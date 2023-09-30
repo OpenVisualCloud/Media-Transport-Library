@@ -55,16 +55,12 @@ endif
 
 if is_windows
   mtl_c_args += ['-DWINDOWSENV']
-  dpdk_include_dir = run_command('pkg-config', '--variable=includedir', 'libdpdk', check: true).stdout().strip()
-  mtl_c_args += ['-include' + dpdk_include_dir + '/rte_config.h']
   ws2_32_dep = cc.find_library('ws2_32', required: true)
-  dpdk_dep = []
+  dpdk_dep = dependency('libdpdk', required : true, static: true)
   libnuma_dep = []
   dpdk_root_dir = get_option('dpdk_root_dir')
   mtl_include_dir += include_directories('''.\windows\''')
   mtl_include_dir += include_directories(dpdk_root_dir + '''\lib\eal\windows\include\''')
-  dpdklibs = run_command('pkg-config', '--static', '--libs', 'libdpdk', check: true)
-  mtl_link_c_args += [dpdklibs.stdout().strip().split()]
   # generate .def file to be converted to .lib for msvc
   mtl_link_c_args += ['-Wl,--output-def,libmtl.def']
 endif

@@ -65,6 +65,7 @@ jobs:
             base-devel
             unzip
           pacboy: >-
+            pkgconf:p
             openssl:p
             gcc:p
             meson:p
