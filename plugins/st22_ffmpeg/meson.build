@@ -2,7 +2,7 @@
 # Copyright 2022 Intel Corporation
 
 project('st22 encoder plugins based on ffmpeg', 'c', default_options: ['buildtype=release'],
-        version: run_command(find_program('cat', 'more'), files('../../VERSION'), check: true).stdout().strip(),)
+        version: run_command(find_program('cat'), files('../../VERSION'), check: true).stdout().strip(),)
 
 # allow experimental api
 add_global_arguments('-DALLOW_EXPERIMENTAL_API', language : 'c')

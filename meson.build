@@ -2,8 +2,7 @@
 # Copyright 2022 Intel Corporation
 
 project('mtl', 'c', default_options: ['buildtype=release'],
-  # Fallback to "more" for Windows
-  version: run_command(find_program('cat', 'more'), files('VERSION'), check: true).stdout().strip(),
+  version: run_command(find_program('cat'), files('VERSION'), check: true).stdout().strip(),
 )
 
 exec_env = host_machine.system()
