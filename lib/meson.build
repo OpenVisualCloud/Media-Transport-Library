@@ -55,6 +55,8 @@ endif
 
 if is_windows
   mtl_c_args += ['-DWINDOWSENV']
+  dpdk_include_dir = run_command('pkg-config', '--variable=includedir', 'libdpdk', check: true).stdout().strip()
+  mtl_c_args += ['-include' + dpdk_include_dir + '/rte_config.h']
   ws2_32_dep = cc.find_library('ws2_32', required: true)
   dpdk_dep = []
   libnuma_dep = []
