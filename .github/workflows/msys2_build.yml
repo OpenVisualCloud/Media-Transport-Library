@@ -16,7 +16,6 @@ env:
   # see https://github.com/msys2/MINGW-packages/issues/11864 and
   # https://gitlab.gnome.org/GNOME/glib/-/merge_requests/3280#note_1678973
   MSYS: winjitdebug
-  PKG_CONFIG_PATH: /${{ matrix.sys }}/lib/pkgconfig/
 
 permissions:
   contents: read
@@ -50,6 +49,8 @@ jobs:
     defaults:
       run:
         shell: msys2 {0}
+    env:
+      PKG_CONFIG_PATH: /${{ matrix.sys }}/lib/pkgconfig/
     steps:
       - name: Harden Runner
         uses: step-security/harden-runner@8ca2b8b2ece13480cda6dacd3511b49857a23c09 # v2.5.1
