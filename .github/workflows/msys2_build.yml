@@ -16,6 +16,7 @@ env:
   # see https://github.com/msys2/MINGW-packages/issues/11864 and
   # https://gitlab.gnome.org/GNOME/glib/-/merge_requests/3280#note_1678973
   MSYS: winjitdebug
+  PKG_CONFIG_PATH: /${{ matrix.sys }}/lib/pkgconfig/
 
 permissions:
   contents: read
@@ -58,7 +59,7 @@ jobs:
       - name: Install dependencies
         uses: msys2/setup-msys2@7efe20baefed56359985e327d329042cde2434ff # v2
         with:
-          msystem: ${{matrix.sys}}
+          msystem: ${{ matrix.sys }}
           update: true
           install: >-
             git
