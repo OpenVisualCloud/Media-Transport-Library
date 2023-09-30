@@ -13,7 +13,7 @@ message('BUILD Environment: ' + exec_env)
 add_global_arguments('-D_DEFAULT_SOURCE', language : 'c')
 
 # get external variables
-add_global_arguments('-D__MTL_GIT__="'+ run_command('git', 'describe', '--abbrev=8', '--dirty', '--always').stdout().strip() + '"', language : 'c')
+add_global_arguments('-D__MTL_GIT__="'+ run_command('git', 'describe', '--abbrev=8', '--dirty', '--always', check: true).stdout().strip() + '"', language : 'c')
 add_global_arguments('-D__MTL_LIB_BUILD__="' + meson.project_version() + '"', language : 'c')
 
 if get_option('disable_pcapng') == true
