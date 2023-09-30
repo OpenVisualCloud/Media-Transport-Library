@@ -1,25 +1,53 @@
-From 3a7d95bc981a809df61cbf30ff0cad5666068b07 Mon Sep 17 00:00:00 2001
-From: Ric Li <ming3.li@intel.com>
-Date: Thu, 14 Sep 2023 10:49:24 -0700
-Subject: [PATCH] Fix list dir glob expassion in msys2
+From patchwork Wed Sep 20 14:18:45 2023
+From: Ric Li <ricmli@outlook.com>
+Date: Wed, 20 Sep 2023 22:18:45 +0800
+Subject: [PATCH v2 1/2] build: fix list_dir_globs failure in MSYS2
 
+When running 'meson setup' on Windows with MSYS2,
+"list-dir-globs.py * failed with status 1".
+
+Avoid using globbing to get components for app build
+since they are already listed in the meson file.
+
+Signed-off-by: Ric Li <ricmli@outlook.com>
+Acked-by: Bruce Richardson <bruce.richardson@intel.com>
 ---
- app/meson.build | 2 +-
- 1 file changed, 1 insertion(+), 1 deletion(-)
+ app/meson.build | 18 +++++++++---------
+ 1 file changed, 9 insertions(+), 9 deletions(-)
 
 diff --git a/app/meson.build b/app/meson.build
-index 4fc1a83eba..ce42bdcd52 100644
+index e4bf5c531c..75ac37bef9 100644
 --- a/app/meson.build
 +++ b/app/meson.build
-@@ -7,7 +7,7 @@ disable_apps = run_command(list_dir_globs, disable_apps, check: true).stdout().s
- enable_apps = ',' + get_option('enable_apps')
- enable_apps = run_command(list_dir_globs, enable_apps, check: true).stdout().split()
- if enable_apps.length() == 0
--    enable_apps = run_command(list_dir_globs, '*', check: true).stdout().split()
-+    enable_apps = run_command(list_dir_globs, '*/', check: true).stdout().split()
+@@ -5,15 +5,6 @@ if is_ms_compiler
+     subdir_done()
  endif
  
+-disable_apps = ',' + get_option('disable_apps')
+-disable_apps = run_command(list_dir_globs, disable_apps, check: true).stdout().split()
+-
+-enable_apps = ',' + get_option('enable_apps')
+-enable_apps = run_command(list_dir_globs, enable_apps, check: true).stdout().split()
+-if enable_apps.length() == 0
+-    enable_apps = run_command(list_dir_globs, '*', check: true).stdout().split()
+-endif
+-
  apps = [
--- 
-2.40.1.windows.1
-
+         'dumpcap',
+         'pdump',
+@@ -41,6 +32,15 @@ if get_option('tests')
+     apps += 'test'
+ endif
+ 
++disable_apps = ',' + get_option('disable_apps')
++disable_apps = run_command(list_dir_globs, disable_apps, check: true).stdout().split()
++
++enable_apps = ',' + get_option('enable_apps')
++enable_apps = run_command(list_dir_globs, enable_apps, check: true).stdout().split()
++if enable_apps.length() == 0
++    enable_apps = apps
++endif
++
+ default_cflags = machine_args + ['-DALLOW_EXPERIMENTAL_API']
+ default_ldflags = []
+ if get_option('default_library') == 'static' and not is_windows
