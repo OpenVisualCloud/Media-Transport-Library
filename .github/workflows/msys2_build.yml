@@ -49,8 +49,6 @@ jobs:
     defaults:
       run:
         shell: msys2 {0}
-    env:
-      PKG_CONFIG_PATH: /${{ matrix.sys }}/lib/pkgconfig/
     steps:
       - name: Harden Runner
         uses: step-security/harden-runner@8ca2b8b2ece13480cda6dacd3511b49857a23c09 # v2.5.1
