@@ -58,7 +58,7 @@ jobs:
         run: |
           pacman --noconfirm -Syuu
           pacman --noconfirm -S --needed --overwrite git base-devel unzip pactoys
-          pacboy --noconfirm -S --needed openssl:p gcc:p meson:p pkg-config:p json-c:p libpcap:p gtest:p SDL2:p SDL2_ttf:p dlfcn:p
+          pacboy --noconfirm -S --needed openssl:p gcc:p meson:p json-c:p libpcap:p gtest:p SDL2:p SDL2_ttf:p dlfcn:p
 
       - name: Checkout IMTL code
         uses: actions/checkout@8ade135a41bc03ea155e62e844d188df1ea18608 # v4.1.0

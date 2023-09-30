@@ -24,7 +24,7 @@ pacman -Syuu
 
 ```bash
 pacman -S git base-devel unzip pactoys
-pacboy -S gcc:p meson:p pkg-config:p openssl:p json-c:p libpcap:p dlfcn:p SDL2:p SDL2_ttf:p gtest:p
+pacboy -S gcc:p meson:p openssl:p json-c:p libpcap:p dlfcn:p SDL2:p SDL2_ttf:p gtest:p
 ```
 
 ## 4. Install tools
