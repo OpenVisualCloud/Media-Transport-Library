@@ -2,7 +2,7 @@
 # Copyright 2022 Intel Corporation
 
 project('linux-mtl', 'c', default_options: ['buildtype=release'],
-        version: run_command(find_program('cat', 'more'), files('../../../VERSION'), check: true).stdout().strip(),)
+        version: run_command(find_program('cat'), files('../../../VERSION'), check: true).stdout().strip(),)
 
 cc = meson.get_compiler('c')
 

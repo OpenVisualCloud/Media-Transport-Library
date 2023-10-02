@@ -58,17 +58,17 @@ jobs:
       - name: Install dependencies
         uses: msys2/setup-msys2@7efe20baefed56359985e327d329042cde2434ff # v2
         with:
-          msystem: ${{matrix.sys}}
+          msystem: ${{ matrix.sys }}
           update: true
           install: >-
             git
             base-devel
             unzip
           pacboy: >-
+            pkgconf:p
             openssl:p
             gcc:p
             meson:p
-            pkg-config:p
             json-c:p
             libpcap:p
             gtest:p

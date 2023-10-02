@@ -2,7 +2,7 @@
 # Copyright 2023 Intel Corporation
 
 project('mtl_preload', 'c', default_options: ['buildtype=release'],
-        version: run_command(find_program('cat', 'more'), files('../VERSION'), check: true).stdout().strip(),)
+        version: run_command(find_program('cat'), files('../VERSION'), check: true).stdout().strip(),)
 
 #detect os
 exec_env = host_machine.system()

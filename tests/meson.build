@@ -2,7 +2,7 @@
 # Copyright 2022 Intel Corporation
 
 project('mtl_test', 'cpp', default_options: ['buildtype=release'],
-        version: run_command(find_program('cat', 'more'), files('../VERSION'), check: true).stdout().strip(),)
+        version: run_command(find_program('cat'), files('../VERSION'), check: true).stdout().strip(),)
 
 exec_env = host_machine.system()
 set_variable('is_windows', exec_env == 'windows')

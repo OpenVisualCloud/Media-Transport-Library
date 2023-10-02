@@ -8,11 +8,11 @@ toolchain = cc.get_id()
 add_global_arguments('-DALLOW_EXPERIMENTAL_API', language : 'c')
 
 # add dependencies
-dpdk_dep = dependency('libdpdk', required : true)
 libm_dep = cc.find_library('m', required : true)
 libpthread_dep = cc.find_library('pthread', required : true)
 libdl_dep = cc.find_library('dl', required : true)
 if not is_windows
+  dpdk_dep = dependency('libdpdk', required : true)
   libnuma_dep = cc.find_library('numa', required : true)
   ws2_32_dep = [] # add this when the code uses hton/ntoh
 endif
@@ -55,15 +55,14 @@ endif
 
 if is_windows
   mtl_c_args += ['-DWINDOWSENV']
-  ws2_32_dep = cc.find_library('ws2_32', required: true) 
+  ws2_32_dep = cc.find_library('ws2_32', required: true)
+  dpdk_dep = dependency('libdpdk', required : true, static: true)
   libnuma_dep = []
   dpdk_root_dir = get_option('dpdk_root_dir')
   mtl_include_dir += include_directories('''.\windows\''')
   mtl_include_dir += include_directories(dpdk_root_dir + '''\lib\eal\windows\include\''')
-  dpdklibs = run_command('pkg-config', '--static', '--libs', 'libdpdk')
-  mtl_link_c_args += [dpdklibs.stdout().strip().split()]
   # generate .def file to be converted to .lib for msvc
-  mtl_link_c_args += ['-Wl,--output-def,libmtl.def'] 
+  mtl_link_c_args += ['-Wl,--output-def,libmtl.def']
 endif
 
 mtl_has_simd = true
