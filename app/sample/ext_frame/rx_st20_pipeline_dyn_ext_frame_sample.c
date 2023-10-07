@@ -37,7 +37,7 @@ static int rx_st20p_frame_available(void* priv) {
   return 0;
 }
 
-static int rx_st20p_query_ext_frame(void* priv, struct st20_ext_frame* ext_frame,
+static int rx_st20p_query_ext_frame(void* priv, struct st_ext_frame* ext_frame,
                                     struct st20_rx_frame_meta* meta) {
   struct rx_st20p_sample_ctx* s = priv;
   int i = s->ext_idx;
@@ -45,9 +45,9 @@ static int rx_st20p_query_ext_frame(void* priv, struct st20_ext_frame* ext_frame
 
   /* you can check the timestamp from lib by meta->timestamp */
 
-  ext_frame->buf_addr = s->ext_frames[i].buf_addr;
-  ext_frame->buf_iova = s->ext_frames[i].buf_iova;
-  ext_frame->buf_len = s->ext_frames[i].buf_len;
+  ext_frame->addr[0] = s->ext_frames[i].buf_addr;
+  ext_frame->iova[0] = s->ext_frames[i].buf_iova;
+  ext_frame->size = s->ext_frames[i].buf_len;
 
   /* save your private data here get it from st_frame.opaque */
   /* ext_frame->opaque = ?; */

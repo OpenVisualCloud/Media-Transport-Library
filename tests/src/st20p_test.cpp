@@ -499,25 +499,12 @@ static void test_internal_st20p_rx_frame_thread(void* args) {
 
   dbg("%s(%d), start\n", __func__, s->idx);
   while (!s->stop) {
-    if (s->rx_get_ext) {
-      frame =
-          st20p_rx_get_ext_frame((st20p_rx_handle)handle, &s->p_ext_frames[s->ext_idx]);
-      if (!frame) { /* no frame */
-        lck.lock();
-        if (!s->stop) s->cv.wait(lck);
-        lck.unlock();
-        continue;
-      }
-      s->ext_idx++;
-      if (s->ext_idx >= s->fb_cnt) s->ext_idx = 0;
-    } else {
-      frame = st20p_rx_get_frame((st20p_rx_handle)handle);
-      if (!frame) { /* no frame */
-        lck.lock();
-        if (!s->stop) s->cv.wait(lck);
-        lck.unlock();
-        continue;
-      }
+    frame = st20p_rx_get_frame((st20p_rx_handle)handle);
+    if (!frame) { /* no frame */
+      lck.lock();
+      if (!s->stop) s->cv.wait(lck);
+      lck.unlock();
+      continue;
     }
 
     if (frame->opaque) {
@@ -579,7 +566,7 @@ static void test_internal_st20p_rx_frame_thread(void* args) {
   dbg("%s(%d), stop\n", __func__, s->idx);
 }
 
-static int test_st20p_rx_query_ext_frame(void* priv, st20_ext_frame* ext_frame,
+static int test_st20p_rx_query_ext_frame(void* priv, st_ext_frame* ext_frame,
                                          struct st20_rx_frame_meta* meta) {
   tests_context* s = (tests_context*)priv;
   int i = s->ext_idx;
@@ -590,9 +577,7 @@ static int test_st20p_rx_query_ext_frame(void* priv, st20_ext_frame* ext_frame,
     return -EIO;
   }
 
-  ext_frame->buf_addr = s->p_ext_frames[i].addr[0];
-  ext_frame->buf_iova = s->p_ext_frames[i].iova[0];
-  ext_frame->buf_len = s->p_ext_frames[i].size;
+  *ext_frame = s->p_ext_frames[i];
   s->ext_fb_in_use[i] = true;
 
   ext_frame->opaque = &s->ext_fb_in_use[i];
@@ -610,9 +595,8 @@ struct st20p_rx_digest_test_para {
   int timeout_ms;
   bool tx_ext;
   bool rx_ext;
-  bool rx_get_ext;
+  bool rx_dedicated_ext;
   bool check_fps;
-  bool dynamic;
   enum st_test_level level;
   int fb_cnt;
   bool user_timestamp;
@@ -635,9 +619,8 @@ static void test_st20p_init_rx_digest_para(struct st20p_rx_digest_test_para* par
   para->timeout_ms = 0;
   para->tx_ext = false;
   para->rx_ext = false;
-  para->rx_get_ext = false;
+  para->rx_dedicated_ext = false;
   para->check_fps = true;
-  para->dynamic = false;
   para->level = ST_TEST_LEVEL_MANDATORY;
   para->user_timestamp = false;
   para->vsync = true;
@@ -889,7 +872,6 @@ static void st20p_rx_digest_test(enum st_fps fps[], int width[], int height[],
     test_ctx_rx[i]->fmt = rx_fmt[i];
     test_ctx_rx[i]->user_timestamp = para->user_timestamp;
     test_ctx_rx[i]->user_meta = para->user_meta;
-    test_ctx_rx[i]->rx_get_ext = para->rx_get_ext;
     test_ctx_rx[i]->frame_size =
         st_frame_size(rx_fmt[i], width[i], height[i], para->interlace);
     /* copy sha */
@@ -963,14 +945,17 @@ static void st20p_rx_digest_test(enum st_fps fps[], int width[], int height[],
     ops_rx.framebuff_cnt = test_ctx_rx[i]->fb_cnt;
     ops_rx.notify_frame_available = test_st20p_rx_frame_available;
     ops_rx.notify_event = test_ctx_notify_event;
-    if (para->dynamic) {
-      ops_rx.query_ext_frame = test_st20p_rx_query_ext_frame;
-      ops_rx.flags |= ST20P_RX_FLAG_RECEIVE_INCOMPLETE_FRAME;
-    } else if (para->rx_ext && !para->rx_get_ext) {
-      ops_rx.ext_frames = test_ctx_rx[i]->p_ext_frames;
+    if (para->rx_ext) {
+      if (para->rx_dedicated_ext) {
+        ops_rx.ext_frames = test_ctx_rx[i]->p_ext_frames;
+      } else {
+        ops_rx.flags |= ST20P_RX_FLAG_EXT_FRAME;
+        ops_rx.query_ext_frame = test_st20p_rx_query_ext_frame;
+        if (st_frame_fmt_equal_transport(ops_rx.output_fmt, ops_rx.transport_fmt))
+          ops_rx.flags |= ST20P_RX_FLAG_RECEIVE_INCOMPLETE_FRAME;
+      }
     }
     if (para->vsync) ops_rx.flags |= ST20P_RX_FLAG_ENABLE_VSYNC;
-    if (para->rx_get_ext) ops_rx.flags |= ST20P_RX_FLAG_EXT_FRAME;
     if (para->pkt_convert) ops_rx.flags |= ST20P_RX_FLAG_PKT_CONVERT;
 
     struct st_rx_rtcp_ops ops_rx_rtcp;
@@ -1075,10 +1060,7 @@ static void st20p_rx_digest_test(enum st_fps fps[], int width[], int height[],
     info("%s, session %d fb_rec %d framerate %f:%f\n", __func__, i,
          test_ctx_rx[i]->fb_rec, framerate_rx[i], expect_framerate_rx[i]);
     EXPECT_GT(test_ctx_rx[i]->fb_rec, 0);
-    if (para->dynamic)
-      EXPECT_LE(test_ctx_rx[i]->incomplete_frame_cnt, 4);
-    else
-      EXPECT_LE(test_ctx_rx[i]->incomplete_frame_cnt, 2);
+    EXPECT_LE(test_ctx_rx[i]->incomplete_frame_cnt, 4);
     EXPECT_EQ(test_ctx_rx[i]->sha_fail_cnt, 0);
     EXPECT_LE(test_ctx_rx[i]->user_meta_fail_cnt, 2);
     if (para->check_fps) {
@@ -1312,7 +1294,6 @@ TEST(St20p, rx_ext_digest_1080p_no_convert_s2) {
   para.sessions = 2;
   para.device = ST_PLUGIN_DEVICE_TEST_INTERNAL;
   para.rx_ext = true;
-  para.level = ST_TEST_LEVEL_ALL;
 
   st20p_rx_digest_test(fps, width, height, tx_fmt, t_fmt, rx_fmt, &para);
 }
@@ -1350,11 +1331,12 @@ TEST(St20p, rx_ext_digest_1080p_packet_convert_s2) {
   para.rx_ext = true;
   para.check_fps = false;
   para.pkt_convert = true;
+  para.level = ST_TEST_LEVEL_ALL;
 
   st20p_rx_digest_test(fps, width, height, tx_fmt, t_fmt, rx_fmt, &para);
 }
 
-TEST(St20p, tx_rx_ext_digest_1080p_no_convert_s2) {
+TEST(St20p, ext_digest_1080p_no_convert_s2) {
   enum st_fps fps[2] = {ST_FPS_P50, ST_FPS_P59_94};
   int width[2] = {1920, 1920};
   int height[2] = {1080, 1080};
@@ -1375,7 +1357,7 @@ TEST(St20p, tx_rx_ext_digest_1080p_no_convert_s2) {
   st20p_rx_digest_test(fps, width, height, tx_fmt, t_fmt, rx_fmt, &para);
 }
 
-TEST(St20p, tx_rx_ext_digest_1080p_convert_s2) {
+TEST(St20p, ext_digest_1080p_convert_s2) {
   enum st_fps fps[2] = {ST_FPS_P50, ST_FPS_P59_94};
   int width[2] = {1920, 1920};
   int height[2] = {1080, 1080};
@@ -1395,27 +1377,7 @@ TEST(St20p, tx_rx_ext_digest_1080p_convert_s2) {
   st20p_rx_digest_test(fps, width, height, tx_fmt, t_fmt, rx_fmt, &para);
 }
 
-TEST(St20p, rx_dynamic_ext_digest_1080p_no_convert_s2) {
-  enum st_fps fps[2] = {ST_FPS_P29_97, ST_FPS_P59_94};
-  int width[2] = {1920, 1280};
-  int height[2] = {1080, 720};
-  enum st_frame_fmt tx_fmt[2] = {ST_FRAME_FMT_YUV422RFC4175PG2BE10,
-                                 ST_FRAME_FMT_YUV422RFC4175PG2BE10};
-  enum st20_fmt t_fmt[2] = {ST20_FMT_YUV_422_10BIT, ST20_FMT_YUV_422_10BIT};
-  enum st_frame_fmt rx_fmt[2] = {ST_FRAME_FMT_YUV422RFC4175PG2BE10,
-                                 ST_FRAME_FMT_YUV422RFC4175PG2BE10};
-
-  struct st20p_rx_digest_test_para para;
-  test_st20p_init_rx_digest_para(&para);
-  para.sessions = 2;
-  para.device = ST_PLUGIN_DEVICE_TEST_INTERNAL;
-  para.rx_ext = true;
-  para.dynamic = true;
-
-  st20p_rx_digest_test(fps, width, height, tx_fmt, t_fmt, rx_fmt, &para);
-}
-
-TEST(St20p, rx_get_ext_digest_1080p_convert_s2) {
+TEST(St20p, rx_dedicated_ext_digest_1080p_convert_s2) {
   enum st_fps fps[2] = {ST_FPS_P29_97, ST_FPS_P59_94};
   int width[2] = {1920, 1280};
   int height[2] = {1080, 720};
@@ -1428,12 +1390,12 @@ TEST(St20p, rx_get_ext_digest_1080p_convert_s2) {
   para.sessions = 2;
   para.device = ST_PLUGIN_DEVICE_TEST_INTERNAL;
   para.rx_ext = true;
-  para.rx_get_ext = true;
+  para.rx_dedicated_ext = true;
 
   st20p_rx_digest_test(fps, width, height, tx_fmt, t_fmt, rx_fmt, &para);
 }
 
-TEST(St20p, tx_rx_ext_digest_1080p_convert_with_padding_s2) {
+TEST(St20p, ext_digest_1080p_convert_with_padding_s2) {
   enum st_fps fps[2] = {ST_FPS_P59_94, ST_FPS_P59_94};
   int width[2] = {1920, 1920};
   int height[2] = {1080, 1080};
@@ -1453,7 +1415,7 @@ TEST(St20p, tx_rx_ext_digest_1080p_convert_with_padding_s2) {
   st20p_rx_digest_test(fps, width, height, tx_fmt, t_fmt, rx_fmt, &para);
 }
 
-TEST(St20p, rx_get_ext_digest_1080p_convert_with_padding_s2) {
+TEST(St20p, rx_dedicated_ext_digest_1080p_convert_with_padding_s2) {
   enum st_fps fps[2] = {ST_FPS_P59_94, ST_FPS_P59_94};
   int width[2] = {1920, 1920};
   int height[2] = {1080, 1080};
@@ -1467,14 +1429,14 @@ TEST(St20p, rx_get_ext_digest_1080p_convert_with_padding_s2) {
   para.device = ST_PLUGIN_DEVICE_TEST_INTERNAL;
   para.tx_ext = true;
   para.rx_ext = true;
-  para.rx_get_ext = true;
+  para.rx_dedicated_ext = true;
   para.check_fps = false;
   para.line_padding_size = 512;
 
   st20p_rx_digest_test(fps, width, height, tx_fmt, t_fmt, rx_fmt, &para);
 }
 
-TEST(St20p, tx_rx_ext_digest_1080p_packet_convert_with_padding_s2) {
+TEST(St20p, ext_digest_1080p_packet_convert_with_padding_s2) {
   enum st_fps fps[2] = {ST_FPS_P59_94, ST_FPS_P59_94};
   int width[2] = {1920, 1920};
   int height[2] = {1080, 1080};
@@ -1488,6 +1450,7 @@ TEST(St20p, tx_rx_ext_digest_1080p_packet_convert_with_padding_s2) {
   para.device = ST_PLUGIN_DEVICE_TEST_INTERNAL;
   para.tx_ext = true;
   para.rx_ext = true;
+  para.rx_dedicated_ext = true;
   para.check_fps = false;
   para.line_padding_size = 1024;
   para.pkt_convert = true;
