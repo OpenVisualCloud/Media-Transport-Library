@@ -59,6 +59,7 @@ enum sample_args_cmd {
   SAMPLE_ARG_RX_DUMP,
   SAMPLE_ARG_USE_CPU_COPY,
   SAMPLE_ARG_USER_META,
+  SAMPLE_ARG_LIB_PTP,
 
   SAMPLE_ARG_UDP_MODE = 0x300,
   SAMPLE_ARG_UDP_LEN,
@@ -108,6 +109,7 @@ static struct option sample_args_options[] = {
     {"ext_frame", no_argument, 0, SAMPLE_ARG_EXT_FRAME},
     {"st22_codec", required_argument, 0, SAMPLE_ARG_ST22_CODEC},
     {"pipeline_fmt", required_argument, 0, SAMPLE_ARG_PIPELINE_FRAME_FMT},
+    {"ptp", no_argument, 0, SAMPLE_ARG_LIB_PTP},
 
     {"udp_mode", required_argument, 0, SAMPLE_ARG_UDP_MODE},
     {"udp_len", required_argument, 0, SAMPLE_ARG_UDP_LEN},
@@ -243,6 +245,9 @@ static int _sample_parse_args(struct st_sample_context* ctx, int argc, char** ar
         break;
       case SAMPLE_ARG_PTP_TSC:
         p->flags |= MTL_FLAG_PTP_SOURCE_TSC;
+        break;
+      case SAMPLE_ARG_LIB_PTP:
+        p->flags |= MTL_FLAG_PTP_ENABLE;
         break;
       case SAMPLE_ARG_UDP_LCORE:
         p->flags |= MTL_FLAG_UDP_LCORE;
