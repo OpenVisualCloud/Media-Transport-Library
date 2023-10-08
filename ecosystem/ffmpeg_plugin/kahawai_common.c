@@ -39,15 +39,19 @@ mtl_handle kahawai_init(char* port, char* local_addr, int enc_session_cnt,
   param.num_ports = 1;
 
   snprintf(param.port[MTL_PORT_P], MTL_PORT_MAX_LEN, "%s", port);
+  param.pmd[MTL_PORT_P] = mtl_pmd_by_port_name(param.port[MTL_PORT_P]);
 
-  if (NULL == local_addr) {
-    av_log(NULL, AV_LOG_ERROR, "Invalid local IP address\n");
-    return NULL;
-  } else if (sscanf(local_addr, "%hhu.%hhu.%hhu.%hhu", &param.sip_addr[MTL_PORT_P][0],
-                    &param.sip_addr[MTL_PORT_P][1], &param.sip_addr[MTL_PORT_P][2],
-                    &param.sip_addr[MTL_PORT_P][3]) != MTL_IP_ADDR_LEN) {
-    av_log(NULL, AV_LOG_ERROR, "Failed to parse local IP address: %s\n", local_addr);
-    return NULL;
+  if (param.pmd[MTL_PORT_P] == MTL_PMD_DPDK_USER) {
+    /* check ip for dpdk based pmd */
+    if (NULL == local_addr) {
+      av_log(NULL, AV_LOG_ERROR, "Invalid local IP address\n");
+      return NULL;
+    } else if (sscanf(local_addr, "%hhu.%hhu.%hhu.%hhu", &param.sip_addr[MTL_PORT_P][0],
+                      &param.sip_addr[MTL_PORT_P][1], &param.sip_addr[MTL_PORT_P][2],
+                      &param.sip_addr[MTL_PORT_P][3]) != MTL_IP_ADDR_LEN) {
+      av_log(NULL, AV_LOG_ERROR, "Failed to parse local IP address: %s\n", local_addr);
+      return NULL;
+    }
   }
 
   if (enc_session_cnt > 0) {

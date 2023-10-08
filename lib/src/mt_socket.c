@@ -180,6 +180,10 @@ int mt_socket_get_numa(const char* if_name) {
 
   fclose(file);
   dbg("%s, numa_node %d for %s\n", __func__, numa_node, if_name);
+  if (SOCKET_ID_ANY == numa_node) {
+    numa_node = 0;
+    info("%s, direct soc_id from SOCKET_ID_ANY to 0 for %s\n", __func__, if_name);
+  }
   return numa_node;
 }
 
