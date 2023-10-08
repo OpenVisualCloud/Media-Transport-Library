@@ -100,6 +100,7 @@ uint16_t mt_tx_socket_burst(struct mt_tx_socket_entry* entry, struct rte_mbuf** 
       err("%s(%d,%d), not ipv4\n", __func__, port, fd);
       goto done;
     }
+    // mt_mbuf_dump(port, 0, "socket_tx", m);
 
     void* payload = rte_pktmbuf_mtod_offset(m, void*, sizeof(struct mt_udp_hdr));
     ssize_t payload_len = m->data_len - sizeof(struct mt_udp_hdr);

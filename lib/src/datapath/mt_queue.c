@@ -260,8 +260,8 @@ int mt_dp_queue_init(struct mtl_main_impl* impl) {
 
   for (int i = 0; i < num_ports; i++) {
     dp = impl->dp[i];
-    /* no sys queue for kernel based pmd */
-    if (mt_drv_no_cni(impl, i)) continue;
+    /* no sys tx queue */
+    if (mt_drv_no_sys_txq(impl, i)) continue;
 
     struct mt_txq_flow flow;
     memset(&flow, 0, sizeof(flow));

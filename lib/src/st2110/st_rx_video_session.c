@@ -2975,7 +2975,7 @@ static int rv_init_hw(struct mtl_main_impl* impl, struct st_rx_video_session_imp
     } else {
       flow.hdr_split = false;
     }
-    if (mt_has_cni_rx(impl)) flow.use_cni_queue = true;
+    if (mt_has_cni_rx(impl, port)) flow.use_cni_queue = true;
 
     /* no flow for data path only */
     if (ops->flags & ST20_RX_FLAG_DATA_PATH_ONLY) {

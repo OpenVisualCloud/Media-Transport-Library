@@ -915,6 +915,7 @@ static int ptp_parse_announce(struct mt_ptp_impl* ptp, struct mt_ptp_announce_ms
 
       rte_memcpy(dst_udp, ipv4_hdr, sizeof(*dst_udp));
       rte_memcpy(&dst_udp->ip.src_addr, &ptp->sip_addr[0], MTL_IP_ADDR_LEN);
+      rte_memcpy(&dst_udp->ip.dst_addr, &ptp->mcast_group_addr[0], MTL_IP_ADDR_LEN);
       dst_udp->ip.total_length =
           htons(sizeof(struct mt_ipv4_udp) + sizeof(struct mt_ptp_sync_msg));
       dst_udp->ip.hdr_checksum = 0;
@@ -1039,6 +1040,42 @@ static void phc2sys_init(struct mt_ptp_impl* ptp) {
   info("%s(%d), succ\n", __func__, ptp->port);
 }
 
+static int ptp_rxq_mbuf_handle(struct mt_ptp_impl* ptp, struct rte_mbuf* m) {
+  struct mt_ipv4_udp* ipv4_hdr;
+  struct mt_ptp_header* hdr;
+  size_t hdr_offset;
+
+  hdr_offset = sizeof(struct rte_ether_hdr);
+  ipv4_hdr = rte_pktmbuf_mtod_offset(m, struct mt_ipv4_udp*, hdr_offset);
+  hdr_offset += sizeof(*ipv4_hdr);
+  hdr = rte_pktmbuf_mtod_offset(m, struct mt_ptp_header*, sizeof(struct mt_udp_hdr));
+  mt_ptp_parse(ptp, hdr, false, MT_PTP_L4, m->timesync, ipv4_hdr);
+
+  return 0;
+}
+
+static int ptp_rxq_tasklet_handler(void* priv) {
+  struct mt_ptp_impl* ptp = priv;
+  uint16_t rx;
+  struct rte_mbuf* pkt[MT_PTP_RX_BURST_SIZE];
+
+  /* MT_PTP_UDP_GEN_PORT */
+  rx = mt_rxq_burst(ptp->gen_rxq, &pkt[0], MT_PTP_RX_BURST_SIZE);
+  for (uint16_t i = 0; i < rx; i++) {
+    ptp_rxq_mbuf_handle(ptp, pkt[i]);
+  }
+  rte_pktmbuf_free_bulk(&pkt[0], rx);
+
+  /* MT_PTP_UDP_EVENT_PORT */
+  rx = mt_rxq_burst(ptp->event_rxq, &pkt[0], MT_PTP_RX_BURST_SIZE);
+  for (uint16_t i = 0; i < rx; i++) {
+    ptp_rxq_mbuf_handle(ptp, pkt[i]);
+  }
+  rte_pktmbuf_free_bulk(&pkt[0], rx);
+
+  return 0;
+}
+
 static int ptp_init(struct mtl_main_impl* impl, struct mt_ptp_impl* ptp,
                     enum mtl_port port) {
   uint16_t port_id = mt_port_id(impl, port);
@@ -1059,7 +1096,7 @@ static int ptp_init(struct mtl_main_impl* impl, struct mt_ptp_impl* ptp,
   memcpy(&id[0], &mac.addr_bytes[0], 3);
   memcpy(&id[3], &magic, 2);
   memcpy(&id[5], &mac.addr_bytes[3], 3);
-  our_port_id->port_number = htons(port_id);  // now allways
+  our_port_id->port_number = htons(port_id);  // now always
   // ptp_print_port_id(port_id, our_port_id);
 
   rte_memcpy(ip, mt_sip_addr(impl, port), MTL_IP_ADDR_LEN);
@@ -1109,7 +1146,39 @@ static int ptp_init(struct mtl_main_impl* impl, struct mt_ptp_impl* ptp,
 
   inet_pton(AF_INET, "224.0.1.129", ptp->mcast_group_addr);
 
-  /* no need to create rx queue, always use CNI path */
+  /* create rx queue if no CNI path */
+  if (!mt_has_cni(impl, port)) {
+    struct mt_rxq_flow flow;
+    memset(&flow, 0, sizeof(flow));
+    rte_memcpy(flow.dip_addr, ptp->mcast_group_addr, MTL_IP_ADDR_LEN);
+    rte_memcpy(flow.sip_addr, mt_sip_addr(impl, port), MTL_IP_ADDR_LEN);
+    flow.dst_port = MT_PTP_UDP_GEN_PORT;
+
+    ptp->gen_rxq = mt_rxq_get(impl, port, &flow);
+    if (!ptp->gen_rxq) {
+      err("%s(%d), gen_rxq get fail\n", __func__, port);
+      return -ENOMEM;
+    }
+
+    flow.dst_port = MT_PTP_UDP_EVENT_PORT;
+    ptp->event_rxq = mt_rxq_get(impl, port, &flow);
+    if (!ptp->event_rxq) {
+      err("%s(%d), event_rxq get fail\n", __func__, port);
+      return -ENOMEM;
+    }
+
+    struct mt_sch_tasklet_ops ops;
+    memset(&ops, 0x0, sizeof(ops));
+    ops.priv = ptp;
+    ops.name = "ptp";
+    ops.handler = ptp_rxq_tasklet_handler;
+    ptp->rxq_tasklet = mt_sch_register_tasklet(impl->main_sch, &ops);
+    if (!ptp->rxq_tasklet) {
+      err("%s(%d), rxq tasklet fail\n", __func__, port);
+      mt_cni_uinit(impl);
+      return -EIO;
+    }
+  }
 
   /* join mcast */
   ret = mt_mcast_join(impl, mt_ip_to_u32(ptp->mcast_group_addr), port);
@@ -1146,6 +1215,19 @@ static int ptp_uinit(struct mtl_main_impl* impl, struct mt_ptp_impl* ptp) {
   mt_mcast_l2_leave(impl, &ptp_l2_multicast_eaddr, port);
   mt_mcast_leave(impl, mt_ip_to_u32(ptp->mcast_group_addr), port);
 
+  if (ptp->rxq_tasklet) {
+    mt_sch_unregister_tasklet(ptp->rxq_tasklet);
+    ptp->rxq_tasklet = NULL;
+  }
+  if (ptp->gen_rxq) {
+    mt_rxq_put(ptp->gen_rxq);
+    ptp->gen_rxq = NULL;
+  }
+  if (ptp->event_rxq) {
+    mt_rxq_put(ptp->event_rxq);
+    ptp->event_rxq = NULL;
+  }
+
   info("%s(%d), succ\n", __func__, port);
   return 0;
 }
@@ -1157,7 +1239,7 @@ int mt_ptp_parse(struct mt_ptp_impl* ptp, struct mt_ptp_header* hdr, bool vlan,
 
   if (!ptp->active) return 0;
 
-  // dbg("%s(%d), message_type %d\n", __func__, port, hdr->message_type);
+  dbg("%s(%d), message_type %d\n", __func__, port, hdr->message_type);
   // mt_ptp_print_port_id(port, &hdr->source_port_identity);
 
   if (hdr->message_type != PTP_ANNOUNCE) {
@@ -1275,9 +1357,6 @@ int mt_ptp_init(struct mtl_main_impl* impl) {
   int ret;
 
   for (int i = 0; i < num_ports; i++) {
-    /* no ptp if no cni */
-    if (mt_drv_no_cni(impl, i)) continue;
-
     struct mt_ptp_impl* ptp = mt_rte_zmalloc_socket(sizeof(*ptp), socket);
     if (!ptp) {
       err("%s(%d), ptp malloc fail\n", __func__, i);

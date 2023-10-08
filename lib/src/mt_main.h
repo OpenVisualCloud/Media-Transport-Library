@@ -194,6 +194,11 @@ struct mt_ptp_impl {
   bool qbv_enabled;
   int64_t no_timesync_delta;
 
+  /* for no cni case */
+  struct mt_rxq_entry* gen_rxq;   /* for MT_PTP_UDP_GEN_PORT */
+  struct mt_rxq_entry* event_rxq; /* for MT_PTP_UDP_EVENT_PORT */
+  struct mt_sch_tasklet_impl* rxq_tasklet;
+
   struct mt_phc2sys_impl phc2sys;
   bool phc2sys_active;
   struct mt_pi_servo servo; /* PI for PTP */
@@ -342,9 +347,6 @@ struct mt_cni_entry {
 
 struct mt_cni_impl {
   struct mtl_main_impl* parent;
-
-  bool used; /* if enable cni */
-  int num_ports;
 
   pthread_t tid; /* thread id for rx */
   rte_atomic32_t stop_thread;
@@ -591,7 +593,7 @@ struct mt_tx_queue {
 #define MT_DRV_F_USE_MC_ADDR_LIST (MTL_BIT64(0))
 /* no rte_eth_stats_reset support */
 #define MT_DRV_F_NO_STATUS_RESET (MTL_BIT64(1))
-/* no CNI support */
+/* no CNI support for RX */
 #define MT_DRV_F_NO_CNI (MTL_BIT64(2))
 /* the driver is not dpdk based */
 #define MT_DRV_F_NOT_DPDK_PMD (MTL_BIT64(3))
@@ -603,6 +605,8 @@ struct mt_tx_queue {
 #define MT_DRV_F_RX_NO_FLOW (MTL_BIT64(6))
 /* mcast control in data path, for MTL_PMD_KERNEL_SOCKET */
 #define MT_DRV_F_MCAST_IN_DP (MTL_BIT64(7))
+/* no sys tx queue support */
+#define MT_DRV_F_NO_SYS_TX_QUEUE (MTL_BIT64(8))
 
 struct mt_dev_driver_info {
   char* name;
@@ -685,6 +689,9 @@ struct mt_interface {
 
   uint16_t virtio_port_id; /* virtio_user port id */
   bool virtio_port_active; /* virtio_user port active */
+
+  /* the mac for kernel socket based transport */
+  struct rte_ether_addr k_mac_addr;
 
   void* xdp;
 };
@@ -1111,6 +1118,13 @@ static inline bool mt_drv_no_cni(struct mtl_main_impl* impl, enum mtl_port port)
     return false;
 }
 
+static inline bool mt_drv_no_sys_txq(struct mtl_main_impl* impl, enum mtl_port port) {
+  if (mt_if(impl, port)->drv_info.flags & MT_DRV_F_NO_SYS_TX_QUEUE)
+    return true;
+  else
+    return false;
+}
+
 static inline bool mt_pmd_is_dpdk_af_xdp(struct mtl_main_impl* impl, enum mtl_port port) {
   if (MTL_PMD_DPDK_AF_XDP == mt_get_user_params(impl)->pmd[port])
     return true;
@@ -1251,8 +1265,15 @@ static inline bool mt_has_tx_no_chain(struct mtl_main_impl* impl) {
     return false;
 }
 
-static inline bool mt_has_cni_rx(struct mtl_main_impl* impl) {
-  if (mt_get_user_params(impl)->flags & MTL_FLAG_RX_USE_CNI)
+static inline bool mt_has_cni(struct mtl_main_impl* impl, enum mtl_port port) {
+  if (impl->cni.entries[port].rxq)
+    return true;
+  else
+    return false;
+}
+
+static inline bool mt_has_cni_rx(struct mtl_main_impl* impl, enum mtl_port port) {
+  if ((mt_get_user_params(impl)->flags & MTL_FLAG_RX_USE_CNI) && mt_has_cni(impl, port))
     return true;
   else
     return false;
