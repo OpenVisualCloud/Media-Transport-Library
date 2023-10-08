@@ -472,7 +472,8 @@ struct mtl_init_params {
    * Static(default) or DHCP(please make sure you have a DHCP server inside LAN)
    */
   enum mtl_net_proto net_proto[MTL_PORT_MAX];
-  /** Mandatory. dpdk user pmd(default) or af_xdp */
+  /** Mandatory. dpdk user pmd(default) or af_xdp. Use mtl_pmd_by_port_name helper to get
+   * PMD type */
   enum mtl_pmd_type pmd[MTL_PORT_MAX];
   /**
    * Mandatory. Max NIC tx queues requested the lib to support.
