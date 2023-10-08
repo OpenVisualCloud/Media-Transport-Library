@@ -378,7 +378,7 @@ int mt_macaddr_get(struct mtl_main_impl* impl, enum mtl_port port,
   struct mt_interface* inf = mt_if(impl, port);
 
   if (inf->drv_info.flags & MT_DRV_F_NOT_DPDK_PMD) {
-    /* do we has mac for kernel socket based transport */
+    mtl_memcpy(mac_addr, &inf->k_mac_addr, sizeof(*mac_addr));
     return 0;
   }
 

@@ -72,14 +72,16 @@ static const struct mt_dev_driver_info dev_drvs[] = {
         .port_type = MT_PORT_DPDK_AF_XDP,
         .drv_type = MT_DRV_DPDK_AF_XDP,
         .flow_type = MT_FLOW_ALL,
-        .flags = MT_DRV_F_NO_CNI | MT_DRV_F_USE_KERNEL_CTL | MT_DRV_F_RX_POOL_COMMON,
+        .flags = MT_DRV_F_NO_CNI | MT_DRV_F_USE_KERNEL_CTL | MT_DRV_F_RX_POOL_COMMON |
+                 MT_DRV_F_NO_SYS_TX_QUEUE,
     },
     {
         .name = "net_af_packet",
         .port_type = MT_PORT_DPDK_AF_PKT,
         .drv_type = MT_DRV_DPDK_AF_PKT,
         .flow_type = MT_FLOW_ALL,
-        .flags = MT_DRV_F_USE_KERNEL_CTL | MT_DRV_F_RX_POOL_COMMON | MT_DRV_F_RX_NO_FLOW,
+        .flags = MT_DRV_F_USE_KERNEL_CTL | MT_DRV_F_RX_POOL_COMMON | MT_DRV_F_RX_NO_FLOW |
+                 MT_DRV_F_NO_SYS_TX_QUEUE,
     },
     {
         .name = "kernel_socket",
@@ -94,7 +96,8 @@ static const struct mt_dev_driver_info dev_drvs[] = {
         .port_type = MT_PORT_NATIVE_AF_XDP,
         .drv_type = MT_DRV_NATIVE_AF_XDP,
         .flow_type = MT_FLOW_ALL,
-        .flags = MT_DRV_F_NOT_DPDK_PMD | MT_DRV_F_NO_CNI | MT_DRV_F_USE_KERNEL_CTL,
+        .flags = MT_DRV_F_NOT_DPDK_PMD | MT_DRV_F_NO_CNI | MT_DRV_F_USE_KERNEL_CTL |
+                 MT_DRV_F_NO_SYS_TX_QUEUE | MT_DRV_F_NO_SYS_TX_QUEUE,
     },
 };
 
@@ -2274,6 +2277,11 @@ int mt_dev_if_init(struct mtl_main_impl* impl) {
       err("%s(%d), pad alloc fail\n", __func__, i);
       mt_dev_if_uinit(impl);
       return -ENOMEM;
+    }
+
+    if (inf->drv_info.flags & MT_DRV_F_NOT_DPDK_PMD) {
+      /* get mac */
+      mt_socket_get_if_mac(mt_kernel_if_name(impl, i), &inf->k_mac_addr);
     }
 
     if (mt_pmd_is_native_af_xdp(impl, i)) {

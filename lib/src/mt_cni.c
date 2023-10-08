@@ -260,6 +260,7 @@ static int cni_rx_handle(struct mt_cni_entry* cni, struct rte_mbuf* m) {
         hdr_offset += sizeof(struct mt_ipv4_udp);
         if (ptp && (src_port == MT_PTP_UDP_EVENT_PORT ||
                     src_port == MT_PTP_UDP_GEN_PORT)) { /* ptp pkt*/
+          dbg("%s(%d), ptp msg src_port %u\n", __func__, port, src_port);
           ptp_hdr = rte_pktmbuf_mtod_offset(m, struct mt_ptp_header*, hdr_offset);
           mt_ptp_parse(ptp, ptp_hdr, vlan, MT_PTP_L4, m->timesync, ipv4_hdr);
         } else if (dhcp && src_port == MT_DHCP_UDP_SERVER_PORT) { /* dhcp pkt */
@@ -293,18 +294,17 @@ static int cni_traffic(struct mtl_main_impl* impl) {
 
   for (int i = 0; i < num_ports; i++) {
     cni = cni_get_entry(impl, i);
+    if (!cni->rxq) continue;
 
     mt_tap_handle(impl, i);
 
     /* rx from cni rx queue */
-    if (cni->rxq) {
-      rx = mt_rxq_burst(cni->rxq, pkts_rx, ST_CNI_RX_BURST_SIZE);
-      if (rx > 0) {
-        cni->eth_rx_cnt += rx;
-        for (uint16_t ri = 0; ri < rx; ri++) cni_rx_handle(cni, pkts_rx[ri]);
-        mt_free_mbufs(&pkts_rx[0], rx);
-        done = false;
-      }
+    rx = mt_rxq_burst(cni->rxq, pkts_rx, ST_CNI_RX_BURST_SIZE);
+    if (rx > 0) {
+      cni->eth_rx_cnt += rx;
+      for (uint16_t ri = 0; ri < rx; ri++) cni_rx_handle(cni, pkts_rx[ri]);
+      mt_free_mbufs(&pkts_rx[0], rx);
+      done = false;
     }
 
     cni_burst_from_kernel(cni);
@@ -428,29 +428,30 @@ static int cni_queues_init(struct mtl_main_impl* impl) {
   return 0;
 }
 
-static bool cni_if_need(struct mtl_main_impl* impl) {
+static bool cni_need_tasklet(struct mt_cni_impl* cni_impl) {
+  struct mtl_main_impl* impl = cni_impl->parent;
+  struct mt_cni_entry* cni;
   int num_ports = mt_num_ports(impl);
-  struct mt_interface* inf;
 
   for (int i = 0; i < num_ports; i++) {
-    inf = mt_if(impl, i);
-
-    if (!(inf->drv_info.flags & MT_DRV_F_NO_CNI)) return true;
+    cni = &cni_impl->entries[i];
+    if (cni->rxq) return true;
   }
 
+  /* no cni in all ports */
   return false;
 }
 
 static int cni_stat(void* priv) {
   struct mt_cni_impl* cni_impl = priv;
+  struct mtl_main_impl* impl = cni_impl->parent;
   struct mt_cni_entry* cni;
-  int num_ports = cni_impl->num_ports;
-  double dump_period_s = mt_stat_dump_period_s(cni_impl->parent);
-
-  if (!cni_impl->used) return 0;
+  int num_ports = mt_num_ports(impl);
+  double dump_period_s = mt_stat_dump_period_s(impl);
 
   for (int i = 0; i < num_ports; i++) {
     cni = &cni_impl->entries[i];
+    if (!cni->rxq) continue; /* no cni */
 
     notice("CNI(%d): eth_rx_rate %f Mb/s, eth_rx_cnt %u\n", i,
            (double)cni->eth_rx_bytes * 8 / dump_period_s / MTL_STAT_M_UNIT,
@@ -477,17 +478,14 @@ int mt_cni_init(struct mtl_main_impl* impl) {
   int ret;
   struct mt_cni_impl* cni_impl = mt_get_cni(impl);
   struct mtl_init_params* p = mt_get_user_params(impl);
+  int num_ports = mt_num_ports(impl);
 
   cni_impl->parent = impl;
 
-  cni_impl->used = cni_if_need(impl);
-  if (!cni_impl->used) return 0;
-
-  cni_impl->num_ports = mt_num_ports(impl);
   cni_impl->lcore_tasklet = (p->flags & MTL_FLAG_CNI_THREAD) ? false : true;
   rte_atomic32_set(&cni_impl->stop_thread, 0);
 
-  for (int i = 0; i < cni_impl->num_ports; i++) {
+  for (int i = 0; i < num_ports; i++) {
     struct mt_cni_entry* cni = cni_get_entry(impl, i);
     cni->port = i;
     cni->impl = impl;
@@ -500,6 +498,11 @@ int mt_cni_init(struct mtl_main_impl* impl) {
   if (ret < 0) {
     mt_cni_uinit(impl);
     return ret;
+  }
+
+  if (!cni_need_tasklet(cni_impl)) {
+    info("%s, no cni for all ports\n", __func__);
+    return 0;
   }
 
   ret = mt_tap_init(impl);
@@ -536,12 +539,11 @@ int mt_cni_init(struct mtl_main_impl* impl) {
 
 int mt_cni_uinit(struct mtl_main_impl* impl) {
   struct mt_cni_impl* cni_impl = mt_get_cni(impl);
+  int num_ports = mt_num_ports(impl);
   struct mt_cni_udp_detect_entry* udp_detect;
   struct mt_csq_entry* csq;
 
-  if (!cni_impl->used) return 0;
-
-  for (int i = 0; i < cni_impl->num_ports; i++) {
+  for (int i = 0; i < num_ports; i++) {
     struct mt_cni_entry* cni = cni_get_entry(impl, i);
 
     /* free all udp queue entry */
@@ -563,6 +565,11 @@ int mt_cni_uinit(struct mtl_main_impl* impl) {
     cni_impl->tasklet = NULL;
   }
 
+  if (!cni_need_tasklet(cni_impl)) {
+    info("%s, no cni for all ports\n", __func__);
+    return 0;
+  }
+
   mt_stat_unregister(impl, cni_stat, cni_impl);
 
   mt_cni_stop(impl);
@@ -579,7 +586,7 @@ int mt_cni_start(struct mtl_main_impl* impl) {
   struct mt_cni_impl* cni = mt_get_cni(impl);
   int ret;
 
-  if (!cni->used) return 0;
+  if (!cni_need_tasklet(cni)) return 0;
 
   ret = cni_traffic_thread_start(impl, cni);
   if (ret < 0) return ret;
@@ -589,8 +596,6 @@ int mt_cni_start(struct mtl_main_impl* impl) {
 
 int mt_cni_stop(struct mtl_main_impl* impl) {
   struct mt_cni_impl* cni = mt_get_cni(impl);
-
-  if (!cni->used) return 0;
 
   cni_traffic_thread_stop(cni);
 
