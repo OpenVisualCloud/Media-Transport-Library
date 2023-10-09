@@ -872,9 +872,8 @@ static int tv_init_rtcp(struct mtl_main_impl* impl, struct st_tx_video_sessions_
     }
     /* create flow to receive rtcp nack */
     memset(&flow, 0, sizeof(flow));
-    flow.no_ip_flow = true;
+    flow.flags = MT_RXQ_FLOW_F_NO_IP | MT_RXQ_FLOW_F_FORCE_CNI;
     flow.dst_port = s->st20_dst_port[i] + 1;
-    flow.use_cni_queue = true;
     s->rtcp_q[i] = mt_rxq_get(impl, port, &flow);
     if (!s->rtcp_q[i]) {
       err("%s(%d,%d), mt_rxq_get fail on port %d\n", __func__, mgr_idx, idx, i);
@@ -2419,7 +2418,8 @@ static int tv_init_hw(struct mtl_main_impl* impl, struct st_tx_video_sessions_mg
     flow.bytes_per_sec = tv_rl_bps(s);
     mtl_memcpy(&flow.dip_addr, &s->ops.dip_addr[i], MTL_IP_ADDR_LEN);
     flow.dst_port = s->ops.udp_port[i];
-    if (ST21_TX_PACING_WAY_TSN == s->pacing_way[i]) flow.launch_time_enabled = true;
+    if (ST21_TX_PACING_WAY_TSN == s->pacing_way[i])
+      flow.flags |= MT_TXQ_FLOW_F_LAUNCH_TIME;
     s->queue[i] = mt_txq_get(impl, port, &flow);
     if (!s->queue[i]) {
       tv_uinit_hw(s);

@@ -46,7 +46,8 @@ struct mt_rxq_entry* mt_rxq_get(struct mtl_main_impl* impl, enum mtl_port port,
   }
   entry->parent = impl;
 
-  if (mt_pmd_is_kernel_socket(impl, port)) {
+  dbg("%s(%d), flags 0x%x\n", __func__, port, flow->flags);
+  if (mt_pmd_is_kernel_socket(impl, port) || (flow->flags & MT_RXQ_FLOW_F_FORCE_SOCKET)) {
     entry->rx_socket_q = mt_rx_socket_get(impl, port, flow);
     if (!entry->rx_socket_q) goto fail;
     entry->queue_id = mt_rx_socket_queue_id(entry->rx_socket_q);
@@ -61,7 +62,7 @@ struct mt_rxq_entry* mt_rxq_get(struct mtl_main_impl* impl, enum mtl_port port,
     if (!entry->rsq) goto fail;
     entry->queue_id = mt_rsq_queue_id(entry->rsq);
     entry->burst = rx_rsq_burst;
-  } else if (flow->use_cni_queue) {
+  } else if (flow->flags & MT_RXQ_FLOW_F_FORCE_CNI) {
     entry->csq = mt_csq_get(impl, port, flow);
     if (!entry->csq) goto fail;
     entry->queue_id = mt_csq_queue_id(entry->csq);
@@ -135,7 +136,8 @@ struct mt_txq_entry* mt_txq_get(struct mtl_main_impl* impl, enum mtl_port port,
   }
   entry->parent = impl;
 
-  if (mt_pmd_is_kernel_socket(impl, port)) {
+  dbg("%s(%d), flags 0x%x\n", __func__, port, flow->flags);
+  if (mt_pmd_is_kernel_socket(impl, port) || (flow->flags & MT_TXQ_FLOW_F_FORCE_SOCKET)) {
     entry->tx_socket_q = mt_tx_socket_get(impl, port, flow);
     if (!entry->tx_socket_q) goto fail;
     entry->queue_id = mt_tx_socket_queue_id(entry->tx_socket_q);
@@ -265,7 +267,8 @@ int mt_dp_queue_init(struct mtl_main_impl* impl) {
 
     struct mt_txq_flow flow;
     memset(&flow, 0, sizeof(flow));
-    flow.sys_queue = true;
+    flow.flags = MT_TXQ_FLOW_F_SYS_QUEUE;
+    if (mt_drv_kernel_based(impl, i)) flow.flags = MT_TXQ_FLOW_F_FORCE_SOCKET;
     dp->txq_sys_entry = mt_txq_get(impl, i, &flow);
     if (!dp->txq_sys_entry) {
       err("%s(%d), txq sys entry get fail\n", __func__, i);

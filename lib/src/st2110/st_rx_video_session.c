@@ -2963,7 +2963,7 @@ static int rv_init_hw(struct mtl_main_impl* impl, struct st_rx_video_session_imp
     rte_memcpy(flow.sip_addr, mt_sip_addr(impl, port), MTL_IP_ADDR_LEN);
     flow.dst_port = s->st20_dst_port[i];
     if (rv_is_hdr_split(s)) {
-      flow.hdr_split = true;
+      flow.flags |= MT_RXQ_FLOW_F_HDR_SPLIT;
 #ifdef ST_HAS_DPDK_HDR_SPLIT
       flow.hdr_split_mbuf_cb_priv = s;
       flow.hdr_split_mbuf_cb = rv_hdrs_mbuf_callback_fn;
@@ -2972,10 +2972,8 @@ static int rv_init_hw(struct mtl_main_impl* impl, struct st_rx_video_session_imp
       rv_uinit_hw(s);
       return -ENOTSUP;
 #endif
-    } else {
-      flow.hdr_split = false;
     }
-    if (mt_has_cni_rx(impl, port)) flow.use_cni_queue = true;
+    if (mt_has_cni_rx(impl, port)) flow.flags |= MT_RXQ_FLOW_F_FORCE_CNI;
 
     /* no flow for data path only */
     if (ops->flags & ST20_RX_FLAG_DATA_PATH_ONLY) {

@@ -96,9 +96,9 @@ static struct rte_flow* rte_rx_flow_create(struct mt_interface* inf, uint16_t q,
   /* drv not support ip flow */
   if (inf->drv_info.flow_type == MT_FLOW_NO_IP) has_ip_flow = false;
   /* no ip flow requested */
-  if (flow->no_ip_flow) has_ip_flow = false;
+  if (flow->flags & MT_RXQ_FLOW_F_NO_IP) has_ip_flow = false;
   /* no port flow requested */
-  if (flow->no_port_flow) has_port_flow = false;
+  if (flow->flags & MT_RXQ_FLOW_F_NO_PORT) has_port_flow = false;
 
   /* only raw flow can be applied on the hdr split queue */
   if (mt_if_hdr_split_pool(inf, q)) {

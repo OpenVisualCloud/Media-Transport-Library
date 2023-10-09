@@ -26,7 +26,7 @@
 
 #ifdef WINDOWSENV
 #define be64toh(x) \
-  ((1 == ntohl(1)) ? (x) : ((uint64_t)ntohl((x)&0xFFFFFFFF) << 32) | ntohl((x) >> 32))
+  ((1 == ntohl(1)) ? (x) : ((uint64_t)ntohl((x) & 0xFFFFFFFF) << 32) | ntohl((x) >> 32))
 #endif
 
 static char* ptp_mode_strs[MT_PTP_MAX_MODE] = {
@@ -1146,12 +1146,21 @@ static int ptp_init(struct mtl_main_impl* impl, struct mt_ptp_impl* ptp,
 
   inet_pton(AF_INET, "224.0.1.129", ptp->mcast_group_addr);
 
-  /* create rx queue if no CNI path */
-  if (!mt_has_cni(impl, port)) {
+  if (mt_has_cni(impl, port)) {
+    /* join mcast only if cni path, no cni use socket which has mcast in the data path */
+    ret = mt_mcast_join(impl, mt_ip_to_u32(ptp->mcast_group_addr), port);
+    if (ret < 0) {
+      err("%s(%d), join ptp multicast group fail\n", __func__, port);
+      return ret;
+    }
+    mt_mcast_l2_join(impl, &ptp_l2_multicast_eaddr, port);
+  } else {
+    /* create rx socket queue if no CNI path */
     struct mt_rxq_flow flow;
     memset(&flow, 0, sizeof(flow));
     rte_memcpy(flow.dip_addr, ptp->mcast_group_addr, MTL_IP_ADDR_LEN);
     rte_memcpy(flow.sip_addr, mt_sip_addr(impl, port), MTL_IP_ADDR_LEN);
+    flow.flags = MT_RXQ_FLOW_F_FORCE_SOCKET;
     flow.dst_port = MT_PTP_UDP_GEN_PORT;
 
     ptp->gen_rxq = mt_rxq_get(impl, port, &flow);
@@ -1180,14 +1189,6 @@ static int ptp_init(struct mtl_main_impl* impl, struct mt_ptp_impl* ptp,
     }
   }
 
-  /* join mcast */
-  ret = mt_mcast_join(impl, mt_ip_to_u32(ptp->mcast_group_addr), port);
-  if (ret < 0) {
-    err("%s(%d), join ptp multicast group fail\n", __func__, port);
-    return ret;
-  }
-  mt_mcast_l2_join(impl, &ptp_l2_multicast_eaddr, port);
-
   ptp->active = true;
   if (!mt_if_has_timesync(impl, port)) {
     ptp->no_timesync = true;
@@ -1212,8 +1213,10 @@ static int ptp_uinit(struct mtl_main_impl* impl, struct mt_ptp_impl* ptp) {
 
   if (!ptp->active) return 0;
 
-  mt_mcast_l2_leave(impl, &ptp_l2_multicast_eaddr, port);
-  mt_mcast_leave(impl, mt_ip_to_u32(ptp->mcast_group_addr), port);
+  if (mt_has_cni(impl, port)) {
+    mt_mcast_l2_leave(impl, &ptp_l2_multicast_eaddr, port);
+    mt_mcast_leave(impl, mt_ip_to_u32(ptp->mcast_group_addr), port);
+  }
 
   if (ptp->rxq_tasklet) {
     mt_sch_unregister_tasklet(ptp->rxq_tasklet);

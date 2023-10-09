@@ -187,9 +187,9 @@ struct mt_ptp_impl {
    * The flag indicates Qbv (IEEE 802.1Qbv) traffic shaper
    * enable.
    *
-   * The IEEE 802.1Qbv is designed to seperate traffics
+   * The IEEE 802.1Qbv is designed to separate traffics
    * transmission into different time slices to prevent
-   * traffics transmission interfereing.
+   * traffics transmission interfering.
    */
   bool qbv_enabled;
   int64_t no_timesync_delta;
@@ -278,24 +278,30 @@ struct mt_ptp_impl {
   uint16_t stat_sync_keep;
 };
 
+/* used for cni sys queue */
+#define MT_RXQ_FLOW_F_SYS_QUEUE (MTL_BIT32(0))
+/* no ip flow, only use port flow, for udp transport */
+#define MT_RXQ_FLOW_F_NO_IP (MTL_BIT32(1))
+/* if apply destination port flow or not */
+#define MT_RXQ_FLOW_F_NO_PORT (MTL_BIT32(2))
+/* child of cni to save queue usage */
+#define MT_RXQ_FLOW_F_FORCE_CNI (MTL_BIT32(3))
+/* if request hdr split */
+#define MT_RXQ_FLOW_F_HDR_SPLIT (MTL_BIT32(4))
+/* force to use socket, only for MT_DRV_F_KERNEL_BASED */
+#define MT_RXQ_FLOW_F_FORCE_SOCKET (MTL_BIT32(5))
+
 /* request of rx queue flow */
 struct mt_rxq_flow {
-  /* used for cni queue */
-  bool sys_queue;
-  /* no ip flow, only use port flow, for udp transport */
-  bool no_ip_flow;
-  /* if apply destination port flow or not */
-  bool no_port_flow;
-  /* child of cni to save queue usage */
-  bool use_cni_queue;
   /* mandatory if not no_ip_flow */
   uint8_t dip_addr[MTL_IP_ADDR_LEN]; /* rx destination IP */
   /* source ip is ignored if destination is a multicast address */
   uint8_t sip_addr[MTL_IP_ADDR_LEN]; /* source IP */
   uint16_t dst_port;                 /* udp destination port */
+  /* value of MT_RXQ_FLOW_F_* */
+  uint32_t flags;
 
-  /* optional */
-  bool hdr_split; /* if request hdr split */
+  /* optional for hdr split */
   void* hdr_split_mbuf_cb_priv;
 #ifdef ST_HAS_DPDK_HDR_SPLIT /* rte_eth_hdrs_mbuf_callback_fn define with this marco */
   rte_eth_hdrs_mbuf_callback_fn hdr_split_mbuf_cb;
@@ -607,6 +613,8 @@ struct mt_tx_queue {
 #define MT_DRV_F_MCAST_IN_DP (MTL_BIT64(7))
 /* no sys tx queue support */
 #define MT_DRV_F_NO_SYS_TX_QUEUE (MTL_BIT64(8))
+/* kernel based backend */
+#define MT_DRV_F_KERNEL_BASED (MTL_BIT64(9))
 
 struct mt_dev_driver_info {
   char* name;
@@ -856,14 +864,21 @@ struct mt_rsq_impl {
   struct mt_rsq_queue* rsq_queues;
 };
 
+/* used for sys queue */
+#define MT_TXQ_FLOW_F_SYS_QUEUE (MTL_BIT32(0))
+/* if launch time enabled */
+#define MT_TXQ_FLOW_F_LAUNCH_TIME (MTL_BIT32(1))
+/* force to use socket, only for MT_DRV_F_KERNEL_BASED */
+#define MT_TXQ_FLOW_F_FORCE_SOCKET (MTL_BIT32(1))
+
 /* request of tx queue flow */
 struct mt_txq_flow {
-  bool sys_queue;
   uint64_t bytes_per_sec; /* rl rate in byte */
   /* mandatory if not sys_queue */
   uint8_t dip_addr[MTL_IP_ADDR_LEN]; /* tx destination IP */
   uint16_t dst_port;                 /* udp destination port */
-  bool launch_time_enabled;
+  /* value with MT_TXQ_FLOW_F_* */
+  uint32_t flags;
 };
 
 struct mt_tsq_impl; /* forward delcare */
@@ -1120,6 +1135,13 @@ static inline bool mt_drv_no_cni(struct mtl_main_impl* impl, enum mtl_port port)
 
 static inline bool mt_drv_no_sys_txq(struct mtl_main_impl* impl, enum mtl_port port) {
   if (mt_if(impl, port)->drv_info.flags & MT_DRV_F_NO_SYS_TX_QUEUE)
+    return true;
+  else
+    return false;
+}
+
+static inline bool mt_drv_kernel_based(struct mtl_main_impl* impl, enum mtl_port port) {
+  if (mt_if(impl, port)->drv_info.flags & MT_DRV_F_KERNEL_BASED)
     return true;
   else
     return false;
