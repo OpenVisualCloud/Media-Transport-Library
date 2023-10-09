@@ -1097,7 +1097,7 @@ static int ptp_init(struct mtl_main_impl* impl, struct mt_ptp_impl* ptp,
   memcpy(&id[3], &magic, 2);
   memcpy(&id[5], &mac.addr_bytes[3], 3);
   our_port_id->port_number = htons(port_id);  // now always
-  // ptp_print_port_id(port_id, our_port_id);
+  ptp_print_port_id(port_id, our_port_id);
 
   rte_memcpy(ip, mt_sip_addr(impl, port), MTL_IP_ADDR_LEN);
 
@@ -1146,7 +1146,7 @@ static int ptp_init(struct mtl_main_impl* impl, struct mt_ptp_impl* ptp,
 
   inet_pton(AF_INET, "224.0.1.129", ptp->mcast_group_addr);
 
-  if (mt_has_cni(impl, port)) {
+  if (mt_has_cni(impl, port) && !mt_drv_kernel_based(impl, port)) {
     /* join mcast only if cni path, no cni use socket which has mcast in the data path */
     ret = mt_mcast_join(impl, mt_ip_to_u32(ptp->mcast_group_addr), port);
     if (ret < 0) {
@@ -1213,7 +1213,7 @@ static int ptp_uinit(struct mtl_main_impl* impl, struct mt_ptp_impl* ptp) {
 
   if (!ptp->active) return 0;
 
-  if (mt_has_cni(impl, port)) {
+  if (mt_has_cni(impl, port) && !mt_drv_kernel_based(impl, port)) {
     mt_mcast_l2_leave(impl, &ptp_l2_multicast_eaddr, port);
     mt_mcast_leave(impl, mt_ip_to_u32(ptp->mcast_group_addr), port);
   }

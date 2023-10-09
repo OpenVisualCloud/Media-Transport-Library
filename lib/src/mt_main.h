@@ -607,7 +607,7 @@ struct mt_tx_queue {
 #define MT_DRV_F_USE_KERNEL_CTL (MTL_BIT64(4))
 /* no priv for the mbuf in the rx queue */
 #define MT_DRV_F_RX_POOL_COMMON (MTL_BIT64(5))
-/* no rx flow, for MTL_PMD_DPDK_AF_PACKET and MTL_PMD_DPDK_AF_PACKET */
+/* no rx flow, for MTL_PMD_DPDK_AF_PACKET and MTL_PMD_KERNEL_SOCKET */
 #define MT_DRV_F_RX_NO_FLOW (MTL_BIT64(6))
 /* mcast control in data path, for MTL_PMD_KERNEL_SOCKET */
 #define MT_DRV_F_MCAST_IN_DP (MTL_BIT64(7))
