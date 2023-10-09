@@ -26,7 +26,7 @@
 
 #ifdef WINDOWSENV
 #define be64toh(x) \
-  ((1 == ntohl(1)) ? (x) : ((uint64_t)ntohl((x) & 0xFFFFFFFF) << 32) | ntohl((x) >> 32))
+  ((1 == ntohl(1)) ? (x) : ((uint64_t)ntohl((x)&0xFFFFFFFF) << 32) | ntohl((x) >> 32))
 #endif
 
 static char* ptp_mode_strs[MT_PTP_MAX_MODE] = {
