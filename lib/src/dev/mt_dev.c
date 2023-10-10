@@ -73,7 +73,7 @@ static const struct mt_dev_driver_info dev_drvs[] = {
         .drv_type = MT_DRV_DPDK_AF_XDP,
         .flow_type = MT_FLOW_ALL,
         .flags = MT_DRV_F_NO_CNI | MT_DRV_F_USE_KERNEL_CTL | MT_DRV_F_RX_POOL_COMMON |
-                 MT_DRV_F_NO_SYS_TX_QUEUE,
+                 MT_DRV_F_KERNEL_BASED,
     },
     {
         .name = "net_af_packet",
@@ -81,7 +81,7 @@ static const struct mt_dev_driver_info dev_drvs[] = {
         .drv_type = MT_DRV_DPDK_AF_PKT,
         .flow_type = MT_FLOW_ALL,
         .flags = MT_DRV_F_USE_KERNEL_CTL | MT_DRV_F_RX_POOL_COMMON | MT_DRV_F_RX_NO_FLOW |
-                 MT_DRV_F_NO_SYS_TX_QUEUE,
+                 MT_DRV_F_KERNEL_BASED,
     },
     {
         .name = "kernel_socket",
@@ -89,7 +89,7 @@ static const struct mt_dev_driver_info dev_drvs[] = {
         .drv_type = MT_DRV_KERNEL_SOCKET,
         .flow_type = MT_FLOW_ALL,
         .flags = MT_DRV_F_NOT_DPDK_PMD | MT_DRV_F_NO_CNI | MT_DRV_F_USE_KERNEL_CTL |
-                 MT_DRV_F_RX_NO_FLOW | MT_DRV_F_MCAST_IN_DP,
+                 MT_DRV_F_RX_NO_FLOW | MT_DRV_F_MCAST_IN_DP | MT_DRV_F_KERNEL_BASED,
     },
     {
         .name = "native_af_xdp",
@@ -97,7 +97,7 @@ static const struct mt_dev_driver_info dev_drvs[] = {
         .drv_type = MT_DRV_NATIVE_AF_XDP,
         .flow_type = MT_FLOW_ALL,
         .flags = MT_DRV_F_NOT_DPDK_PMD | MT_DRV_F_NO_CNI | MT_DRV_F_USE_KERNEL_CTL |
-                 MT_DRV_F_NO_SYS_TX_QUEUE | MT_DRV_F_NO_SYS_TX_QUEUE,
+                 MT_DRV_F_KERNEL_BASED,
     },
 };
 
@@ -1495,7 +1495,7 @@ struct mt_tx_queue* mt_dev_get_tx_queue(struct mtl_main_impl* impl, enum mtl_por
        * of queue 0 by hard coding static configuration. So, traffic requires
        * LaunchTime based pacing must be transmitted over queue 0.
        */
-      if (flow->launch_time_enabled) {
+      if (flow->flags & MT_TXQ_FLOW_F_LAUNCH_TIME) {
         /* If require LaunchTime based pacing, queue 0 is the only choice. */
         if (q != 0) break;
       } else {
@@ -1550,7 +1550,8 @@ struct mt_rx_queue* mt_dev_get_rx_queue(struct mtl_main_impl* impl, enum mtl_por
   for (uint16_t q = 0; q < inf->max_rx_queues; q++) {
     rx_queue = &inf->rx_queues[q];
     if (rx_queue->active) continue;
-    if (flow && flow->hdr_split) { /* continue if not hdr split queue */
+    if (flow && (flow->flags & MT_RXQ_FLOW_F_HDR_SPLIT)) {
+      /* continue if not hdr split queue */
       if (!mt_if_hdr_split_pool(inf, q)) continue;
 #ifdef ST_HAS_DPDK_HDR_SPLIT
       if (flow->hdr_split_mbuf_cb) {
@@ -1574,7 +1575,7 @@ struct mt_rx_queue* mt_dev_get_rx_queue(struct mtl_main_impl* impl, enum mtl_por
     }
 
     memset(&rx_queue->flow, 0, sizeof(rx_queue->flow));
-    if (flow && !flow->sys_queue) {
+    if (flow && !(flow->flags & MT_RXQ_FLOW_F_SYS_QUEUE)) {
       rx_queue->flow_rsp = mt_rx_flow_create(impl, port, q, flow);
       if (!rx_queue->flow_rsp) {
         err("%s(%d), create flow fail for queue %d\n", __func__, port, q);
@@ -1611,8 +1612,7 @@ struct mt_rx_queue* mt_dev_get_rx_queue(struct mtl_main_impl* impl, enum mtl_por
   }
   mt_pthread_mutex_unlock(&inf->rx_queues_mutex);
 
-  err("%s(%d), fail to find free rx queue for %s\n", __func__, port,
-      flow && flow->hdr_split ? "hdr_split" : "normal");
+  err("%s(%d), fail to find free rx queue\n", __func__, port);
   return NULL;
 }
 
@@ -1740,7 +1740,7 @@ int mt_dev_put_rx_queue(struct mtl_main_impl* impl, struct mt_rx_queue* queue) {
     rx_queue->flow_rsp = NULL;
   }
 
-  if (rx_queue->flow.hdr_split) {
+  if (rx_queue->flow.flags & MT_RXQ_FLOW_F_HDR_SPLIT) {
 #ifdef ST_HAS_DPDK_HDR_SPLIT
     /* clear hdrs mbuf callback */
     rte_eth_hdrs_set_mbuf_callback(inf->port_id, queue_id, NULL, NULL);

@@ -175,7 +175,7 @@ static int cni_udp_handle(struct mt_cni_entry* cni, struct rte_mbuf* m) {
   csq_lock(cni);
   MT_TAILQ_FOREACH(csq, &cni->csq_queues, next) {
     bool ip_matched;
-    if (csq->flow.no_ip_flow) {
+    if (csq->flow.flags & MT_RXQ_FLOW_F_NO_IP) {
       ip_matched = true;
     } else {
       ip_matched = mt_is_multicast_ip(csq->flow.dip_addr)
@@ -183,7 +183,7 @@ static int cni_udp_handle(struct mt_cni_entry* cni, struct rte_mbuf* m) {
                        : (ipv4->src_addr == *(uint32_t*)csq->flow.dip_addr);
     }
     bool port_matched;
-    if (csq->flow.no_port_flow) {
+    if (csq->flow.flags & MT_RXQ_FLOW_F_NO_PORT) {
       port_matched = true;
     } else {
       port_matched = ntohs(udp->dst_port) == csq->flow.dst_port;
@@ -415,7 +415,7 @@ static int cni_queues_init(struct mtl_main_impl* impl) {
 
     struct mt_rxq_flow flow;
     memset(&flow, 0, sizeof(flow));
-    flow.sys_queue = true;
+    flow.flags = MT_RXQ_FLOW_F_SYS_QUEUE;
     cni->rxq = mt_rxq_get(impl, i, &flow);
     if (!cni->rxq) {
       err("%s(%d), rx queue get fail\n", __func__, i);
@@ -430,6 +430,7 @@ static int cni_queues_init(struct mtl_main_impl* impl) {
 
 static bool cni_need_tasklet(struct mt_cni_impl* cni_impl) {
   struct mtl_main_impl* impl = cni_impl->parent;
+  if (!impl) return false;
   struct mt_cni_entry* cni;
   int num_ports = mt_num_ports(impl);
 
@@ -607,7 +608,7 @@ struct mt_csq_entry* mt_csq_get(struct mtl_main_impl* impl, enum mtl_port port,
   struct mt_cni_entry* cni = cni_get_entry(impl, port);
   int idx = cni->csq_idx;
 
-  if (flow->sys_queue) {
+  if (flow->flags & MT_RXQ_FLOW_F_SYS_QUEUE) {
     err("%s(%d,%d), not support sys queue\n", __func__, port, idx);
     return NULL;
   }

@@ -20,8 +20,8 @@ struct mt_tx_socket_entry* mt_tx_socket_get(struct mtl_main_impl* impl,
                                             struct mt_txq_flow* flow) {
   int ret;
 
-  if (!mt_pmd_is_kernel_socket(impl, port)) {
-    err("%s(%d), this pmd is not kernel socket\n", __func__, port);
+  if (!mt_drv_kernel_based(impl, port)) {
+    err("%s(%d), this pmd is not kernel based\n", __func__, port);
     return NULL;
   }
 
@@ -119,8 +119,10 @@ uint16_t mt_tx_socket_burst(struct mt_tx_socket_entry* entry, struct rte_mbuf** 
           fd, payload_len, send);
       goto done;
     }
-    stats->tx_packets++;
-    stats->tx_bytes += m->data_len;
+    if (stats) {
+      stats->tx_packets++;
+      stats->tx_bytes += m->data_len;
+    }
   }
 
 done:
@@ -133,16 +135,16 @@ struct mt_rx_socket_entry* mt_rx_socket_get(struct mtl_main_impl* impl,
                                             struct mt_rxq_flow* flow) {
   int ret;
 
-  if (!mt_pmd_is_kernel_socket(impl, port)) {
-    err("%s(%d), this pmd is not kernel socket\n", __func__, port);
+  if (!mt_drv_kernel_based(impl, port)) {
+    err("%s(%d), this pmd is not kernel based\n", __func__, port);
     return NULL;
   }
 
-  if (flow->sys_queue) {
+  if (flow->flags & MT_RXQ_FLOW_F_SYS_QUEUE) {
     err("%s(%d), sys_queue not supported\n", __func__, port);
     return NULL;
   }
-  if (flow->no_port_flow) {
+  if (flow->flags & MT_RXQ_FLOW_F_NO_PORT) {
     err("%s(%d), no_port_flow not supported\n", __func__, port);
     return NULL;
   }
@@ -298,8 +300,10 @@ uint16_t mt_rx_socket_burst(struct mt_rx_socket_entry* entry, struct rte_mbuf** 
     ipv4->next_proto_id = IPPROTO_UDP;
 
     rx_pkts[rx] = pkt;
-    stats->rx_packets++;
-    stats->rx_bytes += pkt->data_len;
+    if (stats) {
+      stats->rx_packets++;
+      stats->rx_bytes += pkt->data_len;
+    }
 
     /* allocate a new pkt for next iteration */
     entry->pkt = rte_pktmbuf_alloc(entry->pool);

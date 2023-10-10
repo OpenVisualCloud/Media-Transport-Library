@@ -391,16 +391,16 @@ int mt_socket_add_flow(struct mtl_main_impl* impl, enum mtl_port port, uint16_t 
   uint8_t start_queue = mt_afxdp_start_queue(impl, port);
   const char* if_name = mt_kernel_if_name(impl, port);
 
-  if (flow->sys_queue) {
+  if (flow->flags & MT_RXQ_FLOW_F_SYS_QUEUE) {
     err("%s(%d), sys_queue not supported\n", __func__, port);
     return -EIO;
   }
-  if (flow->no_port_flow) {
+  if (flow->flags & MT_RXQ_FLOW_F_NO_PORT) {
     err("%s(%d), no_port_flow not supported\n", __func__, port);
     return -EIO;
   }
 
-  if (flow->no_ip_flow) {
+  if (flow->flags & MT_RXQ_FLOW_F_NO_IP) {
     snprintf(cmd, sizeof(cmd), "ethtool -N %s flow-type udp4 dst-port %u action %u",
              if_name, flow->dst_port, queue_id + start_queue);
   } else if (mt_is_multicast_ip(flow->dip_addr)) {

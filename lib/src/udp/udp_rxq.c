@@ -257,7 +257,7 @@ static struct mur_queue* urq_get(struct mudp_rxq_mgr* mgr,
   /* create flow */
   struct mt_rxq_flow flow;
   memset(&flow, 0, sizeof(flow));
-  flow.no_ip_flow = true;
+  flow.flags = MT_RXQ_FLOW_F_NO_IP;
   flow.dst_port = dst_port;
   q->rxq = mt_rxq_get(impl, port, &flow);
   if (!q->rxq) {

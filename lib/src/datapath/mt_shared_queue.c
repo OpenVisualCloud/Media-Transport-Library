@@ -138,7 +138,7 @@ static uint32_t rsq_flow_hash(struct mt_rxq_flow* flow) {
   struct rte_ipv4_tuple tuple;
   uint32_t len;
 
-  if (flow->sys_queue) return 0;
+  if (flow->flags & MT_RXQ_FLOW_F_SYS_QUEUE) return 0;
 
   len = RTE_THASH_V4_L4_LEN;
   tuple.src_addr = RTE_IPV4(flow->dip_addr[0], flow->dip_addr[1], flow->dip_addr[2],
@@ -173,7 +173,7 @@ struct mt_rsq_entry* mt_rsq_get(struct mtl_main_impl* impl, enum mtl_port port,
   entry->parent = rsqm;
   rte_memcpy(&entry->flow, flow, sizeof(entry->flow));
 
-  if (!flow->sys_queue) {
+  if (!(flow->flags & MT_RXQ_FLOW_F_SYS_QUEUE)) {
     entry->flow_rsp = mt_rx_flow_create(impl, port, q, flow);
     if (!entry->flow_rsp) {
       err("%s(%u), create flow fail\n", __func__, q);
@@ -197,7 +197,7 @@ struct mt_rsq_entry* mt_rsq_get(struct mtl_main_impl* impl, enum mtl_port port,
   MT_TAILQ_INSERT_HEAD(&rsq_queue->head, entry, next);
   rte_atomic32_inc(&rsq_queue->entry_cnt);
   rsq_queue->entry_idx++;
-  if (flow->sys_queue) rsq_queue->cni_entry = entry;
+  if (flow->flags & MT_RXQ_FLOW_F_SYS_QUEUE) rsq_queue->cni_entry = entry;
   rsq_unlock(rsq_queue);
 
   uint8_t* ip = flow->dip_addr;
@@ -266,7 +266,7 @@ static int rsq_rx(struct mt_rsq_queue* rsq_queue) {
 
     MT_TAILQ_FOREACH(rsq_entry, &rsq_queue->head, next) {
       bool ip_matched;
-      if (rsq_entry->flow.no_ip_flow) {
+      if (rsq_entry->flow.flags & MT_RXQ_FLOW_F_NO_IP) {
         ip_matched = true;
       } else {
         ip_matched = mt_is_multicast_ip(rsq_entry->flow.dip_addr)
@@ -274,7 +274,7 @@ static int rsq_rx(struct mt_rsq_queue* rsq_queue) {
                          : (ipv4->src_addr == *(uint32_t*)rsq_entry->flow.dip_addr);
       }
       bool port_matched;
-      if (rsq_entry->flow.no_port_flow) {
+      if (rsq_entry->flow.flags & MT_RXQ_FLOW_F_NO_PORT) {
         port_matched = true;
       } else {
         port_matched = ntohs(udp->dst_port) == rsq_entry->flow.dst_port;
@@ -454,7 +454,7 @@ static uint32_t tsq_flow_hash(struct mt_txq_flow* flow) {
   struct rte_ipv4_tuple tuple;
   uint32_t len;
 
-  if (flow->sys_queue) return 0;
+  if (flow->flags & MT_TXQ_FLOW_F_SYS_QUEUE) return 0;
 
   len = RTE_THASH_V4_L4_LEN;
   tuple.src_addr = RTE_IPV4(flow->dip_addr[0], flow->dip_addr[1], flow->dip_addr[2],
@@ -475,7 +475,8 @@ struct mt_tsq_entry* mt_tsq_get(struct mtl_main_impl* impl, enum mtl_port port,
   struct mt_tsq_impl* tsqm = tsq_ctx_get(impl, port);
   uint32_t hash = tsq_flow_hash(flow);
   uint16_t q = 0;
-  if (!flow->sys_queue) { /* queue zero is reserved for system queue */
+  /* queue zero is reserved for system queue */
+  if (!(flow->flags & MT_TXQ_FLOW_F_SYS_QUEUE)) {
     q = (hash % RTE_ETH_RETA_GROUP_SIZE) % (tsqm->max_tsq_queues - 1) + 1;
   }
   struct mt_tsq_queue* tsq_queue = &tsqm->tsq_queues[q];

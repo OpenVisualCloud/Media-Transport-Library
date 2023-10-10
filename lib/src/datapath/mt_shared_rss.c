@@ -91,7 +91,7 @@ static int srss_tasklet_handler(void* priv) {
       udp = &hdr->udp;
       MT_TAILQ_FOREACH(srss_entry, &srss->head, next) {
         bool ip_matched;
-        if (srss_entry->flow.no_ip_flow) {
+        if (srss_entry->flow.flags & MT_RXQ_FLOW_F_NO_IP) {
           ip_matched = true;
         } else {
           ip_matched = mt_is_multicast_ip(srss_entry->flow.dip_addr)
@@ -99,7 +99,7 @@ static int srss_tasklet_handler(void* priv) {
                            : (ipv4->src_addr == *(uint32_t*)srss_entry->flow.dip_addr);
         }
         bool port_matched;
-        if (srss_entry->flow.no_port_flow) {
+        if (srss_entry->flow.flags & MT_RXQ_FLOW_F_NO_PORT) {
           port_matched = true;
         } else {
           port_matched = ntohs(udp->dst_port) == srss_entry->flow.dst_port;
@@ -252,7 +252,7 @@ struct mt_srss_entry* mt_srss_get(struct mtl_main_impl* impl, enum mtl_port port
 
   srss_lock(srss);
   MT_TAILQ_INSERT_TAIL(&srss->head, entry, next);
-  if (flow->sys_queue) srss->cni_entry = entry;
+  if (flow->flags & MT_RXQ_FLOW_F_SYS_QUEUE) srss->cni_entry = entry;
   srss->entry_idx++;
   srss_unlock(srss);
 
