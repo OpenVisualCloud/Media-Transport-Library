@@ -11,7 +11,7 @@ struct mt_tx_socket_entry* mt_tx_socket_get(struct mtl_main_impl* impl,
                                             enum mtl_port port, struct mt_txq_flow* flow);
 int mt_tx_socket_put(struct mt_tx_socket_entry* entry);
 static inline uint16_t mt_tx_socket_queue_id(struct mt_tx_socket_entry* entry) {
-  return entry->fd;
+  return entry->threads_data[0].fd;
 }
 uint16_t mt_tx_socket_burst(struct mt_tx_socket_entry* entry, struct rte_mbuf** tx_pkts,
                             uint16_t nb_pkts);
