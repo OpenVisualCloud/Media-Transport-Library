@@ -208,11 +208,18 @@ static inline void mt_mbuf_refcnt_inc_bulk(struct rte_mbuf** mbufs, uint16_t nb)
   }
 }
 
+#ifdef WINDOWSENV
+static inline int mt_fd_set_nonbolck(int fd) {
+  MTL_MAY_UNUSED(fd);
+  return -ENOTSUP;
+}
+#else
 static inline int mt_fd_set_nonbolck(int fd) {
   int flags = fcntl(fd, F_GETFL, 0);
   flags |= O_NONBLOCK;
   return fcntl(fd, F_SETFL, flags);
 }
+#endif
 
 const char* mt_dpdk_afxdp_port2if(const char* port);
 const char* mt_dpdk_afpkt_port2if(const char* port);

@@ -108,7 +108,7 @@ static int tx_socket_init_threads(struct mt_tx_socket_entry* entry) {
   snprintf(ring_name, sizeof(ring_name), "%sP%dFD%d", MT_RX_DP_SOCKET_PREFIX, entry->port,
            idx);
   flags = RING_F_SP_ENQ;
-  count = 1024 * 4;
+  count = mt_if_nb_tx_desc(entry->parent, entry->port);
   ring =
       rte_ring_create(ring_name, count, mt_socket_id(entry->parent, entry->port), flags);
   if (!ring) {
@@ -186,6 +186,7 @@ struct mt_tx_socket_entry* mt_tx_socket_get(struct mtl_main_impl* impl,
 
   uint64_t required = flow->bytes_per_sec * 8;
   entry->threads = required / entry->rate_limit_per_thread + 1;
+  entry->threads = RTE_MIN(entry->threads, MT_DP_SOCKET_THREADS_MAX);
   if (entry->threads > 1) {
     ret = tx_socket_init_threads(entry);
     if (ret < 0) {
