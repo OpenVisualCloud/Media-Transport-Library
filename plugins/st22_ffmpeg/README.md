@@ -54,11 +54,11 @@ ffmpeg -s 1920x1080 -pix_fmt yuv420p -i yuv420p8le.yuv -pix_fmt yuv422p test_pla
 Tx run:
 
 ```bash
-./build/app/TxSt22PipelineSample --st22_codec h264_cbr --st22_fmt YUV422PLANAR8 --tx_url test_planar8.yuv
+./build/app/TxSt22PipelineSample --st22_codec h264_cbr --pipeline_fmt YUV422PLANAR8 --tx_url test_planar8.yuv
 ```
 
 Rx run:
 
 ```bash
-./build/app/RxSt22PipelineSample --st22_codec h264_cbr --st22_fmt YUV422PLANAR8 --rx_url out_planar8.yuv
+./build/app/RxSt22PipelineSample --st22_codec h264_cbr --pipeline_fmt YUV422PLANAR8 --rx_url out_planar8.yuv
 ```

@@ -942,12 +942,24 @@ struct mt_srss_impl {
   int entry_idx;
 };
 
+#define MT_DP_SOCKET_THREADS_MAX (4)
+
+struct mt_tx_socket_thread {
+  struct mt_tx_socket_entry* parent;
+  int fd;
+  pthread_t tid;
+  rte_atomic32_t stop_thread;
+};
+
 struct mt_tx_socket_entry {
   struct mtl_main_impl* parent;
   enum mtl_port port;
   struct mt_txq_flow flow;
 
-  int fd;
+  uint64_t rate_limit_per_thread;
+  int threads;
+  struct rte_ring* ring;
+  struct mt_tx_socket_thread threads_data[MT_DP_SOCKET_THREADS_MAX];
 };
 
 struct mt_rx_socket_entry {
