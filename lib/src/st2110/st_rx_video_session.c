@@ -2950,6 +2950,7 @@ static int rv_init_hw(struct mtl_main_impl* impl, struct st_rx_video_session_imp
   int idx = s->idx, num_port = ops->num_port;
   struct mt_rxq_flow flow;
   enum mtl_port port;
+  uint64_t bps;
 
   for (int i = 0; i < num_port; i++) {
     port = mt_port_logic2phy(s->port_maps, i);
@@ -2959,6 +2960,10 @@ static int rv_init_hw(struct mtl_main_impl* impl, struct st_rx_video_session_imp
     s->priv[i].s_port = i;
 
     memset(&flow, 0, sizeof(flow));
+    bps = 0;
+    st20_get_bandwidth_bps(ops->width, ops->height, ops->fmt, ops->fps, ops->interlaced,
+                           &bps);
+    flow.bytes_per_sec = bps / 8;
     rte_memcpy(flow.dip_addr, ops->sip_addr[i], MTL_IP_ADDR_LEN);
     rte_memcpy(flow.sip_addr, mt_sip_addr(impl, port), MTL_IP_ADDR_LEN);
     flow.dst_port = s->st20_dst_port[i];
