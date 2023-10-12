@@ -176,14 +176,14 @@ static inline int st_set_real_time(struct timespec* ts) {
   tm = gmtime(&secs);
 
   SYSTEMTIME st;
-  st->wYear = tm->tm_year + 1900;
-  st->wMonth = tm->tm_mon + 1;
-  st->wDayOfWeek = tm->tm_wday;
-  st->wDay = tm->tm_mday;
-  st->wHour = tm->tm_hour;
-  st->wMinute = tm->tm_min;
-  st->wSecond = tm->tm_sec;
-  st->wMilliseconds = milliseconds;
+  st.wYear = tm->tm_year + 1900;
+  st.wMonth = tm->tm_mon + 1;
+  st.wDayOfWeek = tm->tm_wday;
+  st.wDay = tm->tm_mday;
+  st.wHour = tm->tm_hour;
+  st.wMinute = tm->tm_min;
+  st.wSecond = tm->tm_sec;
+  st.wMilliseconds = milliseconds;
 
   if (!SetSystemTime(&st)) {
     /* set failed */
