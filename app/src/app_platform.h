@@ -175,6 +175,7 @@ static inline int st_set_real_time(struct timespec* ts) {
   struct tm* tm;
   tm = gmtime(&secs);
 
+  SYSTEMTIME st;
   st->wYear = tm->tm_year + 1900;
   st->wMonth = tm->tm_mon + 1;
   st->wDayOfWeek = tm->tm_wday;
