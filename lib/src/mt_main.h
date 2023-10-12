@@ -300,6 +300,8 @@ struct mt_rxq_flow {
   uint16_t dst_port;                 /* udp destination port */
   /* value of MT_RXQ_FLOW_F_* */
   uint32_t flags;
+  /* rate in bytes */
+  uint64_t bytes_per_sec;
 
   /* optional for hdr split */
   void* hdr_split_mbuf_cb_priv;
@@ -949,6 +951,8 @@ struct mt_tx_socket_thread {
   int fd;
   pthread_t tid;
   rte_atomic32_t stop_thread;
+
+  int stat_tx_pkt;
 };
 
 struct mt_tx_socket_entry {
@@ -962,15 +966,29 @@ struct mt_tx_socket_entry {
   struct mt_tx_socket_thread threads_data[MT_DP_SOCKET_THREADS_MAX];
 };
 
+struct mt_rx_socket_thread {
+  struct mt_rx_socket_entry* parent;
+  int idx;
+  struct rte_mbuf* mbuf;
+  pthread_t tid;
+  rte_atomic32_t stop_thread;
+
+  int stat_rx_pkt;
+};
+
 struct mt_rx_socket_entry {
   struct mtl_main_impl* parent;
   enum mtl_port port;
   struct mt_rxq_flow flow;
 
-  int fd;
   struct rte_mempool* pool;
   uint16_t pool_element_sz;
-  struct rte_mbuf* pkt;
+  int fd;
+
+  uint64_t rate_limit_per_thread;
+  int threads;
+  struct rte_ring* ring;
+  struct mt_rx_socket_thread threads_data[MT_DP_SOCKET_THREADS_MAX];
 };
 
 struct mt_flow_impl {
