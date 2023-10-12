@@ -343,6 +343,7 @@ packet egresses from the sender.
 --audio_fifo_size <count>            : debug option, the audio fifo size between packet builder and pacing.
 --dhcp                               : debug option, enable DHCP for all ports.
 --virtio_user                        : debug option, enable virtio_user ports for control plane packets. Linux only, need to set capability for the app before running, `sudo setcap 'cap_net_admin+ep' ./build/app/RxTxApp`.
+--ptp_sync_sys                       : debug option, enable sync the PTP time from MTL to system time, it required root permission since set system time time is a privilege operation.
 ```
 
 ## 6. Tests

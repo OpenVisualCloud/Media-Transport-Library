@@ -504,6 +504,12 @@ struct st_app_context {
   bool tx_copy_once;
   bool app_thread;
 
+  bool ptp_systime_sync;
+  int ptp_sync_cnt;
+  int64_t ptp_sync_delta_sum;
+  int64_t ptp_sync_delta_max;
+  int64_t ptp_sync_delta_min;
+
   char tx_video_url[ST_APP_URL_MAX_LEN]; /* send video content url*/
   struct st_app_tx_video_session* tx_video_sessions;
   int tx_video_session_cnt;
@@ -583,12 +589,21 @@ static inline void* st_app_zmalloc(size_t sz) {
 
 static inline void st_app_free(void* p) { free(p); }
 
+static inline uint64_t st_timespec_to_ns(const struct timespec* ts) {
+  return ((uint64_t)ts->tv_sec * NS_PER_S) + ts->tv_nsec;
+}
+
+static inline void st_ns_to_timespec(uint64_t ns, struct timespec* ts) {
+  ts->tv_sec = ns / NS_PER_S;
+  ts->tv_nsec = ns % NS_PER_S;
+}
+
 /* Monotonic time (in nanoseconds) since some unspecified starting point. */
 static inline uint64_t st_app_get_monotonic_time() {
   struct timespec ts;
 
   clock_gettime(ST_CLOCK_MONOTONIC_ID, &ts);
-  return ((uint64_t)ts.tv_sec * NS_PER_S) + ts.tv_nsec;
+  return st_timespec_to_ns(&ts);
 }
 
 int st_app_video_get_lcore(struct st_app_context* ctx, int sch_idx, bool rtp,

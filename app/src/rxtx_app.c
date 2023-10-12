@@ -58,6 +58,17 @@ static int app_dump_io_stat(struct st_app_context* ctx) {
   return 0;
 }
 
+static int app_dump_ptp_sync_stat(struct st_app_context* ctx) {
+  info("%s, cnt %d max %" PRId64 " min %" PRId64 " average %fus\n", __func__,
+       ctx->ptp_sync_cnt, ctx->ptp_sync_delta_max, ctx->ptp_sync_delta_min,
+       (float)ctx->ptp_sync_delta_sum / ctx->ptp_sync_cnt / NS_PER_US);
+  ctx->ptp_sync_delta_sum = 0;
+  ctx->ptp_sync_cnt = 0;
+  ctx->ptp_sync_delta_max = INT64_MIN;
+  ctx->ptp_sync_delta_min = INT64_MAX;
+  return 0;
+}
+
 static void app_stat(void* priv) {
   struct st_app_context* ctx = priv;
 
@@ -74,7 +85,43 @@ static void app_stat(void* priv) {
   st_app_rx_st20p_sessions_stat(ctx);
   st_app_rx_st20r_sessions_stat(ctx);
 
+  if (ctx->ptp_systime_sync) {
+    app_dump_ptp_sync_stat(ctx);
+  }
+
   ctx->last_stat_time_ns = st_app_get_monotonic_time();
+}
+
+static void app_ptp_sync_notify(void* priv, struct mtl_ptp_sync_notify_meta* meta) {
+  struct st_app_context* ctx = priv;
+  if (!ctx->ptp_systime_sync) return;
+
+  /* sync raw ptp to sys time */
+  uint64_t to_ns = mtl_ptp_read_time_raw(ctx->st);
+  int ret;
+  struct timespec from_ts, to_ts;
+  st_get_real_time(&from_ts);
+  from_ts.tv_sec += meta->master_utc_offset; /* utc offset */
+  uint64_t from_ns = st_timespec_to_ns(&from_ts);
+
+  /* record the sync delta */
+  int64_t delta = to_ns - from_ns;
+  ctx->ptp_sync_cnt++;
+  ctx->ptp_sync_delta_sum += delta;
+  if (delta > ctx->ptp_sync_delta_max) ctx->ptp_sync_delta_max = delta;
+  if (delta < ctx->ptp_sync_delta_min) ctx->ptp_sync_delta_min = delta;
+
+  /* sample just offset the system time delta, better to calibrate as phc2sys way which
+   * adjust the time frequency also  */
+  st_ns_to_timespec(to_ns, &to_ts);
+  to_ts.tv_sec -= meta->master_utc_offset; /* utc offset */
+  ret = st_set_real_time(&to_ts);
+  if (ret < 0)
+    err("%s, set real time to %" PRIu64 " fail, delta %" PRId64 "\n", __func__, to_ns,
+        delta);
+  dbg("%s, from_ns %" PRIu64 " to_ns %" PRIu64 " delta %" PRId64 " done\n", __func__,
+      from_ns, to_ns, delta);
+  return;
 }
 
 void app_set_log_level(enum mtl_log_level level) { app_log_level = level; }
@@ -84,7 +131,7 @@ enum mtl_log_level app_get_log_level(void) { return app_log_level; }
 static uint64_t app_ptp_from_tai_time(void* priv) {
   struct st_app_context* ctx = priv;
   struct timespec spec;
-  st_getrealtime(&spec);
+  st_get_real_time(&spec);
   spec.tv_sec -= ctx->utc_offset;
   return ((uint64_t)spec.tv_sec * NS_PER_S) + spec.tv_nsec;
 }
@@ -143,6 +190,9 @@ static void st_app_ctx_init(struct st_app_context* ctx) {
   ctx->st22_bpp = 3; /* 3bit per pixel */
 
   ctx->utc_offset = UTC_OFFSET;
+
+  ctx->ptp_sync_delta_min = INT64_MAX;
+  ctx->ptp_sync_delta_max = INT64_MIN;
 
   /* init lcores and sch */
   for (int i = 0; i < ST_APP_MAX_LCORES; i++) {
@@ -351,6 +401,8 @@ int main(int argc, char** argv) {
   if (ctx->enable_hdr_split) {
     ctx->para.nb_rx_hdr_split_queues = ctx->rx_video_session_cnt;
   }
+
+  if (ctx->ptp_systime_sync) ctx->para.ptp_sync_notify = app_ptp_sync_notify;
 
   ctx->st = mtl_init(&ctx->para);
   if (!ctx->st) {

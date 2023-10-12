@@ -67,6 +67,7 @@ enum st_args_cmd {
   ST_ARG_NIC_RX_PROMISCUOUS,
   ST_ARG_LIB_PTP,
   ST_ARG_LIB_PHC2SYS,
+  ST_ARG_LIB_PTP_SYNC_SYS,
   ST_ARG_RX_MONO_POOL,
   ST_ARG_TX_MONO_POOL,
   ST_ARG_MONO_POOL,
@@ -182,6 +183,7 @@ static struct option st_app_args_options[] = {
     {"log_file", required_argument, 0, ST_ARG_LOG_FILE},
     {"ptp", no_argument, 0, ST_ARG_LIB_PTP},
     {"phc2sys", no_argument, 0, ST_ARG_LIB_PHC2SYS},
+    {"ptp_sync_sys", no_argument, 0, ST_ARG_LIB_PTP_SYNC_SYS},
     {"rx_mono_pool", no_argument, 0, ST_ARG_RX_MONO_POOL},
     {"tx_mono_pool", no_argument, 0, ST_ARG_TX_MONO_POOL},
     {"mono_pool", no_argument, 0, ST_ARG_MONO_POOL},
@@ -540,6 +542,11 @@ int st_app_parse_args(struct st_app_context* ctx, struct mtl_init_params* p, int
       case ST_ARG_LIB_PTP:
         p->flags |= MTL_FLAG_PTP_ENABLE;
         p->ptp_get_time_fn = NULL; /* clear the user ptp func */
+        break;
+      case ST_ARG_LIB_PTP_SYNC_SYS:
+        p->flags |= MTL_FLAG_PTP_ENABLE; /* enable built-in ptp */
+        p->ptp_get_time_fn = NULL;       /* clear the user ptp func */
+        ctx->ptp_systime_sync = true;
         break;
       case ST_ARG_LIB_PHC2SYS:
         p->flags |= MTL_FLAG_PHC2SYS_ENABLE;

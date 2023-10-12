@@ -1086,6 +1086,18 @@ uint64_t mtl_ptp_read_time(mtl_handle mt) {
   return ptp;
 }
 
+uint64_t mtl_ptp_read_time_raw(mtl_handle mt) {
+  struct mtl_main_impl* impl = mt;
+  enum mtl_port port = MTL_PORT_P;
+
+  if (impl->type != MT_HANDLE_MAIN) {
+    err("%s, invalid type %d\n", __func__, impl->type);
+    return 0;
+  }
+
+  return mt_get_ptp_time(impl, port);
+}
+
 mtl_udma_handle mtl_udma_create(mtl_handle mt, uint16_t nb_desc, enum mtl_port port) {
   struct mtl_main_impl* impl = mt;
   struct mt_dma_request_req req;

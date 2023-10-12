@@ -359,6 +359,21 @@ enum st21_tx_pacing_way {
  * Enable shared queue for rx.
  */
 #define MTL_FLAG_SHARED_RX_QUEUE (MTL_BIT64(14))
+/**
+ * Flag bit in flags of struct mtl_init_params.
+ * Enable built-in PHC2SYS implementation.
+ */
+#define MTL_FLAG_PHC2SYS_ENABLE (MTL_BIT64(15))
+/**
+ * Flag bit in flags of struct mtl_init_params.
+ * Enable virtio_user as exception path.
+ */
+#define MTL_FLAG_VIRTIO_USER (MTL_BIT64(16))
+/**
+ * Flag bit in flags of struct mtl_init_params.
+ * Do mtl_start in mtl_init, mtl_stop in mtl_uninit, and skip the mtl_start/mtl_stop
+ */
+#define MTL_FLAG_DEV_AUTO_START_STOP (MTL_BIT64(17))
 
 /**
  * Flag bit in flags of struct mtl_init_params, debug usage only.
@@ -385,11 +400,6 @@ enum st21_tx_pacing_way {
  * Mono memory pool for all rx queue(sessions)
  */
 #define MTL_FLAG_RX_MONO_POOL (MTL_BIT64(36))
-/**
- * Flag bit in flags of struct mtl_init_params, debug usage only.
- * Do mtl_start in mtl_init, mtl_stop in mtl_uninit, and skip the mtl_start/mtl_stop
- */
-#define MTL_FLAG_DEV_AUTO_START_STOP (MTL_BIT64(37))
 /**
  * Flag bit in flags of struct mtl_init_params, debug usage only.
  * Enable tasklet time measurement, report status if tasklet run time longer than
@@ -432,16 +442,6 @@ enum st21_tx_pacing_way {
  * Use CNI based queue for RX.
  */
 #define MTL_FLAG_RX_USE_CNI (MTL_BIT64(45))
-/**
- * Flag bit in flags of struct mtl_init_params.
- * Enable built-in PHC2SYS implementation.
- */
-#define MTL_FLAG_PHC2SYS_ENABLE (MTL_BIT64(46))
-/**
- * Flag bit in flags of struct mtl_init_params.
- * Enable virtio_user as exception path.
- */
-#define MTL_FLAG_VIRTIO_USER (MTL_BIT64(47))
 
 /**
  * The structure describing how to init af_xdp interface.
@@ -450,6 +450,13 @@ enum st21_tx_pacing_way {
 struct mtl_af_xdp_params {
   /** starting netdev queue id, must > 0, 0 is reserved for system usage */
   uint8_t start_queue;
+};
+
+struct mtl_ptp_sync_notify_meta {
+  /** offset to UTC of current master PTP */
+  int16_t master_utc_offset;
+  /* phc delta of current sync */
+  int64_t delta;
 };
 
 /**
@@ -559,6 +566,9 @@ struct mtl_init_params {
    * system time if built-in ptp4l is not enabled.
    */
   uint64_t (*ptp_get_time_fn)(void* priv);
+  /** Optional for MTL_FLAG_PTP_ENABLE. The callback is notified every time the built-in
+   * PTP protocol receives a valid PTP_DELAY_RESP message from the PTP grandmaster. */
+  void (*ptp_sync_notify)(void* priv, struct mtl_ptp_sync_notify_meta* meta);
 
   /** Optional. Stats dump period in seconds, zero means determined by lib(10s default) */
   uint16_t dump_period_s;
@@ -940,7 +950,7 @@ int mtl_put_lcore(mtl_handle mt, unsigned int lcore);
 void* mtl_memcpy(void* dest, const void* src, size_t n);
 
 /**
- * Read current time from ptp source.
+ * Read current cache time from ptp source.
  *
  * @param mt
  *   The handle to the MTL transport device context.
@@ -948,6 +958,16 @@ void* mtl_memcpy(void* dest, const void* src, size_t n);
  *   - The time in nanoseconds in current ptp system
  */
 uint64_t mtl_ptp_read_time(mtl_handle mt);
+
+/**
+ * Read raw time from ptp source.
+ *
+ * @param mt
+ *   The handle to the MTL transport device context.
+ * @return
+ *   - The time in nanoseconds in current ptp system
+ */
+uint64_t mtl_ptp_read_time_raw(mtl_handle mt);
 
 /**
  * Allocate memory from the huge-page area of memory. The memory is not cleared.
