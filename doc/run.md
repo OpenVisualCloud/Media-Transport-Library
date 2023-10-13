@@ -303,7 +303,7 @@ If it failed to run the sample, please help to collect the system setup status b
 
 ```bash
 --config_file <URL>                  : the json config file path
---ptp                                : Enable the built-in PTP, default is disabled and system time is selected as PTP time source
+--ptp                                : Enable the built-in PTP implementation, default is disabled and system time is selected as PTP time source.
 --lcores <lcore list>                : the DPDK lcore list for this run, e.g. --lcores 28,29,30,31. If not assigned, lib will allocate lcore from system socket cores.
 --test_time <seconds>                : the run duration, unit: seconds
 --rx_separate_lcore                  : If enabled, RX video session will run on dedicated lcores, it means TX video and RX video is not running on the same core.
@@ -343,7 +343,7 @@ packet egresses from the sender.
 --audio_fifo_size <count>            : debug option, the audio fifo size between packet builder and pacing.
 --dhcp                               : debug option, enable DHCP for all ports.
 --virtio_user                        : debug option, enable virtio_user ports for control plane packets. Linux only, need to set capability for the app before running, `sudo setcap 'cap_net_admin+ep' ./build/app/RxTxApp`.
---ptp_sync_sys                       : debug option, enable sync the PTP time from MTL to system time, it required root permission since set system time time is a privilege operation.
+--ptp_sync_sys                       : debug option, enabling the synchronization of PTP time from MTL to the system time requires root permissions, as setting the system time is a privileged operation.
 ```
 
 ## 6. Tests
