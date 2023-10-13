@@ -591,6 +591,7 @@ static void ptp_sync_timeout_handler(void* param) {
 }
 
 static int ptp_parse_result(struct mt_ptp_impl* ptp) {
+  struct mtl_main_impl* impl = ptp->impl;
   int64_t delta = ((int64_t)ptp->t4 - ptp->t3) - ((int64_t)ptp->t2 - ptp->t1);
   int64_t path_delay = ((int64_t)ptp->t2 - ptp->t1) + ((int64_t)ptp->t4 - ptp->t3);
   uint64_t abs_delta, expect_delta;
@@ -663,6 +664,15 @@ static int ptp_parse_result(struct mt_ptp_impl* ptp) {
   ptp_adjust_delta(ptp, delta, false);
   ptp_t_result_clear(ptp);
   ptp->connected = true;
+
+  /* notify the sync event if ptp_sync_notify is enabled */
+  struct mtl_init_params* p = mt_get_user_params(impl);
+  if (p->ptp_sync_notify && (MTL_PORT_P == ptp->port)) {
+    struct mtl_ptp_sync_notify_meta meta;
+    meta.master_utc_offset = ptp->master_utc_offset;
+    meta.delta = delta;
+    p->ptp_sync_notify(p->priv, &meta);
+  }
 
   if (ptp->delta_result_cnt > 10) {
     if (labs(delta) < 30000) {
