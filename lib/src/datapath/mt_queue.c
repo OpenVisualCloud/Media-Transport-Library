@@ -4,6 +4,7 @@
 
 #include "mt_queue.h"
 
+#include "../dev/mt_af_xdp.h"
 #include "../dev/mt_dev.h"
 #include "../mt_cni.h"
 #include "../mt_log.h"
@@ -14,6 +15,11 @@
 static uint16_t rx_socket_burst(struct mt_rxq_entry* entry, struct rte_mbuf** rx_pkts,
                                 const uint16_t nb_pkts) {
   return mt_rx_socket_burst(entry->rx_socket_q, rx_pkts, nb_pkts);
+}
+
+static uint16_t rx_xdp_burst(struct mt_rxq_entry* entry, struct rte_mbuf** rx_pkts,
+                             const uint16_t nb_pkts) {
+  return mt_rx_xdp_burst(entry->rx_xdp_q, rx_pkts, nb_pkts);
 }
 
 static uint16_t rx_srss_burst(struct mt_rxq_entry* entry, struct rte_mbuf** rx_pkts,
@@ -52,6 +58,11 @@ struct mt_rxq_entry* mt_rxq_get(struct mtl_main_impl* impl, enum mtl_port port,
     if (!entry->rx_socket_q) goto fail;
     entry->queue_id = mt_rx_socket_queue_id(entry->rx_socket_q);
     entry->burst = rx_socket_burst;
+  } else if (mt_pmd_is_native_af_xdp(impl, port)) {
+    entry->rx_xdp_q = mt_rx_xdp_get(impl, port, flow);
+    if (!entry->rx_xdp_q) goto fail;
+    entry->queue_id = mt_rx_xdp_queue_id(entry->rx_xdp_q);
+    entry->burst = rx_xdp_burst;
   } else if (mt_has_srss(impl, port)) {
     entry->srss = mt_srss_get(impl, port, flow);
     if (!entry->srss) goto fail;
@@ -102,6 +113,10 @@ int mt_rxq_put(struct mt_rxq_entry* entry) {
     mt_rx_socket_put(entry->rx_socket_q);
     entry->rx_socket_q = NULL;
   }
+  if (entry->rx_xdp_q) {
+    mt_rx_xdp_put(entry->rx_xdp_q);
+    entry->rx_xdp_q = NULL;
+  }
   mt_rte_free(entry);
   return 0;
 }
@@ -114,6 +129,11 @@ uint16_t mt_rxq_burst(struct mt_rxq_entry* entry, struct rte_mbuf** rx_pkts,
 static uint16_t tx_socket_burst(struct mt_txq_entry* entry, struct rte_mbuf** tx_pkts,
                                 uint16_t nb_pkts) {
   return mt_tx_socket_burst(entry->tx_socket_q, tx_pkts, nb_pkts);
+}
+
+static uint16_t tx_xdp_burst(struct mt_txq_entry* entry, struct rte_mbuf** tx_pkts,
+                             uint16_t nb_pkts) {
+  return mt_tx_xdp_burst(entry->tx_xdp_q, tx_pkts, nb_pkts);
 }
 
 static uint16_t tx_tsq_burst(struct mt_txq_entry* entry, struct rte_mbuf** tx_pkts,
@@ -142,6 +162,11 @@ struct mt_txq_entry* mt_txq_get(struct mtl_main_impl* impl, enum mtl_port port,
     if (!entry->tx_socket_q) goto fail;
     entry->queue_id = mt_tx_socket_queue_id(entry->tx_socket_q);
     entry->burst = tx_socket_burst;
+  } else if (mt_pmd_is_native_af_xdp(impl, port)) {
+    entry->tx_xdp_q = mt_tx_xdp_get(impl, port, flow);
+    if (!entry->tx_xdp_q) goto fail;
+    entry->queue_id = mt_tx_xdp_queue_id(entry->tx_xdp_q);
+    entry->burst = tx_xdp_burst;
   } else if (mt_shared_tx_queue(impl, port)) {
     entry->tsq = mt_tsq_get(impl, port, flow);
     if (!entry->tsq) goto fail;
@@ -173,6 +198,10 @@ int mt_txq_put(struct mt_txq_entry* entry) {
   if (entry->tx_socket_q) {
     mt_tx_socket_put(entry->tx_socket_q);
     entry->tx_socket_q = NULL;
+  }
+  if (entry->tx_xdp_q) {
+    mt_tx_xdp_put(entry->tx_xdp_q);
+    entry->tx_xdp_q = NULL;
   }
   mt_rte_free(entry);
   return 0;

@@ -991,6 +991,20 @@ struct mt_rx_socket_entry {
   struct mt_rx_socket_thread threads_data[MT_DP_SOCKET_THREADS_MAX];
 };
 
+struct mt_tx_xdp_entry {
+  struct mtl_main_impl* parent;
+  enum mtl_port port;
+  struct mt_txq_flow flow;
+  uint16_t queue_id;
+};
+
+struct mt_rx_xdp_entry {
+  struct mtl_main_impl* parent;
+  enum mtl_port port;
+  struct mt_rxq_flow flow;
+  uint16_t queue_id;
+};
+
 struct mt_flow_impl {
   pthread_mutex_t mutex; /* protect mt_rx_flow_create */
 };
