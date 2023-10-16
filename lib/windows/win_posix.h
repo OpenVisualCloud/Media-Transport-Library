@@ -15,6 +15,7 @@
 // clang-format off
 #include <winsock2.h>
 #include <windows.h>
+#include <sysinfoapi.h>
 // clang-format on
 
 #ifndef MTL_MAY_UNUSED
@@ -144,6 +145,35 @@ int pthread_cond_timedwait(pthread_cond_t* cond, pthread_mutex_t* mutex,
                            const struct timespec* time);
 int pthread_cond_destroy(pthread_cond_t* cv);
 int pthread_mutex_trylock(pthread_mutex_t* mutex);
+
+#define ADJ_FREQUENCY 0x0002 /* frequency offset */
+#define ADJ_SETOFFSET 0x0100 /* add 'time' to current time */
+#define ADJ_NANO 0x2000      /* select nanosecond resolution */
+#define ADJ_TICK 0x4000      /* tick value */
+
+struct timex {
+  int modes;           /* mode selector */
+  long offset;         /* time offset (usec) */
+  long freq;           /* frequency offset (scaled ppm) */
+  long maxerror;       /* maximum error (usec) */
+  long esterror;       /* estimated error (usec) */
+  int status;          /* clock command/status */
+  long constant;       /* pll time constant */
+  long precision;      /* clock precision (usec) (read only) */
+  long tolerance;      /* clock frequency tolerance (ppm) (read only) */
+  struct timeval time; /* previous time stamp (read only) */
+  long tick;           /* time tick (usec) (read only) */
+  long ppsfreq;        /* pps frequency (scaled ppm) (read only) */
+  long jitter;         /* pps jitter (usec) (read only) */
+  int shift;           /* interval duration (s) (shift) (read only) */
+  long stabil;         /* pps stability (scaled ppm) (read only) */
+  long jitcnt;         /* jitter limit exceeded count (read only) */
+  long calcnt;         /* calibration intervals (read only) */
+  long errcnt;         /* calibration errors (read only) */
+  long stbcnt;         /* stability limit exceeded count (read only) */
+};
+
+int clock_adjtime(clockid_t clk_id, struct timex* tp);
 
 #ifdef __MTL_LIB_BUILD__
 static inline pid_t getpid() { return GetCurrentProcessId(); }

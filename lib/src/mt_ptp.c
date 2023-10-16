@@ -147,7 +147,6 @@ static inline double pi_sample(struct mt_pi_servo* s, double offset, double loca
 }
 
 static void ptp_adj_system_clock_time(struct mt_ptp_impl* ptp, int64_t delta) {
-#ifndef WINDOWSENV
   struct timex adjtime;
   int sign = 1;
 
@@ -168,14 +167,9 @@ static void ptp_adj_system_clock_time(struct mt_ptp_impl* ptp, int64_t delta) {
   dbg("%s(%d), delta %" PRId64 "\n", __func__, ptp->port, delta);
   int ret = clock_adjtime(CLOCK_REALTIME, &adjtime);
   if (ret < 0) err("%s(%d), adj system time offset fail %d\n", __func__, ptp->port, ret);
-#else
-  MTL_MAY_UNUSED(delta);
-  err("%s(%d), not supported for windows\n", __func__, ptp->port);
-#endif
 }
 
 static void ptp_adj_system_clock_freq(struct mt_ptp_impl* ptp, double freq) {
-#ifndef WINDOWSENV
   struct timex adjfreq;
   memset(&adjfreq, 0, sizeof(adjfreq));
 
@@ -191,10 +185,6 @@ static void ptp_adj_system_clock_freq(struct mt_ptp_impl* ptp, double freq) {
   adjfreq.freq = (long)(freq * 65.536);
   int ret = clock_adjtime(CLOCK_REALTIME, &adjfreq);
   if (ret < 0) err("%s(%d), adj system time freq fail %d\n", __func__, ptp->port, ret);
-#else
-  MTL_MAY_UNUSED(freq);
-  err("%s(%d), not supported for windows\n", __func__, ptp->port);
-#endif
 }
 
 static void phc2sys_adjust(struct mt_ptp_impl* ptp) {
