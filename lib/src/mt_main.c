@@ -135,12 +135,6 @@ static void* mt_calibrate_tsc(void* arg) {
 static int mt_main_create(struct mtl_main_impl* impl) {
   int ret;
 
-  ret = mt_stat_init(impl);
-  if (ret < 0) {
-    err("%s, mt stat init fail %d\n", __func__, ret);
-    return ret;
-  }
-
   ret = mt_flow_init(impl);
   if (ret < 0) {
     err("%s, mt flow init fail %d\n", __func__, ret);
@@ -254,7 +248,6 @@ static int mt_main_free(struct mtl_main_impl* impl) {
 
   mt_dev_free(impl);
   mt_flow_uinit(impl);
-  mt_stat_uinit(impl);
   info("%s, succ\n", __func__);
   return 0;
 }
@@ -544,6 +537,12 @@ mtl_handle mtl_init(struct mtl_init_params* p) {
   impl->page_size = sysconf(_SC_PAGESIZE);
 #endif
 
+  ret = mt_stat_init(impl);
+  if (ret < 0) {
+    err("%s, mt stat init fail %d\n", __func__, ret);
+    goto err_exit;
+  }
+
   /* init interface */
   ret = mt_dev_if_init(impl);
   if (ret < 0) {
@@ -589,6 +588,9 @@ int mtl_uninit(mtl_handle mt) {
   mt_main_free(impl);
 
   mt_dev_if_uinit(impl);
+
+  mt_stat_uinit(impl);
+
   mt_rte_free(impl);
 
   mt_dev_uinit(p);

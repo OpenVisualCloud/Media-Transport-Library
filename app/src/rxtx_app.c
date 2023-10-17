@@ -72,6 +72,8 @@ static int app_dump_ptp_sync_stat(struct st_app_context* ctx) {
 static void app_stat(void* priv) {
   struct st_app_context* ctx = priv;
 
+  if (ctx->stop) return;
+
   if (ctx->mtl_log_stream) {
     app_dump_io_stat(ctx);
     st_app_tx_videos_io_stat(ctx);
