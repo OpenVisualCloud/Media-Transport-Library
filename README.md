@@ -22,7 +22,7 @@ If you find value in our project, please consider giving it a star. Your support
 * Non-root run.
 * Multi-process handling, allowing for up to 8 NICs per process.
 * Virtualization support by SR-IOV.
-* Built-in PTP protocol with hardware time stamp.
+* Built-in PTP protocol with hardware timestamp offload.
 
 #### 1.1.1 ST2110 features
 
