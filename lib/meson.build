@@ -15,6 +15,7 @@ if not is_windows
   dpdk_dep = dependency('libdpdk', required : true)
   libnuma_dep = cc.find_library('numa', required : true)
   ws2_32_dep = [] # add this when the code uses hton/ntoh
+  mincore_dep = []
 endif
 jsonc_dep = dependency('json-c', required : true)
 
@@ -56,6 +57,7 @@ endif
 if is_windows
   mtl_c_args += ['-DWINDOWSENV']
   ws2_32_dep = cc.find_library('ws2_32', required: true)
+  mincore_dep = cc.find_library('mincore', required: true)
   dpdk_dep = dependency('libdpdk', required : true, static: true)
   libnuma_dep = []
   dpdk_root_dir = get_option('dpdk_root_dir')
@@ -95,6 +97,6 @@ mtl_lib += shared_library(meson.project_name(), sources,
   c_args : mtl_c_args,
   link_args : mtl_link_c_args,
   # asan should be always the first dep
-  dependencies: [asan_dep, dpdk_dep, libm_dep, libnuma_dep, libpthread_dep, libdl_dep, jsonc_dep, ws2_32_dep, libxdp_dep],
+  dependencies: [asan_dep, dpdk_dep, libm_dep, libnuma_dep, libpthread_dep, libdl_dep, jsonc_dep, ws2_32_dep, mincore_dep, libxdp_dep],
   install: true
 )
