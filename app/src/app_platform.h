@@ -28,6 +28,7 @@
 #endif
 
 #include <fcntl.h>
+#include <openssl/sha.h>
 #include <signal.h>
 #include <stdio.h>
 
@@ -67,11 +68,13 @@ struct st_tx_frame {
   bool second_field;    /* for interlaced mode */
   bool slice_trigger;   /* for slice */
   uint16_t lines_ready; /* for slice */
+  uint8_t shas[SHA256_DIGEST_LENGTH];
 };
 
 struct st_rx_frame {
   void* frame;
   size_t size;
+  uint8_t shas[SHA256_DIGEST_LENGTH];
 };
 
 static inline int st_pthread_mutex_init(pthread_mutex_t* mutex,

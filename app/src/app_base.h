@@ -108,6 +108,7 @@ struct st_app_tx_video_session {
   uint16_t framebuff_producer_idx;
   uint16_t framebuff_consumer_idx;
   struct st_tx_frame* framebuffs;
+  bool sha_check;
 
   pcap_t* st20_pcap;
   bool st20_pcap_input;
@@ -231,6 +232,7 @@ struct st_app_rx_video_session {
   bool slice;
   uint8_t num_port;
   uint64_t last_stat_time_ns;
+  bool sha_check;
 
   char st20_dst_url[ST_APP_URL_MAX_LEN];
   int st20_dst_fb_cnt; /* the count of received fbs will be saved to file */
@@ -521,6 +523,7 @@ struct st_app_context {
   int32_t tx_ts_delta_us;
   enum st21_pacing tx_pacing_type;
   bool tx_no_bulk;
+  bool video_sha_check;
 
   struct st_app_tx_audio_session* tx_audio_sessions;
   char tx_audio_url[ST_APP_URL_MAX_LEN];
@@ -613,5 +616,7 @@ uint8_t* st_json_ip(struct st_app_context* ctx, st_json_session_base_t* base,
                     enum mtl_session_port port);
 
 int st_set_mtl_log_file(struct st_app_context* ctx, const char* file);
+
+void st_sha_dump(const char* tag, unsigned char* sha);
 
 #endif
