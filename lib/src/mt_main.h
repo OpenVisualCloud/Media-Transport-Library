@@ -996,6 +996,7 @@ struct mt_tx_xdp_entry {
   enum mtl_port port;
   struct mt_txq_flow flow;
   uint16_t queue_id;
+  struct mt_xdp_queue* xq;
 };
 
 struct mt_rx_xdp_entry {
@@ -1003,6 +1004,7 @@ struct mt_rx_xdp_entry {
   enum mtl_port port;
   struct mt_rxq_flow flow;
   uint16_t queue_id;
+  struct mt_xdp_queue* xq;
 };
 
 struct mt_flow_impl {

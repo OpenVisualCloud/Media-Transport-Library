@@ -14,12 +14,15 @@ The Intel® Media Transport Library is a software based solution designed for hi
 
 The Intel® Media Transport Library solves the strict timing challenges of transporting ST2110 compliant media streams using a software library and through IP networks. Instead of specialized hardware, this library leverages existing  commonly available CPU platforms with conventional NICs that incorporate rate limiting to meet the strict timing challenges in the SMPTE ST 2110 standard.
 
+If you find value in our project, please consider giving it a star. Your support helps us grow and reach more people in the open-source community. Every star counts and is greatly appreciated.
+
 ### 1.1 Features
 
 * The User-space LibOS UDP stack features a POSIX socket compatible API.
 * Non-root run.
 * Multi-process handling, allowing for up to 8 NICs per process.
 * Virtualization support by SR-IOV.
+* Built-in PTP protocol with hardware timestamp offload.
 
 #### 1.1.1 ST2110 features
 
