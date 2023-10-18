@@ -35,7 +35,7 @@ static int rsq_stat_dump(void* priv) {
   struct mt_rsq_entry* entry;
   int idx;
 
-  for (uint16_t q = 0; q < rsq->max_rsq_queues; q++) {
+  for (uint16_t q = 0; q < rsq->nb_rsq_queues; q++) {
     s = &rsq->rsq_queues[q];
     if (!rsq_try_lock(s)) continue;
     if (s->stat_pkts_recv) {
@@ -85,7 +85,7 @@ static int rsq_uinit(struct mt_rsq_impl* rsq) {
   struct mt_rsq_entry* entry;
 
   if (rsq->rsq_queues) {
-    for (uint16_t q = 0; q < rsq->max_rsq_queues; q++) {
+    for (uint16_t q = 0; q < rsq->nb_rsq_queues; q++) {
       rsq_queue = &rsq->rsq_queues[q];
 
       /* check if any not free */
@@ -110,13 +110,13 @@ static int rsq_init(struct mtl_main_impl* impl, struct mt_rsq_impl* rsq) {
   struct mt_rsq_queue* rsq_queue;
 
   rsq->rsq_queues =
-      mt_rte_zmalloc_socket(sizeof(*rsq->rsq_queues) * rsq->max_rsq_queues, soc_id);
+      mt_rte_zmalloc_socket(sizeof(*rsq->rsq_queues) * rsq->nb_rsq_queues, soc_id);
   if (!rsq->rsq_queues) {
     err("%s(%d), rsq_queues alloc fail\n", __func__, port);
     return -ENOMEM;
   }
 
-  for (uint16_t q = 0; q < rsq->max_rsq_queues; q++) {
+  for (uint16_t q = 0; q < rsq->nb_rsq_queues; q++) {
     rsq_queue = &rsq->rsq_queues[q];
     rsq_queue->queue_id = q;
     rsq_queue->port_id = mt_port_id(impl, port);
@@ -159,7 +159,7 @@ struct mt_rsq_entry* mt_rsq_get(struct mtl_main_impl* impl, enum mtl_port port,
 
   struct mt_rsq_impl* rsqm = rsq_ctx_get(impl, port);
   uint32_t hash = rsq_flow_hash(flow);
-  uint16_t q = (hash % RTE_ETH_RETA_GROUP_SIZE) % rsqm->max_rsq_queues;
+  uint16_t q = (hash % RTE_ETH_RETA_GROUP_SIZE) % rsqm->nb_rsq_queues;
   struct mt_rsq_queue* rsq_queue = &rsqm->rsq_queues[q];
   int idx = rsq_queue->entry_idx;
   struct mt_rsq_entry* entry =
@@ -325,7 +325,7 @@ int mt_rsq_init(struct mtl_main_impl* impl) {
     }
     impl->rsq[i]->parent = impl;
     impl->rsq[i]->port = i;
-    impl->rsq[i]->max_rsq_queues = mt_if(impl, i)->max_rx_queues;
+    impl->rsq[i]->nb_rsq_queues = mt_if(impl, i)->nb_rx_q;
     ret = rsq_init(impl, impl->rsq[i]);
     if (ret < 0) {
       err("%s(%d), rsq init fail\n", __func__, i);
@@ -371,7 +371,7 @@ static int tsq_stat_dump(void* priv) {
   struct mt_tsq_impl* tsq = priv;
   struct mt_tsq_queue* s;
 
-  for (uint16_t q = 0; q < tsq->max_tsq_queues; q++) {
+  for (uint16_t q = 0; q < tsq->nb_tsq_queues; q++) {
     s = &tsq->tsq_queues[q];
     if (!tsq_try_lock(s)) continue;
     if (s->stat_pkts_send) {
@@ -395,7 +395,7 @@ static int tsq_uinit(struct mt_tsq_impl* tsq) {
   struct mt_tsq_entry* entry;
 
   if (tsq->tsq_queues) {
-    for (uint16_t q = 0; q < tsq->max_tsq_queues; q++) {
+    for (uint16_t q = 0; q < tsq->nb_tsq_queues; q++) {
       tsq_queue = &tsq->tsq_queues[q];
 
       /* check if any not free */
@@ -426,13 +426,13 @@ static int tsq_init(struct mtl_main_impl* impl, struct mt_tsq_impl* tsq) {
   struct mt_tsq_queue* tsq_queue;
 
   tsq->tsq_queues =
-      mt_rte_zmalloc_socket(sizeof(*tsq->tsq_queues) * tsq->max_tsq_queues, soc_id);
+      mt_rte_zmalloc_socket(sizeof(*tsq->tsq_queues) * tsq->nb_tsq_queues, soc_id);
   if (!tsq->tsq_queues) {
     err("%s(%d), tsq_queues alloc fail\n", __func__, port);
     return -ENOMEM;
   }
 
-  for (uint16_t q = 0; q < tsq->max_tsq_queues; q++) {
+  for (uint16_t q = 0; q < tsq->nb_tsq_queues; q++) {
     tsq_queue = &tsq->tsq_queues[q];
     tsq_queue->queue_id = q;
     tsq_queue->port_id = mt_port_id(impl, port);
@@ -477,17 +477,17 @@ struct mt_tsq_entry* mt_tsq_get(struct mtl_main_impl* impl, enum mtl_port port,
   uint16_t q = 0;
   /* queue zero is reserved for system queue */
   if (!(flow->flags & MT_TXQ_FLOW_F_SYS_QUEUE)) {
-    q = (hash % RTE_ETH_RETA_GROUP_SIZE) % (tsqm->max_tsq_queues - 1) + 1;
+    q = (hash % RTE_ETH_RETA_GROUP_SIZE) % (tsqm->nb_tsq_queues - 1) + 1;
   }
   struct mt_tsq_queue* tsq_queue = &tsqm->tsq_queues[q];
 
   if (tsq_queue->fatal_error) {
     /* try to find one valid queue */
-    uint16_t q_b = rand() % (tsqm->max_tsq_queues - 1) + 1;
+    uint16_t q_b = rand() % (tsqm->nb_tsq_queues - 1) + 1;
     tsq_queue = &tsqm->tsq_queues[q];
 
     if (tsq_queue->fatal_error) { /* loop to find a valid queue*/
-      for (q_b = 1; q_b < tsqm->max_tsq_queues; q_b++) {
+      for (q_b = 1; q_b < tsqm->nb_tsq_queues; q_b++) {
         tsq_queue = &tsqm->tsq_queues[q_b];
         if (!tsq_queue->fatal_error) break;
       }
@@ -644,7 +644,7 @@ int mt_tsq_init(struct mtl_main_impl* impl) {
     }
     impl->tsq[i]->parent = impl;
     impl->tsq[i]->port = i;
-    impl->tsq[i]->max_tsq_queues = mt_if(impl, i)->max_tx_queues;
+    impl->tsq[i]->nb_tsq_queues = mt_if(impl, i)->nb_tx_q;
     ret = tsq_init(impl, impl->tsq[i]);
     if (ret < 0) {
       err("%s(%d), tsq init fail\n", __func__, i);

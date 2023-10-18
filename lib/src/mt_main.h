@@ -658,12 +658,12 @@ struct mt_interface {
   pthread_mutex_t vf_cmd_mutex;
 
   /* tx queue resources */
-  uint16_t max_tx_queues;
+  uint16_t nb_tx_q;
   struct mt_tx_queue* tx_queues;
   pthread_mutex_t tx_queues_mutex; /* protect tx_queues */
 
   /* rx queue resources */
-  uint16_t max_rx_queues;
+  uint16_t nb_rx_q;
   uint16_t system_rx_queues_end;
   uint16_t hdr_split_rx_queues_end;
   struct mt_rx_queue* rx_queues;
@@ -862,7 +862,7 @@ struct mt_rsq_impl {
   struct mtl_main_impl* parent;
   enum mtl_port port;
   /* sq rx queue resources */
-  uint16_t max_rsq_queues;
+  uint16_t nb_rsq_queues;
   struct mt_rsq_queue* rsq_queues;
 };
 
@@ -914,7 +914,7 @@ struct mt_tsq_impl {
   struct mtl_main_impl* parent;
   enum mtl_port port;
   /* sq tx queue resources */
-  uint16_t max_tsq_queues;
+  uint16_t nb_tsq_queues;
   struct mt_tsq_queue* tsq_queues;
 };
 
@@ -1005,6 +1005,7 @@ struct mt_rx_xdp_entry {
   struct mt_rxq_flow flow;
   uint16_t queue_id;
   struct mt_xdp_queue* xq;
+  struct mt_rx_flow_rsp* flow_rsp;
 };
 
 struct mt_flow_impl {

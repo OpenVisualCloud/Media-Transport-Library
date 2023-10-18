@@ -189,7 +189,7 @@ static struct mt_rx_flow_rsp* rx_flow_create(struct mt_interface* inf, uint16_t 
   struct mtl_main_impl* impl = inf->parent;
   uint8_t* ip = flow->dip_addr;
 
-  if (q >= inf->max_rx_queues) {
+  if (q >= inf->nb_rx_q) {
     err("%s(%d), invalid q %u\n", __func__, port, q);
     return NULL;
   }
@@ -267,8 +267,8 @@ struct mt_rx_flow_rsp* mt_rx_flow_create(struct mtl_main_impl* impl, enum mtl_po
   struct mt_rx_flow_rsp* rsp;
   struct mt_flow_impl* flow_impl = impl->flow[port];
 
-  if (q >= inf->max_rx_queues) {
-    err("%s(%d), invalid q %u\n", __func__, port, q);
+  if (q >= inf->nb_rx_q) {
+    err("%s(%d), invalid q %u max allowed %u\n", __func__, port, q, inf->nb_rx_q);
     return NULL;
   }
 
