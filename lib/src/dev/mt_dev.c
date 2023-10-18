@@ -474,7 +474,7 @@ int dev_rx_runtime_queue_start(struct mtl_main_impl* impl, enum mtl_port port) {
   int ret;
   struct mt_rx_queue* rx_queue;
 
-  for (uint16_t q = 0; q < inf->max_rx_queues; q++) {
+  for (uint16_t q = 0; q < inf->nb_rx_q; q++) {
     rx_queue = &inf->rx_queues[q];
     if (rx_queue->active) {
       ret = rte_eth_dev_rx_queue_start(inf->port_id, q);
@@ -609,7 +609,7 @@ static int dev_init_ratelimit_all(struct mt_interface* inf) {
   memset(&error, 0, sizeof(error));
 
   struct mt_tx_queue* tx_queue;
-  for (uint16_t q = 0; q < inf->max_tx_queues; q++) {
+  for (uint16_t q = 0; q < inf->nb_tx_q; q++) {
     tx_queue = &inf->tx_queues[q];
 
     shaper = dev_rl_shaper_get(inf, bps);
@@ -833,7 +833,7 @@ static uint8_t mt_rss_hash_key[MT_HASH_KEY_LENGTH] = {
 };
 // clang-format on
 
-/* 1:1 map with hash % reta_size % max_rx_queues */
+/* 1:1 map with hash % reta_size % nb_rx_q */
 static int dev_config_rss_reta(struct mt_interface* inf) {
   enum mtl_port port = inf->port;
   uint16_t reta_size = inf->dev_info.reta_size;
@@ -845,7 +845,7 @@ static int dev_config_rss_reta(struct mt_interface* inf) {
   for (int i = 0; i < reta_group_size; i++) {
     entries[i].mask = UINT64_MAX;
     for (int j = 0; j < RTE_ETH_RETA_GROUP_SIZE; j++) {
-      entries[i].reta[j] = (i * RTE_ETH_RETA_GROUP_SIZE + j) % inf->max_rx_queues;
+      entries[i].reta[j] = (i * RTE_ETH_RETA_GROUP_SIZE + j) % inf->nb_rx_q;
     }
   }
   ret = rte_eth_dev_rss_reta_update(inf->port_id, entries, reta_size);
@@ -865,7 +865,7 @@ static int dev_config_port(struct mt_interface* inf) {
   uint16_t nb_rx_desc = MT_DEV_RX_DESC, nb_tx_desc = MT_DEV_TX_DESC;
   int ret;
   struct mtl_init_params* p = mt_get_user_params(impl);
-  uint16_t nb_rx_q = inf->max_rx_queues, nb_tx_q = inf->max_tx_queues;
+  uint16_t nb_rx_q = inf->nb_rx_q, nb_tx_q = inf->nb_tx_q;
   struct rte_eth_conf port_conf = dev_port_conf;
 
   if (inf->drv_info.flags & MT_DRV_F_NOT_DPDK_PMD) {
@@ -1038,7 +1038,7 @@ static int dev_start_port(struct mt_interface* inf) {
   uint16_t port_id = inf->port_id;
   enum mtl_port port = inf->port;
   int socket_id = inf->socket_id;
-  uint16_t nb_rx_q = inf->max_rx_queues, nb_tx_q = inf->max_tx_queues;
+  uint16_t nb_rx_q = inf->nb_rx_q, nb_tx_q = inf->nb_tx_q;
   uint16_t nb_rx_desc = mt_if_nb_rx_desc(impl, port);
   uint16_t nb_tx_desc = mt_if_nb_tx_desc(impl, port);
   uint8_t rx_deferred_start = 0;
@@ -1185,7 +1185,7 @@ static int dev_if_uinit_rx_queues(struct mt_interface* inf) {
 
   if (!inf->rx_queues) return 0;
 
-  for (uint16_t q = 0; q < inf->max_rx_queues; q++) {
+  for (uint16_t q = 0; q < inf->nb_rx_q; q++) {
     rx_queue = &inf->rx_queues[q];
 
     if (rx_queue->active) {
@@ -1213,18 +1213,17 @@ static int dev_if_uinit_rx_queues(struct mt_interface* inf) {
 }
 
 static int dev_if_init_rx_queues(struct mtl_main_impl* impl, struct mt_interface* inf) {
-  if (!inf->max_rx_queues) return 0;
+  if (!inf->nb_rx_q) return 0;
 
   struct mt_rx_queue* rx_queues =
-      mt_rte_zmalloc_socket(sizeof(*rx_queues) * inf->max_rx_queues, inf->socket_id);
+      mt_rte_zmalloc_socket(sizeof(*rx_queues) * inf->nb_rx_q, inf->socket_id);
   if (!rx_queues) {
-    err("%s(%d), rx_queues zmalloc fail, queues %u\n", __func__, inf->port,
-        inf->max_rx_queues);
+    err("%s(%d), rx_queues zmalloc fail, queues %u\n", __func__, inf->port, inf->nb_rx_q);
     return -ENOMEM;
   }
 
   if (!mt_has_rx_mono_pool(impl)) {
-    for (uint16_t q = 0; q < inf->max_rx_queues; q++) {
+    for (uint16_t q = 0; q < inf->nb_rx_q; q++) {
       rx_queues[q].queue_id = q;
       rx_queues[q].port = inf->port;
       rx_queues[q].port_id = inf->port_id;
@@ -1283,7 +1282,7 @@ static int dev_if_init_rx_queues(struct mtl_main_impl* impl, struct mt_interface
   }
   inf->rx_queues = rx_queues;
 
-  info("%s(%d), rx_queues %u malloc succ\n", __func__, inf->port, inf->max_rx_queues);
+  info("%s(%d), rx_queues %u malloc succ\n", __func__, inf->port, inf->nb_rx_q);
   return 0;
 }
 
@@ -1293,7 +1292,7 @@ static int dev_if_uinit_tx_queues(struct mt_interface* inf) {
 
   if (!inf->tx_queues) return 0;
 
-  for (uint16_t q = 0; q < inf->max_tx_queues; q++) {
+  for (uint16_t q = 0; q < inf->nb_tx_q; q++) {
     tx_queue = &inf->tx_queues[q];
     if (tx_queue->active) {
       warn("%s(%d), tx_queue %d still active\n", __func__, port, q);
@@ -1307,16 +1306,16 @@ static int dev_if_uinit_tx_queues(struct mt_interface* inf) {
 }
 
 static int dev_if_init_tx_queues(struct mt_interface* inf) {
-  if (!inf->max_tx_queues) return 0;
+  if (!inf->nb_tx_q) return 0;
 
   struct mt_tx_queue* tx_queues =
-      mt_rte_zmalloc_socket(sizeof(*tx_queues) * inf->max_tx_queues, inf->socket_id);
+      mt_rte_zmalloc_socket(sizeof(*tx_queues) * inf->nb_tx_q, inf->socket_id);
   if (!tx_queues) {
-    err("%s(%d), tx_queues %u malloc alloc\n", __func__, inf->port, inf->max_tx_queues);
+    err("%s(%d), tx_queues %u malloc alloc\n", __func__, inf->port, inf->nb_tx_q);
     return -ENOMEM;
   }
 
-  for (uint16_t q = 0; q < inf->max_tx_queues; q++) {
+  for (uint16_t q = 0; q < inf->nb_tx_q; q++) {
     tx_queues[q].port = inf->port;
     tx_queues[q].port_id = inf->port_id;
     tx_queues[q].queue_id = q;
@@ -1324,7 +1323,7 @@ static int dev_if_init_tx_queues(struct mt_interface* inf) {
   }
   inf->tx_queues = tx_queues;
 
-  info("%s(%d), tx_queues %u malloc succ\n", __func__, inf->port, inf->max_tx_queues);
+  info("%s(%d), tx_queues %u malloc succ\n", __func__, inf->port, inf->nb_tx_q);
   return 0;
 }
 
@@ -1460,7 +1459,7 @@ int mt_dev_set_tx_bps(struct mtl_main_impl* impl, enum mtl_port port, uint16_t q
                       uint64_t bytes_per_sec) {
   struct mt_interface* inf = mt_if(impl, port);
 
-  if (q >= inf->max_tx_queues) {
+  if (q >= inf->nb_tx_q) {
     err("%s(%d), invalid queue %d\n", __func__, port, q);
     return -EIO;
   }
@@ -1486,7 +1485,7 @@ struct mt_tx_queue* mt_dev_get_tx_queue(struct mtl_main_impl* impl, enum mtl_por
   }
 
   mt_pthread_mutex_lock(&inf->tx_queues_mutex);
-  for (uint16_t q = 0; q < inf->max_tx_queues; q++) {
+  for (uint16_t q = 0; q < inf->nb_tx_q; q++) {
     if ((ST21_TX_PACING_WAY_TSN == inf->tx_pacing_way) &&
         (MT_DRV_IGC == inf->drv_info.drv_type)) {
       /*
@@ -1547,7 +1546,7 @@ struct mt_rx_queue* mt_dev_get_rx_queue(struct mtl_main_impl* impl, enum mtl_por
   }
 
   mt_pthread_mutex_lock(&inf->rx_queues_mutex);
-  for (uint16_t q = 0; q < inf->max_rx_queues; q++) {
+  for (uint16_t q = 0; q < inf->nb_rx_q; q++) {
     rx_queue = &inf->rx_queues[q];
     if (rx_queue->active) continue;
     if (flow && (flow->flags & MT_RXQ_FLOW_F_HDR_SPLIT)) {
@@ -1671,7 +1670,7 @@ int mt_dev_put_tx_queue(struct mtl_main_impl* impl, struct mt_tx_queue* queue) {
   struct mt_tx_queue* tx_queue;
   uint16_t queue_id = queue->queue_id;
 
-  if (queue_id >= inf->max_tx_queues) {
+  if (queue_id >= inf->nb_tx_q) {
     err("%s(%d), invalid queue %d\n", __func__, port, queue_id);
     return -EIO;
   }
@@ -1697,7 +1696,7 @@ int mt_dev_tx_queue_fatal_error(struct mtl_main_impl* impl, struct mt_tx_queue* 
   struct mt_tx_queue* tx_queue;
   uint16_t queue_id = queue->queue_id;
 
-  if (queue_id >= inf->max_tx_queues) {
+  if (queue_id >= inf->nb_tx_q) {
     err("%s(%d), invalid queue %d\n", __func__, port, queue_id);
     return -EIO;
   }
@@ -1724,7 +1723,7 @@ int mt_dev_put_rx_queue(struct mtl_main_impl* impl, struct mt_rx_queue* queue) {
   int ret;
   struct mt_rx_queue* rx_queue;
 
-  if (queue_id >= inf->max_rx_queues) {
+  if (queue_id >= inf->nb_rx_q) {
     err("%s(%d), invalid queue %d\n", __func__, port, queue_id);
     return -EIO;
   }
@@ -2083,64 +2082,64 @@ int mt_dev_if_init(struct mtl_main_impl* impl) {
     info("%s(%d), user request queues tx %u rx %u\n", __func__, i, p->tx_queues_cnt[i],
          p->rx_queues_cnt[i]);
     uint16_t queue_pair_cnt = RTE_MAX(p->tx_queues_cnt[i], p->rx_queues_cnt[i]);
+    if (!queue_pair_cnt) queue_pair_cnt = 1; /* at least 1 queue pair */
     /* set max tx/rx queues */
     if (mt_pmd_is_kernel_socket(impl, i)) {
-      inf->max_tx_queues = p->tx_queues_cnt[i];
-      inf->max_rx_queues = p->rx_queues_cnt[i];
+      inf->nb_tx_q = p->tx_queues_cnt[i];
+      inf->nb_rx_q = p->rx_queues_cnt[i];
       inf->system_rx_queues_end = 0;
     } else if (mt_pmd_is_dpdk_af_packet(impl, i)) {
-      inf->max_tx_queues = p->tx_queues_cnt[i];
-      inf->max_tx_queues++; /* arp, mcast, ptp use shared sys queue */
+      inf->nb_tx_q = p->tx_queues_cnt[i];
+      inf->nb_tx_q++; /* arp, mcast, ptp use shared sys queue */
       /* force to shared since the packet is dispatched by kernel */
-      inf->max_rx_queues = 1;
+      inf->nb_rx_q = 1;
       p->flags |= MTL_FLAG_SHARED_RX_QUEUE;
       inf->system_rx_queues_end = 0;
     } else if (mt_pmd_is_dpdk_af_xdp(impl, i) || mt_pmd_is_native_af_xdp(impl, i)) {
       /* no system queues as no cni */
-      inf->max_tx_queues = queue_pair_cnt;
-      inf->max_rx_queues = queue_pair_cnt;
+      inf->nb_tx_q = queue_pair_cnt;
+      inf->nb_rx_q = queue_pair_cnt;
       inf->system_rx_queues_end = 0;
     } else {
       info("%s(%d), deprecated sessions tx %u rx %u\n", __func__, i,
            p->tx_sessions_cnt_max, p->rx_sessions_cnt_max);
-      inf->max_tx_queues =
+      inf->nb_tx_q =
           p->tx_sessions_cnt_max ? p->tx_sessions_cnt_max : p->tx_queues_cnt[i];
-      inf->max_tx_queues++; /* arp, mcast, ptp use shared sys queue */
+      inf->nb_tx_q++; /* arp, mcast, ptp use shared sys queue */
 #ifdef MTL_HAS_TAP
-      inf->max_tx_queues++; /* tap tx queue */
+      inf->nb_tx_q++; /* tap tx queue */
 #endif
 
-      inf->max_rx_queues =
+      inf->nb_rx_q =
           p->rx_sessions_cnt_max ? p->rx_sessions_cnt_max : p->rx_queues_cnt[i];
       if (!mt_no_system_rxq(impl)) {
-        inf->max_rx_queues++;
+        inf->nb_rx_q++;
         inf->system_rx_queues_end = 1; /* cni rx */
         if (mt_has_ptp_service(impl)) {
-          inf->max_rx_queues++;
+          inf->nb_rx_q++;
           inf->system_rx_queues_end++;
         }
 #ifdef MTL_HAS_TAP
-        inf->max_rx_queues++;
+        inf->nb_rx_q++;
         inf->system_rx_queues_end++;
 #endif
       }
       inf->hdr_split_rx_queues_end =
           inf->system_rx_queues_end + p->nb_rx_hdr_split_queues;
     }
-    dbg("%s(%d), tx_queues %u dev max tx queues %u\n", __func__, i, inf->max_tx_queues,
+    dbg("%s(%d), tx_queues %u dev max tx queues %u\n", __func__, i, inf->nb_tx_q,
         dev_info->max_tx_queues);
     if (!(inf->drv_info.flags & MT_DRV_F_NOT_DPDK_PMD)) {
       /* max tx/rx queues don't exceed dev limit */
-      inf->max_tx_queues = RTE_MIN(inf->max_tx_queues, dev_info->max_tx_queues);
-      inf->max_rx_queues = RTE_MIN(inf->max_rx_queues, dev_info->max_rx_queues);
+      inf->nb_tx_q = RTE_MIN(inf->nb_tx_q, dev_info->max_tx_queues);
+      inf->nb_rx_q = RTE_MIN(inf->nb_rx_q, dev_info->max_rx_queues);
     }
     /* when using IAVF, num_queue_pairs will be set as the max of tx/rx */
     if (inf->drv_info.drv_type == MT_DRV_IAVF) {
-      inf->max_tx_queues = RTE_MAX(inf->max_tx_queues, inf->max_rx_queues);
-      inf->max_rx_queues = inf->max_tx_queues;
+      inf->nb_tx_q = RTE_MAX(inf->nb_tx_q, inf->nb_rx_q);
+      inf->nb_rx_q = inf->nb_tx_q;
     }
-    dbg("%s(%d), tx_queues %u rx queues %u\n", __func__, i, inf->max_tx_queues,
-        inf->max_rx_queues);
+    dbg("%s(%d), tx_queues %u rx queues %u\n", __func__, i, inf->nb_tx_q, inf->nb_rx_q);
 
     /* feature detect */
     if (dev_info->dev_capa & RTE_ETH_DEV_CAPA_RUNTIME_RX_QUEUE_SETUP)
@@ -2236,7 +2235,7 @@ int mt_dev_if_init(struct mtl_main_impl* impl) {
     if (mt_has_rx_mono_pool(impl)) {
       mbuf_elements = 1024;
       /* append as rx queues */
-      mbuf_elements += inf->max_rx_queues * inf->nb_rx_desc;
+      mbuf_elements += inf->nb_rx_q * inf->nb_rx_desc;
       snprintf(pool_name, ST_MAX_NAME_LEN, "%sP%d_SYS", MT_RX_MEMPOOL_PREFIX, i);
       mbuf_pool = mt_mempool_create_common(impl, i, pool_name, mbuf_elements);
       if (!mbuf_pool) {
@@ -2250,7 +2249,7 @@ int mt_dev_if_init(struct mtl_main_impl* impl) {
     mbuf_elements = 1024;
     if (mt_has_tx_mono_pool(impl)) {
       /* append as tx queues, double as tx ring */
-      mbuf_elements += inf->max_tx_queues * inf->nb_tx_desc * 2;
+      mbuf_elements += inf->nb_tx_q * inf->nb_tx_desc * 2;
     }
     snprintf(pool_name, ST_MAX_NAME_LEN, "%sP%d_SYS", MT_TX_MEMPOOL_PREFIX, i);
     mbuf_pool = mt_mempool_create_common(impl, i, pool_name, mbuf_elements);
@@ -2350,7 +2349,7 @@ uint32_t mt_dev_softrss(uint32_t* input_tuple, uint32_t input_len) {
 uint16_t mt_dev_rss_hash_queue(struct mtl_main_impl* impl, enum mtl_port port,
                                uint32_t hash) {
   struct mt_interface* inf = mt_if(impl, port);
-  return (hash % inf->dev_info.reta_size) % inf->max_rx_queues;
+  return (hash % inf->dev_info.reta_size) % inf->nb_rx_q;
 }
 
 int mt_dev_tsc_done_action(struct mtl_main_impl* impl) {
