@@ -105,7 +105,7 @@ static void* app_rx_video_frame_thread(void* arg) {
     app_rx_video_consume_frame(s, framebuff->frame, framebuff->size);
     if (s->sha_check) {
       uint8_t shas[SHA256_DIGEST_LENGTH];
-      SHA256((unsigned char*)framebuff->frame, framebuff->size, shas);
+      st_sha256((unsigned char*)framebuff->frame, framebuff->size, shas);
       if (memcmp(shas, framebuff->shas, sizeof(shas))) {
         err("%s(%d), sha check fail for frame idx %d\n", __func__, idx, consumer_idx);
         st_sha_dump("user meta sha:", framebuff->shas);

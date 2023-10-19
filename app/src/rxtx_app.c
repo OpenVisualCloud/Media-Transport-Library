@@ -587,7 +587,7 @@ int st_set_mtl_log_file(struct st_app_context* ctx, const char* file) {
   return 0;
 }
 
-void st_sha_dump(const char* tag, unsigned char* sha) {
+void st_sha_dump(const char* tag, const unsigned char* sha) {
   if (tag) info("%s, ", tag);
   for (size_t i = 0; i < SHA256_DIGEST_LENGTH; i++) {
     info("0x%02x ", sha[i]);

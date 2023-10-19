@@ -28,9 +28,12 @@
 #endif
 
 #include <fcntl.h>
-#include <openssl/sha.h>
 #include <signal.h>
 #include <stdio.h>
+
+#ifdef APP_HAS_SSL
+#include <openssl/sha.h>
+#endif
 
 #ifndef __FAVOR_BSD
 #define __FAVOR_BSD
@@ -61,6 +64,10 @@ enum st_tx_frame_status {
   ST_TX_FRAME_IN_TRANSMITTING,
   ST_TX_FRAME_STATUS_MAX,
 };
+
+#ifndef SHA256_DIGEST_LENGTH
+#define SHA256_DIGEST_LENGTH 32
+#endif
 
 struct st_tx_frame {
   enum st_tx_frame_status stat;
@@ -197,5 +204,20 @@ static inline int st_set_real_time(struct timespec* ts) {
   return clock_settime(CLOCK_REALTIME, ts);
 #endif
 }
+
+#ifdef APP_HAS_SSL
+static inline unsigned char* st_sha256(const unsigned char* d, size_t n,
+                                       unsigned char* md) {
+  return SHA256(d, n, md);
+}
+#else
+static inline unsigned char* st_sha256(const unsigned char* d, size_t n,
+                                       unsigned char* md) {
+  MTL_MAY_UNUSED(d);
+  MTL_MAY_UNUSED(n);
+  md[0] = rand();
+  return NULL;
+}
+#endif
 
 #endif

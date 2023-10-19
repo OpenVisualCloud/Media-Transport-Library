@@ -19,6 +19,7 @@ libm = cc.find_library('m', required : true)
 libpthread = cc.find_library('pthread', required : true)
 libjson_c = dependency('json-c', required : true)
 libpcap = dependency('pcap', required: true)
+
 libsdl2 = dependency('sdl2', required: false)
 if libsdl2.found()
   add_global_arguments('-DAPP_HAS_SDL2', language : 'c')
@@ -33,8 +34,13 @@ if libsdl2_ttf.found()
 else
   message('SDL2_ttf not found')
 endif
-libopenssl = dependency('openssl', required : true)
-dpdk_dep = dependency('libdpdk', required : true)
+
+libopenssl = dependency('openssl', required : false)
+if libopenssl.found()
+  add_global_arguments('-DAPP_HAS_SSL', language : 'c')
+else
+  message('openssl not found')
+endif
 
 # add source file
 subdir('src')

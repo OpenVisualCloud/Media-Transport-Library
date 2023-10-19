@@ -40,6 +40,8 @@ static void app_rx_st20p_consume_frame(struct st_app_rx_st20p_session* s,
 static void* app_rx_st20p_frame_thread(void* arg) {
   struct st_app_rx_st20p_session* s = arg;
   struct st_frame* frame;
+  uint8_t shas[SHA256_DIGEST_LENGTH];
+  int idx = s->idx;
 
   info("%s(%d), start\n", __func__, s->idx);
   while (!s->st20p_app_thread_stop) {
@@ -70,6 +72,19 @@ static void* app_rx_st20p_frame_thread(void* arg) {
     }
 
     app_rx_st20p_consume_frame(s, frame);
+    if (s->sha_check) {
+      if (frame->user_meta_size != sizeof(shas)) {
+        err("%s(%d), invalid user meta size %" PRId64 "\n", __func__, idx,
+            frame->user_meta_size);
+      } else {
+        st_sha256((unsigned char*)frame->addr[0], st_frame_plane_size(frame, 0), shas);
+        if (memcmp(shas, frame->user_meta, sizeof(shas))) {
+          err("%s(%d), sha check fail for frame %p\n", __func__, idx, frame->addr);
+          st_sha_dump("user meta sha:", frame->user_meta);
+          st_sha_dump("frame sha:", shas);
+        }
+      }
+    }
     s->stat_frame_total_received++;
     if (!s->stat_frame_first_rx_time)
       s->stat_frame_first_rx_time = st_app_get_monotonic_time();
@@ -157,6 +172,7 @@ static int app_rx_st20p_init(struct st_app_context* ctx,
   memset(&ops, 0, sizeof(ops));
 
   s->last_stat_time_ns = st_app_get_monotonic_time();
+  s->sha_check = ctx->video_sha_check;
 
   snprintf(name, 32, "app_rx_st20p_%d", idx);
   ops.name = name;

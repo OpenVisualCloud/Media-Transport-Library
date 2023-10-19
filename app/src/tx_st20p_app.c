@@ -70,6 +70,7 @@ static void* app_tx_st20p_frame_thread(void* arg) {
   st20p_tx_handle handle = s->handle;
   int idx = s->idx;
   struct st_frame* frame;
+  uint8_t shas[SHA256_DIGEST_LENGTH];
 
   info("%s(%d), start\n", __func__, idx);
   while (!s->st20p_app_thread_stop) {
@@ -82,6 +83,11 @@ static void* app_tx_st20p_frame_thread(void* arg) {
       continue;
     }
     app_tx_st20p_build_frame(s, frame);
+    if (s->sha_check) {
+      st_sha256((unsigned char*)frame->addr[0], st_frame_plane_size(frame, 0), shas);
+      frame->user_meta = shas;
+      frame->user_meta_size = sizeof(shas);
+    }
     st20p_tx_put_frame(handle, frame);
   }
   info("%s(%d), stop\n", __func__, idx);
@@ -236,6 +242,7 @@ static int app_tx_st20p_init(struct st_app_context* ctx, st_json_st20p_session_t
   memset(&ops, 0, sizeof(ops));
 
   s->last_stat_time_ns = st_app_get_monotonic_time();
+  s->sha_check = ctx->video_sha_check;
 
   snprintf(name, 32, "app_tx_st20p_%d", idx);
   ops.name = name;

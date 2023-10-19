@@ -434,6 +434,7 @@ struct st_app_tx_st20p_session {
   int height;
   uint8_t num_port;
   uint64_t last_stat_time_ns;
+  bool sha_check;
 
   char st20p_source_url[ST_APP_URL_MAX_LEN];
   uint8_t* st20p_source_begin;
@@ -460,6 +461,7 @@ struct st_app_rx_st20p_session {
   int height;
   uint8_t num_port;
   uint64_t last_stat_time_ns;
+  bool sha_check;
 
   /* stat */
   int stat_frame_received;
@@ -617,6 +619,6 @@ uint8_t* st_json_ip(struct st_app_context* ctx, st_json_session_base_t* base,
 
 int st_set_mtl_log_file(struct st_app_context* ctx, const char* file);
 
-void st_sha_dump(const char* tag, unsigned char* sha);
+void st_sha_dump(const char* tag, const unsigned char* sha);
 
 #endif

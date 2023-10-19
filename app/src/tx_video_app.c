@@ -239,7 +239,7 @@ static void* app_tx_video_frame_thread(void* arg) {
       app_tx_video_build_frame(s, frame_addr, s->st20_frame_size);
     }
     if (s->sha_check) {
-      SHA256((unsigned char*)frame_addr, s->st20_frame_size, framebuff->shas);
+      st_sha256((unsigned char*)frame_addr, s->st20_frame_size, framebuff->shas);
       // st_sha_dump("frame sha:", framebuff->shas);
     }
 
