@@ -56,6 +56,10 @@ static int app_tx_video_next_frame(void* priv, uint16_t* next_frame_idx,
     framebuff->stat = ST_TX_FRAME_IN_TRANSMITTING;
     *next_frame_idx = consumer_idx;
     meta->second_field = framebuff->second_field;
+    if (s->sha_check) {
+      meta->user_meta = framebuff->shas;
+      meta->user_meta_size = sizeof(framebuff->shas);
+    }
     /* point to next */
     consumer_idx++;
     if (consumer_idx >= s->framebuff_cnt) consumer_idx = 0;
@@ -233,6 +237,10 @@ static void* app_tx_video_frame_thread(void* arg) {
     if (!s->slice) {
       /* interlaced use different layout? */
       app_tx_video_build_frame(s, frame_addr, s->st20_frame_size);
+    }
+    if (s->sha_check) {
+      st_sha256((unsigned char*)frame_addr, s->st20_frame_size, framebuff->shas);
+      // st_sha_dump("frame sha:", framebuff->shas);
     }
 
     st_pthread_mutex_lock(&s->st20_wake_mutex);
@@ -710,6 +718,7 @@ static int app_tx_video_init(struct st_app_context* ctx, st_json_video_session_t
   s->ctx = ctx;
   s->enable_vsync = false;
   s->last_stat_time_ns = st_app_get_monotonic_time();
+  s->sha_check = ctx->video_sha_check;
 
   snprintf(name, 32, "app_tx_video_%d", idx);
   ops.name = name;

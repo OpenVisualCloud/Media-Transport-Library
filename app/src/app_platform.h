@@ -31,6 +31,10 @@
 #include <signal.h>
 #include <stdio.h>
 
+#ifdef APP_HAS_SSL
+#include <openssl/sha.h>
+#endif
+
 #ifndef __FAVOR_BSD
 #define __FAVOR_BSD
 #endif
@@ -61,17 +65,23 @@ enum st_tx_frame_status {
   ST_TX_FRAME_STATUS_MAX,
 };
 
+#ifndef SHA256_DIGEST_LENGTH
+#define SHA256_DIGEST_LENGTH 32
+#endif
+
 struct st_tx_frame {
   enum st_tx_frame_status stat;
   size_t size;
   bool second_field;    /* for interlaced mode */
   bool slice_trigger;   /* for slice */
   uint16_t lines_ready; /* for slice */
+  uint8_t shas[SHA256_DIGEST_LENGTH];
 };
 
 struct st_rx_frame {
   void* frame;
   size_t size;
+  uint8_t shas[SHA256_DIGEST_LENGTH];
 };
 
 static inline int st_pthread_mutex_init(pthread_mutex_t* mutex,
@@ -194,5 +204,20 @@ static inline int st_set_real_time(struct timespec* ts) {
   return clock_settime(CLOCK_REALTIME, ts);
 #endif
 }
+
+#ifdef APP_HAS_SSL
+static inline unsigned char* st_sha256(const unsigned char* d, size_t n,
+                                       unsigned char* md) {
+  return SHA256(d, n, md);
+}
+#else
+static inline unsigned char* st_sha256(const unsigned char* d, size_t n,
+                                       unsigned char* md) {
+  MTL_MAY_UNUSED(d);
+  MTL_MAY_UNUSED(n);
+  md[0] = rand();
+  return NULL;
+}
+#endif
 
 #endif

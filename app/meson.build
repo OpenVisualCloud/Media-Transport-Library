@@ -19,6 +19,7 @@ libm = cc.find_library('m', required : true)
 libpthread = cc.find_library('pthread', required : true)
 libjson_c = dependency('json-c', required : true)
 libpcap = dependency('pcap', required: true)
+
 libsdl2 = dependency('sdl2', required: false)
 if libsdl2.found()
   add_global_arguments('-DAPP_HAS_SDL2', language : 'c')
@@ -33,8 +34,13 @@ if libsdl2_ttf.found()
 else
   message('SDL2_ttf not found')
 endif
-libopenssl = dependency('openssl', required : true)
-dpdk_dep = dependency('libdpdk', required : true)
+
+libopenssl = dependency('openssl', required : false)
+if libopenssl.found()
+  add_global_arguments('-DAPP_HAS_SSL', language : 'c')
+else
+  message('openssl not found')
+endif
 
 # add source file
 subdir('src')
@@ -94,7 +100,7 @@ executable('RxTxApp', sources,
   c_args : app_c_args,
   link_args: app_ld_args,
   # asan should be always the first dep
-  dependencies: [asan_dep, mtl, libjson_c, libpcap, libsdl2, libsdl2_ttf, libm, libpthread, ws2_32_dep, mman_dep]
+  dependencies: [asan_dep, mtl, libjson_c, libpcap, libsdl2, libsdl2_ttf, libm, libpthread, ws2_32_dep, mman_dep, libopenssl]
 )
 
 # Color convert tool for raw yuv file

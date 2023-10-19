@@ -24,7 +24,7 @@ static inline bool app_rx_video_is_frame_type(enum st20_type type) {
 }
 
 static int app_rx_video_enqueue_frame(struct st_app_rx_video_session* s, void* frame,
-                                      size_t size) {
+                                      struct st20_rx_frame_meta* meta) {
   uint16_t producer_idx = s->framebuff_producer_idx;
   struct st_rx_frame* framebuff = &s->framebuffs[producer_idx];
 
@@ -32,9 +32,18 @@ static int app_rx_video_enqueue_frame(struct st_app_rx_video_session* s, void* f
     return -EBUSY;
   }
 
+  if (s->sha_check) {
+    if (meta->user_meta_size != sizeof(framebuff->shas)) {
+      err("%s(%d), invalid user meta size %" PRId64 "\n", __func__, s->idx,
+          meta->user_meta_size);
+      return -EIO;
+    }
+    memcpy(framebuff->shas, meta->user_meta, sizeof(framebuff->shas));
+  }
+
   dbg("%s(%d), frame idx %d\n", __func__, s->idx, producer_idx);
   framebuff->frame = frame;
-  framebuff->size = size;
+  framebuff->size = meta->frame_total_size;
   /* point to next */
   producer_idx++;
   if (producer_idx >= s->framebuff_cnt) producer_idx = 0;
@@ -62,7 +71,7 @@ static void app_rx_video_consume_frame(struct st_app_rx_video_session* s, void* 
       st_pthread_cond_signal(&d->display_wake_cond);
       st_pthread_mutex_unlock(&d->display_wake_mutex);
     }
-  } else {
+  } else if (s->st20_dst_fd > 0) {
     if (s->st20_dst_cursor + frame_size > s->st20_dst_end)
       s->st20_dst_cursor = s->st20_dst_begin;
     dbg("%s(%d), dst %p src %p size %" PRIu64 "\n", __func__, s->idx, s->st20_dst_cursor,
@@ -94,6 +103,15 @@ static void* app_rx_video_frame_thread(void* arg) {
 
     dbg("%s(%d), frame idx %d\n", __func__, idx, consumer_idx);
     app_rx_video_consume_frame(s, framebuff->frame, framebuff->size);
+    if (s->sha_check) {
+      uint8_t shas[SHA256_DIGEST_LENGTH];
+      st_sha256((unsigned char*)framebuff->frame, framebuff->size, shas);
+      if (memcmp(shas, framebuff->shas, sizeof(shas))) {
+        err("%s(%d), sha check fail for frame idx %d\n", __func__, idx, consumer_idx);
+        st_sha_dump("user meta sha:", framebuff->shas);
+        st_sha_dump("frame sha:", shas);
+      }
+    }
     st20_rx_put_framebuff(s->handle, framebuff->frame);
     /* point to next */
     st_pthread_mutex_lock(&s->st20_wake_mutex);
@@ -267,7 +285,7 @@ static int app_rx_video_init_frame_thread(struct st_app_rx_video_session* s) {
   int ret, idx = s->idx;
 
   /* user do not require fb save to file or display */
-  if (s->st20_dst_fb_cnt < 1 && s->display == NULL) return 0;
+  if (s->st20_dst_fb_cnt < 1 && !s->display && !s->sha_check) return 0;
 
   ret = pthread_create(&s->st20_app_thread, NULL, app_rx_video_frame_thread, s);
   if (ret < 0) {
@@ -323,19 +341,19 @@ static int app_rx_video_frame_ready(void* priv, void* frame,
   if (!s->stat_frame_first_rx_time)
     s->stat_frame_first_rx_time = st_app_get_monotonic_time();
 
-  if (s->st20_dst_fd < 0 && s->display == NULL) {
+  if (!s->st20_app_thread) {
     /* free the queue directly as no read thread is running */
     st20_rx_put_framebuff(s->handle, frame);
     return 0;
   }
 
   st_pthread_mutex_lock(&s->st20_wake_mutex);
-  ret = app_rx_video_enqueue_frame(s, frame, meta->frame_total_size);
+  ret = app_rx_video_enqueue_frame(s, frame, meta);
   if (ret < 0) {
     /* free the queue */
     st20_rx_put_framebuff(s->handle, frame);
     st_pthread_mutex_unlock(&s->st20_wake_mutex);
-    return ret;
+    return 0;
   }
   st_pthread_cond_signal(&s->st20_wake_cond);
   st_pthread_mutex_unlock(&s->st20_wake_mutex);
@@ -458,6 +476,7 @@ static int app_rx_video_init(struct st_app_context* ctx, st_json_video_session_t
   memset(&ops, 0, sizeof(ops));
 
   s->last_stat_time_ns = st_app_get_monotonic_time();
+  s->sha_check = ctx->video_sha_check;
 
   snprintf(name, 32, "app_rx_video_%d", idx);
   ops.name = name;
