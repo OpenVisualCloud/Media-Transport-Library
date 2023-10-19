@@ -27,6 +27,13 @@
 #ifdef WINDOWSENV
 #define be64toh(x) \
   ((1 == ntohl(1)) ? (x) : ((uint64_t)ntohl((x)&0xFFFFFFFF) << 32) | ntohl((x) >> 32))
+
+typedef BOOL(WINAPI* PGSTAP)(PDWORD64 lpTimeAdjustment, PDWORD64 lpTimeIncrement,
+                             PBOOL lpTimeAdjustmentDisabled);
+static PGSTAP win_get_systime_adj;
+
+typedef BOOL(WINAPI* PSSTAP)(DWORD64 dwTimeAdjustment, BOOL bTimeAdjustmentDisabled);
+static PSSTAP win_set_systime_adj;
 #endif
 
 static char* ptp_mode_strs[MT_PTP_MAX_MODE] = {
@@ -134,7 +141,9 @@ static inline double pi_sample(struct mt_pi_servo* s, double offset, double loca
       break;
     case 3:
       *state = JUMP;
+#ifndef WINDOWSENV /* windows always adj offset since adj freq not ready */
       s->count = 4;
+#endif
       break;
     case 4:
       s->drift += 0.7 * offset;
@@ -147,6 +156,7 @@ static inline double pi_sample(struct mt_pi_servo* s, double offset, double loca
 }
 
 static void ptp_adj_system_clock_time(struct mt_ptp_impl* ptp, int64_t delta) {
+  int ret;
 #ifndef WINDOWSENV
   struct timex adjtime;
   int sign = 1;
@@ -165,16 +175,26 @@ static void ptp_adj_system_clock_time(struct mt_ptp_impl* ptp, int64_t delta) {
     adjtime.time.tv_usec += 1000000000;
   }
 
-  dbg("%s(%d), delta %" PRId64 "\n", __func__, ptp->port, delta);
-  int ret = clock_adjtime(CLOCK_REALTIME, &adjtime);
-  if (ret < 0) err("%s(%d), adj system time offset fail %d\n", __func__, ptp->port, ret);
+  ret = clock_adjtime(CLOCK_REALTIME, &adjtime);
 #else
-  MTL_MAY_UNUSED(delta);
-  err("%s(%d), not supported for windows\n", __func__, ptp->port);
+  FILETIME ft;
+  SYSTEMTIME st;
+  GetSystemTimePreciseAsFileTime(&ft);
+  ULARGE_INTEGER ui;
+  ui.LowPart = ft.dwLowDateTime;
+  ui.HighPart = ft.dwHighDateTime;
+  ui.QuadPart += delta / 100; /* in 100ns */
+  ft.dwLowDateTime = ui.LowPart;
+  ft.dwHighDateTime = ui.HighPart;
+  FileTimeToSystemTime(&ft, &st);
+  ret = SetSystemTime(&st) ? 0 : -1;
 #endif
+  dbg("%s(%d), delta %" PRId64 "\n", __func__, ptp->port, delta);
+  if (ret < 0) err("%s(%d), adj system time offset fail %d\n", __func__, ptp->port, ret);
 }
 
-static void ptp_adj_system_clock_freq(struct mt_ptp_impl* ptp, double freq) {
+static void ptp_adj_system_clock_freq(struct mt_ptp_impl* ptp, double ppb) {
+  int ret = -1;
 #ifndef WINDOWSENV
   struct timex adjfreq;
   memset(&adjfreq, 0, sizeof(adjfreq));
@@ -182,19 +202,24 @@ static void ptp_adj_system_clock_freq(struct mt_ptp_impl* ptp, double freq) {
   if (ptp->phc2sys.realtime_nominal_tick) {
     adjfreq.modes |= ADJ_TICK;
     adjfreq.tick =
-        round(freq / 1e3 / ptp->phc2sys.realtime_hz) + ptp->phc2sys.realtime_nominal_tick;
-    freq -= 1e3 * ptp->phc2sys.realtime_hz *
-            (adjfreq.tick - ptp->phc2sys.realtime_nominal_tick);
+        round(ppb / 1e3 / ptp->phc2sys.realtime_hz) + ptp->phc2sys.realtime_nominal_tick;
+    ppb -= 1e3 * ptp->phc2sys.realtime_hz *
+           (adjfreq.tick - ptp->phc2sys.realtime_nominal_tick);
   }
 
   adjfreq.modes |= ADJ_FREQUENCY;
-  adjfreq.freq = (long)(freq * 65.536);
-  int ret = clock_adjtime(CLOCK_REALTIME, &adjfreq);
-  if (ret < 0) err("%s(%d), adj system time freq fail %d\n", __func__, ptp->port, ret);
-#else
-  MTL_MAY_UNUSED(freq);
-  err("%s(%d), not supported for windows\n", __func__, ptp->port);
+  adjfreq.freq =
+      (long)(ppb * 65.536); /* 1 ppm = 1000 ppb = 2^16 freq unit (scaled ppm) */
+  ret = clock_adjtime(CLOCK_REALTIME, &adjfreq);
+#else /* TBD */
+  uint64_t cur_adj = 0;
+  uint64_t time_inc = 0;
+  int time_adj_disable = 0;
+
+  if ((*win_get_systime_adj)(&cur_adj, &time_inc, &time_adj_disable))
+    ret = (*win_set_systime_adj)(cur_adj - ppb / 100, FALSE) ? 0 : -1;
 #endif
+  if (ret < 0) err("%s(%d), adj system time freq fail %d\n", __func__, ptp->port, ret);
 }
 
 static void phc2sys_adjust(struct mt_ptp_impl* ptp) {
@@ -242,8 +267,9 @@ static void phc2sys_adjust(struct mt_ptp_impl* ptp) {
         break;
       case LOCKED:
         ptp_adj_system_clock_freq(ptp, -ppb);
-        dbg("%s(%d), CLOCK_REALTIME offset %" PRId64 ", delay %" PRIu64 " adjust freq.\n",
-            __func__, ptp->port_id, offset, shortest_delay);
+        dbg("%s(%d), CLOCK_REALTIME offset %" PRId64 ", delay %" PRIu64
+            " adjust freq %lf ppb.\n",
+            __func__, ptp->port_id, offset, shortest_delay, ppb);
         break;
     }
 
@@ -1033,11 +1059,63 @@ static void ptp_sync_from_user_handler(void* param) {
   rte_eal_alarm_set(MT_PTP_EBU_SYNC_MS * 1000, ptp_sync_from_user_handler, ptp);
 }
 
+#ifdef WINDOWSENV
+int obtain_systime_privileges() {
+  HANDLE hProcToken = NULL;
+  TOKEN_PRIVILEGES tp = {0};
+  LUID luid;
+
+  if (!LookupPrivilegeValue(NULL, SE_SYSTEMTIME_NAME, &luid)) {
+    err("%s, failed to lookup privilege value. hr=0x%08lx\n", __func__,
+        HRESULT_FROM_WIN32(GetLastError()));
+    return -1;
+  }
+
+  if (!OpenProcessToken(GetCurrentProcess(), TOKEN_ADJUST_PRIVILEGES | TOKEN_QUERY,
+                        &hProcToken)) {
+    err("%s, failed to open process token. hr=0x%08lx\n", __func__,
+        HRESULT_FROM_WIN32(GetLastError()));
+    return -1;
+  }
+
+  tp.PrivilegeCount = 1;
+  tp.Privileges[0].Luid = luid;
+  tp.Privileges[0].Attributes = SE_PRIVILEGE_ENABLED;
+
+  if (!AdjustTokenPrivileges(hProcToken, FALSE, &tp, 0, NULL, NULL)) {
+    err("%s, failed to adjust process token privileges. hr=0x%08lx\n", __func__,
+        HRESULT_FROM_WIN32(GetLastError()));
+    return -1;
+  }
+
+  if (hProcToken) CloseHandle(hProcToken);
+
+  info("%s, succ\n", __func__);
+  return 0;
+}
+#endif
+
 static void phc2sys_init(struct mt_ptp_impl* ptp) {
   memset(&ptp->phc2sys.servo, 0, sizeof(struct mt_pi_servo));
   memset(&ptp->servo, 0, sizeof(struct mt_pi_servo));
 #ifndef WINDOWSENV
   ptp->phc2sys.realtime_hz = sysconf(_SC_CLK_TCK);
+#else
+  /* init precise systime adjustment functions */
+  HANDLE hDll;
+
+  hDll = LoadLibrary("api-ms-win-core-sysinfo-l1-2-4.dll");
+  win_get_systime_adj = (PGSTAP)GetProcAddress(hDll, "GetSystemTimeAdjustmentPrecise");
+  win_set_systime_adj = (PSSTAP)GetProcAddress(hDll, "SetSystemTimeAdjustmentPrecise");
+
+  if (obtain_systime_privileges()) return;
+
+  /* set system internal adj */
+  if (!(*win_set_systime_adj)(0, TRUE)) {
+    err("failed to set the system time adjustment. hr:0x%08lx\n",
+        HRESULT_FROM_WIN32(GetLastError()));
+    return;
+  }
 #endif
   ptp->phc2sys.realtime_nominal_tick = 0;
   if (ptp->phc2sys.realtime_hz > 0) {
