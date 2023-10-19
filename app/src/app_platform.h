@@ -161,48 +161,11 @@ static inline void st_usleep(
 }
 
 static inline int st_get_real_time(struct timespec* ts) {
-#ifdef WINDOWSENV
-  unsigned __int64 t;
-  union {
-    unsigned __int64 u64;
-    FILETIME ft;
-  } ct;
-  GetSystemTimePreciseAsFileTime(&ct.ft);
-  t = ct.u64 - INT64_C(116444736000000000);
-  ts->tv_sec = t / 10000000;
-  ts->tv_nsec = ((int)(t % 10000000)) * 100;
-  return 0;
-#else
   return clock_gettime(CLOCK_REALTIME, ts);
-#endif
 }
 
 static inline int st_set_real_time(struct timespec* ts) {
-#ifdef WINDOWSENV
-  time_t secs = ts->tv_sec;
-  WORD milliseconds = ts->tv_nsec / 1000000;
-
-  struct tm* tm;
-  tm = gmtime(&secs);
-
-  SYSTEMTIME st;
-  st.wYear = tm->tm_year + 1900;
-  st.wMonth = tm->tm_mon + 1;
-  st.wDayOfWeek = tm->tm_wday;
-  st.wDay = tm->tm_mday;
-  st.wHour = tm->tm_hour;
-  st.wMinute = tm->tm_min;
-  st.wSecond = tm->tm_sec;
-  st.wMilliseconds = milliseconds;
-
-  if (!SetSystemTime(&st)) {
-    /* set failed */
-    return -EPERM;
-  }
-  return 0;
-#else
   return clock_settime(CLOCK_REALTIME, ts);
-#endif
 }
 
 #ifdef APP_HAS_SSL
