@@ -428,7 +428,7 @@ struct rte_mempool* mt_mempool_create_by_ops(struct mtl_main_impl* impl,
   } else {
     float size_m = (float)n * (data_room_size + priv_size) / (1024 * 1024);
     info("%s(%d), succ at %p size %fm n %u d %u for %s\n", __func__, port, mbuf_pool,
-         size_m, n, element_size, name);
+         size_m, n, element_size, name_with_idx);
 #ifdef MTL_HAS_ASAN
     g_mt_mempool_create_cnt++;
 #endif

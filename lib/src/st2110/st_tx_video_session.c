@@ -885,18 +885,21 @@ static int tv_init_rtcp(struct mtl_main_impl* impl, struct st_tx_video_sessions_
   return 0;
 }
 
-static int tv_update_redundant(struct st_tx_video_session_impl* s, struct rte_mbuf* pkt) {
-  struct mt_udp_hdr* hdr = rte_pktmbuf_mtod(pkt, struct mt_udp_hdr*);
+static int tv_update_redundant(struct st_tx_video_session_impl* s, struct rte_mbuf* pkt_r,
+                               const struct rte_mbuf* pkt_base) {
+  struct mt_udp_hdr* hdr = rte_pktmbuf_mtod(pkt_r, struct mt_udp_hdr*);
+  struct mt_udp_hdr* hdr_base = rte_pktmbuf_mtod(pkt_base, struct mt_udp_hdr*);
   struct rte_ipv4_hdr* ipv4 = &hdr->ipv4;
+  struct rte_ipv4_hdr* ipv4_base = &hdr_base->ipv4;
   struct rte_udp_hdr* udp = &hdr->udp;
 
   /* update the hdr: eth, ip, udp */
-  rte_memcpy(&hdr->eth, &s->s_hdr[MTL_SESSION_PORT_R].eth, sizeof(hdr->eth));
-  ipv4->src_addr = s->s_hdr[MTL_SESSION_PORT_R].ipv4.src_addr;
-  ipv4->dst_addr = s->s_hdr[MTL_SESSION_PORT_R].ipv4.dst_addr;
-  udp->src_port = s->s_hdr[MTL_SESSION_PORT_R].udp.src_port;
-  udp->dst_port = s->s_hdr[MTL_SESSION_PORT_R].udp.dst_port;
+  rte_memcpy(hdr, &s->s_hdr[MTL_SESSION_PORT_R], sizeof(*hdr));
 
+  ipv4->packet_id = ipv4_base->packet_id;
+  ipv4->total_length = htons(pkt_r->pkt_len - pkt_r->l2_len);
+
+  udp->dgram_len = htons(pkt_r->pkt_len - pkt_r->l2_len - pkt_r->l3_len);
   if (!s->eth_ipv4_cksum_offload[MTL_SESSION_PORT_R]) {
     /* generate cksum if no offload */
     ipv4->hdr_checksum = rte_ipv4_cksum(ipv4);
@@ -1134,7 +1137,7 @@ static int tv_build_st20_chain(struct st_tx_video_session_impl* s, struct rte_mb
 
 static int tv_build_st20_redundant_chain(struct st_tx_video_session_impl* s,
                                          struct rte_mbuf* pkt_r,
-                                         struct rte_mbuf* pkt_base) {
+                                         const struct rte_mbuf* pkt_base) {
   struct st_rfc4175_video_hdr* hdr;
   struct st_rfc4175_video_hdr* hdr_base;
   struct rte_ipv4_hdr* ipv4;
@@ -1775,7 +1778,7 @@ static int tv_tasklet_frame(struct mtl_main_impl* impl,
     if (ret < 0) {
       dbg("%s(%d), pkts chain alloc fail %d\n", __func__, idx, ret);
       rte_pktmbuf_free_bulk(pkts, bulk);
-      s->stat_build_ret_code = -STI_FRAME_PKT_ALLOC_FAIL;
+      s->stat_build_ret_code = -STI_FRAME_PKT_ALLOC_CHAIN_FAIL;
       return MT_TASKLET_ALL_DONE;
     }
     if (send_r) {
@@ -1784,7 +1787,7 @@ static int tv_tasklet_frame(struct mtl_main_impl* impl,
         dbg("%s(%d), pkts_r alloc fail %d\n", __func__, idx, ret);
         rte_pktmbuf_free_bulk(pkts, bulk);
         rte_pktmbuf_free_bulk(pkts_chain, bulk);
-        s->stat_build_ret_code = -STI_FRAME_PKT_ALLOC_FAIL;
+        s->stat_build_ret_code = -STI_FRAME_PKT_ALLOC_R_FAIL;
         return MT_TASKLET_ALL_DONE;
       }
     }
@@ -1808,12 +1811,17 @@ static int tv_tasklet_frame(struct mtl_main_impl* impl,
 
     if (send_r) {
       if (s->tx_no_chain) {
-        pkts_r[i] = rte_pktmbuf_copy(pkts[i], hdr_pool_r, 0, UINT32_MAX);
+        if (s->st20_pkt_idx >= s->st20_total_pkts) {
+          /* copy will fail for dummy since it's a zero pkt */
+          pkts_r[i] = rte_pktmbuf_alloc(hdr_pool_r);
+        } else {
+          pkts_r[i] = rte_pktmbuf_copy(pkts[i], hdr_pool_r, 0, UINT32_MAX);
+        }
         if (pkts_r[i] == NULL) {
           dbg("%s(%d), pkts_r alloc fail %d\n", __func__, idx, ret);
           rte_pktmbuf_free_bulk(pkts, bulk);
-          rte_pktmbuf_free_bulk(pkts_r, bulk);
-          s->stat_build_ret_code = -STI_FRAME_PKT_ALLOC_FAIL;
+          rte_pktmbuf_free_bulk(pkts_r, i);
+          s->stat_build_ret_code = -STI_FRAME_PKT_ALLOC_COPY_FAIL;
           s->st20_pkt_idx -= i; /* todo: revert all status */
           return MT_TASKLET_ALL_DONE;
         }
@@ -1823,7 +1831,7 @@ static int tv_tasklet_frame(struct mtl_main_impl* impl,
         st_tx_mbuf_set_idx(pkts_r[i], ST_TX_DUMMY_PKT_IDX);
       } else {
         if (s->tx_no_chain) {
-          tv_update_redundant(s, pkts_r[i]);
+          tv_update_redundant(s, pkts_r[i], pkts[i]);
         } else
           tv_build_st20_redundant_chain(s, pkts_r[i], pkts[i]);
         st_tx_mbuf_set_idx(pkts_r[i], s->st20_pkt_idx);
@@ -2021,7 +2029,7 @@ static int tv_tasklet_rtp(struct mtl_main_impl* impl,
           s->st20_pkt_idx -= i; /* todo: revert all status */
           return MT_TASKLET_ALL_DONE;
         }
-        tv_update_redundant(s, pkts_r[i]);
+        tv_update_redundant(s, pkts_r[i], pkts[i]);
       } else
         tv_build_rtp_redundant_chain(s, pkts_r[i], pkts[i]);
       st_tx_mbuf_set_idx(pkts_r[i], s->st20_pkt_idx);
@@ -2232,7 +2240,7 @@ static int tv_tasklet_st22(struct mtl_main_impl* impl,
       if (ret < 0) {
         dbg("%s(%d), pkts chain alloc fail %d\n", __func__, idx, ret);
         rte_pktmbuf_free_bulk(pkts, bulk);
-        s->stat_build_ret_code = -STI_FRAME_PKT_ALLOC_FAIL;
+        s->stat_build_ret_code = -STI_FRAME_PKT_ALLOC_CHAIN_FAIL;
         return MT_TASKLET_ALL_DONE;
       }
       if (send_r) {
@@ -2241,7 +2249,7 @@ static int tv_tasklet_st22(struct mtl_main_impl* impl,
           dbg("%s(%d), pkts_r alloc fail %d\n", __func__, idx, ret);
           rte_pktmbuf_free_bulk(pkts, bulk);
           rte_pktmbuf_free_bulk(pkts_chain, bulk);
-          s->stat_build_ret_code = -STI_FRAME_PKT_ALLOC_FAIL;
+          s->stat_build_ret_code = -STI_FRAME_PKT_ALLOC_R_FAIL;
           return MT_TASKLET_ALL_DONE;
         }
       }
@@ -2273,11 +2281,11 @@ static int tv_tasklet_st22(struct mtl_main_impl* impl,
               dbg("%s(%d), pkts_r alloc fail %d\n", __func__, idx, ret);
               rte_pktmbuf_free_bulk(pkts, bulk);
               rte_pktmbuf_free_bulk(pkts_r, bulk);
-              s->stat_build_ret_code = -STI_ST22_PKT_ALLOC_FAIL;
+              s->stat_build_ret_code = -STI_FRAME_PKT_ALLOC_COPY_FAIL;
               s->st20_pkt_idx -= i; /* todo: revert all status */
               return MT_TASKLET_ALL_DONE;
             }
-            tv_update_redundant(s, pkts_r[i]);
+            tv_update_redundant(s, pkts_r[i], pkts[i]);
           } else
             tv_build_st22_redundant_chain(s, pkts_r[i], pkts[i]);
           st_tx_mbuf_set_idx(pkts_r[i], s->st20_pkt_idx);

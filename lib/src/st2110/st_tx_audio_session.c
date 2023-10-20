@@ -363,18 +363,21 @@ static int tx_audio_sessions_tasklet_start(void* priv) {
 }
 
 static int tx_audio_session_update_redundant(struct st_tx_audio_session_impl* s,
-                                             struct rte_mbuf* pkt) {
-  struct mt_udp_hdr* hdr = rte_pktmbuf_mtod(pkt, struct mt_udp_hdr*);
+                                             struct rte_mbuf* pkt_r,
+                                             const struct rte_mbuf* pkt_base) {
+  struct mt_udp_hdr* hdr = rte_pktmbuf_mtod(pkt_r, struct mt_udp_hdr*);
+  struct mt_udp_hdr* hdr_base = rte_pktmbuf_mtod(pkt_base, struct mt_udp_hdr*);
   struct rte_ipv4_hdr* ipv4 = &hdr->ipv4;
+  struct rte_ipv4_hdr* ipv4_base = &hdr_base->ipv4;
   struct rte_udp_hdr* udp = &hdr->udp;
 
   /* update the hdr: eth, ip, udp */
-  rte_memcpy(&hdr->eth, &s->hdr[MTL_SESSION_PORT_R].eth, sizeof(hdr->eth));
-  ipv4->src_addr = s->hdr[MTL_SESSION_PORT_R].ipv4.src_addr;
-  ipv4->dst_addr = s->hdr[MTL_SESSION_PORT_R].ipv4.dst_addr;
-  udp->src_port = s->hdr[MTL_SESSION_PORT_R].udp.src_port;
-  udp->dst_port = s->hdr[MTL_SESSION_PORT_R].udp.dst_port;
+  rte_memcpy(hdr, &s->hdr[MTL_SESSION_PORT_R], sizeof(*hdr));
 
+  ipv4->packet_id = ipv4_base->packet_id;
+  ipv4->total_length = htons(pkt_r->pkt_len - pkt_r->l2_len);
+
+  udp->dgram_len = htons(pkt_r->pkt_len - pkt_r->l2_len - pkt_r->l3_len);
   if (!s->eth_ipv4_cksum_offload[MTL_SESSION_PORT_R]) {
     /* generate cksum if no offload */
     ipv4->hdr_checksum = rte_ipv4_cksum(ipv4);
@@ -747,7 +750,7 @@ static int tx_audio_session_tasklet_frame(struct mtl_main_impl* impl,
         s->stat_build_ret_code = -STI_FRAME_PKT_ALLOC_FAIL;
         return MT_TASKLET_ALL_DONE;
       }
-      tx_audio_session_update_redundant(s, pkt_r);
+      tx_audio_session_update_redundant(s, pkt_r, pkt);
     }
   }
 
@@ -918,7 +921,7 @@ static int tx_audio_session_tasklet_rtp(struct mtl_main_impl* impl,
         s->stat_build_ret_code = -STI_RTP_PKT_ALLOC_FAIL;
         return MT_TASKLET_ALL_DONE;
       }
-      tx_audio_session_update_redundant(s, pkt_r);
+      tx_audio_session_update_redundant(s, pkt_r, pkt);
     } else {
       tx_audio_session_build_packet_chain(s, pkt_r, pkt_rtp, MTL_SESSION_PORT_R);
     }
