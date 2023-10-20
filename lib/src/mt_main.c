@@ -415,6 +415,12 @@ mtl_handle mtl_init(struct mtl_init_params* p) {
       socket[i] = mt_dev_get_socket_id(p->port[i]);
     if (socket[i] < 0) {
       err("%s, get socket fail %d for pmd %d\n", __func__, socket[i], p->pmd[i]);
+#ifndef WINDOWSENV
+      if (pmd == MTL_PMD_DPDK_USER) {
+        err("Run \"dpdk-devbind.py -s | grep Ethernet\" to check if other port driver is "
+            "ready as vfio-pci mode\n");
+      }
+#endif
       goto err_exit;
     }
   }
