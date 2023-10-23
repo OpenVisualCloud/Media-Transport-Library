@@ -1210,7 +1210,7 @@ static int tx_audio_session_mempool_init(struct mtl_main_impl* impl,
   for (int i = 0; i < num_port; i++) {
     port = mt_port_logic2phy(s->port_maps, i);
     if (s->tx_mono_pool) {
-      s->mbuf_mempool_hdr[i] = mt_get_tx_mempool(impl, port);
+      s->mbuf_mempool_hdr[i] = mt_sys_tx_mempool(impl, port);
       info("%s(%d), use tx mono hdr mempool(%p) for port %d\n", __func__, idx,
            s->mbuf_mempool_hdr[i], i);
     } else if (s->mbuf_mempool_hdr[i]) {
@@ -1239,7 +1239,7 @@ static int tx_audio_session_mempool_init(struct mtl_main_impl* impl,
     if (ops->type == ST30_TYPE_RTP_LEVEL) n += ops->rtp_ring_size;
 
     if (s->tx_mono_pool) {
-      s->mbuf_mempool_chain = mt_get_tx_mempool(impl, port);
+      s->mbuf_mempool_chain = mt_sys_tx_mempool(impl, port);
       info("%s(%d), use tx mono chain mempool(%p)\n", __func__, idx,
            s->mbuf_mempool_chain);
     } else if (s->mbuf_mempool_chain) {

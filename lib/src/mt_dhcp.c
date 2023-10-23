@@ -48,7 +48,7 @@ static int dhcp_send_discover(struct mtl_main_impl* impl, enum mtl_port port) {
   uint8_t* options;
   size_t hdr_offset = 0;
 
-  pkt = rte_pktmbuf_alloc(mt_get_tx_mempool(impl, port));
+  pkt = rte_pktmbuf_alloc(mt_sys_tx_mempool(impl, port));
   if (!pkt) {
     err("%s(%d), pkt alloc fail\n", __func__, port);
     return -ENOMEM;
@@ -128,7 +128,7 @@ static int dhcp_send_request(struct mtl_main_impl* impl, enum mtl_port port) {
   uint8_t* options;
   size_t hdr_offset = 0;
 
-  pkt = rte_pktmbuf_alloc(mt_get_tx_mempool(impl, port));
+  pkt = rte_pktmbuf_alloc(mt_sys_tx_mempool(impl, port));
   if (!pkt) {
     err("%s(%d), pkt alloc fail\n", __func__, port);
     return -ENOMEM;
@@ -360,7 +360,7 @@ static int dhcp_send_release(struct mtl_main_impl* impl, enum mtl_port port) {
   uint8_t* options;
   size_t hdr_offset = 0;
 
-  pkt = rte_pktmbuf_alloc(mt_get_tx_mempool(impl, port));
+  pkt = rte_pktmbuf_alloc(mt_sys_tx_mempool(impl, port));
   if (!pkt) {
     err("%s(%d), pkt alloc fail\n", __func__, port);
     return -ENOMEM;

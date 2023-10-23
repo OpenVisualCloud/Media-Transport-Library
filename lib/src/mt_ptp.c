@@ -1192,7 +1192,7 @@ static int ptp_init(struct mtl_main_impl* impl, struct mt_ptp_impl* ptp,
   ptp->impl = impl;
   ptp->port = port;
   ptp->port_id = port_id;
-  ptp->mbuf_pool = mt_get_tx_mempool(impl, port);
+  ptp->mbuf_pool = mt_sys_tx_mempool(impl, port);
   ptp->master_initialized = false;
   ptp->t3_sequence_id = 0x1000 * port;
   ptp->coefficient = 1.0;

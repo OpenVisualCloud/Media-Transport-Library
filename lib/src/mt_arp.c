@@ -52,7 +52,7 @@ static int arp_receive_request(struct mtl_main_impl* impl, struct rte_arp_hdr* r
     return -EINVAL;
   }
 
-  struct rte_mbuf* rpl_pkt = rte_pktmbuf_alloc(mt_get_tx_mempool(impl, port));
+  struct rte_mbuf* rpl_pkt = rte_pktmbuf_alloc(mt_sys_tx_mempool(impl, port));
   if (!rpl_pkt) {
     err("%s(%d), rpl_pkt alloc fail\n", __func__, port);
     return -ENOMEM;
@@ -132,7 +132,7 @@ static int arp_receive_reply(struct mtl_main_impl* impl, struct rte_arp_hdr* rep
 }
 
 static int arp_send_req(struct mtl_main_impl* impl, enum mtl_port port, uint32_t ip) {
-  struct rte_mbuf* req_pkt = rte_pktmbuf_alloc(mt_get_tx_mempool(impl, port));
+  struct rte_mbuf* req_pkt = rte_pktmbuf_alloc(mt_sys_tx_mempool(impl, port));
   if (!req_pkt) {
     err("%s(%d), req_pkt malloc fail\n", __func__, port);
     return -ENOMEM;

@@ -1523,12 +1523,12 @@ static inline uint32_t mt_sch_schedule_ns(struct mtl_main_impl* impl) {
   return impl->sch_schedule_ns;
 }
 
-static inline struct rte_mempool* mt_get_tx_mempool(struct mtl_main_impl* impl,
+static inline struct rte_mempool* mt_sys_tx_mempool(struct mtl_main_impl* impl,
                                                     enum mtl_port port) {
   return mt_if(impl, port)->tx_mbuf_pool;
 }
 
-static inline struct rte_mempool* mt_get_rx_mempool(struct mtl_main_impl* impl,
+static inline struct rte_mempool* mt_sys_rx_mempool(struct mtl_main_impl* impl,
                                                     enum mtl_port port) {
   return mt_if(impl, port)->rx_mbuf_pool;
 }

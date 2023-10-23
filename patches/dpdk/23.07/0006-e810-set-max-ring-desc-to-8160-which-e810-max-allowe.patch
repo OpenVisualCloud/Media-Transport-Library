@@ -1,0 +1,41 @@
+From 3a72ae3e285752cbd78dd44fe5463601ec12da24 Mon Sep 17 00:00:00 2001
+From: Frank Du <frank.du@intel.com>
+Date: Mon, 23 Oct 2023 14:34:36 +0800
+Subject: [PATCH 6/6] e810: set max ring desc to 8160 which e810 max allowed in
+ hw
+
+Signed-off-by: Frank Du <frank.du@intel.com>
+---
+ drivers/net/iavf/iavf_rxtx.h | 2 +-
+ drivers/net/ice/ice_rxtx.h   | 2 +-
+ 2 files changed, 2 insertions(+), 2 deletions(-)
+
+diff --git a/drivers/net/iavf/iavf_rxtx.h b/drivers/net/iavf/iavf_rxtx.h
+index 605ea3f824..453ac3b43f 100644
+--- a/drivers/net/iavf/iavf_rxtx.h
++++ b/drivers/net/iavf/iavf_rxtx.h
+@@ -8,7 +8,7 @@
+ /* In QLEN must be whole number of 32 descriptors. */
+ #define IAVF_ALIGN_RING_DESC      32
+ #define IAVF_MIN_RING_DESC        64
+-#define IAVF_MAX_RING_DESC        4096
++#define IAVF_MAX_RING_DESC        (8192 - 32)
+ #define IAVF_DMA_MEM_ALIGN        4096
+ /* Base address of the HW descriptor ring should be 128B aligned. */
+ #define IAVF_RING_BASE_ALIGN      128
+diff --git a/drivers/net/ice/ice_rxtx.h b/drivers/net/ice/ice_rxtx.h
+index 268289716e..c6fa299615 100644
+--- a/drivers/net/ice/ice_rxtx.h
++++ b/drivers/net/ice/ice_rxtx.h
+@@ -9,7 +9,7 @@
+ 
+ #define ICE_ALIGN_RING_DESC  32
+ #define ICE_MIN_RING_DESC    64
+-#define ICE_MAX_RING_DESC    4096
++#define ICE_MAX_RING_DESC    (8192 - 32)
+ #define ICE_DMA_MEM_ALIGN    4096
+ #define ICE_RING_BASE_ALIGN  128
+ 
+-- 
+2.34.1
+

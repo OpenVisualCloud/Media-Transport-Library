@@ -1057,7 +1057,7 @@ static int dev_start_port(struct mt_interface* inf) {
   struct rte_mempool* mbuf_pool;
   for (uint16_t q = 0; q < nb_rx_q; q++) {
     mbuf_pool = inf->rx_queues[q].mbuf_pool ? inf->rx_queues[q].mbuf_pool
-                                            : mt_get_rx_mempool(impl, port);
+                                            : mt_sys_rx_mempool(impl, port);
     if (!mbuf_pool) {
       err("%s(%d), no mbuf_pool for queue %d\n", __func__, port, q);
       return -ENOMEM;
@@ -1138,7 +1138,7 @@ static int dev_start_port(struct mt_interface* inf) {
 
   if (mt_has_virtio_user(impl, port)) {
     mbuf_pool = inf->rx_queues[0].mbuf_pool ? inf->rx_queues[0].mbuf_pool
-                                            : mt_get_rx_mempool(impl, port);
+                                            : mt_sys_rx_mempool(impl, port);
     ret = rte_eth_rx_queue_setup(inf->virtio_port_id, 0, 0, socket_id, NULL, mbuf_pool);
     if (ret < 0) {
       err("%s(%d), rte_eth_rx_queue_setup fail %d for virtio port\n", __func__, port,
@@ -2246,7 +2246,7 @@ int mt_dev_if_init(struct mtl_main_impl* impl) {
     }
 
     /* Create default mempool in memory to hold the system tx mbufs */
-    mbuf_elements = 1024;
+    mbuf_elements = inf->nb_tx_desc + 1024;
     if (mt_has_tx_mono_pool(impl)) {
       /* append as tx queues, double as tx ring */
       mbuf_elements += inf->nb_tx_q * inf->nb_tx_desc * 2;
@@ -2271,7 +2271,7 @@ int mt_dev_if_init(struct mtl_main_impl* impl) {
     }
 
     inf->pad =
-        mt_build_pad(impl, mt_get_tx_mempool(impl, i), i, RTE_ETHER_TYPE_IPV4, 1024);
+        mt_build_pad(impl, mt_sys_tx_mempool(impl, i), i, RTE_ETHER_TYPE_IPV4, 1024);
     if (!inf->pad) {
       err("%s(%d), pad alloc fail\n", __func__, i);
       mt_dev_if_uinit(impl);
