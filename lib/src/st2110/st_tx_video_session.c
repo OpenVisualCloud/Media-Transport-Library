@@ -2441,7 +2441,7 @@ static int tv_init_hw(struct mtl_main_impl* impl, struct st_tx_video_sessions_mg
       } else {
         /* reuse rx mempool for zero copy */
         if (mt_has_rx_mono_pool(impl))
-          s->mbuf_mempool_hdr[i] = mt_get_rx_mempool(impl, port);
+          s->mbuf_mempool_hdr[i] = mt_sys_rx_mempool(impl, port);
         else
           s->mbuf_mempool_hdr[i] = mt_if(impl, port)->rx_queues[queue_id].mbuf_pool;
         info("%s(%d,%d), reuse rx mempool(%p) for port %d\n", __func__, mgr_idx, idx,
@@ -2453,7 +2453,7 @@ static int tv_init_hw(struct mtl_main_impl* impl, struct st_tx_video_sessions_mg
       /* disable now, always use no zc mempool for the flush pad */
       pad_mempool = s->mbuf_mempool_hdr[i];
     } else {
-      pad_mempool = mt_get_tx_mempool(impl, port);
+      pad_mempool = mt_sys_tx_mempool(impl, port);
     }
     for (int j = 0; j < ST20_PKT_TYPE_MAX; j++) {
       if (!s->st20_pkt_info[j].number) continue;
@@ -2547,7 +2547,7 @@ static int tv_mempool_init(struct mtl_main_impl* impl,
     if (s->mbuf_mempool_reuse_rx[i]) {
       s->mbuf_mempool_hdr[i] = NULL; /* reuse rx mempool for zero copy */
     } else if (s->tx_mono_pool) {
-      s->mbuf_mempool_hdr[i] = mt_get_tx_mempool(impl, port);
+      s->mbuf_mempool_hdr[i] = mt_sys_tx_mempool(impl, port);
       info("%s(%d), use tx mono hdr mempool(%p) for port %d\n", __func__, idx,
            s->mbuf_mempool_hdr[i], i);
     } else {
@@ -2580,7 +2580,7 @@ static int tv_mempool_init(struct mtl_main_impl* impl,
     if (ops->type == ST20_TYPE_RTP_LEVEL) n += ops->rtp_ring_size;
 
     if (s->tx_mono_pool) {
-      s->mbuf_mempool_chain = mt_get_tx_mempool(impl, port);
+      s->mbuf_mempool_chain = mt_sys_tx_mempool(impl, port);
       info("%s(%d), use tx mono chain mempool(%p)\n", __func__, idx,
            s->mbuf_mempool_chain);
     } else {
@@ -3712,7 +3712,7 @@ int st20_frame_tx_start(struct mtl_main_impl* impl, struct st_tx_video_session_i
   struct st20_rfc4175_rtp_hdr* rtp;
   struct rte_udp_hdr* udp;
 
-  pkt = rte_pktmbuf_alloc(mt_get_tx_mempool(impl, port));
+  pkt = rte_pktmbuf_alloc(mt_sys_tx_mempool(impl, port));
   if (!pkt) {
     err("%s(%d), pkt alloc fail\n", __func__, port);
     return -ENOMEM;

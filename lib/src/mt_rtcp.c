@@ -239,7 +239,7 @@ int mt_rtcp_rx_send_nack_packet(struct mt_rtcp_rx* rx) {
   if (now < rx->nacks_send_time) return 0;
   rx->nacks_send_time = now + rx->nacks_send_interval;
 
-  pkt = rte_pktmbuf_alloc(mt_get_tx_mempool(impl, port));
+  pkt = rte_pktmbuf_alloc(mt_sys_tx_mempool(impl, port));
   if (!pkt) {
     err("%s(%s), pkt alloc fail\n", __func__, rx->name);
     return -ENOMEM;

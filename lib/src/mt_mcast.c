@@ -63,7 +63,7 @@ int mcast_membership_general_query(struct mtl_main_impl* impl, enum mtl_port por
   size_t hdr_offset = 0;
   size_t mb_query_len = sizeof(struct mcast_mb_query_v3);
 
-  pkt = rte_pktmbuf_alloc(mt_get_tx_mempool(impl, port));
+  pkt = rte_pktmbuf_alloc(mt_sys_tx_mempool(impl, port));
   if (!pkt) {
     err("%s, report packet alloc failed\n", __func__);
     return -ENOMEM;
@@ -142,7 +142,7 @@ static int mcast_membership_report(struct mtl_main_impl* impl,
 
   dbg("%s(%d), group_num: %d\n", __func__, port, group_num);
 
-  pkt = rte_pktmbuf_alloc(mt_get_tx_mempool(impl, port));
+  pkt = rte_pktmbuf_alloc(mt_sys_tx_mempool(impl, port));
   if (!pkt) {
     err("%s, report packet alloc failed\n", __func__);
     return -ENOMEM;
