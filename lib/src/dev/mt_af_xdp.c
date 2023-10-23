@@ -441,7 +441,7 @@ static uint16_t xdp_tx(struct mtl_main_impl* impl, struct mt_xdp_queue* xq,
 
       uint32_t idx;
       if (!xsk_ring_prod__reserve(pd, 1, &idx)) {
-        err("%s(%d, %u), socket_tx reserve fail\n", __func__, port, q);
+        dbg("%s(%d, %u), socket_tx reserve fail\n", __func__, port, q);
         xq->stat_tx_prod_reserve_fail++;
         rte_pktmbuf_free(local);
         goto exit;
