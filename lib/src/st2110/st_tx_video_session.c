@@ -885,8 +885,9 @@ static int tv_init_rtcp(struct mtl_main_impl* impl, struct st_tx_video_sessions_
   return 0;
 }
 
-static int tv_update_redundant(struct st_tx_video_session_impl* s, struct rte_mbuf* pkt_r,
-                               const struct rte_mbuf* pkt_base) {
+static int tv_build_st20_redundant(struct st_tx_video_session_impl* s,
+                                   struct rte_mbuf* pkt_r,
+                                   const struct rte_mbuf* pkt_base) {
   struct mt_udp_hdr* hdr = rte_pktmbuf_mtod(pkt_r, struct mt_udp_hdr*);
   struct mt_udp_hdr* hdr_base = rte_pktmbuf_mtod(pkt_base, struct mt_udp_hdr*);
   struct rte_ipv4_hdr* ipv4 = &hdr->ipv4;
@@ -895,15 +896,23 @@ static int tv_update_redundant(struct st_tx_video_session_impl* s, struct rte_mb
 
   /* update the hdr: eth, ip, udp */
   rte_memcpy(hdr, &s->s_hdr[MTL_SESSION_PORT_R], sizeof(*hdr));
-
+  mt_mbuf_init_ipv4(pkt_r);
+  pkt_r->data_len = pkt_base->data_len;
+  pkt_r->pkt_len = pkt_r->data_len;
   ipv4->packet_id = ipv4_base->packet_id;
   ipv4->total_length = htons(pkt_r->pkt_len - pkt_r->l2_len);
-
   udp->dgram_len = htons(pkt_r->pkt_len - pkt_r->l2_len - pkt_r->l3_len);
   if (!s->eth_ipv4_cksum_offload[MTL_SESSION_PORT_R]) {
     /* generate cksum if no offload */
     ipv4->hdr_checksum = rte_ipv4_cksum(ipv4);
   }
+
+  /* copy rtp and payload, assume it's only one segment  */
+  size_t hdr_sz = sizeof(*hdr_base);
+  void* pd_base = rte_pktmbuf_mtod_offset(pkt_base, void*, hdr_sz);
+  void* pd_r = rte_pktmbuf_mtod_offset(pkt_r, void*, hdr_sz);
+  size_t pd_len = pkt_base->pkt_len - hdr_sz;
+  rte_memcpy(pd_r, pd_base, pd_len);
 
   return 0;
 }
@@ -1781,15 +1790,16 @@ static int tv_tasklet_frame(struct mtl_main_impl* impl,
       s->stat_build_ret_code = -STI_FRAME_PKT_ALLOC_CHAIN_FAIL;
       return MT_TASKLET_ALL_DONE;
     }
-    if (send_r) {
-      ret = rte_pktmbuf_alloc_bulk(hdr_pool_r, pkts_r, bulk);
-      if (ret < 0) {
-        dbg("%s(%d), pkts_r alloc fail %d\n", __func__, idx, ret);
-        rte_pktmbuf_free_bulk(pkts, bulk);
-        rte_pktmbuf_free_bulk(pkts_chain, bulk);
-        s->stat_build_ret_code = -STI_FRAME_PKT_ALLOC_R_FAIL;
-        return MT_TASKLET_ALL_DONE;
-      }
+  }
+
+  if (send_r) {
+    ret = rte_pktmbuf_alloc_bulk(hdr_pool_r, pkts_r, bulk);
+    if (ret < 0) {
+      dbg("%s(%d), pkts_r alloc fail %d\n", __func__, idx, ret);
+      rte_pktmbuf_free_bulk(pkts, bulk);
+      if (!s->tx_no_chain) rte_pktmbuf_free_bulk(pkts_chain, bulk);
+      s->stat_build_ret_code = -STI_FRAME_PKT_ALLOC_R_FAIL;
+      return MT_TASKLET_ALL_DONE;
     }
   }
 
@@ -1810,28 +1820,12 @@ static int tv_tasklet_frame(struct mtl_main_impl* impl,
     pacing_set_mbuf_time_stamp(pkts[i], pacing);
 
     if (send_r) {
-      if (s->tx_no_chain) {
-        if (s->st20_pkt_idx >= s->st20_total_pkts) {
-          /* copy will fail for dummy since it's a zero pkt */
-          pkts_r[i] = rte_pktmbuf_alloc(hdr_pool_r);
-        } else {
-          pkts_r[i] = rte_pktmbuf_copy(pkts[i], hdr_pool_r, 0, UINT32_MAX);
-        }
-        if (pkts_r[i] == NULL) {
-          dbg("%s(%d), pkts_r alloc fail %d\n", __func__, idx, ret);
-          rte_pktmbuf_free_bulk(pkts, bulk);
-          rte_pktmbuf_free_bulk(pkts_r, i);
-          s->stat_build_ret_code = -STI_FRAME_PKT_ALLOC_COPY_FAIL;
-          s->st20_pkt_idx -= i; /* todo: revert all status */
-          return MT_TASKLET_ALL_DONE;
-        }
-      }
       st_tx_mbuf_set_priv(pkts_r[i], &s->st20_frames[s->st20_frame_idx]);
       if (s->st20_pkt_idx >= s->st20_total_pkts) {
         st_tx_mbuf_set_idx(pkts_r[i], ST_TX_DUMMY_PKT_IDX);
       } else {
         if (s->tx_no_chain) {
-          tv_update_redundant(s, pkts_r[i], pkts[i]);
+          tv_build_st20_redundant(s, pkts_r[i], pkts[i]);
         } else
           tv_build_st20_redundant_chain(s, pkts_r[i], pkts[i]);
         st_tx_mbuf_set_idx(pkts_r[i], s->st20_pkt_idx);
@@ -2020,7 +2014,7 @@ static int tv_tasklet_rtp(struct mtl_main_impl* impl,
 
     if (send_r) {
       if (s->tx_no_chain) {
-        pkts_r[i] = rte_pktmbuf_copy(pkts[i], hdr_pool_r, 0, UINT32_MAX);
+        pkts_r[i] = rte_pktmbuf_alloc(hdr_pool_r);
         if (pkts_r[i] == NULL) {
           dbg("%s(%d), pkts_r alloc fail %d\n", __func__, idx, ret);
           rte_pktmbuf_free_bulk(pkts, bulk);
@@ -2029,7 +2023,7 @@ static int tv_tasklet_rtp(struct mtl_main_impl* impl,
           s->st20_pkt_idx -= i; /* todo: revert all status */
           return MT_TASKLET_ALL_DONE;
         }
-        tv_update_redundant(s, pkts_r[i], pkts[i]);
+        tv_build_st20_redundant(s, pkts_r[i], pkts[i]);
       } else
         tv_build_rtp_redundant_chain(s, pkts_r[i], pkts[i]);
       st_tx_mbuf_set_idx(pkts_r[i], s->st20_pkt_idx);
@@ -2243,15 +2237,16 @@ static int tv_tasklet_st22(struct mtl_main_impl* impl,
         s->stat_build_ret_code = -STI_FRAME_PKT_ALLOC_CHAIN_FAIL;
         return MT_TASKLET_ALL_DONE;
       }
-      if (send_r) {
-        ret = rte_pktmbuf_alloc_bulk(hdr_pool_r, pkts_r, bulk);
-        if (ret < 0) {
-          dbg("%s(%d), pkts_r alloc fail %d\n", __func__, idx, ret);
-          rte_pktmbuf_free_bulk(pkts, bulk);
-          rte_pktmbuf_free_bulk(pkts_chain, bulk);
-          s->stat_build_ret_code = -STI_FRAME_PKT_ALLOC_R_FAIL;
-          return MT_TASKLET_ALL_DONE;
-        }
+    }
+
+    if (send_r) {
+      ret = rte_pktmbuf_alloc_bulk(hdr_pool_r, pkts_r, bulk);
+      if (ret < 0) {
+        dbg("%s(%d), pkts_r alloc fail %d\n", __func__, idx, ret);
+        rte_pktmbuf_free_bulk(pkts, bulk);
+        if (!s->tx_no_chain) rte_pktmbuf_free_bulk(pkts_chain, bulk);
+        s->stat_build_ret_code = -STI_FRAME_PKT_ALLOC_R_FAIL;
+        return MT_TASKLET_ALL_DONE;
       }
     }
 
@@ -2275,18 +2270,9 @@ static int tv_tasklet_st22(struct mtl_main_impl* impl,
         if (s->st20_pkt_idx >= st22_info->st22_total_pkts) {
           st_tx_mbuf_set_idx(pkts_r[i], ST_TX_DUMMY_PKT_IDX);
         } else {
-          if (s->tx_no_chain) {
-            pkts_r[i] = rte_pktmbuf_copy(pkts[i], hdr_pool_r, 0, UINT32_MAX);
-            if (pkts_r[i] == NULL) {
-              dbg("%s(%d), pkts_r alloc fail %d\n", __func__, idx, ret);
-              rte_pktmbuf_free_bulk(pkts, bulk);
-              rte_pktmbuf_free_bulk(pkts_r, bulk);
-              s->stat_build_ret_code = -STI_FRAME_PKT_ALLOC_COPY_FAIL;
-              s->st20_pkt_idx -= i; /* todo: revert all status */
-              return MT_TASKLET_ALL_DONE;
-            }
-            tv_update_redundant(s, pkts_r[i], pkts[i]);
-          } else
+          if (s->tx_no_chain)
+            tv_build_st20_redundant(s, pkts_r[i], pkts[i]);
+          else
             tv_build_st22_redundant_chain(s, pkts_r[i], pkts[i]);
           st_tx_mbuf_set_idx(pkts_r[i], s->st20_pkt_idx);
           s->port_user_stats[MTL_SESSION_PORT_R].build++;
