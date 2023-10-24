@@ -112,6 +112,7 @@ enum st_args_cmd {
   ST_ARG_SHARED_TX_QUEUES,
   ST_ARG_SHARED_RX_QUEUES,
   ST_ARG_RX_USE_CNI,
+  ST_ARG_RX_UDP_PORT_ONLY,
   ST_ARG_VIRTIO_USER,
   ST_ARG_VIDEO_SHA_CHECK,
   ST_ARG_MAX,
@@ -227,6 +228,7 @@ static struct option st_app_args_options[] = {
     {"shared_tx_queues", no_argument, 0, ST_ARG_SHARED_TX_QUEUES},
     {"shared_rx_queues", no_argument, 0, ST_ARG_SHARED_RX_QUEUES},
     {"rx_use_cni", no_argument, 0, ST_ARG_RX_USE_CNI},
+    {"rx_udp_port_only", no_argument, 0, ST_ARG_RX_UDP_PORT_ONLY},
     {"virtio_user", no_argument, 0, ST_ARG_VIRTIO_USER},
     {"video_sha_check", no_argument, 0, ST_ARG_VIDEO_SHA_CHECK},
 
@@ -689,6 +691,9 @@ int st_app_parse_args(struct st_app_context* ctx, struct mtl_init_params* p, int
         break;
       case ST_ARG_RX_USE_CNI:
         p->flags |= MTL_FLAG_RX_USE_CNI;
+        break;
+      case ST_ARG_RX_UDP_PORT_ONLY:
+        p->flags |= MTL_FLAG_RX_UDP_PORT_ONLY;
         break;
       case ST_ARG_VIRTIO_USER:
         p->flags |= MTL_FLAG_VIRTIO_USER;
