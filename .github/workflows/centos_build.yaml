@@ -26,7 +26,7 @@ jobs:
     outputs:
       changed: ${{ steps.filter.outputs.src == 'true' || steps.filter.outputs.build == 'true' }}
     steps:
-      - uses: actions/checkout@8ade135a41bc03ea155e62e844d188df1ea18608 # v4.1.0
+      - uses: actions/checkout@b4ffde65f46336ab88eb53be808477a3936bae11 # v4.1.1
       
       - uses: dorny/paths-filter@4512585405083f25c027a35db413c2b3b9006d50 # v2
         id: filter
@@ -50,7 +50,7 @@ jobs:
         with:
           egress-policy: audit
 
-      - uses: actions/checkout@8ade135a41bc03ea155e62e844d188df1ea18608 # v4.1.0
+      - uses: actions/checkout@b4ffde65f46336ab88eb53be808477a3936bae11 # v4.1.1
       - uses: DoozyX/clang-format-lint-action@a83a8fb7d371f66da7dd1c4f33a193023899494b # v0.16
         with:
           source: '.'
