@@ -52,14 +52,6 @@ struct mt_rxq_entry* mt_rxq_get(struct mtl_main_impl* impl, enum mtl_port port,
   }
   entry->parent = impl;
 
-  if (mt_get_user_params(impl)->flags & MTL_FLAG_RX_UDP_PORT_ONLY) {
-    if (!(flow->flags & MT_RXQ_FLOW_F_NO_IP)) {
-      info("%s(%d), enable MT_RXQ_FLOW_F_NO_IP as MTL_FLAG_RX_UDP_PORT_ONLY is set\n",
-           __func__, port);
-      flow->flags |= MT_RXQ_FLOW_F_NO_IP;
-    }
-  }
-
   dbg("%s(%d), flags 0x%x\n", __func__, port, flow->flags);
   if (mt_pmd_is_kernel_socket(impl, port) || (flow->flags & MT_RXQ_FLOW_F_FORCE_SOCKET)) {
     entry->rx_socket_q = mt_rx_socket_get(impl, port, flow);

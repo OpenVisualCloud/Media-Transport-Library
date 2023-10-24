@@ -390,6 +390,7 @@ int mt_socket_add_flow(struct mtl_main_impl* impl, enum mtl_port port, uint16_t 
   int flow_id = -1;
   uint8_t start_queue = mt_afxdp_start_queue(impl, port);
   const char* if_name = mt_kernel_if_name(impl, port);
+  bool has_ip_flow = true;
 
   if (flow->flags & MT_RXQ_FLOW_F_SYS_QUEUE) {
     err("%s(%d), sys_queue not supported\n", __func__, port);
@@ -400,7 +401,17 @@ int mt_socket_add_flow(struct mtl_main_impl* impl, enum mtl_port port, uint16_t 
     return -EIO;
   }
 
-  if (flow->flags & MT_RXQ_FLOW_F_NO_IP) {
+  /* no ip flow requested */
+  if (flow->flags & MT_RXQ_FLOW_F_NO_IP) has_ip_flow = false;
+
+  if (mt_get_user_params(impl)->flags & MTL_FLAG_RX_UDP_PORT_ONLY) {
+    if (has_ip_flow) {
+      info("%s(%d), no ip flow as MTL_FLAG_RX_UDP_PORT_ONLY is set\n", __func__, port);
+      has_ip_flow = false;
+    }
+  }
+
+  if (!has_ip_flow) {
     snprintf(cmd, sizeof(cmd), "ethtool -N %s flow-type udp4 dst-port %u action %u",
              if_name, flow->dst_port, queue_id + start_queue);
   } else if (mt_is_multicast_ip(flow->dip_addr)) {

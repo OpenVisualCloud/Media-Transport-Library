@@ -90,6 +90,7 @@ static struct rte_flow* rte_rx_flow_create(struct mt_interface* inf, uint16_t q,
   bool has_port_flow = true;
 
   uint16_t port_id = inf->port_id;
+  enum mtl_port port = inf->port;
 
   memset(&error, 0, sizeof(error));
 
@@ -99,6 +100,13 @@ static struct rte_flow* rte_rx_flow_create(struct mt_interface* inf, uint16_t q,
   if (flow->flags & MT_RXQ_FLOW_F_NO_IP) has_ip_flow = false;
   /* no port flow requested */
   if (flow->flags & MT_RXQ_FLOW_F_NO_PORT) has_port_flow = false;
+
+  if (mt_get_user_params(inf->parent)->flags & MTL_FLAG_RX_UDP_PORT_ONLY) {
+    if (has_ip_flow) {
+      info("%s(%d), no ip flow as MTL_FLAG_RX_UDP_PORT_ONLY is set\n", __func__, port);
+      has_ip_flow = false;
+    }
+  }
 
   /* only raw flow can be applied on the hdr split queue */
   if (mt_if_hdr_split_pool(inf, q)) {
@@ -162,7 +170,7 @@ static struct rte_flow* rte_rx_flow_create(struct mt_interface* inf, uint16_t q,
 
   ret = rte_flow_validate(port_id, &attr, pattern, action, &error);
   if (ret < 0) {
-    err("%s(%d), rte_flow_validate fail %d for queue %d, %s\n", __func__, port_id, ret, q,
+    err("%s(%d), rte_flow_validate fail %d for queue %d, %s\n", __func__, port, ret, q,
         mt_string_safe(error.message));
     return NULL;
   }
@@ -171,14 +179,18 @@ static struct rte_flow* rte_rx_flow_create(struct mt_interface* inf, uint16_t q,
   r_flow = rte_flow_create(port_id, &attr, pattern, action, &error);
   mt_pthread_mutex_unlock(&inf->vf_cmd_mutex);
   if (!r_flow) {
-    err("%s(%d), rte_flow_create fail for queue %d, %s\n", __func__, port_id, q,
+    err("%s(%d), rte_flow_create fail for queue %d, %s\n", __func__, port, q,
         mt_string_safe(error.message));
     return NULL;
   }
 
-  uint8_t* ip = flow->dip_addr;
-  info("%s(%d), queue %u succ, ip %u.%u.%u.%u port %u\n", __func__, inf->port, q, ip[0],
-       ip[1], ip[2], ip[3], flow->dst_port);
+  if (has_ip_flow) {
+    uint8_t* ip = flow->dip_addr;
+    info("%s(%d), queue %u succ, ip %u.%u.%u.%u port %u\n", __func__, port, q, ip[0],
+         ip[1], ip[2], ip[3], flow->dst_port);
+  } else {
+    info("%s(%d), queue %u succ, port %u\n", __func__, port, q, flow->dst_port);
+  }
   return r_flow;
 }
 
