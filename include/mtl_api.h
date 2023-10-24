@@ -442,6 +442,12 @@ enum st21_tx_pacing_way {
  * Use CNI based queue for RX.
  */
 #define MTL_FLAG_RX_USE_CNI (MTL_BIT64(45))
+/**
+ * Flag bit in flags of struct mtl_init_params, debug usage only.
+ * To exclusively use port only for flow, the application must ensure that all RX streams
+ * have unique UDP port numbers.
+ */
+#define MTL_FLAG_RX_UDP_PORT_ONLY (MTL_BIT64(46))
 
 /**
  * The structure describing how to init af_xdp interface.

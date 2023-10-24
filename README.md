@@ -27,11 +27,12 @@ If you find value in our project, please consider giving it a star. Your support
 #### 1.1.1 ST2110 features
 
 * Narrow and wide pacing. Please see [compliance](doc/compliance.md) page for the ST2110 narrow report on our software solution.
-* ST2110-10, ST2110-20, ST2110-21, ST2110-30, ST2110-40, ST2110-22, ST2022-7
+* ST2110-10, ST2110-20, ST2110-21, ST2110-30, ST2110-40, ST2022-7
 * 1080p, 720p, 4k, 8k and other
 * FPS: 120, 119.88, 100, 60, 59.94, 50, 30, 29.97, 25, 24, 23.98
 * All video formats listed in ST2110-20, including YUV 4:2:2 10-bit and others, are supported.
 * CSC support status: [status](doc/convert.md)
+* ST2110-22 with encoder/decoder [plugin](doc/plugin.md) interface.
 * ST2022-6 by RTP passthrough interface.
 
 ### 1.2 Architecture
