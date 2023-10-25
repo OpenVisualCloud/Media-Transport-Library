@@ -2414,6 +2414,7 @@ static int tv_init_hw(struct mtl_main_impl* impl, struct st_tx_video_sessions_mg
     flow.dst_port = s->ops.udp_port[i];
     if (ST21_TX_PACING_WAY_TSN == s->pacing_way[i])
       flow.flags |= MT_TXQ_FLOW_F_LAUNCH_TIME;
+    flow.gso_sz = s->st20_pkt_size - sizeof(struct mt_udp_hdr);
     s->queue[i] = mt_txq_get(impl, port, &flow);
     if (!s->queue[i]) {
       tv_uinit_hw(s);
