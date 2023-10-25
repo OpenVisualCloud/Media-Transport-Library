@@ -881,6 +881,8 @@ struct mt_txq_flow {
   uint16_t dst_port;                 /* udp destination port */
   /* value with MT_TXQ_FLOW_F_* */
   uint32_t flags;
+  /* only for kernel socket */
+  uint16_t gso_sz;
 };
 
 struct mt_tsq_impl; /* forward delcare */
@@ -948,11 +950,19 @@ struct mt_srss_impl {
 
 struct mt_tx_socket_thread {
   struct mt_tx_socket_entry* parent;
+  int idx;
   int fd;
   pthread_t tid;
   rte_atomic32_t stop_thread;
 
+#ifndef WINDOWSENV
+  struct sockaddr_in send_addr;
+  struct msghdr msg;
+  char msg_control[CMSG_SPACE(sizeof(uint16_t))];
+#endif
+
   int stat_tx_pkt;
+  int stat_tx_gso;
 };
 
 struct mt_tx_socket_entry {
@@ -961,6 +971,7 @@ struct mt_tx_socket_entry {
   struct mt_txq_flow flow;
 
   uint64_t rate_limit_per_thread;
+  uint16_t gso_sz;
   int threads;
   struct rte_ring* ring;
   struct mt_tx_socket_thread threads_data[MT_DP_SOCKET_THREADS_MAX];
