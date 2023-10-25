@@ -14,6 +14,11 @@
 #define MT_RX_DP_SOCKET_PREFIX "SR_"
 #define MT_TX_DP_SOCKET_PREFIX "SR_"
 
+#ifndef UDP_SEGMENT
+/* fix for centos build */
+#define UDP_SEGMENT 103 /* Set GSO segmentation size */
+#endif
+
 #ifndef WINDOWSENV
 
 static inline int tx_socket_verify_mbuf(struct rte_mbuf* m) {
