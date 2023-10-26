@@ -961,6 +961,7 @@ struct mt_tx_socket_thread {
   char msg_control[CMSG_SPACE(sizeof(uint16_t))];
 #endif
 
+  int stat_tx_try;
   int stat_tx_pkt;
   int stat_tx_gso;
 };
@@ -975,6 +976,7 @@ struct mt_tx_socket_entry {
   int threads;
   struct rte_ring* ring;
   struct mt_tx_socket_thread threads_data[MT_DP_SOCKET_THREADS_MAX];
+  bool stat_registered;
 };
 
 struct mt_rx_socket_thread {
@@ -984,6 +986,7 @@ struct mt_rx_socket_thread {
   pthread_t tid;
   rte_atomic32_t stop_thread;
 
+  int stat_rx_try;
   int stat_rx_pkt;
 };
 
@@ -1000,6 +1003,7 @@ struct mt_rx_socket_entry {
   int threads;
   struct rte_ring* ring;
   struct mt_rx_socket_thread threads_data[MT_DP_SOCKET_THREADS_MAX];
+  bool stat_registered;
 };
 
 struct mt_tx_xdp_entry {
