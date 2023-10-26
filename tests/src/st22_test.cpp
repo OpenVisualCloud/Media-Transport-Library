@@ -966,6 +966,11 @@ static void st22_rx_dump_test(enum st_fps fps[], int width[], int height[],
     return;
   }
 
+  if (!mtl_pmd_is_dpdk_based(m_handle, MTL_PORT_R)) {
+    info("%s, MTL_PORT_R is not a DPDK based PMD, skip this case\n", __func__);
+    return;
+  }
+
   std::vector<tests_context*> test_ctx_tx;
   std::vector<tests_context*> test_ctx_rx;
   std::vector<st22_tx_handle> tx_handle;

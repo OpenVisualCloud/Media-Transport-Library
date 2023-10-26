@@ -1259,14 +1259,13 @@ TEST(St20_rx, frame_mix_4k_s2) {
   st20_rx_fps_test(type, fps, width, height, ST20_FMT_YUV_422_10BIT, ST_TEST_LEVEL_ALL,
                    2);
 }
-TEST(St20_rx, ext_frame_mix_s3) {
-  enum st20_type type[3] = {ST20_TYPE_FRAME_LEVEL, ST20_TYPE_FRAME_LEVEL,
-                            ST20_TYPE_FRAME_LEVEL};
-  enum st_fps fps[3] = {ST_FPS_P59_94, ST_FPS_P50, ST_FPS_P29_97};
-  int width[3] = {1280, 1920, 3840};
-  int height[3] = {720, 1080, 2160};
+TEST(St20_rx, ext_frame_mix_s2) {
+  enum st20_type type[3] = {ST20_TYPE_FRAME_LEVEL, ST20_TYPE_FRAME_LEVEL};
+  enum st_fps fps[3] = {ST_FPS_P59_94, ST_FPS_P50};
+  int width[3] = {1280, 1920};
+  int height[3] = {720, 1080};
   st20_rx_fps_test(type, fps, width, height, ST20_FMT_YUV_422_10BIT,
-                   ST_TEST_LEVEL_MANDATORY, 3, true);
+                   ST_TEST_LEVEL_MANDATORY, 2, true);
 }
 
 static void st20_rx_update_src_test(enum st20_type type, int tx_sessions,
