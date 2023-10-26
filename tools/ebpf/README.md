@@ -4,7 +4,7 @@ This directory contains tools for eBPF.
 
 ## Build
 
-Dependencies: libbpf, bpftool, clang, llvm, gcc.
+Dependencies: libbpf, bpftool, clang, llvm, gcc, libelf, zlib.
 
 ```bash
 make
@@ -12,14 +12,6 @@ make
 
 ## Run
 
-in one shell:
-
 ```bash
-sudo ./et --print --fentry
-```
-
-then in another:
-
-```bash
-sudo cat /sys/kernel/debug/tracing/trace_pipe
+sudo ./et --prog fentry [--print]
 ```
