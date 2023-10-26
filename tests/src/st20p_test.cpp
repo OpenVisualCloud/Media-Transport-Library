@@ -662,6 +662,14 @@ static void st20p_rx_digest_test(enum st_fps fps[], int width[], int height[],
     }
   }
 
+  if (para->pkt_convert) {
+    enum mtl_pmd_type pmd = ctx->para.pmd[MTL_PORT_R];
+    if (MTL_PMD_DPDK_USER != pmd) {
+      info("%s, skip as pmd %d is not dpdk user\n", __func__, pmd);
+      return;
+    }
+  }
+
   std::vector<tests_context*> test_ctx_tx;
   std::vector<tests_context*> test_ctx_rx;
   std::vector<st20p_tx_handle> tx_handle;

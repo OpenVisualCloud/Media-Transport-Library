@@ -326,8 +326,13 @@ static int mt_user_params_check(struct mtl_init_params* p) {
       for (int j = 0; j < i; j++) {
         /* check if duplicate port name */
         if (0 == strncmp(p->port[i], p->port[j], MTL_PORT_MAX_LEN)) {
-          err("%s, same name %s for port %d and %d\n", __func__, p->port[i], i, j);
-          return -EINVAL;
+          if (!strncmp(p->port[i], "kernel:lo", MTL_PORT_MAX_LEN)) {
+            /* duplicated kernel:lo for test purpose */
+            warn("%s, same name %s for port %d and %d\n", __func__, p->port[i], i, j);
+          } else {
+            err("%s, same name %s for port %d and %d\n", __func__, p->port[i], i, j);
+            return -EINVAL;
+          }
         }
         /* check if duplicate ip */
         if ((p->net_proto[i] == MTL_PROTO_STATIC) && (p->pmd[i] == MTL_PMD_DPDK_USER) &&
@@ -833,6 +838,10 @@ mtl_iova_t mtl_dma_map(mtl_handle mt, const void* vaddr, size_t size) {
   if (ret < 0) return MTL_BAD_IOVA;
   iova = item.iova;
 
+  if (!mt_drv_dpdk_based(impl, MTL_PORT_P)) {
+    return iova;
+  }
+
   ret = rte_extmem_register((void*)vaddr, size, NULL, 0, page_size);
   if (ret < 0) {
     err("%s, fail(%d,%s) to register extmem %p\n", __func__, ret, rte_strerror(rte_errno),
@@ -888,6 +897,10 @@ int mtl_dma_unmap(mtl_handle mt, const void* vaddr, mtl_iova_t iova, size_t size
   item.iova = iova;
   ret = mt_map_remove(impl, &item);
   if (ret < 0) return ret;
+
+  if (!mt_drv_dpdk_based(impl, MTL_PORT_P)) {
+    return 0;
+  }
 
   /* only unmap for MTL_PORT_P now */
   ret = rte_dev_dma_unmap(mt_port_device(impl, MTL_PORT_P), (void*)vaddr, iova, size);
@@ -1264,3 +1277,17 @@ const char* mtl_get_simd_level_name(enum mtl_simd_level level) {
 }
 
 int mtl_openlog_stream(FILE* f) { return rte_openlog_stream(f); }
+
+bool mtl_pmd_is_dpdk_based(mtl_handle mt, enum mtl_port port) {
+  struct mtl_main_impl* impl = mt;
+
+  if (impl->type != MT_HANDLE_MAIN) {
+    err("%s, invalid type %d\n", __func__, impl->type);
+    return -EINVAL;
+  }
+  if (port >= mt_num_ports(impl)) {
+    err("%s, invalid port %d\n", __func__, port);
+    return -EINVAL;
+  }
+  return mt_drv_dpdk_based(impl, port);
+}

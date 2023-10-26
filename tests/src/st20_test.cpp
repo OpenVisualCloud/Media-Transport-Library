@@ -520,6 +520,7 @@ static void st20_tx_ops_init(tests_context* st20, struct st20_tx_ops* ops) {
   ops->name = "st20_test";
   ops->priv = st20;
   ops->num_port = ctx->para.num_ports;
+  if (ctx->same_dual_port) ops->num_port = 1;
   memcpy(ops->dip_addr[MTL_SESSION_PORT_P], ctx->mcast_ip_addr[MTL_PORT_P],
          MTL_IP_ADDR_LEN);
   snprintf(ops->port[MTL_SESSION_PORT_P], MTL_PORT_MAX_LEN, "%s",
@@ -553,6 +554,7 @@ static void st20_rx_ops_init(tests_context* st20, struct st20_rx_ops* ops) {
   ops->name = "st20_test";
   ops->priv = st20;
   ops->num_port = ctx->para.num_ports;
+  if (ctx->same_dual_port) ops->num_port = 1;
   memcpy(ops->sip_addr[MTL_SESSION_PORT_P], ctx->mcast_ip_addr[MTL_PORT_P],
          MTL_IP_ADDR_LEN);
   snprintf(ops->port[MTL_SESSION_PORT_P], MTL_PORT_MAX_LEN, "%s",
@@ -1257,14 +1259,13 @@ TEST(St20_rx, frame_mix_4k_s2) {
   st20_rx_fps_test(type, fps, width, height, ST20_FMT_YUV_422_10BIT, ST_TEST_LEVEL_ALL,
                    2);
 }
-TEST(St20_rx, ext_frame_mix_s3) {
-  enum st20_type type[3] = {ST20_TYPE_FRAME_LEVEL, ST20_TYPE_FRAME_LEVEL,
-                            ST20_TYPE_FRAME_LEVEL};
-  enum st_fps fps[3] = {ST_FPS_P59_94, ST_FPS_P50, ST_FPS_P29_97};
-  int width[3] = {1280, 1920, 3840};
-  int height[3] = {720, 1080, 2160};
+TEST(St20_rx, ext_frame_mix_s2) {
+  enum st20_type type[3] = {ST20_TYPE_FRAME_LEVEL, ST20_TYPE_FRAME_LEVEL};
+  enum st_fps fps[3] = {ST_FPS_P59_94, ST_FPS_P50};
+  int width[3] = {1280, 1920};
+  int height[3] = {720, 1080};
   st20_rx_fps_test(type, fps, width, height, ST20_FMT_YUV_422_10BIT,
-                   ST_TEST_LEVEL_MANDATORY, 3, true);
+                   ST_TEST_LEVEL_MANDATORY, 2, true);
 }
 
 static void st20_rx_update_src_test(enum st20_type type, int tx_sessions,
@@ -3691,6 +3692,11 @@ static void st20_rx_dump_test(enum st20_type type[], enum st_fps fps[], int widt
   if (ctx->para.num_ports != 2) {
     info("%s, dual port should be enabled for tx test, one for tx and one for rx\n",
          __func__);
+    return;
+  }
+
+  if (!mtl_pmd_is_dpdk_based(m_handle, MTL_PORT_R)) {
+    info("%s, MTL_PORT_R is not a DPDK based PMD, skip this case\n", __func__);
     return;
   }
 

@@ -1176,6 +1176,13 @@ static inline bool mt_drv_use_kernel_ctl(struct mtl_main_impl* impl, enum mtl_po
     return false;
 }
 
+static inline bool mt_drv_dpdk_based(struct mtl_main_impl* impl, enum mtl_port port) {
+  if (mt_if(impl, port)->drv_info.flags & MT_DRV_F_NOT_DPDK_PMD)
+    return false;
+  else
+    return true;
+}
+
 static inline bool mt_drv_mcast_in_dp(struct mtl_main_impl* impl, enum mtl_port port) {
   if (mt_if(impl, port)->drv_info.flags & MT_DRV_F_MCAST_IN_DP)
     return true;

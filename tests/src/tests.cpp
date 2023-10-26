@@ -570,7 +570,6 @@ GTEST_API_ int main(int argc, char** argv) {
   for (int i = 0; i < ctx->para.num_ports; i++) {
     ctx->para.pmd[i] = mtl_pmd_by_port_name(ctx->para.port[i]);
     if (ctx->para.pmd[i] != MTL_PMD_DPDK_USER) {
-      mtl_get_if_ip(ctx->para.port[i], ctx->para.sip_addr[i], ctx->para.netmask[i]);
       ctx->para.flags |= MTL_FLAG_RX_SEPARATE_VIDEO_LCORE;
     } else {
       link_flap_wa = true;
@@ -586,11 +585,18 @@ GTEST_API_ int main(int argc, char** argv) {
     return -EIO;
   }
 
-  if (ctx->dhcp) {
-    for (int i = 0; i < ctx->para.num_ports; i++) {
-      /* get the assigned dhcp ip */
-      mtl_port_ip_info(ctx->handle, (enum mtl_port)i, ctx->para.sip_addr[i],
-                       ctx->para.netmask[i], ctx->para.gateway[i]);
+  for (int i = 0; i < ctx->para.num_ports; i++) {
+    mtl_port_ip_info(ctx->handle, (enum mtl_port)i, ctx->para.sip_addr[i],
+                     ctx->para.netmask[i], ctx->para.gateway[i]);
+    uint8_t* ip = ctx->para.sip_addr[i];
+    info("%s, if ip %u.%u.%u.%u for port %s\n", __func__, ip[0], ip[1], ip[2], ip[3],
+         ctx->para.port[i]);
+  }
+
+  if (ctx->para.num_ports > 1) {
+    if (0 == strcmp(ctx->para.port[MTL_PORT_P], ctx->para.port[MTL_PORT_R])) {
+      /* for test with --p_port kernel:lo --r_port kernel:lo */
+      ctx->same_dual_port = true;
     }
   }
 

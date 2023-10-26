@@ -1284,6 +1284,8 @@ enum mtl_iova_mode mtl_iova_mode_get(mtl_handle mt);
  *
  * @param handle
  *   The handle to the st user dma dev.
+ * @param port
+ *   The port.
  * @param ip
  *   The buffer for IP address.
  * @param netmask
@@ -1296,6 +1298,19 @@ enum mtl_iova_mode mtl_iova_mode_get(mtl_handle mt);
  */
 int mtl_port_ip_info(mtl_handle mt, enum mtl_port port, uint8_t ip[MTL_IP_ADDR_LEN],
                      uint8_t netmask[MTL_IP_ADDR_LEN], uint8_t gateway[MTL_IP_ADDR_LEN]);
+
+/**
+ * Check if the pmd of one mtl port is dpdk based or not.
+ *
+ * @param handle
+ *   The handle to the st user dma dev.
+ * @param port
+ *   The port.
+ * @return
+ *   - true: a DPDK based PMD.
+ *   - false: not a DPDK based PMD, MTL_PMD_KERNEL_SOCKET or MTL_PMD_NATIVE_AF_XDP.
+ */
+bool mtl_pmd_is_dpdk_based(mtl_handle mt, enum mtl_port port);
 
 /**
  * Get SIMD level current cpu supported.
