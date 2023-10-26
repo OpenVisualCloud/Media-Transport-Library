@@ -14,7 +14,7 @@
 enum et_args_cmd {
   ET_ARG_UNKNOWN = 0,
   ET_ARG_PRINT_LIBBPF = 0x100, /* start from end of ascii */
-  ET_ARG_FENTRY,
+  ET_ARG_PROG,
   ET_ARG_HELP,
 };
 
@@ -109,7 +109,7 @@ cleanup:
 }
 
 static struct option et_args_options[] = {{"print", no_argument, 0, ET_ARG_PRINT_LIBBPF},
-                                          {"prog", required_argument, 0, ET_ARG_FENTRY},
+                                          {"prog", required_argument, 0, ET_ARG_PROG},
                                           {"help", no_argument, 0, ET_ARG_HELP},
                                           {0, 0, 0, 0}};
 
@@ -131,7 +131,7 @@ static int et_parse_args(struct et_ctx* ctx, int argc, char** argv) {
     if (cmd == -1) break;
 
     switch (cmd) {
-      case ET_ARG_FENTRY:
+      case ET_ARG_PROG:
         if (strcmp(optarg, "fentry") == 0) {
           ctx->prog_type = ET_PROG_FENTRY;
         }
