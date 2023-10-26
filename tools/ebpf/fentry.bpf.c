@@ -14,7 +14,7 @@ char LICENSE[] SEC("license") = "Dual BSD/GPL";
 struct {
   __uint(type, BPF_MAP_TYPE_HASH);
   __uint(max_entries, 8192);
-  __type(key, pid_t);
+  __type(key, u64);
   __type(value, u64);
 } start_time SEC(".maps");
 
@@ -26,12 +26,11 @@ struct {
 SEC("fentry/udp_send_skb")
 int BPF_PROG(udp_send_skb, struct sk_buff* skb, struct flowi4* fl4,
              struct inet_cork* cork) {
-  pid_t pid;
   u64 ts;
+  u64 skb_addr = (u64)skb;
 
-  pid = bpf_get_current_pid_tgid() >> 32;
   ts = bpf_ktime_get_ns();
-  bpf_map_update_elem(&start_time, &pid, &ts, BPF_ANY);
+  bpf_map_update_elem(&start_time, &skb_addr, &ts, BPF_ANY);
 
   return 0;
 }
@@ -42,11 +41,12 @@ int BPF_PROG(udp_send_skb_exit, struct sk_buff* skb, struct flowi4* fl4,
   struct udp_send_event* e;
   pid_t pid;
   u64 *start_ts, duration_ns = 0;
+  u64 skb_addr = (u64)skb;
 
   pid = bpf_get_current_pid_tgid() >> 32;
-  start_ts = bpf_map_lookup_elem(&start_time, &pid);
+  start_ts = bpf_map_lookup_elem(&start_time, &skb_addr);
   if (start_ts) duration_ns = bpf_ktime_get_ns() - *start_ts;
-  bpf_map_delete_elem(&start_time, &pid);
+  bpf_map_delete_elem(&start_time, &skb_addr);
 
   e = bpf_ringbuf_reserve(&rb, sizeof(*e), 0);
   if (!e) return 0;
