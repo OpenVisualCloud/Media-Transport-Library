@@ -1527,6 +1527,11 @@ static int rv_start_pcapng(struct mtl_main_impl* impl, struct st_rx_video_sessio
   int idx = s->idx;
   int pkt_len = ST_PKT_MAX_ETHER_BYTES;
 
+  if (!mt_drv_dpdk_based(impl, port)) {
+    err("%s, port %d is not dpdk based, unsupported\n", __func__, port);
+    return -ENOTSUP;
+  }
+
   if (s->st22_info) {
     snprintf(s->pcapng_file_name, MTL_PCAP_FILE_MAX_LEN, "st22_rx_%d_%u_XXXXXX.pcapng",
              idx, max_dump_packets);

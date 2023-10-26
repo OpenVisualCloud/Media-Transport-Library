@@ -139,3 +139,7 @@ jobs:
       - name: Run st2110 st20p test case in simulation ENA environment
         run: |
           sudo ./build/tests/KahawaiTest --auto_start_stop --p_port ${{  env.TEST_PORT_P  }} --r_port ${{  env.TEST_PORT_R  }} --rss_mode l3_l4 --pacing_way tsc --iova_mode pa --multi_src_port --gtest_filter=Main.*:St20p*:-*ext*
+
+      - name: Run st2110 st20p test case with kernel loopback
+        run: |
+          ./build/tests/KahawaiTest --p_port kernel:lo --r_port kernel:lo --auto_start_stop --gtest_filter=St20p*

@@ -95,6 +95,7 @@ struct st_tests_context {
   bool dhcp;
   enum mtl_iova_mode iova;
   enum mtl_rss_mode rss_mode;
+  bool same_dual_port;
 
   st22_encoder_dev_handle encoder_dev_handle;
   st22_decoder_dev_handle decoder_dev_handle;
