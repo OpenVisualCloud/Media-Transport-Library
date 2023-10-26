@@ -103,6 +103,7 @@ static inline int et_fentry_loop() {
   }
 
 cleanup:
+  ring_buffer__free(rb);
   fentry_bpf__destroy(skel);
   return ret;
 }
