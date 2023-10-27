@@ -364,8 +364,7 @@ static int tx_audio_sessions_tasklet_start(void* priv) {
 }
 
 static int tx_audio_session_update_redundant(struct st_tx_audio_session_impl* s,
-                                             struct rte_mbuf* pkt_r,
-                                             const struct rte_mbuf* pkt_base) {
+                                             struct rte_mbuf* pkt_r) {
   struct mt_udp_hdr* hdr = rte_pktmbuf_mtod(pkt_r, struct mt_udp_hdr*);
   struct rte_ipv4_hdr* ipv4 = &hdr->ipv4;
   struct rte_udp_hdr* udp = &hdr->udp;
@@ -738,7 +737,7 @@ static int tx_audio_session_tasklet_frame(struct mtl_main_impl* impl,
         s->stat_build_ret_code = -STI_FRAME_PKT_ALLOC_FAIL;
         return MT_TASKLET_ALL_DONE;
       }
-      tx_audio_session_update_redundant(s, pkt_r, pkt);
+      tx_audio_session_update_redundant(s, pkt_r);
     }
   }
 
@@ -909,7 +908,7 @@ static int tx_audio_session_tasklet_rtp(struct mtl_main_impl* impl,
         s->stat_build_ret_code = -STI_RTP_PKT_ALLOC_FAIL;
         return MT_TASKLET_ALL_DONE;
       }
-      tx_audio_session_update_redundant(s, pkt_r, pkt);
+      tx_audio_session_update_redundant(s, pkt_r);
     } else {
       tx_audio_session_build_packet_chain(s, pkt_r, pkt_rtp, MTL_SESSION_PORT_R);
     }
