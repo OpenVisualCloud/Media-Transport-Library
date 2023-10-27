@@ -250,7 +250,6 @@ int mt_rtcp_rx_send_nack_packet(struct mt_rtcp_rx* rx) {
   udp = &hdr->udp;
 
   rte_memcpy(hdr, &rx->udp_hdr, sizeof(*hdr));
-  ipv4->packet_id = htons(rx->ipv4_packet_id++);
   mt_mbuf_init_ipv4(pkt);
   pkt->data_len = sizeof(*hdr);
 
@@ -401,7 +400,6 @@ struct mt_rtcp_tx* mt_rtcp_tx_create(struct mtl_main_impl* impl,
   }
   tx->mbuf_ring = ring;
 
-  tx->ipv4_packet_id = 0;
   tx->ssrc = ops->ssrc;
   snprintf(tx->name, sizeof(tx->name) - 1, "%s", ops->name);
   rte_memcpy(&tx->udp_hdr, ops->udp_hdr, sizeof(tx->udp_hdr));
@@ -455,7 +453,6 @@ struct mt_rtcp_rx* mt_rtcp_rx_create(struct mtl_main_impl* impl,
 
   rx->parent = impl;
   rx->port = ops->port;
-  rx->ipv4_packet_id = 0;
   rx->ssrc = 0;
   rx->nacks_send_interval = ops->nacks_send_interval;
   rx->nacks_send_time = mt_get_tsc(impl);

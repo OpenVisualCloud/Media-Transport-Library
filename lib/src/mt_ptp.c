@@ -762,7 +762,7 @@ static void ptp_delay_req_task(struct mt_ptp_impl* ptp) {
     ipv4_hdr->udp.dst_port = ipv4_hdr->udp.src_port;
     ipv4_hdr->udp.dgram_cksum = 0;
     ipv4_hdr->ip.time_to_live = 255;
-    ipv4_hdr->ip.packet_id = htons(ptp->t3_sequence_id);
+    ipv4_hdr->ip.fragment_offset = MT_IP_DONT_FRAGMENT_FLAG;
     ipv4_hdr->ip.next_proto_id = IPPROTO_UDP;
     ipv4_hdr->ip.hdr_checksum = 0;
     mt_mbuf_init_ipv4(m);

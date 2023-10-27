@@ -164,6 +164,7 @@ static int tx_audio_session_init_hdr(struct mtl_main_impl* impl,
   ipv4->version_ihl = (4 << 4) | (sizeof(struct rte_ipv4_hdr) / 4);
   ipv4->time_to_live = 64;
   ipv4->type_of_service = 0;
+  ipv4->packet_id = 0;
   ipv4->fragment_offset = MT_IP_DONT_FRAGMENT_FLAG;
   ipv4->total_length = htons(s->pkt_len + ST_PKT_AUDIO_HDR_LEN);
   ipv4->next_proto_id = IPPROTO_UDP;
@@ -363,18 +364,14 @@ static int tx_audio_sessions_tasklet_start(void* priv) {
 }
 
 static int tx_audio_session_update_redundant(struct st_tx_audio_session_impl* s,
-                                             struct rte_mbuf* pkt_r,
-                                             const struct rte_mbuf* pkt_base) {
+                                             struct rte_mbuf* pkt_r) {
   struct mt_udp_hdr* hdr = rte_pktmbuf_mtod(pkt_r, struct mt_udp_hdr*);
-  struct mt_udp_hdr* hdr_base = rte_pktmbuf_mtod(pkt_base, struct mt_udp_hdr*);
   struct rte_ipv4_hdr* ipv4 = &hdr->ipv4;
-  struct rte_ipv4_hdr* ipv4_base = &hdr_base->ipv4;
   struct rte_udp_hdr* udp = &hdr->udp;
 
   /* update the hdr: eth, ip, udp */
   rte_memcpy(hdr, &s->hdr[MTL_SESSION_PORT_R], sizeof(*hdr));
 
-  ipv4->packet_id = ipv4_base->packet_id;
   ipv4->total_length = htons(pkt_r->pkt_len - pkt_r->l2_len);
 
   udp->dgram_len = htons(pkt_r->pkt_len - pkt_r->l2_len - pkt_r->l3_len);
@@ -402,10 +399,6 @@ static int tx_audio_session_build_packet(struct st_tx_audio_session_impl* s,
   rte_memcpy(&hdr->eth, &s->hdr[MTL_SESSION_PORT_P].eth, sizeof(hdr->eth));
   rte_memcpy(ipv4, &s->hdr[MTL_SESSION_PORT_P].ipv4, sizeof(hdr->ipv4));
   rte_memcpy(udp, &s->hdr[MTL_SESSION_PORT_P].udp, sizeof(hdr->udp));
-
-  /* update ipv4 hdr */
-  ipv4->packet_id = htons(s->st30_ipv4_packet_id);
-  s->st30_ipv4_packet_id++;
 
   /* update mbuf */
   mt_mbuf_init_ipv4(pkt);
@@ -487,10 +480,6 @@ static int tx_audio_session_rtp_update_packet(struct st_tx_audio_session_impl* s
   rte_memcpy(ipv4, &s->hdr[MTL_SESSION_PORT_P].ipv4, sizeof(hdr->ipv4));
   rte_memcpy(udp, &s->hdr[MTL_SESSION_PORT_P].udp, sizeof(hdr->udp));
 
-  /* update ipv4 hdr */
-  ipv4->packet_id = htons(s->st30_ipv4_packet_id);
-  s->st30_ipv4_packet_id++;
-
   if (rtp->tmstamp != s->st30_rtp_time_app) {
     /* start of a new epoch */
     s->st30_rtp_time_app = rtp->tmstamp;
@@ -536,10 +525,8 @@ static int tx_audio_session_build_packet_chain(struct st_tx_audio_session_impl* 
   rte_memcpy(udp, &s->hdr[s_port].udp, sizeof(hdr->udp));
 
   /* update ipv4 hdr */
-  ipv4->packet_id = htons(s->st30_ipv4_packet_id);
   /* update only for primary */
   if (s_port == MTL_SESSION_PORT_P) {
-    s->st30_ipv4_packet_id++;
     /* update rtp time for rtp path */
     if (ops->type == ST30_TYPE_RTP_LEVEL) {
       struct st_rfc3550_rtp_hdr* rtp =
@@ -750,7 +737,7 @@ static int tx_audio_session_tasklet_frame(struct mtl_main_impl* impl,
         s->stat_build_ret_code = -STI_FRAME_PKT_ALLOC_FAIL;
         return MT_TASKLET_ALL_DONE;
       }
-      tx_audio_session_update_redundant(s, pkt_r, pkt);
+      tx_audio_session_update_redundant(s, pkt_r);
     }
   }
 
@@ -921,7 +908,7 @@ static int tx_audio_session_tasklet_rtp(struct mtl_main_impl* impl,
         s->stat_build_ret_code = -STI_RTP_PKT_ALLOC_FAIL;
         return MT_TASKLET_ALL_DONE;
       }
-      tx_audio_session_update_redundant(s, pkt_r, pkt);
+      tx_audio_session_update_redundant(s, pkt_r);
     } else {
       tx_audio_session_build_packet_chain(s, pkt_r, pkt_rtp, MTL_SESSION_PORT_R);
     }
@@ -1438,7 +1425,6 @@ static int tx_audio_session_attach(struct mtl_main_impl* impl,
   s->tx_mono_pool = mt_has_tx_mono_pool(impl);
   /* manually disable chain or any port can't support chain */
   s->tx_no_chain = mt_has_tx_no_chain(impl) || !tx_audio_session_has_chain_buf(s);
-  s->st30_ipv4_packet_id = 0;
 
   s->st30_frames_cnt = ops->framebuff_cnt;
 
