@@ -63,7 +63,6 @@ struct mt_rtcp_tx {
   bool active;
   enum mt_rtp_payload_format payload_format;
 
-  uint16_t ipv4_packet_id;
   uint16_t last_seq_num;
 
   /* stat */
@@ -86,7 +85,6 @@ struct mt_rtcp_rx {
   uint32_t ssrc;
   bool active;
 
-  uint16_t ipv4_packet_id;
   uint64_t nacks_send_time;
 
   uint16_t last_seq;

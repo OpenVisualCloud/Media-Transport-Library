@@ -174,8 +174,6 @@ static int udp_build_tx_pkt(struct mtl_main_impl* impl, struct mudp_impl* s,
   }
 
   /* ip */
-  ipv4->packet_id = htons(s->ipv4_packet_id);
-  s->ipv4_packet_id++;
   mtl_memcpy(&ipv4->dst_addr, dip, MTL_IP_ADDR_LEN);
 
   /* udp */
@@ -276,8 +274,6 @@ static int udp_build_tx_msg_pkt(struct mtl_main_impl* impl, struct mudp_impl* s,
     /* update dst mac */
     rte_memcpy(mt_eth_d_addr(eth), &d_addr, sizeof(d_addr));
     /* ip */
-    ipv4->packet_id = htons(s->ipv4_packet_id);
-    s->ipv4_packet_id++;
     mtl_memcpy(&ipv4->dst_addr, dip, MTL_IP_ADDR_LEN);
     /* udp */
     udp->dst_port = addr_in->sin_port;

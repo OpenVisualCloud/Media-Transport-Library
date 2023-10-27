@@ -277,7 +277,6 @@ struct st_tx_video_session_impl {
   struct st_tx_video_session_handle_impl* st20_handle;
   struct st22_tx_video_session_handle_impl* st22_handle;
 
-  uint16_t st20_ipv4_packet_id;
   uint16_t st20_src_port[MTL_SESSION_PORT_MAX]; /* udp port */
   uint16_t st20_dst_port[MTL_SESSION_PORT_MAX]; /* udp port */
   struct st_rfc4175_video_hdr s_hdr[MTL_SESSION_PORT_MAX];
@@ -802,7 +801,6 @@ struct st_tx_audio_session_impl {
   uint16_t st30_frame_idx;  /* current frame index */
   enum st30_tx_frame_status st30_frame_stat;
 
-  uint16_t st30_ipv4_packet_id;
   uint16_t st30_src_port[MTL_SESSION_PORT_MAX]; /* udp port */
   uint16_t st30_dst_port[MTL_SESSION_PORT_MAX]; /* udp port */
   struct st_rfc3550_audio_hdr hdr[MTL_SESSION_PORT_MAX];
@@ -1020,7 +1018,6 @@ struct st_tx_ancillary_session_impl {
   uint16_t st40_frame_idx; /* current frame index */
   enum st40_tx_frame_status st40_frame_stat;
 
-  uint16_t st40_ipv4_packet_id;
   uint16_t st40_src_port[MTL_SESSION_PORT_MAX]; /* udp port */
   uint16_t st40_dst_port[MTL_SESSION_PORT_MAX]; /* udp port */
   struct st_rfc8331_anc_hdr hdr[MTL_SESSION_PORT_MAX];
