@@ -760,6 +760,13 @@ static void st22p_rx_digest_test(enum st_fps fps[], int width[], int height[],
   /* return if level lower than global */
   if (para->level < ctx->level) return;
 
+  if (para->tx_ext || para->rx_ext) {
+    if (ctx->iova == MTL_IOVA_MODE_PA) {
+      info("%s, skip ext_buf test as it's PA iova mode\n", __func__);
+      return;
+    }
+  }
+
   std::vector<tests_context*> test_ctx_tx;
   std::vector<tests_context*> test_ctx_rx;
   std::vector<st22p_tx_handle> tx_handle;
