@@ -187,7 +187,7 @@ int main(int argc, char** argv) {
   int ret;
 
   memset(&ctx, 0, sizeof(ctx));
-  ret = sample_parse_args(&ctx, argc, argv, false, true, true);
+  ret = sample_parse_args(&ctx, argc, argv, true, true, true);
   if (ret < 0) return ret;
 
   ctx.st = mtl_init(&ctx.param);
