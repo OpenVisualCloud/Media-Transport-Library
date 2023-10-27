@@ -1,6 +1,7 @@
-/* SPDX-License-Identifier: GPL-2.0 OR BSD-3-Clause
- * Copyright (c) 2023 Intel Corporation
+/* SPDX-License-Identifier: BSD-3-Clause
+ * Copyright(c) 2023 Intel Corporation
  */
+
 #include "et.h"
 
 #include <bpf/libbpf.h>
