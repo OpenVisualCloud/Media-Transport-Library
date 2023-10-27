@@ -187,3 +187,46 @@ export CC=clang CXX=clang++
 rm build -rf
 ./build.sh
 ```
+
+### 4.3 Build portable package
+
+Sometimes, you may need to create a portable package that can be used directly on other nodes. Please note that the default steps in section `### 2.3` utilize the `-march=native` compiler version. This generates native instructions based on local CPU features, some of which may not exist on other devices. In such scenarios, it's necessary to specifically indicate the CPU instructions you want to support.
+
+Below are the steps to generate a DPDK binary capable of AVX2. Set `cpu_instruction_set` to `haswell` during the DPDK meson setup stage.
+
+```bash
+cd dpdk
+rm build -rf
+meson setup build -Dcpu_instruction_set=haswell
+ninja -C build
+sudo ninja install -C build
+cd ..
+```
+
+Next, rebuild the Intel® Media Transport Library. IMTL will reuse the build flags from DPDK.
+
+```bash
+cd $imtl_source_code
+rm build -rf
+./build.sh
+```
+
+If you want to enable a AVX512 capable build, just set `cpu_instruction_set` to `skylake-avx512`:
+
+```bash
+meson setup build -Dcpu_instruction_set=skylake-avx512
+```
+
+Use the command below to check the cflags (march) used for the DPDK build:
+
+```bash
+pkg-config --cflags libdpdk
+# below output indicate it use haswell arch
+-include rte_config.h -march=haswell -msse4 -I/usr/local/include
+```
+
+Use below command to check the detail compiler flags of one `march`:
+
+```bash
+echo | gcc -dM -E - -march=haswell
+```
