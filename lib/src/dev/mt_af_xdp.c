@@ -416,7 +416,7 @@ static void xdp_tx_wakeup(struct mt_xdp_queue* xq) {
 static uint16_t xdp_tx(struct mtl_main_impl* impl, struct mt_xdp_queue* xq,
                        struct rte_mbuf** tx_pkts, uint16_t nb_pkts) {
   enum mtl_port port = xq->port;
-  uint16_t q = xq->q;
+  // uint16_t q = xq->q;
   struct rte_mempool* mbuf_pool = xq->mbuf_pool;
   uint16_t tx = 0;
   struct xsk_ring_prod* pd = &xq->tx_prod;
@@ -427,42 +427,45 @@ static uint16_t xdp_tx(struct mtl_main_impl* impl, struct mt_xdp_queue* xq,
 
   for (uint16_t i = 0; i < nb_pkts; i++) {
     struct rte_mbuf* m = tx_pkts[i];
-
-    if (m->pool == mbuf_pool) {
-      warn("%s(%d, %u), same mbuf_pool todo\n", __func__, port, q);
+    struct rte_mbuf* local = rte_pktmbuf_alloc(mbuf_pool);
+    if (!local) {
+      dbg("%s(%d, %u), local mbuf alloc fail\n", __func__, port, q);
+      xq->stat_tx_mbuf_alloc_fail++;
       goto exit;
-    } else {
-      struct rte_mbuf* local = rte_pktmbuf_alloc(mbuf_pool);
-      if (!local) {
-        dbg("%s(%d, %u), local mbuf alloc fail\n", __func__, port, q);
-        xq->stat_tx_mbuf_alloc_fail++;
-        goto exit;
-      }
-
-      uint32_t idx;
-      if (!xsk_ring_prod__reserve(pd, 1, &idx)) {
-        dbg("%s(%d, %u), socket_tx reserve fail\n", __func__, port, q);
-        xq->stat_tx_prod_reserve_fail++;
-        rte_pktmbuf_free(local);
-        goto exit;
-      }
-      struct xdp_desc* desc = xsk_ring_prod__tx_desc(pd, idx);
-      desc->len = m->pkt_len;
-      uint64_t addr =
-          (uint64_t)local - (uint64_t)xq->umem_buffer - xq->mbuf_pool->header_size;
-      uint64_t offset = rte_pktmbuf_mtod(local, uint64_t) - (uint64_t)local +
-                        xq->mbuf_pool->header_size;
-      void* pkt = xsk_umem__get_data(xq->umem_buffer, addr + offset);
-      offset = offset << XSK_UNALIGNED_BUF_OFFSET_SHIFT;
-      desc->addr = addr | offset;
-      rte_memcpy(pkt, rte_pktmbuf_mtod(m, void*), desc->len);
-      tx_bytes += m->data_len;
-      rte_pktmbuf_free(m);
-      dbg("%s(%d, %u), tx local mbuf %p umem pkt %p addr 0x%" PRIu64 "\n", __func__, port,
-          q, local, pkt, addr);
-      xq->stat_tx_copy++;
-      tx++;
     }
+
+    uint32_t idx;
+    if (!xsk_ring_prod__reserve(pd, 1, &idx)) {
+      dbg("%s(%d, %u), socket_tx reserve fail\n", __func__, port, q);
+      xq->stat_tx_prod_reserve_fail++;
+      rte_pktmbuf_free(local);
+      goto exit;
+    }
+    struct xdp_desc* desc = xsk_ring_prod__tx_desc(pd, idx);
+    desc->len = m->pkt_len;
+    uint64_t addr =
+        (uint64_t)local - (uint64_t)xq->umem_buffer - xq->mbuf_pool->header_size;
+    uint64_t offset =
+        rte_pktmbuf_mtod(local, uint64_t) - (uint64_t)local + xq->mbuf_pool->header_size;
+    void* pkt = xsk_umem__get_data(xq->umem_buffer, addr + offset);
+    offset = offset << XSK_UNALIGNED_BUF_OFFSET_SHIFT;
+    desc->addr = addr | offset;
+
+    struct rte_mbuf* n = m;
+    uint16_t nb_segs = m->nb_segs;
+    for (uint16_t seg = 0; seg < nb_segs; seg++) {
+      rte_memcpy(pkt, rte_pktmbuf_mtod(n, void*), n->data_len);
+      pkt += n->data_len;
+      /* point to next */
+      n = n->next;
+    }
+
+    tx_bytes += desc->len;
+    rte_pktmbuf_free(m);
+    dbg("%s(%d, %u), tx local mbuf %p umem pkt %p addr 0x%" PRIu64 "\n", __func__, port,
+        q, local, pkt, addr);
+    xq->stat_tx_copy++;
+    tx++;
   }
 
 exit:
@@ -614,6 +617,7 @@ int mt_dev_xdp_init(struct mt_interface* inf) {
   }
 
   inf->xdp = xdp;
+  inf->feature |= MT_IF_FEATURE_TX_MULTI_SEGS;
   info("%s(%d), start queue %u cnt %u\n", __func__, port, xdp->start_queue,
        xdp->queues_cnt);
   return 0;
@@ -681,13 +685,16 @@ int mt_tx_xdp_put(struct mt_tx_xdp_entry* entry) {
   uint8_t* ip = flow->dip_addr;
   struct mt_xdp_queue* xq = entry->xq;
 
-  /* poll all done buf */
-  xdp_tx_poll_done(xq);
-  xdp_queue_tx_stat(xq);
+  if (xq) {
+    /* poll all done buf */
+    xdp_tx_poll_done(xq);
+    xdp_queue_tx_stat(xq);
 
-  xq->tx_entry = NULL;
-  info("%s(%d), ip %u.%u.%u.%u, port %u, queue %u\n", __func__, port, ip[0], ip[1], ip[2],
-       ip[3], flow->dst_port, entry->queue_id);
+    xq->tx_entry = NULL;
+    info("%s(%d), ip %u.%u.%u.%u, port %u, queue %u\n", __func__, port, ip[0], ip[1],
+         ip[2], ip[3], flow->dst_port, entry->queue_id);
+  }
+
   mt_rte_free(entry);
   return 0;
 }
