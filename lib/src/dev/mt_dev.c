@@ -2095,8 +2095,14 @@ int mt_dev_if_init(struct mtl_main_impl* impl) {
       inf->nb_rx_q = 1;
       p->flags |= MTL_FLAG_SHARED_RX_QUEUE;
       inf->system_rx_queues_end = 0;
-    } else if (mt_pmd_is_dpdk_af_xdp(impl, i) || mt_pmd_is_native_af_xdp(impl, i)) {
+    } else if (mt_pmd_is_dpdk_af_xdp(impl, i)) {
       /* no system queues as no cni */
+      inf->nb_tx_q = queue_pair_cnt;
+      inf->nb_rx_q = queue_pair_cnt;
+      inf->system_rx_queues_end = 0;
+    } else if (mt_pmd_is_native_af_xdp(impl, i)) {
+      /* one more for the sys tx queue */
+      queue_pair_cnt = RTE_MAX(p->tx_queues_cnt[i] + 1, p->rx_queues_cnt[i]);
       inf->nb_tx_q = queue_pair_cnt;
       inf->nb_rx_q = queue_pair_cnt;
       inf->system_rx_queues_end = 0;
