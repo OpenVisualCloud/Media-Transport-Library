@@ -24,4 +24,4 @@ vmlinux.h:
 SKEL_FILES := $(patsubst %.bpf.c,%.skel.h,$(wildcard *.bpf.c))
 
 et: et.c $(SKEL_FILES)
-	gcc -Wall -o $@ $(filter %.c,$^) -include $(SKEL_FILES) -l:libbpf.a -lelf -lz
+	gcc -Wall -o $@ $(filter %.c,$^) -include $(SKEL_FILES) -lxdp -l:libbpf.a -lelf -lz

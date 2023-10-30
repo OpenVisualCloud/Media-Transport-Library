@@ -6,37 +6,18 @@
 
 #include <bpf/libbpf.h>
 #include <errno.h>
+#include <fcntl.h>
 #include <getopt.h>
+#include <net/if.h>
 #include <signal.h>
 #include <stdio.h>
 #include <string.h>
+#include <sys/socket.h>
+#include <sys/stat.h>
+#include <sys/types.h>
+#include <sys/un.h>
 #include <unistd.h>
-
-enum et_args_cmd {
-  ET_ARG_UNKNOWN = 0,
-  ET_ARG_PRINT_LIBBPF = 0x100, /* start from end of ascii */
-  ET_ARG_PROG,
-  ET_ARG_HELP,
-};
-
-enum et_prog_type {
-  ET_PROG_UNKNOWN = 0,
-  ET_PROG_FENTRY,
-  ET_PROG_KPROBE,
-  ET_PROG_TRACEPOINT,
-  ET_PROG_XDP,
-};
-
-static const char* prog_type_str[] = {
-    [ET_PROG_FENTRY] = "fentry",
-    [ET_PROG_KPROBE] = "kprobe",
-    [ET_PROG_TRACEPOINT] = "tracepoint",
-    [ET_PROG_XDP] = "xdp",
-};
-
-struct et_ctx {
-  enum et_prog_type prog_type;
-};
+#include <xdp/xsk.h>
 
 static volatile bool stop = false;
 
@@ -65,7 +46,7 @@ static int udp_send_handler(void* ctx, void* data, size_t data_sz) {
   return 0;
 }
 
-static inline int et_fentry_loop() {
+static int et_fentry_loop() {
   struct ring_buffer* rb = NULL;
   struct fentry_bpf* skel;
   int ret = 0;
@@ -109,8 +90,90 @@ cleanup:
   return ret;
 }
 
+static int send_fd(int sock, int fd) {
+  struct msghdr msg;
+  struct iovec iov[1];
+  struct cmsghdr* cmsg = NULL;
+  char ctrl_buf[CMSG_SPACE(sizeof(int))];
+  char data[1];
+
+  memset(&msg, 0, sizeof(struct msghdr));
+  memset(ctrl_buf, 0, CMSG_SPACE(sizeof(int)));
+
+  data[0] = ' ';
+  iov[0].iov_base = data;
+  iov[0].iov_len = sizeof(data);
+
+  msg.msg_name = NULL;
+  msg.msg_namelen = 0;
+  msg.msg_iov = iov;
+  msg.msg_iovlen = 1;
+  msg.msg_controllen = CMSG_SPACE(sizeof(int));
+  msg.msg_control = ctrl_buf;
+
+  cmsg = CMSG_FIRSTHDR(&msg);
+  cmsg->cmsg_level = SOL_SOCKET;
+  cmsg->cmsg_type = SCM_RIGHTS;
+  cmsg->cmsg_len = CMSG_LEN(sizeof(int));
+
+  *((int*)CMSG_DATA(cmsg)) = fd;
+
+  return sendmsg(sock, &msg, 0);
+}
+
+static int et_xdp_loop(struct et_ctx* ctx) {
+  struct sockaddr_un addr;
+  int ret = 0;
+  int xsks_map_fd = -1;
+  int sock = -1, conn;
+
+  /* here we load the default xdp program built by libxdp */
+  if (xsk_setup_xdp_prog(ctx->xdp_ifindex, &xsks_map_fd) || xsks_map_fd < 0) {
+    perror("xsk_setup_xdp_prog failed");
+    ret = -1;
+    goto cleanup;
+  }
+
+  sock = socket(AF_UNIX, SOCK_STREAM, 0);
+  unlink(ET_XDP_UNIX_SOCKET_PATH);
+
+  int flags = fcntl(sock, F_GETFL, 0);
+  fcntl(sock, F_SETFL, flags | O_NONBLOCK);
+
+  memset(&addr, 0, sizeof(addr));
+  addr.sun_family = AF_UNIX;
+  strcpy(addr.sun_path, ET_XDP_UNIX_SOCKET_PATH);
+  bind(sock, (struct sockaddr*)&addr, sizeof(addr));
+
+  chmod(ET_XDP_UNIX_SOCKET_PATH, 0666); /* allow non-root user to connect */
+
+  listen(sock, 1);
+
+  while (!stop) {
+    printf("waiting socket connection...\n");
+    conn = accept(sock, NULL, 0);
+    if (conn < 0) {
+      if (errno != EAGAIN && errno != EWOULDBLOCK) {
+        perror("accept error");
+        ret = -1;
+        goto cleanup;
+      }
+      sleep(1);
+      continue;
+    }
+    send_fd(conn, xsks_map_fd);
+    close(conn);
+    printf("map_fd %d sent, close conn\n", xsks_map_fd);
+  }
+
+cleanup:
+  if (sock >= 0) close(sock);
+  return ret;
+}
+
 static struct option et_args_options[] = {{"print", no_argument, 0, ET_ARG_PRINT_LIBBPF},
                                           {"prog", required_argument, 0, ET_ARG_PROG},
+                                          {"ifname", required_argument, 0, ET_ARG_IFNAME},
                                           {"help", no_argument, 0, ET_ARG_HELP},
                                           {0, 0, 0, 0}};
 
@@ -121,6 +184,7 @@ static void et_print_help() {
   printf(" --help           : print this help\n");
   printf(" --print          : print libbpf output\n");
   printf(" --prog <type>    : attach to prog <type>\n");
+  printf(" --ifname <name>  : interface name\n");
   printf("\n");
 }
 
@@ -135,11 +199,20 @@ static int et_parse_args(struct et_ctx* ctx, int argc, char** argv) {
       case ET_ARG_PROG:
         if (strcmp(optarg, "fentry") == 0) {
           ctx->prog_type = ET_PROG_FENTRY;
+        } else if (strcmp(optarg, "xdp") == 0) {
+          ctx->prog_type = ET_PROG_XDP;
         }
         break;
       case ET_ARG_PRINT_LIBBPF:
         libbpf_set_print(libbpf_print_fn);
         break;
+      case ET_ARG_IFNAME:
+        int ifindex = if_nametoindex(optarg);
+        if (!ifindex) {
+          fprintf(stderr, "invalid interface name: %s\n", optarg);
+          return -1;
+        }
+        ctx->xdp_ifindex = ifindex;
       case ET_ARG_HELP:
       default:
         et_print_help();
@@ -160,7 +233,9 @@ int main(int argc, char** argv) {
     case ET_PROG_FENTRY:
       et_fentry_loop();
       break;
-
+    case ET_PROG_XDP:
+      et_xdp_loop(&ctx);
+      break;
     default:
       break;
   }
