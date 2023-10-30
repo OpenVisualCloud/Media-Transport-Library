@@ -59,6 +59,9 @@ struct mt_xdp_queue {
   uint64_t stat_rx_burst;
   uint64_t stat_rx_mbuf_alloc_fail;
   uint64_t stat_rx_prod_reserve_fail;
+
+  uint32_t stat_rx_pkt_invalid;
+  uint32_t stat_rx_pkt_err_udp_port;
 };
 
 struct mt_xdp_priv {
@@ -135,6 +138,12 @@ static int xdp_queue_rx_stat(struct mt_xdp_queue* xq) {
     err("%s(%d,%u), prod reserve fail %" PRIu64 "\n", __func__, port, q,
         xq->stat_rx_prod_reserve_fail);
     xq->stat_rx_prod_reserve_fail = 0;
+  }
+  if (xq->stat_rx_pkt_invalid) {
+    err("%s(%d,%u), invalid pkt %u wrong udp port %u\n", __func__, port, q,
+        xq->stat_rx_pkt_invalid, xq->stat_rx_pkt_err_udp_port);
+    xq->stat_rx_pkt_invalid = 0;
+    xq->stat_rx_pkt_err_udp_port = 0;
   }
 
   return 0;
@@ -486,13 +495,48 @@ exit:
   return tx;
 }
 
-static uint16_t xdp_rx(struct mtl_main_impl* impl, struct mt_xdp_queue* xq,
-                       struct rte_mbuf** rx_pkts, uint16_t nb_pkts) {
-  enum mtl_port port = xq->port;
+static bool xdp_rx_check_pkt(struct mt_rx_xdp_entry* entry, struct rte_mbuf* pkt) {
+  enum mtl_port port = entry->port;
+  struct mt_xdp_queue* xq = entry->xq;
+  uint16_t q = entry->queue_id;
+  struct mt_udp_hdr* hdr = rte_pktmbuf_mtod(pkt, struct mt_udp_hdr*);
+  struct rte_ether_hdr* eth = &hdr->eth;
+  struct rte_ipv4_hdr* ipv4 = &hdr->ipv4;
+  struct rte_udp_hdr* udp = &hdr->udp;
+
+  MTL_MAY_UNUSED(port);
+  MTL_MAY_UNUSED(q);
+
+  uint16_t ether_type = ntohs(eth->ether_type);
+  if (ether_type != RTE_ETHER_TYPE_IPV4) {
+    dbg("%s(%d, %u), wrong ether_type %u\n", __func__, port, q, ether_type);
+    return false;
+  }
+
+  if (ipv4->next_proto_id != IPPROTO_UDP) {
+    dbg("%s(%d, %u), wrong next_proto_id %u\n", __func__, port, q, ipv4->next_proto_id);
+    return false;
+  }
+
+  uint16_t dst_port = ntohs(udp->dst_port);
+  if (dst_port != entry->flow.dst_port) {
+    xq->stat_rx_pkt_err_udp_port++;
+    dbg("%s(%d, %u), wrong dst_port %u expect %u\n", __func__, port, q, dst_port,
+        entry->flow.dst_port);
+    return false;
+  }
+
+  return true;
+}
+
+static uint16_t xdp_rx(struct mt_rx_xdp_entry* entry, struct rte_mbuf** rx_pkts,
+                       uint16_t nb_pkts) {
+  struct mt_xdp_queue* xq = entry->xq;
+  enum mtl_port port = entry->port;
   uint16_t q = xq->q;
   struct xsk_ring_cons* rx_cons = &xq->rx_cons;
   struct rte_mempool* mp = xq->mbuf_pool;
-  struct mtl_port_status* stats = mt_if(impl, port)->dev_stats_sw;
+  struct mtl_port_status* stats = mt_if(entry->parent, port)->dev_stats_sw;
   uint64_t rx_bytes = 0;
   uint32_t idx = 0;
   uint32_t rx = xsk_ring_cons__peek(rx_cons, nb_pkts, &idx);
@@ -509,6 +553,7 @@ static uint16_t xdp_rx(struct mtl_main_impl* impl, struct mt_xdp_queue* xq,
     return 0;
   }
 
+  uint32_t valid_rx = 0;
   for (uint32_t i = 0; i < rx; i++) {
     const struct xdp_desc* desc;
     uint64_t addr;
@@ -525,7 +570,13 @@ static uint16_t xdp_rx(struct mtl_main_impl* impl, struct mt_xdp_queue* xq,
         offset - sizeof(struct rte_mbuf) - rte_pktmbuf_priv_size(mp) - mp->header_size;
     rte_pktmbuf_pkt_len(pkt) = len;
     rte_pktmbuf_data_len(pkt) = len;
-    rx_pkts[i] = pkt;
+    if (xdp_rx_check_pkt(entry, pkt)) {
+      rx_pkts[valid_rx] = pkt;
+      valid_rx++;
+    } else {
+      rte_pktmbuf_free(pkt);
+      xq->stat_rx_pkt_invalid++;
+    }
     rx_bytes += len;
   }
 
@@ -543,7 +594,7 @@ static uint16_t xdp_rx(struct mtl_main_impl* impl, struct mt_xdp_queue* xq,
   xq->stat_rx_pkts += rx;
   xq->stat_rx_bytes += rx_bytes;
 
-  return rx;
+  return valid_rx;
 }
 
 int mt_dev_xdp_init(struct mt_interface* inf) {
@@ -776,5 +827,5 @@ int mt_rx_xdp_put(struct mt_rx_xdp_entry* entry) {
 
 uint16_t mt_rx_xdp_burst(struct mt_rx_xdp_entry* entry, struct rte_mbuf** rx_pkts,
                          const uint16_t nb_pkts) {
-  return xdp_rx(entry->parent, entry->xq, rx_pkts, nb_pkts);
+  return xdp_rx(entry, rx_pkts, nb_pkts);
 }
