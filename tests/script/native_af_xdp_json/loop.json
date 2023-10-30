@@ -17,7 +17,7 @@
             ],
             "video": [
                 {
-                    "replicas": 1,
+                    "replicas": 2,
                     "type": "frame",
                     "pacing": "gap",
                     "packing": "BPM",
@@ -65,7 +65,7 @@
             ],
             "video": [
                 {
-                    "replicas": 1,
+                    "replicas": 2,
                     "type": "frame",
                     "pacing": "gap",
                     "start_port": 20000,
