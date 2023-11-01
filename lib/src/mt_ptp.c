@@ -190,7 +190,13 @@ static void ptp_adj_system_clock_time(struct mt_ptp_impl* ptp, int64_t delta) {
   ret = SetSystemTime(&st) ? 0 : -1;
 #endif
   dbg("%s(%d), delta %" PRId64 "\n", __func__, ptp->port, delta);
-  if (ret < 0) err("%s(%d), adj system time offset fail %d\n", __func__, ptp->port, ret);
+  if (ret < 0) {
+    err("%s(%d), adj system time offset fail %d\n", __func__, ptp->port, ret);
+    if (ret == -EPERM)
+      err("%s(%d), please add capability to the app: sudo setcap 'cap_sys_time+ep' "
+          "<app>\n",
+          __func__, ptp->port);
+  }
 }
 
 static void ptp_adj_system_clock_freq(struct mt_ptp_impl* ptp, double ppb) {
@@ -219,7 +225,13 @@ static void ptp_adj_system_clock_freq(struct mt_ptp_impl* ptp, double ppb) {
   if ((*win_get_systime_adj)(&cur_adj, &time_inc, &time_adj_disable))
     ret = (*win_set_systime_adj)(cur_adj - ppb / 100, FALSE) ? 0 : -1;
 #endif
-  if (ret < 0) err("%s(%d), adj system time freq fail %d\n", __func__, ptp->port, ret);
+  if (ret < 0) {
+    err("%s(%d), adj system time freq fail %d\n", __func__, ptp->port, ret);
+    if (ret == -EPERM)
+      err("%s(%d), please add capability to the app: sudo setcap 'cap_sys_time+ep' "
+          "<app>\n",
+          __func__, ptp->port);
+  }
 }
 
 static void phc2sys_adjust(struct mt_ptp_impl* ptp) {

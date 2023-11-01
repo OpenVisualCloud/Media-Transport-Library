@@ -2223,6 +2223,10 @@ int mt_dev_if_init(struct mtl_main_impl* impl) {
       ret = dev_if_init_virtio_user(inf);
       if (ret < 0) {
         err("%s(%d), init virtio_user fail\n", __func__, i);
+        if (ret == -EPERM)
+          err("%s(%d), you need additional capability: sudo setcap 'cap_net_admin+ep' "
+              "<app>\n",
+              __func__, i);
         return ret;
       }
     }

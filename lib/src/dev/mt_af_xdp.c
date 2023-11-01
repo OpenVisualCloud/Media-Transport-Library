@@ -258,6 +258,10 @@ static int xdp_umem_init(struct mt_xdp_queue* xq) {
       xsk_umem__create(&xq->umem, base_addr, umem_size, &xq->rx_prod, &xq->tx_cons, &cfg);
   if (ret < 0) {
     err("%s(%d,%u), umem create fail %d %s\n", __func__, port, q, ret, strerror(errno));
+    if (ret == -EPERM)
+      err("%s(%d,%u), please add capability for the app: sudo setcap 'cap_net_raw+ep' "
+          "<app>\n",
+          __func__, port, q);
     return ret;
   }
   xq->umem_buffer = base_addr;

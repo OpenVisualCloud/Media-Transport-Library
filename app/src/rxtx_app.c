@@ -118,9 +118,14 @@ static void app_ptp_sync_notify(void* priv, struct mtl_ptp_sync_notify_meta* met
   st_ns_to_timespec(to_ns, &to_ts);
   to_ts.tv_sec -= meta->master_utc_offset; /* utc offset */
   ret = st_set_real_time(&to_ts);
-  if (ret < 0)
+  if (ret < 0) {
     err("%s, set real time to %" PRIu64 " fail, delta %" PRId64 "\n", __func__, to_ns,
         delta);
+    if (ret == -EPERM)
+      err("%s, please add capability to the app: sudo setcap 'cap_sys_time+ep' <app>\n",
+          __func__);
+  }
+
   dbg("%s, from_ns %" PRIu64 " to_ns %" PRIu64 " delta %" PRId64 " done\n", __func__,
       from_ns, to_ns, delta);
   return;
