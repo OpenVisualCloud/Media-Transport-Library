@@ -249,6 +249,10 @@ static int app_rx_st22_init(struct st_app_context* ctx, struct st22_app_rx_sessi
     return -EIO;
   }
 
+  char thread_name[32];
+  snprintf(thread_name, sizeof(thread_name), "rx_st22_%d", idx);
+  mtl_thread_setname(s->st22_app_thread, thread_name);
+
   return 0;
 }
 

@@ -154,13 +154,18 @@ static void app_tx_st22_stop_source(struct st22_app_tx_session* s) {
 
 static int app_tx_st22_start_source(struct st22_app_tx_session* s) {
   int ret = -EINVAL;
+  int idx = s->idx;
 
   s->st22_app_thread_stop = false;
   ret = pthread_create(&s->st22_app_thread, NULL, app_tx_st22_frame_thread, s);
   if (ret < 0) {
-    err("%s, st22_app_thread create fail err = %d\n", __func__, ret);
+    err("%s(%d), thread create fail err = %d\n", __func__, idx, ret);
     return ret;
   }
+
+  char thread_name[32];
+  snprintf(thread_name, sizeof(thread_name), "tx_st22_%d", idx);
+  mtl_thread_setname(s->st22_app_thread, thread_name);
 
   return 0;
 }

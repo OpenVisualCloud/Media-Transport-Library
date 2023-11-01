@@ -1296,3 +1296,7 @@ bool mtl_pmd_is_dpdk_based(mtl_handle mt, enum mtl_port port) {
   }
   return mt_drv_dpdk_based(impl, port);
 }
+
+int mtl_thread_setname(pthread_t tid, const char* name) {
+  return rte_thread_setname(tid, name);
+}

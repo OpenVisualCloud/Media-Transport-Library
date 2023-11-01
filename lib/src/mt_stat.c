@@ -154,6 +154,8 @@ int mt_stat_init(struct mtl_main_impl* impl) {
     err("%s, pthread_create fail %d\n", __func__, ret);
     return ret;
   }
+  mtl_thread_setname(mgr->stat_tid, "mtl_stat");
+
   if (!p->dump_period_s) p->dump_period_s = MT_STAT_INTERVAL_S_DEFAULT;
   mgr->dump_period_us = (uint64_t)p->dump_period_s * US_PER_S;
   rte_eal_alarm_set(mgr->dump_period_us, stat_alarm_handler, mgr);

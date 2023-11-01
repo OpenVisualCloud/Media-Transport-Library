@@ -104,6 +104,10 @@ static int app_rx_st20p_init_frame_thread(struct st_app_rx_st20p_session* s) {
     return -EIO;
   }
 
+  char thread_name[32];
+  snprintf(thread_name, sizeof(thread_name), "rx_st20p_%d", idx);
+  mtl_thread_setname(s->st20p_app_thread, thread_name);
+
   return 0;
 }
 

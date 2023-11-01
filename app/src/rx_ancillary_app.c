@@ -162,6 +162,10 @@ static int app_rx_anc_init(struct st_app_context* ctx, st_json_ancillary_session
     return -EIO;
   }
 
+  char thread_name[32];
+  snprintf(thread_name, sizeof(thread_name), "rx_anc_%d", idx);
+  mtl_thread_setname(s->st40_app_thread, thread_name);
+
   return 0;
 }
 

@@ -1392,6 +1392,18 @@ int mtl_get_if_ip(char* if_name, uint8_t ip[MTL_IP_ADDR_LEN],
 int mtl_openlog_stream(FILE* f);
 
 /**
+ * Set thread names.
+ * @param tid
+ *   Thread id.
+ * @param name
+ *   Thread name to set.
+ * @return
+ *   - 0: Success.
+ *   - <0: Error code.
+ */
+int mtl_thread_setname(pthread_t tid, const char* name);
+
+/**
  * Helper function which align a size with pages
  *
  * @param sz

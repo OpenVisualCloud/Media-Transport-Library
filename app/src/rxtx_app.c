@@ -547,6 +547,7 @@ int main(int argc, char** argv) {
   }
 
   test_time_s = ctx->test_time_s;
+  mtl_thread_setname(pthread_self(), "RxTxApp_main");
   info("%s, app lunch succ, test time %ds\n", __func__, test_time_s);
   while (!ctx->stop) {
     sleep(1);

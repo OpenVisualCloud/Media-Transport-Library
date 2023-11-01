@@ -341,6 +341,7 @@ static int app_tx_anc_close_source(struct st_app_tx_anc_session* s) {
 
 static int app_tx_anc_start_source(struct st_app_tx_anc_session* s) {
   int ret = -EINVAL;
+  int idx = s->idx;
 
   s->st40_app_thread_stop = false;
   if (s->st40_pcap_input)
@@ -350,9 +351,13 @@ static int app_tx_anc_start_source(struct st_app_tx_anc_session* s) {
   else
     ret = pthread_create(&s->st40_app_thread, NULL, app_tx_anc_frame_thread, (void*)s);
   if (ret < 0) {
-    err("%s, thread create fail err = %d\n", __func__, ret);
+    err("%s(%d), thread create fail err = %d\n", __func__, idx, ret);
     return ret;
   }
+
+  char thread_name[32];
+  snprintf(thread_name, sizeof(thread_name), "tx_anc_%d", idx);
+  mtl_thread_setname(s->st40_app_thread, thread_name);
 
   return 0;
 }
