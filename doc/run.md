@@ -311,6 +311,7 @@ If it failed to run the sample, please help to collect the system setup status b
 --runtime_session                    : start instance before create video/audio/anc sessions, similar to runtime tx/rx create.
 --log_level <level>                  : set log level. e.g. debug, info, notice, warning, error.
 --log_file <file path>               : set log file for mtl log. If you're initiating multiple RxTxApp processes simultaneously, please ensure each process has a unique filename path. Default the log is writing to stderr.
+--arp_timeout_s <sec>                : set the arp timeout in seconds if using unicast address. Default timeout value is 60 seconds.
 
 --ebu                                : debug option, enable timing check for video rx streams.
 --pcapng_dump <n>                    : debug option, dump n packets from rx video streams to pcapng files.
