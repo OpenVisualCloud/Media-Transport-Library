@@ -821,8 +821,10 @@ int mt_rx_xdp_put(struct mt_rx_xdp_entry* entry) {
     mt_rx_flow_free(entry->parent, port, entry->flow_rsp);
     entry->flow_rsp = NULL;
   }
-  xdp_queue_rx_stat(xq);
-  if (xq) xq->rx_entry = NULL;
+  if (xq) {
+    xdp_queue_rx_stat(xq);
+    xq->rx_entry = NULL;
+  }
   info("%s(%d), ip %u.%u.%u.%u, port %u, queue %u\n", __func__, port, ip[0], ip[1], ip[2],
        ip[3], flow->dst_port, entry->queue_id);
   mt_rte_free(entry);

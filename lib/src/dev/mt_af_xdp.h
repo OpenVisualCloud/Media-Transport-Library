@@ -25,8 +25,10 @@ uint16_t mt_rx_xdp_burst(struct mt_rx_xdp_entry* entry, struct rte_mbuf** rx_pkt
                          const uint16_t nb_pkts);
 #else
 
+#include "../mt_log.h"
+
 static inline int mt_dev_xdp_init(struct mt_interface* inf) {
-  MTL_MAY_UNUSED(inf);
+  err("%s(%d), no xdp support for this build\n", __func__, inf->port);
   return -ENOTSUP;
 }
 

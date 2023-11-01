@@ -540,3 +540,23 @@ The VFIO driver can run without the IOMMU feature, enable it with below command 
 ```bash
 sudo bash -c 'echo 1 > /sys/module/vfio/parameters/enable_unsafe_noiommu_mode'
 ```
+
+### 8.12 Fail to loading shared libraries
+
+If you get below similar message when runing the RxTxApp, it's likely a ld library path problem.
+
+```bash
+./build/app/RxTxApp: error while loading shared libraries: librte_dmadev.so.23: cannot open shared object file: No such file or directory
+```
+
+Try to find the path of this so and append it to `LD_LIBRARY_PATH`.
+
+```bash
+find / -name librte_dmadev.so.23
+# /usr/local/lib64/librte_dmadev.so.23
+```
+
+```bash
+# Note to change the path as the find result
+export LD_LIBRARY_PATH=/usr/local/lib64/
+```
