@@ -193,7 +193,7 @@ enum mtl_pmd_type {
   MTL_PMD_DPDK_AF_PACKET,
   /** Run MTL directly on kernel socket APIs */
   MTL_PMD_KERNEL_SOCKET,
-  /** Run MTL directly on AF_XDP */
+  /** Run MTL directly on AF_XDP, CAP_NET_RAW is needed for UMEM creation */
   MTL_PMD_NATIVE_AF_XDP,
   /** max value of this enum */
   MTL_PMD_TYPE_MAX,
@@ -362,11 +362,13 @@ enum st21_tx_pacing_way {
 /**
  * Flag bit in flags of struct mtl_init_params.
  * Enable built-in PHC2SYS implementation.
+ * CAP_SYS_TIME is needed.
  */
 #define MTL_FLAG_PHC2SYS_ENABLE (MTL_BIT64(15))
 /**
  * Flag bit in flags of struct mtl_init_params.
  * Enable virtio_user as exception path.
+ * CAP_NET_ADMIN is needed.
  */
 #define MTL_FLAG_VIRTIO_USER (MTL_BIT64(16))
 /**
