@@ -378,6 +378,7 @@ int mt_admin_init(struct mtl_main_impl* impl) {
 
   int ret = pthread_create(&admin->admin_tid, NULL, admin_thread, impl);
   if (ret < 0) return ret;
+  mtl_thread_setname(admin->admin_tid, "mtl_admin");
 
   rte_eal_alarm_set(admin->period_us, admin_alarm_handler, impl);
 

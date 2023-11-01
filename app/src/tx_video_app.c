@@ -589,6 +589,7 @@ static int app_tx_video_open_source(struct st_app_tx_video_session* s) {
 
 static int app_tx_video_start_source(struct st_app_tx_video_session* s) {
   int ret = -EINVAL;
+  int idx = s->idx;
 
   if (s->st20_pcap_input)
     ret = pthread_create(&s->st20_app_thread, NULL, app_tx_video_pcap_thread, s);
@@ -597,10 +598,14 @@ static int app_tx_video_start_source(struct st_app_tx_video_session* s) {
   else
     ret = pthread_create(&s->st20_app_thread, NULL, app_tx_video_frame_thread, s);
   if (ret < 0) {
-    err("%s, st20_app_thread create fail err = %d\n", __func__, ret);
+    err("%s(%d), st20_app_thread create fail err = %d\n", __func__, idx, ret);
     return ret;
   }
   s->st20_app_thread_stop = false;
+
+  char thread_name[32];
+  snprintf(thread_name, sizeof(thread_name), "tx_video_%d", idx);
+  mtl_thread_setname(s->st20_app_thread, thread_name);
 
   return 0;
 }

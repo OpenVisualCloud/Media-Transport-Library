@@ -139,6 +139,10 @@ static int app_rx_audio_init_rtp_thread(struct st_app_rx_audio_session* s) {
     return -EIO;
   }
 
+  char thread_name[32];
+  snprintf(thread_name, sizeof(thread_name), "rx_audio_%d", idx);
+  mtl_thread_setname(s->st30_app_thread, thread_name);
+
   return 0;
 }
 

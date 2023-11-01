@@ -293,6 +293,10 @@ static int app_rx_video_init_frame_thread(struct st_app_rx_video_session* s) {
     return -EIO;
   }
 
+  char thread_name[32];
+  snprintf(thread_name, sizeof(thread_name), "rx_video_%d", idx);
+  mtl_thread_setname(s->st20_app_thread, thread_name);
+
   return 0;
 }
 

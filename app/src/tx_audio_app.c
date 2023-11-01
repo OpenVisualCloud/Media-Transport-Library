@@ -311,6 +311,7 @@ static int app_tx_audio_close_source(struct st_app_tx_audio_session* s) {
 
 static int app_tx_audio_start_source(struct st_app_tx_audio_session* s) {
   int ret = -EINVAL;
+  int idx = s->idx;
 
   s->st30_app_thread_stop = false;
   if (s->st30_pcap_input)
@@ -320,10 +321,14 @@ static int app_tx_audio_start_source(struct st_app_tx_audio_session* s) {
   else
     ret = pthread_create(&s->st30_app_thread, NULL, app_tx_audio_frame_thread, (void*)s);
 
-  if (ret != 0) {
-    err("%s, app_thread create fail err = %d", __func__, ret);
+  if (ret < 0) {
+    err("%s(%d), thread create fail err = %d\n", __func__, idx, ret);
     return -EIO;
   }
+
+  char thread_name[32];
+  snprintf(thread_name, sizeof(thread_name), "tx_audio_%d", idx);
+  mtl_thread_setname(s->st30_app_thread, thread_name);
 
   return 0;
 }

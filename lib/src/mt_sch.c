@@ -111,6 +111,10 @@ static int sch_tasklet_func(void* args) {
   num_tasklet = sch->max_tasklet_idx;
   info("%s(%d), start with %d tasklets\n", __func__, idx, num_tasklet);
 
+  char thread_name[32];
+  snprintf(thread_name, sizeof(thread_name), "mtl_sch_%d", idx);
+  rte_thread_setname(pthread_self(), thread_name);
+
   for (i = 0; i < num_tasklet; i++) {
     tasklet = sch->tasklet[i];
     if (!tasklet) continue;
