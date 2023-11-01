@@ -622,6 +622,12 @@ struct mtl_init_params {
   /** Optional. The number of tasklets for each lcore, 0 means determined by lib */
   uint32_t tasklets_nb_per_sch;
 
+  /** Optional.
+   * Set the ARP timeout value in seconds for ST2110 sessions when using a unicast
+   * address. Leave to zero to use the system's default timeout of 60 seconds.
+   */
+  uint16_t arp_timeout_s;
+
   /** Optional for MTL_FLAG_PTP_ENABLE. The ptp pi controller proportional gain. */
   double kp;
   /** Optional for MTL_FLAG_PTP_ENABLE. The ptp pi controller integral gain. */

@@ -1118,6 +1118,8 @@ struct mtl_main_impl {
   uint16_t pkt_udp_suggest_max_size;
   uint16_t rx_pool_data_size;
   int mempool_idx;
+
+  int arp_timeout_ms;
 };
 
 static inline struct mtl_init_params* mt_get_user_params(struct mtl_main_impl* impl) {

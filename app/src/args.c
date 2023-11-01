@@ -115,6 +115,7 @@ enum st_args_cmd {
   ST_ARG_RX_UDP_PORT_ONLY,
   ST_ARG_VIRTIO_USER,
   ST_ARG_VIDEO_SHA_CHECK,
+  ST_ARG_ARP_TIMEOUT_S,
   ST_ARG_MAX,
 };
 
@@ -231,6 +232,7 @@ static struct option st_app_args_options[] = {
     {"rx_udp_port_only", no_argument, 0, ST_ARG_RX_UDP_PORT_ONLY},
     {"virtio_user", no_argument, 0, ST_ARG_VIRTIO_USER},
     {"video_sha_check", no_argument, 0, ST_ARG_VIDEO_SHA_CHECK},
+    {"arp_timeout_s", required_argument, 0, ST_ARG_ARP_TIMEOUT_S},
 
     {0, 0, 0, 0}};
 
@@ -700,6 +702,9 @@ int st_app_parse_args(struct st_app_context* ctx, struct mtl_init_params* p, int
         break;
       case ST_ARG_VIDEO_SHA_CHECK:
         ctx->video_sha_check = true;
+        break;
+      case ST_ARG_ARP_TIMEOUT_S:
+        p->arp_timeout_s = atoi(optarg);
         break;
       case '?':
         break;

@@ -539,6 +539,11 @@ mtl_handle mtl_init(struct mtl_init_params* p) {
   }
   impl->sch_schedule_ns = 200 * NS_PER_US; /* max schedule ns for mt_sleep_ms(0) */
 
+  if (p->arp_timeout_s)
+    impl->arp_timeout_ms = p->arp_timeout_s * MS_PER_S;
+  else
+    impl->arp_timeout_ms = 60 * MS_PER_S;
+
   impl->tsc_hz = rte_get_tsc_hz();
 
   impl->iova_mode = rte_eal_iova_mode();

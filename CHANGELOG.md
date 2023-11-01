@@ -10,6 +10,13 @@
 * backend: add kernel socket based backend, see doc/kernel_socket.md.
 * dpdk pmd: add AF_PACKET PMD support, see doc/experimental/af_packet.md.
 * st22p/rx: add external frame support, see ST22P_RX_FLAG_EXT_FRAME.
+* ptp: add user callback for ptp sync message. See ptp_sync_notify in struct mtl_init_params.
+* api: add arp timeout parameter support for st2110 unicast address. See arp_timeout_s in struct mtl_init_params.
+* st2110/tx: fix RTP passthrough interface support when PMD doesn't support multi segment mbuf.
+* st2110/tx: fix redundant when PMD doesn't support multi segment mbuf.
+* backend/kernel: add multi thread support for both TX and RX.
+* convert: add interlace support.
+* rtcp: add retransmit packet support for st20 sessions, see STxx_RX_FLAG_ENABLE_RTCP.
 
 ## Changelog for 23.08
 
