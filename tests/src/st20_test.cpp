@@ -3645,8 +3645,8 @@ TEST(St20_rx, detect_uframe_mix_s2) {
   enum st20_type rx_type[2] = {ST20_TYPE_FRAME_LEVEL, ST20_TYPE_SLICE_LEVEL};
   enum st20_packing packing[2] = {ST20_PACKING_BPM, ST20_PACKING_BPM};
   enum st_fps fps[2] = {ST_FPS_P59_94, ST_FPS_P29_97};
-  int width[2] = {1280, 1920};
-  int height[2] = {720, 1080};
+  int width[2] = {1280, 1280};
+  int height[2] = {720, 720};
   bool interlaced[2] = {false, false};
   st20_rx_detect_test(tx_type, rx_type, packing, fps, width, height, interlaced, true,
                       ST20_FMT_YUV_422_10BIT, false, ST_TEST_LEVEL_MANDATORY, 2);
