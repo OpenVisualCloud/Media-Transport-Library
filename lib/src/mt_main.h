@@ -827,6 +827,12 @@ struct mt_stat_mgr {
   rte_atomic32_t stat_stop;
 };
 
+enum mt_sq_mode {
+  MT_SQ_MODE_DPDK = 0,
+  MT_SQ_MODE_XDP,
+  MT_SQ_MODE_MAX,
+};
+
 struct mt_rsq_impl; /* forward delcare */
 
 struct mt_rsq_entry {
@@ -847,6 +853,8 @@ MT_TAILQ_HEAD(mt_rsq_entrys_list, mt_rsq_entry);
 struct mt_rsq_queue {
   uint16_t port_id;
   uint16_t queue_id;
+  /* for native xdp based shared queue */
+  struct mt_rx_xdp_entry* xdp;
   /* List of rsq entry */
   struct mt_rsq_entrys_list head;
   rte_spinlock_t mutex;
@@ -864,6 +872,7 @@ struct mt_rsq_impl {
   /* sq rx queue resources */
   uint16_t nb_rsq_queues;
   struct mt_rsq_queue* rsq_queues;
+  enum mt_sq_mode queue_mode;
 };
 
 /* used for sys queue */
@@ -902,6 +911,9 @@ struct mt_tsq_queue {
   uint16_t queue_id;
   /* shared tx mempool */
   struct rte_mempool* tx_pool;
+  /* for native xdp based shared queue */
+  struct mt_tx_xdp_entry* xdp;
+
   /* List of rsq entry */
   struct mt_tsq_entrys_list head;
   pthread_mutex_t mutex;
@@ -918,6 +930,7 @@ struct mt_tsq_impl {
   /* sq tx queue resources */
   uint16_t nb_tsq_queues;
   struct mt_tsq_queue* tsq_queues;
+  enum mt_sq_mode queue_mode;
 };
 
 struct mt_srss_entry {
@@ -1021,6 +1034,7 @@ struct mt_rx_xdp_entry {
   uint16_t queue_id;
   struct mt_xdp_queue* xq;
   struct mt_rx_flow_rsp* flow_rsp;
+  bool skip_udp_port_check;
 };
 
 struct mt_flow_impl {

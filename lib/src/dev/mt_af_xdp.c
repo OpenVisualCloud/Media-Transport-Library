@@ -522,12 +522,14 @@ static bool xdp_rx_check_pkt(struct mt_rx_xdp_entry* entry, struct rte_mbuf* pkt
     return false;
   }
 
-  uint16_t dst_port = ntohs(udp->dst_port);
-  if (dst_port != entry->flow.dst_port) {
-    xq->stat_rx_pkt_err_udp_port++;
-    dbg("%s(%d, %u), wrong dst_port %u expect %u\n", __func__, port, q, dst_port,
-        entry->flow.dst_port);
-    return false;
+  if (!entry->skip_udp_port_check) {
+    uint16_t dst_port = ntohs(udp->dst_port);
+    if (dst_port != entry->flow.dst_port) {
+      xq->stat_rx_pkt_err_udp_port++;
+      dbg("%s(%d, %u), wrong dst_port %u expect %u\n", __func__, port, q, dst_port,
+          entry->flow.dst_port);
+      return false;
+    }
   }
 
   return true;
@@ -671,6 +673,7 @@ int mt_dev_xdp_init(struct mt_interface* inf) {
     return ret;
   }
 
+  inf->port_id = inf->port;
   inf->xdp = xdp;
   inf->feature |= MT_IF_FEATURE_TX_MULTI_SEGS;
   info("%s(%d), start queue %u cnt %u\n", __func__, port, xdp->start_queue,
@@ -692,7 +695,8 @@ int mt_dev_xdp_uinit(struct mt_interface* inf) {
 }
 
 struct mt_tx_xdp_entry* mt_tx_xdp_get(struct mtl_main_impl* impl, enum mtl_port port,
-                                      struct mt_txq_flow* flow) {
+                                      struct mt_txq_flow* flow,
+                                      struct mt_tx_xdp_get_args* args) {
   if (!mt_pmd_is_native_af_xdp(impl, port)) {
     err("%s(%d), this pmd is not native xdp\n", __func__, port);
     return NULL;
@@ -710,21 +714,36 @@ struct mt_tx_xdp_entry* mt_tx_xdp_get(struct mtl_main_impl* impl, enum mtl_port 
 
   struct mt_xdp_priv* xdp = mt_if(impl, port)->xdp;
   struct mt_xdp_queue* xq = NULL;
-  /* find a null slot */
-  mt_pthread_mutex_lock(&xdp->queues_lock);
-  for (uint16_t i = 0; i < xdp->queues_cnt; i++) {
-    if (!xdp->queues_info[i].tx_entry) {
-      xq = &xdp->queues_info[i];
-      xq->tx_entry = entry;
-      break;
+
+  if (args && args->queue_match) {
+    mt_pthread_mutex_lock(&xdp->queues_lock);
+    xq = &xdp->queues_info[args->queue_id];
+    if (xq->tx_entry) {
+      err("%s(%d), q %u is already used\n", __func__, port, args->queue_id);
+      mt_pthread_mutex_unlock(&xdp->queues_lock);
+      mt_tx_xdp_put(entry);
+      return NULL;
+    }
+    xq->tx_entry = entry;
+    mt_pthread_mutex_unlock(&xdp->queues_lock);
+  } else {
+    /* find a null slot */
+    mt_pthread_mutex_lock(&xdp->queues_lock);
+    for (uint16_t i = 0; i < xdp->queues_cnt; i++) {
+      if (!xdp->queues_info[i].tx_entry) {
+        xq = &xdp->queues_info[i];
+        xq->tx_entry = entry;
+        break;
+      }
+    }
+    mt_pthread_mutex_unlock(&xdp->queues_lock);
+    if (!xq) {
+      err("%s(%d), no free tx queue\n", __func__, port);
+      mt_tx_xdp_put(entry);
+      return NULL;
     }
   }
-  mt_pthread_mutex_unlock(&xdp->queues_lock);
-  if (!xq) {
-    err("%s(%d), no free tx queue\n", __func__, port);
-    mt_tx_xdp_put(entry);
-    return NULL;
-  }
+
   entry->xq = xq;
   entry->queue_id = xq->q;
 
@@ -760,11 +779,14 @@ uint16_t mt_tx_xdp_burst(struct mt_tx_xdp_entry* entry, struct rte_mbuf** tx_pkt
 }
 
 struct mt_rx_xdp_entry* mt_rx_xdp_get(struct mtl_main_impl* impl, enum mtl_port port,
-                                      struct mt_rxq_flow* flow) {
+                                      struct mt_rxq_flow* flow,
+                                      struct mt_rx_xdp_get_args* args) {
   if (!mt_pmd_is_native_af_xdp(impl, port)) {
     err("%s(%d), this pmd is not native xdp\n", __func__, port);
     return NULL;
   }
+
+  MTL_MAY_UNUSED(args);
 
   struct mt_rx_xdp_entry* entry =
       mt_rte_zmalloc_socket(sizeof(*entry), mt_socket_id(impl, port));
@@ -778,31 +800,50 @@ struct mt_rx_xdp_entry* mt_rx_xdp_get(struct mtl_main_impl* impl, enum mtl_port 
 
   struct mt_xdp_priv* xdp = mt_if(impl, port)->xdp;
   struct mt_xdp_queue* xq = NULL;
-  /* find a null slot */
-  mt_pthread_mutex_lock(&xdp->queues_lock);
-  for (uint16_t i = 0; i < xdp->queues_cnt; i++) {
-    if (!xdp->queues_info[i].rx_entry) {
-      xq = &xdp->queues_info[i];
-      xq->rx_entry = entry;
-      break;
+
+  if (args && args->queue_match) {
+    mt_pthread_mutex_lock(&xdp->queues_lock);
+    xq = &xdp->queues_info[args->queue_id];
+    if (xq->rx_entry) {
+      err("%s(%d), q %u is already used\n", __func__, port, args->queue_id);
+      mt_pthread_mutex_unlock(&xdp->queues_lock);
+      mt_rx_xdp_put(entry);
+      return NULL;
+    }
+    xq->rx_entry = entry;
+    mt_pthread_mutex_unlock(&xdp->queues_lock);
+  } else {
+    /* find a null slot */
+    mt_pthread_mutex_lock(&xdp->queues_lock);
+    for (uint16_t i = 0; i < xdp->queues_cnt; i++) {
+      if (!xdp->queues_info[i].rx_entry) {
+        xq = &xdp->queues_info[i];
+        xq->rx_entry = entry;
+        break;
+      }
+    }
+    mt_pthread_mutex_unlock(&xdp->queues_lock);
+    if (!xq) {
+      err("%s(%d), no free rx queue\n", __func__, port);
+      mt_rx_xdp_put(entry);
+      return NULL;
     }
   }
-  mt_pthread_mutex_unlock(&xdp->queues_lock);
-  if (!xq) {
-    err("%s(%d), no free tx queue\n", __func__, port);
-    mt_rx_xdp_put(entry);
-    return NULL;
-  }
+
   entry->xq = xq;
   entry->queue_id = xq->q;
+  entry->skip_udp_port_check = args ? args->skip_udp_port_check : false;
 
   uint16_t q = entry->queue_id;
-  /* create flow */
-  entry->flow_rsp = mt_rx_flow_create(impl, port, q - xdp->start_queue, flow);
-  if (!entry->flow_rsp) {
-    err("%s(%d,%u), create flow fail\n", __func__, port, q);
-    mt_rx_xdp_put(entry);
-    return NULL;
+
+  if (!args || !args->skip_flow) {
+    /* create flow */
+    entry->flow_rsp = mt_rx_flow_create(impl, port, q - xdp->start_queue, flow);
+    if (!entry->flow_rsp) {
+      err("%s(%d,%u), create flow fail\n", __func__, port, q);
+      mt_rx_xdp_put(entry);
+      return NULL;
+    }
   }
 
   uint8_t* ip = flow->dip_addr;

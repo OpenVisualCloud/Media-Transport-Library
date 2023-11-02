@@ -58,11 +58,6 @@ struct mt_rxq_entry* mt_rxq_get(struct mtl_main_impl* impl, enum mtl_port port,
     if (!entry->rx_socket_q) goto fail;
     entry->queue_id = mt_rx_socket_queue_id(entry->rx_socket_q);
     entry->burst = rx_socket_burst;
-  } else if (mt_pmd_is_native_af_xdp(impl, port)) {
-    entry->rx_xdp_q = mt_rx_xdp_get(impl, port, flow);
-    if (!entry->rx_xdp_q) goto fail;
-    entry->queue_id = mt_rx_xdp_queue_id(entry->rx_xdp_q);
-    entry->burst = rx_xdp_burst;
   } else if (mt_has_srss(impl, port)) {
     entry->srss = mt_srss_get(impl, port, flow);
     if (!entry->srss) goto fail;
@@ -73,6 +68,11 @@ struct mt_rxq_entry* mt_rxq_get(struct mtl_main_impl* impl, enum mtl_port port,
     if (!entry->rsq) goto fail;
     entry->queue_id = mt_rsq_queue_id(entry->rsq);
     entry->burst = rx_rsq_burst;
+  } else if (mt_pmd_is_native_af_xdp(impl, port)) {
+    entry->rx_xdp_q = mt_rx_xdp_get(impl, port, flow, NULL);
+    if (!entry->rx_xdp_q) goto fail;
+    entry->queue_id = mt_rx_xdp_queue_id(entry->rx_xdp_q);
+    entry->burst = rx_xdp_burst;
   } else if (flow->flags & MT_RXQ_FLOW_F_FORCE_CNI) {
     entry->csq = mt_csq_get(impl, port, flow);
     if (!entry->csq) goto fail;
@@ -162,16 +162,16 @@ struct mt_txq_entry* mt_txq_get(struct mtl_main_impl* impl, enum mtl_port port,
     if (!entry->tx_socket_q) goto fail;
     entry->queue_id = mt_tx_socket_queue_id(entry->tx_socket_q);
     entry->burst = tx_socket_burst;
-  } else if (mt_pmd_is_native_af_xdp(impl, port)) {
-    entry->tx_xdp_q = mt_tx_xdp_get(impl, port, flow);
-    if (!entry->tx_xdp_q) goto fail;
-    entry->queue_id = mt_tx_xdp_queue_id(entry->tx_xdp_q);
-    entry->burst = tx_xdp_burst;
   } else if (mt_shared_tx_queue(impl, port)) {
     entry->tsq = mt_tsq_get(impl, port, flow);
     if (!entry->tsq) goto fail;
     entry->queue_id = mt_tsq_queue_id(entry->tsq);
     entry->burst = tx_tsq_burst;
+  } else if (mt_pmd_is_native_af_xdp(impl, port)) {
+    entry->tx_xdp_q = mt_tx_xdp_get(impl, port, flow, NULL);
+    if (!entry->tx_xdp_q) goto fail;
+    entry->queue_id = mt_tx_xdp_queue_id(entry->tx_xdp_q);
+    entry->burst = tx_xdp_burst;
   } else {
     entry->txq = mt_dev_get_tx_queue(impl, port, flow);
     if (!entry->txq) goto fail;

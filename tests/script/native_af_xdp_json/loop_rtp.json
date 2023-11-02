@@ -1,10 +1,10 @@
 {
     "interfaces": [
         {
-            "name": "native_af_xdp:enp175s0f0np0",
+            "name": "native_af_xdp:enp0s3np0",
         },
         {
-            "name": "native_af_xdp:enp175s0f1np1",
+            "name": "native_af_xdp:enp0s4np0",
         }
     ],
     "tx_sessions": [
