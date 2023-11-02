@@ -494,13 +494,27 @@ sudo ./script/nicctl.sh bind_kernel 0000:af:00.0
 sudo ./script/nicctl.sh bind_pmd 0000:af:00.0
 ```
 
-### 8.9 How to find the BDF number for NICs
+### 8.9 Create trusted VFs
+
+To allow privileged usage in use cases that require Trusted Virtual Functions (VFs), you can utilize the following command:
+
+```bash
+sudo ./script/nicctl.sh create_tvf 0000:af:00.0
+```
+
+If you need to control the Trusted setting on a per-VF basis, you can use the following example command:
+
+```bash
+sudo ip link set enp24s0f0 vf 0 trust on
+```
+
+### 8.10 How to find the BDF number for NICs
 
 ```bash
 dpdk-devbind.py -s
 ```
 
-### 8.10 How to find the BDF number which is ready for IMTL usage
+### 8.11 How to find the BDF number which is ready for IMTL usage
 
 ```bash
 dpdk-devbind.py -s
@@ -519,7 +533,7 @@ Network devices using DPDK-compatible driver
 0000:af:01.5 'Ethernet Adaptive Virtual Function 1889' drv=vfio-pci unused=iavf
 ```
 
-### 8.11 Lower fps if ptp4l&phc2sys is enabled
+### 8.12 Lower fps if ptp4l&phc2sys is enabled
 
 You may have noticed a similar epoch drop log, which is likely caused by both NTP and phc2sys adjusting the system. To address this issue, please disable the NTP service.
 
@@ -533,7 +547,7 @@ MT: TX_VIDEO_SESSION(0,0): mismatch epoch troffset 275
 MT: TX_VIDEO_SESSION(0,0): epoch drop 275
 ```
 
-### 8.12 NO-IOMMU mode for vfio
+### 8.13 NO-IOMMU mode for vfio
 
 The VFIO driver can run without the IOMMU feature, enable it with below command to bypass IOMMU. As the name suggests, `enable_unsafe_noiommu_mode` is considered unsafe, and should only be used if you understand the risks.
 
@@ -541,7 +555,7 @@ The VFIO driver can run without the IOMMU feature, enable it with below command 
 sudo bash -c 'echo 1 > /sys/module/vfio/parameters/enable_unsafe_noiommu_mode'
 ```
 
-### 8.12 Fail to loading shared libraries
+### 8.13 Fail to loading shared libraries
 
 If you get below similar message when runing the RxTxApp, it's likely a ld library path problem.
 
