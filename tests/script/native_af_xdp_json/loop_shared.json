@@ -1,40 +1,44 @@
 {
+    "shared_tx_queues": "1",
+    "shared_rx_queues": "1",
+    "rss_mode": "none",
     "interfaces": [
         {
-            "name": "dpdk_af_xdp:enp0s3np0",
+            "name": "native_af_xdp:enp0s3np0",
+            "tx_queues_cnt": "2",
+            "rx_queues_cnt": "2",
         },
         {
-            "name": "dpdk_af_xdp:enp0s4np0",
+            "name": "native_af_xdp:enp0s4np0",
+            "tx_queues_cnt": "2",
+            "rx_queues_cnt": "2",
         }
     ],
     "tx_sessions": [
         {
             "dip": [
-                "local:1",
-                "local:0"
+                "local:1"
             ],
             "interface": [
-                0,
-				1
+                0
             ],
             "video": [
                 {
-                    "replicas": 1,
-                    "type": "rtp",
+                    "replicas": 2,
+                    "type": "frame",
                     "pacing": "gap",
-                    "packing": "BPM",
                     "start_port": 20000,
                     "payload_type": 112,
                     "tr_offset": "default",
-                    "video_format": "i1080p59",
+                    "video_format": "i1080i50",
                     "pg_format": "YUV_422_10bit",
                     "video_url": "./test.yuv"
                 }
             ],
             "audio": [
                 {
-                    "replicas": 1,
-                    "type": "rtp",
+                    "replicas": 2,
+                    "type": "frame",
                     "start_port": 30000,
                     "payload_type": 111,
                     "audio_format": "PCM16",
@@ -46,10 +50,10 @@
             ],
             "ancillary": [
                 {
-                    "replicas": 1,
+                    "replicas": 2,
                     "start_port": 40000,
                     "payload_type": 113,
-                    "type": "rtp",
+                    "type": "frame",
                     "ancillary_format": "closed_caption",
                     "ancillary_url": "./test.txt",
                     "ancillary_fps": "p59"
@@ -61,29 +65,27 @@
         {
             "ip": [
                 "local:0",
-                "local:1",
             ],
             "interface": [
-                1,
-				0
+                1
             ],
             "video": [
                 {
-                    "replicas": 1,
-                    "type": "rtp",
+                    "replicas": 2,
+                    "type": "frame",
                     "pacing": "gap",
                     "start_port": 20000,
                     "payload_type": 112,
                     "tr_offset": "default",
-                    "video_format": "i1080p59",
+                    "video_format": "i1080i50",
                     "pg_format": "YUV_422_10bit",
                     "display": false
                 }
             ],
             "audio": [
                 {
-                    "replicas": 1,
-                    "type": "rtp",
+                    "replicas": 2,
+                    "type": "frame",
                     "start_port": 30000,
                     "payload_type": 111,
                     "audio_format": "PCM16",
@@ -95,9 +97,9 @@
             ],
             "ancillary": [
                 {
-                    "replicas": 1,
-                    "start_port": 40000,
+                    "replicas": 2,
                     "payload_type": 113,
+                    "start_port": 40000
                 }
             ]
         }

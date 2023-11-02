@@ -4,6 +4,7 @@
 
 #include "mt_shared_queue.h"
 
+#include "../dev/mt_af_xdp.h"
 #include "../dev/mt_dev.h"
 #include "../mt_flow.h"
 #include "../mt_log.h"
@@ -94,6 +95,11 @@ static int rsq_uinit(struct mt_rsq_impl* rsq) {
         MT_TAILQ_REMOVE(&rsq_queue->head, entry, next);
         rsq_entry_free(entry);
       }
+
+      if (rsq_queue->xdp) {
+        mt_rx_xdp_put(rsq_queue->xdp);
+        rsq_queue->xdp = NULL;
+      }
     }
     mt_rte_free(rsq->rsq_queues);
     rsq->rsq_queues = NULL;
@@ -173,10 +179,32 @@ struct mt_rsq_entry* mt_rsq_get(struct mtl_main_impl* impl, enum mtl_port port,
   entry->parent = rsqm;
   rte_memcpy(&entry->flow, flow, sizeof(entry->flow));
 
+  if (rsqm->queue_mode == MT_SQ_MODE_XDP) {
+    rsq_lock(rsq_queue);
+    if (!rsq_queue->xdp) {
+      /* get a 1:1 mapped queue */
+      struct mt_rx_xdp_get_args args;
+      memset(&args, 0, sizeof(args));
+      args.queue_match = true;
+      args.queue_id = q;
+      args.skip_flow = true;
+      args.skip_udp_port_check = true;
+      rsq_queue->xdp = mt_rx_xdp_get(impl, port, flow, &args);
+      if (!rsq_queue->xdp) {
+        err("%s(%d:%u), xdp queue get fail\n", __func__, port, q);
+        rsq_unlock(rsq_queue);
+        mt_rte_free(entry);
+        return NULL;
+      }
+    }
+    rsq_unlock(rsq_queue);
+  }
+
   if (!(flow->flags & MT_RXQ_FLOW_F_SYS_QUEUE)) {
     entry->flow_rsp = mt_rx_flow_create(impl, port, q, flow);
     if (!entry->flow_rsp) {
       err("%s(%u), create flow fail\n", __func__, q);
+      rsq_entry_free(entry);
       return NULL;
     }
   }
@@ -188,8 +216,7 @@ struct mt_rsq_entry* mt_rsq_get(struct mtl_main_impl* impl, enum mtl_port port,
                                 RING_F_SP_ENQ | RING_F_SC_DEQ);
   if (!entry->ring) {
     err("%s(%d,%d), ring %s create fail\n", __func__, port, idx, ring_name);
-    if (entry->flow_rsp) mt_rx_flow_free(impl, port, entry->flow_rsp);
-    mt_rte_free(entry);
+    rsq_entry_free(entry);
     return NULL;
   }
 
@@ -251,7 +278,10 @@ static int rsq_rx(struct mt_rsq_queue* rsq_queue) {
   struct rte_ipv4_hdr* ipv4;
   struct rte_udp_hdr* udp;
 
-  rx = rte_eth_rx_burst(rsq_queue->port_id, q, pkts, MT_SQ_BURST_SIZE);
+  if (rsq_queue->xdp)
+    rx = mt_rx_xdp_burst(rsq_queue->xdp, pkts, MT_SQ_BURST_SIZE);
+  else
+    rx = rte_eth_rx_burst(rsq_queue->port_id, q, pkts, MT_SQ_BURST_SIZE);
   if (rx) dbg("%s(%u), rx pkts %u\n", __func__, q, rx);
   rsq_queue->stat_pkts_recv += rx;
 
@@ -326,6 +356,8 @@ int mt_rsq_init(struct mtl_main_impl* impl) {
     impl->rsq[i]->parent = impl;
     impl->rsq[i]->port = i;
     impl->rsq[i]->nb_rsq_queues = mt_if(impl, i)->nb_rx_q;
+    impl->rsq[i]->queue_mode =
+        mt_pmd_is_native_af_xdp(impl, i) ? MT_SQ_MODE_XDP : MT_SQ_MODE_DPDK;
     ret = rsq_init(impl, impl->rsq[i]);
     if (ret < 0) {
       err("%s(%d), rsq init fail\n", __func__, i);
@@ -408,8 +440,11 @@ static int tsq_uinit(struct mt_tsq_impl* tsq) {
         mt_mempool_free(tsq_queue->tx_pool);
         tsq_queue->tx_pool = NULL;
       }
+      if (tsq_queue->xdp) {
+        mt_tx_xdp_put(tsq_queue->xdp);
+        tsq_queue->xdp = NULL;
+      }
       mt_pthread_mutex_destroy(&tsq_queue->mutex);
-      rte_spinlock_init(&tsq_queue->tx_mutex);
     }
     mt_rte_free(tsq->tsq_queues);
     tsq->tsq_queues = NULL;
@@ -527,6 +562,23 @@ struct mt_tsq_entry* mt_tsq_get(struct mtl_main_impl* impl, enum mtl_port port,
     }
     tsq_queue->tx_pool = pool;
   }
+  if (tsqm->queue_mode == MT_SQ_MODE_XDP) {
+    if (!tsq_queue->xdp) {
+      /* get a 1:1 mapped queue */
+      struct mt_tx_xdp_get_args args;
+      memset(&args, 0, sizeof(args));
+      args.queue_match = true;
+      args.queue_id = q;
+      tsq_queue->xdp = mt_tx_xdp_get(impl, port, flow, &args);
+      if (!tsq_queue->xdp) {
+        err("%s(%d:%u), xdp queue get fail\n", __func__, port, q);
+        tsq_unlock(tsq_queue);
+        mt_rte_free(entry);
+        return NULL;
+      }
+    }
+  }
+
   MT_TAILQ_INSERT_HEAD(&tsq_queue->head, entry, next);
   rte_atomic32_inc(&tsq_queue->entry_cnt);
   tsq_unlock(tsq_queue);
@@ -582,7 +634,10 @@ uint16_t mt_tsq_burst(struct mt_tsq_entry* entry, struct rte_mbuf** tx_pkts,
   uint16_t tx;
 
   rte_spinlock_lock(&tsq_queue->tx_mutex);
-  tx = rte_eth_tx_burst(tsq_queue->port_id, tsq_queue->queue_id, tx_pkts, nb_pkts);
+  if (tsq_queue->xdp)
+    tx = mt_tx_xdp_burst(tsq_queue->xdp, tx_pkts, nb_pkts);
+  else
+    tx = rte_eth_tx_burst(tsq_queue->port_id, tsq_queue->queue_id, tx_pkts, nb_pkts);
   tsq_queue->stat_pkts_send += tx;
   rte_spinlock_unlock(&tsq_queue->tx_mutex);
 
@@ -645,6 +700,8 @@ int mt_tsq_init(struct mtl_main_impl* impl) {
     impl->tsq[i]->parent = impl;
     impl->tsq[i]->port = i;
     impl->tsq[i]->nb_tsq_queues = mt_if(impl, i)->nb_tx_q;
+    impl->tsq[i]->queue_mode =
+        mt_pmd_is_native_af_xdp(impl, i) ? MT_SQ_MODE_XDP : MT_SQ_MODE_DPDK;
     ret = tsq_init(impl, impl->tsq[i]);
     if (ret < 0) {
       err("%s(%d), tsq init fail\n", __func__, i);
