@@ -6,7 +6,7 @@
 set -e
 
 if [ $# -lt 1 ]; then
-    echo "Please special the network interface"
+    echo "Please specify the network interface"
     exit 0
 fi
 
