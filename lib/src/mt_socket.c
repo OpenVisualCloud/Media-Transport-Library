@@ -422,7 +422,7 @@ int mt_socket_add_flow(struct mtl_main_impl* impl, enum mtl_port port, uint16_t 
   /* open control socket */
   fd = socket(AF_INET, SOCK_DGRAM, 0);
   if (fd < 0) {
-    err("%s(%d), cannot get control socket: %d\n", __func__, port, fd);
+    err("%s(%d), cannot create control socket: %d\n", __func__, port, fd);
     return fd;
   }
 
@@ -436,7 +436,7 @@ int mt_socket_add_flow(struct mtl_main_impl* impl, enum mtl_port port, uint16_t 
   ifr.ifr_data = (void*)&cmd;
   ret = ioctl(fd, SIOCETHTOOL, &ifr);
   if (ret < 0) {
-    err("%s(%d), cannot get free location: %d\n", __func__, port, ret);
+    err("%s(%d), cannot get rule count: %s\n", __func__, port, strerror(errno));
     close(fd);
     return ret;
   }
@@ -448,14 +448,14 @@ int mt_socket_add_flow(struct mtl_main_impl* impl, enum mtl_port port, uint16_t 
   ifr.ifr_data = (void*)cmd_w_rules;
   ret = ioctl(fd, SIOCETHTOOL, &ifr);
   if (ret < 0) {
-    err("%s(%d), cannot get rules: %d\n", __func__, port, ret);
+    err("%s(%d), cannot get rules: %s\n", __func__, port, strerror(errno));
     close(fd);
     free(cmd_w_rules);
     return ret;
   }
 
   uint32_t rule_size = cmd_w_rules->data;
-  free_loc = rule_size - 1;
+  free_loc = rule_size - 1; /* start from lowest priority */
   while (free_loc > 0) {
     bool used = false;
     for (int i = 0; i < cmd.rule_cnt; i++) {
@@ -526,7 +526,7 @@ int mt_socket_remove_flow(struct mtl_main_impl* impl, enum mtl_port port, int fl
   const char* if_name = mt_kernel_if_name(impl, port);
 
   if (flow_id <= 0) {
-    dbg("%s(%d), flow_id %d is invalid\n", __func__, port, flow_id);
+    err("%s(%d), flow_id %d is invalid\n", __func__, port, flow_id);
     return -EINVAL;
   }
 
