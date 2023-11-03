@@ -11,9 +11,10 @@ if [ $# -lt 2 ]; then
     echo "Commands:"
     echo "   bind_pmd                 bind driver to DPDK PMD driver"
     echo "   bind_kernel              bind driver to kernel driver"
-    echo "   create_vf                create VF and bind to VFIO"
-    echo "   create_kvf               create VF and bind to kernel driver"
-    echo "   create_dcf_vf            create DCF VF and bind to VFIO"
+    echo "   create_vf                create VFs and bind to VFIO"
+    echo "   create_kvf               create VFs and bind to kernel driver"
+    echo "   create_tvf               create trusted VFs and bind to VFIO"
+    echo "   create_dcf_vf            create DCF VFs and bind to VFIO"
     echo "   disable_vf               Disable VF"
     echo "   status                   List the DPDK port status"
     exit 0
@@ -85,8 +86,10 @@ create_vf() {
         if [ -n "$vfif" ]; then
             ip link set "$vfif" down
         fi
-        #enable trust
-        #ip link set $port vf $i trust on
+        if [ "$2" == "trusted" ]; then
+            # enable trust
+            ip link set "$inf" vf $i trust on
+        fi
         if [ $bifurcated_driver -eq 0 ]; then
             if dpdk-devbind.py -b vfio-pci "$vfport"; then
                 echo "Bind $vfport($vfif) to vfio-pci success"
@@ -109,7 +112,7 @@ create_kvf() {
     done
 }
 
-cmdlist=("bind_kernel" "create_vf" "create_kvf" "disable_vf" "bind_pmd" "create_dcf_vf" "status")
+cmdlist=("bind_kernel" "create_vf" "create_kvf" "create_tvf" "disable_vf" "bind_pmd" "create_dcf_vf" "status")
 
 for c in "${cmdlist[@]}"; do
    if [ "$c" == "$1" ]; then
@@ -194,7 +197,20 @@ if [ "$cmd" == "create_vf" ]; then
     modprobe vfio-pci
     disable_vf
     create_vf $numvfs
-    echo "Create VFs on PF bdf: $bdf $inf succ"
+    echo "Create $numvfs VFs on PF bdf: $bdf $inf succ"
+fi
+
+if [ "$cmd" == "create_tvf" ]; then
+    if [ -n "$3" ]; then
+        numvfs=$(($3+0))
+    else
+        # default VF number
+        numvfs=6
+    fi
+    modprobe vfio-pci
+    disable_vf
+    create_vf $numvfs trusted
+    echo "Create trusted $numvfs VFs on PF bdf: $bdf $inf succ"
 fi
 
 if [ "$cmd" == "create_kvf" ]; then
