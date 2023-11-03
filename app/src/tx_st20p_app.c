@@ -288,6 +288,10 @@ static int app_tx_st20p_init(struct st_app_context* ctx, st_json_st20p_session_t
   ops.fps = st20p ? st20p->info.fps : ST_FPS_P59_94;
   ops.interlaced = st20p ? st20p->info.interlaced : false;
   ops.input_fmt = st20p ? st20p->info.format : ST_FRAME_FMT_YUV422RFC4175PG2BE10;
+  ops.transport_pacing = st20p ? st20p->info.transport_pacing : ST21_PACING_NARROW;
+  if (ctx->tx_pacing_type) /* override if args has pacing defined */
+    ops.transport_pacing = ctx->tx_pacing_type;
+  ops.transport_packing = st20p ? st20p->info.transport_packing : ST20_PACKING_BPM;
   ops.transport_fmt = st20p ? st20p->info.transport_format : ST20_FMT_YUV_422_10BIT;
   ops.device = st20p ? st20p->info.device : ST_PLUGIN_DEVICE_AUTO;
   ops.framebuff_cnt = 2;

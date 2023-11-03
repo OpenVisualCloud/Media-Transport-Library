@@ -727,6 +727,10 @@ struct st20p_tx_ops {
   enum st_fps fps;
   /** Mandatory. Session input frame format */
   enum st_frame_fmt input_fmt;
+  /** Mandatory. Session transport pacing type */
+  enum st21_pacing transport_pacing;
+  /** Mandatory. Session transport packing type */
+  enum st20_packing transport_packing;
   /** Mandatory. Session transport frame format */
   enum st20_fmt transport_fmt;
   /** Mandatory. Convert plugin device, auto or special */

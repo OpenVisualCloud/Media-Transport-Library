@@ -100,15 +100,13 @@ Items in each element of the "video" array
 
 ​ **type (string):** `"frame", "rtp", "slice"` app->lib data type
 
-​ **pacing (string):** `"gap", "linear"` pacing type
+​ **pacing (string):** `"narrow", "wide", "linear"` pacing type
 
-​ **packing (string):** `"GPM_SL", "BPM", "GPM"` packing mode, default is "GPM_SL" single line mode
+​ **packing (string):** `"BPM", "GPM", "GPM_SL"` packing mode, default is "BPM" single line mode
 
 ​ **start_port (int):** `0~65535` start udp port for copies of sessions
 
 ​ **payload_type (int):** `0~127` 7 bits payload type define in RFC3550
-
-​ **tr_offset (string):** `"default", "none"` tr_offset for frame
 
 ​ **video_format (string):** `"i1080p59", "i1080p50", "i1080p29", "i720p59", "i720p50", "i720p29", "i2160p59", "i2160p50", "i2160p29"` video format
 
@@ -172,13 +170,9 @@ Items in each element of the "video" array
 
 ​ **type (string):** `"frame", "rtp", "slice"` lib->app data type
 
-​ **pacing (string):** `"gap", "linear"` pacing type
-
 ​ **start_port (int):** `0~65535` start udp port for copies of sessions
 
 ​ **payload_type (int):** `0~127` 7 bits payload type define in RFC3550
-
-​ **tr_offset (string):** `"default", "none"` tr_offset for frame
 
 ​ **video_format (string):** `"i1080p59", "i1080p50", "i1080p29", "i720p59", "i720p50", "i720p29", "i2160p59", "i2160p50", "i2160p29"` video format
 

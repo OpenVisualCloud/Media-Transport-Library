@@ -757,7 +757,9 @@ static int app_tx_video_init(struct st_app_context* ctx, st_json_video_session_t
       ops.flags |= ST20_TX_FLAG_USER_R_MAC;
     }
   }
-  ops.pacing = ctx->tx_pacing_type;
+  ops.pacing = video ? video->info.pacing : ST21_PACING_NARROW;
+  if (ctx->tx_pacing_type) /* override if args has pacing defined */
+    ops.pacing = ctx->tx_pacing_type;
   ops.packing = video ? video->info.packing : ST20_PACKING_BPM;
   ops.type = video ? video->info.type : ST20_TYPE_FRAME_LEVEL;
   ops.width = video ? st_app_get_width(video->info.video_format) : 1920;

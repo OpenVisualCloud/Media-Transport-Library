@@ -257,6 +257,8 @@ static int tx_st20p_create_transport(struct mtl_main_impl* impl, struct st20p_tx
   ops_tx.width = ops->width;
   ops_tx.height = ops->height;
   ops_tx.fps = ops->fps;
+  ops_tx.pacing = ops->transport_pacing;
+  ops_tx.packing = ops->transport_packing;
   ops_tx.fmt = ops->transport_fmt;
   ops_tx.interlaced = ops->interlaced;
   ops_tx.linesize = ops->transport_linesize;

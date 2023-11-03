@@ -574,9 +574,13 @@ static int parse_video_pacing(json_object* video_obj, st_json_video_session_t* v
       json_object_get_string(st_json_object_object_get(video_obj, "pacing"));
   REQUIRED_ITEM(pacing);
   if (strcmp(pacing, "gap") == 0) {
-    video->info.pacing = PACING_GAP;
+    video->info.pacing = ST21_PACING_NARROW;
+  } else if (strcmp(pacing, "narrow") == 0) {
+    video->info.pacing = ST21_PACING_NARROW;
+  } else if (strcmp(pacing, "wide") == 0) {
+    video->info.pacing = ST21_PACING_WIDE;
   } else if (strcmp(pacing, "linear") == 0) {
-    video->info.pacing = PACING_LINEAR;
+    video->info.pacing = ST21_PACING_LINEAR;
   } else {
     err("%s, invalid video pacing %s\n", __func__, pacing);
     return -ST_JSON_NOT_VALID;
@@ -1481,6 +1485,48 @@ static int parse_st20p_device(json_object* st20p_obj, st_json_st20p_session_t* s
   return ST_JSON_SUCCESS;
 }
 
+static int parse_st20p_pacing(json_object* st20p_obj, st_json_st20p_session_t* st20p) {
+  const char* pacing =
+      json_object_get_string(st_json_object_object_get(st20p_obj, "pacing"));
+  if (!pacing) {
+    st20p->info.transport_pacing = ST21_PACING_NARROW;
+    return ST_JSON_SUCCESS;
+  }
+  if (strcmp(pacing, "gap") == 0) {
+    st20p->info.transport_pacing = ST21_PACING_NARROW;
+  } else if (strcmp(pacing, "narrow") == 0) {
+    st20p->info.transport_pacing = ST21_PACING_NARROW;
+  } else if (strcmp(pacing, "wide") == 0) {
+    st20p->info.transport_pacing = ST21_PACING_WIDE;
+  } else if (strcmp(pacing, "linear") == 0) {
+    st20p->info.transport_pacing = ST21_PACING_LINEAR;
+  } else {
+    err("%s, invalid st20p pacing %s\n", __func__, pacing);
+    return -ST_JSON_NOT_VALID;
+  }
+  return ST_JSON_SUCCESS;
+}
+
+static int parse_st20p_packing(json_object* st20p_obj, st_json_st20p_session_t* st20p) {
+  const char* packing =
+      json_object_get_string(st_json_object_object_get(st20p_obj, "packing"));
+  if (packing) {
+    if (strcmp(packing, "GPM_SL") == 0) {
+      st20p->info.transport_packing = ST20_PACKING_GPM_SL;
+    } else if (strcmp(packing, "BPM") == 0) {
+      st20p->info.transport_packing = ST20_PACKING_BPM;
+    } else if (strcmp(packing, "GPM") == 0) {
+      st20p->info.transport_packing = ST20_PACKING_GPM;
+    } else {
+      err("%s, invalid st20p packing mode %s\n", __func__, packing);
+      return -ST_JSON_NOT_VALID;
+    }
+  } else { /* default set to bpm */
+    st20p->info.transport_packing = ST20_PACKING_BPM;
+  }
+  return ST_JSON_SUCCESS;
+}
+
 static int parse_st20p_format(json_object* st20p_obj, st_json_st20p_session_t* st20p,
                               const char* format_name) {
   const char* format =
@@ -1612,6 +1658,14 @@ static int st_json_parse_tx_st20p(int idx, json_object* st20p_obj,
   ret = parse_st20p_format(st20p_obj, st20p, "input_format");
   if (ret < 0) return ret;
 
+  /* parse transport pacing */
+  ret = parse_st20p_pacing(st20p_obj, st20p);
+  if (ret < 0) return ret;
+
+  /* parse transport packing */
+  ret = parse_st20p_packing(st20p_obj, st20p);
+  if (ret < 0) return ret;
+
   /* parse transport format */
   ret = parse_st20p_transport_format(st20p_obj, st20p);
   if (ret < 0) return ret;
@@ -1668,6 +1722,14 @@ static int st_json_parse_rx_st20p(int idx, json_object* st20p_obj,
 
   /* parse device */
   ret = parse_st20p_device(st20p_obj, st20p);
+  if (ret < 0) return ret;
+
+  /* parse transport pacing */
+  ret = parse_st20p_pacing(st20p_obj, st20p);
+  if (ret < 0) return ret;
+
+  /* parse transport packing */
+  ret = parse_st20p_packing(st20p_obj, st20p);
   if (ret < 0) return ret;
 
   /* parse output format */
