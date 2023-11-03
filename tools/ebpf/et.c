@@ -169,7 +169,7 @@ static int et_xdp_loop(struct et_ctx* ctx) {
       continue;
     }
     char ifname[IFNAMSIZ];
-    int map_fd;
+    int map_fd = -1;
     recv(conn, ifname, sizeof(ifname), 0);
     printf("request xsk_map_fd for ifname %s\n", ifname);
     int ifindex = if_nametoindex(ifname);
@@ -178,6 +178,10 @@ static int et_xdp_loop(struct et_ctx* ctx) {
         map_fd = xsks_map_fd[i];
         break;
       }
+    }
+    if (map_fd < 0) {
+      printf("xsk_map_fd not found for %s\n", ifname);
+      goto cleanup;
     }
     send_fd(conn, map_fd);
     close(conn);
