@@ -418,6 +418,12 @@ struct st20_rx_frame_meta {
   const void* user_meta;
   /** size for meta data buffer */
   size_t user_meta_size;
+  /** the total packets received, not include the redundant packets */
+  uint32_t pkts_total;
+  /** the valid packets received on each session port. For each session port, the validity
+   * of received packets can be assessed by comparing 'pkts_recv[s_port]' with
+   * 'pkts_total,' which serves as an indicator of signal quality.  */
+  uint32_t pkts_recv[MTL_SESSION_PORT_MAX];
 };
 
 /**
@@ -510,6 +516,12 @@ struct st22_rx_frame_meta {
   size_t frame_total_size;
   /** Frame status, complete or not */
   enum st_frame_status status;
+  /** the total packets received, not include the redundant packets */
+  uint32_t pkts_total;
+  /** the valid packets received on each session port. For each session port, the validity
+   * of received packets can be assessed by comparing 'pkts_recv[s_port]' with
+   * 'pkts_total,' which serves as an indicator of signal quality.  */
+  uint32_t pkts_recv[MTL_SESSION_PORT_MAX];
 };
 
 /**
