@@ -382,6 +382,8 @@ static int xdp_socket_update_xskmap(struct mt_xdp_queue* xq, const char* ifname)
 
   len = recvmsg(sock, &msg, 0);
 
+  close(sock);
+
   if (len <= 0) {
     err("%s(%d,%u), recvmsg wrong length %d\n", __func__, port, q, len);
     return -EINVAL;
