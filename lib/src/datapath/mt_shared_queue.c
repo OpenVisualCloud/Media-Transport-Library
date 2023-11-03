@@ -179,7 +179,7 @@ struct mt_rsq_entry* mt_rsq_get(struct mtl_main_impl* impl, enum mtl_port port,
   entry->parent = rsqm;
   rte_memcpy(&entry->flow, flow, sizeof(entry->flow));
 
-  if (rsqm->queue_mode == MT_SQ_MODE_XDP) {
+  if (rsqm->queue_mode == MT_QUEUE_MODE_XDP) {
     rsq_lock(rsq_queue);
     if (!rsq_queue->xdp) {
       /* get a 1:1 mapped queue */
@@ -357,7 +357,7 @@ int mt_rsq_init(struct mtl_main_impl* impl) {
     impl->rsq[i]->port = i;
     impl->rsq[i]->nb_rsq_queues = mt_if(impl, i)->nb_rx_q;
     impl->rsq[i]->queue_mode =
-        mt_pmd_is_native_af_xdp(impl, i) ? MT_SQ_MODE_XDP : MT_SQ_MODE_DPDK;
+        mt_pmd_is_native_af_xdp(impl, i) ? MT_QUEUE_MODE_XDP : MT_QUEUE_MODE_DPDK;
     ret = rsq_init(impl, impl->rsq[i]);
     if (ret < 0) {
       err("%s(%d), rsq init fail\n", __func__, i);
@@ -562,7 +562,7 @@ struct mt_tsq_entry* mt_tsq_get(struct mtl_main_impl* impl, enum mtl_port port,
     }
     tsq_queue->tx_pool = pool;
   }
-  if (tsqm->queue_mode == MT_SQ_MODE_XDP) {
+  if (tsqm->queue_mode == MT_QUEUE_MODE_XDP) {
     if (!tsq_queue->xdp) {
       /* get a 1:1 mapped queue */
       struct mt_tx_xdp_get_args args;
@@ -701,7 +701,7 @@ int mt_tsq_init(struct mtl_main_impl* impl) {
     impl->tsq[i]->port = i;
     impl->tsq[i]->nb_tsq_queues = mt_if(impl, i)->nb_tx_q;
     impl->tsq[i]->queue_mode =
-        mt_pmd_is_native_af_xdp(impl, i) ? MT_SQ_MODE_XDP : MT_SQ_MODE_DPDK;
+        mt_pmd_is_native_af_xdp(impl, i) ? MT_QUEUE_MODE_XDP : MT_QUEUE_MODE_DPDK;
     ret = tsq_init(impl, impl->tsq[i]);
     if (ret < 0) {
       err("%s(%d), tsq init fail\n", __func__, i);

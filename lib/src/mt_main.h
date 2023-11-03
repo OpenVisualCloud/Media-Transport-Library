@@ -827,10 +827,10 @@ struct mt_stat_mgr {
   rte_atomic32_t stat_stop;
 };
 
-enum mt_sq_mode {
-  MT_SQ_MODE_DPDK = 0,
-  MT_SQ_MODE_XDP,
-  MT_SQ_MODE_MAX,
+enum mt_queue_mode {
+  MT_QUEUE_MODE_DPDK = 0,
+  MT_QUEUE_MODE_XDP,
+  MT_QUEUE_MODE_MAX,
 };
 
 struct mt_rsq_impl; /* forward delcare */
@@ -872,7 +872,7 @@ struct mt_rsq_impl {
   /* sq rx queue resources */
   uint16_t nb_rsq_queues;
   struct mt_rsq_queue* rsq_queues;
-  enum mt_sq_mode queue_mode;
+  enum mt_queue_mode queue_mode;
 };
 
 /* used for sys queue */
@@ -930,7 +930,7 @@ struct mt_tsq_impl {
   /* sq tx queue resources */
   uint16_t nb_tsq_queues;
   struct mt_tsq_queue* tsq_queues;
-  enum mt_sq_mode queue_mode;
+  enum mt_queue_mode queue_mode;
 };
 
 struct mt_srss_entry {
@@ -950,6 +950,8 @@ struct mt_srss_impl {
   struct mtl_main_impl* parent;
   rte_spinlock_t mutex; /* protect struct mt_srss_entrys_list head */
   enum mtl_port port;
+  enum mt_queue_mode queue_mode;
+
   struct mt_srss_entrys_list head;
   pthread_t tid;
   rte_atomic32_t stop_thread;
@@ -957,6 +959,9 @@ struct mt_srss_impl {
   struct mt_sch_impl* sch;
   struct mt_srss_entry* cni_entry;
   int entry_idx;
+
+  /* for native xdp based srss */
+  struct mt_rx_xdp_entry** xdps;
 };
 
 #define MT_DP_SOCKET_THREADS_MAX (4)

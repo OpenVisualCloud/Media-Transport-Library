@@ -2101,8 +2101,14 @@ int mt_dev_if_init(struct mtl_main_impl* impl) {
       inf->nb_rx_q = queue_pair_cnt;
       inf->system_rx_queues_end = 0;
     } else if (mt_pmd_is_native_af_xdp(impl, i)) {
-      /* one more for the sys tx queue */
-      queue_pair_cnt = RTE_MAX(p->tx_queues_cnt[i] + 1, p->rx_queues_cnt[i]);
+      if (mt_has_srss(impl, i)) {
+        uint16_t combined = 1;
+        mt_dev_xdp_get_combined(inf, &combined);
+        queue_pair_cnt = combined; /* rss loop all queues */
+      } else {
+        /* one more for the sys tx queue */
+        queue_pair_cnt = RTE_MAX(p->tx_queues_cnt[i] + 1, p->rx_queues_cnt[i]);
+      }
       inf->nb_tx_q = queue_pair_cnt;
       inf->nb_rx_q = queue_pair_cnt;
       inf->system_rx_queues_end = 0;
