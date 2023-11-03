@@ -28,12 +28,6 @@ enum return_type {
   ST_JSON_MAX,
 };
 
-enum pacing {
-  PACING_GAP,
-  PACING_LINEAR,
-  PACING_MAX,
-};
-
 enum tr_offset {
   TR_OFFSET_DEFAULT,
   TR_OFFSET_NONE,
@@ -154,7 +148,7 @@ typedef struct st_json_session_base {
 
 typedef struct st_json_video_info {
   enum video_format video_format;
-  enum pacing pacing;
+  enum st21_pacing pacing;
   enum st20_type type;
   enum st20_packing packing;
   enum tr_offset tr_offset;
@@ -183,7 +177,7 @@ typedef struct st_json_ancillary_info {
 
 typedef struct st_json_st22p_info {
   enum st_frame_fmt format;
-  enum pacing pacing;
+  enum st21_pacing pacing;
   uint32_t width;
   uint32_t height;
   enum st_fps fps;
@@ -199,7 +193,8 @@ typedef struct st_json_st22p_info {
 typedef struct st_json_st20p_info {
   enum st_frame_fmt format;
   enum st20_fmt transport_format;
-  enum pacing pacing;
+  enum st21_pacing transport_pacing;
+  enum st20_packing transport_packing;
   uint32_t width;
   uint32_t height;
   enum st_fps fps;

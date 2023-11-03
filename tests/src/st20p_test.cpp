@@ -607,6 +607,8 @@ struct st20p_rx_digest_test_para {
   bool interlace;
   bool user_meta;
   bool rtcp;
+  enum st20_packing packing;
+  enum st21_pacing pacing;
 };
 
 static void test_st20p_init_rx_digest_para(struct st20p_rx_digest_test_para* para) {
@@ -630,6 +632,8 @@ static void test_st20p_init_rx_digest_para(struct st20p_rx_digest_test_para* par
   para->interlace = false;
   para->user_meta = false;
   para->rtcp = false;
+  para->packing = ST20_PACKING_BPM;
+  para->pacing = ST21_PACING_NARROW;
 }
 
 static void st20p_rx_digest_test(enum st_fps fps[], int width[], int height[],
@@ -731,6 +735,8 @@ static void st20p_rx_digest_test(enum st_fps fps[], int width[], int height[],
     ops_tx.fps = fps[i];
     ops_tx.input_fmt = tx_fmt[i];
     ops_tx.interlaced = para->interlace;
+    ops_tx.transport_packing = para->packing;
+    ops_tx.transport_pacing = para->pacing;
     ops_tx.transport_fmt = t_fmt[i];
     ops_tx.transport_linesize = 0;
     ops_tx.device = para->device;
@@ -1483,6 +1489,7 @@ TEST(St20p, digest_user_meta_s2) {
   para.level = ST_TEST_LEVEL_MANDATORY;
   para.user_meta = true;
   para.check_fps = false;
+  para.packing = ST20_PACKING_GPM;
 
   st20p_rx_digest_test(fps, width, height, tx_fmt, t_fmt, rx_fmt, &para);
 }
@@ -1500,6 +1507,7 @@ TEST(St20p, digest_rtcp_s1) {
   para.level = ST_TEST_LEVEL_MANDATORY;
   para.rtcp = true;
   para.check_fps = false;
+  para.packing = ST20_PACKING_GPM_SL;
 
   st20p_rx_digest_test(fps, width, height, tx_fmt, t_fmt, rx_fmt, &para);
 }

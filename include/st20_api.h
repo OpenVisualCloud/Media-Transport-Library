@@ -1261,12 +1261,8 @@ struct st20_rx_ops {
   /** Mandatory. UDP source port number */
   uint16_t udp_port[MTL_SESSION_PORT_MAX];
 
-  /** Mandatory. Sender pacing type, default is narrow */
-  enum st21_pacing pacing;
   /** Mandatory. Session streaming type, frame(default) or RTP */
   enum st20_type type;
-  /** Mandatory. Session packing mode, default is BPM */
-  enum st20_packing packing;
   /** Mandatory. Session resolution width */
   uint32_t width;
   /** Mandatory. Session resolution height */
@@ -1277,6 +1273,11 @@ struct st20_rx_ops {
   enum st20_fmt fmt;
   /** Mandatory. 7 bits payload type define in RFC3550 */
   uint8_t payload_type;
+
+  /** Optional. Not in use now as RX support all pacing type, reserved for future */
+  enum st21_pacing pacing;
+  /** Optional. Not in use now as RX support all packing type, reserved for future */
+  enum st20_packing packing;
 
   /** Optional. Name */
   const char* name;
