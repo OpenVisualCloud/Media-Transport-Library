@@ -324,9 +324,11 @@ int mt_dp_queue_uinit(struct mtl_main_impl* impl) {
     }
   }
 
+  /*  uinit srss before tsq as srss has sch dependency */
+  mt_srss_uinit(impl);
+
   mt_rsq_uinit(impl);
   mt_tsq_uinit(impl);
-  mt_srss_uinit(impl);
 
   for (int i = 0; i < num_ports; i++) {
     struct mt_dp_impl* dp = impl->dp[i];

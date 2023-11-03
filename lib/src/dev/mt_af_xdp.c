@@ -202,23 +202,33 @@ static int xdp_free(struct mt_xdp_priv* xdp) {
   return 0;
 }
 
+static int _xdp_parse_combined_info(const char* if_name,
+                                    struct ethtool_channels* channels) {
+  struct ifreq ifr;
+  int fd, ret;
+
+  fd = socket(AF_INET, SOCK_DGRAM, 0);
+  if (fd < 0) return fd;
+
+  channels->cmd = ETHTOOL_GCHANNELS;
+  ifr.ifr_data = (void*)channels;
+  strlcpy(ifr.ifr_name, if_name, IFNAMSIZ);
+  ret = ioctl(fd, SIOCETHTOOL, &ifr);
+
+  close(fd);
+  return ret;
+}
+
 static int xdp_parse_combined_info(struct mt_xdp_priv* xdp) {
   struct mtl_main_impl* impl = xdp->parent;
   enum mtl_port port = xdp->port;
   const char* if_name = mt_kernel_if_name(impl, port);
   struct ethtool_channels channels;
-  struct ifreq ifr;
-  int fd, ret;
+  int ret;
 
-  fd = socket(AF_INET, SOCK_DGRAM, 0);
-  if (fd < 0) return -1;
-
-  channels.cmd = ETHTOOL_GCHANNELS;
-  ifr.ifr_data = (void*)&channels;
-  strlcpy(ifr.ifr_name, if_name, IFNAMSIZ);
-  ret = ioctl(fd, SIOCETHTOOL, &ifr);
+  ret = _xdp_parse_combined_info(if_name, &channels);
   if (ret < 0) {
-    warn("%s(%d), SIOCETHTOOL fail %d\n", __func__, port, ret);
+    warn("%s(%d), get combined info fail %d\n", __func__, port, ret);
     return ret;
   }
 
@@ -603,6 +613,25 @@ static uint16_t xdp_rx(struct mt_rx_xdp_entry* entry, struct rte_mbuf** rx_pkts,
   return valid_rx;
 }
 
+int mt_dev_xdp_get_combined(struct mt_interface* inf, uint16_t* combined) {
+  struct mtl_main_impl* impl = inf->parent;
+  enum mtl_port port = inf->port;
+  const char* if_name = mt_kernel_if_name(impl, port);
+  struct ethtool_channels channels;
+  int ret;
+
+  ret = _xdp_parse_combined_info(if_name, &channels);
+  if (ret < 0) {
+    warn("%s(%d), get combined info fail %d, only 1 queue\n", __func__, port, ret);
+    *combined = 1;
+    return 0;
+  }
+
+  *combined = channels.combined_count;
+  info("%s(%d), %u\n", __func__, port, *combined);
+  return 0;
+}
+
 int mt_dev_xdp_init(struct mt_interface* inf) {
   struct mtl_main_impl* impl = inf->parent;
   enum mtl_port port = inf->port;
@@ -623,7 +652,10 @@ int mt_dev_xdp_init(struct mt_interface* inf) {
   xdp->port = port;
   xdp->max_combined = 1;
   xdp->combined_count = 1;
-  xdp->start_queue = p->xdp_info[port].start_queue;
+  if (mt_has_srss(impl, port))
+    xdp->start_queue = 0; /* rss loop all queues */
+  else
+    xdp->start_queue = p->xdp_info[port].start_queue;
   xdp->queues_cnt = RTE_MAX(inf->nb_tx_q, inf->nb_rx_q);
   mt_pthread_mutex_init(&xdp->queues_lock, NULL);
 
