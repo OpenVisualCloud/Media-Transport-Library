@@ -43,7 +43,7 @@ uint16_t mt_rx_xdp_burst(struct mt_rx_xdp_entry* entry, struct rte_mbuf** rx_pkt
 
 #include "../mt_log.h"
 
-int mt_dev_xdp_get_combined(struct mt_interface* inf, uint16_t* combined) {
+static inline int mt_dev_xdp_get_combined(struct mt_interface* inf, uint16_t* combined) {
   err("%s(%d), no xdp support for this build\n", __func__, inf->port);
   *combined = 0;
   return -ENOTSUP;
