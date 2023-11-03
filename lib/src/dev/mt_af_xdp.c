@@ -340,7 +340,7 @@ static int xdp_rx_prod_init(struct mt_xdp_queue* xq) {
   return 0;
 }
 
-static int xdp_socket_update_xskmap(struct mt_xdp_queue* xq) {
+static int xdp_socket_update_xskmap(struct mt_xdp_queue* xq, const char* ifname) {
   enum mtl_port port = xq->port;
   uint16_t q = xq->q;
   struct sockaddr_un server;
@@ -361,6 +361,8 @@ static int xdp_socket_update_xskmap(struct mt_xdp_queue* xq) {
     err("%s(%d,%u), connect socket fail, %s\n", __func__, port, q, strerror(errno));
     return errno;
   }
+
+  send(sock, ifname, IFNAMSIZ, 0);
 
   char cms[CMSG_SPACE(sizeof(int))];
   struct cmsghdr* cmsg;
@@ -412,7 +414,7 @@ static int xdp_socket_init(struct mt_xdp_priv* xdp, struct mt_xdp_queue* xq) {
   cfg.rx_size = mt_if_nb_rx_desc(impl, port);
   cfg.tx_size = mt_if_nb_tx_desc(impl, port);
   cfg.xdp_flags = XDP_FLAGS_UPDATE_IF_NOEXIST;
-  if (true /* no root */) /* this will skip load xdp prog */
+  if (!mt_is_privileged(impl)) /* this will skip load xdp prog */
     cfg.libxdp_flags = XSK_LIBXDP_FLAGS__INHIBIT_PROG_LOAD;
   // cfg.bind_flags = XDP_USE_NEED_WAKEUP;
 
@@ -428,7 +430,7 @@ static int xdp_socket_init(struct mt_xdp_priv* xdp, struct mt_xdp_queue* xq) {
   }
   xq->socket_fd = xsk_socket__fd(xq->socket);
 
-  if (true /* no root */) return xdp_socket_update_xskmap(xq);
+  if (!mt_is_privileged(impl)) return xdp_socket_update_xskmap(xq, if_name);
 
   return 0;
 }

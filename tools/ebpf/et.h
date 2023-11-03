@@ -41,7 +41,8 @@ static const char* prog_type_str[] = {
 
 struct et_ctx {
   enum et_prog_type prog_type;
-  int xdp_ifindex;
+  int xdp_ifindex[8];
+  int xdp_if_cnt;
 };
 
 #endif /* __ET_H */

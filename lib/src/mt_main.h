@@ -1139,10 +1139,15 @@ struct mtl_main_impl {
   int mempool_idx;
 
   int arp_timeout_ms;
+  bool privileged; /* if app running with root privilege */
 };
 
 static inline struct mtl_init_params* mt_get_user_params(struct mtl_main_impl* impl) {
   return &impl->user_para;
+}
+
+static inline bool mt_is_privileged(struct mtl_main_impl* impl) {
+  return impl->privileged;
 }
 
 static inline struct mt_interface* mt_if(struct mtl_main_impl* impl, enum mtl_port port) {

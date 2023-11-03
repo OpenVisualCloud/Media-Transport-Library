@@ -124,14 +124,21 @@ static int send_fd(int sock, int fd) {
 static int et_xdp_loop(struct et_ctx* ctx) {
   struct sockaddr_un addr;
   int ret = 0;
-  int xsks_map_fd = -1;
+  int xsks_map_fd[ctx->xdp_if_cnt];
   int sock = -1, conn;
 
-  /* here we load the default xdp program built by libxdp */
-  if (xsk_setup_xdp_prog(ctx->xdp_ifindex, &xsks_map_fd) || xsks_map_fd < 0) {
-    perror("xsk_setup_xdp_prog failed");
-    ret = -1;
-    goto cleanup;
+  if (ctx->xdp_if_cnt <= 0) {
+    printf("please specify interfaces with --ifname <a,b,...>\n");
+    return -EIO;
+  }
+
+  /* load xdp program for each interface */
+  for (int i = 0; i < ctx->xdp_if_cnt; i++) {
+    ret = xsk_setup_xdp_prog(ctx->xdp_ifindex[i], &xsks_map_fd[i]);
+    if (ret || xsks_map_fd[i] < 0) {
+      printf("xsk_socket__bind failed\n");
+      goto cleanup;
+    }
   }
 
   sock = socket(AF_UNIX, SOCK_STREAM, 0);
@@ -161,9 +168,20 @@ static int et_xdp_loop(struct et_ctx* ctx) {
       sleep(1);
       continue;
     }
-    send_fd(conn, xsks_map_fd);
+    char ifname[IFNAMSIZ];
+    int map_fd;
+    recv(conn, ifname, sizeof(ifname), 0);
+    printf("request xsk_map_fd for ifname %s\n", ifname);
+    int ifindex = if_nametoindex(ifname);
+    for (int i = 0; i < ctx->xdp_if_cnt; i++) {
+      if (ctx->xdp_ifindex[i] == ifindex) {
+        map_fd = xsks_map_fd[i];
+        break;
+      }
+    }
+    send_fd(conn, map_fd);
     close(conn);
-    printf("map_fd %d sent, close conn\n", xsks_map_fd);
+    printf("map_fd %d sent, close conn\n", map_fd);
   }
 
 cleanup:
@@ -181,10 +199,12 @@ static void et_print_help() {
   printf("\n");
   printf("##### Usage: #####\n\n");
   printf(" Params:\n");
-  printf(" --help           : print this help\n");
-  printf(" --print          : print libbpf output\n");
-  printf(" --prog <type>    : attach to prog <type>\n");
-  printf(" --ifname <name>  : interface name\n");
+  printf(" --help                   : print this help\n");
+  printf(" --print                  : print libbpf output\n");
+  printf(" --prog <type>            : attach to prog <type>\n");
+  printf(
+      " --ifname <name1,name2>   : interface names which XDP program will be attached "
+      "to\n");
   printf("\n");
 }
 
@@ -207,12 +227,14 @@ static int et_parse_args(struct et_ctx* ctx, int argc, char** argv) {
         libbpf_set_print(libbpf_print_fn);
         break;
       case ET_ARG_IFNAME:
-        int ifindex = if_nametoindex(optarg);
-        if (!ifindex) {
-          fprintf(stderr, "invalid interface name: %s\n", optarg);
-          return -1;
+        char* ifname;
+        ctx->xdp_if_cnt = 0;
+        ifname = strtok(optarg, ",");
+        while (ifname) {
+          ctx->xdp_ifindex[ctx->xdp_if_cnt++] = if_nametoindex(ifname);
+          ifname = strtok(NULL, ",");
         }
-        ctx->xdp_ifindex = ifindex;
+        break;
       case ET_ARG_HELP:
       default:
         et_print_help();
