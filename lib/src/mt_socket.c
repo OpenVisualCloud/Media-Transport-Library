@@ -83,27 +83,36 @@ int mt_socket_set_if_ip(const char* if_name, uint8_t ip[MTL_IP_ADDR_LEN],
 }
 
 int mt_socket_get_if_gateway(const char* if_name, uint8_t gateway[MTL_IP_ADDR_LEN]) {
-  char cmd[256];
-  char out[256];
+  FILE* fp = fopen("/proc/net/route", "r");
+  char line[100], iface[IF_NAMESIZE], dest[9], gway[9];
 
-  snprintf(cmd, sizeof(cmd), "route -n | grep 'UG' | grep '%s' | awk '{print $2}'",
-           if_name);
-  int ret = mt_run_cmd(cmd, out, sizeof(out));
-  if (ret < 0) return ret;
-
-  uint8_t a, b, c, d;
-  ret = sscanf(out, "%" SCNu8 ".%" SCNu8 ".%" SCNu8 ".%" SCNu8 "", &a, &b, &c, &d);
-  if (ret < 0) {
-    info("%s, cmd: %s fail\n", __func__, cmd);
-    return ret;
+  if (fp == NULL) {
+    err("%s, open /proc/net/route fail\n", __func__);
+    return -EIO;
   }
 
-  dbg("%s, cmd %s out %s\n", __func__, cmd, out);
-  gateway[0] = a;
-  gateway[1] = b;
-  gateway[2] = c;
-  gateway[3] = d;
-  return 0;
+  /* skip header line */
+  if (!fgets(line, sizeof(line), fp)) {
+    err("%s, empty file\n", __func__);
+    fclose(fp);
+    return -EIO;
+  }
+
+  while (fgets(line, sizeof(line), fp)) {
+    sscanf(line, "%s %s %s", iface, dest, gway);
+    if (strcmp(iface, if_name) == 0 && strcmp(dest, "00000000") == 0) {
+      for (int i = 0; i < MTL_IP_ADDR_LEN; ++i) {
+        int byte;
+        sscanf(gway + (MTL_IP_ADDR_LEN - 1 - i) * 2, "%2x", &byte);
+        gateway[i] = byte;
+      }
+      fclose(fp);
+      return 0;
+    }
+  }
+
+  fclose(fp);
+  return -EIO;
 }
 
 int mt_socket_get_if_mac(const char* if_name, struct rte_ether_addr* ea) {
@@ -384,10 +393,9 @@ int mt_socket_get_mac(struct mtl_main_impl* impl, const char* if_name,
 
 int mt_socket_add_flow(struct mtl_main_impl* impl, enum mtl_port port, uint16_t queue_id,
                        struct mt_rxq_flow* flow) {
-  char cmd[256];
-  char out[128]; /* Added rule with ID 15871 */
-  int ret;
-  int flow_id = -1;
+  struct ifreq ifr;
+  int ret, fd;
+  int free_loc = -1, flow_id = -1;
   uint8_t start_queue = mt_afxdp_start_queue(impl, port);
   const char* if_name = mt_kernel_if_name(impl, port);
   bool has_ip_flow = true;
@@ -411,46 +419,144 @@ int mt_socket_add_flow(struct mtl_main_impl* impl, enum mtl_port port, uint16_t 
     }
   }
 
-  if (!has_ip_flow) {
-    snprintf(cmd, sizeof(cmd), "ethtool -N %s flow-type udp4 dst-port %u action %u",
-             if_name, flow->dst_port, queue_id + start_queue);
-  } else if (mt_is_multicast_ip(flow->dip_addr)) {
-    snprintf(cmd, sizeof(cmd),
-             "ethtool -N %s flow-type udp4 dst-ip %u.%u.%u.%u dst-port %u action %u",
-             if_name, flow->dip_addr[0], flow->dip_addr[1], flow->dip_addr[2],
-             flow->dip_addr[3], flow->dst_port, queue_id + start_queue);
-  } else {
-    snprintf(cmd, sizeof(cmd),
-             "ethtool -N %s flow-type udp4 src-ip %u.%u.%u.%u dst-ip %u.%u.%u.%u "
-             "dst-port %u action %u",
-             if_name, flow->dip_addr[0], flow->dip_addr[1], flow->dip_addr[2],
-             flow->dip_addr[3], flow->sip_addr[0], flow->sip_addr[1], flow->sip_addr[2],
-             flow->sip_addr[3], flow->dst_port, queue_id + start_queue);
+  /* open control socket */
+  fd = socket(AF_INET, SOCK_DGRAM, 0);
+  if (fd < 0) {
+    err("%s(%d), cannot get control socket: %d\n", __func__, port, fd);
+    return fd;
   }
-  ret = mt_run_cmd(cmd, out, sizeof(out));
-  if (ret < 0) return ret;
 
-  ret = sscanf(out, "Added rule with ID %d", &flow_id);
+  memset(&ifr, 0, sizeof(ifr));
+  strncpy(ifr.ifr_name, if_name, sizeof(ifr.ifr_name) - 1);
+  struct ethtool_rxnfc cmd;
+  memset(&cmd, 0, sizeof(cmd));
+
+  /* get the free location */
+  cmd.cmd = ETHTOOL_GRXCLSRLCNT;
+  ifr.ifr_data = (void*)&cmd;
+  ret = ioctl(fd, SIOCETHTOOL, &ifr);
   if (ret < 0) {
-    err("%s(%d), unknown out: %s\n", __func__, port, out);
+    err("%s(%d), cannot get free location: %d\n", __func__, port, ret);
+    close(fd);
     return ret;
   }
 
-  info("%s(%d), succ, flow_id %d, cmd %s\n", __func__, port, flow_id, cmd);
+  struct ethtool_rxnfc* cmd_w_rules;
+  cmd_w_rules = calloc(1, sizeof(*cmd_w_rules) + cmd.rule_cnt * sizeof(uint32_t));
+  cmd_w_rules->cmd = ETHTOOL_GRXCLSRLALL;
+  cmd_w_rules->rule_cnt = cmd.rule_cnt;
+  ifr.ifr_data = (void*)cmd_w_rules;
+  ret = ioctl(fd, SIOCETHTOOL, &ifr);
+  if (ret < 0) {
+    err("%s(%d), cannot get rules: %d\n", __func__, port, ret);
+    close(fd);
+    free(cmd_w_rules);
+    return ret;
+  }
+
+  uint32_t rule_size = cmd_w_rules->data;
+  free_loc = rule_size - 1;
+  while (free_loc > 0) {
+    bool used = false;
+    for (int i = 0; i < cmd.rule_cnt; i++) {
+      if (cmd_w_rules->rule_locs[i] == free_loc) {
+        used = true;
+        break;
+      }
+    }
+    if (used)
+      free_loc--;
+    else {
+      info("%s(%d), found free location: %d\n", __func__, port, free_loc);
+      break;
+    }
+  }
+  if (free_loc == 0) {
+    err("%s(%d), cannot find free location\n", __func__, port);
+    close(fd);
+    free(cmd_w_rules);
+    return -EIO;
+  }
+
+  free(cmd_w_rules);
+
+  /* set the flow rule */
+  memset(&cmd, 0, sizeof(cmd));
+  cmd.cmd = ETHTOOL_SRXCLSRLINS;
+  struct ethtool_rx_flow_spec* fs = &cmd.fs;
+  fs->flow_type = UDP_V4_FLOW;
+  fs->m_u.udp_ip4_spec.pdst = 0xFFFF;
+  fs->h_u.udp_ip4_spec.pdst = htons(flow->dst_port);
+  if (has_ip_flow) {
+    fs->m_u.udp_ip4_spec.ip4dst = 0xFFFFFFFF;
+    if (mt_is_multicast_ip(flow->dip_addr)) {
+      rte_memcpy(&fs->h_u.udp_ip4_spec.ip4dst, flow->dip_addr, MTL_IP_ADDR_LEN);
+    } else {
+      fs->m_u.udp_ip4_spec.ip4src = 0xFFFFFFFF;
+      rte_memcpy(&fs->h_u.udp_ip4_spec.ip4src, flow->dip_addr, MTL_IP_ADDR_LEN);
+      rte_memcpy(&fs->h_u.udp_ip4_spec.ip4dst, flow->sip_addr, MTL_IP_ADDR_LEN);
+    }
+  }
+  fs->ring_cookie = queue_id + start_queue;
+  fs->location = free_loc; /* for some NICs the location must be set */
+
+  ifr.ifr_data = (void*)&cmd;
+  ret = ioctl(fd, SIOCETHTOOL, &ifr);
+  if (ret < 0) {
+    err("%s(%d), cannot insert classifier: %s, start_queue %u, if %s\n", __func__, port,
+        strerror(errno), start_queue, if_name);
+    if (ret == -EPERM)
+      err("%s(%d), please add capability for the app: sudo setcap 'cap_net_admin+ep' "
+          "<app>\n",
+          __func__, port);
+    close(fd);
+    return ret;
+  }
+  flow_id = fs->location;
+
+  close(fd);
+
+  info("%s(%d), succ, flow_id %d\n", __func__, port, flow_id);
   return flow_id;
 }
 
 int mt_socket_remove_flow(struct mtl_main_impl* impl, enum mtl_port port, int flow_id) {
-  char cmd[128];
-  int ret;
+  struct ethtool_rxnfc cmd;
+  int ret, fd;
   const char* if_name = mt_kernel_if_name(impl, port);
 
-  if (flow_id > 0) {
-    snprintf(cmd, sizeof(cmd), "ethtool -N %s delete %d", if_name, flow_id);
-    ret = mt_run_cmd(cmd, NULL, 0);
-    if (ret < 0) return ret;
-    info("%s(%d), succ, flow_id %d, cmd %s\n", __func__, port, flow_id, cmd);
+  if (flow_id <= 0) {
+    dbg("%s(%d), flow_id %d is invalid\n", __func__, port, flow_id);
+    return -EINVAL;
   }
+
+  memset(&cmd, 0, sizeof(cmd));
+  cmd.cmd = ETHTOOL_SRXCLSRLDEL;
+  cmd.fs.location = flow_id;
+
+  fd = socket(AF_INET, SOCK_DGRAM, 0);
+  if (fd < 0) {
+    err("%s(%d), cannot get control socket: %d\n", __func__, port, fd);
+    return fd;
+  }
+
+  struct ifreq ifr;
+  memset(&ifr, 0, sizeof(ifr));
+  strncpy(ifr.ifr_name, if_name, IFNAMSIZ - 1);
+  ifr.ifr_data = (char*)&cmd;
+
+  ret = ioctl(fd, SIOCETHTOOL, &ifr);
+  if (ret < 0) {
+    err("%s(%d), cannot remove classifier: %s\n", __func__, port, strerror(errno));
+    if (ret == -EPERM)
+      err("%s(%d), please add capability for the app: sudo setcap 'cap_net_admin+ep' "
+          "<app>\n",
+          __func__, port);
+    close(fd);
+    return ret;
+  }
+  close(fd);
+  info("%s(%d), succ, flow_id %d\n", __func__, port, flow_id);
 
   return 0;
 }
