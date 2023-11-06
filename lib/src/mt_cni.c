@@ -163,32 +163,15 @@ static int cni_burst_from_kernel(struct mt_cni_entry* cni) {
 
 static int cni_udp_handle(struct mt_cni_entry* cni, struct rte_mbuf* m) {
   struct mt_udp_hdr* hdr;
-  struct rte_ipv4_hdr* ipv4;
-  struct rte_udp_hdr* udp;
   struct mt_csq_entry* csq = NULL;
   int ret;
 
   hdr = rte_pktmbuf_mtod(m, struct mt_udp_hdr*);
-  ipv4 = &hdr->ipv4;
-  udp = &hdr->udp;
 
   csq_lock(cni);
   MT_TAILQ_FOREACH(csq, &cni->csq_queues, next) {
-    bool ip_matched;
-    if (csq->flow.flags & MT_RXQ_FLOW_F_NO_IP) {
-      ip_matched = true;
-    } else {
-      ip_matched = mt_is_multicast_ip(csq->flow.dip_addr)
-                       ? (ipv4->dst_addr == *(uint32_t*)csq->flow.dip_addr)
-                       : (ipv4->src_addr == *(uint32_t*)csq->flow.dip_addr);
-    }
-    bool port_matched;
-    if (csq->flow.flags & MT_RXQ_FLOW_F_NO_PORT) {
-      port_matched = true;
-    } else {
-      port_matched = ntohs(udp->dst_port) == csq->flow.dst_port;
-    }
-    if (ip_matched && port_matched) { /* match dst ip:port */
+    bool matched = mt_udp_matched(&csq->flow, hdr);
+    if (matched) {
       ret = rte_ring_sp_enqueue(csq->ring, m);
       if (ret < 0) {
         csq->stat_enqueue_fail_cnt++;

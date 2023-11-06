@@ -946,13 +946,22 @@ struct mt_srss_entry {
 };
 MT_TAILQ_HEAD(mt_srss_entrys_list, mt_srss_entry);
 
+struct mt_srss_list {
+  struct mt_srss_entrys_list entrys_list;
+  rte_spinlock_t mutex; /* protect entrys_list */
+  int idx;
+};
+
 struct mt_srss_impl {
   struct mtl_main_impl* parent;
-  rte_spinlock_t mutex; /* protect struct mt_srss_entrys_list head */
+
   enum mtl_port port;
   enum mt_queue_mode queue_mode;
 
-  struct mt_srss_entrys_list head;
+  /* map entry to different heads as the UDP port number */
+  struct mt_srss_list* lists;
+  int lists_sz;
+
   pthread_t tid;
   rte_atomic32_t stop_thread;
   struct mt_sch_tasklet_impl* tasklet;

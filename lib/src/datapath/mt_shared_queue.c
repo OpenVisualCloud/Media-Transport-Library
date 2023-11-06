@@ -275,8 +275,6 @@ static int rsq_rx(struct mt_rsq_queue* rsq_queue) {
   struct mt_rsq_entry* last_rsq_entry = NULL;
   uint16_t matched_pkts_nb = 0;
   struct mt_udp_hdr* hdr;
-  struct rte_ipv4_hdr* ipv4;
-  struct rte_udp_hdr* udp;
 
   if (rsq_queue->xdp)
     rx = mt_rx_xdp_burst(rsq_queue->xdp, pkts, MT_SQ_BURST_SIZE);
@@ -289,27 +287,12 @@ static int rsq_rx(struct mt_rsq_queue* rsq_queue) {
     rsq_entry = NULL;
 
     hdr = rte_pktmbuf_mtod(pkts[i], struct mt_udp_hdr*);
-    ipv4 = &hdr->ipv4;
-    udp = &hdr->udp;
     dbg("%s(%u), pkt %u ip %u.%u.%u.%u, port dst %u src %u\n", __func__, q, i,
-        ntohs(udp->dst_port), ntohs(udp->src_port));
+        ntohs(hdr->udp.dst_port), ntohs(hdr->udp.src_port));
 
     MT_TAILQ_FOREACH(rsq_entry, &rsq_queue->head, next) {
-      bool ip_matched;
-      if (rsq_entry->flow.flags & MT_RXQ_FLOW_F_NO_IP) {
-        ip_matched = true;
-      } else {
-        ip_matched = mt_is_multicast_ip(rsq_entry->flow.dip_addr)
-                         ? (ipv4->dst_addr == *(uint32_t*)rsq_entry->flow.dip_addr)
-                         : (ipv4->src_addr == *(uint32_t*)rsq_entry->flow.dip_addr);
-      }
-      bool port_matched;
-      if (rsq_entry->flow.flags & MT_RXQ_FLOW_F_NO_PORT) {
-        port_matched = true;
-      } else {
-        port_matched = ntohs(udp->dst_port) == rsq_entry->flow.dst_port;
-      }
-      if (ip_matched && port_matched) { /* match dst ip:port */
+      bool matched = mt_udp_matched(&rsq_entry->flow, hdr);
+      if (matched) {
         if (rsq_entry != last_rsq_entry) UPDATE_ENTRY();
         matched_pkts[matched_pkts_nb++] = pkts[i];
         break;
