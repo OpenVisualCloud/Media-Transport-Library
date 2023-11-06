@@ -271,6 +271,7 @@ struct st_frame {
   uint32_t flags;
   /** frame status, complete or not */
   enum st_frame_status status;
+
   /**
    * The user meta data buffer for current frame of st20, the size must smaller than
    * MTL_PKT_MAX_RTP_BYTES. This data will be transported to RX with video data and passed
@@ -279,6 +280,12 @@ struct st_frame {
   const void* user_meta;
   /** size for meta data buffer */
   size_t user_meta_size;
+  /** the total packets received, not include the redundant packets */
+  uint32_t pkts_total;
+  /** the valid packets received on each session port. For each session port, the validity
+   * of received packets can be assessed by comparing 'pkts_recv[s_port]' with
+   * 'pkts_total,' which serves as an indicator of signal quality.  */
+  uint32_t pkts_recv[MTL_SESSION_PORT_MAX];
 
   /** priv pointer for lib, do not touch this */
   void* priv;

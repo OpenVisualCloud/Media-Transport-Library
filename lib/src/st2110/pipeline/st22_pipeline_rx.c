@@ -99,6 +99,14 @@ static int rx_st22p_frame_ready(void* priv, void* frame,
   framebuff->dst.tfmt = meta->tfmt;
   /* set dst timestamp to same as src? */
   framebuff->dst.timestamp = meta->timestamp;
+
+  framebuff->src.pkts_total = framebuff->dst.pkts_total = meta->pkts_total;
+  for (enum mtl_session_port s_port = MTL_SESSION_PORT_P; s_port < MTL_SESSION_PORT_MAX;
+       s_port++) {
+    framebuff->src.pkts_recv[s_port] = framebuff->dst.pkts_recv[s_port] =
+        meta->pkts_recv[s_port];
+  }
+
   framebuff->stat = ST22P_RX_FRAME_READY;
   /* point to next */
   ctx->framebuff_producer_idx = rx_st22p_next_idx(ctx, framebuff->idx);

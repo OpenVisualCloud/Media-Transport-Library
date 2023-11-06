@@ -177,6 +177,13 @@ static int rx_st20p_frame_ready(void* priv, void* frame,
   framebuff->src.timestamp = framebuff->dst.timestamp = meta->timestamp;
   framebuff->src.status = framebuff->dst.status = meta->status;
 
+  framebuff->src.pkts_total = framebuff->dst.pkts_total = meta->pkts_total;
+  for (enum mtl_session_port s_port = MTL_SESSION_PORT_P; s_port < MTL_SESSION_PORT_MAX;
+       s_port++) {
+    framebuff->src.pkts_recv[s_port] = framebuff->dst.pkts_recv[s_port] =
+        meta->pkts_recv[s_port];
+  }
+
   /* check user meta */
   framebuff->user_meta_data_size = 0;
   if (meta->user_meta) {

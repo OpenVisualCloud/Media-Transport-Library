@@ -1130,8 +1130,10 @@ static void rv_frame_notify(struct st_rx_video_session_impl* s,
   meta->uframe_total_size = s->st20_uframe_size;
   meta->frame_recv_size = rv_slot_get_frame_size(slot);
   meta->pkts_total = slot->pkts_received;
-  meta->pkts_recv[MTL_SESSION_PORT_P] = slot->pkts_recv_per_port[MTL_SESSION_PORT_P];
-  meta->pkts_recv[MTL_SESSION_PORT_R] = slot->pkts_recv_per_port[MTL_SESSION_PORT_R];
+  for (enum mtl_session_port s_port = MTL_SESSION_PORT_P; s_port < MTL_SESSION_PORT_MAX;
+       s_port++) {
+    meta->pkts_recv[s_port] = slot->pkts_recv_per_port[s_port];
+  }
 
   if (slot->frame->user_meta_data_size) {
     meta->user_meta_size = slot->frame->user_meta_data_size;
@@ -1199,8 +1201,10 @@ static void rv_st22_frame_notify(struct st_rx_video_session_impl* s,
   meta->frame_total_size = rv_slot_get_frame_size(slot);
   meta->status = status;
   meta->pkts_total = slot->pkts_received;
-  meta->pkts_recv[MTL_SESSION_PORT_P] = slot->pkts_recv_per_port[MTL_SESSION_PORT_P];
-  meta->pkts_recv[MTL_SESSION_PORT_R] = slot->pkts_recv_per_port[MTL_SESSION_PORT_R];
+  for (enum mtl_session_port s_port = MTL_SESSION_PORT_P; s_port < MTL_SESSION_PORT_MAX;
+       s_port++) {
+    meta->pkts_recv[s_port] = slot->pkts_recv_per_port[s_port];
+  }
 
   /* notify frame */
   int ret = -EIO;

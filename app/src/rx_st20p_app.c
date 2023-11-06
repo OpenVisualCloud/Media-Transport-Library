@@ -17,6 +17,19 @@ static int app_rx_st20p_frame_available(void* priv) {
 static void app_rx_st20p_consume_frame(struct st_app_rx_st20p_session* s,
                                        struct st_frame* frame) {
   struct st_display* d = s->display;
+  int idx = s->idx;
+
+  if (s->num_port > 1) {
+    dbg("%s(%d): pkts_total %u, pkts per port P %u R %u\n", __func__, idx,
+        frame->pkts_total, frame->pkts_recv[MTL_SESSION_PORT_P],
+        frame->pkts_recv[MTL_SESSION_PORT_R]);
+    if (frame->pkts_recv[MTL_SESSION_PORT_P] < (frame->pkts_total / 2))
+      warn("%s(%d): P port only receive %u pkts while total pkts is %u\n", __func__, idx,
+           frame->pkts_recv[MTL_SESSION_PORT_P], frame->pkts_total);
+    if (frame->pkts_recv[MTL_SESSION_PORT_R] < (frame->pkts_total / 2))
+      warn("%s(%d): R port only receive %u pkts while total pkts is %u\n", __func__, idx,
+           frame->pkts_recv[MTL_SESSION_PORT_R], frame->pkts_total);
+  }
 
   if (d && d->front_frame) {
     if (st_pthread_mutex_trylock(&d->display_frame_mutex) == 0) {

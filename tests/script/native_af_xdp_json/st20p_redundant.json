@@ -1,0 +1,63 @@
+{
+    "interfaces": [
+        {
+            "name": "native_af_xdp:enp0s3np0",
+        },
+        {
+            "name": "native_af_xdp:enp0s4np0",
+        }
+    ],
+    "tx_sessions": [
+        {
+            "dip": [
+                "local:1",
+                "local:0"
+            ],
+            "interface": [
+                0,
+                1,
+            ],
+            "st20p": [
+                {
+                    "replicas": 1,
+                    "start_port": 20000,
+                    "payload_type": 112,
+                    "width": 1920,
+                    "height": 1080,
+                    "fps": "p59",
+                    "device": "AUTO",
+                    "input_format": "YUV422PLANAR10LE",
+                    "transport_format": "YUV_422_10bit",
+                    "st20p_url": "./test.yuv"
+                }
+            ]
+        }
+    ],
+    "rx_sessions": [
+        {
+            "ip": [
+                "local:0",
+                "local:1"
+            ],
+            "interface": [
+                1,
+                0,
+            ],
+            "st20p": [
+                {
+                    "replicas": 1,
+                    "start_port": 20000,
+                    "payload_type": 112,
+                    "width": 1920,
+                    "height": 1080,
+                    "fps": "p59",
+                    "device": "AUTO",
+                    "output_format": "YUV422PLANAR10LE",
+                    "transport_format": "YUV_422_10bit",
+                    "display": false,
+                    "measure_latency": true
+                }
+            ]
+        }
+    ]
+}
