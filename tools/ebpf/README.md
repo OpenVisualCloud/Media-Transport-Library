@@ -23,3 +23,9 @@ xdp: a privileged program to load afxdp bpf program and send the xsk_map_fd to o
 ```bash
 sudo ./et --prog xdp --ifname ens785f0
 ```
+
+load a custom program for xdp:
+
+```bash
+sudo ./et --prog xdp --ifname ens785f0 --xdp_path /path/to/xdp.o
+```

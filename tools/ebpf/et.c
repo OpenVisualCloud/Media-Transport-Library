@@ -17,6 +17,7 @@
 #include <sys/types.h>
 #include <sys/un.h>
 #include <unistd.h>
+#include <xdp/libxdp.h>
 #include <xdp/xsk.h>
 
 static volatile bool stop = false;
@@ -126,15 +127,32 @@ static int et_xdp_loop(struct et_ctx* ctx) {
   int ret = 0;
   int xsks_map_fd[ctx->xdp_if_cnt];
   int sock = -1, conn;
+  struct xdp_program* prog = NULL;
 
   if (ctx->xdp_if_cnt <= 0) {
     printf("please specify interfaces with --ifname <a,b,...>\n");
     return -EIO;
   }
 
+  if (ctx->xdp_path) {
+    prog = xdp_program__open_file(ctx->xdp_path, "xdp", NULL);
+    ret = libxdp_get_error(prog);
+    if (ret) {
+      printf("failed to load xdp program\n");
+      return -EIO;
+    }
+  }
+
   /* load xdp program for each interface */
   for (int i = 0; i < ctx->xdp_if_cnt; i++) {
-    ret = xsk_setup_xdp_prog(ctx->xdp_ifindex[i], &xsks_map_fd[i]);
+    int ifindex = ctx->xdp_ifindex[i];
+    if (prog) ret = xdp_program__attach(prog, ifindex, XDP_MODE_NATIVE, 0);
+    if (ret < 0) {
+      printf("xdp_program__attach failed\n");
+      goto cleanup;
+    }
+
+    ret = xsk_setup_xdp_prog(ifindex, &xsks_map_fd[i]);
     if (ret || xsks_map_fd[i] < 0) {
       printf("xsk_socket__bind failed\n");
       goto cleanup;
@@ -156,8 +174,8 @@ static int et_xdp_loop(struct et_ctx* ctx) {
 
   listen(sock, 1);
 
+  printf("waiting socket connection...\n");
   while (!stop) {
-    printf("waiting socket connection...\n");
     conn = accept(sock, NULL, 0);
     if (conn < 0) {
       if (errno != EAGAIN && errno != EWOULDBLOCK) {
@@ -168,6 +186,7 @@ static int et_xdp_loop(struct et_ctx* ctx) {
       sleep(1);
       continue;
     }
+    printf("\nsocket connection %d accepted\n", conn);
     char ifname[IFNAMSIZ];
     int map_fd = -1;
     recv(conn, ifname, sizeof(ifname), 0);
@@ -190,25 +209,41 @@ static int et_xdp_loop(struct et_ctx* ctx) {
 
 cleanup:
   if (sock >= 0) close(sock);
+  if (prog) {
+    for (int i = 0; i < ctx->xdp_if_cnt; i++) {
+      int ifindex = ctx->xdp_ifindex[i];
+      xdp_program__detach(prog, ifindex, XDP_MODE_NATIVE, 0);
+    }
+    xdp_program__close(prog);
+  }
   return ret;
 }
 
-static struct option et_args_options[] = {{"print", no_argument, 0, ET_ARG_PRINT_LIBBPF},
-                                          {"prog", required_argument, 0, ET_ARG_PROG},
-                                          {"ifname", required_argument, 0, ET_ARG_IFNAME},
-                                          {"help", no_argument, 0, ET_ARG_HELP},
-                                          {0, 0, 0, 0}};
+static struct option et_args_options[] = {
+    {"print", no_argument, 0, ET_ARG_PRINT_LIBBPF},
+    {"prog", required_argument, 0, ET_ARG_PROG},
+    {"ifname", required_argument, 0, ET_ARG_IFNAME},
+    {"xdp_path", required_argument, 0, ET_ARG_XDP_PATH},
+    {"help", no_argument, 0, ET_ARG_HELP},
+    {0, 0, 0, 0}};
 
 static void et_print_help() {
   printf("\n");
   printf("##### Usage: #####\n\n");
+
   printf(" Params:\n");
-  printf(" --help                   : print this help\n");
-  printf(" --print                  : print libbpf output\n");
-  printf(" --prog <type>            : attach to prog <type>\n");
+  printf("  --help                                  Print this help information\n");
+  printf("  --print                                 Print libbpf output\n");
+
+  printf("\n Prog Commands:\n");
+  printf("  --prog <type>                           Attach to program of <type>\n");
   printf(
-      " --ifname <name1,name2>   : interface names which XDP program will be attached "
-      "to\n");
+      "  --prog xdp --ifname <name1,name2>       Attach XDP program to specified "
+      "interface names\n");
+  printf(
+      "  --prog xdp --xdp_path /path/to/xdp.o    Load a custom XDP kernel program from "
+      "the specified path\n");
+
   printf("\n");
 }
 
@@ -239,18 +274,22 @@ static int et_parse_args(struct et_ctx* ctx, int argc, char** argv) {
           ifname = strtok(NULL, ",");
         }
         break;
+      case ET_ARG_XDP_PATH:
+        ctx->xdp_path = optarg;
+        break;
       case ET_ARG_HELP:
       default:
         et_print_help();
         return -1;
     }
-  };
+  }
 
   return 0;
 }
 
 int main(int argc, char** argv) {
-  struct et_ctx ctx = {0};
+  struct et_ctx ctx;
+  memset(&ctx, 0, sizeof(ctx));
   et_parse_args(&ctx, argc, argv);
   signal(SIGINT, et_sig_handler);
 

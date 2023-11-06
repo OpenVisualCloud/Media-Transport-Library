@@ -21,6 +21,7 @@ enum et_args_cmd {
   ET_ARG_PRINT_LIBBPF = 0x100, /* start from end of ascii */
   ET_ARG_PROG,
   ET_ARG_IFNAME,
+  ET_ARG_XDP_PATH,
   ET_ARG_HELP,
 };
 
@@ -43,6 +44,7 @@ struct et_ctx {
   enum et_prog_type prog_type;
   int xdp_ifindex[8];
   int xdp_if_cnt;
+  char* xdp_path;
 };
 
 #endif /* __ET_H */
