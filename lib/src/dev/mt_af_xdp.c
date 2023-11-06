@@ -390,6 +390,11 @@ static int xdp_socket_update_xskmap(struct mt_xdp_queue* xq, const char* ifname)
   }
 
   cmsg = CMSG_FIRSTHDR(&msg);
+  if (cmsg->cmsg_level != SOL_SOCKET || cmsg->cmsg_type != SCM_RIGHTS ||
+      cmsg->cmsg_len != CMSG_LEN(sizeof(int))) {
+    err("%s(%d,%u), invalid cmsg for map fd\n", __func__, port, q);
+    return -EINVAL;
+  }
   xsks_map_fd = *(int*)CMSG_DATA(cmsg);
   if (xsks_map_fd < 0) {
     err("%s(%d,%u), get xsks_map_fd fail, %s\n", __func__, port, q, strerror(errno));
