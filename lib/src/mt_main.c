@@ -452,6 +452,15 @@ mtl_handle mtl_init(struct mtl_init_params* p) {
   impl = mt_rte_zmalloc_socket(sizeof(*impl), socket[MTL_PORT_P]);
   if (!impl) goto err_exit;
 
+#ifndef WINDOWSENV
+  if (geteuid() == 0)
+    impl->privileged = true;
+  else
+    impl->privileged = false;
+#else
+  impl->privileged = true;
+#endif
+
   rte_memcpy(&impl->user_para, p, sizeof(*p));
   impl->var_para.sch_default_sleep_us = 1 * US_PER_MS; /* default 1ms */
   /* use sleep zero if sleep us is smaller than this thresh */

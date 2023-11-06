@@ -9,6 +9,7 @@
 #include <linux/if_link.h>
 #include <linux/if_xdp.h>
 #include <linux/sockios.h>
+#include <sys/un.h>
 #include <xdp/xsk.h>
 
 #include "../mt_flow.h"
@@ -339,6 +340,76 @@ static int xdp_rx_prod_init(struct mt_xdp_queue* xq) {
   return 0;
 }
 
+static int xdp_socket_update_xskmap(struct mt_xdp_queue* xq, const char* ifname) {
+  enum mtl_port port = xq->port;
+  uint16_t q = xq->q;
+  struct sockaddr_un server;
+  int ret;
+  int xsks_map_fd = -1;
+
+  int sock = socket(AF_UNIX, SOCK_STREAM, 0);
+  if (sock < 0) {
+    err("%s(%d,%u), unix socket create fail, %s\n", __func__, port, q, strerror(errno));
+    return errno;
+  }
+
+  server.sun_family = AF_UNIX;
+  snprintf(server.sun_path, sizeof(server.sun_path), "/var/run/et_xdp.sock");
+
+  if (connect(sock, (struct sockaddr*)&server, sizeof(struct sockaddr_un)) < 0) {
+    close(sock);
+    err("%s(%d,%u), connect socket fail, %s\n", __func__, port, q, strerror(errno));
+    return errno;
+  }
+
+  send(sock, ifname, IFNAMSIZ, 0);
+
+  char cms[CMSG_SPACE(sizeof(int))];
+  struct cmsghdr* cmsg;
+  struct msghdr msg;
+  struct iovec iov;
+  int value;
+  int len;
+
+  iov.iov_base = &value;
+  iov.iov_len = sizeof(int);
+
+  memset(&msg, 0, sizeof(msg));
+  msg.msg_iov = &iov;
+  msg.msg_iovlen = 1;
+  msg.msg_control = (caddr_t)cms;
+  msg.msg_controllen = sizeof(cms);
+
+  len = recvmsg(sock, &msg, 0);
+
+  close(sock);
+
+  if (len <= 0) {
+    err("%s(%d,%u), recvmsg wrong length %d\n", __func__, port, q, len);
+    return -EINVAL;
+  }
+
+  cmsg = CMSG_FIRSTHDR(&msg);
+  if (cmsg->cmsg_level != SOL_SOCKET || cmsg->cmsg_type != SCM_RIGHTS ||
+      cmsg->cmsg_len != CMSG_LEN(sizeof(int))) {
+    err("%s(%d,%u), invalid cmsg for map fd\n", __func__, port, q);
+    return -EINVAL;
+  }
+  xsks_map_fd = *(int*)CMSG_DATA(cmsg);
+  if (xsks_map_fd < 0) {
+    err("%s(%d,%u), get xsks_map_fd fail, %s\n", __func__, port, q, strerror(errno));
+    return errno;
+  }
+
+  ret = xsk_socket__update_xskmap(xq->socket, xsks_map_fd);
+  if (ret) {
+    err("%s(%d,%u), get xsks_map_fd fail, %d\n", __func__, port, q, ret);
+    return ret;
+  }
+
+  return 0;
+}
+
 static int xdp_socket_init(struct mt_xdp_priv* xdp, struct mt_xdp_queue* xq) {
   enum mtl_port port = xq->port;
   uint16_t q = xq->q;
@@ -350,17 +421,24 @@ static int xdp_socket_init(struct mt_xdp_priv* xdp, struct mt_xdp_queue* xq) {
   cfg.rx_size = mt_if_nb_rx_desc(impl, port);
   cfg.tx_size = mt_if_nb_tx_desc(impl, port);
   cfg.xdp_flags = XDP_FLAGS_UPDATE_IF_NOEXIST;
+  if (!mt_is_privileged(impl)) /* this will skip load xdp prog */
+    cfg.libxdp_flags = XSK_LIBXDP_FLAGS__INHIBIT_PROG_LOAD;
   // cfg.bind_flags = XDP_USE_NEED_WAKEUP;
 
   const char* if_name = mt_kernel_if_name(impl, port);
   ret = xsk_socket__create(&xq->socket, if_name, q, xq->umem, &xq->rx_cons, &xq->tx_prod,
                            &cfg);
   if (ret < 0) {
+    if (ret == -EPERM) {
+      err("%s(%d,%u), please run as inhibit mode or root user\n", __func__, port, q);
+    }
     err("%s(%d,%u), xsk create fail %d\n", __func__, port, q, ret);
     return ret;
   }
-
   xq->socket_fd = xsk_socket__fd(xq->socket);
+
+  if (!mt_is_privileged(impl)) return xdp_socket_update_xskmap(xq, if_name);
+
   return 0;
 }
 
