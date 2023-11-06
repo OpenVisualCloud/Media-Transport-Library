@@ -431,8 +431,9 @@ struct st_rx_video_slot_impl {
   uint8_t* frame_bitmap;
   size_t frame_recv_size;           /* for frame type */
   size_t pkt_lcore_frame_recv_size; /* frame_recv_size for pkt lcore */
+  /* the total packets received, not include the redundant packets */
   uint32_t pkts_received;
-  uint32_t pkts_redundant_received;
+  uint32_t pkts_recv_per_port[MTL_SESSION_PORT_MAX];
   struct st20_rx_frame_meta meta;      /* only for frame type */
   struct st22_rx_frame_meta st22_meta; /* only for st22 frame type */
   /* Second field type indicate */

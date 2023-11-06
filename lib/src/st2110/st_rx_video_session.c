@@ -1046,7 +1046,6 @@ static int rv_init_slot(struct mtl_main_impl* impl, struct st_rx_video_session_i
     slot->frame = NULL;
     rv_slot_init_frame_size(slot);
     slot->pkts_received = 0;
-    slot->pkts_redundant_received = 0;
     slot->tmstamp = 0;
     slot->seq_id_got = false;
     frame_bitmap = mt_rte_zmalloc_socket(bitmap_size, soc_id);
@@ -1130,6 +1129,10 @@ static void rv_frame_notify(struct st_rx_video_session_impl* s,
   meta->frame_total_size = s->st20_frame_size;
   meta->uframe_total_size = s->st20_uframe_size;
   meta->frame_recv_size = rv_slot_get_frame_size(slot);
+  meta->pkts_total = slot->pkts_received;
+  meta->pkts_recv[MTL_SESSION_PORT_P] = slot->pkts_recv_per_port[MTL_SESSION_PORT_P];
+  meta->pkts_recv[MTL_SESSION_PORT_R] = slot->pkts_recv_per_port[MTL_SESSION_PORT_R];
+
   if (slot->frame->user_meta_data_size) {
     meta->user_meta_size = slot->frame->user_meta_data_size;
     meta->user_meta = slot->frame->user_meta;
@@ -1140,9 +1143,8 @@ static void rv_frame_notify(struct st_rx_video_session_impl* s,
   if (meta->frame_recv_size >= s->st20_frame_size) {
     meta->status = ST_FRAME_STATUS_COMPLETE;
     if (ops->num_port > 1) {
-      dbg("%s(%d): pks redundant %u received %u\n", __func__, s->idx,
-          slot->pkts_redundant_received, slot->pkts_received);
-      if ((slot->pkts_redundant_received + 16) < slot->pkts_received)
+      if ((slot->pkts_recv_per_port[MTL_SESSION_PORT_P] < slot->pkts_received) &&
+          (slot->pkts_recv_per_port[MTL_SESSION_PORT_R] < slot->pkts_received))
         meta->status = ST_FRAME_STATUS_RECONSTRUCTED;
     }
     rte_atomic32_inc(&s->stat_frames_received);
@@ -1196,6 +1198,9 @@ static void rv_st22_frame_notify(struct st_rx_video_session_impl* s,
   meta->timestamp = slot->tmstamp;
   meta->frame_total_size = rv_slot_get_frame_size(slot);
   meta->status = status;
+  meta->pkts_total = slot->pkts_received;
+  meta->pkts_recv[MTL_SESSION_PORT_P] = slot->pkts_recv_per_port[MTL_SESSION_PORT_P];
+  meta->pkts_recv[MTL_SESSION_PORT_R] = slot->pkts_recv_per_port[MTL_SESSION_PORT_R];
 
   /* notify frame */
   int ret = -EIO;
@@ -1357,7 +1362,8 @@ static struct st_rx_video_slot_impl* rv_slot_by_tmstamp(
   slot->tmstamp = tmstamp;
   slot->seq_id_got = false;
   slot->pkts_received = 0;
-  slot->pkts_redundant_received = 0;
+  slot->pkts_recv_per_port[MTL_SESSION_PORT_P] = 0;
+  slot->pkts_recv_per_port[MTL_SESSION_PORT_R] = 0;
   s->slot_idx = slot_idx;
 
   struct st_frame_trans* frame_info = rv_get_frame(s);
@@ -1444,7 +1450,8 @@ static void rv_slot_full_frame(struct st_rx_video_session_impl* s,
   rv_frame_notify(s, slot);
   rv_slot_init_frame_size(slot);
   slot->pkts_received = 0;
-  slot->pkts_redundant_received = 0;
+  slot->pkts_recv_per_port[MTL_SESSION_PORT_P] = 0;
+  slot->pkts_recv_per_port[MTL_SESSION_PORT_R] = 0;
   slot->frame = NULL; /* frame pass to app */
 }
 
@@ -1454,7 +1461,8 @@ static void rv_st22_slot_full_frame(struct st_rx_video_session_impl* s,
   rv_st22_frame_notify(s, slot, ST_FRAME_STATUS_COMPLETE);
   rv_slot_init_frame_size(slot);
   slot->pkts_received = 0;
-  slot->pkts_redundant_received = 0;
+  slot->pkts_recv_per_port[MTL_SESSION_PORT_P] = 0;
+  slot->pkts_recv_per_port[MTL_SESSION_PORT_R] = 0;
   slot->frame = NULL; /* frame pass to app */
 }
 
@@ -1765,7 +1773,7 @@ static int rv_handle_frame_pkt(struct st_rx_video_session_impl* s, struct rte_mb
   if (!slot || !slot->frame) {
     if (exist_ts) {
       s->stat_pkts_redundant_dropped++;
-      slot->pkts_redundant_received++;
+      slot->pkts_recv_per_port[s_port]++;
     } else {
       s->stat_pkts_no_slot++;
     }
@@ -1838,7 +1846,7 @@ static int rv_handle_frame_pkt(struct st_rx_video_session_impl* s, struct rte_mb
       dbg("%s(%d,%d), drop as pkt %d already received\n", __func__, s->idx, s_port,
           pkt_idx);
       s->stat_pkts_redundant_dropped++;
-      slot->pkts_redundant_received++;
+      slot->pkts_recv_per_port[s_port]++;
       return 0;
     }
     if (pkt_idx != (slot->last_pkt_idx + 1)) {
@@ -1944,6 +1952,7 @@ static int rv_handle_frame_pkt(struct st_rx_video_session_impl* s, struct rte_mb
   }
   s->stat_pkts_received++;
   slot->pkts_received++;
+  slot->pkts_recv_per_port[s_port]++;
 
   /* slice */
   if (slot->slice_info && !dma_copy) { /* ST20_TYPE_SLICE_LEVEL */
@@ -2145,7 +2154,7 @@ static int rv_handle_st22_pkt(struct st_rx_video_session_impl* s, struct rte_mbu
   if (!slot || !slot->frame) {
     if (exist_ts) {
       s->stat_pkts_redundant_dropped++;
-      slot->pkts_redundant_received++;
+      slot->pkts_recv_per_port[s_port]++;
     } else {
       s->stat_pkts_no_slot++;
     }
@@ -2180,7 +2189,7 @@ static int rv_handle_st22_pkt(struct st_rx_video_session_impl* s, struct rte_mbu
       dbg("%s(%d,%d), drop as pkt %d already received\n", __func__, s->idx, s_port,
           pkt_idx);
       s->stat_pkts_redundant_dropped++;
-      slot->pkts_redundant_received++;
+      slot->pkts_recv_per_port[s_port]++;
       return 0;
     }
     if (pkt_idx != (slot->last_pkt_idx + 1)) {
@@ -2230,6 +2239,7 @@ static int rv_handle_st22_pkt(struct st_rx_video_session_impl* s, struct rte_mbu
   rv_slot_add_frame_size(slot, payload_length);
   s->stat_pkts_received++;
   slot->pkts_received++;
+  slot->pkts_recv_per_port[s_port]++;
 
   /* update the expect frame size */
   if (rtp->base.marker) {
@@ -2301,7 +2311,7 @@ static int rv_handle_hdr_split_pkt(struct st_rx_video_session_impl* s,
   if (!slot || !slot->frame) {
     if (exist_ts) {
       s->stat_pkts_redundant_dropped++;
-      slot->pkts_redundant_received++;
+      slot->pkts_recv_per_port[s_port]++;
     } else {
       s->stat_pkts_no_slot++;
     }
@@ -2328,7 +2338,7 @@ static int rv_handle_hdr_split_pkt(struct st_rx_video_session_impl* s,
       dbg("%s(%d,%d), drop as pkt %d already received\n", __func__, s->idx, s_port,
           pkt_idx);
       s->stat_pkts_redundant_dropped++;
-      slot->pkts_redundant_received++;
+      slot->pkts_recv_per_port[s_port]++;
       return 0;
     }
     if (pkt_idx != (slot->last_pkt_idx + 1)) {
@@ -2409,6 +2419,7 @@ static int rv_handle_hdr_split_pkt(struct st_rx_video_session_impl* s,
   rv_slot_add_frame_size(slot, payload_length);
   s->stat_pkts_received++;
   slot->pkts_received++;
+  slot->pkts_recv_per_port[s_port]++;
 
   /* slice */
   if (slot->slice_info) {

@@ -315,9 +315,21 @@ static int app_rx_video_init_rtp_thread(struct st_app_rx_video_session* s) {
 static int app_rx_video_frame_ready(void* priv, void* frame,
                                     struct st20_rx_frame_meta* meta) {
   struct st_app_rx_video_session* s = priv;
-  int ret;
+  int ret, idx = s->idx;
 
   if (!s->handle) return -EIO;
+
+  if (s->num_port > 1) {
+    dbg("%s(%d): pkts_total %u, pkts per port P %u R %u\n", __func__, idx,
+        meta->pkts_total, meta->pkts_recv[MTL_SESSION_PORT_P],
+        meta->pkts_recv[MTL_SESSION_PORT_R]);
+    if (meta->pkts_recv[MTL_SESSION_PORT_P] < (meta->pkts_total / 2))
+      warn("%s(%d): P port only receive %u pkts while total pkts is %u\n", __func__, idx,
+           meta->pkts_recv[MTL_SESSION_PORT_P], meta->pkts_total);
+    if (meta->pkts_recv[MTL_SESSION_PORT_R] < (meta->pkts_total / 2))
+      warn("%s(%d): R port only receive %u pkts while total pkts is %u\n", __func__, idx,
+           meta->pkts_recv[MTL_SESSION_PORT_R], meta->pkts_total);
+  }
 
   /* incomplete frame */
   if (!st_is_frame_complete(meta->status)) {
