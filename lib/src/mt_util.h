@@ -15,7 +15,7 @@ static inline bool mt_rtp_len_valid(uint16_t len) {
 }
 
 /* ip from 224.x.x.x to 239.x.x.x */
-static inline bool mt_is_multicast_ip(uint8_t ip[MTL_IP_ADDR_LEN]) {
+static inline bool mt_is_multicast_ip(const uint8_t ip[MTL_IP_ADDR_LEN]) {
   if (ip[0] >= 224 && ip[0] <= 239)
     return true;
   else
@@ -206,6 +206,31 @@ static inline void mt_mbuf_refcnt_inc_bulk(struct rte_mbuf** mbufs, uint16_t nb)
       m = m->next;
     }
   }
+}
+
+static inline bool mt_udp_matched(const struct mt_rxq_flow* flow,
+                                  const struct mt_udp_hdr* hdr) {
+  const struct rte_ipv4_hdr* ipv4 = &hdr->ipv4;
+  const struct rte_udp_hdr* udp = &hdr->udp;
+  bool ip_matched, port_matched;
+
+  if (flow->flags & MT_RXQ_FLOW_F_NO_IP) {
+    ip_matched = true;
+  } else {
+    ip_matched = mt_is_multicast_ip(flow->dip_addr)
+                     ? (ipv4->dst_addr == *(uint32_t*)flow->dip_addr)
+                     : (ipv4->src_addr == *(uint32_t*)flow->dip_addr);
+  }
+  if (flow->flags & MT_RXQ_FLOW_F_NO_PORT) {
+    port_matched = true;
+  } else {
+    port_matched = ntohs(udp->dst_port) == flow->dst_port;
+  }
+
+  if (ip_matched && port_matched)
+    return true;
+  else
+    return false;
 }
 
 #ifdef WINDOWSENV
