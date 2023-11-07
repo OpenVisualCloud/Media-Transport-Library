@@ -75,7 +75,24 @@ struct mt_xdp_priv {
 
   struct mt_xdp_queue* queues_info;
   pthread_mutex_t queues_lock;
+
+  bool has_ctrl;
 };
+
+static int xdp_connect_control_sock() {
+  int sock = socket(AF_UNIX, SOCK_STREAM, 0);
+  if (sock <= 0) return -1;
+  struct sockaddr_un server;
+  server.sun_family = AF_UNIX;
+  snprintf(server.sun_path, sizeof(server.sun_path), MTL_XDP_CTRL_SOCK_PATH);
+
+  if (connect(sock, (struct sockaddr*)&server, sizeof(struct sockaddr_un)) < 0) {
+    close(sock);
+    return -1;
+  }
+
+  return sock;
+}
 
 static int xdp_queue_tx_stat(struct mt_xdp_queue* xq) {
   enum mtl_port port = xq->port;
@@ -343,22 +360,12 @@ static int xdp_rx_prod_init(struct mt_xdp_queue* xq) {
 static int xdp_socket_update_xskmap(struct mt_xdp_queue* xq, const char* ifname) {
   enum mtl_port port = xq->port;
   uint16_t q = xq->q;
-  struct sockaddr_un server;
   int ret;
   int xsks_map_fd = -1;
 
-  int sock = socket(AF_UNIX, SOCK_STREAM, 0);
+  int sock = xdp_connect_control_sock();
   if (sock < 0) {
     err("%s(%d,%u), unix socket create fail, %s\n", __func__, port, q, strerror(errno));
-    return errno;
-  }
-
-  server.sun_family = AF_UNIX;
-  snprintf(server.sun_path, sizeof(server.sun_path), "/var/run/et_xdp.sock");
-
-  if (connect(sock, (struct sockaddr*)&server, sizeof(struct sockaddr_un)) < 0) {
-    close(sock);
-    err("%s(%d,%u), connect socket fail, %s\n", __func__, port, q, strerror(errno));
     return errno;
   }
 
@@ -424,7 +431,7 @@ static int xdp_socket_init(struct mt_xdp_priv* xdp, struct mt_xdp_queue* xq) {
   cfg.rx_size = mt_if_nb_rx_desc(impl, port);
   cfg.tx_size = mt_if_nb_tx_desc(impl, port);
   cfg.xdp_flags = XDP_FLAGS_UPDATE_IF_NOEXIST;
-  if (!mt_is_privileged(impl)) /* this will skip load xdp prog */
+  if (!mt_is_privileged(impl) && xdp->has_ctrl) /* this will skip load xdp prog */
     cfg.libxdp_flags = XSK_LIBXDP_FLAGS__INHIBIT_PROG_LOAD;
   // cfg.bind_flags = XDP_USE_NEED_WAKEUP;
 
@@ -433,14 +440,15 @@ static int xdp_socket_init(struct mt_xdp_priv* xdp, struct mt_xdp_queue* xq) {
                            &cfg);
   if (ret < 0) {
     if (ret == -EPERM) {
-      err("%s(%d,%u), please run as inhibit mode or root user\n", __func__, port, q);
+      err("%s(%d,%u), please run with control server or root user\n", __func__, port, q);
     }
     err("%s(%d,%u), xsk create fail %d\n", __func__, port, q, ret);
     return ret;
   }
   xq->socket_fd = xsk_socket__fd(xq->socket);
 
-  if (!mt_is_privileged(impl)) return xdp_socket_update_xskmap(xq, if_name);
+  if (!mt_is_privileged(impl) && xdp->has_ctrl)
+    return xdp_socket_update_xskmap(xq, if_name);
 
   return 0;
 }
@@ -740,6 +748,16 @@ int mt_dev_xdp_init(struct mt_interface* inf) {
   xdp->queues_cnt = RTE_MAX(inf->nb_tx_q, inf->nb_rx_q);
   mt_pthread_mutex_init(&xdp->queues_lock, NULL);
 
+  int ctrl_sock = xdp_connect_control_sock();
+  if (ctrl_sock > 0) {
+    char buf[10];
+    snprintf(buf, sizeof(buf), "imtl:ping");
+    send(ctrl_sock, buf, sizeof(buf), 0);
+    recv(ctrl_sock, buf, sizeof(buf), 0);
+    if (strncmp(buf, "pong", 4) == 0) xdp->has_ctrl = true;
+    close(ctrl_sock);
+  }
+
   xdp_parse_combined_info(xdp);
   if ((xdp->start_queue + xdp->queues_cnt) > xdp->combined_count) {
     err("%s(%d), too many queues requested, start_queue %u queues_cnt %u combined_count "
@@ -892,20 +910,9 @@ uint16_t mt_tx_xdp_burst(struct mt_tx_xdp_entry* entry, struct rte_mbuf** tx_pkt
 }
 
 static int xdp_socket_update_dp(const char* if_name, int dp, bool add) {
-  struct sockaddr_un server;
-
-  int sock = socket(AF_UNIX, SOCK_STREAM, 0);
+  int sock = xdp_connect_control_sock();
   if (sock < 0) {
     err("%s, unix socket create fail, %s\n", __func__, strerror(errno));
-    return errno;
-  }
-
-  server.sun_family = AF_UNIX;
-  snprintf(server.sun_path, sizeof(server.sun_path), "/var/run/et_xdp.sock");
-
-  if (connect(sock, (struct sockaddr*)&server, sizeof(struct sockaddr_un)) < 0) {
-    close(sock);
-    err("%s, connect socket fail, %s\n", __func__, strerror(errno));
     return errno;
   }
 
@@ -987,7 +994,7 @@ struct mt_rx_xdp_entry* mt_rx_xdp_get(struct mtl_main_impl* impl, enum mtl_port 
       mt_rx_xdp_put(entry);
       return NULL;
     }
-    if (!mt_is_privileged(impl))
+    if (xdp->has_ctrl)
       xdp_socket_update_dp(mt_kernel_if_name(impl, port), flow->dst_port, true);
   }
 
@@ -1003,11 +1010,12 @@ int mt_rx_xdp_put(struct mt_rx_xdp_entry* entry) {
   struct mt_rxq_flow* flow = &entry->flow;
   uint8_t* ip = flow->dip_addr;
   struct mt_xdp_queue* xq = entry->xq;
+  struct mt_xdp_priv* xdp = mt_if(impl, port)->xdp;
 
   if (entry->flow_rsp) {
     mt_rx_flow_free(impl, port, entry->flow_rsp);
     entry->flow_rsp = NULL;
-    if (!mt_is_privileged(impl))
+    if (xdp->has_ctrl)
       xdp_socket_update_dp(mt_kernel_if_name(impl, port), flow->dst_port, false);
   }
   if (xq) {

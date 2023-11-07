@@ -7,6 +7,8 @@
 
 #include "../mt_main.h"
 
+#define MTL_XDP_CTRL_SOCK_PATH "/var/run/et_xdp.sock"
+
 struct mt_tx_xdp_get_args {
   bool queue_match;
   uint16_t queue_id;
