@@ -952,20 +952,36 @@ struct mt_srss_list {
   int idx;
 };
 
+struct mt_srss_sch {
+  struct mt_srss_impl* parent;
+  int idx;
+  uint16_t q_start;
+  uint16_t q_end;
+  struct mt_sch_impl* sch;
+  struct mt_sch_tasklet_impl* tasklet;
+  int quota_mps;
+
+  uint32_t stat_pkts_rx;
+};
+
 struct mt_srss_impl {
   struct mtl_main_impl* parent;
 
   enum mtl_port port;
   enum mt_queue_mode queue_mode;
+  uint16_t nb_rx_q;
 
   /* map entry to different heads as the UDP port number */
   struct mt_srss_list* lists;
   int lists_sz;
 
+  /* sch threads */
+  struct mt_srss_sch* schs;
+  int schs_cnt;
+
   pthread_t tid;
   rte_atomic32_t stop_thread;
-  struct mt_sch_tasklet_impl* tasklet;
-  struct mt_sch_impl* sch;
+
   struct mt_srss_entry* cni_entry;
   int entry_idx;
 

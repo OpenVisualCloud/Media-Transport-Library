@@ -37,7 +37,7 @@ static inline void srss_entry_pkts_enqueue(struct mt_srss_entry* entry,
                                            struct rte_mbuf** pkts,
                                            const uint16_t nb_pkts) {
   /* use bulk version */
-  unsigned int n = rte_ring_sp_enqueue_bulk(entry->ring, (void**)pkts, nb_pkts, NULL);
+  unsigned int n = rte_ring_mp_enqueue_bulk(entry->ring, (void**)pkts, nb_pkts, NULL);
   entry->stat_enqueue_cnt += n;
   if (n == 0) {
     rte_pktmbuf_free_bulk(pkts, nb_pkts);
@@ -68,17 +68,17 @@ static inline void srss_entry_pkts_enqueue(struct mt_srss_entry* entry,
     last_list = list;                           \
   } while (0)
 
-static int srss_tasklet_handler(void* priv) {
-  struct mt_srss_impl* srss = priv;
+static int srss_sch_tasklet_handler(void* priv) {
+  struct mt_srss_sch* srss_sch = priv;
+  struct mt_srss_impl* srss = srss_sch->parent;
   struct mtl_main_impl* impl = srss->parent;
-  struct mt_interface* inf = mt_if(impl, srss->port);
   struct rte_mbuf *pkts[MT_SRSS_BURST_SIZE], *matched_pkts[MT_SRSS_BURST_SIZE];
   struct mt_srss_entry *srss_entry, *last_srss_entry;
   struct mt_srss_list *list = NULL, *last_list = NULL;
   struct mt_udp_hdr* hdr;
   struct rte_ipv4_hdr* ipv4;
 
-  for (uint16_t queue = 0; queue < inf->nb_rx_q; queue++) {
+  for (uint16_t queue = srss_sch->q_start; queue < srss_sch->q_end; queue++) {
     uint16_t matched_pkts_nb = 0;
 
     uint16_t rx;
@@ -89,6 +89,7 @@ static int srss_tasklet_handler(void* priv) {
           rte_eth_rx_burst(mt_port_id(impl, srss->port), queue, pkts, MT_SRSS_BURST_SIZE);
     }
     if (!rx) continue;
+    srss_sch->stat_pkts_rx += rx;
 
     last_srss_entry = NULL;
     for (uint16_t i = 0; i < rx; i++) {
@@ -142,7 +143,11 @@ static void* srss_traffic_thread(void* arg) {
 
   info("%s, start\n", __func__);
   while (rte_atomic32_read(&srss->stop_thread) == 0) {
-    srss_tasklet_handler(srss);
+    for (int s_idx = 0; s_idx < srss->schs_cnt; s_idx++) {
+      struct mt_srss_sch* srss_sch = &srss->schs[s_idx];
+
+      srss_sch_tasklet_handler(srss_sch);
+    }
     mt_sleep_ms(1);
   }
   info("%s, stop\n", __func__);
@@ -178,19 +183,23 @@ static int srss_traffic_thread_stop(struct mt_srss_impl* srss) {
   return 0;
 }
 
-static int srss_tasklet_start(void* priv) {
-  struct mt_srss_impl* srss = priv;
+static int srss_sch_tasklet_start(void* priv) {
+  struct mt_srss_sch* srss_sch = priv;
 
-  /* tasklet will take over the srss thread */
-  srss_traffic_thread_stop(srss);
+  if (srss_sch->idx == 0) {
+    /* tasklet will take over the srss thread */
+    srss_traffic_thread_stop(srss_sch->parent);
+  }
 
   return 0;
 }
 
-static int srss_tasklet_stop(void* priv) {
-  struct mt_srss_impl* srss = priv;
+static int srss_sch_tasklet_stop(void* priv) {
+  struct mt_srss_sch* srss_sch = priv;
 
-  srss_traffic_thread_start(srss);
+  if (srss_sch->idx == 0) {
+    srss_traffic_thread_start(srss_sch->parent);
+  }
 
   return 0;
 }
@@ -223,18 +232,21 @@ static int srss_stat(void* priv) {
     srss_list_unlock(list);
   }
 
+  for (int s_idx = 0; s_idx < srss->schs_cnt; s_idx++) {
+    struct mt_srss_sch* srss_sch = &srss->schs[s_idx];
+
+    notice("%s(%d,%d), pkts rx %u\n", __func__, port, s_idx, srss_sch->stat_pkts_rx);
+    srss_sch->stat_pkts_rx = 0;
+  }
+
   return 0;
 }
 
 static int srss_uinit_xdp(struct mt_srss_impl* srss) {
-  struct mtl_main_impl* impl = srss->parent;
-  enum mtl_port port = srss->port;
-  struct mt_interface* inf = mt_if(impl, port);
-
   struct mt_rx_xdp_entry** xdps = srss->xdps;
   if (!xdps) return 0;
 
-  for (uint16_t queue = 0; queue < inf->nb_rx_q; queue++) {
+  for (uint16_t queue = 0; queue < srss->nb_rx_q; queue++) {
     if (xdps[queue]) {
       mt_rx_xdp_put(xdps[queue]);
       xdps[queue] = NULL;
@@ -249,10 +261,9 @@ static int srss_uinit_xdp(struct mt_srss_impl* srss) {
 static int srss_init_xdp(struct mt_srss_impl* srss) {
   struct mtl_main_impl* impl = srss->parent;
   enum mtl_port port = srss->port;
-  struct mt_interface* inf = mt_if(impl, port);
 
-  srss->xdps =
-      mt_rte_zmalloc_socket(sizeof(*srss->xdps) * inf->nb_rx_q, mt_socket_id(impl, port));
+  srss->xdps = mt_rte_zmalloc_socket(sizeof(*srss->xdps) * srss->nb_rx_q,
+                                     mt_socket_id(impl, port));
   if (!srss->xdps) {
     err("%s(%d), xdps malloc fail\n", __func__, port);
     return -ENOMEM;
@@ -266,7 +277,7 @@ static int srss_init_xdp(struct mt_srss_impl* srss) {
   args.skip_flow = true;
   args.skip_udp_port_check = true;
 
-  for (uint16_t queue = 0; queue < inf->nb_rx_q; queue++) {
+  for (uint16_t queue = 0; queue < srss->nb_rx_q; queue++) {
     /* get a 1:1 mapped queue */
     args.queue_id = queue;
     srss->xdps[queue] = mt_rx_xdp_get(impl, port, &flow, &args);
@@ -319,8 +330,8 @@ struct mt_srss_entry* mt_srss_get(struct mtl_main_impl* impl, enum mtl_port port
   /* ring create */
   char ring_name[32];
   snprintf(ring_name, 32, "%sP%d_%d", MT_SRSS_RING_PREFIX, port, idx);
-  entry->ring = rte_ring_create(ring_name, 512, mt_socket_id(impl, MTL_PORT_P),
-                                RING_F_SP_ENQ | RING_F_SC_DEQ);
+  entry->ring =
+      rte_ring_create(ring_name, 512, mt_socket_id(impl, MTL_PORT_P), RING_F_SC_DEQ);
   if (!entry->ring) {
     err("%s(%d,%d), ring create fail\n", __func__, port, idx);
     mt_rte_free(entry);
@@ -382,36 +393,32 @@ int mt_srss_put(struct mt_srss_entry* entry) {
 
 int mt_srss_init(struct mtl_main_impl* impl) {
   int num_ports = mt_num_ports(impl);
+  struct mtl_init_params* p = mt_get_user_params(impl);
   int ret;
 
-  for (int i = 0; i < num_ports; i++) {
-    if (!mt_has_srss(impl, i)) continue;
+  for (int port = 0; port < num_ports; port++) {
+    if (!mt_has_srss(impl, port)) continue;
 
-    impl->srss[i] = mt_rte_zmalloc_socket(sizeof(*impl->srss[i]), mt_socket_id(impl, i));
-    if (!impl->srss[i]) {
-      err("%s(%d), srss malloc fail\n", __func__, i);
+    impl->srss[port] =
+        mt_rte_zmalloc_socket(sizeof(*impl->srss[port]), mt_socket_id(impl, port));
+    if (!impl->srss[port]) {
+      err("%s(%d), srss malloc fail\n", __func__, port);
       mt_srss_uinit(impl);
       return -ENOMEM;
     }
-    struct mt_srss_impl* srss = impl->srss[i];
+    struct mt_srss_impl* srss = impl->srss[port];
 
-    struct mt_sch_impl* sch = mt_sch_get(impl, 0, MT_SCH_TYPE_DEFAULT, MT_SCH_MASK_ALL);
-    if (!sch) {
-      err("%s(%d), get sch fail\n", __func__, i);
-      mt_srss_uinit(impl);
-      return -EIO;
-    }
-
-    srss->sch = sch;
-    srss->port = i;
+    srss->port = port;
     srss->parent = impl;
     srss->queue_mode =
-        mt_pmd_is_native_af_xdp(impl, i) ? MT_QUEUE_MODE_XDP : MT_QUEUE_MODE_DPDK;
+        mt_pmd_is_native_af_xdp(impl, port) ? MT_QUEUE_MODE_XDP : MT_QUEUE_MODE_DPDK;
+    srss->nb_rx_q = mt_if(impl, port)->nb_rx_q;
+
     srss->lists_sz = 64 - 1; /* use odd count for better distribution */
     srss->lists = mt_rte_zmalloc_socket(sizeof(*srss->lists) * srss->lists_sz,
-                                        mt_socket_id(impl, i));
+                                        mt_socket_id(impl, port));
     if (!srss->lists) {
-      err("%s(%d), lists malloc fail\n", __func__, i);
+      err("%s(%d), lists malloc fail\n", __func__, port);
       mt_srss_uinit(impl);
       return -ENOMEM;
     }
@@ -426,37 +433,76 @@ int mt_srss_init(struct mtl_main_impl* impl) {
     if (srss->queue_mode == MT_QUEUE_MODE_XDP) {
       ret = srss_init_xdp(srss);
       if (ret < 0) {
-        err("%s(%d), init xdp fail\n", __func__, i);
+        err("%s(%d), init xdp fail\n", __func__, port);
         mt_srss_uinit(impl);
         return ret;
       }
     }
 
-    struct mt_sch_tasklet_ops ops;
-    memset(&ops, 0x0, sizeof(ops));
-    ops.priv = srss;
-    ops.name = "shared_rss";
-    ops.start = srss_tasklet_start;
-    ops.stop = srss_tasklet_stop;
-    ops.handler = srss_tasklet_handler;
-    srss->tasklet = mt_sch_register_tasklet(sch, &ops);
-    if (!srss->tasklet) {
-      err("%s, mt_sch_register_tasklet fail\n", __func__);
+    srss->schs_cnt = p->rss_sch_nb[port];
+    if (!srss->schs_cnt) srss->schs_cnt = 1;
+    if (srss->schs_cnt > srss->nb_rx_q) srss->schs_cnt = srss->nb_rx_q;
+    srss->schs = mt_rte_zmalloc_socket(sizeof(*srss->schs) * srss->schs_cnt,
+                                       mt_socket_id(impl, port));
+    if (!srss->schs) {
+      err("%s(%d), schs malloc fail\n", __func__, port);
       mt_srss_uinit(impl);
-      return -EIO;
+      return -ENOMEM;
+    }
+    mt_sch_mask_t sch_mask = MT_SCH_MASK_ALL;
+    uint16_t q_idx = 0;
+    uint16_t q_per_sch = srss->nb_rx_q / srss->schs_cnt;
+    uint16_t q_remaining = srss->nb_rx_q % srss->schs_cnt;
+    for (int s_idx = 0; s_idx < srss->schs_cnt; s_idx++) {
+      struct mt_srss_sch* srss_sch = &srss->schs[s_idx];
+      srss_sch->parent = srss;
+      srss_sch->idx = s_idx;
+      srss_sch->quota_mps = 0;
+      srss_sch->q_start = q_idx;
+      uint16_t q_end = srss_sch->q_start + q_per_sch;
+      if (s_idx < q_remaining) q_end++;
+      srss_sch->q_end = q_end;
+      q_idx = q_end;
+
+      struct mt_sch_impl* sch =
+          mt_sch_get(impl, srss_sch->quota_mps, MT_SCH_TYPE_DEFAULT, sch_mask);
+      if (!sch) {
+        err("%s(%d), get sch fail on %d\n", __func__, port, s_idx);
+        mt_srss_uinit(impl);
+        return -EIO;
+      }
+      srss_sch->sch = sch;
+
+      struct mt_sch_tasklet_ops ops;
+      memset(&ops, 0x0, sizeof(ops));
+      ops.priv = srss_sch;
+      ops.name = "shared_rss";
+      ops.start = srss_sch_tasklet_start;
+      ops.stop = srss_sch_tasklet_stop;
+      ops.handler = srss_sch_tasklet_handler;
+      srss_sch->tasklet = mt_sch_register_tasklet(sch, &ops);
+      if (!srss_sch->tasklet) {
+        err("%s(%d), register tasklet fail on %d\n", __func__, port, s_idx);
+        mt_srss_uinit(impl);
+        return -EIO;
+      }
+
+      sch_mask &= ~(MTL_BIT64(sch->idx));
+      info("%s(%d), sch %d with queues start %u end %u\n", __func__, port, s_idx,
+           srss_sch->q_start, srss_sch->q_end);
     }
 
     rte_atomic32_set(&srss->stop_thread, 0);
     ret = srss_traffic_thread_start(srss);
     if (ret < 0) {
-      err("%s(%d), srss_traffic_thread_start fail\n", __func__, i);
+      err("%s(%d), traffic thread start fail\n", __func__, port);
       mt_srss_uinit(impl);
       return ret;
     }
 
     mt_stat_register(impl, srss_stat, srss, "srss");
 
-    info("%s(%d), succ with shared rss mode\n", __func__, i);
+    info("%s(%d), succ with shared rss mode\n", __func__, port);
   }
 
   return 0;
@@ -471,14 +517,24 @@ int mt_srss_uinit(struct mtl_main_impl* impl) {
 
     mt_stat_unregister(impl, srss_stat, srss);
     srss_traffic_thread_stop(srss);
-    if (srss->tasklet) {
-      mt_sch_unregister_tasklet(srss->tasklet);
-      srss->tasklet = NULL;
+
+    if (srss->schs) {
+      for (int s_idx = 0; s_idx < srss->schs_cnt; s_idx++) {
+        struct mt_srss_sch* srss_sch = &srss->schs[s_idx];
+        if (srss_sch->tasklet) {
+          mt_sch_unregister_tasklet(srss_sch->tasklet);
+          srss_sch->tasklet = NULL;
+        }
+        if (srss_sch->sch) {
+          mt_sch_put(srss_sch->sch, srss_sch->quota_mps);
+          srss_sch->sch = NULL;
+        }
+      }
+
+      mt_rte_free(srss->schs);
+      srss->schs = NULL;
     }
-    if (srss->sch) {
-      mt_sch_put(srss->sch, 0);
-      srss->sch = NULL;
-    }
+
     if (srss->lists) {
       for (int l_idx = 0; l_idx < srss->lists_sz; l_idx++) {
         struct mt_srss_list* list = &srss->lists[l_idx];
