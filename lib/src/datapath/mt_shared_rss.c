@@ -61,12 +61,20 @@ static inline void srss_entry_pkts_enqueue(struct mt_srss_entry* entry,
       rte_pktmbuf_free(pkts[i]);                             \
   } while (0)
 
+#define UPDATE_LIST()                           \
+  do {                                          \
+    if (last_list) srss_list_unlock(last_list); \
+    srss_list_lock(list);                       \
+    last_list = list;                           \
+  } while (0)
+
 static int srss_tasklet_handler(void* priv) {
   struct mt_srss_impl* srss = priv;
   struct mtl_main_impl* impl = srss->parent;
   struct mt_interface* inf = mt_if(impl, srss->port);
   struct rte_mbuf *pkts[MT_SRSS_BURST_SIZE], *matched_pkts[MT_SRSS_BURST_SIZE];
   struct mt_srss_entry *srss_entry, *last_srss_entry;
+  struct mt_srss_list *list = NULL, *last_list = NULL;
   struct mt_udp_hdr* hdr;
   struct rte_ipv4_hdr* ipv4;
 
@@ -98,9 +106,13 @@ static int srss_tasklet_handler(void* priv) {
         CNI_ENQUEUE();
         continue;
       }
-      /* check if match any entry */
-      struct mt_srss_list* list = srss_list_by_udp_port(srss, ntohs(hdr->udp.dst_port));
-      srss_list_lock(list);
+
+      /* get the list, lock if it's a list */
+      list = srss_list_by_udp_port(srss, ntohs(hdr->udp.dst_port));
+      if (list != last_list) {
+        UPDATE_LIST();
+      }
+      /* check if match any entry in current list */
       struct mt_srss_entrys_list* head = &list->entrys_list;
       MT_TAILQ_FOREACH(srss_entry, head, next) {
         bool matched = mt_udp_matched(&srss_entry->flow, hdr);
@@ -110,7 +122,6 @@ static int srss_tasklet_handler(void* priv) {
           break;
         }
       }
-      srss_list_unlock(list);
 
       if (!srss_entry) { /* no match, redirect to cni */
         UPDATE_ENTRY();
@@ -120,6 +131,8 @@ static int srss_tasklet_handler(void* priv) {
     if (matched_pkts_nb)
       srss_entry_pkts_enqueue(last_srss_entry, &matched_pkts[0], matched_pkts_nb);
   }
+
+  if (last_list) srss_list_unlock(last_list);
 
   return 0;
 }
