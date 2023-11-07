@@ -1,13 +1,16 @@
 {
     "rss_mode": "l3_l4",
+    "tx_no_chain": "true",
     "interfaces": [
         {
             "name": "0000:af:01.0",
-            "ip": "192.168.17.101"
+            "ip": "192.168.17.101",
+            "rx_queues_cnt": "16",
         },
         {
             "name": "0000:af:01.1",
-            "ip": "192.168.17.102"
+            "ip": "192.168.17.102",
+            "rx_queues_cnt": "16",
         }
     ],
     "tx_sessions": [
@@ -20,7 +23,7 @@
             ],
             "audio": [
                 {
-                    "replicas": 128,
+                    "replicas": 512,
                     "type": "frame",
                     "start_port": 30000,
                     "payload_type": 111,
@@ -43,7 +46,7 @@
             ],
             "audio": [
                 {
-                    "replicas": 128,
+                    "replicas": 512,
                     "type": "frame",
                     "start_port": 30000,
                     "payload_type": 111,

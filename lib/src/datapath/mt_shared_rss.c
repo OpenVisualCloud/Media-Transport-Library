@@ -394,7 +394,7 @@ int mt_srss_init(struct mtl_main_impl* impl) {
     srss->parent = impl;
     srss->queue_mode =
         mt_pmd_is_native_af_xdp(impl, i) ? MT_QUEUE_MODE_XDP : MT_QUEUE_MODE_DPDK;
-    srss->lists_sz = 128;
+    srss->lists_sz = 64 - 1; /* use odd count for better distribution */
     srss->lists = mt_rte_zmalloc_socket(sizeof(*srss->lists) * srss->lists_sz,
                                         mt_socket_id(impl, i));
     if (!srss->lists) {
