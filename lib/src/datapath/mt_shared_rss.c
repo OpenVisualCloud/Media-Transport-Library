@@ -376,6 +376,11 @@ int mt_srss_put(struct mt_srss_entry* entry) {
     return -EIO;
   }
 
+  if (srss->cni_entry == entry) {
+    info("%s(%d), delete cni_entry %d\n", __func__, port, entry->idx);
+    srss->cni_entry = NULL;
+  }
+
   srss_list_lock(list);
   MT_TAILQ_REMOVE(head, entry, next);
   srss_list_unlock(list);
