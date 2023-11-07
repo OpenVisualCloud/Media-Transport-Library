@@ -362,7 +362,10 @@ static int xdp_socket_update_xskmap(struct mt_xdp_queue* xq, const char* ifname)
     return errno;
   }
 
-  send(sock, ifname, IFNAMSIZ, 0);
+  char command[64];
+  snprintf(command, sizeof(command), "imtl:if:%s:get_xsk_map", ifname);
+
+  send(sock, command, sizeof(command), 0);
 
   char cms[CMSG_SPACE(sizeof(int))];
   struct cmsghdr* cmsg;
@@ -888,6 +891,36 @@ uint16_t mt_tx_xdp_burst(struct mt_tx_xdp_entry* entry, struct rte_mbuf** tx_pkt
   return xdp_tx(entry->parent, entry->xq, tx_pkts, nb_pkts);
 }
 
+static int xdp_socket_update_dp(const char* if_name, int dp, bool add) {
+  struct sockaddr_un server;
+
+  int sock = socket(AF_UNIX, SOCK_STREAM, 0);
+  if (sock < 0) {
+    err("%s, unix socket create fail, %s\n", __func__, strerror(errno));
+    return errno;
+  }
+
+  server.sun_family = AF_UNIX;
+  snprintf(server.sun_path, sizeof(server.sun_path), "/var/run/et_xdp.sock");
+
+  if (connect(sock, (struct sockaddr*)&server, sizeof(struct sockaddr_un)) < 0) {
+    close(sock);
+    err("%s, connect socket fail, %s\n", __func__, strerror(errno));
+    return errno;
+  }
+
+  char command[64];
+  if (add)
+    snprintf(command, sizeof(command), "imtl:if:%s:dp_add_filter:%d", if_name, dp);
+  else
+    snprintf(command, sizeof(command), "imtl:if:%s:dp_del_filter:%d", if_name, dp);
+
+  send(sock, command, sizeof(command), 0);
+
+  close(sock);
+  return 0;
+}
+
 struct mt_rx_xdp_entry* mt_rx_xdp_get(struct mtl_main_impl* impl, enum mtl_port port,
                                       struct mt_rxq_flow* flow,
                                       struct mt_rx_xdp_get_args* args) {
@@ -954,6 +987,8 @@ struct mt_rx_xdp_entry* mt_rx_xdp_get(struct mtl_main_impl* impl, enum mtl_port 
       mt_rx_xdp_put(entry);
       return NULL;
     }
+    if (!mt_is_privileged(impl))
+      xdp_socket_update_dp(mt_kernel_if_name(impl, port), flow->dst_port, true);
   }
 
   uint8_t* ip = flow->dip_addr;
@@ -963,14 +998,17 @@ struct mt_rx_xdp_entry* mt_rx_xdp_get(struct mtl_main_impl* impl, enum mtl_port 
 }
 
 int mt_rx_xdp_put(struct mt_rx_xdp_entry* entry) {
+  struct mtl_main_impl* impl = entry->parent;
   enum mtl_port port = entry->port;
   struct mt_rxq_flow* flow = &entry->flow;
   uint8_t* ip = flow->dip_addr;
   struct mt_xdp_queue* xq = entry->xq;
 
   if (entry->flow_rsp) {
-    mt_rx_flow_free(entry->parent, port, entry->flow_rsp);
+    mt_rx_flow_free(impl, port, entry->flow_rsp);
     entry->flow_rsp = NULL;
+    if (!mt_is_privileged(impl))
+      xdp_socket_update_dp(mt_kernel_if_name(impl, port), flow->dst_port, false);
   }
   if (xq) {
     xdp_queue_rx_stat(xq);
