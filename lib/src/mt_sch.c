@@ -528,8 +528,8 @@ static int sch_init_lcores(struct mt_sch_mgr* mgr) {
     memset(lcore_shm, 0, sizeof(*lcore_shm));
 
   mgr->lcore_shm = lcore_shm;
-  info("%s, shared memory attached at %p nattch %d\n", __func__, mgr->lcore_shm,
-       (int)stat.shm_nattch);
+  info("%s, shared memory attached at %p nattch %d shm_id %d key 0x%x\n", __func__,
+       mgr->lcore_shm, (int)stat.shm_nattch, shm_id, key);
   ret = sch_filelock_unlock(mgr);
   if (ret < 0) {
     err("%s, sch_filelock_unlock fail\n", __func__);

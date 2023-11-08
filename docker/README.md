@@ -14,19 +14,40 @@ Refer to below build command if you are in a proxy env.
 docker build -t mtl:latest -f ubuntu.dockerfile --build-arg HTTP_PROXY=http://proxy.xxx.com:xxx --build-arg HTTPS_PROXY=https://proxy.xxx.com:xxx ./
 ```
 
-## 2. DPDK NIC PMD and env setup
+## 2. DPDK NIC PMD and env setup on host
 
-Please refer to [run guide](../doc/run.md)
+Follow [run guide](../doc/run.md) to setup the hugepages, driver of NIC PF, vfio driver mode for VFs.
 
-## 3. Run the docker image
+## 3. Run and login into the docker container with root user
+
+The sample usage provided below is enabled with specific privileged settings such as VFIO access, a shared IPC namespace and root user inside the docker.
+
+### 3.1 Run the docker container
+
+The argument `/dev/vfio/` enables the Docker instance to access the VFIO device.
+
+The arguments `/dev/null, /tmp/kahawai_lcore.lock, and --ipc=host` and touch `/tmp/kahawai_lcore.lock` command are used for managing shared memory within IMTL, primarily for lcore management across multiple IMTL docker containers.
 
 ```bash
-docker run --privileged -it -v /dev/vfio/vfio:/dev/vfio/vfio mtl:latest
+touch /tmp/kahawai_lcore.lock
+docker run --privileged -it -v /dev/vfio/:/dev/vfio/ -v /dev/null:/dev/null -v /tmp/kahawai_lcore.lock:/tmp/kahawai_lcore.lock --ipc=host mtl:latest
 ```
 
-non-root run need additional permission settings for the vfio and hugepage.
+If you confirm that all IMTL processes will run within a single Docker container, you can disregard the settings related to shared memory. Simply execute the following command:
 
-## 3. Run RxTXApp inside docker
+```bash
+docker run --privileged -it -v /dev/vfio/:/dev/vfio/  mtl:latest
+```
+
+### 3.2 Switch to the root user inside a Docker container
+
+On the docker bash shell:
+
+```bash
+sudo -s
+```
+
+## 4. Run RxTXApp
 
 ```bash
 cd Media-Transport-Library/
