@@ -628,6 +628,9 @@ struct mtl_init_params {
    */
   uint16_t arp_timeout_s;
 
+  /** Optional. Number of scheduler(lcore) used for rss dispatch, 0 means only 1 core */
+  uint16_t rss_sch_nb[MTL_PORT_MAX];
+
   /** Optional for MTL_FLAG_PTP_ENABLE. The ptp pi controller proportional gain. */
   double kp;
   /** Optional for MTL_FLAG_PTP_ENABLE. The ptp pi controller integral gain. */
