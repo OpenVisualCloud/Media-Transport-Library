@@ -248,7 +248,7 @@ cleanup:
   if (sock >= 0) close(sock);
   for (int i = 0; i < if_cnt; i++) {
     int ifindex = ctx->xdp_ifindex[i];
-    if (prog[i]) {
+    if (prog[i] && !libxdp_get_error(prog[i])) {
       xdp_program__detach(prog[i], ifindex, XDP_MODE_NATIVE, 0);
       xdp_program__close(prog[i]);
       prog[i] = NULL;
