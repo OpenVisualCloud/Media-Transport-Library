@@ -27,5 +27,5 @@ sudo ./et --prog xdp --ifname ens785f0
 load a custom program for xdp:
 
 ```bash
-sudo ./et --prog xdp --ifname ens785f0 --xdp_path /path/to/xdp.o
+sudo ./et --prog xdp --ifname ens785f0,ens785f1 --xdp_path xsk.xdp.o
 ```

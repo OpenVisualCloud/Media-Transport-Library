@@ -123,33 +123,36 @@ static int send_fd(int sock, int fd) {
 }
 
 static int et_xdp_loop(struct et_ctx* ctx) {
-  struct sockaddr_un addr;
   int ret = 0;
-  int xsks_map_fd[ctx->xdp_if_cnt];
-  int sock = -1, conn;
-  struct xdp_program* prog = NULL;
+  int if_cnt = ctx->xdp_if_cnt;
 
-  if (ctx->xdp_if_cnt <= 0) {
+  if (if_cnt <= 0) {
     printf("please specify interfaces with --ifname <a,b,...>\n");
     return -EIO;
   }
 
-  if (ctx->xdp_path) {
-    prog = xdp_program__open_file(ctx->xdp_path, "xdp", NULL);
-    ret = libxdp_get_error(prog);
-    if (ret) {
-      printf("failed to load xdp program\n");
-      return -EIO;
-    }
-  }
+  struct sockaddr_un addr;
+  int xsks_map_fd[if_cnt];
+  int sock = -1, conn;
+  struct xdp_program* prog[if_cnt];
 
   /* load xdp program for each interface */
-  for (int i = 0; i < ctx->xdp_if_cnt; i++) {
+  for (int i = 0; i < if_cnt; i++) {
+    if (ctx->xdp_path) {
+      prog[i] = xdp_program__open_file(ctx->xdp_path, "xdp", NULL);
+      ret = libxdp_get_error(prog[i]);
+      if (ret) {
+        printf("failed to load xdp program\n");
+        goto cleanup;
+      }
+    }
     int ifindex = ctx->xdp_ifindex[i];
-    if (prog) ret = xdp_program__attach(prog, ifindex, XDP_MODE_NATIVE, 0);
-    if (ret < 0) {
-      printf("xdp_program__attach failed\n");
-      goto cleanup;
+    if (prog[i]) {
+      ret = xdp_program__attach(prog[i], ifindex, XDP_MODE_NATIVE, 0);
+      if (ret < 0) {
+        printf("xdp_program__attach failed\n");
+        goto cleanup;
+      }
     }
 
     ret = xsk_setup_xdp_prog(ifindex, &xsks_map_fd[i]);
@@ -187,35 +190,71 @@ static int et_xdp_loop(struct et_ctx* ctx) {
       continue;
     }
     printf("\nsocket connection %d accepted\n", conn);
-    char ifname[IFNAMSIZ];
-    int map_fd = -1;
-    recv(conn, ifname, sizeof(ifname), 0);
-    printf("request xsk_map_fd for ifname %s\n", ifname);
-    int ifindex = if_nametoindex(ifname);
-    for (int i = 0; i < ctx->xdp_if_cnt; i++) {
-      if (ctx->xdp_ifindex[i] == ifindex) {
-        map_fd = xsks_map_fd[i];
-        break;
+    char command[64];
+    recv(conn, command, sizeof(command), 0);
+    if (command[0]) {
+      printf("command: %s\n", command);
+      char* magic = strtok(command, ":");
+      if (strncmp(magic, "imtl", strlen("imtl")) == 0) {
+        char* type = strtok(NULL, ":");
+        if (strncmp(type, "if", strlen("if")) == 0) {
+          char* ifname = strtok(NULL, ":");
+          int ifindex = if_nametoindex(ifname);
+          int if_id = -1;
+          for (int i = 0; i < if_cnt; i++) {
+            if (ctx->xdp_ifindex[i] == ifindex) {
+              if_id = i;
+              break;
+            }
+          }
+          if (if_id != -1) {
+            char* action = strtok(NULL, ":");
+            if (strncmp(action, "get_xsk_map", strlen("get_xsk_map")) == 0) {
+              int map_fd = xsks_map_fd[if_id];
+              if (map_fd >= 0) {
+                send_fd(conn, map_fd);
+                printf("map_fd %d sent\n", map_fd);
+              }
+            } else if (strncmp(action, "dp_add_filter", strlen("dp_add_filter")) == 0 ||
+                       strncmp(action, "dp_del_filter", strlen("dp_del_filter")) == 0) {
+              /* update dest port for udp4_dp_filter array map */
+              char* port = strtok(NULL, ":");
+              int port_num = atoi(port);
+              if (prog[if_id] && port_num > 0 && port_num < 65535) {
+                int map_fd = bpf_map__fd(bpf_object__find_map_by_name(
+                    xdp_program__bpf_obj(prog[if_id]), "udp4_dp_filter"));
+                if (map_fd >= 0) {
+                  int value = 1;
+                  if (strncmp(type, "dp_del_filter", strlen("dp_del_filter")) == 0)
+                    value = 0;
+                  ret = bpf_map_update_elem(map_fd, &port_num, &value, BPF_ANY);
+                  if (ret < 0) printf("bpf_map_update_elem failed\n");
+                }
+              }
+            }
+          }
+        } else if (strncmp(type, "ping", strlen("ping")) == 0) {
+          char buf[5];
+          snprintf(buf, sizeof(buf), "pong");
+          send(conn, buf, 5, 0);
+        }
       }
     }
-    if (map_fd < 0) {
-      printf("xsk_map_fd not found for %s\n", ifname);
-      goto cleanup;
-    }
-    send_fd(conn, map_fd);
+
     close(conn);
-    printf("map_fd %d sent, close conn\n", map_fd);
   }
 
 cleanup:
   if (sock >= 0) close(sock);
-  if (prog) {
-    for (int i = 0; i < ctx->xdp_if_cnt; i++) {
-      int ifindex = ctx->xdp_ifindex[i];
-      xdp_program__detach(prog, ifindex, XDP_MODE_NATIVE, 0);
+  for (int i = 0; i < if_cnt; i++) {
+    int ifindex = ctx->xdp_ifindex[i];
+    if (prog[i] && !libxdp_get_error(prog[i])) {
+      xdp_program__detach(prog[i], ifindex, XDP_MODE_NATIVE, 0);
+      xdp_program__close(prog[i]);
+      prog[i] = NULL;
     }
-    xdp_program__close(prog);
   }
+
   return ret;
 }
 

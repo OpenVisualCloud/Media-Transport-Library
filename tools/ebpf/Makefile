@@ -2,7 +2,7 @@
 # Copyright 2023 Intel Corporation
 
 .PHONY: all
-all: et
+all: et xsk.xdp.o
 
 .PHONY: clean
 clean:
@@ -14,6 +14,11 @@ vmlinux.h:
 # Build BPF code, strip useless info
 %.bpf.o: %.bpf.c vmlinux.h
 	clang -g -O2 -target bpf -c $(filter %.c,$^) -o $@
+	llvm-strip -g $@
+
+# Build AF_XDP kernel prog
+xsk.xdp.o: xsk.xdp.c
+	clang -g -O2 -target bpf -c xsk.xdp.c -o $@
 	llvm-strip -g $@
 
 # Generate BPF skeletons

@@ -7,6 +7,9 @@
 
 #define ET_XDP_UNIX_SOCKET_PATH "/var/run/et_xdp.sock"
 
+#define XDP_METADATA_SECTION "xdp_metadata"
+#define XSK_PROG_VERSION 1
+
 struct udp_send_event {
   int pid;
   int udp_send_cnt;
