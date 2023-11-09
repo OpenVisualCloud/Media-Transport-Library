@@ -271,6 +271,9 @@ struct st30_tx_ops {
   /** Mandatory. 7 bits payload type define in RFC3550 */
   uint8_t payload_type;
 
+  /** Optional. Synchronization source defined in RFC3550, if zero the session will assign
+   * a random value */
+  uint32_t ssrc;
   /** Optional. name */
   const char* name;
   /** Optional. private data to the callback function */
@@ -368,6 +371,9 @@ struct st30_rx_ops {
   /** Mandatory. 7 bits payload type define in RFC3550 */
   uint8_t payload_type;
 
+  /** Optional. Synchronization source defined in RFC3550, RX session will check the
+   * incoming RTP packets match the ssrc. Leave to zero to disable the ssrc check */
+  uint32_t ssrc;
   /** Optional. name */
   const char* name;
   /** Optional. private data to the callback function */

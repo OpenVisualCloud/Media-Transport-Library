@@ -88,6 +88,10 @@ struct st20r_rx_ops {
   bool interlaced;
   /** 7 bits payload type define in RFC3550 */
   uint8_t payload_type;
+  /** Optional. Synchronization source defined in RFC3550, RX session will check the
+   * incoming RTP packets match the ssrc. Leave to zero to disable the ssrc check */
+  uint32_t ssrc;
+
   /** flags, value in ST20R_RX_FLAG_* */
   uint32_t flags;
   /**

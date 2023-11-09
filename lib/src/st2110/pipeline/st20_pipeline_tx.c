@@ -263,6 +263,7 @@ static int tx_st20p_create_transport(struct mtl_main_impl* impl, struct st20p_tx
   ops_tx.interlaced = ops->interlaced;
   ops_tx.linesize = ops->transport_linesize;
   ops_tx.payload_type = ops->port.payload_type;
+  ops_tx.ssrc = ops->port.ssrc;
   ops_tx.type = ST20_TYPE_FRAME_LEVEL;
   ops_tx.framebuff_cnt = ops->framebuff_cnt;
   ops_tx.get_next_frame = tx_st20p_next_frame;

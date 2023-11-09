@@ -98,6 +98,13 @@ static int rx_ancillary_session_handle_pkt(struct mtl_main_impl* impl,
     s->st40_stat_pkts_wrong_hdr_dropped++;
     return -EINVAL;
   }
+  if (ops->ssrc) {
+    uint32_t ssrc = ntohl(rtp->ssrc);
+    if (ssrc != ops->ssrc) {
+      s->st40_stat_pkts_wrong_hdr_dropped++;
+      return -EINVAL;
+    }
+  }
 
   /* set if it is first pkt */
   if (unlikely(s->latest_seq_id == -1)) s->latest_seq_id = seq_id - 1;

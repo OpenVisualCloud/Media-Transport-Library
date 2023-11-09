@@ -421,6 +421,7 @@ static int rx_st20p_create_transport(struct mtl_main_impl* impl, struct st20p_rx
   ops_rx.interlaced = ops->interlaced;
   ops_rx.linesize = ops->transport_linesize;
   ops_rx.payload_type = ops->port.payload_type;
+  ops_rx.ssrc = ops->port.ssrc;
   ops_rx.type = ST20_TYPE_FRAME_LEVEL;
   ops_rx.framebuff_cnt = ops->framebuff_cnt;
   ops_rx.notify_frame_ready = rx_st20p_frame_ready;

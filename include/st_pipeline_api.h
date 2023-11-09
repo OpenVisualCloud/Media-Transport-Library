@@ -705,6 +705,9 @@ struct st_tx_port {
   uint8_t payload_type;
   /** Optional. UDP source port number, leave as 0 to use same port as dst */
   uint16_t udp_src_port[MTL_SESSION_PORT_MAX];
+  /** Optional. Synchronization source defined in RFC3550, if zero the session will assign
+   * a random value */
+  uint32_t ssrc;
 };
 
 /** The structure info for st rx port, used in creating session. */
@@ -719,6 +722,9 @@ struct st_rx_port {
   uint16_t udp_port[MTL_SESSION_PORT_MAX];
   /** Mandatory. 7 bits payload type define in RFC3550 */
   uint8_t payload_type;
+  /** Optional. Synchronization source defined in RFC3550, RX session will check the
+   * incoming RTP packets match the ssrc. Leave to zero to disable the ssrc check */
+  uint32_t ssrc;
 };
 
 /** The structure describing how to create a tx st2110-20 pipeline session. */

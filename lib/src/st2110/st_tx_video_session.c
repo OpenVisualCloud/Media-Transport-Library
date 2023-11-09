@@ -799,7 +799,8 @@ static int tv_init_hdr(struct mtl_main_impl* impl, struct st_tx_video_session_im
   rtp->base.payload_type = st_is_valid_payload_type(ops->payload_type)
                                ? ops->payload_type
                                : ST_RVRTP_PAYLOAD_TYPE_RAW_VIDEO;
-  rtp->base.ssrc = htonl(s->idx + 0x123450);
+  uint32_t ssrc = ops->ssrc ? ops->ssrc : s->idx + 0x123450;
+  rtp->base.ssrc = htonl(ssrc);
   rtp->row_length = htons(s->st20_pkt_len);
   rtp->row_number = 0;
   rtp->row_offset = 0;
@@ -817,9 +818,9 @@ static int tv_init_hdr(struct mtl_main_impl* impl, struct st_tx_video_session_im
 
   info("%s(%d,%d), ip %u.%u.%u.%u port %u:%u\n", __func__, idx, s_port, dip[0], dip[1],
        dip[2], dip[3], s->st20_src_port[s_port], s->st20_dst_port[s_port]);
-  info("%s(%d), mac: %02hhx:%02hhx:%02hhx:%02hhx:%02hhx:%02hhx\n", __func__, idx,
+  info("%s(%d), mac: %02hhx:%02hhx:%02hhx:%02hhx:%02hhx:%02hhx, ssrc %u\n", __func__, idx,
        d_addr->addr_bytes[0], d_addr->addr_bytes[1], d_addr->addr_bytes[2],
-       d_addr->addr_bytes[3], d_addr->addr_bytes[4], d_addr->addr_bytes[5]);
+       d_addr->addr_bytes[3], d_addr->addr_bytes[4], d_addr->addr_bytes[5], ssrc);
   return 0;
 }
 
@@ -4228,6 +4229,7 @@ st22_tx_handle st22_tx_create(mtl_handle mt, struct st22_tx_ops* ops) {
   st20_ops.fmt = ST20_FMT_YUV_422_10BIT;
   st20_ops.framebuff_cnt = ops->framebuff_cnt;
   st20_ops.payload_type = ops->payload_type;
+  st20_ops.ssrc = ops->ssrc;
   st20_ops.rtp_ring_size = ops->rtp_ring_size;
   st20_ops.rtp_frame_total_pkts = ops->rtp_frame_total_pkts;
   st20_ops.rtp_pkt_size = ops->rtp_pkt_size;

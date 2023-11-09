@@ -258,6 +258,7 @@ static int tx_st22p_create_transport(struct mtl_main_impl* impl, struct st22p_tx
   ops_tx.height = ops->height;
   ops_tx.fps = ops->fps;
   ops_tx.payload_type = ops->port.payload_type;
+  ops_tx.ssrc = ops->port.ssrc;
   ops_tx.type = ST22_TYPE_FRAME_LEVEL;
   ops_tx.pack_type = ops->pack_type;
   ops_tx.framebuff_cnt = ops->framebuff_cnt;
