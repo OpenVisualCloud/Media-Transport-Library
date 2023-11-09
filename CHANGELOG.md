@@ -17,6 +17,8 @@
 * backend/kernel: add multi thread support for both TX and RX.
 * convert: add interlace support.
 * rtcp: add retransmit packet support for st20 sessions, see STxx_RX_FLAG_ENABLE_RTCP.
+* st2110: add ssrc support.
+* rss: add multi-core support.
 
 ## Changelog for 23.08
 

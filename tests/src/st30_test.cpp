@@ -452,7 +452,7 @@ static void st30_rx_fps_test(enum st30_type type[], enum st30_sampling sample[],
     ops_tx.channel = channel[i];
     ops_tx.fmt = fmt[i];
     ops_tx.payload_type = ST30_TEST_PAYLOAD_TYPE;
-    ops_tx.ssrc = i ? i + 342312 : 0;
+    ops_tx.ssrc = i ? i + 0x66666666 : 0;
     ops_tx.ptime = ptime[i];
     ops_tx.framebuff_size =
         st30_get_packet_size(ops_tx.fmt, ops_tx.ptime, ops_tx.sampling, ops_tx.channel);
@@ -514,7 +514,7 @@ static void st30_rx_fps_test(enum st30_type type[], enum st30_sampling sample[],
     ops_rx.channel = channel[i];
     ops_rx.fmt = fmt[i];
     ops_rx.payload_type = ST30_TEST_PAYLOAD_TYPE;
-    ops_rx.ssrc = i ? i + 342312 : 0;
+    ops_rx.ssrc = i ? i + 0x66666666 : 0;
     ops_rx.ptime = ptime[i];
     ops_rx.framebuff_size =
         st30_get_packet_size(ops_rx.fmt, ops_rx.ptime, ops_rx.sampling, ops_rx.channel);
