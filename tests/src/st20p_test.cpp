@@ -609,6 +609,7 @@ struct st20p_rx_digest_test_para {
   bool rtcp;
   enum st20_packing packing;
   enum st21_pacing pacing;
+  uint32_t ssrc;
 };
 
 static void test_st20p_init_rx_digest_para(struct st20p_rx_digest_test_para* para) {
@@ -634,6 +635,7 @@ static void test_st20p_init_rx_digest_para(struct st20p_rx_digest_test_para* par
   para->rtcp = false;
   para->packing = ST20_PACKING_BPM;
   para->pacing = ST21_PACING_NARROW;
+  para->ssrc = 0;
 }
 
 static void st20p_rx_digest_test(enum st_fps fps[], int width[], int height[],
@@ -730,6 +732,7 @@ static void st20p_rx_digest_test(enum st_fps fps[], int width[], int height[],
              ctx->para.port[MTL_PORT_P]);
     ops_tx.port.udp_port[MTL_SESSION_PORT_P] = ST20P_TEST_UDP_PORT + i * 2;
     ops_tx.port.payload_type = ST20P_TEST_PAYLOAD_TYPE;
+    ops_tx.port.ssrc = para->ssrc;
     ops_tx.width = width[i];
     ops_tx.height = height[i];
     ops_tx.fps = fps[i];
@@ -948,6 +951,7 @@ static void st20p_rx_digest_test(enum st_fps fps[], int width[], int height[],
              ctx->para.port[MTL_PORT_R]);
     ops_rx.port.udp_port[MTL_SESSION_PORT_P] = ST20P_TEST_UDP_PORT + i * 2;
     ops_rx.port.payload_type = ST20P_TEST_PAYLOAD_TYPE;
+    ops_rx.port.ssrc = para->ssrc;
     ops_rx.width = width[i];
     ops_rx.height = height[i];
     ops_rx.fps = fps[i];
@@ -1130,6 +1134,7 @@ TEST(St20p, digest_1080i_s2) {
   para.check_fps = false;
   para.interlace = true;
   para.device = ST_PLUGIN_DEVICE_TEST_INTERNAL;
+  para.ssrc = 54321;
 
   st20p_rx_digest_test(fps, width, height, tx_fmt, t_fmt, rx_fmt, &para);
 }

@@ -498,6 +498,7 @@ static void st40_rx_fps_test(enum st40_type type[], enum st_fps fps[],
     ops_tx.type = type[i];
     ops_tx.fps = fps[i];
     ops_tx.payload_type = ST40_TEST_PAYLOAD_TYPE;
+    ops_tx.ssrc = i ? i + 0x88888888 : 0;
     ops_tx.framebuff_cnt = test_ctx_tx[i]->fb_cnt;
     if (user_timestamp) {
       ops_tx.get_next_frame = tx_anc_next_frame_timestamp;
@@ -552,6 +553,7 @@ static void st40_rx_fps_test(enum st40_type type[], enum st_fps fps[],
     ops_rx.notify_rtp_ready = rx_rtp_ready;
     ops_rx.rtp_ring_size = 1024;
     ops_rx.payload_type = ST40_TEST_PAYLOAD_TYPE;
+    ops_rx.ssrc = i ? i + 0x88888888 : 0;
     rx_handle[i] = st40_rx_create(m_handle, &ops_rx);
     ASSERT_TRUE(rx_handle[i] != NULL);
 

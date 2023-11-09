@@ -717,6 +717,7 @@ struct st22p_rx_digest_test_para {
   bool rtcp;
   bool tx_ext;
   bool rx_ext;
+  uint32_t ssrc;
 };
 
 static void test_st22p_init_rx_digest_para(struct st22p_rx_digest_test_para* para) {
@@ -734,6 +735,7 @@ static void test_st22p_init_rx_digest_para(struct st22p_rx_digest_test_para* par
   para->rtcp = false;
   para->tx_ext = false;
   para->rx_ext = false;
+  para->ssrc = 0;
 }
 
 static void st22p_rx_digest_test(enum st_fps fps[], int width[], int height[],
@@ -822,6 +824,7 @@ static void st22p_rx_digest_test(enum st_fps fps[], int width[], int height[],
              ctx->para.port[MTL_PORT_P]);
     ops_tx.port.udp_port[MTL_SESSION_PORT_P] = ST22P_TEST_UDP_PORT + i * 2;
     ops_tx.port.payload_type = ST22P_TEST_PAYLOAD_TYPE;
+    ops_tx.port.ssrc = para->ssrc;
     ops_tx.width = width[i];
     ops_tx.height = height[i];
     ops_tx.fps = fps[i];
@@ -996,6 +999,7 @@ static void st22p_rx_digest_test(enum st_fps fps[], int width[], int height[],
              ctx->para.port[MTL_PORT_R]);
     ops_rx.port.udp_port[MTL_SESSION_PORT_P] = ST22P_TEST_UDP_PORT + i * 2;
     ops_rx.port.payload_type = ST22P_TEST_PAYLOAD_TYPE;
+    ops_rx.port.ssrc = para->ssrc;
     ops_rx.width = width[i];
     ops_rx.height = height[i];
     ops_rx.fps = fps[i];
@@ -1164,6 +1168,7 @@ TEST(St22p, digest_st22_s2) {
   test_st22p_init_rx_digest_para(&para);
   para.sessions = 2;
   para.user_timestamp = true;
+  para.ssrc = 778899;
 
   st22p_rx_digest_test(fps, width, height, fmt, codec, compress_ratio, &para);
 }

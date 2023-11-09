@@ -252,6 +252,7 @@ static int rx_st22p_create_transport(struct mtl_main_impl* impl, struct st22p_rx
   ops_rx.height = ops->height;
   ops_rx.fps = ops->fps;
   ops_rx.payload_type = ops->port.payload_type;
+  ops_rx.ssrc = ops->port.ssrc;
   ops_rx.type = ST22_TYPE_FRAME_LEVEL;
   ops_rx.pack_type = ops->pack_type;
   ops_rx.framebuff_cnt = ops->framebuff_cnt;

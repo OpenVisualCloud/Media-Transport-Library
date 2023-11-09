@@ -1764,6 +1764,15 @@ static int rv_handle_frame_pkt(struct st_rx_video_session_impl* s, struct rte_mb
     s->stat_pkts_wrong_hdr_dropped++;
     return -EINVAL;
   }
+  if (ops->ssrc) {
+    uint32_t ssrc = ntohl(rtp->base.ssrc);
+    dbg("%s(%d,%d): expect ssrc %u actual %u\n", __func__, s->idx, s_port, ops->ssrc,
+        ssrc);
+    if (ssrc != ops->ssrc) {
+      s->stat_pkts_wrong_hdr_dropped++;
+      return -EINVAL;
+    }
+  }
   if (mbuf_next && mbuf_next->data_len) {
     /* for some reason mbuf splits into 2 segments (1024 bytes + left bytes) */
     /* todo: payload needs to be copied from 2 places */
@@ -2004,6 +2013,13 @@ static int rv_handle_rtp_pkt(struct st_rx_video_session_impl* s, struct rte_mbuf
     s->stat_pkts_wrong_hdr_dropped++;
     return -EINVAL;
   }
+  if (ops->ssrc) {
+    uint32_t ssrc = ntohl(rtp->ssrc);
+    if (ssrc != ops->ssrc) {
+      s->stat_pkts_wrong_hdr_dropped++;
+      return -EINVAL;
+    }
+  }
 
   /* find the target slot by tmstamp */
   struct st_rx_video_slot_impl* slot = rv_rtp_slot_by_tmstamp(s, tmstamp);
@@ -2145,6 +2161,13 @@ static int rv_handle_st22_pkt(struct st_rx_video_session_impl* s, struct rte_mbu
   if (payload_type != ops->payload_type) {
     s->stat_pkts_wrong_hdr_dropped++;
     return -EINVAL;
+  }
+  if (ops->ssrc) {
+    uint32_t ssrc = ntohl(rtp->base.ssrc);
+    if (ssrc != ops->ssrc) {
+      s->stat_pkts_wrong_hdr_dropped++;
+      return -EINVAL;
+    }
   }
 
   if (rtp->kmode) {
@@ -2299,6 +2322,13 @@ static int rv_handle_hdr_split_pkt(struct st_rx_video_session_impl* s,
   if (payload_type != ops->payload_type) {
     s->stat_pkts_wrong_hdr_dropped++;
     return -EINVAL;
+  }
+  if (ops->ssrc) {
+    uint32_t ssrc = ntohl(rtp->base.ssrc);
+    if (ssrc != ops->ssrc) {
+      s->stat_pkts_wrong_hdr_dropped++;
+      return -EINVAL;
+    }
   }
   if (!hdr_split->mbuf_pool_ready) {
     s->stat_pkts_no_slot++;
@@ -2746,6 +2776,13 @@ static int rv_handle_detect_pkt(struct st_rx_video_session_impl* s, struct rte_m
     dbg("%s, payload_type mismatch %d %d\n", __func__, payload_type, ops->payload_type);
     s->stat_pkts_wrong_hdr_dropped++;
     return -EINVAL;
+  }
+  if (ops->ssrc) {
+    uint32_t ssrc = ntohl(rtp->base.ssrc);
+    if (ssrc != ops->ssrc) {
+      s->stat_pkts_wrong_hdr_dropped++;
+      return -EINVAL;
+    }
   }
 
   /* detect continuous bit */
@@ -4535,6 +4572,7 @@ st22_rx_handle st22_rx_create(mtl_handle mt, struct st22_rx_ops* ops) {
   st20_ops.fps = ops->fps;
   st20_ops.fmt = ST20_FMT_YUV_422_10BIT;
   st20_ops.payload_type = ops->payload_type;
+  st20_ops.ssrc = ops->ssrc;
   st20_ops.rtp_ring_size = ops->rtp_ring_size;
   st20_ops.notify_rtp_ready = ops->notify_rtp_ready;
   st20_ops.framebuff_cnt = ops->framebuff_cnt;

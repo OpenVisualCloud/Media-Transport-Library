@@ -399,6 +399,13 @@ static int rx_audio_session_handle_frame_pkt(struct mtl_main_impl* impl,
     s->st30_stat_pkts_wrong_hdr_dropped++;
     return -EINVAL;
   }
+  if (ops->ssrc) {
+    uint32_t ssrc = ntohl(rtp->ssrc);
+    if (ssrc != ops->ssrc) {
+      s->st30_stat_pkts_wrong_hdr_dropped++;
+      return -EINVAL;
+    }
+  }
 
   if (pkt_len != s->pkt_len) {
     dbg("%s(%d,%d), drop as pkt_len mismatch now %u expect %u\n", __func__, s->idx,
@@ -493,6 +500,13 @@ static int rx_audio_session_handle_rtp_pkt(struct mtl_main_impl* impl,
   if (payload_type != ops->payload_type) {
     s->st30_stat_pkts_wrong_hdr_dropped++;
     return -EINVAL;
+  }
+  if (ops->ssrc) {
+    uint32_t ssrc = ntohl(rtp->ssrc);
+    if (ssrc != ops->ssrc) {
+      s->st30_stat_pkts_wrong_hdr_dropped++;
+      return -EINVAL;
+    }
   }
 
   /* set first seq_id - 1 */

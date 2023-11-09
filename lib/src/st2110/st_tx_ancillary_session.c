@@ -186,15 +186,16 @@ static int tx_ancillary_session_init_hdr(struct mtl_main_impl* impl,
   rtp->base.payload_type = st_is_valid_payload_type(ops->payload_type)
                                ? ops->payload_type
                                : ST_RANCRTP_PAYLOAD_TYPE_ANCILLARY;
-  rtp->base.ssrc = htonl(s->idx + 0x323450);
+  uint32_t ssrc = ops->ssrc ? ops->ssrc : s->idx + 0x323450;
+  rtp->base.ssrc = htonl(ssrc);
   s->st40_seq_id = 0;
   s->st40_ext_seq_id = 0;
 
   info("%s(%d,%d), ip %u.%u.%u.%u port %u:%u\n", __func__, idx, s_port, dip[0], dip[1],
        dip[2], dip[3], s->st40_src_port[s_port], s->st40_dst_port[s_port]);
-  info("%s(%d), mac: %02hhx:%02hhx:%02hhx:%02hhx:%02hhx:%02hhx\n", __func__, idx,
+  info("%s(%d), mac: %02hhx:%02hhx:%02hhx:%02hhx:%02hhx:%02hhx, ssrc %u\n", __func__, idx,
        d_addr->addr_bytes[0], d_addr->addr_bytes[1], d_addr->addr_bytes[2],
-       d_addr->addr_bytes[3], d_addr->addr_bytes[4], d_addr->addr_bytes[5]);
+       d_addr->addr_bytes[3], d_addr->addr_bytes[4], d_addr->addr_bytes[5], ssrc);
   return 0;
 }
 

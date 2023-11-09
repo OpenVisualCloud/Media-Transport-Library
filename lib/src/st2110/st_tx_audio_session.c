@@ -187,14 +187,16 @@ static int tx_audio_session_init_hdr(struct mtl_main_impl* impl,
   rtp->payload_type = st_is_valid_payload_type(ops->payload_type)
                           ? ops->payload_type
                           : ST_RARTP_PAYLOAD_TYPE_PCM_AUDIO;
-  rtp->ssrc = htonl(s->idx + 0x223450);
+  uint32_t ssrc = ops->ssrc ? ops->ssrc : s->idx + 0x223450;
+  rtp->ssrc = htonl(ssrc);
+
   s->st30_seq_id = 0;
 
   info("%s(%d,%d), ip %u.%u.%u.%u port %u:%u\n", __func__, idx, s_port, dip[0], dip[1],
        dip[2], dip[3], s->st30_src_port[s_port], s->st30_dst_port[s_port]);
-  info("%s(%d), mac: %02hhx:%02hhx:%02hhx:%02hhx:%02hhx:%02hhx\n", __func__, idx,
+  info("%s(%d), mac: %02hhx:%02hhx:%02hhx:%02hhx:%02hhx:%02hhx, ssrc %u\n", __func__, idx,
        d_addr->addr_bytes[0], d_addr->addr_bytes[1], d_addr->addr_bytes[2],
-       d_addr->addr_bytes[3], d_addr->addr_bytes[4], d_addr->addr_bytes[5]);
+       d_addr->addr_bytes[3], d_addr->addr_bytes[4], d_addr->addr_bytes[5], ssrc);
   return 0;
 }
 
