@@ -354,11 +354,15 @@ static int sch_stat(void* priv) {
   int idx = sch->idx;
   uint32_t avg_us;
 
+  if (!mt_sch_is_active(sch)) return 0;
+
   if (mt_has_tasklet_time_measure(sch->parent)) {
+    notice("SCH(%d): tasklets %d\n", idx, num_tasklet);
     for (int i = 0; i < num_tasklet; i++) {
       tasklet = sch->tasklet[i];
       if (!tasklet) continue;
 
+      dbg("SCH(%d): tasklet %s at %d\n", idx, tasklet->name, i);
       if (tasklet->stat_time_cnt) {
         avg_us = tasklet->stat_sum_time_us / tasklet->stat_time_cnt;
         notice("SCH(%d): tasklet %s, avg %uus max %uus min %uus\n", idx, tasklet->name,
@@ -379,7 +383,7 @@ static int sch_stat(void* priv) {
     sch->stat_sleep_ns_min = -1;
     sch->stat_sleep_ns_max = 0;
   }
-  if (mt_sch_is_active(sch) && !mt_sch_started(sch)) {
+  if (!mt_sch_started(sch)) {
     notice("SCH(%d): active but still not started\n", idx);
   }
 

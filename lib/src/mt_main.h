@@ -476,8 +476,9 @@ typedef uint64_t mt_sch_mask_t;
 struct mt_sch_impl {
   pthread_mutex_t mutex; /* protect sch context */
   struct mt_sch_tasklet_impl** tasklet;
-  int nb_tasklets;     /* the number of tasklet in current sch */
-  int max_tasklet_idx; /* max tasklet index */
+  int nb_tasklets; /* the number of tasklet in current sch */
+  /* max tasklet index */
+  volatile int max_tasklet_idx;
   unsigned int lcore;
   bool run_in_thread; /* Run the tasklet inside one thread instead of a pinned lcore. */
   pthread_t tid;      /* thread id for run_in_thread */
