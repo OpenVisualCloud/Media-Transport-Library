@@ -19,7 +19,7 @@
 * rtcp: add retransmit packet support for st20 sessions, see STxx_RX_FLAG_ENABLE_RTCP.
 * st2110: add ssrc support.
 * rss: add multi-core support.
-* log: default add time info print, and a api `mtl_set_log_prefix_formatter` to customize the log prefix formatter.
+* log: default add time info print, and a API `mtl_set_log_prefix_formatter` to customize the log prefix formatter.
 
 ## Changelog for 23.08
 
