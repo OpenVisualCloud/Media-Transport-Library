@@ -23,6 +23,18 @@
 #include "st2110/pipeline/st_plugin.h"
 #include "udp/udp_rxq.h"
 
+static void log_default_prefix(char* buf, size_t sz) {
+  time_t now;
+  struct tm tm;
+
+  time(&now);
+  localtime_r(&now, &tm);
+  strftime(buf, sz, "%Y-%m-%d %H:%M:%S, ", &tm);
+}
+
+/* default log prefix format */
+void (*g_mt_log_prefix_format)(char* buf, size_t sz) = log_default_prefix;
+
 enum mtl_port mt_port_by_id(struct mtl_main_impl* impl, uint16_t port_id) {
   int num_ports = mt_num_ports(impl);
   int i;
@@ -1308,4 +1320,15 @@ bool mtl_pmd_is_dpdk_based(mtl_handle mt, enum mtl_port port) {
 
 int mtl_thread_setname(pthread_t tid, const char* name) {
   return rte_thread_setname(tid, name);
+}
+
+int mtl_set_log_prefix_formatter(void (*log_prefix_formatter)(char* buf, size_t buf_sz)) {
+  if (log_prefix_formatter) {
+    info("%s, new formatter %p\n", __func__, log_prefix_formatter);
+    g_mt_log_prefix_format = log_prefix_formatter;
+  } else {
+    info("%s, switch to default as user prefix is null\n", __func__);
+    g_mt_log_prefix_format = log_default_prefix;
+  }
+  return 0;
 }

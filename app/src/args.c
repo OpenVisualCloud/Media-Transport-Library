@@ -74,6 +74,7 @@ enum st_args_cmd {
   ST_ARG_RX_POOL_DATA_SIZE,
   ST_ARG_LOG_LEVEL,
   ST_ARG_LOG_FILE,
+  ST_ARG_LOG_TIME_MS,
   ST_ARG_NB_TX_DESC,
   ST_ARG_NB_RX_DESC,
   ST_ARG_DMA_DEV,
@@ -185,6 +186,7 @@ static struct option st_app_args_options[] = {
     {"promiscuous", no_argument, 0, ST_ARG_NIC_RX_PROMISCUOUS},
     {"log_level", required_argument, 0, ST_ARG_LOG_LEVEL},
     {"log_file", required_argument, 0, ST_ARG_LOG_FILE},
+    {"log_time_ms", no_argument, 0, ST_ARG_LOG_TIME_MS},
     {"ptp", no_argument, 0, ST_ARG_LIB_PTP},
     {"phc2sys", no_argument, 0, ST_ARG_LIB_PHC2SYS},
     {"ptp_sync_sys", no_argument, 0, ST_ARG_LIB_PTP_SYNC_SYS},
@@ -332,6 +334,17 @@ static int app_args_json(struct st_app_context* ctx, struct mtl_init_params* p,
 
   info("%s, json_file %s succ\n", __func__, json_file);
   return 0;
+}
+
+static void log_prefix_time_ms(char* buf, size_t sz) {
+  struct timespec ts;
+  struct tm tm;
+  char time_s_buf[64];
+
+  clock_gettime(CLOCK_REALTIME, &ts);
+  localtime_r(&ts.tv_sec, &tm);
+  strftime(time_s_buf, sizeof(time_s_buf), "%Y-%m-%d %H:%M:%S", &tm);
+  snprintf(buf, sz, "%s.%u, ", time_s_buf, (uint32_t)(ts.tv_nsec / NS_PER_MS));
 }
 
 int st_app_parse_args(struct st_app_context* ctx, struct mtl_init_params* p, int argc,
@@ -576,6 +589,9 @@ int st_app_parse_args(struct st_app_context* ctx, struct mtl_init_params* p, int
         break;
       case ST_ARG_LOG_FILE:
         st_set_mtl_log_file(ctx, optarg);
+        break;
+      case ST_ARG_LOG_TIME_MS:
+        mtl_set_log_prefix_formatter(log_prefix_time_ms);
         break;
       case ST_ARG_NB_TX_DESC:
         p->nb_tx_desc = atoi(optarg);
