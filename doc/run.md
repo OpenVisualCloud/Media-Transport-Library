@@ -345,8 +345,9 @@ packet egresses from the sender.
 --dhcp                               : debug option, enable DHCP for all ports.
 --virtio_user                        : debug option, enable virtio_user ports for control plane packets. Linux only, need to set capability for the app before running, `sudo setcap 'cap_net_admin+ep' ./build/app/RxTxApp`.
 --phc2sys                            : debug option, enable the built-in phc2sys function to sync the system time to our internal synced PTP time. Linux only, need to set capability for the app before running, `sudo setcap 'cap_sys_time+ep' ./build/app/RxTxApp`.
---ptp_sync_sys                       : debug option, enabling the synchronization of PTP time from MTL to the system time. On Linux, need to set capability for the app before running, `sudo setcap 'cap_sys_time+ep' ./build/app/RxTxApp`.
+--ptp_sync_sys                       : debug option, enabling the synchronization of PTP time from MTL to the system time in the application. On Linux, need to set capability for the app before running, `sudo setcap 'cap_sys_time+ep' ./build/app/RxTxApp`.
 --rss_sch_nb <number>                : debug option, set the schedulers(lcores) number for the RSS dispatch.
+--log_time_ms                        : debug option, enable a ms accuracy log printer by the api mtl_set_log_prefix_formatter.
 ```
 
 ## 6. Tests

@@ -883,6 +883,27 @@ int mtl_set_log_level(mtl_handle mt, enum mtl_log_level level);
 enum mtl_log_level mtl_get_log_level(mtl_handle mt);
 
 /**
+ * Set the log prefix user customized formatter.
+ *
+ * A example formatter is like below:
+ *   static void log_default_prefix(char* buf, size_t sz) {
+ *     time_t now;
+ *     struct tm tm;
+ *
+ *     time(&now);
+ *     localtime_r(&now, &tm);
+ *     strftime(buf, sz, "%Y-%m-%d %H:%M:%S, ", &tm);
+ *   }
+ *
+ * @param log_prefix_format_func
+ *   The log level define.
+ * @return
+ *   - 0: Success.
+ *   - <0: Error code.
+ */
+int mtl_set_log_prefix_formatter(void (*log_prefix_formatter)(char* buf, size_t buf_sz));
+
+/**
  * Enable or disable sleep mode for sch.
  *
  * @param mt
