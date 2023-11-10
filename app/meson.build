@@ -111,6 +111,14 @@ executable('ConvApp', conv_sources,
   dependencies: [asan_dep, mtl]
 )
 
+# Legacy lcore manager
+executable('LcoreMgr', lcore_mgr_sources,
+  c_args : app_c_args,
+  link_args: app_ld_args,
+  # asan should be always the first dep
+  dependencies: [asan_dep, mtl]
+)
+
 # Performance benchmarks for color convert
 executable('PerfRfc4175422be10ToP10Le', perf_rfc4175_422be10_to_p10le_sources,
   c_args : app_c_args,

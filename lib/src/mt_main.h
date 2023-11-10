@@ -545,14 +545,18 @@ struct mt_sch_impl {
   uint64_t stat_sleep_ns_max;
 };
 
+struct mt_lcore_mgr {
+  struct mt_lcore_shm* lcore_shm;
+  int lcore_shm_id;
+};
+
 struct mt_sch_mgr {
   struct mt_sch_impl sch[MT_MAX_SCH_NUM];
   /* active sch cnt */
   rte_atomic32_t sch_cnt;
   pthread_mutex_t mgr_mutex; /* protect sch mgr */
 
-  struct mt_lcore_shm* lcore_shm;
-  int lcore_shm_id;
+  struct mt_lcore_mgr lcore_mgr;
   int lcore_lock_fd;
   bool local_lcores_active[RTE_MAX_LCORE]; /* local lcores active map */
 };
@@ -707,9 +711,18 @@ struct mt_interface {
   void* xdp;
 };
 
+struct mt_lcore_shm_entry {
+  char hostname[64];
+  char user[32];
+  pid_t pid;
+  bool active;
+};
+
 struct mt_lcore_shm {
-  int used;                          /* number of used lcores */
-  bool lcores_active[RTE_MAX_LCORE]; /* lcores active map */
+  /* number of used lcores */
+  int used;
+  /* lcores map info */
+  struct mt_lcore_shm_entry lcores_info[RTE_MAX_LCORE];
 };
 
 typedef int (*mt_dma_drop_mbuf_cb)(void* priv, struct rte_mbuf* mbuf);
@@ -1078,6 +1091,12 @@ struct mt_dp_impl {
   rte_spinlock_t txq_sys_entry_lock; /* protect txq_sys_entry */
 };
 
+struct mt_user_info {
+  char hostname[64];
+  char user[32];
+  pid_t pid;
+};
+
 struct mtl_main_impl {
   struct mt_interface inf[MTL_PORT_MAX];
 
@@ -1138,6 +1157,8 @@ struct mtl_main_impl {
 
   /* st plugin dev mgr */
   struct st_plugin_mgr plugin_mgr;
+
+  struct mt_user_info u_info;
 
   void* mudp_rxq_mgr[MTL_PORT_MAX];
 
