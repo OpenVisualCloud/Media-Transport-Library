@@ -121,17 +121,6 @@ enum st_args_cmd {
   ST_ARG_MAX,
 };
 
-static void log_prefix_time_ms(char* buf, size_t sz) {
-  struct timespec ts;
-  struct tm tm;
-  char time_s_buf[64];
-
-  clock_gettime(CLOCK_REALTIME, &ts);
-  localtime_r(&ts.tv_sec, &tm);
-  strftime(time_s_buf, sizeof(time_s_buf), "%Y-%m-%d %H:%M:%S", &tm);
-  snprintf(buf, sz, "%s.%" PRIu64 ", ", time_s_buf, ts.tv_nsec / NS_PER_MS);
-}
-
 /*
 struct option {
    const char *name;
@@ -345,6 +334,17 @@ static int app_args_json(struct st_app_context* ctx, struct mtl_init_params* p,
 
   info("%s, json_file %s succ\n", __func__, json_file);
   return 0;
+}
+
+static void log_prefix_time_ms(char* buf, size_t sz) {
+  struct timespec ts;
+  struct tm tm;
+  char time_s_buf[64];
+
+  clock_gettime(CLOCK_REALTIME, &ts);
+  localtime_r(&ts.tv_sec, &tm);
+  strftime(time_s_buf, sizeof(time_s_buf), "%Y-%m-%d %H:%M:%S", &tm);
+  snprintf(buf, sz, "%s.%u, ", time_s_buf, (uint32_t)(ts.tv_nsec / NS_PER_MS));
 }
 
 int st_app_parse_args(struct st_app_context* ctx, struct mtl_init_params* p, int argc,
