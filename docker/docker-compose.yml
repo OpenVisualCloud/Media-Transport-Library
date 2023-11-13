@@ -1,0 +1,17 @@
+version: '3'
+
+services:
+  imtl:
+    image: mtl:latest
+    devices:
+      - "/dev/vfio:/dev/vfio" # or add /dev/vfio/vfio and /dev/vfio/<specific_device>
+    ipc: host
+    volumes:
+      - "/tmp/kahawai_lcore.lock:/tmp/kahawai_lcore.lock"
+      - "/dev/null:/dev/null"
+    cap_add:
+      - SYS_NICE
+      - IPC_LOCK
+      - NET_ADMIN
+      - SYS_TIME
+      - NET_RAW
