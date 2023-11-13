@@ -117,13 +117,13 @@ list() {
 
     id_counter=0
 
-    for pci_bdf in $(dpdk-devbind.py -s | awk '/Network devices using (DPDK-compatible|kernel) driver/ {show=1; next} /^$/ {show=0} show && /drv=/ {print $1}'); do
+    for pci_bdf in $(dpdk-devbind.py -s | awk '/^Network devices/ {show=1; next} /^$/ {show=0} show && /drv=/ {print $1}'); do
         
-        driver=$(basename $(readlink /sys/bus/pci/devices/"${pci_bdf}"/driver) 2>/dev/null || echo "N/A")
+        driver=$(basename "$(readlink /sys/bus/pci/devices/"${pci_bdf}"/driver)" 2>/dev/null || echo "N/A")
 
         numa_node=$(cat /sys/bus/pci/devices/"${pci_bdf}"/numa_node 2>/dev/null || echo "N/A")
 
-        iommu_group=$(basename $(readlink /sys/bus/pci/devices/"${pci_bdf}"/iommu_group) 2>/dev/null || echo "N/A")
+        iommu_group=$(basename "$(readlink /sys/bus/pci/devices/"${pci_bdf}"/iommu_group)" 2>/dev/null || echo "N/A")
 
         interface_name=$(basename /sys/bus/pci/devices/"${pci_bdf}"/net/*)
 
