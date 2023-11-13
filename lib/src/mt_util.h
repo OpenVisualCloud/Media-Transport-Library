@@ -251,4 +251,6 @@ const char* mt_dpdk_afpkt_port2if(const char* port);
 const char* mt_kernel_port2if(const char* port);
 const char* mt_native_afxdp_port2if(const char* port);
 
+int mt_user_info_init(struct mt_user_info* info);
+
 #endif

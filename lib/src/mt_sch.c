@@ -4,8 +4,11 @@
 
 #include "mt_sch.h"
 
+#include <signal.h>
+
 #include "mt_log.h"
 #include "mt_stat.h"
+#include "mtl_lcore_shm_api.h"
 #include "st2110/st_rx_ancillary_session.h"
 #include "st2110/st_rx_audio_session.h"
 #include "st2110/st_rx_video_session.h"
@@ -1038,12 +1041,95 @@ int mtl_lcore_shm_print(void) {
 
   for (int i = 0; i < RTE_MAX_LCORE; i++) {
     shm_entry = &lcore_shm->lcores_info[i];
-    if (shm_entry->active) {
-      info("%s, lcore %d active on %s@%s with pid: %d\n", __func__, i, shm_entry->user,
-           shm_entry->hostname, (int)shm_entry->pid);
-    }
+
+    if (!shm_entry->active) continue;
+    info("%s, lcore %d active on %s@%s with pid: %d\n", __func__, i, shm_entry->user,
+         shm_entry->hostname, (int)shm_entry->pid);
   }
 
   sch_lcore_shm_uinit(&lcore_mgr);
   return 0;
+}
+
+static int lcore_shm_clean_auto_pid(struct mt_lcore_mgr* lcore_mgr) {
+  struct mt_user_info u_info;
+  int clean = 0;
+
+  memset(&u_info, 0, sizeof(u_info));
+  mt_user_info_init(&u_info);
+
+  struct mt_lcore_shm* lcore_shm = lcore_mgr->lcore_shm;
+  struct mt_lcore_shm_entry* shm_entry;
+  for (int i = 0; i < RTE_MAX_LCORE; i++) {
+    shm_entry = &lcore_shm->lcores_info[i];
+
+    if (!shm_entry->active) continue;
+    if (0 != strncmp(shm_entry->hostname, u_info.hostname, sizeof(shm_entry->hostname)))
+      continue;
+    if (0 != strncmp(shm_entry->user, u_info.user, sizeof(shm_entry->user))) continue;
+    /* now check if PID is active with zero signal */
+    int result = kill(shm_entry->pid, 0);
+    if (0 == result) continue;
+    clean++;
+    notice("%s, delete dead lcore %d from the shared mem, PID %d\n", __func__, i,
+           (int)shm_entry->pid);
+  }
+
+  return clean;
+}
+
+static int lcore_shm_clean_id(struct mt_lcore_mgr* lcore_mgr, void* args,
+                              size_t args_sz) {
+  struct mtl_lcore_clean_pid_info* info = args;
+
+  if (!args) {
+    err("%s, NULL args\n", __func__);
+    return -EINVAL;
+  }
+  if (args_sz != sizeof(*info)) {
+    err("%s, error args_sz %" PRIu64 "\n", __func__, args_sz);
+    return -EINVAL;
+  }
+  uint32_t lcore = info->lcore;
+  if (lcore >= RTE_MAX_LCORE) {
+    err("%s, invalid lcore %u\n", __func__, lcore);
+    return -EINVAL;
+  }
+
+  struct mt_lcore_shm* lcore_shm = lcore_mgr->lcore_shm;
+  struct mt_lcore_shm_entry* shm_entry = &lcore_shm->lcores_info[lcore];
+  if (!shm_entry->active) {
+    err("%s, lcore %u is inactive\n", __func__, lcore);
+    return -EINVAL;
+  }
+
+  shm_entry->active = false;
+  notice("%s, delete lcore %u from the shared mem, PID %d\n", __func__, lcore,
+         (int)shm_entry->pid);
+  return 0;
+}
+
+int mtl_lcore_shm_clean(enum mtl_lcore_clean_action action, void* args, size_t args_sz) {
+  struct mt_lcore_mgr lcore_mgr;
+
+  int ret = sch_lcore_shm_init(&lcore_mgr, false);
+  if (ret < 0) return ret;
+
+  MTL_MAY_UNUSED(args);
+  MTL_MAY_UNUSED(args_sz);
+  switch (action) {
+    case MTL_LCORE_CLEAN_PID_AUTO_CHECK:
+      ret = lcore_shm_clean_auto_pid(&lcore_mgr);
+      break;
+    case MTL_LCORE_CLEAN_LCORE:
+      ret = lcore_shm_clean_id(&lcore_mgr, args, args_sz);
+      break;
+    default:
+      err("%s, unknown action %d\n", __func__, action);
+      ret = -EINVAL;
+      break;
+  }
+
+  sch_lcore_shm_uinit(&lcore_mgr);
+  return ret;
 }

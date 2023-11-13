@@ -4,10 +4,6 @@
 
 #include "mt_main.h"
 
-#ifndef WINDOWSENV
-#include <pwd.h>
-#endif
-
 #include "datapath/mt_queue.h"
 #include "dev/mt_dev.h"
 #include "mt_admin.h"
@@ -402,31 +398,6 @@ static int _mt_stop(struct mtl_main_impl* impl) {
   return 0;
 }
 
-static int mt_user_info_init(struct mtl_main_impl* impl) {
-  int ret = -EIO;
-  struct mt_user_info* info = &impl->u_info;
-
-#ifdef WINDOWSENV /* todo */
-  MTL_MAY_UNUSED(ret);
-  snprintf(info->hostname, sizeof(info->hostname), "%s", "unknow");
-  snprintf(info->user, sizeof(info->user), "%s", "unknow");
-#else
-  ret = gethostname(info->hostname, sizeof(info->hostname));
-  if (ret < 0) {
-    warn("%s, gethostname fail %d\n", __func__, ret);
-    snprintf(info->hostname, sizeof(info->hostname), "%s", "unknow");
-  }
-  uid_t uid = getuid();
-  struct passwd* user_info = getpwuid(uid);
-  snprintf(info->user, sizeof(info->user), "%s",
-           user_info ? user_info->pw_name : "unknow");
-#endif
-
-  info->pid = getpid();
-
-  return 0;
-}
-
 mtl_handle mtl_init(struct mtl_init_params* p) {
   struct mtl_main_impl* impl = NULL;
   int socket[MTL_PORT_MAX], ret;
@@ -493,7 +464,7 @@ mtl_handle mtl_init(struct mtl_init_params* p) {
   impl = mt_rte_zmalloc_socket(sizeof(*impl), socket[MTL_PORT_P]);
   if (!impl) goto err_exit;
 
-  mt_user_info_init(impl);
+  mt_user_info_init(&impl->u_info);
 
 #ifndef WINDOWSENV
   if (geteuid() == 0)

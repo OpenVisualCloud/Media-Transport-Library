@@ -4,6 +4,10 @@
 
 #include "mt_util.h"
 
+#ifndef WINDOWSENV
+#include <pwd.h>
+#endif
+
 #include "datapath/mt_queue.h"
 #include "mt_log.h"
 #include "mt_main.h"
@@ -878,4 +882,28 @@ const char* mt_native_afxdp_port2if(const char* port) {
     return NULL;
   }
   return port + strlen(native_afxdp_port_prefix);
+}
+
+int mt_user_info_init(struct mt_user_info* info) {
+  int ret = -EIO;
+
+#ifdef WINDOWSENV /* todo */
+  MTL_MAY_UNUSED(ret);
+  snprintf(info->hostname, sizeof(info->hostname), "%s", "unknow");
+  snprintf(info->user, sizeof(info->user), "%s", "unknow");
+#else
+  ret = gethostname(info->hostname, sizeof(info->hostname));
+  if (ret < 0) {
+    warn("%s, gethostname fail %d\n", __func__, ret);
+    snprintf(info->hostname, sizeof(info->hostname), "%s", "unknow");
+  }
+  uid_t uid = getuid();
+  struct passwd* user_info = getpwuid(uid);
+  snprintf(info->user, sizeof(info->user), "%s",
+           user_info ? user_info->pw_name : "unknow");
+#endif
+
+  info->pid = getpid();
+
+  return 0;
 }
