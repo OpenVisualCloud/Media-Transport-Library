@@ -1051,6 +1051,14 @@ int mtl_lcore_shm_print(void) {
   return 0;
 }
 
+#ifdef WINDOWSENV
+static int lcore_shm_clean_auto_pid(struct mt_lcore_mgr* lcore_mgr) {
+  MTL_MAY_UNUSED(lcore_mgr);
+  err("%s, not support on windows\n", __func__);
+  return -EINVAL;
+}
+#else
+
 static int lcore_shm_clean_auto_pid(struct mt_lcore_mgr* lcore_mgr) {
   struct mt_user_info u_info;
   int clean = 0;
@@ -1077,6 +1085,7 @@ static int lcore_shm_clean_auto_pid(struct mt_lcore_mgr* lcore_mgr) {
 
   return clean;
 }
+#endif
 
 static int lcore_shm_clean_id(struct mt_lcore_mgr* lcore_mgr, void* args,
                               size_t args_sz) {

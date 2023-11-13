@@ -69,7 +69,7 @@ int main(int argc, char** argv) {
         else
           err("Fail %d to clean shm by auto PID check\n", ret);
         break;
-      case LSM_ARG_CLEAN_LCORE:
+      case LSM_ARG_CLEAN_LCORE: {
         int lcore = atoi(optarg);
         if (lcore < 0) {
           err("lcore %d is not valid\n", lcore);
@@ -83,7 +83,7 @@ int main(int argc, char** argv) {
         else
           err("Fail %d to delete lcore %d\n", ret, lcore);
         break;
-        break;
+      }
       case LSM_ARG_HELP:
       default:
         lsm_print_help();
