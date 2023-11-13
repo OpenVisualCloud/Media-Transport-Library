@@ -488,6 +488,7 @@ static int sch_lcore_shm_uinit(struct mt_lcore_mgr* mgr) {
       err("%s, can not stat shared memory, %s\n", __func__, strerror(errno));
     } else {
       if (shmds.shm_nattch == 0) { /* remove ipc if we are the last user */
+        notice("%s, remove shared memory as we are the last user\n", __func__);
         ret = shmctl(mgr->lcore_shm_id, IPC_RMID, NULL);
         if (ret < 0) {
           warn("%s, can not remove shared memory, %s\n", __func__, strerror(errno));
@@ -1039,7 +1040,7 @@ int mtl_lcore_shm_print(void) {
     shm_entry = &lcore_shm->lcores_info[i];
     if (shm_entry->active) {
       info("%s, lcore %d active on %s@%s with pid: %d\n", __func__, i, shm_entry->user,
-           shm_entry->hostname, shm_entry->pid);
+           shm_entry->hostname, (int)shm_entry->pid);
     }
   }
 

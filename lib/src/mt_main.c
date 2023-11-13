@@ -4,7 +4,9 @@
 
 #include "mt_main.h"
 
+#ifndef WINDOWSENV
 #include <pwd.h>
+#endif
 
 #include "datapath/mt_queue.h"
 #include "dev/mt_dev.h"
@@ -401,9 +403,14 @@ static int _mt_stop(struct mtl_main_impl* impl) {
 }
 
 static int mt_user_info_init(struct mtl_main_impl* impl) {
-  int ret;
+  int ret = -EIO;
   struct mt_user_info* info = &impl->u_info;
 
+#ifdef WINDOWSENV /* todo */
+  MTL_MAY_UNUSED(ret);
+  snprintf(info->hostname, sizeof(info->hostname), "%s", "unknow");
+  snprintf(info->user, sizeof(info->user), "%s", "unknow");
+#else
   ret = gethostname(info->hostname, sizeof(info->hostname));
   if (ret < 0) {
     warn("%s, gethostname fail %d\n", __func__, ret);
@@ -413,6 +420,7 @@ static int mt_user_info_init(struct mtl_main_impl* impl) {
   struct passwd* user_info = getpwuid(uid);
   snprintf(info->user, sizeof(info->user), "%s",
            user_info ? user_info->pw_name : "unknow");
+#endif
 
   info->pid = getpid();
 
