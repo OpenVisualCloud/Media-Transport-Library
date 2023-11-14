@@ -23,7 +23,8 @@ When you use the `--clean_pid_auto_check` option, the tool will perform a loop c
 
 If you are deploying in a multi-container environment, the PID check becomes less useful as each container has its own process namespace. In such cases, you can use the `--clean_lcore` option to remove an entry based on the lcore ID. However, it's important to confirm that the lcore is not active before using this option.
 
-Before using the `--clean_lcore` option, please ensure that you double-check the current lcore status by running `./build/app/LcoreMgr --info`. An example output list is provided below. Pay close attention to the lcore usage details, including user, host, PID, process name, allocation information, and, most importantly, CPU usage. Typically, an active lcore allocated by the IMTL library should utilize 100% of the CPU resources.
+Before using the `--clean_lcore` option, please ensure that you double-check the current lcore status by running `./build/app/LcoreMgr --info`. An example output list is provided below. Pay close attention to the lcore usage details, including user, host, PID, process name, allocation information, and, most importantly, CPU usage.
+Typically, an active lcore allocated by the IMTL library should utilize 100% of the CPU resources.
 
 ```bash
 MT: 2023-11-14 15:00:03, mtl_lcore_shm_print, MTL used lcores 3

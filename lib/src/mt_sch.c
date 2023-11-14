@@ -1076,13 +1076,13 @@ int mtl_lcore_shm_print(void) {
     struct mt_cpu_usage prev[found];
     struct mt_cpu_usage cur[found];
 
-    info("%s, collecting cpu usage\n", __func__);
+    info("%s, collecting cpu usage...\n", __func__);
     ret = mt_read_cpu_usage(prev, cpu_ids, found);
     if (ret != found) {
       err("%s, read cpu prev usage fail, expect %d but only %d get\n", __func__, found,
           ret);
     } else {
-      sleep(1);
+      mt_sleep_ms(1000 * 1);
       ret = mt_read_cpu_usage(cur, cpu_ids, found);
       if (ret != found) {
         err("%s, read cpu curr usage fail, expect %d but only %d get\n", __func__, found,
