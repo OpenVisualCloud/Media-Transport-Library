@@ -41,7 +41,6 @@ static void lsm_print_help() {
   printf("Params:\n");
   printf(" --help: Print the help information\n");
   printf(" --info: Print lcore shared manager detail info\n");
-  printf(" --info: Print lcore shared manager detail info\n");
   printf(" --clean_pid_auto_check: Clean the dead entries if PID is not active\n");
   printf(" --clean_lcore <lcore id>: Clean the entry by lcore ID\n");
 

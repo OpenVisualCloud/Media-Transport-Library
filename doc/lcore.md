@@ -8,7 +8,8 @@ It minimizes the impact of OS scheduler decisions, reduces cache-related issues,
 
 ## 2. Lcore manager for multi process
 
-IMTL supports multi-process deployment based on SR-IOV VF isolation. To manage the dispatching of lcores among multiple processes, it introduces shared memory mapping to maintain the status of lcore usage. Each process searches the mapping and allocates a new lcore slot from it, freeing the slot when it is no longer in use. The last user attached to the shared memory will reset the mapping to an initial status during the `shmdt` operation as part of the release routine.
+IMTL supports multi-process deployment based on SR-IOV VF isolation. To manage the dispatching of lcores among multiple processes, it introduces shared memory mapping to maintain the status of lcore usage. Each process searches the mapping and allocates a new lcore slot from it, freeing the slot when it is no longer in use.
+The last user attached to the shared memory will reset the mapping to an initial status during the `shmdt` operation as part of the release routine.
 
 IMTL also provides a tool which can be find from `./build/app/LcoreMgr` for manually cleaning up lcore entries. This tool is typically used when a process fails to release lcores due to panic issues or other failures that prevent the regular free routine from running. Below is the usage information:
 
