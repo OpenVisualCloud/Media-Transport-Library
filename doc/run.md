@@ -557,7 +557,7 @@ The VFIO driver can run without the IOMMU feature, enable it with below command 
 sudo bash -c 'echo 1 > /sys/module/vfio/parameters/enable_unsafe_noiommu_mode'
 ```
 
-### 8.13 Fail to loading shared libraries
+### 8.14 Fail to loading shared libraries
 
 If you get below similar message when runing the RxTxApp, it's likely a ld library path problem.
 

@@ -464,6 +464,8 @@ mtl_handle mtl_init(struct mtl_init_params* p) {
   impl = mt_rte_zmalloc_socket(sizeof(*impl), socket[MTL_PORT_P]);
   if (!impl) goto err_exit;
 
+  mt_user_info_init(&impl->u_info);
+
 #ifndef WINDOWSENV
   if (geteuid() == 0)
     impl->privileged = true;
