@@ -66,7 +66,8 @@ static inline void mt_sch_set_cpu_busy(struct mt_sch_impl* sch, bool busy) {
 }
 
 int mt_sch_put_lcore(struct mtl_main_impl* impl, unsigned int lcore);
-int mt_sch_get_lcore(struct mtl_main_impl* impl, unsigned int* lcore);
+int mt_sch_get_lcore(struct mtl_main_impl* impl, unsigned int* lcore,
+                     enum mt_lcore_type type);
 bool mt_sch_lcore_valid(struct mtl_main_impl* impl, unsigned int lcore);
 
 #endif

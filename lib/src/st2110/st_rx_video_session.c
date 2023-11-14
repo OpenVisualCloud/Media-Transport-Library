@@ -2538,7 +2538,7 @@ static int rv_init_pkt_lcore(struct mtl_main_impl* impl,
   }
   s->pkt_lcore_ring = ring;
 
-  ret = mt_sch_get_lcore(impl, &lcore);
+  ret = mt_sch_get_lcore(impl, &lcore, MT_LCORE_TYPE_RXV_RING_LCORE);
   if (ret < 0) {
     err("%s(%d,%d), get lcore fail %d\n", __func__, mgr_idx, idx, ret);
     rv_uinit_pkt_lcore(impl, s);

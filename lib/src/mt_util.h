@@ -253,4 +253,19 @@ const char* mt_native_afxdp_port2if(const char* port);
 
 int mt_user_info_init(struct mt_user_info* info);
 
+struct mt_cpu_usage {
+  uint64_t user;
+  uint64_t nice;
+  uint64_t system;
+  uint64_t idle;
+  uint64_t iowait;
+  uint64_t irq;
+  uint64_t softirq;
+  uint64_t steal;
+};
+
+int mt_read_cpu_usage(struct mt_cpu_usage* usages, int* cpu_ids, int num_cpus);
+
+double mt_calculate_cpu_usage(struct mt_cpu_usage* prev, struct mt_cpu_usage* curr);
+
 #endif

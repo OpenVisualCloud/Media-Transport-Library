@@ -887,10 +887,13 @@ const char* mt_native_afxdp_port2if(const char* port) {
 int mt_user_info_init(struct mt_user_info* info) {
   int ret = -EIO;
 
+  info->pid = getpid();
+
 #ifdef WINDOWSENV /* todo */
   MTL_MAY_UNUSED(ret);
   snprintf(info->hostname, sizeof(info->hostname), "%s", "unknow");
   snprintf(info->user, sizeof(info->user), "%s", "unknow");
+  snprintf(info->comm, sizeof(info->comm), "%s", "unknow");
 #else
   ret = gethostname(info->hostname, sizeof(info->hostname));
   if (ret < 0) {
@@ -901,9 +904,77 @@ int mt_user_info_init(struct mt_user_info* info) {
   struct passwd* user_info = getpwuid(uid);
   snprintf(info->user, sizeof(info->user), "%s",
            user_info ? user_info->pw_name : "unknow");
+  char comm_path[128];
+  snprintf(comm_path, sizeof(comm_path), "/proc/%d/comm", info->pid);
+  int fd = open(comm_path, O_RDONLY);
+  if (fd >= 0) {
+    ssize_t bytes = read(fd, info->comm, sizeof(info->comm) - 1);
+    if (bytes <= 0)
+      snprintf(info->comm, sizeof(info->comm), "%s", "unknow");
+    else
+      info->comm[strcspn(info->comm, "\n")] = '\0';
+    close(fd);
+  } else {
+    snprintf(info->comm, sizeof(info->comm), "%s", "unknow");
+  }
+  dbg("%s, comm %s\n", __func__, info->comm);
 #endif
 
-  info->pid = getpid();
-
   return 0;
+}
+
+int mt_read_cpu_usage(struct mt_cpu_usage* usages, int* cpu_ids, int num_cpus) {
+#ifdef WINDOWSENV /* todo */
+  MTL_MAY_UNUSED(usages);
+  MTL_MAY_UNUSED(cpu_ids);
+  MTL_MAY_UNUSED(num_cpus);
+  err("%s, not support on windows\n", __func__);
+  return -ENOTSUP;
+#else
+  FILE* file;
+  char line[256];
+  int found = 0;
+
+  file = fopen("/proc/stat", "r");
+  if (!file) {
+    err("%s, open /proc/stat fail\n", __func__);
+    return -EIO;
+  }
+
+  while (fgets(line, sizeof(line) - 1, file)) {
+    struct mt_cpu_usage cur;
+    int cpu;
+    int parsed = sscanf(line,
+                        "cpu%d %" PRIu64 " %" PRIu64 " %" PRIu64 " %" PRIu64 " %" PRIu64
+                        " %" PRIu64 " %" PRIu64 " %" PRIu64 "",
+                        &cpu, &cur.user, &cur.nice, &cur.system, &cur.idle, &cur.iowait,
+                        &cur.irq, &cur.softirq, &cur.steal);
+    if (parsed != 9) continue;
+    /* check if match with any input cpus */
+    for (int i = 0; i < num_cpus; i++) {
+      if (cpu == cpu_ids[i]) {
+        found++;
+        usages[i] = cur;
+        dbg("%s, get succ for cpu %d at %d\n", __func__, cpu, i);
+        break;
+      }
+    }
+  }
+
+  fclose(file);
+  return found;
+#endif
+}
+
+double mt_calculate_cpu_usage(struct mt_cpu_usage* prev, struct mt_cpu_usage* curr) {
+  uint64_t prev_idle = prev->idle + prev->iowait;
+  uint64_t curr_idle = curr->idle + curr->iowait;
+  uint64_t prev_total = prev->user + prev->nice + prev->system + prev->idle +
+                        prev->iowait + prev->irq + prev->softirq + prev->steal;
+  uint64_t curr_total = curr->user + curr->nice + curr->system + curr->idle +
+                        curr->iowait + curr->irq + curr->softirq + curr->steal;
+  uint64_t totald = curr_total - prev_total;
+  uint64_t idled = curr_idle - prev_idle;
+
+  return 100.0 * (totald - idled) / totald;
 }
