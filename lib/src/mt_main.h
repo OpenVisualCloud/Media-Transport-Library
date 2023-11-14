@@ -711,10 +711,26 @@ struct mt_interface {
   void* xdp;
 };
 
-struct mt_lcore_shm_entry {
+struct mt_user_info {
   char hostname[64];
   char user[32];
+  /* the current process name */
+  char comm[64];
   pid_t pid;
+};
+
+enum mt_lcore_type {
+  MT_LCORE_TYPE_SCH = 0, /* lib scheduler used */
+  MT_LCORE_TYPE_TAP,
+  MT_LCORE_TYPE_RXV_RING_LCORE,
+  MT_LCORE_TYPE_USER, /* allocated by application */
+  MT_LCORE_TYPE_MAX,
+};
+
+struct mt_lcore_shm_entry {
+  struct mt_user_info u_info;
+  pid_t pid;
+  enum mt_lcore_type type;
   bool active;
 };
 
@@ -1089,12 +1105,6 @@ struct mt_dp_impl {
   /* the shared tx sys queue */
   struct mt_txq_entry* txq_sys_entry;
   rte_spinlock_t txq_sys_entry_lock; /* protect txq_sys_entry */
-};
-
-struct mt_user_info {
-  char hostname[64];
-  char user[32];
-  pid_t pid;
 };
 
 struct mtl_main_impl {

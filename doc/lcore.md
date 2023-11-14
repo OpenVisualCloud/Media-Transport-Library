@@ -21,4 +21,17 @@ IMTL also provides a tool which can be find from `./build/app/LcoreMgr` for manu
 
 When you use the `--clean_pid_auto_check` option, the tool will perform a loop check for all the active entries in the map. It checks whether the hostname and user match the current login environment and then verifies if the PID is still running. If the tool detects that the PID is no longer active, it will proceed to remove the lcore from the mapping.
 
-If you are deploying in a multi-container environment, the PID check becomes less useful as each container has its own process namespace. In such cases, you can use the --clean_lcore option to remove an entry based on the lcore ID. However, it's important to confirm that the lcore is not active before using this option.
+If you are deploying in a multi-container environment, the PID check becomes less useful as each container has its own process namespace. In such cases, you can use the `--clean_lcore` option to remove an entry based on the lcore ID. However, it's important to confirm that the lcore is not active before using this option.
+
+Before using the `--clean_lcore` option, please ensure that you double-check the current lcore status by running `./build/app/LcoreMgr --info`. An example output list is provided below. Pay close attention to the lcore usage details, including user, host, PID, process name, allocation information, and, most importantly, CPU usage. Typically, an active lcore allocated by the IMTL library should utilize 100% of the CPU resources.
+
+```bash
+MT: 2023-11-14 15:00:03, mtl_lcore_shm_print, MTL used lcores 3
+MT: 2023-11-14 15:00:03, mtl_lcore_shm_print, lcore 28 active by frank@media-frankdu-kahawai-node2, pid: 236759(comm: RxTxApp) type: app_allocated
+MT: 2023-11-14 15:00:03, mtl_lcore_shm_print, lcore 29 active by frank@media-frankdu-kahawai-node2, pid: 236759(comm: RxTxApp) type: lib_sch
+MT: 2023-11-14 15:00:03, mtl_lcore_shm_print, lcore 30 active by frank@media-frankdu-kahawai-node2, pid: 236759(comm: RxTxApp) type: lib_sch
+MT: 2023-11-14 15:00:03, mtl_lcore_shm_print, collecting cpu usage
+MT: 2023-11-14 15:00:04, mtl_lcore_shm_print, lcore 28 cpu usage 4.08%
+MT: 2023-11-14 15:00:04, mtl_lcore_shm_print, lcore 29 cpu usage 100.00%
+MT: 2023-11-14 15:00:04, mtl_lcore_shm_print, lcore 30 cpu usage 100.00%
+```

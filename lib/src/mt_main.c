@@ -674,7 +674,7 @@ int mtl_get_lcore(mtl_handle mt, unsigned int* lcore) {
     return -EIO;
   }
 
-  return mt_sch_get_lcore(impl, lcore);
+  return mt_sch_get_lcore(impl, lcore, MT_LCORE_TYPE_USER);
 }
 
 int mtl_put_lcore(mtl_handle mt, unsigned int lcore) {

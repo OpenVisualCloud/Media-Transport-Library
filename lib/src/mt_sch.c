@@ -201,7 +201,7 @@ static int sch_start(struct mt_sch_impl* sch) {
   rte_atomic32_set(&sch->stopped, 0);
 
   if (!sch->run_in_thread) {
-    ret = mt_sch_get_lcore(sch->parent, &sch->lcore);
+    ret = mt_sch_get_lcore(sch->parent, &sch->lcore, MT_LCORE_TYPE_SCH);
     if (ret < 0) {
       err("%s(%d), get lcore fail %d\n", __func__, idx, ret);
       sch_unlock(sch);
@@ -563,7 +563,8 @@ static int sch_init_lcores(struct mt_sch_mgr* mgr) {
   return 0;
 }
 
-int mt_sch_get_lcore(struct mtl_main_impl* impl, unsigned int* lcore) {
+int mt_sch_get_lcore(struct mtl_main_impl* impl, unsigned int* lcore,
+                     enum mt_lcore_type type) {
   struct mt_sch_mgr* mgr = mt_sch_get_mgr(impl);
   struct mt_user_info* info = &impl->u_info;
   unsigned int cur_lcore = 0;
@@ -586,8 +587,11 @@ int mt_sch_get_lcore(struct mtl_main_impl* impl, unsigned int* lcore) {
       if (!shm_entry->active) {
         *lcore = cur_lcore;
         shm_entry->active = true;
-        strncpy(shm_entry->hostname, info->hostname, sizeof(shm_entry->hostname));
-        strncpy(shm_entry->user, info->user, sizeof(shm_entry->user));
+        struct mt_user_info* u_info = &shm_entry->u_info;
+        strncpy(u_info->hostname, info->hostname, sizeof(u_info->hostname));
+        strncpy(u_info->user, info->user, sizeof(u_info->user));
+        strncpy(u_info->comm, info->comm, sizeof(u_info->comm));
+        shm_entry->type = type;
         shm_entry->pid = info->pid;
         lcore_shm->used++;
         rte_atomic32_inc(&impl->lcore_cnt);
@@ -1029,6 +1033,20 @@ int mt_sch_stop_all(struct mtl_main_impl* impl) {
   return 0;
 }
 
+static const char* lcore_type_names[MT_LCORE_TYPE_MAX] = {
+    "lib_sch",
+    "lib_tap",
+    "lib_rxv_ring",
+    "app_allocated",
+};
+
+static const char* lcore_type_name(enum mt_lcore_type type) {
+  if (type >= MT_LCORE_TYPE_SCH && type < MT_LCORE_TYPE_MAX)
+    return lcore_type_names[type];
+  else
+    return "unknown";
+}
+
 int mtl_lcore_shm_print(void) {
   struct mt_lcore_mgr lcore_mgr;
   struct mt_lcore_shm_entry* shm_entry;
@@ -1039,12 +1057,44 @@ int mtl_lcore_shm_print(void) {
   struct mt_lcore_shm* lcore_shm = lcore_mgr.lcore_shm;
   info("%s, MTL used lcores %d\n", __func__, lcore_shm->used);
 
+  int cpu_ids[RTE_MAX_LCORE];
+  int found = 0;
+
   for (int i = 0; i < RTE_MAX_LCORE; i++) {
     shm_entry = &lcore_shm->lcores_info[i];
 
     if (!shm_entry->active) continue;
-    info("%s, lcore %d active on %s@%s with pid: %d\n", __func__, i, shm_entry->user,
-         shm_entry->hostname, (int)shm_entry->pid);
+    struct mt_user_info* u_info = &shm_entry->u_info;
+    info("%s, lcore %d active by %s@%s, pid: %d(comm: %s) type: %s\n", __func__, i,
+         u_info->user, u_info->hostname, (int)shm_entry->pid, u_info->comm,
+         lcore_type_name(shm_entry->type));
+    cpu_ids[found] = i;
+    found++;
+  }
+
+  if (found > 0) { /* read the cpu usage */
+    struct mt_cpu_usage prev[found];
+    struct mt_cpu_usage cur[found];
+
+    info("%s, collecting cpu usage\n", __func__);
+    ret = mt_read_cpu_usage(prev, cpu_ids, found);
+    if (ret != found) {
+      err("%s, read cpu prev usage fail, expect %d but only %d get\n", __func__, found,
+          ret);
+    } else {
+      sleep(1);
+      ret = mt_read_cpu_usage(cur, cpu_ids, found);
+      if (ret != found) {
+        err("%s, read cpu curr usage fail, expect %d but only %d get\n", __func__, found,
+            ret);
+      } else {
+        /* print the result */
+        for (int i = 0; i < found; i++) {
+          double usage = mt_calculate_cpu_usage(&prev[i], &cur[i]);
+          info("%s, lcore %d cpu usage %.2f%%\n", __func__, cpu_ids[i], usage);
+        }
+      }
+    }
   }
 
   sch_lcore_shm_uinit(&lcore_mgr);
@@ -1060,11 +1110,11 @@ static int lcore_shm_clean_auto_pid(struct mt_lcore_mgr* lcore_mgr) {
 #else
 
 static int lcore_shm_clean_auto_pid(struct mt_lcore_mgr* lcore_mgr) {
-  struct mt_user_info u_info;
+  struct mt_user_info info;
   int clean = 0;
 
-  memset(&u_info, 0, sizeof(u_info));
-  mt_user_info_init(&u_info);
+  memset(&info, 0, sizeof(info));
+  mt_user_info_init(&info);
 
   struct mt_lcore_shm* lcore_shm = lcore_mgr->lcore_shm;
   struct mt_lcore_shm_entry* shm_entry;
@@ -1072,9 +1122,9 @@ static int lcore_shm_clean_auto_pid(struct mt_lcore_mgr* lcore_mgr) {
     shm_entry = &lcore_shm->lcores_info[i];
 
     if (!shm_entry->active) continue;
-    if (0 != strncmp(shm_entry->hostname, u_info.hostname, sizeof(shm_entry->hostname)))
-      continue;
-    if (0 != strncmp(shm_entry->user, u_info.user, sizeof(shm_entry->user))) continue;
+    struct mt_user_info* u_info = &shm_entry->u_info;
+    if (0 != strncmp(u_info->hostname, info.hostname, sizeof(u_info->hostname))) continue;
+    if (0 != strncmp(u_info->user, info.user, sizeof(u_info->user))) continue;
     /* now check if PID is active with zero signal */
     int result = kill(shm_entry->pid, 0);
     if (0 == result) continue;
