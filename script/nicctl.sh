@@ -9,14 +9,14 @@ if [ $# -lt 2 ]; then
     echo "Usage: "
     echo "    $0 <command> <bb:dd:ff.x> [args]"
     echo "Commands:"
-    echo "   bind_pmd                 bind driver to DPDK PMD driver"
-    echo "   bind_kernel              bind driver to kernel driver"
-    echo "   create_vf                create VFs and bind to VFIO"
-    echo "   create_kvf               create VFs and bind to kernel driver"
-    echo "   create_tvf               create trusted VFs and bind to VFIO"
-    echo "   create_dcf_vf            create DCF VFs and bind to VFIO"
+    echo "   bind_pmd                 Bind driver to DPDK PMD driver"
+    echo "   bind_kernel              Bind driver to kernel driver"
+    echo "   create_vf                Create VFs and bind to VFIO"
+    echo "   create_kvf               Create VFs and bind to kernel driver"
+    echo "   create_tvf               Create trusted VFs and bind to VFIO"
+    echo "   create_dcf_vf            Create DCF VFs and bind to VFIO"
     echo "   disable_vf               Disable VF"
-    echo "   status                   List the DPDK port status"
+    echo "   list all                 List all NIC devices and the brief"
     exit 0
 fi
 
@@ -112,7 +112,29 @@ create_kvf() {
     done
 }
 
-cmdlist=("bind_kernel" "create_vf" "create_kvf" "create_tvf" "disable_vf" "bind_pmd" "create_dcf_vf" "status")
+list() {
+    printf "%-4s\t%-12s\t%-12s\t%-4s\t%-6s\t%-10s\n" "ID" "PCI BDF" "Driver" "NUMA" "IOMMU" "IF Name"
+
+    id_counter=0
+
+    for pci_bdf in $(dpdk-devbind.py -s | awk '/^Network devices/ {show=1; next} /^$/ {show=0} show && /drv=/ {print $1}'); do
+        
+        driver=$(basename "$(readlink /sys/bus/pci/devices/"${pci_bdf}"/driver)" 2>/dev/null || echo "N/A")
+
+        numa_node=$(cat /sys/bus/pci/devices/"${pci_bdf}"/numa_node 2>/dev/null || echo "N/A")
+
+        iommu_group=$(basename "$(readlink /sys/bus/pci/devices/"${pci_bdf}"/iommu_group)" 2>/dev/null || echo "N/A")
+
+        interface_name=$(basename /sys/bus/pci/devices/"${pci_bdf}"/net/*)
+
+        printf "%-4s\t%-12s\t%-12s\t%-4s\t%-6s\t%-10s\n" \
+            "$id_counter" "$pci_bdf" "$driver" "$numa_node" "$iommu_group" "$interface_name"
+
+        id_counter=$((id_counter + 1))
+    done
+}
+
+cmdlist=("bind_kernel" "create_vf" "create_kvf" "create_tvf" "disable_vf" "bind_pmd" "create_dcf_vf" "list")
 
 for c in "${cmdlist[@]}"; do
    if [ "$c" == "$1" ]; then
@@ -124,6 +146,11 @@ done
 if [ -z "$cmd" ]; then
     echo "Command $1 not found"
     exit 1
+fi
+
+if [ "$cmd" == "list" ]; then
+    list
+    exit 0
 fi
 
 bdf=$2
@@ -158,7 +185,7 @@ if [ "$cmd" == "bind_pmd" ]; then
     exit 0
 fi
 
-# suppose bind kernel should be called
+# suppose bind kernel should be called for following commands
 if [ -z "$inf" ]; then
     bind_kernel
     inf=$(dpdk-devbind.py -s | grep "$bdf.*if" | sed -e s/.*if=//g | awk '{print $1;}')
