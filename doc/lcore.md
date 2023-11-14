@@ -28,9 +28,9 @@ Typically, an active lcore allocated by the IMTL library should utilize 100% of 
 
 ```bash
 MT: 2023-11-14 15:00:03, mtl_lcore_shm_print, MTL used lcores 3
-MT: 2023-11-14 15:00:03, mtl_lcore_shm_print, lcore 28 active by frank@media-frankdu-kahawai-node2, pid: 236759(comm: RxTxApp) type: app_allocated
-MT: 2023-11-14 15:00:03, mtl_lcore_shm_print, lcore 29 active by frank@media-frankdu-kahawai-node2, pid: 236759(comm: RxTxApp) type: lib_sch
-MT: 2023-11-14 15:00:03, mtl_lcore_shm_print, lcore 30 active by frank@media-frankdu-kahawai-node2, pid: 236759(comm: RxTxApp) type: lib_sch
+MT: 2023-11-14 15:00:03, mtl_lcore_shm_print, lcore 28 active by xxx@xxx, pid: 236759(comm: RxTxApp) type: app_allocated
+MT: 2023-11-14 15:00:03, mtl_lcore_shm_print, lcore 29 active by xxx@xxx, pid: 236759(comm: RxTxApp) type: lib_sch
+MT: 2023-11-14 15:00:03, mtl_lcore_shm_print, lcore 30 active by xxx@xxx, pid: 236759(comm: RxTxApp) type: lib_sch
 MT: 2023-11-14 15:00:03, mtl_lcore_shm_print, collecting cpu usage
 MT: 2023-11-14 15:00:04, mtl_lcore_shm_print, lcore 28 cpu usage 4.08%
 MT: 2023-11-14 15:00:04, mtl_lcore_shm_print, lcore 29 cpu usage 100.00%
