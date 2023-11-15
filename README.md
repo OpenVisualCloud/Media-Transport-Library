@@ -18,6 +18,7 @@ If you find value in our project, please consider giving it a star. Your support
 
 ### 1.1 Features
 
+* Supported data path backend: DPDK PMD, kernel socket, and AF_XDP with eBPF filter(still in developing)
 * The User-space LibOS UDP stack features a POSIX socket compatible API.
 * Non-root run.
 * Multi-process handling, allowing for up to 8 NICs per process.
