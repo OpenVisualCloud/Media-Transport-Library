@@ -70,6 +70,7 @@ APP_BUILD_DIR=${WORKSPACE}/build/app
 TEST_BUILD_DIR=${WORKSPACE}/build/tests
 PLUGINS_BUILD_DIR=${WORKSPACE}/build/plugins
 LD_PRELOAD_BUILD_DIR=${WORKSPACE}/build/ld_preload
+MANAGER_BUILD_DIR=${WORKSPACE}/build/manager
 
 # build lib
 meson setup "${LIB_BUILD_DIR}" -Dbuildtype="$buildtype" -Ddisable_pcapng="$disable_pcapng" -Denable_asan="$enable_asan" -Denable_tap="$enable_tap"
@@ -85,17 +86,13 @@ popd
 # build app
 pushd app/
 meson setup "${APP_BUILD_DIR}" -Dbuildtype="$buildtype" -Denable_asan="$enable_asan"
-popd
-pushd "${APP_BUILD_DIR}"
-ninja
+meson compile -C "${APP_BUILD_DIR}"
 popd
 
 # build tests
 pushd tests/
 meson setup "${TEST_BUILD_DIR}" -Dbuildtype="$buildtype" -Denable_asan="$enable_asan"
-popd
-pushd "${TEST_BUILD_DIR}"
-ninja
+meson compile -C "${TEST_BUILD_DIR}"
 popd
 
 # build plugins
@@ -123,5 +120,13 @@ if [ "$user" == "root" ]; then
 else
     sudo ninja install
 fi
+popd
+fi
+
+# build mtl_manager
+if [ "$OS" != "Windows_NT" ]; then
+pushd manager/
+meson setup "${MANAGER_BUILD_DIR}" -Dbuildtype="$buildtype" -Denable_asan="$enable_asan"
+meson compile -C "${MANAGER_BUILD_DIR}"
 popd
 fi
