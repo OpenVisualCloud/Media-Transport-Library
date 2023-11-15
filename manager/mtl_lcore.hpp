@@ -2,15 +2,15 @@
  * Copyright(c) 2023 Intel Corporation
  */
 
-#include <rte_build_config.h>
-
 #include <bitset>
 #include <iostream>
 #include <mutex>
 
+#define MTL_MAX_LCORE 128
+
 class mtl_lcore {
  private:
-  std::bitset<RTE_MAX_LCORE> bs;
+  std::bitset<MTL_MAX_LCORE> bs;
   std::mutex bs_mtx;
 
  public:
