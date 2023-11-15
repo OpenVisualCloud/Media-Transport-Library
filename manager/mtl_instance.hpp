@@ -22,13 +22,9 @@ class mtl_instance {
   std::vector<int> ifindex;
   std::vector<int> lcore_ids;
   std::shared_ptr<mtl_lcore> lcore_manager_sp;
-  std::chrono::steady_clock::time_point last_heartbeat;
-  uint32_t last_heartbeat_seq;
-  uint32_t heartbeat_skipped;
 
  private:
   int handle_message_request_lcore(mtl_request_lcore_message_t* request_lcore_msg);
-  void handle_message_heartbeat() { last_heartbeat = std::chrono::steady_clock::now(); }
   int handle_message_register(mtl_register_message_t* register_msg);
   int send_response(bool success) {
     mtl_message_t msg;
@@ -41,9 +37,7 @@ class mtl_instance {
 
  public:
   mtl_instance(int conn_fd, std::shared_ptr<mtl_lcore> lcore_manager)
-      : conn_fd(conn_fd), lcore_manager_sp(lcore_manager) {
-    last_heartbeat = std::chrono::steady_clock::now();
-  }
+      : conn_fd(conn_fd), lcore_manager_sp(lcore_manager) {}
   ~mtl_instance() {
     for (const auto& lcore_id : lcore_ids) lcore_manager_sp->put_lcore(lcore_id);
     ifindex.clear();
@@ -57,11 +51,6 @@ class mtl_instance {
   int get_uid() { return uid; }
   std::string get_hostname() { return hostname; }
   std::vector<int> get_ifindex() { return ifindex; }
-
-  bool is_timeout(std::chrono::duration<double> timeout) {
-    return std::chrono::steady_clock::now() - last_heartbeat > timeout;
-  }
-
   int handle_message(const char* buf, int len);
 };
 
@@ -74,9 +63,6 @@ int mtl_instance::handle_message(const char* buf, int len) {
   }
 
   switch (ntohl(msg->header.type)) {
-    case MTL_MSG_TYPE_HEARTBEAT:
-      handle_message_heartbeat();
-      break;
     case MTL_MSG_TYPE_REGISTER:
       handle_message_register(&msg->body.register_msg);
       break;
