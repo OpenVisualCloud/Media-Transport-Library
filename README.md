@@ -10,7 +10,7 @@ Scorecard](https://api.securityscorecards.dev/projects/github.com/OpenVisualClou
 
 ## 1. Overview
 
-The Intel® Media Transport Library is a software based solution designed for high-throughput, low-latency transmission and reception of media data. It features an efficient user-space LibOS UDP stack specifically crafted for media transport, and comes equipped with a built-in SMPTE ST 2110-compliant implementation for Professional Media over Managed IP Networks.
+The Intel® Media Transport Library(IMTL) is a software based solution designed for high-throughput, low-latency transmission and reception of media data. It features an efficient user-space LibOS UDP stack specifically crafted for media transport, and comes equipped with a built-in SMPTE ST 2110-compliant implementation for Professional Media over Managed IP Networks.
 
 The Intel® Media Transport Library solves the strict timing challenges of transporting ST2110 compliant media streams using a software library and through IP networks. Instead of specialized hardware, this library leverages existing  commonly available CPU platforms with conventional NICs that incorporate rate limiting to meet the strict timing challenges in the SMPTE ST 2110 standard.
 
@@ -18,6 +18,7 @@ If you find value in our project, please consider giving it a star. Your support
 
 ### 1.1 Features
 
+* Supported data path backend: DPDK PMD,native kernel socket, and AF_XDP with eBPF filter(still in developing)
 * The User-space LibOS UDP stack features a POSIX socket compatible API.
 * Non-root run.
 * Multi-process handling, allowing for up to 8 NICs per process.
@@ -37,13 +38,19 @@ If you find value in our project, please consider giving it a star. Your support
 
 ### 1.2 Architecture
 
-The Intel® Media Transport Library leverages DPDK features(hugepages, memory pool, thread management) to implement a highly efficient, real-time, and low-latency media transport stack. This software-based media transport solution enables deployment on edge and cloud environments using COTS hardware.
+The Intel® Media Transport Library leverages DPDK (Data Plane Development Kit) EAL (Environment Abstraction Layer including the memory and core management) to implement a highly efficient, real-time, and low-latency media transport solution. This software-based media transport stack enables deployment on edge and cloud environments using COTS hardware.
 
-The library introduces a tasklet asynchronous-based scheduler that maximizes CPU resources, making it easy to integrate with various packet processing units and accelerators.
+The library incorporates a virtual data path backend layer, designed to abstract various NIC implementation and provide a unified packet TX/RX interface to the upper network layer. It currently supports three types of NIC devices:
 
-The packet pacing module supports various algorithms to achieve narrow pacing, including RL (rate limit) which is partially hardware offloaded and TSC which is fully software-based.
+* DPDK Poll-Mode Drivers (PMDs): These drivers fully bypass the kernel's networking stack, utilizing the 'poll mode' driver. This approach provides direct hardware access, eliminates heavy user/kernel context switches, and avoids IRQ (Interrupt Request) switches. As a result, DPDK PMDs deliver ultra-low latency and high throughput, making them ideal for demanding networking applications.
+* Native Linux Kernel Network Socket Stack: This option supports the full range of kernel ecosystems.
+* AF_XDP (Express Data Path) with eBPF filter(still in developing): AF_XDP represents a significant advancement in the Linux networking stack, striking a balance between raw performance and integration with the kernel's networking ecosystem. It's particularly valuable in scenarios where performance is critical, but a full kernel bypass solution like DPDK is not feasible or desired.
 
-The library also includes SIMD CSC (color space format conversion), DMA, and plugin interfaces to enable the creation of a complete video production ecosystem.
+The library introduces a tasklet-based asynchronous scheduler that optimizes CPU resource utilization, facilitating integration with various packet processing units and accelerators.
+
+Additionally, the packet pacing module offers support for various pacing algorithms, including RL (Rate Limit), which is partially hardware-offloaded, and TSC (timestamp Counter), which is fully software-based.
+
+IMTL also incorporates SIMD (Single Instruction, Multiple Data) for CSC (Color Space Format Conversion) of the big-endian and little-endian, DMA (Direct Memory Access), and plugin interfaces, enabling the creation of a comprehensive video production ecosystem.
 
 <div align="center">
 <img src="doc/png/arch.png" align="center" alt="overall architecture">
@@ -51,13 +58,15 @@ The library also includes SIMD CSC (color space format conversion), DMA, and plu
 
 ### 1.3 Ethernet supported
 
-Regarding supported Ethernet, it can essentially run well on any Ethernet already supported by DPDK. You can refer to the site <https://doc.dpdk.org/guides/nics/> for a list of supported Ethernet hardware in DPDK.
+IMTL offers versatile Ethernet support, thanks to its compatibility with DPDK PMD, kernel socket, and AF_XDP backends.
 
-In addition, this implementation provides a fallback kernel(Linux) socket transport support for cases where your NIC is not supported by DPDK.
+For DPDK PMD support, you can refer to the DPDK PMD site <https://doc.dpdk.org/guides/nics/> for a comprehensive list of supported Ethernet hardware.
+
+In cases where your NIC is not supported by DPDK, IMTL provides a fallback option with kernel (Linux) socket transport support.
 
 However, please note that our daily development and validation is primarily conducted on the Intel E810 series and AWS ENA, so we can't guarantee the status for other network interface cards (NICs).
 
-An important point to note is that narrow pacing of TX is only supported for the Intel E810 series due to its rate limit feature. All other NICs have to use TSC (Timestamp Counter) as the pacing source, which can only ensure a broad wide pacing.
+An important point to note is that narrow pacing of TX is only supported for the Intel E810 series together with DPDK PMD due to the rate limit feature. All other type of usage have to use TSC (Timestamp Counter) as the pacing source, which can only ensure a broad wide pacing.
 
 ## 2. Build
 
@@ -67,7 +76,7 @@ For Windows, please refer to the [Win build guide](doc/build_WIN.md) for instruc
 
 ## 3. Run ST2110
 
-Please refer to [run guide](doc/run.md) for instructions on how to set up and run the demo pipeline application based on DPDK PMD.
+Please refer to [run guide](doc/run.md) for instructions on how to set up and run the demo pipeline application based on DPDK PMD backend.
 
 For Windows, please refer to [Windows run guide](doc/run_WIN.md).
 
@@ -83,9 +92,8 @@ To quickly develop applications based on the Intel® Media Transport Library, pl
 
 ## 5. User space LibOS UDP stack guide
 
-Starting from version 23.03.0, this library extends support for a user-space UDP stack that runs directly under the current process context for improved performance. Other user-space UDP stacks typically run with a client-service architecture, which introduces cross-core message costs that can negatively impact performance.
-
-Our stack runs the NIC tx/rx function directly from the sendto/recvfrom API, which eliminates the need for cross-core calls and maintains data affinity (LLC) to the UDP consumer.
+Starting from version 23.04, IMTL introduces support for a LD preload POSIX-compatible user-space UDP stack that operates directly within the current process context. This enhancement significantly boosts performance by eliminating the cross-core message costs typically associated with client-service architectures used in other user-space UDP stacks.
+IMTL's stack allows the NIC transmission and reception functions to run directly from the sendto/recvfrom API, eliminating the need for cross-core calls and maintaining data affinity (LLC) to the UDP consumer, thereby optimizing performance.
 
 To learn how to use the LibOS UDP stack, please refer to the [udp doc](doc/udp.md).
 
