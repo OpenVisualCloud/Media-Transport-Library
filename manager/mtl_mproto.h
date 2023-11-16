@@ -17,7 +17,7 @@ extern "C" {
 
 #pragma pack(push, 1)
 
-const uint32_t imtl_magic = 0x494D544C; /* ASCII representation of "IMTL" */
+#define IMTL_MAGIC (0x494D544C) /* ASCII representation of "IMTL" */
 
 /* message type */
 typedef enum {
@@ -28,7 +28,8 @@ typedef enum {
   MTL_MSG_TYPE_REGISTER,
   MTL_MSG_TYPE_HEARTBEAT,
   MTL_MSG_TYPE_REQUEST_MAP_FD,
-  MTL_MSG_TYPE_REQUEST_LCORE,
+  MTL_MSG_TYPE_GET_LCORE,
+  MTL_MSG_TYPE_PUT_LCORE,
   MTL_MSG_TYPE_UDP_PORT_OPERATION,
   /* server to client */
   MTL_MSG_TYPE_SC = 200,
@@ -60,7 +61,7 @@ typedef struct {
 
 typedef struct {
   uint16_t lcore;
-} mtl_request_lcore_message_t;
+} mtl_lcore_message_t;
 
 typedef struct {
   int ifindex;
@@ -78,7 +79,7 @@ typedef struct {
     mtl_register_message_t register_msg;
     mtl_heartbeat_message_t heartbeat_msg;
     mtl_request_map_fd_message_t request_map_fd_msg;
-    mtl_request_lcore_message_t request_lcore_msg;
+    mtl_lcore_message_t lcore_msg;
     mtl_udp_port_operation_message_t udp_port_op_msg;
     mtl_response_message_t response_msg;
   } body;

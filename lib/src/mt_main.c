@@ -13,6 +13,7 @@
 #include "mt_dhcp.h"
 #include "mt_dma.h"
 #include "mt_flow.h"
+#include "mt_instance.h"
 #include "mt_log.h"
 #include "mt_mcast.h"
 #include "mt_ptp.h"
@@ -475,6 +476,8 @@ mtl_handle mtl_init(struct mtl_init_params* p) {
   impl->privileged = true;
 #endif
 
+  mt_instance_init(impl);
+
   rte_memcpy(&impl->user_para, p, sizeof(*p));
   impl->var_para.sch_default_sleep_us = 1 * US_PER_MS; /* default 1ms */
   /* use sleep zero if sleep us is smaller than this thresh */
@@ -629,6 +632,8 @@ int mtl_uninit(mtl_handle mt) {
   mt_dev_if_uinit(impl);
 
   mt_stat_uinit(impl);
+
+  mt_instance_uinit(impl);
 
   mt_rte_free(impl);
 

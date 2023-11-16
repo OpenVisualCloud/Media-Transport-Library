@@ -24,11 +24,12 @@ class mtl_instance {
   std::shared_ptr<mtl_lcore> lcore_manager_sp;
 
  private:
-  int handle_message_request_lcore(mtl_request_lcore_message_t* request_lcore_msg);
+  int handle_message_get_lcore(mtl_lcore_message_t* lcore_msg);
+  int handle_message_put_lcore(mtl_lcore_message_t* lcore_msg);
   int handle_message_register(mtl_register_message_t* register_msg);
   int send_response(bool success) {
     mtl_message_t msg;
-    msg.header.magic = htonl(imtl_magic);
+    msg.header.magic = htonl(IMTL_MAGIC);
     msg.header.type = (mtl_message_type_t)htonl(MTL_MSG_TYPE_RESPONSE);
     msg.header.body_len = htonl(sizeof(mtl_response_message_t));
     msg.body.response_msg.response = success ? 0 : 1;
@@ -57,7 +58,7 @@ class mtl_instance {
 int mtl_instance::handle_message(const char* buf, int len) {
   if ((size_t)len < sizeof(mtl_message_t)) return -1;
   mtl_message_t* msg = (mtl_message_t*)buf;
-  if (ntohl(msg->header.magic) != imtl_magic) {
+  if (ntohl(msg->header.magic) != IMTL_MAGIC) {
     std::cout << "Invalid magic number" << std::endl;
     return -1;
   }
@@ -66,8 +67,11 @@ int mtl_instance::handle_message(const char* buf, int len) {
     case MTL_MSG_TYPE_REGISTER:
       handle_message_register(&msg->body.register_msg);
       break;
-    case MTL_MSG_TYPE_REQUEST_LCORE:
-      handle_message_request_lcore(&msg->body.request_lcore_msg);
+    case MTL_MSG_TYPE_GET_LCORE:
+      handle_message_get_lcore(&msg->body.lcore_msg);
+      break;
+    case MTL_MSG_TYPE_PUT_LCORE:
+      handle_message_put_lcore(&msg->body.lcore_msg);
       break;
     case MTL_MSG_TYPE_REQUEST_MAP_FD:
       std::cout << "Receive request map fd from client" << std::endl;
@@ -83,16 +87,14 @@ int mtl_instance::handle_message(const char* buf, int len) {
   return 0;
 }
 
-int mtl_instance::handle_message_request_lcore(
-    mtl_request_lcore_message_t* request_lcore_msg) {
+int mtl_instance::handle_message_get_lcore(mtl_lcore_message_t* lcore_msg) {
   if (!is_registered) {
     std::cout << "Instance is not registered" << std::endl;
     return -1;
   }
-  uint16_t lcore_id = ntohs(request_lcore_msg->lcore);
+  uint16_t lcore_id = ntohs(lcore_msg->lcore);
   int ret = lcore_manager_sp->get_lcore(lcore_id);
   if (ret < 0) {
-    std::cout << "Cannot get lcore " << lcore_id << std::endl;
     send_response(false);
     return -1;
   }
@@ -100,6 +102,24 @@ int mtl_instance::handle_message_request_lcore(
   std::cout << "Add lcore " << lcore_id << " to instance " << hostname << ":" << pid
             << std::endl;
   send_response(true);
+  return 0;
+}
+
+int mtl_instance::handle_message_put_lcore(mtl_lcore_message_t* lcore_msg) {
+  if (!is_registered) {
+    std::cout << "Instance is not registered" << std::endl;
+    return -1;
+  }
+  uint16_t lcore_id = ntohs(lcore_msg->lcore);
+  lcore_manager_sp->put_lcore(lcore_id);
+  for (auto it = lcore_ids.begin(); it != lcore_ids.end(); it++) {
+    if (*it == lcore_id) {
+      lcore_ids.erase(it);
+      break;
+    }
+  }
+  std::cout << "Remove lcore " << lcore_id << " from instance " << hostname << ":" << pid
+            << std::endl;
   return 0;
 }
 
@@ -120,6 +140,7 @@ int mtl_instance::handle_message_register(mtl_register_message_t* register_msg) 
   }
 
   is_registered = true;
+  send_response(true);
 
   return 0;
 }
