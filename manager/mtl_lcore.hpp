@@ -3,7 +3,6 @@
  */
 
 #include <bitset>
-#include <iostream>
 #include <mutex>
 
 #define MTL_MAX_LCORE 128

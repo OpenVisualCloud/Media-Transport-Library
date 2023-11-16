@@ -9,6 +9,7 @@
 #include <memory>
 #include <vector>
 
+#include "logging.hpp"
 #include "mtl_lcore.hpp"
 #include "mtl_mproto.h"
 
@@ -40,6 +41,7 @@ class mtl_instance {
   mtl_instance(int conn_fd, std::shared_ptr<mtl_lcore> lcore_manager)
       : conn_fd(conn_fd), lcore_manager_sp(lcore_manager) {}
   ~mtl_instance() {
+    logger::log(log_level::INFO, "Remove client " + hostname + ":" + std::to_string(pid));
     for (const auto& lcore_id : lcore_ids) lcore_manager_sp->put_lcore(lcore_id);
     ifindex.clear();
     lcore_ids.clear();
@@ -59,7 +61,7 @@ int mtl_instance::handle_message(const char* buf, int len) {
   if ((size_t)len < sizeof(mtl_message_t)) return -1;
   mtl_message_t* msg = (mtl_message_t*)buf;
   if (ntohl(msg->header.magic) != MTL_MANAGER_MAGIC) {
-    std::cout << "Invalid magic number" << std::endl;
+    logger::log(log_level::INFO, "Invalid magic");
     return -1;
   }
 
@@ -74,13 +76,13 @@ int mtl_instance::handle_message(const char* buf, int len) {
       handle_message_put_lcore(&msg->body.lcore_msg);
       break;
     case MTL_MSG_TYPE_REQUEST_MAP_FD:
-      std::cout << "Receive request map fd from client" << std::endl;
+      logger::log(log_level::INFO, "MTL_MSG_TYPE_REQUEST_MAP_FD");
       break;
     case MTL_MSG_TYPE_UDP_PORT_OPERATION:
-      std::cout << "Receive udp port operation from client" << std::endl;
+      logger::log(log_level::INFO, "MTL_MSG_TYPE_UDP_PORT_OPERATION");
       break;
     default:
-      std::cout << "Unknown message type" << std::endl;
+      logger::log(log_level::INFO, "Unknown message type");
       break;
   }
 
@@ -89,7 +91,7 @@ int mtl_instance::handle_message(const char* buf, int len) {
 
 int mtl_instance::handle_message_get_lcore(mtl_lcore_message_t* lcore_msg) {
   if (!is_registered) {
-    std::cout << "Instance is not registered" << std::endl;
+    logger::log(log_level::INFO, "Instance is not registered");
     return -1;
   }
   uint16_t lcore_id = ntohs(lcore_msg->lcore);
@@ -99,15 +101,15 @@ int mtl_instance::handle_message_get_lcore(mtl_lcore_message_t* lcore_msg) {
     return -1;
   }
   lcore_ids.push_back(lcore_id);
-  std::cout << "Add lcore " << lcore_id << " to instance " << hostname << ":" << pid
-            << std::endl;
+  logger::log(log_level::INFO, "Add lcore " + std::to_string(lcore_id) + " to instance " +
+                                   hostname + ":" + std::to_string(pid));
   send_response(true);
   return 0;
 }
 
 int mtl_instance::handle_message_put_lcore(mtl_lcore_message_t* lcore_msg) {
   if (!is_registered) {
-    std::cout << "Instance is not registered" << std::endl;
+    logger::log(log_level::INFO, "Instance is not registered");
     return -1;
   }
   uint16_t lcore_id = ntohs(lcore_msg->lcore);
@@ -118,8 +120,10 @@ int mtl_instance::handle_message_put_lcore(mtl_lcore_message_t* lcore_msg) {
       break;
     }
   }
-  std::cout << "Remove lcore " << lcore_id << " from instance " << hostname << ":" << pid
-            << std::endl;
+
+  logger::log(log_level::INFO, "Remove lcore " + std::to_string(lcore_id) +
+                                   " from instance " + hostname + ":" +
+                                   std::to_string(pid));
   return 0;
 }
 
@@ -132,12 +136,8 @@ int mtl_instance::handle_message_register(mtl_register_message_t* register_msg) 
     ifindex.push_back(ntohs(register_msg->ifindex[i]));
   }
 
-  std::cout << "Register message from " << hostname << std::endl;
-  std::cout << "pid: " << pid << std::endl;
-  std::cout << "uid: " << uid << std::endl;
-  for (int i = 0; i < num_if; i++) {
-    std::cout << "ifindex[" << i << "]: " << ifindex[i] << std::endl;
-  }
+  logger::log(log_level::INFO,
+              "Register instance " + hostname + ":" + std::to_string(pid));
 
   is_registered = true;
   send_response(true);
