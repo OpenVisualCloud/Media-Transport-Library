@@ -17,7 +17,6 @@
 #include <sys/queue.h>
 #include <unistd.h>
 
-#include "../manager/mtl_mproto.h"
 #include "mt_mem.h"
 #include "mt_platform.h"
 #include "mt_quirk.h"

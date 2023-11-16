@@ -4,8 +4,11 @@
 
 #include "mt_instance.h"
 
+#ifndef WINDOWSENV
+
 #include <sys/un.h>
 
+#include "../manager/mtl_mproto.h"
 #include "mt_log.h"
 
 int mt_instance_put_lcore(struct mtl_main_impl* impl, unsigned int lcore_id) {
@@ -121,3 +124,29 @@ int mt_instance_uinit(struct mtl_main_impl* impl) {
 
   return close(sock);
 }
+
+#else /* not supported on Windows */
+
+int mt_instance_init(struct mtl_main_impl* impl) {
+  impl->instance_fd = -1;
+  return -ENOTSUP;
+}
+
+int mt_instance_uinit(struct mtl_main_impl* impl) {
+  MTL_MAY_UNUSED(impl);
+  return -ENOTSUP;
+}
+
+int mt_instance_get_lcore(struct mtl_main_impl* impl, unsigned int lcore_id) {
+  MTL_MAY_UNUSED(impl);
+  MTL_MAY_UNUSED(lcore_id);
+  return -ENOTSUP;
+}
+
+int mt_instance_put_lcore(struct mtl_main_impl* impl, unsigned int lcore_id) {
+  MTL_MAY_UNUSED(impl);
+  MTL_MAY_UNUSED(lcore_id);
+  return -ENOTSUP;
+}
+
+#endif
