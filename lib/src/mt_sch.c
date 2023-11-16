@@ -6,6 +6,7 @@
 
 #include <signal.h>
 
+#include "mt_instance.h"
 #include "mt_log.h"
 #include "mt_stat.h"
 #include "mtl_lcore_shm_api.h"
@@ -565,92 +566,114 @@ static int sch_init_lcores(struct mt_sch_mgr* mgr) {
 
 int mt_sch_get_lcore(struct mtl_main_impl* impl, unsigned int* lcore,
                      enum mt_lcore_type type) {
-  struct mt_sch_mgr* mgr = mt_sch_get_mgr(impl);
-  struct mt_user_info* info = &impl->u_info;
   unsigned int cur_lcore = 0;
   int ret;
-  struct mt_lcore_shm* lcore_shm = mgr->lcore_mgr.lcore_shm;
-  struct mt_lcore_shm_entry* shm_entry;
+  if (mt_is_manager_connected(impl)) {
+    do {
+      cur_lcore = rte_get_next_lcore(cur_lcore, 1, 0);
+      if ((cur_lcore < RTE_MAX_LCORE) &&
+          mt_socket_match(rte_lcore_to_socket_id(cur_lcore),
+                          mt_socket_id(impl, MTL_PORT_P))) {
+        ret = mt_instance_get_lcore(impl, cur_lcore);
+        if (ret == 0) {
+          *lcore = cur_lcore;
+          return 0;
+        }
+      }
+    } while (cur_lcore < RTE_MAX_LCORE);
+  } else {
+    struct mt_sch_mgr* mgr = mt_sch_get_mgr(impl);
+    struct mt_user_info* info = &impl->u_info;
 
-  ret = sch_filelock_lock(mgr);
-  if (ret < 0) {
-    err("%s, sch_filelock_lock fail\n", __func__);
-    return ret;
+    struct mt_lcore_shm* lcore_shm = mgr->lcore_mgr.lcore_shm;
+    struct mt_lcore_shm_entry* shm_entry;
+
+    ret = sch_filelock_lock(mgr);
+    if (ret < 0) {
+      err("%s, sch_filelock_lock fail\n", __func__);
+      return ret;
+    }
+
+    do {
+      cur_lcore = rte_get_next_lcore(cur_lcore, 1, 0);
+      shm_entry = &lcore_shm->lcores_info[cur_lcore];
+
+      if ((cur_lcore < RTE_MAX_LCORE) &&
+          mt_socket_match(rte_lcore_to_socket_id(cur_lcore),
+                          mt_socket_id(impl, MTL_PORT_P))) {
+        if (!shm_entry->active) {
+          *lcore = cur_lcore;
+          shm_entry->active = true;
+          struct mt_user_info* u_info = &shm_entry->u_info;
+          strncpy(u_info->hostname, info->hostname, sizeof(u_info->hostname));
+          strncpy(u_info->user, info->user, sizeof(u_info->user));
+          strncpy(u_info->comm, info->comm, sizeof(u_info->comm));
+          shm_entry->type = type;
+          shm_entry->pid = info->pid;
+          lcore_shm->used++;
+          rte_atomic32_inc(&impl->lcore_cnt);
+          mgr->local_lcores_active[cur_lcore] = true;
+          ret = sch_filelock_unlock(mgr);
+          info("%s, available lcore %d\n", __func__, cur_lcore);
+          if (ret < 0) {
+            err("%s, sch_filelock_unlock fail\n", __func__);
+            return ret;
+          }
+          return 0;
+        }
+      }
+    } while (cur_lcore < RTE_MAX_LCORE);
+
+    sch_filelock_unlock(mgr);
   }
 
-  do {
-    cur_lcore = rte_get_next_lcore(cur_lcore, 1, 0);
-    shm_entry = &lcore_shm->lcores_info[cur_lcore];
-
-    if ((cur_lcore < RTE_MAX_LCORE) && mt_socket_match(rte_lcore_to_socket_id(cur_lcore),
-                                                       mt_socket_id(impl, MTL_PORT_P))) {
-      if (!shm_entry->active) {
-        *lcore = cur_lcore;
-        shm_entry->active = true;
-        struct mt_user_info* u_info = &shm_entry->u_info;
-        strncpy(u_info->hostname, info->hostname, sizeof(u_info->hostname));
-        strncpy(u_info->user, info->user, sizeof(u_info->user));
-        strncpy(u_info->comm, info->comm, sizeof(u_info->comm));
-        shm_entry->type = type;
-        shm_entry->pid = info->pid;
-        lcore_shm->used++;
-        rte_atomic32_inc(&impl->lcore_cnt);
-        mgr->local_lcores_active[cur_lcore] = true;
-        ret = sch_filelock_unlock(mgr);
-        info("%s, available lcore %d\n", __func__, cur_lcore);
-        if (ret < 0) {
-          err("%s, sch_filelock_unlock fail\n", __func__);
-          return ret;
-        }
-        return 0;
-      }
-    }
-  } while (cur_lcore < RTE_MAX_LCORE);
-
-  sch_filelock_unlock(mgr);
   err("%s, fail to find lcore\n", __func__);
   return -EIO;
 }
 
 int mt_sch_put_lcore(struct mtl_main_impl* impl, unsigned int lcore) {
-  int ret;
-  struct mt_sch_mgr* mgr = mt_sch_get_mgr(impl);
-  struct mt_lcore_shm* lcore_shm = mgr->lcore_mgr.lcore_shm;
+  if (mt_is_manager_connected(impl)) {
+    return mt_instance_put_lcore(impl, lcore);
+  } else {
+    int ret;
+    struct mt_sch_mgr* mgr = mt_sch_get_mgr(impl);
+    struct mt_lcore_shm* lcore_shm = mgr->lcore_mgr.lcore_shm;
 
-  if (lcore >= RTE_MAX_LCORE) {
-    err("%s, invalid lcore %d\n", __func__, lcore);
-    return -EIO;
-  }
-  if (!lcore_shm) {
-    err("%s, no lcore shm attached\n", __func__);
-    return -EIO;
-  }
-  ret = sch_filelock_lock(mgr);
-  if (ret < 0) {
-    err("%s, sch_filelock_lock fail\n", __func__);
+    if (lcore >= RTE_MAX_LCORE) {
+      err("%s, invalid lcore %d\n", __func__, lcore);
+      return -EIO;
+    }
+    if (!lcore_shm) {
+      err("%s, no lcore shm attached\n", __func__);
+      return -EIO;
+    }
+    ret = sch_filelock_lock(mgr);
+    if (ret < 0) {
+      err("%s, sch_filelock_lock fail\n", __func__);
+      return ret;
+    }
+    if (!lcore_shm->lcores_info[lcore].active) {
+      err("%s, lcore %d not active\n", __func__, lcore);
+      ret = -EIO;
+      goto err_unlock;
+    }
+
+    lcore_shm->lcores_info[lcore].active = false;
+    lcore_shm->used--;
+    rte_atomic32_dec(&impl->lcore_cnt);
+    mgr->local_lcores_active[lcore] = false;
+    ret = sch_filelock_unlock(mgr);
+    info("%s, lcore %d\n", __func__, lcore);
+    if (ret < 0) {
+      err("%s, sch_filelock_unlock fail\n", __func__);
+      return ret;
+    }
+    return 0;
+
+  err_unlock:
+    sch_filelock_unlock(mgr);
     return ret;
   }
-  if (!lcore_shm->lcores_info[lcore].active) {
-    err("%s, lcore %d not active\n", __func__, lcore);
-    ret = -EIO;
-    goto err_unlock;
-  }
-
-  lcore_shm->lcores_info[lcore].active = false;
-  lcore_shm->used--;
-  rte_atomic32_dec(&impl->lcore_cnt);
-  mgr->local_lcores_active[lcore] = false;
-  ret = sch_filelock_unlock(mgr);
-  info("%s, lcore %d\n", __func__, lcore);
-  if (ret < 0) {
-    err("%s, sch_filelock_unlock fail\n", __func__);
-    return ret;
-  }
-  return 0;
-
-err_unlock:
-  sch_filelock_unlock(mgr);
-  return ret;
 }
 
 bool mt_sch_lcore_valid(struct mtl_main_impl* impl, unsigned int lcore) {
@@ -661,6 +684,9 @@ bool mt_sch_lcore_valid(struct mtl_main_impl* impl, unsigned int lcore) {
     err("%s, invalid lcore %d\n", __func__, lcore);
     return -EIO;
   }
+
+  if (mt_is_manager_connected(impl)) return true;
+
   if (!lcore_shm) {
     err("%s, no lcore shm attached\n", __func__);
     return -EIO;
@@ -773,9 +799,11 @@ int mt_sch_mrg_init(struct mtl_main_impl* impl, int data_quota_mbs_limit) {
 
   mt_pthread_mutex_init(&mgr->mgr_mutex, NULL);
 
-  mgr->lcore_lock_fd = -1;
-  ret = sch_init_lcores(mgr);
-  if (ret < 0) return ret;
+  if (!mt_is_manager_connected(impl)) {
+    mgr->lcore_lock_fd = -1;
+    ret = sch_init_lcores(mgr);
+    if (ret < 0) return ret;
+  }
 
   for (int sch_idx = 0; sch_idx < MT_MAX_SCH_NUM; sch_idx++) {
     sch = mt_sch_instance(impl, sch_idx);
@@ -834,7 +862,7 @@ int mt_sch_mrg_uinit(struct mtl_main_impl* impl) {
   struct mt_sch_impl* sch;
   struct mt_sch_mgr* mgr = mt_sch_get_mgr(impl);
 
-  sch_uinit_lcores(impl, mgr);
+  if (!mt_is_manager_connected(impl)) sch_uinit_lcores(impl, mgr);
 
   for (int sch_idx = 0; sch_idx < MT_MAX_SCH_NUM; sch_idx++) {
     sch = mt_sch_instance(impl, sch_idx);
