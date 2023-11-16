@@ -25,7 +25,7 @@ int main() {
   std::vector<mtl_instance*> clients;
   std::shared_ptr<mtl_lcore> lcore_manager = std::make_shared<mtl_lcore>();
 
-  logger::setlog_level(log_level::INFO);
+  logger::set_log_level(log_level::INFO);
 
   fs::path directory_path(MTL_MANAGER_SOCK_PATH);
   directory_path.remove_filename();
@@ -180,12 +180,14 @@ int main() {
     }
   }
 
-  logger::log(log_level::INFO, "MTL Manager exited.");
-
 out:
-  clients.clear();
+  for (auto it = clients.begin(); it != clients.end(); ++it) {
+    delete *it;
+  }
   if (signal_fd >= 0) close(signal_fd);
   if (epfd >= 0) close(epfd);
   if (sockfd >= 0) close(sockfd);
+
+  logger::log(log_level::INFO, "MTL Manager exited.");
   return ret;
 }
