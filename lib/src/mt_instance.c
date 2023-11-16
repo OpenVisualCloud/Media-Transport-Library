@@ -56,6 +56,7 @@ int mt_instance_get_lcore(struct mtl_main_impl* impl, unsigned int lcore_id) {
 
   int response = msg.body.response_msg.response;
 
+  /* return negative value incase user check with < 0 */
   return -response;
 }
 
