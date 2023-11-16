@@ -15,9 +15,9 @@ extern "C" {
 
 #define MTL_MANAGER_SOCK_PATH "/var/run/imtl/mtl_manager.sock"
 
-#pragma pack(push, 1)
+#define MTL_MANAGER_MAGIC (0x494D544C) /* ASCII representation of "IMTL" */
 
-#define IMTL_MAGIC (0x494D544C) /* ASCII representation of "IMTL" */
+#pragma pack(push, 1)
 
 /* message type */
 typedef enum {

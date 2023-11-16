@@ -16,7 +16,7 @@ int mt_instance_put_lcore(struct mtl_main_impl* impl, unsigned int lcore_id) {
   int sock = impl->instance_fd;
 
   mtl_message_t msg;
-  msg.header.magic = htonl(IMTL_MAGIC);
+  msg.header.magic = htonl(MTL_MANAGER_MAGIC);
   msg.header.type = htonl(MTL_MSG_TYPE_PUT_LCORE);
   msg.body.lcore_msg.lcore = htons(lcore_id);
   msg.header.body_len = sizeof(msg.body.lcore_msg);
@@ -35,7 +35,7 @@ int mt_instance_get_lcore(struct mtl_main_impl* impl, unsigned int lcore_id) {
   int sock = impl->instance_fd;
 
   mtl_message_t msg;
-  msg.header.magic = htonl(IMTL_MAGIC);
+  msg.header.magic = htonl(MTL_MANAGER_MAGIC);
   msg.header.type = htonl(MTL_MSG_TYPE_GET_LCORE);
   msg.body.lcore_msg.lcore = htons(lcore_id);
   msg.header.body_len = htonl(sizeof(mtl_lcore_message_t));
@@ -48,7 +48,7 @@ int mt_instance_get_lcore(struct mtl_main_impl* impl, unsigned int lcore_id) {
 
   ret = recv(sock, &msg, sizeof(mtl_message_t), 0);
 
-  if (ret < 0 || ntohl(msg.header.magic) != IMTL_MAGIC ||
+  if (ret < 0 || ntohl(msg.header.magic) != MTL_MANAGER_MAGIC ||
       ntohl(msg.header.type) != MTL_MSG_TYPE_RESPONSE) {
     err("%s, recv response fail\n", __func__);
     return -EIO;
@@ -80,7 +80,7 @@ int mt_instance_init(struct mtl_main_impl* impl) {
   struct mt_user_info* u_info = &impl->u_info;
 
   mtl_message_t msg;
-  msg.header.magic = htonl(IMTL_MAGIC);
+  msg.header.magic = htonl(MTL_MANAGER_MAGIC);
   msg.header.type = htonl(MTL_MSG_TYPE_REGISTER);
   msg.header.body_len = sizeof(mtl_register_message_t);
 
@@ -97,7 +97,7 @@ int mt_instance_init(struct mtl_main_impl* impl) {
   }
 
   ret = recv(sock, &msg, sizeof(msg), 0);
-  if (ret < 0 || ntohl(msg.header.magic) != IMTL_MAGIC ||
+  if (ret < 0 || ntohl(msg.header.magic) != MTL_MANAGER_MAGIC ||
       ntohl(msg.header.type) != MTL_MSG_TYPE_RESPONSE) {
     err("%s, recv response fail\n", __func__);
     close(sock);

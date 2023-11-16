@@ -29,7 +29,7 @@ class mtl_instance {
   int handle_message_register(mtl_register_message_t* register_msg);
   int send_response(bool success) {
     mtl_message_t msg;
-    msg.header.magic = htonl(IMTL_MAGIC);
+    msg.header.magic = htonl(MTL_MANAGER_MAGIC);
     msg.header.type = (mtl_message_type_t)htonl(MTL_MSG_TYPE_RESPONSE);
     msg.header.body_len = htonl(sizeof(mtl_response_message_t));
     msg.body.response_msg.response = success ? 0 : 1;
@@ -58,7 +58,7 @@ class mtl_instance {
 int mtl_instance::handle_message(const char* buf, int len) {
   if ((size_t)len < sizeof(mtl_message_t)) return -1;
   mtl_message_t* msg = (mtl_message_t*)buf;
-  if (ntohl(msg->header.magic) != IMTL_MAGIC) {
+  if (ntohl(msg->header.magic) != MTL_MANAGER_MAGIC) {
     std::cout << "Invalid magic number" << std::endl;
     return -1;
   }
