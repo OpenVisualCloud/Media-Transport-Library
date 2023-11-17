@@ -10,6 +10,7 @@
 
 #include "../manager/mtl_mproto.h"
 #include "mt_log.h"
+#include "mt_util.h"
 
 int mt_instance_put_lcore(struct mtl_main_impl* impl, unsigned int lcore_id) {
   int ret;
@@ -60,7 +61,7 @@ int mt_instance_get_lcore(struct mtl_main_impl* impl, unsigned int lcore_id) {
   return -response;
 }
 
-int mt_instance_init(struct mtl_main_impl* impl) {
+int mt_instance_init(struct mtl_main_impl* impl, struct mtl_init_params* p) {
   impl->instance_fd = -1;
   int sock = socket(AF_UNIX, SOCK_STREAM, 0);
   if (sock < 0) {
@@ -73,7 +74,7 @@ int mt_instance_init(struct mtl_main_impl* impl) {
   strncpy(addr.sun_path, MTL_MANAGER_SOCK_PATH, sizeof(addr.sun_path) - 1);
   int ret = connect(sock, (struct sockaddr*)&addr, sizeof(addr));
   if (ret < 0) {
-    err("%s, connect to manager fail\n", __func__);
+    warn("%s, connect to manager fail, assume single instance mode\n", __func__);
     close(sock);
     return ret;
   }
@@ -89,6 +90,17 @@ int mt_instance_init(struct mtl_main_impl* impl) {
   reg_msg->pid = htonl(u_info->pid);
   reg_msg->uid = htonl(getuid());
   strncpy(reg_msg->hostname, u_info->hostname, sizeof(reg_msg->hostname));
+
+  /* manager will load xdp program for afxdp interfaces */
+  uint16_t num_xdp_if = 0;
+  for (int i = 0; i < p->num_ports; i++) {
+    if (mtl_pmd_is_af_xdp(p->pmd[i])) {
+      const char* if_name = mt_native_afxdp_port2if(p->port[i]);
+      reg_msg->ifindex[i] = htonl(if_nametoindex(if_name));
+      num_xdp_if++;
+    }
+  }
+  reg_msg->num_if = htons(num_xdp_if);
 
   ret = send(sock, &msg, sizeof(msg), 0);
   if (ret < 0) {
@@ -128,8 +140,9 @@ int mt_instance_uinit(struct mtl_main_impl* impl) {
 
 #else /* not supported on Windows */
 
-int mt_instance_init(struct mtl_main_impl* impl) {
+int mt_instance_init(struct mtl_main_impl* impl, struct mtl_init_params* p) {
   impl->instance_fd = -1;
+  MTL_MAY_UNUSED(p);
   return -ENOTSUP;
 }
 
