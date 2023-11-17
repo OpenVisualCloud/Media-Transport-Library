@@ -7,7 +7,7 @@
 
 #include "mt_main.h"
 
-int mt_instance_init(struct mtl_main_impl* impl);
+int mt_instance_init(struct mtl_main_impl* impl, struct mtl_init_params* p);
 int mt_instance_uinit(struct mtl_main_impl* impl);
 
 int mt_instance_get_lcore(struct mtl_main_impl* impl, unsigned int lcore_id);

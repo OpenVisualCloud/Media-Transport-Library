@@ -49,7 +49,7 @@ typedef struct {
   uid_t uid;
   char hostname[64];
   uint16_t num_if;
-  uint16_t ifindex[8];
+  unsigned int ifindex[8];
 } mtl_register_message_t;
 
 typedef struct {

@@ -179,12 +179,12 @@ int main() {
       }
     }
   }
+  logger::log(log_level::INFO, "MTL Manager exited.");
 
 out:
   if (signal_fd >= 0) close(signal_fd);
   if (epfd >= 0) close(epfd);
   if (sockfd >= 0) close(sockfd);
 
-  logger::log(log_level::INFO, "MTL Manager exited.");
   return ret;
 }

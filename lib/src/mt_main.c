@@ -476,7 +476,7 @@ mtl_handle mtl_init(struct mtl_init_params* p) {
   impl->privileged = true;
 #endif
 
-  mt_instance_init(impl);
+  mt_instance_init(impl, p);
 
   rte_memcpy(&impl->user_para, p, sizeof(*p));
   impl->var_para.sch_default_sleep_us = 1 * US_PER_MS; /* default 1ms */
