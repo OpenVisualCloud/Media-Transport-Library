@@ -6,24 +6,26 @@
 #include <sys/signalfd.h>
 #include <sys/un.h>
 
-#include <atomic>
+#include <algorithm>
 #include <csignal>
 #include <filesystem>
 #include <memory>
 #include <vector>
 
+#include "logging.hpp"
 #include "mtl_instance.hpp"
 #include "mtl_mproto.h"
 
 namespace fs = std::filesystem;
 
-static std::atomic<bool> is_running(true);
+static const int MAX_CLIENTS = 10;
 
 int main() {
   int ret = 0;
+  bool is_running = true;
   int epfd = -1, sockfd = -1;
-  std::vector<mtl_instance*> clients;
-  std::shared_ptr<mtl_lcore> lcore_manager = std::make_shared<mtl_lcore>();
+  std::vector<std::unique_ptr<mtl_instance>> clients;
+  auto lcore_manager = std::make_shared<mtl_lcore>();
 
   logger::set_log_level(log_level::INFO);
 
@@ -72,7 +74,7 @@ int main() {
   /* Allow all users to connect (which might be insecure) */
   fs::permissions(MTL_MANAGER_SOCK_PATH, fs::perms::all, fs::perm_options::replace);
 
-  ret = listen(sockfd, 10);
+  ret = listen(sockfd, MAX_CLIENTS);
   if (ret < 0) {
     logger::log(log_level::ERROR, "Failed to listen on socket.");
     goto out;
@@ -104,20 +106,19 @@ int main() {
     goto out;
   }
 
-  is_running.store(true);
   logger::log(log_level::INFO, "MTL Manager is running. Press Ctrl+C to stop it.");
 
-  while (is_running.load()) {
-    logger::log(log_level::INFO,
-                "Listening " + std::to_string(clients.size()) + " clients");
+  while (is_running) {
     struct epoll_event events[clients.size() + 2];
     int nfds = epoll_wait(epfd, events, clients.size() + 2, -1);
     if (nfds < 0) {
       logger::log(log_level::ERROR, "Failed to wait for epoll.");
       continue;
     }
+
     for (int i = 0; i < nfds; i++) {
-      if (events[i].data.fd == sockfd) {
+      int evfd = events[i].data.fd;
+      if (evfd == sockfd) { /* accept new client */
         int client_sockfd = accept(sockfd, NULL, NULL);
         if (client_sockfd < 0) {
           logger::log(log_level::ERROR, "Failed to accept client.");
@@ -134,11 +135,12 @@ int main() {
           continue;
         }
 
-        mtl_instance* client = new mtl_instance(client_sockfd, lcore_manager);
-        clients.push_back(client);
+        auto client = std::make_unique<mtl_instance>(client_sockfd, lcore_manager);
+        clients.push_back(std::move(client));
         logger::log(log_level::INFO,
                     "New client connected. fd: " + std::to_string(client_sockfd));
-      } else if (events[i].data.fd == signal_fd) {
+        logger::log(log_level::INFO, "Total clients: " + std::to_string(clients.size()));
+      } else if (evfd == signal_fd) { /* handle signal */
         struct signalfd_siginfo siginfo;
         ssize_t len = read(signal_fd, &siginfo, sizeof(siginfo));
         if (len != sizeof(siginfo)) {
@@ -148,42 +150,37 @@ int main() {
 
         if (siginfo.ssi_signo == SIGINT) {
           logger::log(log_level::INFO, "Received SIGINT. Shutting down.");
-          is_running.store(false);
+          is_running = false;
         }
-      } else {
-        for (auto it = clients.begin(); it != clients.end();) {
-          mtl_instance* client = *it;
-          if (client->get_conn_fd() == events[i].data.fd) {
-            char buf[256];
-            int len = recv(events[i].data.fd, buf, sizeof(buf), 0);
-            if (len < 0) {
-              logger::log(log_level::ERROR, "Failed to receive data from client " +
-                                                std::to_string(events[i].data.fd));
-              ++it;
-              continue;
-            }
-            if (len == 0) {
-              logger::log(log_level::INFO, "Client " + std::to_string(events[i].data.fd) +
-                                               " disconnected.");
-              ret = epoll_ctl(epfd, EPOLL_CTL_DEL, events[i].data.fd, NULL);
-              if (ret < 0)
-                logger::log(log_level::ERROR, "Failed to remove client from epoll.");
-              delete client; /* close fd in deconstruction */
-              it = clients.erase(it);
-              continue;
-            }
+      } else { /* handle client message */
+        auto it = std::find_if(clients.begin(), clients.end(), [&](auto& client) {
+          return client->get_conn_fd() == evfd;
+        });
+        if (it != clients.end()) {
+          auto& client = *it;
+          char buf[256];
+          int len = recv(evfd, buf, sizeof(buf), 0);
+          if (len < 0) {
+            logger::log(log_level::ERROR,
+                        "Failed to receive data from client " + std::to_string(evfd));
+          } else if (len == 0) {
+            logger::log(log_level::INFO,
+                        "Client " + std::to_string(evfd) + " disconnected.");
+            ret = epoll_ctl(epfd, EPOLL_CTL_DEL, evfd, NULL);
+            if (ret < 0)
+              logger::log(log_level::WARNING, "Failed to remove client from epoll.");
+            clients.erase(it);
+            logger::log(log_level::INFO,
+                        "Total clients: " + std::to_string(clients.size()));
+          } else {
             client->handle_message(buf, len);
           }
-          ++it;
         }
       }
     }
   }
 
 out:
-  for (auto it = clients.begin(); it != clients.end(); ++it) {
-    delete *it;
-  }
   if (signal_fd >= 0) close(signal_fd);
   if (epfd >= 0) close(epfd);
   if (sockfd >= 0) close(sockfd);

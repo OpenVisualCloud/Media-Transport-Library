@@ -2,9 +2,13 @@
  * Copyright(c) 2023 Intel Corporation
  */
 
+#ifndef __MTL_INSTANCE_HPP__
+#define __MTL_INSTANCE_HPP__
+
 #include <arpa/inet.h>
 #include <unistd.h>
 
+#include <algorithm>
 #include <chrono>
 #include <memory>
 #include <vector>
@@ -21,7 +25,7 @@ class mtl_instance {
   int uid;
   std::string hostname;
   std::vector<int> ifindex;
-  std::vector<int> lcore_ids;
+  std::vector<uint16_t> lcore_ids;
   std::shared_ptr<mtl_lcore> lcore_manager_sp;
 
  private:
@@ -39,12 +43,10 @@ class mtl_instance {
 
  public:
   mtl_instance(int conn_fd, std::shared_ptr<mtl_lcore> lcore_manager)
-      : conn_fd(conn_fd), lcore_manager_sp(lcore_manager) {}
+      : conn_fd(conn_fd), is_registered(false), lcore_manager_sp(lcore_manager) {}
   ~mtl_instance() {
     logger::log(log_level::INFO, "Remove client " + hostname + ":" + std::to_string(pid));
     for (const auto& lcore_id : lcore_ids) lcore_manager_sp->put_lcore(lcore_id);
-    ifindex.clear();
-    lcore_ids.clear();
 
     close(conn_fd);
   }
@@ -74,12 +76,6 @@ int mtl_instance::handle_message(const char* buf, int len) {
       break;
     case MTL_MSG_TYPE_PUT_LCORE:
       handle_message_put_lcore(&msg->body.lcore_msg);
-      break;
-    case MTL_MSG_TYPE_REQUEST_MAP_FD:
-      logger::log(log_level::INFO, "MTL_MSG_TYPE_REQUEST_MAP_FD");
-      break;
-    case MTL_MSG_TYPE_UDP_PORT_OPERATION:
-      logger::log(log_level::INFO, "MTL_MSG_TYPE_UDP_PORT_OPERATION");
       break;
     default:
       logger::log(log_level::INFO, "Unknown message type");
@@ -114,12 +110,9 @@ int mtl_instance::handle_message_put_lcore(mtl_lcore_message_t* lcore_msg) {
   }
   uint16_t lcore_id = ntohs(lcore_msg->lcore);
   lcore_manager_sp->put_lcore(lcore_id);
-  for (auto it = lcore_ids.begin(); it != lcore_ids.end(); it++) {
-    if (*it == lcore_id) {
-      lcore_ids.erase(it);
-      break;
-    }
-  }
+  auto it = std::find_if(lcore_ids.begin(), lcore_ids.end(),
+                         [lcore_id](uint16_t id) { return id == lcore_id; });
+  if (it != lcore_ids.end()) lcore_ids.erase(it);
 
   logger::log(log_level::INFO, "Remove lcore " + std::to_string(lcore_id) +
                                    " from instance " + hostname + ":" +
@@ -144,3 +137,5 @@ int mtl_instance::handle_message_register(mtl_register_message_t* register_msg) 
 
   return 0;
 }
+
+#endif

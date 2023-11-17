@@ -2,6 +2,9 @@
  * Copyright(c) 2023 Intel Corporation
  */
 
+#ifndef __MTL_LCORE_HPP__
+#define __MTL_LCORE_HPP__
+
 #include <bitset>
 #include <mutex>
 
@@ -40,3 +43,5 @@ int mtl_lcore::put_lcore(uint16_t lcore_id) {
     bs.set(lcore_id, false);
   return 0;
 }
+
+#endif

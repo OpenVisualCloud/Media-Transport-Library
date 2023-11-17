@@ -2,6 +2,9 @@
  * Copyright(c) 2023 Intel Corporation
  */
 
+#ifndef _MTL_INTERFACE_HPP_
+#define _MTL_INTERFACE_HPP_
+
 #include <bpf/libbpf.h>
 #include <xdp/libxdp.h>
 #include <xdp/xsk.h>
@@ -39,3 +42,5 @@ int mtl_interface::get_ifindex() { return this->ifindex; }
 int mtl_interface::attach_xdp_prog(std::string xdp_prog_path) { return 0; }
 
 int mtl_interface::detach_xdp_prog() { return 0; }
+
+#endif
