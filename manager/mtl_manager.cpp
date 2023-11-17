@@ -25,7 +25,6 @@ int main() {
   bool is_running = true;
   int epfd = -1, sockfd = -1;
   std::vector<std::unique_ptr<mtl_instance>> clients;
-  auto lcore_manager = std::make_shared<mtl_lcore>();
 
   logger::set_log_level(log_level::INFO);
 
@@ -135,7 +134,7 @@ int main() {
           continue;
         }
 
-        auto client = std::make_unique<mtl_instance>(client_sockfd, lcore_manager);
+        auto client = std::make_unique<mtl_instance>(client_sockfd);
         clients.push_back(std::move(client));
         logger::log(log_level::INFO,
                     "New client connected. fd: " + std::to_string(client_sockfd));

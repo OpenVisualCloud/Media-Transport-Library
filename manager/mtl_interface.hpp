@@ -21,7 +21,7 @@ static const std::string xdp_prog_path = "/var/run/imtl/xdp_prog.o";
 
 class mtl_interface {
  private:
-  int ifindex;
+  const int ifindex;
   struct xdp_program* xdp_prog;
 
  public:

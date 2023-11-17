@@ -21,17 +21,16 @@
 
 class mtl_instance {
  private:
-  int conn_fd;
+  const int conn_fd;
   bool is_registered;
   int pid;
   int uid;
   std::string hostname;
   std::vector<uint16_t> lcore_ids;
-  std::shared_ptr<mtl_lcore> lcore_manager_sp;
   std::unordered_map<unsigned int, std::shared_ptr<mtl_interface>> interfaces;
 
  private:
-  void log(log_level level, const std::string& message) {
+  void log(const log_level& level, const std::string& message) const {
     logger::log(level,
                 "[Instance " + hostname + ":" + std::to_string(pid) + "] " + message);
   }
@@ -47,27 +46,22 @@ class mtl_instance {
     msg.body.response_msg.response = success ? 0 : 1;
     return send(conn_fd, &msg, sizeof(mtl_message_t), 0);
   }
-  std::shared_ptr<mtl_interface> get_interface(unsigned int ifindex);
+  std::shared_ptr<mtl_interface> get_interface(const unsigned int ifindex);
 
  public:
-  mtl_instance(int conn_fd, std::shared_ptr<mtl_lcore> lcore_manager)
-      : conn_fd(conn_fd),
-        is_registered(false),
-        pid(-1),
-        uid(-1),
-        hostname("unknown"),
-        lcore_manager_sp(lcore_manager) {}
+  mtl_instance(int conn_fd)
+      : conn_fd(conn_fd), is_registered(false), pid(-1), uid(-1), hostname("unknown") {}
   ~mtl_instance() {
     log(log_level::INFO, "Remove client.");
-    for (const auto& lcore_id : lcore_ids) lcore_manager_sp->put_lcore(lcore_id);
+    for (const auto& lcore_id : lcore_ids) mtl_lcore::get_instance().put_lcore(lcore_id);
 
     close(conn_fd);
   }
 
-  int get_conn_fd() { return conn_fd; }
-  int get_pid() { return pid; }
-  int get_uid() { return uid; }
-  std::string get_hostname() { return hostname; }
+  int get_conn_fd() const { return conn_fd; }
+  int get_pid() const { return pid; }
+  int get_uid() const { return uid; }
+  std::string get_hostname() const { return hostname; }
   int handle_message(const char* buf, int len);
 };
 
@@ -103,7 +97,7 @@ int mtl_instance::handle_message_get_lcore(mtl_lcore_message_t* lcore_msg) {
     return -1;
   }
   uint16_t lcore_id = ntohs(lcore_msg->lcore);
-  int ret = lcore_manager_sp->get_lcore(lcore_id);
+  int ret = mtl_lcore::get_instance().get_lcore(lcore_id);
   if (ret < 0) {
     send_response(false);
     return -1;
@@ -120,7 +114,7 @@ int mtl_instance::handle_message_put_lcore(mtl_lcore_message_t* lcore_msg) {
     return -1;
   }
   uint16_t lcore_id = ntohs(lcore_msg->lcore);
-  lcore_manager_sp->put_lcore(lcore_id);
+  mtl_lcore::get_instance().put_lcore(lcore_id);
   auto it = std::find_if(lcore_ids.begin(), lcore_ids.end(),
                          [lcore_id](uint16_t id) { return id == lcore_id; });
   if (it != lcore_ids.end()) lcore_ids.erase(it);
@@ -152,7 +146,7 @@ int mtl_instance::handle_message_register(mtl_register_message_t* register_msg) 
   return 0;
 }
 
-std::shared_ptr<mtl_interface> mtl_instance::get_interface(unsigned int ifindex) {
+std::shared_ptr<mtl_interface> mtl_instance::get_interface(const unsigned int ifindex) {
   auto it = interfaces.find(ifindex);
 
   if (it != interfaces.end()) {
