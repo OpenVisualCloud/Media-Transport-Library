@@ -94,7 +94,7 @@ int mt_instance_init(struct mtl_main_impl* impl, struct mtl_init_params* p) {
   /* manager will load xdp program for afxdp interfaces */
   uint16_t num_xdp_if = 0;
   for (int i = 0; i < p->num_ports; i++) {
-    if (p->pmd[i] == MTL_PMD_NATIVE_AF_XDP) {
+    if (mtl_pmd_is_af_xdp(p->pmd[i])) {
       const char* if_name = mt_native_afxdp_port2if(p->port[i]);
       reg_msg->ifindex[i] = htonl(if_nametoindex(if_name));
       num_xdp_if++;

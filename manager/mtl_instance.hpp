@@ -148,7 +148,6 @@ int mtl_instance::handle_message_register(mtl_register_message_t* register_msg) 
 
 std::shared_ptr<mtl_interface> mtl_instance::get_interface(const unsigned int ifindex) {
   auto it = interfaces.find(ifindex);
-
   if (it != interfaces.end()) {
     log(log_level::INFO, "Returning existing interface.");
     return it->second;
@@ -163,9 +162,9 @@ std::shared_ptr<mtl_interface> mtl_instance::get_interface(const unsigned int if
     }
   }
 
-  // Interface does not exist, create and initialize it
+  /* Interface does not exist, create and initialize it */
   log(log_level::INFO, "Initializing a new interface " + std::to_string(ifindex));
-  std::shared_ptr<mtl_interface> new_interface = std::make_shared<mtl_interface>(ifindex);
+  auto new_interface = std::make_shared<mtl_interface>(ifindex);
   g_interfaces[ifindex] = new_interface;
   interfaces[ifindex] = new_interface;
   return new_interface;
