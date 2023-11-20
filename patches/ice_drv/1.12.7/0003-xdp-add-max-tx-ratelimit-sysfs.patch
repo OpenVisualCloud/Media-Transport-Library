@@ -1,0 +1,182 @@
+From 3b7785f27f91eb7cefa0924ac4a5f44741e337a0 Mon Sep 17 00:00:00 2001
+From: Frank Du <frank.du@intel.com>
+Date: Thu, 16 Nov 2023 14:12:12 +0800
+Subject: [PATCH 3/4] xdp: add max tx ratelimit sysfs
+
+Signed-off-by: Frank Du <frank.du@intel.com>
+---
+ src/ice_txrx.h |   1 +
+ src/ice_xsk.c  | 101 +++++++++++++++++++++++++++++++++++++++++++++++++
+ 2 files changed, 102 insertions(+)
+
+diff --git a/src/ice_txrx.h b/src/ice_txrx.h
+index ac06f87..58fa784 100644
+--- a/src/ice_txrx.h
++++ b/src/ice_txrx.h
+@@ -458,6 +458,7 @@ struct ice_tx_ring {
+ 	u8 flags;
+ 	u8 dcb_tc;			/* Traffic class of ring */
+ 	u8 ptp_tx:1;
++	u32 xdp_rate_kbps; /* only for xdp tx ring */
+ } ____cacheline_internodealigned_in_smp;
+ 
+ static inline bool ice_ring_uses_build_skb(struct ice_rx_ring *ring)
+diff --git a/src/ice_xsk.c b/src/ice_xsk.c
+index fb1ce4f..d37a84a 100644
+--- a/src/ice_xsk.c
++++ b/src/ice_xsk.c
+@@ -8,8 +8,10 @@
+ #include "ice.h"
+ #include "ice_lib.h"
+ #include "ice_base.h"
++#include "ice_dcb_lib.h"
+ #include "ice_type.h"
+ #include "ice_xsk.h"
++#include "ice_tc_lib.h"
+ #include "ice_txrx.h"
+ #include "ice_txrx_lib.h"
+ #include "ice_irq.h"
+@@ -393,6 +395,90 @@ static void ice_xsk_umem_dma_unmap(struct ice_vsi *vsi, struct xdp_umem *umem)
+ }
+ #endif
+ 
++#define to_netdev_queue(obj) container_of(obj, struct netdev_queue, kobj)
++
++static int
++xdp_set_tx_maxrate(struct net_device *netdev, int queue_index, u32 rate_kbps)
++{
++	struct ice_netdev_priv *np = netdev_priv(netdev);
++	struct ice_vsi *vsi = np->vsi;
++	u16 q_handle;
++	int status;
++	u8 tc;
++
++	/* Validate rate_kbps requested is within permitted range */
++	if (rate_kbps > ICE_SCHED_MAX_BW) {
++		netdev_err(netdev, "%s, Invalid max rate %d specified for the queue %d\n",
++			   __func__, rate_kbps, queue_index);
++		return -EINVAL;
++	}
++
++	q_handle = vsi->xdp_rings[queue_index]->q_handle;
++	tc = ice_dcb_get_tc(vsi, queue_index);
++
++	vsi = ice_locate_vsi_using_queue(vsi, queue_index);
++	if (!vsi) {
++		netdev_err(netdev, "%s, Invalid VSI for given queue %d\n",
++			   __func__, queue_index);
++		return -EINVAL;
++	}
++
++	/* Set BW back to default, when user set rate_kbps to 0 */
++	if (!rate_kbps)
++		status = ice_cfg_q_bw_dflt_lmt(vsi->port_info, vsi->idx, tc,
++					       q_handle, ICE_MAX_BW);
++	else
++		status = ice_cfg_q_bw_lmt(vsi->port_info, vsi->idx, tc,
++					  q_handle, ICE_MAX_BW, rate_kbps);
++	if (status)
++		netdev_err(netdev, "%s, Unable to set Tx max rate, error %d\n",
++			   __func__, status);
++	else
++		vsi->xdp_rings[queue_index]->xdp_rate_kbps = rate_kbps;
++
++	return status;
++}
++
++static ssize_t xdp_ratelimit_kbps_show(struct kobject *kobj, struct kobj_attribute *attr,
++								  char *buf)
++{
++	struct netdev_queue *queue = to_netdev_queue(kobj);
++	struct net_device *netdev = queue->dev;
++	u16 qid = queue - netdev->_tx;
++	struct ice_netdev_priv *np;
++
++	if (qid >= netdev->real_num_tx_queues)
++		return -EINVAL;
++
++	np = netdev_priv(netdev);
++	return sysfs_emit(buf, "%u\n", np->vsi->xdp_rings[qid]->xdp_rate_kbps);
++}
++
++static ssize_t xdp_ratelimit_kbps_store(struct kobject *kobj, struct kobj_attribute *attr,
++								   const char *buf, size_t count)
++{
++	struct netdev_queue *queue = to_netdev_queue(kobj);
++	struct net_device *netdev = queue->dev;
++	u16 qid = queue - netdev->_tx;
++	u32 rate_kbps = 0;
++	int err;
++
++	if (qid >= netdev->real_num_tx_queues)
++		return -EINVAL;
++
++	err = kstrtou32(buf, 10, &rate_kbps);
++	if (err < 0)
++		return err;
++
++	err = xdp_set_tx_maxrate(netdev, qid, rate_kbps);
++	if (err < 0)
++		return err;
++	netdev_info(netdev, "%s, qid %u rate %u succ\n", __func__, qid, rate_kbps);
++	return 0;
++}
++
++static struct kobj_attribute xdp_ratelimit_kbps_attribute = __ATTR_RW(xdp_ratelimit_kbps);
++
+ /**
+  * ice_xsk_pool_disable - disable a buffer pool region
+  * @vsi: Current VSI
+@@ -402,6 +488,7 @@ static void ice_xsk_umem_dma_unmap(struct ice_vsi *vsi, struct xdp_umem *umem)
+  */
+ static int ice_xsk_pool_disable(struct ice_vsi *vsi, u16 qid)
+ {
++	struct kobject *kobj;
+ #ifdef HAVE_AF_XDP_NETDEV_UMEM
+ #ifdef HAVE_NETDEV_BPF_XSK_POOL
+ 	struct xsk_buff_pool *pool = xsk_get_pool_from_qid(vsi->netdev, qid);
+@@ -420,6 +507,9 @@ static int ice_xsk_pool_disable(struct ice_vsi *vsi, u16 qid)
+ 	if (!pool)
+ 		return -EINVAL;
+ 
++	kobj = &vsi->netdev->_tx[qid].kobj;
++	sysfs_remove_file(kobj, &xdp_ratelimit_kbps_attribute.attr);
++
+ 	clear_bit(qid, vsi->af_xdp_zc_qps);
+ #ifndef HAVE_MEM_TYPE_XSK_BUFF_POOL
+ 	ice_xsk_umem_dma_unmap(vsi, pool);
+@@ -453,6 +543,7 @@ ice_xsk_pool_enable(struct ice_vsi *vsi, struct xdp_umem *pool, u16 qid)
+ 	struct xdp_umem_fq_reuse *reuseq;
+ #endif
+ 	int err;
++	struct kobject *kobj;
+ 
+ 	if (vsi->type != ICE_VSI_PF)
+ 		return -EINVAL;
+@@ -494,6 +585,14 @@ ice_xsk_pool_enable(struct ice_vsi *vsi, struct xdp_umem *pool, u16 qid)
+ 	if (err)
+ 		return err;
+ 
++	/* the kobj mapped to each tx queue */
++	kobj = &vsi->netdev->_tx[qid].kobj;
++	err = sysfs_create_file(kobj, &xdp_ratelimit_kbps_attribute.attr);
++	if (err < 0) {
++		netdev_err(vsi->netdev, "%s, create xdp ratelimit sysfs fail %d for qid %u\n",
++				   __func__, err, qid);
++	}
++
+ 	set_bit(qid, vsi->af_xdp_zc_qps);
+ 
+ 	return 0;
+@@ -583,6 +682,8 @@ int ice_xsk_umem_setup(struct ice_vsi *vsi, struct xdp_umem *pool, u16 qid)
+ 	bool if_running, pool_present = !!pool;
+ 	int ret = 0, pool_failure = 0;
+ 
++	netdev_info(vsi->netdev, "%s, qid %u pool %p\n", __func__, qid, pool);
++
+ 	if (qid >= vsi->num_rxq || qid >= vsi->num_txq) {
+ 		netdev_err(vsi->netdev, "Please use queue id in scope of combined queues count\n");
+ 		pool_failure = -EINVAL;
+-- 
+2.34.1
+

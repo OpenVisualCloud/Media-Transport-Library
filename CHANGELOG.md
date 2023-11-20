@@ -2,7 +2,6 @@
 
 ## Changelog for 23.12
 
-* ice: update driver to 1.12.6.
 * log: add log to file support, see mtl_openlog_stream.
 * dpdk: upgrade dpdk version to 23.07.
 * virtio_user: add virtio_user support for exception path, deprecate kni.
@@ -20,6 +19,8 @@
 * st2110: add ssrc support.
 * rss: add multi-core support.
 * log: default add time info print, and a API `mtl_set_log_prefix_formatter` to customize the log prefix formatter.
+* lcore: add `LcoreMgr` tools to manage the inactive lcore status. See doc/lcore.md
+* ice: update driver to 1.12.7
 
 ## Changelog for 23.08
 
