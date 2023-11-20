@@ -13,6 +13,14 @@ if is_windows
     subdir_done()
 endif
 
+# xdp check
+libxdp_dep = dependency('libxdp', required: false)
+if not libxdp_dep.found()
+  build = false
+  reason = 'libxdp not found'
+  subdir_done()
+endif
+
 message('BUILD Environment: ' + exec_env)
 
 cpp_c = meson.get_compiler('cpp')
@@ -33,8 +41,6 @@ if get_option('enable_asan') == true
   cpp_args += ['-fsanitize=address']
   asan_dep = cpp_c.find_library('asan', required : true)
 endif
-
-libxdp_dep = dependency('libxdp', required: true)
 
 executable('MtlManager', sources,
     cpp_args: cpp_args,
