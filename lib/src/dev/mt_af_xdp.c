@@ -25,6 +25,7 @@ struct mt_xdp_queue {
   struct rte_mempool* mbuf_pool;
   uint16_t q;
   uint32_t umem_ring_size;
+  bool xdp_zero_copy;
 
   struct xsk_umem* umem;
   void* umem_buffer;
@@ -52,6 +53,7 @@ struct mt_xdp_queue {
   uint64_t stat_tx_submit;
   uint64_t stat_tx_copy;
   uint64_t stat_tx_wakeup;
+  uint64_t stat_tx_wakeup_fail;
   uint64_t stat_tx_mbuf_alloc_fail;
   uint64_t stat_tx_prod_reserve_fail;
 
@@ -68,6 +70,8 @@ struct mt_xdp_queue {
 struct mt_xdp_priv {
   struct mtl_main_impl* parent;
   enum mtl_port port;
+  struct bpf_xdp_query_opts nic_features;
+
   uint8_t start_queue;
   uint16_t queues_cnt;
   uint32_t max_combined;
@@ -122,6 +126,11 @@ static int xdp_queue_tx_stat(struct mt_xdp_queue* xq) {
     warn("%s(%d,%u), mbuf alloc fail %" PRIu64 "\n", __func__, port, q,
          xq->stat_tx_mbuf_alloc_fail);
     xq->stat_tx_mbuf_alloc_fail = 0;
+  }
+  if (xq->stat_tx_wakeup_fail) {
+    warn("%s(%d,%u), tx wakeup fail %" PRIu64 "\n", __func__, port, q,
+         xq->stat_tx_wakeup_fail);
+    xq->stat_tx_wakeup_fail = 0;
   }
   if (xq->stat_tx_prod_reserve_fail) {
     err("%s(%d,%u), prod reserve fail %" PRIu64 "\n", __func__, port, q,
@@ -435,15 +444,31 @@ static int xdp_socket_init(struct mt_xdp_priv* xdp, struct mt_xdp_queue* xq) {
     cfg.libxdp_flags = XSK_LIBXDP_FLAGS__INHIBIT_PROG_LOAD;
   // cfg.bind_flags = XDP_USE_NEED_WAKEUP;
 
+  /* first try zero copy mode */
+  cfg.bind_flags |= XDP_ZEROCOPY; /* force zero copy mode */
   const char* if_name = mt_kernel_if_name(impl, port);
   ret = xsk_socket__create(&xq->socket, if_name, q, xq->umem, &xq->rx_cons, &xq->tx_prod,
                            &cfg);
   if (ret < 0) {
     if (ret == -EPERM) {
       err("%s(%d,%u), please run with control server or root user\n", __func__, port, q);
+      return ret;
     }
-    err("%s(%d,%u), xsk create fail %d\n", __func__, port, q, ret);
-    return ret;
+    warn("%s(%d,%u), xsk create with zero copy fail %d(%s), try copy mode\n", __func__,
+         port, q, ret, strerror(ret));
+    cfg.bind_flags &= ~XDP_ZEROCOPY; /* force zero copy mode */
+    ret = xsk_socket__create(&xq->socket, if_name, q, xq->umem, &xq->rx_cons,
+                             &xq->tx_prod, &cfg);
+    if (ret < 0) {
+      if (ret == -EPERM) {
+        err("%s(%d,%u), please run with control server or root user\n", __func__, port,
+            q);
+      }
+      err("%s(%d,%u), xsk create fail %d(%s)\n", __func__, port, q, ret, strerror(ret));
+      return ret;
+    }
+  } else {
+    xq->xdp_zero_copy = true;
   }
   xq->socket_fd = xsk_socket__fd(xq->socket);
 
@@ -512,15 +537,14 @@ static inline void xdp_tx_check_free(struct mt_xdp_queue* xq) {
 }
 
 static void xdp_tx_wakeup(struct mt_xdp_queue* xq) {
-  enum mtl_port port = xq->port;
-  uint16_t q = xq->q;
-
   if (xsk_ring_prod__needs_wakeup(&xq->tx_prod)) {
     int ret = send(xq->socket_fd, NULL, 0, MSG_DONTWAIT);
     xq->stat_tx_wakeup++;
     dbg("%s(%d, %u), wake up %d\n", __func__, port, q, ret);
     if (ret < 0) {
-      err("%s(%d, %u), wake up fail %d(%s)\n", __func__, port, q, ret, strerror(errno));
+      dbg("%s(%d, %u), wake up fail %d(%s)\n", __func__, xq->port, xq->q, ret,
+          strerror(errno));
+      xq->stat_tx_wakeup_fail++;
     }
   }
 }
@@ -551,6 +575,7 @@ static uint16_t xdp_tx(struct mtl_main_impl* impl, struct mt_xdp_queue* xq,
       dbg("%s(%d, %u), socket_tx reserve fail\n", __func__, port, q);
       xq->stat_tx_prod_reserve_fail++;
       rte_pktmbuf_free(local);
+      xdp_tx_wakeup(xq);
       goto exit;
     }
     struct xdp_desc* desc = xsk_ring_prod__tx_desc(pd, idx);
