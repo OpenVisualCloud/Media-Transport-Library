@@ -34,8 +34,10 @@ if get_option('enable_asan') == true
   asan_dep = cpp_c.find_library('asan', required : true)
 endif
 
+libxdp_dep = dependency('libxdp', required: true)
+
 executable('MtlManager', sources,
     cpp_args: cpp_args,
     link_args: link_cpp_args,
-    dependencies: [asan_dep]
+    dependencies: [asan_dep, libxdp_dep]
 )

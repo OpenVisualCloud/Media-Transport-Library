@@ -12,5 +12,6 @@ int mt_instance_uinit(struct mtl_main_impl* impl);
 
 int mt_instance_get_lcore(struct mtl_main_impl* impl, unsigned int lcore_id);
 int mt_instance_put_lcore(struct mtl_main_impl* impl, unsigned int lcore_id);
+int mt_instance_request_xsks_map_fd(struct mtl_main_impl* impl, unsigned int ifindex);
 
 #endif
