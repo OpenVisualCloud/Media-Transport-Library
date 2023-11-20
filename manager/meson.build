@@ -8,16 +8,7 @@ exec_env = host_machine.system()
 set_variable('is_windows', exec_env == 'windows')
 
 if is_windows
-    build = false
-    reason = 'not supported on Windows'
-    subdir_done()
-endif
-
-# xdp check
-libxdp_dep = dependency('libxdp', required: false)
-if not libxdp_dep.found()
-  build = false
-  reason = 'libxdp not found'
+  message('not supported on Windows')
   subdir_done()
 endif
 
@@ -42,8 +33,17 @@ if get_option('enable_asan') == true
   asan_dep = cpp_c.find_library('asan', required : true)
 endif
 
+# xdp check
+libxdp_dep = dependency('libxdp', required: false)
+libbpf_dep = dependency('libbpf', required: false)
+if libxdp_dep.found() and libbpf_dep.found()
+  add_global_arguments('-DMTL_HAS_XDP_BACKEND', language : 'cpp')
+else
+  message('libxdp and libbpf not found, no af_xdp backend')
+endif
+
 executable('MtlManager', sources,
-    cpp_args: cpp_args,
-    link_args: link_cpp_args,
-    dependencies: [asan_dep, libxdp_dep]
+  cpp_args: cpp_args,
+  link_args: link_cpp_args,
+  dependencies: [asan_dep, libxdp_dep, libbpf_dep]
 )

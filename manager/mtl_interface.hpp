@@ -5,16 +5,16 @@
 #ifndef _MTL_INTERFACE_HPP_
 #define _MTL_INTERFACE_HPP_
 
+#ifdef MTL_HAS_XDP_BACKEND
 #include <xdp/libxdp.h>
 #include <xdp/xsk.h>
+#endif
 
 #include <memory>
 #include <string>
 #include <unordered_map>
 
 #include "logging.hpp"
-
-static const std::string xdp_prog_path_default = "/tmp/imtl/xdp_prog.o";
 
 class mtl_interface {
  private:
@@ -29,20 +29,21 @@ class mtl_interface {
   int get_xsks_map_fd() { return xsks_map_fd; }
 };
 
-mtl_interface::mtl_interface(int ifindex) : ifindex(ifindex) {
+mtl_interface::mtl_interface(int ifindex)
+    : ifindex(ifindex), xdp_prog(nullptr), xsks_map_fd(-1) {
+#ifdef MTL_HAS_XDP_BACKEND
   /* get xdp prog path from env or use manager default path */
   std::string xdp_prog_path;
   char* xdp_prog_path_env = getenv("MTL_XDP_PROG_PATH");
   if (xdp_prog_path_env != nullptr) {
     xdp_prog_path = xdp_prog_path_env;
   } else {
-    xdp_prog_path = xdp_prog_path_default;
+    xdp_prog_path = "/tmp/imtl/xdp_prog.o";
   }
 
   if (!std::filesystem::is_regular_file(xdp_prog_path)) {
     logger::log(log_level::WARNING, "Fallback to use libxdp default prog for " +
                                         xdp_prog_path + " is not valid.");
-    xdp_prog = nullptr;
   } else {
     xdp_prog = xdp_program__open_file(xdp_prog_path.c_str(), "xdp", NULL);
     if (libxdp_get_error(xdp_prog)) {
@@ -75,9 +76,13 @@ mtl_interface::mtl_interface(int ifindex) : ifindex(ifindex) {
   if (xdp_prog == nullptr) xdp_prog_path = "<libxdp_default>";
   logger::log(log_level::INFO, "Add interface " + std::to_string(ifindex) +
                                    " with xdp prog " + xdp_prog_path);
+#else
+  logger::log(log_level::INFO, "Add interface " + std::to_string(ifindex));
+#endif
 }
 
 mtl_interface::~mtl_interface() {
+#ifdef MTL_HAS_XDP_BACKEND
   if (xdp_prog == nullptr) {
     logger::log(log_level::WARNING,
                 "Using libxdp default prog. Try to unload all for interface " +
@@ -92,6 +97,7 @@ mtl_interface::~mtl_interface() {
     xdp_program__close(xdp_prog);
     xdp_prog = nullptr;
   }
+#endif
 
   logger::log(log_level::INFO, "Remove interface " + std::to_string(ifindex));
 }
