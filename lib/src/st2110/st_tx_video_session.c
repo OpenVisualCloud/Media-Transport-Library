@@ -3591,8 +3591,14 @@ int st20_tx_queue_fatal_error(struct mtl_main_impl* impl,
   int idx = s->idx;
   int ret;
 
+  if (!mt_pmd_is_dpdk_user(impl, port)) {
+    err("%s(%d,%d), not dpdk user pmd, nothing to do\n", __func__, s_port, idx);
+    if (s->ops.notify_event) s->ops.notify_event(s->ops.priv, ST_EVENT_FATAL_ERROR, NULL);
+    return 0;
+  }
+
   if (!s->queue[s_port]) {
-    err("%s(%d,%d), no queue\n", __func__, idx, s_port);
+    err("%s(%d,%d), no queue\n", __func__, s_port, idx);
     return -EIO;
   }
 
@@ -3615,14 +3621,14 @@ int st20_tx_queue_fatal_error(struct mtl_main_impl* impl,
   flow.dst_port = s->ops.udp_port[s_port];
   s->queue[s_port] = mt_txq_get(impl, port, &flow);
   if (!s->queue[s_port]) {
-    err("%s(%d,%d), get new txq fail\n", __func__, idx, s_port);
+    err("%s(%d,%d), get new txq fail\n", __func__, s_port, idx);
     s->stat_unrecoverable_error++;
     s->active = false; /* mark current session to dead */
     if (s->ops.notify_event) s->ops.notify_event(s->ops.priv, ST_EVENT_FATAL_ERROR, NULL);
     return -EIO;
   }
   uint16_t queue_id = mt_txq_queue_id(s->queue[s_port]);
-  info("%s(%d,%d), new queue_id %u\n", __func__, idx, s_port, queue_id);
+  info("%s(%d,%d), new queue_id %u\n", __func__, s_port, idx, queue_id);
 
   /* cleanup frame manager */
   struct st_frame_trans* frame;
@@ -3630,7 +3636,7 @@ int st20_tx_queue_fatal_error(struct mtl_main_impl* impl,
     frame = &s->st20_frames[i];
     int refcnt = rte_atomic32_read(&frame->refcnt);
     if (refcnt) {
-      info("%s(%d,%d), stop frame %u\n", __func__, idx, s_port, i);
+      info("%s(%d,%d), stop frame %u\n", __func__, s_port, idx, i);
       tv_notify_frame_done(s, i);
       rte_atomic32_dec(&frame->refcnt);
       rte_mbuf_ext_refcnt_set(&frame->sh_info, 0);
@@ -3642,7 +3648,7 @@ int st20_tx_queue_fatal_error(struct mtl_main_impl* impl,
   s->recovery_idx++;
   ret = tv_mempool_init(impl, s->mgr, s);
   if (ret < 0) {
-    err("%s(%d,%d), reset mempool fail\n", __func__, idx, s_port);
+    err("%s(%d,%d), reset mempool fail\n", __func__, s_port, idx);
     s->stat_unrecoverable_error++;
     s->active = false; /* mark current session to dead */
     if (s->ops.notify_event) s->ops.notify_event(s->ops.priv, ST_EVENT_FATAL_ERROR, NULL);
