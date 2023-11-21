@@ -61,6 +61,61 @@ int mt_instance_get_lcore(struct mtl_main_impl* impl, unsigned int lcore_id) {
   return -response;
 }
 
+int mt_instance_request_xsks_map_fd(struct mtl_main_impl* impl, unsigned int ifindex) {
+  int ret;
+  int xsks_map_fd = -1;
+  int sock = impl->instance_fd;
+
+  mtl_message_t mtl_msg;
+  mtl_msg.header.magic = htonl(MTL_MANAGER_MAGIC);
+  mtl_msg.header.type = htonl(MTL_MSG_TYPE_REQUEST_MAP_FD);
+  mtl_msg.body.request_map_fd_msg.ifindex = htonl(ifindex);
+  mtl_msg.header.body_len = htonl(sizeof(mtl_request_map_fd_message_t));
+
+  ret = send(sock, &mtl_msg, sizeof(mtl_message_t), 0);
+  if (ret < 0) {
+    err("%s(%u), send message fail\n", __func__, ifindex);
+    return ret;
+  }
+
+  char cms[CMSG_SPACE(sizeof(int))];
+  struct cmsghdr* cmsg;
+  struct msghdr msg;
+  struct iovec iov;
+  int value;
+  int len;
+
+  iov.iov_base = &value;
+  iov.iov_len = sizeof(int);
+
+  memset(&msg, 0, sizeof(msg));
+  msg.msg_iov = &iov;
+  msg.msg_iovlen = 1;
+  msg.msg_control = (caddr_t)cms;
+  msg.msg_controllen = sizeof(cms);
+
+  len = recvmsg(sock, &msg, 0);
+  if (len < 0) {
+    err("%s(%u), recv message fail\n", __func__, ifindex);
+    return len;
+  }
+
+  cmsg = CMSG_FIRSTHDR(&msg);
+  if (cmsg->cmsg_level != SOL_SOCKET || cmsg->cmsg_type != SCM_RIGHTS ||
+      cmsg->cmsg_len != CMSG_LEN(sizeof(int))) {
+    err("%s(%u), invalid cmsg for map fd\n", __func__, ifindex);
+    return -EINVAL;
+  }
+
+  xsks_map_fd = *(int*)CMSG_DATA(cmsg);
+  if (xsks_map_fd < 0) {
+    err("%s(%u), get xsks_map_fd fail, %s\n", __func__, ifindex, strerror(errno));
+    return errno;
+  }
+
+  return xsks_map_fd;
+}
+
 int mt_instance_init(struct mtl_main_impl* impl, struct mtl_init_params* p) {
   impl->instance_fd = -1;
   int sock = socket(AF_UNIX, SOCK_STREAM, 0);
@@ -160,6 +215,12 @@ int mt_instance_get_lcore(struct mtl_main_impl* impl, unsigned int lcore_id) {
 int mt_instance_put_lcore(struct mtl_main_impl* impl, unsigned int lcore_id) {
   MTL_MAY_UNUSED(impl);
   MTL_MAY_UNUSED(lcore_id);
+  return -ENOTSUP;
+}
+
+int mt_instance_request_xsks_map_fd(struct mtl_main_impl* impl, unsigned int ifindex) {
+  MTL_MAY_UNUSED(impl);
+  MTL_MAY_UNUSED(ifindex);
   return -ENOTSUP;
 }
 

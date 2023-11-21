@@ -38,6 +38,7 @@ class mtl_instance {
   int handle_message_get_lcore(mtl_lcore_message_t* lcore_msg);
   int handle_message_put_lcore(mtl_lcore_message_t* lcore_msg);
   int handle_message_register(mtl_register_message_t* register_msg);
+  int handle_message_request_map_fd(mtl_request_map_fd_message_t* request_map_fd_msg);
   int send_response(bool success) {
     mtl_message_t msg;
     msg.header.magic = htonl(MTL_MANAGER_MAGIC);
@@ -82,6 +83,9 @@ int mtl_instance::handle_message(const char* buf, int len) {
       break;
     case MTL_MSG_TYPE_PUT_LCORE:
       handle_message_put_lcore(&msg->body.lcore_msg);
+      break;
+    case MTL_MSG_TYPE_REQUEST_MAP_FD:
+      handle_message_request_map_fd(&msg->body.request_map_fd_msg);
       break;
     default:
       log(log_level::ERROR, "Unknown message type");
@@ -149,7 +153,7 @@ int mtl_instance::handle_message_register(mtl_register_message_t* register_msg) 
 std::shared_ptr<mtl_interface> mtl_instance::get_interface(const unsigned int ifindex) {
   auto it = interfaces.find(ifindex);
   if (it != interfaces.end()) {
-    log(log_level::INFO, "Returning existing interface.");
+    log(log_level::DEBUG, "Returning existing interface.");
     return it->second;
   }
 
@@ -164,10 +168,57 @@ std::shared_ptr<mtl_interface> mtl_instance::get_interface(const unsigned int if
 
   /* Interface does not exist, create and initialize it */
   log(log_level::INFO, "Initializing a new interface " + std::to_string(ifindex));
-  auto new_interface = std::make_shared<mtl_interface>(ifindex);
-  g_interfaces[ifindex] = new_interface;
-  interfaces[ifindex] = new_interface;
-  return new_interface;
+  try {
+    auto new_interface = std::make_shared<mtl_interface>(ifindex);
+    g_interfaces[ifindex] = new_interface;
+    interfaces[ifindex] = new_interface;
+    return new_interface;
+  } catch (const std::exception& e) {
+    log(log_level::ERROR, "Failed to initialize interface: " + std::string(e.what()));
+    return nullptr;
+  }
+}
+
+int mtl_instance::handle_message_request_map_fd(
+    mtl_request_map_fd_message_t* request_map_fd_msg) {
+  unsigned int ifindex = ntohl(request_map_fd_msg->ifindex);
+  auto interface = get_interface(ifindex);
+
+  struct msghdr msg;
+  struct iovec iov[1];
+  struct cmsghdr* cmsg = NULL;
+  char ctrl_buf[CMSG_SPACE(sizeof(int))];
+  char data[1];
+
+  memset(&msg, 0, sizeof(struct msghdr));
+  memset(ctrl_buf, 0, CMSG_SPACE(sizeof(int)));
+
+  data[0] = ' ';
+  iov[0].iov_base = data;
+  iov[0].iov_len = sizeof(data);
+
+  msg.msg_name = NULL;
+  msg.msg_namelen = 0;
+  msg.msg_iov = iov;
+  msg.msg_iovlen = 1;
+  msg.msg_controllen = CMSG_SPACE(sizeof(int));
+  msg.msg_control = ctrl_buf;
+
+  cmsg = CMSG_FIRSTHDR(&msg);
+  cmsg->cmsg_level = SOL_SOCKET;
+  cmsg->cmsg_type = SCM_RIGHTS;
+  cmsg->cmsg_len = CMSG_LEN(sizeof(int));
+
+  if (interface == nullptr) {
+    log(log_level::ERROR, "Failed to get interface " + std::to_string(ifindex));
+    *((int*)CMSG_DATA(cmsg)) = -1;
+    sendmsg(conn_fd, &msg, 0);
+    return -1;
+  }
+
+  *((int*)CMSG_DATA(cmsg)) = interface->get_xsks_map_fd();
+
+  return sendmsg(conn_fd, &msg, 0);
 }
 
 #endif

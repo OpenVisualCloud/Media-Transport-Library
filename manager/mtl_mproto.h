@@ -57,7 +57,7 @@ typedef struct {
 } mtl_heartbeat_message_t;
 
 typedef struct {
-  int ifindex;
+  unsigned int ifindex;
 } mtl_request_map_fd_message_t;
 
 typedef struct {
