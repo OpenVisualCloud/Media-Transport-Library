@@ -447,8 +447,7 @@ static int xdp_socket_init(struct mt_xdp_priv* xdp, struct mt_xdp_queue* xq) {
   cfg.rx_size = mt_if_nb_rx_desc(impl, port);
   cfg.tx_size = mt_if_nb_tx_desc(impl, port);
   cfg.xdp_flags = XDP_FLAGS_UPDATE_IF_NOEXIST;
-  if (mt_is_manager_connected(impl) ||
-      (!mt_is_privileged(impl) && xdp->has_ctrl)) /* this will skip load xdp prog */
+  if (xdp->has_ctrl) /* this will skip load xdp prog */
     cfg.libxdp_flags = XSK_LIBXDP_FLAGS__INHIBIT_PROG_LOAD;
   // cfg.bind_flags = XDP_USE_NEED_WAKEUP;
 
@@ -480,8 +479,7 @@ static int xdp_socket_init(struct mt_xdp_priv* xdp, struct mt_xdp_queue* xq) {
   }
   xq->socket_fd = xsk_socket__fd(xq->socket);
 
-  if (mt_is_manager_connected(impl) || (!mt_is_privileged(impl) && xdp->has_ctrl))
-    return xdp_socket_update_xskmap(impl, xq, if_name);
+  if (xdp->has_ctrl) return xdp_socket_update_xskmap(impl, xq, if_name);
 
   return 0;
 }
@@ -781,15 +779,19 @@ int mt_dev_xdp_init(struct mt_interface* inf) {
   xdp->queues_cnt = RTE_MAX(inf->nb_tx_q, inf->nb_rx_q);
   mt_pthread_mutex_init(&xdp->queues_lock, NULL);
 
-  int ctrl_sock = xdp_connect_control_sock();
-  if (ctrl_sock > 0) {
-    char buf[10];
-    snprintf(buf, sizeof(buf), "imtl:ping");
-    send(ctrl_sock, buf, sizeof(buf), 0);
-    recv(ctrl_sock, buf, sizeof(buf), 0);
-    if (strncmp(buf, "pong", 4) == 0) xdp->has_ctrl = true;
-    close(ctrl_sock);
+  if (!mt_is_privileged(impl)) {
+    int ctrl_sock = xdp_connect_control_sock();
+    if (ctrl_sock > 0) {
+      char buf[10];
+      snprintf(buf, sizeof(buf), "imtl:ping");
+      send(ctrl_sock, buf, sizeof(buf), 0);
+      recv(ctrl_sock, buf, sizeof(buf), 0);
+      if (strncmp(buf, "pong", 4) == 0) xdp->has_ctrl = true;
+      close(ctrl_sock);
+    }
   }
+
+  if (mt_is_manager_connected(impl)) xdp->has_ctrl = true;
 
   xdp_parse_combined_info(xdp);
   if ((xdp->start_queue + xdp->queues_cnt) > xdp->combined_count) {
@@ -942,7 +944,12 @@ uint16_t mt_tx_xdp_burst(struct mt_tx_xdp_entry* entry, struct rte_mbuf** tx_pkt
   return xdp_tx(entry->parent, entry->xq, tx_pkts, nb_pkts);
 }
 
-static int xdp_socket_update_dp(const char* if_name, int dp, bool add) {
+static int xdp_socket_update_dp(struct mtl_main_impl* impl, const char* if_name, int dp,
+                                bool add) {
+  if (mt_is_manager_connected(impl)) {
+    dbg("%s, not implemented\n", __func__);
+    return 0;
+  }
   int sock = xdp_connect_control_sock();
   if (sock < 0) {
     err("%s, unix socket create fail, %s\n", __func__, strerror(errno));
@@ -1028,7 +1035,7 @@ struct mt_rx_xdp_entry* mt_rx_xdp_get(struct mtl_main_impl* impl, enum mtl_port 
       return NULL;
     }
     if (xdp->has_ctrl)
-      xdp_socket_update_dp(mt_kernel_if_name(impl, port), flow->dst_port, true);
+      xdp_socket_update_dp(impl, mt_kernel_if_name(impl, port), flow->dst_port, true);
   }
 
   uint8_t* ip = flow->dip_addr;
@@ -1049,7 +1056,7 @@ int mt_rx_xdp_put(struct mt_rx_xdp_entry* entry) {
     mt_rx_flow_free(impl, port, entry->flow_rsp);
     entry->flow_rsp = NULL;
     if (xdp->has_ctrl)
-      xdp_socket_update_dp(mt_kernel_if_name(impl, port), flow->dst_port, false);
+      xdp_socket_update_dp(impl, mt_kernel_if_name(impl, port), flow->dst_port, false);
   }
   if (xq) {
     xdp_queue_rx_stat(xq);
