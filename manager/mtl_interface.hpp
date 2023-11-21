@@ -45,7 +45,7 @@ mtl_interface::mtl_interface(int ifindex)
     logger::log(log_level::WARNING, "Fallback to use libxdp default prog for " +
                                         xdp_prog_path + " is not valid.");
   } else {
-    xdp_prog = xdp_program__open_file(xdp_prog_path.c_str(), "xdp", NULL);
+    xdp_prog = xdp_program__open_file(xdp_prog_path.c_str(), NULL, NULL);
     if (libxdp_get_error(xdp_prog)) {
       logger::log(log_level::WARNING, "Fallback to use libxdp default prog for " +
                                           xdp_prog_path + " cannot load.");
@@ -62,12 +62,12 @@ mtl_interface::mtl_interface(int ifindex)
     if (xdp_prog != nullptr) {
       xdp_program__detach(xdp_prog, ifindex, XDP_MODE_NATIVE, 0);
       xdp_program__close(xdp_prog);
-    } else {
-      struct xdp_multiprog* multiprog = xdp_multiprog__get_from_ifindex(ifindex);
-      if (multiprog != nullptr) {
-        xdp_multiprog__detach(multiprog);
-        xdp_multiprog__close(multiprog);
-      }
+    }
+    /* unload all xdp programs for the interface */
+    struct xdp_multiprog* multiprog = xdp_multiprog__get_from_ifindex(ifindex);
+    if (multiprog != nullptr) {
+      xdp_multiprog__detach(multiprog);
+      xdp_multiprog__close(multiprog);
     }
 
     throw std::runtime_error("Failed to setup AF_XDP socket.");
@@ -83,19 +83,20 @@ mtl_interface::mtl_interface(int ifindex)
 
 mtl_interface::~mtl_interface() {
 #ifdef MTL_HAS_XDP_BACKEND
-  if (xdp_prog == nullptr) {
-    logger::log(log_level::WARNING,
-                "Using libxdp default prog. Try to unload all for interface " +
-                    std::to_string(ifindex));
-    struct xdp_multiprog* multiprog = xdp_multiprog__get_from_ifindex(ifindex);
-    if (multiprog != nullptr) {
-      xdp_multiprog__detach(multiprog);
-      xdp_multiprog__close(multiprog);
-    }
-  } else {
+  if (xdp_prog != nullptr) {
     xdp_program__detach(xdp_prog, ifindex, XDP_MODE_NATIVE, 0);
     xdp_program__close(xdp_prog);
     xdp_prog = nullptr;
+  } else {
+    logger::log(log_level::WARNING,
+                "Using libxdp default prog. Try to unload all for interface " +
+                    std::to_string(ifindex));
+  }
+  /* unload all xdp programs for the interface */
+  struct xdp_multiprog* multiprog = xdp_multiprog__get_from_ifindex(ifindex);
+  if (multiprog != nullptr) {
+    xdp_multiprog__detach(multiprog);
+    xdp_multiprog__close(multiprog);
   }
 #endif
 
