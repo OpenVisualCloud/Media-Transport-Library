@@ -37,7 +37,7 @@ jobs:
 
   build:
     needs: changes
-    if: ${{ needs.changes.outputs.changed == 'true' }}
+    if: ${{ github.repository == 'OpenVisualCloud/Media-Transport-Library' && needs.changes.outputs.changed == 'true' }}
     runs-on: windows-latest
     strategy:
       fail-fast: false

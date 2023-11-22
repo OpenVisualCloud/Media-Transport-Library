@@ -28,7 +28,7 @@ jobs:
           upstream_sync_repo: OpenVisualCloud/Media-Transport-Library
 
           # Set test_mode true to run tests instead of the true action!!
-          test_mode: true
+          test_mode: false
 
       - name: Sync check
         if: failure()

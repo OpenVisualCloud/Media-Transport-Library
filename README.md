@@ -119,7 +119,7 @@ Before opening a pull request, please follow these steps:
 4. Push your changes to your forked repository.
 5. Open a pull request to the main repository.
 
-If you do not want the main branch automatically synced to the upstream, please go to Action and disable the Upstream Sync workflow.
+If you do not want the main branch automatically synced to the upstream, please go to `Actions` and disable the `Upstream Sync` workflow.
 
 ### 7.2 Coding style
 
