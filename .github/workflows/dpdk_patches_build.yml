@@ -34,7 +34,7 @@ jobs:
 
   build:
     needs: changes
-    if: ${{ needs.changes.outputs.changed == 'true' }}
+    if: ${{ github.repository == 'OpenVisualCloud/Media-Transport-Library' && needs.changes.outputs.changed == 'true' }}
     runs-on: ${{ matrix.os }}
     timeout-minutes: 60
     container:
