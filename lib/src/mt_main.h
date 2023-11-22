@@ -422,7 +422,7 @@ struct mt_dhcp_impl {
 };
 
 struct mt_sch_tasklet_impl {
-  struct mtl_sch_tasklet_ops ops;
+  struct mtl_tasklet_ops ops;
   char name[ST_MAX_NAME_LEN];
   struct mtl_sch_impl* sch;
 
@@ -449,9 +449,10 @@ typedef uint64_t mt_sch_mask_t;
 #define MT_SCH_MASK_ALL ((mt_sch_mask_t)-1)
 
 struct mtl_sch_impl {
+  char name[32];
   pthread_mutex_t mutex; /* protect sch context */
   struct mt_sch_tasklet_impl** tasklet;
-  int nb_tasklets; /* the number of tasklet in current sch */
+  uint32_t nb_tasklets; /* the number of tasklet in current sch */
   /* max tasklet index */
   volatile int max_tasklet_idx;
   unsigned int lcore;

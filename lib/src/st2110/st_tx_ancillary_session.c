@@ -1535,7 +1535,7 @@ static int tx_ancillary_sessions_mgr_init(struct mtl_main_impl* impl,
                                           struct mtl_sch_impl* sch,
                                           struct st_tx_ancillary_sessions_mgr* mgr) {
   int idx = sch->idx;
-  struct mtl_sch_tasklet_ops ops;
+  struct mtl_tasklet_ops ops;
   int i;
 
   RTE_BUILD_BUG_ON(sizeof(struct st_rfc8331_anc_hdr) != 62);

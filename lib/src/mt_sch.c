@@ -107,7 +107,7 @@ static int sch_tasklet_func(void* args) {
   struct mtl_main_impl* impl = sch->parent;
   int idx = sch->idx;
   int num_tasklet, i;
-  struct mtl_sch_tasklet_ops* ops;
+  struct mtl_tasklet_ops* ops;
   struct mt_sch_tasklet_impl* tasklet;
   bool time_measure = mt_has_tasklet_time_measure(impl);
   uint64_t tsc_s = 0;
@@ -253,7 +253,7 @@ static int sch_stop(struct mtl_sch_impl* sch) {
 }
 
 static struct mtl_sch_impl* sch_request(struct mtl_main_impl* impl, enum mt_sch_type type,
-                                        mt_sch_mask_t mask) {
+                                        mt_sch_mask_t mask, struct mtl_sch_ops* ops) {
   struct mtl_sch_impl* sch;
 
   for (int sch_idx = 0; sch_idx < MT_MAX_SCH_NUM; sch_idx++) {
@@ -265,9 +265,27 @@ static struct mtl_sch_impl* sch_request(struct mtl_main_impl* impl, enum mt_sch_
     sch_lock(sch);
     if (!mt_sch_is_active(sch)) { /* find one free sch */
       sch->type = type;
+      if (ops && ops->name) {
+        snprintf(sch->name, sizeof(sch->name), "%s", ops->name);
+      } else {
+        snprintf(sch->name, sizeof(sch->name), "sch_%d", sch_idx);
+      }
+      if (ops && ops->nb_tasklets)
+        sch->nb_tasklets = ops->nb_tasklets;
+      else
+        sch->nb_tasklets = impl->tasklets_nb_per_sch;
+      sch->tasklet = mt_rte_zmalloc_socket(sizeof(*sch->tasklet) * sch->nb_tasklets,
+                                           mt_socket_id(impl, MTL_PORT_P));
+      if (!sch->tasklet) {
+        err("%s(%d), %u tasklet malloc fail\n", __func__, sch_idx, sch->nb_tasklets);
+        sch_unlock(sch);
+        return NULL;
+      }
       rte_atomic32_inc(&sch->active);
       rte_atomic32_inc(&mt_sch_get_mgr(impl)->sch_cnt);
       sch_unlock(sch);
+      info("%s(%d), name %s with %u tasklets\n", __func__, sch_idx, sch->name,
+           sch->nb_tasklets);
       return sch;
     }
     sch_unlock(sch);
@@ -285,15 +303,21 @@ static int sch_free(struct mtl_sch_impl* sch) {
     return -EIO;
   }
 
+  info("%s(%d), start to free sch: %s \n", __func__, idx, sch->name);
   sch_lock(sch);
-  for (int i = 0; i < sch->nb_tasklets; i++) {
-    if (sch->tasklet[i]) {
-      warn("%s(%d), tasklet %d still active\n", __func__, idx, i);
-      sch_unlock(sch); /* unlock */
-      mtl_sch_unregister_tasklet(sch->tasklet[i]);
-      sch_lock(sch);
+  if (sch->tasklet) {
+    for (int i = 0; i < sch->nb_tasklets; i++) {
+      if (sch->tasklet[i]) {
+        warn("%s(%d), tasklet %d still active\n", __func__, idx, i);
+        sch_unlock(sch); /* unlock */
+        mtl_sch_unregister_tasklet(sch->tasklet[i]);
+        sch_lock(sch);
+      }
     }
+    mt_rte_free(sch->tasklet);
+    sch->tasklet = NULL;
   }
+  sch->nb_tasklets = 0;
   rte_atomic32_dec(&mt_sch_get_mgr(sch->parent)->sch_cnt);
   rte_atomic32_dec(&sch->active);
   sch_unlock(sch);
@@ -357,8 +381,9 @@ static int sch_stat(void* priv) {
 
   if (!mt_sch_is_active(sch)) return 0;
 
+  notice("SCH(%d:%s): tasklets %d max idx %d\n", idx, sch->name, num_tasklet,
+         sch->max_tasklet_idx);
   if (mt_has_tasklet_time_measure(sch->parent)) {
-    notice("SCH(%d): tasklets %d\n", idx, num_tasklet);
     for (int i = 0; i < num_tasklet; i++) {
       tasklet = sch->tasklet[i];
       if (!tasklet) continue;
@@ -366,8 +391,9 @@ static int sch_stat(void* priv) {
       dbg("SCH(%d): tasklet %s at %d\n", idx, tasklet->name, i);
       if (tasklet->stat_time_cnt) {
         avg_us = tasklet->stat_sum_time_us / tasklet->stat_time_cnt;
-        notice("SCH(%d): tasklet %s, avg %uus max %uus min %uus\n", idx, tasklet->name,
-               avg_us, tasklet->stat_max_time_us, tasklet->stat_min_time_us);
+        notice("SCH(%d,%d): tasklet %s, avg %uus max %uus min %uus\n", idx, i,
+               tasklet->name, avg_us, tasklet->stat_max_time_us,
+               tasklet->stat_min_time_us);
         sch_tasklet_stat_clear(tasklet);
       }
     }
@@ -745,7 +771,7 @@ int mtl_sch_unregister_tasklet(mtl_tasklet_handle tasklet) {
 }
 
 mtl_tasklet_handle mtl_sch_register_tasklet(struct mtl_sch_impl* sch,
-                                            struct mtl_sch_tasklet_ops* tasklet_ops) {
+                                            struct mtl_tasklet_ops* tasklet_ops) {
   int idx = sch->idx;
   struct mtl_main_impl* impl = sch->parent;
   struct mt_sch_tasklet_impl* tasklet;
@@ -791,8 +817,6 @@ mtl_tasklet_handle mtl_sch_register_tasklet(struct mtl_sch_impl* sch,
 int mt_sch_mrg_init(struct mtl_main_impl* impl, int data_quota_mbs_limit) {
   struct mtl_sch_impl* sch;
   struct mt_sch_mgr* mgr = mt_sch_get_mgr(impl);
-  int socket = mt_socket_id(impl, MTL_PORT_P);
-  int nb_tasklets = impl->tasklets_nb_per_sch;
   int ret;
 
   mt_pthread_mutex_init(&mgr->mgr_mutex, NULL);
@@ -812,7 +836,6 @@ int mt_sch_mrg_init(struct mtl_main_impl* impl, int data_quota_mbs_limit) {
     rte_atomic32_set(&sch->ref_cnt, 0);
     rte_atomic32_set(&sch->active, 0);
     sch->max_tasklet_idx = 0;
-    sch->nb_tasklets = nb_tasklets;
     sch->data_quota_mbs_total = 0;
     sch->data_quota_mbs_limit = data_quota_mbs_limit;
     sch->run_in_thread = mt_tasklet_has_thread(impl);
@@ -841,18 +864,9 @@ int mt_sch_mrg_init(struct mtl_main_impl* impl, int data_quota_mbs_limit) {
     mt_pthread_mutex_init(&sch->rx_anc_mgr_mutex, NULL);
 
     mt_stat_register(impl, sch_stat, sch, "sch");
-
-    sch->tasklet =
-        mt_rte_zmalloc_socket(sizeof(*sch->tasklet) * sch->nb_tasklets, socket);
-    if (!sch->tasklet) {
-      err("%s(%d), tasklet malloc fail\n", __func__, sch_idx);
-      mt_sch_mrg_uinit(impl);
-      return -ENOMEM;
-    }
   }
 
-  info("%s, succ with data quota %d M, nb_tasklets %d\n", __func__, data_quota_mbs_limit,
-       nb_tasklets);
+  info("%s, succ with data quota %d M\n", __func__, data_quota_mbs_limit);
   return 0;
 }
 
@@ -865,9 +879,9 @@ int mt_sch_mrg_uinit(struct mtl_main_impl* impl) {
   for (int sch_idx = 0; sch_idx < MT_MAX_SCH_NUM; sch_idx++) {
     sch = mt_sch_instance(impl, sch_idx);
 
-    if (sch->tasklet) {
-      mt_rte_free(sch->tasklet);
-      sch->tasklet = NULL;
+    if (mt_sch_is_active(sch)) {
+      warn("%s(%d), sch:%s still active\n", __func__, sch_idx, sch->name);
+      mtl_sch_free(sch);
     }
 
     mt_stat_unregister(impl, sch_stat, sch);
@@ -989,7 +1003,7 @@ struct mtl_sch_impl* mt_sch_get(struct mtl_main_impl* impl, int quota_mbs,
   }
 
   /* no quota, try to create one */
-  sch = sch_request(impl, type, mask);
+  sch = sch_request(impl, type, mask, NULL);
   if (!sch) {
     err("%s, no free sch\n", __func__);
     sch_mgr_unlock(mgr);
@@ -1224,7 +1238,7 @@ int mtl_lcore_shm_clean(enum mtl_lcore_clean_action action, void* args, size_t a
 
 /* below for public interface for application */
 
-mtl_sch_handle mtl_sch_create(mtl_handle mt) {
+mtl_sch_handle mtl_sch_create(mtl_handle mt, struct mtl_sch_ops* ops) {
   struct mtl_main_impl* impl = mt;
 
   if (impl->type != MT_HANDLE_MAIN) {
@@ -1232,7 +1246,12 @@ mtl_sch_handle mtl_sch_create(mtl_handle mt) {
     return NULL;
   }
 
-  struct mtl_sch_impl* sch = sch_request(impl, MT_SCH_TYPE_APP, MT_SCH_MASK_ALL);
+  if (!ops) {
+    err("%s, NULL ops\n", __func__);
+    return NULL;
+  }
+
+  struct mtl_sch_impl* sch = sch_request(impl, MT_SCH_TYPE_APP, MT_SCH_MASK_ALL, ops);
   if (!sch) {
     err("%s, sch request fail\n", __func__);
     return NULL;

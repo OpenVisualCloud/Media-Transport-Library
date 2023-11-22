@@ -928,7 +928,7 @@ static int rx_audio_sessions_mgr_init(struct mtl_main_impl* impl,
                                       struct mtl_sch_impl* sch,
                                       struct st_rx_audio_sessions_mgr* mgr) {
   int idx = sch->idx;
-  struct mtl_sch_tasklet_ops ops;
+  struct mtl_tasklet_ops ops;
 
   mgr->parent = impl;
   mgr->idx = idx;

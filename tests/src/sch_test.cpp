@@ -8,7 +8,12 @@
 #include "tests.h"
 
 static void sch_create_test(mtl_handle mt) {
-  mtl_sch_handle sch = mtl_sch_create(mt);
+  struct mtl_sch_ops sch_ops;
+  memset(&sch_ops, 0x0, sizeof(sch_ops));
+  sch_ops.name = "sch";
+  sch_ops.nb_tasklets = 16;
+
+  mtl_sch_handle sch = mtl_sch_create(mt, &sch_ops);
   ASSERT_TRUE(sch != NULL);
   int ret = mtl_sch_start(sch);
   EXPECT_GE(ret, 0);
@@ -29,9 +34,13 @@ static void sch_create_max_test(mtl_handle mt, int max) {
   mtl_sch_handle schs[max];
   int cnt = 0;
   int ret;
+  struct mtl_sch_ops sch_ops;
+  memset(&sch_ops, 0x0, sizeof(sch_ops));
+  sch_ops.name = "sch";
+  sch_ops.nb_tasklets = 16;
 
   for (int i = 0; i < max; i++) {
-    mtl_sch_handle sch = mtl_sch_create(mt);
+    mtl_sch_handle sch = mtl_sch_create(mt, &sch_ops);
     if (!sch) break;
     ret = mtl_sch_start(sch);
     if (ret < 0) {
@@ -108,7 +117,13 @@ static void sch_tasklet_digest_test(mtl_handle mt, struct sch_digest_test_para* 
   int tasklet_cnt = para->tasklets;
   mtl_sch_handle schs[sch_cnt];
   int ret;
-  struct mtl_sch_tasklet_ops ops;
+
+  struct mtl_sch_ops sch_ops;
+  memset(&sch_ops, 0x0, sizeof(sch_ops));
+  sch_ops.name = "sch_test";
+  sch_ops.nb_tasklets = tasklet_cnt;
+
+  struct mtl_tasklet_ops ops;
   memset(&ops, 0x0, sizeof(ops));
   ops.name = "test";
   ops.start = test_tasklet_start;
@@ -116,11 +131,11 @@ static void sch_tasklet_digest_test(mtl_handle mt, struct sch_digest_test_para* 
   ops.handler = test_tasklet_handler;
 
   std::vector<tasklet_test_ctx*> tasklet_ctxs;
-  tasklet_ctxs.resize(sch_cnt * tasklet_cnt);
+  tasklet_ctxs.resize((size_t)sch_cnt * tasklet_cnt);
 
   /* create the sch */
   for (int i = 0; i < sch_cnt; i++) {
-    mtl_sch_handle sch = mtl_sch_create(mt);
+    mtl_sch_handle sch = mtl_sch_create(mt, &sch_ops);
     ASSERT_TRUE(sch != NULL);
     if (!para->runtime) {
       for (int j = 0; j < tasklet_cnt; j++) {

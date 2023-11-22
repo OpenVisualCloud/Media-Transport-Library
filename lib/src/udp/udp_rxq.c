@@ -349,7 +349,7 @@ static int urc_tasklet_handler(void* priv) {
 static int urc_init_tasklet(struct mtl_main_impl* impl, struct mur_client* c) {
   if (!mt_udp_lcore(impl, c->port)) return 0;
 
-  struct mtl_sch_tasklet_ops ops;
+  struct mtl_tasklet_ops ops;
   char name[32];
   snprintf(name, 32, "%sP%dDP%dQ%uC%d", MT_UDP_RXQ_PREFIX, c->port, c->dst_port,
            c->q->rxq_id, c->idx);

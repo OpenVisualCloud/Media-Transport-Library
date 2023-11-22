@@ -1276,7 +1276,7 @@ static int ptp_init(struct mtl_main_impl* impl, struct mt_ptp_impl* ptp,
       return -ENOMEM;
     }
 
-    struct mtl_sch_tasklet_ops ops;
+    struct mtl_tasklet_ops ops;
     memset(&ops, 0x0, sizeof(ops));
     ops.priv = ptp;
     ops.name = "ptp";

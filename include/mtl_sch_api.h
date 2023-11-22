@@ -30,10 +30,20 @@ typedef struct mt_sch_tasklet_impl* mtl_tasklet_handle;
 #define MTL_TASKLET_ALL_DONE (0)
 
 /**
- * Tasklets share the time slot on a sch, only non-block method can be used in handler
- * routine.
+ * The structure describing how to create a sch.
  */
-struct mtl_sch_tasklet_ops {
+struct mtl_sch_ops {
+  /** name */
+  const char* name;
+  /** the max number of tasklet in this sch, leave to zero to use the default value */
+  uint32_t nb_tasklets;
+};
+
+/**
+ * The structure describing how to create a tasklet. Tasklet share the time slot on a
+ * sch, only non-block method can be used in handler routine.
+ */
+struct mtl_tasklet_ops {
   /** name */
   const char* name;
   /** private data to the callback */
@@ -62,11 +72,13 @@ struct mtl_sch_tasklet_ops {
  *
  * @param mt
  *   The handle to the media transport context.
+ * @param ops
+ *   The ops to create the sch.
  * @return
  *   - NULL on error.
  *   - Otherwise, the handle to the sch.
  */
-mtl_sch_handle mtl_sch_create(mtl_handle mt);
+mtl_sch_handle mtl_sch_create(mtl_handle mt, struct mtl_sch_ops* ops);
 
 /**
  * Start the sch.
@@ -114,7 +126,7 @@ int mtl_sch_free(mtl_sch_handle sch);
  *   - Otherwise, the handle to the tasklet.
  */
 mtl_tasklet_handle mtl_sch_register_tasklet(struct mtl_sch_impl* sch,
-                                            struct mtl_sch_tasklet_ops* tasklet_ops);
+                                            struct mtl_tasklet_ops* tasklet_ops);
 
 /**
  * Unregister the tasklet from the bind sch. One tasklet can be unregistered at runtime

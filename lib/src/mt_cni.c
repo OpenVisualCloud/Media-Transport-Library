@@ -493,7 +493,7 @@ int mt_cni_init(struct mtl_main_impl* impl) {
   if (ret < 0) return ret;
 
   if (cni_impl->lcore_tasklet) {
-    struct mtl_sch_tasklet_ops ops;
+    struct mtl_tasklet_ops ops;
 
     memset(&ops, 0x0, sizeof(ops));
     ops.priv = impl;

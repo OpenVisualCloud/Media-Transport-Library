@@ -112,7 +112,7 @@ int st_ancillary_transmitter_init(struct mtl_main_impl* impl, struct mtl_sch_imp
                                   struct st_tx_ancillary_sessions_mgr* mgr,
                                   struct st_ancillary_transmitter_impl* trs) {
   int idx = sch->idx;
-  struct mtl_sch_tasklet_ops ops;
+  struct mtl_tasklet_ops ops;
 
   trs->parent = impl;
   trs->idx = idx;
