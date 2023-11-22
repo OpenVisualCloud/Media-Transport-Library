@@ -1087,7 +1087,7 @@ int mtl_sch_enable_sleep(mtl_handle mt, int sch_idx, bool enable) {
     return -EIO;
   }
 
-  struct mt_sch_impl* sch = mt_sch_instance(impl, sch_idx);
+  struct mtl_sch_impl* sch = mt_sch_instance(impl, sch_idx);
   if (!sch) {
     err("%s(%d), sch instance null\n", __func__, sch_idx);
     return -EIO;
@@ -1339,3 +1339,7 @@ int mtl_set_log_prefix_formatter(void (*log_prefix_formatter)(char* buf, size_t 
   }
   return 0;
 }
+
+void mtl_sleep_us(unsigned int us) { return mt_sleep_us(us); }
+
+void mtl_delay_us(unsigned int us) { return mt_delay_us(us); }

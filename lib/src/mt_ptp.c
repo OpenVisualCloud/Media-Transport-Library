@@ -1276,12 +1276,12 @@ static int ptp_init(struct mtl_main_impl* impl, struct mt_ptp_impl* ptp,
       return -ENOMEM;
     }
 
-    struct mt_sch_tasklet_ops ops;
+    struct mtl_sch_tasklet_ops ops;
     memset(&ops, 0x0, sizeof(ops));
     ops.priv = ptp;
     ops.name = "ptp";
     ops.handler = ptp_rxq_tasklet_handler;
-    ptp->rxq_tasklet = mt_sch_register_tasklet(impl->main_sch, &ops);
+    ptp->rxq_tasklet = mtl_sch_register_tasklet(impl->main_sch, &ops);
     if (!ptp->rxq_tasklet) {
       err("%s(%d), rxq tasklet fail\n", __func__, port);
       mt_cni_uinit(impl);
@@ -1319,7 +1319,7 @@ static int ptp_uinit(struct mtl_main_impl* impl, struct mt_ptp_impl* ptp) {
   }
 
   if (ptp->rxq_tasklet) {
-    mt_sch_unregister_tasklet(ptp->rxq_tasklet);
+    mtl_sch_unregister_tasklet(ptp->rxq_tasklet);
     ptp->rxq_tasklet = NULL;
   }
   if (ptp->gen_rxq) {

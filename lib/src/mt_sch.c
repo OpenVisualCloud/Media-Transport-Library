@@ -25,27 +25,27 @@ static inline void sch_mgr_unlock(struct mt_sch_mgr* mgr) {
   mt_pthread_mutex_unlock(&mgr->mgr_mutex);
 }
 
-static inline void sch_lock(struct mt_sch_impl* sch) {
+static inline void sch_lock(struct mtl_sch_impl* sch) {
   mt_pthread_mutex_lock(&sch->mutex);
 }
 
-static inline void sch_unlock(struct mt_sch_impl* sch) {
+static inline void sch_unlock(struct mtl_sch_impl* sch) {
   mt_pthread_mutex_unlock(&sch->mutex);
 }
 
-static void sch_sleep_wakeup(struct mt_sch_impl* sch) {
+static void sch_sleep_wakeup(struct mtl_sch_impl* sch) {
   mt_pthread_mutex_lock(&sch->sleep_wake_mutex);
   mt_pthread_cond_signal(&sch->sleep_wake_cond);
   mt_pthread_mutex_unlock(&sch->sleep_wake_mutex);
 }
 
 static void sch_sleep_alarm_handler(void* param) {
-  struct mt_sch_impl* sch = param;
+  struct mtl_sch_impl* sch = param;
 
   sch_sleep_wakeup(sch);
 }
 
-static int sch_tasklet_sleep(struct mtl_main_impl* impl, struct mt_sch_impl* sch) {
+static int sch_tasklet_sleep(struct mtl_main_impl* impl, struct mtl_sch_impl* sch) {
   /* get sleep us */
   uint64_t sleep_us = mt_sch_default_sleep_us(impl);
   uint64_t force_sleep_us = mt_sch_force_sleep_us(impl);
@@ -103,11 +103,11 @@ static int sch_tasklet_sleep(struct mtl_main_impl* impl, struct mt_sch_impl* sch
 }
 
 static int sch_tasklet_func(void* args) {
-  struct mt_sch_impl* sch = args;
+  struct mtl_sch_impl* sch = args;
   struct mtl_main_impl* impl = sch->parent;
   int idx = sch->idx;
   int num_tasklet, i;
-  struct mt_sch_tasklet_ops* ops;
+  struct mtl_sch_tasklet_ops* ops;
   struct mt_sch_tasklet_impl* tasklet;
   bool time_measure = mt_has_tasklet_time_measure(impl);
   uint64_t tsc_s = 0;
@@ -126,20 +126,13 @@ static int sch_tasklet_func(void* args) {
     tasklet = sch->tasklet[i];
     if (!tasklet) continue;
     ops = &tasklet->ops;
-    if (ops->pre_start) ops->pre_start(ops->priv);
-  }
-
-  for (i = 0; i < num_tasklet; i++) {
-    tasklet = sch->tasklet[i];
-    if (!tasklet) continue;
-    ops = &tasklet->ops;
     if (ops->start) ops->start(ops->priv);
   }
 
   sch->sleep_ratio_start_ns = mt_get_tsc(impl);
 
   while (rte_atomic32_read(&sch->request_stop) == 0) {
-    int pending = MT_TASKLET_ALL_DONE;
+    int pending = MTL_TASKLET_ALL_DONE;
 
     num_tasklet = sch->max_tasklet_idx;
     for (i = 0; i < num_tasklet; i++) {
@@ -162,7 +155,7 @@ static int sch_tasklet_func(void* args) {
         tasklet->stat_time_cnt++;
       }
     }
-    if (sch->allow_sleep && (pending == MT_TASKLET_ALL_DONE)) {
+    if (sch->allow_sleep && (pending == MTL_TASKLET_ALL_DONE)) {
       sch_tasklet_sleep(impl, sch);
     }
   }
@@ -185,7 +178,7 @@ static void* sch_tasklet_thread(void* arg) {
   return NULL;
 }
 
-static int sch_start(struct mt_sch_impl* sch) {
+static int sch_start(struct mtl_sch_impl* sch) {
   int idx = sch->idx;
   int ret;
 
@@ -202,7 +195,9 @@ static int sch_start(struct mt_sch_impl* sch) {
   rte_atomic32_set(&sch->stopped, 0);
 
   if (!sch->run_in_thread) {
-    ret = mt_sch_get_lcore(sch->parent, &sch->lcore, MT_LCORE_TYPE_SCH);
+    ret = mt_sch_get_lcore(
+        sch->parent, &sch->lcore,
+        (sch->type == MT_SCH_TYPE_APP) ? MT_LCORE_TYPE_SCH_USER : MT_LCORE_TYPE_SCH);
     if (ret < 0) {
       err("%s(%d), get lcore fail %d\n", __func__, idx, ret);
       sch_unlock(sch);
@@ -227,7 +222,7 @@ static int sch_start(struct mt_sch_impl* sch) {
   return 0;
 }
 
-static int sch_stop(struct mt_sch_impl* sch) {
+static int sch_stop(struct mtl_sch_impl* sch) {
   int idx = sch->idx;
 
   sch_lock(sch);
@@ -257,9 +252,9 @@ static int sch_stop(struct mt_sch_impl* sch) {
   return 0;
 }
 
-static struct mt_sch_impl* sch_request(struct mtl_main_impl* impl, enum mt_sch_type type,
-                                       mt_sch_mask_t mask) {
-  struct mt_sch_impl* sch;
+static struct mtl_sch_impl* sch_request(struct mtl_main_impl* impl, enum mt_sch_type type,
+                                        mt_sch_mask_t mask) {
+  struct mtl_sch_impl* sch;
 
   for (int sch_idx = 0; sch_idx < MT_MAX_SCH_NUM; sch_idx++) {
     /* mask check */
@@ -282,7 +277,7 @@ static struct mt_sch_impl* sch_request(struct mtl_main_impl* impl, enum mt_sch_t
   return NULL;
 }
 
-static int sch_free(struct mt_sch_impl* sch) {
+static int sch_free(struct mtl_sch_impl* sch) {
   int idx = sch->idx;
 
   if (!mt_sch_is_active(sch)) {
@@ -294,7 +289,9 @@ static int sch_free(struct mt_sch_impl* sch) {
   for (int i = 0; i < sch->nb_tasklets; i++) {
     if (sch->tasklet[i]) {
       warn("%s(%d), tasklet %d still active\n", __func__, idx, i);
-      mt_sch_unregister_tasklet(sch->tasklet[i]);
+      sch_unlock(sch); /* unlock */
+      mtl_sch_unregister_tasklet(sch->tasklet[i]);
+      sch_lock(sch);
     }
   }
   rte_atomic32_dec(&mt_sch_get_mgr(sch->parent)->sch_cnt);
@@ -303,7 +300,7 @@ static int sch_free(struct mt_sch_impl* sch) {
   return 0;
 }
 
-static int sch_free_quota(struct mt_sch_impl* sch, int quota_mbs) {
+static int sch_free_quota(struct mtl_sch_impl* sch, int quota_mbs) {
   int idx = sch->idx;
 
   if (!mt_sch_is_active(sch)) {
@@ -323,7 +320,7 @@ static int sch_free_quota(struct mt_sch_impl* sch, int quota_mbs) {
   return 0;
 }
 
-static bool sch_is_capable(struct mt_sch_impl* sch, int quota_mbs,
+static bool sch_is_capable(struct mtl_sch_impl* sch, int quota_mbs,
                            enum mt_sch_type type) {
   if (!quota_mbs) { /* zero quota_mbs can be applied to any type */
     return true;
@@ -352,7 +349,7 @@ static void sch_tasklet_stat_clear(struct mt_sch_tasklet_impl* tasklet) {
 }
 
 static int sch_stat(void* priv) {
-  struct mt_sch_impl* sch = priv;
+  struct mtl_sch_impl* sch = priv;
   int num_tasklet = sch->max_tasklet_idx;
   struct mt_sch_tasklet_impl* tasklet;
   int idx = sch->idx;
@@ -695,8 +692,8 @@ bool mt_sch_lcore_valid(struct mtl_main_impl* impl, unsigned int lcore) {
   return lcore_shm->lcores_info[lcore].active;
 }
 
-int mt_sch_unregister_tasklet(struct mt_sch_tasklet_impl* tasklet) {
-  struct mt_sch_impl* sch = tasklet->sch;
+int mtl_sch_unregister_tasklet(mtl_tasklet_handle tasklet) {
+  struct mtl_sch_impl* sch = tasklet->sch;
   int sch_idx = sch->idx;
   int idx = tasklet->idx;
 
@@ -727,6 +724,8 @@ int mt_sch_unregister_tasklet(struct mt_sch_tasklet_impl* tasklet) {
     } while (!tasklet->ack_exit);
     info("%s(%d), tasklet %s(%d) unregistered, retry %d\n", __func__, sch_idx,
          tasklet->name, idx, retry);
+    /* call the stop for runtime path */
+    if (tasklet->ops.stop) tasklet->ops.stop(tasklet->ops.priv);
   } else {
     /* safe to directly remove */
     sch->tasklet[idx] = NULL;
@@ -745,8 +744,8 @@ int mt_sch_unregister_tasklet(struct mt_sch_tasklet_impl* tasklet) {
   return 0;
 }
 
-struct mt_sch_tasklet_impl* mt_sch_register_tasklet(
-    struct mt_sch_impl* sch, struct mt_sch_tasklet_ops* tasklet_ops) {
+mtl_tasklet_handle mtl_sch_register_tasklet(struct mtl_sch_impl* sch,
+                                            struct mtl_sch_tasklet_ops* tasklet_ops) {
   int idx = sch->idx;
   struct mtl_main_impl* impl = sch->parent;
   struct mt_sch_tasklet_impl* tasklet;
@@ -775,7 +774,6 @@ struct mt_sch_tasklet_impl* mt_sch_register_tasklet(
     sch->max_tasklet_idx = RTE_MAX(sch->max_tasklet_idx, i + 1);
 
     if (mt_sch_started(sch)) {
-      if (tasklet_ops->pre_start) tasklet_ops->pre_start(tasklet_ops->priv);
       if (tasklet_ops->start) tasklet_ops->start(tasklet_ops->priv);
     }
 
@@ -791,7 +789,7 @@ struct mt_sch_tasklet_impl* mt_sch_register_tasklet(
 }
 
 int mt_sch_mrg_init(struct mtl_main_impl* impl, int data_quota_mbs_limit) {
-  struct mt_sch_impl* sch;
+  struct mtl_sch_impl* sch;
   struct mt_sch_mgr* mgr = mt_sch_get_mgr(impl);
   int socket = mt_socket_id(impl, MTL_PORT_P);
   int nb_tasklets = impl->tasklets_nb_per_sch;
@@ -859,7 +857,7 @@ int mt_sch_mrg_init(struct mtl_main_impl* impl, int data_quota_mbs_limit) {
 }
 
 int mt_sch_mrg_uinit(struct mtl_main_impl* impl) {
-  struct mt_sch_impl* sch;
+  struct mtl_sch_impl* sch;
   struct mt_sch_mgr* mgr = mt_sch_get_mgr(impl);
 
   if (!mt_is_manager_connected(impl)) sch_uinit_lcores(impl, mgr);
@@ -893,7 +891,7 @@ int mt_sch_mrg_uinit(struct mtl_main_impl* impl) {
   return 0;
 };
 
-int mt_sch_add_quota(struct mt_sch_impl* sch, int quota_mbs) {
+int mt_sch_add_quota(struct mtl_sch_impl* sch, int quota_mbs) {
   int idx = sch->idx;
 
   if (!mt_sch_is_active(sch)) {
@@ -917,7 +915,7 @@ int mt_sch_add_quota(struct mt_sch_impl* sch, int quota_mbs) {
   return -ENOMEM;
 }
 
-int mt_sch_put(struct mt_sch_impl* sch, int quota_mbs) {
+int mt_sch_put(struct mtl_sch_impl* sch, int quota_mbs) {
   int sidx = sch->idx, ret;
   struct mtl_main_impl* impl = sch->parent;
 
@@ -964,10 +962,10 @@ int mt_sch_put(struct mt_sch_impl* sch, int quota_mbs) {
   return 0;
 }
 
-struct mt_sch_impl* mt_sch_get(struct mtl_main_impl* impl, int quota_mbs,
-                               enum mt_sch_type type, mt_sch_mask_t mask) {
+struct mtl_sch_impl* mt_sch_get(struct mtl_main_impl* impl, int quota_mbs,
+                                enum mt_sch_type type, mt_sch_mask_t mask) {
   int ret, idx;
-  struct mt_sch_impl* sch;
+  struct mtl_sch_impl* sch;
   struct mt_sch_mgr* mgr = mt_sch_get_mgr(impl);
 
   sch_mgr_lock(mgr);
@@ -1024,11 +1022,14 @@ struct mt_sch_impl* mt_sch_get(struct mtl_main_impl* impl, int quota_mbs,
 
 int mt_sch_start_all(struct mtl_main_impl* impl) {
   int ret = 0;
-  struct mt_sch_impl* sch;
+  struct mtl_sch_impl* sch;
 
   /* start active sch */
   for (int sch_idx = 0; sch_idx < MT_MAX_SCH_NUM; sch_idx++) {
     sch = mt_sch_instance(impl, sch_idx);
+    /* not start the app created sch, app should do the mtl_sch_start */
+    if (sch->type == MT_SCH_TYPE_APP) continue;
+
     if (mt_sch_is_active(sch) && !mt_sch_started(sch)) {
       ret = sch_start(sch);
       if (ret < 0) {
@@ -1044,11 +1045,14 @@ int mt_sch_start_all(struct mtl_main_impl* impl) {
 
 int mt_sch_stop_all(struct mtl_main_impl* impl) {
   int ret;
-  struct mt_sch_impl* sch;
+  struct mtl_sch_impl* sch;
 
   /* stop active sch */
   for (int sch_idx = 0; sch_idx < MT_MAX_SCH_NUM; sch_idx++) {
     sch = mt_sch_instance(impl, sch_idx);
+    /* not stop the app created sch, app should do the mtl_sch_stop */
+    if (sch->type == MT_SCH_TYPE_APP) continue;
+
     if (mt_sch_is_active(sch) && mt_sch_started(sch)) {
       ret = sch_stop(sch);
       if (ret < 0) {
@@ -1062,10 +1066,7 @@ int mt_sch_stop_all(struct mtl_main_impl* impl) {
 }
 
 static const char* lcore_type_names[MT_LCORE_TYPE_MAX] = {
-    "lib_sch",
-    "lib_tap",
-    "lib_rxv_ring",
-    "app_allocated",
+    "lib_sch", "lib_tap", "lib_rxv_ring", "app_allocated", "lib_app_sch",
 };
 
 static const char* lcore_type_name(enum mt_lcore_type type) {
@@ -1219,4 +1220,59 @@ int mtl_lcore_shm_clean(enum mtl_lcore_clean_action action, void* args, size_t a
 
   sch_lcore_shm_uinit(&lcore_mgr);
   return ret;
+}
+
+/* below for public interface for application */
+
+mtl_sch_handle mtl_sch_create(mtl_handle mt) {
+  struct mtl_main_impl* impl = mt;
+
+  if (impl->type != MT_HANDLE_MAIN) {
+    err("%s, invalid type %d\n", __func__, impl->type);
+    return NULL;
+  }
+
+  struct mtl_sch_impl* sch = sch_request(impl, MT_SCH_TYPE_APP, MT_SCH_MASK_ALL);
+  if (!sch) {
+    err("%s, sch request fail\n", __func__);
+    return NULL;
+  }
+
+  info("%s, succ on %d\n", __func__, sch->idx);
+  return sch;
+}
+
+int mtl_sch_free(mtl_sch_handle sch) {
+  int idx = sch->idx;
+  /* stop incase user not dp the mtl_sch_stop */
+  if (mt_sch_started(sch)) sch_stop(sch);
+  int ret = sch_free(sch);
+  if (ret < 0) {
+    err("%s(%d), sch free fail %d\n", __func__, idx, ret);
+    return ret;
+  }
+  info("%s(%d), succ\n", __func__, idx);
+  return 0;
+}
+
+int mtl_sch_start(mtl_sch_handle sch) {
+  int idx = sch->idx;
+  int ret = sch_start(sch);
+  if (ret < 0) {
+    err("%s(%d), sch start fail %d\n", __func__, idx, ret);
+    return ret;
+  }
+  info("%s(%d), succ\n", __func__, idx);
+  return 0;
+}
+
+int mtl_sch_stop(mtl_sch_handle sch) {
+  int idx = sch->idx;
+  int ret = sch_stop(sch);
+  if (ret < 0) {
+    err("%s(%d), sch start fail %d\n", __func__, idx, ret);
+    return ret;
+  }
+  info("%s(%d), succ\n", __func__, idx);
+  return 0;
 }

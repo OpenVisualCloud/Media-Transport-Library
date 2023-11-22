@@ -582,13 +582,13 @@ static int rx_audio_session_tasklet(struct st_rx_audio_session_impl* s) {
     if (rv) done = false;
   }
 
-  return done ? MT_TASKLET_ALL_DONE : MT_TASKLET_HAS_PENDING;
+  return done ? MTL_TASKLET_ALL_DONE : MTL_TASKLET_HAS_PENDING;
 }
 
 static int rx_audio_sessions_tasklet_handler(void* priv) {
   struct st_rx_audio_sessions_mgr* mgr = priv;
   struct st_rx_audio_session_impl* s;
-  int pending = MT_TASKLET_ALL_DONE;
+  int pending = MTL_TASKLET_ALL_DONE;
 
   for (int sidx = 0; sidx < mgr->max_idx; sidx++) {
     s = rx_audio_session_try_get(mgr, sidx);
@@ -924,10 +924,11 @@ static int st_rx_audio_sessions_stat(void* priv) {
   return 0;
 }
 
-static int rx_audio_sessions_mgr_init(struct mtl_main_impl* impl, struct mt_sch_impl* sch,
+static int rx_audio_sessions_mgr_init(struct mtl_main_impl* impl,
+                                      struct mtl_sch_impl* sch,
                                       struct st_rx_audio_sessions_mgr* mgr) {
   int idx = sch->idx;
-  struct mt_sch_tasklet_ops ops;
+  struct mtl_sch_tasklet_ops ops;
 
   mgr->parent = impl;
   mgr->idx = idx;
@@ -943,9 +944,9 @@ static int rx_audio_sessions_mgr_init(struct mtl_main_impl* impl, struct mt_sch_
   ops.stop = rx_audio_sessions_tasklet_stop;
   ops.handler = rx_audio_sessions_tasklet_handler;
 
-  mgr->tasklet = mt_sch_register_tasklet(sch, &ops);
+  mgr->tasklet = mtl_sch_register_tasklet(sch, &ops);
   if (!mgr->tasklet) {
-    err("%s(%d), mt_sch_register_tasklet fail\n", __func__, idx);
+    err("%s(%d), mtl_sch_register_tasklet fail\n", __func__, idx);
     return -EIO;
   }
 
@@ -1041,7 +1042,7 @@ static int rx_audio_sessions_mgr_uinit(struct st_rx_audio_sessions_mgr* mgr) {
   mt_stat_unregister(mgr->parent, st_rx_audio_sessions_stat, mgr);
 
   if (mgr->tasklet) {
-    mt_sch_unregister_tasklet(mgr->tasklet);
+    mtl_sch_unregister_tasklet(mgr->tasklet);
     mgr->tasklet = NULL;
   }
 
@@ -1111,7 +1112,7 @@ static int rx_audio_ops_check(struct st30_rx_ops* ops) {
   return 0;
 }
 
-static int st_rx_audio_init(struct mtl_main_impl* impl, struct mt_sch_impl* sch) {
+static int st_rx_audio_init(struct mtl_main_impl* impl, struct mtl_sch_impl* sch) {
   int ret;
 
   if (sch->rx_a_init) return 0;
@@ -1127,7 +1128,7 @@ static int st_rx_audio_init(struct mtl_main_impl* impl, struct mt_sch_impl* sch)
   return 0;
 }
 
-int st_rx_audio_sessions_sch_uinit(struct mt_sch_impl* sch) {
+int st_rx_audio_sessions_sch_uinit(struct mtl_sch_impl* sch) {
   if (!sch->rx_a_init) return 0;
 
   rx_audio_sessions_mgr_uinit(&sch->rx_a_mgr);
@@ -1138,7 +1139,7 @@ int st_rx_audio_sessions_sch_uinit(struct mt_sch_impl* sch) {
 
 st30_rx_handle st30_rx_create(mtl_handle mt, struct st30_rx_ops* ops) {
   struct mtl_main_impl* impl = mt;
-  struct mt_sch_impl* sch;
+  struct mtl_sch_impl* sch;
   struct st_rx_audio_session_handle_impl* s_impl;
   struct st_rx_audio_session_impl* s;
   int quota_mbs, ret;
@@ -1205,7 +1206,7 @@ st30_rx_handle st30_rx_create(mtl_handle mt, struct st30_rx_ops* ops) {
 int st30_rx_update_source(st30_rx_handle handle, struct st_rx_source_info* src) {
   struct st_rx_audio_session_handle_impl* s_impl = handle;
   struct st_rx_audio_session_impl* s;
-  struct mt_sch_impl* sch;
+  struct mtl_sch_impl* sch;
   int idx, ret, sch_idx;
 
   if (s_impl->type != MT_HANDLE_RX_AUDIO) {
@@ -1234,7 +1235,7 @@ int st30_rx_update_source(st30_rx_handle handle, struct st_rx_source_info* src) 
 int st30_rx_free(st30_rx_handle handle) {
   struct st_rx_audio_session_handle_impl* s_impl = handle;
   struct mtl_main_impl* impl;
-  struct mt_sch_impl* sch;
+  struct mtl_sch_impl* sch;
   struct st_rx_audio_session_impl* s;
   int ret, idx;
   int sch_idx;

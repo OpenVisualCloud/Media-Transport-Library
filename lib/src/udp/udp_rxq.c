@@ -349,7 +349,7 @@ static int urc_tasklet_handler(void* priv) {
 static int urc_init_tasklet(struct mtl_main_impl* impl, struct mur_client* c) {
   if (!mt_udp_lcore(impl, c->port)) return 0;
 
-  struct mt_sch_tasklet_ops ops;
+  struct mtl_sch_tasklet_ops ops;
   char name[32];
   snprintf(name, 32, "%sP%dDP%dQ%uC%d", MT_UDP_RXQ_PREFIX, c->port, c->dst_port,
            c->q->rxq_id, c->idx);
@@ -359,7 +359,7 @@ static int urc_init_tasklet(struct mtl_main_impl* impl, struct mur_client* c) {
   ops.name = name;
   ops.handler = urc_tasklet_handler;
 
-  c->lcore_tasklet = mt_sch_register_tasklet(impl->main_sch, &ops);
+  c->lcore_tasklet = mtl_sch_register_tasklet(impl->main_sch, &ops);
   if (!c->lcore_tasklet) {
     err("%s, register lcore tasklet fail\n", __func__);
     MUDP_ERR_RET(EIO);
@@ -448,7 +448,7 @@ int mur_client_put(struct mur_client* c) {
   urc_lcore_wakeup(c); /* wake up any pending wait */
 
   if (c->lcore_tasklet) {
-    mt_sch_unregister_tasklet(c->lcore_tasklet);
+    mtl_sch_unregister_tasklet(c->lcore_tasklet);
     c->lcore_tasklet = NULL;
   }
   if (c->q) {

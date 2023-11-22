@@ -293,7 +293,7 @@ static int cni_traffic(struct mtl_main_impl* impl) {
     cni_burst_from_kernel(cni);
   }
 
-  return done ? MT_TASKLET_ALL_DONE : MT_TASKLET_HAS_PENDING;
+  return done ? MTL_TASKLET_ALL_DONE : MTL_TASKLET_HAS_PENDING;
 }
 
 static void* cni_traffic_thread(void* arg) {
@@ -493,7 +493,7 @@ int mt_cni_init(struct mtl_main_impl* impl) {
   if (ret < 0) return ret;
 
   if (cni_impl->lcore_tasklet) {
-    struct mt_sch_tasklet_ops ops;
+    struct mtl_sch_tasklet_ops ops;
 
     memset(&ops, 0x0, sizeof(ops));
     ops.priv = impl;
@@ -502,9 +502,9 @@ int mt_cni_init(struct mtl_main_impl* impl) {
     ops.stop = cni_tasklet_stop;
     ops.handler = cni_tasklet_handler;
 
-    cni_impl->tasklet = mt_sch_register_tasklet(impl->main_sch, &ops);
+    cni_impl->tasklet = mtl_sch_register_tasklet(impl->main_sch, &ops);
     if (!cni_impl->tasklet) {
-      err("%s, mt_sch_register_tasklet fail\n", __func__);
+      err("%s, mtl_sch_register_tasklet fail\n", __func__);
       mt_cni_uinit(impl);
       return -EIO;
     }
@@ -545,7 +545,7 @@ int mt_cni_uinit(struct mtl_main_impl* impl) {
   }
 
   if (cni_impl->tasklet) {
-    mt_sch_unregister_tasklet(cni_impl->tasklet);
+    mtl_sch_unregister_tasklet(cni_impl->tasklet);
     cni_impl->tasklet = NULL;
   }
 
