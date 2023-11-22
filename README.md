@@ -109,7 +109,7 @@ Whitepaper: Open Source Library Enables Real-Time Media over IP Networks. <https
 
 We welcome community contributions to the Intel® Media Transport Library project. If you have any ideas or issues, please share them with us by using GitHub issues or opening a pull request.
 
-### 7.1 For this repository
+### 7.1 Fork this repository
 
 Before opening a pull request, please follow these steps:
 
