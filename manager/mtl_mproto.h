@@ -65,7 +65,7 @@ typedef struct {
 } mtl_lcore_message_t;
 
 typedef struct {
-  int ifindex;
+  unsigned int ifindex;
   uint16_t port;
 } mtl_udp_dp_filter_message_t;
 

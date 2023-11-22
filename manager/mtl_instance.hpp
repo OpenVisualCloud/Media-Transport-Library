@@ -39,6 +39,9 @@ class mtl_instance {
   int handle_message_put_lcore(mtl_lcore_message_t* lcore_msg);
   int handle_message_register(mtl_register_message_t* register_msg);
   int handle_message_request_map_fd(mtl_request_map_fd_message_t* request_map_fd_msg);
+  int handle_message_udp_dp_filter(mtl_udp_dp_filter_message_t* udp_dp_filter_msg,
+                                   bool add);
+
   int send_response(bool success) {
     mtl_message_t msg;
     msg.header.magic = htonl(MTL_MANAGER_MAGIC);
@@ -87,6 +90,12 @@ int mtl_instance::handle_message(const char* buf, int len) {
     case MTL_MSG_TYPE_REQUEST_MAP_FD:
       handle_message_request_map_fd(&msg->body.request_map_fd_msg);
       break;
+    case MTL_MSG_TYPE_ADD_UDP_DP_FILTER:
+      handle_message_udp_dp_filter(&msg->body.udp_dp_filter_msg, true);
+      break;
+    case MTL_MSG_TYPE_DEL_UDP_DP_FILTER:
+      handle_message_udp_dp_filter(&msg->body.udp_dp_filter_msg, false);
+      break;
     default:
       log(log_level::ERROR, "Unknown message type");
       break;
@@ -107,7 +116,7 @@ int mtl_instance::handle_message_get_lcore(mtl_lcore_message_t* lcore_msg) {
     return -1;
   }
   lcore_ids.push_back(lcore_id);
-  log(log_level::INFO, "Add lcore " + std::to_string(lcore_id));
+  log(log_level::INFO, "Added lcore " + std::to_string(lcore_id));
   send_response(true);
   return 0;
 }
@@ -123,7 +132,7 @@ int mtl_instance::handle_message_put_lcore(mtl_lcore_message_t* lcore_msg) {
                          [lcore_id](uint16_t id) { return id == lcore_id; });
   if (it != lcore_ids.end()) lcore_ids.erase(it);
 
-  log(log_level::INFO, "Remove lcore " + std::to_string(lcore_id));
+  log(log_level::INFO, "Removed lcore " + std::to_string(lcore_id));
   return 0;
 }
 
@@ -219,6 +228,21 @@ int mtl_instance::handle_message_request_map_fd(
   *((int*)CMSG_DATA(cmsg)) = interface->get_xsks_map_fd();
 
   return sendmsg(conn_fd, &msg, 0);
+}
+
+int mtl_instance::handle_message_udp_dp_filter(
+    mtl_udp_dp_filter_message_t* udp_dp_filter_msg, bool add) {
+  unsigned int ifindex = ntohl(udp_dp_filter_msg->ifindex);
+  uint16_t port = ntohs(udp_dp_filter_msg->port);
+  auto interface = get_interface(ifindex);
+  if (interface == nullptr) {
+    log(log_level::ERROR, "Failed to get interface " + std::to_string(ifindex));
+    send_response(false);
+    return -1;
+  }
+  int ret = interface->update_udp_dp_filter(port, add);
+  send_response(ret == 0);
+  return ret;
 }
 
 #endif
