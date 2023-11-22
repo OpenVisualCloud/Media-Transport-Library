@@ -16,9 +16,9 @@
 
 #define ST_RX_VIDEO_PREFIX "RV_"
 
-int st_rx_video_sessions_sch_init(struct mtl_main_impl* impl, struct mt_sch_impl* sch);
+int st_rx_video_sessions_sch_init(struct mtl_main_impl* impl, struct mtl_sch_impl* sch);
 
-int st_rx_video_sessions_sch_uinit(struct mtl_main_impl* impl, struct mt_sch_impl* sch);
+int st_rx_video_sessions_sch_uinit(struct mtl_main_impl* impl, struct mtl_sch_impl* sch);
 
 /* call rx_video_session_put always if get successfully */
 static inline struct st_rx_video_session_impl* rx_video_session_get(

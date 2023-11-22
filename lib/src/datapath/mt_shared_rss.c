@@ -469,7 +469,7 @@ int mt_srss_init(struct mtl_main_impl* impl) {
       srss_sch->q_end = q_end;
       q_idx = q_end;
 
-      struct mt_sch_impl* sch =
+      struct mtl_sch_impl* sch =
           mt_sch_get(impl, srss_sch->quota_mps, MT_SCH_TYPE_DEFAULT, sch_mask);
       if (!sch) {
         err("%s(%d), get sch fail on %d\n", __func__, port, s_idx);
@@ -478,14 +478,14 @@ int mt_srss_init(struct mtl_main_impl* impl) {
       }
       srss_sch->sch = sch;
 
-      struct mt_sch_tasklet_ops ops;
+      struct mtl_tasklet_ops ops;
       memset(&ops, 0x0, sizeof(ops));
       ops.priv = srss_sch;
       ops.name = "shared_rss";
       ops.start = srss_sch_tasklet_start;
       ops.stop = srss_sch_tasklet_stop;
       ops.handler = srss_sch_tasklet_handler;
-      srss_sch->tasklet = mt_sch_register_tasklet(sch, &ops);
+      srss_sch->tasklet = mtl_sch_register_tasklet(sch, &ops);
       if (!srss_sch->tasklet) {
         err("%s(%d), register tasklet fail on %d\n", __func__, port, s_idx);
         mt_srss_uinit(impl);
@@ -527,7 +527,7 @@ int mt_srss_uinit(struct mtl_main_impl* impl) {
       for (int s_idx = 0; s_idx < srss->schs_cnt; s_idx++) {
         struct mt_srss_sch* srss_sch = &srss->schs[s_idx];
         if (srss_sch->tasklet) {
-          mt_sch_unregister_tasklet(srss_sch->tasklet);
+          mtl_sch_unregister_tasklet(srss_sch->tasklet);
           srss_sch->tasklet = NULL;
         }
         if (srss_sch->sch) {

@@ -1,6 +1,8 @@
 name: win_gtest
 
 on:
+  # allow manually trigger
+  workflow_dispatch:
   push:
     branches:
       - main

@@ -2986,7 +2986,7 @@ static int rv_pkt_rx_tasklet(struct st_rx_video_session_impl* s) {
   /* submit if any */
   if (s->dma_copy && s->dma_dev) mt_dma_submit(s->dma_dev);
 
-  return done ? MT_TASKLET_ALL_DONE : MT_TASKLET_HAS_PENDING;
+  return done ? MTL_TASKLET_ALL_DONE : MTL_TASKLET_HAS_PENDING;
 }
 
 static int rv_uinit_hw(struct st_rx_video_session_impl* s) {
@@ -3413,7 +3413,7 @@ static int rvs_pkt_rx_tasklet_handler(void* priv) {
   struct st_rx_video_sessions_mgr* mgr = priv;
   struct st_rx_video_session_impl* s;
   int sidx;
-  int pending = MT_TASKLET_ALL_DONE;
+  int pending = MTL_TASKLET_ALL_DONE;
 
   for (sidx = 0; sidx < mgr->max_idx; sidx++) {
     s = rx_video_session_try_get(mgr, sidx);
@@ -3743,10 +3743,10 @@ static int rv_mgr_update_src(struct st_rx_video_sessions_mgr* mgr,
   return 0;
 }
 
-static int rvs_mgr_init(struct mtl_main_impl* impl, struct mt_sch_impl* sch,
+static int rvs_mgr_init(struct mtl_main_impl* impl, struct mtl_sch_impl* sch,
                         struct st_rx_video_sessions_mgr* mgr) {
   int idx = sch->idx;
-  struct mt_sch_tasklet_ops ops;
+  struct mtl_tasklet_ops ops;
 
   mgr->parent = impl;
   mgr->idx = idx;
@@ -3760,7 +3760,7 @@ static int rvs_mgr_init(struct mtl_main_impl* impl, struct mt_sch_impl* sch,
   ops.name = "rvs_pkt_rx";
   ops.handler = rvs_pkt_rx_tasklet_handler;
 
-  mgr->pkt_rx_tasklet = mt_sch_register_tasklet(sch, &ops);
+  mgr->pkt_rx_tasklet = mtl_sch_register_tasklet(sch, &ops);
   if (!mgr->pkt_rx_tasklet) {
     err("%s(%d), pkt_rx_tasklet register fail\n", __func__, idx);
     return -EIO;
@@ -3772,7 +3772,7 @@ static int rvs_mgr_init(struct mtl_main_impl* impl, struct mt_sch_impl* sch,
   ops.start = rvs_ctl_tasklet_start;
   ops.handler = rvs_ctl_tasklet_handler;
 
-  mgr->ctl_tasklet = mt_sch_register_tasklet(sch, &ops);
+  mgr->ctl_tasklet = mtl_sch_register_tasklet(sch, &ops);
   if (!mgr->ctl_tasklet) {
     err("%s(%d), ctl_tasklet register fail\n", __func__, idx);
     return -EIO;
@@ -3795,12 +3795,12 @@ static int rvs_mgr_uinit(struct st_rx_video_sessions_mgr* mgr) {
   struct st_rx_video_session_impl* s;
 
   if (mgr->ctl_tasklet) {
-    mt_sch_unregister_tasklet(mgr->ctl_tasklet);
+    mtl_sch_unregister_tasklet(mgr->ctl_tasklet);
     mgr->ctl_tasklet = NULL;
   }
 
   if (mgr->pkt_rx_tasklet) {
-    mt_sch_unregister_tasklet(mgr->pkt_rx_tasklet);
+    mtl_sch_unregister_tasklet(mgr->pkt_rx_tasklet);
     mgr->pkt_rx_tasklet = NULL;
   }
 
@@ -3911,7 +3911,7 @@ static int rv_sessions_stat(void* priv) {
   return 0;
 }
 
-int st_rx_video_sessions_sch_init(struct mtl_main_impl* impl, struct mt_sch_impl* sch) {
+int st_rx_video_sessions_sch_init(struct mtl_main_impl* impl, struct mtl_sch_impl* sch) {
   int ret, idx = sch->idx;
 
   if (sch->rx_video_init) return 0;
@@ -3930,7 +3930,7 @@ int st_rx_video_sessions_sch_init(struct mtl_main_impl* impl, struct mt_sch_impl
   return 0;
 }
 
-int st_rx_video_sessions_sch_uinit(struct mtl_main_impl* impl, struct mt_sch_impl* sch) {
+int st_rx_video_sessions_sch_uinit(struct mtl_main_impl* impl, struct mtl_sch_impl* sch) {
   if (!sch->rx_video_init) return 0;
 
   struct st_rx_video_sessions_mgr* rx_video_mgr = &sch->rx_video_mgr;
@@ -4113,7 +4113,7 @@ static int rv_st22_ops_check(struct st22_rx_ops* ops) {
 
 st20_rx_handle st20_rx_create_with_mask(struct mtl_main_impl* impl,
                                         struct st20_rx_ops* ops, mt_sch_mask_t sch_mask) {
-  struct mt_sch_impl* sch;
+  struct mtl_sch_impl* sch;
   struct st_rx_video_session_handle_impl* s_impl;
   struct st_rx_video_session_impl* s;
   int quota_mbs, ret, quota_mbs_wo_dma = 0;
@@ -4301,7 +4301,7 @@ int st20_rx_reset_port_stats(st20_rx_handle handle, enum mtl_session_port port) 
 
 int st20_rx_free(st20_rx_handle handle) {
   struct st_rx_video_session_handle_impl* s_impl = handle;
-  struct mt_sch_impl* sch;
+  struct mtl_sch_impl* sch;
   struct st_rx_video_session_impl* s;
   struct mtl_main_impl* impl;
   int ret, sch_idx, idx;
@@ -4477,7 +4477,7 @@ int st20_rx_get_queue_meta(st20_rx_handle handle, struct st_queue_meta* meta) {
 
 st22_rx_handle st22_rx_create(mtl_handle mt, struct st22_rx_ops* ops) {
   struct mtl_main_impl* impl = mt;
-  struct mt_sch_impl* sch;
+  struct mtl_sch_impl* sch;
   struct st22_rx_video_session_handle_impl* s_impl;
   struct st_rx_video_session_impl* s;
   int quota_mbs, ret;
@@ -4655,7 +4655,7 @@ int st22_rx_pcapng_dump(st22_rx_handle handle, uint32_t max_dump_packets, bool s
 
 int st22_rx_free(st22_rx_handle handle) {
   struct st22_rx_video_session_handle_impl* s_impl = handle;
-  struct mt_sch_impl* sch;
+  struct mtl_sch_impl* sch;
   struct st_rx_video_session_impl* s;
   struct mtl_main_impl* impl;
   int ret, sch_idx, idx;

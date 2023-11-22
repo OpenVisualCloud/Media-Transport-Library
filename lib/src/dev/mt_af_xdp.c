@@ -21,12 +21,15 @@
 #error "Please use XDP lib version with XDP_UMEM_UNALIGNED_CHUNK_FLAG support"
 #endif
 
+#define XDP_F_ZERO_COPY (MTL_BIT32(0))
+#define XDP_F_RATE_LIMIT (MTL_BIT32(1))
+
 struct mt_xdp_queue {
   enum mtl_port port;
   struct rte_mempool* mbuf_pool;
   uint16_t q;
   uint32_t umem_ring_size;
-  bool xdp_zero_copy;
+  uint32_t flags; /* XDP_F_* */
 
   struct xsk_umem* umem;
   void* umem_buffer;
@@ -475,7 +478,7 @@ static int xdp_socket_init(struct mt_xdp_priv* xdp, struct mt_xdp_queue* xq) {
       return ret;
     }
   } else {
-    xq->xdp_zero_copy = true;
+    xq->flags |= XDP_F_ZERO_COPY;
   }
   xq->socket_fd = xsk_socket__fd(xq->socket);
 

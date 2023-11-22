@@ -1236,64 +1236,64 @@ struct st_plugin_mgr {
 struct st_tx_video_session_handle_impl {
   struct mtl_main_impl* parent;
   enum mt_handle_type type;
-  struct mt_sch_impl* sch; /* the sch this session attached */
-  int quota_mbs;           /* data quota for this session */
+  struct mtl_sch_impl* sch; /* the sch this session attached */
+  int quota_mbs;            /* data quota for this session */
   struct st_tx_video_session_impl* impl;
 };
 
 struct st22_tx_video_session_handle_impl {
   struct mtl_main_impl* parent;
   enum mt_handle_type type;
-  struct mt_sch_impl* sch; /* the sch this session attached */
-  int quota_mbs;           /* data quota for this session */
+  struct mtl_sch_impl* sch; /* the sch this session attached */
+  int quota_mbs;            /* data quota for this session */
   struct st_tx_video_session_impl* impl;
 };
 
 struct st_tx_audio_session_handle_impl {
   struct mtl_main_impl* parent;
   enum mt_handle_type type;
-  struct mt_sch_impl* sch; /* the sch this session attached */
-  int quota_mbs;           /* data quota for this session */
+  struct mtl_sch_impl* sch; /* the sch this session attached */
+  int quota_mbs;            /* data quota for this session */
   struct st_tx_audio_session_impl* impl;
 };
 
 struct st_tx_ancillary_session_handle_impl {
   struct mtl_main_impl* parent;
   enum mt_handle_type type;
-  struct mt_sch_impl* sch; /* the sch this session attached */
-  int quota_mbs;           /* data quota for this session */
+  struct mtl_sch_impl* sch; /* the sch this session attached */
+  int quota_mbs;            /* data quota for this session */
   struct st_tx_ancillary_session_impl* impl;
 };
 
 struct st_rx_video_session_handle_impl {
   struct mtl_main_impl* parent;
   enum mt_handle_type type;
-  struct mt_sch_impl* sch; /* the sch this session attached */
-  int quota_mbs;           /* data quota for this session */
+  struct mtl_sch_impl* sch; /* the sch this session attached */
+  int quota_mbs;            /* data quota for this session */
   struct st_rx_video_session_impl* impl;
 };
 
 struct st22_rx_video_session_handle_impl {
   struct mtl_main_impl* parent;
   enum mt_handle_type type;
-  struct mt_sch_impl* sch; /* the sch this session attached */
-  int quota_mbs;           /* data quota for this session */
+  struct mtl_sch_impl* sch; /* the sch this session attached */
+  int quota_mbs;            /* data quota for this session */
   struct st_rx_video_session_impl* impl;
 };
 
 struct st_rx_audio_session_handle_impl {
   struct mtl_main_impl* parent;
   enum mt_handle_type type;
-  struct mt_sch_impl* sch; /* the sch this session attached */
-  int quota_mbs;           /* data quota for this session */
+  struct mtl_sch_impl* sch; /* the sch this session attached */
+  int quota_mbs;            /* data quota for this session */
   struct st_rx_audio_session_impl* impl;
 };
 
 struct st_rx_ancillary_session_handle_impl {
   struct mtl_main_impl* parent;
   enum mt_handle_type type;
-  struct mt_sch_impl* sch; /* the sch this session attached */
-  int quota_mbs;           /* data quota for this session */
+  struct mtl_sch_impl* sch; /* the sch this session attached */
+  int quota_mbs;            /* data quota for this session */
   struct st_rx_ancillary_session_impl* impl;
 };
 

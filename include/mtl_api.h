@@ -1080,6 +1080,22 @@ mtl_iova_t mtl_hp_virt2iova(mtl_handle mt, const void* vaddr);
 size_t mtl_page_size(mtl_handle mt);
 
 /**
+ * Sleep with us.
+ *
+ * @param us
+ *   The us to sleep.
+ */
+void mtl_sleep_us(unsigned int us);
+
+/**
+ * Busy delay with us.
+ *
+ * @param us
+ *   The us to sleep.
+ */
+void mtl_delay_us(unsigned int us);
+
+/**
  * Perform DMA mapping with virtual address that can be used for IO.
  * The virtual address and size must align to page size(mtl_page_size).
  *

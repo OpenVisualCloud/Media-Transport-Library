@@ -20,6 +20,7 @@
 #include "mt_mem.h"
 #include "mt_platform.h"
 #include "mt_quirk.h"
+#include "mtl_sch_api.h"
 #include "st2110/st_header.h"
 
 #ifndef _MT_LIB_MAIN_HEAD_H_
@@ -420,37 +421,10 @@ struct mt_dhcp_impl {
   uint8_t dns[MTL_IP_ADDR_LEN];
 };
 
-#define MT_TASKLET_HAS_PENDING (1)
-#define MT_TASKLET_ALL_DONE (0)
-
-/*
- * Tasklets share the time slot on a lcore,
- * only non-block method can be used in handler routine.
- */
-struct mt_sch_tasklet_ops {
-  char* name;
-  void* priv; /* private data to the callback */
-
-  int (*pre_start)(void* priv);
-  int (*start)(void* priv);
-  int (*stop)(void* priv);
-  /*
-   * return MT_TASKLET_ALL_DONE if no any pending task, all are done
-   * return MT_TASKLET_HAS_PENDING if it has pending tasks.
-   */
-  int (*handler)(void* priv);
-  /*
-   * the recommend sleep time(us) if tasklet report MT_TASKLET_ALL_DONE.
-   * also this value can be set by mt_tasklet_set_sleep at runtime.
-   * leave to zero if you don't know.
-   */
-  uint64_t advice_sleep_us;
-};
-
 struct mt_sch_tasklet_impl {
-  struct mt_sch_tasklet_ops ops;
+  struct mtl_tasklet_ops ops;
   char name[ST_MAX_NAME_LEN];
-  struct mt_sch_impl* sch;
+  struct mtl_sch_impl* sch;
 
   int idx;
   bool request_exit;
@@ -465,6 +439,7 @@ struct mt_sch_tasklet_impl {
 enum mt_sch_type {
   MT_SCH_TYPE_DEFAULT = 0,
   MT_SCH_TYPE_RX_VIDEO_ONLY,
+  MT_SCH_TYPE_APP, /* created by user */
   MT_SCH_TYPE_MAX,
 };
 
@@ -473,10 +448,11 @@ typedef uint64_t mt_sch_mask_t;
 /* all sch */
 #define MT_SCH_MASK_ALL ((mt_sch_mask_t)-1)
 
-struct mt_sch_impl {
+struct mtl_sch_impl {
+  char name[32];
   pthread_mutex_t mutex; /* protect sch context */
   struct mt_sch_tasklet_impl** tasklet;
-  int nb_tasklets; /* the number of tasklet in current sch */
+  uint32_t nb_tasklets; /* the number of tasklet in current sch */
   /* max tasklet index */
   volatile int max_tasklet_idx;
   unsigned int lcore;
@@ -551,7 +527,7 @@ struct mt_lcore_mgr {
 };
 
 struct mt_sch_mgr {
-  struct mt_sch_impl sch[MT_MAX_SCH_NUM];
+  struct mtl_sch_impl sch[MT_MAX_SCH_NUM];
   /* active sch cnt */
   rte_atomic32_t sch_cnt;
   pthread_mutex_t mgr_mutex; /* protect sch mgr */
@@ -719,11 +695,13 @@ struct mt_user_info {
   pid_t pid;
 };
 
+/* remember to update lcore_type_names if any item changed */
 enum mt_lcore_type {
   MT_LCORE_TYPE_SCH = 0, /* lib scheduler used */
   MT_LCORE_TYPE_TAP,
   MT_LCORE_TYPE_RXV_RING_LCORE,
-  MT_LCORE_TYPE_USER, /* allocated by application */
+  MT_LCORE_TYPE_USER,     /* allocated by application */
+  MT_LCORE_TYPE_SCH_USER, /* application allocated by mtl_sch_create  */
   MT_LCORE_TYPE_MAX,
 };
 
@@ -987,7 +965,7 @@ struct mt_srss_sch {
   int idx;
   uint16_t q_start;
   uint16_t q_end;
-  struct mt_sch_impl* sch;
+  struct mtl_sch_impl* sch;
   struct mt_sch_tasklet_impl* tasklet;
   int quota_mps;
 
@@ -1139,7 +1117,7 @@ struct mtl_main_impl {
   rte_atomic32_t instance_in_reset; /* if mt instance is in reset */
   /* if mt instance is aborted, in case for ctrl-c from app */
   rte_atomic32_t instance_aborted;
-  struct mt_sch_impl* main_sch; /* system sch */
+  struct mtl_sch_impl* main_sch; /* system sch */
 
   /* admin context */
   struct mt_admin admin;
