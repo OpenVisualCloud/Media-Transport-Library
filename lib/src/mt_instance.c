@@ -48,7 +48,6 @@ int mt_instance_get_lcore(struct mtl_main_impl* impl, unsigned int lcore_id) {
   }
 
   ret = recv(sock, &msg, sizeof(mtl_message_t), 0);
-
   if (ret < 0 || ntohl(msg.header.magic) != MTL_MANAGER_MAGIC ||
       ntohl(msg.header.type) != MTL_MSG_TYPE_RESPONSE) {
     err("%s, recv response fail\n", __func__);
@@ -114,6 +113,38 @@ int mt_instance_request_xsks_map_fd(struct mtl_main_impl* impl, unsigned int ifi
   }
 
   return xsks_map_fd;
+}
+
+int mt_instance_update_udp_dp_filter(struct mtl_main_impl* impl, unsigned int ifindex,
+                                     uint16_t dst_port, bool add) {
+  int ret;
+  int sock = impl->instance_fd;
+
+  mtl_message_t msg;
+  msg.header.magic = htonl(MTL_MANAGER_MAGIC);
+  msg.header.type =
+      add ? htonl(MTL_MSG_TYPE_ADD_UDP_DP_FILTER) : htonl(MTL_MSG_TYPE_DEL_UDP_DP_FILTER);
+  msg.body.udp_dp_filter_msg.ifindex = htonl(ifindex);
+  msg.body.udp_dp_filter_msg.port = htons(dst_port);
+  msg.header.body_len = htonl(sizeof(mtl_udp_dp_filter_message_t));
+
+  ret = send(sock, &msg, sizeof(mtl_message_t), 0);
+  if (ret < 0) {
+    err("%s(%u), send message fail\n", __func__, ifindex);
+    return ret;
+  }
+
+  ret = recv(sock, &msg, sizeof(mtl_message_t), 0);
+  if (ret < 0 || ntohl(msg.header.magic) != MTL_MANAGER_MAGIC ||
+      ntohl(msg.header.type) != MTL_MSG_TYPE_RESPONSE) {
+    err("%s, recv response fail\n", __func__);
+    return -EIO;
+  }
+
+  int response = msg.body.response_msg.response;
+
+  /* return negative value incase user check with < 0 */
+  return -response;
 }
 
 int mt_instance_init(struct mtl_main_impl* impl, struct mtl_init_params* p) {

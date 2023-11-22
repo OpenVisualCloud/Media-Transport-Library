@@ -944,12 +944,11 @@ uint16_t mt_tx_xdp_burst(struct mt_tx_xdp_entry* entry, struct rte_mbuf** tx_pkt
   return xdp_tx(entry->parent, entry->xq, tx_pkts, nb_pkts);
 }
 
-static int xdp_socket_update_dp(struct mtl_main_impl* impl, const char* if_name, int dp,
-                                bool add) {
-  if (mt_is_manager_connected(impl)) {
-    dbg("%s, not implemented\n", __func__);
-    return 0;
-  }
+static int xdp_socket_update_dp(struct mtl_main_impl* impl, const char* if_name,
+                                uint16_t dp, bool add) {
+  if (mt_is_manager_connected(impl))
+    return mt_instance_update_udp_dp_filter(impl, if_nametoindex(if_name), dp, add);
+
   int sock = xdp_connect_control_sock();
   if (sock < 0) {
     err("%s, unix socket create fail, %s\n", __func__, strerror(errno));
@@ -958,9 +957,9 @@ static int xdp_socket_update_dp(struct mtl_main_impl* impl, const char* if_name,
 
   char command[64];
   if (add)
-    snprintf(command, sizeof(command), "imtl:if:%s:dp_add_filter:%d", if_name, dp);
+    snprintf(command, sizeof(command), "imtl:if:%s:dp_add_filter:%u", if_name, dp);
   else
-    snprintf(command, sizeof(command), "imtl:if:%s:dp_del_filter:%d", if_name, dp);
+    snprintf(command, sizeof(command), "imtl:if:%s:dp_del_filter:%u", if_name, dp);
 
   send(sock, command, sizeof(command), 0);
 

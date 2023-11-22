@@ -13,5 +13,7 @@ int mt_instance_uinit(struct mtl_main_impl* impl);
 int mt_instance_get_lcore(struct mtl_main_impl* impl, unsigned int lcore_id);
 int mt_instance_put_lcore(struct mtl_main_impl* impl, unsigned int lcore_id);
 int mt_instance_request_xsks_map_fd(struct mtl_main_impl* impl, unsigned int ifindex);
+int mt_instance_update_udp_dp_filter(struct mtl_main_impl* impl, unsigned int ifindex,
+                                     uint16_t dst_port, bool add);
 
 #endif
