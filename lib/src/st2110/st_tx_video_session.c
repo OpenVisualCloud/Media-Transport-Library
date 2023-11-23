@@ -1552,6 +1552,9 @@ static int tv_tasklet_start(void* priv) {
     if (!s) continue;
     /* re-calculate the vsync */
     if (s->ops.flags & ST20_TX_FLAG_ENABLE_VSYNC) st_vsync_calculate(impl, &s->vsync);
+    for (int i = 0; i < s->ops.num_port; i++) {
+      s->last_burst_succ_time_tsc[i] = mt_get_tsc(impl);
+    }
     /* calculate the pacing epoch */
     tv_init_pacing_epoch(impl, s);
     tx_video_session_put(mgr, sidx);

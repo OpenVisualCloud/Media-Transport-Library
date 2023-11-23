@@ -1,7 +1,7 @@
-From 59a5646ab85d1da53b15b4148bdb0ad29544caf3 Mon Sep 17 00:00:00 2001
+From 2d65e59f778da831b2bbbc1e63d8b1b321590f78 Mon Sep 17 00:00:00 2001
 From: Frank Du <frank.du@intel.com>
 Date: Thu, 16 Nov 2023 14:19:55 +0800
-Subject: [PATCH 4/4] version: update to Kahawai_1.12.7_20231116
+Subject: [PATCH 3/4] version: update to Kahawai_1.12.7_20231116
 
 Signed-off-by: Frank Du <frank.du@intel.com>
 ---
