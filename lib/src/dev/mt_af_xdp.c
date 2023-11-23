@@ -192,7 +192,25 @@ static int xdp_stat_dump(void* priv) {
   return 0;
 }
 
+static void xdp_queue_clean_mbuf(struct mt_xdp_queue* xq) {
+  struct xsk_ring_prod* rpq = &xq->rx_prod;
+  struct rte_mempool* mp = xq->mbuf_pool;
+  uint32_t size = xq->umem_ring_size;
+  uint32_t idx = 0;
+
+  /* clean rx prod ring */
+  xsk_ring_prod__reserve(rpq, 0, &idx);
+  for (uint32_t i = 0; i < size; i++) {
+    __u64* fq_addr = xsk_ring_prod__fill_addr(rpq, idx--);
+    if (!fq_addr) break;
+    struct rte_mbuf* m = *fq_addr + xq->umem_buffer + mp->header_size;
+    rte_pktmbuf_free(m);
+  }
+}
+
 static int xdp_queue_uinit(struct mt_xdp_queue* xq) {
+  xdp_queue_clean_mbuf(xq);
+
   if (xq->socket) {
     xsk_socket__delete(xq->socket);
     xq->socket = NULL;
@@ -719,7 +737,7 @@ static uint16_t xdp_rx(struct mt_rx_xdp_entry* entry, struct rte_mbuf** rx_pkts,
     rx_bytes += len;
   }
 
-  xsk_ring_cons__release(rx_cons, nb_pkts);
+  xsk_ring_cons__release(rx_cons, rx);
   ret = xdp_rx_prod_reserve(xq, fill, rx);
   if (ret < 0) { /* should never happen */
     err("%s(%d, %u), prod fill bulk %u fail\n", __func__, port, q, rx);
