@@ -86,13 +86,17 @@ popd
 # build app
 pushd app/
 meson setup "${APP_BUILD_DIR}" -Dbuildtype="$buildtype" -Denable_asan="$enable_asan"
-meson compile -C "${APP_BUILD_DIR}"
+popd
+pushd "${APP_BUILD_DIR}"
+ninja
 popd
 
 # build tests
 pushd tests/
 meson setup "${TEST_BUILD_DIR}" -Dbuildtype="$buildtype" -Denable_asan="$enable_asan"
-meson compile -C "${TEST_BUILD_DIR}"
+popd
+pushd "${TEST_BUILD_DIR}"
+ninja
 popd
 
 # build plugins
