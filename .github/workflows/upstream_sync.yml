@@ -5,11 +5,16 @@ on:
     - cron: "0 0 * * *" # every day
   workflow_dispatch: # trigger manually
 
+permissions:
+  contents: read
+
 jobs:
   sync_latest_from_upstream:
     runs-on: ubuntu-latest
     name: Sync latest commits from upstream repo
     if: ${{ github.event.repository.fork }}
+    permissions:
+      contents: write
 
     steps:
       - name: Checkout target repo
