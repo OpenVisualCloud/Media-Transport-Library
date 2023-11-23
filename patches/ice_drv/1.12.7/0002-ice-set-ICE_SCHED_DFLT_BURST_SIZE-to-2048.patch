@@ -1,4 +1,4 @@
-From 3402eb59eef6ff9e55fa3e60578c86af32d5ea31 Mon Sep 17 00:00:00 2001
+From 431d23a21a680c26705f2ba5ca5140af10f44672 Mon Sep 17 00:00:00 2001
 From: Frank Du <frank.du@intel.com>
 Date: Tue, 21 Feb 2023 09:37:27 +0800
 Subject: [PATCH 2/4] ice: set ICE_SCHED_DFLT_BURST_SIZE to 2048
