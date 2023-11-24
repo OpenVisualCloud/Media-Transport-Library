@@ -557,7 +557,7 @@ The VFIO driver can run without the IOMMU feature, enable it with below command 
 sudo bash -c 'echo 1 > /sys/module/vfio/parameters/enable_unsafe_noiommu_mode'
 ```
 
-### 8.14 Fail to loading shared libraries
+### 8.14 Fail to load shared libraries
 
 If you get below similar message when runing the RxTxApp, it's likely a ld library path problem.
 
@@ -575,4 +575,26 @@ find / -name librte_dmadev.so.23
 ```bash
 # Note to change the path as the find result
 export LD_LIBRARY_PATH=/usr/local/lib64/
+```
+
+### 8.15 Fail to init lcore
+
+This might happen after commit `4f46e49`, because the lcore_shm structure is [changed](https://github.com/OpenVisualCloud/Media-Transport-Library/commit/4f46e493b79451c7ca564d82e1be56c7916b0722#diff-7ff8a138885ebda032ff57250ff81174b30722cc168a26fe39d9a4ff501d48d0L710).
+
+```bash
+MT: 2023-11-24 15:06:27, Error: sch_lcore_shm_init, can not get shared memory for lcore, Invalid argument
+MT: 2023-11-24 15:06:27, Error: sch_init_lcores, lcore init fail -5
+MT: 2023-11-24 15:06:27, Error: mt_dev_create, sch mgr init fail -5
+MT: 2023-11-24 15:06:27, dev_stop_port(0), succ
+MT: 2023-11-24 15:06:27, Error: mt_main_create, mt_dev_create fail -5
+MT: 2023-11-24 15:06:27, Error: mtl_init, st main create fail -5
+```
+
+Follow below steps to clear the old shared mem in system:
+
+```bash
+# find the shmid of the old shm
+ipcs -m
+# delete the old shm
+sudo ipcrm -m <shmid>
 ```
