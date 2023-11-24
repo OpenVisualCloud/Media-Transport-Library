@@ -2414,7 +2414,7 @@ static int tv_init_hw(struct mtl_main_impl* impl, struct st_tx_video_sessions_mg
       }
     }
 
-    if (false & mt_pmd_is_dpdk_af_xdp(impl, port)) {
+    if (false && mt_pmd_is_dpdk_af_xdp(impl, port)) {
       /* disable now, always use no zc mempool for the flush pad */
       pad_mempool = s->mbuf_mempool_hdr[i];
     } else {

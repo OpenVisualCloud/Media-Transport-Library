@@ -727,7 +727,7 @@ static uint16_t xdp_rx(struct mt_rx_xdp_entry* entry, struct rte_mbuf** rx_pkts,
         offset - sizeof(struct rte_mbuf) - rte_pktmbuf_priv_size(mp) - mp->header_size;
     rte_pktmbuf_pkt_len(pkt) = len;
     rte_pktmbuf_data_len(pkt) = len;
-    if (xdp_rx_check_pkt(entry, pkt)) {
+    if (entry->skip_all_check || xdp_rx_check_pkt(entry, pkt)) {
       rx_pkts[valid_rx] = pkt;
       valid_rx++;
     } else {
@@ -1054,8 +1054,11 @@ struct mt_rx_xdp_entry* mt_rx_xdp_get(struct mtl_main_impl* impl, enum mtl_port 
       mt_rx_xdp_put(entry);
       return NULL;
     }
-    if (xdp->has_ctrl)
-      xdp_socket_update_dp(impl, mt_kernel_if_name(impl, port), flow->dst_port, true);
+    if (xdp->has_ctrl &&
+        !xdp_socket_update_dp(impl, mt_kernel_if_name(impl, port), flow->dst_port, true))
+      entry->skip_all_check = true;
+    else
+      entry->skip_all_check = false;
   }
 
   uint8_t* ip = flow->dip_addr;
