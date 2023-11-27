@@ -1073,6 +1073,7 @@ struct mt_rx_xdp_entry {
   struct mt_xdp_queue* xq;
   struct mt_rx_flow_rsp* flow_rsp;
   bool skip_udp_port_check;
+  bool skip_all_check;
 };
 
 struct mt_flow_impl {
