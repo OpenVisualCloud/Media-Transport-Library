@@ -82,7 +82,8 @@ List all interfaces that can be used by app
 
  **rx_queues_cnt (int):** the number of tx queues(optional). Default it will calculated based on the sessions number in this configuration.
 
-> Session group contains a group of sessions which use some common settings, there can be 0 or multiple video/audio/ancillary sessions in one group, and there can be 0 or multiple tx/rx session groups in the following parts in case you have multiple destination IP. (see [example config](../config/test_tx_1port_1v_2dest.json))
+> Session group contains a group of sessions which use some common settings, there can be 0 or multiple video/audio/ancillary sessions in one group, and there can be 0 or multiple tx/rx session groups in the following parts in case you have multiple destination IP.
+> See [tx_multi_dest](../config/test_tx_1port_2v_2dest.json) and [rx_multi_dest](../config/test_rx_1port_2v_2dest.json) for multiple destination reference.
 
 ### TX Sessions (array of tx session groups)
 
