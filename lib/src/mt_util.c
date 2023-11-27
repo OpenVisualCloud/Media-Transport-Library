@@ -978,3 +978,24 @@ double mt_calculate_cpu_usage(struct mt_cpu_usage* prev, struct mt_cpu_usage* cu
 
   return 100.0 * (totald - idled) / totald;
 }
+
+bool mt_file_exists(const char* filename) {
+  FILE* file = fopen(filename, "r");
+  if (file) {
+    fclose(file);
+    return true;
+  }
+  return false;
+}
+
+int mt_sysfs_write_uint32(const char* path, uint32_t value) {
+  FILE* file = fopen(path, "w");
+  if (!file) {
+    err("%s, open %s fail\n", __func__, path);
+    return -EIO;
+  }
+
+  int bytes_written = fprintf(file, "%u", value);
+  fclose(file);
+  return bytes_written > 0 ? 0 : -EIO;
+}

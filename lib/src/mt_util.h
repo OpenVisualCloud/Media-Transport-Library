@@ -268,4 +268,8 @@ int mt_read_cpu_usage(struct mt_cpu_usage* usages, int* cpu_ids, int num_cpus);
 
 double mt_calculate_cpu_usage(struct mt_cpu_usage* prev, struct mt_cpu_usage* curr);
 
+bool mt_file_exists(const char* filename);
+
+int mt_sysfs_write_uint32(const char* path, uint32_t value);
+
 #endif

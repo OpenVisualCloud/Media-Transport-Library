@@ -76,6 +76,8 @@ static inline float tx_video_session_get_cpu_busy(struct st_tx_video_session_imp
 int st_tx_video_session_migrate(struct st_tx_video_sessions_mgr* mgr,
                                 struct st_tx_video_session_impl* s, int idx);
 
-int st20_pacing_static_profiling(struct st_tx_video_session_impl* s);
+int st20_pacing_static_profiling(struct mtl_main_impl* impl,
+                                 struct st_tx_video_session_impl* s,
+                                 enum mtl_session_port s_port);
 
 #endif

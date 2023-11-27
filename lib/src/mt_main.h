@@ -123,7 +123,10 @@ enum mt_port_type {
 
 enum mt_rl_type {
   MT_RL_TYPE_NONE = 0,
-  MT_RL_TYPE_TM, /* RL based on RTE Generic Traffic Manager*/
+  /* RL based on RTE Generic Traffic Manager */
+  MT_RL_TYPE_TM,
+  /* XDP based on queue sysfs */
+  MT_RL_TYPE_XDP_QUEUE_SYSFS,
 };
 
 enum mt_driver_type {
