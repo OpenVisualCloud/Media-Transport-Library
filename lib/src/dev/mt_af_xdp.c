@@ -16,6 +16,7 @@
 #include "../mt_instance.h"
 #include "../mt_log.h"
 #include "../mt_stat.h"
+#include "../mt_util.h"
 
 #ifndef XDP_UMEM_UNALIGNED_CHUNK_FLAG
 #error "Please use XDP lib version with XDP_UMEM_UNALIGNED_CHUNK_FLAG support"
@@ -29,7 +30,6 @@ struct mt_xdp_queue {
   struct rte_mempool* mbuf_pool;
   uint16_t q;
   uint32_t umem_ring_size;
-  uint32_t flags; /* XDP_F_* */
 
   struct xsk_umem* umem;
   void* umem_buffer;
@@ -74,7 +74,8 @@ struct mt_xdp_queue {
 struct mt_xdp_priv {
   struct mtl_main_impl* parent;
   enum mtl_port port;
-  struct bpf_xdp_query_opts nic_features;
+  char drv[32];
+  uint32_t flags; /* XDP_F_* */
 
   uint8_t start_queue;
   uint16_t queues_cnt;
@@ -100,6 +101,19 @@ static int xdp_connect_control_sock() {
   }
 
   return sock;
+}
+
+static int xdp_queue_tx_max_rate(struct mt_xdp_priv* xdp, struct mt_xdp_queue* xq,
+                                 uint32_t rate_kbps) {
+  enum mtl_port port = xq->port;
+  const char* if_name = mt_kernel_if_name(xdp->parent, port);
+
+  char path[128];
+  snprintf(path, sizeof(path), "/sys/class/net/%s/queues/tx-%u/tx_maxrate", if_name,
+           xq->q);
+  int ret = mt_sysfs_write_uint32(path, rate_kbps | MTL_BIT32(31));
+  info("%s(%d), write %u to %s ret %d\n", __func__, port, rate_kbps, path, ret);
+  return ret;
 }
 
 static int xdp_queue_tx_stat(struct mt_xdp_queue* xq) {
@@ -286,6 +300,53 @@ static int xdp_parse_combined_info(struct mt_xdp_priv* xdp) {
   info("%s(%d), combined max %u cnt %u\n", __func__, port, xdp->max_combined,
        xdp->combined_count);
   return 0;
+}
+
+static int xdp_parse_drv_name(struct mt_xdp_priv* xdp) {
+  struct mtl_main_impl* impl = xdp->parent;
+  enum mtl_port port = xdp->port;
+  const char* if_name = mt_kernel_if_name(impl, port);
+  char drv_path[128];
+  char link_path[128];
+
+  snprintf(drv_path, sizeof(drv_path), "/sys/class/net/%s/device/driver", if_name);
+  ssize_t len = readlink(drv_path, link_path, sizeof(link_path));
+  if (len < 0) {
+    warn("%s(%d), readlink fail for %s\n", __func__, port, if_name);
+    goto unknown;
+  }
+  link_path[len] = '\0';
+  char* driver_name = basename(link_path);
+  if (!driver_name) {
+    warn("%s(%d), basename fail for %s\n", __func__, port, if_name);
+    goto unknown;
+  }
+
+  snprintf(xdp->drv, sizeof(xdp->drv), "%s", driver_name);
+  info("%s(%d), if:%s drv:%s\n", __func__, port, if_name, xdp->drv);
+  return 0;
+
+unknown:
+  snprintf(xdp->drv, sizeof(xdp->drv), "%s", "unknown");
+  return -EIO;
+}
+
+static int xdp_parse_pacing_ice(struct mt_xdp_priv* xdp) {
+  struct mtl_main_impl* impl = xdp->parent;
+  enum mtl_port port = xdp->port;
+  const char* if_name = mt_kernel_if_name(impl, port);
+
+  uint32_t rate = MTL_BIT32(31);
+  char path[128];
+  snprintf(path, sizeof(path), "/sys/class/net/%s/queues/tx-%u/tx_maxrate", if_name,
+           xdp->start_queue);
+  int ret = mt_sysfs_write_uint32(path, rate);
+  info("%s(%d), rl feature %s\n", __func__, port, ret < 0 ? "no" : "yes");
+  if (ret >= 0) {
+    xdp->flags |= XDP_F_RATE_LIMIT;
+    mt_if(impl, port)->drv_info.rl_type = MT_RL_TYPE_XDP_QUEUE_SYSFS;
+  }
+  return ret;
 }
 
 static inline uintptr_t xdp_mp_base_addr(struct rte_mempool* mp, uint64_t* align) {
@@ -496,7 +557,7 @@ static int xdp_socket_init(struct mt_xdp_priv* xdp, struct mt_xdp_queue* xq) {
       return ret;
     }
   } else {
-    xq->flags |= XDP_F_ZERO_COPY;
+    xdp->flags |= XDP_F_ZERO_COPY;
   }
   xq->socket_fd = xsk_socket__fd(xq->socket);
 
@@ -800,6 +861,8 @@ int mt_dev_xdp_init(struct mt_interface* inf) {
   xdp->queues_cnt = RTE_MAX(inf->nb_tx_q, inf->nb_rx_q);
   mt_pthread_mutex_init(&xdp->queues_lock, NULL);
 
+  xdp_parse_drv_name(xdp);
+
   if (!mt_is_privileged(impl)) {
     int ctrl_sock = xdp_connect_control_sock();
     if (ctrl_sock > 0) {
@@ -859,6 +922,8 @@ int mt_dev_xdp_init(struct mt_interface* inf) {
     xdp_free(xdp);
     return ret;
   }
+
+  if (0 == strncmp(xdp->drv, "ice", sizeof("ice"))) xdp_parse_pacing_ice(xdp);
 
   inf->port_id = inf->port;
   inf->xdp = xdp;
@@ -934,6 +999,15 @@ struct mt_tx_xdp_entry* mt_tx_xdp_get(struct mtl_main_impl* impl, enum mtl_port 
   entry->xq = xq;
   entry->queue_id = xq->q;
 
+  /* rl settings */
+  if (xdp->flags & XDP_F_RATE_LIMIT) {
+    uint32_t rate_kbps = 0;
+    if (mt_if(impl, port)->tx_pacing_way == ST21_TX_PACING_WAY_RL) {
+      rate_kbps = flow->bytes_per_sec / 1000 * 8;
+    }
+    xdp_queue_tx_max_rate(xdp, xq, rate_kbps);
+  }
+
   uint8_t* ip = flow->dip_addr;
   info("%s(%d), ip %u.%u.%u.%u, port %u, queue %u\n", __func__, port, ip[0], ip[1], ip[2],
        ip[3], flow->dst_port, entry->queue_id);
@@ -945,6 +1019,12 @@ int mt_tx_xdp_put(struct mt_tx_xdp_entry* entry) {
   struct mt_txq_flow* flow = &entry->flow;
   uint8_t* ip = flow->dip_addr;
   struct mt_xdp_queue* xq = entry->xq;
+  struct mt_xdp_priv* xdp = mt_if(entry->parent, port)->xdp;
+
+  /* rl settings clear */
+  if (xdp->flags & XDP_F_RATE_LIMIT) {
+    xdp_queue_tx_max_rate(xdp, xq, 0);
+  }
 
   if (xq) {
     /* poll all done buf */

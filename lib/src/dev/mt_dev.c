@@ -1342,8 +1342,8 @@ static int dev_if_init_pacing(struct mt_interface* inf) {
   /* pacing select for auto */
   if (ST21_TX_PACING_WAY_AUTO == inf->tx_pacing_way) {
     auto_detect = true;
-    if (inf->drv_info.rl_type != MT_RL_TYPE_NONE) {
-      info("%s(%d), try rl as drv support\n", __func__, port);
+    if (inf->drv_info.rl_type == MT_RL_TYPE_TM) {
+      info("%s(%d), try rl as drv support TM\n", __func__, port);
       inf->tx_pacing_way = ST21_TX_PACING_WAY_RL;
     } else {
       info("%s(%d), use tsc as default\n", __func__, port);
@@ -1356,6 +1356,10 @@ static int dev_if_init_pacing(struct mt_interface* inf) {
     if (inf->drv_info.rl_type == MT_RL_TYPE_NONE) {
       err("%s(%d), this port not support rl\n", __func__, port);
       return -EINVAL;
+    }
+    if (inf->drv_info.rl_type == MT_RL_TYPE_XDP_QUEUE_SYSFS) {
+      /* detect done in the xdp pacing init already */
+      return 0;
     }
     /* IAVF require all q config with RL */
     if (inf->drv_info.drv_type == MT_DRV_IAVF) {

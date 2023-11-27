@@ -94,9 +94,18 @@ static void tv_frame_free_cb(void* addr, void* opaque) {
   struct st_tx_video_session_impl* s = frame_info->priv;
   int s_idx = s->idx, frame_idx = frame_info->idx;
 
-  if ((addr < frame_info->addr) || (addr >= (frame_info->addr + s->st20_fb_size)))
+  if ((addr < frame_info->addr) || (addr >= (frame_info->addr + s->st20_fb_size))) {
     err("%s(%d), addr %p does not belong to frame %d\n", __func__, s_idx, addr,
         frame_idx);
+    return;
+  }
+
+  int refcnt = rte_atomic32_read(&frame_info->refcnt);
+  if (refcnt != 1) {
+    warn("%s(%d), frame %d err refcnt %d addr %p\n", __func__, s_idx, frame_idx, refcnt,
+         addr);
+    return;
+  }
 
   tv_notify_frame_done(s, frame_idx);
   rte_atomic32_dec(&frame_info->refcnt);
@@ -313,7 +322,7 @@ static int tv_train_pacing(struct mtl_main_impl* impl, struct st_tx_video_sessio
     return 0;
   }
   if (!(s->ops.flags & ST20_TX_FLAG_DISABLE_STATIC_PAD_P)) {
-    resolved = st20_pacing_static_profiling(s);
+    resolved = st20_pacing_static_profiling(impl, s, s_port);
     if (resolved) {
       s->pacing.pad_interval = resolved;
       info("%s(%d), user static pad_interval %u\n", __func__, idx, resolved);
@@ -328,8 +337,9 @@ static int tv_train_pacing(struct mtl_main_impl* impl, struct st_tx_video_sessio
     return 0;
   }
 
-  /* wait ptp calibrate done, pacing ptp time */
+  /* wait ptp and tsc calibrate done */
   mt_ptp_wait_stable(impl, MTL_PORT_P, 60 * 3 * MS_PER_S);
+  mt_wait_tsc_stable(impl);
 
   train_start_time = mt_get_tsc(impl);
 
