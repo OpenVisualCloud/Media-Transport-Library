@@ -989,13 +989,24 @@ bool mt_file_exists(const char* filename) {
 }
 
 int mt_sysfs_write_uint32(const char* path, uint32_t value) {
-  FILE* file = fopen(path, "w");
-  if (!file) {
-    err("%s, open %s fail\n", __func__, path);
+  int fd = open(path, O_WRONLY);
+  if (fd < 0) {
+    err("%s, open %s fail %d\n", __func__, path, fd);
     return -EIO;
   }
 
-  int bytes_written = fprintf(file, "%u", value);
-  fclose(file);
-  return bytes_written > 0 ? 0 : -EIO;
+  char buf[64];
+  snprintf(buf, sizeof(buf), "%u", value);
+  size_t len = strlen(buf);
+  ssize_t bytes_written = write(fd, buf, len);
+  int ret;
+  if (bytes_written != len) {
+    warn("%s, write %u to %s fail\n", __func__, value, path);
+    ret = -EIO;
+  } else {
+    ret = 0;
+  }
+
+  close(fd);
+  return ret;
 }
