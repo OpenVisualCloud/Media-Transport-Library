@@ -1171,13 +1171,10 @@ uint16_t st20_pacing_static_profiling(struct mtl_main_impl* impl,
                                       enum mtl_session_port s_port) {
   const struct cvl_pad_table* refer;
   struct st20_tx_ops* ops = &s->ops;
-  enum mtl_port port = mt_port_logic2phy(s->port_maps, s_port);
+  MTL_MAY_UNUSED(impl);
+  MTL_MAY_UNUSED(s_port);
 
   if (s->s_type == MT_ST22_HANDLE_TX_VIDEO) return 0; /* no for st22 */
-
-  if (!mt_pmd_is_dpdk_user(impl, port)) {
-    return 0; /* only for DPDK user PMD */
-  }
 
   for (int i = 0; i < MTL_ARRAY_SIZE(g_cvl_static_pad_tables); i++) {
     refer = &g_cvl_static_pad_tables[i];

@@ -47,6 +47,7 @@ struct mt_xdp_queue {
   /* tx pkt send on this producer ring, filled from userspace on the TX data path */
   struct xsk_ring_prod tx_prod;
   uint32_t tx_free_thresh;
+  uint32_t tx_full_thresh;
 
   struct mt_tx_xdp_entry* tx_entry;
   struct mt_rx_xdp_entry* rx_entry;
@@ -60,6 +61,7 @@ struct mt_xdp_queue {
   uint64_t stat_tx_wakeup_fail;
   uint64_t stat_tx_mbuf_alloc_fail;
   uint64_t stat_tx_prod_reserve_fail;
+  uint64_t stat_tx_prod_full;
 
   uint64_t stat_rx_pkts;
   uint64_t stat_rx_bytes;
@@ -144,6 +146,11 @@ static int xdp_queue_tx_stat(struct mt_xdp_queue* xq) {
     warn("%s(%d,%u), mbuf alloc fail %" PRIu64 "\n", __func__, port, q,
          xq->stat_tx_mbuf_alloc_fail);
     xq->stat_tx_mbuf_alloc_fail = 0;
+  }
+  if (xq->stat_tx_prod_full) {
+    info("%s(%d,%u), tx prod full %" PRIu64 "\n", __func__, port, q,
+         xq->stat_tx_prod_full);
+    xq->stat_tx_prod_full = 0;
   }
   if (xq->stat_tx_wakeup_fail) {
     warn("%s(%d,%u), tx wakeup fail %" PRIu64 "\n", __func__, port, q,
@@ -649,6 +656,12 @@ static uint16_t xdp_tx(struct mtl_main_impl* impl, struct mt_xdp_queue* xq,
 
   xdp_tx_check_free(xq); /* do we need check free threshold for every tx burst */
 
+  uint32_t prod_free = xsk_prod_nb_free(&xq->tx_prod, xq->umem_ring_size);
+  if (prod_free < xq->tx_full_thresh) { /* tx_prod is full */
+    xq->stat_tx_prod_full++;
+    return 0;
+  }
+
   for (uint16_t i = 0; i < nb_pkts; i++) {
     struct rte_mbuf* m = tx_pkts[i];
     struct rte_mbuf* local = rte_pktmbuf_alloc(mbuf_pool);
@@ -901,6 +914,7 @@ int mt_dev_xdp_init(struct mt_interface* inf) {
     xq->q = q;
     xq->umem_ring_size = XSK_RING_CONS__DEFAULT_NUM_DESCS;
     xq->tx_free_thresh = 0; /* default check free always */
+    xq->tx_full_thresh = 1;
     xq->mbuf_pool = inf->rx_queues[i].mbuf_pool;
     if (!xq->mbuf_pool) {
       err("%s(%d), no mbuf_pool for q %u\n", __func__, port, q);
