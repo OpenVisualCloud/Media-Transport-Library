@@ -32,10 +32,44 @@ This command will start the MTL Manager with root privileges, which are necessar
 
 ## Run with our XDP program
 
-We have an edited version of the original AF_XDP eBPF program which allows user to add or remove udp dest port in the eBPF program to act as a packet filter, please see [ebpf tool](../tools/ebpf) for how to build it.
+We have a modified version of the original AF_XDP eBPF program which allows user to add or remove udp dest port in the eBPF program to act as a packet filter, please see [ebpf tool](../tools/ebpf) for how to build it.
 
 To run the MTL Manager with our XDP program, execute:
 
 ```bash
 sudo MTL_XDP_PROG_PATH=/path/to/Media-Transport-Library/tools/ebpf/xsk.xdp.o ./build/MtlManager
+```
+
+## Run in a Docker container
+
+Build the Docker image:
+
+```bash
+docker build -t mtl-manager:latest .
+# docker build -t mtl-manager:latest --build-arg HTTP_PROXY=$http_proxy --build-arg HTTPS_PROXY=$https_proxy .
+```
+
+Run the Docker container as a daemon:
+
+```bash
+docker run -d \
+  --name mtl-manager \
+  --privileged --net=host \
+  -v /var/run/imtl:/var/run/imtl \
+  -v /sys/fs/bpf:/sys/fs/bpf \
+  -v "$(pwd)"/../tools/ebpf/xsk.xdp.o:/tmp/imtl/xdp_prog.o \
+  mtl-manager:latest
+```
+
+Print the MTL Manager logs:
+
+```bash
+docker logs -f mtl-manager
+```
+
+Shutdown the Docker container with SIGINT:
+
+```bash
+docker kill -s SIGINT mtl-manager
+# docker rm mtl-manager
 ```
