@@ -31,7 +31,14 @@ int main() {
   fs::path directory_path(MTL_MANAGER_SOCK_PATH);
   directory_path.remove_filename();
   if (!fs::exists(directory_path)) {
-    fs::create_directory(directory_path);
+    try {
+      fs::create_directory(directory_path);
+    } catch (const std::exception& e) {
+      logger::log(log_level::ERROR,
+                  "Failed to create dir:" + std::string(MTL_MANAGER_SOCK_PATH) +
+                      ", please run the application with the appropriate privileges");
+      return -EIO;
+    }
   }
 
   sigset_t signal_mask;
@@ -66,7 +73,9 @@ int main() {
 
   ret = bind(sockfd, (struct sockaddr*)&addr, sizeof(addr));
   if (ret < 0) {
-    logger::log(log_level::ERROR, "Failed to bind socket.");
+    logger::log(log_level::ERROR,
+                "Failed to bind socket, please run the application with the "
+                "appropriate privileges.");
     goto out;
   }
 
