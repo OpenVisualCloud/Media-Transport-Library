@@ -190,42 +190,29 @@ std::shared_ptr<mtl_interface> mtl_instance::get_interface(const unsigned int if
 
 int mtl_instance::handle_message_request_map_fd(
     mtl_request_map_fd_message_t* request_map_fd_msg) {
+  int fd = -1;
   unsigned int ifindex = ntohl(request_map_fd_msg->ifindex);
   auto interface = get_interface(ifindex);
+  if (interface != nullptr) fd = interface->get_xsks_map_fd();
 
-  struct msghdr msg;
+  struct msghdr msg = {0};
   struct iovec iov[1];
-  struct cmsghdr* cmsg = NULL;
-  char ctrl_buf[CMSG_SPACE(sizeof(int))];
-  char data[1];
+  char control[CMSG_SPACE(sizeof(int))] = {0};
+  char data[1] = {' '};
 
-  memset(&msg, 0, sizeof(struct msghdr));
-  memset(ctrl_buf, 0, CMSG_SPACE(sizeof(int)));
-
-  data[0] = ' ';
   iov[0].iov_base = data;
   iov[0].iov_len = sizeof(data);
 
-  msg.msg_name = NULL;
-  msg.msg_namelen = 0;
   msg.msg_iov = iov;
   msg.msg_iovlen = 1;
   msg.msg_controllen = CMSG_SPACE(sizeof(int));
-  msg.msg_control = ctrl_buf;
+  msg.msg_control = control;
 
-  cmsg = CMSG_FIRSTHDR(&msg);
+  struct cmsghdr* cmsg = CMSG_FIRSTHDR(&msg);
   cmsg->cmsg_level = SOL_SOCKET;
   cmsg->cmsg_type = SCM_RIGHTS;
   cmsg->cmsg_len = CMSG_LEN(sizeof(int));
-
-  if (interface == nullptr) {
-    log(log_level::ERROR, "Failed to get interface " + std::to_string(ifindex));
-    *((int*)CMSG_DATA(cmsg)) = -1;
-    sendmsg(conn_fd, &msg, 0);
-    return -1;
-  }
-
-  *((int*)CMSG_DATA(cmsg)) = interface->get_xsks_map_fd();
+  *((int*)CMSG_DATA(cmsg)) = fd;
 
   return sendmsg(conn_fd, &msg, 0);
 }
