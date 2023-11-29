@@ -4,6 +4,12 @@
 
 This section provides a detailed design concept of the Intel® Media Transport Library, offering an in-depth dive into the technology used.
 
+Similar to other network processing libraries, it consists of a control plane and a data plane. In the data plane, a lockless design is adopted to achieve ultra-high performance.
+
+<div align="center">
+<img src="png/software stack.png" align="center" alt="Software Stack">
+</div>
+
 ## 2. Core management
 
 MTL default uses busy polling, also known as busy-waiting or spinning, to achieve high data packet throughput and low latency. This technique constantly checks for new data packets to process rather than waiting for an interrupt. The polling thread is pinned to a single CPU core to prevent the thread from migrating between CPU cores.
@@ -16,6 +22,10 @@ With this PMD design, it is expected that a CPU thread will always be utilized t
 
 BTW, we provide a option `MTL_FLAG_TASKLET_SLEEP` that enables the sleep option for the PMD thread. However, take note that enabling this option may impact latency, as the CPU may enter a sleep state when there are no packets on the network. If you are utilizing the RxTxApp, it can be enable by `--tasklet_sleep` arguments.
 Additionally, the `MTL_FLAG_TASKLET_THREAD` option is provided to disable pinning to a single CPU core, for cases where a pinned core is not feasible.
+
+<div align="center">
+<img src="png/tasklet.png" align="center" alt="Tasklet">
+</div>
 
 ### 2.1 Tasklet design
 
@@ -46,7 +56,7 @@ The instructions for this deprecated method can still be accessed in the [shm_lc
 
 ### 2.5 The tasklet API for application
 
-Applications can also leverage the efficient tasklet framework. For more information, please refer to the [mtl_sch_api](../include/mtl_sch_api.h). Example usage is provided below:
+Applications can also leverage the efficient tasklet framework. An important note is that the callback tasklet function cannot use any blocking methods, as the thread resource is shared among many tasklets. For more information, please refer to the [mtl_sch_api](../include/mtl_sch_api.h). Example usage is provided below:
 
 ```bash
     mtl_sch_create
@@ -70,6 +80,51 @@ MTL utilizes hugepages for performance optimization when processing packets at h
 HugePages come in two sizes: 2MB and 1GB. MTL recommends using the 2MB pages because they are easier to configure in the system; typically, 1GB pages require many additional settings in the OS. Moreover, according to our performance measurements, the benefits provided by 2MB pages are sufficient.
 The hugepages size is dependent on the workloads you wish to execute on the system, usually a 2G huge page is a good start point, consider increasing the value if memory allocation failures occur during runtime.
 
-### 3.1 Memory API
+### 3.2 Memory API
 
 In MTL, memory management is directly handled through DPDK's memory-related APIs, including mempool and mbuf. In fact, all internal data objects are constructed based on mbuf/mempool to ensure efficient lifecycle management.
+
+## 4. TX Path
+
+After receiving a frame from an application, MTL constructs a network packet from the frame in accordance with RFC 4175 <https://datatracker.ietf.org/doc/rfc4175/> and ST2110-21 timing requirement.
+
+### 4.1 Zero Copy Packet Build
+
+Most modern Network Interface Cards (NICs) support a multi-buffer descriptor feature, enabling the programming of the NIC to dispatch a packet to the network from multiple data segments. The MTL utilizes this capability to achieve zero-copy transmission when a DPDK Poll Mode Driver (PMD) is utilized, thereby delivering unparalleled performance.
+In one typical setup, capable of sending approximately 50 Gbps(equivalent to 16 streams of 1080p YUV422 at 10-bit color depth and 59.94 fps) only requires a single core.
+
+During the packet construction process, only the RTP header is regenerated to represent the packet position within a frame. The video data is carried in the second segment of an mbuf, which directly points to the original frame.
+
+Note that if the currently used NIC does not support the multi-buffer feature, the MTL will need to copy the video frame into the descriptor, resulting in a loss of performance.
+
+<div align="center">
+<img src="png/tx_zero_copy.png" align="center" alt="TX Zero Copy">
+</div>
+
+### 4.2 ST2110-21 pacing
+
+The specific standard ST2110-21 deals with the traffic shaping and delivery timing of uncompressed video. It defines how the video data packets should be paced over the network to maintain consistent timing and bandwidth utilization.
+
+Due to the stringent timing requirements at the microsecond level, existing solutions are primarily built on hardware implementations, which introduce significant dependencies not conducive to cloud-native deployments. The MTL adopts a software-based approach, embracing cloud-native concepts.
+MTL addresses this challenge by leveraging the NIC's rate-limiting features along with a software algorithm. This combination has successfully passed numerous third-party interoperability verifications.
+
+The default NIC queue depth is set to 512 in MTL, and MTL will always ensure the queue is fully utilized by the tasklet engine. In the case of 1080p at 50fps, one packet time in ST2110-21 is approximately ~5us. With a queue depth of 512, the IMTL can tolerate a kernel scheduler jitter of up to ~2.5ms. If you observe any packet timing jitter, consider increasing the queue depth. MTL provides the `nb_tx_desc` option for this adjustment.
+However, for a 4K 50fps session, the time for one packet is approximately ~1us, indicating that the duration for 512 packets is around ~500us. With a queue depth of 512, IMTL can only tolerate a scheduler jitter of about ~500us. However, by adjusting the depth to the maximum hardware-permitted value of 4096, IMTL should be capable of handling a maximum scheduler jitter of 4ms.
+
+In the case that the rate-limiting feature is unavailable, TSC (Timestamp Counter) based software pacing is provided as a fallback option.
+
+<div align="center">
+<img src="png/tx_pacing.png" align="center" alt="TX Pacing">
+</div>
+
+## 5. RX Path
+
+The RX (Receive) packet classification in MTL includes two types: Flow Director and RSS (Receive Side Scaling). Flow Director is preferred if the NIC is capable, as it can directly feed the desired packet into the RX session packet handling function. Once the packet is received and validated as legitimate, the RX session will copy the payload to the frame and notify the application if it is the last packet.
+
+### 5.1 RX DMA offload
+
+The process of copying data between packets and frames consumes a significant amount of CPU resources. MTL can be configured to use DMA to offload this copy operation, thereby enhancing performance. For detailed usage instructions, please refer to [DMA guide](./dma.md)
+
+<div align="center">
+<img src="png/rx_dma_offload.png" align="center" alt="RX DMA Offload">
+</div>
