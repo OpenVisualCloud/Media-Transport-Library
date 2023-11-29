@@ -737,8 +737,6 @@ int mt_dev_xdp_init(struct mt_interface* inf) {
   xdp->queues_cnt = RTE_MAX(inf->nb_tx_q, inf->nb_rx_q);
   mt_pthread_mutex_init(&xdp->queues_lock, NULL);
 
-  xdp_parse_drv_name(xdp);
-
   if (mt_is_manager_connected(impl)) xdp->has_ctrl = true;
 
   xdp_parse_combined_info(xdp);
