@@ -7,7 +7,7 @@ This section provides a detailed design concept of the Intel® Media Transport L
 Similar to other network processing libraries, it consists of a control plane and a data plane. In the data plane, a lockless design is adopted to achieve ultra-high performance.
 
 <div align="center">
-<img src="png/software stack.png" align="center" alt="Software Stack">
+<img src="png/software_stack.png" align="center" alt="Software Stack">
 </div>
 
 ## 2. Core management
