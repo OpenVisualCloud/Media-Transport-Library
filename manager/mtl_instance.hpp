@@ -197,8 +197,7 @@ int mtl_instance::handle_message_request_map_fd(
 
   struct msghdr msg = {0};
   struct iovec iov[1];
-  int controllen = CMSG_SPACE(sizeof(int));
-  char control[controllen] = {0};
+  char control[CMSG_SPACE(sizeof(int))] = {0};
   char data[1] = {' '};
 
   iov[0].iov_base = data;
@@ -206,7 +205,7 @@ int mtl_instance::handle_message_request_map_fd(
 
   msg.msg_iov = iov;
   msg.msg_iovlen = 1;
-  msg.msg_controllen = controllen;
+  msg.msg_controllen = CMSG_SPACE(sizeof(int));
   msg.msg_control = control;
 
   struct cmsghdr* cmsg = CMSG_FIRSTHDR(&msg);
