@@ -18,13 +18,7 @@ fentry: a simple program to trace udp_send_skb calls, requires kernel > 5.5.
 sudo ./et --prog fentry [--print]
 ```
 
-xdp: a privileged program to load afxdp bpf program and send the xsk_map_fd to other processes by socket.
-
-```bash
-sudo ./et --prog xdp --ifname ens785f0
-```
-
-load a custom program for xdp:
+xdp: a privileged program to load custom xdp bpf program:
 
 ```bash
 sudo ./et --prog xdp --ifname ens785f0,ens785f1 --xdp_path xsk.xdp.o
