@@ -5,8 +5,6 @@
 #ifndef __ET_H
 #define __ET_H
 
-#define ET_XDP_UNIX_SOCKET_PATH "/var/run/et_xdp.sock"
-
 #define XDP_METADATA_SECTION "xdp_metadata"
 #define XSK_PROG_VERSION 1
 

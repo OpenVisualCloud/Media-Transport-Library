@@ -12,10 +12,8 @@
 #include <signal.h>
 #include <stdio.h>
 #include <string.h>
-#include <sys/socket.h>
 #include <sys/stat.h>
 #include <sys/types.h>
-#include <sys/un.h>
 #include <unistd.h>
 #include <xdp/libxdp.h>
 #include <xdp/xsk.h>
@@ -91,37 +89,6 @@ cleanup:
   return ret;
 }
 
-static int send_fd(int sock, int fd) {
-  struct msghdr msg;
-  struct iovec iov[1];
-  struct cmsghdr* cmsg = NULL;
-  char ctrl_buf[CMSG_SPACE(sizeof(int))];
-  char data[1];
-
-  memset(&msg, 0, sizeof(struct msghdr));
-  memset(ctrl_buf, 0, CMSG_SPACE(sizeof(int)));
-
-  data[0] = ' ';
-  iov[0].iov_base = data;
-  iov[0].iov_len = sizeof(data);
-
-  msg.msg_name = NULL;
-  msg.msg_namelen = 0;
-  msg.msg_iov = iov;
-  msg.msg_iovlen = 1;
-  msg.msg_controllen = CMSG_SPACE(sizeof(int));
-  msg.msg_control = ctrl_buf;
-
-  cmsg = CMSG_FIRSTHDR(&msg);
-  cmsg->cmsg_level = SOL_SOCKET;
-  cmsg->cmsg_type = SCM_RIGHTS;
-  cmsg->cmsg_len = CMSG_LEN(sizeof(int));
-
-  *((int*)CMSG_DATA(cmsg)) = fd;
-
-  return sendmsg(sock, &msg, 0);
-}
-
 static int et_xdp_loop(struct et_ctx* ctx) {
   int ret = 0;
   int if_cnt = ctx->xdp_if_cnt;
@@ -131,121 +98,30 @@ static int et_xdp_loop(struct et_ctx* ctx) {
     return -EIO;
   }
 
-  struct sockaddr_un addr;
-  int xsks_map_fd[if_cnt];
-  int sock = -1, conn;
   struct xdp_program* prog[if_cnt];
 
   /* load xdp program for each interface */
   for (int i = 0; i < if_cnt; i++) {
-    if (ctx->xdp_path) {
-      prog[i] = xdp_program__open_file(ctx->xdp_path, "xdp", NULL);
-      ret = libxdp_get_error(prog[i]);
-      if (ret) {
-        printf("failed to load xdp program\n");
-        goto cleanup;
-      }
-    }
-    int ifindex = ctx->xdp_ifindex[i];
-    if (prog[i]) {
-      ret = xdp_program__attach(prog[i], ifindex, XDP_MODE_NATIVE, 0);
-      if (ret < 0) {
-        printf("xdp_program__attach failed\n");
-        goto cleanup;
-      }
+    prog[i] = xdp_program__open_file(ctx->xdp_path, "xdp", NULL);
+    ret = libxdp_get_error(prog[i]);
+    if (ret) {
+      printf("xdp_program__open_file failed, please specify the right path\n");
+      goto cleanup;
     }
 
-    ret = xsk_setup_xdp_prog(ifindex, &xsks_map_fd[i]);
-    if (ret || xsks_map_fd[i] < 0) {
-      printf("xsk_socket__bind failed\n");
+    int ifindex = ctx->xdp_ifindex[i];
+    ret = xdp_program__attach(prog[i], ifindex, XDP_MODE_NATIVE, 0);
+    if (ret < 0) {
+      printf("xdp_program__attach failed\n");
       goto cleanup;
     }
   }
 
-  sock = socket(AF_UNIX, SOCK_STREAM, 0);
-  unlink(ET_XDP_UNIX_SOCKET_PATH);
-
-  int flags = fcntl(sock, F_GETFL, 0);
-  fcntl(sock, F_SETFL, flags | O_NONBLOCK);
-
-  memset(&addr, 0, sizeof(addr));
-  addr.sun_family = AF_UNIX;
-  strcpy(addr.sun_path, ET_XDP_UNIX_SOCKET_PATH);
-  bind(sock, (struct sockaddr*)&addr, sizeof(addr));
-
-  chmod(ET_XDP_UNIX_SOCKET_PATH, 0666); /* allow non-root user to connect */
-
-  listen(sock, 1);
-
-  printf("waiting socket connection...\n");
   while (!stop) {
-    conn = accept(sock, NULL, 0);
-    if (conn < 0) {
-      if (errno != EAGAIN && errno != EWOULDBLOCK) {
-        perror("accept error");
-        ret = -1;
-        goto cleanup;
-      }
-      sleep(1);
-      continue;
-    }
-    printf("\nsocket connection %d accepted\n", conn);
-    char command[64];
-    recv(conn, command, sizeof(command), 0);
-    if (command[0]) {
-      printf("command: %s\n", command);
-      char* magic = strtok(command, ":");
-      if (strncmp(magic, "imtl", strlen("imtl")) == 0) {
-        char* type = strtok(NULL, ":");
-        if (strncmp(type, "if", strlen("if")) == 0) {
-          char* ifname = strtok(NULL, ":");
-          int ifindex = if_nametoindex(ifname);
-          int if_id = -1;
-          for (int i = 0; i < if_cnt; i++) {
-            if (ctx->xdp_ifindex[i] == ifindex) {
-              if_id = i;
-              break;
-            }
-          }
-          if (if_id != -1) {
-            char* action = strtok(NULL, ":");
-            if (strncmp(action, "get_xsk_map", strlen("get_xsk_map")) == 0) {
-              int map_fd = xsks_map_fd[if_id];
-              if (map_fd >= 0) {
-                send_fd(conn, map_fd);
-                printf("map_fd %d sent\n", map_fd);
-              }
-            } else if (strncmp(action, "dp_add_filter", strlen("dp_add_filter")) == 0 ||
-                       strncmp(action, "dp_del_filter", strlen("dp_del_filter")) == 0) {
-              /* update dest port for udp4_dp_filter array map */
-              char* port = strtok(NULL, ":");
-              int port_num = atoi(port);
-              if (prog[if_id] && port_num > 0 && port_num < 65535) {
-                int map_fd = bpf_map__fd(bpf_object__find_map_by_name(
-                    xdp_program__bpf_obj(prog[if_id]), "udp4_dp_filter"));
-                if (map_fd >= 0) {
-                  int value = 1;
-                  if (strncmp(type, "dp_del_filter", strlen("dp_del_filter")) == 0)
-                    value = 0;
-                  ret = bpf_map_update_elem(map_fd, &port_num, &value, BPF_ANY);
-                  if (ret < 0) printf("bpf_map_update_elem failed\n");
-                }
-              }
-            }
-          }
-        } else if (strncmp(type, "ping", strlen("ping")) == 0) {
-          char buf[5];
-          snprintf(buf, sizeof(buf), "pong");
-          send(conn, buf, 5, 0);
-        }
-      }
-    }
-
-    close(conn);
+    sleep(1);
   }
 
 cleanup:
-  if (sock >= 0) close(sock);
   for (int i = 0; i < if_cnt; i++) {
     int ifindex = ctx->xdp_ifindex[i];
     if (prog[i] && !libxdp_get_error(prog[i])) {
@@ -277,11 +153,9 @@ static void et_print_help() {
   printf("\n Prog Commands:\n");
   printf("  --prog <type>                           Attach to program of <type>\n");
   printf(
-      "  --prog xdp --ifname <name1,name2>       Attach XDP program to specified "
-      "interface names\n");
-  printf(
-      "  --prog xdp --xdp_path /path/to/xdp.o    Load a custom XDP kernel program from "
-      "the specified path\n");
+      "  --prog xdp --ifname <name1,name2> --xdp_path /path/to/xdp.o       Load a custom "
+      "XDP kernel program from the specified path and attach it to specified "
+      "interfaces\n");
 
   printf("\n");
 }
