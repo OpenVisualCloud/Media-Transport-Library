@@ -90,21 +90,6 @@ struct mt_xdp_priv {
   bool has_ctrl;
 };
 
-static int xdp_connect_control_sock() {
-  int sock = socket(AF_UNIX, SOCK_STREAM, 0);
-  if (sock <= 0) return -1;
-  struct sockaddr_un server;
-  server.sun_family = AF_UNIX;
-  snprintf(server.sun_path, sizeof(server.sun_path), MTL_XDP_CTRL_SOCK_PATH);
-
-  if (connect(sock, (struct sockaddr*)&server, sizeof(struct sockaddr_un)) < 0) {
-    close(sock);
-    return -1;
-  }
-
-  return sock;
-}
-
 static int xdp_queue_tx_max_rate(struct mt_xdp_priv* xdp, struct mt_xdp_queue* xq,
                                  uint32_t rate_kbps) {
   enum mtl_port port = xq->port;
@@ -461,64 +446,17 @@ static int xdp_socket_update_xskmap(struct mtl_main_impl* impl, struct mt_xdp_qu
   enum mtl_port port = xq->port;
   uint16_t q = xq->q;
   int ret;
-  int xsks_map_fd = -1;
 
-  if (mt_is_manager_connected(impl)) {
-    xsks_map_fd = mt_instance_request_xsks_map_fd(impl, if_nametoindex(ifname));
-  } else {
-    int sock = xdp_connect_control_sock();
-    if (sock < 0) {
-      err("%s(%d,%u), unix socket create fail, %s\n", __func__, port, q, strerror(errno));
-      return errno;
-    }
-
-    char command[64];
-    snprintf(command, sizeof(command), "imtl:if:%s:get_xsk_map", ifname);
-
-    send(sock, command, sizeof(command), 0);
-
-    char cms[CMSG_SPACE(sizeof(int))];
-    struct cmsghdr* cmsg;
-    struct msghdr msg;
-    struct iovec iov;
-    int value;
-    int len;
-
-    iov.iov_base = &value;
-    iov.iov_len = sizeof(int);
-
-    memset(&msg, 0, sizeof(msg));
-    msg.msg_iov = &iov;
-    msg.msg_iovlen = 1;
-    msg.msg_control = (caddr_t)cms;
-    msg.msg_controllen = sizeof(cms);
-
-    len = recvmsg(sock, &msg, 0);
-
-    close(sock);
-
-    if (len <= 0) {
-      err("%s(%d,%u), recvmsg wrong length %d\n", __func__, port, q, len);
-      return -EINVAL;
-    }
-
-    cmsg = CMSG_FIRSTHDR(&msg);
-    if (cmsg->cmsg_level != SOL_SOCKET || cmsg->cmsg_type != SCM_RIGHTS ||
-        cmsg->cmsg_len != CMSG_LEN(sizeof(int))) {
-      err("%s(%d,%u), invalid cmsg for map fd\n", __func__, port, q);
-      return -EINVAL;
-    }
-    xsks_map_fd = *(int*)CMSG_DATA(cmsg);
-  }
+  int xsks_map_fd = mt_instance_request_xsks_map_fd(impl, if_nametoindex(ifname));
 
   if (xsks_map_fd < 0) {
-    err("%s(%d,%u), get xsks_map_fd fail, %s\n", __func__, port, q, strerror(errno));
-    return errno;
+    err("%s(%d,%u), get xsks_map_fd fail\n", __func__, port, q);
+    return -EIO;
   }
 
   ret = xsk_socket__update_xskmap(xq->socket, xsks_map_fd);
   if (ret) {
-    err("%s(%d,%u), get xsks_map_fd fail, %d\n", __func__, port, q, ret);
+    err("%s(%d,%u), update xsks_map fail, %d\n", __func__, port, q, ret);
     return ret;
   }
 
@@ -547,7 +485,7 @@ static int xdp_socket_init(struct mt_xdp_priv* xdp, struct mt_xdp_queue* xq) {
                            &cfg);
   if (ret < 0) {
     if (ret == -EPERM) {
-      err("%s(%d,%u), please run with control server or root user\n", __func__, port, q);
+      err("%s(%d,%u), please run with mtl manager or root user\n", __func__, port, q);
       return ret;
     }
     warn("%s(%d,%u), xsk create with zero copy fail %d(%s), try copy mode\n", __func__,
@@ -557,8 +495,7 @@ static int xdp_socket_init(struct mt_xdp_priv* xdp, struct mt_xdp_queue* xq) {
                              &xq->tx_prod, &cfg);
     if (ret < 0) {
       if (ret == -EPERM) {
-        err("%s(%d,%u), please run with control server or root user\n", __func__, port,
-            q);
+        err("%s(%d,%u), please run with mtl manager or root user\n", __func__, port, q);
       }
       err("%s(%d,%u), xsk create fail %d(%s)\n", __func__, port, q, ret, strerror(ret));
       return ret;
@@ -876,18 +813,6 @@ int mt_dev_xdp_init(struct mt_interface* inf) {
 
   xdp_parse_drv_name(xdp);
 
-  if (!mt_is_privileged(impl)) {
-    int ctrl_sock = xdp_connect_control_sock();
-    if (ctrl_sock > 0) {
-      char buf[10];
-      snprintf(buf, sizeof(buf), "imtl:ping");
-      send(ctrl_sock, buf, sizeof(buf), 0);
-      recv(ctrl_sock, buf, sizeof(buf), 0);
-      if (strncmp(buf, "pong", 4) == 0) xdp->has_ctrl = true;
-      close(ctrl_sock);
-    }
-  }
-
   if (mt_is_manager_connected(impl)) xdp->has_ctrl = true;
 
   xdp_parse_combined_info(xdp);
@@ -1059,27 +984,9 @@ uint16_t mt_tx_xdp_burst(struct mt_tx_xdp_entry* entry, struct rte_mbuf** tx_pkt
   return xdp_tx(entry->parent, entry->xq, tx_pkts, nb_pkts);
 }
 
-static int xdp_socket_update_dp(struct mtl_main_impl* impl, const char* if_name,
-                                uint16_t dp, bool add) {
-  if (mt_is_manager_connected(impl))
-    return mt_instance_update_udp_dp_filter(impl, if_nametoindex(if_name), dp, add);
-
-  int sock = xdp_connect_control_sock();
-  if (sock < 0) {
-    err("%s, unix socket create fail, %s\n", __func__, strerror(errno));
-    return errno;
-  }
-
-  char command[64];
-  if (add)
-    snprintf(command, sizeof(command), "imtl:if:%s:dp_add_filter:%u", if_name, dp);
-  else
-    snprintf(command, sizeof(command), "imtl:if:%s:dp_del_filter:%u", if_name, dp);
-
-  send(sock, command, sizeof(command), 0);
-
-  close(sock);
-  return 0;
+static inline int xdp_socket_update_dp(struct mtl_main_impl* impl, const char* if_name,
+                                       uint16_t dp, bool add) {
+  return mt_instance_update_udp_dp_filter(impl, if_nametoindex(if_name), dp, add);
 }
 
 struct mt_rx_xdp_entry* mt_rx_xdp_get(struct mtl_main_impl* impl, enum mtl_port port,

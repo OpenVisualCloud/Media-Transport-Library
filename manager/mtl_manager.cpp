@@ -114,7 +114,8 @@ int main() {
     goto out;
   }
 
-  logger::log(log_level::INFO, "MTL Manager is running. Press Ctrl+C to stop it.");
+  logger::log(log_level::INFO,
+              "MTL Manager is running. Press Ctrl+C or use SIGINT to stop it.");
 
   while (is_running) {
     struct epoll_event events[clients.size() + 2];
