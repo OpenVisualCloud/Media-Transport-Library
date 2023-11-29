@@ -1,5 +1,7 @@
 # Lcore Guide
 
+This guide is outdated and should only be referenced if the use of the Manager service is not possible.
+
 ## 1. Introduction
 
 In DPDK (Data Plane Development Kit), an "lcore" stands for "logical core," and it represents a logical CPU core on a multi-core processor. Binding a thread to a specific logical core (lcore) is a technique used to achieve better control over the execution of packet processing tasks and to optimize the performance of networking applications.
