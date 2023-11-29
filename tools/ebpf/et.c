@@ -12,10 +12,8 @@
 #include <signal.h>
 #include <stdio.h>
 #include <string.h>
-#include <sys/socket.h>
 #include <sys/stat.h>
 #include <sys/types.h>
-#include <sys/un.h>
 #include <unistd.h>
 #include <xdp/libxdp.h>
 #include <xdp/xsk.h>
