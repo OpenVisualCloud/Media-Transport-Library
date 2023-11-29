@@ -52,6 +52,8 @@ Additionally, the packet pacing module offers support for various pacing algorit
 
 IMTL also incorporates SIMD (Single Instruction, Multiple Data) for CSC (Color Space Format Conversion) of the big-endian and little-endian, DMA (Direct Memory Access), and plugin interfaces, enabling the creation of a comprehensive video production ecosystem.
 
+For the detail design, please refer to [design guide](doc/design.md).
+
 <div align="center">
 <img src="doc/png/arch.png" align="center" alt="overall architecture">
 </div>
