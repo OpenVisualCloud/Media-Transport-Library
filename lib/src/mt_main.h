@@ -1330,98 +1330,112 @@ static inline uint8_t mt_afxdp_start_queue(struct mtl_main_impl* impl,
   return impl->user_para.xdp_info[port].start_queue;
 }
 
-static inline bool mt_has_phc2sys_service(struct mtl_main_impl* impl) {
+/* if user enable the phc2sys service */
+static inline bool mt_user_phc2sys_service(struct mtl_main_impl* impl) {
   if (mt_get_user_params(impl)->flags & MTL_FLAG_PHC2SYS_ENABLE)
     return true;
   else
     return false;
 }
 
-static inline bool mt_has_ptp_service(struct mtl_main_impl* impl) {
+/* if user enable the ptp service */
+static inline bool mt_user_ptp_service(struct mtl_main_impl* impl) {
   if (mt_get_user_params(impl)->flags & MTL_FLAG_PTP_ENABLE)
     return true;
   else
     return false;
 }
 
-static inline bool mt_has_auto_start_stop(struct mtl_main_impl* impl) {
+/* if user enable the auto start/stop */
+static inline bool mt_user_auto_start_stop(struct mtl_main_impl* impl) {
   if (mt_get_user_params(impl)->flags & MTL_FLAG_DEV_AUTO_START_STOP)
     return true;
   else
     return false;
 }
 
-static inline bool mt_has_af_xdp_zc(struct mtl_main_impl* impl) {
+/* if user disable the af xdp zc */
+static inline bool mt_user_af_xdp_zc(struct mtl_main_impl* impl) {
   if (mt_get_user_params(impl)->flags & MTL_FLAG_AF_XDP_ZC_DISABLE)
     return false;
   else
     return true;
 }
 
-static inline bool mt_has_user_ptp(struct mtl_main_impl* impl) {
+/* if user enable the ptp time source func */
+static inline bool mt_user_ptp_time_fn(struct mtl_main_impl* impl) {
   if (mt_get_user_params(impl)->ptp_get_time_fn)
     return true;
   else
     return false;
 }
 
-static inline bool mt_has_user_quota(struct mtl_main_impl* impl) {
+/* if user has customized sch quota */
+static inline bool mt_user_quota_active(struct mtl_main_impl* impl) {
   if (mt_get_user_params(impl)->data_quota_mbs_per_sch)
     return true;
   else
     return false;
 }
 
-static inline bool mt_has_ebu(struct mtl_main_impl* impl) {
+/* if user enable ebu feature */
+static inline bool mt_user_ebu_active(struct mtl_main_impl* impl) {
   if (mt_get_user_params(impl)->flags & MTL_FLAG_RX_VIDEO_EBU)
     return true;
   else
     return false;
 }
 
-static inline bool mt_has_rxv_separate_sch(struct mtl_main_impl* impl) {
+/* if user enable separate sch for rx video session */
+static inline bool mt_user_rxv_separate_sch(struct mtl_main_impl* impl) {
   if (mt_get_user_params(impl)->flags & MTL_FLAG_RX_SEPARATE_VIDEO_LCORE)
     return true;
   else
     return false;
 }
 
-static inline bool mt_has_tx_video_migrate(struct mtl_main_impl* impl) {
+/* if user enable tx video migrate feature */
+static inline bool mt_user_tx_video_migrate(struct mtl_main_impl* impl) {
   if (mt_get_user_params(impl)->flags & MTL_FLAG_TX_VIDEO_MIGRATE)
     return true;
   else
     return false;
 }
 
-static inline bool mt_has_rx_video_migrate(struct mtl_main_impl* impl) {
+/* if user enable rx video migrate feature */
+static inline bool mt_user_rx_video_migrate(struct mtl_main_impl* impl) {
   if (mt_get_user_params(impl)->flags & MTL_FLAG_RX_VIDEO_MIGRATE)
     return true;
   else
     return false;
 }
 
-static inline bool mt_has_tasklet_time_measure(struct mtl_main_impl* impl) {
+/* if user enable tasklet time measure */
+static inline bool mt_user_tasklet_time_measure(struct mtl_main_impl* impl) {
   if (mt_get_user_params(impl)->flags & MTL_FLAG_TASKLET_TIME_MEASURE)
     return true;
   else
     return false;
 }
 
-static inline bool mt_has_rx_mono_pool(struct mtl_main_impl* impl) {
+/* if user enable rx mono pool */
+static inline bool mt_user_rx_mono_pool(struct mtl_main_impl* impl) {
   if (mt_get_user_params(impl)->flags & MTL_FLAG_RX_MONO_POOL)
     return true;
   else
     return false;
 }
 
-static inline bool mt_has_tx_mono_pool(struct mtl_main_impl* impl) {
+/* if user enable tx mono pool */
+static inline bool mt_user_tx_mono_pool(struct mtl_main_impl* impl) {
   if (mt_get_user_params(impl)->flags & MTL_FLAG_TX_MONO_POOL)
     return true;
   else
     return false;
 }
 
-static inline bool mt_has_tx_no_chain(struct mtl_main_impl* impl) {
+/* if user force tx to no chain mode */
+static inline bool mt_user_tx_no_chain(struct mtl_main_impl* impl) {
   if (mt_get_user_params(impl)->flags & MTL_FLAG_TX_NO_CHAIN)
     return true;
   else
@@ -1458,16 +1472,17 @@ static inline bool mt_dhcp_service_active(struct mtl_main_impl* impl,
     return false;
 }
 
-static inline enum mtl_rss_mode mt_get_rss_mode(struct mtl_main_impl* impl,
-                                                enum mtl_port port) {
+static inline enum mtl_rss_mode mt_if_rss_mode(struct mtl_main_impl* impl,
+                                               enum mtl_port port) {
   return mt_if(impl, port)->rss_mode;
 }
 
 static inline bool mt_has_srss(struct mtl_main_impl* impl, enum mtl_port port) {
-  return mt_get_rss_mode(impl, port) != MTL_RSS_MODE_NONE;
+  return mt_if_rss_mode(impl, port) != MTL_RSS_MODE_NONE;
 }
 
-static inline bool mt_udp_lcore(struct mtl_main_impl* impl, enum mtl_port port) {
+/* if user enable udp lcore mode */
+static inline bool mt_user_udp_lcore(struct mtl_main_impl* impl, enum mtl_port port) {
   MTL_MAY_UNUSED(port);
   if (mt_get_user_params(impl)->flags & MTL_FLAG_UDP_LCORE)
     return true;
@@ -1475,21 +1490,24 @@ static inline bool mt_udp_lcore(struct mtl_main_impl* impl, enum mtl_port port) 
     return false;
 }
 
-static inline bool mt_random_src_port(struct mtl_main_impl* impl) {
+/* if user enable random src port */
+static inline bool mt_user_random_src_port(struct mtl_main_impl* impl) {
   if (mt_get_user_params(impl)->flags & MTL_FLAG_RANDOM_SRC_PORT)
     return true;
   else
     return false;
 }
 
-static inline bool mt_multi_src_port(struct mtl_main_impl* impl) {
+/* if user enable multi src port */
+static inline bool mt_user_multi_src_port(struct mtl_main_impl* impl) {
   if (mt_get_user_params(impl)->flags & MTL_FLAG_MULTI_SRC_PORT)
     return true;
   else
     return false;
 }
 
-static inline bool mt_shared_tx_queue(struct mtl_main_impl* impl, enum mtl_port port) {
+/* if user enable shared tx queue */
+static inline bool mt_user_shared_txq(struct mtl_main_impl* impl, enum mtl_port port) {
   MTL_MAY_UNUSED(port);
   if (mt_get_user_params(impl)->flags & MTL_FLAG_SHARED_TX_QUEUE)
     return true;
@@ -1497,7 +1515,8 @@ static inline bool mt_shared_tx_queue(struct mtl_main_impl* impl, enum mtl_port 
     return false;
 }
 
-static inline bool mt_shared_rx_queue(struct mtl_main_impl* impl, enum mtl_port port) {
+/* if user enable shared rx queue */
+static inline bool mt_user_shared_rxq(struct mtl_main_impl* impl, enum mtl_port port) {
   MTL_MAY_UNUSED(port);
   if (mt_get_user_params(impl)->flags & MTL_FLAG_SHARED_RX_QUEUE)
     return true;
@@ -1505,28 +1524,32 @@ static inline bool mt_shared_rx_queue(struct mtl_main_impl* impl, enum mtl_port 
     return false;
 }
 
-static inline bool mt_no_system_rxq(struct mtl_main_impl* impl) {
+/* if user disable system rx queue */
+static inline bool mt_user_no_system_rxq(struct mtl_main_impl* impl) {
   if (mt_get_user_params(impl)->flags & MTL_FLAG_DISABLE_SYSTEM_RX_QUEUES)
     return true;
   else
     return false;
 }
 
-static inline bool mt_ptp_tsc_source(struct mtl_main_impl* impl) {
+/* if user enable ptp tsc source */
+static inline bool mt_user_ptp_tsc_source(struct mtl_main_impl* impl) {
   if (mt_get_user_params(impl)->flags & MTL_FLAG_PTP_SOURCE_TSC)
     return true;
   else
     return false;
 }
 
-static inline bool mt_tasklet_has_thread(struct mtl_main_impl* impl) {
+/* if user enable tasklet thread */
+static inline bool mt_user_tasklet_thread(struct mtl_main_impl* impl) {
   if (mt_get_user_params(impl)->flags & MTL_FLAG_TASKLET_THREAD)
     return true;
   else
     return false;
 }
 
-static inline bool mt_tasklet_has_sleep(struct mtl_main_impl* impl) {
+/* if user enable tasklet sleep */
+static inline bool mt_user_tasklet_sleep(struct mtl_main_impl* impl) {
   if (mt_get_user_params(impl)->flags & MTL_FLAG_TASKLET_SLEEP)
     return true;
   else

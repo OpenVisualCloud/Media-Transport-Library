@@ -333,7 +333,7 @@ static int rx_ancillary_session_attach(struct mtl_main_impl* impl,
   ret = mt_build_port_map(impl, ports, s->port_maps, num_port);
   if (ret < 0) return ret;
 
-  s->time_measure = mt_has_tasklet_time_measure(impl);
+  s->time_measure = mt_user_tasklet_time_measure(impl);
   if (ops->name) {
     snprintf(s->ops_name, sizeof(s->ops_name), "%s", ops->name);
   } else {

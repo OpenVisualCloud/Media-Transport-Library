@@ -384,7 +384,7 @@ static int cni_queues_init(struct mtl_main_impl* impl) {
   struct mt_cni_entry* cni;
   struct mt_interface* inf;
 
-  if (mt_no_system_rxq(impl)) {
+  if (mt_user_no_system_rxq(impl)) {
     warn("%s, disabled as no system rx queues\n", __func__);
     return 0;
   }
