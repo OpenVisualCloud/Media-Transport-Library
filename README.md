@@ -55,7 +55,7 @@ IMTL also incorporates SIMD (Single Instruction, Multiple Data) for CSC (Color S
 For the detail design, please refer to [design guide](doc/design.md).
 
 <div align="center">
-<img src="doc/png/arch.png" align="center" alt="overall architecture">
+<img src="doc/png/arch.svg" align="center" alt="/Overall Architecture">
 </div>
 
 ### 1.3 Ethernet supported
