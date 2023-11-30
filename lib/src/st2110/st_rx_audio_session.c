@@ -446,7 +446,7 @@ static int rx_audio_session_handle_frame_pkt(struct mtl_main_impl* impl,
   s->st30_stat_pkts_received++;
   s->st30_pkt_idx++;
 
-  if (mt_has_ebu(impl) && inf->feature & MT_IF_FEATURE_RX_OFFLOAD_TIMESTAMP) {
+  if (mt_user_ebu_active(impl) && inf->feature & MT_IF_FEATURE_RX_OFFLOAD_TIMESTAMP) {
     ra_ebu_on_packet(s, tmstamp, mt_mbuf_hw_time_stamp(impl, mbuf, port));
   }
 
@@ -532,7 +532,7 @@ static int rx_audio_session_handle_rtp_pkt(struct mtl_main_impl* impl,
   ops->notify_rtp_ready(ops->priv);
   s->st30_stat_pkts_received++;
 
-  if (mt_has_ebu(impl) && inf->feature & MT_IF_FEATURE_RX_OFFLOAD_TIMESTAMP) {
+  if (mt_user_ebu_active(impl) && inf->feature & MT_IF_FEATURE_RX_OFFLOAD_TIMESTAMP) {
     ra_ebu_on_packet(s, tmstamp, mt_mbuf_hw_time_stamp(impl, mbuf, port));
   }
 
@@ -727,7 +727,7 @@ static int rx_audio_session_attach(struct mtl_main_impl* impl,
   ret = mt_build_port_map(impl, ports, s->port_maps, num_port);
   if (ret < 0) return ret;
 
-  s->time_measure = mt_has_tasklet_time_measure(impl);
+  s->time_measure = mt_user_tasklet_time_measure(impl);
   if (ops->name) {
     snprintf(s->ops_name, sizeof(s->ops_name), "%s", ops->name);
   } else {
@@ -768,7 +768,7 @@ static int rx_audio_session_attach(struct mtl_main_impl* impl,
   rte_atomic32_set(&s->st30_stat_frames_received, 0);
   s->st30_stat_last_time = mt_get_monotonic_time();
 
-  if (mt_has_ebu(impl)) {
+  if (mt_user_ebu_active(impl)) {
     ret = ra_ebu_init(s);
     if (ret < 0) {
       err("%s(%d), ra_ebu_init fail %d\n", __func__, idx, ret);
@@ -847,7 +847,7 @@ static int rx_audio_session_detach(struct mtl_main_impl* impl,
                                    struct st_rx_audio_sessions_mgr* mgr,
                                    struct st_rx_audio_session_impl* s) {
   s->attached = false;
-  if (mt_has_ebu(impl)) rx_audio_session_ebu_result(s);
+  if (mt_user_ebu_active(impl)) rx_audio_session_ebu_result(s);
   rx_audio_session_stat(mgr, s);
   rx_audio_session_uinit_mcast(impl, s);
   rx_audio_session_uinit_sw(s);

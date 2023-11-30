@@ -158,7 +158,7 @@ static uint32_t rsq_flow_hash(struct mt_rxq_flow* flow) {
 
 struct mt_rsq_entry* mt_rsq_get(struct mtl_main_impl* impl, enum mtl_port port,
                                 struct mt_rxq_flow* flow) {
-  if (!mt_shared_rx_queue(impl, port)) {
+  if (!mt_user_shared_rxq(impl, port)) {
     err("%s(%d), shared queue not enabled\n", __func__, port);
     return NULL;
   }
@@ -329,7 +329,7 @@ int mt_rsq_init(struct mtl_main_impl* impl) {
   int ret;
 
   for (int i = 0; i < num_ports; i++) {
-    if (!mt_shared_rx_queue(impl, i)) continue;
+    if (!mt_user_shared_rxq(impl, i)) continue;
     impl->rsq[i] = mt_rte_zmalloc_socket(sizeof(*impl->rsq[i]), mt_socket_id(impl, i));
     if (!impl->rsq[i]) {
       err("%s(%d), rsq malloc fail\n", __func__, i);
@@ -485,7 +485,7 @@ static uint32_t tsq_flow_hash(struct mt_txq_flow* flow) {
 
 struct mt_tsq_entry* mt_tsq_get(struct mtl_main_impl* impl, enum mtl_port port,
                                 struct mt_txq_flow* flow) {
-  if (!mt_shared_tx_queue(impl, port)) {
+  if (!mt_user_shared_txq(impl, port)) {
     err("%s(%d), shared queue not enabled\n", __func__, port);
     return NULL;
   }
@@ -673,7 +673,7 @@ int mt_tsq_init(struct mtl_main_impl* impl) {
   int ret;
 
   for (int i = 0; i < num_ports; i++) {
-    if (!mt_shared_tx_queue(impl, i)) continue;
+    if (!mt_user_shared_txq(impl, i)) continue;
     impl->tsq[i] = mt_rte_zmalloc_socket(sizeof(*impl->tsq[i]), mt_socket_id(impl, i));
     if (!impl->tsq[i]) {
       err("%s(%d), tsq malloc fail\n", __func__, i);

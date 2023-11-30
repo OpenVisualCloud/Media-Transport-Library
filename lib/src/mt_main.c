@@ -598,7 +598,7 @@ mtl_handle mtl_init(struct mtl_init_params* p) {
     goto err_exit;
   }
 
-  if (mt_has_auto_start_stop(impl)) {
+  if (mt_user_auto_start_stop(impl)) {
     ret = _mt_start(impl);
     if (ret < 0) {
       err("%s, st start fail %d\n", __func__, ret);
@@ -666,7 +666,7 @@ int mtl_stop(mtl_handle mt) {
     return -EIO;
   }
 
-  if (mt_has_auto_start_stop(impl)) return 0;
+  if (mt_user_auto_start_stop(impl)) return 0;
 
   return _mt_stop(impl);
 }
@@ -1243,7 +1243,7 @@ enum mtl_rss_mode mtl_rss_mode_get(mtl_handle mt) {
     return MTL_RSS_MODE_MAX;
   }
 
-  return mt_get_rss_mode(impl, MTL_PORT_P);
+  return mt_if_rss_mode(impl, MTL_PORT_P);
 }
 
 enum mtl_iova_mode mtl_iova_mode_get(mtl_handle mt) {

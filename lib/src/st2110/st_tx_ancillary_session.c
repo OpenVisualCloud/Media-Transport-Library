@@ -1333,7 +1333,7 @@ static int tx_ancillary_session_attach(struct mtl_main_impl* impl,
   ret = mt_build_port_map(impl, ports, s->port_maps, num_port);
   if (ret < 0) return ret;
 
-  s->time_measure = mt_has_tasklet_time_measure(impl);
+  s->time_measure = mt_user_tasklet_time_measure(impl);
   if (ops->name) {
     snprintf(s->ops_name, sizeof(s->ops_name), "%s", ops->name);
   } else {
@@ -1342,7 +1342,7 @@ static int tx_ancillary_session_attach(struct mtl_main_impl* impl,
   s->ops = *ops;
   for (int i = 0; i < num_port; i++) {
     s->st40_dst_port[i] = (ops->udp_port[i]) ? (ops->udp_port[i]) : (10200 + idx * 2);
-    if (mt_random_src_port(impl))
+    if (mt_user_random_src_port(impl))
       s->st40_src_port[i] = mt_random_port(s->st40_dst_port[i]);
     else
       s->st40_src_port[i] =
@@ -1357,9 +1357,9 @@ static int tx_ancillary_session_attach(struct mtl_main_impl* impl,
       return -EIO;
     }
   }
-  s->tx_mono_pool = mt_has_tx_mono_pool(impl);
+  s->tx_mono_pool = mt_user_tx_mono_pool(impl);
   /* manually disable chain or any port can't support chain */
-  s->tx_no_chain = mt_has_tx_no_chain(impl) || !tx_ancillary_session_has_chain_buf(s);
+  s->tx_no_chain = mt_user_tx_no_chain(impl) || !tx_ancillary_session_has_chain_buf(s);
   s->max_pkt_len = ST_PKT_MAX_ETHER_BYTES - sizeof(struct st_rfc8331_anc_hdr);
 
   s->st40_frames_cnt = ops->framebuff_cnt;

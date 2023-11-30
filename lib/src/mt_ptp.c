@@ -972,9 +972,9 @@ static int ptp_parse_announce(struct mt_ptp_impl* ptp, struct mt_ptp_announce_ms
     }
 
     /* point ptp fn to eth phc */
-    if (mt_ptp_tsc_source(ptp->impl))
+    if (mt_user_ptp_tsc_source(ptp->impl))
       warn("%s(%d), skip as ptp force to tsc\n", __func__, port);
-    else if (mt_has_user_ptp(ptp->impl))
+    else if (mt_user_ptp_time_fn(ptp->impl))
       warn("%s(%d), skip as user provide ptp source already\n", __func__, port);
     else
       mt_if(ptp->impl, port)->ptp_get_time_fn = ptp_from_eth;
@@ -1213,7 +1213,7 @@ static int ptp_init(struct mtl_main_impl* impl, struct mt_ptp_impl* ptp,
   ptp->use_pi = (impl->user_para.flags & MTL_FLAG_PTP_PI);
   if (ptp->use_pi)
     info("%s(%d), use pi controller, kp %e, ki %e\n", __func__, port, ptp->kp, ptp->ki);
-  if (mt_has_phc2sys_service(impl) && (MTL_PORT_P == port)) phc2sys_init(ptp);
+  if (mt_user_phc2sys_service(impl) && (MTL_PORT_P == port)) phc2sys_init(ptp);
 
   struct mtl_init_params* p = mt_get_user_params(impl);
   if (p->flags & MTL_FLAG_PTP_UNICAST_ADDR) {
@@ -1230,8 +1230,8 @@ static int ptp_init(struct mtl_main_impl* impl, struct mt_ptp_impl* ptp,
   ptp_stat_clear(ptp);
   ptp_coefficient_result_reset(ptp);
 
-  if (!mt_has_ptp_service(impl)) {
-    if (mt_has_ebu(impl)) {
+  if (!mt_user_ptp_service(impl)) {
+    if (mt_user_ebu_active(impl)) {
       ptp_sync_from_user(impl, ptp);
       rte_eal_alarm_set(MT_PTP_EBU_SYNC_MS * 1000, ptp_sync_from_user_handler, ptp);
       ptp->active = true;
@@ -1239,7 +1239,7 @@ static int ptp_init(struct mtl_main_impl* impl, struct mt_ptp_impl* ptp,
     return 0;
   }
 
-  if (mt_no_system_rxq(impl)) {
+  if (mt_user_no_system_rxq(impl)) {
     warn("%s(%d), disabled as no system rx queues\n", __func__, port);
     return 0;
   }
@@ -1406,7 +1406,7 @@ static int ptp_stat(void* priv) {
   notice("PTP(%d): time %" PRIu64 ", %s\n", port, ns, date_time);
 
   if (!ptp->active) {
-    if (mt_has_ebu(impl)) {
+    if (mt_user_ebu_active(impl)) {
       notice("PTP(%d): raw ptp %" PRIu64 "\n", port, ptp_get_raw_time(ptp));
       if (ptp->stat_delta_cnt) {
         notice("PTP(%d): delta avr %" PRId64 ", min %" PRId64 ", max %" PRId64

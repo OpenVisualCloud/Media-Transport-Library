@@ -1222,7 +1222,7 @@ static int dev_if_init_rx_queues(struct mtl_main_impl* impl, struct mt_interface
     return -ENOMEM;
   }
 
-  if (!mt_has_rx_mono_pool(impl)) {
+  if (!mt_user_rx_mono_pool(impl)) {
     for (uint16_t q = 0; q < inf->nb_rx_q; q++) {
       rx_queues[q].queue_id = q;
       rx_queues[q].port = inf->port;
@@ -1333,7 +1333,7 @@ static int dev_if_init_pacing(struct mt_interface* inf) {
   int ret;
   bool auto_detect = false;
 
-  if (mt_shared_tx_queue(inf->parent, inf->port)) {
+  if (mt_user_shared_txq(inf->parent, inf->port)) {
     info("%s(%d), use tsc as shared tx queue\n", __func__, port);
     inf->tx_pacing_way = ST21_TX_PACING_WAY_TSC;
     return 0;
@@ -1482,7 +1482,7 @@ struct mt_tx_queue* mt_dev_get_tx_queue(struct mtl_main_impl* impl, enum mtl_por
   struct mt_tx_queue* tx_queue;
   int ret;
 
-  if (mt_shared_tx_queue(impl, port)) {
+  if (mt_user_shared_txq(impl, port)) {
     err("%s(%d), conflict with shared tx queue mode, use tsq api instead\n", __func__,
         port);
     return NULL;
@@ -1543,7 +1543,7 @@ struct mt_rx_queue* mt_dev_get_rx_queue(struct mtl_main_impl* impl, enum mtl_por
     return NULL;
   }
 
-  if (mt_shared_rx_queue(impl, port)) {
+  if (mt_user_shared_rxq(impl, port)) {
     err("%s(%d), conflict with shared rx queue mode, use rsq api instead\n", __func__,
         port);
     return NULL;
@@ -1775,7 +1775,8 @@ int mt_dev_create(struct mtl_main_impl* impl) {
 
 #if RTE_VERSION >= RTE_VERSION_NUM(21, 11, 0, 0)
     /* DPDK 21.11 support start time sync before rte_eth_dev_start */
-    if ((mt_has_ptp_service(impl) || mt_has_ebu(impl)) && (port_type == MT_PORT_PF)) {
+    if ((mt_user_ptp_service(impl) || mt_user_ebu_active(impl)) &&
+        (port_type == MT_PORT_PF)) {
       ret = dev_start_timesync(inf);
       if (ret >= 0) inf->feature |= MT_IF_FEATURE_TIMESYNC;
     }
@@ -1809,8 +1810,8 @@ int mt_dev_create(struct mtl_main_impl* impl) {
       }
     }
     /* try to start time sync after rte_eth_dev_start */
-    if ((mt_has_ptp_service(impl) || mt_has_ebu(impl)) && (port_type == MT_PORT_PF) &&
-        !(inf->feature & MT_IF_FEATURE_TIMESYNC)) {
+    if ((mt_user_ptp_service(impl) || mt_user_ebu_active(impl)) &&
+        (port_type == MT_PORT_PF) && !(inf->feature & MT_IF_FEATURE_TIMESYNC)) {
       ret = dev_start_timesync(inf);
       if (ret >= 0) inf->feature |= MT_IF_FEATURE_TIMESYNC;
     }
@@ -1848,7 +1849,7 @@ int mt_dev_create(struct mtl_main_impl* impl) {
 
   /* init sch with one lcore scheduler */
   int data_quota_mbs_per_sch;
-  if (mt_has_user_quota(impl)) {
+  if (mt_user_quota_active(impl)) {
     data_quota_mbs_per_sch = mt_get_user_params(impl)->data_quota_mbs_per_sch;
   } else {
     /* default: max ST_QUOTA_TX1080P_PER_SCH sessions 1080p@60fps for tx */
@@ -2064,10 +2065,10 @@ int mt_dev_if_init(struct mtl_main_impl* impl) {
     mt_pthread_mutex_init(&inf->vf_cmd_mutex, NULL);
     rte_spinlock_init(&inf->stats_lock);
 
-    if (mt_ptp_tsc_source(impl)) {
+    if (mt_user_ptp_tsc_source(impl)) {
       info("%s(%d), use tsc ptp source\n", __func__, i);
       inf->ptp_get_time_fn = ptp_from_tsc;
-    } else if (mt_has_user_ptp(impl)) {
+    } else if (mt_user_ptp_time_fn(impl)) {
       /* user provide the ptp source */
       info("%s(%d), use user ptp source\n", __func__, i);
       inf->ptp_get_time_fn = ptp_from_user;
@@ -2128,10 +2129,10 @@ int mt_dev_if_init(struct mtl_main_impl* impl) {
 
       inf->nb_rx_q =
           p->rx_sessions_cnt_max ? p->rx_sessions_cnt_max : p->rx_queues_cnt[i];
-      if (!mt_no_system_rxq(impl)) {
+      if (!mt_user_no_system_rxq(impl)) {
         inf->nb_rx_q++;
         inf->system_rx_queues_end = 1; /* cni rx */
-        if (mt_has_ptp_service(impl)) {
+        if (mt_user_ptp_service(impl)) {
           inf->nb_rx_q++;
           inf->system_rx_queues_end++;
         }
@@ -2203,7 +2204,7 @@ int mt_dev_if_init(struct mtl_main_impl* impl) {
     }
 #endif
 
-    if (mt_has_ebu(impl) &&
+    if (mt_user_ebu_active(impl) &&
 #if RTE_VERSION >= RTE_VERSION_NUM(22, 3, 0, 0)
         (dev_info->rx_offload_capa & RTE_ETH_RX_OFFLOAD_TIMESTAMP)
 #else
@@ -2252,7 +2253,7 @@ int mt_dev_if_init(struct mtl_main_impl* impl) {
     char pool_name[ST_MAX_NAME_LEN];
     struct rte_mempool* mbuf_pool;
     /* Create mempool in memory to hold the system rx mbufs if mono */
-    if (mt_has_rx_mono_pool(impl)) {
+    if (mt_user_rx_mono_pool(impl)) {
       mbuf_elements = 1024;
       /* append as rx queues */
       mbuf_elements += inf->nb_rx_q * inf->nb_rx_desc;
@@ -2267,7 +2268,7 @@ int mt_dev_if_init(struct mtl_main_impl* impl) {
 
     /* Create default mempool in memory to hold the system tx mbufs */
     mbuf_elements = inf->nb_tx_desc + 1024;
-    if (mt_has_tx_mono_pool(impl)) {
+    if (mt_user_tx_mono_pool(impl)) {
       /* append as tx queues, double as tx ring */
       mbuf_elements += inf->nb_tx_q * inf->nb_tx_desc * 2;
     }

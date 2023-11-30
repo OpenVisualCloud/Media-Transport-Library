@@ -1655,7 +1655,7 @@ static int rv_dump_pcapng(struct mtl_main_impl* impl, struct st_rx_video_session
   for (uint16_t i = 0; i < rv; i++) {
     struct rte_mbuf* mc;
     uint64_t timestamp_cycle, timestamp_ns;
-    if (mt_has_ebu(impl) && inf->feature & MT_IF_FEATURE_RX_OFFLOAD_TIMESTAMP) {
+    if (mt_user_ebu_active(impl) && inf->feature & MT_IF_FEATURE_RX_OFFLOAD_TIMESTAMP) {
       timestamp_cycle = 0;
       timestamp_ns = mt_mbuf_hw_time_stamp(impl, mbuf[i], port);
     } else {
@@ -1896,7 +1896,7 @@ static int rv_handle_frame_pkt(struct st_rx_video_session_impl* s, struct rte_mb
   bool need_copy = true;
   struct mtl_dma_lender_dev* dma_dev = s->dma_dev;
   struct mtl_main_impl* impl = rv_get_impl(s);
-  bool ebu = mt_has_ebu(impl);
+  bool ebu = mt_user_ebu_active(impl);
   if (ebu) {
     /* no copy for ebu */
     need_copy = false;
@@ -2698,7 +2698,7 @@ static int rv_init_sw(struct mtl_main_impl* impl, struct st_rx_video_sessions_mg
     s->slot_max = ST_VIDEO_RX_REC_NUM_OFO;
   }
 
-  if (mt_has_ebu(impl)) {
+  if (mt_user_ebu_active(impl)) {
     rv_ebu_init(s);
   }
 
@@ -2718,7 +2718,7 @@ static int rv_init_sw(struct mtl_main_impl* impl, struct st_rx_video_sessions_mg
   double trs = s->vsync.meta.frame_time / estimated_total_pkts;
   double sleep_ns = trs * 128;
   s->advice_sleep_us = sleep_ns / NS_PER_US;
-  if (mt_tasklet_has_sleep(impl)) {
+  if (mt_user_tasklet_sleep(impl)) {
     info("%s(%d), advice sleep us %" PRIu64 ", trs %fns, total pkts %d\n", __func__, idx,
          s->advice_sleep_us, trs, estimated_total_pkts);
   }
@@ -3234,7 +3234,7 @@ static int rv_attach(struct mtl_main_impl* impl, struct st_rx_video_sessions_mgr
   }
 
   s->impl = impl;
-  s->time_measure = mt_has_tasklet_time_measure(impl);
+  s->time_measure = mt_user_tasklet_time_measure(impl);
   s->frame_time = (double)1000000000.0 * fps_tm.den / fps_tm.mul;
   s->frame_time_sampling = (double)(fps_tm.sampling_clock_rate) * fps_tm.den / fps_tm.mul;
   s->st20_bytes_in_line = ops->width * s->st20_pg.size / s->st20_pg.coverage;
@@ -3329,7 +3329,7 @@ static int rv_attach(struct mtl_main_impl* impl, struct st_rx_video_sessions_mgr
   }
 
   if (st20_is_frame_type(ops->type) && (!st22_ops) &&
-      ((ops->flags & ST20_RX_FLAG_AUTO_DETECT) || mt_has_ebu(impl))) {
+      ((ops->flags & ST20_RX_FLAG_AUTO_DETECT) || mt_user_ebu_active(impl))) {
     /* init sw after detected */
     ret = rv_detector_init(s);
     if (ret < 0) {
@@ -3669,7 +3669,7 @@ static int rvs_ctl_tasklet_start(void* priv) {
 static int rv_detach(struct mtl_main_impl* impl, struct st_rx_video_sessions_mgr* mgr,
                      struct st_rx_video_session_impl* s) {
   s->attached = false;
-  if (mt_has_ebu(mgr->parent)) rv_ebu_final_result(s);
+  if (mt_user_ebu_active(mgr->parent)) rv_ebu_final_result(s);
   rv_stat(mgr, s);
   rv_uinit_mcast(impl, s);
   rv_uinit_rtcp(s);
@@ -4138,7 +4138,7 @@ st20_rx_handle st20_rx_create_with_mask(struct mtl_main_impl* impl,
   }
   quota_mbs = bps / (1000 * 1000);
   quota_mbs *= ops->num_port;
-  if (!mt_has_user_quota(impl)) {
+  if (!mt_user_quota_active(impl)) {
     if (ST20_TYPE_RTP_LEVEL == ops->type) {
       quota_mbs = quota_mbs * ST_QUOTA_TX1080P_PER_SCH / ST_QUOTA_RX1080P_RTP_PER_SCH;
     } else {
@@ -4155,7 +4155,7 @@ st20_rx_handle st20_rx_create_with_mask(struct mtl_main_impl* impl,
   }
 
   enum mt_sch_type type =
-      mt_has_rxv_separate_sch(impl) ? MT_SCH_TYPE_RX_VIDEO_ONLY : MT_SCH_TYPE_DEFAULT;
+      mt_user_rxv_separate_sch(impl) ? MT_SCH_TYPE_RX_VIDEO_ONLY : MT_SCH_TYPE_DEFAULT;
   sch = mt_sch_get(impl, quota_mbs, type, sch_mask);
   if (!sch) {
     mt_rte_free(s_impl);
@@ -4183,7 +4183,7 @@ st20_rx_handle st20_rx_create_with_mask(struct mtl_main_impl* impl,
     return NULL;
   }
 
-  if (!mt_has_user_quota(impl) && st20_is_frame_type(ops->type) && !s->dma_dev) {
+  if (!mt_user_quota_active(impl) && st20_is_frame_type(ops->type) && !s->dma_dev) {
     int extra_quota_mbs = quota_mbs_wo_dma - quota_mbs;
     ret = mt_sch_add_quota(sch, extra_quota_mbs);
     if (ret >= 0) quota_mbs += extra_quota_mbs;
@@ -4523,7 +4523,7 @@ st22_rx_handle st22_rx_create(mtl_handle mt, struct st22_rx_ops* ops) {
   }
 
   enum mt_sch_type type =
-      mt_has_rxv_separate_sch(impl) ? MT_SCH_TYPE_RX_VIDEO_ONLY : MT_SCH_TYPE_DEFAULT;
+      mt_user_rxv_separate_sch(impl) ? MT_SCH_TYPE_RX_VIDEO_ONLY : MT_SCH_TYPE_DEFAULT;
   sch = mt_sch_get(impl, quota_mbs, type, MT_SCH_MASK_ALL);
   if (!sch) {
     mt_rte_free(s_impl);

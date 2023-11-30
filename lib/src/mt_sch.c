@@ -109,7 +109,7 @@ static int sch_tasklet_func(void* args) {
   int num_tasklet, i;
   struct mtl_tasklet_ops* ops;
   struct mt_sch_tasklet_impl* tasklet;
-  bool time_measure = mt_has_tasklet_time_measure(impl);
+  bool time_measure = mt_user_tasklet_time_measure(impl);
   uint64_t tsc_s = 0;
 
   num_tasklet = sch->max_tasklet_idx;
@@ -383,7 +383,7 @@ static int sch_stat(void* priv) {
 
   notice("SCH(%d:%s): tasklets %d max idx %d\n", idx, sch->name, num_tasklet,
          sch->max_tasklet_idx);
-  if (mt_has_tasklet_time_measure(sch->parent)) {
+  if (mt_user_tasklet_time_measure(sch->parent)) {
     for (int i = 0; i < num_tasklet; i++) {
       tasklet = sch->tasklet[i];
       if (!tasklet) continue;
@@ -838,10 +838,10 @@ int mt_sch_mrg_init(struct mtl_main_impl* impl, int data_quota_mbs_limit) {
     sch->max_tasklet_idx = 0;
     sch->data_quota_mbs_total = 0;
     sch->data_quota_mbs_limit = data_quota_mbs_limit;
-    sch->run_in_thread = mt_tasklet_has_thread(impl);
+    sch->run_in_thread = mt_user_tasklet_thread(impl);
 
     /* sleep info init */
-    sch->allow_sleep = mt_tasklet_has_sleep(impl);
+    sch->allow_sleep = mt_user_tasklet_sleep(impl);
 #if MT_THREAD_TIMEDWAIT_CLOCK_ID != CLOCK_REALTIME
     pthread_condattr_t attr;
     pthread_condattr_init(&attr);

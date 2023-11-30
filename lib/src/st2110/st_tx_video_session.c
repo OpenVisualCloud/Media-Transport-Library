@@ -2415,7 +2415,7 @@ static int tv_init_hw(struct mtl_main_impl* impl, struct st_tx_video_sessions_mg
             mgr_idx, idx, i);
       } else {
         /* reuse rx mempool for zero copy */
-        if (mt_has_rx_mono_pool(impl))
+        if (mt_user_rx_mono_pool(impl))
           s->mbuf_mempool_hdr[i] = mt_sys_rx_mempool(impl, port);
         else
           s->mbuf_mempool_hdr[i] = mt_if(impl, port)->rx_queues[queue_id].mbuf_pool;
@@ -2890,7 +2890,7 @@ static int tv_attach(struct mtl_main_impl* impl, struct st_tx_video_sessions_mgr
     s->st20_fb_size = s->st20_linesize * height;
   }
   s->st20_frames_cnt = ops->framebuff_cnt;
-  s->time_measure = mt_has_tasklet_time_measure(impl);
+  s->time_measure = mt_user_tasklet_time_measure(impl);
 
   ret = tv_init_pkt(impl, s, ops, st22_frame_ops);
   if (ret < 0) {
@@ -2925,7 +2925,7 @@ static int tv_attach(struct mtl_main_impl* impl, struct st_tx_video_sessions_mgr
   s->s_type = s_type;
   for (int i = 0; i < num_port; i++) {
     s->st20_dst_port[i] = (ops->udp_port[i]) ? (ops->udp_port[i]) : (10000 + idx * 2);
-    if (mt_random_src_port(impl))
+    if (mt_user_random_src_port(impl))
       s->st20_src_port[i] = mt_random_port(s->st20_dst_port[i]);
     else
       s->st20_src_port[i] =
@@ -2933,17 +2933,17 @@ static int tv_attach(struct mtl_main_impl* impl, struct st_tx_video_sessions_mgr
     enum mtl_port port = mt_port_logic2phy(s->port_maps, i);
     s->eth_ipv4_cksum_offload[i] = mt_if_has_offload_ipv4_cksum(impl, port);
     s->eth_has_chain[i] = mt_if_has_multi_seg(impl, port);
-    if (mt_pmd_is_dpdk_af_xdp(impl, port) && mt_has_af_xdp_zc(impl)) {
+    if (mt_pmd_is_dpdk_af_xdp(impl, port) && mt_user_af_xdp_zc(impl)) {
       /* enable zero copy for tx */
       s->mbuf_mempool_reuse_rx[i] = true;
     } else {
       s->mbuf_mempool_reuse_rx[i] = false;
     }
   }
-  s->tx_mono_pool = mt_has_tx_mono_pool(impl);
+  s->tx_mono_pool = mt_user_tx_mono_pool(impl);
   /* manually disable chain or any port can't support chain */
-  s->tx_no_chain = mt_has_tx_no_chain(impl) || !tv_has_chain_buf(s);
-  s->multi_src_port = mt_multi_src_port(impl);
+  s->tx_no_chain = mt_user_tx_no_chain(impl) || !tv_has_chain_buf(s);
+  s->multi_src_port = mt_user_multi_src_port(impl);
 
   s->ring_count = ST_TX_VIDEO_SESSIONS_RING_SIZE;
   /* make sure the ring is smaller than total pkts */
@@ -3007,7 +3007,7 @@ static int tv_attach(struct mtl_main_impl* impl, struct st_tx_video_sessions_mgr
   /* init advice sleep us */
   double sleep_ns = s->pacing.trs * 128;
   s->advice_sleep_us = sleep_ns / NS_PER_US;
-  if (mt_tasklet_has_sleep(impl)) {
+  if (mt_user_tasklet_sleep(impl)) {
     info("%s(%d), advice sleep us %" PRIu64 "\n", __func__, idx, s->advice_sleep_us);
   }
 
@@ -3768,7 +3768,7 @@ st20_tx_handle st20_tx_create(mtl_handle mt, struct st20_tx_ops* ops) {
   }
   quota_mbs = bps / (1000 * 1000);
   quota_mbs *= ops->num_port;
-  if (!mt_has_user_quota(impl)) {
+  if (!mt_user_quota_active(impl)) {
     if (ST20_TYPE_RTP_LEVEL == ops->type) {
       quota_mbs = quota_mbs * ST_QUOTA_TX1080P_PER_SCH / ST_QUOTA_TX1080P_RTP_PER_SCH;
     }
@@ -4169,7 +4169,7 @@ st22_tx_handle st22_tx_create(mtl_handle mt, struct st22_tx_ops* ops) {
     }
     quota_mbs = bps / (1000 * 1000);
     quota_mbs *= ops->num_port;
-    if (!mt_has_user_quota(impl)) {
+    if (!mt_user_quota_active(impl)) {
       quota_mbs = quota_mbs * ST_QUOTA_TX1080P_PER_SCH / ST_QUOTA_TX1080P_RTP_PER_SCH;
     }
   } else {
