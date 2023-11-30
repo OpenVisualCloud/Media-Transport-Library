@@ -23,6 +23,7 @@
 #include <netinet/udp.h>
 #include <numa.h>
 #include <poll.h>
+#include <pthread.h>
 #include <sys/ioctl.h>
 #include <sys/shm.h>
 #include <sys/socket.h>
