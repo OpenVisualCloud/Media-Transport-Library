@@ -1326,7 +1326,11 @@ bool mtl_pmd_is_dpdk_based(mtl_handle mt, enum mtl_port port) {
 }
 
 int mtl_thread_setname(pthread_t tid, const char* name) {
+#if RTE_VERSION >= RTE_VERSION_NUM(23, 11, 0, 0)
+  return rte_thread_set_name(tid, name);
+#else
   return rte_thread_setname(tid, name);
+#endif
 }
 
 int mtl_set_log_prefix_formatter(void (*log_prefix_formatter)(char* buf, size_t buf_sz)) {
