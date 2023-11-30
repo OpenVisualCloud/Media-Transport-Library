@@ -401,6 +401,8 @@ struct rte_mbuf* mt_pcapng_copy(struct mtl_main_impl* impl, enum mtl_port port,
   uint32_t queue_id = mt_rxq_queue_id(rxq);
 
 #if RTE_VERSION >= RTE_VERSION_NUM(23, 11, 0, 0)
+  MTL_MAY_UNUSED(timestamp);
+  MTL_MAY_UNUSED(tm_ns);
   mc = rte_pcapng_copy(port_id, queue_id, m, mp, length, direction, NULL);
 #elif RTE_VERSION >= RTE_VERSION_NUM(23, 3, 0, 0)
   mc = rte_pcapng_copy(port_id, queue_id, m, mp, length, timestamp, tm_ns, direction,
