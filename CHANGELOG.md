@@ -2,6 +2,8 @@
 
 ## Changelog for 24.04
 
+* dpdk: upgrade dpdk version to 23.11.
+
 ## Changelog for 23.12
 
 * log: add log to file support, see mtl_openlog_stream.
