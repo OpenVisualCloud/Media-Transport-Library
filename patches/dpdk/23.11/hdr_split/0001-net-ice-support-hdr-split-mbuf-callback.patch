@@ -1,27 +1,24 @@
-From f75548a75f9ca8ba321bb21ded76571f96bebcfd Mon Sep 17 00:00:00 2001
+From 68c3010b0e15bf8d0fdeba5b8880b9f5ff2d47cd Mon Sep 17 00:00:00 2001
 From: Ric Li <ming3.li@intel.com>
-Date: Wed, 30 Aug 2023 13:44:00 +0800
+Date: Thu, 30 Nov 2023 16:04:59 +0800
 Subject: [PATCH] net/ice: support hdr split mbuf callback
 
-Use this cb to get customized payload buffer.
-
-Signed-off-by: Du, Frank <frank.du@intel.com>
 Signed-off-by: Ric Li <ming3.li@intel.com>
 ---
  drivers/net/ice/ice_ethdev.c |  1 +
  drivers/net/ice/ice_rxtx.c   | 46 ++++++++++++++++++++++++++++++++++++
  drivers/net/ice/ice_rxtx.h   |  5 ++++
- lib/ethdev/ethdev_driver.h   |  7 ++++++
+ lib/ethdev/ethdev_driver.h   |  6 +++++
  lib/ethdev/rte_ethdev.c      | 14 +++++++++++
- lib/ethdev/rte_ethdev.h      | 13 ++++++++++
+ lib/ethdev/rte_ethdev.h      | 14 +++++++++++
  lib/ethdev/version.map       |  3 +++
  7 files changed, 89 insertions(+)
 
 diff --git a/drivers/net/ice/ice_ethdev.c b/drivers/net/ice/ice_ethdev.c
-index 4bad39c2c1..c0cc3abb98 100644
+index 3ccba4db80..6af8391e3c 100644
 --- a/drivers/net/ice/ice_ethdev.c
 +++ b/drivers/net/ice/ice_ethdev.c
-@@ -296,6 +296,7 @@ static const struct eth_dev_ops ice_eth_dev_ops = {
+@@ -294,6 +294,7 @@ static const struct eth_dev_ops ice_eth_dev_ops = {
  	.timesync_write_time          = ice_timesync_write_time,
  	.timesync_disable             = ice_timesync_disable,
  	.tm_ops_get                   = ice_tm_ops_get,
@@ -30,7 +27,7 @@ index 4bad39c2c1..c0cc3abb98 100644
  };
  
 diff --git a/drivers/net/ice/ice_rxtx.c b/drivers/net/ice/ice_rxtx.c
-index 64c4486b4b..d5a36a07ad 100644
+index 73e47ae92d..6aec352ddd 100644
 --- a/drivers/net/ice/ice_rxtx.c
 +++ b/drivers/net/ice/ice_rxtx.c
 @@ -487,6 +487,14 @@ ice_alloc_rx_queue_mbufs(struct ice_rx_queue *rxq)
@@ -78,7 +75,7 @@ index 64c4486b4b..d5a36a07ad 100644
  
  			nmb->next = nmb_pay;
  			nmb_pay->next = NULL;
-@@ -4599,3 +4623,25 @@ ice_fdir_programming(struct ice_pf *pf, struct ice_fltr_desc *fdir_desc)
+@@ -4606,3 +4630,25 @@ ice_fdir_programming(struct ice_pf *pf, struct ice_fltr_desc *fdir_desc)
  
  
  }
@@ -104,11 +101,12 @@ index 64c4486b4b..d5a36a07ad 100644
 +	PMD_DRV_LOG(NOTICE, "RX queue %u register hdrs mbuf cb at %p", rx_queue_id, cb);
 +	return 0;
 +}
+\ No newline at end of file
 diff --git a/drivers/net/ice/ice_rxtx.h b/drivers/net/ice/ice_rxtx.h
-index 268289716e..745d7a29d6 100644
+index bd2c4abec9..e71cc527e0 100644
 --- a/drivers/net/ice/ice_rxtx.h
 +++ b/drivers/net/ice/ice_rxtx.h
-@@ -121,6 +121,9 @@ struct ice_rx_queue {
+@@ -123,6 +123,9 @@ struct ice_rx_queue {
  	struct rte_eth_rxseg_split rxseg[ICE_RX_MAX_NSEG];
  	uint32_t rxseg_nb;
  	bool ts_enable; /* if rxq timestamp is enabled */
@@ -118,31 +116,30 @@ index 268289716e..745d7a29d6 100644
  };
  
  struct ice_tx_entry {
-@@ -316,6 +319,8 @@ uint16_t ice_xmit_pkts_vec_avx512_offload(void *tx_queue,
+@@ -318,6 +321,8 @@ uint16_t ice_xmit_pkts_vec_avx512_offload(void *tx_queue,
  int ice_fdir_programming(struct ice_pf *pf, struct ice_fltr_desc *fdir_desc);
  int ice_tx_done_cleanup(void *txq, uint32_t free_cnt);
  int ice_get_monitor_addr(void *rx_queue, struct rte_power_monitor_cond *pmc);
 +int ice_hdrs_mbuf_set_cb(struct rte_eth_dev *dev, uint16_t rx_queue_id,
-+				   void *priv, rte_eth_hdrs_mbuf_callback_fn cb);
++				void *priv, rte_eth_hdrs_mbuf_callback_fn cb);
  
  #define FDIR_PARSING_ENABLE_PER_QUEUE(ad, on) do { \
  	int i; \
 diff --git a/lib/ethdev/ethdev_driver.h b/lib/ethdev/ethdev_driver.h
-index 980f837ab6..2b9d16f31b 100644
+index b482cd12bb..e8ae1550c4 100644
 --- a/lib/ethdev/ethdev_driver.h
 +++ b/lib/ethdev/ethdev_driver.h
-@@ -1126,6 +1126,10 @@ typedef int (*eth_cman_config_set_t)(struct rte_eth_dev *dev,
+@@ -1136,6 +1136,9 @@ typedef int (*eth_cman_config_set_t)(struct rte_eth_dev *dev,
  typedef int (*eth_cman_config_get_t)(struct rte_eth_dev *dev,
  				struct rte_eth_cman_config *config);
  
 +typedef int (*eth_hdrs_mbuf_set_cb_t)(struct rte_eth_dev *dev, uint16_t rx_queue_id,
-+				   void *priv, rte_eth_hdrs_mbuf_callback_fn cb);
-+
++				void *priv, rte_eth_hdrs_mbuf_callback_fn cb);
 +
  /**
   * @internal
   * Dump Rx descriptor info to a file.
-@@ -1430,6 +1434,9 @@ struct eth_dev_ops {
+@@ -1442,6 +1445,9 @@ struct eth_dev_ops {
  	/** Dump Tx descriptor info */
  	eth_tx_descriptor_dump_t eth_tx_descriptor_dump;
  
@@ -153,16 +150,16 @@ index 980f837ab6..2b9d16f31b 100644
  	eth_cman_info_get_t cman_info_get;
  	/** Initialize congestion management structure with default values */
 diff --git a/lib/ethdev/rte_ethdev.c b/lib/ethdev/rte_ethdev.c
-index 0840d2b594..a75eae6d9c 100644
+index 3858983fcc..7b0d31bfd4 100644
 --- a/lib/ethdev/rte_ethdev.c
 +++ b/lib/ethdev/rte_ethdev.c
-@@ -6628,6 +6628,20 @@ rte_eth_ip_reassembly_conf_set(uint16_t port_id,
+@@ -6809,6 +6809,20 @@ rte_eth_ip_reassembly_conf_set(uint16_t port_id,
  	return ret;
  }
  
 +int
 +rte_eth_hdrs_set_mbuf_callback(uint16_t port_id, uint16_t rx_queue_id, void *priv,
-+			       rte_eth_hdrs_mbuf_callback_fn cb)
++			    rte_eth_hdrs_mbuf_callback_fn cb)
 +{
 +	struct rte_eth_dev *dev;
 +
@@ -178,10 +175,10 @@ index 0840d2b594..a75eae6d9c 100644
  rte_eth_dev_priv_dump(uint16_t port_id, FILE *file)
  {
 diff --git a/lib/ethdev/rte_ethdev.h b/lib/ethdev/rte_ethdev.h
-index 04a2564f22..2028243290 100644
+index 77331ce652..88c11aae14 100644
 --- a/lib/ethdev/rte_ethdev.h
 +++ b/lib/ethdev/rte_ethdev.h
-@@ -6527,6 +6527,19 @@ rte_eth_tx_buffer(uint16_t port_id, uint16_t queue_id,
+@@ -6640,6 +6640,20 @@ rte_eth_tx_buffer(uint16_t port_id, uint16_t queue_id,
  	return rte_eth_tx_buffer_flush(port_id, queue_id, buffer);
  }
  
@@ -198,14 +195,15 @@ index 04a2564f22..2028243290 100644
 +int rte_eth_hdrs_set_mbuf_callback(uint16_t port_id, uint16_t rx_queue_id, void *priv,
 +			rte_eth_hdrs_mbuf_callback_fn cb);
 +
++
  /**
   * @warning
-  * @b EXPERIMENTAL: this API may change without prior notice
+  * @b EXPERIMENTAL: this API may change, or be removed, without prior notice
 diff --git a/lib/ethdev/version.map b/lib/ethdev/version.map
-index fc492ee839..776a0ed9a0 100644
+index 5c4917c020..3f65e0361e 100644
 --- a/lib/ethdev/version.map
 +++ b/lib/ethdev/version.map
-@@ -280,6 +280,9 @@ EXPERIMENTAL {
+@@ -278,6 +278,9 @@ EXPERIMENTAL {
  	rte_mtr_color_in_protocol_set;
  	rte_mtr_meter_vlan_table_update;
  
