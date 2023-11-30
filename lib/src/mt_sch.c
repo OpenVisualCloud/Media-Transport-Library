@@ -118,9 +118,7 @@ static int sch_tasklet_func(void* args) {
   char thread_name[32];
   snprintf(thread_name, sizeof(thread_name), "mtl_sch_%d", idx);
 
-#ifndef WINDOWSENV
   mtl_thread_setname(pthread_self(), thread_name);
-#endif
 
   for (i = 0; i < num_tasklet; i++) {
     tasklet = sch->tasklet[i];
