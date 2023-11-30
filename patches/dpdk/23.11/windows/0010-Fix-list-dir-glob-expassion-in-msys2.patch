@@ -1,0 +1,25 @@
+From 3a7d95bc981a809df61cbf30ff0cad5666068b07 Mon Sep 17 00:00:00 2001
+From: Ric Li <ming3.li@intel.com>
+Date: Thu, 14 Sep 2023 10:49:24 -0700
+Subject: [PATCH] Fix list dir glob expassion in msys2
+
+---
+ app/meson.build | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/app/meson.build b/app/meson.build
+index 4fc1a83eba..ce42bdcd52 100644
+--- a/app/meson.build
++++ b/app/meson.build
+@@ -7,7 +7,7 @@ disable_apps = run_command(list_dir_globs, disable_apps, check: true).stdout().s
+ enable_apps = ',' + get_option('enable_apps')
+ enable_apps = run_command(list_dir_globs, enable_apps, check: true).stdout().split()
+ if enable_apps.length() == 0
+-    enable_apps = run_command(list_dir_globs, '*', check: true).stdout().split()
++    enable_apps = run_command(list_dir_globs, '*/', check: true).stdout().split()
+ endif
+ 
+ apps = [
+-- 
+2.40.1.windows.1
+
