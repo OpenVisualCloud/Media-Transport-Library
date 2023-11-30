@@ -1,51 +1,81 @@
-From ba8e0b4276c1384715f0d7a81ae056ec693a849f Mon Sep 17 00:00:00 2001
+From d19b0e8f5562e3c55adce724d72308e3c306c90a Mon Sep 17 00:00:00 2001
 From: Ric Li <ming3.li@intel.com>
-Date: Mon, 15 May 2023 12:19:48 +0800
+Date: Thu, 30 Nov 2023 13:46:33 +0800
 Subject: [PATCH] Fix missing mkstemps for windows pcapng test build
 
+Signed-off-by: Ric Li <ming3.li@intel.com>
 ---
- app/test/test_pcapng.c | 12 +++++++++++-
- 1 file changed, 11 insertions(+), 1 deletion(-)
+ app/test/test_pcapng.c | 27 +++++++++++++++++++++++++--
+ 1 file changed, 25 insertions(+), 2 deletions(-)
 
 diff --git a/app/test/test_pcapng.c b/app/test/test_pcapng.c
-index 14c58c5f20..c209038c1e 100644
+index 89535efad0..776e326ea3 100644
 --- a/app/test/test_pcapng.c
 +++ b/app/test/test_pcapng.c
-@@ -11,6 +11,7 @@
+@@ -13,6 +13,7 @@
  #include <rte_mbuf.h>
  #include <rte_mempool.h>
  #include <rte_net.h>
 +#include <rte_os_shim.h>
  #include <rte_pcapng.h>
+ #include <rte_random.h>
+ #include <rte_reciprocal.h>
+@@ -23,6 +24,10 @@
  
- #include <pcap/pcap.h>
-@@ -24,7 +25,12 @@ static rte_pcapng_t *pcapng;
- static struct rte_mempool *mp;
- static const uint32_t pkt_len = 200;
- static uint16_t port_id;
-+#ifndef RTE_EXEC_ENV_IS_WINDOWS
- static char file_name[] = "/tmp/pcapng_test_XXXXXX.pcapng";
-+#else
-+static char file_name[] = "/tmp/pcapng_test_XXXXXX";
+ #include "test.h"
+ 
++#ifndef IOV_MAX
 +#define IOV_MAX 128
 +#endif
++
+ #define PCAPNG_TEST_DEBUG 0
  
- /* first mbuf in the packet, should always be at offset 0 */
- struct dummy_mbuf {
-@@ -93,8 +99,12 @@ test_setup(void)
- 		fprintf(stderr, "No valid Ether port\n");
- 		return -1;
- 	}
--
+ #define TOTAL_PACKETS	4096
+@@ -316,12 +321,21 @@ valid_pcapng_file(const char *file_name, uint64_t started, unsigned int expected
+ static int
+ test_add_interface(void)
+ {
 +#ifndef RTE_EXEC_ENV_IS_WINDOWS
- 	tmp_fd = mkstemps(file_name, strlen(".pcapng"));
+ 	char file_name[] = "/tmp/pcapng_test_XXXXXX.pcapng";
++#else
++	char file_name[] = "/tmp/pcapng_test_XXXXXX";
++#endif
+ 	static rte_pcapng_t *pcapng;
+ 	int ret, tmp_fd;
+ 	uint64_t now = current_timestamp();
+ 
+-	tmp_fd = mkstemps(file_name, strlen(".pcapng"));
++#ifndef RTE_EXEC_ENV_IS_WINDOWS
++ 	tmp_fd = mkstemps(file_name, strlen(".pcapng"));
 +#else
 +	/* MinGW only implement mkstemp */
 +	tmp_fd = mkstemp(file_name);
 +#endif
  	if (tmp_fd == -1) {
  		perror("mkstemps() failure");
- 		return -1;
+ 		goto fail;
+@@ -377,12 +391,21 @@ test_add_interface(void)
+ static int
+ test_write_packets(void)
+ {
++#ifndef RTE_EXEC_ENV_IS_WINDOWS
+ 	char file_name[] = "/tmp/pcapng_test_XXXXXX.pcapng";
++#else
++	char file_name[] = "/tmp/pcapng_test_XXXXXX";
++#endif
+ 	static rte_pcapng_t *pcapng;
+ 	int ret, tmp_fd, count;
+ 	uint64_t now = current_timestamp();
+ 
+-	tmp_fd = mkstemps(file_name, strlen(".pcapng"));
++#ifndef RTE_EXEC_ENV_IS_WINDOWS
++ 	tmp_fd = mkstemps(file_name, strlen(".pcapng"));
++#else
++	/* MinGW only implement mkstemp */
++	tmp_fd = mkstemp(file_name);
++#endif
+ 	if (tmp_fd == -1) {
+ 		perror("mkstemps() failure");
+ 		goto fail;
 -- 
-2.40.1
-
+2.34.1
