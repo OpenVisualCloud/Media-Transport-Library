@@ -1,0 +1,39 @@
+From e744badc47cd8d867395e521e05f322acfb46230 Mon Sep 17 00:00:00 2001
+From: Ric Li <ming3.li@intel.com>
+Date: Thu, 30 Nov 2023 14:03:19 +0800
+Subject: [PATCH] Disable OFFLOAD_WB_ON_ITR flag for iavf
+
+Signed-off-by: Ric Li <ming3.li@intel.com>
+---
+ drivers/net/iavf/iavf.h   | 1 -
+ drivers/net/ice/ice_dcf.c | 2 +-
+ 2 files changed, 1 insertion(+), 2 deletions(-)
+
+diff --git a/drivers/net/iavf/iavf.h b/drivers/net/iavf/iavf.h
+index 10868f2c30..580c076df5 100644
+--- a/drivers/net/iavf/iavf.h
++++ b/drivers/net/iavf/iavf.h
+@@ -48,7 +48,6 @@
+ 
+ #define IAVF_BASIC_OFFLOAD_CAPS  ( \
+ 	VF_BASE_MODE_OFFLOADS | \
+-	VIRTCHNL_VF_OFFLOAD_WB_ON_ITR | \
+ 	VIRTCHNL_VF_OFFLOAD_RX_POLLING)
+ 
+ #define IAVF_RSS_OFFLOAD_ALL ( \
+diff --git a/drivers/net/ice/ice_dcf.c b/drivers/net/ice/ice_dcf.c
+index 7f8f5163ac..3008ee5d79 100644
+--- a/drivers/net/ice/ice_dcf.c
++++ b/drivers/net/ice/ice_dcf.c
+@@ -357,7 +357,7 @@ ice_dcf_get_vf_resource(struct ice_dcf_hw *hw)
+ 	uint32_t caps;
+ 	int err, i;
+ 
+-	caps = VIRTCHNL_VF_OFFLOAD_WB_ON_ITR | VIRTCHNL_VF_OFFLOAD_RX_POLLING |
++	caps = VIRTCHNL_VF_OFFLOAD_RX_POLLING |
+ 	       VIRTCHNL_VF_CAP_ADV_LINK_SPEED | VIRTCHNL_VF_CAP_DCF |
+ 	       VIRTCHNL_VF_OFFLOAD_VLAN_V2 |
+ 	       VF_BASE_MODE_OFFLOADS | VIRTCHNL_VF_OFFLOAD_RX_FLEX_DESC |
+-- 
+2.34.1
+
