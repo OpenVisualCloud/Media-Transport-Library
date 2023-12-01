@@ -36,13 +36,20 @@ static inline uint32_t pacing_time_stamp(struct st_tx_video_session_impl* s,
                                          uint64_t epochs) {
   uint64_t tmstamp64;
   double time;
-  if (s->ops.flags & ST20_TX_FLAG_RTP_TIMESTAMP_FIRST_PKT) {
+  if (s->ops.flags & ST20_TX_FLAG_RTP_TIMESTAMP_EPOCH) {
+    /* the start of epoch */
+    time = pacing_first_pkt_time(pacing, epochs);
+  } else if (s->ops.flags & ST20_TX_FLAG_RTP_TIMESTAMP_FIRST_PKT) {
     /* the start of first pkt */
     time = pacing_first_pkt_time(pacing, epochs);
     if (pacing->warm_pkts) time -= 3 * pacing->trs; /* deviation for VRX */
-  } else {
+  } else if (s->ops.rtp_timestamp_delta_us) {
     int32_t rtp_timestamp_delta_us = s->ops.rtp_timestamp_delta_us;
     time = pacing_time(pacing, epochs) + (rtp_timestamp_delta_us * NS_PER_US);
+  } else {
+    /* default to the start of first pkt */
+    time = pacing_first_pkt_time(pacing, epochs);
+    if (pacing->warm_pkts) time -= 3 * pacing->trs; /* deviation for VRX */
   }
   tmstamp64 = (time / pacing->frame_time) * pacing->frame_time_sampling;
   uint32_t tmstamp32 = tmstamp64;
