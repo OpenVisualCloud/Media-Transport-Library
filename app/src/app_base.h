@@ -522,6 +522,7 @@ struct st_app_context {
   uint16_t tx_pad_interval;
   bool tx_no_static_pad;
   bool tx_ts_first_pkt;
+  bool tx_ts_epoch;
   int32_t tx_ts_delta_us;
   enum st21_pacing tx_pacing_type;
   bool tx_no_bulk;

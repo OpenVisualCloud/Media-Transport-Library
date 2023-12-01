@@ -434,10 +434,15 @@ enum st22_quality_mode {
 #define ST20P_TX_FLAG_RTP_TIMESTAMP_FIRST_PKT (MTL_BIT32(8))
 /**
  * Flag bit in flags of struct st20p_tx_ops.
+ * Set this flag to set rtp timestamp at the time of the epoch.
+ */
+#define ST20P_TX_FLAG_RTP_TIMESTAMP_EPOCH (MTL_BIT32(9))
+/**
+ * Flag bit in flags of struct st20p_tx_ops.
  * Set this flag to the bulk operation on all internal buffer rings. It may degrade the
  * performance since the object enqueue/dequeue will be acted one by one.
  */
-#define ST20P_TX_FLAG_DISABLE_BULK (MTL_BIT32(9))
+#define ST20P_TX_FLAG_DISABLE_BULK (MTL_BIT32(10))
 
 /**
  * Flag bit in flags of struct st22p_rx_ops, for non MTL_PMD_DPDK_USER.

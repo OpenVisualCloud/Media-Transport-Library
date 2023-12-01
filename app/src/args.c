@@ -51,6 +51,7 @@ enum st_args_cmd {
   ST_ARG_NO_PAD_STATIC,
   ST_ARG_SHAPING,
   ST_ARG_TIMESTAMP_FIRST_PKT,
+  ST_ARG_TIMESTAMP_EPOCH,
   ST_ARG_TIMESTAMP_DELTA_US,
   ST_ARG_NO_BULK,
 
@@ -485,6 +486,9 @@ int st_app_parse_args(struct st_app_context* ctx, struct mtl_init_params* p, int
         break;
       case ST_ARG_TIMESTAMP_FIRST_PKT:
         ctx->tx_ts_first_pkt = true;
+        break;
+      case ST_ARG_TIMESTAMP_EPOCH:
+        ctx->tx_ts_epoch = true;
         break;
       case ST_ARG_TIMESTAMP_DELTA_US:
         ctx->tx_ts_delta_us = atoi(optarg);
