@@ -25,8 +25,10 @@
 #define MT_PTP_DEFAULT_KI 1e-10 /* to be tuned */
 
 #ifdef WINDOWSENV
+// clang-format off
 #define be64toh(x) \
-  ((1 == ntohl(1)) ? (x) : ((uint64_t)ntohl((x)&0xFFFFFFFF) << 32) | ntohl((x) >> 32))
+  ((1 == ntohl(1)) ? (x) : ((uint64_t)ntohl((x) & 0xFFFFFFFF) << 32) | ntohl((x) >> 32))
+// clang-format on
 
 typedef BOOL(WINAPI* PGSTAP)(PDWORD64 lpTimeAdjustment, PDWORD64 lpTimeIncrement,
                              PBOOL lpTimeAdjustmentDisabled);
@@ -1232,8 +1234,12 @@ static int ptp_init(struct mtl_main_impl* impl, struct mt_ptp_impl* ptp,
 
   if (!mt_user_ptp_service(impl)) {
     if (mt_user_ebu_active(impl)) {
+      ptp->no_timesync = true;
+      info("%s(%d), ptp running for ebu without time sync\n", __func__, port);
       ptp_sync_from_user(impl, ptp);
       rte_eal_alarm_set(MT_PTP_EBU_SYNC_MS * 1000, ptp_sync_from_user_handler, ptp);
+      ptp->connected = true;
+      ptp->locked = true;
       ptp->active = true;
     }
     return 0;
@@ -1539,4 +1545,15 @@ int mt_ptp_wait_stable(struct mtl_main_impl* impl, enum mtl_port port, int timeo
   }
 
   return 0;
+}
+
+uint64_t mt_ptp_internal_time(struct mtl_main_impl* impl, enum mtl_port port) {
+  struct mt_ptp_impl* ptp = mt_get_ptp(impl, port);
+
+  if (!ptp->active) {
+    err("%s(%d), ptp not active\n", __func__, port);
+    return 0;
+  }
+
+  return ptp_get_correct_time(ptp);
 }

@@ -122,4 +122,6 @@ static inline bool mt_ptp_is_connected(struct mtl_main_impl* impl, enum mtl_port
   return mt_get_ptp(impl, port)->connected;
 }
 
+uint64_t mt_ptp_internal_time(struct mtl_main_impl* impl, enum mtl_port port);
+
 #endif

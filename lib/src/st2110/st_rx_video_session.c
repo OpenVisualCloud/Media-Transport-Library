@@ -12,14 +12,10 @@
 #include "../mt_rtcp.h"
 #include "../mt_stat.h"
 #include "st_fmt.h"
+#include "st_rx_ebu.h"
 
 static int rv_init_pkt_handler(struct st_rx_video_session_impl* s);
 static int rvs_mgr_update(struct st_rx_video_sessions_mgr* mgr);
-
-static inline double rv_ebu_pass_rate(struct st_rx_video_ebu_result* ebu_result,
-                                      int pass) {
-  return (double)pass * 100 / ebu_result->ebu_result_num;
-}
 
 static inline struct mtl_main_impl* rv_get_impl(struct st_rx_video_session_impl* s) {
   return s->parent->parent;
@@ -28,400 +24,6 @@ static inline struct mtl_main_impl* rv_get_impl(struct st_rx_video_session_impl*
 static inline uint16_t rv_queue_id(struct st_rx_video_session_impl* s,
                                    enum mtl_session_port s_port) {
   return mt_rxq_queue_id(s->rxq[s_port]);
-}
-
-static void rv_ebu_final_result(struct st_rx_video_session_impl* s) {
-  int idx = s->idx;
-  struct st_rx_video_ebu_result* ebu_result = &s->ebu_result;
-
-  if (ebu_result->ebu_result_num < 0) {
-    err("%s(%d), ebu result not enough\n", __func__, idx);
-    return;
-  }
-
-  critical("st20(%d), [ --- Total %d ---  Compliance Rate Narrow %.2f%%  Wide %.2f%% ]\n",
-           idx, ebu_result->ebu_result_num,
-           rv_ebu_pass_rate(ebu_result, ebu_result->compliance_narrow),
-           rv_ebu_pass_rate(ebu_result,
-                            ebu_result->compliance - ebu_result->compliance_narrow));
-  critical("st20(%d), [ Cinst ]\t| Narrow %.2f%% | Wide %.2f%% | Fail %.2f%% |\n", idx,
-           rv_ebu_pass_rate(ebu_result, ebu_result->cinst_pass_narrow),
-           rv_ebu_pass_rate(ebu_result, ebu_result->cinst_pass_wide),
-           rv_ebu_pass_rate(ebu_result, ebu_result->cinst_fail));
-  critical("st20(%d), [ VRX ]\t| Narrow %.2f%% | Wide %.2f%% | Fail %.2f%% |\n", idx,
-           rv_ebu_pass_rate(ebu_result, ebu_result->vrx_pass_narrow),
-           rv_ebu_pass_rate(ebu_result, ebu_result->vrx_pass_wide),
-           rv_ebu_pass_rate(ebu_result, ebu_result->vrx_fail));
-  critical("st20(%d), [ FPT ]\t| Pass %.2f%% | Fail %.2f%% |\n", idx,
-           rv_ebu_pass_rate(ebu_result, ebu_result->fpt_pass),
-           rv_ebu_pass_rate(ebu_result, ebu_result->fpt_fail));
-  critical("st20(%d), [ Latency ]\t| Pass %.2f%% | Fail %.2f%% |\n", idx,
-           rv_ebu_pass_rate(ebu_result, ebu_result->latency_pass),
-           rv_ebu_pass_rate(ebu_result, ebu_result->latency_fail));
-  critical("st20(%d), [ RTP Offset ]\t| Pass %.2f%% | Fail %.2f%% |\n", idx,
-           rv_ebu_pass_rate(ebu_result, ebu_result->rtp_offset_pass),
-           rv_ebu_pass_rate(ebu_result, ebu_result->rtp_offset_fail));
-  critical("st20(%d), [ RTP TS Delta ]\t| Pass %.2f%% | Fail %.2f%% |\n", idx,
-           rv_ebu_pass_rate(ebu_result, ebu_result->rtp_ts_delta_pass),
-           rv_ebu_pass_rate(ebu_result, ebu_result->rtp_ts_delta_fail));
-}
-
-static void rv_ebu_clear_result(struct st_rx_video_ebu_stat* ebu) {
-  memset(ebu, 0, sizeof(*ebu));
-
-  ebu->cinst_max = INT_MIN;
-  ebu->cinst_min = INT_MAX;
-  ebu->vrx_max = INT_MIN;
-  ebu->vrx_min = INT_MAX;
-  ebu->fpt_max = INT_MIN;
-  ebu->fpt_min = INT_MAX;
-  ebu->latency_max = INT_MIN;
-  ebu->latency_min = INT_MAX;
-  ebu->rtp_offset_max = INT_MIN;
-  ebu->rtp_offset_min = INT_MAX;
-  ebu->rtp_ts_delta_max = INT_MIN;
-  ebu->rtp_ts_delta_min = INT_MAX;
-  ebu->rtp_ipt_max = INT_MIN;
-  ebu->rtp_ipt_min = INT_MAX;
-
-  ebu->compliant = true;
-  ebu->compliant_narrow = true;
-}
-
-static inline float rv_ebu_calculate_avg(uint32_t cnt, int64_t sum) {
-  return cnt ? ((float)sum / cnt) : -1.0f;
-}
-
-static char* rv_ebu_cinst_result(struct st_rx_video_ebu_stat* ebu,
-                                 struct st_rx_video_ebu_info* ebu_info,
-                                 struct st_rx_video_ebu_result* ebu_result) {
-  if (ebu->cinst_max <= ebu_info->c_max_narrow_pass) {
-    ebu_result->cinst_pass_narrow++;
-    return ST_EBU_PASS_NARROW;
-  }
-
-  if (ebu->cinst_max <= ebu_info->c_max_wide_pass) {
-    ebu_result->cinst_pass_wide++;
-    ebu->compliant_narrow = false;
-    return ST_EBU_PASS_WIDE;
-  }
-
-  if (ebu->cinst_max <= (ebu_info->c_max_wide_pass * 16)) {
-    ebu_result->cinst_pass_wide++;
-    ebu->compliant_narrow = false;
-    return ST_EBU_PASS_WIDE_WA; /* WA, the RX time inaccurate */
-  }
-
-  ebu_result->cinst_fail++;
-  ebu->compliant = false;
-  return ST_EBU_FAIL;
-}
-
-static char* rv_ebu_vrx_result(struct st_rx_video_ebu_stat* ebu,
-                               struct st_rx_video_ebu_info* ebu_info,
-                               struct st_rx_video_ebu_result* ebu_result) {
-  if ((ebu->vrx_min >= 0) && (ebu->vrx_max <= ebu_info->vrx_full_narrow_pass)) {
-    ebu_result->vrx_pass_narrow++;
-    return ST_EBU_PASS_NARROW;
-  }
-
-  if ((ebu->vrx_min >= 0) && (ebu->vrx_max <= ebu_info->vrx_full_wide_pass)) {
-    ebu_result->vrx_pass_wide++;
-    ebu->compliant_narrow = false;
-    return ST_EBU_PASS_WIDE;
-  }
-
-  ebu_result->vrx_fail++;
-  ebu->compliant = false;
-  return ST_EBU_FAIL;
-}
-
-static char* rv_ebu_latency_result(struct st_rx_video_ebu_stat* ebu,
-                                   struct st_rx_video_ebu_result* ebu_result) {
-  if ((ebu->latency_min < 0) || (ebu->latency_max > ST_EBU_LATENCY_MAX_NS)) {
-    ebu_result->latency_fail++;
-    ebu->compliant = false;
-    return ST_EBU_FAIL;
-  }
-
-  ebu_result->latency_pass++;
-  return ST_EBU_PASS;
-}
-
-static char* rv_ebu_rtp_offset_result(struct st_rx_video_ebu_stat* ebu,
-                                      struct st_rx_video_ebu_info* ebu_info,
-                                      struct st_rx_video_ebu_result* ebu_result) {
-  if ((ebu->rtp_offset_min < ST_EBU_RTP_OFFSET_MIN) ||
-      (ebu->rtp_offset_max > ebu_info->rtp_offset_max_pass)) {
-    ebu_result->rtp_offset_fail++;
-    ebu->compliant = false;
-    return ST_EBU_FAIL;
-  }
-
-  ebu_result->rtp_offset_pass++;
-  return ST_EBU_PASS;
-}
-
-static char* rv_ebu_rtp_ts_delta_result(struct st_rx_video_session_impl* s,
-                                        struct st_rx_video_ebu_stat* ebu,
-                                        struct st_rx_video_ebu_result* ebu_result) {
-  int32_t rtd = s->frame_time_sampling;
-
-  if ((ebu->rtp_ts_delta_min < rtd) || (ebu->rtp_ts_delta_max > (rtd + 1))) {
-    ebu_result->rtp_ts_delta_fail++;
-    ebu->compliant = false;
-    return ST_EBU_FAIL;
-  }
-
-  ebu_result->rtp_ts_delta_pass++;
-  return ST_EBU_PASS;
-}
-
-static char* rv_ebu_fpt_result(struct st_rx_video_ebu_stat* ebu, uint32_t tr_offset,
-                               struct st_rx_video_ebu_result* ebu_result) {
-  if (ebu->fpt_max <= tr_offset) {
-    ebu_result->fpt_pass++;
-    return ST_EBU_PASS;
-  }
-
-  if (ebu->fpt_max <= (tr_offset * 2)) { /* WA as no HW RX time */
-    ebu_result->fpt_pass++;
-    return ST_EBU_PASS_WIDE_WA;
-  }
-
-  ebu_result->fpt_fail++;
-  ebu->compliant = false;
-  return ST_EBU_FAIL;
-}
-
-static void rv_ebu_result(struct st_rx_video_session_impl* s) {
-  struct st_rx_video_ebu_stat* ebu = &s->ebu;
-  struct st_rx_video_ebu_info* ebu_info = &s->ebu_info;
-  struct st_rx_video_ebu_result* ebu_result = &s->ebu_result;
-  int idx = s->idx;
-
-  ebu->vrx_avg = rv_ebu_calculate_avg(ebu->vrx_cnt, ebu->vrx_sum);
-  ebu->cinst_avg = rv_ebu_calculate_avg(ebu->cinst_cnt, ebu->cinst_sum);
-  ebu->fpt_avg = rv_ebu_calculate_avg(ebu->fpt_cnt, ebu->fpt_sum);
-  ebu->latency_avg = rv_ebu_calculate_avg(ebu->latency_cnt, ebu->latency_sum);
-  ebu->rtp_offset_avg = rv_ebu_calculate_avg(ebu->rtp_offset_cnt, ebu->rtp_offset_sum);
-  ebu->rtp_ts_delta_avg =
-      rv_ebu_calculate_avg(ebu->rtp_ts_delta_cnt, ebu->rtp_ts_delta_sum);
-  ebu->rtp_ipt_avg = rv_ebu_calculate_avg(ebu->rtp_ipt_cnt, ebu->rtp_ipt_sum);
-
-  info("%s(%d), Cinst AVG %.2f MIN %d MAX %d test %s!\n", __func__, idx, ebu->cinst_avg,
-       ebu->cinst_min, ebu->cinst_max, rv_ebu_cinst_result(ebu, ebu_info, ebu_result));
-  info("%s(%d), VRX AVG %.2f MIN %d MAX %d test %s!\n", __func__, idx, ebu->vrx_avg,
-       ebu->vrx_min, ebu->vrx_max, rv_ebu_vrx_result(ebu, ebu_info, ebu_result));
-  info("%s(%d), TRO %.2f TPRS %.2f FPT AVG %.2f MIN %d MAX %d DIFF %d test %s!\n",
-       __func__, idx, ebu_info->tr_offset, ebu_info->trs, ebu->fpt_avg, ebu->fpt_min,
-       ebu->fpt_max, ebu->fpt_max - ebu->fpt_min,
-       rv_ebu_fpt_result(ebu, ebu_info->tr_offset, ebu_result));
-  info("%s(%d), LATENCY AVG %.2f MIN %d MAX %d test %s!\n", __func__, idx,
-       ebu->latency_avg, ebu->latency_min, ebu->latency_max,
-       rv_ebu_latency_result(ebu, ebu_result));
-  info("%s(%d), RTP Offset AVG %.2f MIN %d MAX %d test %s!\n", __func__, idx,
-       ebu->rtp_offset_avg, ebu->rtp_offset_min, ebu->rtp_offset_max,
-       rv_ebu_rtp_offset_result(ebu, ebu_info, ebu_result));
-  info("%s(%d), RTP TS Delta AVG %.2f MIN %d MAX %d test %s!\n", __func__, idx,
-       ebu->rtp_ts_delta_avg, ebu->rtp_ts_delta_min, ebu->rtp_ts_delta_max,
-       rv_ebu_rtp_ts_delta_result(s, ebu, ebu_result));
-  info("%s(%d), Inter-packet time(ns) AVG %.2f MIN %d MAX %d!\n", __func__, idx,
-       ebu->rtp_ipt_avg, ebu->rtp_ipt_min, ebu->rtp_ipt_max);
-
-  if (ebu->compliant) {
-    ebu_result->compliance++;
-    if (ebu->compliant_narrow) ebu_result->compliance_narrow++;
-  }
-}
-
-static void rv_ebu_on_frame(struct st_rx_video_session_impl* s, uint32_t rtp_tmstamp,
-                            uint64_t pkt_tmstamp) {
-  struct st_rx_video_ebu_stat* ebu = &s->ebu;
-  struct st_rx_video_ebu_info* ebu_info = &s->ebu_info;
-  struct st_rx_video_ebu_result* ebu_result = &s->ebu_result;
-  uint64_t epochs = (double)pkt_tmstamp / s->frame_time;
-  uint64_t epoch_tmstamp = (double)epochs * s->frame_time;
-  double fpt_delta = (double)pkt_tmstamp - epoch_tmstamp;
-
-  ebu_info->frame_idx++;
-
-  /* skip first 2 frames */
-  if (ebu_info->frame_idx < 3) return;
-
-  if (ebu_info->frame_idx % ebu_info->result_interval == 0) {
-    ebu_result->ebu_result_num++;
-    rv_ebu_result(s);
-    if (ebu_result->ebu_result_num) {
-      double pass_narrow = rv_ebu_pass_rate(ebu_result, ebu_result->compliance_narrow);
-      double pass_wide = rv_ebu_pass_rate(
-          ebu_result, ebu_result->compliance - ebu_result->compliance_narrow);
-      info("%s(%d), Compliance Rate Narrow %.2f%% Wide %.2f%%, total %d narrow %d\n\n",
-           __func__, s->idx, pass_narrow, pass_wide, ebu_result->ebu_result_num,
-           ebu_result->compliance_narrow);
-    }
-    rv_ebu_clear_result(ebu);
-  }
-
-  ebu_info->cur_epochs = epochs;
-  ebu->vrx_drained_prev = 0;
-  ebu->vrx_prev = 0;
-  ebu->cinst_initial_time = pkt_tmstamp;
-  ebu->prev_rtp_ipt_ts = 0;
-
-  /* calculate fpt */
-  ebu->fpt_sum += fpt_delta;
-  ebu->fpt_min = RTE_MIN(fpt_delta, ebu->fpt_min);
-  ebu->fpt_max = RTE_MAX(fpt_delta, ebu->fpt_max);
-  ebu->fpt_cnt++;
-
-  uint64_t tmstamp64 = epochs * s->frame_time_sampling;
-  uint32_t tmstamp32 = tmstamp64;
-  double diff_rtp_ts = (double)rtp_tmstamp - tmstamp32;
-  double diff_rtp_ts_ns = diff_rtp_ts * s->frame_time / s->frame_time_sampling;
-  double latency = fpt_delta - diff_rtp_ts_ns;
-
-  /* calculate latency */
-  ebu->latency_sum += latency;
-  ebu->latency_min = RTE_MIN(latency, ebu->latency_min);
-  ebu->latency_max = RTE_MAX(latency, ebu->latency_max);
-  ebu->latency_cnt++;
-
-  /* calculate rtp offset */
-  ebu->rtp_offset_sum += diff_rtp_ts;
-  ebu->rtp_offset_min = RTE_MIN(diff_rtp_ts, ebu->rtp_offset_min);
-  ebu->rtp_offset_max = RTE_MAX(diff_rtp_ts, ebu->rtp_offset_max);
-  ebu->rtp_offset_cnt++;
-
-  /* calculate rtp ts delta */
-  if (ebu->prev_rtp_ts) {
-    int rtp_ts_delta = rtp_tmstamp - ebu->prev_rtp_ts;
-
-    ebu->rtp_ts_delta_sum += rtp_ts_delta;
-    ebu->rtp_ts_delta_min = RTE_MIN(rtp_ts_delta, ebu->rtp_ts_delta_min);
-    ebu->rtp_ts_delta_max = RTE_MAX(rtp_ts_delta, ebu->rtp_ts_delta_max);
-    ebu->rtp_ts_delta_cnt++;
-  }
-  ebu->prev_rtp_ts = rtp_tmstamp;
-}
-
-static void rv_ebu_on_packet(struct st_rx_video_session_impl* s, uint32_t rtp_tmstamp,
-                             uint64_t pkt_tmstamp, int pkt_idx) {
-  struct st_rx_video_ebu_stat* ebu = &s->ebu;
-  struct st_rx_video_ebu_info* ebu_info = &s->ebu_info;
-  uint64_t epoch_tmstamp;
-  double tvd, packet_delta_ns, trs = ebu_info->trs;
-
-  if (!ebu_info->init) return;
-
-  if (!pkt_idx) /* start of new frame */
-    rv_ebu_on_frame(s, rtp_tmstamp, pkt_tmstamp);
-
-  if (!ebu_info->cur_epochs) return;
-
-  epoch_tmstamp = (uint64_t)(ebu_info->cur_epochs * s->frame_time);
-  tvd = epoch_tmstamp + ebu_info->tr_offset;
-
-  /* Calculate vrx */
-  packet_delta_ns = (double)pkt_tmstamp - tvd;
-  int32_t drained = (packet_delta_ns + trs) / trs;
-  int32_t vrx_cur = ebu->vrx_prev + 1 - (drained - ebu->vrx_drained_prev);
-
-  ebu->vrx_sum += vrx_cur;
-  ebu->vrx_min = RTE_MIN(vrx_cur, ebu->vrx_min);
-  ebu->vrx_max = RTE_MAX(vrx_cur, ebu->vrx_max);
-  ebu->vrx_cnt++;
-  ebu->vrx_prev = vrx_cur;
-  ebu->vrx_drained_prev = drained;
-
-  /* Calculate C-inst */
-  int exp_cin_pkts =
-      ((pkt_tmstamp - ebu->cinst_initial_time) / trs) * ST_EBU_CINST_DRAIN_FACTOR;
-  int cinst = RTE_MAX(0, pkt_idx - exp_cin_pkts);
-
-  ebu->cinst_sum += cinst;
-  ebu->cinst_min = RTE_MIN(cinst, ebu->cinst_min);
-  ebu->cinst_max = RTE_MAX(cinst, ebu->cinst_max);
-  ebu->cinst_cnt++;
-
-  /* calculate Inter-packet time */
-  if (ebu->prev_rtp_ipt_ts) {
-    double ipt = (double)pkt_tmstamp - ebu->prev_rtp_ipt_ts;
-
-    ebu->rtp_ipt_sum += ipt;
-    ebu->rtp_ipt_min = RTE_MIN(ipt, ebu->rtp_ipt_min);
-    ebu->rtp_ipt_max = RTE_MAX(ipt, ebu->rtp_ipt_max);
-    ebu->rtp_ipt_cnt++;
-  }
-  ebu->prev_rtp_ipt_ts = pkt_tmstamp;
-}
-
-static int rv_ebu_init(struct st_rx_video_session_impl* s) {
-  int idx = s->idx, ret;
-  struct st_rx_video_ebu_info* ebu_info = &s->ebu_info;
-  struct st20_rx_ops* ops = &s->ops;
-  double frame_time = s->frame_time;
-  double frame_time_s;
-  struct st_fps_timing fps_tm;
-
-  rv_ebu_clear_result(&s->ebu);
-
-  ret = st_get_fps_timing(ops->fps, &fps_tm);
-  if (ret < 0) {
-    err("%s(%d), invalid fps %d\n", __func__, idx, ops->fps);
-    return ret;
-  }
-
-  frame_time_s = (double)fps_tm.den / fps_tm.mul;
-
-  int st20_total_pkts = s->detector.pkt_per_frame;
-  info("%s(%d), st20_total_pkts %d\n", __func__, idx, st20_total_pkts);
-  if (!st20_total_pkts) {
-    err("%s(%d), can not get total packets number\n", __func__, idx);
-    return -EINVAL;
-  }
-
-  double reactive = 1080.0 / 1125.0;
-  if (ops->interlaced && ops->height <= 576) {
-    reactive = (ops->height == 480) ? 487.0 / 525.0 : 576.0 / 625.0;
-  }
-
-  ebu_info->result_interval = fps_tm.framerate * 5; /* result every 5s */
-  ebu_info->trs = frame_time * reactive / st20_total_pkts;
-  if (!ops->interlaced) {
-    ebu_info->tr_offset =
-        ops->height >= 1080 ? frame_time * (43.0 / 1125.0) : frame_time * (28.0 / 750.0);
-  } else {
-    if (ops->height == 480) {
-      ebu_info->tr_offset = frame_time * (20.0 / 525.0) * 2;
-    } else if (ops->height == 576) {
-      ebu_info->tr_offset = frame_time * (26.0 / 625.0) * 2;
-    } else {
-      ebu_info->tr_offset = frame_time * (22.0 / 1125.0) * 2;
-    }
-  }
-
-  ebu_info->c_max_narrow_pass =
-      RTE_MAX(4, (double)st20_total_pkts / (43200 * reactive * frame_time_s));
-  ebu_info->c_max_wide_pass =
-      RTE_MAX(16, (double)st20_total_pkts / (21600 * frame_time_s));
-
-  ebu_info->vrx_full_narrow_pass = RTE_MAX(8, st20_total_pkts / (27000 * frame_time_s));
-  ebu_info->vrx_full_wide_pass = RTE_MAX(720, st20_total_pkts / (300 * frame_time_s));
-
-  ebu_info->rtp_offset_max_pass =
-      ceil((ebu_info->tr_offset / NS_PER_S) * fps_tm.sampling_clock_rate) + 1;
-
-  info("%s[%02d], trs %f tr offset %f sampling %f\n", __func__, idx, ebu_info->trs,
-       ebu_info->tr_offset, s->frame_time_sampling);
-  info(
-      "%s[%02d], cmax_narrow %d cmax_wide %d vrx_full_narrow %d vrx_full_wide %d "
-      "rtp_offset_max %d\n",
-      __func__, idx, ebu_info->c_max_narrow_pass, ebu_info->c_max_wide_pass,
-      ebu_info->vrx_full_narrow_pass, ebu_info->vrx_full_wide_pass,
-      ebu_info->rtp_offset_max_pass);
-  ebu_info->init = true;
-  return 0;
 }
 
 static int rv_detector_init(struct st_rx_video_session_impl* s) {
@@ -1110,6 +712,12 @@ static void rv_frame_notify(struct st_rx_video_session_impl* s,
   struct st20_rx_ops* ops = &s->ops;
   struct st20_rx_frame_meta* meta = &slot->meta;
 
+  if (s->ebu) {
+    /* todo: share the ebu data to st20_rx_frame_meta */
+    struct st_rv_ebu_slot* ebu_slot = &s->ebu->slots[slot->idx];
+    rv_ebu_slot_parse_result(s, ebu_slot);
+  }
+
   dbg("%s(%d), start\n", __func__, s->idx);
   meta->width = ops->width;
   meta->height = ops->height;
@@ -1124,7 +732,7 @@ static void rv_frame_notify(struct st_rx_video_session_impl* s,
   double fpt_delta = (double)meta->timestamp_first_pkt - epoch_tmstamp;
   dbg("%s(%d): fpt_delta %f\n", __func__, s->idx, fpt_delta);
   meta->fpt = fpt_delta;
-  meta->timestamp_last_pkt = mtl_ptp_read_time(s->parent->parent);
+  meta->timestamp_last_pkt = mtl_ptp_read_time(rv_get_impl(s));
   meta->second_field = slot->second_field;
   meta->frame_total_size = s->st20_frame_size;
   meta->uframe_total_size = s->st20_uframe_size;
@@ -1370,6 +978,8 @@ static struct st_rx_video_slot_impl* rv_slot_by_tmstamp(
   slot->pkts_recv_per_port[MTL_SESSION_PORT_R] = 0;
   s->slot_idx = slot_idx;
 
+  if (s->ebu) rv_ebu_slot_init(&s->ebu->slots[slot_idx]);
+
   struct st_frame_trans* frame_info = rv_get_frame(s);
   if (!frame_info) {
     s->stat_slot_get_frame_fail++;
@@ -1405,7 +1015,7 @@ static struct st_rx_video_slot_impl* rv_slot_by_tmstamp(
   }
   frame_info->user_meta_data_size = 0;
   slot->frame = frame_info;
-  slot->timestamp_first_pkt = mtl_ptp_read_time(s->parent->parent);
+  slot->timestamp_first_pkt = mtl_ptp_read_time(rv_get_impl(s));
 
   s->dma_slot = slot;
 
@@ -1655,7 +1265,7 @@ static int rv_dump_pcapng(struct mtl_main_impl* impl, struct st_rx_video_session
   for (uint16_t i = 0; i < rv; i++) {
     struct rte_mbuf* mc;
     uint64_t timestamp_cycle, timestamp_ns;
-    if (mt_user_ebu_active(impl) && inf->feature & MT_IF_FEATURE_RX_OFFLOAD_TIMESTAMP) {
+    if (inf->feature & MT_IF_FEATURE_RX_OFFLOAD_TIMESTAMP) {
       timestamp_cycle = 0;
       timestamp_ns = mt_mbuf_hw_time_stamp(impl, mbuf[i], port);
     } else {
@@ -1895,18 +1505,23 @@ static int rv_handle_frame_pkt(struct st_rx_video_session_impl* s, struct rte_mb
   bool dma_copy = false;
   bool need_copy = true;
   struct mtl_dma_lender_dev* dma_dev = s->dma_dev;
-  struct mtl_main_impl* impl = rv_get_impl(s);
-  bool ebu = mt_user_ebu_active(impl);
-  if (ebu) {
-    /* no copy for ebu */
-    need_copy = false;
+
+  /* if ebu */
+  if (s->ebu) {
+    struct mtl_main_impl* impl = rv_get_impl(s);
     enum mtl_port port = mt_port_logic2phy(s->port_maps, s_port);
     struct mt_interface* inf = mt_if(impl, port);
-    if ((inf->feature & MT_IF_FEATURE_RX_OFFLOAD_TIMESTAMP) &&
-        mt_ptp_is_connected(impl, port)) {
-      rv_ebu_on_packet(s, tmstamp, mt_mbuf_hw_time_stamp(impl, mbuf, port), pkt_idx);
+    if (mt_ptp_is_connected(impl, port)) {
+      uint64_t pkt_ns;
+      if (inf->feature & MT_IF_FEATURE_RX_OFFLOAD_TIMESTAMP)
+        pkt_ns = mt_mbuf_hw_time_stamp(impl, mbuf, port);
+      else
+        pkt_ns = mt_ptp_internal_time(impl, port);
+      struct st_rv_ebu_slot* ebu_slot = &s->ebu->slots[slot->idx];
+      rv_ebu_on_packet(s, ebu_slot, tmstamp, pkt_ns, pkt_idx);
     }
   }
+
   if (s->st20_uframe_size) {
     /* user frame mode, pass to app to handle the payload */
     struct st20_rx_uframe_pg_meta* pg_meta = &s->pg_meta;
@@ -2585,6 +2200,7 @@ static int rv_uinit_st22(struct st_rx_video_session_impl* s) {
 }
 
 static int rv_uinit_sw(struct mtl_main_impl* impl, struct st_rx_video_session_impl* s) {
+  rv_ebu_uinit(s);
   rv_uinit_pkt_lcore(impl, s);
   rv_free_dma(impl, s);
   rv_uinit_slot(s);
@@ -2698,8 +2314,13 @@ static int rv_init_sw(struct mtl_main_impl* impl, struct st_rx_video_sessions_mg
     s->slot_max = ST_VIDEO_RX_REC_NUM_OFO;
   }
 
-  if (mt_user_ebu_active(impl)) {
-    rv_ebu_init(s);
+  if (s->enable_ebu) {
+    ret = rv_ebu_init(impl, s);
+    if (ret < 0) {
+      err("%s(%d), ebu init fail %d\n", __func__, idx, ret);
+      rv_uinit_sw(impl, s);
+      return ret;
+    }
   }
 
   /* init vsync */
@@ -3321,6 +2942,10 @@ static int rv_attach(struct mtl_main_impl* impl, struct st_rx_video_sessions_mgr
   s->dma_busy_score = 0;
   s->st22_expect_frame_size = 0;
   s->burst_loss_cnt = 0;
+  if (mt_user_ebu_active(impl))
+    s->enable_ebu = true;
+  else
+    s->enable_ebu = false;
 
   ret = rv_init_hw(impl, s);
   if (ret < 0) {
@@ -3329,7 +2954,7 @@ static int rv_attach(struct mtl_main_impl* impl, struct st_rx_video_sessions_mgr
   }
 
   if (st20_is_frame_type(ops->type) && (!st22_ops) &&
-      ((ops->flags & ST20_RX_FLAG_AUTO_DETECT) || mt_user_ebu_active(impl))) {
+      ((ops->flags & ST20_RX_FLAG_AUTO_DETECT) || s->enable_ebu)) {
     /* init sw after detected */
     ret = rv_detector_init(s);
     if (ret < 0) {
@@ -3646,6 +3271,7 @@ static void rv_stat(struct st_rx_video_sessions_mgr* mgr,
            s->stat_pkts_retransmit);
     s->stat_pkts_retransmit = 0;
   }
+  if (s->ebu) rv_ebu_stat(s);
 }
 
 static int rvs_ctl_tasklet_start(void* priv) {
@@ -3669,7 +3295,6 @@ static int rvs_ctl_tasklet_start(void* priv) {
 static int rv_detach(struct mtl_main_impl* impl, struct st_rx_video_sessions_mgr* mgr,
                      struct st_rx_video_session_impl* s) {
   s->attached = false;
-  if (mt_user_ebu_active(mgr->parent)) rv_ebu_final_result(s);
   rv_stat(mgr, s);
   rv_uinit_mcast(impl, s);
   rv_uinit_rtcp(s);

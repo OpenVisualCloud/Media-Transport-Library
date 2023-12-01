@@ -447,102 +447,6 @@ struct st_rx_video_slot_impl {
   int last_pkt_idx;
 };
 
-struct st_rx_video_ebu_info {
-  double trs;       /* in ns for of 2 consecutive packets, T-Frame / N-Packets */
-  double tr_offset; /* in ns, tr offset time of each frame */
-
-  // pass criteria
-  uint32_t c_max_narrow_pass;
-  uint32_t c_max_wide_pass;
-  uint32_t vrx_full_narrow_pass;
-  uint32_t vrx_full_wide_pass;
-  int32_t rtp_offset_max_pass;
-
-  bool init;
-  uint64_t cur_epochs; /* epoch of current frame */
-  int frame_idx;
-  int result_interval;
-};
-
-struct st_rx_video_ebu_stat {
-  bool compliant;
-  bool compliant_narrow;
-
-  /* Cinst, packet level check */
-  uint64_t cinst_initial_time;
-  int32_t cinst_max;
-  int32_t cinst_min;
-  uint32_t cinst_cnt;
-  int64_t cinst_sum;
-  float cinst_avg;
-
-  /* vrx, packet level check */
-  int32_t vrx_drained_prev;
-  int32_t vrx_prev;
-  int32_t vrx_max;
-  int32_t vrx_min;
-  uint32_t vrx_cnt;
-  int64_t vrx_sum;
-  float vrx_avg;
-
-  /* fpt(first packet timestamp), frame level check, pass criteria < TR_OFFSET */
-  int32_t fpt_max;
-  int32_t fpt_min;
-  uint32_t fpt_cnt;
-  int64_t fpt_sum;
-  float fpt_avg;
-
-  /* latency(== fpt), frame level check */
-  int32_t latency_max;
-  int32_t latency_min;
-  uint32_t latency_cnt;
-  int64_t latency_sum;
-  float latency_avg;
-
-  /* rtp offset, frame level check */
-  int32_t rtp_offset_max;
-  int32_t rtp_offset_min;
-  uint32_t rtp_offset_cnt;
-  int64_t rtp_offset_sum;
-  float rtp_offset_avg;
-
-  /* Inter-frame RTP TS Delta, frame level check */
-  uint32_t prev_rtp_ts;
-  int32_t rtp_ts_delta_max;
-  int32_t rtp_ts_delta_min;
-  uint32_t rtp_ts_delta_cnt;
-  int64_t rtp_ts_delta_sum;
-  float rtp_ts_delta_avg;
-
-  /* Inter-packet time(ns), packet level check */
-  uint64_t prev_rtp_ipt_ts;
-  int32_t rtp_ipt_max;
-  int32_t rtp_ipt_min;
-  uint32_t rtp_ipt_cnt;
-  int64_t rtp_ipt_sum;
-  float rtp_ipt_avg;
-};
-
-struct st_rx_video_ebu_result {
-  int ebu_result_num;
-  int cinst_pass_narrow;
-  int cinst_pass_wide;
-  int cinst_fail;
-  int vrx_pass_narrow;
-  int vrx_pass_wide;
-  int vrx_fail;
-  int latency_pass;
-  int latency_fail;
-  int rtp_offset_pass;
-  int rtp_offset_fail;
-  int rtp_ts_delta_pass;
-  int rtp_ts_delta_fail;
-  int fpt_pass;
-  int fpt_fail;
-  int compliance;
-  int compliance_narrow;
-};
-
 enum st20_detect_status {
   ST20_DETECT_STAT_DISABLED = 0,
   ST20_DETECT_STAT_DETECTING,
@@ -592,6 +496,94 @@ struct st_rx_session_priv {
   void* session;
   struct mtl_main_impl* impl;
   enum mtl_session_port s_port;
+};
+
+enum st_rv_ebu_compliant {
+  ST_RV_EBU_COMPLIANT_FAILED = 0,
+  ST_RV_EBU_COMPLIANT_WIDE,
+  ST_RV_EBU_COMPLIANT_NARROW,
+  ST_RV_EBU_COMPLIANT_MAX,
+};
+
+struct st_rv_ebu_slot {
+  /* epoch of current slot */
+  uint64_t cur_epochs;
+  /* result(packet) cnt in current slot */
+  uint32_t pkt_cnt;
+
+  uint32_t rtp_tmstamp;
+  uint64_t first_pkt_time; /* ns */
+  uint64_t prev_pkt_time;  /* ns */
+  /* fpt(first packet time) against the epoch, pass criteria < TR_OFFSET */
+  int32_t fpt_to_epoch; /* ns */
+  int32_t latency;      /* ns */
+  int32_t rtp_offset;   /* ticks */
+  int32_t rtp_ts_delta; /* ticks */
+
+  /* latency */
+  // int32_t latency;
+  /* rtp offset */
+  // int32_t rtp_offset;
+
+  /* Cinst, packet level check */
+  int32_t cinst_max;
+  int32_t cinst_min;
+  int64_t cinst_sum;
+  float cinst_avg;
+  /* vrx, packet level check */
+  int32_t vrx_drained_prev;
+  int32_t vrx_prev;
+  int32_t vrx_max;
+  int32_t vrx_min;
+  int64_t vrx_sum;
+  float vrx_avg;
+  /* Inter-packet time(ns), packet level check */
+  int32_t ipt_max;
+  int32_t ipt_min;
+  int64_t ipt_sum;
+  float ipt_avg;
+
+  enum st_rv_ebu_compliant compliant;
+};
+
+struct st_rv_ebu_stat {
+  /* for the status */
+  struct st_rv_ebu_slot slot;
+  uint32_t stat_frame_cnt;
+
+  int32_t stat_fpt_min;
+  int32_t stat_fpt_max;
+  float stat_fpt_sum;
+  int32_t stat_latency_min;
+  int32_t stat_latency_max;
+  float stat_latency_sum;
+  int32_t stat_rtp_offset_min;
+  int32_t stat_rtp_offset_max;
+  float stat_rtp_offset_sum;
+  int32_t stat_rtp_ts_delta_min;
+  int32_t stat_rtp_ts_delta_max;
+  float stat_rtp_ts_delta_sum;
+  uint32_t stat_compliant_result[ST_RV_EBU_COMPLIANT_MAX];
+};
+
+struct st_rx_video_ebu {
+  /* in ns for of 2 consecutive packets, T-Frame / N-Packets */
+  double trs;
+  /* in ns, tr offset time of each frame */
+  double tr_offset;
+  /* pass criteria */
+  uint32_t c_max_narrow_pass;
+  uint32_t c_max_wide_pass;
+  uint32_t vrx_full_narrow_pass;
+  uint32_t vrx_full_wide_pass;
+  int32_t rtp_offset_max_pass;
+
+  /* ebu timing info for each slot */
+  struct st_rv_ebu_slot slots[ST_VIDEO_RX_REC_NUM_OFO];
+  uint32_t pre_rtp_tmstamp;
+
+  /* for the status */
+  struct st_rv_ebu_stat stat;
 };
 
 struct st_rx_video_session_impl {
@@ -697,6 +689,13 @@ struct st_rx_video_session_impl {
   /* use atomic safe? */
   struct st20_rx_port_status port_user_stats[MTL_SESSION_PORT_MAX];
 
+  int (*pkt_handler)(struct st_rx_video_session_impl* s, struct rte_mbuf* mbuf,
+                     enum mtl_session_port s_port, bool ctrl_thread);
+
+  /* if enable the ebu parser for the st2110-21 timing */
+  bool enable_ebu;
+  struct st_rx_video_ebu* ebu;
+
   /* status */
   int stat_pkts_idx_dropped;
   int stat_pkts_idx_oo_bitmap;
@@ -731,13 +730,6 @@ struct st_rx_video_session_impl {
   uint32_t stat_slot_query_ext_fail;
   uint64_t stat_bytes_received;
   uint32_t stat_max_notify_frame_us;
-
-  struct st_rx_video_ebu_info ebu_info;
-  struct st_rx_video_ebu_stat ebu;
-  struct st_rx_video_ebu_result ebu_result;
-
-  int (*pkt_handler)(struct st_rx_video_session_impl* s, struct rte_mbuf* mbuf,
-                     enum mtl_session_port s_port, bool ctrl_thread);
 };
 
 struct st_rx_video_sessions_mgr {
