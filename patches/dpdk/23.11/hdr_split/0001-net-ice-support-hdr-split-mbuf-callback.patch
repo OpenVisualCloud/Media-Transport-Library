@@ -1,4 +1,4 @@
-From 68c3010b0e15bf8d0fdeba5b8880b9f5ff2d47cd Mon Sep 17 00:00:00 2001
+From 15065952c478c0f3e8d696f43b39a69c9ee87234 Mon Sep 17 00:00:00 2001
 From: Ric Li <ming3.li@intel.com>
 Date: Thu, 30 Nov 2023 16:04:59 +0800
 Subject: [PATCH] net/ice: support hdr split mbuf callback
@@ -11,11 +11,11 @@ Signed-off-by: Ric Li <ming3.li@intel.com>
  lib/ethdev/ethdev_driver.h   |  6 +++++
  lib/ethdev/rte_ethdev.c      | 14 +++++++++++
  lib/ethdev/rte_ethdev.h      | 14 +++++++++++
- lib/ethdev/version.map       |  3 +++
- 7 files changed, 89 insertions(+)
+ lib/ethdev/version.map       |  1 +
+ 7 files changed, 87 insertions(+)
 
 diff --git a/drivers/net/ice/ice_ethdev.c b/drivers/net/ice/ice_ethdev.c
-index 3ccba4db80..6af8391e3c 100644
+index 625c4564eb..86fee757de 100644
 --- a/drivers/net/ice/ice_ethdev.c
 +++ b/drivers/net/ice/ice_ethdev.c
 @@ -294,6 +294,7 @@ static const struct eth_dev_ops ice_eth_dev_ops = {
@@ -27,7 +27,7 @@ index 3ccba4db80..6af8391e3c 100644
  };
  
 diff --git a/drivers/net/ice/ice_rxtx.c b/drivers/net/ice/ice_rxtx.c
-index 73e47ae92d..6aec352ddd 100644
+index 91a86a132f..c934237404 100644
 --- a/drivers/net/ice/ice_rxtx.c
 +++ b/drivers/net/ice/ice_rxtx.c
 @@ -487,6 +487,14 @@ ice_alloc_rx_queue_mbufs(struct ice_rx_queue *rxq)
@@ -103,7 +103,7 @@ index 73e47ae92d..6aec352ddd 100644
 +}
 \ No newline at end of file
 diff --git a/drivers/net/ice/ice_rxtx.h b/drivers/net/ice/ice_rxtx.h
-index bd2c4abec9..e71cc527e0 100644
+index 0f394b0dd3..6aec0e28f6 100644
 --- a/drivers/net/ice/ice_rxtx.h
 +++ b/drivers/net/ice/ice_rxtx.h
 @@ -123,6 +123,9 @@ struct ice_rx_queue {
@@ -200,19 +200,17 @@ index 77331ce652..88c11aae14 100644
   * @warning
   * @b EXPERIMENTAL: this API may change, or be removed, without prior notice
 diff --git a/lib/ethdev/version.map b/lib/ethdev/version.map
-index 5c4917c020..3f65e0361e 100644
+index 5c4917c020..6e37524c42 100644
 --- a/lib/ethdev/version.map
 +++ b/lib/ethdev/version.map
-@@ -278,6 +278,9 @@ EXPERIMENTAL {
- 	rte_mtr_color_in_protocol_set;
- 	rte_mtr_meter_vlan_table_update;
+@@ -313,6 +313,7 @@ EXPERIMENTAL {
  
-+	# added for kahawai header split
+ 	# added in 23.11
+ 	rte_eth_dev_rss_algo_name;
 +	rte_eth_hdrs_set_mbuf_callback;
-+
- 	# added in 22.11
- 	rte_eth_buffer_split_get_supported_hdr_ptypes;
- 	rte_eth_cman_config_get;
+ 	rte_eth_recycle_rx_queue_info_get;
+ 	rte_flow_group_set_miss_actions;
+ 	rte_flow_calc_table_hash;
 -- 
 2.34.1
 
