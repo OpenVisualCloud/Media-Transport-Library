@@ -1266,7 +1266,7 @@ static int rv_dump_pcapng(struct mtl_main_impl* impl, struct st_rx_video_session
     uint64_t timestamp_cycle = 0, timestamp_ns = 0;
 #if RTE_VERSION < RTE_VERSION_NUM(23, 11, 0, 0) /* dpdk 23.11 uses internal time */
     struct mt_interface* inf = mt_if(impl, port);
-    if (mt_has_ebu(impl) && inf->feature & MT_IF_FEATURE_RX_OFFLOAD_TIMESTAMP)
+    if (inf->feature & MT_IF_FEATURE_RX_OFFLOAD_TIMESTAMP)
       timestamp_ns = mt_mbuf_hw_time_stamp(impl, mbuf[i], port);
     else
       timestamp_cycle = rte_get_tsc_cycles();
