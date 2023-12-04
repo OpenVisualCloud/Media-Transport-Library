@@ -940,7 +940,8 @@ static ssize_t udp_rx_dequeue(struct mudp_impl* s, void* buf, size_t len, int fl
   return copied;
 }
 
-static ssize_t udp_rx_ret_timeout(struct mudp_impl* s) {
+static ssize_t udp_rx_ret_timeout(struct mudp_impl* s, int flags) {
+  MTL_MAY_UNUSED(flags);
   if (s->rx_timeout_us) {
     dbg("%s(%d), timeout to %d ms, flags %d\n", __func__, s->idx, s->rx_timeout_us,
         flags);
@@ -981,7 +982,7 @@ dequeue:
     goto dequeue;
   }
 
-  return udp_rx_ret_timeout(s);
+  return udp_rx_ret_timeout(s, flags);
 }
 
 static ssize_t udp_rx_msg_dequeue(struct mudp_impl* s, struct msghdr* msg, int flags) {
@@ -1081,7 +1082,7 @@ dequeue:
   }
 
   s->stat_rx_msg_timeout_cnt++;
-  return udp_rx_ret_timeout(s);
+  return udp_rx_ret_timeout(s, flags);
 }
 
 static int udp_fallback_poll(struct mudp_pollfd* fds, mudp_nfds_t nfds, int timeout) {

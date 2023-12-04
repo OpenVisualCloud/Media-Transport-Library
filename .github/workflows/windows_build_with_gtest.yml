@@ -19,7 +19,7 @@ concurrency:
 env:
   # Customize the env if
   BUILD_TYPE: Release
-  DPDK_VERSION: 23.07
+  DPDK_VERSION: 23.11
   TEST_PORT_P: 0000:af:00.0
   TEST_PORT_R: 0000:af:00.1
   MSYSTEM: UCRT64

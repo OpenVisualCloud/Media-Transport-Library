@@ -17,7 +17,7 @@ jobs:
       matrix:
         sys:
           - mingw64
-        dpdk: [23.07]
+        dpdk: [23.11]
     defaults:
       run:
         shell: msys2 {0}

@@ -153,7 +153,7 @@ static uint32_t rsq_flow_hash(struct mt_rxq_flow* flow) {
                             flow->sip_addr[3]);
   tuple.dport = flow->dst_port;
   tuple.sport = tuple.dport;
-  return mt_dev_softrss((uint32_t*)&tuple, len);
+  return mt_softrss((uint32_t*)&tuple, len);
 }
 
 struct mt_rsq_entry* mt_rsq_get(struct mtl_main_impl* impl, enum mtl_port port,
@@ -480,7 +480,7 @@ static uint32_t tsq_flow_hash(struct mt_txq_flow* flow) {
   tuple.dst_addr = tuple.src_addr;
   tuple.sport = flow->dst_port;
   tuple.dport = flow->dst_port;
-  return mt_dev_softrss((uint32_t*)&tuple, len);
+  return mt_softrss((uint32_t*)&tuple, len);
 }
 
 struct mt_tsq_entry* mt_tsq_get(struct mtl_main_impl* impl, enum mtl_port port,

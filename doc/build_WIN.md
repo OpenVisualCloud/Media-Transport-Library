@@ -60,7 +60,7 @@ export imtl_source_code=${PWD}/Media-Transport-Library
 * Convert symlink patch files to real file:
 
 ```bash
-cd $imtl_source_code/patches/dpdk/23.07
+cd $imtl_source_code/patches/dpdk/23.11
 ls *.patch | xargs -I{} bash -c 'if [[ $(sed -n '1p' "{}") =~ ^../.*\.patch$ ]]; then cp "$(cat "{}")" "{}"; fi'
 cd windows
 ls *.patch | xargs -I{} bash -c 'if [[ $(sed -n '1p' "{}") =~ ^../.*\.patch$ ]]; then cp "$(cat "{}")" "{}"; fi'
@@ -72,13 +72,13 @@ ls *.patch | xargs -I{} bash -c 'if [[ $(sed -n '1p' "{}") =~ ^../.*\.patch$ ]];
 cd $imtl_source_code
 git clone https://github.com/DPDK/dpdk.git
 cd dpdk
-git checkout v23.07
-git switch -c v23.07
+git checkout v23.11
+git switch -c v23.11
 
 git config user.name "Your Name"        # config if not
 git config user.email "you@example.com" # config if not
-git am $imtl_source_code/patches/dpdk/23.07/*.patch
-git am $imtl_source_code/patches/dpdk/23.07/windows/*.patch
+git am $imtl_source_code/patches/dpdk/23.11/*.patch
+git am $imtl_source_code/patches/dpdk/23.11/windows/*.patch
 ```
 
 * Build and install DPDK:

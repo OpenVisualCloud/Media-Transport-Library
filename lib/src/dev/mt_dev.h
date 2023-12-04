@@ -68,8 +68,6 @@ int mt_dev_if_pre_uinit(struct mtl_main_impl* impl);
 
 int mt_dev_tsc_done_action(struct mtl_main_impl* impl);
 
-uint32_t mt_dev_softrss(uint32_t* input_tuple, uint32_t input_len);
-
 uint16_t mt_dev_rss_hash_queue(struct mtl_main_impl* impl, enum mtl_port port,
                                uint32_t hash);
 

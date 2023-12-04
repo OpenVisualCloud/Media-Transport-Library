@@ -822,17 +822,6 @@ static const struct rte_eth_conf dev_port_conf = {.txmode = {
                                                       .offloads = 0,
                                                   }};
 
-#define MT_HASH_KEY_LENGTH (40)
-// clang-format off
-static uint8_t mt_rss_hash_key[MT_HASH_KEY_LENGTH] = {
-  0x6d, 0x5a, 0x56, 0xda, 0x25, 0x5b, 0x0e, 0xc2,
-  0x41, 0x67, 0x25, 0x3d, 0x43, 0xa3, 0x8f, 0xb0,
-  0xd0, 0xca, 0x2b, 0xcb, 0xae, 0x7b, 0x30, 0xb4,
-  0x77, 0xcb, 0x2d, 0xa3, 0x80, 0x30, 0xf2, 0x0c,
-  0x6a, 0x42, 0xb7, 0x3b, 0xbe, 0xac, 0x01, 0xfa,
-};
-// clang-format on
-
 /* 1:1 map with hash % reta_size % nb_rx_q */
 static int dev_config_rss_reta(struct mt_interface* inf) {
   enum mtl_port port = inf->port;
@@ -906,8 +895,7 @@ static int dev_config_port(struct mt_interface* inf) {
     struct rte_eth_rss_conf* rss_conf;
     rss_conf = &port_conf.rx_adv_conf.rss_conf;
 
-    rss_conf->rss_key = mt_rss_hash_key;
-    rss_conf->rss_key_len = MT_HASH_KEY_LENGTH;
+    rss_conf->rss_key = NULL;
     if (inf->rss_mode == MTL_RSS_MODE_L3) {
       rss_conf->rss_hf = RTE_ETH_RSS_IPV4;
     } else if (inf->rss_mode == MTL_RSS_MODE_L3_L4) {
@@ -2360,10 +2348,6 @@ int mt_dev_if_pre_uinit(struct mtl_main_impl* impl) {
   }
 
   return 0;
-}
-
-uint32_t mt_dev_softrss(uint32_t* input_tuple, uint32_t input_len) {
-  return rte_softrss(input_tuple, input_len, mt_rss_hash_key);
 }
 
 /* map with dev_config_rss_reta */

@@ -12,7 +12,7 @@ on:
 
 env:
   # Customize the env if
-  DPDK_VERSION: 23.07
+  DPDK_VERSION: 23.11
 
 permissions:
   contents: read

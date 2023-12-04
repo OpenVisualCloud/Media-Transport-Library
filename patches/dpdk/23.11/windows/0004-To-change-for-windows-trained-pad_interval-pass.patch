@@ -1,0 +1,31 @@
+From bf49dcf6561ed295eafa396b965cdc17b94b9e53 Mon Sep 17 00:00:00 2001
+From: Ric Li <ming3.li@intel.com>
+Date: Thu, 30 Nov 2023 13:09:45 +0800
+Subject: [PATCH] To change for windows trained pad_interval pass
+
+Signed-off-by: Ric Li <ming3.li@intel.com>
+---
+ lib/eal/common/eal_common_thread.c | 2 ++
+ 1 file changed, 2 insertions(+)
+
+diff --git a/lib/eal/common/eal_common_thread.c b/lib/eal/common/eal_common_thread.c
+index c422ea8b53..e9293c56f0 100644
+--- a/lib/eal/common/eal_common_thread.c
++++ b/lib/eal/common/eal_common_thread.c
+@@ -257,12 +257,14 @@ static int control_thread_init(void *arg)
+ 	 * as control threads may be scheduled on any NUMA node.
+ 	 */
+ 	RTE_PER_LCORE(_socket_id) = SOCKET_ID_ANY;
++#ifndef RTE_EXEC_ENV_WINDOWS
+ 	params->ret = rte_thread_set_affinity_by_id(rte_thread_self(), cpuset);
+ 	if (params->ret != 0) {
+ 		rte_atomic_store_explicit(&params->status,
+ 			CTRL_THREAD_ERROR, rte_memory_order_release);
+ 		return 1;
+ 	}
++#endif
+ 
+ 	rte_atomic_store_explicit(&params->status,
+ 		CTRL_THREAD_RUNNING, rte_memory_order_release);
+-- 
+2.34.1

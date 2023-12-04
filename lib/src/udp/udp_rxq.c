@@ -92,7 +92,7 @@ static uint16_t urq_rx_handle(struct mur_queue* q, struct rte_mbuf** pkts,
     /* hash with ip and port of both src and dst */
     uint32_t tuple[3];
     rte_memcpy(tuple, &hdr->ipv4.src_addr, sizeof(tuple));
-    uint32_t hash = mt_dev_softrss(tuple, 3);
+    uint32_t hash = mt_softrss(tuple, 3);
     int c_idx = hash % clients;
 
     if (c_idx != last_c_idx) {

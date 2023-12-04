@@ -400,7 +400,11 @@ struct rte_mbuf* mt_pcapng_copy(struct mtl_main_impl* impl, enum mtl_port port,
   uint16_t port_id = mt_port_id(impl, port);
   uint32_t queue_id = mt_rxq_queue_id(rxq);
 
-#if RTE_VERSION >= RTE_VERSION_NUM(23, 3, 0, 0)
+#if RTE_VERSION >= RTE_VERSION_NUM(23, 11, 0, 0)
+  MTL_MAY_UNUSED(timestamp);
+  MTL_MAY_UNUSED(tm_ns);
+  mc = rte_pcapng_copy(port_id, queue_id, m, mp, length, direction, NULL);
+#elif RTE_VERSION >= RTE_VERSION_NUM(23, 3, 0, 0)
   mc = rte_pcapng_copy(port_id, queue_id, m, mp, length, timestamp, tm_ns, direction,
                        NULL);
 #else
@@ -1009,4 +1013,19 @@ int mt_sysfs_write_uint32(const char* path, uint32_t value) {
 
   close(fd);
   return ret;
+}
+
+#define MT_HASH_KEY_LENGTH (40)
+// clang-format off
+static uint8_t mt_rss_hash_key[MT_HASH_KEY_LENGTH] = {
+  0x6d, 0x5a, 0x56, 0xda, 0x25, 0x5b, 0x0e, 0xc2,
+  0x41, 0x67, 0x25, 0x3d, 0x43, 0xa3, 0x8f, 0xb0,
+  0xd0, 0xca, 0x2b, 0xcb, 0xae, 0x7b, 0x30, 0xb4,
+  0x77, 0xcb, 0x2d, 0xa3, 0x80, 0x30, 0xf2, 0x0c,
+  0x6a, 0x42, 0xb7, 0x3b, 0xbe, 0xac, 0x01, 0xfa,
+};
+// clang-format on
+
+uint32_t mt_softrss(uint32_t* input_tuple, uint32_t input_len) {
+  return rte_softrss(input_tuple, input_len, mt_rss_hash_key);
 }
