@@ -1,0 +1,86 @@
+From 83294aeac1d4779d8a8a7dceaf67f2b5d7dba1b8 Mon Sep 17 00:00:00 2001
+From: Ric Li <ming3.li@intel.com>
+Date: Mon, 4 Dec 2023 13:26:31 +0800
+Subject: [PATCH] Use alarm to workaround vf uio no intr issue
+
+---
+ drivers/net/iavf/iavf_ethdev.c | 26 ++------------------------
+ drivers/net/iavf/iavf_vchnl.c  | 11 +++--------
+ 2 files changed, 5 insertions(+), 32 deletions(-)
+
+diff --git a/drivers/net/iavf/iavf_ethdev.c b/drivers/net/iavf/iavf_ethdev.c
+index 6efd789d81..ec03af56be 100644
+--- a/drivers/net/iavf/iavf_ethdev.c
++++ b/drivers/net/iavf/iavf_ethdev.c
+@@ -2678,7 +2678,6 @@ iavf_dev_init(struct rte_eth_dev *eth_dev)
+ 	struct iavf_adapter *adapter =
+ 		IAVF_DEV_PRIVATE_TO_ADAPTER(eth_dev->data->dev_private);
+ 	struct iavf_hw *hw = IAVF_DEV_PRIVATE_TO_HW(adapter);
+-	struct iavf_info *vf = IAVF_DEV_PRIVATE_TO_VF(adapter);
+ 	struct rte_pci_device *pci_dev = RTE_ETH_DEV_TO_PCI(eth_dev);
+ 	int ret = 0;
+ 
+@@ -2746,19 +2745,7 @@ iavf_dev_init(struct rte_eth_dev *eth_dev)
+ 	rte_ether_addr_copy((struct rte_ether_addr *)hw->mac.addr,
+ 			&eth_dev->data->mac_addrs[0]);
+ 
+-
+-	if (vf->vf_res->vf_cap_flags & VIRTCHNL_VF_OFFLOAD_WB_ON_ITR) {
+-		/* register callback func to eal lib */
+-		rte_intr_callback_register(pci_dev->intr_handle,
+-					   iavf_dev_interrupt_handler,
+-					   (void *)eth_dev);
+-
+-		/* enable uio intr after callback register */
+-		rte_intr_enable(pci_dev->intr_handle);
+-	} else {
+-		rte_eal_alarm_set(IAVF_ALARM_INTERVAL,
+-				  iavf_dev_alarm_handler, eth_dev);
+-	}
++	rte_eal_alarm_set(IAVF_ALARM_INTERVAL, iavf_dev_alarm_handler, eth_dev);
+ 
+ 	/* configure and enable device interrupt */
+ 	iavf_enable_irq0(hw);
+@@ -2803,16 +2790,7 @@ iavf_dev_init(struct rte_eth_dev *eth_dev)
+ flow_init_err:
+ 	iavf_disable_irq0(hw);
+ 
+-	if (vf->vf_res->vf_cap_flags & VIRTCHNL_VF_OFFLOAD_WB_ON_ITR) {
+-		/* disable uio intr before callback unregiser */
+-		rte_intr_disable(pci_dev->intr_handle);
+-
+-		/* unregister callback func from eal lib */
+-		rte_intr_callback_unregister(pci_dev->intr_handle,
+-					     iavf_dev_interrupt_handler, eth_dev);
+-	} else {
+-		rte_eal_alarm_cancel(iavf_dev_alarm_handler, eth_dev);
+-	}
++	rte_eal_alarm_cancel(iavf_dev_alarm_handler, eth_dev);
+ 
+ 	rte_free(eth_dev->data->mac_addrs);
+ 	eth_dev->data->mac_addrs = NULL;
+diff --git a/drivers/net/iavf/iavf_vchnl.c b/drivers/net/iavf/iavf_vchnl.c
+index 0a3e1d082c..3c29a2f00e 100644
+--- a/drivers/net/iavf/iavf_vchnl.c
++++ b/drivers/net/iavf/iavf_vchnl.c
+@@ -2109,14 +2109,9 @@ iavf_request_queues(struct rte_eth_dev *dev, uint16_t num)
+ 	args.out_buffer = vf->aq_resp;
+ 	args.out_size = IAVF_AQ_BUF_SZ;
+ 
+-	if (vf->vf_res->vf_cap_flags & VIRTCHNL_VF_OFFLOAD_WB_ON_ITR) {
+-		err = iavf_execute_vf_cmd_safe(adapter, &args, 0);
+-	} else {
+-		rte_eal_alarm_cancel(iavf_dev_alarm_handler, dev);
+-		err = iavf_execute_vf_cmd_safe(adapter, &args, 0);
+-		rte_eal_alarm_set(IAVF_ALARM_INTERVAL,
+-				  iavf_dev_alarm_handler, dev);
+-	}
++	rte_eal_alarm_cancel(iavf_dev_alarm_handler, dev);
++	err = iavf_execute_vf_cmd_safe(adapter, &args, 0);
++	rte_eal_alarm_set(IAVF_ALARM_INTERVAL, iavf_dev_alarm_handler, dev);
+ 
+ 	if (err) {
+ 		PMD_DRV_LOG(ERR, "fail to execute command OP_REQUEST_QUEUES");
+-- 
+2.43.0
+
