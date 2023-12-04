@@ -1260,18 +1260,17 @@ static int rv_dump_pcapng(struct mtl_main_impl* impl, struct st_rx_video_session
   int pcapng_mbuf_cnt = 0;
   ssize_t len;
   enum mtl_port port = mt_port_logic2phy(s->port_maps, s_port);
-  struct mt_interface* inf = mt_if(impl, port);
 
   for (uint16_t i = 0; i < rv; i++) {
     struct rte_mbuf* mc;
-    uint64_t timestamp_cycle, timestamp_ns;
-    if (inf->feature & MT_IF_FEATURE_RX_OFFLOAD_TIMESTAMP) {
-      timestamp_cycle = 0;
+    uint64_t timestamp_cycle = 0, timestamp_ns = 0;
+#if RTE_VERSION < RTE_VERSION_NUM(23, 11, 0, 0) /* dpdk 23.11 uses internal time */
+    struct mt_interface* inf = mt_if(impl, port);
+    if (mt_has_ebu(impl) && inf->feature & MT_IF_FEATURE_RX_OFFLOAD_TIMESTAMP)
       timestamp_ns = mt_mbuf_hw_time_stamp(impl, mbuf[i], port);
-    } else {
+    else
       timestamp_cycle = rte_get_tsc_cycles();
-      timestamp_ns = 0;
-    }
+#endif
 
     mc = mt_pcapng_copy(impl, port, s->rxq[s_port], mbuf[i], s->pcapng_pool,
                         ST_PKT_MAX_ETHER_BYTES, timestamp_cycle, timestamp_ns,
