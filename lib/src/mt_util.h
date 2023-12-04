@@ -272,4 +272,6 @@ bool mt_file_exists(const char* filename);
 
 int mt_sysfs_write_uint32(const char* path, uint32_t value);
 
+uint32_t mt_softrss(uint32_t* input_tuple, uint32_t input_len);
+
 #endif
