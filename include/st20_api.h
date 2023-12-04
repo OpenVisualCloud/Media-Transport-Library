@@ -1335,7 +1335,7 @@ struct st20_rx_ops {
    * return:
    *   - 0: if app consume the frame successful. App should call st20_rx_put_framebuff
    * to return the frame when it finish the handling
-   *   < 0: the error code if app can't handle, lib will free the frame then.
+   *   < 0: the error code if app can't handle, lib will call st20_rx_put_framebuff then.
    * And only non-block method can be used in this callback as it run from lcore tasklet
    * routine.
    */

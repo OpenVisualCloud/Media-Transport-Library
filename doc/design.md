@@ -84,11 +84,59 @@ The hugepages size is dependent on the workloads you wish to execute on the syst
 
 In MTL, memory management is directly handled through DPDK's memory-related APIs, including mempool and mbuf. In fact, all internal data objects are constructed based on mbuf/mempool to ensure efficient lifecycle management.
 
-## 4. TX Path
+## 4. Data path
+
+### 4.1 Backend layer
+
+The library incorporates a virtual data path backend layer, designed to abstract various NIC implementation and provide a unified packet TX/RX interface to the upper network layer. It currently supports three types of NIC devices:
+
+* DPDK Poll-Mode Drivers (PMDs): These drivers fully bypass the kernel's networking stack, utilizing the 'DPDK poll mode' driver.
+* Native Linux Kernel Network Socket Stack: This option supports the full range of kernel ecosystems. Related code can be found from [mt_dp_socket.c](../lib/src/datapath/mt_dp_socket.c)
+* AF_XDP (Express Data Path) with eBPF filter: AF_XDP represents a significant advancement in the Linux networking stack, striking a balance between raw performance and integration with the kernel's networking ecosystem. Please refer to [mt_af_xdp.c](../lib/src/dev/mt_af_xdp.c) for detail.
+* Native Windows Kernel Network Socket Stack: in plan, not implemented.
+
+MTL selects the backend NIC based on input from the application. Users should specify both of the following parameters in `struct mtl_init_params`, the port name should follow the format described below, and the pmd type can be fetched using `mtl_pmd_by_port_name`.
+
+```bash
+  /**
+   *  MTL_PMD_DPDK_USER. Use PCIE BDF port, ex: 0000:af:01.0.
+   *  MTL_PMD_KERNEL_SOCKET. Use kernel + ifname, ex: kernel:enp175s0f0.
+   *  MTL_PMD_NATIVE_AF_XDP. Use native_af_xdp + ifname, ex: native_af_xdp:enp175s0f0.
+   */
+  char port[MTL_PORT_MAX][MTL_PORT_MAX_LEN];
+  enum mtl_pmd_type pmd[MTL_PORT_MAX];
+```
+
+### 4.2 Queue Manager
+
+The library incorporates a queue manager layer, designed to abstract various queue implementation. Code please refer to [mt_queue.c](../lib/src/datapath/mt_queue.c) for detail.
+
+#### 4.2.1 Tx
+
+For transmitting (TX) data, there are two queue modes available:
+
+Dedicated Mode: In this mode, each session exclusively occupies one TX queue resource.
+
+Shared Mode: In contrast, shared mode allows multiple sessions to utilize the same TX queue. To ensure there is no conflict in the packet output path, a spin lock is employed. While this mode enables more efficient use of resources by sharing them, there can be a performance trade-off due to the overhead of acquiring and releasing the lock.
+The TX queue shared mode is enabled by `MTL_FLAG_SHARED_TX_QUEUE` flag. Code please refer to [mt_shared_queue.c](../lib/src/datapath/mt_shared_queue.c) for detail.
+
+#### 4.2.2 RX
+
+For RX data, there are three queue modes available:
+
+Dedicated Mode: each session is assigned a unique RX queue. Flow Director is utilized to filter and steer the incoming packets to the correct RX queue based on criteria such as IP address, port, protocol, or a combination of these.
+
+Shared Mode: allows multiple sessions to utilize the same RX queue. Each session will configure its own set of Flow Director rules to identify its specific traffic. However, all these rules will direct the corresponding packets to the same shared RX queue. Software will dispatch the packet to each session during the process of received packet for each queue.
+The RX queue shared mode is enabled by `MTL_FLAG_SHARED_RX_QUEUE` flag. Code please refer to [mt_shared_queue.c](../lib/src/datapath/mt_shared_queue.c) for detail.
+
+RSS mode: Not all NICs support Flow Director. For those that don't, we employs Receive Side Scaling (RSS) to enable the efficient distribution of network receive processing across multiple queues. This is based on a hash calculated from fields in packet headers, such as source and destination IP addresses, and port numbers.
+Code please refer to [mt_shared_rss.c](../lib/src/datapath/mt_shared_rss.c) for detail.
+
+### 4.3 ST2110 TX
 
 After receiving a frame from an application, MTL constructs a network packet from the frame in accordance with RFC 4175 <https://datatracker.ietf.org/doc/rfc4175/> and ST2110-21 timing requirement.
 
-### 4.1 Zero Copy Packet Build
+#### 4.3.1 Zero Copy Packet Build
 
 Most modern Network Interface Cards (NICs) support a multi-buffer descriptor feature, enabling the programming of the NIC to dispatch a packet to the network from multiple data segments. The MTL utilizes this capability to achieve zero-copy transmission when a DPDK Poll Mode Driver (PMD) is utilized, thereby delivering unparalleled performance.
 In one typical setup, capable of sending approximately 50 Gbps(equivalent to 16 streams of 1080p YUV422 at 10-bit color depth and 59.94 fps) only requires a single core.
@@ -101,7 +149,7 @@ Note that if the currently used NIC does not support the multi-buffer feature, t
 <img src="png/tx_zero_copy.png" align="center" alt="TX Zero Copy">
 </div>
 
-### 4.2 ST2110-21 pacing
+#### 4.3.2 ST2110-21 pacing
 
 The specific standard ST2110-21 deals with the traffic shaping and delivery timing of uncompressed video. It defines how the video data packets should be paced over the network to maintain consistent timing and bandwidth utilization.
 
@@ -118,15 +166,63 @@ In the case that the rate-limiting feature is unavailable, TSC (Timestamp Counte
 <img src="png/tx_pacing.png" align="center" alt="TX Pacing">
 </div>
 
-## 5. RX Path
+### 4.4 ST2110 RX
 
 The RX (Receive) packet classification in MTL includes two types: Flow Director and RSS (Receive Side Scaling). Flow Director is preferred if the NIC is capable, as it can directly feed the desired packet into the RX session packet handling function.
 Once the packet is received and validated as legitimate, the RX session will copy the payload to the frame and notify the application if it is the last packet.
 
-### 5.1 RX DMA offload
+#### 4.4.1 RX DMA offload
 
 The process of copying data between packets and frames consumes a significant amount of CPU resources. MTL can be configured to use DMA to offload this copy operation, thereby enhancing performance. For detailed usage instructions, please refer to [DMA guide](./dma.md)
 
 <div align="center">
 <img src="png/rx_dma_offload.png" align="center" alt="RX DMA Offload">
 </div>
+
+## 5. Control path
+
+For the DPDK Poll Mode Driver backend, given its nature of fully bypassing the kernel, it is necessary to implement specific control protocols within MTL."
+
+### 5.1 ARP
+
+Address Resolution Protocol is a communication protocol used for discovering the link layer address, such as a MAC address, associated with a given internet layer address, typically an IPv4 address. This mapping is critical for local area network communication. The code can be found from [mt_arp.c](../lib/src/mt_arp.c)
+
+### 5.2 IGMP
+
+The internet Group Management Protocol is a communication protocol used by hosts and adjacent routers on IPv4 networks to establish multicast group memberships. IGMP is used for managing the membership of internet Protocol multicast groups and is an integral part of the IP multicast specification. MTL support the IGMPv3 version. The code can be found from [mt_mcast.c](../lib/src/mt_mcast.c)
+
+### 5.3 DHCP
+
+Dynamic Host Configuration Protocol is a network management protocol used on IP networks whereby a DHCP server dynamically assigns an IP address and other network configuration parameters to each device on a network, so they can communicate with other IP networks.
+DHCP allows devices known as clients to get an IP address automatically, reducing the need for a network administrator or a user to manually assign IP addresses to all networked devices.
+
+The DHCP option is not default on, enable it by set `net_proto` in `struct mtl_init_params` to `MTL_PROTO_DHCP`.
+
+The code implementation can be found from [mt_dhcp.c](../lib/src/mt_dhcp.c).
+
+### 5.4 PTP
+
+Precision Time Protocol, also known as IEEE 1588, is designed for accurate clock synchronization between devices on a network. PTP is capable of clock accuracy in the sub-microsecond range, making it ideal for systems where precise timekeeping is vital. PTP uses a master-slave architecture for time synchronization.
+Typically, a PTP grandmaster is deployed within the network, and clients synchronize with it using tools like ptp4l.
+
+MTL support two type of PTP client settings, the built-in PTP client implementation inside MTL or using a external PTP time source.
+
+#### 5.4.1 Built-in PTP
+
+This project includes a built-in support for the PTP client protocol, which is also based on the hardware offload timesync feature. This combination allows for achieving a PTP time clock source with an accuracy of approximately 30ns.
+
+To enable this feature in the RxTxApp sample application, use the `--ptp` argument. The control for the built-in PTP feature is the `MTL_FLAG_PTP_ENABLE` flag in the `mtl_init_params` structure.
+
+Note: Currently, the VF (Virtual Function) does not support the hardware timesync feature. Therefore, for VF deployment, the timestamp of the transmitted (TX) and received (RX) packets is read from the CPU TSC (TimeStamp Counter) instead. In this case, it is not possible to obtain a stable delta in the PTP adjustment, and the maximum accuracy achieved will be up to 1us.
+
+#### 5.4.2 Customized PTP time source by Application
+
+Some setups may utilize external tools, such as `ptp4l`, for synchronization with a grandmaster clock. MTL provides an option `ptp_get_time_fn` within `struct mtl_init_params`, allowing applications to customize the PTP time source. In this mode, whenever MTL requires a PTP time, it will invoke this function to acquire the actual PTP time.
+Consequently, it is the application's responsibility to retrieve the time from the PTP client configuration.
+
+#### 5.4.3 37 seconds offset between UTC and TAI time
+
+There's actually a difference of 37 seconds between Coordinated Universal Time (UTC) and International Atomic Time (TAI). This discrepancy is due to the number of leap seconds that have been added to UTC to keep it synchronized with Earth's rotation, which is gradually slowing down.
+
+It is possible to observe a 37-second offset in some third-party timing equipment using MTL in conjunction with external PTP4L. This is typically caused by the time difference between Coordinated Universal Time (UTC) and International Atomic Time (TAI).
+While PTP grandmasters disseminate the offset in their announce messages, this offset is not always accurately passed to the `ptp_get_time_fn` function. The RxTxApp provides a `--utc_offset` option, with a default value of 37 seconds, to compensate for this discrepancy. Consider adjusting the offset if you encounter similar issues.
