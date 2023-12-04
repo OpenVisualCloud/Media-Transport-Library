@@ -398,8 +398,7 @@ struct st30_rx_ops {
    * return:
    *   - 0: if app consume the frame successful. App should call st30_rx_put_framebuff
    * to return the frame when it finish the handling
-   *   < 0: the error code if app can't handle, lib will free the frame then
-   * the consume of frame.
+   *   < 0: the error code if app can't handle, lib will call st30_rx_put_framebuff then.
    * And only non-block method can be used in this callback as it run from lcore tasklet
    * routine.
    */
