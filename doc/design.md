@@ -20,8 +20,8 @@ The drawbacks is it can lead to 100% CPU usage because the cores are always acti
 
 With this PMD design, it is expected that a CPU thread will always be utilized to 100%, even with only one stream active. In our configuration, one core can handle up to a maximum of 16 1080p transmission sessions, although the actual density may vary depending on the hardware configuration.
 
-BTW, we provide a option `IMTL_FLAG_TASKLET_SLEEP` that enables the sleep option for the PMD thread. However, take note that enabling this option may impact latency, as the CPU may enter a sleep state when there are no packets on the network. If you are utilizing the RxTxApp, it can be enable by `--tasklet_sleep` arguments.
-Additionally, the `IMTL_FLAG_TASKLET_THREAD` option is provided to disable pinning to a single CPU core, for cases where a pinned core is not feasible.
+BTW, we provide a option `MTL_FLAG_TASKLET_SLEEP` that enables the sleep option for the PMD thread. However, take note that enabling this option may impact latency, as the CPU may enter a sleep state when there are no packets on the network. If you are utilizing the RxTxApp, it can be enable by `--tasklet_sleep` arguments.
+Additionally, the `MTL_FLAG_TASKLET_THREAD` option is provided to disable pinning to a single CPU core, for cases where a pinned core is not feasible.
 
 <div align="center">
 <img src="png/tasklet.png" align="center" alt="Tasklet">
@@ -43,7 +43,7 @@ The performance of the setup can vary, so the data traffic quota for each schedu
 
 ### 2.3 Session migrate
 
-Additionally, IMTL has introduced support for session migration with the `IMTL_FLAG_TX_VIDEO_MIGRATE` and `IMTL_FLAG_RX_VIDEO_MIGRATE` flags. This feature enables runtime CPU usage calculations. When the system detects that a scheduler is operating at 100% capacity, that overloaded scheduler will attempt to redistribute its last few sessions to other underutilized schedulers.
+Additionally, IMTL has introduced support for session migration with the `MTL_FLAG_TX_VIDEO_MIGRATE` and `MTL_FLAG_RX_VIDEO_MIGRATE` flags. This feature enables runtime CPU usage calculations. When the system detects that a scheduler is operating at 100% capacity, that overloaded scheduler will attempt to redistribute its last few sessions to other underutilized schedulers.
 This migration capability adds flexibility to deployment, accommodating the often unpredictable capacity of a system.
 
 ### 2.4 Multi process support
@@ -110,12 +110,12 @@ IMTL selects the backend NIC based on input from the application. Users should s
 
 ```bash
   /**
-   *  IMTL_PMD_DPDK_USER. Use PCIE BDF port, ex: 0000:af:01.0.
-   *  IMTL_PMD_KERNEL_SOCKET. Use kernel + ifname, ex: kernel:enp175s0f0.
-   *  IMTL_PMD_NATIVE_AF_XDP. Use native_af_xdp + ifname, ex: native_af_xdp:enp175s0f0.
+   *  MTL_PMD_DPDK_USER. Use PCIE BDF port, ex: 0000:af:01.0.
+   *  MTL_PMD_KERNEL_SOCKET. Use kernel + ifname, ex: kernel:enp175s0f0.
+   *  MTL_PMD_NATIVE_AF_XDP. Use native_af_xdp + ifname, ex: native_af_xdp:enp175s0f0.
    */
-  char port[IMTL_PORT_MAX][IMTL_PORT_MAX_LEN];
-  enum mtl_pmd_type pmd[IMTL_PORT_MAX];
+  char port[MTL_PORT_MAX][MTL_PORT_MAX_LEN];
+  enum mtl_pmd_type pmd[MTL_PORT_MAX];
 ```
 
 ### 4.2 Queue Manager
@@ -129,7 +129,7 @@ For transmitting (TX) data, there are two queue modes available:
 Dedicated Mode: In this mode, each session exclusively occupies one TX queue resource.
 
 Shared Mode: In contrast, shared mode allows multiple sessions to utilize the same TX queue. To ensure there is no conflict in the packet output path, a spin lock is employed. While this mode enables more efficient use of resources by sharing them, there can be a performance trade-off due to the overhead of acquiring and releasing the lock.
-The TX queue shared mode is enabled by `IMTL_FLAG_SHARED_TX_QUEUE` flag. Code please refer to [mt_shared_queue.c](../lib/src/datapath/mt_shared_queue.c) for detail.
+The TX queue shared mode is enabled by `MTL_FLAG_SHARED_TX_QUEUE` flag. Code please refer to [mt_shared_queue.c](../lib/src/datapath/mt_shared_queue.c) for detail.
 
 #### 4.2.2 RX
 
@@ -138,7 +138,7 @@ For RX data, there are three queue modes available:
 Dedicated Mode: each session is assigned a unique RX queue. Flow Director is utilized to filter and steer the incoming packets to the correct RX queue based on criteria such as IP address, port, protocol, or a combination of these.
 
 Shared Mode: allows multiple sessions to utilize the same RX queue. Each session will configure its own set of Flow Director rules to identify its specific traffic. However, all these rules will direct the corresponding packets to the same shared RX queue. Software will dispatch the packet to each session during the process of received packet for each queue.
-The RX queue shared mode is enabled by `IMTL_FLAG_SHARED_RX_QUEUE` flag. Code please refer to [mt_shared_queue.c](../lib/src/datapath/mt_shared_queue.c) for detail.
+The RX queue shared mode is enabled by `MTL_FLAG_SHARED_RX_QUEUE` flag. Code please refer to [mt_shared_queue.c](../lib/src/datapath/mt_shared_queue.c) for detail.
 
 RSS mode: Not all NICs support Flow Director. For those that don't, we employs Receive Side Scaling (RSS) to enable the efficient distribution of network receive processing across multiple queues. This is based on a hash calculated from fields in packet headers, such as source and destination IP addresses, and port numbers.
 Code please refer to [mt_shared_rss.c](../lib/src/datapath/mt_shared_rss.c) for detail.
@@ -207,7 +207,7 @@ The internet Group Management Protocol is a communication protocol used by hosts
 Dynamic Host Configuration Protocol is a network management protocol used on IP networks whereby a DHCP server dynamically assigns an IP address and other network configuration parameters to each device on a network, so they can communicate with other IP networks.
 DHCP allows devices known as clients to get an IP address automatically, reducing the need for a network administrator or a user to manually assign IP addresses to all networked devices.
 
-The DHCP option is not default on, enable it by set `net_proto` in `struct mtl_init_params` to `IMTL_PROTO_DHCP`.
+The DHCP option is not default on, enable it by set `net_proto` in `struct mtl_init_params` to `MTL_PROTO_DHCP`.
 
 The code implementation can be found from [mt_dhcp.c](../lib/src/mt_dhcp.c).
 
@@ -222,7 +222,7 @@ IMTL support two type of PTP client settings, the built-in PTP client implementa
 
 This project includes a built-in support for the PTP client protocol, which is also based on the hardware offload timesync feature. This combination allows for achieving a PTP time clock source with an accuracy of approximately 30ns.
 
-To enable this feature in the RxTxApp sample application, use the `--ptp` argument. The control for the built-in PTP feature is the `IMTL_FLAG_PTP_ENABLE` flag in the `mtl_init_params` structure.
+To enable this feature in the RxTxApp sample application, use the `--ptp` argument. The control for the built-in PTP feature is the `MTL_FLAG_PTP_ENABLE` flag in the `mtl_init_params` structure.
 
 Note: Currently, the VF (Virtual Function) does not support the hardware timesync feature. Therefore, for VF deployment, the timestamp of the transmitted (TX) and received (RX) packets is read from the CPU TSC (TimeStamp Counter) instead. In this case, it is not possible to obtain a stable delta in the PTP adjustment, and the maximum accuracy achieved will be up to 1us.
 
@@ -246,7 +246,8 @@ The API between IMTL and application are 3 different types:
 
 IMTL orchestrates the packet processing from the frame level to L2 network packets and vice versa, with the frame buffer serving as the interface for video context exchange between IMTL and the application.
 
-For transmission, the IMTL TX session will get the index of the next available frame buffer via the `get_next_frame` callback function. Once transmission of the entire frame to the network is complete, the application will be notified through the `notify_frame_done` callback. It is crucial for the application to manage the lifecycle of the frame buffers, ensuring that no modifications are made to a frame while it is in the midst of being transmitted.
+For transmission, the IMTL TX session will get the index of the next available frame buffer via the `get_next_frame` callback function. Once transmission of the entire frame to the network is complete, the application will be notified through the `notify_frame_done` callback.
+It is crucial for the application to manage the lifecycle of the frame buffers, ensuring that no modifications are made to a frame while it is in the midst of being transmitted.
 
 For reception, the IMTL RX session will process packets received from the network. Once a complete frame is assembled, the application will be alerted via the `notify_frame_ready` callback. However, it is important to note that the application must return the frame to IMTL using the `st**_rx_put_framebuff` function after video frame processing is complete.
 
@@ -254,7 +255,8 @@ Sample application code can be find at [tx_video_sample.c](../app/sample/legacy/
 
 #### 6.1.1 Slice mode
 
-Slice mode is an enhancement of frame mode that provides applications with more granular control at the slice level, enabling the achievement of ultra-low latency. In transmission, IMTL slices use `query_frame_lines_ready` to determine the number of lines available for transmission to the network. For reception, the application specifies the slice size using the `slice_lines` field in the `struct st20_rx_ops`. IMTL will then inform the application via the `notify_slice_ready` callback when all packets of any slice have been received and are ready for the application to process.
+Slice mode is an enhancement of frame mode that provides applications with more granular control at the slice level, enabling the achievement of ultra-low latency. In transmission, IMTL slices use `query_frame_lines_ready` to determine the number of lines available for transmission to the network.
+For reception, the application specifies the slice size using the `slice_lines` field in the `struct st20_rx_ops`. IMTL will then inform the application via the `notify_slice_ready` callback when all packets of any slice have been received and are ready for the application to process.
 
 Sample application code can be find at [tx_slice_video_sample.c](../app/sample/low_level/tx_slice_video_sample.c) and [rx_slice_video_sample.c](../app/sample/low_level/rx_slice_video_sample.c)
 
@@ -284,7 +286,8 @@ Sample application code can be find at [tx_st20_pipeline_sample.c](../app/sample
 
 ### 6.4 ST22 support
 
-The support for ST 2110-22 JPEG XS can be categorized into two modes: ST 2110-22 raw codestream mode and ST 2110-22 pipeline mode. The pipeline mode leverages an IMTL plugin to handle the decoding/encoding between the raw video buffer and the codestream. We recommend using the pipeline mode, as it allows the application to concentrate on video content processing without needing to manage codec-specific differences. In contrast, the ST 2110-22 codestream mode requires the application to handle the codec operations directly.
+The support for ST 2110-22 JPEG XS can be categorized into two modes: ST 2110-22 raw codestream mode and ST 2110-22 pipeline mode. The pipeline mode leverages an IMTL plugin to handle the decoding/encoding between the raw video buffer and the codestream.
+We recommend using the pipeline mode, as it allows the application to concentrate on video content processing without needing to manage codec-specific differences. In contrast, the ST 2110-22 codestream mode requires the application to handle the codec operations directly.
 
 #### 6.4.1 ST22 pipeline
 
@@ -312,30 +315,34 @@ Sample application code can be find at [tx_st22_video_sample.c](../app/sample/le
 
 ### 6.5 2022-7 redundant support
 
-All sessions within IMTL incorporate redundancy support through a software-based approach. For transmission (TX), IMTL replicates packets onto a redundant path once they have been assembled from a frame; these duplicates are then sent to the TX queue of a secondary network device. For reception (RX), IMTL concurrently captures packets from both primary and secondary network devices within the same tasklet, examining the RTP headers to ascertain each packet's position within a frame. IMTL identifies and flags any duplicate packets as redundant. Furthermore, applications can assess the signal quality of each network device by reviewing the `uint32_t pkts_recv[IMTL_SESSION_PORT_MAX]` array within the `struct st20_rx_frame_meta` structure.
+All sessions within IMTL incorporate redundancy support through a software-based approach. For transmission (TX), IMTL replicates packets onto a redundant path once they have been assembled from a frame; these duplicates are then sent to the TX queue of a secondary network device.
+For reception (RX), IMTL concurrently captures packets from both primary and secondary network devices within the same tasklet, examining the RTP headers to ascertain each packet's position within a frame.
+IMTL identifies and flags any duplicate packets as redundant. Furthermore, applications can assess the signal quality of each network device by reviewing the `uint32_t pkts_recv[MTL_SESSION_PORT_MAX]` array within the `struct st20_rx_frame_meta` structure.
 
 Enabling redundancy is straightforward with the setup parameters in the `st**_tx_create` and `st**_rx_create` calls. Simply set `uint8_t num_port` to 2 and provide the appropriate configurations for the redundant port and IP.
 
 ```bash
   ops_tx.port.num_port = 2;
   if (ops_tx.port.num_port > 1) {
-    memcpy(ops_tx.port.dip_addr[IMTL_SESSION_PORT_R], ctx.tx_dip_addr[IMTL_PORT_R],
-             IMTL_IP_ADDR_LEN);
-    snprintf(ops_tx.port.port[IMTL_SESSION_PORT_R], IMTL_PORT_MAX_LEN, "%s",
-               ctx.param.port[IMTL_PORT_R]);
-    ops_tx.port.udp_port[IMTL_SESSION_PORT_R] = ctx.udp_port + i * 2;
+    memcpy(ops_tx.port.dip_addr[MTL_SESSION_PORT_R], ctx.tx_dip_addr[MTL_PORT_R],
+             MTL_IP_ADDR_LEN);
+    snprintf(ops_tx.port.port[MTL_SESSION_PORT_R], MTL_PORT_MAX_LEN, "%s",
+               ctx.param.port[MTL_PORT_R]);
+    ops_tx.port.udp_port[MTL_SESSION_PORT_R] = ctx.udp_port + i * 2;
   }
 ```
 
 ### 6.6 Get incomplete frame
 
-By default, the RX session will only deliver complete frames, where all packets have been successfully received, to the application. Frames that are incomplete due to missing packets are discarded by IMTL. However, in certain scenarios, an application may need to be aware of incomplete frames to apply its own logic for frame processing. This behavior can be activated by setting the flag `ST**_RX_FLAG_RECEIVE_INCOMPLETE_FRAME` during session creation.
+By default, the RX session will only deliver complete frames, where all packets have been successfully received, to the application. Frames that are incomplete due to missing packets are discarded by IMTL. However, in certain scenarios, an application may need to be aware of incomplete frames to apply its own logic for frame processing.
+This behavior can be activated by setting the flag `ST**_RX_FLAG_RECEIVE_INCOMPLETE_FRAME` during session creation.
 
 ### 6.7 RTCP re-transmission
 
 In cloud or edge computing environments, where network management can be challenging and packet loss may occur due to complex routing, ensuring reliable data transmission is critical. SMPTE ST 2110 utilizes the SMPTE 2022-7 redundancy standard for enhanced reliability, but this approach demands double the bandwidth, which can be costly.
 
-As an alternative to the bandwidth-intensive 2022-7 standard, IMTL supports RTCP-based retransmission for handling occasional packet loss. On the reception (RX) side, IMTL monitors for missing packets by inspecting the RTP headers. If packet loss is detected, IMTL promptly issues a retransmission request to the transmitter (TX). The TX side maintains a buffer ring that retains recently transmitted packets. Upon receiving a retransmission request from RX, TX checks this buffer ring to determine if the requested packet is available. If so, the packet is resent, mitigating the packet loss without duplicating the entire transmitted data, thus saving bandwidth.
+As an alternative to the bandwidth-intensive 2022-7 standard, IMTL supports RTCP-based retransmission for handling occasional packet loss. On the reception (RX) side, IMTL monitors for missing packets by inspecting the RTP headers. If packet loss is detected, IMTL promptly issues a retransmission request to the transmitter (TX).
+The TX side maintains a buffer ring that retains recently transmitted packets. Upon receiving a retransmission request from RX, TX checks this buffer ring to determine if the requested packet is available. If so, the packet is resent, mitigating the packet loss without duplicating the entire transmitted data, thus saving bandwidth.
 
 It's important to be mindful that the RTCP retransmission method used by IMTL for packet loss recovery is not a standardized feature within the SMPTE ST 2110 suite. Consequently, this approach may not be compatible with non-IMTL implementations.
 
@@ -343,13 +350,16 @@ It can be enabled by `ST**_TX_FLAG_ENABLE_RTCP` and `ST**_RX_FLAG_ENABLE_RTCP`, 
 
 ### 6.8 External frame
 
-By default, the frame buffer is allocated by IMTL using huge page memory, however, some advanced use cases may require managing the frame buffers themselves—especially applications that utilize GPU-based memory for additional video frame processing. IMTL offers an external frame mode, allowing applications to supply frame information at runtime for increased flexibility. IMTL TX and RX will interact with the NIC using these user-defined frames directly. It is the application's responsibility to manage the frame lifecycle because IMTL only recognizes the frame address. Additionally, it's important to note that if a DPDK-based PMD backend is utilized, the external frame must provide an IOVA address, which can be conveniently obtained using the `mtl_dma_map` API, thanks to IOMMU/VFIO support.
+By default, the frame buffer is allocated by IMTL using huge page memory, however, some advanced use cases may require managing the frame buffers themselves—especially applications that utilize GPU-based memory for additional video frame processing. IMTL offers an external frame mode, allowing applications to supply frame information at runtime for increased flexibility.
+IMTL TX and RX will interact with the NIC using these user-defined frames directly. It is the application's responsibility to manage the frame lifecycle because IMTL only recognizes the frame address.
+Additionally, it's important to note that if a DPDK-based PMD backend is utilized, the external frame must provide an IOVA address, which can be conveniently obtained using the `mtl_dma_map` API, thanks to IOMMU/VFIO support.
 
 For more comprehensive information and instructions on using these converters, please refer to the [external_frame](./external_frame.md).
 
 ### 6.9 VSync
 
-VSync events can be generated by IMTL sessions, leveraging their tasklet-based scheduling which synchronizes with the PTP time source. Some applications may require VSync events to drive their video frame processing logic. This feature can be enabled using the `ST**_TX_FLAG_ENABLE_VSYNC` and `ST**_RX_FLAG_ENABLE_VSYNC` flags. Consequently, the application will receive notifications through `notify_event` callback, containing `ST_EVENT_VSYNC`, which indicate the commencement of each epoch.
+VSync events can be generated by IMTL sessions, leveraging their tasklet-based scheduling which synchronizes with the PTP time source. Some applications may require VSync events to drive their video frame processing logic. This feature can be enabled using the `ST**_TX_FLAG_ENABLE_VSYNC` and `ST**_RX_FLAG_ENABLE_VSYNC` flags.
+Consequently, the application will receive notifications through `notify_event` callback, containing `ST_EVENT_VSYNC`, which indicate the commencement of each epoch.
 
 ### 6.10 User timestamp and pacing control for TX
 
@@ -363,7 +373,8 @@ The ST**_TX_FLAG_USER_TIMESTAMP flag is provided to enable applications to use t
 
 IMTL has many built-in SIMD converter, detail code can be found from [st_avx512.c](../lib/src/st2110/st_avx512.c) and [st_avx512_vbmi.c](../lib/src/st2110/st_avx512_vbmi.c). The API is public at [st_convert_api.h](../include/st_convert_api.h). Detail guide can be find from [convert guide](./convert.md)
 
-IMTL includes an array of built-in SIMD converters, providing high-performance data processing. The implementation details for these converters are available in the IMTL library source files [st_avx512.c](../lib/src/st2110/st_avx512.c) and [st_avx512_vbmi.c](../lib/src/st2110/st_avx512_vbmi.c). The API for these converters is publicly documented in the header file [st_convert_api.h](../include/st_convert_api.h). For more comprehensive information and instructions on using these converters, please refer to the [convert guide](./convert.md).
+IMTL includes an array of built-in SIMD converters, providing high-performance data processing. The implementation details for these converters are available in the IMTL library source files [st_avx512.c](../lib/src/st2110/st_avx512.c) and [st_avx512_vbmi.c](../lib/src/st2110/st_avx512_vbmi.c).
+The API for these converters is publicly documented in the header file [st_convert_api.h](../include/st_convert_api.h). For more comprehensive information and instructions on using these converters, please refer to the [convert guide](./convert.md).
 
 ### 6.12 Sample code
 
