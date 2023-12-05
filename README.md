@@ -90,11 +90,11 @@ To run this library on the kernel network stack with the built-in kernel NIC dri
 
 ## 4. ST2110 Programmers guide
 
-To quickly develop applications based on the Intel® Media Transport Library, please refer to the [sample code](app/sample).
+To quickly develop applications based on the Intel® Media Transport Library, please refer to `## 6. ST2110 API` from [design guide](doc/design.md).
 
 ## 5. User space LibOS UDP stack guide
 
-Starting from version 23.04, IMTL introduces support for a LD preload POSIX-compatible user-space UDP stack that operates directly within the current process context. This enhancement significantly boosts performance by eliminating the cross-core message costs typically associated with client-service architectures used in other user-space UDP stacks.
+IMTL has support for a LD preload POSIX-compatible user-space UDP stack that operates directly within the current process context. This enhancement significantly boosts performance by eliminating the cross-core message costs typically associated with client-service architectures used in other user-space UDP stacks.
 IMTL's stack allows the NIC transmission and reception functions to run directly from the sendto/recvfrom API, eliminating the need for cross-core calls and maintaining data affinity (LLC) to the UDP consumer, thereby optimizing performance.
 
 To learn how to use the LibOS UDP stack, please refer to the [udp doc](doc/udp.md).

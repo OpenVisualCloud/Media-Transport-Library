@@ -130,4 +130,4 @@ mtl_udma_submit
 mtl_udma_completed
 ```
 
-You can use the function st_hp_virt2iova when memory is allocated via st_hp_malloc, or use st_dma_map if memory is allocated using the standard malloc to obtain the IOVA (Input/Output Virtual Address) necessary for DMA operations with hardware.
+You can use the function `mtl_hp_virt2iova` when memory is allocated via `mtl_hp_malloc`, or use `mtl_dma_map` if memory is allocated using the standard malloc to obtain the IOVA (Input/Output Virtual Address) necessary for DMA operations with hardware.
