@@ -84,6 +84,17 @@ The hugepages size is dependent on the workloads you wish to execute on the syst
 
 In MTL, memory management is directly handled through DPDK's memory-related APIs, including mempool and mbuf. In fact, all internal data objects are constructed based on mbuf/mempool to ensure efficient lifecycle management.
 
+### 3.3 Public Memory API for application usage
+
+Applications can allocate hugepage memory through the following public APIs:
+
+```bash
+  mtl_hp_malloc
+  mtl_hp_zmalloc
+  mtl_hp_free
+  mtl_hp_virt2iova
+```
+
 ## 4. Data path
 
 ### 4.1 Backend layer
@@ -226,3 +237,37 @@ There's actually a difference of 37 seconds between Coordinated Universal Time (
 
 It is possible to observe a 37-second offset in some third-party timing equipment using MTL in conjunction with external PTP4L. This is typically caused by the time difference between Coordinated Universal Time (UTC) and International Atomic Time (TAI).
 While PTP grandmasters disseminate the offset in their announce messages, this offset is not always accurately passed to the `ptp_get_time_fn` function. The RxTxApp provides a `--utc_offset` option, with a default value of 37 seconds, to compensate for this discrepancy. Consider adjusting the offset if you encounter similar issues.
+
+## 6. ST2110 API
+
+The API between MTL and application are 3 different types:
+
+### 6.1 Frame mode
+
+MTL orchestrates the packet processing from the frame level to L2 network packets and vice versa, with the frame buffer serving as the interface for video context exchange between MTL and the application.
+
+### 6.2 RTP passthrough mode
+
+MTL manages the processing from RTP to L2 packet and vice versa, but it is the responsibility of the application to encapsulate/decapsulate RTP with various upper-layer protocols. This approach is commonly employed to implement support for ST2022-6, given that MTL natively supports only ST2110.
+
+### 6.3 Pipeline mode
+
+An enhancement over frame mode, this feature provides more user-friendly get/put APIs with built-in frame cycle management and inherent color format support. Given that the ST2110 format operates in network big-endian mode, and typically the CPU/GPU uses little endian, such functionality is essential for seamless integration. The implementation can be found from [pipeline code](../lib/src/st2110/pipeline/).
+
+The Get/Put API is straightforward to use; consider the following example:
+
+```bash
+  st20p_tx_create
+  while (active) {
+    st20p_tx_get_frame
+    /* the process to frame */
+    st20p_tx_put_frame
+  }
+  st20p_tx_free
+```
+
+### 6.4 Redundant support
+
+### 6.5 Sample code
+
+In addition to the built-in RxTxApp, MTL also provides numerous sample codes that demonstrate how to construct simple test programs using its APIs. For more details, please refer to [sample](../app/sample/).
