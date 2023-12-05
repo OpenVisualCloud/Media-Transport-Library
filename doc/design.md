@@ -338,7 +338,8 @@ In iMTL, each field is treated as an individual frame, with fields being transmi
 
 For instance, with a 1080i50 format, you should use the following session parameters when creating a session: `interlaced: true, width: 1920, height: 1080, fps: ST_FPS_P50`. It is important to note that the height parameter should reflect the full frame height of 1080, not half height. However, keep in mind that the buffer for each field (or frame) will only contain data for 540 lines.
 
-For transmission (TX), users can specify whether the current field is the first or second by using the `second_field` flag within the `struct st20_tx_frame_meta`. Similarly, for reception (RX), applications can determine the field order with the `second_field` flag present in the `struct st20_rx_frame_meta`. In the case of pipeline mode, the bool `second_field` within the `struct st_frame` also communicates field information between the application and IMTL.
+For transmission (TX), users can specify whether the current field is the first or second by using the `second_field` flag within the `struct st20_tx_frame_meta`. Similarly, for reception (RX), applications can determine the field order with the `second_field` flag present in the `struct st20_rx_frame_meta`.
+In the case of pipeline mode, the bool `second_field` within the `struct st_frame` also communicates field information between the application and IMTL.
 
 ### 6.7 Get incomplete frame
 
