@@ -29,11 +29,11 @@ If you find value in our project, please consider giving it a star. Your support
 
 * Narrow and wide pacing. Please see [compliance](doc/compliance.md) page for the ST2110 narrow report on our software solution.
 * ST2110-10, ST2110-20, ST2110-21, ST2110-30, ST2110-40, ST2022-7
-* 1080p, 720p, 4k, 8k and other
+* 1080p, 1080i, 720p, 4k, 8k and other
 * FPS: 120, 119.88, 100, 60, 59.94, 50, 30, 29.97, 25, 24, 23.98
 * All video formats listed in ST2110-20, including YUV 4:2:2 10-bit and others, are supported.
-* CSC support status: [status](doc/convert.md)
-* ST2110-22 with encoder/decoder [plugin](doc/plugin.md) interface.
+* SIMD color space converter between big-endian and little-endian.
+* ST2110-22 with encoder/decoder plugin interface.
 * ST2022-6 by RTP passthrough interface.
 
 ### 1.2 Architecture
@@ -90,11 +90,11 @@ To run this library on the kernel network stack with the built-in kernel NIC dri
 
 ## 4. ST2110 Programmers guide
 
-To quickly develop applications based on the Intel® Media Transport Library, please refer to the [sample code](app/sample).
+To quickly develop applications based on the Intel® Media Transport Library, please refer to `## 6. ST2110 API` from [design guide](doc/design.md).
 
 ## 5. User space LibOS UDP stack guide
 
-Starting from version 23.04, IMTL introduces support for a LD preload POSIX-compatible user-space UDP stack that operates directly within the current process context. This enhancement significantly boosts performance by eliminating the cross-core message costs typically associated with client-service architectures used in other user-space UDP stacks.
+IMTL has support for a LD preload POSIX-compatible user-space UDP stack that operates directly within the current process context. This enhancement significantly boosts performance by eliminating the cross-core message costs typically associated with client-service architectures used in other user-space UDP stacks.
 IMTL's stack allows the NIC transmission and reception functions to run directly from the sendto/recvfrom API, eliminating the need for cross-core calls and maintaining data affinity (LLC) to the UDP consumer, thereby optimizing performance.
 
 To learn how to use the LibOS UDP stack, please refer to the [udp doc](doc/udp.md).
