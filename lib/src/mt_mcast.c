@@ -251,7 +251,7 @@ static int mcast_membership_report_on_query(struct mtl_main_impl* impl,
     return -EIO;
   }
 
-  info("%s, send pkt, mb_report_len %" PRIu64 "\n", __func__, mb_report_len);
+  dbg("%s, send pkt, mb_report_len %" PRIu64 "\n", __func__, mb_report_len);
 
   return 0;
 }
@@ -463,14 +463,10 @@ int mt_mcast_init(struct mtl_main_impl* impl) {
     impl->mcast[i] = mcast;
   }
 
-  bool has_query_server = true;
-  /* we do not need this timer if igmp query is enabled on switch */
-  if (!has_query_server) {
-    int ret =
-        rte_eal_alarm_set(IGMP_JOIN_GROUP_PERIOD_US, mcast_membership_report_cb, impl);
-    if (ret < 0) err("%s, set igmp alarm fail %d\n", __func__, ret);
-    info("%s, report every %d seconds\n", __func__, IGMP_JOIN_GROUP_PERIOD_S);
-  }
+  int ret =
+      rte_eal_alarm_set(IGMP_JOIN_GROUP_PERIOD_US, mcast_membership_report_cb, impl);
+  if (ret < 0) err("%s, set igmp alarm fail %d\n", __func__, ret);
+  info("%s, report every %d seconds\n", __func__, IGMP_JOIN_GROUP_PERIOD_S);
 
   return 0;
 }
@@ -739,7 +735,7 @@ int mt_mcast_l2_leave(struct mtl_main_impl* impl, struct rte_ether_addr* addr,
 int mt_mcast_parse(struct mtl_main_impl* impl, struct mcast_mb_query_v3* query,
                    enum mtl_port port) {
   if (query->type != MEMBERSHIP_QUERY) {
-    dbg("%s, invalid type %u, only allow igmp query packet.\n", __func__, query->type);
+    err("%s, invalid type %u, only allow igmp query packet.\n", __func__, query->type);
   }
 
   uint16_t checksum = mcast_msg_checksum(MEMBERSHIP_QUERY, query, 0);
@@ -749,7 +745,7 @@ int mt_mcast_parse(struct mtl_main_impl* impl, struct mcast_mb_query_v3* query,
   }
 
   info("%s, received igmp query\n", __func__);
-
+  /* stop auto-join if there is query server */
   struct mt_mcast_impl* mcast = get_mcast(impl, port);
   mcast->has_external_query = true;
 
