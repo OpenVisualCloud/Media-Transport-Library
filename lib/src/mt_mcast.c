@@ -736,6 +736,7 @@ int mt_mcast_parse(struct mtl_main_impl* impl, struct mcast_mb_query_v3* query,
                    enum mtl_port port) {
   if (query->type != MEMBERSHIP_QUERY) {
     err("%s, invalid type %u, only allow igmp query packet.\n", __func__, query->type);
+    return -EIO;
   }
 
   uint16_t checksum = mcast_msg_checksum(MEMBERSHIP_QUERY, query, 0);

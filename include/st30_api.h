@@ -355,7 +355,7 @@ struct st30_rx_ops {
   uint8_t num_port;
   /** Mandatory. Pcie BDF path like 0000:af:00.0, should align to BDF of mtl_init */
   char port[MTL_SESSION_PORT_MAX][MTL_PORT_MAX_LEN];
-  /** Mandatory. UDP source port number */
+  /** Mandatory. UDP dest port number */
   uint16_t udp_port[MTL_SESSION_PORT_MAX];
 
   /** Mandatory. Session PCM format */

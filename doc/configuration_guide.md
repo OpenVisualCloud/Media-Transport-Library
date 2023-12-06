@@ -161,6 +161,8 @@ Common settings for following sessions in the group:
 
 ​ **ip (array-string):** the transmitter's IP or the multicast group IP, at least 1 primary IP, the second is redundant IP
 
+​ **mcast_src_ip (array-string):** the source IP filter for multicast(optional), assume primary and redundant sessions use different multicast group, if one of the source filter set, another is allowed to be set as 0.0.0.0(any source)
+
 ​ **interfaces (array-int):** interfaces/ports used by the sessions, at least 1 primary interface, the second is redundant interface
 
 #### video (array of video sessions) for RX
