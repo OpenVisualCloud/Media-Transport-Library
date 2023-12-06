@@ -2682,7 +2682,7 @@ static int rv_uinit_mcast(struct mtl_main_impl* impl,
 
   for (int i = 0; i < ops->num_port; i++) {
     if (mt_is_multicast_ip(ops->sip_addr[i]))
-      mt_mcast_leave(impl, mt_ip_to_u32(ops->sip_addr[i]),
+      mt_mcast_leave(impl, mt_ip_to_u32(ops->sip_addr[i]), 0,
                      mt_port_logic2phy(s->port_maps, i));
   }
 
@@ -2701,7 +2701,7 @@ static int rv_init_mcast(struct mtl_main_impl* impl, struct st_rx_video_session_
       info("%s(%d), skip mcast join for port %d\n", __func__, s->idx, i);
       return 0;
     }
-    ret = mt_mcast_join(impl, mt_ip_to_u32(ops->sip_addr[i]), port);
+    ret = mt_mcast_join(impl, mt_ip_to_u32(ops->sip_addr[i]), 0, port);
     if (ret < 0) return ret;
   }
 

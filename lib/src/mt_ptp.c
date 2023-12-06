@@ -1254,7 +1254,7 @@ static int ptp_init(struct mtl_main_impl* impl, struct mt_ptp_impl* ptp,
 
   if (mt_has_cni(impl, port) && !mt_drv_kernel_based(impl, port)) {
     /* join mcast only if cni path, no cni use socket which has mcast in the data path */
-    ret = mt_mcast_join(impl, mt_ip_to_u32(ptp->mcast_group_addr), port);
+    ret = mt_mcast_join(impl, mt_ip_to_u32(ptp->mcast_group_addr), 0, port);
     if (ret < 0) {
       err("%s(%d), join ptp multicast group fail\n", __func__, port);
       return ret;
@@ -1321,7 +1321,7 @@ static int ptp_uinit(struct mtl_main_impl* impl, struct mt_ptp_impl* ptp) {
 
   if (mt_has_cni(impl, port) && !mt_drv_kernel_based(impl, port)) {
     mt_mcast_l2_leave(impl, &ptp_l2_multicast_eaddr, port);
-    mt_mcast_leave(impl, mt_ip_to_u32(ptp->mcast_group_addr), port);
+    mt_mcast_leave(impl, mt_ip_to_u32(ptp->mcast_group_addr), 0, port);
   }
 
   if (ptp->rxq_tasklet) {
