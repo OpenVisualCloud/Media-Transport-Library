@@ -144,6 +144,10 @@ static int app_rx_st22p_init(struct st_app_context* ctx,
          st22p ? st_json_ip(ctx, &st22p->base, MTL_SESSION_PORT_P)
                : ctx->rx_sip_addr[MTL_PORT_P],
          MTL_IP_ADDR_LEN);
+  memcpy(
+      ops.mcast_sip_addr[MTL_SESSION_PORT_P],
+      st22p ? st22p->base.mcast_src_ip[MTL_PORT_P] : ctx->rx_mcast_sip_addr[MTL_PORT_P],
+      MTL_IP_ADDR_LEN);
   snprintf(
       ops.port.port[MTL_SESSION_PORT_P], MTL_PORT_MAX_LEN, "%s",
       st22p ? st22p->base.inf[MTL_SESSION_PORT_P]->name : ctx->para.port[MTL_PORT_P]);
@@ -153,6 +157,10 @@ static int app_rx_st22p_init(struct st_app_context* ctx,
            st22p ? st_json_ip(ctx, &st22p->base, MTL_SESSION_PORT_R)
                  : ctx->rx_sip_addr[MTL_PORT_R],
            MTL_IP_ADDR_LEN);
+    memcpy(
+        ops.mcast_sip_addr[MTL_SESSION_PORT_R],
+        st22p ? st22p->base.mcast_src_ip[MTL_PORT_R] : ctx->rx_mcast_sip_addr[MTL_PORT_R],
+        MTL_IP_ADDR_LEN);
     snprintf(
         ops.port.port[MTL_SESSION_PORT_R], MTL_PORT_MAX_LEN, "%s",
         st22p ? st22p->base.inf[MTL_SESSION_PORT_R]->name : ctx->para.port[MTL_PORT_R]);

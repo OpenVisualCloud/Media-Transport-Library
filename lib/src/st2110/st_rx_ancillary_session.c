@@ -277,7 +277,8 @@ static int rx_ancillary_session_init_mcast(struct mtl_main_impl* impl,
       info("%s(%d), skip mcast join for port %d\n", __func__, s->idx, i);
       return 0;
     }
-    ret = mt_mcast_join(impl, mt_ip_to_u32(ops->sip_addr[i]), 0,
+    ret = mt_mcast_join(impl, mt_ip_to_u32(ops->sip_addr[i]),
+                        mt_ip_to_u32(ops->mcast_sip_addr[i]),
                         mt_port_logic2phy(s->port_maps, i));
     if (ret < 0) return ret;
   }

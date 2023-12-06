@@ -502,6 +502,10 @@ static int app_rx_video_init(struct st_app_context* ctx, st_json_video_session_t
          video ? st_json_ip(ctx, &video->base, MTL_SESSION_PORT_P)
                : ctx->rx_sip_addr[MTL_PORT_P],
          MTL_IP_ADDR_LEN);
+  memcpy(
+      ops.mcast_sip_addr[MTL_SESSION_PORT_P],
+      video ? video->base.mcast_src_ip[MTL_PORT_P] : ctx->rx_mcast_sip_addr[MTL_PORT_P],
+      MTL_IP_ADDR_LEN);
   snprintf(
       ops.port[MTL_SESSION_PORT_P], MTL_PORT_MAX_LEN, "%s",
       video ? video->base.inf[MTL_SESSION_PORT_P]->name : ctx->para.port[MTL_PORT_P]);
@@ -511,6 +515,10 @@ static int app_rx_video_init(struct st_app_context* ctx, st_json_video_session_t
            video ? st_json_ip(ctx, &video->base, MTL_SESSION_PORT_R)
                  : ctx->rx_sip_addr[MTL_PORT_R],
            MTL_IP_ADDR_LEN);
+    memcpy(
+        ops.mcast_sip_addr[MTL_SESSION_PORT_R],
+        video ? video->base.mcast_src_ip[MTL_PORT_R] : ctx->rx_mcast_sip_addr[MTL_PORT_R],
+        MTL_IP_ADDR_LEN);
     snprintf(
         ops.port[MTL_SESSION_PORT_R], MTL_PORT_MAX_LEN, "%s",
         video ? video->base.inf[MTL_SESSION_PORT_R]->name : ctx->para.port[MTL_PORT_R]);

@@ -130,6 +130,9 @@ static int app_rx_anc_init(struct st_app_context* ctx, st_json_ancillary_session
          anc ? st_json_ip(ctx, &anc->base, MTL_SESSION_PORT_P)
              : ctx->rx_sip_addr[MTL_PORT_P],
          MTL_IP_ADDR_LEN);
+  memcpy(ops.mcast_sip_addr[MTL_SESSION_PORT_P],
+         anc ? anc->base.mcast_src_ip[MTL_PORT_P] : ctx->rx_mcast_sip_addr[MTL_PORT_P],
+         MTL_IP_ADDR_LEN);
   snprintf(ops.port[MTL_SESSION_PORT_P], MTL_PORT_MAX_LEN, "%s",
            anc ? anc->base.inf[MTL_SESSION_PORT_P]->name : ctx->para.port[MTL_PORT_P]);
   ops.udp_port[MTL_SESSION_PORT_P] = anc ? anc->base.udp_port : (10200 + s->idx);
@@ -137,6 +140,9 @@ static int app_rx_anc_init(struct st_app_context* ctx, st_json_ancillary_session
     memcpy(ops.sip_addr[MTL_SESSION_PORT_R],
            anc ? st_json_ip(ctx, &anc->base, MTL_SESSION_PORT_R)
                : ctx->rx_sip_addr[MTL_PORT_R],
+           MTL_IP_ADDR_LEN);
+    memcpy(ops.mcast_sip_addr[MTL_SESSION_PORT_R],
+           anc ? anc->base.mcast_src_ip[MTL_PORT_R] : ctx->rx_mcast_sip_addr[MTL_PORT_R],
            MTL_IP_ADDR_LEN);
     snprintf(ops.port[MTL_SESSION_PORT_R], MTL_PORT_MAX_LEN, "%s",
              anc ? anc->base.inf[MTL_SESSION_PORT_R]->name : ctx->para.port[MTL_PORT_R]);
