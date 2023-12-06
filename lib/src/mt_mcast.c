@@ -164,6 +164,7 @@ int mcast_membership_general_query(struct mtl_main_impl* impl, enum mtl_port por
   }
   mb_query->checksum = htons(checksum);
 
+  ip_hdr->total_length = htons(sizeof(struct rte_ipv4_hdr) + mb_query_len);
   mt_mbuf_init_ipv4(pkt);
   pkt->pkt_len = pkt->l2_len + pkt->l3_len + mb_query_len;
   pkt->data_len = pkt->pkt_len;
@@ -310,7 +311,7 @@ static int mcast_membership_report_on_action(struct mtl_main_impl* impl,
   }
 #endif
   /* send membership report twice */
-  struct rte_mbuf* pkt_clone = rte_pktmbuf_clone(pkt, pkt->pool);
+  struct rte_mbuf* pkt_copy = rte_pktmbuf_copy(pkt, pkt->pool, 0, UINT32_MAX);
 
   uint16_t tx = mt_sys_queue_tx_burst(impl, port, &pkt, 1);
   if (tx < 1) {
@@ -319,10 +320,10 @@ static int mcast_membership_report_on_action(struct mtl_main_impl* impl,
     return -EIO;
   }
 
-  tx = mt_sys_queue_tx_burst(impl, port, &pkt_clone, 1);
+  tx = mt_sys_queue_tx_burst(impl, port, &pkt_copy, 1);
   if (tx < 1) {
     err("%s, send pkt fail\n", __func__);
-    rte_pktmbuf_free(pkt_clone);
+    rte_pktmbuf_free(pkt_copy);
     return -EIO;
   }
 
@@ -744,7 +745,7 @@ int mt_mcast_l2_leave(struct mtl_main_impl* impl, struct rte_ether_addr* addr,
 int mt_mcast_parse(struct mtl_main_impl* impl, struct mcast_mb_query_v3* query,
                    enum mtl_port port) {
   if (query->type != MEMBERSHIP_QUERY) {
-    err("%s, invalid type %u, only allow igmp query packet.\n", __func__, query->type);
+    err("%s, invalid type %u, only allow igmp query packet\n", __func__, query->type);
     return -EIO;
   }
 
@@ -756,10 +757,11 @@ int mt_mcast_parse(struct mtl_main_impl* impl, struct mcast_mb_query_v3* query,
     return -EIO;
   }
 
-  info_once("%s, received igmp query\n", __func__);
-  /* stop auto-join if there is query server */
   struct mt_mcast_impl* mcast = get_mcast(impl, port);
-  mcast->has_external_query = true;
+  if (!mcast->has_external_query) {
+    info("%s, received igmp query, stop auto-join\n", __func__);
+    mcast->has_external_query = true;
+  }
 
   mcast_membership_report_on_query(impl, port);
   return 0;
