@@ -145,7 +145,7 @@ static int app_rx_st22p_init(struct st_app_context* ctx,
                : ctx->rx_sip_addr[MTL_PORT_P],
          MTL_IP_ADDR_LEN);
   memcpy(
-      ops.mcast_sip_addr[MTL_SESSION_PORT_P],
+      ops.port.mcast_sip_addr[MTL_SESSION_PORT_P],
       st22p ? st22p->base.mcast_src_ip[MTL_PORT_P] : ctx->rx_mcast_sip_addr[MTL_PORT_P],
       MTL_IP_ADDR_LEN);
   snprintf(
@@ -158,7 +158,7 @@ static int app_rx_st22p_init(struct st_app_context* ctx,
                  : ctx->rx_sip_addr[MTL_PORT_R],
            MTL_IP_ADDR_LEN);
     memcpy(
-        ops.mcast_sip_addr[MTL_SESSION_PORT_R],
+        ops.port.mcast_sip_addr[MTL_SESSION_PORT_R],
         st22p ? st22p->base.mcast_src_ip[MTL_PORT_R] : ctx->rx_mcast_sip_addr[MTL_PORT_R],
         MTL_IP_ADDR_LEN);
     snprintf(
