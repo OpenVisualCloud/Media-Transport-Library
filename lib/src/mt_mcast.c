@@ -442,6 +442,9 @@ static int mcast_inf_remove_mac(struct mt_interface* inf,
     return rte_eth_dev_mac_addr_remove(port_id, mcast_mac);
 }
 
+/* 224.0.0.1 */
+static struct rte_ether_addr mcast_mac_all = {{0x01, 0x00, 0x5e, 0x00, 0x00, 0x01}};
+
 int mt_mcast_init(struct mtl_main_impl* impl) {
   int num_ports = mt_num_ports(impl);
   int socket = mt_socket_id(impl, MTL_PORT_P);
@@ -461,6 +464,9 @@ int mt_mcast_init(struct mtl_main_impl* impl) {
 
     /* assign mcast instance */
     impl->mcast[i] = mcast;
+
+    if (!mt_drv_use_kernel_ctl(impl, i))
+      mcast_inf_add_mac(mt_if(impl, i), &mcast_mac_all);
   }
 
   int ret =
@@ -502,6 +508,9 @@ int mt_mcast_uinit(struct mtl_main_impl* impl) {
   for (int i = 0; i < num_ports; i++) {
     struct mt_mcast_impl* mcast = get_mcast(impl, i);
     if (!mcast) continue;
+
+    if (!mt_drv_use_kernel_ctl(impl, i))
+      mcast_inf_remove_mac(mt_if(impl, i), &mcast_mac_all);
 
     /* clear group list */
     mcast_group_clear(&mcast->group_list);
@@ -739,13 +748,15 @@ int mt_mcast_parse(struct mtl_main_impl* impl, struct mcast_mb_query_v3* query,
     return -EIO;
   }
 
+  uint16_t query_checksum = ntohs(query->checksum);
+  query->checksum = 0;
   uint16_t checksum = mcast_msg_checksum(MEMBERSHIP_QUERY, query, 0);
-  if (checksum != ntohs(query->checksum)) {
-    err("%s, err checksum %d:%d\n", __func__, ntohs(query->checksum), checksum);
+  if (checksum != query_checksum) {
+    err("%s, err checksum %d:%d\n", __func__, query_checksum, checksum);
     return -EIO;
   }
 
-  info("%s, received igmp query\n", __func__);
+  info_once("%s, received igmp query\n", __func__);
   /* stop auto-join if there is query server */
   struct mt_mcast_impl* mcast = get_mcast(impl, port);
   mcast->has_external_query = true;

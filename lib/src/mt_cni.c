@@ -206,7 +206,8 @@ static int cni_rx_handle(struct mt_cni_entry* cni, struct rte_mbuf* m) {
   struct mt_ptp_header* ptp_hdr;
   struct rte_arp_hdr* arp_hdr;
   struct mt_dhcp_hdr* dhcp_hdr;
-  struct mt_ipv4_udp* ipv4_hdr;
+  struct rte_ipv4_hdr* ipv4_hdr;
+  struct rte_udp_hdr* udp_hdr;
   size_t hdr_offset = sizeof(struct rte_ether_hdr);
 
   // mt_mbuf_dump_hdr(port, 0, "cni_rx", m);
@@ -238,27 +239,30 @@ static int cni_rx_handle(struct mt_cni_entry* cni, struct rte_mbuf* m) {
       }
       break;
     case RTE_ETHER_TYPE_IPV4:
-      ipv4_hdr = rte_pktmbuf_mtod_offset(m, struct mt_ipv4_udp*, hdr_offset);
-      hdr_offset += sizeof(struct mt_ipv4_udp);
-      if (ipv4_hdr->ip.next_proto_id == IPPROTO_UDP) {
-        src_port = ntohs(ipv4_hdr->udp.src_port);
+      ipv4_hdr = rte_pktmbuf_mtod_offset(m, struct rte_ipv4_hdr*, hdr_offset);
+      hdr_offset += ipv4_hdr->ihl * 4; /* may have ip option field */
+      if (ipv4_hdr->next_proto_id == IPPROTO_UDP) {
+        udp_hdr = rte_pktmbuf_mtod_offset(m, struct rte_udp_hdr*, hdr_offset);
+        hdr_offset += sizeof(struct rte_udp_hdr);
+        src_port = ntohs(udp_hdr->src_port);
         if (ptp && (src_port == MT_PTP_UDP_EVENT_PORT ||
                     src_port == MT_PTP_UDP_GEN_PORT)) { /* ptp pkt*/
           dbg("%s(%d), ptp msg src_port %u\n", __func__, port, src_port);
           ptp_hdr = rte_pktmbuf_mtod_offset(m, struct mt_ptp_header*, hdr_offset);
-          mt_ptp_parse(ptp, ptp_hdr, vlan, MT_PTP_L4, m->timesync, ipv4_hdr);
+          mt_ptp_parse(ptp, ptp_hdr, vlan, MT_PTP_L4, m->timesync,
+                       (struct mt_ipv4_udp*)ipv4_hdr);
         } else if (dhcp && src_port == MT_DHCP_UDP_SERVER_PORT) { /* dhcp pkt */
           dhcp_hdr = rte_pktmbuf_mtod_offset(m, struct mt_dhcp_hdr*, hdr_offset);
           mt_dhcp_parse(impl, dhcp_hdr, port);
         } else {
           cni_udp_handle(cni, m);
         }
-      } else if (ipv4_hdr->ip.next_proto_id == IPPROTO_IGMP) {
+      } else if (ipv4_hdr->next_proto_id == IPPROTO_IGMP) {
         struct mcast_mb_query_v3* mb_query =
             rte_pktmbuf_mtod_offset(m, struct mcast_mb_query_v3*, hdr_offset);
         mt_mcast_parse(impl, mb_query, port);
       } else {
-        /* ipv4 packets other than UDP fallback to kernel */
+        /* ipv4 packets other than UDP/IGMP fallback to kernel */
         cni_burst_to_kernel(cni, m);
       }
       break;

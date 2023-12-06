@@ -31,7 +31,6 @@ enum mcast_group_record_type {
 enum mcast_action_type {
   MCAST_JOIN = 0,
   MCAST_LEAVE,
-  MCAST_ON_QUERY,
 };
 
 struct mcast_group_record {
