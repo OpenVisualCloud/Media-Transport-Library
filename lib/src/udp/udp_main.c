@@ -826,7 +826,7 @@ static int udp_add_membership(struct mudp_impl* s, const void* optval, socklen_t
   mreq = (const struct ip_mreq*)optval;
   ip = (uint8_t*)&mreq->imr_multiaddr.s_addr;
   uint32_t group_addr = mt_ip_to_u32(ip);
-  ret = mt_mcast_join(s->parent, group_addr, port);
+  ret = mt_mcast_join(s->parent, group_addr, 0, port);
   if (ret < 0) {
     err("%s(%d), join mcast fail\n", __func__, idx);
     return ret;
@@ -846,7 +846,7 @@ static int udp_add_membership(struct mudp_impl* s, const void* optval, socklen_t
   mt_pthread_mutex_unlock(&s->mcast_addrs_mutex);
   if (!added) {
     err("%s(%d), record mcast fail\n", __func__, idx);
-    mt_mcast_leave(s->parent, group_addr, port);
+    mt_mcast_leave(s->parent, group_addr, 0, port);
     MUDP_ERR_RET(EIO);
   }
 
@@ -891,7 +891,7 @@ static int udp_drop_membership(struct mudp_impl* s, const void* optval,
     MUDP_ERR_RET(EIO);
   }
 
-  mt_mcast_leave(s->parent, group_addr, port);
+  mt_mcast_leave(s->parent, group_addr, 0, port);
   return 0;
 }
 

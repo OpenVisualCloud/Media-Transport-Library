@@ -717,7 +717,7 @@ struct st_tx_port {
 
 /** The structure info for st rx port, used in creating session. */
 struct st_rx_port {
-  /** Mandatory. source IP address of sender */
+  /** Mandatory. source IP address of sender or multicast IP address */
   uint8_t sip_addr[MTL_SESSION_PORT_MAX][MTL_IP_ADDR_LEN];
   /** Mandatory. 1 or 2, num of ports this session attached to */
   uint8_t num_port;
@@ -730,6 +730,8 @@ struct st_rx_port {
   /** Optional. Synchronization source defined in RFC3550, RX session will check the
    * incoming RTP packets match the ssrc. Leave to zero to disable the ssrc check */
   uint32_t ssrc;
+  /** Optional. source filter IP address of multicast */
+  uint8_t mcast_sip_addr[MTL_SESSION_PORT_MAX][MTL_IP_ADDR_LEN];
 };
 
 /** The structure describing how to create a tx st2110-20 pipeline session. */

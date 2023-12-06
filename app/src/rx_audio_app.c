@@ -231,6 +231,10 @@ static int app_rx_audio_init(struct st_app_context* ctx, st_json_audio_session_t
          audio ? st_json_ip(ctx, &audio->base, MTL_SESSION_PORT_P)
                : ctx->rx_sip_addr[MTL_PORT_P],
          MTL_IP_ADDR_LEN);
+  memcpy(
+      ops.mcast_sip_addr[MTL_SESSION_PORT_P],
+      audio ? audio->base.mcast_src_ip[MTL_PORT_P] : ctx->rx_mcast_sip_addr[MTL_PORT_P],
+      MTL_IP_ADDR_LEN);
   snprintf(
       ops.port[MTL_SESSION_PORT_P], MTL_PORT_MAX_LEN, "%s",
       audio ? audio->base.inf[MTL_SESSION_PORT_P]->name : ctx->para.port[MTL_PORT_P]);
@@ -240,6 +244,10 @@ static int app_rx_audio_init(struct st_app_context* ctx, st_json_audio_session_t
            audio ? st_json_ip(ctx, &audio->base, MTL_SESSION_PORT_R)
                  : ctx->rx_sip_addr[MTL_PORT_R],
            MTL_IP_ADDR_LEN);
+    memcpy(
+        ops.mcast_sip_addr[MTL_SESSION_PORT_R],
+        audio ? audio->base.mcast_src_ip[MTL_PORT_R] : ctx->rx_mcast_sip_addr[MTL_PORT_R],
+        MTL_IP_ADDR_LEN);
     snprintf(ops.port[MTL_SESSION_PORT_R], MTL_PORT_MAX_LEN, "%s",
              audio ? audio->base.inf[MTL_PORT_R]->name : ctx->para.port[MTL_PORT_R]);
     ops.udp_port[MTL_SESSION_PORT_R] = audio ? audio->base.udp_port : (10100 + s->idx);

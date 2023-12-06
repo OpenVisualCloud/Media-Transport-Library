@@ -1275,13 +1275,13 @@ struct st_rx_rtcp_ops {
  * Include the PCIE port and other required info.
  */
 struct st20_rx_ops {
-  /** Mandatory. source IP address of sender */
+  /** Mandatory. source IP address of sender or multicast IP address */
   uint8_t sip_addr[MTL_SESSION_PORT_MAX][MTL_IP_ADDR_LEN];
   /** Mandatory. 1 or 2, num of ports this session attached to */
   uint8_t num_port;
   /** Mandatory. Pcie BDF path like 0000:af:00.0, should align to BDF of mtl_init */
   char port[MTL_SESSION_PORT_MAX][MTL_PORT_MAX_LEN];
-  /** Mandatory. UDP source port number */
+  /** Mandatory. UDP dest port number */
   uint16_t udp_port[MTL_SESSION_PORT_MAX];
 
   /** Mandatory. Session streaming type, frame(default) or RTP */
@@ -1297,6 +1297,8 @@ struct st20_rx_ops {
   /** Mandatory. 7 bits payload type define in RFC3550 */
   uint8_t payload_type;
 
+  /** Optional. source filter IP address of multicast */
+  uint8_t mcast_sip_addr[MTL_SESSION_PORT_MAX][MTL_IP_ADDR_LEN];
   /** Optional. Synchronization source defined in RFC3550, RX session will check the
    * incoming RTP packets match the ssrc. Leave to zero to disable the ssrc check */
   uint32_t ssrc;
@@ -1422,13 +1424,13 @@ struct st20_rx_ops {
  * Include the PCIE port and other required info.
  */
 struct st22_rx_ops {
-  /** Mandatory. source IP address of sender */
+  /** Mandatory. source IP address of sender or multicast IP address */
   uint8_t sip_addr[MTL_SESSION_PORT_MAX][MTL_IP_ADDR_LEN];
   /** Mandatory. 1 or 2, num of ports this session attached to */
   uint8_t num_port;
   /** Mandatory. Pcie BDF path like 0000:af:00.0, should align to BDF of mtl_init */
   char port[MTL_SESSION_PORT_MAX][MTL_PORT_MAX_LEN];
-  /** Mandatory. UDP source port number */
+  /** Mandatory. UDP dest port number */
   uint16_t udp_port[MTL_SESSION_PORT_MAX];
 
   /** Mandatory. Sender pacing type, default is narrow */
@@ -1448,6 +1450,8 @@ struct st22_rx_ops {
   /** Mandatory. 7 bits payload type define in RFC3550 */
   uint8_t payload_type;
 
+  /** Optional. source filter IP address of multicast */
+  uint8_t mcast_sip_addr[MTL_SESSION_PORT_MAX][MTL_IP_ADDR_LEN];
   /** Optional. Synchronization source defined in RFC3550, RX session will check the
    * incoming RTP packets match the ssrc. Leave to zero to disable the ssrc check */
   uint32_t ssrc;

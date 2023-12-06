@@ -63,7 +63,7 @@ struct st20r_rx_ops {
   const char* name;
   /** private data to the callback function */
   void* priv;
-  /** source IP address of sender */
+  /** source IP address of sender or multicast IP address */
   uint8_t sip_addr[MTL_SESSION_PORT_MAX][MTL_IP_ADDR_LEN];
   /** num of ports this session attached to, must be 2 */
   uint8_t num_port;
@@ -91,6 +91,8 @@ struct st20r_rx_ops {
   /** Optional. Synchronization source defined in RFC3550, RX session will check the
    * incoming RTP packets match the ssrc. Leave to zero to disable the ssrc check */
   uint32_t ssrc;
+  /** Optional. source filter IP address of multicast */
+  uint8_t mcast_sip_addr[MTL_SESSION_PORT_MAX][MTL_IP_ADDR_LEN];
 
   /** flags, value in ST20R_RX_FLAG_* */
   uint32_t flags;

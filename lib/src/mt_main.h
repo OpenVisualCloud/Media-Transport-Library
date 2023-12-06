@@ -392,11 +392,29 @@ struct mt_arp_impl {
   struct mtl_main_impl* parent;
 };
 
+struct mt_mcast_src_entry {
+  uint32_t src_ip;
+  uint16_t src_ref_cnt;
+  TAILQ_ENTRY(mt_mcast_src_entry) entries;
+};
+
+TAILQ_HEAD(mt_mcast_src_list, mt_mcast_src_entry);
+
+struct mt_mcast_group_entry {
+  uint32_t group_ip;
+  uint16_t group_ref_cnt;
+  struct mt_mcast_src_list src_list;
+  uint16_t src_num;
+  TAILQ_ENTRY(mt_mcast_group_entry) entries;
+};
+
+TAILQ_HEAD(mt_mcast_group_list, mt_mcast_group_entry);
+
 struct mt_mcast_impl {
   pthread_mutex_t group_mutex;
-  uint32_t group_ip[MT_MCAST_GROUP_MAX];
-  uint32_t group_ref_cnt[MT_MCAST_GROUP_MAX];
+  struct mt_mcast_group_list group_list;
   uint16_t group_num;
+  bool has_external_query;
 };
 
 enum mt_dhcp_status {
